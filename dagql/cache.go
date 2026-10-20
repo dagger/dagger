@@ -2605,7 +2605,12 @@ type sharedResult struct {
 	// storedRecordBytes is the size of the record a blob-backed cache stores
 	// for the entry, as persistence writes it (encodedRecordBytes), or 0.
 	// Guarded by egraphMu.
-	storedRecordBytes           int64
+	storedRecordBytes int64
+	// storedTransfer is the entry's stored record normalized for transfer,
+	// which StoredBundle keeps (storedTransferRecordLocked) and dropping or
+	// replacing the value releases. Builds hold egraphMu for reading, so it is set
+	// atomically.
+	storedTransfer              atomic.Pointer[storedTransferRecord]
 	transferRevision            uint64
 	dependencyOwnershipRevision uint64
 	// Reverse offer ownership does not propagate lookup requirements.

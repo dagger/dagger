@@ -1502,6 +1502,7 @@ func completePartKeysCoverageLocked(res *sharedResult) ([]string, bool) {
 func (c *Cache) failMergedEntryLocked(ctx context.Context, res *sharedResult, queue collectionQueue) collectionQueue {
 	if c.blobBacked {
 		res.storedRecordBytes = 0
+		res.storedTransfer.Store(nil)
 		res.payloadMu.Lock()
 		res.persistedEnvelope = nil
 		res.hasValue = false

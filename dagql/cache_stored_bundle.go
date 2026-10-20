@@ -166,11 +166,16 @@ func (c *Cache) storedBundleVisitLocked(build *storedBundleBuild, res *sharedRes
 // storedBundleValueLocked copies res's stored record into the build,
 // normalized for transfer and relocated to ordinals. Requires egraphMu.
 func (c *Cache) storedBundleValueLocked(build *storedBundleBuild, res *sharedResult) error {
-	normalized, err := normalizeTransferRecord(PersistedRecord{ResultID: uint64(res.id), Envelope: *res.persistedEnvelope, Call: res.loadResultCall()})
+	normalized, err := storedTransferRecordLocked(res)
 	if err != nil {
 		return fmt.Errorf("stored bundle: entry %d: %w", res.id, err)
 	}
-	normalized.Envelope.PendingOffers = nil
+	// Relocation leaves what it doesn't rewrite shared with its input, and
+	// the bundle is its caller's to change.
+	normalized.Envelope, err = clonePersistedEnvelope(normalized.Envelope)
+	if err != nil {
+		return fmt.Errorf("stored bundle: entry %d: %w", res.id, err)
+	}
 	rec, err := VisitEncodedReferences(normalized, build.relocate)
 	if err != nil {
 		return fmt.Errorf("stored bundle: entry %d: %w", res.id, err)
@@ -182,6 +187,35 @@ func (c *Cache) storedBundleValueLocked(build *storedBundleBuild, res *sharedRes
 	slices.Sort(value.DependencyIDs)
 	build.bundle.Values = append(build.bundle.Values, value)
 	return nil
+}
+
+// storedTransferRecord is an entry's stored record normalized for transfer,
+// without offers, and the envelope and call it was normalized from.
+type storedTransferRecord struct {
+	envelope *PersistedResultEnvelope
+	call     *ResultCall
+	record   PersistedRecord
+}
+
+// storedTransferRecordLocked returns res's stored record normalized for
+// transfer, without offers. Normalizing reads only the record's envelope and
+// call, which the cache replaces and never changes in place, so the entry
+// keeps the result with them and normalizes again once either is replaced.
+// The kept record holds both, so neither can be freed and another take its
+// address while it is kept. The result is shared: callers copy what they
+// change. Requires egraphMu.
+func storedTransferRecordLocked(res *sharedResult) (PersistedRecord, error) {
+	env, call := res.persistedEnvelope, res.loadResultCall()
+	if kept := res.storedTransfer.Load(); kept != nil && kept.envelope == env && kept.call == call {
+		return kept.record, nil
+	}
+	rec, err := normalizeTransferRecord(PersistedRecord{ResultID: uint64(res.id), Envelope: *env, Call: call})
+	if err != nil {
+		return PersistedRecord{}, err
+	}
+	rec.Envelope.PendingOffers = nil
+	res.storedTransfer.Store(&storedTransferRecord{envelope: env, call: call, record: rec})
+	return rec, nil
 }
 
 // storedBundleOutputsLocked adds res's outputs to the build: its own stored

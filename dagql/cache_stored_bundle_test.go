@@ -3,11 +3,13 @@ package dagql
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"sync"
 	"testing"
 
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/stretchr/testify/require"
 )
 
@@ -213,6 +215,112 @@ func TestStoredBundleNeverMixesAReplacement(t *testing.T) {
 		}
 		require.Equal(t, r, rootValue.SenderNumber, "the entry is replaced, never retired")
 	}
+}
+
+// A stored bundle carries an entry's current record and call: a build after a
+// content digest changes the call, or after a merge replaces the record,
+// carries the new one, though an earlier build normalized the old.
+func TestStoredBundleCarriesTheCurrentRecord(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, _ := storedBundleTestCloud(t, "old")
+	rootRecord := func() PersistedRecord {
+		t.Helper()
+		got, err := cloud.StoredBundle(ctx, []uint64{r})
+		require.NoError(t, err)
+		for _, value := range got.Bundle.Values {
+			if value.SenderNumber == r {
+				return value.Record
+			}
+		}
+		t.Fatal("the bundle has no record of R")
+		return PersistedRecord{}
+	}
+	require.Contains(t, string(rootRecord().Envelope.ObjectJSON), "old")
+
+	content := testDigest("current-record-content")
+	require.NoError(t, cloud.TeachContentDigest(ctx, Result[Typed]{shared: storedBundleTestEntry(cloud, r)}, content))
+	require.Contains(t, rootRecord().Call.ExtraDigests, call.ExtraDigest{Digest: content, Label: call.ExtraDigestLabelContent}, "the new call")
+
+	mergeTestExpire(cloud, storedBundleTestEntry(cloud, r))
+	fresh, _ := mergeTestSource(t, "bundle-root", "new")
+	_, err := cloud.MergeValues(ctx, "cache-b", fresh)
+	require.NoError(t, err)
+	require.False(t, storedBundleTestKept(cloud, r), "the replacement releases the old record")
+	require.Contains(t, string(rootRecord().Envelope.ObjectJSON), "new", "the new record")
+}
+
+// storedBundleTestKept reports whether the entry with the number keeps a
+// normalized record.
+func storedBundleTestKept(c *Cache, number uint64) bool {
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	return c.resultsByID[sharedResultID(number)].storedTransfer.Load() != nil
+}
+
+// A prune that drops a value releases the normalized record a build kept for
+// it, and the record the entry later takes again is the one a build carries.
+func TestStoredBundleRecordGoesWithThePrunedValue(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, p := storedBundleTestCloud(t, "root")
+	_, err := cloud.StoredBundle(ctx, []uint64{r})
+	require.NoError(t, err)
+	require.True(t, storedBundleTestKept(cloud, r))
+	require.True(t, storedBundleTestKept(cloud, p))
+
+	_, removed, dropped, err := cloud.removePrunedEdge(ctx, sharedResultID(r))
+	require.NoError(t, err)
+	require.True(t, removed)
+	require.Equal(t, 2, dropped)
+	require.False(t, storedBundleTestKept(cloud, r), "released with R's value")
+	require.False(t, storedBundleTestKept(cloud, p), "released with P's value")
+	got, err := cloud.StoredBundle(ctx, []uint64{r})
+	require.NoError(t, err)
+	require.Equal(t, []uint64{r}, got.NoValue)
+
+	actx, a, asrv := transferTestCache(t)
+	root := persistedListTestResult(t, actx, a, asrv, "bundle-root", &transferTestValue{Text: "again"})
+	dep := persistedListTestResult(t, actx, a, asrv, "bundle-dep", &transferTestValue{Text: "dep"})
+	transferTestDependency(a, actx, root, dep)
+	reply, err := cloud.MergeValues(ctx, "cache-b", exportTestBundle(t, actx, a, root))
+	require.NoError(t, err)
+	require.Equal(t, r, reply.Imported()[0].ResultID, "the same entry")
+	got, err = cloud.StoredBundle(ctx, []uint64{r})
+	require.NoError(t, err)
+	for _, value := range got.Bundle.Values {
+		if value.SenderNumber == r {
+			require.Contains(t, string(value.Record.Envelope.ObjectJSON), "again")
+		}
+	}
+}
+
+// A restored Cloud builds the bundle it built before it was saved: a restore
+// starts with no normalized record and normalizes the restored ones.
+func TestStoredBundleAfterARestore(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "cloud.db")
+	ctx, cloud := storedPersistenceTestCloud(t, path)
+	actx, a, asrv := transferTestCache(t)
+	r := persistedListTestResult(t, actx, a, asrv, "restored-root", &transferTestValue{Text: "root"})
+	p := persistedListTestResult(t, actx, a, asrv, "restored-dep", &transferTestValue{Text: "dep"})
+	transferTestDependency(a, actx, r, p)
+	root := storedPersistenceTestMerge(t, ctx, cloud, exportTestBundle(t, actx, a, r))[0]
+	stored, err := cloud.SetStoredPart(ctx, root, storedBenchPart(1), 0)
+	require.NoError(t, err)
+	require.True(t, stored)
+	before, err := cloud.StoredBundle(ctx, []uint64{root})
+	require.NoError(t, err)
+	want, err := json.Marshal(before)
+	require.NoError(t, err)
+	require.NoError(t, cloud.Close(ctx))
+
+	ctx, cloud = storedPersistenceTestCloud(t, path)
+	defer func() { require.NoError(t, cloud.Close(ctx)) }()
+	require.False(t, storedBundleTestKept(cloud, root))
+	after, err := cloud.StoredBundle(ctx, []uint64{root})
+	require.NoError(t, err)
+	got, err := json.Marshal(after)
+	require.NoError(t, err)
+	require.JSONEq(t, string(want), string(got))
 }
 
 // A stored bundle is its caller's copy: changing its records and outputs in
