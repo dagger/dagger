@@ -42,6 +42,17 @@ dagger -W https://github.com/acme/api settings -g aws profile alice-dev
 
 Only module settings: `modules.<name>.settings.*`. Because one key spans every branch and clone of a repository, an entry for a module that doesn't exist in the current checkout is ignored there rather than being an error.
 
+## Old engines
+
+A Dagger CLI that starts its engine container removes engine containers of other Dagger versions. To keep them, for example when several CLI versions share one host, set:
+
+```toml
+[engine]
+leave_old_engines = true
+```
+
+The `DAGGER_LEAVE_OLD_ENGINE` environment variable, when set, takes precedence over this setting. The setting takes precedence over the `cleanup` parameter of an `image://` engine URL.
+
 ## Workspace key
 
 The key is the normalized `origin` remote: host and path, with no scheme, no user, and no `.git` suffix. Equivalent spellings all match: `git@github.com:acme/api.git`, `https://github.com/acme/api`, and `github.com/acme/api` identify the same workspace, both as the config key and in the repository's git config.

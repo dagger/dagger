@@ -675,12 +675,8 @@ func xReleaseProcessEnv(environ []string) (env []string, engineEnvs []string) {
 }
 
 func shouldCleanupOldEngines() bool {
-	val, ok := os.LookupEnv("DAGGER_LEAVE_OLD_ENGINE")
-	if !ok {
-		return true
-	}
-	leaveOldEngine, _ := strconv.ParseBool(val)
-	return !leaveOldEngine
+	leave, ok := drivers.LeaveOldEngines()
+	return !ok || !leave
 }
 
 // A command can share a global flag's value under its long name while using
