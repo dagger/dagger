@@ -155,7 +155,7 @@ func TestOfferPartsResourcesAndSettlement(t *testing.T) {
 	gate.outputs[key] = partOutputState{phase: PartOutputInstalled, task: token, installation: 1}
 	out, err = c.testOfferParts(ctx, r, []PersistedPartOffer{offer})
 	require.NoError(t, err)
-	require.Equal(t, OfferAlreadyComplete, out[0].Outcome)
+	require.Equal(t, OfferExecutionStarted, out[0].Outcome, "an installed output is not complete before it settles")
 	require.NoError(t, c.settlePart(ctx, row, offer.Address, token, 1))
 	require.NoError(t, c.settlePart(ctx, row, offer.Address, token, 1))
 	require.Empty(t, row.testPartOffers())
