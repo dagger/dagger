@@ -44,12 +44,54 @@ func dimensionNames(names map[string]string, a *Artifact) map[string]string {
 	return own
 }
 
-// NameEntries sets the display names that each entry's address uses.
+// NameEntries sets the display names and short type key that each entry's
+// address uses.
 func (a *Artifacts) NameEntries() {
 	names := a.displayNames()
 	for _, entry := range a.Entries {
 		entry.DimensionNames = dimensionNames(names, entry)
+		entry.TypeKeyName = a.typeKeyName(entry)
 	}
+}
+
+// typeKeyName is the shortest type key that names entry's path among the
+// loaded paths with the collection dimensions its projected address keys, or
+// "" for the full path. Without keys, an address keeps the full path: it then
+// names a path across every module, and the full path is its stable name.
+func (a *Artifacts) typeKeyName(entry *Artifact) string {
+	dimensions := entry.projectedDimensions()
+	if entry.TypeName == "" || len(dimensions) == 0 {
+		return ""
+	}
+	path := strings.Join(entry.Path, "/")
+	short := artifact.ShortTypeKey(a.AllPaths.Candidates("type:"+entry.TypeName, dimensions, nil), path)
+	if short == path {
+		return ""
+	}
+	return short
+}
+
+// PathIndex lists the entries' schema paths for AllPaths.
+func (a *Artifacts) PathIndex() artifact.Paths {
+	var paths artifact.Paths
+	seen := map[string]bool{}
+	for _, entry := range a.Entries {
+		if entry.TypeName == "" {
+			continue
+		}
+		path := artifact.Path{Type: "type:" + entry.TypeName, Key: strings.Join(entry.Path, "/"), Module: entry.ModuleName}
+		for _, dim := range entry.DimensionDefinitions() {
+			if !artifact.IsStaticDimension(dim.Identifier) {
+				path.Dimensions = append(path.Dimensions, dim.Identifier)
+			}
+		}
+		key := path.Type + "\x00" + path.Key + "\x00" + path.Module + "\x00" + strings.Join(path.Dimensions, "\x00")
+		if !seen[key] {
+			seen[key] = true
+			paths = append(paths, path)
+		}
+	}
+	return paths
 }
 
 func collectionInputFromText(typ *TypeDef, text string) (dagql.Input, error) {
@@ -128,7 +170,69 @@ func (a *Artifacts) BindDimensions() (*Artifacts, error) {
 			bound.Selector.DimensionAlternatives = append(bound.Selector.DimensionAlternatives, ids)
 		}
 	}
+	if err := bound.resolveTypeKeys(); err != nil {
+		return nil, err
+	}
 	return bound, nil
+}
+
+func (a *Artifacts) dimensionDisplayName(identifier string) string {
+	for _, dim := range a.AllDimensions {
+		if dim.Identifier == identifier {
+			return a.AllDimensions.DisplayName(dim)
+		}
+	}
+	if typeName, ok := strings.CutPrefix(identifier, "type:"); ok {
+		return ArtifactTypeName(typeName)
+	}
+	return identifier
+}
+
+// resolveTypeKeys replaces each short type key filter with the full paths it
+// names among the loaded paths that have every filtered collection dimension
+// (see artifact.ResolveTypeKey). A full path names only itself, and a key
+// that names nothing stays, matching nothing.
+func (a *Artifacts) resolveTypeKeys() error {
+	if len(a.AllPaths) == 0 {
+		return nil
+	}
+	paths := a.AllPaths
+	var dimensions []string
+	for _, filter := range a.Selector.Dimensions {
+		switch {
+		case filter.Dimension == artifact.ModuleDimension && filter.Keys != nil:
+			paths = slices.DeleteFunc(slices.Clone(paths), func(path artifact.Path) bool { return !moduleKeysMatch(filter.Keys, path.Module) })
+		case !artifact.IsStaticDimension(filter.Dimension):
+			dimensions = append(dimensions, filter.Dimension)
+		}
+	}
+	for i, filter := range a.Selector.Dimensions {
+		if !strings.HasPrefix(filter.Dimension, "type:") || filter.Keys == nil {
+			continue
+		}
+		candidates := paths.CandidatePaths(filter.Dimension, dimensions, nil)
+		keys := make([]string, 0, len(filter.Keys))
+		for _, key := range filter.Keys {
+			full := []string{key}
+			// A full path names itself, so a stored address stays exact.
+			if !slices.ContainsFunc(candidates, func(path artifact.Path) bool { return path.Key == key }) {
+				matches, err := artifact.ResolveTypeKey(candidates, a.dimensionDisplayName(filter.Dimension), key)
+				if err != nil {
+					return err
+				}
+				if len(matches) > 0 {
+					full = matches
+				}
+			}
+			for _, key := range full {
+				if !slices.Contains(keys, key) {
+					keys = append(keys, key)
+				}
+			}
+		}
+		a.Selector.Dimensions[i].Keys = keys
+	}
+	return nil
 }
 
 func (a *Artifacts) ResolveDimension(name string) (string, error) {
@@ -226,6 +330,7 @@ func (a *Artifacts) DimensionItems(dimension string) ([]*Artifact, error) {
 			}
 			item.setStaticDimensions()
 			item.DimensionNames = dimensionNames(names, &item)
+			item.TypeKeyName = a.typeKeyName(&item)
 			id, err := item.identity()
 			if err != nil {
 				return nil, err
@@ -333,7 +438,7 @@ func (a *Artifacts) expand(ctx context.Context, collectionKeys artifactCollectio
 			}
 			// Match the exclusion with its own selector. The entries already
 			// satisfy the inclusion filters.
-			excluded, err := (&Artifacts{Entries: result.Entries, AllDimensions: a.AllDimensions}).filterURI(address, true)
+			excluded, err := (&Artifacts{Entries: result.Entries, AllDimensions: a.AllDimensions, AllPaths: a.AllPaths}).filterURI(address, true)
 			if err != nil {
 				return nil, err
 			}
@@ -374,7 +479,7 @@ func (a *Artifacts) expand(ctx context.Context, collectionKeys artifactCollectio
 		}
 		return bound, nil
 	}
-	result := &Artifacts{Entries: []*Artifact{}, Selector: bound.Selector, AllDimensions: bound.AllDimensions}
+	result := &Artifacts{Entries: []*Artifact{}, Selector: bound.Selector, AllDimensions: bound.AllDimensions, AllPaths: bound.AllPaths}
 	names := bound.displayNames()
 	// Each worker owns one slot; flatten only after all workers finish so
 	// discovery order is independent of evaluation completion order.
@@ -459,9 +564,15 @@ func expandArtifactNode(ctx context.Context, node *ModTreeNode, template *Artifa
 		}) {
 			return nil, nil
 		}
+		// A key filter on an item that is already keyed may have dropped its
+		// siblings, which this node cannot see.
+		keyFiltered := node.CollectionDimension != nil && slices.ContainsFunc(filters, func(filter ArtifactDimensionFilter) bool {
+			return filter.Dimension == node.CollectionDimension.Identifier && filter.Keys != nil
+		})
 		for _, parent := range parents {
 			copy := *node
 			copy.Parent = parent
+			copy.CollectionComplete = copy.CollectionComplete && !keyFiltered
 			expanded = append(expanded, &copy)
 		}
 		return expanded, nil
@@ -480,6 +591,7 @@ func expandArtifactNode(ctx context.Context, node *ModTreeNode, template *Artifa
 			if err != nil {
 				return fmt.Errorf("dimension %q: %w", node.CollectionDimension.Identifier, err)
 			}
+			complete := true
 			for _, key := range keys {
 				keep := true
 				for _, filter := range filters {
@@ -492,7 +604,12 @@ func expandArtifactNode(ctx context.Context, node *ModTreeNode, template *Artifa
 					copy.Parent = parent
 					copy.CollectionKey = &key.text
 					children[i] = append(children[i], &copy)
+				} else {
+					complete = false
 				}
+			}
+			for _, child := range children[i] {
+				child.CollectionComplete = complete
 			}
 			return nil
 		})
