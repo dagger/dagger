@@ -71,6 +71,9 @@ type Tool {
 		))
 		_, err := result.Sync(ctx)
 		require.NoError(t, err)
+		// The session copies its output into logs asynchronously; closing the
+		// client waits for that copy to finish.
+		require.NoError(t, outputClient.Close())
 		require.Contains(t, logs.String(), "stdout-marker")
 		require.Contains(t, logs.String(), "stderr-marker")
 	})
