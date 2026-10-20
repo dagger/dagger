@@ -142,6 +142,7 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 		cur.replacements++
 	}
 	cur.imported = fresh.imported
+	cur.mergedAtUnixNano = fresh.mergedAtUnixNano
 	cur.inlineBorrow = fresh.inlineBorrow
 	cur.sessionResourceHandle = fresh.sessionResourceHandle
 	cur.requiredSessionResources = fresh.requiredSessionResources

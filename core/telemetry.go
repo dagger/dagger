@@ -296,6 +296,12 @@ func recordCacheEvidence(ctx context.Context, span trace.Span, ev *dagql.CacheDe
 	if ev.Outcome == dagql.CacheOutcomeHit && ev.HitRoute != "" {
 		attrs = append(attrs, attribute.String(telemetryattrs.CacheHitRouteAttr, string(ev.HitRoute)))
 	}
+	if ev.Outcome == dagql.CacheOutcomeHit && ev.HitRemote {
+		attrs = append(attrs, attribute.String(telemetryattrs.CacheHitRemoteAttr, "true"))
+		if ev.HitMergedAtUnixNano != 0 {
+			attrs = append(attrs, attribute.String(telemetryattrs.CacheHitMergedAtAttr, strconv.FormatInt(ev.HitMergedAtUnixNano, 10)))
+		}
+	}
 	if ev.Outcome == dagql.CacheOutcomeExecuted {
 		// Miss facts describe why the executed call's lookup found nothing
 		// reusable; emitted as "true"/index only when recorded, absent

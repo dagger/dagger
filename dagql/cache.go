@@ -2582,6 +2582,11 @@ type sharedResult struct {
 	inlineBorrow *PartHost
 	// Origin is immutable; slots and graph revisions are guarded by egraphMu.
 	imported bool
+	// mergedAtUnixNano is when the Cloud merge that installed the entry's
+	// value committed, on an engine; 0 for a value the engine computed, and
+	// for one restored after a restart. It goes with the value. Guarded by
+	// egraphMu.
+	mergedAtUnixNano int64
 	// storedParts are the parts whose layer chains are in this cache's own
 	// blob store, by part address key. Only a blob-backed cache (the Cloud)
 	// sets them. Guarded by egraphMu.

@@ -990,6 +990,7 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 		change   RemoteChange
 		created  collectionQueue
 	)
+	committedAt := time.Now().UnixNano()
 
 	// The values.
 	for _, row := range commit.rows {
@@ -1000,19 +1001,19 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 			c.retireResultLocked(row.target)
 			fallthrough
 		case mergeCreate:
-			c.installMergedRecordLocked(row.res, row)
+			c.installMergedRecordLocked(row.res, row, committedAt)
 			c.putResultLocked(row.res)
 			row.res.onRelease = c.resultSnapshotLeaseCleanup(row.res)
 			c.indexRecipeLocked(row.plan.recipe, row.res)
 			created = append(created, row.res)
 		case mergeStore:
-			c.installMergedRecordLocked(row.res, row)
+			c.installMergedRecordLocked(row.res, row, committedAt)
 			if row.res.onRelease == nil {
 				row.res.onRelease = c.resultSnapshotLeaseCleanup(row.res)
 			}
 		case mergeReplace:
 			fresh := &sharedResult{}
-			c.installMergedRecordLocked(fresh, row)
+			c.installMergedRecordLocked(fresh, row, committedAt)
 			old, more, err := c.replaceResultValueInPlaceLocked(ctx, row.res, fresh, row.value.ExpiresAtUnix)
 			queue = append(queue, more...)
 			errs = errors.Join(errs, err)
@@ -1150,11 +1151,15 @@ type mergeReplacement struct {
 }
 
 // installMergedRecordLocked gives res the row's relocated record as its
-// value: stored and not decoded. res is a new entry, an entry with no value,
-// or the fresh value of a replacement. Requires egraphMu for writing.
-func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow) {
+// value: stored and not decoded, from the merge that commits at committedAt.
+// res is a new entry, an entry with no value, or the fresh value of a
+// replacement. Requires egraphMu for writing.
+func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow, committedAt int64) {
 	rec := row.rec
 	res.imported = true
+	if !c.blobBacked {
+		res.mergedAtUnixNano = committedAt
+	}
 	res.storedRecordBytes = row.recordBytes
 	res.expiresAtUnix = row.value.ExpiresAtUnix
 	res.sessionResourceHandle = rec.Envelope.SessionResourceHandle

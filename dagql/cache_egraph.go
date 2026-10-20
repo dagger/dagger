@@ -968,6 +968,8 @@ func (c *Cache) lookupCacheForRequestLocked(
 	if ev := req.CacheEvidence; ev != nil {
 		if hitRes != nil {
 			ev.HitRoute = match.route
+			ev.HitRemote = hitRes.imported
+			ev.HitMergedAtUnixNano = hitRes.mergedAtUnixNano
 		} else {
 			ev.MissSawExpired = match.sawExpired
 			// Expiry is applied during accumulation, so a non-empty candidate
