@@ -937,7 +937,14 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg repo", err))
 				}
 			}
-			return nil, (*Release).Create(&parent, ctx, tag, title, files, draft, preRelease, target, notes, notesFile, discussionCategory, generateNotes, notesStartTag, latest, verifyTag, notesFromTag, token, repo)
+			var updateExisting bool
+			if inputArgs["updateExisting"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["updateExisting"]), &updateExisting)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg updateExisting", err))
+				}
+			}
+			return nil, (*Release).Create(&parent, ctx, tag, title, files, draft, preRelease, target, notes, notesFile, discussionCategory, generateNotes, notesStartTag, latest, verifyTag, notesFromTag, token, repo, updateExisting)
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
@@ -1002,7 +1009,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("Release",
 							dag.TypeDef().WithObject("Release")).
 							WithDescription("Manage releases.").
-							WithSourceMap(dag.SourceMap("release.go", 10, 1))).
+							WithSourceMap(dag.SourceMap("release.go", 12, 1))).
 					WithFunction(
 						dag.Function("Repo",
 							dag.TypeDef().WithObject("Repo")).
@@ -1111,28 +1118,29 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							WithArg("body", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Specify the body of a review.", SourceMap: dag.SourceMap("pull-request.go", 250, 2)}).
 							WithArg("bodyFile", dag.TypeDef().WithObject("File").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Read body text from file.", SourceMap: dag.SourceMap("pull-request.go", 255, 2)}))).
 			WithObject(
-				dag.TypeDef().WithObject("Release", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("release.go", 14, 6)}).
+				dag.TypeDef().WithObject("Release", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("release.go", 16, 6)}).
 					WithFunction(
 						dag.Function("Create",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Create a new GitHub Release for a repository.").
-							WithSourceMap(dag.SourceMap("release.go", 28, 1)).
-							WithArg("tag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Tag this release should point to or create.", SourceMap: dag.SourceMap("release.go", 32, 2)}).
-							WithArg("title", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Release title.", SourceMap: dag.SourceMap("release.go", 35, 2)}).
-							WithArg("files", dag.TypeDef().WithListOf(dag.TypeDef().WithObject("File")).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Release assets to upload.", SourceMap: dag.SourceMap("release.go", 40, 2)}).
-							WithArg("draft", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Save the release as a draft instead of publishing it.", SourceMap: dag.SourceMap("release.go", 45, 2)}).
-							WithArg("preRelease", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Mark the release as a prerelease.", SourceMap: dag.SourceMap("release.go", 50, 2)}).
-							WithArg("target", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Target branch or full commit SHA (default: main branch).", SourceMap: dag.SourceMap("release.go", 55, 2)}).
-							WithArg("notes", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Release notes.", SourceMap: dag.SourceMap("release.go", 60, 2)}).
-							WithArg("notesFile", dag.TypeDef().WithObject("File").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Read release notes from file.", SourceMap: dag.SourceMap("release.go", 65, 2)}).
-							WithArg("discussionCategory", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Start a discussion in the specified category.", SourceMap: dag.SourceMap("release.go", 70, 2)}).
-							WithArg("generateNotes", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Automatically generate title and notes for the release.", SourceMap: dag.SourceMap("release.go", 75, 2)}).
-							WithArg("notesStartTag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Tag to use as the starting point for generating release notes.", SourceMap: dag.SourceMap("release.go", 80, 2)}).
-							WithArg("latest", dag.TypeDef().WithEnum("Latest").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Mark this release as \"Latest\" (default: automatic based on date and version).", SourceMap: dag.SourceMap("release.go", 86, 2), DefaultValue: dagger.JSON("\"Auto\"")}).
-							WithArg("verifyTag", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Abort in case the git tag doesn't already exist in the remote repository.", SourceMap: dag.SourceMap("release.go", 91, 2)}).
-							WithArg("notesFromTag", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Tag to use as the starting point for generating release notes.", SourceMap: dag.SourceMap("release.go", 96, 2)}).
-							WithArg("token", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{Description: "GitHub token.", SourceMap: dag.SourceMap("release.go", 101, 2)}).
-							WithArg("repo", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "GitHub repository (e.g. \"owner/repo\").", SourceMap: dag.SourceMap("release.go", 106, 2)}))).
+							WithSourceMap(dag.SourceMap("release.go", 30, 1)).
+							WithArg("tag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Tag this release should point to or create.", SourceMap: dag.SourceMap("release.go", 34, 2)}).
+							WithArg("title", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Release title.", SourceMap: dag.SourceMap("release.go", 37, 2)}).
+							WithArg("files", dag.TypeDef().WithListOf(dag.TypeDef().WithObject("File")).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Release assets to upload.", SourceMap: dag.SourceMap("release.go", 42, 2)}).
+							WithArg("draft", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Save the release as a draft instead of publishing it.", SourceMap: dag.SourceMap("release.go", 47, 2)}).
+							WithArg("preRelease", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Mark the release as a prerelease.", SourceMap: dag.SourceMap("release.go", 52, 2)}).
+							WithArg("target", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Target branch or full commit SHA (default: main branch).", SourceMap: dag.SourceMap("release.go", 57, 2)}).
+							WithArg("notes", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Release notes.", SourceMap: dag.SourceMap("release.go", 62, 2)}).
+							WithArg("notesFile", dag.TypeDef().WithObject("File").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Read release notes from file.", SourceMap: dag.SourceMap("release.go", 67, 2)}).
+							WithArg("discussionCategory", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Start a discussion in the specified category.", SourceMap: dag.SourceMap("release.go", 72, 2)}).
+							WithArg("generateNotes", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Automatically generate title and notes for the release.", SourceMap: dag.SourceMap("release.go", 77, 2)}).
+							WithArg("notesStartTag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Tag to use as the starting point for generating release notes.", SourceMap: dag.SourceMap("release.go", 82, 2)}).
+							WithArg("latest", dag.TypeDef().WithEnum("Latest").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Mark this release as \"Latest\" (default: automatic based on date and version).", SourceMap: dag.SourceMap("release.go", 88, 2), DefaultValue: dagger.JSON("\"Auto\"")}).
+							WithArg("verifyTag", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Abort in case the git tag doesn't already exist in the remote repository.", SourceMap: dag.SourceMap("release.go", 93, 2)}).
+							WithArg("notesFromTag", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Tag to use as the starting point for generating release notes.", SourceMap: dag.SourceMap("release.go", 98, 2)}).
+							WithArg("token", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{Description: "GitHub token.", SourceMap: dag.SourceMap("release.go", 103, 2)}).
+							WithArg("repo", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "GitHub repository (e.g. \"owner/repo\").", SourceMap: dag.SourceMap("release.go", 108, 2)}).
+							WithArg("updateExisting", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "If a release for the tag already exists, update its title, notes,\ntarget, draft, prerelease and latest settings and re-upload its assets,\ninstead of failing. Lets an interrupted release be rerun.", SourceMap: dag.SourceMap("release.go", 115, 2)}))).
 			WithObject(
 				dag.TypeDef().WithObject("Repo", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("repo.go", 10, 6)}).
 					WithFunction(
@@ -1161,10 +1169,10 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							WithDescription("Request changes on a pull request.").
 							WithSourceMap(dag.SourceMap("pull-request.go", 291, 1)))).
 			WithEnum(
-				dag.TypeDef().WithEnum("Latest", dagger.TypeDefWithEnumOpts{SourceMap: dag.SourceMap("release.go", 19, 6)}).
-					WithEnumMember("Auto", dagger.TypeDefWithEnumMemberOpts{Value: "LATEST_AUTO", SourceMap: dag.SourceMap("release.go", 24, 2)}).
-					WithEnumMember("False", dagger.TypeDefWithEnumMemberOpts{Value: "LATEST_FALSE", SourceMap: dag.SourceMap("release.go", 23, 2)}).
-					WithEnumMember("True", dagger.TypeDefWithEnumMemberOpts{Value: "LATEST_TRUE", SourceMap: dag.SourceMap("release.go", 22, 2)})), nil
+				dag.TypeDef().WithEnum("Latest", dagger.TypeDefWithEnumOpts{SourceMap: dag.SourceMap("release.go", 21, 6)}).
+					WithEnumMember("Auto", dagger.TypeDefWithEnumMemberOpts{Value: "LATEST_AUTO", SourceMap: dag.SourceMap("release.go", 26, 2)}).
+					WithEnumMember("False", dagger.TypeDefWithEnumMemberOpts{Value: "LATEST_FALSE", SourceMap: dag.SourceMap("release.go", 25, 2)}).
+					WithEnumMember("True", dagger.TypeDefWithEnumMemberOpts{Value: "LATEST_TRUE", SourceMap: dag.SourceMap("release.go", 24, 2)})), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

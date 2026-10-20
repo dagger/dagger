@@ -144,7 +144,7 @@ func (r *Gh) PullRequest() *GhPullRequest { // gh (../../../../../../.dagger/mod
 }
 
 // Manage releases.
-func (r *Gh) Release() *GhRelease { // gh (../../../../../../.dagger/modules/release/gh/release.go:10:1)
+func (r *Gh) Release() *GhRelease { // gh (../../../../../../.dagger/modules/release/gh/release.go:12:1)
 	q := r.query.Select("release")
 
 	return &GhRelease{
@@ -706,7 +706,7 @@ func (r *GhPullRequestReview) AsNode() Node {
 	}
 }
 
-type GhRelease struct { // gh (../../../../../../.dagger/modules/release/gh/release.go:14:6)
+type GhRelease struct { // gh (../../../../../../.dagger/modules/release/gh/release.go:16:6)
 	query *querybuilder.Selection
 
 	create *Void
@@ -724,65 +724,71 @@ type GhReleaseCreateOpts struct {
 	//
 	// Release assets to upload.
 	//
-	Files []*File // gh (../../../../../../.dagger/modules/release/gh/release.go:40:2)
+	Files []*File // gh (../../../../../../.dagger/modules/release/gh/release.go:42:2)
 	//
 	// Save the release as a draft instead of publishing it.
 	//
-	Draft bool // gh (../../../../../../.dagger/modules/release/gh/release.go:45:2)
+	Draft bool // gh (../../../../../../.dagger/modules/release/gh/release.go:47:2)
 	//
 	// Mark the release as a prerelease.
 	//
-	PreRelease bool // gh (../../../../../../.dagger/modules/release/gh/release.go:50:2)
+	PreRelease bool // gh (../../../../../../.dagger/modules/release/gh/release.go:52:2)
 	//
 	// Target branch or full commit SHA (default: main branch).
 	//
-	Target string // gh (../../../../../../.dagger/modules/release/gh/release.go:55:2)
+	Target string // gh (../../../../../../.dagger/modules/release/gh/release.go:57:2)
 	//
 	// Release notes.
 	//
-	Notes string // gh (../../../../../../.dagger/modules/release/gh/release.go:60:2)
+	Notes string // gh (../../../../../../.dagger/modules/release/gh/release.go:62:2)
 	//
 	// Read release notes from file.
 	//
-	NotesFile *File // gh (../../../../../../.dagger/modules/release/gh/release.go:65:2)
+	NotesFile *File // gh (../../../../../../.dagger/modules/release/gh/release.go:67:2)
 	//
 	// Start a discussion in the specified category.
 	//
-	DiscussionCategory string // gh (../../../../../../.dagger/modules/release/gh/release.go:70:2)
+	DiscussionCategory string // gh (../../../../../../.dagger/modules/release/gh/release.go:72:2)
 	//
 	// Automatically generate title and notes for the release.
 	//
-	GenerateNotes bool // gh (../../../../../../.dagger/modules/release/gh/release.go:75:2)
+	GenerateNotes bool // gh (../../../../../../.dagger/modules/release/gh/release.go:77:2)
 	//
 	// Tag to use as the starting point for generating release notes.
 	//
-	NotesStartTag string // gh (../../../../../../.dagger/modules/release/gh/release.go:80:2)
+	NotesStartTag string // gh (../../../../../../.dagger/modules/release/gh/release.go:82:2)
 	//
 	// Mark this release as "Latest" (default: automatic based on date and version).
 	//
 	//
 	// Default: AUTO
-	Latest GhLatest // gh (../../../../../../.dagger/modules/release/gh/release.go:86:2)
+	Latest GhLatest // gh (../../../../../../.dagger/modules/release/gh/release.go:88:2)
 	//
 	// Abort in case the git tag doesn't already exist in the remote repository.
 	//
-	VerifyTag bool // gh (../../../../../../.dagger/modules/release/gh/release.go:91:2)
+	VerifyTag bool // gh (../../../../../../.dagger/modules/release/gh/release.go:93:2)
 	//
 	// Tag to use as the starting point for generating release notes.
 	//
-	NotesFromTag bool // gh (../../../../../../.dagger/modules/release/gh/release.go:96:2)
+	NotesFromTag bool // gh (../../../../../../.dagger/modules/release/gh/release.go:98:2)
 	//
 	// GitHub token.
 	//
-	Token *Secret // gh (../../../../../../.dagger/modules/release/gh/release.go:101:2)
+	Token *Secret // gh (../../../../../../.dagger/modules/release/gh/release.go:103:2)
 	//
 	// GitHub repository (e.g. "owner/repo").
 	//
-	Repo string // gh (../../../../../../.dagger/modules/release/gh/release.go:106:2)
+	Repo string // gh (../../../../../../.dagger/modules/release/gh/release.go:108:2)
+	//
+	// If a release for the tag already exists, update its title, notes,
+	// target, draft, prerelease and latest settings and re-upload its assets,
+	// instead of failing. Lets an interrupted release be rerun.
+	//
+	UpdateExisting bool // gh (../../../../../../.dagger/modules/release/gh/release.go:115:2)
 }
 
 // Create a new GitHub Release for a repository.
-func (r *GhRelease) Create(ctx context.Context, tag string, title string, opts ...GhReleaseCreateOpts) error { // gh (../../../../../../.dagger/modules/release/gh/release.go:28:1)
+func (r *GhRelease) Create(ctx context.Context, tag string, title string, opts ...GhReleaseCreateOpts) error { // gh (../../../../../../.dagger/modules/release/gh/release.go:30:1)
 	if r.create != nil {
 		return nil
 	}
@@ -843,6 +849,10 @@ func (r *GhRelease) Create(ctx context.Context, tag string, title string, opts .
 		// `repo` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Repo) {
 			q = q.Arg("repo", opts[i].Repo)
+		}
+		// `updateExisting` optional argument
+		if !querybuilder.IsZeroValue(opts[i].UpdateExisting) {
+			q = q.Arg("updateExisting", opts[i].UpdateExisting)
 		}
 	}
 	q = q.Arg("tag", tag)
@@ -1064,7 +1074,7 @@ func (r *Query) Gh(opts ...GhOpts) *Gh { // gh (../../../../../../.dagger/module
 	}
 }
 
-type GhLatest string // gh (../../../../../../.dagger/modules/release/gh/release.go:19:6)
+type GhLatest string // gh (../../../../../../.dagger/modules/release/gh/release.go:21:6)
 
 func (GhLatest) IsEnum() {}
 
@@ -1117,10 +1127,10 @@ func (v *GhLatest) UnmarshalJSON(dt []byte) error {
 }
 
 const (
-	GhLatestAuto GhLatest = "LATEST_AUTO" // gh (../../../../../../.dagger/modules/release/gh/release.go:24:2)
+	GhLatestAuto GhLatest = "LATEST_AUTO" // gh (../../../../../../.dagger/modules/release/gh/release.go:26:2)
 
-	GhLatestFalse GhLatest = "LATEST_FALSE" // gh (../../../../../../.dagger/modules/release/gh/release.go:23:2)
+	GhLatestFalse GhLatest = "LATEST_FALSE" // gh (../../../../../../.dagger/modules/release/gh/release.go:25:2)
 
-	GhLatestTrue GhLatest = "LATEST_TRUE" // gh (../../../../../../.dagger/modules/release/gh/release.go:22:2)
+	GhLatestTrue GhLatest = "LATEST_TRUE" // gh (../../../../../../.dagger/modules/release/gh/release.go:24:2)
 
 )

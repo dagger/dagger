@@ -669,6 +669,10 @@ type GhReleaseCreateOpts struct {
 	Token *Secret
 	// GitHub repository (e.g. "owner/repo").
 	Repo string
+	// If a release for the tag already exists, update its title, notes,
+	// target, draft, prerelease and latest settings and re-upload its assets,
+	// instead of failing. Lets an interrupted release be rerun.
+	UpdateExisting bool
 }
 
 // Create a new GitHub Release for a repository.
@@ -733,6 +737,10 @@ func (r *GhRelease) Create(ctx context.Context, tag string, title string, opts .
 		// `repo` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Repo) {
 			q = q.Arg("repo", opts[i].Repo)
+		}
+		// `updateExisting` optional argument
+		if !querybuilder.IsZeroValue(opts[i].UpdateExisting) {
+			q = q.Arg("updateExisting", opts[i].UpdateExisting)
 		}
 	}
 	q = q.Arg("tag", tag)
