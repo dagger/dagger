@@ -2,6 +2,7 @@ package dagql
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -13,7 +14,12 @@ func TestClassForkHistoryIsolation(t *testing.T) {
 			srv := newDagqlServerForTest(t, &reflectedAccessorTestObject{})
 			parent := NewClass[*reflectedAccessorTestObject](srv)
 			add := func(class Class[*reflectedAccessorTestObject], view, description string) {
-				spec := FieldSpec{Name: "versioned", Type: String(""), Description: description, ViewFilter: ExactView(view)}
+				spec := FieldSpec{
+					Name:        "versioned",
+					Type:        String(""),
+					Description: description,
+					ViewFilter:  ExactView(view),
+				}
 				if extend {
 					class.Extend(spec, nil)
 				} else {
@@ -23,6 +29,10 @@ func TestClassForkHistoryIsolation(t *testing.T) {
 			for i := range 3 {
 				add(parent, fmt.Sprint(i), "before fork")
 			}
+			// Give the backing array spare capacity before it is shared with the
+			// fork, without relying on append's growth strategy.
+			history := parent.fields["versioned"]
+			parent.fields["versioned"] = slices.Grow(history, 1)
 			object, err := parent.ForkObjectType(srv)
 			require.NoError(t, err)
 			fork := object.(Class[*reflectedAccessorTestObject])
