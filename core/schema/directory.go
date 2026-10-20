@@ -1587,6 +1587,23 @@ func (s *directorySchema) changesetWithChangeset(ctx context.Context, parent dag
 		return nil, err
 	}
 
+	if parent.Self().Before.Self().IsScratch() && parent.Self().After.Self().IsScratch() {
+		// An empty starting changeset has nothing to merge. Keep the input's
+		// snapshots instead of round-tripping them through Git, which loses
+		// permission bits. Exclude root Git metadata as the merge does.
+		withoutGit := dagql.Selector{Field: "withoutDirectory", Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString(".git")},
+		}}
+		var before, after dagql.ObjectResult[*core.Directory]
+		if err := srv.Select(ctx, change.Self().Before, &before, withoutGit); err != nil {
+			return nil, err
+		}
+		if err := srv.Select(ctx, change.Self().After, &after, withoutGit); err != nil {
+			return nil, err
+		}
+		return core.NewChangeset(ctx, before, after)
+	}
+
 	var after dagql.ObjectResult[*core.Directory]
 	if err := srv.Select(ctx, parent, &after, dagql.Selector{
 		Field: "__mergeWithChangeset",

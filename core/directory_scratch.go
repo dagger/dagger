@@ -15,6 +15,20 @@ type DirectoryScratchLazy struct{ LazyState }
 
 type persistedDirectoryScratchLazy struct{}
 
+// IsScratch reports whether the directory comes from the canonical empty
+// directory operation, including when that operation was restored or imported.
+func (dir *Directory) IsScratch() bool {
+	dir.outputMu.Lock()
+	defer dir.outputMu.Unlock()
+	if _, ok := dir.Lazy.(*DirectoryScratchLazy); ok {
+		return true
+	}
+	if dir.transferPending != nil {
+		return dir.transferPending.LazyKind == "scratch"
+	}
+	return dir.lazyKind == "scratch"
+}
+
 func validateDirectoryScratchPayload(raw json.RawMessage) error {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &fields); err != nil {
