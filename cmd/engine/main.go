@@ -59,7 +59,7 @@ import (
 	telemetry "github.com/dagger/otel-go"
 )
 
-const gracefulStopTimeout = 5 * time.Minute // need to sync disks, which could be expensive
+const gracefulStopTimeout = 5 * time.Minute // session teardown and persisting the dagql cache can take a while
 const ebpfProgramEnvPrefix = "DAGGER_EBPF_PROG_"
 
 type ebpfProgram struct {
