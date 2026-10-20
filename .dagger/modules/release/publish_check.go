@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"strings"
@@ -220,6 +221,57 @@ git ls-remote --tags "$REPO_URL" "$RELEASE_TAG"
 	}
 	if err := env.assertSDKTags(ctx); err != nil {
 		return err
+	}
+
+	// Rerunning a release must finish it, as when a run fails partway and is
+	// rerun on a fresh runner. Package registries reject re-uploads, so the
+	// rerun must recognize what they already have instead of uploading again.
+	rerunStart := time.Now()
+	rerunOut, err := env.runReleasePublish(ctx, engine, env.releaseTag, publishCheckRegistryPass)
+	if err != nil {
+		return err
+	}
+	if err := requireNotContains(rerunOut, "Error while publishing", "rerunning a release should complete"); err != nil {
+		return err
+	}
+	for _, sdk := range []string{"🐍 Python SDK", "⬢ TypeScript SDK", "🧪 Elixir SDK", "⚙️ Rust SDK"} {
+		if err := requireContains(rerunOut, "- [x] "+sdk+" (already published", "rerunning a release should find the "+sdk+" already published"); err != nil {
+			return err
+		}
+	}
+	if err := env.assertNoRegistryUploadsSince(ctx, rerunStart); err != nil {
+		return err
+	}
+	return nil
+}
+
+// assertNoRegistryUploadsSince checks that no package registry upload was
+// attempted after since.
+func (env *publishCheckEnv) assertNoRegistryUploadsSince(ctx context.Context, since time.Time) error {
+	events, err := env.mockEvents(ctx)
+	if err != nil {
+		return err
+	}
+	uploads := map[string]bool{
+		"pypi_publish": true, "pypi_publish_duplicate": true,
+		"hex_publish": true, "hex_publish_duplicate": true, "hex_docs_publish": true,
+		"cargo_publish": true, "cargo_publish_duplicate": true,
+	}
+	for _, line := range strings.Split(events, "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var event struct {
+			Kind string  `json:"kind"`
+			Time float64 `json:"time"`
+			Path string  `json:"path"`
+		}
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			return fmt.Errorf("parse mock event %q: %w", line, err)
+		}
+		if uploads[event.Kind] && int64(event.Time) >= since.Unix() {
+			return fmt.Errorf("rerunning a release should not upload to package registries again, but got %s %s", event.Kind, event.Path)
+		}
 	}
 	return nil
 }
@@ -2275,6 +2327,9 @@ os.makedirs(github_content_records_dir, exist_ok=True)
 os.makedirs(github_release_records_dir, exist_ok=True)
 os.makedirs(github_asset_records_dir, exist_ok=True)
 published_crates = {}
+published_pypi_files = set()
+published_pypi_versions = set()
+published_hex_versions = set()
 github_refs = {}
 deleted_github_assets = set()
 state_lock = threading.Lock()
@@ -2444,6 +2499,13 @@ def record_cargo_publish(handler, body):
     crate_version = meta.get("vers", "")
     checksum = hashlib.sha256(crate).hexdigest()
     with state_lock:
+        duplicate = crate_name in published_crates and published_crates[crate_name]["meta"].get("vers") == crate_version
+    if duplicate:
+        # crates.io rejects re-uploading a version it already has.
+        record("cargo_publish_duplicate", handler, body, {"crate_name": crate_name, "crate_version": crate_version})
+        handler.send_json(200, {"errors": [{"detail": "crate version " + crate_version + " is already uploaded"}]})
+        return
+    with state_lock:
         published_crates[crate_name] = {
             "name": crate_name,
             "meta": meta,
@@ -2519,6 +2581,28 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path.startswith("/netlify/api/v1/sites/docs.dagger.io/deploys"):
             record("netlify_list_deploys", self, b"", {"auth_header": auth_header(self)})
             self.send_json(200, [{"id": "deploy-1"}])
+            return
+        if self.path.startswith("/pypi/") and self.path.endswith("/json"):
+            # PyPI JSON API: /pypi/<project>/<version>/json
+            parts = self.path.strip("/").split("/")
+            name, version = (parts[1].lower().replace("_", "-"), parts[2]) if len(parts) == 4 else ("", "")
+            with state_lock:
+                found = (name, version) in published_pypi_versions
+            record("pypi_version_lookup", self, b"", {"package_name": name, "package_version": version, "found": found})
+            if found:
+                self.send_json(200, {"info": {"name": name, "version": version}})
+            else:
+                self.send_json(404, {"message": "Not Found"})
+            return
+        if self.path.startswith("/hex/api/packages/dagger/releases/"):
+            version = self.path.removeprefix("/hex/api/packages/dagger/releases/").strip("/")
+            with state_lock:
+                found = version in published_hex_versions
+            record("hex_version_lookup", self, b"", {"package_version": version, "found": found})
+            if found:
+                self.send_json(200, {"version": version})
+            else:
+                self.send_json(404, {"message": "Not Found"})
             return
         if self.path == "/hex/api/users/me":
             record("hex_user_me", self, b"")
@@ -2620,13 +2704,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_json(200, {"id": "deploy-1"})
             return
         if self.path.startswith("/pypi/"):
+            name = multipart_field(body, "name").lower().replace("_", "-")
+            version = multipart_field(body, "version")
+            filename = multipart_filename(body, "content")
+            with state_lock:
+                duplicate = filename in published_pypi_files
+                published_pypi_files.add(filename)
+                published_pypi_versions.add((name, version))
+            if duplicate:
+                # PyPI rejects re-uploading a file it already has.
+                record("pypi_publish_duplicate", self, body, {"filename": filename})
+                self.send_bytes(400, b"File already exists. See https://pypi.org/help/#file-name-reuse for more information.", "text/plain")
+                return
             record("pypi_publish", self, body, {
                 "auth_header": auth_header(self),
                 "content_type": self.headers.get("content-type", ""),
                 "package_name": multipart_field(body, "name"),
-                "package_version": multipart_field(body, "version"),
+                "package_version": version,
                 "filetype": multipart_field(body, "filetype"),
-                "filename": multipart_filename(body, "content"),
+                "filename": filename,
             })
             self.send_bytes(200, b"OK", "text/plain")
             return
@@ -2640,6 +2736,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         if self.path.startswith("/hex/api/packages/dagger/releases"):
             version = hex_package_version(body)
+            with state_lock:
+                duplicate = version in published_hex_versions
+                published_hex_versions.add(version)
+            if duplicate:
+                # Hex rejects re-publishing a version it already has.
+                record("hex_publish_duplicate", self, body, {"package_version": version})
+                self.send_etf(422, {"status": 422, "message": "Validation error(s)", "errors": {"inserted_at": "can only modify a release up to one hour after publication"}})
+                return
             record("hex_publish", self, body, {
                 "auth_header": auth_header(self),
                 "package_version": version,
