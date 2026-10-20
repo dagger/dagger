@@ -955,6 +955,8 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
 
     /**
      * Discover static object artifacts from workspace modules without evaluating their values.
+     *
+     * Omits the paths that the workspace's check.skip, generate.skip, and up.skip settings skip.
      */
     public function artifacts(?array $include = null): Artifacts
     {

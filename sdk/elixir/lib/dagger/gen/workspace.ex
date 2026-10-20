@@ -28,6 +28,8 @@ defmodule Dagger.Workspace do
 
   @doc """
   Discover static object artifacts from workspace modules without evaluating their values.
+
+  Omits the paths that the workspace's check.skip, generate.skip, and up.skip settings skip.
   """
   @spec artifacts(t(), [{:include, [String.t()]}]) :: Dagger.Artifacts.t()
   def artifacts(%__MODULE__{} = workspace, optional_args \\ []) do

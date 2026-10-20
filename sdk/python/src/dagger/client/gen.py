@@ -18381,6 +18381,9 @@ class Workspace(Type):
         """Discover static object artifacts from workspace modules without
         evaluating their values.
 
+        Omits the paths that the workspace's check.skip, generate.skip, and
+        up.skip settings skip.
+
         Parameters
         ----------
         include:

@@ -21016,6 +21016,8 @@ type WorkspaceArtifactsOpts struct {
 }
 
 // Discover static object artifacts from workspace modules without evaluating their values.
+//
+// Omits the paths that the workspace's check.skip, generate.skip, and up.skip settings skip.
 func (r *Workspace) Artifacts(opts ...WorkspaceArtifactsOpts) *Artifacts {
 	q := r.query.Select("artifacts")
 	for i := len(opts) - 1; i >= 0; i-- {

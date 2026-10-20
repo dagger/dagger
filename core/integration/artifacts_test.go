@@ -1313,13 +1313,18 @@ up.skip = ["skipped-service", "skipped-unmarked-service"]
  rawChecks: filterDirectives(directives: ["check"]) { items { uri } }
  rawGenerators: filterDirectives(directives: ["generate"]) { items { uri } }
  rawServices: filterDirectives(directives: ["up"]) { items { uri } }
+ checkPaths: filterTypes(types: ["Check"]) { items { uri } }
+ servicePaths: filterTypes(types: ["Service"]) { items { uri } }
 } } }`, &testutil.QueryOptions{Variables: map[string]any{"id": id}})
 	require.NoError(t, err)
-	// Raw directive filters do not apply workspace settings.
+	// Workspace artifacts omit what the skip settings skip, for every consumer.
+	// check-generated is a command default, so staleness checks remain.
 	raw := map[string][]string{
-		"rawChecks":     {"dag://?check=gen/stale", "dag://?check=scana", "dag://?check=scanb", "dag://?check=skipped", "dag://?check=skipped-generate/stale", "dag://?check=verify"},
-		"rawGenerators": {"dag://?generator=gen", "dag://?generator=skipped-generate"},
-		"rawServices":   {"dag://?service=serve", "dag://?service=skipped-service"},
+		"rawChecks":     {"dag://?check=gen/stale", "dag://?check=verify"},
+		"rawGenerators": {"dag://?generator=gen"},
+		"rawServices":   {"dag://?service=serve"},
+		"checkPaths":    {"dag://?check=gen/stale", "dag://?check=verify"},
+		"servicePaths":  {"dag://?service=serve", "dag://?service=unmarked-service"},
 	}
 	for name, want := range raw {
 		var names []string
