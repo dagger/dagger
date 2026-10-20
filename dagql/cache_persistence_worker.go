@@ -14,10 +14,20 @@ import (
 
 // Checkpoint saves a blob-backed cache, the Cloud's, without closing it: the
 // same save as Close's, the closure of the stored roots in one transaction,
-// with each value's stored parts. A crash during a save keeps the previous
-// one, and a blob-backed cache restores the last save whatever ended the
-// process (NewCache). Only a blob-backed cache checkpoints while it runs: it
+// with each value's stored parts. A crash of the process during a save keeps
+// the previous one, and a blob-backed cache restores the last save however
+// its process ended (NewCache). An operating-system crash or a power loss can
+// lose saves or corrupt the store, which is written with synchronous=OFF
+// (prepareCacheDBs). Only a blob-backed cache checkpoints while it runs: it
 // never decodes a value, so its save copies stored records as they are.
+//
+// SQLite writes a save to the write-ahead log first, so the log grows to
+// about the store's size, and SQLite then reuses the file without shrinking
+// it. So after the save, Checkpoint copies the log into the database and
+// truncates it: between saves, the store takes its own size on disk, not
+// twice that. A checkpoint that another connection keeps from completing,
+// with a lock it holds, leaves the log as it is: the save stands, and a later
+// one truncates it.
 func (c *Cache) Checkpoint(ctx context.Context) error {
 	if !c.blobBacked {
 		return errors.New("checkpoint: the cache has no blob store")
@@ -32,7 +42,17 @@ func (c *Cache) Checkpoint(ctx context.Context) error {
 	}
 	c.checkpointMu.Lock()
 	defer c.checkpointMu.Unlock()
-	return c.persistCurrentState(ctx)
+	if err := c.persistCurrentState(ctx); err != nil {
+		return err
+	}
+	var busy, logFrames, copied int
+	if err := c.sqlDB.QueryRowContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)").Scan(&busy, &logFrames, &copied); err != nil {
+		return fmt.Errorf("checkpoint: saved, but truncating the write-ahead log failed: %w", err)
+	}
+	if busy != 0 {
+		slog.Warn("dagql checkpoint saved, but the write-ahead log is in use and stays at its size", "frames", logFrames, "copied", copied)
+	}
+	return nil
 }
 
 func (c *Cache) persistCurrentState(ctx context.Context) error {

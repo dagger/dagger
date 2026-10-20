@@ -536,8 +536,10 @@ func NewCache(
 	// An engine wipes its store after a stop that was not clean, because its
 	// snapshots may no longer match it. A blob-backed cache has no snapshots,
 	// and its store is a whole, consistent save at every commit (Checkpoint),
-	// so it restores the last save whatever ended the process, and never
-	// marks its store dirty.
+	// so it restores the last save however its process ended, a crash
+	// included, and never marks its store dirty. An operating-system crash or
+	// a power loss can still lose saves or corrupt the store: it is written
+	// with synchronous=OFF (prepareCacheDBs).
 	cleanShutdownVal, found, err := c.pdb.SelectMetaValue(ctx, persistdb.MetaKeyCleanShutdown)
 	if err != nil {
 		if closeErr := closeCacheDBs(db, c.pdb); closeErr != nil {

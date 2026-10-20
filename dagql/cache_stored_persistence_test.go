@@ -261,11 +261,11 @@ func TestCheckpointRunsBesideReaders(t *testing.T) {
 
 // Every Checkpoint rewrites the whole store in one transaction, which SQLite
 // writes to the write-ahead log first, so one save puts about the store's
-// size in the log. A checkpoint copies the log into the database, and the
-// next save writes the log from its start again, but nothing shrinks the
-// file: left at one save's size, it doubles the store's disk use between
-// saves. After each save the log is at most walBound, while the store is many
-// times that.
+// size in the log. SQLite copies the log into the database and writes it from
+// its start again, without shrinking the file: left at one save's size, it
+// would double the store's disk use between saves. After each save the log is
+// at most walBound, while the store is many times that, and the store left
+// restores the save.
 func TestCheckpointBoundsTheWriteAheadLog(t *testing.T) {
 	t.Parallel()
 	const (
@@ -276,7 +276,6 @@ func TestCheckpointBoundsTheWriteAheadLog(t *testing.T) {
 	)
 	path := filepath.Join(t.TempDir(), "cloud.db")
 	ctx, cloud := storedPersistenceTestCloud(t, path)
-	defer func() { require.NoError(t, cloud.Close(ctx)) }()
 	actx, a, asrv := transferTestCache(t)
 	var results []AnyResult
 	for i := range roots {
@@ -306,4 +305,10 @@ func TestCheckpointBoundsTheWriteAheadLog(t *testing.T) {
 		require.GreaterOrEqual(t, dbs[i], int64(8*walBound), "save %d: the store is many times the bound", i+1)
 		require.LessOrEqual(t, wals[i], int64(walBound), "save %d: the write-ahead log", i+1)
 	}
+	saved := storedPersistenceTestState(cloud)
+	require.NoError(t, cloud.CloseDiscardingPersistence())
+	ctx, cloud = storedPersistenceTestCloud(t, path)
+	defer func() { require.NoError(t, cloud.Close(ctx)) }()
+	require.Equal(t, CachePersistenceResetNone, cloud.PersistenceResetReason())
+	require.Equal(t, saved, storedPersistenceTestState(cloud))
 }
