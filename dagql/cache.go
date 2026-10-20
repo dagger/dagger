@@ -3253,6 +3253,25 @@ func clientScopeSessionClosed(ctx context.Context) bool {
 	return ok && scope.Lease().SessionClosed()
 }
 
+// logProducerRemovedOutcome records how shared work running under ctx ended
+// when the session it runs under had been removed: if it succeeded, its
+// waiters keep the value; if it failed, waiters still waiting may take it
+// over. It tells how often letting such work run, rather than cancelling it at
+// removal, pays off. Callers log each piece of work's final outcome once.
+func logProducerRemovedOutcome(ctx context.Context, work, key string, err error) {
+	scope, ok := engine.ClientScopeFromContext(ctx)
+	if !ok || !scope.Lease().SessionClosed() {
+		return
+	}
+	if err != nil {
+		slog.InfoContext(ctx, "shared work failed after its producer's session was removed",
+			"work", work, "key", key, "producerSession", scope.SessionID(), "error", err)
+		return
+	}
+	slog.InfoContext(ctx, "shared work succeeded after its producer's session was removed",
+		"work", work, "key", key, "producerSession", scope.SessionID())
+}
+
 func (oc *ongoingCall) releaseSharedWorkLeases(ctx context.Context) error {
 	if oc == nil {
 		return nil
@@ -5117,6 +5136,7 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 				partial = lazyPartsEvaluationPartialLocked(shared, res)
 			}
 			shared.lazyMu.Unlock()
+			logProducerRemovedOutcome(attemptCtx, "lazy evaluation", fmt.Sprintf("%d/%s", shared.id, group), err)
 
 			// End lazySpan after retiring the attempt but before closing done. The
 			// retired state prevents concurrently successful attempts from all
@@ -6101,6 +6121,11 @@ func (c *Cache) getOrInitCallInner(
 			c.retireOngoingCallLocked(oc)
 		}
 		c.callsMu.Unlock()
+		if err != nil {
+			// A successful callback's outcome is its publication's, logged
+			// there.
+			logProducerRemovedOutcome(oc.sharedWorkCtx, "call", callKey, err)
+		}
 		if c.testAfterCallbackWaiterCheck != nil {
 			c.testAfterCallbackWaiterCheck()
 		}
@@ -6374,6 +6399,7 @@ func (c *Cache) wait(
 		oc.producerClosed = oc.initCompletedResultErr != nil && oc.clientScopeLease.SessionClosed()
 		c.retireOngoingCallLocked(oc)
 		c.callsMu.Unlock()
+		logProducerRemovedOutcome(oc.sharedWorkCtx, "call", oc.callConcurrencyKeys.callKey, oc.initCompletedResultErr)
 	})
 	if oc.initCompletedResultErr != nil {
 		c.callsMu.Lock()

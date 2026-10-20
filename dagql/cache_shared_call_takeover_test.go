@@ -1,10 +1,12 @@
 package dagql
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -12,8 +14,43 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/stretchr/testify/require"
 )
+
+// lockedBuffer is a buffer that concurrent log writers can share.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+// producerRemovedLogs captures, through the context's logger, the lines
+// recording shared work that ended after its producer's session was removed.
+type producerRemovedLogs struct {
+	out lockedBuffer
+}
+
+func (l *producerRemovedLogs) into(ctx context.Context) context.Context {
+	return slog.WithLogger(ctx, slog.New(slog.NewTextHandler(&l.out, nil)))
+}
+
+func (l *producerRemovedLogs) lines() []string {
+	l.out.mu.Lock()
+	defer l.out.mu.Unlock()
+	var lines []string
+	for _, line := range strings.Split(l.out.buf.String(), "\n") {
+		if strings.Contains(line, "after its producer's session was removed") {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
 
 // sharedCallTakeoverScope returns ctx under a client scope of its own session,
 // issued like a session's leases: under the session's authority, and refusing
@@ -48,6 +85,7 @@ func sharedCallTakeoverScope(t *testing.T, ctx context.Context, session string) 
 // failure instead of waiting for more.
 func TestCacheSharedCallTakeoverBudget(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
+		logs := &producerRemovedLogs{}
 		base := cacheTestContext(t.Context())
 		c, err := NewCache(base, "", nil, nil)
 		require.NoError(t, err)
@@ -56,7 +94,7 @@ func TestCacheSharedCallTakeoverBudget(t *testing.T) {
 			defer cancel()
 			require.NoError(t, c.Close(ctx))
 		})
-		base = ContextWithCache(base, c)
+		base = logs.into(ContextWithCache(base, c))
 		frame := cacheTestIntCall("shared-call-takeover-budget")
 		const concurrencyKey = "shared-call-takeover-budget"
 
@@ -150,6 +188,13 @@ func TestCacheSharedCallTakeoverBudget(t *testing.T) {
 		require.ErrorContains(t, err, fmt.Sprintf("shared call takeover budget exhausted after %d foreign-session takeovers", maxSharedCallTakeovers))
 		require.ErrorContains(t, err, ps[producers-1].session+"'s dependency is gone")
 		require.False(t, waiterRan, "the waiter only ever joined another producer's call")
+		lines := logs.lines()
+		require.Len(t, lines, producers, "each removed producer's failure is logged once: %v", lines)
+		for i, line := range lines {
+			require.Contains(t, line, "failed after its producer's session was removed")
+			require.Contains(t, line, "work=call")
+			require.Contains(t, line, fmt.Sprintf("producerSession=producer-%d", i))
+		}
 	})
 }
 
@@ -165,6 +210,7 @@ func TestCachePersistenceImportedDecodeLeaderSessionRemovalRetriesJoiner(t *test
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
 	persistRetryDecodeSnapshotID.Store("")
 	resultID := persistRetryDecodeSeed(t, ctx, dbPath, nil)
+	logs := &producerRemovedLogs{}
 
 	cB, err := NewCache(ctx, dbPath, nil, nil)
 	require.NoError(t, err)
@@ -176,7 +222,7 @@ func TestCachePersistenceImportedDecodeLeaderSessionRemovalRetriesJoiner(t *test
 	const leaderSessionID = "persist-decode-removed-session-a"
 	const joinerSessionID = "persist-decode-removed-session-b"
 	loadCtx := func(sessionID string) (context.Context, *engine.ClientScopeAuthority) {
-		loadCtx := ContextWithCache(ctx, cB)
+		loadCtx := ContextWithCache(logs.into(ctx), cB)
 		loadCtx = srvToContext(loadCtx, srvB)
 		return sharedCallTakeoverScope(t, loadCtx, sessionID)
 	}
@@ -239,7 +285,90 @@ func TestCachePersistenceImportedDecodeLeaderSessionRemovalRetriesJoiner(t *test
 	require.Equal(t, int32(2), decodeEntries.Load())
 	_, joinerDecoded := decodeSessions.Load(joinerSessionID)
 	require.True(t, joinerDecoded, "the joiner led its own decode")
+	lines := logs.lines()
+	require.Len(t, lines, 1, "only the removed leader's decode is logged: %v", lines)
+	require.Contains(t, lines[0], "failed after its producer's session was removed")
+	require.Contains(t, lines[0], `work="persisted decode"`)
+	require.Contains(t, lines[0], "producerSession="+leaderSessionID)
 
 	require.NoError(t, cB.ReleaseSession(joinerCtx, joinerSessionID))
 	require.NoError(t, cB.ReleaseSession(leaderCtx, leaderSessionID))
+}
+
+// Shared work whose producer's session is removed before the work's outcome
+// is known keeps its value for its waiters when it succeeds, and the outcome
+// is logged once, so how often waiting for such work pays off can be
+// measured. The removal can come while the work runs, or after its callback
+// returned but before its result is published.
+func TestCacheSharedCallSucceedsAfterProducerRemoval(t *testing.T) {
+	for _, removal := range []string{"while the work runs", "before publication"} {
+		t.Run(removal, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				logs := &producerRemovedLogs{}
+				base := cacheTestContext(t.Context())
+				c, err := NewCache(base, "", nil, nil)
+				require.NoError(t, err)
+				t.Cleanup(func() {
+					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+					defer cancel()
+					require.NoError(t, c.Close(ctx))
+				})
+				base = logs.into(ContextWithCache(base, c))
+				frame := cacheTestIntCall("shared-call-succeeds-after-removal")
+				const concurrencyKey = "shared-call-succeeds-after-removal"
+
+				producerScoped, producerAuthority := sharedCallTakeoverScope(t, base, "producer")
+				producerCtx, cancelProducer := context.WithCancel(producerScoped)
+				defer cancelProducer()
+				waiterCtx, _ := sharedCallTakeoverScope(t, base, "waiter")
+				started, release := make(chan struct{}), make(chan struct{})
+				releaseWork := sync.OnceFunc(func() { close(release) })
+				defer releaseWork()
+				var runs atomic.Int32
+				work := func(ctx context.Context) (AnyResult, error) {
+					runs.Add(1)
+					close(started)
+					select {
+					case <-release:
+					case <-ctx.Done():
+						return nil, context.Cause(ctx)
+					}
+					return cacheTestIntResult(frame, 1), nil
+				}
+				if removal == "before publication" {
+					// The callback has returned; its waiters have not yet
+					// published its result.
+					c.testAfterCallbackWaiterCheck = producerAuthority.Close
+				}
+
+				producerDone := make(chan error, 1)
+				go func() {
+					_, err := c.GetOrInitCall(producerCtx, "producer", noopTypeResolver{}, &CallRequest{ResultCall: frame, ConcurrencyKey: concurrencyKey}, work)
+					producerDone <- err
+				}()
+				<-started
+				waiterDone := make(chan error, 1)
+				go func() {
+					_, err := c.GetOrInitCall(waiterCtx, "waiter", noopTypeResolver{}, &CallRequest{ResultCall: frame, ConcurrencyKey: concurrencyKey}, work)
+					waiterDone <- err
+				}()
+				synctest.Wait()
+
+				if removal == "while the work runs" {
+					producerAuthority.Close()
+				}
+				cancelProducer()
+				require.ErrorIs(t, <-producerDone, context.Canceled)
+				releaseWork()
+
+				require.NoError(t, <-waiterDone)
+				require.Equal(t, int32(1), runs.Load(), "the waiter kept the work's value instead of running it again")
+				lines := logs.lines()
+				require.Len(t, lines, 1, "%v", lines)
+				require.Contains(t, lines[0], "succeeded after its producer's session was removed")
+				require.Contains(t, lines[0], "work=call")
+				require.Contains(t, lines[0], "producerSession=producer")
+			})
+		})
+	}
 }

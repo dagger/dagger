@@ -877,6 +877,7 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 			res.persistDecodeWaitCh = nil
 			res.persistDecodeMu.Unlock()
 			close(waitCh)
+			logProducerRemovedOutcome(ctx, "persisted decode", fmt.Sprint(res.id), err)
 		}
 
 		// A leader with an installed payload (persistLeaseSyncPending was

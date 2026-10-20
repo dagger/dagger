@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -16,6 +17,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 // sharedWorkTestSession is an initialized session with one client and a held
@@ -354,6 +356,11 @@ func TestSharedCallSurvivesItsProducersFullSessionTeardown(t *testing.T) {
 	require.NoError(t, receiveWithin(t, removed, "the producer's session removal to finish"))
 }
 
+// writerFunc adapts a function to an io.Writer.
+type writerFunc func([]byte) (int, error)
+
+func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
+
 // lazySharedWorkValue is a value whose lazy evaluation the cache shares
 // between every session that evaluates it.
 type lazySharedWorkValue struct {
@@ -507,8 +514,15 @@ func TestSharedCallPublicationSurvivesItsProducersSessionRemoval(t *testing.T) {
 		dag, err := dagql.NewServer(t.Context(), &core.Query{})
 		require.NoError(t, err)
 
+		var logs bytes.Buffer
+		var logsMu sync.Mutex
+		logger := slog.New(slog.NewTextHandler(writerFunc(func(p []byte) (int, error) {
+			logsMu.Lock()
+			defer logsMu.Unlock()
+			return logs.Write(p)
+		}), nil))
 		scoped := func(ctx context.Context, scope engine.ClientScope) context.Context {
-			ctx, err := engine.ContextWithClientScope(dagql.ContextWithCache(ctx, cache), scope)
+			ctx, err := engine.ContextWithClientScope(dagql.ContextWithCache(slog.WithLogger(ctx, logger), cache), scope)
 			require.NoError(t, err)
 			return ctx
 		}
@@ -626,6 +640,20 @@ func TestSharedCallPublicationSurvivesItsProducersSessionRemoval(t *testing.T) {
 		require.NotEmpty(t, nestedSessions)
 		require.NotContains(t, nestedSessions, "producer", "no publication succeeded under the removed producer's scope")
 		nestedMu.Unlock()
+		// The producer's call is logged once, by its failed publication; the
+		// survivors' calls ran under live sessions.
+		logsMu.Lock()
+		var removedLines []string
+		for _, line := range strings.Split(logs.String(), "\n") {
+			if strings.Contains(line, "after its producer's session was removed") {
+				removedLines = append(removedLines, line)
+			}
+		}
+		logsMu.Unlock()
+		require.Len(t, removedLines, 1, "%v", removedLines)
+		require.Contains(t, removedLines[0], "failed after its producer's session was removed")
+		require.Contains(t, removedLines[0], "work=call")
+		require.Contains(t, removedLines[0], "producerSession=producer")
 		require.NoError(t, receiveWithin(t, drained, "the producer's scopes to drain"))
 	})
 }
