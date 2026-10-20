@@ -2829,11 +2829,20 @@ func (s *moduleSchema) moduleDependencies(
 	ctx context.Context,
 	mod *core.Module,
 	args struct{},
-) (dagql.Array[*core.Module], error) {
-	depMods := make([]*core.Module, 0, len(mod.Deps.Mods()))
-	for _, dep := range mod.Deps.Mods() {
+) (dagql.ObjectResultArray[*core.Module], error) {
+	return moduleDependencyResults(mod.Deps)
+}
+
+// moduleDependencyResults returns the dependencies' own results, not their
+// values: publishing a dependency's value again as a new result would attach
+// it a second time, and a module that includes itself in its deps (always the
+// case for Dang modules) would then name that new result, owned only by the
+// calling session, as its self dependency.
+func moduleDependencyResults(deps *core.SchemaBuilder) (dagql.ObjectResultArray[*core.Module], error) {
+	depMods := make(dagql.ObjectResultArray[*core.Module], 0, len(deps.Mods()))
+	for _, dep := range deps.Mods() {
 		if depInst := dep.ModuleResult(); depInst.Self() != nil {
-			depMods = append(depMods, depInst.Self())
+			depMods = append(depMods, depInst)
 			continue
 		}
 		switch dep.(type) {
@@ -2939,21 +2948,8 @@ func (s *moduleSchema) currentModuleDependencies(
 	ctx context.Context,
 	mod *core.CurrentModule,
 	args struct{},
-) (dagql.Array[*core.Module], error) {
-	depMods := make([]*core.Module, 0, len(mod.Module.Self().Deps.Mods()))
-	for _, dep := range mod.Module.Self().Deps.Mods() {
-		if depInst := dep.ModuleResult(); depInst.Self() != nil {
-			depMods = append(depMods, depInst.Self())
-			continue
-		}
-		switch dep.(type) {
-		case *CoreMod:
-			// skip
-		default:
-			return nil, fmt.Errorf("unexpected mod dependency type %T", dep)
-		}
-	}
-	return depMods, nil
+) (dagql.ObjectResultArray[*core.Module], error) {
+	return moduleDependencyResults(mod.Module.Self().Deps)
 }
 
 func (s *moduleSchema) currentModuleContextDirectory(
