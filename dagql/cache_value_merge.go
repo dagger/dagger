@@ -110,6 +110,30 @@ func (c *Cache) MergeValues(ctx context.Context, from CacheID, input ValueBundle
 	}
 }
 
+// PreparedValueMerge is a merge PrepareValueMerge prepared, for one terminal
+// action: CommitValueMerge or Release.
+type PreparedValueMerge struct{}
+
+// errValueMergeEnded is CommitValueMerge's answer for a prepared merge whose
+// terminal action has already run.
+var errValueMergeEnded = errors.New("commit value merge: the prepared merge has ended")
+
+// PrepareValueMerge prepares a merge of input from the cache from, for
+// CommitValueMerge. Not implemented yet.
+func (c *Cache) PrepareValueMerge(ctx context.Context, from CacheID, input ValueBundle) (*PreparedValueMerge, error) {
+	return nil, errors.New("prepare value merge: not implemented")
+}
+
+// CommitValueMerge commits a merge PrepareValueMerge prepared. Not
+// implemented yet.
+func (c *Cache) CommitValueMerge(ctx context.Context, p *PreparedValueMerge) (MergeReply, error) {
+	return MergeReply{}, errors.New("commit value merge: not implemented")
+}
+
+// Release drops a prepared merge that won't be committed. Not implemented
+// yet.
+func (p *PreparedValueMerge) Release() {}
+
 // MergeReply is what a merge committed, read under the lock that committed it.
 type MergeReply struct {
 	// Values has one entry per merged record, in dependency order.
