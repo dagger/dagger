@@ -130,12 +130,14 @@ func (r ReleaseReportArtifact) MarshalJSON() ([]byte, error) {
 		Link   string
 		Errors []*dagger.Error
 		Notify bool
+		Note   string
 	}
 	concrete.Name = r.Name
 	concrete.Tag = r.Tag
 	concrete.Link = r.Link
 	concrete.Errors = r.Errors
 	concrete.Notify = r.Notify
+	concrete.Note = r.Note
 	return json.Marshal(&concrete)
 }
 
@@ -146,6 +148,7 @@ func (r *ReleaseReportArtifact) UnmarshalJSON(bs []byte) error {
 		Link   string
 		Errors []*dagger.Error
 		Notify bool
+		Note   string
 	}
 	err := json.Unmarshal(bs, &concrete)
 	if err != nil {
@@ -156,6 +159,7 @@ func (r *ReleaseReportArtifact) UnmarshalJSON(bs []byte) error {
 	r.Link = concrete.Link
 	r.Errors = concrete.Errors
 	r.Notify = concrete.Notify
+	r.Note = concrete.Note
 	return nil
 }
 
@@ -735,12 +739,12 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("Notify",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
-							WithSourceMap(dag.SourceMap("main.go", 472, 1)).
-							WithArg("repository", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "GitHub repository URL", SourceMap: dag.SourceMap("main.go", 475, 2)}).
-							WithArg("target", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "The target tag for the release\ne.g. sdk/typescript/v0.14.0", SourceMap: dag.SourceMap("main.go", 478, 2)}).
-							WithArg("name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Name of the component to release", SourceMap: dag.SourceMap("main.go", 480, 2)}).
-							WithArg("discordWebhook", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Discord webhook", SourceMap: dag.SourceMap("main.go", 483, 2)}).
-							WithArg("dryRun", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Whether to perform a dry run without creating the release", SourceMap: dag.SourceMap("main.go", 487, 2)})).
+							WithSourceMap(dag.SourceMap("main.go", 508, 1)).
+							WithArg("repository", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "GitHub repository URL", SourceMap: dag.SourceMap("main.go", 511, 2)}).
+							WithArg("target", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "The target tag for the release\ne.g. sdk/typescript/v0.14.0", SourceMap: dag.SourceMap("main.go", 514, 2)}).
+							WithArg("name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Name of the component to release", SourceMap: dag.SourceMap("main.go", 516, 2)}).
+							WithArg("discordWebhook", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Discord webhook", SourceMap: dag.SourceMap("main.go", 519, 2)}).
+							WithArg("dryRun", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Whether to perform a dry run without creating the release", SourceMap: dag.SourceMap("main.go", 523, 2)})).
 					WithFunction(
 						dag.Function("PhpSdkTargetVersion",
 							dag.TypeDef().WithObject("Changeset")).
@@ -751,46 +755,46 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("Publish",
 							dag.TypeDef().WithObject("ReleaseReport")).
 							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
-							WithSourceMap(dag.SourceMap("main.go", 109, 1)).
-							WithArg("tag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 111, 2)}).
-							WithArg("commit", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 112, 2)}).
-							WithArg("dryRun", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 114, 2)}).
-							WithArg("registryImage", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 116, 2)}).
-							WithArg("registryUsername", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 117, 2)}).
-							WithArg("registryPassword", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 118, 2)}).
-							WithArg("githubToken", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 120, 2)}).
-							WithArg("githubOrgName", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 121, 2)}).
-							WithArg("githubHost", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 122, 2)}).
-							WithArg("githubCaCert", dag.TypeDef().WithObject("File").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 123, 2)}).
-							WithArg("netlifyToken", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 125, 2)}).
-							WithArg("netlifyAPIURL", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 126, 2)}).
-							WithArg("pypiToken", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 127, 2)}).
-							WithArg("pypiRepo", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 128, 2)}).
-							WithArg("pypiURL", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 129, 2)}).
-							WithArg("npmToken", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 130, 2)}).
-							WithArg("npmRegistryURL", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 131, 2)}).
-							WithArg("hexAPIKey", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 132, 2)}).
-							WithArg("hexAPIURL", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 133, 2)}).
-							WithArg("cargoRegistryToken", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 134, 2)}).
-							WithArg("cargoRegistryIndex", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 135, 2)}).
-							WithArg("goSdkDestRemote", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 136, 2)}).
-							WithArg("phpSdkDestRemote", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 137, 2)}).
-							WithArg("awsAccessKeyID", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 139, 2)}).
-							WithArg("awsSecretAccessKey", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 140, 2)}).
-							WithArg("awsRegion", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 141, 2)}).
-							WithArg("awsBucket", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 142, 2)}).
-							WithArg("awsCloudfrontDistribution", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 143, 2)}).
-							WithArg("awsEndpointURL", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 144, 2)}).
-							WithArg("artefactsFQDN", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 145, 2)}).
-							WithArg("helmRegistry", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 147, 2)}).
-							WithArg("discordWebhook", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 149, 2)})).
+							WithSourceMap(dag.SourceMap("main.go", 110, 1)).
+							WithArg("tag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 112, 2)}).
+							WithArg("commit", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 113, 2)}).
+							WithArg("dryRun", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 115, 2)}).
+							WithArg("registryImage", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 117, 2)}).
+							WithArg("registryUsername", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 118, 2)}).
+							WithArg("registryPassword", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 119, 2)}).
+							WithArg("githubToken", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 121, 2)}).
+							WithArg("githubOrgName", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 122, 2)}).
+							WithArg("githubHost", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 123, 2)}).
+							WithArg("githubCaCert", dag.TypeDef().WithObject("File").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 124, 2)}).
+							WithArg("netlifyToken", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 126, 2)}).
+							WithArg("netlifyAPIURL", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 127, 2)}).
+							WithArg("pypiToken", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 128, 2)}).
+							WithArg("pypiRepo", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 129, 2)}).
+							WithArg("pypiURL", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 130, 2)}).
+							WithArg("npmToken", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 131, 2)}).
+							WithArg("npmRegistryURL", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 132, 2)}).
+							WithArg("hexAPIKey", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 133, 2)}).
+							WithArg("hexAPIURL", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 134, 2)}).
+							WithArg("cargoRegistryToken", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 135, 2)}).
+							WithArg("cargoRegistryIndex", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 136, 2)}).
+							WithArg("goSdkDestRemote", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 137, 2)}).
+							WithArg("phpSdkDestRemote", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 138, 2)}).
+							WithArg("awsAccessKeyID", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 140, 2)}).
+							WithArg("awsSecretAccessKey", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 141, 2)}).
+							WithArg("awsRegion", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 142, 2)}).
+							WithArg("awsBucket", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 143, 2)}).
+							WithArg("awsCloudfrontDistribution", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 144, 2)}).
+							WithArg("awsEndpointURL", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 145, 2)}).
+							WithArg("artefactsFQDN", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 146, 2)}).
+							WithArg("helmRegistry", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 148, 2)}).
+							WithArg("discordWebhook", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 150, 2)})).
 					WithFunction(
 						dag.Function("PublishWithMockEndpoints",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Exercise the release publish path against local mock endpoints.").
-							WithSourceMap(dag.SourceMap("publish_check.go", 63, 1)).
+							WithSourceMap(dag.SourceMap("publish_check.go", 64, 1)).
 							WithCheck().
-							WithArg("source", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Source tree to publish. The check commits this exact tree to a local git\nservice and invokes release through a nested engine using that git ref.", SourceMap: dag.SourceMap("publish_check.go", 69, 2), DefaultPath: "/"})).
+							WithArg("source", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Source tree to publish. The check commits this exact tree to a local git\nservice and invokes release through a nested engine using that git ref.", SourceMap: dag.SourceMap("publish_check.go", 70, 2), DefaultPath: "/"})).
 					WithFunction(
 						dag.Function("PythonSdkTargetVersion",
 							dag.TypeDef().WithObject("Changeset")).
@@ -819,7 +823,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					WithFunction(
 						dag.Function("Markdown",
 							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
-							WithSourceMap(dag.SourceMap("main.go", 60, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 61, 1))).
 					WithField("Ref", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 30, 2)}).
 					WithField("Commit", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 31, 2)}).
 					WithField("Version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 32, 2)}).
@@ -834,9 +838,9 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					WithField("Link", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 45, 2)}).
 					WithField("Errors", dag.TypeDef().WithListOf(dag.TypeDef().WithObject("Error")), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 47, 2)})).
 			WithObject(
-				dag.TypeDef().WithObject("ReleaseReportFollowUp", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 52, 6)}).
-					WithField("Name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 53, 2)}).
-					WithField("Link", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 54, 2)})), nil
+				dag.TypeDef().WithObject("ReleaseReportFollowUp", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 53, 6)}).
+					WithField("Name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 54, 2)}).
+					WithField("Link", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 55, 2)})), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}
