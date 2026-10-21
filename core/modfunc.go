@@ -1137,30 +1137,69 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		return nil, fmt.Errorf("convert return value: %w", err)
 	}
 
-	if returnValue != nil && fn.hasWorkspaceArgs() {
+	return fn.withReturnContentDigest(ctx, returnValue, curCall)
+}
+
+func (fn *ModuleFunction) withReturnContentDigest(
+	ctx context.Context,
+	returnValue dagql.AnyResult,
+	curCall *dagql.ResultCall,
+) (dagql.AnyResult, error) {
+	collectionGetter := fn.isCollectionGetter()
+	if returnValue != nil && (fn.hasWorkspaceArgs() || collectionGetter) {
 		returnType := fn.returnType
 		for nullable, ok := returnType.(*NullableType); ok; nullable, ok = returnType.(*NullableType) {
 			returnType = nullable.Inner
 		}
 		if _, ok := returnType.(*ModuleObjectType); ok {
 			returnedContent := NewCollectedContent()
+			if collectionGetter {
+				if curCall == nil || curCall.Module == nil {
+					return nil, fmt.Errorf("collection getter has no module provenance")
+				}
+				// Value equality must not merge objects from different module
+				// implementations, return types or schema views.
+				scope := &dagql.ResultCall{
+					Kind:        dagql.ResultCallKindSynthetic,
+					SyntheticOp: "collection-item-content",
+					Type:        dagql.NewResultCallType(returnValue.Type()),
+					Module:      curCall.Module,
+					View:        curCall.View,
+				}
+				digest, err := scope.ContentPreferredDigest(ctx)
+				if err != nil {
+					return nil, fmt.Errorf("collection item scope: %w", err)
+				}
+				if err := returnedContent.CollectJSONable(digest); err != nil {
+					return nil, err
+				}
+			}
 			if err := fn.returnType.CollectContent(ctx, returnValue, returnedContent); err != nil {
 				return nil, fmt.Errorf("collect content: %w", err)
 			}
 
-			// If this function accepts Workspace args and returns a user module
-			// object, set a content digest on the result derived from all content
-			// it returned. This ensures downstream calls that reference this
-			// result get a different cache key when the underlying content
-			// changes.
-			returnValue, err = returnValue.WithContentDigestAny(ctx, returnedContent.Digest())
+			// Workspace-aware functions and collection getters return objects
+			// whose contents determine whether downstream calls can be reused.
+			withDigest, err := returnValue.WithContentDigestAny(ctx, returnedContent.Digest())
 			if err != nil {
 				return nil, fmt.Errorf("set content digest on module function return value: %w", err)
 			}
+			return withDigest, nil
 		}
 	}
 
 	return returnValue, nil
+}
+
+func (fn *ModuleFunction) isCollectionGetter() bool {
+	if fn.objDef == nil || fn.objDef.Collection == nil || !fn.objDef.Collection.Enabled {
+		return false
+	}
+	name := fn.objDef.Collection.Get
+	if name == "" {
+		name = "get"
+	}
+	return fn.metadata.Name == name
 }
 
 // hasWorkspaceArgs returns true if any of the function's arguments are of type Workspace.
