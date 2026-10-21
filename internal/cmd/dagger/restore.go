@@ -26,6 +26,9 @@ type traceRestore struct {
 	agent       string
 	source      archiveRestoreSource
 	cloudSource cloudRestoreSource
+	// engineUnavailable, when set, skips the engine archive for Cloud: why
+	// the engine cannot serve this restore (see nestedEngineSession).
+	engineUnavailable error
 }
 
 // agentRestoreSource is the frontend seam the plan is read through
@@ -65,6 +68,7 @@ func restoreFromTrace(ctx context.Context, handler *shellCallHandler, req traceR
 	}
 	ctx, span := Tracer().Start(ctx, "restoring trace "+req.traceID, telemetry.Reveal())
 	defer telemetry.EndWithCause(span, &rerr)
+	req.engineUnavailable = nestedEngineSession()
 	return restoreTraceSources(ctx, fe, &sessionRestore{dag: handler.dag, session: handler.llmSession}, req)
 }
 
