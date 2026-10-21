@@ -74,7 +74,9 @@ func New(
 		return nil, err
 	}
 
-	if vcsCommit == "" && ws != nil {
+	vcsCommit2 := vcsCommit
+
+	if vcsCommit2 == "" && ws != nil {
 		git := ws.Git()
 		if commit, err := git.Head().Commit(ctx); err == nil {
 			vcsCommit = commit
