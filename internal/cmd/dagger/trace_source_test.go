@@ -102,6 +102,21 @@ func TestEngineTraceParamsLeaveCloudURLAlone(t *testing.T) {
 		"client.Connect reports https://dagger.cloud/traces/setup through any callback")
 }
 
+// TestEngineTraceParamsNeverPrompt: reading an archive never prompts, and the
+// non-pager --log dump has no running frontend to answer a prompt, even on a
+// terminal.
+func TestEngineTraceParamsNeverPrompt(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("DAGGER_CLOUD_TOKEN", "")
+	prevFrontend, prevTTY := Frontend, hasTTY
+	t.Cleanup(func() { Frontend, hasTTY = prevFrontend, prevTTY })
+	Frontend, hasTTY = &idtui.FrontendMock{}, true
+	params, err := engineTraceParams(t.Context())
+	require.NoError(t, err)
+	require.Nil(t, params.PromptHandler)
+}
+
 // TestEngineTraceInsideSessionReadsCloud: inside a Dagger session the CLI
 // would be a nested client, which the archive API always refuses (401, main
 // client authority). The engine is skipped up front, so Cloud is read, while

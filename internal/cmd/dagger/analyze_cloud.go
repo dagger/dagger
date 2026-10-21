@@ -7,13 +7,11 @@ import (
 	"io"
 	"os"
 	"strings"
-	"sync/atomic"
 
 	"github.com/dagger/dagger/dagql/dagui"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	cloudapi "github.com/dagger/dagger/internal/cloud"
 	"github.com/dagger/dagger/internal/tracesource"
-	"github.com/dagger/dagger/util/cleanups"
 	"github.com/spf13/cobra"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
@@ -21,24 +19,24 @@ import (
 // writeTraceLogs writes the selected span's full logs, as raw text, to stdout
 // or to --output. It is 'view --log' when there is no pager. Like the tree
 // view and the pager, it reads the engine's retained archive first and Dagger
-// Cloud otherwise, inside the frontend's run so the engine connection gets the
-// same plumbing.
-func (cli *CloudCLI) writeTraceLogs(cmd *cobra.Command, traceID string, sel spanSelector, o *traceViewOptions) error {
-	// The count is reported after the frontend has released the terminal.
-	// Atomic because a force-quit abandons the run closure without joining.
-	var wrote atomic.Int64
-	wrote.Store(-1)
-	err := Frontend.Run(cmd.Context(), opts, func(ctx context.Context) (cleanups.CleanupF, error) {
-		cleanup, n, err := cli.writeTraceLogsFrom(ctx, cmd, traceID, sel, o)
-		if err == nil {
-			wrote.Store(int64(n))
-		}
-		return cleanup, err
-	})
-	if n := wrote.Load(); err == nil && o.output != "" && n >= 0 {
+// Cloud otherwise.
+//
+// It is a scripted dump, so no frontend runs: a live TUI would only quit on a
+// telemetry EOF this engine-less path never sends, leaving an empty TUI open
+// after the logs are written. Nothing reaches a frontend anyway: the engine
+// connection carries no CLI telemetry here.
+func (cli *CloudCLI) writeTraceLogs(cmd *cobra.Command, traceID string, sel spanSelector, o *traceViewOptions) (rerr error) {
+	cleanup, n, err := cli.writeTraceLogsFrom(cmd.Context(), cmd, traceID, sel, o)
+	if cleanup != nil {
+		defer func() { rerr = errors.Join(rerr, cleanup()) }()
+	}
+	if err != nil {
+		return err
+	}
+	if o.output != "" {
 		fmt.Fprintf(cmd.ErrOrStderr(), "wrote %d log messages to %s\n", n, o.output)
 	}
-	return err
+	return nil
 }
 
 // openTraceSource selects the trace's source: the local engine archive, else
@@ -63,10 +61,9 @@ func (cli *CloudCLI) openTraceSource(ctx context.Context, traceID string) (trace
 		})
 }
 
-// writeTraceLogsFrom is writeTraceLogs within the frontend's run, returning
-// how many log messages it wrote. The returned cleanup closes the selected
-// source.
-func (cli *CloudCLI) writeTraceLogsFrom(ctx context.Context, cmd *cobra.Command, traceID string, sel spanSelector, o *traceViewOptions) (cleanups.CleanupF, int, error) {
+// writeTraceLogsFrom selects the source and writes the logs, returning how
+// many log messages it wrote. The returned cleanup closes the source.
+func (cli *CloudCLI) writeTraceLogsFrom(ctx context.Context, cmd *cobra.Command, traceID string, sel spanSelector, o *traceViewOptions) (func() error, int, error) {
 	source, closeSource, err := cli.openTraceSource(ctx, traceID)
 	if err != nil {
 		return nil, 0, fmt.Errorf("open trace %s: %w", traceID, err)

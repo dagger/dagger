@@ -6,18 +6,22 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/archive"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/internal/cloud"
 	"github.com/dagger/dagger/internal/cloud/auth"
 	"github.com/dagger/dagger/internal/cloud/otlpstream"
 	"github.com/dagger/dagger/internal/tracesource"
+	"github.com/dagger/dagger/util/cleanups"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
@@ -212,6 +216,46 @@ func (a *localLogsArchive) Logs(_ context.Context, _ string, opts archive.Stream
 }
 func (a *localLogsArchive) Metrics(_ context.Context, _ string, opts archive.StreamOptions, _ func(int64, *colmetricspb.ExportMetricsServiceRequest) error) (int64, error) {
 	return opts.HighWater, nil
+}
+
+// TestTraceLogsDumpRunsNoFrontend: the non-pager --log dump (`-o file`, or
+// stdout redirected) is scripted output. It must not start the frontend: a
+// live TUI would wait for a telemetry EOF this path never sends, staying open
+// until a key press. The command returns on its own.
+func TestTraceLogsDumpRunsNoFrontend(t *testing.T) {
+	prev := Frontend
+	t.Cleanup(func() { Frontend = prev })
+	Frontend = &idtui.FrontendMock{RunFunc: func(context.Context, dagui.FrontendOpts, func(context.Context) (cleanups.CleanupF, error)) error {
+		t.Error("the log dump must not start the frontend")
+		return nil
+	}}
+	f := &fakeCloudLogs{t: t, root: []byte{1, 1, 1, 1, 1, 1, 1, 1}, check: []byte{2, 2, 2, 2, 2, 2, 2, 2}}
+	local := &localLogsArchive{f: f}
+	closed := false
+	seal := time.Unix(10, 0)
+	cli := &CloudCLI{openLocalTrace: func(_ context.Context, traceID string) (tracesource.Source, func() error, error) {
+		return tracesource.NewArchive(local, archive.Manifest{TraceID: traceID, SealAt: &seal, HighWater: archive.HighWater{Spans: 2, Logs: 5}}),
+			func() error { closed = true; return nil }, nil
+	}}
+	cmd := &cobra.Command{}
+	cmd.SetContext(t.Context())
+	var stderr bytes.Buffer
+	cmd.SetErr(&stderr)
+	out := filepath.Join(t.TempDir(), "out.txt")
+	o := &traceViewOptions{sel: spanSelector{check: "lint"}, log: true, output: out, timeout: time.Minute}
+	done := make(chan error, 1)
+	go func() { done <- cli.writeTraceLogs(cmd, "trace-id", o.sel, o) }()
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("the log dump did not return without user input")
+	}
+	got, err := os.ReadFile(out)
+	require.NoError(t, err)
+	require.Equal(t, "hello world\n", string(got))
+	require.Equal(t, "wrote 2 log messages to "+out+"\n", stderr.String())
+	require.True(t, closed, "the source is closed when the dump returns")
 }
 
 // TestTraceLogsReadLocalArchiveWithoutCloud: like the tree view and the

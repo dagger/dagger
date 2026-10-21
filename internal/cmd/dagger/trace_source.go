@@ -36,6 +36,9 @@ func engineTraceParams(ctx context.Context) (client.Params, error) {
 	// must not become the frontend's, which would enable the web key and
 	// `-w` on the setup page even when Cloud serves the trace.
 	params.CloudURLCallback = nil
+	// Nor does reading an archive ever prompt; the non-pager --log dump
+	// runs with no frontend to answer one.
+	params.PromptHandler = nil
 	return params, nil
 }
 
