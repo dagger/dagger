@@ -416,7 +416,7 @@ This will also kick off [`.github/workflows/evals.yml`], which is currently brok
   ```console
   dagger --x-release="$ENGINE_VERSION" generate \
     'release:*target-version' \
-    golang:generate-all \
+    golang:packages:generate \
     -y
   ```
 

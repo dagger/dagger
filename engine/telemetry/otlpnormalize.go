@@ -38,12 +38,13 @@ import (
 // missing pieces in with their empty forms (an empty resource, an empty
 // string) and drop nil list entries, so nothing that could be stored is lost.
 //
-// That belongs upstream, in otel-go's decode path. dagger/otel-go#17 proposed
-// it but was CLOSED WITHOUT MERGING, and the otel-go main this repo pins
-// (2bca4f5622cf) still dereferences these fields. Keep these guards until an
-// upstream fix actually lands and the pin is bumped past it; then delete them,
-// since a decode boundary that answers for its own optional fields is the real
-// fix and duplicating it here only hides the next one.
+// That belongs upstream, in otel-go's decode path. dagger/otel-go#17, which
+// the pinned otel-go includes, handles a missing resource and missing
+// attribute and log values, but a gauge with no Gauge message still panics
+// there. Keep these guards until otel-go covers every shape above and the pin
+// is bumped past it; then delete them, since a decode boundary that answers
+// for its own optional fields is the real fix and duplicating it here only
+// hides the next one.
 
 // NormalizeTraceRequest makes req safe to convert with otel.SpansFromPB,
 // in place.
