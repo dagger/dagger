@@ -71,7 +71,11 @@ func (e reportLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 	logsCopy := make([]sdklog.Record, len(logs))
 	copy(logsCopy, logs)
 	logsCopy = e.s.db.IngestLogs(logsCopy)
-	return e.s.logs.Export(ctx, logsCopy)
+	// A log buffer's storage error (e.g. a full TMPDIR) stays on that buffer,
+	// which renders it in place of the span's logs. Like the interactive
+	// frontend, don't let one span's failed spill fail the whole report.
+	_ = e.s.logs.Export(ctx, logsCopy)
+	return nil
 }
 
 func (e reportLogExporter) Shutdown(context.Context) error { return nil }

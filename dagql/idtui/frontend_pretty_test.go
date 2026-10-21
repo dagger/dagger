@@ -169,6 +169,22 @@ func TestPrettyLogsExportContinuesPastStorageError(t *testing.T) {
 	require.Equal(t, "hello\nworld\n", logs.Logs[dagui.SpanID{SpanID: healthy}].rawBuf.String())
 }
 
+func TestReportSessionToleratesLogStorageError(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir()+"/missing")
+	session := NewReportSession(dagui.NewDB())
+	t.Cleanup(session.Close)
+	failing, healthy := trace.SpanID{1}, trace.SpanID{2}
+
+	// One span's failed spill must not fail the whole report's ingestion.
+	require.NoError(t, session.LogExporter().Export(t.Context(), []sdklog.Record{
+		frontendTestLogRecord(failing, otellog.StringValue(strings.Repeat("line\n", 10000))),
+		frontendTestLogRecord(healthy, otellog.StringValue("hello\n")),
+	}))
+	require.Error(t, session.logs.Logs[dagui.SpanID{SpanID: failing}].Err(),
+		"the failed buffer keeps its error to render in place")
+	require.Equal(t, "hello\n", session.logs.Logs[dagui.SpanID{SpanID: healthy}].rawBuf.String())
+}
+
 func TestTelemetryDataRecordsExcludedFromFrontendLogs(t *testing.T) {
 	knownSpanID := trace.SpanID{1}
 	unknownSpanID := trace.SpanID{2}
