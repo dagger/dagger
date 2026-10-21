@@ -244,6 +244,7 @@ func init() {
 	cobra.AddTemplateFunc("hasParentCommands", hasParentCommands)
 	cobra.AddTemplateFunc("indent", indentLines)
 	rootCmd.SetUsageTemplate(usageTemplate)
+	rootCmd.SetHelpFunc(rootHelp(rootCmd.HelpFunc()))
 
 	// hide the help flag as it's ubiquitous and thus noisy
 	// we'll add it in the last line of the usage template
