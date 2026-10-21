@@ -14,6 +14,7 @@ import (
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/internal/cloud"
 	"github.com/dagger/dagger/internal/cloud/auth"
+	"github.com/dagger/dagger/internal/tracesource"
 )
 
 var cloudCLI = &CloudCLI{}
@@ -63,6 +64,9 @@ type CloudCLI struct {
 	// otlpClient, when set, stands in for cloudOTLPClient's credential
 	// resolution: tests aim it at a fake Cloud.
 	otlpClient *cloud.OTLPClient
+	// openLocalTrace, when set, stands in for openEngineTrace: tests supply
+	// a local archive without an engine.
+	openLocalTrace func(context.Context, string) (tracesource.Source, func() error, error)
 }
 
 func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {

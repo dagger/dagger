@@ -7,33 +7,87 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync/atomic"
 
 	"github.com/dagger/dagger/dagql/dagui"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	cloudapi "github.com/dagger/dagger/internal/cloud"
 	"github.com/dagger/dagger/internal/tracesource"
+	"github.com/dagger/dagger/util/cleanups"
 	"github.com/spf13/cobra"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
 // writeTraceLogs writes the selected span's full logs, as raw text, to stdout
-// or to --output. It is 'view --log' when there is no pager.
+// or to --output. It is 'view --log' when there is no pager. Like the tree
+// view and the pager, it reads the engine's retained archive first and Dagger
+// Cloud otherwise, inside the frontend's run so the engine connection gets the
+// same plumbing.
 func (cli *CloudCLI) writeTraceLogs(cmd *cobra.Command, traceID string, sel spanSelector, o *traceViewOptions) error {
-	ctx := cmd.Context()
-
-	// Cloud's OTLP stream endpoints are addressed by trace ID and token
-	// alone, so no org is resolved here.
-	client, err := cli.cloudOTLPClient(ctx)
-	if err != nil {
-		return err
+	// The count is reported after the frontend has released the terminal.
+	// Atomic because a force-quit abandons the run closure without joining.
+	var wrote atomic.Int64
+	wrote.Store(-1)
+	err := Frontend.Run(cmd.Context(), opts, func(ctx context.Context) (cleanups.CleanupF, error) {
+		cleanup, n, err := cli.writeTraceLogsFrom(ctx, cmd, traceID, sel, o)
+		if err == nil {
+			wrote.Store(int64(n))
+		}
+		return cleanup, err
+	})
+	if n := wrote.Load(); err == nil && o.output != "" && n >= 0 {
+		fmt.Fprintf(cmd.ErrOrStderr(), "wrote %d log messages to %s\n", n, o.output)
 	}
+	return err
+}
 
+// openTraceSource selects the trace's source: the local engine archive, else
+// Cloud. Cloud credentials are only resolved when Cloud is actually needed.
+func (cli *CloudCLI) openTraceSource(ctx context.Context, traceID string) (tracesource.Source, func() error, error) {
+	local := cli.openLocalTrace
+	if local == nil {
+		local = openEngineTrace
+	}
+	return tracesource.Select(ctx,
+		func(ctx context.Context) (tracesource.Source, func() error, error) {
+			return local(ctx, traceID)
+		},
+		func(ctx context.Context) (tracesource.Source, func() error, error) {
+			// Cloud's OTLP stream endpoints are addressed by trace ID and
+			// token alone, so no org is resolved here.
+			client, err := cli.cloudOTLPClient(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
+			return client, nil, nil
+		})
+}
+
+// writeTraceLogsFrom is writeTraceLogs within the frontend's run, returning
+// how many log messages it wrote. The returned cleanup closes the selected
+// source.
+func (cli *CloudCLI) writeTraceLogsFrom(ctx context.Context, cmd *cobra.Command, traceID string, sel spanSelector, o *traceViewOptions) (cleanups.CleanupF, int, error) {
+	source, closeSource, err := cli.openTraceSource(ctx, traceID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("open trace %s: %w", traceID, err)
+	}
+	cleanup := func() error {
+		if closeSource != nil {
+			return closeSource()
+		}
+		return nil
+	}
+	n, err := writeSourceTraceLogs(ctx, cmd, source, traceID, sel, o)
+	return cleanup, n, err
+}
+
+func writeSourceTraceLogs(ctx context.Context, cmd *cobra.Command, client tracesource.Source, traceID string, sel spanSelector, o *traceViewOptions) (int, error) {
 	w := cmd.OutOrStdout()
 	var outFile *os.File
 	if o.output != "" {
 		f, err := os.Create(o.output)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		defer f.Close() // no-op on the happy path's explicit checked Close
 		outFile = f
@@ -45,7 +99,7 @@ func (cli *CloudCLI) writeTraceLogs(cmd *cobra.Command, traceID string, sel span
 
 	spanID, descendants, err := sel.resolveSpan(ctx, client, traceID)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	endedWithNewline := true
@@ -62,11 +116,11 @@ func (cli *CloudCLI) writeTraceLogs(cmd *cobra.Command, traceID string, sel span
 		return nil
 	})
 	if writeErr != nil {
-		return fmt.Errorf("write logs: %w", writeErr)
+		return n, fmt.Errorf("write logs: %w", writeErr)
 	}
 	// A deadline is an expected way to stop a long stream, not an error.
 	if streamErr != nil && !errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return streamErr
+		return n, streamErr
 	}
 	if !endedWithNewline {
 		// End on a newline without having invented line breaks mid-stream.
@@ -76,11 +130,10 @@ func (cli *CloudCLI) writeTraceLogs(cmd *cobra.Command, traceID string, sel span
 		// Surface close errors (e.g. a deferred flush failing on a full disk)
 		// instead of reporting success over a truncated file.
 		if err := outFile.Close(); err != nil {
-			return fmt.Errorf("close %s: %w", o.output, err)
+			return n, fmt.Errorf("close %s: %w", o.output, err)
 		}
-		fmt.Fprintf(cmd.ErrOrStderr(), "wrote %d log messages to %s\n", n, o.output)
 	}
-	return nil
+	return n, nil
 }
 
 // streamTraceLogText streams a span's logs from a trace source and hands each
