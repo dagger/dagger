@@ -449,6 +449,9 @@ type DB struct {
 	logIdx     *logLookup
 	callIdx    *callLookup
 	archiveIdx *archiveLookup
+	// archiveTopos caches archive span topologies built from this store; it
+	// is released with the store.
+	archiveTopos *archiveTopologyCache
 
 	clientID string
 	refCount int
@@ -461,11 +464,12 @@ func openStore(ctx context.Context, root, clientID string, tailBudget int64) (_ 
 	}
 
 	store := &DB{
-		lookup:     newSpanLookup(),
-		logIdx:     newLogLookup(),
-		callIdx:    newCallLookup(),
-		archiveIdx: newArchiveLookup(),
-		clientID:   clientID,
+		lookup:       newSpanLookup(),
+		logIdx:       newLogLookup(),
+		callIdx:      newCallLookup(),
+		archiveIdx:   newArchiveLookup(),
+		archiveTopos: newArchiveTopologyCache(),
+		clientID:     clientID,
 	}
 	defer func() {
 		if rerr != nil {

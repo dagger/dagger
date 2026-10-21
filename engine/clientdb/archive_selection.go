@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
+	"sync"
 
 	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/archive"
@@ -83,13 +85,23 @@ func archiveLogMetadata(row Log) archiveLogMeta {
 	return m
 }
 
-// ArchiveSpans is compact topology at precisely one span/log cut. It stores
-// only the last row ID and view metadata, never full spans or log bodies.
+// ArchiveSpans is one request's view of an archive's span topology at
+// precisely one span/log cut: the shared, immutable topology plus the
+// request's own selection. It stores only the last row ID and view metadata,
+// never full spans or log bodies.
 type ArchiveSpans struct {
-	nodes    map[string]archiveSpanNode
-	children map[string][]string
+	*archiveTopology
 	selected map[string]bool
 	partial  bool
+}
+
+// archiveTopology is the selection-independent part of an archive span view.
+// Rows at or below a cut never change, so a topology is immutable once built
+// and is shared by every request for the same (trace, cut) on a store; see
+// archiveTopologyCache. Nothing may mutate it after construction.
+type archiveTopology struct {
+	nodes    map[string]archiveSpanNode
+	children map[string][]string
 }
 type archiveSpanNode struct {
 	row                   int64
@@ -99,11 +111,28 @@ type archiveSpanNode struct {
 	hasLogs               bool
 }
 
+// ArchiveSpanView returns the archive span view of traceID at cut, with sel
+// applied. The topology is built once per (trace, cut) on this store and
+// shared; only the selection is computed per call.
 func (s *DB) ArchiveSpanView(ctx context.Context, traceID string, cut HighWater, sel *archive.SpanSelection) (*ArchiveSpans, error) {
 	if cut.Spans < 0 || cut.Logs < 0 {
 		return nil, errors.New("invalid archive cut")
 	}
-	v := &ArchiveSpans{nodes: map[string]archiveSpanNode{}, children: map[string][]string{}}
+	topo, err := s.archiveTopos.get(ctx, archiveTopologyKey{trace: traceID, spans: cut.Spans, logs: cut.Logs}, func(ctx context.Context) (*archiveTopology, error) {
+		return s.buildArchiveTopology(ctx, traceID, cut)
+	})
+	if err != nil {
+		return nil, err
+	}
+	v := &ArchiveSpans{archiveTopology: topo}
+	v.selectSpans(sel)
+	return v, nil
+}
+
+// buildArchiveTopology reads every span row up to the cut and the log
+// metadata index up to the cut. It is the expensive part of a span view.
+func (s *DB) buildArchiveTopology(ctx context.Context, traceID string, cut HighWater) (*archiveTopology, error) {
+	v := &archiveTopology{nodes: map[string]archiveSpanNode{}, children: map[string][]string{}}
 	for cursor := int64(0); cursor < cut.Spans; {
 		rows, err := s.SelectSpansRange(ctx, SelectSpansRangeParams{AfterID: cursor, ThroughID: cut.Spans, Limit: 128})
 		if err != nil {
@@ -158,8 +187,95 @@ func (s *DB) ArchiveSpanView(ctx context.Context, traceID string, cut HighWater,
 			}
 		}
 	}
-	v.selectSpans(sel)
 	return v, nil
+}
+
+// archiveTopologyCacheSize bounds the topologies one open store retains. A
+// main client's store normally backs a single archive trace, at a single cut.
+const archiveTopologyCacheSize = 4
+
+type archiveTopologyKey struct {
+	trace       string
+	spans, logs int64
+}
+
+// archiveTopologyCache keeps the most recently used archive topologies of one
+// store, and coalesces concurrent construction of the same one: clients issue
+// many span-view and descendant-log requests at once against one archive.
+// It lives on the DB, so it is released with the store.
+type archiveTopologyCache struct {
+	mu      sync.Mutex
+	entries map[archiveTopologyKey]*archiveTopologyEntry
+	// lru orders keys from least to most recently used.
+	lru []archiveTopologyKey
+}
+
+type archiveTopologyEntry struct {
+	done chan struct{}
+	topo *archiveTopology
+	err  error
+}
+
+func newArchiveTopologyCache() *archiveTopologyCache {
+	return &archiveTopologyCache{entries: map[archiveTopologyKey]*archiveTopologyEntry{}}
+}
+
+// touchLocked marks key most recently used, evicting the least recently used
+// keys beyond the bound. An evicted in-flight build still completes for the
+// callers already waiting on it.
+func (c *archiveTopologyCache) touchLocked(key archiveTopologyKey) {
+	c.lru = slices.DeleteFunc(c.lru, func(k archiveTopologyKey) bool { return k == key })
+	c.lru = append(c.lru, key)
+	for len(c.lru) > archiveTopologyCacheSize {
+		delete(c.entries, c.lru[0])
+		c.lru = c.lru[1:]
+	}
+}
+
+func (c *archiveTopologyCache) forgetLocked(key archiveTopologyKey, e *archiveTopologyEntry) {
+	if c.entries[key] != e {
+		return
+	}
+	delete(c.entries, key)
+	c.lru = slices.DeleteFunc(c.lru, func(k archiveTopologyKey) bool { return k == key })
+}
+
+// get returns the cached topology for key, building it at most once at a
+// time. Failures are not cached. A waiter whose builder was canceled (by its
+// own request's context) retries with its own context rather than failing.
+func (c *archiveTopologyCache) get(ctx context.Context, key archiveTopologyKey, build func(context.Context) (*archiveTopology, error)) (*archiveTopology, error) {
+	for {
+		c.mu.Lock()
+		e := c.entries[key]
+		if e == nil {
+			e = &archiveTopologyEntry{done: make(chan struct{})}
+			c.entries[key] = e
+			c.touchLocked(key)
+			c.mu.Unlock()
+			e.topo, e.err = build(ctx)
+			if e.err != nil {
+				c.mu.Lock()
+				c.forgetLocked(key, e)
+				c.mu.Unlock()
+			}
+			close(e.done)
+			return e.topo, e.err
+		}
+		c.touchLocked(key)
+		c.mu.Unlock()
+		select {
+		case <-e.done:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		if e.err == nil {
+			return e.topo, nil
+		}
+		if (errors.Is(e.err, context.Canceled) || errors.Is(e.err, context.DeadlineExceeded)) && ctx.Err() == nil {
+			continue
+		}
+		return nil, e.err
+	}
 }
 
 // archiveSpanClass reads a span's view classification from its attributes:
