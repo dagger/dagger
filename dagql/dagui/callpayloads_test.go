@@ -326,11 +326,9 @@ func TestCallPayloadRecordsDoNotDisturbLogOrdering(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if len(logs) != 2 {
-		t.Fatalf("ordinary logs = %d, want 2", len(logs))
-	}
-	if logs[0] != "before" || logs[1] != "after" {
-		t.Fatalf("ordinary log order changed: %q, %q", logs[0], logs[1])
+	// Consecutive output on one stream may be replayed as one chunk.
+	if got := strings.Join(logs, ""); got != "beforeafter" {
+		t.Fatalf("ordinary log output = %q, want %q", got, "beforeafter")
 	}
 }
 

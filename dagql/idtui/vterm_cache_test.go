@@ -174,20 +174,25 @@ func TestVtermSpoolErrorsAreVisible(t *testing.T) {
 	require.Error(t, term.Err())
 }
 
-func TestVtermSpoolWriteFailure(t *testing.T) {
+// TestVtermSpoolFallsBackToMemory: spilling is an optimization; without a
+// writable TMPDIR logs past the in-memory limit stay readable from memory.
+func TestVtermSpoolFallsBackToMemory(t *testing.T) {
 	t.Setenv("TMPDIR", t.TempDir()+"/missing")
 	term := NewVterm(termenv.Ascii)
 	t.Cleanup(term.Close)
-	_, err := io.WriteString(term, strings.Repeat("line\n", 10000))
-	require.Error(t, err)
-	require.Error(t, term.PrintRaw(io.Discard))
-	require.Contains(t, term.View(), "log storage error")
+	content := strings.Repeat("line\n", 10000)
+	_, err := io.WriteString(term, content)
+	require.NoError(t, err)
+	var raw strings.Builder
+	require.NoError(t, term.PrintRaw(&raw))
+	require.Equal(t, content, raw.String())
+	require.NotContains(t, term.View(), "log storage error")
 	media := NewVterm(termenv.Ascii)
 	t.Cleanup(media.Close)
 	media.WriteMedia(dagui.MediaRecord{Kind: "audio"}, "[audio]")
 	_, err = media.WriteMarkdown([]byte(strings.Repeat("markdown\n", 10000)))
-	require.Error(t, err)
-	require.Contains(t, media.View(), "log storage error")
+	require.NoError(t, err)
+	require.NotContains(t, media.View(), "log storage error")
 }
 
 func TestVtermCacheMediaAndMarkdown(t *testing.T) {

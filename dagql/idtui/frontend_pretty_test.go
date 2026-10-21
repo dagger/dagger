@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image/color"
 	"io"
+	"os"
 	"reflect"
 	"regexp"
 	"slices"
@@ -145,15 +146,25 @@ func requireRenderableFrontendLogs(t *testing.T, records []sdklog.Record) {
 	require.Empty(t, records[2].Body().AsString(), "stdio EOF must remain available to frontends")
 }
 
+// breakSpilledLog makes a span's spilled log storage unusable: its file is
+// gone, so it can neither be appended to nor cut back for an in-memory tail.
+func breakSpilledLog(t *testing.T, term *Vterm) {
+	t.Helper()
+	require.NotEmpty(t, term.terminalBuf.path, "the log must have spilled")
+	require.NoError(t, os.Remove(term.terminalBuf.path))
+}
+
 func TestPrettyLogsExportContinuesPastStorageError(t *testing.T) {
-	// Spilling a buffer past its in-memory limit fails without a TMPDIR.
-	t.Setenv("TMPDIR", t.TempDir()+"/missing")
 	logs := newPrettyLogs(termenv.Ascii, dagui.NewDB())
 	t.Cleanup(logs.Close)
 	failing, healthy := trace.SpanID{1}, trace.SpanID{2}
+	require.NoError(t, logs.Export(t.Context(), []sdklog.Record{
+		frontendTestLogRecord(failing, otellog.StringValue(strings.Repeat("line\n", 10000))),
+	}))
+	breakSpilledLog(t, logs.Logs[dagui.SpanID{SpanID: failing}])
 
 	err := logs.Export(t.Context(), []sdklog.Record{
-		frontendTestLogRecord(failing, otellog.StringValue(strings.Repeat("line\n", 10000))),
+		frontendTestLogRecord(failing, otellog.StringValue("more\n")),
 		frontendTestLogRecord(healthy, otellog.StringValue("hello\n")),
 	})
 	require.Error(t, err)
@@ -169,15 +180,36 @@ func TestPrettyLogsExportContinuesPastStorageError(t *testing.T) {
 	require.Equal(t, "hello\nworld\n", rawLog(logs.Logs[dagui.SpanID{SpanID: healthy}]))
 }
 
-func TestReportSessionToleratesLogStorageError(t *testing.T) {
+// TestPrettyLogsWithoutTempStorage: a span's log past the in-memory limit
+// stays readable from memory when TMPDIR cannot be written.
+func TestPrettyLogsWithoutTempStorage(t *testing.T) {
 	t.Setenv("TMPDIR", t.TempDir()+"/missing")
+	logs := newPrettyLogs(termenv.Ascii, dagui.NewDB())
+	t.Cleanup(logs.Close)
+	id := trace.SpanID{1}
+	content := strings.Repeat("line\n", 10000)
+	require.NoError(t, logs.Export(t.Context(), []sdklog.Record{
+		frontendTestLogRecord(id, otellog.StringValue(content[:len(content)/2])),
+		frontendTestLogRecord(id, otellog.StringValue(content[len(content)/2:])),
+	}))
+	term := logs.Logs[dagui.SpanID{SpanID: id}]
+	require.NoError(t, term.Err())
+	require.Equal(t, content, rawLog(term))
+	require.NotContains(t, term.View(), "log storage error")
+}
+
+func TestReportSessionToleratesLogStorageError(t *testing.T) {
 	session := NewReportSession(dagui.NewDB())
 	t.Cleanup(session.Close)
 	failing, healthy := trace.SpanID{1}, trace.SpanID{2}
-
-	// One span's failed spill must not fail the whole report's ingestion.
 	require.NoError(t, session.LogExporter().Export(t.Context(), []sdklog.Record{
 		frontendTestLogRecord(failing, otellog.StringValue(strings.Repeat("line\n", 10000))),
+	}))
+	breakSpilledLog(t, session.logs.Logs[dagui.SpanID{SpanID: failing}])
+
+	// One span's failed storage must not fail the whole report's ingestion.
+	require.NoError(t, session.LogExporter().Export(t.Context(), []sdklog.Record{
+		frontendTestLogRecord(failing, otellog.StringValue("more\n")),
 		frontendTestLogRecord(healthy, otellog.StringValue("hello\n")),
 	}))
 	require.Error(t, session.logs.Logs[dagui.SpanID{SpanID: failing}].Err(),

@@ -1,14 +1,16 @@
 package dagui
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"runtime"
-	"strings"
+	"sync/atomic"
 
+	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
 	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -18,20 +20,35 @@ import (
 // also retains their resource/attribute graphs and arbitrarily large bodies.
 // Keep only a small byte prefix in memory and spill the rest, preserving stream
 // order. Readers replay in bounded chunks, including for a single huge record.
+//
+// Spilling is an optimization, never a precondition for printing output: if
+// temporary storage cannot be created or written (an unwritable TMPDIR, a full
+// disk), the rest of the output stays in memory, as it did before spilling.
 const primaryLogMemoryLimit = 64 << 10
 
+// primaryLogChunk is a run of consecutive output on one stream. Records on the
+// same stream coalesce, so many small records cost one chunk.
 type primaryLogChunk struct {
 	stream int64
-	body   string
+	body   []byte
 }
 
 type primaryLogBuffer struct {
-	chunks  []primaryLogChunk
-	bytes   int
-	file    *os.File
-	cleanup runtime.Cleanup
-	err     error
+	// chunks is the whole output while nothing has spilled, and the tail after
+	// the file once spilling has failed.
+	chunks []primaryLogChunk
+	bytes  int
+	file   *os.File
+	// fileSize is the length of the complete records in file.
+	fileSize int64
+	// spillFailed keeps all further output in memory.
+	spillFailed bool
+	cleanup     runtime.Cleanup
+	err         error
 }
+
+// primarySpillWarned limits the spill-failure warning to once per process.
+var primarySpillWarned atomic.Bool
 
 func (db *DB) appendPrimaryLog(id SpanID, record sdklog.Record) {
 	db.primaryLogsMu.Lock()
@@ -63,40 +80,83 @@ func (b *primaryLogBuffer) append(stream int64, body string) {
 	if b.err != nil {
 		return
 	}
-	if b.file == nil && b.bytes+len(body) <= primaryLogMemoryLimit && len(b.chunks) < 256 {
-		b.chunks = append(b.chunks, primaryLogChunk{stream, strings.Clone(body)})
-		b.bytes += len(body)
+	if b.spillFailed || (b.file == nil && b.bytes+len(body) <= primaryLogMemoryLimit) {
+		b.appendMemory(stream, body)
 		return
 	}
 	if b.file == nil {
-		b.file, b.err = os.CreateTemp("", "dagger-primary-logs-*")
-		if b.err != nil {
+		file, err := os.CreateTemp("", "dagger-primary-logs-*")
+		if err != nil {
+			b.abandonSpill(err)
+			b.appendMemory(stream, body)
 			return
 		}
+		b.file = file
 		b.cleanup = runtime.AddCleanup(b, func(file *os.File) {
 			_ = file.Close()
 			_ = os.Remove(file.Name())
 		}, b.file)
-		for _, chunk := range b.chunks {
-			if b.err = b.write(chunk.stream, chunk.body); b.err != nil {
+		for i, chunk := range b.chunks {
+			if err := b.write(chunk.stream, chunk.body); err != nil {
+				// What was written stays in the file; the rest stays here.
+				b.chunks = b.chunks[i:]
+				b.abandonSpill(err)
+				if b.err == nil {
+					b.appendMemory(stream, body)
+				}
 				return
 			}
 		}
 		b.chunks = nil
 		b.bytes = 0
 	}
-	b.err = b.write(stream, body)
+	if err := b.write(stream, []byte(body)); err != nil {
+		b.abandonSpill(err)
+		if b.err == nil {
+			b.appendMemory(stream, body)
+		}
+	}
 }
 
-func (b *primaryLogBuffer) write(stream int64, body string) error {
+func (b *primaryLogBuffer) appendMemory(stream int64, body string) {
+	if n := len(b.chunks); n > 0 && b.chunks[n-1].stream == stream {
+		b.chunks[n-1].body = append(b.chunks[n-1].body, body...)
+	} else {
+		b.chunks = append(b.chunks, primaryLogChunk{stream, []byte(body)})
+	}
+	b.bytes += len(body)
+}
+
+// abandonSpill keeps all further output in memory after temporary storage
+// failed. A partially written record is cut off the file first; if even that
+// fails, the file can no longer be replayed faithfully and the failure is
+// reported instead.
+func (b *primaryLogBuffer) abandonSpill(err error) {
+	if b.file != nil {
+		if terr := b.file.Truncate(b.fileSize); terr != nil {
+			b.err = errors.Join(err, terr)
+			return
+		}
+	}
+	b.spillFailed = true
+	if primarySpillWarned.CompareAndSwap(false, true) {
+		// Not under primaryLogsMu: the log may be rendered by the frontend.
+		go slog.Warn("cannot spill command output to temporary storage; keeping it in memory", "err", err)
+	}
+}
+
+func (b *primaryLogBuffer) write(stream int64, body []byte) error {
 	var header [16]byte
 	binary.LittleEndian.PutUint64(header[:8], uint64(stream))
 	binary.LittleEndian.PutUint64(header[8:], uint64(len(body)))
 	if _, err := b.file.Write(header[:]); err != nil {
 		return err
 	}
-	_, err := io.WriteString(b.file, body)
-	return err
+	if _, err := b.file.Write(body); err != nil {
+		return err
+	}
+	b.fileSize += int64(len(header) + len(body))
+	return nil
 }
 
 // WalkPrimaryLogs replays exact bytes in original stream order without loading
@@ -130,13 +190,16 @@ func (db *DB) WalkPrimaryLogs(id SpanID, fn func(stream int64, data []byte) erro
 			}
 		}
 	}
-	if b.file == nil {
+	emitMemory := func() error {
 		for _, chunk := range b.chunks {
-			if err := emit(chunk.stream, strings.NewReader(chunk.body)); err != nil {
+			if err := emit(chunk.stream, bytes.NewReader(chunk.body)); err != nil {
 				return err
 			}
 		}
 		return nil
+	}
+	if b.file == nil {
+		return emitMemory()
 	}
 	stat, err := b.file.Stat()
 	if err != nil {
@@ -147,7 +210,8 @@ func (db *DB) WalkPrimaryLogs(id SpanID, fn func(stream int64, data []byte) erro
 		var header [16]byte
 		n, err := io.ReadFull(r, header[:])
 		if n == 0 && errors.Is(err, io.EOF) {
-			return nil
+			// After a failed spill, the rest of the output is in memory.
+			return emitMemory()
 		}
 		if err != nil {
 			return fmt.Errorf("read primary output: %w", err)
