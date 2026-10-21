@@ -66,6 +66,7 @@ require (
 	github.com/dagger/otel-go v1.43.1-0.20260917165636-2bca4f5622cf
 	github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59
 	github.com/dagger/testctx v0.1.2
+	github.com/danielgatis/go-vte v1.0.11
 	github.com/dave/jennifer v1.7.1
 	github.com/denisbrodbeck/machineid v1.0.1
 	github.com/distribution/reference v0.6.0
@@ -266,7 +267,6 @@ require (
 	github.com/danielgatis/go-ansicode v1.0.14 // indirect
 	github.com/danielgatis/go-iterator v0.0.1 // indirect
 	github.com/danielgatis/go-utf8 v1.0.1 // indirect
-	github.com/danielgatis/go-vte v1.0.11 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dlclark/regexp2 v1.11.5 // indirect
 	github.com/docker/docker-credential-helpers v0.9.3 // indirect

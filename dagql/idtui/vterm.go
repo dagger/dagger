@@ -10,13 +10,12 @@ import (
 	"sync"
 	"time"
 	"unicode"
-	"unicode/utf8"
 
 	"charm.land/lipgloss/v2"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour/styles"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/charmbracelet/x/ansi/parser"
+	"github.com/danielgatis/go-vte"
 	"github.com/muesli/termenv"
 	"github.com/vito/midterm"
 )
@@ -73,9 +72,9 @@ type Vterm struct {
 	rawBuf      *logBuffer
 	rawSeparate bool
 	// printed is set once the terminal stream may have printed a character;
-	// printState is the escape parser state until then. See HasOutput.
+	// printScan follows the stream until then. See HasOutput.
 	printed     bool
-	printState  parser.State
+	printScan   *printScanner
 	needsRedraw bool
 
 	// Search highlight state. When SearchQuery is non-empty, matching
@@ -217,10 +216,10 @@ func (term *Vterm) UsedHeight() int {
 
 // HasOutput reports whether the log may have rows, without materializing it:
 // false guarantees UsedHeight() == 0, so an emptiness guard can skip the log
-// before UsedHeight lays it out. It errs towards true: media logs, non-ASCII
-// bytes, and text printed only on the alternate screen count as output, so
-// code that draws still checks UsedHeight. As with UsedHeight, Markdown in a
-// log without media is not counted.
+// before UsedHeight lays it out. It errs towards true: media logs and text
+// printed only on the alternate screen count as output, so code that draws
+// still checks UsedHeight. As with UsedHeight, Markdown in a log without
+// media is not counted.
 func (term *Vterm) HasOutput() bool {
 	term.mu.Lock()
 	defer term.mu.Unlock()
@@ -234,25 +233,53 @@ func (term *Vterm) HasOutput() bool {
 	return term.printed
 }
 
-// notePrintedLocked scans terminal input until it prints a character, the
-// only thing that gives midterm a used row (erased text still leaves one).
-// Escape sequences, newlines and other controls alone do not.
+// notePrintedLocked runs terminal input through midterm's own escape parser
+// (go-vte, under go-ansicode) until midterm would print: only printed runes
+// and horizontal tabs, which midterm fills with spaces, give it a used row
+// (erased text still leaves one). Escape sequences, strings such as OSC, DCS
+// and SOS/PM/APC however they end, and other controls do not.
 func (term *Vterm) notePrintedLocked(p []byte) {
-	state := term.printState
+	if term.printScan == nil && len(p) > 0 && (p[0] == '\t' || p[0] >= 0x20 && p[0] < 0x7f) {
+		// The parser starts in its ground state, where these print: most
+		// logs need no parser at all.
+		term.printed = true
+		return
+	}
+	if term.printScan == nil {
+		term.printScan = new(printScanner)
+		term.printScan.parser = vte.NewParser(term.printScan)
+	}
 	for _, b := range p {
-		if b >= utf8.RuneSelf {
+		term.printScan.parser.Advance(b)
+		if term.printScan.printed {
 			term.printed = true
-			return
-		}
-		var action parser.Action
-		state, action = parser.Table.Transition(state, b)
-		if action == parser.PrintAction {
-			term.printed = true
+			term.printScan = nil
 			return
 		}
 	}
-	term.printState = state
 }
+
+// printScanner is a go-vte performer that only notes whether go-ansicode would
+// make midterm put a cell: Print (Input) and HT (Tab). CSI REP repeats the
+// preceding printed rune, so it can't be the first to print.
+type printScanner struct {
+	parser  *vte.Parser
+	printed bool
+}
+
+func (s *printScanner) Print(rune) { s.printed = true }
+func (s *printScanner) Execute(b byte) {
+	if b == '\t' {
+		s.printed = true
+	}
+}
+func (s *printScanner) Put(byte)                                        {}
+func (s *printScanner) Unhook()                                         {}
+func (s *printScanner) Hook([][]uint16, []byte, bool, rune)             {}
+func (s *printScanner) OscDispatch([][]byte, bool)                      {}
+func (s *printScanner) CsiDispatch([][]uint16, []byte, bool, rune)      {}
+func (s *printScanner) EscDispatch([]byte, bool, byte)                  {}
+func (s *printScanner) SosPmApcDispatch(vte.SosPmApcKind, []byte, bool) {}
 
 func (term *Vterm) usedHeightLocked() int {
 	term.materializeLocked()

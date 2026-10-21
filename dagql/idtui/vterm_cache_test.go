@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"os"
 	"strings"
 	"sync"
@@ -266,6 +267,34 @@ func TestVtermHasOutputWithoutMaterializing(t *testing.T) {
 		{"text\r\x1b[2K"},
 		{"\x1b[41m \x1b[0m"},
 		{"界"},
+		// midterm's parser ends SOS/PM/APC strings on BEL, as it does OSC.
+		{"\x1b_foo\abar"},
+		{"\x1bX\abar"},
+		{"\x1b^\abar"},
+		{"\x1b]0;title\abar"},
+		{"\x1b_foo\a"},
+		{"\x1b]0;title\x1b\\"},
+		// Tabs are filled with spaces.
+		{"\t"},
+		{"\t\n"},
+		{"\x1b[41m\t\x1b[0m\n"},
+		// CAN and SUB abort a sequence; what follows prints.
+		{"\x1b[3\x18x"},
+		{"\x1b[3\x1ax"},
+		{"\x1b]0;ti\x18x"},
+		{"\x1b[3\x18"},
+		// 8-bit C1 controls, invalid UTF-8 and split runes.
+		{"\x9b31m"},
+		{"\xc2\x9b31m"},
+		{"\xff"},
+		{"\xe7", "\x95", "\x8c"},
+		{"\xe7\x95"},
+		// DCS strings, and controls inside sequences.
+		{"\x1bPq#0;2;0;0;0\x1b\\"},
+		{"\x1bPqabc\x07def"},
+		{"\x1b[\n31m"},
+		{"\x1b[1b"},
+		{"\x08\r\x0b\x0c\x0e\x0f\x7f"},
 	} {
 		term := NewVterm(termenv.ANSI)
 		t.Cleanup(term.Close)
@@ -278,6 +307,28 @@ func TestVtermHasOutputWithoutMaterializing(t *testing.T) {
 		used := term.UsedHeight()
 		require.Equal(t, used > 0, has, "%q: UsedHeight %d", chunks, used)
 		require.Equal(t, has, term.HasOutput())
+	}
+	// Random mixes of sequence fragments, split across writes: false must
+	// always mean no rows.
+	fragments := []string{"\x1b", "[", "]", "P", "X", "^", "_", "\\", "\a", "\t", "\n", "\r", "\x18", "\x1a",
+		"\x9b", "\x9c", "\x9d", "\x90", "\xc2", "\xe7", "\x95", "3", "1", ";", "m", "?1049h", "?1049l", "b", "x", " "}
+	rng := rand.New(rand.NewPCG(1, 2))
+	for range 5000 {
+		term := NewVterm(termenv.ANSI)
+		var stream []string
+		for range 1 + rng.IntN(8) {
+			chunk := ""
+			for range 1 + rng.IntN(4) {
+				chunk += fragments[rng.IntN(len(fragments))]
+			}
+			stream = append(stream, chunk)
+			_, err := io.WriteString(term, chunk)
+			require.NoError(t, err)
+		}
+		if !term.HasOutput() {
+			require.Zero(t, term.UsedHeight(), "%q", stream)
+		}
+		term.Close()
 	}
 }
 
