@@ -41,6 +41,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
+	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	otlplogsv1 "go.opentelemetry.io/proto/otlp/logs/v1"
 	"google.golang.org/grpc"
@@ -2904,6 +2905,114 @@ func TestSessionTeardownFlushesTraceTelemetryAfterMetricShutdown(t *testing.T) {
 		"the completed cleanup span must pass the final session flush")
 	// The live snapshot may be coalesced with the completed one in the same batch.
 	require.LessOrEqual(t, liveSnapshots, 1)
+}
+
+// A session whose main client forwards its own telemetry ends that client's
+// trace stream with the session-end carrier. The client's /shutdown lets its
+// streams end, but teardown stamps the carrier only after it, so a stream with
+// nothing left to send at /shutdown must stay open until the session's final
+// telemetry barrier.
+func TestMainClientTraceStreamDeliversSessionEnd(t *testing.T) {
+	srv := newTeardownTestServer(t)
+	srv.clientDBs = clientdb.NewDBs(t.TempDir())
+	srv.telemetryPubSub = NewPubSub(srv)
+
+	md := &engine.ClientMetadata{SessionID: "session", ClientID: "main"}
+	client := &clientRuntime{clientRecord: &clientRecord{clientID: "main", clientMetadata: md, shutdownCh: make(chan struct{})}}
+	sess := &daggerSession{
+		sessionID:          md.SessionID,
+		mainClientCallerID: md.ClientID,
+		clientRuntimes:     map[string]*clientRuntime{client.clientID: client},
+		services:           core.NewServices(),
+		analytics:          analytics.New(analytics.Config{DoNotTrack: true}),
+		shutdownCh:         make(chan struct{}),
+		telemetryPubSub:    srv.telemetryPubSub,
+		wcprofTraceID:      trace.TraceID{1},
+		wcprofRootSpanID:   trace.SpanID{1},
+	}
+	installTestClientRecords(sess)
+	sess.dagqlCond = sync.NewCond(&sess.dagqlMu)
+	sess.closingCtx, sess.cancelClosing = context.WithCancelCause(context.Background())
+	sess.schemaBuilderMemo.Store(core.NewSchemaBuilderMemo())
+	srv.initializeSessionTelemetry(sess, md)
+	require.False(t, sess.publishesToCloud(), "the client forwards the session's telemetry")
+
+	// The session's only cache span reaches the store before /shutdown, so
+	// the stream has no backlog left when the client shuts down.
+	emitTestSpan(sess, "7")
+	require.NoError(t, sess.FlushTelemetry(t.Context(), "test"))
+
+	// The stream reads the store as TracesSubscribeHandler's fetcher does, and
+	// reports each read that finds nothing once the client has shut down.
+	idleAfterShutdown := make(chan struct{}, 2)
+	fetch := func(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, proto.Message, int, error) {
+		next, req, rows, err := fetchSpanBatch(ctx, db, since, limit, nil)
+		select {
+		case <-client.shutdownCh:
+			if rows == 0 && err == nil {
+				select {
+				case idleAfterShutdown <- struct{}{}:
+				default:
+				}
+			}
+		default:
+		}
+		if req == nil {
+			return next, nil, rows, err
+		}
+		return next, req, rows, err
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	req := httptest.NewRequest(http.MethodGet, "/v1/traces", nil).WithContext(ctx)
+	req.Header.Set("Accept", enginetel.LiveContentType)
+	resp := httptest.NewRecorder()
+	streamed := make(chan error, 1)
+	go func() { streamed <- srv.telemetryPubSub.streamHandler(resp, req, client.clientRecord, fetch) }()
+
+	// /shutdown ends by closing the client's shutdownCh; teardown follows in
+	// the background reap. Teardown starts only once the stream has found the
+	// store empty twice since: a stream that ends at the client's shutdown has
+	// then already decided to.
+	client.closeShutdownOnce.Do(func() { close(client.shutdownCh) })
+	for range 2 {
+		select {
+		case <-idleAfterShutdown:
+		case <-ctx.Done():
+			t.Fatal("the stream never found the store empty after the client's shutdown")
+		}
+	}
+	require.NoError(t, srv.removeDaggerSession(t.Context(), sess))
+	// The session's final telemetry, not a fallback timeout, ends the stream.
+	select {
+	case err := <-streamed:
+		require.NoError(t, err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("the stream did not end promptly after the session's telemetry ended")
+	}
+
+	var names []string
+	for {
+		kind, _, payload, err := enginetel.ReadLiveFrame(resp.Body)
+		require.NoError(t, err)
+		if kind == enginetel.LiveFrameTerminal {
+			break
+		}
+		if kind != enginetel.LiveFrameData {
+			continue
+		}
+		var batch coltracepb.ExportTraceServiceRequest
+		require.NoError(t, proto.Unmarshal(payload, &batch))
+		for _, rs := range batch.GetResourceSpans() {
+			for _, ss := range rs.GetScopeSpans() {
+				for _, span := range ss.GetSpans() {
+					names = append(names, span.GetName())
+				}
+			}
+		}
+	}
+	require.Contains(t, names, "call")
+	require.Contains(t, names, wcprofSessionCompleteSpanName, "the stream ended before the session-end carrier")
 }
 
 // newTeardownTestSession publishes an initialized session whose main client
