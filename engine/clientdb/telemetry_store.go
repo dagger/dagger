@@ -415,23 +415,48 @@ func (l *spanLookup) markedSpanIDs() (checks, tests map[string]struct{}) {
 type logLookup struct {
 	mu         sync.RWMutex
 	rowsBySpan map[string][]int64
+	// meta holds one logMeta per log row, indexed by row ID - 1, for
+	// selected reads (see selection.go). Its trace and span fields index the
+	// intern tables below.
+	meta       []logMeta
+	metaErrs   map[int64]error
+	traceIDs   []string
+	traceIndex map[string]uint32
+	spanIDs    []string
+	spanIndex  map[string]uint32
+
+	// memoMu guards attrMemo, which caches attribute classes by their bytes.
+	memoMu   sync.Mutex
+	attrMemo map[string]logAttrClassResult
 }
 
 func newLogLookup() *logLookup {
-	return &logLookup{rowsBySpan: make(map[string][]int64)}
+	return &logLookup{
+		rowsBySpan: make(map[string][]int64),
+		metaErrs:   make(map[int64]error),
+		traceIndex: make(map[string]uint32),
+		spanIndex:  make(map[string]uint32),
+		attrMemo:   make(map[string]logAttrClassResult),
+	}
 }
 
-func (l *logLookup) add(row Log) {
-	if !row.SpanID.Valid {
-		return
-	}
-	l.mu.Lock()
-	l.rowsBySpan[row.SpanID.String] = append(l.rowsBySpan[row.SpanID.String], row.ID)
-	l.mu.Unlock()
-}
+func (l *logLookup) add(row Log) { l.addAll([]Log{row}) }
 
 func (l *logLookup) addAll(rows []Log) {
+	flags, errs := l.classify(rows)
 	l.mu.Lock()
+	for i, row := range rows {
+		if errs != nil && errs[i] != nil {
+			l.metaErrs[int64(len(l.meta))] = errs[i]
+		}
+		l.meta = append(l.meta, logMeta{
+			timestamp: row.Timestamp,
+			size:      logCodec.size(row),
+			trace:     internLocked(l.traceIndex, &l.traceIDs, row.TraceID.String),
+			span:      internLocked(l.spanIndex, &l.spanIDs, row.SpanID.String),
+			flags:     flags[i],
+		})
+	}
 	for _, row := range rows {
 		if !row.SpanID.Valid {
 			continue
@@ -471,6 +496,9 @@ type DB struct {
 	logIdx     *logLookup
 	callIdx    *callLookup
 	archiveIdx *archiveLookup
+	// spanTopos caches span topologies for selected reads (see
+	// selection.go); it is released with the store.
+	spanTopos *spanTopologyCache
 
 	clientID string
 	refCount int
@@ -487,6 +515,7 @@ func openStore(ctx context.Context, root, clientID string, tailBudget int64) (_ 
 		logIdx:     newLogLookup(),
 		callIdx:    newCallLookup(),
 		archiveIdx: newArchiveLookup(),
+		spanTopos:  newSpanTopologyCache(),
 		clientID:   clientID,
 	}
 	defer func() {
