@@ -140,7 +140,7 @@ type UnsealedArchive struct {
 // with an ErrState request error for any other state, including a sealed
 // (closed) archive.
 func (c *Client) Unsealed(ctx context.Context, traceID string) (UnsealedArchive, error) {
-	resp, err := c.get(ctx, archivePath+"/"+url.PathEscape(traceID), url.Values{"unsealed": {"1"}}, "application/json", 0)
+	resp, err := c.get(ctx, archivePath+"/"+url.PathEscape(traceID), url.Values{"unsealed": {"1"}}, "application/json")
 	if err != nil {
 		return UnsealedArchive{}, err
 	}
@@ -162,7 +162,7 @@ func (c *Client) Unsealed(ctx context.Context, traceID string) (UnsealedArchive,
 // downloading the bootstrap or historical telemetry. Any other state fails
 // with an ErrState request error; see Unsealed for a best-effort read.
 func (c *Client) Inspect(ctx context.Context, traceID string) (Manifest, error) {
-	resp, err := c.get(ctx, archivePath+"/"+url.PathEscape(traceID), nil, "application/json", 0)
+	resp, err := c.get(ctx, archivePath+"/"+url.PathEscape(traceID), nil, "application/json")
 	if err != nil {
 		return Manifest{}, err
 	}
@@ -192,7 +192,7 @@ func (c *Client) List(ctx context.Context, opts ListOptions) (Page, error) {
 	if opts.Limit != 0 {
 		query.Set("limit", strconv.Itoa(opts.Limit))
 	}
-	resp, err := c.get(ctx, archivePath, query, "application/json", 0)
+	resp, err := c.get(ctx, archivePath, query, "application/json")
 	if err != nil {
 		return Page{}, err
 	}
@@ -256,7 +256,7 @@ type BootstrapResult struct {
 // telemetry. The engine verified the roster and recipe closure when it built
 // the bootstrap.
 func (c *Client) Bootstrap(ctx context.Context, traceID string, consume func(BootstrapHeader, BootstrapBatch) error) (BootstrapResult, error) {
-	resp, err := c.get(ctx, archiveResourcePath(traceID, AgentBootstrapResource), nil, BootstrapContentType, 0)
+	resp, err := c.get(ctx, archiveResourcePath(traceID, AgentBootstrapResource), nil, BootstrapContentType)
 	if err != nil {
 		return BootstrapResult{}, err
 	}
@@ -482,8 +482,8 @@ func (c *Client) streamBody(ctx context.Context, traceID, signal string, opts St
 }
 
 // get issues one GET against the archive API.
-func (c *Client) get(ctx context.Context, path string, query url.Values, accept string, cursor int64) (*http.Response, error) {
-	return c.do(ctx, http.MethodGet, path, query, nil, accept, cursor)
+func (c *Client) get(ctx context.Context, path string, query url.Values, accept string) (*http.Response, error) {
+	return c.do(ctx, http.MethodGet, path, query, nil, accept, 0)
 }
 
 // do issues one request against the archive API. Every archive read is a GET
