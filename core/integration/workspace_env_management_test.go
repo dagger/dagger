@@ -222,7 +222,7 @@ source = "github.com/dagger/aws"
 
 		tests := [][]string{
 			{"modules.aws.source", "github.com/acme/aws"},
-			{"modules.aws.entrypoint", "true"},
+			{"modules.aws.main", "true"},
 			{"defaults_from_dotenv", "true"},
 		}
 		for _, args := range tests {
@@ -374,7 +374,7 @@ func (WorkspaceSuite) TestWorkspaceEnvConfigRuntimeConsistency(ctx context.Conte
 	t.Run("effective config reads match the defaults used by runtime commands", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
 source = "modules/aws"
-entrypoint = true
+main = true
 
 [modules.aws.settings]
 region = "us-west-2"
@@ -400,7 +400,7 @@ region = "us-east-1"
 	t.Run("env-scoped writes affect only that envs runtime behavior", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
 source = "modules/aws"
-entrypoint = true
+main = true
 
 [modules.aws.settings]
 region = "base-region"

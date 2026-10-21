@@ -2316,10 +2316,10 @@ type InstallOpts struct {
 	// be returned through interfaces.
 	SkipConstructor bool
 
-	// Entrypoint installs non-conflicting proxies for the module's
+	// Main installs non-conflicting proxies for the module's
 	// main-object methods on the Query root. The module's namespaced
 	// constructor remains installed separately.
-	Entrypoint bool
+	Main bool
 }
 
 type Mod interface {

@@ -102,7 +102,7 @@ commands, `dagger.toml`, and prose explaining how the pieces fit together. The
 one exception is a platform-native directive or config line when the section
 is about that line: show it on its own, never the code around it. The module
 the reader writes is the project's dev module. `dagger module init <sdk>` with
-no name creates `<project>-dev` as the workspace entrypoint, and a reader who
+no name creates `<project>-dev` as the workspace main, and a reader who
 already has a dev module adds to it, so write `<project>-dev` as the placeholder
 in commands and config. Say that the snippet's type name stands in for the one
 `dagger module init` generated, since a mismatched type fails to load. Functions

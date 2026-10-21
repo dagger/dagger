@@ -12,6 +12,31 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestExtraModuleMainWireCompatibility(t *testing.T) {
+	t.Parallel()
+
+	data, err := json.Marshal(ExtraModule{Ref: "./ci", Name: "ci", Main: true})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"ref":"./ci","name":"ci","main":true,"entrypoint":true}`, string(data))
+	legacyData, err := json.Marshal(ExtraModule{Ref: "./ci", Entrypoint: true})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"ref":"./ci","main":true,"entrypoint":true}`, string(legacyData))
+
+	for _, input := range []string{
+		`{"ref":"./ci","main":true}`,
+		`{"ref":"./ci","entrypoint":true}`,
+		`{"ref":"./ci","main":true,"entrypoint":true}`,
+	} {
+		var module ExtraModule
+		require.NoError(t, json.Unmarshal([]byte(input), &module))
+		require.Equal(t, ExtraModule{Ref: "./ci", Main: true}, module)
+	}
+
+	var module ExtraModule
+	err = json.Unmarshal([]byte(`{"ref":"./ci","main":true,"entrypoint":false}`), &module)
+	require.EqualError(t, err, "extra module cannot set conflicting main and deprecated entrypoint values")
+}
+
 func TestClientScopeIsImmutableCloneableAndRaceSafe(t *testing.T) {
 	t.Parallel()
 

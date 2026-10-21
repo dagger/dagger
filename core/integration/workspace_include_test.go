@@ -109,7 +109,7 @@ source = "`+baseRef+`"
 		require.Contains(t, out, `source = "`+moduleRef+`"`, "the module ref is inherited")
 		require.Contains(t, out, `greeting = "hola"`, "the local override wins")
 		require.Contains(t, out, `tone = "formal"`, "settings merge key by key")
-		require.Contains(t, out, "entrypoint = true", "other fields are inherited")
+		require.Contains(t, out, "main = true", "other fields are inherited")
 		require.Contains(t, out, `ignore = ["dist"]`, "a top-level key the file sets wins")
 		require.NotContains(t, out, "base-dist")
 
@@ -130,7 +130,7 @@ source = "`+baseRef+`"
 		require.Equal(t, baseRef, strings.TrimSpace(out))
 	})
 
-	// The include entry is the workspace entrypoint, so its functions are
+	// The include entry is the workspace main, so its functions are
 	// proxied onto the root rather than namespaced under the module name.
 	t.Run("loads a module the include contributes", func(ctx context.Context, t *testctx.T) {
 		out, err := ctr.With(workspaceSelectionDaggerCall("identify")).Stdout(ctx)

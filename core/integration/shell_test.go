@@ -249,7 +249,7 @@ func (ShellSuite) TestModuleLookup(ctx context.Context, t *testctx.T) {
 		require.Contains(t, out, "MODULE")
 		require.Contains(t, out, "Main module")
 		require.Contains(t, out, "Multiline module description.")
-		require.Contains(t, out, "ENTRYPOINT")
+		require.Contains(t, out, "MAIN")
 		require.Contains(t, out, "Constructor description.")
 		require.Contains(t, out, "Usage: . [options]")
 		// functions
@@ -337,7 +337,7 @@ func (ShellSuite) TestModuleLookup(ctx context.Context, t *testctx.T) {
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "A local module") // main object description fallback
-		require.NotContains(t, out, "ENTRYPOINT")
+		require.NotContains(t, out, "MAIN")
 		require.Contains(t, out, "AVAILABLE FUNCTIONS")
 	})
 

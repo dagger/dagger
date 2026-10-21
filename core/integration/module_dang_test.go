@@ -321,7 +321,7 @@ func (DangSuite) TestCoreTypeShadowing(_ context.Context, t *testctx.T) {
 func (DangSuite) TestWorkspaceArg(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	out, err := moduleEntrypointFixture(t, c, "workspace-arg", "dang/workspace-arg").
+	out, err := moduleMainFixture(t, c, "workspace-arg", "dang/workspace-arg").
 		WithNewFile("marker.txt", "hello from workspace").
 		With(daggerCall("read")).
 		Stdout(ctx)

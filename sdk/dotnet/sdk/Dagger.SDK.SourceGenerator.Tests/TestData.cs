@@ -20379,10 +20379,10 @@ public static class TestData
                       {
                         "defaultValue": null,
                         "deprecationReason": null,
-                        "description": "Install the module as the entrypoint, promoting its main-object methods onto the Query root",
+                        "description": "Install the module as the workspace main, promoting its main-object methods onto the Query root",
                         "directives": [],
                         "isDeprecated": false,
-                        "name": "entrypoint",
+                        "name": "main",
                         "type": {
                           "kind": "SCALAR",
                           "name": "Boolean",
@@ -23147,7 +23147,7 @@ public static class TestData
                       {
                         "defaultValue": null,
                         "deprecationReason": null,
-                        "description": "Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).\n\nCore types (Container, Directory, etc.) are kept so return types and method chaining still work.",
+                        "description": "Strip core API functions from the Query type, leaving only module-sourced functions (constructors, workspace main proxies, etc.).\n\nCore types (Container, Directory, etc.) are kept so return types and method chaining still work.",
                         "directives": [],
                         "isDeprecated": false,
                         "name": "hideCore",

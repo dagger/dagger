@@ -117,7 +117,7 @@ func (h *shellCallHandler) MainHelp() string {
 		}
 	}
 
-	// Emit groups: core first, then entrypoint modules, then dependencies.
+	// Emit groups: core first, then main modules, then dependencies.
 	if g, ok := groups[""]; ok {
 		doc.Add("Available Functions",
 			nameShortWrapped(g.fns, func(f *modFunction) (string, string) {
@@ -126,7 +126,7 @@ func (h *shellCallHandler) MainHelp() string {
 		)
 	}
 
-	// Entrypoint module functions (source module == current module name).
+	// Main module functions (source module == current module name).
 	if def.HasModule() {
 		if g, ok := groups[def.Name]; ok {
 			title := def.Name
@@ -142,7 +142,7 @@ func (h *shellCallHandler) MainHelp() string {
 		}
 	}
 
-	// Installed (non-entrypoint) modules in a single group.
+	// Installed (non-main) modules in a single group.
 	var installed []*modFunction
 	for _, src := range order {
 		if src == "" || src == def.Name {
@@ -334,7 +334,7 @@ func (h *shellCallHandler) ModuleDoc(m *moduleDef) string {
 		doc.Add("Module", meta.String())
 	}
 
-	// When entrypoint proxying is active, MainObject is Query and the
+	// When main proxying is active, MainObject is Query and the
 	// constructor is the synthetic `with` function. Look up the module's
 	// named main object to get the original constructor and its functions.
 	constr := m.MainObject.AsObject.Constructor
@@ -355,7 +355,7 @@ func (h *shellCallHandler) ModuleDoc(m *moduleDef) string {
 			constructor.WriteString(constr.Description)
 		}
 
-		doc.Add("Entrypoint", constructor.String())
+		doc.Add("Main", constructor.String())
 
 		if args := constr.RequiredArgs(); len(args) > 0 {
 			doc.AddSection(

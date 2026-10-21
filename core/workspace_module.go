@@ -12,9 +12,9 @@ import (
 
 // WorkspaceModule describes a module entry in the workspace config.
 type WorkspaceModule struct {
-	Name       string `field:"true" doc:"The module name."`
-	Entrypoint bool   `field:"true" doc:"Whether the module is the workspace entrypoint (functions aliased to Query root)."`
-	Source     string `field:"true" doc:"The module source path."`
+	Name   string `field:"true" doc:"The module name."`
+	Main   bool   `field:"true" doc:"Whether the module is the workspace main (functions aliased to Query root)."`
+	Source string `field:"true" doc:"The module source path."`
 }
 
 var _ dagql.PersistedObject = (*WorkspaceModule)(nil)
@@ -43,11 +43,20 @@ func (m *WorkspaceModule) EncodePersistedObject(ctx context.Context, enc *dagql.
 func (*WorkspaceModule) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	_ = ctx
 	_ = dec
-	var m WorkspaceModule
-	if err := json.Unmarshal(payload, &m); err != nil {
+	var persisted struct {
+		Name       string
+		Main       bool
+		Entrypoint bool
+		Source     string
+	}
+	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted workspace module payload: %w", err)
 	}
-	return &m, nil
+	return &WorkspaceModule{
+		Name:   persisted.Name,
+		Main:   persisted.Main || persisted.Entrypoint,
+		Source: persisted.Source,
+	}, nil
 }
 
 // WorkspaceModuleSetting describes one constructor-backed module setting.

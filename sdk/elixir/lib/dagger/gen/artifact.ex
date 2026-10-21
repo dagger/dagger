@@ -117,7 +117,7 @@ defmodule Dagger.Artifact do
   end
 
   @doc """
-  Ordered, literal fields to follow. Entrypoint targets use their shorthand.
+  Ordered, literal fields to follow. Workspace main targets use their shorthand.
   """
   @spec path(t()) :: {:ok, [String.t()]} | {:error, term()}
   def path(%__MODULE__{} = artifact) do

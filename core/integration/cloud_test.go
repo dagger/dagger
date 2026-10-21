@@ -45,7 +45,7 @@ func (CloudSuite) TestTraceURLNested(ctx context.Context, t *testctx.T) {
 	// depends on where the test runs - in an already nested test, we're *not* logged in
 	org, _ := auth.CurrentOrgName()
 
-	modGen := moduleEntrypointFixture(t, c, "test", "go/cloud-trace-url")
+	modGen := moduleMainFixture(t, c, "test", "go/cloud-trace-url")
 	out, err := modGen.With(daggerCall("trace-url")).Stdout(ctx)
 	if org == "" {
 		requireErrOut(t, err, "no cloud organization configured")

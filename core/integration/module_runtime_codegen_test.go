@@ -205,7 +205,7 @@ func (RuntimeCodegenSuite) TestPythonTrustedFilesUsed(ctx context.Context, t *te
 		WithoutFile("dagger.json").
 		WithNewFile("dagger.toml", `[modules.minimal]
 source = "."
-entrypoint = true
+main = true
 `).
 		With(configFile(".", &modules.ModuleConfig{
 			Name:          "minimal",
@@ -238,7 +238,7 @@ func (RuntimeCodegenSuite) TestPythonTrustedRejectsStaleLockfile(ctx context.Con
 		WithoutFile("dagger.json").
 		WithNewFile("dagger.toml", `[modules.minimal]
 source = "."
-entrypoint = true
+main = true
 `).
 		With(configFile(".", &modules.ModuleConfig{
 			Name:          "minimal",
@@ -313,7 +313,7 @@ func (RuntimeCodegenSuite) TestPreSplitCommittedBindingsRun(ctx context.Context,
 			EngineVersion: modules.EngineVersionLatest,
 			SDK:           &modules.SDK{Source: "go"},
 		})).
-		// A standalone TOML module has no workspace entrypoint; select it
+		// A standalone TOML module has no workspace main; select it
 		// explicitly without regenerating its committed bindings.
 		With(daggerCallAt(".", "message")).
 		Stdout(ctx)

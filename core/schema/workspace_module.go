@@ -49,9 +49,9 @@ func (s *workspaceSchema) workspaceModules(
 		}
 		source := filepath.ToSlash(workspace.ResolveModuleEntrySource(configDir, entry.Source))
 		modules = append(modules, &core.WorkspaceModule{
-			Name:       moduleName,
-			Entrypoint: entry.Entrypoint,
-			Source:     source,
+			Name:   moduleName,
+			Main:   entry.Main,
+			Source: source,
 		})
 	}
 	if name != "" && len(modules) == 0 {
@@ -70,7 +70,7 @@ func (s *workspaceSchema) workspaceModules(
 			Field: "__workspaceModule",
 			Args: []dagql.NamedInput{
 				{Name: "name", Value: dagql.String(module.Name)},
-				{Name: "entrypoint", Value: dagql.Boolean(module.Entrypoint)},
+				{Name: "main", Value: dagql.Boolean(module.Main)},
 				{Name: "source", Value: dagql.String(module.Source)},
 			},
 		}); err != nil {
@@ -171,15 +171,15 @@ func (s *workspaceSchema) workspaceModule(
 	ctx context.Context,
 	parent *core.Workspace,
 	args struct {
-		Name       string
-		Entrypoint bool
-		Source     string
+		Name   string
+		Main   bool
+		Source string
 	},
 ) (*core.WorkspaceModule, error) {
 	return &core.WorkspaceModule{
-		Name:       args.Name,
-		Entrypoint: args.Entrypoint,
-		Source:     args.Source,
+		Name:   args.Name,
+		Main:   args.Main,
+		Source: args.Source,
 	}, nil
 }
 

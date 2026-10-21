@@ -370,7 +370,7 @@ func (GeneratorsSuite) TestGeneratorArtifactsSyncWithNestedSDKCodegen(ctx contex
 		WithDirectory(".dagger/modules/module-max-lifecycle", core.NewQuery(c).Host().Directory(sdkModulePath)).
 		WithNewFile("dagger.toml", `[modules.consumer]
 source = ".dagger/modules/consumer"
-entrypoint = true
+main = true
 
 [modules.go-sdk]
 source = ".dagger/modules/module-max-lifecycle"
@@ -796,7 +796,7 @@ name = "project"
 		out, err := initialized.CombinedOutput(ctx)
 		require.NoError(t, err, out)
 
-		require.Contains(t, out, `Automatically installed module "shop-dev" as entrypoint.`)
+		require.Contains(t, out, `Automatically installed module "shop-dev" as the workspace main.`)
 
 		moduleRoot := "/work/apps/shop/.dagger/modules/shop-dev"
 		_, err = initialized.File(moduleRoot + "/dagger-module.toml").Contents(ctx)
@@ -809,7 +809,7 @@ name = "project"
 		require.NoError(t, err)
 		parsed, err := workspacecfg.ParseConfig([]byte(config))
 		require.NoError(t, err)
-		require.True(t, parsed.Modules["shop-dev"].Entrypoint)
+		require.True(t, parsed.Modules["shop-dev"].Main)
 		require.Contains(t, config, `[sdks.go.scopes.".dagger/modules/shop-dev"]`)
 		require.NotContains(t, config, `name = "shop-dev"`)
 		require.Empty(t, parsed.SDKs["go"].Scopes[".dagger/modules/shop-dev"].Name)
@@ -823,17 +823,17 @@ name = "project"
 		require.Contains(t, marker, "for shop-dev")
 	})
 
-	t.Run("rejects a second inferred entrypoint", func(ctx context.Context, t *testctx.T) {
+	t.Run("rejects a second inferred main", func(ctx context.Context, t *testctx.T) {
 		out, err := base.
 			WithNewFile("/work/apps/shop/dagger.toml", config+`
 [modules.existing]
 source = "target"
-entrypoint = true
+main = true
 `).
 			With(daggerNonNestedExecFail("module", "init", "go", "-y")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, `workspace already has entrypoint module "existing"; pass --name to initialize an additional namespaced module`)
+		require.Contains(t, out, `workspace already has main module "existing"; pass --name to initialize an additional namespaced module`)
 	})
 }
 
@@ -910,10 +910,10 @@ source = "dang"
 			require.NoError(t, err)
 		})
 	}
-	t.Run("one-off module replaces the SDK entrypoint", func(ctx context.Context, t *testctx.T) {
+	t.Run("one-off module replaces the SDK main", func(ctx context.Context, t *testctx.T) {
 		const cwd = "/work/app/generated/demo/sub"
 		config := strings.Replace(config, `source = "../sdk"`, `source = "../sdk"
-entrypoint = true`, 1)
+main = true`, 1)
 		generated := mixed.WithNewFile("/work/app/dagger.toml", config).
 			WithWorkdir(cwd).
 			WithEnvVariable("DAGGER_MODULE", "/work/regular").
@@ -973,7 +973,7 @@ module = "workspace-writer"
 	require.Contains(t, config, "[modules.demo]\nsource = \"../generated/demo\"")
 	parsed, err := workspacecfg.ParseConfig([]byte(config))
 	require.NoError(t, err)
-	require.False(t, parsed.Modules["demo"].Entrypoint)
+	require.False(t, parsed.Modules["demo"].Main)
 	require.Contains(t, config, `[sdks.test.scopes."../generated/demo"]`)
 	require.Contains(t, config, `name = "demo"`)
 
@@ -984,7 +984,7 @@ module = "workspace-writer"
 	require.NoError(t, err)
 	parsed, err = workspacecfg.ParseConfig([]byte(config))
 	require.NoError(t, err)
-	require.True(t, parsed.Modules["app-dev"].Entrypoint)
+	require.True(t, parsed.Modules["app-dev"].Main)
 	require.Equal(t, "../generated/app-dev", parsed.Modules["app-dev"].Source)
 	require.Empty(t, parsed.SDKs["test"].Scopes["../generated/app-dev"].Name)
 
@@ -1183,21 +1183,21 @@ func (GeneratorsSuite) TestWorkspaceGenerateNarrowsToRequestedModule(ctx context
 	})
 }
 
-// TestWorkspaceGenerateSkipsBrokenEntrypoint is a regression test for
-// https://github.com/dagger/dagger/issues/13742: an entrypoint module that
+// TestWorkspaceGenerateSkipsBrokenMain is a regression test for
+// https://github.com/dagger/dagger/issues/13742: a workspace main module that
 // cannot load (e.g. a migrated v1 module whose local dependencies are missing
 // their generated files) must not abort `dagger generate` — generate is often
 // the repair for exactly that state. The generators listing already loads
 // best-effort, but the CLI's follow-up queries are rooted at `node(id:)` (every
 // post-Sync SDK handle is), so an unrecognized `node` root field must not
-// strictly (re)load the pending entrypoint, which would fail every generate
+// strictly (re)load the pending main, which would fail every generate
 // mode.
-func (GeneratorsSuite) TestWorkspaceGenerateSkipsBrokenEntrypoint(ctx context.Context, t *testctx.T) {
+func (GeneratorsSuite) TestWorkspaceGenerateSkipsBrokenMain(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	base := workspaceFixture(t, c, "generators-broken-entrypoint")
 
-	t.Run("listing enumerates healthy generators despite a broken entrypoint", func(ctx context.Context, t *testctx.T) {
+	t.Run("listing enumerates healthy generators despite a broken main", func(ctx context.Context, t *testctx.T) {
 		out, err := base.
 			With(daggerExec("generate", "-l", "-f=link")).
 			CombinedOutput(ctx)
@@ -1205,19 +1205,19 @@ func (GeneratorsSuite) TestWorkspaceGenerateSkipsBrokenEntrypoint(ctx context.Co
 		require.Contains(t, out, "good/generate")
 	})
 
-	t.Run("unscoped generate runs healthy generators despite a broken entrypoint", func(ctx context.Context, t *testctx.T) {
+	t.Run("unscoped generate runs healthy generators despite a broken main", func(ctx context.Context, t *testctx.T) {
 		ctr := base.With(daggerExec("generate", "-y", "--progress=plain"))
 		out, err := ctr.CombinedOutput(ctx)
 		require.NoError(t, err, out)
 		require.NotContains(t, out, "no changes to apply")
-		// The broken entrypoint is surfaced as a skipped-module span, not a
+		// The broken main is surfaced as a skipped-module span, not a
 		// fatal error.
 		require.Contains(t, out, "modules/bad")
 		_, err = ctr.WithExec([]string{"grep", "-rl", "hello from good", "."}).Sync(ctx)
 		require.NoError(t, err)
 	})
 
-	t.Run("generate --no-apply previews despite a broken entrypoint", func(ctx context.Context, t *testctx.T) {
+	t.Run("generate --no-apply previews despite a broken main", func(ctx context.Context, t *testctx.T) {
 		out, err := base.
 			With(daggerExec("generate", "--no-apply", "--progress=plain")).
 			CombinedOutput(ctx)
@@ -1225,7 +1225,7 @@ func (GeneratorsSuite) TestWorkspaceGenerateSkipsBrokenEntrypoint(ctx context.Co
 		require.NotContains(t, out, "no changes to apply")
 	})
 
-	t.Run("--require-load still makes the entrypoint load failure fatal", func(ctx context.Context, t *testctx.T) {
+	t.Run("--require-load still makes the main load failure fatal", func(ctx context.Context, t *testctx.T) {
 		out, err := base.
 			With(daggerExecFail("generate", "-l", "--require-load")).
 			CombinedOutput(ctx)
@@ -1457,20 +1457,20 @@ func (GeneratorsSuite) TestWorkspaceCallNarrowsToRequestedModule(ctx context.Con
 	})
 }
 
-// TestWorkspaceCallNarrowsByCliNameAndEntrypoint covers the two demand shapes
+// TestWorkspaceCallNarrowsByCliNameAndMain covers the two demand shapes
 // TestWorkspaceCallNarrowsToRequestedModule cannot see with its single-word
 // module names:
 //
 //   - the CLI targets modules by their kebab-case command name, so a module
 //     declared as "goodMod" is called as `dagger api call good-mod ...` and
 //     the engine must normalize both sides the same way to narrow loading;
-//   - with a workspace entrypoint configured, the first argument may be one of
-//     the entrypoint's root-proxied functions rather than a module name, in
-//     which case the entrypoint module must load — and suffice — to resolve
+//   - with a workspace main configured, the first argument may be one of
+//     the main's root-proxied functions rather than a module name, in
+//     which case the main module must load — and suffice — to resolve
 //     the call.
 //
 // In both cases the broken sibling module must stay unloaded.
-func (GeneratorsSuite) TestWorkspaceCallNarrowsByCliNameAndEntrypoint(ctx context.Context, t *testctx.T) {
+func (GeneratorsSuite) TestWorkspaceCallNarrowsByCliNameAndMain(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	base := workspaceFixture(t, c, "call-narrowing")
@@ -1484,12 +1484,12 @@ func (GeneratorsSuite) TestWorkspaceCallNarrowsByCliNameAndEntrypoint(ctx contex
 		require.NotContains(t, out, "intentionally invalid")
 	})
 
-	t.Run("entrypoint function target skips the broken module", func(ctx context.Context, t *testctx.T) {
+	t.Run("main function target skips the broken module", func(ctx context.Context, t *testctx.T) {
 		out, err := base.
 			With(daggerExec("api", "call", "greet", "--progress=plain")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "hello from entrypoint")
+		require.Contains(t, out, "hello from workspace main")
 		require.NotContains(t, out, "intentionally invalid")
 	})
 
@@ -1559,7 +1559,7 @@ func (GeneratorsSuite) TestWorkspaceGeneratorsVisibleFromModule(ctx context.Cont
 		WithWorkdir("hello-with-generators").
 		WithNewFile("dagger.toml", `[modules.hello-with-generators]
 source = "."
-entrypoint = true
+main = true
 
 [modules.toolchain-generators]
 source = "toolchain"

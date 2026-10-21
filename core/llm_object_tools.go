@@ -286,7 +286,7 @@ func (m *MCP) BoundToolBindings() ([]boundToolBinding, error) {
 
 // bindWorkspaceModuleTools binds each served workspace module's main object as
 // a toolset, constructing it through the canonical server (which serves module
-// constructors even for entrypoint modules, whose sugared schema only carries
+// constructors even for workspace main modules, whose sugared schema only carries
 // proxies). `dagger mcp` uses this so a workspace module's methods are served
 // as MCP tools without an explicit withTools: the module entrypoint is "the
 // way in" (hack/designs/workspace-agents.md). Modules whose constructors

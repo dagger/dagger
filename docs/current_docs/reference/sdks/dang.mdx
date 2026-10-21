@@ -60,7 +60,7 @@ dagger module init dang --name my-ci
 
 `init` takes these arguments:
 
-- `--name` is optional. Without `--name` or `--path`, Dagger infers `<project>-dev` and installs the module as the workspace entrypoint.
+- `--name` is optional. Without `--name` or `--path`, Dagger infers `<project>-dev` and installs the module as the workspace main.
 - `--path` selects a directory relative to the current directory. A custom path is registered for generation but is not installed; use `dagger module install <path>` to install it.
 - `--template` selects the starter template. `minimal` is the only template and the default. Despite the name, it is a small working module with a Check, a test environment, a service, and a generator, shown below.
 - `--fat` also generates a `dagger.json` file for older engines. It is disabled by default.

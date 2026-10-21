@@ -19,15 +19,15 @@ func TestModTreePath(t *testing.T) {
 
 func TestModTreeCommandNamePreservesQualifiedPath(t *testing.T) {
 	root := &ModTreeNode{
-		Parent:              &ModTreeNode{},
-		Name:                "myProjectDev",
-		WorkspaceEntrypoint: true,
+		Parent:        &ModTreeNode{},
+		Name:          "myProjectDev",
+		WorkspaceMain: true,
 	}
 	node := &ModTreeNode{Parent: &ModTreeNode{Parent: root, Name: "unitTests"}, Name: "verify"}
 	require.Equal(t, "unit-tests:verify", node.CommandName())
 	require.Equal(t, "my-project-dev:unit-tests:verify", node.PathString())
 	require.Equal(t, "unit-tests:verify", node.Clone().CommandName())
-	root.WorkspaceEntrypoint = false
+	root.WorkspaceMain = false
 	require.Equal(t, "my-project-dev:unit-tests:verify", node.CommandName())
 }
 

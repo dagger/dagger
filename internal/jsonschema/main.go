@@ -44,7 +44,14 @@ func generate() error {
 			r.CommentMap[k] = newline.ReplaceAllString(v, `$1 $2`)
 		}
 
-		data, err := json.MarshalIndent(r.Reflect(target.value), "", "  ")
+		schema := r.Reflect(target.value)
+		if target.output == "dagger-workspace.schema.json" {
+			if err := addWorkspaceCompatibilityAliases(schema); err != nil {
+				return fmt.Errorf("%s: %w", target.output, err)
+			}
+		}
+
+		data, err := json.MarshalIndent(schema, "", "  ")
 		if err != nil {
 			return fmt.Errorf("%s: %w", target.output, err)
 		}
@@ -52,5 +59,18 @@ func generate() error {
 			return err
 		}
 	}
+	return nil
+}
+
+func addWorkspaceCompatibilityAliases(schema *jsonschema.Schema) error {
+	moduleEntry := schema.Definitions["ModuleEntry"]
+	if moduleEntry == nil || moduleEntry.Properties == nil {
+		return fmt.Errorf("ModuleEntry definition not found")
+	}
+	moduleEntry.Properties.Set("entrypoint", &jsonschema.Schema{
+		Type:        "boolean",
+		Description: "Deprecated alias for main.",
+		Deprecated:  true,
+	})
 	return nil
 }

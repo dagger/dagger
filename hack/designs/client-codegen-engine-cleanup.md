@@ -81,7 +81,7 @@ Coordinate with the `.dang` SDK side landing first (it must dispatch
   and does not install the bound module at all. Feeding the module-facing schema
   to client codegen produces an incomplete/incorrect client.
 - A client never promotes a module's functions to the Query root: the bound
-  module is installed namespaced (`InstallOpts{}`, not `Entrypoint: true`) and
+  module is installed namespaced (`InstallOpts{}`, not `Main: true`) and
   reached via `dag.<moduleName>`. It is the only user module in the client schema
   — dependencies are excluded (see the summary), so a client has no `dag.<dep>()`
   bindings.
