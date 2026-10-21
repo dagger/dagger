@@ -176,6 +176,7 @@ type GitCommit struct {
 type GitCommitMetadata struct {
 	SHA            string
 	ShortSHA       string
+	TreeSHA        string
 	AuthoredDate   string
 	CommittedDate  string
 	AuthorName     string
@@ -1271,6 +1272,10 @@ func parseGitCommitMetadata(sha string, raw string) (*GitCommitMetadata, error) 
 			continue
 		}
 		switch key {
+		case "tree":
+			if meta.TreeSHA == "" {
+				meta.TreeSHA = value
+			}
 		case "parent":
 			meta.ParentSHAs = append(meta.ParentSHAs, value)
 		case "author":
@@ -1292,6 +1297,9 @@ func parseGitCommitMetadata(sha string, raw string) (*GitCommitMetadata, error) 
 		}
 	}
 
+	if meta.TreeSHA == "" {
+		return nil, fmt.Errorf("missing tree")
+	}
 	if meta.AuthorName == "" || meta.AuthorEmail == "" || meta.AuthoredDate == "" {
 		return nil, fmt.Errorf("missing author metadata")
 	}

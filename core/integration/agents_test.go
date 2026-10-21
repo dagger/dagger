@@ -18,10 +18,12 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
+	"time"
 
 	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -164,6 +166,28 @@ func (AgentsSuite) TestValidationRejectsBadReturnType(ctx context.Context, t *te
 	out, err := modGen.With(daggerExecFail("agent", "-l")).CombinedOutput(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "does not return LLM!")
+}
+
+func (AgentsSuite) TestCLIComposesWithOwningAgent(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	fixture, err := installAgents(t, c, "editor")
+	require.NoError(t, err)
+	fixture = fixture.WithNewFile("../editor/main.dang", `
+type Editor {
+  agent(base: LLM!, me: Agent!): LLM! @agent {
+    if (me.name != "agent") { raise "CLI composed with the wrong owning agent" }
+    base.withSystemPrompt("Owned by " + me.name)
+  }
+}
+`)
+	// EOF exits before inference, but composition must already see the runtime.
+	out, err := fixture.
+		WithEnvVariable("OPENAI_API_KEY", "unused").
+		WithEnvVariable("OPENAI_MODEL", "unused").
+		WithEnvVariable("OPENAI_BASE_URL", "http://127.0.0.1:1").
+		With(daggerExec("agent", "--progress=plain")).CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "spawn")
 }
 
 func (AgentsSuite) TestComposeToolset(ctx context.Context, t *testctx.T) {
@@ -439,6 +463,97 @@ func (AgentsSuite) TestOverlayUnrelatedEditKeepsToolset(ctx context.Context, t *
 	out, err := agentFixtureTools(ctx, t, c, agentFixtureWorkspace(modGen).WithNewFile("/README.md", "unrelated edit"), nil)
 	require.NoError(t, err)
 	require.Equal(t, baseline, out)
+}
+
+// TestExpertiseOriginalModuleOutlivesReadingSession is a regression test for
+// Expertise.originalModule (and Module.dependencies) publishing a module's
+// value as a second result.
+// A Dang module includes itself in its deps, so attaching that second result
+// pointed the long-lived module's self entry at it; once the session that read
+// originalModule closed, the second result was collected and every later walk
+// of the module's deps (loading a held object, calling a function) failed for
+// good with "has no call frame". It runs on a private engine so the reading
+// client is a truly separate session.
+func (AgentsSuite) TestExpertiseOriginalModuleOutlivesReadingSession(ctx context.Context, t *testctx.T) {
+	outer := connect(ctx, t)
+	engineSvc := devEngineContainerAsService(devEngineContainer(outer))
+	tunnel, err := core.NewQuery(outer).Host().Tunnel(engineSvc).Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = tunnel.Stop(ctx, core.ServiceStopOpts{Kill: true})
+		_, _ = engineSvc.Stop(ctx)
+	})
+	endpoint, err := tunnel.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
+	require.NoError(t, err)
+
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	moduleDir := filepath.Join(workdir, "modules", "probe")
+	require.NoError(t, os.MkdirAll(moduleDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "dagger.toml"), []byte("[modules.probe]\nsource = \"./modules/probe\"\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(moduleDir, "dagger.json"), []byte(`{"name":"probe","engineVersion":"v1.0.0","sdk":"dang"}`), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(moduleDir, "main.dang"), []byte(`type Probe {
+  agent(base: LLM!): LLM! @agent { base.withTools(currentNode) }
+
+  hello: String! { "hello" }
+}
+`), 0o644))
+
+	// Session A serves the module, holds one of its objects and lists its
+	// expertise.
+	a, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithWorkdir(workdir), dagger.WithLoadWorkspaceModules(), dagger.WithLogOutput(testutil.NewTWriter(t)))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = a.Close() })
+	var held struct{ Probe struct{ ID core.ID } }
+	require.NoError(t, a.Do(ctx, &dagger.Request{Query: `{probe{id}}`}, &dagger.Response{Data: &held}))
+	var listed struct {
+		CurrentWorkspace struct {
+			Artifacts struct {
+				FilterTypes struct{ AsExpertise []struct{ ID core.ID } }
+			}
+		}
+	}
+	require.NoError(t, a.Do(ctx, &dagger.Request{
+		Query: `{currentWorkspace{artifacts{filterTypes(types:["Expertise"]){asExpertise{id}}}}}`,
+	}, &dagger.Response{Data: &listed}))
+	expertise := listed.CurrentWorkspace.Artifacts.FilterTypes.AsExpertise
+	require.Len(t, expertise, 1)
+
+	// Session B reads the module through one of A's expertise entries, along
+	// with its dependencies (which include the module itself), then leaves,
+	// releasing everything only it owns.
+	b, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
+	require.NoError(t, err)
+	var original struct {
+		Node struct {
+			OriginalModule struct {
+				Name         string
+				Dependencies []struct{ Name string }
+			}
+		}
+	}
+	require.NoError(t, b.Do(ctx, &dagger.Request{
+		Query:     `query($id: ID!) { node(id: $id) { ... on Expertise { originalModule { name dependencies { name } } } } }`,
+		Variables: map[string]any{"id": expertise[0].ID},
+	}, &dagger.Response{Data: &original}))
+	require.Equal(t, "probe", original.Node.OriginalModule.Name)
+	require.NotEmpty(t, original.Node.OriginalModule.Dependencies)
+	require.NoError(t, b.Close())
+
+	// A's module must still be whole. The engine releases B's session
+	// asynchronously, so keep checking across that window.
+	for i := range 10 {
+		var reloaded struct{ Node struct{ Hello string } }
+		require.NoError(t, a.Do(ctx, &dagger.Request{
+			Query:     `query($id: ID!) { node(id: $id) { ... on Probe { hello } } }`,
+			Variables: map[string]any{"id": held.Probe.ID},
+		}, &dagger.Response{Data: &reloaded}), "reloading the held object (attempt %d)", i)
+		require.Equal(t, "hello", reloaded.Node.Hello)
+		var called struct{ Probe struct{ Hello string } }
+		require.NoError(t, a.Do(ctx, &dagger.Request{Query: `{probe{hello}}`}, &dagger.Response{Data: &called}), "calling the module (attempt %d)", i)
+		require.Equal(t, "hello", called.Probe.Hello)
+		time.Sleep(time.Second)
+	}
 }
 
 func (AgentsSuite) TestEmptySelectionComposesBareLLM(ctx context.Context, t *testctx.T) {

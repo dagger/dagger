@@ -306,6 +306,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	if err := srv.initRootPaths(); err != nil {
 		return nil, err
 	}
+	logStateFilesystem(srv.rootDir)
 
 	// Opened before the local cache state: the snapshot manager takes the
 	// builtin store at construction, for chain imports of builtin layers.
@@ -395,7 +396,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	//
 
 	srv.runc = &runc.Runc{
-		Command:   distconsts.RuncPath,
+		Command:   distconsts.RuntimePath,
 		Log:       filepath.Join(srv.executorRootDir, "runc-log.json"),
 		LogFormat: runc.JSON,
 		Setpgid:   true,
@@ -880,6 +881,10 @@ func (srv *Server) initBoltDBs() (err error) {
 
 var errServerShuttingDown = errors.New("engine is shutting down")
 
+// slowGracefulStopPhase is how long a graceful stop stage runs before the
+// engine reports which of its threads are waiting in the kernel.
+const slowGracefulStopPhase = 15 * time.Second
+
 func (srv *Server) BeginGracefulStop() {
 	if srv.shuttingDown.CompareAndSwap(false, true) && srv.shutdownCancel != nil {
 		srv.shutdownCancel(errServerShuttingDown)
@@ -938,12 +943,35 @@ func (srv *Server) Clients() []string {
 	return slices.Collect(maps.Keys(clients))
 }
 
-// GracefulStop attempts to close all boltdbs and do a final syncfs since all the DBs
-// run with NoSync=true (plus NoFreelistSync/NoGrowSync) for performance reasons.
+// GracefulStop stops sessions, persists the dagql cache and closes the engine's
+// DBs. The DBs run without syncing (bolt NoSync=true plus
+// NoFreelistSync/NoGrowSync, SQLite synchronous=OFF) for performance, and the
+// stop does not sync them either; see the comment at the end.
 func (srv *Server) GracefulStop(ctx context.Context) error {
 	srv.BeginGracefulStop()
 
 	var err error
+
+	// stopPhase times one stage of the stop, logging before and after: the
+	// caller bounds the whole stop, so a stage that stalls must be
+	// attributable from the engine log alone.
+	stopStart := time.Now()
+	stopPhase := func(name string, fn func()) {
+		slog.Debug("graceful stop phase starting", "phase", name)
+		start := time.Now()
+		// A stage that runs long is usually waiting in the kernel; name the
+		// threads doing so while they still are.
+		slow := time.AfterFunc(slowGracefulStopPhase, func() {
+			slog.Warn("graceful stop phase is slow", "phase", name, "elapsed", time.Since(start),
+				"threads", engineutil.DescribeUninterruptibleThreads("/proc/self"))
+		})
+		fn()
+		slow.Stop()
+		slog.Info("graceful stop phase done", "phase", name, "duration", time.Since(start))
+	}
+	defer func() {
+		slog.Info("graceful stop done", "duration", time.Since(stopStart), "error", err)
+	}()
 
 	// note this *could* cause a panic in Session if it was still running, so
 	// the server should be shutdown first
@@ -960,7 +988,10 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	// Decide the integration's stop outcome before draining sessions or closing
 	// the cache, and join Run outside gcmu and every cache lock. A failed stop
 	// keeps the cache checkpoint dirty and is returned.
-	adapterStopErr := srv.stopRemoteCacheIntegration(ctx)
+	var adapterStopErr error
+	stopPhase("stop remote cache integration", func() {
+		adapterStopErr = srv.stopRemoteCacheIntegration(ctx)
+	})
 	if adapterStopErr != nil {
 		slog.Error("failed to stop remote cache integration", "error", adapterStopErr)
 	}
@@ -970,64 +1001,79 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 		defer srv.gcmu.Unlock()
 	}
 
-	for _, s := range daggerSessions {
-		s.lifecycleMu.Lock()
-		// Wait out any in-flight init (lifecycleMu serializes it), then tear down
-		// only if the session actually initialized. An already-removed tombstone
-		// belongs to the teardown or failed-initialization path that published it;
-		// that path also owns the matching retire-or-delete decision.
-		state := s.state.Load()
-		retire := state == sessionStateInitialized
-		if retire {
-			err = errors.Join(err, srv.removeDaggerSession(ctx, s))
+	stopPhase("remove sessions", func() {
+		for _, s := range daggerSessions {
+			s.lifecycleMu.Lock()
+			// Wait out any in-flight init (lifecycleMu serializes it), then tear
+			// down only if the session actually initialized. An already-removed
+			// tombstone belongs to the teardown or failed-initialization path
+			// that published it; that path also owns the matching
+			// retire-or-delete decision.
+			state := s.state.Load()
+			retire := state == sessionStateInitialized
+			if retire {
+				err = errors.Join(err, srv.removeDaggerSession(ctx, s))
+			}
+			s.lifecycleMu.Unlock()
+			if retire {
+				srv.retireSession(s)
+			} else if state == sessionStateUninitialized {
+				srv.deleteSession(s)
+			}
 		}
-		s.lifecycleMu.Unlock()
-		if retire {
-			srv.retireSession(s)
-		} else if state == sessionStateUninitialized {
-			srv.deleteSession(s)
-		}
-	}
+	})
 
 	// Sessions are gone, and their stores' ends final: forwarders still
 	// publishing to Cloud get one Cloud bound to finish, then stop,
 	// releasing their stores.
-	if stopErr := srv.cloudForwarders.stopAll(ctx, sessionTelemetryFlushTimeout); stopErr != nil {
-		slog.Warn("Cloud telemetry forwarders did not stop in time", "error", stopErr)
-	}
+	stopPhase("stop Cloud telemetry forwarders", func() {
+		if stopErr := srv.cloudForwarders.stopAll(ctx, sessionTelemetryFlushTimeout); stopErr != nil {
+			slog.Warn("Cloud telemetry forwarders did not stop in time", "error", stopErr)
+		}
+	})
 
 	if srv.clientDBs != nil {
-		err = errors.Join(err, srv.clientDBs.Close())
+		stopPhase("close client DBs", func() {
+			err = errors.Join(err, srv.clientDBs.Close())
+		})
 	}
 
 	// Shared read-only mounts nobody is using, and the releases running in
 	// the background, are released before the final collection and before
 	// the metadata DBs close.
 	if releaser, ok := srv.workerCache.(bkcache.ReadOnlyMountReleaser); ok {
-		releaser.WaitForBackgroundReleases()
+		stopPhase("wait for read-only mount releases", releaser.WaitForBackgroundReleases)
 	}
 
 	if srv.engineCache != nil && srv.localCacheGCEnabled {
-		if gcErr := srv.gcLocked(ctx, localCacheGCGracefulShutdown); gcErr != nil {
-			err = errors.Join(err, fmt.Errorf("failed to prune local cache during graceful shutdown: %w", gcErr))
-		}
+		stopPhase("prune local cache", func() {
+			if gcErr := srv.gcLocked(ctx, localCacheGCGracefulShutdown); gcErr != nil {
+				err = errors.Join(err, fmt.Errorf("failed to prune local cache during graceful shutdown: %w", gcErr))
+			}
+		})
 	}
 
 	cleanCacheClose := false
 	if srv.engineCache != nil {
-		if closeErr := srv.engineCache.CloseWithShutdownError(ctx, adapterStopErr); closeErr != nil {
-			slog.Error("failed to close base dagql cache", "error", closeErr)
-			err = errors.Join(err, closeErr)
-		} else {
-			cleanCacheClose = true
-		}
+		stopPhase("close dagql cache", func() {
+			if closeErr := srv.engineCache.CloseWithShutdownError(ctx, adapterStopErr); closeErr != nil {
+				slog.Error("failed to close base dagql cache", "error", closeErr)
+				err = errors.Join(err, closeErr)
+			} else {
+				cleanCacheClose = true
+			}
+		})
 	}
-	srv.stopEngineEvents(ctx, cleanCacheClose)
+	stopPhase("stop engine events", func() {
+		srv.stopEngineEvents(ctx, cleanCacheClose)
+	})
 
-	err = errors.Join(err, srv.engineUtilOpts.Close())
+	stopPhase("close network providers", func() {
+		err = errors.Join(err, srv.engineUtilOpts.Close())
+	})
 
 	// Shutdown the global namespace worker pool
-	engineutil.ShutdownGlobalNamespaceWorkerPool()
+	stopPhase("stop namespace worker pool", engineutil.ShutdownGlobalNamespaceWorkerPool)
 
 	var eg errgroup.Group
 	eg.Go(func() error {
@@ -1047,38 +1093,39 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 
 	// Buffered, so the closing goroutine can finish after GracefulStop returns
 	// through ctx.Done().
+	//
+	// There is deliberately no final sync, so the engine's writes reach disk
+	// through ordinary kernel writeback. They stay in the page cache, which
+	// outlives the engine process, so a restart on the same kernel sees them;
+	// a host crash before writeback, even after a reported successful stop,
+	// can lose them. The next start wipes local cache state only when a bolt
+	// DB fails to open or the dagql store is unclean or fails to import, so
+	// stale or partial state can go undetected. That was already possible for
+	// a crash during the old sync, since the clean marker is written before
+	// it; dropping the sync extends that window to the writeback delay.
+	// syncfs flushed every other writer's dirty data on the filesystem
+	// holding the engine state, which is often shared (a host volume, or a
+	// nested engine's cache volume in CI): minutes on a busy disk, in
+	// uninterruptible sleep that not even SIGKILL can cut short. Syncing only
+	// the DB files can still wait on other files' data on ext4, where fsync
+	// commits the journal and the commit writes out ordered data first.
 	doneClosingCh := make(chan error, 1)
 	go func() {
 		defer close(doneClosingCh)
-
-		err := eg.Wait()
-		defer func() {
-			doneClosingCh <- err
-		}()
-
-		// all the DBs closed, do a final sync of the engine state filesystem.
-		// Use a guaranteed child of the state root rather than the mountpoint
-		// itself so path resolution is unambiguously inside the mounted tree.
-		f, err := os.Open(srv.workerRootDir)
-		if err != nil {
-			err = fmt.Errorf("failed to open root dir for final sync: %w", err)
-			return
-		}
-		defer f.Close()
-
-		err = unix.Syncfs(int(f.Fd()))
-		if err != nil {
-			err = fmt.Errorf("failed to syncfs for final sync: %w", err)
-			return
-		}
+		var dbErr error
+		stopPhase("close metadata DBs", func() {
+			dbErr = eg.Wait()
+		})
+		doneClosingCh <- dbErr
 	}()
 
 	select {
 	case dbCloseErr := <-doneClosingCh:
-		return errors.Join(err, adapterStopErr, dbCloseErr)
+		err = errors.Join(err, adapterStopErr, dbCloseErr)
 	case <-ctx.Done():
-		return errors.Join(err, adapterStopErr, ctx.Err())
+		err = errors.Join(err, adapterStopErr, ctx.Err())
 	}
+	return err
 }
 
 func (srv *Server) SnapshotManager() bkcache.SnapshotManager {

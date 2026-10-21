@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	telemetry "github.com/dagger/otel-go"
-	"github.com/muesli/reflow/indent"
 	"github.com/muesli/termenv"
 )
 
@@ -27,13 +26,13 @@ func shellDebugLine(title string, data ...any) string {
 			data = data[1:]
 		}
 		// for other values, display each in a new arrowed line
-		iw := indent.NewWriter(uint(len(lvl)+1), nil)
+		args := new(strings.Builder)
 		for _, arg := range data {
 			if arg != nil {
-				fmt.Fprintf(iw, "\n→ %s", shellDebugFormat(arg))
+				fmt.Fprintf(args, "\n→ %s", shellDebugFormat(arg))
 			}
 		}
-		extra.WriteString(iw.String())
+		extra.WriteString(indentLines(args.String(), uint(len(lvl)+1)))
 	}
 
 	// style everything faint so normal output stands out more

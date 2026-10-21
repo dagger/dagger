@@ -186,14 +186,7 @@ func validateTransferRecord(rec PersistedRecord, deps []uint64) error {
 	if err := validateTransferRecordHeader(rec); err != nil {
 		return err
 	}
-	if err := walkTransferPayloads(&rec.Envelope, rec.Call, nil, func(family PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
-		if family.Transfer != nil {
-			if err := family.Transfer.ValidateForeign(v); err != nil {
-				return nil, err
-			}
-		}
-		return v.Payload, nil
-	}); err != nil {
+	if err := validateTransferPayloads(rec); err != nil {
 		return err
 	}
 	direct, err := validateTransferDependencies(rec, deps)
@@ -203,6 +196,19 @@ func validateTransferRecord(rec PersistedRecord, deps []uint64) error {
 	rec.Envelope.PendingOffers = nil
 	_, err = VisitEncodedReferences(rec, directTransferReferences(direct))
 	return err
+}
+
+// validateTransferPayloads checks each payload of a transferred record by
+// its codec.
+func validateTransferPayloads(rec PersistedRecord) error {
+	return walkTransferPayloads(&rec.Envelope, rec.Call, nil, func(family PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
+		if family.Transfer != nil {
+			if err := family.Transfer.ValidateForeign(v); err != nil {
+				return nil, err
+			}
+		}
+		return v.Payload, nil
+	})
 }
 
 // validateTransferRecordShape checks what validateTransferRecord checks

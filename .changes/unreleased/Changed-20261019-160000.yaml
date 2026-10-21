@@ -1,0 +1,6 @@
+kind: Changed
+body: |
+  `Workspace.artifacts` omits the paths that `check.skip`, `generate.skip` and `up.skip` skip, so every consumer of the API sees the same artifacts as `dagger check`, `dagger generate` and `dagger start`. A skipped generator's staleness check is omitted with it.
+time: 2026-10-19T16:00:00Z
+custom:
+  Author: kpenfound

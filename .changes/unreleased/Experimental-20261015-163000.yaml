@@ -1,0 +1,21 @@
+kind: Experimental
+body: |
+  Add `Artifact.workspace`, the workspace an artifact was discovered in, or null
+  for an artifact without one, such as an LLM's bound tool objects.
+
+  A module that fails to load now stands in for whatever it would hold: every
+  path and dimension filter of an artifact selection (`filterUri`,
+  `filterPath`, `filterPathPattern`, `filterDimensions`, `filterDimensionKeys`,
+  and the CLI and agent tools built on them) keeps its load failure when the
+  module could hold what it selects. With a broken entrypoint module, that is
+  almost any path that does not start with another module's name. So
+  `asExpertise`, `asChangesets` and `asServices` fail with the load error
+  instead of finding nothing, and `Workspace.resolve` names it.
+
+  The load failure's address now uses the module's kebab-case name, like its
+  artifacts, and module keys (`?module=`) match a module's configured or
+  kebab-case name.
+time: 2026-10-15T16:30:00Z
+custom:
+  Author: vito
+  PR: "14700"

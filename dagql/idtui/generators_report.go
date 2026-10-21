@@ -76,7 +76,7 @@ func (fe *frontendPretty) renderGeneratorNode(ctx tuist.Context, out TermOutput,
 				fe.renderCauseDetail(ctx, out, r, origin, depth+1)
 			}
 		} else {
-			fe.renderGeneratorFailureDetail(out, r, node.Span, depth+1)
+			fe.renderSpanFailureDetail(out, r, node.Span, depth+1)
 		}
 	}
 
@@ -89,10 +89,10 @@ func (fe *frontendPretty) renderGeneratorNode(ctx tuist.Context, out TermOutput,
 	}
 }
 
-// renderGeneratorFailureDetail renders a failed generator span's own rolled-up
-// logs and error beneath its status line -- renderCauseDetail minus the title
-// row, since the generator's status line above already names the span.
-func (fe *frontendPretty) renderGeneratorFailureDetail(out TermOutput, r *renderer, span *dagui.Span, depth int) {
+// renderSpanFailureDetail renders a failed check or generator span's own
+// rolled-up logs and error beneath its status line -- renderCauseDetail minus
+// the title row, since the status line above already names the span.
+func (fe *frontendPretty) renderSpanFailureDetail(out TermOutput, r *renderer, span *dagui.Span, depth int) {
 	indent := strings.Repeat("  ", depth)
 	row := &dagui.TraceRow{Span: span, Expanded: true, Depth: depth}
 	fe.requestLogsOnRender(span.ID)

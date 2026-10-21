@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -18,7 +19,6 @@ const (
 	maxPendingWorkloadReadings = LargeSpanQueueSize
 	SamplePhaseAttr            = "dagger.io/resource.sample.phase"
 	SampleIntervalAttr         = "dagger.io/resource.sample_interval_ms"
-	ExecutionIDAttr            = "dagger.io/execution.id"
 	ExecutionInternalAttr      = "dagger.io/execution.internal"
 	ResourceAvailableName      = "dagger.io/resource.sample.available"
 	// Only workload export has these memory.stat readings. memory.current
@@ -35,8 +35,8 @@ type workloadReadingTimeKey struct{}
 type workloadReadingAttrsKey struct{}
 type samplePhaseKey struct{}
 
-// WorkloadReadings keeps every CPU and memory reading of workloads for the
-// workload export reader.
+// WorkloadReadings keeps every CPU, memory, and external network reading of
+// workloads for the workload export reader.
 // Ordinary SDK gauges still receive every Record call and retain their existing
 // last-value aggregation. This buffer never feeds the CLI or Cloud readers.
 type WorkloadReadings struct {
@@ -96,8 +96,9 @@ func WithSamplePhase(ctx context.Context, phase string) context.Context {
 	return context.WithValue(ctx, samplePhaseKey{}, phase)
 }
 
-// WorkloadReadingMeter copies only total CPU and current memory readings to the
-// workload export. The original meter, record options, and metric series stay intact.
+// WorkloadReadingMeter copies only total CPU, current memory, and external
+// network byte readings to the workload export. The original meter, record
+// options, and metric series stay intact.
 func WorkloadReadingMeter(ctx context.Context, meter metric.Meter, scope string) metric.Meter {
 	if o, _ := ctx.Value(workloadReadingsKey{}).(*WorkloadReadings); o != nil {
 		return workloadReadingMeter{Meter: meter, readings: o, scope: scope}
@@ -128,12 +129,21 @@ type workloadReadingGauge struct {
 
 func (m workloadReadingMeter) Int64Gauge(name string, opts ...metric.Int64GaugeOption) (metric.Int64Gauge, error) {
 	gauge, err := m.Meter.Int64Gauge(name, opts...)
-	if err != nil || (name != telemetry.CPUStatUsage && name != telemetry.MemoryCurrentBytes) {
+	if err != nil || !workloadReadingName(name) {
 		return gauge, err
 	}
 	cfg := metric.NewInt64GaugeConfig(opts...)
 	return workloadReadingGauge{Int64Gauge: gauge, readings: m.readings,
 		instrument: workloadReadingInstrument{m.scope, name, cfg.Unit()}}, nil
+}
+
+func workloadReadingName(name string) bool {
+	switch name {
+	case telemetry.CPUStatUsage, telemetry.MemoryCurrentBytes,
+		telemetryattrs.NetworkExternalRxBytes, telemetryattrs.NetworkExternalTxBytes:
+		return true
+	}
+	return false
 }
 
 func (g workloadReadingGauge) Record(ctx context.Context, value int64, opts ...metric.RecordOption) {

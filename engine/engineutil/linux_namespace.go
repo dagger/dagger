@@ -10,10 +10,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/opencontainers/runc/libcontainer"
+	runc "github.com/containerd/go-runc"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sourcegraph/conc/pool"
 	"golang.org/x/sys/unix"
+
+	"github.com/dagger/dagger/engine/distconsts"
 )
 
 const (
@@ -59,25 +61,22 @@ func runInNetNS[T any](
 	}
 	resultCh := make(chan result, 1)
 
-	var nsPath string
-
-	// need this to extract the namespace file
-	var tmpSpec specs.Spec
+	// Start from a private network namespace, as the OCI spec does, and let
+	// the provider change it. Host networking removes it: there is then
+	// nothing to enter, and no container PID to look up before runc starts.
+	tmpSpec := specs.Spec{Linux: &specs.Linux{
+		Namespaces: []specs.LinuxNamespace{{Type: specs.NetworkNamespace}},
+	}}
 	if state.networkNamespace != nil {
 		if err := state.networkNamespace.Set(&tmpSpec); err != nil {
 			return zero, fmt.Errorf("failed to set network namespace: %w", err)
 		}
-		for _, ns := range tmpSpec.Linux.Namespaces {
-			if ns.Type == specs.NetworkNamespace {
-				nsPath = ns.Path
-			}
-		}
 	}
-	namespaces := []specs.LinuxNamespace{
-		{
-			Type: specs.NetworkNamespace,
-			Path: nsPath, // this known (and needed) ahead of time
-		},
+	var namespaces []specs.LinuxNamespace
+	for _, ns := range tmpSpec.Linux.Namespaces {
+		if ns.Type == specs.NetworkNamespace {
+			namespaces = append(namespaces, ns)
+		}
 	}
 
 	// Wrap the function to match the expected signature and capture result
@@ -269,7 +268,7 @@ func (gwp *GlobalNamespaceWorkerPool) createNamespaceWorker(containerID string, 
 		if ns.Path != "" {
 			targetPath = ns.Path
 		} else {
-			// Get the container PID using libcontainer
+			// Get the container PID from the runtime
 			pid, err := getContainerPID(containerID)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get container PID: %w", err)
@@ -423,22 +422,15 @@ func ShutdownGlobalNamespaceWorkerPool() {
 	}
 }
 
-// getContainerPID retrieves the PID of a container using libcontainer
+// getContainerPID asks the container runtime for the PID of a running
+// container's init process.
 func getContainerPID(containerID string) (int, error) {
-	// Load the container using libcontainer
-	container, err := libcontainer.Load("/run/runc", containerID)
+	state, err := (&runc.Runc{Command: distconsts.RuntimePath}).State(context.Background(), containerID)
 	if err != nil {
-		return 0, fmt.Errorf("failed to create libcontainer factory: %w", err)
+		return 0, fmt.Errorf("get state of container %s: %w", containerID, err)
 	}
-
-	state, err := container.OCIState()
-	if err != nil {
-		return 0, fmt.Errorf("failed to get OCI state for container %s: %w", containerID, err)
-	}
-
 	if state.Pid == 0 {
 		return 0, fmt.Errorf("container %s has no running process", containerID)
 	}
-
 	return state.Pid, nil
 }

@@ -121,8 +121,10 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 		rerr  error
 	)
 	// The stored parts, like the offers, belonged to the old value, and so
-	// did its place in a list's items (cache_list_items.go).
+	// did its normalized record and its place in a list's items
+	// (cache_list_items.go).
 	cur.storedParts = nil
+	cur.storedTransfer.Store(nil)
 	c.forgetListItemLocked(cur)
 	cur.storedRecordBytes = fresh.storedRecordBytes
 	for _, offer := range cur.partOffersLocked() {
@@ -142,6 +144,7 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 		cur.replacements++
 	}
 	cur.imported = fresh.imported
+	cur.mergedAtUnixNano = fresh.mergedAtUnixNano
 	cur.inlineBorrow = fresh.inlineBorrow
 	cur.sessionResourceHandle = fresh.sessionResourceHandle
 	cur.requiredSessionResources = fresh.requiredSessionResources

@@ -113,6 +113,9 @@ func (s *workspaceSchema) workspaceOverlayModulesWithLoadFailures(
 	if err != nil {
 		return nil, nil, err
 	}
+	if err := workspace.ValidateEffectiveConfig(cfg); err != nil {
+		return nil, nil, err
+	}
 	if len(cfg.Modules) == 0 {
 		return nil, nil, nil
 	}
@@ -175,7 +178,7 @@ func (s *workspaceSchema) workspaceOverlayModulesWithLoadFailures(
 			if !mode.BestEffort() {
 				return nil, nil, err
 			}
-			failure := core.ModuleLoadFailure{Name: name, Message: core.DescribeLoadFailure(err, core.ModuleLoadBestEffort)}
+			failure := core.ModuleLoadFailure{Name: name, Message: core.DescribeLoadFailure(err, core.ModuleLoadBestEffort), Entrypoint: entry.Entrypoint}
 			if workspace.IsLocalRef(entry.Source, "") {
 				failure.Dir = filepath.ToSlash(workspace.ResolveModuleEntrySource(configDir, entry.Source))
 			}

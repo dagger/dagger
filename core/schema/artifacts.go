@@ -55,11 +55,11 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		Description: "The evaluated value, or null when evaluation failed."}, s.resultValue)
 	dagql.Fields[*core.ArtifactDimensionKey]{}.Install(srv)
 	dagql.Fields[*core.Artifacts]{
-		dagql.NodeFunc("asExpertise", s.asExpertise).Doc("Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise."),
-		dagql.NodeFunc("asGenerators", s.asGenerators).Doc("Convert the selection to Generators without running them. Fail if any artifact is not a Generator."),
-		dagql.NodeFunc("asChecks", s.asChecks).Doc("Convert the selection to Checks. Fail if any artifact is not a Check. Does not apply command filters or run the checks."),
-		dagql.NodeFunc("asChangesets", s.asChangesets).Doc("Convert the selection to Changesets. Fail if any artifact is not a Changeset. Does not apply command filters."),
-		dagql.NodeFunc("asServices", s.asServices).Doc("Convert the selection to Services. Fail if any artifact is not a Service. Does not apply command filters or start the services."),
+		dagql.NodeFunc("asExpertise", s.asExpertise).Doc("Convert the selection to expertise without running the functions. Each must take one LLM! argument and return LLM!; any other arguments must be optional or auto-filled. Agent arguments receive the agent that owns the conversation. A module load failure fails with its load error."),
+		dagql.NodeFunc("asGenerators", s.asGenerators).Doc("Convert the selection to Generators without running them. Fail if any artifact is not a Generator. Module load failures are skipped: generating can repair them."),
+		dagql.NodeFunc("asChecks", s.asChecks).Doc("Convert the selection to Checks. Fail if any artifact is not a Check. A module load failure is a Check that fails with its load error. Does not apply command filters or run the checks."),
+		dagql.NodeFunc("asChangesets", s.asChangesets).Doc("Convert the selection to Changesets. Fail if any artifact is not a Changeset; a module load failure fails with its load error. Does not apply command filters."),
+		dagql.NodeFunc("asServices", s.asServices).Doc("Convert the selection to Services. Fail if any artifact is not a Service; a module load failure fails with its load error. Does not apply command filters or start the services."),
 		dagql.Func("pathDefinitions", s.pathDefinitions).Doc("List selected schema paths, including empty collections. Does not read runtime values. Applies type keys and collection presence; collection key values require items.").Args(dagql.Arg("absolute").Doc("Prefix each address with the workspace's Git address and commit."), dagql.Arg("typeAssertion").Doc("Include the artifact type in each address scheme."), dagql.Arg("dimension").Doc("Project paths to the items of this collection dimension. Preserve parent dimensions and remove descendant dimensions.")),
 		dagql.Func("dimensionDefinitions", s.dimensionDefinitions).Doc("List dimensions on the selected schema paths, including empty collections. Does not read runtime values."),
 		// Each invocation gets a new cache key. Retain its results so SDK clients can load their IDs.
@@ -78,7 +78,8 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		dagql.Func("filterDimensionKeys", s.filterDimensionKeys).Doc("Keep artifacts with any listed key in this dimension."),
 		dagql.Func("filterUri", s.filterURI).
 			Doc("Apply a DAG address as one filter: the chain of path, type, and dimension-key filters it encodes.",
-				"The scheme is optional. The path may be a pattern; an empty path selects all artifacts.").
+				"The scheme is optional. The path may be a pattern; an empty path selects all artifacts.",
+				"A module that failed to load keeps its load failure when the module could hold what the address selects, as with every filter (see Artifacts).").
 			Args(dagql.Arg("uri").Doc("A DAG address: [dag[+<type>]://][<path>][?<dimension>=<key>&...]")),
 		dagql.Func("dimensions", s.dimensions).Doc("List dimension identifiers represented in this selection, sorted with no duplicates."),
 		dagql.Func("dimensionKeys", s.dimensionKeys).Doc("List keys represented in this selection for the given dimension, sorted with no duplicates."),
@@ -100,6 +101,7 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		dagql.Func("loadError", s.loadError).Doc("A module load failure, or an empty string if discovery succeeded."),
 		dagql.Func("arguments", s.arguments).Doc("The arguments accepted by the artifact field."),
 		dagql.Func("description", s.description).Doc("The description of the field that supplies this artifact."),
+		dagql.Func("workspace", s.artifactWorkspace).Doc("The workspace this artifact was discovered in; its address is relative to it. Null for an artifact without a workspace, such as one of an LLM's bound tool objects (see LLM.artifacts)."),
 		dagql.Func("uri", s.artifactURI).
 			Doc("The artifact's DAG address, such as dag://engine-dev/playground.").
 			Args(
@@ -444,7 +446,7 @@ func (*artifactsSchema) value(ctx context.Context, parent dagql.AnyResult, args 
 		return result, err
 	case "Expertise":
 		if len(inputs) != 0 {
-			return nil, fmt.Errorf("artifacts of type Expertise receive their LLM through LLM.compose; artifact arguments are not supported")
+			return nil, fmt.Errorf("artifacts of type Expertise receive their LLM through LLM.spawn(expertise:) or LLM.compose; artifact arguments are not supported")
 		}
 		err = srv.Select(ctx, parent.(dagql.AnyObjectResult), &result, dagql.Selector{Field: "__expertise"})
 		return result, err
@@ -459,6 +461,17 @@ func (*artifactsSchema) value(ctx context.Context, parent dagql.AnyResult, args 
 			err = srv.Select(ctx, gen, &result, dagql.Selector{Field: "stale"})
 			return result, err
 		}
+	}
+	// A conversation transform is listed without arguments because
+	// composition supplies its conversation. Evaluated on its own, say so
+	// rather than failing on the missing argument.
+	if name := core.ConversationArgument(artifact); name != "" && artifact.LoadFailure == nil &&
+		!slices.ContainsFunc(inputs, func(input dagql.NamedInput) bool { return input.Name == name }) {
+		uri, err := artifact.URI(core.ArtifactURIOpts{DimensionKeys: true})
+		if err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("%s transforms a conversation: compose it with LLM.compose or LLM.spawn(expertise:) through Artifacts.asExpertise, or pass the conversation as its %q argument", uri, name)
 	}
 	if err := evaluateArtifact(ctx, artifact, &result, inputs...); err != nil {
 		if artifact.TypeName != "Check" {
@@ -737,26 +750,78 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 			result.Entries = append(result.Entries, entry)
 		}
 	}
-	seenFailures := map[string]bool{}
-	for _, failure := range failures {
-		if seenFailures[failure.Name] {
-			continue
-		}
-		seenFailures[failure.Name] = true
-		entry := &core.Artifact{
-			ModuleName: failure.Name, Path: []string{failure.Name, "load"}, DimensionKeys: []*core.ArtifactDimensionKey{},
-			Directives: []string{"check"}, TypeName: "Check", LoadFailure: &failure, Workspace: parent,
-		}
+	for _, entry := range loadFailureArtifacts(parent, cfg, entrypoints, mods, failures) {
 		loaded = append(loaded, entry)
 		result.Entries = append(result.Entries, entry)
 	}
 	result.AllDimensions = (&core.Artifacts{Entries: loaded}).DimensionDefinitions()
+	result.AllPaths = (&core.Artifacts{Entries: loaded}).PathIndex()
 	result.NameEntries()
+	skipped, err := workspaceSkippedPaths(ctx, result, mods, cfg)
+	if err != nil {
+		return nil, err
+	}
+	result.Entries = slices.DeleteFunc(result.Entries, func(entry *core.Artifact) bool {
+		return entry.LoadFailure == nil && skipped[strings.Join(entry.Path, "/")]
+	})
 	slices.SortFunc(result.Entries, func(a, b *core.Artifact) int { return slices.Compare(a.Path, b.Path) })
 	if err := validateArtifactPaths(result.Entries); err != nil {
 		return nil, err
 	}
 	return result, nil
+}
+
+// loadFailureArtifacts stands each module that failed to load up as a
+// <module>/load check, named like the module's artifacts would be.
+func loadFailureArtifacts(
+	parent dagql.ObjectResult[*core.Workspace],
+	cfg *workspace.Config,
+	entrypoints map[string]bool,
+	mods []dagql.ObjectResult[*core.Module],
+	failures []core.ModuleLoadFailure,
+) []*core.Artifact {
+	// An entrypoint's shorthand paths cannot start with another module's
+	// address name. Name every module the workspace has, not only those the
+	// include patterns loaded.
+	var moduleNames []string
+	addModule := func(name string) {
+		if name := core.ArtifactTypeName(name); !slices.Contains(moduleNames, name) {
+			moduleNames = append(moduleNames, name)
+		}
+	}
+	for name := range cfg.Modules {
+		addModule(name)
+	}
+	for name := range entrypoints {
+		addModule(name)
+	}
+	for _, mod := range mods {
+		addModule(mod.Self().Name())
+	}
+	for _, failure := range failures {
+		addModule(failure.Name)
+	}
+	slices.Sort(moduleNames)
+	var entries []*core.Artifact
+	seen := map[string]bool{}
+	for _, failure := range failures {
+		if seen[failure.Name] {
+			continue
+		}
+		seen[failure.Name] = true
+		name := core.ArtifactTypeName(failure.Name)
+		// The loader reports whether the failed module is the entrypoint;
+		// the policy that names healthy entrypoints covers the rest.
+		if failure.Entrypoint || entrypoints[failure.Name] {
+			failure.Entrypoint = true
+			failure.Siblings = slices.DeleteFunc(slices.Clone(moduleNames), func(sibling string) bool { return sibling == name })
+		}
+		entries = append(entries, &core.Artifact{
+			ModuleName: failure.Name, Path: []string{name, "load"}, DimensionKeys: []*core.ArtifactDimensionKey{},
+			Directives: []string{"check"}, TypeName: "Check", LoadFailure: &failure, Workspace: parent,
+		})
+	}
+	return entries
 }
 
 func (s *workspaceSchema) sdkArtifactNodes(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], cfg *workspace.Config, entrypoints map[string]bool) ([]*core.ModTreeNode, error) {
@@ -822,6 +887,13 @@ func (*artifactsSchema) description(_ context.Context, parent *core.Artifact, _ 
 	return parent.Description(), nil
 }
 
+func (*artifactsSchema) artifactWorkspace(_ context.Context, parent *core.Artifact, _ struct{}) (dagql.Nullable[dagql.ObjectResult[*core.Workspace]], error) {
+	if parent.Workspace.Self() == nil {
+		return dagql.Null[dagql.ObjectResult[*core.Workspace]](), nil
+	}
+	return dagql.NonNull(parent.Workspace), nil
+}
+
 // Keep planned artifacts in the query graph so value evaluation, remote
 // execution, and saved result IDs all refer to the same batch selection.
 func (*artifactsSchema) evaluationItems(ctx context.Context, parent *core.Artifacts, _ struct{}) ([]*core.Artifact, error) {
@@ -863,7 +935,10 @@ func (s *artifactsSchema) values(ctx context.Context, parent dagql.ObjectResult[
 	}
 	for i, selected := range selection {
 		artifact := selected.Self()
-		uri, err := artifact.URI(core.ArtifactURIOpts{DimensionKeys: true})
+		// Spans carry the projected address, as `dagger list` prints it: a
+		// short type key, and a batch of a whole collection named by its
+		// parent keys. The value is still selected by the full address.
+		name, err := artifact.URI(core.ArtifactURIOpts{DimensionKeys: true})
 		if err != nil {
 			return nil, err
 		}
@@ -874,17 +949,17 @@ func (s *artifactsSchema) values(ctx context.Context, parent dagql.ObjectResult[
 		if artifact.TypeName == "Check" {
 			// Name every check span by its dag:// address, whether it runs here or
 			// scales out to a cloud engine, so CI suggestions reference the address.
-			attrs = append(attrs, attribute.String(telemetry.CheckNameAttr, uri))
+			attrs = append(attrs, attribute.String(telemetry.CheckNameAttr, name))
 		}
 		if slices.Contains(artifact.Directives, "generate") {
-			attrs = append(attrs, attribute.String(telemetry.GeneratorNameAttr, uri))
+			attrs = append(attrs, attribute.String(telemetry.GeneratorNameAttr, name))
 		}
 		group := &localJobs
 		if artifact.TypeName == "Check" && !localCheck {
 			group = &remoteJobs
 		}
-		*group = group.WithJob(uri, func(ctx context.Context) error {
-			ctx = core.WithCheckName(ctx, uri)
+		*group = group.WithJob(name, func(ctx context.Context) error {
+			ctx = core.WithCheckName(ctx, name)
 			srv, err := core.CurrentDagqlServer(ctx)
 			if err == nil {
 				// Keep the value's subtree visible, including deferred execution logs.
@@ -969,7 +1044,33 @@ func (*artifactsSchema) loadError(_ context.Context, artifact *core.Artifact, _ 
 }
 
 func (*artifactsSchema) asExpertise(ctx context.Context, parent dagql.ObjectResult[*core.Artifacts], _ struct{}) (dagql.ObjectResultArray[*core.Expertise], error) {
-	return artifactValuesAs[*core.Expertise](ctx, parent)
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var items dagql.ObjectResultArray[*core.Artifact]
+	if err := srv.Select(ctx, parent, &items, dagql.Selector{Field: "items"}); err != nil {
+		return nil, err
+	}
+	// Validate every signature before creating any entry. Artifact types still
+	// reflect return types; an explicit selection may include plain LLM transforms.
+	for _, item := range items {
+		// A broken module under the selection fails with its load error, not
+		// as an artifact that is not a source of expertise.
+		if failure := item.Self().LoadFailure; failure != nil {
+			return nil, fmt.Errorf("%s", failure.Message)
+		}
+		if _, err := core.NewExpertise(item.Self()); err != nil {
+			return nil, err
+		}
+	}
+	entries := make(dagql.ObjectResultArray[*core.Expertise], len(items))
+	for i, item := range items {
+		if err := srv.Select(ctx, item, &entries[i], dagql.Selector{Field: "__expertise"}); err != nil {
+			return nil, err
+		}
+	}
+	return entries, nil
 }
 func (*artifactsSchema) asGenerators(ctx context.Context, parent dagql.ObjectResult[*core.Artifacts], _ struct{}) (dagql.ObjectResultArray[*core.Generator], error) {
 	return artifactValuesAs[*core.Generator](ctx, parent)

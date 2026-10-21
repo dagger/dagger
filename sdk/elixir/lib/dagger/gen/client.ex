@@ -328,6 +328,29 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Format many names at once, for codegen. Returns them in input order.
+
+  > #### Experimental {: .warning}
+  >
+  > "Identifier casing APIs are likely to change."
+  """
+  @spec format_identifiers(t(), [String.t()], Dagger.Casing.t(), [
+          {:acronyms, Dagger.AcronymStyle.t() | nil},
+          {:version, String.t() | nil}
+        ]) :: {:ok, [String.t()]} | {:error, term()}
+  def format_identifiers(%__MODULE__{} = client, names, casing, optional_args \\ []) do
+    query_builder =
+      client.query_builder
+      |> QB.select("formatIdentifiers")
+      |> QB.put_arg("names", names)
+      |> QB.put_arg("casing", casing)
+      |> QB.maybe_put_arg("acronyms", optional_args[:acronyms])
+      |> QB.maybe_put_arg("version", optional_args[:version])
+
+    Client.execute(client.client, query_builder)
+  end
+
+  @doc """
   Creates a function.
   """
   @spec function(t(), String.t(), Dagger.TypeDef.t()) :: Dagger.Function.t()
@@ -477,6 +500,26 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Parse a name in any casing into words.
+
+  Known acronyms and terms come from the naming dictionary; everything else falls back to the case heuristic. Errors on non-ASCII input, input with no letters or digits, or input over 256 bytes.
+
+  > #### Experimental {: .warning}
+  >
+  > "Identifier casing APIs are likely to change."
+  """
+  @spec identifier(t(), String.t()) :: Dagger.Identifier.t()
+  def identifier(%__MODULE__{} = client, name) do
+    query_builder =
+      client.query_builder |> QB.select("identifier") |> QB.put_arg("name", name)
+
+    %Dagger.Identifier{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   Initialize a JSON value
   """
   @spec json(t()) :: Dagger.JSONValue.t()
@@ -570,6 +613,33 @@ defmodule Dagger.Client do
       query_builder: query_builder,
       client: client.client
     }
+  end
+
+  @doc """
+  The acronyms and terms used to parse and format identifiers.
+
+  > #### Experimental {: .warning}
+  >
+  > "Identifier casing APIs are likely to change."
+  """
+  @spec naming_dictionary(t()) :: {:ok, [Dagger.NamingTerm.t()]} | {:error, term()}
+  def naming_dictionary(%__MODULE__{} = client) do
+    query_builder =
+      client.query_builder |> QB.select("namingDictionary") |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(client.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.NamingTerm{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("NamingTerm"),
+           client: client.client
+         }
+       end}
+    end
   end
 
   @doc """

@@ -35,6 +35,10 @@ type ModTreeNode struct {
 	CollectionKey       *string
 	// CollectionKeys selects the subset used by an implicit batch node.
 	CollectionKeys []string
+	// CollectionComplete is set on an item whose expansion kept every key of
+	// its receiver. A batch of such items runs the whole collection, so its
+	// display address can omit the item keys.
+	CollectionComplete bool
 }
 
 func (node *ModTreeNode) Path() ModTreePath {
@@ -555,6 +559,7 @@ type persistedModTreeNode struct {
 	CollectionDimension    *ArtifactDimension `json:"collectionDimension,omitempty"`
 	CollectionKey          *string            `json:"collectionKey,omitempty"`
 	CollectionKeys         []string           `json:"collectionKeys,omitempty"`
+	CollectionComplete     bool               `json:"collectionComplete,omitempty"`
 	RootValueResultID      uint64             `json:"rootValueResultID,omitempty"`
 	ID                     int                `json:"id"`
 	ParentID               int                `json:"parentID,omitempty"`
@@ -605,6 +610,7 @@ func (enc *persistedModTreeEncoder) Add(node *ModTreeNode) (int, error) {
 		CollectionDimension: node.CollectionDimension,
 		CollectionKey:       node.CollectionKey,
 		CollectionKeys:      node.CollectionKeys,
+		CollectionComplete:  node.CollectionComplete,
 		ID:                  id,
 		ParentID:            parentID,
 		Name:                node.Name,
@@ -658,6 +664,7 @@ func decodePersistedModTree(ctx context.Context, dec *dagql.PersistDecodeContext
 			CollectionDimension: persisted.CollectionDimension,
 			CollectionKey:       persisted.CollectionKey,
 			CollectionKeys:      persisted.CollectionKeys,
+			CollectionComplete:  persisted.CollectionComplete,
 			Name:                persisted.Name,
 			Description:         persisted.Description,
 			Directives:          persisted.Directives,

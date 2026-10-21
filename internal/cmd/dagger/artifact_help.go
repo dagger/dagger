@@ -45,7 +45,7 @@ func artifactCommandFlags(cmd *cobra.Command) string {
 	flags.AddFlagSet(inheritedFlags(cmd))
 	groups := map[string]*pflag.FlagSet{}
 	flags.VisitAll(func(flag *pflag.Flag) {
-		if flag.Hidden || flag.Name == "failfast" {
+		if flag.Hidden || flag.Name == "fail-fast" {
 			return
 		}
 		copy := *flag

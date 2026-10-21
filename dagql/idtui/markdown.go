@@ -3,9 +3,11 @@ package idtui
 import (
 	"bytes"
 	"html"
+	"reflect"
+	"strconv"
 	"strings"
 
-	glamouransi "github.com/charmbracelet/glamour/ansi"
+	glamouransi "charm.land/glamour/v2/ansi"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/cellbuf"
 	"github.com/muesli/termenv"
@@ -29,7 +31,7 @@ func renderMarkdown(content string, width int, style glamouransi.StyleConfig, ru
 		width = 80
 	}
 	opts := glamouransi.Options{
-		WordWrap: width, Styles: style, ColorProfile: termenv.ANSI,
+		WordWrap: width, Styles: ansiStyleConfig(style),
 		ChromaFormatter: "terminal16", PreserveNewLines: true,
 	}
 	r := &markdownTableRenderer{base: glamouransi.NewRenderer(opts), options: opts, width: width, ruleColor: ruleColor}
@@ -65,6 +67,44 @@ func renderMarkdown(content string, width int, style glamouransi.StyleConfig, ru
 
 // markdownTabWidth matches the diff view's tab stops.
 const markdownTabWidth = diffTabWidth
+
+// ansiStyleConfig maps every style color onto the terminal's 16-color
+// palette, so Markdown follows the user's theme like the rest of the TUI.
+// Glamour v2 emits style colors verbatim and leaves downsampling to the
+// output, but rendered Markdown also embeds colors that must survive as they
+// are (blended table rules), so convert the style rather than the output.
+// Code blocks are colored by Chroma's terminal16 formatter instead.
+func ansiStyleConfig(style glamouransi.StyleConfig) glamouransi.StyleConfig {
+	ansiStyleColors(reflect.ValueOf(&style).Elem())
+	return style
+}
+
+func ansiStyleColors(v reflect.Value) {
+	for i := 0; i < v.NumField(); i++ {
+		field := v.Field(i)
+		switch {
+		case field.Kind() == reflect.Struct:
+			ansiStyleColors(field)
+		case field.Type() == reflect.TypeFor[*string]() && !field.IsNil():
+			switch v.Type().Field(i).Name {
+			case "Color", "BackgroundColor":
+				// Replace the pointer rather than its target: it is shared
+				// with the caller's style.
+				converted := ansiColorString(*field.Interface().(*string))
+				field.Set(reflect.ValueOf(&converted))
+			}
+		}
+	}
+}
+
+func ansiColorString(s string) string {
+	// Convert with termenv, as glamour v1 did, so colors land on the same
+	// palette entries as before (x/ansi's 16-color conversion differs).
+	if c, ok := termenv.ANSI.Color(s).(termenv.ANSIColor); ok {
+		return strconv.Itoa(int(c))
+	}
+	return s
+}
 
 // expandCodeBlockTabs replaces the tabs inside code blocks with spaces, with
 // tab stops counted from the start of the code rather than from wherever the

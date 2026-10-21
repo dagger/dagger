@@ -71,6 +71,7 @@ func TestSessionHelperStatus(t *testing.T) {
 		want   string
 	}{
 		{"exited 3\n", "the Dagger session helper in this container exited with status 3"},
+		{"exited 1 \"failed to connect to session server: connection refused\\n\"\n", "the Dagger session helper in this container exited with status 1: failed to connect to session server: connection refused"},
 		{"start-failed failed to start session subprocess: fork/exec /proc/self/exe: no such file or directory\n", "the Dagger session helper in this container failed to start: failed to start session subprocess"},
 	} {
 		status, err := newSessionHelperStatus()

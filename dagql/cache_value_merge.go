@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"sync/atomic"
 	"time"
 )
 
@@ -47,24 +48,96 @@ import (
 // The reply reports every target as the commit left it, read under the same
 // lock, with the cache's generation and clock. Merge runs in no session and
 // emits no span.
+//
+// MergeValues is PrepareValueMerge then CommitValueMerge. A caller that holds
+// a lock of its own across a merge can call them apart, and prepare outside
+// that lock.
 func (c *Cache) MergeValues(ctx context.Context, from CacheID, input ValueBundle) (MergeReply, error) {
+	p, err := c.PrepareValueMerge(ctx, from, input)
+	if err != nil {
+		return MergeReply{}, err
+	}
+	return c.CommitValueMerge(ctx, p)
+}
+
+// PreparedValueMerge is a merge prepared for one cache and sending cache,
+// waiting for its one terminal action: CommitValueMerge, or Release when it
+// won't be committed. Until then it holds a cache operation, so the cache
+// doesn't close under it, and the prepared bundle, whose memory grows with
+// the input's. The cache bounds neither how many prepared merges are open nor
+// how long one waits, as it bounds no caller's concurrent MergeValues: the
+// caller that prepares merges ahead of committing them bounds them.
+type PreparedValueMerge struct {
+	cache *Cache
+	from  CacheID
+	// input is the bundle as sent, for the commit to prepare in full again
+	// if it installs a light record after all. Only an engine prepares
+	// light records, and only then is input kept.
+	input ValueBundle
+	prep  *valueMergePrep
+	op    cacheOperation
+	// ended is set once, by the terminal action.
+	ended atomic.Bool
+}
+
+// errValueMergeEnded is CommitValueMerge's answer for a prepared merge whose
+// terminal action has already run.
+var errValueMergeEnded = errors.New("commit value merge: the prepared merge has ended")
+
+// PrepareValueMerge prepares a merge of input, from the cache from, as
+// MergeValues does before it decides: it clones and validates the bundle,
+// reserves the records' numbers, derives each record's identity, and decodes
+// and validates every payload the merge will install. It takes egraphMu only
+// to reserve the numbers and, on an engine, to read which records merge would
+// keep. input must not change until the prepared merge's terminal action.
+//
+// A preparation that fails, or whose context is cancelled, returns no
+// prepared merge.
+func (c *Cache) PrepareValueMerge(ctx context.Context, from CacheID, input ValueBundle) (*PreparedValueMerge, error) {
 	switch {
 	case from == "":
-		return MergeReply{}, fmt.Errorf("merge values: no sending cache")
+		return nil, fmt.Errorf("merge values: no sending cache")
 	case c.blobBacked && from == cloudCacheID:
-		return MergeReply{}, fmt.Errorf("merge values: the Cloud merges from engine caches")
+		return nil, fmt.Errorf("merge values: the Cloud merges from engine caches")
 	case !c.blobBacked && from != cloudCacheID:
-		return MergeReply{}, fmt.Errorf("merge values: an engine merges only from the Cloud, not %q", from)
+		return nil, fmt.Errorf("merge values: an engine merges only from the Cloud, not %q", from)
 	}
 	op, err := c.beginCacheOperation()
 	if err != nil {
-		return MergeReply{}, err
+		return nil, err
 	}
-	defer op.finish(false)
 	prep, err := c.prepareValueMerge(ctx, input, true)
 	if err != nil {
-		return MergeReply{}, err
+		op.finish(false)
+		return nil, err
 	}
+	p := &PreparedValueMerge{cache: c, from: from, prep: prep, op: op}
+	if len(prep.light) > 0 {
+		p.input = input
+	}
+	return p, nil
+}
+
+// CommitValueMerge commits a prepared merge as MergeValues does: it selects
+// warming targets under egraphMu.RLock, releases it before capturing their
+// complete parts, waits for attachments, decides under egraphMu by the cache
+// as it stands, prepares in full again outside egraphMu when the decision
+// installs a light record, commits, and runs the commit's finish, with
+// MergeValues' committed-with-error result. It is the prepared merge's
+// terminal action whatever it returns, but for a prepared merge of another
+// cache, which it refuses and leaves to its owner.
+func (c *Cache) CommitValueMerge(ctx context.Context, p *PreparedValueMerge) (MergeReply, error) {
+	switch {
+	case p == nil:
+		return MergeReply{}, errors.New("commit value merge: no prepared merge")
+	case p.cache != c:
+		return MergeReply{}, errors.New("commit value merge: the merge was prepared for another cache")
+	case !p.ended.CompareAndSwap(false, true):
+		return MergeReply{}, errValueMergeEnded
+	}
+	defer p.op.finish(false)
+	from, input, prep := p.from, p.input, p.prep
+	p.input, p.prep = ValueBundle{}, nil
 	// Reading an entry's complete parts captures its record, which needs the
 	// graph lock free. The reply reads them back only while that capture
 	// still describes the entry's value.
@@ -108,6 +181,19 @@ func (c *Cache) MergeValues(ctx context.Context, from CacheID, input ValueBundle
 		}
 		return reply, err
 	}
+}
+
+// Release is a prepared merge's terminal action when it won't be committed:
+// it drops the prepared bundle and ends the cache operation. The numbers the
+// preparation reserved stay unused, as gaps: the counter isn't rewound. After
+// the terminal action, and on a nil prepared merge, Release does nothing, so
+// a caller can defer it.
+func (p *PreparedValueMerge) Release() {
+	if p == nil || !p.ended.CompareAndSwap(false, true) {
+		return
+	}
+	p.input, p.prep = ValueBundle{}, nil
+	p.op.finish(false)
 }
 
 // MergeReply is what a merge committed, read under the lock that committed it.
@@ -218,6 +304,9 @@ var errMergeNeedsFullPrep = errors.New("merge values: a light record is installe
 // doesn't install it. Its payload is neither validated by its codec nor
 // relocated; its shape, its call's references and its offers' are checked
 // (validateTransferRecordShape).
+//
+// It returns ctx's cause when ctx is cancelled: it checks before each payload
+// and once more at the end.
 func (c *Cache) prepareValueMerge(ctx context.Context, input ValueBundle, skipKept bool) (*valueMergePrep, error) {
 	bundle, err := cloneValueBundle(input)
 	if err != nil {
@@ -340,14 +429,33 @@ func (c *Cache) prepareValueMerge(ctx context.Context, input ValueBundle, skipKe
 		prep.light = c.keptMergeRecords(prep)
 	}
 	// Every other record is prepared with its payload.
-	for _, id := range order {
-		if !prep.light[id] {
-			if err := prep.prepareRecordPayload(id, relocate); err != nil {
-				return nil, err
-			}
-		}
+	if err := prep.prepareRecordPayloads(ctx, relocate); err != nil {
+		return nil, err
+	}
+	// A preparation cancelled after its last payload, or with every record
+	// light, returns its cause all the same.
+	if err := context.Cause(ctx); err != nil {
+		return nil, err
 	}
 	return prep, nil
+}
+
+// prepareRecordPayloads prepares every record but a light one with its
+// payload (prepareRecordPayload), in dependency order. It returns ctx's cause
+// when ctx is cancelled before a payload.
+func (prep *valueMergePrep) prepareRecordPayloads(ctx context.Context, relocate PersistedRefVisitor) error {
+	for _, id := range prep.order {
+		if prep.light[id] {
+			continue
+		}
+		if err := context.Cause(ctx); err != nil {
+			return err
+		}
+		if err := prep.prepareRecordPayload(id, relocate); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // prepareRecordPayload validates the record of ordinal id with its payload,
@@ -990,6 +1098,7 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 		change   RemoteChange
 		created  collectionQueue
 	)
+	committedAt := time.Now().UnixNano()
 
 	// The values.
 	for _, row := range commit.rows {
@@ -1000,19 +1109,19 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 			c.retireResultLocked(row.target)
 			fallthrough
 		case mergeCreate:
-			c.installMergedRecordLocked(row.res, row)
+			c.installMergedRecordLocked(row.res, row, committedAt)
 			c.putResultLocked(row.res)
 			row.res.onRelease = c.resultSnapshotLeaseCleanup(row.res)
 			c.indexRecipeLocked(row.plan.recipe, row.res)
 			created = append(created, row.res)
 		case mergeStore:
-			c.installMergedRecordLocked(row.res, row)
+			c.installMergedRecordLocked(row.res, row, committedAt)
 			if row.res.onRelease == nil {
 				row.res.onRelease = c.resultSnapshotLeaseCleanup(row.res)
 			}
 		case mergeReplace:
 			fresh := &sharedResult{}
-			c.installMergedRecordLocked(fresh, row)
+			c.installMergedRecordLocked(fresh, row, committedAt)
 			old, more, err := c.replaceResultValueInPlaceLocked(ctx, row.res, fresh, row.value.ExpiresAtUnix)
 			queue = append(queue, more...)
 			errs = errors.Join(errs, err)
@@ -1150,11 +1259,15 @@ type mergeReplacement struct {
 }
 
 // installMergedRecordLocked gives res the row's relocated record as its
-// value: stored and not decoded. res is a new entry, an entry with no value,
-// or the fresh value of a replacement. Requires egraphMu for writing.
-func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow) {
+// value: stored and not decoded, from the merge that commits at committedAt.
+// res is a new entry, an entry with no value, or the fresh value of a
+// replacement. Requires egraphMu for writing.
+func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow, committedAt int64) {
 	rec := row.rec
 	res.imported = true
+	if !c.blobBacked {
+		res.mergedAtUnixNano = committedAt
+	}
 	res.storedRecordBytes = row.recordBytes
 	res.expiresAtUnix = row.value.ExpiresAtUnix
 	res.sessionResourceHandle = rec.Envelope.SessionResourceHandle
@@ -1362,12 +1475,22 @@ func recordCompletePartKeys(record PersistedRecord) []string {
 // under the lock: those its value's last captured record reports, while that
 // capture still describes the value, and those its part gate has settled.
 func completePartKeysLocked(res *sharedResult) []string {
+	keys, _ := completePartKeysCoverageLocked(res)
+	return keys
+}
+
+// completePartKeysCoverageLocked is completePartKeysLocked, also reporting
+// whether a current capture of the value's record was among its sources:
+// without one, the keys are only the settled subset.
+func completePartKeysCoverageLocked(res *sharedResult) ([]string, bool) {
 	keys := res.settledPartKeys()
-	if cached := res.completeParts.Load(); cached != nil && cached.stamp.current(res) {
+	cached := res.completeParts.Load()
+	current := cached != nil && cached.stamp.current(res)
+	if current {
 		keys = append(keys, cached.keys...)
 	}
 	slices.Sort(keys)
-	return slices.Compact(keys)
+	return slices.Compact(keys), current
 }
 
 // failMergedEntryLocked takes back an entry whose merged value met an
@@ -1379,6 +1502,7 @@ func completePartKeysLocked(res *sharedResult) []string {
 func (c *Cache) failMergedEntryLocked(ctx context.Context, res *sharedResult, queue collectionQueue) collectionQueue {
 	if c.blobBacked {
 		res.storedRecordBytes = 0
+		res.storedTransfer.Store(nil)
 		res.payloadMu.Lock()
 		res.persistedEnvelope = nil
 		res.hasValue = false

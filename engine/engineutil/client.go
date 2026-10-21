@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"time"
 
 	contentapi "github.com/containerd/containerd/api/services/content/v1"
 	imagesapi "github.com/containerd/containerd/api/services/images/v1"
@@ -927,12 +928,28 @@ func (c *Client) OpenTerminal(
 		// terminal startup fails immediately
 		return nil, fmt.Errorf("failed to open terminal: %w", err)
 	}
+	return newTerminalClient(ctx, term)
+}
 
+// terminalCloseTimeout bounds how long closing a terminal waits for the client
+// to process the rest of the session. A variable so tests can shorten it.
+var terminalCloseTimeout = 5 * time.Second
+
+func newTerminalClient(ctx context.Context, term terminal.Terminal_SessionClient) (*TerminalClient, error) {
 	var (
 		stdoutR, stdoutW = io.Pipe()
 		stderrR, stderrW = io.Pipe()
 		stdinR, stdinW   = io.Pipe()
 	)
+
+	// A gRPC stream must not be sent on from several goroutines at once, and
+	// the output forwarders and Close all send.
+	var sendMu sync.Mutex
+	send := func(req *terminal.SessionRequest) error {
+		sendMu.Lock()
+		defer sendMu.Unlock()
+		return term.Send(req)
+	}
 
 	forwardFD := func(r io.ReadCloser, fn func([]byte) *terminal.SessionRequest) error {
 		defer r.Close()
@@ -946,23 +963,30 @@ func (c *Client) OpenTerminal(
 				return fmt.Errorf("error reading fd: %w", err)
 			}
 
-			if err := term.Send(fn(b[:n])); err != nil {
+			if err := send(fn(b[:n])); err != nil {
 				return fmt.Errorf("error forwarding fd: %w", err)
 			}
 		}
 	}
 
-	go forwardFD(stdoutR, func(stdout []byte) *terminal.SessionRequest {
-		return &terminal.SessionRequest{
-			Msg: &terminal.SessionRequest_Stdout{Stdout: stdout},
-		}
-	})
-
-	go forwardFD(stderrR, func(stderr []byte) *terminal.SessionRequest {
-		return &terminal.SessionRequest{
-			Msg: &terminal.SessionRequest_Stderr{Stderr: stderr},
-		}
-	})
+	var forwarders sync.WaitGroup
+	forwarders.Add(2)
+	go func() {
+		defer forwarders.Done()
+		forwardFD(stdoutR, func(stdout []byte) *terminal.SessionRequest {
+			return &terminal.SessionRequest{
+				Msg: &terminal.SessionRequest_Stdout{Stdout: stdout},
+			}
+		})
+	}()
+	go func() {
+		defer forwarders.Done()
+		forwardFD(stderrR, func(stderr []byte) *terminal.SessionRequest {
+			return &terminal.SessionRequest{
+				Msg: &terminal.SessionRequest_Stderr{Stderr: stderr},
+			}
+		})
+	}()
 
 	resizeCh := make(chan bkgw.WinSize, 1)
 
@@ -986,8 +1010,12 @@ func (c *Client) OpenTerminal(
 	}
 
 	errCh := make(chan error, 1)
+	recvDone := make(chan struct{})
+	closing := make(chan struct{})
 	go func() {
+		defer close(recvDone)
 		defer stdinW.Close()
+		stdinDone := false
 		defer close(errCh)
 		defer close(resizeCh)
 		for {
@@ -1001,16 +1029,30 @@ func (c *Client) OpenTerminal(
 			}
 			switch msg := res.GetMsg().(type) {
 			case *terminal.SessionResponse_Stdin:
-				_, err := stdinW.Write(msg.Stdin)
-				if err != nil {
-					slog.WarnContext(ctx, "failed to write stdin", "err", err)
-					errCh <- err
-					return
+				if stdinDone {
+					break
+				}
+				if _, err := stdinW.Write(msg.Stdin); err != nil {
+					// Stop forwarding input but keep receiving: the session
+					// is over only when the client ends it. A closed pipe
+					// just means the process no longer reads its input.
+					stdinDone = true
+					if !errors.Is(err, io.ErrClosedPipe) {
+						slog.WarnContext(ctx, "failed to write stdin", "err", err)
+						select {
+						case errCh <- err:
+						default:
+						}
+					}
 				}
 			case *terminal.SessionResponse_Resize:
-				resizeCh <- bkgw.WinSize{
+				select {
+				case resizeCh <- bkgw.WinSize{
 					Rows: uint32(msg.Resize.Height),
 					Cols: uint32(msg.Resize.Width),
+				}:
+				case <-closing:
+					// nothing reads resizes once the session is closing
 				}
 			default:
 			}
@@ -1024,16 +1066,32 @@ func (c *Client) OpenTerminal(
 		ErrCh:    errCh,
 		ResizeCh: resizeCh,
 		Close: onceValueWithArg(func(exitCode int) error {
-			defer stdinR.Close()
-			defer stdoutW.Close()
-			defer stderrW.Close()
-			defer term.CloseSend()
+			close(closing)
+			// Unblock a pending input write, so receiving the rest of the
+			// session can't stall on input nothing reads anymore.
+			stdinR.Close()
 
-			err := term.Send(&terminal.SessionRequest{
+			// The client stops reading at the exit message, so send all
+			// output first.
+			stdoutW.Close()
+			stderrW.Close()
+			forwarders.Wait()
+
+			err := send(&terminal.SessionRequest{
 				Msg: &terminal.SessionRequest_Exit{Exit: int32(exitCode)},
 			})
+			term.CloseSend()
 			if err != nil {
 				return fmt.Errorf("failed to close terminal: %w", err)
+			}
+			// Sending only queues the output and the exit message. Wait for
+			// the client to process them and end the session: as soon as this
+			// returns, the terminal call can complete, and a client that sees
+			// it complete shuts down and drops the session's unread messages.
+			select {
+			case <-recvDone:
+			case <-time.After(terminalCloseTimeout):
+				slog.WarnContext(ctx, "terminal client did not end the session", "timeout", terminalCloseTimeout)
 			}
 			return nil
 		}),

@@ -159,6 +159,13 @@ func (fn *ModuleFunction) cacheImplicitInputs() []dagql.ImplicitInput {
 	return implicitInputs
 }
 
+func (fn *ModuleFunction) explicitCacheTTLSeconds() int64 {
+	if fn.metadata.derivedCachePolicy(fn.mod.Self()) != FunctionCachePolicyDefault || !fn.metadata.CacheTTLSeconds.Valid {
+		return 0
+	}
+	return fn.metadata.CacheTTLSeconds.Value.Int64()
+}
+
 // cachePolicyNever reports whether an installed field has cache policy Never,
 // reading back what cacheImplicitInputs recorded: dagql.PerCallInput, which
 // makes every call a fresh evaluation.
@@ -666,6 +673,13 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 	view call.View,
 	req *dagql.CallRequest,
 ) error {
+	// The agent spawn is composing is deliberately NOT stamped here: it is a
+	// fresh random handle per spawn, so recording it would make every module
+	// call made during composition (tool constructors, helpers) miss the cache
+	// on every spawn. Lineage instead follows execution (see
+	// WithComposingAgent): a spawn that runs during composition gets the
+	// composing agent as parent, while a cache-hit call that spawned when it
+	// first ran is not re-run and keeps naming that first child.
 	var ctxArgs []*FunctionArg
 	var workspaceArgs []*FunctionArg
 	var userDefaults []*UserDefault
@@ -1057,9 +1071,11 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		Parent:    parentJSON,
 		InputArgs: callInputs,
 	})
+	fnCall.composingAgentHandle = composingAgentHandle(ctx)
 	if fn.objDef != nil {
 		fnCall.ParentName = fn.objDef.OriginalName
 	}
+	fnCall.cacheTTLSeconds = fn.explicitCacheTTLSeconds()
 	// Carry the receiver object (with its dagql ID) engine-side so the module can
 	// reach it via Query.currentNode. It rides the fnCall by reference into the
 	// nested client session (ServeHTTPToNestedClient) for both in-process and

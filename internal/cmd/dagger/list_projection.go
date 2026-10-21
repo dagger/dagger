@@ -52,10 +52,6 @@ func omitCollectionTypeKeys(items []listedArtifact, paths []artifactListPath) er
 		if !item.CollectionItem {
 			continue
 		}
-		addr, err := dagaddress.Parse(item.URI)
-		if err != nil {
-			return err
-		}
 		var dimensions []string
 		for _, key := range itemDimensionFilters(item) {
 			if !strings.HasPrefix(key.Dimension, "type:") {
@@ -67,7 +63,7 @@ func omitCollectionTypeKeys(items []listedArtifact, paths []artifactListPath) er
 		}
 		slices.Sort(dimensions)
 		dimensions = slices.Compact(dimensions)
-		itemPath := addr.ArtifactPath(addr.Types...)
+		itemPath := item.fullPath()
 		cacheKey := itemPath + "\x00" + strings.Join(dimensions, "\x00")
 		if omit, ok := cache[cacheKey]; ok {
 			items[i].OmitTypeKey = omit

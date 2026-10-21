@@ -91,7 +91,7 @@ func (c *Cache) StoredBundle(ctx context.Context, roots []uint64) (StoredBundleR
 			return StoredBundleResult{}, err
 		}
 	}
-	if _, err := validateValueBundle(build.bundle); err != nil {
+	if err := validateStoredBundle(build.bundle); err != nil {
 		return StoredBundleResult{}, fmt.Errorf("stored bundle: %w", err)
 	}
 	out.Bundle, out.Donors = build.bundle, build.donors
@@ -166,22 +166,96 @@ func (c *Cache) storedBundleVisitLocked(build *storedBundleBuild, res *sharedRes
 // storedBundleValueLocked copies res's stored record into the build,
 // normalized for transfer and relocated to ordinals. Requires egraphMu.
 func (c *Cache) storedBundleValueLocked(build *storedBundleBuild, res *sharedResult) error {
-	normalized, err := normalizeTransferRecord(PersistedRecord{ResultID: uint64(res.id), Envelope: *res.persistedEnvelope, Call: res.loadResultCall()})
+	normalized, err := storedTransferRecordLocked(res)
 	if err != nil {
 		return fmt.Errorf("stored bundle: entry %d: %w", res.id, err)
 	}
-	normalized.Envelope.PendingOffers = nil
-	rec, err := VisitEncodedReferences(normalized, build.relocate)
+	// Relocation leaves what it doesn't rewrite shared with its input, and
+	// the bundle is its caller's to change.
+	normalized.Envelope, err = clonePersistedEnvelope(normalized.Envelope)
 	if err != nil {
 		return fmt.Errorf("stored bundle: entry %d: %w", res.id, err)
 	}
-	value := TransferredValue{Ordinal: build.ordinals[res.id], SenderNumber: uint64(res.id), SenderReplacements: res.replacements, Record: rec, ExpiresAtUnix: res.expiresAtUnix}
+	value := TransferredValue{Ordinal: build.ordinals[res.id], SenderNumber: uint64(res.id), SenderReplacements: res.replacements, ExpiresAtUnix: res.expiresAtUnix}
+	direct := make(map[uint64]bool, len(res.deps))
 	for dep := range res.deps {
-		value.DependencyIDs = append(value.DependencyIDs, uint64(build.ordinals[dep]))
+		ordinal := uint64(build.ordinals[dep])
+		value.DependencyIDs = append(value.DependencyIDs, ordinal)
+		direct[ordinal] = true
 	}
 	slices.Sort(value.DependencyIDs)
+	// The bundle is validated by shape (validateStoredBundle), so each
+	// reference is checked against the record's dependencies here, as it is
+	// relocated.
+	checkDirect := directTransferReferences(direct)
+	value.Record, err = VisitEncodedReferences(normalized, func(ref *PersistedRef) error {
+		if err := build.relocate(ref); err != nil {
+			return err
+		}
+		return checkDirect(ref)
+	})
+	if err != nil {
+		return fmt.Errorf("stored bundle: entry %d: %w", res.id, err)
+	}
 	build.bundle.Values = append(build.bundle.Values, value)
 	return nil
+}
+
+// validateStoredBundle checks a stored bundle by its shape
+// (validateValueBundleShape): every check of the bundle as a whole, and of
+// each record without its payloads. The rest of a record's checks are made
+// as the bundle is built: its payloads are validated by their codecs and its
+// outputs mapped once for each of its versions, when it is normalized
+// (storedTransferRecordLocked), relocation rewrites only its references, and
+// each reference is checked against its dependencies as it is relocated
+// (storedBundleValueLocked).
+func validateStoredBundle(bundle ValueBundle) error {
+	_, err := validateValueBundleShape(bundle)
+	return err
+}
+
+// storedTransferRecord is an entry's stored record normalized for transfer,
+// without offers, and the envelope and call it was normalized from.
+type storedTransferRecord struct {
+	envelope *PersistedResultEnvelope
+	call     *ResultCall
+	record   PersistedRecord
+}
+
+// storedTransferRecordLocked returns res's stored record normalized for
+// transfer, without offers, and checked as validateStoredBundle relies on.
+// Normalizing reads only the record's envelope and
+// call, which the cache replaces and never changes in place, so the entry
+// keeps the result with them and normalizes again once either is replaced.
+// The kept record holds both, so neither can be freed and another take its
+// address while it is kept. The result is shared: callers copy what they
+// change. Requires egraphMu.
+func storedTransferRecordLocked(res *sharedResult) (PersistedRecord, error) {
+	env, call := res.persistedEnvelope, res.loadResultCall()
+	if kept := res.storedTransfer.Load(); kept != nil && kept.envelope == env && kept.call == call {
+		return kept.record, nil
+	}
+	rec, err := normalizeTransferRecord(PersistedRecord{ResultID: uint64(res.id), Envelope: *env, Call: call})
+	if err != nil {
+		return PersistedRecord{}, err
+	}
+	rec.Envelope.PendingOffers = nil
+	// A build validates its bundle by shape, so the record's payloads are
+	// checked by their codecs, and its outputs mapped, here.
+	if err := validateTransferPayloads(rec); err != nil {
+		return PersistedRecord{}, err
+	}
+	outputs, err := mapTransferredOutputs(rec)
+	if err != nil {
+		return PersistedRecord{}, err
+	}
+	for _, output := range outputs {
+		if _, err := partAddressKey(output.Address); err != nil {
+			return PersistedRecord{}, err
+		}
+	}
+	res.storedTransfer.Store(&storedTransferRecord{envelope: env, call: call, record: rec})
+	return rec, nil
 }
 
 // storedBundleOutputsLocked adds res's outputs to the build: its own stored

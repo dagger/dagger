@@ -135,3 +135,80 @@ func (ContainerSuite) TestNestedDaggerCLI(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\nabsent\n", out)
 	})
 }
+
+func (ContainerSuite) TestNestedDaggerCLIServesChild(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	const queryScript = `wget -q -O- \
+	--header "Authorization: Basic $(printf '%s:' "$DAGGER_SESSION_TOKEN" | base64)" \
+	--header 'Content-Type: application/json' \
+	--post-data '{"query":"{ version }"}' \
+	"http://127.0.0.1:$DAGGER_SESSION_PORT/query"
+`
+	// `dagger session` serves until its stdin closes, so the FIFO's writer
+	// keeps it up until the child is done.
+	const sessionScript = `set -e
+mkfifo /tmp/stdin
+sleep 300 > /tmp/stdin &
+stdin=$!
+dagger session < /tmp/stdin > /tmp/params &
+session=$!
+until [ -s /tmp/params ]; do
+	kill -0 "$session"
+	sleep 0.1
+done
+export DAGGER_SESSION_PORT=$(sed -n 's/.*"port":\([0-9]*\).*/\1/p' /tmp/params)
+export DAGGER_SESSION_TOKEN=$(sed -n 's/.*"session_token":"\([^"]*\)".*/\1/p' /tmp/params)
+rc=0
+"$@" || rc=$?
+kill "$stdin"
+wait "$session"
+exit "$rc"
+`
+	ctr := sdkcore.NewQuery(c).Container().
+		From(alpineImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithNewFile("/query.sh", queryScript).
+		WithNewFile("/session.sh", sessionScript).
+		WithNewFile("/version.graphql", "{ version }").
+		WithEnvVariable("ID", rand.Text())
+
+	for _, nesting := range []struct {
+		name string
+		opts sdkcore.ContainerWithExecOpts
+	}{
+		{"nested session", sdkcore.ContainerWithExecOpts{}},
+		{"new session", sdkcore.ContainerWithExecOpts{DaggerInDaggerNewSession: true}},
+	} {
+		t.Run(nesting.name, func(ctx context.Context, t *testctx.T) {
+			for _, tc := range []struct {
+				name    string
+				args    []string
+				wantErr string
+			}{
+				{"dagger run", []string{"dagger", "run", "sh", "/query.sh"}, ""},
+				{"dagger session", []string{"sh", "/session.sh", "sh", "/query.sh"}, ""},
+				{
+					"dagger run, CLI child",
+					[]string{"dagger", "run", "dagger", "query", "--doc", "/version.graphql"},
+					"connecting a Dagger CLI to the session served by `dagger run` is not supported yet",
+				},
+				{
+					"dagger session, CLI child",
+					[]string{"sh", "/session.sh", "dagger", "query", "--doc", "/version.graphql"},
+					"connecting a Dagger CLI to the session served by `dagger session` is not supported yet",
+				},
+			} {
+				t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+					out, err := ctr.WithExec(tc.args, nesting.opts).Stdout(ctx)
+					if tc.wantErr != "" {
+						requireErrOut(t, err, tc.wantErr)
+						return
+					}
+					require.NoError(t, err)
+					require.Contains(t, out, `{"data":{"version":`)
+				})
+			}
+		})
+	}
+}

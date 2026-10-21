@@ -333,6 +333,61 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		}
 	})
 
+	t.Run("imported host directory projection keeps its digest after restart", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "imported-hash-restart-" + rand.Text()
+		dir := t.TempDir()
+		for _, name := range []string{"before", "warm", "after"} {
+			require.NoError(t, os.Mkdir(filepath.Join(dir, name), 0o755))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, name, "source.txt"), []byte("unchanged source"), 0o644))
+		}
+		clientOpts := []dagger.ClientOpt{dagger.WithWorkdir(dir)}
+		// The random output reveals whether the command executed again.
+		action := func(client *dagger.Client, source *core.Directory) (string, error) {
+			return core.NewQuery(client).Container().From(alpineImage).
+				WithMountedDirectory("/source", source).
+				WithExec([]string{"sh", "-ec", "cat /source/source.txt >/dev/null; cat /proc/sys/kernel/random/uuid"}).
+				Stdout(ctx)
+		}
+
+		upA, tunnelA, a := startEngineWithClientOpts(c, ctx, t, stateKey, clientOpts, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upA, tunnelA, a) })
+		hostA, err := core.NewQuery(a).Host().Directory(".").Sync(ctx)
+		require.NoError(t, err)
+		hostID, err := hostA.ID(ctx)
+		require.NoError(t, err)
+		beforeSource := hostA.Directory("before")
+		beforeDigest, err := beforeSource.Digest(ctx)
+		require.NoError(t, err)
+		beforeToken, err := action(a, beforeSource)
+		require.NoError(t, err)
+		warmToken, err := action(a, hostA.Directory("warm"))
+		require.NoError(t, err)
+		require.Equal(t, beforeToken, warmToken, "identical source projections should reuse the executed action")
+		stopEngine(ctx, t, upA, tunnelA, a)
+		upA, tunnelA, a = nil, nil, nil
+
+		upB, tunnelB, b := startEngineWithClientOpts(c, ctx, t, stateKey, clientOpts, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upB, tunnelB, b) })
+		// Read the restored result by its handle. A fresh host import would
+		// recreate the XXH3 records and hide their loss across the restart.
+		restored := core.Ref[*core.Directory](core.NewQuery(b), hostID)
+		originalToken, err := action(b, restored.Directory("before"))
+		require.NoError(t, err)
+		require.Equal(t, beforeToken, originalToken, "the original action result must survive restart")
+
+		// This projection was never requested before the restart. Its bytes
+		// match the old source, so both its digest and action should match.
+		afterSource := restored.Directory("after")
+		afterDigest, err := afterSource.Digest(ctx)
+		require.NoError(t, err)
+		afterToken, err := action(b, afterSource)
+		require.NoError(t, err)
+		t.Logf("unchanged projection after restart: before digest=%s after digest=%s action reused=%t", beforeDigest, afterDigest, beforeToken == afterToken)
+		require.Equal(t, beforeDigest, afterDigest, "unchanged content should keep its imported digest across restart")
+		require.Equal(t, beforeToken, afterToken, "unchanged content should reuse the action across restart")
+	})
+
 	t.Run("directory and file restore without opening", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		stateKey := "directory-file-" + rand.Text()
@@ -1467,47 +1522,6 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, outA, outB, "always-cached function result should survive engine restart")
-	})
-
-	t.Run("entrypoint resources survive restart", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-		stateKey := "persist-entrypoint-resources-state-" + rand.Text()
-		logs := core.NewQuery(c).CacheVolume("persist-entrypoint-resources-log-" + rand.Text())
-		withLog := func(ctr *core.Container) *core.Container {
-			return ctr.WithMountedCache("/resources-log", logs).
-				WithEntrypoint([]string{"sh", "-c", `exec /usr/local/bin/dagger-entrypoint.sh "$@" 2>>/resources-log/engine.log`, "dagger-engine"})
-		}
-		evaluations := func() int {
-			out, err := core.NewQuery(c).Container().From(alpineImage).WithMountedCache("/resources-log", logs).
-				WithEnvVariable("READ", rand.Text()).
-				WithExec([]string{"sh", "-c", "cat /resources-log/engine.log 2>/dev/null || true"}).
-				Stdout(ctx)
-			require.NoError(t, err)
-			return strings.Count(out, entrypointResourcesEvaluatedLine)
-		}
-		callModule := func(engineClient *dagger.Client) string {
-			out, err := goGitBase(t, engineClient).
-				WithDirectory(".", resourcesModuleFixture(engineClient, sharedResourcesMember)).
-				With(daggerCallAt("./m", "call")).
-				Stdout(ctx)
-			require.NoError(t, err)
-			return out
-		}
-
-		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t), withLog)
-		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
-		outA := callModule(engineClientA)
-		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
-		upstreamSvcA = nil
-		engineSvcA = nil
-		engineClientA = nil
-		require.Equal(t, 1, evaluations())
-
-		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t), withLog)
-		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
-		outB := callModule(engineClientB)
-		require.Equal(t, outA, outB, "the call key survives the restart")
-		require.Equal(t, 1, evaluations(), "the restarted engine reused the persisted resources")
 	})
 
 	t.Run("typescript function cache control survives restart", func(ctx context.Context, t *testctx.T) {

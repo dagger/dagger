@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 
-	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 )
@@ -36,8 +35,5 @@ func NewCommandSampler(cgroupPath string, meter metric.Meter, attrs attribute.Se
 // Sample must run before the command's cgroup is removed, including after exit
 // so short-lived commands retain their final CPU usage and memory peak.
 func (s *CommandSampler) Sample(ctx context.Context) error {
-	// Helpers have span metrics, but no executor identity in the workload
-	// export. Do not emit anonymous availability readings into that stream.
-	ctx = enginetel.WithoutWorkloadReadings(ctx)
 	return errors.Join(s.cpu.sample(ctx), s.current.sample(ctx), s.peak.sample(ctx))
 }

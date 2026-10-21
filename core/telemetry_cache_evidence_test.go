@@ -233,6 +233,93 @@ func TestRecordCacheEvidenceMappingJoinedStampsNoMissFacts(t *testing.T) {
 	assert.Equal(t, 0, len(inputs))
 }
 
+// A hit on a value from the remote cache says so, with the merge's commit
+// time, beside the lookup's own time.
+func TestRecordCacheEvidenceMappingRemoteHit(t *testing.T) {
+	t.Parallel()
+	sr, span := evidenceTestRecordingSpan(t)
+
+	selfDig := digest.FromString("evidence-remote-self")
+	recordCacheEvidence(context.Background(), span, &dagql.CacheDecision{
+		Outcome:               dagql.CacheOutcomeHit,
+		HitRoute:              dagql.CacheHitRouteRecipe,
+		HitRemote:             true,
+		HitMergedAtUnixNano:   1760000000123456789,
+		LookupAtUnixNano:      1760000000987654321,
+		MissUnknownInputIndex: -1,
+		SelfDigest:            selfDig,
+		PairingDigest:         selfDig,
+	}, nil)
+
+	got := evidenceTestCacheAttrs(t, evidenceTestEndedAttrs(t, sr, span))
+	assert.DeepEqual(t, got, map[string]string{
+		telemetryattrs.CacheContractAttr:      telemetryattrs.CacheContractV1,
+		telemetryattrs.CacheOutcomeAttr:       "hit",
+		telemetryattrs.CacheHitRouteAttr:      "recipe",
+		telemetryattrs.CacheHitRemoteAttr:     "true",
+		telemetryattrs.CacheHitMergedAtAttr:   "1760000000123456789",
+		telemetryattrs.CacheLookupAtAttr:      "1760000000987654321",
+		telemetryattrs.CacheSelfDigestAttr:    selfDig.String(),
+		telemetryattrs.CachePairingDigestAttr: selfDig.String(),
+	})
+}
+
+// A serve-time miss stamps its reason on the executed call, and the remote
+// fact of the hit it gave up does not ride along. A call that joined after one
+// stamps neither reason.
+func TestRecordCacheEvidenceMappingServeTimeMiss(t *testing.T) {
+	t.Parallel()
+	selfDig := digest.FromString("evidence-serve-miss-self")
+	for _, tc := range []struct {
+		name    string
+		ev      dagql.CacheDecision
+		reasons map[string]string
+	}{
+		{
+			name:    "producer released",
+			ev:      dagql.CacheDecision{Outcome: dagql.CacheOutcomeExecuted, MissProducerReleased: true},
+			reasons: map[string]string{telemetryattrs.CacheMissProducerReleasedAttr: "true"},
+		},
+		{
+			name:    "requirements grew",
+			ev:      dagql.CacheDecision{Outcome: dagql.CacheOutcomeExecuted, MissRequirementsGrew: true},
+			reasons: map[string]string{telemetryattrs.CacheMissRequirementsGrewAttr: "true"},
+		},
+		{
+			name: "joined",
+			ev:   dagql.CacheDecision{Outcome: dagql.CacheOutcomeJoined, MissProducerReleased: true, MissRequirementsGrew: true},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			sr, span := evidenceTestRecordingSpan(t)
+			ev := tc.ev
+			// Left by the hit the serve gave up.
+			ev.HitRoute = dagql.CacheHitRouteRecipe
+			ev.HitRemote = true
+			ev.HitMergedAtUnixNano = 1760000000123456789
+			ev.LookupAtUnixNano = 1760000000987654321
+			ev.MissUnknownInputIndex = -1
+			ev.SelfDigest = selfDig
+			ev.PairingDigest = selfDig
+			recordCacheEvidence(context.Background(), span, &ev, nil)
+
+			want := map[string]string{
+				telemetryattrs.CacheContractAttr:      telemetryattrs.CacheContractV1,
+				telemetryattrs.CacheOutcomeAttr:       string(tc.ev.Outcome),
+				telemetryattrs.CacheLookupAtAttr:      "1760000000987654321",
+				telemetryattrs.CacheSelfDigestAttr:    selfDig.String(),
+				telemetryattrs.CachePairingDigestAttr: selfDig.String(),
+			}
+			for k, v := range tc.reasons {
+				want[k] = v
+			}
+			got := evidenceTestCacheAttrs(t, evidenceTestEndedAttrs(t, sr, span))
+			assert.DeepEqual(t, got, want)
+		})
+	}
+}
+
 func TestRecordCacheEvidenceMappingUncached(t *testing.T) {
 	t.Parallel()
 	sr, span := evidenceTestRecordingSpan(t)
@@ -413,4 +500,57 @@ func TestRecordCacheEvidenceCacheState(t *testing.T) {
 	assert.Equal(t, attribute.Key(telemetryattrs.CacheDepsAttr), mapped[0].Key)
 	assert.Equal(t, 2, len(mapped), "no retention, expiry or empty parts are stamped")
 	assert.DeepEqual(t, []string{`{"part":"fs"}`}, mapped[1].Value.AsStringSlice())
+}
+
+// evidenceTestChain builds a result whose frame has a receiver chain of n
+// inline calls with an argument each, like a container built up step by step.
+func evidenceTestChain(t testing.TB, n int, content digest.Digest) dagql.AnyResult {
+	t.Helper()
+	var receiver *dagql.ResultCallRef
+	for i := range n {
+		step := evidenceTestFrame("step" + strconv.Itoa(i))
+		step.Receiver = receiver
+		step.Args = []*dagql.ResultCallArg{{Name: "value", Value: &dagql.ResultCallLiteral{Kind: dagql.ResultCallLiteralKindString, StringValue: strings.Repeat("v", 64)}}}
+		receiver = &dagql.ResultCallRef{Call: step}
+	}
+	frame := evidenceTestFrame("final")
+	frame.Receiver = receiver
+	if content != "" {
+		frame.ExtraDigests = []call.ExtraDigest{{Label: call.ExtraDigestLabelContent, Digest: content}}
+	}
+	res, err := dagql.NewResultForCall(dagql.NewInt(1), frame)
+	assert.NilError(t, err)
+	return res
+}
+
+// ResultFrameFacts reads the same facts as cloning the frame with ResultCall,
+// which recordCacheEvidence used to do for every recorded span.
+func TestResultFrameFacts(t *testing.T) {
+	t.Parallel()
+	contentDig := digest.FromString("frame-facts-content")
+	for _, content := range []digest.Digest{"", contentDig} {
+		res := evidenceTestChain(t, 8, content)
+		frame, err := res.ResultCall()
+		assert.NilError(t, err)
+		gotContent, gotType, ok := dagql.ResultFrameFacts(res)
+		assert.Assert(t, ok)
+		assert.Equal(t, frame.ContentDigest(), gotContent)
+		assert.Equal(t, frame.Type.NamedType, gotType)
+		assert.Equal(t, content, gotContent)
+		assert.Equal(t, "Int", gotType)
+	}
+
+	_, _, ok := dagql.ResultFrameFacts(nil)
+	assert.Assert(t, !ok)
+}
+
+func BenchmarkRecordCacheEvidence(b *testing.B) {
+	res := evidenceTestChain(b, 32, digest.FromString("bench-content"))
+	ev := &dagql.CacheDecision{Outcome: dagql.CacheOutcomeHit, HitRoute: dagql.CacheHitRouteStructural, MissUnknownInputIndex: -1}
+	ctx := context.Background()
+	span := tracenoop.Span{}
+	b.ReportAllocs()
+	for b.Loop() {
+		recordCacheEvidence(ctx, span, ev, res)
+	}
 }

@@ -25,7 +25,6 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
-	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	telemetry "github.com/dagger/otel-go"
@@ -158,6 +157,11 @@ type daggerSession struct {
 	spanExporter   sdktrace.SpanExporter
 	logExporter    sdklog.Exporter
 	telemetryDebug LifecycleTelemetryCounts
+	// workloadTracerProvider sends spans only to the workload export.
+	workloadTracerProvider *sdktrace.TracerProvider
+	// workloadUses holds the results that the session has used, for the
+	// workload export.
+	workloadUses *enginetel.WorkloadUses
 
 	// Dagger Cloud publishing, set up when the main client asked the engine
 	// to publish the session's telemetry. cloudForwarder publishes the spans
@@ -222,9 +226,6 @@ type daggerSession struct {
 	analytics analytics.Tracker
 
 	authProvider *auth.RegistryAuthProvider
-
-	containers   map[bkgw.Container]struct{}
-	containersMu sync.Mutex
 
 	dagqlMu       sync.Mutex
 	dagqlCond     *sync.Cond
@@ -435,6 +436,11 @@ type clientRuntime struct {
 	// load failures by moduleProgressName; failed modules stay pending to keep
 	// reporting their error
 	failedModules map[string]error
+	// configErr is a workspace config that could not be made effective — a
+	// failed [[include]], or a module left without a source — for a client
+	// that does not auto-load modules. The workspace still binds, so a config
+	// edit can repair it, and EnsureWorkspaceModules returns it.
+	configErr error
 	// whether an entrypoint module has been served (extras outrank ambient)
 	entrypointServed bool
 	// resolved identities already served, for cross-batch deduplication
@@ -514,6 +520,7 @@ func (client *clientRuntime) releaseHeavyState() {
 	client.extraModulesLoaded = false
 	client.extraModulesErr = nil
 	client.failedModules = nil
+	client.configErr = nil
 	client.entrypointServed = false
 	client.servedModuleKeys = nil
 	client.servedWorkspaceModuleNames = nil
@@ -775,6 +782,9 @@ func (sess *daggerSession) shutdownTelemetry(ctx context.Context) error {
 	if sess.tracerProvider != nil {
 		traceDur += timedProviderOp(ctx, &errs, sess.tracerProvider.Shutdown)
 	}
+	if sess.workloadTracerProvider != nil {
+		traceDur += timedProviderOp(ctx, &errs, sess.workloadTracerProvider.Shutdown)
+	}
 	if sess.loggerProvider != nil {
 		logDur += timedProviderOp(ctx, &errs, sess.loggerProvider.Shutdown)
 	}
@@ -990,9 +1000,16 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 		spanProcessors++
 	}
 	sess.tracerProvider = sdktrace.NewTracerProvider(tracerOpts...)
+	sess.workloadTracerProvider = srv.workloadExport.WorkloadTracerProvider(sess.sessionID, dagql.NewWcprofLazyParentProcessor())
+	tracerProviders := 1
+	if sess.workloadTracerProvider != nil {
+		tracerProviders++
+		spanProcessors++
+		sess.workloadUses = enginetel.NewWorkloadUses()
+	}
 	sess.loggerProvider = sdklog.NewLoggerProvider(loggerOpts...)
 	sess.telemetryDebug = LifecycleTelemetryCounts{
-		TracerProviders:          1,
+		TracerProviders:          tracerProviders,
 		LoggerProviders:          1,
 		ConfiguredSpanProcessors: spanProcessors,
 		ConfiguredLogProcessors:  logProcessors,
@@ -1034,7 +1051,6 @@ func (srv *Server) initializeDaggerSession(
 		LeaseManager: srv.leaseManager,
 	})
 	failureCleanups.Add("close session resolver", sess.resolver.Close)
-	sess.containers = map[bkgw.Container]struct{}{}
 	sess.dagqlCond = sync.NewCond(&sess.dagqlMu)
 	sess.telemetryPubSub = srv.telemetryPubSub
 	srv.initializeSessionTelemetry(sess, clientMetadata)
@@ -1200,24 +1216,6 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 		sess.dagqlCond.Wait()
 	}
 	sess.dagqlMu.Unlock()
-
-	// Release containers and buildkit state before the final telemetry barrier.
-	// Their cleanup paths may still emit spans, logs, and metrics.
-
-	var releaseGroup errgroup.Group
-	sess.containersMu.Lock()
-	for ctr := range sess.containers {
-		if ctr != nil {
-			releaseGroup.Go(func() error {
-				return ctr.Release(ctx)
-			})
-		}
-	}
-	// Keep the container set closed to mutation until all captured containers have
-	// released, then drop the lock before later cleanup and telemetry barriers.
-	releaseErr := releaseGroup.Wait()
-	sess.containersMu.Unlock()
-	errs = errors.Join(errs, releaseErr)
 
 	// cleanup analytics and telemetry
 	errs = errors.Join(errs, sess.analytics.Close())
@@ -1580,7 +1578,10 @@ func (srv *Server) initializeClientRuntime(
 			servedMods = servedMods.Append(core.NewUserMod(client.mod))
 		}
 		client.servedMods = servedMods.ClientOwned()
-	} else {
+	} else if !opts.InertAttachables {
+		// Only a client that can read its host detects its own workspace. An
+		// in-engine SDK client without a module, such as one that evaluates an
+		// entrypoint's sources, inherits its parent's like a module client.
 		client.pendingWorkspaceLoad = true
 		if clientMD := client.clientMetadata; clientMD != nil && len(clientMD.ExtraModules) > 0 {
 			client.pendingExtraModules = clientMD.ExtraModules
@@ -2553,13 +2554,17 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		return fmt.Errorf("failed to hijack connection: %w", err)
 	}
+	// From here on, a failure closes the connection: net/http no longer owns
+	// it. A nested exec's session helper starts alongside the command, so the
+	// exec can end, closing the helper's connection, in the middle of this
+	// handshake.
 	defer func() {
 		if rerr != nil {
 			conn.Close()
 		}
 	}()
 	if err := conn.SetDeadline(time.Time{}); err != nil {
-		panic(fmt.Errorf("failed to clear deadline: %w", err))
+		return fmt.Errorf("failed to clear deadline: %w", err)
 	}
 
 	// confirm to the client that everything went swimmingly and we're ready to become a gRPC client
@@ -2570,7 +2575,7 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 	resp.Header.Set("Connection", "Upgrade")
 	resp.Header.Set("Upgrade", "h2c")
 	if err := resp.Write(conn); err != nil {
-		panic(fmt.Errorf("failed to write response: %w", err))
+		return fmt.Errorf("failed to write response: %w", err)
 	}
 
 	// The client confirms it has fully read the response and is ready to serve gRPC by sending
@@ -2578,7 +2583,7 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 	// before the response has been fully read, which can mix http and gRPC traffic.
 	ack := make([]byte, 1)
 	if _, err := conn.Read(ack); err != nil {
-		panic(fmt.Errorf("failed to read ack: %w", err))
+		return fmt.Errorf("failed to read ack: %w", err)
 	}
 
 	ctx = record.daggerSession.withAttachablesCancel(ctx, record.clientID)
@@ -2710,6 +2715,8 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 	ctx = telemetry.WithLoggerProvider(ctx, sess.loggerProvider)
 	ctx = telemetry.WithMeterProvider(ctx, client.meterProvider)
 	ctx = enginetel.WithWorkloadReadings(ctx, client.workloadReadings)
+	ctx = enginetel.WithWorkloadTracer(ctx, sess.workloadTracerProvider)
+	ctx = enginetel.WithWorkloadUses(ctx, sess.workloadUses)
 
 	ctx = dagql.ContextWithOperationLeaseProvider(ctx, dagql.OperationLeaseProviderFunc(func(ctx context.Context) (context.Context, func(context.Context) error, error) {
 		if leaseID, ok := leases.FromContext(ctx); ok && leaseID != "" {

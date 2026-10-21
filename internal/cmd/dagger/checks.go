@@ -34,7 +34,7 @@ const checksParallelEnv = "DAGGER_CHECK_PARALLEL"
 func init() {
 	registerCommandArtifactFlags(checksCmd)
 	checksCmd.Flags().BoolVarP(&checksListMode, "list", "l", false, "List available checks")
-	checksCmd.Flags().BoolVar(&checksFailFast, "failfast", false, "Cancel remaining checks on first failure")
+	checksCmd.Flags().BoolVar(&checksFailFast, "fail-fast", false, "Cancel remaining checks on first failure")
 	checksCmd.Flags().BoolVar(&checksGenerated, "generated", true, "Include staleness checks for 'dagger generate'")
 	checksCmd.Flags().StringArrayVar(&checksSkip, "skip", nil, "Exclude checks selected by this `link`")
 	checksCmd.Flags().BoolVar(&checksScaleOut, "scale-out", false, "Enable scale-out to cloud engines for each check executed")
@@ -43,7 +43,7 @@ func init() {
 }
 
 var checksCmd = &cobra.Command{
-	Use:   "check [--failfast] [FILTERS] [OPTIONS]",
+	Use:   "check [--fail-fast] [FILTERS] [OPTIONS]",
 	Short: "Verify your project — tests, linters, type checks, security scans, etc.",
 	Args:  cobra.ArbitraryArgs,
 	RunE:  runChecksCommand,

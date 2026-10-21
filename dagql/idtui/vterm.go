@@ -8,9 +8,9 @@ import (
 	"sync"
 	"unicode"
 
+	"charm.land/glamour/v2/styles"
 	"charm.land/lipgloss/v2"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/glamour/styles"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 	"github.com/vito/midterm"

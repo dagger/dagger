@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"strings"
@@ -48,8 +49,9 @@ type publishCheckEnv struct {
 	verdaccio   *dagger.Service
 	mockSvc     *dagger.Service
 
-	certs       *releaseCheckCerts
-	mockRecords *dagger.CacheVolume
+	certs           *releaseCheckCerts
+	mockRecords     *dagger.CacheVolume
+	registryStorage *dagger.CacheVolume
 
 	platform        dagger.Platform
 	platformArchive string
@@ -91,7 +93,28 @@ func (r *Release) PublishWithMockEndpoints(
 		return err
 	}
 
-	initialOut, err := env.runReleasePublish(ctx, engine, "main")
+	// A publish whose engine push fails must publish nothing else: the CLI
+	// needs its engine image. Run the main publish once with a wrong registry
+	// password, before anything has been published. Its engine builds are
+	// the ones the real main publish below needs, so this costs little more
+	// than the failed push.
+	failedStart := time.Now()
+	failedOut, err := env.runReleasePublish(ctx, engine, "main", "wrong-registry-password", "")
+	if err != nil {
+		return err
+	}
+	if err := env.assertNothingPublished(ctx, "main with a failing engine push", failedStart); err != nil {
+		return err
+	}
+	if err := requireContains(failedOut, "Error while publishing 🚙 Engine", "publish with a failing engine push should report the engine error"); err != nil {
+		return err
+	}
+	if err := requireContains(failedOut, "- [ ] 🚗 CLI", "publish with a failing engine push should not publish the CLI"); err != nil {
+		return err
+	}
+
+	initialStart := time.Now()
+	initialOut, err := env.runReleasePublish(ctx, engine, "main", publishCheckRegistryPass, "")
 	if err != nil {
 		return err
 	}
@@ -99,6 +122,9 @@ func (r *Release) PublishWithMockEndpoints(
 		return err
 	}
 	if err := requireContains(initialOut, "- [x] 🚗 CLI", "initial main publish should publish the CLI"); err != nil {
+		return err
+	}
+	if err := env.assertPublishOrder(ctx, "main", initialStart); err != nil {
 		return err
 	}
 	if err := env.assertInitialCLIReleaseOutputs(ctx); err != nil {
@@ -113,7 +139,8 @@ git ls-remote --tags "$REPO_URL" "$RELEASE_TAG"
 		return err
 	}
 
-	taggedOut, err := env.runReleasePublish(ctx, engine, env.releaseTag)
+	taggedStart := time.Now()
+	taggedOut, err := env.runReleasePublish(ctx, engine, env.releaseTag, publishCheckRegistryPass, "")
 	if err != nil {
 		return err
 	}
@@ -144,6 +171,9 @@ git ls-remote --tags "$REPO_URL" "$RELEASE_TAG"
 		}
 	}
 	if err := requireNotContains(taggedOut, "Error while publishing", "release publish should complete against mock endpoints"); err != nil {
+		return err
+	}
+	if err := env.assertPublishOrder(ctx, env.releaseTag, taggedStart); err != nil {
 		return err
 	}
 
@@ -192,6 +222,57 @@ git ls-remote --tags "$REPO_URL" "$RELEASE_TAG"
 	if err := env.assertSDKTags(ctx); err != nil {
 		return err
 	}
+
+	// Rerunning a release must finish it, as when a run fails partway and is
+	// rerun on a fresh runner. Package registries reject re-uploads, so the
+	// rerun must recognize what they already have instead of uploading again.
+	rerunStart := time.Now()
+	rerunOut, err := env.runReleasePublish(ctx, engine, env.releaseTag, publishCheckRegistryPass, "-rerun")
+	if err != nil {
+		return err
+	}
+	if err := requireNotContains(rerunOut, "Error while publishing", "rerunning a release should complete"); err != nil {
+		return err
+	}
+	for _, sdk := range []string{"🐍 Python SDK", "⬢ TypeScript SDK", "🧪 Elixir SDK", "⚙️ Rust SDK"} {
+		if err := requireContains(rerunOut, "- [x] "+sdk+" (already published", "rerunning a release should find the "+sdk+" already published"); err != nil {
+			return err
+		}
+	}
+	if err := env.assertNoRegistryUploadsSince(ctx, rerunStart); err != nil {
+		return err
+	}
+	return nil
+}
+
+// assertNoRegistryUploadsSince checks that no package registry upload was
+// attempted after since.
+func (env *publishCheckEnv) assertNoRegistryUploadsSince(ctx context.Context, since time.Time) error {
+	events, err := env.mockEvents(ctx)
+	if err != nil {
+		return err
+	}
+	uploads := map[string]bool{
+		"pypi_publish": true, "pypi_publish_identical": true, "pypi_publish_conflict": true,
+		"hex_publish": true, "hex_publish_duplicate": true, "hex_docs_publish": true,
+		"cargo_publish": true, "cargo_publish_duplicate": true,
+	}
+	for _, line := range strings.Split(events, "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var event struct {
+			Kind string  `json:"kind"`
+			Time float64 `json:"time"`
+			Path string  `json:"path"`
+		}
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			return fmt.Errorf("parse mock event %q: %w", line, err)
+		}
+		if uploads[event.Kind] && int64(event.Time) >= since.Unix() {
+			return fmt.Errorf("rerunning a release should not upload to package registries again, but got %s %s", event.Kind, event.Path)
+		}
+	}
 	return nil
 }
 
@@ -208,7 +289,7 @@ func newPublishCheckEnv(ctx context.Context, source *dagger.Directory, ws *dagge
 	// A stable release reads release notes from a changelog file per published
 	// component: the root .changes/<tag>.md for the engine and CLI (cli-dev's
 	// publish step), and <component>/.changes/<tag>.md for each SDK and the Helm
-	// chart (Changelog.lookupEntry, used when cutting their GitHub releases). The
+	// chart (Changie.lookupEntry, used when cutting their GitHub releases). The
 	// pre-release working tree under test carries none of these until the release
 	// is actually cut, so stub them all.
 	//
@@ -307,8 +388,12 @@ git rev-parse HEAD
 	}
 	env.moduleRef = env.repoURL + "@" + env.commit
 
+	// The registry's storage lives on a cache volume so assertPublishOrder can
+	// read when each engine tag was pushed.
+	env.registryStorage = dag.CacheVolume("release-registry-storage-" + randomID())
 	env.registrySvc = dag.Container().
 		From("registry:3").
+		WithMountedCache("/var/lib/registry", env.registryStorage).
 		WithNewFile("/auth/htpasswd", publishCheckRegistryUser+":$2y$05$/iP8ud0Fs8o3NLlElyfVVOp6LesJl3oRLYoc3neArZKWX10OhynSC").
 		WithEnvVariable("REGISTRY_AUTH", "htpasswd").
 		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_REALM", "Registry Realm").
@@ -380,9 +465,14 @@ func (env *publishCheckEnv) releaseEngine(ctx context.Context) (*dagger.Service,
 		return nil, err
 	}
 
+	// This replaces engine-dev's default engine.json, so keep its docker.io
+	// mirror: without it the release engine pulls straight from Docker Hub.
 	engineCtr := dev.Container().
 		WithNewFile("/etc/dagger/engine.json", `{
   "registries": {
+    "docker.io": {
+      "mirrors": ["mirror.gcr.io"]
+    },
     "`+publishCheckRegistryAddress+`": {
       "http": true
     }
@@ -433,7 +523,13 @@ func (env *publishCheckEnv) client(engine *dagger.Service) *dagger.Container {
 	})
 }
 
-func (env *publishCheckEnv) runReleasePublish(ctx context.Context, engine *dagger.Service, tag string) (string, error) {
+// runReleasePublish runs release publish for tag in the nested engine.
+// tokenSuffix is appended to the fake package registry, Netlify and AWS
+// tokens. Secrets are cached by value, so a new suffix makes every step that
+// uses them run again, like a rerun on a fresh CI runner instead of a cache
+// hit. The GitHub token keeps its value: the Helm publish also logs in to
+// the local registry with it.
+func (env *publishCheckEnv) runReleasePublish(ctx context.Context, engine *dagger.Service, tag, registryPassword, tokenSuffix string) (string, error) {
 	script := `set +e
 	dagger --progress=plain -W "$MODULE_REF" call release publish \
   --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" \
@@ -471,15 +567,15 @@ exit "$status"
 `
 
 	out, err := env.client(engine).
-		WithSecretVariable("REGISTRY_PASSWORD", dag.SetSecret("release-registry-password-"+randomID(), publishCheckRegistryPass)).
+		WithSecretVariable("REGISTRY_PASSWORD", dag.SetSecret("release-registry-password-"+randomID(), registryPassword)).
 		WithSecretVariable("FAKE_GITHUB_TOKEN", dag.SetSecret("fake-github-token-"+randomID(), publishCheckRegistryPass)).
-		WithSecretVariable("FAKE_NETLIFY_TOKEN", dag.SetSecret("fake-netlify-token-"+randomID(), "fake-netlify-token")).
-		WithSecretVariable("FAKE_PYPI_TOKEN", dag.SetSecret("fake-pypi-token-"+randomID(), "fake-pypi-token")).
-		WithSecretVariable("FAKE_NPM_TOKEN", dag.SetSecret("fake-npm-token-"+randomID(), "fake-npm-token")).
-		WithSecretVariable("FAKE_HEX_API_KEY", dag.SetSecret("fake-hex-api-key-"+randomID(), "fake-hex-api-key")).
-		WithSecretVariable("FAKE_CARGO_REGISTRY_TOKEN", dag.SetSecret("fake-cargo-token-"+randomID(), "fake-cargo-token")).
-		WithSecretVariable("AWS_ACCESS_KEY_ID", dag.SetSecret("fake-aws-access-key-"+randomID(), "test")).
-		WithSecretVariable("AWS_SECRET_ACCESS_KEY", dag.SetSecret("fake-aws-secret-key-"+randomID(), "test")).
+		WithSecretVariable("FAKE_NETLIFY_TOKEN", dag.SetSecret("fake-netlify-token-"+randomID(), "fake-netlify-token"+tokenSuffix)).
+		WithSecretVariable("FAKE_PYPI_TOKEN", dag.SetSecret("fake-pypi-token-"+randomID(), "fake-pypi-token"+tokenSuffix)).
+		WithSecretVariable("FAKE_NPM_TOKEN", dag.SetSecret("fake-npm-token-"+randomID(), "fake-npm-token"+tokenSuffix)).
+		WithSecretVariable("FAKE_HEX_API_KEY", dag.SetSecret("fake-hex-api-key-"+randomID(), "fake-hex-api-key"+tokenSuffix)).
+		WithSecretVariable("FAKE_CARGO_REGISTRY_TOKEN", dag.SetSecret("fake-cargo-token-"+randomID(), "fake-cargo-token"+tokenSuffix)).
+		WithSecretVariable("AWS_ACCESS_KEY_ID", dag.SetSecret("fake-aws-access-key-"+randomID(), "test"+tokenSuffix)).
+		WithSecretVariable("AWS_SECRET_ACCESS_KEY", dag.SetSecret("fake-aws-secret-key-"+randomID(), "test"+tokenSuffix)).
 		WithEnvVariable("MODULE_REF", env.moduleRef).
 		WithEnvVariable("RELEASE_TAG", tag).
 		WithEnvVariable("RELEASE_COMMIT", env.commit).
@@ -617,6 +713,118 @@ func (env *publishCheckEnv) assertMockEvents(ctx context.Context) error {
 			return err
 		}
 	}
+	return nil
+}
+
+// assertPublishOrder checks that nothing user-visible went out before the
+// engine image it depends on: every S3 object written and every write request
+// the mock endpoints received since the publish started must come no earlier
+// than the last engine tag pushed during that publish. All mock services run
+// on the same host, so their clocks agree; S3 LastModified has one-second
+// resolution, so times are compared in whole seconds.
+func (env *publishCheckEnv) assertPublishOrder(ctx context.Context, ref string, since time.Time) error {
+	return env.checkPublishWrites(ctx, ref, since, false)
+}
+
+// assertNothingPublished checks that a publish that should have stopped early
+// pushed no engine tag and wrote nothing to S3 or the mock endpoints.
+func (env *publishCheckEnv) assertNothingPublished(ctx context.Context, ref string, since time.Time) error {
+	return env.checkPublishWrites(ctx, ref, since, true)
+}
+
+func (env *publishCheckEnv) checkPublishWrites(ctx context.Context, ref string, since time.Time, expectNothing bool) error {
+	out, err := env.awsCLI().
+		WithExec([]string{"apk", "add", "python3"}).
+		WithMountedCache("/records", env.mockRecords).
+		WithMountedCache("/registry", env.registryStorage).
+		WithEnvVariable("AWS_BUCKET", env.awsBucket).
+		WithEnvVariable("PUBLISH_REF", ref).
+		WithEnvVariable("PUBLISH_SINCE", fmt.Sprint(since.Unix())).
+		WithEnvVariable("EXPECT_NOTHING", fmt.Sprint(expectNothing)).
+		WithExec([]string{"sh", "-ec", `
+set -eu
+aws --endpoint-url "$AWS_ENDPOINT_URL" s3api list-objects-v2 --bucket "$AWS_BUCKET" > /tmp/s3-objects.json
+python3 - <<'PY'
+import datetime
+import glob
+import json
+import os
+import sys
+
+def fail(msg):
+    print(msg, file=sys.stderr)
+    raise SystemExit(1)
+
+def utc(ts):
+    return datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).strftime("%H:%M:%S")
+
+ref = os.environ["PUBLISH_REF"]
+since = int(os.environ["PUBLISH_SINCE"])
+
+engine_tags = {}
+for link in glob.glob("/registry/docker/registry/v2/repositories/dagger/engine/_manifests/tags/*/current/link"):
+    pushed = int(os.stat(link).st_mtime)
+    if pushed >= since:
+        engine_tags[link.split("/")[-3]] = pushed
+
+writes = []
+listing = json.load(open("/tmp/s3-objects.json", encoding="utf-8"))
+for obj in listing.get("Contents") or []:
+    modified = int(datetime.datetime.fromisoformat(obj["LastModified"].replace("Z", "+00:00")).timestamp())
+    if modified >= since:
+        writes.append((modified, "s3://" + obj["Key"]))
+s3_writes = len(writes)
+# The mock server creates its records file on its first request, which a main
+# publish may never make.
+events = []
+if os.path.exists("/records/events.jsonl"):
+    with open("/records/events.jsonl", encoding="utf-8") as f:
+        events = [json.loads(line) for line in f if line.strip()]
+for event in events:
+    if event.get("method") not in ("POST", "PUT", "PATCH", "DELETE"):
+        continue
+    at = int(event.get("time", 0))
+    if at >= since:
+        writes.append((at, event.get("method") + " " + event.get("path", "")))
+writes.sort()
+
+if os.environ["EXPECT_NOTHING"] == "true":
+    if writes or engine_tags:
+        lines = [f"  {utc(at)} {what}" for at, what in writes[:10]]
+        fail(
+            f"{ref}: expected nothing to be published, but engine tags [{', '.join(sorted(engine_tags))}] were pushed "
+            f"and {len(writes)} writes went public:\n" + "\n".join(lines)
+        )
+    print(f"{ref}: nothing was published, as expected")
+    raise SystemExit(0)
+
+if not writes:
+    fail(f"{ref} publish: expected S3 objects or mock endpoint writes, found none")
+if not engine_tags:
+    fail(f"{ref} publish: {len(writes)} writes went public but no engine tag was pushed; first: {writes[0][1]} at {utc(writes[0][0])}")
+
+engine_done = max(engine_tags.values())
+early = [w for w in writes if w[0] < engine_done]
+if early:
+    lines = [f"  {utc(at)} {what}" for at, what in early[:10]]
+    fail(
+        f"{ref} publish: {len(early)} of {len(writes)} writes went public before the last engine tag was pushed at {utc(engine_done)} "
+        f"(tags: {', '.join(sorted(engine_tags))}); earliest:\n" + "\n".join(lines)
+    )
+print(
+    f"{ref} publish order ok: engine tags {', '.join(sorted(engine_tags))} pushed by {utc(engine_done)}; "
+    f"{s3_writes} S3 objects and {len(writes) - s3_writes} mock endpoint writes from {utc(writes[0][0])} "
+    f"({writes[0][1]}, {writes[0][0] - engine_done}s after) to {utc(writes[-1][0])}"
+)
+for at, what in writes:
+    print(f"  {utc(at)} {what}")
+PY
+`}).
+		Stdout(ctx)
+	if err != nil {
+		return fmt.Errorf("check %s publish order: %w", ref, err)
+	}
+	fmt.Println(strings.TrimSpace(out))
 	return nil
 }
 
@@ -1719,7 +1927,12 @@ func (env *publishCheckEnv) assertEngineVersion(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("check engine version in published image: %w", err)
 	}
-	return requireContains(version, env.releaseTag, "published engine binary should report release tag")
+	// dagger-engine --version prints "<version> <tag> <platform>".
+	lines := strings.Split(strings.TrimSpace(version), "\n")
+	if fields := strings.Fields(lines[len(lines)-1]); len(fields) == 0 || fields[0] != env.releaseTag {
+		return fmt.Errorf("published engine binary should report version %s, got %q", env.releaseTag, version)
+	}
+	return nil
 }
 
 func (env *publishCheckEnv) assertCLIVersion(ctx context.Context) error {
@@ -1735,7 +1948,12 @@ tar -xzf /tmp/dagger.tgz -C /tmp/dagger
 	if err != nil {
 		return fmt.Errorf("check CLI version in published archive: %w", err)
 	}
-	return requireContains(version, env.releaseTag, "published CLI binary should report release tag")
+	for _, line := range strings.Split(version, "\n") {
+		if fields := strings.Fields(line); len(fields) == 2 && fields[0] == "version:" && fields[1] == env.releaseTag {
+			return nil
+		}
+	}
+	return fmt.Errorf("published CLI binary should report version %s, got %q", env.releaseTag, version)
 }
 
 func (env *publishCheckEnv) assertNpmVersion(
@@ -2115,7 +2333,12 @@ os.makedirs(github_content_records_dir, exist_ok=True)
 os.makedirs(github_release_records_dir, exist_ok=True)
 os.makedirs(github_asset_records_dir, exist_ok=True)
 published_crates = {}
+published_pypi_files = {}
+published_pypi_versions = {}
+published_hex_versions = set()
+published_hex_docs = set()
 github_refs = {}
+github_releases = {}
 deleted_github_assets = set()
 state_lock = threading.Lock()
 existing_content_sha = "9999999999999999999999999999999999999999"
@@ -2169,6 +2392,20 @@ def multipart_field(body, name):
     if end < 0:
         end = len(body)
     return body[start:end].decode("utf-8", "replace").strip()
+
+def multipart_file(body, name, content_type):
+    # The file part ends at the next boundary, which can't occur inside it.
+    boundary = content_type.split("boundary=", 1)[-1].strip().strip('"').encode("utf-8")
+    marker = ('name="' + name + '"').encode("utf-8")
+    idx = body.find(marker)
+    if idx < 0 or not boundary:
+        return b""
+    start = body.find(b"\r\n\r\n", idx)
+    if start < 0:
+        return b""
+    start += 4
+    end = body.find(b"\r\n--" + boundary, start)
+    return body[start:] if end < 0 else body[start:end]
 
 def multipart_filename(body, name):
     marker = ('name="' + name + '"').encode("utf-8")
@@ -2284,6 +2521,13 @@ def record_cargo_publish(handler, body):
     crate_version = meta.get("vers", "")
     checksum = hashlib.sha256(crate).hexdigest()
     with state_lock:
+        duplicate = crate_name in published_crates and published_crates[crate_name]["meta"].get("vers") == crate_version
+    if duplicate:
+        # crates.io rejects re-uploading a version it already has.
+        record("cargo_publish_duplicate", handler, body, {"crate_name": crate_name, "crate_version": crate_version})
+        handler.send_json(200, {"errors": [{"detail": "crate version " + crate_version + " is already uploaded"}]})
+        return
+    with state_lock:
         published_crates[crate_name] = {
             "name": crate_name,
             "meta": meta,
@@ -2360,6 +2604,30 @@ class Handler(http.server.BaseHTTPRequestHandler):
             record("netlify_list_deploys", self, b"", {"auth_header": auth_header(self)})
             self.send_json(200, [{"id": "deploy-1"}])
             return
+        if self.path.startswith("/pypi/") and self.path.endswith("/json"):
+            # PyPI JSON API: /pypi/<project>/<version>/json
+            parts = self.path.strip("/").split("/")
+            name, version = (parts[1].lower().replace("_", "-"), parts[2]) if len(parts) == 4 else ("", "")
+            with state_lock:
+                files = sorted(published_pypi_versions.get((name, version), set()))
+            found = bool(files)
+            record("pypi_version_lookup", self, b"", {"package_name": name, "package_version": version, "files": files})
+            if found:
+                self.send_json(200, {"info": {"name": name, "version": version}, "urls": [{"filename": f} for f in files]})
+            else:
+                self.send_json(404, {"message": "Not Found"})
+            return
+        if self.path.startswith("/hex/api/packages/dagger/releases/"):
+            version = self.path.removeprefix("/hex/api/packages/dagger/releases/").strip("/")
+            with state_lock:
+                found = version in published_hex_versions
+                has_docs = version in published_hex_docs
+            record("hex_version_lookup", self, b"", {"package_version": version, "found": found, "has_docs": has_docs})
+            if found:
+                self.send_json(200, {"version": version, "has_docs": has_docs})
+            else:
+                self.send_json(404, {"message": "Not Found"})
+            return
         if self.path == "/hex/api/users/me":
             record("hex_user_me", self, b"")
             self.send_etf(200, {
@@ -2394,8 +2662,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         if self.path.startswith("/api/v3/repos/") and "/releases/tags/" in self.path:
             tag = urllib.parse.unquote(self.path.split("/releases/tags/", 1)[1].split("?", 1)[0])
-            record("github_release_lookup", self, b"", {"tag_name": tag})
-            self.send_json(404, {"message": "Not Found"})
+            with state_lock:
+                existing = github_releases.get(tag)
+            record("github_release_lookup", self, b"", {"tag_name": tag, "found": existing is not None})
+            if existing is None:
+                self.send_json(404, {"message": "Not Found"})
+            else:
+                # A release an earlier attempt created, as a rerun finds it.
+                self.send_json(200, existing)
             return
         if self.path == "/api/v3/repos/dagger/dagger/releases/" + str(existing_root_release_id) + "/assets":
             record("github_release_asset_list", self, b"")
@@ -2460,18 +2734,39 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_json(200, {"id": "deploy-1"})
             return
         if self.path.startswith("/pypi/"):
+            name = multipart_field(body, "name").lower().replace("_", "-")
+            version = multipart_field(body, "version")
+            filename = multipart_filename(body, "content")
+            digest = hashlib.sha256(multipart_file(body, "content", self.headers.get("content-type", ""))).hexdigest()
+            with state_lock:
+                existing = published_pypi_files.get(filename)
+                if existing is None:
+                    published_pypi_files[filename] = digest
+                    published_pypi_versions.setdefault((name, version), set()).add(filename)
+            if existing == digest:
+                # PyPI accepts re-uploading an identical file and ignores it.
+                record("pypi_publish_identical", self, body, {"filename": filename})
+                self.send_bytes(200, b"OK", "text/plain")
+                return
+            if existing is not None:
+                # PyPI rejects a different file under a name it already has.
+                record("pypi_publish_conflict", self, body, {"filename": filename})
+                self.send_bytes(400, b"File already exists. See https://pypi.org/help/#file-name-reuse for more information.", "text/plain")
+                return
             record("pypi_publish", self, body, {
                 "auth_header": auth_header(self),
                 "content_type": self.headers.get("content-type", ""),
                 "package_name": multipart_field(body, "name"),
-                "package_version": multipart_field(body, "version"),
+                "package_version": version,
                 "filetype": multipart_field(body, "filetype"),
-                "filename": multipart_filename(body, "content"),
+                "filename": filename,
             })
             self.send_bytes(200, b"OK", "text/plain")
             return
         if self.path.startswith("/hex/api/packages/dagger/releases/") and self.path.endswith("/docs"):
             version = self.path.split("/releases/", 1)[-1].split("/docs", 1)[0]
+            with state_lock:
+                published_hex_docs.add(version)
             record("hex_docs_publish", self, body, {
                 "auth_header": auth_header(self),
                 "package_version": version,
@@ -2480,6 +2775,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         if self.path.startswith("/hex/api/packages/dagger/releases"):
             version = hex_package_version(body)
+            with state_lock:
+                duplicate = version in published_hex_versions
+                published_hex_versions.add(version)
+            if duplicate:
+                # Hex rejects re-publishing a version it already has.
+                record("hex_publish_duplicate", self, body, {"package_version": version})
+                self.send_etf(422, {"status": 422, "message": "Validation error(s)", "errors": {"inserted_at": "can only modify a release up to one hour after publication"}})
+                return
             record("hex_publish", self, body, {
                 "auth_header": auth_header(self),
                 "package_version": version,
@@ -2497,7 +2800,32 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path == "/api/v3/repos/dagger/dagger/releases":
             payload = json.loads(body.decode("utf-8") or "{}")
             tag = payload.get("tag_name", "")
+            with state_lock:
+                duplicate = tag in github_releases
+            if duplicate:
+                # GitHub refuses to create a second release for a tag.
+                record("github_release_create_duplicate", self, body, {"tag_name": tag})
+                self.send_json(422, {
+                    "message": "Validation Failed",
+                    "errors": [{"resource": "Release", "code": "already_exists", "field": "tag_name"}],
+                })
+                return
             write_github_release_record(tag, payload)
+            release_id = int(time.time() * 1000)
+            with state_lock:
+                github_releases[tag] = {
+                    "id": release_id,
+                    "tag_name": tag,
+                    "name": payload.get("name", tag),
+                    "draft": bool(payload.get("draft")),
+                    "prerelease": bool(payload.get("prerelease")),
+                    "target_commitish": payload.get("target_commitish", ""),
+                    "body": payload.get("body", ""),
+                    "html_url": "https://github.test/dagger/dagger/releases/tag/" + tag,
+                    "url": "https://github.test/api/v3/repos/dagger/dagger/releases/" + str(release_id),
+                    "upload_url": "https://github.test/api/uploads/repos/dagger/dagger/releases/" + str(release_id) + "/assets{?name,label}",
+                    "assets": [],
+                }
             record("github_release_create", self, body, {
                 "tag_name": tag,
                 "target_commitish": payload.get("target_commitish", ""),
@@ -2508,7 +2836,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "release_body": payload.get("body", ""),
             })
             self.send_json(201, {
-                "id": int(time.time() * 1000),
+                "id": release_id,
                 "tag_name": tag,
                 "name": payload.get("name", tag),
                 "html_url": "https://github.test/dagger/dagger/releases/tag/" + tag,

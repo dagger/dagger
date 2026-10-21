@@ -4,7 +4,36 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/dagger/dagger/cmd/codegen/generator"
 )
+
+func TestModuleRelPath(t *testing.T) {
+	cfg := generator.Config{
+		ModuleConfig: &generator.ModuleGeneratorConfig{
+			// module at .dagger/modules/engine-dev in its context directory
+			ModuleParentPath: "../../..",
+		},
+	}
+	const src = ".dagger/modules/engine-dev/notify/main.go:18:6"
+
+	for _, tc := range []struct {
+		fileDir  string
+		expected string
+	}{
+		{"internal/dagger", "../../../../../" + src},
+		{"internal/dagger/core", "../../../../../../" + src},
+	} {
+		t.Run(tc.fileDir, func(t *testing.T) {
+			require.Equal(t, tc.expected, ModuleRelPath(cfg, tc.fileDir)(src))
+		})
+	}
+
+	t.Run("url", func(t *testing.T) {
+		url := "https://github.com/dagger/dagger/tree/main/.dagger/modules/engine-dev/notify/main.go#L18"
+		require.Equal(t, url, ModuleRelPath(cfg, "internal/dagger/core")(url))
+	})
+}
 
 func TestParsePragmaComment(t *testing.T) {
 	tests := []struct {

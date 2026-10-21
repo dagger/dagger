@@ -196,9 +196,6 @@ type ModuleSource struct {
 	IncludePaths []string
 	// RebasedIncludePaths are the include paths with the source root subpath prepended
 	RebasedIncludePaths []string
-	// EntrypointResourcesLoaded records that the entrypoint's resources member
-	// added patterns to IncludePaths, so a context reload must exclude .git.
-	EntrypointResourcesLoaded bool
 
 	// ConfigDependencies are the dependencies as read from the module config
 	// NOTE: this is currently not updated by withDependencies and related APIs, only Dependencies will be updated
@@ -488,7 +485,6 @@ type persistedModuleSourcePayload struct {
 	SDK                             *SDKConfig                            `json:"sdk,omitempty"`
 	IncludePaths                    []string                              `json:"includePaths,omitempty"`
 	RebasedIncludePaths             []string                              `json:"rebasedIncludePaths,omitempty"`
-	EntrypointResourcesLoaded       bool                                  `json:"entrypointResourcesLoaded,omitempty"`
 	ConfigDependencies              []*modules.ModuleConfigDependency     `json:"configDependencies,omitempty"`
 	DependencyResultIDs             []uint64                              `json:"dependencyResultIDs,omitempty"`
 	ConfigBlueprint                 *modules.ModuleConfigDependency       `json:"configBlueprint,omitempty"`
@@ -813,7 +809,6 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, enc *dagql.P
 		SDK:                           src.SDK,
 		IncludePaths:                  slices.Clone(src.IncludePaths),
 		RebasedIncludePaths:           slices.Clone(src.RebasedIncludePaths),
-		EntrypointResourcesLoaded:     src.EntrypointResourcesLoaded,
 		ConfigDependencies:            slices.Clone(src.ConfigDependencies),
 		ConfigBlueprint:               src.ConfigBlueprint,
 		ConfigToolchains:              slices.Clone(src.ConfigToolchains),
@@ -977,7 +972,6 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dec *dagql.Persi
 		SDK:                           persisted.SDK,
 		IncludePaths:                  slices.Clone(persisted.IncludePaths),
 		RebasedIncludePaths:           slices.Clone(persisted.RebasedIncludePaths),
-		EntrypointResourcesLoaded:     persisted.EntrypointResourcesLoaded,
 		ConfigDependencies:            slices.Clone(persisted.ConfigDependencies),
 		Dependencies:                  dependencies,
 		ConfigBlueprint:               persisted.ConfigBlueprint,
@@ -1051,10 +1045,7 @@ func (src *ModuleSource) AsString() string {
 		if version == "" {
 			version = src.Git.Version
 		}
-		if src.Git.Selector == gitref.GitRefSelector {
-			return gitref.GitURLRefString(src.Git.CloneRef, src.SourceRootSubpath, version)
-		}
-		return GitRefString(src.Git.CloneRef, src.SourceRootSubpath, version)
+		return src.Git.RefString(src.SourceRootSubpath, version)
 
 	default:
 		return ""
@@ -1515,16 +1506,9 @@ func (src *ModuleSource) LoadContextDir(
 ) (inst dagql.ObjectResult[*Directory], err error) {
 	filterInputs := copyFilterInputs(filter)
 
-	// Determine the context for defaultPath arguments, in priority order:
-	//
-	//   1. a Workspace explicitly bound into the context (an LLM bound via
-	//      withWorkspace), so the agent's defaultPath args resolve against its
-	//      own (possibly overlaid) workspace;
-	//   2. otherwise the module source itself.
-	//
-	// NOTE: this applies unilaterally, whether the module was loaded from Host,
-	// Git, or a Directory.
-	if ws, ok := WorkspaceFromContext(ctx); ok {
+	// A bound workspace may carry edits, such as an agent's overlay, that the
+	// module source was loaded without.
+	if ws, ok := WorkspaceFromContext(ctx); ok && src.contextIsWorkspace(ws.Self()) {
 		inst, err = src.loadContextFromWorkspace(ctx, dag, ws, path, filterInputs)
 	} else {
 		inst, err = NewModuleSourceFS(nil, src).directory(ctx, dag, path, filterInputs)
@@ -1560,6 +1544,26 @@ func (src *ModuleSource) LoadContextDir(
 	}
 
 	return inst, nil
+}
+
+// contextIsWorkspace reports whether ws's root is src's context root, the only
+// case in which src's contextual paths mean the same thing in ws. A module
+// installed by git ref, or from a local path under another root, is not in ws.
+// A source loaded through a Workspace, and a Directory source, which has no
+// root to compare, are assumed to be in ws.
+func (src *ModuleSource) contextIsWorkspace(ws *Workspace) bool {
+	if src.Workspace.Self() != nil {
+		return true
+	}
+	switch src.Kind {
+	case ModuleSourceKindDir:
+		return true
+	case ModuleSourceKindLocal:
+		hostPath, ok := ws.LocalSourceHostPath()
+		return ok && src.Local != nil && filepath.Clean(src.Local.ContextDirectoryPath) == filepath.Clean(hostPath)
+	default:
+		return false
+	}
 }
 
 func copyFilterInputs(filter CopyFilter) []dagql.NamedInput {
@@ -2110,6 +2114,15 @@ func (src GitModuleSource) Link(filepath string, line int, column int) (string, 
 	}
 }
 
+// RefString builds a ref string for a path in this repository, in the same
+// syntax the source was loaded with.
+func (src GitModuleSource) RefString(sourceRootSubpath, version string) string {
+	if src.Selector == gitref.GitRefSelector {
+		return gitref.GitURLRefString(src.CloneRef, sourceRootSubpath, version)
+	}
+	return GitRefString(src.CloneRef, sourceRootSubpath, version)
+}
+
 func (src GitModuleSource) Clone() *GitModuleSource {
 	return &src
 }
@@ -2258,8 +2271,7 @@ func ResolveDepToSource(
 		case ModuleSourceKindGit:
 			// parent=git, dep=local
 			// load the dep relative to the parent's source root, from the parent source's git repo
-			refString := GitRefString(
-				parentSrc.Git.CloneRef,
+			refString := parentSrc.Git.RefString(
 				filepath.Join(parentSrc.SourceRootSubpath, depSrcRef),
 				parentSrc.Git.Version,
 			)

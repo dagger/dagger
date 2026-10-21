@@ -82,6 +82,15 @@ directive @sourceMap(module: String!, filename: String!, line: Int!, column: Int
 """Indicates that this function returns a service for dagger up."""
 directive @up on FIELD_DEFINITION
 
+"""How acronyms and terms are written where a word starts with a capital."""
+enum AcronymStyle {
+  """HTTPClient, IPv6Address, GitHubRepo"""
+  UPPERCASE
+
+  """HttpClient, Ipv6Address, GitHubRepo"""
+  CAPITALIZED
+}
+
 """
 A standardized address to load containers, directories, secrets, and other
 object types. Address format depends on the type, and is validated at type
@@ -179,6 +188,9 @@ LLM value.
 type Agent implements Node {
   """A unique identifier for this Agent."""
   id: ID!
+
+  """The agent that spawned this agent, or null for a root agent."""
+  parent: Agent @experimental(reason: "Agent APIs are likely to change.")
 
   """Display label for the agent; carries no identity."""
   name: String! @experimental(reason: "Agent APIs are likely to change.")
@@ -507,6 +519,13 @@ type Artifact implements Node {
   """The description of the field that supplies this artifact."""
   description: String!
 
+  """
+  The workspace this artifact was discovered in; its address is relative to it.
+  Null for an artifact without a workspace, such as one of an LLM's bound tool
+  objects (see LLM.artifacts).
+  """
+  workspace: Workspace
+
   """The artifact's DAG address, such as dag://engine-dev/playground."""
   uri(
     """
@@ -639,36 +658,51 @@ type ArtifactResult implements Node {
 
 """
 An immutable selection of workspace artifacts. Listed types, dimensions, and
-keys use OR; chained filters use AND. Empty alternatives and unknown names match
-nothing. Filters never change addresses or dimension identifiers.
+keys use OR; chained filters use AND. Empty alternatives match nothing; unknown
+names match nothing but module load failures. Filters never change addresses or
+dimension identifiers. Module keys match a module's configured or kebab-case
+name. A module that failed to load has no schema, so its load failure stands in
+for whatever it would hold: a filter keeps it when the module could hold
+something the filter selects, and an exclusion drops it only by its own address,
+such as <module>/** or ?module=<module>.
 """
 type Artifacts implements Node {
   """A unique identifier for this Artifacts."""
   id: ID!
 
   """
-  Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise.
+  Convert the selection to expertise without running the functions. Each must
+  take one LLM! argument and return LLM!; any other arguments must be optional
+  or auto-filled. Agent arguments receive the agent that owns the conversation.
+  A module load failure fails with its load error.
   """
   asExpertise: [Expertise!]!
 
   """
-  Convert the selection to Generators without running them. Fail if any artifact is not a Generator.
+  Convert the selection to Generators without running them. Fail if any artifact
+  is not a Generator. Module load failures are skipped: generating can repair
+  them.
   """
   asGenerators: [Generator!]!
 
   """
-  Convert the selection to Checks. Fail if any artifact is not a Check. Does not apply command filters or run the checks.
+  Convert the selection to Checks. Fail if any artifact is not a Check. A module
+  load failure is a Check that fails with its load error. Does not apply command
+  filters or run the checks.
   """
   asChecks: [Check!]!
 
   """
-  Convert the selection to Changesets. Fail if any artifact is not a Changeset. Does not apply command filters.
+  Convert the selection to Changesets. Fail if any artifact is not a Changeset;
+  a module load failure fails with its load error. Does not apply command
+  filters.
   """
   asChangesets: [Changeset!]!
 
   """
-  Convert the selection to Services. Fail if any artifact is not a Service. Does
-  not apply command filters or start the services.
+  Convert the selection to Services. Fail if any artifact is not a Service; a
+  module load failure fails with its load error. Does not apply command filters
+  or start the services.
   """
   asServices: [Service!]!
 
@@ -785,6 +819,9 @@ type Artifacts implements Node {
   Apply a DAG address as one filter: the chain of path, type, and dimension-key filters it encodes.
 
   The scheme is optional. The path may be a pattern; an empty path selects all artifacts.
+
+  A module that failed to load keeps its load failure when the module could hold
+  what the address selects, as with every filter (see Artifacts).
   """
   filterUri(
     """A DAG address: [dag[+<type>]://][<path>][?<dimension>=<key>&...]"""
@@ -853,6 +890,27 @@ enum CacheSharingMode {
 type CacheVolume implements Node {
   """A unique identifier for this CacheVolume."""
   id: ID!
+}
+
+"""A convention for joining words into an identifier."""
+enum Casing {
+  """HTTPClient"""
+  PASCAL
+
+  """httpClient"""
+  CAMEL
+
+  """http_client"""
+  SNAKE
+
+  """HTTP_CLIENT"""
+  SCREAMING_SNAKE
+
+  """http-client"""
+  KEBAB
+
+  """httpclient (output only: drops word boundaries)"""
+  FLAT
 }
 
 """
@@ -3450,21 +3508,26 @@ enum ExistsType {
   SYMLINK_TYPE
 }
 
-"""An agent function that can modify a conversation."""
+"""A function that can modify a conversation."""
 type Expertise implements Node {
   """A unique identifier for this Expertise."""
   id: ID!
 
-  """The agent function's name."""
+  """
+  The artifact this expertise runs. Look it up again by URI to pick up module changes.
+  """
+  artifact: Artifact!
+
+  """The function's name."""
   name: String!
 
-  """The agent function's description."""
+  """The function's description."""
   description: String!
 
-  """The agent function's path within its module."""
+  """The function's path within its module."""
   path: [String!]!
 
-  """The module that defines the agent function."""
+  """The module that defines the function."""
   originalModule: Module!
 }
 
@@ -4027,6 +4090,13 @@ type GitCommit implements Node {
 
   """The abbreviated commit SHA."""
   shortSha: String!
+
+  """
+  The ID of the commit's Git tree object.
+
+  Commits with identical trees have identical contents and file modes.
+  """
+  treeSHA: String!
 
   """Git author date, in RFC3339 format."""
   authoredDate: String!
@@ -4635,6 +4705,59 @@ type Host implements Node {
   ): Container!
 }
 
+"""A name parsed into words, which can be formatted in any casing."""
+type Identifier implements Node {
+  """A unique identifier for this Identifier."""
+  id: ID!
+
+  """Format the identifier in a casing."""
+  format(
+    """The casing to format the identifier in."""
+    casing: Casing!
+
+    """How to write acronyms and terms where a word starts with a capital."""
+    acronyms: AcronymStyle = UPPERCASE
+  ): String!
+
+  """The name as given."""
+  name: String!
+
+  """The words that make up the name, in order."""
+  words: [IdentifierWord!]!
+}
+
+"""One word of an identifier."""
+type IdentifierWord implements Node {
+  """A unique identifier for this IdentifierWord."""
+  id: ID!
+
+  """The dictionary entry this word matched, if any."""
+  term: NamingTerm
+
+  """Standard spelling: "client" (WORD), "HTTP" (ACRONYM), "GitHub" (TERM)."""
+  text: String!
+
+  """
+  Trailing digits and/or a plural "s", in that order: SHA+"s", OAuth+"2", HTTP+"2s".
+  """
+  suffix: String!
+
+  """The kind of word."""
+  kind: IdentifierWordKind!
+}
+
+"""The kind of a word in an identifier."""
+enum IdentifierWordKind {
+  """An ordinary word."""
+  WORD
+
+  """An acronym, from the dictionary or a run of capitals."""
+  ACRONYM
+
+  """A dictionary term with a fixed mixed-case spelling (GitHub, IPv6)."""
+  TERM
+}
+
 """Compression algorithm to use for image layers."""
 enum ImageLayerCompression {
   Gzip
@@ -4774,25 +4897,19 @@ type LLM implements Node & Syncer {
   """A unique identifier for this LLM."""
   id: ID!
 
+  """Expertise composed into this conversation, in order."""
+  expertise: [Expertise!]!
+
   """
-  Run expertise in list order, passing this conversation through each function. Retain existing contributions.
+  Run expertise on this conversation, passing it through each function in order, and record it in expertise.
+
+  Composing an entry that is already recorded refreshes its module: the module's
+  contributions are cleared, all of its recorded entries run again, and
+  compatible tool state is kept. Other contributions are untouched.
+
+  Agent arguments receive the agent that owns this conversation. Without one, entries requiring an Agent are skipped.
   """
   compose(
-    """The expertise to run. Each reference retains its source workspace."""
-    expertise: [ID!]! @expectedType(name: "Expertise")
-  ): LLM!
-
-  """
-  Run expertise in list order, replacing their modules' contributions and preserving compatible tool state.
-
-  Clear each selected module's contributions once before execution. Retain
-  unowned contributions and contributions from other modules. Keep this LLM's
-  workspace.
-
-  A change to a tool binding's version resets its state. Removed bindings,
-  changed identities, and incompatible state are errors.
-  """
-  recompose(
     """The expertise to run. Each reference retains its source workspace."""
     expertise: [ID!]! @expectedType(name: "Expertise")
   ): LLM!
@@ -5109,6 +5226,13 @@ type LLM implements Node & Syncer {
   stepped.
   """
   spawn(
+    """
+    Expertise to compose into the new agent's conversation. Agent arguments
+    receive the new agent, which cannot be used until composition completes; if
+    composition fails, the agent is left STOPPED.
+    """
+    expertise: [ID!] = [] @expectedType(name: "Expertise")
+
     """
     Display label for the agent — telemetry and error messages; carries no
     identity. Defaults to a short name derived from the conversation.
@@ -5922,6 +6046,18 @@ enum ModuleSourceKind {
   DIR @enumValue(value: "DIR_SOURCE")
 }
 
+"""An entry in the naming dictionary."""
+type NamingTerm implements Node {
+  """A unique identifier for this NamingTerm."""
+  id: ID!
+
+  """Standard spelling: "HTTP", "IPv6", "GitHub", "iOS"."""
+  spelling: String!
+
+  """Spelling in the CAPITALIZED style: "Http", "Ipv6", "GitHub", "Ios"."""
+  capitalized: String!
+}
+
 """Transport layer network protocol associated to a port."""
 enum NetworkProtocol {
   TCP
@@ -6418,6 +6554,40 @@ type Query implements Node {
 
   """Initialize a JSON value"""
   json: JSONValue!
+
+  """
+  Parse a name in any casing into words.
+
+  Known acronyms and terms come from the naming dictionary; everything else
+  falls back to the case heuristic. Errors on non-ASCII input, input with no
+  letters or digits, or input over 256 bytes.
+  """
+  identifier(
+    """The name to parse."""
+    name: String!
+  ): Identifier! @experimental(reason: "Identifier casing APIs are likely to change.")
+
+  """Format many names at once, for codegen. Returns them in input order."""
+  formatIdentifiers(
+    """The names to format, in any casing."""
+    names: [String!]!
+
+    """The casing to format the names in."""
+    casing: Casing!
+
+    """How to write acronyms and terms where a word starts with a capital."""
+    acronyms: AcronymStyle = UPPERCASE
+
+    """
+    The engine version whose naming dictionary to parse the names with, e.g. the
+    __schemaVersion of a schema being generated. Defaults to the caller's engine
+    version.
+    """
+    version: String
+  ): [String!]! @experimental(reason: "Identifier casing APIs are likely to change.")
+
+  """The acronyms and terms used to parse and format identifiers."""
+  namingDictionary: [NamingTerm!]! @experimental(reason: "Identifier casing APIs are likely to change.")
 
   """Load a GraphQL introspection schema for merging."""
   schema(
@@ -7967,6 +8137,8 @@ type Workspace implements Node {
 
   """
   Discover static object artifacts from workspace modules without evaluating their values.
+
+  Omits the paths that the workspace's check.skip, generate.skip, and up.skip settings skip.
   """
   artifacts(
     """

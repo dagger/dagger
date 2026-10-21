@@ -537,9 +537,10 @@ func (fe *frontendPretty) consoleHelp(w http.ResponseWriter, _ *http.Request) {
 		"  GET  /id?dig=<dig>   encoded dagql ID rebuilt for a call digest\n"+
 		"  GET  /calls?grep=<re> content-search ingested call payloads (full search, bounded previews)\n"+
 		"  GET  /toolset        the interactive LLM session's tool docs, when one is live\n"+
-		"  GET  /agents         trace-derived roster (handles, names, state, parent, spans)\n"+
-		"  GET  /transcript?agent=<handle|name>[&role=user&tool=...&grep=...&offset=0&limit=20]\n"+
-		"                      recorded checkpoint data for dagger trace; idle runtime snapshots in engine sessions\n"+
+		"  GET  /agents[?all=true]  roster tree (handle, name, state); recorded traces hide agents without a checkpoint unless all=true\n"+
+		"  GET  /transcript?agent=<handle|name>[&role=user|assistant|tool|system|gap&tool=...&grep=...&offset=0&limit=20&clip=4000]\n"+
+		"                      readable transcript: recorded checkpoint data for dagger trace; idle runtime snapshots in engine sessions.\n"+
+		"                      Pages stop at ~40KiB; clip bounds each tool call/result in bytes (0 = unclipped). format=json for both routes\n"+
 		"  GET  /help           this list\n"+
 		"keys: ←↑↓→ move · right/l expand · left/h collapse · enter zoom · "+
 		"r error origin · L logs · +/- verbosity · / search\n"+
@@ -694,7 +695,7 @@ func consoleAgentsFromDB(db *dagui.DB) []consoleAgent {
 	return agents
 }
 
-func (fe *frontendPretty) consoleAgentsHandler(w http.ResponseWriter, _ *http.Request) {
+func (fe *frontendPretty) consoleAgentsHandler(w http.ResponseWriter, r *http.Request) {
 	fe.consoleMu.Lock()
 	if fe.tui != nil {
 		fe.tui.Step()
@@ -702,12 +703,21 @@ func (fe *frontendPretty) consoleAgentsHandler(w http.ResponseWriter, _ *http.Re
 	agents := fe.consoleAgents()
 	connected := fe.dag != nil
 	fe.consoleMu.Unlock()
-	consoleJSON(w, struct {
-		Agents          []consoleAgent `json:"agents"`
-		LoadedSpansOnly bool           `json:"loadedSpansOnly"`
-		EngineConnected bool           `json:"engineConnected"`
-		Note            string         `json:"note"`
-	}{agents, true, connected, "Use dagger agent -r <trace-id> to restore the full roster before reading transcripts. Discovery does not start agents."})
+	const note = "Use dagger agent -r <trace-id> to restore the full roster before reading transcripts. Discovery does not start agents."
+	if r.URL.Query().Get("format") == "json" {
+		consoleJSON(w, struct {
+			Agents          []consoleAgent `json:"agents"`
+			LoadedSpansOnly bool           `json:"loadedSpansOnly"`
+			EngineConnected bool           `json:"engineConnected"`
+			Note            string         `json:"note"`
+		}{agents, true, connected, note})
+		return
+	}
+	header := "Live session: only loaded telemetry is represented."
+	if !connected {
+		header += " No engine is connected, so transcripts are unavailable."
+	}
+	consoleText(w, renderConsoleAgents(agents, false, true, header+" "+note))
 }
 
 type consoleTranscriptBlock struct {
@@ -734,9 +744,12 @@ type consoleTranscriptMessage struct {
 }
 
 type consoleAgentSnapshot struct {
-	Source   string `json:"-"`
-	Digest   string `json:"-"`
-	State    string `json:"state"`
+	Source string `json:"-"`
+	Digest string `json:"-"`
+	// Gaps lists where a recorded checkpoint could not be fully decoded; each
+	// also stands in place as a GAP message.
+	Gaps     []string `json:"-"`
+	State    string   `json:"state"`
 	Snapshot struct {
 		ID       string                     `json:"id"`
 		Messages []consoleTranscriptMessage `json:"messages"`
@@ -809,12 +822,20 @@ func serveConsoleTranscript(w http.ResponseWriter, r *http.Request, agents []con
 		return
 	}
 	role := strings.ToUpper(q.Get("role"))
-	if role != "" && role != "USER" && role != "ASSISTANT" && role != "SYSTEM" {
-		http.Error(w, "role must be user, assistant, or system", http.StatusBadRequest)
+	if role != "" && role != "USER" && role != "ASSISTANT" && role != "SYSTEM" && role != "GAP" && role != "TOOL" {
+		http.Error(w, "role must be user, assistant, tool, system, or gap", http.StatusBadRequest)
 		return
 	}
 	offset, limit := 0, 20
 	var err error
+	clip := consoleDefaultClip
+	if raw := q.Get("clip"); raw != "" {
+		clip, err = strconv.Atoi(raw)
+		if err != nil || clip < 0 {
+			http.Error(w, "clip must be a non-negative integer", http.StatusBadRequest)
+			return
+		}
+	}
 	if raw := q.Get("offset"); raw != "" {
 		offset, err = strconv.Atoi(raw)
 		if err != nil || offset < 0 {
@@ -878,29 +899,59 @@ func serveConsoleTranscript(w http.ResponseWriter, r *http.Request, agents []con
 	end := start + min(limit, total-start)
 	agent := matches[0]
 	agent.State = snapshot.State
-	consoleJSON(w, struct {
-		Agent          consoleAgent               `json:"agent"`
-		Source         string                     `json:"source"`
-		SnapshotDigest string                     `json:"snapshotDigest,omitempty"`
-		SnapshotID     string                     `json:"snapshotID,omitempty"`
-		Total          int                        `json:"total"`
-		Offset         int                        `json:"offset"`
-		Limit          int                        `json:"limit"`
-		HasMore        bool                       `json:"hasMore"`
-		Messages       []consoleTranscriptMessage `json:"messages"`
-	}{agent, snapshot.Source, snapshot.Digest, snapshot.Snapshot.ID, total, offset, limit, end < total, messages[start:end]})
+	if q.Get("format") == "json" {
+		consoleJSON(w, struct {
+			Agent          consoleAgent               `json:"agent"`
+			Source         string                     `json:"source"`
+			SnapshotDigest string                     `json:"snapshotDigest,omitempty"`
+			SnapshotID     string                     `json:"snapshotID,omitempty"`
+			Total          int                        `json:"total"`
+			Offset         int                        `json:"offset"`
+			Limit          int                        `json:"limit"`
+			HasMore        bool                       `json:"hasMore"`
+			Partial        bool                       `json:"partial,omitempty"`
+			Gaps           []string                   `json:"gaps,omitempty"`
+			Messages       []consoleTranscriptMessage `json:"messages"`
+		}{agent, snapshot.Source, snapshot.Digest, snapshot.Snapshot.ID, total, offset, limit, end < total,
+			len(snapshot.Gaps) > 0, snapshot.Gaps, messages[start:end]})
+		return
+	}
+	consoleText(w, renderConsoleTranscript(consoleTranscriptPage{
+		Agent:    agent,
+		Snapshot: snapshot,
+		Messages: messages,
+		Offset:   start,
+		Limit:    limit,
+		Clip:     clip,
+		Filters:  consoleTranscriptFilters(q),
+	}))
 }
 
 func selectConsoleTranscript(messages []consoleTranscriptMessage, role, tool string, grep *regexp.Regexp) []consoleTranscriptMessage {
 	selected := make([]consoleTranscriptMessage, 0)
+	toolNames := map[string]string{}
+	for _, message := range messages {
+		for _, block := range message.Content {
+			if block.Kind == "TOOL_CALL" && block.CallID != "" {
+				toolNames[block.CallID] = block.ToolName
+			}
+		}
+	}
 	for index, message := range messages {
-		if role == "" && message.Role == "SYSTEM" || role != "" && message.Role != role {
+		// Tool results are user-role messages to the model, but a reader
+		// asking for user messages wants prompts: filter them as "TOOL".
+		effective := message.Role
+		if effective == "USER" && len(message.Content) > 0 && message.Content[0].Kind == "TOOL_RESULT" {
+			effective = "TOOL"
+		}
+		if role == "" && effective == "SYSTEM" || role != "" && effective != role {
 			continue
 		}
 		toolMatches := tool == ""
 		var text strings.Builder
 		for _, block := range message.Content {
-			toolMatches = toolMatches || block.Kind == "TOOL_CALL" && block.ToolName == tool
+			toolMatches = toolMatches || block.Kind == "TOOL_CALL" && block.ToolName == tool ||
+				block.Kind == "TOOL_RESULT" && toolNames[block.CallID] == tool
 			if grep != nil {
 				text.WriteString(block.Text)
 				text.WriteString("\n")

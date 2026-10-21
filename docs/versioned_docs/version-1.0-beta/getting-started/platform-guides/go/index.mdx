@@ -23,7 +23,7 @@ Complete the [Quickstart](../../quickstart.mdx) in the project before you start.
 
 ## Install the Dagger module for Go
 
-The Dagger module for Go is a reusable module from `dagger.io/go`. It finds every `go.mod` in the repository, tests each one, and runs `go generate` in it. It is installed in the workspace under the name `go`.
+The Dagger module for Go is a reusable module from `dagger.io/go`. It finds every `go.mod` in the repository, tests the packages in each Go module, and runs `go generate` in them. It is installed in the workspace under the name `go`.
 
 ```shell
 dagger module install dagger.io/go
@@ -36,9 +36,13 @@ dagger check go -l
 ```
 
 ```text
-go:test-all       # Run tests in every discovered Go module.
-go:generate-all   # Did you "run go generate . in selected directories across the workspace"?
+MODULE  GO-PACKAGE  GO-TEST  CHECK  DESCRIPTION
+go      *                    stale  staleness check: run go generate in this package
+go      *           *        test   Run this test.
+# Use --all to expand collections and list each item.
 ```
+
+The Go packages and their tests are collections, so each row stands for every package (`*`) or every test the module found. `dagger check go -l --all` lists one row per package and test.
 
 Run them:
 
@@ -46,9 +50,29 @@ Run them:
 dagger check go
 ```
 
-`go:test-all` runs `go test ./...` in every Go module it finds. Each Go test is reported as its own span, so a failure names the test that failed. `go:generate-all` is the drift check for the generator: it fails when `go generate` would change a committed file.
+`test` runs the tests of each package with one `go test` command per package. Each Go test is reported as its own span, so a failure names the test that failed. `stale` is the drift check for the generator: it fails when `go generate` would change a committed file.
 
-A test that skips itself because a service is unavailable is not a failure. The Check passes, and the summary adds a `skipped` count next to `passed` whenever a test skipped. If that count appears, the project needs the second half of this guide.
+To run part of the suite, select packages and tests by name. For example, run one test:
+
+```shell
+dagger check --go-package=store --go-test=TestFixture
+```
+
+[Checking your code](../../../using/checking.mdx#select-collection-items) covers every way to list and select packages and tests.
+
+A test that skips itself because a service is unavailable is not a failure. The Check passes, and the report adds a `skipped` count for the package:
+
+```text
+✔ dag://?check=go/packages/tests/test&go-package=store&go-test=TestFixture&go-test=TestDatabase 5.3s OK
+  == TESTS ==
+    ∅ example.com/greetings/store › TestDatabase SKIP
+              store_test.go:18: DATABASE_URL not set
+
+    ∅ 1 skipped
+    ✔ 1 passed
+```
+
+If a `skipped` count appears, the project needs the second half of this guide.
 
 ## Configure the `go` module
 
@@ -62,13 +86,15 @@ dagger module settings go
 
 ```text
 MODULE  KEY                VALUE  DESCRIPTION
-go      version                   Go toolchain version for every module, overriding what each module's own
-go      base                      Base image for Go test and generate containers. It must carry a Go
-go      includeExtraFiles         Extra workspace-root include patterns mounted for each module's Go commands.
-go      test                      Module roots to test. A bare pattern selects, a "!"-prefixed pattern
-go      generate                  Directories to run go generate in. Paths are relative to the workspace root
-go      goflags                   Value of the GOFLAGS environment variable in every Go container, e.g.
-go      mountPath                 Absolute container path where the workspace is mounted for Go commands.
+go      version                   Go version for every module, overriding go.mod. Ignored when base is set.
+go      base                      Base image for Go containers. Must include a Go toolchain.
+go      includeExtraFiles         Extra workspace files to mount for Go commands, as include patterns.
+go      test                      Module roots to test, e.g. ["**", "!docs"]. "!" excludes.
+go      generate                  Directories to run go generate in, as workspace-root globs. "!" excludes.
+go      build                     Main packages to build, as module-relative globs. "!" excludes.
+go      buildFlags                Extra flags for go build only, e.g. ["-trimpath", "-ldflags=-s -w"].
+go      goflags                   GOFLAGS for every Go container, e.g. "-tags=extended".
+go      mountPath                 Where to mount the workspace in Go containers. Defaults to "/src/<workspace name>".
 ```
 
 Set a single value with the same command:
@@ -97,12 +123,18 @@ The [Go module reference](../../../reference/modules/go.mdx) describes every set
 
 ## Lint the project
 
-Linting is a separate module, so a project picks the linter it already uses. Two are available, and both discover Go modules the same way the `go` module does:
+Linting is a separate module, so a project picks the linter it already uses. Two are available, and each lints the directories that hold its configuration file:
 
-- **golangci-lint** from `dagger.io/go/golangci-lint` runs `golangci-lint run` with the project's `.golangci.*` config if it has one.
-- **Staticcheck** from `dagger.io/go/staticcheck` runs `staticcheck ./...` with the project's `staticcheck.conf` files if it has any.
+- **golangci-lint** from `dagger.io/go/golangci-lint` runs `golangci-lint run` wherever the project has a `.golangci.yml`, `.golangci.yaml`, `.golangci.toml`, or `.golangci.json`.
+- **Staticcheck** from `dagger.io/go/staticcheck` runs `staticcheck` wherever the project has a `staticcheck.conf`.
 
-Install one, unless `dagger module list` shows the workspace already has one. The rest of this section uses golangci-lint, and Staticcheck works the same way with `staticcheck` in place of `golangci-lint`:
+Each configuration file roots a lint project, which covers the Go code below it. A project without a configuration file has nothing to lint, so commit one first if the project does not have one yet. A minimal `.golangci.yml` is one line:
+
+```yaml
+version: "2"
+```
+
+Install a linter module, unless `dagger module list` shows the workspace already has one. The rest of this section uses golangci-lint, and Staticcheck works the same way with `staticcheck` in place of `golangci-lint`:
 
 ```shell
 dagger module install dagger.io/go/golangci-lint
@@ -115,12 +147,14 @@ dagger check -l
 ```
 
 ```text
-go:test-all              # Run tests in every discovered Go module.
-go:generate-all          # Did you "run go generate . in selected directories across the workspace"?
-golangci-lint:lint-all   # Run golangci-lint in every selected Go module.
+MODULE         GO-PACKAGE  GO-TEST  GOLANGCI-LINT-PROJECT  CHECK  DESCRIPTION
+go             *                                           stale  staleness check: run go generate in this package
+go             *           *                               test   Run this test.
+golangci-lint                       *                      lint   Run golangci-lint in this project.
+# Use --all to expand collections and list each item.
 ```
 
-`golangci-lint:lint-all` runs the linter in every selected Go module and reports diagnostics with paths relative to the repository root. It runs in its own container, built for the toolchain each module's `go.mod` asks for, so the `go` module's `version` and `base` settings do not affect it. The linter module has settings of the same shape:
+`lint` runs the linter in each project and reports diagnostics with paths relative to the repository root. It runs in its own container, built for the toolchain each Go module's `go.mod` asks for, so the `go` module's `version` and `base` settings do not affect it. The linter module has settings of the same shape:
 
 ```shell
 dagger module settings golangci-lint
@@ -128,14 +162,14 @@ dagger module settings golangci-lint
 
 ```text
 MODULE         KEY                VALUE  DESCRIPTION
-golangci-lint  version                   golangci-lint release every module is linted with, without the v prefix.
-golangci-lint  goVersion                 Go toolchain version for every module, overriding what each module's own
-golangci-lint  base                      Container to run golangci-lint in. It must carry a Go toolchain, along with
+golangci-lint  version                   golangci-lint release, without the v prefix.
+golangci-lint  goVersion                 Go version for every module, overriding go.mod. Ignored when base is set.
+golangci-lint  base                      Base image for Go containers. Must include a Go toolchain.
 golangci-lint  includeExtraFiles
-golangci-lint  lint                      Module roots to lint. Bare patterns select, "!"-prefixed patterns exclude,
+golangci-lint  lint                      Project roots to lint, e.g. ["**", "!docs"]. "!" excludes.
 ```
 
-`version` selects the golangci-lint release, `goVersion` overrides the Go toolchain the same way the `go` module's `version` does, and `base` supplies a container of your own, which brings its own toolchain. `includeExtraFiles` and `lint` follow the same rules as the `go` module's settings, so a monorepo that excludes a module from tests usually excludes it from lint the same way:
+`version` selects the golangci-lint release, `goVersion` overrides the Go toolchain the same way the `go` module's `version` does, and `base` supplies a container of your own, which brings its own toolchain. `includeExtraFiles` follows the same rules as the `go` module's setting. `lint` uses the same patterns as `test`, but selects lint projects, so an exclusion applies to a directory that holds its own configuration file:
 
 ```toml
 [modules.golangci-lint.settings]
@@ -144,7 +178,7 @@ lint = ["**", "!legacy-service", "!test-fixtures"]
 
 ## Run generators
 
-If the project uses `go generate`, the `go` module's generator runs it in every Go module that has a `//go:generate` directive:
+If the project uses `go generate`, the `go` module's generator runs it in every package that has a `//go:generate` directive:
 
 ```shell
 dagger generate
@@ -180,7 +214,7 @@ Without the directive, the test fails the same way it would on a machine that do
           fixture_test.go:10: open ../fixtures/users.json: no such file or directory
 ```
 
-A generator without its input either fails or writes different output, and `go:generate-all` reports the difference as drift. Add the directive and both Checks pass.
+A generator without its input either fails or writes different output, and the `stale` Check reports the difference as drift. Add the directive and both Checks pass.
 
 Dagger's own repository uses this for its CLI reference. A Go file with no code holds a `//go:generate:include` line for the rendered page above the `//go:generate go -C ../../../../ run ./internal/cmd/dagger/docsgen` line that renders it, so the drift check compares the regenerated page against the committed one, and the `go -C` argument pulls the repository's root Go module in as the generator's input.
 
@@ -289,14 +323,15 @@ dagger start -l
 ```
 
 ```text
-postgres   # A Postgres database for development and tests.
+MODULE         SERVICE   DESCRIPTION
+greetings-dev  postgres  A Postgres database for development and tests.
 ```
 
-`dagger module init` made the dev module the workspace entrypoint, so its functions are listed without the module name. The settings command stores the full `dag://<project>-dev/test-runtime` address in `dagger.toml`.
+The `MODULE` column shows the dev module's name, `<project>-dev`. `dagger module init` made it the workspace entrypoint, so the settings command accepts `test-runtime` without the module name and stores the full `dag://<project>-dev/test-runtime` address in `dagger.toml`.
 
 ### Make sure the runtime is wired
 
-If you wired `dag://<project>-dev/test-runtime` into `base` in the previous section, nothing changes in `dagger.toml`. If you skipped that section, [create the dev module](#create-a-runtime-module) first, then wire it now with [module wiring](../../../config/module-wiring.mdx):
+If you wired `dag://<project>-dev/test-runtime` into `base` in the previous section, nothing changes in `dagger.toml`. If you skipped that section, [create the dev module](#create-a-custom-module) first, then wire it now with [module wiring](../../../config/module-wiring.mdx):
 
 ```shell
 dagger module settings go base dag://<project>-dev/test-runtime
@@ -305,7 +340,7 @@ dagger module settings go base dag://<project>-dev/test-runtime
 Run the tests again:
 
 ```shell
-dagger check dag://go/test-all
+dagger check --go --check=test
 ```
 
 The tests that skipped before now run, and the output gains a services section showing Postgres starting alongside them. The `go` module still owns the test logic. The project's own code is two functions that describe its runtime and its database, and `dagger.toml` connects them.
@@ -317,19 +352,26 @@ dagger check
 ```
 
 ```text
-== CHECKS ==  ✔ 3 passed
-✔ go:generate-all 1.5s OK
-✔ go:test-all 1.5s OK
+== CHECKS ==  ✔ 5 passed
+✔ dag://?check=dang-sdk/generate/stale 4.0s OK
+✔ dag://?check=go/packages/generate/stale&go-package=.&go-package=store&go-package=version 11.3s OK
+✔ dag://?check=go/packages/tests/test&go-package=.&go-test=TestHello 11.3s OK
   == TESTS ==
     ✔ example.com/greetings  1 passed
+
+    ✔ 1 passed
+✔ dag://?check=go/packages/tests/test&go-package=store&go-test=TestFixture&go-test=TestDatabase 11.3s OK
+  == TESTS ==
     ✔ example.com/greetings/store  2 passed
 
-    ✔ 3 passed
-✔ golangci-lint:lint-all 0.5s OK
+    ✔ 2 passed
+✔ dag://?check=golangci-lint/projects/lint&golangci-lint-project=. 2.2s OK
 
 == SERVICES ==
-✔ ...dagger.local exec docker-entrypoint.sh postgres 1.3s EXITED
+✔ ...dagger.local exec docker-entrypoint.sh postgres 1.5s EXITED
 ```
+
+Each Check is named by its link and the packages or tests it covered. The Dang SDK adds a drift check of its own for the dev module's generated files.
 
 Commit the configuration, the lock file, and the module. Dagger needs all three to load the workspace the same way everywhere:
 

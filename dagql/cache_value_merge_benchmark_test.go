@@ -352,3 +352,149 @@ func benchmarkMergeLargeRecords(b *testing.B, shape mergeBenchShape, existing bo
 	b.ReportMetric(float64(longestHold.Microseconds())/1000, "longest-hold-ms")
 	b.ReportMetric(float64(longestWait.Microseconds())/1000, "reader-wait-ms")
 }
+
+// BenchmarkValueMergeSplit merges an engine's export into a new Cloud cache,
+// once with MergeValues and once prepared and then committed. A caller that
+// holds a lock of its own across a merge, as the remote-cache service holds
+// its work lock, holds it for all of MergeValues; once it prepares outside
+// that lock, for the commit only. The shapes are a reply of about 2 MB, 200
+// records of about 10 KB as roots with a dependency each, and a module's
+// runtime container, one root over 63 records of about 16 KB.
+//
+// It reports each part's time, mean and longest: merge-ms (MergeValues),
+// prepare-ms and commit-ms. It also reports the longest a reader looping on
+// egraphMu waited during a preparation, which takes egraphMu only to reserve
+// numbers.
+func BenchmarkValueMergeSplit(b *testing.B) {
+	shapes := map[string]mergeBenchShape{
+		"runtime-root/records=63": {records: 63, chain: true, fields: 70},
+		"records=200":             {records: 200, fields: 44},
+	}
+	for _, name := range []string{"runtime-root/records=63", "records=200"} {
+		b.Run(name, func(b *testing.B) {
+			benchmarkValueMergeSplit(b, shapes[name])
+		})
+	}
+}
+
+func benchmarkValueMergeSplit(b *testing.B, shape mergeBenchShape) {
+	ctx := cacheTestContext(context.Background())
+	a, err := NewCache(ctx, filepath.Join(b.TempDir(), "a.db"), nil, nil)
+	require.NoError(b, err)
+	b.Cleanup(func() { require.NoError(b, a.CloseDiscardingPersistence()) })
+	srv := newDagqlServerForTest(b, &persistCodecRoot{})
+	srv.InstallObject(NewClass(srv, ClassOpts[*transferTestValue]{}))
+	actx := srvToContext(ContextWithCache(ctx, a), srv)
+	publish := func(field string, child AnyResult) AnyResult {
+		value := &transferTestValue{Text: field, Fields: mergeBenchBody(field, shape.fields)}
+		if child != nil {
+			value.Child = uint64(child.cacheSharedResult().id)
+		}
+		frame := &ResultCall{Kind: ResultCallKindField, Field: field, Type: NewResultCallType(value.Type())}
+		res, err := a.GetOrInitCall(actx, "test-session", srv, &CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+			return NewResultForCall(value, frame)
+		})
+		require.NoError(b, err)
+		if child != nil {
+			transferTestDependency(a, actx, res, child)
+		}
+		return res
+	}
+	var roots []AnyResult
+	if shape.chain {
+		var prev AnyResult
+		for i := range shape.records {
+			prev = publish(fmt.Sprintf("step-%d", i), prev)
+		}
+		roots = []AnyResult{prev}
+	} else {
+		for i := range shape.records / 2 {
+			roots = append(roots, publish(fmt.Sprintf("root-%d", i), publish(fmt.Sprintf("dep-%d", i), nil)))
+		}
+	}
+	var bundle ValueBundle
+	require.NoError(b, a.WithExportedValues(actx, ValueSelection{Roots: roots}, config.RefConfig{}, func(_ context.Context, values *ExportedValues) error {
+		bundle = values.Bundle
+		return nil
+	}))
+	require.Len(b, bundle.Values, shape.records)
+	encoded, err := json.Marshal(bundle)
+	require.NoError(b, err)
+
+	newCloud := func() *Cache {
+		c, err := NewCache(ctx, "", nil, nil, WithBlobStore())
+		require.NoError(b, err)
+		return c
+	}
+	type part struct{ total, longest time.Duration }
+	var merge, prepare, commit part
+	add := func(p *part, d time.Duration) {
+		p.total += d
+		if d > p.longest {
+			p.longest = d
+		}
+	}
+	var longestWait time.Duration
+	b.ResetTimer()
+	for range b.N {
+		b.StopTimer()
+		merged, split := newCloud(), newCloud()
+		b.StartTimer()
+
+		start := time.Now()
+		want, err := merged.MergeValues(ctx, "cache-a", bundle)
+		add(&merge, time.Since(start))
+		require.NoError(b, err)
+
+		b.StopTimer()
+		stop, waited := make(chan struct{}), make(chan time.Duration)
+		go func() {
+			var most time.Duration
+			for {
+				select {
+				case <-stop:
+					waited <- most
+					return
+				default:
+				}
+				start := time.Now()
+				split.egraphMu.RLock()
+				if wait := time.Since(start); wait > most {
+					most = wait
+				}
+				split.egraphMu.RUnlock()
+			}
+		}()
+		b.StartTimer()
+		start = time.Now()
+		p, err := split.PrepareValueMerge(ctx, "cache-a", bundle)
+		add(&prepare, time.Since(start))
+		b.StopTimer()
+		close(stop)
+		if wait := <-waited; wait > longestWait {
+			longestWait = wait
+		}
+		require.NoError(b, err)
+		b.StartTimer()
+
+		start = time.Now()
+		got, err := split.CommitValueMerge(ctx, p)
+		add(&commit, time.Since(start))
+		require.NoError(b, err)
+
+		b.StopTimer()
+		require.Equal(b, len(want.Values), len(got.Values))
+		require.NoError(b, merged.CloseDiscardingPersistence())
+		require.NoError(b, split.CloseDiscardingPersistence())
+		b.StartTimer()
+	}
+	ms := func(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 }
+	b.ReportMetric(float64(len(encoded)), "bundle-bytes")
+	b.ReportMetric(ms(merge.total)/float64(b.N), "merge-ms")
+	b.ReportMetric(ms(merge.longest), "longest-merge-ms")
+	b.ReportMetric(ms(prepare.total)/float64(b.N), "prepare-ms")
+	b.ReportMetric(ms(prepare.longest), "longest-prepare-ms")
+	b.ReportMetric(ms(commit.total)/float64(b.N), "commit-ms")
+	b.ReportMetric(ms(commit.longest), "longest-commit-ms")
+	b.ReportMetric(ms(longestWait), "prepare-reader-wait-ms")
+}

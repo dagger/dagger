@@ -8,12 +8,14 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 
 	"github.com/dagger/dagger/engine/distconsts"
 )
@@ -23,6 +25,11 @@ const (
 	// testHelperEnv sets how this test binary behaves when /.init starts it as
 	// the session helper: "hang" or "exit:<status>".
 	testHelperEnv = "_DAGGER_INIT_TEST_SESSION_HELPER"
+	// testHelperPidFileEnv names a file the session helper writes its pid to.
+	testHelperPidFileEnv = "_DAGGER_INIT_TEST_SESSION_HELPER_PID_FILE"
+	// testHelperPrintEnv is text the session helper writes to its stdout and
+	// stderr when it starts.
+	testHelperPrintEnv = "_DAGGER_INIT_TEST_SESSION_HELPER_PRINT"
 )
 
 // TestMain runs the test binary as /.init when a test starts it with
@@ -43,6 +50,13 @@ func TestMain(m *testing.M) {
 		return
 	}
 	if helper, ok := os.LookupEnv(testHelperEnv); ok {
+		if pidFile := os.Getenv(testHelperPidFileEnv); pidFile != "" {
+			os.WriteFile(pidFile, []byte(strconv.Itoa(os.Getpid())), 0o600)
+		}
+		if text := os.Getenv(testHelperPrintEnv); text != "" {
+			fmt.Fprint(os.Stdout, text)
+			fmt.Fprint(os.Stderr, text)
+		}
 		if status, ok := strings.CutPrefix(helper, "exit:"); ok {
 			code, _ := strconv.Atoi(status)
 			os.Exit(code)
@@ -55,6 +69,16 @@ func TestMain(m *testing.M) {
 	}
 	os.Exit(m.Run())
 }
+
+// Shell snippets for commands to synchronize with the session helper through
+// its pid file, in testHelperPidFileEnv, each bounded to about 20 seconds.
+const (
+	// waitHelperStarted waits for the helper to write its pid file.
+	waitHelperStarted = `i=0; while [ ! -s "$` + testHelperPidFileEnv + `" ] && [ $i -lt 2000 ]; do sleep 0.01; i=$((i+1)); done; `
+	// waitHelperGone waits for the helper to have exited and been reaped,
+	// which /.init reports on before handling anything else.
+	waitHelperGone = waitHelperStarted + `p=$(cat "$` + testHelperPidFileEnv + `"); i=0; while kill -0 "$p" 2>/dev/null && [ $i -lt 2000 ]; do sleep 0.01; i=$((i+1)); done; `
+)
 
 // initEnv is the environment for running the test binary as /.init: the
 // test's own, without a Dagger session (which would make /.init start its
@@ -156,9 +180,10 @@ func TestInitReportsSessionHelperExit(t *testing.T) {
 	require.NoError(t, err)
 	defer r.Close()
 
-	cmd := exec.Command(os.Args[0], "sh", "-c", "sleep 1; echo ran")
+	cmd := exec.Command(os.Args[0], "sh", "-c", waitHelperGone+"echo ran")
 	cmd.Env = initEnv(
 		"DAGGER_SESSION_TOKEN=token", "DAGGER_SESSION_PORT=1", testHelperEnv+"=exit:3",
+		testHelperPidFileEnv+"="+filepath.Join(t.TempDir(), "helper.pid"),
 		distconsts.SessionHelperStatusFDEnv+"=3",
 	)
 	cmd.ExtraFiles = []*os.File{w}
@@ -170,4 +195,112 @@ func TestInitReportsSessionHelperExit(t *testing.T) {
 	report, err := bufio.NewReader(r).ReadString('\n')
 	require.NoError(t, err)
 	require.Equal(t, "exited 3\n", report)
+}
+
+// /.init stops and reaps the session helper before it exits, whether the
+// command ran or failed to start, and keeps the command's exit status.
+func TestInitStopsSessionHelper(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		args    []string
+		status  int
+		started bool // the helper certainly started before /.init exited
+	}{
+		{"command exits", []string{"sh", "-c", waitHelperStarted + "exit 5"}, 5, true},
+		{"command fails to start", []string{"/does/not/exist"}, 1, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pidFile := filepath.Join(t.TempDir(), "helper.pid")
+			cmd := exec.Command(os.Args[0], tc.args...)
+			cmd.Env = initEnv(
+				"DAGGER_SESSION_TOKEN=token", "DAGGER_SESSION_PORT=1",
+				testHelperEnv+"=hang", testHelperPidFileEnv+"="+pidFile,
+			)
+			err := cmd.Run()
+			var exitErr *exec.ExitError
+			require.ErrorAs(t, err, &exitErr)
+			require.Equal(t, tc.status, exitErr.ExitCode())
+
+			if tc.started {
+				_, err := os.Stat(pidFile)
+				require.NoError(t, err, "the session helper didn't start")
+			}
+			// The helper's environment carries pidFile, which is unique to
+			// this test.
+			left := processesWithEnv(t, testHelperPidFileEnv+"="+pidFile)
+			for _, pid := range left {
+				unix.Kill(pid, unix.SIGKILL)
+			}
+			require.Empty(t, left, "the session helper outlived /.init")
+		})
+	}
+}
+
+// processesWithEnv returns the live processes whose environment has kv.
+func processesWithEnv(t *testing.T, kv string) []int {
+	t.Helper()
+	entries, err := os.ReadDir("/proc")
+	require.NoError(t, err)
+	var pids []int
+	for _, e := range entries {
+		pid, err := strconv.Atoi(e.Name())
+		if err != nil {
+			continue
+		}
+		env, err := os.ReadFile(filepath.Join("/proc", e.Name(), "environ"))
+		if err != nil {
+			continue
+		}
+		for _, v := range strings.Split(string(env), "\x00") {
+			if v == kv {
+				pids = append(pids, pid)
+				break
+			}
+		}
+	}
+	return pids
+}
+
+// The session helper's output doesn't reach the command's stdout or stderr.
+func TestInitKeepsSessionHelperOutputPrivate(t *testing.T) {
+	pidFile := filepath.Join(t.TempDir(), "helper.pid")
+	cmd := exec.Command(os.Args[0], "sh", "-c", waitHelperStarted+"echo ran; echo oops >&2")
+	cmd.Env = initEnv(
+		"DAGGER_SESSION_TOKEN=token", "DAGGER_SESSION_PORT=1",
+		testHelperEnv+"=hang", testHelperPidFileEnv+"="+pidFile, testHelperPrintEnv+"=helper says hi\n",
+	)
+	var stdout, stderr strings.Builder
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	require.NoError(t, cmd.Run())
+	_, err := os.Stat(pidFile)
+	require.NoError(t, err, "the session helper didn't start")
+	require.Equal(t, "ran\n", stdout.String())
+	require.Equal(t, "oops\n", stderr.String())
+}
+
+// When the session helper exits while the command runs, /.init reports what
+// it wrote along with its status.
+func TestInitReportsSessionHelperOutput(t *testing.T) {
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	defer r.Close()
+
+	cmd := exec.Command(os.Args[0], "sh", "-c", waitHelperGone+"echo ran")
+	cmd.Env = initEnv(
+		"DAGGER_SESSION_TOKEN=token", "DAGGER_SESSION_PORT=1", testHelperEnv+"=exit:2",
+		testHelperPidFileEnv+"="+filepath.Join(t.TempDir(), "helper.pid"),
+		testHelperPrintEnv+"=no session for you\n", distconsts.SessionHelperStatusFDEnv+"=3",
+	)
+	cmd.ExtraFiles = []*os.File{w}
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	w.Close()
+	require.NoError(t, err)
+	require.Equal(t, "ran\n", string(out))
+	require.Empty(t, stderr.String())
+
+	report, err := bufio.NewReader(r).ReadString('\n')
+	require.NoError(t, err)
+	require.Equal(t, "exited 2 "+strconv.Quote("no session for you\nno session for you\n")+"\n", report)
 }

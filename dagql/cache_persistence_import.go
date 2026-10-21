@@ -59,6 +59,10 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("list mirror snapshot_content_links: %w", err)
 	}
+	snapshotContentHashRows, err := c.pdb.ListMirrorSnapshotContentHashes(ctx)
+	if err != nil {
+		return fmt.Errorf("list mirror snapshot_content_hashes: %w", err)
+	}
 	importedLayerBlobRows, err := c.pdb.ListMirrorImportedLayerBlobIndex(ctx)
 	if err != nil {
 		return fmt.Errorf("list mirror imported_layer_blob_index: %w", err)
@@ -551,9 +555,16 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 
 	if c.snapshotManager != nil {
 		rows := bkcache.PersistentMetadataRows{
+			ContentHashes:   make([]bkcache.SnapshotContentHashRow, 0, len(snapshotContentHashRows)),
 			SnapshotContent: make([]bkcache.SnapshotContentRow, 0, len(snapshotContentRows)),
 			ImportedByBlob:  make([]bkcache.ImportedLayerBlobRow, 0, len(importedLayerBlobRows)),
 			ImportedByDiff:  make([]bkcache.ImportedLayerDiffRow, 0, len(importedLayerDiffRows)),
+		}
+		for _, row := range snapshotContentHashRows {
+			rows.ContentHashes = append(rows.ContentHashes, bkcache.SnapshotContentHashRow{
+				SnapshotID: row.SnapshotID,
+				Data:       row.Data,
+			})
 		}
 		for _, row := range snapshotContentRows {
 			rows.SnapshotContent = append(rows.SnapshotContent, bkcache.SnapshotContentRow{
@@ -810,7 +821,8 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 			if decodeErr != nil {
 				if decodeRetry {
 					// The attempt failed only because its leader's own
-					// context was canceled; the entry itself is healthy.
+					// context was canceled or its session was removed; the
+					// entry itself is healthy.
 					// Mirror waitForLazyEvaluation: a canceled joiner
 					// returns its own cause, a healthy one retries.
 					if ownCause := context.Cause(ctx); ownCause != nil {
@@ -855,12 +867,17 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 		finishPersistDecode := func(err error, installed bool) {
 			res.persistDecodeMu.Lock()
 			res.persistDecodeErr = err
-			res.persistDecodeRetry = lazyEvalErrorCausedByContext(ctx, err)
+			// A failure after the leader's session was removed is that
+			// removal's, whatever the error, as for shared calls: the
+			// decode can need the leader's client.
+			res.persistDecodeRetry = lazyEvalErrorCausedByContext(ctx, err) ||
+				(err != nil && clientScopeSessionClosed(ctx))
 			res.persistLeaseSyncPending = installed && err != nil
 			waitCh := res.persistDecodeWaitCh
 			res.persistDecodeWaitCh = nil
 			res.persistDecodeMu.Unlock()
 			close(waitCh)
+			logProducerRemovedOutcome(ctx, "persisted decode", fmt.Sprint(res.id), err)
 		}
 
 		// A leader with an installed payload (persistLeaseSyncPending was

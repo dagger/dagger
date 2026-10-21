@@ -13,6 +13,8 @@ import (
 	"github.com/adrg/xdg"
 	"github.com/gofrs/flock"
 	toml "github.com/pelletier/go-toml"
+
+	"github.com/dagger/dagger/internal/userconfig"
 )
 
 // oauthRefreshMu serializes OAuth load→refresh→persist sequences so
@@ -47,20 +49,13 @@ type rejectedOAuthRefresh struct {
 }
 
 const (
-	ConfigFileName = "config.toml"
+	ConfigFileName = userconfig.FileName
 )
 
 var (
 	ConfigRoot = filepath.Join(xdg.ConfigHome, "dagger")
-	ConfigFile = configFilePath()
+	ConfigFile = userconfig.Path()
 )
-
-func configFilePath() string {
-	if p := os.Getenv("DAGGER_CONFIG"); p != "" {
-		return p
-	}
-	return filepath.Join(ConfigRoot, ConfigFileName)
-}
 
 // Config represents the top-level dagger config file.
 // Only the [llm] section is managed here; other sections are preserved as-is.

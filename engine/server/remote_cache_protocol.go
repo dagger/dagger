@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"time"
+	"unicode/utf8"
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/opencontainers/go-digest"
@@ -34,11 +35,14 @@ func (a *RemoteCacheAdapter) CacheIdentity() (string, uint64) {
 
 // Export holds the requested entries by number and captures the held roots
 // with the selected outputs, leaving out those outside the captured closure.
-// A missing root is skipped as gone. When a busy entry fails the capture,
-// each root is probed alone, those whose probe fails are skipped as busy, and
-// the others are captured together; if that capture fails too, they are all
-// busy. consume is called once, with the bundle while its chains stay open,
-// or with no bundle when no root survived.
+// A missing root is skipped as gone. When the capture fails, other than by
+// the request's own cancellation or the cache closing, each root is probed
+// alone: one whose probe is busy is skipped as busy, one whose probe fails
+// otherwise is skipped as refused, with its error as the message, and the
+// others are captured together; if that capture is busy, they are all busy,
+// and if it fails otherwise, so does the request. consume is called once,
+// with the bundle while its chains stay open, or with no bundle when no root
+// survived.
 func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, consume func(context.Context, remotecache.Export) error) (rerr error) {
 	if a.stopped.Load() {
 		return ErrRemoteCacheAdapterClosed
@@ -87,7 +91,7 @@ func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, co
 	}
 	if len(roots) > 0 {
 		err := export(roots)
-		if captured || !errors.Is(err, dagql.ErrPersistStateNotReady) {
+		if captured || !rootCaptureError(ctx, err) {
 			return err
 		}
 		// A probe copies records and opens no chain.
@@ -97,12 +101,15 @@ func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, co
 				return nil
 			})
 			switch {
+			case err == nil:
+				ready = append(ready, root)
 			case errors.Is(err, dagql.ErrPersistStateNotReady):
 				skipped = append(skipped, protocol.SkippedRoot{Number: root.number, Reason: protocol.SkipBusy})
-			case err != nil:
+			case !rootCaptureError(ctx, err):
 				return err
 			default:
-				ready = append(ready, root)
+				slog.Warn("remote cache export refused a root", "number", root.number, "error", err)
+				skipped = append(skipped, protocol.SkippedRoot{Number: root.number, Reason: protocol.SkipRefused, Message: skippedMessage(err)})
 			}
 		}
 		if len(ready) > 0 {
@@ -118,6 +125,34 @@ func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, co
 	}
 	logExport(req, skipped, nil, time.Since(start))
 	return consume(ctx, remotecache.Export{Skipped: skipped})
+}
+
+// rootCaptureError reports whether a failed capture may have failed for one
+// of its roots, and not for the request's own cancellation or the cache
+// closing, which fail the whole request.
+func rootCaptureError(ctx context.Context, err error) bool {
+	return err != nil && ctx.Err() == nil &&
+		!errors.Is(err, dagql.ErrCacheClosed) &&
+		!errors.Is(err, context.Canceled) &&
+		!errors.Is(err, context.DeadlineExceeded)
+}
+
+// maxSkippedMessageBytes bounds the message a refused root's skip carries,
+// so that one long error can't bloat the reply.
+const maxSkippedMessageBytes = 1024
+
+// skippedMessage is err's message, cut to maxSkippedMessageBytes at a rune
+// boundary.
+func skippedMessage(err error) string {
+	msg := err.Error()
+	if len(msg) <= maxSkippedMessageBytes {
+		return msg
+	}
+	cut := maxSkippedMessageBytes
+	for cut > 0 && !utf8.RuneStart(msg[cut]) {
+		cut--
+	}
+	return msg[:cut]
 }
 
 type heldRoot struct {
@@ -157,14 +192,42 @@ func (h *entryHolds) release(ctx context.Context) error {
 // the bundle's records and outputs, the time from the request to the bundle,
 // and the part of it spent opening the chains, which compresses layers.
 func logExport(req protocol.Export, skipped []protocol.SkippedRoot, values *dagql.ExportedValues, capture time.Duration) {
+	slog.Info("remote cache export", exportLogAttrs(req, skipped, values, capture)...)
+}
+
+// maxLoggedSkippedRoots is how many skipped roots an export's log line names:
+// past it, they are only counted by reason.
+const maxLoggedSkippedRoots = 8
+
+// exportLogAttrs are an export's log attributes: its roots, its skipped roots
+// counted by reason and, when there are at most maxLoggedSkippedRoots of
+// them, named with their reasons, then what the bundle holds and how long
+// the capture and the chains took.
+func exportLogAttrs(req protocol.Export, skipped []protocol.SkippedRoot, values *dagql.ExportedValues, capture time.Duration) []any {
 	var records, outputs int
 	var chains time.Duration
 	if values != nil {
 		records, outputs, chains = len(values.Bundle.Values), len(values.Bundle.Outputs), values.ChainTime
 	}
-	slog.Info("remote cache export",
+	counts := map[protocol.SkipReason]int{}
+	for _, root := range skipped {
+		counts[root.Reason]++
+	}
+	attrs := []any{
 		"roots", len(req.Roots),
 		"skipped", len(skipped),
+		"skipped_gone", counts[protocol.SkipGone],
+		"skipped_busy", counts[protocol.SkipBusy],
+		"skipped_refused", counts[protocol.SkipRefused],
+	}
+	if len(skipped) > 0 && len(skipped) <= maxLoggedSkippedRoots {
+		named := make([]string, len(skipped))
+		for i, root := range skipped {
+			named[i] = fmt.Sprintf("%d:%s", root.Number, root.Reason)
+		}
+		attrs = append(attrs, "skipped_roots", named)
+	}
+	return append(attrs,
 		"records", records,
 		"outputs", outputs,
 		"capture", capture,

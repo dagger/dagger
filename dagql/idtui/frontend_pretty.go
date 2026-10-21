@@ -175,6 +175,9 @@ type frontendPretty struct {
 	// from the trace, so the roster can render them as read-only rather than
 	// letting a failed rebuild look like a working entry.
 	unaddressableAgents map[string]bool
+	// unaddressableGen bumps whenever unaddressableAgents changes, so the
+	// roster can tell its read-only marks are current without re-reading it.
+	unaddressableGen uint64
 	// pendingFocusAgent is the agent the client BELIEVES it has focused: the
 	// destination of the most recent focus keypress, held until the handler
 	// confirms it. Focus is retargeted on the shell goroutine, so between a
@@ -189,13 +192,23 @@ type frontendPretty struct {
 	// rather than where the user walked to. Taps behind it coalesce, and
 	// settleFocus issues one catch-up hop when it lands.
 	focusInFlight bool
-	// agentRosterState fingerprints what the strip last rendered, so the
-	// trace can push updates into it without re-rendering every frame.
-	agentRosterState string
+	// agentRosterState is what the strip last rendered, so the trace can push
+	// updates into it without re-rendering every frame.
+	agentRosterState []AgentRosterEntry
+	// agentRosterInputs is what agentRosterState was built from. The roster
+	// is pushed on every span and log batch, and rebuilding it per batch
+	// just to find it unchanged was most of the UI loop's time (and nearly
+	// all of its garbage) once a session held many agents; while these
+	// match, the entries cannot have changed and the rebuild is skipped.
+	agentRosterInputs agentRosterInputs
 	// lastRosterFocus is the focused agent as of the last roster update, so a
 	// change of FOCUS can invalidate the view without the state flags -- which
-	// also fingerprint above, and change far more often -- doing so too.
+	// also feed the roster above, and change far more often -- doing so too.
 	lastRosterFocus string
+	// agentStepsSeen is the roster notifyAgentSteps last walked. db.Agents()
+	// returns the same slice until something it is built from changes, so
+	// walking the same slice again could not find a new snapshot digest.
+	agentStepsSeen []*dagui.AgentNode
 	// agentSnapshots remembers the last conversation-snapshot digest seen per
 	// agent, so telemetry ingestion can detect step boundaries (a fresh
 	// commit) and push a per-step UI refresh to the handler rather than
@@ -4272,7 +4285,9 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 // check'); otherwise it emits just "RUN LOCALLY". The "RUN LOCALLY" section can
 // be overridden by FrontendOpts.RerunSuggestion, for consumers that don't have
 // a CLI to run. Only outermost
-// checks are re-runnable, so sub-checks roll up to their root. Returns nil when
+// checks are re-runnable, so sub-checks roll up to their root. A failed
+// staleness check also gets a "REGENERATE" section ('dagger generate' for its
+// generator), since running the generator is what fixes it. Returns nil when
 // no failed check applies. Controlled by showSuggestions at the call site.
 func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 	if fe.db == nil {
@@ -4282,12 +4297,30 @@ func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 
 	var names []string
 	seen := map[string]bool{}
-	add := func(name string) {
-		if name == "" || seen[name] {
+	// A failed staleness check is fixed by running its generator, so the
+	// re-runnable checks' failed generator checks get a `dagger generate` too.
+	var generators []string
+	seenGenerator := map[string]bool{}
+	var addGenerators func(n *dagui.CheckNode)
+	addGenerators = func(n *dagui.CheckNode) {
+		if !n.Failed() {
 			return
 		}
-		seen[name] = true
-		names = append(names, name)
+		if gen := n.Span.CheckGenerator; gen != "" && !seenGenerator[gen] {
+			seenGenerator[gen] = true
+			generators = append(generators, gen)
+		}
+		for _, child := range n.Children {
+			addGenerators(child)
+		}
+	}
+	add := func(n *dagui.CheckNode) {
+		if n.Name == "" || seen[n.Name] {
+			return
+		}
+		seen[n.Name] = true
+		names = append(names, n.Name)
+		addGenerators(n)
 	}
 
 	switch {
@@ -4295,13 +4328,13 @@ func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 		// Zoomed to a check: re-run its outermost surfaced check (the re-runnable
 		// unit), if that check failed.
 		if root := outermostSurfacedCheck(roots, zoomed.CheckName); root != nil && root.Failed() {
-			add(root.Name)
+			add(root)
 		}
 	case zoomed == nil:
 		// Whole trace: re-run every failed outermost check.
 		for _, n := range roots {
 			if n.Failed() {
-				add(n.Name)
+				add(n)
 			}
 		}
 	}
@@ -4338,14 +4371,33 @@ func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 			heading = hookHeading
 		}
 		body = hookBody
+		// The hook owns the vocabulary; a CLI command would be noise to it.
+		generators = nil
 	}
-	if len(body) == 0 {
-		return lines
+	if len(body) > 0 {
+		if len(lines) > 0 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, reportSectionLines(out, fe.agentStyle(), heading, body)...)
 	}
-	if len(lines) > 0 {
-		lines = append(lines, "")
+
+	// Run the generators whose staleness checks failed, to fix them. An agent
+	// must choose what to do with the changeset up front (see
+	// generateChangesetDisposition), so spell out applying it.
+	if len(generators) > 0 {
+		cmd := "dagger generate"
+		if fe.agentStyle() {
+			cmd += " -y"
+		}
+		body := make([]string, 0, len(generators))
+		for _, gen := range generators {
+			body = append(body, fmt.Sprintf("%s %q", cmd, gen))
+		}
+		if len(lines) > 0 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, reportSectionLines(out, fe.agentStyle(), "REGENERATE", body)...)
 	}
-	lines = append(lines, reportSectionLines(out, fe.agentStyle(), heading, body)...)
 
 	return lines
 }
@@ -4643,7 +4695,7 @@ func (fe *frontendPretty) recalculateViewLocked() {
 			})
 			eachFailedLeafGenerator(fe.reportGenerators(), func(n *dagui.GeneratorNode) {
 				// The generator span's own rolled-up logs carry the exec failure
-				// (renderGeneratorFailureDetail); explicit origins render like a
+				// (renderSpanFailureDetail); explicit origins render like a
 				// check's causes.
 				fe.requestLogs(n.Span.ID)
 				for _, origin := range n.Span.ErrorOrigins.Spans() {
@@ -5034,7 +5086,7 @@ func (fe *frontendPretty) focusAgent(entry AgentRosterEntry) (claimed, moved boo
 	// was missing have arrived since. Clear the mark, and any error still
 	// naming the failure -- a successful focus must not leave a red line
 	// about it on screen.
-	delete(fe.unaddressableAgents, entry.ID)
+	fe.clearAgentUnaddressable(entry.ID)
 	fe.clearPromptError()
 
 	fe.saveAgentDraft()
@@ -5155,7 +5207,17 @@ func (fe *frontendPretty) markAgentUnaddressable(agentID string) {
 	if fe.unaddressableAgents == nil {
 		fe.unaddressableAgents = map[string]bool{}
 	}
-	fe.unaddressableAgents[agentID] = true
+	if !fe.unaddressableAgents[agentID] {
+		fe.unaddressableAgents[agentID] = true
+		fe.unaddressableGen++
+	}
+}
+
+func (fe *frontendPretty) clearAgentUnaddressable(agentID string) {
+	if fe.unaddressableAgents[agentID] {
+		delete(fe.unaddressableAgents, agentID)
+		fe.unaddressableGen++
+	}
 }
 
 // saveAgentDraft parks the half-typed line against the agent it was being
@@ -5235,12 +5297,14 @@ func (fe *frontendPretty) updateAgentRoster() {
 	}
 	// The strip is no longer the only thing focus drives: the live tree is
 	// promoted per focused agent (see promoteConversationLocked), so a focus
-	// change has to invalidate the view too. Checked ahead of the fingerprint
-	// below, and against focus alone: this is the one place every focus path
-	// converges on -- focusAgent believing a switch, and the handler's
-	// completion confirming or rolling it back -- while the fingerprint also
-	// covers state flags, which change often and do not move the transcript.
-	if focused := fe.focusedAgentID(); focused != fe.lastRosterFocus {
+	// change has to invalidate the view too. Checked ahead of the roster
+	// comparison below, and against focus alone: this is the one place every
+	// focus path converges on -- focusAgent believing a switch, and the
+	// handler's completion confirming or rolling it back -- while the roster
+	// also covers state flags, which change often and do not move the
+	// transcript.
+	focused := fe.focusedAgentID()
+	if focused != fe.lastRosterFocus {
 		fe.lastRosterFocus = focused
 		fe.viewDirty = true
 		// Sections describing an agent (the Changes bubble, and the diff
@@ -5255,21 +5319,58 @@ func (fe *frontendPretty) updateAgentRoster() {
 			fe.diffViewer.Update()
 		}
 	}
-	var fingerprint strings.Builder
-	for _, entry := range fe.agentRosterEntries() {
-		fmt.Fprintf(&fingerprint, "%s\x00%s\x00%s\x00%t\x00%t\n",
-			entry.ID, entry.Name, entry.State, entry.Focused, entry.ReadOnly)
+	// This runs on every span and log batch, almost always with nothing new
+	// for the strip: skip the rebuild unless something agentRosterEntries
+	// reads has changed.
+	inputs := agentRosterInputs{
+		init:          true,
+		focused:       focused,
+		unaddressable: fe.unaddressableGen,
 	}
-	if fingerprint.String() == fe.agentRosterState {
+	if fe.db != nil {
+		inputs.agents = fe.db.Agents()
+	}
+	if inputs.same(fe.agentRosterInputs) {
 		return
 	}
-	fe.agentRosterState = fingerprint.String()
+	fe.agentRosterInputs = inputs
+	entries := fe.agentRosterEntries()
+	if slices.Equal(entries, fe.agentRosterState) {
+		return
+	}
+	fe.agentRosterState = entries
 	if fe.statusLine != nil {
 		fe.statusLine.Update()
 	}
 	if fe.promptFrame != nil {
 		fe.promptFrame.Update() // its bottom edge opens over the focused tab
 	}
+}
+
+// agentRosterInputs is everything agentRosterEntries reads: the published
+// agents, the focused agent, and the read-only marks.
+type agentRosterInputs struct {
+	init bool
+	// agents is compared by identity, not content: db.Agents() returns the
+	// same slice until something it is built from changes, and never
+	// mutates the nodes of a slice it has handed out.
+	agents        []*dagui.AgentNode
+	focused       string
+	unaddressable uint64
+}
+
+func (in agentRosterInputs) same(other agentRosterInputs) bool {
+	return in.init == other.init &&
+		sameAgentNodes(in.agents, other.agents) &&
+		in.focused == other.focused &&
+		in.unaddressable == other.unaddressable
+}
+
+// sameAgentNodes reports whether two db.Agents() results are the same
+// slice. Two empty rosters count as the same: there is nothing to render
+// either way.
+func sameAgentNodes(a, b []*dagui.AgentNode) bool {
+	return len(a) == len(b) && (len(a) == 0 || &a[0] == &b[0])
 }
 
 // notifyAgentSteps detects step boundaries in the ingested trace -- an
@@ -5291,7 +5392,13 @@ func (fe *frontendPretty) notifyAgentSteps() {
 	if fe.agentSnapshots == nil {
 		fe.agentSnapshots = map[string]string{}
 	}
-	for _, agent := range fe.db.Agents() {
+	agents := fe.db.Agents()
+	if fe.agentStepsSeen != nil && sameAgentNodes(agents, fe.agentStepsSeen) {
+		// Every digest in this roster was recorded by the walk that saw it.
+		return
+	}
+	fe.agentStepsSeen = agents
+	for _, agent := range agents {
 		if agent.ID == "" || agent.SnapshotDigest == "" {
 			continue
 		}

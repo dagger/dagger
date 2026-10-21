@@ -7,6 +7,7 @@ package dagql
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -411,6 +412,10 @@ func TestCacheEvidenceJoinedAndExecutedCarriers(t *testing.T) {
 	// Both carry the same identity facts, derived independently.
 	assert.Equal(t, execReq.CacheEvidence.SelfDigest, joinReq.CacheEvidence.SelfDigest)
 	assert.Equal(t, execReq.CacheEvidence.PairingDigest, joinReq.CacheEvidence.PairingDigest)
+	// Each records its own lookup: the joiner's ran after the executor's had
+	// started its resolver.
+	assert.Assert(t, execReq.CacheEvidence.LookupAtUnixNano != 0)
+	assert.Assert(t, joinReq.CacheEvidence.LookupAtUnixNano > execReq.CacheEvidence.LookupAtUnixNano)
 }
 
 func TestCacheEvidenceDoNotCacheUncached(t *testing.T) {
@@ -431,6 +436,109 @@ func TestCacheEvidenceDoNotCacheUncached(t *testing.T) {
 	assert.Equal(t, digest.Digest(""), ev.SelfDigest)
 	assert.Equal(t, digest.Digest(""), ev.PairingDigest)
 	assert.Equal(t, 0, len(ev.StructuralInputs))
+	assert.Equal(t, int64(0), ev.LookupAtUnixNano, "no lookup runs")
+}
+
+// An executed call and a hit each record when their lookup chose its
+// candidates: after the call started, before it returned.
+func TestCacheEvidenceLookupTime(t *testing.T) {
+	t.Parallel()
+	ctx, c := cacheTestEvidenceEnv(t)
+
+	frame := cacheTestIntCall("evidence-lookup-time")
+	lookup := func() *CacheDecision {
+		t.Helper()
+		req := cacheTestArmedRequest(frame)
+		before := time.Now().UnixNano()
+		_, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, req, func(context.Context) (AnyResult, error) {
+			return cacheTestIntResult(frame, 1), nil
+		})
+		assert.NilError(t, err)
+		after := time.Now().UnixNano()
+		ev := req.CacheEvidence
+		assert.Assert(t, ev.LookupAtUnixNano >= before && ev.LookupAtUnixNano <= after,
+			"lookup at %d, call from %d to %d", ev.LookupAtUnixNano, before, after)
+		return ev
+	}
+	executed := lookup()
+	assert.Equal(t, CacheOutcomeExecuted, executed.Outcome)
+	hit := lookup()
+	assert.Equal(t, CacheOutcomeHit, hit.Outcome)
+	assert.Assert(t, hit.LookupAtUnixNano > executed.LookupAtUnixNano)
+}
+
+// A hit records whether the value it chose came from the remote cache: a
+// value a Cloud merge installed does, with the merge's commit time. A value
+// the engine computed does not, even when a merge of the same recipe kept it
+// and gave it a Cloud holding, and neither does a merged value that local work
+// replaced in place.
+func TestCacheEvidenceRemoteHit(t *testing.T) {
+	t.Parallel()
+	frame := func() *ResultCall {
+		return &ResultCall{Kind: ResultCallKindField, Field: "root", Type: NewResultCallType((&transferTestValue{}).Type())}
+	}
+	hit := func(t *testing.T, ctx context.Context, c *Cache, srv *Server) *CacheDecision {
+		t.Helper()
+		req := &CallRequest{ResultCall: frame(), IsPersistable: true, CacheEvidence: NewCacheDecision()}
+		var calls atomic.Int32
+		res, err := c.GetOrInitCall(ctx, "test-session", srv, req, func(context.Context) (AnyResult, error) {
+			calls.Add(1)
+			return NewResultForCall(&transferTestValue{Text: "computed"}, frame())
+		})
+		assert.NilError(t, err)
+		assert.Equal(t, int32(0), calls.Load(), "a hit")
+		assert.Assert(t, res.HitCache())
+		assert.Equal(t, CacheOutcomeHit, req.CacheEvidence.Outcome)
+		return req.CacheEvidence
+	}
+
+	t.Run("merged", func(t *testing.T) {
+		t.Parallel()
+		bundle, _ := mergeTestSource(t, "root", "sent")
+		ctx, c, srv := transferTestCache(t)
+		before := time.Now().UnixNano()
+		_, err := c.MergeValues(ctx, cloudCacheID, bundle)
+		assert.NilError(t, err)
+		after := time.Now().UnixNano()
+		ev := hit(t, ctx, c, srv)
+		assert.Assert(t, ev.HitRemote)
+		assert.Assert(t, ev.HitMergedAtUnixNano >= before && ev.HitMergedAtUnixNano <= after,
+			"merged at %d, merge from %d to %d", ev.HitMergedAtUnixNano, before, after)
+		assert.Assert(t, ev.LookupAtUnixNano > ev.HitMergedAtUnixNano)
+	})
+
+	t.Run("kept local", func(t *testing.T) {
+		t.Parallel()
+		bundle, _ := mergeTestSource(t, "root", "sent")
+		ctx, c, srv := transferTestCache(t)
+		local := persistedListTestResult(t, ctx, c, srv, "root", &transferTestValue{Text: "local"})
+		reply, err := c.MergeValues(ctx, cloudCacheID, bundle)
+		assert.NilError(t, err)
+		assert.Equal(t, uint64(local.cacheSharedResult().id), reply.Imported()[0].ResultID, "the merge kept the local value")
+		c.egraphMu.RLock()
+		_, cloud := local.cacheSharedResult().cloudHoldingLocked()
+		c.egraphMu.RUnlock()
+		assert.Assert(t, cloud != nil, "and gave it a Cloud holding")
+		ev := hit(t, ctx, c, srv)
+		assert.Assert(t, !ev.HitRemote)
+		assert.Equal(t, int64(0), ev.HitMergedAtUnixNano)
+	})
+
+	t.Run("replaced locally", func(t *testing.T) {
+		t.Parallel()
+		bundle, _ := mergeTestSource(t, "root", "sent")
+		ctx, c, srv := transferTestCache(t)
+		reply, err := c.MergeValues(ctx, cloudCacheID, bundle)
+		assert.NilError(t, err)
+		merged, err := c.LoadResultByResultID(ctx, "", srv, reply.Imported()[0].ResultID)
+		assert.NilError(t, err)
+		currentEntryTestExpire(c, merged)
+		replaced := persistedListTestResult(t, ctx, c, srv, "root", &transferTestValue{Text: "new"})
+		assert.Equal(t, merged.cacheSharedResult().id, replaced.cacheSharedResult().id, "replaced in place")
+		ev := hit(t, ctx, c, srv)
+		assert.Assert(t, !ev.HitRemote)
+		assert.Equal(t, int64(0), ev.HitMergedAtUnixNano)
+	})
 }
 
 func TestCacheEvidencePendingLazyHitIsHit(t *testing.T) {

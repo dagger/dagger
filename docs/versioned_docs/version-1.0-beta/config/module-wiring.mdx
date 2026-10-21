@@ -28,14 +28,13 @@ source = "dagger.io/js/playwright"
 service = "dag://myapp/serve"
 ```
 
-Now `dagger check dag://playwright/test` runs the browser tests against your app.
+Now `dagger check --playwright` runs the browser tests against your app.
 Dagger resolves the reference when it constructs the playwright module and
 passes the running service in.
 
-To find functions you can wire, run `dagger artifact list --type Service`.
-It lists every service-returning function in the workspace, in exactly the
-`dag://` address form a setting accepts. Any function returning the right
-type works.
+To find functions you can wire, run `dagger list services`. It lists every
+service in the workspace with the module that provides it. Any function
+returning the right type works.
 
 ## Wire a container
 
@@ -90,7 +89,7 @@ A module reference is an ordinary address string, so it also works as a CLI
 flag for any object-typed constructor argument:
 
 ```shell
-dagger api call playwright --service=dag://myapp/serve test
+dagger api call playwright --service=dag://myapp/serve project --path=. test
 ```
 
 ## How references resolve
@@ -102,7 +101,7 @@ dagger api call playwright --service=dag://myapp/serve test
   module segment: `dag://serve`.
 - An address with `dag://` *is* a module reference. A missing function or a
   mismatched type is then a hard error, never a silent fallback to an image or
-  URL. `dagger artifact list` prints every address the workspace has.
+  URL. `dagger list` lists the artifacts the workspace has, by type.
 - A value without `dag://` keeps its ordinary address meaning: an OCI ref for
   a `Container`, a `tcp://` URL for a `Service`. So `git:2.40` and
   `alpine:3.20` stay image refs.
@@ -153,6 +152,7 @@ If you author modules, wiring changes how you shape a constructor:
   than failing: skip the service binding, or fall back to a default image. The
   workspace may have nothing to wire yet.
 
-The [Playwright module](../reference/modules/js/playwright.mdx) is a worked example of all
-three. [Daggerize a Go Project](../getting-started/platform-guides/go/index.mdx) wires a project's own
+The [Playwright module](../reference/modules/js/playwright.mdx) is a worked example of
+optional collaborators, constructor-level configuration, and graceful
+degradation. [Daggerize a Go Project](../getting-started/platform-guides/go/index.mdx) wires a project's own
 module into the Go module's `base` setting, from the consumer's side.

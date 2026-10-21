@@ -3,11 +3,17 @@ package dagql
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"path/filepath"
+	"reflect"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/stretchr/testify/require"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 // storedBundleTestCloud merges an export of a root R, which depends on P,
@@ -211,6 +217,344 @@ func TestStoredBundleNeverMixesAReplacement(t *testing.T) {
 			require.Empty(t, got.Bundle.Outputs, "the new record, whose part isn't stored")
 		}
 		require.Equal(t, r, rootValue.SenderNumber, "the entry is replaced, never retired")
+	}
+}
+
+// A stored bundle carries an entry's current record and call: a build after a
+// content digest changes the call, or after a merge replaces the record,
+// carries the new one, though an earlier build normalized the old.
+func TestStoredBundleCarriesTheCurrentRecord(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, _ := storedBundleTestCloud(t, "old")
+	rootRecord := func() PersistedRecord {
+		t.Helper()
+		got, err := cloud.StoredBundle(ctx, []uint64{r})
+		require.NoError(t, err)
+		for _, value := range got.Bundle.Values {
+			if value.SenderNumber == r {
+				return value.Record
+			}
+		}
+		t.Fatal("the bundle has no record of R")
+		return PersistedRecord{}
+	}
+	require.Contains(t, string(rootRecord().Envelope.ObjectJSON), "old")
+
+	content := testDigest("current-record-content")
+	require.NoError(t, cloud.TeachContentDigest(ctx, Result[Typed]{shared: storedBundleTestEntry(cloud, r)}, content))
+	require.Contains(t, rootRecord().Call.ExtraDigests, call.ExtraDigest{Digest: content, Label: call.ExtraDigestLabelContent}, "the new call")
+
+	mergeTestExpire(cloud, storedBundleTestEntry(cloud, r))
+	fresh, _ := mergeTestSource(t, "bundle-root", "new")
+	_, err := cloud.MergeValues(ctx, "cache-b", fresh)
+	require.NoError(t, err)
+	require.False(t, storedBundleTestKept(cloud, r), "the replacement releases the old record")
+	require.Contains(t, string(rootRecord().Envelope.ObjectJSON), "new", "the new record")
+}
+
+// storedBundleTestKept reports whether the entry with the number keeps a
+// normalized record.
+func storedBundleTestKept(c *Cache, number uint64) bool {
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	return c.resultsByID[sharedResultID(number)].storedTransfer.Load() != nil
+}
+
+// A prune that drops a value releases the normalized record a build kept for
+// it, and the record the entry later takes again is the one a build carries.
+func TestStoredBundleRecordGoesWithThePrunedValue(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, p := storedBundleTestCloud(t, "root")
+	_, err := cloud.StoredBundle(ctx, []uint64{r})
+	require.NoError(t, err)
+	require.True(t, storedBundleTestKept(cloud, r))
+	require.True(t, storedBundleTestKept(cloud, p))
+
+	_, removed, dropped, err := cloud.removePrunedEdge(ctx, sharedResultID(r))
+	require.NoError(t, err)
+	require.True(t, removed)
+	require.Equal(t, 2, dropped)
+	require.False(t, storedBundleTestKept(cloud, r), "released with R's value")
+	require.False(t, storedBundleTestKept(cloud, p), "released with P's value")
+	got, err := cloud.StoredBundle(ctx, []uint64{r})
+	require.NoError(t, err)
+	require.Equal(t, []uint64{r}, got.NoValue)
+
+	actx, a, asrv := transferTestCache(t)
+	root := persistedListTestResult(t, actx, a, asrv, "bundle-root", &transferTestValue{Text: "again"})
+	dep := persistedListTestResult(t, actx, a, asrv, "bundle-dep", &transferTestValue{Text: "dep"})
+	transferTestDependency(a, actx, root, dep)
+	reply, err := cloud.MergeValues(ctx, "cache-b", exportTestBundle(t, actx, a, root))
+	require.NoError(t, err)
+	require.Equal(t, r, reply.Imported()[0].ResultID, "the same entry")
+	got, err = cloud.StoredBundle(ctx, []uint64{r})
+	require.NoError(t, err)
+	for _, value := range got.Bundle.Values {
+		if value.SenderNumber == r {
+			require.Contains(t, string(value.Record.Envelope.ObjectJSON), "again")
+		}
+	}
+}
+
+// A restored Cloud builds the bundle it built before it was saved: a restore
+// starts with no normalized record and normalizes the restored ones.
+func TestStoredBundleAfterARestore(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "cloud.db")
+	ctx, cloud := storedPersistenceTestCloud(t, path)
+	actx, a, asrv := transferTestCache(t)
+	r := persistedListTestResult(t, actx, a, asrv, "restored-root", &transferTestValue{Text: "root"})
+	p := persistedListTestResult(t, actx, a, asrv, "restored-dep", &transferTestValue{Text: "dep"})
+	transferTestDependency(a, actx, r, p)
+	root := storedPersistenceTestMerge(t, ctx, cloud, exportTestBundle(t, actx, a, r))[0]
+	stored, err := cloud.SetStoredPart(ctx, root, storedBenchPart(1), 0)
+	require.NoError(t, err)
+	require.True(t, stored)
+	before, err := cloud.StoredBundle(ctx, []uint64{root})
+	require.NoError(t, err)
+	want, err := json.Marshal(before)
+	require.NoError(t, err)
+	require.NoError(t, cloud.Close(ctx))
+
+	ctx, cloud = storedPersistenceTestCloud(t, path)
+	defer func() { require.NoError(t, cloud.Close(ctx)) }()
+	require.False(t, storedBundleTestKept(cloud, root))
+	after, err := cloud.StoredBundle(ctx, []uint64{root})
+	require.NoError(t, err)
+	got, err := json.Marshal(after)
+	require.NoError(t, err)
+	require.JSONEq(t, string(want), string(got))
+}
+
+// A stored record that names an entry of its closure that isn't one of its
+// dependencies is refused, though relocation finds that entry an ordinal: a
+// build checks every reference against the record's dependencies.
+func TestStoredBundleRefusesAReferenceToAnIndirectEntry(t *testing.T) {
+	t.Parallel()
+	actx, a, asrv := transferTestCache(t)
+	root := persistedListTestResult(t, actx, a, asrv, "indirect-root", &transferTestValue{Text: "root"})
+	mid := persistedListTestResult(t, actx, a, asrv, "indirect-mid", &transferTestValue{Text: "mid"})
+	leaf := persistedListTestResult(t, actx, a, asrv, "indirect-leaf", &transferTestValue{Text: "leaf"})
+	transferTestDependency(a, actx, root, mid)
+	transferTestDependency(a, actx, mid, leaf)
+	bundle := exportTestBundle(t, actx, a, root)
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	reply, err := cloud.MergeValues(ctx, "cache-a", bundle)
+	require.NoError(t, err)
+	numbers := map[TransferOrdinal]uint64{}
+	for _, value := range reply.Values {
+		numbers[value.Ordinal] = value.Number
+	}
+	var r, leafNumber uint64
+	for _, value := range bundle.Values {
+		switch value.SenderNumber {
+		case uint64(root.cacheSharedResult().id):
+			r = numbers[value.Ordinal]
+		case uint64(leaf.cacheSharedResult().id):
+			leafNumber = numbers[value.Ordinal]
+		}
+	}
+	require.NotZero(t, r)
+	require.NotZero(t, leafNumber)
+	_, err = cloud.StoredBundle(ctx, []uint64{r})
+	require.NoError(t, err)
+
+	// R's record now names the leaf, which only its dependency depends on.
+	payload, err := json.Marshal(&transferTestValue{Text: "root", Child: leafNumber})
+	require.NoError(t, err)
+	cloud.egraphMu.Lock()
+	res := cloud.resultsByID[sharedResultID(r)]
+	env := *res.persistedEnvelope
+	env.ObjectJSON = payload
+	res.persistedEnvelope = &env
+	cloud.egraphMu.Unlock()
+	_, err = cloud.StoredBundle(ctx, []uint64{r})
+	require.ErrorContains(t, err, "is not a direct dependency")
+}
+
+// storedCheckValue's family has a codec that normalizes a payload without
+// validating it, as a family's codec may: only its validation refuses a
+// payload whose text is "invalid", only its output mapping one whose text is
+// "unmapped", and it maps one whose text is "unaddressed" to an output with
+// no part. The cache never decodes its records.
+type storedCheckValue struct{}
+
+func (*storedCheckValue) Type() *ast.Type {
+	return &ast.Type{NamedType: "StoredCheckValue", NonNull: true}
+}
+
+type storedCheckCodec struct{}
+
+func (storedCheckCodec) VisitPersistedReferences(v PersistedPayloadVisit, _ PersistedRefVisitor) (json.RawMessage, error) {
+	return v.Payload, nil
+}
+func (storedCheckCodec) NormalizeForeign(v PersistedPayloadVisit) (ForeignPayload, error) {
+	return ForeignPayload{JSON: slices.Clone(v.Payload)}, nil
+}
+func (storedCheckCodec) ValidateForeign(v PersistedPayloadVisit) error {
+	if strings.Contains(string(v.Payload), `"invalid"`) {
+		return fmt.Errorf("invalid payload")
+	}
+	return nil
+}
+func (storedCheckCodec) MapSnapshotParts(v PersistedPayloadVisit) ([]CapturedCodecOutput, error) {
+	if strings.Contains(string(v.Payload), `"unmapped"`) {
+		return nil, fmt.Errorf("unmapped payload")
+	}
+	if strings.Contains(string(v.Payload), `"unaddressed"`) {
+		return []CapturedCodecOutput{{Address: PersistedPartAddress{OutputPath: v.Path}, State: "pending"}}, nil
+	}
+	return nil, nil
+}
+func init() {
+	RegisterPersistedObjectFamily(PersistedObjectFamily{Name: "dagql_test.StoredCheck", Typed: (*storedCheckValue)(nil), Visitor: storedCheckCodec{}, Transfer: storedCheckCodec{}})
+}
+
+// A stored record whose payload its codec refuses, can't map to its outputs,
+// or maps to an output with no part, is refused, though the codec normalizes
+// it: a build validates and maps each record's payloads when it normalizes
+// the record.
+func TestStoredBundleRefusesAPayloadItsCodecRefuses(t *testing.T) {
+	t.Parallel()
+	for text, refusal := range map[string]string{"invalid": "invalid payload", "unmapped": "unmapped payload", "unaddressed": "empty part"} {
+		ctx, cloud, r, _ := storedBundleTestCloud(t, "root")
+		_, err := cloud.StoredBundle(ctx, []uint64{r})
+		require.NoError(t, err, text)
+		cloud.egraphMu.Lock()
+		res := cloud.resultsByID[sharedResultID(r)]
+		env := *res.persistedEnvelope
+		env.ObjectCodec = "dagql_test.StoredCheck"
+		env.ObjectJSON = json.RawMessage(`{"text":"` + text + `"}`)
+		res.persistedEnvelope = &env
+		cloud.egraphMu.Unlock()
+		_, err = cloud.StoredBundle(ctx, []uint64{r})
+		require.ErrorContains(t, err, refusal, text)
+	}
+}
+
+// A payload its codec validated stays valid once its family's visitor
+// relocates its references, which validateStoredBundle relies on: a stored
+// bundle's records are validated before they are relocated. Every family the
+// dagql tests register with a transfer codec has a sample, and the samples
+// with references have them moved.
+func TestRelocatedTransferPayloadsStayValid(t *testing.T) {
+	samples := map[string]struct {
+		payload string
+		refs    int
+	}{
+		"dagql_test.Transfer":      {`{"text":"relocated","child":5}`, 1},
+		"dagql_test.StoredBench":   {`{"text":"relocated","child":5,"fields":[{"name":"f","description":"d","type":"String!"}]}`, 1},
+		"dagql_test.InlineCapture": {`{"text":"relocated"}`, 0},
+		"dagql_test.StatePart":     {`{}`, 0},
+		"dagql_test.StateTwoPart":  {`{}`, 0},
+		"dagql_test.Share":         {`{"name":"relocated"}`, 0},
+		"dagql_test.FixtureDemand": {`{"name":"relocated"}`, 0},
+		"dagql_test.StoredCheck":   {`{"text":"relocated"}`, 0},
+	}
+	for _, family := range PersistedObjectFamilies() {
+		// core's families, which this package's external tests register,
+		// are core's test's to cover.
+		if family.Transfer == nil || !strings.HasPrefix(family.Name, "dagql_test.") {
+			continue
+		}
+		sample, ok := samples[family.Name]
+		require.True(t, ok, "family %s has no sample", family.Name)
+		v := PersistedPayloadVisit{Version: persistedResultEnvelopeVersion, Payload: json.RawMessage(sample.payload)}
+		foreign, err := family.Transfer.NormalizeForeign(v)
+		require.NoError(t, err, family.Name)
+		v.Payload = foreign.JSON
+		require.NoError(t, family.Transfer.ValidateForeign(v), family.Name)
+		moved := 0
+		relocated, err := family.Visitor.VisitPersistedReferences(v, func(ref *PersistedRef) error {
+			if ref.RecipeID == nil && ref.ResultID != 0 {
+				ref.ResultID += 1000
+				moved++
+			}
+			return nil
+		})
+		require.NoError(t, err, family.Name)
+		require.Equal(t, sample.refs, moved, family.Name)
+		if moved > 0 {
+			require.NotEqual(t, string(v.Payload), string(relocated), family.Name)
+		}
+		v.Payload = relocated
+		require.NoError(t, family.Transfer.ValidateForeign(v), "%s, relocated", family.Name)
+	}
+}
+
+// A stored bundle is its caller's copy: changing its records and outputs in
+// place reaches neither the stored parts it was built from, which keep their
+// addresses and renewal keys, nor the next bundle built from the same entries.
+// The root depends on a scalar, whose payload relocation passes through.
+func TestStoredBundleIsTheCallersCopy(t *testing.T) {
+	t.Parallel()
+	actx, a, asrv := transferTestCache(t)
+	root := persistedListTestResult(t, actx, a, asrv, "copied-root", &transferTestValue{Text: "root"})
+	transferTestDependency(a, actx, root, persistedListTestResult(t, actx, a, asrv, "copied-scalar", String("scalar")))
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	reply, err := cloud.MergeValues(ctx, "cache-a", exportTestBundle(t, actx, a, root))
+	require.NoError(t, err)
+	r := reply.Imported()[0].ResultID
+	part := storedBenchPart(1)
+	stored, err := cloud.SetStoredPart(ctx, r, part, 0)
+	require.NoError(t, err)
+	require.True(t, stored)
+	first, err := cloud.StoredBundle(ctx, []uint64{r})
+	require.NoError(t, err)
+	require.Len(t, first.Bundle.Outputs, 1)
+	want, err := json.Marshal(first.Bundle)
+	require.NoError(t, err)
+
+	scribbleTestValue(reflect.ValueOf(&first.Bundle).Elem(), map[uintptr]bool{})
+	second, err := cloud.StoredBundle(ctx, []uint64{r})
+	require.NoError(t, err)
+	got, err := json.Marshal(second.Bundle)
+	require.NoError(t, err)
+	require.JSONEq(t, string(want), string(got))
+	cloud.egraphMu.RLock()
+	kept := storedBundleTestEntry(cloud, r).storedParts
+	cloud.egraphMu.RUnlock()
+	key, err := partAddressKey(part.Address)
+	require.NoError(t, err)
+	require.Equal(t, map[string]PersistedPartOffer{key: part}, kept)
+}
+
+// scribbleTestValue overwrites, in place, every exported field v reaches: the
+// elements of its slices, the values of its maps and the targets of its
+// pointers.
+func scribbleTestValue(v reflect.Value, seen map[uintptr]bool) {
+	switch v.Kind() {
+	case reflect.Pointer:
+		if v.IsNil() || seen[v.Pointer()] {
+			return
+		}
+		seen[v.Pointer()] = true
+		scribbleTestValue(v.Elem(), seen)
+	case reflect.Struct:
+		for i := range v.NumField() {
+			if v.Type().Field(i).IsExported() {
+				scribbleTestValue(v.Field(i), seen)
+			}
+		}
+	case reflect.Slice:
+		for i := range v.Len() {
+			scribbleTestValue(v.Index(i), seen)
+		}
+	case reflect.Map:
+		for _, key := range v.MapKeys() {
+			elem := reflect.New(v.Type().Elem()).Elem()
+			elem.Set(v.MapIndex(key))
+			scribbleTestValue(elem, seen)
+			v.SetMapIndex(key, elem)
+		}
+	case reflect.String:
+		v.SetString("scribbled")
+	case reflect.Bool:
+		v.SetBool(!v.Bool())
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		v.SetInt(v.Int() + 1)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		v.SetUint(v.Uint() + 1)
 	}
 }
 

@@ -81,11 +81,18 @@ func (fe *frontendPretty) renderCheckNode(ctx tuist.Context, out TermOutput, r *
 				fmt.Fprintln(out, line)
 			}
 		} else {
-			// Otherwise show the failed command and its logs.
+			// Otherwise show the failed command and its logs. A check that
+			// failed on its own span (e.g. a stale generator's check, which logs
+			// its patch there) shows its logs and error under its status line,
+			// without repeating its title.
 			for _, origin := range fe.checkRootCauses(node.Span) {
 				if !origin.Received {
 					// Incremental --full may not have loaded the origin (or its
 					// logs); skip rather than render an empty stub.
+					continue
+				}
+				if origin == node.Span {
+					fe.renderSpanFailureDetail(out, r, origin, depth+1)
 					continue
 				}
 				fe.renderCauseDetail(ctx, out, r, origin, depth+1)

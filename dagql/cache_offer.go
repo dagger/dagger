@@ -106,8 +106,15 @@ func (c *Cache) OfferParts(ctx context.Context, receiver AnyResult, offers []Clo
 // scope, including outputs whose topology is not known until metadata exists.
 func offerGateOutcomeLocked(gate *PartWriterGate, address PersistedPartAddress) OfferOutcome {
 	key, _ := partAddressKey(address)
-	if gate.outputs[key].phase != PartPending {
+	switch gate.outputs[key].phase {
+	case PartComplete:
 		return OfferAlreadyComplete
+	case PartOutputInstalled:
+		// Installed but not settled: its owner synchronization or settlement
+		// can still fail and be retained for a retry, and nothing reports the
+		// part before it settles. It closes offer admission without being
+		// complete yet, so the offer is retried.
+		return OfferExecutionStarted
 	}
 	for key, group := range gate.groups {
 		overlaps := containsPart(group.writeSet, address)

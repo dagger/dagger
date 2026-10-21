@@ -527,11 +527,11 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg pkg", err))
 				}
 			}
-			var failfast bool
-			if inputArgs["failfast"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["failfast"]), &failfast)
+			var failFast bool
+			if inputArgs["failFast"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["failFast"]), &failFast)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg failfast", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg failFast", err))
 				}
 			}
 			var parallel int
@@ -604,7 +604,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg dumpAfter", err))
 				}
 			}
-			return nil, (*EngineDev).Test(&parent, ctx, run, skip, pkg, failfast, parallel, timeout, race, count, envFile, testVerbose, update, ebpfProgs, ebpf, dumpAfter)
+			return nil, (*EngineDev).Test(&parent, ctx, run, skip, pkg, failFast, parallel, timeout, race, count, envFile, testVerbose, update, ebpfProgs, ebpf, dumpAfter)
 		case "TestProfile":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -632,11 +632,11 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg pkg", err))
 				}
 			}
-			var failfast bool
-			if inputArgs["failfast"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["failfast"]), &failfast)
+			var failFast bool
+			if inputArgs["failFast"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["failFast"]), &failFast)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg failfast", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg failFast", err))
 				}
 			}
 			var parallel int
@@ -688,7 +688,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ebpfProgs", err))
 				}
 			}
-			return (*EngineDev).TestProfile(&parent, ctx, run, skip, pkg, failfast, parallel, timeout, race, count, envFile, testVerbose, ebpfProgs)
+			return (*EngineDev).TestProfile(&parent, ctx, run, skip, pkg, failFast, parallel, timeout, race, count, envFile, testVerbose, ebpfProgs)
 		case "TestTelemetry":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -716,11 +716,11 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg update", err))
 				}
 			}
-			var failfast bool
-			if inputArgs["failfast"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["failfast"]), &failfast)
+			var failFast bool
+			if inputArgs["failFast"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["failFast"]), &failFast)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg failfast", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg failFast", err))
 				}
 			}
 			var parallel int
@@ -772,7 +772,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ebpfProgs", err))
 				}
 			}
-			return (*EngineDev).TestTelemetry(&parent, ctx, run, skip, update, failfast, parallel, timeout, race, count, envFile, testVerbose, ebpfProgs)
+			return (*EngineDev).TestTelemetry(&parent, ctx, run, skip, update, failFast, parallel, timeout, race, count, envFile, testVerbose, ebpfProgs)
 		case "Tests":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -1002,7 +1002,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							WithArg("run", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Only run these tests", SourceMap: dag.SourceMap("test.go", 27, 2)}).
 							WithArg("skip", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Skip these tests", SourceMap: dag.SourceMap("test.go", 30, 2)}).
 							WithArg("pkg", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 33, 2), DefaultValue: dagger.JSON("\"./...\"")}).
-							WithArg("failfast", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Abort test run on first failure", SourceMap: dag.SourceMap("test.go", 36, 2)}).
+							WithArg("failFast", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Abort test run on first failure", SourceMap: dag.SourceMap("test.go", 36, 2)}).
 							WithArg("parallel", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "How many tests to run in parallel - defaults to the number of CPUs", SourceMap: dag.SourceMap("test.go", 39, 2)}).
 							WithArg("timeout", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "How long before timing out the test run", SourceMap: dag.SourceMap("test.go", 42, 2)}).
 							WithArg("race", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 44, 2)}).
@@ -1022,7 +1022,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							WithArg("run", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Only run these tests", SourceMap: dag.SourceMap("test.go", 131, 2)}).
 							WithArg("skip", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Skip these tests", SourceMap: dag.SourceMap("test.go", 134, 2)}).
 							WithArg("pkg", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 137, 2), DefaultValue: dagger.JSON("\"./...\"")}).
-							WithArg("failfast", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Abort test run on first failure", SourceMap: dag.SourceMap("test.go", 140, 2)}).
+							WithArg("failFast", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Abort test run on first failure", SourceMap: dag.SourceMap("test.go", 140, 2)}).
 							WithArg("parallel", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "How many tests to run in parallel - defaults to the number of CPUs", SourceMap: dag.SourceMap("test.go", 143, 2)}).
 							WithArg("timeout", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "How long before timing out the test run", SourceMap: dag.SourceMap("test.go", 146, 2)}).
 							WithArg("race", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 148, 2)}).
@@ -1039,7 +1039,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							WithArg("run", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Only run these tests", SourceMap: dag.SourceMap("test.go", 223, 2)}).
 							WithArg("skip", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Skip these tests", SourceMap: dag.SourceMap("test.go", 226, 2)}).
 							WithArg("update", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 228, 2)}).
-							WithArg("failfast", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 230, 2)}).
+							WithArg("failFast", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 230, 2)}).
 							WithArg("parallel", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 232, 2)}).
 							WithArg("timeout", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 234, 2)}).
 							WithArg("race", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 236, 2)}).

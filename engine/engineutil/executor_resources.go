@@ -16,6 +16,12 @@ import (
 )
 
 func execResourceTelemetry(ctx context.Context, state *execState) (context.Context, metric.Meter, attribute.Set) {
+	// Workload readings are keyed by the exec.run span. Without a recording
+	// span there is no exec.run record to key them by.
+	span := trace.SpanContextFromContext(ctx)
+	if !span.IsValid() || !trace.SpanFromContext(ctx).IsRecording() {
+		ctx = enginetel.WithoutWorkloadReadings(ctx)
+	}
 	hasCallDigest := state.execMD != nil && state.execMD.CallDigest != ""
 	meter := telemetry.Meter(ctx, InstrumentationLibrary)
 	if !hasCallDigest {
@@ -27,7 +33,6 @@ func execResourceTelemetry(ctx context.Context, state *execState) (context.Conte
 	if hasCallDigest {
 		attrs = append(attrs, attribute.String(telemetry.DagDigestAttr, string(state.execMD.CallDigest)))
 	}
-	span := trace.SpanContextFromContext(ctx)
 	if span.HasSpanID() {
 		attrs = append(attrs, attribute.String(telemetry.MetricsSpanIDAttr, span.SpanID().String()))
 	}
@@ -37,7 +42,6 @@ func execResourceTelemetry(ctx context.Context, state *execState) (context.Conte
 	if enginetel.HasWorkloadReadings(ctx) {
 		interval := min(enginetel.WorkloadReadingInterval(ctx, cgroupSampleInterval), cgroupSampleInterval)
 		workloadAttrs := append(slices.Clone(attrs),
-			attribute.String(enginetel.ExecutionIDAttr, state.id),
 			attribute.Bool(enginetel.ExecutionInternalAttr, state.execMD != nil && state.execMD.Internal),
 			attribute.Int64(enginetel.SampleIntervalAttr, interval.Milliseconds()),
 		)

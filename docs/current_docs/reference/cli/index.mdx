@@ -324,7 +324,7 @@ dagger api with-session python main.py
 Verify your project — tests, linters, type checks, security scans, etc.
 
 ```
-dagger check [--failfast] [FILTERS] [OPTIONS]
+dagger check [--fail-fast] [FILTERS] [OPTIONS]
 ```
 
 ### Options
@@ -333,7 +333,7 @@ dagger check [--failfast] [FILTERS] [OPTIONS]
       --absolute             Show absolute links (alias: --abs)
   -a, --all                  Expand collections and list each item
       --allow-llm strings    List of URLs of remote modules allowed to access LLM APIs, or 'all' to allow every loaded module for the entire session
-      --failfast             Cancel remaining checks on first failure
+      --fail-fast            Cancel remaining checks on first failure
   -f, --format FORMAT        Output FORMAT: table, link, or cli (requires --list) (default "table")
       --generated            Include staleness checks for 'dagger generate' (default true)
   -l, --list                 List available checks
@@ -455,7 +455,10 @@ dagger cloud checks list [version]
 ### Options
 
 ```
-      --failed   Only list failed checks
+      --fail-fast           When watching, stop as soon as a check is not successful
+      --failed              Only list failed checks
+      --interval duration   Polling interval used while watching (default 5s)
+      --watch               Wait until all checks have finished; exit non-zero if any check did not succeed
 ```
 
 ### Options inherited from parent commands
@@ -2794,6 +2797,13 @@ With one argument and --unset, removes the value at the given key.
 
 With --env, reads show the effective env-applied view while writes target that
 environment's overlay. Explicit env.* keys always address raw overlay storage.
+
+An include is set with "dagger workspace config include &lt;source&gt;", where source
+is a git ref (github.com/acme/base@v1) or a path to a config file next to this
+one ("./base.toml", or "/common/base.toml" from the workspace root). Reads then
+show the merged view — the included configuration with this workspace's own on
+top — while writes still only touch this workspace's dagger.toml. Reading the
+include key itself reports this workspace's own value.
 
 Local module source values are stored relative to dagger.toml.
 

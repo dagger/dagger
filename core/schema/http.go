@@ -122,6 +122,7 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Q
 			Permissions:         permissions,
 			Checksum:            args.Checksum,
 			AuthorizationHeader: authHeader,
+			ServiceHost:         args.ExperimentalServiceHost.Valid,
 		})
 		if err != nil {
 			return inst, err

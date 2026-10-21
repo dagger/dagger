@@ -1401,7 +1401,9 @@ type changesetExportArgs struct {
 }
 
 func (s *directorySchema) changesetExport(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args changesetExportArgs) (dagql.String, error) {
-	err := parent.Self().Export(ctx, args.Path)
+	exportCtx, exported := filesyncExport(ctx, parent)
+	err := parent.Self().Export(exportCtx, args.Path)
+	exported(err)
 	if err != nil {
 		return "", err
 	}
@@ -1497,7 +1499,9 @@ type dirExportArgs struct {
 }
 
 func (s *directorySchema) export(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args dirExportArgs) (dagql.String, error) {
-	err := parent.Self().Export(ctx, parent, args.Path, !args.Wipe)
+	exportCtx, exported := filesyncExport(ctx, parent)
+	err := parent.Self().Export(exportCtx, parent, args.Path, !args.Wipe)
+	exported(err)
 	if err != nil {
 		return "", err
 	}

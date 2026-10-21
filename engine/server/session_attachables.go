@@ -18,6 +18,7 @@ import (
 
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 )
 
 type sessionAttachableManager struct {
@@ -239,6 +240,8 @@ func attachableClientConn(ctx context.Context, conn net.Conn) (context.Context, 
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(defaults.DefaultMaxRecvMsgSize)),
 		grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(defaults.DefaultMaxSendMsgSize)),
+		// Uploads from the client and exports to it use this connection.
+		grpc.WithStatsHandler(enginetel.WorkloadTransferStatsHandler()),
 	}
 
 	cc, err := grpc.NewClient("passthrough:localhost", dialOpts...)

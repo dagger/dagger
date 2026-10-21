@@ -296,6 +296,12 @@ func recordCacheEvidence(ctx context.Context, span trace.Span, ev *dagql.CacheDe
 	if ev.Outcome == dagql.CacheOutcomeHit && ev.HitRoute != "" {
 		attrs = append(attrs, attribute.String(telemetryattrs.CacheHitRouteAttr, string(ev.HitRoute)))
 	}
+	if ev.Outcome == dagql.CacheOutcomeHit && ev.HitRemote {
+		attrs = append(attrs, attribute.String(telemetryattrs.CacheHitRemoteAttr, "true"))
+		if ev.HitMergedAtUnixNano != 0 {
+			attrs = append(attrs, attribute.String(telemetryattrs.CacheHitMergedAtAttr, strconv.FormatInt(ev.HitMergedAtUnixNano, 10)))
+		}
+	}
 	if ev.Outcome == dagql.CacheOutcomeExecuted {
 		// Miss facts describe why the executed call's lookup found nothing
 		// reusable; emitted as "true"/index only when recorded, absent
@@ -310,6 +316,15 @@ func recordCacheEvidence(ctx context.Context, span trace.Span, ev *dagql.CacheDe
 		if ev.MissUnknownInputIndex >= 0 {
 			attrs = append(attrs, attribute.String(telemetryattrs.CacheMissUnknownInputAttr, strconv.Itoa(ev.MissUnknownInputIndex)))
 		}
+		if ev.MissProducerReleased {
+			attrs = append(attrs, attribute.String(telemetryattrs.CacheMissProducerReleasedAttr, "true"))
+		}
+		if ev.MissRequirementsGrew {
+			attrs = append(attrs, attribute.String(telemetryattrs.CacheMissRequirementsGrewAttr, "true"))
+		}
+	}
+	if ev.LookupAtUnixNano != 0 {
+		attrs = append(attrs, attribute.String(telemetryattrs.CacheLookupAtAttr, strconv.FormatInt(ev.LookupAtUnixNano, 10)))
 	}
 	if ev.SelfDigest != "" {
 		attrs = append(attrs, attribute.String(telemetryattrs.CacheSelfDigestAttr, ev.SelfDigest.String()))
@@ -332,14 +347,14 @@ func recordCacheEvidence(ctx context.Context, span trace.Span, ev *dagql.CacheDe
 	if res != nil {
 		// The recorded output content identity: the authoritative frame's last
 		// content-labeled extra digest at completion (never the derived
-		// content-preferred digest). Errors reading the frame just drop the
-		// optional fact.
-		if frame, frameErr := res.ResultCall(); frameErr == nil {
-			if contentDig := frame.ContentDigest(); contentDig != "" {
+		// content-preferred digest). A result without a frame just drops the
+		// optional facts.
+		if contentDig, typeName, ok := dagql.ResultFrameFacts(res); ok {
+			if contentDig != "" {
 				attrs = append(attrs, attribute.String(telemetryattrs.CacheOutputContentDigestAttr, contentDig.String()))
 			}
-			if frame.Type != nil && frame.Type.NamedType != "" {
-				attrs = append(attrs, attribute.String(telemetryattrs.CacheTypeAttr, frame.Type.NamedType))
+			if typeName != "" {
+				attrs = append(attrs, attribute.String(telemetryattrs.CacheTypeAttr, typeName))
 			}
 		}
 	}

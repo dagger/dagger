@@ -17,6 +17,7 @@ import (
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/engineconn"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/agentcontrol"
 	telemetry "github.com/dagger/otel-go"
@@ -174,16 +175,35 @@ func (sink *agentTraceSink) captureLLMRecipe(ctx context.Context, t *testctx.T, 
 	return sink.committedRecipe(ctx, name)
 }
 
+// unownedRecipe strips the owner stamp the capturing agent puts on the
+// committed conversation. The stamp names the capture's random handle, so
+// tests comparing or inspecting the captured conversation itself use this.
+func unownedRecipe(t *testctx.T, recipe core.ID) core.ID {
+	t.Helper()
+	var id call.ID
+	require.NoError(t, id.Decode(string(recipe)))
+	require.Equal(t, "__withOwnerAgent", id.Field())
+	enc, err := id.Receiver().Encode()
+	require.NoError(t, err)
+	return core.ID(enc)
+}
+
 // captureShellRecipe captures a nested shell's committed conversation after its
 // client exits. The outer session's telemetry carries the nested control records.
+// The caller's base is evaluated first, under the caller's deadline, so the
+// capture budget covers only the shell and its recipe's arrival.
 func (sink *agentTraceSink) captureShellRecipe(ctx context.Context, t *testctx.T, base *core.Container, selection string) (string, error) {
 	t.Helper()
+	if _, err := base.Sync(ctx); err != nil {
+		return "", fmt.Errorf("evaluate capture shell base: %w", err)
+	}
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 	name := "shell-recipe-" + rand.Text()
+	start := time.Now()
 	_, err := base.With(daggerShell(selection + " | spawn --handle " + name + " --name " + name)).Sync(ctx)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("run capture shell after %s: %w", time.Since(start).Round(time.Millisecond), err)
 	}
 	id, err := sink.committedRecipe(ctx, name)
 	return string(id), err

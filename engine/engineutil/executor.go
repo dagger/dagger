@@ -33,14 +33,13 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/entitlements"
-	"github.com/dagger/dagger/internal/buildkit/util/stack"
 	"github.com/dagger/dagger/util/cleanups"
-	"github.com/moby/sys/signal"
 	"github.com/opencontainers/go-digest"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sys/unix"
 )
 
 type ExecutionMetadata struct {
@@ -56,6 +55,14 @@ type ExecutionMetadata struct {
 
 	// hostname -> list of aliases
 	HostAliases map[string][]string
+	// If true, an alias whose target no longer resolves is left out of the
+	// hosts file instead of failing the exec. Interactive execs set this: a
+	// bound service that has already exited must not stop a terminal from
+	// starting.
+	//
+	// omitempty keeps the serialized form, and therefore the cache keys, of
+	// every other exec unchanged.
+	SkipUnresolvableHostAliases bool `json:",omitempty"`
 	// search domains to install prior to the session's domain
 	ExtraSearchDomains []string
 
@@ -212,7 +219,6 @@ func (c *Client) Run(
 		var attrs []attribute.KeyValue
 		if enginetel.HasWorkloadReadings(ctx) {
 			attrs = append(attrs,
-				attribute.String(enginetel.ExecutionIDAttr, state.id),
 				attribute.Bool(enginetel.ExecutionInternalAttr, execMD != nil && execMD.Internal),
 			)
 		}
@@ -466,11 +472,12 @@ func (c *Client) exec(ctx context.Context, id string, specsProcess *specs.Proces
 	}
 	defer killer.Cleanup()
 
-	return c.callWithIO(ctx, &process, started, killer, func(ctx context.Context, started chan<- int, io runc.IO, pidfile string) error {
+	return c.callWithIO(ctx, &process, started, killer, func(ctx context.Context, started chan<- int, io runc.IO, consoleSocket runc.ConsoleSocket, pidfile string) error {
 		return c.Runc.Exec(ctx, id, *specsProcess, &runc.ExecOpts{
-			Started: started,
-			IO:      io,
-			PidFile: pidfile,
+			Started:       started,
+			IO:            io,
+			ConsoleSocket: consoleSocket,
+			PidFile:       pidfile,
 		})
 	})
 }
@@ -522,7 +529,7 @@ func exitError(ctx context.Context, exitCodePath string, err error, validExitCod
 		exitErr.Err = fmt.Errorf("%s: %w", exitErr.Error(), context.Cause(ctx))
 		return exitErr
 	default:
-		return stack.Enable(exitErr)
+		return exitErr
 	}
 }
 
@@ -621,23 +628,24 @@ func (k procKiller) Kill(ctx context.Context) (err error) {
 	// get the runc pid via the startedCh, so we might need to retry until
 	// it appears in the edge case where we want to kill a process
 	// immediately after it was created.
+	// crun creates the file before writing the pid into it, so an empty file
+	// is retried like a missing one.
 	var pidData []byte
 	for {
 		pidData, err = os.ReadFile(k.pidfile)
-		if err != nil {
-			if os.IsNotExist(err) {
-				select {
-				case <-ctx.Done():
-					return errors.New("context cancelled before runc wrote pidfile")
-				case <-time.After(10 * time.Millisecond):
-					continue
-				}
-			}
-			return fmt.Errorf("failed to read pidfile from runc: %w", err)
+		if err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to read pidfile from the runtime: %w", err)
 		}
-		break
+		if err == nil && len(strings.TrimSpace(string(pidData))) > 0 {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return errors.New("context cancelled before the runtime wrote the pidfile")
+		case <-time.After(10 * time.Millisecond):
+		}
 	}
-	pid, err := strconv.Atoi(string(pidData))
+	pid, err := strconv.Atoi(strings.TrimSpace(string(pidData)))
 	if err != nil {
 		return fmt.Errorf("read invalid pid from pidfile: %w", err)
 	}
@@ -815,7 +823,12 @@ func handleSignals(ctx context.Context, runcProcess *procHandle, signals <-chan 
 	}
 }
 
-type runcCall func(ctx context.Context, started chan<- int, io runc.IO, pidfile string) error
+// ttyDrainTimeout bounds how long a TTY process's remaining output is drained
+// after the runtime exits, in case something else, such as a background job,
+// still holds its terminal open. A variable so tests can shorten it.
+var ttyDrainTimeout = 5 * time.Second
+
+type runcCall func(ctx context.Context, started chan<- int, io runc.IO, consoleSocket runc.ConsoleSocket, pidfile string) error
 
 func (c *Client) callWithIO(ctx context.Context, process *executor.ProcessInfo, started func(), killer procKiller, call runcCall) error {
 	runcProcess, ctx := runcProcessHandle(ctx, killer)
@@ -839,99 +852,180 @@ func (c *Client) callWithIO(ctx context.Context, process *executor.ProcessInfo, 
 	})
 
 	if !process.Meta.Tty {
-		return call(ctx, startedCh, &forwardIO{stdin: process.Stdin, stdout: process.Stdout, stderr: process.Stderr}, killer.pidfile)
+		return call(ctx, startedCh, &forwardIO{stdin: process.Stdin, stdout: process.Stdout, stderr: process.Stderr}, nil, killer.pidfile)
 	}
 
-	ptm, ptsName, err := console.NewPty()
+	// The runtime creates the process's terminal and sends us its master over
+	// this socket, so we copy, resize and drain it ourselves. Without one,
+	// crun relays the terminal itself and stops as soon as the process exits,
+	// dropping output it has not relayed yet: for a quick command, often all
+	// of it.
+	consoleSocket, err := runc.NewTempConsoleSocket()
 	if err != nil {
-		return err
+		return fmt.Errorf("create console socket: %w", err)
 	}
+	masterCh := make(chan *os.File, 1)
+	receiverDone := make(chan struct{})
+	go func() {
+		defer close(receiverDone)
+		defer close(masterCh)
+		received, err := consoleSocket.ReceiveMaster()
+		if err != nil {
+			// the socket was closed before the runtime sent a terminal
+			return
+		}
+		master, err := pollableTerminal(received)
+		if err != nil {
+			bklog.G(ctx).Errorf("failed to set up tty: %s", err)
+			return
+		}
+		masterCh <- master
+	}()
 
-	pts, err := os.OpenFile(ptsName, os.O_RDWR|syscall.O_NOCTTY, 0)
-	if err != nil {
-		ptm.Close()
-		return err
-	}
-
+	callDone := make(chan struct{})
+	ttyDone := make(chan struct{})
+	var callErr error
 	defer func() {
+		close(callDone)
+		var exitErr *runc.ExitError
+		if callErr == nil || errors.As(callErr, &exitErr) {
+			// The process likely ran, so the runtime sent its terminal
+			// first, but accepting it may still be pending; closing the
+			// socket first would drop it. An exit error can also mean the
+			// runtime itself failed before sending one; then this waits out
+			// the bound.
+			select {
+			case <-receiverDone:
+			case <-time.After(ttyDrainTimeout):
+				bklog.G(ctx).Warnf("tty not received after %s", ttyDrainTimeout)
+			}
+		}
+		consoleSocket.Close()
 		if process.Stdin != nil {
 			process.Stdin.Close()
 		}
-		pts.Close()
-		ptm.Close()
-		runcProcess.Shutdown()
-		err := eg.Wait()
-		if err != nil {
-			bklog.G(ctx).Warningf("error while shutting down tty io: %s", err)
-		}
+		<-ttyDone
 	}()
 
-	if process.Stdin != nil {
-		eg.Go(func() error {
-			_, err := io.Copy(ptm, process.Stdin)
-			// stdin might be a pipe, so this is like EOF
-			if errors.Is(err, io.ErrClosedPipe) {
-				return nil
-			}
-			return err
-		})
-	}
+	eg.Go(func() error {
+		defer close(ttyDone)
 
-	if process.Stdout != nil {
-		eg.Go(func() error {
-			_, err := io.Copy(process.Stdout, ptm)
-			// ignore `read /dev/ptmx: input/output error` when ptm is closed
-			var ptmClosedError *os.PathError
-			if errors.As(err, &ptmClosedError) {
-				if ptmClosedError.Op == "read" &&
-					ptmClosedError.Path == "/dev/ptmx" &&
-					ptmClosedError.Err == syscall.EIO {
+		// Keep the latest resize until the terminal exists, so the initial
+		// size is applied as soon as it does.
+		var pending *executor.WinSize
+		var master *os.File
+		for master == nil {
+			select {
+			case m, ok := <-masterCh:
+				if !ok {
 					return nil
 				}
+				master = m
+			case resize := <-process.Resize:
+				pending = &resize
+			}
+		}
+		defer master.Close()
+
+		applySize := func(resize executor.WinSize) {
+			if err := resizeTerminal(master, resize); err != nil {
+				bklog.G(ctx).Errorf("failed to resize tty: %s", err)
+			}
+		}
+		if pending != nil {
+			applySize(*pending)
+		}
+
+		if process.Stdin != nil {
+			eg.Go(func() error {
+				_, err := io.Copy(master, process.Stdin)
+				// stdin might be a pipe, so this is like EOF; the terminal may
+				// also be closed first, once the process is done with it
+				if errors.Is(err, io.ErrClosedPipe) || errors.Is(err, os.ErrClosed) {
+					return nil
+				}
+				return err
+			})
+		}
+
+		stdout := io.Discard
+		if process.Stdout != nil {
+			stdout = process.Stdout
+		}
+		stdoutDone := make(chan struct{})
+		eg.Go(func() error {
+			defer close(stdoutDone)
+			_, err := io.Copy(stdout, master)
+			// the read fails with EIO once the process and everything else
+			// holding its terminal have closed it, or once we close the master
+			if errors.Is(err, syscall.EIO) || errors.Is(err, os.ErrClosed) {
+				return nil
 			}
 			return err
 		})
-	}
 
-	eg.Go(func() error {
-		err := runcProcess.WaitForReady(ctx)
-		if err != nil {
-			return err
-		}
 		for {
 			select {
-			case <-ctx.Done():
-				return nil
 			case resize := <-process.Resize:
-				err = ptm.Resize(console.WinSize{
-					Height: uint16(resize.Rows),
-					Width:  uint16(resize.Cols),
-				})
-				if err != nil {
-					bklog.G(ctx).Errorf("failed to resize ptm: %s", err)
+				applySize(resize)
+			case <-stdoutDone:
+				return nil
+			case <-callDone:
+				// The process has exited. Drain what it printed before
+				// closing the terminal.
+				select {
+				case <-stdoutDone:
+				case <-time.After(ttyDrainTimeout):
+					bklog.G(ctx).Warnf("tty output not drained after %s", ttyDrainTimeout)
 				}
-				// SIGWINCH must be sent to the runc monitor process, as
-				// terminal resizing is done in runc.
-				err = runcProcess.monitorProcess.Signal(signal.SIGWINCH)
-				if err != nil {
-					bklog.G(ctx).Errorf("failed to send SIGWINCH to process: %s", err)
-				}
+				return nil
 			}
 		}
 	})
 
-	runcIO := &forwardIO{}
-	if process.Stdin != nil {
-		runcIO.stdin = pts
-	}
-	if process.Stdout != nil {
-		runcIO.stdout = pts
-	}
-	if process.Stderr != nil {
-		runcIO.stderr = pts
-	}
+	callErr = call(ctx, startedCh, &forwardIO{}, consoleSocket, killer.pidfile)
+	return callErr
+}
 
-	return call(ctx, startedCh, runcIO, killer.pidfile)
+// pollableTerminal returns the terminal master the runtime sent as a file
+// whose I/O goes through Go's poller, so closing it interrupts a pending read.
+// The runtime sends a blocking descriptor: closing that would leave a read
+// stuck for as long as anything, such as a background job, holds the terminal
+// open.
+func pollableTerminal(received console.Console) (*os.File, error) {
+	defer received.Close()
+	// Duplicate with close-on-exec set atomically, so no process started
+	// meanwhile can inherit the terminal.
+	fd, err := unix.FcntlInt(received.Fd(), unix.F_DUPFD_CLOEXEC, 0)
+	if err != nil {
+		return nil, fmt.Errorf("dup tty: %w", err)
+	}
+	if err := unix.SetNonblock(fd, true); err != nil {
+		unix.Close(fd)
+		return nil, fmt.Errorf("set tty non-blocking: %w", err)
+	}
+	// NewFile makes a non-blocking descriptor pollable.
+	return os.NewFile(uintptr(fd), "tty"), nil
+}
+
+// resizeTerminal sets a terminal's window size without taking it out of the
+// poller, which (*os.File).Fd would do.
+func resizeTerminal(f *os.File, size executor.WinSize) error {
+	conn, err := f.SyscallConn()
+	if err != nil {
+		return err
+	}
+	var ioctlErr error
+	err = conn.Control(func(fd uintptr) {
+		ioctlErr = unix.IoctlSetWinsize(int(fd), unix.TIOCSWINSZ, &unix.Winsize{
+			Row: uint16(size.Rows),
+			Col: uint16(size.Cols),
+		})
+	})
+	if err != nil {
+		return err
+	}
+	return ioctlErr
 }
 
 type nopCloser struct {

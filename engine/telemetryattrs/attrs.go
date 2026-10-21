@@ -1,6 +1,34 @@
 package telemetryattrs
 
 const (
+	// WorkloadTransfersAttr marks, in the workload export, the spans of an
+	// engine that records its external transfers, the readings of its
+	// executions and helper commands, and the results that each session uses.
+	// Without it, the work below a call is unknown, not zero. Version 2 keys
+	// readings by span and records helper commands and uses; version 1 keyed
+	// readings by execution ID.
+	WorkloadTransfersAttr = "dagger.io/workload.transfers"
+	WorkloadTransfersV2   = "2"
+
+	// A workload input or output span records one external transfer to or
+	// from the engine. Kind is filesync, registry, http, or llm. Bytes are
+	// absent when the transfer could not be measured. Identity names the
+	// transferred content, for example a manifest or content digest; it never
+	// contains a URL.
+	WorkloadInputSpan            = "workload.input"
+	WorkloadOutputSpan           = "workload.output"
+	WorkloadTransferKindAttr     = "dagger.io/workload.transfer.kind"
+	WorkloadTransferBytesAttr    = "dagger.io/workload.transfer.bytes"
+	WorkloadTransferIdentityAttr = "dagger.io/workload.transfer.identity"
+
+	// A workload use span records that a session needed the content of a
+	// result: its files or command outputs, not only its metadata. It is sent
+	// once per session and result, with the result's digest after
+	// evaluation. The work that produced the result is below the lazy
+	// evaluation spans with the same digest.
+	WorkloadUseSpan       = "workload.use"
+	WorkloadUseDigestAttr = "dagger.io/workload.use.digest"
+
 	// DagContentPreferredDigestAttr is the operation's content-preferred identity
 	// at span completion (string). Prefer its recorded output content digest;
 	// otherwise hash its recipe using recursively content-preferred inputs.
@@ -77,6 +105,13 @@ const (
 	LogRoleAttr     = "dagger.io/log.role"
 	LogRoleSpanName = "span.name"
 
+	// LogHumanOnlyAttr marks a log record written for people reading the
+	// trace, not for a model: frontends render it as usual, while the logs an
+	// LLM reads (tool results, ReadLogs) leave it out. Use it for engine
+	// diagnostics whose substance reaches the model some other way, or not at
+	// all. (bool)
+	LogHumanOnlyAttr = "dagger.io/log.human_only"
+
 	// Media logs keep a payload-free textual placeholder in Body. These string
 	// attributes let capable frontends replace that placeholder with inline
 	// media without changing log ordering or leaking base64 to text outputs.
@@ -120,6 +155,13 @@ const (
 	// post-generation error -- and the TUI's SKIPPED MODULES report shows that
 	// in place of the pre-generation load error. (bool)
 	GenerateRegeneratedAttr = "dagger.io/generate.regenerated"
+
+	// CheckGeneratorAttr marks a staleness check span that found its generator
+	// out of date, with the generator's dag:// address: running that generator
+	// is what fixes the check, so the TUI suggests `dagger generate` for it
+	// alongside `dagger check`. Unset when the generator itself failed, since
+	// running it would only repeat the failure. (string)
+	CheckGeneratorAttr = "dagger.io/check.generator"
 
 	// DagBlockedAttr marks a lazy-evaluation resume span that aborted because a
 	// prerequisite result's evaluation failed, rather than because the result's
@@ -546,6 +588,25 @@ const (
 	CacheHitRouteDigest     = "digest"
 	CacheHitRouteStructural = "structural"
 
+	// CacheHitRemoteAttr ("true", hits only, absent otherwise) records that
+	// the value the hit served came from the remote cache: a Cloud merge
+	// installed it, and no local work has replaced it since. A merge that
+	// kept the engine's own value, or a Cloud holding alone, does not count.
+	// The fact survives an engine restart.
+	CacheHitRemoteAttr = "dagger.io/cache.hit.remote"
+	// CacheHitMergedAtAttr (with CacheHitRemoteAttr) is the time the merge
+	// that installed the served value committed, in decimal-string absolute
+	// Unix nanoseconds, comparable with CacheLookupAtAttr. The engine keeps it
+	// in memory only, so it is absent for a value restored after a restart.
+	CacheHitMergedAtAttr = "dagger.io/cache.hit.merged_at_unix_ns"
+
+	// CacheLookupAtAttr is the time the call's cache lookup chose its
+	// candidates, in decimal-string absolute Unix nanoseconds, for hit,
+	// executed and joined calls (an uncached call does no lookup). It is read
+	// under the same lock a merge commits under, so it orders the lookup
+	// against CacheHitMergedAtAttr exactly; the span's start is earlier.
+	CacheLookupAtAttr = "dagger.io/cache.lookup.at_unix_ns"
+
 	// CacheMissIncompatibleCandidatesAttr ("true", executed misses only, absent
 	// otherwise) records that non-expired candidate results existed but none
 	// satisfied this session's resource requirements (secrets/sockets the
@@ -568,6 +629,18 @@ const (
 	// current cache state, not history, so this does NOT mean "first run".
 	// Absent when every input was known.
 	CacheMissUnknownInputAttr = "dagger.io/cache.miss.unknown_input"
+
+	// The two serve-time misses: the lookup chose a hit, and serving it then
+	// failed, so the call executed. Each is "true", executed misses only,
+	// absent otherwise. A call that joined after one stamps neither, as for
+	// the other miss facts.
+	//
+	// CacheMissProducerReleasedAttr: the hit's attachment was refused because
+	// the session that produced it was released first.
+	CacheMissProducerReleasedAttr = "dagger.io/cache.miss.producer_released"
+	// CacheMissRequirementsGrewAttr: the hit's session-resource requirements
+	// grew after it was chosen, beyond what this session has loaded.
+	CacheMissRequirementsGrewAttr = "dagger.io/cache.miss.requirements_grew"
 
 	// CacheSelfDigestAttr is the engine-derived structural self digest of the
 	// call: the operation, its literal arguments (sensitive values redacted),
@@ -649,6 +722,24 @@ const (
 	// with the state beside it: the parts, dependencies and expiry it names
 	// belong to that value. Absent while the count is 0.
 	CacheReplacementsAttr = "dagger.io/cache.replacements"
+
+	// A part installed from a Cloud offer, stamped on the lazy-evaluation
+	// span of the task that installed it, which names the receiving entry
+	// (CacheResultIDAttr). That task installs one part, and the demanding
+	// call is an ancestor of the span by causal parent (WcprofParentAttr,
+	// else the parent). Calls that join an install in progress wait on that
+	// span.
+	//
+	// CacheOfferPartAttr is the installed part's address, as in
+	// CachePartsAttr.
+	CacheOfferPartAttr = "dagger.io/cache.offer.part"
+	// CacheOfferBytesAttr is the decimal-string count of bytes downloaded for
+	// the part: layers the engine already had are not downloaded.
+	CacheOfferBytesAttr = "dagger.io/cache.offer.bytes"
+	// CacheOfferDurationAttr is the decimal-string count of nanoseconds from
+	// the start of the part's import to its install, over which the download
+	// and the layers' application interleave.
+	CacheOfferDurationAttr = "dagger.io/cache.offer.duration_ns"
 
 	// CacheSessionSpansAttr is the decimal-string count of the spans of one
 	// session that carry CacheResultIDAttr, stamped on the session's

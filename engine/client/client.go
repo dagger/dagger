@@ -232,6 +232,9 @@ type Client struct {
 	primarySpan trace.SpanContext
 
 	nestedSessionPort int
+	// nestedSessionToken authenticates a nested client to the exec's session.
+	// SecretToken stays the token this client serves its own children with.
+	nestedSessionToken string
 
 	labels enginetel.Labels
 
@@ -318,7 +321,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 			return nil, fmt.Errorf("parse DAGGER_SESSION_PORT: %w", err)
 		}
 		c.nestedSessionPort = nestedSessionPort
-		c.SecretToken = os.Getenv("DAGGER_SESSION_TOKEN")
+		c.nestedSessionToken = os.Getenv("DAGGER_SESSION_TOKEN")
 		numCPUVal := os.Getenv("DAGGER_ENGINE_NUM_CPU")
 		if numCPUVal != "" {
 			numCPU, err := strconv.Atoi(numCPUVal)
@@ -1458,11 +1461,16 @@ func (c *Client) init(ctx context.Context) error {
 		return fmt.Errorf("new request: %w", err)
 	}
 
-	req.SetBasicAuth(c.SecretToken, "")
+	req.SetBasicAuth(c.engineToken(), "")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("do init: %w", err)
+	}
+	if resp.StatusCode >= http.StatusBadRequest {
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+		return fmt.Errorf("%s: %s", resp.Status, strings.TrimSpace(string(body)))
 	}
 
 	return resp.Body.Close()
@@ -1491,7 +1499,7 @@ func (c *Client) shutdownServer() error {
 		return fmt.Errorf("new request: %w", err)
 	}
 
-	req.SetBasicAuth(c.SecretToken, "")
+	req.SetBasicAuth(c.engineToken(), "")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -1535,6 +1543,13 @@ func (c *Client) DialContext(ctx context.Context, _, _ string) (conn net.Conn, e
 		conn.Close()
 	}()
 	return conn, nil
+}
+
+func (c *Client) engineToken() string {
+	if c.nestedSessionPort != 0 {
+		return c.nestedSessionToken
+	}
+	return c.SecretToken
 }
 
 func (c *Client) dialContextNoClientClose(ctx context.Context) (net.Conn, error) {
@@ -1964,7 +1979,7 @@ func (c *Client) newHTTPClient() *httpClient {
 			},
 		},
 		headers:     c.AppendHTTPRequestHeaders(http.Header{}),
-		secretToken: c.SecretToken,
+		secretToken: c.engineToken(),
 	}
 }
 
@@ -1979,7 +1994,7 @@ func (c *Client) newTelemetryHTTPClient() *httpClient {
 			},
 		},
 		headers:     c.AppendHTTPRequestHeaders(http.Header{}),
-		secretToken: c.SecretToken,
+		secretToken: c.engineToken(),
 	}
 }
 

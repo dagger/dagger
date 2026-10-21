@@ -1,0 +1,6 @@
+kind: Changed
+body: The engine spends less CPU storing telemetry spans. Span attributes, events and links were JSON-encoded a second time when stored; each list is now encoded once.
+time: 2026-10-10T00:18:40Z
+custom:
+  Author: sipsma
+  PR: "14626"

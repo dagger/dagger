@@ -4356,8 +4356,9 @@ func (s *containerSchema) export(ctx context.Context, parent dagql.ObjectResult[
 		return "", err
 	}
 
+	exportCtx, exported := filesyncExport(ctx, parent)
 	_, err = parent.Self().Export(
-		ctx,
+		exportCtx,
 		core.ExportOpts{
 			Dest:              path,
 			PlatformVariants:  variants,
@@ -4366,6 +4367,7 @@ func (s *containerSchema) export(ctx context.Context, parent dagql.ObjectResult[
 			Tar:               true,
 		},
 	)
+	exported(err)
 	if err != nil {
 		return "", err
 	}
@@ -4479,13 +4481,15 @@ func (s *containerSchema) exportImage(
 		}
 	}
 
-	_, err = parent.Self().Export(ctx, core.ExportOpts{
+	exportCtx, exported := filesyncExport(ctx, parent)
+	_, err = parent.Self().Export(exportCtx, core.ExportOpts{
 		Dest:              refName.String(),
 		PlatformVariants:  platformVariants,
 		ForcedCompression: args.ForcedCompression.Value,
 		MediaTypes:        args.MediaTypes,
 		Tar:               false,
 	})
+	exported(err)
 	if err != nil {
 		return core.Void{}, err
 	}

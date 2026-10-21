@@ -2450,6 +2450,11 @@ type FunctionCall struct {
 	// module calls. Zero when the call did not originate from an agent turn.
 	callerAgent dagql.ObjectResult[*Agent]
 
+	// composingAgentHandle propagates initial-composition lineage across module
+	// client boundaries without changing callerAgent's provenance semantics.
+	// Like callerAgent, it is set at dispatch and never part of a cache key.
+	composingAgentHandle string
+
 	// processSpan is the span that the processes started for this call parent
 	// their telemetry to, carried engine-side only like callerAgent. A module
 	// entrypoint sets it to the function call span: its module process is
@@ -2462,6 +2467,20 @@ type FunctionCall struct {
 	// to its own span, so that its module process's dependency loading lands
 	// there too (see WithModuleProcessRequest).
 	plumbingSpan trace.SpanContext
+
+	// cacheTTLSeconds is the explicit TTL of the call's function, carried
+	// engine-side only like processSpan. A module entrypoint runs such a call
+	// in a new exec each time dagql evaluates it.
+	cacheTTLSeconds int64
+}
+
+// CacheTTLSeconds returns the explicit TTL of the call's function, and 0 when
+// it has none.
+func (fnCall *FunctionCall) CacheTTLSeconds() int64 {
+	if fnCall == nil {
+		return 0
+	}
+	return fnCall.cacheTTLSeconds
 }
 
 // PlumbingSpanContext returns the span holding the work that runs this call

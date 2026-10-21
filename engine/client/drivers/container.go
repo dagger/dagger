@@ -23,6 +23,7 @@ import (
 	"github.com/dagger/dagger/engine/config"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/internal/userconfig"
 )
 
 func init() {
@@ -131,13 +132,7 @@ func (d *imageDriver) Available(ctx context.Context) (bool, error) {
 }
 
 func (d *imageDriver) Provision(ctx context.Context, target *url.URL, opts *DriverOpts) (Connector, error) {
-	cleanup := true
-	if val, ok := os.LookupEnv("DAGGER_LEAVE_OLD_ENGINE"); ok {
-		b, _ := strconv.ParseBool(val)
-		cleanup = !b
-	} else if val := target.Query().Get("cleanup"); val != "" {
-		cleanup, _ = strconv.ParseBool(val)
-	}
+	cleanup := cleanupOldEngines(target.Query())
 
 	port, _ := strconv.Atoi(target.Query().Get("port"))
 	target, err := d.create(ctx, containerCreateOpts{
@@ -159,6 +154,32 @@ func (d *imageDriver) Provision(ctx context.Context, target *url.URL, opts *Driv
 		values:  target.Query(),
 		warm:    newWarmTunnels(),
 	}, nil
+}
+
+// LeaveOldEngines reports whether the user asked to keep engine containers of
+// other versions: DAGGER_LEAVE_OLD_ENGINE when set, otherwise the
+// [engine] leave_old_engines setting of the user config file. ok is false when
+// neither is set.
+func LeaveOldEngines() (leave bool, ok bool) {
+	if val, ok := os.LookupEnv("DAGGER_LEAVE_OLD_ENGINE"); ok {
+		leave, _ := strconv.ParseBool(val)
+		return leave, true
+	}
+	return userconfig.LeaveOldEngines()
+}
+
+// cleanupOldEngines decides whether provisioning removes engines of other
+// versions. LeaveOldEngines wins over the runner URL's cleanup parameter;
+// cleanup is the default.
+func cleanupOldEngines(query url.Values) bool {
+	if leave, ok := LeaveOldEngines(); ok {
+		return !leave
+	}
+	if val := query.Get("cleanup"); val != "" {
+		cleanup, _ := strconv.ParseBool(val)
+		return cleanup
+	}
+	return true
 }
 
 func (d *imageDriver) ImageLoader(ctx context.Context) imageload.Backend {

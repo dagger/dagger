@@ -58,6 +58,8 @@ type FetchHTTPRequestOpts struct {
 	Permissions         int
 	Checksum            dagql.Optional[dagql.String]
 	AuthorizationHeader string
+	// ServiceHost reports that the URL is served by a Dagger service.
+	ServiceHost bool
 }
 
 type HTTPFetchResult struct {
@@ -246,7 +248,10 @@ func (state *HTTPState) Resolve(
 	// fails, surfacing as a labeled progress row only when bytes actually
 	// move (a 304 revalidation emits no progress).
 	span, ctx := tracing.StartSpan(ctx, "fetching "+state.URL, telemetry.Encapsulated(), telemetry.Encapsulate())
+	ctx, input := enginetelemetry.StartWorkloadInput(ctx, enginetelemetry.WorkloadTransferHTTP)
+	var identity string
 	defer func() {
+		input.End(identity, rerr)
 		tracing.FinishWithError(span, rerr)
 	}()
 
@@ -300,6 +305,8 @@ func (state *HTTPState) Resolve(
 		if state.snapshot == nil {
 			return nil, fmt.Errorf("http state %q returned 304 without a cached snapshot", state.URL)
 		}
+		// A revalidation receives no body. It is not a transfer of the content.
+		identity = "unchanged:" + state.ContentDigest.String()
 		if etag := etagValue(resp.Header.Get("ETag")); etag != "" {
 			state.ETag = etag
 		}
@@ -312,7 +319,7 @@ func (state *HTTPState) Resolve(
 		return state.fileResult(ctx, query, name, permissions)
 	}
 
-	resp.Body, err = bkcache.NewNetworkProgressReader(ctx, state.URL, resp.ContentLength, resp.Body, enginetelemetry.NetworkRX)
+	resp.Body, err = bkcache.NewNetworkProgressReader(ctx, state.URL, resp.ContentLength, input.Body(resp.Body), enginetelemetry.NetworkRX)
 	if err != nil {
 		return nil, fmt.Errorf("create HTTP network progress reader: %w", err)
 	}
@@ -320,6 +327,7 @@ func (state *HTTPState) Resolve(
 	if err != nil {
 		return nil, err
 	}
+	identity = newDigest.String()
 
 	if expectedChecksum != "" && newDigest != expectedChecksum {
 		_ = newCanonical.Release(context.WithoutCancel(ctx))
@@ -471,7 +479,14 @@ func FetchHTTPFile(ctx context.Context, query *Query, opts FetchHTTPRequestOpts)
 
 func fetchHTTPFile(ctx context.Context, query *Query, opts FetchHTTPRequestOpts, useFileResultLayout bool) (_ *HTTPFetchResult, rerr error) {
 	span, ctx := tracing.StartSpan(ctx, "fetching "+opts.URL, telemetry.Encapsulated(), telemetry.Encapsulate())
+	// A service host is inside the engine; its response is not external input.
+	var input *enginetelemetry.WorkloadTransfer
+	if !opts.ServiceHost {
+		ctx, input = enginetelemetry.StartWorkloadInput(ctx, enginetelemetry.WorkloadTransferHTTP)
+	}
+	var received digest.Digest
 	defer func() {
+		input.End(received.String(), rerr)
 		tracing.FinishWithError(span, rerr)
 	}()
 
@@ -493,7 +508,7 @@ func fetchHTTPFile(ctx context.Context, query *Query, opts FetchHTTPRequestOpts,
 	if err != nil {
 		return nil, err
 	}
-	resp.Body, err = bkcache.NewNetworkProgressReader(ctx, opts.URL, resp.ContentLength, resp.Body, enginetelemetry.NetworkRX)
+	resp.Body, err = bkcache.NewNetworkProgressReader(ctx, opts.URL, resp.ContentLength, input.Body(resp.Body), enginetelemetry.NetworkRX)
 	if err != nil {
 		return nil, fmt.Errorf("create HTTP network progress reader: %w", err)
 	}
@@ -558,6 +573,7 @@ func fetchHTTPFile(ctx context.Context, query *Query, opts FetchHTTPRequestOpts,
 	}
 
 	contentDigest := digest.NewDigest(digest.SHA256, h)
+	received = contentDigest
 	if expectedChecksum != "" && contentDigest != expectedChecksum {
 		return nil, fmt.Errorf("http checksum mismatch: expected %s, got %s", expectedChecksum, contentDigest)
 	}

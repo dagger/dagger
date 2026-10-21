@@ -115,7 +115,7 @@ func TestScopedSnapshotCanonicalKeys(t *testing.T) {
 }
 func TestScopedSnapshotSQLConflict(t *testing.T) {
 	ctx := context.Background()
-	db, q, err := prepareCacheDBs(ctx, filepath.Join(t.TempDir(), "cache.db"))
+	db, q, err := prepareCacheDBs(ctx, filepath.Join(t.TempDir(), "cache.db"), false)
 	require.NoError(t, err)
 	defer closeCacheDBs(db, q)
 	require.NoError(t, q.InsertMirrorResult(ctx, persistdb.MirrorResult{ID: 1, SelfPayload: []byte(`{}`)}))

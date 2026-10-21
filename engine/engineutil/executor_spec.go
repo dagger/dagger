@@ -41,7 +41,6 @@ import (
 	"github.com/dagger/dagger/util/cleanups"
 	"github.com/google/uuid"
 	"github.com/moby/sys/user"
-	"github.com/opencontainers/cgroups"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sourcegraph/conc/pool"
 	"go.opentelemetry.io/otel/attribute"
@@ -362,7 +361,14 @@ func (c *Client) setupNetwork(ctx context.Context, state *execState) error {
 			errs = errors.Join(errs, err)
 		}
 		if errs != nil {
-			return fmt.Errorf("lookup %s for hosts file: %w", target, errs)
+			if !state.execMD.SkipUnresolvableHostAliases {
+				return fmt.Errorf("lookup %s for hosts file: %w", target, errs)
+			}
+			bklog.G(ctx).WithError(errs).Warnf("skipping unresolvable host aliases %v for %s", aliases, target)
+			if state.procInfo.Stderr != nil {
+				fmt.Fprintf(state.procInfo.Stderr, "warning: could not resolve bound service %s; skipping its host aliases\r\n", strings.Join(aliases, ", "))
+			}
+			continue
 		}
 
 		for _, ip := range ips {
@@ -489,10 +495,7 @@ func (c *Client) generateBaseSpec(ctx context.Context, state *execState) error {
 		// runc removes the container leaf, not its accounting parent.
 		// Mount accounting may already have removed the parent.
 		if filepath.IsAbs(state.resourceCgroupPath) && !strings.Contains(state.resourceCgroupPath, ":") {
-			removeErr := os.Remove(filepath.Join("/sys/fs/cgroup", state.resourceCgroupPath))
-			if !errors.Is(removeErr, os.ErrNotExist) {
-				err = errors.Join(err, removeErr)
-			}
+			err = errors.Join(err, removeExecCgroup(filepath.Join("/sys/fs/cgroup", state.resourceCgroupPath), os.Remove, describeCgroupTasks))
 		}
 		return err
 	})
@@ -1676,7 +1679,14 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 	initFDs.add(distconsts.SessionHelperStatusFDEnv, state.sessionHelperStatus.writeEnd())
 	initFDs.add(distconsts.InitTimingFDEnv, initTiming.writeEnd())
 	if state.sessionHelperStatus != nil {
-		go state.sessionHelperStatus.watch(state.failSessionHelper)
+		go state.sessionHelperStatus.watch(func(err error) {
+			// A query waiting for the helper's attachables gets this error, but
+			// a helper that fails after registering may have none waiting, so
+			// keep the report, with what the helper wrote, in the engine's log.
+			bklog.G(ctx).WithField("nested_client_id", state.nestedClientMetadata.ClientID).
+				Warnf("exec %s: %v", state.id, err)
+			state.failSessionHelper(err)
+		})
 	}
 
 	if err := json.NewEncoder(f).Encode(initFDs.withEnv(state.spec)); err != nil {
@@ -1734,9 +1744,7 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 	}
 
 	state.cleanups.Add("runc delete container", func() error {
-		return deleteContainer(ctx, state.id, cgroups.IsCgroup2UnifiedMode(), c.Runc.Delete, func(recoveryCtx context.Context) error {
-			return killContainerCgroup(recoveryCtx, state.id, state.spec.Linux.CgroupsPath)
-		})
+		return c.Runc.Delete(context.WithoutCancel(ctx), state.id, &runc.DeleteOpts{})
 	})
 
 	// Wake the existing sampler when runc starts. The cgroup may not exist at
@@ -1866,7 +1874,7 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 
 	killer := newRunProcKiller(c.Runc, state.id)
 
-	runcCall := func(ctx context.Context, started chan<- int, io runc.IO, pidfile string) error {
+	runcCall := func(ctx context.Context, started chan<- int, io runc.IO, consoleSocket runc.ConsoleSocket, pidfile string) error {
 		/*
 			We need to avoid the following type of race condition, which can result in invalid overlapping overlay mounts:
 			1. Engine creates random (unrelated to this exec) overlay mount like upperdir=B,lowerdir=A
@@ -1969,11 +1977,12 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 			}
 
 			_, err = c.Runc.Run(ctx, state.id, bundle, &runc.CreateOpts{
-				Started:    started,
-				IO:         io,
-				ExtraArgs:  []string{"--keep"},
-				PidFile:    pidFile,
-				ExtraFiles: initFDs.files,
+				Started:       started,
+				IO:            io,
+				ConsoleSocket: consoleSocket,
+				ExtraArgs:     []string{"--keep"},
+				PidFile:       pidFile,
+				ExtraFiles:    initFDs.files,
 			})
 			return err
 		})
@@ -2001,7 +2010,7 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 		if startedNS := profStartedNS.Load(); startedNS > 0 {
 			wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.containerStart", wcprof.OpOpts{Ident: state.id}, profStartNS, startedNS, wcprof.OutcomeOK)
 			processStartNS := startedNS
-			if releasedNS := workloadReleasedNS(pidFile, startedNS, profStartedWall.Load()); releasedNS > startedNS && releasedNS <= endNS {
+			if releasedNS := workloadReleasedNS(pidFile, startedNS, profStartedWall.Load()); releasedNS != 0 && releasedNS <= endNS {
 				// runc creating the container, up to releasing the workload
 				wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.runtimeStart", wcprof.OpOpts{Ident: state.id}, startedNS, releasedNS, wcprof.OutcomeOK)
 				processStartNS = releasedNS

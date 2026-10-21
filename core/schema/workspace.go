@@ -572,7 +572,8 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				"Relative paths in workspace APIs resolve from here."),
 		dagql.NodeFunc("artifacts", s.artifacts).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Discover static object artifacts from workspace modules without evaluating their values.").
+			Doc("Discover static object artifacts from workspace modules without evaluating their values.",
+				"Omits the paths that the workspace's check.skip, generate.skip, and up.skip settings skip.").
 			Args(dagql.Arg("include").Doc("Only include artifacts matching these path patterns, as with checks and services. A path selects that path and its children.")),
 		dagql.NodeFunc("__doctor", s.workspaceDoctor).
 			WithInput(dagql.PerClientInput).
@@ -909,6 +910,17 @@ func (s *workspaceSchema) workspaceReadPathExists(
 			}
 		}
 	}
+	return s.workspaceBasePathExists(ctx, ws, resolvedPath)
+}
+
+// workspaceBasePathExists excludes host overlay edits: a path created only
+// in the overlay must not become an operand of the host's ripgrep process.
+func (s *workspaceSchema) workspaceBasePathExists(
+	ctx context.Context,
+	ws *core.Workspace,
+	resolvedPath string,
+) (bool, error) {
+	rp := filepath.ToSlash(resolvedPath)
 	if ws.HostPath() != "" && ws.ClientLocalBase() {
 		ctx, err := s.withWorkspaceClientContext(ctx, ws)
 		if err != nil {
@@ -1457,14 +1469,15 @@ func (s *workspaceSchema) search(
 		if err != nil {
 			return nil, fmt.Errorf("search: %w", err)
 		}
+	}
 
-		if _, ok := ws.OverlayChanges(); ok && ws.ClientLocalBase() {
-			overlayResults, err := s.overlaySearchResults(ctx, ws, args)
-			if err != nil {
-				return nil, fmt.Errorf("search: %w", err)
-			}
-			results = mergeSearchResults(results, overlayResults, ws.OverlayPathTouched, args.Limit)
+	// The overlay may be the only source for every requested path.
+	if _, ok := ws.OverlayChanges(); ok && ws.ClientLocalBase() {
+		overlayResults, err := s.overlaySearchResults(ctx, ws, args)
+		if err != nil {
+			return nil, fmt.Errorf("search: %w", err)
 		}
+		results = mergeSearchResults(results, overlayResults, ws.OverlayPathTouched, args.Limit)
 	}
 
 	// Mounted content is readable through the normal workspace file tools, so
@@ -1495,10 +1508,12 @@ func (s *workspaceSchema) search(
 //     source doesn't have it — mounts materialize their own parents, so the
 //     path can exist in the workspace view through the mount alone.
 //
-// Paths uninvolved with mounts pass through untouched, so a genuinely
+// Host overlay edits also shadow the base. Their explicit paths are dropped,
+// and ancestors created only by the overlay are omitted from the host search.
+// Paths uninvolved with mounts or overlays pass through untouched, so a genuinely
 // nonexistent path still errors like today. The boolean reports whether the
 // source-side search should run at all: false when the caller scoped the
-// search entirely to mounted content.
+// search entirely to mounted or host-overlay content.
 func (s *workspaceSchema) searchSourcePaths(
 	ctx context.Context,
 	ws *core.Workspace,
@@ -1507,14 +1522,27 @@ func (s *workspaceSchema) searchSourcePaths(
 	if len(paths) == 0 {
 		return nil, true, nil
 	}
+	hostOverlay := ws.ClientLocalBase() && len(ws.OverlayTouchedPaths()) > 0
 	sourcePaths := make([]string, 0, len(paths))
 	for _, p := range paths {
 		scope := cleanSearchScope(p)
 		if ws.MountedPath(scope) {
 			continue
 		}
-		if ws.HasMountsUnder(scope) {
-			exists, err := s.workspaceReadPathExists(ctx, ws, scope)
+		overlayUnder := false
+		if hostOverlay {
+			if ws.OverlayPathTouched(scope) {
+				continue
+			}
+			for _, touched := range ws.OverlayTouchedPaths() {
+				if scope == "." || strings.HasPrefix(cleanSearchScope(touched), scope+"/") {
+					overlayUnder = true
+					break
+				}
+			}
+		}
+		if ws.HasMountsUnder(scope) || overlayUnder {
+			exists, err := s.workspaceBasePathExists(ctx, ws, scope)
 			if err != nil {
 				return nil, false, err
 			}
@@ -2880,7 +2908,10 @@ func (s *workspaceSchema) exportOverlay(
 	// effect on the calling client, like Directory.export — never on the
 	// client that created the workspace (dagger/dagger#14007).
 	wrote = true // Filesync can partially write before returning an error.
-	if err := changes.Self().Export(ctx, args.Path); err != nil {
+	exportCtx, exported := filesyncExport(ctx, changes)
+	err = changes.Self().Export(exportCtx, args.Path)
+	exported(err)
+	if err != nil {
 		return core.Void{}, err
 	}
 	return core.Void{}, nil
