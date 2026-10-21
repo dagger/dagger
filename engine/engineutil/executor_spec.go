@@ -488,16 +488,7 @@ func (c *Client) generateBaseSpec(ctx context.Context, state *execState) error {
 	// Reverse cleanup order: delete the container, release its mounts, take
 	// the final parent sample, then release the retained helper counters.
 	state.cleanups.Add("release exec mount accounting", func() error {
-		var err error
-		if state.mountResources != nil {
-			err = state.mountResources.Close()
-		}
-		// runc removes the container leaf, not its accounting parent.
-		// Mount accounting may already have removed the parent.
-		if filepath.IsAbs(state.resourceCgroupPath) && !strings.Contains(state.resourceCgroupPath, ":") {
-			err = errors.Join(err, removeExecCgroup(filepath.Join("/sys/fs/cgroup", state.resourceCgroupPath), os.Remove, describeCgroupTasks))
-		}
-		return err
+		return releaseExecCgroup(ctx, state.mountResources, state.resourceCgroupPath, hostCgroupOps)
 	})
 	state.cleanups.Add("release workload network accounting", func() error {
 		if state.closeWorkloadNetwork != nil {
