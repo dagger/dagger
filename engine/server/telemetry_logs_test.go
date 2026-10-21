@@ -331,7 +331,7 @@ func TestPresenceSurvivesRefetch(t *testing.T) {
 		}
 		return n
 	}
-	fetch := presenceLogFetcher()
+	fetch := presenceLogFetcher(nil)
 	_, msg, _, err := fetch(t.Context(), db, 0, 10)
 	require.NoError(t, err)
 	require.Equal(t, 2, count(msg))
