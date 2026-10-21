@@ -149,3 +149,33 @@ func TestFilesystemPersistenceReadersShareTheGuard(t *testing.T) {
 		})
 	}
 }
+
+// A part store writes the value it installs into, so it and a persistence read
+// still exclude each other, without waiting.
+func TestFilesystemPartStoreExcludesReaders(t *testing.T) {
+	for _, family := range []string{"File", "Directory"} {
+		t.Run(family, func(t *testing.T) {
+			var read func() (func(), error)
+			var store func() dagql.PreparedPartStore
+			if family == "File" {
+				file := storedSnapshotTestValue("File", "installed", "/out", false).(*File)
+				read = file.lockForPersistence
+				store = func() dagql.PreparedPartStore { return &filePartStore{receiver: file, expected: file.OutputRev} }
+			} else {
+				dir := storedSnapshotTestValue("Directory", "installed", "/out", false).(*Directory)
+				read = dir.lockForPersistence
+				store = func() dagql.PreparedPartStore { return &directoryPartStore{receiver: dir, expected: dir.OutputRev} }
+			}
+			unlock, err := read()
+			require.NoError(t, err)
+			require.False(t, store().TryLock(), "a held read refuses an install")
+			unlock()
+
+			s := store()
+			require.True(t, s.TryLock())
+			_, err = read()
+			s.Unlock()
+			require.ErrorIs(t, err, dagql.ErrPersistStateNotReady, "a held install refuses a read")
+		})
+	}
+}

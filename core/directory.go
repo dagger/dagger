@@ -87,8 +87,8 @@ func (dir *Directory) CachePayloadBytes() int64 {
 	if dir == nil {
 		return 0
 	}
-	dir.outputMu.Lock()
-	defer dir.outputMu.Unlock()
+	dir.outputMu.RLock()
+	defer dir.outputMu.RUnlock()
 	n := int64(len(dir.lazyJSON))
 	if dir.transferPending != nil {
 		n += int64(len(dir.transferPending.LazyJSON))
@@ -157,8 +157,8 @@ func (dir *Directory) snapshotIdentity() (string, bool) {
 	if dir == nil {
 		return "", false
 	}
-	dir.outputMu.Lock()
-	defer dir.outputMu.Unlock()
+	dir.outputMu.RLock()
+	defer dir.outputMu.RUnlock()
 	return dir.snapshotIdentityLocked()
 }
 
