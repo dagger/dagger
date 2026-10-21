@@ -34,7 +34,9 @@ type logMeta struct {
 	size      int64
 	trace     uint32
 	span      uint32
-	flags     logFlags
+	// digest interns the row's dagger.io/dag.digest attribute; 0 is none.
+	digest uint32
+	flags  logFlags
 }
 
 type logFlags uint8
@@ -56,17 +58,29 @@ const (
 
 func (f logFlags) has(flag logFlags) bool { return f&flag != 0 }
 
-// logAttrClass classifies a row's encoded attributes (MarshalProtoList): the hidden,
-// control, metadata and call flags. It depends on the attribute bytes alone,
-// so its results may be memoized by those bytes.
-func logAttrClass(raw []byte) (logFlags, error) {
+// display reports display text: a decodable text row that is neither a
+// semantic record nor agent control. Unlike logText it includes global and
+// verbose rows, which only the frontend may hide.
+func (f logFlags) display() bool { return !f.has(logMetadata | logControl | logFailed) }
+
+// logAttrClass classifies a row's encoded attributes (MarshalProtoList): the
+// hidden, control, metadata and call flags, and its dag.digest. It depends on
+// the attribute bytes alone, so its results may be memoized by those bytes.
+func logAttrClass(raw []byte) (logFlags, string, error) {
 	var attrs []*commonpb.KeyValue
 	if err := UnmarshalProtoList(raw, &commonpb.KeyValue{}, &attrs); err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	var flags logFlags
+	var digest string
+	var digestSeen bool
 	for _, a := range attrs {
 		switch a.GetKey() {
+		case telemetry.DagDigestAttr:
+			// dagui routes by the first one (dagui.DB.routeLog).
+			if !digestSeen {
+				digest, digestSeen = a.GetValue().GetStringValue(), true
+			}
 		case telemetry.LogsGlobalAttr, telemetry.LogsVerboseAttr:
 			if a.GetValue().GetBoolValue() {
 				flags |= logHidden
@@ -85,7 +99,7 @@ func logAttrClass(raw []byte) (logFlags, error) {
 			}
 		}
 	}
-	return flags, nil
+	return flags, digest, nil
 }
 
 // logClass completes a row's classification from its attribute class and its
@@ -137,21 +151,24 @@ const (
 )
 
 type logAttrClassResult struct {
-	flags logFlags
-	err   error
+	flags  logFlags
+	digest string
+	err    error
 }
 
 // classify classifies rows, memoizing attribute classes by their exact bytes,
-// which keeps the classification identical to decoding every row.
-func (l *logLookup) classify(rows []Log) ([]logFlags, []error) {
+// which keeps the classification identical to decoding every row. digests
+// holds each row's dag.digest ("" for none).
+func (l *logLookup) classify(rows []Log) ([]logFlags, []string, []error) {
 	flags := make([]logFlags, len(rows))
+	digests := make([]string, len(rows))
 	var errs []error
 	l.memoMu.Lock()
 	defer l.memoMu.Unlock()
 	for i, row := range rows {
 		attrs, ok := l.attrMemo[string(row.Attributes)]
 		if !ok {
-			attrs.flags, attrs.err = logAttrClass(row.Attributes)
+			attrs.flags, attrs.digest, attrs.err = logAttrClass(row.Attributes)
 			if len(row.Attributes) <= logAttrMemoMaxBytes {
 				if len(l.attrMemo) >= logAttrMemoEntries {
 					clear(l.attrMemo)
@@ -159,6 +176,7 @@ func (l *logLookup) classify(rows []Log) ([]logFlags, []error) {
 				l.attrMemo[string(row.Attributes)] = attrs
 			}
 		}
+		digests[i] = attrs.digest
 		var err error
 		flags[i], err = logClass(attrs.flags, attrs.err, row.Body)
 		if err != nil {
@@ -168,7 +186,7 @@ func (l *logLookup) classify(rows []Log) ([]logFlags, []error) {
 			errs[i] = err
 		}
 	}
-	return flags, errs
+	return flags, digests, errs
 }
 
 // internLocked returns id's index in a string intern table. It requires the
@@ -513,6 +531,46 @@ const selectedLogBatchBytes = 1 << 20
 // Agent control records are skipped unless includeControl is set (an unsealed
 // archive, which has no bootstrap to supply them).
 func (s *DB) SelectLogsRangeMatching(ctx context.Context, p SelectLogsRangeParams, traceID string, scope map[string]bool, sel *archive.LogSelection, includeControl bool) ([]Log, int64, error) {
+	trace, traceKnown := uint32(0), false
+	traceResolved := false
+	return s.scanLogs(ctx, p, func(idx *logLookup, i int64, m logMeta) (bool, error) {
+		if !traceResolved {
+			// Rows of a trace the index has never seen cannot match.
+			trace, traceKnown = idx.traceIndex[traceID]
+			traceResolved = true
+		}
+		if !traceKnown || m.trace != trace || (scope != nil && !scope[idx.spanIDs[m.span]]) {
+			return false, nil
+		}
+		if m.flags.has(logFailed) {
+			return false, idx.metaErrs[i]
+		}
+		if m.flags.has(logControl) && !includeControl {
+			return false, nil
+		}
+		if sel != nil {
+			if sel.After != nil && m.timestamp <= sel.After.UnixNano() {
+				return false, nil
+			}
+			switch sel.Records {
+			case archive.LogRecordsLogs:
+				return m.flags.has(logText), nil
+			case archive.LogRecordsCallPayloads:
+				return m.flags.has(logCall), nil
+			case archive.LogRecordsMetadata:
+				return m.flags.has(logMetadata), nil
+			}
+		}
+		return true, nil
+	})
+}
+
+// scanLogs scans a bounded metadata window (p.AfterID, min(p.ThroughID,
+// p.AfterID+p.Limit)] under the index's read lock and reads the bodies of
+// the rows match selects, bounded by bytes as well as rows. next is the last
+// row the scan covered, matched or not, so cursors address the underlying
+// stream. A match error ends the scan with that error.
+func (s *DB) scanLogs(ctx context.Context, p SelectLogsRangeParams, match func(idx *logLookup, i int64, m logMeta) (bool, error)) ([]Log, int64, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, p.AfterID, err
 	}
@@ -528,40 +586,15 @@ func (s *DB) SelectLogsRangeMatching(ctx context.Context, p SelectLogsRangeParam
 		idx.mu.RUnlock()
 		return nil, p.AfterID, errors.New("log stream truncated before cut")
 	}
-	// Rows of a trace the index has never seen cannot match.
-	trace, traceKnown := idx.traceIndex[traceID]
-	for i := p.AfterID; traceKnown && i < next; i++ {
+	for i := p.AfterID; i < next; i++ {
 		m := idx.meta[i]
-		id := i + 1
-		if m.trace != trace || (scope != nil && !scope[idx.spanIDs[m.span]]) {
-			continue
-		}
-		if m.flags.has(logFailed) {
-			err := idx.metaErrs[i]
+		ok, err := match(idx, i, m)
+		if err != nil {
 			idx.mu.RUnlock()
 			return nil, p.AfterID, err
 		}
-		if m.flags.has(logControl) && !includeControl {
+		if !ok {
 			continue
-		}
-		if sel != nil {
-			if sel.After != nil && m.timestamp <= sel.After.UnixNano() {
-				continue
-			}
-			switch sel.Records {
-			case archive.LogRecordsLogs:
-				if !m.flags.has(logText) {
-					continue
-				}
-			case archive.LogRecordsCallPayloads:
-				if !m.flags.has(logCall) {
-					continue
-				}
-			case archive.LogRecordsMetadata:
-				if !m.flags.has(logMetadata) {
-					continue
-				}
-			}
 		}
 		// Bound retained bodies by bytes as well as rows.
 		if len(ids) > 0 && m.size > selectedLogBatchBytes-bytes {
@@ -569,7 +602,7 @@ func (s *DB) SelectLogsRangeMatching(ctx context.Context, p SelectLogsRangeParam
 			break
 		}
 		bytes += m.size
-		ids = append(ids, id)
+		ids = append(ids, i+1)
 	}
 	idx.mu.RUnlock()
 	rows, err := s.SelectLogRows(ctx, ids)
