@@ -313,8 +313,16 @@ func (term *Vterm) rememberFollowLocked() {
 
 type vtermTextRow struct {
 	changes uint64
-	width   int
-	offset  int
+	// data and region identify the midterm row that was laid out. midterm
+	// moves a row's Changes counter along with it on insert/delete-line and
+	// scrolling, so a shifted row can meet an equal counter at its new index.
+	// Holding the pointers keeps those arrays alive, so they can't be reused
+	// by another row while this layout refers to them.
+	data   *rune
+	cols   int
+	region *midterm.Region
+	width  int
+	offset int
 	// length is the number of runes laid out (see textEnd).
 	length int
 	// wraps holds the midterm rune column where each wrapped row starts. A
@@ -524,17 +532,28 @@ func (term *Vterm) layoutTextLocked() {
 	term.textRows = term.textRows[:used]
 	height := 0
 	term.cacheCells = 0
+	shifted := false
 	for row := range term.textRows {
 		layout := &term.textRows[row]
-		if layout.wraps == nil || layout.changes != term.vt.Changes[row] || layout.width != width {
+		content := term.vt.Content[row]
+		var region *midterm.Region
+		if row < len(term.vt.Format.Rows) {
+			region = term.vt.Format.Rows[row]
+		}
+		same := layout.data == unsafe.SliceData(content) && layout.cols == len(content) && layout.region == region
+		if layout.wraps != nil && layout.changes == term.vt.Changes[row] && layout.width == width && !same {
+			shifted = true
+		}
+		if layout.wraps == nil || layout.changes != term.vt.Changes[row] || layout.width != width || !same {
 			// Erasing a progress line leaves blank cells in midterm. They must
 			// not become extra empty wrapped rows after a shorter replacement.
 			term.layoutRow(layout, row, width)
 			layout.changes = term.vt.Changes[row]
+			layout.data, layout.cols, layout.region = unsafe.SliceData(content), len(content), region
 		}
 		layout.offset = height
 		height += len(layout.wraps)
-		term.cacheCells += len(term.vt.Content[row]) + 12 + 2*len(layout.wraps) + 2*len(layout.blocks)
+		term.cacheCells += len(content) + 12 + 2*len(layout.wraps) + 2*len(layout.blocks)
 	}
 	term.textHeight = height
 	term.layoutDirty = false
@@ -544,6 +563,11 @@ func (term *Vterm) layoutTextLocked() {
 		term.Offset = min(term.Offset, max(0, height-term.Height))
 	}
 	if term.SearchQuery != "" {
+		if shifted {
+			// midterm's incremental search has the same blind spot: it
+			// compares Changes by row index.
+			term.vt.SearchClear()
+		}
 		term.vt.Search(term.SearchQuery)
 		term.setCurrentMatchByRow(term.SearchCurrentRow)
 	}

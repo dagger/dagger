@@ -205,6 +205,16 @@ func TestVtermLongLineEditsMatchFreshLayout(t *testing.T) {
 		"\x1b[41m    \x1b[0m",
 		"\x1b[1500G\x1b[K" + "short",
 		"\r\n" + strings.Repeat("next ", 600),
+		// Line insertion, deletion and scrolling shift rows, and midterm
+		// moves their change counters along with them. Rows with as many
+		// cell writes as their neighbours but other wraps catch stale reuse.
+		"\r\nabc" + strings.Repeat(" ", 40) + "\r\n" + strings.Repeat("abcd", 11)[:43] + "\r\nzz\r\n界界界界界\r\nabcde",
+		"\x1b[H\x1b[M",
+		"\x1b[2;1H\x1b[2L",
+		"\x1b[3;1Hinserted",
+		"\x1b[2;4r\x1b[4;1H\n\n\x1b[r",
+		"\x1b[2;4r\x1b[2;1H\x1bM\x1b[r",
+		"\x1b[1;1H\x1b[2M",
 	} {
 		_, err := io.WriteString(inc, step)
 		require.NoError(t, err)
@@ -228,6 +238,32 @@ func TestVtermLongLineEditsMatchFreshLayout(t *testing.T) {
 		ref.mu.Unlock()
 		inc.Search("", -1)
 		ref.Search("", -1)
+	}
+}
+
+// Same-row change counters must not let a row that moved into another row's
+// place reuse that row's layout or search results. Each pair of lines takes
+// the same number of cell writes, so their counters are equal, but they wrap
+// differently.
+func TestVtermShiftedRowsAreLaidOutAgain(t *testing.T) {
+	for _, text := range []string{"abc     \r\nabcdefgh\r\nzz", "界界界界界\r\nabcde\r\nzz"} {
+		inc, ref := NewVterm(termenv.Ascii), NewVterm(termenv.Ascii)
+		for _, term := range []*Vterm{inc, ref} {
+			t.Cleanup(term.Close)
+			term.SetWidth(6)
+			term.SetHeight(10)
+			term.SetSearchHighlight("b", -1)
+		}
+		_, err := io.WriteString(inc, text)
+		require.NoError(t, err)
+		_ = reflowViewLines(inc)
+		require.NotEmpty(t, inc.SearchMatchRows())
+		_, err = io.WriteString(inc, "\x1b[H\x1b[M")
+		require.NoError(t, err)
+		_, err = io.WriteString(ref, text+"\x1b[H\x1b[M")
+		require.NoError(t, err)
+		require.Equal(t, reflowViewLines(ref), reflowViewLines(inc))
+		require.Equal(t, ref.SearchMatchRows(), inc.SearchMatchRows())
 	}
 }
 
