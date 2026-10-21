@@ -21,52 +21,87 @@ import (
 
 // archiveLogMeta never retains a body, resource, or attribute blob. The index
 // lets lazy reads reject unrelated rows before reading their (possibly huge)
-// payloads from disk. It is rebuilt during ordinary spill recovery.
+// payloads from disk. It is rebuilt during ordinary spill recovery, and every
+// log row of every store carries one, so it is kept compact and pointer-free:
+// trace and span IDs are interned (see logLookup), classes are bit flags, and
+// the rare per-row decode error lives in a side map keyed by row index.
 type archiveLogMeta struct {
-	trace, span                             string
-	timestamp                               int64
-	size                                    int64
-	text, nonempty, call, metadata, control bool
-	err                                     error
+	timestamp int64
+	size      int64
+	trace     uint32
+	span      uint32
+	flags     archiveLogFlags
 }
 
-func archiveLogMetadata(row Log) archiveLogMeta {
-	m := archiveLogMeta{trace: row.TraceID.String, span: row.SpanID.String, timestamp: row.Timestamp, size: logCodec.size(row)}
+type archiveLogFlags uint8
+
+const (
+	// Row classes, as read by SelectArchiveLogsRange and ArchiveSpanView.
+	archiveLogText archiveLogFlags = 1 << iota
+	archiveLogNonempty
+	archiveLogCall
+	archiveLogMetadata
+	archiveLogControl
+	// archiveLogFailed marks a row whose attributes or body failed to
+	// decode; its error is in logLookup.archiveErrs.
+	archiveLogFailed
+	// archiveLogHidden is an attribute class only (global/verbose logs); it
+	// folds into archiveLogText and is never stored.
+	archiveLogHidden
+)
+
+func (f archiveLogFlags) has(flag archiveLogFlags) bool { return f&flag != 0 }
+
+// archiveLogAttrClass classifies a row's protojson-encoded attributes: the
+// hidden, control, metadata and call flags. It depends on the attribute bytes
+// alone, so its results may be memoized by those bytes.
+func archiveLogAttrClass(raw []byte) (archiveLogFlags, error) {
 	var attrs []*commonpb.KeyValue
-	if err := UnmarshalProtoJSONs(row.Attributes, &commonpb.KeyValue{}, &attrs); err != nil {
-		m.err = err
-		return m
+	if err := UnmarshalProtoJSONs(raw, &commonpb.KeyValue{}, &attrs); err != nil {
+		return 0, err
 	}
-	var hidden bool
+	var flags archiveLogFlags
 	for _, a := range attrs {
 		switch a.GetKey() {
 		case telemetry.LogsGlobalAttr, telemetry.LogsVerboseAttr:
-			hidden = hidden || a.GetValue().GetBoolValue()
+			if a.GetValue().GetBoolValue() {
+				flags |= archiveLogHidden
+			}
 		case agentcontrol.VersionAttr:
-			m.control = true
+			flags |= archiveLogControl
 		case telemetryattrs.LogRoleAttr, telemetryattrs.ProgressItemAttr, telemetryattrs.AgentStateAttr, telemetryattrs.AgentSnapshotDigestAttr:
-			m.metadata = true
+			flags |= archiveLogMetadata
 		case telemetry.ContentTypeAttr:
-			m.call = a.GetValue().GetStringValue() == telemetryattrs.CallPayloadContentType
-			// Typed binary semantic records include agent state and snapshots.
-			if m.call {
-				m.metadata = true
+			// The last content type wins.
+			flags &^= archiveLogCall
+			if a.GetValue().GetStringValue() == telemetryattrs.CallPayloadContentType {
+				// Typed binary semantic records include agent state and
+				// snapshots.
+				flags |= archiveLogCall | archiveLogMetadata
 			}
 		}
 	}
+	return flags, nil
+}
+
+// archiveLogClass completes a row's classification from its attribute class
+// and its encoded AnyValue body. A failed row carries no text classes.
+func archiveLogClass(attrFlags archiveLogFlags, attrErr error, body []byte) (archiveLogFlags, error) {
+	if attrErr != nil {
+		return archiveLogFailed, attrErr
+	}
+	flags := attrFlags &^ archiveLogHidden
 	// Inspect the oneof wire tag without allocating a copy of a large body.
 	var text, nonempty bool
-	for body := row.Body; len(body) > 0; {
+	for len(body) > 0 {
 		num, typ, n := protowire.ConsumeTag(body)
 		if n < 0 {
-			m.err = protowire.ParseError(n)
-			return m
+			return flags | archiveLogFailed, protowire.ParseError(n)
 		}
 		body = body[n:]
 		n = protowire.ConsumeFieldValue(num, typ, body)
 		if n < 0 {
-			m.err = protowire.ParseError(n)
-			return m
+			return flags | archiveLogFailed, protowire.ParseError(n)
 		}
 		if num >= 1 && num <= 7 {
 			text = num == 1 && typ == protowire.BytesType
@@ -77,12 +112,71 @@ func archiveLogMetadata(row Log) archiveLogMeta {
 		}
 		body = body[n:]
 	}
-	m.text = text && !m.metadata && !m.control && !hidden
-	m.nonempty = nonempty
-	if !text {
-		m.metadata = true
+	if text && !attrFlags.has(archiveLogMetadata|archiveLogControl|archiveLogHidden) {
+		flags |= archiveLogText
 	}
-	return m
+	if nonempty {
+		flags |= archiveLogNonempty
+	}
+	if !text {
+		flags |= archiveLogMetadata
+	}
+	return flags, nil
+}
+
+// Bounds of logLookup's attribute class memo. Log rows overwhelmingly repeat
+// a few small attribute blobs (stdio streams and the like), so a small memo
+// skips nearly every protojson decode while retaining little.
+const (
+	archiveAttrMemoEntries  = 256
+	archiveAttrMemoMaxBytes = 512
+)
+
+type archiveAttrClassResult struct {
+	flags archiveLogFlags
+	err   error
+}
+
+// archiveClassify classifies rows, memoizing attribute classes by their exact
+// bytes, which keeps the classification identical to decoding every row.
+func (l *logLookup) archiveClassify(rows []Log) ([]archiveLogFlags, []error) {
+	flags := make([]archiveLogFlags, len(rows))
+	var errs []error
+	l.memoMu.Lock()
+	defer l.memoMu.Unlock()
+	for i, row := range rows {
+		attrs, ok := l.attrMemo[string(row.Attributes)]
+		if !ok {
+			attrs.flags, attrs.err = archiveLogAttrClass(row.Attributes)
+			if len(row.Attributes) <= archiveAttrMemoMaxBytes {
+				if len(l.attrMemo) >= archiveAttrMemoEntries {
+					clear(l.attrMemo)
+				}
+				l.attrMemo[string(row.Attributes)] = attrs
+			}
+		}
+		var err error
+		flags[i], err = archiveLogClass(attrs.flags, attrs.err, row.Body)
+		if err != nil {
+			if errs == nil {
+				errs = make([]error, len(rows))
+			}
+			errs[i] = err
+		}
+	}
+	return flags, errs
+}
+
+// internLocked returns id's index in a string intern table. It requires the
+// table's owner lock for writing.
+func internLocked(index map[string]uint32, table *[]string, id string) uint32 {
+	if i, ok := index[id]; ok {
+		return i
+	}
+	i := uint32(len(*table))
+	*table = append(*table, id)
+	index[id] = i
+	return i
 }
 
 // ArchiveSpans is one request's view of an archive's span topology at
@@ -161,19 +255,23 @@ func (s *DB) buildArchiveTopology(ctx context.Context, traceID string, cut HighW
 		s.logIdx.mu.RUnlock()
 		return nil, errors.New("archive log stream truncated before cut")
 	}
-	for i, m := range s.logIdx.archive[:cut.Logs] {
-		if i%128 == 0 {
-			if err := ctx.Err(); err != nil {
-				s.logIdx.mu.RUnlock()
-				return nil, err
+	// A trace the index has never seen has no log rows to mark.
+	if trace, ok := s.logIdx.traceIndex[traceID]; ok {
+		spans := s.logIdx.spanIDs
+		for i, m := range s.logIdx.archive[:cut.Logs] {
+			if i%128 == 0 {
+				if err := ctx.Err(); err != nil {
+					s.logIdx.mu.RUnlock()
+					return nil, err
+				}
 			}
-		}
-		if m.trace != traceID || !m.text || !m.nonempty {
-			continue
-		}
-		if node, ok := v.nodes[m.span]; ok {
-			node.hasLogs = true
-			v.nodes[m.span] = node
+			if m.trace != trace || !m.flags.has(archiveLogText) || !m.flags.has(archiveLogNonempty) {
+				continue
+			}
+			if node, ok := v.nodes[spans[m.span]]; ok {
+				node.hasLogs = true
+				v.nodes[spans[m.span]] = node
+			}
 		}
 	}
 	s.logIdx.mu.RUnlock()
@@ -404,22 +502,26 @@ func (s *DB) SelectArchiveLogsRange(ctx context.Context, p SelectLogsRangeParams
 	next := p.AfterID + min(p.ThroughID-p.AfterID, p.Limit)
 	var ids []int64
 	var bytes int64
-	s.logIdx.mu.RLock()
-	if p.ThroughID > int64(len(s.logIdx.archive)) {
-		s.logIdx.mu.RUnlock()
+	idx := s.logIdx
+	idx.mu.RLock()
+	if p.ThroughID > int64(len(idx.archive)) {
+		idx.mu.RUnlock()
 		return nil, p.AfterID, errors.New("archive log stream truncated before cut")
 	}
-	for i := p.AfterID; i < next; i++ {
-		m := s.logIdx.archive[i]
+	// Rows of a trace the index has never seen cannot match.
+	trace, traceKnown := idx.traceIndex[traceID]
+	for i := p.AfterID; traceKnown && i < next; i++ {
+		m := idx.archive[i]
 		id := i + 1
-		if m.trace != traceID || (scope != nil && !scope[m.span]) {
+		if m.trace != trace || (scope != nil && !scope[idx.spanIDs[m.span]]) {
 			continue
 		}
-		if m.err != nil {
-			s.logIdx.mu.RUnlock()
-			return nil, p.AfterID, m.err
+		if m.flags.has(archiveLogFailed) {
+			err := idx.archiveErrs[i]
+			idx.mu.RUnlock()
+			return nil, p.AfterID, err
 		}
-		if m.control && !includeControl {
+		if m.flags.has(archiveLogControl) && !includeControl {
 			continue
 		}
 		if sel != nil {
@@ -428,15 +530,15 @@ func (s *DB) SelectArchiveLogsRange(ctx context.Context, p SelectLogsRangeParams
 			}
 			switch sel.Records {
 			case archive.LogRecordsLogs:
-				if !m.text {
+				if !m.flags.has(archiveLogText) {
 					continue
 				}
 			case archive.LogRecordsCallPayloads:
-				if !m.call {
+				if !m.flags.has(archiveLogCall) {
 					continue
 				}
 			case archive.LogRecordsMetadata:
-				if !m.metadata {
+				if !m.flags.has(archiveLogMetadata) {
 					continue
 				}
 			}
@@ -450,7 +552,7 @@ func (s *DB) SelectArchiveLogsRange(ctx context.Context, p SelectLogsRangeParams
 		bytes += m.size
 		ids = append(ids, id)
 	}
-	s.logIdx.mu.RUnlock()
+	idx.mu.RUnlock()
 	rows := make([]Log, 0, len(ids))
 	for _, id := range ids {
 		row, ok, err := s.logs.readArchiveID(ctx, id)

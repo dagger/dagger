@@ -21,7 +21,7 @@ import (
 
 const selectionTrace = "01000000000000000000000000000000"
 
-func selectionLog(t *testing.T, span string, body *commonpb.AnyValue, attrs ...*commonpb.KeyValue) Log {
+func selectionLog(t testing.TB, span string, body *commonpb.AnyValue, attrs ...*commonpb.KeyValue) Log {
 	t.Helper()
 	encoded, err := MarshalProtoJSONs(attrs)
 	require.NoError(t, err)
@@ -254,17 +254,21 @@ func TestArchivePriorityConversation(t *testing.T) {
 }
 
 func TestArchiveMetadataTextAndVisibility(t *testing.T) {
+	classify := func(row Log) (archiveLogFlags, error) {
+		attrs, err := archiveLogAttrClass(row.Attributes)
+		return archiveLogClass(attrs, err, row.Body)
+	}
 	for _, key := range []string{telemetry.LogsGlobalAttr, telemetry.LogsVerboseAttr} {
 		row := selectionLog(t, "span", selectionText("hidden"), &commonpb.KeyValue{Key: key, Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_BoolValue{BoolValue: true}}})
-		m := archiveLogMetadata(row)
-		require.NoError(t, m.err)
-		require.False(t, m.text)
-		require.False(t, m.metadata)
+		flags, err := classify(row)
+		require.NoError(t, err)
+		require.False(t, flags.has(archiveLogText))
+		require.False(t, flags.has(archiveLogMetadata))
 	}
 	for _, key := range []string{telemetryattrs.ProgressItemAttr, telemetryattrs.AgentStateAttr, telemetryattrs.AgentSnapshotDigestAttr, telemetryattrs.LogRoleAttr} {
-		m := archiveLogMetadata(selectionLog(t, "span", selectionText("semantic"), selectionAttr(key, "value")))
-		require.NoError(t, m.err)
-		require.False(t, m.text)
-		require.True(t, m.metadata)
+		flags, err := classify(selectionLog(t, "span", selectionText("semantic"), selectionAttr(key, "value")))
+		require.NoError(t, err)
+		require.False(t, flags.has(archiveLogText))
+		require.True(t, flags.has(archiveLogMetadata))
 	}
 }
