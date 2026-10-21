@@ -245,8 +245,8 @@ func (sess *daggerSession) closeArchiveControl(ctx context.Context) error {
 // by its trace, so `dagger trace` can read it from the engine as it reads an
 // agent session. It runs at teardown, once the session can record no agent
 // state, and seals like an agent archive with an empty roster. It is best
-// effort: a trace another session already owns, or no trace at all, simply
-// leaves the session's store to store GC as before.
+// effort: a trace another session keeps (see RegisterTelemetryOnly), or no
+// trace at all, simply leaves the session's store to store GC as before.
 func (srv *Server) registerTelemetryArchive(sess *daggerSession) {
 	if srv.archives == nil {
 		return
@@ -264,7 +264,7 @@ func (srv *Server) registerTelemetryArchive(sess *daggerSession) {
 	if sess.archiveManifest != nil || sess.archiveRegisterErr != nil {
 		return
 	}
-	manifest, err := srv.archives.RegisterTelemetryOnly(traceID, sess.mainClientCallerID)
+	manifest, err := srv.archives.RegisterTelemetryOnly(traceID, sess.mainClientCallerID, sess.startedAt)
 	if err != nil {
 		slog.Debug("not retaining session telemetry", "session", sess.sessionID, "traceID", traceID, "err", err)
 		return

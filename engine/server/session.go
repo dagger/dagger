@@ -74,6 +74,9 @@ type daggerSession struct {
 	// archivePendingTitle is a title published before the archive existed.
 	archivePendingTitle pendingArchiveTitle
 	mainClientCallerID  string
+	// startedAt is when the session initialized. Among plain sessions
+	// sharing a trace, the earliest-started (outermost) one retains it.
+	startedAt time.Time
 
 	// schemaBuilderMemo holds the schemas built for module dependency sets
 	// (e.g. a Module's Deps) by any of the session's clients. A function
@@ -1046,6 +1049,7 @@ func (srv *Server) initializeDaggerSession(
 	// construction (before the session is published) and are immutable /
 	// clientMu-protected thereafter; they are deliberately not assigned here.
 	sess.wcprofEnabled = clientMetadata.Profile
+	sess.startedAt = time.Now()
 	sess.attachables = newSessionAttachableManager()
 	sess.endpoints = map[string]http.Handler{}
 	sess.closingCtx, sess.cancelClosing = context.WithCancelCause(context.Background())
