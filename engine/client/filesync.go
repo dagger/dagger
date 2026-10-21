@@ -828,6 +828,16 @@ func globHostPath(ctx context.Context, root string, pattern string) ([]string, e
 	}
 	onlyPrefixIncludes := !strings.ContainsAny(patStr, patternChars)
 
+	// A wildcard cannot match outside the literal directories before it.
+	// Keep the trailing separator so "sdk/" cannot match "sdk-other/".
+	var wildcardPrefix string
+	if wildcard := strings.IndexAny(patStr, patternChars); wildcard >= 0 {
+		literal := patStr[:wildcard]
+		if slash := strings.LastIndex(literal, string(filepath.Separator)); slash >= 0 {
+			wildcardPrefix = literal[:slash+1]
+		}
+	}
+
 	var matches []string
 	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, prevErr error) error {
 		if prevErr != nil {
@@ -863,6 +873,11 @@ func globHostPath(ctx context.Context, root string, pattern string) ([]string, e
 				if !strings.HasPrefix(prefixSlash, dirSlash) {
 					return filepath.SkipDir
 				}
+			}
+		} else if d.IsDir() && !pat.Exclusion() && wildcardPrefix != "" {
+			dirSlash := rel + string(filepath.Separator)
+			if !strings.HasPrefix(wildcardPrefix, dirSlash) && !strings.HasPrefix(dirSlash, wildcardPrefix) {
+				return filepath.SkipDir
 			}
 		}
 
