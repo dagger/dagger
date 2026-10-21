@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"syscall"
 
 	"github.com/containerd/containerd/v2/core/mount"
 )
@@ -35,11 +34,7 @@ func mergeFileModeCandidates(ctx context.Context, base map[string]os.FileMode, c
 				if strings.HasSuffix(p, "/") {
 					continue
 				}
-				full, err := RootPathWithoutFinalSymlink(dir, p)
-				if err != nil {
-					return err
-				}
-				info, err := os.Lstat(full)
+				info, err := lstatInRoot(dir, p)
 				if err != nil {
 					return TrimErrPathPrefix(err, dir)
 				}
@@ -165,11 +160,9 @@ func restoreMergeFileMode(full string, mode, base os.FileMode, candidates []merg
 			continue
 		}
 		if mode != candidate.mode {
-			if err := os.Chmod(full, candidate.mode); err != nil {
-				return err
-			}
+			return os.Chmod(full, candidate.mode)
 		}
-		break
+		return nil
 	}
 	return nil
 }
@@ -184,11 +177,14 @@ func (ws *gitMergeWorkspace) changedFileModes(contents ...*changesetContent) (ma
 			if strings.HasSuffix(p, "/") {
 				continue
 			}
-			full, info, err := ws.changedFileModePath(p)
-			if err != nil {
-				return nil, err
+			info, err := lstatInRoot(ws.workDir, p)
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
 			}
-			if full != "" {
+			if err != nil {
+				return nil, TrimErrPathPrefix(err, ws.root)
+			}
+			if info.Mode().IsRegular() {
 				modes[p] = info.Mode()
 			}
 		}
@@ -208,41 +204,20 @@ func (ws *gitMergeWorkspace) restoreChangedFileModes(ctx context.Context, base m
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		full, info, err := ws.changedFileModePath(p)
-		if err != nil {
-			return err
-		}
-		if full == "" {
+		info, err := lstatInRoot(ws.workDir, p)
+		if errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
+		if err != nil {
+			return TrimErrPathPrefix(err, ws.root)
+		}
+		if !info.Mode().IsRegular() {
+			continue
+		}
+		full := filepath.Join(ws.workDir, filepath.FromSlash(p))
 		if err := restoreMergeFileMode(full, info.Mode(), base[p], candidates, false); err != nil {
 			return TrimErrPathPrefix(err, ws.root)
 		}
 	}
 	return nil
-}
-
-func (ws *gitMergeWorkspace) changedFileModePath(p string) (string, os.FileInfo, error) {
-	full, err := RootPathWithoutFinalSymlink(ws.workDir, p)
-	if errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) || errors.Is(err, syscall.ELOOP) {
-		return "", nil, nil
-	}
-	if err != nil {
-		return "", nil, err
-	}
-	// Do not traverse a symlink that replaced a directory on an input side.
-	if full != filepath.Join(ws.workDir, filepath.FromSlash(p)) {
-		return "", nil, nil
-	}
-	info, err := os.Lstat(full)
-	if errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
-		return "", nil, nil
-	}
-	if err != nil {
-		return "", nil, TrimErrPathPrefix(err, ws.root)
-	}
-	if !info.Mode().IsRegular() {
-		return "", nil, nil
-	}
-	return full, info, nil
 }
