@@ -58,12 +58,17 @@ func blockAfterCommit(store *testutil.Store) (entered <-chan struct{}, release f
 	return enteredCh, func() { releaseOnce.Do(func() { close(releaseCh) }) }
 }
 
+// waitFor waits for a value on ch, failing the test if none arrives within a
+// minute. The waited-for work compresses layers and commits metadata, and the
+// store's bolt database syncs each commit to disk, so on a loaded CI disk it
+// can take more than ten seconds. The bound still turns a stalled operation
+// or a lost wakeup into a failure rather than a hang.
 func waitFor[T any](t *testing.T, ch <-chan T, what string) T {
 	t.Helper()
 	select {
 	case v := <-ch:
 		return v
-	case <-time.After(10 * time.Second):
+	case <-time.After(time.Minute):
 		t.Fatalf("timed out waiting for %s", what)
 		panic("unreachable")
 	}
@@ -441,16 +446,27 @@ func TestAttachLeaseRecordsCommittedPrefixAfterLaterFailure(t *testing.T) {
 	base, baseOwner := buildSnapshot(t, store, nil, "g.txt", "base")
 	mid, midOwner := buildSnapshot(t, store, base, "p.txt", "middle")
 	top, topOwner := buildSnapshot(t, store, mid, "c.txt", "top")
-	layers := func(cfg config.RefConfig) []string {
+	// exportLayers does not use t, so it can run on another goroutine: a
+	// require there would panic the test binary once this test has failed.
+	exportLayers := func(cfg config.RefConfig) ([]string, error) {
 		chain, err := top.ExportChain(ctx, cfg)
-		require.NoError(t, err)
+		if err != nil {
+			return nil, err
+		}
 		defer chain.Release(ctx)
-		require.Len(t, chain.Layers, 3)
+		if len(chain.Layers) != 3 {
+			return nil, fmt.Errorf("exported %d layers, want 3", len(chain.Layers))
+		}
 		var digests []string
 		for _, layer := range chain.Layers {
 			digests = append(digests, layer.Descriptor.Digest.String())
 		}
-		return digests // base, middle, top
+		return digests, nil // base, middle, top
+	}
+	layers := func(cfg config.RefConfig) []string {
+		digests, err := exportLayers(cfg)
+		require.NoError(t, err)
+		return digests
 	}
 	recorded := layers(uncompressed)
 
@@ -472,11 +488,18 @@ func TestAttachLeaseRecordsCommittedPrefixAfterLaterFailure(t *testing.T) {
 
 	// Before the owner is recorded, a forced export records a gzip variant
 	// for every snapshot of the chain.
-	gzipped := make(chan []string, 1)
+	type exportResult struct {
+		digests []string
+		err     error
+	}
+	gzipped := make(chan exportResult, 1)
 	go func() {
-		gzipped <- layers(config.RefConfig{Compression: compression.New(compression.Gzip).SetForce(true)})
+		digests, err := exportLayers(config.RefConfig{Compression: compression.New(compression.Gzip).SetForce(true)})
+		gzipped <- exportResult{digests, err}
 	}()
-	gz := waitFor(t, gzipped, "the forced gzip export")
+	exported := waitFor(t, gzipped, "the forced gzip export")
+	require.NoError(t, exported.err)
+	gz := exported.digests
 	release()
 	require.ErrorIs(t, waitFor(t, attachErr, "AttachLease"), injected)
 	store.BeforeAdd = nil

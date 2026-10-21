@@ -29,6 +29,9 @@ type execMountResources struct {
 	err         error
 }
 
+// cgroupRoot is where the cgroup v2 hierarchy is mounted; tests replace it.
+var cgroupRoot = "/sys/fs/cgroup"
+
 func NewExecMountResources(path string) enginetel.ExecMountResources {
 	return &execMountResources{path: path}
 }
@@ -59,7 +62,7 @@ func (r *execMountResources) Prepare(cmd *exec.Cmd) (_ func() error, rerr error)
 		if !filepath.IsAbs(r.path) || strings.Contains(r.path, ":") || filepath.Clean(r.path) != r.path || r.path == "/" {
 			return nil, fmt.Errorf("unsupported exec cgroup path %q", r.path)
 		}
-		parent := filepath.Join("/sys/fs/cgroup", r.path)
+		parent := filepath.Join(cgroupRoot, r.path)
 		if err := os.MkdirAll(filepath.Dir(parent), 0o755); err != nil {
 			return nil, err
 		}
@@ -85,7 +88,7 @@ func (r *execMountResources) Prepare(cmd *exec.Cmd) (_ func() error, rerr error)
 		}
 		r.active = true
 	}
-	command, err := nettracer.PrepareCommandIn(cmd, filepath.Join("/sys/fs/cgroup", r.path, "sshfs"))
+	command, err := nettracer.PrepareCommandIn(cmd, filepath.Join(cgroupRoot, r.path, "sshfs"))
 	if err != nil {
 		return nil, err
 	}
@@ -163,9 +166,10 @@ func (r *execMountResources) Close() error {
 	for _, command := range r.commands {
 		err = errors.Join(err, command.Close())
 	}
+	// The execution cgroup itself is the executor's to remove, after the
+	// container's: it may still hold what the container's runtime left.
 	if r.active {
-		err = errors.Join(err, os.Remove(filepath.Join("/sys/fs/cgroup", r.path, "sshfs")))
-		err = errors.Join(err, os.Remove(filepath.Join("/sys/fs/cgroup", r.path)))
+		err = errors.Join(err, os.Remove(filepath.Join(cgroupRoot, r.path, "sshfs")))
 	}
 	return err
 }
