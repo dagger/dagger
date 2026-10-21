@@ -750,7 +750,9 @@ func (term *Vterm) LastLine() string {
 	return lastLine + reset
 }
 
-// Print prints the full log output without any formatting.
+// Print prints the log output without any formatting, as the rows View lays
+// out: wrapped at the viewport width, when one is set. PrintRaw is the
+// byte-exact output.
 func (term *Vterm) Print(w io.Writer) error {
 	term.mu.Lock()
 	defer term.mu.Unlock()
@@ -769,19 +771,19 @@ func (term *Vterm) Print(w io.Writer) error {
 	if err := term.errLocked(); err != nil {
 		return err
 	}
-	used := term.vt.UsedHeight()
-
-	for row, l := range term.vt.Content {
-		_, err := fmt.Fprintln(w, strings.TrimRight(string(l), " "))
-		if err != nil {
-			return err
-		}
-
-		if row > used {
-			break
+	var line strings.Builder
+	for row := range term.textRows {
+		layout := &term.textRows[row]
+		content := term.vt.Content[row]
+		for i, start := range layout.wraps {
+			line.Reset()
+			line.WriteString(strings.TrimRight(string(content[start:layout.wrapEnd(i)]), " "))
+			line.WriteByte('\n')
+			if _, err := io.WriteString(w, line.String()); err != nil {
+				return err
+			}
 		}
 	}
-
 	return nil
 }
 

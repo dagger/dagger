@@ -1,12 +1,14 @@
 package idtui
 
 import (
+	"io"
 	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/muesli/termenv"
+	"github.com/stretchr/testify/require"
 	"github.com/vito/tuist"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -493,6 +495,31 @@ func TestTestViewSummaryCondenses(t *testing.T) {
 	if len(floor) != 2 || !strings.Contains(floor[1], "3 failed") || !strings.Contains(floor[1], "5 passed") {
 		t.Fatalf("2-row floor not heading+counts:\n%s", strings.Join(floor, "\n"))
 	}
+}
+
+// The live summary shows a failing test's log tail as the log wraps at the
+// summary's width, so a long line's end (often the failure) stays visible
+// rather than being clipped to one row.
+func TestTestViewLiveSummaryWrapsLongLogLines(t *testing.T) {
+	id := dagui.SpanID{SpanID: trace.SpanID{1}}
+	logs := NewVterm(termenv.Ascii)
+	t.Cleanup(logs.Close)
+	logs.SetWidth(30)
+	line := strings.Repeat("x", 50) + "-TAIL-OF-FAILURE"
+	_, err := io.WriteString(logs, "before\r\n"+line+"\r\n")
+	require.NoError(t, err)
+	tv := &TestView{SummaryLogLines: 8, Logs: map[dagui.SpanID]*Vterm{id: logs}}
+	entry := testSummaryEntry{category: dagui.TestCategoryFailing, label: "fails", span: &dagui.Span{SpanSnapshot: dagui.SpanSnapshot{ID: id}}}
+	var buf strings.Builder
+	out := NewOutput(&buf, termenv.WithProfile(termenv.Ascii))
+	lines := tv.renderTestSummaryLogs(out, entry, 40)
+	indent := strings.Repeat(" ", 8)
+	require.Equal(t, []string{
+		indent + "before",
+		indent + line[:32],
+		indent + line[32:64],
+		indent + line[64:],
+	}, lines)
 }
 
 func TestTestViewPrettyReportSkippedSuites(t *testing.T) {
