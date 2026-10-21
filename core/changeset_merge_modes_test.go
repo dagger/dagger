@@ -123,6 +123,37 @@ func TestGitMergeFileModesRenameAndModify(t *testing.T) {
 	require.NoFileExists(t, filepath.Join(work, "old"))
 }
 
+func TestGitMergeFileModesRenameConflict(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		strategy WithChangesetMergeConflict
+		wantMode os.FileMode
+	}{
+		{"ours", PreferOursOnConflict, 0o600},
+		{"theirs", PreferTheirsOnConflict, 0o640},
+		{"markers", LeaveConflictMarkers, 0o600},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			base := t.TempDir()
+			scopedMergeWrite(t, base, "a", strings.Repeat("a\n", 20), 0o600)
+			scopedMergeWrite(t, base, "b", strings.Repeat("b\n", 20), 0o640)
+			ours := scopedMergeContent(t, base, func(dir string) {
+				scopedMergeRename(t, dir, "a", "merged")
+			})
+			theirs := scopedMergeContent(t, base, func(dir string) {
+				scopedMergeRename(t, dir, "b", "merged")
+			})
+			require.Equal(t, map[string]string{"merged": "a"}, ours.paths.Renamed)
+			require.Equal(t, map[string]string{"merged": "b"}, theirs.paths.Renamed)
+			work := filepath.Join(t.TempDir(), "work")
+			copyScopedMergeTree(t, base, work)
+			ws := &gitMergeWorkspace{root: work, dir: "/", workDir: work}
+			require.NoError(t, ws.mergeChangesets(t.Context(), nil, ours, theirs, ours.paths.CheckConflicts(theirs.paths), tc.strategy, nil))
+			requireMergeFileMode(t, work, "merged", tc.wantMode)
+		})
+	}
+}
+
 func TestGitMergeFileModesReplacements(t *testing.T) {
 	base := t.TempDir()
 	scopedMergeWrite(t, base, "dir/child", "old child\n", 0o400)
