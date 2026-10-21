@@ -36,12 +36,17 @@ async def test_git_repository():
 
 
 async def test_container_build():
-    dagger_img = (
-        await dag.git("https://github.com/dagger/dagger")
-        .tag("v0.3.0")
-        .tree()
-        .docker_build()
-    )
+    repo = dag.git("https://github.com/dagger/dagger").tag("v0.3.0").tree()
+
+    # proxy.golang.org sometimes resets a module download mid-stream, and Go's
+    # default GOPROXY doesn't fall back on that. "|" falls back on any error.
+    goproxy = "https://proxy.golang.org|https://proxy.golang.org|direct"
+    stage = "AS build\n"
+    dockerfile = await repo.file("Dockerfile").contents()
+    assert stage in dockerfile
+    dockerfile = dockerfile.replace(stage, f"{stage}ENV GOPROXY={goproxy}\n", 1)
+
+    dagger_img = await repo.with_new_file("Dockerfile", dockerfile).docker_build()
 
     out = await dagger_img.with_exec(["dagger", "version"]).stdout()
 
