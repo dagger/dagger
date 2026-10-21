@@ -146,6 +146,12 @@ type daggerSession struct {
 	shutdownCh        chan struct{}
 	closeShutdownOnce sync.Once
 
+	// telemetryEnded is closed once shutdownTelemetry has written the
+	// session's last telemetry, the session-end carrier included, to the
+	// client stores.
+	telemetryEnded   chan struct{}
+	endTelemetryOnce sync.Once
+
 	// the http endpoints being served (as a map since APIs like shellEndpoint can add more)
 	endpoints  map[string]http.Handler
 	endpointMu sync.RWMutex
@@ -333,6 +339,11 @@ type clientRecord struct {
 	// attachables client; this is sealed at transport registration and never
 	// selected from request metadata.
 	attachablesClientID string
+
+	// attachablesFromExecHelper says that the exec's session helper registers
+	// the attachables, so waits for them end with the exec. Sealed with
+	// attachablesClientID.
+	attachablesFromExecHelper bool
 
 	// Synthetic clients may route host services through this stable ancestor ID.
 	hostServiceProxyClientID string
@@ -799,6 +810,9 @@ func (sess *daggerSession) shutdownTelemetry(ctx context.Context) error {
 	for _, client := range clients {
 		errs = errors.Join(errs, client.closeTelemetryDB())
 	}
+	if sess.telemetryEnded != nil {
+		sess.endTelemetryOnce.Do(func() { close(sess.telemetryEnded) })
+	}
 	logClientTelemetryOp(slog.With("sessionID", sess.sessionID), "session telemetry shutdown", start, traceDur, logDur, metricDur, errs)
 	return errs
 }
@@ -927,6 +941,7 @@ func (srv *Server) initializeClientMetrics(client *clientRuntime) {
 
 func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadata *engine.ClientMetadata) {
 	cloudEngine := clientMetadata != nil && clientMetadata.CloudEngine
+	sess.telemetryEnded = make(chan struct{})
 	srv.initializeSessionCloudTelemetry(sess, clientMetadata)
 	spanExporter := sessionSpanExporter{sess: sess, ps: srv.telemetryPubSub}
 	logExporter := sessionLogExporter{sess: sess, ps: srv.telemetryPubSub}
@@ -3661,6 +3676,7 @@ func (srv *Server) clientAttachableCallerWithin(
 	record.daggerSession.scopeMu.Lock()
 	inertAttachables := record.inertAttachables
 	attachablesClientID := record.attachablesClientID
+	fromExecHelper := record.attachablesFromExecHelper
 	record.daggerSession.scopeMu.Unlock()
 	if inertAttachables {
 		return nil, status.Error(codes.PermissionDenied, "SDK client access to host session attachables is denied")
@@ -3672,9 +3688,9 @@ func (srv *Server) clientAttachableCallerWithin(
 		caller, _ := record.daggerSession.attachables.Lookup(attachablesClientID)
 		return caller, nil
 	}
-	ctx, cancel := record.daggerSession.attachables.waitContext(ctx, attachablesClientID, timeout)
+	ctx, cancel := record.daggerSession.attachables.waitContext(ctx, timeout, fromExecHelper)
 	defer cancel()
-	caller, err := record.daggerSession.attachables.Wait(ctx, attachablesClientID)
+	caller, err := record.daggerSession.attachables.Wait(ctx, attachablesClientID, fromExecHelper)
 	if err != nil {
 		return nil, err
 	}

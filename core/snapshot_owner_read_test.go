@@ -157,6 +157,7 @@ func TestSnapshotOwnerCompletedReaders(t *testing.T) {
 			var value dagql.SnapshotOwnerReader
 			var guard func() (func(), error)
 			var nonblocking dagql.PersistedOutputVersion
+			var store func() dagql.PreparedPartStore
 			if family == "Container" {
 				op := &ContainerBuiltinLazy{LazyState: NewLazyState()}
 				ctr := NewContainer(Platform{})
@@ -177,6 +178,7 @@ func TestSnapshotOwnerCompletedReaders(t *testing.T) {
 				guard = func() (func(), error) {
 					return file.lockSnapshotOwnerRead(t.Context(), func() any { return file.Lazy })
 				}
+				store = func() dagql.PreparedPartStore { return &filePartStore{receiver: file, expected: file.OutputRev} }
 			}
 			before, links, err := value.ReadSnapshotOwner(t.Context())
 			require.NoError(t, err)
@@ -186,14 +188,28 @@ func TestSnapshotOwnerCompletedReaders(t *testing.T) {
 			release := sync.OnceFunc(unlock)
 			defer release()
 			done := startSnapshotOwnerRead(value)
-			awaitSnapshotOwnerLatch(t, done)
-			_, err = nonblocking.PersistedOutputRevision()
-			require.ErrorIs(t, err, dagql.ErrPersistStateNotReady, "capture and Commit remain nonblocking")
-			release()
+			if store == nil {
+				awaitSnapshotOwnerLatch(t, done)
+				_, err = nonblocking.PersistedOutputRevision()
+				require.ErrorIs(t, err, dagql.ErrPersistStateNotReady, "capture and Commit remain nonblocking")
+				release()
+			} else {
+				// A completed File's readers share its output guard; a part
+				// store, which writes, is refused without waiting.
+				_, err = nonblocking.PersistedOutputRevision()
+				require.NoError(t, err)
+				require.False(t, store().TryLock(), "a part store excludes readers")
+			}
 			result := <-done
 			require.NoError(t, result.err)
 			require.Equal(t, before, result.revision)
 			require.Equal(t, links, result.links)
+			if store != nil {
+				release()
+				s := store()
+				require.True(t, s.TryLock())
+				s.Unlock()
+			}
 		})
 	}
 }

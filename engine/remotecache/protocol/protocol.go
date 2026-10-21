@@ -145,7 +145,8 @@ type SkipReason string
 const (
 	// SkipGone: the engine no longer has the entry.
 	SkipGone SkipReason = "gone"
-	// SkipBusy: the entry could not be captured now; ask again later.
+	// SkipBusy: the entry could not be captured now; ask again later. The
+	// skip's Message says what was busy.
 	SkipBusy SkipReason = "busy"
 	// SkipRefused: the engine refused to capture the entry, and would again;
 	// the skip's Message says why.
@@ -164,7 +165,7 @@ type Exported struct {
 }
 
 // SkippedRoot is an exported root left out, by number. Message is the
-// engine's error for a refused root, cut to a bounded length.
+// engine's error for a busy or refused root, cut to a bounded length.
 type SkippedRoot struct {
 	Number  uint64     `json:"number"`
 	Reason  SkipReason `json:"reason"`

@@ -10,15 +10,20 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 )
 
-// filesystemOutput guards typed publication. The body latch is retained after
-// acquisition replaces Lazy so direct callers are excluded until their body returns.
-// OutputRev is process-local and is read only through PersistedOutputRevision.
+// filesystemOutput guards typed publication. Publication writes under
+// outputMu's write lock; reads share its read lock, so one reader does not
+// refuse another on outputMu: a span reading its call's complete parts can
+// overlap a snapshot-sharing probe of the same value. An unevaluated body's
+// latch still admits one reader at a time. The body latch is retained after
+// acquisition replaces Lazy so direct callers are excluded until their body
+// returns; readers record it too, so it is atomic. OutputRev is process-local
+// and is read only through PersistedOutputRevision.
 type filesystemOutput struct {
 	partHost        atomic.Pointer[dagql.PartHost]
-	outputMu        sync.Mutex
+	outputMu        sync.RWMutex
 	acquiredOpen    sync.Mutex
 	OutputRev       dagql.OutputRevision
-	persistenceBody *LazyState
+	persistenceBody atomic.Pointer[LazyState]
 }
 
 // lazyEvalBody is a value's unevaluated lazy body as seen by lazyEvalFunc.
@@ -34,9 +39,9 @@ func (out *filesystemOutput) lazyEvalFunc(kind string, lazyLocked func() (pendin
 	if host := out.partHost.Load(); host != nil && host.Managed() {
 		return func(ctx context.Context) error { return host.Evaluate(ctx, "snapshot") }
 	}
-	out.outputMu.Lock()
+	out.outputMu.RLock()
 	pending, body := lazyLocked()
-	out.outputMu.Unlock()
+	out.outputMu.RUnlock()
 	if pending {
 		return func(ctx context.Context) error {
 			if host := out.partHost.Load(); host != nil {
@@ -76,7 +81,7 @@ func (out *filesystemOutput) evaluateLazy(ctx context.Context, state *LazyState,
 			if err := published(); err != nil {
 				return err
 			}
-			out.persistenceBody = state
+			out.persistenceBody.Store(state)
 			out.OutputRev++
 			return nil
 		}(); err != nil {
@@ -92,23 +97,24 @@ func (out *filesystemOutput) evaluateLazy(ctx context.Context, state *LazyState,
 
 func (out *filesystemOutput) rememberBodyLocked(lazy any) {
 	if provider, ok := lazy.(interface{ ContainerLazyState() *LazyState }); ok {
-		out.persistenceBody = provider.ContainerLazyState()
+		out.persistenceBody.Store(provider.ContainerLazyState())
 	}
 }
 
 // tryPersistenceLocked never waits for a body while holding a cache lock or
-// outputMu: bodies may need both. The caller owns outputMu on entry.
-func (out *filesystemOutput) tryPersistenceLocked(lazy any) (func(), error) {
+// outputMu: bodies may need both. The caller holds outputMu on entry, and
+// unlock releases it.
+func (out *filesystemOutput) tryPersistenceLocked(lazy any, unlock func()) (func(), error) {
 	out.rememberBodyLocked(lazy)
-	state := out.persistenceBody
+	state := out.persistenceBody.Load()
 	if lazy != nil && (state == nil || state.LazyMu == nil) {
-		out.outputMu.Unlock()
+		unlock()
 		return nil, fmt.Errorf("encode filesystem output: missing lazy state for %T", lazy)
 	}
 	lockBody := state != nil && state.LazyMu != nil && !state.IsEvaluated()
 	if lockBody {
 		if !state.LazyMu.TryLock() {
-			out.outputMu.Unlock()
+			unlock()
 			return nil, fmt.Errorf("%w: filesystem body in use", dagql.ErrPersistStateNotReady)
 		}
 	}
@@ -116,7 +122,7 @@ func (out *filesystemOutput) tryPersistenceLocked(lazy any) (func(), error) {
 		if lockBody {
 			state.LazyMu.Unlock()
 		}
-		out.outputMu.Unlock()
+		unlock()
 	}, nil
 }
 
@@ -124,21 +130,21 @@ func (out *filesystemOutput) tryPersistenceLocked(lazy any) (func(), error) {
 // outputMu, so release it before waiting on that body's latch and read anew.
 func (out *filesystemOutput) lockSnapshotOwnerRead(ctx context.Context, lazy func() any) (func(), error) {
 	for {
-		out.outputMu.Lock()
+		out.outputMu.RLock()
 		op := lazy()
 		out.rememberBodyLocked(op)
-		state := out.persistenceBody
+		state := out.persistenceBody.Load()
 		if op != nil && (state == nil || state.LazyMu == nil) {
-			out.outputMu.Unlock()
+			out.outputMu.RUnlock()
 			return nil, fmt.Errorf("filesystem ownership read: missing lazy state for %T", op)
 		}
 		if state == nil || state.LazyMu == nil || state.IsEvaluated() {
-			return out.outputMu.Unlock, nil
+			return out.outputMu.RUnlock, nil
 		}
 		if state.LazyMu.TryLock() {
-			return func() { state.LazyMu.Unlock(); out.outputMu.Unlock() }, nil
+			return func() { state.LazyMu.Unlock(); out.outputMu.RUnlock() }, nil
 		}
-		out.outputMu.Unlock()
+		out.outputMu.RUnlock()
 		state.awaitUnlocked(ctx)
 	}
 }
@@ -170,10 +176,19 @@ func (dir *Directory) ReadSnapshotOwner(ctx context.Context) (dagql.OutputRevisi
 }
 
 func (file *File) lockForPersistence() (func(), error) {
+	if !file.outputMu.TryRLock() {
+		return nil, fmt.Errorf("%w: File publication in use", dagql.ErrPersistStateNotReady)
+	}
+	return file.tryPersistenceLocked(file.Lazy, file.outputMu.RUnlock)
+}
+
+// lockForPublication is lockForPersistence for a part store, which writes the
+// value: it excludes readers as well as writers.
+func (file *File) lockForPublication() (func(), error) {
 	if !file.outputMu.TryLock() {
 		return nil, fmt.Errorf("%w: File publication in use", dagql.ErrPersistStateNotReady)
 	}
-	return file.tryPersistenceLocked(file.Lazy)
+	return file.tryPersistenceLocked(file.Lazy, file.outputMu.Unlock)
 }
 
 func (file *File) PersistedOutputRevision() (dagql.OutputRevision, error) {
@@ -221,10 +236,19 @@ func (file *File) evaluateLazy(ctx context.Context, state *LazyState, name strin
 }
 
 func (dir *Directory) lockForPersistence() (func(), error) {
+	if !dir.outputMu.TryRLock() {
+		return nil, fmt.Errorf("%w: Directory publication in use", dagql.ErrPersistStateNotReady)
+	}
+	return dir.tryPersistenceLocked(dir.Lazy, dir.outputMu.RUnlock)
+}
+
+// lockForPublication is lockForPersistence for a part store, which writes the
+// value: it excludes readers as well as writers.
+func (dir *Directory) lockForPublication() (func(), error) {
 	if !dir.outputMu.TryLock() {
 		return nil, fmt.Errorf("%w: Directory publication in use", dagql.ErrPersistStateNotReady)
 	}
-	return dir.tryPersistenceLocked(dir.Lazy)
+	return dir.tryPersistenceLocked(dir.Lazy, dir.outputMu.Unlock)
 }
 
 func (dir *Directory) PersistedOutputRevision() (dagql.OutputRevision, error) {

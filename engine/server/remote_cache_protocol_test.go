@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -335,7 +336,8 @@ func TestRemoteCacheAdapterExportSkipsBusyRoots(t *testing.T) {
 	calls := 0
 	err := e.adapter.Export(e.ctx, req, func(_ context.Context, exp remotecache.Export) error {
 		calls++
-		require.Equal(t, []protocol.SkippedRoot{{Number: entryNumber(t, busy), Reason: protocol.SkipBusy}}, exp.Skipped)
+		require.Len(t, exp.Skipped, 1)
+		requireBusySkip(t, entryNumber(t, busy), exp.Skipped[0])
 		require.NotNil(t, exp.Bundle)
 		require.Equal(t, []uint64{entryNumber(t, ready)}, bundleRoots(exp.Bundle))
 		require.Len(t, exp.Bundle.Outputs, 1, "the busy root's output lies outside the closure, and is left out")
@@ -446,6 +448,15 @@ func TestExportLogAttrs(t *testing.T) {
 	require.NotContains(t, attrs, "skipped_roots", "past the limit, skipped roots are only counted")
 }
 
+// requireBusySkip checks that skip leaves out root, a busyFile, as busy,
+// saying why: its evaluation is running.
+func requireBusySkip(t *testing.T, root uint64, skip protocol.SkippedRoot) {
+	t.Helper()
+	require.Equal(t, root, skip.Number)
+	require.Equal(t, protocol.SkipBusy, skip.Reason)
+	require.Equal(t, fmt.Sprintf("%s: result %d whole evaluation", dagql.ErrPersistStateNotReady, root), skip.Message)
+}
+
 // logAttrs maps a log line's alternating keys and values.
 func logAttrs(attrs []any) map[string]any {
 	m := map[string]any{}
@@ -464,7 +475,9 @@ func TestRemoteCacheAdapterExportWithNoSurvivingRoot(t *testing.T) {
 	err := e.adapter.Export(e.ctx, protocol.Export{Roots: []uint64{entryNumber(t, busy), goneNumber}}, func(_ context.Context, exp remotecache.Export) error {
 		calls++
 		require.Nil(t, exp.Bundle)
-		require.Equal(t, []protocol.SkippedRoot{{Number: goneNumber, Reason: protocol.SkipGone}, {Number: entryNumber(t, busy), Reason: protocol.SkipBusy}}, exp.Skipped)
+		require.Len(t, exp.Skipped, 2)
+		require.Equal(t, protocol.SkippedRoot{Number: goneNumber, Reason: protocol.SkipGone}, exp.Skipped[0])
+		requireBusySkip(t, entryNumber(t, busy), exp.Skipped[1])
 		return nil
 	})
 	require.NoError(t, err)

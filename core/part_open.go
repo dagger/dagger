@@ -19,9 +19,9 @@ func (out *filesystemOutput) openSnapshotPart(ctx context.Context, kind string, 
 	}
 	out.acquiredOpen.Lock()
 	defer out.acquiredOpen.Unlock()
-	out.outputMu.Lock()
+	out.outputMu.RLock()
 	opened, stored := load()
-	out.outputMu.Unlock()
+	out.outputMu.RUnlock()
 	if opened {
 		return nil
 	}

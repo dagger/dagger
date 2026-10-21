@@ -540,7 +540,9 @@ func TestTelemetryStreamsConfirmCloudPublishing(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			sess, root := newCloudTestSession(t, &Server{}, tc.md)
-			t.Cleanup(func() { require.NoError(t, sess.shutdownTelemetry(context.Background())) })
+			// The session's telemetry ends first, as its teardown's does, so
+			// the main client's streams end once drained.
+			require.NoError(t, sess.shutdownTelemetry(context.Background()))
 			shutdownCh := make(chan struct{})
 			close(shutdownCh)
 			root.shutdownCh = shutdownCh

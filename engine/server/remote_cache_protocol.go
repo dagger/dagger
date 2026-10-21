@@ -38,9 +38,9 @@ func (a *RemoteCacheAdapter) CacheIdentity() (string, uint64) {
 // A missing root is skipped as gone. When the capture fails, other than by
 // the request's own cancellation or the cache closing, each root is probed
 // alone: one whose probe is busy is skipped as busy, one whose probe fails
-// otherwise is skipped as refused, with its error as the message, and the
-// others are captured together; if that capture is busy, they are all busy,
-// and if it fails otherwise, so does the request. consume is called once,
+// otherwise is skipped as refused, each with its error as the message, and
+// the others are captured together; if that capture is busy, they are all
+// busy with its error, and if it fails otherwise, so does the request. consume is called once,
 // with the bundle while its chains stay open, or with no bundle when no root
 // survived.
 func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, consume func(context.Context, remotecache.Export) error) (rerr error) {
@@ -104,7 +104,7 @@ func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, co
 			case err == nil:
 				ready = append(ready, root)
 			case errors.Is(err, dagql.ErrPersistStateNotReady):
-				skipped = append(skipped, protocol.SkippedRoot{Number: root.number, Reason: protocol.SkipBusy})
+				skipped = append(skipped, protocol.SkippedRoot{Number: root.number, Reason: protocol.SkipBusy, Message: skippedMessage(err)})
 			case !rootCaptureError(ctx, err):
 				return err
 			default:
@@ -119,7 +119,7 @@ func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, co
 			}
 			// A task started between the probes and the export.
 			for _, root := range ready {
-				skipped = append(skipped, protocol.SkippedRoot{Number: root.number, Reason: protocol.SkipBusy})
+				skipped = append(skipped, protocol.SkippedRoot{Number: root.number, Reason: protocol.SkipBusy, Message: skippedMessage(err)})
 			}
 		}
 	}
@@ -137,8 +137,8 @@ func rootCaptureError(ctx context.Context, err error) bool {
 		!errors.Is(err, context.DeadlineExceeded)
 }
 
-// maxSkippedMessageBytes bounds the message a refused root's skip carries,
-// so that one long error can't bloat the reply.
+// maxSkippedMessageBytes bounds the message a busy or refused root's skip
+// carries, so that one long error can't bloat the reply.
 const maxSkippedMessageBytes = 1024
 
 // skippedMessage is err's message, cut to maxSkippedMessageBytes at a rune

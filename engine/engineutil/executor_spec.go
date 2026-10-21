@@ -1275,19 +1275,22 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		state.nestedClientMetadata.ClientVersion = version
 	}
 
+	// /.init starts the session helper alongside the command rather than
+	// before it, so the client's queries wait for its attachables. Without
+	// /.init nothing starts a helper, and the default wait applies.
+	fromExecHelper := state.execMD == nil || !state.execMD.NoInit
+
 	transports := newNestedClientTransportManager(
 		ctx,
 		c.SessionHandler,
 		state.nestedClientMetadata,
 		parentClientID,
+		fromExecHelper,
 	)
 	transports.profExecOpID = state.profExecOpID
 	state.cleanups.Add("close nested client transports", cleanups.Infallible(transports.Close))
 
-	// /.init starts the session helper alongside the command rather than
-	// before it, so the client's queries wait for its attachables. Without
-	// /.init nothing starts a helper, and the default wait applies.
-	if state.execMD == nil || !state.execMD.NoInit {
+	if fromExecHelper {
 		fail, done, err := c.SessionHandler.ExpectNestedExecAttachables(state.nestedClientMetadata.SessionID, state.nestedClientMetadata.ClientID)
 		if err != nil {
 			return fmt.Errorf("expect nested client attachables: %w", err)
@@ -1413,6 +1416,9 @@ type nestedClientTransportManager struct {
 	sessionHandler  sessionHandler
 	baseMetadata    *engine.ClientMetadata
 	parentClientID  string
+	// fromExecHelper says that the exec's session helper registers the
+	// attachables of every client it hosts.
+	fromExecHelper bool
 	// profExecOpID is the wcprof op of the exec hosting these clients.
 	profExecOpID uint64
 
@@ -1435,12 +1441,14 @@ func newNestedClientTransportManager(
 	handler sessionHandler,
 	baseMetadata *engine.ClientMetadata,
 	parentClientID string,
+	fromExecHelper bool,
 ) *nestedClientTransportManager {
 	return &nestedClientTransportManager{
 		registrationCtx: ctx,
 		sessionHandler:  handler,
 		baseMetadata:    baseMetadata,
 		parentClientID:  parentClientID,
+		fromExecHelper:  fromExecHelper,
 		transports:      map[string]*nestedClientTransport{},
 	}
 }
@@ -1505,6 +1513,7 @@ func (manager *nestedClientTransportManager) register(client *nestedClientTransp
 		client.metadata,
 		manager.parentClientID,
 		manager.baseMetadata.ClientID,
+		manager.fromExecHelper,
 	)
 
 	manager.mu.Lock()

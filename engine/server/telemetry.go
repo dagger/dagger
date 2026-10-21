@@ -1189,6 +1189,46 @@ func (ps clientMetrics) Aggregation(sdkmetric.InstrumentKind) sdkmetric.Aggregat
 func (ps clientMetrics) ForceFlush(ctx context.Context) error { return nil }
 func (ps clientMetrics) Shutdown(context.Context) error       { return nil }
 
+// mainClientStreamGrace bounds how long the main client's telemetry streams
+// wait after its /shutdown for the session's final telemetry. Session teardown
+// runs in the background after /shutdown and usually ends within milliseconds;
+// the bound keeps a slow one, such as a large cache release, from holding the
+// client's exit for its whole drain budget (10s by default).
+const mainClientStreamGrace = 5 * time.Second
+
+// telemetryStreamEnd returns a channel that is closed once the record's
+// telemetry streams may end when drained: once its client has shut down, and
+// for the session's main client, once the session's telemetry has ended too,
+// or mainClientStreamGrace after the shutdown, whichever is first. Session
+// teardown writes the session-end carrier, and whatever its cleanup emits, to
+// the main client's store after that client's /shutdown, so a client that
+// forwards the session's telemetry reads them only from a stream that outlasts
+// the teardown.
+func (record *clientRecord) telemetryStreamEnd(ctx context.Context) <-chan struct{} {
+	sess := record.daggerSession
+	if sess == nil || record.clientID != sess.mainClientCallerID {
+		return record.shutdownCh
+	}
+	end := make(chan struct{})
+	go func() {
+		select {
+		case <-record.shutdownCh:
+		case <-ctx.Done():
+			return
+		}
+		grace := time.NewTimer(mainClientStreamGrace)
+		defer grace.Stop()
+		select {
+		case <-sess.telemetryEnded:
+		case <-grace.C:
+		case <-ctx.Done():
+			return
+		}
+		close(end)
+	}()
+	return end
+}
+
 type streamFetcher func(ctx context.Context, db *clientdb.DB, since int64, limit int) (next int64, message proto.Message, rows int, err error)
 
 func (ps *PubSub) streamHandler(w http.ResponseWriter, r *http.Request, record *clientRecord, fetcher streamFetcher) error {
@@ -1286,6 +1326,9 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 	}
 	flush()
 
+	streamCtx, stopStream := context.WithCancel(r.Context())
+	defer stopStream()
+	streamEnd := record.telemetryStreamEnd(streamCtx)
 	terminating := false
 	batchLimit := otlpBatchSize
 	// failStream ends the stream for good: the client must not reconnect at
@@ -1336,7 +1379,7 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 			case <-time.After(telemetry.NearlyImmediate):
 				// Poll at the telemetry batching frequency. Tail reads are cheap,
 				// while coupling readers to writers risks blocking shutdown.
-			case <-record.shutdownCh:
+			case <-streamEnd:
 				logger.ExtraDebug("shutting down")
 				terminating = true
 			case <-r.Context().Done():

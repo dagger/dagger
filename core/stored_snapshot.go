@@ -73,8 +73,8 @@ func (dir *Directory) HasPendingLazyComputation() bool {
 	if dir == nil {
 		return false
 	}
-	dir.outputMu.Lock()
-	defer dir.outputMu.Unlock()
+	dir.outputMu.RLock()
+	defer dir.outputMu.RUnlock()
 	return dir.stored == nil && dir.Lazy != nil && !dir.Lazy.IsEvaluated()
 }
 
@@ -89,8 +89,8 @@ func (file *File) HasPendingLazyComputation() bool {
 	if file == nil {
 		return false
 	}
-	file.outputMu.Lock()
-	defer file.outputMu.Unlock()
+	file.outputMu.RLock()
+	defer file.outputMu.RUnlock()
 	return file.stored == nil && file.Lazy != nil && !file.Lazy.IsEvaluated()
 }
 
@@ -104,10 +104,10 @@ func (file *File) LazyGroupStoredPart(group dagql.LazyGroupKey) dagql.PartKey {
 // PathOrEval returns saved metadata without opening its snapshot. Fresh values
 // still need evaluation, even when their path accessor has been prefilled.
 func (dir *Directory) PathOrEval(ctx context.Context, self dagql.ObjectResult[*Directory]) (string, error) {
-	dir.outputMu.Lock()
+	dir.outputMu.RLock()
 	known := dir.stored != nil || dir.transferPending != nil && dir.transferPending.ValueKnown
 	path, ok := dir.Dir.Peek()
-	dir.outputMu.Unlock()
+	dir.outputMu.RUnlock()
 	if known {
 		if ok {
 			return path, nil
@@ -118,10 +118,10 @@ func (dir *Directory) PathOrEval(ctx context.Context, self dagql.ObjectResult[*D
 }
 
 func (file *File) PathOrEval(ctx context.Context, self dagql.ObjectResult[*File]) (string, error) {
-	file.outputMu.Lock()
+	file.outputMu.RLock()
 	known := file.stored != nil || file.transferPending != nil && file.transferPending.ValueKnown
 	path, ok := file.File.Peek()
-	file.outputMu.Unlock()
+	file.outputMu.RUnlock()
 	if known {
 		if ok {
 			return path, nil
@@ -136,9 +136,9 @@ func SourceFilePaths(ctx context.Context, files []dagql.ObjectResult[*File]) ([]
 	var fresh []dagql.AnyResult
 	for _, file := range files {
 		value := file.Self()
-		value.outputMu.Lock()
+		value.outputMu.RLock()
 		freshPath := value.stored == nil && (value.transferPending == nil || !value.transferPending.ValueKnown)
-		value.outputMu.Unlock()
+		value.outputMu.RUnlock()
 		if freshPath {
 			fresh = append(fresh, file)
 		}
