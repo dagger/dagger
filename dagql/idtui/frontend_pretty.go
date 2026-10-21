@@ -7891,6 +7891,11 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 		!fe.shouldRenderInlineTests(row) && !fe.rollsUpSubChecks(row) {
 		// in shell mode, we print top-level command logs unindented, like shells
 		// usually does
+		if fe.shellTranscript() {
+			// Collapsed, so no LogsView asks for them: a restored history's
+			// command output is fetched as the row renders.
+			fe.requestLogsOnRender(row.Span.ID)
+		}
 		if logs := fe.logs.Logs[row.Span.ID]; logs != nil && logs.UsedHeight() > 0 {
 			if fe.shellTranscript() {
 				unindent := *row
