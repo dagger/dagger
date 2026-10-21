@@ -669,15 +669,8 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 	}
 	var logQuery *archive.LogQuery
 	if r.Method == http.MethodPost {
-		logQuery = &archive.LogQuery{}
-		if err := archive.DecodeLogBody(r.Body, logQuery); err != nil {
+		if logQuery, err = archiveLogQuery(r, logSelection); err != nil {
 			return httpErr(err, http.StatusBadRequest)
-		}
-		if err := logQuery.Validate(); err != nil {
-			return httpErr(err, http.StatusBadRequest)
-		}
-		if logSelection != nil {
-			return httpErr(errors.New("a log query body excludes query selections"), http.StatusBadRequest)
 		}
 	}
 	// Once the session has ended nothing else holds its store, and reopening
@@ -703,10 +696,7 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 			logScope = spanView.Scope(logSelection.SpanID, true)
 		}
 	}
-	var displayScope *clientdb.LogQueryScope
-	if logQuery != nil {
-		displayScope = spanView.LogQueryScope(logQuery.Spans)
-	}
+	displayScope := archiveDisplayScope(spanView, logQuery)
 	w.Header().Set("Content-Type", enginetel.LiveContentType)
 	w.Header().Set("Cache-Control", "no-store")
 	defer func() {
@@ -757,6 +747,28 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 		batchLimit = otlpBatchSize
 	}
 	return enginetel.WriteLiveTerminal(w, high)
+}
+
+// archiveLogQuery decodes a POSTed multi-span log query, which replaces the
+// query-string log selection.
+func archiveLogQuery(r *http.Request, logSelection *archive.LogSelection) (*archive.LogQuery, error) {
+	if logSelection != nil {
+		return nil, errors.New("a log query body excludes query selections")
+	}
+	var q archive.LogQuery
+	if err := archive.DecodeLogBody(r.Body, &q); err != nil {
+		return nil, err
+	}
+	return &q, q.Validate()
+}
+
+// archiveDisplayScope resolves a log query at the archive's span view, which
+// is always built when there is one.
+func archiveDisplayScope(spanView *clientdb.SpanView, logQuery *archive.LogQuery) *clientdb.LogQueryScope {
+	if logQuery == nil {
+		return nil
+	}
+	return spanView.LogQueryScope(logQuery.Spans)
 }
 
 // archiveSignalReader reads batches of one archive's signal rows as OTLP

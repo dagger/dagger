@@ -83,7 +83,7 @@ func presenceResourceLogs(presence []clientdb.LogPresence) *otlplogsv1.ResourceL
 			})
 		}
 		records = append(records, &otlplogsv1.LogRecord{
-			TimeUnixNano: uint64(p.Timestamp), //nolint:gosec // stored from an OTLP uint64
+			TimeUnixNano: uint64(p.Timestamp),
 			TraceId:      traceID,
 			SpanId:       spanID,
 			Body:         &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_StringValue{}},
