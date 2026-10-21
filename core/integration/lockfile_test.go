@@ -541,6 +541,33 @@ func (LockfileSuite) TestRemoteWorkspaceSelectorDoesNotBypassOwnPin(ctx context.
 	require.Contains(t, string(out), pinnedCommit)
 }
 
+// Clients of one session can use different workspace locks, here two nested
+// CLIs with their own workspaces. Each gets the image its own lock pins for a
+// tag, not whichever client resolved that tag first.
+func (LockfileSuite) TestNestedClientsUseOwnImagePins(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	digestOf := func(address string) string {
+		imageRef, err := core.NewQuery(c).Container().From(address).ImageRef(ctx)
+		require.NoError(t, err)
+		_, digest, found := strings.Cut(imageRef, "@")
+		require.True(t, found, "expected canonical image ref with digest: %q", imageRef)
+		return digest
+	}
+	for _, tc := range []struct{ release, digest string }{
+		{"3.20", digestOf("alpine:3.20")},
+		{"3.19", digestOf("alpine:3.19")},
+	} {
+		out, err := workspaceBase(t, c).
+			WithNewFile("dagger.toml", "").
+			WithNewFile(workspace.LockFileName, mustMarshalOCISHALock(t, tc.digest)).
+			WithNewFile("query.graphql", containerFromQuery).
+			With(daggerExec("--silent", "query", "--doc", "query.graphql")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, tc.release)
+	}
+}
+
 func requireRemoteLockUnchanged(ctx context.Context, t *testctx.T, c *dagger.Client, remote remoteLockWorkspace, want string) {
 	t.Helper()
 	committedLock, err := core.NewQuery(c).Git(remote.repoURL).Commit(remote.commit).Tree().File(workspace.LockFileName).Contents(ctx)
