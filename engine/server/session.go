@@ -78,6 +78,9 @@ type daggerSession struct {
 	// cloudClaimID is the Dagger Cloud claim the main client connected under,
 	// set when the session is initialized.
 	cloudClaimID string
+	// startedAt is when the session initialized. Among plain sessions
+	// sharing a trace, the earliest-started (outermost) one retains it.
+	startedAt time.Time
 
 	// schemaBuilderMemo holds the schemas built for module dependency sets
 	// (e.g. a Module's Deps) by any of the session's clients. A function
@@ -1185,6 +1188,7 @@ func (srv *Server) initializeDaggerSession(
 		sess.releaseEBPF = release
 		failureCleanups.Add("release eBPF programs", cleanups.Infallible(release))
 	}
+	sess.startedAt = time.Now()
 	sess.attachables = newSessionAttachableManager()
 	sess.endpoints = map[string]http.Handler{}
 	sess.closingCtx, sess.cancelClosing = context.WithCancelCause(context.Background())

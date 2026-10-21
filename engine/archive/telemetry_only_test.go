@@ -15,7 +15,9 @@ func sealArchive(t *testing.T, manager *Manager, traceID, clientID string, telem
 	t.Helper()
 	register := manager.Register
 	if telemetryOnly {
-		register = manager.RegisterTelemetryOnly
+		register = func(traceID, clientID string) (Manifest, error) {
+			return manager.RegisterTelemetryOnly(traceID, clientID, at)
+		}
 	}
 	registered, err := register(traceID, clientID)
 	if err != nil {
@@ -63,12 +65,41 @@ func TestManagerTelemetryOnlyArchives(t *testing.T) {
 		t.Fatalf("listing = %+v, want only the agent archive", page.Archives)
 	}
 
-	// A telemetry-only registration never displaces an archive.
-	if _, err := restarted.RegisterTelemetryOnly(testTraceA, "late-plain"); err == nil {
+	// A telemetry-only registration never displaces an agent archive, nor a
+	// telemetry-only one of a session that started first.
+	if _, err := restarted.RegisterTelemetryOnly(testTraceA, "late-plain", now.Add(-time.Hour)); err == nil {
 		t.Fatal("telemetry-only registration displaced an agent archive")
 	}
-	if _, err := restarted.RegisterTelemetryOnly(testTraceB, "late-plain"); err == nil {
-		t.Fatal("telemetry-only registration displaced a telemetry-only archive")
+	if _, err := restarted.RegisterTelemetryOnly(testTraceB, "late-plain", now.Add(time.Second)); err == nil {
+		t.Fatal("telemetry-only registration displaced an earlier session's archive")
+	}
+}
+
+// Sessions sharing a trace (a nested dagger-in-dagger session inherits its
+// parent's) each hold only their own telemetry. The inner one ends first, but
+// the outer, earlier-started one keeps the trace.
+func TestManagerOutermostPlainSessionKeepsTrace(t *testing.T) {
+	root := t.TempDir()
+	start := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	now := start.Add(time.Hour)
+	manager, err := NewManager(Config{Root: root, Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealArchive(t, manager, testTraceA, "inner", true, start.Add(time.Minute), 1)
+	outer, err := manager.RegisterTelemetryOnly(testTraceA, "outer", start)
+	if err != nil {
+		t.Fatalf("outer session registration: %v", err)
+	}
+	if !outer.StartedAt.Equal(start) {
+		t.Fatalf("started = %s, want the session's start", outer.StartedAt)
+	}
+	if manifest, err := manager.Manifest(testTraceA); err != nil || manifest.MainClientID != "outer" {
+		t.Fatalf("lookup = %+v, %v", manifest, err)
+	}
+	// Active: still owned by its session, whoever started first.
+	if _, err := manager.RegisterTelemetryOnly(testTraceA, "earliest", start.Add(-time.Minute)); err == nil {
+		t.Fatal("telemetry-only registration displaced an active archive")
 	}
 }
 
@@ -82,7 +113,7 @@ func TestManagerAgentSupersedesTelemetryOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := manager.RegisterTelemetryOnly(testTraceA, "plain-active"); err != nil {
+	if _, err := manager.RegisterTelemetryOnly(testTraceA, "plain-active", now); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := manager.Register(testTraceA, "agent"); err == nil {

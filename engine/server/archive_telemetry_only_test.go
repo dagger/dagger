@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/archive"
@@ -127,4 +128,22 @@ func TestArchiveAgentSessionSupersedesPlainSession(t *testing.T) {
 	require.False(t, m.TelemetryOnly)
 	require.Equal(t, "main", m.MainClientID)
 	require.Equal(t, archive.StateActive, m.State)
+}
+
+// TestArchiveOuterPlainSessionKeepsSharedTrace: a nested dagger-in-dagger
+// session inherits its parent's trace and ends first; the outer session, which
+// started first, still retains the trace.
+func TestArchiveOuterPlainSessionKeepsSharedTrace(t *testing.T) {
+	srv := telemetryArchiveServer(t)
+	outer := plainSessionFixture(t, srv, "outer", "outer-main", true)
+	outer.startedAt = time.Now().Add(-time.Minute)
+	inner := plainSessionFixture(t, srv, "inner", "inner-main", true)
+	inner.startedAt = time.Now()
+	require.NoError(t, srv.finalizeSessionArchive(t.Context(), inner, nil))
+	require.NoError(t, srv.finalizeSessionArchive(t.Context(), outer, nil))
+	m, err := srv.archives.Manifest(archiveTestTrace)
+	require.NoError(t, err)
+	require.Equal(t, "outer-main", m.MainClientID)
+	require.Equal(t, archive.StateClosed, m.State, "failure: %s", m.Failure)
+	require.True(t, m.TelemetryOnly)
 }
