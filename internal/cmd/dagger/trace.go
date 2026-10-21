@@ -641,6 +641,15 @@ type traceLoader struct {
 	// log fetch, for sources whose call payloads are already imported
 	// separately (archive restore's background metadata stream).
 	skipCallPayloads bool
+	// keepRollUpSpanIDs imports a roll-up's descendant records under their
+	// own spans instead of re-keying them onto the roll-up, for a frontend
+	// that holds the whole span tree (archive restore): it then routes them
+	// as a live session does. textOwner records which fetch imported each
+	// span's text (by logFetches sequence), so overlapping roll-up and own
+	// fetches never import it twice.
+	keepRollUpSpanIDs bool
+	textOwner         map[string]uint64
+	logFetches        uint64
 
 	// background backfills (lazy child loads) run on the command's ctx so
 	// they keep working while the TUI is interactive (-E).
@@ -662,15 +671,16 @@ func newTraceLoaderForFrontend(ctx context.Context, client tracesource.Source, t
 	// second root to render through.
 	importer.KeepRoots = true
 	return &traceLoader{
-		ctx:      ctx,
-		client:   client,
-		traceID:  traceID,
-		frontend: fe,
-		importer: importer,
-		filter:   map[dagui.SpanID]bool{{}: true}, // subscribe to roots first
-		logReq:   map[string]bool{},
-		logSem:   make(chan struct{}, 8),
-		sem:      make(chan struct{}, 8),
+		ctx:       ctx,
+		client:    client,
+		traceID:   traceID,
+		frontend:  fe,
+		importer:  importer,
+		filter:    map[dagui.SpanID]bool{{}: true}, // subscribe to roots first
+		logReq:    map[string]bool{},
+		textOwner: map[string]uint64{},
+		logSem:    make(chan struct{}, 8),
+		sem:       make(chan struct{}, 8),
 	}
 }
 
@@ -822,6 +832,18 @@ func (l *traceLoader) fetchLogs(fg *fetchGroup, id dagui.SpanID, descendants boo
 		return
 	}
 	l.logReq[spanHex] = true
+	// A roll-up keeping its records' span IDs imports each descendant's
+	// text, so a span's text is claimed by the first fetch to import it.
+	l.logFetches++
+	fetch := l.logFetches
+	if l.keepRollUpSpanIDs {
+		if _, claimed := l.textOwner[spanHex]; claimed {
+			// An earlier roll-up already imported this span's text.
+			l.mu.Unlock()
+			return
+		}
+		l.textOwner[spanHex] = fetch
+	}
 	l.mu.Unlock()
 	fg.Go(func() error {
 		select {
@@ -832,18 +854,25 @@ func (l *traceLoader) fetchLogs(fg *fetchGroup, id dagui.SpanID, descendants boo
 		defer func() { <-l.logSem }()
 		sel := cloud.LogSelection{SpanID: spanHex, Descendants: descendants}
 		if descendants {
-			// A rolled-up span's descendants aren't loaded (the priority
-			// window doesn't include them), so their records would route to
-			// orphan buffers nothing renders. Ask for text output only --
-			// the semantic records riding the log channel (span names,
-			// progress, agent state) are per-span facts that must not be
-			// re-attributed -- and attribute it to the span we fetched it
-			// for, like the summary's flat roll-up, so e.g. a failed test
-			// shows its sub-operation's output.
+			// Ask for text output only -- the semantic records riding the
+			// log channel (span names, progress, agent state) are per-span
+			// facts that must not be re-attributed.
 			sel.Records = cloud.LogRecordsLogs
 		}
 		if err := l.client.FetchLogs(l.ctx, l.traceID, sel, func(ctx context.Context, req *collogspb.ExportLogsServiceRequest) error {
-			if descendants {
+			switch {
+			case descendants && l.keepRollUpSpanIDs:
+				// The whole span tree is loaded, so records keep their
+				// spans and the frontend routes them as in a live session:
+				// to each descendant, and a prefixed copy to the roll-up.
+				l.claimRollUpText(req, fetch)
+			case descendants:
+				// A rolled-up span's descendants aren't loaded (the
+				// priority window doesn't include them), so their records
+				// would route to orphan buffers nothing renders. Attribute
+				// them to the span we fetched them for, like the summary's
+				// flat roll-up, so e.g. a failed test shows its
+				// sub-operation's output.
 				rekeyLogRecords(req, id)
 			}
 			return l.importer.ImportLogs(ctx, req)
@@ -872,6 +901,32 @@ func (l *traceLoader) fetchLogs(fg *fetchGroup, id dagui.SpanID, descendants boo
 		}
 		return nil
 	})
+}
+
+// claimRollUpText drops the records of spans whose text another fetch claimed
+// (an own fetch, or an enclosing roll-up), and claims the rest for fetch, so
+// each span's text is imported once however its fetches overlap. A claimed
+// span's own later request is then a no-op.
+func (l *traceLoader) claimRollUpText(req *collogspb.ExportLogsServiceRequest, fetch uint64) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, rl := range req.GetResourceLogs() {
+		for _, sl := range rl.GetScopeLogs() {
+			kept := sl.LogRecords[:0]
+			for _, record := range sl.GetLogRecords() {
+				var id dagui.SpanID
+				copy(id.SpanID[:], record.GetSpanId())
+				spanHex := id.String()
+				if owner, claimed := l.textOwner[spanHex]; claimed && owner != fetch {
+					continue
+				}
+				l.textOwner[spanHex] = fetch
+				l.logReq[spanHex] = true
+				kept = append(kept, record)
+			}
+			sl.LogRecords = kept
+		}
+	}
 }
 
 // rekeyLogRecords attributes every record in req to id.

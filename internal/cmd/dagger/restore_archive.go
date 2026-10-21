@@ -154,8 +154,10 @@ func restoreArchive(ctx context.Context, source archiveRestoreSource, fe archive
 		})
 		loader := newTraceLoaderForFrontend(historyCtx, display, req.traceID, fe)
 		// The background metadata log stream already imports every call
-		// payload up to the cut, so a roll-up only needs its text.
+		// payload up to the cut, so a roll-up only needs its text, and the
+		// full span tree is loaded, so its records keep their own spans.
 		loader.skipCallPayloads = true
+		loader.keepRollUpSpanIDs = true
 		// The provider stays installed for the whole resumed session, whose
 		// own live spans stream their logs in and are never in the archive.
 		// Only spans the archived history delivers are fetched from it.
@@ -209,12 +211,19 @@ func importArchiveRemainder(ctx context.Context, source archiveRestoreSource, tr
 // archivedSpans gates lazy log fetches to the spans the archived history
 // delivers: only those can be found in the archive.
 //
-// The history's log stream runs beside its span stream, and a metadata record
-// (e.g. a span name) can make the frontend show a span before its row has
-// arrived. The frontend asks for a span's logs once, so a request for a span
-// not yet known is parked until record delivers it, rather than dropped. Once
-// the span stream is complete an unknown span is definitively live: its
-// request is dropped and nothing more is parked.
+// Fetches wait for the span stream to complete. A roll-up's descendant records
+// keep their own span IDs (the loader's keepRollUpSpanIDs), and the frontend
+// routes each to its span and a prefixed copy to the enclosing roll-up only
+// when the spans between them are loaded -- as in a live session, where spans
+// precede their logs. The history's log stream also runs beside its span
+// stream, so a metadata record (e.g. a span name) can make the frontend show
+// a span before its row has arrived; the frontend asks for a span's logs once,
+// so such requests are parked rather than dropped. Once the span stream is
+// complete the parked requests for archived spans are fetched, and an unknown
+// span is definitively live: its request is dropped and nothing is retained.
+//
+// Waiting costs a late first expansion on a very large archive, never output:
+// before lazy display, restore imported every log eagerly instead.
 type archivedSpans struct {
 	fetch func(dagui.SpanID, bool)
 
@@ -235,10 +244,15 @@ func newArchivedSpans(fetch func(dagui.SpanID, bool)) *archivedSpans {
 
 // request is the frontend's log provider.
 func (s *archivedSpans) request(id dagui.SpanID, descendants bool) {
+	if !id.IsValid() {
+		return
+	}
 	s.mu.Lock()
 	_, known := s.ids[id]
-	if !known && s.pending != nil && id.IsValid() {
+	if s.pending != nil {
 		s.pending[id] = s.pending[id] || descendants
+		s.mu.Unlock()
+		return
 	}
 	s.mu.Unlock()
 	if known {
@@ -246,43 +260,43 @@ func (s *archivedSpans) request(id dagui.SpanID, descendants bool) {
 	}
 }
 
-// record notes a batch of archived spans before the frontend can see it, and
-// fires the requests parked for them.
+// record notes a batch of archived spans before the frontend can see it.
 func (s *archivedSpans) record(req *coltracepb.ExportTraceServiceRequest) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, rs := range req.GetResourceSpans() {
+		for _, ss := range rs.GetScopeSpans() {
+			for _, span := range ss.GetSpans() {
+				var id dagui.SpanID
+				copy(id.SpanID[:], span.GetSpanId())
+				if id.IsValid() {
+					s.ids[id] = struct{}{}
+				}
+			}
+		}
+	}
+}
+
+// complete marks the span stream finished (or abandoned), every delivered span
+// imported: parked requests for archived spans are fetched, the rest dropped,
+// and later requests are fetched or dropped at once.
+func (s *archivedSpans) complete() {
 	type parked struct {
 		id          dagui.SpanID
 		descendants bool
 	}
 	var fire []parked
 	s.mu.Lock()
-	for _, rs := range req.GetResourceSpans() {
-		for _, ss := range rs.GetScopeSpans() {
-			for _, span := range ss.GetSpans() {
-				var id dagui.SpanID
-				copy(id.SpanID[:], span.GetSpanId())
-				if !id.IsValid() {
-					continue
-				}
-				s.ids[id] = struct{}{}
-				if descendants, ok := s.pending[id]; ok {
-					delete(s.pending, id)
-					fire = append(fire, parked{id, descendants})
-				}
-			}
+	for id, descendants := range s.pending {
+		if _, known := s.ids[id]; known {
+			fire = append(fire, parked{id, descendants})
 		}
 	}
+	s.pending = nil
 	s.mu.Unlock()
 	for _, p := range fire {
 		s.fetch(p.id, p.descendants)
 	}
-}
-
-// complete marks the span stream finished (or abandoned): no further span
-// will become known, so parked and later unknown requests are dropped.
-func (s *archivedSpans) complete() {
-	s.mu.Lock()
-	s.pending = nil
-	s.mu.Unlock()
 }
 
 // importArchiveRemainderMode is importArchiveRemainder, optionally leaving

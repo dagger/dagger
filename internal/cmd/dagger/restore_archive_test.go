@@ -528,20 +528,20 @@ func TestArchiveRestoreSkipsLiveSpanLogs(t *testing.T) {
 		fe.provider(dagui.SpanID{SpanID: trace.SpanID{2}}, descendants)
 		fe.provider(dagui.SpanID{SpanID: trace.SpanID{3}}, descendants)
 	}
+	fe.provider(archived, true)
+	// Fetches start once the span stream completes, so by the time the
+	// archived span's arrives, the live spans' requests were dropped.
+	select {
+	case opts := <-source.requests:
+		require.Equal(t, archived.String(), opts.Logs.SpanID, "only the archived span is fetched")
+	case <-time.After(time.Second):
+		t.Fatal("archived span was not fetched")
+	}
 	fe.wait()
 	select {
 	case opts := <-source.requests:
 		t.Fatalf("live span fetched from the archive: %+v", opts.Logs)
 	default:
-	}
-
-	fe.provider(archived, true)
-	fe.wait()
-	select {
-	case opts := <-source.requests:
-		require.Equal(t, archived.String(), opts.Logs.SpanID)
-	default:
-		t.Fatal("archived span was not fetched")
 	}
 }
 
@@ -635,6 +635,28 @@ func TestArchivedSpansDropsUnknownAfterCompletion(t *testing.T) {
 	require.Nil(t, s.pending, "a request after completion is not retained")
 	s.request(archived, false)
 	require.Equal(t, []dagui.SpanID{archived}, fetched, "only the archived span is fetched")
+}
+
+// TestArchivedSpansWaitForTheSpanTree: a fetch for an archived span, even one
+// already delivered, waits for the span stream to complete, so a roll-up's
+// records -- which keep their own span IDs -- are routed through the loaded
+// tree to the roll-up, as in a live session. Its roll-up decision is kept.
+func TestArchivedSpansWaitForTheSpanTree(t *testing.T) {
+	type fetch struct {
+		id          dagui.SpanID
+		descendants bool
+	}
+	var fetched []fetch
+	s := newArchivedSpans(func(id dagui.SpanID, descendants bool) { fetched = append(fetched, fetch{id, descendants}) })
+	rollUp := dagui.SpanID{SpanID: trace.SpanID{1}}
+	child := dagui.SpanID{SpanID: trace.SpanID{2}}
+	s.record(archivedSpanBatch(rollUp))
+	s.request(rollUp, true)
+	require.Empty(t, fetched, "the roll-up's descendants may not be loaded yet")
+	s.record(archivedSpanBatch(child))
+	require.Empty(t, fetched)
+	s.complete()
+	require.Equal(t, []fetch{{rollUp, true}}, fetched)
 }
 
 // TestArchiveRestoreCleanupCancelsLazyFetches: exit cancels lazy log fetches
