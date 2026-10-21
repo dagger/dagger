@@ -275,6 +275,56 @@ func TestNestedTransportRegistrationWaitsForExpectedAttachables(t *testing.T) {
 	require.ErrorContains(t, <-failed, "exited with status 1")
 }
 
+// Secret and socket lookups can name a nested exec's client after the exec has
+// ended. They wait for its attachables with no bound of their own, so they must
+// fail at once rather than wait for attachables that will never come.
+func TestEndedExecClientLookupsFailAtOnce(t *testing.T) {
+	t.Parallel()
+
+	srv, sess, parent, ctx, requestScope := newNestedTransportTestFixture(t)
+	defer requestScope.Lease().Release()
+	sess.attachables = newSessionAttachableManager()
+
+	t.Run("client registered during the exec", func(t *testing.T) {
+		bootstrapMetadata := nestedTransportTestMetadata("connected-bootstrap")
+		_, done, err := srv.ExpectNestedExecAttachables(sess.sessionID, bootstrapMetadata.ClientID)
+		require.NoError(t, err)
+		bootstrap, err := srv.RegisterNestedClientTransportForExec(ctx, bootstrapMetadata, parent.clientID, bootstrapMetadata.ClientID)
+		require.NoError(t, err)
+		defer bootstrap.Close()
+		done()
+		requireLookupFailsAtOnce(t, srv, sess, bootstrapMetadata.ClientID)
+	})
+
+	// The exec's transport manager never waits for a registration in flight,
+	// so a client can be published after its exec has ended.
+	t.Run("client registered after the exec ended", func(t *testing.T) {
+		bootstrapMetadata := nestedTransportTestMetadata("late-bootstrap")
+		_, done, err := srv.ExpectNestedExecAttachables(sess.sessionID, bootstrapMetadata.ClientID)
+		require.NoError(t, err)
+		done()
+		bootstrap, err := srv.RegisterNestedClientTransportForExec(ctx, bootstrapMetadata, parent.clientID, bootstrapMetadata.ClientID)
+		require.NoError(t, err)
+		defer bootstrap.Close()
+		requireLookupFailsAtOnce(t, srv, sess, bootstrapMetadata.ClientID)
+	})
+}
+
+func requireLookupFailsAtOnce(t *testing.T, srv *Server, sess *daggerSession, clientID string) {
+	t.Helper()
+	got := make(chan error, 1)
+	go func() {
+		_, err := srv.clientAttachableCaller(t.Context(), sess.sessionID, clientID, false)
+		got <- err
+	}()
+	select {
+	case err := <-got:
+		require.ErrorIs(t, err, errExecEnded)
+	case <-time.After(5 * time.Second):
+		t.Fatalf("the lookup of %q waited for the attachables of an ended exec", clientID)
+	}
+}
+
 // waitForAttachablesWaiter waits until something waits for clientID's
 // attachables.
 func waitForAttachablesWaiter(t *testing.T, m *sessionAttachableManager, clientID string) {

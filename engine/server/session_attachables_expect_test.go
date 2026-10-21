@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -140,4 +141,21 @@ func TestClientCallerCancelStopsExpectedWait(t *testing.T) {
 	}, 5*time.Second, time.Millisecond, "the query never waited for the attachables")
 	cancel()
 	require.ErrorIs(t, requireResult(t, got), context.Canceled)
+}
+
+// The manager keeps nothing for an exec once it has ended, so a session that
+// runs many nested execs doesn't accrete an entry per exec.
+func TestEndedExecAttachablesAreForgotten(t *testing.T) {
+	m := newSessionAttachableManager()
+	for i := range 100 {
+		fail, done := m.Expect(fmt.Sprintf("nested-%d", i))
+		if i%2 == 0 {
+			fail(errors.New("exited"))
+		}
+		done()
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	require.Empty(t, m.expected)
+	require.Empty(t, m.waiters)
 }
