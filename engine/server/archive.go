@@ -29,6 +29,7 @@ import (
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
+	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -489,7 +490,7 @@ func (srv *Server) archiveManifest(ctx context.Context, sess *daggerSession, tra
 // unsealedArchiveCut is the current end of an unsealed archive's store. Its
 // session is gone, so the cut is stable across every stream.
 func (srv *Server) unsealedArchiveCut(ctx context.Context, m archive.Manifest) (archive.HighWater, error) {
-	db, err := srv.clientDBs.Open(ctx, m.MainClientID)
+	db, err := srv.clientDBs.OpenHeld(ctx, m.MainClientID)
 	if err != nil {
 		return archive.HighWater{}, err
 	}
@@ -544,11 +545,33 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 	if cursor > high {
 		return httpErr(errors.New("cursor exceeds archive cut"), http.StatusBadRequest)
 	}
-	db, err := srv.clientDBs.Open(r.Context(), m.MainClientID)
+	spanSelection, logSelection, err := archive.ParseSelection(signal, r.URL.Query())
+	if err != nil {
+		return httpErr(err, http.StatusBadRequest)
+	}
+	// Once the session has ended nothing else holds its store, and reopening
+	// replays every row from disk. Keep it open across a burst of selected
+	// reads (along with its cached span topology); the idle hold never blocks
+	// archive removal, store GC or engine shutdown.
+	db, err := srv.clientDBs.OpenHeld(r.Context(), m.MainClientID)
 	if err != nil {
 		return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureIO, Err: err})
 	}
 	defer db.Close()
+	var spanView *clientdb.SpanView
+	var logScope map[string]bool
+	if spanSelection != nil || (logSelection != nil && logSelection.Descendants) {
+		spanView, err = db.SpanViewAt(r.Context(), m.TraceID, clientdb.HighWater{Spans: cut.Spans, Logs: cut.Logs, Metrics: cut.Metrics}, spanSelection)
+		if err != nil {
+			return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureCorrupt, Err: err})
+		}
+	}
+	if logSelection != nil && logSelection.SpanID != "" {
+		logScope = map[string]bool{logSelection.SpanID: true}
+		if logSelection.Descendants {
+			logScope = spanView.Scope(logSelection.SpanID, true)
+		}
+	}
 	w.Header().Set("Content-Type", enginetel.LiveContentType)
 	w.Header().Set("Cache-Control", "no-store")
 	defer func() {
@@ -556,55 +579,23 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 			_ = enginetel.WriteLiveError(w, cursor, rerr)
 		}
 	}()
+	reader := archiveSignalReader{
+		db:             db,
+		traceID:        m.TraceID,
+		includeControl: includeControl,
+		spanSelection:  spanSelection,
+		spanView:       spanView,
+		logSelection:   logSelection,
+		logScope:       logScope,
+	}
 	batchLimit := otlpBatchSize
 	for cursor < high {
 		if err := r.Context().Err(); err != nil {
 			return err
 		}
-		var message proto.Message
-		var next int64
-		var rowCount int
-		switch signal {
-		case "traces":
-			rows, err := db.SelectSpansRange(r.Context(), clientdb.SelectSpansRangeParams{AfterID: cursor, ThroughID: high, Limit: int64(batchLimit)})
-			if err != nil {
-				return err
-			}
-			if len(rows) == 0 {
-				return errors.New("archive span stream truncated before cut")
-			}
-			next, rowCount = rows[len(rows)-1].ID, len(rows)
-			var spans []clientdb.Span
-			for _, row := range rows {
-				if row.TraceID == m.TraceID {
-					spans = append(spans, row)
-				}
-			}
-			message = &coltracepb.ExportTraceServiceRequest{ResourceSpans: clientdb.SpansToPB(spans)}
-		case "logs":
-			rows, err := db.SelectLogsRange(r.Context(), clientdb.SelectLogsRangeParams{AfterID: cursor, ThroughID: high, Limit: int64(batchLimit)})
-			if err != nil {
-				return err
-			}
-			if len(rows) == 0 {
-				return errors.New("archive log stream truncated before cut")
-			}
-			next, rowCount = rows[len(rows)-1].ID, len(rows)
-			filtered, err := archiveHistoryLogs(rows, m.TraceID, includeControl)
-			if err != nil {
-				return err
-			}
-			message = &collogspb.ExportLogsServiceRequest{ResourceLogs: clientdb.LogsToPB(filtered)}
-		case "metrics":
-			rows, err := db.SelectMetricsRange(r.Context(), clientdb.SelectMetricsRangeParams{AfterID: cursor, ThroughID: high, Limit: int64(batchLimit)})
-			if err != nil {
-				return err
-			}
-			if len(rows) == 0 {
-				return errors.New("archive metric stream truncated before cut")
-			}
-			next, rowCount = rows[len(rows)-1].ID, len(rows)
-			message = &colmetricspb.ExportMetricsServiceRequest{ResourceMetrics: clientdb.MetricsToPB(rows)}
+		message, next, rowCount, err := reader.batch(r.Context(), signal, cursor, high, batchLimit)
+		if err != nil {
+			return err
 		}
 		if size := proto.Size(message); size > maxPayloadSize {
 			if rowCount > 1 {
@@ -630,6 +621,81 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 		batchLimit = otlpBatchSize
 	}
 	return enginetel.WriteLiveTerminal(w, high)
+}
+
+// archiveSignalReader reads batches of one archive's signal rows as OTLP
+// export messages, filtered to its trace and selection.
+type archiveSignalReader struct {
+	db             *clientdb.DB
+	traceID        string
+	includeControl bool
+	spanSelection  *archive.SpanSelection
+	spanView       *clientdb.SpanView
+	logSelection   *archive.LogSelection
+	logScope       map[string]bool
+}
+
+// batch reads up to limit signal rows after cursor, through high. next is the
+// last row it scanned, and rowCount how many rows that covers.
+func (a archiveSignalReader) batch(ctx context.Context, signal string, cursor, high int64, limit int) (proto.Message, int64, int, error) {
+	switch signal {
+	case "traces":
+		rows, err := a.db.SelectSpansRange(ctx, clientdb.SelectSpansRangeParams{AfterID: cursor, ThroughID: high, Limit: int64(limit)})
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		if len(rows) == 0 {
+			return nil, 0, 0, errors.New("archive span stream truncated before cut")
+		}
+		var spans []clientdb.Span
+		for _, row := range rows {
+			if row.TraceID == a.traceID && (a.spanView == nil || a.spanView.Includes(row)) {
+				spans = append(spans, row)
+			}
+		}
+		resourceSpans := clientdb.SpansToPB(spans)
+		if a.spanSelection != nil && a.spanSelection.DagUIView {
+			annotateArchiveSpans(resourceSpans, a.spanView)
+		}
+		return &coltracepb.ExportTraceServiceRequest{ResourceSpans: resourceSpans}, rows[len(rows)-1].ID, len(rows), nil
+	case "logs":
+		rows, scanned, err := a.db.SelectLogsRangeMatching(ctx, clientdb.SelectLogsRangeParams{AfterID: cursor, ThroughID: high, Limit: int64(limit)}, a.traceID, a.logScope, a.logSelection, a.includeControl)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		filtered, err := archiveHistoryLogs(rows, a.traceID, a.includeControl)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		return &collogspb.ExportLogsServiceRequest{ResourceLogs: clientdb.LogsToPB(filtered)}, scanned, int(scanned - cursor), nil
+	case "metrics":
+		rows, err := a.db.SelectMetricsRange(ctx, clientdb.SelectMetricsRangeParams{AfterID: cursor, ThroughID: high, Limit: int64(limit)})
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		if len(rows) == 0 {
+			return nil, 0, 0, errors.New("archive metric stream truncated before cut")
+		}
+		return &colmetricspb.ExportMetricsServiceRequest{ResourceMetrics: clientdb.MetricsToPB(rows)}, rows[len(rows)-1].ID, len(rows), nil
+	default:
+		return nil, 0, 0, fmt.Errorf("unknown archive signal %q", signal)
+	}
+}
+
+// annotateArchiveSpans applies the span view's dagui attributes to spans.
+func annotateArchiveSpans(resourceSpans []*tracepb.ResourceSpans, spanView *clientdb.SpanView) {
+	for _, rs := range resourceSpans {
+		for _, ss := range rs.ScopeSpans {
+			for _, span := range ss.Spans {
+				for _, annotation := range spanView.Attributes(hex.EncodeToString(span.SpanId)) {
+					// Imported spans may already carry another source's
+					// view hints. This archive's fixed cut is authoritative.
+					span.Attributes = slices.DeleteFunc(span.Attributes, func(attr *commonpb.KeyValue) bool { return attr.GetKey() == annotation.Key })
+					span.Attributes = append(span.Attributes, annotation)
+				}
+			}
+		}
+	}
 }
 
 // shrinkOversizedArchiveRow fits a single archive row that alone exceeds the
