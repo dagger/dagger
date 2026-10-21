@@ -142,6 +142,8 @@ type LogPresence struct {
 	TraceID   string
 	SpanID    string
 	Digest    string
+
+	key [3]uint32
 }
 
 // LogPresenceSet remembers the (trace, span, digest) triples a push stream
@@ -154,13 +156,20 @@ func NewLogPresenceSet() *LogPresenceSet {
 	return &LogPresenceSet{seen: map[[3]uint32]struct{}{}}
 }
 
+// Forget unannounces presence a stream did not deliver after all (e.g. a
+// batch it discarded to refetch a smaller one), so it is reported again.
+func (s *LogPresenceSet) Forget(presence []LogPresence) {
+	for _, p := range presence {
+		delete(s.seen, p.key)
+	}
+}
+
 // SelectLogsWithoutDisplay reads every row in (p.AfterID, p.ThroughID],
 // scanning at most p.Limit rows, except display text, which it reports as
 // presence instead: once per (trace, span, digest) not yet in seen. It is the
 // live push for a frontend that reads display text on demand.
 func (s *DB) SelectLogsWithoutDisplay(ctx context.Context, p SelectLogsRangeParams, seen *LogPresenceSet) ([]Log, []LogPresence, int64, error) {
 	var presence []LogPresence
-	var keys [][3]uint32
 	rows, next, err := s.scanLogs(ctx, p, func(idx *logLookup, i int64, m logMeta) (bool, error) {
 		if !m.flags.display() {
 			return true, nil
@@ -168,30 +177,29 @@ func (s *DB) SelectLogsWithoutDisplay(ctx context.Context, p SelectLogsRangePara
 		key := [3]uint32{m.trace, m.span, m.digest}
 		if _, ok := seen.seen[key]; !ok {
 			seen.seen[key] = struct{}{}
-			keys = append(keys, key)
 			presence = append(presence, LogPresence{
 				Row:       i + 1,
 				Timestamp: m.timestamp,
 				TraceID:   idx.traceIDs[m.trace],
 				SpanID:    idx.spanIDs[m.span],
 				Digest:    idx.digests[m.digest],
+				key:       key,
 			})
 		}
 		return false, nil
 	})
 	if err != nil {
-		for _, key := range keys {
-			delete(seen.seen, key)
-		}
+		seen.Forget(presence)
 		return nil, nil, p.AfterID, err
 	}
 	// A byte-bounded scan may stop early; presence past it is reported again
 	// by the next scan, so forget it here.
-	for len(presence) > 0 && presence[len(presence)-1].Row > next {
-		delete(seen.seen, keys[len(keys)-1])
-		presence, keys = presence[:len(presence)-1], keys[:len(keys)-1]
+	keep := len(presence)
+	for keep > 0 && presence[keep-1].Row > next {
+		keep--
 	}
-	return rows, presence, next, nil
+	seen.Forget(presence[keep:])
+	return rows, presence[:keep], next, nil
 }
 
 // logSearchScanBytes bounds the bodies one SearchLogs call reads, so a search
