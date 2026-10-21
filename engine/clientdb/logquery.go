@@ -27,10 +27,8 @@ type LogQueryScope struct {
 	tree    map[string]bool
 	digests map[string]bool
 
-	// live scopes resolve against a growing store. spanCut is the span
-	// high-water the tree was resolved at.
-	live    *spanLookup
-	spanCut int64
+	// live scopes resolve against a growing store.
+	live *spanLookup
 }
 
 func newLogQueryScope(spans []archive.LogSpan) *LogQueryScope {
@@ -45,15 +43,12 @@ func newLogQueryScope(spans []archive.LogSpan) *LogQueryScope {
 }
 
 // LiveLogScope resolves spans against the store's current span index. Spans
-// that arrive later are placed as their rows are read: a row of a span the
-// scope has not placed matches when the span turns out to be beneath a
-// descendant selection, or when the store has no snapshot of it yet (its
-// position is unknown, so the reader decides).
+// placed later are found as their rows are read: a row of a span outside the
+// resolved tree matches when the span is now beneath a descendant selection
+// (it, its parent or its cause link arrived later), or when the store has no
+// snapshot of it yet (its position is unknown, so the reader decides).
 func (s *DB) LiveLogScope(spans []archive.LogSpan) *LogQueryScope {
 	scope := newLogQueryScope(spans)
-	// Read the cut first: a span indexed while the tree is walked is then
-	// at worst checked twice, never missed.
-	scope.spanCut = s.spans.highWater()
 	scope.live = s.lookup
 	for _, sel := range spans {
 		if !sel.Descendants {
@@ -79,8 +74,8 @@ func (v *SpanView) LogQueryScope(spans []archive.LogSpan) *LogQueryScope {
 	return scope
 }
 
-// matcher returns the per-scan row predicate. Undecided live spans are
-// memoized for one scan only, since later spans and links may place them.
+// matcher returns the per-scan row predicate. Spans outside the tree are
+// decided once per scan only, since later spans and links may place them.
 func (q *LogQueryScope) matcher() func(idx *logLookup, m logMeta) bool {
 	undecided := map[uint32]bool{}
 	return func(idx *logLookup, m logMeta) bool {
@@ -100,13 +95,15 @@ func (q *LogQueryScope) matcher() func(idx *logLookup, m logMeta) bool {
 		if ok, memo := undecided[m.span]; memo {
 			return ok
 		}
-		first, known := q.live.first(idx.traceIDs[m.trace], span)
 		var ok bool
 		switch {
-		case !known:
+		case !q.live.hasSpan(span):
+			// Its place is unknown yet: leave it to the reader.
 			ok = true
-		case first > q.spanCut && q.live.beneath(span, q.tree):
-			// The tree only grows, so placing the span is permanent.
+		case q.live.beneath(span, q.tree):
+			// A span stored after the tree was resolved, or one whose parent
+			// or cause link arrived later. The tree only grows, so placing
+			// the span is permanent.
 			q.tree[span] = true
 			return true
 		}
