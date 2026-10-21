@@ -3,7 +3,11 @@ package idtui
 import (
 	"bytes"
 	"container/list"
+	"fmt"
 	"hash/maphash"
+	"io"
+	"os"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -41,6 +45,16 @@ type terminalCache struct {
 	maxCount, maxCells int
 	live               bool
 	now                func() time.Time
+	// onSearched is called, from any goroutine, when a background search has
+	// new match rows; the live display renders again. searches tracks them.
+	onSearched func()
+	searches   sync.WaitGroup
+}
+
+func (c *terminalCache) searched() {
+	if c.onSearched != nil {
+		c.onSearched()
+	}
 }
 
 type terminalCacheEntry struct {
@@ -224,28 +238,144 @@ func (term *Vterm) searchMatchRowsLocked() []int {
 	if term.vt == nil && !term.cache.hasRoom(max(term.terminalBuf.Len(), term.rawLocked().Len())) {
 		// Searching must not evict terminals that are being displayed, nor
 		// thrash the cache when there are more logs than it holds: search a
-		// throwaway terminal and keep only its match rows.
+		// throwaway terminal and keep only its match rows. A replay costs
+		// O(log), so streaming output into an evicted log is searched again
+		// only after several times the last search's duration.
 		now := term.cache.clock()
 		stale := term.searchKey
 		stale.version = key.version
-		if term.searchCached && stale == key && now.Sub(term.searchedAt) < terminalCacheShownFor {
-			// Streaming output into an evicted log: re-reading all of it on
-			// every change would cost O(log) per frame, so its previous rows
-			// are served for a moment.
-			return term.searchRows
+		if term.searchJob != nil || (term.searchCached && stale == key &&
+			now.Sub(term.searchedAt) < max(terminalCacheShownFor, vtermSearchBackoff*term.searchCost)) {
+			return term.staleSearchRowsLocked(key)
 		}
+		if term.segments == nil {
+			// A terminal stream can be replayed off the UI goroutine. Media
+			// logs lay out several buffers and images, so they are searched
+			// here, under the same adaptive backoff.
+			term.searchInBackgroundLocked(key, now)
+			return term.staleSearchRowsLocked(key)
+		}
+		began := time.Now()
 		term.searchTransientLocked()
 		term.searchedAt = now
+		term.searchCost = time.Since(began)
 	} else {
 		if term.vt == nil {
 			term.materializeLocked()
 		}
+		term.searchJob = nil // a live search supersedes one in flight
 		term.searchLiveLocked()
 		term.collectSearchRowsLocked()
 	}
 	term.searchKey = key
 	term.searchCached = true
 	return term.searchRows
+}
+
+// vtermSearchBackoff scales how long a transient search took into how long
+// its rows are served before an evicted log that keeps changing is searched
+// again.
+const vtermSearchBackoff = 4
+
+// staleSearchRowsLocked serves the previous rows of the same query while new
+// ones are pending; rows of another query would be wrong, not just late.
+func (term *Vterm) staleSearchRowsLocked(key vtermSearchKey) []int {
+	if term.searchCached && term.searchKey.query == key.query {
+		return term.searchRows
+	}
+	return nil
+}
+
+// vtermSearchJob is a transient search of an evicted log running off the UI
+// goroutine.
+type vtermSearchJob struct {
+	key vtermSearchKey
+}
+
+// searchInBackgroundLocked replays the stream as it is now into a throwaway
+// terminal on another goroutine, then publishes the rows and tells the cache
+// owner to render again. The bytes it reads are fixed: logBuffer only
+// appends, and the snapshot keeps the buffer alive, so its file is not
+// cleaned up meanwhile; Close removing the file just fails the search.
+func (term *Vterm) searchInBackgroundLocked(key vtermSearchKey, start time.Time) {
+	job := &vtermSearchJob{key: key}
+	term.searchJob = job
+	term.replays++
+	snapshot := snapshotLog(term.terminalBuf)
+	cache := term.cache
+	cache.searches.Add(1)
+	began := time.Now()
+	go func() {
+		defer cache.searches.Done()
+		rows, err := searchLogRows(snapshot, key.query, key.width, key.prefix)
+		term.mu.Lock()
+		current := term.searchJob == job
+		if current {
+			term.searchJob = nil
+			term.searchedAt = start
+			term.searchCost = time.Since(began)
+			if err == nil {
+				term.searchRows, term.searchKey, term.searchCached = rows, key, true
+			}
+		}
+		term.mu.Unlock()
+		if current && err == nil {
+			cache.searched()
+		}
+	}()
+}
+
+// logSnapshot is the content of a logBuffer at one moment, readable without
+// its owner's lock.
+type logSnapshot struct {
+	buf      *logBuffer // keeps the file's cleanup from running
+	path     string
+	fileSize int
+	memory   []byte
+	err      error
+}
+
+func snapshotLog(b *logBuffer) logSnapshot {
+	memory := b.memory.Bytes()
+	return logSnapshot{buf: b, path: b.path, fileSize: b.fileSize, memory: memory[:len(memory):len(memory)], err: b.err}
+}
+
+func (s logSnapshot) replay(w io.Writer) error {
+	defer runtime.KeepAlive(s.buf)
+	if s.err != nil {
+		return s.err
+	}
+	var r io.Reader = bytes.NewReader(s.memory)
+	if s.path != "" {
+		f, err := os.Open(s.path)
+		if err != nil {
+			return fmt.Errorf("read logs: %w", err)
+		}
+		defer func() { _ = f.Close() }()
+		r = io.MultiReader(io.LimitReader(f, int64(s.fileSize)), r)
+	}
+	_, err := io.Copy(w, r)
+	return err
+}
+
+// searchLogRows lays out a terminal stream at width and returns the wrapped
+// rows matching query, like a materialized Vterm would.
+func searchLogRows(log logSnapshot, query string, width int, prefix string) ([]int, error) {
+	scratch := &Vterm{
+		Width:            width,
+		Prefix:           prefix,
+		SearchQuery:      query,
+		SearchCurrentRow: -1,
+		vt:               midterm.NewAutoResizingTerminal(),
+		layoutDirty:      true,
+		viewBuf:          new(bytes.Buffer),
+	}
+	if err := log.replay(scratch.vt); err != nil {
+		return nil, err
+	}
+	scratch.layoutTextLocked()
+	scratch.collectSearchRowsLocked()
+	return scratch.searchRows, nil
 }
 
 // collectSearchRowsLocked always allocates: earlier results may be shared.

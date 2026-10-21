@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -280,6 +281,113 @@ func TestVtermHasOutputWithoutMaterializing(t *testing.T) {
 	}
 }
 
+// Searching an evicted log that doesn't fit in the cache replays it on
+// another goroutine: the caller gets the previous rows at once, and the new
+// ones once the replay is done, followed by a render request.
+func TestVtermSearchEvictedLogInBackground(t *testing.T) {
+	for _, needles := range []int{1, 50} { // in memory, and spilled to disk
+		t.Run(fmt.Sprint(needles), func(t *testing.T) {
+			testVtermSearchEvictedLogInBackground(t, needles)
+		})
+	}
+}
+
+func testVtermSearchEvictedLogInBackground(t *testing.T, needles int) {
+	cache := newTerminalCache()
+	cache.maxCount = 1
+	var now atomic.Int64
+	cache.now = func() time.Time { return time.Unix(now.Load(), 0) }
+	searched := make(chan struct{}, 10)
+	cache.onSearched = func() { searched <- struct{}{} }
+	text := strings.Repeat(strings.Repeat("ordinary output\r\n", 99)+"needle\r\n", needles)
+	big, other := NewVterm(termenv.Ascii), NewVterm(termenv.Ascii)
+	for _, term := range []*Vterm{big, other} {
+		t.Cleanup(term.Close)
+		term.cache = cache
+		term.SetWidth(10)
+		_, err := io.WriteString(term, text)
+		require.NoError(t, err)
+	}
+	other.View() // fills the cache
+	want := func() []int {
+		ref := NewVterm(termenv.Ascii)
+		t.Cleanup(ref.Close)
+		ref.SetWidth(10)
+		big.mu.Lock()
+		stream := big.terminalBuf.String()
+		big.mu.Unlock()
+		_, err := io.WriteString(ref, stream)
+		require.NoError(t, err)
+		ref.SetSearchHighlight("needle", -1)
+		return ref.SearchMatchRows()
+	}
+
+	big.SetSearchHighlight("needle", -1)
+	require.Nil(t, big.SearchMatchRows(), "no rows of this query yet")
+	cache.searches.Wait()
+	<-searched
+	require.Nil(t, big.vt, "the search did not materialize the log")
+	require.Equal(t, want(), big.SearchMatchRows())
+	require.Len(t, big.SearchMatchRows(), needles)
+
+	// Streaming output keeps the previous rows until the backoff passes.
+	_, err := io.WriteString(big, "another needle\r\n")
+	require.NoError(t, err)
+	require.Len(t, big.SearchMatchRows(), needles)
+	cache.searches.Wait()
+	require.Len(t, big.SearchMatchRows(), needles)
+	now.Add(2)
+	require.Len(t, big.SearchMatchRows(), needles, "stale rows while the replay runs")
+	// The replay reads the stream as it was; writes may go on meanwhile.
+	for range 100 {
+		_, err := io.WriteString(big, "late needle\r\n")
+		require.NoError(t, err)
+	}
+	cache.searches.Wait()
+	<-searched
+	require.Len(t, big.SearchMatchRows(), needles+1)
+	now.Add(10)
+	big.SearchMatchRows()
+	cache.searches.Wait()
+	<-searched
+	require.Equal(t, want(), big.SearchMatchRows())
+	require.Len(t, big.SearchMatchRows(), needles+101)
+	require.Equal(t, 3, big.replays)
+}
+
+// A transient search of an evicted multi-megabyte log: the UI goroutine's
+// cost (start) against the replay that used to run on it (replay).
+func BenchmarkVtermSearchEvictedLog(b *testing.B) {
+	text := strings.Repeat("ordinary log output with a needle now and then\r\n", 20<<20/49)
+	cache := newTerminalCache()
+	cache.maxCount = 1
+	big, other := NewVterm(termenv.Ascii), NewVterm(termenv.Ascii)
+	for _, term := range []*Vterm{big, other} {
+		b.Cleanup(term.Close)
+		term.cache = cache
+		term.SetWidth(120)
+	}
+	_, _ = io.WriteString(big, text)
+	other.View()
+	b.Run("start", func(b *testing.B) {
+		for i := 0; b.Loop(); i++ {
+			big.SetSearchHighlight(fmt.Sprintf("needle%d", i), -1)
+			_ = big.SearchMatchRows()
+			b.StopTimer()
+			cache.searches.Wait()
+			b.StartTimer()
+		}
+	})
+	b.Run("replay", func(b *testing.B) {
+		big.mu.Lock()
+		snapshot := snapshotLog(big.terminalBuf)
+		big.mu.Unlock()
+		for b.Loop() {
+			_, _ = searchLogRows(snapshot, "needle", 120, "")
+		}
+	})
+}
+
 func TestPrettyLogsCollapsedSpansStayLazy(t *testing.T) {
 	for _, rollUp := range []bool{false, true} {
 		t.Run(fmt.Sprintf("rollUpLogs=%v", rollUp), func(t *testing.T) {
@@ -365,6 +473,11 @@ func TestPrettyLogsSearchFramesStayOffTerminalCache(t *testing.T) {
 	frame := func() {
 		now = now.Add(100 * time.Millisecond)
 		fe.Update() // the root renders, and refreshes search, on every frame
+		_ = fe.tui.RenderLines()
+		// Evicted logs are searched in the background; their rows land on
+		// the frame after.
+		fe.logs.Cache.searches.Wait()
+		fe.Update()
 		_ = fe.tui.RenderLines()
 	}
 	frame()
@@ -570,11 +683,19 @@ func BenchmarkVtermSearchFrame(b *testing.B) {
 		_, _ = io.WriteString(terms[i], text)
 		b.Cleanup(terms[i].Close)
 	}
-	b.ReportAllocs()
-	for b.Loop() {
+	frame := func() {
 		for _, term := range terms {
 			term.SetSearchHighlight("needle", -1)
 		}
+		for _, term := range terms {
+			term.SearchMatchRows()
+		}
+	}
+	frame() // logs that don't fit in the cache are searched in the background
+	cache.searches.Wait()
+	b.ReportAllocs()
+	for b.Loop() {
+		frame()
 		for _, term := range terms {
 			if len(term.SearchMatchRows()) != 20 {
 				b.Fatal("missing matches")

@@ -64,6 +64,9 @@ type Vterm struct {
 	searchCached bool
 	// searchedAt is when an evicted log was last searched transiently.
 	searchedAt time.Time
+	// searchCost is how long that took; searchJob is one still running.
+	searchCost time.Duration
+	searchJob  *vtermSearchJob
 	// Regular terminal buffer
 	viewBuf *bytes.Buffer
 	// rawBuf is empty until rawSeparate; see separateRawLocked.

@@ -1144,6 +1144,9 @@ func newWithTerminalProfile(w io.Writer, db *dagui.DB, term tuist.Terminal, prof
 	tui.AddInputListener(fe.handlePromptBackground)
 	tui.AddInputListener(fe.handleHUDKey)
 	tui.AddChild(fe)
+	// Search rows of evicted logs arrive from background replays; the next
+	// frame refreshes the match list.
+	logs.Cache.onSearched = func() { fe.dispatch(fe.Update) }
 	return fe
 }
 
