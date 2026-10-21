@@ -6,6 +6,7 @@ package tracesource
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/dagger/dagger/engine/archive"
@@ -27,25 +28,37 @@ type Source interface {
 // incremental reads have stopped, including interactive reads after a report.
 type Open func(context.Context) (Source, func() error, error)
 
+// ErrEngineUnavailable marks a failure to reach or provision the local engine
+// at all (e.g. no container runtime): it was never asked for the trace, so
+// another source may serve it.
+var ErrEngineUnavailable = errors.New("engine unavailable")
+
 // Select prefers the retained engine archive. Only an unavailable source may
-// fall back.
+// fall back. When the fallback fails too, its error also says why the local
+// source was not used.
 func Select(ctx context.Context, local, remote Open) (Source, func() error, error) {
-	source, close, err := local(ctx)
-	if err == nil {
+	source, close, localErr := local(ctx)
+	if localErr == nil {
 		return source, close, nil
 	}
 	if close != nil {
 		if closeErr := close(); closeErr != nil {
-			return nil, nil, errors.Join(err, closeErr)
+			return nil, nil, errors.Join(localErr, closeErr)
 		}
 	}
-	if !CanFallback(ctx, err) {
-		return nil, nil, err
+	if !CanFallback(ctx, localErr) {
+		return nil, nil, localErr
 	}
-	source, close, err = remote(ctx)
-	if err != nil && close != nil {
-		err = errors.Join(err, close())
-		close = nil
+	source, close, err := remote(ctx)
+	if err != nil {
+		if close != nil {
+			err = errors.Join(err, close())
+			close = nil
+		}
+		// %v, not %w: the local failure is context for the remote one. A
+		// quiet engine error (e.g. no container runtime) found in the chain
+		// would otherwise be displayed alone, hiding the remote failure.
+		err = errors.Join(err, fmt.Errorf("local engine archive: %v", localErr))
 	}
 	return source, close, err
 }
@@ -53,7 +66,15 @@ func Select(ctx context.Context, local, remote Open) (Source, func() error, erro
 // CanFallback classifies only source-opening errors, never errors after import
 // starts. Explicit refusals, bad data and cancellation always remain visible.
 func CanFallback(ctx context.Context, err error) bool {
-	if err == nil || ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, archive.ErrCorrupt) || errors.Is(err, archive.ErrState) {
+	if err == nil || ctx.Err() != nil {
+		return false
+	}
+	// The engine never answered, so nothing it said is being hidden. An
+	// internal connect timeout is unavailability, not the caller's deadline.
+	if errors.Is(err, ErrEngineUnavailable) {
+		return true
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, archive.ErrCorrupt) || errors.Is(err, archive.ErrState) {
 		return false
 	}
 	var request *archive.RequestError

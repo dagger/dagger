@@ -3,6 +3,7 @@ package tracesource
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -27,6 +28,8 @@ func TestSelectOnlyFallsBackBeforeImport(t *testing.T) {
 		{"canceled", errors.Join(archive.ErrTransient, context.Canceled), false},
 		{"deadline", errors.Join(archive.ErrTransient, context.DeadlineExceeded), false},
 		{"unknown", errors.New("connection configuration invalid"), false},
+		{"engine unavailable", fmt.Errorf("%w: %w", ErrEngineUnavailable, errors.New("no container runtime")), true},
+		{"engine connect timeout", fmt.Errorf("%w: %w", ErrEngineUnavailable, context.DeadlineExceeded), true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			opened, closed := false, false
@@ -43,6 +46,20 @@ func TestSelectOnlyFallsBackBeforeImport(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSelectFallbackFailureNamesLocalFailure(t *testing.T) {
+	local := fmt.Errorf("%w: %w", ErrEngineUnavailable, errors.New("no container runtime"))
+	remote := errors.New("cloud auth: not logged in")
+	_, close, err := Select(t.Context(), func(context.Context) (Source, func() error, error) {
+		return nil, nil, local
+	}, func(context.Context) (Source, func() error, error) {
+		return nil, nil, remote
+	})
+	require.Nil(t, close)
+	require.ErrorIs(t, err, remote)
+	require.ErrorContains(t, err, "no container runtime")
+	require.NotErrorIs(t, err, ErrEngineUnavailable, "the local failure is context, not the error's cause")
 }
 
 func TestSelectPinsAndCleanup(t *testing.T) {

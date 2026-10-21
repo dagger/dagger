@@ -2,9 +2,7 @@ package daggercmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"net"
 
 	"github.com/dagger/dagger/engine/archive"
 	"github.com/dagger/dagger/engine/client"
@@ -18,14 +16,29 @@ func openEngineTrace(ctx context.Context, traceID string) (tracesource.Source, f
 	if err != nil {
 		return nil, nil, err
 	}
-	session, err := client.Connect(ctx, params)
+	return openEngineTraceWith(ctx, traceID, func(ctx context.Context) (*client.Client, error) {
+		return client.Connect(ctx, params)
+	})
+}
+
+// openEngineTraceWith is openEngineTrace with the engine connection supplied.
+func openEngineTraceWith(ctx context.Context, traceID string, connect func(context.Context) (*client.Client, error)) (tracesource.Source, func() error, error) {
+	session, err := connect(ctx)
 	if err != nil {
-		var transport *net.OpError
-		if errors.As(err, &transport) && !transport.Timeout() && ctx.Err() == nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-			err = fmt.Errorf("%w: %w", archive.ErrTransient, err)
-		}
-		return nil, nil, err
+		return nil, nil, engineConnectError(ctx, err)
 	}
 	source, err := tracesource.OpenArchive(ctx, archive.NewClient(client.EngineConn(session)), traceID)
 	return source, session.Close, err
+}
+
+// engineConnectError classifies a failure to reach or provision the engine
+// (no container runtime, an unreachable runner, a failed engine start) as
+// unavailability: the engine was never asked for the trace, so another source
+// may be. Only the caller's own cancellation stays final; the client's
+// internal connect timeout is unavailability too.
+func engineConnectError(ctx context.Context, err error) error {
+	if ctx.Err() != nil {
+		return err
+	}
+	return fmt.Errorf("%w: %w", tracesource.ErrEngineUnavailable, err)
 }
