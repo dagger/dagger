@@ -233,6 +233,121 @@ func TestPrettyLogsCollapsedSpansStayLazy(t *testing.T) {
 	require.Zero(t, fe.logs.Cache.entries.Len())
 }
 
+// An active search refreshes on every frame. With more logs than the cache
+// holds, that must not replay every log every frame.
+func TestPrettyLogsSearchFramesStayOffTerminalCache(t *testing.T) {
+	db := dagui.NewDB()
+	root := prettyTestSpanID(1)
+	start := time.Unix(100, 0)
+	snapshots := []dagui.SpanSnapshot{{ID: root, TraceID: prettyTestTraceID(), Name: "root", StartTime: start, EndTime: start.Add(time.Second), Final: true}}
+	for i := byte(2); i < 42; i++ {
+		snapshots = append(snapshots, dagui.SpanSnapshot{ID: prettyTestSpanID(i), ParentID: root, TraceID: prettyTestTraceID(), Name: fmt.Sprintf("child %d", i), StartTime: start, EndTime: start.Add(time.Second), Final: true})
+	}
+	db.ImportSnapshots(snapshots)
+	db.SetPrimarySpan(root)
+	fe := NewWithDB(io.Discard, db)
+	t.Cleanup(fe.logs.Close)
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.GCThreshold = time.Hour
+	fe.FrontendOpts.SpanExpanded = map[dagui.SpanID]bool{root: true}
+	text := strings.Repeat(strings.Repeat("ordinary output\r\n", 99)+"needle\r\n", 20)
+	for _, snapshot := range snapshots[1:] {
+		fe.FrontendOpts.SpanExpanded[snapshot.ID] = false
+		_, err := io.WriteString(fe.logs.spanLogs(snapshot.ID), text)
+		require.NoError(t, err)
+	}
+	fe.logs.SetWidth(80)
+	fe.recalculateViewLocked()
+	fe.searchQuery = "needle"
+	replays := func() int {
+		total := 0
+		for _, logs := range fe.logs.Logs {
+			logs.mu.Lock()
+			total += logs.replays
+			logs.mu.Unlock()
+		}
+		return total
+	}
+	frame := func() {
+		fe.Update() // the root renders, and refreshes search, on every frame
+		_ = fe.tui.RenderLines()
+	}
+	frame()
+	require.Equal(t, 40, replays(), "the first search frame reads each log once")
+	require.Len(t, fe.searchMatches, 40*20, "search covers every log")
+	require.LessOrEqual(t, fe.logs.Cache.entries.Len(), terminalCacheCount)
+	for range 5 {
+		frame()
+	}
+	require.Equal(t, 40, replays(), "unchanged logs are not replayed on later frames")
+	require.Len(t, fe.searchMatches, 40*20)
+
+	// New output is found on the next frame; only the changed log is read.
+	var evicted *Vterm
+	for _, logs := range fe.logs.Logs {
+		if logs.vt == nil {
+			evicted = logs
+			break
+		}
+	}
+	require.NotNil(t, evicted)
+	_, err := io.WriteString(evicted, "another needle\r\n")
+	require.NoError(t, err)
+	frame()
+	require.Equal(t, 41, replays())
+	require.Len(t, fe.searchMatches, 40*20+1)
+	require.Nil(t, evicted.vt, "searching an evicted log leaves it evicted")
+
+	fe.clearSearch()
+	for range 2 {
+		frame()
+	}
+	require.Equal(t, 41, replays(), "clearing search does not materialize logs")
+}
+
+// Logs on screen together must not evict each other on every frame, even when
+// they exceed the cell budget together.
+func TestVtermCacheKeepsShownTerminals(t *testing.T) {
+	cache := newTerminalCache()
+	cache.maxCells = 1000
+	var terms []*Vterm
+	for range 3 {
+		term := NewVterm(termenv.Ascii)
+		t.Cleanup(term.Close)
+		term.cache = cache
+		term.SetHeight(3)
+		_, err := io.WriteString(term, strings.Repeat("line of output\r\n", 100))
+		require.NoError(t, err)
+		terms = append(terms, term)
+	}
+	a, b, c := terms[0], terms[1], terms[2]
+	cache.beginFrame()
+	a.View()
+	b.View()
+	aReplays, bReplays := a.replays, b.replays
+	for range 10 {
+		cache.beginFrame()
+		a.View()
+		b.View()
+	}
+	require.Equal(t, aReplays, a.replays)
+	require.Equal(t, bReplays, b.replays)
+	// Once b leaves the screen, it is evicted to make room for others.
+	cache.beginFrame()
+	a.View()
+	c.View()
+	cReplays := c.replays
+	for range 3 {
+		cache.beginFrame()
+		a.View()
+		c.View()
+	}
+	require.Nil(t, b.vt)
+	require.NotNil(t, a.vt)
+	require.Equal(t, aReplays, a.replays)
+	require.Equal(t, cReplays, c.replays)
+}
+
 func TestVtermStreamAndLayoutStayLazy(t *testing.T) {
 	term := NewVterm(termenv.ANSI)
 	t.Cleanup(term.Close)
@@ -277,6 +392,33 @@ func TestVtermMediaProgressBeforeWrapping(t *testing.T) {
 	require.Equal(t, "done\nimg\nnext\n", mediaTestView(term))
 	term.SetWidth(20)
 	require.Equal(t, "done\nimg\nnext\n", mediaTestView(term))
+}
+
+// One search frame over 40 unchanged logs of 2000 lines: more logs than the
+// terminal cache holds.
+func BenchmarkVtermSearchFrame(b *testing.B) {
+	cache := newTerminalCache()
+	text := strings.Repeat(strings.Repeat("ordinary output\r\n", 99)+"needle\r\n", 20)
+	terms := make([]*Vterm, 40)
+	for i := range terms {
+		terms[i] = NewVterm(termenv.Ascii)
+		terms[i].cache = cache
+		terms[i].SetWidth(80)
+		_, _ = io.WriteString(terms[i], text)
+		b.Cleanup(terms[i].Close)
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		cache.beginFrame()
+		for _, term := range terms {
+			term.SetSearchHighlight("needle", -1)
+		}
+		for _, term := range terms {
+			if len(term.SearchMatchRows()) != 20 {
+				b.Fatal("missing matches")
+			}
+		}
+	}
 }
 
 func BenchmarkVtermHiddenLogs(b *testing.B) {

@@ -13,6 +13,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 	"github.com/vito/midterm"
 )
 
@@ -20,6 +21,10 @@ import (
 // terminal may exceed the cell budget: truncating it would change cursor/ANSI
 // semantics and make search silently incomplete. Moving to another terminal
 // evicts it. Rebuilding and searching always replay the complete stream.
+//
+// Terminals shown in the current or previous frame are not evicted: logs on
+// screen together would otherwise replay each other out of the cache on every
+// frame. The budget can then be exceeded while they stay on screen.
 const (
 	terminalCacheCount = 16
 	terminalCacheCells = 1024 * 1024
@@ -31,39 +36,78 @@ type terminalCache struct {
 	byTerm             map[*Vterm]*list.Element
 	cells              int
 	maxCount, maxCells int
+	frame              uint64
 }
 
 type terminalCacheEntry struct {
 	term  *Vterm
 	cells int
+	shown uint64 // the frame that last displayed it; 0 for never
 }
 
 func newTerminalCache() *terminalCache {
 	return &terminalCache{byTerm: make(map[*Vterm]*list.Element), maxCount: terminalCacheCount, maxCells: terminalCacheCells}
 }
 
+// beginFrame starts a frame of the live display. Without frames (reports,
+// tests), eviction is plain LRU.
+func (c *terminalCache) beginFrame() {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.frame++
+}
+
+// hasRoom reports whether a terminal of about cells would fit without
+// evicting another one.
+func (c *terminalCache) hasRoom(cells int) bool {
+	if c == nil {
+		return true
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.entries.Len() < c.maxCount && c.cells+cells <= c.maxCells
+}
+
 // touch is called with term.mu held. TryLock avoids lock inversion with another
 // terminal being displayed concurrently; busy entries are retried next time.
 func (c *terminalCache) touch(term *Vterm) {
+	c.use(term, false)
+}
+
+// show is touch for a terminal being displayed in the current frame.
+func (c *terminalCache) show(term *Vterm) {
+	c.use(term, true)
+}
+
+func (c *terminalCache) use(term *Vterm, shown bool) {
 	if c == nil || term.vt == nil {
 		return
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	cells := term.cacheCells + term.viewBuf.Len()/4
-	if el := c.byTerm[term]; el != nil {
-		entry := el.Value.(*terminalCacheEntry)
+	own := c.byTerm[term]
+	if own != nil {
+		entry := own.Value.(*terminalCacheEntry)
 		c.cells -= entry.cells
 		entry.cells = cells
-		c.entries.MoveToFront(el)
+		c.entries.MoveToFront(own)
 	} else {
-		c.byTerm[term] = c.entries.PushFront(&terminalCacheEntry{term, cells})
+		own = c.entries.PushFront(&terminalCacheEntry{term: term, cells: cells})
+		c.byTerm[term] = own
+	}
+	if shown {
+		own.Value.(*terminalCacheEntry).shown = c.frame
 	}
 	c.cells += cells
 	for el := c.entries.Back(); el != nil && (c.entries.Len() > c.maxCount || c.cells > c.maxCells); {
 		previous := el.Prev()
 		entry := el.Value.(*terminalCacheEntry)
-		if entry.term != term && entry.term.mu.TryLock() {
+		onScreen := c.frame > 0 && entry.shown > 0 && entry.shown+1 >= c.frame
+		if entry.term != term && !onScreen && entry.term.mu.TryLock() {
 			entry.term.evictLocked()
 			entry.term.mu.Unlock()
 			delete(c.byTerm, entry.term)
@@ -97,19 +141,114 @@ func (term *Vterm) materializeLocked() {
 		return
 	}
 	if term.vt == nil {
-		// Engine logs have no terminal width. Cursor edits are interpreted in
-		// logical lines; display wrapping must never affect these coordinates.
-		term.vt = midterm.NewAutoResizingTerminal()
-		if err := term.terminalBuf.replay(term.vt); err != nil {
-			term.storageErr = err
-		}
-		term.layoutDirty = true
-		if term.SearchQuery != "" {
-			term.vt.Search(term.SearchQuery)
-		}
+		term.replayTerminalLocked()
 	}
 	term.layoutTextLocked()
 	term.cache.touch(term)
+}
+
+func (term *Vterm) replayTerminalLocked() {
+	// Engine logs have no terminal width. Cursor edits are interpreted in
+	// logical lines; display wrapping must never affect these coordinates.
+	term.vt = midterm.NewAutoResizingTerminal()
+	term.replays++
+	if err := term.terminalBuf.replay(term.vt); err != nil {
+		term.storageErr = err
+	}
+	term.layoutDirty = true
+	if term.SearchQuery != "" {
+		term.vt.Search(term.SearchQuery)
+	}
+}
+
+// vtermSearchKey is everything search match rows depend on.
+type vtermSearchKey struct {
+	query   string
+	version uint64
+	width   int
+	prefix  string
+	images  bool
+}
+
+func (term *Vterm) searchKeyLocked() vtermSearchKey {
+	return vtermSearchKey{
+		query:   term.SearchQuery,
+		version: term.version,
+		width:   term.Width,
+		prefix:  term.Prefix,
+		images:  term.segments != nil && term.Profile != termenv.Ascii && term.images.isActive(),
+	}
+}
+
+// searchLiveLocked brings a materialized terminal's layout and incremental
+// midterm search up to date with SearchQuery.
+func (term *Vterm) searchLiveLocked() {
+	if term.segments != nil {
+		term.layoutMedia()
+	} else {
+		term.layoutTextLocked()
+	}
+	term.vt.Search(term.SearchQuery)
+	term.setCurrentMatchByRow(term.SearchCurrentRow)
+}
+
+func (term *Vterm) searchMatchRowsLocked() []int {
+	if term.SearchQuery == "" {
+		return nil
+	}
+	key := term.searchKeyLocked()
+	if term.searchCached && term.searchKey == key {
+		return term.searchRows
+	}
+	if term.vt == nil && !term.cache.hasRoom(max(term.terminalBuf.Len(), term.rawBuf.Len())) {
+		// Searching must not evict terminals that are being displayed, nor
+		// thrash the cache when there are more logs than it holds: search a
+		// throwaway terminal and keep only its match rows.
+		term.searchTransientLocked()
+	} else {
+		if term.vt == nil {
+			term.materializeLocked()
+		}
+		term.searchLiveLocked()
+		term.collectSearchRowsLocked()
+	}
+	term.searchKey = key
+	term.searchCached = true
+	return term.searchRows
+}
+
+// collectSearchRowsLocked always allocates: earlier results may be shared.
+func (term *Vterm) collectSearchRowsLocked() {
+	var rows []int
+	for _, match := range term.vt.SearchMatches {
+		row := term.matchRow(match)
+		if len(rows) == 0 || rows[len(rows)-1] != row {
+			rows = append(rows, row)
+		}
+	}
+	term.searchRows = rows
+}
+
+// searchTransientLocked lays out an evicted terminal outside the cache and
+// leaves it evicted, with its viewport and follow state untouched.
+func (term *Vterm) searchTransientLocked() {
+	offset, follow, mediaFollow, mediaActive := term.Offset, term.follow, term.mediaFollow, term.mediaActive
+	defer func() {
+		term.vt = nil
+		term.textRows = nil
+		term.textHeight = 0
+		term.cacheCells = 0
+		term.layoutDirty = true
+		term.mediaRows = nil
+		term.Offset, term.follow, term.mediaFollow, term.mediaActive = offset, follow, mediaFollow, mediaActive
+	}()
+	if term.segments != nil {
+		term.layoutMedia()
+	} else {
+		term.replayTerminalLocked()
+		term.layoutTextLocked()
+	}
+	term.collectSearchRowsLocked()
 }
 
 func (term *Vterm) writeTerminalLocked(p []byte) error {
@@ -117,6 +256,7 @@ func (term *Vterm) writeTerminalLocked(p []byte) error {
 		term.storageErr = err
 		return err
 	}
+	term.version++
 	if term.vt != nil {
 		term.rememberFollowLocked()
 		if _, err := term.vt.Write(p); err != nil {

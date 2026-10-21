@@ -46,7 +46,8 @@ func (fe *frontendPretty) buildSearchMatches() {
 				fe.searchMatchSpans[spanID] = true
 			}
 
-			// 2. Vterm log content matches — reads midterm's cached results.
+			// 2. Vterm log content matches, cached per Vterm until its
+			// content, layout or the query changes.
 			appendLogMatches := func(logs *Vterm, toolArgs bool) {
 				if logs == nil {
 					return
@@ -310,8 +311,9 @@ func (fe *frontendPretty) dirtySearchTrees() {
 }
 
 // syncVtermSearchHighlights propagates the current search state to all
-// vterms. Each vterm's SetSearchHighlight calls midterm's Search() which
-// is incremental — only re-scanning rows that changed since last call.
+// vterms. A materialized vterm's SetSearchHighlight calls midterm's Search()
+// which is incremental — only re-scanning rows that changed since last call;
+// an evicted one only stores the query.
 func (fe *frontendPretty) syncVtermSearchHighlights() {
 	var currentSpan dagui.SpanID
 	currentRow := -1

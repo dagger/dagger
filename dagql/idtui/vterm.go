@@ -50,6 +50,15 @@ type Vterm struct {
 	cacheCells  int
 	// wrapWork counts runes passed to the wrapper, for complexity tests.
 	wrapWork int
+	// replays counts complete log replays into a terminal, for tests.
+	replays int
+	// version changes with every change to the searchable content.
+	version uint64
+	// Search rows survive eviction, so an active search does not replay every
+	// unchanged log on every frame.
+	searchRows   []int
+	searchKey    vtermSearchKey
+	searchCached bool
 	// Regular terminal buffer
 	viewBuf     *bytes.Buffer
 	rawBuf      *logBuffer
@@ -84,20 +93,13 @@ func (term *Vterm) Term() *midterm.Terminal {
 	return term.vt
 }
 
-// SearchMatchRows returns a snapshot, safe even if another display evicts the
-// terminal. Search is over the complete log, never a truncated preview.
+// SearchMatchRows returns the rows matching SearchQuery, safe even if another
+// display evicts the terminal. Search is over the complete log, never a
+// truncated preview. The result is shared: callers must not modify it.
 func (term *Vterm) SearchMatchRows() []int {
 	term.mu.Lock()
 	defer term.mu.Unlock()
-	term.materializeLocked()
-	var rows []int
-	for _, match := range term.vt.SearchMatches {
-		row := term.matchRow(match)
-		if len(rows) == 0 || rows[len(rows)-1] != row {
-			rows = append(rows, row)
-		}
-	}
-	return rows
+	return term.searchMatchRowsLocked()
 }
 
 func (term *Vterm) WriteMarkdown(p []byte) (int, error) {
@@ -258,43 +260,29 @@ func (term *Vterm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // search. Pass an empty query to clear highlights. currentRow is the vterm
 // row of the "current" match (-1 if none in this vterm).
 //
-// Always re-runs the search so that new content is picked up.
+// A materialized terminal re-runs midterm's incremental search so that new
+// content is picked up. An evicted one only stores the query: materializing
+// it searches, and an active search must not replay every log every frame.
 func (term *Vterm) SetSearchHighlight(query string, currentRow int) {
 	term.mu.Lock()
 	defer term.mu.Unlock()
 
-	if query == "" && term.vt == nil {
-		term.SearchQuery = ""
-		term.SearchCurrentRow = -1
-		return
-	}
-	term.materializeLocked()
-	if query == "" {
-		if term.SearchQuery != "" {
-			term.vt.SearchClear()
-			term.needsRedraw = true
-		}
-		term.SearchQuery = ""
-		term.SearchCurrentRow = -1
-		return
-	}
-
-	// Always re-run search to pick up new content.
-	term.vt.Search(query)
-
-	// Mark the current match by row.
-	if currentRow >= 0 {
-		term.setCurrentMatchByRow(currentRow)
-	} else {
-		// Clear any previous current highlight.
-		term.vt.SearchSetCurrent(-1)
-	}
-
 	if term.SearchQuery != query || term.SearchCurrentRow != currentRow {
 		term.needsRedraw = true
 	}
+	if query == "" && term.SearchQuery != "" && term.vt != nil {
+		term.vt.SearchClear()
+	}
+	if query == "" {
+		currentRow = -1
+	}
 	term.SearchQuery = query
 	term.SearchCurrentRow = currentRow
+	if query == "" || term.vt == nil || (term.segments != nil && term.mediaRows == nil) {
+		// A pending media layout rebuilds and searches its projection.
+		return
+	}
+	term.searchLiveLocked()
 }
 
 // setCurrentMatchByRow finds the first search match on the given row and
@@ -412,7 +400,7 @@ func (term *Vterm) View() string {
 	term.mu.Lock()
 	defer term.mu.Unlock()
 	term.materializeLocked()
-	defer term.cache.touch(term)
+	defer term.cache.show(term)
 	if err := term.errLocked(); err != nil {
 		return fmt.Sprintf("[log storage error: %s]\n", err)
 	}

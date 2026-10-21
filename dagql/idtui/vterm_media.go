@@ -118,6 +118,7 @@ func (term *Vterm) mediaAtBottom() bool {
 func (term *Vterm) invalidateMedia() {
 	term.mediaRows = nil
 	term.needsRedraw = true
+	term.version++
 }
 
 func (term *Vterm) mediaWidth() int {
@@ -136,6 +137,7 @@ func (term *Vterm) layoutMedia() {
 	}
 	term.mediaActive = active
 	term.mediaRows = []vtermMediaRow{}
+	term.replays++
 	width := term.mediaWidth()
 	for _, segment := range term.segments {
 		if segment.media != nil {

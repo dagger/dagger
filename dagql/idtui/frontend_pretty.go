@@ -3554,6 +3554,8 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 		return
 	}
 	fe.claims = newRenderClaims()
+	// Logs displayed in this frame or the last stay materialized.
+	fe.logs.Cache.beginFrame()
 	if !fe.finalRender {
 		// Update window dimensions before choosing the screen body. Command-owned
 		// views embed the same trace renderers, which depend on this state for
