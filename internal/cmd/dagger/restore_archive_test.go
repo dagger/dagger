@@ -536,6 +536,39 @@ func TestArchiveRestoreSkipsLiveSpanLogs(t *testing.T) {
 	}
 }
 
+// TestArchiveRestoreRollUpSkipsCallPayloads: the background metadata stream
+// already imports every call payload, so a rolled-up span's lazy fetch is
+// one descendants request for its text, without the call-payload follow-up
+// 'dagger trace' sends.
+func TestArchiveRestoreRollUpSkipsCallPayloads(t *testing.T) {
+	base, _, _, _ := canonicalArchive() //nolint:dogsled // Only the transport fixture is needed here.
+	base.header.HighWater = archive.HighWater{Spans: 10, Logs: 20, Metrics: 30}
+	id := dagui.SpanID{SpanID: trace.SpanID{1}}
+	source := &lazyRestoreArchive{
+		restoreTestArchive: base, requests: make(chan archive.StreamOptions, 8),
+		spans: archivedSpanBatch(id), spansDone: make(chan struct{}),
+	}
+	fe := &lazyRestoreFrontend{restoreTestFrontend: newRestoreTestFrontend()}
+	cleanup, err := restoreArchive(t.Context(), source, fe, newFakeRestoreTarget(), restoreRequest())
+	require.NoError(t, err)
+	defer cleanup()
+	metadata := <-source.requests
+	require.Equal(t, archive.LogRecordsMetadata, metadata.Logs.Records)
+	<-source.spansDone
+
+	fe.provider(id, true)
+	fe.wait()
+	rollUp := <-source.requests
+	require.Equal(t, id.String(), rollUp.Logs.SpanID)
+	require.True(t, rollUp.Logs.Descendants)
+	require.Equal(t, archive.LogRecordsLogs, rollUp.Logs.Records)
+	select {
+	case opts := <-source.requests:
+		t.Fatalf("redundant follow-up request: %+v", opts.Logs)
+	default:
+	}
+}
+
 // TestArchiveRestoreCleanupCancelsLazyFetches: exit cancels lazy log fetches
 // both in flight and queued behind the loader's concurrency limit.
 func TestArchiveRestoreCleanupCancelsLazyFetches(t *testing.T) {

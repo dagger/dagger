@@ -153,6 +153,9 @@ func restoreArchive(ctx context.Context, source archiveRestoreSource, fe archive
 			HighWater: archive.HighWater{Spans: cut.HighWater.Spans, Logs: cut.HighWater.Logs, Metrics: cut.HighWater.Metrics},
 		})
 		loader := newTraceLoaderForFrontend(historyCtx, display, req.traceID, fe)
+		// The background metadata log stream already imports every call
+		// payload up to the cut, so a roll-up only needs its text.
+		loader.skipCallPayloads = true
 		// The provider stays installed for the whole resumed session, whose
 		// own live spans stream their logs in and are never in the archive.
 		// Only spans the archived history delivered are fetched from it.

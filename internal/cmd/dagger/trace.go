@@ -637,6 +637,10 @@ type traceLoader struct {
 	// zoom request.
 	logReq map[string]bool
 	logSem chan struct{}
+	// skipCallPayloads leaves out the call-payload follow-up of a roll-up
+	// log fetch, for sources whose call payloads are already imported
+	// separately (archive restore's background metadata stream).
+	skipCallPayloads bool
 
 	// background backfills (lazy child loads) run on the command's ctx so
 	// they keep working while the TUI is interactive (-E).
@@ -851,7 +855,7 @@ func (l *traceLoader) fetchLogs(fg *fetchGroup, id dagui.SpanID, descendants boo
 			slog.Warn("error streaming span logs", "span", spanHex, "err", err)
 			return fmt.Errorf("stream span %s logs: %w", spanHex, err)
 		}
-		if !descendants {
+		if !descendants || l.skipCallPayloads {
 			return nil
 		}
 		// The text-only class above left out the subtree's call payloads,
