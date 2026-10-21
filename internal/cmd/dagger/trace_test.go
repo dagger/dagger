@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -328,6 +329,69 @@ func TestTraceLoaderFetchLogs(t *testing.T) {
 	mu.Lock()
 	require.Equal(t, []url.Values{{"span_id": {own.String()}}}, requests, "own logs are every record, one request")
 	mu.Unlock()
+}
+
+// logSource serves each span's selected records, and reports what each
+// request's callback kept of them.
+type logSource struct {
+	tracesource.Source
+	records map[string][]*logspb.LogRecord // span_id -> records it selects
+	mu      sync.Mutex
+	sels    []cloud.LogSelection
+	kept    [][]byte // span IDs of the records the callbacks left to import
+}
+
+func (s *logSource) FetchLogs(ctx context.Context, _ string, sel cloud.LogSelection, cb func(context.Context, *collogspb.ExportLogsServiceRequest) error) error {
+	req := &collogspb.ExportLogsServiceRequest{ResourceLogs: []*logspb.ResourceLogs{{
+		ScopeLogs: []*logspb.ScopeLogs{{LogRecords: slices.Clone(s.records[sel.SpanID])}},
+	}}}
+	err := cb(ctx, req)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sels = append(s.sels, sel)
+	for _, record := range req.ResourceLogs[0].ScopeLogs[0].LogRecords {
+		s.kept = append(s.kept, record.SpanId)
+	}
+	return err
+}
+
+// With the whole span tree loaded (a restored session's history), a roll-up
+// is one request for every record class, whose records keep their own span
+// IDs. Spans another fetch owns are left out of it, and the spans it imported
+// are not fetched again on their own.
+func TestTraceLoaderFullTreeRollUp(t *testing.T) {
+	rollUp, child, grandchild := []byte{1, 0, 0, 0, 0, 0, 0, 1}, []byte{2, 0, 0, 0, 0, 0, 0, 2}, []byte{3, 0, 0, 0, 0, 0, 0, 3}
+	id := func(b []byte) dagui.SpanID {
+		var id dagui.SpanID
+		copy(id.SpanID[:], b)
+		return id
+	}
+	text := func(span []byte) *logspb.LogRecord {
+		return &logspb.LogRecord{SpanId: span, Body: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "out\n"}}}
+	}
+	source := &logSource{records: map[string][]*logspb.LogRecord{
+		id(grandchild).String(): {text(grandchild)},
+		id(rollUp).String():     {text(rollUp), text(child), text(grandchild)},
+	}}
+	loader, _, _ := testTraceLoader(t)
+	loader.client = source
+	loader.fullTree = true
+
+	var fg fetchGroup
+	loader.fetchLogs(&fg, id(grandchild), false)
+	require.NoError(t, fg.Wait())
+	loader.fetchLogs(&fg, id(rollUp), true)
+	require.NoError(t, fg.Wait())
+	loader.fetchLogs(&fg, id(child), false)
+	loader.fetchLogs(&fg, id(grandchild), true)
+	require.NoError(t, fg.Wait())
+
+	require.Equal(t, []cloud.LogSelection{
+		{SpanID: id(grandchild).String()},
+		{SpanID: id(rollUp).String(), Descendants: true},
+	}, source.sels, "a roll-up is one request for every record; owned spans are not fetched again")
+	require.Equal(t, [][]byte{grandchild, rollUp, child}, source.kept,
+		"records keep their own span IDs, without the records another fetch imported")
 }
 
 // resolvingFrontend is the slice of TraceFrontend resolveTraceTarget drives.
