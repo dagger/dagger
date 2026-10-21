@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  `currentModule` now works in the process that a module entrypoint starts for a call, so Python, Go and TypeScript modules on a Dang entrypoint can access their current module.
+time: 2026-10-21T06:14:51+00:00
+custom:
+    Author: eunomie
+    PR: ""
