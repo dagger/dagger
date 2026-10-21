@@ -1864,7 +1864,7 @@ func (c *Client) serveHijackedHTTP(ctx context.Context, cancel context.CancelCau
 	clientConn, _, err := hij.Hijack()
 	if err != nil {
 		w.WriteHeader(http.StatusBadGateway)
-		w.Write([]byte("hijack: " + err.Error()))
+		w.Write([]byte("hijack: " + err.Error())) //nolint:gosec // G705: a plain-text proxy error, not rendered as HTML
 		return
 	}
 	go func() {
