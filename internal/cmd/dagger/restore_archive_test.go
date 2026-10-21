@@ -28,6 +28,7 @@ import (
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	logspb "go.opentelemetry.io/proto/otlp/logs/v1"
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
+	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 )
 
 type restoreTestFrontend struct {
@@ -392,23 +393,64 @@ func (fe *lazyRestoreFrontend) SetFetchWaiter(f func())                   { fe.w
 type lazyRestoreArchive struct {
 	*restoreTestArchive
 	requests chan archive.StreamOptions
+	// spans is the archived history's spans; spansDone closes once they are
+	// imported.
+	spans     *coltracepb.ExportTraceServiceRequest
+	spansDone chan struct{}
+	// blockSelected makes selected (per-span) log reads block until
+	// cancelled.
+	blockSelected bool
 }
 
-func (s *lazyRestoreArchive) Traces(_ context.Context, _ string, opts archive.StreamOptions, _ func(int64, *coltracepb.ExportTraceServiceRequest) error) (int64, error) {
+func (s *lazyRestoreArchive) Traces(_ context.Context, _ string, opts archive.StreamOptions, consume func(int64, *coltracepb.ExportTraceServiceRequest) error) (int64, error) {
+	if s.spansDone != nil {
+		defer close(s.spansDone)
+	}
+	if s.spans != nil {
+		if err := consume(opts.HighWater, s.spans); err != nil {
+			return 0, err
+		}
+	}
 	return opts.HighWater, nil
 }
 func (s *lazyRestoreArchive) Metrics(_ context.Context, _ string, opts archive.StreamOptions, _ func(int64, *colmetricspb.ExportMetricsServiceRequest) error) (int64, error) {
 	return opts.HighWater, nil
 }
-func (s *lazyRestoreArchive) Logs(_ context.Context, _ string, opts archive.StreamOptions, _ func(int64, *collogspb.ExportLogsServiceRequest) error) (int64, error) {
+func (s *lazyRestoreArchive) Logs(ctx context.Context, _ string, opts archive.StreamOptions, _ func(int64, *collogspb.ExportLogsServiceRequest) error) (int64, error) {
 	s.requests <- opts
+	if s.blockSelected && opts.Logs != nil && opts.Logs.SpanID != "" {
+		<-ctx.Done()
+		return 0, ctx.Err()
+	}
 	return opts.HighWater, nil
+}
+
+// archivedSpanBatch is a span export of the given spans, in the restored trace.
+func archivedSpanBatch(ids ...dagui.SpanID) *coltracepb.ExportTraceServiceRequest {
+	traceID, err := trace.TraceIDFromHex(restoreRequest().traceID)
+	if err != nil {
+		panic(err)
+	}
+	var spans []*tracepb.Span
+	for _, id := range ids {
+		spans = append(spans, &tracepb.Span{
+			TraceId: traceID[:], SpanId: id.SpanID[:], Name: "archived",
+			StartTimeUnixNano: uint64(time.Unix(10, 0).UnixNano()), EndTimeUnixNano: uint64(time.Unix(11, 0).UnixNano()),
+		})
+	}
+	return &coltracepb.ExportTraceServiceRequest{ResourceSpans: []*tracepb.ResourceSpans{{
+		Resource: &resourcepb.Resource{}, ScopeSpans: []*tracepb.ScopeSpans{{Spans: spans}},
+	}}}
 }
 
 func TestArchiveRestoreDefersDisplayLogs(t *testing.T) {
 	base, chief, _, _ := canonicalArchive()
 	base.header.HighWater = archive.HighWater{Spans: 10, Logs: 20, Metrics: 30}
-	source := &lazyRestoreArchive{restoreTestArchive: base, requests: make(chan archive.StreamOptions, 8)}
+	id := dagui.SpanID{SpanID: trace.SpanID{1}}
+	source := &lazyRestoreArchive{
+		restoreTestArchive: base, requests: make(chan archive.StreamOptions, 8),
+		spans: archivedSpanBatch(id), spansDone: make(chan struct{}),
+	}
 	fe := &lazyRestoreFrontend{restoreTestFrontend: newRestoreTestFrontend()}
 	target := newFakeRestoreTarget()
 	cleanup, err := restoreArchive(t.Context(), source, fe, target, restoreRequest())
@@ -429,8 +471,12 @@ func TestArchiveRestoreDefersDisplayLogs(t *testing.T) {
 		t.Fatal("eager display log request")
 	default:
 	}
+	select {
+	case <-source.spansDone:
+	case <-time.After(time.Second):
+		t.Fatal("archived spans were not imported")
+	}
 
-	id := dagui.SpanID{SpanID: trace.SpanID{1}}
 	fe.provider(id, false)
 	fe.wait()
 	own := <-source.requests
@@ -443,6 +489,95 @@ func TestArchiveRestoreDefersDisplayLogs(t *testing.T) {
 	case <-source.requests:
 		t.Fatal("duplicate lazy fetch")
 	default:
+	}
+}
+
+// TestArchiveRestoreSkipsLiveSpanLogs: the resumed session keeps the lazy
+// provider installed, but its own live spans (e.g. a new tool call, which
+// rolls up its descendants) stream their logs in and are never in the
+// archive, so they must not cost an archive read.
+func TestArchiveRestoreSkipsLiveSpanLogs(t *testing.T) {
+	base, _, _, _ := canonicalArchive() //nolint:dogsled // Only the transport fixture is needed here.
+	base.header.HighWater = archive.HighWater{Spans: 10, Logs: 20, Metrics: 30}
+	archived := dagui.SpanID{SpanID: trace.SpanID{1}}
+	source := &lazyRestoreArchive{
+		restoreTestArchive: base, requests: make(chan archive.StreamOptions, 8),
+		spans: archivedSpanBatch(archived), spansDone: make(chan struct{}),
+	}
+	fe := &lazyRestoreFrontend{restoreTestFrontend: newRestoreTestFrontend()}
+	cleanup, err := restoreArchive(t.Context(), source, fe, newFakeRestoreTarget(), restoreRequest())
+	require.NoError(t, err)
+	defer cleanup()
+	<-source.requests // the background metadata stream
+	select {
+	case <-source.spansDone:
+	case <-time.After(time.Second):
+		t.Fatal("archived spans were not imported")
+	}
+
+	for _, descendants := range []bool{false, true} {
+		fe.provider(dagui.SpanID{SpanID: trace.SpanID{2}}, descendants)
+		fe.provider(dagui.SpanID{SpanID: trace.SpanID{3}}, descendants)
+	}
+	fe.wait()
+	select {
+	case opts := <-source.requests:
+		t.Fatalf("live span fetched from the archive: %+v", opts.Logs)
+	default:
+	}
+
+	fe.provider(archived, true)
+	fe.wait()
+	select {
+	case opts := <-source.requests:
+		require.Equal(t, archived.String(), opts.Logs.SpanID)
+	default:
+		t.Fatal("archived span was not fetched")
+	}
+}
+
+// TestArchiveRestoreCleanupCancelsLazyFetches: exit cancels lazy log fetches
+// both in flight and queued behind the loader's concurrency limit.
+func TestArchiveRestoreCleanupCancelsLazyFetches(t *testing.T) {
+	base, _, _, _ := canonicalArchive() //nolint:dogsled // Only the transport fixture is needed here.
+	base.header.HighWater = archive.HighWater{Spans: 10, Logs: 20, Metrics: 30}
+	var ids []dagui.SpanID
+	for i := range 20 {
+		ids = append(ids, dagui.SpanID{SpanID: trace.SpanID{byte(i + 1)}})
+	}
+	source := &lazyRestoreArchive{
+		restoreTestArchive: base, requests: make(chan archive.StreamOptions, 64),
+		spans: archivedSpanBatch(ids...), spansDone: make(chan struct{}), blockSelected: true,
+	}
+	fe := &lazyRestoreFrontend{restoreTestFrontend: newRestoreTestFrontend()}
+	cleanup, err := restoreArchive(t.Context(), source, fe, newFakeRestoreTarget(), restoreRequest())
+	require.NoError(t, err)
+	<-source.spansDone
+	for _, id := range ids {
+		fe.provider(id, false)
+	}
+	// Wait for the in-flight fetches to occupy the loader's limit, leaving
+	// the rest queued.
+	inFlight := 0
+	for inFlight < 8 {
+		select {
+		case opts := <-source.requests:
+			if opts.Logs != nil && opts.Logs.SpanID != "" {
+				inFlight++
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("only %d lazy fetches started", inFlight)
+		}
+	}
+	done := make(chan struct{})
+	go func() {
+		cleanup()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("cleanup did not cancel queued lazy fetches")
 	}
 }
 

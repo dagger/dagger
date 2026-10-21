@@ -140,8 +140,12 @@ func restoreArchive(ctx context.Context, source archiveRestoreSource, fe archive
 	// frontends load display logs on demand; semantic metadata still arrives in
 	// the background so names, progress and call rendering do not require an
 	// expanded log pane. Lazy reads stay pinned to the bootstrap's cut.
+	//
+	// Queued and in-flight lazy fetches run on historyCtx, so the cleanup's
+	// cancel stops them before it joins them.
 	historyCtx, cancel := context.WithCancel(ctx)
 	var logFg fetchGroup
+	var archived *archivedSpans
 	tf, lazy := fe.(idtui.TraceFrontend)
 	if lazy {
 		display := tracesource.NewArchive(source, archive.Manifest{
@@ -149,13 +153,20 @@ func restoreArchive(ctx context.Context, source archiveRestoreSource, fe archive
 			HighWater: archive.HighWater{Spans: cut.HighWater.Spans, Logs: cut.HighWater.Logs, Metrics: cut.HighWater.Metrics},
 		})
 		loader := newTraceLoaderForFrontend(historyCtx, display, req.traceID, fe)
+		// The provider stays installed for the whole resumed session, whose
+		// own live spans stream their logs in and are never in the archive.
+		// Only spans the archived history delivered are fetched from it.
+		archived = newArchivedSpans()
 		tf.SetLogProvider(func(id dagui.SpanID, descendants bool) {
+			if !archived.has(id) {
+				return
+			}
 			loader.fetchLogs(&logFg, id, descendants)
 		})
 		tf.SetFetchWaiter(func() { _ = logFg.Wait() })
 	}
 	stop := startHistoricalImport(historyCtx, func(ctx context.Context) error {
-		return importArchiveRemainderMode(ctx, source, req.traceID, importer, cut, lazy)
+		return importArchiveRemainderMode(ctx, source, req.traceID, importer, cut, lazy, archived)
 	}, func(err error) {
 		restoreNotice(ctx, fmt.Sprintf("historical telemetry import incomplete: %v; restored agents remain usable", err))
 	})
@@ -192,12 +203,48 @@ func startHistoricalImport(ctx context.Context, run func(context.Context) error,
 // applied; the frontend ignores digests it already has, and a sealed archive's
 // history never includes control records.
 func importArchiveRemainder(ctx context.Context, source archiveRestoreSource, traceID string, importer *enginetel.ArchiveTraceImporter, cut enginetel.ArchiveCut) error {
-	return importArchiveRemainderMode(ctx, source, traceID, importer, cut, false)
+	return importArchiveRemainderMode(ctx, source, traceID, importer, cut, false, nil)
+}
+
+// archivedSpans is the set of spans the archived history delivered: the
+// spans a lazy log fetch can find in the archive.
+type archivedSpans struct {
+	mu  sync.RWMutex
+	ids map[dagui.SpanID]struct{}
+}
+
+func newArchivedSpans() *archivedSpans {
+	return &archivedSpans{ids: map[dagui.SpanID]struct{}{}}
+}
+
+func (s *archivedSpans) record(req *coltracepb.ExportTraceServiceRequest) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, rs := range req.GetResourceSpans() {
+		for _, ss := range rs.GetScopeSpans() {
+			for _, span := range ss.GetSpans() {
+				var id dagui.SpanID
+				copy(id.SpanID[:], span.GetSpanId())
+				if id.IsValid() {
+					s.ids[id] = struct{}{}
+				}
+			}
+		}
+	}
+}
+
+func (s *archivedSpans) has(id dagui.SpanID) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.ids[id]
+	return ok
 }
 
 // importArchiveRemainderMode is importArchiveRemainder, optionally leaving
-// display log bodies for the frontend to load on demand.
-func importArchiveRemainderMode(ctx context.Context, source archiveRestoreSource, traceID string, importer *enginetel.ArchiveTraceImporter, cut enginetel.ArchiveCut, lazyLogs bool) error {
+// display log bodies for the frontend to load on demand. Each span batch is
+// recorded in archived (when non-nil) before the frontend can see it, so a
+// rendered archived span is always known to be fetchable.
+func importArchiveRemainderMode(ctx context.Context, source archiveRestoreSource, traceID string, importer *enginetel.ArchiveTraceImporter, cut enginetel.ArchiveCut, lazyLogs bool, archived *archivedSpans) error {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var resultErr error
@@ -225,6 +272,9 @@ func importArchiveRemainderMode(ctx context.Context, source archiveRestoreSource
 				switch signal {
 				case enginetel.ArchiveSpans:
 					opts.Cursor, err = source.Traces(ctx, traceID, opts, func(cursor int64, batch *coltracepb.ExportTraceServiceRequest) error {
+						if archived != nil {
+							archived.record(batch)
+						}
 						return importer.ImportAndWait(ctx, enginetel.ArchiveImportBatch{Spans: batch, Cursor: cursor})
 					})
 				case enginetel.ArchiveLogs:
