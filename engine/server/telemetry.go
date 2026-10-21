@@ -888,14 +888,21 @@ func fetchLogRows(ctx context.Context, db *clientdb.DB, since int64, limit int, 
 }
 
 func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request, record *clientRecord) error {
-	return ps.streamHandler(w, r, record, fetchTraceStreamBatch)
+	keep := streamedSpanRow(record.clientID)
+	return ps.streamHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, streamEncoder, int, error) {
+		return fetchTraceStreamBatchFiltered(ctx, db, since, limit, keep)
+	})
 }
 
 // fetchTraceStreamBatch is the trace stream's streamFetcher. Its binary
 // frames are written from the stored rows, without building the request's
 // messages first.
 func fetchTraceStreamBatch(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, streamEncoder, int, error) {
-	next, spans, rows, err := fetchSpanRows(ctx, db, since, limit, nil)
+	return fetchTraceStreamBatchFiltered(ctx, db, since, limit, nil)
+}
+
+func fetchTraceStreamBatchFiltered(ctx context.Context, db *clientdb.DB, since int64, limit int, keep func(*clientdb.Span) bool) (int64, streamEncoder, int, error) {
+	next, spans, rows, err := fetchSpanRows(ctx, db, since, limit, keep)
 	if err != nil || rows == 0 {
 		return next, nil, rows, err
 	}
@@ -910,15 +917,22 @@ func fetchTraceStreamBatch(ctx context.Context, db *clientdb.DB, since int64, li
 }
 
 func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, record *clientRecord) error {
+	keep := streamedLogRow(record.clientID)
 	if r.URL.Query().Get(enginetel.LiveDisplayParam) == enginetel.LiveDisplayPresence {
-		return ps.serveLiveStream(w, r, record, presenceLogFetcher(), enginetel.MaxLivePayloadSize, liveStreamOptions{indexed: true})
+		return ps.serveLiveStream(w, r, record, presenceLogFetcher(keep), enginetel.MaxLivePayloadSize, liveStreamOptions{indexed: true})
 	}
-	return ps.streamHandler(w, r, record, fetchLogStreamBatch)
+	return ps.streamHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, streamEncoder, int, error) {
+		return fetchLogStreamBatchFiltered(ctx, db, since, limit, keep)
+	})
 }
 
 // fetchLogStreamBatch is fetchTraceStreamBatch for log records.
 func fetchLogStreamBatch(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, streamEncoder, int, error) {
-	next, logs, rows, err := fetchLogRows(ctx, db, since, limit, nil)
+	return fetchLogStreamBatchFiltered(ctx, db, since, limit, nil)
+}
+
+func fetchLogStreamBatchFiltered(ctx context.Context, db *clientdb.DB, since int64, limit int, keep func(*clientdb.Log) bool) (int64, streamEncoder, int, error) {
+	next, logs, rows, err := fetchLogRows(ctx, db, since, limit, keep)
 	if err != nil || rows == 0 {
 		return next, nil, rows, err
 	}
@@ -933,6 +947,7 @@ func fetchLogStreamBatch(ctx context.Context, db *clientdb.DB, since int64, limi
 }
 
 func (ps *PubSub) MetricsSubscribeHandler(w http.ResponseWriter, r *http.Request, record *clientRecord) error {
+	keep := streamedMetricRow(record.clientID)
 	return ps.streamHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, streamEncoder, int, error) {
 		metrics, err := db.Read().SelectMetricsSince(ctx, clientdb.SelectMetricsSinceParams{
 			ID:    since,
@@ -945,8 +960,14 @@ func (ps *PubSub) MetricsSubscribeHandler(w http.ResponseWriter, r *http.Request
 			return since, nil, 0, nil
 		}
 		since = metrics[len(metrics)-1].ID
+		kept := make([]clientdb.Metric, 0, len(metrics))
+		for i := range metrics {
+			if keep(&metrics[i]) {
+				kept = append(kept, metrics[i])
+			}
+		}
 		return since, encodeMessage(&colmetricspb.ExportMetricsServiceRequest{
-			ResourceMetrics: clientdb.MetricsToPB(metrics),
+			ResourceMetrics: clientdb.MetricsToPB(kept),
 		}), len(metrics), nil
 	})
 }
@@ -1533,6 +1554,7 @@ func (ps *PubSub) serveLiveStream(w http.ResponseWriter, r *http.Request, record
 
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set(enginetel.LiveFeaturesHeader, liveTelemetryFeatures)
+	w.Header().Set(engine.ClientTelemetryIngestHeader, engine.ClientTelemetryIngestStore)
 	if sess := record.daggerSession; sess != nil && sess.publishesToCloud() {
 		w.Header().Set(engine.CloudTelemetryPublisherHeader, engine.CloudTelemetryPublisherEngine)
 	}
