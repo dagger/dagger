@@ -252,33 +252,77 @@ func TestVtermCacheConcurrentAccess(t *testing.T) {
 	wg.Wait()
 }
 
+// HasOutput must never report false for a log with rows, and stays lazy.
+func TestVtermHasOutputWithoutMaterializing(t *testing.T) {
+	for _, chunks := range [][]string{
+		{},
+		{"\n\r\n"},
+		{"\x1b[31m", "\x1b[0m\x1b[2J\x1b[H"},
+		{"\x1b[3", "1m\x1b[1", "0D"},
+		{"\x1b]0;title\x07\x1b]8;;https://example.com\x1b\\"},
+		{"x"},
+		{"\x1b[31", "mx"},
+		{"text\r\x1b[2K"},
+		{"\x1b[41m \x1b[0m"},
+		{"界"},
+	} {
+		term := NewVterm(termenv.ANSI)
+		t.Cleanup(term.Close)
+		for _, chunk := range chunks {
+			_, err := io.WriteString(term, chunk)
+			require.NoError(t, err)
+		}
+		has := term.HasOutput()
+		require.Nil(t, term.vt, "%q", chunks)
+		used := term.UsedHeight()
+		require.Equal(t, used > 0, has, "%q: UsedHeight %d", chunks, used)
+		require.Equal(t, has, term.HasOutput())
+	}
+}
+
 func TestPrettyLogsCollapsedSpansStayLazy(t *testing.T) {
-	db := dagui.NewDB()
-	root := prettyTestSpanID(1)
-	start := time.Unix(100, 0)
-	snapshots := []dagui.SpanSnapshot{{ID: root, TraceID: prettyTestTraceID(), Name: "root", StartTime: start, EndTime: start.Add(time.Second), Final: true}}
-	for i := byte(2); i < 52; i++ {
-		snapshots = append(snapshots, dagui.SpanSnapshot{ID: prettyTestSpanID(i), ParentID: root, TraceID: prettyTestTraceID(), Name: fmt.Sprintf("child %d", i), StartTime: start, EndTime: start.Add(time.Second), Final: true})
+	for _, rollUp := range []bool{false, true} {
+		t.Run(fmt.Sprintf("rollUpLogs=%v", rollUp), func(t *testing.T) {
+			db := dagui.NewDB()
+			root := prettyTestSpanID(1)
+			start := time.Unix(100, 0)
+			snapshots := []dagui.SpanSnapshot{{ID: root, TraceID: prettyTestTraceID(), Name: "root", StartTime: start, EndTime: start.Add(time.Second), Final: true}}
+			for i := byte(2); i < 52; i++ {
+				snapshots = append(snapshots, dagui.SpanSnapshot{ID: prettyTestSpanID(i), ParentID: root, TraceID: prettyTestTraceID(), Name: fmt.Sprintf("child %d", i), StartTime: start, EndTime: start.Add(time.Second), Final: true, RollUpLogs: rollUp})
+			}
+			db.ImportSnapshots(snapshots)
+			db.SetPrimarySpan(root)
+			fe := NewWithDB(io.Discard, db)
+			t.Cleanup(fe.logs.Close)
+			fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+			fe.FrontendOpts.GCThreshold = time.Hour
+			fe.FrontendOpts.SpanExpanded = map[dagui.SpanID]bool{root: true}
+			for _, snapshot := range snapshots[1:] {
+				fe.FrontendOpts.SpanExpanded[snapshot.ID] = false
+				_, err := io.WriteString(fe.logs.spanLogs(snapshot.ID), strings.Repeat("hidden output\r\n", 3000))
+				require.NoError(t, err)
+			}
+			fe.logs.SetWidth(80)
+			fe.ZoomedSpan = root
+			fe.recalculateViewLocked()
+			// A completed, collapsed roll-up row at depth 0 draws no logs either.
+			require.Zero(t, fe.rows.BySpan[snapshots[1].ID].Depth)
+			_ = fe.tui.RenderLines()
+			replays := func() int {
+				total := 0
+				for _, logs := range fe.logs.Logs {
+					total += logs.replays
+				}
+				return total
+			}
+			require.Zero(t, replays(), "collapsed spans must not materialize while drawing the tree")
+			require.Zero(t, fe.logs.Cache.entries.Len())
+			var out bytes.Buffer
+			require.NoError(t, fe.FinalRender(&out))
+			require.NotContains(t, out.String(), "hidden output")
+			require.Zero(t, replays(), "nor in the final render")
+		})
 	}
-	db.ImportSnapshots(snapshots)
-	db.SetPrimarySpan(root)
-	fe := NewWithDB(io.Discard, db)
-	t.Cleanup(fe.logs.Close)
-	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
-	fe.FrontendOpts.GCThreshold = time.Hour
-	fe.FrontendOpts.SpanExpanded = map[dagui.SpanID]bool{root: true}
-	for _, snapshot := range snapshots[1:] {
-		fe.FrontendOpts.SpanExpanded[snapshot.ID] = false
-		_, err := io.WriteString(fe.logs.spanLogs(snapshot.ID), strings.Repeat("hidden output\r\n", 3000))
-		require.NoError(t, err)
-	}
-	fe.logs.SetWidth(80)
-	fe.recalculateViewLocked()
-	_ = fe.tui.RenderLines()
-	for _, logs := range fe.logs.Logs {
-		require.Nil(t, logs.vt, "collapsed spans must not materialize while drawing the tree")
-	}
-	require.Zero(t, fe.logs.Cache.entries.Len())
 }
 
 // An active search refreshes on every frame. With more logs than the cache

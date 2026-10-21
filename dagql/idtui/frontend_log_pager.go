@@ -283,7 +283,7 @@ func (fe *frontendPretty) spanHasLogs(span *dagui.Span) bool {
 		return false
 	}
 	logs := fe.logs.Logs[span.ID]
-	return logs != nil && logs.UsedHeight() > 0
+	return logs != nil && logs.HasOutput() && logs.UsedHeight() > 0
 }
 
 func (fe *frontendPretty) currentLogSpan() *dagui.Span {

@@ -10,11 +10,13 @@ import (
 	"sync"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"charm.land/lipgloss/v2"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour/styles"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/charmbracelet/x/ansi/parser"
 	"github.com/muesli/termenv"
 	"github.com/vito/midterm"
 )
@@ -67,6 +69,10 @@ type Vterm struct {
 	// rawBuf is empty until rawSeparate; see separateRawLocked.
 	rawBuf      *logBuffer
 	rawSeparate bool
+	// printed is set once the terminal stream may have printed a character;
+	// printState is the escape parser state until then. See HasOutput.
+	printed     bool
+	printState  parser.State
 	needsRedraw bool
 
 	// Search highlight state. When SearchQuery is non-empty, matching
@@ -198,10 +204,51 @@ func (term *Vterm) rawLocked() *logBuffer {
 	return term.terminalBuf
 }
 
+// UsedHeight lays the log out to count its rows, materializing it. Check
+// HasOutput first where most logs are not drawn.
 func (term *Vterm) UsedHeight() int {
 	term.mu.Lock()
 	defer term.mu.Unlock()
 	return term.usedHeightLocked()
+}
+
+// HasOutput reports whether the log may have rows, without materializing it:
+// false guarantees UsedHeight() == 0, so an emptiness guard can skip the log
+// before UsedHeight lays it out. It errs towards true: media logs, non-ASCII
+// bytes, and text printed only on the alternate screen count as output, so
+// code that draws still checks UsedHeight. As with UsedHeight, Markdown in a
+// log without media is not counted.
+func (term *Vterm) HasOutput() bool {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	if term.segments != nil {
+		return true
+	}
+	if term.vt != nil && term.vt.MaxY >= 0 {
+		// Exact once materialized, whatever the scan below concluded.
+		term.printed = true
+	}
+	return term.printed
+}
+
+// notePrintedLocked scans terminal input until it prints a character, the
+// only thing that gives midterm a used row (erased text still leaves one).
+// Escape sequences, newlines and other controls alone do not.
+func (term *Vterm) notePrintedLocked(p []byte) {
+	state := term.printState
+	for _, b := range p {
+		if b >= utf8.RuneSelf {
+			term.printed = true
+			return
+		}
+		var action parser.Action
+		state, action = parser.Table.Transition(state, b)
+		if action == parser.PrintAction {
+			term.printed = true
+			return
+		}
+	}
+	term.printState = state
 }
 
 func (term *Vterm) usedHeightLocked() int {

@@ -288,6 +288,9 @@ func (term *Vterm) writeTerminalLocked(p []byte) error {
 		return err
 	}
 	term.version++
+	if !term.printed {
+		term.notePrintedLocked(p)
+	}
 	if term.vt != nil {
 		term.rememberFollowLocked()
 		if _, err := term.vt.Write(p); err != nil {

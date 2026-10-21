@@ -198,7 +198,7 @@ func (lv *LogsView) Render(ctx tuist.Context) {
 	if lv.toolArgs {
 		logs = lv.fe.logs.ToolArgs[lv.spanID]
 	}
-	if logs == nil || logs.UsedHeight() == 0 {
+	if logs == nil || !logs.HasOutput() || logs.UsedHeight() == 0 {
 		return
 	}
 	logs.SetPrefix(lv.logPrefix)

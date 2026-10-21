@@ -4028,7 +4028,7 @@ func (fe *frontendPretty) renderZoomedFinalLogs(out TermOutput, indent string) [
 	}
 	fe.requestLogsOnRender(fe.ZoomedSpan)
 	logs := fe.logs.Logs[fe.ZoomedSpan]
-	if logs == nil || logs.UsedHeight() == 0 {
+	if logs == nil || !logs.HasOutput() || logs.UsedHeight() == 0 {
 		return nil
 	}
 	var buf strings.Builder
@@ -4347,7 +4347,7 @@ func checkBreakdownPartsFor(out TermOutput, nodes []*dagui.CheckNode) []string {
 func (fe *frontendPretty) renderLogsLines(prefix string) []string {
 	fe.requestLogsOnRender(fe.ZoomedSpan)
 	logs := fe.logs.Logs[fe.ZoomedSpan]
-	if logs == nil || logs.UsedHeight() == 0 || fe.claims.hasLog(fe.ZoomedSpan) || fe.hasShownRootError() {
+	if logs == nil || fe.claims.hasLog(fe.ZoomedSpan) || fe.hasShownRootError() || !logs.HasOutput() || logs.UsedHeight() == 0 {
 		return nil
 	}
 	logs.SetHeight(fe.window.Height / 3)
@@ -7634,13 +7634,16 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 		(span.RollUpLogs || fe.shellTranscript()) && row.Depth == 0 && !row.Expanded &&
 		!fe.shouldRenderInlineTests(row) && !fe.rollsUpSubChecks(row) {
 		// in shell mode, we print top-level command logs unindented, like shells
-		// usually does
-		if logs := fe.logs.Logs[row.Span.ID]; logs != nil && logs.UsedHeight() > 0 {
+		// usually does. Check for output without laying the log out: most of
+		// these rows are completed and draw nothing.
+		if logs := fe.logs.Logs[row.Span.ID]; logs != nil && logs.HasOutput() {
 			if fe.shellTranscript() {
-				unindent := *row
-				unindent.Depth = -1
-				fe.renderLogs(out, r, &unindent, logs, logs.UsedHeight(), prefix, false)
-			} else if row.Span.RollUpLogs && (row.IsRunningOrChildRunning || row.Span.IsFailedOrCausedFailure()) {
+				if height := logs.UsedHeight(); height > 0 {
+					unindent := *row
+					unindent.Depth = -1
+					fe.renderLogs(out, r, &unindent, logs, height, prefix, false)
+				}
+			} else if row.Span.RollUpLogs && (row.IsRunningOrChildRunning || row.Span.IsFailedOrCausedFailure()) && logs.UsedHeight() > 0 {
 				// Show rolled-up logs while the span is running, and keep them on
 				// failure so the reason survives in the final report -- otherwise a
 				// failed rolled-up span (e.g. a generator whose exec failed)
@@ -8103,7 +8106,7 @@ func (fe *frontendPretty) renderRootCauseSection(ctx tuist.Context, r *renderer,
 			// logs the tree didn't show -- a row that printed a bare error
 			// with its logs collapsed still needs its detail surfaced.
 			logs := fe.logs.Logs[origin.ID]
-			if logs == nil || logs.UsedHeight() == 0 || fe.claims.hasLog(origin.ID) {
+			if logs == nil || fe.claims.hasLog(origin.ID) || !logs.HasOutput() || logs.UsedHeight() == 0 {
 				continue
 			}
 		}
@@ -8383,7 +8386,7 @@ func (fe *frontendPretty) renderToolOutputSummary(out TermOutput, span *dagui.Sp
 		return
 	}
 	logs := fe.logs.Logs[span.ID]
-	if exec := toolCallExecSpan(span); (logs == nil || logs.UsedHeight() == 0) && exec != nil {
+	if exec := toolCallExecSpan(span); (logs == nil || !logs.HasOutput() || logs.UsedHeight() == 0) && exec != nil {
 		logs = fe.logs.Logs[exec.ID]
 	}
 	if logs == nil {
