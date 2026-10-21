@@ -30,6 +30,10 @@ func TestSelectOnlyFallsBackBeforeImport(t *testing.T) {
 		{"unknown", errors.New("connection configuration invalid"), false},
 		{"engine unavailable", fmt.Errorf("%w: %w", ErrEngineUnavailable, errors.New("no container runtime")), true},
 		{"engine connect timeout", fmt.Errorf("%w: %w", ErrEngineUnavailable, context.DeadlineExceeded), true},
+		// A nested client is never asked: the CLI reports it as unavailable
+		// before connecting, while a refusal it did receive stays final.
+		{"nested client", fmt.Errorf("%w: nested client", ErrEngineUnavailable), true},
+		{"nested client refused", &archive.RequestError{Kind: archive.ErrorTransient, StatusCode: http.StatusUnauthorized, Err: errors.New("archive API requires main client authority")}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			opened, closed := false, false

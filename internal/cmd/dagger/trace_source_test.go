@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"testing"
 
+	"github.com/dagger/dagger/engine/archive"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/internal/tracesource"
 	"github.com/stretchr/testify/require"
@@ -79,4 +81,30 @@ func TestEngineTraceWithoutRuntimeFallsBackToCloud(t *testing.T) {
 		})
 		require.Error(t, err)
 	})
+}
+
+// TestEngineTraceInsideSessionReadsCloud: inside a Dagger session the CLI
+// would be a nested client, which the archive API always refuses (401, main
+// client authority). The engine is skipped up front, so Cloud is read, while
+// an authority refusal of a main client still stays final.
+func TestEngineTraceInsideSessionReadsCloud(t *testing.T) {
+	t.Setenv("DAGGER_SESSION_PORT", "1234")
+	cloudOpened := false
+	_, _, err := tracesource.Select(t.Context(), func(ctx context.Context) (tracesource.Source, func() error, error) {
+		return openEngineTrace(ctx, "2f123ba77bf7bd2d4db2f70ed20613e8")
+	}, func(context.Context) (tracesource.Source, func() error, error) {
+		cloudOpened = true
+		return nil, nil, nil
+	})
+	require.NoError(t, err)
+	require.True(t, cloudOpened, "a nested client reads Cloud")
+
+	refused := &archive.RequestError{Kind: archive.ErrorTransient, StatusCode: http.StatusUnauthorized}
+	_, _, err = tracesource.Select(t.Context(), func(context.Context) (tracesource.Source, func() error, error) {
+		return nil, nil, refused
+	}, func(context.Context) (tracesource.Source, func() error, error) {
+		t.Fatal("an authority refusal must not fall back")
+		return nil, nil, nil
+	})
+	require.ErrorIs(t, err, refused)
 }
