@@ -200,7 +200,7 @@ func (term *Vterm) searchMatchRowsLocked() []int {
 	if term.searchCached && term.searchKey == key {
 		return term.searchRows
 	}
-	if term.vt == nil && !term.cache.hasRoom(max(term.terminalBuf.Len(), term.rawBuf.Len())) {
+	if term.vt == nil && !term.cache.hasRoom(max(term.terminalBuf.Len(), term.rawLocked().Len())) {
 		// Searching must not evict terminals that are being displayed, nor
 		// thrash the cache when there are more logs than it holds: search a
 		// throwaway terminal and keep only its match rows.

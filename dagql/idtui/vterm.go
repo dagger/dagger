@@ -60,8 +60,10 @@ type Vterm struct {
 	searchKey    vtermSearchKey
 	searchCached bool
 	// Regular terminal buffer
-	viewBuf     *bytes.Buffer
+	viewBuf *bytes.Buffer
+	// rawBuf is empty until rawSeparate; see separateRawLocked.
 	rawBuf      *logBuffer
+	rawSeparate bool
 	needsRedraw bool
 
 	// Search highlight state. When SearchQuery is non-empty, matching
@@ -109,6 +111,9 @@ func (term *Vterm) WriteMarkdown(p []byte) (int, error) {
 	if term.segments != nil {
 		return term.writeMediaText(p, true, false)
 	}
+	if err := term.separateRawLocked(); err != nil {
+		return 0, err
+	}
 	n, err := term.markdownBuf.Write(p)
 	if err != nil {
 		return n, err
@@ -131,6 +136,9 @@ func (term *Vterm) WriteDiff(p []byte) (int, error) {
 	if term.segments != nil {
 		return term.writeMediaText(p, false, true)
 	}
+	if err := term.separateRawLocked(); err != nil {
+		return 0, err
+	}
 	highlighted := highlightDiff(term.Profile, string(p))
 	if err := term.writeTerminalLocked([]byte(highlighted)); err != nil {
 		return 0, err
@@ -152,11 +160,39 @@ func (term *Vterm) Write(p []byte) (int, error) {
 	if err := term.writeTerminalLocked(p); err != nil {
 		return 0, err
 	}
+	if !term.rawSeparate {
+		return len(p), nil
+	}
 	n, err := term.rawBuf.Write(p)
 	if err != nil {
 		term.storageErr = err
 	}
 	return n, err
+}
+
+// separateRawLocked is called before the first write whose raw bytes differ
+// from the terminal stream (Markdown, diffs, media). Until then the raw log
+// is exactly terminalBuf, so ordinary output is not stored, or spilled to
+// disk, twice.
+func (term *Vterm) separateRawLocked() error {
+	if term.rawSeparate {
+		return nil
+	}
+	term.rawSeparate = true
+	if err := term.terminalBuf.replay(term.rawBuf); err != nil {
+		term.storageErr = err
+		return err
+	}
+	return nil
+}
+
+// rawLocked is the buffer holding the bytes written to the log, before any
+// highlighting or rendering.
+func (term *Vterm) rawLocked() *logBuffer {
+	if term.rawSeparate {
+		return term.rawBuf
+	}
+	return term.terminalBuf
 }
 
 func (term *Vterm) UsedHeight() int {
@@ -635,7 +671,7 @@ func (term *Vterm) Print(w io.Writer) error {
 		return err
 	}
 	if term.segments != nil {
-		text, err := term.rawBuf.contents()
+		text, err := term.rawLocked().contents()
 		if err != nil {
 			return err
 		}
@@ -672,12 +708,12 @@ func (term *Vterm) PrintRaw(w io.Writer) error {
 	}
 	if term.Profile == termenv.Ascii {
 		// Agent / NO_COLOR mode: strip only ANSI escapes, not log content.
-		text, err := term.rawBuf.contents()
+		text, err := term.rawLocked().contents()
 		if err != nil {
 			return err
 		}
 		_, err = io.WriteString(w, ansi.Strip(text))
 		return err
 	}
-	return term.rawBuf.replay(w)
+	return term.rawLocked().replay(w)
 }

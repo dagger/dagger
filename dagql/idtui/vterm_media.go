@@ -42,6 +42,9 @@ func (term *Vterm) WriteMedia(media dagui.MediaRecord, fallback string) {
 
 	term.mediaFollow = term.mediaAtBottom()
 	if term.segments == nil {
+		// The terminal stream moves into a segment below; the raw log now
+		// diverges from it. A storage error is reported by the view.
+		_ = term.separateRawLocked()
 		term.segments = []vtermSegment{}
 		// Keep pre-media ordering, but defer the terminal snapshot until layout.
 		// Merely receiving an image must not expand all preceding text into cells.

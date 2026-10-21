@@ -157,7 +157,7 @@ func TestPrettyLogsExportContinuesPastStorageError(t *testing.T) {
 		frontendTestLogRecord(healthy, otellog.StringValue("hello\n")),
 	})
 	require.Error(t, err)
-	require.Equal(t, "hello\n", logs.Logs[dagui.SpanID{SpanID: healthy}].rawBuf.String(),
+	require.Equal(t, "hello\n", rawLog(logs.Logs[dagui.SpanID{SpanID: healthy}]),
 		"a failed buffer must not drop other spans' records in the batch")
 
 	// The failed buffer's error is sticky; later batches still reach others.
@@ -166,7 +166,7 @@ func TestPrettyLogsExportContinuesPastStorageError(t *testing.T) {
 		frontendTestLogRecord(healthy, otellog.StringValue("world\n")),
 	})
 	require.Error(t, err)
-	require.Equal(t, "hello\nworld\n", logs.Logs[dagui.SpanID{SpanID: healthy}].rawBuf.String())
+	require.Equal(t, "hello\nworld\n", rawLog(logs.Logs[dagui.SpanID{SpanID: healthy}]))
 }
 
 func TestReportSessionToleratesLogStorageError(t *testing.T) {
@@ -205,7 +205,7 @@ func TestTelemetryDataRecordsExcludedFromFrontendLogs(t *testing.T) {
 		require.NotContains(t, output.String(), "reserved malformed payload")
 		knownLogs := fe.logs.testLogs[dagui.SpanID{SpanID: knownSpanID}]
 		require.NotNil(t, knownLogs)
-		require.Equal(t, "before\nafter\n", knownLogs.rawBuf.String())
+		require.Equal(t, "before\nafter\n", rawLog(knownLogs))
 		requireRenderableFrontendLogs(t, fe.logs.pendingLogs[dagui.SpanID{SpanID: unknownSpanID}])
 		require.Len(t, fe.logs.pendingLogs, 1, "reserved records remained buffered for missing spans")
 	})
@@ -228,7 +228,7 @@ func TestTelemetryDataRecordsExcludedFromFrontendLogs(t *testing.T) {
 		require.NoError(t, fe.LogExporter().Export(context.Background(), knownRecords))
 		spanLogs := fe.logs.Logs[dagui.SpanID{SpanID: knownSpanID}]
 		require.NotNil(t, spanLogs)
-		require.Equal(t, "before\nafter\n", spanLogs.rawBuf.String())
+		require.Equal(t, "before\nafter\n", rawLog(spanLogs))
 	})
 
 	t.Run("report", func(t *testing.T) {
@@ -237,7 +237,7 @@ func TestTelemetryDataRecordsExcludedFromFrontendLogs(t *testing.T) {
 		require.NoError(t, session.LogExporter().Export(context.Background(), knownRecords))
 		spanLogs := session.logs.Logs[dagui.SpanID{SpanID: knownSpanID}]
 		require.NotNil(t, spanLogs)
-		require.Equal(t, "before\nafter\n", spanLogs.rawBuf.String())
+		require.Equal(t, "before\nafter\n", rawLog(spanLogs))
 	})
 }
 
@@ -2989,7 +2989,7 @@ func TestOpenLogStreamReleasesSpilledStorage(t *testing.T) {
 	first := fe.OpenLogStream(prettyTestSpanID(1), "first")
 	_, err := io.WriteString(first, strings.Repeat("spilled line\n", 10000))
 	require.NoError(t, err)
-	firstPath := fe.logStream.vt.rawBuf.path
+	firstPath := fe.logStream.vt.terminalBuf.path
 	require.NotEmpty(t, firstPath, "the stream spilled to disk")
 	require.FileExists(t, firstPath)
 
@@ -3002,7 +3002,7 @@ func TestOpenLogStreamReleasesSpilledStorage(t *testing.T) {
 
 	_, err = io.WriteString(second, strings.Repeat("spilled line\n", 10000))
 	require.NoError(t, err)
-	secondPath := fe.logStream.vt.rawBuf.path
+	secondPath := fe.logStream.vt.terminalBuf.path
 	require.FileExists(t, secondPath)
 	fe.logStream.close()
 	require.NoFileExists(t, secondPath)

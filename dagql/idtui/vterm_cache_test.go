@@ -32,9 +32,10 @@ func TestVtermLazySpillAndCache(t *testing.T) {
 		require.NoError(t, err)
 		term.SetSearchHighlight("", -1)
 		require.Nil(t, term.vt, "ingestion, width, and clearing search must remain lazy")
-		require.Zero(t, term.rawBuf.memory.Len())
 		require.Zero(t, term.terminalBuf.memory.Len())
-		require.NotEmpty(t, term.rawBuf.path)
+		require.NotEmpty(t, term.terminalBuf.path)
+		require.Zero(t, term.rawBuf.Len(), "plain terminal output is spooled once")
+		require.Empty(t, term.rawBuf.path)
 		terms[i] = term
 	}
 	for _, term := range terms {
@@ -50,10 +51,52 @@ func TestVtermLazySpillAndCache(t *testing.T) {
 	count, _ := terms[0].Search("searchable", 0)
 	require.Equal(t, 1500, count, "search includes the complete spooled log")
 	require.Equal(t, 1500, len(terms[0].SearchMatchRows()))
-	path := terms[0].rawBuf.path
+	path := terms[0].terminalBuf.path
 	terms[0].Close()
 	_, err := os.Stat(path)
 	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+// rawLog is what PrintRaw replays, before ANSI stripping.
+func rawLog(term *Vterm) string {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	return term.rawLocked().String()
+}
+
+// The raw log shares the terminal spool until a write's raw bytes diverge
+// from what the terminal interprets.
+func TestVtermRawLogSharesTerminalSpool(t *testing.T) {
+	for _, diverge := range []struct {
+		name  string
+		write func(*Vterm) error
+		raw   string
+	}{
+		{"diff", func(term *Vterm) error { _, err := term.WriteDiff([]byte("-old\n+new\n")); return err }, "-old\n+new\n"},
+		{"markdown", func(term *Vterm) error { _, err := term.WriteMarkdown([]byte("**bold**\n")); return err }, "**bold**\n"},
+		{"media", func(term *Vterm) error { term.WriteMedia(dagui.MediaRecord{Kind: "audio"}, "[audio]"); return nil }, "[audio]\n"},
+	} {
+		t.Run(diverge.name, func(t *testing.T) {
+			term := NewVterm(termenv.ANSI)
+			t.Cleanup(term.Close)
+			text := strings.Repeat("\x1b[31mspilled\x1b[0m line\r\n", 3000)
+			_, err := io.WriteString(term, text)
+			require.NoError(t, err)
+			require.NotEmpty(t, term.terminalBuf.path)
+			require.Zero(t, term.rawBuf.Len())
+			require.Empty(t, term.rawBuf.path, "no second spool for identical bytes")
+			var raw bytes.Buffer
+			require.NoError(t, term.PrintRaw(&raw))
+			require.Equal(t, text, raw.String())
+
+			require.NoError(t, diverge.write(term))
+			_, err = io.WriteString(term, "after\n")
+			require.NoError(t, err)
+			raw.Reset()
+			require.NoError(t, term.PrintRaw(&raw))
+			require.Equal(t, text+diverge.raw+"after\n", raw.String())
+		})
+	}
 }
 
 func TestVtermCacheReplaysLogicalANSI(t *testing.T) {
