@@ -41,7 +41,6 @@ import (
 	"github.com/dagger/dagger/util/cleanups"
 	"github.com/google/uuid"
 	"github.com/moby/sys/user"
-	"github.com/opencontainers/cgroups"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sourcegraph/conc/pool"
 	"go.opentelemetry.io/otel/attribute"
@@ -1745,9 +1744,7 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 	}
 
 	state.cleanups.Add("runc delete container", func() error {
-		return deleteContainer(ctx, state.id, cgroups.IsCgroup2UnifiedMode(), c.Runc.Delete, func(recoveryCtx context.Context) error {
-			return killContainerCgroup(recoveryCtx, state.id, state.spec.Linux.CgroupsPath)
-		})
+		return c.Runc.Delete(context.WithoutCancel(ctx), state.id, &runc.DeleteOpts{})
 	})
 
 	// Wake the existing sampler when runc starts. The cgroup may not exist at
