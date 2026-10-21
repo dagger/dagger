@@ -24,9 +24,9 @@ func (dir *Directory) IsScratch() bool {
 		return true
 	}
 	if dir.transferPending != nil {
-		return dir.transferPending.LazyKind == "scratch"
+		return dir.transferPending.LazyKind == persistedDirectoryLazyKindScratch
 	}
-	return dir.lazyKind == "scratch"
+	return dir.lazyKind == persistedDirectoryLazyKindScratch
 }
 
 func validateDirectoryScratchPayload(raw json.RawMessage) error {

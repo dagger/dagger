@@ -111,6 +111,8 @@ func requireSingleChangesetMode(t *testing.T, ctx context.Context, srv *dagql.Se
 	changeID, err := change.ID()
 	require.NoError(t, err)
 	var merged dagql.ObjectResult[*core.Changeset]
+	// A mount "operation not permitted" error here means the snapshot shortcut
+	// was not taken: the fallback Git merge cannot mount in this package test.
 	require.NoError(t, srv.Select(ctx, parent, &merged, dagql.Selector{Field: "withChangesets", Args: []dagql.NamedInput{
 		{Name: "changes", Value: dagql.ArrayInput[dagql.ID[*core.Changeset]]{dagql.NewID[*core.Changeset](changeID)}},
 	}}))
