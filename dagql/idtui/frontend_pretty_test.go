@@ -2963,3 +2963,31 @@ func TestOpenLogStreamPagesAndReopens(t *testing.T) {
 	require.Equal(t, "lint", fe.logPager.Title)
 	require.Contains(t, fe.logPager.Logs.View(), "hello from lint")
 }
+
+func TestOpenLogStreamReleasesSpilledStorage(t *testing.T) {
+	fe := NewWithDB(io.Discard, dagui.NewDB())
+	fe.reportOnly = true // run dispatched work synchronously
+	fe.tui.SetFocus(fe)
+	fe.window = windowSize{Width: 80, Height: 20}
+
+	first := fe.OpenLogStream(prettyTestSpanID(1), "first")
+	_, err := io.WriteString(first, strings.Repeat("spilled line\n", 10000))
+	require.NoError(t, err)
+	firstPath := fe.logStream.vt.rawBuf.path
+	require.NotEmpty(t, firstPath, "the stream spilled to disk")
+	require.FileExists(t, firstPath)
+
+	// Replacing the stream releases the old one; its late writes are dropped.
+	second := fe.OpenLogStream(prettyTestSpanID(2), "second")
+	require.NoFileExists(t, firstPath)
+	_, err = io.WriteString(first, strings.Repeat("late line\n", 10000))
+	require.NoError(t, err)
+	require.NoFileExists(t, firstPath)
+
+	_, err = io.WriteString(second, strings.Repeat("spilled line\n", 10000))
+	require.NoError(t, err)
+	secondPath := fe.logStream.vt.rawBuf.path
+	require.FileExists(t, secondPath)
+	fe.logStream.close()
+	require.NoFileExists(t, secondPath)
+}

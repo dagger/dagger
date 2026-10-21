@@ -1664,7 +1664,11 @@ func traceMessage(profile termenv.Profile, url string, msg string) string {
 // prints the primary output to the appropriate stdout/stderr streams.
 func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run func(context.Context) (cleanups.CleanupF, error)) (rerr error) {
 	defer func() { rerr = errors.Join(rerr, fe.db.ClosePrimaryLogs()) }()
-	defer fe.logs.Close()
+	defer func() {
+		fe.logs.Close()
+		// Like the span buffers: the --log pager's stream spills to disk too.
+		fe.logStream.close()
+	}()
 	if opts.TooFastThreshold == 0 {
 		opts.TooFastThreshold = 100 * time.Millisecond
 	}
@@ -4457,7 +4461,7 @@ func (fe *frontendPretty) recalculateViewLocked() {
 
 	if fe.logProvider != nil {
 		// The primary output is written at end of run from OUTSIDE the render
-		// tree (renderPrimaryOutput reads db.PrimaryLogs), so no view fetches it
+		// tree (renderPrimaryOutput reads db.WalkPrimaryLogs), so no view fetches it
 		// on render -- request it eagerly in both modes. It's a single span
 		// (descendants=false), not the rolled-up build log, so it isn't the
 		// over-fetch interactive cares about.

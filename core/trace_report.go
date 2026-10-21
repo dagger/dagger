@@ -187,6 +187,8 @@ func renderTraceReport(ctx context.Context, root string, opts traceReportOpts) (
 	if err != nil {
 		return traceReportResult{}, err
 	}
+	// Large logs spill to disk; release them once the report is rendered.
+	defer session.Close()
 	return renderTraceReportSession(session, root, opts)
 }
 
@@ -220,7 +222,7 @@ func traceReportClientDB(ctx context.Context) (*clientdb.DB, error) {
 // loaded span's parent pointer resolves to an unreceived placeholder. Logs
 // are fetched for the walk only: ancestors above root frame the tree but
 // render no output of their own in a scoped report.
-func loadTraceReportSession(ctx context.Context, clientDB *clientdb.DB, root string) (*idtui.ReportSession, error) {
+func loadTraceReportSession(ctx context.Context, clientDB *clientdb.DB, root string) (_ *idtui.ReportSession, rerr error) {
 	if !clientDB.HasSpan(root) {
 		return nil, fmt.Errorf("no span %q in this trace", root)
 	}
@@ -229,6 +231,11 @@ func loadTraceReportSession(ctx context.Context, clientDB *clientdb.DB, root str
 	scope := read.AncestorClosure(walk)
 
 	session := idtui.NewReportSession(dagui.NewDB())
+	defer func() {
+		if rerr != nil {
+			session.Close()
+		}
+	}()
 	if err := ingestSpanScope(ctx, read, session.DB(), scope); err != nil {
 		return nil, err
 	}

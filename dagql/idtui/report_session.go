@@ -51,6 +51,10 @@ func NewReportSession(db *dagui.DB) *ReportSession {
 // DB returns the session's telemetry DB.
 func (s *ReportSession) DB() *dagui.DB { return s.db }
 
+// Close releases the session's log buffers, including any disk-backed storage
+// large logs spilled to. The session must not be used afterwards.
+func (s *ReportSession) Close() { s.logs.Close() }
+
 // LogExporter ingests log records into the session. Logs have to flow through
 // here rather than through db.LogExporter() alone: the rendered ┃ log lines
 // come from these buffers, while the DB only tracks which spans have logs.
