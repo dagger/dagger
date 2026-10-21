@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	"charm.land/lipgloss/v2"
@@ -59,10 +60,8 @@ type Vterm struct {
 	searchRows   []int
 	searchKey    vtermSearchKey
 	searchCached bool
-	// searchedTransiently is set while the search rows of an evicted log
-	// come from a throwaway terminal, of its content at that version.
-	searchedTransiently    bool
-	searchTransientVersion uint64
+	// searchedAt is when an evicted log was last searched transiently.
+	searchedAt time.Time
 	// Regular terminal buffer
 	viewBuf *bytes.Buffer
 	// rawBuf is empty until rawSeparate; see separateRawLocked.

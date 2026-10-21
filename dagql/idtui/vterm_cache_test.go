@@ -301,6 +301,8 @@ func TestPrettyLogsSearchFramesStayOffTerminalCache(t *testing.T) {
 	}
 	fe.logs.SetWidth(80)
 	fe.recalculateViewLocked()
+	now := time.Unix(100, 0)
+	fe.logs.Cache.now = func() time.Time { return now }
 	fe.searchQuery = "needle"
 	replays := func() int {
 		total := 0
@@ -312,6 +314,7 @@ func TestPrettyLogsSearchFramesStayOffTerminalCache(t *testing.T) {
 		return total
 	}
 	frame := func() {
+		now = now.Add(100 * time.Millisecond)
 		fe.Update() // the root renders, and refreshes search, on every frame
 		_ = fe.tui.RenderLines()
 	}
@@ -325,35 +328,37 @@ func TestPrettyLogsSearchFramesStayOffTerminalCache(t *testing.T) {
 	require.Equal(t, 40, replays(), "unchanged logs are not replayed on later frames")
 	require.Len(t, fe.searchMatches, 40*20)
 
-	// New output is found on the next frame. A log searched transiently that
-	// changes is streaming: it is read once more, then searched incrementally.
-	var evicted *Vterm
+	// Output streaming into every log, more than the cache holds, is found
+	// within a second; an evicted log is read at most once a second.
+	var evicted []*Vterm
 	for _, logs := range fe.logs.Logs {
 		if logs.vt == nil {
-			evicted = logs
-			break
+			evicted = append(evicted, logs)
 		}
 	}
-	require.NotNil(t, evicted)
-	_, err := io.WriteString(evicted, "another needle\r\n")
-	require.NoError(t, err)
-	frame()
-	require.Equal(t, 41, replays())
-	require.Len(t, fe.searchMatches, 40*20+1)
-	require.NotNil(t, evicted.vt)
-	for range 3 {
-		_, err := io.WriteString(evicted, "more needles\r\n")
-		require.NoError(t, err)
+	require.Len(t, evicted, 40-terminalCacheCount)
+	for range 20 {
+		for _, logs := range fe.logs.Logs {
+			_, err := io.WriteString(logs, "another needle\r\n")
+			require.NoError(t, err)
+		}
 		frame()
 	}
-	require.Equal(t, 41, replays(), "a streaming log is not replayed per change")
-	require.Len(t, fe.searchMatches, 40*20+4)
+	require.LessOrEqual(t, replays(), 40+3*len(evicted))
+	for range 10 {
+		frame()
+	}
+	require.Len(t, fe.searchMatches, 40*(20+20))
+	for _, logs := range evicted {
+		require.Nil(t, logs.vt, "searching an evicted log leaves it evicted")
+	}
 
 	fe.clearSearch()
+	before := replays()
 	for range 2 {
 		frame()
 	}
-	require.Equal(t, 41, replays(), "clearing search does not materialize logs")
+	require.Equal(t, before, replays(), "clearing search does not materialize logs")
 }
 
 // Logs a live display renders together, at their own rates, must not evict

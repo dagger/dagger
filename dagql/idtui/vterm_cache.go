@@ -64,6 +64,14 @@ func (c *terminalCache) setLive(live bool) {
 	c.live = live
 }
 
+// clock is the cache's time source; c may be nil.
+func (c *terminalCache) clock() time.Time {
+	if c == nil {
+		return time.Now()
+	}
+	return c.now()
+}
+
 // hasRoom reports whether a terminal of about cells would fit without
 // evicting another one.
 func (c *terminalCache) hasRoom(cells int) bool {
@@ -148,7 +156,6 @@ func (term *Vterm) evictLocked() {
 }
 
 func (term *Vterm) materializeLocked() {
-	term.searchedTransiently = false
 	if term.segments != nil {
 		term.layoutMedia()
 		term.cache.touch(term)
@@ -214,14 +221,21 @@ func (term *Vterm) searchMatchRowsLocked() []int {
 	if term.searchCached && term.searchKey == key {
 		return term.searchRows
 	}
-	streaming := term.searchedTransiently && term.searchTransientVersion != term.version
-	if term.vt == nil && !streaming && !term.cache.hasRoom(max(term.terminalBuf.Len(), term.rawLocked().Len())) {
+	if term.vt == nil && !term.cache.hasRoom(max(term.terminalBuf.Len(), term.rawLocked().Len())) {
 		// Searching must not evict terminals that are being displayed, nor
 		// thrash the cache when there are more logs than it holds: search a
-		// throwaway terminal and keep only its match rows. A log that changes
-		// after that is streaming: replaying it on every change would cost
-		// O(log) per frame, so it is materialized and searched incrementally.
+		// throwaway terminal and keep only its match rows.
+		now := term.cache.clock()
+		stale := term.searchKey
+		stale.version = key.version
+		if term.searchCached && stale == key && now.Sub(term.searchedAt) < terminalCacheShownFor {
+			// Streaming output into an evicted log: re-reading all of it on
+			// every change would cost O(log) per frame, so its previous rows
+			// are served for a moment.
+			return term.searchRows
+		}
 		term.searchTransientLocked()
+		term.searchedAt = now
 	} else {
 		if term.vt == nil {
 			term.materializeLocked()
@@ -258,8 +272,6 @@ func (term *Vterm) searchTransientLocked() {
 		term.layoutDirty = true
 		term.mediaRows = nil
 		term.Offset, term.follow, term.mediaFollow, term.mediaActive = offset, follow, mediaFollow, mediaActive
-		term.searchedTransiently = true
-		term.searchTransientVersion = term.version
 	}()
 	if term.segments != nil {
 		term.layoutMedia()
