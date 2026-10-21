@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -447,12 +448,13 @@ func TestExportLogAttrs(t *testing.T) {
 	require.NotContains(t, attrs, "skipped_roots", "past the limit, skipped roots are only counted")
 }
 
-// requireBusySkip checks that skip leaves out root as busy, saying why.
+// requireBusySkip checks that skip leaves out root, a busyFile, as busy,
+// saying why: its evaluation is running.
 func requireBusySkip(t *testing.T, root uint64, skip protocol.SkippedRoot) {
 	t.Helper()
 	require.Equal(t, root, skip.Number)
 	require.Equal(t, protocol.SkipBusy, skip.Reason)
-	require.Contains(t, skip.Message, dagql.ErrPersistStateNotReady.Error())
+	require.Equal(t, fmt.Sprintf("%s: result %d whole evaluation", dagql.ErrPersistStateNotReady, root), skip.Message)
 }
 
 // logAttrs maps a log line's alternating keys and values.
