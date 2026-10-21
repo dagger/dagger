@@ -109,6 +109,30 @@ func TestDisplayLogsLiveScopeFollowsNewSpans(t *testing.T) {
 	require.Empty(t, ids)
 }
 
+// Spans stored before the scope was resolved can still join it later: a
+// child whose parent arrives after it, and a service span whose cause link
+// to the selection arrives in a later snapshot.
+func TestDisplayLogsLiveScopePlacesKnownSpansLater(t *testing.T) {
+	db := logQueryStore(t)
+	const (
+		root = "00000000000000a1"
+		mid  = "00000000000000a2"
+		kid  = "00000000000000a3"
+		svc  = "00000000000000b1"
+	)
+	_, err := db.AppendSpans([]Span{logQuerySpan(root, ""), logQuerySpan(kid, mid), logQuerySpan(svc, "")})
+	require.NoError(t, err)
+	scope := db.LiveLogScope([]archive.LogSpan{{SpanID: root, Descendants: true}})
+	linked := logQuerySpan(svc, "")
+	linked.Links = linksJSON(t, spanLink(t, selectionTrace, root, telemetry.LinkPurposeCause))
+	_, err = db.AppendSpans([]Span{logQuerySpan(mid, root), linked})
+	require.NoError(t, err)
+	_, err = db.AppendLogs([]Log{selectionLog(t, kid, selectionText("kid")), selectionLog(t, svc, selectionText("svc"))})
+	require.NoError(t, err)
+	ids, _ := readDisplay(t, db, scope, 0, db.HighWater().Logs)
+	require.Equal(t, []int64{1, 2}, ids)
+}
+
 func TestLogsWithoutDisplayReportsPresence(t *testing.T) {
 	db := logQueryStore(t)
 	_, err := db.AppendLogs([]Log{
