@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"maps"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 
 	"github.com/containerd/containerd/v2/core/mount"
 )
@@ -64,17 +66,7 @@ func (ws *gitMergeWorkspace) restoreFileModes(ctx context.Context, base map[stri
 	if err != nil {
 		return err
 	}
-	// A rename on one side can carry the other side's edits to the new path.
-	// Make both paths' mode candidates available at that destination too.
-	base = maps.Clone(base)
-	for _, content := range contents {
-		for newPath, oldPath := range content.paths.withoutGitMeta().Renamed {
-			modes[newPath] = append(modes[newPath], modes[oldPath]...)
-			if mode, ok := base[oldPath]; ok {
-				base[newPath] = mode
-			}
-		}
-	}
+	base = mergeRenamedFileModes(base, modes, contents...)
 	var recoveredRenames bool
 	// Walking the result avoids following a symlink that replaced a base
 	// directory and accidentally chmodding its target through an old child.
@@ -110,34 +102,7 @@ func (ws *gitMergeWorkspace) restoreFileModes(ctx context.Context, base map[stri
 		if err != nil {
 			return TrimErrPathPrefix(err, ws.root)
 		}
-		slices.SortStableFunc(candidates, func(a, b mergeFileMode) int {
-			// A changed permission wins over an unchanged base permission.
-			aChanged, bChanged := a.mode != base[p], b.mode != base[p]
-			if aChanged != bChanged {
-				if aChanged {
-					return -1
-				}
-				return 1
-			}
-			if preferTheirs {
-				return b.side - a.side
-			}
-			return a.side - b.side
-		})
-		for _, candidate := range candidates {
-			// Git tracks only the owner's executable bit. Do not undo its
-			// mode merge when the other side changed executability.
-			if candidate.mode&0o100 != info.Mode()&0o100 {
-				continue
-			}
-			if info.Mode() != candidate.mode {
-				if err := os.Chmod(full, candidate.mode); err != nil {
-					return TrimErrPathPrefix(err, ws.root)
-				}
-			}
-			break
-		}
-		return nil
+		return TrimErrPathPrefix(restoreMergeFileMode(full, info.Mode(), base[p], candidates, preferTheirs), ws.root)
 	})
 }
 
@@ -161,4 +126,123 @@ func (ws *gitMergeWorkspace) recoverFileModeRenames(ctx context.Context, modes m
 		}
 	}
 	return nil
+}
+
+func mergeRenamedFileModes(base map[string]os.FileMode, modes map[string][]mergeFileMode, contents ...*changesetContent) map[string]os.FileMode {
+	// A rename on one side can carry the other side's edits to the new path.
+	// Make both paths' mode candidates available at that destination too.
+	base = maps.Clone(base)
+	for _, content := range contents {
+		for newPath, oldPath := range content.paths.withoutGitMeta().Renamed {
+			modes[newPath] = append(modes[newPath], modes[oldPath]...)
+			if mode, ok := base[oldPath]; ok {
+				base[newPath] = mode
+			}
+		}
+	}
+	return base
+}
+
+func restoreMergeFileMode(full string, mode, base os.FileMode, candidates []mergeFileMode, preferTheirs bool) error {
+	slices.SortStableFunc(candidates, func(a, b mergeFileMode) int {
+		// A changed permission wins over an unchanged base permission.
+		aChanged, bChanged := a.mode != base, b.mode != base
+		if aChanged != bChanged {
+			if aChanged {
+				return -1
+			}
+			return 1
+		}
+		if preferTheirs {
+			return b.side - a.side
+		}
+		return a.side - b.side
+	})
+	for _, candidate := range candidates {
+		// Git tracks only the owner's executable bit. Do not undo its
+		// mode merge when the other side changed executability.
+		if candidate.mode&0o100 != mode&0o100 {
+			continue
+		}
+		if mode != candidate.mode {
+			if err := os.Chmod(full, candidate.mode); err != nil {
+				return err
+			}
+		}
+		break
+	}
+	return nil
+}
+
+// changedFileModes reads only the base paths a native workspace merge can
+// rewrite, retaining its ability to avoid walking the unchanged baseline.
+func (ws *gitMergeWorkspace) changedFileModes(contents ...*changesetContent) (map[string]os.FileMode, error) {
+	modes := make(map[string]os.FileMode)
+	for _, content := range contents {
+		paths := content.paths.withoutGitMeta()
+		for _, p := range slices.Concat(paths.Added, paths.Modified, paths.AllRemoved) {
+			if strings.HasSuffix(p, "/") {
+				continue
+			}
+			full, info, err := ws.changedFileModePath(p)
+			if err != nil {
+				return nil, err
+			}
+			if full != "" {
+				modes[p] = info.Mode()
+			}
+		}
+	}
+	return modes, nil
+}
+
+// restoreChangedFileModes applies the same permission merge as the general
+// merge, without scanning untouched files or requiring its temporary Git repo.
+func (ws *gitMergeWorkspace) restoreChangedFileModes(ctx context.Context, base map[string]os.FileMode, contents ...*changesetContent) error {
+	modes, err := mergeFileModeCandidates(ctx, base, contents...)
+	if err != nil {
+		return err
+	}
+	base = mergeRenamedFileModes(base, modes, contents...)
+	for p, candidates := range modes {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		full, info, err := ws.changedFileModePath(p)
+		if err != nil {
+			return err
+		}
+		if full == "" {
+			continue
+		}
+		if err := restoreMergeFileMode(full, info.Mode(), base[p], candidates, false); err != nil {
+			return TrimErrPathPrefix(err, ws.root)
+		}
+	}
+	return nil
+}
+
+func (ws *gitMergeWorkspace) changedFileModePath(p string) (string, os.FileInfo, error) {
+	full, err := RootPathWithoutFinalSymlink(ws.workDir, p)
+	if errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) || errors.Is(err, syscall.ELOOP) {
+		return "", nil, nil
+	}
+	if err != nil {
+		return "", nil, err
+	}
+	// Do not traverse a symlink that replaced a directory on an input side.
+	if full != filepath.Join(ws.workDir, filepath.FromSlash(p)) {
+		return "", nil, nil
+	}
+	info, err := os.Lstat(full)
+	if errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+		return "", nil, nil
+	}
+	if err != nil {
+		return "", nil, TrimErrPathPrefix(err, ws.root)
+	}
+	if !info.Mode().IsRegular() {
+		return "", nil, nil
+	}
+	return full, info, nil
 }
