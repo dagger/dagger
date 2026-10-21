@@ -27,6 +27,10 @@ const (
 	LogRecordsMetadata     = "metadata"
 )
 
+// MaxListenSpans bounds the subtrees one span selection may listen to.
+// Callers with more split them across requests.
+const MaxListenSpans = 256
+
 // LogSelection selects a span's own or descendant records. Records selects
 // ordinary output (including media), call payloads, or all historical records.
 // Control records remain exclusive to the verified bootstrap in every mode.
@@ -117,7 +121,7 @@ func parseSpanSelection(q url.Values) (*SpanSelection, error) {
 	if v := q.Get("view"); v != "" && v != "dagui" {
 		return nil, fmt.Errorf("invalid archive view %q", v)
 	}
-	if len(q["listen"]) > 256 {
+	if len(q["listen"]) > MaxListenSpans {
 		return nil, fmt.Errorf("too many listened spans")
 	}
 	for _, id := range q["listen"] {

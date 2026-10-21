@@ -107,14 +107,28 @@ func (a *Archive) options(traceID string, highWater int64) (archive.StreamOption
 	return archive.StreamOptions{HighWater: highWater, Unsealed: a.unsealed}, nil
 }
 
+// FetchSpans reads a span selection. Listened subtrees beyond what one archive
+// request accepts are read in successive requests; only the first includes
+// the priority roots it asked for.
 func (a *Archive) FetchSpans(ctx context.Context, traceID string, sel cloud.SpanSelection, cb func(context.Context, *coltracepb.ExportTraceServiceRequest) error) error {
 	opts, err := a.options(traceID, a.manifest.HighWater.Spans)
 	if err != nil {
 		return err
 	}
-	opts.Spans = &archive.SpanSelection{Full: !sel.Incremental && !sel.NoRoot && len(sel.Listen) == 0, NoRoot: sel.NoRoot, Listen: sel.Listen, DagUIView: sel.DagUIView}
-	_, err = a.reader.Traces(ctx, traceID, opts, func(_ int64, req *coltracepb.ExportTraceServiceRequest) error { return cb(ctx, req) })
-	return err
+	full := !sel.Incremental && !sel.NoRoot && len(sel.Listen) == 0
+	listen, noRoot := sel.Listen, sel.NoRoot
+	for {
+		chunk := listen[:min(len(listen), archive.MaxListenSpans)]
+		listen = listen[len(chunk):]
+		opts.Spans = &archive.SpanSelection{Full: full, NoRoot: noRoot, Listen: chunk, DagUIView: sel.DagUIView}
+		if _, err := a.reader.Traces(ctx, traceID, opts, func(_ int64, req *coltracepb.ExportTraceServiceRequest) error { return cb(ctx, req) }); err != nil {
+			return err
+		}
+		if len(listen) == 0 {
+			return nil
+		}
+		noRoot = true
+	}
 }
 
 func (a *Archive) FetchLogs(ctx context.Context, traceID string, sel cloud.LogSelection, cb func(context.Context, *collogspb.ExportLogsServiceRequest) error) error {

@@ -3,6 +3,7 @@ package tracesource
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -65,6 +66,37 @@ func TestArchiveSelectionsStayPinned(t *testing.T) {
 	require.EqualValues(t, 20, r.logs[0].HighWater)
 	require.ErrorContains(t, s.FetchSpans(t.Context(), "other", cloud.SpanSelection{}, cb), "pinned")
 	require.Len(t, r.spans, 2)
+}
+
+// TestArchiveListenIsChunked: the archive refuses more than MaxListenSpans
+// listened subtrees per request, so a large backfill (e.g. every surfaced
+// failed check of a big run) is split, with the roots asked for only once.
+func TestArchiveListenIsChunked(t *testing.T) {
+	r := &archiveReader{}
+	seal := time.Unix(123, 0)
+	s := NewArchive(r, archive.Manifest{TraceID: "trace", SealAt: &seal, HighWater: archive.HighWater{Spans: 10}})
+	ids := make([]string, 2*archive.MaxListenSpans+88)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("%016x", i+1)
+	}
+	batches := 0
+	require.NoError(t, s.FetchSpans(t.Context(), "trace", cloud.SpanSelection{Listen: ids, Incremental: true, DagUIView: true}, func(context.Context, *coltracepb.ExportTraceServiceRequest) error {
+		batches++
+		return nil
+	}))
+	require.Len(t, r.spans, 3)
+	require.Equal(t, 3, batches)
+	var got []string
+	for i, opts := range r.spans {
+		require.LessOrEqual(t, len(opts.Spans.Listen), archive.MaxListenSpans)
+		require.Equal(t, i > 0, opts.Spans.NoRoot, "only the first request includes the roots")
+		require.False(t, opts.Spans.Full)
+		require.True(t, opts.Spans.DagUIView)
+		_, err := opts.SelectionQuery("traces")
+		require.NoError(t, err, "every chunk is a valid archive request")
+		got = append(got, opts.Spans.Listen...)
+	}
+	require.Equal(t, ids, got)
 }
 
 type bootstrapReader struct {
