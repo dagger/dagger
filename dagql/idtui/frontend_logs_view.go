@@ -89,7 +89,14 @@ func (lv *LogsView) OnMount(tuist.Context) {
 	if lv.fe.reportOnly {
 		return
 	}
-	lv.fe.requestLogsWith(lv.spanID, lv.descendants)
+	if lv.toolArgs {
+		// A tool call's arguments are always the span's own logs.
+		lv.fe.requestLogsWith(lv.spanID, false)
+		return
+	}
+	// The roll-up is the span's (logDescendants), which requestLogs defers
+	// until a placeholder span has its metadata.
+	lv.fe.requestLogs(lv.spanID)
 }
 
 // sync updates the render inputs and bumps the tuist generation only when the

@@ -213,6 +213,10 @@ type frontendPretty struct {
 	// span; nil for live runs. requestedLogs dedups so each span is fetched once.
 	logProvider   func(dagui.SpanID, bool)
 	requestedLogs map[dagui.SpanID]bool
+	// deferredLogs holds log requests for spans known only from a log record
+	// (a placeholder): whether to roll up their descendants depends on span
+	// metadata that hasn't arrived, so they're requested when it does.
+	deferredLogs map[dagui.SpanID]bool
 
 	// spanProvider lazily fetches a span's children on demand when the user
 	// expands it (or it's surfaced/zoomed). Set by 'dagger trace' to fetch
@@ -2342,10 +2346,13 @@ func (fe *frontendPretty) RequestSurfacedLogs() {
 // requestedLogs dedup over setExpanded's own-logs-only request.
 func (fe *frontendPretty) RequestZoomLogs(id dagui.SpanID, descendants bool) {
 	fe.dispatch(func() {
-		if !descendants {
-			descendants = fe.logDescendants(id)
+		if descendants {
+			fe.requestLogsWith(id, true)
+			return
 		}
-		fe.requestLogsWith(id, descendants)
+		// Not loaded yet: its roll-up is decided once it arrives (the
+		// ExportSpans hook), not latched as own-logs-only now.
+		fe.requestLogs(id)
 	})
 }
 
@@ -2473,9 +2480,20 @@ func (fe *frontendPretty) requestLogsOnRender(id dagui.SpanID) {
 // requestLogs asks the log provider for a span's logs, once. It rolls up
 // descendant logs when the span is marked RollUpLogs (e.g. a check or test
 // whose real output lives in a sub-operation), mirroring the web UI.
+//
+// A span not received yet -- unloaded, or only a placeholder a log record
+// created -- doesn't carry the metadata that decision needs, so the request is
+// deferred until the span arrives (the ExportSpans hook) instead of latching
+// an own-logs-only fetch the roll-up could never replace.
 func (fe *frontendPretty) requestLogs(id dagui.SpanID) {
-	if _, ok := fe.db.Spans.Map[id]; !ok {
-		// Span not loaded yet; it'll be requested once it's surfaced.
+	if fe.logProvider == nil || !id.IsValid() || fe.requestedLogs[id] {
+		return
+	}
+	if span, ok := fe.db.Spans.Map[id]; !ok || !span.Received {
+		if fe.deferredLogs == nil {
+			fe.deferredLogs = make(map[dagui.SpanID]bool)
+		}
+		fe.deferredLogs[id] = true
 		return
 	}
 	fe.requestLogsWith(id, fe.logDescendants(id))
@@ -2529,6 +2547,7 @@ func (fe *frontendPretty) requestLogsWith(id dagui.SpanID, descendants bool) {
 		fe.requestedLogs = make(map[dagui.SpanID]bool)
 	}
 	fe.requestedLogs[id] = true
+	delete(fe.deferredLogs, id)
 	fe.logProvider(id, descendants)
 }
 
@@ -3057,10 +3076,11 @@ func (fe prettySpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.R
 	fe.dispatch(func() {
 		fe.db.ExportSpans(context.Background(), spansCopy)
 		for _, id := range spanIDs {
-			// A zoom outside the priority window can precede the span itself.
-			// Finish its deferred log request now, using the arrived roll-up
-			// metadata instead of requiring a second expand/zoom gesture.
-			if fe.SpanExpanded[id] {
+			// A zoom outside the priority window, or a log record ahead of
+			// its span, can precede the span itself. Finish its deferred log
+			// request now, using the arrived roll-up metadata instead of
+			// requiring a second expand/zoom gesture.
+			if fe.SpanExpanded[id] || fe.deferredLogs[id] {
 				fe.requestLogs(id)
 			}
 			if fe.logs.flushResolvedLogsForSpan(id) {
