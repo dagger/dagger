@@ -389,21 +389,79 @@ func testVtermSearchEvictedLogInBackground(t *testing.T, needles int) {
 	require.Len(t, big.SearchMatchRows(), needles)
 	now.Add(2)
 	require.Len(t, big.SearchMatchRows(), needles, "stale rows while the replay runs")
-	// The replay reads the stream as it was; writes may go on meanwhile.
+	// The replay reads the stream as it is when it starts; writes may go on
+	// meanwhile.
 	for range 100 {
 		_, err := io.WriteString(big, "late needle\r\n")
 		require.NoError(t, err)
 	}
 	cache.searches.Wait()
 	<-searched
-	require.Len(t, big.SearchMatchRows(), needles+1)
+	rows := len(big.SearchMatchRows())
+	require.GreaterOrEqual(t, rows, needles+1)
+	require.LessOrEqual(t, rows, needles+101)
 	now.Add(10)
 	big.SearchMatchRows()
 	cache.searches.Wait()
-	<-searched
 	require.Equal(t, want(), big.SearchMatchRows())
 	require.Len(t, big.SearchMatchRows(), needles+101)
-	require.Equal(t, 3, big.replays)
+	require.LessOrEqual(t, big.replays, 3)
+}
+
+// Background searches of many evicted logs run on a couple of workers, drop
+// work for logs that were closed, and search the query current when they
+// start; no worker outlives the queue.
+func TestVtermBackgroundSearchesAreBounded(t *testing.T) {
+	cache := newTerminalCache()
+	cache.maxCount = 1
+	text := strings.Repeat(strings.Repeat("ordinary output\r\n", 99)+"needle haystack\r\n", 30)
+	terms := make([]*Vterm, 60)
+	for i := range terms {
+		terms[i] = NewVterm(termenv.Ascii)
+		terms[i].cache = cache
+		terms[i].SetWidth(80)
+		_, err := io.WriteString(terms[i], text)
+		require.NoError(t, err)
+	}
+	other := NewVterm(termenv.Ascii)
+	t.Cleanup(other.Close)
+	other.cache = cache
+	_, err := io.WriteString(other, "fills the cache\n")
+	require.NoError(t, err)
+	other.View()
+	for _, term := range terms {
+		term.SetSearchHighlight("needle", -1)
+		require.Nil(t, term.SearchMatchRows())
+	}
+	closed, requeried := terms[40:50], terms[50:]
+	for _, term := range closed {
+		term.Close()
+	}
+	for _, term := range requeried {
+		term.SetSearchHighlight("haystack", -1)
+	}
+	cache.searches.Wait()
+
+	cache.mu.Lock()
+	require.LessOrEqual(t, cache.peakSearchesRunning, terminalCacheSearchWorkers)
+	require.Zero(t, cache.searchWorkers, "workers exit with the queue")
+	require.Empty(t, cache.searchQueue)
+	cache.mu.Unlock()
+	replayedClosed := 0
+	for _, term := range closed {
+		replayedClosed += term.replays
+	}
+	require.LessOrEqual(t, replayedClosed, terminalCacheSearchWorkers, "only searches already running when closed")
+	for _, term := range terms[:40] {
+		require.Len(t, term.SearchMatchRows(), 30)
+		require.Equal(t, 1, term.replays)
+		term.Close()
+	}
+	for _, term := range requeried {
+		require.Len(t, term.SearchMatchRows(), 30, "searched for the query current when it ran")
+		require.Equal(t, 1, term.replays)
+		term.Close()
+	}
 }
 
 // A transient search of an evicted multi-megabyte log: the UI goroutine's

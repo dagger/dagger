@@ -46,9 +46,14 @@ type terminalCache struct {
 	live               bool
 	now                func() time.Time
 	// onSearched is called, from any goroutine, when a background search has
-	// new match rows; the live display renders again. searches tracks them.
-	onSearched func()
-	searches   sync.WaitGroup
+	// new match rows; the live display renders again. searches tracks queued
+	// and running searches; peakSearchesRunning is for tests.
+	onSearched          func()
+	searches            sync.WaitGroup
+	searchQueue         []*Vterm
+	searchWorkers       int
+	searchesRunning     int
+	peakSearchesRunning int
 }
 
 func (c *terminalCache) searched() {
@@ -252,7 +257,7 @@ func (term *Vterm) searchMatchRowsLocked() []int {
 			// A terminal stream can be replayed off the UI goroutine. Media
 			// logs lay out several buffers and images, so they are searched
 			// here, under the same adaptive backoff.
-			term.searchInBackgroundLocked(key, now)
+			term.searchInBackgroundLocked()
 			return term.staleSearchRowsLocked(key)
 		}
 		began := time.Now()
@@ -286,43 +291,102 @@ func (term *Vterm) staleSearchRowsLocked(key vtermSearchKey) []int {
 	return nil
 }
 
-// vtermSearchJob is a transient search of an evicted log running off the UI
-// goroutine.
+// vtermSearchJob marks a transient search of an evicted log that is queued
+// for, or running on, one of the cache's search workers.
 type vtermSearchJob struct {
-	key vtermSearchKey
+	_ byte // distinct jobs have distinct addresses
 }
 
-// searchInBackgroundLocked replays the stream as it is now into a throwaway
-// terminal on another goroutine, then publishes the rows and tells the cache
-// owner to render again. The bytes it reads are fixed: logBuffer only
-// appends, and the snapshot keeps the buffer alive, so its file is not
-// cleaned up meanwhile; Close removing the file just fails the search.
-func (term *Vterm) searchInBackgroundLocked(key vtermSearchKey, start time.Time) {
-	job := &vtermSearchJob{key: key}
-	term.searchJob = job
-	term.replays++
-	snapshot := snapshotLog(term.terminalBuf)
-	cache := term.cache
-	cache.searches.Add(1)
-	began := time.Now()
-	go func() {
-		defer cache.searches.Done()
-		rows, err := searchLogRows(snapshot, key.query, key.width, key.prefix)
-		term.mu.Lock()
-		current := term.searchJob == job
-		if current {
+// terminalCacheSearchWorkers bounds concurrent background replays: each
+// holds a whole throwaway terminal and an open spill file.
+const terminalCacheSearchWorkers = 2
+
+// searchInBackgroundLocked queues a search of the evicted log. A worker
+// replays the stream as it is when the search starts into a throwaway
+// terminal, then publishes the rows and tells the cache owner to render
+// again. Meanwhile the log serves its previous rows.
+func (term *Vterm) searchInBackgroundLocked() {
+	term.searchJob = &vtermSearchJob{}
+	term.cache.enqueueSearch(term)
+}
+
+func (c *terminalCache) enqueueSearch(term *Vterm) {
+	c.searches.Add(1)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.searchQueue = append(c.searchQueue, term)
+	if c.searchWorkers < terminalCacheSearchWorkers {
+		c.searchWorkers++
+		go c.searchWorker()
+	}
+}
+
+// searchWorker runs queued searches until the queue is empty, so no worker
+// outlives the work: a frontend that exits leaves none behind.
+func (c *terminalCache) searchWorker() {
+	for {
+		c.mu.Lock()
+		if len(c.searchQueue) == 0 {
+			c.searchWorkers--
+			c.mu.Unlock()
+			return
+		}
+		term := c.searchQueue[0]
+		c.searchQueue[0] = nil
+		c.searchQueue = c.searchQueue[1:]
+		c.mu.Unlock()
+		c.runSearch(term)
+		c.searches.Done()
+	}
+}
+
+// runSearch searches term as it is now, unless the search is no longer
+// wanted: the log was closed or materialized (which searches it live), or
+// the query was cleared.
+func (c *terminalCache) runSearch(term *Vterm) {
+	term.mu.Lock()
+	job := term.searchJob
+	if job == nil || term.cache != c || term.vt != nil || term.segments != nil || term.SearchQuery == "" {
+		if job != nil {
 			term.searchJob = nil
-			term.searchedAt = start
-			term.searchCost = time.Since(began)
-			if err == nil {
-				term.searchRows, term.searchKey, term.searchCached = rows, key, true
-			}
 		}
 		term.mu.Unlock()
-		if current && err == nil {
-			cache.searched()
+		return
+	}
+	key := term.searchKeyLocked()
+	term.replays++
+	// The bytes read are fixed: logBuffer only appends, and the snapshot
+	// keeps the buffer alive, so its file is not cleaned up meanwhile; Close
+	// removing the file just fails the search.
+	snapshot := snapshotLog(term.terminalBuf)
+	start := c.clock()
+	term.mu.Unlock()
+
+	c.mu.Lock()
+	c.searchesRunning++
+	c.peakSearchesRunning = max(c.peakSearchesRunning, c.searchesRunning)
+	c.mu.Unlock()
+	began := time.Now()
+	rows, err := searchLogRows(snapshot, key.query, key.width, key.prefix)
+	cost := time.Since(began)
+	c.mu.Lock()
+	c.searchesRunning--
+	c.mu.Unlock()
+
+	term.mu.Lock()
+	current := term.searchJob == job
+	if current {
+		term.searchJob = nil
+		term.searchedAt = start
+		term.searchCost = cost
+		if err == nil {
+			term.searchRows, term.searchKey, term.searchCached = rows, key, true
 		}
-	}()
+	}
+	term.mu.Unlock()
+	if current && err == nil {
+		c.searched()
+	}
 }
 
 // logSnapshot is the content of a logBuffer at one moment, readable without
@@ -730,6 +794,7 @@ func (term *Vterm) Close() {
 		}
 	}
 	term.segments = nil
+	term.searchJob = nil // a queued search is dropped
 	term.evictLocked()
 	term.cache = nil
 }
