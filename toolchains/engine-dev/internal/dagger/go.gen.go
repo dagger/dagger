@@ -697,7 +697,7 @@ type GoOpts struct {
 	// Go version
 	//
 	//
-	// Default: "1.26"
+	// Default: "1.27"
 	Version string // go (../../../../toolchains/go/main.go:31:2)
 	//
 	// Use a custom module cache
