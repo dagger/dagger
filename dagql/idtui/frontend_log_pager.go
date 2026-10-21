@@ -467,8 +467,9 @@ func (fe *frontendPretty) OpenLogStream(id dagui.SpanID, title string) io.Writer
 			fe.closeLogPager()
 		}
 		fe.logStream.close()
-		// Size the buffer before the first write: text written at width 0 is
-		// lost. The pager keeps it sized after that.
+		// Give the pager its initial viewport; layout is lazy, so text is
+		// wrapped at whatever width the pager has when it renders, and the
+		// pager keeps it sized after that.
 		if fe.window.Width > 0 {
 			stream.vt.SetPrefix("")
 			stream.vt.SetWidth(fe.window.Width)
