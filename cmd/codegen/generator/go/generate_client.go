@@ -120,15 +120,10 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 	clientGoModFilePath := filepath.Join(g.Config.ClientConfig.ClientDir, "go.mod")
 	if isInstall {
 		// Now write the client's go.mod (after directory structure is created)
-		clientGoMod := new(modfile.File)
-		clientGoMod.AddModuleStmt(clientModuleName)
-		// Use the Go SDK's minimum version rather than the codegen runtime version,
-		// so the client go.mod stays compatible with the SDK's requirements.
-		clientGoVersion := goVersion
-		if sdkMod, err := modfile.Parse("go.mod", dagger.GoMod, nil); err == nil && sdkMod.Go != nil {
-			clientGoVersion = sdkMod.Go.Version
+		clientGoMod, err := newClientGoMod(clientModuleName)
+		if err != nil {
+			return nil, err
 		}
-		clientGoMod.AddGoStmt(clientGoVersion)
 		// Set dagger.io/dagger version to match the engineVersion from dagger.json
 		// Only for released versions (not dev, not empty) - go mod tidy will fail for unreleased versions
 		// (replace directives added by tests/users will override this)
@@ -201,6 +196,26 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 	}
 
 	return genSt, nil
+}
+
+// Seed new clients before tidy resolves their direct imports. Otherwise tidy
+// may choose newer OTel packages than the SDK and parent module support.
+func newClientGoMod(moduleName string) (*modfile.File, error) {
+	sdkMod, err := modfile.Parse("go.mod", dagger.GoMod, nil)
+	if err != nil {
+		return nil, fmt.Errorf("parse embedded SDK go.mod: %w", err)
+	}
+	mod := new(modfile.File)
+	mod.AddModuleStmt(moduleName)
+	clientGoVersion := goVersion
+	if sdkMod.Go != nil {
+		clientGoVersion = sdkMod.Go.Version
+	}
+	mod.AddGoStmt(clientGoVersion)
+	for _, req := range sdkMod.Require {
+		mod.AddNewRequire(req.Mod.Path, req.Mod.Version, req.Indirect)
+	}
+	return mod, nil
 }
 
 func (g *GoGenerator) writeClientGoMod(mfs *memfs.FS, clientGoModFilePath string, existingClientGoModData []byte) error {

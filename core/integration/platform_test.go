@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	engineconfig "github.com/dagger/dagger/engine/config"
+	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
@@ -275,7 +276,7 @@ func (PlatformSuite) TestCrossCompile(ctx context.Context, t *testctx.T) {
 		i := i - 1
 		eg.Go(func() error {
 			ctr := c.Container().
-				From("crazymax/goxx:latest").
+				From("crazymax/goxx:"+distconsts.GolangVersion).
 				WithMountedCache("/go/pkg/mod", c.CacheVolume("gomod")).
 				WithMountedCache("/root/.cache/go-build", c.CacheVolume("gobuild")).
 				WithMountedDirectory("/src", c.Host().Directory(".")).
