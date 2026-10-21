@@ -9435,6 +9435,20 @@ func newPrettyLogs(profile termenv.Profile, db *dagui.DB) *prettyLogs {
 }
 
 func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
+	// A buffer's storage error is sticky and reported by the buffer itself;
+	// collect it (once per buffer) and keep exporting, so one failed spill
+	// can't drop every later record in the batch, other spans' included.
+	var errs []error
+	var failed map[*Vterm]bool
+	report := func(vt *Vterm) {
+		if err := vt.Err(); err != nil && !failed[vt] {
+			if failed == nil {
+				failed = map[*Vterm]bool{}
+			}
+			failed[vt] = true
+			errs = append(errs, err)
+		}
+	}
 	for _, log := range logs {
 		body, isText := dagui.LogBodyString(log)
 		if !isText {
@@ -9486,21 +9500,16 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 			if isMedia {
 				l.spanLogs(rollUpID).WriteMedia(media, pw.Prefix+body)
 			} else {
-				if _, err := fmt.Fprint(pw, body); err != nil {
-					return err
-				}
+				// A write error is the roll-up buffer's own, reported below.
+				_, _ = fmt.Fprint(pw, body)
 			}
-			if err := l.spanLogs(rollUpID).Err(); err != nil {
-				return err
-			}
+			report(l.spanLogs(rollUpID))
 		}
 
 		vterm := l.spanLogs(spanID)
 		if isMedia {
 			vterm.WriteMedia(media, body)
-			if err := vterm.Err(); err != nil {
-				return err
-			}
+			report(vterm)
 			continue
 		}
 		if contentType == "application/json" {
@@ -9516,11 +9525,9 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 		default:
 			_, _ = fmt.Fprint(vterm, body)
 		}
-		if err := vterm.Err(); err != nil {
-			return err
-		}
+		report(vterm)
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 func (l *prettyLogs) flushResolvedLogsForSpan(spanID dagui.SpanID) bool {

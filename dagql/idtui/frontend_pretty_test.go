@@ -145,6 +145,30 @@ func requireRenderableFrontendLogs(t *testing.T, records []sdklog.Record) {
 	require.Empty(t, records[2].Body().AsString(), "stdio EOF must remain available to frontends")
 }
 
+func TestPrettyLogsExportContinuesPastStorageError(t *testing.T) {
+	// Spilling a buffer past its in-memory limit fails without a TMPDIR.
+	t.Setenv("TMPDIR", t.TempDir()+"/missing")
+	logs := newPrettyLogs(termenv.Ascii, dagui.NewDB())
+	t.Cleanup(logs.Close)
+	failing, healthy := trace.SpanID{1}, trace.SpanID{2}
+
+	err := logs.Export(t.Context(), []sdklog.Record{
+		frontendTestLogRecord(failing, otellog.StringValue(strings.Repeat("line\n", 10000))),
+		frontendTestLogRecord(healthy, otellog.StringValue("hello\n")),
+	})
+	require.Error(t, err)
+	require.Equal(t, "hello\n", logs.Logs[dagui.SpanID{SpanID: healthy}].rawBuf.String(),
+		"a failed buffer must not drop other spans' records in the batch")
+
+	// The failed buffer's error is sticky; later batches still reach others.
+	err = logs.Export(t.Context(), []sdklog.Record{
+		frontendTestLogRecord(failing, otellog.StringValue("more\n")),
+		frontendTestLogRecord(healthy, otellog.StringValue("world\n")),
+	})
+	require.Error(t, err)
+	require.Equal(t, "hello\nworld\n", logs.Logs[dagui.SpanID{SpanID: healthy}].rawBuf.String())
+}
+
 func TestTelemetryDataRecordsExcludedFromFrontendLogs(t *testing.T) {
 	knownSpanID := trace.SpanID{1}
 	unknownSpanID := trace.SpanID{2}
