@@ -228,6 +228,13 @@ type Client struct {
 	telemetryFeatures map[string]bool
 	logsPresence      bool
 
+	// ingestsTelemetry and publishesTelemetry record what the engine
+	// answered on this client's trace stream: whether it stores the
+	// telemetry the client posts about itself (ExportSpans, ...), and
+	// whether it publishes the session's telemetry to Cloud.
+	ingestsTelemetry   bool
+	publishesTelemetry bool
+
 	httpClient *httpClient
 	bkClient   *bkclient.Client
 	bkVersion  string
@@ -1093,6 +1100,10 @@ type otlpConsumer struct {
 	// features lists the optional live telemetry features (LiveFeature*)
 	// the engine named on the first response.
 	features map[string]bool
+	// engineIngests records whether the engine stores the telemetry the
+	// client posts about itself (engine.ClientTelemetryIngestHeader), from
+	// the stream's first response.
+	engineIngests bool
 }
 
 // liveTelemetryFeatures parses a subscription response's LiveFeaturesHeader.
@@ -1150,6 +1161,7 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte, liveTelemetr
 	}
 	c.enginePublishes = confirmsEnginePublishing(resp)
 	c.features = liveTelemetryFeatures(resp)
+	c.engineIngests = resp.Header.Get(engine.ClientTelemetryIngestHeader) == engine.ClientTelemetryIngestStore
 	span.SetAttributes(attribute.Bool("dagger.io/telemetry.engine_publishes", c.enginePublishes))
 
 	c.eg.Go(func() error {
@@ -1421,7 +1433,7 @@ func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error
 		eg:         c.telemetry,
 	}
 
-	err := exp.Consume(ctx, func(data []byte, encoding liveTelemetryEncoding) error {
+	if err := exp.Consume(ctx, func(data []byte, encoding liveTelemetryEncoding) error {
 		var req coltracepb.ExportTraceServiceRequest
 		if err := unmarshalLiveTelemetry(data, encoding, &req); err != nil {
 			return fmt.Errorf("unmarshal: %w", err)
@@ -1442,12 +1454,14 @@ func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error
 		}
 
 		return nil
-	})
-	if err != nil {
+	}); err != nil {
 		return err
 	}
-	// The trace subscription connects first; what the engine said on it
-	// settles the log subscription's mode.
+	// Consume reads the first response's answers before it returns; the
+	// consuming goroutine never changes them. The trace subscription
+	// connects first, so they settle the log subscription's mode.
+	c.ingestsTelemetry = exp.engineIngests && c.nestedSessionPort == 0
+	c.publishesTelemetry = c.forwardsWithoutCloud(exp.enginePublishes)
 	c.telemetryFeatures = exp.features
 	c.logsPresence = c.EngineLogsPresence &&
 		exp.features[enginetel.LiveFeatureLogPresence] &&
