@@ -265,6 +265,35 @@ func TestLogRequestsRouteByTraceAndWaitForSpans(t *testing.T) {
 	require.Equal(t, map[dagui.SpanID]bool{rollUp: true, early: true}, got, "the arrived span was not requested with its roll-up")
 }
 
+// TestShellTranscriptRequestsCollapsedCommandLogs: the shell transcript shows
+// a top-level command's output under its collapsed row, where no LogsView
+// mounts to ask for it, so a restored history's command requests it as it
+// renders.
+func TestShellTranscriptRequestsCollapsedCommandLogs(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	archived := dagui.TraceID{TraceID: trace.TraceID{1}}
+	rootID, commandID := prettyTestSpanID(1), prettyTestSpanID(2)
+	start := time.Unix(100, 0)
+	db := dagui.NewDB()
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: archived, Name: "root", StartTime: start, EndTime: start.Add(2 * time.Second), Final: true},
+		{ID: commandID, TraceID: archived, ParentID: rootID, Name: "command", StartTime: start, EndTime: start.Add(time.Second), Final: true},
+	})
+	db.SetPrimarySpan(rootID)
+	fe := NewWithDB(io.Discard, db)
+	fe.shell = stubShellHandler{}
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.GCThreshold = time.Hour
+	fe.ZoomedSpan = rootID
+	got := map[dagui.SpanID]bool{}
+	fe.traceLogProviders = map[dagui.TraceID]func(dagui.SpanID, bool){
+		archived: func(id dagui.SpanID, _ bool) { got[id] = true },
+	}
+	fe.recalculateViewLocked()
+	_ = fe.tui.RenderLines()
+	require.True(t, got[commandID], "the collapsed command's logs were not requested; got %v", got)
+}
+
 func renderDump(t *testing.T, id *call.ID, dump Dump) string {
 	t.Helper()
 	var buf strings.Builder
