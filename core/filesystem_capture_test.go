@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/dagger/dagger/dagql"
@@ -104,6 +105,47 @@ func TestFilesystemPersistenceRetainsBodyLatch(t *testing.T) {
 			require.ErrorIs(t, err, dagql.ErrPersistStateNotReady)
 			_, err = test.version.PersistedOutputRevision()
 			require.NoError(t, err)
+		})
+	}
+}
+
+// A persistence read does not refuse another. A span reads its call's complete
+// parts as it ends, and that read can overlap another reader of the same
+// value, such as an early snapshot-sharing pass that probes it as a donor.
+// Refused, the span would report only the parts the gate settled: none, for a
+// value built with its snapshot, which no later span may name.
+func TestFilesystemPersistenceReadersShareTheGuard(t *testing.T) {
+	snapshotKey, err := json.Marshal(dagql.PersistedPartAddress{Part: "snapshot"})
+	require.NoError(t, err)
+	for _, family := range []string{"File", "Directory"} {
+		t.Run(family, func(t *testing.T) {
+			env := newPersistedFamiliesTestEnv(t, "filesystem-capture-readers")
+			ctx, cache, srv := env.open(t)
+			value := storedSnapshotTestValue(family, "built", "/out", false)
+			frame := &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: "built", Type: dagql.NewResultCallType(value.Type())}
+			req := &dagql.CallRequest{ResultCall: frame, IsPersistable: true, CacheEvidence: dagql.NewCacheDecision()}
+			res, err := cache.GetOrInitCall(ctx, env.session, srv, req, func(context.Context) (dagql.AnyResult, error) {
+				if dir, ok := value.(*Directory); ok {
+					return dagql.NewObjectResultForCall(dir, srv, frame)
+				}
+				return dagql.NewObjectResultForCall(value.(*File), srv, frame)
+			})
+			require.NoError(t, err)
+
+			// Another reader holds the value's persistence guard.
+			var unlock func()
+			if dir, ok := value.(*Directory); ok {
+				unlock, err = dir.lockForPersistence()
+			} else {
+				unlock, err = value.(*File).lockForPersistence()
+			}
+			require.NoError(t, err)
+			state, ok := req.CacheEvidence.ResultState(ctx, res)
+			_, captureErr := cache.CapturePersistedRecord(ctx, res)
+			unlock()
+			require.True(t, ok)
+			require.NoError(t, captureErr)
+			require.Equal(t, []string{string(snapshotKey)}, state.Parts)
 		})
 	}
 }
