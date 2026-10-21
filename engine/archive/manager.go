@@ -54,19 +54,23 @@ type Bootstrap struct {
 // Manifest describes one archive. An archive is identified by its trace ID
 // alone: the first session to register a trace owns its archive.
 type Manifest struct {
-	Version      int        `json:"version"`
-	TraceID      string     `json:"traceID"`
-	MainClientID string     `json:"mainClientID"`
-	State        State      `json:"state"`
-	Title        string     `json:"title,omitempty"`
-	StartedAt    time.Time  `json:"startedAt"`
-	ClosedAt     *time.Time `json:"closedAt,omitempty"`
-	ExpiresAt    time.Time  `json:"expiresAt"`
-	SealAt       *time.Time `json:"sealAt,omitempty"`
-	SizeBytes    int64      `json:"sizeBytes"`
-	Bootstrap    Bootstrap  `json:"bootstrap,omitempty"`
-	HighWater    HighWater  `json:"highWater"`
-	Failure      string     `json:"failure,omitempty"`
+	Version      int    `json:"version"`
+	TraceID      string `json:"traceID"`
+	MainClientID string `json:"mainClientID"`
+	// TelemetryOnly marks the archive of a session that recorded no agent
+	// state: it retains the session's telemetry for display, its bootstrap
+	// has an empty roster, and it is never offered for agent restore.
+	TelemetryOnly bool       `json:"telemetryOnly,omitempty"`
+	State         State      `json:"state"`
+	Title         string     `json:"title,omitempty"`
+	StartedAt     time.Time  `json:"startedAt"`
+	ClosedAt      *time.Time `json:"closedAt,omitempty"`
+	ExpiresAt     time.Time  `json:"expiresAt"`
+	SealAt        *time.Time `json:"sealAt,omitempty"`
+	SizeBytes     int64      `json:"sizeBytes"`
+	Bootstrap     Bootstrap  `json:"bootstrap,omitempty"`
+	HighWater     HighWater  `json:"highWater"`
+	Failure       string     `json:"failure,omitempty"`
 }
 
 type FailureKind string
@@ -265,10 +269,23 @@ func validateManifest(manifest Manifest) error {
 	return nil
 }
 
-// Register creates the active archive for a trace. The first session to
-// register a trace owns its archive; a later registration for the same trace
-// (e.g. a nested session that inherited TRACEPARENT) fails.
+// Register creates the active archive for an agent session's trace. The first
+// session to register a trace owns its archive; a later registration for the
+// same trace (e.g. a nested session that inherited TRACEPARENT) fails. The one
+// exception is an ended telemetry-only archive: agent state outranks a plain
+// session's telemetry, so an agent session sharing its trace takes it over.
 func (m *Manager) Register(traceID, mainClientID string) (Manifest, error) {
+	return m.register(traceID, mainClientID, false)
+}
+
+// RegisterTelemetryOnly creates the active archive for a session that recorded
+// no agent state, retaining its telemetry by trace ID. It never displaces an
+// existing archive.
+func (m *Manager) RegisterTelemetryOnly(traceID, mainClientID string) (Manifest, error) {
+	return m.register(traceID, mainClientID, true)
+}
+
+func (m *Manager) register(traceID, mainClientID string, telemetryOnly bool) (Manifest, error) {
 	if _, err := trace.TraceIDFromHex(traceID); err != nil {
 		return Manifest{}, fmt.Errorf("invalid canonical trace ID: %w", err)
 	}
@@ -278,7 +295,7 @@ func (m *Manager) Register(traceID, mainClientID string) (Manifest, error) {
 	now := m.now().UTC()
 	manifest := Manifest{
 		Version: ManifestVersion, TraceID: traceID, MainClientID: mainClientID,
-		State: StateActive, StartedAt: now, ExpiresAt: now.Add(m.ttl),
+		TelemetryOnly: telemetryOnly, State: StateActive, StartedAt: now, ExpiresAt: now.Add(m.ttl),
 	}
 	if err := validateManifest(manifest); err != nil {
 		return Manifest{}, err
@@ -286,14 +303,15 @@ func (m *Manager) Register(traceID, mainClientID string) (Manifest, error) {
 	// Every session that inherits the trace registers it from its telemetry
 	// export, so a later registration fails without waiting on updates.
 	m.mu.RLock()
-	err := m.registrableLocked(traceID)
+	_, err := m.registrableLocked(traceID, telemetryOnly)
 	m.mu.RUnlock()
 	if err != nil {
 		return Manifest{}, err
 	}
 	m.writeMu.Lock()
 	defer m.writeMu.Unlock()
-	if err := m.registrableLocked(traceID); err != nil {
+	superseded, err := m.registrableLocked(traceID, telemetryOnly)
+	if err != nil {
 		return Manifest{}, err
 	}
 	// Unlike updates, the first write holds mu: a lookup racing a new
@@ -303,19 +321,33 @@ func (m *Manager) Register(traceID, mainClientID string) (Manifest, error) {
 	if err := m.writeManifest(manifest); err != nil {
 		return Manifest{}, err
 	}
+	if superseded != nil {
+		// The superseded store is no longer kept, so store GC collects it.
+		if superseded.Bootstrap.File != "" {
+			if err := os.Remove(filepath.Join(m.root, superseded.Bootstrap.File)); err != nil && !errors.Is(err, os.ErrNotExist) {
+				slog.Warn("remove superseded archive bootstrap", "traceID", traceID, "err", err)
+			}
+		}
+		*superseded = manifest
+		return manifest, nil
+	}
 	m.entries[traceID] = &manifest
 	return manifest, nil
 }
 
-// registrableLocked requires mu or writeMu.
-func (m *Manager) registrableLocked(traceID string) error {
-	if _, exists := m.entries[traceID]; exists {
-		return fmt.Errorf("archive for trace %s is already registered", traceID)
+// registrableLocked requires mu or writeMu. It returns the ended
+// telemetry-only archive an agent registration would supersede, if any.
+func (m *Manager) registrableLocked(traceID string, telemetryOnly bool) (*Manifest, error) {
+	if existing, exists := m.entries[traceID]; exists {
+		if !telemetryOnly && existing.TelemetryOnly && (existing.State == StateClosed || existing.State.Unsealed()) {
+			return existing, nil
+		}
+		return nil, fmt.Errorf("archive for trace %s is already registered", traceID)
 	}
 	if err := m.corrupt[traceID]; err != nil {
-		return &Failure{Kind: FailureCorrupt, Err: err}
+		return nil, &Failure{Kind: FailureCorrupt, Err: err}
 	}
-	return nil
+	return nil, nil
 }
 
 func (m *Manager) BeginFinalizing(traceID string) error {
@@ -488,6 +520,8 @@ type Page struct {
 	Next     string     `json:"next,omitempty"`
 }
 
+// List pages through agent archives, the sessions `dagger agent -r` can
+// resume. Telemetry-only archives are left out: they have no agent state.
 func (m *Manager) List(after, excludeTraceID string, limit int) Page {
 	if limit <= 0 || limit > 100 {
 		limit = 50
@@ -495,7 +529,7 @@ func (m *Manager) List(after, excludeTraceID string, limit int) Page {
 	m.mu.RLock()
 	all := make([]Manifest, 0, len(m.entries))
 	for traceID, ent := range m.entries {
-		if traceID != excludeTraceID && traceID > after {
+		if traceID != excludeTraceID && traceID > after && !ent.TelemetryOnly {
 			manifest := *ent
 			if manifest.Title == "" {
 				manifest.Title = "Agent session " + manifest.StartedAt.Format(time.RFC3339)
@@ -534,10 +568,10 @@ func (m *Manager) KeepSet() map[string]bool {
 }
 
 // GC deletes expired archives, then the oldest ended archives (closed or
-// unsealed) until the retained ones fit the quota. The newest ended archive is
-// kept even when it alone exceeds the quota; overage reports by how much. An
-// archive whose store is still open is left in place and retried by the next
-// GC.
+// unsealed) until the retained ones fit the quota, telemetry-only archives
+// before agent archives. The last ended archive in that order is kept even
+// when it alone exceeds the quota; overage reports by how much. An archive
+// whose store is still open is left in place and retried by the next GC.
 func (m *Manager) GC() (overage int64, err error) {
 	now := m.now()
 	var doomed, ended []Manifest
@@ -553,7 +587,12 @@ func (m *Manager) GC() (overage int64, err error) {
 		}
 	}
 	m.mu.RUnlock()
+	// Telemetry-only archives are evicted first, so retaining every
+	// session's telemetry never costs an agent archive its place.
 	sort.Slice(ended, func(i, j int) bool {
+		if ended[i].TelemetryOnly != ended[j].TelemetryOnly {
+			return ended[i].TelemetryOnly
+		}
 		ei, ej := ended[i].endedAt(), ended[j].endedAt()
 		if !ei.Equal(ej) {
 			return ei.Before(ej)
@@ -597,6 +636,13 @@ func (m *Manager) delete(manifest Manifest) error {
 		}
 	}
 	var result error
+	m.writeMu.Lock()
+	defer m.writeMu.Unlock()
+	if current, ok := m.entries[manifest.TraceID]; !ok || current.MainClientID != manifest.MainClientID || !current.StartedAt.Equal(manifest.StartedAt) {
+		// Superseded by an agent session since GC chose it: the files are
+		// the new owner's now.
+		return nil
+	}
 	if manifest.Bootstrap.File != "" {
 		if err := os.Remove(filepath.Join(m.root, manifest.Bootstrap.File)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			result = errors.Join(result, err)
@@ -604,11 +650,9 @@ func (m *Manager) delete(manifest Manifest) error {
 	}
 	result = errors.Join(result, removeAndSync(filepath.Join(m.root, manifest.TraceID+".json")))
 	if result == nil {
-		m.writeMu.Lock()
 		m.mu.Lock()
 		delete(m.entries, manifest.TraceID)
 		m.mu.Unlock()
-		m.writeMu.Unlock()
 	}
 	return result
 }
