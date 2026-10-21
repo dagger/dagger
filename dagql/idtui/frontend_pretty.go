@@ -229,6 +229,15 @@ type frontendPretty struct {
 	// span; nil for live runs. requestedLogs dedups so each span is fetched once.
 	logProvider   func(dagui.SpanID, bool)
 	requestedLogs map[dagui.SpanID]bool
+	// traceLogProviders route the requests for one trace's spans
+	// (SetTraceLogProvider), ahead of logProvider. A resumed agent session
+	// renders its archived trace beside its own live one, whose logs stream
+	// in: a span of a trace with no provider is never requested.
+	traceLogProviders map[dagui.TraceID]func(dagui.SpanID, bool)
+	// deferredLogs holds log requests for spans not received yet -- unloaded,
+	// or a placeholder a log record created -- whose roll-up decision (and
+	// trace) is unknown until the span arrives.
+	deferredLogs map[dagui.SpanID]bool
 
 	// spanProvider lazily fetches a span's children on demand when the user
 	// expands it (or it's surfaced/zoomed). Set by 'dagger trace' to fetch
@@ -2392,6 +2401,35 @@ func (fe *frontendPretty) SetLogProvider(provider func(dagui.SpanID, bool)) {
 	})
 }
 
+// SetTraceLogProvider registers the log provider for the spans of one trace
+// only, ahead of any SetLogProvider provider. `dagger agent -r` uses it for
+// the restored trace, so the resumed session's own live spans, whose logs
+// stream in, are never requested from the archive.
+func (fe *frontendPretty) SetTraceLogProvider(traceID dagui.TraceID, provider func(dagui.SpanID, bool)) {
+	fe.dispatch(func() {
+		if fe.traceLogProviders == nil {
+			fe.traceLogProviders = make(map[dagui.TraceID]func(dagui.SpanID, bool))
+		}
+		fe.traceLogProviders[traceID] = provider
+	})
+}
+
+// hasLogProvider reports whether any span's logs are fetched lazily.
+func (fe *frontendPretty) hasLogProvider() bool {
+	return fe.logProvider != nil || len(fe.traceLogProviders) > 0
+}
+
+// logProviderFor is the provider for a span's trace, else the provider for
+// every trace; nil when the span's logs are not fetched.
+func (fe *frontendPretty) logProviderFor(id dagui.SpanID) func(dagui.SpanID, bool) {
+	if span, ok := fe.db.Spans.Map[id]; ok && span.Received {
+		if provider := fe.traceLogProviders[span.TraceID]; provider != nil {
+			return provider
+		}
+	}
+	return fe.logProvider
+}
+
 // RequestSurfacedLogs asks the log provider for the logs of every failed span
 // currently visible in the view. It's used by non-interactive ('report') mode,
 // which renders only once: the caller invokes this after the spans are loaded,
@@ -2552,12 +2590,34 @@ func (fe *frontendPretty) requestLogsOnRender(id dagui.SpanID) {
 // requestLogs asks the log provider for a span's logs, once. It rolls up
 // descendant logs when the span is marked RollUpLogs (e.g. a check or test
 // whose real output lives in a sub-operation), mirroring the web UI.
+//
+// A span not received yet -- unloaded, or only a placeholder a log record
+// created -- doesn't carry the metadata that decision (or its trace's
+// provider) needs, so the request is deferred until the span arrives
+// (requestArrivedSpanLogs) instead of latching an own-logs-only fetch the
+// roll-up could never replace.
 func (fe *frontendPretty) requestLogs(id dagui.SpanID) {
-	if _, ok := fe.db.Spans.Map[id]; !ok {
-		// Span not loaded yet; it'll be requested once it's surfaced.
+	if !fe.hasLogProvider() || !id.IsValid() || fe.requestedLogs[id] {
+		return
+	}
+	if span, ok := fe.db.Spans.Map[id]; !ok || !span.Received {
+		if fe.deferredLogs == nil {
+			fe.deferredLogs = make(map[dagui.SpanID]bool)
+		}
+		fe.deferredLogs[id] = true
 		return
 	}
 	fe.requestLogsWith(id, fe.logDescendants(id))
+}
+
+// requestArrivedSpanLogs finishes a log request that waited for its span to
+// arrive. Called by every path that imports spans (ExportSpans,
+// ImportSnapshots).
+func (fe *frontendPretty) requestArrivedSpanLogs(id dagui.SpanID) {
+	if fe.deferredLogs[id] || fe.SpanExpanded[id] {
+		delete(fe.deferredLogs, id)
+		fe.requestLogs(id)
+	}
 }
 
 // logDescendants decides whether a span's log fetch should roll up its
@@ -2597,18 +2657,23 @@ func (fe *frontendPretty) isFailingLeafTestSpan(id dagui.SpanID) bool {
 // to roll up descendant logs. Used to roll up failed leaf test cases, whose real
 // output lives in a sub-operation even though the test span isn't marked
 // RollUpLogs.
+//
+// The request goes to the provider for the span's trace; a span whose trace
+// has none (a resumed session's live spans) is not requested, nor latched.
 func (fe *frontendPretty) requestLogsWith(id dagui.SpanID, descendants bool) {
-	if fe.logProvider == nil || !id.IsValid() {
+	if !id.IsValid() || fe.requestedLogs[id] {
 		return
 	}
-	if fe.requestedLogs[id] {
+	provider := fe.logProviderFor(id)
+	if provider == nil {
 		return
 	}
 	if fe.requestedLogs == nil {
 		fe.requestedLogs = make(map[dagui.SpanID]bool)
 	}
 	fe.requestedLogs[id] = true
-	fe.logProvider(id, descendants)
+	delete(fe.deferredLogs, id)
+	provider(id, descendants)
 }
 
 // SetSpanProvider registers a callback that lazily supplies a span's children.
@@ -2693,6 +2758,7 @@ func (fe *frontendPretty) ImportSnapshots(snapshots []dagui.SpanSnapshot) {
 	fe.dispatch(func() {
 		fe.db.ImportSnapshots(snapshots)
 		for _, id := range ids {
+			fe.requestArrivedSpanLogs(id)
 			if fe.logs.flushResolvedLogsForSpan(id) {
 				fe.updateSpanTreesForLogs(id)
 				fe.updateLogPagerForLogs(id)
@@ -3149,6 +3215,7 @@ func (fe prettySpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.R
 	fe.dispatch(func() {
 		fe.db.ExportSpans(context.Background(), spansCopy)
 		for _, id := range spanIDs {
+			fe.requestArrivedSpanLogs(id)
 			if fe.logs.flushResolvedLogsForSpan(id) {
 				fe.updateSpanTreesForLogs(id)
 				fe.updateLogPagerForLogs(id)
@@ -4619,7 +4686,7 @@ func (fe *frontendPretty) recalculateViewLocked() {
 		fe.requestSubtree(fe.ZoomedSpan)
 	}
 
-	if fe.logProvider != nil {
+	if fe.hasLogProvider() {
 		// The primary output is written at end of run from OUTSIDE the render
 		// tree (renderPrimaryOutput reads db.PrimaryLogs), so no view fetches it
 		// on render -- request it eagerly in both modes. It's a single span
