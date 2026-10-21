@@ -1717,7 +1717,8 @@ func (s *containerSchema) withExecDynamicInputs(
 	if args.ModuleContext.Valid {
 		return nil
 	}
-	nesting, err := execNesting(ctx, args)
+	// The call is not current yet, so the request carries its view.
+	nesting, err := execNesting(core.AfterVersion(defaultNestingVersion).Contains(req.View), args)
 	if err != nil || !nesting {
 		return err
 	}
@@ -1738,8 +1739,8 @@ func (s *containerSchema) withExecDynamicInputs(
 	return req.SetArgInput(ctx, "moduleContext", dagql.Opt(dagql.NewID[*core.Module](modID)), false)
 }
 
-func execNesting(ctx context.Context, args containerExecArgs) (bool, error) {
-	if core.Supports(ctx, defaultNestingVersion) {
+func execNesting(defaultNesting bool, args containerExecArgs) (bool, error) {
+	if defaultNesting {
 		return v1Nesting(args.DisableDaggerInDagger, args.DaggerInDaggerNewSession)
 	}
 	return args.ExperimentalPrivilegedNesting, nil
@@ -1758,7 +1759,7 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 	if args.SkipEntrypoint != nil {
 		args.UseEntrypoint = !*args.SkipEntrypoint
 	}
-	args.ExperimentalPrivilegedNesting, err = execNesting(ctx, args)
+	args.ExperimentalPrivilegedNesting, err = execNesting(core.Supports(ctx, defaultNestingVersion), args)
 	if err != nil {
 		return inst, err
 	}
