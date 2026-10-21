@@ -350,6 +350,158 @@ func (ServiceSuite) TestWithHostname(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "Hello, world!", resp)
 }
 
+// networkGate holds the teardown of service networks in a dev engine, standing
+// in for a host whose network lock is contended: the engine waits for the gate
+// to open before tearing down a service's network namespace.
+type networkGate struct {
+	c   *dagger.Client
+	dir *core.CacheVolume
+}
+
+// gatedNetworkSession connects to a new dev engine whose service network
+// teardowns wait for the returned gate. The gate opens when the test ends.
+func gatedNetworkSession(ctx context.Context, t *testctx.T) (*dagger.Client, networkGate) {
+	c := connect(ctx, t)
+	gate := networkGate{c: c, dir: core.NewQuery(c).CacheVolume("network-gate-" + rand.Text())}
+	devEngine := devEngineContainerAsService(devEngineContainer(c, func(ctr *core.Container) *core.Container {
+		return ctr.
+			WithMountedCache("/network-gate", gate.dir).
+			WithEnvVariable("_DAGGER_TEST_CNI_RELEASE_GATE", "/network-gate")
+	}))
+	tunnel, err := core.NewQuery(c).Host().Tunnel(devEngine).Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		gate.open(context.Background(), t)
+		_, _ = tunnel.Stop(context.Background())
+		_, _ = devEngine.Stop(context.Background())
+	})
+	endpoint, err := tunnel.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
+	require.NoError(t, err)
+	session, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = session.Close() })
+	return session, gate
+}
+
+func (g networkGate) run(ctx context.Context, script string) (string, error) {
+	return core.NewQuery(g.c).Container().
+		From(busyboxImage).
+		WithMountedCache("/network-gate", g.dir).
+		WithEnvVariable("CACHEBUST", rand.Text()).
+		WithExec([]string{"sh", "-c", script}).
+		Stdout(ctx)
+}
+
+// waitEntered waits until a network teardown is held at the gate, and returns
+// its namespace's ID.
+func (g networkGate) waitEntered(ctx context.Context, t *testctx.T) string {
+	out, err := g.run(ctx, `for i in $(seq 1200); do
+for f in /network-gate/entered-*; do [ -e "$f" ] && echo "${f#/network-gate/entered-}" && exit 0; done
+sleep 0.1
+done
+exit 1`)
+	require.NoError(t, err, "no network teardown reached the gate")
+	return strings.TrimSpace(out)
+}
+
+// result returns how the teardown of namespace id ended: "ok", its error, or
+// "" if it has not finished.
+func (g networkGate) result(ctx context.Context, t *testctx.T, id string) string {
+	out, err := g.run(ctx, fmt.Sprintf(`cat /network-gate/done-%s 2>/dev/null || true`, id))
+	require.NoError(t, err)
+	return out
+}
+
+// waitDone waits until the teardown of namespace id has succeeded.
+func (g networkGate) waitDone(ctx context.Context, t *testctx.T, id string) {
+	out, err := g.run(ctx, fmt.Sprintf(`for i in $(seq 1200); do
+[ -e /network-gate/done-%[1]s ] && cat /network-gate/done-%[1]s && exit 0
+sleep 0.1
+done
+exit 1`, id))
+	require.NoError(t, err, "the network teardown of %s did not finish", id)
+	require.Equal(t, "ok", out, "the network teardown of %s failed", id)
+}
+
+func (g networkGate) open(ctx context.Context, t testing.TB) {
+	_, err := g.run(ctx, "touch /network-gate/open")
+	require.NoError(t, err)
+}
+
+// addressService serves its own address over HTTP under hostname.
+func addressService(c *dagger.Client, hostname string) *core.Service {
+	return core.NewQuery(c).Container().
+		From(busyboxImage).
+		WithWorkdir("/srv").
+		WithDefaultArgs([]string{"sh", "-c", `ip -4 addr show scope global | awk '$1 == "inet" {split($2, a, "/"); printf "%s", a[1]}' > index.html && test -s index.html && exec httpd -v -f`}).
+		WithExposedPort(80).
+		AsService().
+		WithHostname(hostname)
+}
+
+// resolve returns the addresses hostname resolves to, and the address of the
+// addressService instance that answers on it.
+func resolve(ctx context.Context, t *testctx.T, c *dagger.Client, hostname string) (addrs []string, answered string) {
+	out, err := core.NewQuery(c).Container().
+		From(busyboxImage).
+		WithEnvVariable("CACHEBUST", rand.Text()).
+		WithExec([]string{"sh", "-c", fmt.Sprintf(
+			`nslookup -type=a %[1]s | awk '/^Name:/ {n=1} n && /^Address/ {print $NF}' | sort && echo -- && wget -q -T 5 -O- http://%[1]s`,
+			hostname,
+		)}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	resolved, served, ok := strings.Cut(out, "--\n")
+	require.True(t, ok, out)
+	return strings.Fields(resolved), served
+}
+
+// Stopping a service does not wait for its network namespace's teardown,
+// which can wait a long time for the host's network lock under load.
+func (ServiceSuite) TestStopDoesNotWaitForNetworkTeardown(ctx context.Context, t *testctx.T) {
+	c, gate := gatedNetworkSession(ctx, t)
+	srv := addressService(c, "teardown")
+	_, err := srv.Start(ctx)
+	require.NoError(t, err)
+
+	// The teardown never finishes while the gate is shut, so a stop that waits
+	// for it times out.
+	stopCtx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	_, err = srv.Stop(stopCtx)
+	require.NoError(t, err)
+	id := gate.waitEntered(ctx, t)
+	require.Empty(t, gate.result(ctx, t, id), "the stop returned while its network teardown was held")
+}
+
+// A restarted service resolves only to its new instance, both while its
+// previous instance's network is still being torn down and after.
+func (ServiceSuite) TestRestartResolvesOnlyNewInstance(ctx context.Context, t *testctx.T) {
+	c, gate := gatedNetworkSession(ctx, t)
+	srv := addressService(c, "restarted")
+	_, err := srv.Start(ctx)
+	require.NoError(t, err)
+	addrs, oldAddr := resolve(ctx, t, c, "restarted")
+	require.Equal(t, []string{oldAddr}, addrs)
+	stopCtx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	_, err = srv.Stop(stopCtx)
+	require.NoError(t, err)
+	oldID := gate.waitEntered(ctx, t)
+
+	_, err = srv.Start(ctx)
+	require.NoError(t, err)
+	addrs, newAddr := resolve(ctx, t, c, "restarted")
+	require.NotEqual(t, oldAddr, newAddr)
+	require.Equal(t, []string{newAddr}, addrs, "resolves only to the new instance during the old teardown")
+
+	gate.open(ctx, t)
+	gate.waitDone(ctx, t, oldID)
+	addrs, answered := resolve(ctx, t, c, "restarted")
+	require.Equal(t, newAddr, answered)
+	require.Equal(t, []string{newAddr}, addrs, "resolves only to the new instance after the old teardown")
+}
+
 func (ServiceSuite) TestContentAddressedModuleScoping(ctx context.Context, t *testctx.T) {
 	t.Run("addressable within module", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
