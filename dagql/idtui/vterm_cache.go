@@ -3,9 +3,13 @@ package idtui
 import (
 	"bytes"
 	"container/list"
+	"hash/maphash"
+	"sort"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
+	"unsafe"
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -140,35 +144,91 @@ type vtermTextRow struct {
 	changes uint64
 	width   int
 	offset  int
-	wraps   []vtermWrap
+	// length is the number of runes laid out (see textEnd).
+	length int
+	// wraps holds the midterm rune column where each wrapped row starts. A
+	// wrapped row ends where the next one starts, the last one at length.
+	wraps []int
+	// blocks hashes each complete wrapHashBlock-rune block of the laid-out
+	// text, so a changed row only re-wraps from its first edited block.
+	blocks []uint64
 }
 
-type vtermWrap struct {
-	col        int // midterm rune column, for search mapping
-	start, end int // display columns, for ANSI-aware slicing
-}
-
-// wrapLine contains only presentation metadata, not another terminal or a copy
-// of the rendered text. ANSI parsing and progress edits happen once in midterm.
-func wrapLine(line string, width int) []vtermWrap {
-	lines := []string{line}
-	if width > 0 {
-		lines = strings.Split(ansi.Hardwrap(line, width, true), "\n")
+func (layout *vtermTextRow) wrapEnd(i int) int {
+	if i+1 < len(layout.wraps) {
+		return layout.wraps[i+1]
 	}
-	wraps := make([]vtermWrap, 0, len(lines))
-	col, start := 0, 0
-	for _, part := range lines {
-		end := start + ansi.StringWidth(part)
-		wraps = append(wraps, vtermWrap{col: col, start: start, end: end})
+	return layout.length
+}
+
+// A long logical line (progress dots, minified JSON) is rewritten on every
+// live chunk. Hashing it runs at memory speed; grapheme-aware wrapping does
+// not, so only the edited tail is wrapped again. Short rows have no blocks.
+const wrapHashBlock = 1024
+
+var wrapHashSeed = maphash.MakeSeed()
+
+func hashRunes(text []rune) uint64 {
+	return maphash.Bytes(wrapHashSeed, unsafe.Slice((*byte)(unsafe.Pointer(unsafe.SliceData(text))), len(text)*4))
+}
+
+// wrapRunes appends the start column of each row that text[start:] wraps
+// into. Wrapping is greedy, so restarting at a previous row start yields the
+// same rows as wrapping the whole line. It returns the number of runes wrapped.
+func wrapRunes(dst []int, text []rune, start, width int) ([]int, int) {
+	if width <= 0 {
+		return append(dst, start), 0
+	}
+	col := start
+	for part := range strings.SplitSeq(ansi.Hardwrap(string(text[start:]), width, true), "\n") {
+		dst = append(dst, col)
 		col += utf8.RuneCountInString(part)
-		start = end
 	}
-	return wraps
+	return dst, len(text) - start
 }
 
-// textLine omits plain erase padding while preserving visible whitespace such
+// layoutRow wraps one logical row. Unchanged complete blocks keep the wrapped
+// rows before them; wrapping resumes a row before the first edit, since a
+// grapheme cluster appended across a row boundary can change where the
+// previous rows broke.
+func (term *Vterm) layoutRow(layout *vtermTextRow, row, width int) {
+	content := term.vt.Content[row]
+	end := textEnd(term.vt, row)
+	text := content[:end]
+	keep := 0
+	if layout.wraps != nil && layout.width == width {
+		for keep < len(layout.blocks) && (keep+1)*wrapHashBlock <= end &&
+			hashRunes(text[keep*wrapHashBlock:(keep+1)*wrapHashBlock]) == layout.blocks[keep] {
+			keep++
+		}
+	} else {
+		layout.wraps = layout.wraps[:0]
+	}
+	resume := 0
+	if edit := min(keep*wrapHashBlock, end); edit > 0 && len(layout.wraps) > 0 {
+		// The wrapped row holding the last unchanged rune, and one before it.
+		idx := sort.SearchInts(layout.wraps, edit) - 1
+		resume = max(0, idx-1)
+	}
+	start := 0
+	if resume < len(layout.wraps) {
+		start = layout.wraps[resume]
+	}
+	layout.blocks = layout.blocks[:keep]
+	for (len(layout.blocks)+1)*wrapHashBlock <= end {
+		n := len(layout.blocks)
+		layout.blocks = append(layout.blocks, hashRunes(text[n*wrapHashBlock:(n+1)*wrapHashBlock]))
+	}
+	var wrapped int
+	layout.wraps, wrapped = wrapRunes(layout.wraps[:min(resume, len(layout.wraps))], text, start, width)
+	term.wrapWork += wrapped
+	layout.length = end
+	layout.width = width
+}
+
+// textEnd omits plain erase padding while preserving visible whitespace such
 // as background-colored progress bars, reverse video and underlined spaces.
-func textLine(terminal *midterm.Terminal, row int) string {
+func textEnd(terminal *midterm.Terminal, row int) int {
 	content := terminal.Content[row]
 	end := len(content)
 	for end > 0 && content[end-1] == ' ' {
@@ -181,7 +241,101 @@ func textLine(terminal *midterm.Terminal, row int) string {
 			end = max(end, min(col, len(content)))
 		}
 	}
-	return string(content[:end])
+	return end
+}
+
+// vtermCells renders column ranges of one midterm row like RenderLine does,
+// with its formats, search highlights and cursor, so a wrapped row costs its
+// own cells rather than a render and ANSI-aware cut of the whole logical line.
+// Ranges must be requested in ascending order; together they take one pass
+// over the row's format regions.
+type vtermCells struct {
+	vt     *midterm.Terminal
+	line   []rune
+	region *midterm.Region
+	pos    int // column where region starts
+	hls    []midterm.SearchHighlight
+	cursor int
+}
+
+func newVtermCells(vt *midterm.Terminal, row int) *vtermCells {
+	cells := &vtermCells{vt: vt, line: vt.Content[row], cursor: -1}
+	if row < len(vt.Format.Rows) {
+		cells.region = vt.Format.Rows[row]
+	}
+	if vt.SearchHighlights != nil {
+		cells.hls = vt.SearchHighlights[row]
+	}
+	if vt.CursorVisible && vt.Cursor.Y == row &&
+		(vt.CursorBlinkEpoch == nil || int(time.Since(*vt.CursorBlinkEpoch).Seconds())%2 == 0) {
+		cells.cursor = vt.Cursor.X
+	}
+	return cells
+}
+
+// render writes columns [from, to), starting from a clean SGR state, without
+// a trailing reset.
+func (cells *vtermCells) render(w *strings.Builder, from, to int) {
+	to = min(to, len(cells.line))
+	last := midterm.EmptyFormat
+	for from < to {
+		for cells.region != nil && cells.pos+cells.region.Size <= from {
+			cells.pos += cells.region.Size
+			cells.region = cells.region.Next
+		}
+		if cells.region == nil {
+			return
+		}
+		f := cells.region.F
+		end := min(to, cells.pos+cells.region.Size)
+		for len(cells.hls) > 0 && cells.hls[0].End <= from {
+			cells.hls = cells.hls[1:]
+		}
+		if len(cells.hls) > 0 {
+			if hl := cells.hls[0]; hl.Col <= from {
+				f = cells.vt.SearchMatchStyle
+				if hl.Current {
+					f = cells.vt.SearchCurrentStyle
+				}
+				end = min(end, hl.End)
+			} else {
+				end = min(end, hl.Col)
+			}
+		}
+		if cells.cursor == from {
+			f = cells.region.F
+			f.SetReverse(!f.IsReverse())
+			end = from + 1
+		} else if cells.cursor > from && cells.cursor < end {
+			end = cells.cursor
+		}
+		if f != last {
+			if formatLeaks(last, f) {
+				w.WriteString(reset)
+			}
+			w.WriteString(f.Render())
+			last = f
+		}
+		w.WriteString(string(cells.line[from:end]))
+		from = end
+	}
+}
+
+// formatLeaks mirrors midterm: Format.Render emits only "on" sequences, so any
+// attribute or color the previous format set that f drops needs a reset first.
+func formatLeaks(prev, f midterm.Format) bool {
+	if f.IsReset() || f == (midterm.Format{}) {
+		return false
+	}
+	const attrs = midterm.BoldBit | midterm.FaintBit | midterm.ItalicBit | midterm.UnderlineBit |
+		midterm.BlinkBit | midterm.ReverseBit | midterm.ConcealBit
+	if (prev.Properties&attrs)&^f.Properties != 0 {
+		return true
+	}
+	if prev.Fg != nil && f.Fg == nil {
+		return true
+	}
+	return prev.Bg != nil && f.Bg == nil
 }
 
 func (term *Vterm) layoutTextLocked() {
@@ -204,13 +358,12 @@ func (term *Vterm) layoutTextLocked() {
 		if layout.wraps == nil || layout.changes != term.vt.Changes[row] || layout.width != width {
 			// Erasing a progress line leaves blank cells in midterm. They must
 			// not become extra empty wrapped rows after a shorter replacement.
-			layout.wraps = wrapLine(textLine(term.vt, row), width)
+			term.layoutRow(layout, row, width)
 			layout.changes = term.vt.Changes[row]
-			layout.width = width
 		}
 		layout.offset = height
 		height += len(layout.wraps)
-		term.cacheCells += len(term.vt.Content[row]) + 12 + 6*len(layout.wraps)
+		term.cacheCells += len(term.vt.Content[row]) + 12 + 2*len(layout.wraps) + 2*len(layout.blocks)
 	}
 	term.textHeight = height
 	term.layoutDirty = false
@@ -230,14 +383,8 @@ func (term *Vterm) matchRow(match midterm.SearchMatch) int {
 		return match.Row
 	}
 	layout := term.textRows[match.Row]
-	row := layout.offset
-	for _, wrap := range layout.wraps[1:] {
-		if wrap.col > match.Col {
-			break
-		}
-		row++
-	}
-	return row
+	wrap := sort.Search(len(layout.wraps), func(i int) bool { return layout.wraps[i] > match.Col }) - 1
+	return layout.offset + max(0, wrap)
 }
 
 // Close removes disk-backed log storage. The terminal must no longer be used.

@@ -169,10 +169,17 @@ func (term *Vterm) layoutMedia() {
 			terminal := midterm.NewAutoResizingTerminal()
 			_, _ = terminal.Write([]byte(text))
 			for row := 0; row < terminal.UsedHeight(); row++ {
-				var line strings.Builder
-				terminal.RenderLineFgBg(&line, row, nil, nil)
-				for _, wrap := range wrapLine(textLine(terminal, row), width) {
-					lines = append(lines, ansi.Cut(line.String(), wrap.start, wrap.end)+reset)
+				end := textEnd(terminal, row)
+				wraps, _ := wrapRunes(nil, terminal.Content[row][:end], 0, width)
+				cells := newVtermCells(terminal, row)
+				for i, start := range wraps {
+					stop := end
+					if i+1 < len(wraps) {
+						stop = wraps[i+1]
+					}
+					var line strings.Builder
+					cells.render(&line, start, stop)
+					lines = append(lines, line.String()+reset)
 				}
 			}
 		}

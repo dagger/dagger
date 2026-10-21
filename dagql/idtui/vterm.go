@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"unicode"
@@ -46,6 +48,8 @@ type Vterm struct {
 	textHeight  int
 	layoutDirty bool
 	cacheCells  int
+	// wrapWork counts runes passed to the wrapper, for complexity tests.
+	wrapWork int
 	// Regular terminal buffer
 	viewBuf     *bytes.Buffer
 	rawBuf      *logBuffer
@@ -572,22 +576,27 @@ func (term *Vterm) renderLocked(w io.Writer, offset, height int) {
 		return
 	}
 	end := max(0, offset) + max(0, height)
-	for row, layout := range term.textRows {
-		if layout.offset+len(layout.wraps) <= offset {
-			continue
-		}
+	first := sort.Search(len(term.textRows), func(row int) bool {
+		layout := &term.textRows[row]
+		return layout.offset+len(layout.wraps) > offset
+	})
+	var line strings.Builder
+	for row := first; row < len(term.textRows); row++ {
+		layout := &term.textRows[row]
 		if layout.offset >= end {
 			break
 		}
-		var line strings.Builder
-		term.vt.RenderLineFgBg(&line, row, nil, nil)
-		for i, wrap := range layout.wraps {
-			if layout.offset+i < offset || layout.offset+i >= end {
-				continue
-			}
-			// Cut carries the logical line's ANSI style into every visible
-			// slice, even when earlier wrapped rows are outside the viewport.
-			fmt.Fprintln(w, term.Prefix+ansi.Cut(line.String(), wrap.start, wrap.end)+reset)
+		// Each visible slice starts from its own SGR state, so the logical
+		// line's style carries into continuation rows even when earlier
+		// wrapped rows are outside the viewport.
+		cells := newVtermCells(term.vt, row)
+		for i := max(0, offset-layout.offset); i < len(layout.wraps) && layout.offset+i < end; i++ {
+			line.Reset()
+			line.WriteString(term.Prefix)
+			cells.render(&line, layout.wraps[i], layout.wrapEnd(i))
+			line.WriteString(reset)
+			line.WriteByte('\n')
+			_, _ = io.WriteString(w, line.String())
 		}
 	}
 }
@@ -607,17 +616,24 @@ func (term *Vterm) LastLine() string {
 	}
 	var lastLine string
 	for row := used - 1; row >= 0; row-- {
+		if term.segments == nil {
+			// Render only the last wrapped row of the logical line.
+			layout := &term.textRows[row]
+			i := len(layout.wraps) - 1
+			if !slices.ContainsFunc(term.vt.Content[row][:layout.length], func(r rune) bool { return !unicode.IsSpace(r) }) {
+				continue
+			}
+			var buf strings.Builder
+			newVtermCells(term.vt, row).render(&buf, layout.wraps[i], layout.wrapEnd(i))
+			lastLine = strings.TrimRightFunc(buf.String(), unicode.IsSpace)
+			break
+		}
 		buf := new(strings.Builder)
 		_ = term.vt.RenderLine(buf, row)
 		if strings.TrimSpace(ansi.Strip(buf.String())) == "" {
 			continue
 		}
 		lastLine = strings.TrimRightFunc(buf.String(), unicode.IsSpace)
-		if term.segments == nil {
-			wraps := term.textRows[row].wraps
-			wrap := wraps[len(wraps)-1]
-			lastLine = ansi.Cut(lastLine, wrap.start, wrap.end)
-		}
 		break
 	}
 	return lastLine + reset
