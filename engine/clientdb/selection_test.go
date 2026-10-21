@@ -286,7 +286,7 @@ func TestSelectedPriorityConversation(t *testing.T) {
 
 func TestSelectedMetadataTextAndVisibility(t *testing.T) {
 	classify := func(row Log) (logFlags, error) {
-		attrs, err := logAttrClass(row.Attributes)
+		attrs, _, err := logAttrClass(row.Attributes)
 		return logClass(attrs, err, row.Body)
 	}
 	for _, key := range []string{telemetry.LogsGlobalAttr, telemetry.LogsVerboseAttr} {
