@@ -810,8 +810,9 @@ func fetchLogBatch(ctx context.Context, db *clientdb.DB, since int64, limit int,
 }
 
 func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request, record *clientRecord) error {
+	keep := streamedSpanRow(record.clientID)
 	return ps.streamHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, proto.Message, int, error) {
-		next, req, rows, err := fetchSpanBatch(ctx, db, since, limit, nil)
+		next, req, rows, err := fetchSpanBatch(ctx, db, since, limit, keep)
 		if req == nil {
 			return next, nil, rows, err
 		}
@@ -820,11 +821,12 @@ func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request,
 }
 
 func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, record *clientRecord) error {
+	keep := streamedLogRow(record.clientID)
 	if r.URL.Query().Get(enginetel.LiveDisplayParam) == enginetel.LiveDisplayPresence {
-		return ps.streamHandler(w, r, record, presenceLogFetcher())
+		return ps.streamHandler(w, r, record, presenceLogFetcher(keep))
 	}
 	return ps.streamHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, proto.Message, int, error) {
-		next, req, rows, err := fetchLogBatch(ctx, db, since, limit, nil)
+		next, req, rows, err := fetchLogBatch(ctx, db, since, limit, keep)
 		if req == nil {
 			return next, nil, rows, err
 		}
@@ -833,6 +835,7 @@ func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, r
 }
 
 func (ps *PubSub) MetricsSubscribeHandler(w http.ResponseWriter, r *http.Request, record *clientRecord) error {
+	keep := streamedMetricRow(record.clientID)
 	return ps.streamHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, proto.Message, int, error) {
 		metrics, err := db.Read().SelectMetricsSince(ctx, clientdb.SelectMetricsSinceParams{
 			ID:    since,
@@ -845,8 +848,14 @@ func (ps *PubSub) MetricsSubscribeHandler(w http.ResponseWriter, r *http.Request
 			return since, nil, 0, nil
 		}
 		since = metrics[len(metrics)-1].ID
+		kept := make([]clientdb.Metric, 0, len(metrics))
+		for i := range metrics {
+			if keep(&metrics[i]) {
+				kept = append(kept, metrics[i])
+			}
+		}
 		return since, &colmetricspb.ExportMetricsServiceRequest{
-			ResourceMetrics: clientdb.MetricsToPB(metrics),
+			ResourceMetrics: clientdb.MetricsToPB(kept),
 		}, len(metrics), nil
 	})
 }
@@ -1324,6 +1333,7 @@ func (ps *PubSub) serveLiveStream(w http.ResponseWriter, r *http.Request, record
 
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set(enginetel.LiveFeaturesHeader, liveTelemetryFeatures)
+	w.Header().Set(engine.ClientTelemetryIngestHeader, engine.ClientTelemetryIngestStore)
 	if sess := record.daggerSession; sess != nil && sess.publishesToCloud() {
 		w.Header().Set(engine.CloudTelemetryPublisherHeader, engine.CloudTelemetryPublisherEngine)
 	}
