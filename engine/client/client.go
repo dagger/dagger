@@ -210,6 +210,13 @@ type Client struct {
 
 	telemetry *errgroup.Group
 
+	// ingestsTelemetry and publishesTelemetry record what the engine
+	// answered on this client's trace stream: whether it stores the
+	// telemetry the client posts about itself (ExportSpans, ...), and
+	// whether it publishes the session's telemetry to Cloud.
+	ingestsTelemetry   bool
+	publishesTelemetry bool
+
 	httpClient *httpClient
 	bkClient   *bkclient.Client
 	bkVersion  string
@@ -1069,6 +1076,10 @@ type otlpConsumer struct {
 	// Reconnects keep that answer, so forwarding never flips midway. Only
 	// the consuming goroutine touches it after the first connect.
 	enginePublishes bool
+	// engineIngests records whether the engine stores the telemetry the
+	// client posts about itself (engine.ClientTelemetryIngestHeader), from
+	// the stream's first response.
+	engineIngests bool
 }
 
 // confirmsEnginePublishing reports whether a telemetry stream's response
@@ -1114,6 +1125,7 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte, liveTelemetr
 		return fmt.Errorf("connect to OTLP stream: %w", err)
 	}
 	c.enginePublishes = confirmsEnginePublishing(resp)
+	c.engineIngests = resp.Header.Get(engine.ClientTelemetryIngestHeader) == engine.ClientTelemetryIngestStore
 	span.SetAttributes(attribute.Bool("dagger.io/telemetry.engine_publishes", c.enginePublishes))
 
 	c.eg.Go(func() error {
@@ -1384,7 +1396,7 @@ func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error
 		eg:         c.telemetry,
 	}
 
-	return exp.Consume(ctx, func(data []byte, encoding liveTelemetryEncoding) error {
+	if err := exp.Consume(ctx, func(data []byte, encoding liveTelemetryEncoding) error {
 		var req coltracepb.ExportTraceServiceRequest
 		if err := unmarshalLiveTelemetry(data, encoding, &req); err != nil {
 			return fmt.Errorf("unmarshal: %w", err)
@@ -1405,7 +1417,14 @@ func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error
 		}
 
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+	// Consume reads both answers off the first response before it returns;
+	// the consuming goroutine never changes them.
+	c.ingestsTelemetry = exp.engineIngests && c.nestedSessionPort == 0
+	c.publishesTelemetry = c.forwardsWithoutCloud(exp.enginePublishes)
+	return nil
 }
 
 func (c *Client) exportLogs(ctx context.Context, httpClient *httpClient) error {
