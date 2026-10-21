@@ -1,0 +1,7 @@
+kind: Added
+body: |
+  The CLI reads `leave_old_engines` from the `[engine]` section of the user config file (`~/.config/dagger/config.toml` or `$DAGGER_CONFIG`). When it is `true`, starting an engine no longer removes engine containers of other versions. `DAGGER_LEAVE_OLD_ENGINE`, when set, still takes precedence.
+time: 2026-10-20T20:00:00Z
+custom:
+  Author: sipsma
+  PR: ""
