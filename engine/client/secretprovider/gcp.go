@@ -178,7 +178,7 @@ func gcpConfigureClient(ctx context.Context) error {
 
 	// Check for explicit credentials file
 	if credFile := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"); credFile != "" {
-		opts = append(opts, option.WithCredentialsFile(credFile))
+		opts = append(opts, option.WithCredentialsFile(credFile)) //nolint:staticcheck
 	}
 	// Otherwise, the client will use Application Default Credentials (ADC)
 	// which includes:

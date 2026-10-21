@@ -27,7 +27,7 @@ const (
 	// Set to a commit on https://github.com/dagger/dagger-go-sdk if an unreleased
 	// change is needed in the generated library.
 	// Otherwise, update it to the latest known commit during release.
-	goSDKLibVersion = "2dbebdf7a7405d33d7c8962bba6b5f6ca17d5697" // v0.21.10
+	goSDKLibVersion = "2dbebdf7a7405d33d7c8962bba6b5f6ca17d5697" // v0.21.11
 )
 
 var goSDKExecMDDigest = digest.FromString("go-sdk-with-exec-execmd")
@@ -139,7 +139,8 @@ func (sdk *goSDK) GenerateClient(
 		dagql.String(fmt.Sprintf("--client-dir=%s", outputDir)),
 	}
 
-	err = dag.Select(ctx, ctr, &ctr,
+	err = dag.Select(
+		ctx, ctr, &ctr,
 		dagql.Selector{
 			Field: "withMountedFile",
 			Args: []dagql.NamedInput{
@@ -387,7 +388,8 @@ func (sdk *goSDK) ModuleTypes(
 	}
 	selectors = append(selectors, dependencySelectors...)
 
-	selectors = append(selectors,
+	selectors = append(
+		selectors,
 		dagql.Selector{
 			Field: "withExec",
 			Args: []dagql.NamedInput{
@@ -438,7 +440,8 @@ func (sdk *goSDK) ModuleTypes(
 	}
 
 	var modDefsID string
-	err = dag.Select(ctx, ctr, &modDefsID,
+	err = dag.Select(
+		ctx, ctr, &modDefsID,
 		dagql.Selector{
 			Field: "file",
 			Args: []dagql.NamedInput{
@@ -504,7 +507,8 @@ func (sdk *goSDK) Runtime(
 	if err != nil {
 		return nil, err
 	}
-	if err := dag.Select(ctx, ctr, &ctr,
+	if err := dag.Select(
+		ctx, ctr, &ctr,
 		dagql.Selector{
 			Field: "withExec",
 			Args: []dagql.NamedInput{
@@ -606,7 +610,8 @@ func (sdk *goSDK) baseWithCodegen(
 	// anyways. If it doesn't exist, we ignore not found in the implementation of
 	// `withoutFile` so it will be a no-op.
 	var updatedContextDir dagql.Result[*core.Directory]
-	if err := dag.Select(ctx, contextDir, &updatedContextDir,
+	if err := dag.Select(
+		ctx, contextDir, &updatedContextDir,
 		dagql.Selector{
 			Field: "withoutFile",
 			Args: []dagql.NamedInput{
@@ -682,7 +687,8 @@ func (sdk *goSDK) baseWithCodegen(
 
 	// now that we are done with gitconfig and injecting env
 	// variables, we can run the codegen command.
-	selectors = append(selectors,
+	selectors = append(
+		selectors,
 		dagql.Selector{
 			Field: "withoutDefaultArgs",
 		},
@@ -762,7 +768,8 @@ func (sdk *goSDK) base(ctx context.Context) (dagql.ObjectResult[*core.Container]
 	}
 
 	var baseCtr dagql.ObjectResult[*core.Container]
-	if err := dag.Select(ctx, dag.Root(), &baseCtr,
+	if err := dag.Select(
+		ctx, dag.Root(), &baseCtr,
 		dagql.Selector{
 			Field: "_builtinContainer",
 			Args: []dagql.NamedInput{
@@ -853,7 +860,8 @@ func (sdk *goSDK) base(ctx context.Context) (dagql.ObjectResult[*core.Container]
 	}
 
 	var ctr dagql.ObjectResult[*core.Container]
-	if err := dag.Select(ctx, baseCtr, &ctr,
+	if err := dag.Select(
+		ctx, baseCtr, &ctr,
 		dagql.Selector{
 			Field: "withMountedCache",
 			Args: []dagql.NamedInput{
@@ -981,7 +989,8 @@ func (sdk *goSDK) getUnixSocketSelector(ctx context.Context) ([]dagql.Selector, 
 	}
 
 	var sockInst dagql.Result[*core.Socket]
-	if err := dag.Select(ctx, dag.Root(), &sockInst,
+	if err := dag.Select(
+		ctx, dag.Root(), &sockInst,
 		dagql.Selector{
 			Field: "host",
 		},
