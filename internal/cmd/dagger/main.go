@@ -1257,6 +1257,15 @@ func getViewWidth() int {
 	return width - 1
 }
 
+// helpProfile styles help for its reader: pipes, agents and NO_COLOR get plain
+// text, so they can split command rows into names.
+var helpProfile = func() termenv.Profile {
+	if idtui.RunningInAgent() {
+		return termenv.Ascii
+	}
+	return termenv.NewOutput(os.Stdout).EnvColorProfile()
+}
+
 // flagUsagesWrapped returns the usage string for all flags in the given FlagSet
 // wrapped to the width of the terminal.
 func flagUsagesWrapped(flags *pflag.FlagSet) string {
@@ -1298,14 +1307,14 @@ func wrapCmdDescription(name, short string, padding int) string {
 	// the right based on the longest name. Add two extra spaces to the left
 	// of the screen, and three extra spaces before the description.
 	nameFormat := fmt.Sprintf("  %%-%ds   ", padding)
-	name = fmt.Sprintf(nameFormat, name)
-	if len(name)+len(short) >= width {
-		wrapped := ansi.Wordwrap(short, width-len(name), "-")
-		indented := indentLines(wrapped, uint(len(name)))
+	padded := fmt.Sprintf(nameFormat, name)
+	if len(padded)+len(short) >= width {
+		wrapped := ansi.Wordwrap(short, width-len(padded), "-")
+		indented := indentLines(wrapped, uint(len(padded)))
 		// first line shouldn't be indented since we're going to prepend the name
 		short = strings.TrimLeftFunc(indented, unicode.IsSpace)
 	}
-	return name + short
+	return strings.Replace(padded, name, helpProfile().String(name).Bold().String(), 1) + short
 }
 
 // cmdShortWrappedListByGroups renders the AVAILABLE COMMANDS section for a

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger/core"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
@@ -447,8 +448,8 @@ func TestModuleInitHelpListsInstalledSDKs(t *testing.T) {
 	require.Contains(t, help, "dagger module init SDK [flags]")
 	require.Contains(t, help, "AVAILABLE SDKs")
 	require.NotContains(t, help, "AVAILABLE COMMANDS")
-	require.Contains(t, strings.Fields(help), "go")
-	require.Contains(t, strings.Fields(help), "python")
+	require.Contains(t, strings.Fields(ansi.Strip(help)), "go")
+	require.Contains(t, strings.Fields(ansi.Strip(help)), "python")
 	require.NotContains(t, help, "Examples")
 
 	for _, cmd := range []*cobra.Command{moduleClientAddCmd, moduleClientRemoveCmd} {
