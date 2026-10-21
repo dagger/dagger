@@ -19,6 +19,9 @@ func (ChangesetSuite) TestMergedFilePermissions(ctx context.Context, t *testctx.
 		WithNewFile("deleted", "gone", core.DirectoryWithNewFileOpts{Permissions: 0o600})
 	first := base.
 		WithNewFile("a", "private", core.DirectoryWithNewFileOpts{Permissions: 0o600}).
+		// Overwriting an existing file preserves its mode, so recreate it
+		// to exercise a content change together with a permission change.
+		WithoutFile("modified").
 		WithNewFile("modified", "after", core.DirectoryWithNewFileOpts{Permissions: 0o640}).
 		WithoutFile("deleted").Changes(base)
 	second := base.
@@ -27,6 +30,11 @@ func (ChangesetSuite) TestMergedFilePermissions(ctx context.Context, t *testctx.
 	third := base.
 		WithNewFile("c", "third", core.DirectoryWithNewFileOpts{Permissions: 0o440}).
 		Changes(base)
+	stat, err := first.After().Stat(ctx, "modified")
+	require.NoError(t, err)
+	permissions, err := stat.Permissions(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 0o640, permissions, "input fixture mode")
 
 	for _, tc := range []struct {
 		name   string

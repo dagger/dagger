@@ -18,12 +18,7 @@ type mergeFileMode struct {
 	side int
 }
 
-// restoreFileModes restores the permissions Git cannot represent. Unchanged
-// files retain the merge base's mode; changed files use their input's mode.
-// When both sides change a mode, the conflict preference breaks the tie (ours
-// for conflict markers and clean merges), while retaining Git's executable-bit
-// decision. Symlinks and paths deleted or replaced by directories are skipped.
-func (ws *gitMergeWorkspace) restoreFileModes(ctx context.Context, base map[string]os.FileMode, preferTheirs bool, branches []string, contents ...*changesetContent) error {
+func mergeFileModeCandidates(ctx context.Context, base map[string]os.FileMode, contents ...*changesetContent) (map[string][]mergeFileMode, error) {
 	modes := make(map[string][]mergeFileMode, len(base))
 	for p, mode := range base {
 		modes[p] = []mergeFileMode{{mode: mode, side: len(contents)}}
@@ -53,8 +48,21 @@ func (ws *gitMergeWorkspace) restoreFileModes(ctx context.Context, base map[stri
 			return nil
 		})
 		if err != nil {
-			return fmt.Errorf("read merge file modes: %w", err)
+			return nil, fmt.Errorf("read merge file modes: %w", err)
 		}
+	}
+	return modes, nil
+}
+
+// restoreFileModes restores the permissions Git cannot represent. Unchanged
+// files retain the merge base's mode; changed files use their input's mode.
+// When both sides change a mode, the conflict preference breaks the tie (ours
+// for conflict markers and clean merges), while retaining Git's executable-bit
+// decision. Symlinks and paths deleted or replaced by directories are skipped.
+func (ws *gitMergeWorkspace) restoreFileModes(ctx context.Context, base map[string]os.FileMode, preferTheirs bool, branches []string, contents ...*changesetContent) error {
+	modes, err := mergeFileModeCandidates(ctx, base, contents...)
+	if err != nil {
+		return err
 	}
 	// A rename on one side can carry the other side's edits to the new path.
 	// Make both paths' mode candidates available at that destination too.
@@ -68,28 +76,6 @@ func (ws *gitMergeWorkspace) restoreFileModes(ctx context.Context, base map[stri
 		}
 	}
 	var recoveredRenames bool
-	recoverRenames := func() error {
-		// Directory rename detection can move an added file to a path no
-		// input declared. Ask Git for that mapping only if we encounter one.
-		originalModes, originalBase := maps.Clone(modes), maps.Clone(base)
-		for _, branch := range branches {
-			out, err := runGitOutput(ctx, ws.workDir, "diff", "--name-status", "-z", "--find-renames", "--diff-filter=R", branch, "--")
-			if err != nil {
-				return fmt.Errorf("find merged file renames: %w", err)
-			}
-			for newPath, oldPath := range parseGitOutput([]byte(out), "", "").Renamed {
-				if gitMetaPath(newPath) || gitMetaPath(oldPath) || len(modes[newPath]) != 0 {
-					continue
-				}
-				modes[newPath] = slices.Clone(originalModes[oldPath])
-				if mode, ok := originalBase[oldPath]; ok {
-					base[newPath] = mode
-				}
-			}
-		}
-		recoveredRenames = true
-		return nil
-	}
 	// Walking the result avoids following a symlink that replaced a base
 	// directory and accidentally chmodding its target through an old child.
 	return filepath.WalkDir(ws.workDir, func(full string, entry fs.DirEntry, err error) error {
@@ -111,9 +97,10 @@ func (ws *gitMergeWorkspace) restoreFileModes(ctx context.Context, base map[stri
 			return nil
 		}
 		if len(modes[p]) == 0 && !recoveredRenames {
-			if err := recoverRenames(); err != nil {
+			if err := ws.recoverFileModeRenames(ctx, modes, base, branches); err != nil {
 				return err
 			}
+			recoveredRenames = true
 		}
 		candidates := modes[p]
 		if len(candidates) == 0 {
@@ -152,4 +139,26 @@ func (ws *gitMergeWorkspace) restoreFileModes(ctx context.Context, base map[stri
 		}
 		return nil
 	})
+}
+
+func (ws *gitMergeWorkspace) recoverFileModeRenames(ctx context.Context, modes map[string][]mergeFileMode, base map[string]os.FileMode, branches []string) error {
+	// Directory rename detection can move an added file to a path no
+	// input declared. Ask Git for that mapping only if we encounter one.
+	originalModes, originalBase := maps.Clone(modes), maps.Clone(base)
+	for _, branch := range branches {
+		out, err := runGitOutput(ctx, ws.workDir, "diff", "--name-status", "-z", "--find-renames", "--diff-filter=R", branch, "--")
+		if err != nil {
+			return fmt.Errorf("find merged file renames: %w", err)
+		}
+		for newPath, oldPath := range parseGitOutput([]byte(out), "", "").Renamed {
+			if gitMetaPath(newPath) || gitMetaPath(oldPath) || len(modes[newPath]) != 0 {
+				continue
+			}
+			modes[newPath] = slices.Clone(originalModes[oldPath])
+			if mode, ok := originalBase[oldPath]; ok {
+				base[newPath] = mode
+			}
+		}
+	}
+	return nil
 }
