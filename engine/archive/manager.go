@@ -52,7 +52,9 @@ type Bootstrap struct {
 }
 
 // Manifest describes one archive. An archive is identified by its trace ID
-// alone: the first session to register a trace owns its archive.
+// alone: the first session to register a trace owns its archive, except that
+// an ended telemetry-only archive yields to an agent session, or to a plain
+// session that started earlier (see RegisterTelemetryOnly).
 type Manifest struct {
 	Version      int    `json:"version"`
 	TraceID      string `json:"traceID"`
@@ -275,17 +277,20 @@ func validateManifest(manifest Manifest) error {
 // exception is an ended telemetry-only archive: agent state outranks a plain
 // session's telemetry, so an agent session sharing its trace takes it over.
 func (m *Manager) Register(traceID, mainClientID string) (Manifest, error) {
-	return m.register(traceID, mainClientID, false)
+	return m.register(traceID, mainClientID, false, time.Time{})
 }
 
 // RegisterTelemetryOnly creates the active archive for a session that recorded
-// no agent state, retaining its telemetry by trace ID. It never displaces an
-// existing archive.
-func (m *Manager) RegisterTelemetryOnly(traceID, mainClientID string) (Manifest, error) {
-	return m.register(traceID, mainClientID, true)
+// no agent state, retaining its telemetry by trace ID. Sessions sharing a
+// trace (a nested dagger-in-dagger session inherits its parent's) each hold
+// only their own telemetry, so the earliest-started, outermost one keeps the
+// trace: it supersedes an ended telemetry-only archive of a session that
+// started after it. It never displaces any other archive.
+func (m *Manager) RegisterTelemetryOnly(traceID, mainClientID string, startedAt time.Time) (Manifest, error) {
+	return m.register(traceID, mainClientID, true, startedAt)
 }
 
-func (m *Manager) register(traceID, mainClientID string, telemetryOnly bool) (Manifest, error) {
+func (m *Manager) register(traceID, mainClientID string, telemetryOnly bool, startedAt time.Time) (Manifest, error) {
 	if _, err := trace.TraceIDFromHex(traceID); err != nil {
 		return Manifest{}, fmt.Errorf("invalid canonical trace ID: %w", err)
 	}
@@ -293,9 +298,12 @@ func (m *Manager) register(traceID, mainClientID string, telemetryOnly bool) (Ma
 		return Manifest{}, errors.New("main client ID is required")
 	}
 	now := m.now().UTC()
+	if startedAt.IsZero() {
+		startedAt = now
+	}
 	manifest := Manifest{
 		Version: ManifestVersion, TraceID: traceID, MainClientID: mainClientID,
-		TelemetryOnly: telemetryOnly, State: StateActive, StartedAt: now, ExpiresAt: now.Add(m.ttl),
+		TelemetryOnly: telemetryOnly, State: StateActive, StartedAt: startedAt.UTC(), ExpiresAt: now.Add(m.ttl),
 	}
 	if err := validateManifest(manifest); err != nil {
 		return Manifest{}, err
@@ -303,14 +311,14 @@ func (m *Manager) register(traceID, mainClientID string, telemetryOnly bool) (Ma
 	// Every session that inherits the trace registers it from its telemetry
 	// export, so a later registration fails without waiting on updates.
 	m.mu.RLock()
-	_, err := m.registrableLocked(traceID, telemetryOnly)
+	_, err := m.registrableLocked(manifest)
 	m.mu.RUnlock()
 	if err != nil {
 		return Manifest{}, err
 	}
 	m.writeMu.Lock()
 	defer m.writeMu.Unlock()
-	superseded, err := m.registrableLocked(traceID, telemetryOnly)
+	superseded, err := m.registrableLocked(manifest)
 	if err != nil {
 		return Manifest{}, err
 	}
@@ -336,15 +344,16 @@ func (m *Manager) register(traceID, mainClientID string, telemetryOnly bool) (Ma
 }
 
 // registrableLocked requires mu or writeMu. It returns the ended
-// telemetry-only archive an agent registration would supersede, if any.
-func (m *Manager) registrableLocked(traceID string, telemetryOnly bool) (*Manifest, error) {
-	if existing, exists := m.entries[traceID]; exists {
-		if !telemetryOnly && existing.TelemetryOnly && (existing.State == StateClosed || existing.State.Unsealed()) {
+// telemetry-only archive the registration would supersede, if any.
+func (m *Manager) registrableLocked(next Manifest) (*Manifest, error) {
+	if existing, exists := m.entries[next.TraceID]; exists {
+		ended := existing.State == StateClosed || existing.State.Unsealed()
+		if ended && existing.TelemetryOnly && (!next.TelemetryOnly || next.StartedAt.Before(existing.StartedAt)) {
 			return existing, nil
 		}
-		return nil, fmt.Errorf("archive for trace %s is already registered", traceID)
+		return nil, fmt.Errorf("archive for trace %s is already registered", next.TraceID)
 	}
-	if err := m.corrupt[traceID]; err != nil {
+	if err := m.corrupt[next.TraceID]; err != nil {
 		return nil, &Failure{Kind: FailureCorrupt, Err: err}
 	}
 	return nil, nil
