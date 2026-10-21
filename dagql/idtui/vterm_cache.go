@@ -451,7 +451,7 @@ func (term *Vterm) collectSearchRowsLocked() {
 	var rows []int
 	for _, match := range term.vt.SearchMatches {
 		row := term.matchRow(match)
-		if len(rows) == 0 || rows[len(rows)-1] != row {
+		if row >= 0 && (len(rows) == 0 || rows[len(rows)-1] != row) {
 			rows = append(rows, row)
 		}
 	}
@@ -727,13 +727,17 @@ func (term *Vterm) layoutTextLocked() {
 		width = max(1, term.Width-lipgloss.Width(term.Prefix))
 	}
 	used := term.vt.UsedHeight()
+	// A switch between the main and alternate screens, or fewer used rows,
+	// leaves midterm's incremental search with matches it never rescans: it
+	// only looks at rows up to the current screen's height.
+	rescan := term.vt.IsAlt != term.layoutAlt || used < len(term.textRows)
+	term.layoutAlt = term.vt.IsAlt
 	for len(term.textRows) < used {
 		term.textRows = append(term.textRows, vtermTextRow{})
 	}
 	term.textRows = term.textRows[:used]
 	height := 0
 	term.cacheCells = 0
-	shifted := false
 	for row := range term.textRows {
 		layout := &term.textRows[row]
 		content := term.vt.Content[row]
@@ -742,9 +746,11 @@ func (term *Vterm) layoutTextLocked() {
 			region = term.vt.Format.Rows[row]
 		}
 		same := layout.data == unsafe.SliceData(content) && layout.cols == len(content) && layout.region == region
+		// A row moved by insert/delete-line or scrolling keeps its counter,
+		// and midterm's incremental search compares counters by row index.
 		// A resize may land in between: the width doesn't matter to search.
 		if layout.wraps != nil && layout.changes == term.vt.Changes[row] && !same {
-			shifted = true
+			rescan = true
 		}
 		if layout.wraps == nil || layout.changes != term.vt.Changes[row] || layout.width != width || !same {
 			// Erasing a progress line leaves blank cells in midterm. They must
@@ -765,9 +771,7 @@ func (term *Vterm) layoutTextLocked() {
 		term.Offset = min(term.Offset, max(0, height-term.Height))
 	}
 	if term.SearchQuery != "" {
-		if shifted {
-			// midterm's incremental search has the same blind spot: it
-			// compares Changes by row index.
+		if rescan {
 			term.vt.SearchClear()
 		}
 		term.vt.Search(term.SearchQuery)
@@ -775,9 +779,14 @@ func (term *Vterm) layoutTextLocked() {
 	}
 }
 
+// matchRow maps a midterm match to its wrapped row, or -1 for a match on a
+// row that isn't laid out.
 func (term *Vterm) matchRow(match midterm.SearchMatch) int {
 	if term.segments != nil {
 		return match.Row
+	}
+	if match.Row < 0 || match.Row >= len(term.textRows) {
+		return -1
 	}
 	layout := term.textRows[match.Row]
 	wrap := sort.Search(len(layout.wraps), func(i int) bool { return layout.wraps[i] > match.Col }) - 1

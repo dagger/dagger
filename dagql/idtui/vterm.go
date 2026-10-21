@@ -48,6 +48,7 @@ type Vterm struct {
 	storageErr  error
 	textRows    []vtermTextRow
 	textHeight  int
+	layoutAlt   bool // whether textRows were laid out from the alternate screen
 	layoutDirty bool
 	cacheCells  int
 	// wrapWork counts runes passed to the wrapper, for complexity tests.
@@ -405,6 +406,9 @@ func (term *Vterm) SetSearchHighlight(query string, currentRow int) {
 // marks it as "current" in midterm. Must be called with term.mu held.
 func (term *Vterm) setCurrentMatchByRow(row int) {
 	term.vt.SearchSetCurrent(-1)
+	if row < 0 {
+		return
+	}
 	for i, m := range term.vt.SearchMatches {
 		if term.matchRow(m) == row {
 			term.vt.SearchSetCurrent(i)
@@ -715,6 +719,9 @@ func (term *Vterm) LastLine() string {
 		return fmt.Sprintf("[log storage error: %s]", term.storageErr)
 	}
 	used := term.vt.UsedHeight()
+	if term.segments == nil {
+		used = len(term.textRows) // the rows laid out, which index textRows
+	}
 	if used == 0 {
 		return ""
 	}

@@ -2,6 +2,7 @@ package idtui
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -238,6 +239,61 @@ func TestVtermLongLineEditsMatchFreshLayout(t *testing.T) {
 		ref.mu.Unlock()
 		inc.Search("", -1)
 		ref.Search("", -1)
+	}
+}
+
+// A materialized log whose used screen shrinks or switches (alternate screen,
+// clears, reset) under an active search must not index past its rows, and
+// must match a fresh layout of the same stream.
+func TestVtermScreenSwitchesUnderSearch(t *testing.T) {
+	var lines strings.Builder
+	for i := range 20 {
+		fmt.Fprintf(&lines, "match %d\r\n", i)
+	}
+	for _, edit := range []string{
+		"\x1b[?1049hhello alt screen\r\n",
+		// Alternate-screen rows written as often as the main rows they cover,
+		// so per-row counters alone can't tell them apart.
+		"\x1b[?1049h\x1b[Hhello 0",
+		"\x1b[?1049h\x1b[Hhello 0x",
+		"\x1b[?1049h\x1b[Hhello 0xy",
+		"\x1b[?1049h\x1b[Hhello 0\r\nhello 1\r\nhello 2",
+		"\x1b[?1049h\x1b[Hhello",
+		"\x1b[?1049h\x1b[Hhello 0\x1b[?1049l",
+		"\x1b[?1049hmatch on alt\r\n\x1b[?1049l",
+		"\x1b[?1049h\x1b[?1049lmatch after alt\r\n",
+		"\x1b[?47hmatch\x1b[?47l",
+		"\x1b[2Jmatch cleared\r\n",
+		"\x1b[3J\x1b[Hmatch top",
+		"\x1bcmatch reset\r\n",
+		"\x1b[H\x1b[20M",
+	} {
+		inc, ref := NewVterm(termenv.Ascii), NewVterm(termenv.Ascii)
+		for _, term := range []*Vterm{inc, ref} {
+			t.Cleanup(term.Close)
+			term.SetWidth(6)
+			term.SetHeight(100)
+		}
+		_, err := io.WriteString(inc, lines.String())
+		require.NoError(t, err)
+		_ = inc.View()
+		inc.SetSearchHighlight("match", -1)
+		require.NotEmpty(t, inc.SearchMatchRows())
+		_, err = io.WriteString(inc, edit)
+		require.NoError(t, err)
+		require.NotPanics(t, func() { _ = inc.View() }, "%q", edit)
+		_, err = io.WriteString(ref, lines.String()+edit)
+		require.NoError(t, err)
+		ref.SetSearchHighlight("match", -1)
+		require.Equal(t, reflowViewLines(ref), reflowViewLines(inc), "%q", edit)
+		require.Equal(t, ref.SearchMatchRows(), inc.SearchMatchRows(), "%q", edit)
+		require.Equal(t, ref.View(), inc.View(), "highlights %q", edit)
+		require.Equal(t, ref.LastLine(), inc.LastLine(), "%q", edit)
+		// The pager counts midterm's matches directly.
+		count, row := inc.Search("match", 0)
+		refCount, refRow := ref.Search("match", 0)
+		require.Equal(t, refCount, count, "%q", edit)
+		require.Equal(t, refRow, row, "%q", edit)
 	}
 }
 
