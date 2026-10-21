@@ -146,6 +146,12 @@ type daggerSession struct {
 	shutdownCh        chan struct{}
 	closeShutdownOnce sync.Once
 
+	// telemetryEnded is closed once shutdownTelemetry has written the
+	// session's last telemetry, the session-end carrier included, to the
+	// client stores.
+	telemetryEnded   chan struct{}
+	endTelemetryOnce sync.Once
+
 	// the http endpoints being served (as a map since APIs like shellEndpoint can add more)
 	endpoints  map[string]http.Handler
 	endpointMu sync.RWMutex
@@ -804,6 +810,9 @@ func (sess *daggerSession) shutdownTelemetry(ctx context.Context) error {
 	for _, client := range clients {
 		errs = errors.Join(errs, client.closeTelemetryDB())
 	}
+	if sess.telemetryEnded != nil {
+		sess.endTelemetryOnce.Do(func() { close(sess.telemetryEnded) })
+	}
 	logClientTelemetryOp(slog.With("sessionID", sess.sessionID), "session telemetry shutdown", start, traceDur, logDur, metricDur, errs)
 	return errs
 }
@@ -932,6 +941,7 @@ func (srv *Server) initializeClientMetrics(client *clientRuntime) {
 
 func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadata *engine.ClientMetadata) {
 	cloudEngine := clientMetadata != nil && clientMetadata.CloudEngine
+	sess.telemetryEnded = make(chan struct{})
 	srv.initializeSessionCloudTelemetry(sess, clientMetadata)
 	spanExporter := sessionSpanExporter{sess: sess, ps: srv.telemetryPubSub}
 	logExporter := sessionLogExporter{sess: sess, ps: srv.telemetryPubSub}
