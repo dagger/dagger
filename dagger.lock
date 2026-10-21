@@ -16,6 +16,7 @@
 ["","git-latest",["github.com/dagger/wolfi"],"refs/heads/main"]
 ["","git-latest",["github.com/vito/agents",["tagPrefix","committer"]],"refs/tags/v0.0.7"]
 ["","git-latest",["github.com/vito/agents",["tagPrefix","contributor"]],"refs/tags/v0.0.7"]
+["","git-latest",["github.com/vito/agents",["tagPrefix","reviewer"]],"refs/tags/v0.0.7"]
 ["","git-latest",["github.com/vito/agents",["tagPrefix","staff"]],"refs/tags/v0.0.7"]
 ["","git-latest",["github.com/vito/editor"],"refs/tags/v0.0.3"]
 ["","git-sha",["github.com/containernetworking/plugins","refs/tags/v1.9.0"],"9b3772e1a7abf93cbb7c6526a28bc0d27b830e02"]
