@@ -674,7 +674,8 @@ func (term *Vterm) layoutTextLocked() {
 			region = term.vt.Format.Rows[row]
 		}
 		same := layout.data == unsafe.SliceData(content) && layout.cols == len(content) && layout.region == region
-		if layout.wraps != nil && layout.changes == term.vt.Changes[row] && layout.width == width && !same {
+		// A resize may land in between: the width doesn't matter to search.
+		if layout.wraps != nil && layout.changes == term.vt.Changes[row] && !same {
 			shifted = true
 		}
 		if layout.wraps == nil || layout.changes != term.vt.Changes[row] || layout.width != width || !same {

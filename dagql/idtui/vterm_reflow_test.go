@@ -246,24 +246,31 @@ func TestVtermLongLineEditsMatchFreshLayout(t *testing.T) {
 // the same number of cell writes, so their counters are equal, but they wrap
 // differently.
 func TestVtermShiftedRowsAreLaidOutAgain(t *testing.T) {
-	for _, text := range []string{"abc     \r\nabcdefgh\r\nzz", "界界界界界\r\nabcde\r\nzz"} {
-		inc, ref := NewVterm(termenv.Ascii), NewVterm(termenv.Ascii)
-		for _, term := range []*Vterm{inc, ref} {
-			t.Cleanup(term.Close)
-			term.SetWidth(6)
-			term.SetHeight(10)
-			term.SetSearchHighlight("b", -1)
+	for _, resize := range []bool{false, true} {
+		for _, text := range []string{"abc     \r\nabcdefgh\r\nzz", "界界界界界\r\nabcde\r\nzz"} {
+			inc, ref := NewVterm(termenv.Ascii), NewVterm(termenv.Ascii)
+			for _, term := range []*Vterm{inc, ref} {
+				t.Cleanup(term.Close)
+				term.SetWidth(6)
+				term.SetHeight(10)
+				term.SetSearchHighlight("b", -1)
+			}
+			_, err := io.WriteString(inc, text)
+			require.NoError(t, err)
+			_ = reflowViewLines(inc)
+			require.NotEmpty(t, inc.SearchMatchRows())
+			_, err = io.WriteString(inc, "\x1b[H\x1b[M")
+			require.NoError(t, err)
+			_, err = io.WriteString(ref, text+"\x1b[H\x1b[M")
+			require.NoError(t, err)
+			if resize {
+				// A resize before the next layout must not hide the shift.
+				inc.SetWidth(5)
+				ref.SetWidth(5)
+			}
+			require.Equal(t, reflowViewLines(ref), reflowViewLines(inc), "resize=%v %q", resize, text)
+			require.Equal(t, ref.SearchMatchRows(), inc.SearchMatchRows(), "resize=%v %q", resize, text)
 		}
-		_, err := io.WriteString(inc, text)
-		require.NoError(t, err)
-		_ = reflowViewLines(inc)
-		require.NotEmpty(t, inc.SearchMatchRows())
-		_, err = io.WriteString(inc, "\x1b[H\x1b[M")
-		require.NoError(t, err)
-		_, err = io.WriteString(ref, text+"\x1b[H\x1b[M")
-		require.NoError(t, err)
-		require.Equal(t, reflowViewLines(ref), reflowViewLines(inc))
-		require.Equal(t, ref.SearchMatchRows(), inc.SearchMatchRows())
 	}
 }
 
