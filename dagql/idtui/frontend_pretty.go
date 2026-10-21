@@ -2636,6 +2636,7 @@ func (fe *frontendPretty) ImportSnapshots(snapshots []dagui.SpanSnapshot) {
 	fe.dispatch(func() {
 		fe.db.ImportSnapshots(snapshots)
 		for _, id := range ids {
+			fe.requestArrivedSpanLogs(id)
 			if fe.logs.flushResolvedLogsForSpan(id) {
 				fe.updateSpanTreesForLogs(id)
 				fe.updateLogPagerForLogs(id)
@@ -2650,6 +2651,17 @@ func (fe *frontendPretty) ImportSnapshots(snapshots []dagui.SpanSnapshot) {
 		fe.viewDirty = true
 		fe.Update()
 	})
+}
+
+// requestArrivedSpanLogs finishes a log request that waited for the span: a
+// zoom outside the priority window, or a log record ahead of its span, can
+// precede the span itself. The arrived roll-up metadata decides the fetch,
+// without requiring a second expand/zoom gesture. Called by every path that
+// imports spans (ExportSpans, ImportSnapshots).
+func (fe *frontendPretty) requestArrivedSpanLogs(id dagui.SpanID) {
+	if fe.SpanExpanded[id] || fe.deferredLogs[id] {
+		fe.requestLogs(id)
+	}
 }
 
 func (fe *frontendPretty) RevealAllSpans() {
@@ -3079,13 +3091,7 @@ func (fe prettySpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.R
 	fe.dispatch(func() {
 		fe.db.ExportSpans(context.Background(), spansCopy)
 		for _, id := range spanIDs {
-			// A zoom outside the priority window, or a log record ahead of
-			// its span, can precede the span itself. Finish its deferred log
-			// request now, using the arrived roll-up metadata instead of
-			// requiring a second expand/zoom gesture.
-			if fe.SpanExpanded[id] || fe.deferredLogs[id] {
-				fe.requestLogs(id)
-			}
+			fe.requestArrivedSpanLogs(id)
 			if fe.logs.flushResolvedLogsForSpan(id) {
 				fe.updateSpanTreesForLogs(id)
 				fe.updateLogPagerForLogs(id)

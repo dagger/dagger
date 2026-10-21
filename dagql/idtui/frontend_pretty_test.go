@@ -72,8 +72,29 @@ func TestLazyZoomRequestsLogsWhenSpanArrives(t *testing.T) {
 // the span itself, leaving a placeholder without its roll-up metadata. A log
 // request made then must not latch an own-logs fetch: it waits for the span,
 // whichever path asked (a zoom, or an unexpanded request such as a render
-// site or RequestZoomLogs).
+// site or RequestZoomLogs), and whichever path delivers the span (OTLP
+// ExportSpans, or ImportSnapshots).
 func TestLogBeforeSpanDefersRollUpDecision(t *testing.T) {
+	arrivals := []struct {
+		name   string
+		arrive func(t *testing.T, fe *frontendPretty, id dagui.SpanID)
+	}{
+		{"export", func(t *testing.T, fe *frontendPretty, id dagui.SpanID) {
+			span := tracetest.SpanStub{
+				Name:        "rolled-up span",
+				SpanContext: trace.NewSpanContext(trace.SpanContextConfig{TraceID: trace.TraceID{1}, SpanID: id.SpanID}),
+				StartTime:   time.Unix(100, 0), EndTime: time.Unix(101, 0),
+				Attributes: []attribute.KeyValue{attribute.Bool(telemetry.UIRollUpLogsAttr, true)},
+			}.Snapshot()
+			require.NoError(t, fe.SpanExporter().ExportSpans(t.Context(), []sdktrace.ReadOnlySpan{span}))
+		}},
+		{"snapshot", func(_ *testing.T, fe *frontendPretty, id dagui.SpanID) {
+			fe.ImportSnapshots([]dagui.SpanSnapshot{{
+				ID: id, Name: "rolled-up span", RollUpLogs: true,
+				StartTime: time.Unix(100, 0), EndTime: time.Unix(101, 0),
+			}})
+		}},
+	}
 	for _, tc := range []struct {
 		name    string
 		request func(fe *frontendPretty, id dagui.SpanID)
@@ -85,38 +106,34 @@ func TestLogBeforeSpanDefersRollUpDecision(t *testing.T) {
 			fe.dispatch(func() { fe.requestLogs(id) })
 		}},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			fe := NewWithDB(io.Discard, dagui.NewDB())
-			// Run dispatches inline, without a TUI event loop.
-			fe.reportOnly = true
-			id := prettyTestSpanID(42)
-			var requests []bool
-			fe.SetLogProvider(func(got dagui.SpanID, descendants bool) {
-				require.Equal(t, id, got)
-				requests = append(requests, descendants)
+		for _, arrival := range arrivals {
+			t.Run(tc.name+"/"+arrival.name, func(t *testing.T) {
+				fe := NewWithDB(io.Discard, dagui.NewDB())
+				// Run dispatches inline, without a TUI event loop.
+				fe.reportOnly = true
+				id := prettyTestSpanID(42)
+				var requests []bool
+				fe.SetLogProvider(func(got dagui.SpanID, descendants bool) {
+					require.Equal(t, id, got)
+					requests = append(requests, descendants)
+				})
+				require.NoError(t, fe.LogExporter().Export(t.Context(), []sdklog.Record{
+					frontendTestLogRecord(id.SpanID, otellog.StringValue("early name"),
+						otellog.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName)),
+				}))
+				placeholder := fe.db.Spans.Map[id]
+				require.NotNil(t, placeholder, "the log record creates a placeholder")
+				require.False(t, placeholder.Received)
+
+				tc.request(fe, id)
+				require.Empty(t, requests, "a placeholder's roll-up is unknown")
+
+				arrival.arrive(t, fe, id)
+				require.Equal(t, []bool{true}, requests, "the arrived span's roll-up decides the fetch")
+				arrival.arrive(t, fe, id)
+				require.Len(t, requests, 1)
 			})
-			require.NoError(t, fe.LogExporter().Export(t.Context(), []sdklog.Record{
-				frontendTestLogRecord(id.SpanID, otellog.StringValue("early name"),
-					otellog.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName)),
-			}))
-			placeholder := fe.db.Spans.Map[id]
-			require.NotNil(t, placeholder, "the log record creates a placeholder")
-			require.False(t, placeholder.Received)
-
-			tc.request(fe, id)
-			require.Empty(t, requests, "a placeholder's roll-up is unknown")
-
-			span := tracetest.SpanStub{
-				Name:        "rolled-up span",
-				SpanContext: trace.NewSpanContext(trace.SpanContextConfig{TraceID: trace.TraceID{1}, SpanID: id.SpanID}),
-				StartTime:   time.Unix(100, 0), EndTime: time.Unix(101, 0),
-				Attributes: []attribute.KeyValue{attribute.Bool(telemetry.UIRollUpLogsAttr, true)},
-			}.Snapshot()
-			require.NoError(t, fe.SpanExporter().ExportSpans(t.Context(), []sdktrace.ReadOnlySpan{span}))
-			require.Equal(t, []bool{true}, requests, "the arrived span's roll-up decides the fetch")
-			require.NoError(t, fe.SpanExporter().ExportSpans(t.Context(), []sdktrace.ReadOnlySpan{span}))
-			require.Len(t, requests, 1)
-		})
+		}
 	}
 }
 
