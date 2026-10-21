@@ -10,6 +10,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"fmt"
 	"os"
@@ -485,6 +486,59 @@ func (LockfileSuite) TestRemoteWorkspaceModuleUsesLockedGitRef(ctx context.Conte
 			require.Equal(t, "pinned", strings.TrimSpace(string(out)))
 		})
 	}
+}
+
+// Selecting a workspace by branch resolves that branch live, before its lock
+// is available. A later lookup of the same ref in the session still gets the
+// pin from the workspace's lock, not the live resolution.
+func (LockfileSuite) TestRemoteWorkspaceSelectorDoesNotBypassOwnPin(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	gitSrv, _ := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("old", "old"))
+	gitSrv, err := gitSrv.Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = gitSrv.Stop(ctx) })
+	shortHost, err := gitSrv.Hostname(ctx)
+	require.NoError(t, err)
+	getentOut, err := core.NewQuery(c).Container().From(alpineImage).
+		WithExec([]string{"getent", "hosts", shortHost}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	fields := strings.Fields(getentOut)
+	require.NotEmpty(t, fields, "unexpected getent output: %q", getentOut)
+	repoURL := "git://" + fields[0] + "/repo.git"
+
+	pinnedCommit, err := core.NewQuery(c).Git(repoURL).Branch("main").CommitSHA(ctx)
+	require.NoError(t, err)
+
+	// The workspace commit pins its own repository's main to the commit before it.
+	lock := workspace.NewLock()
+	require.NoError(t, lock.SetLookup(workspace.CoreLockNamespace, workspace.LockOperationGitSHA,
+		[]any{repoURL, "main"}, pinnedCommit))
+	lockBytes, err := lock.Marshal()
+	require.NoError(t, err)
+	_, err = core.NewQuery(c).Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).With(gitUserConfig).
+		WithServiceBinding("gitsrv", gitSrv).
+		WithEnvVariable("CACHEBUST", rand.Text()).
+		WithExec([]string{"git", "clone", "git://gitsrv/repo.git", "/src"}).
+		WithWorkdir("/src").
+		WithNewFile("dagger.toml", "").
+		WithNewFile(workspace.LockFileName, string(lockBytes)).
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "workspace"}).
+		WithExec([]string{"git", "push", "origin", "HEAD:main"}).
+		Sync(ctx)
+	require.NoError(t, err)
+
+	workdir := t.TempDir()
+	queryPath := writeQueryDoc(t, workdir, "query.graphql", `{
+  git(url: "`+repoURL+`") {
+    ref(name: "main") { commit }
+  }
+}`)
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "-W", repoURL+"@main", "query", "--doc", queryPath)
+	require.NoError(t, err)
+	require.Contains(t, string(out), pinnedCommit)
 }
 
 func requireRemoteLockUnchanged(ctx context.Context, t *testctx.T, c *dagger.Client, remote remoteLockWorkspace, want string) {
