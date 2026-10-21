@@ -29,8 +29,10 @@ import (
 // presenceLogFetcher is the display-free log push: every row but display
 // text, which it replaces with one presence record per (trace, span, digest).
 // Its presence set belongs to one stream; a reconnect starts a new one and may
-// repeat presence, which is idempotent.
-func presenceLogFetcher() streamFetcher {
+// repeat presence, which is idempotent. Rows keep rejects (the client's own
+// ingested records) are left out, but their presence is still sent: display
+// text is read through log queries, which return those rows too.
+func presenceLogFetcher(keep func(*clientdb.Log) bool) streamFetcher {
 	seen := clientdb.NewLogPresenceSet()
 	lastSince := int64(-1)
 	var last []clientdb.LogPresence
@@ -51,6 +53,15 @@ func presenceLogFetcher() streamFetcher {
 			return 0, nil, 0, err
 		}
 		last, lastSince = presence, since
+		if keep != nil {
+			kept := rows[:0]
+			for i := range rows {
+				if keep(&rows[i]) {
+					kept = append(kept, rows[i])
+				}
+			}
+			rows = kept
+		}
 		req := &collogspb.ExportLogsServiceRequest{ResourceLogs: clientdb.LogsToPB(rows)}
 		if len(presence) > 0 {
 			req.ResourceLogs = append(req.ResourceLogs, presenceResourceLogs(presence))
