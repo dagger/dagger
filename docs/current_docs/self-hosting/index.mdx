@@ -209,7 +209,9 @@ To put more than one host behind one address, use a TCP load balancer with sourc
 
 ## Configure the engines
 
-The engine reads [`engine.json`](../reference/config-files/engine-json.mdx) at startup. Use it to set the cache size limits for the disk of each engine.
+The engine reads [`engine.json`](../reference/config-files/engine-json.mdx) at startup. Use it to set the cache size limits for the disk of each engine, and to configure registry mirrors and private registries.
 
 - **Helm chart:** set the `engine.configJson` value
 - **Docker:** mount the file at `/etc/dagger/engine.json`
+
+A few settings, such as registry client certificates, are only available in `engine.toml`. See [Settings only in engine.toml](../reference/config-files/engine-json.mdx#settings-only-in-enginetoml).
