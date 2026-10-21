@@ -171,6 +171,7 @@ func TestLiveLogQueryOneShotAndFollow(t *testing.T) {
 	query := archive.LogQuery{Spans: []archive.LogSpan{{SpanID: lqRoot, Descendants: true}}}
 
 	resp := postLogQuery(t, ts, query)
+	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.Contains(t, resp.Header.Get(enginetel.LiveFeaturesHeader), enginetel.LiveFeatureLogQuery)
 	require.Equal(t, enginetel.LiveFrameHello, readLogFrame(t, resp.Body).kind)
@@ -182,7 +183,9 @@ func TestLiveLogQueryOneShotAndFollow(t *testing.T) {
 	// Follow: rows appended later arrive on the open stream, including those
 	// of a span that joins the subtree after the query started.
 	query.Follow = true
-	resp = postLogQuery(t, ts, query)
+	follow := postLogQuery(t, ts, query)
+	defer follow.Body.Close()
+	resp = follow
 	require.Equal(t, enginetel.LiveFrameHello, readLogFrame(t, resp.Body).kind)
 	bodies, _ = readLogBodies(t, resp.Body, 2)
 	require.Equal(t, []string{"root 1", "kid 1"}, bodies)
@@ -232,6 +235,7 @@ func TestLiveLogQueryResumesAndValidates(t *testing.T) {
 		"wrong type": map[string]any{"spans": 1},
 	} {
 		resp := postLogQuery(t, ts, q)
+		resp.Body.Close()
 		require.Equal(t, http.StatusBadRequest, resp.StatusCode, name)
 	}
 }
@@ -254,6 +258,7 @@ func TestLiveLogQueryLargeSpanSet(t *testing.T) {
 	require.NoError(t, err)
 	require.Greater(t, len(body), 64<<10)
 	resp := postLogQuery(t, ts, archive.LogQuery{Spans: spans})
+	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.Equal(t, enginetel.LiveFrameHello, readLogFrame(t, resp.Body).kind)
 	bodies, _ := readLogBodies(t, resp.Body, 0)
@@ -266,6 +271,7 @@ func TestLiveLogQueryNestedClientStore(t *testing.T) {
 	f.append(t, "main", []clientdb.Span{logQuerySpanRow(lqRoot, "")}, logQueryRow(t, lqRoot, "main's"))
 	f.append(t, "nested", []clientdb.Span{logQuerySpanRow(lqRoot, "")}, logQueryRow(t, lqRoot, "nested's"))
 	resp := postLogQuery(t, f.serve(t, "nested"), archive.LogQuery{Spans: []archive.LogSpan{{SpanID: lqRoot}}})
+	defer resp.Body.Close()
 	require.Equal(t, enginetel.LiveFrameHello, readLogFrame(t, resp.Body).kind)
 	bodies, _ := readLogBodies(t, resp.Body, 0)
 	require.Equal(t, []string{"nested's"}, bodies)

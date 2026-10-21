@@ -186,5 +186,5 @@ func lastLogTime(req *collogspb.ExportLogsServiceRequest) (time.Time, bool) {
 	if last == 0 {
 		return time.Time{}, false
 	}
-	return time.Unix(0, int64(last)).UTC(), true //nolint:gosec // OTLP nanosecond timestamps fit int64 until 2262
+	return time.Unix(0, int64(last)).UTC(), true
 }
