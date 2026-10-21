@@ -16,6 +16,10 @@ type workspaceLookupLock struct {
 	query   *core.Query
 	lock    *workspace.Lock
 	refresh bool
+	// readOnly marks a lock with nowhere to write back to, such as the
+	// committed lock of a remote Git workspace: its pins apply, but a lookup
+	// it has no entry for resolves live without recording one.
+	readOnly bool
 }
 
 type workspaceLookupLockOverrideKey struct{}
@@ -64,21 +68,37 @@ func loadWorkspaceLookupLock(ctx context.Context, query *core.Query) (*workspace
 	if err != nil {
 		return nil, err
 	}
+	if ok {
+		return &workspaceLookupLock{
+			ctx:     ctx,
+			query:   query,
+			lock:    lock,
+			refresh: workspaceLookupLockRefresh(ctx),
+		}, nil
+	}
+
+	// Without a writable binding, a remote workspace's committed lock still
+	// pins its lookups.
+	lock, ok, err = query.CurrentWorkspaceLock(ctx, false)
+	if err != nil {
+		return nil, err
+	}
 	if !ok {
 		return nil, nil
 	}
-
 	return &workspaceLookupLock{
-		ctx:     ctx,
-		query:   query,
-		lock:    lock,
-		refresh: workspaceLookupLockRefresh(ctx),
+		lock:     lock,
+		refresh:  workspaceLookupLockRefresh(ctx),
+		readOnly: true,
 	}, nil
 }
 
 func (l *workspaceLookupLock) SetLookup(namespace, operation string, inputs []any, value string) error {
 	if l == nil {
 		return fmt.Errorf("workspace lock is required")
+	}
+	if l.readOnly {
+		return fmt.Errorf("workspace lock is read-only")
 	}
 	if l.query != nil {
 		if err := l.query.SetCurrentWorkspaceLookup(l.ctx, namespace, operation, inputs, value); err != nil {
@@ -128,7 +148,7 @@ func resolveLookupFromLoadedLock(
 
 	lockValue, ok := lookupLock.lock.GetLookup(workspace.CoreLockNamespace, operation, inputs)
 	if !ok {
-		resolution.ShouldWrite = true
+		resolution.ShouldWrite = !lookupLock.readOnly
 		return resolution
 	}
 

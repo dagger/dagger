@@ -3160,7 +3160,7 @@ func (srv *Server) CurrentWorkspaceLock(ctx context.Context, requireWritable boo
 		return nil, false, err
 	}
 	if !requireWritable {
-		lock, ok, err := readImmutableRemoteWorkspaceLock(ctx, client.workspace)
+		lock, ok, err := readRemoteWorkspaceLock(ctx, client.workspace)
 		if err != nil || ok {
 			return lock, ok, err
 		}
@@ -3372,22 +3372,22 @@ func readWorkspaceLockState(ctx context.Context, bk interface {
 	return lock, nil
 }
 
-func readImmutableRemoteWorkspaceLock(ctx context.Context, ws *core.Workspace) (*workspace.Lock, bool, error) {
+// readRemoteWorkspaceLock reads the lock committed with a remote Git
+// workspace. The workspace's tree, config and lock all come from the one
+// commit its selector resolved to when the session loaded it, so the lock
+// applies whether the selector named that commit or a branch or tag. Nothing
+// writes back to it.
+func readRemoteWorkspaceLock(ctx context.Context, ws *core.Workspace) (*workspace.Lock, bool, error) {
 	if ws == nil || ws.LockFile == "" {
 		return nil, false, nil
 	}
-
-	// The remote loader records whether the original workspace selector was a
-	// commit. A resolved SHA alone is insufficient because branches and tags have
-	// one too.
-	source, ok := ws.Source().(*core.WorkspaceSourceGitRef)
-	if !ok || !source.ExplicitCommit {
+	if _, ok := ws.Source().(*core.WorkspaceSourceGitRef); !ok {
 		return nil, false, nil
 	}
 
 	root := ws.Rootfs()
 	if root.Self() == nil {
-		return nil, true, fmt.Errorf("immutable remote Git workspace has no root filesystem")
+		return nil, true, fmt.Errorf("remote Git workspace has no root filesystem")
 	}
 	lock, err := readWorkspaceLockFromRootfs(ctx, root, ws.LockFile)
 	return lock, true, err
@@ -3433,7 +3433,7 @@ func readWorkspaceLockFromRootfs(
 			return nil, conflictErr
 		}
 		console(ctx, "Warning: ignoring invalid workspace lockfile.")
-		slog.WarnContext(ctx, "invalid workspace lockfile in immutable Git workspace; ignoring it", "path", lockPath, "error", err)
+		slog.WarnContext(ctx, "invalid workspace lockfile in remote Git workspace; ignoring it", "path", lockPath, "error", err)
 		return workspace.NewLock(), nil
 	}
 	return lock, nil

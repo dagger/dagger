@@ -27,7 +27,6 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/telemetryattrs"
-	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/dagger/util/parallel"
 )
 
@@ -326,7 +325,7 @@ func (srv *Server) loadWorkspaceFromRemote(ctx context.Context, client *clientRu
 		},
 		false, // isLocal
 		tree,  // pre-built rootfs for remote
-		core.NewWorkspaceSourceGitRef(gitRef.Result, gitutil.IsCommitSHA(parsedRef.Version)),
+		core.NewWorkspaceSourceGitRef(gitRef.Result),
 		// The workspace tree is remote, but user-level config still comes from
 		// the caller's host; the key is the declared remote itself.
 		client.daggerSession.engineUtilClient.ReadCallerHostFile,

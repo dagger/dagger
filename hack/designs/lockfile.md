@@ -299,7 +299,8 @@ These are current branch facts, not necessarily the final target for all future 
 - lockfile location is derived from the detected workspace directory
 - on `workspace-plumbing`, that means `dagger.lock` sits under the current detected workspace path, not necessarily repo root
 - lockfile mutation is local-only
-- remote workspaces currently error for lock-aware mutation paths
+- remote workspaces currently error for lock-aware mutation paths; ordinary lookups
+  in a remote Git workspace apply its committed lock without writing back
 - hot lookup paths do not reread `dagger.lock` from the caller host after the session
   snapshot is loaded
 - automatic lock writes are buffered in session-owned workspace state and exported once on
@@ -501,7 +502,7 @@ Important constraints:
 - [ ] add direct coverage for session shutdown export behavior
 - [ ] `http` lookup locking
 - [ ] decide whether additional Git lookup operations such as `refs`, `symrefs`, or `isPublic` belong in the lock model
-- [ ] remote-workspace read semantics, if any
+- [x] remote Git workspaces apply their committed lock read-only
 - [ ] final initialized-workspace semantics for `dagger.lock` anchoring
 
 ### UX and maintenance follow-ups
