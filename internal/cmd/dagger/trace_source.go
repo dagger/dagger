@@ -16,13 +16,27 @@ func openEngineTrace(ctx context.Context, traceID string) (tracesource.Source, f
 	if err := nestedEngineSession(); err != nil {
 		return nil, nil, err
 	}
-	params, err := finalizeEngineParams(ctx, client.Params{LoadWorkspaceModules: false})
+	params, err := engineTraceParams(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
 	return openEngineTraceWith(ctx, traceID, func(ctx context.Context) (*client.Client, error) {
 		return client.Connect(ctx, params)
 	})
+}
+
+// engineTraceParams are the client params for reading an engine archive.
+func engineTraceParams(ctx context.Context) (client.Params, error) {
+	params, err := finalizeEngineParams(ctx, client.Params{LoadWorkspaceModules: false})
+	if err != nil {
+		return params, err
+	}
+	// The connection only reads an archive; it is not the run being viewed.
+	// Its Cloud URL -- with no Cloud telemetry configured, the setup page --
+	// must not become the frontend's, which would enable the web key and
+	// `-w` on the setup page even when Cloud serves the trace.
+	params.CloudURLCallback = nil
+	return params, nil
 }
 
 // nestedEngineSession reports, as unavailability, that this CLI runs inside a

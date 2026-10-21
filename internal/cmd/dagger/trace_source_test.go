@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/archive"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/internal/tracesource"
@@ -81,6 +82,24 @@ func TestEngineTraceWithoutRuntimeFallsBackToCloud(t *testing.T) {
 		})
 		require.Error(t, err)
 	})
+}
+
+// TestEngineTraceParamsLeaveCloudURLAlone: the archive connection's Cloud URL
+// (the setup page, with no Cloud telemetry configured) must never reach the
+// frontend: it would enable the web key and `-w` on the setup page.
+func TestEngineTraceParamsLeaveCloudURLAlone(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("DAGGER_CLOUD_TOKEN", "")
+	prev := Frontend
+	t.Cleanup(func() { Frontend = prev })
+	Frontend = &idtui.FrontendMock{SetCloudURLFunc: func(_ context.Context, url string, _ string, _ bool) {
+		t.Errorf("frontend Cloud URL set to %q", url)
+	}}
+	params, err := engineTraceParams(t.Context())
+	require.NoError(t, err)
+	require.Nil(t, params.CloudURLCallback,
+		"client.Connect reports https://dagger.cloud/traces/setup through any callback")
 }
 
 // TestEngineTraceInsideSessionReadsCloud: inside a Dagger session the CLI
