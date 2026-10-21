@@ -239,12 +239,70 @@ func (sess *daggerSession) closeArchiveControl(ctx context.Context) error {
 	return nil
 }
 
+// registerTelemetryArchive retains a session that registered no agent archive
+// by its trace, so `dagger trace` can read it from the engine as it reads an
+// agent session. It runs at teardown, once the session can record no agent
+// state, and seals like an agent archive with an empty roster. It is best
+// effort: a trace another session already owns, or no trace at all, simply
+// leaves the session's store to store GC as before.
+func (srv *Server) registerTelemetryArchive(sess *daggerSession) {
+	if srv.archives == nil {
+		return
+	}
+	traceID := sess.primaryTraceID()
+	if traceID == "" {
+		return
+	}
+	if size, err := srv.clientDBs.StoreSize(sess.mainClientCallerID); err != nil || size == 0 {
+		// Nothing recorded, or nothing measurable to account for.
+		return
+	}
+	sess.archiveMu.Lock()
+	defer sess.archiveMu.Unlock()
+	if sess.archiveManifest != nil || sess.archiveRegisterErr != nil {
+		return
+	}
+	manifest, err := srv.archives.RegisterTelemetryOnly(traceID, sess.mainClientCallerID)
+	if err != nil {
+		slog.Debug("not retaining session telemetry", "session", sess.sessionID, "traceID", traceID, "err", err)
+		return
+	}
+	sess.archiveManifest = &manifest
+	if sess.archivePendingTitle.traceID == traceID {
+		sess.setArchiveTitleLocked(manifest, sess.archivePendingTitle.title)
+	}
+	sess.archivePendingTitle = pendingArchiveTitle{}
+}
+
+// primaryTraceID is the trace the session's main client declared as its own,
+// or else the trace of its first query.
+func (sess *daggerSession) primaryTraceID() string {
+	sess.clientMu.RLock()
+	record := sess.clientRecords[sess.mainClientCallerID]
+	sess.clientMu.RUnlock()
+	if record != nil {
+		sess.scopeMu.Lock()
+		md := record.clientMetadata
+		sess.scopeMu.Unlock()
+		if md != nil {
+			if traceID, err := trace.TraceIDFromHex(md.PrimaryTraceID); err == nil && traceID.IsValid() {
+				return traceID.String()
+			}
+		}
+	}
+	if sess.wcprofTraceID.IsValid() {
+		return sess.wcprofTraceID.String()
+	}
+	return ""
+}
+
 // finalizeSessionArchive seals the session's archive, or marks it incomplete.
 // teardownErr carries only the teardown errors that make the final cut
 // untrustworthy: closing agent control, killing agents, and the final
 // telemetry shutdown barrier. Unrelated teardown failures (services, cache
 // release, ...) do not affect what the store recorded and must not unseal it.
 func (srv *Server) finalizeSessionArchive(ctx context.Context, sess *daggerSession, teardownErr error) (rerr error) {
+	srv.registerTelemetryArchive(sess)
 	sess.archiveMu.Lock()
 	manifest := sess.archiveManifest
 	registrationErr := sess.archiveRegisterErr
@@ -255,12 +313,24 @@ func (srv *Server) finalizeSessionArchive(ctx context.Context, sess *daggerSessi
 	defer func() {
 		if rerr != nil {
 			_ = srv.archives.MarkIncomplete(manifest.TraceID, rerr)
+			if manifest.TelemetryOnly {
+				// Retaining a plain session is best effort; its teardown
+				// errors are already reported on their own.
+				slog.Debug("telemetry-only archive left unsealed", "traceID", manifest.TraceID, "err", rerr)
+				rerr = nil
+			}
 		}
 	}()
 	if err := errors.Join(teardownErr, sess.archiveCloseErr, registrationErr); err != nil {
 		return err
 	}
-	if sess.archiveExpected.Agents == nil {
+	want := sess.archiveExpected
+	if manifest.TelemetryOnly && want.Agents == nil {
+		// No agent control was closed (or none was ever set up): a
+		// telemetry-only archive's roster is empty by construction.
+		want = agentcontrol.Expectation{Agents: map[agentcontrol.Key]int64{}, Subscriptions: map[agentcontrol.EdgeKey]int64{}}
+	}
+	if want.Agents == nil {
 		return errors.New("missing independent final roster witness")
 	}
 	if err := srv.archives.BeginFinalizing(manifest.TraceID); err != nil {
@@ -276,7 +346,7 @@ func (srv *Server) finalizeSessionArchive(ctx context.Context, sess *daggerSessi
 		return err
 	}
 	sealAt := time.Now().UTC()
-	data, records, err := buildArchiveBootstrap(ctx, db, *manifest, cut, sess.archiveExpected, sealAt)
+	data, records, err := buildArchiveBootstrap(ctx, db, *manifest, cut, want, sealAt)
 	if err != nil {
 		return err
 	}
@@ -428,6 +498,11 @@ func (srv *Server) serveArchiveHTTP(w http.ResponseWriter, r *http.Request, reco
 	if err != nil {
 		slog.Debug("archive lookup failed", "traceID", parts[0], "session", record.daggerSession.sessionID, "err", err)
 		return writeArchiveFailure(w, err)
+	}
+	if len(parts) == 2 && parts[1] == archive.AgentBootstrapResource && m.TelemetryOnly {
+		// Nothing to restore: for agent restore this trace is a clean miss,
+		// whatever state its telemetry was retained in.
+		return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureNotFound, Err: errors.New("archive has no agent state")})
 	}
 	// An unsealed archive (interrupted or incomplete) has no bootstrap or
 	// verified cut; it can only be streamed at the current end of its store,
