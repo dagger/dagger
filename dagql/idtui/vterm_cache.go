@@ -282,10 +282,14 @@ func (term *Vterm) searchMatchRowsLocked() []int {
 // again.
 const vtermSearchBackoff = 4
 
-// staleSearchRowsLocked serves the previous rows of the same query while new
-// ones are pending; rows of another query would be wrong, not just late.
+// staleSearchRowsLocked serves the previous rows while new ones are pending,
+// but only if just the content moved on since: rows of another query, or
+// wrapped-row indices of another layout (width, prefix, images), would be
+// wrong, not just late.
 func (term *Vterm) staleSearchRowsLocked(key vtermSearchKey) []int {
-	if term.searchCached && term.searchKey.query == key.query {
+	stale := term.searchKey
+	stale.version = key.version
+	if term.searchCached && stale == key {
 		return term.searchRows
 	}
 	return nil

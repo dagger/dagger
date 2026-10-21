@@ -406,6 +406,28 @@ func testVtermSearchEvictedLogInBackground(t *testing.T, needles int) {
 	require.Equal(t, want(), big.SearchMatchRows())
 	require.Len(t, big.SearchMatchRows(), needles+101)
 	require.LessOrEqual(t, big.replays, 3)
+
+	// Rows index wrapped rows: after a resize, the old ones would send n/N
+	// to the wrong rows, so none are served until the new ones land.
+	big.SetWidth(7)
+	require.Nil(t, big.SearchMatchRows())
+	cache.searches.Wait()
+	<-searched
+	require.Equal(t, wantSearchRows(t, big), big.SearchMatchRows())
+}
+
+// wantSearchRows is big's match rows from a fresh layout at its current width.
+func wantSearchRows(t *testing.T, big *Vterm) []int {
+	ref := NewVterm(termenv.Ascii)
+	t.Cleanup(ref.Close)
+	big.mu.Lock()
+	stream, width := big.terminalBuf.String(), big.Width
+	big.mu.Unlock()
+	ref.SetWidth(width)
+	_, err := io.WriteString(ref, stream)
+	require.NoError(t, err)
+	ref.SetSearchHighlight("needle", -1)
+	return ref.SearchMatchRows()
 }
 
 // Background searches of many evicted logs run on a couple of workers, drop
