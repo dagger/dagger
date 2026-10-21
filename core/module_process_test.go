@@ -1,10 +1,18 @@
 package core
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+type failingCallServer struct{ mockServer }
+
+func (*failingCallServer) CurrentFunctionCall(context.Context) (*FunctionCall, error) {
+	return nil, errors.New("client scope lookup failed")
+}
 
 func TestModuleProcessModule(t *testing.T) {
 	t.Parallel()
@@ -32,5 +40,11 @@ func TestModuleProcessModule(t *testing.T) {
 	t.Run("a client outside a function call does not, such as a module process", func(t *testing.T) {
 		t.Parallel()
 		require.False(t, moduleFor(t, nil))
+	})
+
+	t.Run("a failed call lookup fails", func(t *testing.T) {
+		t.Parallel()
+		_, err := ModuleProcessModule(ContextWithQuery(t.Context(), &Query{Server: &failingCallServer{}}))
+		require.ErrorContains(t, err, "client scope lookup failed")
 	})
 }

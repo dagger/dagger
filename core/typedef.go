@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"iter"
 	"regexp"
@@ -2535,8 +2536,13 @@ func ModuleProcessModule(ctx context.Context) (dagql.ObjectResult[*Module], erro
 		return none, err
 	}
 	fnCall, err := query.CurrentFunctionCall(ctx)
-	if err != nil || fnCall == nil || !fnCall.moduleProcess {
-		return none, nil //nolint:nilerr
+	switch {
+	case errors.Is(err, ErrNoCurrentFunctionCall), errors.Is(err, ErrNoCurrentModule):
+		return none, nil
+	case err != nil:
+		return none, err
+	case fnCall == nil || !fnCall.moduleProcess:
+		return none, nil
 	}
 	return query.CurrentModule(ctx)
 }
