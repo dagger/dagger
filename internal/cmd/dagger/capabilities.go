@@ -294,8 +294,10 @@ func init() {
 	} {
 		setCommandCapabilities(cmd, mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig, mayRenderPipeline)
 	}
+	// Trace display reads the engine's retained telemetry store before
+	// falling back to Cloud, without selecting a workspace.
 	for _, cmd := range []*cobra.Command{traceCmd, cloudTracesViewCmd, cloudLogsCmd} {
-		setCommandCapabilities(cmd, mayRenderPipeline)
+		setCommandCapabilities(cmd, mayCallEngine, mayRenderPipeline)
 	}
 
 	for _, cmd := range []*cobra.Command{
