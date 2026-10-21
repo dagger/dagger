@@ -194,7 +194,7 @@ func TestNestedTransportRegistrationBindsExactExecAttachables(t *testing.T) {
 
 	logicalMetadata := nestedTransportTestMetadata("logical")
 	logicalMetadata.ClientSecretToken = bootstrapMetadata.ClientSecretToken
-	logical, err := srv.RegisterNestedClientTransportForExec(ctx, logicalMetadata, parent.clientID, bootstrapMetadata.ClientID)
+	logical, err := srv.RegisterNestedClientTransportForExec(ctx, logicalMetadata, parent.clientID, bootstrapMetadata.ClientID, false)
 	require.NoError(t, err)
 	defer logical.Close()
 
@@ -214,11 +214,11 @@ func TestNestedTransportRegistrationBindsExactExecAttachables(t *testing.T) {
 	require.Same(t, bootstrapCaller, caller)
 
 	missing := nestedTransportTestMetadata("missing-carrier")
-	_, err = srv.RegisterNestedClientTransportForExec(ctx, missing, parent.clientID, "absent")
+	_, err = srv.RegisterNestedClientTransportForExec(ctx, missing, parent.clientID, "absent", false)
 	require.ErrorContains(t, err, `attachables client "absent" not found`)
 
 	wrongSecret := nestedTransportTestMetadata("wrong-secret")
-	_, err = srv.RegisterNestedClientTransportForExec(ctx, wrongSecret, parent.clientID, bootstrapMetadata.ClientID)
+	_, err = srv.RegisterNestedClientTransportForExec(ctx, wrongSecret, parent.clientID, bootstrapMetadata.ClientID, false)
 	require.ErrorContains(t, err, "different secret token")
 }
 
@@ -242,7 +242,7 @@ func TestNestedTransportRegistrationWaitsForExpectedAttachables(t *testing.T) {
 	}
 	registered := make(chan result, 1)
 	go func() {
-		transport, err := srv.RegisterNestedClientTransportForExec(ctx, logicalMetadata, parent.clientID, bootstrapMetadata.ClientID)
+		transport, err := srv.RegisterNestedClientTransportForExec(ctx, logicalMetadata, parent.clientID, bootstrapMetadata.ClientID, true)
 		registered <- result{transport, err}
 	}()
 	waitForAttachablesWaiter(t, sess.attachables, bootstrapMetadata.ClientID)
@@ -267,7 +267,7 @@ func TestNestedTransportRegistrationWaitsForExpectedAttachables(t *testing.T) {
 	orphan.ClientSecretToken = failedMetadata.ClientSecretToken
 	failed := make(chan error, 1)
 	go func() {
-		_, err := srv.RegisterNestedClientTransportForExec(ctx, orphan, parent.clientID, failedMetadata.ClientID)
+		_, err := srv.RegisterNestedClientTransportForExec(ctx, orphan, parent.clientID, failedMetadata.ClientID, true)
 		failed <- err
 	}()
 	waitForAttachablesWaiter(t, sess.attachables, failedMetadata.ClientID)
@@ -289,7 +289,7 @@ func TestEndedExecClientLookupsFailAtOnce(t *testing.T) {
 		bootstrapMetadata := nestedTransportTestMetadata("connected-bootstrap")
 		_, done, err := srv.ExpectNestedExecAttachables(sess.sessionID, bootstrapMetadata.ClientID)
 		require.NoError(t, err)
-		bootstrap, err := srv.RegisterNestedClientTransportForExec(ctx, bootstrapMetadata, parent.clientID, bootstrapMetadata.ClientID)
+		bootstrap, err := srv.RegisterNestedClientTransportForExec(ctx, bootstrapMetadata, parent.clientID, bootstrapMetadata.ClientID, true)
 		require.NoError(t, err)
 		defer bootstrap.Close()
 		done()
@@ -303,7 +303,7 @@ func TestEndedExecClientLookupsFailAtOnce(t *testing.T) {
 		_, done, err := srv.ExpectNestedExecAttachables(sess.sessionID, bootstrapMetadata.ClientID)
 		require.NoError(t, err)
 		done()
-		bootstrap, err := srv.RegisterNestedClientTransportForExec(ctx, bootstrapMetadata, parent.clientID, bootstrapMetadata.ClientID)
+		bootstrap, err := srv.RegisterNestedClientTransportForExec(ctx, bootstrapMetadata, parent.clientID, bootstrapMetadata.ClientID, true)
 		require.NoError(t, err)
 		defer bootstrap.Close()
 		requireLookupFailsAtOnce(t, srv, sess, bootstrapMetadata.ClientID)
@@ -1163,7 +1163,7 @@ func TestWorkspaceHostAccessDoesNotRequireOwnerRuntime(t *testing.T) {
 	owner.daggerSession = sess
 	callerRecord.daggerSession = sess
 	sess.getClientCaller = func(ctx context.Context, id string) (engineutil.SessionCaller, error) {
-		return sess.attachables.Wait(ctx, id)
+		return sess.attachables.Wait(ctx, id, false)
 	}
 	sess.engineUtilClient = &engineutil.Client{Opts: &engineutil.Opts{
 		GetClientCaller:      sess.getClientCaller,

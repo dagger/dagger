@@ -30,7 +30,7 @@ func waitResult(t *testing.T, m *sessionAttachableManager, ctx context.Context, 
 	t.Helper()
 	got := make(chan error, 1)
 	go func() {
-		_, err := m.Wait(ctx, clientID)
+		_, err := m.Wait(ctx, clientID, true)
 		got <- err
 	}()
 	return got
@@ -54,7 +54,7 @@ func TestExpectedAttachablesOutlastTheDefaultWait(t *testing.T) {
 	_, done := m.Expect("nested")
 	defer done()
 
-	ctx, cancel := m.waitContext(t.Context(), "nested", 50*time.Millisecond)
+	ctx, cancel := m.waitContext(t.Context(), 50*time.Millisecond, true)
 	defer cancel()
 	got := waitResult(t, m, ctx, "nested")
 	time.Sleep(200 * time.Millisecond)
@@ -69,9 +69,9 @@ func TestExpectedAttachablesOutlastTheDefaultWait(t *testing.T) {
 
 func TestUnexpectedAttachablesKeepTheDefaultWait(t *testing.T) {
 	m := newSessionAttachableManager()
-	ctx, cancel := m.waitContext(t.Context(), "other", 50*time.Millisecond)
+	ctx, cancel := m.waitContext(t.Context(), 50*time.Millisecond, false)
 	defer cancel()
-	_, err := m.Wait(ctx, "other")
+	_, err := m.Wait(ctx, "other", false)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
@@ -88,7 +88,7 @@ func TestExpectedAttachablesFailWithTheHelper(t *testing.T) {
 	fail(helperErr)
 	require.ErrorIs(t, requireResult(t, got), helperErr)
 
-	_, err := m.Wait(t.Context(), "nested")
+	_, err := m.Wait(t.Context(), "nested", true)
 	require.ErrorIs(t, err, helperErr)
 }
 
@@ -113,7 +113,7 @@ func TestRegisteredAttachablesOutliveAFailureReport(t *testing.T) {
 		return ok
 	}, 5*time.Second, time.Millisecond)
 	fail(errors.New("exited"))
-	_, err := m.Wait(t.Context(), "nested")
+	_, err := m.Wait(t.Context(), "nested", true)
 	require.NoError(t, err)
 }
 
@@ -122,7 +122,7 @@ func TestRegisteredAttachablesOutliveAFailureReport(t *testing.T) {
 func TestClientCallerCancelStopsExpectedWait(t *testing.T) {
 	sess := &daggerSession{sessionID: "sess", attachables: newSessionAttachableManager()}
 	sess.state.Store(sessionStateInitialized)
-	sess.clientRecords = map[string]*clientRecord{"nested": {daggerSession: sess, clientID: "nested"}}
+	sess.clientRecords = map[string]*clientRecord{"nested": {daggerSession: sess, clientID: "nested", attachablesFromExecHelper: true}}
 	srv := &Server{daggerSessions: map[string]*daggerSession{"sess": sess}, engineUtilOpts: &engineutil.Opts{}}
 	require.NoError(t, srv.initializeSessionEngineClient(t.Context(), sess))
 	_, done := sess.attachables.Expect("nested")

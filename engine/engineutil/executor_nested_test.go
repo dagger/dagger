@@ -19,9 +19,10 @@ import (
 )
 
 type nestedTransportSessionHandler struct {
-	registered atomic.Int32
-	closed     atomic.Int32
-	served     atomic.Int32
+	registered     atomic.Int32
+	closed         atomic.Int32
+	served         atomic.Int32
+	fromExecHelper atomic.Bool
 }
 
 func (handler *nestedTransportSessionHandler) ExpectNestedExecAttachables(string, string) (func(error), func(), error) {
@@ -33,8 +34,10 @@ func (handler *nestedTransportSessionHandler) RegisterNestedClientTransportForEx
 	metadata *engine.ClientMetadata,
 	_ string,
 	_ string,
+	fromExecHelper bool,
 ) (*engine.NestedClientTransport, error) {
 	handler.registered.Add(1)
+	handler.fromExecHelper.Store(fromExecHelper)
 	transport := engine.NewNestedClientTransport(func() { handler.closed.Add(1) })
 	return transport, nil
 }
@@ -80,6 +83,26 @@ func TestNestedClientParentUsesHeldScopeNotContextMetadata(t *testing.T) {
 	require.ErrorContains(t, err, "does not match")
 }
 
+// Every client an exec hosts is registered as getting its attachables from the
+// exec's session helper, if the exec has one, so the session ends waits for
+// them with the exec.
+func TestContainerNestedTransportsRegisterWhetherTheHelperRuns(t *testing.T) {
+	t.Parallel()
+
+	for _, fromExecHelper := range []bool{true, false} {
+		handler := &nestedTransportSessionHandler{}
+		handler.fromExecHelper.Store(!fromExecHelper)
+		manager := newNestedClientTransportManager(t.Context(), handler, &engine.ClientMetadata{
+			SessionID: "session",
+			ClientID:  "proxy-template",
+		}, "parent", fromExecHelper)
+		_, _, _, err := manager.transportForRequest(httptest.NewRequest(http.MethodGet, "/query", nil))
+		require.NoError(t, err)
+		require.Equal(t, fromExecHelper, handler.fromExecHelper.Load())
+		manager.Close()
+	}
+}
+
 func TestContainerNestedTransportsAreExactPerRequestClient(t *testing.T) {
 	t.Parallel()
 
@@ -88,7 +111,7 @@ func TestContainerNestedTransportsAreExactPerRequestClient(t *testing.T) {
 		SessionID:         "session",
 		ClientID:          "proxy-template",
 		ClientSecretToken: "proxy-secret",
-	}, "parent")
+	}, "parent", true)
 
 	request := func(metadata engine.ClientMetadata) (*engine.NestedClientTransport, *engine.ClientMetadata, int, error) {
 		req := httptest.NewRequest(http.MethodGet, "/v1/traces", nil)
@@ -146,7 +169,7 @@ func TestContainerNestedTransportManagerUsesExactHeaderlessProxyIdentity(t *test
 	manager := newNestedClientTransportManager(t.Context(), handler, &engine.ClientMetadata{
 		SessionID: "session",
 		ClientID:  "proxy-template",
-	}, "parent")
+	}, "parent", true)
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/traces", nil)
 	transport, metadata, status, err := manager.transportForRequest(req)
@@ -192,7 +215,7 @@ func TestContainerNestedClientLinkedToExecOp(t *testing.T) {
 	manager := newNestedClientTransportManager(phaseCtx, handler, &engine.ClientMetadata{
 		SessionID: "session",
 		ClientID:  clientID,
-	}, "parent")
+	}, "parent", true)
 	manager.profExecOpID = execOp.ID()
 	phaseOp.End(wcprof.OutcomeOK)
 
@@ -229,13 +252,14 @@ func (handler *gatedRegistrationHandler) RegisterNestedClientTransportForExec(
 	metadata *engine.ClientMetadata,
 	parentClientID string,
 	attachablesClientID string,
+	fromExecHelper bool,
 ) (*engine.NestedClientTransport, error) {
 	handler.entered <- struct{}{}
 	<-handler.release
 	if handler.failNext.CompareAndSwap(true, false) {
 		return nil, errors.New("registration rejected")
 	}
-	return handler.nestedTransportSessionHandler.RegisterNestedClientTransportForExec(ctx, metadata, parentClientID, attachablesClientID)
+	return handler.nestedTransportSessionHandler.RegisterNestedClientTransportForExec(ctx, metadata, parentClientID, attachablesClientID, fromExecHelper)
 }
 
 type transportOutcome struct {
@@ -265,7 +289,7 @@ func TestContainerNestedTransportManagerCloseDoesNotWaitForRegistration(t *testi
 	manager := newNestedClientTransportManager(t.Context(), handler, &engine.ClientMetadata{
 		SessionID: "session",
 		ClientID:  "proxy-template",
-	}, "parent")
+	}, "parent", true)
 
 	first := requestNestedTransport(manager, "first")
 	<-handler.entered
@@ -305,7 +329,7 @@ func TestContainerNestedTransportManagerJoinsInFlightRegistration(t *testing.T) 
 	manager := newNestedClientTransportManager(t.Context(), handler, &engine.ClientMetadata{
 		SessionID: "session",
 		ClientID:  "proxy-template",
-	}, "parent")
+	}, "parent", true)
 
 	first := requestNestedTransport(manager, "first")
 	<-handler.entered
@@ -343,7 +367,7 @@ func TestContainerNestedTransportManagerCanceledRequestStopsWaiting(t *testing.T
 	manager := newNestedClientTransportManager(t.Context(), handler, &engine.ClientMetadata{
 		SessionID: "session",
 		ClientID:  "proxy-template",
-	}, "parent")
+	}, "parent", true)
 
 	// The registration waits for the exec's session helper; the request that
 	// started it is canceled meanwhile.
@@ -385,7 +409,7 @@ func TestContainerNestedTransportManagerDoesNotCacheFailedRegistration(t *testin
 	manager := newNestedClientTransportManager(t.Context(), handler, &engine.ClientMetadata{
 		SessionID: "session",
 		ClientID:  "proxy-template",
-	}, "parent")
+	}, "parent", true)
 
 	request := func() (*engine.NestedClientTransport, int, error) {
 		req := httptest.NewRequest(http.MethodGet, "/query", nil)

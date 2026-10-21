@@ -25,10 +25,11 @@ type sessionAttachableManager struct {
 	mu      sync.Mutex
 	callers map[string]*sessionAttachableCaller
 	waiters map[string][]chan struct{}
-	// expected holds the clients whose attachables a nested exec's session
-	// helper will register. Waits for them last until the helper registers,
-	// fails, or the exec ends, instead of a fixed timeout. A non-nil error
-	// means it will not register (any more).
+	// expected holds the clients whose attachables a running nested exec's
+	// session helper will register. A non-nil error means it will not
+	// register (any more). An exec's entry goes when the exec ends: waits
+	// that know their attachables come from an exec's helper treat a missing
+	// entry as the exec having ended (see Wait).
 	expected map[string]*expectedAttachables
 }
 
@@ -109,61 +110,64 @@ func (m *sessionAttachableManager) Lookup(clientID string) (engineutil.SessionCa
 // Expect marks clientID's attachables as coming from a nested exec's session
 // helper, which starts alongside the exec's command rather than before it.
 // fail records that the helper will not register them; done records that the
-// exec has ended. Either wakes current waits with the error, and makes later
-// ones fail at once.
+// exec has ended, and forgets clientID. Either wakes current waits with the
+// error, and makes later ones fail at once.
 func (m *sessionAttachableManager) Expect(clientID string) (fail func(error), done func()) {
 	m.mu.Lock()
 	exp := &expectedAttachables{}
 	m.expected[clientID] = exp
 	m.mu.Unlock()
-	fail = func(err error) {
-		m.mu.Lock()
-		defer m.mu.Unlock()
+	failLocked := func(err error) {
 		if exp.err == nil {
 			exp.err = err
 			m.wakeWaitersLocked(clientID)
 		}
 	}
-	return fail, func() { fail(errExecEnded) }
+	fail = func(err error) {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		failLocked(err)
+	}
+	done = func() {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		failLocked(errExecEnded)
+		if m.expected[clientID] == exp {
+			delete(m.expected, clientID)
+		}
+	}
+	return fail, done
 }
 
 // waitContext bounds a wait for clientID's attachables by timeout (0 means
-// none), unless they are expected from a nested exec's session helper: those
-// waits last until the helper registers, fails, or the exec ends.
-func (m *sessionAttachableManager) waitContext(ctx context.Context, clientID string, timeout time.Duration) (context.Context, context.CancelFunc) {
-	m.mu.Lock()
-	_, expected := m.expected[clientID]
-	m.mu.Unlock()
-	if expected || timeout <= 0 {
+// none), unless they come from a nested exec's session helper: those waits
+// last until the helper registers, fails, or the exec ends.
+func (m *sessionAttachableManager) waitContext(ctx context.Context, timeout time.Duration, fromExecHelper bool) (context.Context, context.CancelFunc) {
+	if fromExecHelper || timeout <= 0 {
 		return context.WithCancel(ctx)
 	}
 	return context.WithTimeout(ctx, timeout)
 }
 
-// WaitExpected waits for clientID's attachables if a nested exec's session
-// helper is expected to register them, until it does, fails, or the exec
-// ends. It returns at once for clients that aren't expected.
-func (m *sessionAttachableManager) WaitExpected(ctx context.Context, clientID string) error {
-	m.mu.Lock()
-	_, expected := m.expected[clientID]
-	m.mu.Unlock()
-	if !expected {
-		return nil
-	}
-	_, err := m.Wait(ctx, clientID)
-	return err
-}
-
-func (m *sessionAttachableManager) Wait(ctx context.Context, clientID string) (engineutil.SessionCaller, error) {
+// Wait waits for clientID's attachables, or until ctx is done. fromExecHelper
+// says that a nested exec's session helper registers them (see Expect): the
+// wait then also ends when the helper fails or the exec ends, and fails at
+// once if the exec has already ended.
+func (m *sessionAttachableManager) Wait(ctx context.Context, clientID string, fromExecHelper bool) (engineutil.SessionCaller, error) {
 	for {
 		m.mu.Lock()
 		if caller, ok := m.callers[clientID]; ok && caller.active() {
 			m.mu.Unlock()
 			return caller, nil
 		}
-		if exp := m.expected[clientID]; exp != nil && exp.err != nil {
+		exp := m.expected[clientID]
+		if exp != nil && exp.err != nil {
 			m.mu.Unlock()
 			return nil, fmt.Errorf("no session attachables for client %q: %w", clientID, exp.err)
+		}
+		if exp == nil && fromExecHelper {
+			m.mu.Unlock()
+			return nil, fmt.Errorf("no session attachables for client %q: %w", clientID, errExecEnded)
 		}
 
 		waiter := make(chan struct{})

@@ -334,6 +334,11 @@ type clientRecord struct {
 	// selected from request metadata.
 	attachablesClientID string
 
+	// attachablesFromExecHelper says that the exec's session helper registers
+	// the attachables, so waits for them end with the exec. Sealed with
+	// attachablesClientID.
+	attachablesFromExecHelper bool
+
 	// Synthetic clients may route host services through this stable ancestor ID.
 	hostServiceProxyClientID string
 
@@ -3661,6 +3666,7 @@ func (srv *Server) clientAttachableCallerWithin(
 	record.daggerSession.scopeMu.Lock()
 	inertAttachables := record.inertAttachables
 	attachablesClientID := record.attachablesClientID
+	fromExecHelper := record.attachablesFromExecHelper
 	record.daggerSession.scopeMu.Unlock()
 	if inertAttachables {
 		return nil, status.Error(codes.PermissionDenied, "SDK client access to host session attachables is denied")
@@ -3672,9 +3678,9 @@ func (srv *Server) clientAttachableCallerWithin(
 		caller, _ := record.daggerSession.attachables.Lookup(attachablesClientID)
 		return caller, nil
 	}
-	ctx, cancel := record.daggerSession.attachables.waitContext(ctx, attachablesClientID, timeout)
+	ctx, cancel := record.daggerSession.attachables.waitContext(ctx, timeout, fromExecHelper)
 	defer cancel()
-	caller, err := record.daggerSession.attachables.Wait(ctx, attachablesClientID)
+	caller, err := record.daggerSession.attachables.Wait(ctx, attachablesClientID, fromExecHelper)
 	if err != nil {
 		return nil, err
 	}
