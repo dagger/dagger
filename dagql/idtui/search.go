@@ -18,9 +18,10 @@ type searchMatch struct {
 
 // buildSearchMatches walks ALL spans in the trace tree (not just visible
 // rows) and populates fe.searchMatches with every hit for the current
-// searchQuery. Reads midterm's cached search results (populated by
-// syncVtermSearchHighlights). Results are ordered by tree position so
-// n/N navigation follows a logical sequence.
+// searchQuery. Each Vterm's SearchMatchRows serves rows cached until its
+// content, layout or the query change, then searches the log incrementally,
+// or transiently when it is evicted and the cache has no room. Results are
+// ordered by tree position so n/N navigation follows a logical sequence.
 func (fe *frontendPretty) buildSearchMatches() {
 	fe.searchMatches = fe.searchMatches[:0]
 	fe.searchMatchSpans = make(map[dagui.SpanID]bool)
@@ -121,9 +122,9 @@ func (fe *frontendPretty) syncSearchState() {
 }
 
 // refreshSearchMatches is called every frame when a search is active.
-// It incrementally updates midterm's search results (only re-scanning
-// rows that changed), rebuilds the match list, and preserves the
-// current match selection.
+// It updates materialized logs' incremental midterm search (only
+// re-scanning rows that changed), rebuilds the match list from each log's
+// cached match rows, and preserves the current match selection.
 func (fe *frontendPretty) refreshSearchMatches() {
 	oldMatch := searchMatch{}
 	if fe.searchIdx >= 0 && fe.searchIdx < len(fe.searchMatches) {

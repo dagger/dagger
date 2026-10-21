@@ -3554,8 +3554,9 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 		return
 	}
 	fe.claims = newRenderClaims()
-	// Logs displayed in this frame or the last stay materialized.
-	fe.logs.Cache.beginFrame()
+	// The live display keeps the logs it renders materialized for a moment;
+	// the final render shows every log at once, so it must not.
+	fe.logs.Cache.setLive(!fe.finalRender)
 	if !fe.finalRender {
 		// Update window dimensions before choosing the screen body. Command-owned
 		// views embed the same trace renderers, which depend on this state for

@@ -325,7 +325,8 @@ func TestPrettyLogsSearchFramesStayOffTerminalCache(t *testing.T) {
 	require.Equal(t, 40, replays(), "unchanged logs are not replayed on later frames")
 	require.Len(t, fe.searchMatches, 40*20)
 
-	// New output is found on the next frame; only the changed log is read.
+	// New output is found on the next frame. A log searched transiently that
+	// changes is streaming: it is read once more, then searched incrementally.
 	var evicted *Vterm
 	for _, logs := range fe.logs.Logs {
 		if logs.vt == nil {
@@ -339,7 +340,14 @@ func TestPrettyLogsSearchFramesStayOffTerminalCache(t *testing.T) {
 	frame()
 	require.Equal(t, 41, replays())
 	require.Len(t, fe.searchMatches, 40*20+1)
-	require.Nil(t, evicted.vt, "searching an evicted log leaves it evicted")
+	require.NotNil(t, evicted.vt)
+	for range 3 {
+		_, err := io.WriteString(evicted, "more needles\r\n")
+		require.NoError(t, err)
+		frame()
+	}
+	require.Equal(t, 41, replays(), "a streaming log is not replayed per change")
+	require.Len(t, fe.searchMatches, 40*20+4)
 
 	fe.clearSearch()
 	for range 2 {
@@ -348,11 +356,14 @@ func TestPrettyLogsSearchFramesStayOffTerminalCache(t *testing.T) {
 	require.Equal(t, 41, replays(), "clearing search does not materialize logs")
 }
 
-// Logs on screen together must not evict each other on every frame, even when
-// they exceed the cell budget together.
+// Logs a live display renders together, at their own rates, must not evict
+// each other on every update, even when they exceed the cell budget together.
 func TestVtermCacheKeepsShownTerminals(t *testing.T) {
 	cache := newTerminalCache()
-	cache.maxCells = 1000
+	cache.maxCells = 2000 // each log takes about 3000 cells
+	cache.live = true
+	now := time.Unix(100, 0)
+	cache.now = func() time.Time { return now }
 	var terms []*Vterm
 	for range 3 {
 		term := NewVterm(termenv.Ascii)
@@ -364,31 +375,86 @@ func TestVtermCacheKeepsShownTerminals(t *testing.T) {
 		terms = append(terms, term)
 	}
 	a, b, c := terms[0], terms[1], terms[2]
-	cache.beginFrame()
 	a.View()
 	b.View()
 	aReplays, bReplays := a.replays, b.replays
-	for range 10 {
-		cache.beginFrame()
+	for frame := range 30 {
+		now = now.Add(100 * time.Millisecond)
+		_, err := io.WriteString(a, "a\r\n")
+		require.NoError(t, err)
 		a.View()
-		b.View()
+		if frame%3 == 0 {
+			_, err := io.WriteString(b, "b\r\n")
+			require.NoError(t, err)
+			b.View()
+		}
 	}
 	require.Equal(t, aReplays, a.replays)
 	require.Equal(t, bReplays, b.replays)
-	// Once b leaves the screen, it is evicted to make room for others.
-	cache.beginFrame()
+	// Once b is no longer rendered, it is evicted to make room for others.
+	now = now.Add(terminalCacheShownFor)
 	a.View()
 	c.View()
-	cReplays := c.replays
-	for range 3 {
-		cache.beginFrame()
-		a.View()
-		c.View()
-	}
 	require.Nil(t, b.vt)
 	require.NotNil(t, a.vt)
 	require.Equal(t, aReplays, a.replays)
-	require.Equal(t, cReplays, c.replays)
+}
+
+// Rendered terminals may exceed the budget only by a bounded factor.
+func TestVtermCacheBoundsShownTerminals(t *testing.T) {
+	cache := newTerminalCache()
+	cache.maxCells = 10000
+	cache.live = true
+	for range 20 {
+		term := NewVterm(termenv.Ascii)
+		t.Cleanup(term.Close)
+		term.cache = cache
+		_, err := io.WriteString(term, strings.Repeat("line of output\r\n", 200))
+		require.NoError(t, err)
+		term.SetHeight(3)
+		term.View()
+		require.LessOrEqual(t, cache.cells, terminalCacheShownSlack*cache.maxCells)
+	}
+	require.Greater(t, cache.cells, cache.maxCells, "recently rendered logs are kept past the budget")
+}
+
+// The final render shows every log at once; it must stay within the budget.
+func TestPrettyLogsFinalRenderStaysBounded(t *testing.T) {
+	db := dagui.NewDB()
+	root := prettyTestSpanID(1)
+	start := time.Unix(100, 0)
+	snapshots := []dagui.SpanSnapshot{{ID: root, TraceID: prettyTestTraceID(), Name: "root", StartTime: start, EndTime: start.Add(time.Second), Final: true}}
+	for i := byte(2); i < 42; i++ {
+		snapshots = append(snapshots, dagui.SpanSnapshot{ID: prettyTestSpanID(i), ParentID: root, TraceID: prettyTestTraceID(), Name: fmt.Sprintf("child %d", i), StartTime: start, EndTime: start.Add(time.Second), Final: true})
+	}
+	db.ImportSnapshots(snapshots)
+	db.SetPrimarySpan(root)
+	fe := NewWithDB(io.Discard, db)
+	t.Cleanup(fe.logs.Close)
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.GCThreshold = time.Hour
+	fe.FrontendOpts.SpanExpanded = map[dagui.SpanID]bool{}
+	for _, snapshot := range snapshots {
+		fe.FrontendOpts.SpanExpanded[snapshot.ID] = true
+	}
+	for _, snapshot := range snapshots[1:] {
+		_, err := io.WriteString(fe.logs.spanLogs(snapshot.ID), strings.Repeat("final output\r\n", 3000))
+		require.NoError(t, err)
+	}
+	fe.logs.SetWidth(80)
+	fe.recalculateViewLocked()
+	_ = fe.tui.RenderLines() // a live frame first
+	var out bytes.Buffer
+	require.NoError(t, fe.FinalRender(&out))
+	require.Contains(t, out.String(), "final output")
+	require.LessOrEqual(t, fe.logs.Cache.entries.Len(), terminalCacheCount)
+	materialized := 0
+	for _, logs := range fe.logs.Logs {
+		if logs.vt != nil {
+			materialized++
+		}
+	}
+	require.Less(t, materialized, 40)
 }
 
 func TestVtermStreamAndLayoutStayLazy(t *testing.T) {
@@ -452,7 +518,6 @@ func BenchmarkVtermSearchFrame(b *testing.B) {
 	}
 	b.ReportAllocs()
 	for b.Loop() {
-		cache.beginFrame()
 		for _, term := range terms {
 			term.SetSearchHighlight("needle", -1)
 		}

@@ -59,6 +59,10 @@ type Vterm struct {
 	searchRows   []int
 	searchKey    vtermSearchKey
 	searchCached bool
+	// searchedTransiently is set while the search rows of an evicted log
+	// come from a throwaway terminal, of its content at that version.
+	searchedTransiently    bool
+	searchTransientVersion uint64
 	// Regular terminal buffer
 	viewBuf *bytes.Buffer
 	// rawBuf is empty until rawSeparate; see separateRawLocked.

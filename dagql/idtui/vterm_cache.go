@@ -22,12 +22,15 @@ import (
 // semantics and make search silently incomplete. Moving to another terminal
 // evicts it. Rebuilding and searching always replay the complete stream.
 //
-// Terminals shown in the current or previous frame are not evicted: logs on
-// screen together would otherwise replay each other out of the cache on every
-// frame. The budget can then be exceeded while they stay on screen.
+// A live display keeps terminals it rendered within terminalCacheShownFor:
+// logs updating together, at their own rates, would otherwise replay each
+// other out of the cache on every update. Those may exceed the budget, up to
+// terminalCacheShownSlack times it; past that, plain LRU applies again.
 const (
-	terminalCacheCount = 16
-	terminalCacheCells = 1024 * 1024
+	terminalCacheCount      = 16
+	terminalCacheCells      = 1024 * 1024
+	terminalCacheShownFor   = time.Second
+	terminalCacheShownSlack = 4
 )
 
 type terminalCache struct {
@@ -36,28 +39,29 @@ type terminalCache struct {
 	byTerm             map[*Vterm]*list.Element
 	cells              int
 	maxCount, maxCells int
-	frame              uint64
+	live               bool
+	now                func() time.Time
 }
 
 type terminalCacheEntry struct {
 	term  *Vterm
 	cells int
-	shown uint64 // the frame that last displayed it; 0 for never
+	shown time.Time // when a live display last rendered it
 }
 
 func newTerminalCache() *terminalCache {
-	return &terminalCache{byTerm: make(map[*Vterm]*list.Element), maxCount: terminalCacheCount, maxCells: terminalCacheCells}
+	return &terminalCache{byTerm: make(map[*Vterm]*list.Element), maxCount: terminalCacheCount, maxCells: terminalCacheCells, now: time.Now}
 }
 
-// beginFrame starts a frame of the live display. Without frames (reports,
-// tests), eviction is plain LRU.
-func (c *terminalCache) beginFrame() {
+// setLive is set for each frame of the live display. Reports and the final
+// render, which show every log at once, use plain LRU.
+func (c *terminalCache) setLive(live bool) {
 	if c == nil {
 		return
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.frame++
+	c.live = live
 }
 
 // hasRoom reports whether a terminal of about cells would fit without
@@ -77,7 +81,7 @@ func (c *terminalCache) touch(term *Vterm) {
 	c.use(term, false)
 }
 
-// show is touch for a terminal being displayed in the current frame.
+// show is touch for a terminal being rendered.
 func (c *terminalCache) show(term *Vterm) {
 	c.use(term, true)
 }
@@ -99,15 +103,24 @@ func (c *terminalCache) use(term *Vterm, shown bool) {
 		own = c.entries.PushFront(&terminalCacheEntry{term: term, cells: cells})
 		c.byTerm[term] = own
 	}
-	if shown {
-		own.Value.(*terminalCacheEntry).shown = c.frame
+	now := c.now()
+	if shown && c.live {
+		own.Value.(*terminalCacheEntry).shown = now
 	}
 	c.cells += cells
-	for el := c.entries.Back(); el != nil && (c.entries.Len() > c.maxCount || c.cells > c.maxCells); {
+	c.evictOver(term, 1, func(entry *terminalCacheEntry) bool {
+		return c.live && now.Sub(entry.shown) < terminalCacheShownFor
+	})
+	c.evictOver(term, terminalCacheShownSlack, func(*terminalCacheEntry) bool { return false })
+}
+
+// evictOver evicts least recently used entries, except term and kept ones,
+// while the cache is over slack times its budget.
+func (c *terminalCache) evictOver(term *Vterm, slack int, keep func(*terminalCacheEntry) bool) {
+	for el := c.entries.Back(); el != nil && (c.entries.Len() > slack*c.maxCount || c.cells > slack*c.maxCells); {
 		previous := el.Prev()
 		entry := el.Value.(*terminalCacheEntry)
-		onScreen := c.frame > 0 && entry.shown > 0 && entry.shown+1 >= c.frame
-		if entry.term != term && !onScreen && entry.term.mu.TryLock() {
+		if entry.term != term && !keep(entry) && entry.term.mu.TryLock() {
 			entry.term.evictLocked()
 			entry.term.mu.Unlock()
 			delete(c.byTerm, entry.term)
@@ -135,6 +148,7 @@ func (term *Vterm) evictLocked() {
 }
 
 func (term *Vterm) materializeLocked() {
+	term.searchedTransiently = false
 	if term.segments != nil {
 		term.layoutMedia()
 		term.cache.touch(term)
@@ -200,10 +214,13 @@ func (term *Vterm) searchMatchRowsLocked() []int {
 	if term.searchCached && term.searchKey == key {
 		return term.searchRows
 	}
-	if term.vt == nil && !term.cache.hasRoom(max(term.terminalBuf.Len(), term.rawLocked().Len())) {
+	streaming := term.searchedTransiently && term.searchTransientVersion != term.version
+	if term.vt == nil && !streaming && !term.cache.hasRoom(max(term.terminalBuf.Len(), term.rawLocked().Len())) {
 		// Searching must not evict terminals that are being displayed, nor
 		// thrash the cache when there are more logs than it holds: search a
-		// throwaway terminal and keep only its match rows.
+		// throwaway terminal and keep only its match rows. A log that changes
+		// after that is streaming: replaying it on every change would cost
+		// O(log) per frame, so it is materialized and searched incrementally.
 		term.searchTransientLocked()
 	} else {
 		if term.vt == nil {
@@ -241,6 +258,8 @@ func (term *Vterm) searchTransientLocked() {
 		term.layoutDirty = true
 		term.mediaRows = nil
 		term.Offset, term.follow, term.mediaFollow, term.mediaActive = offset, follow, mediaFollow, mediaActive
+		term.searchedTransiently = true
+		term.searchTransientVersion = term.version
 	}()
 	if term.segments != nil {
 		term.layoutMedia()
