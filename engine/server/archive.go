@@ -463,7 +463,7 @@ func (srv *Server) serveArchiveHTTP(w http.ResponseWriter, r *http.Request, reco
 // unsealedArchiveCut is the current end of an unsealed archive's store. Its
 // session is gone, so the cut is stable across every stream.
 func (srv *Server) unsealedArchiveCut(ctx context.Context, m archive.Manifest) (archive.HighWater, error) {
-	db, err := srv.clientDBs.Open(ctx, m.MainClientID)
+	db, err := srv.clientDBs.OpenHeld(ctx, m.MainClientID)
 	if err != nil {
 		return archive.HighWater{}, err
 	}
@@ -522,7 +522,11 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 	if err != nil {
 		return httpErr(err, http.StatusBadRequest)
 	}
-	db, err := srv.clientDBs.Open(r.Context(), m.MainClientID)
+	// Once the archived session has ended nothing else holds its store, and
+	// reopening replays every row from disk. Keep it open across a burst of
+	// lazy reads (along with its cached span topology); the idle hold never
+	// blocks archive removal, store GC or engine shutdown.
+	db, err := srv.clientDBs.OpenHeld(r.Context(), m.MainClientID)
 	if err != nil {
 		return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureIO, Err: err})
 	}

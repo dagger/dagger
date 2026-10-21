@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/dagger/dagger/engine/archive"
 	"github.com/dagger/dagger/engine/clientdb"
@@ -17,7 +19,10 @@ import (
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 )
 
-func TestArchiveLazySelectionHTTP(t *testing.T) {
+// lazySelectionArchive seals the fixture's archive over an 8-span chain with
+// one log line per span; span 6 failed.
+func lazySelectionArchive(t *testing.T) (*Server, *daggerSession, *clientdb.DB) {
+	t.Helper()
 	srv, sess, db, _ := archiveFixture(t)
 	for i := 1; i <= 8; i++ {
 		row := clientdb.Span{TraceID: archiveTestTrace, SpanID: fmt.Sprintf("%016x", i), Name: fmt.Sprint(i), Resource: []byte("{}"), InstrumentationScope: []byte("{}"), Attributes: []byte("[]"), Links: []byte("[]"), Events: []byte("[]")}
@@ -38,12 +43,65 @@ func TestArchiveLazySelectionHTTP(t *testing.T) {
 		require.NoError(t, err)
 	}
 	require.NoError(t, srv.finalizeSessionArchive(t.Context(), sess, nil))
+	return srv, sess, db
+}
+
+func TestArchiveLazySelectionHTTP(t *testing.T) {
+	srv, sess, _ := lazySelectionArchive(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.NoError(t, srv.serveArchiveHTTP(w, r, sess.clientRecords["main"]))
 	}))
 	defer server.Close()
 	c, err := archive.NewClientWithURL(server.Client(), server.URL)
 	require.NoError(t, err)
+	requireLazySelection(t, c)
+}
+
+// TestArchiveLazyReadsHoldEndedSessionStore: once the archived session's own
+// handle is gone, lazy reads keep its store open between requests instead of
+// replaying it per request, without blocking archive collection or shutdown.
+func TestArchiveLazyReadsHoldEndedSessionStore(t *testing.T) {
+	for _, release := range []string{"archive GC", "engine shutdown"} {
+		t.Run(release, func(t *testing.T) {
+			srv, sess, db := lazySelectionArchive(t)
+			manifest, err := srv.archives.Manifest(archiveTestTrace)
+			require.NoError(t, err)
+			// The session has ended: nothing holds its store any more.
+			require.NoError(t, db.Close())
+			require.Equal(t, clientdb.OpenStats{}, srv.clientDBs.OpenStats())
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				require.NoError(t, srv.serveArchiveHTTP(w, r, sess.clientRecords["main"]))
+			}))
+			defer server.Close()
+			c, err := archive.NewClientWithURL(server.Client(), server.URL)
+			require.NoError(t, err)
+			requireLazySelection(t, c)
+			require.Equal(t, clientdb.OpenStats{Stores: 1, Streams: 3, Refs: 1}, srv.clientDBs.OpenStats(), "only the idle hold remains")
+
+			switch release {
+			case "archive GC":
+				expired := manifest.ExpiresAt.Add(time.Hour)
+				srv.archives, err = archive.NewManager(archive.Config{Root: filepath.Dir(srv.archives.BootstrapPath(archiveTestTrace)), Now: func() time.Time { return expired }, RemoveStore: srv.clientDBs.Remove})
+				require.NoError(t, err)
+				_, err = srv.archives.GC()
+				require.NoError(t, err)
+				_, err = srv.archives.Manifest(archiveTestTrace)
+				require.ErrorAs(t, err, new(*archive.Failure))
+				size, err := srv.clientDBs.StoreSize("main")
+				require.NoError(t, err)
+				require.Zero(t, size, "the held store is removed with its archive")
+				require.Equal(t, clientdb.OpenStats{}, srv.clientDBs.OpenStats())
+			case "engine shutdown":
+				require.NoError(t, srv.clientDBs.Close())
+				require.Equal(t, clientdb.OpenStats{}, srv.clientDBs.OpenStats())
+			}
+		})
+	}
+}
+
+func requireLazySelection(t *testing.T, c *archive.Client) {
+	t.Helper()
 	m, err := c.Inspect(t.Context(), archiveTestTrace)
 	require.NoError(t, err)
 	require.Equal(t, archive.StateClosed, m.State)
