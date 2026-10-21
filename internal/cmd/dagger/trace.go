@@ -14,6 +14,7 @@ import (
 
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine/archive"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
@@ -868,15 +869,40 @@ func (l *traceLoader) fetchLogs(fg *fetchGroup, id dagui.SpanID, descendants boo
 			// so e.g. a failed test shows its sub-operation's output.
 			sel.Records = cloud.LogRecordsLogs
 		}
-		if err := l.client.FetchLogs(l.ctx, l.traceID, sel, func(ctx context.Context, req *collogspb.ExportLogsServiceRequest) error {
-			switch {
-			case rekey:
-				rekeyLogRecords(req, id)
-			case descendants:
-				l.claimLogRecords(req, fetch)
+		// A transient failure before anything was imported is retried, as
+		// the bulk history import does; a retry after a partial import
+		// would import its records twice.
+		imported := false
+		var err error
+		for attempt := 0; ; attempt++ {
+			err = l.client.FetchLogs(l.ctx, l.traceID, sel, func(ctx context.Context, req *collogspb.ExportLogsServiceRequest) error {
+				imported = true
+				switch {
+				case rekey:
+					rekeyLogRecords(req, id)
+				case descendants:
+					l.claimLogRecords(req, fetch)
+				}
+				return l.importer.ImportLogs(ctx, req)
+			})
+			if err == nil || imported || attempt >= 2 || l.ctx.Err() != nil || !errors.Is(err, archive.ErrTransient) {
+				break
 			}
-			return l.importer.ImportLogs(ctx, req)
-		}); err != nil {
+			select {
+			case <-l.ctx.Done():
+			case <-time.After(time.Duration(attempt+1) * 100 * time.Millisecond):
+			}
+		}
+		if err != nil {
+			if !imported {
+				// Nothing landed, so nothing this fetch owns may block a
+				// later request or an enclosing roll-up from fetching it.
+				l.releaseLogs(fetch)
+			}
+			if l.ctx.Err() != nil {
+				// Exiting: not a failure worth reporting.
+				return l.ctx.Err()
+			}
 			// Warn for interactive mode, where post-drain lazy expands have
 			// no one waiting on the error; the pre-report drain also
 			// collects it, failing the command rather than rendering a
@@ -897,11 +923,25 @@ func (l *traceLoader) fetchLogs(fg *fetchGroup, id dagui.SpanID, descendants boo
 			Descendants: true,
 			Records:     cloud.LogRecordsCallPayloads,
 		}, l.importer.ImportLogs); err != nil {
+			if l.ctx.Err() != nil {
+				return l.ctx.Err()
+			}
 			slog.Warn("error streaming span call payloads", "span", spanHex, "err", err)
 			return fmt.Errorf("stream span %s call payloads: %w", spanHex, err)
 		}
 		return nil
 	})
+}
+
+// releaseLogs forgets the spans a fetch owns, so they can be fetched again.
+func (l *traceLoader) releaseLogs(fetch uint64) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for span, owner := range l.logReq {
+		if owner == fetch {
+			delete(l.logReq, span)
+		}
+	}
 }
 
 // claimLogRecords drops the records of spans another fetch owns (a span's own
