@@ -29,6 +29,22 @@ func TestGenaiNullableSchema(t *testing.T) {
 	assert.Equal(t, "An optional mode.", schema.Description)
 }
 
+func TestGenaiSchemaDropsEmptyEnumValues(t *testing.T) {
+	schema, err := bbiSchemaToGenaiSchema(map[string]any{
+		"type": "string", "enum": []string{"", "ERROR", "ok"}, "default": "",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"ERROR", "ok"}, schema.Enum)
+	assert.Equal(t, "enum", schema.Format)
+
+	schema, err = bbiSchemaToGenaiSchema(map[string]any{
+		"type": "string", "enum": []string{""},
+	})
+	require.NoError(t, err)
+	assert.Empty(t, schema.Enum)
+	assert.Empty(t, schema.Format)
+}
+
 func TestDecodeThoughtSignature(t *testing.T) {
 	raw := []byte("some-opaque-signature")
 	encoded := base64.StdEncoding.EncodeToString(raw)
