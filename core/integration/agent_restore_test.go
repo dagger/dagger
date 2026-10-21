@@ -852,10 +852,11 @@ func testCLITraceResume(ctx context.Context, t *testctx.T, cloudOnly bool) {
 	require.Equal(t, "source conversation retained", reply)
 	// Output of the source session's own work, which the restored display
 	// shows on demand: an engine archive's display logs are fetched per span
-	// when the span is opened, not imported with the history.
+	// when the span is opened, not imported with the history. The command
+	// line, which the span's title shows, must not contain the output.
 	const execText = "RESTORED-HISTORY-EXEC-OUTPUT"
 	_, err = core.NewQuery(source).Container().From(alpineImage).WithEnvVariable("RESTORE_DISPLAY_FIXTURE", rand.Text()).
-		WithExec([]string{"sh", "-c", "printf '" + execText + "\\n'"}).Sync(sourceCtx)
+		WithExec([]string{"sh", "-c", `printf '%s-%s\n' RESTORED-HISTORY EXEC-OUTPUT`}).Sync(sourceCtx)
 	require.NoError(t, err)
 	nodes := sink.awaitRestorable(t, 2)
 	require.NotEmpty(t, nodes["dismissed"].Control.Failure)
