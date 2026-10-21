@@ -58,7 +58,7 @@ func Select(ctx context.Context, local, remote Open) (Source, func() error, erro
 		// %v, not %w: the local failure is context for the remote one. A
 		// quiet engine error (e.g. no container runtime) found in the chain
 		// would otherwise be displayed alone, hiding the remote failure.
-		err = errors.Join(err, fmt.Errorf("local engine archive: %v", localErr))
+		err = errors.Join(err, fmt.Errorf("local engine archive: %v", localErr)) //nolint:errorlint // deliberately not wrapped, see above
 	}
 	return source, close, err
 }

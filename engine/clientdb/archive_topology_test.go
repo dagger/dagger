@@ -86,7 +86,7 @@ func TestArchiveTopologyCacheCoalescesConcurrentBuilds(t *testing.T) {
 	key := archiveTopologyKey{trace: selectionTrace, spans: 10, logs: 10}
 	release := make(chan struct{})
 	var builds atomic.Int32
-	build := func(context.Context) (*archiveTopology, error) {
+	build := func(context.Context) (*archiveTopology, error) { //nolint:unparam // signature fixed by archiveTopologyCache.get
 		builds.Add(1)
 		<-release
 		return &archiveTopology{}, nil

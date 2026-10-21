@@ -182,7 +182,7 @@ func TestReportSessionToleratesLogStorageError(t *testing.T) {
 	}))
 	require.Error(t, session.logs.Logs[dagui.SpanID{SpanID: failing}].Err(),
 		"the failed buffer keeps its error to render in place")
-	require.Equal(t, "hello\n", session.logs.Logs[dagui.SpanID{SpanID: healthy}].rawBuf.String())
+	require.Equal(t, "hello\n", rawLog(session.logs.Logs[dagui.SpanID{SpanID: healthy}]))
 }
 
 func TestTelemetryDataRecordsExcludedFromFrontendLogs(t *testing.T) {
