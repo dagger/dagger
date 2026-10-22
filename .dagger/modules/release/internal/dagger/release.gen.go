@@ -20,6 +20,9 @@ type ReleaseNotifyOpts = core.ReleaseNotifyOpts
 // ReleasePublishOpts contains options for Release.Publish
 type ReleasePublishOpts = core.ReleasePublishOpts
 
+// ReleasePublishCheckRepoIsDeterministicOpts contains options for Release.PublishCheckRepoIsDeterministic
+type ReleasePublishCheckRepoIsDeterministicOpts = core.ReleasePublishCheckRepoIsDeterministicOpts
+
 // ReleasePublishWithMockEndpointsOpts contains options for Release.PublishWithMockEndpoints
 type ReleasePublishWithMockEndpointsOpts = core.ReleasePublishWithMockEndpointsOpts
 

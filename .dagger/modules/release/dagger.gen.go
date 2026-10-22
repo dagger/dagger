@@ -647,6 +647,20 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Release).Publish(&parent, ctx, tag, commit, dryRun, registryImage, registryUsername, registryPassword, githubToken, githubOrgName, githubHost, githubCaCert, netlifyToken, netlifyApiurl, pypiToken, pypiRepo, pypiUrl, npmToken, npmRegistryUrl, hexApikey, hexApiurl, cargoRegistryToken, cargoRegistryIndex, goSdkDestRemote, phpSdkDestRemote, awsAccessKeyId, awsSecretAccessKey, awsRegion, awsBucket, awsCloudfrontDistribution, awsEndpointUrl, artefactsFqdn, helmRegistry, discordWebhook)
+		case "PublishCheckRepoIsDeterministic":
+			var parent Release
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var source *dagger.Directory
+			if inputArgs["source"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["source"]), &source)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg source", err))
+				}
+			}
+			return nil, (*Release).PublishCheckRepoIsDeterministic(&parent, ctx, source)
 		case "PublishWithMockEndpoints":
 			var parent Release
 			err = json.Unmarshal(parentJSON, &parent)
@@ -821,6 +835,12 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							WithArg("artefactsFQDN", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 168, 2)}).
 							WithArg("helmRegistry", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 170, 2)}).
 							WithArg("discordWebhook", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 172, 2)})).
+					WithFunction(
+						dag.Function("PublishCheckRepoIsDeterministic",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithDescription("Verify that the publish check's release git repo gets the same commit\nevery time it is created from the same source. The nested builds stamp\nthat commit, so a commit that changed with the clock would change their\ncache keys on every run.").
+							WithSourceMap(dag.SourceMap("publish_check.go", 2278, 1)).
+							WithArg("source", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Source tree to commit.", SourceMap: dag.SourceMap("publish_check.go", 2282, 2), DefaultPath: "/"})).
 					WithFunction(
 						dag.Function("PublishWithMockEndpoints",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).

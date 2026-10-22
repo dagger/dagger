@@ -47,9 +47,10 @@ func (r *Query) Release(ws *Workspace, opts ...ReleaseOpts) *Release { // releas
 type Release struct { // release (../../../../../../:0:0)
 	query *querybuilder.Selection
 
-	id                       *ID
-	notify                   *Void
-	publishWithMockEndpoints *Void
+	id                              *ID
+	notify                          *Void
+	publishCheckRepoIsDeterministic *Void
+	publishWithMockEndpoints        *Void
 }
 
 func (r *Release) WithGraphQLQuery(q *querybuilder.Selection) *Release {
@@ -396,6 +397,31 @@ func (r *Release) Publish(tag string, commit string, opts ...ReleasePublishOpts)
 	return &ReleaseReport{
 		query: q,
 	}
+}
+
+// ReleasePublishCheckRepoIsDeterministicOpts contains options for Release.PublishCheckRepoIsDeterministic
+type ReleasePublishCheckRepoIsDeterministicOpts struct {
+	// Source tree to commit.
+	Source *Directory
+}
+
+// Verify that the publish check's release git repo gets the same commit
+// every time it is created from the same source. The nested builds stamp
+// that commit, so a commit that changed with the clock would change their
+// cache keys on every run.
+func (r *Release) PublishCheckRepoIsDeterministic(ctx context.Context, opts ...ReleasePublishCheckRepoIsDeterministicOpts) error {
+	if r.publishCheckRepoIsDeterministic != nil {
+		return nil
+	}
+	q := r.query.Select("publishCheckRepoIsDeterministic")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `source` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Source) {
+			q = q.Arg("source", opts[i].Source)
+		}
+	}
+
+	return q.Execute(ctx)
 }
 
 // ReleasePublishWithMockEndpointsOpts contains options for Release.PublishWithMockEndpoints
