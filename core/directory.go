@@ -3874,11 +3874,17 @@ func (dir *Directory) Stat(ctx context.Context, self dagql.ObjectResult[*Directo
 	}
 
 	var fileInfo os.FileInfo
+	var isDir bool
 	err = MountRef(ctx, immutableRef, func(root string, _ *mount.Mount) error {
 		resolvedPath, err := rootPathFunc(root, dirPath, targetPath)
 		if err != nil {
 			return err
 		}
+		base, err := containerdfs.RootPath(root, dirPath)
+		if err != nil {
+			return err
+		}
+		isDir = resolvedPath == base
 		fileInfo, err = osStatFunc(resolvedPath)
 		return TrimErrPathPrefix(err, root)
 	})
@@ -3896,9 +3902,10 @@ func (dir *Directory) Stat(ctx context.Context, self dagql.ObjectResult[*Directo
 		Name:        fileInfo.Name(),
 		Permissions: int(fileInfo.Mode().Perm()),
 	}
-	if path.Join("/", targetPath) == "/" && path.Clean(dirPath) != "/" {
-		// The directory itself goes by its own name, as Directory.name
-		// reports it, even if it was selected through a symlink.
+	if isDir && path.Clean(dirPath) != "/" {
+		// The directory itself, however the path led back to it, goes by its
+		// own name, as Directory.name reports it, even if it was selected
+		// through a symlink.
 		stat.Name = path.Base(dirPath)
 	}
 
