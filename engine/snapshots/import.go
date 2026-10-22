@@ -20,19 +20,39 @@ func (cm *snapshotManager) ImportChain(ctx context.Context, chain *ExportChain) 
 		return nil, err
 	}
 	var current ImmutableRef
+	// ahead holds the download of the next layer's blob, started while this
+	// layer's applies.
+	var ahead *contentFetch
 	defer func() {
 		if rerr != nil {
+			cm.dropFetch(ctx, ahead)
 			if current != nil {
 				_ = current.Release(context.WithoutCancel(ctx))
 			}
 			_ = pin.release(ctx)
 		}
 	}()
-	for _, layer := range chain.Layers {
-		next, err := cm.importLayer(ctx, layer.Descriptor, current, chain.Provider, ImportImageOpts{}, true, chain.Timing)
+	for i, layer := range chain.Layers {
+		held := ahead
+		ahead = nil
+		layerImport := &chainLayer{owner: chain, ahead: held}
+		if chain.Provider != nil && i+1 < len(chain.Layers) && fetchAheadEnabled() {
+			// Once this layer's blob is in, fetch the next one while this
+			// one applies.
+			layerImport.fetched = func() {
+				var started bool
+				ahead, started = cm.fetchAhead(ctx, chain.Layers[i+1].Descriptor, chain.Provider, chain)
+				if started && chain.Timing != nil {
+					chain.Timing.Ahead++
+				}
+			}
+		}
+		next, err := cm.importLayer(ctx, layer.Descriptor, current, chain.Provider, ImportImageOpts{}, true, chain.Timing, layerImport)
 		if err != nil {
+			cm.dropFetch(ctx, held)
 			return nil, err
 		}
+		cm.leaveFetch(ctx, held)
 		if current != nil {
 			_ = current.Release(context.WithoutCancel(ctx))
 		}

@@ -79,7 +79,7 @@ var offerTimingFields = []string{"layers", "requests", "ttfb", "conns_new", "ren
 
 // requireOfferTiming checks the identities every install line's timing
 // holds: the request wait is part of the read wait, the read wait of the
-// fetch, the import's three sums of the import, and the import and commit
+// import, the import's three sums of the import, and the import and commit
 // of the whole install.
 func requireOfferTiming(t *testing.T, line offerLine) {
 	t.Helper()
@@ -87,7 +87,9 @@ func requireOfferTiming(t *testing.T, line offerLine) {
 		require.GreaterOrEqual(t, line.int(t, key), int64(0), key)
 	}
 	require.LessOrEqual(t, line.duration(t, "ttfb"), line.duration(t, "read_wait"))
-	require.LessOrEqual(t, line.duration(t, "read_wait"), line.duration(t, "fetch"))
+	// The next layer's blob is read while the layer before it applies, so
+	// the read wait is part of the import, not of the fetch alone.
+	require.LessOrEqual(t, line.duration(t, "read_wait"), line.duration(t, "import"))
 	require.LessOrEqual(t, line.duration(t, "layer_wait")+line.duration(t, "fetch")+line.duration(t, "apply"), line.duration(t, "import"))
 	require.LessOrEqual(t, line.duration(t, "import")+line.duration(t, "commit"), line.duration(t, "duration"))
 }

@@ -73,8 +73,12 @@ func (s *ExportStats) Add(o ExportStats) {
 }
 
 // ImportTiming sums where a chain import's time went, over its layers. The
-// layers are imported one at a time, and each blob is fetched whole before
-// it is applied, so the three never overlap.
+// layers are imported one at a time, and each is fetched whole before it is
+// applied. With fetching ahead, the next layer's blob downloads while a
+// layer applies, so the download itself overlaps the apply; but every sum
+// here is time the import itself spent, on its own path (Fetch is its wait
+// for the blob, not the download's duration), so the three don't overlap
+// and together never exceed the import's time.
 type ImportTiming struct {
 	// LayerWait is the wait for the per-layer import lock, held by another
 	// import of the same layer onto the same parent.
@@ -84,6 +88,11 @@ type ImportTiming struct {
 	Fetch time.Duration
 	// Apply is applying the fetched blobs to their snapshots.
 	Apply time.Duration
+	// Ahead counts the blobs whose download started early, while the layer
+	// before them applied, and Joined the layers whose blob came from a
+	// download another import had in progress.
+	Ahead  int
+	Joined int
 }
 
 // Release ends provider consumption. Copies of a locally exported chain share
