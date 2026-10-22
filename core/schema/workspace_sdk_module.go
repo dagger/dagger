@@ -1045,7 +1045,10 @@ func workspaceAtSDKModuleScope(
 		var rootDir dagql.ObjectResult[*core.Directory]
 		if err := dag.Select(ctx, rooted, &rootDir, dagql.Selector{
 			Field: "directory",
-			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String(".")}},
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(".")},
+				{Name: "gitignore", Value: dagql.Boolean(true)},
+			},
 		}); err != nil {
 			return prepared, fmt.Errorf("inspect SDK-module workspace root: %w", err)
 		}
@@ -1155,7 +1158,7 @@ func (s *workspaceSchema) validateGeneratedModuleConfig(
 	generated dagql.ObjectResult[*core.Workspace],
 	scopePath string,
 ) error {
-	root, err := s.workspaceOverlayRootfs(ctx, generated.Self())
+	root, err := s.workspaceGitignoredOverlayRootfs(ctx, generated.Self())
 	if err != nil {
 		return err
 	}

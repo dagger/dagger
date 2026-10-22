@@ -1256,12 +1256,24 @@ func (s *workspaceSchema) workspaceOverlayRootfs(ctx context.Context, ws *core.W
 	if ws.HostPath() == "" {
 		return rootfs, fmt.Errorf("workspace has no root filesystem")
 	}
-	// Whole-tree materialization: legitimate for callers that need the full
-	// workspace as a Directory (module-source loading, install flows). For a
-	// host overlay this resolves as full host + changeset via the overlay
-	// branch in resolveRootfs; edits and diffs never come through here (see
-	// overlayEdit, which keeps the changeset delta-native).
+	// Whole-tree unfiltered materialization. Callers that can reach a host-backed
+	// workspace must intentionally require ignored content; engine-owned broad
+	// reads should normally use workspaceGitignoredOverlayRootfs instead. For a
+	// host overlay this resolves as full host + changeset via the overlay branch
+	// in resolveRootfs; edits and diffs never come through here (see overlayEdit,
+	// which keeps the changeset delta-native).
 	return s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, false)
+}
+
+// workspaceGitignoredOverlayRootfs resolves the complete workspace view while
+// pruning host content ignored by Git. Overlay edits are applied after the
+// host-side filter, so generated or explicitly staged paths still win even
+// when an existing ignore rule matches them.
+func (s *workspaceSchema) workspaceGitignoredOverlayRootfs(ctx context.Context, ws *core.Workspace) (dagql.ObjectResult[*core.Directory], error) {
+	if ws == nil {
+		return dagql.ObjectResult[*core.Directory]{}, fmt.Errorf("workspace is required")
+	}
+	return s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, true)
 }
 
 func requireLocalWorkspace(ws *core.Workspace, operation string) error {
@@ -3604,7 +3616,7 @@ func (s *workspaceSchema) workspaceGitRepository(
 		}
 	}
 	if !fast {
-		dir, err = s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, false)
+		dir, err = s.workspaceGitignoredOverlayRootfs(ctx, ws)
 		if err != nil {
 			return inst, fmt.Errorf("workspace git directory: %w", err)
 		}

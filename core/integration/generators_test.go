@@ -12,6 +12,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -22,6 +23,7 @@ import (
 	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
+	"github.com/containerd/continuity/fs"
 	workspacecfg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/util/lockfile"
 	"github.com/dagger/testctx"
@@ -36,6 +38,27 @@ func TestGenerators(t *testing.T) {
 
 func generatorsTestEnv(t *testctx.T, c *dagger.Client) (*core.Container, error) {
 	return specificTestEnv(t, c, "generators")
+}
+
+// SDK-scope generation needs a complete workspace view, but the host side of
+// that view must still prune ignored content before filesync walks it.
+func (GeneratorsSuite) TestGenerateDoesNotUploadGitignoredFiles(ctx context.Context, t *testctx.T) {
+	fixture, err := filepath.Abs("testdata/workspaces/sdk-scope-generation")
+	require.NoError(t, err)
+	workdir := t.TempDir()
+	require.NoError(t, fs.CopyDir(workdir, fixture))
+	initGitRepo(ctx, t, workdir)
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, ".gitignore"), []byte("/.venv/\n"), 0o644))
+	require.NoError(t, os.Mkdir(filepath.Join(workdir, ".venv"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, ".venv", "should-not-upload"), []byte("ignored\n"), 0o644))
+
+	var logs safeBuffer
+	c := connect(ctx, t, dagger.WithWorkdir(workdir), dagger.WithLogOutput(&logs), dagger.WithVerbosity(2))
+	empty, err := core.NewQuery(c).CurrentWorkspace().SDK("test").Generate().IsEmpty(ctx)
+	require.NoError(t, err)
+	require.False(t, empty)
+	require.NoError(t, c.Close())
+	require.NotRegexp(t, `(?m)^\d+\s+:\s+(?:┆\s+)*\.venv(?:\s+DONE.*)?$`, logs.String(), "generate must not upload gitignored content")
 }
 
 func (GeneratorsSuite) TestGeneratorsDirectSDK(ctx context.Context, t *testctx.T) {

@@ -263,7 +263,7 @@ func (s *workspaceSchema) resolveWorkspaceInstallSource(
 	kind := core.FastModuleSourceKindCheck(ref, "")
 	var workspaceRoot dagql.ObjectResult[*core.Directory]
 	if kind == "" {
-		workspaceRoot, err = s.workspaceOverlayRootfs(ctx, ws)
+		workspaceRoot, err = s.workspaceGitignoredOverlayRootfs(ctx, ws)
 		if err != nil {
 			return src, "", err
 		}
@@ -316,7 +316,7 @@ func (s *workspaceSchema) resolveWorkspaceInstallSourceFromRoot(
 	var src dagql.ObjectResult[*core.ModuleSource]
 	var err error
 	if root.Self() == nil {
-		root, err = s.workspaceOverlayRootfs(ctx, ws)
+		root, err = s.workspaceGitignoredOverlayRootfs(ctx, ws)
 		if err != nil {
 			return src, "", err
 		}

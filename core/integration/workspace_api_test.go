@@ -1415,6 +1415,44 @@ func (WorkspaceAPISuite) TestAbsoluteModuleRefInsideLocalWorkspaceUsesOverlaySna
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
+// Resolving a local install needs a complete workspace view, but ignored host
+// content must be pruned before filesync walks it.
+func (WorkspaceAPISuite) TestLocalModuleInstallDoesNotUploadGitignoredFiles(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	depDir := filepath.Join(workdir, "dep")
+	require.NoError(t, os.MkdirAll(depDir, 0o755))
+	copyTestdataFixture(ctx, t, depDir, "modules", "go", "minimal-dep")
+	initGitRepo(ctx, t, workdir)
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, ".gitignore"), []byte("/.venv/\n"), 0o644))
+	require.NoError(t, os.Mkdir(filepath.Join(workdir, ".venv"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, ".venv", "should-not-upload"), []byte("ignored\n"), 0o644))
+
+	var logs safeBuffer
+	c := connect(ctx, t, dagger.WithWorkdir(workdir), dagger.WithLogOutput(&logs), dagger.WithVerbosity(2))
+	current := core.NewQuery(c).CurrentWorkspace()
+	_, err := current.WithModule("./dep").Changes(core.WorkspaceChangesOpts{From: current}).AddedPaths(ctx)
+	require.NoError(t, err)
+	require.NoError(t, c.Close())
+	require.NotRegexp(t, `(?m)^\d+\s+:\s+(?:┆\s+)*\.venv(?:\s+DONE.*)?$`, logs.String(), "local module install must not upload gitignored content")
+}
+
+// An unborn repository takes the compatibility path that materializes a full
+// workspace checkout. That fallback must still prune ignored host content.
+func (WorkspaceAPISuite) TestWorkspaceGitFallbackDoesNotUploadGitignoredFiles(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, ".gitignore"), []byte("/.venv/\n"), 0o644))
+	require.NoError(t, os.Mkdir(filepath.Join(workdir, ".venv"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, ".venv", "should-not-upload"), []byte("ignored\n"), 0o644))
+
+	var logs safeBuffer
+	c := connect(ctx, t, dagger.WithWorkdir(workdir), dagger.WithLogOutput(&logs), dagger.WithVerbosity(2))
+	_, err := core.NewQuery(c).CurrentWorkspace().Git().Directory().Entries(ctx)
+	require.ErrorContains(t, err, "requires a HEAD commit")
+	require.NoError(t, c.Close())
+	require.NotRegexp(t, `(?m)^\d+\s+:\s+(?:┆\s+)*\.venv(?:\s+DONE.*)?$`, logs.String(), "workspace Git fallback must not upload gitignored content")
+}
+
 func (WorkspaceAPISuite) TestModuleSourceResolvesWorkspacePaths(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
