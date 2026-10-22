@@ -51,9 +51,10 @@ func GetContentHashFromDirectory(
 // covers the few files outside the subdirectory that operations on it read
 // (see outsideInputsDigest), and nothing else around it.
 //
-// If those files can't be read, it returns no digest and no error: the
-// directory then keeps the identity of the call that made it, as a directory
-// without a content digest does.
+// If those files can't be read, or the subdirectory is in a Git repository,
+// which git run on it reads beyond any digest, it returns no digest and no
+// error: the directory then keeps the identity of the call that made it, as a
+// directory without a content digest does.
 func DirectoryContentDigest(ctx context.Context, snapshot bkcache.ImmutableRef, dirPath string) (digest.Digest, error) {
 	dgst, err := GetContentHashFromDirectory(ctx, snapshot, dirPath)
 	if err != nil {
@@ -73,7 +74,7 @@ func DirectoryContentDigest(ctx context.Context, snapshot bkcache.ImmutableRef, 
 		return err
 	}, mountRefAsReadOnly)
 	if err != nil {
-		bklog.G(ctx).WithError(err).Debugf("directory %s: not keying by content: reading the files around it", dirPath)
+		bklog.G(ctx).WithError(err).Debugf("directory %s: not keyed by content", dirPath)
 		return "", nil
 	}
 	return hashutil.HashStrings("directory", dgst.String(), "name", name, "outside", outside), nil
