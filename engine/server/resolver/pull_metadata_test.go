@@ -12,9 +12,11 @@ import (
 	"testing"
 
 	"github.com/containerd/containerd/v2/core/content"
+	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/containerd/containerd/v2/core/remotes/docker"
 	localcontentstore "github.com/containerd/containerd/v2/plugins/content/local"
 	cerrdefs "github.com/containerd/errdefs"
+	"github.com/containerd/platforms"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/opencontainers/image-spec/specs-go"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -243,6 +245,11 @@ func newTestPullRegistry(t *testing.T, image *testPullImage) *testPullRegistry {
 
 func newTestResolver(t *testing.T, host string, store content.Store) *Resolver {
 	t.Helper()
+	return newTestResolverWithLeases(t, host, store, newTestLeaseManager())
+}
+
+func newTestResolverWithLeases(t *testing.T, host string, store content.Store, leaseManager *testLeaseManager) *Resolver {
+	t.Helper()
 	rslvr := New(Opts{
 		Hosts: func(domain string) ([]docker.RegistryHost, error) {
 			if domain != host {
@@ -256,8 +263,54 @@ func newTestResolver(t *testing.T, host string, store content.Store) *Resolver {
 			}}, nil
 		},
 		ContentStore: store,
-		LeaseManager: newTestLeaseManager(),
+		LeaseManager: leaseManager,
 	})
 	t.Cleanup(func() { require.NoError(t, rslvr.Close()) })
 	return rslvr
+}
+
+// A pinned image whose blobs are all local is pulled from the content store,
+// unless one goes before the pull's lease holds it, as a prune's collection
+// removes an unleased blob: the pull then reads the image from the registry,
+// so every blob it returns is in the store.
+func TestPullLocalImageLosesALayerBeforeItsLease(t *testing.T) {
+	ctx := t.Context()
+	s := seedPinnedMetadata(t, false)
+	leaseManager := newTestLeaseManager()
+	s.resolver = newTestResolverWithLeases(t, s.registry.host, s.store, leaseManager)
+	first, err := s.resolver.Pull(ctx, s.ref, s.opts)
+	require.NoError(t, err)
+	s.requireLayerDownloaded(t, first)
+	require.NoError(t, first.Release(context.WithoutCancel(ctx)))
+	// With every blob local, a pull asks the registry nothing.
+	heads := s.registry.manifestHEADs.Load()
+	local, err := s.resolver.Pull(ctx, s.ref, s.opts)
+	require.NoError(t, err)
+	require.NoError(t, local.Release(context.WithoutCancel(ctx)))
+	require.Equal(t, heads, s.registry.manifestHEADs.Load(), "the pull was served from the content store")
+	require.Equal(t, int32(1), s.registry.layerGETs.Load())
+	closure, found, release, err := s.resolver.tryLocalCanonicalClosure(ctx, s.ref, s.image.root, platforms.Only(platforms.Normalize(s.opts.Platform)), nil)
+	require.NoError(t, err)
+	require.True(t, found, "the image is pulled from the content store")
+	require.Len(t, closure.Layers, 1)
+	require.NoError(t, release(context.WithoutCancel(ctx)))
+
+	// The next pull finds every blob local too; its first lease's creation
+	// is when the layer goes.
+	var removed atomic.Bool
+	leaseManager.mu.Lock()
+	leaseManager.afterCreate = func(leases.Lease) {
+		if removed.CompareAndSwap(false, true) {
+			require.NoError(t, s.store.Delete(context.Background(), s.image.layer.Digest))
+		}
+	}
+	leaseManager.mu.Unlock()
+	pulled, err := s.resolver.Pull(ctx, s.ref, s.opts)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, pulled.Release(context.WithoutCancel(ctx))) })
+	require.True(t, removed.Load(), "the layer went before the pull's lease held it")
+	require.Len(t, pulled.Layers, 1)
+	_, err = s.store.Info(ctx, pulled.Layers[0].Digest)
+	require.NoError(t, err, "the pulled layer is in the store")
+	require.Equal(t, int32(2), s.registry.layerGETs.Load(), "the pull read the layer from the registry again")
 }
