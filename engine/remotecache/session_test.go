@@ -1413,3 +1413,45 @@ func TestLookupSessionEndReleasesWaitsFirst(t *testing.T) {
 	close(release)
 	within(t, closedSession)
 }
+
+// A wait ends with how its merge ended: merged when it committed, stale when
+// the engine refused its held rows and committed nothing, failed when it
+// failed. A merge that ended before the answer named it keeps its outcome.
+func TestLookupMergeOutcomes(t *testing.T) {
+	adapter := newFakeAdapter()
+	adapter.merge = func(_ context.Context, req protocol.Merge) (protocol.Merged, error) {
+		switch req.Bundle.Version {
+		case 1:
+			return protocol.Merged{Generation: 3, Stale: []dagql.TransferOrdinal{2}, Values: []protocol.MergedValue{}, Retained: []protocol.RetainedRoot{}}, nil
+		case 2:
+			return protocol.Merged{}, errors.New("refused")
+		}
+		return protocol.Merged{Generation: 3}, nil
+	}
+	s, conn := lookupSession(t, adapter, time.Minute)
+	s.dispatch(request(t, 110, protocol.TypeMerge, protocol.Merge{Bundle: dagql.ValueBundle{Version: 1}, Lookup: 1}))
+	require.Equal(t, protocol.TypeMerged, conn.next(t).Type)
+	adapter.misses <- lookupMisses(4)
+	answerLookup(t, s, conn, protocol.LookedUp{Misses: []protocol.LookedUpMiss{
+		{Status: protocol.LookupMerging, Merge: 100, Parts: protocol.LookupPartsComplete},
+		{Status: protocol.LookupMerging, Merge: 101, Parts: protocol.LookupPartsComplete},
+		{Status: protocol.LookupMerging, Merge: 102, Parts: protocol.LookupPartsComplete},
+		{Status: protocol.LookupInFlight, Merge: 110, Parts: protocol.LookupPartsComplete},
+	}})
+	committed, stale, failed, endedStale := within(t, adapter.expected), within(t, adapter.expected), within(t, adapter.expected), within(t, adapter.expected)
+	s.dispatch(request(t, 100, protocol.TypeMerge, protocol.Merge{Bundle: *testBundle(), Lookup: 1}))
+	s.dispatch(request(t, 101, protocol.TypeMerge, protocol.Merge{Bundle: dagql.ValueBundle{Version: 1}, Lookup: 1}))
+	s.dispatch(request(t, 102, protocol.TypeMerge, protocol.Merge{Bundle: dagql.ValueBundle{Version: 2}, Lookup: 1}))
+	for _, tc := range []struct {
+		got  expectedMerge
+		want string
+	}{
+		{committed, dagql.RemoteMergeMerged},
+		{stale, dagql.RemoteMergeStale},
+		{failed, dagql.RemoteMergeFailed},
+		{endedStale, dagql.RemoteMergeStale},
+	} {
+		within(t, tc.got.wait.Done())
+		require.Equal(t, tc.want, tc.got.wait.Outcome(), "merge for %s", tc.got.recipe)
+	}
+}
