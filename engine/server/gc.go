@@ -536,7 +536,7 @@ func (srv *Server) localCachePressureGCNeeded(ctx context.Context) bool {
 	if srv.localCacheGCEnabled && srv.engineCache != nil && !srv.metadataPruneMonitorBlocked.Load() {
 		metadataPressure = srv.engineCache.MetadataEstimate().EstimatedBytes > srv.dagqlCacheMaxEstimatedBytes
 	}
-	return diskPressure || metadataPressure
+	return diskPressure || metadataPressure || srv.cacheVolumeDirPressure(ctx)
 }
 
 func localCacheDiskPressureGCNeeded(policies []dagqlCachePrunePolicy, dstat disk.DiskStat) bool {

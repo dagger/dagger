@@ -48,21 +48,45 @@ func (srv *Server) initCacheVolumeDir(cfg config.CacheVolumesConfig) error {
 }
 
 // validateCacheVolumeDir checks the configured directory and returns it
-// cleaned, with symlinks resolved when it exists.
+// canonical: cleaned, with the symlinks of its longest existing prefix
+// resolved, since the directory itself may not exist yet.
 func (srv *Server) validateCacheVolumeDir(dir string) (string, error) {
 	if !filepath.IsAbs(dir) {
 		return "", fmt.Errorf("cacheVolumes.dir %q must be an absolute path", dir)
 	}
-	dir = filepath.Clean(dir)
-	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
-		dir = resolved
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return "", fmt.Errorf("resolve cacheVolumes.dir %q: %w", dir, err)
+	dir, err := resolveExistingPrefix(filepath.Clean(dir))
+	if err != nil {
+		return "", fmt.Errorf("resolve cacheVolumes.dir: %w", err)
 	}
-	if rel, err := filepath.Rel(srv.workerRootDir, dir); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("cacheVolumes.dir %q must not be inside the engine's worker state %q, which a local cache reset removes", dir, srv.workerRootDir)
+	worker, err := resolveExistingPrefix(srv.workerRootDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve engine worker state: %w", err)
+	}
+	if rel, err := filepath.Rel(worker, dir); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("cacheVolumes.dir %q must not be inside the engine's worker state %q, which a local cache reset removes", dir, worker)
 	}
 	return dir, nil
+}
+
+// resolveExistingPrefix resolves the symlinks of path's longest existing
+// prefix, and appends the rest unchanged.
+func resolveExistingPrefix(path string) (string, error) {
+	rest := ""
+	for cur := path; ; {
+		resolved, err := filepath.EvalSymlinks(cur)
+		if err == nil {
+			return filepath.Join(resolved, rest), nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return path, nil
+		}
+		rest = filepath.Join(filepath.Base(cur), rest)
+		cur = parent
+	}
 }
 
 // cacheVolumeDirPolicy is the directory's collection policy: its own space
@@ -137,14 +161,30 @@ func (srv *Server) closeCacheVolumeDir() error {
 	}
 	core.SetCacheVolumeDir(nil)
 	err := srv.cacheVolumeDir.Close()
+	if errors.Is(err, cachevolumedir.ErrPinned) {
+		// Operations that outlived session teardown still mount volumes:
+		// keep the directory until the process exits, so no other engine
+		// collects them meanwhile.
+		slog.Warn("cache volume directory still in use at stop; keeping it until the engine exits", "error", err)
+		return nil
+	}
 	srv.cacheVolumeDir = nil
 	return err
 }
 
 // cacheVolumeDirPressure reports whether the directory's filesystem is below
-// the directory's minimum free space.
+// the directory's minimum free space, as the monitor checks the engine's
+// state disk.
 func (srv *Server) cacheVolumeDirPressure(ctx context.Context) bool {
-	return false
+	if srv.cacheVolumeDir == nil || !srv.localCacheGCEnabled {
+		return false
+	}
+	policy, err := srv.cacheVolumeDirPolicy(false)
+	if err != nil {
+		slog.WarnContext(ctx, "cache volume directory pressure check skipped", "error", err)
+		return false
+	}
+	return policy.MinFreeSpace > 0 && policy.CurrentFreeSpace < policy.MinFreeSpace
 }
 
 // cacheVolumeDirEntries lists the directory's volumes as local cache entries.
