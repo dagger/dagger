@@ -320,6 +320,9 @@ func appendCacheEvidenceAttrs(ctx context.Context, attrs []attribute.KeyValue, e
 			attrs = append(attrs, attribute.String(telemetryattrs.CacheMissRequirementsGrewAttr, "true"))
 		}
 		attrs = appendRemoteMissAttrs(attrs, ev)
+		if ev.MissRemoteLookup != "" {
+			attrs = append(attrs, attribute.String(telemetryattrs.CacheMissRemoteLookupAttr, ev.MissRemoteLookup))
+		}
 	}
 	attrs = appendAdoptionAttrs(attrs, ev)
 	if ev.LookupAtUnixNano != 0 {
