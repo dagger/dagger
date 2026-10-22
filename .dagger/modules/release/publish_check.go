@@ -55,6 +55,11 @@ type publishCheckEnv struct {
 
 	platform        dagger.Platform
 	platformArchive string
+
+	// The nested release engine's remote cache settings, if any
+	remoteCacheURL *dagger.Secret
+	cloudURL       *dagger.Secret
+	cloudToken     *dagger.Secret
 }
 
 // Exercise the release publish path against local mock endpoints.
@@ -73,6 +78,9 @@ func (r *Release) PublishWithMockEndpoints(
 	if err != nil {
 		return err
 	}
+	env.remoteCacheURL = r.RemoteCacheURL
+	env.cloudURL = r.CloudURL
+	env.cloudToken = r.CloudToken
 
 	engine, err := env.releaseEngine(ctx)
 	if err != nil {
@@ -467,7 +475,11 @@ func (env *publishCheckEnv) releaseEngine(ctx context.Context) (*dagger.Service,
 
 	// This replaces engine-dev's default engine.json, so keep its docker.io
 	// mirror: without it the release engine pulls straight from Docker Hub.
-	engineCtr := dev.Container().
+	engineCtr := dev.Container(dagger.EngineDevContainerOpts{
+		RemoteCacheURL: env.remoteCacheURL,
+		CloudURL:       env.cloudURL,
+		CloudToken:     env.cloudToken,
+	}).
 		WithNewFile("/etc/dagger/engine.json", `{
   "registries": {
     "docker.io": {

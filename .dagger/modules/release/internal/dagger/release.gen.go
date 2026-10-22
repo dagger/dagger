@@ -6,6 +6,9 @@ import (
 	"dagger/release/internal/dagger/core"
 )
 
+// ReleaseOpts contains options for Query.Release
+type ReleaseOpts = core.ReleaseOpts
+
 type Release = core.Release
 
 // ReleaseGetMaintainersOpts contains options for Release.GetMaintainers
