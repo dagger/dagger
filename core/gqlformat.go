@@ -303,12 +303,73 @@ func (n Namer) NamespaceObject(objOriginalName, modFinalName, modOriginalName st
 	rest := obj.Words
 	// The prefix check compares words, not characters, so it only matches on
 	// a word boundary: "Postman" in module "post" becomes "PostPostman",
-	// while "PostMan" is already namespaced.
+	// while "PostMan" is already namespaced. The words may be cut
+	// differently in the type's and the module's spelling around digits and
+	// acronyms (K8STools in module k8s-tools, My2Go in module my2go), so
+	// failing that, words that spell the module's name once flattened
+	// (lowercased, without boundaries) count as the prefix too.
 	if mod, err := n.dict.Parse(modOriginalName); err == nil && hasWordPrefix(obj.Words, mod.Words) {
 		rest = obj.Words[len(mod.Words):]
+	} else if k := flatWordPrefix(obj.Words, flatName(modOriginalName)); k >= 0 {
+		rest = obj.Words[k:]
 	}
 	words := append(append([]naming.Word(nil), final.Words...), rest...)
 	return naming.Identifier{Words: words}.Format(naming.Pascal, naming.Uppercase)
+}
+
+// flatName is name lowercased, with everything but ASCII letters and digits
+// dropped: the spelling every casing of a name shares, however it cuts words
+// (K8STools, K8sTools and k8s-tools are all k8stools).
+func flatName(name string) string {
+	var b strings.Builder
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		switch {
+		case 'a' <= c && c <= 'z', '0' <= c && c <= '9':
+			b.WriteByte(c)
+		case 'A' <= c && c <= 'Z':
+			b.WriteByte(c + 'a' - 'A')
+		}
+	}
+	return b.String()
+}
+
+// flatWordPrefix returns how many of words, flattened and joined, spell
+// prefix exactly, ending on a word boundary; or -1.
+func flatWordPrefix(words []naming.Word, prefix string) int {
+	if prefix == "" {
+		return -1
+	}
+	var spelled string
+	for i, w := range words {
+		spelled += flatName(w.Text + w.Suffix)
+		switch {
+		case spelled == prefix:
+			return i + 1
+		case len(spelled) >= len(prefix) || !strings.HasPrefix(prefix, spelled):
+			return -1
+		}
+	}
+	return -1
+}
+
+// SameDeclaredName reports whether a and b, two spellings of a declared
+// name, name the same thing for a module named by n: they normalize to the
+// same schema name, or, with the engine/naming rules, they're the same once
+// flattened (lowercased, without word boundaries). An SDK or template may
+// spell a module's main type differently around digits and acronyms than the
+// module's name (K8STools for module k8s-tools, My2Go for my2go,
+// Go1Password for go-1password), which the legacy strcase rules happened to
+// normalize alike but engine/naming doesn't.
+//
+// A flat match is weaker than a normalized one: lookups that pick one of
+// several declarations take a normalized match first, and a flat one only if
+// it's the only one (see Module.ObjectByOriginalName).
+func (n Namer) SameDeclaredName(a, b string) bool {
+	if n.ObjectName(a) == n.ObjectName(b) {
+		return true
+	}
+	return !n.Legacy() && flatName(a) != "" && flatName(a) == flatName(b)
 }
 
 // hasWordPrefix reports whether words starts with prefix, comparing words by

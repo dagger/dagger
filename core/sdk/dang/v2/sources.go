@@ -131,7 +131,7 @@ func EntrypointSources(
 		return sources, err
 	}
 	nestedClientMetadata.SDKEntrypoint = true
-	module := dangModule{name: src.ModuleName, originalName: src.ModuleOriginalName}
+	module := dangModule{name: src.ModuleName, originalName: src.ModuleOriginalName, namer: src.Namer()}
 
 	_, err = dangshared.WithNestedClientServer(ctx, query, nestedClientMetadata, true, nil, dagql.ObjectResult[*core.Module]{}, func(ctx context.Context, client graphql.Client) ([]byte, error) {
 		ctx = dang.ContextWithImportConfigs(ctx, dang.ImportConfig{
