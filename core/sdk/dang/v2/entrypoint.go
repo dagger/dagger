@@ -49,7 +49,7 @@ func EntrypointModuleTypes(
 		return inst, err
 	}
 
-	var contract entrypointContract
+	contract := entrypointContract{dangVersion: src.Self().EntrypointDangVersion}
 	var typeDefs dagql.ObjectResultArray[*core.TypeDef]
 	_, err = evalDangSource(
 		ctx,
@@ -156,7 +156,7 @@ func (r *entrypointRuntime) Call(
 		return err
 	}
 
-	var contract entrypointContract
+	contract := entrypointContract{dangVersion: r.modSource.Self().EntrypointDangVersion}
 	var resultJSON []byte
 	_, err = evalDangSource(
 		ctx,
@@ -254,16 +254,19 @@ const sourcesEntrypointInterface = `interface ModuleEntrypoint {
 // entrypointContract is stateful because the contract is known only once run
 // reads the entrypoint, which evalDangSource mounts.
 type entrypointContract struct {
-	sources bool
+	// dangVersion is the Dang version the entrypoint is written in
+	// (ModuleSource.EntrypointDangVersion).
+	dangVersion string
+	sources     bool
 }
 
 func (c *entrypointContract) run(ctx context.Context, dir string) (dang.ValueScope, error) {
-	sources, err := DeclaresEntrypointSources(dir)
+	sources, err := DeclaresEntrypointSources(dir, c.dangVersion)
 	if err != nil {
 		return nil, err
 	}
 	c.sources = sources
-	return runEntrypointDir(ctx, dir, sources)
+	return runEntrypointDir(ctx, dir, c.dangVersion, sources)
 }
 
 func (c *entrypointContract) workspaceArgs(
@@ -285,7 +288,11 @@ func (c *entrypointContract) workspaceArgs(
 	return []*core.FunctionCallArgValue{arg}, nil
 }
 
-func runEntrypointDir(ctx context.Context, sourceDir string, sources bool) (dang.ValueScope, error) {
+func runEntrypointDir(ctx context.Context, sourceDir string, dangVersion string, sources bool) (dang.ValueScope, error) {
+	ctx, err := contextWithEntrypointVersion(ctx, dangVersion)
+	if err != nil {
+		return nil, err
+	}
 	dir, err := os.MkdirTemp("", "dagger-module-entrypoint-")
 	if err != nil {
 		return nil, fmt.Errorf("create module entrypoint directory: %w", err)
