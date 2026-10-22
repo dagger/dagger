@@ -341,9 +341,17 @@ letter-digit words like versions and product names: `APIv1`, `APIS3` and
 - The Go SDK's Dagger additions: `FS SDK LLM`
 - Acronyms found in the core schema: `GPU VCS SHA MCP OCI SSHFS`
 - Common in modules: `E2E CLI TUI IO PR EC2 MD5`
-- Terms: `GitHub GitLab OAuth IPv4 IPv6 iOS macOS gRPC GraphQL 3D 2D`. Their
-  `capitalized` forms are `Oauth Ipv4 Ipv6 Ios MacOS Grpc`; the brands
-  `GitHub GitLab GraphQL` and `3D 2D` keep their spelling.
+- Terms: `GitHub GitLab OAuth IPv4 IPv6 iOS macOS gRPC GraphQL 3D 2D K8s K3s`.
+  Their `capitalized` forms are `Oauth Ipv4 Ipv6 Ios MacOS Grpc`; the brands
+  `GitHub GitLab GraphQL`, `3D 2D` and the numeronyms `K8s K3s` keep their
+  spelling. `K8s` and `K3s` are product names, not acronyms, so `K8STools`,
+  `K8sTools` and `k8s-tools` all parse as *K8s · tools. They were added before
+  any engine named modules with the dictionary (only the experimental
+  `formatIdentifiers` had shipped, in v1.0.0-beta.20, and no SDK used it), so
+  they're in `Initial` rather than a later dictionary. Other numeronyms
+  (`k0s`, `i18n`, `l10n`, `a11y`) are left to the heuristic: lowercase or
+  capitalized they parse as one word, and their all-caps spellings (`I18N`)
+  are as common as the lowercase ones, so no spelling is clearly canonical.
 
 ### Process
 
@@ -489,8 +497,8 @@ Notes:
 - Like every object in the schema, `IdentifierWord` and `NamingTerm` also
   implement `Node`.
 - The API is `@experimental` and visible to clients at engine version
-  `v1.0.0-0` and above, so prereleases see it: the same views whose modules
-  are named by the new rules (see [The gate](#the-gate)).
+  `v1.0.0-beta.21` (`IdentifierNamingVersion`) and above: the same views
+  whose modules are named by the new rules (see [The gate](#the-gate)).
 
 ## Engine Integration
 
@@ -724,7 +732,7 @@ schema for the generators. `cmd/codegen` connects to the engine whenever it
 generates from introspection JSON that has `Query.formatIdentifiers`.
 
 **Gate:** the schema being generated. If it has no `Query.formatIdentifiers`
-(schema views before `v1.0.0-0`, the identifier API's gate, or older
+(schema views before `v1.0.0-beta.21`, the identifier API's gate, or older
 engines), codegen formats nothing through the engine and keeps its legacy
 converter, so older modules and clients regenerate byte-identical code. A
 name missing from a map (one that isn't among the schema's names) also gets
@@ -794,10 +802,10 @@ The algorithm and the dictionary are selected by engine version through the
 existing view mechanism (`AfterVersion` / `BeforeVersion` in `core/util.go`):
 
 - A module's own names are parsed with the version its `engineVersion` selects.
-  Modules below `v1.0.0` keep strcase behavior until they bump. A module
-  entrypoint (manifest v2), which declares no `engineVersion`, is served at the
-  engine's own version and gets its rules (see
-  [Module entrypoints](#module-entrypoints)).
+  Modules below `IdentifierNamingVersion` (`v1.0.0-beta.21`) keep strcase
+  behavior until they bump. A module entrypoint (manifest v2) is named by
+  whatever engine version its `ModuleSource` ends up with, like any other
+  module (see [Module entrypoints](#module-entrypoints)).
 - A client's codegen uses the version the client connects with.
 - A dictionary addition lands with an engine version and applies only to
   modules and clients at or above it.
@@ -809,34 +817,29 @@ Each dictionary release adds an entry to the list in
 `engine/naming/version.go`.
 
 Module normalization is gated on the API view, at `IdentifierNamingVersion`
-(`v1.0.0-0`, `core/gqlformat.go`): `NamerForView` gives the strcase rules to
-views before it and engine/naming to the rest, and a module is named by the
-rules of its view (`ModuleSource.NamingView`, `engine.APIViewVersion` of its
-`engineVersion`). Views are base-version granular, so every v1.0.0 prerelease
-(`v1.0.0-beta.1` onwards, and the `v1.0.0-0` the repo's own modules declare)
-shares the `v1.0.0` view and gets the new rules. The same view gates
-`Query.formatIdentifiers`, which SDK codegen, Go module codegen and the Python
-and TypeScript runtimes check, so a module's codegen and runtime always agree
-with the engine on its names.
+(`engine.IdentifierCasingVersion`, `v1.0.0-beta.21`, `core/gqlformat.go`):
+`NamerForView` gives the strcase rules to views before it and engine/naming to
+the rest (`IdentifierNamingView`), and a module is named by the rules of its
+view (`ModuleSource.NamingView`, `engine.ModuleAPIViewVersion` of its
+`engineVersion`). Views keep their prerelease from `v1.0.0-beta.21` on, and
+every earlier v1.0.0 prerelease (`v1.0.0-0`, `v1.0.0-beta.1` to
+`v1.0.0-beta.20`) shares the `v1.0.0-beta.20` view, so modules released
+against those betas keep the strcase names they shipped with, byte for byte.
+While the engine is a v1.0.0 prerelease, a module declaring exactly `v1.0.0`
+gets that pre-cut view too. The same view gates `Query.formatIdentifiers`,
+which SDK codegen and the Python and TypeScript runtimes check, so a module's
+codegen and runtime always agree with the engine on its names.
 
-That renames modules released against those betas: a Go module's
-`legacyJSON` argument, which strcase made `legacyJson`, is now `legacyJSON`,
-and the `daggerCli` constructor of a module named `dagger-cli` is now
-`daggerCLI`. Callers built against the old names (other modules' Dang code,
-committed generated bindings, hand-written queries) keep working through
-[transition aliases](#transition-aliases): wherever the engine names a
-module's type, function, field or argument by the new rules and the strcase
-rules would have named it differently, it installs the strcase name as a
-hidden alias.
+There are no aliases for the old spellings: a module's schema has exactly the
+names of its own rules, and bumping `engineVersion` past the cut is an opt-in
+rename, like any other API change a bump brings. (An earlier revision gated
+at `v1.0.0-0`, renamed modules released against the betas, and kept their old
+spellings as hidden transition aliases; it was dropped for this cut.) The
+typedef constructors that normalize names are view-scoped
+(`View(AllVersion)`), so their calls record the caller's view and modules on
+either side of the cut never share a cached, wrongly named typedef.
 
-An earlier version of this design gated on the full `engineVersion`,
-prerelease included, and served older v1.0.0 prereleases at their view marked
-with `+legacy-naming` build metadata. It couldn't work: external SDK modules
-that declare `engineVersion = "v1.0.0"` (go-sdk, sdk-helpers) would have
-been renamed at release anyway, and the marked views fragmented the cache and
-had to hide `formatIdentifiers` and rewrite `__schemaVersion`.
-
-`NamerForView` gives the new rules to every view from `v1.0.0`, which also
+`NamerForView` gives the new rules to every view from the cut, which also
 names the typedefs that clients that aren't modules construct themselves.
 
 Known gaps:
@@ -848,16 +851,12 @@ Known gaps:
   the engine like the runtimes do (see [Module runtimes](#module-runtimes)).
 - CLI naming follows the CLI's engine version, not each module's (see
   [CLI](#cli)).
-- Go module codegen (`module_naming.go`) still names the module's own types,
-  fields and arguments with the `engine/naming` it was built with, using
-  `DictionaryFor` of the module's schema version. It compares words, not just
-  formatted strings (namespacing checks whether a type's words start with the
-  module's), which `formatIdentifiers` can't answer. A codegen binary older
-  than the engine could therefore miss dictionary additions once there is more
-  than one dictionary. Fetching the dictionary of the module's version from
-  the engine into `naming.NewDictionary` would close that gap (today
-  `Query.namingDictionary` follows the caller's version; it could take a
-  `version` like `formatIdentifiers`).
+- The in-repo Go module codegen (`cmd/codegen`) still names a module's own
+  types, fields and arguments in its self-binding schema by strcase, so a Go
+  module at the new rules that references a core type starting with an
+  acronym (`JSONValue`, `LLMMessage`) doesn't build. Mirroring `core.Namer`
+  there (a `moduleNamer`) moves to the Go SDK repository
+  (github.com/dagger/go-sdk), with the rest of the Go codegen work.
 
 ### Module entrypoints
 
@@ -874,27 +873,27 @@ constructor calls, e.g. python-sdk's `sdk/tests/mod/golden/types.dang`), or
 the module points at a shared remote entrypoint that describes its types when
 it loads.
 
-**Naming.** An entrypoint module gets the engine's own version as its
-`EngineVersion` (`initFromModConfig` in `core/schema/modulesource.go`), and so
-the engine's API and naming rules, like any module on a v1 view: its client is
-served at that view, so the typedef constructors its entrypoint calls name by
-the new rules, `Module.Namer` names its namespaced types, constructor and CLI
-paths by them, and its codegen sees `Query.formatIdentifiers`. Dispatch
-doesn't care, since calls carry original names.
+**Naming.** An entrypoint module is named by whatever engine version its
+`ModuleSource` ends up with, with no special path: today
+`initFromModConfig` (`core/schema/modulesource.go`) gives it the engine's own
+version, and so the engine's API and naming rules; reading a version the
+entrypoint declares is separate work. Its client is served at that view, so
+the typedef constructors its entrypoint calls name by those rules,
+`Module.Namer` names its namespaced types, constructor and CLI paths by them,
+and its codegen sees `Query.formatIdentifiers` exactly when they're the new
+rules. Dispatch doesn't care, since calls carry original names.
 
-Shipping this design renames existing entrypoint modules' acronyms: an SDK
-that registers `getUrl` (Python's own `snake_to_camel` of `get_url`) sees it
-become `getURL`, and a module `tiny`'s `HttpClient` type becomes
-`TinyHTTPClient` (was `TinyHttpClient`). Their old spellings stay accepted as
-[transition aliases](#transition-aliases), like every module rename, so
-existing callers, generated clients and queries keep working.
+Served at an engine version past the cut, existing entrypoint modules' acronyms
+are renamed: an SDK that registers `getUrl` (Python's own `snake_to_camel` of
+`get_url`) sees it become `getURL`, and a module `tiny`'s `HttpClient` type
+becomes `TinyHTTPClient` (was `TinyHttpClient`). There are no aliases for the
+old spellings.
 
-**Pinned naming.** Aliases only bridge the legacy rules to the new ones. A
-later dictionary addition would rename an entrypoint module again on engine
-upgrade, which is what versioning the dictionary (`DictionaryFor`) exists to
-prevent: a module's names follow the version it declares, and an entrypoint
-module declares none. Its names should be decided at `dagger generate`, never
-at load. Two options:
+**Pinned naming.** A later dictionary addition would rename an entrypoint
+module again on engine upgrade, which is what versioning the dictionary
+(`DictionaryFor`) exists to prevent: a module's names follow the version it
+declares. Its names should be decided at `dagger generate`, never at load.
+Two options:
 
 - **(A) Final names in the entrypoint.** The generator calls
   `formatIdentifiers` at `dagger generate` and writes final schema names into
@@ -928,6 +927,12 @@ or a marker that names are final), which #14038's authors own. Nothing needs
 pinning until the first dictionary addition.
 
 ### Transition aliases
+
+> **Superseded for this cut.** The dagql alias machinery described here
+> (#14668) was dropped: module naming is gated purely on the module's declared
+> engine version (see [The gate](#the-gate)), so there are no module name
+> aliases, and core renames need their own plan. The section is kept for the
+> record of what was considered.
 
 A rename breaks every caller that still uses the old name: an external SDK
 module's Dang code (go-sdk calls sdk-helpers'
@@ -1070,10 +1075,10 @@ Other gaps:
 
 ### What changes for module authors (on bump)
 
-A module that declares an `engineVersion` of `v1.0.0` or later (`latest`, or
-any v1.0.0 prerelease) gets the new rules. Module type, field and argument
-names that contain runs of capitals or dictionary terms get their real casing
-back:
+A module that declares an `engineVersion` of `v1.0.0-beta.21` or later
+(`latest`, or a later prerelease; exactly `v1.0.0` only once the engine is
+v1.0.0) gets the new rules. Module type, field and argument names that
+contain runs of capitals or dictionary terms get their real casing back:
 
 - `MyModHttpclient` → `MyModHTTPClient`
 - `Llmmessage` → `LLMMessage`, and references to core `LLM*` / `JSON*` types
@@ -1085,8 +1090,10 @@ back:
   `GIT_HUB` → `GITHUB`.
 
 Names that were already canonical don't change. The old schema names of the
-others stay accepted as hidden aliases (see
-[Transition aliases](#transition-aliases)).
+others are gone: there are no aliases, so callers built against them (other
+modules' code, committed bindings, hand-written queries) must move to the new
+names with the bump. The CLI still accepts the old flag, command and enum
+member spellings it printed before, on its side only.
 
 ### Core schema
 
@@ -1325,6 +1332,13 @@ copy: they get formatted names from the engine.
 | `apiS3Bucket` | ^API · s3 · bucket | `APIS3Bucket` | `apiS3Bucket` | `api_s3_bucket` | `ApiS3Bucket` |
 | `HTTP2s` | ^HTTP+2s | `HTTP2s` | `http2s` | `http2s` | `Http2s` |
 | `SHA256s` | ^SHA+256s | `SHA256s` | `sha256s` | `sha256s` | `Sha256s` |
+| `K8STools` | *K8s · tools | `K8sTools` | `k8sTools` | `k8s_tools` | `K8sTools` |
+| `K8sTools` | *K8s · tools | `K8sTools` | `k8sTools` | `k8s_tools` | `K8sTools` |
+| `k8s-tools` | *K8s · tools | `K8sTools` | `k8sTools` | `k8s_tools` | `K8sTools` |
+| `K8S_TOOLS` | *K8s · tools | `K8sTools` | `k8sTools` | `k8s_tools` | `K8sTools` |
+| `MyK8SCluster` | my · *K8s · cluster | `MyK8sCluster` | `myK8sCluster` | `my_k8s_cluster` | `MyK8sCluster` |
+| `K3SServer` | *K3s · server | `K3sServer` | `k3sServer` | `k3s_server` | `K3sServer` |
+| `k3s_server` | *K3s · server | `K3sServer` | `k3sServer` | `k3s_server` | `K3sServer` |
 | `Café` | error: non-ASCII | | | | |
 
 ## Open Questions

@@ -15,7 +15,6 @@ import (
 	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/dagql/dagui"
 	telemetry "github.com/dagger/otel-go"
-	"github.com/iancoleman/strcase"
 	"github.com/spf13/pflag"
 	"go.opentelemetry.io/otel/attribute"
 )
@@ -337,8 +336,9 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client, opts .
 		}
 		if obj := fn.ReturnType.AsObject; obj != nil {
 			// Detect module constructors: a Query field is a constructor
-			// when its SourceModuleName matches the field name.
-			if fn.SourceModuleName != "" && fn.Name == gqlFieldName(fn.SourceModuleName) {
+			// when its SourceModuleName matches the field name (spelled by
+			// the module's naming rules, current or legacy).
+			if fn.SourceModuleName != "" && slices.Contains(fieldNameCandidates(fn.SourceModuleName), fn.Name) {
 				obj.Constructor = fn
 			}
 		}
@@ -469,7 +469,7 @@ func (m *moduleDef) AsInputs() []*modInput {
 func (m *moduleDef) GetObject(name string) *modObject {
 	for _, obj := range m.AsObjects() {
 		// Normalize name in case an SDK uses a different convention for object names.
-		if gqlObjectName(obj.Name) == gqlObjectName(name) {
+		if sameObjectName(obj.Name, name) {
 			return obj
 		}
 	}
@@ -485,22 +485,39 @@ func (m *moduleDef) GetObjectFunction(objectName, functionName string) (*modFunc
 }
 
 func (m *moduleDef) GetFunction(fp functionProvider, functionName string) (*modFunction, error) {
-	for _, fn := range fp.GetFunctions() {
-		if fn.Name == functionName || fn.CmdName() == functionName {
-			if err := m.LoadFunctionTypeDefs(fn); err != nil {
-				return nil, err
-			}
-			return fn, nil
+	fn := findFunctionByCmdName(fp.GetFunctions(), functionName)
+	if fn == nil {
+		return nil, fmt.Errorf("no function %q in type %q", functionName, fp.ProviderName())
+	}
+	if err := m.LoadFunctionTypeDefs(fn); err != nil {
+		return nil, err
+	}
+	return fn, nil
+}
+
+// findFunctionByCmdName finds the function a user named: by its schema name
+// or command name, or else by the legacy (strcase) spelling of its command
+// name that CLIs printed before engine/naming (fn-2 for fn2), so commands and
+// scripts written against older modules keep working.
+func findFunctionByCmdName(fns []*modFunction, name string) *modFunction {
+	for _, fn := range fns {
+		if fn.Name == name || fn.CmdName() == name {
+			return fn
 		}
 	}
-	return nil, fmt.Errorf("no function %q in type %q", functionName, fp.ProviderName())
+	for _, fn := range fns {
+		if legacyCLIName(fn.Name) == name {
+			return fn
+		}
+	}
+	return nil
 }
 
 // GetInterface retrieves a saved interface type definition from the module.
 func (m *moduleDef) GetInterface(name string) *modInterface {
 	for _, iface := range m.AsInterfaces() {
 		// Normalize name in case an SDK uses a different convention for interface names.
-		if gqlObjectName(iface.Name) == gqlObjectName(name) {
+		if sameObjectName(iface.Name, name) {
 			return iface
 		}
 	}
@@ -511,7 +528,7 @@ func (m *moduleDef) GetInterface(name string) *modInterface {
 func (m *moduleDef) GetEnum(name string) *modEnum {
 	for _, enum := range m.AsEnums() {
 		// Normalize name in case an SDK uses a different convention for object names.
-		if gqlObjectName(enum.Name) == gqlObjectName(name) {
+		if sameObjectName(enum.Name, name) {
 			return enum
 		}
 	}
@@ -542,7 +559,7 @@ func (m *moduleDef) GetTypeDef(name string) *modTypeDef {
 func (m *moduleDef) GetInput(name string) *modInput {
 	for _, input := range m.AsInputs() {
 		// Normalize name in case an SDK uses a different convention for input names.
-		if gqlObjectName(input.Name) == gqlObjectName(name) {
+		if sameObjectName(input.Name, name) {
 			return input
 		}
 	}
@@ -1003,6 +1020,34 @@ func (e *modEnum) ValueNames() []string {
 	return values
 }
 
+// MemberName returns the name of the member s names: the member whose name
+// is s in any case, or else the only one whose name is s once word
+// separators are ignored too. That accepts the names the legacy naming rules
+// gave the members of a module on the new rules (ARM_64 for ARM64, GIT_HUB
+// for GITHUB), which users may have typed before the module moved to the
+// new rules; the CLI resolves them and sends the canonical name.
+func (e *modEnum) MemberName(s string) (string, bool) {
+	for _, member := range e.Members {
+		if strings.EqualFold(s, member.Name) {
+			return member.Name, true
+		}
+	}
+	loose := func(name string) string {
+		return strings.NewReplacer("_", "", "-", "").Replace(name)
+	}
+	found := ""
+	for _, member := range e.Members {
+		if !strings.EqualFold(loose(s), loose(member.Name)) {
+			continue
+		}
+		if found != "" {
+			return "", false
+		}
+		found = member.Name
+	}
+	return found, found != ""
+}
+
 type modEnumMember struct {
 	Name        string
 	Description string
@@ -1180,7 +1225,7 @@ func (r *modFunctionArg) IsWorkspace() bool {
 // FlagName returns the name of the argument using CLI naming conventions.
 func (r *modFunctionArg) FlagName() string {
 	r.once.Do(func() {
-		r.flagName = cliName(r.Name)
+		r.flagName = registerFlagName(r.Name)
 	})
 	return r.flagName
 }
@@ -1272,19 +1317,4 @@ func (r *modFunctionArg) defValue() string {
 		}
 	}
 	return ""
-}
-
-// gqlObjectName converts casing to a GraphQL object  name
-func gqlObjectName(name string) string {
-	return strcase.ToCamel(name)
-}
-
-// gqlFieldName converts casing to a GraphQL object field name
-func gqlFieldName(name string) string {
-	return strcase.ToLowerCamel(name)
-}
-
-// cliName converts casing to the CLI convention (kebab)
-func cliName(name string) string {
-	return strcase.ToKebab(name)
 }

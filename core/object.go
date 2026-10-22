@@ -1224,7 +1224,11 @@ func (obj *ModuleObject) isMainObject() bool {
 	if src := obj.Module.Self().GetSource(); src != nil && src.Entrypoint != nil {
 		return obj.TypeDef.Constructor.Valid
 	}
-	return gqlObjectName(obj.TypeDef.OriginalName) == gqlObjectName(obj.Module.Self().OriginalName)
+	// The main object is the one the module's name designates, by the
+	// module's rules (see Module.MainObject): an SDK may spell it otherwise
+	// around digits and acronyms (K8STools for module k8s-tools).
+	main, ok := obj.Module.Self().MainObject()
+	return ok && main.OriginalName == obj.TypeDef.OriginalName
 }
 
 func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Server) error {
@@ -1245,7 +1249,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 			desc = formatGqlDescription(mod.Description)
 		}
 		spec := dagql.FieldSpec{
-			Name:             gqlFieldName(mod.Name()),
+			Name:             mod.ConstructorName(),
 			Description:      desc,
 			Type:             obj,
 			Module:           moduleID,
@@ -1294,7 +1298,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 	if err != nil {
 		return fmt.Errorf("failed to get field spec for constructor: %w", err)
 	}
-	spec.Name = gqlFieldName(mod.Name())
+	spec.Name = mod.ConstructorName()
 	if spec.Description == "" {
 		spec.Description = formatGqlDescription(objDef.Description)
 	}
@@ -1333,7 +1337,7 @@ func (obj *ModuleObject) installMainMethods(ctx context.Context, dag *dagql.Serv
 	if err != nil {
 		return fmt.Errorf("failed to resolve module identity for workspace main object %q: %w", obj.TypeDef.Name, err)
 	}
-	constructorName := gqlFieldName(obj.Module.Self().Name())
+	constructorName := obj.Module.Self().ConstructorName()
 
 	// Build constructor arg specs from the module's type definition
 	// rather than looking them up from the server — the constructor

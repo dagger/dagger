@@ -32,6 +32,12 @@ import (
 )
 
 func init() {
+	// These only affect the legacy strcase rules, which name the types of
+	// modules older than IdentifierNamingVersion; engine/naming's dictionary
+	// covers LLM (and any other acronym) in every position, so newer modules
+	// resolve references to every LLM* core type without them. They stay,
+	// unchanged, for as long as the legacy rules do: removing one would rename
+	// types in modules that rely on it.
 	strcase.ConfigureAcronym("LLM", "LLM")
 	// Acronyms only match a whole name, so a module type definition naming
 	// these core types would otherwise normalize to "Llmcontent" /

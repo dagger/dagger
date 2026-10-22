@@ -3,11 +3,14 @@ package core
 import (
 	"context"
 	"strings"
+	"sync"
 
 	"github.com/iancoleman/strcase"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/naming"
 )
 
 /*
@@ -27,40 +30,411 @@ func formatGqlDescription(desc string) string {
 
 // IdentifierNamingVersion is the first engine version whose names are
 // normalized by engine/naming: modules that declare it or later in their
-// engineVersion, and modules served at the engine's own version (manifest v2
-// entrypoints). Modules that declare an older engineVersion keep the strcase
+// engineVersion. Modules that declare an older engineVersion keep the strcase
 // rules they were built against, byte for byte. See
 // hack/designs/identifier-casing.md, "The gate".
 //
-// The gate is an API view, so it's base-version granular like every view
-// (engine.APIViewVersion): every v1.0.0 prerelease shares the v1.0.0 view and
-// gets the new rules. The old spellings of the module names they changed stay
-// accepted as hidden aliases (see ModuleNameAliases).
-const IdentifierNamingVersion = "v1.0.0-0"
+// It's engine.IdentifierCasingVersion, the first release after
+// v1.0.0-beta.20, so no released engine names modules the new way under an
+// older version: a module that declares beta.20 or older (including
+// v1.0.0-0, which shares beta.20's view) keeps the strcase rules.
+//
+// SDK generators decide which naming rules to apply by whether the schema
+// they generate from has Query.formatIdentifiers, which is installed on the
+// same view: the two must line up exactly.
+const IdentifierNamingVersion = engine.IdentifierCasingVersion
 
-func gqlObjectName(name string) string {
-	// gql object name is capitalized camel case
-	return strcase.ToCamel(name)
+// IdentifierNamingView is the API views whose names follow engine/naming:
+// the views of IdentifierNamingVersion and later. It gates both how modules
+// are named (NamerForView) and the identifier API (Query.formatIdentifiers
+// and friends).
+var IdentifierNamingView dagql.ViewFilter = AfterVersion(IdentifierNamingVersion)
+
+// Namer normalizes module-declared names (types, fields, functions,
+// arguments, enum members) into schema names, and schema names into CLI
+// names.
+//
+// A Namer is selected by the engine version of the module whose names it
+// produces: engine/naming with that version's dictionary from
+// IdentifierNamingVersion on, and the legacy strcase rules before it. The
+// zero Namer is the legacy one.
+type Namer struct {
+	// dict is the naming dictionary, or nil for the legacy strcase rules.
+	dict *naming.Dictionary
 }
 
-// NamespaceObject maps a module-local type name to its namespaced schema name.
-// It is the exported entry point for SDK runtimes (e.g. the Dang interpreter)
-// that need to resolve a local type reference to the name the engine installed.
-func NamespaceObject(objOriginalName, modFinalName, modOriginalName string) string {
-	return namespaceObject(objOriginalName, modFinalName, modOriginalName)
+var (
+	// LegacyNamer is the strcase normalization of modules older than
+	// IdentifierNamingVersion.
+	LegacyNamer = Namer{}
+	// LatestNamer is the normalization of the newest engine version.
+	LatestNamer = Namer{dict: naming.Latest}
+)
+
+// NamerForView returns the Namer for an API view. The empty view is the
+// latest, as it is for AfterVersion.
+func NamerForView(view call.View) Namer {
+	if !IdentifierNamingView.Contains(view) {
+		return LegacyNamer
+	}
+	return Namer{dict: naming.DictionaryFor(string(view))}
 }
 
-func namespaceObject(
+// NamerForEngineVersion returns the Namer for a module that declares
+// engineVersion in its dagger.json.
+func NamerForEngineVersion(engineVersion string) Namer {
+	return NamerForView(call.View(engine.ModuleAPIViewVersion(engineVersion)))
+}
+
+// NamingView is the API view the module is served at, and whose naming rules
+// name its declarations: the view of its engine version, as
+// engine.ModuleAPIViewVersion maps it (a module declaring exactly v1.0.0 gets
+// the pre-cut view while this engine is a v1.0.0 prerelease). That includes
+// workspace main modules (manifest v2): they're named by whatever engine
+// version their ModuleSource has, like any other module.
+func (src *ModuleSource) NamingView() call.View {
+	if src == nil {
+		return ""
+	}
+	return call.View(engine.ModuleAPIViewVersion(src.EngineVersion))
+}
+
+// Namer normalizes the names the module declares: the rules of NamingView.
+func (src *ModuleSource) Namer() Namer {
+	return NamerForView(src.NamingView())
+}
+
+// namingFields are the typedef constructors that normalize a name they're
+// given, by type and field: the rules come from the view of their call (see
+// NamerFromContext), so they record it (View(AllVersion) or another view
+// filter).
+var namingFields = map[string]map[string]bool{
+	"Query":    {"function": true},
+	"Function": {"withArg": true},
+	"TypeDef": {
+		"withObject":          true,
+		"withInterface":       true,
+		"withEnum":            true,
+		"withScalar":          true,
+		"withField":           true,
+		"withEnumMember":      true,
+		"withCollectionKeys":  true,
+		"withCollectionGet":   true,
+		"withCollectionDelta": true,
+	},
+}
+
+// IsNamingField reports whether typeName.field is a typedef constructor that
+// normalizes a name with the naming rules of its call's view.
+func IsNamingField(typeName, field string) bool {
+	return namingFields[typeName][field]
+}
+
+// CallerView is the API view of the caller of the current field: the view
+// recorded in the call when the field is view-scoped, else the view of the
+// current server. Empty when neither is known.
+func CallerView(ctx context.Context) call.View {
+	if cur := dagql.CurrentCall(ctx); cur != nil && cur.View != "" {
+		return cur.View
+	}
+	if srv := dagql.CurrentDagqlServer(ctx); srv != nil {
+		return srv.View
+	}
+	return ""
+}
+
+// NamerFromContext returns the Namer for the view of the current call. Only
+// fields with a view filter record the caller's view in their call (and
+// cache key); the typedef constructors that normalize names have one, so a
+// module's runtime gets the Namer of the engine version the module declares.
+func NamerFromContext(ctx context.Context) Namer {
+	if cur := dagql.CurrentCall(ctx); cur != nil {
+		return NamerForView(cur.View)
+	}
+	return LatestNamer
+}
+
+// Legacy reports whether n uses the strcase rules.
+func (n Namer) Legacy() bool {
+	return n.dict == nil
+}
+
+// Dictionary returns n's naming dictionary, or nil for the legacy rules.
+func (n Namer) Dictionary() *naming.Dictionary {
+	return n.dict
+}
+
+// format parses name with n's dictionary and formats it. A name the parser
+// rejects (non-ASCII, or no letters or digits) is returned unchanged:
+// schema validation reports it.
+func (n Namer) format(name string, casing naming.Casing) string {
+	key := formatKey{dict: n.dict, casing: casing, name: name}
+	if formatted, ok := formatCache.Load(key); ok {
+		return formatted.(string)
+	}
+	formatted := name
+	if id, err := n.dict.Parse(name); err == nil {
+		formatted = id.Format(casing, naming.Uppercase)
+	}
+	formatCache.Store(key, formatted)
+	return formatted
+}
+
+// formatCache memoizes Namer.format: the same schema names are normalized
+// over and over (every lookup of a module's types and fields), and
+// dictionaries never change.
+var formatCache sync.Map
+
+type formatKey struct {
+	dict   *naming.Dictionary
+	casing naming.Casing
+	name   string
+}
+
+// ObjectName is the schema name of an object, interface, enum or scalar:
+// PascalCase.
+func (n Namer) ObjectName(name string) string {
+	if n.Legacy() {
+		return strcase.ToCamel(name)
+	}
+	return n.format(name, naming.Pascal)
+}
+
+// FieldName is the schema name of a field or function: camelCase.
+func (n Namer) FieldName(name string) string {
+	if n.Legacy() {
+		return strcase.ToLowerCamel(name)
+	}
+	return n.format(name, naming.Camel)
+}
+
+// ArgName is the schema name of an argument: camelCase.
+func (n Namer) ArgName(name string) string {
+	return n.FieldName(name)
+}
+
+// EnumMemberName is the schema name of an enum member: SCREAMING_SNAKE, with
+// names already written in GraphQL's member convention (HTTP2, P_256) kept
+// as they are.
+func (n Namer) EnumMemberName(name string) string {
+	if isConventionalGraphQLEnumMemberName(name) {
+		return name
+	}
+	if n.Legacy() {
+		return strcase.ToScreamingSnake(name)
+	}
+	return n.format(name, naming.ScreamingSnake)
+}
+
+// CLIName is the CLI spelling of a name: kebab-case. Characters that can't
+// be part of a name (glob metacharacters, ':' path separators) stay where
+// they are, as they do with strcase, so path patterns convert too. A word
+// separator next to one of them is kept, as a '-', so a pattern doesn't
+// broaden: test-* stays test-*, not test*.
+func (n Namer) CLIName(name string) string {
+	if n.Legacy() {
+		return strcase.ToKebab(name)
+	}
+	var b strings.Builder
+	start := -1
+	flush := func(end int) {
+		if start < 0 {
+			return
+		}
+		run := name[start:end]
+		trimmed := strings.TrimLeft(run, nameSeparators)
+		if start > 0 && len(trimmed) < len(run) {
+			b.WriteByte('-')
+		}
+		lead := len(trimmed)
+		trimmed = strings.TrimRight(trimmed, nameSeparators)
+		b.WriteString(n.format(trimmed, naming.Kebab))
+		if end < len(name) && len(trimmed) < lead && trimmed != "" {
+			b.WriteByte('-')
+		}
+		start = -1
+	}
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		if isNameByte(c) {
+			if start < 0 {
+				start = i
+			}
+			continue
+		}
+		flush(i)
+		b.WriteByte(c)
+	}
+	flush(len(name))
+	return b.String()
+}
+
+// nameSeparators are the word separators isNameByte accepts.
+const nameSeparators = "-_. "
+
+// isNameByte reports whether c can be part of a name in some casing: a
+// letter, a digit, or a word separator.
+func isNameByte(c byte) bool {
+	switch {
+	case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', '0' <= c && c <= '9':
+		return true
+	case c == '-', c == '_', c == '.', c == ' ':
+		return true
+	default:
+		return false
+	}
+}
+
+// NamespaceObject maps a module-local type name to its namespaced schema
+// name: the module's final name, followed by the type name unless the type
+// name already starts with the module's original name.
+func (n Namer) NamespaceObject(objOriginalName, modFinalName, modOriginalName string) string {
+	if n.Legacy() {
+		return legacyNamespaceObject(objOriginalName, modFinalName, modOriginalName)
+	}
+	obj, err := n.dict.Parse(objOriginalName)
+	if err != nil {
+		return n.ObjectName(modFinalName + "_" + objOriginalName)
+	}
+	final, err := n.dict.Parse(modFinalName)
+	if err != nil {
+		return n.ObjectName(modFinalName + "_" + objOriginalName)
+	}
+	rest := obj.Words
+	// The prefix check compares words, not characters, so it only matches on
+	// a word boundary: "Postman" in module "post" becomes "PostPostman",
+	// while "PostMan" is already namespaced. The words may be cut
+	// differently in the type's and the module's spelling around digits and
+	// acronyms (K8STools in module k8s-tools, My2Go in module my2go), so
+	// failing that, words that spell the module's name once flattened
+	// (lowercased, without boundaries) count as the prefix too.
+	if mod, err := n.dict.Parse(modOriginalName); err == nil && hasWordPrefix(obj.Words, mod.Words) {
+		rest = obj.Words[len(mod.Words):]
+	} else if k := flatWordPrefix(obj.Words, flatName(modOriginalName)); k >= 0 {
+		rest = obj.Words[k:]
+	}
+	words := append(append([]naming.Word(nil), final.Words...), rest...)
+	return naming.Identifier{Words: words}.Format(naming.Pascal, naming.Uppercase)
+}
+
+// flatName is name lowercased, with everything but ASCII letters and digits
+// dropped: the spelling every casing of a name shares, however it cuts words
+// (K8STools, K8sTools and k8s-tools are all k8stools).
+func flatName(name string) string {
+	var b strings.Builder
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		switch {
+		case 'a' <= c && c <= 'z', '0' <= c && c <= '9':
+			b.WriteByte(c)
+		case 'A' <= c && c <= 'Z':
+			b.WriteByte(c + 'a' - 'A')
+		}
+	}
+	return b.String()
+}
+
+// flatWordPrefix returns how many of words, flattened and joined, spell
+// prefix exactly, ending on a word boundary; or -1.
+func flatWordPrefix(words []naming.Word, prefix string) int {
+	if prefix == "" {
+		return -1
+	}
+	var spelled string
+	for i, w := range words {
+		spelled += flatName(w.Text + w.Suffix)
+		switch {
+		case spelled == prefix:
+			return i + 1
+		case len(spelled) >= len(prefix) || !strings.HasPrefix(prefix, spelled):
+			return -1
+		}
+	}
+	return -1
+}
+
+// SameDeclaredName reports whether a and b, two spellings of a declared
+// name, name the same thing for a module named by n: they normalize to the
+// same schema name, or, with the engine/naming rules, they're the same once
+// flattened (lowercased, without word boundaries). An SDK or template may
+// spell a module's main type differently around digits and acronyms than the
+// module's name (K8STools for module k8s-tools, My2Go for my2go,
+// Go1Password for go-1password), which the legacy strcase rules happened to
+// normalize alike but engine/naming doesn't.
+//
+// A flat match is weaker than a normalized one: lookups that pick one of
+// several declarations take a normalized match first, and a flat one only if
+// it's the only one (see Module.ObjectByOriginalName).
+func (n Namer) SameDeclaredName(a, b string) bool {
+	if n.ObjectName(a) == n.ObjectName(b) {
+		return true
+	}
+	return !n.Legacy() && flatName(a) != "" && flatName(a) == flatName(b)
+}
+
+// hasWordPrefix reports whether words starts with prefix, comparing words by
+// their spelling, ignoring case.
+func hasWordPrefix(words, prefix []naming.Word) bool {
+	if len(prefix) > len(words) {
+		return false
+	}
+	for i, w := range prefix {
+		if !strings.EqualFold(words[i].Text, w.Text) || !strings.EqualFold(words[i].Suffix, w.Suffix) {
+			return false
+		}
+	}
+	return true
+}
+
+// FieldNameCandidates are the field names a name typed in another casing
+// (a CLI address, a pattern, a module name from a config file) may have in a
+// schema: its spelling by the latest naming rules, then by the legacy ones
+// when that differs. Which applies depends on the engine version of the
+// module that installed the field, which a caller resolving the name doesn't
+// know yet; it looks up each in order.
+func FieldNameCandidates(name string) []string {
+	latest := LatestNamer.FieldName(name)
+	legacy := LegacyNamer.FieldName(name)
+	if legacy == latest {
+		return []string{latest}
+	}
+	return []string{latest, legacy}
+}
+
+// SameCLIName reports whether two names are the same once spelled the CLI
+// way (kebab-case) by the latest or the legacy naming rules: "myMod",
+// "my-mod" and "MyMod" are the same module. Comparisons of names whose
+// module, and so naming rules, aren't known use it.
+func SameCLIName(a, b string) bool {
+	return a == b ||
+		LatestNamer.CLIName(a) == LatestNamer.CLIName(b) ||
+		LegacyNamer.CLIName(a) == LegacyNamer.CLIName(b)
+}
+
+// anyNamerMatches reports whether name, in any casing, normalizes to
+// schemaName under the latest or the legacy rules. Lookups that don't know
+// which rules produced schemaName (a name a user typed, matched before the
+// owning module is known) use it, so the spellings both rules produce keep
+// resolving.
+func anyNamerMatches(schemaName, name string, normalize func(Namer, string) string) bool {
+	return schemaName == name ||
+		schemaName == normalize(LatestNamer, name) ||
+		schemaName == normalize(LegacyNamer, name)
+}
+
+// legacyNamespaceObject is NamespaceObject by the legacy strcase rules,
+// unchanged from before engine/naming.
+func legacyNamespaceObject(
 	objOriginalName string,
 	modFinalName string,
 	modOriginalName string,
 ) string {
-	objOriginalName = gqlObjectName(objOriginalName)
-	if rest := strings.TrimPrefix(objOriginalName, gqlObjectName(modOriginalName)); rest != objOriginalName {
+	objOriginalName = strcase.ToCamel(objOriginalName)
+	if rest := strings.TrimPrefix(objOriginalName, strcase.ToCamel(modOriginalName)); rest != objOriginalName {
 		if len(rest) == 0 {
 			// Main module object with same original name as module original name, give it
 			// the same name as the module's final name
-			return gqlObjectName(modFinalName)
+			return strcase.ToCamel(modFinalName)
 		}
 		// we have this case check here to check for a boundary
 		// e.g. if objName="Postman" and namespace="Post", then we should still namespace
@@ -69,29 +443,12 @@ func namespaceObject(
 		if 'A' <= rest[0] && rest[0] <= 'Z' {
 			// objName has original module name prefixed, just make sure it has the final
 			// module name as prefix
-			return gqlObjectName(modFinalName + rest)
+			return strcase.ToCamel(modFinalName + rest)
 		}
 	}
 
 	// need to namespace object with final module name
-	return gqlObjectName(modFinalName + "_" + objOriginalName)
-}
-
-func gqlFieldName(name string) string {
-	// gql field name is uncapitalized camel case
-	return strcase.ToLowerCamel(name)
-}
-
-func gqlArgName(name string) string {
-	// gql arg name is uncapitalized camel case
-	return strcase.ToLowerCamel(name)
-}
-
-func gqlEnumMemberName(name string) string {
-	if isConventionalGraphQLEnumMemberName(name) {
-		return name
-	}
-	return strcase.ToScreamingSnake(name)
+	return strcase.ToCamel(modFinalName + "_" + objOriginalName)
 }
 
 func isConventionalGraphQLEnumMemberName(name string) bool {
@@ -109,17 +466,4 @@ func isConventionalGraphQLEnumMemberName(name string) bool {
 		return false
 	}
 	return true
-}
-
-// CallerView is the API view of the caller of the current field: the view
-// recorded in the call when the field is view-scoped, else the view of the
-// current server. Empty when neither is known.
-func CallerView(ctx context.Context) call.View {
-	if cur := dagql.CurrentCall(ctx); cur != nil && cur.View != "" {
-		return cur.View
-	}
-	if srv := dagql.CurrentDagqlServer(ctx); srv != nil {
-		return srv.View
-	}
-	return ""
 }
