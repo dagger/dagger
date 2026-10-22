@@ -3,8 +3,12 @@ package dagql
 import (
 	"context"
 	"errors"
+	"time"
+
+	"github.com/opencontainers/go-digest"
 
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/wcprof"
 )
 
@@ -83,4 +87,74 @@ func profErrOutcome(err error) wcprof.Outcome {
 	default:
 		return wcprof.OutcomeError
 	}
+}
+
+// Remote-cache hooks. They read the measurement points the remote cache's log
+// lines and span attributes already keep, and record them as intervals.
+
+// partInstalledOutcome is the install outcome for a part that installed; the
+// others are partInstallFailure's.
+const partInstalledOutcome = "installed"
+
+// profBeginInstall starts the profile op of one attempt to install an offered
+// part on receiver, from start, where the install's line times it from: the
+// part's key, and a part link with its size, the whole chain's, which is what
+// a pull of it costs a cache that has none of it.
+func profBeginInstall(ctx context.Context, receiver AnyResult, target PersistedPartAddress, layers []snapshots.ExportLayer, start time.Time) (context.Context, *wcprof.Op) {
+	if !wcprof.Enabled(ctx) {
+		return ctx, nil
+	}
+	key, _ := partAddressKey(target)
+	ctx, op := wcprof.BeginOp(ctx, wcprof.OpKindRemoteCache, "remotecache.install", wcprof.OpOpts{
+		Ident:    key,
+		ClientID: profClientID(ctx),
+		WorkType: wcprof.WorkTypeExternal,
+		Start:    start,
+	})
+	var size int64
+	for _, layer := range layers {
+		size += layer.Descriptor.Size
+	}
+	wcprof.Part(ctx, op.ID(), key, profResultID(receiver), size)
+	return ctx, op
+}
+
+// profEndInstall ends an install's profile op at now, where the install's
+// line times it to, with its outcome (one of partInstallFailure's, or
+// partInstalledOutcome) and the bytes it downloaded, after recording its
+// commit, from committing, when it got that far. ctx is the op's.
+func profEndInstall(ctx context.Context, op *wcprof.Op, receiver AnyResult, outcome string, downloaded int64, committing, now time.Time) {
+	if op == nil {
+		return
+	}
+	result := wcprof.OutcomeError
+	switch outcome {
+	case partInstalledOutcome:
+		result = wcprof.OutcomeOK
+	case "canceled":
+		result = wcprof.OutcomeCanceled
+	case "refused":
+		result = wcprof.OutcomeRefused
+	case "superseded":
+		result = wcprof.OutcomeSuperseded
+	case "content":
+		wcprof.Fact(ctx, op.ID(), "install.content", 0)
+	}
+	if !committing.IsZero() {
+		wcprof.RecordOpAt(ctx, wcprof.OpKindRemoteCache, "remotecache.install.commit", wcprof.OpOpts{}, committing, now, result)
+	}
+	op.SetBytes(downloaded)
+	op.EndAt(result, profResultID(receiver), now)
+}
+
+// profRenewal records a renewal of a part's content addresses, from start to
+// end: a round trip to the service, or a wait on another source's.
+func profRenewal(ctx context.Context, blob digest.Digest, start, end time.Time, err error) {
+	if !wcprof.Enabled(ctx) {
+		return
+	}
+	wcprof.RecordOpAt(ctx, wcprof.OpKindRemoteCache, "remotecache.renew", wcprof.OpOpts{
+		Ident:    blob.String(),
+		WorkType: wcprof.WorkTypeExternal,
+	}, start, end, profErrOutcome(err))
 }
