@@ -20,6 +20,11 @@ import (
 // where every Directory operation resolves it within dir (see ResolveInDir).
 // So if dir has any such symlink, f gets a copy of dir in which each of them
 // points where it resolves within dir; otherwise f gets the mount itself.
+//
+// Only symlinks are confined: f must not itself reach above the path it is
+// given, by "..", an absolute path, or by searching parent directories. The
+// Dang runtime, its caller, installs its import configs before evaluating, so
+// the dang library doesn't search parent directories for a project config.
 func (dir *Directory) MountConfined(ctx context.Context, self dagql.ObjectResult[*Directory], f func(string) error) error {
 	return dir.Mount(ctx, self, func(base string) error {
 		return withLinksConfined(base, f)
@@ -45,9 +50,15 @@ func withLinksConfined(base string, f func(string) error) error {
 		return fmt.Errorf("copy directory to confine its links: %w", err)
 	}
 	for _, rel := range leaving {
+		// Resolve against the original, not the copy being rewritten.
 		resolved, err := containerdfs.RootPath(base, rel)
 		if err != nil {
-			return err
+			// A link that can't be resolved, such as one in a cycle, can't
+			// be followed in the copy either.
+			if err := os.Remove(filepath.Join(confined, rel)); err != nil {
+				return err
+			}
+			continue
 		}
 		within, err := filepath.Rel(base, resolved)
 		if err != nil {
@@ -81,10 +92,14 @@ func linksLeavingDir(base string) ([]string, error) {
 			return err
 		}
 		leaves, err := leavesDir(base, filepath.ToSlash(rel))
-		if err != nil || !leaves {
-			return err
+		if err != nil {
+			// A link that can't be resolved within dir, such as one in a
+			// cycle, leads nowhere; following it fails as it would anyway.
+			return nil //nolint:nilerr
 		}
-		leaving = append(leaving, rel)
+		if leaves {
+			leaving = append(leaving, rel)
+		}
 		return nil
 	})
 	return leaving, err

@@ -89,9 +89,11 @@ func TestWithLinksConfined(t *testing.T) {
 	require.NoError(t, os.Symlink("/inside.txt", filepath.Join(dir, "sub", "abs")))
 	require.NoError(t, os.Symlink("../../inside.txt", filepath.Join(dir, "sub", "up")))
 	require.NoError(t, os.Symlink("abs", filepath.Join(dir, "sub", "chain")))
+	require.NoError(t, os.Symlink("/sub", filepath.Join(dir, "subdir")))
+	require.NoError(t, os.Symlink("loop", filepath.Join(dir, "loop")))
 	require.NoError(t, withLinksConfined(dir, func(p string) error {
 		require.NotEqual(t, dir, p)
-		for _, name := range []string{"within", "sub/abs", "sub/up", "sub/chain"} {
+		for _, name := range []string{"within", "sub/abs", "sub/up", "sub/chain", "subdir/abs"} {
 			got, err := os.ReadFile(filepath.Join(p, name))
 			require.NoError(t, err, name)
 			require.Equal(t, "inside", string(got), name)
