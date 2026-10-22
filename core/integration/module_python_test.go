@@ -1014,12 +1014,13 @@ func (PythonSuite) TestDocs(ctx context.Context, t *testctx.T) {
 
 		obj := inspectModuleObjects(ctx, t, modGen).Get("0")
 
-		require.EqualValues(t, []any{"comUrl", "orgUrl"}, obj.Get("constructor.args.#.name").Value())
-		require.Equal(t, "A .com URL", obj.Get("constructor.args.#(name=comUrl).description").String())
-		require.Equal(t, "A .org URL", obj.Get("constructor.args.#(name=orgUrl).description").String())
+		// URL is a dictionary acronym, so com_url is comURL in the schema.
+		require.EqualValues(t, []any{"comURL", "orgURL"}, obj.Get("constructor.args.#.name").Value())
+		require.Equal(t, "A .com URL", obj.Get("constructor.args.#(name=comURL).description").String())
+		require.Equal(t, "A .org URL", obj.Get("constructor.args.#(name=orgURL).description").String())
 
-		require.Equal(t, "https://example.com", obj.Get("constructor.args.#(name=comUrl).defaultValue.@fromstr").String())
-		require.Equal(t, "https://example.org", obj.Get("constructor.args.#(name=orgUrl).defaultValue.@fromstr").String())
+		require.Equal(t, "https://example.com", obj.Get("constructor.args.#(name=comURL).defaultValue.@fromstr").String())
+		require.Equal(t, "https://example.org", obj.Get("constructor.args.#(name=orgURL).defaultValue.@fromstr").String())
 
 		// Sanity check
 		out, err := modGen.With(daggerCallAt(".", "urls", "--json")).Stdout(ctx)
