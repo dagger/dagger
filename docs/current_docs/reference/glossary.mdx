@@ -10,23 +10,23 @@ Terms used in the Dagger documentation, each with a link to the page that covers
 
 ## Artifact
 
-A value that a workspace exposes at a [DAG address](#dag-address): the result of a zero-argument function on an installed module, such as a `Service`, `Container`, `Directory`, or `File`. `dagger list` lists the artifacts in a workspace by type. See [Module wiring](../config/module-wiring.mdx).
+A part of a project that Dagger makes available as a typed value: source code, containers, binaries, generated files, even tests. Modules discover the artifacts in a project, and Dagger computes them on demand and caches them. Every artifact has a URI, called a [DAG link](#dag-link). `dagger list` lists the artifacts in a workspace by type. See [Module wiring](../config/module-wiring.mdx).
 
 ## Cache
 
-Dagger caches work at two levels. The function cache stores a function's result, keyed by its inputs, and a hit skips the function entirely. The layer cache stores the result of each operation inside a function, such as a container command, so a function that runs again reuses its unchanged steps. See [engine.json](./config-files/engine-json.mdx) for how the engine prunes it.
+Each [engine](#engine) caches the result of each operation, for example a built container or a compiled binary, so that it does not run the operation again. Dagger also caches function results, keyed by inputs (arguments, parent state, module source). A function cache hit skips the function entirely. See [engine.json](./config-files/engine-json.mdx) for how the engine prunes its cache.
 
 ## Cache volume
 
-A directory whose contents persist across [sessions](#session), such as a package manager's download cache. A function mounts it into a container. See [`CacheVolume`](./api/cache-volume.mdx).
+A directory whose contents persist across Dagger [sessions](#session), such as a package manager's download cache. A function mounts it into a container. See [`CacheVolume`](./api/cache-volume.mdx).
 
 ## Changeset
 
-A set of proposed file changes. A [Generator](#generator) returns one, and so can any function that edits files, such as a formatter's `fix`. Dagger shows the changed paths for review and writes them only when the changeset is applied. See [Generating code](../using/generating.mdx).
+A diff of proposed file changes. A [Generator](#generator) returns one, and so can a function that edits files, such as a formatter's `fix`. Dagger shows the changed paths and line counts, and nothing is written until the changeset is applied. When a function returns multiple changesets, the CLI merges them and offers one combined apply prompt. See [Generating code](../using/generating.mdx).
 
 ## Check
 
-A function that validates the project, such as a test suite, a linter, or a scan. A module marks it with `@check` or its SDK's equivalent. `dagger check` runs every Check in the workspace and exits non-zero if any fails. Each Generator also provides a Check that fails when the files it generates are stale. See [Checking your code](../using/checking.mdx).
+A function that validates the project: tests, linters, scans, policy. A Check passes or fails, so it can be used as a gate. A module marks it with `@check` or its SDK's equivalent. `dagger check` runs every Check in the workspace, locally, in CI, and as [Cloud Checks](#cloud-checks). A `stale` check finds generated files that are out of date. See [Checking your code](../using/checking.mdx).
 
 ## Client
 
@@ -36,19 +36,19 @@ In the context of [services](#service), a client is any container or program tha
 
 ## Client library
 
-A package, published for each language, that calls the [core API](#core-api) from a program, such as `dagger.io/dagger` for Go or `@dagger.io/dagger` for TypeScript. See [Client libraries](./client-libraries/index.mdx#standalone-client-libraries).
+A plain client library for the [core API](#core-api) that each SDK publishes to its language's package registry, such as `dagger.io/dagger` for Go or `@dagger.io/dagger` for TypeScript. See [Standalone client libraries](./client-libraries/index.mdx#standalone-client-libraries).
 
 ## Cloud Checks
 
-A Dagger Cloud feature that runs a workspace's Checks on [Cloud Engines](#cloud-engine) after each push or pull request to a GitHub repository. `dagger cloud checks on` enables it. See [Set up Cloud Checks](../getting-started/cloud-checks.mdx).
+Runs a repository's Checks on [Cloud Engines](#cloud-engine) on each push to GitHub or pull request, with no additional CI configuration or third-party service needed. `dagger cloud checks on` connects the repository to Dagger Cloud. The results show as GitHub check statuses and in Dagger Cloud. See [Set up Cloud Checks](../getting-started/cloud-checks.mdx).
 
 ## Cloud Engine
 
-An [engine](#engine) that Dagger Cloud runs. [Cloud Checks](#cloud-checks) run on Cloud Engines.
+A managed remote [engine](#engine) that Dagger Cloud runs, with scale-out, distributed cache, access control and observability. `--engine=cloud` runs any pipeline on Cloud Engines, and [Cloud Checks](#cloud-checks) run on them.
 
 ## Collection
 
-A set of objects with unique keys that a module returns for the units of a project it discovers at run time, such as Go packages or test files. Each collection adds a flag to `dagger check` and `dagger generate`, such as `--go-package`, that selects items by key. See [Collections](../using/calling-functions.mdx#collections) and [Select collection items](../using/checking.mdx#select-collection-items).
+A set of objects with unique keys that a module returns for the units of a project it discovers at run time, such as packages, test files, or config directories. Each collection adds a filter flag to `dagger check` and `dagger generate`, such as `--go-package`, that selects items by key. A collection can also define batch functions, which run once over the selected items. See [Collections](../using/calling-functions.mdx#collections) and [Select collection items](../using/checking.mdx#select-collection-items).
 
 ## Constructor
 
@@ -58,19 +58,23 @@ The function that creates a module's main [object](#object). Its arguments are t
 
 The types and functions the [engine](#engine) provides without any module installed, such as `Container`, `Directory`, `Secret`, and `Service`. Modules extend it with their own types. See the [API reference](./api/index.mdx).
 
-## DAG address
+## DAG link
 
-An address with the `dag://` scheme that names something in a workspace by its path. The first segment is a module's [install name](#install-name), and the rest names functions, as in `dag://go/packages/tests/test`. Query parameters select [collection](#collection) items. The [workspace main](#workspace-main) module's functions omit the module segment, as in `dag://serve`. Also called a DAG link.
+The URI of an [artifact](#artifact), with the `dag://` scheme. A DAG link names one artifact with its filters, for example `dag://go/packages/tests/test?go-package=store`. It works on the command line, in `dagger.toml`, and in native configuration such as a `//go:generate` directive. Its first path segment is a module's [install name](#install-name), and the [workspace main](#workspace-main) module's functions omit that segment, as in `dag://serve`. Also called a DAG address.
 
-`dagger check` and `dagger generate` take DAG addresses to select Checks and Generators. A [setting](#setting) whose value is a DAG address [wires](#module-wiring) in another module's [artifact](#artifact). See [Filter checks](../using/checking.mdx#filter-checks).
+`dagger check` and `dagger generate` take DAG links to select Checks and Generators. A [setting](#setting) whose value is a DAG link [wires](#module-wiring) in another module's artifact. See [Filter checks](../using/checking.mdx#filter-checks).
 
 ## Dagger API
 
-The GraphQL API that the [engine](#engine) serves. The CLI, modules, and [clients](#client) all run on it. It is made of the [core API](#core-api) plus the types of the modules a workspace installs. See the [API reference](./api/index.mdx).
+The GraphQL API that the [engine](#engine) serves. The CLI, modules, Checks, Generators, and services all run on it. It is made of the [core API](#core-api) plus the types of the modules a workspace installs. See the [API reference](./api/index.mdx).
 
 ## Dagger Cloud
 
-Dagger's hosted service. It stores [traces](#trace) and runs [Cloud Checks](#cloud-checks) on [Cloud Engines](#cloud-engine). `dagger cloud signup` creates an account. See [Set up Cloud Checks](../getting-started/cloud-checks.mdx).
+Dagger's hosted service. It offers managed remote engines, with scale-out, distributed cache, access control and observability. See [Set up Cloud Checks](../getting-started/cloud-checks.mdx).
+
+## Dagger Shell
+
+The bash-style language for pipelines, run with `dagger -c '...'` or from a script file. For example, `dagger -c 'go | packages | get store | tests | keys'` lists the tests in one Go package. See [Collections](../using/calling-functions.mdx#collections).
 
 ## `dagger-module.toml`
 
@@ -78,15 +82,19 @@ The manifest of a [module](#module). It holds the module role of the Dagger 0.x 
 
 ## `dagger.toml`
 
-The [workspace](#workspace) configuration file. It records the installed modules, their [settings](#setting), [SDK scopes](#sdk-scope), and [includes](#include). Dagger reads the nearest `dagger.toml` above the current directory, up to the [workspace root](#workspace-root). See [dagger.toml](./config-files/dagger-toml.mdx).
+The [workspace](#workspace) configuration file. It specifies the modules to load, their [settings](#setting), [SDK scopes](#sdk-scope), and [includes](#include). Dagger reads the nearest `dagger.toml` above the current directory, up to the [workspace root](#workspace-root). See [dagger.toml](./config-files/dagger-toml.mdx).
 
 ## Dang
 
-Dagger's native language for writing modules. A Dang module runs as written, with no code generation or build step. See [Dang](./sdks/dang.mdx).
+A scripting language designed specifically for Dagger, with a native runtime built into the engine. Dang loads types directly from the engine at runtime, so it needs no codegen and starts almost immediately. All official modules and SDK runtimes are written in Dang. See [Dang](./sdks/dang.mdx).
+
+## Dev shell
+
+A shell in any container that a workspace provides, such as a dev environment, a build container or the container that tests run in. `dagger shell` opens one, and `dagger check -i` opens one in the exact state where a command failed. See [`dagger shell`](./cli/index.mdx#dagger-shell).
 
 ## Engine
 
-The Dagger Engine serves the [Dagger API](#dagger-api). It runs functions and containers, starts [services](#service), and stores the [cache](#cache). The CLI starts an engine in a container on the local machine, and Dagger Cloud runs [Cloud Engines](#cloud-engine). See [engine.json](./config-files/engine-json.mdx).
+The Dagger Engine serves the [Dagger API](#dagger-api) and runs pipelines. It runs on a local machine, on a server, or as a [Cloud Engine](#cloud-engine), and it stores the [cache](#cache). The Dagger Engine is open source. See [engine.json](./config-files/engine-json.mdx).
 
 ## Function
 
@@ -94,11 +102,11 @@ An operation that a module exposes on one of its [objects](#object). It takes ty
 
 ## Generated client
 
-A typed binding to one module's API, including the [core API](#core-api) and every module it depends on. An [SDK](#sdk) generates it into an [SDK scope](#sdk-scope), and `dagger generate` regenerates it. See [Generated clients](./client-libraries/index.mdx#generated-clients).
+Code that gives a language typed access to the functions of a module, including the [core API](#core-api) and every module it depends on. `dagger module client add` adds one to an [SDK scope](#sdk-scope), and `dagger generate` regenerates it. See [Generated clients](./client-libraries/index.mdx#generated-clients).
 
 ## Generator
 
-A function that produces source changes, such as code generation, formatting, or lockfile updates, and returns them as a [changeset](#changeset). A module marks it with `@generate` or its SDK's equivalent. `dagger generate` runs every Generator in the workspace. See [Generating code](../using/generating.mdx).
+A function that produces source changes as a reviewable [changeset](#changeset): codegen, formatting, lockfile updates. A module marks it with `@generate` or its SDK's equivalent. `dagger generate` runs every Generator in the workspace, and `dagger check` runs them again to catch stale generated files. See [Generating code](../using/generating.mdx).
 
 ## Include
 
@@ -106,7 +114,11 @@ An `[[include]]` entry in `dagger.toml` that inherits another config file. The i
 
 ## Install name
 
-The key a module is installed under in `dagger.toml`, as in `[modules.<name>]`. Commands, flags, and [DAG addresses](#dag-address) refer to the module by this name, as in `dagger check --go` and `dag://go/packages`.
+The key a module is installed under in `dagger.toml`, as in `[modules.<name>]`. Commands, flags, and [DAG links](#dag-link) refer to the module by this name, as in `dagger check --go` and `dag://go/packages`.
+
+## Interface
+
+A type that lets a module accept any object that has the functions it needs, from a module in any language. See [Interfaces](./sdks/go.mdx#interfaces) in the Go SDK guide.
 
 ## Lockfile
 
@@ -114,7 +126,7 @@ The `dagger.lock` file beside `dagger.toml`. It pins resolved image, Git, and va
 
 ## Module
 
-A package of code that the [engine](#engine) loads to extend the [Dagger API](#dagger-api). It defines [objects](#object) and [functions](#function), including Checks, Generators, and services. A module is written with an [SDK](#sdk), described by [`dagger-module.toml`](#dagger-moduletoml), and used by installing it in a workspace. See [SDKs](./sdks/index.mdx).
+A reusable, typed API for automation: functions, objects, Checks, services, and Generators that anyone can run from a workspace, in CI, in Cloud, or from an agent. It is a package of code that the Dagger engine can load and execute, written with an [SDK](#sdk) and described by [`dagger-module.toml`](#dagger-moduletoml). A workspace uses a module by installing it. See [SDKs](./sdks/index.mdx).
 
 The docs name a Dagger module by its install name in code font, such as the `go` module. "Go module" without code font is a Go project defined by a `go.mod` file. `Module` in code font is the [API type](./api/module.mdx).
 
@@ -124,7 +136,7 @@ The address a module is installed from: a local path such as `./ci/myapp`, or a 
 
 ## Module wiring
 
-Connecting installed modules through [settings](#setting). A setting whose value is a [DAG address](#dag-address) passes the [artifact](#artifact) at that address to the module's [constructor](#constructor). See [Module wiring](../config/module-wiring.mdx).
+Connecting installed modules through [settings](#setting). A setting whose value is a [DAG link](#dag-link) injects the value returned by a function on another installed module. This is how generic modules compose without knowing about each other. See [Module wiring](../config/module-wiring.mdx).
 
 ## Object
 
@@ -132,11 +144,19 @@ A type that a module defines, with fields and [functions](#function). A module's
 
 ## Official module
 
-A module that Dagger publishes under `dagger.io/`, such as `dagger.io/go` or `dagger.io/js/eslint`. See [Modules](./modules/index.mdx).
+A module in the catalog that the Dagger team maintains. Each official module integrates Dagger with a common tool, for example Go, pytest, ESLint or Playwright. `dagger module recommend` examines a repository and recommends the official modules that match. Official modules have short addresses, for example `dagger.io/go`. See [Modules](./modules/index.mdx).
+
+## Pipeline
+
+A chain of [function](#function) calls. Each function returns an object, and the next function is called on that result. See [Chain functions](../using/calling-functions.mdx#chain-functions).
+
+## Remote engine
+
+An [engine](#engine) that runs on another machine. `--engine` or `DAGGER_ENGINE` selects it, for example `ssh://`, `tls://`, `kube-pod://`, or `cloud` for a [Cloud Engine](#cloud-engine). Dagger streams local files, secrets, network tunnels and the terminal to it as needed. See [`dagger`](./cli/index.mdx#dagger).
 
 ## SDK
 
-The toolkit for writing modules in one language. Each SDK is a module itself, such as `dagger.io/sdk/go`. An SDK installed in a workspace creates modules with `dagger module init` and generates their code. See [SDKs](./sdks/index.mdx).
+The toolkit for writing modules in one language. Each SDK is a Dagger module, such as `dagger.io/sdk/go` or `dagger.io/sdk/dang`. An SDK installed in a workspace creates modules with `dagger module init` and supplies the language-specific generation code. See [SDKs](./sdks/index.mdx).
 
 ## SDK scope
 
@@ -144,23 +164,27 @@ A directory where an [SDK](#sdk) generates code: a module, [generated clients](#
 
 ## Secret
 
-A credential that a function receives as a `Secret`, read from a provider URI such as `env:DEPLOY_TOKEN`, `file:./token.txt`, or `vault://secret/foo/bar.token`. Dagger keeps secret values out of logs, container filesystems, and the cache. See [Secrets](../config/secrets.mdx).
+A password, API key or token that a function receives as a `Secret`, sourced from a provider URI such as `env:DEPLOY_TOKEN`, `file:./token.txt`, or `vault://secret/foo/bar.token`. Secrets are never exposed in logs, written to container filesystems, or inserted into the cache. See [Secrets](../config/secrets.mdx).
 
 ## Service
 
-A long-running process, such as a database or web server, running in a container. A module function that returns a `Service` and takes no required arguments is a service of the workspace, and `dagger start` starts it and tunnels its ports to the local machine. See [Running services](../using/services.mdx).
+A long-running process such as a database, web server, or proxy. Services run in ephemeral containers. A module function that returns a `Service` and takes no required arguments is a service of the workspace, and `dagger start` starts it and tunnels its ports to the local machine. See [Running services](../using/services.mdx).
 
 ## Session
 
-A connection between a [client](#client) and the [engine](#engine). Each `dagger` command that calls the engine runs in a session, and `dagger api with-session` starts one for another program. See [Client libraries](./client-libraries/index.mdx#standalone-client-libraries).
+A connection between a [client](#client) and the [engine](#engine). Each `dagger` command that calls the engine runs in a session, and `dagger api with-session` starts one for another program. See [Standalone client libraries](./client-libraries/index.mdx#standalone-client-libraries).
 
 ## Setting
 
 A value that a workspace sets for an installed module, stored under `[modules.<name>.settings]` in `dagger.toml`. Each setting is an argument to the module's [constructor](#constructor). `dagger module settings` lists and changes them. See [Configuring your Workspace](../config/index.mdx).
 
+## Toolchain
+
+The compiler and tools of a language, such as the Go toolchain that a `go.mod` file asks for. Dagger detects a repository's toolchains and recommends [official modules](#official-module) for them. For the Dagger 0.x term, see [Toolchain (Dagger 0.x)](#toolchain-dagger-0x).
+
 ## Trace
 
-The record of a Dagger run: each function call and operation, with its logs and duration. The CLI sends traces to [Dagger Cloud](#dagger-cloud).
+The record of a run, traced end to end: each function call and operation, with its status, duration and logs, in the terminal and in [Dagger Cloud](#dagger-cloud). Each test that an official module runs is a span in the trace.
 
 ## User configuration
 
@@ -168,7 +192,7 @@ The file `~/.config/dagger/config.toml`, or the file named by `$DAGGER_CONFIG`. 
 
 ## Workspace
 
-The Git repository that Dagger runs in, together with its configuration. Its installed modules provide the Checks, Generators, services, and functions that `dagger` commands run. `-W` selects a remote workspace by its Git address. `Workspace` in code font is the [API type](./api/workspace.mdx) that gives a module access to workspace files. See [Configuring your Workspace](../config/index.mdx).
+A context in which Dagger is configured and run, usually one Git repository. Its `dagger.toml` specifies the modules to load and other settings. Modules access their workspace through the [`Workspace`](./api/workspace.mdx) API: they load files on demand, find projects and read their native configuration. See [Configuring your Workspace](../config/index.mdx).
 
 ## Workspace main
 
@@ -184,11 +208,11 @@ These terms appear in `dagger.json` files from Dagger 0.x. See [Migrate from dag
 
 ### `dagger.json`
 
-The Dagger 0.x file that was both a module's manifest and the workspace configuration. [`dagger-module.toml`](#dagger-moduletoml) and [`dagger.toml`](#daggertoml) hold those roles in 1.0. `dagger workspace migrate` and `dagger module migrate` convert it.
+The Dagger 0.x file that served two roles: a manifest for a module, and a configuration file for a workspace. [`dagger-module.toml`](#dagger-moduletoml) and [`dagger.toml`](#daggertoml) fill those roles in Dagger 1.0, which can still load `dagger.json`. `dagger workspace migrate` and `dagger module migrate` convert it.
 
-### Toolchain
+### Toolchain (Dagger 0.x)
 
-A module installed in a Dagger 0.x `dagger.json` to add its functions and checks to the project. `dagger workspace migrate` installs each toolchain as a module in `dagger.toml` and converts its customizations to [settings](#setting).
+A Dagger module that provides ready-to-use functions and checks for common development workflows, installed in a Dagger 0.x `dagger.json`. `dagger workspace migrate` migrates each toolchain as a 1.0 module, installs it in `dagger.toml`, and converts its customizations to [settings](#setting).
 
 ### Blueprint
 
