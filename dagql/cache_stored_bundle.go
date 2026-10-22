@@ -47,8 +47,16 @@ func (h *HeldBy) heldLocked(res *sharedResult) bool {
 	if h.Not[uint64(res.id)] {
 		return false
 	}
-	for key, held := range res.holders {
-		if key.Cache == h.Cache && (held.expiresAtUnix == 0 || held.expiresAtUnix > h.Now) {
+	return h.holdsLocked(res)
+}
+
+// holdsLocked reports whether res has a holding of h.Cache that hasn't
+// expired at h.Now: among its holdings of that cache only (cacheHolders),
+// each judged by its own expiry. Requires egraphMu.
+func (h *HeldBy) holdsLocked(res *sharedResult) bool {
+	for number := range res.cacheHolders[h.Cache] {
+		held := res.holders[HolderKey{Cache: h.Cache, Number: number}]
+		if held != nil && (held.expiresAtUnix == 0 || held.expiresAtUnix > h.Now) {
 			return true
 		}
 	}
