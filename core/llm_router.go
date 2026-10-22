@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/dagger/dagger/engine"
@@ -194,9 +195,26 @@ func (r *LLMRouter) routeOpenAIModel() *LLMEndpoint {
 	return &LLMEndpoint{
 		Provider:         OpenAI,
 		BaseURL:          cfg.BaseURL,
+		ReasoningEffort:  cfg.ReasoningEffort,
 		azureVersion:     cfg.AzureVersion,
 		disableStreaming: cfg.StreamingDisabled(),
 	}
+}
+
+// usesOpenAIResponses reports whether an OpenAI endpoint talks to OpenAI's own
+// API, which gets the Responses API: newer reasoning models (e.g.
+// gpt-6.1-sol) refuse function tools over chat completions. Azure, custom
+// base URLs (typically OpenAI-compatible servers that only implement chat
+// completions), and non-streaming configurations stay on chat completions.
+func (endpoint *LLMEndpoint) usesOpenAIResponses() bool {
+	if endpoint.azureVersion != "" || endpoint.disableStreaming {
+		return false
+	}
+	if endpoint.BaseURL == "" {
+		return true
+	}
+	u, err := url.Parse(endpoint.BaseURL)
+	return err == nil && u.Hostname() == "api.openai.com"
 }
 
 func (r *LLMRouter) routeCodexModel() *LLMEndpoint {
@@ -521,7 +539,12 @@ func (endpoint *LLMEndpoint) newClient() (LLMClient, error) {
 	switch endpoint.Provider {
 	case Anthropic:
 		return newAnthropicClient(endpoint), nil
-	case OpenAI, Other:
+	case OpenAI:
+		if endpoint.usesOpenAIResponses() {
+			return newOpenAIResponsesClient(endpoint), nil
+		}
+		return newOpenAIClient(endpoint, endpoint.azureVersion, endpoint.disableStreaming), nil
+	case Other:
 		return newOpenAIClient(endpoint, endpoint.azureVersion, endpoint.disableStreaming), nil
 	case OpenRouter:
 		return newOpenAIClient(endpoint, "", false), nil
