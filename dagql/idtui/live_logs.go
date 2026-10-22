@@ -46,7 +46,33 @@ type LiveLogsFrontend interface {
 	// they route to the primary span; it returns once they are applied, and
 	// so after every record exported before it.
 	SetPrimaryOutput([]sdklog.Record)
+	// LiveLogsCoverage tells, for the records a read returned (by the
+	// trace, span and digest a read selects them by), whether the frontend
+	// routes them to a span it requested or to a descendant of one it
+	// requested with its descendants: a read may return more than that.
+	LiveLogsCoverage([]LogTarget) []LogCoverage
 }
+
+// LogTarget names the records of one span and digest (if any).
+type LogTarget struct {
+	Trace  dagui.TraceID
+	Span   dagui.SpanID
+	Digest string
+}
+
+// LogCoverage is whether a frontend asked for some records.
+type LogCoverage int
+
+const (
+	// LogCovered records route to a requested span, or below one requested
+	// with its descendants.
+	LogCovered LogCoverage = iota
+	// LogUncovered records route to a known span outside every request.
+	LogUncovered
+	// LogUnknown records route to a span (or a digest's creator) the
+	// frontend has not received yet, so it cannot tell.
+	LogUnknown
+)
 
 var _ LiveLogsFrontend = (*frontendPretty)(nil)
 
@@ -77,6 +103,10 @@ func (fe *frontendPretty) SetLiveLogs(traceID dagui.TraceID, subscribe func(LogR
 			fe.traceLogProviders = make(map[dagui.TraceID]func(dagui.SpanID, bool))
 		}
 		fe.traceLogProviders[traceID] = func(id dagui.SpanID, descendants bool) {
+			if fe.liveRequests == nil {
+				fe.liveRequests = make(map[dagui.SpanID]bool)
+			}
+			fe.liveRequests[id] = descendants
 			subscribe(LogRequest{Span: id, Descendants: descendants, Digests: fe.logDigests(id)})
 		}
 		// Forget what this process's own display text rendered so far: the
@@ -130,6 +160,15 @@ func (fe *frontendPretty) RequestFinalLogs() {
 	fe.dispatchWait(func() {
 		fe.finalLogs = true
 		fe.recalculateViewLocked()
+		// Rows showing their logs inline (e.g. every completed step at high
+		// verbosity): the report mounts no views to ask for them.
+		if fe.rows != nil {
+			for _, row := range fe.rows.Order {
+				if row.Span != nil && row.Expanded {
+					fe.requestLogs(row.Span.ID)
+				}
+			}
+		}
 		// The final render zooms to the primary span, wherever the user
 		// was: request its root causes too.
 		if prim := fe.db.Spans.Map[fe.primarySpan()]; prim != nil {
@@ -161,5 +200,40 @@ func (fe *frontendPretty) SetPrimaryOutput(records []sdklog.Record) {
 			}
 		}
 		fe.db.PrimaryLogs[primary] = kept
+		// What this process logs from now on -- e.g. a failing cleanup --
+		// is not in what was read: buffer it after.
+		fe.db.PrimaryLogsOnDemand = false
 	})
+}
+
+func (fe *frontendPretty) LiveLogsCoverage(targets []LogTarget) []LogCoverage {
+	coverage := make([]LogCoverage, len(targets))
+	fe.dispatchWait(func() {
+		for i, t := range targets {
+			coverage[i] = fe.liveLogCoverage(t)
+		}
+	})
+	return coverage
+}
+
+func (fe *frontendPretty) liveLogCoverage(t LogTarget) LogCoverage {
+	target := fe.db.LogTarget(t.Trace, t.Span, t.Digest)
+	span, ok := fe.db.Spans.Map[target]
+	if !target.IsValid() || !ok || !span.Received {
+		return LogUnknown
+	}
+	if _, ok := fe.liveRequests[target]; ok {
+		return LogCovered
+	}
+	for id := span.ParentID; id.IsValid(); {
+		parent, ok := fe.db.Spans.Map[id]
+		if !ok || !parent.Received {
+			return LogUnknown
+		}
+		if fe.liveRequests[id] {
+			return LogCovered
+		}
+		id = parent.ParentID
+	}
+	return LogUncovered
 }

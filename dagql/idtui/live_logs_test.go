@@ -122,6 +122,82 @@ func TestLiveLogsPresenceFlagsHasLogs(t *testing.T) {
 	require.Nil(t, fe.logs.Logs[step], "presence rendered")
 }
 
+// TestLiveLogsCoverage: a read may return more than was asked for; the
+// frontend tells which records route to what it requested.
+func TestLiveLogsCoverage(t *testing.T) {
+	live := dagui.TraceID{TraceID: trace.TraceID{2}}
+	rollUp, child, other, creator := prettyTestSpanID(1), prettyTestSpanID(2), prettyTestSpanID(3), prettyTestSpanID(4)
+	start := time.Unix(100, 0)
+	db := dagui.NewDB()
+	fe := NewWithDB(io.Discard, db)
+	fe.reportOnly = true
+	fe.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rollUp, TraceID: live, Name: "check", StartTime: start, RollUpLogs: true, Final: true},
+		{ID: child, TraceID: live, ParentID: rollUp, Name: "exec", StartTime: start, Final: true},
+		{ID: other, TraceID: live, Name: "other", StartTime: start, Final: true},
+		{ID: creator, TraceID: live, Name: "asService", StartTime: start, CallDigest: "xxh3:call", Output: "xxh3:svc", Final: true},
+	})
+	fe.SetLiveLogs(live, func(LogRequest) {})
+	fe.requestLogs(rollUp)
+	fe.requestLogs(creator)
+	got := fe.LiveLogsCoverage([]LogTarget{
+		{Trace: live, Span: rollUp},
+		{Trace: live, Span: child},
+		{Trace: live, Span: other},
+		{Trace: live, Span: other, Digest: "xxh3:svc"},
+		{Trace: live, Span: prettyTestSpanID(9)},
+		{Trace: live, Span: other, Digest: "xxh3:unknown"},
+	})
+	require.Equal(t, []LogCoverage{LogCovered, LogCovered, LogUncovered, LogCovered, LogUnknown, LogUnknown}, got)
+}
+
+// TestLiveLogsBufferAfterPrimaryOutput: what this process logs after the
+// primary output was read at exit (e.g. a failing cleanup) is still written.
+func TestLiveLogsBufferAfterPrimaryOutput(t *testing.T) {
+	live := dagui.TraceID{TraceID: trace.TraceID{2}}
+	primary := prettyTestSpanID(1)
+	db := dagui.NewDB()
+	fe := NewWithDB(io.Discard, db)
+	fe.reportOnly = true
+	fe.ImportSnapshots([]dagui.SpanSnapshot{{ID: primary, TraceID: live, Name: "cmd", StartTime: time.Unix(100, 0), Final: true}})
+	fe.SetPrimary(primary)
+	fe.SetLiveLogs(live, func(LogRequest) {})
+	fe.SetPrimaryOutput([]sdklog.Record{liveTestLog(live, primary, "result\n")})
+	require.NoError(t, fe.LogExporter().Export(context.Background(), []sdklog.Record{liveTestLog(live, primary, "cleanup failed\n")}))
+	var bodies []string
+	for _, rec := range db.PrimaryLogs[primary] {
+		bodies = append(bodies, rec.Body().AsString())
+	}
+	require.Equal(t, []string{"result\n", "cleanup failed\n"}, bodies)
+}
+
+// TestLiveLogsRequestCollapsedRollUp: a collapsed top-level roll-up row
+// (a service, a check) shows its rolled-up output while running, with no
+// LogsView mounted to ask for it: it asks as it renders.
+func TestLiveLogsRequestCollapsedRollUp(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	live := dagui.TraceID{TraceID: trace.TraceID{2}}
+	rootID, rollUp := prettyTestSpanID(1), prettyTestSpanID(2)
+	start := time.Unix(100, 0)
+	db := dagui.NewDB()
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: live, Name: "root", StartTime: start, Final: true},
+		{ID: rollUp, TraceID: live, ParentID: rootID, Name: "service", StartTime: start, RollUpLogs: true, Final: true},
+	})
+	db.SetPrimarySpan(rootID)
+	fe := NewWithDB(io.Discard, db)
+	fe.FrontendOpts.GCThreshold = time.Hour
+	fe.ZoomedSpan = rootID
+	got := map[dagui.SpanID]bool{}
+	fe.traceLogProviders = map[dagui.TraceID]func(dagui.SpanID, bool){
+		live: func(id dagui.SpanID, _ bool) { got[id] = true },
+	}
+	fe.SpanExpanded = map[dagui.SpanID]bool{rollUp: false}
+	fe.recalculateViewLocked()
+	_ = fe.tui.RenderLines()
+	require.True(t, got[rollUp], "the collapsed roll-up's logs were not requested; got %v", got)
+}
+
 // TestRequestFinalLogsSurfacesFailures: the interactive final render has no
 // later pass, so at exit the frontend requests the failures it surfaces, as
 // the report does.
