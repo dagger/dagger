@@ -5931,7 +5931,20 @@ type ModuleSource implements Node & Syncer {
   dependencies are excluded: a client is generated for a single module plus
   core, not its dependency graph.
   """
-  clientSchemaIntrospectionJSON: File!
+  clientSchemaIntrospectionJSON(
+    """
+    The engine version of the client the schema is generated for, e.g. the
+    engineVersion of the module that depends on this one: core is described as
+    that client sees it.
+
+    This module is still loaded at the engine version it declares, and so named
+    by its own naming rules, as the engine serves it to such a client. Defaults
+    to this module's own engine version.
+
+    Use this rather than withEngineVersion, which makes this module declare another version and so changes its names.
+    """
+    clientVersion: String = ""
+  ): File!
 
   """
   The directory containing the module configuration and source code (source code may be in a subdir).
