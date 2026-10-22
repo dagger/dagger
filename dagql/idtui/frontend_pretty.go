@@ -226,7 +226,8 @@ type frontendPretty struct {
 	// logProvider lazily fetches a span's logs on demand (e.g. on expand, or
 	// when a failure is surfaced). The bool is whether to roll up descendant
 	// logs (span.RollUpLogs). Set by 'dagger trace' to pull recorded logs per
-	// span; nil for live runs. requestedLogs dedups so each span is fetched once.
+	// span; nil for live runs. requestedLogs dedups so each span is fetched once
+	// (until log_cache.go evicts it).
 	logProvider   func(dagui.SpanID, bool)
 	requestedLogs map[dagui.SpanID]bool
 	// traceLogProviders route the requests for one trace's spans
@@ -247,6 +248,9 @@ type frontendPretty struct {
 	// liveRequests holds the live trace's requested spans, each with
 	// whether it rolls up its descendants (LiveLogsCoverage).
 	liveRequests map[dagui.SpanID]bool
+	// logCache bounds the logs read on demand to what is shown, plus a few
+	// recently shown (log_cache.go).
+	logCache logCache
 	// finalLogs makes the eager surfaced-failure fetch run in interactive
 	// mode too, so the final render has what it shows (RequestFinalLogs).
 	finalLogs bool
@@ -2591,6 +2595,7 @@ func (fe *frontendPretty) requestLogsOnRender(id dagui.SpanID) {
 	if fe.reportOnly {
 		return
 	}
+	fe.touchLogs(id)
 	fe.requestLogs(id)
 }
 
@@ -2680,6 +2685,12 @@ func (fe *frontendPretty) requestLogsWith(id dagui.SpanID, descendants bool) {
 	}
 	fe.requestedLogs[id] = true
 	delete(fe.deferredLogs, id)
+	if descendants {
+		fe.logCache.init()
+		fe.logCache.rollUps[id] = true
+	}
+	fe.touchLogs(id)
+	fe.scheduleLogSweep()
 	provider(id, descendants)
 }
 
