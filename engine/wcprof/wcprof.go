@@ -73,6 +73,9 @@ const (
 	OpKindIO
 	// OpKindInternal is engine-internal background work (gc, persistence).
 	OpKindInternal
+	// OpKindRemoteCache is remote-cache work: a part's install, an export
+	// and its uploads, an offer or a merge.
+	OpKindRemoteCache
 )
 
 var opKindNames = map[OpKind]string{
@@ -85,6 +88,7 @@ var opKindNames = map[OpKind]string{
 	OpKindSessionPhase: "session_phase",
 	OpKindIO:           "io",
 	OpKindInternal:     "internal",
+	OpKindRemoteCache:  "remote_cache",
 }
 
 func (k OpKind) String() string {
@@ -219,12 +223,21 @@ const (
 	// LinkKindReusedResult: op was satisfied by reusing the dagql result
 	// with ResultID (cache hit).
 	LinkKindReusedResult
+	// LinkKindFact: the fact named by the link's ident was true of the op
+	// (e.g. "hit.remote" on a call), about the dagql result with ResultID
+	// when set.
+	LinkKindFact
+	// LinkKindPart: the dagql result with ResultID has the part named by the
+	// link's ident, of Bytes bytes (the compressed size of its chain).
+	LinkKindPart
 )
 
 var linkKindNames = map[LinkKind]string{
 	LinkKindNestedClient: "nested_client",
 	LinkKindResult:       "result",
 	LinkKindReusedResult: "reused_result",
+	LinkKindFact:         "fact",
+	LinkKindPart:         "part",
 }
 
 func (k LinkKind) String() string {
@@ -243,6 +256,8 @@ func (k LinkKind) String() string {
 //     waiting on a named resource, in which case IdentID names it).
 //   - Link: ParentID is the from-op, TargetID an op (optional), IdentID an
 //     interned identifier (optional), ResultID a dagql result (optional).
+//
+// Bytes is a byte count an op moved or a part link names, 0 when none.
 type Event struct {
 	Type     EventType
 	OpKind   OpKind
@@ -263,11 +278,13 @@ type Event struct {
 	// scalar JSON-array encoding of a user exec's scrubbed argv), 0 when none.
 	MetaID uint32
 
+	Bytes int64
+
 	StartNS int64
 	EndNS   int64
 }
 
-const defaultMaxEvents = 4 << 20 // ~4M events ≈ 300MB
+const defaultMaxEvents = 4 << 20 // ~4M events ≈ 335MB
 
 const numShards = 16
 
@@ -326,6 +343,11 @@ func NewRecorder(maxEvents int64) *Recorder {
 // Now returns the current recorder-relative timestamp in nanoseconds.
 func (r *Recorder) Now() int64 {
 	return int64(time.Since(r.epoch))
+}
+
+// at returns t as a recorder-relative timestamp in nanoseconds.
+func (r *Recorder) at(t time.Time) int64 {
+	return int64(t.Sub(r.epoch))
 }
 
 // Intern interns s and returns its table ID.
