@@ -7,6 +7,7 @@ import (
 	"io"
 	"maps"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"strconv"
 	"sync"
@@ -195,6 +196,8 @@ type partContentProvider struct {
 	layers     []snapshots.ExportLayer
 	renewalKey string
 	demand     *PartDemandState
+	// stats, when set, counts the install's requests.
+	stats *partInstallStats
 
 	mu        sync.Mutex
 	addresses map[digest.Digest]BlobAddress
@@ -281,6 +284,7 @@ func (p *partContentProvider) address(ctx context.Context, blob digest.Digest, f
 // An absent bridge or key cannot claim it, but may use an episode another
 // source already claimed.
 func (p *partContentProvider) renew(ctx context.Context, blob digest.Digest) error {
+	defer p.stats.renewed(time.Now())
 	if p.demand == nil {
 		return renewalUnavailable("no demand")
 	}
@@ -509,6 +513,13 @@ func (r *partHTTPReader) open(off int64) error {
 
 func (r *partHTTPReader) request(off int64) (*partHTTPStream, *http.Response, error) {
 	ctx, cancel := context.WithCancelCause(r.ctx)
+	if stats := r.provider.stats; stats != nil {
+		ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{GotConn: func(info httptrace.GotConnInfo) {
+			if !info.Reused {
+				stats.connsNew.Add(1)
+			}
+		}})
+	}
 	stream := &partHTTPStream{ctx: ctx, cancel: cancel}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, r.url, nil)
 	if err != nil {
@@ -518,8 +529,10 @@ func (r *partHTTPReader) request(off int64) (*partHTTPStream, *http.Response, er
 	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", off, r.desc.Size-1))
 	var resp *http.Response
 	_, err = stream.wait(func() (int, error) {
+		sent := time.Now()
 		var err error
 		resp, err = r.provider.client.Do(req) //nolint:bodyclose // The body is handed to the stream wrapper, which closes it in stream.close and its context AfterFunc.
+		r.provider.stats.request(sent)
 		return 0, err
 	})
 	if err != nil {
@@ -586,33 +599,167 @@ func (d *PartDemandState) exhaust(source *PartSourceLease, err error) {
 // logOfferInstall records a part installed from an offer: the entry, the part,
 // the bytes downloaded for it and the time from the start of the import to
 // the install, over which the download and the layers' application
-// interleave. A layer the import reused or already had is not downloaded.
-// It logs them, and stamps them on the span of ctx: the lazy-evaluation span
-// of the task that installed the part, which names the entry.
-func logOfferInstall(ctx context.Context, receiver AnyResult, source *PartSourceLease, downloaded int64, duration time.Duration) {
-	slog.InfoContext(ctx, "remote cache part installed",
+// alternate, layer by layer. A layer the import reused or already had is not
+// downloaded. Then where the time went, before and during the install. It
+// logs them, and stamps them on the span of ctx: the lazy-evaluation span of
+// the task that installed the part, which names the entry.
+func logOfferInstall(ctx context.Context, receiver AnyResult, source *PartSourceLease, downloaded int64, duration time.Duration, timing partInstallTiming) {
+	args := []any{
 		"entry", uint64(receiver.cacheSharedResult().id),
 		"output", source.target.OutputPath.String(),
 		"part", string(source.target.Part),
 		"bytes", downloaded,
 		"duration", duration,
-		"source", "offer")
+		"source", "offer",
+		"waited", timing.waited,
+	}
+	args = append(args, timing.fields()...)
+	args = append(args, "commit", timing.commit)
+	slog.InfoContext(ctx, "remote cache part installed", args...)
 	key, err := partAddressKey(source.target)
 	if err != nil {
 		return
 	}
+	ns := func(d time.Duration) string { return strconv.FormatInt(d.Nanoseconds(), 10) }
 	trace.SpanFromContext(ctx).SetAttributes(
 		attribute.String(telemetryattrs.CacheOfferPartAttr, key),
 		attribute.String(telemetryattrs.CacheOfferBytesAttr, strconv.FormatInt(downloaded, 10)),
-		attribute.String(telemetryattrs.CacheOfferDurationAttr, strconv.FormatInt(duration.Nanoseconds(), 10)),
+		attribute.String(telemetryattrs.CacheOfferDurationAttr, ns(duration)),
+		attribute.String(telemetryattrs.CacheOfferWaitedAttr, ns(timing.waited)),
+		attribute.String(telemetryattrs.CacheOfferLayersAttr, strconv.Itoa(timing.layers)),
+		attribute.String(telemetryattrs.CacheOfferRequestsAttr, strconv.Itoa(timing.requests)),
+		attribute.String(telemetryattrs.CacheOfferTTFBAttr, ns(timing.ttfb)),
+		attribute.String(telemetryattrs.CacheOfferConnsNewAttr, strconv.Itoa(timing.connsNew)),
+		attribute.String(telemetryattrs.CacheOfferRenewAttr, ns(timing.renew)),
+		attribute.String(telemetryattrs.CacheOfferReadWaitAttr, ns(timing.readWait)),
+		attribute.String(telemetryattrs.CacheOfferLayerWaitAttr, ns(timing.LayerWait)),
+		attribute.String(telemetryattrs.CacheOfferFetchAttr, ns(timing.Fetch)),
+		attribute.String(telemetryattrs.CacheOfferApplyAttr, ns(timing.Apply)),
+		attribute.String(telemetryattrs.CacheOfferImportAttr, ns(timing.imported)),
+		attribute.String(telemetryattrs.CacheOfferCommitAttr, ns(timing.commit)),
 	)
 }
 
-// countingProvider counts the bytes read through a provider. An import reads
-// a blob only when it has neither the snapshot nor the blob already.
+// logOfferInstallFailed records an install from an offer that reached the
+// import and installed nothing: the outcome, and the bytes and time it took,
+// as far as it got. It stamps no span, since CacheOfferPartAttr names an
+// installed part. Refusals and supersessions are coordination, at info level.
+func logOfferInstallFailed(ctx context.Context, receiver AnyResult, source *PartSourceLease, err error, contentFailed bool, downloaded int64, duration time.Duration, timing partInstallTiming, committed bool) {
+	var stuck *PartNoProgressError
+	outcome, level := "error", slog.LevelWarn
+	switch {
+	case context.Cause(ctx) != nil:
+		outcome, level = "canceled", slog.LevelInfo
+	case contentFailed:
+		outcome = "content"
+	case partCanReselect(err), errors.As(err, &stuck):
+		outcome, level = "refused", slog.LevelInfo
+	case err == nil:
+		outcome, level = "superseded", slog.LevelInfo
+	}
+	args := []any{
+		"entry", uint64(receiver.cacheSharedResult().id),
+		"output", source.target.OutputPath.String(),
+		"part", string(source.target.Part),
+		"outcome", outcome,
+		"bytes", downloaded,
+		"waited", timing.waited,
+		"duration", duration,
+	}
+	args = append(args, timing.fields()...)
+	if committed {
+		args = append(args, "commit", timing.commit)
+	}
+	if err != nil {
+		args = append(args, "error", err.Error())
+	}
+	slog.FromContext(ctx).Log(ctx, level, "remote cache part install failed", args...)
+}
+
+// partInstallStats counts one install's content requests. Atomic, as a
+// reader's Close may run beside the import's reads.
+type partInstallStats struct {
+	requests atomic.Int64
+	// ttfb sums each request's wait for its response headers, in nanoseconds.
+	ttfb atomic.Int64
+	// connsNew counts the requests that opened a connection rather than
+	// reusing an idle one.
+	connsNew atomic.Int64
+	// renewNS sums the time getting fresh addresses, in nanoseconds.
+	renewNS atomic.Int64
+}
+
+// request counts one request, sent at sent, whose response headers arrived
+// or whose send failed just now. A nil stats counts nothing.
+func (s *partInstallStats) request(sent time.Time) {
+	if s == nil {
+		return
+	}
+	s.requests.Add(1)
+	s.ttfb.Add(int64(time.Since(sent)))
+}
+
+// renewed adds a renewal that started at start and just ended. A nil stats
+// counts nothing.
+func (s *partInstallStats) renewed(start time.Time) {
+	if s == nil {
+		return
+	}
+	s.renewNS.Add(int64(time.Since(start)))
+}
+
+// partInstallTiming is where one install's time went, as its lines log it.
+// ttfb is part of readWait, readWait of Fetch, and the import's three sums
+// of imported.
+type partInstallTiming struct {
+	// waited runs from the demand's start to the install's.
+	waited time.Duration
+	layers int
+	// requests and ttfb are the content requests and their summed wait for
+	// response headers, connsNew those on a new connection, and renew the
+	// time getting fresh addresses. readWait is the time blocked in content
+	// reads.
+	requests int
+	ttfb     time.Duration
+	connsNew int
+	renew    time.Duration
+	readWait time.Duration
+	snapshots.ImportTiming
+	imported time.Duration
+	// commit runs from the end of the import to the install, or to failure.
+	commit time.Duration
+}
+
+func (t *partInstallTiming) count(stats *partInstallStats, downloaded *countingProvider) {
+	t.requests = int(stats.requests.Load())
+	t.ttfb = time.Duration(stats.ttfb.Load())
+	t.connsNew = int(stats.connsNew.Load())
+	t.renew = time.Duration(stats.renewNS.Load())
+	t.readWait = time.Duration(downloaded.readNS.Load())
+}
+
+func (t partInstallTiming) fields() []any {
+	return []any{
+		"layers", t.layers,
+		"requests", t.requests,
+		"ttfb", t.ttfb,
+		"conns_new", t.connsNew,
+		"renew", t.renew,
+		"read_wait", t.readWait,
+		"layer_wait", t.LayerWait,
+		"fetch", t.Fetch,
+		"apply", t.Apply,
+		"import", t.imported,
+	}
+}
+
+// countingProvider counts the bytes read through a provider, and the time
+// blocked reading them. An import reads a blob only when it has neither the
+// snapshot nor the blob already.
 type countingProvider struct {
 	content.InfoReaderProvider
-	read atomic.Int64
+	read   atomic.Int64
+	readNS atomic.Int64
 }
 
 func (p *countingProvider) ReaderAt(ctx context.Context, desc ocispecs.Descriptor) (content.ReaderAt, error) {
@@ -620,16 +767,19 @@ func (p *countingProvider) ReaderAt(ctx context.Context, desc ocispecs.Descripto
 	if err != nil {
 		return nil, err
 	}
-	return countingReaderAt{ReaderAt: ra, read: &p.read}, nil
+	return countingReaderAt{ReaderAt: ra, read: &p.read, readNS: &p.readNS}, nil
 }
 
 type countingReaderAt struct {
 	content.ReaderAt
-	read *atomic.Int64
+	read   *atomic.Int64
+	readNS *atomic.Int64
 }
 
 func (r countingReaderAt) ReadAt(b []byte, off int64) (int, error) {
+	start := time.Now()
 	n, err := r.ReaderAt.ReadAt(b, off)
+	r.readNS.Add(int64(time.Since(start)))
 	r.read.Add(int64(n))
 	return n, err
 }
@@ -666,18 +816,44 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 	if err != nil {
 		return err
 	}
+	stats := &partInstallStats{}
 	provider := c.PartContentSource().Provider(ctx, copied[0], demand)
+	if p, ok := provider.(*partContentProvider); ok {
+		p.stats = stats
+	}
 	if c.partFixture.Load() != nil {
 		provider = partFixtureProvider{InfoReaderProvider: provider, cache: c, row: receiver.cacheSharedResult(), address: source.target}
 	}
 	downloaded := &countingProvider{InfoReaderProvider: provider}
-	imported, err := c.snapshotManager.ImportChain(ctx, &snapshots.ExportChain{Layers: copied[0].Chain.Layers, Provider: downloaded})
+	timing := partInstallTiming{layers: len(copied[0].Chain.Layers)}
+	if demand != nil && !demand.started.IsZero() {
+		timing.waited = start.Sub(demand.started)
+	}
+	// Every attempt that reaches the import logs one line: installed, or
+	// failed with its outcome.
+	var installed, contentFailed bool
+	var committing time.Time
+	defer func() {
+		if installed {
+			return
+		}
+		now := time.Now()
+		timing.count(stats, downloaded)
+		if !committing.IsZero() {
+			timing.commit = now.Sub(committing)
+		}
+		logOfferInstallFailed(ctx, receiver, source, rerr, contentFailed, downloaded.read.Load(), now.Sub(start), timing, !committing.IsZero())
+	}()
+	importStart := time.Now()
+	imported, err := c.snapshotManager.ImportChain(ctx, &snapshots.ExportChain{Layers: copied[0].Chain.Layers, Provider: downloaded, Timing: &timing.ImportTiming})
+	timing.imported = time.Since(importStart)
 	if err != nil {
 		if cause := context.Cause(ctx); cause != nil {
 			return cause
 		}
 		var contentErr *snapshots.ChainContentError
 		if errors.As(err, &contentErr) {
+			contentFailed = true
 			demand.exhaust(source, err)
 			return partRefused("chain: content failed, source exhausted")
 		}
@@ -685,6 +861,7 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 	}
 	cleanup := &partCleanup{fn: imported.Release}
 	defer func() { rerr = errors.Join(rerr, cleanup.release(ctx)) }()
+	committing = time.Now()
 	source.descriptor.SnapshotID = imported.SnapshotID()
 	// Keep admitted authority across a stale receiver preparation. Its donor
 	// can disappear during download; re-preparation must not require re-admission.
@@ -710,7 +887,11 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 			receipt, outcome, commitErr := c.CommitReadyPart(ctx, prepared)
 			err = commitErr
 			if outcome == PartInstalled {
-				logOfferInstall(ctx, receiver, source, downloaded.read.Load(), time.Since(start))
+				now := time.Now()
+				timing.count(stats, downloaded)
+				timing.commit = now.Sub(committing)
+				installed = true
+				logOfferInstall(ctx, receiver, source, downloaded.read.Load(), now.Sub(start), timing)
 				return errors.Join(err, c.finishReadyPartInline(ctx, receipt))
 			}
 			if outcome == PartInstallRefused && err == nil {
