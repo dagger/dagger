@@ -5,7 +5,7 @@ go 1.26.1
 require (
 	chainguard.dev/apko v1.2.9
 	github.com/Khan/genqlient v0.8.1
-	github.com/dagger/otel-go v1.41.0
+	github.com/dagger/otel-go v1.43.0
 	github.com/vektah/gqlparser/v2 v2.5.33
 	go.opentelemetry.io/otel v1.44.0
 	go.opentelemetry.io/otel/sdk v1.43.0
