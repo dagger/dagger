@@ -36,6 +36,8 @@ type contentTestFault struct {
 	stallAfter int
 	// closeDelay makes the body's Close take that long before it is closed.
 	closeDelay time.Duration
+	// truncateFirst truncates only the URL's first that many responses.
+	truncateFirst int
 }
 
 // contentTestTransport is an in-process RoundTripper over byte slices. It
@@ -93,10 +95,14 @@ func (tr *contentTestTransport) RoundTrip(req *http.Request) (*http.Response, er
 	url := req.URL.String()
 	tr.mu.Lock()
 	tr.requests[url]++
+	served := tr.requests[url]
 	tr.ranges = append(tr.ranges, req.Header.Get("Range"))
 	data, ok := tr.objects[url]
 	fault, faulted := tr.faults[url]
 	tr.mu.Unlock()
+	if served <= fault.truncateFirst {
+		fault.truncate = true
+	}
 	if !faulted {
 		fault.stallAfter = -1
 	}
