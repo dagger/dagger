@@ -2,14 +2,19 @@ package main
 
 import (
 	"context"
+	"net"
+	"net/http"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/dagger/dagger/engine/config"
 )
@@ -83,46 +88,70 @@ func TestGracefulStopTimeoutSetting(t *testing.T) {
 }
 
 func TestStopListeners(t *testing.T) {
-	t.Run("draining that finishes in time doesn't force anything", func(t *testing.T) {
-		var closed, stopped atomic.Bool
+	t.Run("draining that finishes in time stops gRPC gracefully", func(t *testing.T) {
+		var closed, graceful, stopped atomic.Bool
 		stopListeners(t.Context(),
 			func(context.Context) error { return nil },
 			func() error { closed.Store(true); return nil },
-			func() {},
+			func() { graceful.Store(true) },
 			func() { stopped.Store(true) })
 		require.False(t, closed.Load())
+		require.True(t, graceful.Load())
 		require.False(t, stopped.Load())
 	})
 
 	t.Run("a stalled request is cut at the budget", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 		defer cancel()
-		var closed atomic.Bool
-		grpcStop := make(chan struct{})
-		var stopOnce sync.Once
+		var closed, graceful, stopped atomic.Bool
+		stopListeners(ctx,
+			// http.Server.Shutdown returns ctx's error when its
+			// connections don't go idle in time.
+			func(ctx context.Context) error { <-ctx.Done(); return ctx.Err() },
+			func() error { closed.Store(true); return nil },
+			func() { graceful.Store(true) },
+			func() { stopped.Store(true) })
+		require.True(t, closed.Load(), "the HTTP server is closed when it doesn't drain")
+		require.True(t, stopped.Load(), "gRPC is stopped hard")
+		require.False(t, graceful.Load(), "gRPC's graceful stop would wait for the stalled call")
+	})
+
+	// The engine's real setup: gRPC served through the HTTP server, with a
+	// call still open when the budget ends. Stopping must neither hang nor
+	// panic (a graceful gRPC stop panics draining a ServeHTTP transport).
+	t.Run("gRPC over HTTP with a call in flight", func(t *testing.T) {
+		grpcServer := grpc.NewServer()
+		healthpb.RegisterHealthServer(grpcServer, health.NewServer())
+		protocols := new(http.Protocols)
+		protocols.SetHTTP1(true)
+		protocols.SetUnencryptedHTTP2(true)
+		httpServer := &http.Server{
+			Handler:   http.HandlerFunc(grpcServer.ServeHTTP),
+			Protocols: protocols,
+		}
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		require.NoError(t, err)
+		go httpServer.Serve(l) //nolint:errcheck // ends with ErrServerClosed
+
+		conn, err := grpc.NewClient("passthrough:///"+l.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+		require.NoError(t, err)
+		defer conn.Close()
+		stream, err := healthpb.NewHealthClient(conn).Watch(t.Context(), &healthpb.HealthCheckRequest{})
+		require.NoError(t, err)
+		_, err = stream.Recv()
+		require.NoError(t, err, "the watch stays open: a call in flight")
+
+		ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+		defer cancel()
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
-			stopListeners(ctx,
-				// http.Server.Shutdown returns ctx's error when its
-				// connections don't go idle in time.
-				func(ctx context.Context) error { <-ctx.Done(); return ctx.Err() },
-				func() error { closed.Store(true); return nil },
-				// gRPC's graceful stop waits for its calls until a hard
-				// stop interrupts them.
-				func() { <-grpcStop },
-				func() { stopOnce.Do(func() { close(grpcStop) }) })
+			stopListeners(ctx, httpServer.Shutdown, httpServer.Close, grpcServer.GracefulStop, grpcServer.Stop)
 		}()
 		select {
 		case <-done:
 		case <-time.After(10 * time.Second):
 			t.Fatal("stopListeners outlived its budget")
-		}
-		require.True(t, closed.Load(), "the HTTP server is closed when it doesn't drain")
-		select {
-		case <-grpcStop:
-		default:
-			t.Fatal("the gRPC server is stopped when it doesn't drain")
 		}
 	})
 }

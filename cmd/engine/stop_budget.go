@@ -109,9 +109,12 @@ func gracefulStopTimeoutSetting(c *cli.Context, cfg config.Config) (time.Duratio
 	return timeout, nil
 }
 
-// stopListeners stops the API listeners within ctx, the stop budget: it drains
-// in-flight HTTP requests and gRPC calls, and forces whatever is left closed
-// when ctx ends, so a stalled request can't hold the stop past its budget.
+// stopListeners stops the API listeners within ctx, the stop budget. The
+// engine serves gRPC through the HTTP server (grpc.Server.ServeHTTP), so
+// draining HTTP drains gRPC too. When HTTP drains in time, nothing is left for
+// gRPC's graceful stop to wait for. When it doesn't, the HTTP server is closed
+// and gRPC is stopped hard: its graceful stop would wait for the stalled calls,
+// and would panic draining a ServeHTTP transport, which can't be drained.
 func stopListeners(ctx context.Context, httpShutdown func(context.Context) error, httpClose func() error, grpcGracefulStop, grpcStop func()) {
 	if httpShutdown != nil {
 		if err := httpShutdown(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -119,18 +122,10 @@ func stopListeners(ctx context.Context, httpShutdown func(context.Context) error
 			if err := httpClose(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				slog.Error("http server close", "error", err)
 			}
+			// Stop doesn't drain transports or wait for handlers.
+			grpcStop()
+			return
 		}
 	}
-	drained := make(chan struct{})
-	go func() {
-		grpcGracefulStop()
-		close(drained)
-	}()
-	select {
-	case <-drained:
-	case <-ctx.Done():
-		slog.Warn("grpc server did not drain within the stop budget; stopping it")
-		grpcStop()
-		<-drained
-	}
+	grpcGracefulStop()
 }
