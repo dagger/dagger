@@ -380,3 +380,55 @@ func TestRemoteLookupDetachReleasesWaits(t *testing.T) {
 	require.Zero(t, bridge.lookups.expecting.Load())
 }
 
+// A miss records, on its evidence, what it did about a remote lookup: queued
+// one, found its recipe already asked for, or found the queue full. With no
+// connection serving lookups it records nothing.
+func TestRemoteLookupMissFact(t *testing.T) {
+	ctx, c, srv, sessionID, bridge := lookupTestCache(t)
+	miss := func(field string) string {
+		t.Helper()
+		frame := cacheTestIntCall(field)
+		req := cacheTestArmedRequest(frame)
+		_, err := c.GetOrInitCall(ctx, sessionID, srv, req, func(context.Context) (AnyResult, error) {
+			return cacheTestIntResult(frame, 1), nil
+		})
+		require.NoError(t, err)
+		return req.CacheEvidence.MissRemoteLookup
+	}
+	require.Empty(t, miss("off"))
+	bridge.StartRemoteLookups()
+	require.Equal(t, RemoteLookupQueued, miss("queued"))
+	require.Equal(t, RemoteLookupAsked, bridge.noteRemoteMiss(RemoteMiss{Recipe: cacheTestCallDigest(cacheTestIntCall("queued"))}))
+	for i := range remoteLookupQueueCapacity {
+		bridge.noteRemoteMiss(RemoteMiss{Recipe: digest.FromString(fmt.Sprint("filler", i))})
+	}
+	require.Equal(t, RemoteLookupDropped, miss("dropped"))
+}
+
+// The lazy-evaluation span's state reports the entry's last wait for a
+// remote lookup's merge and how it ended, and no wait when none ran.
+func TestRemoteLookupWaitOnLazySpanState(t *testing.T) {
+	ctx, c, bridge, res, miss, ran := lazyLookupResult(t, "span-state")
+	require.Nil(t, c.lazySpanCacheState(ctx, res.cacheSharedResult(), nil).lookupWait)
+	// An expectation whose merge has ended, before it retires.
+	ended := NewRemoteMergeWait()
+	ended.End(RemoteMergeDisconnected)
+	exp := remoteMergeExpectation{wait: ended, deadline: time.Now().Add(time.Minute)}
+	bridge.lookups.mu.Lock()
+	bridge.lookups.expected[miss.Recipe] = exp
+	bridge.lookups.expecting.Store(1)
+	bridge.lookups.mu.Unlock()
+	c.awaitRemoteMerge(ctx, res.cacheSharedResult())
+	bridge.lookups.forget(miss.Recipe, exp)
+	wait := c.lazySpanCacheState(ctx, res.cacheSharedResult(), nil).lookupWait
+	require.NotNil(t, wait)
+	require.Equal(t, RemoteMergeDisconnected, wait.outcome, "the wait reports why its merge ended")
+
+	bridge.ExpectRemoteMerge(miss.Recipe, NewRemoteMergeWait(), time.Now().Add(time.Second))
+	require.NoError(t, c.Evaluate(ctx, res))
+	within(t, ran)
+	wait = c.lazySpanCacheState(ctx, res.cacheSharedResult(), nil).lookupWait
+	require.NotNil(t, wait)
+	require.Equal(t, RemoteMergeDeadline, wait.outcome)
+	require.Positive(t, wait.waited)
+}
