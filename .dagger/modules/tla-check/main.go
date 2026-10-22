@@ -36,6 +36,14 @@ const temporalOutcome = "temporal"
 var expectedOutcome = map[string]string{
 	"snapshot_import": "",
 	"snapshot_export": "",
+	// Per-object downloads (fetching chain layers ahead, joining, retrying
+	// another import's failed download). Each mutation re-breaks one
+	// property; see the config headers.
+	"snapshot_download":            "",
+	"snapshot_download_droppin":    "JoinedBlobPresent",
+	"snapshot_download_leaveearly": "ApplyHasBytes",
+	"snapshot_download_ownretry":   "NoOwnRetry",
+	"snapshot_download_aheadreuse": "ReuseBeforeBytes",
 	// green: regression checks over the modeled cache behavior. (The
 	// former core configuration is folded into resources: same bounds,
 	// every core invariant, and strictly more behavior.)
@@ -538,14 +546,11 @@ func runOne(
 	}
 }
 
-// modelFiles preserves the existing short names and adds the snapshot component.
+// modelFiles preserves the existing short names and adds the snapshot
+// component: snapshot_<name> is SnapshotChain_<name>.cfg.
 func modelFiles(name string) (string, string) {
-	switch name {
-	case "snapshot_import":
-		return "SnapshotChain.tla", "SnapshotChain_import.cfg"
-	case "snapshot_export":
-		return "SnapshotChain.tla", "SnapshotChain_export.cfg"
-	default:
-		return "CacheLifecycle.tla", fmt.Sprintf("CacheLifecycle_%s.cfg", name)
+	if rest, ok := strings.CutPrefix(name, "snapshot_"); ok {
+		return "SnapshotChain.tla", fmt.Sprintf("SnapshotChain_%s.cfg", rest)
 	}
+	return "CacheLifecycle.tla", fmt.Sprintf("CacheLifecycle_%s.cfg", name)
 }
