@@ -44,10 +44,14 @@
 (* while any holder holds it (joinFetch :63, runFetch :98, leaveFetch    *)
 (* :115). A holder links the content into its own pins before it lets go *)
 (* (fetchChainContent :156, link :183), so the bytes are never unpinned.  *)
-(* Once a layer's bytes are in, an importer starts the next layer's      *)
-(* download ahead (pull.go:231 chain.fetched, import.go:39, fetchAhead    *)
-(* :207), outside that layer's key lock and before its lookup; it holds   *)
-(* it until that layer's import ends (import.go:52-55). A failed download*)
+(* An importer starts the downloads of the layers after the one it      *)
+(* imports ahead (import.go chainAhead.fill, fetchAhead): at each layer's *)
+(* loop top, outside its key lock and before its lookup, from the first   *)
+(* layer the import indexes lack (chainLocalPrefix, walked once at Start, *)
+(* with no I/O), and once a layer's bytes are in (pull.go chain.fetched). *)
+(* It holds each until that layer's import ends (import.go take, leave).  *)
+(* Engine slots and the window bound how many start, never which: any    *)
+(* subset of the later layers may start, in any order. A failed download*)
 (* is terminal for the import that started it; a holder of another's    *)
 (* failed download starts the next attempt in its place, or joins the    *)
 (* one another holder started (:186-198). The last holder to leave a     *)
@@ -74,12 +78,13 @@
 (* green configuration.                                                  *)
 EXTENDS Naturals, Sequences, FiniteSets, TLC
 
-CONSTANTS MaxStarts, MaxSnapshots, LocalBuild, SourceCanFail,
+CONSTANTS NumLayers, MaxStarts, MaxSnapshots, LocalBuild, SourceCanFail,
           ModelDownloads, ModelPrefetch,
-          MutDropDownloadPin, MutLeaveBeforeLink, MutRetryOwn, MutAheadSkipsReuse
+          MutDropDownloadPin, MutLeaveBeforeLink, MutRetryOwn, MutAheadSkipsReuse,
+          MutAheadKeptOnFailure
 Importers == {1, 2}
 Owners == {1, 2}
-Layers == {1, 2}
+Layers == 1..NumLayers
 Keys == (0..MaxSnapshots) \X Layers
 (* A download's object, and the layers it brings in. *)
 Objects == Layers
@@ -110,11 +115,18 @@ Candidate(i) == index[Key(i)]
 Survives(s) == s # 0 /\ Ancestry(s) \subseteq Present
 Indexed(i) == Survives(Candidate(i))
 EmptyPins == [snaps |-> {}, bytes |-> {}]
-(* ahead: the layer whose download this importer holds ahead.            *)
+(* aheads: the layers whose downloads this importer holds ahead. first:   *)
+(* the first layer its prefix walk found the import indexes lack.         *)
 EmptyWorker == [phase |-> "idle", prefix |-> 0, layer |-> 1, target |-> 1,
                 handle |-> 0, snapshotChoice |-> 0, blobChoice |-> FALSE,
                 pins |-> EmptyPins, mount |-> FALSE,
-                write |-> FALSE, ahead |-> 0]
+                write |-> FALSE, aheads |-> {}, first |-> 1]
+(* chainLocalPrefix: from parent p and layer l, the first layer up to t   *)
+(* the index has no entry for. Entries are hints: a stale one only means *)
+(* that layer downloads when it imports.                                  *)
+RECURSIVE WalkIndex(_, _, _)
+WalkIndex(p, l, t) == IF l > t \/ index[<<p, l>>] = 0 THEN l
+                      ELSE WalkIndex(index[<<p, l>>], l + 1, t)
 (* failed: <<holder, owner>> of each replaced attempt still held.        *)
 EmptyDownload == [phase |-> "none", holders |-> {}, owner |-> 0, failed |-> {}]
 (* A holder leaves; the last one ends the download: a running one is      *)
@@ -164,16 +176,16 @@ NewSnapshot(parent, layer, content) ==
 
 Init ==
     /\ snapshots = IF LocalBuild THEN
-         <<NewSnapshot(0, 1, FALSE), NewSnapshot(1, 2, FALSE)>> ELSE <<>>
-    /\ blobs \in IF LocalBuild THEN {{}, {1, 2}} ELSE {{}}
+         [s \in Layers |-> NewSnapshot(s - 1, s, FALSE)] ELSE <<>>
+    /\ blobs \in IF LocalBuild THEN {{}, Layers} ELSE {{}}
     /\ index = [k \in Keys |-> 0]
     /\ workers = [i \in Importers |-> EmptyWorker]
     /\ locks = [k \in Keys |-> 0]
     /\ owners = [o \in Owners |-> IF LocalBuild /\ o = 1
-         THEN [tip |-> 2, pins |-> [snaps |-> {1, 2}, bytes |-> {}], expected |-> {}]
+         THEN [tip |-> NumLayers, pins |-> [snaps |-> Layers, bytes |-> {}], expected |-> {}]
          ELSE [tip |-> 0, pins |-> EmptyPins, expected |-> {}]]
     /\ producer = [phase |-> IF LocalBuild THEN "select" ELSE "done",
-                    tip |-> IF LocalBuild THEN 2 ELSE 0,
+                    tip |-> IF LocalBuild THEN NumLayers ELSE 0,
                     layer |-> 1, pins |-> EmptyPins]
     /\ starts = 0
     /\ seen = {}
@@ -185,7 +197,8 @@ Start(i) ==
     /\ starts < MaxStarts
     /\ workers[i].phase \in {"idle", "done", "failed"}
     /\ \E target \in Layers : workers' = [workers EXCEPT
-         ![i] = [EmptyWorker EXCEPT !.phase = "lock", !.target = target]]
+         ![i] = [EmptyWorker EXCEPT !.phase = "lock", !.target = target,
+                                    !.first = WalkIndex(0, 1, target)]]
     /\ starts' = starts + 1
     /\ dl' = [o \in Objects |-> Disown(dl[o], i)]
     /\ UNCHANGED <<snapshots, blobs, index, locks, owners, producer, seen, bad, pf>>
@@ -202,7 +215,7 @@ Lookup(i) ==
     /\ workers' = [workers EXCEPT ![i].handle = Candidate(i),
          ![i].snapshotChoice = IF Indexed(i) THEN Candidate(i) ELSE 0,
          ![i].phase = IF Candidate(i) = 0 \/
-                         (MutAheadSkipsReuse /\ workers[i].ahead = workers[i].layer)
+                         (MutAheadSkipsReuse /\ workers[i].layer \in workers[i].aheads)
                       THEN "blob" ELSE "attach"]
     /\ bad' = bad \cup (IF Indexed(i) /\ workers'[i].handle # Candidate(i)
                            THEN {"snapshotSelection"} ELSE {})
@@ -270,7 +283,7 @@ Fetch(i) ==
 FetchHeld(i) ==
     /\ ModelDownloads
     /\ workers[i].phase = "fetch"
-    /\ workers[i].ahead = workers[i].layer
+    /\ workers[i].layer \in workers[i].aheads
     /\ workers' = [workers EXCEPT ![i].phase = "waitDl"]
     /\ seen' = seen \cup {"fetch", "aheadUsed"}
     /\ bad' = FetchBad(i)
@@ -279,7 +292,7 @@ FetchHeld(i) ==
 FetchJoin(i) ==
     /\ ModelDownloads
     /\ workers[i].phase = "fetch"
-    /\ workers[i].ahead # workers[i].layer
+    /\ workers[i].layer \notin workers[i].aheads
     /\ LET o == Src(workers[i].layer) IN
        /\ dl' = [dl EXCEPT ![o] = Join(o, i)]
        /\ workers' = [workers EXCEPT ![i].phase = "waitDl"]
@@ -290,18 +303,21 @@ FetchJoin(i) ==
     /\ bad' = FetchBad(i)
     /\ UNCHANGED <<snapshots, blobs, index, locks, owners, producer, starts, pf>>
 
-(* chain.fetched: once this layer's bytes are in, before its apply, the  *)
-(* next layer's download starts, unless its blob is already present.     *)
-FetchAhead(i) ==
+(* fill: at a layer's loop top from the first layer the walk found       *)
+(* missing, or once this layer's bytes are in (chain.fetched), before its *)
+(* apply, a later layer's download starts, unless its blob is present.   *)
+FetchAhead(i, l) ==
     /\ ModelDownloads
-    /\ workers[i].phase = "ready"
-    /\ workers[i].ahead = 0
-    /\ workers[i].layer < workers[i].target
-    /\ LET l == workers[i].layer + 1 IN
-       /\ l \notin blobs
-       /\ dl' = [dl EXCEPT ![Src(l)] = Join(Src(l), i)]
-       /\ workers' = [workers EXCEPT ![i].ahead = l]
+    /\ \/ workers[i].phase = "ready"
+       \/ workers[i].phase = "lock" /\ workers[i].layer >= workers[i].first
+    /\ l \in (workers[i].layer + 1)..workers[i].target
+    /\ l \notin workers[i].aheads
+    /\ l \notin blobs
+    /\ dl' = [dl EXCEPT ![Src(l)] = Join(Src(l), i)]
+    /\ workers' = [workers EXCEPT ![i].aheads = @ \cup {l}]
     /\ seen' = seen \cup {"fetchAhead"}
+         \cup (IF workers[i].aheads # {} THEN {"aheadSet"} ELSE {})
+         \cup (IF workers[i].first > 1 THEN {"aheadPastPrefix"} ELSE {})
     /\ UNCHANGED <<snapshots, blobs, index, locks, owners, producer, starts, bad, pf>>
 
 (* runFetch ends: the content lands, held by the download's lease.       *)
@@ -333,8 +349,9 @@ LeaveDownload(i) ==
        /\ AttemptPhase(i, o) = "done"
        /\ IF MutLeaveBeforeLink
           THEN /\ dl' = [dl EXCEPT ![o] = Leave(dl[o], i)]
-               /\ workers' = [workers EXCEPT ![i].phase = "link", ![i].ahead = 0]
-          ELSE /\ dl' = IF workers[i].ahead = workers[i].layer THEN dl
+               /\ workers' = [workers EXCEPT ![i].phase = "link",
+                                             ![i].aheads = @ \ {workers[i].layer}]
+          ELSE /\ dl' = IF workers[i].layer \in workers[i].aheads THEN dl
                         ELSE [dl EXCEPT ![o] = Leave(dl[o], i)]
                /\ workers' = [workers EXCEPT ![i].phase = AfterLeave(i),
                                              ![i].pins.bytes = @ \cup {workers[i].layer}]
@@ -365,7 +382,7 @@ RetryDownload(i) ==
        /\ dl' = [dl EXCEPT ![o] = Retry(o, i)]
        /\ bad' = bad \cup (IF AttemptOwner(i, o) = i THEN {"ownRetry"} ELSE {})
        /\ seen' = seen \cup RetrySeen(o, i)
-    /\ workers' = [workers EXCEPT ![i].ahead = IF @ = workers[i].layer THEN 0 ELSE @]
+    /\ workers' = [workers EXCEPT ![i].aheads = @ \ {workers[i].layer}]
     /\ UNCHANGED <<snapshots, blobs, index, locks, owners, producer, starts, pf>>
 
 (* Its own attempt failed: the import fails (Cleanup lets go).           *)
@@ -462,14 +479,14 @@ Commit(i) ==
     /\ UNCHANGED <<blobs, locks, owners, producer, starts, seen, bad, downloadVars>>
 
 (* The import of this layer ends: its ahead download, if held, is let   *)
-(* go (import.go:55); one started for the next layer stays held.         *)
+(* go (import.go leaveFetch); those of later layers stay held.           *)
 Advance(i) ==
     /\ workers[i].phase = "advance"
-    /\ LET held == workers[i].ahead = workers[i].layer IN
+    /\ LET held == workers[i].layer \in workers[i].aheads IN
        /\ workers' = [workers EXCEPT ![i].prefix = workers[i].handle,
             ![i].phase = IF workers[i].layer = workers[i].target THEN "returned" ELSE "lock",
             ![i].layer = IF workers[i].layer = workers[i].target THEN @ ELSE @ + 1,
-            ![i].ahead = IF held THEN 0 ELSE @]
+            ![i].aheads = @ \ {workers[i].layer}]
        /\ dl' = IF held THEN [dl EXCEPT ![Src(workers[i].layer)] =
                                   Drop(Src(workers[i].layer), i)]
                 ELSE dl
@@ -504,12 +521,18 @@ Fail(i) ==
     /\ seen' = IF workers[i].prefix # 0 THEN seen \cup {"prefixFailure"} ELSE seen
     /\ UNCHANGED <<snapshots, blobs, index, locks, owners, producer, starts, bad, downloadVars>>
 
-(* Cleanup lets go of every download the importer holds (dropFetch).     *)
+(* Cleanup lets go of every download the importer holds (dropFetch, and   *)
+(* chainAhead.drop for those held ahead). MutAheadKeptOnFailure keeps the *)
+(* holds of later layers' downloads.                                      *)
 Cleanup(i) ==
     /\ workers[i].phase = "cleanup"
     /\ workers' = [workers EXCEPT ![i] = [EmptyWorker EXCEPT !.phase = "failed"]]
     /\ locks' = [k \in Keys |-> IF locks[k] = i THEN 0 ELSE locks[k]]
-    /\ dl' = LeaveAll(i)
+    /\ dl' = IF MutAheadKeptOnFailure
+             THEN [o \in Objects |->
+                     IF \E l \in workers[i].aheads : l # workers[i].layer /\ Src(l) = o
+                     THEN dl[o] ELSE Drop(o, i)]
+             ELSE LeaveAll(i)
     /\ UNCHANGED <<snapshots, blobs, index, owners, producer, starts, seen, bad, pf>>
 
 (* GC may remove an unowned suffix or whole chain. Index rows remain hints. *)
@@ -575,8 +598,8 @@ ExportRegister ==
                                   !.expected = @ \cup {producer.layer}] ELSE owners[o]]
        /\ workers' = [i \in Importers |-> IF s \in workers[i].pins.snaps
             THEN [workers[i] EXCEPT !.pins.bytes = @ \cup {producer.layer}] ELSE workers[i]]
-    /\ producer' = [producer EXCEPT !.phase = IF producer.layer = 2 THEN "provider" ELSE "blob",
-                                   !.layer = IF producer.layer = 2 THEN @ ELSE @ + 1]
+    /\ producer' = [producer EXCEPT !.phase = IF producer.layer = NumLayers THEN "provider" ELSE "blob",
+                                   !.layer = IF producer.layer = NumLayers THEN @ ELSE @ + 1]
     /\ bad' = bad \cup
          (IF index'[<<snapshots[producer.layer].parent, snapshots[producer.layer].layer>>] # producer.layer
           THEN {"exportRegistration"} ELSE {})
@@ -597,7 +620,7 @@ Next ==
     \/ \E i \in Importers : Start(i) \/ Lock(i) \/ Lookup(i) \/ Attach(i) \/ Validate(i)
          \/ BlobLookup(i) \/ PinBlob(i) \/ CheckBlob(i) \/ Fetch(i) \/ Fetched(i)
          \/ Apply(i) \/ Commit(i) \/ Advance(i) \/ Fail(i) \/ Cleanup(i)
-         \/ FetchHeld(i) \/ FetchJoin(i) \/ FetchAhead(i) \/ LeaveDownload(i)
+         \/ FetchHeld(i) \/ FetchJoin(i) \/ (\E l \in Layers : FetchAhead(i, l)) \/ LeaveDownload(i)
          \/ Link(i) \/ RetryDownload(i) \/ OwnFailure(i)
          \/ \E o \in Owners : Adopt(i, o)
     \/ \E o \in Objects : DownloadDone(o) \/ DownloadFail(o)
@@ -658,5 +681,5 @@ CleanupComplete ==
          /\ workers[i].pins = EmptyPins /\ workers[i].prefix = 0 /\ workers[i].handle = 0
          /\ ~workers[i].mount /\ ~workers[i].write
          /\ \A k \in Keys : locks[k] # i
-         /\ workers[i].ahead = 0 /\ \A o \in Objects : ~Holds(i, o)
+         /\ workers[i].aheads = {} /\ \A o \in Objects : ~Holds(i, o)
 =============================================================================
