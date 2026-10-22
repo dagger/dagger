@@ -79,6 +79,7 @@ func TestMessagesRoundTrip(t *testing.T) {
 		{TypeUpload, Upload{ExportID: "x-1", URLs: map[digest.Digest]string{layer.Descriptor.Digest: "https://blobs/put"}}, func() any { return &Upload{} }},
 		{TypeUploaded, Uploaded{Done: []digest.Digest{layer.Descriptor.Digest}, Failed: []UploadFailure{{Digest: digest.FromString("other"), Message: "503"}}}, func() any { return &Uploaded{} }},
 		{TypeMerge, Merge{Bundle: bundle}, func() any { return &Merge{} }},
+		{TypeMerge, Merge{Bundle: bundle, Lookup: 31}, func() any { return &Merge{} }},
 		{TypeMerged, Merged{
 			Generation: 4,
 			EngineTime: 1790000000123456789,
@@ -94,6 +95,17 @@ func TestMessagesRoundTrip(t *testing.T) {
 		{TypeRenew, Renew{RenewalKey: "12/fs", Layers: []snapshots.ExportLayer{layer}, NeededBlob: layer.Descriptor.Digest}, func() any { return &Renew{} }},
 		{TypeRenewed, Renewed{Addresses: map[digest.Digest]dagql.BlobAddress{layer.Descriptor.Digest: {URL: "https://blobs/get2", ExpiresAtUnix: 1790007200}}}, func() any { return &Renewed{} }},
 		{TypeRenewed, Renewed{Unavailable: true}, func() any { return &Renewed{} }},
+		{TypeLookup, Lookup{
+			Misses:     []LookupMiss{{Recipe: digest.FromString("recipe"), Extra: []digest.Digest{digest.FromString("extra")}, Field: "withExec"}, {Recipe: digest.FromString("other")}},
+			WaitMillis: 10000,
+		}, func() any { return &Lookup{} }},
+		{TypeLookedUp, LookedUp{Misses: []LookedUpMiss{
+			{Status: LookupMerging, Merge: 40, Parts: LookupPartsComplete},
+			{Status: LookupInFlight, Merge: 38, Parts: LookupPartsPartial},
+			{Status: LookupUnknown},
+			{Status: LookupNotStored},
+			{Status: LookupDeferred},
+		}}, func() any { return &LookedUp{} }},
 		{TypeError, Error{Message: TooLargeMessage}, func() any { return &Error{} }},
 	} {
 		t.Run(string(tc.typ), func(t *testing.T) {
@@ -139,6 +151,10 @@ func derefBody(v any) any {
 	case *Renew:
 		return *b
 	case *Renewed:
+		return *b
+	case *Lookup:
+		return *b
+	case *LookedUp:
 		return *b
 	case *Error:
 		return *b
@@ -196,12 +212,13 @@ func TestReplyType(t *testing.T) {
 		TypeMerge:  TypeMerged,
 		TypeOffer:  TypeOffered,
 		TypeRenew:  TypeRenewed,
+		TypeLookup: TypeLookedUp,
 	} {
 		got, ok := ReplyType(request)
 		require.True(t, ok, request)
 		require.Equal(t, reply, got)
 	}
-	for _, notRequest := range []Type{TypeWelcome, TypeExported, TypeUploaded, TypeMerged, TypeOffered, TypeRenewed, TypeError} {
+	for _, notRequest := range []Type{TypeWelcome, TypeExported, TypeUploaded, TypeMerged, TypeOffered, TypeRenewed, TypeLookedUp, TypeError} {
 		_, ok := ReplyType(notRequest)
 		require.False(t, ok, notRequest)
 	}
@@ -222,4 +239,37 @@ func TestOfferOutcomeOf(t *testing.T) {
 	}
 	_, err := OfferOutcomeOf(dagql.OfferOutcome(200))
 	require.Error(t, err)
+}
+
+// A lookup and its answer have the wire names the service reads, and a
+// placement merge carries no lookup.
+func TestLookupShape(t *testing.T) {
+	raw, err := json.Marshal(Lookup{Misses: []LookupMiss{{Recipe: "xxh3:1", Extra: []digest.Digest{"xxh3:2"}, Field: "withExec"}}, WaitMillis: 10000})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"misses": [{"recipe": "xxh3:1", "extra": ["xxh3:2"], "field": "withExec"}], "waitMillis": 10000}`, string(raw))
+
+	raw, err = json.Marshal(LookedUp{Misses: []LookedUpMiss{{Status: LookupMerging, Merge: 40, Parts: LookupPartsNone}, {Status: LookupUnknown}}})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"misses": [{"status": "merging", "merge": 40, "parts": "none"}, {"status": "unknown"}]}`, string(raw))
+
+	for status, want := range map[LookupStatus]string{
+		LookupUnknown:   "unknown",
+		LookupNotStored: "notStored",
+		LookupInFlight:  "inFlight",
+		LookupMerging:   "merging",
+		LookupDeferred:  "deferred",
+	} {
+		require.Equal(t, want, string(status))
+	}
+	for parts, want := range map[LookupParts]string{
+		LookupPartsComplete: "complete",
+		LookupPartsPartial:  "partial",
+		LookupPartsNone:     "none",
+	} {
+		require.Equal(t, want, string(parts))
+	}
+
+	raw, err = json.Marshal(Merge{})
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), "lookup")
 }
