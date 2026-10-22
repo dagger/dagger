@@ -125,6 +125,12 @@ type Store struct {
 	// beforeRemove, when set, runs before each background removal; tests
 	// use it to hold removals.
 	beforeRemove func()
+	// removeAll removes a tree; os.RemoveAll, replaced by tests.
+	removeAll func(string) error
+	// afterUsage and beforeClearDirty, when set, run at those points of
+	// Collect and of a measurement; tests use them to interleave.
+	afterUsage       func()
+	beforeClearDirty func()
 }
 
 type pinState struct {
@@ -159,11 +165,12 @@ func Open(dir string, opts Options) (*Store, error) {
 		return nil, fmt.Errorf("lock cache volume directory: %w", err)
 	}
 	s := &Store{
-		dir:     dir,
-		formDir: filepath.Join(dir, "v"+strconv.Itoa(FormatVersion)),
-		opts:    opts,
-		lock:    lock,
-		pins:    map[string]*pinState{},
+		dir:       dir,
+		formDir:   filepath.Join(dir, "v"+strconv.Itoa(FormatVersion)),
+		opts:      opts,
+		lock:      lock,
+		pins:      map[string]*pinState{},
+		removeAll: os.RemoveAll,
 	}
 	for _, sub := range []string{"volumes", "tmp", "trash"} {
 		if err := os.MkdirAll(filepath.Join(s.formDir, sub), 0o755); err != nil {
@@ -185,6 +192,18 @@ func Open(dir string, opts Options) (*Store, error) {
 // Dir is the directory the store owns.
 func (s *Store) Dir() string {
 	return s.dir
+}
+
+// ErrPinned is returned by Close when volumes are still pinned.
+var ErrPinned = errors.New("cache volumes are still in use")
+
+// abandon releases ownership without checking pins, as a crashed process
+// would; for tests.
+func (s *Store) abandon() {
+	if s.lock != nil {
+		s.lock.Close()
+		s.lock = nil
+	}
 }
 
 // Close gives up ownership. Pins still held lose their protection. Removals in
@@ -510,6 +529,9 @@ func (s *Store) currentEntry(ctx context.Context, id string) (Entry, error) {
 	}
 	// Meta first: a crash between the two leaves the marker, which only costs
 	// another walk.
+	if s.beforeClearDirty != nil {
+		s.beforeClearDirty()
+	}
 	if err := os.Remove(filepath.Join(volDir, dirtyName)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return Entry{}, fmt.Errorf("clear cache volume %s dirty marker: %w", id, err)
 	}
@@ -590,6 +612,9 @@ func (s *Store) Collect(ctx context.Context, policy Policy) (Report, error) {
 	entries, used, err := s.Usage(ctx)
 	if err != nil {
 		return report, err
+	}
+	if s.afterUsage != nil {
+		s.afterUsage()
 	}
 	s.mu.Lock()
 	pending := s.pendingBytes
@@ -675,7 +700,7 @@ func (s *Store) remove(e Entry) (bool, error) {
 		if s.beforeRemove != nil {
 			s.beforeRemove()
 		}
-		_ = os.RemoveAll(trash)
+		_ = s.removeAll(trash)
 		s.mu.Lock()
 		s.pendingBytes -= e.SizeBytes
 		s.mu.Unlock()

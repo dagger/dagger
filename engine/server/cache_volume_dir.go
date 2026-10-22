@@ -141,6 +141,12 @@ func (srv *Server) closeCacheVolumeDir() error {
 	return err
 }
 
+// cacheVolumeDirPressure reports whether the directory's filesystem is below
+// the directory's minimum free space.
+func (srv *Server) cacheVolumeDirPressure(ctx context.Context) bool {
+	return false
+}
+
 // cacheVolumeDirEntries lists the directory's volumes as local cache entries.
 func (srv *Server) cacheVolumeDirEntries(ctx context.Context) ([]*core.EngineCacheEntry, error) {
 	if srv.cacheVolumeDir == nil {

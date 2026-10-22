@@ -294,7 +294,7 @@ func TestSizeSurvivesCrash(t *testing.T) {
 	pin, err := s.Acquire(t.Context(), ident, true, emptyPopulate)
 	require.NoError(t, err)
 	writeFile(t, filepath.Join(pin.Path(), "big"), 2*mib)
-	require.NoError(t, s.Close())
+	s.abandon()
 
 	s2 := openStore(t, dir, nil)
 	entries, _, err := s2.Usage(t.Context())
@@ -464,4 +464,112 @@ func TestHandOffToAnotherEngine(t *testing.T) {
 	require.NoError(t, err)
 	defer pin.Release()
 	require.FileExists(t, filepath.Join(pin.Path(), "cached"))
+}
+
+func TestCloseKeepsOwnershipWhilePinned(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(dir, Options{})
+	require.NoError(t, err)
+	pin, err := s.Acquire(t.Context(), Identity{Key: "k"}, true, emptyPopulate)
+	require.NoError(t, err)
+
+	require.ErrorIs(t, s.Close(), ErrPinned, "a mounted volume keeps the directory owned")
+	_, err = Open(dir, Options{})
+	require.ErrorIs(t, err, ErrOwned, "so no other owner can collect it")
+
+	pin.Release()
+	require.NoError(t, s.Close())
+	s2, err := Open(dir, Options{})
+	require.NoError(t, err)
+	require.NoError(t, s2.Close())
+}
+
+func TestOpenRemovesOtherFormatsDebris(t *testing.T) {
+	dir := t.TempDir()
+	for _, sub := range []string{"v2/tmp/half-made", "v2/trash/half-gone"} {
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, sub), 0o755))
+		writeFile(t, filepath.Join(dir, sub, "f"), 10)
+	}
+	openStore(t, dir, nil)
+	for _, sub := range []string{"v2/tmp", "v2/trash"} {
+		ents, err := os.ReadDir(filepath.Join(dir, sub))
+		require.NoError(t, err)
+		require.Empty(t, ents, sub)
+	}
+}
+
+// A writer that pins while a measurement is clearing the dirty marker must
+// keep its marker: otherwise its writes hide behind the old size.
+func TestClearingDirtyDoesNotLoseANewWriter(t *testing.T) {
+	dir := t.TempDir()
+	s := openStore(t, dir, nil)
+	ident := Identity{Key: "k"}
+	use(t, s, ident, true, "a", 1)
+
+	var writer sync.WaitGroup
+	s.beforeClearDirty = func() {
+		s.beforeClearDirty = nil
+		writer.Add(1)
+		go func() {
+			defer writer.Done()
+			pin, err := s.Acquire(context.Background(), ident, true, emptyPopulate)
+			if err == nil {
+				pin.Release()
+			}
+		}()
+		// Give the writer every chance to get in before the marker goes.
+		time.Sleep(100 * time.Millisecond)
+	}
+	_, _, err := s.Usage(t.Context())
+	require.NoError(t, err)
+	writer.Wait()
+	require.FileExists(t, filepath.Join(volumeDir(dir, ident), "dirty"), "the new writer's marker survives the measurement")
+}
+
+// A removal that finishes while Collect decides must not count twice: the
+// bytes it freed were in the usage Collect read.
+func TestCollectDoesNotOvershootWhenARemovalFinishes(t *testing.T) {
+	clock := newFakeClock()
+	s := openStore(t, t.TempDir(), clock)
+	gate := make(chan struct{})
+	s.beforeRemove = func() { <-gate }
+	for _, key := range []string{"a", "b", "c", "d"} {
+		use(t, s, Identity{Key: key}, true, "f", mib)
+		clock.Advance(time.Minute)
+	}
+	policy := Policy{MaxUsedSpace: 3*mib + mib/2}
+	report, err := s.Collect(t.Context(), policy)
+	require.NoError(t, err)
+	require.Len(t, report.Removed, 1)
+
+	// The pending removal finishes after the next Collect read its usage.
+	s.afterUsage = func() {
+		s.afterUsage = nil
+		close(gate)
+		require.NoError(t, s.WaitRemovals(context.Background()))
+	}
+	report, err = s.Collect(t.Context(), policy)
+	require.NoError(t, err)
+	require.Empty(t, report.Removed, "the usage it read already counted the finished removal as pending")
+}
+
+func TestFailedRemovalStaysCounted(t *testing.T) {
+	clock := newFakeClock()
+	dir := t.TempDir()
+	s := openStore(t, dir, clock)
+	s.removeAll = func(string) error { return errors.New("disk on fire") }
+	for _, key := range []string{"a", "b"} {
+		use(t, s, Identity{Key: key}, true, "f", mib)
+		clock.Advance(time.Minute)
+	}
+	report, err := s.Collect(t.Context(), Policy{MaxUsedSpace: mib + mib/2})
+	require.NoError(t, err)
+	require.Len(t, report.Removed, 1)
+
+	err = s.WaitRemovals(t.Context())
+	require.ErrorContains(t, err, "disk on fire", "a failed removal is reported")
+	_, used, err := s.Usage(t.Context())
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, used, int64(2*mib), "what it couldn't remove still counts")
+	require.NoError(t, s.WaitRemovals(t.Context()), "reported once")
 }

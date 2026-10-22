@@ -1,6 +1,7 @@
 package server
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -28,6 +29,50 @@ func TestValidateCacheVolumeDir(t *testing.T) {
 
 	_, err = srv.validateCacheVolumeDir(filepath.Join(root, "workers"))
 	require.NoError(t, err, "a sibling sharing the prefix isn't inside")
+
+	// A symlink into worker/, with a leaf that doesn't exist yet.
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "worker"), 0o700))
+	require.NoError(t, os.Symlink(filepath.Join(root, "worker"), filepath.Join(root, "link")))
+	_, err = srv.validateCacheVolumeDir(filepath.Join(root, "link", "new-cache"))
+	require.Error(t, err, "resolved through the symlink, it's inside worker/")
+}
+
+func TestCloseCacheVolumeDirKeepsOwnershipWhilePinned(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "cache-volumes")
+	srv := &Server{workerRootDir: filepath.Join(root, "worker")}
+	require.NoError(t, srv.initCacheVolumeDir(config.CacheVolumesConfig{Dir: dir}))
+	pin, err := srv.cacheVolumeDir.Acquire(t.Context(), cachevolumedir.Identity{Key: "k"}, true, nil)
+	require.NoError(t, err)
+
+	require.NoError(t, srv.closeCacheVolumeDir(), "a stop with operations still mounting volumes isn't an error")
+	_, err = cachevolumedir.Open(dir, cachevolumedir.Options{})
+	require.ErrorIs(t, err, cachevolumedir.ErrOwned, "the directory stays owned until they finish")
+
+	pin.Release()
+	require.NoError(t, srv.closeCacheVolumeDir())
+	require.Nil(t, srv.cacheVolumeDir)
+}
+
+func TestCacheVolumeDirPressure(t *testing.T) {
+	root := t.TempDir()
+	srv := &Server{workerRootDir: filepath.Join(root, "worker"), localCacheGCEnabled: true}
+	require.False(t, srv.cacheVolumeDirPressure(t.Context()), "no directory, no pressure")
+
+	require.NoError(t, srv.initCacheVolumeDir(config.CacheVolumesConfig{Dir: filepath.Join(root, "cache-volumes")}))
+	t.Cleanup(func() { _ = srv.closeCacheVolumeDir() })
+	srv.cacheVolumesCfg.MinFreeSpace = config.DiskSpace{Bytes: 1}
+	require.False(t, srv.cacheVolumeDirPressure(t.Context()))
+
+	// More free space wanted than the filesystem has: pressure, which the
+	// GC monitor acts on.
+	srv.cacheVolumesCfg.MinFreeSpace = config.DiskSpace{Percentage: 100}
+	srv.cacheVolumesCfg.MaxUsedSpace = config.DiskSpace{Bytes: 1 << 50}
+	require.True(t, srv.cacheVolumeDirPressure(t.Context()))
+	require.True(t, srv.localCachePressureGCNeeded(t.Context()))
+
+	srv.localCacheGCEnabled = false
+	require.False(t, srv.cacheVolumeDirPressure(t.Context()), "not with GC disabled")
 }
 
 func TestInitCacheVolumeDirFallsBackWhenOwned(t *testing.T) {
