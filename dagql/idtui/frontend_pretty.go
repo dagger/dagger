@@ -244,6 +244,9 @@ type frontendPretty struct {
 	// dropped; what is read for it arrives on the exporter SetLiveLogs
 	// returns.
 	liveLogsTrace dagui.TraceID
+	// liveRequests holds the live trace's requested spans, each with
+	// whether it rolls up its descendants (LiveLogsCoverage).
+	liveRequests map[dagui.SpanID]bool
 	// finalLogs makes the eager surfaced-failure fetch run in interactive
 	// mode too, so the final render has what it shows (RequestFinalLogs).
 	finalLogs bool
@@ -7934,6 +7937,9 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 		if fe.shellTranscript() {
 			// Collapsed, so no LogsView asks for them: a restored history's
 			// command output is fetched as the row renders.
+			fe.requestLogsOnRender(row.Span.ID)
+		} else if row.Span.RollUpLogs && (row.IsRunningOrChildRunning || row.Span.IsFailedOrCausedFailure()) {
+			// Likewise the rolled-up logs shown below, read on demand.
 			fe.requestLogsOnRender(row.Span.ID)
 		}
 		if logs := fe.logs.Logs[row.Span.ID]; logs != nil && logs.UsedHeight() > 0 {
