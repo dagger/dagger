@@ -101,86 +101,31 @@ func (CollectionsSuite) TestGoAPI(ctx context.Context, t *testctx.T) {
     keys
     list { name }
     get(key: "a") { name }
-     selected removed 
+    selected removed
     subset(keys: ["c", "b"]) {
       keys
-       selected removed copy { subset(keys: ["c"]) {  removed  } } 
-      subset(keys: ["c"]) { keys  selected removed  }
-      empty: subset(keys: []) { keys list  selected removed  }
+      selected removed copy { subset(keys: ["c"]) { removed } }
+      subset(keys: ["c"]) { keys selected removed }
+      empty: subset(keys: []) { keys list selected removed }
     }
   }
 }`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{
-  "items": {
-    "keys": [
-      "b",
-      "a",
-      "c"
-    ],
-    "list": [
-      {
-        "name": "item:b"
-      },
-      {
-        "name": "item:a"
-      },
-      {
-        "name": "item:c"
-      }
-    ],
-    "get": {
-      "name": "item:a"
+  "items":{
+    "keys":["b","a","c"],
+    "list":[{"name":"item:b"},{"name":"item:a"},{"name":"item:c"}],
+    "get":{"name":"item:a"},
+    "subset":{
+      "keys":["b","c"],
+      "subset":{"keys":["c"],"selected":["c"],"removed":["b","a"]},
+      "empty":{"keys":[],"list":[],"selected":[],"removed":["b","a","c"]},
+      "selected":["b","c"],
+      "removed":["a"],
+      "copy":{"subset":{"removed":["b","a"]}}
     },
-    "subset": {
-      "keys": [
-        "b",
-        "c"
-      ],
-      "subset": {
-        "keys": [
-          "c"
-        ],
-        "selected": [
-          "c"
-        ],
-        "removed": [
-          "b",
-          "a"
-        ]
-      },
-      "empty": {
-        "keys": [],
-        "list": [],
-        "selected": [],
-        "removed": [
-          "b",
-          "a",
-          "c"
-        ]
-      },
-      "selected": [
-        "b",
-        "c"
-      ],
-      "removed": [
-        "a"
-      ],
-      "copy": {
-        "subset": {
-          "removed": [
-            "b",
-            "a"
-          ]
-        }
-      }
-    },
-    "selected": [
-      "b",
-      "a",
-      "c"
-    ],
-    "removed": []
+    "selected":["b","a","c"],
+    "removed":[]
   }
 }`, out)
 	out, err = ctr.With(daggerQueryAt("./collections", `{ selfSubset argumentDelta }`)).Stdout(ctx)
@@ -189,76 +134,32 @@ func (CollectionsSuite) TestGoAPI(ctx context.Context, t *testctx.T) {
 	out, err = ctr.With(daggerQueryAt("./collections", collectionDeltaQuery)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, collectionDeltaExpected, out)
-	out, err = ctr.With(daggerQueryAt("./collections", `{ items {  change(names: ["c", "d"]) {  deltaCheck { pass }  }  } }`)).Stdout(ctx)
+	out, err = ctr.With(daggerQueryAt("./collections", `{ items { change(names: ["c", "d"]) { deltaCheck { pass } } } }`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{
-  "items": {
-    "change": {
-      "deltaCheck": {
-        "pass": true
-      }
-    }
-  }
-}`, out)
+	require.JSONEq(t, `{"items":{"change":{"deltaCheck":{"pass":true}}}}`, out)
 }
 
 const collectionDeltaQuery = `{ items {
-   change(names: ["c", "d"]) {
+  change(names: ["c", "d"]) {
     keys
-     added removed change(names: ["c", "b", "a"]) {  added removed  } 
-    subset(keys: ["d"]) {  added removed  }
-  } 
-  subset(keys: ["c"]) { 
-    change(names: ["b", "c", "d"]) {  added removed  }
-    fresh { keys  added removed  }
-   }
+    added removed change(names: ["c", "b", "a"]) { added removed }
+    subset(keys: ["d"]) { added removed }
+  }
+  subset(keys: ["c"]) {
+    change(names: ["b", "c", "d"]) { added removed }
+    fresh { keys added removed }
+  }
 } }`
 
 const collectionDeltaExpected = `{
-  "items": {
-    "subset": {
-      "change": {
-        "added": [
-          "d"
-        ],
-        "removed": [
-          "a"
-        ]
-      },
-      "fresh": {
-        "keys": [
-          "z"
-        ],
-        "added": [],
-        "removed": []
-      }
-    },
-    "change": {
-      "keys": [
-        "c",
-        "d"
-      ],
-      "subset": {
-        "added": [
-          "d"
-        ],
-        "removed": [
-          "b",
-          "a",
-          "c"
-        ]
-      },
-      "added": [
-        "d"
-      ],
-      "removed": [
-        "b",
-        "a"
-      ],
-      "change": {
-        "added": [],
-        "removed": []
-      }
+  "items":{
+    "subset":{"change":{"added":["d"],"removed":["a"]},"fresh":{"keys":["z"],"added":[],"removed":[]}},
+    "change":{
+      "keys":["c","d"],
+      "subset":{"added":["d"],"removed":["b","a","c"]},
+      "added":["d"],
+      "removed":["b","a"],
+      "change":{"added":[],"removed":[]}
     }
   }
 }`
@@ -869,20 +770,9 @@ func (*Test) Get(name string) *Item { return &Item{Name: name} }
 func (tests *Test) Count() int { return len(tests.Keys) }
 type Item struct { Name string }
 `).
-		With(daggerQuery(`{ keys get(key: "a") { name } subset(keys: ["b"]) {  count  } }`)).Stdout(ctx)
+		With(daggerQuery(`{ keys get(key: "a") { name } subset(keys: ["b"]) { count } }`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{
-  "keys": [
-    "a",
-    "b"
-  ],
-  "get": {
-    "name": "a"
-  },
-  "subset": {
-    "count": 1
-  }
-}`, out)
+	require.JSONEq(t, `{"keys":["a","b"],"get":{"name":"a"},"subset":{"count":1}}`, out)
 }
 
 func (CollectionsSuite) TestEnumKeys(ctx context.Context, t *testctx.T) {
@@ -909,28 +799,9 @@ func (*Test) Get(color Color) *Item { return &Item{Name: string(color)} }
 func (colors *Test) Removed(ctx context.Context) ([]string, error) { return colors.Delta.RemovedKeys(ctx) }
 type Item struct { Name string }
 `).
-		With(daggerQuery(`{ keys get(key: RED) { name } subset(keys: [BLUE]) { keys get(key: BLUE) { name }  removed  } }`)).Stdout(ctx)
+		With(daggerQuery(`{ keys get(key: RED) { name } subset(keys: [BLUE]) { keys get(key: BLUE) { name } removed } }`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{
-  "keys": [
-    "RED",
-    "BLUE"
-  ],
-  "get": {
-    "name": "red"
-  },
-  "subset": {
-    "keys": [
-      "BLUE"
-    ],
-    "get": {
-      "name": "blue"
-    },
-    "removed": [
-      "RED"
-    ]
-  }
-}`, out)
+	require.JSONEq(t, `{"keys":["RED","BLUE"],"get":{"name":"red"},"subset":{"keys":["BLUE"],"get":{"name":"blue"},"removed":["RED"]}}`, out)
 }
 
 func (CollectionsSuite) TestSDKs(ctx context.Context, t *testctx.T) {
@@ -947,50 +818,20 @@ func (CollectionsSuite) TestSDKs(ctx context.Context, t *testctx.T) {
 			out, err := ctr.With(daggerQuery(`{ items {
   keys
   get(key: "a") { name }
-   selected removed 
+  selected removed
   subset(keys: ["c", "b"]) {
     keys
-     selected removed copy { subset(keys: ["c"]) {  removed  } } 
+    selected removed copy { subset(keys: ["c"]) { removed } }
   }
 } }`)).Stdout(ctx)
 			require.NoError(t, err)
 			require.JSONEq(t, `{
-  "items": {
-    "keys": [
-      "b",
-      "a",
-      "c"
-    ],
-    "get": {
-      "name": "item:a"
-    },
-    "subset": {
-      "keys": [
-        "b",
-        "c"
-      ],
-      "selected": [
-        "b",
-        "c"
-      ],
-      "removed": [
-        "a"
-      ],
-      "copy": {
-        "subset": {
-          "removed": [
-            "b",
-            "a"
-          ]
-        }
-      }
-    },
-    "selected": [
-      "b",
-      "a",
-      "c"
-    ],
-    "removed": []
+  "items":{
+    "keys":["b","a","c"],
+    "get":{"name":"item:a"},
+    "subset":{"keys":["b","c"],"selected":["b","c"],"removed":["a"],"copy":{"subset":{"removed":["b","a"]}}},
+    "selected":["b","a","c"],
+    "removed":[]
   }
 }`, out)
 			out, err = ctr.With(daggerQuery(collectionDeltaQuery)).Stdout(ctx)
