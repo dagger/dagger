@@ -457,8 +457,9 @@ type persistedGitModuleSourcePayload struct {
 }
 
 type persistedDirModuleSourcePayload struct {
-	OriginalSourceRootSubpath  string `json:"originalSourceRootSubpath,omitempty"`
-	OriginalContextDirResultID uint64 `json:"originalContextDirResultID,omitempty"`
+	OriginalSourceRootSubpath  string  `json:"originalSourceRootSubpath,omitempty"`
+	OriginRoot                 *string `json:"originRoot,omitempty"`
+	OriginalContextDirResultID uint64  `json:"originalContextDirResultID,omitempty"`
 }
 
 type persistedModuleSourceSDKCapabilities struct {
@@ -914,6 +915,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, enc *dagql.P
 	if src.DirSrc != nil {
 		payload.DirSrc = &persistedDirModuleSourcePayload{
 			OriginalSourceRootSubpath: src.DirSrc.OriginalSourceRootSubpath,
+			OriginRoot:                src.DirSrc.OriginRoot,
 		}
 		if src.DirSrc.OriginalContextDir.Self() != nil {
 			originalContextDirID, err := encodePersistedObjectRef(enc, src.DirSrc.OriginalContextDir, "module source dir original context dir")
@@ -1013,6 +1015,7 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dec *dagql.Persi
 	if persisted.DirSrc != nil {
 		src.DirSrc = &DirModuleSource{
 			OriginalSourceRootSubpath: persisted.DirSrc.OriginalSourceRootSubpath,
+			OriginRoot:                persisted.DirSrc.OriginRoot,
 		}
 		if persisted.DirSrc.OriginalContextDirResultID != 0 {
 			originalContextDir, err := loadPersistedObjectResultByResultID[*Directory](ctx, dec, persisted.DirSrc.OriginalContextDirResultID, "module source dir original context directory")
@@ -2132,6 +2135,29 @@ type DirModuleSource struct {
 	OriginalContextDir dagql.ObjectResult[*Directory]
 	// the original source root subpath provided to AsModuleSource
 	OriginalSourceRootSubpath string
+	// OriginRoot is the symbolic identity of the tree the directory came from,
+	// when a module loaded it from its own tree: a git clone ref, or "" for a
+	// local context. Nil for any other directory. See OriginSymbolic.
+	OriginRoot *string
+}
+
+// OriginSymbolic is the identity of a directory module source in the tree a
+// module loaded it from, built like Git.Symbolic, or "" without an origin.
+// Cache volumes are namespaced by it rather than by content, so they match
+// the module loaded directly and survive changes to its files.
+func (src *ModuleSource) OriginSymbolic() string {
+	if src.Kind != ModuleSourceKindDir || src.DirSrc == nil || src.DirSrc.OriginRoot == nil {
+		return ""
+	}
+	root, subpath := *src.DirSrc.OriginRoot, src.SourceRootSubpath
+	switch {
+	case root == "":
+		return subpath
+	case subpath == ".":
+		return root
+	default:
+		return root + "/" + subpath
+	}
 }
 
 type moduleDependencyResolutionKey struct{}

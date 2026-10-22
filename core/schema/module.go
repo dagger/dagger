@@ -3175,6 +3175,11 @@ func (s *moduleSchema) moduleImplementationScoped(
 	if src.Kind == core.ModuleSourceKindGit && src.Git != nil {
 		scopedDigestInputs = append(scopedDigestInputs, "gitCommit:"+src.Git.Commit)
 	}
+	// The origin namespaces the module's cache volumes, so the same files
+	// served from two origins must not share the execs that create them.
+	if origin := src.OriginSymbolic(); origin != "" {
+		scopedDigestInputs = append(scopedDigestInputs, "originSymbolic:"+origin)
+	}
 	scopedDigest := hashutil.HashStrings(scopedDigestInputs...)
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {

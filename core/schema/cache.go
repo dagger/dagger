@@ -111,6 +111,9 @@ func namespaceFromModule(ctx context.Context, m *core.Module) (string, error) {
 	case core.ModuleSourceKindGit:
 		symbolic = src.Self().Git.Symbolic
 	case core.ModuleSourceKindDir:
+		if symbolic = src.Self().OriginSymbolic(); symbolic != "" {
+			break
+		}
 		sourceDigest, err := src.Self().SourceImplementationDigest(ctx)
 		if err != nil {
 			return "", err
