@@ -32,19 +32,51 @@ Code reviewed: `ce6dc9f9403b52067f5831149eab4871f857185d`. Check the current cod
 - **Conversions:** Keep `asXXX()` methods. They convert selected artifacts to objects of a specific type, such as `Check`.
 - **Return types:** Keep lists such as `[Check]` for this work. Decide later whether to replace these lists.
 
-Relevant target fields are shown below. Other existing fields are omitted.
+Docstrings describe behavior. Comments mark schema changes. No new `Artifacts` fields are added. Other existing fields are omitted.
 
 ```graphql
+# CHANGED: selected values use the filtered workspace view.
+"""A selection of artifacts and the workspace view used to evaluate them."""
 type Artifacts {
+  # UNCHANGED: signature and selection rule.
+  """Keep the listed types. If exclude is true, remove them instead."""
   filterTypes(types: [String!]!, exclude: Boolean! = false): Artifacts!
+
+  # CHANGED: also reduce collections and replace references in the new view.
+  # UNCHANGED: signature. The source selection stays unchanged.
+  """
+  Keep artifacts with any listed key in this dimension.
+  For a collection dimension, keep matching keys in each collection.
+  Skip keys absent from a collection. Use the reduced collections in this view.
+  """
   filterDimensionKeys(dimension: String!, keys: [String!]!): Artifacts!
+
+  # CHANGED: each returned artifact retains this view for later evaluation.
+  """List selected artifacts without evaluating their values."""
   items: [Artifact!]!
 
+  # CHANGED: all conversions use this view.
+  # UNCHANGED: names and list return types.
+  """Return selected checks without running them. Fail on other types."""
   asChecks: [Check!]!
+
+  """
+  Return selected generators without running them. Fail on other types.
+  Skip module load failures, because generation can repair them.
+  """
   asGenerators: [Generator!]!
+
+  """Return selected services without starting them. Fail on other types."""
   asServices: [Service!]!
+
+  """Evaluate selected Changeset fields and return their values. Fail on other types."""
   asChangesets: [Changeset!]!
+
+  """Return selected expertise functions without running them. Fail on invalid signatures."""
   asExpertise: [Expertise!]!
+
+  # REMOVED: values. No general execution method replaces it.
+  # DEFERRED: withArtifacts. Do not merge separate views in this version.
 }
 ```
 
@@ -63,28 +95,46 @@ Remove `ArtifactResult` if no remaining approved API uses it.
 Keep ordinary author functions. Move them from the batch type to the collection type. For example, suppose a module has a `selected` function:
 
 ```graphql
-# Before: the engine puts the author function under batch.
+# BEFORE: only fields affected by the move are shown.
 type GoTests {
-  keys: [String!]!
-  list: [GoTest!]!
-  get(key: String!): GoTest!
-  subset(keys: [String!]!): GoTests!
+  # REMOVED: access through the batch namespace.
+  """Return collection-level functions."""
   batch: GoTests_Batch!
 }
 
+# REMOVED TYPE: move its author functions onto GoTests.
 type GoTests_Batch {
+  # MOVED: this function remains available as GoTests.selected.
+  """Return the selected test keys."""
   selected: [String!]!
 }
 ```
 
 ```graphql
-# After: the function is an ordinary collection method.
+# AFTER: ordinary author functions sit beside standard collection methods.
+"""A collection of tests."""
 type GoTests {
+  # UNCHANGED: standard collection fields and methods.
+  """Return current keys in author order."""
   keys: [String!]!
+
+  """Return current test items in key order."""
   list: [GoTest!]!
+
+  """Return the test for this key. Fail if the key is absent."""
   get(key: String!): GoTest!
+
+  """
+  Return a collection with only the requested keys, in author order.
+  Keep the source unchanged. Fail on absent or duplicate keys.
+  """
   subset(keys: [String!]!): GoTests!
+
+  # ADDED HERE: moved from GoTests_Batch; not a new author function.
+  """Return the selected test keys."""
   selected: [String!]!
+
+  # REMOVED: batch field. GoTests_Batch no longer exists.
 }
 ```
 
