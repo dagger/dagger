@@ -584,7 +584,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`If the group is omitted, it defaults to the same as the user.`),
 			),
 
-		dagql.NodeFuncWithDynamicInputs("withDirectory", s.withDirectory, s.withDirectoryDynamicInputs).
+		dagql.NodeFunc("withDirectory", s.withDirectory).
 			IsPersistable().
 			View(AllVersion).
 			Doc(`Return a new container snapshot, with a directory added to its filesystem`).
@@ -5058,10 +5058,4 @@ func (s *containerSchema) terminalLegacy(
 
 func (s *containerSchema) terminalLegacyWebsocketEndpoint(ctx context.Context, parent *core.TerminalLegacy, args struct{}) (string, error) {
 	return "", nil
-}
-
-// withDirectoryDynamicInputs keys a copy that applies gitignore rules by the
-// ignore files above its source (see core.AncestorIgnoresInput).
-func (s *containerSchema) withDirectoryDynamicInputs(ctx context.Context, _ dagql.ObjectResult[*core.Container], args containerWithDirectoryArgs, req *dagql.CallRequest) error {
-	return copySourceIgnoresInput(ctx, cmp.Or(args.Source, args.Directory), args.CopyFilter, req)
 }

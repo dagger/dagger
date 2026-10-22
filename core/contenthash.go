@@ -6,6 +6,8 @@ import (
 	"path"
 	"strings"
 
+	"github.com/containerd/containerd/v2/core/mount"
+	containerdfs "github.com/containerd/continuity/fs"
 	bkcontenthash "github.com/dagger/dagger/engine/contenthash"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
@@ -45,7 +47,13 @@ func GetContentHashFromDirectory(
 // of snapshot. For a whole snapshot it is the content hash of its files. A
 // subdirectory also has a name, which Directory.name reports and the content
 // hash leaves out, so its digest covers the name too: two subdirectories
-// with equal files under different names are not interchangeable.
+// with equal files under different names are not interchangeable. It also
+// covers the few files outside the subdirectory that operations on it read
+// (see outsideInputsDigest), and nothing else around it.
+//
+// If those files can't be read, it returns no digest and no error: the
+// directory then keeps the identity of the call that made it, as a directory
+// without a content digest does.
 func DirectoryContentDigest(ctx context.Context, snapshot bkcache.ImmutableRef, dirPath string) (digest.Digest, error) {
 	dgst, err := GetContentHashFromDirectory(ctx, snapshot, dirPath)
 	if err != nil {
@@ -55,7 +63,20 @@ func DirectoryContentDigest(ctx context.Context, snapshot bkcache.ImmutableRef, 
 	if name == "/" {
 		return dgst, nil
 	}
-	return hashutil.HashStrings("directory", dgst.String(), "name", name), nil
+	var outside string
+	err = MountRef(ctx, snapshot, func(root string, _ *mount.Mount) error {
+		base, err := containerdfs.RootPath(root, dirPath)
+		if err != nil || base == root {
+			return err
+		}
+		outside, err = outsideInputsDigest(root, base)
+		return err
+	}, mountRefAsReadOnly)
+	if err != nil {
+		bklog.G(ctx).WithError(err).Debugf("directory %s: not keying by content: reading the files around it", dirPath)
+		return "", nil
+	}
+	return hashutil.HashStrings("directory", dgst.String(), "name", name, "outside", outside), nil
 }
 
 func GetContentHashFromFile(
