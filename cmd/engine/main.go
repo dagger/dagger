@@ -590,12 +590,12 @@ func main() { //nolint:gocyclo
 				return
 			}
 			srv.BeginGracefulStop()
+			var httpShutdown func(context.Context) error
+			var httpClose func() error
 			if httpServer != nil {
-				if err := httpServer.Shutdown(context.WithoutCancel(stopCtx)); err != nil && !errors.Is(err, http.ErrServerClosed) {
-					slog.Error("http server shutdown", "error", err)
-				}
+				httpShutdown, httpClose = httpServer.Shutdown, httpServer.Close
 			}
-			grpcServer.GracefulStop()
+			stopListeners(stopCtx, httpShutdown, httpClose, grpcServer.GracefulStop, grpcServer.Stop)
 			// stopCtx carries the graceful stop deadline and nothing else, so
 			// it must reach session teardown intact: a session whose producer
 			// ignores cancellation is bounded by that deadline rather than

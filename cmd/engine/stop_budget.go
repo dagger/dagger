@@ -2,13 +2,16 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"sync"
 	"time"
 
 	"github.com/urfave/cli"
 
 	"github.com/dagger/dagger/engine/config"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 const (
@@ -96,12 +99,38 @@ func gracefulStopTimeoutSetting(c *cli.Context, cfg config.Config) (time.Duratio
 		}
 		return timeout, nil
 	}
-	timeout := cfg.Shutdown.GracefulStopTimeout.Duration
-	switch {
-	case timeout < 0:
-		return 0, fmt.Errorf("shutdown.gracefulStopTimeout must not be negative, got %s", timeout)
-	case timeout == 0:
+	if cfg.Shutdown.GracefulStopTimeout == nil {
 		return defaultGracefulStopTimeout, nil
 	}
+	timeout := cfg.Shutdown.GracefulStopTimeout.Duration
+	if timeout <= 0 {
+		return 0, fmt.Errorf("shutdown.gracefulStopTimeout must be positive, got %s", timeout)
+	}
 	return timeout, nil
+}
+
+// stopListeners stops the API listeners within ctx, the stop budget: it drains
+// in-flight HTTP requests and gRPC calls, and forces whatever is left closed
+// when ctx ends, so a stalled request can't hold the stop past its budget.
+func stopListeners(ctx context.Context, httpShutdown func(context.Context) error, httpClose func() error, grpcGracefulStop, grpcStop func()) {
+	if httpShutdown != nil {
+		if err := httpShutdown(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			slog.Warn("http server did not drain within the stop budget; closing it", "error", err)
+			if err := httpClose(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				slog.Error("http server close", "error", err)
+			}
+		}
+	}
+	drained := make(chan struct{})
+	go func() {
+		grpcGracefulStop()
+		close(drained)
+	}()
+	select {
+	case <-drained:
+	case <-ctx.Done():
+		slog.Warn("grpc server did not drain within the stop budget; stopping it")
+		grpcStop()
+		<-drained
+	}
 }

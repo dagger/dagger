@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -29,7 +32,13 @@ func TestGracefulStopTimeoutSetting(t *testing.T) {
 	}
 	withConfig := func(d time.Duration) config.Config {
 		var cfg config.Config
-		cfg.Shutdown.GracefulStopTimeout.Duration = d
+		cfg.Shutdown.GracefulStopTimeout = &config.Duration{Duration: d}
+		return cfg
+	}
+	loadConfig := func(t *testing.T, js string) config.Config {
+		t.Helper()
+		cfg, err := config.Load(strings.NewReader(js))
+		require.NoError(t, err)
 		return cfg
 	}
 
@@ -55,6 +64,66 @@ func TestGracefulStopTimeoutSetting(t *testing.T) {
 	t.Run("config must not be negative", func(t *testing.T) {
 		_, err := setting(t, withConfig(-time.Second))
 		require.Error(t, err)
+	})
+	t.Run("config from JSON", func(t *testing.T) {
+		got, err := setting(t, loadConfig(t, `{"shutdown":{"gracefulStopTimeout":"50s"}}`))
+		require.NoError(t, err)
+		require.Equal(t, 50*time.Second, got)
+
+		got, err = setting(t, loadConfig(t, `{"shutdown":{}}`))
+		require.NoError(t, err)
+		require.Equal(t, 5*time.Minute, got, "omitted means the default")
+	})
+	t.Run("an explicit zero in the config is refused", func(t *testing.T) {
+		_, err := setting(t, loadConfig(t, `{"shutdown":{"gracefulStopTimeout":"0s"}}`))
+		require.Error(t, err)
+		_, err = setting(t, loadConfig(t, `{"shutdown":{"gracefulStopTimeout":0}}`))
+		require.Error(t, err)
+	})
+}
+
+func TestStopListeners(t *testing.T) {
+	t.Run("draining that finishes in time doesn't force anything", func(t *testing.T) {
+		var closed, stopped atomic.Bool
+		stopListeners(t.Context(),
+			func(context.Context) error { return nil },
+			func() error { closed.Store(true); return nil },
+			func() {},
+			func() { stopped.Store(true) })
+		require.False(t, closed.Load())
+		require.False(t, stopped.Load())
+	})
+
+	t.Run("a stalled request is cut at the budget", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+		defer cancel()
+		var closed atomic.Bool
+		grpcStop := make(chan struct{})
+		var stopOnce sync.Once
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			stopListeners(ctx,
+				// http.Server.Shutdown returns ctx's error when its
+				// connections don't go idle in time.
+				func(ctx context.Context) error { <-ctx.Done(); return ctx.Err() },
+				func() error { closed.Store(true); return nil },
+				// gRPC's graceful stop waits for its calls until a hard
+				// stop interrupts them.
+				func() { <-grpcStop },
+				func() { stopOnce.Do(func() { close(grpcStop) }) })
+		}()
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			t.Fatal("stopListeners outlived its budget")
+		}
+		require.True(t, closed.Load(), "the HTTP server is closed when it doesn't drain")
+		select {
+		case <-grpcStop:
+		default:
+			t.Fatal("the gRPC server is stopped when it doesn't drain")
+		}
 	})
 }
 
