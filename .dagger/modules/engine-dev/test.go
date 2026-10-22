@@ -62,6 +62,15 @@ func (dev *EngineDev) Test(
 	// Elapsed times after the test runner starts at which to dump engine goroutines
 	// +optional
 	dumpAfter []string,
+	// The remote cache service's URL, for the test engine to join its remote cache
+	// +optional
+	remoteCacheURL *dagger.Secret,
+	// The Dagger Cloud URL the test engine exports its cache events to
+	// +optional
+	cloudURL *dagger.Secret,
+	// An engine token for the remote cache and Dagger Cloud
+	// +optional
+	cloudToken *dagger.Secret,
 ) error {
 	dumpTimes := make([]time.Duration, len(dumpAfter))
 	for i, after := range dumpAfter {
@@ -72,7 +81,9 @@ func (dev *EngineDev) Test(
 		dumpTimes[i] = duration
 	}
 	// FIXME: use the damn standard Go toolchain
-	ctr, ldflagValues, err := dev.testContainer(ctx, ebpfProgs, false)
+	ctr, ldflagValues, err := dev.testContainer(ctx, ebpfProgs, false, func(ctr *dagger.Container) *dagger.Container {
+		return withRemoteCache(ctr, remoteCacheURL, cloudURL, cloudToken)
+	})
 	if err != nil {
 		return err
 	}
@@ -158,7 +169,7 @@ func (dev *EngineDev) TestProfile(
 	// +optional
 	ebpfProgs []string,
 ) (*TestProfileResult, error) {
-	ctr, ldflagValues, err := dev.testContainer(ctx, ebpfProgs, true)
+	ctr, ldflagValues, err := dev.testContainer(ctx, ebpfProgs, true, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -247,7 +258,7 @@ func (dev *EngineDev) TestTelemetry(
 	// Goldens compare a warmed cache with the following CLI invocation.
 	// Keep warmup results available after its session closes.
 	dev = dev.WithEngineConfig("worker.oci", "gc = false")
-	ctr, ldflagValues, err := dev.testContainer(ctx, ebpfProgs, false)
+	ctr, ldflagValues, err := dev.testContainer(ctx, ebpfProgs, false, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -476,14 +487,16 @@ exit "$result"
 // Build an ephemeral test environment ready to run core engine tests.
 // With wcprof, the test engine records a wcprof wall-clock profile of all its
 // work from startup, readable at http://daggerengine:6060/debug/wcprof/dump.
+// withServiceEngine, if set, applies to the test engine service only, not to
+// the engine.tar the tests start their own engines from.
 // (FIXME: do this more cleanly, and reuse the standard Go toolchain)
-func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string, wcprof bool) (*dagger.Container, []string, error) {
+func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string, wcprof bool, withServiceEngine dagger.WithContainerFunc) (*dagger.Container, []string, error) {
 	devEngine, err := dev.
 		WithEBPFProgs(ebpfProgs).
 		WithEngineConfig(`registry."registry:5000"`, `http = true`).
 		WithEngineConfig(`registry."privateregistry:5000"`, `http = true`).
 		WithEngineConfig(`registry."docker.io"`, `mirrors = ["mirror.gcr.io"]`).
-		Container(
+		container(
 			ctx,
 			"",    // platform
 			false, // gpuSupport
@@ -522,6 +535,9 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string, wcp
 
 	engineRunVol := dag.CacheVolume("dagger-dev-engine-test-varrun" + rand.Text())
 	registrySvc := registry()
+	if withServiceEngine != nil {
+		devEngine = withServiceEngine(devEngine)
+	}
 	devEngineSvc := devEngine.
 		WithServiceBinding("registry", registrySvc).
 		WithServiceBinding("privateregistry", privateRegistry()).
