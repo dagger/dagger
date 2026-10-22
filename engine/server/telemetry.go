@@ -623,6 +623,9 @@ func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) {
 	// Foreign OTLP: fill in the optional fields otel-go's conversion would
 	// dereference (see engine/telemetry/otlpnormalize.go).
 	enginetel.NormalizeTraceRequest(&req)
+	if host := r.Header.Get(enginetel.WcprofHostHeader); host != "" {
+		enginetel.StampWcprofHost(&req, host)
+	}
 	spans := telemetry.SpansFromPB(req.ResourceSpans)
 	slog.Debug("exporting spans", "spans", len(spans), "origin", clientID)
 

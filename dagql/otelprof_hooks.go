@@ -43,6 +43,32 @@ func OTelProfActive(ctx context.Context) bool {
 	return trace.SpanFromContext(ctx).IsRecording()
 }
 
+type otelHostExecKey struct{}
+
+// OTelHostExec is the exec hosting a nested client, as its spans see it.
+type OTelHostExec struct {
+	// ExecRun is the exec's exec.run span.
+	ExecRun trace.SpanContext
+	// Propagated is the span the exec's container got as its traceparent: the
+	// call that made the exec, beside exec.run.
+	Propagated trace.SpanContext
+}
+
+// ContextWithOTelHostExec marks ctx as serving a nested client hosted by
+// host. A request span of the client's whose parent is host.Propagated names
+// host.ExecRun as its causal parent (wcprof.parent), which would otherwise
+// leave the client's work beside the exec rather than in it.
+func ContextWithOTelHostExec(ctx context.Context, host OTelHostExec) context.Context {
+	return context.WithValue(ctx, otelHostExecKey{}, host)
+}
+
+// OTelHostExecFromContext returns the exec hosting the nested client ctx
+// serves, if any.
+func OTelHostExecFromContext(ctx context.Context) OTelHostExec {
+	host, _ := ctx.Value(otelHostExecKey{}).(OTelHostExec)
+	return host
+}
+
 // beginOTelCallExec starts the call_exec span for a resolver execution on the
 // call's detached context, mirroring native's execOp (cache.go getOrInitCall).
 // The returned context carries the span, so the resolver's sub-call spans nest

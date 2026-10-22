@@ -211,9 +211,10 @@ func (c *Client) Run(
 	// OTel analog of execOp: exec.run nests the container run under
 	// the withExec call_exec span (or the service exec span) via the propagated
 	// ctx, so the offline loader reconstructs the same exec shape from a Cloud
-	// trace. Gated only on telemetry being active, independent of wcprof. OTel
-	// gets nested-client parentage for free via traceparent, so unlike native it
-	// needs no nested-client link.
+	// trace. Gated only on telemetry being active, independent of wcprof. The
+	// traceparent a container gets names the call, not exec.run, so its nested
+	// clients' spans name exec.run as their causal parent instead (wcprof.parent,
+	// via otelExecRunSpanCtx), as native links them to execOp.
 	var execRunSpan trace.Span
 	if dagql.OTelProfActive(ctx) {
 		var attrs []attribute.KeyValue
@@ -223,6 +224,7 @@ func (c *Client) Run(
 			)
 		}
 		ctx, execRunSpan = beginOTelExecRun(ctx, execIdent, attrs...)
+		state.otelExecRunSpanCtx = execRunSpan.SpanContext()
 	}
 	err := c.run(ctx, state,
 		namedSetupFunc{"setupNetwork", c.setupNetwork},

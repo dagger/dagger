@@ -146,6 +146,13 @@ type execState struct {
 	// profExecOpID is the wcprof exec.run op of this run (0 when not
 	// profiling): the op nested clients of this exec are linked to.
 	profExecOpID uint64
+	// otelExecRunSpanCtx is this run's exec.run span (invalid when the OTel
+	// source isn't recording): the causal parent (wcprof.parent) of the spans
+	// its container and nested clients start directly under
+	// otelPropagatedSpanCtx, the span the container gets as traceparent, as
+	// profExecOpID is natively.
+	otelExecRunSpanCtx    trace.SpanContext
+	otelPropagatedSpanCtx trace.SpanContext
 
 	// sessionHelperStatus carries /.init's report that a nested client's
 	// session helper failed, and failSessionHelper fails the waits for its
@@ -988,6 +995,8 @@ func (c *Client) setupOTel(ctx context.Context, state *execState) error {
 			}
 			r.Header.Set("X-Dagger-Session-ID", destSession)
 			r.Header.Set("X-Dagger-Client-ID", destClientID)
+			// The traceparent is set below, before the container runs.
+			setWcprofHostHeader(r.Header, dagql.OTelHostExec{ExecRun: state.otelExecRunSpanCtx, Propagated: state.otelPropagatedSpanCtx})
 			c.TelemetryPubSub.ServeHTTP(rw, r)
 		}),
 		ReadHeaderTimeout: 5 * time.Second, // for gocritic
@@ -1054,6 +1063,7 @@ func (c *Client) setupOTel(ctx context.Context, state *execState) error {
 	}
 	state.spec.Process.Env = append(state.spec.Process.Env,
 		telemetry.PropagationEnv(trace.ContextWithSpanContext(ctx, propSpanCtx))...)
+	state.otelPropagatedSpanCtx = propSpanCtx
 
 	return nil
 }
@@ -1279,6 +1289,7 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		fromExecHelper,
 	)
 	transports.profExecOpID = state.profExecOpID
+	transports.otelHostExec = dagql.OTelHostExec{ExecRun: state.otelExecRunSpanCtx, Propagated: state.otelPropagatedSpanCtx}
 	state.cleanups.Add("close nested client transports", cleanups.Infallible(transports.Close))
 
 	if fromExecHelper {
@@ -1331,7 +1342,7 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 				http.Error(resp, err.Error(), status)
 				return
 			}
-			c.SessionHandler.ServeHTTPToNestedClient(resp, req, transport, metadata, transports.parentClientID, false, state.nestedClientModule, state.nestedClientFunctionCall)
+			c.SessionHandler.ServeHTTPToNestedClient(resp, transports.hostedRequest(req), transport, metadata, transports.parentClientID, false, state.nestedClientModule, state.nestedClientFunctionCall)
 		}),
 		Protocols: protocols,
 	}
@@ -1410,8 +1421,10 @@ type nestedClientTransportManager struct {
 	// fromExecHelper says that the exec's session helper registers the
 	// attachables of every client it hosts.
 	fromExecHelper bool
-	// profExecOpID is the wcprof op of the exec hosting these clients.
+	// profExecOpID is the wcprof op of the exec hosting these clients, and
+	// otelHostExec its spans.
 	profExecOpID uint64
+	otelHostExec dagql.OTelHostExec
 
 	closed     bool
 	transports map[string]*nestedClientTransport
@@ -2033,4 +2046,24 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 	}
 	emitOTelExecSplit(ctx, state.id, profStartWall, profStartedWallTime, endWall, runErr, profArgv)
 	return exitError(ctx, state.exitCodePath, runErr, state.procInfo.Meta.ValidExitCodes)
+}
+
+// hostedRequest is req, marked as served for a client this exec hosts, so the
+// client's request spans name the exec as their causal parent.
+func (manager *nestedClientTransportManager) hostedRequest(req *http.Request) *http.Request {
+	if !manager.otelHostExec.ExecRun.IsValid() {
+		return req
+	}
+	return req.WithContext(dagql.ContextWithOTelHostExec(req.Context(), manager.otelHostExec))
+}
+
+// setWcprofHostHeader names host, the exec a container runs in, on the
+// container's telemetry exports, so the engine names the exec as the causal
+// parent of the spans the container starts directly under its traceparent;
+// with no host, it drops any such header the container sent.
+func setWcprofHostHeader(h http.Header, host dagql.OTelHostExec) {
+	h.Del(enginetel.WcprofHostHeader)
+	if host.ExecRun.IsValid() && host.Propagated.IsValid() {
+		h.Set(enginetel.WcprofHostHeader, enginetel.WcprofHostHeaderValue(host.Propagated.SpanID(), host.ExecRun.SpanID()))
+	}
 }
