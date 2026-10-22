@@ -29,7 +29,22 @@ func (s *workspaceSchema) loadWorkspaceSDKModule(
 
 	var workspaceSource *core.ModuleSource
 	if workspace.IsLocalRef(sdkRef, "") {
-		workspaceRoot, err := s.workspaceGitignoredOverlayRootfs(ctx, ws)
+		explicitDirs := []string{}
+		resolvedSDK := workspace.ResolveModuleEntrySource(configDir, sdkRef)
+		if filepath.IsAbs(resolvedSDK) {
+			if hostRoot, ok := ws.LocalSourceHostPath(); ok {
+				rel, inside, err := relativePathWithinRoot(hostRoot, resolvedSDK)
+				if err != nil {
+					return nil, err
+				}
+				if inside {
+					explicitDirs = append(explicitDirs, rel)
+				}
+			}
+		} else {
+			explicitDirs = append(explicitDirs, resolvedSDK)
+		}
+		workspaceRoot, err := s.workspaceGitignoredOverlayRootfsWithExplicitDirs(ctx, ws, explicitDirs...)
 		if err != nil {
 			return nil, fmt.Errorf("load workspace SDK-module root: %w", err)
 		}

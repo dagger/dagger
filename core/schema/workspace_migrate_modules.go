@@ -90,7 +90,7 @@ func (s *workspaceSchema) stageWorkspaceMigration(ctx context.Context, ws *core.
 			}
 			return stage, nil
 		}
-		stage.base, err = s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, true)
+		stage.base, err = s.workspaceMigrationRootfs(ctx, ws)
 		if err != nil {
 			return nil, err
 		}
@@ -177,7 +177,7 @@ func (s *workspaceSchema) migrateModule(ctx context.Context, ws *core.Workspace,
 	if ws.HostPath() == "" {
 		return nil, fmt.Errorf("module migration is local-only")
 	}
-	base, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, true)
+	base, err := s.workspaceMigrationRootfs(ctx, ws)
 	if err != nil {
 		return nil, err
 	}
@@ -254,8 +254,30 @@ func (s *workspaceSchema) newModuleMigrationPlanner(ctx context.Context, ws *cor
 		if err != nil {
 			return err
 		}
+		cleanupRoot, err := s.workspaceGitignoredOverlayRootfsWithExplicitDirs(
+			workspaceCtx,
+			ws,
+			dir,
+		)
+		if err != nil {
+			return err
+		}
+		stagedID, err := staged.ID()
+		if err != nil {
+			return err
+		}
+		var merged dagql.ObjectResult[*core.Directory]
+		if err := srv.Select(workspaceCtx, cleanupRoot, &merged, dagql.Selector{
+			Field: "withDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString("/")},
+				{Name: "source", Value: dagql.NewID[*core.Directory](stagedID)},
+			},
+		}); err != nil {
+			return err
+		}
 		projectRoot := filepath.Join(ws.HostPath(), filepath.FromSlash(dir))
-		cleanup, err := s.workspaceMigrationGitignoreCleanup(workspaceCtx, srv, ws, staged, &workspace.CompatWorkspace{
+		cleanup, err := s.workspaceMigrationGitignoreCleanup(workspaceCtx, srv, ws, merged, &workspace.CompatWorkspace{
 			Config: cfg, ProjectRoot: projectRoot,
 			ConfigPath: filepath.Join(projectRoot, workspace.LegacyModuleConfigFileName),
 		})

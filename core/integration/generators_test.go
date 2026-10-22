@@ -48,7 +48,11 @@ func (GeneratorsSuite) TestGenerateDoesNotUploadGitignoredFiles(ctx context.Cont
 	workdir := t.TempDir()
 	require.NoError(t, fs.CopyDir(workdir, fixture))
 	initGitRepo(ctx, t, workdir)
-	require.NoError(t, os.WriteFile(filepath.Join(workdir, ".gitignore"), []byte("/.venv/\n"), 0o644))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(workdir, ".gitignore"),
+		[]byte("/.venv/\n/.dagger/modules/scope-sdk/\n"),
+		0o644,
+	))
 	require.NoError(t, os.Mkdir(filepath.Join(workdir, ".venv"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(workdir, ".venv", "should-not-upload"), []byte("ignored\n"), 0o644))
 

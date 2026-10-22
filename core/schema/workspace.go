@@ -1161,11 +1161,19 @@ func (s *workspaceSchema) resolveHostOverlayRootfs(
 	// onto a base that lacks them — exactly as building the delta root on an
 	// empty base does. Keeping the base independent of the touched set also keeps
 	// its cache identity stable across edits.
+	// An overlay can change the rules themselves. In that case, apply the
+	// overlay first and evaluate the effective .gitignore files in the engine.
+	// This rare path uses the full host base because the client cannot apply an
+	// ignore file that exists only in the overlay.
+	deferGitignore := gitignore && workspaceOverlayTouchesGitignore(ws)
 	args := []dagql.NamedInput{
 		{Name: "path", Value: dagql.NewString(absPath)},
 	}
 	includes := rerootPatterns(resolvedPath, filter.Include)
-	if len(includes) == 0 && resolvedPath != "." && resolvedPath != "" {
+	if deferGitignore {
+		includes = nil
+	}
+	if len(includes) == 0 && !deferGitignore && resolvedPath != "." && resolvedPath != "" {
 		// No include filter: request only the resolved subtree.
 		subtree := strings.TrimSuffix(resolvedPath, "/")
 		includes = []string{subtree, subtree + "/**"}
@@ -1184,7 +1192,7 @@ func (s *workspaceSchema) resolveHostOverlayRootfs(
 		}
 		args = append(args, dagql.NamedInput{Name: "exclude", Value: arr})
 	}
-	if gitignore {
+	if gitignore && !deferGitignore {
 		args = append(args,
 			dagql.NamedInput{Name: "gitignore", Value: dagql.NewBoolean(true)},
 			dagql.NamedInput{Name: "gitIgnoreRoot", Value: dagql.NewString(ws.HostPath())},
@@ -1212,10 +1220,18 @@ func (s *workspaceSchema) resolveHostOverlayRootfs(
 
 	// Descend and re-apply the filter: the changeset applies at the workspace
 	// root, so merged also contains touched paths outside the requested scope;
-	// the descent plus filter trims them back out. Gitignore was already applied
-	// host-side — the sparse tree lacks the .gitignore context to re-evaluate it,
-	// and overlay edits win even for ignored paths.
-	return s.resolveRootfsFromDirectory(ctx, srv, ws, merged, resolvedPath, filter, false)
+	// the descent plus filter trims them back out. Usually Git ignore rules were
+	// applied by the client. If the overlay changed those rules, apply them now.
+	return s.resolveRootfsFromDirectory(ctx, srv, ws, merged, resolvedPath, filter, deferGitignore)
+}
+
+func workspaceOverlayTouchesGitignore(ws *core.Workspace) bool {
+	for _, touched := range ws.OverlayTouchedPaths() {
+		if path.Base(filepath.ToSlash(touched)) == ".gitignore" {
+			return true
+		}
+	}
+	return false
 }
 
 // rerootPatterns prefixes filter patterns (relative to a resolved workspace
@@ -1274,6 +1290,63 @@ func (s *workspaceSchema) workspaceGitignoredOverlayRootfs(ctx context.Context, 
 		return dagql.ObjectResult[*core.Directory]{}, fmt.Errorf("workspace is required")
 	}
 	return s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, true)
+}
+
+// workspaceGitignoredOverlayRootfsWithExplicitDirs keeps broad workspace
+// content subject to Git ignore rules, then restores directories that the user
+// named. An explicit local module or SDK path must win over an ignore rule.
+func (s *workspaceSchema) workspaceGitignoredOverlayRootfsWithExplicitDirs(
+	ctx context.Context,
+	ws *core.Workspace,
+	dirs ...string,
+) (dagql.ObjectResult[*core.Directory], error) {
+	root, err := s.workspaceGitignoredOverlayRootfs(ctx, ws)
+	if err != nil {
+		return root, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return root, err
+	}
+	seen := map[string]struct{}{}
+	for _, dir := range dirs {
+		dir = filepath.ToSlash(cleanWorkspaceRelPath(dir))
+		if _, ok := seen[dir]; ok {
+			continue
+		}
+		seen[dir] = struct{}{}
+		filter := core.CopyFilter{}
+		target := dir
+		if dir == "." {
+			// The root itself cannot be hidden. Restore only the config files
+			// that identify an explicit root module.
+			filter.Include = []string{
+				workspace.ModuleConfigFileName,
+				workspace.LegacyModuleConfigFileName,
+			}
+			target = "/"
+		}
+		explicit, err := s.resolveRootfs(ctx, ws, dir, filter, false)
+		if err != nil {
+			return root, err
+		}
+		explicitID, err := explicit.ID()
+		if err != nil {
+			return root, err
+		}
+		var merged dagql.ObjectResult[*core.Directory]
+		if err := srv.Select(ctx, root, &merged, dagql.Selector{
+			Field: "withDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(target)},
+				{Name: "source", Value: dagql.NewID[*core.Directory](explicitID)},
+			},
+		}); err != nil {
+			return root, fmt.Errorf("restore explicit workspace directory %q: %w", dir, err)
+		}
+		root = merged
+	}
+	return root, nil
 }
 
 func requireLocalWorkspace(ws *core.Workspace, operation string) error {
