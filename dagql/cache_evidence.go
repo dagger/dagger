@@ -101,6 +101,12 @@ type CacheDecision struct {
 	// misses (Outcome executed).
 	MissFreshInputs []int
 
+	// MissRemoteLookup is what the miss did about asking the remote cache
+	// service for the call's value (RemoteLookupQueued, RemoteLookupAsked or
+	// RemoteLookupDropped), or "" when no connection serves lookups.
+	// Meaningful only for misses (Outcome executed).
+	MissRemoteLookup string
+
 	// Adopted records that the publication this call executed or joined
 	// adopted its recipe's live current entry in place of the call's new
 	// value; AdoptedRemote that the entry's value came from a Cloud merge,
