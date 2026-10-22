@@ -3262,6 +3262,13 @@ type ongoingCall struct {
 	initCompletedResultOnce sync.Once
 	handoffHoldActive       bool
 	initCompletedResultErr  error
+	// adopted records that publication adopted the recipe's live current
+	// entry in place of the new value, and adoptedRemote and adoptedMergedAt
+	// that entry's merge origin (cache evidence). Set inside
+	// initCompletedResultOnce, read by waiters after it.
+	adopted         bool
+	adoptedRemote   bool
+	adoptedMergedAt int64
 
 	waitCh                      chan struct{}
 	cancel                      context.CancelCauseFunc
@@ -6552,6 +6559,9 @@ func (c *Cache) wait(
 		// The last waiter creates the edge, possibly after this call's span
 		// ends; until then the span reports it as the publication's.
 		ev.pendingEdge = oc.pendingEdge
+		ev.Adopted = oc.adopted
+		ev.AdoptedRemote = oc.adoptedRemote
+		ev.AdoptedMergedAtUnixNano = oc.adoptedMergedAt
 	}
 
 	retRes := Result[Typed]{
@@ -7052,6 +7062,9 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 			}
 			resWasCacheBacked = true
 			adoptedCurrent = true
+			oc.adopted = true
+			oc.adoptedRemote = cur.imported
+			oc.adoptedMergedAt = cur.mergedAtUnixNano
 			break
 		}
 		// A declined value doesn't take over the entry's retention edge, as
