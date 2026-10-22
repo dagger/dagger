@@ -41,6 +41,14 @@ func (c *Check) runFunction(ctx context.Context) error {
 
 func (c *Check) AttachDependencyResults(ctx context.Context, _ dagql.AnyResult, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
 	var owned []dagql.AnyResult
+	if c.Unaddressed.Self() != nil {
+		result, err := attach(c.Unaddressed)
+		if err != nil {
+			return nil, err
+		}
+		c.Unaddressed = result.(dagql.ObjectResult[*Check])
+		owned = append(owned, result)
+	}
 	if c.RemoteArtifact.Self() != nil {
 		result, err := attach(c.RemoteArtifact)
 		if err != nil {
