@@ -1,6 +1,6 @@
 {
   "name": "beta-sdk",
-  "engineVersion": "v1.0.0",
+  "engineVersion": "v1.0.0-beta.20",
   "sdk": {
     "source": "dang"
   }
