@@ -155,7 +155,7 @@ func (WorkspaceSuite) TestValueBackedWorkspaceLoadsModulesFromTree(ctx context.C
 	const gitAgentDoc = "Agent loaded from the GitRef workspace tree."
 	source := core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", "[modules.git-agent]\nsource = \"./modules/git-agent\"\n").
-		WithNewFile("modules/git-agent/dagger.json", `{"name":"git-agent","engineVersion":"v1.0.0","sdk":"dang"}`).
+		WithNewFile("modules/git-agent/dagger.json", `{"name":"git-agent","engineVersion":"v1.0.0-beta.20","sdk":"dang"}`).
 		WithNewFile("modules/git-agent/main.dang", `type GitAgent {
   agent(base: LLM!): LLM! @agent {
     base.withTools(currentNode)
@@ -249,14 +249,14 @@ source = "./modules/good"
 [modules.bad]
 source = "./modules/bad"
 `).
-		WithNewFile("modules/good/dagger.json", `{"name":"good","engineVersion":"v1.0.0","sdk":"dang"}`).
+		WithNewFile("modules/good/dagger.json", `{"name":"good","engineVersion":"v1.0.0-beta.20","sdk":"dang"}`).
 		WithNewFile("modules/good/main.dang", `type Good {
   generate(workdir: Directory! @defaultPath(path: ".")): Changeset! @generate {
     workdir.withNewFile("generated.txt", "generated").changes(workdir)
   }
 }
 `).
-		WithNewFile("modules/bad/dagger.json", `{"name":"bad","engineVersion":"v1.0.0","sdk":"dang"}`).
+		WithNewFile("modules/bad/dagger.json", `{"name":"bad","engineVersion":"v1.0.0-beta.20","sdk":"dang"}`).
 		WithNewFile("modules/bad/main.dang", "this is not valid Dang")
 	gitDaemon, repoURL := gitService(ctx, t, c, source)
 	ws := core.NewQuery(c).Git(repoURL, core.GitOpts{ExperimentalServiceHost: gitDaemon}).

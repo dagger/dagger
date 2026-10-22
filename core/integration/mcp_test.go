@@ -102,11 +102,11 @@ func (MCPSuite) TestFailureIncludesDiagnosticLogs(ctx context.Context, t *testct
 	modDir := t.TempDir()
 	for name, contents := range map[string]string{
 		"dagger.toml": "[modules.test]\nsource = \".\"\nmain = true\n",
-		"dagger.json": `{"name":"test","engineVersion":"v1.0.0","sdk":"dang"}`,
+		"dagger.json": `{"name":"test","engineVersion":"v1.0.0-beta.20","sdk":"dang"}`,
 		"main.dang": `type Test {
   broken: Module! {
     directory
-      .withNewFile("dagger.json", contents: "{\"name\":\"broken\",\"engineVersion\":\"v1.0.0\",\"sdk\":\"dang\"}")
+      .withNewFile("dagger.json", contents: "{\"name\":\"broken\",\"engineVersion\":\"v1.0.0-beta.20\",\"sdk\":\"dang\"}")
       .withNewFile("main.dang", contents: "type Broken {\n  hello: IntentionallyUndefinedType! { \"hi\" }\n}\n")
       .asModule
   }
@@ -161,7 +161,7 @@ func (MCPSuite) TestLLMContentResult(ctx context.Context, t *testctx.T) {
 	modDir := t.TempDir()
 	for name, contents := range map[string]string{
 		"dagger.toml": "[modules.test]\nsource = \".\"\nmain = true\n",
-		"dagger.json": `{"name":"test","engineVersion":"v1.0.0","sdk":"dang"}`,
+		"dagger.json": `{"name":"test","engineVersion":"v1.0.0-beta.20","sdk":"dang"}`,
 		"main.dang": `type Test {
   screenshots: LLMContent! {
     llmContent

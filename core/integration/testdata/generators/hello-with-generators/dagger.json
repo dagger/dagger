@@ -1,6 +1,6 @@
 {
   "name": "hello-with-generators",
-  "engineVersion": "v1.0.0",
+  "engineVersion": "v1.0.0-beta.20",
   "sdk": {
     "source": "go"
   }

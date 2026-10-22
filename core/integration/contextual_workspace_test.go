@@ -65,7 +65,7 @@ func (ContextualWorkspaceSuite) TestContextualWorkspaceSelection(ctx context.Con
 
 		ctr := legacyWorkspaceBase(t, c, `{
   "name": "myapp",
-  "engineVersion": "v1.0.0",
+  "engineVersion": "v1.0.0-beta.20",
   "sdk": {"source": "dang"},
   "source": "ci"
 }`, func(ctr *core.Container) *core.Container {
@@ -122,7 +122,7 @@ type Myapp {
 
 		ctr := legacyWorkspaceBase(t, c, `{
   "name": "standalone",
-  "engineVersion": "v1.0.0",
+  "engineVersion": "v1.0.0-beta.20",
   "sdk": {"source": "dang"}
 }`, func(ctr *core.Container) *core.Container {
 			return ctr.WithNewFile("main.dang", `
