@@ -46,9 +46,8 @@ func TestRemoteCacheSettings(t *testing.T) {
 	}
 }
 
-// Lookups are on by default, with the default wait; the environment turns
-// them off, or sets the wait, 0 asking without waiting. An invalid wait keeps
-// the default.
+// Lookups are on by default, asked without waiting; the environment turns
+// them off, or sets a wait. An invalid wait keeps the default.
 func TestRemoteCacheLookupSettings(t *testing.T) {
 	t.Setenv(envRemoteCacheURL, "https://env.example")
 	t.Setenv("DAGGER_CLOUD_TOKEN", "engine-token")
@@ -59,12 +58,12 @@ func TestRemoteCacheLookupSettings(t *testing.T) {
 		on      bool
 		want    time.Duration
 	}{
-		{name: "default", on: true, want: 10 * time.Second},
-		{name: "off", lookups: "0", on: false, want: 10 * time.Second},
+		{name: "default", on: true, want: 0},
+		{name: "off", lookups: "0", on: false, want: 0},
 		{name: "a wait", wait: "3s", on: true, want: 3 * time.Second},
 		{name: "no wait", wait: "0", on: true, want: 0},
-		{name: "an invalid wait", wait: "soon", on: true, want: 10 * time.Second},
-		{name: "a negative wait", wait: "-1s", on: true, want: 10 * time.Second},
+		{name: "an invalid wait", wait: "soon", on: true, want: 0},
+		{name: "a negative wait", wait: "-1s", on: true, want: 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv(envRemoteCacheLookups, tc.lookups)
@@ -75,6 +74,19 @@ func TestRemoteCacheLookupSettings(t *testing.T) {
 			require.Equal(t, tc.want, settings.LookupWait)
 		})
 	}
+}
+
+// By default an engine asks lookups without waiting: no miss waits on the
+// service unless _EXPERIMENTAL_DAGGER_REMOTE_CACHE_LOOKUP_WAIT opts in.
+func TestRemoteCacheLookupWaitIsNoneByDefault(t *testing.T) {
+	t.Setenv(envRemoteCacheURL, "https://env.example")
+	t.Setenv("DAGGER_CLOUD_TOKEN", "engine-token")
+	t.Setenv(envRemoteCacheLookups, "")
+	t.Setenv(envRemoteCacheLookupWait, "")
+	settings, on := remoteCacheSettings(config.Config{})
+	require.True(t, on)
+	require.True(t, settings.Lookups)
+	require.Zero(t, settings.LookupWait)
 }
 
 // An engine whose state does not outlive its run says so when

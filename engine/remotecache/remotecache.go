@@ -37,8 +37,10 @@ const (
 	// LookupsInFlight is how many lookups the engine has unanswered at once.
 	LookupsInFlight = 4
 	// DefaultLookupWait is how long an evaluation waits, by default, for a
-	// merge a lookup's answer names.
-	DefaultLookupWait = 10 * time.Second
+	// merge a lookup's answer names: none. Lookups are asked without
+	// waiting, so no miss waits on the service; a wait is opt-in, through
+	// the engine's _EXPERIMENTAL_DAGGER_REMOTE_CACHE_LOOKUP_WAIT.
+	DefaultLookupWait time.Duration = 0
 
 	// lookupLinger is how long the engine waits, after a miss, for more
 	// misses to send with it.
