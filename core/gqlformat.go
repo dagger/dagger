@@ -27,10 +27,10 @@ func formatGqlDescription(desc string) string {
 
 // IdentifierNamingVersion is the first engine version whose names are
 // normalized by engine/naming: modules that declare it or later in their
-// engineVersion, and modules served at the engine's own version (manifest v2
-// entrypoints). Modules that declare an older engineVersion keep the strcase
-// rules they were built against, byte for byte. See
-// hack/designs/identifier-casing.md, "The gate".
+// engineVersion (for manifest v2 entrypoints, the Dagger version in the
+// dang.toml governing the entrypoint). Modules that declare an older
+// engineVersion keep the strcase rules they were built against, byte for
+// byte. See hack/designs/identifier-casing.md, "The gate".
 //
 // The gate is an API view, so it's base-version granular like every view
 // (engine.APIViewVersion): every v1.0.0 prerelease shares the v1.0.0 view and

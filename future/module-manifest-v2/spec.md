@@ -422,6 +422,81 @@ the Dang evaluator.
 The entrypoint does not receive an introspection file or an introspection
 argument.
 
+#### Versions
+
+A version 2 manifest has no `engineVersion`. The entrypoint declares what it is
+written against in a `dang.toml`, with the keys Dang defines:
+
+```toml
+dang = "2.1"
+
+[imports.Dagger]
+dagger = "v1.0.0-beta.21"
+```
+
+| Key | Meaning |
+| --- | --- |
+| `dang` | The Dang language version the entrypoint source is parsed as. |
+| `[imports.<name>] dagger` | The Dagger version the entrypoint is written against. |
+
+The Dagger version is the module's engine version, as `engineVersion` is for a
+previous-format module. It selects the core API view of the entrypoint and of
+the module's functions, the naming rules of the module's types, and the default
+function caching, through the same checks and view mapping as an
+`engineVersion`. The engine refuses a version newer than itself with
+`module requires dagger <version>, but you have <engine version>`, and a
+version older than the oldest module version it supports. Two imports that
+declare different Dagger versions are an error.
+
+The engine reads the `dang.toml` that governs the entrypoint by Dang's rules,
+restricted to the module:
+
+- For a local entrypoint, the nearest `dang.toml` in the entrypoint directory
+  or above it, up to the module directory. A `dang.toml` above the module
+  directory never counts, even where Dang's own walk would reach it: a local
+  or Git module context does not hold it, while a directory module source may,
+  so honoring it would make the version depend on how the module was loaded.
+- For a module reference or an address, only the `dang.toml` of the named
+  directory. The engine resolves that directory when it loads the module
+  source, not only when it loads the module's types, so a metadata query such
+  as `ModuleSource.engineVersion` fetches it too and fails when it is
+  unreachable.
+
+The engine reads the versions when it loads the module source, before it
+evaluates `sources`. A `dang.toml` that `sources` returns does not change them.
+`sources` runs at the module's API view, as `types` and `call` do.
+`ModuleSource.engineVersion` reports the Dagger version, and
+`withEngineVersion` overrides it as for any module.
+
+Defaults:
+
+| Declared | Dagger version | Dang version |
+| --- | --- | --- |
+| No `dang.toml` | `v1.0.0-beta.20` | `2.1` |
+| No Dagger import, or `dagger = true` | `v1.0.0-beta.20` | as declared |
+| No `dang` key | as declared | `2.1` |
+
+**Decision: an undeclared Dagger version is v1.0.0-beta.20.** Entrypoints
+written before the key existed were served at the engine that ran them, from
+v1.0.0-beta.16 to v1.0.0-beta.20: the v1 API, Dang 2.1 and the naming rules
+from before the cut at v1.0.0-beta.21. The default is the last of those
+releases, and it is pinned. Its API view is the shared view of every v1.0.0
+prerelease before the cut, so it gets none of the API that changes at the cut,
+such as renamed enum values that generated entrypoints spell the old way.
+Following the running engine would change the API and the type names of an
+entrypoint that declares nothing with every engine release.
+
+**Decision: an undeclared Dang version is 2.1.** That is Dang's
+`DefaultVersion`, which Dang uses for a `dang.toml` without the key. The
+engine uses it for an entrypoint without a `dang.toml` too, rather than Dang's
+`CurrentVersion`, for the same reason.
+
+The versions are part of the module digest, so a result built under one
+version, such as the module's type definitions, never answers for another.
+
+The engine does not run the `dang.toml` imports. It provides the `Dagger`
+import itself, at the declared version.
+
 ### Observability
 
 The engine records which interface it drove a module through, so the choice

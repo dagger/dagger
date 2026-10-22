@@ -16,6 +16,7 @@ import (
 	dangshared "github.com/dagger/dagger/core/sdk/dang/shared"
 	"github.com/dagger/dagger/core/sdk/entrypoint"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 )
 
 // EntrypointSourcesMember is the optional entrypoint member that returns the
@@ -27,8 +28,17 @@ const EntrypointSourcesMember = "sources"
 // ModuleEntrypoint in the top-level Dang files of dir declares a public
 // sources member. A comment, a string, a private member or a member of another
 // type does not count. A file that does not parse declares nothing, so its
-// error surfaces when the entrypoint runs.
-func DeclaresEntrypointSources(dir string) (bool, error) {
+// error surfaces when the entrypoint runs. dangVersion is the Dang version the
+// files are written in (ModuleSource.EntrypointDangVersion).
+func DeclaresEntrypointSources(dir string, dangVersion string) (bool, error) {
+	version := dang.DefaultVersion
+	if dangVersion != "" {
+		parsed, err := dang.ParseVersion(dangVersion)
+		if err != nil {
+			return false, fmt.Errorf("module entrypoint Dang version: %w", err)
+		}
+		version = parsed
+	}
 	files, err := entrypointFiles(dir)
 	if err != nil {
 		return false, err
@@ -41,7 +51,7 @@ func DeclaresEntrypointSources(dir string) (bool, error) {
 		if !bytes.Contains(data, []byte(EntrypointSourcesMember)) {
 			continue
 		}
-		root, err := dang.Parse(path, data)
+		root, err := dang.Parse(path, data, dang.WithVersion(version))
 		if err != nil {
 			return false, nil //nolint:nilerr
 		}
@@ -130,6 +140,12 @@ func EntrypointSources(
 	if err != nil {
 		return sources, err
 	}
+	// The program is type checked against the module's API view, but with no
+	// module context its client would be served at its client version's view,
+	// the engine's own. Declare the module's view as the client version, so
+	// sources runs against the API it was checked against, as types and call
+	// do through their module context.
+	nestedClientMetadata.ClientVersion = engine.ModuleAPIViewVersion(src.EngineVersion)
 	module := dangModule{name: src.ModuleName, originalName: src.ModuleOriginalName}
 
 	_, err = dangshared.WithNestedClientServer(ctx, query, nestedClientMetadata, true, nil, dagql.ObjectResult[*core.Module]{}, func(ctx context.Context, client graphql.Client) ([]byte, error) {
@@ -141,7 +157,7 @@ func EntrypointSources(
 		})
 		return nil, entryDir.Self().Mount(ctx, entryDir, func(dir string) error {
 			ensureModuleSelfTypes(intro.Schema, src, dir)
-			env, err := runEntrypointDir(ctx, dir, true)
+			env, err := runEntrypointDir(ctx, dir, src.EntrypointDangVersion, true)
 			if err != nil {
 				if isDangSourceError(err) {
 					return &dangSourceError{err: err}

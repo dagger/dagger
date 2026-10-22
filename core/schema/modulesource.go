@@ -1126,8 +1126,15 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	src.ConfigClients = modCfg.Clients
 
 	engineVersion := modCfg.EngineVersion
+	src.EntrypointDangVersion = ""
 	if modCfg.Entrypoint != nil {
-		engineVersion = engine.Version
+		// A manifest v2 module declares its versions in the dang.toml
+		// governing its entrypoint, which resolveEntrypointVersions reads once
+		// the module context is loaded. Until then it has the versions of an
+		// entrypoint that declares none.
+		defaults := dangv2.DefaultEntrypointVersions()
+		engineVersion = defaults.Engine
+		src.EntrypointDangVersion = defaults.DangString()
 	}
 	switch engineVersion {
 	case "":
@@ -1139,22 +1146,7 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	}
 	engineVersion = engine.NormalizeVersion(engineVersion)
 	src.EngineVersion = engineVersion
-
-	canDefaultFuncCaching := engine.CheckVersionCompatibility(
-		engine.BaseVersion(src.EngineVersion),
-		engine.MinimumDefaultFunctionCachingModuleVersion,
-	)
-	switch {
-	case modCfg.DisableDefaultFunctionCaching != nil:
-		// explicit setting in the module config, use it
-		src.DisableDefaultFunctionCaching = *modCfg.DisableDefaultFunctionCaching
-	case canDefaultFuncCaching:
-		// no explicit setting in the module config but module engine version supports it, enable function caching
-		src.DisableDefaultFunctionCaching = false
-	default:
-		// no explicit setting in the module config and module engine version doesn't support it, disable function caching
-		src.DisableDefaultFunctionCaching = true
-	}
+	setDefaultFunctionCaching(src, modCfg.DisableDefaultFunctionCaching)
 
 	if modCfg.SDK != nil {
 		src.SDK = &core.SDKConfig{
@@ -1210,6 +1202,56 @@ func moduleSourceConfigFilename(src *core.ModuleSource) string {
 		return src.ConfigFilename
 	}
 	return modules.Filename
+}
+
+// setDefaultFunctionCaching sets whether functions of src default to
+// per-session caching: as explicit says, or else by src's engine version.
+func setDefaultFunctionCaching(src *core.ModuleSource, explicit *bool) {
+	canDefaultFuncCaching := engine.CheckVersionCompatibility(
+		engine.BaseVersion(src.EngineVersion),
+		engine.MinimumDefaultFunctionCachingModuleVersion,
+	)
+	switch {
+	case explicit != nil:
+		// explicit setting in the module config, use it
+		src.DisableDefaultFunctionCaching = *explicit
+	case canDefaultFuncCaching:
+		// no explicit setting in the module config but module engine version supports it, enable function caching
+		src.DisableDefaultFunctionCaching = false
+	default:
+		// no explicit setting in the module config and module engine version doesn't support it, disable function caching
+		src.DisableDefaultFunctionCaching = true
+	}
+}
+
+// resolveEntrypointVersions sets the engine and Dang versions of a manifest
+// v2 module from the dang.toml governing its entrypoint (see
+// entrypoint.FindConfigFile and dangv2.ResolveEntrypointVersions). It runs
+// once the module context is loaded and before anything reads the versions:
+// the entrypoint's sources member is evaluated at the engine version.
+func (s *moduleSourceSchema) resolveEntrypointVersions(ctx context.Context, src *core.ModuleSource) error {
+	if src.Entrypoint == nil {
+		return nil
+	}
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return err
+	}
+	configPath, contents, found, err := entrypoint.FindConfigFile(ctx, dag, src, dangv2.EntrypointConfigFilename)
+	if err != nil {
+		return fmt.Errorf("module %q entrypoint: find %s: %w", src.ModuleName, dangv2.EntrypointConfigFilename, err)
+	}
+	if !found {
+		contents = nil
+	}
+	versions, err := dangv2.ResolveEntrypointVersions(ctx, configPath, contents)
+	if err != nil {
+		return fmt.Errorf("module %q entrypoint: %w", src.ModuleName, err)
+	}
+	src.EngineVersion = versions.Engine
+	src.EntrypointDangVersion = versions.DangString()
+	setDefaultFunctionCaching(src, nil)
+	return nil
 }
 
 // loadConfiguredModuleSource performs the source-independent half of module
@@ -1268,6 +1310,9 @@ func (s *moduleSourceSchema) loadConfiguredModuleSource(ctx context.Context, src
 	if err := eg.Wait(); err != nil {
 		return err
 	}
+	if err := s.resolveEntrypointVersions(ctx, src); err != nil {
+		return err
+	}
 	if err := s.loadEntrypointSources(ctx, src); err != nil {
 		return err
 	}
@@ -1303,7 +1348,7 @@ func (s *moduleSourceSchema) loadEntrypointSources(ctx context.Context, src *cor
 	}
 	declared := false
 	err = entryDir.Self().Mount(ctx, entryDir, func(dir string) error {
-		declared, err = dangv2.DeclaresEntrypointSources(dir)
+		declared, err = dangv2.DeclaresEntrypointSources(dir, src.EntrypointDangVersion)
 		return err
 	})
 	if err != nil {
@@ -2709,18 +2754,19 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 		return nil, err
 	}
 
-	// A manifest version 2 module declares no engine version. It always runs
-	// against the running engine, so there is no declared version to check.
+	// A manifest v2 module's engine version comes from the dang.toml governing
+	// its entrypoint rather than from the manifest, so check it on the source.
+	engineVersion := modCfg.EngineVersion
 	if src.Entrypoint != nil {
-		return modCfg, nil
+		engineVersion = src.EngineVersion
 	}
 
 	// Check version compatibility.
-	if !engine.CheckVersionCompatibility(modCfg.EngineVersion, engine.MinimumModuleVersion) {
-		return nil, fmt.Errorf("module requires dagger %s, but support for that version has been removed", modCfg.EngineVersion)
+	if !engine.CheckVersionCompatibility(engineVersion, engine.MinimumModuleVersion) {
+		return nil, fmt.Errorf("module requires dagger %s, but support for that version has been removed", engineVersion)
 	}
-	if !engine.CheckMaxVersionCompatibility(modCfg.EngineVersion, engine.BaseVersion(engine.Version)) {
-		return nil, fmt.Errorf("module requires dagger %s, but you have %s", modCfg.EngineVersion, engine.Version)
+	if !engine.CheckMaxVersionCompatibility(engineVersion, engine.BaseVersion(engine.Version)) {
+		return nil, fmt.Errorf("module requires dagger %s, but you have %s", engineVersion, engine.Version)
 	}
 
 	return modCfg, nil
