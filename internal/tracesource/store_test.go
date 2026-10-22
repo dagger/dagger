@@ -163,3 +163,29 @@ func TestStoreWholeTraceAndFailure(t *testing.T) {
 	require.ErrorIs(t, s.FetchTrace(t.Context(), "trace", sink), r.failure)
 	require.Equal(t, 2, sink.seals, "failed display imports seal partial spans without hiding the error")
 }
+
+type searchReader struct {
+	archiveReader
+	unsealed bool
+	search   archive.LogSearch
+}
+
+func (r *searchReader) SearchLogs(_ context.Context, _ string, unsealed bool, search archive.LogSearch) (archive.LogSearchResult, error) {
+	r.unsealed, r.search = unsealed, search
+	return archive.LogSearchResult{Matches: []archive.LogMatch{{SpanID: "span"}}}, nil
+}
+
+// TestStoreSearchLogs: a store searches its trace's archive, and only it.
+func TestStoreSearchLogs(t *testing.T) {
+	r := &searchReader{}
+	s := &Store{reader: r, manifest: archive.Manifest{TraceID: "trace"}, unsealed: true}
+	result, err := s.SearchLogs(t.Context(), "trace", archive.LogSearch{Pattern: "boom"})
+	require.NoError(t, err)
+	require.Len(t, result.Matches, 1)
+	require.True(t, r.unsealed)
+	require.Equal(t, "boom", r.search.Pattern)
+	_, err = s.SearchLogs(t.Context(), "other", archive.LogSearch{Pattern: "boom"})
+	require.ErrorContains(t, err, "pinned")
+	_, err = NewStore(&archiveReader{}, archive.Manifest{TraceID: "trace"}).SearchLogs(t.Context(), "trace", archive.LogSearch{Pattern: "boom"})
+	require.ErrorContains(t, err, "does not support log search")
+}
