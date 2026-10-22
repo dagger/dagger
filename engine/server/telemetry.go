@@ -1253,6 +1253,7 @@ var liveTelemetryFeatures = strings.Join([]string{
 	enginetel.LiveFeatureLogQuery,
 	enginetel.LiveFeatureLogPresence,
 	enginetel.LiveFeatureLogSearch,
+	enginetel.LiveFeatureFlush,
 }, ",")
 
 // liveStreamOptions vary a live stream.
