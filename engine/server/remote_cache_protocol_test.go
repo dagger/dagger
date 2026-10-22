@@ -140,6 +140,24 @@ func TestRemoteCacheAdapterAnswersACommittedMergeDespiteAReleaseError(t *testing
 	}, merged)
 }
 
+// A merge refused for stale held rows committed nothing, and is answered
+// with them, so the service resends their records.
+func TestRemoteCacheAdapterAnswersAStaleMerge(t *testing.T) {
+	adapter := newTestRemoteCacheAdapter(t, newGCTestCache(t))
+	adapter.mergeValues = func(context.Context, dagql.CacheID, dagql.ValueBundle) (dagql.MergeReply, error) {
+		return dagql.MergeReply{Generation: 4, EngineTimeUnixNano: 42, Stale: []dagql.TransferOrdinal{2, 5}}, nil
+	}
+	merged, err := adapter.Merge(t.Context(), protocol.Merge{})
+	require.NoError(t, err, "a stale merge is answered merged")
+	require.Equal(t, protocol.Merged{
+		Generation: 4,
+		EngineTime: 42,
+		Values:     []protocol.MergedValue{},
+		Retained:   []protocol.RetainedRoot{},
+		Stale:      []dagql.TransferOrdinal{2, 5},
+	}, merged)
+}
+
 // A merge that changed nothing is answered with its error.
 func TestRemoteCacheAdapterMergeRefused(t *testing.T) {
 	adapter := newTestRemoteCacheAdapter(t, newGCTestCache(t))
