@@ -40,7 +40,7 @@ func (WorkspaceSuite) TestWorkspaceRemoteParentHistoryDoesNotFetch(ctx context.C
 	ahead, err := head.Log(ctx, core.GitRefLogOpts{Base: remote, Limit: 101})
 	require.NoError(t, err)
 	require.Len(t, ahead, 1)
-	parents, err := ahead[0].ParentShas(ctx)
+	parents, err := ahead[0].ParentSHAs(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []string{remoteSHA}, parents)
 	behind, err := remote.Log(ctx, core.GitRefLogOpts{Base: head, Limit: 101})
@@ -320,7 +320,7 @@ func (WorkspaceSuite) TestWorkspaceRemoteLazyHistoryOrdinary(ctx context.Context
 		recent, err := head.Log(ctx, core.GitRefLogOpts{Limit: 2})
 		require.NoError(t, err)
 		require.Equal(t, []string{headSHA, parentSHA}, workspaceRemoteHistorySHAs(ctx, t, recent))
-		parents, err := recent[0].ParentShas(ctx)
+		parents, err := recent[0].ParentSHAs(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{parentSHA}, parents)
 		ahead, err := head.Log(ctx, core.GitRefLogOpts{Base: before, Limit: 101})
@@ -375,7 +375,7 @@ func (WorkspaceSuite) TestWorkspaceRemoteLazyHistoryDemand(ctx context.Context, 
 			head := ws.Git().Head()
 			headSHA, err := head.CommitSHA(ctx)
 			require.NoError(t, err)
-			parents, err := head.TargetCommit().ParentShas(ctx)
+			parents, err := head.TargetCommit().ParentSHAs(ctx)
 			require.NoError(t, err)
 			require.Len(t, parents, 1)
 			localSHAs := []string{headSHA, parents[0]}
@@ -391,7 +391,7 @@ func (WorkspaceSuite) TestWorkspaceRemoteLazyHistoryDemand(ctx context.Context, 
 					sha, err := commit.Sha(ctx)
 					require.NoError(t, err)
 					if sha == mergeSHA {
-						parents, err := commit.ParentShas(ctx)
+						parents, err := commit.ParentSHAs(ctx)
 						require.NoError(t, err)
 						require.Equal(t, strings.Fields(fixture.git(ctx, t, "show", "-s", "--format=%P", "merge")), parents)
 					}

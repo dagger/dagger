@@ -84,7 +84,7 @@ type LLMContentBlockInput struct {
 	Arguments JSON `json:"arguments"`
 
 	// The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds).
-	CallID string `json:"callId,omitempty"`
+	CallID string `json:"callID,omitempty"`
 
 	// Ordered TEXT or media blocks returned by a tool.
 	Content []LLMContentBlockInput `json:"content,omitempty"`
@@ -2259,7 +2259,7 @@ func (r *Artifacts) FilterTypes(types []string, opts ...ArtifactsFilterTypesOpts
 //
 // A module that failed to load keeps its load failure when the module could hold what the address selects, as with every filter (see Artifacts).
 func (r *Artifacts) FilterURI(uri string) *Artifacts {
-	q := r.query.Select("filterUri")
+	q := r.query.Select("filterURI")
 	q = q.Arg("uri", uri)
 
 	return &Artifacts{
@@ -2480,7 +2480,7 @@ func (r *Artifacts) Types(ctx context.Context) ([]TypeDef, error) {
 	return convert(response), nil
 }
 
-// The DAG address that selects this whole selection: filterUri(uri) selects the same set.
+// The DAG address that selects this whole selection: filterURI(uri) selects the same set.
 func (r *Artifacts) URI(ctx context.Context) (string, error) {
 	if r.uri != nil {
 		return *r.uri, nil
@@ -2566,7 +2566,7 @@ func (r *Artifacts) WithArtifacts(artifacts *Artifacts) *Artifacts {
 
 // Remove artifacts selected by a DAG address.
 func (r *Artifacts) WithoutURI(uri string) *Artifacts {
-	q := r.query.Select("withoutUri")
+	q := r.query.Select("withoutURI")
 	q = q.Arg("uri", uri)
 
 	return &Artifacts{
@@ -11191,7 +11191,7 @@ type GitCommit struct {
 	messageBody     *string
 	messageHeadline *string
 	sha             *string
-	shortSha        *string
+	shortSHA        *string
 	treeSHA         *string
 }
 
@@ -11421,8 +11421,8 @@ func (r *GitCommit) MessageHeadline(ctx context.Context) (string, error) {
 }
 
 // Parent commit SHAs.
-func (r *GitCommit) ParentShas(ctx context.Context) ([]string, error) {
-	q := r.query.Select("parentShas")
+func (r *GitCommit) ParentSHAs(ctx context.Context) ([]string, error) {
+	q := r.query.Select("parentSHAs")
 
 	var response []string
 
@@ -11473,11 +11473,11 @@ func (r *GitCommit) Sha(ctx context.Context) (string, error) {
 }
 
 // The abbreviated commit SHA.
-func (r *GitCommit) ShortSha(ctx context.Context) (string, error) {
-	if r.shortSha != nil {
-		return *r.shortSha, nil
+func (r *GitCommit) ShortSHA(ctx context.Context) (string, error) {
+	if r.shortSHA != nil {
+		return *r.shortSHA, nil
 	}
-	q := r.query.Select("shortSha")
+	q := r.query.Select("shortSHA")
 
 	var response string
 
@@ -12643,9 +12643,9 @@ type GitRepositoryWithRemoteOpts struct {
 func (r *GitRepository) WithRemote(name string, url string, opts ...GitRepositoryWithRemoteOpts) *GitRepository {
 	q := r.query.Select("withRemote")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `pushUrl` optional argument
+		// `pushURL` optional argument
 		if !querybuilder.IsZeroValue(opts[i].PushURL) {
-			q = q.Arg("pushUrl", opts[i].PushURL)
+			q = q.Arg("pushURL", opts[i].PushURL)
 		}
 	}
 	q = q.Arg("name", name)
@@ -14077,7 +14077,7 @@ type LLMArtifactsOpts struct {
 //
 // The workspace part is the artifacts of the workspace bound with withWorkspace, as returned by Workspace.artifacts; an LLM with no bound workspace has none. A workspace module with the same name as a module with bound tool objects is omitted: the bound tools shadow it. Unless they are only a plain construction of the module, which has no state of its own: then the workspace module's artifacts are kept instead.
 //
-// Tool arguments that take an address resolve it here: a DAG address to one object, or, for Artifacts and Artifact arguments, a selection filtered like filterUri.
+// Tool arguments that take an address resolve it here: a DAG address to one object, or, for Artifacts and Artifact arguments, a selection filtered like filterURI.
 //
 // Experimental: Agent APIs are likely to change.
 func (r *LLM) Artifacts(opts ...LLMArtifactsOpts) *Artifacts {
@@ -14739,7 +14739,7 @@ type LLMWithToolResultOpts struct {
 }
 
 // Append the result of a tool call to the message history.
-func (r *LLM) WithToolResult(callId string, content string, errored bool, opts ...LLMWithToolResultOpts) *LLM {
+func (r *LLM) WithToolResult(callID string, content string, errored bool, opts ...LLMWithToolResultOpts) *LLM {
 	q := r.query.Select("withToolResult")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `blocks` optional argument
@@ -14747,7 +14747,7 @@ func (r *LLM) WithToolResult(callId string, content string, errored bool, opts .
 			q = q.Arg("blocks", opts[i].Blocks)
 		}
 	}
-	q = q.Arg("callId", callId)
+	q = q.Arg("callID", callID)
 	q = q.Arg("content", content)
 	q = q.Arg("errored", errored)
 
@@ -15030,7 +15030,7 @@ type LLMContentBlock struct {
 	refetchID bool
 
 	arguments *JSON
-	callId    *string
+	callID    *string
 	data      *Bytes
 	errored   *bool
 	id        *ID
@@ -15065,10 +15065,10 @@ func (r *LLMContentBlock) Arguments(ctx context.Context) (JSON, error) {
 
 // The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds).
 func (r *LLMContentBlock) CallID(ctx context.Context) (string, error) {
-	if r.callId != nil {
-		return *r.callId, nil
+	if r.callID != nil {
+		return *r.callID, nil
 	}
-	q := r.query.Select("callId")
+	q := r.query.Select("callID")
 
 	var response string
 
@@ -21584,7 +21584,7 @@ func (r *Workspace) Modules(ctx context.Context) ([]WorkspaceModule, error) {
 
 // Resolve an address in this workspace.
 //
-// A DAG address (dag://<path>) selects exactly one workspace artifact: artifacts.filterUri(value).one(). Its typed loaders use that artifact and never fall back to external resolution.
+// A DAG address (dag://<path>) selects exactly one workspace artifact: artifacts.filterURI(value).one(). Its typed loaders use that artifact and never fall back to external resolution.
 //
 // A value without the dag:// scheme keeps its external meaning, such as a container image reference.
 //
@@ -22287,9 +22287,9 @@ func (r *Workspace) WithSDK(ref string, opts ...WorkspaceWithSDKOpts) *Workspace
 		if !querybuilder.IsZeroValue(opts[i].Here) {
 			q = q.Arg("here", opts[i].Here)
 		}
-		// `asSdkName` optional argument
+		// `asSDKName` optional argument
 		if !querybuilder.IsZeroValue(opts[i].AsSDKName) {
-			q = q.Arg("asSdkName", opts[i].AsSDKName)
+			q = q.Arg("asSDKName", opts[i].AsSDKName)
 		}
 	}
 	q = q.Arg("ref", ref)
