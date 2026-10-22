@@ -3,12 +3,14 @@ package dagql
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/opencontainers/go-digest"
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/engine/wcprof"
 )
 
@@ -211,5 +213,60 @@ func profExportedParts(ctx context.Context, outputs []TransferredOutput, sources
 			size += layer.Descriptor.Size
 		}
 		wcprof.Part(ctx, 0, key, results[output.Ordinal], size)
+	}
+}
+
+// egraphMuProfIdent names the cache's graph lock in lock waits: lookups,
+// publications and an export's walk contend for it.
+const egraphMuProfIdent = "dagql.Cache.egraphMu"
+
+// cacheFact is a fact's name: its span attribute's, without the
+// dagger.io/cache. prefix, so a profile and a trace say it the same way.
+func cacheFact(attr string) string {
+	return strings.TrimPrefix(attr, "dagger.io/cache.")
+}
+
+// profLookupFacts links the facts of a call's cache decision from its op, as
+// its span's cache attributes say them: whether a hit was remote, why a miss
+// found nothing it could use (its lost candidates, remote or not, and its new
+// inputs), and whether its publication adopted a merged entry. A fact about a
+// result names it.
+func profLookupFacts(ctx context.Context, op *wcprof.Op, ev *CacheDecision, res AnyResult) {
+	if op == nil || ev == nil {
+		return
+	}
+	fact := func(attr string, resultID uint64) {
+		wcprof.Fact(ctx, op.ID(), cacheFact(attr), resultID)
+	}
+	switch ev.Outcome {
+	case CacheOutcomeHit:
+		if ev.HitRemote {
+			fact(telemetryattrs.CacheHitRemoteAttr, profResultID(res))
+		}
+	case CacheOutcomeExecuted:
+		for _, f := range []struct {
+			set  bool
+			attr string
+		}{
+			{ev.MissIncompatibleCandidates, telemetryattrs.CacheMissIncompatibleCandidatesAttr},
+			{ev.MissSawExpired, telemetryattrs.CacheMissSawExpiredAttr},
+			{ev.MissUnknownInputIndex >= 0, telemetryattrs.CacheMissUnknownInputAttr},
+			{ev.MissProducerReleased, telemetryattrs.CacheMissProducerReleasedAttr},
+			{ev.MissRequirementsGrew, telemetryattrs.CacheMissRequirementsGrewAttr},
+			{ev.MissSawExpired && ev.MissExpiredRemote, telemetryattrs.CacheMissExpiredRemoteAttr},
+			{ev.MissIncompatibleCandidates && ev.MissIncompatibleRemote, telemetryattrs.CacheMissIncompatibleRemoteAttr},
+			{(ev.MissProducerReleased || ev.MissRequirementsGrew) && ev.HitRemote, telemetryattrs.CacheMissChosenRemoteAttr},
+			{len(ev.MissFreshInputs) > 0, telemetryattrs.CacheMissFreshInputsAttr},
+		} {
+			if f.set {
+				fact(f.attr, 0)
+			}
+		}
+	}
+	if (ev.Outcome == CacheOutcomeExecuted || ev.Outcome == CacheOutcomeJoined) && ev.Adopted {
+		fact(telemetryattrs.CacheAdoptedAttr, profResultID(res))
+		if ev.AdoptedRemote {
+			fact(telemetryattrs.CacheAdoptedRemoteAttr, profResultID(res))
+		}
 	}
 }

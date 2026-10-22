@@ -196,7 +196,7 @@ func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelectio
 	capture.walk = time.Since(walkStart)
 	c.egraphMu.Unlock()
 	if wcprof.Enabled(ctx) {
-		wcprof.RecordWaitAt(ctx, "dagql.Cache.egraphMu", wcprof.WaitReasonLock, lockStart, walkStart)
+		wcprof.RecordWaitAt(ctx, egraphMuProfIdent, wcprof.WaitReasonLock, lockStart, walkStart)
 		wcprof.RecordOpAt(ctx, wcprof.OpKindRemoteCache, "remotecache.export.walk", wcprof.OpOpts{}, walkStart, walkStart.Add(capture.walk), profErrOutcome(err))
 	}
 	if err != nil {

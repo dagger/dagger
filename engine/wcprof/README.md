@@ -60,6 +60,19 @@ Current hook points:
 - `core/services.go`: `service_start` ops with singleflight wait edges.
 - `engine/server/session.go serveQuery`: per-query `session_phase` ops
   (attachables wait, workspace load, module load, schema build, query).
+- `dagql/cache.go getOrInitCall`, lookup facts: `fact` links from the `call`
+  op saying why its lookup decided what it did, named as its span's
+  `dagger.io/cache.*` attributes without the prefix: `hit.remote` (about
+  the result hit), `miss.saw_expired`, `miss.expired_remote`,
+  `miss.incompatible_candidates`, `miss.incompatible_remote`,
+  `miss.chosen_remote`, `miss.producer_released`, `miss.requirements_grew`,
+  `miss.unknown_input`, `miss.fresh_inputs`, `adopted` and
+  `adopted.remote`. They read the call's `CacheDecision`; when no recording
+  span armed one, the profile arms it for the call and disarms it after (the
+  carrier's own fact gathering, such as the new-inputs check, is then the
+  profile's only added cost).
+  Lookups and publications record contended waits for the cache's graph
+  lock as lock waits on `dagql.Cache.egraphMu`, as an export's walk does.
 - `engine/snapshots` layer imports (remote-cache installs and image pulls):
   per layer, an `io` op `snapshot.import.fetch[<source>]` (`download`,
   `builtin` or `present`) and `snapshot.import.apply`, with the layer's

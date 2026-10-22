@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/util/hashutil"
 	set "github.com/hashicorp/go-set/v3"
 	"github.com/opencontainers/go-digest"
@@ -1074,7 +1075,7 @@ func (c *Cache) lookupCacheForRequest(
 		return nil, false, nil
 	}
 
-	c.egraphMu.Lock()
+	wcprof.LockRW(ctx, &c.egraphMu, egraphMuProfIdent)
 	// One collector for this E interval: identity teaching can union classes
 	// or insert a new membership, and both are flushed before the unlock.
 	notify, notifyOwner := c.beginShareNotificationsLocked()
