@@ -1339,6 +1339,25 @@ func TestLookupWithoutWait(t *testing.T) {
 	}
 }
 
+// With the default wait, a lookup whose answer names a merge carrying the
+// value with its parts' bytes asks the service not to wait and expects
+// nothing: no evaluation waits for it.
+func TestDefaultLookupWaitWaitsForNothing(t *testing.T) {
+	require.Zero(t, DefaultLookupWait)
+	merging := protocol.LookedUpMiss{Status: protocol.LookupMerging, Merge: 41, Parts: protocol.LookupPartsComplete}
+	adapter := newFakeAdapter()
+	s, conn := lookupSession(t, adapter, DefaultLookupWait)
+	require.False(t, s.waitsFor(merging))
+	adapter.misses <- lookupMisses(1)
+	sent := answerLookup(t, s, conn, protocol.LookedUp{Misses: []protocol.LookedUpMiss{merging}})
+	require.Zero(t, sent.WaitMillis)
+	select {
+	case got := <-adapter.expected:
+		t.Fatalf("unexpected expectation for %s", got.recipe)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
 // A service that refuses a lookup isn't sent another on the connection, and
 // an engine with lookups off sends none.
 func TestLookupRefused(t *testing.T) {
