@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"time"
 
@@ -464,6 +465,13 @@ func (c *Cache) addHoldingLocked(ctx context.Context, state *remoteCacheState, k
 		entry.holders = make(map[HolderKey]*holding)
 	}
 	entry.holders[key] = h
+	if entry.cacheHolders == nil {
+		entry.cacheHolders = make(map[CacheID]map[uint64]struct{})
+	}
+	if entry.cacheHolders[key.Cache] == nil {
+		entry.cacheHolders[key.Cache] = make(map[uint64]struct{})
+	}
+	entry.cacheHolders[key.Cache][key.Number] = struct{}{}
 	if c.holderEntries == nil {
 		c.holderEntries = make(map[HolderKey]sharedResultID)
 	}
@@ -985,6 +993,12 @@ func (c *Cache) CompactEqClasses(ctx context.Context) (oldSlots, newSlots int, r
 // Requires egraphMu for writing.
 func (c *Cache) removeHoldingLocked(ctx context.Context, state *remoteCacheState, key HolderKey, entry *sharedResult, h *holding, entries []*sharedResult) ([]HolderKey, []*sharedResult, error) {
 	delete(entry.holders, key)
+	if numbers := entry.cacheHolders[key.Cache]; numbers != nil {
+		delete(numbers, key.Number)
+		if len(numbers) == 0 {
+			delete(entry.cacheHolders, key.Cache)
+		}
+	}
 	delete(c.holderEntries, key)
 	state.holdings--
 	var deps []HolderKey
@@ -1362,6 +1376,76 @@ func (c *Cache) RemoteHoldingInfo(key HolderKey) (RemoteHeldEntry, bool) {
 	held := RemoteHeldEntry{Holding: holdingInfo(key, h)}
 	held.Number, held.Stored, held.StoredExpiresAtUnix, held.Recipes = entryFactsLocked(entry)
 	return held, true
+}
+
+// EntryClass is an entry's own facts, as RemoteEntryInfo reports them, and
+// the entries of its classes, itself among them, without any holding.
+type EntryClass struct {
+	Number              uint64
+	Stored              bool
+	StoredExpiresAtUnix int64
+	// Entries are the numbers of the entries in the entry's output
+	// equivalence classes, the entry's own included, sorted: those
+	// EquivalentEntries returns for each of its class digests.
+	Entries []uint64
+}
+
+// EntryClassEntries returns the entry numbered number's facts and its
+// classes' entries, read under one hold. Unlike EntryInfo, it describes no
+// holding, digest or term, so its cost grows with the classes' entries, not
+// with how many engine caches hold them. It reports false when the cache has
+// no such entry.
+func (c *Cache) EntryClassEntries(number uint64) (EntryClass, bool) {
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	entry := c.resultsByID[sharedResultID(number)]
+	if entry == nil {
+		return EntryClass{}, false
+	}
+	var class EntryClass
+	class.Number, class.Stored, class.StoredExpiresAtUnix, _ = entryFactsLocked(entry)
+	entries := map[sharedResultID]struct{}{entry.id: {}}
+	for root := range c.outputEqClassRootsLocked(entry.id) {
+		for id := range c.outputEqClassResults[root] {
+			if c.resultsByID[id] != nil {
+				entries[id] = struct{}{}
+			}
+		}
+	}
+	for id := range entries {
+		class.Entries = append(class.Entries, uint64(id))
+	}
+	slices.Sort(class.Entries)
+	return class, true
+}
+
+// CacheHoldings returns the holdings of one engine cache on the entries
+// numbered numbers, each as RemoteHoldingInfo describes it with its entry's
+// facts, in the order of numbers and then by holding number, read under one
+// hold; an entry's holdings share its Recipes slice. Its cost grows with the
+// entries and that cache's holdings on them, not with other caches'
+// (cacheHolders). An entry the cache doesn't have, or one the engine cache
+// holds nothing on, is skipped.
+func (c *Cache) CacheHoldings(cache CacheID, numbers []uint64) []RemoteHeldEntry {
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	var out []RemoteHeldEntry
+	for _, number := range numbers {
+		entry := c.resultsByID[sharedResultID(number)]
+		if entry == nil || len(entry.cacheHolders[cache]) == 0 {
+			continue
+		}
+		var held RemoteHeldEntry
+		held.Number, held.Stored, held.StoredExpiresAtUnix, held.Recipes = entryFactsLocked(entry)
+		for _, n := range slices.Sorted(maps.Keys(entry.cacheHolders[cache])) {
+			key := HolderKey{Cache: cache, Number: n}
+			if h := entry.holders[key]; h != nil {
+				held.Holding = holdingInfo(key, h)
+				out = append(out, held)
+			}
+		}
+	}
+	return out
 }
 
 // entryFactsLocked returns entry's number, whether it stores a record and
