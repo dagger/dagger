@@ -1455,3 +1455,33 @@ func TestLookupMergeOutcomes(t *testing.T) {
 		require.Equal(t, tc.want, tc.got.wait.Outcome(), "merge for %s", tc.got.recipe)
 	}
 }
+
+// A merge read from the connection reaches the adapter whole, with its
+// envelope's ID, whether the session decodes its body in one pass
+// (_EXPERIMENTAL_DAGGER_REMOTE_CACHE_DECODE_ONCE) or not.
+func TestMergeReadFromTheConnection(t *testing.T) {
+	for _, once := range []bool{true, false} {
+		t.Run(fmt.Sprint("once=", once), func(t *testing.T) {
+			adapter := newFakeAdapter()
+			got := make(chan protocol.Merge, 1)
+			adapter.merge = func(_ context.Context, req protocol.Merge) (protocol.Merged, error) {
+				got <- req
+				return protocol.Merged{Generation: 3}, nil
+			}
+			conn := newServiceConn()
+			cfg := newSettings(Config{})
+			require.True(t, cfg.decodeOnce, "on by default")
+			cfg.decodeOnce = once
+			s := newSession(t.Context(), conn, adapter, cfg)
+			t.Cleanup(s.close)
+			s.go_(s.read)
+			sent := protocol.Merge{Bundle: *testBundle(), Lookup: 5}
+			conn.send(t, request(t, 21, protocol.TypeMerge, sent))
+			require.Equal(t, sent, within(t, got))
+			require.Equal(t, uint64(21), within(t, adapter.mergeIDs))
+			reply := conn.next(t)
+			require.Equal(t, protocol.TypeMerged, reply.Type)
+			require.Equal(t, uint64(21), reply.Re)
+		})
+	}
+}
