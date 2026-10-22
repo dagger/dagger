@@ -2196,6 +2196,17 @@ type Cache struct {
 	testBeforeTransferCommit func()
 	testAfterTransferCommit  func()
 
+	// testStoredSizeMeasure runs before StoredSizes measures each value,
+	// testStoredSizesHold after each hold of egraphMu it takes, with the
+	// hold's length, and testStoredTransferNormalized after a build
+	// normalizes a record and before it keeps it.
+	testStoredSizeMeasure        func()
+	testStoredSizesHold          func(time.Duration)
+	testStoredTransferNormalized func()
+
+	// storedSizeEncodes counts StoredSizes' first measurements of values.
+	storedSizeEncodes atomic.Uint64
+
 	offerOwners      map[offerOwnerID]*offerOwner
 	nextOfferOwnerID offerOwnerID
 	// callsMu protects in-flight call bookkeeping and arbitrary in-memory call maps.
