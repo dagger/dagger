@@ -242,13 +242,5 @@ module.exports = {
         },
       ],
     },
-
-    // ========================================
-    // SELF-HOSTING
-    // ========================================
-    // Docusaurus renders a category with no items as a plain link, so this is a
-    // doc entry until the section has pages. custom.scss styles a level-1 link
-    // as a section label, the same as a level-1 category.
-    { type: "doc", id: "self-hosting/index", label: "Self-hosting" },
   ],
 };
