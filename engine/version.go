@@ -111,7 +111,7 @@ func cleanVersion(v string) string {
 	return v
 }
 
-// Compatibility gating compares *base* versions — prerelease and build
+// Minimum-version gating compares *base* versions — prerelease and build
 // metadata stripped (see BaseVersion) — NOT strict semver precedence.
 //
 // Why: dev builds carry a prerelease suffix (e.g. "v0.2.0-dev-<commit>"). Under
@@ -136,8 +136,17 @@ func CheckVersionCompatibility(version string, minVersion string) bool {
 	return semver.Compare(BaseVersion(version), BaseVersion(minVersion)) >= 0
 }
 
-func CheckMaxVersionCompatibility(version string, maxVersion string) bool {
-	return semver.Compare(BaseVersion(version), BaseVersion(maxVersion)) <= 0
+// CheckMaxAPIViewCompatibility reports whether an engine at maxVersion serves
+// the API a module declaring version asks for: whether the module's API view
+// (APIViewVersion) is not past the engine's.
+//
+// It compares views, not base versions, so prereleases from
+// PrereleaseViewsVersion on are ordered: a v1.0.0-beta.21 engine refuses a
+// module declaring v1.0.0-beta.22, or v1.0.0, whose API it doesn't have. Dev
+// builds still share their release's view, so two dev builds of a version
+// accept each other's modules.
+func CheckMaxAPIViewCompatibility(version string, maxVersion string) bool {
+	return semver.Compare(APIViewVersion(version), APIViewVersion(maxVersion)) <= 0
 }
 
 func NormalizeVersion(version string) string {
@@ -178,15 +187,15 @@ const basePrereleaseView = "v1.0.0-beta.20"
 // GitCommit.shortSHA). Gate on it with a view filter,
 // View(AfterVersion(engine.IdentifierCasingVersion)) and
 // View(BeforeVersion(engine.IdentifierCasingVersion)), in a resolver with
-// core.Supports(ctx, engine.IdentifierCasingVersion), and for a module's
-// declared engineVersion outside a call with APIVersionAtLeast.
+// core.Supports(ctx, engine.IdentifierCasingVersion), and for a declared
+// version outside a call with APIVersionAtLeast.
 //
 // It must not be older than PrereleaseViewsVersion: earlier prereleases share
 // one view, which a gate cannot split.
 const IdentifierCasingVersion = "v1.0.0-beta.21"
 
-// APIViewVersion returns the API view for a client that declares version.
-// Modules get theirs from ModuleAPIViewVersion.
+// APIViewVersion returns the API view for a client or module that declares
+// version.
 //
 // From PrereleaseViewsVersion on, a view keeps the declared prerelease, so a
 // view gate such as AfterVersion("v1.0.0-beta.21") tells v1.0.0-beta.21 and
@@ -217,47 +226,13 @@ func APIViewVersion(version string) string {
 	}
 }
 
-// APIVersionAtLeast reports whether a module that declares engineVersion
+// APIVersionAtLeast reports whether a client or module that declares
 // version gets the API of minVersion or later: whether its API view
-// (ModuleAPIViewVersion) is at or past minVersion, comparing prereleases. It
-// is a view gate, AfterVersion(minVersion), for a module's declared version
-// where no call carries the view.
+// (APIViewVersion) is at or past minVersion, comparing prereleases. It is a
+// view gate, AfterVersion(minVersion), for a declared version that is not
+// carried by a call, such as a module's engineVersion.
 func APIVersionAtLeast(version, minVersion string) bool {
-	return semver.Compare(ModuleAPIViewVersion(version), minVersion) >= 0
-}
-
-// ModuleAPIViewVersion returns the API view for a module that declares
-// engineVersion version. It is APIViewVersion, with one exception while this
-// engine is a v1.0.0 prerelease or dev build: a module that declares exactly
-// v1.0.0 gets basePrereleaseView, the view of v1.0.0 prereleases before
-// PrereleaseViewsVersion, rather than the release's view.
-//
-// Released modules declared v1.0.0 before views kept prereleases, when it got
-// the same view as every beta (e.g. every sdk-helpers tag, which all SDKs
-// lock, and go-sdk). Served the release's view by a beta engine, they would
-// see the API past every prerelease gate, renamed under them, and locked
-// versions can't be fixed. The release's own engine serves them its view, so
-// the break comes with v1.0.0, not with a beta. Client versions are not
-// clamped: a client's version is the dagger CLI's that started its session
-// (or the engine's, for a nested client), not a pin locked into a released
-// module.
-func ModuleAPIViewVersion(version string) string {
-	view := APIViewVersion(version)
-	if view != "v1.0.0" || !isV1Prerelease(Version) {
-		return view
-	}
-	declared := NormalizeVersion(version)
-	if strings.TrimSuffix(declared, semver.Build(declared)) != "v1.0.0" {
-		// a dev build of v1.0.0 is past the cut
-		return view
-	}
-	return basePrereleaseView
-}
-
-// isV1Prerelease reports whether version is a prerelease or dev build of
-// v1.0.0.
-func isV1Prerelease(version string) bool {
-	return BaseVersion(version) == "v1.0.0" && semver.Prerelease(version) != ""
+	return semver.Compare(APIViewVersion(version), minVersion) >= 0
 }
 
 func BaseVersion(version string) string {

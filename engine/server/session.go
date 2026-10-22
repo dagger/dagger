@@ -1609,7 +1609,7 @@ func (srv *Server) initializeClientRuntime(
 
 		if !client.clientMetadata.ClientVersionDeclared {
 			engineVersion := client.mod.Self().Source.Value.Self().EngineVersion
-			coreView = call.View(engine.ModuleAPIViewVersion(engineVersion))
+			coreView = call.View(engine.APIViewVersion(engineVersion))
 			client.dag.View = coreView
 			coreMod = coreSchemaBase.CoreMod(coreView)
 		}
