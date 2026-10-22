@@ -1135,8 +1135,11 @@ func (s *workspaceSchema) resolveRootfsFromDirectory(
 // contentKeyedFilteredRead identifies a filtered read by the files it selects.
 // Otherwise its identity is its recipe over the workspace root, and a Git
 // root's identity is its commit, so every commit would give every read, and
-// all work on it, a new key even where the selected files are unchanged. Host
-// reads already carry the content digest of their sync.
+// all work on it, a new key even where the selected files are unchanged. Reads
+// from an unedited host workspace are host.directory syncs, which already carry
+// the content digest of what they synced. Reads from a host workspace with
+// overlay edits, under a mounted path or from a rootless local workspace read
+// from a Directory root, and come through here.
 //
 // A filtered read is a copy into a fresh directory, so it holds nothing but the
 // selected files and its content hash covers everything it can reach. A
