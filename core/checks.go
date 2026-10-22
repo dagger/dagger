@@ -50,33 +50,12 @@ func (c *Check) Clone() *Check {
 	return &copy
 }
 
-func (c *Check) Run(ctx context.Context) (_ *Check, rerr error) {
+func (c *Check) Run(ctx context.Context) (*Check, error) {
 	c = c.Clone()
 	if c.Completed {
 		return c, nil
 	}
 	var failure error
-	spanCtx := ctx
-	if c.RemoteArtifact.Self() == nil {
-		name := c.Address
-		if name == "" {
-			name = c.Function
-		}
-		if name == "" {
-			name = "generator stale"
-		}
-		var span trace.Span
-		ctx, span = Tracer(ctx).Start(ctx, name, trace.WithAttributes(
-			attribute.Bool(telemetry.UIRollUpLogsAttr, true),
-			attribute.Bool(telemetry.UIRollUpSpansAttr, true),
-			attribute.String(telemetry.CheckNameAttr, name),
-		))
-		spanCtx = ctx
-		defer func() {
-			span.SetAttributes(attribute.Bool(telemetry.CheckPassedAttr, failure == nil))
-			telemetry.EndWithCause(span, &failure)
-		}()
-	}
 	switch {
 	case c.RemoteArtifact.Self() != nil:
 		failure = c.runRemote(ctx)
@@ -98,9 +77,9 @@ func (c *Check) Run(ctx context.Context) (_ *Check, rerr error) {
 				// Stale: running the generator is what fixes this check. Not
 				// when the generator itself failed, which it would just repeat.
 				if uri, err := c.Generator.Self().Artifact.URI(ArtifactURIOpts{DimensionKeys: true}); err == nil {
-					trace.SpanFromContext(spanCtx).SetAttributes(attribute.String(telemetryattrs.CheckGeneratorAttr, uri))
+					trace.SpanFromContext(ctx).SetAttributes(attribute.String(telemetryattrs.CheckGeneratorAttr, uri))
 				}
-				logStalePatch(ctx, spanCtx, srv, changes)
+				logStalePatch(ctx, srv, changes)
 				failure = fmt.Errorf("generated files are not up to date")
 			}
 		}
@@ -121,7 +100,7 @@ func (c *Check) Run(ctx context.Context) (_ *Check, rerr error) {
 // logStalePatch prints the changes a stale generator would make on the
 // check's span: the patch itself, tagged so frontends highlight it like a
 // tool's patch, or a diff-stat summary when the patch is too large to show.
-func logStalePatch(ctx, spanCtx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) {
+func logStalePatch(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) {
 	preview := summarizePatch(ctx, srv, changes, stalePatchLimits)
 	if preview == "" || ctx.Err() != nil {
 		// Canceled (e.g. by fail-fast): the preview is at best a warning about
@@ -135,7 +114,7 @@ func logStalePatch(ctx, spanCtx context.Context, srv *dagql.Server, changes dagq
 	if contentType := toolResultContentType(preview); contentType != "" {
 		attrs = append(attrs, log.String(telemetry.ContentTypeAttr, contentType))
 	}
-	stdio := telemetry.SpanStdio(spanCtx, InstrumentationLibrary, attrs...)
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, attrs...)
 	defer stdio.Close()
 	fmt.Fprint(stdio.Stdout, preview)
 }

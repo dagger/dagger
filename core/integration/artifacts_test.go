@@ -1548,39 +1548,15 @@ func (ArtifactsSuite) TestLazyValueFailures(ctx context.Context, t *testctx.T) {
 		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"./probe\"\nmain = true\n").
 		WithNewFile("probe/dagger-module.toml", "name = \"probe\"\nengineVersion = \"v1.0.0\"\n[runtime]\nsource = \"dang\"\n").
 		WithNewFile("probe/main.dang", `type Probe {
- pub brokenDirectory: Directory! { container.from("alpine:3.22").withExec(["sh", "-c", "exit 42"]).rootfs }
- pub brokenFile: File! { container.from("alpine:3.22").withExec(["sh", "-c", "exit 43"]).file("/missing") }
- pub good: Directory! { directory.withNewFile("ok", "ok") }
+ pub brokenDirectory: Void @check { container.from("alpine:3.22").withExec(["sh", "-c", "exit 42"]).rootfs.sync; null }
+ pub brokenFile: Void @check { container.from("alpine:3.22").withExec(["sh", "-c", "exit 43"]).file("/missing").sync; null }
+ pub good: Void @check { directory.withNewFile("ok", "ok").sync; null }
 }`)
-	out, err := base.With(daggerQuery(`{
- currentWorkspace { artifacts { filterTypes(types: ["Directory", "File"]) {
-  values { artifact { uri } error { message } value { ... on Directory { entries } ... on File { contents } } }
- } } }
-}`)).Stdout(ctx)
-	require.NoError(t, err)
-	var response struct {
-		CurrentWorkspace struct {
-			Artifacts struct {
-				FilterTypes struct {
-					Values []struct {
-						Artifact struct{ URI string }
-						Error    *struct{ Message string }
-						Value    json.RawMessage
-					}
-				}
-			}
-		}
-	}
-	require.NoError(t, json.Unmarshal([]byte(out), &response))
-	results := response.CurrentWorkspace.Artifacts.FilterTypes.Values
-	require.Len(t, results, 3)
-	for i, code := range []string{"42", "43"} {
-		require.NotNil(t, results[i].Error)
-		require.Contains(t, results[i].Error.Message, code)
-		require.JSONEq(t, "null", string(results[i].Value))
-	}
-	require.Nil(t, results[2].Error)
-	require.JSONEq(t, `{ "entries": ["ok"] }`, string(results[2].Value))
+	out, err := base.With(daggerExecFail("--progress=report", "check")).CombinedOutput(ctx)
+	require.NoError(t, err, out)
+	require.Contains(t, out, "exit code: 42")
+	require.Contains(t, out, "exit code: 43")
+	require.Contains(t, out, "1 passed")
 }
 
 func (ArtifactsSuite) TestCheckScaleOut(ctx context.Context, t *testctx.T) {
