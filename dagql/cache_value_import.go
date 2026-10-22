@@ -2,7 +2,9 @@ package dagql
 
 import (
 	"fmt"
+	"reflect"
 	"slices"
+	"strings"
 
 	"github.com/opencontainers/go-digest"
 )
@@ -41,6 +43,13 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 		if row.SenderNumber == 0 {
 			return nil, fmt.Errorf("row %d: no sender number", id)
 		}
+		if row.Held != "" {
+			if err := validateHeldRow(row); err != nil {
+				return nil, fmt.Errorf("row %d: %w", id, err)
+			}
+			rows[id] = row
+			continue
+		}
 		validate := validateTransferRecord
 		if shapeOnly {
 			validate = validateTransferRecordShape
@@ -60,7 +69,7 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 	// an output names.
 	addresses := map[uint64]map[string]CapturedCodecOutput{}
 	for id, row := range rows {
-		if shapeOnly && !named[id] && len(row.Record.Envelope.PendingOffers) == 0 {
+		if row.Held != "" || shapeOnly && !named[id] && len(row.Record.Envelope.PendingOffers) == 0 {
 			continue
 		}
 		outputs, err := mapTransferredOutputs(row.Record)
@@ -111,8 +120,10 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 	described := map[string]bool{}
 	for _, output := range bundle.Outputs {
 		id := uint64(output.Ordinal)
-		if _, ok := rows[id]; !ok {
+		if row, ok := rows[id]; !ok {
 			return nil, fmt.Errorf("output names missing ordinal %d", id)
+		} else if row.Held != "" {
+			return nil, fmt.Errorf("output names held row %d", id)
 		}
 		key, err := partAddressKey(output.Address)
 		if err != nil {
@@ -213,6 +224,19 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 		return nil, fmt.Errorf("bundle contains rows outside its root closure")
 	}
 	return order, nil
+}
+
+// validateHeldRow checks a held row: a recipe digest, in its algorithm:encoded
+// form (recipes are xxh3, which go-digest doesn't validate), and nothing a
+// record would carry but its ordinal.
+func validateHeldRow(row TransferredValue) error {
+	if algorithm, encoded, ok := strings.Cut(string(row.Held), ":"); !ok || algorithm == "" || encoded == "" {
+		return fmt.Errorf("held recipe %q is not a digest", row.Held)
+	}
+	if len(row.DependencyIDs) > 0 || row.Record.Call != nil || len(row.Record.SnapshotLinks) > 0 || !reflect.ValueOf(row.Record.Envelope).IsZero() {
+		return fmt.Errorf("held row carries a record")
+	}
+	return nil
 }
 
 type transferIdentityPlan struct {
