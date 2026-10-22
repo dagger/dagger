@@ -637,6 +637,8 @@ type PartDemandState struct {
 	renewals map[renewalEpisodeKey]*renewalEpisode
 	// progress is what the progress rule has recorded for this demand.
 	progress map[partProgressKey]partProgressSeen
+	// started is when the demand began; an install logs its wait from here.
+	started time.Time
 }
 
 func partContentKey(id sharedResultID, address PersistedPartAddress, offer *PersistedPartOffer, revision uint64) string {

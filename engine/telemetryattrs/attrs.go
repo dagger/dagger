@@ -738,8 +738,49 @@ const (
 	CacheOfferBytesAttr = "dagger.io/cache.offer.bytes"
 	// CacheOfferDurationAttr is the decimal-string count of nanoseconds from
 	// the start of the part's import to its install, over which the download
-	// and the layers' application interleave.
+	// and the layers' application alternate, layer by layer.
 	CacheOfferDurationAttr = "dagger.io/cache.offer.duration_ns"
+	// CacheOfferWaitedAttr is the decimal-string count of nanoseconds from the
+	// start of the part's demand to the start of its import: selecting a
+	// source, the demand's other work, and waits for other writers.
+	CacheOfferWaitedAttr = "dagger.io/cache.offer.waited_ns"
+	// CacheOfferLayersAttr is the decimal-string count of layers in the
+	// offered chain, downloaded or not.
+	CacheOfferLayersAttr = "dagger.io/cache.offer.layers"
+	// CacheOfferRequestsAttr is the decimal-string count of HTTP requests
+	// made for the part's content, reopened and renewed ones included.
+	CacheOfferRequestsAttr = "dagger.io/cache.offer.requests"
+	// CacheOfferTTFBAttr is the decimal-string count of nanoseconds, summed
+	// over those requests, from sending each to its response headers.
+	CacheOfferTTFBAttr = "dagger.io/cache.offer.ttfb_ns"
+	// CacheOfferConnsNewAttr is the decimal-string count of those requests
+	// that opened a new connection rather than reusing an idle one.
+	CacheOfferConnsNewAttr = "dagger.io/cache.offer.conns_new"
+	// CacheOfferRenewAttr is the decimal-string count of nanoseconds spent
+	// getting fresh content addresses from the service, waits on another
+	// source's renewal included.
+	CacheOfferRenewAttr = "dagger.io/cache.offer.renew_ns"
+	// CacheOfferReadWaitAttr is the decimal-string count of nanoseconds spent
+	// blocked reading the part's content, CacheOfferTTFBAttr included.
+	CacheOfferReadWaitAttr = "dagger.io/cache.offer.read_wait_ns"
+	// CacheOfferLayerWaitAttr is the decimal-string count of nanoseconds spent
+	// waiting for another import of the same layer onto the same parent.
+	CacheOfferLayerWaitAttr = "dagger.io/cache.offer.layer_wait_ns"
+	// CacheOfferFetchAttr is the decimal-string count of nanoseconds spent
+	// getting the blobs into the local content store: CacheOfferReadWaitAttr,
+	// and writing, verifying and committing them.
+	CacheOfferFetchAttr = "dagger.io/cache.offer.fetch_ns"
+	// CacheOfferApplyAttr is the decimal-string count of nanoseconds spent
+	// applying the fetched blobs to their snapshots.
+	CacheOfferApplyAttr = "dagger.io/cache.offer.apply_ns"
+	// CacheOfferImportAttr is the decimal-string count of nanoseconds the
+	// chain's import took: CacheOfferLayerWaitAttr, CacheOfferFetchAttr,
+	// CacheOfferApplyAttr and the snapshots' bookkeeping.
+	CacheOfferImportAttr = "dagger.io/cache.offer.import_ns"
+	// CacheOfferCommitAttr is the decimal-string count of nanoseconds from
+	// the end of the import to the install: preparing and committing the
+	// part, and retrying a refused commit.
+	CacheOfferCommitAttr = "dagger.io/cache.offer.commit_ns"
 
 	// CacheSessionSpansAttr is the decimal-string count of the spans of one
 	// session that carry CacheResultIDAttr, stamped on the session's
