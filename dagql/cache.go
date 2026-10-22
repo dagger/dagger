@@ -207,13 +207,7 @@ type persistedEdge struct {
 // index named it, so a restart restores one current entry per recipe. Older
 // stores cannot tell a recipe's current entry from others of its recipe and
 // are wiped on import.
-//
-// 23: API views keep prereleases from v1.0.0-beta.21 on
-// (engine.APIViewVersion). Older stores recorded the view "v1.0.0" for every
-// v1.0.0 prerelease caller, which now names the release's view, past every
-// prerelease gate: their results and IDs would be read against API their
-// callers never had.
-const cachePersistenceSchemaVersion = "23"
+const cachePersistenceSchemaVersion = "22"
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 var ErrCacheSessionReleased = errors.New("cache session released")
