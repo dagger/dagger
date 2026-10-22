@@ -13,6 +13,7 @@ import (
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/remotecache"
@@ -25,9 +26,24 @@ import (
 
 var _ remotecache.Adapter = (*RemoteCacheAdapter)(nil)
 
-// exportRefConfig is how exported chains' layers are compressed: the engine's
-// default, as for image exports.
-var exportRefConfig = config.RefConfig{Compression: compression.New(compression.Default)}
+// exportLayerWorkers is how many of an export's missing layer blobs build at
+// once. Layers build independently: each is the diff of its snapshot against
+// its parent's, compressed.
+const exportLayerWorkers = 4
+
+// exportRefConfig is how exported chains' layers are compressed, with the
+// engine's default as for image exports, and how many build at once: up to
+// exportLayerWorkers per export, and across all exports no more than
+// remotecache.ExportsInFlight serial exports built. Only building a blob
+// takes the gate, so it bounds the engine's compression streams and layer
+// reads.
+var exportRefConfig = config.RefConfig{
+	Compression: compression.New(compression.Default),
+	Builds: config.LayerBuilds{
+		Workers: exportLayerWorkers,
+		Gate:    semaphore.NewWeighted(max(exportLayerWorkers, remotecache.ExportsInFlight)),
+	},
+}
 
 // CacheIdentity returns the engine cache's identity and generation, which the
 // remote cache integration says in hello.
@@ -320,6 +336,7 @@ func exportLogAttrs(req protocol.Export, skipped []protocol.SkippedRoot, values 
 		"blob_bytes", stats.BlobBytes,
 		"diff_time", stats.DiffTime,
 		"lock_wait", stats.LockWait,
+		"build_wait", stats.BuildWait,
 		"layers_merged", stats.LayersMerged,
 		"merged_raw_bytes", stats.MergedRawBytes,
 		"merged_blob_bytes", stats.MergedBlobBytes,
