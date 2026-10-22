@@ -575,6 +575,16 @@ var systemRootfsUnmountOps = rootfsUnmountOps{
 	unmountSyscall:   unix.Unmount,
 }
 
+// removeMountTempDir removes a temporary directory that served as a mount
+// target. It deliberately does not recurse: the directory is only empty when
+// the earlier unmount cleanup succeeded, so a plain os.Remove is enough. If
+// the unmount failed (e.g. EBUSY because a process still uses the mount), a
+// recursive remove would walk into the still-live mount and delete its
+// contents; os.Remove fails with ENOTEMPTY instead and leaves them untouched.
+func removeMountTempDir(path string) error {
+	return os.Remove(path)
+}
+
 // unmountFromRootfs undoes a mount the executor made into a container rootfs.
 // A recursive bind is first detached with MNT_DETACH, which takes its whole
 // subtree in one syscall, as moby's mount.RecursiveUnmount does.
@@ -599,7 +609,7 @@ func (c *Client) setupRootfs(ctx context.Context, state *execState) error {
 		return fmt.Errorf("create rootfs temp dir: %w", err)
 	}
 	state.cleanups.Add("remove rootfs temp dir", func() error {
-		return os.RemoveAll(state.rootfsPath)
+		return removeMountTempDir(state.rootfsPath)
 	})
 	state.spec.Root.Path = state.rootfsPath
 	if state.rootMount.Selector != "" {
@@ -682,7 +692,7 @@ func (c *Client) setupRootfs(ctx context.Context, state *execState) error {
 				return fmt.Errorf("create meta mount temp dir: %w", err)
 			}
 			state.cleanups.Add("remove meta mount temp dir", func() error {
-				return os.RemoveAll(mntPath)
+				return removeMountTempDir(mntPath)
 			})
 			mnts := []mount.Mount{{
 				Type:    metaMount.Type,

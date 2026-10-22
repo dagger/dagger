@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/containerd/containerd/v2/core/mount"
@@ -282,4 +283,49 @@ func TestUnmountFromRootfs(t *testing.T) {
 			require.Equal(t, tc.want, calls)
 		})
 	}
+}
+
+// The temp dir behind a mount target must not be removed recursively: if the
+// unmount cleanup failed, the mount is still live and a recursive remove
+// would delete its contents through the mount point.
+func TestRemoveMountTempDir(t *testing.T) {
+	t.Parallel()
+
+	t.Run("empty dir is removed", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		require.NoError(t, removeMountTempDir(dir))
+		_, err := os.Stat(dir)
+		require.ErrorIs(t, err, os.ErrNotExist)
+	})
+
+	t.Run("non-empty dir survives", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		sentinel := filepath.Join(dir, "sentinel")
+		require.NoError(t, os.WriteFile(sentinel, []byte("x"), 0o644))
+		require.Error(t, removeMountTempDir(dir))
+		require.FileExists(t, sentinel)
+	})
+}
+
+// setupRootfs registers the temp-dir removal before the unmount, so Run
+// executes the unmount first; a failed unmount must not be followed by a
+// recursive delete through the still-mounted rootfs.
+func TestRootfsCleanupAfterFailedUnmount(t *testing.T) {
+	t.Parallel()
+
+	rootfsPath := t.TempDir()
+	sentinel := filepath.Join(rootfsPath, "still-mounted")
+	require.NoError(t, os.WriteFile(sentinel, []byte("x"), 0o644))
+
+	var c cleanups.Cleanups
+	// same registration order as setupRootfs
+	c.Add("remove rootfs temp dir", func() error { return removeMountTempDir(rootfsPath) })
+	c.Add("unmount rootfs", func() error { return unix.EBUSY })
+
+	err := c.Run()
+	require.ErrorIs(t, err, unix.EBUSY)
+	require.FileExists(t, sentinel)
+	require.DirExists(t, rootfsPath)
 }
