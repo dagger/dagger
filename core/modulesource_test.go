@@ -377,3 +377,24 @@ func TestLocalContextFilePath(t *testing.T) {
 	_, err := fs.ReadFile(t.Context(), "dagger-module.toml")
 	require.ErrorIs(t, err, ErrForeignModuleContext)
 }
+
+func TestModuleSourceOriginSymbolic(t *testing.T) {
+	t.Parallel()
+
+	root := func(s string) *string { return &s }
+	for _, tc := range []struct {
+		root    *string
+		subpath string
+		want    string
+	}{
+		{root("github.com/org/repo"), ".dagger/modules/go", "github.com/org/repo/.dagger/modules/go"},
+		{root("github.com/org/repo"), ".", "github.com/org/repo"},
+		{root(""), ".dagger/modules/go", ".dagger/modules/go"},
+		{root(""), ".", "."},
+		{nil, ".dagger/modules/go", ""},
+	} {
+		src := &ModuleSource{Kind: ModuleSourceKindDir, SourceRootSubpath: tc.subpath, DirSrc: &DirModuleSource{OriginRoot: tc.root}}
+		require.Equal(t, tc.want, src.OriginSymbolic(), tc)
+	}
+	require.Empty(t, (&ModuleSource{Kind: ModuleSourceKindGit, Git: &GitModuleSource{Symbolic: "github.com/org/repo"}}).OriginSymbolic())
+}

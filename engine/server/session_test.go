@@ -880,6 +880,7 @@ func TestClientMetadataBootstrapDeepCloneAndScopeSnapshot(t *testing.T) {
 		Workspace:             &workspace,
 		WorkspaceEnv:          &workspaceEnv,
 		UseRecipeIDsByDefault: true,
+		SDKEntrypoint:         true,
 	}
 	client := &clientRuntime{clientRecord: &clientRecord{clientID: input.ClientID, accepting: true}}
 	sess := &daggerSession{}
@@ -902,6 +903,7 @@ func TestClientMetadataBootstrapDeepCloneAndScopeSnapshot(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "main", lookupAgain.Labels["branch"])
 	require.Equal(t, "github.com/acme/extra@v1", lookupAgain.ExtraModules[0].Ref)
+	require.True(t, lookupAgain.SDKEntrypoint)
 
 	lease := engine.NewClientLifecycleLease(engine.ClientLeaseRequest, "test", func() {}, nil)
 	scope, err := engine.NewClientScope(client.clientMetadata, lease)
@@ -916,6 +918,7 @@ func TestClientMetadataBootstrapDeepCloneAndScopeSnapshot(t *testing.T) {
 	require.Equal(t, "github.com/acme/workspace@main", *first.Workspace)
 	require.Equal(t, "ci", *first.WorkspaceEnv)
 	require.True(t, first.UseRecipeIDsByDefault)
+	require.True(t, first.SDKEntrypoint)
 
 	first.Labels["branch"] = "lookup-mutated"
 	first.ExtraModules[0].Ref = "lookup-mutated"
@@ -5331,6 +5334,7 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 			WorkspaceEnv:          stringPtr("parent-ci"),
 			WorkspaceModuleScope:  "parent-scope",
 			UseRecipeIDsByDefault: true,
+			SDKEntrypoint:         true,
 		}
 	}
 
@@ -5356,6 +5360,7 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 		require.Nil(t, md.WorkspaceEnv)
 		require.Empty(t, md.WorkspaceModuleScope)
 		require.True(t, md.UseRecipeIDsByDefault)
+		require.True(t, md.SDKEntrypoint)
 
 		base.AllowedLLMModules[0] = "mutated"
 		require.Equal(t, []string{"parent"}, md.AllowedLLMModules)
@@ -5413,6 +5418,7 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 			Main: true,
 		}}, md.ExtraModules)
 		require.True(t, md.UseRecipeIDsByDefault)
+		require.True(t, md.SDKEntrypoint)
 	})
 
 	t.Run("does not accept internal recipe ID default from forwarded metadata", func(t *testing.T) {
@@ -5420,14 +5426,17 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 
 		base := baseMetadata()
 		base.UseRecipeIDsByDefault = false
+		base.SDKEntrypoint = false
 		forwarded := engine.ClientMetadata{
 			ClientVersion:         "v-test",
 			UseRecipeIDsByDefault: true,
+			SDKEntrypoint:         true,
 		}
 
 		md := nestedClientMetadataForRequest(forwarded.AppendToHTTPHeaders(http.Header{}), base)
 
 		require.False(t, md.UseRecipeIDsByDefault)
+		require.False(t, md.SDKEntrypoint)
 	})
 }
 

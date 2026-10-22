@@ -48,6 +48,7 @@ func EntrypointModuleTypes(
 	if err != nil {
 		return inst, err
 	}
+	nestedClientMetadata.SDKEntrypoint = true
 
 	var contract entrypointContract
 	var typeDefs dagql.ObjectResultArray[*core.TypeDef]
@@ -155,6 +156,7 @@ func (r *entrypointRuntime) Call(
 	if err != nil {
 		return err
 	}
+	nestedClientMetadata.SDKEntrypoint = true
 
 	var contract entrypointContract
 	var resultJSON []byte
