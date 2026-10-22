@@ -219,6 +219,9 @@ const (
 	// WaitReasonDependency: a reported task waited for one of its
 	// dependencies' results (zero-length when it was already done).
 	WaitReasonDependency
+	// WaitReasonAttach: a publication blocked on a result's dependency
+	// attachment, which another publication or a merge holds open.
+	WaitReasonAttach
 )
 
 var waitReasonNames = map[WaitReason]string{
@@ -230,6 +233,7 @@ var waitReasonNames = map[WaitReason]string{
 	WaitReasonExec:         "exec",
 	WaitReasonIO:           "io",
 	WaitReasonDependency:   "dependency",
+	WaitReasonAttach:       "attach",
 }
 
 func (r WaitReason) String() string {

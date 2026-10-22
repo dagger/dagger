@@ -9,6 +9,8 @@ import (
 	"slices"
 	"sync/atomic"
 	"time"
+
+	"github.com/dagger/dagger/engine/wcprof"
 )
 
 // MergeValues merges a bundle of transferred values into the cache, and
@@ -1131,6 +1133,8 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 			row.res.attachDepsMu.Lock()
 			row.res.attachDepsWaitCh = make(chan struct{})
 			row.res.attachDepsErr = nil
+			// A merge has no span of its own to target.
+			row.res.attachHolder = newAttachHolder(wcprof.CurrentOpID(ctx), nil)
 			row.res.attachDepsMu.Unlock()
 			replaced = append(replaced, mergeReplacement{res: row.res, old: old})
 		}
@@ -1536,6 +1540,7 @@ func (c *Cache) finishMergedReplacement(ctx context.Context, r mergeReplacement)
 	if r.res.attachDepsWaitCh != nil {
 		r.res.attachDepsErr = err
 		close(r.res.attachDepsWaitCh)
+		r.res.attachHolder = nil
 	}
 	r.res.attachDepsMu.Unlock()
 	return err
