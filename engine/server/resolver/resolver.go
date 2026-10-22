@@ -192,7 +192,9 @@ func (r *Resolver) ResolveImageConfig(
 	opts ResolveImageConfigOpts,
 ) (_ string, _ digest.Digest, _ []byte, rerr error) {
 	span, ctx := tracing.StartSpan(ctx, "resolving "+ref, telemetry.Encapsulated(), telemetry.Encapsulate())
+	ctx, profOp := beginRegistryOp(ctx, "image.resolve", ref)
 	defer func() {
+		profOp.EndErr(rerr)
 		tracing.FinishWithError(span, rerr)
 	}()
 
@@ -286,10 +288,12 @@ func (r *Resolver) ResolveImageDigest(
 ) (_ string, _ digest.Digest, rerr error) {
 	span, ctx := tracing.StartSpan(ctx, "resolving "+ref,
 		telemetry.Encapsulated(), telemetry.Encapsulate())
+	ctx, profOp := beginRegistryOp(ctx, "image.resolve", ref)
 	ctx, input := registryTransfer(ctx, ref, opts.Network, enginetelemetry.StartWorkloadInput)
 	var identity string
 	defer func() {
 		input.End(identity, rerr)
+		profOp.EndErr(rerr)
 		tracing.FinishWithError(span, rerr)
 	}()
 
@@ -332,7 +336,9 @@ func registryImageIdentity(manifest digest.Digest) string { return "image:" + ma
 
 func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *PulledImage, rerr error) {
 	span, ctx := tracing.StartSpan(ctx, "pulling "+bkcache.DisplayRef(ref), telemetry.Encapsulated(), telemetry.Encapsulate())
+	ctx, profOp := beginRegistryOp(ctx, "image.pull", ref)
 	defer func() {
+		profOp.EndErr(rerr)
 		tracing.FinishWithError(span, rerr)
 	}()
 
@@ -375,6 +381,7 @@ func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *Pull
 	if err != nil {
 		return nil, err
 	}
+	fetcher = profFetcher(ctx, fetcher)
 	leaseCtx, release, err := r.newPullLease(ctx)
 	if err != nil {
 		return nil, err
@@ -868,7 +875,9 @@ func (r *Resolver) localCanonicalRootDescriptor(ctx context.Context, dgst digest
 
 func (r *Resolver) PushImage(ctx context.Context, img *PushedImage, ref string, opts PushOpts) (rerr error) {
 	span, ctx := tracing.StartSpan(ctx, "pushing "+ref, telemetry.Encapsulated(), telemetry.Encapsulate())
+	ctx, profOp := beginRegistryOp(ctx, "image.push", ref)
 	defer func() {
+		profOp.EndErr(rerr)
 		tracing.FinishWithError(span, rerr)
 	}()
 
@@ -1457,7 +1466,11 @@ func pushHandler(
 	provider content.Provider,
 	network *enginetelemetry.NetworkAccumulator,
 ) images.HandlerFunc {
-	return func(ctx context.Context, desc ocispecs.Descriptor) ([]ocispecs.Descriptor, error) {
+	return func(ctx context.Context, desc ocispecs.Descriptor) (_ []ocispecs.Descriptor, rerr error) {
+		// The blob's upload, as a profile op: its size when it was sent, none
+		// when the registry had it.
+		ctx, profOp := beginRegistryOp(ctx, "image.push.blob", desc.Digest.String())
+		defer func() { profOp.EndErr(rerr) }()
 		cw, err := pusher.Push(ctx, desc)
 		if err != nil {
 			if errors.Is(err, cerrdefs.ErrAlreadyExists) {
@@ -1483,6 +1496,7 @@ func pushHandler(
 			}
 			return nil, fmt.Errorf("push content %s (%d bytes): %w", desc.Digest, desc.Size, err)
 		}
+		profOp.SetBytes(desc.Size)
 		return nil, nil
 	}
 }
