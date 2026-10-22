@@ -283,9 +283,10 @@ func (fc *FuncCommand) Command() *cobra.Command {
 		// to test its functions. For example, if a function argument is
 		// `dockerConfig` in code, the user can type `--dockerConfig` or even
 		// `--DockerConfig` as this normalization function rewrites to the
-		// equivalent `--docker-config` in kebab-case.
+		// equivalent `--docker-config` in kebab-case. The spelling older
+		// CLIs gave a flag (`--e-2-e-test` for `e2eTest`) works too.
 		fc.cmd.SetGlobalNormalizationFunc(func(f *pflag.FlagSet, name string) pflag.NormalizedName {
-			return pflag.NormalizedName(cliName(name))
+			return pflag.NormalizedName(normalizeFlagName(name))
 		})
 
 		fc.cmd.PersistentFlags().StringVarP(&outputPath, "output", "o", "", "Save the result to a local file or directory")
@@ -800,7 +801,8 @@ func (fc *FuncCommand) childCommandPath(parent, child *modFunction, collectionPr
 			module = fc.mod.Name
 		}
 		path := &functionCommandPath{Module: cliName(module)}
-		if child.Name != gqlFieldName(module) {
+		// The constructor is spelled by the module's rules, legacy or current.
+		if !slices.Contains(fieldNameCandidates(module), child.Name) {
 			path.Fields = []string{cliName(child.Name)}
 		}
 		return path
@@ -931,6 +933,12 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, fn *modFunction) *cobra.C
 		// This is going to be executed in the "execution" vertex, when
 		// we have the final/leaf command.
 		RunE: fc.RunE(ctx, fn),
+	}
+
+	// Older CLIs spelled some command names differently (e-2-e-test for
+	// e2eTest); keep those working.
+	if legacy := legacyCLIName(fn.Name); legacy != newCmd.Name() {
+		newCmd.Aliases = append(newCmd.Aliases, legacy)
 	}
 
 	newCmd.Flags().SetInterspersed(false)
@@ -1133,16 +1141,11 @@ func collectionSelectorValues(typeDef *modTypeDef, values []string) (any, error)
 	case core.TypeDefKindEnumKind:
 		result := make([]string, len(values))
 		for i, value := range values {
-			found := false
-			for _, member := range typeDef.AsEnum.Members {
-				if strings.EqualFold(value, member.Name) {
-					result[i], found = member.Name, true
-					break
-				}
-			}
+			name, found := typeDef.AsEnum.MemberName(value)
 			if !found {
 				return nil, fmt.Errorf("value should be one of %s", strings.Join(typeDef.AsEnum.ValueNames(), ","))
 			}
+			result[i] = name
 		}
 		return result, nil
 	default:
