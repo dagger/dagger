@@ -223,16 +223,20 @@ func (s *session) handleExport(env protocol.Envelope) {
 		s.replyError(env, err)
 		return
 	}
+	arrived := time.Now()
 	select {
 	case s.exportSlots <- struct{}{}:
 	case <-s.ctx.Done():
 		return
 	}
 	defer func() { <-s.exportSlots }()
+	slotted := time.Now()
+	ended := exportEnded{roots: len(req.Roots), slotWait: slotted.Sub(arrived)}
 	replied := false
 	err := s.adapter.Export(s.ctx, req, func(ctx context.Context, exp Export) error {
 		replied = true
 		if exp.Bundle == nil {
+			ended.noBundle = true
 			return s.reply(env, protocol.TypeExported, protocol.Exported{Skipped: exp.Skipped})
 		}
 		exportID, err := newExportID()
@@ -251,16 +255,77 @@ func (s *session) handleExport(env protocol.Envelope) {
 		if err := s.reply(env, protocol.TypeExported, protocol.Exported{ExportID: exportID, Bundle: exp.Bundle, Skipped: exp.Skipped}); err != nil {
 			return err
 		}
+		ended.export = exportID
+		repliedAt := time.Now()
 		select {
 		case up := <-upload:
-			return s.upload(ctx, up, exp.Blobs)
+			uploadAt := time.Now()
+			ended.uploadWait = uploadAt.Sub(repliedAt)
+			summary, err := s.upload(ctx, up, exp.Blobs)
+			ended.upload, ended.summary = time.Since(uploadAt), summary
+			return err
 		case <-ctx.Done():
+			ended.uploadWait = time.Since(repliedAt)
 			return context.Cause(ctx)
 		}
 	})
+	ended.held = time.Since(slotted)
+	s.logExportEnded(ended, err)
 	if err != nil && !replied {
 		s.replyError(env, err)
 	}
+}
+
+// exportEnded is what one export took, from its request to the release of
+// its chains.
+type exportEnded struct {
+	// export is the ID of the bundle sent, if one was.
+	export string
+	roots  int
+	// slotWait is the wait for an export slot, uploadWait the wait from
+	// sending the bundle to the service's upload, upload the upload, and
+	// held the time from the slot to the chains' release.
+	slotWait   time.Duration
+	uploadWait time.Duration
+	upload     time.Duration
+	held       time.Duration
+	summary    uploadSummary
+	noBundle   bool
+}
+
+// logExportEnded logs one export's end. A failed export is canceled when the
+// session ended; one that succeeded is classified by what it sent and what
+// the service asked for, even if the session has ended since.
+func (s *session) logExportEnded(ended exportEnded, err error) {
+	level, outcome := slog.LevelInfo, "uploaded"
+	switch {
+	case err != nil && context.Cause(s.ctx) != nil:
+		outcome = "canceled"
+	case err != nil:
+		level, outcome = slog.LevelWarn, "error"
+	case ended.noBundle:
+		outcome = "no_bundle"
+	case ended.summary.blobs == 0:
+		// The service asked for no blobs: it had them all, or it released
+		// the bundle.
+		outcome = "empty"
+	}
+	args := []any{
+		"export", ended.export,
+		"roots", ended.roots,
+		"slot_wait", ended.slotWait,
+		"upload_wait", ended.uploadWait,
+		"upload", ended.upload,
+		"blobs", ended.summary.blobs,
+		"failed", ended.summary.failed,
+		"bytes", ended.summary.bytes,
+		"held", ended.held,
+		"outcome", outcome,
+	}
+	if err != nil {
+		args = append(args, "error", err.Error())
+	}
+	s.cfg.Logger.Log(s.ctx, level, "remote cache export ended", args...)
 }
 
 // handleUpload hands an upload to the export whose chains are held for it.
@@ -282,27 +347,35 @@ func (s *session) handleUpload(env protocol.Envelope) {
 	}
 }
 
+// uploadSummary counts an upload's blobs: those asked for, those that
+// failed, and the bytes of those uploaded.
+type uploadSummary struct {
+	blobs, failed int
+	bytes         int64
+}
+
 // upload PUTs the blobs the service asked for, and answers the upload. At
 // most UploadConcurrency PUTs run at a time across all the exports. Each
 // blob's line logs how long it queued for a slot, from the request's arrival,
 // and how long its PUT took.
-func (s *session) upload(ctx context.Context, env protocol.Envelope, blobs BlobSource) error {
+func (s *session) upload(ctx context.Context, env protocol.Envelope, blobs BlobSource) (uploadSummary, error) {
 	received := time.Now()
 	var req protocol.Upload
 	if err := env.Decode(&req); err != nil {
-		return s.replyError(env, err)
+		return uploadSummary{}, s.replyError(env, err)
 	}
 	var (
-		mu    sync.Mutex
-		reply = protocol.Uploaded{Done: []digest.Digest{}}
-		wg    sync.WaitGroup
+		mu      sync.Mutex
+		reply   = protocol.Uploaded{Done: []digest.Digest{}}
+		summary = uploadSummary{blobs: len(req.URLs)}
+		wg      sync.WaitGroup
 	)
 	for dgst, address := range req.URLs {
 		select {
 		case s.uploadSlots <- struct{}{}:
 		case <-ctx.Done():
 			wg.Wait()
-			return context.Cause(ctx)
+			return summary, context.Cause(ctx)
 		}
 		queued := time.Since(received)
 		wg.Add(1)
@@ -315,17 +388,19 @@ func (s *session) upload(ctx context.Context, env protocol.Envelope, blobs BlobS
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
+				summary.failed++
 				reply.Failed = append(reply.Failed, protocol.UploadFailure{Digest: dgst, Message: err.Error()})
 			} else {
+				summary.bytes += size
 				reply.Done = append(reply.Done, dgst)
 			}
 		}()
 	}
 	wg.Wait()
 	if err := context.Cause(ctx); err != nil {
-		return err
+		return summary, err
 	}
-	return s.reply(env, protocol.TypeUploaded, reply)
+	return summary, s.reply(env, protocol.TypeUploaded, reply)
 }
 
 // uploadBlob PUTs one blob, and returns its size once it is read.

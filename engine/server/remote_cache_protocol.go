@@ -16,6 +16,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/remotecache"
 	"github.com/dagger/dagger/engine/remotecache/protocol"
+	"github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
 )
@@ -48,6 +49,7 @@ func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, co
 		return ErrRemoteCacheAdapterClosed
 	}
 	start := time.Now()
+	var local exportCapture
 	holds := entryHolds{cache: a.cache, held: map[uint64]dagql.AnyResult{}}
 	defer func() { rerr = errors.Join(rerr, holds.release(ctx)) }()
 	var roots []heldRoot
@@ -76,16 +78,18 @@ func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, co
 			outputs = append(outputs, dagql.SelectedValueOutput{Result: res, Address: output.Address})
 		}
 	}
+	local.hold = time.Since(start)
 
 	captured := false
 	export := func(roots []heldRoot) error {
+		local.attempts++
 		selection := dagql.ValueSelection{Outputs: outputs, LeaveOutOutputsOutsideClosure: true}
 		for _, root := range roots {
 			selection.Roots = append(selection.Roots, root.result)
 		}
 		return a.cache.WithExportedValues(ctx, selection, exportRefConfig, func(ctx context.Context, values *dagql.ExportedValues) error {
 			captured = true
-			logExport(req, skipped, values, time.Since(start))
+			logExport(req, skipped, values, time.Since(start), local)
 			return consume(ctx, remotecache.Export{Bundle: &values.Bundle, Skipped: skipped, Blobs: newChainBlobs(values.Chains)})
 		})
 	}
@@ -97,9 +101,13 @@ func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, co
 		// A probe copies records and opens no chain.
 		var ready []heldRoot
 		for _, root := range roots {
-			err := a.cache.WithExportedValues(ctx, dagql.ValueSelection{Roots: []dagql.AnyResult{root.result}}, exportRefConfig, func(context.Context, *dagql.ExportedValues) error {
+			probeStart := time.Now()
+			err := a.cache.WithExportedValues(ctx, dagql.ValueSelection{Roots: []dagql.AnyResult{root.result}}, exportRefConfig, func(_ context.Context, values *dagql.ExportedValues) error {
+				local.probeWalkWait += values.Phases.WalkWait
 				return nil
 			})
+			local.probes++
+			local.probeTime += time.Since(probeStart)
 			switch {
 			case err == nil:
 				ready = append(ready, root)
@@ -123,7 +131,7 @@ func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, co
 			}
 		}
 	}
-	logExport(req, skipped, nil, time.Since(start))
+	logExport(req, skipped, nil, time.Since(start), local)
 	return consume(ctx, remotecache.Export{Skipped: skipped})
 }
 
@@ -188,11 +196,24 @@ func (h *entryHolds) release(ctx context.Context) error {
 	return err
 }
 
+// exportCapture is where an export's time went outside the capture it logs:
+// holding the entries, and the per-root probes after a failed attempt.
+type exportCapture struct {
+	hold time.Duration
+	// attempts counts the captures of the roots together: a second follows
+	// the probes.
+	attempts      int
+	probes        int
+	probeTime     time.Duration
+	probeWalkWait time.Duration
+}
+
 // logExport records one export's capture: the roots asked for and skipped,
 // the bundle's records and outputs, the time from the request to the bundle,
-// and the part of it spent opening the chains, which compresses layers.
-func logExport(req protocol.Export, skipped []protocol.SkippedRoot, values *dagql.ExportedValues, capture time.Duration) {
-	slog.Info("remote cache export", exportLogAttrs(req, skipped, values, capture)...)
+// and the part of it spent opening the chains, which compresses layers. Then
+// where the capture's time went, and what the chains' layers took.
+func logExport(req protocol.Export, skipped []protocol.SkippedRoot, values *dagql.ExportedValues, capture time.Duration, local exportCapture) {
+	slog.Info("remote cache export", exportLogAttrs(req, skipped, values, capture, local)...)
 }
 
 // maxLoggedSkippedRoots is how many skipped roots an export's log line names:
@@ -202,12 +223,19 @@ const maxLoggedSkippedRoots = 8
 // exportLogAttrs are an export's log attributes: its roots, its skipped roots
 // counted by reason and, when there are at most maxLoggedSkippedRoots of
 // them, named with their reasons, then what the bundle holds and how long
-// the capture and the chains took.
-func exportLogAttrs(req protocol.Export, skipped []protocol.SkippedRoot, values *dagql.ExportedValues, capture time.Duration) []any {
+// the capture and the chains took, and then the capture's phases and the
+// chains' layers. With no bundle, those of the capture and the chains are 0.
+func exportLogAttrs(req protocol.Export, skipped []protocol.SkippedRoot, values *dagql.ExportedValues, capture time.Duration, local exportCapture) []any {
 	var records, outputs int
 	var chains time.Duration
+	var phases dagql.ExportPhases
+	var stats snapshots.ExportStats
 	if values != nil {
 		records, outputs, chains = len(values.Bundle.Values), len(values.Bundle.Outputs), values.ChainTime
+		phases = values.Phases
+		if values.Chains != nil {
+			stats = values.Chains.Stats
+		}
 	}
 	counts := map[protocol.SkipReason]int{}
 	for _, root := range skipped {
@@ -231,7 +259,69 @@ func exportLogAttrs(req protocol.Export, skipped []protocol.SkippedRoot, values 
 		"records", records,
 		"outputs", outputs,
 		"capture", capture,
-		"chains", chains)
+		"chains", chains,
+		"hold", local.hold,
+		"walk_wait", phases.WalkWait,
+		"walk", phases.Walk,
+		"copy", phases.Copy,
+		"retried_stale", phases.RetriedStale,
+		"attempts", local.attempts,
+		"probes", local.probes,
+		"probe_time", local.probeTime,
+		"probe_walk_wait", local.probeWalkWait,
+		"layers", stats.Layers,
+		"layers_reused", stats.LayersReused,
+		"layers_diffed", stats.LayersDiffed,
+		"raw_bytes", stats.RawBytes,
+		"blob_bytes", stats.BlobBytes,
+		"diff_time", stats.DiffTime,
+		"lock_wait", stats.LockWait,
+		"layers_merged", stats.LayersMerged,
+		"merged_raw_bytes", stats.MergedRawBytes,
+		"merged_blob_bytes", stats.MergedBlobBytes,
+		"merged_diff_time", stats.MergedDiffTime)
+}
+
+// offerLogAttrs are an offered part's log attributes: the entry offered to,
+// the row and part the offer's address resolved to, which is the entry an
+// install of the part logs, and what the engine did with it. Then the offered
+// chain's layers and size, the time to its earliest address's expiry, and the
+// time from the offer's arrival to its admission. Never an address.
+func offerLogAttrs(number uint64, offer dagql.PersistedPartOffer, disposition dagql.OfferDisposition, outcome protocol.OfferOutcome, admit time.Duration, now time.Time) []any {
+	address := disposition.TargetAddress
+	if disposition.Target == 0 {
+		address = disposition.Address
+	}
+	var size int64
+	for _, layer := range offer.Chain.Layers {
+		size += layer.Descriptor.Size
+	}
+	var earliest int64
+	for _, blob := range offer.Chain.Addresses {
+		if blob.ExpiresAtUnix != 0 && (earliest == 0 || blob.ExpiresAtUnix < earliest) {
+			earliest = blob.ExpiresAtUnix
+		}
+	}
+	var expiresIn time.Duration
+	if earliest != 0 {
+		expiresIn = time.Unix(earliest, 0).Sub(now)
+	}
+	attrs := []any{
+		"entry", number,
+		"target", disposition.Target,
+		"output", address.OutputPath.String(),
+		"part", string(address.Part),
+		"outcome", string(outcome),
+		"replaced", disposition.Replaced,
+		"layers", len(offer.Chain.Layers),
+		"bytes", size,
+		"expires_in", expiresIn,
+		"admit", admit,
+	}
+	if disposition.Err != nil {
+		attrs = append(attrs, "error", disposition.Err.Error())
+	}
+	return attrs
 }
 
 // chainBlobs reads the layer blobs of an export's chains.
@@ -363,6 +453,7 @@ func (a *RemoteCacheAdapter) OfferParts(ctx context.Context, req protocol.Offer)
 }
 
 func (a *RemoteCacheAdapter) offerItem(ctx context.Context, item protocol.OfferItem) (_ protocol.OfferedItem, rerr error) {
+	start := time.Now()
 	receiver, release, err := a.cache.HoldEntry(ctx, item.Number)
 	if errors.Is(err, dagql.ErrUnknownEntry) {
 		return protocol.OfferedItem{Number: item.Number, Gone: true}, nil
@@ -382,11 +473,21 @@ func (a *RemoteCacheAdapter) offerItem(ctx context.Context, item protocol.OfferI
 		return protocol.OfferedItem{}, err
 	}
 	answer := protocol.OfferedItem{Number: item.Number, Parts: make([]protocol.OfferedPart, 0, len(dispositions))}
-	for _, disposition := range dispositions {
+	for i, disposition := range dispositions {
 		outcome, err := protocol.OfferOutcomeOf(disposition.Outcome)
 		if err != nil {
 			return protocol.OfferedItem{}, err
 		}
+		// OfferParts answers each offer at its index.
+		var offer dagql.PersistedPartOffer
+		if len(dispositions) == len(item.Offers) {
+			offer = item.Offers[i].Offer
+		}
+		level := slog.LevelInfo
+		if outcome == protocol.OfferInvalid {
+			level = slog.LevelWarn
+		}
+		slog.Log(ctx, level, "remote cache part offered", offerLogAttrs(item.Number, offer, disposition, outcome, time.Since(start), time.Now())...)
 		part := protocol.OfferedPart{Address: disposition.Address, Outcome: outcome}
 		if disposition.Err != nil {
 			part.Message = disposition.Err.Error()
