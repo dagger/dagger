@@ -263,6 +263,18 @@ func TestHello(t *testing.T) {
 	require.True(t, <-served)
 }
 
+// An engine configured as ephemeral says so in its hello.
+func TestHelloEphemeral(t *testing.T) {
+	conn := newRecordingConn()
+	s := newSession(t.Context(), conn, newFakeAdapter(), newSettings(Config{EngineVersion: "v0.20.0", EngineName: "dagger-engine", Ephemeral: true}))
+	t.Cleanup(s.close)
+	go func() { _, _ = s.serve() }()
+	hello := conn.next(t)
+	require.Equal(t, protocol.TypeHello, hello.Type)
+	require.Equal(t, protocol.Hello{CacheID: "cache-1", Generation: 3, EngineVersion: "v0.20.0", EngineName: "dagger-engine", HeldRows: true, Ephemeral: true}, decode[protocol.Hello](t, hello))
+	s.cancel(errors.New("done"))
+}
+
 // A service that answers hello with an error does not welcome the engine.
 func TestHelloRefused(t *testing.T) {
 	s, conn := testSession(t, newFakeAdapter())
