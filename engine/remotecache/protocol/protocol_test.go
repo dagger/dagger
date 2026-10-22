@@ -71,6 +71,7 @@ func TestMessagesRoundTrip(t *testing.T) {
 		into func() any
 	}{
 		{TypeHello, Hello{CacheID: "cache-1", Generation: 4, EngineVersion: "v0.20.0", EngineName: "dagger-engine"}, func() any { return &Hello{} }},
+		{TypeHello, Hello{CacheID: "cache-1", Generation: 1, EngineVersion: "v0.20.0", EngineName: "dagger-engine", Ephemeral: true}, func() any { return &Hello{} }},
 		{TypeWelcome, Welcome{}, func() any { return &Welcome{} }},
 		{TypeExport, Export{Roots: []uint64{12, 13}, Outputs: []ExportOutput{{Number: 12, Address: testAddress()}}}, func() any { return &Export{} }},
 		{TypeExported, Exported{ExportID: "x-1", Bundle: &bundle, Skipped: []SkippedRoot{{Number: 13, Reason: SkipBusy}}}, func() any { return &Exported{} }},
@@ -175,6 +176,18 @@ func TestEnvelopeFraming(t *testing.T) {
 	raw, err = json.Marshal(reply)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"id": 9, "re": 17, "type": "error", "body": {"message": "too large"}}`, string(raw))
+}
+
+// A hello says "ephemeral" only for an engine whose cache does not outlive it,
+// so a hello from any other engine reads as before.
+func TestHelloEphemeral(t *testing.T) {
+	raw, err := json.Marshal(Hello{CacheID: "cache-1", Generation: 1, EngineVersion: "v0.20.0", EngineName: "dagger-engine", Ephemeral: true})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"cacheID": "cache-1", "generation": 1, "engineVersion": "v0.20.0", "engineName": "dagger-engine", "ephemeral": true}`, string(raw))
+
+	raw, err = json.Marshal(Hello{CacheID: "cache-1", Generation: 1, EngineVersion: "v0.20.0", EngineName: "dagger-engine"})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"cacheID": "cache-1", "generation": 1, "engineVersion": "v0.20.0", "engineName": "dagger-engine"}`, string(raw))
 }
 
 // An offer names the Cloud counterpart per offered part, not per item.
