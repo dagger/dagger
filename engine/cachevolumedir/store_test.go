@@ -573,3 +573,87 @@ func TestFailedRemovalStaysCounted(t *testing.T) {
 	require.GreaterOrEqual(t, used, int64(2*mib), "what it couldn't remove still counts")
 	require.NoError(t, s.WaitRemovals(t.Context()), "reported once")
 }
+
+// An acquisition still creating its volume holds the directory like a pin:
+// another owner's open would otherwise sweep the volume being made.
+func TestCloseWaitsOutAcquisitionInProgress(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(dir, Options{})
+	require.NoError(t, err)
+
+	populating := make(chan struct{})
+	finish := make(chan struct{})
+	type result struct {
+		pin *Pin
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		pin, err := s.Acquire(context.Background(), Identity{Key: "k"}, true, func(context.Context, string) error {
+			close(populating)
+			<-finish
+			return nil
+		})
+		done <- result{pin, err}
+	}()
+	<-populating
+
+	require.ErrorIs(t, s.Close(), ErrPinned, "the volume being created keeps the directory owned")
+	_, err = Open(dir, Options{})
+	require.ErrorIs(t, err, ErrOwned)
+
+	close(finish)
+	r := <-done
+	require.NoError(t, r.err)
+	r.pin.Release()
+	require.NoError(t, s.Close())
+	require.True(t, s.Closed())
+
+	_, err = s.Acquire(t.Context(), Identity{Key: "k"}, false, emptyPopulate)
+	require.ErrorIs(t, err, ErrClosed, "a closed store takes no new acquisitions")
+}
+
+// Space a failed removal left behind is stuck, not about to be freed: later
+// collections still evict to get under the cap.
+func TestFailedRemovalDoesNotStopLaterEviction(t *testing.T) {
+	clock := newFakeClock()
+	s := openStore(t, t.TempDir(), clock)
+	s.removeAll = func(string) error { return errors.New("disk on fire") }
+	for _, key := range []string{"a", "b", "c"} {
+		use(t, s, Identity{Key: key}, true, "f", mib)
+		clock.Advance(time.Minute)
+	}
+	policy := Policy{MaxUsedSpace: 2*mib + mib/2}
+
+	report, err := s.Collect(t.Context(), policy)
+	require.NoError(t, err)
+	require.Len(t, report.Removed, 1)
+	require.Error(t, s.WaitRemovals(t.Context()))
+
+	report, err = s.Collect(t.Context(), policy)
+	require.NoError(t, err)
+	require.Len(t, report.Removed, 1, "usage is still over the cap, and nothing is being removed")
+	require.Equal(t, "b", report.Removed[0].Identity.Key)
+}
+
+// If what a failed removal left can't be measured, none of it counts as freed.
+func TestUnmeasurableFailedRemovalCountsInFull(t *testing.T) {
+	clock := newFakeClock()
+	s := openStore(t, t.TempDir(), clock)
+	s.removeAll = func(string) error { return errors.New("disk on fire") }
+	s.trashSize = func(context.Context, string) (int64, error) { return 0, errors.New("unreadable") }
+	for _, key := range []string{"a", "b"} {
+		use(t, s, Identity{Key: key}, true, "f", mib)
+		clock.Advance(time.Minute)
+	}
+	report, err := s.Collect(t.Context(), Policy{MaxUsedSpace: mib + mib/2})
+	require.NoError(t, err)
+	require.Len(t, report.Removed, 1)
+
+	err = s.WaitRemovals(t.Context())
+	require.ErrorContains(t, err, "disk on fire")
+	require.ErrorContains(t, err, "unreadable", "the measurement failure is reported too")
+	_, used, err := s.Usage(t.Context())
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, used, int64(2*mib), "the removed volume still counts in full")
+}

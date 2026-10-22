@@ -130,6 +130,9 @@ type Store struct {
 	beforeRemove func()
 	// removeAll removes a tree; os.RemoveAll, replaced by tests.
 	removeAll func(string) error
+	// trashSize measures what a failed removal left; treeSize, replaced
+	// by tests.
+	trashSize func(context.Context, string) (int64, error)
 	// afterUsage and beforeClearDirty, when set, run at those points of
 	// Collect and of a measurement; tests use them to interleave.
 	afterUsage       func()
@@ -174,6 +177,7 @@ func Open(dir string, opts Options) (*Store, error) {
 		lock:      lock,
 		pins:      map[string]*pinState{},
 		removeAll: os.RemoveAll,
+		trashSize: treeSize,
 	}
 	for _, sub := range []string{"volumes", "tmp", "trash"} {
 		if err := os.MkdirAll(filepath.Join(s.formDir, sub), 0o755); err != nil {
@@ -210,6 +214,20 @@ func (s *Store) Dir() string {
 
 // ErrPinned is returned by Close when volumes are still pinned.
 var ErrPinned = errors.New("cache volumes are still in use")
+
+// ErrClosed is returned by Acquire once the store is closed.
+var ErrClosed = errors.New("cache volume directory is closed")
+
+// Closed reports whether the store has given up ownership. A nil store is
+// closed.
+func (s *Store) Closed() bool {
+	if s == nil {
+		return true
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lock == nil
+}
 
 // Close gives up ownership. If volumes are still pinned, it keeps ownership and
 // returns ErrPinned: another owner could otherwise collect a volume that is
@@ -739,7 +757,7 @@ func (s *Store) remove(e Entry) (bool, error) {
 		if err != nil {
 			// What survived still takes space: keep counting it until a
 			// later owner's open removes it.
-			survived, _ := treeSize(context.Background(), trash)
+			survived, _ := s.trashSize(context.Background(), trash)
 			freed = max(e.SizeBytes-survived, 0)
 		}
 		s.mu.Lock()

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -51,7 +52,10 @@ func TestCloseCacheVolumeDirKeepsOwnershipWhilePinned(t *testing.T) {
 
 	pin.Release()
 	require.NoError(t, srv.closeCacheVolumeDir())
-	require.Nil(t, srv.cacheVolumeDir)
+	require.True(t, srv.cacheVolumeDir.Closed())
+	other, err := cachevolumedir.Open(dir, cachevolumedir.Options{})
+	require.NoError(t, err, "given up once nothing uses it")
+	require.NoError(t, other.Close())
 }
 
 func TestCacheVolumeDirPressure(t *testing.T) {
@@ -89,7 +93,7 @@ func TestInitCacheVolumeDirFallsBackWhenOwned(t *testing.T) {
 	require.NoError(t, srv.initCacheVolumeDir(config.CacheVolumesConfig{Dir: dir}))
 	require.NotNil(t, srv.cacheVolumeDir)
 	require.NoError(t, srv.closeCacheVolumeDir())
-	require.Nil(t, srv.cacheVolumeDir)
+	require.True(t, srv.cacheVolumeDir.Closed())
 
 	require.NoError(t, srv.initCacheVolumeDir(config.CacheVolumesConfig{}), "off when unset")
 	require.Nil(t, srv.cacheVolumeDir)
@@ -113,4 +117,31 @@ func TestCacheVolumeDirPolicy(t *testing.T) {
 	require.EqualValues(t, 80e9, policy.MaxUsedSpace)
 	require.EqualValues(t, 3600e9, policy.KeepDuration)
 	require.True(t, policy.All)
+}
+
+// The GC monitor checks pressure outside gcmu, concurrently with a graceful
+// stop closing the directory. Run with -race: the check must neither race the
+// close nor use the store after it.
+func TestCacheVolumeDirPressureDuringClose(t *testing.T) {
+	root := t.TempDir()
+	srv := &Server{workerRootDir: filepath.Join(root, "worker"), localCacheGCEnabled: true}
+	require.NoError(t, srv.initCacheVolumeDir(config.CacheVolumesConfig{Dir: filepath.Join(root, "cache-volumes")}))
+
+	stop := make(chan struct{})
+	checked := make(chan struct{})
+	go func() {
+		defer close(checked)
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				srv.cacheVolumeDirPressure(context.Background())
+			}
+		}
+	}()
+	require.NoError(t, srv.closeCacheVolumeDir())
+	close(stop)
+	<-checked
+	require.False(t, srv.cacheVolumeDirPressure(t.Context()), "a closed directory has no pressure to act on")
 }
