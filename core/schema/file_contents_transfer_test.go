@@ -92,6 +92,15 @@ func TestFileContentsPersistsUpToItsLimit(t *testing.T) {
 			salt := transferTestSalt(t)
 			a := newTransferTestEngine(t, salt)
 
+			// A session that holds the file, not its contents, open
+			// throughout: a later session's file is then this live one, not
+			// a Directory.file computed again over the evaluated directory,
+			// which checksums the file through a bind mount an unprivileged
+			// runner refuses. Whether the contents are kept still rests on
+			// their own retention.
+			holder := a.session(t, "holder")
+			fileContentsTestFile(t, a, holder, tc.contents)
+
 			// The read, then the same read in another session while the
 			// first is open: a hit either way, as today.
 			a1 := a.session(t, "a1")
