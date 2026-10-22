@@ -14,42 +14,11 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-type checkNameKey struct{}
-
-type checkSpanKey struct{}
-
-// WithCheckName marks a check already covered by an artifact evaluation span,
-// the span current in ctx. It does not change the check's execution identity.
-func WithCheckName(ctx context.Context, name string) context.Context {
-	ctx = context.WithValue(ctx, checkSpanKey{}, trace.SpanFromContext(ctx))
-	return context.WithValue(ctx, checkNameKey{}, name)
-}
-
-// checkSpanContext returns ctx with the span that covers the running check as
-// its current span, so the check's own output and attributes land on it rather
-// than on whichever (possibly internal) call span is running the check.
-func checkSpanContext(ctx context.Context) context.Context {
-	if span, ok := ctx.Value(checkSpanKey{}).(trace.Span); ok && span.SpanContext().IsValid() {
-		return trace.ContextWithSpan(ctx, span)
-	}
-	return ctx
-}
-
-// CheckNameFromContext returns the check's dag:// address when the current
-// evaluation already named it (see WithCheckName), or "" otherwise. Check
-// constructors use it to record the address on the Check itself so later runs
-// name their span correctly even when reached through a path that does not set
-// the context value.
-func CheckNameFromContext(ctx context.Context) string {
-	name, _ := ctx.Value(checkNameKey{}).(string)
-	return name
-}
-
 // Check is a deferred assertion and its outcome.
 type Check struct {
 	Assertion       dagql.Nullable[dagql.String]                   `field:"true" doc:"The assertion that is false when this check fails."`
 	Report          dagql.Nullable[dagql.ObjectResult[*Directory]] `field:"true" doc:"An optional report produced by the check."`
-	RemoteArtifact  *Artifact
+	RemoteArtifact  dagql.ObjectResult[*Artifact]
 	RemoteArguments JSON
 	Receiver        dagql.ObjectResult[*ModuleObject]
 	Workspace       dagql.ObjectResult[*Workspace]
@@ -64,6 +33,13 @@ type Check struct {
 	Error           dagql.Nullable[dagql.ObjectResult[*Error]]
 }
 
+func (c *Check) ResultScope() dagql.ResultScope {
+	if c.Receiver.Self() != nil {
+		return c.Receiver.Self().ResultScope()
+	}
+	return nil
+}
+
 func (*Check) Type() *ast.Type { return &ast.Type{NamedType: "Check", NonNull: true} }
 func (*Check) TypeDescription() string {
 	return "One deferred check. Reading pass, error, or sync runs it."
@@ -71,9 +47,6 @@ func (*Check) TypeDescription() string {
 
 func (c *Check) Clone() *Check {
 	copy := *c
-	if c.RemoteArtifact != nil {
-		copy.RemoteArtifact = c.RemoteArtifact.Clone()
-	}
 	return &copy
 }
 
@@ -83,12 +56,9 @@ func (c *Check) Run(ctx context.Context) (_ *Check, rerr error) {
 		return c, nil
 	}
 	var failure error
-	name := CheckNameFromContext(ctx)
-	// The span covering this check: the artifact evaluation's when it named the
-	// check, or the one started below.
-	spanCtx := checkSpanContext(ctx)
-	if c.RemoteArtifact == nil && name == "" {
-		name = c.Address
+	spanCtx := ctx
+	if c.RemoteArtifact.Self() == nil {
+		name := c.Address
 		if name == "" {
 			name = c.Function
 		}
@@ -108,7 +78,7 @@ func (c *Check) Run(ctx context.Context) (_ *Check, rerr error) {
 		}()
 	}
 	switch {
-	case c.RemoteArtifact != nil:
+	case c.RemoteArtifact.Self() != nil:
 		failure = c.runRemote(ctx)
 	case c.Failure != "":
 		failure = fmt.Errorf("%s", c.Failure)

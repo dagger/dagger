@@ -1464,88 +1464,6 @@ impl Node for ArtifactPath {
     }
 }
 #[derive(Clone)]
-pub struct ArtifactResult {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
-}
-impl IntoID<Id> for ArtifactResult {
-    fn into_id(
-        self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
-        Box::pin(async move { self.id().await })
-    }
-}
-impl Loadable for ArtifactResult {
-    fn graphql_type() -> &'static str {
-        "ArtifactResult"
-    }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
-    }
-}
-impl ArtifactResult {
-    /// A unique identifier for this ArtifactResult.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// The artifact that was evaluated.
-    pub fn artifact(&self) -> Artifact {
-        let query = self.selection.select("artifact");
-        Artifact {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// The evaluation failure, if any.
-    pub async fn error(&self) -> Result<Option<Error>, DaggerError> {
-        let query = self.selection.select("error");
-        let query = query.select("id");
-        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
-        Ok(id.map(|id| Error {
-            proc: self.proc.clone(),
-            selection: query
-                .root()
-                .select("node")
-                .arg("id", &id.0)
-                .inline_fragment("Error"),
-            graphql_client: self.graphql_client.clone(),
-        }))
-    }
-    /// The evaluated value, or null when evaluation failed.
-    pub async fn value(&self) -> Result<Option<NodeClient>, DaggerError> {
-        let query = self.selection.select("value");
-        let query = query.select("id");
-        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
-        Ok(id.map(|id| NodeClient {
-            proc: self.proc.clone(),
-            selection: query
-                .root()
-                .select("node")
-                .arg("id", &id.0)
-                .inline_fragment("Node"),
-            graphql_client: self.graphql_client.clone(),
-        }))
-    }
-}
-impl Node for ArtifactResult {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
-    }
-}
-#[derive(Clone)]
 pub struct Artifacts {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -1562,18 +1480,6 @@ pub struct ArtifactsPathDefinitionsOpts<'a> {
     /// Include the artifact type in each address scheme.
     #[builder(setter(into, strip_option), default)]
     pub type_assertion: Option<bool>,
-}
-#[derive(Builder, Debug, PartialEq)]
-pub struct ArtifactsValuesOpts {
-    /// Field arguments applied to each artifact, as a JSON object.
-    #[builder(setter(into, strip_option), default)]
-    pub arguments: Option<Json>,
-    /// Cancel remaining work after the first failure.
-    #[builder(setter(into, strip_option), default)]
-    pub fail_fast: Option<bool>,
-    /// Evaluate at most this many artifacts at once on this engine; the rest wait. Checks that scale out to cloud engines are not counted. 0 means no limit.
-    #[builder(setter(into, strip_option), default)]
-    pub max_concurrency: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ArtifactsFilterDirectivesOpts {
@@ -1784,60 +1690,6 @@ impl Artifacts {
             })
             .collect())
     }
-    /// Evaluate the selection in parallel, retaining each result and error.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn values(&self) -> Result<Vec<ArtifactResult>, DaggerError> {
-        let query = self.selection.select("values");
-        let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| ArtifactResult {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("ArtifactResult"),
-                graphql_client: self.graphql_client.clone(),
-            })
-            .collect())
-    }
-    /// Evaluate the selection in parallel, retaining each result and error.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn values_opts(
-        &self,
-        opts: ArtifactsValuesOpts,
-    ) -> Result<Vec<ArtifactResult>, DaggerError> {
-        let mut query = self.selection.select("values");
-        if let Some(fail_fast) = opts.fail_fast {
-            query = query.arg("failFast", fail_fast);
-        }
-        if let Some(arguments) = opts.arguments {
-            query = query.arg("arguments", arguments);
-        }
-        if let Some(max_concurrency) = opts.max_concurrency {
-            query = query.arg("maxConcurrency", max_concurrency);
-        }
-        let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| ArtifactResult {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("ArtifactResult"),
-                graphql_client: self.graphql_client.clone(),
-            })
-            .collect())
-    }
     /// List the modules represented in this selection without evaluating artifact values.
     pub async fn modules(&self) -> Result<Vec<Module>, DaggerError> {
         let query = self.selection.select("modules");
@@ -2007,23 +1859,7 @@ impl Artifacts {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Combine two selections, keeping each workspace address once. Different addresses remain distinct even if they return the same object.
-    pub fn with_artifacts(&self, artifacts: impl IntoID<Id>) -> Artifacts {
-        let mut query = self.selection.select("withArtifacts");
-        query = query.arg_lazy(
-            "artifacts",
-            Box::new(move || {
-                let artifacts = artifacts.clone();
-                Box::pin(async move { artifacts.into_id().await.unwrap().quote() })
-            }),
-        );
-        Artifacts {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Remove artifacts selected by a DAG address.
+    /// Remove artifacts selected by a DAG address. Retain the collection view.
     pub fn without_uri(&self, uri: impl Into<String>) -> Artifacts {
         let mut query = self.selection.select("withoutUri");
         query = query.arg("uri", uri.into());
@@ -2113,7 +1949,7 @@ impl Artifacts {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Keep artifacts with any listed key in this dimension.
+    /// Keep artifacts with any listed key in this dimension. Replace collection references with matching subsets. Skip absent keys and leave the source view unchanged.
     pub fn filter_dimension_keys(
         &self,
         dimension: impl Into<String>,
@@ -2182,7 +2018,7 @@ impl Artifacts {
             })
             .collect())
     }
-    /// Enumerate complete artifacts without evaluating their values.
+    /// List artifact descriptions with their collection view. Discover collection keys without evaluating leaf values.
     pub async fn items(&self) -> Result<Vec<Artifact>, DaggerError> {
         let query = self.selection.select("items");
         let query = query.select("id");
@@ -2879,21 +2715,6 @@ impl CollectionTypeDef {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
-    }
-    /// The type of batch operations, or null when there are none.
-    pub async fn batch_type(&self) -> Result<Option<TypeDef>, DaggerError> {
-        let query = self.selection.select("batchType");
-        let query = query.select("id");
-        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
-        Ok(id.map(|id| TypeDef {
-            proc: self.proc.clone(),
-            selection: query
-                .root()
-                .select("node")
-                .arg("id", &id.0)
-                .inline_fragment("TypeDef"),
-            graphql_client: self.graphql_client.clone(),
-        }))
     }
 }
 impl Node for CollectionTypeDef {

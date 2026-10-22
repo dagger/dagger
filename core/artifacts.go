@@ -58,6 +58,7 @@ func (*ArtifactPath) TypeDescription() string {
 // e.g. an LLM's bound tool object. It evaluates in its ContextWorkspace, if
 // any, else in the caller's context.
 type Artifact struct {
+	View           *ArtifactView
 	ModuleName     string `field:"true" doc:"The installed module name."`
 	DimensionNames map[string]string
 	Path           []string                `field:"true" doc:"Ordered, literal fields to follow. Entrypoint targets use their shorthand."`
@@ -282,12 +283,11 @@ type ArtifactSelector struct {
 	ExcludedURIs []string
 }
 
-// Artifacts is an immutable selection. Filtering changes only the entry list
-// and the recorded selector, preserving each artifact's address, module tree,
-// and workspace.
+// Artifacts selects workspace fields and the collection view used to evaluate them.
 type Artifacts struct {
-	Entries  []*Artifact
-	Selector ArtifactSelector
+	Entries         []*Artifact
+	CollectionRoots []*Artifact
+	Selector        ArtifactSelector
 	// AllDimensions lists the dimensions of every loaded module. Names resolve
 	// against it, so a filter cannot change what a name means. It omits
 	// modules that are not loaded, but names start with their module, so
@@ -308,11 +308,14 @@ var _ dagql.HasDependencyResults = (*Artifacts)(nil)
 
 func (*Artifacts) Type() *ast.Type { return &ast.Type{NamedType: "Artifacts", NonNull: true} }
 func (*Artifacts) TypeDescription() string {
-	return "An immutable selection of workspace artifacts. Listed types, dimensions, and keys use OR; chained filters use AND. Empty alternatives match nothing; unknown names match nothing but module load failures. Filters never change addresses or dimension identifiers. Module keys match a module's configured or kebab-case name. A module that failed to load has no schema, so its load failure stands in for whatever it would hold: a filter keeps it when the module could hold something the filter selects, and an exclusion drops it only by its own address, such as <module>/** or ?module=<module>."
+	return "A selection of workspace artifacts and their immutable collection view. Collection key filters replace collection references with subsets. Static filters change only membership. Listed types, dimensions, and keys use OR; chained filters use AND. Empty alternatives match nothing; unknown names match nothing but module load failures. Filters never change addresses or dimension identifiers. Module keys match a module's configured or kebab-case name. A module that failed to load has no schema, so its load failure stands in for whatever it would hold: a filter keeps it when the module could hold something the filter selects, and an exclusion drops it only by its own address, such as <module>/** or ?module=<module>."
 }
 
 func (a *Artifacts) filter(matches func(*Artifact) bool) *Artifacts {
 	selected := &Artifacts{Entries: make([]*Artifact, 0, len(a.Entries)), Selector: a.Selector.clone(), AllDimensions: a.AllDimensions, exact: a.exact}
+	for _, root := range a.CollectionRoots {
+		selected.CollectionRoots = append(selected.CollectionRoots, root.Clone())
+	}
 	for _, artifact := range a.Entries {
 		if matches(artifact) {
 			selected.Entries = append(selected.Entries, artifact.Clone())
@@ -502,24 +505,6 @@ func (a *Artifact) WorkspaceContext(ctx context.Context) (context.Context, error
 		return nil, err
 	}
 	return WorkspaceToContext(ctx, ws), nil
-}
-
-func (a *Artifacts) WithArtifacts(other *Artifacts) (*Artifacts, error) {
-	selected := &Artifacts{Entries: []*Artifact{}, AllDimensions: artifact.Union(a.AllDimensions, other.AllDimensions)}
-	seen := map[string]bool{}
-	for _, artifact := range slices.Concat(a.Entries, other.Entries) {
-		key, err := artifact.identity()
-		if err != nil {
-			return nil, err
-		}
-		if !seen[key] {
-			seen[key] = true
-			selected.Entries = append(selected.Entries, artifact.Clone())
-		}
-	}
-	slices.SortStableFunc(selected.Entries, func(a, b *Artifact) int { return slices.Compare(a.Path, b.Path) })
-	selected.Selector.Paths = selected.exactPaths()
-	return selected, nil
 }
 
 func (a *Artifacts) WithoutArtifacts(other *Artifacts) (*Artifacts, error) {
@@ -921,6 +906,7 @@ func BoundArtifacts(ctx context.Context, mod dagql.ObjectResult[*Module], root d
 	}
 	slices.SortFunc(artifacts.Entries, func(a, b *Artifact) int { return slices.Compare(a.Path, b.Path) })
 	artifacts.AllDimensions = artifacts.DimensionDefinitions()
+	artifacts.SetCollectionRoots(artifacts.Entries)
 	return artifacts, nil
 }
 
@@ -959,6 +945,9 @@ func (a *Artifact) Evaluate(ctx context.Context, dest any, inputs ...dagql.Named
 		}
 		node.DagqlServer = srv
 	}
+	if a.View != nil {
+		ctx = dagql.WithResultScope(ctx, a.View)
+	}
 	return artifact.Node.dagqlValue(ctx, dest, inputs)
 }
 
@@ -996,39 +985,51 @@ type persistedArtifact struct {
 	Node           int
 	Workspace      uint64
 	// ContextWorkspace is Artifact.ContextWorkspace; zero when unset.
-	ContextWorkspace uint64 `json:",omitempty"`
+	ContextWorkspace uint64                 `json:",omitempty"`
+	View             *persistedArtifactView `json:",omitempty"`
 }
 type persistedArtifacts struct {
-	Tree          persistedModTree
-	Entries       []persistedArtifact
-	Selector      ArtifactSelector
-	AllDimensions artifact.Dimensions
+	Tree            persistedModTree
+	Entries         []persistedArtifact
+	CollectionRoots []persistedArtifact
+	Selector        ArtifactSelector
+	AllDimensions   artifact.Dimensions
 }
 
-func encodeArtifacts(enc *dagql.PersistEncodeContext, entries []*Artifact, selector ArtifactSelector, allDimensions artifact.Dimensions) (dagql.PersistedObjectEncoding, error) {
+func encodeArtifacts(enc *dagql.PersistEncodeContext, entries, roots []*Artifact, selector ArtifactSelector, allDimensions artifact.Dimensions) (dagql.PersistedObjectEncoding, error) {
 	tree := newPersistedModTreeEncoder(enc)
 	payload := persistedArtifacts{Selector: selector, AllDimensions: allDimensions}
-	for _, a := range entries {
-		p := persistedArtifact{ModuleName: a.ModuleName, LoadFailure: a.LoadFailure, Path: a.Path, DimensionKeys: a.DimensionKeys, TypeName: a.TypeName, Directives: a.Directives}
-		p.DimensionNames = a.DimensionNames
-		var err error
-		p.Node, err = tree.Add(a.Node)
-		if err != nil {
-			return dagql.PersistedObjectEncoding{}, err
-		}
-		if a.Workspace.Self() != nil {
-			p.Workspace, err = encodePersistedObjectRef(enc, a.Workspace, "artifact workspace")
+	for i, group := range [][]*Artifact{entries, roots} {
+		for _, a := range group {
+			p := persistedArtifact{ModuleName: a.ModuleName, LoadFailure: a.LoadFailure, Path: a.Path, DimensionKeys: a.DimensionKeys, TypeName: a.TypeName, Directives: a.Directives}
+			p.DimensionNames = a.DimensionNames
+			var err error
+			p.View, err = a.View.encode(enc)
 			if err != nil {
 				return dagql.PersistedObjectEncoding{}, err
 			}
-		}
-		if a.ContextWorkspace.Self() != nil {
-			p.ContextWorkspace, err = encodePersistedObjectRef(enc, a.ContextWorkspace, "artifact context workspace")
+			p.Node, err = tree.Add(a.Node)
 			if err != nil {
 				return dagql.PersistedObjectEncoding{}, err
 			}
+			if a.Workspace.Self() != nil {
+				p.Workspace, err = encodePersistedObjectRef(enc, a.Workspace, "artifact workspace")
+				if err != nil {
+					return dagql.PersistedObjectEncoding{}, err
+				}
+			}
+			if a.ContextWorkspace.Self() != nil {
+				p.ContextWorkspace, err = encodePersistedObjectRef(enc, a.ContextWorkspace, "artifact context workspace")
+				if err != nil {
+					return dagql.PersistedObjectEncoding{}, err
+				}
+			}
+			if i == 0 {
+				payload.Entries = append(payload.Entries, p)
+			} else {
+				payload.CollectionRoots = append(payload.CollectionRoots, p)
+			}
 		}
-		payload.Entries = append(payload.Entries, p)
 	}
 	payload.Tree = tree.tree
 	return encodePersistedObjectPayload(payload)
@@ -1043,29 +1044,39 @@ func decodeArtifacts(ctx context.Context, dec *dagql.PersistDecodeContext, raw j
 		return nil, err
 	}
 	result := &Artifacts{Selector: payload.Selector, AllDimensions: payload.AllDimensions}
-	for _, p := range payload.Entries {
-		a := &Artifact{ModuleName: p.ModuleName, LoadFailure: p.LoadFailure, Path: p.Path, DimensionKeys: p.DimensionKeys, TypeName: p.TypeName, Directives: p.Directives, Node: nodes[p.Node]}
-		a.DimensionNames = p.DimensionNames
-		if a.DimensionKeys == nil {
-			a.DimensionKeys = []*ArtifactDimensionKey{}
+	for i, group := range [][]persistedArtifact{payload.Entries, payload.CollectionRoots} {
+		for _, p := range group {
+			a := &Artifact{ModuleName: p.ModuleName, LoadFailure: p.LoadFailure, Path: p.Path, DimensionKeys: p.DimensionKeys, TypeName: p.TypeName, Directives: p.Directives, Node: nodes[p.Node]}
+			a.View, err = p.View.decode(ctx, dec)
+			if err != nil {
+				return nil, err
+			}
+			a.DimensionNames = p.DimensionNames
+			if a.DimensionKeys == nil {
+				a.DimensionKeys = []*ArtifactDimensionKey{}
+			}
+			if a.Node == nil && a.LoadFailure == nil {
+				return nil, fmt.Errorf("artifact references missing tree node %d", p.Node)
+			}
+			a.Workspace, err = loadPersistedObjectResultByResultID[*Workspace](ctx, dec, p.Workspace, "artifact workspace")
+			if err != nil {
+				return nil, err
+			}
+			a.ContextWorkspace, err = loadPersistedObjectResultByResultID[*Workspace](ctx, dec, p.ContextWorkspace, "artifact context workspace")
+			if err != nil {
+				return nil, err
+			}
+			if i == 0 {
+				result.Entries = append(result.Entries, a)
+			} else {
+				result.CollectionRoots = append(result.CollectionRoots, a)
+			}
 		}
-		if a.Node == nil && a.LoadFailure == nil {
-			return nil, fmt.Errorf("artifact references missing tree node %d", p.Node)
-		}
-		a.Workspace, err = loadPersistedObjectResultByResultID[*Workspace](ctx, dec, p.Workspace, "artifact workspace")
-		if err != nil {
-			return nil, err
-		}
-		a.ContextWorkspace, err = loadPersistedObjectResultByResultID[*Workspace](ctx, dec, p.ContextWorkspace, "artifact context workspace")
-		if err != nil {
-			return nil, err
-		}
-		result.Entries = append(result.Entries, a)
 	}
 	return result, nil
 }
 func (a *Artifact) EncodePersistedObject(_ context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
-	return encodeArtifacts(enc, []*Artifact{a}, ArtifactSelector{}, nil)
+	return encodeArtifacts(enc, []*Artifact{a}, nil, ArtifactSelector{}, nil)
 }
 func (*Artifact) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, raw json.RawMessage) (dagql.Typed, error) {
 	result, err := decodeArtifacts(ctx, dec, raw)
@@ -1078,7 +1089,7 @@ func (*Artifact) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDe
 	return result.Entries[0], nil
 }
 func (a *Artifacts) EncodePersistedObject(_ context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
-	return encodeArtifacts(enc, a.Entries, a.Selector, a.AllDimensions)
+	return encodeArtifacts(enc, a.Entries, a.CollectionRoots, a.Selector, a.AllDimensions)
 }
 func (*Artifacts) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, raw json.RawMessage) (dagql.Typed, error) {
 	return decodeArtifacts(ctx, dec, raw)
@@ -1112,11 +1123,16 @@ func (a *Artifact) AttachDependencyResults(_ context.Context, _ dagql.AnyResult,
 		}
 		owned = append(owned, value)
 	}
-	return owned, nil
+	view, deps, err := a.View.attach(attach)
+	if err != nil {
+		return nil, err
+	}
+	a.View = view
+	return append(owned, deps...), nil
 }
 func (a *Artifacts) AttachDependencyResults(ctx context.Context, _ dagql.AnyResult, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
 	var owned []dagql.AnyResult
-	for _, entry := range a.Entries {
+	for _, entry := range slices.Concat(a.Entries, a.CollectionRoots) {
 		deps, err := entry.AttachDependencyResults(ctx, nil, attach)
 		if err != nil {
 			return nil, err

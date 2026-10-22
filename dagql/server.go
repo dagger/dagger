@@ -1389,7 +1389,11 @@ func (s *Server) Load(ctx context.Context, id *call.ID) (AnyObjectResult, error)
 	if err != nil {
 		return nil, err
 	}
-	return s.toSelectable(ctx, res)
+	object, err := s.toSelectable(ctx, res)
+	if err != nil {
+		return nil, err
+	}
+	return scopeObject(ctx, s, object)
 }
 
 func (s *Server) loadNthValue(
@@ -1422,6 +1426,13 @@ func (s *Server) loadNthValue(
 			return nil, fmt.Errorf("item %d is null from enumerable", nth)
 		}
 		return nil, nil
+	}
+	if _, scoped := UnwrapAs[HasResultScope](res); scoped && CurrentResultScope(ctx) != nil {
+		object, err := s.toSelectable(ctx, res)
+		if err != nil {
+			return nil, err
+		}
+		return scopeObject(ctx, s, object)
 	}
 	return res, nil
 }
@@ -2043,8 +2054,16 @@ func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sel
 		}
 	}()
 
+	ctx = resultScopeFromReceiver(ctx, self)
+	if len(sels) == 0 {
+		self, err = scopeObject(ctx, s, self)
+		if err != nil {
+			return err
+		}
+	}
 	var res AnyResult = self
 	for i, sel := range sels {
+		ctx = resultScopeFromReceiver(ctx, self)
 		nth := sel.Nth
 		// if we are selecting the nth element, then select the parent list first and
 		// grab the NthValue below
@@ -2393,6 +2412,7 @@ func gqlErr(rerr error, path ast.Path) *gqlerror.Error {
 }
 
 func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Selection) (res any, rerr error) {
+	ctx = resultScopeFromReceiver(ctx, self)
 	defer func() {
 		if r := recover(); r != nil {
 			rerr = PanicError{

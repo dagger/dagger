@@ -41,12 +41,13 @@ func (c *Check) runFunction(ctx context.Context) error {
 
 func (c *Check) AttachDependencyResults(ctx context.Context, _ dagql.AnyResult, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
 	var owned []dagql.AnyResult
-	if c.RemoteArtifact != nil {
-		deps, err := c.RemoteArtifact.AttachDependencyResults(ctx, nil, attach)
+	if c.RemoteArtifact.Self() != nil {
+		result, err := attach(c.RemoteArtifact)
 		if err != nil {
 			return nil, err
 		}
-		owned = append(owned, deps...)
+		c.RemoteArtifact = result.(dagql.ObjectResult[*Artifact])
+		owned = append(owned, result)
 	}
 	if c.Receiver.Self() != nil {
 		result, err := attach(c.Receiver)
@@ -92,11 +93,19 @@ func (c *Check) AttachDependencyResults(ctx context.Context, _ dagql.AnyResult, 
 }
 
 func (c *Check) runRemote(ctx context.Context) error {
-	var outcome struct{ Pass bool }
-	if err := c.RemoteArtifact.QueryCloud(ctx, c.RemoteArguments, `... on Check { pass }`, &outcome); err != nil {
+	var outcome struct {
+		Sync struct {
+			Pass  bool
+			Error *Error
+		}
+	}
+	if err := queryArtifactCloud(ctx, c.RemoteArtifact, c.RemoteArguments, `... on Check { sync { pass error { message values { name value } } } }`, &outcome); err != nil {
 		return err
 	}
-	if !outcome.Pass {
+	if outcome.Sync.Error != nil {
+		return outcome.Sync.Error
+	}
+	if !outcome.Sync.Pass {
 		return fmt.Errorf("check failed")
 	}
 	return nil

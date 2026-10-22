@@ -392,23 +392,6 @@ export type ArtifactsPathDefinitionsOpts = {
   dimension?: string
 }
 
-export type ArtifactsValuesOpts = {
-  /**
-   * Cancel remaining work after the first failure.
-   */
-  failFast?: boolean
-
-  /**
-   * Field arguments applied to each artifact, as a JSON object.
-   */
-  arguments?: JSON
-
-  /**
-   * Evaluate at most this many artifacts at once on this engine; the rest wait. Checks that scale out to cloud engines are not counted. 0 means no limit.
-   */
-  maxConcurrency?: number
-}
-
 export type BuildArg = {
   /**
    * The build argument name.
@@ -4642,25 +4625,6 @@ export function WorkspaceCommitPickStatusNameToValue(
       return name as WorkspaceCommitPickStatus
   }
 }
-export type __DirectiveArgsOpts = {
-  includeDeprecated?: boolean
-}
-
-export type __FieldArgsOpts = {
-  includeDeprecated?: boolean
-}
-
-export type __TypeEnumValuesOpts = {
-  includeDeprecated?: boolean
-}
-
-export type __TypeFieldsOpts = {
-  includeDeprecated?: boolean
-}
-
-export type __TypeInputFieldsOpts = {
-  includeDeprecated?: boolean
-}
 
 /**
  * A standardized address to load containers, directories, secrets, and other object types. Address format depends on the type, and is validated at type selection.
@@ -5772,72 +5736,8 @@ export class ArtifactPath extends BaseClient {
   }
 }
 
-export class ArtifactResult extends BaseClient {
-  private readonly _id?: ID = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(ctx?: Context, _id?: ID) {
-    super(ctx)
-
-    this._id = _id
-  }
-
-  /**
-   * A unique identifier for this ArtifactResult.
-   */
-  id = async (): Promise<ID> => {
-    if (this._id) {
-      return this._id
-    }
-
-    const ctx = this._ctx.select("id")
-
-    const response: Awaited<ID> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * The artifact that was evaluated.
-   */
-  artifact = (): Artifact => {
-    const ctx = this._ctx.select("artifact")
-    return new Artifact(ctx)
-  }
-
-  /**
-   * The evaluation failure, if any.
-   */
-  error = async (): Promise<Error | null> => {
-    const ctx = this._ctx.select("error").select("id")
-
-    const response: Awaited<string | null> = await ctx.execute()
-
-    if (response === null) {
-      return null
-    }
-    return new Error(ctx.copy().selectNode(response, "Error"))
-  }
-
-  /**
-   * The evaluated value, or null when evaluation failed.
-   */
-  value = async (): Promise<Node | null> => {
-    const ctx = this._ctx.select("value").select("id")
-
-    const response: Awaited<string | null> = await ctx.execute()
-
-    if (response === null) {
-      return null
-    }
-    return new _NodeClient(ctx.copy().selectNode(response, "Node"))
-  }
-}
-
 /**
- * An immutable selection of workspace artifacts. Listed types, dimensions, and keys use OR; chained filters use AND. Empty alternatives match nothing; unknown names match nothing but module load failures. Filters never change addresses or dimension identifiers. Module keys match a module's configured or kebab-case name. A module that failed to load has no schema, so its load failure stands in for whatever it would hold: a filter keeps it when the module could hold something the filter selects, and an exclusion drops it only by its own address, such as <module>/** or ?module=<module>.
+ * A selection of workspace artifacts and their immutable collection view. Collection key filters replace collection references with subsets. Static filters change only membership. Listed types, dimensions, and keys use OR; chained filters use AND. Empty alternatives match nothing; unknown names match nothing but module load failures. Filters never change addresses or dimension identifiers. Module keys match a module's configured or kebab-case name. A module that failed to load has no schema, so its load failure stands in for whatever it would hold: a filter keeps it when the module could hold something the filter selects, and an exclusion drops it only by its own address, such as <module>/** or ?module=<module>.
  */
 export class Artifacts extends BaseClient {
   private readonly _id?: ID = undefined
@@ -6009,7 +5909,7 @@ export class Artifacts extends BaseClient {
   }
 
   /**
-   * Keep artifacts with any listed key in this dimension.
+   * Keep artifacts with any listed key in this dimension. Replace collection references with matching subsets. Skip absent keys and leave the source view unchanged.
    */
   filterDimensionKeys = (dimension: string, keys: string[]): Artifacts => {
     const ctx = this._ctx.select("filterDimensionKeys", { dimension, keys })
@@ -6105,7 +6005,7 @@ export class Artifacts extends BaseClient {
   }
 
   /**
-   * Enumerate complete artifacts without evaluating their values.
+   * List artifact descriptions with their collection view. Discover collection keys without evaluating leaf values.
    */
   items = async (): Promise<Artifact[]> => {
     type items = {
@@ -6201,35 +6101,7 @@ export class Artifacts extends BaseClient {
   }
 
   /**
-   * Evaluate the selection in parallel, retaining each result and error.
-   * @param opts.failFast Cancel remaining work after the first failure.
-   * @param opts.arguments Field arguments applied to each artifact, as a JSON object.
-   * @param opts.maxConcurrency Evaluate at most this many artifacts at once on this engine; the rest wait. Checks that scale out to cloud engines are not counted. 0 means no limit.
-   */
-  values = async (opts?: ArtifactsValuesOpts): Promise<ArtifactResult[]> => {
-    type values = {
-      id: ID
-    }
-
-    const ctx = this._ctx.select("values", { ...opts }).select("id")
-
-    const response: Awaited<values[]> = await ctx.execute()
-
-    return response.map(
-      (r) => new ArtifactResult(ctx.copy().selectNode(r.id, "ArtifactResult")),
-    )
-  }
-
-  /**
-   * Combine two selections, keeping each workspace address once. Different addresses remain distinct even if they return the same object.
-   */
-  withArtifacts = (artifacts: Artifacts): Artifacts => {
-    const ctx = this._ctx.select("withArtifacts", { artifacts })
-    return new Artifacts(ctx)
-  }
-
-  /**
-   * Remove artifacts selected by a DAG address.
+   * Remove artifacts selected by a DAG address. Retain the collection view.
    */
   withoutUri = (uri: string): Artifacts => {
     const ctx = this._ctx.select("withoutUri", { uri })
@@ -6783,20 +6655,6 @@ export class CollectionTypeDef extends BaseClient {
     const response: Awaited<ID> = await ctx.execute()
 
     return response
-  }
-
-  /**
-   * The type of batch operations, or null when there are none.
-   */
-  batchType = async (): Promise<TypeDef | null> => {
-    const ctx = this._ctx.select("batchType").select("id")
-
-    const response: Awaited<string | null> = await ctx.execute()
-
-    if (response === null) {
-      return null
-    }
-    return new TypeDef(ctx.copy().selectNode(response, "TypeDef"))
   }
 
   /**
