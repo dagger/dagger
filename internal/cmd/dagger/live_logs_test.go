@@ -998,6 +998,110 @@ func (f *fakeExitFrontend) SetPrimaryOutput(records []sdklog.Record) {
 func (f *fakeExitFrontend) LiveLogsCoverage([]idtui.LogTarget) []idtui.LogCoverage { return nil }
 func (f *fakeExitFrontend) LiveLogsActivity([]dagui.SpanID) []idtui.LogActivity { return nil }
 
+// TestFinishLiveLogsInterrupted: against a hung engine, an interrupt during
+// the exit ends it promptly -- the TUI's Ctrl-C canceling the run's context,
+// or a SIGINT after the run was already canceled -- whether it hangs in the
+// barrier or in the primary output's read, whose final render gets what was
+// read so far. A run canceled before exit still gets its reads.
+func TestFinishLiveLogsInterrupted(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// canceledRun cancels the run's context before exit; interrupting
+		// is then a SIGINT, and otherwise canceling the run's context.
+		canceledRun, hangBarrier, hangPrimary bool
+	}{
+		{name: "ctrl-c in barrier", hangBarrier: true},
+		{name: "ctrl-c in primary read", hangPrimary: true},
+		{name: "sigint in barrier", canceledRun: true, hangBarrier: true},
+		{name: "sigint in primary read", canceledRun: true, hangPrimary: true},
+		{name: "run canceled before exit", canceledRun: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sigintCtx, sigint := context.WithCancel(t.Context())
+			oldInterrupts := exitInterrupts
+			exitInterrupts = func(ctx context.Context) (context.Context, context.CancelFunc) {
+				ctx, stop := context.WithCancel(ctx)
+				stopAfter := context.AfterFunc(sigintCtx, stop)
+				return ctx, func() { stopAfter(); stop() }
+			}
+			t.Cleanup(func() { exitInterrupts = oldInterrupts })
+
+			events := &exitEvents{}
+			hung := make(chan struct{}, 2)
+			hang := func(ctx context.Context) error {
+				hung <- struct{}{}
+				<-ctx.Done()
+				return ctx.Err()
+			}
+			sess := hangingExitSession{events: events}
+			if tc.hangBarrier {
+				sess.hang = hang
+			}
+			reader := logReaderFunc(func(ctx context.Context, _ string, q tracesource.LogQuery, cb func(context.Context, *collogspb.ExportLogsServiceRequest, string) error) error {
+				span := q.Spans[0].SpanID
+				events.add("read " + span[len(span)-2:])
+				if span != liveTestSpan(9).String() {
+					return nil
+				}
+				if err := cb(ctx, liveLogRequest([]liveLogRow{{span: 9, body: "partial"}}), "1"); err != nil {
+					return err
+				}
+				if tc.hangPrimary {
+					return hang(ctx)
+				}
+				return nil
+			})
+			live := newLiveLogs(reader, "trace", &bodyCollector{}, false)
+			fe := &fakeExitFrontend{events: events, live: live}
+			live.frontend = fe
+
+			runCtx, cancelRun := context.WithCancel(t.Context())
+			defer cancelRun()
+			interrupt := cancelRun
+			if tc.canceledRun {
+				cancelRun()
+				interrupt = sigint
+			}
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				finishLiveLogs(runCtx, sess, live)
+			}()
+			if tc.hangBarrier || tc.hangPrimary {
+				<-hung
+				interrupt()
+			}
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				t.Fatal("exit not interrupted")
+			}
+			require.NotContains(t, events.got(), "wait idle", "no quiet wait once interrupted")
+			require.Contains(t, events.got(), "set primary output")
+			if !tc.hangBarrier {
+				require.Equal(t, []string{"partial"}, fe.primary, "the primary output read so far is written")
+			}
+		})
+	}
+}
+
+type hangingExitSession struct {
+	events *exitEvents
+	hang   func(context.Context) error
+}
+
+func (s hangingExitSession) TelemetryBarrier(ctx context.Context) error {
+	s.events.add("barrier")
+	if s.hang != nil {
+		return s.hang(ctx)
+	}
+	return nil
+}
+
+func (s hangingExitSession) WaitTelemetryIdle(context.Context, time.Duration) {
+	s.events.add("wait idle")
+}
+
 // TestFlushableSpanForwarder: the frontend's batching processors hand what
 // the session delivered on when the barrier flushes the forwarder.
 func TestFlushableSpanForwarder(t *testing.T) {
