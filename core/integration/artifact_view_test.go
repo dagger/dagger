@@ -49,9 +49,9 @@ type Case {
   pub name: String!
   pub parent: Cases!
   verify: Void @check {
-    if (parent.owner.parent.keys.length != 2) { raise "parent view lost" }
-    if (parent.owner.name == "left" && parent.keys.length != 2) { raise "case view lost" }
-    if (parent.owner.name == "right" && parent.keys.length != 1) { raise "case view lost" }
+    if (parent.owner.parent.names.length != 2) { raise "parent view lost" }
+    if (parent.owner.name == "left" and parent.names.length != 2) { raise "case view lost" }
+    if (parent.owner.name == "right" and parent.names.length != 1) { raise "case view lost" }
     parent.results.file("/selected").contents
     if (name == "Bar") { raise "Bar assertion failed" }
     null
@@ -167,14 +167,13 @@ func (ArtifactsSuite) TestFilteredViewCollectionOrigins(ctx context.Context, t *
   first: Cases! { shared }
   second: Cases! { Cases(names: ["b", "c", "d"]) }
   alias: Cases! { first }
-  bound: LLM! { llm.withTools(first.subset(keys: ["b", "c"])) }
 }
 type Cases @collection {
   pub names: [String!]! @keys
   pub selection: CollectionDelta @delta
   lookup(name: String!): Case! @get { Case(name: name, parent: self, alias: self) }
   removed: [String!]! { selection!.removedKeys }
-  narrow: Cases! { self.subset(keys: ["b"]) }
+  bound: LLM! { llm.withTools(currentNode) }
 }
 type Case {
   pub name: String!
@@ -186,20 +185,19 @@ type Case {
  currentWorkspace { artifacts { filterTypes(types: ["ViewCase"]) {
   first: filterDimensionKeys(dimension: "/view/first", keys: ["a", "b"]) {
    items { value { ... on ViewCase { name alias { keys } parent {
-    keys removed narrow { keys removed }
+    keys removed narrow: subset(keys: ["b"]) { keys removed }
    } } } }
   }
   second: filterDimensionKeys(dimension: "/view/second", keys: ["d"]) {
    items { value { ... on ViewCase { name alias { keys } parent { keys removed } } } }
   }
  } } }
- first { keys }
  second { keys }
- bound { artifacts { filterTypes(types: ["ViewCase"]) {
+ first { keys subset(keys: ["b", "c"]) { bound { artifacts { filterTypes(types: ["ViewCase"]) {
   filterDimensionKeys(dimension: "view-case", keys: ["c", "absent"]) {
    items { value { ... on ViewCase { name parent { keys removed } } } }
   }
- } } }
+ } } } } }
 }`)).Stdout(ctx)
 	require.NoError(t, err, out)
 	require.JSONEq(t, `{
@@ -212,10 +210,10 @@ type Case {
    {"value":{"name":"d","alias":{"keys":["d"]},"parent":{"keys":["d"],"removed":["b","c"]}}}
   ]}
  }}},
- "first":{"keys":["a","b","c"]}, "second":{"keys":["b","c","d"]},
- "bound":{"artifacts":{"filterTypes":{"filterDimensionKeys":{"items":[
+ "second":{"keys":["b","c","d"]},
+ "first":{"keys":["a","b","c"],"subset":{"bound":{"artifacts":{"filterTypes":{"filterDimensionKeys":{"items":[
   {"value":{"name":"c","parent":{"keys":["c"],"removed":["a","b"]}}}
- ]}}}}
+ ]}}}}}}
 }`, out)
 }
 
