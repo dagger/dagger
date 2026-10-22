@@ -47,9 +47,10 @@ type ExportStats struct {
 	// LockWait is the wait for the per-snapshot export lock, held by another
 	// export of the same layer.
 	LockWait time.Duration
-	// LayersMerged counts the diffed layers whose snapshot a merge or a diff
-	// application made, and the Merged sums are their share of RawBytes,
-	// BlobBytes and DiffTime.
+	// LayersMerged counts the diffed layers whose snapshot carries the
+	// merge-usage label: a merge, a diff application, or a copy committed with
+	// its usage (CommitWithUsage). The Merged sums are their share of
+	// RawBytes, BlobBytes and DiffTime.
 	LayersMerged    int
 	MergedRawBytes  int64
 	MergedBlobBytes int64
