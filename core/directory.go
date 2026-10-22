@@ -2652,6 +2652,22 @@ func viewDest(root, dirPath, dest string) (boundary, out string, _ error) {
 	return boundary, out, nil
 }
 
+// newViewCopier returns a copier into the directory at dirPath of the
+// filesystem mounted at root, with the directory as its boundary, and writes
+// dests, destination paths in the directory, to out as paths for it (see
+// viewDest).
+func newViewCopier(root string, mnt *mount.Mount, dirPath string, dests, out []string) (*layercopy.Copier, error) {
+	var boundary string
+	for i, dest := range dests {
+		var err error
+		boundary, out[i], err = viewDest(root, dirPath, dest)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return layercopy.NewCopier(layercopy.Mount{Root: root, Mount: mnt, Boundary: boundary})
+}
+
 //nolint:gocyclo
 func (dir *Directory) WithDirectoryDockerfileCompat(
 	ctx context.Context,
@@ -3172,14 +3188,7 @@ func (dir *Directory) copyFiles(
 			}
 		}
 
-		var boundary string
-		for i, destPath := range destPaths {
-			boundary, copyDestPaths[i], err = viewDest(root, ourDir, destPath)
-			if err != nil {
-				return err
-			}
-		}
-		copier, err := layercopy.NewCopier(layercopy.Mount{Root: root, Mount: destMnt, Boundary: boundary})
+		copier, err := newViewCopier(root, destMnt, ourDir, destPaths, copyDestPaths)
 		if err != nil {
 			return err
 		}
