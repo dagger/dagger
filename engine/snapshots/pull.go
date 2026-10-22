@@ -11,6 +11,7 @@ import (
 	"github.com/containerd/containerd/v2/core/diff"
 	"github.com/containerd/containerd/v2/core/leases"
 	cerrdefs "github.com/containerd/errdefs"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/tracing"
@@ -159,11 +160,18 @@ func (cm *snapshotManager) importLayer(
 		parentSnapshotID = parent.SnapshotID()
 	}
 
+	// The stamps feed the import's timing sums and the profile alike.
+	prof := wcprof.Enabled(ctx)
+	clock := importClock{timing: timing, prof: prof}
 	lockKey := importedLayerDiffLockKey(parentSnapshotID, diffID)
-	waitStart := timing.now()
+	waitStart := clock.now()
 	unlock, err := cm.importLayerLocker.acquire(ctx, lockKey)
+	waited := clock.now()
 	if timing != nil {
-		timing.LayerWait += time.Since(waitStart)
+		timing.LayerWait += waited.Sub(waitStart)
+	}
+	if prof {
+		wcprof.RecordWaitAt(ctx, "snapshots.importLayer", wcprof.WaitReasonLock, waitStart, waited)
 	}
 	if err != nil {
 		return nil, err
@@ -215,10 +223,14 @@ func (cm *snapshotManager) importLayer(
 		cm.mu.Unlock()
 	}
 
-	fetchStart := timing.now()
-	err = cm.importLayerContent(ctx, desc, provider, chainMode)
+	fetchStart := clock.now()
+	source, err := cm.importLayerContent(ctx, desc, provider, chainMode)
+	fetched := clock.now()
 	if timing != nil {
-		timing.Fetch += time.Since(fetchStart)
+		timing.Fetch += fetched.Sub(fetchStart)
+	}
+	if prof {
+		recordImportPhase(ctx, "snapshot.import.fetch["+source+"]", desc, source, fetchStart, fetched, err)
 	}
 	if err != nil {
 		return nil, err
@@ -262,10 +274,14 @@ func (cm *snapshotManager) importLayer(
 			unpack.Update(read)
 		}))
 	}
-	applyStart := timing.now()
+	applyStart := clock.now()
 	_, err = cm.Applier.Apply(ctx, desc, mounts, applyOpts...)
+	applied := clock.now()
 	if timing != nil {
-		timing.Apply += time.Since(applyStart)
+		timing.Apply += applied.Sub(applyStart)
+	}
+	if prof {
+		recordImportPhase(ctx, "snapshot.import.apply", desc, "", applyStart, applied, err)
 	}
 	if err != nil {
 		_ = unmount()
@@ -439,10 +455,13 @@ const BuiltinLayersLeaseID = "dagger/builtin-image/layers"
 // image store between the two: a layer of a builtin image is then copied
 // from the engine's own files, with no network, and held for the engine's
 // lifetime under BuiltinLayersLeaseID.
-func (cm *snapshotManager) importLayerContent(ctx context.Context, desc ocispecs.Descriptor, provider content.Provider, chainMode bool) (rerr error) {
+// importLayerContent gets desc's blob into the content store, and returns
+// where it came from: present (already there), builtin (the builtin image
+// store), or download (the provider).
+func (cm *snapshotManager) importLayerContent(ctx context.Context, desc ocispecs.Descriptor, provider content.Provider, chainMode bool) (_ string, rerr error) {
 	present, err := cm.pinContent(ctx, desc)
 	if err != nil || present {
-		return err
+		return layerSourcePresent, err
 	}
 	if chainMode {
 		copied, err := cm.copyBuiltinLayer(ctx, desc)
@@ -451,19 +470,19 @@ func (cm *snapshotManager) importLayerContent(ctx context.Context, desc ocispecs
 			// blocks an import: log and download as today.
 			bklog.G(ctx).WithError(err).Warnf("builtin image store could not supply layer %s; downloading it", desc.Digest)
 		} else if copied {
-			return nil
+			return layerSourceBuiltin, nil
 		}
 	}
 	if provider == nil {
-		return chainError(ctx, chainMode, desc, "provider", errors.Wrapf(cerrdefs.ErrNotFound, "missing local layer %s", desc.Digest))
+		return layerSourceDownload, chainError(ctx, chainMode, desc, "provider", errors.Wrapf(cerrdefs.ErrNotFound, "missing local layer %s", desc.Digest))
 	}
 	ref := "snapshot-import-" + rand.Text()
 	writer, err := content.OpenWriter(ctx, cm.ContentStore, content.WithRef(ref), content.WithDescriptor(desc))
 	if cerrdefs.IsAlreadyExists(err) {
-		return nil
+		return layerSourcePresent, nil
 	}
 	if err != nil {
-		return err
+		return layerSourceDownload, err
 	}
 	defer func() {
 		_ = writer.Close()
@@ -473,13 +492,53 @@ func (cm *snapshotManager) importLayerContent(ctx context.Context, desc ocispecs
 	}()
 	reader, err := provider.ReaderAt(ctx, desc)
 	if err != nil {
-		return chainError(ctx, chainMode, desc, "provider", err)
+		return layerSourceDownload, chainError(ctx, chainMode, desc, "provider", err)
 	}
 	defer reader.Close()
 	if chainMode {
-		return copyChainContent(ctx, writer, reader, desc)
+		return layerSourceDownload, copyChainContent(ctx, writer, reader, desc)
 	}
-	return content.Copy(ctx, writer, io.NewSectionReader(reader, 0, reader.Size()), desc.Size, desc.Digest)
+	return layerSourceDownload, content.Copy(ctx, writer, io.NewSectionReader(reader, 0, reader.Size()), desc.Size, desc.Digest)
+}
+
+// Where importLayerContent found a layer's blob.
+const (
+	layerSourcePresent  = "present"
+	layerSourceBuiltin  = "builtin"
+	layerSourceDownload = "download"
+)
+
+// importClock stamps an import's phases when the import's timing or the
+// profile wants them, and reads no clock otherwise.
+type importClock struct {
+	timing *ImportTiming
+	prof   bool
+}
+
+func (c importClock) now() time.Time {
+	if c.timing == nil && !c.prof {
+		return time.Time{}
+	}
+	return time.Now()
+}
+
+// recordImportPhase records one phase of a layer's import, from start to
+// end, as a profile op: the layer's digest, and its size when the phase
+// moved its bytes (a download or an apply, not a blob already present). A
+// download waits on the network; the rest is the engine's.
+func recordImportPhase(ctx context.Context, class string, desc ocispecs.Descriptor, source string, start, end time.Time, err error) {
+	opts := wcprof.OpOpts{Ident: desc.Digest.String(), Bytes: desc.Size}
+	switch source {
+	case layerSourceDownload:
+		opts.WorkType = wcprof.WorkTypeExternal
+	case layerSourcePresent:
+		opts.Bytes = 0
+	}
+	outcome := wcprof.OutcomeOK
+	if err != nil {
+		outcome = wcprof.OutcomeError
+	}
+	wcprof.RecordOpAt(ctx, wcprof.OpKindIO, class, opts, start, end, outcome)
 }
 
 // copyBuiltinLayer copies the blob desc names from the builtin image store

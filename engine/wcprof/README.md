@@ -22,7 +22,10 @@ Three event types, written by hooks at the engine's blocking choke points:
 - **links**: non-blocking correlations, most importantly "exec op X hosts
   nested client Y" so module-function calls back into the API are stitched
   under the exec that made them (wcprof-report puts them under the exec's
-  `exec.processRun`, or its `exec.workload` when the run is split).
+  `exec.processRun`, or its `exec.workload` when the run is split). A `fact`
+  link says something was true of its op (its ident, e.g. `hit.remote`),
+  optionally about a result; a `part` link says a result has a part (its
+  ident) of `b` bytes.
 
 Current hook points:
 
@@ -57,6 +60,22 @@ Current hook points:
 - `core/services.go`: `service_start` ops with singleflight wait edges.
 - `engine/server/session.go serveQuery`: per-query `session_phase` ops
   (attachables wait, workspace load, module load, schema build, query).
+- `engine/snapshots` layer imports (remote-cache installs and image pulls):
+  per layer, an `io` op `snapshot.import.fetch[<source>]` (`download`,
+  `builtin` or `present`) and `snapshot.import.apply`, with the layer's
+  digest as ident and its size in bytes, and a lock wait on
+  `snapshots.importLayer`.
+- Remote-cache installs (`dagql/cache_part_content.go`): one `remote_cache`
+  op `remotecache.install` per attempt to install an offered part, with the
+  part key as ident, the receiving result, and the bytes downloaded; a `part`
+  link with the part's size (its whole chain's); the layers' import ops,
+  `remotecache.renew` (fresh content addresses) and
+  `remotecache.install.commit` as children. Outcomes are `ok`, `refused`,
+  `superseded`, `canceled` or `error` (with an `install.content` fact when
+  the source's bytes were bad). A part that no source could supply and that
+  is computed locally gets a `part.no_source` fact. Lazy ops name their task
+  (`lazy:…`, `acquire:…`, `obtain:…`) as ident. These read the same
+  measurement points as the install's log line and span attributes.
 
 ## Enabling and dumping
 
@@ -101,6 +120,7 @@ curl -s http://localhost:6060/debug/wcprof/dump > /tmp/wcprof.dump
 
 Dumps are NDJSON: a `DumpHeader` line (with the interned `strings` table that
 `class`/`ident`/`client` indexes point into), then one `DumpEvent` per line.
+An event's `b` is a byte count: what an op moved, or a `part` link's size.
 Read them with `wcprof.ReadDump`.
 
 ## Analysis

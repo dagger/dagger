@@ -5042,8 +5042,10 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 		var lazyOp *wcprof.Op
 		if wcprof.Enabled(evalCtx) {
 			// The run of this result's lazy callback; the class ties the cost back
-			// to the call that created the lazy value.
+			// to the call that created the lazy value, and the ident names the
+			// task (an evaluation, or a part's acquisition or install).
 			evalCtx, lazyOp = wcprof.BeginOp(evalCtx, wcprof.OpKindLazy, profCallClass(resultCall), wcprof.OpOpts{
+				Ident:    string(group),
 				ClientID: profClientID(stackCtx),
 			})
 			attempt.profOpID = lazyOp.ID()

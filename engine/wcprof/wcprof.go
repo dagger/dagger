@@ -147,6 +147,12 @@ const (
 	OutcomeError
 	// OutcomeCanceled: op canceled.
 	OutcomeCanceled
+	// OutcomeRefused: op gave way to coordination (e.g. a remote-cache
+	// install refused so its demand selects again); not a failure.
+	OutcomeRefused
+	// OutcomeSuperseded: op's work was done by another op meanwhile (e.g. a
+	// part another install installed first).
+	OutcomeSuperseded
 )
 
 var outcomeNames = map[Outcome]string{
@@ -158,6 +164,8 @@ var outcomeNames = map[Outcome]string{
 	OutcomeOK:         "ok",
 	OutcomeError:      "error",
 	OutcomeCanceled:   "canceled",
+	OutcomeRefused:    "refused",
+	OutcomeSuperseded: "superseded",
 }
 
 func (o Outcome) String() string {

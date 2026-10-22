@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/wcprof"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -411,7 +412,15 @@ func (c *Cache) runLazyOperationDecision(ctx context.Context, res AnyResult, add
 		if outcome != GateGranted {
 			return partRefused("decision: another evaluation owns the write set")
 		}
-		if err := drain.Wait(ctx); err != nil {
+		var drainStart time.Time
+		if wcprof.Enabled(ctx) {
+			drainStart = time.Now()
+		}
+		err = drain.Wait(ctx)
+		if !drainStart.IsZero() {
+			wcprof.RecordWaitAt(ctx, "dagql.partDrain", wcprof.WaitReasonLock, drainStart, time.Now())
+		}
+		if err != nil {
 			return err
 		}
 		row := res.cacheSharedResult()
@@ -487,6 +496,8 @@ func (c *Cache) runLazyOperationDecision(ctx context.Context, res AnyResult, add
 				return err
 			}
 			c.recordPartFixture(row, address, "lazy-enter")
+			// No source could supply the part: it is computed here.
+			wcprof.Fact(ctx, 0, "part.no_source", uint64(row.id))
 			if err := invocation.Run(ctx); err != nil {
 				return err
 			}
