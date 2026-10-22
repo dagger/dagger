@@ -350,9 +350,10 @@ func (build *Builder) cniPlugins() (bins []*dagger.File) {
 		"./plugins/meta/firewall",
 		"./plugins/ipam/host-local",
 	} {
-		// CNI plugins are third-party; VCS stamping is irrelevant here, so we
-		// don't thread any VCS info into their build.
-		bin := dag.Go(dagger.GoOpts{Source: src, Ws: build.ws}).Binary(pluginPath, dagger.GoBinaryOpts{
+		// CNI plugins are third-party, so they carry no dagger VCS stamp, and
+		// their builds stay the same from one dagger commit to the next. The
+		// workspace is still passed: a module must pass one explicitly.
+		bin := dag.Go(dagger.GoOpts{Source: src, Ws: build.ws, NoVcs: true}).Binary(pluginPath, dagger.GoBinaryOpts{
 			NoSymbols: true,
 			NoDwarf:   true,
 			Platform:  build.platform,

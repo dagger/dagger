@@ -107,6 +107,13 @@ func New(
 	// Resolved VCS dirty state to stamp, paired with vcsCommit.
 	// +optional
 	vcsDirty bool,
+
+	// Stamp no VCS info into built binaries, whatever ws or vcsCommit say:
+	// for sources other than dagger's own, such as a third-party tree, where
+	// the stamp sets nothing and would change the build on every commit. A
+	// caller inside a module still passes ws, which the engine requires.
+	// +optional
+	noVcs bool,
 ) *Go {
 	if source == nil {
 		source = dag.Directory()
@@ -169,7 +176,9 @@ func New(
 	// build proceeds with whatever we collected. Only the resolved strings are
 	// ever stamped, never the Workspace itself, so the build stays
 	// content-addressed and its result survives an engine restart.
-	if vcsCommit == "" && ws != nil {
+	if noVcs {
+		vcsCommit = ""
+	} else if vcsCommit == "" && ws != nil {
 		git := ws.Git()
 		if commit, err := git.Head().CommitSHA(ctx); err == nil {
 			vcsCommit = commit

@@ -10,7 +10,7 @@ import (
 )
 
 // A Go project
-type Go struct { // go (../../../../../../.dagger/modules/go/main.go:207:6)
+type Go struct { // go (../../../../../../.dagger/modules/go/main.go:216:6)
 	query *querybuilder.Selection
 	// refetchID is set when this object is built through a field marked
 	// @reevaluate: it fetches its ID on every use, so each use evaluates that
@@ -44,7 +44,7 @@ func (r *Go) WithGraphQLQuery(q *querybuilder.Selection) *Go {
 }
 
 // Base container from which to run all operations
-func (r *Go) Base() *Container { // go (../../../../../../.dagger/modules/go/main.go:221:2)
+func (r *Go) Base() *Container { // go (../../../../../../.dagger/modules/go/main.go:230:2)
 	q := r.query.Select("base")
 
 	return &Container{
@@ -58,19 +58,19 @@ type GoBinaryOpts struct {
 	//
 	// Disable symbol table
 	//
-	NoSymbols bool // go (../../../../../../.dagger/modules/go/main.go:399:2)
+	NoSymbols bool // go (../../../../../../.dagger/modules/go/main.go:408:2)
 	//
 	// Disable DWARF generation
 	//
-	NoDwarf bool // go (../../../../../../.dagger/modules/go/main.go:402:2)
+	NoDwarf bool // go (../../../../../../.dagger/modules/go/main.go:411:2)
 	//
 	// Target build platform
 	//
-	Platform Platform // go (../../../../../../.dagger/modules/go/main.go:405:2)
+	Platform Platform // go (../../../../../../.dagger/modules/go/main.go:414:2)
 }
 
 // Build a single main package, and return the compiled binary
-func (r *Go) Binary(pkg string, opts ...GoBinaryOpts) *File { // go (../../../../../../.dagger/modules/go/main.go:393:1)
+func (r *Go) Binary(pkg string, opts ...GoBinaryOpts) *File { // go (../../../../../../.dagger/modules/go/main.go:402:1)
 	q := r.query.Select("binary")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `noSymbols` optional argument
@@ -101,29 +101,29 @@ type GoBuildOpts struct {
 	//
 	//
 	// Default: ["./..."]
-	Pkgs []string // go (../../../../../../.dagger/modules/go/main.go:341:2)
+	Pkgs []string // go (../../../../../../.dagger/modules/go/main.go:350:2)
 	//
 	// Disable symbol table
 	//
-	NoSymbols bool // go (../../../../../../.dagger/modules/go/main.go:344:2)
+	NoSymbols bool // go (../../../../../../.dagger/modules/go/main.go:353:2)
 	//
 	// Disable DWARF generation
 	//
-	NoDwarf bool // go (../../../../../../.dagger/modules/go/main.go:347:2)
+	NoDwarf bool // go (../../../../../../.dagger/modules/go/main.go:356:2)
 	//
 	// Target build platform
 	//
-	Platform Platform // go (../../../../../../.dagger/modules/go/main.go:350:2)
+	Platform Platform // go (../../../../../../.dagger/modules/go/main.go:359:2)
 	//
 	// Output directory
 	//
 	//
 	// Default: "./bin/"
-	Output string // go (../../../../../../.dagger/modules/go/main.go:354:2)
+	Output string // go (../../../../../../.dagger/modules/go/main.go:363:2)
 }
 
 // Build the given main packages, and return the build directory
-func (r *Go) Build(opts ...GoBuildOpts) *Directory { // go (../../../../../../.dagger/modules/go/main.go:336:1)
+func (r *Go) Build(opts ...GoBuildOpts) *Directory { // go (../../../../../../.dagger/modules/go/main.go:345:1)
 	q := r.query.Select("build")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `pkgs` optional argument
@@ -155,7 +155,7 @@ func (r *Go) Build(opts ...GoBuildOpts) *Directory { // go (../../../../../../.d
 }
 
 // Go build cache
-func (r *Go) BuildCache() *CacheVolume { // go (../../../../../../.dagger/modules/go/main.go:218:2)
+func (r *Go) BuildCache() *CacheVolume { // go (../../../../../../.dagger/modules/go/main.go:227:2)
 	q := r.query.Select("buildCache")
 
 	return &CacheVolume{
@@ -165,7 +165,7 @@ func (r *Go) BuildCache() *CacheVolume { // go (../../../../../../.dagger/module
 }
 
 // Enable CGO
-func (r *Go) Cgo(ctx context.Context) (bool, error) { // go (../../../../../../.dagger/modules/go/main.go:233:2)
+func (r *Go) Cgo(ctx context.Context) (bool, error) { // go (../../../../../../.dagger/modules/go/main.go:242:2)
 	if r.cgo != nil {
 		return *r.cgo, nil
 	}
@@ -179,13 +179,13 @@ func (r *Go) Cgo(ctx context.Context) (bool, error) { // go (../../../../../../.
 
 // GoCheckTidyOpts contains options for Go.CheckTidy
 type GoCheckTidyOpts struct {
-	Include []string // go (../../../../../../.dagger/modules/go/main.go:819:2)
+	Include []string // go (../../../../../../.dagger/modules/go/main.go:828:2)
 
-	Exclude []string // go (../../../../../../.dagger/modules/go/main.go:820:2)
+	Exclude []string // go (../../../../../../.dagger/modules/go/main.go:829:2)
 }
 
 // Check if 'go mod tidy' is up-to-date
-func (r *Go) CheckTidy(opts ...GoCheckTidyOpts) *Check { // go (../../../../../../.dagger/modules/go/main.go:817:1)
+func (r *Go) CheckTidy(opts ...GoCheckTidyOpts) *Check { // go (../../../../../../.dagger/modules/go/main.go:826:1)
 	q := r.query.Select("checkTidy")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `include` optional argument
@@ -205,7 +205,7 @@ func (r *Go) CheckTidy(opts ...GoCheckTidyOpts) *Check { // go (../../../../../.
 }
 
 // Download dependencies into the module cache
-func (r *Go) Download() *Go { // go (../../../../../../.dagger/modules/go/main.go:256:1)
+func (r *Go) Download() *Go { // go (../../../../../../.dagger/modules/go/main.go:265:1)
 	q := r.query.Select("download")
 
 	return &Go{
@@ -216,14 +216,14 @@ func (r *Go) Download() *Go { // go (../../../../../../.dagger/modules/go/main.g
 
 // GoEnvOpts contains options for Go.Env
 type GoEnvOpts struct {
-	Platform Platform // go (../../../../../../.dagger/modules/go/main.go:277:2)
+	Platform Platform // go (../../../../../../.dagger/modules/go/main.go:286:2)
 }
 
 // Prepare a build environment for the given Go source code:
 //   - Build a base container with Go tooling installed and configured
 //   - Apply configuration
 //   - Mount the source code
-func (r *Go) Env(opts ...GoEnvOpts) *Container { // go (../../../../../../.dagger/modules/go/main.go:275:1)
+func (r *Go) Env(opts ...GoEnvOpts) *Container { // go (../../../../../../.dagger/modules/go/main.go:284:1)
 	q := r.query.Select("env")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `platform` optional argument
@@ -238,7 +238,7 @@ func (r *Go) Env(opts ...GoEnvOpts) *Container { // go (../../../../../../.dagge
 	}
 }
 
-func (r *Go) Exclude(ctx context.Context) ([]string, error) { // go (../../../../../../.dagger/modules/go/main.go:243:2)
+func (r *Go) Exclude(ctx context.Context) ([]string, error) { // go (../../../../../../.dagger/modules/go/main.go:252:2)
 	q := r.query.Select("exclude")
 
 	var response []string
@@ -248,7 +248,7 @@ func (r *Go) Exclude(ctx context.Context) ([]string, error) { // go (../../../..
 }
 
 // Enable go experiments
-func (r *Go) Experiment(ctx context.Context) ([]string, error) { // go (../../../../../../.dagger/modules/go/main.go:239:2)
+func (r *Go) Experiment(ctx context.Context) ([]string, error) { // go (../../../../../../.dagger/modules/go/main.go:248:2)
 	q := r.query.Select("experiment")
 
 	var response []string
@@ -257,7 +257,7 @@ func (r *Go) Experiment(ctx context.Context) ([]string, error) { // go (../../..
 	return response, q.Execute(ctx)
 }
 
-func (r *Go) GenerateDaggerRuntime(start string) *Go { // go (../../../../../../.dagger/modules/go/main.go:658:1)
+func (r *Go) GenerateDaggerRuntime(start string) *Go { // go (../../../../../../.dagger/modules/go/main.go:667:1)
 	q := r.query.Select("generateDaggerRuntime")
 	q = q.Arg("start", start)
 
@@ -268,7 +268,7 @@ func (r *Go) GenerateDaggerRuntime(start string) *Go { // go (../../../../../../
 }
 
 // Generate Dagger runtime files for Go SDK modules in the configured source.
-func (r *Go) GenerateDaggerRuntimes() *Changeset { // go (../../../../../../.dagger/modules/go/main.go:614:1)
+func (r *Go) GenerateDaggerRuntimes() *Changeset { // go (../../../../../../.dagger/modules/go/main.go:623:1)
 	q := r.query.Select("generateDaggerRuntimes")
 
 	return &Changeset{
@@ -332,7 +332,7 @@ func (r *Go) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-func (r *Go) Include(ctx context.Context) ([]string, error) { // go (../../../../../../.dagger/modules/go/main.go:241:2)
+func (r *Go) Include(ctx context.Context) ([]string, error) { // go (../../../../../../.dagger/modules/go/main.go:250:2)
 	q := r.query.Select("include")
 
 	var response []string
@@ -342,7 +342,7 @@ func (r *Go) Include(ctx context.Context) ([]string, error) { // go (../../../..
 }
 
 // Pass arguments to 'go build -ldflags'
-func (r *Go) Ldflags(ctx context.Context) ([]string, error) { // go (../../../../../../.dagger/modules/go/main.go:224:2)
+func (r *Go) Ldflags(ctx context.Context) ([]string, error) { // go (../../../../../../.dagger/modules/go/main.go:233:2)
 	q := r.query.Select("ldflags")
 
 	var response []string
@@ -352,7 +352,7 @@ func (r *Go) Ldflags(ctx context.Context) ([]string, error) { // go (../../../..
 }
 
 // Max number of parallel jobs to run
-func (r *Go) Limit(ctx context.Context) (int, error) { // go (../../../../../../.dagger/modules/go/main.go:246:2)
+func (r *Go) Limit(ctx context.Context) (int, error) { // go (../../../../../../.dagger/modules/go/main.go:255:2)
 	if r.limit != nil {
 		return *r.limit, nil
 	}
@@ -371,15 +371,15 @@ type GoListPackagesOpts struct {
 	//
 	//
 	// Default: ["./..."]
-	Pkgs []string // go (../../../../../../.dagger/modules/go/main.go:489:2)
+	Pkgs []string // go (../../../../../../.dagger/modules/go/main.go:498:2)
 	//
 	// Only list main packages
 	//
-	OnlyMain bool // go (../../../../../../.dagger/modules/go/main.go:492:2)
+	OnlyMain bool // go (../../../../../../.dagger/modules/go/main.go:501:2)
 }
 
 // List packages matching the specified criteria
-func (r *Go) ListPackages(ctx context.Context, opts ...GoListPackagesOpts) ([]string, error) { // go (../../../../../../.dagger/modules/go/main.go:484:1)
+func (r *Go) ListPackages(ctx context.Context, opts ...GoListPackagesOpts) ([]string, error) { // go (../../../../../../.dagger/modules/go/main.go:493:1)
 	q := r.query.Select("listPackages")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `pkgs` optional argument
@@ -399,7 +399,7 @@ func (r *Go) ListPackages(ctx context.Context, opts ...GoListPackagesOpts) ([]st
 }
 
 // Go module cache
-func (r *Go) ModuleCache() *CacheVolume { // go (../../../../../../.dagger/modules/go/main.go:215:2)
+func (r *Go) ModuleCache() *CacheVolume { // go (../../../../../../.dagger/modules/go/main.go:224:2)
 	q := r.query.Select("moduleCache")
 
 	return &CacheVolume{
@@ -410,13 +410,13 @@ func (r *Go) ModuleCache() *CacheVolume { // go (../../../../../../.dagger/modul
 
 // GoModulesOpts contains options for Go.Modules
 type GoModulesOpts struct {
-	Include []string // go (../../../../../../.dagger/modules/go/main.go:564:2)
+	Include []string // go (../../../../../../.dagger/modules/go/main.go:573:2)
 
-	Exclude []string // go (../../../../../../.dagger/modules/go/main.go:565:2)
+	Exclude []string // go (../../../../../../.dagger/modules/go/main.go:574:2)
 }
 
 // Scan the source for go modules, and return their paths
-func (r *Go) Modules(ctx context.Context, opts ...GoModulesOpts) ([]string, error) { // go (../../../../../../.dagger/modules/go/main.go:562:1)
+func (r *Go) Modules(ctx context.Context, opts ...GoModulesOpts) ([]string, error) { // go (../../../../../../.dagger/modules/go/main.go:571:1)
 	q := r.query.Select("modules")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `include` optional argument
@@ -436,7 +436,7 @@ func (r *Go) Modules(ctx context.Context, opts ...GoModulesOpts) ([]string, erro
 }
 
 // Enable race detector
-func (r *Go) Race(ctx context.Context) (bool, error) { // go (../../../../../../.dagger/modules/go/main.go:236:2)
+func (r *Go) Race(ctx context.Context) (bool, error) { // go (../../../../../../.dagger/modules/go/main.go:245:2)
 	if r.race != nil {
 		return *r.race, nil
 	}
@@ -449,7 +449,7 @@ func (r *Go) Race(ctx context.Context) (bool, error) { // go (../../../../../../
 }
 
 // Project source directory
-func (r *Go) Source() *Directory { // go (../../../../../../.dagger/modules/go/main.go:212:2)
+func (r *Go) Source() *Directory { // go (../../../../../../.dagger/modules/go/main.go:221:2)
 	q := r.query.Select("source")
 
 	return &Directory{
@@ -459,7 +459,7 @@ func (r *Go) Source() *Directory { // go (../../../../../../.dagger/modules/go/m
 }
 
 // Pass arguments to 'go build -tags'
-func (r *Go) Tags(ctx context.Context) ([]string, error) { // go (../../../../../../.dagger/modules/go/main.go:227:2)
+func (r *Go) Tags(ctx context.Context) ([]string, error) { // go (../../../../../../.dagger/modules/go/main.go:236:2)
 	q := r.query.Select("tags")
 
 	var response []string
@@ -473,38 +473,38 @@ type GoTestOpts struct {
 	//
 	// Only run these tests
 	//
-	Run string // go (../../../../../../.dagger/modules/go/main.go:435:2)
+	Run string // go (../../../../../../.dagger/modules/go/main.go:444:2)
 	//
 	// Skip these tests
 	//
-	Skip string // go (../../../../../../.dagger/modules/go/main.go:438:2)
+	Skip string // go (../../../../../../.dagger/modules/go/main.go:447:2)
 	//
 	// Abort test run on first failure
 	//
-	FailFast bool // go (../../../../../../.dagger/modules/go/main.go:441:2)
+	FailFast bool // go (../../../../../../.dagger/modules/go/main.go:450:2)
 	//
 	// How many tests to run in parallel - defaults to the number of CPUs
 	//
-	Parallel int // go (../../../../../../.dagger/modules/go/main.go:445:2)
+	Parallel int // go (../../../../../../.dagger/modules/go/main.go:454:2)
 	//
 	// How long before timing out the test run
 	//
 	//
 	// Default: "30m"
-	Timeout string // go (../../../../../../.dagger/modules/go/main.go:449:2)
+	Timeout string // go (../../../../../../.dagger/modules/go/main.go:458:2)
 
 	// Default: 1
-	Count int // go (../../../../../../.dagger/modules/go/main.go:452:2)
+	Count int // go (../../../../../../.dagger/modules/go/main.go:461:2)
 	//
 	// Which packages to test
 	//
 	//
 	// Default: ["./..."]
-	Pkgs []string // go (../../../../../../.dagger/modules/go/main.go:456:2)
+	Pkgs []string // go (../../../../../../.dagger/modules/go/main.go:465:2)
 }
 
 // Run tests for the given packages
-func (r *Go) Test(ctx context.Context, opts ...GoTestOpts) error { // go (../../../../../../.dagger/modules/go/main.go:431:1)
+func (r *Go) Test(ctx context.Context, opts ...GoTestOpts) error { // go (../../../../../../.dagger/modules/go/main.go:440:1)
 	if r.test != nil {
 		return nil
 	}
@@ -550,11 +550,11 @@ type GoTestsOpts struct {
 	//
 	//
 	// Default: ["./..."]
-	Pkgs []string // go (../../../../../../.dagger/modules/go/main.go:326:2)
+	Pkgs []string // go (../../../../../../.dagger/modules/go/main.go:335:2)
 }
 
 // List tests
-func (r *Go) Tests(ctx context.Context, opts ...GoTestsOpts) (string, error) { // go (../../../../../../.dagger/modules/go/main.go:321:1)
+func (r *Go) Tests(ctx context.Context, opts ...GoTestsOpts) (string, error) { // go (../../../../../../.dagger/modules/go/main.go:330:1)
 	if r.tests != nil {
 		return *r.tests, nil
 	}
@@ -574,12 +574,12 @@ func (r *Go) Tests(ctx context.Context, opts ...GoTestsOpts) (string, error) { /
 
 // GoTidyOpts contains options for Go.Tidy
 type GoTidyOpts struct {
-	Include []string // go (../../../../../../.dagger/modules/go/main.go:587:2)
+	Include []string // go (../../../../../../.dagger/modules/go/main.go:596:2)
 
-	Exclude []string // go (../../../../../../.dagger/modules/go/main.go:588:2)
+	Exclude []string // go (../../../../../../.dagger/modules/go/main.go:597:2)
 }
 
-func (r *Go) Tidy(opts ...GoTidyOpts) *Changeset { // go (../../../../../../.dagger/modules/go/main.go:585:1)
+func (r *Go) Tidy(opts ...GoTidyOpts) *Changeset { // go (../../../../../../.dagger/modules/go/main.go:594:1)
 	q := r.query.Select("tidy")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `include` optional argument
@@ -598,7 +598,7 @@ func (r *Go) Tidy(opts ...GoTidyOpts) *Changeset { // go (../../../../../../.dag
 	}
 }
 
-func (r *Go) TidyModule(module string) *Changeset { // go (../../../../../../.dagger/modules/go/main.go:574:1)
+func (r *Go) TidyModule(module string) *Changeset { // go (../../../../../../.dagger/modules/go/main.go:583:1)
 	q := r.query.Select("tidyModule")
 	q = q.Arg("module", module)
 
@@ -609,7 +609,7 @@ func (r *Go) TidyModule(module string) *Changeset { // go (../../../../../../.da
 }
 
 // Add string value definition of the form importpath.name=value
-func (r *Go) Values(ctx context.Context) ([]string, error) { // go (../../../../../../.dagger/modules/go/main.go:230:2)
+func (r *Go) Values(ctx context.Context) ([]string, error) { // go (../../../../../../.dagger/modules/go/main.go:239:2)
 	q := r.query.Select("values")
 
 	var response []string
@@ -619,7 +619,7 @@ func (r *Go) Values(ctx context.Context) ([]string, error) { // go (../../../../
 }
 
 // Go version
-func (r *Go) Version(ctx context.Context) (string, error) { // go (../../../../../../.dagger/modules/go/main.go:209:2)
+func (r *Go) Version(ctx context.Context) (string, error) { // go (../../../../../../.dagger/modules/go/main.go:218:2)
 	if r.version != nil {
 		return *r.version, nil
 	}
@@ -722,6 +722,13 @@ type GoOpts struct {
 	// Resolved VCS dirty state to stamp, paired with vcsCommit.
 	//
 	VcsDirty bool // go (../../../../../../.dagger/modules/go/main.go:109:2)
+	//
+	// Stamp no VCS info into built binaries, whatever ws or vcsCommit say:
+	// for sources other than dagger's own, such as a third-party tree, where
+	// the stamp sets nothing and would change the build on every commit. A
+	// caller inside a module still passes ws, which the engine requires.
+	//
+	NoVcs bool // go (../../../../../../.dagger/modules/go/main.go:116:2)
 }
 
 // A Go project
@@ -791,6 +798,10 @@ func (r *Query) Go(opts ...GoOpts) *Go { // go (../../../../../../.dagger/module
 		// `vcsDirty` optional argument
 		if !querybuilder.IsZeroValue(opts[i].VcsDirty) {
 			q = q.Arg("vcsDirty", opts[i].VcsDirty)
+		}
+		// `noVcs` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoVcs) {
+			q = q.Arg("noVcs", opts[i].NoVcs)
 		}
 	}
 
