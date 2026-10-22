@@ -31,11 +31,16 @@ const (
 
 // LogCacheFrontend is the optional interface of a frontend that reads logs
 // on demand (SetLogProvider, SetTraceLogProvider, SetLiveLogs) and lets them
-// go once it stops showing them.
+// go once it stops showing them, and that searches the source of the logs it
+// does not hold.
 type LogCacheFrontend interface {
 	// SetLogRelease registers the callback that lets go of the logs read
 	// for a trace's spans (a zero traceID: SetLogProvider's).
 	SetLogRelease(traceID dagui.TraceID, release func(LogRelease))
+	// SetLogSearch registers the search of a trace's display text (a zero
+	// traceID: SetLogProvider's), for the logs not loaded. Without one, a
+	// search covers only what is loaded.
+	SetLogSearch(traceID dagui.TraceID, search LogSearchFunc)
 }
 
 var _ LogCacheFrontend = (*frontendPretty)(nil)
