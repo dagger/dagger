@@ -205,6 +205,47 @@ func TestLogCachePinsShownSpans(t *testing.T) {
 	require.Nil(t, fe.logs.Logs[mounted])
 }
 
+// TestLogCacheKeepsRowsInView: rows whose logs the view shows without a
+// mounted view (messages here) stay held however many there are: their
+// render is served from cache, so nothing asks for them again, and dropping
+// them would read them again on every recalculation.
+func TestLogCacheKeepsRowsInView(t *testing.T) {
+	live := dagui.TraceID{TraceID: trace.TraceID{2}}
+	primary := prettyTestSpanID(1)
+	start := time.Unix(100, 0)
+	fe := NewWithDB(io.Discard, dagui.NewDB())
+	fe.reportOnly = true
+	snaps := []dagui.SpanSnapshot{{ID: primary, TraceID: live, Name: "cmd", StartTime: start, Final: true}}
+	var msgs []dagui.SpanID
+	for i := range 40 {
+		id := prettyTestSpanID(byte(10 + i))
+		msgs = append(msgs, id)
+		snaps = append(snaps, dagui.SpanSnapshot{ID: id, TraceID: live, ParentID: primary, Name: "msg", Message: "received", StartTime: start.Add(time.Duration(i) * time.Second), Final: true})
+	}
+	fe.ImportSnapshots(snaps)
+	fe.SetPrimary(primary)
+	fe.ZoomedSpan = primary
+	read := fe.SetLiveLogs(live, func(LogRequest) {})
+	var released []dagui.SpanID
+	fe.SetLogRelease(live, func(r LogRelease) { released = append(released, r.Dropped...) })
+	fakeLogClock(fe, 4)
+	for _, id := range msgs {
+		fe.requestLogs(id)
+		require.NoError(t, read.Export(context.Background(), []sdklog.Record{liveTestLog(live, id, "text\n")}))
+	}
+	fe.recalculateViewLocked()
+	sweepInteractive(fe)
+	require.Empty(t, released, "a row in view was dropped")
+	require.Len(t, fe.logs.Logs, len(msgs))
+
+	// Out of view, they are let go, all but the LRU.
+	fe.ZoomedSpan = msgs[0]
+	fe.FocusedSpan = msgs[0]
+	fe.recalculateViewLocked()
+	sweepInteractive(fe)
+	require.Len(t, released, len(msgs)-1-4)
+}
+
 // TestLogPagerOpensUnrenderedSpan: the pager opens on a span whose logs were
 // never rendered, and reads them.
 func TestLogPagerOpensUnrenderedSpan(t *testing.T) {

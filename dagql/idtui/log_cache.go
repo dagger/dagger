@@ -68,6 +68,9 @@ type logCache struct {
 	mounts map[dagui.SpanID]int
 	// rollUps holds the requested spans whose request reads descendants.
 	rollUps map[dagui.SpanID]bool
+	// inView holds the spans the view shows the logs of, as of its last
+	// recalculation (markLogsInView).
+	inView map[dagui.SpanID]bool
 	// releases are keyed like the log providers: by trace, or the zero
 	// trace for the provider of every trace.
 	releases    map[dagui.TraceID]func(LogRelease)
@@ -147,7 +150,7 @@ func (fe *frontendPretty) dismountLogs(id dagui.SpanID) {
 // logsPinned reports whether a span is shown, so its logs are never dropped.
 func (fe *frontendPretty) logsPinned(id dagui.SpanID, now time.Time) bool {
 	c := &fe.logCache
-	if c.mounts[id] > 0 || id == fe.ZoomedSpan || id == fe.FocusedSpan || id == fe.primarySpan() {
+	if c.mounts[id] > 0 || c.inView[id] || id == fe.ZoomedSpan || id == fe.FocusedSpan || id == fe.primarySpan() {
 		return true
 	}
 	if fe.logPager != nil && fe.logPager.SpanID == id {
@@ -155,6 +158,43 @@ func (fe *frontendPretty) logsPinned(id dagui.SpanID, now time.Time) bool {
 	}
 	shown, ok := c.shown[id]
 	return ok && now.Sub(shown) < c.grace
+}
+
+// rowShowsLogs reports whether a row of the view shows its span's logs: an
+// expanded row, a message or tool call, or a top-level roll-up or shell
+// command, whose output shows under its collapsed row.
+func (fe *frontendPretty) rowShowsLogs(row *dagui.TraceRow) bool {
+	span := row.Span
+	if span == nil {
+		return false
+	}
+	return row.Expanded || span.Message != "" || span.LLMTool != "" ||
+		(row.Depth == 0 && (span.RollUpLogs || fe.shellTranscript()))
+}
+
+// markLogsInView rebuilds the spans the view shows the logs of, from its
+// rows, as it is recalculated: a row's render is served from cache while
+// it is unchanged, so its render site does not ask again to keep it shown.
+func (fe *frontendPretty) markLogsInView() {
+	c := &fe.logCache
+	if len(c.releases) == 0 || fe.rows == nil {
+		c.inView = nil
+		return
+	}
+	c.inView = map[dagui.SpanID]bool{}
+	for _, row := range fe.rows.Order {
+		if fe.rowShowsLogs(row) {
+			c.inView[row.Span.ID] = true
+		}
+	}
+}
+
+// logInView marks a span whose logs the view shows outside its rows (e.g.
+// the conversation's).
+func (fe *frontendPretty) logInView(id dagui.SpanID) {
+	if fe.logCache.inView != nil {
+		fe.logCache.inView[id] = true
+	}
 }
 
 // scheduleLogSweep sweeps the logs soon, once per interval at most.
@@ -172,27 +212,22 @@ func (fe *frontendPretty) logGroupOf(id dagui.SpanID, memo map[dagui.SpanID]dagu
 		return g
 	}
 	group := id
+	// A roll-up's copies stop at a boundary (findRollUpSpan); a request
+	// reading descendants does not.
+	bounded := false
 	for cur := id; cur.IsValid(); {
 		span, ok := fe.db.Spans.Map[cur]
 		if !ok {
 			break
 		}
-		if fe.logGroupRoot(cur) {
+		bounded = bounded || span.Boundary || span.Encapsulate || span.Internal
+		if fe.logCache.rollUps[cur] || (span.RollUpLogs && !bounded) {
 			group = cur
 		}
 		cur = span.ParentID
 	}
 	memo[id] = group
 	return group
-}
-
-// logGroupRoot reports whether a span's group takes in its descendants.
-func (fe *frontendPretty) logGroupRoot(id dagui.SpanID) bool {
-	if fe.logCache.rollUps[id] {
-		return true
-	}
-	span, ok := fe.db.Spans.Map[id]
-	return ok && span.RollUpLogs
 }
 
 // sweepLogs evicts the requests of the groups past the LRU, and drops the
