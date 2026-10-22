@@ -44,6 +44,15 @@ declaring `v1.0.0-beta.19` or `v1.0.0-0`. SDK codegens compare it with strict
 semver (e.g. nullable objects from `v1.0.0-beta.10`); the shared view keeps
 those checks unchanged for pre-cut callers.
 
+Modules get their view from `engine.ModuleAPIViewVersion`. It differs in one
+case: while the engine is a v1.0.0 prerelease or dev build, a module declaring
+exactly `v1.0.0` gets the shared `v1.0.0-beta.20` view, not the release's.
+Released modules (every sdk-helpers tag, go-sdk) declare `v1.0.0` and are
+locked by SDKs and users, so a beta engine must not serve them the API past the
+cut. A v1.0.0 engine serves them its view. In-repo fixtures that test API past
+the cut must declare a prerelease from the cut on, such as `v1.0.0-beta.21`,
+not `v1.0.0`.
+
 `engine.IdentifierCasingVersion` (`v1.0.0-beta.21`) is the cut for the
 identifier casing changes. Gate on it like any version:
 `View(AfterVersion(engine.IdentifierCasingVersion))`,

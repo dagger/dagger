@@ -217,13 +217,46 @@ func APIViewVersion(version string) string {
 	}
 }
 
-// APIVersionAtLeast reports whether a client or module that declares
+// APIVersionAtLeast reports whether a module that declares engineVersion
 // version gets the API of minVersion or later: whether its API view
-// (APIViewVersion) is at or past minVersion, comparing prereleases. It is a
-// view gate, AfterVersion(minVersion), for a declared version that is not
-// carried by a call, such as a module's engineVersion.
+// (ModuleAPIViewVersion) is at or past minVersion, comparing prereleases. It
+// is a view gate, AfterVersion(minVersion), for a module's declared version
+// where no call carries the view.
 func APIVersionAtLeast(version, minVersion string) bool {
-	return semver.Compare(APIViewVersion(version), minVersion) >= 0
+	return semver.Compare(ModuleAPIViewVersion(version), minVersion) >= 0
+}
+
+// ModuleAPIViewVersion returns the API view for a module that declares
+// engineVersion version. It is APIViewVersion, with one exception while this
+// engine is a v1.0.0 prerelease or dev build: a module that declares exactly
+// v1.0.0 gets basePrereleaseView, the view of v1.0.0 prereleases before
+// PrereleaseViewsVersion, rather than the release's view.
+//
+// Released modules declared v1.0.0 before views kept prereleases, when it got
+// the same view as every beta (e.g. every sdk-helpers tag, which all SDKs
+// lock, and go-sdk). Served the release's view by a beta engine, they would
+// see the API past every prerelease gate, renamed under them, and locked
+// versions can't be fixed. The release's own engine serves them its view, so
+// the break comes with v1.0.0, not with a beta. Client versions are not
+// clamped: they name the CLI or SDK release a client runs, not a pin locked
+// into a released module.
+func ModuleAPIViewVersion(version string) string {
+	view := APIViewVersion(version)
+	if view != "v1.0.0" || !isV1Prerelease(Version) {
+		return view
+	}
+	declared := NormalizeVersion(version)
+	if strings.TrimSuffix(declared, semver.Build(declared)) != "v1.0.0" {
+		// a dev build of v1.0.0 is past the cut
+		return view
+	}
+	return basePrereleaseView
+}
+
+// isV1Prerelease reports whether version is a prerelease or dev build of
+// v1.0.0.
+func isV1Prerelease(version string) bool {
+	return BaseVersion(version) == "v1.0.0" && semver.Prerelease(version) != ""
 }
 
 func BaseVersion(version string) string {
