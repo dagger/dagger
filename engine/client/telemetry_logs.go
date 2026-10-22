@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
@@ -23,6 +24,10 @@ import (
 // ErrLiveLogsUnsupported reports that the engine does not serve on-demand
 // live log reads: it predates them, so the log push carries everything.
 var ErrLiveLogsUnsupported = errors.New("engine does not serve on-demand live log reads")
+
+// ErrTelemetryBarrierUnsupported reports that the engine predates
+// TelemetryBarrier (enginetel.LiveFeatureFlush).
+var ErrTelemetryBarrierUnsupported = errors.New("engine does not serve a telemetry barrier")
 
 // SupportsTelemetryFeature reports whether the engine named a live telemetry
 // feature (enginetel.LiveFeature*) on this client's trace subscription. It is
@@ -56,6 +61,110 @@ func (c *Client) WaitTelemetryIdle(ctx context.Context, quiet time.Duration) {
 		case <-ctx.Done():
 			return
 		case <-time.After(wait):
+		}
+	}
+}
+
+// TelemetryBarrier waits until the trace and log subscriptions have
+// delivered everything the engine stored for this client up to now: the
+// engine flushes the session's telemetry and reports its store's high-water
+// marks, which the subscriptions then reach. A frontend reading display text
+// on demand passes it at exit, so the spans of work that just ended are
+// there when it chooses what its final render reads, and the store still
+// serves the reads. It needs enginetel.LiveFeatureFlush; an older engine
+// answers ErrTelemetryBarrierUnsupported, and WaitTelemetryIdle remains.
+func (c *Client) TelemetryBarrier(ctx context.Context) error {
+	if !c.SupportsTelemetryFeature(enginetel.LiveFeatureFlush) {
+		return ErrTelemetryBarrierUnsupported
+	}
+	marks, err := c.flushTelemetry(ctx)
+	if err != nil {
+		return err
+	}
+	if err := c.traceDelivered.wait(ctx, marks.Spans); err != nil {
+		return fmt.Errorf("wait for spans: %w", err)
+	}
+	if err := c.logsDelivered.wait(ctx, marks.Logs); err != nil {
+		return fmt.Errorf("wait for logs: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) flushTelemetry(ctx context.Context) (enginetel.LiveFlushResult, error) {
+	var marks enginetel.LiveFlushResult
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://dagger"+enginetel.LiveFlushPath, nil)
+	if err != nil {
+		return marks, err
+	}
+	resp, err := c.liveTelemetryHTTP().Do(req)
+	if err != nil {
+		return marks, fmt.Errorf("flush telemetry: %w", err)
+	}
+	defer resp.Body.Close()
+	if err := expectLiveLogResponse(resp, "application/json"); err != nil {
+		return marks, fmt.Errorf("flush telemetry: %w", err)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&marks); err != nil {
+		return marks, fmt.Errorf("decode flush result: %w", err)
+	}
+	return marks, nil
+}
+
+// deliveredCursor is how far a subscription has delivered: the cursor of
+// the last frame its callback returned from. The zero value is ready; a nil
+// one ignores updates.
+type deliveredCursor struct {
+	mu     sync.Mutex
+	cursor int64
+	// ended is set once the subscription stops consuming.
+	ended   bool
+	changed chan struct{}
+}
+
+func (d *deliveredCursor) update(fn func()) {
+	if d == nil {
+		return
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	fn()
+	if d.changed != nil {
+		close(d.changed)
+		d.changed = nil
+	}
+}
+
+func (d *deliveredCursor) advance(cursor int64) {
+	d.update(func() { d.cursor = max(d.cursor, cursor) })
+}
+
+func (d *deliveredCursor) end() {
+	d.update(func() { d.ended = true })
+}
+
+// wait blocks until the subscription has delivered through cursor, ctx
+// ends, or the subscription stops short of it.
+func (d *deliveredCursor) wait(ctx context.Context, cursor int64) error {
+	for {
+		d.mu.Lock()
+		at, ended := d.cursor, d.ended
+		if at >= cursor {
+			d.mu.Unlock()
+			return nil
+		}
+		if ended {
+			d.mu.Unlock()
+			return fmt.Errorf("subscription ended at cursor %d, before %d", at, cursor)
+		}
+		if d.changed == nil {
+			d.changed = make(chan struct{})
+		}
+		changed := d.changed
+		d.mu.Unlock()
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("delivered through cursor %d of %d: %w", at, cursor, context.Cause(ctx))
+		case <-changed:
 		}
 	}
 }
