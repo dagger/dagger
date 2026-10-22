@@ -41,6 +41,10 @@ type session struct {
 	// of all of them together.
 	exportSlots chan struct{}
 	uploadSlots chan struct{}
+	// lookupSlots bounds the lookups unanswered, and merges follows the
+	// service's merges for the lookups that wait on them.
+	lookupSlots chan struct{}
+	merges      *mergeTracker
 
 	mu sync.Mutex
 	// pending are the engine's requests waiting for their replies, by ID.
@@ -61,6 +65,8 @@ func newSession(ctx context.Context, conn wsConn, adapter Adapter, cfg *settings
 		cfg:         cfg,
 		exportSlots: make(chan struct{}, ExportsInFlight),
 		uploadSlots: make(chan struct{}, UploadConcurrency),
+		lookupSlots: make(chan struct{}, LookupsInFlight),
+		merges:      newMergeTracker(),
 		pending:     map[uint64]chan protocol.Envelope{},
 		exports:     map[string]chan protocol.Envelope{},
 	}
@@ -76,15 +82,18 @@ func (s *session) serve() (bool, error) {
 	}
 	s.go_(s.ping)
 	s.go_(s.renewals)
+	s.go_(s.lookups)
 	<-s.ctx.Done()
 	return true, context.Cause(s.ctx)
 }
 
 // close ends the connection without waiting for the service and waits for
 // the session's goroutines, whose work is all bound to the session's context.
+// Evaluations waiting for the session's merges stop waiting at once.
 func (s *session) close() {
 	s.cancel(errConnectionClosed)
 	_ = s.conn.CloseNow()
+	s.merges.close()
 	s.wg.Wait()
 }
 
@@ -151,6 +160,9 @@ func (s *session) dispatch(env protocol.Envelope) {
 	case protocol.TypeUpload:
 		s.handleUpload(env)
 	case protocol.TypeMerge:
+		// Recorded in arrival order, before any later answer that names it
+		// is read.
+		s.merges.start(env.ID)
 		s.go_(func() { s.handleMerge(env) })
 	case protocol.TypeOffer:
 		s.go_(func() { s.handleOffer(env) })
@@ -520,13 +532,17 @@ func profUploadBlob(ctx context.Context, dgst digest.Digest, size int64, start, 
 	wcprof.RecordOpAt(ctx, wcprof.OpKindRemoteCache, "remotecache.upload.blob", wcprof.OpOpts{Ident: dgst.String(), Bytes: size, WorkType: wcprof.WorkTypeExternal}, start, end, result)
 }
 
+// handleMerge merges a bundle and answers. The merge ends, for the lookups
+// waiting on it, before the reply is written: its offers are in the cache.
 func (s *session) handleMerge(env protocol.Envelope) {
 	var req protocol.Merge
 	if err := env.Decode(&req); err != nil {
+		s.merges.end(env.ID)
 		s.replyError(env, err)
 		return
 	}
-	merged, err := s.adapter.Merge(s.ctx, req)
+	merged, err := s.adapter.Merge(s.ctx, env.ID, req)
+	s.merges.end(env.ID)
 	if err != nil {
 		s.replyError(env, err)
 		return
@@ -551,7 +567,11 @@ func (s *session) handleOffer(env protocol.Envelope) {
 // request sends an engine request and waits for its reply, which may be an
 // error reply. It fails when ctx or the session ends first.
 func (s *session) request(ctx context.Context, typ protocol.Type, body any) (protocol.Envelope, error) {
-	id := s.lastID.Add(1)
+	return s.requestAs(ctx, s.lastID.Add(1), typ, body)
+}
+
+// requestAs is request with the ID the caller took for it.
+func (s *session) requestAs(ctx context.Context, id uint64, typ protocol.Type, body any) (protocol.Envelope, error) {
 	env, err := protocol.NewEnvelope(id, 0, typ, body)
 	if err != nil {
 		return protocol.Envelope{}, err

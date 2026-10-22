@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/config"
@@ -14,6 +15,15 @@ import (
 // envRemoteCacheURL sets the remote cache service's URL. It wins over the
 // engine config's remoteCache.url.
 const envRemoteCacheURL = "_EXPERIMENTAL_DAGGER_REMOTE_CACHE_URL"
+
+// envRemoteCacheLookups set to 0 stops the engine asking the service for the
+// calls its cache misses. envRemoteCacheLookupWait sets how long an
+// evaluation waits for a merge the service's answer names, as a duration; 0
+// asks without waiting.
+const (
+	envRemoteCacheLookups    = "_EXPERIMENTAL_DAGGER_REMOTE_CACHE_LOOKUPS"
+	envRemoteCacheLookupWait = "_EXPERIMENTAL_DAGGER_REMOTE_CACHE_LOOKUP_WAIT"
+)
 
 // remoteCacheSettings returns the connection to the remote cache service, and
 // whether it is on: when the service URL is set, by the environment or the
@@ -38,11 +48,22 @@ func remoteCacheSettings(cfg config.Config) (remotecache.Config, bool) {
 		slog.Warn("remote cache off: an OIDC token is not an engine token")
 		return remotecache.Config{}, false
 	}
+	lookupWait := remotecache.DefaultLookupWait
+	if v := os.Getenv(envRemoteCacheLookupWait); v != "" {
+		wait, err := time.ParseDuration(v)
+		if err != nil || wait < 0 {
+			slog.Warn("remote cache: invalid lookup wait; using the default", "value", v, "default", lookupWait)
+		} else {
+			lookupWait = wait
+		}
+	}
 	return remotecache.Config{
 		URL:           url,
 		Token:         token,
 		EngineVersion: engine.Version,
 		EngineName:    engineName,
+		Lookups:       os.Getenv(envRemoteCacheLookups) != "0",
+		LookupWait:    lookupWait,
 	}, true
 }
 
