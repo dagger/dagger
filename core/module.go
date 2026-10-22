@@ -173,17 +173,11 @@ func (mod *Module) MainObject() (*ObjectTypeDef, bool) {
 // This is needed because namespaceObject rewrites obj.Name to match the
 // module's final name, but obj.OriginalName always reflects the SDK name.
 func (mod *Module) ObjectByOriginalName(name string) (*ObjectTypeDef, bool) {
-	namer := mod.Namer()
-	for _, objDef := range mod.ObjectDefs {
-		typeDef := objDef.Self()
-		if typeDef.AsObject.Valid {
-			obj := typeDef.AsObject.Value.Self()
-			if namer.ObjectName(obj.OriginalName) == namer.ObjectName(name) {
-				return obj, true
-			}
-		}
+	objDef, ok := mod.objectTypeDefResultByOriginalName(name)
+	if !ok {
+		return nil, false
 	}
-	return nil, false
+	return objDef.Self().AsObject.Value.Self(), true
 }
 
 func (mod *Module) ObjectByName(name string) (*ObjectTypeDef, bool) {
@@ -606,8 +600,14 @@ func functionArgResultByName(namer Namer, fn *Function, name string) (dagql.Obje
 	return dagql.ObjectResult[*FunctionArg]{}, false
 }
 
+// objectTypeDefResultByOriginalName finds the object the SDK registered as
+// name, in any casing: the one whose name normalizes to the same schema name,
+// or else the only one that's the same once flattened (see
+// Namer.SameDeclaredName). Several flat matches are ambiguous, and match
+// nothing.
 func (mod *Module) objectTypeDefResultByOriginalName(name string) (dagql.ObjectResult[*TypeDef], bool) {
 	namer := mod.Namer()
+	var flat []dagql.ObjectResult[*TypeDef]
 	for _, objDef := range mod.ObjectDefs {
 		typeDef := objDef.Self()
 		if typeDef.AsObject.Valid {
@@ -615,7 +615,13 @@ func (mod *Module) objectTypeDefResultByOriginalName(name string) (dagql.ObjectR
 			if namer.ObjectName(obj.OriginalName) == namer.ObjectName(name) {
 				return objDef, true
 			}
+			if namer.SameDeclaredName(obj.OriginalName, name) {
+				flat = append(flat, objDef)
+			}
 		}
+	}
+	if len(flat) == 1 {
+		return flat[0], true
 	}
 	return dagql.ObjectResult[*TypeDef]{}, false
 }
