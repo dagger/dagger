@@ -86,6 +86,29 @@ type CacheDecision struct {
 	MissProducerReleased bool
 	MissRequirementsGrew bool
 
+	// MissExpiredRemote records that a candidate expiry eliminated (see
+	// MissSawExpired) was a value a Cloud merge installed, and
+	// MissIncompatibleRemote that a session-incompatible candidate (see
+	// MissIncompatibleCandidates) was. Meaningful only for misses (Outcome
+	// executed). A serve-time miss keeps HitRemote for the hit it chose.
+	MissExpiredRemote      bool
+	MissIncompatibleRemote bool
+
+	// MissFreshInputs are the indices into StructuralInputs of the inputs
+	// whose equivalence class was the input of no term at lookup time, so no
+	// term could match: the inputs new to the cache. Recorded when the
+	// structural lookup was possible (every input known). Meaningful only for
+	// misses (Outcome executed).
+	MissFreshInputs []int
+
+	// Adopted records that the publication this call executed or joined
+	// adopted its recipe's live current entry in place of the call's new
+	// value; AdoptedRemote that the entry's value came from a Cloud merge,
+	// and AdoptedMergedAtUnixNano when that merge committed (0 when unknown).
+	Adopted                 bool
+	AdoptedRemote           bool
+	AdoptedMergedAtUnixNano int64
+
 	// SelfDigest is the engine-derived structural self digest of the call.
 	// Empty for CacheOutcomeUncached, whose path skips identity derivation.
 	SelfDigest digest.Digest
