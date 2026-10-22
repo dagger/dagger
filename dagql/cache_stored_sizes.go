@@ -266,14 +266,29 @@ func encodedSize(v any) (int64, error) {
 
 // heldRowSizeLocked returns the encoded size of res as a held row, its
 // recipe measured by one of its recipe keys: StoredBundle derives the recipe
-// from its call frame after the lock, and recipes are of one length.
-// Requires egraphMu.
+// from its call frame after the lock, and recipes are of one length. The row
+// carries the frame's transfer terms too (HeldTerms), which are encoded to
+// measure them. Requires egraphMu.
 func heldRowSizeLocked(res *sharedResult) int64 {
 	recipe := heldRowSizeDigest
 	if len(res.recipeKeys) > 0 {
 		recipe = res.recipeKeys[0]
 	}
-	return heldRowSize(uint64(res.id), res.replacements, res.expiresAtUnix, recipe)
+	size := heldRowSize(uint64(res.id), res.replacements, res.expiresAtUnix, recipe)
+	if frame := res.loadResultCall(); frame != nil && len(frame.TransferTerms) > 0 {
+		size += heldTermsSize(frame.TransferTerms)
+	}
+	return size
+}
+
+// heldTermsSize returns what terms add to a held row's json.Marshal
+// encoding.
+func heldTermsSize(terms []TransferTerm) int64 {
+	size, err := encodedSize(TransferredValue{HeldTerms: terms})
+	if err != nil {
+		return 0
+	}
+	return size - heldRowEncoding.base
 }
 
 // heldRowEncoding is what a held row's json.Marshal encoding is made of:
