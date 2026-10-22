@@ -39,6 +39,18 @@ type Config struct {
 	// Registries configures custom registry mirrors, root CAs, and
 	// insecure/HTTP access.
 	Registries map[string]RegistryConfig `json:"registries,omitempty"`
+
+	// Shutdown configures how the engine stops.
+	Shutdown ShutdownConfig `json:"shutdown,omitempty"`
+}
+
+type ShutdownConfig struct {
+	// GracefulStopTimeout bounds the engine's whole stop, from the first
+	// SIGTERM or SIGINT to process exit. The final telemetry flushes get what
+	// remains of it, at most 30s each. Set it below the grace period of
+	// whatever supervises the engine, so that the engine exits on its own
+	// rather than being killed. Defaults to 5m.
+	GracefulStopTimeout Duration `json:"gracefulStopTimeout,omitempty"`
 }
 
 type TelemetryConfig struct {
