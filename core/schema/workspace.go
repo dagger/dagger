@@ -20,6 +20,7 @@ import (
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"golang.org/x/mod/semver"
 )
@@ -1141,6 +1142,12 @@ func (s *workspaceSchema) resolveRootfsFromDirectory(
 // selected files and its content hash covers everything it can reach. A
 // subpath read without a filter is a view into the root, which can still
 // reach the root's files, so this adds no content digest to it.
+//
+// Hashing evaluates the read. A read that fails to evaluate or hash, such as
+// one of a subpath the root doesn't have, is returned as it is, with no content
+// digest, so it keeps the recipe identity it had before. Its evaluation is
+// retried where the read is used, as before, rather than failing the workspace
+// call, so a caller can still handle a missing path, as Directory.exists does.
 func contentKeyedFilteredRead(
 	ctx context.Context,
 	resolvedPath string,
@@ -1156,19 +1163,29 @@ func contentKeyedFilteredRead(
 	if dir.Self() == nil {
 		return dir, fmt.Errorf("workspace directory %q: nil directory result", resolvedPath)
 	}
+	dgst, ok := filteredReadContentHash(ctx, dir)
+	if !ok {
+		return dir, nil
+	}
+	return dir.WithContentDigest(ctx, dgst)
+}
+
+// filteredReadContentHash evaluates a filtered read and returns the content
+// hash of its files, or false if the read fails to evaluate or hash.
+func filteredReadContentHash(ctx context.Context, dir dagql.ObjectResult[*core.Directory]) (digest.Digest, bool) {
 	snapshot, err := dir.Self().Snapshot.GetOrEval(ctx, dir.Result)
 	if err != nil {
-		return dir, fmt.Errorf("workspace directory %q: snapshot: %w", resolvedPath, err)
+		return "", false
 	}
 	dirPath, err := dir.Self().Dir.GetOrEval(ctx, dir.Result)
 	if err != nil {
-		return dir, fmt.Errorf("workspace directory %q: path: %w", resolvedPath, err)
+		return "", false
 	}
 	dgst, err := core.GetContentHashFromDirectory(ctx, snapshot, dirPath)
 	if err != nil {
-		return dir, fmt.Errorf("workspace directory %q: content hash: %w", resolvedPath, err)
+		return "", false
 	}
-	return dir.WithContentDigest(ctx, dgst)
+	return dgst, true
 }
 
 // resolveHostOverlayRootfs resolves a read against a host-backed overlay

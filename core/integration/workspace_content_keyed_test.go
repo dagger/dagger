@@ -39,14 +39,18 @@ func (WorkspaceSuite) TestFilteredReadsAreContentKeyed(ctx context.Context, t *t
 	backends := []struct {
 		name string
 		load func(*core.Directory) *core.Workspace
+		// lazySubpath is whether a subpath read is left unevaluated until
+		// used. A Git root carries a content digest, so a subpath read of it
+		// is evaluated, and fails if the subpath is missing, when it is made.
+		lazySubpath bool
 	}{
 		{"directory", func(src *core.Directory) *core.Workspace {
 			return src.AsWorkspace()
-		}},
+		}, true},
 		{"git", func(src *core.Directory) *core.Workspace {
 			gitDaemon, repoURL := gitService(ctx, t, c, src)
 			return core.NewQuery(c).Git(repoURL, core.GitOpts{ExperimentalServiceHost: gitDaemon}).Head().AsWorkspace()
-		}},
+		}, false},
 	}
 
 	for _, backend := range backends {
@@ -90,6 +94,19 @@ func (WorkspaceSuite) TestFilteredReadsAreContentKeyed(ctx context.Context, t *t
 					require.NoError(t, err)
 					require.Equal(t, tc.want, contents)
 				}
+			})
+
+			// A filtered read of a subpath the root doesn't have fails only
+			// where it is used, so a caller can still handle it: exists reports
+			// that the path is missing.
+			t.Run("missing subpath", func(ctx context.Context, t *testctx.T) {
+				if !backend.lazySubpath {
+					t.Skip("this root evaluates subpath reads when they are made")
+				}
+				read := baseWS.Directory("/missing", core.WorkspaceDirectoryOpts{Include: []string{"**/*.txt"}})
+				exists, err := read.Exists(ctx, "main.txt")
+				require.NoError(t, err)
+				require.False(t, exists)
 			})
 
 			t.Run("subpath name", func(ctx context.Context, t *testctx.T) {
