@@ -558,7 +558,7 @@ func TestExportLogAttrsPhases(t *testing.T) {
 	values := &dagql.ExportedValues{
 		ChainTime: time.Second,
 		Phases:    dagql.ExportPhases{WalkWait: 6 * time.Microsecond, Walk: 7 * time.Microsecond, Copy: 8 * time.Microsecond, RetriedStale: 1},
-		Chains:    &dagql.SelectedChains{Stats: bkcache.ExportStats{Layers: 3, LayersReused: 1, LayersDiffed: 2, RawBytes: 900, BlobBytes: 300, DiffTime: 9 * time.Millisecond, LockWait: 10 * time.Microsecond, LayersMerged: 1, MergedRawBytes: 400, MergedBlobBytes: 100, MergedDiffTime: 3 * time.Millisecond}},
+		Chains:    &dagql.SelectedChains{Stats: bkcache.ExportStats{Layers: 3, LayersReused: 1, LayersDiffed: 2, RawBytes: 900, BlobBytes: 300, DiffTime: 9 * time.Millisecond, LockWait: 10 * time.Microsecond, BuildWait: 11 * time.Microsecond, LayersMerged: 1, MergedRawBytes: 400, MergedBlobBytes: 100, MergedDiffTime: 3 * time.Millisecond}},
 	}
 	want := []any{
 		"chains", time.Second,
@@ -578,6 +578,7 @@ func TestExportLogAttrsPhases(t *testing.T) {
 		"blob_bytes", int64(300),
 		"diff_time", 9 * time.Millisecond,
 		"lock_wait", 10 * time.Microsecond,
+		"build_wait", 11 * time.Microsecond,
 		"layers_merged", 1,
 		"merged_raw_bytes", int64(400),
 		"merged_blob_bytes", int64(100),
@@ -606,6 +607,7 @@ func TestExportLogAttrsPhases(t *testing.T) {
 		"blob_bytes", int64(0),
 		"diff_time", time.Duration(0),
 		"lock_wait", time.Duration(0),
+		"build_wait", time.Duration(0),
 		"layers_merged", 0,
 		"merged_raw_bytes", int64(0),
 		"merged_blob_bytes", int64(0),
