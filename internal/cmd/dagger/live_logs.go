@@ -5,6 +5,8 @@ import (
 	"errors"
 	"log/slog"
 	"maps"
+	"os"
+	"os/signal"
 	"slices"
 	"sync"
 	"time"
@@ -416,7 +418,7 @@ func (f flushableSpanForwarder) ForceFlush(ctx context.Context) error {
 // until it goes quiet.
 func settleLiveLogs(ctx context.Context, sess liveLogsSession) {
 	err := sess.TelemetryBarrier(ctx)
-	if err == nil {
+	if err == nil || ctx.Err() != nil {
 		return
 	}
 	if !errors.Is(err, client.ErrTelemetryBarrierUnsupported) {
@@ -427,29 +429,55 @@ func settleLiveLogs(ctx context.Context, sess liveLogsSession) {
 	cancel()
 }
 
+// exitInterrupts returns a context canceled by an interrupt (SIGINT); it is
+// a variable for tests.
+var exitInterrupts = func(ctx context.Context) (context.Context, context.CancelFunc) {
+	return signal.NotifyContext(ctx, os.Interrupt)
+}
+
+// exitContext is the context of the reads at exit. What ended the command
+// does not cancel it -- an interrupt that canceled the run must not cost its
+// report -- but an interrupt during the reads does: ctx ending from then
+// on (the TUI's Ctrl-C), or another SIGINT.
+func exitContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	exitCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
+	stopAfter := func() bool { return false }
+	if ctx.Err() == nil {
+		stopAfter = context.AfterFunc(ctx, func() { cancel(context.Cause(ctx)) })
+	}
+	sigCtx, stopSignals := exitInterrupts(exitCtx)
+	return sigCtx, func() {
+		stopSignals()
+		stopAfter()
+		cancel(nil)
+	}
+}
+
 // finishLiveLogs reads what the final render shows: the logs the frontend
 // requests for it, and the primary output. It must run before the session
-// closes, which ends its store's reads.
+// closes, which ends its store's reads. An interrupt stops it promptly, and
+// the final render shows what was read by then (see exitContext).
 func finishLiveLogs(ctx context.Context, sess liveLogsSession, live *liveLogs) {
 	lf := live.frontend
 	if lf == nil {
 		return
 	}
-	ctx = context.WithoutCancel(ctx)
+	ctx, stop := exitContext(ctx)
+	defer stop()
 	finishCtx, cancel := context.WithTimeout(ctx, liveLogsFinishTimeout)
 	settleLiveLogs(finishCtx, sess)
 	// Stop following first, so finish catches up the final requests itself,
 	// rather than a follow restart it would cut short.
 	live.stop()
 	lf.RequestFinalLogs()
-	if err := live.finish(finishCtx); err != nil {
+	if err := live.finish(finishCtx); err != nil && ctx.Err() == nil {
 		slog.Warn("error reading the final logs", "err", err)
 	}
 	cancel()
 	primaryCtx, cancel := context.WithTimeout(ctx, liveLogsPrimaryTimeout)
 	defer cancel()
 	records, err := readPrimaryOutput(primaryCtx, live.reader, live.traceID, lf.PrimarySpan())
-	if err != nil {
+	if err != nil && ctx.Err() == nil {
 		slog.Warn("error reading the primary output", "err", err)
 	}
 	lf.SetPrimaryOutput(records)
