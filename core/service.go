@@ -627,6 +627,8 @@ func (svc *Service) startContainer(
 	// is cloned above, so this never mutates shared state.
 	recordBoundServiceFQDNs(execMD, ctr.Services, runningDeps)
 	SetExecutionIdentity(ctx, execMD)
+	// For the executor's "starting container" line, as for withExec.
+	execMD.CacheMounts = cacheMountCount(ctr.Mounts)
 
 	propagateDependencyExits := len(runningDeps) > 0 &&
 		running.Key.Kind != ServiceRuntimeInteractive &&
