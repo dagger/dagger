@@ -16,6 +16,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/remotecache/protocol"
+	"github.com/dagger/dagger/engine/wcprof"
 )
 
 var (
@@ -223,17 +224,30 @@ func (s *session) handleExport(env protocol.Envelope) {
 		s.replyError(env, err)
 		return
 	}
+	// The export's profile op: the service's work, not a client's, so it is
+	// recorded when the engine records everything. It spans what the export's
+	// line times: from the request, before the wait for a slot, to the chains'
+	// release.
 	arrived := time.Now()
+	profCtx, profOp := wcprof.BeginOp(s.ctx, wcprof.OpKindRemoteCache, "remotecache.export", wcprof.OpOpts{Start: arrived})
 	select {
 	case s.exportSlots <- struct{}{}:
 	case <-s.ctx.Done():
+		if profOp != nil {
+			now := time.Now()
+			wcprof.RecordWaitAt(profCtx, "remotecache.exportSlots", wcprof.WaitReasonLock, arrived, now)
+			profOp.EndAt(wcprof.OutcomeCanceled, 0, now)
+		}
 		return
 	}
 	defer func() { <-s.exportSlots }()
 	slotted := time.Now()
+	if profOp != nil {
+		wcprof.RecordWaitAt(profCtx, "remotecache.exportSlots", wcprof.WaitReasonLock, arrived, slotted)
+	}
 	ended := exportEnded{roots: len(req.Roots), slotWait: slotted.Sub(arrived)}
 	replied := false
-	err := s.adapter.Export(s.ctx, req, func(ctx context.Context, exp Export) error {
+	err := s.adapter.Export(profCtx, req, func(ctx context.Context, exp Export) error {
 		replied = true
 		if exp.Bundle == nil {
 			ended.noBundle = true
@@ -256,21 +270,35 @@ func (s *session) handleExport(env protocol.Envelope) {
 			return err
 		}
 		ended.export = exportID
+		profOp.SetIdent(exportID)
 		repliedAt := time.Now()
 		select {
 		case up := <-upload:
 			uploadAt := time.Now()
 			ended.uploadWait = uploadAt.Sub(repliedAt)
-			summary, err := s.upload(ctx, up, exp.Blobs)
+			if profOp != nil {
+				wcprof.RecordWaitAt(ctx, "remotecache:service-upload", wcprof.WaitReasonIO, repliedAt, uploadAt)
+			}
+			uploadCtx, uploadOp := wcprof.BeginOp(ctx, wcprof.OpKindRemoteCache, "remotecache.upload", wcprof.OpOpts{WorkType: wcprof.WorkTypeExternal})
+			summary, err := s.upload(uploadCtx, up, exp.Blobs)
+			uploadOp.SetBytes(summary.bytes)
+			uploadOp.EndErr(err)
 			ended.upload, ended.summary = time.Since(uploadAt), summary
 			return err
 		case <-ctx.Done():
 			ended.uploadWait = time.Since(repliedAt)
+			if profOp != nil {
+				wcprof.RecordWaitAt(ctx, "remotecache:service-upload", wcprof.WaitReasonIO, repliedAt, repliedAt.Add(ended.uploadWait))
+			}
 			return context.Cause(ctx)
 		}
 	})
-	ended.held = time.Since(slotted)
-	s.logExportEnded(ended, err)
+	released := time.Now()
+	ended.held = released.Sub(slotted)
+	// One classification for the line and the profile.
+	level, outcome := s.exportOutcome(ended, err)
+	s.logExportEnded(ended, err, level, outcome)
+	s.profExportEnded(profCtx, profOp, ended, outcome, released)
 	if err != nil && !replied {
 		s.replyError(env, err)
 	}
@@ -293,23 +321,9 @@ type exportEnded struct {
 	noBundle   bool
 }
 
-// logExportEnded logs one export's end. A failed export is canceled when the
-// session ended; one that succeeded is classified by what it sent and what
-// the service asked for, even if the session has ended since.
-func (s *session) logExportEnded(ended exportEnded, err error) {
-	level, outcome := slog.LevelInfo, "uploaded"
-	switch {
-	case err != nil && context.Cause(s.ctx) != nil:
-		outcome = "canceled"
-	case err != nil:
-		level, outcome = slog.LevelWarn, "error"
-	case ended.noBundle:
-		outcome = "no_bundle"
-	case ended.summary.blobs == 0:
-		// The service asked for no blobs: it had them all, or it released
-		// the bundle.
-		outcome = "empty"
-	}
+// logExportEnded logs one export's end, at the level and with the outcome
+// exportOutcome gave it.
+func (s *session) logExportEnded(ended exportEnded, err error, level slog.Level, outcome string) {
 	args := []any{
 		"export", ended.export,
 		"roots", ended.roots,
@@ -326,6 +340,46 @@ func (s *session) logExportEnded(ended exportEnded, err error) {
 		args = append(args, "error", err.Error())
 	}
 	s.cfg.Logger.Log(s.ctx, level, "remote cache export ended", args...)
+}
+
+// exportOutcome classifies an export's end, for its log line and its
+// profile. A failed export is canceled when the session ended; one that
+// succeeded is classified by what it sent and what the service asked for,
+// even if the session has ended since.
+func (s *session) exportOutcome(ended exportEnded, err error) (slog.Level, string) {
+	switch {
+	case err != nil && context.Cause(s.ctx) != nil:
+		return slog.LevelInfo, "canceled"
+	case err != nil:
+		return slog.LevelWarn, "error"
+	case ended.noBundle:
+		return slog.LevelInfo, "no_bundle"
+	case ended.summary.blobs == 0:
+		// The service asked for no blobs: it had them all, or it released
+		// the bundle.
+		return slog.LevelInfo, "empty"
+	}
+	return slog.LevelInfo, "uploaded"
+}
+
+// profExportEnded ends an export's profile op at end, the chains' release,
+// with its outcome, as exportOutcome gave it, and the bytes it uploaded. An
+// export that sent no bundle, or uploaded nothing, says so as a fact.
+func (s *session) profExportEnded(ctx context.Context, op *wcprof.Op, ended exportEnded, outcome string, end time.Time) {
+	if op == nil {
+		return
+	}
+	result := wcprof.OutcomeOK
+	switch outcome {
+	case "canceled":
+		result = wcprof.OutcomeCanceled
+	case "error":
+		result = wcprof.OutcomeError
+	case "no_bundle", "empty":
+		wcprof.Fact(ctx, op.ID(), "export."+outcome, 0)
+	}
+	op.SetBytes(ended.summary.bytes)
+	op.EndAt(result, 0, end)
 }
 
 // handleUpload hands an upload to the export whose chains are held for it.
@@ -370,12 +424,23 @@ func (s *session) upload(ctx context.Context, env protocol.Envelope, blobs BlobS
 		summary = uploadSummary{blobs: len(req.URLs)}
 		wg      sync.WaitGroup
 	)
+	prof := wcprof.Enabled(ctx)
 	for dgst, address := range req.URLs {
+		var slotStart time.Time
+		if prof {
+			slotStart = time.Now()
+		}
 		select {
 		case s.uploadSlots <- struct{}{}:
 		case <-ctx.Done():
+			if prof {
+				wcprof.RecordWaitAt(ctx, "remotecache.uploadSlots", wcprof.WaitReasonLock, slotStart, time.Now())
+			}
 			wg.Wait()
 			return summary, context.Cause(ctx)
+		}
+		if prof {
+			wcprof.RecordWaitAt(ctx, "remotecache.uploadSlots", wcprof.WaitReasonLock, slotStart, time.Now())
 		}
 		queued := time.Since(received)
 		wg.Add(1)
@@ -384,7 +449,13 @@ func (s *session) upload(ctx context.Context, env protocol.Envelope, blobs BlobS
 			defer func() { <-s.uploadSlots }()
 			start := time.Now()
 			size, err := s.uploadBlob(ctx, blobs, dgst, address)
-			s.logUpload(ctx, req.ExportID, dgst, size, queued, time.Since(start), err)
+			// One end and one classification for the line and the profile.
+			end := time.Now()
+			level, outcome := uploadOutcome(ctx, err)
+			s.logUpload(ctx, req.ExportID, dgst, size, queued, end.Sub(start), err, level, outcome)
+			if prof {
+				profUploadBlob(ctx, dgst, size, start, end, outcome)
+			}
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
@@ -415,19 +486,37 @@ func (s *session) uploadBlob(ctx context.Context, blobs BlobSource, dgst digest.
 
 // logUpload logs one blob's upload. It never logs the address, which carries
 // a signature; put's errors never include it.
-func (s *session) logUpload(ctx context.Context, exportID string, dgst digest.Digest, size int64, queued, duration time.Duration, err error) {
-	level, outcome := slog.LevelInfo, "ok"
-	switch {
-	case context.Cause(ctx) != nil:
-		level, outcome = slog.LevelWarn, "canceled"
-	case err != nil:
-		level, outcome = slog.LevelWarn, "error"
-	}
+func (s *session) logUpload(ctx context.Context, exportID string, dgst digest.Digest, size int64, queued, duration time.Duration, err error, level slog.Level, outcome string) {
 	args := []any{"export", exportID, "digest", dgst.String(), "bytes", size, "queued", queued, "duration", duration, "outcome", outcome}
 	if err != nil {
 		args = append(args, "error", err.Error())
 	}
 	s.cfg.Logger.Log(ctx, level, "remote cache blob uploaded", args...)
+}
+
+// uploadOutcome classifies a blob's upload, for its log line and its
+// profile.
+func uploadOutcome(ctx context.Context, err error) (slog.Level, string) {
+	switch {
+	case context.Cause(ctx) != nil:
+		return slog.LevelWarn, "canceled"
+	case err != nil:
+		return slog.LevelWarn, "error"
+	}
+	return slog.LevelInfo, "ok"
+}
+
+// profUploadBlob records a blob's upload, from start to end, as a profile op
+// with the blob's digest and size, and its outcome as uploadOutcome gave it.
+func profUploadBlob(ctx context.Context, dgst digest.Digest, size int64, start, end time.Time, outcome string) {
+	result := wcprof.OutcomeOK
+	switch outcome {
+	case "canceled":
+		result = wcprof.OutcomeCanceled
+	case "error":
+		result = wcprof.OutcomeError
+	}
+	wcprof.RecordOpAt(ctx, wcprof.OpKindRemoteCache, "remotecache.upload.blob", wcprof.OpOpts{Ident: dgst.String(), Bytes: size, WorkType: wcprof.WorkTypeExternal}, start, end, result)
 }
 
 func (s *session) handleMerge(env protocol.Envelope) {

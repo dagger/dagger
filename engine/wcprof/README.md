@@ -76,6 +76,27 @@ Current hook points:
   is computed locally gets a `part.no_source` fact. Lazy ops name their task
   (`lazy:…`, `acquire:…`, `obtain:…`) as ident. These read the same
   measurement points as the install's log line and span attributes.
+- Remote-cache exports (`engine/remotecache/session.go`,
+  `engine/server/remote_cache_protocol.go`, `dagql/cache_value_capture.go`):
+  one root `remote_cache` op `remotecache.export` per export the service
+  asks for, named by its export ID, with the bytes uploaded and an
+  `export.no_bundle` or `export.empty` fact when it sent nothing or the
+  service asked for nothing. It waits on `remotecache.exportSlots` and on
+  `remotecache:service-upload` (the service's upload request). Its children
+  are `remotecache.export.hold`, `remotecache.export.capture` (per attempt;
+  a graph-lock wait on `dagql.Cache.egraphMu`, `.walk`, `.copy` and
+  `.chains`, with one `remotecache.export.chain` per exported part: the
+  part key, its result and the bytes of the blobs it computed, over its
+  layers' `snapshot.export.diff` ops and `snapshots.exportLayer` lock
+  waits), `remotecache.export.probe` per root probed after a failed
+  capture, and `remotecache.upload`, with a `remotecache.upload.blob` per
+  PUT after a wait on `remotecache.uploadSlots`. The capture links each
+  output's part to its result with the part's size (its chain's). Merges are
+  a `remotecache.merge` op, and each offered part a `remotecache.offer` op
+  on the row its address resolved to, with an `offer.<outcome>` fact.
+  Exports, merges and offers run on the service's connection, not a
+  client's, so they are recorded when the engine records everything, not
+  under `--profile`. Image exports get the `snapshot.export.diff` ops too.
 
 ## Enabling and dumping
 

@@ -13,6 +13,7 @@ import (
 	"github.com/containerd/containerd/v2/pkg/labels"
 	"github.com/containerd/containerd/v2/plugins/diff/walking"
 	cerrdefs "github.com/containerd/errdefs"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
 	"github.com/dagger/dagger/internal/buildkit/util/converter"
@@ -122,12 +123,19 @@ func (cm *snapshotManager) ensureExportBlob(
 	// snapshot avoids sharing a canceled caller's ref or lease with waiters.
 	waitStart := time.Now()
 	unlock, err := cm.exportLayerLocker.acquire(ctx, ref.SnapshotID())
-	stats.LockWait += time.Since(waitStart)
+	waited := time.Now()
+	stats.LockWait += waited.Sub(waitStart)
+	wcprof.RecordWaitAt(ctx, "snapshots.exportLayer", wcprof.WaitReasonLock, waitStart, waited)
 	if err != nil {
 		return ocispecs.Descriptor{}, false, err
 	}
 	defer unlock()
 	result, err := func() (_ ensureExportBlobResult, err error) {
+		// diffOp is the profile op of computing the layer's blob, when it is
+		// computed: the digest and size it produced, under the export. It
+		// ends where the diff's time does, or with the export's error.
+		var diffOp *wcprof.Op
+		defer func() { diffOp.EndErr(err) }()
 		blobDigest := ref.md.getBlob()
 		if blobDigest == "" {
 			// A ref reopened after a restart is rehydrated with no blob
@@ -224,6 +232,8 @@ func (cm *snapshotManager) ensureExportBlob(
 		}
 
 		diffStart := time.Now()
+		diffCtx, op := wcprof.BeginOp(ctx, wcprof.OpKindIO, "snapshot.export.diff", wcprof.OpOpts{Start: diffStart})
+		diffOp = op
 		var desc ocispecs.Descriptor
 		var enableOverlay, fallback, logWarnOnErr bool
 		if forceOvlStr := os.Getenv("BUILDKIT_DEBUG_FORCE_OVERLAY_DIFF"); forceOvlStr != "" {
@@ -242,7 +252,7 @@ func (cm *snapshotManager) ensureExportBlob(
 			}
 		}
 		if enableOverlay {
-			computed, ok, err := ref.tryComputeOverlayBlob(ctx, lower, upper, mediaType, ref.ID(), compressorFunc)
+			computed, ok, err := ref.tryComputeOverlayBlob(diffCtx, lower, upper, mediaType, ref.ID(), compressorFunc)
 			if !ok || err != nil {
 				if !fallback {
 					if !ok {
@@ -251,7 +261,7 @@ func (cm *snapshotManager) ensureExportBlob(
 					return ensureExportBlobResult{}, errors.Wrapf(err, "failed to compute overlay diff")
 				}
 				if logWarnOnErr {
-					bklog.G(ctx).Warnf("failed to compute blob by overlay differ (ok=%v): %v", ok, err)
+					bklog.G(diffCtx).Warnf("failed to compute blob by overlay differ (ok=%v): %v", ok, err)
 				}
 			} else {
 				desc = computed
@@ -259,18 +269,18 @@ func (cm *snapshotManager) ensureExportBlob(
 		}
 
 		if desc.Digest == "" && !isTypeWindows(ref) && refCfg.Type.NeedsComputeDiffBySelf(refCfg) {
-			desc, err = walking.NewWalkingDiff(cm.ContentStore).Compare(ctx, lower, upper,
+			desc, err = walking.NewWalkingDiff(cm.ContentStore).Compare(diffCtx, lower, upper,
 				diff.WithMediaType(mediaType),
 				diff.WithReference(ref.ID()),
 				diff.WithCompressor(compressorFunc),
 			)
 			if err != nil {
-				bklog.G(ctx).WithError(err).Warnf("failed to compute blob by buildkit differ")
+				bklog.G(diffCtx).WithError(err).Warnf("failed to compute blob by buildkit differ")
 			}
 		}
 
 		if desc.Digest == "" {
-			desc, err = cm.Differ.Compare(ctx, lower, upper,
+			desc, err = cm.Differ.Compare(diffCtx, lower, upper,
 				diff.WithMediaType(mediaType),
 				diff.WithReference(ref.ID()),
 				diff.WithCompressor(compressorFunc),
@@ -284,13 +294,18 @@ func (cm *snapshotManager) ensureExportBlob(
 			desc.Annotations = map[string]string{}
 		}
 		if finalize != nil {
-			annotations, err := finalize(ctx, cm.ContentStore)
+			annotations, err := finalize(diffCtx, cm.ContentStore)
 			if err != nil {
 				return ensureExportBlobResult{}, errors.Wrapf(err, "failed to finalize compression")
 			}
 			maps.Copy(desc.Annotations, annotations)
 		}
-		diffTime := time.Since(diffStart)
+		diffEnd := time.Now()
+		diffTime := diffEnd.Sub(diffStart)
+		diffOp.SetIdent(desc.Digest.String())
+		diffOp.SetBytes(desc.Size)
+		diffOp.EndAt(wcprof.OutcomeOK, 0, diffEnd)
+		diffOp = nil
 		info, err := cm.ContentStore.Info(ctx, desc.Digest)
 		if err != nil {
 			return ensureExportBlobResult{}, err
