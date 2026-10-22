@@ -809,8 +809,8 @@ const (
 	// the part: layers the engine already had are not downloaded.
 	CacheOfferBytesAttr = "dagger.io/cache.offer.bytes"
 	// CacheOfferDurationAttr is the decimal-string count of nanoseconds from
-	// the start of the part's import to its install, over which the download
-	// and the layers' application alternate, layer by layer.
+	// the start of the part's import to its install, over which the layers'
+	// downloads run at once while the layers apply in order.
 	CacheOfferDurationAttr = "dagger.io/cache.offer.duration_ns"
 	// CacheOfferWaitedAttr is the decimal-string count of nanoseconds from the
 	// start of the part's demand to the start of its import: selecting a
@@ -833,14 +833,17 @@ const (
 	// source's renewal included.
 	CacheOfferRenewAttr = "dagger.io/cache.offer.renew_ns"
 	// CacheOfferReadWaitAttr is the decimal-string count of nanoseconds spent
-	// blocked reading the part's content, CacheOfferTTFBAttr included.
+	// blocked reading the part's content, CacheOfferTTFBAttr included, summed
+	// over the layers' reads, which run at once.
 	CacheOfferReadWaitAttr = "dagger.io/cache.offer.read_wait_ns"
 	// CacheOfferLayerWaitAttr is the decimal-string count of nanoseconds spent
 	// waiting for another import of the same layer onto the same parent.
 	CacheOfferLayerWaitAttr = "dagger.io/cache.offer.layer_wait_ns"
-	// CacheOfferFetchAttr is the decimal-string count of nanoseconds spent
-	// getting the blobs into the local content store: CacheOfferReadWaitAttr,
-	// and writing, verifying and committing them.
+	// CacheOfferFetchAttr is the decimal-string count of nanoseconds the
+	// import spent, layer by layer, getting each layer's blob into the local
+	// content store: waiting for its download, or downloading it, and
+	// writing, verifying and committing it. A blob downloaded ahead while
+	// earlier layers applied counts in CacheOfferReadWaitAttr, not here.
 	CacheOfferFetchAttr = "dagger.io/cache.offer.fetch_ns"
 	// CacheOfferApplyAttr is the decimal-string count of nanoseconds spent
 	// applying the fetched blobs to their snapshots.
