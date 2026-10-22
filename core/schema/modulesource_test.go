@@ -177,9 +177,10 @@ func TestLoadCurrentModuleSourceConfigPreservesGitDependencySourceAndPin(t *test
 	require.NotContains(t, string(out), `version =`)
 }
 
-// A manifest version 2 module declares no engine version, so there is no
-// declared version to check against the running engine. currentModule.source
-// loads the config this way from inside a module.
+// A manifest version 2 module declares its engine version in the dang.toml of
+// its entrypoint, not in the manifest, so the version is checked on the source
+// and not written to the manifest. currentModule.source loads the config this
+// way from inside a module.
 func TestLoadModuleSourceConfigAcceptsEntrypointManifest(t *testing.T) {
 	t.Parallel()
 
@@ -191,7 +192,7 @@ func TestLoadModuleSourceConfigAcceptsEntrypointManifest(t *testing.T) {
 		Kind:               core.ModuleSourceKindLocal,
 		ConfigFilename:     modules.Filename,
 		ModuleOriginalName: "tiny",
-		EngineVersion:      engine.Version,
+		EngineVersion:      "v1.0.0-beta.20",
 		SourceRootSubpath:  ".",
 		Entrypoint:         entrypoint,
 		Local: &core.LocalModuleSource{
@@ -204,6 +205,38 @@ func TestLoadModuleSourceConfigAcceptsEntrypointManifest(t *testing.T) {
 	require.Equal(t, "tiny", cfg.Name)
 	require.Equal(t, entrypoint, cfg.Entrypoint)
 	require.Empty(t, cfg.EngineVersion)
+}
+
+func TestLoadModuleSourceConfigChecksEntrypointEngineVersion(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		version string
+		err     string
+	}{
+		{version: "v999.0.0", err: "module requires dagger v999.0.0, but you have " + engine.Version},
+		{version: "v0.9.0", err: "module requires dagger v0.9.0, but support for that version has been removed"},
+	} {
+		t.Run(tc.version, func(t *testing.T) {
+			t.Parallel()
+			src := &core.ModuleSource{
+				Kind:               core.ModuleSourceKindLocal,
+				ConfigFilename:     modules.Filename,
+				ModuleOriginalName: "tiny",
+				EngineVersion:      tc.version,
+				SourceRootSubpath:  ".",
+				Entrypoint: &modules.ModuleEntrypointConfig{
+					Kind:   modules.ModuleEntrypointKindDang,
+					Source: "./entrypoint",
+				},
+				Local: &core.LocalModuleSource{
+					ContextDirectoryPath: "/work/tiny",
+				},
+			}
+			_, err := (&moduleSourceSchema{}).loadModuleSourceConfig(src)
+			require.EqualError(t, err, tc.err)
+		})
+	}
 }
 
 func moduleSourceObjectResult(t *testing.T, dag *dagql.Server, op string, self *core.ModuleSource) dagql.ObjectResult[*core.ModuleSource] {
