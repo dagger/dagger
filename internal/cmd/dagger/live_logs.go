@@ -71,6 +71,11 @@ const (
 // followed, so each (span, digest) pair -- the unit a query selects rows by
 // -- is owned by the read that first imported it: a catch-up imports
 // nothing of a pair it does not own, which the follow already did.
+//
+// When the frontend lets go of spans (release), they leave the set -- or,
+// retired, stop being watched -- and the pairs routing to the spans whose
+// display text it dropped are forgotten, so their next request reads them
+// again from the start.
 type liveLogs struct {
 	reader  tracesource.LogReader
 	traceID string
@@ -79,7 +84,7 @@ type liveLogs struct {
 	// coverage, when set, classifies records by the frontend's requests
 	// (idtui.LiveLogsFrontend.LiveLogsCoverage): a read imports only what
 	// the frontend asked for, and claims only pairs it knows it did.
-	coverage func([]idtui.LogTarget) []idtui.LogCoverage
+	coverage func([]idtui.LogTarget) []idtui.LogRoute
 	// activity, when set, tells which spans may still get rows
 	// (idtui.LiveLogsFrontend.LiveLogsActivity): a follow retires the
 	// others.
@@ -98,6 +103,8 @@ type liveLogs struct {
 	// spans are followed (or, without following, read at finish);
 	// pending joined since and are not caught up yet.
 	spans, pending map[string]archive.LogSpan
+	// catching are the spans of the catch-up in flight.
+	catching map[string]archive.LogSpan
 	// idleSince is when a followed span was first seen idle; through, the
 	// LogActivity.Through it was last seen with.
 	idleSince, through map[string]time.Time
@@ -105,14 +112,22 @@ type liveLogs struct {
 	// reactivated ones were retired, then seen active again, and are read
 	// from that cursor to the follow's before they are followed again.
 	retired, reactivated map[string]retiredLogSpan
+	// reactivating is the reactivated span whose gap read is in flight;
+	// release clears it, so the read does not put the span back.
+	reactivating string
 	// cursor is where the follow of spans stands; "" before it read
 	// anything, when a newcomer needs no catch-up.
 	cursor string
 	// owned maps a (span, digest) pair to the read that imported it first:
 	// 0 for a follow (or finish's read), a catch-up's number otherwise. A
 	// retiring span's pairs nothing followed selects pass to its gap read.
-	owned    map[logOwner]uint64
+	owned    map[logOwner]logClaim
 	catchUps uint64
+	// gen counts releases (release); released maps each span the frontend
+	// dropped since the current read began to the release that dropped it:
+	// the read imports nothing more for it.
+	gen      uint64
+	released map[dagui.SpanID]uint64
 	finished bool
 	wake     chan struct{}
 
@@ -122,6 +137,13 @@ type liveLogs struct {
 type logOwner struct {
 	span   [8]byte
 	digest string
+}
+
+// logClaim is the read that owns a pair, and the span the frontend routes
+// its records to.
+type logClaim struct {
+	read   uint64
+	target dagui.SpanID
 }
 
 // retiredLogSpan is a span the follow no longer reads, the cursor it was
@@ -150,7 +172,8 @@ func newLiveLogs(reader tracesource.LogReader, traceID string, export sdklog.Exp
 		through:     map[string]time.Time{},
 		retired:     map[string]retiredLogSpan{},
 		reactivated: map[string]retiredLogSpan{},
-		owned:       map[logOwner]uint64{},
+		owned:       map[logOwner]logClaim{},
+		released:    map[dagui.SpanID]uint64{},
 		wake:        make(chan struct{}, 1),
 		stop:        func() {},
 	}
@@ -170,6 +193,12 @@ func startLiveLogs(ctx context.Context, fe idtui.Frontend, client tracesource.Li
 	l.coverage = lf.LiveLogsCoverage
 	l.activity = lf.LiveLogsActivity
 	l.export = lf.SetLiveLogs(traceID, l.subscribe)
+	if cf, ok := fe.(idtui.LogCacheFrontend); ok {
+		cf.SetLogRelease(traceID, l.release)
+		if searcher, ok := client.(liveLogSearcher); ok {
+			cf.SetLogSearch(traceID, logSearchFunc(searcher.SearchLogs))
+		}
+	}
 	if follow {
 		ctx, cancel := context.WithCancel(ctx)
 		done := make(chan struct{})
@@ -204,6 +233,9 @@ func (l *liveLogs) subscribe(req idtui.LogRequest) {
 	if _, ok := l.reactivated[span.SpanID]; ok {
 		return
 	}
+	if l.reactivating == span.SpanID {
+		return
+	}
 	l.pending[span.SpanID] = span
 	l.notify()
 }
@@ -214,6 +246,77 @@ func (l *liveLogs) notify() {
 	case l.wake <- struct{}{}:
 	default:
 	}
+}
+
+// release lets go of what the frontend dropped (idtui.LogRelease): the
+// spans it no longer requests leave the set, ending the follow so it
+// resumes without them, and the pairs routing to the spans it dropped are
+// forgotten, so a later request imports them again from the start. Like
+// subscribe, it runs on the frontend's event loop: it only takes l.mu,
+// which nothing holds while it waits on the frontend.
+//
+// A released span is forgotten whether it is followed, retired or
+// reactivated: it is no longer watched for activity, and a later request
+// for it is a new one, caught up from the start rather than resumed from
+// where it retired. So the pairs its retirement passed to its gap read are
+// forgotten too, the gap read in flight for it, if any, puts nothing back,
+// and the pairs routing to a dropped span are forgotten whichever read owns
+// them.
+func (l *liveLogs) release(r idtui.LogRelease) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.finished {
+		return
+	}
+	l.gen++
+	dropped := make(map[dagui.SpanID]bool, len(r.Dropped))
+	for _, id := range r.Dropped {
+		dropped[id] = true
+		l.released[id] = l.gen
+	}
+	// The gap reads of released retired spans: none of them runs again.
+	forsaken := map[uint64]bool{}
+	var left bool
+	for _, id := range r.Spans {
+		hex := id.String()
+		if _, ok := l.spans[hex]; ok {
+			delete(l.spans, hex)
+			left = true
+		}
+		delete(l.pending, hex)
+		delete(l.catching, hex)
+		delete(l.idleSince, hex)
+		delete(l.through, hex)
+		if rs, ok := l.retired[hex]; ok {
+			forsaken[rs.read] = true
+			delete(l.retired, hex)
+		}
+		if rs, ok := l.reactivated[hex]; ok {
+			forsaken[rs.read] = true
+			delete(l.reactivated, hex)
+		}
+		if l.reactivating == hex {
+			l.reactivating = ""
+		}
+	}
+	for key, claim := range l.owned {
+		if dropped[claim.target] || forsaken[claim.read] {
+			delete(l.owned, key)
+		}
+	}
+	if left {
+		l.notify()
+	}
+}
+
+// beginRead starts a read: no other read is in flight, so the spans
+// released before it no longer matter. It returns the release generation
+// the read starts at.
+func (l *liveLogs) beginRead() uint64 {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	clear(l.released)
+	return l.gen
 }
 
 // run follows the set until ctx ends, or the session's telemetry drains.
@@ -267,7 +370,7 @@ func (l *liveLogs) run(ctx context.Context) {
 		// anything, and without this read its cursor would never move,
 		// leaving everything stored since unread for every span.
 		readStart := l.now()
-		if err := l.reader.ReadLogs(ctx, l.traceID, tracesource.LogQuery{Spans: spans, Cursor: cursor}, l.importFollowed); err != nil {
+		if err := l.reader.ReadLogs(ctx, l.traceID, tracesource.LogQuery{Spans: spans, Cursor: cursor}, l.importFollowed(l.beginRead())); err != nil {
 			if ctx.Err() != nil {
 				return
 			}
@@ -285,11 +388,13 @@ func (l *liveLogs) run(ctx context.Context) {
 		l.mu.Unlock()
 		if joining || len(spans) == 0 {
 			// Spans joined meanwhile, and there is room for them: catch
-			// them up first. Or every span retired: wait for one to join.
+			// them up first. Or every span retired or was released: wait
+			// for one to join.
 			continue
 		}
 		// A span joining the set ends this follow, to catch it up and
-		// follow the grown set; so does one to retire, or to reactivate.
+		// follow the grown set; so does one to retire, or to reactivate,
+		// or one the frontend released, to follow the set without it.
 		followCtx, cancel := context.WithCancel(ctx)
 		woken := make(chan struct{})
 		go func() {
@@ -300,7 +405,7 @@ func (l *liveLogs) run(ctx context.Context) {
 			case <-followCtx.Done():
 			}
 		}()
-		err := l.reader.ReadLogs(followCtx, l.traceID, tracesource.LogQuery{Spans: spans, Follow: true, Cursor: cursor}, l.importFollowed)
+		err := l.reader.ReadLogs(followCtx, l.traceID, tracesource.LogQuery{Spans: spans, Follow: true, Cursor: cursor}, l.importFollowed(l.beginRead()))
 		cancel()
 		select {
 		case <-woken:
@@ -451,16 +556,19 @@ func (l *liveLogs) retire(readStart time.Time) {
 			followedDigests[d] = true
 		}
 	}
-	for key := range l.owned {
+	for key, claim := range l.owned {
 		if followed[key.span] || (key.digest != "" && followedDigests[key.digest]) {
 			continue
 		}
 		// The installing span is the one a service's restart reactivates:
-		// its exec span links it.
+		// its exec span links it. The claim keeps its target, which a
+		// release that drops it forgets it by.
 		if read, ok := retiring[key.span]; ok {
-			l.owned[key] = read
+			claim.read = read
+			l.owned[key] = claim
 		} else if read, ok := retiringDigests[key.digest]; ok && key.digest != "" {
-			l.owned[key] = read
+			claim.read = read
+			l.owned[key] = claim
 		}
 	}
 }
@@ -490,16 +598,18 @@ func (l *liveLogs) reactivate(ctx context.Context) error {
 			return errs
 		}
 		delete(l.reactivated, id)
+		l.reactivating = id
 		cursor := l.cursor
 		l.mu.Unlock()
 		var err error
 		if r.cursor != cursor {
+			start := l.beginRead()
 			err = l.reader.ReadLogs(ctx, l.traceID, tracesource.LogQuery{
 				Spans:   []archive.LogSpan{r.span},
 				Cursor:  r.cursor,
 				Through: cursor,
 			}, func(ctx context.Context, req *collogspb.ExportLogsServiceRequest, next string) error {
-				if err := l.importLogs(ctx, req, r.read); err != nil {
+				if err := l.importLogs(ctx, req, r.read, start); err != nil {
 					return err
 				}
 				r.cursor = next
@@ -507,12 +617,23 @@ func (l *liveLogs) reactivate(ctx context.Context) error {
 			})
 		}
 		l.mu.Lock()
-		if err != nil {
+		switch {
+		case l.reactivating != id:
+			// Released meanwhile (release): forget it, and what this read
+			// claimed for it since.
+			for key, claim := range l.owned {
+				if claim.read == r.read {
+					delete(l.owned, key)
+				}
+			}
+			err = nil
+		case err != nil:
 			l.reactivated[id] = r
-		} else {
+		default:
 			l.spans[id] = r.span
 			l.through[id] = r.through
 		}
+		l.reactivating = ""
 		l.mu.Unlock()
 		if err != nil {
 			return errors.Join(errs, err)
@@ -533,6 +654,7 @@ func (l *liveLogs) catchUp(ctx context.Context) error {
 		batch[id] = span
 		delete(l.pending, id)
 	}
+	l.catching = maps.Clone(batch)
 	cursor := l.cursor
 	l.catchUps++
 	read := l.catchUps
@@ -540,6 +662,7 @@ func (l *liveLogs) catchUp(ctx context.Context) error {
 	if len(batch) == 0 {
 		return nil
 	}
+	start := l.beginRead()
 	var imported bool
 	var err error
 	if cursor != "" {
@@ -548,11 +671,13 @@ func (l *liveLogs) catchUp(ctx context.Context) error {
 			Through: cursor,
 		}, func(ctx context.Context, req *collogspb.ExportLogsServiceRequest, _ string) error {
 			imported = true
-			return l.importLogs(ctx, req, read)
+			return l.importLogs(ctx, req, read, start)
 		})
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	// What the frontend released meanwhile is left out.
+	batch, l.catching = l.catching, nil
 	if err != nil && !imported {
 		// Nothing landed: try these again.
 		for id, span := range batch {
@@ -568,21 +693,25 @@ func (l *liveLogs) catchUp(ctx context.Context) error {
 	return err
 }
 
-// importFollowed imports a batch of the set's own read, which carries the
-// cursor to resume after it.
-func (l *liveLogs) importFollowed(ctx context.Context, req *collogspb.ExportLogsServiceRequest, cursor string) error {
-	if err := l.importLogs(ctx, req, 0); err != nil {
-		return err
+// importFollowed returns the import of the set's own read, which started at
+// release generation start: each batch carries the cursor to resume after
+// it.
+func (l *liveLogs) importFollowed(start uint64) func(context.Context, *collogspb.ExportLogsServiceRequest, string) error {
+	return func(ctx context.Context, req *collogspb.ExportLogsServiceRequest, cursor string) error {
+		if err := l.importLogs(ctx, req, 0, start); err != nil {
+			return err
+		}
+		l.mu.Lock()
+		l.cursor = cursor
+		l.mu.Unlock()
+		return nil
 	}
-	l.mu.Lock()
-	l.cursor = cursor
-	l.mu.Unlock()
-	return nil
 }
 
 // importLogs exports the records of req that read owns (see liveLogs), of
-// those the frontend routes to what it requested.
-func (l *liveLogs) importLogs(ctx context.Context, req *collogspb.ExportLogsServiceRequest, read uint64) error {
+// those the frontend routes to what it requested, leaving out the spans it
+// dropped since the read started (at release generation start).
+func (l *liveLogs) importLogs(ctx context.Context, req *collogspb.ExportLogsServiceRequest, read, start uint64) error {
 	var targets []idtui.LogTarget
 	for _, rl := range req.GetResourceLogs() {
 		for _, sl := range rl.GetScopeLogs() {
@@ -603,21 +732,27 @@ func (l *liveLogs) importLogs(ctx context.Context, req *collogspb.ExportLogsServ
 		// round trip each.
 		return nil
 	}
-	var coverage []idtui.LogCoverage
+	var routes []idtui.LogRoute
 	if l.coverage != nil {
-		coverage = l.coverage(targets)
+		routes = l.coverage(targets)
 	}
 	l.mu.Lock()
 	i, kept := 0, 0
 	for _, rl := range req.GetResourceLogs() {
 		for _, sl := range rl.GetScopeLogs() {
 			sl.LogRecords = slices.DeleteFunc(sl.LogRecords, func(rec *otlplogsv1.LogRecord) bool {
-				cover := idtui.LogCovered
-				if i < len(coverage) {
-					cover = coverage[i]
+				key := logOwnerOf(rec)
+				route := idtui.LogRoute{Coverage: idtui.LogCovered, Span: dagui.SpanID{SpanID: key.span}}
+				if i < len(routes) {
+					route = routes[i]
 				}
 				i++
-				switch cover {
+				if route.Span.IsValid() && l.released[route.Span] > start {
+					// Dropped while this read was in flight: a later
+					// request reads it again.
+					return true
+				}
+				switch route.Coverage {
 				case idtui.LogUncovered:
 					// Not asked for: the read of a span that asks for it
 					// later imports it then.
@@ -627,13 +762,12 @@ func (l *liveLogs) importLogs(ctx context.Context, req *collogspb.ExportLogsServ
 					// claiming the pair this read may not keep selecting.
 					return false
 				}
-				key := logOwnerOf(rec)
-				owner, ok := l.owned[key]
+				claim, ok := l.owned[key]
 				if !ok {
-					l.owned[key] = read
+					l.owned[key] = logClaim{read: read, target: route.Span}
 					return false
 				}
-				return owner != read && read != 0
+				return claim.read != read && read != 0
 			})
 			kept += len(sl.LogRecords)
 		}
@@ -686,14 +820,15 @@ func (l *liveLogs) finish(ctx context.Context) error {
 	pending := slices.Collect(maps.Values(l.pending))
 	l.mu.Unlock()
 	if len(spans) > 0 {
-		err = errors.Join(err, l.reader.ReadLogs(ctx, l.traceID, tracesource.LogQuery{Spans: spans, Cursor: cursor}, l.importFollowed))
+		err = errors.Join(err, l.reader.ReadLogs(ctx, l.traceID, tracesource.LogQuery{Spans: spans, Cursor: cursor}, l.importFollowed(l.beginRead())))
 	}
 	for _, r := range reactivated {
+		start := l.beginRead()
 		err = errors.Join(err, l.reader.ReadLogs(ctx, l.traceID, tracesource.LogQuery{
 			Spans:  []archive.LogSpan{r.span},
 			Cursor: r.cursor,
 		}, func(ctx context.Context, req *collogspb.ExportLogsServiceRequest, _ string) error {
-			return l.importLogs(ctx, req, r.read)
+			return l.importLogs(ctx, req, r.read, start)
 		}))
 	}
 	for chunk := range slices.Chunk(pending, l.maxSpans) {
@@ -701,12 +836,49 @@ func (l *liveLogs) finish(ctx context.Context) error {
 		l.catchUps++
 		read := l.catchUps
 		l.mu.Unlock()
+		start := l.beginRead()
 		err = errors.Join(err, l.reader.ReadLogs(ctx, l.traceID, tracesource.LogQuery{Spans: chunk},
 			func(ctx context.Context, req *collogspb.ExportLogsServiceRequest, _ string) error {
-				return l.importLogs(ctx, req, read)
+				return l.importLogs(ctx, req, read, start)
 			}))
 	}
 	return err
+}
+
+// liveLogSearcher is an engine client's search of its own live store.
+type liveLogSearcher interface {
+	SearchLogs(context.Context, archive.LogSearch) (archive.LogSearchResult, error)
+}
+
+// logSearchFunc is a frontend's search of a source's display text
+// (idtui.LogCacheFrontend.SetLogSearch): a case-insensitive substring, as
+// the frontend matches what it holds, up to the store's match limit.
+func logSearchFunc(search func(context.Context, archive.LogSearch) (archive.LogSearchResult, error)) idtui.LogSearchFunc {
+	return func(ctx context.Context, pattern string) ([]idtui.LogTarget, error) {
+		result, err := search(ctx, archive.LogSearch{Pattern: pattern, IgnoreCase: true, Limit: archive.MaxLogSearchLimit})
+		if err != nil {
+			return nil, err
+		}
+		var targets []idtui.LogTarget
+		seen := map[idtui.LogTarget]bool{}
+		for _, match := range result.Matches {
+			traceID, err1 := trace.TraceIDFromHex(match.TraceID)
+			spanID, err2 := trace.SpanIDFromHex(match.SpanID)
+			if err1 != nil || err2 != nil {
+				continue
+			}
+			target := idtui.LogTarget{
+				Trace:  dagui.TraceID{TraceID: traceID},
+				Span:   dagui.SpanID{SpanID: spanID},
+				Digest: match.Digest,
+			}
+			if !seen[target] {
+				seen[target] = true
+				targets = append(targets, target)
+			}
+		}
+		return targets, nil
+	}
 }
 
 // liveLogsWanted reports whether to ask the engine for log presence: the
