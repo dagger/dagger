@@ -3,7 +3,9 @@ package core
 import (
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -153,6 +155,28 @@ func TestOutsideInputsDigest(t *testing.T) {
 		return digest(tree(map[string]string{"rules": rules}, map[string]string{"app/.gitignore": "../rules"}), "app")
 	}
 	require.NotEqual(t, linked("*.log\n"), linked("*.tmp\n"), "an ignore file linked from outside counts")
+
+	// A pipe or a device behind an ignore file is never read, which need not
+	// end: the digest fails, so the directory falls back to recipe keying.
+	fifo := tree(nil, nil)
+	require.NoError(t, syscall.Mkfifo(filepath.Join(fifo, "pipe"), 0o644))
+	require.NoError(t, os.Symlink("pipe", filepath.Join(fifo, ".gitignore")))
+	done := make(chan error, 1)
+	go func() {
+		_, err := outsideInputsDigest(fifo, filepath.Join(fifo, "app"))
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		require.Error(t, err)
+	case <-time.After(10 * time.Second):
+		// Unblock the reader so the test can end.
+		w, err := os.OpenFile(filepath.Join(fifo, "pipe"), os.O_WRONLY, 0)
+		if err == nil {
+			w.Close()
+		}
+		t.Fatal("reading an ignore file that is a pipe blocked")
+	}
 
 	loop := tree(nil, map[string]string{".gitignore": ".gitignore"})
 	_, err := outsideInputsDigest(loop, filepath.Join(loop, "app"))
