@@ -766,7 +766,9 @@ func TestRenewalChainControls(t *testing.T) {
 		}})
 		require.NoError(t, got.err)
 		require.Len(t, got.requests, 1)
-		require.Equal(t, fixture.digest(0), got.requests[0].NeededBlob)
+		// The layers download at once: either one's expired address starts
+		// the renewal.
+		require.Contains(t, []digest.Digest{fixture.digest(0), fixture.digest(1)}, got.requests[0].NeededBlob)
 		require.Equal(t, 1, got.transport.count("https://renewed.invalid/lower"))
 		require.Equal(t, 1, got.transport.count("https://renewed.invalid/upper"))
 	})
