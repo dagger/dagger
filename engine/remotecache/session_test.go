@@ -204,8 +204,8 @@ func TestBackoff(t *testing.T) {
 	require.InDelta(t, float64(2400*time.Millisecond), float64(b.next(0.99999)), float64(time.Millisecond))
 }
 
-// The engine's first message says hello with its identity, numbered 1; the
-// session is served once the service welcomes it.
+// The engine's first message says hello with its identity and that it merges
+// held rows, numbered 1; the session is served once the service welcomes it.
 func TestHello(t *testing.T) {
 	adapter := newFakeAdapter()
 	adapter.renewals <- renewalRequest(time.Minute)
@@ -218,7 +218,7 @@ func TestHello(t *testing.T) {
 	hello := conn.next(t)
 	require.Equal(t, protocol.TypeHello, hello.Type)
 	require.Equal(t, uint64(1), hello.ID, "IDs start at 1")
-	require.Equal(t, protocol.Hello{CacheID: "cache-1", Generation: 3, EngineVersion: "v0.20.0", EngineName: "dagger-engine"}, decode[protocol.Hello](t, hello))
+	require.Equal(t, protocol.Hello{CacheID: "cache-1", Generation: 3, EngineVersion: "v0.20.0", EngineName: "dagger-engine", HeldRows: true}, decode[protocol.Hello](t, hello))
 	s.dispatch(protocol.Envelope{ID: 1, Re: hello.ID, Type: protocol.TypeWelcome, Body: json.RawMessage(`{}`)})
 	// Renewals start only after the welcome is consumed. Wait for one before
 	// canceling so the hello reply cannot race with cancellation.
