@@ -5,6 +5,7 @@ import (
 	"maps"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/containerd/containerd/v2/core/diff"
 	"github.com/containerd/containerd/v2/core/mount"
@@ -111,6 +112,7 @@ func (cm *snapshotManager) ensureExportBlob(
 	parentSnapshotID string,
 	ref *immutableRef,
 	refCfg compression.Config,
+	stats *ExportStats,
 ) (_ ocispecs.Descriptor, _ bool, rerr error) {
 	if ref == nil {
 		return ocispecs.Descriptor{}, false, errors.New("ensure export blob: nil ref")
@@ -118,7 +120,9 @@ func (cm *snapshotManager) ensureExportBlob(
 
 	// A caller owns its own pins while waiting and doing I/O. Serializing by
 	// snapshot avoids sharing a canceled caller's ref or lease with waiters.
+	waitStart := time.Now()
 	unlock, err := cm.exportLayerLocker.acquire(ctx, ref.SnapshotID())
+	stats.LockWait += time.Since(waitStart)
 	if err != nil {
 		return ocispecs.Descriptor{}, false, err
 	}
@@ -163,6 +167,7 @@ func (cm *snapshotManager) ensureExportBlob(
 				if err := cm.recordSnapshotContent(ref.SnapshotID(), desc); err != nil {
 					return ensureExportBlobResult{}, err
 				}
+				stats.LayersReused++
 				return ensureExportBlobResult{desc: desc, hasLayer: true}, nil
 			}
 		}
@@ -218,6 +223,7 @@ func (cm *snapshotManager) ensureExportBlob(
 			defer releaseUpper()
 		}
 
+		diffStart := time.Now()
 		var desc ocispecs.Descriptor
 		var enableOverlay, fallback, logWarnOnErr bool
 		if forceOvlStr := os.Getenv("BUILDKIT_DEBUG_FORCE_OVERLAY_DIFF"); forceOvlStr != "" {
@@ -284,6 +290,7 @@ func (cm *snapshotManager) ensureExportBlob(
 			}
 			maps.Copy(desc.Annotations, annotations)
 		}
+		diffTime := time.Since(diffStart)
 		info, err := cm.ContentStore.Info(ctx, desc.Digest)
 		if err != nil {
 			return ensureExportBlobResult{}, err
@@ -342,6 +349,10 @@ func (cm *snapshotManager) ensureExportBlob(
 		if err := cm.recordSnapshotContent(ref.SnapshotID(), desc); err != nil {
 			return ensureExportBlobResult{}, err
 		}
+		stats.LayersDiffed++
+		stats.RawBytes += usage.Size
+		stats.BlobBytes += desc.Size
+		stats.DiffTime += diffTime
 		return ensureExportBlobResult{
 			desc:     desc,
 			hasLayer: true,
