@@ -89,6 +89,27 @@ func (DirectorySuite) TestSubdirectoryViewResolution(ctx context.Context, t *tes
 		require.Equal(t, "app", name, `".." stops at the directory`)
 	})
 
+	t.Run("stat name through a self link", func(ctx context.Context, t *testctx.T) {
+		// alias -> app in one root and alias -> lib in the other, with equal
+		// files: a stat that resolves back to the directory itself reports
+		// the directory's own name, not its target's.
+		nonce := rand.Text()
+		for _, target := range []string{"app", "lib"} {
+			dir := t.TempDir()
+			writeTree(t, dir,
+				map[string]string{target + "/main.txt": nonce},
+				map[string]string{"alias": target, target + "/self": ".", target + "/chain": "self"})
+			alias := host(dir).Directory("alias")
+			for _, p := range []string{"self", "chain", "self/.", "chain/self"} {
+				stat, err := alias.Stat(ctx, p)
+				require.NoError(t, err)
+				name, err := stat.Name(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "alias", name, p)
+			}
+		}
+	})
+
 	t.Run("dockerfile outside", func(ctx context.Context, t *testctx.T) {
 		dir := t.TempDir()
 		writeTree(t, dir,
