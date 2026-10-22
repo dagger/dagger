@@ -44,6 +44,10 @@ var expectedOutcome = map[string]string{
 	"snapshot_download_leaveearly": "ApplyHasBytes",
 	"snapshot_download_ownretry":   "NoOwnRetry",
 	"snapshot_download_aheadreuse": "ReuseBeforeBytes",
+	// Downloads ahead over a window of later layers (parallel layer
+	// downloads), and the mutation that keeps them past a failure.
+	"snapshot_download_window":           "",
+	"snapshot_download_window_keepahead": "CleanupComplete",
 	// green: regression checks over the modeled cache behavior. (The
 	// former core configuration is folded into resources: same bounds,
 	// every core invariant, and strictly more behavior.)
