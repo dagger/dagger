@@ -130,7 +130,7 @@ func TestDeclaresEntrypointSources(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			declared, err := DeclaresEntrypointSources(writeDangFiles(t, tc.files))
+			declared, err := DeclaresEntrypointSources(writeDangFiles(t, tc.files), "")
 			require.NoError(t, err)
 			require.Equal(t, tc.declared, declared)
 		})
@@ -183,7 +183,7 @@ func runContract(t *testing.T, source string, sources bool) error {
 		Schema:     contractTestSchema(),
 		AutoImport: true,
 	})
-	_, err := runEntrypointDir(ctx, writeDangFiles(t, map[string]string{"main.dang": source}), sources)
+	_, err := runEntrypointDir(ctx, writeDangFiles(t, map[string]string{"main.dang": source}), "", sources)
 	return err
 }
 

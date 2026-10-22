@@ -187,6 +187,12 @@ type ModuleSource struct {
 	ModuleConfigUserFields        modules.ModuleConfigUserFields
 	DisableDefaultFunctionCaching bool
 
+	// EntrypointDangVersion is the Dang language version a manifest v2
+	// module's Dang entrypoint is written in, e.g. "2.1", as the dang.toml
+	// governing the entrypoint declares it (or Dang's default). Empty for
+	// any other module. See core/sdk/dang/v2.ResolveEntrypointVersions.
+	EntrypointDangVersion string
+
 	// The SDK configuration of the module as read from the module config or set by withSDK
 	SDK *SDKConfig `field:"true" name:"sdk" doc:"The SDK configuration of the module."`
 	// The implementation of the SDK with codegen and related operations. Reloaded when SDK changes.
@@ -480,6 +486,7 @@ type persistedModuleSourcePayload struct {
 	ModuleName                      string                                `json:"moduleName,omitempty"`
 	ModuleOriginalName              string                                `json:"moduleOriginalName,omitempty"`
 	EngineVersion                   string                                `json:"engineVersion,omitempty"`
+	EntrypointDangVersion           string                                `json:"entrypointDangVersion,omitempty"`
 	CodegenConfig                   *modules.ModuleCodegenConfig          `json:"codegenConfig,omitempty"`
 	ModuleConfigUserFields          modules.ModuleConfigUserFields        `json:"moduleConfigUserFields,omitempty"`
 	DisableDefaultFunctionCaching   bool                                  `json:"disableDefaultFunctionCaching,omitempty"`
@@ -804,6 +811,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, enc *dagql.P
 		ModuleName:                    src.ModuleName,
 		ModuleOriginalName:            src.ModuleOriginalName,
 		EngineVersion:                 src.EngineVersion,
+		EntrypointDangVersion:         src.EntrypointDangVersion,
 		CodegenConfig:                 src.CodegenConfig,
 		ModuleConfigUserFields:        src.ModuleConfigUserFields,
 		DisableDefaultFunctionCaching: src.DisableDefaultFunctionCaching,
@@ -968,6 +976,7 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dec *dagql.Persi
 		ModuleName:                    persisted.ModuleName,
 		ModuleOriginalName:            persisted.ModuleOriginalName,
 		EngineVersion:                 persisted.EngineVersion,
+		EntrypointDangVersion:         persisted.EntrypointDangVersion,
 		CodegenConfig:                 persisted.CodegenConfig,
 		ModuleConfigUserFields:        persisted.ModuleConfigUserFields,
 		DisableDefaultFunctionCaching: persisted.DisableDefaultFunctionCaching,
@@ -1442,6 +1451,18 @@ func (src *ModuleSource) SourceImplementationDigest(ctx context.Context) (digest
 
 	if src.SDK != nil {
 		inputs = append(inputs, src.SDK.Source)
+	}
+
+	// A manifest v2 entrypoint's versions come from its dang.toml, which
+	// need not be in the context directory (a module reference or an address
+	// names a directory outside it), and they decide how its types are named
+	// and which API they are written against. Results built under one version
+	// must not answer for another, so key on them directly.
+	if src.Entrypoint != nil {
+		inputs = append(inputs,
+			"entrypointEngineVersion:"+src.EngineVersion,
+			"entrypointDangVersion:"+src.EntrypointDangVersion,
+		)
 	}
 
 	inputs = append(inputs, src.IncludePaths...)
