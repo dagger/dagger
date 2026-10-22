@@ -144,7 +144,7 @@ func evalDangSource(
 
 		modCtx := modSource.Self().ContextDirectory
 		var env dang.ValueScope
-		err = modCtx.Self().Mount(ctx, modCtx, func(path string) error {
+		err = modCtx.Self().MountConfined(ctx, modCtx, func(path string) error {
 			modSrcDir := filepath.Join(path, modSource.Self().SourceSubpath)
 
 			// During the typedef/declaration phase (ModuleTypes) the schema
