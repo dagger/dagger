@@ -307,3 +307,26 @@ func TestMergeHeldRowRefusals(t *testing.T) {
 	_, err = b.MergeValues(bctx, cloudCacheID, bad)
 	require.ErrorContains(t, err, "held row carries a record")
 }
+
+// A bundle that carries a held row and a record of the same recipe is
+// malformed, and the merge refuses it, committing nothing: the record could
+// replace the entry the held row was checked against.
+func TestMergeHeldRowRefusesARecordOfTheSameRecipe(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, p := storedBundleTestCloud(t, "root")
+	bctx, b, _ := heldTestEngineWithP(t, ctx, cloud, p)
+	full, err := cloud.StoredBundle(ctx, []uint64{r}, nil)
+	require.NoError(t, err)
+	recipe, err := storedBundleTestEntry(cloud, p).loadResultCall().deriveRecipeDigest(cloud)
+	require.NoError(t, err)
+	ordinal := TransferOrdinal(len(full.Bundle.Values) + 1)
+	bundle := full.Bundle
+	bundle.Values = append(bundle.Values, TransferredValue{Ordinal: ordinal, SenderNumber: p, Record: PersistedRecord{ResultID: uint64(ordinal)}, Held: recipe})
+	bundle.Roots = append(bundle.Roots, TransferredRoot{Ordinal: ordinal})
+
+	entries := heldTestEntries(b)
+	reply, err := b.MergeValues(bctx, cloudCacheID, bundle)
+	require.ErrorContains(t, err, "same recipe")
+	require.False(t, reply.Committed)
+	require.Equal(t, entries, heldTestEntries(b), "nothing committed")
+}
