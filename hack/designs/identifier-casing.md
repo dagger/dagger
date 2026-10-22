@@ -341,9 +341,17 @@ letter-digit words like versions and product names: `APIv1`, `APIS3` and
 - The Go SDK's Dagger additions: `FS SDK LLM`
 - Acronyms found in the core schema: `GPU VCS SHA MCP OCI SSHFS`
 - Common in modules: `E2E CLI TUI IO PR EC2 MD5`
-- Terms: `GitHub GitLab OAuth IPv4 IPv6 iOS macOS gRPC GraphQL 3D 2D`. Their
-  `capitalized` forms are `Oauth Ipv4 Ipv6 Ios MacOS Grpc`; the brands
-  `GitHub GitLab GraphQL` and `3D 2D` keep their spelling.
+- Terms: `GitHub GitLab OAuth IPv4 IPv6 iOS macOS gRPC GraphQL 3D 2D K8s K3s`.
+  Their `capitalized` forms are `Oauth Ipv4 Ipv6 Ios MacOS Grpc`; the brands
+  `GitHub GitLab GraphQL`, `3D 2D` and the numeronyms `K8s K3s` keep their
+  spelling. `K8s` and `K3s` are product names, not acronyms, so `K8STools`,
+  `K8sTools` and `k8s-tools` all parse as *K8s · tools. They were added before
+  any engine named modules with the dictionary (only the experimental
+  `formatIdentifiers` had shipped, in v1.0.0-beta.20, and no SDK used it), so
+  they're in `Initial` rather than a later dictionary. Other numeronyms
+  (`k0s`, `i18n`, `l10n`, `a11y`) are left to the heuristic: lowercase or
+  capitalized they parse as one word, and their all-caps spellings (`I18N`)
+  are as common as the lowercase ones, so no spelling is clearly canonical.
 
 ### Process
 
@@ -1326,6 +1334,13 @@ copy: they get formatted names from the engine.
 | `apiS3Bucket` | ^API · s3 · bucket | `APIS3Bucket` | `apiS3Bucket` | `api_s3_bucket` | `ApiS3Bucket` |
 | `HTTP2s` | ^HTTP+2s | `HTTP2s` | `http2s` | `http2s` | `Http2s` |
 | `SHA256s` | ^SHA+256s | `SHA256s` | `sha256s` | `sha256s` | `Sha256s` |
+| `K8STools` | *K8s · tools | `K8sTools` | `k8sTools` | `k8s_tools` | `K8sTools` |
+| `K8sTools` | *K8s · tools | `K8sTools` | `k8sTools` | `k8s_tools` | `K8sTools` |
+| `k8s-tools` | *K8s · tools | `K8sTools` | `k8sTools` | `k8s_tools` | `K8sTools` |
+| `K8S_TOOLS` | *K8s · tools | `K8sTools` | `k8sTools` | `k8s_tools` | `K8sTools` |
+| `MyK8SCluster` | my · *K8s · cluster | `MyK8sCluster` | `myK8sCluster` | `my_k8s_cluster` | `MyK8sCluster` |
+| `K3SServer` | *K3s · server | `K3sServer` | `k3sServer` | `k3s_server` | `K3sServer` |
+| `k3s_server` | *K3s · server | `K3sServer` | `k3sServer` | `k3s_server` | `K3sServer` |
 | `Café` | error: non-ASCII | | | | |
 
 ## Open Questions

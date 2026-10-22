@@ -189,4 +189,10 @@ var initialTerms = []Term{
 	{Spelling: "GraphQL", Capitalized: "GraphQL"},
 	{Spelling: "3D", Capitalized: "3D"},
 	{Spelling: "2D", Capitalized: "2D"},
+
+	// Numeronym product names spelled with a fixed lowercase "s", not
+	// acronyms: without these, K8STools would keep its author's K8S (and
+	// K8sTools, k8s-tools their K8s), so the spellings wouldn't agree.
+	{Spelling: "K8s", Capitalized: "K8s"},
+	{Spelling: "K3s", Capitalized: "K3s"},
 }
