@@ -121,6 +121,9 @@ type Store struct {
 	// hasn't finished.
 	pendingBytes int64
 	removals     sync.WaitGroup
+	// removalErr collects background removal failures until WaitRemovals
+	// reports them.
+	removalErr error
 
 	// beforeRemove, when set, runs before each background removal; tests
 	// use it to hold removals.
@@ -178,12 +181,23 @@ func Open(dir string, opts Options) (*Store, error) {
 			return nil, fmt.Errorf("create cache volume directory layout: %w", err)
 		}
 	}
-	// This process owns the directory now, so anything in tmp/ or trash/ was
-	// left by a previous owner that stopped mid-way.
-	for _, sub := range []string{"tmp", "trash"} {
-		if err := removeContents(filepath.Join(s.formDir, sub)); err != nil {
-			s.Close()
-			return nil, fmt.Errorf("remove leftover cache volume %s: %w", sub, err)
+	// This process owns the directory now, so anything in a tmp/ or trash/,
+	// of any format, was left by a previous owner that stopped mid-way.
+	forms, err := os.ReadDir(dir)
+	if err != nil {
+		s.Close()
+		return nil, fmt.Errorf("read cache volume directory: %w", err)
+	}
+	for _, form := range forms {
+		if _, ok := formatOf(form); !ok {
+			continue
+		}
+		for _, sub := range []string{"tmp", "trash"} {
+			err := removeContents(filepath.Join(dir, form.Name(), sub))
+			if err != nil && !errors.Is(err, fs.ErrNotExist) {
+				s.Close()
+				return nil, fmt.Errorf("remove leftover cache volume %s/%s: %w", form.Name(), sub, err)
+			}
 		}
 	}
 	return s, nil
@@ -197,24 +211,37 @@ func (s *Store) Dir() string {
 // ErrPinned is returned by Close when volumes are still pinned.
 var ErrPinned = errors.New("cache volumes are still in use")
 
-// abandon releases ownership without checking pins, as a crashed process
-// would; for tests.
-func (s *Store) abandon() {
-	if s.lock != nil {
-		s.lock.Close()
-		s.lock = nil
-	}
-}
-
-// Close gives up ownership. Pins still held lose their protection. Removals in
-// progress keep running until they finish.
+// Close gives up ownership. If volumes are still pinned, it keeps ownership and
+// returns ErrPinned: another owner could otherwise collect a volume that is
+// still mounted. The ownership lock then lasts until the process exits.
+// Removals in progress keep running until they finish.
 func (s *Store) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.lock == nil {
 		return nil
+	}
+	pinned := 0
+	for _, st := range s.pins {
+		pinned += st.count
+	}
+	if pinned > 0 {
+		return fmt.Errorf("keeping ownership of %s: %d pins: %w", s.dir, pinned, ErrPinned)
 	}
 	err := s.lock.Close()
 	s.lock = nil
 	return err
+}
+
+// abandon releases ownership without checking pins, as a crashed process
+// would; for tests.
+func (s *Store) abandon() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.lock != nil {
+		s.lock.Close()
+		s.lock = nil
+	}
 }
 
 // Pin keeps a volume from being collected until it is released.
@@ -402,9 +429,15 @@ type Entry struct {
 // returns the bytes the whole directory uses, including what is still being
 // created or removed.
 func (s *Store) Usage(ctx context.Context) ([]Entry, int64, error) {
+	entries, used, _, err := s.usage(ctx)
+	return entries, used, err
+}
+
+// usage is Usage, also returning the pending-removal bytes it counted.
+func (s *Store) usage(ctx context.Context) ([]Entry, int64, int64, error) {
 	entries, err := s.scan(ctx)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, 0, err
 	}
 	used := int64(0)
 	for _, e := range entries {
@@ -413,12 +446,12 @@ func (s *Store) Usage(ctx context.Context) ([]Entry, int64, error) {
 	// Volumes being created count at their current size.
 	tmpBytes, err := treeSize(ctx, filepath.Join(s.formDir, "tmp"))
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, 0, err
 	}
 	s.mu.Lock()
 	pending := s.pendingBytes
 	s.mu.Unlock()
-	return entries, used + tmpBytes + pending, nil
+	return entries, used + tmpBytes + pending, pending, nil
 }
 
 // scan lists every volume of every format, measuring stale sizes.
@@ -513,12 +546,16 @@ func (s *Store) currentEntry(ctx context.Context, id string) (Entry, error) {
 	}
 	e.SizeBytes = size
 
+	// The final check, the size and the marker's removal happen under s.mu,
+	// so a writer can't pin between them: Acquire counts its writer under
+	// s.mu before writing the marker, so either this sees it and keeps the
+	// marker, or the writer's marker comes after the removal.
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	settled := writersBefore == 0
 	if st := s.pins[id]; st != nil {
 		settled = settled && st.writers == 0 && st.writeEpoch == epoch
 	}
-	s.mu.Unlock()
 	if !settled {
 		// A writer held the volume at some point during the walk: use the
 		// size for now, and keep the marker.
@@ -609,16 +646,13 @@ func (s *Store) Collect(ctx context.Context, policy Policy) (Report, error) {
 	if err := ctx.Err(); err != nil {
 		return report, err
 	}
-	entries, used, err := s.Usage(ctx)
+	entries, used, pending, err := s.usage(ctx)
 	if err != nil {
 		return report, err
 	}
 	if s.afterUsage != nil {
 		s.afterUsage()
 	}
-	s.mu.Lock()
-	pending := s.pendingBytes
-	s.mu.Unlock()
 	need := policy.targetBytes(used)
 	if !policy.All {
 		// What is already being removed counts as freed.
@@ -700,16 +734,26 @@ func (s *Store) remove(e Entry) (bool, error) {
 		if s.beforeRemove != nil {
 			s.beforeRemove()
 		}
-		_ = s.removeAll(trash)
+		err := s.removeAll(trash)
+		freed := e.SizeBytes
+		if err != nil {
+			// What survived still takes space: keep counting it until a
+			// later owner's open removes it.
+			survived, _ := treeSize(context.Background(), trash)
+			freed = max(e.SizeBytes-survived, 0)
+		}
 		s.mu.Lock()
-		s.pendingBytes -= e.SizeBytes
+		s.pendingBytes -= freed
+		if err != nil {
+			s.removalErr = errors.Join(s.removalErr, fmt.Errorf("remove cache volume %s: %w", e.ID, err))
+		}
 		s.mu.Unlock()
 	}()
 	return true, nil
 }
 
 // WaitRemovals waits until every removal Collect started has finished, or ctx
-// ends.
+// ends. It reports the removals that failed since it last reported.
 func (s *Store) WaitRemovals(ctx context.Context) error {
 	done := make(chan struct{})
 	go func() {
@@ -718,7 +762,11 @@ func (s *Store) WaitRemovals(ctx context.Context) error {
 	}()
 	select {
 	case <-done:
-		return nil
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		err := s.removalErr
+		s.removalErr = nil
+		return err
 	case <-ctx.Done():
 		return ctx.Err()
 	}
