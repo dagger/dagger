@@ -74,6 +74,43 @@ func TestRemoteCacheAdapterMergesABundle(t *testing.T) {
 	require.Equal(t, target.Identity().Generation, generation)
 }
 
+// The merge line carries the reply's generation and the engine's clock at the
+// commit, so a merge orders against the lookups the engine's spans time on
+// the same clock. Not parallel: it swaps the default logger.
+func TestRemoteCacheAdapterMergeLogsItsClock(t *testing.T) {
+	source := newGCTestCache(t)
+	ctx, res := addGCTestPersistableResult(t, source, "source", "merged", dagql.NewInt(7))
+	var bundle dagql.ValueBundle
+	require.NoError(t, source.WithExportedValues(ctx, dagql.ValueSelection{Roots: []dagql.AnyResult{res}}, config.RefConfig{}, func(_ context.Context, exp *dagql.ExportedValues) error {
+		bundle = exp.Bundle
+		return nil
+	}))
+	target := newGCTestCache(t)
+	adapter := newTestRemoteCacheAdapter(t, target)
+
+	logs := &lockedLog{}
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	merged, err := adapter.Merge(t.Context(), protocol.Merge{Bundle: bundle})
+	require.NoError(t, err)
+
+	var lines []map[string]any
+	dec := json.NewDecoder(strings.NewReader(logs.String()))
+	dec.UseNumber()
+	for dec.More() {
+		var line map[string]any
+		require.NoError(t, dec.Decode(&line))
+		if line["msg"] == "remote cache merge" {
+			lines = append(lines, line)
+		}
+	}
+	require.Len(t, lines, 1)
+	require.Equal(t, json.Number(fmt.Sprint(merged.Generation)), lines[0]["generation"])
+	require.Equal(t, json.Number(fmt.Sprint(merged.EngineTime)), lines[0]["engine_time"])
+	require.Equal(t, "INFO", lines[0]["level"])
+}
+
 // A merge that committed and then failed to release something is still
 // answered with what it committed: the cache changed, and the service must
 // learn how. The injected result is the one MergeValues returns when a
