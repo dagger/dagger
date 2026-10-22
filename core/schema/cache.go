@@ -6,6 +6,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 )
 
 type cacheSchema struct{}
@@ -37,6 +38,14 @@ func (s *cacheSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.CacheVolume]{}.Install(srv)
 }
 
+// sdkEntrypointCacheNamespace is the namespace every module entrypoint on an
+// engine shares, so an SDK's build caches stay warm across the modules it
+// builds. The engine cannot tell an SDK's generated entrypoint from one a
+// module author wrote, so its authors are trusted like the built-in SDK
+// runtimes; it is kept apart from their "internal" namespace, so entrypoint
+// code cannot reach the volumes every legacy module build mounts.
+const sdkEntrypointCacheNamespace = "sdkEntrypoint"
+
 type cacheArgs struct {
 	Key       string
 	Namespace string `internal:"true" default:""`
@@ -52,6 +61,9 @@ func (s *cacheSchema) cacheVolumeCacheKey(
 	req *dagql.CallRequest,
 ) error {
 	if args.Namespace == "" {
+		if clientMetadata, err := engine.ClientMetadataFromContext(ctx); err == nil && clientMetadata.SDKEntrypoint {
+			return req.SetArgInput(ctx, "namespace", dagql.NewString(sdkEntrypointCacheNamespace), false)
+		}
 		m, err := parent.Self().CurrentModule(ctx)
 		if err != nil && !errors.Is(err, core.ErrNoCurrentModule) {
 			return err

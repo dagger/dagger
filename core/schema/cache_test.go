@@ -81,3 +81,35 @@ func TestNamespaceFromModule(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "mod(go"+sourceDigest.String()+")", ns)
 }
+
+func TestCacheVolumeNamespace(t *testing.T) {
+	ctx := t.Context()
+
+	srv := &currentTypeDefsTestServer{}
+	root := core.NewRoot(srv)
+	dag, err := dagql.NewServer(ctx, root)
+	require.NoError(t, err)
+	srv.dag = dag
+	ctx = core.ContextWithQuery(ctx, root)
+	parent, ok := dag.Root().(dagql.ObjectResult[*core.Query])
+	require.True(t, ok)
+
+	namespace := func(clientMetadata *engine.ClientMetadata, args cacheArgs) string {
+		t.Helper()
+		req := &dagql.CallRequest{ResultCall: &dagql.ResultCall{}}
+		err := (&cacheSchema{}).cacheVolumeCacheKey(engine.ContextWithClientMetadata(ctx, clientMetadata), parent, args, req)
+		require.NoError(t, err)
+		arg := req.Arg("namespace")
+		if arg == nil {
+			return ""
+		}
+		return arg.Value.StringValue
+	}
+
+	require.Equal(t, "mainClient", namespace(&engine.ClientMetadata{}, cacheArgs{Key: "go-sdk-v2-mod"}))
+	require.Equal(t, "sdkEntrypoint", namespace(&engine.ClientMetadata{SDKEntrypoint: true}, cacheArgs{Key: "go-sdk-v2-mod"}))
+	require.Equal(t, "sdkEntrypoint", namespace(&engine.ClientMetadata{SDKEntrypoint: true}, cacheArgs{Key: "gomod"}),
+		"an entrypoint does not reach the legacy runtimes' volumes")
+	require.Empty(t, namespace(&engine.ClientMetadata{SDKEntrypoint: true}, cacheArgs{Key: "gomod", Namespace: "custom"}),
+		"an explicit namespace is kept as passed")
+}

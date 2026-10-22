@@ -254,8 +254,8 @@ func cloneClientMetadata(metadata *engine.ClientMetadata) (*engine.ClientMetadat
 	}
 	// ClientMetadata is a wire declaration, so a JSON round trip provides a
 	// simple exhaustive deep clone of every exported map, slice, pointer, cache,
-	// module, and workspace declaration. Restore the one intentionally
-	// non-wire, engine-internal field explicitly.
+	// module, and workspace declaration. Restore the intentionally non-wire,
+	// engine-internal fields explicitly.
 	snapshot, err := json.Marshal(metadata)
 	if err != nil {
 		return nil, fmt.Errorf("snapshot client metadata: %w", err)
@@ -265,6 +265,7 @@ func cloneClientMetadata(metadata *engine.ClientMetadata) (*engine.ClientMetadat
 		return nil, fmt.Errorf("restore client metadata: %w", err)
 	}
 	cloned.UseRecipeIDsByDefault = metadata.UseRecipeIDsByDefault
+	cloned.SDKEntrypoint = metadata.SDKEntrypoint
 	return &cloned, nil
 }
 

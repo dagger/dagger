@@ -1,0 +1,8 @@
+kind: Fixed
+body: |-
+    Cache volumes that a module entrypoint creates are shared across the modules of an engine, so a Go module that uses the Go SDK entrypoint no longer builds the SDK's dispatcher from cold caches.
+    Every module entrypoint on an engine shares this cache namespace: the engine cannot tell an SDK's generated entrypoint from one a module author wrote, so entrypoint authors are trusted like the built-in SDK runtimes. The namespace is separate from the one the legacy SDK runtimes use, so entrypoints cannot reach those volumes.
+time: 2026-10-22T16:00:01+02:00
+custom:
+    Author: eunomie
+    PR: "14813"

@@ -251,6 +251,13 @@ type ClientMetadata struct {
 	// nested-client state and must not be forwarded through client headers.
 	UseRecipeIDsByDefault bool `json:"-"`
 
+	// SDKEntrypoint marks the nested client that evaluates a module
+	// entrypoint. Its cache volumes default to a namespace every module
+	// entrypoint shares, so SDK build caches stay warm for every module.
+	// Engine-internal: never read from client headers, and not inherited by
+	// the processes the entrypoint starts.
+	SDKEntrypoint bool `json:"-"`
+
 	// Profile enables engine wall-clock profiling (wcprof) for the duration
 	// of this client's work. Experimental; the recorded events are retrieved
 	// via the engine debug endpoints.
