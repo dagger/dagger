@@ -111,7 +111,7 @@ func TestRemoteCacheAdapterExportProfiled(t *testing.T) {
 	}
 	var lockWaits int
 	for _, ev := range events {
-		if ev.Type == "wait" && ev.ParentID == capture.OpID && ev.ident == "dagql.Cache.egraphMu" {
+		if ev.Type == "wait" && ev.ParentID == capture.OpID && ev.ident == "dagql.egraph" {
 			lockWaits++
 		}
 	}
