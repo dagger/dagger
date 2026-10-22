@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -217,6 +218,71 @@ func TestValueTransferPartsContainerMount(t *testing.T) {
 		return nil
 	})
 	require.ErrorContains(t, err, "injected snapshot open failure")
+}
+
+// One export's selected outputs build their missing layers at once, up to
+// the export's workers.
+func TestValueTransferPartsChainsBuildTogether(t *testing.T) {
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	rootfs, _ := producer.Build(t, nil, "rootfs.txt", "fs bytes")
+	mounted, _ := producer.Build(t, nil, "mounted.txt", "mount bytes")
+	var running, peak atomic.Int64
+	producer.BeforeDiff = func(ctx context.Context) error {
+		n := running.Add(1)
+		defer running.Add(-1)
+		for {
+			if p := peak.Load(); n <= p || peak.CompareAndSwap(p, n) {
+				break
+			}
+		}
+		deadline := time.Now().Add(5 * time.Second)
+		for peak.Load() < 2 && time.Now().Before(deadline) {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Millisecond):
+			}
+		}
+		return nil
+	}
+	ctx, cache, srv := transferCache(t, producer, filepath.Join(t.TempDir(), "a.db"), "a")
+	platform := Platform{OS: "linux", Architecture: "amd64"}
+	newDir := func(ref bkcache.ImmutableRef) *Directory {
+		dir := &Directory{Dir: new(LazyAccessor[string, *Directory]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]), Platform: platform}
+		dir.SetPath("/")
+		dir.SetSnapshot(ref)
+		return dir
+	}
+	ctr := NewContainer(platform)
+	ctr.FS.setValue(newDir(rootfs))
+	mount := new(LazyAccessor[*Directory, *Container])
+	mount.setValue(newDir(mounted))
+	ctr.Mounts = ContainerMounts{{Target: "/selected", DirectorySource: mount}}
+	result := attachTransferObject(t, ctx, cache, srv, "a", "buildTogether", ctr)
+	selection := dagql.ValueSelection{Roots: []dagql.AnyResult{result}, Outputs: []dagql.SelectedValueOutput{
+		{Result: result, Address: dagql.PersistedPartAddress{Part: "fs"}},
+		{Result: result, Address: dagql.PersistedPartAddress{Part: "mount:/selected"}},
+	}}
+	cfg := config.RefConfig{Compression: compression.New(compression.Uncompressed), Builds: config.LayerBuilds{Workers: 2}}
+	require.NoError(t, cache.WithExportedValues(ctx, selection, cfg, func(ctx context.Context, values *dagql.ExportedValues) error {
+		require.Len(t, values.Chains.Entries, 2)
+		require.Equal(t, 2, values.Chains.Stats.LayersDiffed)
+		found := map[string]string{}
+		for _, chain := range values.Chains.Entries {
+			ref, err := consumer.Manager.ImportChain(ctx, &bkcache.ExportChain{Layers: chain.Layers, Provider: chain.Provider})
+			require.NoError(t, err)
+			defer ref.Release(context.WithoutCancel(ctx))
+			root := testutil.Root(t, ref)
+			for _, name := range []string{"rootfs.txt", "mounted.txt"} {
+				if data, err := os.ReadFile(filepath.Join(root, name)); err == nil {
+					found[name] = string(data)
+				}
+			}
+		}
+		require.Equal(t, map[string]string{"rootfs.txt": "fs bytes", "mounted.txt": "mount bytes"}, found)
+		return nil
+	}))
+	require.EqualValues(t, 2, peak.Load(), "both outputs' layers built at once")
 }
 
 // Spike 2 of the engine-service protocol design (6.2), kept as a test of
