@@ -664,26 +664,45 @@ func (r *Resolver) tryLocalCanonicalClosure(
 	if err != nil {
 		return nil, false, nil, err
 	}
-	if ok, err := r.localClosureHasMatchingSource(ctx, refspec, closure); err != nil {
-		return nil, false, nil, err
-	} else if !ok {
-		return nil, false, nil, nil
-	}
 
+	// The closure's blobs are held by the pull's lease before they're checked
+	// a last time: a blob a prune's collection removed before then is missing
+	// now, and the pull reads the image from the registry; one present now
+	// stays while the lease holds it.
 	leaseCtx, release, err := r.newPullLease(ctx)
 	if err != nil {
 		return nil, false, nil, err
 	}
+	// Every return but the last, an error's included, lets the lease go.
+	kept := false
 	defer func() {
-		if rerr != nil {
+		if !kept {
 			release(context.WithoutCancel(leaseCtx))
 		}
 	}()
 	if err := r.attachLocalizedClosureToLease(leaseCtx, closure); err != nil {
 		return nil, false, nil, err
 	}
+	if ok, err := r.localClosureStillPresent(ctx, refspec, closure); err != nil {
+		return nil, false, nil, err
+	} else if !ok {
+		return nil, false, nil, nil
+	}
 
+	kept = true
 	return closure, true, release, nil
+}
+
+// localClosureStillPresent reports whether every blob of closure is in the
+// content store, from the source refspec names.
+func (r *Resolver) localClosureStillPresent(ctx context.Context, refspec ctdreference.Spec, closure *localizedImageClosure) (bool, error) {
+	if _, err := r.contentStore.Info(ctx, closure.ManifestDesc.Digest); err != nil {
+		if cerrdefs.IsNotFound(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return r.localClosureHasMatchingSource(ctx, refspec, closure)
 }
 
 func (r *Resolver) localClosureHasMatchingSource(ctx context.Context, refspec ctdreference.Spec, closure *localizedImageClosure) (bool, error) {
