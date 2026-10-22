@@ -155,6 +155,7 @@ type ClientScope struct {
 	clientID              string
 	metadata              []byte
 	useRecipeIDsByDefault bool
+	sdkEntrypoint         bool
 	lease                 *ClientLifecycleLease
 }
 
@@ -179,6 +180,7 @@ func NewClientScope(metadata *ClientMetadata, lease *ClientLifecycleLease) (Clie
 		clientID:              metadata.ClientID,
 		metadata:              snapshot,
 		useRecipeIDsByDefault: metadata.UseRecipeIDsByDefault,
+		sdkEntrypoint:         metadata.SDKEntrypoint,
 		lease:                 lease,
 	}, nil
 }
@@ -198,6 +200,7 @@ func (scope ClientScope) Metadata() (*ClientMetadata, error) {
 		return nil, fmt.Errorf("restore client scope metadata: %w", err)
 	}
 	metadata.UseRecipeIDsByDefault = scope.useRecipeIDsByDefault
+	metadata.SDKEntrypoint = scope.sdkEntrypoint
 	return &metadata, nil
 }
 
@@ -218,6 +221,7 @@ func (scope ClientScope) Clone(kind ClientLeaseKind, ownerID string) (ClientScop
 		clientID:              scope.clientID,
 		metadata:              append([]byte(nil), scope.metadata...),
 		useRecipeIDsByDefault: scope.useRecipeIDsByDefault,
+		sdkEntrypoint:         scope.sdkEntrypoint,
 		lease:                 lease,
 	}, nil
 }
@@ -244,6 +248,7 @@ func (scope ClientScope) Delegate(kind ClientLeaseKind, ownerID string) (ClientS
 		clientID:              scope.clientID,
 		metadata:              append([]byte(nil), scope.metadata...),
 		useRecipeIDsByDefault: scope.useRecipeIDsByDefault,
+		sdkEntrypoint:         scope.sdkEntrypoint,
 		lease:                 lease,
 	}, nil
 }

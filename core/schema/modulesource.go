@@ -917,6 +917,10 @@ type directoryAsModuleSourceArgs struct {
 	// (dagger.toml), not a Module (dagger.json). Mirrors the tolerance local
 	// and git module sources already have.
 	AllowNotExists bool `internal:"true" default:"false"`
+
+	// OriginRoot is set when a module loads this directory from its own tree;
+	// see core.DirModuleSource.OriginRoot.
+	OriginRoot dagql.Optional[dagql.String] `internal:"true"`
 }
 
 func (s *moduleSourceSchema) directoryAsModule(
@@ -963,6 +967,10 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 			OriginalContextDir:        contextDir,
 			OriginalSourceRootSubpath: args.SourceRootPath,
 		},
+	}
+	if args.OriginRoot.Valid {
+		root := args.OriginRoot.Value.String()
+		dirSrc.DirSrc.OriginRoot = &root
 	}
 	if args.Workspace.Valid {
 		srv, err := core.CurrentDagqlServer(ctx)
@@ -4120,7 +4128,12 @@ func (s *moduleSourceSchema) moduleSourceImplementationScoped(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get module source implementation digest: %w", err)
 	}
-	scopedDigest := hashutil.HashStrings("ModuleSource._implementationScoped", sourceDigest.String())
+	scopedDigestInputs := []string{"ModuleSource._implementationScoped", sourceDigest.String()}
+	// See moduleImplementationScoped.
+	if origin := src.Self().OriginSymbolic(); origin != "" {
+		scopedDigestInputs = append(scopedDigestInputs, "originSymbolic:"+origin)
+	}
+	scopedDigest := hashutil.HashStrings(scopedDigestInputs...)
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)

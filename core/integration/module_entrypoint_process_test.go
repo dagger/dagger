@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"strings"
 
@@ -179,4 +180,99 @@ func (ModuleSuite) TestModuleFunctionProcessHasNoModule(ctx context.Context, t *
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "no current module")
+}
+
+// moduleCacheEntrypoint appends the module's name to a cache volume, once from
+// the entrypoint itself and once from a process it starts, and returns every
+// name appended so far, which shows the modules each volume is shared with.
+const moduleCacheEntrypoint = `type Entrypoint implements ModuleEntrypoint {
+  pub types(workspace: Workspace!): [TypeDef!]! {
+    [
+      typeDef
+        .withObject("Probe")
+        .withConstructor(function("", typeDef.withObject("Probe")))
+        .withFunction(function("Entrypoint", typeDef.withKind(TypeDefKind.STRING_KIND)))
+        .withFunction(function("Process", typeDef.withKind(TypeDefKind.STRING_KIND))),
+    ]
+  }
+
+  pub call(
+    workspace: Workspace!,
+    receiverType: String!,
+    receiverValue: JSON,
+    fnName: String!,
+    fnArgs: JSON!,
+  ): JSON! {
+    if (fnName == "") {
+      ("{}" :: JSON!)
+    } else if (fnName == "Entrypoint") {
+      (JSON.encode(base
+        .withMountedCache("/cache", cacheVolume(%[2]q))
+        .withExec(["sh", "-c", "echo " + currentModule.name + " >> /cache/log; cat /cache/log"])
+        .stdout) :: JSON!)
+    } else {
+      (JSON.encode(base
+        .withFile("/usr/local/bin/dagger", currentModule.source.file("bin/dagger"))
+        .withFile("/probe.sh", currentModule.source.file("probe.sh"))
+        .withEnvVariable("IMAGE", %[1]q)
+        .withEnvVariable("NAME", currentModule.name)
+        .withExec(["sh", "/probe.sh"], experimentalPrivilegedNesting: true)
+        .stdout) :: JSON!)
+    }
+  }
+
+  let base: Container! {
+    container.from(%[1]q)
+  }
+}
+`
+
+// moduleCacheProcessScript does what the entrypoint does, from the module's
+// process.
+const moduleCacheProcessScript = `set -e
+query() { echo "$1" | dagger query; }
+cache=$(query '{cacheVolume(key: "%[1]s"){id}}' | tr -d ' \n' | sed 's/.*"id":"\([^"]*\)".*/\1/')
+query "{
+  container {
+    from(address: \"$IMAGE\") {
+      withMountedCache(path: \"/cache\", cache: \"$cache\") {
+        withExec(args: [\"sh\", \"-c\", \"echo $NAME >> /cache/log; cat /cache/log\"]) { stdout }
+      }
+    }
+  }
+}" | tr -d ' \n' | sed 's/.*"stdout":"\([^"]*\)".*/\1/'
+`
+
+// An SDK entrypoint builds every module with the same SDK code, such as the Go
+// SDK building its dispatcher, so its cache volumes are shared across modules.
+// The module's own code keeps its volumes.
+func (ModuleSuite) TestModuleEntrypointCacheVolumes(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	cli := daggerCliFile(t, c)
+	entrypointKey := "entrypoint-" + rand.Text()
+	processKey := "process-" + rand.Text()
+	ctr := goGitBase(t, c)
+	for _, name := range []string{"m", "n"} {
+		ctr = ctr.
+			WithNewFile(name+"/dagger-module.toml", strings.Replace(sourcesModuleManifest, `name = "m"`, fmt.Sprintf("name = %q", name), 1)).
+			WithNewFile(name+"/entrypoint/main.dang", fmt.Sprintf(moduleCacheEntrypoint, alpineImage, entrypointKey)).
+			WithNewFile(name+"/probe.sh", fmt.Sprintf(moduleCacheProcessScript, processKey)).
+			WithFile(name+"/bin/dagger", cli)
+	}
+	call := func(ctx context.Context, t *testctx.T, args ...string) string {
+		t.Helper()
+		out, err := ctr.With(daggerCallAt(args[0], args[1:]...)).Stdout(ctx)
+		require.NoError(t, err)
+		return out
+	}
+
+	t.Run("the entrypoint's volumes are shared across modules", func(ctx context.Context, t *testctx.T) {
+		require.Equal(t, "m\n", call(ctx, t, "./m", "entrypoint"))
+		require.Equal(t, "m\nn\n", call(ctx, t, "./n", "entrypoint"))
+	})
+
+	t.Run("the module process's volumes are not", func(ctx context.Context, t *testctx.T) {
+		require.Equal(t, `m\n`, strings.TrimSpace(call(ctx, t, "./m", "process")))
+		require.Equal(t, `n\n`, strings.TrimSpace(call(ctx, t, "./n", "process")))
+	})
 }
