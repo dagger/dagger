@@ -177,6 +177,10 @@ func addFlags(app *cli.App) {
 			Usage: "path to state directory",
 			Value: defaultConf.Root,
 		},
+		cli.StringFlag{
+			Name:  "cache-volumes-dir",
+			Usage: "keep cache volumes as directories under this absolute path instead of as snapshots (overrides cacheVolumes.dir)",
+		},
 		cli.DurationFlag{
 			Name:  "graceful-stop-timeout",
 			Usage: "bound the engine's whole stop, from the first SIGTERM or SIGINT to exit (default 5m; overrides shutdown.gracefulStopTimeout)",
@@ -406,6 +410,7 @@ func main() { //nolint:gocyclo
 			return err
 		}
 		engineStopBudget.setTimeout(stopTimeout)
+		applyCacheVolumesFlags(c, &cfg)
 		if cfg.Telemetry.WorkloadExport {
 			workloadExport, err = enginetel.NewWorkloadExport(ctx, engineInstanceID)
 			if err != nil {

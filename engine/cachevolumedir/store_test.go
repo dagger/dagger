@@ -82,19 +82,18 @@ func entryByKey(entries []Entry, key string) (Entry, bool) {
 }
 
 func TestIdentityID(t *testing.T) {
-	base := Identity{Namespace: "mainClient", Key: "go-build", Sharing: "SHARED", Owner: "1000:1000", Source: "sha256:abc", Selector: "/"}
+	base := Identity{Namespace: "mainClient", Key: "go-build", Sharing: "SHARED", Owner: "1000:1000", Source: "sha256:abc"}
 	id := base.ID()
 	require.Len(t, id, 64)
 	require.Regexp(t, "^[0-9a-f]{64}$", id)
 	require.Equal(t, id, base.ID(), "deterministic")
 
 	for name, changed := range map[string]Identity{
-		"namespace": {Namespace: "mod(x)", Key: base.Key, Sharing: base.Sharing, Owner: base.Owner, Source: base.Source, Selector: base.Selector},
-		"key":       {Namespace: base.Namespace, Key: "go-mod", Sharing: base.Sharing, Owner: base.Owner, Source: base.Source, Selector: base.Selector},
-		"sharing":   {Namespace: base.Namespace, Key: base.Key, Sharing: "LOCKED", Owner: base.Owner, Source: base.Source, Selector: base.Selector},
-		"owner":     {Namespace: base.Namespace, Key: base.Key, Sharing: base.Sharing, Owner: "0:0", Source: base.Source, Selector: base.Selector},
-		"source":    {Namespace: base.Namespace, Key: base.Key, Sharing: base.Sharing, Owner: base.Owner, Source: "sha256:def", Selector: base.Selector},
-		"selector":  {Namespace: base.Namespace, Key: base.Key, Sharing: base.Sharing, Owner: base.Owner, Source: base.Source, Selector: "/sub"},
+		"namespace": {Namespace: "mod(x)", Key: base.Key, Sharing: base.Sharing, Owner: base.Owner, Source: base.Source},
+		"key":       {Namespace: base.Namespace, Key: "go-mod", Sharing: base.Sharing, Owner: base.Owner, Source: base.Source},
+		"sharing":   {Namespace: base.Namespace, Key: base.Key, Sharing: "LOCKED", Owner: base.Owner, Source: base.Source},
+		"owner":     {Namespace: base.Namespace, Key: base.Key, Sharing: base.Sharing, Owner: "0:0", Source: base.Source},
+		"source":    {Namespace: base.Namespace, Key: base.Key, Sharing: base.Sharing, Owner: base.Owner, Source: "sha256:def"},
 	} {
 		require.NotEqual(t, id, changed.ID(), name)
 	}
@@ -102,6 +101,24 @@ func TestIdentityID(t *testing.T) {
 	require.NotEqual(t,
 		Identity{Namespace: "ab", Key: "c"}.ID(),
 		Identity{Namespace: "a", Key: "bc"}.ID())
+}
+
+func TestPinnedPath(t *testing.T) {
+	dir := t.TempDir()
+	s := openStore(t, dir, nil)
+	ident := Identity{Key: "k"}
+	_, err := s.PinnedPath(ident)
+	require.Error(t, err, "an unpinned volume has no safe path")
+
+	pin, err := s.Acquire(t.Context(), ident, false, emptyPopulate)
+	require.NoError(t, err)
+	path, err := s.PinnedPath(ident)
+	require.NoError(t, err)
+	require.Equal(t, pin.Path(), path)
+
+	pin.Release()
+	_, err = s.PinnedPath(ident)
+	require.Error(t, err)
 }
 
 func TestOpenOwnership(t *testing.T) {
