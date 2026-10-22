@@ -49,8 +49,8 @@ type ShutdownConfig struct {
 	// SIGTERM or SIGINT to process exit. The final telemetry flushes get what
 	// remains of it, at most 30s each. Set it below the grace period of
 	// whatever supervises the engine, so that the engine exits on its own
-	// rather than being killed. Defaults to 5m.
-	GracefulStopTimeout Duration `json:"gracefulStopTimeout,omitempty"`
+	// rather than being killed. Defaults to 5m; when set, it must be positive.
+	GracefulStopTimeout *Duration `json:"gracefulStopTimeout,omitempty"`
 }
 
 type TelemetryConfig struct {
