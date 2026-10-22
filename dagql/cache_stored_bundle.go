@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"sync/atomic"
 	"time"
 )
 
@@ -26,11 +27,11 @@ type StoredBundleResult struct {
 }
 
 // HeldBy names the entries of a blob-backed cache whose values a recipient
-// engine cache already holds, for StoredBundle to carry as held rows. An
-// entry is held when it has a holding of Cache that hasn't expired at Now
-// (Unix seconds), and isn't in Not, by number: the values the recipient
-// answered stale. Only an entry with a call frame can be held: its recipe
-// names it to the recipient.
+// engine cache already holds, for StoredBundle to carry as held rows and
+// StoredSizes to price as such. An entry is held when it has a holding of
+// Cache that hasn't expired at Now (Unix seconds), and isn't in Not, by
+// number: the values the recipient answered stale. Only an entry with a call
+// frame can be held: its recipe names it to the recipient.
 type HeldBy struct {
 	Cache CacheID
 	Now   int64
@@ -224,6 +225,25 @@ func (c *Cache) storedBundleVisitLocked(build *storedBundleBuild, res *sharedRes
 		return fmt.Errorf("stored bundle: entry %d in the closure has no stored record", res.id)
 	}
 	visiting[res.id] = true
+	for _, id := range storedClosureChildrenLocked(res) {
+		child := c.resultsByID[id]
+		if child == nil {
+			return fmt.Errorf("stored bundle: entry %d names missing entry %d", res.id, id)
+		}
+		if err := c.storedBundleVisitLocked(build, child, visiting); err != nil {
+			return err
+		}
+	}
+	delete(visiting, res.id)
+	build.order = append(build.order, res)
+	build.ordinals[res.id] = TransferOrdinal(len(build.order))
+	return nil
+}
+
+// storedClosureChildrenLocked returns what a stored bundle walks below res,
+// sorted: its dependencies, and the entries its own stored parts' owners and
+// services name. Requires egraphMu.
+func storedClosureChildrenLocked(res *sharedResult) []sharedResultID {
 	var children []sharedResultID
 	for dep := range res.deps {
 		children = append(children, dep)
@@ -237,19 +257,7 @@ func (c *Cache) storedBundleVisitLocked(build *storedBundleBuild, res *sharedRes
 		}
 	}
 	slices.Sort(children)
-	for _, id := range slices.Compact(children) {
-		child := c.resultsByID[id]
-		if child == nil {
-			return fmt.Errorf("stored bundle: entry %d names missing entry %d", res.id, id)
-		}
-		if err := c.storedBundleVisitLocked(build, child, visiting); err != nil {
-			return err
-		}
-	}
-	delete(visiting, res.id)
-	build.order = append(build.order, res)
-	build.ordinals[res.id] = TransferOrdinal(len(build.order))
-	return nil
+	return slices.Compact(children)
 }
 
 // storedBundleValueLocked copies res's stored record into the build,
@@ -309,6 +317,20 @@ type storedTransferRecord struct {
 	envelope *PersistedResultEnvelope
 	call     *ResultCall
 	record   PersistedRecord
+	// size is the entry's value's encoded size in a bundle, once StoredSizes
+	// has measured it (storedValueSizeLocked), with what else it read.
+	size atomic.Pointer[storedValueSize]
+}
+
+// storedValueSize is a measured value size, and the entry's dependency
+// revision, replacement count and expiry it was measured at: a value carries
+// its dependencies, which a stored part can add to without replacing the
+// record, and the other two.
+type storedValueSize struct {
+	dependencyRevision uint64
+	replacements       uint64
+	expiresAtUnix      int64
+	bytes              int64
 }
 
 // storedTransferRecordLocked returns res's stored record normalized for
