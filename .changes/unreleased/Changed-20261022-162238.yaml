@@ -1,0 +1,15 @@
+kind: Changed
+body: |
+  A subdirectory now resolves paths with itself as the root: `..` stops at it, and a symlink in it that is absolute or climbs above it resolves inside it instead of reaching the rest of its parent. Before, `dir.directory("app").file("../x")` and links out of `app` read the parent's files, and two subdirectories with equal files but different parents could be taken for each other, so such a read could return the other parent's file. This applies to every path given to a subdirectory: reads, `stat`, `exists`, `entries`, `search` paths, selecting a file or directory, the destinations of `withNewFile`, `withFile`, `withFiles`, `withDirectory`, `withNewDirectory`, `withSymlink` and `withChanges`, `without*`, `chown`, the Dockerfile path of `dockerBuild`, and the sources of Dockerfile `COPY`.
+
+  Other changes that follow from it:
+  - Selecting a file or directory through a symlink keeps the name it was selected by, unless resolving it leaves the subdirectory (an absolute link, or one that climbs above it); then it is named after what it resolves to inside the subdirectory.
+  - A `stat` that resolves to a directory selected through a symlink, `stat(".")` or a link back to it, reports the directory's own name, as `name` does, not its target's.
+  - Copying into a subdirectory through a symlink that leads out of it, to a directory that doesn't exist inside it, replaces the symlink with a directory instead of writing through it.
+  - `withTimestamps` sets a symlink's own timestamps instead of following it.
+  - A subdirectory's cache identity now also covers its name, so equal subdirectories under different names keep their own names.
+  - It also covers the few files around it that operations on it read: the snapshot's `/etc/passwd` and `/etc/group`, which copies and `chown` read to resolve a user or group name, and the ignore files in the directories above it, which gitignore filtering and `search` with `skipIgnored` apply, along with where it is when there are any. Subdirectories with equal files whose parents differ in those files no longer share cached results, so these operations use each parent's own files; parents that differ in anything else still share them. A subdirectory that is, contains, or is inside a Git or Jujutsu repository (anything named `.git`, `HEAD`, `commondir`, `gitdir` or `.jj` in it or above it) is cached by how it was made rather than by its content, since Git run on it reads beyond its files.
+  - The Dang SDK reads a module's sources with their symlinks resolved inside the module's context, as the engine API does, instead of following a link out of it.
+time: 2026-10-22T16:22:38Z
+custom:
+  Author: sipsma

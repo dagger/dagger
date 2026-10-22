@@ -25,6 +25,7 @@ type inode struct {
 
 type destination struct {
 	viewRoot  string
+	boundary  string
 	writeRoot string
 	overlay   bool
 	userxattr bool
@@ -52,6 +53,7 @@ func newDestination(m Mount) (*destination, error) {
 
 	d := &destination{
 		viewRoot:         m.Root,
+		boundary:         m.Boundary,
 		writeRoot:        m.Root,
 		sourceLinks:      map[inode]string{},
 		crossLinks:       map[inode]struct{}{},
@@ -149,7 +151,7 @@ func (d *destination) ensureDir(destPath string, src *sourceEntry, opts CopyOpti
 }
 
 func (d *destination) ensureExistingDir(destPath string, src *sourceEntry, opts CopyOptions, overwriteMetadata bool) (string, bool, error) {
-	viewPath, err := rootPath(d.viewRoot, destPath, true)
+	viewPath, err := BoundedRootPath(d.viewRoot, d.boundary, destPath, true)
 	if err != nil {
 		if os.IsNotExist(err) || isNotDir(err) {
 			return "", false, nil
@@ -237,6 +239,9 @@ func (d *destination) createDir(destPath string, src *sourceEntry, opts CopyOpti
 		if err := d.replaceCreateDir(realPath, mode, opts); err != nil {
 			return "", false, err
 		}
+		if err := d.replaceBoundaryLink(realPath, mode); err != nil {
+			return "", false, err
+		}
 	}
 	if err := d.applyMetadataPath(realPath, src, opts); err != nil {
 		return "", false, err
@@ -266,6 +271,26 @@ func (d *destination) replaceCreateDir(realPath string, mode os.FileMode, opts C
 		return d.markOpaque(realPath)
 	}
 	return nil
+}
+
+// replaceBoundaryLink replaces a symlink where a directory is being created,
+// within a boundary, with the directory. The link's target is missing within
+// the boundary, or the directory would have been found there; written through,
+// the link would reach outside it. An overlay destination's write root never
+// holds the lower layers' links, so this is what creating the directory there
+// does anyway.
+func (d *destination) replaceBoundaryLink(realPath string, mode os.FileMode) error {
+	if filepath.Join("/", d.boundary) == "/" {
+		return nil
+	}
+	info, err := os.Lstat(realPath)
+	if err != nil || info.Mode()&os.ModeSymlink == 0 {
+		return err
+	}
+	if err := d.removeAll(realPath, false); err != nil {
+		return err
+	}
+	return os.Mkdir(realPath, mode)
 }
 
 func mkdirMode(src *sourceEntry, opts CopyOptions) os.FileMode {
@@ -408,7 +433,7 @@ func (d *destination) realPath(destPath string) (string, error) {
 }
 
 func (d *destination) statView(destPath string) (os.FileInfo, bool, error) {
-	viewPath, err := rootPath(d.viewRoot, destPath, true)
+	viewPath, err := BoundedRootPath(d.viewRoot, d.boundary, destPath, true)
 	if err != nil {
 		if os.IsNotExist(err) || isNotDir(err) {
 			return nil, false, nil
