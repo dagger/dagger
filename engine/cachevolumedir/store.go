@@ -117,6 +117,12 @@ type Store struct {
 	// while pinned and never pinned while half-moved.
 	mu   sync.Mutex
 	pins map[string]*pinState
+	// acquiring counts Acquire calls in progress, which Close waits out like
+	// pins: they may be creating a volume before they hold a pin.
+	acquiring int
+	// stuckBytes are the bytes a failed removal left in trash; they take
+	// space until a later owner's open removes them.
+	stuckBytes int64
 	// pendingBytes are the bytes of volumes moved to trash whose removal
 	// hasn't finished.
 	pendingBytes int64
@@ -218,21 +224,12 @@ var ErrPinned = errors.New("cache volumes are still in use")
 // ErrClosed is returned by Acquire once the store is closed.
 var ErrClosed = errors.New("cache volume directory is closed")
 
-// Closed reports whether the store has given up ownership. A nil store is
-// closed.
-func (s *Store) Closed() bool {
-	if s == nil {
-		return true
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.lock == nil
-}
-
-// Close gives up ownership. If volumes are still pinned, it keeps ownership and
-// returns ErrPinned: another owner could otherwise collect a volume that is
-// still mounted. The ownership lock then lasts until the process exits.
-// Removals in progress keep running until they finish.
+// Close gives up ownership. If volumes are still pinned, or acquisitions are
+// still in progress, it keeps ownership and returns ErrPinned: another owner
+// could otherwise collect a volume that is still in use, or sweep one being
+// created. The ownership lock then lasts until the process exits. Once
+// closed, Acquire fails with ErrClosed. Removals in progress keep running
+// until they finish.
 func (s *Store) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -243,12 +240,23 @@ func (s *Store) Close() error {
 	for _, st := range s.pins {
 		pinned += st.count
 	}
-	if pinned > 0 {
-		return fmt.Errorf("keeping ownership of %s: %d pins: %w", s.dir, pinned, ErrPinned)
+	if pinned > 0 || s.acquiring > 0 {
+		return fmt.Errorf("keeping ownership of %s: %d pins, %d acquisitions in progress: %w", s.dir, pinned, s.acquiring, ErrPinned)
 	}
 	err := s.lock.Close()
 	s.lock = nil
 	return err
+}
+
+// Closed reports whether the store has given up ownership. A nil store is
+// closed.
+func (s *Store) Closed() bool {
+	if s == nil {
+		return true
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lock == nil
 }
 
 // abandon releases ownership without checking pins, as a crashed process
@@ -300,6 +308,21 @@ func (p *Pin) Release() {
 func (s *Store) Acquire(ctx context.Context, ident Identity, writable bool, populate func(ctx context.Context, fsDir string) error) (*Pin, error) {
 	id := ident.ID()
 	volDir := s.volumeDir(id)
+
+	// Counted from before any filesystem work, so Close can't give the
+	// directory away under a volume being created.
+	s.mu.Lock()
+	if s.lock == nil {
+		s.mu.Unlock()
+		return nil, fmt.Errorf("acquire cache volume %q: %w", ident.Key, ErrClosed)
+	}
+	s.acquiring++
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		s.acquiring--
+		s.mu.Unlock()
+	}()
 
 	unlock := s.createMu.lock(id)
 	defer unlock()
@@ -467,9 +490,11 @@ func (s *Store) usage(ctx context.Context) ([]Entry, int64, int64, error) {
 		return nil, 0, 0, err
 	}
 	s.mu.Lock()
-	pending := s.pendingBytes
+	pending, stuck := s.pendingBytes, s.stuckBytes
 	s.mu.Unlock()
-	return entries, used + tmpBytes + pending, pending, nil
+	// Stuck trash takes space, but no removal will free it: only pending
+	// bytes count as being freed.
+	return entries, used + tmpBytes + pending + stuck, pending, nil
 }
 
 // scan lists every volume of every format, measuring stale sizes.
@@ -753,15 +778,21 @@ func (s *Store) remove(e Entry) (bool, error) {
 			s.beforeRemove()
 		}
 		err := s.removeAll(trash)
-		freed := e.SizeBytes
+		var survived int64
 		if err != nil {
-			// What survived still takes space: keep counting it until a
-			// later owner's open removes it.
-			survived, _ := s.trashSize(context.Background(), trash)
-			freed = max(e.SizeBytes-survived, 0)
+			// What survived still takes space: count it as stuck until a
+			// later owner's open removes it. If it can't be measured,
+			// assume nothing was freed.
+			measured, measureErr := s.trashSize(context.Background(), trash)
+			survived = min(max(measured, 0), e.SizeBytes)
+			if measureErr != nil {
+				survived = e.SizeBytes
+				err = errors.Join(err, fmt.Errorf("measure what survived: %w", measureErr))
+			}
 		}
 		s.mu.Lock()
-		s.pendingBytes -= freed
+		s.pendingBytes -= e.SizeBytes
+		s.stuckBytes += survived
 		if err != nil {
 			s.removalErr = errors.Join(s.removalErr, fmt.Errorf("remove cache volume %s: %w", e.ID, err))
 		}

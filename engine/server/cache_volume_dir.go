@@ -24,6 +24,7 @@ import (
 // volumes as snapshots for this run.
 func (srv *Server) initCacheVolumeDir(cfg config.CacheVolumesConfig) error {
 	srv.cacheVolumesCfg = cfg
+	srv.cacheVolumeDir = nil
 	core.SetCacheVolumeDir(nil)
 	if cfg.Dir == "" {
 		return nil
@@ -122,7 +123,7 @@ func (srv *Server) cacheVolumeDirPolicy(all bool) (cachevolumedir.Policy, error)
 
 // collectCacheVolumeDir runs the directory's stage of a collection.
 func (srv *Server) collectCacheVolumeDir(ctx context.Context, all bool) (cachevolumedir.Report, error) {
-	if srv.cacheVolumeDir == nil {
+	if srv.cacheVolumeDir == nil || srv.cacheVolumeDir.Closed() {
 		return cachevolumedir.Report{}, nil
 	}
 	policy, err := srv.cacheVolumeDirPolicy(all)
@@ -154,7 +155,9 @@ func (srv *Server) collectCacheVolumeDirAtShutdown(ctx context.Context) error {
 }
 
 // closeCacheVolumeDir gives up the directory. Removals still running finish
-// in the background; the next owner removes whatever they leave.
+// in the background; the next owner removes whatever they leave. The store
+// stays in srv.cacheVolumeDir, closed: the field is only written at startup,
+// so the GC monitor, which reads it outside gcmu, never races a write.
 func (srv *Server) closeCacheVolumeDir() error {
 	if srv.cacheVolumeDir == nil {
 		return nil
@@ -168,7 +171,6 @@ func (srv *Server) closeCacheVolumeDir() error {
 		slog.Warn("cache volume directory still in use at stop; keeping it until the engine exits", "error", err)
 		return nil
 	}
-	srv.cacheVolumeDir = nil
 	return err
 }
 
@@ -176,7 +178,7 @@ func (srv *Server) closeCacheVolumeDir() error {
 // the directory's minimum free space, as the monitor checks the engine's
 // state disk.
 func (srv *Server) cacheVolumeDirPressure(ctx context.Context) bool {
-	if srv.cacheVolumeDir == nil || !srv.localCacheGCEnabled {
+	if srv.cacheVolumeDir == nil || !srv.localCacheGCEnabled || srv.cacheVolumeDir.Closed() {
 		return false
 	}
 	policy, err := srv.cacheVolumeDirPolicy(false)
