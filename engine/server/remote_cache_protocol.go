@@ -31,14 +31,16 @@ var _ remotecache.Adapter = (*RemoteCacheAdapter)(nil)
 // its parent's, compressed.
 const exportLayerWorkers = 4
 
-// exportRefConfig is how exported chains' layers are compressed, with the
-// engine's default as for image exports, and how many build at once: up to
-// exportLayerWorkers per export, and across all exports no more than
-// remotecache.ExportsInFlight serial exports built. Only building a blob
+// exportRefConfig is how exported chains' layers are compressed: zstd, which
+// compresses several times faster than gzip into smaller blobs, and
+// decompresses faster for the engines that install them. A layer that already
+// has a blob, such as a pulled image's, keeps it. It is also how many build at
+// once: up to exportLayerWorkers per export, and across all exports no more
+// than remotecache.ExportsInFlight serial exports built. Only building a blob
 // takes the gate, so it bounds the engine's compression streams and layer
 // reads.
 var exportRefConfig = config.RefConfig{
-	Compression: compression.New(compression.Default),
+	Compression: compression.New(compression.Zstd),
 	Builds: config.LayerBuilds{
 		Workers: exportLayerWorkers,
 		Gate:    semaphore.NewWeighted(max(exportLayerWorkers, remotecache.ExportsInFlight)),
