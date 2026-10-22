@@ -2641,6 +2641,13 @@ type sharedResult struct {
 	// that name it. Both guarded by egraphMu.
 	holders    map[HolderKey]*holding
 	recipeKeys []digest.Digest
+	// cacheHolders indexes holders by engine cache: the numbers of each
+	// engine cache's holdings on this entry, so that a read of one cache's
+	// holdings doesn't walk every other cache's (heldLocked, CacheHoldings).
+	// addHoldingLocked and removeHoldingLocked keep it, as they do holders;
+	// the Cloud's own holding on an engine's entry (noteCloudCopyLocked) is
+	// not in it. Guarded by egraphMu.
+	cacheHolders map[CacheID]map[uint64]struct{}
 	// listItems are, on a list entry, the item read at each position of its
 	// value, and listItemOf and listItemNth name that list and position on
 	// such an item (CallRequest.ListItem). Not persisted; guarded by
