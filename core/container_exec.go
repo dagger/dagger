@@ -1039,7 +1039,7 @@ func prepareMounts(
 				mountState.CacheDir = path
 				break
 			}
-			if err := EnsureBackingSnapshot(ctx, cacheSrc.Volume); err != nil {
+			if err := mountCacheVolume(ctx, cacheSrc.Volume, ctrMount.Target); err != nil {
 				return materialized, fmt.Errorf("initialize cache volume snapshot for mount %d: %w", i, err)
 			}
 			cacheSnapshot := cacheSrc.Volume.Self().getSnapshot()
@@ -1892,7 +1892,7 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 					mountState.CacheDir = path
 					break
 				}
-				if err := EnsureBackingSnapshot(ctx, cacheSrc.Volume); err != nil {
+				if err := mountCacheVolume(ctx, cacheSrc.Volume, ctrMount.Target); err != nil {
 					return failPrepare(fmt.Errorf("initialize cache volume snapshot for mount %d: %w", i, err))
 				}
 				cacheSnapshot := cacheSrc.Volume.Self().getSnapshot()

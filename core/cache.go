@@ -17,10 +17,15 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
 // cacheVolumeDir is the engine's cache volume directory when it keeps cache
@@ -57,6 +62,12 @@ type CacheVolume struct {
 	// sourceEvaluated records that a directory-backed volume evaluated its
 	// source; see evaluateSourceLocked.
 	sourceEvaluated bool
+
+	// origin is how this object got its current snapshot, as a
+	// telemetryattrs.CacheVolumeState value, and mounts counts the exec mounts
+	// prepared since. Both are reset with the snapshot.
+	origin string
+	mounts int
 }
 
 func (*CacheVolume) Type() *ast.Type {
@@ -117,6 +128,7 @@ func (cache *CacheVolume) OnRelease(ctx context.Context) error {
 	releaseSnapshot := cache.releaseSnapshot
 	cache.snapshot = nil
 	cache.releaseSnapshot = nil
+	cache.origin, cache.mounts = "", 0
 	cache.mu.Unlock()
 
 	if releaseSnapshot != nil {
@@ -507,7 +519,11 @@ func (cache *CacheVolume) InitializeSnapshot(ctx context.Context) error {
 		return err
 	}
 	if cache.snapshotID != "" {
+		// acquire opens the snapshot only when no volume of this client has it
+		// open yet.
+		origin := telemetryattrs.CacheVolumeStateOpen
 		ref, releaseSnapshot, err := query.cacheVolumes().acquire(ctx, cache.snapshotID, func(ctx context.Context) (bkcache.MutableRef, error) {
+			origin = telemetryattrs.CacheVolumeStateReopened
 			ref, err := query.SnapshotManager().GetMutableBySnapshotID(
 				ctx,
 				cache.snapshotID,
@@ -525,6 +541,7 @@ func (cache *CacheVolume) InitializeSnapshot(ctx context.Context) error {
 		}
 		cache.snapshot = ref
 		cache.releaseSnapshot = releaseSnapshot
+		cache.origin, cache.mounts = origin, 0
 		if cache.selector == "" {
 			cache.selector = "/"
 		}
@@ -554,6 +571,10 @@ func (cache *CacheVolume) InitializeSnapshot(ctx context.Context) error {
 	cache.snapshot = newRef
 	cache.snapshotID = newRef.SnapshotID()
 	cache.releaseSnapshot = releaseSnapshot
+	cache.origin, cache.mounts = telemetryattrs.CacheVolumeStateNew, 0
+	if cache.Source.Valid {
+		cache.origin = telemetryattrs.CacheVolumeStateSeeded
+	}
 	if sourceSelector == "" {
 		sourceSelector = "/"
 	}
@@ -703,6 +724,65 @@ func (cache *CacheVolume) populateDir(ctx context.Context, fsDir string) error {
 		}
 		return nil
 	}, mountRefAsReadOnly)
+}
+
+// cacheVolumeMount is what one mount preparation saw of a cache volume.
+type cacheVolumeMount struct {
+	snapshot string
+	state    string
+}
+
+// noteMount counts a mount preparation of the volume's current snapshot and
+// returns what it saw. The first preparation since the volume got its snapshot
+// reports how it got it; later ones report it reused.
+func (cache *CacheVolume) noteMount() cacheVolumeMount {
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+
+	mount := cacheVolumeMount{state: telemetryattrs.CacheVolumeStateReused}
+	if cache.mounts == 0 {
+		mount.state = cache.origin
+	}
+	cache.mounts++
+	if cache.snapshot != nil {
+		mount.snapshot = cache.snapshot.SnapshotID()
+	}
+	return mount
+}
+
+// mountCacheVolume readies a cache volume's backing snapshot for an exec or
+// service mount at target, then reports the preparation on an internal span
+// (see telemetryattrs.CacheVolumeMountSpan). The span starts only once the
+// snapshot is ready, so a failure is attributed as before.
+func mountCacheVolume(ctx context.Context, vol dagql.ObjectResult[*CacheVolume], target string) error {
+	if err := EnsureBackingSnapshot(ctx, vol); err != nil {
+		return err
+	}
+	cache := vol.Self()
+	mount := cache.noteMount()
+
+	attrs := []attribute.KeyValue{
+		attribute.String(telemetryattrs.CacheVolumeKeyAttr, cache.Key),
+		attribute.String(telemetryattrs.CacheVolumeNamespaceAttr, cache.Namespace),
+		attribute.String(telemetryattrs.CacheVolumeSharingAttr, string(cache.Sharing)),
+		attribute.String(telemetryattrs.CacheVolumeTargetAttr, target),
+		attribute.String(telemetryattrs.CacheVolumeSnapshotAttr, mount.snapshot),
+		attribute.String(telemetryattrs.CacheVolumeStateAttr, mount.state),
+	}
+	args := []any{
+		"key", cache.Key,
+		"namespace", cache.Namespace,
+		"sharing", string(cache.Sharing),
+		"target", target,
+		"snapshot", mount.snapshot,
+		"state", mount.state,
+	}
+
+	ctx, span := Tracer(ctx).Start(ctx, telemetryattrs.CacheVolumeMountSpan+": "+cache.Key,
+		telemetry.Internal(), trace.WithAttributes(attrs...))
+	defer telemetry.EndWithCause(span, nil)
+	slog.SpanLogger(ctx, InstrumentationLibrary).Info(telemetryattrs.CacheVolumeMountSpan, args...)
+	return nil
 }
 
 type CacheSharingMode string
