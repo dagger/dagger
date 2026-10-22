@@ -283,8 +283,13 @@ func (p *partContentProvider) address(ctx context.Context, blob digest.Digest, f
 // renew uses this demand's one episode for the target address and content.
 // An absent bridge or key cannot claim it, but may use an episode another
 // source already claimed.
-func (p *partContentProvider) renew(ctx context.Context, blob digest.Digest) error {
-	defer p.stats.renewed(time.Now())
+func (p *partContentProvider) renew(ctx context.Context, blob digest.Digest) (rerr error) {
+	start := time.Now()
+	defer func() {
+		end := time.Now()
+		p.stats.renewed(start, end)
+		profRenewal(ctx, blob, start, end, rerr)
+	}()
 	if p.demand == nil {
 		return renewalUnavailable("no demand")
 	}
@@ -644,19 +649,7 @@ func logOfferInstall(ctx context.Context, receiver AnyResult, source *PartSource
 // import and installed nothing: the outcome, and the bytes and time it took,
 // as far as it got. It stamps no span, since CacheOfferPartAttr names an
 // installed part. Refusals and supersessions are coordination, at info level.
-func logOfferInstallFailed(ctx context.Context, receiver AnyResult, source *PartSourceLease, err error, contentFailed bool, downloaded int64, duration time.Duration, timing partInstallTiming, committed bool) {
-	var stuck *PartNoProgressError
-	outcome, level := "error", slog.LevelWarn
-	switch {
-	case context.Cause(ctx) != nil:
-		outcome, level = "canceled", slog.LevelInfo
-	case contentFailed:
-		outcome = "content"
-	case partCanReselect(err), errors.As(err, &stuck):
-		outcome, level = "refused", slog.LevelInfo
-	case err == nil:
-		outcome, level = "superseded", slog.LevelInfo
-	}
+func logOfferInstallFailed(ctx context.Context, receiver AnyResult, source *PartSourceLease, err error, outcome string, level slog.Level, downloaded int64, duration time.Duration, timing partInstallTiming, committed bool) {
 	args := []any{
 		"entry", uint64(receiver.cacheSharedResult().id),
 		"output", source.target.OutputPath.String(),
@@ -674,6 +667,24 @@ func logOfferInstallFailed(ctx context.Context, receiver AnyResult, source *Part
 		args = append(args, "error", err.Error())
 	}
 	slog.FromContext(ctx).Log(ctx, level, "remote cache part install failed", args...)
+}
+
+// partInstallFailure classifies an install attempt that installed nothing,
+// for its log line and its profile: canceled, content (the source's bytes
+// were bad), refused and superseded (coordination, at info level), or error.
+func partInstallFailure(ctx context.Context, err error, contentFailed bool) (string, slog.Level) {
+	var stuck *PartNoProgressError
+	switch {
+	case context.Cause(ctx) != nil:
+		return "canceled", slog.LevelInfo
+	case contentFailed:
+		return "content", slog.LevelWarn
+	case partCanReselect(err), errors.As(err, &stuck):
+		return "refused", slog.LevelInfo
+	case err == nil:
+		return "superseded", slog.LevelInfo
+	}
+	return "error", slog.LevelWarn
 }
 
 // partInstallStats counts one install's content requests. Atomic, as a
@@ -699,13 +710,12 @@ func (s *partInstallStats) request(sent time.Time) {
 	s.ttfb.Add(int64(time.Since(sent)))
 }
 
-// renewed adds a renewal that started at start and just ended. A nil stats
-// counts nothing.
-func (s *partInstallStats) renewed(start time.Time) {
+// renewed adds a renewal from start to end. A nil stats counts nothing.
+func (s *partInstallStats) renewed(start, end time.Time) {
 	if s == nil {
 		return
 	}
-	s.renewNS.Add(int64(time.Since(start)))
+	s.renewNS.Add(int64(end.Sub(start)))
 }
 
 // partInstallTiming is where one install's time went, as its lines log it.
@@ -816,6 +826,10 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 	if err != nil {
 		return err
 	}
+	// The install's own work runs under its profile op; what follows the
+	// install doesn't.
+	outerCtx := ctx
+	ctx, profOp := profBeginInstall(ctx, receiver, source.target, copied[0].Chain.Layers, start)
 	stats := &partInstallStats{}
 	provider := c.PartContentSource().Provider(ctx, copied[0], demand)
 	if p, ok := provider.(*partContentProvider); ok {
@@ -842,7 +856,10 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 		if !committing.IsZero() {
 			timing.commit = now.Sub(committing)
 		}
-		logOfferInstallFailed(ctx, receiver, source, rerr, contentFailed, downloaded.read.Load(), now.Sub(start), timing, !committing.IsZero())
+		// One classification for the line and the profile.
+		outcome, level := partInstallFailure(ctx, rerr, contentFailed)
+		logOfferInstallFailed(ctx, receiver, source, rerr, outcome, level, downloaded.read.Load(), now.Sub(start), timing, !committing.IsZero())
+		profEndInstall(ctx, profOp, receiver, outcome, downloaded.read.Load(), committing, now)
 	}()
 	importStart := time.Now()
 	imported, err := c.snapshotManager.ImportChain(ctx, &snapshots.ExportChain{Layers: copied[0].Chain.Layers, Provider: downloaded, Timing: &timing.ImportTiming})
@@ -892,7 +909,8 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 				timing.commit = now.Sub(committing)
 				installed = true
 				logOfferInstall(ctx, receiver, source, downloaded.read.Load(), now.Sub(start), timing)
-				return errors.Join(err, c.finishReadyPartInline(ctx, receipt))
+				profEndInstall(ctx, profOp, receiver, partInstalledOutcome, downloaded.read.Load(), committing, now)
+				return errors.Join(err, c.finishReadyPartInline(outerCtx, receipt))
 			}
 			if outcome == PartInstallRefused && err == nil {
 				err = partRefused("chain: commit refused")
