@@ -279,6 +279,10 @@ func (fe *frontendPretty) spanHasLogs(span *dagui.Span) bool {
 	if fe.logStreamFor(span.ID) != nil {
 		return true
 	}
+	if span.HasLogs && fe.logProviderFor(span.ID) != nil {
+		// Read on demand: openLogPager reads them.
+		return true
+	}
 	if fe.logs == nil {
 		return false
 	}
@@ -330,7 +334,10 @@ func (fe *frontendPretty) openLogPager(span *dagui.Span, title, titleIcon string
 	if title == "" {
 		title = span.Name
 	}
-	fe.showLogPager(span.ID, title, titleIcon, fe.logs.Logs[span.ID])
+	// A span never rendered holds no logs yet: read them into the terminal
+	// the pager shows (it stays pinned while the pager is open).
+	fe.requestLogs(span.ID)
+	fe.showLogPager(span.ID, title, titleIcon, fe.logs.spanLogs(span.ID))
 }
 
 func (fe *frontendPretty) showLogPager(id dagui.SpanID, title, titleIcon string, logs *Vterm) {
