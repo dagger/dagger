@@ -423,6 +423,9 @@ func TestRemoteLookupWaitOnLazySpanState(t *testing.T) {
 	wait := c.lazySpanCacheState(ctx, res.cacheSharedResult(), nil).lookupWait
 	require.NotNil(t, wait)
 	require.Equal(t, RemoteMergeDisconnected, wait.outcome, "the wait reports why its merge ended")
+	for _, outcome := range []string{RemoteMergeStale, RemoteMergeFailed} {
+		require.NotEqual(t, RemoteMergeMerged, outcome, "a merge that committed nothing isn't merged")
+	}
 
 	bridge.ExpectRemoteMerge(miss.Recipe, NewRemoteMergeWait(), time.Now().Add(time.Second))
 	require.NoError(t, c.Evaluate(ctx, res))
