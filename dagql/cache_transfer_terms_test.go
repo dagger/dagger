@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
@@ -316,4 +317,53 @@ func TestTransferredTermsStayOffDerivedFrames(t *testing.T) {
 	require.Empty(t, persistedListItemCall(listFrame, 1).TransferTerms, "a persisted list item")
 	require.Empty(t, listFrame.clone().TransferTerms, "a plain copy")
 	require.Empty(t, listFrame.fork().TransferTerms, "a plain fork")
+}
+
+// An engine that already holds the inner value, which the Cloud therefore
+// sends it as a held row, still learns the function call's term: B computed
+// the inner result itself before A's run, the Cloud's bundle of A's run for B
+// carries it held, and B then hits the function call, which returns B's own
+// inner value.
+func TestTransferredTermsReachAHeldValue(t *testing.T) {
+	t.Parallel()
+	content := digest.FromString("terms-test-module-content")
+	bctx, b, bsrv := transferTestCache(t)
+	bInner, ran := termsTestCall(t, bctx, b, bsrv, "withEnvVariable", nil, nil, termsTestValue("inner on B"))
+	require.True(t, ran)
+
+	actx, a, asrv := transferTestCache(t)
+	mod := termsTestModule(t, actx, a, asrv, "module-a", content)
+	wolfi, _ := termsTestCall(t, actx, a, asrv, "wolfi", nil, mod, termsTestValue("wolfi"))
+	inner, _ := termsTestCall(t, actx, a, asrv, "withEnvVariable", nil, nil, termsTestValue("inner"))
+	termsTestCall(t, actx, a, asrv, "container", wolfi, mod, func(*ResultCall) (AnyResult, error) { return inner, nil })
+	bundle := exportTestBundle(t, actx, a, inner, wolfi, mod)
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	reply, err := cloud.MergeValues(ctx, "cache-a", bundle)
+	require.NoError(t, err)
+	var numbers []uint64
+	var cloudInner uint64
+	for _, value := range reply.Values {
+		numbers = append(numbers, value.Number)
+		for _, sent := range bundle.Values {
+			if sent.Ordinal == value.Ordinal && sent.SenderNumber == uint64(inner.cacheSharedResult().id) {
+				cloudInner = value.Number
+			}
+		}
+	}
+	require.NotZero(t, cloudInner)
+	heldTestHold(t, ctx, cloud, "cache-b", uint64(bInner.cacheSharedResult().id), cloudInner, 0)
+	stored, err := cloud.StoredBundle(ctx, numbers, &HeldBy{Cache: "cache-b", Now: time.Now().Unix()})
+	require.NoError(t, err)
+	require.Equal(t, []uint64{cloudInner}, stored.Held, "B's inner value goes held")
+
+	merged, err := b.MergeValues(bctx, cloudCacheID, stored.Bundle)
+	require.NoError(t, err)
+	require.True(t, merged.Committed)
+	require.Empty(t, merged.Stale)
+	bmod := termsTestModule(t, bctx, b, bsrv, "module-b", content)
+	bwolfi, ran := termsTestCall(t, bctx, b, bsrv, "wolfi", nil, bmod, termsTestValue("wolfi on B"))
+	require.False(t, ran, "B hits A's constructor")
+	got, ran := termsTestCall(t, bctx, b, bsrv, "container", bwolfi, bmod, termsTestValue("container on B"))
+	require.False(t, ran, "B hits A's module function call")
+	require.Equal(t, bInner.cacheSharedResult().id, got.cacheSharedResult().id, "it returns B's own inner value")
 }
