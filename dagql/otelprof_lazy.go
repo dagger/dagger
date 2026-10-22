@@ -203,6 +203,10 @@ type lazySpanCacheState struct {
 	deps          []uint64
 	contentDigest digest.Digest
 	replacements  uint64
+	// remote records that the entry's value came from a Cloud merge, and
+	// mergedAt when that merge committed (0 when unknown).
+	remote   bool
+	mergedAt int64
 }
 
 // lazySpanCacheState reads the state a lazy op span reports for row once its
@@ -220,6 +224,8 @@ func (c *Cache) lazySpanCacheState(ctx context.Context, row *sharedResult, frame
 	defer c.egraphMu.RUnlock()
 	state.deps = sortedResultIDs(row.deps)
 	state.replacements = row.replacements
+	state.remote = row.imported
+	state.mergedAt = row.mergedAtUnixNano
 	return state
 }
 
@@ -256,6 +262,12 @@ func endOTelLazyOp(span trace.Span, isResume bool, sharedID sharedResultID, part
 		}
 		if cacheState.replacements != 0 {
 			span.SetAttributes(attribute.String(telemetryattrs.CacheReplacementsAttr, strconv.FormatUint(cacheState.replacements, 10)))
+		}
+		if cacheState.remote {
+			span.SetAttributes(attribute.String(telemetryattrs.CacheValueRemoteAttr, "true"))
+			if cacheState.mergedAt != 0 {
+				span.SetAttributes(attribute.String(telemetryattrs.CacheValueMergedAtAttr, strconv.FormatInt(cacheState.mergedAt, 10)))
+			}
 		}
 	}
 	if storedPart != "" && *errPtr == nil {

@@ -642,6 +642,57 @@ const (
 	// grew after it was chosen, beyond what this session has loaded.
 	CacheMissRequirementsGrewAttr = "dagger.io/cache.miss.requirements_grew"
 
+	// Remote candidates a miss lost, each "true", executed misses only,
+	// absent otherwise. A remote candidate is a value a Cloud merge installed
+	// (as for CacheHitRemoteAttr).
+	//
+	// CacheMissExpiredRemoteAttr (with CacheMissSawExpiredAttr): a candidate
+	// expiry eliminated was a remote one.
+	CacheMissExpiredRemoteAttr = "dagger.io/cache.miss.expired_remote"
+	// CacheMissIncompatibleRemoteAttr (with
+	// CacheMissIncompatibleCandidatesAttr): a candidate this session's
+	// resources did not satisfy was a remote one.
+	CacheMissIncompatibleRemoteAttr = "dagger.io/cache.miss.incompatible_remote"
+	// CacheMissChosenRemoteAttr (with a serve-time miss,
+	// CacheMissProducerReleasedAttr or CacheMissRequirementsGrewAttr): the hit
+	// the lookup chose, and then failed to serve, was a remote one.
+	CacheMissChosenRemoteAttr = "dagger.io/cache.miss.chosen_remote"
+
+	// CacheMissFreshInputsAttr (executed misses only) lists, as decimal-string
+	// indices into CacheStructuralInputsAttr (native string array), the
+	// inputs whose equivalence class was the input of no term at lookup time,
+	// so the structural lookup could match nothing: the inputs new to the
+	// cache. Like CacheMissUnknownInputAttr, it reads current cache state, not
+	// history. It is recorded only when every input was known (no
+	// CacheMissUnknownInputAttr), and absent when there are none. A
+	// receiver's structural input is its recipe digest, the dagger.io/dag.digest
+	// of the call span that produced it.
+	CacheMissFreshInputsAttr = "dagger.io/cache.miss.fresh_inputs"
+
+	// CacheAdoptedAttr ("true", executed and joined calls, absent otherwise)
+	// records that the publication of the call's value adopted its recipe's
+	// live current entry instead: the call ran, its new value was released,
+	// and CacheResultIDAttr names the adopted entry. CacheAdoptedRemoteAttr
+	// ("true") adds that the entry's value came from a Cloud merge, and
+	// CacheAdoptedMergedAtAttr is when that merge committed, in decimal-string
+	// absolute Unix nanoseconds (in memory only, as for CacheHitMergedAtAttr).
+	// Publication adopts by the recipe of the returned value's frame, which
+	// can differ from the recipe the lookup used, so the merge can have
+	// committed before or after the lookup: compare CacheAdoptedMergedAtAttr
+	// with CacheLookupAtAttr, which is on the same clock.
+	CacheAdoptedAttr         = "dagger.io/cache.adopted"
+	CacheAdoptedRemoteAttr   = "dagger.io/cache.adopted.remote"
+	CacheAdoptedMergedAtAttr = "dagger.io/cache.adopted.merged_at_unix_ns"
+
+	// CacheValueRemoteAttr ("true", on a lazy-evaluation span, absent
+	// otherwise) records that the value of the entry the attempt evaluated
+	// came from a Cloud merge, as the attempt left it. With CacheOfferPartAttr
+	// on the same span, it tells an evaluation an offer install satisfied
+	// from one that ran. CacheValueMergedAtAttr is when that merge committed,
+	// in decimal-string absolute Unix nanoseconds (in memory only).
+	CacheValueRemoteAttr   = "dagger.io/cache.value.remote"
+	CacheValueMergedAtAttr = "dagger.io/cache.value.merged_at_unix_ns"
+
 	// CacheSelfDigestAttr is the engine-derived structural self digest of the
 	// call: the operation, its literal arguments (sensitive values redacted),
 	// implicit inputs, list selection and schema view — with reference-valued
