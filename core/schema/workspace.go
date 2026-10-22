@@ -3616,7 +3616,7 @@ func (s *workspaceSchema) workspaceGitRepository(
 		}
 	}
 	if !fast {
-		dir, err = s.workspaceGitignoredOverlayRootfs(ctx, ws)
+		dir, err = s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, false)
 		if err != nil {
 			return inst, fmt.Errorf("workspace git directory: %w", err)
 		}
