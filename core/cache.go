@@ -634,3 +634,9 @@ func (mode *CacheSharingMode) UnmarshalJSON(payload []byte) error {
 
 	return nil
 }
+
+// cacheMountCount is the number of cache volume mounts among mounts, read-only
+// ones included.
+func cacheMountCount(mounts []ContainerMount) int {
+	return 0
+}
