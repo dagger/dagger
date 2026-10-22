@@ -233,7 +233,10 @@ type Client struct {
 	// on its trace subscription, and logsPresence whether the log push omits
 	// display text. Both are settled before Connect returns.
 	telemetryFeatures map[string]bool
-	logsPresence      bool
+	// telemetryFrameAt is when the trace or log subscription last delivered
+	// a batch (UnixNano), for WaitTelemetryIdle.
+	telemetryFrameAt atomic.Int64
+	logsPresence     bool
 
 	// ingestsTelemetry and publishesTelemetry record what the engine
 	// answered on this client's trace stream: whether it stores the
@@ -1478,6 +1481,7 @@ func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error
 	}
 
 	if err := exp.Consume(ctx, func(data []byte, encoding liveTelemetryEncoding) error {
+		c.telemetryFrameAt.Store(time.Now().UnixNano())
 		var req coltracepb.ExportTraceServiceRequest
 		if err := unmarshalLiveTelemetry(data, encoding, &req); err != nil {
 			return fmt.Errorf("unmarshal: %w", err)
@@ -1529,6 +1533,7 @@ func (c *Client) exportLogs(ctx context.Context, httpClient *httpClient) error {
 	}
 
 	return exp.Consume(ctx, func(data []byte, encoding liveTelemetryEncoding) error {
+		c.telemetryFrameAt.Store(time.Now().UnixNano())
 		var req collogspb.ExportLogsServiceRequest
 		if err := unmarshalLiveTelemetry(data, encoding, &req); err != nil {
 			return fmt.Errorf("unmarshal spans: %w", err)
