@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -373,6 +375,180 @@ func TestUploadConcurrencyIsPerEngine(t *testing.T) {
 		require.Equal(t, protocol.TypeUploaded, reply.Type)
 		require.Len(t, decode[protocol.Uploaded](t, reply).Done, perExport)
 	}
+}
+
+// uploadLogs captures a session's JSON log lines.
+type uploadLogs struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (l *uploadLogs) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.Write(p)
+}
+
+func (l *uploadLogs) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.String()
+}
+
+// lines returns the decoded lines with msg.
+func (l *uploadLogs) lines(t *testing.T, msg string) []map[string]any {
+	t.Helper()
+	var lines []map[string]any
+	dec := json.NewDecoder(strings.NewReader(l.String()))
+	dec.UseNumber()
+	for dec.More() {
+		var line map[string]any
+		require.NoError(t, dec.Decode(&line))
+		if line["msg"] == msg {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
+func logDuration(t *testing.T, line map[string]any, key string) time.Duration {
+	t.Helper()
+	n, ok := line[key].(json.Number)
+	require.True(t, ok, "%s is a JSON number: %v", key, line[key])
+	v, err := n.Int64()
+	require.NoError(t, err)
+	return time.Duration(v)
+}
+
+// uploadSession is a session whose JSON log is captured, with one export of
+// data held for upload. It returns the export's ID.
+func uploadSession(t *testing.T, data blobs) (*session, *recordingConn, *uploadLogs, string) {
+	t.Helper()
+	adapter := newFakeAdapter()
+	adapter.export = func(ctx context.Context, req protocol.Export, consume func(context.Context, Export) error) error {
+		return consume(ctx, Export{Bundle: testBundle(), Blobs: data})
+	}
+	s, conn := testSession(t, adapter)
+	logs := &uploadLogs{}
+	s.cfg.Logger = slog.New(slog.NewJSONHandler(logs, nil))
+	s.dispatch(request(t, 7, protocol.TypeExport, protocol.Export{Roots: []uint64{12}}))
+	exportID := decode[protocol.Exported](t, conn.next(t)).ExportID
+	require.NotEmpty(t, exportID)
+	return s, conn, logs, exportID
+}
+
+// Each uploaded blob is logged once, at info level, with its export, digest
+// and size, how long it queued for a slot and how long its upload took.
+func TestUploadLogged(t *testing.T) {
+	data := blobs{}
+	urls := map[digest.Digest]string{}
+	for i := range 3 {
+		value := strings.Repeat("x", i+1)
+		dgst := digest.FromString(value)
+		data[dgst] = value
+		urls[dgst] = "put-" + dgst.String()
+	}
+	s, conn, logs, exportID := uploadSession(t, data)
+	s.cfg.put = func(_ context.Context, _ string, body io.Reader, _ int64) error {
+		_, err := io.Copy(io.Discard, body)
+		return err
+	}
+	s.dispatch(request(t, 8, protocol.TypeUpload, protocol.Upload{ExportID: exportID, URLs: urls}))
+	require.Len(t, decode[protocol.Uploaded](t, conn.next(t)).Done, len(data))
+	lines := logs.lines(t, "remote cache blob uploaded")
+	require.Len(t, lines, len(data))
+	seen := map[digest.Digest]bool{}
+	for _, line := range lines {
+		require.Equal(t, "INFO", line["level"])
+		require.Equal(t, exportID, line["export"])
+		dgst := digest.Digest(line["digest"].(string))
+		value, ok := data[dgst]
+		require.True(t, ok, "a requested digest: %s", dgst)
+		require.False(t, seen[dgst], "one line per blob")
+		seen[dgst] = true
+		require.Equal(t, json.Number(fmt.Sprint(len(value))), line["bytes"])
+		require.Equal(t, "ok", line["outcome"])
+		require.GreaterOrEqual(t, logDuration(t, line, "queued"), time.Duration(0))
+		require.GreaterOrEqual(t, logDuration(t, line, "duration"), time.Duration(0))
+		require.NotContains(t, line, "error")
+	}
+}
+
+// A blob that waits for an upload slot logs the wait: with every slot held,
+// the blobs past UploadConcurrency queue until the held uploads end, and the
+// others do not. The bounds are the observed intervals: a free slot is taken
+// before the slots fill, and a held one after the release.
+func TestUploadLoggedQueued(t *testing.T) {
+	const hold = 200 * time.Millisecond
+	data := blobs{}
+	urls := map[digest.Digest]string{}
+	for i := range UploadConcurrency + 2 {
+		dgst := digest.FromString(fmt.Sprint(i))
+		data[dgst] = "data"
+		urls[dgst] = "put-" + dgst.String()
+	}
+	s, conn, logs, exportID := uploadSession(t, data)
+	var (
+		running     atomic.Int64
+		release     = make(chan struct{})
+		reached     = make(chan struct{})
+		once        sync.Once
+		releaseOnce sync.Once
+	)
+	releaseAll := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(releaseAll)
+	s.cfg.put = func(context.Context, string, io.Reader, int64) error {
+		if running.Add(1) == UploadConcurrency {
+			once.Do(func() { close(reached) })
+		}
+		<-release
+		return nil
+	}
+	dispatched := time.Now()
+	s.dispatch(request(t, 8, protocol.TypeUpload, protocol.Upload{ExportID: exportID, URLs: urls}))
+	select {
+	case <-reached:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the uploads never filled the slots")
+	}
+	filled := time.Since(dispatched)
+	time.Sleep(hold)
+	releaseAll()
+	require.Len(t, decode[protocol.Uploaded](t, conn.next(t)).Done, len(data))
+	lines := logs.lines(t, "remote cache blob uploaded")
+	require.Len(t, lines, len(data))
+	var queued []time.Duration
+	for _, line := range lines {
+		queued = append(queued, logDuration(t, line, "queued"))
+	}
+	slices.Sort(queued)
+	for _, q := range queued[:UploadConcurrency] {
+		require.LessOrEqual(t, q, filled, "a free slot is taken before the slots fill")
+	}
+	for _, q := range queued[UploadConcurrency:] {
+		require.GreaterOrEqual(t, q, hold, "the extra blobs waited for the held slots")
+	}
+}
+
+// A failed upload is logged at warn level with its error, which never names
+// the signed address.
+func TestUploadLoggedFailure(t *testing.T) {
+	dgst := digest.FromString("one")
+	s, conn, logs, exportID := uploadSession(t, blobs{dgst: "one"})
+	s.cfg.put = httpPut(&http.Client{Transport: failingTransport{}}, time.Minute)
+	address := "https://blobs.example/put?X-Amz-Signature=secret"
+	s.dispatch(request(t, 8, protocol.TypeUpload, protocol.Upload{ExportID: exportID, URLs: map[digest.Digest]string{dgst: address}}))
+	require.Len(t, decode[protocol.Uploaded](t, conn.next(t)).Failed, 1)
+	lines := logs.lines(t, "remote cache blob uploaded")
+	require.Len(t, lines, 1)
+	line := lines[0]
+	require.Equal(t, "WARN", line["level"])
+	require.Equal(t, "error", line["outcome"])
+	require.Equal(t, dgst.String(), line["digest"])
+	require.Equal(t, json.Number("3"), line["bytes"])
+	require.Contains(t, line["error"], "connection refused")
+	require.NotContains(t, logs.String(), "X-Amz-Signature=secret")
+	require.NotContains(t, logs.String(), "blobs.example")
 }
 
 // An exported reply over the message limit is not sent: the export is
