@@ -321,6 +321,44 @@ func TestLazyOpSpanStampsValueRemote(t *testing.T) {
 	}
 }
 
+// The lazy-evaluation span stamps the entry's wait for a remote lookup's
+// merge, when one ran.
+func TestLazyOpSpanStampsRemoteLookupWait(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name  string
+		state lazySpanCacheState
+		want  map[string]string
+	}{
+		{name: "no wait", state: lazySpanCacheState{}, want: map[string]string{}},
+		{name: "waited", state: lazySpanCacheState{lookupWait: &remoteLookupWait{waited: 1500 * time.Millisecond, outcome: "deadline"}}, want: map[string]string{
+			telemetryattrs.CacheRemoteLookupWaitedAttr:      "1500000000",
+			telemetryattrs.CacheRemoteLookupWaitOutcomeAttr: "deadline",
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			const resultID = sharedResultID(7)
+			sr, rootCtx, root := newLazyRecordingRoot("POST /query")
+			c := &Cache{sessionLazySpansBySession: map[string]map[sharedResultID]trace.SpanContext{}}
+			evalCtx := engine.ContextWithClientMetadata(rootCtx, &engine.ClientMetadata{SessionID: "sess-lookup-wait", ClientID: "client-1"})
+			_, lazySpan, isResume := c.beginOTelLazyOp(evalCtx, resultID, LazyGroupWhole, &ResultCall{Field: "withExec"}, "")
+			var err error
+			endOTelLazyOp(lazySpan, isResume, resultID, false, false, "", tc.state, &err)
+			root.End()
+			exported := spanBySpanID(t, sr.Ended(), lazySpan.SpanContext().SpanID())
+			got := map[string]string{}
+			for _, kv := range exported.Attributes() {
+				switch string(kv.Key) {
+				case telemetryattrs.CacheRemoteLookupWaitedAttr, telemetryattrs.CacheRemoteLookupWaitOutcomeAttr:
+					got[string(kv.Key)] = kv.Value.AsString()
+				}
+			}
+			assert.DeepEqual(t, tc.want, got)
+		})
+	}
+}
+
 // The new facts never change a decision: the same calls with no carrier get
 // the same results.
 func TestCacheEvidenceRemoteFactsChangeNoDecision(t *testing.T) {

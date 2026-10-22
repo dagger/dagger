@@ -402,6 +402,35 @@ func TestRecordCacheEvidenceMappingRemoteMissFacts(t *testing.T) {
 	}
 }
 
+// What a miss did about a remote lookup is stamped on executed calls only.
+func TestRecordCacheEvidenceMappingRemoteLookup(t *testing.T) {
+	t.Parallel()
+	selfDig := digest.FromString("evidence-remote-lookup-self")
+	for _, tc := range []struct {
+		outcome dagql.CacheOutcome
+		lookup  string
+		want    map[string]string
+	}{
+		{outcome: dagql.CacheOutcomeExecuted, lookup: dagql.RemoteLookupQueued, want: map[string]string{telemetryattrs.CacheMissRemoteLookupAttr: "queued"}},
+		{outcome: dagql.CacheOutcomeExecuted, lookup: dagql.RemoteLookupAsked, want: map[string]string{telemetryattrs.CacheMissRemoteLookupAttr: "asked"}},
+		{outcome: dagql.CacheOutcomeExecuted, lookup: dagql.RemoteLookupDropped, want: map[string]string{telemetryattrs.CacheMissRemoteLookupAttr: "dropped"}},
+		{outcome: dagql.CacheOutcomeExecuted, want: map[string]string{}},
+		{outcome: dagql.CacheOutcomeJoined, lookup: dagql.RemoteLookupQueued, want: map[string]string{}},
+	} {
+		t.Run(string(tc.outcome)+"/"+tc.lookup, func(t *testing.T) {
+			t.Parallel()
+			sr, span := evidenceTestRecordingSpan(t)
+			ev := dagql.CacheDecision{Outcome: tc.outcome, MissRemoteLookup: tc.lookup, MissUnknownInputIndex: -1, SelfDigest: selfDig, PairingDigest: selfDig}
+			recordCacheEvidence(context.Background(), span, &ev, nil)
+			got := evidenceTestCacheAttrs(t, evidenceTestEndedAttrs(t, sr, span))
+			v, ok := got[telemetryattrs.CacheMissRemoteLookupAttr]
+			want, wantOK := tc.want[telemetryattrs.CacheMissRemoteLookupAttr]
+			assert.Equal(t, wantOK, ok)
+			assert.Equal(t, want, v)
+		})
+	}
+}
+
 // Adoption is a fact of the publication, so the executed call and the calls
 // that joined it stamp it, with the merge's origin when the adopted entry is
 // remote.
