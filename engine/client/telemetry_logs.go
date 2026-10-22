@@ -68,11 +68,13 @@ func (c *Client) WaitTelemetryIdle(ctx context.Context, quiet time.Duration) {
 // TelemetryBarrier waits until the trace and log subscriptions have
 // delivered everything the engine stored for this client up to now: the
 // engine flushes the session's telemetry and reports its store's high-water
-// marks, which the subscriptions then reach. A frontend reading display text
-// on demand passes it at exit, so the spans of work that just ended are
-// there when it chooses what its final render reads, and the store still
-// serves the reads. It needs enginetel.LiveFeatureFlush; an older engine
-// answers ErrTelemetryBarrierUnsupported, and WaitTelemetryIdle remains.
+// marks, which the subscriptions then reach, and EngineTrace and EngineLogs
+// are flushed (when they can be) so it is through their processors too. A
+// frontend reading display text on demand passes it at exit, so the spans
+// of work that just ended are there when it chooses what its final render
+// reads, and the store still serves the reads. It needs
+// enginetel.LiveFeatureFlush; an older engine answers
+// ErrTelemetryBarrierUnsupported, and WaitTelemetryIdle remains.
 func (c *Client) TelemetryBarrier(ctx context.Context) error {
 	if !c.SupportsTelemetryFeature(enginetel.LiveFeatureFlush) {
 		return ErrTelemetryBarrierUnsupported
@@ -86,6 +88,17 @@ func (c *Client) TelemetryBarrier(ctx context.Context) error {
 	}
 	if err := c.logsDelivered.wait(ctx, marks.Logs); err != nil {
 		return fmt.Errorf("wait for logs: %w", err)
+	}
+	// What the subscriptions delivered may still sit in batching processors
+	// on its way to the frontend.
+	var errs error
+	for _, exp := range []any{c.engineTrace(c.publishesTelemetry), c.engineLogs(c.publishesTelemetry)} {
+		if f, ok := exp.(interface{ ForceFlush(context.Context) error }); ok {
+			errs = errors.Join(errs, f.ForceFlush(ctx))
+		}
+	}
+	if errs != nil {
+		return fmt.Errorf("flush delivered telemetry: %w", errs)
 	}
 	return nil
 }
