@@ -4777,13 +4777,16 @@ func (fe *frontendPretty) recalculateViewLocked() {
 					// bare. So fetch the exec span's own logs directly too -- that's
 					// the result (or error) the LLM saw (see renderMessageLogs).
 					fe.requestLogsWith(n.Span.ID, false)
+					fe.logInView(n.Span.ID)
 					if exec := toolCallExecSpan(n.Span); exec != nil {
 						fe.requestLogsWith(exec.ID, false)
+						fe.logInView(exec.ID)
 					}
 				}
 				reqConversationLogs(n.Children)
 			}
 		}
+		fe.markLogsInView()
 		reqConversationLogs(fe.reportConversation())
 
 		// Eager failure-detail fetch is REPORT-ONLY. The non-interactive report
