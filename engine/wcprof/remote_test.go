@@ -51,7 +51,7 @@ func TestRecordAtUsesRecorderClock(t *testing.T) {
 	start := time.Now()
 	time.Sleep(2 * time.Millisecond)
 	end := time.Now()
-	id := RecordOpAt(ctx, OpKindRemoteCache, "remotecache.export.walk", OpOpts{Bytes: 7}, start, end, OutcomeOK)
+	id := RecordOpAt(ctx, OpKindRemoteCache, "remotecache.export.walk", OpOpts{Bytes: 7, ResultID: 3}, start, end, OutcomeOK)
 	if id == 0 {
 		t.Fatal("RecordOpAt recorded nothing")
 	}
@@ -82,7 +82,7 @@ func TestRecordAtUsesRecorderClock(t *testing.T) {
 	if op.StartNS != wantStart || op.EndNS != wantEnd || op.EndNS-op.StartNS < int64(2*time.Millisecond) {
 		t.Fatalf("op interval [%d,%d], want [%d,%d]", op.StartNS, op.EndNS, wantStart, wantEnd)
 	}
-	if op.ParentID != parent.ID() || op.Bytes != 7 {
+	if op.ParentID != parent.ID() || op.Bytes != 7 || op.ResultID != 3 {
 		t.Fatalf("op: %+v", op)
 	}
 	if wait.ParentID != parent.ID() || wait.Reason != WaitReasonLock || wait.StartNS != wantStart || wait.EndNS != wantEnd {
