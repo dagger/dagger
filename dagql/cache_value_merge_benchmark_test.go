@@ -498,3 +498,97 @@ func benchmarkValueMergeSplit(b *testing.B, shape mergeBenchShape) {
 	b.ReportMetric(ms(commit.longest), "longest-commit-ms")
 	b.ReportMetric(ms(longestWait), "prepare-reader-wait-ms")
 }
+
+// BenchmarkMergeValuesResent merges the same bundle into the same engine
+// cache again and again, as a fresh engine's placement does: in one measured
+// placement each engine was sent 10 to 13 times the Cloud's values, most of
+// them records it already held, at about 4 KB a record. Every measured merge
+// lands every record on an entry that holds its value. Each operation first
+// decodes the bundle from its JSON, as the engine's session does. It reports
+// each step's time per record, and the commit's hold of egraphMu.
+func BenchmarkMergeValuesResent(b *testing.B) {
+	for _, records := range []int{6, 500, 2_000} {
+		b.Run(fmt.Sprintf("records=%d", records), func(b *testing.B) {
+			benchmarkMergeResent(b, mergeBenchShape{records: records, fields: 16})
+		})
+	}
+}
+
+func benchmarkMergeResent(b *testing.B, shape mergeBenchShape) {
+	newCache := func(name string) (context.Context, *Cache, *Server) {
+		ctx := cacheTestContext(context.Background())
+		c, err := NewCache(ctx, filepath.Join(b.TempDir(), name+".db"), nil, nil)
+		require.NoError(b, err)
+		b.Cleanup(func() { require.NoError(b, c.CloseDiscardingPersistence()) })
+		srv := newDagqlServerForTest(b, &persistCodecRoot{})
+		srv.InstallObject(NewClass(srv, ClassOpts[*transferTestValue]{}))
+		return srvToContext(ContextWithCache(ctx, c), srv), c, srv
+	}
+	actx, a, asrv := newCache("a")
+	publish := func(field string, child AnyResult) AnyResult {
+		value := &transferTestValue{Text: field, Fields: mergeBenchBody(field, shape.fields)}
+		if child != nil {
+			value.Child = uint64(child.cacheSharedResult().id)
+		}
+		frame := &ResultCall{Kind: ResultCallKindField, Field: field, Type: NewResultCallType(value.Type())}
+		res, err := a.GetOrInitCall(actx, "test-session", asrv, &CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+			return NewResultForCall(value, frame)
+		})
+		require.NoError(b, err)
+		if child != nil {
+			transferTestDependency(a, actx, res, child)
+		}
+		return res
+	}
+	var roots []AnyResult
+	for i := range shape.records / 2 {
+		root := publish(fmt.Sprintf("root-%d", i), publish(fmt.Sprintf("dep-%d", i), nil))
+		out, err := a.testOfferParts(actx, root, []PersistedPartOffer{testLiveOffer()})
+		require.NoError(b, err)
+		require.Equal(b, OfferAccepted, out[0].Outcome)
+		roots = append(roots, root)
+	}
+	var bundle ValueBundle
+	require.NoError(b, a.WithExportedValues(actx, ValueSelection{Roots: roots}, config.RefConfig{}, func(_ context.Context, values *ExportedValues) error {
+		bundle = values.Bundle
+		return nil
+	}))
+	require.Len(b, bundle.Values, shape.records)
+	encoded, err := json.Marshal(bundle)
+	require.NoError(b, err)
+
+	bctx, c, _ := newCache("b")
+	first, err := c.MergeValues(bctx, cloudCacheID, bundle)
+	require.NoError(b, err)
+	require.True(b, first.Committed)
+	c.egraphMu.RLock()
+	entries := len(c.resultsByID)
+	c.egraphMu.RUnlock()
+
+	var decoding, merging, holding time.Duration
+	b.ResetTimer()
+	for range b.N {
+		start := time.Now()
+		var in ValueBundle
+		require.NoError(b, json.Unmarshal(encoded, &in))
+		decoded := time.Now()
+		reply, err := c.MergeValues(bctx, cloudCacheID, in)
+		merged := time.Now()
+		require.NoError(b, err)
+		require.True(b, reply.Committed)
+		decoding += decoded.Sub(start)
+		merging += merged.Sub(decoded)
+		holding += reply.CommitHold
+	}
+	b.StopTimer()
+	c.egraphMu.RLock()
+	require.Equal(b, entries, len(c.resultsByID), "every record lands on the entry that holds it")
+	c.egraphMu.RUnlock()
+	perRecord := func(d time.Duration) float64 {
+		return float64(d.Nanoseconds()) / 1000 / float64(b.N*shape.records)
+	}
+	b.ReportMetric(float64(len(encoded))/float64(shape.records), "bytes/record")
+	b.ReportMetric(perRecord(decoding), "decode-µs/record")
+	b.ReportMetric(perRecord(merging), "merge-µs/record")
+	b.ReportMetric(perRecord(holding), "hold-µs/record")
+}
