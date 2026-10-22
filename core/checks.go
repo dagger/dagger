@@ -20,6 +20,7 @@ type Check struct {
 	Report          dagql.Nullable[dagql.ObjectResult[*Directory]] `field:"true" doc:"An optional report produced by the check."`
 	RemoteArtifact  dagql.ObjectResult[*Artifact]
 	RemoteArguments JSON
+	Unaddressed     dagql.ObjectResult[*Check]
 	Receiver        dagql.ObjectResult[*ModuleObject]
 	Workspace       dagql.ObjectResult[*Workspace]
 	Function        string

@@ -17,9 +17,12 @@ func (s checksSchema) Install(srv *dagql.Server) {
 	run := dagql.NodeFuncWithDynamicInputs("__run", s.run, s.cachePolicy)
 	run.Spec.NoTelemetry = true
 	dagql.Fields[*core.Check]{
-		dagql.Func("__withAddress", func(_ context.Context, check *core.Check, args struct{ Address string }) (*core.Check, error) {
-			copy := check.Clone()
+		dagql.NodeFunc("__withAddress", func(_ context.Context, check dagql.ObjectResult[*core.Check], args struct{ Address string }) (*core.Check, error) {
+			copy := check.Self().Clone()
 			copy.Address = args.Address
+			if copy.Unaddressed.Self() == nil {
+				copy.Unaddressed = check
+			}
 			return copy, nil
 		}),
 		dagql.NodeFunc("sync", s.sync).DoNotCache("Report each check execution request.").Doc("Run the check and retain its result."),
@@ -69,7 +72,11 @@ func (s checksSchema) sync(ctx context.Context, check dagql.ObjectResult[*core.C
 		}()
 	}
 	var result dagql.ObjectResult[*core.Check]
-	if failure = srv.Select(ctx, check, &result, dagql.Selector{Field: "__run"}); failure != nil {
+	target := check
+	if check.Self().Unaddressed.Self() != nil {
+		target = check.Self().Unaddressed
+	}
+	if failure = srv.Select(ctx, target, &result, dagql.Selector{Field: "__run"}); failure != nil {
 		return result, failure
 	}
 	if result.Self().Error.Valid {
