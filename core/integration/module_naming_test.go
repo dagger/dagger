@@ -295,6 +295,45 @@ func (ModuleNamingSuite) TestSameTypeDefsAcrossVersions(ctx context.Context, t *
 	}
 }
 
+// TestMainTypeSpelling checks a module whose main type is spelled otherwise
+// than its name around digits and acronyms: K8STools in module k8s-tools,
+// which engine/naming cuts into different words (K8STools vs K8sTools). It's
+// still the main object, with a constructor, and a type prefixed with it is
+// namespaced under the module once.
+func (ModuleNamingSuite) TestMainTypeSpelling(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ws := goGitBase(t, c).
+		WithNewFile("dagger.toml", "[modules.k8s-tools]\nsource = \"./k8s-tools\"\n").
+		WithNewFile("k8s-tools/dagger-module.toml", "name = \"k8s-tools\"\nengineVersion = \"v1.0.0-beta.21\"\nsource = \".\"\n\n[runtime]\nsource = \"dang\"\n").
+		WithNewFile("k8s-tools/main.dang", `type K8SToolsClient {
+  pub name: String!
+
+  new(name: String!) {
+    self.name = name
+    self
+  }
+}
+
+type K8STools {
+  pub greet: String! {
+    "hello"
+  }
+
+  pub client(name: String!): K8SToolsClient! {
+    K8SToolsClient(name: name)
+  }
+}
+`)
+
+	out, err := ws.With(daggerCallAt("k8s-tools", "greet")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hello", strings.TrimSpace(out))
+
+	out, err = ws.With(daggerQuery(`{k8sTools { __typename greet client(name: "x") { __typename name } }}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"k8sTools": {"__typename": "K8sTools", "greet": "hello", "client": {"__typename": "K8sToolsClient", "name": "x"}}}`, out)
+}
+
 // TestCLIFlags checks the CLI's spelling of an E2E-style argument. The CLI
 // names flags by the rules of its own engine version (--e2e-test), whichever
 // rules the module's schema names follow, and still accepts the spelling

@@ -1224,8 +1224,11 @@ func (obj *ModuleObject) isMainObject() bool {
 	if src := obj.Module.Self().GetSource(); src != nil && src.Entrypoint != nil {
 		return obj.TypeDef.Constructor.Valid
 	}
-	namer := obj.Module.Self().Namer()
-	return namer.ObjectName(obj.TypeDef.OriginalName) == namer.ObjectName(obj.Module.Self().OriginalName)
+	// The main object is the one the module's name designates, by the
+	// module's rules (see Module.MainObject): an SDK may spell it otherwise
+	// around digits and acronyms (K8STools for module k8s-tools).
+	main, ok := obj.Module.Self().MainObject()
+	return ok && main.OriginalName == obj.TypeDef.OriginalName
 }
 
 func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Server) error {
