@@ -85,14 +85,6 @@ type ImportTiming struct {
 	Apply time.Duration
 }
 
-// now is the time for a phase's start, read only when timing is on.
-func (t *ImportTiming) now() time.Time {
-	if t == nil {
-		return time.Time{}
-	}
-	return time.Now()
-}
-
 // Release ends provider consumption. Copies of a locally exported chain share
 // the same ownership, so Release is safe to call more than once.
 func (c *ExportChain) Release(ctx context.Context) error {
