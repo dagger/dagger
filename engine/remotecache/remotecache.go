@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/http/httptrace"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -131,9 +132,16 @@ type BlobSource interface {
 	ReadBlob(ctx context.Context, dgst digest.Digest) (io.ReadCloser, int64, error)
 }
 
+// envDecodeOnce set to 0 makes the session read a merge's body as it did:
+// json.Unmarshal of the envelope, then Decode of the body
+// (protocol.ReadEnvelope).
+const envDecodeOnce = "_EXPERIMENTAL_DAGGER_REMOTE_CACHE_DECODE_ONCE"
+
 // settings are Run's configuration with the limits and seams tests change.
 type settings struct {
 	Config
+	// decodeOnce decodes a merge's body in one pass (envDecodeOnce).
+	decodeOnce bool
 	dial       func(context.Context) (wsConn, error)
 	put        func(ctx context.Context, url string, body io.Reader, size int64) error
 	maxMessage int
@@ -149,6 +157,7 @@ func newSettings(cfg Config) *settings {
 		put:        httpPut(uploadClient(uploadResponseTimeout), uploadIdleTimeout),
 		maxMessage: protocol.MaxMessageBytes,
 		jitter:     rand.Float64,
+		decodeOnce: os.Getenv(envDecodeOnce) != "0",
 	}
 	s.dial = s.dialService
 	return s
