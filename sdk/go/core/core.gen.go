@@ -16623,11 +16623,27 @@ func (r *ModuleSource) Blueprint() *ModuleSource {
 	}
 }
 
+// ModuleSourceClientSchemaIntrospectionJSONOpts contains options for ModuleSource.ClientSchemaIntrospectionJSON
+type ModuleSourceClientSchemaIntrospectionJSONOpts struct {
+	// The engine version of the client the schema is generated for, e.g. the engineVersion of the module that depends on this one: core is described as that client sees it.
+	//
+	// This module is still loaded at the engine version it declares, and so named by its own naming rules, as the engine serves it to such a client. Defaults to this module's own engine version.
+	//
+	// Use this rather than withEngineVersion, which makes this module declare another version and so changes its names.
+	ClientVersion string
+}
+
 // The client-facing introspection schema JSON file for this module source.
 //
 // This is the schema consumed by client codegen: unlike introspectionSchemaJSON (the module-facing schema), it hides no core types and installs this module (reached via dag.<moduleName>) so a generated client can bind it. The module's dependencies are excluded: a client is generated for a single module plus core, not its dependency graph.
-func (r *ModuleSource) ClientSchemaIntrospectionJSON() *File {
+func (r *ModuleSource) ClientSchemaIntrospectionJSON(opts ...ModuleSourceClientSchemaIntrospectionJSONOpts) *File {
 	q := r.query.Select("clientSchemaIntrospectionJSON")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `clientVersion` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ClientVersion) {
+			q = q.Arg("clientVersion", opts[i].ClientVersion)
+		}
+	}
 
 	return &File{
 		query:     q,

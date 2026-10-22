@@ -12,6 +12,32 @@ import (
 	"github.com/dagger/dagger/engine"
 )
 
+// SDKs generate a dependency's client from clientSchemaIntrospectionJSON at
+// their own client's version: the argument is optional, so existing callers
+// keep the module's own version.
+func TestClientSchemaIntrospectionJSONClientVersion(t *testing.T) {
+	ctx := t.Context()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, cache.Close(context.Background())) })
+	ctx = dagql.ContextWithCache(ctx, cache)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{ClientID: "client-version", SessionID: "client-version"})
+	srv := &currentTypeDefsTestServer{platform: core.Platform{OS: "linux", Architecture: "amd64"}}
+	base, err := NewCoreSchemaBase(ctx, srv)
+	require.NoError(t, err)
+	for _, view := range []call.View{"v1.0.0-beta.20", "v1.0.0-beta.21"} {
+		dag, err := base.Fork(ctx, core.NewRoot(srv), view)
+		require.NoError(t, err)
+		field := dag.SchemaForView(view).Types["ModuleSource"].Fields.ForName("clientSchemaIntrospectionJSON")
+		require.NotNil(t, field, view)
+		arg := field.Arguments.ForName("clientVersion")
+		require.NotNil(t, arg, view)
+		require.False(t, arg.Type.NonNull, view)
+		require.NotNil(t, arg.DefaultValue, view)
+		require.Equal(t, `""`, arg.DefaultValue.String(), view)
+	}
+}
+
 // namingConstructors are the typedef constructors that normalize a name
 // they're given (core.IsNamingField), with the type they're installed on.
 var namingConstructors = []struct{ typeName, field string }{

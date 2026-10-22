@@ -259,7 +259,13 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 		dagql.NodeFunc("clientSchemaIntrospectionJSON", s.moduleSourceClientSchemaIntrospectionJSON).
 			View(AfterVersion("v1.0.0-0")).
 			Doc(`The client-facing introspection schema JSON file for this module source.`,
-				`This is the schema consumed by client codegen: unlike introspectionSchemaJSON (the module-facing schema), it hides no core types and installs this module (reached via dag.<moduleName>) so a generated client can bind it. The module's dependencies are excluded: a client is generated for a single module plus core, not its dependency graph.`),
+				`This is the schema consumed by client codegen: unlike introspectionSchemaJSON (the module-facing schema), it hides no core types and installs this module (reached via dag.<moduleName>) so a generated client can bind it. The module's dependencies are excluded: a client is generated for a single module plus core, not its dependency graph.`).
+			Args(
+				dagql.Arg("clientVersion").Doc(
+					`The engine version of the client the schema is generated for, e.g. the engineVersion of the module that depends on this one: core is described as that client sees it.`,
+					`This module is still loaded at the engine version it declares, and so named by its own naming rules, as the engine serves it to such a client. Defaults to this module's own engine version.`,
+					`Use this rather than withEngineVersion, which makes this module declare another version and so changes its names.`),
+			),
 
 		dagql.NodeFunc("directory", s.moduleSourceDirectory).
 			Doc(`The directory containing the module configuration and source code (source code may be in a subdir).`).
@@ -3030,7 +3036,7 @@ func (s *moduleSourceSchema) runClientGenerator(
 	if err != nil {
 		return genDirInst, fmt.Errorf("failed to load generated module source for client generation: %w", err)
 	}
-	schemaJSONFile, err := s.clientSchemaIntrospectionJSONFile(ctx, dag, schemaSrc)
+	schemaJSONFile, err := s.clientSchemaIntrospectionJSONFile(ctx, dag, schemaSrc, schemaSrc.Self().EngineVersion)
 	if err != nil {
 		return genDirInst, fmt.Errorf("failed to get schema for client generation: %w", err)
 	}
@@ -4040,7 +4046,9 @@ func (s *moduleSourceSchema) moduleSourceIntrospectionSchemaJSON(
 func (s *moduleSourceSchema) moduleSourceClientSchemaIntrospectionJSON(
 	ctx context.Context,
 	src dagql.ObjectResult[*core.ModuleSource],
-	args struct{},
+	args struct {
+		ClientVersion string `default:""`
+	},
 ) (inst dagql.Result[*core.File], rerr error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
@@ -4050,7 +4058,14 @@ func (s *moduleSourceSchema) moduleSourceClientSchemaIntrospectionJSON(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
-	return s.clientSchemaIntrospectionJSONFile(ctx, dag, src)
+	clientVersion := args.ClientVersion
+	switch clientVersion {
+	case "":
+		clientVersion = src.Self().EngineVersion
+	case modules.EngineVersionLatest:
+		clientVersion = engine.Version
+	}
+	return s.clientSchemaIntrospectionJSONFile(ctx, dag, src, engine.NormalizeVersion(clientVersion))
 }
 
 // clientSchemaIntrospectionJSONFile builds the client-facing introspection
@@ -4061,16 +4076,21 @@ func (s *moduleSourceSchema) moduleSourceClientSchemaIntrospectionJSON(
 // module plus core, not for its whole dependency graph. Unlike the
 // module-facing schema, it hides no core types. This is the schema client
 // codegen consumes.
+//
+// Core is described at the view of clientVersion, the engine version of the
+// client the schema is for; the module is loaded at the version it declares,
+// so it's named by its own rules, as the engine serves it to that client.
 func (s *moduleSourceSchema) clientSchemaIntrospectionJSONFile(
 	ctx context.Context,
 	dag *dagql.Server,
 	srcInst dagql.ObjectResult[*core.ModuleSource],
+	clientVersion string,
 ) (dagql.Result[*core.File], error) {
 	var inst dagql.Result[*core.File]
 
 	// Start from only the default (core) deps: the module's own dependencies
 	// must not leak into the client schema.
-	codegenDeps, err := s.loadDefaultSchemaBuilder(ctx, srcInst)
+	codegenDeps, err := s.defaultSchemaBuilderForEngineVersion(ctx, clientVersion)
 	if err != nil {
 		return inst, fmt.Errorf("failed to load default dependencies: %w", err)
 	}
@@ -4552,20 +4572,11 @@ func (s *moduleSourceSchema) loadDependencyModulesForEngineVersion(
 	return deps, nil
 }
 
-// loadDefaultSchemaBuilder returns a SchemaBuilder seeded with only the default
-// (core) dependencies, with the core module pinned to src's engine version
-// view, whose naming rules also name src's declarations (see
-// core.ModuleSource.NamingView). Callers append the user modules they want to
-// expose.
-func (s *moduleSourceSchema) loadDefaultSchemaBuilder(
-	ctx context.Context,
-	src dagql.ObjectResult[*core.ModuleSource],
-) (*core.SchemaBuilder, error) {
-	return s.defaultSchemaBuilderForEngineVersion(ctx, src.Self().EngineVersion)
-}
-
-// defaultSchemaBuilderForEngineVersion is loadDefaultSchemaBuilder for an
-// explicit engine version.
+// defaultSchemaBuilderForEngineVersion returns a SchemaBuilder seeded with
+// only the default (core) dependencies, with the core module pinned to the
+// view of engineVersion. Callers append the user modules they want to expose;
+// each is named by the rules of the version it declares (see
+// core.ModuleSource.NamingView), not by engineVersion.
 func (s *moduleSourceSchema) defaultSchemaBuilderForEngineVersion(
 	ctx context.Context,
 	engineVersion string,

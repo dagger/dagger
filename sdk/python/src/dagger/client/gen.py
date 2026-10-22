@@ -14635,7 +14635,9 @@ class ModuleSource(Type):
         _ctx = self._select("blueprint", _args)
         return ModuleSource(_ctx)
 
-    def client_schema_introspection_json(self) -> File:
+    def client_schema_introspection_json(
+        self, *, client_version: str | None = ""
+    ) -> File:
         """The client-facing introspection schema JSON file for this module
         source.
 
@@ -14645,8 +14647,22 @@ class ModuleSource(Type):
         generated client can bind it. The module's dependencies are excluded:
         a client is generated for a single module plus core, not its
         dependency graph.
+
+        Parameters
+        ----------
+        client_version:
+            The engine version of the client the schema is generated for, e.g.
+            the engineVersion of the module that depends on this one: core is
+            described as that client sees it.
+            This module is still loaded at the engine version it declares, and
+            so named by its own naming rules, as the engine serves it to such
+            a client. Defaults to this module's own engine version.
+            Use this rather than withEngineVersion, which makes this module
+            declare another version and so changes its names.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("clientVersion", client_version, ""),
+        ]
         _ctx = self._select("clientSchemaIntrospectionJSON", _args)
         return File(_ctx)
 

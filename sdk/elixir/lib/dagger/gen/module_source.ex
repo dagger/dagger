@@ -62,10 +62,13 @@ defmodule Dagger.ModuleSource do
 
   This is the schema consumed by client codegen: unlike introspectionSchemaJSON (the module-facing schema), it hides no core types and installs this module (reached via dag.<moduleName>) so a generated client can bind it. The module's dependencies are excluded: a client is generated for a single module plus core, not its dependency graph.
   """
-  @spec client_schema_introspection_json(t()) :: Dagger.File.t()
-  def client_schema_introspection_json(%__MODULE__{} = module_source) do
+  @spec client_schema_introspection_json(t(), [{:client_version, String.t() | nil}]) ::
+          Dagger.File.t()
+  def client_schema_introspection_json(%__MODULE__{} = module_source, optional_args \\ []) do
     query_builder =
-      module_source.query_builder |> QB.select("clientSchemaIntrospectionJSON")
+      module_source.query_builder
+      |> QB.select("clientSchemaIntrospectionJSON")
+      |> QB.maybe_put_arg("clientVersion", optional_args[:client_version])
 
     %Dagger.File{
       query_builder: query_builder,
