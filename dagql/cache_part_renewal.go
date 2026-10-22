@@ -72,6 +72,10 @@ type RemoteCacheBridge struct {
 	exchanges map[uint64]*renewalExchange
 	queue     []uint64
 	ready     chan struct{}
+
+	// lookups are the attachment's remote lookups, under their own lock
+	// (cache_remote_lookup.go).
+	lookups remoteLookups
 }
 
 type renewalExchange struct {
@@ -84,6 +88,7 @@ type renewalExchange struct {
 
 func newRemoteCacheBridge(mu *sync.Mutex) (*RemoteCacheBridge, error) {
 	b := &RemoteCacheBridge{mu: mu, exchanges: map[uint64]*renewalExchange{}, ready: make(chan struct{})}
+	b.lookups.init()
 	if _, err := rand.Read(b.epoch[:]); err != nil {
 		return nil, fmt.Errorf("remote cache bridge epoch: %w", err)
 	}
@@ -293,6 +298,7 @@ func (b *RemoteCacheBridge) closeLocked() {
 	}
 	b.queue = nil
 	close(b.ready)
+	b.lookups.close()
 }
 
 func cloneExportLayers(layers []snapshots.ExportLayer) ([]snapshots.ExportLayer, error) {
