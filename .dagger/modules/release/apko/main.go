@@ -243,7 +243,7 @@ func (m *Apko) Build(
 	args = commonArgs.Process(args)
 
 	return &BuildResult{
-		File: container.WithExec(args).File("/work/output/image.tar"),
+		File: dag.Directory().WithFile("image.tar", container.WithExec(args).File("/work/output/image.tar")).File("image.tar"),
 		Tag:  tag,
 	}
 }

@@ -262,7 +262,7 @@ func (build *Builder) runtimeBin() *dagger.File {
 		"https://github.com/json-c/json-c/archive/refs/tags/json-c-"+consts.JSONCVersion+".tar.gz",
 		dagger.HTTPOpts{Checksum: consts.JSONCChecksum},
 	)
-	return dag.Container().
+	crun := dag.Container().
 		From(consts.AlpineImage).
 		WithEnvVariable("BUILDPLATFORM", "linux/"+runtime.GOARCH).
 		WithEnvVariable("TARGETPLATFORM", string(build.platform)).
@@ -292,6 +292,7 @@ llvm-strip crun
 xx-verify --static crun
 `}).
 		File("/src/crun")
+	return freshFile("crun", crun)
 }
 
 func (build *Builder) sshfsBin() *dagger.File {
@@ -303,7 +304,7 @@ func (build *Builder) sshfsBin() *dagger.File {
 		Tag("sshfs-" + consts.SSHFSVersion).
 		Tree()
 
-	return dag.
+	sshfs := dag.
 		Wolfi().
 		Container(dagger.WolfiContainerOpts{
 			Packages: []string{
@@ -321,6 +322,23 @@ func (build *Builder) sshfsBin() *dagger.File {
 		WithExec([]string{"meson", "setup", "build", "--buildtype=release"}).
 		WithExec([]string{"meson", "compile", "-C", "build"}).
 		File("/src/build/sshfs")
+	return freshFile("sshfs", sshfs)
+}
+
+// freshFile returns file on its own in a new directory. A file read out of a
+// build container keeps its backing snapshot: the container's rootfs, or the
+// mounted directory it was read from, with everything else in it, such as the
+// toolchain or the build tree. An engine reusing the file from a remote cache
+// pulls whatever of that it is missing. A copy in a new directory holds only
+// the file, and is built from the same inputs, so it is reused across commits
+// as before.
+func freshFile(name string, file *dagger.File) *dagger.File {
+	return dag.Directory().WithFile(name, file).File(name)
+}
+
+// freshDir is freshFile for a directory.
+func freshDir(dir *dagger.Directory) *dagger.Directory {
+	return dag.Directory().WithDirectory(".", dir)
 }
 
 func (build *Builder) cniPlugins() (bins []*dagger.File) {

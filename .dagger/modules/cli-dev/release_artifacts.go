@@ -111,20 +111,30 @@ func (cli *CliDev) releaseArchive(label string, target cliReleaseTarget) *dagger
 		WithDirectory("/input", input).
 		WithExec([]string{"mkdir", "-p", "/out"})
 	if target.Windows {
-		return ctr.
+		return freshFile(name, ctr.
 			WithWorkdir("/input").
 			WithExec([]string{"touch", "-t", "198001010000", "LICENSE", target.Binary}).
 			WithExec([]string{"zip", "-X", "-q", "/out/" + name, "LICENSE", target.Binary}).
-			File("/out/" + name)
+			File("/out/"+name))
 	}
 
-	return ctr.
+	return freshFile(name, ctr.
 		WithExec([]string{"tar", "--sort=name", "--mtime=UTC 1970-01-01", "--owner=0", "--group=0", "--numeric-owner", "-czf", "/out/" + name, "-C", "/input", "LICENSE", target.Binary}).
-		File("/out/" + name)
+		File("/out/"+name))
+}
+
+// freshFile returns file on its own in a new directory. A file read out of a
+// container keeps the container's rootfs as its backing snapshot, with
+// everything else in it; an engine reusing the file from a remote cache pulls
+// whatever of that it is missing. A copy in a new directory holds only the
+// file, and is built from the same inputs, so it is reused across commits as
+// before.
+func freshFile(name string, file *dagger.File) *dagger.File {
+	return dag.Directory().WithFile(name, file).File(name)
 }
 
 func (cli *CliDev) releaseChecksums(dist *dagger.Directory) *dagger.File {
-	return dag.
+	checksums := dag.
 		Alpine(dagger.AlpineOpts{
 			Branch: "3.22",
 		}).
@@ -136,6 +146,7 @@ for file in $(ls | sort); do
 	sha256sum "$file"
 done > /out/checksums.txt`}).
 		File("/out/checksums.txt")
+	return freshFile("checksums.txt", checksums)
 }
 
 func releaseArchiveBase() *dagger.Container {

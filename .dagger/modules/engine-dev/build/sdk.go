@@ -109,6 +109,7 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 			"-r", "/requirements.txt",
 		}).
 		File("/codegen")
+	codegen = freshFile("codegen", codegen)
 
 	rootfs := pySrc.
 		// bundle the uv binaries
@@ -147,6 +148,7 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 		From(tsdistconsts.DefaultNodeImageRef).
 		WithExec([]string{"npm", "install", "-g", fmt.Sprintf("tsx@%s", TypescriptSDKTSXVersion)}).
 		Directory("/usr/local/lib/node_modules/tsx")
+	tsxNodeModule = freshDir(tsxNodeModule)
 
 	rootfs := dag.Directory().WithDirectory("/", build.source.Directory("sdk/typescript"), dagger.DirectoryWithDirectoryOpts{
 		Include: []string{
@@ -196,10 +198,10 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 		// typescript library when introspecting the user's module.
 		// TODO: As a follow up, this also enable skipping dependencies installation inside the module
 		// runtime if only typescript library is used (by default)
-		WithDirectory("/typescript-library", bunBuilderCtr.Directory("/src/node_modules/typescript")).
-		WithFile("/bin/ts-introspector", bunBuilderCtr.File("/bin/ts-introspector")).
+		WithDirectory("/typescript-library", freshDir(bunBuilderCtr.Directory("/src/node_modules/typescript"))).
+		WithFile("/bin/ts-introspector", freshFile("ts-introspector", bunBuilderCtr.File("/bin/ts-introspector"))).
 		WithDirectory("/tsx_module", tsxNodeModule).
-		WithDirectory("/bundled_lib", bunBuilderCtr.Directory("/out-node")).
+		WithDirectory("/bundled_lib", freshDir(bunBuilderCtr.Directory("/out-node"))).
 		AsTarball(dagger.ContainerAsTarballOpts{
 			ForcedCompression: dagger.ImageLayerCompressionZstd,
 		})
@@ -264,8 +266,8 @@ func (build *Builder) goSDKContent(ctx context.Context) (*sdkContent, error) {
 		WithEnvVariable("GOTOOLCHAIN", "auto").
 		WithFile("/usr/local/bin/codegen", build.CodegenBinary()).
 		// these cache directories should match the cache volume locations in the engine's goSDK.base
-		WithDirectory("/go/pkg/mod", sdkCache.Directory("/go/pkg/mod")).
-		WithDirectory("/root/.cache/go-build", sdkCache.Directory("/root/.cache/go-build")).
+		WithDirectory("/go/pkg/mod", freshDir(sdkCache.Directory("/go/pkg/mod"))).
+		WithDirectory("/root/.cache/go-build", freshDir(sdkCache.Directory("/root/.cache/go-build"))).
 		AsTarball(dagger.ContainerAsTarballOpts{
 			ForcedCompression: dagger.ImageLayerCompressionZstd,
 		})
