@@ -23,6 +23,11 @@ type OfferDisposition struct {
 	Replaced bool
 	OfferRev uint64
 	Err      error
+	// Target is the row the offer's address resolved to, the receiver or a
+	// descendant, and TargetAddress the address re-rooted at it. Target is 0
+	// for an offer refused before its address resolved.
+	Target        uint64
+	TargetAddress PersistedPartAddress
 	// Replacements and Deps are the receiver's replacement count and direct
 	// dependencies, read under the lock that decided Outcome: the value state
 	// the outcome describes.
@@ -209,6 +214,7 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 		return out
 	}
 	offer.Address = address
+	out.Target, out.TargetAddress = id, clonePartAddress(address)
 	capture := captures[id]
 	row := capture.row
 	probes, err := describePartRecord(capture.record)
