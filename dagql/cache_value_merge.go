@@ -1467,6 +1467,11 @@ func (c *Cache) applyMergedIdentitiesLocked(ctx context.Context, commit *valueMe
 			frame = row.res.loadResultCall()
 		}
 		c.applyPreparedResultIdentityLocked(ctx, row.res, frame, row.plan.recipe, row.plan.self, row.plan.inputs, row.plan.provenance, row.plan.recipe)
+		// The terms of the calls that returned the record's result on the
+		// sending engine, such as a module function that returned it as an
+		// inner result, as that engine taught them: the record carries them
+		// in its frame. A kept entry takes them onto its own frame too.
+		c.applyTransferTermsLocked(ctx, row.res, row.plan.row.loadResultCall())
 		if !c.blobBacked {
 			// The Cloud entry that sent the record stores it, with the
 			// record's expiry.

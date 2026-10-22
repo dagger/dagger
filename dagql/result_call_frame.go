@@ -220,6 +220,16 @@ type ResultCall struct {
 	// profileSkip in core/telemetry.go.
 	ProfileSkip bool `json:"profileSkip,omitempty"`
 
+	// TransferTerms are the terms of module function calls that returned
+	// this result other than through its own frame: a function that returns
+	// an inner result has the call's term on that result too, and an engine
+	// hits the call by it. They ride with the frame, in a transfer record
+	// and in persistence, so that an engine that merges the record hits the
+	// call as the engine that ran it does (applyTransferTermsLocked). Like
+	// ProfileSkip, they are EXCLUDED from every digest: they say what else
+	// names the result, not what the result's own call is.
+	TransferTerms []TransferTerm `json:"transferTerms,omitempty"`
+
 	// recipeDigest is memoized once the frame has reached its finalized
 	// semantic shape. Do not mutate the frame after calling RecipeDigest.
 	recipeDigestOnce sync.Once
@@ -251,15 +261,16 @@ func (frame *ResultCall) cloneWith(memo resultCallCloneMemo) *ResultCall {
 		return cp
 	}
 	cp := &ResultCall{
-		Kind:         frame.Kind,
-		Type:         frame.Type.clone(),
-		Field:        frame.Field,
-		SyntheticOp:  frame.SyntheticOp,
-		View:         frame.View,
-		Nth:          frame.Nth,
-		EffectIDs:    slices.Clone(frame.EffectIDs),
-		ExtraDigests: slices.Clone(frame.ExtraDigests),
-		ProfileSkip:  frame.ProfileSkip,
+		Kind:          frame.Kind,
+		Type:          frame.Type.clone(),
+		Field:         frame.Field,
+		SyntheticOp:   frame.SyntheticOp,
+		View:          frame.View,
+		Nth:           frame.Nth,
+		EffectIDs:     slices.Clone(frame.EffectIDs),
+		ExtraDigests:  slices.Clone(frame.ExtraDigests),
+		ProfileSkip:   frame.ProfileSkip,
+		TransferTerms: cloneTransferTerms(frame.TransferTerms),
 	}
 	// Register before recursing so a shared (or, defensively, cyclic) sub-DAG
 	// resolves to this same clone instead of being re-expanded into a tree.
@@ -302,8 +313,38 @@ func (frame *ResultCall) fork() *ResultCall {
 		// fork inherits the producer's decision; the element's own immediate
 		// receiver is the list (not a reflection type), so recomputing here would
 		// wrongly profile a reflection-list walk — inheritance is the correct rule.
-		ProfileSkip: frame.ProfileSkip,
+		ProfileSkip:   frame.ProfileSkip,
+		TransferTerms: cloneTransferTerms(frame.TransferTerms),
 	}
+}
+
+// TransferTerm is a call's term on a result it returned, as digests another
+// engine can resolve: the call's request digest, its self digest, and its
+// ordered structural inputs' digests with their provenance kinds, as the
+// engine that ran the call derived them.
+type TransferTerm struct {
+	Request    digest.Digest   `json:"request"`
+	Self       digest.Digest   `json:"self"`
+	Inputs     []digest.Digest `json:"inputs,omitempty"`
+	Provenance []string        `json:"provenance,omitempty"`
+}
+
+func (term TransferTerm) equal(other TransferTerm) bool {
+	return term.Request == other.Request && term.Self == other.Self &&
+		slices.Equal(term.Inputs, other.Inputs) && slices.Equal(term.Provenance, other.Provenance)
+}
+
+func cloneTransferTerms(terms []TransferTerm) []TransferTerm {
+	if terms == nil {
+		return nil
+	}
+	out := make([]TransferTerm, len(terms))
+	for i, term := range terms {
+		term.Inputs = slices.Clone(term.Inputs)
+		term.Provenance = slices.Clone(term.Provenance)
+		out[i] = term
+	}
+	return out
 }
 
 func (frame *ResultCall) RecipeDigest(ctx context.Context) (digest.Digest, error) {

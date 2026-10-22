@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"time"
 
@@ -1047,6 +1048,9 @@ func (c *Cache) lookupCacheForRequestLocked(
 	if err := c.teachResultIdentityLocked(ctx, res, req.ResultCall, requestDigest, requestSelf, requestInputs, requestInputRefs); err != nil {
 		return nil, false, 0, err
 	}
+	if err := c.recordTransferTermLocked(ctx, res, req.ResultCall, requestDigest, requestSelf, requestInputs, requestInputRefs); err != nil {
+		return nil, false, 0, err
+	}
 	retRes := Result[Typed]{
 		shared:   res,
 		hitCache: true,
@@ -1711,6 +1715,83 @@ func (c *Cache) applyPreparedResultIdentityLocked(ctx context.Context, res *shar
 	}
 }
 
+// maxTransferTerms is how many transfer terms a result's frame keeps: the
+// first ones recorded. A module function returns its inner result to each
+// client with a term over that client's module provenance, so the terms grow
+// with the clients, while a merging engine needs only one whose inputs its
+// classes hold.
+const maxTransferTerms = 8
+
+// recordTransferTermLocked records on res's frame the term of a module
+// function call that returned res, the request's frame with the request's
+// derived digests, so that the term travels with res's record
+// (ResultCall.TransferTerms). A call without module provenance records
+// nothing, nor does res's own call, one of its recipes: its record carries
+// that identity already. Requires egraphMu.
+func (c *Cache) recordTransferTermLocked(ctx context.Context, res *sharedResult, requestFrame *ResultCall, requestDigest, requestSelf digest.Digest, requestInputs []digest.Digest, requestInputRefs []ResultCallStructuralInputRef) error {
+	if res == nil || requestFrame == nil || requestFrame.Module == nil || requestDigest == "" || requestSelf == "" {
+		return nil
+	}
+	if slices.Contains(res.recipeKeys, requestDigest) {
+		return nil
+	}
+	provenance, err := c.inputProvenanceForRefs(requestInputRefs)
+	if err != nil {
+		return err
+	}
+	term := TransferTerm{Request: requestDigest, Self: requestSelf, Inputs: slices.Clone(requestInputs)}
+	for _, kind := range provenance {
+		term.Provenance = append(term.Provenance, string(kind))
+	}
+	c.addTransferTermLocked(ctx, res, term)
+	return nil
+}
+
+// addTransferTermLocked adds the term to res's frame, unless the frame has it,
+// or has maxTransferTerms already, which it logs at debug. The frame is
+// replaced, never changed in place. Requires egraphMu.
+func (c *Cache) addTransferTermLocked(ctx context.Context, res *sharedResult, term TransferTerm) {
+	frame := res.loadResultCall()
+	if frame == nil || slices.ContainsFunc(frame.TransferTerms, term.equal) {
+		return
+	}
+	if len(frame.TransferTerms) >= maxTransferTerms {
+		slog.DebugContext(ctx, "transfer term not kept: the result's frame has the most it keeps",
+			"result", uint64(res.id), "request", term.Request, "max", maxTransferTerms)
+		return
+	}
+	next := frame.fork()
+	next.TransferTerms = append(next.TransferTerms, term)
+	res.storeResultCall(next)
+	c.traceResultCallFrameUpdated(ctx, res, "transfer_term", frame, next)
+}
+
+// applyTransferTermsLocked teaches res each transfer term of frame, the
+// frame of a record merged onto res, as the engine that ran the call taught
+// it (applyPreparedResultIdentityLocked, as a remote holding's term is), and
+// keeps it on res's frame, so that res's own records carry it on. A term
+// whose inputs res's cache doesn't know adds only classes of their own: no
+// lookup reaches it until something joins them. Requires egraphMu.
+func (c *Cache) applyTransferTermsLocked(ctx context.Context, res *sharedResult, frame *ResultCall) {
+	if res == nil || frame == nil {
+		return
+	}
+	for _, term := range frame.TransferTerms {
+		if term.Request == "" || term.Self == "" {
+			continue
+		}
+		provenance := make([]egraphInputProvenanceKind, len(term.Inputs))
+		for i := range provenance {
+			provenance[i] = egraphInputProvenanceKindDigest
+			if i < len(term.Provenance) && term.Provenance[i] != "" {
+				provenance[i] = egraphInputProvenanceKind(term.Provenance[i])
+			}
+		}
+		c.applyPreparedResultIdentityLocked(ctx, res, &ResultCall{Kind: ResultCallKindField, Field: frame.Field}, term.Request, term.Self, term.Inputs, provenance, term.Request)
+		c.addTransferTermLocked(ctx, res, term)
+	}
+}
+
 // addFramePostingsLocked posts a frame's recipe digest and extra digests for
 // the result. Requires egraphMu.
 func (c *Cache) addFramePostingsLocked(resID sharedResultID, recipe digest.Digest, extras []call.ExtraDigest) {
@@ -1917,6 +1998,13 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 
 	if err := c.indexResultDigestsLocked(res, requestFrame, responseFrame); err != nil {
 		return err
+	}
+	// A call that returned a result of another call, as a module function
+	// returns an inner result, leaves its term on the result's frame too.
+	if requestFrame != nil && responseFrame != nil && requestFrame != responseFrame && requestDigest != responseDigest {
+		if err := c.recordTransferTermLocked(ctx, res, requestFrame, requestDigest, requestSelf, requestInputs, requestInputRefs); err != nil {
+			return err
+		}
 	}
 	for termID := range c.resultTerms[res.id] {
 		term := c.egraphTerms[termID]
