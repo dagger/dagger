@@ -1494,51 +1494,55 @@ func (*Probe) Once() error { return fmt.Errorf("once %s", rand.Text()) }
 // +cache="never"
 func (*Probe) Every() error { return fmt.Errorf("every %s", rand.Text()) }
 `)
-	out, err := base.With(daggerQuery(`{
- a: once { error { message } }
- b: once { error { message } }
- currentWorkspace { artifacts(include: ["once"]) { one { value { ... on Check { error { message } } } } } }
-}`)).Stdout(ctx)
-	require.NoError(t, err)
-	var direct struct {
-		A, B             struct{ Error struct{ Message string } }
-		CurrentWorkspace struct {
-			Artifacts struct {
-				One struct {
-					Value struct{ Error struct{ Message string } }
-				}
-			}
-		}
-	}
-	require.NoError(t, json.Unmarshal([]byte(out), &direct))
-	require.NotEmpty(t, direct.A.Error.Message)
-	require.Equal(t, direct.A.Error.Message, direct.B.Error.Message)
-	require.Equal(t, direct.A.Error.Message, direct.CurrentWorkspace.Artifacts.One.Value.Error.Message)
-
-	out, err = base.With(daggerQuery(`{
- currentWorkspace { artifacts(include: ["every"]) {
-  a: asChecks { sync { error { message } again: sync { error { message } } } }
-  b: asChecks { sync { error { message } } }
- } }
-}`)).Stdout(ctx)
-	require.NoError(t, err)
-	var repeated struct {
-		CurrentWorkspace struct {
-			Artifacts struct {
-				A, B []struct {
-					Sync struct {
-						Error struct{ Message string }
-						Again struct{ Error struct{ Message string } }
+	t.Run("cached checks share direct and artifact execution", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerQuery(`{
+	 a: once { error { message } }
+	 b: once { error { message } }
+	 currentWorkspace { artifacts(include: ["once"]) { one { value { ... on Check { error { message } } } } } }
+	}`)).Stdout(ctx)
+		require.NoError(t, err)
+		var direct struct {
+			A, B             struct{ Error struct{ Message string } }
+			CurrentWorkspace struct {
+				Artifacts struct {
+					One struct {
+						Value struct{ Error struct{ Message string } }
 					}
 				}
 			}
 		}
-	}
-	require.NoError(t, json.Unmarshal([]byte(out), &repeated))
-	require.Len(t, repeated.CurrentWorkspace.Artifacts.A, 1)
-	require.Len(t, repeated.CurrentWorkspace.Artifacts.B, 1)
-	require.NotEqual(t, repeated.CurrentWorkspace.Artifacts.A[0].Sync.Error.Message, repeated.CurrentWorkspace.Artifacts.B[0].Sync.Error.Message)
-	require.Equal(t, repeated.CurrentWorkspace.Artifacts.A[0].Sync.Error.Message, repeated.CurrentWorkspace.Artifacts.A[0].Sync.Again.Error.Message)
+		require.NoError(t, json.Unmarshal([]byte(out), &direct))
+		require.NotEmpty(t, direct.A.Error.Message)
+		require.Equal(t, direct.A.Error.Message, direct.B.Error.Message)
+		require.Equal(t, direct.A.Error.Message, direct.CurrentWorkspace.Artifacts.One.Value.Error.Message)
+
+	})
+	t.Run("uncached checks retain each sync result", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerQuery(`{
+	 currentWorkspace { artifacts(include: ["every"]) {
+	  a: asChecks { sync { error { message } again: sync { error { message } } } }
+	  b: asChecks { sync { error { message } } }
+	 } }
+	}`)).Stdout(ctx)
+		require.NoError(t, err)
+		var repeated struct {
+			CurrentWorkspace struct {
+				Artifacts struct {
+					A, B []struct {
+						Sync struct {
+							Error struct{ Message string }
+							Again struct{ Error struct{ Message string } }
+						}
+					}
+				}
+			}
+		}
+		require.NoError(t, json.Unmarshal([]byte(out), &repeated))
+		require.Len(t, repeated.CurrentWorkspace.Artifacts.A, 1)
+		require.Len(t, repeated.CurrentWorkspace.Artifacts.B, 1)
+		require.NotEqual(t, repeated.CurrentWorkspace.Artifacts.A[0].Sync.Error.Message, repeated.CurrentWorkspace.Artifacts.B[0].Sync.Error.Message)
+		require.Equal(t, repeated.CurrentWorkspace.Artifacts.A[0].Sync.Error.Message, repeated.CurrentWorkspace.Artifacts.A[0].Sync.Again.Error.Message)
+	})
 }
 
 // A failed materialization must not discard other check results.
