@@ -231,7 +231,10 @@ type Client struct {
 	// telemetryFrameAt is when the trace or log subscription last delivered
 	// a batch (UnixNano), for WaitTelemetryIdle.
 	telemetryFrameAt atomic.Int64
-	logsPresence     bool
+	// traceDelivered and logsDelivered are how far the trace and log
+	// subscriptions have delivered, for TelemetryBarrier.
+	traceDelivered, logsDelivered deliveredCursor
+	logsPresence                  bool
 
 	// ingestsTelemetry and publishesTelemetry record what the engine
 	// answered on this client's trace stream: whether it stores the
@@ -1109,6 +1112,9 @@ type otlpConsumer struct {
 	// client posts about itself (engine.ClientTelemetryIngestHeader), from
 	// the stream's first response.
 	engineIngests bool
+	// delivered, when set, tracks the cursor of the last frame the
+	// callback returned from.
+	delivered *deliveredCursor
 }
 
 // liveTelemetryFeatures parses a subscription response's LiveFeaturesHeader.
@@ -1170,6 +1176,7 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte, liveTelemetr
 	span.SetAttributes(attribute.Bool("dagger.io/telemetry.engine_publishes", c.enginePublishes))
 
 	c.eg.Go(func() error {
+		defer c.delivered.end()
 		cursor := int64(0)
 		for {
 			current := resp
@@ -1178,7 +1185,9 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte, liveTelemetr
 			stopClose()
 			_ = current.Body.Close()
 			if complete || ctx.Err() != nil {
-				return nil //nolint:nilerr // Cancellation and terminal frames end the background consumer normally.
+				// Cancellation and terminal frames end the background
+				// consumer normally.
+				return nil
 			}
 			if errors.Is(err, enginetel.ErrInvalidLiveFrame) || errors.Is(err, enginetel.ErrLiveStream) {
 				return fmt.Errorf("decode OTLP stream: %w", err)
@@ -1186,7 +1195,7 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte, liveTelemetr
 			logger.Debug("reconnecting to OTLP stream", "cursor", cursor, "err", err)
 
 			if err := c.waitForReconnect(ctx); err != nil {
-				return nil //nolint:nilerr // Cancellation ends the background consumer normally.
+				return nil
 			}
 			resp, err = c.connect(ctx, cursor) //nolint:bodyclose // The outer loop closes every response after consumeResponse.
 			if ctx.Err() != nil {
@@ -1332,6 +1341,7 @@ func (c *otlpConsumer) consumeResponse(
 			if err := consumeTelemetryPayload(next, data, liveTelemetryBinary, cursor, cb, span, logger); err != nil {
 				return false, err
 			}
+			c.delivered.advance(*cursor)
 		}
 	}
 }
@@ -1362,6 +1372,7 @@ func (c *otlpConsumer) consumeSSEResponse(
 		if err := consumeTelemetryPayload(next, event.Data, liveTelemetryProtoJSON, cursor, cb, span, logger); err != nil {
 			return false, err
 		}
+		c.delivered.advance(*cursor)
 	}
 }
 
@@ -1436,6 +1447,7 @@ func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error
 		clientID:   c.ID,
 		httpClient: httpClient,
 		eg:         c.telemetry,
+		delivered:  &c.traceDelivered,
 	}
 
 	if err := exp.Consume(ctx, func(data []byte, encoding liveTelemetryEncoding) error {
@@ -1485,6 +1497,7 @@ func (c *Client) exportLogs(ctx context.Context, httpClient *httpClient) error {
 		clientID:   c.ID,
 		httpClient: httpClient,
 		eg:         c.telemetry,
+		delivered:  &c.logsDelivered,
 	}
 	if c.logsPresence {
 		exp.query = url.Values{enginetel.LiveDisplayParam: {enginetel.LiveDisplayPresence}}.Encode()
