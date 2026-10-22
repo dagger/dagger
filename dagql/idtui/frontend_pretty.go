@@ -432,6 +432,12 @@ type frontendPretty struct {
 	searchMatchSpans     map[dagui.SpanID]bool // fast lookup: does this span have any match?
 	prevSearchMatchSpans map[dagui.SpanID]bool // previous frame's matchSpans for diff-based dirtying
 	searchIdx            int                   // current match index (-1 = none)
+	// logSearches search the sources of logs read on demand, keyed like the
+	// log providers (SetLogSearch); searchRemote holds the spans their
+	// search found the query in, for the search searchGen numbers.
+	logSearches  map[dagui.TraceID]LogSearchFunc
+	searchRemote map[dagui.SpanID]bool
+	searchGen    uint64
 	// searchNames memoizes the spans whose name matches the search, until
 	// the query or the DB's spans change (see searchNameMatches).
 	searchNames struct {
@@ -3749,10 +3755,15 @@ func (fe *frontendPretty) escHelp() string {
 }
 
 func (fe *frontendPretty) searchCountHint(base string) string {
-	if len(fe.searchMatches) == 0 {
-		return base + " (0)"
+	// Without a source to search, logs not loaded are not searched.
+	var scope string
+	if fe.searchLoadedOnly() {
+		scope = ", loaded logs only"
 	}
-	return fmt.Sprintf("%s (%d/%d)", base, fe.searchIdx+1, len(fe.searchMatches))
+	if len(fe.searchMatches) == 0 {
+		return base + " (0" + scope + ")"
+	}
+	return fmt.Sprintf("%s (%d/%d%s)", base, fe.searchIdx+1, len(fe.searchMatches), scope)
 }
 
 func KeyEnabled(enabled bool) key.BindingOpt {
@@ -7122,6 +7133,7 @@ func (fe *frontendPretty) confirmSearch(query string) {
 	}
 	fe.searchQuery = query
 	fe.searchIdx = -1
+	fe.startLogSearch(query)
 	// Push query to all vterms (triggers midterm Search), read results,
 	// navigate to first match, then update highlights + dirty trees.
 	fe.syncVtermSearchHighlights()
