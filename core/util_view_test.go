@@ -1,0 +1,71 @@
+package core
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+func TestLeavesDir(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	app := filepath.Join(root, "app")
+	require.NoError(t, os.MkdirAll(filepath.Join(app, "nested"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(app, "main.txt"), []byte("main"), 0o644))
+	require.NoError(t, os.Symlink("../main.txt", filepath.Join(app, "nested", "inner")))
+	require.NoError(t, os.Symlink("nested", filepath.Join(app, "alias")))
+	require.NoError(t, os.Symlink("../other.txt", filepath.Join(app, "up")))
+	require.NoError(t, os.Symlink("/main.txt", filepath.Join(app, "abs")))
+	require.NoError(t, os.Symlink("nested/../../x", filepath.Join(app, "climb")))
+	require.NoError(t, os.Symlink("loop", filepath.Join(app, "loop")))
+
+	for _, tc := range []struct {
+		p      string
+		leaves bool
+	}{
+		{"main.txt", false},
+		{"nested/inner", false},
+		{"alias/inner", false},
+		{"missing/x", false},
+		{"../main.txt", false}, // ".." in the path itself stops at the directory, as written
+		{"up", true},
+		{"abs", true},
+		{"climb", true},
+		{"alias/../up", true},
+	} {
+		leaves, err := leavesDir(app, tc.p)
+		require.NoError(t, err, tc.p)
+		require.Equal(t, tc.leaves, leaves, tc.p)
+	}
+
+	_, err := leavesDir(app, "loop")
+	require.Error(t, err)
+}
+
+func TestResolveInDirStaysInDir(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	app := filepath.Join(root, "app")
+	require.NoError(t, os.Mkdir(app, 0o755))
+	require.NoError(t, os.Symlink("../other.txt", filepath.Join(app, "up")))
+
+	for _, p := range []string{"..", "../", "../..", ".", "/"} {
+		got, err := ResolveInDir(root, "/app", p)
+		require.NoError(t, err, p)
+		require.Equal(t, app, got, p)
+		got, err = ResolveInDirWithoutFinalSymlink(root, "/app", p)
+		require.NoError(t, err, p)
+		require.Equal(t, app, got, p)
+	}
+
+	got, err := ResolveInDir(root, "/app", "up")
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(app, "other.txt"), got)
+	got, err = ResolveInDirWithoutFinalSymlink(root, "/app", "up")
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(app, "up"), got)
+}

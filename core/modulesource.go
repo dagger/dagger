@@ -1746,7 +1746,7 @@ func (src *ModuleSource) LoadContextDir(
 		if err != nil {
 			return inst, fmt.Errorf("context directory path: %w", err)
 		}
-		dgst, err := GetContentHashFromDirectory(ctx, snapshot, dirPath)
+		dgst, err := DirectoryContentDigest(ctx, snapshot, dirPath)
 		if err != nil {
 			return inst, fmt.Errorf("failed to content-hash contextual directory: %w", err)
 		}
@@ -2015,7 +2015,7 @@ func (src *ModuleSource) loadContextFromSource(
 		if err != nil {
 			return inst, fmt.Errorf("context directory path: %w", err)
 		}
-		dgst, err := GetContentHashFromDirectory(ctx, snapshot, dirPath)
+		dgst, err := DirectoryContentDigest(ctx, snapshot, dirPath)
 		if err != nil {
 			return inst, err
 		}
