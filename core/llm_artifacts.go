@@ -88,6 +88,7 @@ func mergeScopeArtifacts(bound []*Artifact, shadowed, fresh map[string]bool, wor
 		if yields[ArtifactTypeName(entry.ModuleName)] {
 			continue
 		}
+		result.CollectionRoots = append(result.CollectionRoots, entry.Clone())
 		match, err := matchesInclude(entry, result.Selector.Paths)
 		if err != nil {
 			return nil, err
@@ -101,6 +102,12 @@ func mergeScopeArtifacts(bound []*Artifact, shadowed, fresh map[string]bool, wor
 			result.Entries = append(result.Entries, entry)
 		}
 	}
+	for _, root := range workspace.CollectionRoots {
+		if name := ArtifactTypeName(root.ModuleName); !shadowed[name] || yields[name] {
+			result.CollectionRoots = append(result.CollectionRoots, root.Clone())
+		}
+	}
+	result.SetCollectionRoots(result.CollectionRoots)
 	slices.SortStableFunc(result.Entries, func(a, b *Artifact) int { return slices.Compare(a.Path, b.Path) })
 	result.NameEntries()
 	return result, nil
@@ -360,7 +367,9 @@ func scopeWorkspaceArtifacts(ctx context.Context, srv *dagql.Server, ws dagql.Ob
 	for _, entry := range artifacts.Self().Entries {
 		entries = append(entries, entry.Clone())
 	}
-	return &Artifacts{Entries: entries, AllDimensions: artifacts.Self().AllDimensions, AllPaths: artifacts.Self().AllPaths}, nil
+	result := artifacts.Self().filter(func(*Artifact) bool { return true })
+	result.Entries = entries
+	return result, nil
 }
 
 // scopeLLM returns the conversation whose scope (LLM.artifacts) a tool

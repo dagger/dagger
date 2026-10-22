@@ -56,9 +56,6 @@ query TypeDefs($hideCore: Boolean) {
 			valueType {
 				...TypeDefRefParts
 			}
-			batchType {
-				...TypeDefRefParts
-			}
 		}
 		asScalar {
 			name

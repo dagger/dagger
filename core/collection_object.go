@@ -266,7 +266,7 @@ func (obj *ModuleObject) restoreCollectionBase(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		result, err = dag.Load(ctx, &id)
+		result, err = dag.Load(dagql.WithResultScope(ctx, nil), &id)
 		if err != nil {
 			return err
 		}
@@ -274,7 +274,7 @@ func (obj *ModuleObject) restoreCollectionBase(ctx context.Context) error {
 		return fmt.Errorf("invalid collection base value %T", value)
 	}
 	base, ok := dagql.UnwrapAs[*ModuleObject](result)
-	if !ok || base.TypeDef.Name != obj.TypeDef.Name || base.CollectionBatch {
+	if !ok || base.TypeDef.Name != obj.TypeDef.Name {
 		return fmt.Errorf("invalid collection base type %s", result.Type())
 	}
 	obj.CollectionBase = result
@@ -287,13 +287,6 @@ func (obj *ModuleObject) collectionFields(ctx context.Context, dag *dagql.Server
 	members, err := obj.TypeDef.CollectionMembers()
 	if err != nil {
 		return nil, err
-	}
-	if obj.CollectionBatch {
-		fields, err := obj.functions(ctx, dag)
-		if err != nil {
-			return nil, err
-		}
-		return slices.DeleteFunc(fields, func(field dagql.Field[*ModuleObject]) bool { return field.Spec.Name == members.Get.Name }), nil
 	}
 	moduleID, moduleProvider, err := NewUserMod(obj.Module).FieldModule()
 	if err != nil {
@@ -388,31 +381,20 @@ func (obj *ModuleObject) collectionFields(ctx context.Context, dag *dagql.Server
 				if err != nil {
 					return nil, err
 				}
+				// The derived call may have its own binding in the current view.
+				subset.ArtifactView = nil
 				return dagql.NewResultForCurrentCall(ctx, subset)
 			},
 		},
 	}
-	if len(obj.TypeDef.Functions) > 1 {
-		batch := *obj
-		batch.CollectionBatch = true
-		if existing, exists := dag.ObjectType(batch.Type().Name()); exists {
-			installed, ok := existing.Typed().(*ModuleObject)
-			if !ok || !installed.CollectionBatch || installed.TypeDef.Name != obj.TypeDef.Name {
-				return nil, fmt.Errorf("collection batch type %q conflicts with an existing type", batch.Type().Name())
-			}
+	functions, err := obj.functions(ctx, dag)
+	if err != nil {
+		return nil, err
+	}
+	for _, field := range functions {
+		if field.Spec.Name != members.Get.Name {
+			fields = append(fields, field)
 		}
-		if err := batch.Install(ctx, dag); err != nil {
-			return nil, err
-		}
-		fields = append(fields, dagql.Field[*ModuleObject]{
-			Spec: &dagql.FieldSpec{Name: "batch", Description: "Operations on the current collection.", Type: &batch, Module: moduleID, ModuleProvider: moduleProvider},
-			Func: func(ctx context.Context, self dagql.ObjectResult[*ModuleObject], _ map[string]dagql.Input, _ call.View) (dagql.AnyResult, error) {
-				batch := *self.Self()
-				batch.CollectionBatch = true
-				batch.Fields = maps.Clone(batch.Fields)
-				return dagql.NewResultForCurrentCall(ctx, &batch)
-			},
-		})
 	}
 	return fields, nil
 }

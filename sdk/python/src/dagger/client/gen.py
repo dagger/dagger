@@ -2178,57 +2178,10 @@ class ArtifactPath(Type):
 
 
 @typecheck
-class ArtifactResult(Type):
-    def artifact(self) -> Artifact:
-        """The artifact that was evaluated."""
-        _args: list[Arg] = []
-        _ctx = self._select("artifact", _args)
-        return Artifact(_ctx)
-
-    async def error(self) -> "Error | None":
-        """The evaluation failure, if any."""
-        _args: list[Arg] = []
-        _ctx = self._select("error", _args)
-        return await _ctx.execute_object(Error)
-
-    async def id(self) -> str:
-        """A unique identifier for this ArtifactResult.
-
-        Note
-        ----
-        This is lazily evaluated, no operation is actually run.
-
-        Returns
-        -------
-        str
-            The `ID` scalar type represents a unique identifier, often used to
-            refetch an object or as key for a cache. The ID type appears in a
-            JSON response as a String; however, it is not intended to be
-            human-readable. When expected as an input type, any string (such
-            as `"4"`) or integer (such as `4`) input value will be accepted as
-            an ID.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("id", _args)
-        return await _ctx.execute(str)
-
-    async def value(self) -> Node | None:
-        """The evaluated value, or null when evaluation failed."""
-        _args: list[Arg] = []
-        _ctx = self._select("value", _args)
-        return await _ctx.execute_object(_NodeClient)
-
-
-@typecheck
 class Artifacts(Type):
-    """An immutable selection of workspace artifacts. Listed types,
+    """A selection of workspace artifacts and their immutable collection
+    view. Collection key filters replace collection references with
+    subsets. Static filters change only membership. Listed types,
     dimensions, and keys use OR; chained filters use AND. Empty
     alternatives match nothing; unknown names match nothing but module
     load failures. Filters never change addresses or dimension
@@ -2352,7 +2305,10 @@ class Artifacts(Type):
         return await _ctx.execute(list[str])
 
     def filter_dimension_keys(self, dimension: str, keys: list[str]) -> Self:
-        """Keep artifacts with any listed key in this dimension."""
+        """Keep artifacts with any listed key in this dimension. Replace
+        collection references with matching subsets. Skip absent keys and
+        leave the source view unchanged.
+        """
         _args = [
             Arg("dimension", dimension),
             Arg("keys", keys),
@@ -2524,7 +2480,9 @@ class Artifacts(Type):
         return await _ctx.execute(str)
 
     async def items(self) -> list[Artifact]:
-        """Enumerate complete artifacts without evaluating their values."""
+        """List artifact descriptions with their collection view. Discover
+        collection keys without evaluating leaf values.
+        """
         _args: list[Arg] = []
         _ctx = self._select("items", _args)
         return await _ctx.execute_object_list(Artifact)
@@ -2604,46 +2562,10 @@ class Artifacts(Type):
         _ctx = self._select("uri", _args)
         return await _ctx.execute(str)
 
-    async def values(
-        self,
-        *,
-        fail_fast: bool | None = False,
-        arguments: JSON | None = "{}",
-        max_concurrency: int | None = 0,
-    ) -> list[ArtifactResult]:
-        """Evaluate the selection in parallel, retaining each result and error.
-
-        Parameters
-        ----------
-        fail_fast:
-            Cancel remaining work after the first failure.
-        arguments:
-            Field arguments applied to each artifact, as a JSON object.
-        max_concurrency:
-            Evaluate at most this many artifacts at once on this engine; the
-            rest wait. Checks that scale out to cloud engines are not counted.
-            0 means no limit.
-        """
-        _args = [
-            Arg("failFast", fail_fast, False),
-            Arg("arguments", arguments, "{}"),
-            Arg("maxConcurrency", max_concurrency, 0),
-        ]
-        _ctx = self._select("values", _args)
-        return await _ctx.execute_object_list(ArtifactResult)
-
-    def with_artifacts(self, artifacts: Self) -> Self:
-        """Combine two selections, keeping each workspace address once. Different
-        addresses remain distinct even if they return the same object.
-        """
-        _args = [
-            Arg("artifacts", artifacts),
-        ]
-        _ctx = self._select("withArtifacts", _args)
-        return Artifacts(_ctx)
-
     def without_uri(self, uri: str) -> Self:
-        """Remove artifacts selected by a DAG address."""
+        """Remove artifacts selected by a DAG address. Retain the collection
+        view.
+        """
         _args = [
             Arg("uri", uri),
         ]
@@ -3233,12 +3155,6 @@ class CollectionDelta(Type):
 
 @typecheck
 class CollectionTypeDef(Type):
-    async def batch_type(self) -> "TypeDef | None":
-        """The type of batch operations, or null when there are none."""
-        _args: list[Arg] = []
-        _ctx = self._select("batchType", _args)
-        return await _ctx.execute_object(TypeDef)
-
     async def id(self) -> str:
         """A unique identifier for this CollectionTypeDef.
 
@@ -20991,7 +20907,6 @@ __all__ = [
     "ArtifactDimensionKey",
     "ArtifactDimensionKind",
     "ArtifactPath",
-    "ArtifactResult",
     "Artifacts",
     "BuildArg",
     "Bytes",

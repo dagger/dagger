@@ -1723,125 +1723,7 @@ func (r *ArtifactPath) AsNode() Node {
 	}
 }
 
-type ArtifactResult struct {
-	query *querybuilder.Selection
-	// refetchID is set when this object is built through a field marked
-	// @reevaluate: it fetches its ID on every use, so each use evaluates that
-	// field again.
-	refetchID bool
-
-	id *ID
-}
-
-func (r *ArtifactResult) WithGraphQLQuery(q *querybuilder.Selection) *ArtifactResult {
-	return &ArtifactResult{
-		query: q,
-		// The query's origin is unknown: it may go through a field that
-		// must be reevaluated.
-		refetchID: true,
-	}
-}
-
-// The artifact that was evaluated.
-func (r *ArtifactResult) Artifact() *Artifact {
-	q := r.query.Select("artifact")
-
-	return &Artifact{
-		query:     q,
-		refetchID: r.refetchID,
-	}
-}
-
-// The evaluation failure, if any.
-func (r *ArtifactResult) Error(ctx context.Context) (*Error, error) {
-	q := r.query.Select("error")
-
-	q = q.Select("id")
-	var objectID *ID
-	if err := q.Bind(&objectID).Execute(ctx); err != nil {
-		return nil, err
-	}
-	if objectID == nil {
-		return nil, nil
-	}
-	return &Error{
-		query: selectNode(q.Root(), *objectID, "Error"),
-	}, nil
-}
-
-// A unique identifier for this ArtifactResult.
-func (r *ArtifactResult) ID(ctx context.Context) (ID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response ID
-
-	q = q.Bind(&response)
-	if r.refetchID {
-		return response, q.Execute(ctx)
-	}
-	return memoizedID(ctx, r.query, func() (ID, error) {
-		err := q.Execute(ctx)
-		return response, err
-	})
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *ArtifactResult) XXX_GraphQLType() string {
-	return "ArtifactResult"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *ArtifactResult) XXX_GraphQLIDType() string {
-	return "ID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *ArtifactResult) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *ArtifactResult) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-
-// The evaluated value, or null when evaluation failed.
-func (r *ArtifactResult) Value(ctx context.Context) (Node, error) {
-	q := r.query.Select("value")
-
-	q = q.Select("id")
-	var objectID *ID
-	if err := q.Bind(&objectID).Execute(ctx); err != nil {
-		return nil, err
-	}
-	if objectID == nil {
-		return nil, nil
-	}
-	return &NodeClient{
-		query: selectNode(q.Root(), *objectID, "Node"),
-	}, nil
-}
-
-// AsNode returns this ArtifactResult as a Node.
-// This is a local type conversion — no GraphQL call.
-func (r *ArtifactResult) AsNode() Node {
-	return &NodeClient{
-		query:     r.query,
-		refetchID: r.refetchID,
-	}
-}
-
-// An immutable selection of workspace artifacts. Listed types, dimensions, and keys use OR; chained filters use AND. Empty alternatives match nothing; unknown names match nothing but module load failures. Filters never change addresses or dimension identifiers. Module keys match a module's configured or kebab-case name. A module that failed to load has no schema, so its load failure stands in for whatever it would hold: a filter keeps it when the module could hold something the filter selects, and an exclusion drops it only by its own address, such as <module>/** or ?module=<module>.
+// A selection of workspace artifacts and their immutable collection view. Collection key filters replace collection references with subsets. Static filters change only membership. Listed types, dimensions, and keys use OR; chained filters use AND. Empty alternatives match nothing; unknown names match nothing but module load failures. Filters never change addresses or dimension identifiers. Module keys match a module's configured or kebab-case name. A module that failed to load has no schema, so its load failure stands in for whatever it would hold: a filter keeps it when the module could hold something the filter selects, and an exclusion drops it only by its own address, such as <module>/** or ?module=<module>.
 type Artifacts struct {
 	query *querybuilder.Selection
 	// refetchID is set when this object is built through a field marked
@@ -2123,7 +2005,7 @@ func (r *Artifacts) Dimensions(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Keep artifacts with any listed key in this dimension.
+// Keep artifacts with any listed key in this dimension. Replace collection references with matching subsets. Skip absent keys and leave the source view unchanged.
 func (r *Artifacts) FilterDimensionKeys(dimension string, keys []string) *Artifacts {
 	q := r.query.Select("filterDimensionKeys")
 	q = q.Arg("dimension", dimension)
@@ -2321,7 +2203,7 @@ func (r *Artifacts) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Enumerate complete artifacts without evaluating their values.
+// List artifact descriptions with their collection view. Discover collection keys without evaluating leaf values.
 func (r *Artifacts) Items(ctx context.Context) ([]Artifact, error) {
 	q := r.query.Select("items")
 
@@ -2500,78 +2382,7 @@ func (r *Artifacts) URI(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// ArtifactsValuesOpts contains options for Artifacts.Values
-type ArtifactsValuesOpts struct {
-	// Cancel remaining work after the first failure.
-	FailFast bool
-	// Field arguments applied to each artifact, as a JSON object.
-	//
-	// Default: "{}"
-	Arguments JSON
-	// Evaluate at most this many artifacts at once on this engine; the rest wait. Checks that scale out to cloud engines are not counted. 0 means no limit.
-	MaxConcurrency int
-}
-
-// Evaluate the selection in parallel, retaining each result and error.
-func (r *Artifacts) Values(ctx context.Context, opts ...ArtifactsValuesOpts) ([]ArtifactResult, error) {
-	q := r.query.Select("values")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `failFast` optional argument
-		if !querybuilder.IsZeroValue(opts[i].FailFast) {
-			q = q.Arg("failFast", opts[i].FailFast)
-		}
-		// `arguments` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Arguments) {
-			q = q.Arg("arguments", opts[i].Arguments)
-		}
-		// `maxConcurrency` optional argument
-		if !querybuilder.IsZeroValue(opts[i].MaxConcurrency) {
-			q = q.Arg("maxConcurrency", opts[i].MaxConcurrency)
-		}
-	}
-
-	q = q.Select("id")
-
-	type values struct {
-		Id ID
-	}
-
-	convert := func(fields []values) []ArtifactResult {
-		out := []ArtifactResult{}
-
-		for i := range fields {
-			val := ArtifactResult{id: &fields[i].Id}
-			val.query = selectNode(q.Root(), fields[i].Id, "ArtifactResult")
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []values
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
-// Combine two selections, keeping each workspace address once. Different addresses remain distinct even if they return the same object.
-func (r *Artifacts) WithArtifacts(artifacts *Artifacts) *Artifacts {
-	assertNotNil("artifacts", artifacts)
-	q := r.query.Select("withArtifacts")
-	q = q.Arg("artifacts", artifacts)
-
-	return &Artifacts{
-		query:     q,
-		refetchID: r.refetchID,
-	}
-}
-
-// Remove artifacts selected by a DAG address.
+// Remove artifacts selected by a DAG address. Retain the collection view.
 func (r *Artifacts) WithoutURI(uri string) *Artifacts {
 	q := r.query.Select("withoutUri")
 	q = q.Arg("uri", uri)
@@ -3431,23 +3242,6 @@ func (r *CollectionTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *Collect
 		// must be reevaluated.
 		refetchID: true,
 	}
-}
-
-// The type of batch operations, or null when there are none.
-func (r *CollectionTypeDef) BatchType(ctx context.Context) (*TypeDef, error) {
-	q := r.query.Select("batchType")
-
-	q = q.Select("id")
-	var objectID *ID
-	if err := q.Bind(&objectID).Execute(ctx); err != nil {
-		return nil, err
-	}
-	if objectID == nil {
-		return nil, nil
-	}
-	return &TypeDef{
-		query: selectNode(q.Root(), *objectID, "TypeDef"),
-	}, nil
 }
 
 // A unique identifier for this CollectionTypeDef.

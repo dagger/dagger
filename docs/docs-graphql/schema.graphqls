@@ -642,29 +642,17 @@ type ArtifactPath implements Node {
   dimensions: [String!]!
 }
 
-type ArtifactResult implements Node {
-  """A unique identifier for this ArtifactResult."""
-  id: ID!
-
-  """The artifact that was evaluated."""
-  artifact: Artifact!
-
-  """The evaluation failure, if any."""
-  error: Error
-
-  """The evaluated value, or null when evaluation failed."""
-  value: Node
-}
-
 """
-An immutable selection of workspace artifacts. Listed types, dimensions, and
-keys use OR; chained filters use AND. Empty alternatives match nothing; unknown
-names match nothing but module load failures. Filters never change addresses or
-dimension identifiers. Module keys match a module's configured or kebab-case
-name. A module that failed to load has no schema, so its load failure stands in
-for whatever it would hold: a filter keeps it when the module could hold
-something the filter selects, and an exclusion drops it only by its own address,
-such as <module>/** or ?module=<module>.
+A selection of workspace artifacts and their immutable collection view.
+Collection key filters replace collection references with subsets. Static
+filters change only membership. Listed types, dimensions, and keys use OR;
+chained filters use AND. Empty alternatives match nothing; unknown names match
+nothing but module load failures. Filters never change addresses or dimension
+identifiers. Module keys match a module's configured or kebab-case name. A
+module that failed to load has no schema, so its load failure stands in for
+whatever it would hold: a filter keeps it when the module could hold something
+the filter selects, and an exclusion drops it only by its own address, such as
+<module>/** or ?module=<module>.
 """
 type Artifacts implements Node {
   """A unique identifier for this Artifacts."""
@@ -729,21 +717,6 @@ type Artifacts implements Node {
   """
   dimensionDefinitions: [ArtifactDimension!]!
 
-  """Evaluate the selection in parallel, retaining each result and error."""
-  values(
-    """Cancel remaining work after the first failure."""
-    failFast: Boolean = false
-
-    """Field arguments applied to each artifact, as a JSON object."""
-    arguments: JSON = "{}"
-
-    """
-    Evaluate at most this many artifacts at once on this engine; the rest wait.
-    Checks that scale out to cloud engines are not counted. 0 means no limit.
-    """
-    maxConcurrency: Int = 0
-  ): [ArtifactResult!]! @reevaluate
-
   """
   List the modules represented in this selection without evaluating artifact values.
   """
@@ -785,12 +758,8 @@ type Artifacts implements Node {
   ): Artifacts!
 
   """
-  Combine two selections, keeping each workspace address once. Different
-  addresses remain distinct even if they return the same object.
+  Remove artifacts selected by a DAG address. Retain the collection view.
   """
-  withArtifacts(artifacts: ID! @expectedType(name: "Artifacts")): Artifacts!
-
-  """Remove artifacts selected by a DAG address."""
   withoutUri(uri: String!): Artifacts!
 
   """Keep artifacts of any listed concrete GraphQL type."""
@@ -813,7 +782,11 @@ type Artifacts implements Node {
   """Keep artifacts selected through any listed dimension."""
   filterDimensions(dimensions: [String!]!): Artifacts!
 
-  """Keep artifacts with any listed key in this dimension."""
+  """
+  Keep artifacts with any listed key in this dimension. Replace collection
+  references with matching subsets. Skip absent keys and leave the source view
+  unchanged.
+  """
   filterDimensionKeys(dimension: String!, keys: [String!]!): Artifacts!
 
   """
@@ -846,7 +819,9 @@ type Artifacts implements Node {
   """
   dimensionItems(dimension: String!): [Artifact!]!
 
-  """Enumerate complete artifacts without evaluating their values."""
+  """
+  List artifact descriptions with their collection view. Discover collection keys without evaluating leaf values.
+  """
   items: [Artifact!]!
 
   """
@@ -1104,9 +1079,6 @@ type CollectionTypeDef implements Node {
 
   """The object type returned by get."""
   valueType: TypeDef!
-
-  """The type of batch operations, or null when there are none."""
-  batchType: TypeDef
 }
 
 """A command's arguments and execution settings."""
