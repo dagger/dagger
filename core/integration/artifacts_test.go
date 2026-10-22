@@ -36,7 +36,7 @@ settings.input = "dag://provider/marker"
 `).
 		WithNewFile("marker.txt", "original").
 		WithNewFile("provider/dagger-module.toml", `name = "provider"
-engineVersion = "v1.0.0"
+engineVersion = "v1.0.0-beta.20"
 [runtime]
 source = "dang"
 `).
@@ -58,7 +58,7 @@ type Docs {
   pub source: Directory! { directory.withNewFile("readme", "docs") }
 }`).
 		WithNewFile("consumer/dagger-module.toml", `name = "consumer"
-engineVersion = "v1.0.0"
+engineVersion = "v1.0.0-beta.20"
 [runtime]
 source = "dang"
 `).
@@ -321,11 +321,11 @@ func (ArtifactsSuite) TestFilterURI(ctx context.Context, t *testctx.T) {
 func failedModuleWorkspace(c *dagger.Client) *core.Directory {
 	return core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", "[modules.good]\nsource = \"./good\"\n[modules.staff]\nsource = \"./staff\"\n[modules.my_mod]\nsource = \"./my_mod\"\n").
-		WithNewFile("good/dagger-module.toml", "name = \"good\"\nengineVersion = \"v1.0.0\"\n[runtime]\nsource = \"dang\"\n").
+		WithNewFile("good/dagger-module.toml", "name = \"good\"\nengineVersion = \"v1.0.0-beta.20\"\n[runtime]\nsource = \"dang\"\n").
 		WithNewFile("good/main.dang", "type Good {\n  pub helper(base: LLM!): LLM! @agent { base }\n}\n").
-		WithNewFile("staff/dagger-module.toml", "name = \"staff\"\nengineVersion = \"v1.0.0\"\n[runtime]\nsource = \"dang\"\n").
+		WithNewFile("staff/dagger-module.toml", "name = \"staff\"\nengineVersion = \"v1.0.0-beta.20\"\n[runtime]\nsource = \"dang\"\n").
 		WithNewFile("staff/main.dang", "invalid source").
-		WithNewFile("my_mod/dagger-module.toml", "name = \"my_mod\"\nengineVersion = \"v1.0.0\"\n[runtime]\nsource = \"dang\"\n").
+		WithNewFile("my_mod/dagger-module.toml", "name = \"my_mod\"\nengineVersion = \"v1.0.0-beta.20\"\n[runtime]\nsource = \"dang\"\n").
 		WithNewFile("my_mod/main.dang", "invalid source")
 }
 
@@ -416,7 +416,7 @@ func (ArtifactsSuite) TestArtifactWorkspace(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	source := core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", "[modules.binder]\nsource = \"./binder\"\n").
-		WithNewFile("binder/dagger-module.toml", "name = \"binder\"\nengineVersion = \"v1.0.0\"\n[runtime]\nsource = \"dang\"\n").
+		WithNewFile("binder/dagger-module.toml", "name = \"binder\"\nengineVersion = \"v1.0.0-beta.20\"\n[runtime]\nsource = \"dang\"\n").
 		WithNewFile("binder/main.dang", `type Binder {
   pub docs: Directory! { directory.withNewFile("readme", "docs") }
   pub bound: Artifacts! { llm.withTools(currentNode).artifacts }
@@ -799,7 +799,7 @@ func (*Legacy) Output(ctx context.Context) (string, error) {
 func (ArtifactsSuite) TestExplicitMain(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := nativeWorkspaceBase(t, c).WithDirectory(".", artifactSource(c)).
-		WithNewFile("extra/dagger-module.toml", "name = \"extra\"\nengineVersion = \"v1.0.0\"\n[runtime]\nsource = \"dang\"\n").
+		WithNewFile("extra/dagger-module.toml", "name = \"extra\"\nengineVersion = \"v1.0.0-beta.20\"\n[runtime]\nsource = \"dang\"\n").
 		WithNewFile("extra/main.dang", `type Extra {
   pub base: Container! { container.withNewFile("/marker", "extra") }
 }`)
@@ -1140,7 +1140,7 @@ func (ArtifactsSuite) TestCheckReturnTypes(ctx context.Context, t *testctx.T) {
 source = "./example"
 main = true
 `).WithNewFile("example/dagger-module.toml", `name = "example"
-engineVersion = "v1.0.0"
+engineVersion = "v1.0.0-beta.20"
 [runtime]
 source = "dang"
 `).WithNewFile("example/main.dang", fmt.Sprintf("type Example { pub verify: %s @check { %s } }", tc.returnType, tc.body))
@@ -1174,7 +1174,7 @@ func (ArtifactsSuite) TestCheckProjection(ctx context.Context, t *testctx.T) {
 source = "./example"
 main = true
 `).WithNewFile("example/dagger-module.toml", `name = "example"
-engineVersion = "v1.0.0"
+engineVersion = "v1.0.0-beta.20"
 [runtime]
 source = "dang"
 `).WithNewFile("example/main.dang", `type Example {
@@ -1512,7 +1512,7 @@ func (ArtifactsSuite) TestCheckCachePolicy(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := nativeWorkspaceBase(t, c).
 		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"./probe\"\nmain = true\n").
-		WithNewFile("probe/dagger.json", `{"name":"probe","engineVersion":"v1.0.0","sdk":"go"}`).
+		WithNewFile("probe/dagger.json", `{"name":"probe","engineVersion":"v1.0.0-beta.20","sdk":"go"}`).
 		WithNewFile("probe/main.go", `package main
 import ("crypto/rand"; "fmt")
 type Probe struct{}
@@ -1568,7 +1568,7 @@ func (ArtifactsSuite) TestLazyValueFailures(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := nativeWorkspaceBase(t, c).
 		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"./probe\"\nmain = true\n").
-		WithNewFile("probe/dagger-module.toml", "name = \"probe\"\nengineVersion = \"v1.0.0\"\n[runtime]\nsource = \"dang\"\n").
+		WithNewFile("probe/dagger-module.toml", "name = \"probe\"\nengineVersion = \"v1.0.0-beta.20\"\n[runtime]\nsource = \"dang\"\n").
 		WithNewFile("probe/main.dang", `type Probe {
  pub brokenDirectory: Directory! { container.from("alpine:3.22").withExec(["sh", "-c", "exit 42"]).rootfs }
  pub brokenFile: File! { container.from("alpine:3.22").withExec(["sh", "-c", "exit 43"]).file("/missing") }
@@ -1627,7 +1627,7 @@ source = "./bad"
 main = true
 `).
 		WithNewFile("marker", "bound").
-		WithNewFile("good/dagger-module.toml", "name = \"good\"\nengineVersion = \"v1.0.0\"\n[runtime]\nsource = \"dang\"\n").
+		WithNewFile("good/dagger-module.toml", "name = \"good\"\nengineVersion = \"v1.0.0-beta.20\"\n[runtime]\nsource = \"dang\"\n").
 		WithNewFile("good/main.dang", `type Good {
  pub expected: String! = "default"
  pub verify(ws: Workspace!): Void @check {
@@ -1652,7 +1652,7 @@ main = true
  }
  pub fail: Void @check { raise "remote assertion" }
 }`).
-		WithNewFile("bad/dagger-module.toml", "name = \"bad\"\nengineVersion = \"v1.0.0\"\n[runtime]\nsource = \"dang\"\n").
+		WithNewFile("bad/dagger-module.toml", "name = \"bad\"\nengineVersion = \"v1.0.0-beta.20\"\n[runtime]\nsource = \"dang\"\n").
 		WithNewFile("bad/main.dang", "invalid source")
 	out, err := base.With(daggerNonNestedExec("check", "--scale-out", "dag://good/verify")).CombinedOutput(ctx)
 	require.NoError(t, err, out)
@@ -1746,7 +1746,7 @@ func (ArtifactsSuite) TestGeneratorCachePolicy(ctx context.Context, t *testctx.T
 	c := connect(ctx, t)
 	base := nativeWorkspaceBase(t, c).
 		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"./probe\"\nmain = true\n").
-		WithNewFile("probe/dagger.json", `{"name":"probe","engineVersion":"v1.0.0","sdk":"go"}`).
+		WithNewFile("probe/dagger.json", `{"name":"probe","engineVersion":"v1.0.0-beta.20","sdk":"go"}`).
 		WithNewFile("probe/main.go", `package main
 import ("crypto/rand"; "fmt"; "dagger/probe/internal/dagger")
 type Probe struct{}

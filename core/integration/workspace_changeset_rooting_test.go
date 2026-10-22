@@ -23,7 +23,7 @@ func (WorkspaceSuite) TestWorkspaceChangesetRooting(ctx context.Context, t *test
 	c := connect(ctx, t)
 
 	ctr := workspaceFixture(t, c, "changeset-rooting").
-		WithNewFile("app/dagger.json", `{"name":"app","engineVersion":"v1.0.0","sdk":{"source":"dang"},"source":"."}`).
+		WithNewFile("app/dagger.json", `{"name":"app","engineVersion":"v1.0.0-beta.20","sdk":{"source":"dang"},"source":"."}`).
 		WithWorkdir("/work/app")
 
 	t.Run("generated context changesets remain context-measured", func(ctx context.Context, t *testctx.T) {

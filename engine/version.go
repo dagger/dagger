@@ -111,7 +111,7 @@ func cleanVersion(v string) string {
 	return v
 }
 
-// Compatibility gating compares *base* versions — prerelease and build
+// Minimum-version gating compares *base* versions — prerelease and build
 // metadata stripped (see BaseVersion) — NOT strict semver precedence.
 //
 // Why: dev builds carry a prerelease suffix (e.g. "v0.2.0-dev-<commit>"). Under
@@ -136,8 +136,17 @@ func CheckVersionCompatibility(version string, minVersion string) bool {
 	return semver.Compare(BaseVersion(version), BaseVersion(minVersion)) >= 0
 }
 
-func CheckMaxVersionCompatibility(version string, maxVersion string) bool {
-	return semver.Compare(BaseVersion(version), BaseVersion(maxVersion)) <= 0
+// CheckMaxAPIViewCompatibility reports whether an engine at maxVersion serves
+// the API a module declaring version asks for: whether the module's API view
+// (APIViewVersion) is not past the engine's.
+//
+// It compares views, not base versions, so prereleases from
+// PrereleaseViewsVersion on are ordered: a v1.0.0-beta.21 engine refuses a
+// module declaring v1.0.0-beta.22, or v1.0.0, whose API it doesn't have. Dev
+// builds still share their release's view, so two dev builds of a version
+// accept each other's modules.
+func CheckMaxAPIViewCompatibility(version string, maxVersion string) bool {
+	return semver.Compare(APIViewVersion(version), APIViewVersion(maxVersion)) <= 0
 }
 
 func NormalizeVersion(version string) string {
@@ -158,12 +167,72 @@ func NormalizeVersion(version string) string {
 	}
 }
 
+// PrereleaseViewsVersion is the first release whose API view keeps its
+// prerelease (see APIViewVersion). It is frozen once released: moving it
+// would change the view, and so the schema and cache keys, of every caller
+// declaring a version between the old and new value.
+const PrereleaseViewsVersion = "v1.0.0-beta.21"
+
+// basePrereleaseView is the API view of every v1.0.0 prerelease before
+// PrereleaseViewsVersion: v1.0.0-0, v1.0.0-beta.1 to v1.0.0-beta.20, and so
+// on. Those callers all got the v1.0.0 view before views kept prereleases, so
+// they keep sharing one view; v1.0.0 itself is now the release's view. It is
+// the last release before PrereleaseViewsVersion, so it sorts above every
+// view gate set while views dropped prereleases (the newest is
+// v1.0.0-beta.17) and below every gate at PrereleaseViewsVersion or later.
+const basePrereleaseView = "v1.0.0-beta.20"
+
+// IdentifierCasingVersion is the first engine version with the identifier
+// casing rules: new module naming rules and the renamed core API (e.g.
+// GitCommit.shortSHA). Gate on it with a view filter,
+// View(AfterVersion(engine.IdentifierCasingVersion)) and
+// View(BeforeVersion(engine.IdentifierCasingVersion)), in a resolver with
+// core.Supports(ctx, engine.IdentifierCasingVersion), and for a declared
+// version outside a call with APIVersionAtLeast.
+//
+// It must not be older than PrereleaseViewsVersion: earlier prereleases share
+// one view, which a gate cannot split.
+const IdentifierCasingVersion = "v1.0.0-beta.21"
+
 // APIViewVersion returns the API view for a client or module that declares
-// version. Views are base-version granular: every prerelease of a version,
-// such as v1.0.0-beta.12 and v1.0.0-beta.15, shares that version's view, so a
-// view gate cannot tell prereleases of the same version apart.
+// version.
+//
+// From PrereleaseViewsVersion on, a view keeps the declared prerelease, so a
+// view gate such as AfterVersion("v1.0.0-beta.21") tells v1.0.0-beta.21 and
+// later apart from earlier prereleases, and orders them before v1.0.0. Build
+// metadata is dropped, and so is a dev build's prerelease (any prerelease
+// mentioning "dev", e.g. v1.0.0-dev-<commit>): dev builds of a version share
+// its release's view, and are past every prerelease gate of that version.
+//
+// Before PrereleaseViewsVersion, views are base-version granular, as they
+// always were: every prerelease of a version shares that version's view.
+// The exception is v1.0.0, whose release view is now distinct: its earlier
+// prereleases share basePrereleaseView instead.
 func APIViewVersion(version string) string {
-	return BaseVersion(NormalizeVersion(version))
+	version = NormalizeVersion(version)
+	version = strings.TrimSuffix(version, semver.Build(version))
+	pre := semver.Prerelease(version)
+	switch {
+	case pre == "":
+		return version
+	case strings.Contains(pre, "dev"):
+		return BaseVersion(version)
+	case semver.Compare(version, PrereleaseViewsVersion) >= 0:
+		return version
+	case BaseVersion(version) == BaseVersion(PrereleaseViewsVersion):
+		return basePrereleaseView
+	default:
+		return BaseVersion(version)
+	}
+}
+
+// APIVersionAtLeast reports whether a client or module that declares
+// version gets the API of minVersion or later: whether its API view
+// (APIViewVersion) is at or past minVersion, comparing prereleases. It is a
+// view gate, AfterVersion(minVersion), for a declared version that is not
+// carried by a call, such as a module's engineVersion.
+func APIVersionAtLeast(version, minVersion string) bool {
+	return semver.Compare(APIViewVersion(version), minVersion) >= 0
 }
 
 func BaseVersion(version string) string {

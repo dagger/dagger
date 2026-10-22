@@ -10,15 +10,63 @@ Dagger serves a schema view for each module based on that module's configured
 `engineVersion`. A module pinned to an older engine version should see the API
 surface that existed for that version, even when running on a newer engine.
 
-Views are base-version granular. `engine.APIViewVersion` drops the prerelease
-and build suffixes, so every prerelease of a version shares that version's view:
-modules and clients declaring `v1.0.0-beta.12`, `v1.0.0-beta.15`, or
-`v1.0.0-0` all get the `v1.0.0` view. A view gate at a prerelease boundary such
-as `AfterVersion("v1.0.0-beta.15")` therefore cannot separate earlier betas
-from later ones; it behaves exactly like `AfterVersion("v1.0.0-0")`. When
-behavior must differ between prereleases, compare the caller's exact declared
-engine version instead, as `callerPastChangesetCwdCutover` in
-`core/schema/workspace.go` does.
+`engine.APIViewVersion` maps a declared version to its view:
+
+- Releases keep their own view (`v0.21.6`, `v1.0.0`). Build metadata is
+  dropped.
+- From `engine.PrereleaseViewsVersion` (`v1.0.0-beta.21`) on, a prerelease
+  keeps its own view: `v1.0.0-beta.21`, `v1.0.0-beta.22`, `v1.0.0-rc.1`. View
+  gates compare views with strict semver, so these order before `v1.0.0` and
+  after each other, and a gate at `AfterVersion("v1.0.0-beta.22")` separates
+  beta.21 callers from later ones.
+- Every v1.0.0 prerelease before that (`v1.0.0-0`, `v1.0.0-beta.1` through
+  `v1.0.0-beta.20`) shares the `v1.0.0-beta.20` view. These callers all got the
+  `v1.0.0` view while views dropped prereleases, and `v1.0.0-beta.20` is past
+  every gate set in that time (the newest is `v1.0.0-beta.17`), so their API is
+  unchanged. No gate can tell them apart; when behavior must differ between
+  them, compare the caller's exact declared engine version instead, as
+  `callerPastChangesetCwdCutover` in `core/schema/workspace.go` does.
+- Prereleases of other versions before the cut keep dropping the prerelease
+  (`v0.21.0-rc1` gets `v0.21.0`).
+- Dev builds drop the prerelease (any prerelease mentioning `dev`, e.g.
+  `v1.0.0-dev-<commit>` gets `v1.0.0`), so they share their release's view and
+  pass every prerelease gate of it. Dev builds from `main` declare the next
+  release from `internal/version/VERSION`, e.g. `v1.0.0-beta.21`, and get that
+  view.
+
+`__schemaVersion` echoes the view, so it reports `v1.0.0-beta.20` for a caller
+declaring `v1.0.0-beta.19` or `v1.0.0-0`. SDK codegens compare it with strict
+semver (e.g. nullable objects from `v1.0.0-beta.10`); the shared view keeps
+those checks unchanged for pre-cut callers.
+
+Clients and modules get their view from the same mapping. A module's view is
+that of the `engineVersion` it declares; an engine refuses to load a module
+whose view is past its own (`engine.CheckMaxAPIViewCompatibility`), so a
+v1.0.0-beta.21 engine refuses modules declaring `v1.0.0-beta.22` or `v1.0.0`.
+Dev builds share their release's view, so they accept any module of their
+version. In-repo fixtures must not declare bare `v1.0.0`: a dev engine built
+from `main` is a prerelease, and refuses them.
+
+A client's version is that of the dagger CLI that starts its session
+(`dagger session --version` overrides it), or the engine's for a nested client,
+not of the SDK release it was generated with: an SDK client locked to a beta.20
+SDK and run under a beta.21 CLI gets the beta.21 view.
+
+`engine.IdentifierCasingVersion` (`v1.0.0-beta.21`) is the cut for the
+identifier casing changes. Gate on it like any version:
+`View(AfterVersion(engine.IdentifierCasingVersion))`,
+`View(BeforeVersion(engine.IdentifierCasingVersion))`,
+`core.Supports(ctx, engine.IdentifierCasingVersion)`, and
+`engine.APIVersionAtLeast(declared, engine.IdentifierCasingVersion)` for a
+declared version that is not carried by a call, such as a module's
+`engineVersion`.
+
+The view is only part of a call's identity, and so of its cache key, when the
+field has a view filter (any `.View(...)`, including `AllVersion`). A resolver
+whose result depends on the caller's version (through `core.Supports`,
+`core.CallerView`, or the server's view) must be view-scoped, or callers on
+either side of a gate share one cached result. Each view from the cut on is a
+separate cache key for view-scoped calls; callers before it share one.
 
 The view is carried by dagql calls and IDs, and codegen consumes introspection
 for that view. That means a new public API leaking into an old view can change
@@ -55,9 +103,12 @@ When adding a public field, argument, type, enum value, scalar, input object, or
 interface:
 
 1. Decide the first module engine version that should see it.
-2. Gate new future API with `View(AfterVersion("<version>"))`. For unreleased
-   v1 API surface, the current pattern is `AfterVersion("v1.0.0-0")`; a later
-   v1.0.0 prerelease boundary would not change which callers see it.
+2. Gate new future API with `View(AfterVersion("<version>"))`, the next
+   release from `internal/version/VERSION` (e.g. `v1.0.0-beta.22`). From
+   `engine.PrereleaseViewsVersion` on, a prerelease boundary separates the
+   callers before and after it. Do not gate at a v1.0.0 prerelease before it:
+   those callers share one view. Do not gate at bare `v1.0.0` unless the API
+   is for the release only: under strict semver every beta is older.
    In tests, build views from declared versions with `engine.APIViewVersion`,
    not raw prerelease strings, so they match what callers actually get.
 3. If replacing old shape with new shape, gate the legacy shape with
@@ -100,13 +151,17 @@ give that module a v1 engine view in `dagger.json`:
 ```json
 {
   "name": "example",
-  "engineVersion": "v1.0.0",
+  "engineVersion": "v1.0.0-beta.20",
   "sdk": {"source": "dang"}
 }
 ```
 
-A prerelease `engineVersion` such as `v1.0.0-beta.12` gets the same `v1.0.0`
-view, so it does not select an older slice of the v1 API. Do not leave a fixture pinned to `v0.21.x` if it
+A module declaring a v1.0.0 prerelease before `v1.0.0-beta.21`, such as
+`v1.0.0-beta.12` or `v1.0.0-0`, gets the shared `v1.0.0-beta.20` view, which
+has the whole v1 API gated before the cut. A fixture that exercises API gated
+at the cut or later must declare a prerelease at or past it, such as
+`v1.0.0-beta.21`. Do not declare bare `v1.0.0`: prerelease engines refuse it.
+Do not leave a fixture pinned to `v0.21.x` if it
 uses v1-only workspace fields; it may fail before the test reaches its
 assertions because SDK/runtime generation uses the older schema view.
 

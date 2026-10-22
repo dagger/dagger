@@ -2758,10 +2758,10 @@ const changesetCwdCutover = "v1.0.0-beta.10"
 
 // callerPastChangesetCwdCutover reports whether the calling module declares
 // an engine version at or past the cwd cutover. The schema view cannot carry
-// this decision — views are base-version granular, so v1.0.0-beta.7 and the
-// cutover both collapse to the v1.0.0 view — hence the exact declared
-// version decides. Callers that are not module code (the CLI, SDK clients,
-// tests) always get the new behavior.
+// this decision — every v1.0.0 prerelease before engine.PrereleaseViewsVersion
+// shares one view, so v1.0.0-beta.7 and the cutover can't be told apart —
+// hence the exact declared version decides. Callers that are not module code
+// (the CLI, SDK clients, tests) always get the new behavior.
 //
 // Call this at resolver entry: some resolvers swap in another client's
 // metadata mid-flight, which would change the answer.
