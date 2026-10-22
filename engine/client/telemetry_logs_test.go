@@ -107,6 +107,7 @@ func TestLogsPresenceNegotiation(t *testing.T) {
 		name                  string
 		ask, cloud, publishes bool
 		features              string
+		noIngest, nested      bool
 		wantPresence          bool
 	}{
 		{name: "asked and served", ask: true, features: "log-presence", wantPresence: true},
@@ -115,6 +116,10 @@ func TestLogsPresenceNegotiation(t *testing.T) {
 		{name: "engine publishes to cloud", ask: true, cloud: true, publishes: true, features: "log-presence", wantPresence: true},
 		// The client would forward logs to Cloud itself, which needs them whole.
 		{name: "engine did not confirm cloud", ask: true, cloud: true, features: "log-presence"},
+		// The store would lack the client's own display text, which the
+		// frontend then reads from it too.
+		{name: "engine does not store client telemetry", ask: true, features: "log-presence", noIngest: true},
+		{name: "nested client", ask: true, features: "log-presence", nested: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var logsQuery string
@@ -128,6 +133,9 @@ func TestLogsPresenceNegotiation(t *testing.T) {
 				if tc.publishes {
 					w.Header().Set(engine.CloudTelemetryPublisherHeader, engine.CloudTelemetryPublisherEngine)
 				}
+				if !tc.noIngest {
+					w.Header().Set(engine.ClientTelemetryIngestHeader, engine.ClientTelemetryIngestStore)
+				}
 				w.Header().Set("Content-Type", enginetel.LiveContentType)
 				_ = enginetel.WriteLiveHello(w, 0)
 				_ = enginetel.WriteLiveTerminal(w, 0)
@@ -140,6 +148,9 @@ func TestLogsPresenceNegotiation(t *testing.T) {
 					EngineCloudTelemetry: tc.cloud,
 				},
 				telemetry: new(errgroup.Group),
+			}
+			if tc.nested {
+				c.nestedSessionPort = 1234
 			}
 			hc := &httpClient{inner: &http.Client{Transport: handlerTransport{handler}}}
 			require.NoError(t, c.exportTraces(t.Context(), hc))
