@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -282,8 +283,11 @@ func (s *session) handleUpload(env protocol.Envelope) {
 }
 
 // upload PUTs the blobs the service asked for, and answers the upload. At
-// most UploadConcurrency PUTs run at a time across all the exports.
+// most UploadConcurrency PUTs run at a time across all the exports. Each
+// blob's line logs how long it queued for a slot, from the request's arrival,
+// and how long its PUT took.
 func (s *session) upload(ctx context.Context, env protocol.Envelope, blobs BlobSource) error {
+	received := time.Now()
 	var req protocol.Upload
 	if err := env.Decode(&req); err != nil {
 		return s.replyError(env, err)
@@ -300,11 +304,14 @@ func (s *session) upload(ctx context.Context, env protocol.Envelope, blobs BlobS
 			wg.Wait()
 			return context.Cause(ctx)
 		}
+		queued := time.Since(received)
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			defer func() { <-s.uploadSlots }()
-			err := s.uploadBlob(ctx, blobs, dgst, address)
+			start := time.Now()
+			size, err := s.uploadBlob(ctx, blobs, dgst, address)
+			s.logUpload(ctx, req.ExportID, dgst, size, queued, time.Since(start), err)
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
@@ -321,13 +328,31 @@ func (s *session) upload(ctx context.Context, env protocol.Envelope, blobs BlobS
 	return s.reply(env, protocol.TypeUploaded, reply)
 }
 
-func (s *session) uploadBlob(ctx context.Context, blobs BlobSource, dgst digest.Digest, address string) error {
+// uploadBlob PUTs one blob, and returns its size once it is read.
+func (s *session) uploadBlob(ctx context.Context, blobs BlobSource, dgst digest.Digest, address string) (int64, error) {
 	body, size, err := blobs.ReadBlob(ctx, dgst)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer body.Close()
-	return s.cfg.put(ctx, address, body, size)
+	return size, s.cfg.put(ctx, address, body, size)
+}
+
+// logUpload logs one blob's upload. It never logs the address, which carries
+// a signature; put's errors never include it.
+func (s *session) logUpload(ctx context.Context, exportID string, dgst digest.Digest, size int64, queued, duration time.Duration, err error) {
+	level, outcome := slog.LevelInfo, "ok"
+	switch {
+	case context.Cause(ctx) != nil:
+		level, outcome = slog.LevelWarn, "canceled"
+	case err != nil:
+		level, outcome = slog.LevelWarn, "error"
+	}
+	args := []any{"export", exportID, "digest", dgst.String(), "bytes", size, "queued", queued, "duration", duration, "outcome", outcome}
+	if err != nil {
+		args = append(args, "error", err.Error())
+	}
+	s.cfg.Logger.Log(ctx, level, "remote cache blob uploaded", args...)
 }
 
 func (s *session) handleMerge(env protocol.Envelope) {
