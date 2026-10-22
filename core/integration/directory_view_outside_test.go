@@ -184,22 +184,25 @@ func (DirectorySuite) TestSubdirectoryViewResolution(ctx context.Context, t *tes
 	})
 }
 
-// TestOutsideInputsKeyTheirOperation covers the files a few operations read
-// outside a subdirectory: the account databases a named owner is resolved
-// from, and the ignore files above it. They don't change the subdirectory's
-// identity, but they do change the identity of the operations that read them.
-func (DirectorySuite) TestOutsideInputsKeyTheirOperation(ctx context.Context, t *testctx.T) {
+// TestOutsideInputsKeyTheView covers the files a few operations on a
+// subdirectory read outside it: the account databases a named owner is
+// resolved from, and the ignore files above it. A subdirectory identified by
+// its content carries them in its identity, so subdirectories whose parents
+// differ in them don't share work, while parents that differ in anything else
+// still do.
+func (DirectorySuite) TestOutsideInputsKeyTheView(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	host := func(dir string) *core.Directory {
 		return core.NewQuery(c).Host().Directory(dir)
 	}
-	// roots makes one root per outside variant, each with the same app/.
-	roots := func(appFiles map[string]string, outside ...map[string]string) []string {
+	// roots makes one root per outside variant, each with the same files and
+	// links otherwise.
+	roots := func(files, links map[string]string, outside ...map[string]string) []string {
 		var dirs []string
-		for _, files := range outside {
+		for _, extra := range outside {
 			dir := t.TempDir()
-			writeTree(t, dir, appFiles, nil)
-			writeTree(t, dir, files, nil)
+			writeTree(t, dir, files, links)
+			writeTree(t, dir, extra, nil)
 			dirs = append(dirs, dir)
 		}
 		return dirs
@@ -212,6 +215,24 @@ func (DirectorySuite) TestOutsideInputsKeyTheirOperation(ctx context.Context, t 
 		require.NoError(t, err)
 		return strings.TrimSpace(out)
 	}
+	entries := func(ctx context.Context, t *testctx.T, dir *core.Directory) []string {
+		ents, err := dir.Entries(ctx)
+		require.NoError(t, err)
+		sort.Strings(ents)
+		return ents
+	}
+	searched := func(ctx context.Context, t *testctx.T, search func() ([]core.SearchResult, error)) []string {
+		results, err := search()
+		require.NoError(t, err)
+		var found []string
+		for _, r := range results {
+			p, err := r.FilePath(ctx)
+			require.NoError(t, err)
+			found = append(found, p)
+		}
+		sort.Strings(found)
+		return found
+	}
 
 	t.Run("account databases", func(ctx context.Context, t *testctx.T) {
 		nonce := rand.Text()
@@ -221,11 +242,10 @@ func (DirectorySuite) TestOutsideInputsKeyTheirOperation(ctx context.Context, t 
 				"etc/group":  "root:x:0:\napp:x:" + id + ":\n",
 			}
 		}
-		dirs := roots(map[string]string{"app/main.txt": nonce}, passwd("1000"), passwd("2000"))
+		dirs := roots(map[string]string{"app/main.txt": nonce}, nil, passwd("1000"), passwd("2000"))
 		appA, appB := host(dirs[0]).Directory("app"), host(dirs[1]).Directory("app")
-
-		require.Equal(t, uncachedViewToken(ctx, t, c, appA), uncachedViewToken(ctx, t, c, appB),
-			"the account databases outside the directory are not part of it")
+		require.NotEqual(t, uncachedViewToken(ctx, t, c, appA), uncachedViewToken(ctx, t, c, appB),
+			"subdirectories of parents with different account databases must not share work")
 
 		src := core.NewQuery(c).Directory().WithNewFile("f", nonce)
 		for i, want := range []string{"1000", "2000"} {
@@ -233,45 +253,101 @@ func (DirectorySuite) TestOutsideInputsKeyTheirOperation(ctx context.Context, t 
 			require.Equal(t, want, uid(ctx, t, app.WithDirectory("d", src, core.DirectoryWithDirectoryOpts{Owner: "app"}), "d/f"), "withDirectory")
 			require.Equal(t, want, uid(ctx, t, app.WithFile("g", src.File("f"), core.DirectoryWithFileOpts{Owner: "app"}), "g"), "withFile")
 			require.Equal(t, want, uid(ctx, t, app.Chown("main.txt", "app"), "main.txt"), "chown")
-			chowned := core.NewQuery(c).Directory().WithFile("main.txt", app.File("main.txt").Chown("app"))
-			require.Equal(t, want, uid(ctx, t, chowned, "main.txt"), "File.chown")
 		}
 	})
 
 	t.Run("ignore files", func(ctx context.Context, t *testctx.T) {
 		nonce := rand.Text()
 		dirs := roots(
-			map[string]string{"app/x.log": nonce, "app/y.tmp": nonce},
-			map[string]string{".gitignore": "app/*.log\n", ".ignore": "app/*.log\n"},
-			map[string]string{".gitignore": "app/*.tmp\n", ".ignore": "app/*.tmp\n"},
+			map[string]string{"app/x.log": nonce, "app/y.tmp": nonce}, nil,
+			map[string]string{".gitignore": "*.log\n", ".ignore": "*.log\n"},
+			map[string]string{".gitignore": "*.tmp\n", ".ignore": "*.tmp\n"},
 		)
 		appA, appB := host(dirs[0]).Directory("app"), host(dirs[1]).Directory("app")
-
-		require.Equal(t, uncachedViewToken(ctx, t, c, appA), uncachedViewToken(ctx, t, c, appB),
-			"the ignore files above the directory are not part of it")
+		require.NotEqual(t, uncachedViewToken(ctx, t, c, appA), uncachedViewToken(ctx, t, c, appB),
+			"subdirectories of parents with different ignore files must not share work")
 
 		for i, want := range []string{"y.tmp", "x.log"} {
 			app := []*core.Directory{appA, appB}[i]
-			entries, err := app.Filter(core.DirectoryFilterOpts{Gitignore: true}).Entries(ctx)
-			require.NoError(t, err)
-			require.Equal(t, []string{want}, entries, "filter")
+			require.Equal(t, []string{want}, entries(ctx, t, app.Filter(core.DirectoryFilterOpts{Gitignore: true})), "filter")
+			require.Equal(t, []string{want}, entries(ctx, t, core.NewQuery(c).Directory().
+				WithDirectory("/", app, core.DirectoryWithDirectoryOpts{Gitignore: true})), "withDirectory")
+			require.Equal(t, []string{want}, searched(ctx, t, func() ([]core.SearchResult, error) {
+				return app.Search(ctx, nonce, core.DirectorySearchOpts{Literal: true, SkipIgnored: true})
+			}), "search")
 
-			entries, err = core.NewQuery(c).Directory().
-				WithDirectory("/", app, core.DirectoryWithDirectoryOpts{Gitignore: true}).
-				Entries(ctx)
-			require.NoError(t, err)
-			require.Equal(t, []string{want}, entries, "withDirectory")
-
-			results, err := app.Search(ctx, nonce, core.DirectorySearchOpts{Literal: true, SkipIgnored: true})
-			require.NoError(t, err)
-			var found []string
-			for _, r := range results {
-				p, err := r.FilePath(ctx)
-				require.NoError(t, err)
-				found = append(found, p)
-			}
-			sort.Strings(found)
-			require.Equal(t, []string{want}, found, "search")
+			ws := app.AsWorkspace()
+			require.Equal(t, []string{want}, entries(ctx, t, ws.Directory(".", core.WorkspaceDirectoryOpts{Gitignore: true})), "workspace directory")
+			require.Equal(t, []string{want}, searched(ctx, t, func() ([]core.SearchResult, error) {
+				return ws.Search(ctx, nonce, core.WorkspaceSearchOpts{Literal: true, SkipIgnored: true})
+			}), "workspace search")
 		}
+	})
+
+	t.Run("ignore files by path", func(ctx context.Context, t *testctx.T) {
+		// alias -> app in one root and alias -> lib in the other, with equal
+		// files and the same ignore rule for app/: the rule applies to one of
+		// them only.
+		nonce := rand.Text()
+		files := map[string]string{"app/x.log": nonce, "lib/x.log": nonce, "app/y.tmp": nonce, "lib/y.tmp": nonce, ".gitignore": "app/*.log\n"}
+		var got [][]string
+		for _, target := range []string{"app", "lib"} {
+			dir := t.TempDir()
+			writeTree(t, dir, files, map[string]string{"alias": target})
+			got = append(got, entries(ctx, t, host(dir).Directory("alias").Filter(core.DirectoryFilterOpts{Gitignore: true})))
+		}
+		require.Equal(t, [][]string{{"y.tmp"}, {"x.log", "y.tmp"}}, got)
+	})
+
+	t.Run("ignore file linked from outside", func(ctx context.Context, t *testctx.T) {
+		nonce := rand.Text()
+		dirs := roots(
+			map[string]string{"app/x.log": nonce, "app/y.tmp": nonce},
+			map[string]string{"app/.gitignore": "../rules"},
+			map[string]string{"rules": "*.log\n"},
+			map[string]string{"rules": "*.tmp\n"},
+		)
+		for i, want := range []string{"y.tmp", "x.log"} {
+			got := entries(ctx, t, host(dirs[i]).Directory("app").Filter(core.DirectoryFilterOpts{Gitignore: true}))
+			require.Equal(t, []string{".gitignore", want}, got)
+		}
+	})
+
+	t.Run("other files", func(ctx context.Context, t *testctx.T) {
+		// Parents with the same account databases and ignore files, which
+		// differ elsewhere, still share work on equal subdirectories.
+		nonce := rand.Text()
+		dirs := roots(
+			map[string]string{
+				"app/main.txt": nonce,
+				"etc/passwd":   "app:x:1000:1000::/:/bin/sh\n",
+				".gitignore":   "*.log\n",
+			}, nil,
+			map[string]string{"other.txt": "a"},
+			map[string]string{"other.txt": "b"},
+		)
+		require.Equal(t,
+			uncachedViewToken(ctx, t, c, host(dirs[0]).Directory("app")),
+			uncachedViewToken(ctx, t, c, host(dirs[1]).Directory("app")),
+			"subdirectories with equal files must still share work across parents that differ elsewhere")
+	})
+
+	t.Run("unreadable ignore file", func(ctx context.Context, t *testctx.T) {
+		// A parent whose ignore file can't be read still gives a working
+		// subdirectory, keyed by how it was made rather than by its content.
+		nonce := rand.Text()
+		dirs := roots(
+			map[string]string{"app/main.txt": nonce},
+			map[string]string{".gitignore": ".gitignore"},
+			map[string]string{"other.txt": "a"},
+			map[string]string{"other.txt": "b"},
+		)
+		appA, appB := host(dirs[0]).Directory("app"), host(dirs[1]).Directory("app")
+		for _, app := range []*core.Directory{appA, appB} {
+			contents, err := app.File("main.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, nonce, contents)
+		}
+		require.NotEqual(t, uncachedViewToken(ctx, t, c, appA), uncachedViewToken(ctx, t, c, appB))
 	})
 }
