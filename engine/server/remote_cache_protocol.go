@@ -378,7 +378,9 @@ func (a *RemoteCacheAdapter) Merge(ctx context.Context, req protocol.Merge) (pro
 		"committed", reply.Committed,
 		"commitHold", reply.CommitHold,
 		"duration", time.Since(start),
-		"error", err)
+		"error", err,
+		"generation", reply.Generation,
+		"engine_time", reply.EngineTimeUnixNano)
 	if !reply.Committed {
 		return protocol.Merged{}, err
 	}

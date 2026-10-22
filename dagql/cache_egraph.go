@@ -602,19 +602,28 @@ type lookupMatch struct {
 	// cache-evidence hit provenance (CacheHitRouteRecipe/Digest/Structural).
 	// Purely observational: candidate gathering and selection are unchanged.
 	route CacheHitRoute
-	// sawExpired records that expiry dropped at least one otherwise-matching
-	// result during candidate accumulation (cache-evidence miss fact).
-	sawExpired bool
+	// expired records what expiry dropped during candidate accumulation
+	// (cache-evidence miss facts).
+	expired expirySeen
+}
+
+// expirySeen records that expiry dropped at least one otherwise-matching
+// result during candidate accumulation, and whether one of them was a value a
+// Cloud merge installed. Cache-evidence miss facts only: candidate gathering
+// is unchanged.
+type expirySeen struct {
+	any    bool
+	remote bool
 }
 
 func newSharedResultSet() *set.TreeSet[*sharedResult] {
 	return set.NewTreeSet(compareSharedResults)
 }
 
-// sawExpired, when non-nil, is set to true if expiry drops at least one
-// otherwise-matching result during accumulation (cache-evidence miss fact);
-// candidate gathering itself is unchanged.
-func (c *Cache) appendDigestResultsLocked(candidates *set.TreeSet[*sharedResult], dig digest.Digest, nowUnix int64, sawExpired *bool) {
+// expired, when non-nil, records the results expiry drops during
+// accumulation (cache-evidence miss facts); candidate gathering itself is
+// unchanged.
+func (c *Cache) appendDigestResultsLocked(candidates *set.TreeSet[*sharedResult], dig digest.Digest, nowUnix int64, expired *expirySeen) {
 	if dig == "" {
 		return
 	}
@@ -623,7 +632,7 @@ func (c *Cache) appendDigestResultsLocked(candidates *set.TreeSet[*sharedResult]
 		return
 	}
 	for resID := range resultSet.Items() {
-		if res := c.servableCandidateLocked(resID, nowUnix, sawExpired); res != nil {
+		if res := c.servableCandidateLocked(resID, nowUnix, expired); res != nil {
 			candidates.Insert(res)
 		}
 	}
@@ -643,8 +652,8 @@ func (c *Cache) appendOutputEqClassResultsLocked(candidates *set.TreeSet[*shared
 }
 
 // servableCandidateLocked returns the result lookup may serve for resID, or
-// nil. sawExpired is set as in appendDigestResultsLocked.
-func (c *Cache) servableCandidateLocked(resID sharedResultID, nowUnix int64, sawExpired *bool) *sharedResult {
+// nil. expired is filled as in appendDigestResultsLocked.
+func (c *Cache) servableCandidateLocked(resID sharedResultID, nowUnix int64, expired *expirySeen) *sharedResult {
 	res := c.resultsByID[resID]
 	if res == nil {
 		return nil
@@ -657,22 +666,23 @@ func (c *Cache) servableCandidateLocked(resID sharedResultID, nowUnix int64, saw
 		return nil
 	}
 	if c.resultExpiredAtLocked(res, nowUnix) {
-		if sawExpired != nil {
-			*sawExpired = true
+		if expired != nil {
+			expired.any = true
+			expired.remote = expired.remote || res.imported
 		}
 		return nil
 	}
 	return res
 }
 
-func (c *Cache) appendTermSetResultsLocked(candidates *set.TreeSet[*sharedResult], termSet *set.TreeSet[egraphTermID], nowUnix int64, sawExpired *bool) {
+func (c *Cache) appendTermSetResultsLocked(candidates *set.TreeSet[*sharedResult], termSet *set.TreeSet[egraphTermID], nowUnix int64, expired *expirySeen) {
 	if termSet == nil {
 		return
 	}
 
 	for termID := range termSet.Items() {
 		for resID := range c.termResults[termID] {
-			if res := c.servableCandidateLocked(resID, nowUnix, sawExpired); res != nil {
+			if res := c.servableCandidateLocked(resID, nowUnix, expired); res != nil {
 				candidates.Insert(res)
 			}
 		}
@@ -696,7 +706,7 @@ func (c *Cache) appendTermSetResultsLocked(candidates *set.TreeSet[*sharedResult
 		}
 		seenOutputEqClasses[outputEqID] = struct{}{}
 		for dig := range c.eqClassToDigests[outputEqID] {
-			c.appendDigestResultsLocked(candidates, digest.Digest(dig), nowUnix, sawExpired)
+			c.appendDigestResultsLocked(candidates, digest.Digest(dig), nowUnix, expired)
 		}
 	}
 }
@@ -762,7 +772,7 @@ func (c *Cache) lookupMatchForDigestsLocked(recipeDigest digest.Digest, extraDig
 	}
 
 	candidates := newSharedResultSet()
-	c.appendDigestResultsLocked(candidates, recipeDigest, nowUnix, &match.sawExpired)
+	c.appendDigestResultsLocked(candidates, recipeDigest, nowUnix, &match.expired)
 	if !candidates.Empty() {
 		match.candidates = candidates
 		match.hitRecipeDigest = true
@@ -770,7 +780,7 @@ func (c *Cache) lookupMatchForDigestsLocked(recipeDigest digest.Digest, extraDig
 		return match
 	}
 	for _, extra := range extraDigests {
-		c.appendDigestResultsLocked(candidates, extra.Digest, nowUnix, &match.sawExpired)
+		c.appendDigestResultsLocked(candidates, extra.Digest, nowUnix, &match.expired)
 	}
 	if !candidates.Empty() {
 		match.candidates = candidates
@@ -826,13 +836,26 @@ func (c *Cache) lookupMatchForCallLocked(
 			match.termSetSize = termSet.Size()
 		}
 		candidates := newSharedResultSet()
-		c.appendTermSetResultsLocked(candidates, termSet, nowUnix, &match.sawExpired)
+		c.appendTermSetResultsLocked(candidates, termSet, nowUnix, &match.expired)
 		if !candidates.Empty() {
 			match.candidates = candidates
 			match.route = CacheHitRouteStructural
 		}
 	}
 	return match
+}
+
+// freshInputsLocked returns the indices of the input classes that are the
+// input of no term: no term can match while one of them is, so they are the
+// inputs new to the cache. nil when there are none. Requires egraphMu.
+func (c *Cache) freshInputsLocked(inputEqIDs []eqClassID) []int {
+	var fresh []int
+	for i, id := range inputEqIDs {
+		if len(c.inputEqClassToTerms[id]) == 0 {
+			fresh = append(fresh, i)
+		}
+	}
+	return fresh
 }
 
 func (c *Cache) indexResultDigestsLocked(res *sharedResult, requestFrame, responseFrame *ResultCall) error {
@@ -976,13 +999,24 @@ func (c *Cache) lookupCacheForRequestLocked(
 			ev.HitRemote = hitRes.imported
 			ev.HitMergedAtUnixNano = hitRes.mergedAtUnixNano
 		} else {
-			ev.MissSawExpired = match.sawExpired
+			ev.MissSawExpired = match.expired.any
+			ev.MissExpiredRemote = match.expired.remote
 			// Expiry is applied during accumulation, so a non-empty candidate
 			// set on a miss means every surviving candidate failed the
 			// session-resource filter.
 			ev.MissIncompatibleCandidates = match.candidates != nil && !match.candidates.Empty()
+			if ev.MissIncompatibleCandidates {
+				for res := range match.candidates.Items() {
+					if res.imported {
+						ev.MissIncompatibleRemote = true
+						break
+					}
+				}
+			}
 			if !match.primaryLookupPossible {
 				ev.MissUnknownInputIndex = match.missingInputIndex
+			} else {
+				ev.MissFreshInputs = c.freshInputsLocked(match.inputEqIDs)
 			}
 		}
 	}
