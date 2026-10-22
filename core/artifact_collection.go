@@ -216,10 +216,7 @@ func (a *Artifacts) resolveTypeKeys() error {
 			full := []string{key}
 			// A full path names itself, so a stored address stays exact.
 			if !slices.ContainsFunc(candidates, func(path artifact.Path) bool { return path.Key == key }) {
-				matches, err := artifact.ResolveTypeKey(candidates, a.dimensionDisplayName(filter.Dimension), key)
-				if err != nil {
-					return err
-				}
+				matches := artifact.ResolveTypeKey(candidates, key)
 				if len(matches) > 0 {
 					full = matches
 				}
