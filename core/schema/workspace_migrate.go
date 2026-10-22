@@ -212,7 +212,7 @@ func (s *workspaceSchema) workspaceMigrationGitignoreCleanups(
 	if err != nil {
 		return nil, fmt.Errorf("prepare legacy .gitignore cleanup: %w", err)
 	}
-	rootDir, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, false)
+	rootDir, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, true)
 	if err != nil {
 		return nil, err
 	}
@@ -376,7 +376,7 @@ func (s *workspaceSchema) workspaceMigrationCompatWorkspaces(
 			"**/.git",
 			"**/.git/**",
 		},
-	}, false)
+	}, true)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -727,7 +727,7 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 	ctx, span := core.Tracer(ctx).Start(ctx, "build migration changeset", workspaceMigrationWrapperSpanOpts(ctx)...)
 	defer telemetry.EndWithCause(span, &rerr)
 
-	baseDir, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, false)
+	baseDir, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, true)
 	if err != nil {
 		return changes, err
 	}

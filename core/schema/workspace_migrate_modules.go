@@ -90,7 +90,7 @@ func (s *workspaceSchema) stageWorkspaceMigration(ctx context.Context, ws *core.
 			}
 			return stage, nil
 		}
-		stage.base, err = s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, false)
+		stage.base, err = s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, true)
 		if err != nil {
 			return nil, err
 		}
@@ -177,7 +177,7 @@ func (s *workspaceSchema) migrateModule(ctx context.Context, ws *core.Workspace,
 	if ws.HostPath() == "" {
 		return nil, fmt.Errorf("module migration is local-only")
 	}
-	base, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, false)
+	base, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, true)
 	if err != nil {
 		return nil, err
 	}
