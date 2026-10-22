@@ -212,7 +212,13 @@ type persistedEdge struct {
 // (DeclinePersistence). An older engine reading a newer store drops the mark
 // when it saves, and a declined value would then gain a retention edge from
 // its next persistable hit, so stores of another version are wiped on import.
-const cachePersistenceSchemaVersion = "23"
+//
+// 24: API views keep prereleases from v1.0.0-beta.21 on
+// (engine.APIViewVersion). Older stores recorded the view "v1.0.0" for every
+// v1.0.0 prerelease caller, which now names the release's view, past every
+// prerelease gate: their results and IDs would be read against API their
+// callers never had.
+const cachePersistenceSchemaVersion = "24"
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 var ErrCacheSessionReleased = errors.New("cache session released")
