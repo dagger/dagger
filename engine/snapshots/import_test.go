@@ -126,24 +126,31 @@ func TestExportChainStats(t *testing.T) {
 	require.Zero(t, second.Stats.BlobBytes)
 }
 
-// A merged snapshot's layer is counted as merged when it is diffed; a plain
-// chain's never is.
+// A snapshot labelled as merged has its layer counted as merged when it is
+// diffed; a plain chain's never is. The labels are the merge-usage ones a merge,
+// a diff application or CommitWithUsage writes (merge.go withMergeUsage); a
+// real merge's diff application needs mount privileges these stores lack.
 func TestExportChainMergedStats(t *testing.T) {
 	ctx := context.Background()
 	store := testutil.NewStore(t)
-	a, _ := store.Build(t, nil, "a.txt", "merged a")
-	b, _ := store.Build(t, nil, "b.txt", "merged b")
+	a, _ := store.Build(t, nil, "a.txt", "plain a")
 	plain := exportChain(t, a)
-	exportChain(t, b)
 	require.Zero(t, plain.Stats.LayersMerged)
-	merged, err := store.Manager.Merge(ctx, []bkcache.ImmutableRef{a, b})
+	b, _ := store.Build(t, nil, "b.txt", "labelled b")
+	_, err := store.Snapshots.Update(ctx, ctdsnapshots.Info{
+		Name: b.SnapshotID(),
+		Labels: map[string]string{
+			"buildkit.mergeUsageSize":   "4096",
+			"buildkit.mergeUsageInodes": "1",
+		},
+	}, "labels.buildkit.mergeUsageSize", "labels.buildkit.mergeUsageInodes")
 	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, merged.Release(context.Background())) })
-	chain := exportChain(t, merged)
+	chain := exportChain(t, b)
 	require.Len(t, chain.Layers, 1)
 	require.Equal(t, 1, chain.Stats.LayersMerged)
 	require.Equal(t, chain.Layers[0].Descriptor.Size, chain.Stats.MergedBlobBytes)
-	require.Positive(t, chain.Stats.MergedRawBytes)
+	// The export reads a labelled snapshot's usage from its labels.
+	require.Equal(t, int64(4096), chain.Stats.MergedRawBytes)
 	require.Positive(t, chain.Stats.MergedDiffTime)
 }
 
