@@ -42,6 +42,27 @@ type Config struct {
 
 	// Shutdown configures how the engine stops.
 	Shutdown ShutdownConfig `json:"shutdown,omitempty"`
+
+	// CacheVolumes configures where the engine keeps cache volumes.
+	CacheVolumes CacheVolumesConfig `json:"cacheVolumes,omitempty"`
+}
+
+type CacheVolumesConfig struct {
+	// Dir, when set, keeps every cache volume as a plain directory under this
+	// absolute path, apart from the engine's snapshots, instead of as a
+	// snapshot. Another engine given the same directory later reuses its
+	// volumes. One engine uses the directory at a time: an engine that finds
+	// it in use keeps cache volumes as snapshots. It must not be inside the
+	// engine's worker state directory.
+	Dir string `json:"dir,omitempty"`
+
+	// KeepDuration keeps volumes used more recently than this from garbage
+	// collection.
+	KeepDuration Duration `json:"keepDuration,omitempty"`
+
+	// GCSpace bounds the directory's disk use. Unset values default from the
+	// directory's own filesystem, as the engine's defaults do for its state.
+	GCSpace
 }
 
 type ShutdownConfig struct {

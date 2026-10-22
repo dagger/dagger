@@ -31,6 +31,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/cachevolumedir"
 	"github.com/dagger/dagger/engine/config"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	containerdsnapshot "github.com/dagger/dagger/engine/snapshots/containerd"
@@ -133,6 +134,11 @@ type Server struct {
 	localContentStore    content.Store
 	contentStore         *containerdsnapshot.Store
 	builtinContentStore  content.Store
+
+	// cacheVolumeDir is the cache volume directory this engine owns, when
+	// cache volumes are directories (cacheVolumes.dir); nil otherwise.
+	cacheVolumeDir  *cachevolumedir.Store
+	cacheVolumesCfg config.CacheVolumesConfig
 
 	snapshotter        ctdsnapshot.Snapshotter
 	snapshotterMDStore *storage.MetaStore // only set for overlay snapshotter right now
@@ -307,6 +313,9 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		return nil, err
 	}
 	logStateFilesystem(srv.rootDir)
+	if err := srv.initCacheVolumeDir(cfg.CacheVolumes); err != nil {
+		return nil, err
+	}
 
 	// Opened before the local cache state: the snapshot manager takes the
 	// builtin store at construction, for chain imports of builtin layers.
@@ -1052,6 +1061,10 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 			}
 		})
 	}
+
+	stopPhase("close cache volume directory", func() {
+		err = errors.Join(err, srv.closeCacheVolumeDir())
+	})
 
 	cleanCacheClose := false
 	if srv.engineCache != nil {

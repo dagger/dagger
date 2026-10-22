@@ -4,16 +4,39 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
+	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"syscall"
 
+	"github.com/containerd/containerd/v2/core/mount"
+	ctrdfs "github.com/containerd/continuity/fs"
+	"github.com/dagger/dagger/engine/cachevolumedir"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
+	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 )
+
+// cacheVolumeDir is the engine's cache volume directory when it keeps cache
+// volumes there instead of as snapshots (cacheVolumes.dir). One engine = one
+// Server, so a process-global is sufficient, as for SetWorkspaceInvalidator.
+var cacheVolumeDir atomic.Pointer[cachevolumedir.Store]
+
+// SetCacheVolumeDir makes cache volumes directories in store; nil keeps them
+// as snapshots.
+func SetCacheVolumeDir(store *cachevolumedir.Store) {
+	cacheVolumeDir.Store(store)
+}
+
+func currentCacheVolumeDir() *cachevolumedir.Store {
+	return cacheVolumeDir.Load()
+}
 
 // CacheVolume is a persistent volume with a globally scoped identifier.
 type CacheVolume struct {
@@ -469,6 +492,13 @@ func (cache *CacheVolume) InitializeSnapshot(ctx context.Context) error {
 	if cache.snapshot != nil {
 		return nil
 	}
+	if currentCacheVolumeDir() != nil {
+		// The volume is a directory, made and pinned when an exec mounts
+		// it (lockMountedCaches). A snapshot persisted before the engine
+		// kept volumes there stays owned by this value until the value is
+		// pruned, but isn't used.
+		return nil
+	}
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -499,60 +529,9 @@ func (cache *CacheVolume) InitializeSnapshot(ctx context.Context) error {
 		return nil
 	}
 
-	var source dagql.ObjectResult[*Directory]
-	if cache.Source.Valid {
-		source = cache.Source.Value
-	}
-
-	if cache.Owner != "" {
-		if source.Self() == nil {
-			srv, err := CurrentDagqlServer(ctx)
-			if err != nil {
-				return err
-			}
-			if err := srv.Select(ctx, srv.Root(), &source, dagql.Selector{Field: "directory"}); err != nil {
-				return fmt.Errorf("failed to create scratch source directory for cache owner: %w", err)
-			}
-		}
-
-		srv, err := CurrentDagqlServer(ctx)
-		if err != nil {
-			return err
-		}
-		chowned := dagql.ObjectResult[*Directory]{}
-		if err := srv.Select(ctx, source, &chowned, dagql.Selector{
-			Field: "chown",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(".")},
-				{Name: "owner", Value: dagql.String(cache.Owner)},
-			},
-		}); err != nil {
-			return fmt.Errorf("failed to chown cache source directory: %w", err)
-		}
-		source = chowned
-	}
-
-	sourceSelector := "/"
-	var sourceRef bkcache.ImmutableRef
-	if source.Self() != nil {
-		dagCache, err := dagql.EngineCache(ctx)
-		if err != nil {
-			return err
-		}
-		if err := dagCache.Evaluate(ctx, source); err != nil {
-			return fmt.Errorf("evaluate cache source directory: %w", err)
-		}
-		sourceSelector, err = source.Self().Dir.GetOrEval(ctx, source.Result)
-		if err != nil {
-			return fmt.Errorf("failed to get cache source selector: %w", err)
-		}
-		if sourceSelector == "" {
-			sourceSelector = "/"
-		}
-		sourceRef, err = source.Self().Snapshot.GetOrEval(ctx, source.Result)
-		if err != nil {
-			return fmt.Errorf("failed to get cache source snapshot: %w", err)
-		}
+	sourceRef, sourceSelector, err := cache.sourceSnapshot(ctx)
+	if err != nil {
+		return err
 	}
 
 	newRef, err := query.SnapshotManager().New(
@@ -578,6 +557,132 @@ func (cache *CacheVolume) InitializeSnapshot(ctx context.Context) error {
 	}
 	cache.selector = sourceSelector
 	return nil
+}
+
+// sourceSnapshot is the snapshot a new volume starts from, and the selected
+// path within it: the source directory, chowned to the owner if one is set
+// (an empty directory chowned, for an owner with no source). It is nil when
+// the volume has neither.
+func (cache *CacheVolume) sourceSnapshot(ctx context.Context) (bkcache.ImmutableRef, string, error) {
+	var source dagql.ObjectResult[*Directory]
+	if cache.Source.Valid {
+		source = cache.Source.Value
+	}
+
+	if cache.Owner != "" {
+		if source.Self() == nil {
+			srv, err := CurrentDagqlServer(ctx)
+			if err != nil {
+				return nil, "", err
+			}
+			if err := srv.Select(ctx, srv.Root(), &source, dagql.Selector{Field: "directory"}); err != nil {
+				return nil, "", fmt.Errorf("failed to create scratch source directory for cache owner: %w", err)
+			}
+		}
+
+		srv, err := CurrentDagqlServer(ctx)
+		if err != nil {
+			return nil, "", err
+		}
+		chowned := dagql.ObjectResult[*Directory]{}
+		if err := srv.Select(ctx, source, &chowned, dagql.Selector{
+			Field: "chown",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(".")},
+				{Name: "owner", Value: dagql.String(cache.Owner)},
+			},
+		}); err != nil {
+			return nil, "", fmt.Errorf("failed to chown cache source directory: %w", err)
+		}
+		source = chowned
+	}
+
+	sourceSelector := "/"
+	var sourceRef bkcache.ImmutableRef
+	if source.Self() != nil {
+		dagCache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return nil, "", err
+		}
+		if err := dagCache.Evaluate(ctx, source); err != nil {
+			return nil, "", fmt.Errorf("evaluate cache source directory: %w", err)
+		}
+		sourceSelector, err = source.Self().Dir.GetOrEval(ctx, source.Result)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to get cache source selector: %w", err)
+		}
+		if sourceSelector == "" {
+			sourceSelector = "/"
+		}
+		sourceRef, err = source.Self().Snapshot.GetOrEval(ctx, source.Result)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to get cache source snapshot: %w", err)
+		}
+	}
+	return sourceRef, sourceSelector, nil
+}
+
+// dirIdentity is the volume's identity in the cache volume directory: the same
+// fields that name its lock, with the source as its recipe digest, which is
+// the same in every engine, where its ID is an engine-local handle.
+func (cache *CacheVolume) dirIdentity(ctx context.Context) (cachevolumedir.Identity, error) {
+	sharing := cache.Sharing
+	if sharing == "" {
+		sharing = CacheSharingModeShared
+	}
+	ident := cachevolumedir.Identity{
+		Namespace: cache.Namespace,
+		Key:       cache.Key,
+		Sharing:   string(sharing),
+		Owner:     cache.Owner,
+	}
+	if cache.Source.Valid && cache.Source.Value.Self() != nil {
+		dgst, err := cache.Source.Value.RecipeDigest(ctx)
+		if err != nil {
+			return ident, fmt.Errorf("cache volume %q source recipe digest: %w", cache.Key, err)
+		}
+		ident.Source = dgst.String()
+	}
+	return ident, nil
+}
+
+// populateDir fills a new directory-backed volume as InitializeSnapshot starts
+// a snapshot: with the selected subtree of its (chowned) source, the root
+// taking that subtree's mode and owner. With neither source nor owner the
+// directory stays empty.
+func (cache *CacheVolume) populateDir(ctx context.Context, fsDir string) error {
+	sourceRef, selector, err := cache.sourceSnapshot(ctx)
+	if err != nil {
+		return err
+	}
+	if sourceRef == nil {
+		return nil
+	}
+	return MountRef(ctx, sourceRef, func(root string, _ *mount.Mount) error {
+		src, err := ctrdfs.RootPath(root, selector)
+		if err != nil {
+			return fmt.Errorf("resolve cache volume source %q: %w", selector, err)
+		}
+		if err := fscopy.Copy(ctx, root, selector, fsDir, "/", fscopy.WithCopyInfo(fscopy.CopyInfo{
+			CopyDirContents:                true,
+			AlwaysReplaceExistingDestPaths: true,
+		})); err != nil {
+			return fmt.Errorf("copy cache volume source: %w", err)
+		}
+		info, err := os.Lstat(src)
+		if err != nil {
+			return fmt.Errorf("stat cache volume source: %w", err)
+		}
+		if st, ok := info.Sys().(*syscall.Stat_t); ok {
+			if err := os.Lchown(fsDir, int(st.Uid), int(st.Gid)); err != nil {
+				return fmt.Errorf("chown cache volume root: %w", err)
+			}
+		}
+		if err := os.Chmod(fsDir, info.Mode()&(fs.ModePerm|fs.ModeSetuid|fs.ModeSetgid|fs.ModeSticky)); err != nil {
+			return fmt.Errorf("chmod cache volume root: %w", err)
+		}
+		return nil
+	}, mountRefAsReadOnly)
 }
 
 type CacheSharingMode string

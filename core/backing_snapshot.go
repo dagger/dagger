@@ -67,6 +67,10 @@ func EnsureBackingSnapshot[T lateBackingSnapshot](ctx context.Context, row dagql
 }
 
 func (cache *CacheVolume) ensureBackingSnapshot(ctx context.Context) (bool, func(context.Context) error, error) {
+	if currentCacheVolumeDir() != nil {
+		// A directory-backed volume has no snapshot to own.
+		return false, nil, nil
+	}
 	cache.mu.Lock()
 	opened := cache.snapshot == nil
 	created := opened && cache.snapshotID == ""

@@ -67,8 +67,9 @@ type Identity struct {
 	Sharing   string `json:"sharing,omitempty"`
 	Owner     string `json:"owner,omitempty"`
 	// Source is the recipe digest of the volume's source directory, or empty.
-	Source   string `json:"source,omitempty"`
-	Selector string `json:"selector,omitempty"`
+	// The recipe includes which subdirectory of its parent the source is, so
+	// the identity needs no separate selector.
+	Source string `json:"source,omitempty"`
 }
 
 // ID is the volume's directory name: the hex SHA-256 of the identity's
@@ -83,8 +84,7 @@ func (id Identity) ID() string {
 		Sharing   string `json:"sharing"`
 		Owner     string `json:"owner"`
 		Source    string `json:"source"`
-		Selector  string `json:"selector"`
-	}{FormatVersion, id.Namespace, id.Key, id.Sharing, id.Owner, id.Source, id.Selector})
+	}{FormatVersion, id.Namespace, id.Key, id.Sharing, id.Owner, id.Source})
 	if err != nil {
 		// Marshaling a struct of strings can't fail.
 		panic(err)
@@ -348,6 +348,19 @@ func (s *Store) create(ctx context.Context, ident Identity, populate func(ctx co
 		return fmt.Errorf("publish cache volume %s: %w", id, err)
 	}
 	return nil
+}
+
+// PinnedPath is the contents directory of a volume this process has pinned.
+// Mounting it is safe while the pin is held; it is an error to ask for a
+// volume that isn't pinned, since nothing then keeps it from being removed.
+func (s *Store) PinnedPath(ident Identity) (string, error) {
+	id := ident.ID()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if st := s.pins[id]; st == nil || st.count == 0 {
+		return "", fmt.Errorf("cache volume %q (%s) is not pinned", ident.Key, id)
+	}
+	return filepath.Join(s.volumeDir(id), fsName), nil
 }
 
 // Entry describes one volume in the directory.
