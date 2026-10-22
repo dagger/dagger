@@ -2598,6 +2598,9 @@ type sharedResult struct {
 	// for one restored after a restart. It goes with the value. Guarded by
 	// egraphMu.
 	mergedAtUnixNano int64
+	// remoteLookupWait is the last wait of an evaluation of the entry for a
+	// remote lookup's merge (cache_remote_lookup.go), or nil.
+	remoteLookupWait atomic.Pointer[remoteLookupWait]
 	// storedParts are the parts whose layer chains are in this cache's own
 	// blob store, by part address key. Only a blob-backed cache (the Cloud)
 	// sets them. Guarded by egraphMu.
@@ -6026,7 +6029,9 @@ func (c *Cache) getOrInitCallInner(
 		c.captureSessionResultInstallSpan(ctx, sessionID, hitRes)
 		return hitRes, nil
 	}
-	c.noteRemoteMiss(req, callDigest)
+	if lookup := c.noteRemoteMiss(req, callDigest); ev != nil {
+		ev.MissRemoteLookup = lookup
+	}
 
 	c.callsMu.Lock()
 	if c.ongoingCalls == nil {

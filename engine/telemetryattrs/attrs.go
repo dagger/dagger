@@ -670,6 +670,13 @@ const (
 	// of the call span that produced it.
 	CacheMissFreshInputsAttr = "dagger.io/cache.miss.fresh_inputs"
 
+	// CacheMissRemoteLookupAttr (executed misses only) is what the miss did
+	// about asking the remote cache service for the call's value: "queued"
+	// when it queued a lookup, "asked" when the call's recipe was already
+	// asked for on the engine's connection, "dropped" when the lookup queue
+	// was full. Absent when no connection serves lookups.
+	CacheMissRemoteLookupAttr = "dagger.io/cache.miss.remote_lookup"
+
 	// CacheAdoptedAttr ("true", executed and joined calls, absent otherwise)
 	// records that the publication of the call's value adopted its recipe's
 	// live current entry instead: the call ran, its new value was released,
@@ -693,6 +700,17 @@ const (
 	// in decimal-string absolute Unix nanoseconds (in memory only).
 	CacheValueRemoteAttr   = "dagger.io/cache.value.remote"
 	CacheValueMergedAtAttr = "dagger.io/cache.value.merged_at_unix_ns"
+
+	// CacheRemoteLookupWaitedAttr (on a lazy-evaluation span, absent unless a
+	// wait ran) is how long an evaluation of the entry waited, before its
+	// attempt, for a merge a remote lookup's answer named as carrying the
+	// entry's value, in decimal-string nanoseconds; the entry's last wait.
+	// CacheRemoteLookupWaitOutcomeAttr is how that wait ended: "merged" (the
+	// merge ended on the engine), "deadline", "disconnected" (the connection
+	// that would carry it ended), "detached" (the remote cache integration
+	// stopped) or "canceled" (the evaluation's caller gave up).
+	CacheRemoteLookupWaitedAttr      = "dagger.io/cache.remote_lookup.waited_ns"
+	CacheRemoteLookupWaitOutcomeAttr = "dagger.io/cache.remote_lookup.wait_outcome"
 
 	// CacheSelfDigestAttr is the engine-derived structural self digest of the
 	// call: the operation, its literal arguments (sensitive values redacted),

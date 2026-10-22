@@ -323,6 +323,9 @@ func recordCacheEvidence(ctx context.Context, span trace.Span, ev *dagql.CacheDe
 			attrs = append(attrs, attribute.String(telemetryattrs.CacheMissRequirementsGrewAttr, "true"))
 		}
 		attrs = appendRemoteMissAttrs(attrs, ev)
+		if ev.MissRemoteLookup != "" {
+			attrs = append(attrs, attribute.String(telemetryattrs.CacheMissRemoteLookupAttr, ev.MissRemoteLookup))
+		}
 	}
 	attrs = appendAdoptionAttrs(attrs, ev)
 	if ev.LookupAtUnixNano != 0 {

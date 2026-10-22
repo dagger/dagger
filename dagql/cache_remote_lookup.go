@@ -31,6 +31,18 @@ const (
 	remoteLookupMaxExtras = 8
 )
 
+// What a miss did about a remote lookup, as its evidence records it
+// (CacheDecision.MissRemoteLookup).
+const (
+	// RemoteLookupQueued: the miss queued a lookup.
+	RemoteLookupQueued = "queued"
+	// RemoteLookupAsked: the call's recipe was already asked for on the
+	// connection.
+	RemoteLookupAsked = "asked"
+	// RemoteLookupDropped: the lookup queue was full.
+	RemoteLookupDropped = "dropped"
+)
+
 // How a merge an evaluation waits for ended (RemoteMergeWait.Outcome).
 const (
 	// RemoteMergeMerged: the merge ended on the engine, its parts admitted
@@ -66,6 +78,13 @@ func (w *RemoteMergeWait) Done() <-chan struct{} { return w.done }
 
 // Outcome is how the wait ended, once Done has closed.
 func (w *RemoteMergeWait) Outcome() string { return w.outcome }
+
+// remoteLookupWait is an evaluation's wait for a remote lookup's merge, as
+// the entry's lazy-evaluation span reports it.
+type remoteLookupWait struct {
+	waited  time.Duration
+	outcome string
+}
 
 // RemoteMiss is a call the cache missed, as a remote lookup names it: its
 // recipe digest, then the extra digests the cache's own lookup tries.
@@ -137,20 +156,21 @@ func (b *RemoteCacheBridge) StopRemoteLookups() {
 }
 
 // noteRemoteMiss queues a miss, unless its recipe was asked for already on
-// this connection. A full queue drops it, and counts it.
-func (b *RemoteCacheBridge) noteRemoteMiss(miss RemoteMiss) {
+// this connection. A full queue drops it, and counts it. It returns what it
+// did, or "" when no connection serves lookups.
+func (b *RemoteCacheBridge) noteRemoteMiss(miss RemoteMiss) string {
 	l := &b.lookups
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.closed || !l.on.Load() {
-		return
+		return ""
 	}
 	if _, ok := l.asked[miss.Recipe]; ok {
-		return
+		return RemoteLookupAsked
 	}
 	if len(l.queue) >= remoteLookupQueueCapacity {
 		l.dropped++
-		return
+		return RemoteLookupDropped
 	}
 	if len(l.asked) >= remoteLookupAskedCapacity {
 		clear(l.asked)
@@ -161,6 +181,7 @@ func (b *RemoteCacheBridge) noteRemoteMiss(miss RemoteMiss) {
 	case l.notify <- struct{}{}:
 	default:
 	}
+	return RemoteLookupQueued
 }
 
 // TakeRemoteMisses waits for queued misses and takes at most limit of them.
@@ -286,12 +307,12 @@ func (l *remoteLookups) close() {
 }
 
 // noteRemoteMiss queues a call's lookup miss for the remote cache service,
-// when a connection serves lookups. It runs after the lookup, with no lock
-// held.
-func (c *Cache) noteRemoteMiss(req *CallRequest, recipe digest.Digest) {
+// when a connection serves lookups, and returns what it did (RemoteLookup*),
+// or "". It runs after the lookup, with no lock held.
+func (c *Cache) noteRemoteMiss(req *CallRequest, recipe digest.Digest) string {
 	b := c.partContentSource.attachedBridge()
 	if b == nil || !b.lookups.on.Load() || recipe == "" || req.ListItem {
-		return
+		return ""
 	}
 	miss := RemoteMiss{Recipe: recipe, Field: req.ResultCall.Field}
 	for _, extra := range req.ResultCall.ExtraDigests {
@@ -302,7 +323,7 @@ func (c *Cache) noteRemoteMiss(req *CallRequest, recipe digest.Digest) {
 			miss.Extra = append(miss.Extra, extra.Digest)
 		}
 	}
-	b.noteRemoteMiss(miss)
+	return b.noteRemoteMiss(miss)
 }
 
 // awaitRemoteMerge waits, before an evaluation, for a merge expected to
@@ -342,9 +363,11 @@ func (c *Cache) awaitRemoteMerge(ctx context.Context, shared *sharedResult) {
 	case <-ctx.Done():
 		outcome = "canceled"
 	}
+	waited := time.Since(start)
+	shared.remoteLookupWait.Store(&remoteLookupWait{waited: waited, outcome: outcome})
 	slog.InfoContext(ctx, "remote cache lookup wait",
 		"entry", uint64(shared.id),
 		"recipe", recipe.String(),
-		"waited", time.Since(start),
+		"waited", waited,
 		"outcome", outcome)
 }

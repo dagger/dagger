@@ -207,6 +207,9 @@ type lazySpanCacheState struct {
 	// mergedAt when that merge committed (0 when unknown).
 	remote   bool
 	mergedAt int64
+	// lookupWait is the entry's last wait for a remote lookup's merge, or
+	// nil.
+	lookupWait *remoteLookupWait
 }
 
 // lazySpanCacheState reads the state a lazy op span reports for row once its
@@ -226,6 +229,7 @@ func (c *Cache) lazySpanCacheState(ctx context.Context, row *sharedResult, frame
 	state.replacements = row.replacements
 	state.remote = row.imported
 	state.mergedAt = row.mergedAtUnixNano
+	state.lookupWait = row.remoteLookupWait.Load()
 	return state
 }
 
@@ -268,6 +272,12 @@ func endOTelLazyOp(span trace.Span, isResume bool, sharedID sharedResultID, part
 			if cacheState.mergedAt != 0 {
 				span.SetAttributes(attribute.String(telemetryattrs.CacheValueMergedAtAttr, strconv.FormatInt(cacheState.mergedAt, 10)))
 			}
+		}
+		if wait := cacheState.lookupWait; wait != nil {
+			span.SetAttributes(
+				attribute.String(telemetryattrs.CacheRemoteLookupWaitedAttr, strconv.FormatInt(wait.waited.Nanoseconds(), 10)),
+				attribute.String(telemetryattrs.CacheRemoteLookupWaitOutcomeAttr, wait.outcome),
+			)
 		}
 	}
 	if storedPart != "" && *errPtr == nil {
