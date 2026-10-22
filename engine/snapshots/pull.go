@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/diff"
@@ -61,7 +62,7 @@ func (cm *snapshotManager) ImportImage(
 	}()
 
 	for _, layer := range img.Layers {
-		next, err := cm.importLayer(ctx, layer, current, nil, opts, false)
+		next, err := cm.importLayer(ctx, layer, current, nil, opts, false, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -146,6 +147,7 @@ func (cm *snapshotManager) importLayer(
 	provider content.Provider,
 	opts ImportImageOpts,
 	chainMode bool,
+	timing *ImportTiming,
 ) (ImmutableRef, error) {
 	diffID, err := diffIDFromDescriptor(desc)
 	if err != nil {
@@ -158,7 +160,11 @@ func (cm *snapshotManager) importLayer(
 	}
 
 	lockKey := importedLayerDiffLockKey(parentSnapshotID, diffID)
+	waitStart := timing.now()
 	unlock, err := cm.importLayerLocker.acquire(ctx, lockKey)
+	if timing != nil {
+		timing.LayerWait += time.Since(waitStart)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -209,7 +215,12 @@ func (cm *snapshotManager) importLayer(
 		cm.mu.Unlock()
 	}
 
-	if err := cm.importLayerContent(ctx, desc, provider, chainMode); err != nil {
+	fetchStart := timing.now()
+	err = cm.importLayerContent(ctx, desc, provider, chainMode)
+	if timing != nil {
+		timing.Fetch += time.Since(fetchStart)
+	}
+	if err != nil {
 		return nil, err
 	}
 	if parent != nil {
@@ -251,7 +262,12 @@ func (cm *snapshotManager) importLayer(
 			unpack.Update(read)
 		}))
 	}
-	if _, err := cm.Applier.Apply(ctx, desc, mounts, applyOpts...); err != nil {
+	applyStart := timing.now()
+	_, err = cm.Applier.Apply(ctx, desc, mounts, applyOpts...)
+	if timing != nil {
+		timing.Apply += time.Since(applyStart)
+	}
+	if err != nil {
 		_ = unmount()
 		return nil, chainError(ctx, chainMode, desc, "apply", err)
 	}

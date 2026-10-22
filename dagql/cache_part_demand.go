@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 	"sync/atomic"
+	"time"
 
 	"github.com/dagger/dagger/engine"
 	"golang.org/x/sync/errgroup"
@@ -149,7 +150,7 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 	if err != nil {
 		return err
 	}
-	demand := &PartDemandState{target: clonePartAddress(address)}
+	demand := &PartDemandState{target: clonePartAddress(address), started: time.Now()}
 	ctx = context.WithValue(ctx, partDemandContextKey{}, demand)
 	outer := partReselectWatch{loop: "demandPart"}
 	for {
