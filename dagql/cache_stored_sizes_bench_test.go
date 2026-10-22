@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"testing"
 	"time"
 
@@ -149,34 +150,48 @@ func storedSizesBenchForget(c *Cache) {
 	}
 }
 
-// storedSizesBenchLongestHold measures each root alone, in order, and returns
-// the longest: StoredSizes holds egraphMu.RLock for the whole of each root's
-// walk, and a root measured alone walks all of its closure.
-func storedSizesBenchLongestHold(b *testing.B, ctx context.Context, c *Cache, roots []uint64, held *HeldBy) time.Duration {
+// storedSizesBenchHolds are the holds of egraphMu StoredSizes took.
+type storedSizesBenchHolds []time.Duration
+
+// report reports the holds' median, 99th percentile and longest.
+func (holds storedSizesBenchHolds) report(b *testing.B) {
 	b.Helper()
-	var longest time.Duration
-	for _, root := range roots {
-		start := time.Now()
-		_, err := c.StoredSizes(ctx, []uint64{root}, held)
-		require.NoError(b, err)
-		if d := time.Since(start); d > longest {
-			longest = d
-		}
+	if len(holds) == 0 {
+		return
 	}
-	return longest
+	slices.Sort(holds)
+	b.ReportMetric(float64(holds[len(holds)/2].Nanoseconds()), "p50-hold-ns")
+	b.ReportMetric(float64(holds[len(holds)*99/100].Nanoseconds()), "p99-hold-ns")
+	b.ReportMetric(float64(holds[len(holds)-1].Nanoseconds()), "longest-hold-ns")
+}
+
+// storedSizesBenchTrackHolds records every hold of egraphMu that StoredSizes
+// takes, until the returned function stops it and returns them.
+func storedSizesBenchTrackHolds(c *Cache) func() storedSizesBenchHolds {
+	var holds storedSizesBenchHolds
+	c.testStoredSizesHold = func(hold time.Duration) {
+		holds = append(holds, hold)
+	}
+	return func() storedSizesBenchHolds {
+		c.testStoredSizesHold = nil
+		return holds
+	}
 }
 
 // BenchmarkStoredSizesAtScale measures StoredSizes over the pool: a first
 // call over every root after a restart, with no recipient (cold-all), and the
 // service's preflight of 64 and 9 consecutive roots for one engine cache,
 // once the sizes are measured, over the roots that cache doesn't hold
-// (warm-64, warm-9). Each reports the longest
-// single root's measure, which bounds a hold of the graph lock.
+// (warm-64, warm-9), and the same 64 with MeasuredStoredSizes
+// (measured-64). Each reports the median, 99th percentile and longest of
+// its holds of the graph lock, and the values it measured.
 func BenchmarkStoredSizesAtScale(b *testing.B) {
 	ctx, cloud, roots := storedSizesBenchCloud(b)
 
 	b.Run("cold-all", func(b *testing.B) {
 		var records int
+		stop := storedSizesBenchTrackHolds(cloud)
+		encodes := cloud.StoredSizeEncodes()
 		for range b.N {
 			b.StopTimer()
 			storedSizesBenchForget(cloud)
@@ -190,13 +205,17 @@ func BenchmarkStoredSizesAtScale(b *testing.B) {
 			}
 		}
 		b.StopTimer()
-		storedSizesBenchForget(cloud)
 		b.ReportMetric(float64(records), "records")
-		b.ReportMetric(float64(storedSizesBenchLongestHold(b, ctx, cloud, roots, nil).Nanoseconds()), "longest-hold-ns")
+		b.ReportMetric(float64(cloud.StoredSizeEncodes()-encodes)/float64(b.N), "encodes/op")
+		stop().report(b)
 	})
 
-	for _, n := range []int{64, 9} {
-		b.Run(fmt.Sprintf("warm-%d", n), func(b *testing.B) {
+	for _, run := range []struct {
+		name     string
+		n        int
+		measured bool
+	}{{"warm-64", 64, false}, {"warm-9", 9, false}, {"measured-64", 64, true}} {
+		b.Run(run.name, func(b *testing.B) {
 			_, err := cloud.StoredSizes(ctx, roots, nil)
 			require.NoError(b, err)
 			held := &HeldBy{Cache: "cache-03", Now: time.Now().Unix()}
@@ -209,21 +228,29 @@ func BenchmarkStoredSizesAtScale(b *testing.B) {
 				}
 			}
 			cloud.egraphMu.RUnlock()
+			measure := cloud.StoredSizes
+			if run.measured {
+				measure = cloud.MeasuredStoredSizes
+			}
 			var records int
+			stop := storedSizesBenchTrackHolds(cloud)
+			encodes := cloud.StoredSizeEncodes()
 			b.ResetTimer()
 			for i := range b.N {
-				start := (i * n) % (len(candidates) - n)
-				sizes, err := cloud.StoredSizes(ctx, candidates[start:start+n], held)
+				start := (i * run.n) % (len(candidates) - run.n)
+				sizes, err := measure(ctx, candidates[start:start+run.n], held)
 				require.NoError(b, err)
 				records = 0
 				for _, size := range sizes {
+					require.False(b, size.Unmeasured)
 					records += size.Records
 				}
 			}
 			b.StopTimer()
 			b.ReportMetric(float64(records), "records")
 			b.ReportMetric(float64(len(candidates)), "candidates")
-			b.ReportMetric(float64(storedSizesBenchLongestHold(b, ctx, cloud, candidates[:n], held).Nanoseconds()), "longest-hold-ns")
+			b.ReportMetric(float64(cloud.StoredSizeEncodes()-encodes)/float64(b.N), "encodes/op")
+			stop().report(b)
 		})
 	}
 }
