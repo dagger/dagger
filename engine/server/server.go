@@ -309,11 +309,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	// setup directories and paths
 	//
 
-	if err := srv.initRootPaths(); err != nil {
-		return nil, err
-	}
-	logStateFilesystem(srv.rootDir)
-	if err := srv.initCacheVolumeDir(cfg.CacheVolumes); err != nil {
+	if err := srv.initStateLocations(cfg.CacheVolumes); err != nil {
 		return nil, err
 	}
 
@@ -542,6 +538,16 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	}
 
 	return srv, nil
+}
+
+// initStateLocations sets up where the engine keeps its state: the state root
+// and its paths, and the cache volume directory when one is configured.
+func (srv *Server) initStateLocations(cacheVolumes config.CacheVolumesConfig) error {
+	if err := srv.initRootPaths(); err != nil {
+		return err
+	}
+	logStateFilesystem(srv.rootDir)
+	return srv.initCacheVolumeDir(cacheVolumes)
 }
 
 func (srv *Server) initRootPaths() error {

@@ -57,7 +57,7 @@ func writeFile(t *testing.T, path string, size int) {
 func emptyPopulate(context.Context, string) error { return nil }
 
 // use acquires the volume, optionally writes a file into it, and releases it.
-func use(t *testing.T, s *Store, ident Identity, writable bool, file string, size int) string {
+func use(t *testing.T, s *Store, ident Identity, writable bool, file string, size int) {
 	t.Helper()
 	pin, err := s.Acquire(t.Context(), ident, writable, emptyPopulate)
 	require.NoError(t, err)
@@ -65,7 +65,6 @@ func use(t *testing.T, s *Store, ident Identity, writable bool, file string, siz
 	if file != "" {
 		writeFile(t, filepath.Join(pin.Path(), file), size)
 	}
-	return pin.Path()
 }
 
 func volumeDir(dir string, ident Identity) string {
@@ -187,10 +186,10 @@ func TestAcquireConcurrentCreatesOnce(t *testing.T) {
 	s := openStore(t, t.TempDir(), nil)
 	ident := Identity{Key: "k"}
 	var populated atomic.Int32
-	populate := func(context.Context, string) error {
+	populate := func(ctx context.Context, _ string) error {
 		populated.Add(1)
 		time.Sleep(20 * time.Millisecond)
-		return nil
+		return ctx.Err()
 	}
 	var wg sync.WaitGroup
 	pins := make([]*Pin, 8)
