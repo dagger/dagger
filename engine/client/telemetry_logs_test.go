@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	otlplogsv1 "go.opentelemetry.io/proto/otlp/logs/v1"
@@ -22,6 +24,18 @@ import (
 )
 
 type handlerTransport struct{ h http.Handler }
+
+// flushCounter is a span and log exporter that counts its flushes.
+type flushCounter struct {
+	nopLogExporter
+	flushes atomic.Int32
+}
+
+func (*flushCounter) ExportSpans(context.Context, []sdktrace.ReadOnlySpan) error { return nil }
+func (f *flushCounter) ForceFlush(context.Context) error {
+	f.flushes.Add(1)
+	return nil
+}
 
 type nopLogExporter struct{}
 
@@ -203,6 +217,8 @@ func TestTelemetryBarrier(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(enginetel.LiveFlushResult{Spans: 5, Logs: 7})
 	})
 	c := &Client{telemetryHTTP: &httpClient{inner: &http.Client{Transport: handlerTransport{handler}}}}
+	spans, logs := &flushCounter{}, &flushCounter{}
+	c.EngineTrace, c.EngineLogs = spans, logs
 	require.ErrorIs(t, c.TelemetryBarrier(t.Context()), ErrTelemetryBarrierUnsupported, "an older engine is never asked")
 	require.Zero(t, flushes)
 
@@ -216,6 +232,7 @@ func TestTelemetryBarrier(t *testing.T) {
 		t.Fatalf("returned before the logs reached the mark: %v", err)
 	case <-time.After(50 * time.Millisecond):
 	}
+	require.Zero(t, spans.flushes.Load())
 	c.logsDelivered.advance(7)
 	select {
 	case err := <-done:
@@ -224,6 +241,8 @@ func TestTelemetryBarrier(t *testing.T) {
 		t.Fatal("barrier never returned")
 	}
 	require.Equal(t, 1, flushes)
+	require.EqualValues(t, 1, spans.flushes.Load(), "what was delivered is flushed through the frontend's processors")
+	require.EqualValues(t, 1, logs.flushes.Load())
 
 	// A subscription that stops short fails the barrier rather than hang it.
 	c = &Client{
