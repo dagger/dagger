@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -28,6 +29,7 @@ import (
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
+	logspb "go.opentelemetry.io/proto/otlp/logs/v1"
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 )
 
@@ -358,6 +360,7 @@ func traceRunSource(ctx context.Context, tf idtui.TraceFrontend, traceID string,
 		tf.SetLogProvider(func(id dagui.SpanID, descendants bool) {
 			loader.fetchLogs(&logFg, id, descendants)
 		})
+		setLogCache(tf, dagui.TraceID{}, loader, source, traceID)
 		tf.SetSpanProvider(loader.listen)
 
 		// Initial load: the trace's priority spans. For a small enough
@@ -657,6 +660,13 @@ type traceLoader struct {
 	logReq    map[string]uint64
 	logFetchN uint64
 	logSem    chan struct{}
+	// logGen counts the frontend's releases (forgetLogs); logReleased maps
+	// each span it dropped while fetches were in flight to the release that
+	// dropped it, so a fetch that started before imports nothing more for
+	// it. logInflight counts the fetches in flight.
+	logGen      uint64
+	logReleased map[string]uint64
+	logInflight int
 
 	// fullTree is set when the whole span tree is loaded (a restored
 	// session's history): a roll-up imports its descendants' records of
@@ -687,14 +697,15 @@ func newTraceLoaderFor(ctx context.Context, client tracesource.Source, traceID s
 	// second root to render through.
 	importer.KeepRoots = true
 	return &traceLoader{
-		ctx:      ctx,
-		client:   client,
-		traceID:  traceID,
-		importer: importer,
-		filter:   map[dagui.SpanID]bool{{}: true}, // subscribe to roots first
-		logReq:   map[string]uint64{},
-		logSem:   make(chan struct{}, 8),
-		sem:      make(chan struct{}, 8),
+		ctx:         ctx,
+		client:      client,
+		traceID:     traceID,
+		importer:    importer,
+		filter:      map[dagui.SpanID]bool{{}: true}, // subscribe to roots first
+		logReq:      map[string]uint64{},
+		logSem:      make(chan struct{}, 8),
+		logReleased: map[string]uint64{},
+		sem:         make(chan struct{}, 8),
 	}
 }
 
@@ -848,12 +859,15 @@ func (l *traceLoader) fetchLogs(fg *fetchGroup, id dagui.SpanID, descendants boo
 	l.logFetchN++
 	fetch := l.logFetchN
 	l.logReq[spanHex] = fetch
+	start := l.logGen
+	l.logInflight++
 	l.mu.Unlock()
 	// Without the whole tree, a rolled-up span's descendants aren't loaded
 	// (the priority window doesn't include them), so their records would
 	// route to orphan buffers nothing renders: re-key them to the span.
 	rekey := descendants && !l.fullTree
 	fg.Go(func() error {
+		defer l.endLogFetch()
 		select {
 		case l.logSem <- struct{}{}:
 		case <-l.ctx.Done():
@@ -879,9 +893,13 @@ func (l *traceLoader) fetchLogs(fg *fetchGroup, id dagui.SpanID, descendants boo
 				imported = true
 				switch {
 				case rekey:
+					l.dropReleasedLogs(req, id, start)
 					rekeyLogRecords(req, id)
 				case descendants:
+					l.dropReleasedLogs(req, dagui.SpanID{}, start)
 					l.claimLogRecords(req, fetch)
+				default:
+					l.dropReleasedLogs(req, dagui.SpanID{}, start)
 				}
 				return l.importer.ImportLogs(ctx, req)
 			})
@@ -940,6 +958,76 @@ func (l *traceLoader) releaseLogs(fetch uint64) {
 	for span, owner := range l.logReq {
 		if owner == fetch {
 			delete(l.logReq, span)
+		}
+	}
+}
+
+// setLogCache lets the frontend let go of the logs loader fetched for it
+// (traceID as in idtui.LogCacheFrontend), and search the source for what it
+// does not hold when the source can: an engine store can, Cloud cannot, so
+// a search of a Cloud trace covers what is loaded.
+func setLogCache(fe any, traceID dagui.TraceID, loader *traceLoader, source any, traceHex string) {
+	cf, ok := fe.(idtui.LogCacheFrontend)
+	if !ok {
+		return
+	}
+	cf.SetLogRelease(traceID, loader.forgetLogs)
+	if searcher, ok := source.(tracesource.LogSearcher); ok {
+		cf.SetLogSearch(traceID, logSearchFunc(func(ctx context.Context, search archive.LogSearch) (archive.LogSearchResult, error) {
+			return searcher.SearchLogs(ctx, traceHex, search)
+		}))
+	}
+}
+
+// forgetLogs is the frontend letting go of logs it no longer shows
+// (idtui.LogCacheFrontend.SetLogRelease): the spans it dropped are fetched
+// again on their next request, and the fetches in flight import nothing
+// more for them. Fetches are one-shot, so there is nothing to unsubscribe.
+// It runs on the frontend's event loop, so it only takes the lock.
+func (l *traceLoader) forgetLogs(r idtui.LogRelease) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(r.Dropped) == 0 {
+		return
+	}
+	l.logGen++
+	for _, id := range r.Dropped {
+		spanHex := id.String()
+		delete(l.logReq, spanHex)
+		if l.logInflight > 0 {
+			l.logReleased[spanHex] = l.logGen
+		}
+	}
+}
+
+// endLogFetch ends a fetch; once none is in flight, the spans released
+// during them no longer matter.
+func (l *traceLoader) endLogFetch() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.logInflight--; l.logInflight == 0 {
+		clear(l.logReleased)
+	}
+}
+
+// dropReleasedLogs drops the records of the spans the frontend dropped since
+// a fetch started (at release generation start); with a target, the records
+// are all its, re-keyed onto it.
+func (l *traceLoader) dropReleasedLogs(req *collogspb.ExportLogsServiceRequest, target dagui.SpanID, start uint64) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(l.logReleased) == 0 {
+		return
+	}
+	for _, rl := range req.GetResourceLogs() {
+		for _, sl := range rl.GetScopeLogs() {
+			sl.LogRecords = slices.DeleteFunc(sl.LogRecords, func(record *logspb.LogRecord) bool {
+				id := target
+				if !id.IsValid() {
+					copy(id.SpanID[:], record.GetSpanId())
+				}
+				return l.logReleased[id.String()] > start
+			})
 		}
 	}
 }
