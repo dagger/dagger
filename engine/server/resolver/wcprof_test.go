@@ -247,8 +247,9 @@ func TestFetchProfiledRegistryFailure(t *testing.T) {
 		return []docker.RegistryHost{{Client: server.Client(), Host: host, Scheme: "http", Path: "/v2", Capabilities: docker.HostCapabilityPull}}, nil
 	}})
 	ctx, root := profiledRoot(t.Context())
-	fetcher, err := profFetcher(ctx, resolver, host+"/test/image")
+	fetcher, err := resolver.Fetcher(ctx, host+"/test/image")
 	require.NoError(t, err)
+	fetcher = profFetcher(ctx, fetcher)
 	body, err := fetcher.Fetch(ctx, ocispecs.Descriptor{Digest: digest.FromString("missing"), Size: 7, MediaType: ocispecs.MediaTypeImageLayer})
 	if err == nil {
 		_, err = io.ReadAll(body)
