@@ -124,8 +124,8 @@ type mergeTracker struct {
 	// an answer and not yet received; running marks the former.
 	waits   map[uint64]*dagql.RemoteMergeWait
 	running map[uint64]struct{}
-	// ended remembers the last endedMerges merges that ended, in a ring.
-	ended     map[uint64]struct{}
+	// ended remembers how the last endedMerges merges ended, in a ring.
+	ended     map[uint64]string
 	endedRing []uint64
 	next      int
 }
@@ -134,7 +134,7 @@ func newMergeTracker() *mergeTracker {
 	return &mergeTracker{
 		waits:     map[uint64]*dagql.RemoteMergeWait{},
 		running:   map[uint64]struct{}{},
-		ended:     map[uint64]struct{}{},
+		ended:     map[uint64]string{},
 		endedRing: make([]uint64, endedMerges),
 	}
 }
@@ -152,15 +152,16 @@ func (m *mergeTracker) start(id uint64) {
 	m.running[id] = struct{}{}
 }
 
-// end records a merge's end, and releases what waits for it.
-func (m *mergeTracker) end(id uint64) {
+// end records a merge's end and how it ended (dagql.RemoteMerge*), and
+// releases what waits for it.
+func (m *mergeTracker) end(id uint64, outcome string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.closed {
 		return
 	}
 	if w := m.waits[id]; w != nil {
-		w.End(dagql.RemoteMergeMerged)
+		w.End(outcome)
 	}
 	delete(m.waits, id)
 	delete(m.running, id)
@@ -169,7 +170,7 @@ func (m *mergeTracker) end(id uint64) {
 	}
 	m.endedRing[m.next] = id
 	m.next = (m.next + 1) % len(m.endedRing)
-	m.ended[id] = struct{}{}
+	m.ended[id] = outcome
 }
 
 // await returns a wait that ends when the merge does. For a merge not
@@ -185,8 +186,8 @@ func (m *mergeTracker) await(id uint64, deadline time.Time) *dagql.RemoteMergeWa
 	case w != nil:
 	default:
 		w = dagql.NewRemoteMergeWait()
-		if _, ok := m.ended[id]; ok {
-			w.End(dagql.RemoteMergeMerged)
+		if outcome, ok := m.ended[id]; ok {
+			w.End(outcome)
 			return w
 		}
 		m.waits[id] = w
