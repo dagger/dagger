@@ -7,6 +7,9 @@ import (
 	"log/slog"
 	"sync"
 	"sync/atomic"
+	"time"
+
+	"github.com/opencontainers/go-digest"
 
 	"github.com/dagger/dagger/dagql"
 )
@@ -40,6 +43,9 @@ type RemoteCacheAdapter struct {
 	// mergeValues is the cache's MergeValues. A test replaces it to return a
 	// committed reply with a release error.
 	mergeValues func(context.Context, dagql.CacheID, dagql.ValueBundle) (dagql.MergeReply, error)
+	// lookupMerges counts the merges in progress that answer lookups,
+	// which the others wait for.
+	lookupMerges priorityMerges
 }
 
 func newRemoteCacheAdapter(cache *dagql.Cache, bridge *dagql.RemoteCacheBridge) *RemoteCacheAdapter {
@@ -62,6 +68,79 @@ func (a *RemoteCacheAdapter) ReplyRenewal(reply dagql.RenewalReply) dagql.Renewa
 		return dagql.RenewalReplyDiscarded
 	}
 	return a.bridge.ReplyRenewal(reply)
+}
+
+func (a *RemoteCacheAdapter) StartLookups() {
+	if a.stopped.Load() {
+		return
+	}
+	a.bridge.StartRemoteLookups()
+}
+
+func (a *RemoteCacheAdapter) StopLookups() {
+	a.bridge.StopRemoteLookups()
+}
+
+func (a *RemoteCacheAdapter) TakeLookupMisses(ctx context.Context, limit int, linger time.Duration) ([]dagql.RemoteMiss, uint64, error) {
+	if a.stopped.Load() {
+		return nil, 0, ErrRemoteCacheAdapterClosed
+	}
+	misses, dropped, err := a.bridge.TakeRemoteMisses(ctx, limit, linger)
+	if errors.Is(err, dagql.ErrRemoteCacheBridgeClosed) {
+		err = fmt.Errorf("%w: %w", ErrRemoteCacheAdapterClosed, err)
+	}
+	return misses, dropped, err
+}
+
+func (a *RemoteCacheAdapter) ExpectMerge(recipe digest.Digest, wait *dagql.RemoteMergeWait, deadline time.Time) {
+	if a.stopped.Load() {
+		return
+	}
+	a.bridge.ExpectRemoteMerge(recipe, wait, deadline)
+}
+
+// priorityMerges counts the merges in progress that go first. The others
+// wait until none is.
+type priorityMerges struct {
+	mu      sync.Mutex
+	running int
+	// idle closes when running drops to zero.
+	idle chan struct{}
+}
+
+func (p *priorityMerges) begin() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.running == 0 {
+		p.idle = make(chan struct{})
+	}
+	p.running++
+}
+
+func (p *priorityMerges) end() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.running--
+	if p.running == 0 {
+		close(p.idle)
+	}
+}
+
+// wait returns once no priority merge is in progress, or ctx ends.
+func (p *priorityMerges) wait(ctx context.Context) error {
+	p.mu.Lock()
+	if p.running == 0 {
+		p.mu.Unlock()
+		return nil
+	}
+	idle := p.idle
+	p.mu.Unlock()
+	select {
+	case <-idle:
+		return nil
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	}
 }
 
 // close refuses later control calls, detaches this adapter's bridge and

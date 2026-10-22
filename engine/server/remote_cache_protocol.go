@@ -380,11 +380,20 @@ type readerAtCloser struct {
 // release after the commit failed: the cache changed, and the service must
 // learn how. The release's error is logged instead. A merge refused for stale
 // held rows committed nothing, and is answered with them.
-func (a *RemoteCacheAdapter) Merge(ctx context.Context, req protocol.Merge) (protocol.Merged, error) {
+func (a *RemoteCacheAdapter) Merge(ctx context.Context, id uint64, req protocol.Merge) (protocol.Merged, error) {
 	if a.stopped.Load() {
 		return protocol.Merged{}, ErrRemoteCacheAdapterClosed
 	}
 	start := time.Now()
+	// A merge that answers a lookup goes first: the others wait while one
+	// is in progress.
+	if req.Lookup != 0 {
+		a.lookupMerges.begin()
+		defer a.lookupMerges.end()
+	} else if err := a.lookupMerges.wait(ctx); err != nil {
+		return protocol.Merged{}, err
+	}
+	priorityWait := time.Since(start)
 	mergeCtx, mergeOp := wcprof.BeginOp(ctx, wcprof.OpKindRemoteCache, "remotecache.merge", wcprof.OpOpts{})
 	reply, err := a.mergeValues(mergeCtx, dagql.CloudCacheID, req.Bundle)
 	if reply.Committed {
@@ -408,7 +417,10 @@ func (a *RemoteCacheAdapter) Merge(ctx context.Context, req protocol.Merge) (pro
 		"duration", time.Since(start),
 		"error", err,
 		"generation", reply.Generation,
-		"engine_time", reply.EngineTimeUnixNano)
+		"engine_time", reply.EngineTimeUnixNano,
+		"merge", id,
+		"lookup", req.Lookup,
+		"priority_wait", priorityWait)
 	if err == nil && len(reply.Stale) > 0 {
 		return protocol.Merged{Generation: reply.Generation, EngineTime: reply.EngineTimeUnixNano, Values: []protocol.MergedValue{}, Retained: []protocol.RetainedRoot{}, Stale: reply.Stale}, nil
 	}
