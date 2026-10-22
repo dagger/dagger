@@ -1452,6 +1452,11 @@ func (c *Client) exportMetrics(ctx context.Context, httpClient *httpClient) erro
 	})
 }
 
+// EngineVersion is the version of the engine the client connected to.
+func (c *Client) EngineVersion() string {
+	return engine.NormalizeVersion(c.bkVersion)
+}
+
 func (c *Client) init(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()

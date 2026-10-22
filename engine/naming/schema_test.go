@@ -11,19 +11,14 @@ import (
 )
 
 // Core schema names are written by hand, not normalized, so they're the
-// largest real-world corpus of canonical names. Every field and argument name
-// is canonical with the Initial dictionary except these, which predate the
-// casing rules and are due to be renamed (keeping their old spellings as
-// hidden aliases).
-var nonCanonicalCoreNames = map[string]bool{
-	"asSdkName":  true,
-	"callId":     true,
-	"filterUri":  true,
-	"parentShas": true,
-	"pushUrl":    true,
-	"shortSha":   true,
-	"withoutUri": true,
-}
+// largest real-world corpus of canonical names. The schema read here is the
+// latest view's (docs/docs-graphql/schema.graphqls), where every field and
+// argument name is canonical with the Initial dictionary: the ones that
+// weren't (asSdkName, callId, filterUri, parentShas, pushUrl, shortSha,
+// withoutUri) keep their old spellings only in views before
+// engine.IdentifierCasingVersion. Add a name here only while it's due to be
+// renamed.
+var nonCanonicalCoreNames = map[string]bool{}
 
 func loadCoreSchema(t *testing.T) *ast.SchemaDocument {
 	t.Helper()

@@ -23,8 +23,8 @@ type Blocker {
   until the dwell elapses. Touches started on the volume first, so callers
   can synchronize on the exec really being underway.
   """
-  block(volume: String!, bust: String!): String! @cache(policy: FunctionCachePolicy.Never) {
-    # @cache(Never): the dwell is the point; a replayed answer would skip it.
+  block(volume: String!, bust: String!): String! @cache(policy: FunctionCachePolicy.NEVER) {
+    # @cache(NEVER): the dwell is the point; a replayed answer would skip it.
     Dagger.container
       .from("alpine:3.20")
       .withMountedCache("/sync", cacheVolume(volume))
@@ -40,7 +40,7 @@ type Blocker {
   because its cache volumes are namespaced per module: the caller cannot
   mount the same volume from its own client.
   """
-  peek(volume: String!, bust: String!): String! @cache(policy: FunctionCachePolicy.Never) {
+  peek(volume: String!, bust: String!): String! @cache(policy: FunctionCachePolicy.NEVER) {
     Dagger.container
       .from("alpine:3.20")
       .withMountedCache("/sync", cacheVolume(volume))

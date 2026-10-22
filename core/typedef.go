@@ -506,10 +506,19 @@ type FunctionCachePolicy string
 
 var FunctionCachePolicyEnum = dagql.NewEnum[FunctionCachePolicy]()
 
+// Views from engine.IdentifierCasingVersion on add the canonical
+// SCREAMING_SNAKE_CASE spellings, as ImageLayerCompression added GZIP. The
+// PascalCase values stay in every view: SDK module runtimes and clients
+// generated before the cut name them, and are served later views. Both
+// spellings decode to the PascalCase value, so IDs and cache keys are the
+// same in every view.
 var (
 	FunctionCachePolicyDefault    = FunctionCachePolicyEnum.Register("Default")
+	_                             = FunctionCachePolicyEnum.AliasView("DEFAULT", FunctionCachePolicyDefault, CanonicalNamesView)
 	FunctionCachePolicyPerSession = FunctionCachePolicyEnum.Register("PerSession")
+	_                             = FunctionCachePolicyEnum.AliasView("PER_SESSION", FunctionCachePolicyPerSession, CanonicalNamesView)
 	FunctionCachePolicyNever      = FunctionCachePolicyEnum.Register("Never")
+	_                             = FunctionCachePolicyEnum.AliasView("NEVER", FunctionCachePolicyNever, CanonicalNamesView)
 )
 
 func (proto FunctionCachePolicy) Type() *ast.Type {

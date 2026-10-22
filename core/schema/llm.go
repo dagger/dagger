@@ -144,7 +144,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Doc("Discover every artifact this conversation can address, as one selection, without evaluating their values.",
 				"Tool objects bound with withTools contribute their modules' artifacts, rooted at their current values: evaluating one reads the live state of the bound tools, not a fresh construction. If a module's main object is bound, only its tree is included; otherwise each bound object of that module contributes its own tree. Addresses start with the module name. These artifacts have no workspace of their own: they evaluate in the LLM's bound workspace, if any, whoever evaluates them.",
 				"The workspace part is the artifacts of the workspace bound with withWorkspace, as returned by Workspace.artifacts; an LLM with no bound workspace has none. A workspace module with the same name as a module with bound tool objects is omitted: the bound tools shadow it. Unless they are only a plain construction of the module, which has no state of its own: then the workspace module's artifacts are kept instead.",
-				"Tool arguments that take an address resolve it here: a DAG address to one object, or, for Artifacts and Artifact arguments, a selection filtered like filterUri.").
+				"Tool arguments that take an address resolve it here: a DAG address to one object, or, for Artifacts and Artifact arguments, a selection filtered like filterURI.").
 			Args(dagql.Arg("include").Doc("Only include artifacts matching these path patterns, as with Workspace.artifacts. A path selects that path and its children.")),
 		dagql.Func("withModel", s.withModel).
 			Doc("Change the model for the rest of the conversation. The message history is preserved; the new model takes effect on the next step.").
@@ -223,7 +223,13 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Append the result of a tool call to the message history.").
 			Args(
-				dagql.Arg("callId").Doc("The ID of the tool call this result responds to"),
+				dagql.Arg("callID").View(core.CanonicalNamesView).Doc("The ID of the tool call this result responds to"),
+				dagql.Arg("callId").View(core.LegacyNamesView).Doc("The ID of the tool call this result responds to"),
+				// Agent conversations recorded by engines before the rename
+				// select withToolResult(callId:) in view "": there, callId stays
+				// accepted as an internal argument, and callID is optional.
+				dagql.Arg("callID").View(core.RecordedNamesView).Default(dagql.String("")).Doc("The ID of the tool call this result responds to"),
+				dagql.Arg("callId").View(core.RecordedNamesView).Default(dagql.String("")).Internal(),
 				dagql.Arg("content").Doc("Text returned by the tool, placed before blocks"),
 				dagql.Arg("errored").Doc("Whether the tool call resulted in an error"),
 				dagql.Arg("blocks").Doc("Ordered text and media returned by the tool"),
@@ -359,14 +365,49 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Doc(`Who put this message on the record, when it arrived through an agent mailbox.`,
 				`Null for the user's own prompts and for everything the model or tools produced.`),
 	}.Install(srv)
-	dagql.Fields[*core.LLMContentBlock]{}.Install(srv)
+	dagql.Fields[*core.LLMContentBlock]{
+		contentBlockCallIDField("callID").View(core.CanonicalNamesView),
+		contentBlockCallIDField("callId").View(core.LegacyNamesView),
+	}.Install(srv)
 	dagql.Fields[*core.LLMSkill]{}.Install(srv)
 	dagql.Fields[*core.LLMMessageOrigin]{}.Install(srv)
 	core.LLMMessageRoles.Install(srv, AfterVersion("v1.0.0-0"))
 	core.LLMContentBlockKinds.Install(srv, AfterVersion("v1.0.0-0"))
 	core.LLMMessageOriginKinds.Install(srv, AfterVersion("v1.0.0-0"))
-	dagql.MustInputSpec(core.LLMContentBlockInput{}).Install(srv, AfterVersion("v1.0.0-0"))
+	contentBlockInputSpec().Install(srv, AfterVersion("v1.0.0-0"))
 	dagql.MustInputSpec(core.LLMMessageOriginInput{}).Install(srv, AfterVersion("v1.0.0-0"))
+}
+
+const contentBlockCallIDDoc = "The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds)."
+
+// contentBlockCallIDField is LLMContentBlock.callID, spelled callId in views
+// before engine.IdentifierCasingVersion. A plain accessor, like the struct
+// fields.
+func contentBlockCallIDField(name string) dagql.Field[*core.LLMContentBlock] {
+	field := dagql.Func(name, func(_ context.Context, block *core.LLMContentBlock, _ struct{}) (dagql.String, error) {
+		return dagql.NewString(block.CallID), nil
+	}).Doc(contentBlockCallIDDoc)
+	field.Spec.Trivial = true
+	return field
+}
+
+// contentBlockInputSpec is LLMContentBlockInput, with its callID field
+// spelled callId in views before engine.IdentifierCasingVersion. The struct has
+// both fields; each view shows one.
+func contentBlockInputSpec() dagql.InputObjectSpec {
+	spec := dagql.MustInputSpec(core.LLMContentBlockInput{})
+	// No field has a view filter yet: any view lists them all.
+	fields := spec.Fields.Inputs("")
+	for i := range fields {
+		switch fields[i].Name {
+		case "callID":
+			fields[i].ViewFilter = core.CanonicalNamesView
+		case "callId":
+			fields[i].ViewFilter = core.LegacyNamesView
+		}
+	}
+	spec.Fields = dagql.NewInputSpecs(fields...)
+	return spec
 }
 
 func (s *llmSchema) messageOrigin(_ context.Context, msg *core.LLMMessage, _ struct{}) (dagql.Nullable[*core.LLMMessageOrigin], error) {
@@ -628,11 +669,17 @@ func (s *llmSchema) withResponse(ctx context.Context, llm *core.LLM, args struct
 }
 
 func (s *llmSchema) withToolResult(ctx context.Context, llm *core.LLM, args struct {
-	CallID  string `name:"callId"`
-	Content string
-	Errored bool
-	Blocks  []dagql.InputObject[core.LLMContentBlockInput] `default:"[]"`
+	CallID string `name:"callID"`
+	// LegacyCallID is callID in views before engine.IdentifierCasingVersion,
+	// and in the internal view "" of recipes recorded before it.
+	LegacyCallID string `name:"callId"`
+	Content      string
+	Errored      bool
+	Blocks       []dagql.InputObject[core.LLMContentBlockInput] `default:"[]"`
 }) (*core.LLM, error) {
+	if args.CallID == "" {
+		args.CallID = args.LegacyCallID
+	}
 	blocks, err := resolveLLMContent(ctx, args.Blocks)
 	if err != nil {
 		return nil, err

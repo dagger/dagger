@@ -791,7 +791,7 @@ type Artifacts implements Node {
   withArtifacts(artifacts: ID! @expectedType(name: "Artifacts")): Artifacts!
 
   """Remove artifacts selected by a DAG address."""
-  withoutUri(uri: String!): Artifacts!
+  withoutURI(uri: String!): Artifacts!
 
   """Keep artifacts of any listed concrete GraphQL type."""
   filterTypes(
@@ -824,7 +824,7 @@ type Artifacts implements Node {
   A module that failed to load keeps its load failure when the module could hold
   what the address selects, as with every filter (see Artifacts).
   """
-  filterUri(
+  filterURI(
     """A DAG address: [dag[+<type>]://][<path>][?<dimension>=<key>&...]"""
     uri: String!
   ): Artifacts!
@@ -856,7 +856,7 @@ type Artifacts implements Node {
   one: Artifact!
 
   """
-  The DAG address that selects this whole selection: filterUri(uri) selects the same set.
+  The DAG address that selects this whole selection: filterURI(uri) selects the same set.
   """
   uri: String!
 }
@@ -3913,6 +3913,9 @@ enum FunctionCachePolicy {
   Default
   PerSession
   Never
+  DEFAULT @enumValue(value: "Default")
+  PER_SESSION @enumValue(value: "PerSession")
+  NEVER @enumValue(value: "Never")
 }
 
 """An active function call."""
@@ -4090,7 +4093,7 @@ type GitCommit implements Node {
   sha: String!
 
   """The abbreviated commit SHA."""
-  shortSha: String!
+  shortSHA: String!
 
   """
   The ID of the commit's Git tree object.
@@ -4127,7 +4130,7 @@ type GitCommit implements Node {
   messageBody: String!
 
   """Parent commit SHAs."""
-  parentShas: [String!]!
+  parentSHAs: [String!]!
 }
 
 """How a Git push updated the remote ref."""
@@ -4499,7 +4502,7 @@ type GitRepository implements Node {
     """
     Push destination, when pushes go somewhere other than url. Empty uses url.
     """
-    pushUrl: String = ""
+    pushURL: String = ""
   ): GitRepository!
 
   """
@@ -4980,7 +4983,7 @@ type LLM implements Node & Syncer {
 
   Tool arguments that take an address resolve it here: a DAG address to one
   object, or, for Artifacts and Artifact arguments, a selection filtered like
-  filterUri.
+  filterURI.
   """
   artifacts(
     """
@@ -5106,7 +5109,7 @@ type LLM implements Node & Syncer {
   """Append the result of a tool call to the message history."""
   withToolResult(
     """The ID of the tool call this result responds to"""
-    callId: String!
+    callID: String! = ""
 
     """Text returned by the tool, placed before blocks"""
     content: String!
@@ -5369,6 +5372,9 @@ type LLMContentBlock implements Node {
   """A unique identifier for this LLMContentBlock."""
   id: ID!
 
+  """The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds)."""
+  callID: String!
+
   """
   The kind of content block, which determines the other populated fields.
   """
@@ -5376,9 +5382,6 @@ type LLMContentBlock implements Node {
 
   """Text content (for TEXT, THINKING, or TOOL_RESULT kinds)."""
   text: String!
-
-  """The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds)."""
-  callId: String!
 
   """The name of the tool called (for TOOL_CALL kind)."""
   toolName: String!
@@ -5415,7 +5418,7 @@ input LLMContentBlockInput {
   text: String = ""
 
   """The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds)."""
-  callId: String = ""
+  callID: String = ""
 
   """The name of the tool to call (for TOOL_CALL kind)."""
   toolName: String = ""
@@ -7204,7 +7207,7 @@ type Workspace implements Node {
   Resolve an address in this workspace.
 
   A DAG address (dag://<path>) selects exactly one workspace artifact:
-  artifacts.filterUri(value).one(). Its typed loaders use that artifact and
+  artifacts.filterURI(value).one(). Its typed loaders use that artifact and
   never fall back to external resolution.
 
   A value without the dag:// scheme keeps its external meaning, such as a container image reference.
@@ -7797,7 +7800,7 @@ type Workspace implements Node {
     """
     Optional override for the SDK name conventionally derived from the installed module name.
     """
-    asSdkName: String = ""
+    asSDKName: String = ""
   ): Workspace!
 
   """Return this workspace with an SDK removed from its config."""

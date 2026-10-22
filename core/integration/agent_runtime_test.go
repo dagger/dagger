@@ -1271,7 +1271,7 @@ func agentContentRecordingModel(ctx context.Context, t *testctx.T, c *dagger.Cli
 			Messages json.RawMessage `json:"messages"`
 		} `json:"node"`
 	}](c, t, `query($id: ID!) { node(id: $id) { ... on LLM {
-		messages { role origin { kind agentName ref replyTo } content { kind text data mimeType callId toolName arguments errored } }
+		messages { role origin { kind agentName ref replyTo } content { kind text data mimeType callID toolName arguments errored } }
 	} } }`, &testutil.QueryOptions{Variables: map[string]any{"id": id}})
 	require.NoError(t, err)
 	return "recording/" + base64.StdEncoding.EncodeToString(recorded.Node.Messages)

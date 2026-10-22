@@ -691,7 +691,7 @@ func TestContentBlockInputRoundTrip(t *testing.T) {
 		decoded, err := (dagql.InputObject[LLMContentBlockInput]{}).Decoder().DecodeInput(map[string]any{
 			"kind":      string(block.Kind),
 			"text":      block.Text,
-			"callId":    block.CallID,
+			"callID":    block.CallID,
 			"toolName":  block.ToolName,
 			"arguments": string(block.Arguments),
 			"errored":   block.Errored,
@@ -717,7 +717,8 @@ func TestContentBlockInputRoundTrip(t *testing.T) {
 	// Regression: empty "arguments" decodes to nil and is dropped from the
 	// serialized literal, so reloading a saved ID decodes a map with no
 	// "arguments" key at all. That must not fail as a missing required field
-	// (it did, breaking session reload for every non-tool-call block).
+	// (it did, breaking session reload for every non-tool-call block). An ID
+	// saved in a view before callID was renamed spells it callId.
 	decoded, err := (dagql.InputObject[LLMContentBlockInput]{}).Decoder().DecodeInput(map[string]any{
 		"kind":      string(LLMContentText),
 		"text":      "reloaded",

@@ -284,7 +284,7 @@ func (GitSuite) TestGitCommit(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.Equal(t, sha, gotSHA)
 
-	shortSHA, err := commit.ShortSha(ctx)
+	shortSHA, err := commit.ShortSHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, sha[:len(shortSHA)], shortSHA)
 
@@ -296,7 +296,7 @@ func (GitSuite) TestGitCommit(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, authoredDate)
 
-	parents, err := commit.ParentShas(ctx)
+	parents, err := commit.ParentSHAs(ctx)
 	require.NoError(t, err)
 	require.NotEmpty(t, parents)
 
@@ -479,7 +479,7 @@ git add . && git commit -m other
 			})
 			t.Run("merge first parent", func(ctx context.Context, t *testctx.T) {
 				assertPaths(t, merge.Changes(), []string{"topic"}, nil, nil)
-				parents, err := merge.ParentShas(ctx)
+				parents, err := merge.ParentSHAs(ctx)
 				require.NoError(t, err)
 				require.Len(t, parents, 2)
 				assertPaths(t, merge.Changes(core.GitCommitChangesOpts{Against: repo.Commit(parents[1])}), []string{"main"}, nil, nil)
@@ -699,7 +699,7 @@ func (GitSuite) TestWithRemote(ctx context.Context, t *testctx.T) {
 	require.NoError(t, c.Do(ctx, &dagger.Request{
 		Query: `query($url: String!, $service: ID!, $upstream: String!, $push: String!) {
 			git(url: $url, experimentalServiceHost: $service) {
-				withRemote(name: "upstream", url: $upstream, pushUrl: $push) {
+				withRemote(name: "upstream", url: $upstream, pushURL: $push) {
 					head { tree { id } }
 				}
 			}
@@ -2460,12 +2460,12 @@ func (GitSuite) TestGitLog(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.NotEmpty(t, authoredDate)
 
-		parents, err := log[0].ParentShas(ctx)
+		parents, err := log[0].ParentSHAs(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{shaB}, parents)
 
 		// the oldest commit is a root commit
-		parents, err = log[2].ParentShas(ctx)
+		parents, err = log[2].ParentSHAs(ctx)
 		require.NoError(t, err)
 		require.Empty(t, parents)
 	})
@@ -2530,7 +2530,7 @@ func (GitSuite) TestGitLog(ctx context.Context, t *testctx.T) {
 				require.True(t, reachable[logSHAs[i]],
 					"%s is not a parent of any commit listed before it", logSHAs[i])
 			}
-			parents, err := commit.ParentShas(ctx)
+			parents, err := commit.ParentSHAs(ctx)
 			require.NoError(t, err)
 			require.NotEmpty(t, parents)
 			for _, parent := range parents {

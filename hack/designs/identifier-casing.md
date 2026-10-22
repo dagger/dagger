@@ -1059,9 +1059,7 @@ Other gaps:
   engine's hidden aliases, so it recovers a module's old schema names by
   applying the legacy strcase namer to the current ones, when the new rules
   spell them as they are (`daggerCLI` → `daggerCli`, `DaggerCLIHTTPClient` →
-  `DaggerCliHttpclient` for module `dagger-cli`); core names are left alone,
-  but for the few renamed since (see [Core schema](#core-schema)), whose old
-  names every in-repo generator keeps in a small table of its own.
+  `DaggerCliHttpclient` for module `dagger-cli`); core names are left alone.
   Where the heuristic misses, there's no alias. Go modules with a
   `dagger-module.toml` build from committed bindings that the external go-sdk
   generates with its own lint-based converter: their old names keep working on
@@ -1102,19 +1100,29 @@ initial dictionary, before the API above added its own (canonical) names:
   aliases: `FunctionCachePolicy` (`Default`, `PerSession`, `Never`).
   `ImageLayerCompression` and `ImageMediaTypes` already have aliases.
 
-These are renamed on the views with the new rules, with their old spellings
-kept as hidden aliases there ([Transition aliases](#transition-aliases),
-`core.NameAliases`): `GitCommit.shortSHA` and `parentSHAs`,
-`Artifacts.filterURI` and `withoutURI`, `LLMContentBlock.callID`,
-`LLMContentBlockInput.callID`, `LLM.withToolResult(callID:)`,
-`GitRepository.withRemote(pushURL:)`, `Workspace.withSDK(asSDKName:)`, and
-`FunctionCachePolicy`'s `DEFAULT`, `PER_SESSION` and `NEVER`. All but the
-enum only exist on those views; older views keep `FunctionCachePolicy`'s
-PascalCase values exactly, and both spellings decode to the same value
-(`EnumValues.RenameView`). The SDKs' codegen can't see the hidden aliases,
-so each keeps a small table of these renames, to keep deprecating the
-identifiers it derived from the old names rather than inventing new ones
-from the new names (Python's `parent_sh_as`, Java's `shortSHA()`).
+These are renamed in the views from `engine.IdentifierCasingVersion`
+(v1.0.0-beta.21) on, dev builds and v1.0.0 included, by plain view gating:
+`GitCommit.shortSHA` and `parentSHAs`, `Artifacts.filterURI` and
+`withoutURI`, `LLMContentBlock.callID`, `LLMContentBlockInput.callID`,
+`LLM.withToolResult(callID:)`, `GitRepository.withRemote(pushURL:)` and
+`Workspace.withSDK(asSDKName:)` exist only in those views, and their old
+spellings only in earlier views (`core.CanonicalNamesView`,
+`core.LegacyNamesView`). No view has both: in the SDKs' casings they would
+collide (`shortSha` and `shortSHA` are both Python's `short_sha`). All of
+them were added during the v1.0.0 prereleases.
+
+`FunctionCachePolicy` follows `ImageLayerCompression` instead: `DEFAULT`,
+`PER_SESSION` and `NEVER` are added from the cut on as `AliasView`s of the
+PascalCase values, which stay in every view, since SDK module runtimes and
+clients generated before the cut name them. Both spellings decode to the
+same value, so IDs and cache keys don't change.
+
+A client generated before the cut but run under a CLI past it is served the
+new view, and its calls to the renamed fields and arguments fail. Recipes
+recorded by earlier engines keep loading: their internal selections
+(workspace checkpoints' `withRemote(pushUrl:)`, agent tool results'
+`withToolResult(callId:)`) are in the internal view `""`, which accepts those
+old spellings as internal arguments (`core.RecordedNamesView`).
 
 `TestCoreSchemaCanonical` in `engine/naming` asserts that every core type name
 and every field/argument name is canonical; legacy enum values (the
@@ -1153,8 +1161,7 @@ code it generated before:
   `ImageLayerCompression.ESTARGZ`, `GZIP`, `UNCOMPRESSED` and `ZSTD`,
   `ImageMediaTypes.DOCKER` and `OCI`, which used to be aliases of the legacy
   members, are now the canonical members, and the legacy names their
-  deprecated aliases. Values don't change for core enums, but for
-  `FunctionCachePolicy`'s, renamed in the schema (see below). A dependency
+  deprecated aliases. Values don't change for core enums. A dependency
   module's enum, whose members hold the module's own values (`ACTIVE` holds
   `"ACTIVE value"`), keeps the members it always had, sent by name.
 - **Rust**: the same 2 methods as Python, kept as deprecated aliases. No type
@@ -1203,17 +1210,12 @@ code it generated before:
   aliases; they still serialize to the schema's values.
 
 The core names renamed in the schema ([Core schema](#core-schema)) change
-what goes over the wire (`shortSHA`, `callID`, `pushURL`, ...,
-`FunctionCachePolicy`'s `PER_SESSION`), not the identifiers above: those
-derived from the old names keep working, as they are where the new name
-formats the same (Go `FilterURI`, Python `short_sha`, Rust `call_id`, PHP and
-Java `shortSha`, .NET `FunctionCachePolicy.PerSession`), and as the
-deprecated aliases above otherwise (Go `ShortSha`, TypeScript `shortSha` and
-the `pushUrl` opts key, Python `FunctionCachePolicy.PerSession`, PHP and Java
-`FunctionCachePolicy` constants). An input object field can't be aliased in
-every language: TypeScript's `LLMContentBlockInput` keeps a deprecated
-`callId` key, sent as is, and PHP's keeps its `callId` property (a
-constructor parameter), sent as `callID`; the engine takes either.
+what goes over the wire in the views from the cut on (`shortSHA`, `callID`,
+`pushURL`, ...), where the old names don't exist: clients generated from
+those views use the new names, and clients generated before the cut fail on
+them when a CLI past the cut serves them its view. `FunctionCachePolicy`
+keeps its PascalCase values in every view, so identifiers derived from them
+keep working.
 
 Renamed identifiers stay as deprecated aliases wherever the language allows
 one. The hard breaks are:

@@ -105,7 +105,10 @@ Dates use RFC3339 format.`,
 }
 
 type workspaceGitCommit struct {
-	SHA             string   `json:"sha"`
+	SHA string `json:"sha"`
+	// The --json keys keep the spellings from before the shortSHA and
+	// parentSHAs fields were renamed, so scripts reading them don't break.
+	// (Decoding the response matches keys case-insensitively.)
 	ShortSHA        string   `json:"shortSha"`
 	AuthorName      string   `json:"authorName"`
 	AuthorEmail     string   `json:"authorEmail"`
@@ -120,10 +123,10 @@ type workspaceGitCommit struct {
 }
 
 func workspaceGitLog(ctx context.Context, dag *dagger.Client, limit int, fullMetadata bool) ([]workspaceGitCommit, error) {
-	fields := "shortSha messageHeadline"
+	fields := "shortSHA messageHeadline"
 	if fullMetadata {
 		fields += ` sha authorName authorEmail authoredDate committerName committerEmail
-			committedDate message messageBody parentShas`
+			committedDate message messageBody parentSHAs`
 	}
 	var result struct {
 		CurrentWorkspace struct {

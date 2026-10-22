@@ -153,7 +153,7 @@ func commandSkippedPaths(ctx context.Context, dag *dagger.Client, selected *core
 			declarations = append(declarations, "$"+selection+": ID!")
 		}
 		fmt.Fprintf(&fields, `skip%d: node(id: $%s) { ... on Artifacts {
- filterUri(uri: $module%d) { pathDefinitions { uri loadError } }
+ filterURI(uri: $module%d) { pathDefinitions { uri loadError } }
 } }
 `, i, selection, i)
 	}

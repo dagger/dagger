@@ -22,7 +22,7 @@ func (*scopeLiftRunner) Type() *ast.Type {
 
 // TestLiftScopeSelection covers lifting an address into an Artifacts or
 // Artifact argument: the selection is selected through the dispatching
-// conversation — artifacts(include: [<path>]).filterUri(uri: <address>), plus
+// conversation — artifacts(include: [<path>]).filterURI(uri: <address>), plus
 // one for an Artifact — so the module function receives a loadable ID with
 // that recipe. LLM.artifacts and the filters are stubbed with their core
 // implementations over a fixed scope.
@@ -76,7 +76,7 @@ func TestLiftScopeSelection(t *testing.T) {
 		}),
 	}.Install(srv)
 	dagql.Fields[*Artifacts]{
-		dagql.Func("filterUri", func(_ context.Context, a *Artifacts, args struct{ URI string }) (*Artifacts, error) {
+		dagql.Func("filterURI", func(_ context.Context, a *Artifacts, args struct{ URI string }) (*Artifacts, error) {
 			addr, err := dagaddress.Parse(args.URI)
 			if err != nil {
 				return nil, err
@@ -155,13 +155,13 @@ func TestLiftScopeSelection(t *testing.T) {
 		includes = nil
 		out, err := call(t, m, "check", map[string]any{"targets": "go/**"})
 		require.NoError(t, err)
-		require.Equal(t, "go/lint,go/test via conversation.artifacts.filterUri", out)
+		require.Equal(t, "go/lint,go/test via conversation.artifacts.filterURI", out)
 		// The path narrows which workspace modules load.
 		require.Equal(t, [][]string{{"go/**"}}, includes)
 
 		out, err = call(t, m, "check", map[string]any{"targets": "dag+directory://"})
 		require.NoError(t, err)
-		require.Equal(t, "docs/site via conversation.artifacts.filterUri", out)
+		require.Equal(t, "docs/site via conversation.artifacts.filterURI", out)
 		require.Nil(t, includes[len(includes)-1], "an address without a path loads everything")
 
 		// An address that selects nothing is refused, rather than handing
@@ -174,7 +174,7 @@ func TestLiftScopeSelection(t *testing.T) {
 	t.Run("an Artifact arg takes the one artifact", func(t *testing.T) {
 		out, err := call(t, m, "eval", map[string]any{"target": "dag://go/test"})
 		require.NoError(t, err)
-		require.Equal(t, "go/test via conversation.artifacts.filterUri.one", out)
+		require.Equal(t, "go/test via conversation.artifacts.filterURI.one", out)
 
 		// Several matches are an error listing them, pointing to discovery.
 		_, err = call(t, m, "eval", map[string]any{"target": "go/*"})
@@ -191,7 +191,7 @@ func TestLiftScopeSelection(t *testing.T) {
 		rebound.SetSelfLLM(conversation)
 		out, err := call(t, rebound, "check", map[string]any{"targets": "docs/**"})
 		require.NoError(t, err)
-		require.Equal(t, "docs/site via conversation.withTools.artifacts.filterUri", out)
+		require.Equal(t, "docs/site via conversation.withTools.artifacts.filterURI", out)
 	})
 
 	t.Run("an address needs a conversation", func(t *testing.T) {

@@ -295,7 +295,7 @@ func uriExpertiseIDs(ctx context.Context, c *dagger.Client, ws *core.Workspace, 
 	}
 	err = c.Do(ctx, &dagger.Request{
 		Query: `query($ws: ID!, $uri: String!) {
-			node(id: $ws) { ... on Workspace { artifacts { filterUri(uri: $uri) { asExpertise { id } } } } }
+			node(id: $ws) { ... on Workspace { artifacts { filterURI(uri: $uri) { asExpertise { id } } } } }
 		}`,
 		Variables: map[string]any{"ws": wsID, "uri": uri},
 	}, &dagger.Response{Data: &res})
