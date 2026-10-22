@@ -2719,7 +2719,7 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 	if !engine.CheckVersionCompatibility(modCfg.EngineVersion, engine.MinimumModuleVersion) {
 		return nil, fmt.Errorf("module requires dagger %s, but support for that version has been removed", modCfg.EngineVersion)
 	}
-	if !engine.CheckMaxVersionCompatibility(modCfg.EngineVersion, engine.BaseVersion(engine.Version)) {
+	if !engine.CheckMaxAPIViewCompatibility(modCfg.EngineVersion, engine.Version) {
 		return nil, fmt.Errorf("module requires dagger %s, but you have %s", modCfg.EngineVersion, engine.Version)
 	}
 
@@ -4268,7 +4268,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	if !engine.CheckVersionCompatibility(engineVersion, engine.MinimumModuleVersion) {
 		return inst, fmt.Errorf("module requires dagger %s, but support for that version has been removed", engineVersion)
 	}
-	if !engine.CheckMaxVersionCompatibility(engineVersion, engine.BaseVersion(engine.Version)) {
+	if !engine.CheckMaxAPIViewCompatibility(engineVersion, engine.Version) {
 		return inst, fmt.Errorf("module requires dagger %s, but you have %s", engineVersion, engine.Version)
 	}
 
@@ -4579,7 +4579,7 @@ func (s *moduleSourceSchema) defaultSchemaBuilderForEngineVersion(
 	baseMods := defaultDeps.Mods()
 	for i, depMod := range baseMods {
 		if coreMod, ok := depMod.(*CoreMod); ok {
-			baseMods[i] = coreMod.WithView(call.View(engine.ModuleAPIViewVersion(engineVersion)))
+			baseMods[i] = coreMod.WithView(call.View(engine.APIViewVersion(engineVersion)))
 		}
 	}
 	return core.NewSchemaBuilder(query, baseMods), nil

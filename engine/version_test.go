@@ -197,9 +197,6 @@ func TestAPIViewVersion(t *testing.T) {
 }
 
 func TestAPIVersionAtLeast(t *testing.T) {
-	// a released engine: the v1.0.0 module clamp (ModuleAPIViewVersion) is
-	// off
-	setVersion(t, "v1.0.1")
 	for _, tc := range []struct {
 		version string
 		post    bool
@@ -226,42 +223,46 @@ func TestAPIVersionAtLeast(t *testing.T) {
 	}
 }
 
-// While the engine is a v1.0.0 prerelease or dev build, a module declaring
-// exactly v1.0.0 gets the view of the earlier prereleases; clients, and
-// modules on a released engine, get the release's.
-func TestModuleAPIViewVersion(t *testing.T) {
+// An engine refuses a module whose API view is past its own: prereleases are
+// ordered from PrereleaseViewsVersion on, and dev builds share their
+// release's view.
+func TestMaxAPIViewCompatibility(t *testing.T) {
+	setVersion(t, "v1.0.0-beta.21")
 	for _, tc := range []struct {
-		engine  string
-		version string
-		view    string
+		engine     string
+		version    string
+		compatible bool
 	}{
-		{engine: "v1.0.0-beta.21", version: "v1.0.0", view: "v1.0.0-beta.20"},
-		{engine: "v1.0.0-beta.21", version: "1.0.0", view: "v1.0.0-beta.20"},
-		{engine: "v1.0.0-beta.21", version: "v1.0.0+abc", view: "v1.0.0-beta.20"},
-		{engine: "v1.0.0-beta.22", version: "v1.0.0", view: "v1.0.0-beta.20"},
-		{engine: "v1.0.0-dev-123", version: "v1.0.0", view: "v1.0.0-beta.20"},
-		{engine: "v1.0.0", version: "v1.0.0", view: "v1.0.0"},
-		{engine: "v1.0.1", version: "v1.0.0", view: "v1.0.0"},
-		{engine: "v0.21.6", version: "v1.0.0", view: "v1.0.0"},
+		{engine: "v1.0.0-beta.21", version: "v1.0.0-beta.21", compatible: true},
+		{engine: "v1.0.0-beta.21", version: "v1.0.0-beta.21+abcdef12", compatible: true},
+		{engine: "v1.0.0-beta.21", version: "v1.0.0-beta.20", compatible: true},
+		{engine: "v1.0.0-beta.21", version: "v1.0.0-0", compatible: true},
+		{engine: "v1.0.0-beta.21", version: "v0.21.6", compatible: true},
+		{engine: "v1.0.0-beta.21", version: "", compatible: true},
+		{engine: "v1.0.0-beta.21", version: "v1.0.0-beta.22"},
+		{engine: "v1.0.0-beta.21", version: "v1.0.0-rc.1"},
+		{engine: "v1.0.0-beta.21", version: "v1.0.0"},
+		{engine: "v1.0.0-beta.21", version: "v1.0.0-dev-123"},
 
-		// only exactly v1.0.0 is clamped
-		{engine: "v1.0.0-beta.21", version: "v1.0.0-dev-123", view: "v1.0.0"},
-		{engine: "v1.0.0-beta.21", version: "v1.0.0-beta.21", view: "v1.0.0-beta.21"},
-		{engine: "v1.0.0-beta.21", version: "v1.0.0-beta.19", view: "v1.0.0-beta.20"},
-		{engine: "v1.0.0-beta.21", version: "v1.0.1", view: "v1.0.1"},
-		{engine: "v1.0.0-beta.21", version: "v0.21.6", view: "v0.21.6"},
-		{engine: "v1.0.0-beta.21", version: "", view: "v1.0.0-beta.21"},
+		// pre-cut engines share one view, so they accept each other's
+		// modules, but not the cut's
+		{engine: "v1.0.0-beta.20", version: "v1.0.0-beta.19", compatible: true},
+		{engine: "v1.0.0-beta.19", version: "v1.0.0-beta.20", compatible: true},
+		{engine: "v1.0.0-beta.20", version: "v1.0.0-beta.21"},
+
+		// dev builds share their release's view
+		{engine: "v1.0.0-dev-123", version: "v1.0.0-beta.22", compatible: true},
+		{engine: "v1.0.0-dev-123", version: "v1.0.0", compatible: true},
+		{engine: "v1.0.0-dev-123", version: "v1.0.0-dev-456", compatible: true},
+		{engine: "v1.0.0-dev-123", version: "v1.0.1"},
+
+		{engine: "v1.0.0", version: "v1.0.0", compatible: true},
+		{engine: "v2.0.0", version: "v2.0.1"},
 	} {
 		t.Run(tc.engine+"/"+tc.version, func(t *testing.T) {
-			setVersion(t, tc.engine)
-			require.Equal(t, tc.view, ModuleAPIViewVersion(tc.version))
-			require.Equal(t, semver.Compare(tc.view, IdentifierCasingVersion) >= 0,
-				APIVersionAtLeast(tc.version, IdentifierCasingVersion))
+			require.Equal(t, tc.compatible, CheckMaxAPIViewCompatibility(tc.version, tc.engine))
 		})
 	}
-	// clients are not clamped
-	setVersion(t, "v1.0.0-beta.21")
-	require.Equal(t, "v1.0.0", APIViewVersion("v1.0.0"))
 }
 
 // The view constants must agree: earlier v1.0.0 prereleases share one view
