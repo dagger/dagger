@@ -577,8 +577,8 @@ func (h *shellCallHandler) registerCommands() error { //nolint:gocyclo
 					// type instead so `. | .help` documents the module
 					// object, not Query.
 					if t.AsFunctionProvider() != nil && t.AsFunctionProvider().ProviderName() == "Query" && def.HasModule() {
-						if mt := def.GetTypeDef(gqlObjectName(def.Name)); mt != nil {
-							t = mt
+						if mt := def.GetObject(def.Name); mt != nil && mt.typeDef != nil {
+							t = mt.typeDef
 						}
 					}
 					return h.Print(ctx, shellTypeDoc(t))
