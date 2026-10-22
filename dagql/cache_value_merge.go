@@ -52,7 +52,8 @@ import (
 // that depend on it relocate onto that entry. It holds when merge would keep
 // the entry's value for a record of the recipe with the row's expiry, judged
 // against the cache before the merge. If any held row doesn't hold, the merge
-// commits nothing and its reply names every stale held row.
+// commits nothing and its reply names every stale held row. A bundle that
+// carries a held row and a record of the same recipe is malformed.
 //
 // The reply reports every target as the commit left it, read under the same
 // lock, with the cache's generation and clock. Merge runs in no session and
@@ -423,20 +424,11 @@ func (c *Cache) prepareValueMerge(ctx context.Context, input ValueBundle, skipKe
 	if err != nil {
 		return nil, err
 	}
-	for i, id := range order {
-		res := private.resultsByID[sharedResultID(prep.firstID+id-1)]
-		plan := transferIdentityPlan{row: res, recipe: prep.index[id].Held}
-		if !prep.held[id] {
-			if plan, err = private.transferIdentityPlanOf(res); err != nil {
-				return nil, err
-			}
-		}
-		prep.plans[id] = plan
-		if c.testTransferPlanPrepared != nil {
-			if err := c.testTransferPlanPrepared(i + 1); err != nil {
-				return nil, err
-			}
-		}
+	if err := c.planMergeIdentities(prep, private); err != nil {
+		return nil, err
+	}
+	if err := prep.checkHeldRecipes(); err != nil {
+		return nil, err
 	}
 
 	if skipKept && !c.blobBacked {
@@ -454,6 +446,104 @@ func (c *Cache) prepareValueMerge(ctx context.Context, input ValueBundle, skipKe
 	return prep, nil
 }
 
+// privateMergeCache builds the private cache a preparation derives the
+// records' identities in: each record at its provisional number, relocated
+// in its call and offers, a held row standing in with its entry's own call
+// frame (heldFrames), and the bundle's ownership graph, with its offers'
+// owners. It holds no lock: the private cache is the preparation's own.
+func (c *Cache) privateMergeCache(ctx context.Context, prep *valueMergePrep, heldFrames map[uint64]*ResultCall, relocate PersistedRefVisitor) (*Cache, error) {
+	private := &Cache{resultsByID: map[sharedResultID]*sharedResult{}}
+	for _, id := range prep.order {
+		row := prep.index[id]
+		if prep.held[id] {
+			// The held row stands in with its entry's own call frame, whose
+			// recipe the rows that depend on it derive theirs from. The
+			// frame is the cache's: nothing below relocates or rewires it.
+			rec := PersistedRecord{ResultID: prep.firstID + id - 1}
+			prep.records[id] = rec
+			res := &sharedResult{id: sharedResultID(rec.ResultID), imported: true, expiresAtUnix: row.ExpiresAtUnix}
+			res.storeResultCall(heldFrames[id])
+			private.putResultLocked(res)
+			continue
+		}
+		rec := row.Record
+		rec.ResultID = prep.firstID + id - 1
+		rec.Envelope.ResultID = rec.ResultID
+		rec.Envelope.Imported = true
+		rec.Call = rec.Call.clone()
+		if err := visitResultCallReferences(rec.Call, nil, relocate); err != nil {
+			return nil, err
+		}
+		offers, err := clonePartOffers(rec.Envelope.PendingOffers)
+		if err != nil {
+			return nil, err
+		}
+		for i := range offers {
+			if err := visitPersistedPartOffer(&offers[i], nil, relocate); err != nil {
+				return nil, err
+			}
+		}
+		rec.Envelope.PendingOffers = offers
+		deps := make(map[sharedResultID]struct{}, len(row.DependencyIDs))
+		for _, dep := range row.DependencyIDs {
+			deps[sharedResultID(prep.firstID+dep-1)] = struct{}{}
+		}
+		prep.records[id] = rec
+		res := &sharedResult{id: sharedResultID(rec.ResultID), imported: true, isObject: rec.Envelope.Kind == persistedResultKindObject, persistedEnvelope: &rec.Envelope, deps: deps, expiresAtUnix: row.ExpiresAtUnix, sessionResourceHandle: rec.Envelope.SessionResourceHandle}
+		res.storeResultCall(rec.Call)
+		if !c.blobBacked {
+			// The private offers attach to a Cloud holding, as they will in
+			// the cache.
+			res.noteCloudCopyLocked(row.SenderNumber, true, row.ExpiresAtUnix)
+		}
+		private.putResultLocked(res)
+	}
+	for _, res := range private.resultsByID {
+		if prep.held[uint64(res.id)-prep.firstID+1] {
+			continue
+		}
+		if err := walkTransferCalls(res.loadResultCall(), func(*ResultCall) error { return nil }, func(ref *ResultCallRef) error {
+			ref.shared = private.resultsByID[sharedResultID(ref.ResultID)]
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+		for depID := range res.deps {
+			dep := private.resultsByID[depID]
+			private.rememberDependencyEdgeLocked(res, dep)
+			private.incrementIncomingOwnershipLocked(ctx, dep)
+		}
+	}
+	// The bundle's offers are checked in its own ownership graph here, and
+	// against the cache's when the merge decides.
+	if err := private.restoreOfferOwnersLocked(ctx); err != nil {
+		return nil, err
+	}
+	return private, nil
+}
+
+// planMergeIdentities derives each record's identity in the private cache,
+// in dependency order; a held row's is its recipe alone.
+func (c *Cache) planMergeIdentities(prep *valueMergePrep, private *Cache) error {
+	for i, id := range prep.order {
+		res := private.resultsByID[sharedResultID(prep.firstID+id-1)]
+		plan := transferIdentityPlan{row: res, recipe: prep.index[id].Held}
+		if !prep.held[id] {
+			var err error
+			if plan, err = private.transferIdentityPlanOf(res); err != nil {
+				return err
+			}
+		}
+		prep.plans[id] = plan
+		if c.testTransferPlanPrepared != nil {
+			if err := c.testTransferPlanPrepared(i + 1); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // prepareRecordPayloads prepares every record but a light one with its
 // payload (prepareRecordPayload), in dependency order. It returns ctx's cause
 // when ctx is cancelled before a payload.
@@ -467,6 +557,32 @@ func (prep *valueMergePrep) prepareRecordPayloads(ctx context.Context, relocate 
 		}
 		if err := prep.prepareRecordPayload(id, relocate); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// checkHeldRecipes refuses a bundle that carries a held row and a record of
+// the same recipe, as malformed: the held row is checked against the
+// recipe's current entry, which the record could replace. It runs once every
+// row's recipe is derived; a preparation that finds a held row stale has
+// answered before then, committing nothing either way.
+func (prep *valueMergePrep) checkHeldRecipes() error {
+	if len(prep.held) == 0 {
+		return nil
+	}
+	held := map[string]uint64{}
+	for _, id := range prep.order {
+		if prep.held[id] {
+			held[prep.plans[id].recipe.String()] = id
+		}
+	}
+	for _, id := range prep.order {
+		if prep.held[id] {
+			continue
+		}
+		if other, ok := held[prep.plans[id].recipe.String()]; ok {
+			return fmt.Errorf("merge values: held row %d and row %d have the same recipe", other, id)
 		}
 	}
 	return nil
@@ -1715,80 +1831,4 @@ func comparePartAddresses(a, b PersistedPartAddress) int {
 		return 1
 	}
 	return 0
-}
-
-// privateMergeCache builds the private cache a preparation derives the
-// records' identities in: each record at its provisional number, relocated
-// in its call and offers, a held row standing in with its entry's own call
-// frame (heldFrames), and the bundle's ownership graph, with its offers'
-// owners. It holds no lock: the private cache is the preparation's own.
-func (c *Cache) privateMergeCache(ctx context.Context, prep *valueMergePrep, heldFrames map[uint64]*ResultCall, relocate PersistedRefVisitor) (*Cache, error) {
-	private := &Cache{resultsByID: map[sharedResultID]*sharedResult{}}
-	for _, id := range prep.order {
-		row := prep.index[id]
-		if prep.held[id] {
-			// The held row stands in with its entry's own call frame, whose
-			// recipe the rows that depend on it derive theirs from. The
-			// frame is the cache's: nothing below relocates or rewires it.
-			rec := PersistedRecord{ResultID: prep.firstID + id - 1}
-			prep.records[id] = rec
-			res := &sharedResult{id: sharedResultID(rec.ResultID), imported: true, expiresAtUnix: row.ExpiresAtUnix}
-			res.storeResultCall(heldFrames[id])
-			private.putResultLocked(res)
-			continue
-		}
-		rec := row.Record
-		rec.ResultID = prep.firstID + id - 1
-		rec.Envelope.ResultID = rec.ResultID
-		rec.Envelope.Imported = true
-		rec.Call = rec.Call.clone()
-		if err := visitResultCallReferences(rec.Call, nil, relocate); err != nil {
-			return nil, err
-		}
-		offers, err := clonePartOffers(rec.Envelope.PendingOffers)
-		if err != nil {
-			return nil, err
-		}
-		for i := range offers {
-			if err := visitPersistedPartOffer(&offers[i], nil, relocate); err != nil {
-				return nil, err
-			}
-		}
-		rec.Envelope.PendingOffers = offers
-		deps := make(map[sharedResultID]struct{}, len(row.DependencyIDs))
-		for _, dep := range row.DependencyIDs {
-			deps[sharedResultID(prep.firstID+dep-1)] = struct{}{}
-		}
-		prep.records[id] = rec
-		res := &sharedResult{id: sharedResultID(rec.ResultID), imported: true, isObject: rec.Envelope.Kind == persistedResultKindObject, persistedEnvelope: &rec.Envelope, deps: deps, expiresAtUnix: row.ExpiresAtUnix, sessionResourceHandle: rec.Envelope.SessionResourceHandle}
-		res.storeResultCall(rec.Call)
-		if !c.blobBacked {
-			// The private offers attach to a Cloud holding, as they will in
-			// the cache.
-			res.noteCloudCopyLocked(row.SenderNumber, true, row.ExpiresAtUnix)
-		}
-		private.putResultLocked(res)
-	}
-	for _, res := range private.resultsByID {
-		if prep.held[uint64(res.id)-prep.firstID+1] {
-			continue
-		}
-		if err := walkTransferCalls(res.loadResultCall(), func(*ResultCall) error { return nil }, func(ref *ResultCallRef) error {
-			ref.shared = private.resultsByID[sharedResultID(ref.ResultID)]
-			return nil
-		}); err != nil {
-			return nil, err
-		}
-		for depID := range res.deps {
-			dep := private.resultsByID[depID]
-			private.rememberDependencyEdgeLocked(res, dep)
-			private.incrementIncomingOwnershipLocked(ctx, dep)
-		}
-	}
-	// The bundle's offers are checked in its own ownership graph here, and
-	// against the cache's when the merge decides.
-	if err := private.restoreOfferOwnersLocked(ctx); err != nil {
-		return nil, err
-	}
-	return private, nil
 }
