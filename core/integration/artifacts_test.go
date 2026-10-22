@@ -1548,11 +1548,11 @@ func (ArtifactsSuite) TestCheckMaterializationFailures(ctx context.Context, t *t
 		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"./probe\"\nmain = true\n").
 		WithNewFile("probe/dagger-module.toml", "name = \"probe\"\nengineVersion = \"v1.0.0\"\n[runtime]\nsource = \"dang\"\n").
 		WithNewFile("probe/main.dang", `type Probe {
- pub brokenDirectory: Directory! @check { container.from("alpine:3.22").withExec(["sh", "-c", "exit 42"]).rootfs }
- pub brokenFile: File! @check { container.from("alpine:3.22").withExec(["sh", "-c", "exit 43"]).file("/missing") }
- pub good: Directory! @check { directory.withNewFile("ok", "ok") }
+ pub brokenDirectory: Void @check { container.from("alpine:3.22").withExec(["sh", "-c", "exit 42"]).rootfs.sync; null }
+ pub brokenFile: Void @check { container.from("alpine:3.22").withExec(["sh", "-c", "exit 43"]).file("/missing").sync; null }
+ pub good: Void @check { directory.withNewFile("ok", "ok").sync; null }
 }`)
-	out, err := base.With(daggerExecFail("check")).CombinedOutput(ctx)
+	out, err := base.With(daggerExecFail("--progress=report", "check")).CombinedOutput(ctx)
 	require.NoError(t, err, out)
 	require.Contains(t, out, "exit code: 42")
 	require.Contains(t, out, "exit code: 43")

@@ -236,7 +236,7 @@ func (ArtifactsSuite) TestFilteredViewChecks(ctx context.Context, t *testctx.T) 
  {"sync":{"pass":false,"error":{"message":"Bar assertion failed"}}},
  {"sync":{"pass":false,"error":{"message":"Bar assertion failed"}}}
  ]}}}}`, out)
-	out, err = base.With(daggerExecFail("check", "--generated=false", "packages/tests/verify",
+	out, err = base.With(daggerExecFail("--progress=report", "check", "--generated=false", "packages/tests/verify",
 		"--view-package=left", "--view-package=right", "--view-case=Foo", "--view-case=Bar")).CombinedOutput(ctx)
 	require.NoError(t, err, out)
 	require.Contains(t, out, "Bar assertion failed")
@@ -251,7 +251,7 @@ func (ArtifactsSuite) TestFilteredViewChecks(ctx context.Context, t *testctx.T) 
 		}))
 		out, err := engineClientContainer(ctx, t, c, source).
 			WithDirectory("/work", base.Directory("/work")).WithWorkdir("/work").
-			With(daggerNonNestedExecFail("check", "--scale-out", "--generated=false", selection)).CombinedOutput(ctx)
+			With(daggerNonNestedExecFail("--progress=report", "check", "--scale-out", "--generated=false", selection)).CombinedOutput(ctx)
 		require.NoError(t, err, out)
 		require.Contains(t, out, "Bar assertion failed")
 		require.NotContains(t, out, "view lost")
