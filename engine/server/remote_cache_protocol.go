@@ -378,7 +378,8 @@ type readerAtCloser struct {
 // Merge merges a bundle of the Cloud's values into the cache and answers with
 // what the commit left. A merge that committed is answered even when a
 // release after the commit failed: the cache changed, and the service must
-// learn how. The release's error is logged instead.
+// learn how. The release's error is logged instead. A merge refused for stale
+// held rows committed nothing, and is answered with them.
 func (a *RemoteCacheAdapter) Merge(ctx context.Context, req protocol.Merge) (protocol.Merged, error) {
 	if a.stopped.Load() {
 		return protocol.Merged{}, ErrRemoteCacheAdapterClosed
@@ -391,15 +392,26 @@ func (a *RemoteCacheAdapter) Merge(ctx context.Context, req protocol.Merge) (pro
 	} else {
 		mergeOp.EndErr(err)
 	}
+	held := 0
+	for _, value := range req.Bundle.Values {
+		if value.Held != "" {
+			held++
+		}
+	}
 	slog.Info("remote cache merge",
 		"records", len(req.Bundle.Values),
+		"held", held,
 		"roots", len(req.Bundle.Roots),
 		"committed", reply.Committed,
+		"stale", len(reply.Stale),
 		"commitHold", reply.CommitHold,
 		"duration", time.Since(start),
 		"error", err,
 		"generation", reply.Generation,
 		"engine_time", reply.EngineTimeUnixNano)
+	if err == nil && len(reply.Stale) > 0 {
+		return protocol.Merged{Generation: reply.Generation, EngineTime: reply.EngineTimeUnixNano, Values: []protocol.MergedValue{}, Retained: []protocol.RetainedRoot{}, Stale: reply.Stale}, nil
+	}
 	if !reply.Committed {
 		return protocol.Merged{}, err
 	}
