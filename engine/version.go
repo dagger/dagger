@@ -178,15 +178,15 @@ const basePrereleaseView = "v1.0.0-beta.20"
 // GitCommit.shortSHA). Gate on it with a view filter,
 // View(AfterVersion(engine.IdentifierCasingVersion)) and
 // View(BeforeVersion(engine.IdentifierCasingVersion)), in a resolver with
-// core.Supports(ctx, engine.IdentifierCasingVersion), and for a declared
-// version outside a call with APIVersionAtLeast.
+// core.Supports(ctx, engine.IdentifierCasingVersion), and for a module's
+// declared engineVersion outside a call with APIVersionAtLeast.
 //
 // It must not be older than PrereleaseViewsVersion: earlier prereleases share
 // one view, which a gate cannot split.
 const IdentifierCasingVersion = "v1.0.0-beta.21"
 
-// APIViewVersion returns the API view for a client or module that declares
-// version.
+// APIViewVersion returns the API view for a client that declares version.
+// Modules get theirs from ModuleAPIViewVersion.
 //
 // From PrereleaseViewsVersion on, a view keeps the declared prerelease, so a
 // view gate such as AfterVersion("v1.0.0-beta.21") tells v1.0.0-beta.21 and
@@ -238,8 +238,9 @@ func APIVersionAtLeast(version, minVersion string) bool {
 // see the API past every prerelease gate, renamed under them, and locked
 // versions can't be fixed. The release's own engine serves them its view, so
 // the break comes with v1.0.0, not with a beta. Client versions are not
-// clamped: they name the CLI or SDK release a client runs, not a pin locked
-// into a released module.
+// clamped: a client's version is the dagger CLI's that started its session
+// (or the engine's, for a nested client), not a pin locked into a released
+// module.
 func ModuleAPIViewVersion(version string) string {
 	view := APIViewVersion(version)
 	if view != "v1.0.0" || !isV1Prerelease(Version) {
