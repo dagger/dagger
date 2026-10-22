@@ -190,7 +190,7 @@ func (ModuleConfigSuite) TestEngineVersionLatestPinsOnConfigWrite(ctx context.Co
 
 	want := engine.NormalizeVersion(engine.Version)
 	require.Equal(t, want, writtenEngineVersion(ctx, t, moduleSource("latest").WithName("bar")))
-	require.Equal(t, want, writtenEngineVersion(ctx, t, moduleSource("v1.0.0").WithEngineVersion("latest")))
+	require.Equal(t, want, writtenEngineVersion(ctx, t, moduleSource("v1.0.0-beta.20").WithEngineVersion("latest")))
 }
 
 func (ModuleConfigSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
@@ -992,7 +992,7 @@ func (ModuleConfigSuite) TestGeneratedContextChangesetPreservesUnrelatedContext(
 
 	src := core.NewQuery(c).Directory().
 		WithNewFile("outside.txt", "keep me").
-		WithNewFile("mod/dagger.json", `{"name":"foo","engineVersion":"v1.0.0","sdk":{"source":"dang"}}`).
+		WithNewFile("mod/dagger.json", `{"name":"foo","engineVersion":"v1.0.0-beta.20","sdk":{"source":"dang"}}`).
 		WithNewFile("mod/main.dang", "type Foo {\n  pub hello: String! {\n    \"hi\"\n  }\n}\n").
 		AsModuleSource(core.DirectoryAsModuleSourceOpts{SourceRootPath: "mod"})
 
@@ -1009,7 +1009,7 @@ func (ModuleConfigSuite) TestModuleSourceGenerateWorkspace(ctx context.Context, 
 
 	ws := core.NewQuery(c).Directory().
 		WithNewFile("outside.txt", "keep me").
-		WithNewFile("mod/dagger.json", `{"name":"foo","engineVersion":"v1.0.0","sdk":{"source":"go"},"source":"."}`).
+		WithNewFile("mod/dagger.json", `{"name":"foo","engineVersion":"v1.0.0-beta.20","sdk":{"source":"go"},"source":"."}`).
 		WithNewFile("mod/main.go", "package main\n\ntype Foo struct{}\n").
 		AsWorkspace()
 

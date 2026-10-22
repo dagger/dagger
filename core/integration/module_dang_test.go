@@ -586,7 +586,7 @@ func (DangSuite) TestLoadErrorReport(ctx context.Context, t *testctx.T) {
 		t.Helper()
 		modDir := t.TempDir()
 		require.NoError(t, os.WriteFile(filepath.Join(modDir, "dagger.json"),
-			[]byte(`{"name":"broken","engineVersion":"v1.0.0","sdk":"dang"}`), 0o644))
+			[]byte(`{"name":"broken","engineVersion":"v1.0.0-beta.20","sdk":"dang"}`), 0o644))
 		require.NoError(t, os.WriteFile(filepath.Join(modDir, "main.dang"), []byte(source), 0o644))
 		return modDir
 	}
