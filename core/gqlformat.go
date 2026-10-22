@@ -8,6 +8,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 )
 
 /*
@@ -27,17 +28,25 @@ func formatGqlDescription(desc string) string {
 
 // IdentifierNamingVersion is the first engine version whose names are
 // normalized by engine/naming: modules that declare it or later in their
-// engineVersion, and modules served at the engine's own version (manifest v2
-// entrypoints). Modules that declare an older engineVersion keep the strcase
+// engineVersion. Modules that declare an older engineVersion keep the strcase
 // rules they were built against, byte for byte. See
 // hack/designs/identifier-casing.md, "The gate".
 //
-// The gate is an API view (engine.APIViewVersion), and every v1.0.0
-// prerelease's view is past it: those before engine.PrereleaseViewsVersion
-// share one pre-cut view, and later ones keep their own. So every v1.0.0
-// prerelease gets the new rules. The old spellings of the module names they
-// changed stay accepted as hidden aliases (see ModuleNameAliases).
-const IdentifierNamingVersion = "v1.0.0-0"
+// It's engine.IdentifierCasingVersion, the first release whose view keeps
+// its prerelease, so no released engine names modules the new way under an
+// older version: a module that declares an earlier v1.0.0 prerelease
+// (including v1.0.0-0, which shares their pre-cut view) keeps the strcase
+// rules.
+//
+// SDK generators decide which naming rules to apply by whether the schema
+// they generate from has Query.formatIdentifiers, which is installed on the
+// same view: the two must line up exactly.
+const IdentifierNamingVersion = engine.IdentifierCasingVersion
+
+// IdentifierNamingView is the API views whose names follow engine/naming:
+// the views of IdentifierNamingVersion and later. It gates both how modules
+// are named and the identifier API (Query.formatIdentifiers and friends).
+var IdentifierNamingView dagql.ViewFilter = AfterVersion(IdentifierNamingVersion)
 
 func gqlObjectName(name string) string {
 	// gql object name is capitalized camel case
