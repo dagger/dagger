@@ -149,7 +149,34 @@ func TestOutsideInputsDigest(t *testing.T) {
 	require.NotEqual(t, ignored, digest(tree(map[string]string{".gitignore": "*.log\n"}, nil), "lib"),
 		"with ignore files above it, where it is counts: their patterns match by path")
 	require.NotEqual(t, none, digest(tree(map[string]string{".ignore": "*.log\n"}, nil), "app"))
-	require.NotEqual(t, none, digest(tree(map[string]string{".git/info/exclude": "*.log\n"}, nil), "app"))
+
+	// A repository above the directory, or at its root, means it isn't keyed
+	// by content at all.
+	for _, files := range []map[string]string{
+		{".git/HEAD": "ref: refs/heads/main\n"},
+		{".git": "gitdir: elsewhere\n"},
+		{"app/.git/HEAD": "ref: refs/heads/main\n"},
+		{"app/nested/.git": "gitdir: ../../../elsewhere\n"},
+		{"HEAD": "ref: refs/heads/main\n", "objects/.keep": "", "refs/.keep": ""},
+		{"HEAD": "ref: refs/heads/main\n", "commondir": "../common\n"},
+		{"app/HEAD": "ref: refs/heads/main\n", "app/objects/.keep": ""},
+		{"app/sub/HEAD": "ref: refs/heads/main\n", "app/sub/refs/.keep": ""},
+	} {
+		root := tree(files, nil)
+		_, err := outsideInputsDigest(root, filepath.Join(root, "app"))
+		require.ErrorIs(t, err, errInRepository, "%v", files)
+	}
+	for _, files := range []map[string]string{
+		{"HEAD": "x"},
+		{"gitdir": "x"},
+		{".jj/repo": "x"},
+		{"app/.jj/repo": "x"},
+		{"app/deep/commondir": "x"},
+	} {
+		root := tree(files, nil)
+		_, err := outsideInputsDigest(root, filepath.Join(root, "app"))
+		require.ErrorIs(t, err, errInRepository, "%v", files)
+	}
 
 	linked := func(rules string) string {
 		return digest(tree(map[string]string{"rules": rules}, map[string]string{"app/.gitignore": "../rules"}), "app")
