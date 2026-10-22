@@ -81,21 +81,21 @@ func TestStopBudget(t *testing.T) {
 		b.start()
 
 		now = time.Unix(1010, 0)
-		ctx, cancel := b.flushContext(context.Background(), stopFlushTimeout)
+		ctx, cancel := b.flushContext(context.Background())
 		deadline, ok := ctx.Deadline()
 		cancel()
 		require.True(t, ok)
 		require.Equal(t, time.Unix(1040, 0), deadline, "plenty of budget left: capped at the flush timeout")
 
 		now = time.Unix(1040, 0)
-		ctx, cancel = b.flushContext(context.Background(), stopFlushTimeout)
+		ctx, cancel = b.flushContext(context.Background())
 		deadline, ok = ctx.Deadline()
 		cancel()
 		require.True(t, ok)
 		require.Equal(t, time.Unix(1050, 0), deadline, "near the end: only the remainder")
 
 		now = time.Unix(1070, 0)
-		ctx, cancel = b.flushContext(context.Background(), stopFlushTimeout)
+		ctx, cancel = b.flushContext(context.Background())
 		deadline, ok = ctx.Deadline()
 		cancel()
 		require.True(t, ok)
@@ -127,7 +127,7 @@ func TestStopBudget(t *testing.T) {
 		_, ok := ctx.Deadline()
 		require.True(t, ok)
 
-		fctx, fcancel := b.flushContext(parent, stopFlushTimeout)
+		fctx, fcancel := b.flushContext(parent)
 		defer fcancel()
 		require.NoError(t, fctx.Err())
 	})
