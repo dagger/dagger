@@ -98,7 +98,7 @@ Other core returns, and bound core objects, rely on core calls being hermetic.
 
 - `__withField` is an engine-owned field installed on every module object type
   beside `__rebindState`. It is not in `TypeDef.Functions`, so it never becomes
-  a tool, an entrypoint proxy or an SDK method. It is a pure, persistable
+  a tool, an workspace main proxy or an SDK method. It is a pure, persistable
   setter that clones the receiver with one field replaced, and carries the
   module's `Module`/`ModuleProvider`, so its frames keep module provenance and
   `withTools` can resolve their type without loading them.

@@ -73,19 +73,19 @@ Every write — `dagger install`, `dagger settings`, `dagger workspace config <k
 
 ## What you inherit
 
-An include is meant for configuration shared inside one team or company: trust it as you trust your own `dagger.toml`. Its modules, entrypoint, settings, and check, generate and service policies become yours, and a change to the shared config reaches every workspace that includes it.
+An include is meant for configuration shared inside one team or company: trust it as you trust your own `dagger.toml`. Its modules, main selection, settings, and check, generate and service policies become yours, and a change to the shared config reaches every workspace that includes it.
 
 You cannot remove an inherited module while you keep the include, but you can stop it from acting:
 
 ```toml
 [modules.lint]
-entrypoint = false
+main = false
 check.skip = ["*"]
 generate.skip = ["*"]
 up.skip = ["*"]
 ```
 
-`entrypoint = false` stops the module from being the workspace entrypoint. Each `skip` pattern drops the matching checks, generators or services from `dagger check`, `dagger generate` and `dagger start`. The module itself still loads: `dagger module list` lists it, and its functions stay callable.
+`main = false` stops the module from being the workspace main. Each `skip` pattern drops the matching checks, generators or services from `dagger check`, `dagger generate` and `dagger start`. The module itself still loads: `dagger module list` lists it, and its functions stay callable.
 
 ## Limits
 

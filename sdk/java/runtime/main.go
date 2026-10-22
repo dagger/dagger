@@ -117,7 +117,7 @@ func (m *JavaSdk) codegenBase(
 		// Set the working directory to the one containing the sources to build, not just the module root
 		WithWorkdir(m.moduleConfig.modulePath())
 	// Add a default template if there's no existing user code
-	ctr, err = m.addTemplate(ctx, ctr)
+	ctr, err = m.addTemplate(ctx, ctr, modSource.ContextDirectory())
 	if err != nil {
 		return nil, err
 	}
@@ -193,9 +193,14 @@ func (m *JavaSdk) buildJavaDependencies(
 }
 
 // addTemplate creates all the necessary files to start a new Java module
+//
+// The checks read the user's module source, srcDir, rather than ctr: ctr
+// depends on the SDK build, and a failure there must not be mistaken for a
+// module without a pom.xml.
 func (m *JavaSdk) addTemplate(
 	ctx context.Context,
 	ctr *dagger.Container,
+	srcDir *dagger.Directory,
 ) (*dagger.Container, error) {
 	name := m.moduleConfig.name
 	pkgName := strings.ReplaceAll(strings.ReplaceAll(strings.ToLower(name), "-", ""), "_", "")
@@ -203,12 +208,28 @@ func (m *JavaSdk) addTemplate(
 	camelName := strcase.ToCamel(name)
 
 	// Check if there's a pom.xml inside the module path. If a file exist, no need to add the templates
-	if _, err := ctr.File(filepath.Join(m.moduleConfig.modulePath(), "pom.xml")).Name(ctx); err == nil {
+	exists, err := srcDir.Exists(ctx, filepath.Join(m.moduleConfig.subPath, "pom.xml"), dagger.DirectoryExistsOpts{DoNotFollowSymlinks: true})
+	if err != nil {
+		return ctr, fmt.Errorf("could not check for pom.xml: %w", err)
+	}
+	if exists {
 		return ctr, nil
 	}
 
 	absPath := func(rel ...string) string {
 		return filepath.Join(append([]string{m.moduleConfig.modulePath()}, rel...)...)
+	}
+	// withTemplateFile adds a template file, unless the user's module source
+	// already has a file at that path
+	withTemplateFile := func(ctr *dagger.Container, contents string, rel ...string) (*dagger.Container, error) {
+		exists, err := srcDir.Exists(ctx, filepath.Join(append([]string{m.moduleConfig.subPath}, rel...)...), dagger.DirectoryExistsOpts{DoNotFollowSymlinks: true})
+		if err != nil {
+			return ctr, fmt.Errorf("could not add template: %w", err)
+		}
+		if exists {
+			return ctr, nil
+		}
+		return ctr.WithNewFile(absPath(rel...), contents), nil
 	}
 
 	changes := []repl{
@@ -239,10 +260,15 @@ func (m *JavaSdk) addTemplate(
 	}
 
 	// And copy them to the container, renamed to match the dagger module name
-	ctr = ctr.
-		WithNewFile(absPath("pom.xml"), pomXML).
-		WithNewFile(absPath("src", "main", "java", "io", "dagger", "modules", pkgName, fmt.Sprintf("%s.java", camelName)), daggerModuleJava).
-		WithNewFile(absPath("src", "main", "java", "io", "dagger", "modules", pkgName, "package-info.java"), packageInfoJava)
+	if ctr, err = withTemplateFile(ctr, pomXML, "pom.xml"); err != nil {
+		return ctr, err
+	}
+	if ctr, err = withTemplateFile(ctr, daggerModuleJava, "src", "main", "java", "io", "dagger", "modules", pkgName, fmt.Sprintf("%s.java", camelName)); err != nil {
+		return ctr, err
+	}
+	if ctr, err = withTemplateFile(ctr, packageInfoJava, "src", "main", "java", "io", "dagger", "modules", pkgName, "package-info.java"); err != nil {
+		return ctr, err
+	}
 
 	return ctr, nil
 }

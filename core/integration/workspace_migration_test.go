@@ -1324,7 +1324,7 @@ type Hello {
 	})
 
 	t.Run("subdirectory blueprint config fails without changes", func(ctx context.Context, t *testctx.T) {
-		// A blueprint needs a workspace config, and hoisting an entrypoint to
+		// A blueprint needs a workspace config, and hoisting a main module to
 		// the repo root would change repo-wide behavior — the config is left
 		// as legacy, and setup explains the skip instead of claiming there is
 		// nothing to migrate.

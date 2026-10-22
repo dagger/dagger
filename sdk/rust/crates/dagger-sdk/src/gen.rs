@@ -1210,7 +1210,7 @@ impl Artifact {
         let query = self.selection.select("moduleName");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Ordered, literal fields to follow. Entrypoint targets use their shorthand.
+    /// Ordered, literal fields to follow. Workspace main targets use their shorthand.
     pub async fn path(&self) -> Result<Vec<String>, DaggerError> {
         let query = self.selection.select("path");
         query.execute(self.graphql_client.clone()).await
@@ -1923,7 +1923,7 @@ impl Artifacts {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Keep paths that match a glob pattern. A literal path matches exactly. Both module-qualified and entrypoint paths match.
+    /// Keep paths that match a glob pattern. A literal path matches exactly. Both module-qualified and workspace main paths match.
     pub fn filter_path_pattern(&self, pattern: impl Into<String>) -> Artifacts {
         let mut query = self.selection.select("filterPathPattern");
         query = query.arg("pattern", pattern.into());
@@ -14215,12 +14215,15 @@ pub struct Module {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ModuleServeOpts {
-    /// Install the module as the entrypoint, promoting its main-object methods onto the Query root
+    /// Compatibility alias for main.
     #[builder(setter(into, strip_option), default)]
     pub entrypoint: Option<bool>,
     /// Expose the dependencies of this module to the client
     #[builder(setter(into, strip_option), default)]
     pub include_dependencies: Option<bool>,
+    /// Install the module as the workspace main, promoting its main-object methods onto the Query root
+    #[builder(setter(into, strip_option), default)]
+    pub main: Option<bool>,
 }
 impl IntoID<Id> for Module {
     fn into_id(
@@ -14423,6 +14426,9 @@ impl Module {
         let mut query = self.selection.select("serve");
         if let Some(include_dependencies) = opts.include_dependencies {
             query = query.arg("includeDependencies", include_dependencies);
+        }
+        if let Some(main) = opts.main {
+            query = query.arg("main", main);
         }
         if let Some(entrypoint) = opts.entrypoint {
             query = query.arg("entrypoint", entrypoint);
@@ -15644,7 +15650,7 @@ pub struct QueryModuleSourceOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryCurrentTypeDefsOpts {
-    /// Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).
+    /// Strip core API functions from the Query type, leaving only module-sourced functions (constructors, workspace main proxies, etc.).
     /// Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
     #[builder(setter(into, strip_option), default)]
     pub hide_core: Option<bool>,
@@ -18507,12 +18513,15 @@ pub struct WorkspaceWithoutSdkOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithInitModuleOpts<'a> {
-    /// Select this module as the entrypoint and install it. False prevents automatic selection. When omitted, select only if both path and name are omitted and the module is installed.
+    /// Compatibility alias for main.
     #[builder(setter(into, strip_option), default)]
     pub entrypoint: Option<bool>,
     /// Install the module. When omitted, install only if path is omitted.
     #[builder(setter(into, strip_option), default)]
     pub install: Option<bool>,
+    /// Select this module as the workspace main and install it. False prevents automatic selection. When omitted, select only if both path and name are omitted and the module is installed.
+    #[builder(setter(into, strip_option), default)]
+    pub main: Option<bool>,
     /// Module name. The engine infers it from path, the active config file, or the workspace root when omitted.
     #[builder(setter(into, strip_option), default)]
     pub name: Option<&'a str>,
@@ -19791,8 +19800,22 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Return this workspace with an installed module selected as its entrypoint.
-    /// Every other entrypoint selection is cleared. Entrypoints live in the base workspace config.
+    /// Return this workspace with an installed module selected as its main.
+    /// Every other main selection is cleared. The main module lives in the base workspace config.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Exact installed module name.
+    pub fn with_main(&self, name: impl Into<String>) -> Workspace {
+        let mut query = self.selection.select("withMain");
+        query = query.arg("name", name.into());
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Compatibility alias for withMain.
     ///
     /// # Arguments
     ///
@@ -19806,7 +19829,16 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Return this workspace with no module selected as its entrypoint.
+    /// Return this workspace with no module selected as its main.
+    pub fn without_main(&self) -> Workspace {
+        let query = self.selection.select("withoutMain");
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Compatibility alias for withoutMain.
     pub fn without_entrypoint(&self) -> Workspace {
         let query = self.selection.select("withoutEntrypoint");
         Workspace {
@@ -19853,6 +19885,9 @@ impl Workspace {
         }
         if let Some(install) = opts.install {
             query = query.arg("install", install);
+        }
+        if let Some(main) = opts.main {
+            query = query.arg("main", main);
         }
         if let Some(entrypoint) = opts.entrypoint {
             query = query.arg("entrypoint", entrypoint);
@@ -20362,8 +20397,13 @@ impl Workspace {
         }
         query.execute(self.graphql_client.clone()).await
     }
-    /// Installed name of the module selected as the workspace entrypoint, or an empty string when none is selected.
+    /// Installed name of the module selected as the workspace main, or an empty string when none is selected.
     /// Reflects the selected env's effective view. Fails if several modules are selected.
+    pub async fn main(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("main");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Compatibility alias for main.
     pub async fn entrypoint(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("entrypoint");
         query.execute(self.graphql_client.clone()).await
@@ -20430,6 +20470,7 @@ impl Workspace {
         query.execute(self.graphql_client.clone()).await
     }
     /// Discover static object artifacts from workspace modules without evaluating their values.
+    /// Omits the paths that the workspace's check.skip, generate.skip, and up.skip settings skip.
     ///
     /// # Arguments
     ///
@@ -20443,6 +20484,7 @@ impl Workspace {
         }
     }
     /// Discover static object artifacts from workspace modules without evaluating their values.
+    /// Omits the paths that the workspace's check.skip, generate.skip, and up.skip settings skip.
     ///
     /// # Arguments
     ///
@@ -20824,6 +20866,11 @@ impl WorkspaceModule {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Compatibility alias for main.
+    pub async fn entrypoint(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("entrypoint");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// List constructor-backed settings for this module.
     pub async fn settings(&self) -> Result<Vec<WorkspaceModuleSetting>, DaggerError> {
         let query = self.selection.select("settings");
@@ -20851,9 +20898,9 @@ impl WorkspaceModule {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Whether the module is the workspace entrypoint (functions aliased to Query root).
-    pub async fn entrypoint(&self) -> Result<bool, DaggerError> {
-        let query = self.selection.select("entrypoint");
+    /// Whether the module is the workspace main (functions aliased to Query root).
+    pub async fn main(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("main");
         query.execute(self.graphql_client.clone()).await
     }
     /// The module source path.

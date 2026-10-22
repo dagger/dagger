@@ -1,0 +1,6 @@
+kind: Fixed
+body: Preserve list element types when converting values into Dang.
+time: 2026-10-19T20:42:06Z
+custom:
+  Author: grouville
+  PR: 14737

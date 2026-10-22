@@ -106,7 +106,7 @@ func TestPlanMigrationWritesMigrationReportForGaps(t *testing.T) {
 // source path preserved as-is: other repos may install this module by path,
 // and that path must keep resolving to the module config file. Only a module
 // whose source lives in a subdirectory (a project-style layout) is installed
-// into the workspace with an entrypoint.
+// into the workspace with a workspace main.
 func TestPlanMigrationConvertsModuleConfigInPlace(t *testing.T) {
 	t.Parallel()
 
@@ -151,7 +151,7 @@ func TestPlanMigrationConvertsModuleConfigInPlace(t *testing.T) {
 			if tc.installed {
 				require.Equal(t, ".", entry.Source,
 					"the entry points at the module config's directory")
-				require.True(t, entry.Entrypoint)
+				require.True(t, entry.Main)
 			}
 		})
 	}
@@ -160,7 +160,7 @@ func TestPlanMigrationConvertsModuleConfigInPlace(t *testing.T) {
 // TestPlanMigrationModuleRepoSkipsSDKInstall verifies the "repo is just a
 // dagger module" shape (source at the project root) records no SDK registration
 // for the root module: the runtime pin is a plain install added by the
-// migration caller, and the module gets no entrypoint.
+// migration caller, and the module gets no main.
 func TestPlanMigrationModuleRepoSkipsSDKInstall(t *testing.T) {
 	t.Parallel()
 
@@ -327,7 +327,7 @@ func TestPlanMigrationWritesSDK(t *testing.T) {
 	require.Contains(t, configData, `module = "dagger-go-sdk"`)
 	require.Contains(t, configData, "[sdks.go.scopes.\".\"]")
 	require.Contains(t, configData, `is-module = true`)
-	// The scope is the entrypoint's source, so "myapp" is inferred at load
+	// The scope is the main's source, so "myapp" is inferred at load
 	// time and is not written as an override.
 	require.NotContains(t, configData, `name = "myapp"`)
 }

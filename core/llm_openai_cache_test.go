@@ -236,3 +236,54 @@ func TestCodexTurnIndex(t *testing.T) {
 	assert.Equal(t, 1, codexTurnIndex([]*LLMMessage{system, prompt, call, result, call, result}))
 	assert.Equal(t, 3, codexTurnIndex([]*LLMMessage{system, prompt, call, mixed}))
 }
+
+func TestOpenAIResponsesRequest(t *testing.T) {
+	server, requests := codexStubServer(t, func(int) string { return "turn" })
+	history := llmTestHistory()
+	tools := []LLMTool{{Name: "read", Schema: map[string]any{"type": "object"}}}
+	send := func(endpoint *LLMEndpoint) map[string]any {
+		t.Helper()
+		_, err := newOpenAIResponsesClient(endpoint).SendQuery(t.Context(), history, tools, &LLMCallOpts{MaxTokens: 100})
+		require.NoError(t, err)
+		seen := requests()
+		req := seen[len(seen)-1]
+		// The ChatGPT backend's affinity headers stay with Codex.
+		assert.Empty(t, req.sessionID)
+		assert.Empty(t, req.turnState)
+		var payload map[string]any
+		require.NoError(t, json.Unmarshal(req.body, &payload))
+		return payload
+	}
+
+	payload := send(&LLMEndpoint{Model: "gpt-6.1-sol", Provider: OpenAI, BaseURL: server.URL, Key: "sk", ReasoningEffort: "high"})
+	assert.Equal(t, "gpt-6.1-sol", payload["model"])
+	assert.Len(t, payload["tools"], 1)
+	assert.Equal(t, openAIPromptCacheKey(history), payload["prompt_cache_key"])
+	assert.EqualValues(t, 100, payload["max_output_tokens"])
+	// No summary: OpenAI's API refuses it to unverified organizations.
+	assert.Equal(t, map[string]any{"effort": "high"}, payload["reasoning"])
+	assert.Equal(t, []any{"reasoning.encrypted_content"}, payload["include"])
+
+	// A model that can't reason gets no reasoning parameters at all.
+	payload = send(&LLMEndpoint{Model: "gpt-4.1", Provider: OpenAI, BaseURL: server.URL, Key: "sk", ReasoningEffort: "high", ReasoningMode: LLMReasoningUnsupported})
+	assert.NotContains(t, payload, "reasoning")
+	assert.NotContains(t, payload, "include")
+}
+
+func TestOpenAIEndpointUsesResponses(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		endpoint LLMEndpoint
+		want     bool
+	}{
+		{"default base URL", LLMEndpoint{}, true},
+		{"explicit OpenAI base URL", LLMEndpoint{BaseURL: "https://api.openai.com/v1"}, true},
+		{"compatible server", LLMEndpoint{BaseURL: "http://localhost:11434/v1"}, false},
+		{"azure", LLMEndpoint{BaseURL: "https://x.openai.azure.com", azureVersion: "2024-06-01"}, false},
+		{"streaming disabled", LLMEndpoint{disableStreaming: true}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, tc.endpoint.usesOpenAIResponses())
+		})
+	}
+}

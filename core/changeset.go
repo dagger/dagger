@@ -1998,13 +1998,18 @@ type mergeDir struct {
 	info os.FileInfo
 }
 
-func (ws *gitMergeWorkspace) listDirs() ([]mergeDir, error) {
-	var dirs []mergeDir
+type mergeMetadata struct {
+	dirs  []mergeDir
+	files map[string]os.FileMode
+}
+
+func (ws *gitMergeWorkspace) listMetadata() (*mergeMetadata, error) {
+	metadata := &mergeMetadata{files: make(map[string]os.FileMode)}
 	err := filepath.WalkDir(ws.workDir, func(p string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if !entry.IsDir() || p == ws.workDir {
+		if p == ws.workDir {
 			return nil
 		}
 		rel, err := filepath.Rel(ws.workDir, p)
@@ -2015,13 +2020,18 @@ func (ws *gitMergeWorkspace) listDirs() ([]mergeDir, error) {
 		if err != nil {
 			return err
 		}
-		dirs = append(dirs, mergeDir{path: filepath.ToSlash(rel), info: info})
+		rel = filepath.ToSlash(rel)
+		if info.IsDir() {
+			metadata.dirs = append(metadata.dirs, mergeDir{path: rel, info: info})
+		} else if info.Mode().IsRegular() {
+			metadata.files[rel] = info.Mode()
+		}
 		return nil
 	})
 	if err != nil {
 		return nil, TrimErrPathPrefix(err, ws.root)
 	}
-	return dirs, nil
+	return metadata, nil
 }
 
 // restorePrunedDirs recreates the merge base directories that git removed
@@ -2250,9 +2260,9 @@ func (ws *gitMergeWorkspace) mergeChangesets(ctx context.Context, scope *gitMerg
 	if !scoped {
 		prefix = "full_"
 	}
-	var baseDirs []mergeDir
+	var metadata *mergeMetadata
 	if err := phases.run(ctx, prefix+"base_dirs", func(context.Context) (err error) {
-		baseDirs, err = ws.listDirs()
+		metadata, err = ws.listMetadata()
 		return err
 	}); err != nil {
 		return err
@@ -2278,13 +2288,13 @@ func (ws *gitMergeWorkspace) mergeChangesets(ctx context.Context, scope *gitMerg
 		return err
 	}
 	return phases.run(ctx, prefix+"merge", func(ctx context.Context) error {
-		return ws.mergeBranches(ctx, scoped, baseDirs, ours, theirs, conflicts, strategy)
+		return ws.mergeBranches(ctx, scoped, metadata, ours, theirs, conflicts, strategy)
 	})
 }
 
 // mergeBranches merges the theirs branch into ours, in the worktree, and
-// restores the baseDirs git pruned.
-func (ws *gitMergeWorkspace) mergeBranches(ctx context.Context, scoped bool, baseDirs []mergeDir, ours, theirs *changesetContent, conflicts Conflicts, strategy WithChangesetMergeConflict) error {
+// restores metadata Git cannot preserve.
+func (ws *gitMergeWorkspace) mergeBranches(ctx context.Context, scoped bool, metadata *mergeMetadata, ours, theirs *changesetContent, conflicts Conflicts, strategy WithChangesetMergeConflict) error {
 	if err := runGit(ctx, ws.workDir, "checkout", "ours"); err != nil {
 		return err
 	}
@@ -2331,7 +2341,10 @@ func (ws *gitMergeWorkspace) mergeBranches(ctx context.Context, scoped bool, bas
 		}
 	}
 
-	if err := ws.restorePrunedDirs(baseDirs, ours, theirs); err != nil {
+	if err := ws.restorePrunedDirs(metadata.dirs, ours, theirs); err != nil {
+		return err
+	}
+	if err := ws.restoreFileModes(ctx, metadata.files, strategy == PreferTheirsOnConflict, []string{"ours", "theirs"}, ours, theirs); err != nil {
 		return err
 	}
 
@@ -2354,63 +2367,70 @@ func gitOctopusMergeChangesets(
 	otherContents []*changesetContent,
 ) (*Directory, error) {
 	return withGitMergeWorkspace(ctx, base, "Changeset.withChangesets git octopus merge", func(ws *gitMergeWorkspace) error {
-		baseDirs, err := ws.listDirs()
-		if err != nil {
-			return err
-		}
-		if err := enginetel.Task(ctx, "init git", func(ctx context.Context) error {
-			return initGitRepo(ctx, ws.workDir)
-		}); err != nil {
-			return err
-		}
-		if err := enginetel.Task(ctx, "create branch for ours", func(ctx context.Context) error {
-			return createBranchWithContent(ctx, ws, "ours", ourContent, false)
-		}); err != nil {
-			return err
-		}
-
-		branchNames := make([]string, len(otherContents))
-		for i, content := range otherContents {
-			branchName := fmt.Sprintf("branch_%d", i)
-			branchNames[i] = branchName
-			if err := enginetel.Task(ctx, "create branch "+branchName, func(ctx context.Context) error {
-				return createBranchWithContent(ctx, ws, branchName, content, false, "HEAD~1")
-			}); err != nil {
-				return err
-			}
-		}
-
-		if err := enginetel.Task(ctx, "checkout ours", func(ctx context.Context) error {
-			return runGit(ctx, ws.workDir, "checkout", "ours")
-		}); err != nil {
-			return err
-		}
-
-		mergeArgs := []string{"merge", "--no-edit", "--no-commit"}
-		mergeArgs = append(mergeArgs, branchNames...)
-
-		if err := enginetel.Task(ctx, "git merge", func(ctx context.Context) error {
-			return runGit(ctx, ws.workDir, mergeArgs...)
-		}); err != nil {
-			return err
-		}
-
-		contents := append([]*changesetContent{ourContent}, otherContents...)
-		if err := ws.restorePrunedDirs(baseDirs, contents...); err != nil {
-			return err
-		}
-
-		// An octopus merge refuses to run with conflicts, so on success every
-		// declared path must have survived.
-		if err := ws.verifyMergedPaths(contents...); err != nil {
-			return err
-		}
-
-		if err := os.RemoveAll(filepath.Join(ws.workDir, ".git")); err != nil {
-			return fmt.Errorf("remove temporary octopus merge git repository: %w", err)
-		}
-		return nil
+		return ws.mergeMultipleChangesets(ctx, ourContent, otherContents)
 	})
+}
+
+func (ws *gitMergeWorkspace) mergeMultipleChangesets(ctx context.Context, ourContent *changesetContent, otherContents []*changesetContent) error {
+	metadata, err := ws.listMetadata()
+	if err != nil {
+		return err
+	}
+	if err := enginetel.Task(ctx, "init git", func(ctx context.Context) error {
+		return initGitRepo(ctx, ws.workDir)
+	}); err != nil {
+		return err
+	}
+	if err := enginetel.Task(ctx, "create branch for ours", func(ctx context.Context) error {
+		return createBranchWithContent(ctx, ws, "ours", ourContent, false)
+	}); err != nil {
+		return err
+	}
+
+	branchNames := make([]string, len(otherContents))
+	for i, content := range otherContents {
+		branchName := fmt.Sprintf("branch_%d", i)
+		branchNames[i] = branchName
+		if err := enginetel.Task(ctx, "create branch "+branchName, func(ctx context.Context) error {
+			return createBranchWithContent(ctx, ws, branchName, content, false, "HEAD~1")
+		}); err != nil {
+			return err
+		}
+	}
+
+	if err := enginetel.Task(ctx, "checkout ours", func(ctx context.Context) error {
+		return runGit(ctx, ws.workDir, "checkout", "ours")
+	}); err != nil {
+		return err
+	}
+
+	mergeArgs := []string{"merge", "--no-edit", "--no-commit"}
+	mergeArgs = append(mergeArgs, branchNames...)
+
+	if err := enginetel.Task(ctx, "git merge", func(ctx context.Context) error {
+		return runGit(ctx, ws.workDir, mergeArgs...)
+	}); err != nil {
+		return err
+	}
+
+	contents := append([]*changesetContent{ourContent}, otherContents...)
+	if err := ws.restorePrunedDirs(metadata.dirs, contents...); err != nil {
+		return err
+	}
+	if err := ws.restoreFileModes(ctx, metadata.files, false, append([]string{"ours"}, branchNames...), contents...); err != nil {
+		return err
+	}
+
+	// An octopus merge refuses to run with conflicts, so on success every
+	// declared path must have survived.
+	if err := ws.verifyMergedPaths(contents...); err != nil {
+		return err
+	}
+
+	if err := os.RemoveAll(filepath.Join(ws.workDir, ".git")); err != nil {
+		return fmt.Errorf("remove temporary octopus merge git repository: %w", err)
+	}
+	return nil
 }
 
 var gitEphemeralConfig = []string{

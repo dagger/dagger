@@ -99,6 +99,27 @@ type CacheDebugResult struct {
 	CacheUsageSizeByIdentity              map[string]int64 `json:"cache_usage_size_by_identity,omitempty"`
 	PersistedEnvelopeKind                 string           `json:"persisted_envelope_kind,omitempty"`
 	PersistedEnvelopeTypeName             string           `json:"persisted_envelope_type_name,omitempty"`
+	// CompleteParts are the address keys of the entry's complete parts, as
+	// dagger.io/cache.parts names them: those its current record reports
+	// locally complete. When the snapshot could not read the current record,
+	// because an evaluation was in flight or the value changed while the
+	// snapshot prepared, they are only the parts the entry's gate has settled,
+	// a subset, and CompletePartsPartial says so.
+	CompleteParts        []string `json:"complete_parts,omitempty"`
+	CompletePartsPartial bool     `json:"complete_parts_partial,omitempty"`
+	// OfferedParts are the address keys of the parts the Cloud offers the
+	// entry, and CloudHolding what the entry knows of its Cloud counterpart.
+	OfferedParts []string                `json:"offered_parts,omitempty"`
+	CloudHolding *CacheDebugCloudHolding `json:"cloud_holding,omitempty"`
+}
+
+// CacheDebugCloudHolding is an engine entry's Cloud holding: the Cloud entry
+// the latest message named, whether it stores a record, and the record's
+// expiry.
+type CacheDebugCloudHolding struct {
+	Number        uint64 `json:"number"`
+	Stored        bool   `json:"stored"`
+	ExpiresAtUnix int64  `json:"expires_at_unix,omitempty"`
 }
 
 type CacheDebugResultDigestIndex struct {
@@ -1175,9 +1196,49 @@ func (c *Cache) debugResultCallDigests() map[*ResultCall]cacheDebugCallDigests {
 	return frames
 }
 
+// debugWarmCompleteParts reads every entry's complete parts from its current
+// record. Reading them captures the record, which needs the graph lock free,
+// so it runs before the streamed snapshot holds that lock; the snapshot reads
+// them back only while that capture still describes the entry's value.
+//
+// A debug read never makes an entry collectible: it captures only owned
+// rows, and adds no lasting ownership. If a concurrent release drops the last
+// owner during its capture, the capture's normal cleanup may collect the
+// entry, as any capture would. An entry nothing owns is not read: the
+// snapshot reports its settled parts as partial.
+func (c *Cache) debugWarmCompleteParts(ctx context.Context) {
+	c.egraphMu.RLock()
+	rows := make([]*sharedResult, 0, len(c.resultsByID))
+	for _, res := range c.resultsByID {
+		if res.incomingOwnershipCount > 0 && !res.noValueLocked() {
+			rows = append(rows, res)
+		}
+	}
+	c.egraphMu.RUnlock()
+	for _, res := range rows {
+		c.completePartKeys(ctx, res)
+	}
+}
+
+// debugPartsLocked is what the snapshot reports of res's parts and its Cloud
+// holding. Requires egraphMu.
+func debugPartsLocked(res *sharedResult) (complete []string, partial bool, offered []string, holding *CacheDebugCloudHolding) {
+	complete, current := completePartKeysCoverageLocked(res)
+	partial = !current && !res.noValueLocked()
+	for key := range res.partOffersLocked() {
+		offered = append(offered, key)
+	}
+	slices.Sort(offered)
+	if key, h := res.cloudHoldingLocked(); h != nil {
+		holding = &CacheDebugCloudHolding{Number: key.Number, Stored: !h.unstored, ExpiresAtUnix: h.expiresAtUnix}
+	}
+	return complete, partial, offered, holding
+}
+
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 	callDigests := c.debugResultCallDigests()
+	c.debugWarmCompleteParts(context.Background())
 	sessionResults := c.debugSessionResultsSnapshot()
 	c.callsMu.Lock()
 	c.egraphMu.RLock()
@@ -1373,6 +1434,7 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 				persistedEnvelopeKind = state.persistedEnvelope.Kind
 				persistedEnvelopeTypeName = state.persistedEnvelope.TypeName
 			}
+			completeParts, completePartsPartial, offeredParts, cloudHolding := debugPartsLocked(res)
 
 			if err := writeElem(CacheDebugResult{
 				ValueState: func() any {
@@ -1423,6 +1485,10 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 				}(),
 				PersistedEnvelopeKind:     persistedEnvelopeKind,
 				PersistedEnvelopeTypeName: persistedEnvelopeTypeName,
+				CompleteParts:             completeParts,
+				CompletePartsPartial:      completePartsPartial,
+				OfferedParts:              offeredParts,
+				CloudHolding:              cloudHolding,
 			}); err != nil {
 				return err
 			}

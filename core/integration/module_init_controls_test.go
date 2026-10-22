@@ -34,25 +34,25 @@ module = 'writer'
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", testCLIBinPath).
 		With(nonNestedDevEngine(c))
 	for _, tc := range []struct {
-		name                                 string
-		args                                 []string
-		moduleName, source, message          string
-		installed, entrypoint, oldEntrypoint bool
+		name                        string
+		args                        []string
+		moduleName, source, message string
+		installed, main, oldMain    bool
 	}{
-		{name: "defaults", moduleName: "app-dev", source: "../generated/app-dev", installed: true, entrypoint: true, message: `Automatically installed module "app-dev" as entrypoint.`},
+		{name: "defaults", moduleName: "app-dev", source: "../generated/app-dev", installed: true, main: true, message: `Automatically installed module "app-dev" as the workspace main.`},
 		{name: "explicit name", args: []string{"--name=demo"}, moduleName: "demo", source: "../generated/demo", installed: true, message: `Automatically installed module "demo".`},
 		{name: "explicit path", args: []string{"--path=custom"}, moduleName: "custom", source: "custom", message: "Initialized module custom\nCustom path; module was not installed."},
 		{name: "install custom path", args: []string{"--path=custom", "--install"}, moduleName: "custom", source: "custom", installed: true, message: `Installed module "custom".`},
-		{name: "explicit install implicit entrypoint", args: []string{"--install"}, moduleName: "app-dev", source: "../generated/app-dev", installed: true, entrypoint: true, message: "Installed module \"app-dev\".\nAutomatically selected module \"app-dev\" as entrypoint."},
+		{name: "explicit install implicit main", args: []string{"--install"}, moduleName: "app-dev", source: "../generated/app-dev", installed: true, main: true, message: "Installed module \"app-dev\".\nAutomatically selected module \"app-dev\" as the workspace main."},
 		{name: "disable install", args: []string{"--install=false"}, moduleName: "app-dev", source: "../generated/app-dev", message: "Initialized module \"app-dev\".\nModule was not installed."},
-		{name: "disable entrypoint", args: []string{"--entrypoint=false"}, moduleName: "app-dev", source: "../generated/app-dev", installed: true, message: `Automatically installed module "app-dev".`},
-		{name: "replace entrypoint", args: []string{"--path=custom", "--name=demo", "--entrypoint"}, moduleName: "demo", source: "custom", installed: true, entrypoint: true, oldEntrypoint: true, message: `Installed module "demo" as entrypoint.`},
-		{name: "named init keeps entrypoint", args: []string{"--name=demo"}, moduleName: "demo", source: "../generated/demo", installed: true, oldEntrypoint: true, message: `Automatically installed module "demo".`},
+		{name: "disable main", args: []string{"--main=false"}, moduleName: "app-dev", source: "../generated/app-dev", installed: true, message: `Automatically installed module "app-dev".`},
+		{name: "replace main", args: []string{"--path=custom", "--name=demo", "--main"}, moduleName: "demo", source: "custom", installed: true, main: true, oldMain: true, message: `Installed module "demo" as the workspace main.`},
+		{name: "named init keeps main", args: []string{"--name=demo"}, moduleName: "demo", source: "../generated/demo", installed: true, oldMain: true, message: `Automatically installed module "demo".`},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			ctr := base
-			if tc.oldEntrypoint {
-				ctr = ctr.WithNewFile("/work/app/dagger.toml", config+"\n[modules.old]\nsource = '../sdk'\nentrypoint = true\n")
+			if tc.oldMain {
+				ctr = ctr.WithNewFile("/work/app/dagger.toml", config+"\n[modules.old]\nsource = '../sdk'\nmain = true\n")
 			}
 			initialized := ctr.With(daggerNonNestedExec(append([]string{"mod", "init", "test", "-y"}, tc.args...)...))
 			out, err := initialized.CombinedOutput(ctx)
@@ -65,12 +65,12 @@ module = 'writer'
 			require.NoError(t, err)
 			entry, installed := cfg.Modules[tc.moduleName]
 			require.Equal(t, tc.installed, installed)
-			require.Equal(t, tc.entrypoint, entry.Entrypoint)
+			require.Equal(t, tc.main, entry.Main)
 			if installed {
 				require.Equal(t, tc.source, entry.Source)
 			}
-			if tc.oldEntrypoint {
-				require.Equal(t, !tc.entrypoint, cfg.Modules["old"].Entrypoint)
+			if tc.oldMain {
+				require.Equal(t, !tc.main, cfg.Modules["old"].Main)
 			}
 			scope := cfg.SDKs["test"].Scopes[tc.source]
 			require.True(t, scope.IsModule)
@@ -81,12 +81,12 @@ module = 'writer'
 	}
 	t.Run("API distinguishes omitted and false controls", func(ctx context.Context, t *testctx.T) {
 		for _, tc := range []struct {
-			args                  string
-			installed, entrypoint bool
+			args            string
+			installed, main bool
 		}{
-			{installed: true, entrypoint: true},
+			{installed: true, main: true},
 			{args: ", install: false"},
-			{args: ", entrypoint: false", installed: true},
+			{args: ", main: false", installed: true},
 		} {
 			query := `query { currentWorkspace { withInitModule(sdk: "test"` + tc.args + `) { configRead } } }`
 			queried := base.WithNewFile("/query.graphql", query).With(daggerNonNestedExec("api", "query", "--doc=/query.graphql"))
@@ -100,7 +100,7 @@ module = 'writer'
 			require.NoError(t, err)
 			entry, installed := cfg.Modules["app-dev"]
 			require.Equal(t, tc.installed, installed, tc.args)
-			require.Equal(t, tc.entrypoint, entry.Entrypoint, tc.args)
+			require.Equal(t, tc.main, entry.Main, tc.args)
 			unchanged, err := queried.File("/work/app/dagger.toml").Contents(ctx)
 			require.NoError(t, err)
 			require.Equal(t, config, unchanged)
@@ -115,18 +115,18 @@ module = 'writer'
 	})
 	t.Run("rejected controls leave files unchanged", func(ctx context.Context, t *testctx.T) {
 		for _, args := range [][]string{
-			{"--install=false", "--entrypoint"},
+			{"--install=false", "--main"},
 			{}, {"--install"},
 		} {
-			original := config + "\n[modules.old]\nsource = '../sdk'\nentrypoint = true\n"
+			original := config + "\n[modules.old]\nsource = '../sdk'\nmain = true\n"
 			failed := base.WithNewFile("/work/app/dagger.toml", original).
 				With(daggerNonNestedExecFail(append([]string{"mod", "init", "test", "-y"}, args...)...))
 			out, err := failed.CombinedOutput(ctx)
 			require.NoError(t, err, out)
 			if len(args) == 2 {
-				require.Contains(t, out, "--install=false cannot be combined with --entrypoint")
+				require.Contains(t, out, "--install=false cannot be combined with --main")
 			} else {
-				require.Contains(t, out, `workspace already has entrypoint module "old"`)
+				require.Contains(t, out, `workspace already has main module "old"`)
 			}
 			require.NotContains(t, out, "installed module")
 			updated, err := failed.File("/work/app/dagger.toml").Contents(ctx)
@@ -153,7 +153,7 @@ module = 'writer'
 	t.Run("controls retain inferred name when SDK chooses a different basename", func(ctx context.Context, t *testctx.T) {
 		source, err := core.NewQuery(c).Host().File(filepath.Join(sdkPath, "main.dang")).Contents(ctx)
 		require.NoError(t, err)
-		for _, flag := range []string{"--install=false", "--entrypoint=false"} {
+		for _, flag := range []string{"--install=false", "--main=false"} {
 			initialized := base.WithNewFile("/work/sdk/main.dang", strings.Replace(source, `"generated/" + name`, `"generated/api"`, 1)).
 				With(daggerNonNestedExec("mod", "init", "test", flag, "-y"))
 			moduleConfig, err := initialized.File("/work/generated/api/dagger-module.toml").Contents(ctx)

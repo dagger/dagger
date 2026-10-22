@@ -76,8 +76,8 @@ func (file *File) CachePayloadBytes() int64 {
 	if file == nil {
 		return 0
 	}
-	file.outputMu.Lock()
-	defer file.outputMu.Unlock()
+	file.outputMu.RLock()
+	defer file.outputMu.RUnlock()
 	n := int64(len(file.lazyJSON))
 	if file.transferPending != nil {
 		n += int64(len(file.transferPending.LazyJSON))
@@ -150,8 +150,8 @@ func (file *File) snapshotIdentity() (string, bool) {
 	if file == nil {
 		return "", false
 	}
-	file.outputMu.Lock()
-	defer file.outputMu.Unlock()
+	file.outputMu.RLock()
+	defer file.outputMu.RUnlock()
 	return file.snapshotIdentityLocked()
 }
 

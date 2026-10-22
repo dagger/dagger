@@ -423,6 +423,7 @@ func (container *Container) runLazyGroup(ctx context.Context, op LazyContainerPa
 		if err != nil {
 			return err
 		}
+		container.dependOnPartServicesOf(host, op)
 		return host.RunNative(ctx, group, parts, func(ctx context.Context) error { return container.runLazyGroupAdmitted(ctx, op, group) })
 	}
 	return container.runLazyGroupAdmitted(ctx, op, group)
@@ -1108,3 +1109,41 @@ func (container *Container) nativeGroupParts(ctx context.Context, op LazyContain
 }
 
 func (container *Container) PartHostBinding() *dagql.PartHost { return container.partHost.Load() }
+
+// dependOnPartServicesOf has each of op's bodies, as it succeeds, make the
+// services its snapshot parts' values are bound to dependencies of the
+// container's result. Each part's record names them
+// (encodeContainerPartsLocked): a mounted File or Directory keeps its own
+// service bindings. Publication covers the parts valued by then
+// (AttachDependencyResultsKinds); a part evaluated after it takes its value
+// from its source here, and the edges exist before the body's latch lets a
+// persistence reader see the parts.
+func (container *Container) dependOnPartServicesOf(host *dagql.PartHost, op Lazy[*Container]) {
+	provider, ok := op.(interface{ ContainerLazyState() *LazyState })
+	if !ok {
+		return
+	}
+	provider.ContainerLazyState().OnBodyDone(func(ctx context.Context, group dagql.LazyGroupKey) error {
+		// A whole-op body wrote every part; a group's body only its own,
+		// which no sibling group writes.
+		parts := containerSnapshotParts(container)
+		if refined, ok := op.(LazyContainerParts); ok && group != dagql.LazyGroupWhole {
+			var err error
+			if parts, err = container.nativeGroupParts(ctx, refined, group); err != nil {
+				return err
+			}
+		}
+		var deps []dagql.AnyResult
+		for _, part := range parts {
+			// A part without a value yet names no service.
+			value, err := container.containerPartValue(part)
+			if err != nil {
+				continue
+			}
+			for _, binding := range value.Services {
+				deps = append(deps, binding.Service)
+			}
+		}
+		return host.AddDependencies(ctx, deps)
+	})
+}

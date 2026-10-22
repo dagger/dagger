@@ -821,7 +821,8 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 			if decodeErr != nil {
 				if decodeRetry {
 					// The attempt failed only because its leader's own
-					// context was canceled; the entry itself is healthy.
+					// context was canceled or its session was removed; the
+					// entry itself is healthy.
 					// Mirror waitForLazyEvaluation: a canceled joiner
 					// returns its own cause, a healthy one retries.
 					if ownCause := context.Cause(ctx); ownCause != nil {
@@ -866,12 +867,17 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 		finishPersistDecode := func(err error, installed bool) {
 			res.persistDecodeMu.Lock()
 			res.persistDecodeErr = err
-			res.persistDecodeRetry = lazyEvalErrorCausedByContext(ctx, err)
+			// A failure after the leader's session was removed is that
+			// removal's, whatever the error, as for shared calls: the
+			// decode can need the leader's client.
+			res.persistDecodeRetry = lazyEvalErrorCausedByContext(ctx, err) ||
+				(err != nil && clientScopeSessionClosed(ctx))
 			res.persistLeaseSyncPending = installed && err != nil
 			waitCh := res.persistDecodeWaitCh
 			res.persistDecodeWaitCh = nil
 			res.persistDecodeMu.Unlock()
 			close(waitCh)
+			logProducerRemovedOutcome(ctx, "persisted decode", fmt.Sprint(res.id), err)
 		}
 
 		// A leader with an installed payload (persistLeaseSyncPending was

@@ -7,7 +7,7 @@ package core
 // See also:
 // - workspace_selection_test.go: explicit workspace selection.
 // - contextual_workspace_test.go: workspace find-up from the current directory.
-// - module_loading_test.go: module source selection and entrypoint arbitration.
+// - module_loading_test.go: module source selection and workspace main arbitration.
 
 import (
 	"context"
@@ -21,6 +21,7 @@ import (
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
+	"github.com/dagger/dagger/core/gitref"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -1598,6 +1599,15 @@ engineVersion = "latest"
 	name, err := src.ModuleOriginalName(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "git-module", name)
+	// Nested clients reload this string: it must parse back to the same
+	// repository and subpath without import-path discovery.
+	ref, err := src.AsString(ctx)
+	require.NoError(t, err)
+	parsed, err := gitref.Parse(ctx, ref)
+	require.NoError(t, err)
+	require.Equal(t, repoURL, parsed.CloneRef)
+	require.Equal(t, "module", parsed.RepoRootSubdir)
+	require.Equal(t, gitref.GitRefSelector, parsed.Selector)
 }
 
 func (WorkspaceAPISuite) TestGitWorkspaceModuleSourcePrivateSSH(ctx context.Context, t *testctx.T) {

@@ -11,6 +11,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
@@ -19,6 +20,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/Netflix/go-expect"
@@ -113,6 +115,139 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 
 		_, err = console.ExpectString("size=35 160\r\n")
 		require.NoError(t, err)
+
+		go console.ExpectEOF()
+		require.NoError(t, cmd.Wait())
+	})
+
+	t.Run("shell setup failure is reported", func(ctx context.Context, t *testctx.T) {
+		console, err := newTUIConsole(t, 60*time.Second)
+		require.NoError(t, err)
+		defer console.Close()
+
+		tty := console.Tty()
+		require.NoError(t, pty.Setsize(tty, &pty.Winsize{Rows: 35, Cols: 160}))
+
+		// The unknown user fails the shell's container setup, so no shell
+		// ever runs. That must fail the command with the setup error, not
+		// end it successfully with a bare "exit 1".
+		cmd := hostDaggerCommandRaw(ctx, t, t.TempDir(), "-c",
+			`container | from `+alpineImage+` | with-user no-such-user | terminal`)
+		cmd.Stdin = tty
+		cmd.Stdout = tty
+		cmd.Stderr = tty
+		require.NoError(t, cmd.Start())
+
+		_, err = console.ExpectString("get user")
+		require.NoError(t, err)
+
+		go console.ExpectEOF()
+		require.Error(t, cmd.Wait())
+	})
+
+	t.Run("initial terminal size in a service", func(ctx context.Context, t *testctx.T) {
+		console, err := newTUIConsole(t, 60*time.Second)
+		require.NoError(t, err)
+		defer console.Close()
+
+		tty := console.Tty()
+		require.NoError(t, pty.Setsize(tty, &pty.Winsize{Rows: 35, Cols: 160}))
+
+		cmd := hostDaggerCommandRaw(ctx, t, t.TempDir(), "-c",
+			`container | from `+alpineImage+` | with-new-file /probe.sh --contents='for i in $(seq 50); do s=$(stty size); [ "$s" = "35 160" ] && break; sleep 0.1; done; echo "size=$s"' | as-service --args=sleep,60 | terminal --cmd=sh,/probe.sh`)
+		cmd.Stdin = tty
+		cmd.Stdout = tty
+		cmd.Stderr = tty
+		require.NoError(t, cmd.Start())
+
+		_, err = console.ExpectString("size=35 160\r\n")
+		require.NoError(t, err)
+
+		go console.ExpectEOF()
+		require.NoError(t, cmd.Wait())
+	})
+
+	t.Run("terminal resize", func(ctx context.Context, t *testctx.T) {
+		console, err := newTUIConsole(t, 60*time.Second)
+		require.NoError(t, err)
+		defer console.Close()
+
+		tty := console.Tty()
+		require.NoError(t, pty.Setsize(tty, &pty.Winsize{Rows: 35, Cols: 160}))
+
+		cmd := hostDaggerCommandRaw(ctx, t, t.TempDir(), "-c",
+			`container | from `+alpineImage+` | with-new-file /probe.sh --contents='for i in $(seq 50); do s=$(stty size); [ "$s" = "35 160" ] && break; sleep 0.1; done; echo "size=$s"; read x; for i in $(seq 50); do s=$(stty size); [ "$s" = "40 120" ] && break; sleep 0.1; done; echo "resized=$s"' | terminal --cmd=sh,/probe.sh`)
+		cmd.Stdin = tty
+		cmd.Stdout = tty
+		cmd.Stderr = tty
+		require.NoError(t, cmd.Start())
+
+		_, err = console.ExpectString("size=35 160\r\n")
+		require.NoError(t, err)
+
+		// Resize the client's terminal and tell the CLI, as a terminal
+		// emulator would.
+		require.NoError(t, pty.Setsize(tty, &pty.Winsize{Rows: 40, Cols: 120}))
+		require.NoError(t, cmd.Process.Signal(syscall.SIGWINCH))
+		_, err = console.SendLine("")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString("resized=40 120\r\n")
+		require.NoError(t, err)
+
+		go console.ExpectEOF()
+		require.NoError(t, cmd.Wait())
+	})
+
+	// The runtime used to stop relaying a TTY exec's output as soon as its
+	// process exited, dropping whatever it had not relayed yet. A background
+	// job that prints after the command exits makes that deterministic. It
+	// ignores, from before it starts, the SIGHUP and SIGTERM that the
+	// command's exit sends it.
+	t.Run("output after a service command exits", func(ctx context.Context, t *testctx.T) {
+		console, err := newTUIConsole(t, 60*time.Second)
+		require.NoError(t, err)
+		defer console.Close()
+
+		tty := console.Tty()
+		require.NoError(t, pty.Setsize(tty, &pty.Winsize{Rows: 35, Cols: 160}))
+
+		// $((1+1)) keeps the expected output out of the command line the
+		// TUI prints.
+		cmd := hostDaggerCommandRaw(ctx, t, t.TempDir(), "-c",
+			`container | from `+alpineImage+` | with-new-file /probe.sh --contents='trap "" HUP TERM; (sleep 1; echo late-$((1+1))) & echo early' | as-service --args=sleep,60 | terminal --cmd=sh,/probe.sh`)
+		cmd.Stdin = tty
+		cmd.Stdout = tty
+		cmd.Stderr = tty
+		require.NoError(t, cmd.Start())
+
+		_, err = console.ExpectString("late-2\r\n")
+		require.NoError(t, err)
+
+		go console.ExpectEOF()
+		require.NoError(t, cmd.Wait())
+	})
+
+	// A quick command's output must arrive in full, including a large burst
+	// just before it exits.
+	t.Run("all output of a quick command", func(ctx context.Context, t *testctx.T) {
+		console, err := newTUIConsole(t, 60*time.Second)
+		require.NoError(t, err)
+		defer console.Close()
+
+		tty := console.Tty()
+		require.NoError(t, pty.Setsize(tty, &pty.Winsize{Rows: 35, Cols: 160}))
+
+		cmd := hostDaggerCommandRaw(ctx, t, t.TempDir(), "-c",
+			`container | from `+alpineImage+` | with-new-file /probe.sh --contents='head -c 300000 /dev/zero | tr "\0" x; echo; echo end-$((1+1))' | terminal --cmd=sh,/probe.sh`)
+		cmd.Stdin = tty
+		cmd.Stdout = tty
+		cmd.Stderr = tty
+		require.NoError(t, cmd.Start())
+
+		out, err := console.ExpectString("end-2\r\n")
+		require.NoError(t, err)
+		require.Contains(t, out, strings.Repeat("x", 300000)+"\r\nend-2\r\n")
 
 		go console.ExpectEOF()
 		require.NoError(t, cmd.Wait())
@@ -234,7 +369,7 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
 		require.NoError(t, err)
 
-		cmd := hostDaggerCommand(ctx, t, modDir, "-m", ".", "call", "ctr", "terminal")
+		cmd := hostDaggerCommand(ctx, t, modDir, "-m", ".", "call", "--nonce", rand.Text(), "ctr", "terminal")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
@@ -247,7 +382,13 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 		_, err = console.ExpectString(prompt)
 		require.NoError(t, err)
 
-		time.Sleep(2 * time.Second)
+		// Crash the dependency only now that the shell is up, wait until it has
+		// exited, and give the engine time to observe the exit.
+		_, err = console.SendLine("touch /handshake/crash; until [ -e /handshake/crashed ]; do sleep 0.1; done; sleep 2")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
 
 		_, err = console.SendLine("echo still here")
 		require.NoError(t, err)

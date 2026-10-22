@@ -22,15 +22,20 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// OpenAICodexClient uses the OpenAI Responses API against the ChatGPT
-// backend (chatgpt.com/backend-api/codex/responses) with a ChatGPT
-// subscription OAuth token.
-type OpenAICodexClient struct {
+// OpenAIResponsesClient uses the OpenAI Responses API, either against
+// OpenAI's own API with an API key, or against the ChatGPT backend
+// (chatgpt.com/backend-api/codex/responses) with a ChatGPT subscription
+// OAuth token.
+type OpenAIResponsesClient struct {
 	svc      responses.ResponseService
 	endpoint *LLMEndpoint
 
+	// codex is set for the ChatGPT backend. It only officially serves the
+	// Codex CLI, so requests mirror Codex's (see newOpenAICodexClient).
+	codex bool
+
 	// turnStates holds each conversation's sticky-routing token, keyed by
-	// its prompt cache key (see codexTurnState).
+	// its prompt cache key (see codexTurnState). Codex backend only.
 	turnStates sync.Map
 }
 
@@ -71,7 +76,7 @@ func codexTurnIndex(history []*LLMMessage) int {
 // conversation's requests together on the backend: the session-id header the
 // ChatGPT backend derives cache affinity from, and the current turn's
 // sticky-routing token when one has been issued.
-func (c *OpenAICodexClient) turnRequestOptions(cacheKey string, turn int) []option.RequestOption {
+func (c *OpenAIResponsesClient) turnRequestOptions(cacheKey string, turn int) []option.RequestOption {
 	opts := []option.RequestOption{option.WithHeader("session-id", cacheKey)}
 	if st, ok := c.turnStates.Load(cacheKey); ok {
 		if st := st.(*codexTurnState); st.turn == turn {
@@ -83,7 +88,7 @@ func (c *OpenAICodexClient) turnRequestOptions(cacheKey string, turn int) []opti
 
 // recordTurnState keeps the sticky-routing token issued at the start of a
 // turn. Like Codex, the first token wins for the rest of the turn.
-func (c *OpenAICodexClient) recordTurnState(cacheKey string, turn int, resp *http.Response) {
+func (c *OpenAIResponsesClient) recordTurnState(cacheKey string, turn int, resp *http.Response) {
 	if resp == nil {
 		return
 	}
@@ -97,7 +102,7 @@ func (c *OpenAICodexClient) recordTurnState(cacheKey string, turn int, resp *htt
 	c.turnStates.Store(cacheKey, &codexTurnState{turn: turn, token: token})
 }
 
-func newOpenAICodexClient(endpoint *LLMEndpoint) *OpenAICodexClient {
+func newOpenAICodexClient(endpoint *LLMEndpoint) *OpenAIResponsesClient {
 	var opts []option.RequestOption
 
 	// The base URL for the Codex API; the SDK appends "responses" to it.
@@ -121,22 +126,38 @@ func newOpenAICodexClient(endpoint *LLMEndpoint) *OpenAICodexClient {
 	opts = append(opts, option.WithHTTPClient(endpoint.otelHTTPClient("openai-codex")))
 
 	svc := responses.NewResponseService(opts...)
-	return &OpenAICodexClient{svc: svc, endpoint: endpoint}
+	return &OpenAIResponsesClient{svc: svc, endpoint: endpoint, codex: true}
 }
 
-var _ LLMClient = (*OpenAICodexClient)(nil)
+// newOpenAIResponsesClient builds a Responses API client for OpenAI's own API,
+// authenticated with an API key. Like newOpenAIClient, it ignores the engine
+// process's OPENAI_* environment.
+func newOpenAIResponsesClient(endpoint *LLMEndpoint) *OpenAIResponsesClient {
+	opts := []option.RequestOption{option.WithEnvironmentProduction()}
+	if endpoint.Key != "" {
+		opts = append(opts, option.WithAPIKey(endpoint.Key))
+	}
+	if endpoint.BaseURL != "" {
+		opts = append(opts, option.WithBaseURL(endpoint.BaseURL))
+	}
+	opts = append(opts, option.WithHTTPClient(endpoint.otelHTTPClient("openai")))
+	return &OpenAIResponsesClient{svc: responses.NewResponseService(opts...), endpoint: endpoint}
+}
+
+var _ LLMClient = (*OpenAIResponsesClient)(nil)
 
 // IsRetryable reports whether a failed turn is worth resending. The ChatGPT
-// backend gives no reliable signal to key off, so nothing is retried here; a
-// rejected credential is the one exception and is handled centrally, since
-// resending only helps once the credential has been re-resolved (see
+// backend gives no reliable signal to key off, and the SDK already retries
+// OpenAI's own API internally, so nothing is retried here; a rejected
+// credential is the one exception and is handled centrally, since resending
+// only helps once the credential has been re-resolved (see
 // sendQueryWithRetry).
-func (c *OpenAICodexClient) IsRetryable(err error) bool {
+func (c *OpenAIResponsesClient) IsRetryable(err error) bool {
 	return false
 }
 
 //nolint:gocyclo // streaming response handling is clearest as one protocol state machine
-func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool, opts *LLMCallOpts) (_ *LLMResponse, rerr error) {
+func (c *OpenAIResponsesClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool, opts *LLMCallOpts) (_ *LLMResponse, rerr error) {
 	// Stream this turn's content into per-block display spans.
 	dp := newDisplayPhases(ctx, opts.CallDigest, tools)
 	defer func() {
@@ -188,10 +209,6 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 
 	cacheKey := openAIPromptCacheKey(history)
 
-	// NB: no max_output_tokens is sent, so an explicit maxTokens cap has no
-	// effect here. The ChatGPT backend only officially serves the Codex CLI,
-	// which never sends an output cap; an unexpected parameter risks
-	// rejection.
 	params := responses.ResponseNewParams{
 		Model:        strings.TrimPrefix(c.endpoint.Model, "openai-codex/"),
 		Instructions: param.NewOpt(systemPrompt),
@@ -199,16 +216,25 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 			OfInputItemList: inputItems,
 		},
 		Store: param.NewOpt(false),
-		// Return the encrypted reasoning chain so it can be resubmitted on the next
-		// turn. With Store:false the server keeps no state, so a reasoning model
-		// (e.g. gpt-5-codex) would otherwise reject a resubmitted function call
-		// without the reasoning item that produced it.
-		Include: []responses.ResponseIncludable{
-			responses.ResponseIncludableReasoningEncryptedContent,
-		},
 		// Pin the conversation to a cache node, as Codex does with its thread
 		// id (see openAIPromptCacheKey).
 		PromptCacheKey: param.NewOpt(cacheKey),
+	}
+	canReason := c.endpoint.ReasoningMode != LLMReasoningUnsupported
+	if canReason {
+		// Return the encrypted reasoning chain so it can be resubmitted on the
+		// next turn. With Store:false the server keeps no state, so a reasoning
+		// model (e.g. gpt-5-codex) would otherwise reject a resubmitted function
+		// call without the reasoning item that produced it.
+		params.Include = []responses.ResponseIncludable{
+			responses.ResponseIncludableReasoningEncryptedContent,
+		}
+	}
+	// The ChatGPT backend gets no max_output_tokens, so an explicit maxTokens
+	// cap has no effect there: Codex never sends an output cap, and an
+	// unexpected parameter risks rejection.
+	if !c.codex && opts != nil && opts.MaxTokens > 0 {
+		params.MaxOutputTokens = param.NewOpt(int64(opts.MaxTokens))
 	}
 	if len(toolParams) > 0 {
 		params.Tools = toolParams
@@ -219,20 +245,29 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 	}
 
 	// Configure reasoning effort if specified
-	if effort := c.endpoint.ReasoningEffort; effort != "" && effort != "none" {
+	if effort := c.endpoint.ReasoningEffort; effort != "" && effort != "none" && canReason {
 		params.Reasoning = shared.ReasoningParam{
-			Effort:  shared.ReasoningEffort(effort),
-			Summary: shared.ReasoningSummaryConcise,
+			Effort: shared.ReasoningEffort(effort),
+		}
+		// OpenAI's own API rejects summary requests from organizations that
+		// haven't been verified, so only the ChatGPT backend asks for one.
+		if c.codex {
+			params.Reasoning.Summary = shared.ReasoningSummaryConcise
 		}
 	}
 
 	// Use streaming
 	turn := codexTurnIndex(history)
 	var httpResp *http.Response
-	reqOpts := append(c.turnRequestOptions(cacheKey, turn), option.WithResponseInto(&httpResp))
+	reqOpts := []option.RequestOption{option.WithResponseInto(&httpResp)}
+	if c.codex {
+		reqOpts = append(reqOpts, c.turnRequestOptions(cacheKey, turn)...)
+	}
 	stream := c.svc.NewStreaming(ctx, params, reqOpts...)
 	defer stream.Close()
-	c.recordTurnState(cacheKey, turn, httpResp)
+	if c.codex {
+		c.recordTurnState(cacheKey, turn, httpResp)
+	}
 
 	var content strings.Builder
 	var contentBlocks []*LLMContentBlock
@@ -345,8 +380,11 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 		}
 	}
 
-	if stream.Err() != nil {
-		return nil, codexAPIError(stream.Err())
+	if err := stream.Err(); err != nil {
+		if c.codex {
+			return nil, codexAPIError(err)
+		}
+		return nil, err
 	}
 	// Close the streamed text response phase (if any).
 	dp.Close(0)

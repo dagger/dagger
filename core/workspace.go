@@ -400,7 +400,7 @@ func (ws *Workspace) OverlayPathTouched(p string) bool {
 	p = path.Clean(filepath.ToSlash(p))
 	for _, touched := range ws.OverlayTouchedPaths() {
 		touched = path.Clean(filepath.ToSlash(touched))
-		if p == touched || strings.HasPrefix(p, touched+"/") {
+		if touched == "." || p == touched || strings.HasPrefix(p, touched+"/") {
 			return true
 		}
 	}

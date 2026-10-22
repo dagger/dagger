@@ -158,7 +158,7 @@ func runGenerators(ctx context.Context, dag *dagger.Client, generators *core.Art
 		}
 		sdkGenerators := map[string]bool{}
 		if len(sdkPaths) > 0 {
-			// Discovery resolves the active entrypoint, including -m overrides.
+			// Discovery resolves the active main, including -m overrides.
 			selected := core.NewQuery(dag).CurrentWorkspace().Artifacts(core.WorkspaceArtifactsOpts{Include: sdkPaths}).FilterTypes([]string{"Generator"})
 			uris, err := artifactURIs(ctx, dag, selected, false)
 			if err != nil {

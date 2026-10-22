@@ -527,7 +527,7 @@ func (fc *FuncCommand) cobraBuilder(ctx context.Context, fn *modFunction) func(*
 		// When the root type is Query and the constructor is the no-op
 		// identity (name == ""), discover `with` from the type's functions
 		// and register its args as local flags. When the constructor IS
-		// `with` (entrypoint proxying), its args are already registered
+		// `with` (main proxying), its args are already registered
 		// by addFlagsForFunction above, but we still need to collect
 		// constructor flags from other modules sharing the Query root.
 		isQueryConstructor := fn.ReturnType != nil &&

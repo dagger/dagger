@@ -1,0 +1,11 @@
+kind: Fixed
+body: |
+  When crun leaves part of a container's cgroup tree behind, as it can when a
+  nested container runtime made threaded cgroups, stopping the service now
+  kills and removes what's left under the execution's cgroup instead of
+  failing at once with "device or resource busy". It still fails if what's
+  left doesn't exit within the recovery's deadline.
+time: 2026-10-21T22:52:05Z
+custom:
+    Author: sipsma
+    PR: "14782"

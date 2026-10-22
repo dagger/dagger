@@ -79,7 +79,10 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *c
 	if err != nil {
 		return err
 	}
+	// Group by the full path. A projected type key can repeat across paths
+	// with different dimensions, so it only prints the group.
 	groups := map[string][]listedArtifact{}
+	prefixes := map[string]string{}
 	for _, item := range items {
 		addr, err := dagaddress.Parse(item.URI)
 		if err != nil {
@@ -90,13 +93,16 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *c
 		if ok {
 			addr.Query = []dagaddress.Pair{typeKey}
 		}
-		path := addr.String()
-		groups[path] = append(groups[path], item)
+		group := strings.Join(addr.Types, "+") + "\x00" + item.fullPath()
+		if _, ok := prefixes[group]; !ok {
+			prefixes[group] = addr.String()
+		}
+		groups[group] = append(groups[group], item)
 	}
-	groupPaths := slices.Sorted(maps.Keys(groups))
 	var output []listedArtifact
-	for _, path := range groupPaths {
-		for _, row := range artifactListRows(groups[path], all) {
+	for _, group := range slices.Sorted(maps.Keys(groups)) {
+		path := prefixes[group]
+		for _, row := range artifactListRows(groups[group], all) {
 			item := row[0]
 			item.DimensionKeys = nil
 			for _, key := range listedArtifactKeys(row) {

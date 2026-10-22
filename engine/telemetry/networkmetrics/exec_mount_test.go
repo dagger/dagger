@@ -2,6 +2,8 @@ package networkmetrics
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -49,4 +51,23 @@ func TestExecMountWaitsAndRetainsFinalCounters(t *testing.T) {
 	require.EqualValues(t, 19, sample.ExternalTxBytes)
 	require.NoError(t, r.Close())
 	<-command.closed
+}
+
+// Closing removes the mount accounting's own cgroup only. The execution
+// cgroup is the executor's to remove, and may still hold what the
+// container's runtime left, which must not fail the close.
+func TestExecMountResourcesCloseLeavesExecutionCgroup(t *testing.T) {
+	root := t.TempDir()
+	saved := cgroupRoot
+	cgroupRoot = root
+	t.Cleanup(func() { cgroupRoot = saved })
+
+	exec := filepath.Join(root, "exec", "x")
+	require.NoError(t, os.MkdirAll(filepath.Join(exec, "sshfs"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(exec, "container", "default"), 0o755))
+
+	r := &execMountResources{path: "/exec/x", active: true}
+	require.NoError(t, r.Close())
+	require.NoDirExists(t, filepath.Join(exec, "sshfs"))
+	require.DirExists(t, exec)
 }

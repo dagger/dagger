@@ -26,6 +26,9 @@ const (
 	legacyModuleConfigFile = "dagger.json"
 )
 
+// goproxy retries a failed proxy download once before going direct. See New.
+const goproxy = "https://proxy.golang.org|https://proxy.golang.org|direct"
+
 func New(
 	ctx context.Context,
 
@@ -118,6 +121,7 @@ func New(
 		// For now, we namespace them explicitly here.
 		buildCache = dag.CacheVolume("github.com/dagger/dagger/modules/go:build")
 	}
+	customBase := base != nil
 	if base == nil {
 		packages := []string{
 			"go-" + version,
@@ -146,6 +150,17 @@ func New(
 			WithMountedCache("/go/pkg/mod", moduleCache).
 			WithMountedCache("/root/.cache/go-build", buildCache).
 			WithWorkdir("/app")
+	}
+	// proxy.golang.org sometimes resets a module zip download mid-stream
+	// ("stream error: ... INTERNAL_ERROR"). With Go's default GOPROXY
+	// ("https://proxy.golang.org,direct") only a 404 or 410 falls through to
+	// the next entry, so that fails the build. "|" falls through on any error:
+	// retry the proxy once, then fetch from the origin. go.sum still verifies
+	// whatever is downloaded. A caller-supplied base keeps its own GOPROXY.
+	if !customBase {
+		base = base.WithEnvVariable("GOPROXY", goproxy)
+	} else if existing, err := base.EnvVariable(ctx, "GOPROXY"); err == nil && existing == "" {
+		base = base.WithEnvVariable("GOPROXY", goproxy)
 	}
 	// Stamp git commit / dirty state into built binaries as VCS info, via
 	// -ldflags into the Dagger buildinfo package's Injected* vars. Prefer the

@@ -1051,6 +1051,12 @@ func (s *moduleSourceSchema) workspaceModuleSource(
 			Commit:           ref.Ref.SHA,
 			Ref:              ref.Ref.Name,
 		}
+		// Print this source back as repo#ref:subpath, so reloading it doesn't
+		// have to rediscover where the repository ends. SCP-style refs
+		// (git@host:path) have no scheme and can't use that form.
+		if gitref.Scheme(cloneRef).Prefix() != "" {
+			src.Git.Selector = gitref.GitRefSelector
+		}
 		src.Git.Symbolic = cloneRef
 		if sourceRootPath != "." {
 			src.Git.Symbolic += "/" + filepath.ToSlash(sourceRootPath)

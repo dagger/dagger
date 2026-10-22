@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -108,7 +109,7 @@ source = "`+baseRef+`"
 		require.Contains(t, out, `source = "`+moduleRef+`"`, "the module ref is inherited")
 		require.Contains(t, out, `greeting = "hola"`, "the local override wins")
 		require.Contains(t, out, `tone = "formal"`, "settings merge key by key")
-		require.Contains(t, out, "entrypoint = true", "other fields are inherited")
+		require.Contains(t, out, "main = true", "other fields are inherited")
 		require.Contains(t, out, `ignore = ["dist"]`, "a top-level key the file sets wins")
 		require.NotContains(t, out, "base-dist")
 
@@ -129,7 +130,7 @@ source = "`+baseRef+`"
 		require.Equal(t, baseRef, strings.TrimSpace(out))
 	})
 
-	// The include entry is the workspace entrypoint, so its functions are
+	// The include entry is the workspace main, so its functions are
 	// proxied onto the root rather than namespaced under the module name.
 	t.Run("loads a module the include contributes", func(ctx context.Context, t *testctx.T) {
 		out, err := ctr.With(workspaceSelectionDaggerCall("identify")).Stdout(ctx)
@@ -360,7 +361,12 @@ source = "`+baseRef+`"
 	out, err := ctr.With(workspaceIncludeConfig()).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, `source = "`+moduleRef+`"`, "a remote entry comes through untouched")
-	require.Contains(t, out, "/dagger/modules/ci@", "a local entry is addressed against the config's own directory")
+	baseURL, _, ok := strings.Cut(baseRef, "#")
+	require.True(t, ok)
+	require.Regexp(t,
+		regexp.MustCompile(regexp.QuoteMeta(`source = "`+baseURL+`#`)+`[0-9a-f]{40}:dagger/modules/ci"`),
+		out,
+		"a local entry is addressed against the config's own directory with its explicit selector")
 
 	out, err = ctr.With(workspaceSelectionDaggerCall("local-ci", "identify")).Stdout(ctx)
 	require.NoError(t, err)

@@ -164,7 +164,7 @@ serveModule(
   sibling client-codegen primitives.
 - `DoNotCache` — it mutates the calling session's schema, like `Module.serve`.
 - The module is served **namespaced**: neither `includeDependencies` nor
-  `entrypoint`. A client's schema is core plus its one bound module, so its
+  `main`. A client's schema is core plus its one bound module, so its
   bindings never reference a dependency, and promoting a bound module onto the
   `Query` root is not something a client bootstrap should decide.
 
@@ -229,7 +229,7 @@ emits a local target for a git-loaded module today.
 
 ## What this deliberately does not do
 
-- **No `includeDependencies` / `entrypoint` passthrough.** See [API](#api). Add
+- **No `includeDependencies` / `main` passthrough.** See [API](#api). Add
   them only if a concrete caller needs them; `Module.serve` remains for callers
   that do.
 - **No new resolution semantics.** Every branch is a server-side selection of an

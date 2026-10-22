@@ -5,6 +5,7 @@ import (
 
 	"testing"
 
+	"github.com/dagger/dagger/core/gitref"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/stretchr/testify/require"
 )
@@ -14,7 +15,12 @@ const testIncludeCommit = "0123456789abcdef0123456789abcdef01234567"
 // testGitAddresser stands in for an include resolved from
 // https://github.com/acme/base, whose config sits at the repository root.
 func testGitAddresser() includedModuleAddresser {
-	return gitIncludedModuleAddresser("https://github.com/acme/base", testIncludeCommit, ".")
+	return gitIncludedModuleAddresser(
+		"https://github.com/acme/base",
+		gitref.NoSelector,
+		testIncludeCommit,
+		".",
+	)
 }
 
 func TestAddressIncludedModules(t *testing.T) {
@@ -105,11 +111,49 @@ source = "../tools/lint"
 `))
 	require.NoError(t, err)
 
-	address := gitIncludedModuleAddresser("https://github.com/acme/base", testIncludeCommit, "dagger/common")
+	address := gitIncludedModuleAddresser(
+		"https://github.com/acme/base",
+		gitref.NoSelector,
+		testIncludeCommit,
+		"dagger/common",
+	)
 	require.Empty(t, addressIncludedModules(address, cfg, nil))
 
 	require.Equal(t, "https://github.com/acme/base/dagger/common/ci@"+testIncludeCommit, cfg.Modules["ci"].Source)
 	require.Equal(t, "https://github.com/acme/base/dagger/tools/lint@"+testIncludeCommit, cfg.Modules["sibling"].Source)
+}
+
+func TestGitIncludedModuleAddresserPreservesSelector(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name     string
+		selector gitref.SelectorType
+		want     string
+	}{
+		{
+			name:     "module version",
+			selector: gitref.ModuleVersionSelector,
+			want:     "https://git.example.org/team/project.git/config/ci@" + testIncludeCommit,
+		},
+		{
+			name:     "Git URL",
+			selector: gitref.GitRefSelector,
+			want:     "https://git.example.org/team/project.git#" + testIncludeCommit + ":config/ci",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			address := gitIncludedModuleAddresser(
+				"https://git.example.org/team/project.git",
+				tc.selector,
+				testIncludeCommit,
+				"config",
+			)
+			got, ok := address("./ci")
+			require.True(t, ok)
+			require.Equal(t, tc.want, got)
+		})
+	}
 }
 
 func TestAddressIncludedModulesKeepsAVanityRemote(t *testing.T) {

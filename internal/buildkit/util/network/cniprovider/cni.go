@@ -2,7 +2,11 @@ package cniprovider
 
 import (
 	"context"
+	"encoding/json"
+	stderrors "errors"
+	"net"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -15,12 +19,58 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/network"
+	"github.com/dagger/dagger/network/dnshosts"
 	"github.com/gofrs/flock"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
 )
 
 const aboveTargetGracePeriod = 5 * time.Minute
+
+// backgroundReleaseShutdownTimeout bounds how long Close waits for named
+// namespaces still being released in the background. Any left over are
+// released by the next engine start, like every namespace left behind.
+const backgroundReleaseShutdownTimeout = time.Minute
+
+// releaseGate, if set, is a directory that holds the release of namespaces
+// that have a hostname, standing in for a host whose network lock is
+// contended. Tests only: a release creates "entered-<id>" in it, waits for a
+// file named "open", releases, and writes "ok" or its error to "done-<id>".
+var releaseGate = os.Getenv("_DAGGER_TEST_CNI_RELEASE_GATE")
+
+// releaseNamed releases a namespace that has a hostname, through releaseGate
+// if set.
+func releaseNamed(ns *cniNS) error {
+	if releaseGate == "" {
+		return ns.release()
+	}
+	writeGateMarker("entered-"+ns.id, "")
+	for deadline := time.Now().Add(10 * time.Minute); time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
+		if _, err := os.Stat(filepath.Join(releaseGate, "open")); err == nil {
+			break
+		}
+	}
+	err := ns.release()
+	result := "ok"
+	if err != nil {
+		result = err.Error()
+	}
+	writeGateMarker("done-"+ns.id, result)
+	return err
+}
+
+// writeGateMarker publishes a marker with its whole content: it is written
+// under a temporary name and renamed into place.
+func writeGateMarker(name, content string) {
+	tmp := filepath.Join(releaseGate, ".tmp-"+name)
+	err := os.WriteFile(tmp, []byte(content), 0o600)
+	if err == nil {
+		err = os.Rename(tmp, filepath.Join(releaseGate, name))
+	}
+	if err != nil {
+		bklog.L.Errorf("writing network release gate marker %s: %s", name, err)
+	}
+}
 
 type Opt struct {
 	Root       string
@@ -61,10 +111,16 @@ func New(opt Opt) (network.Provider, error) {
 		return nil, err
 	}
 
+	dnsFiles, err := dnsnameFiles(opt.ConfigPath)
+	if err != nil {
+		return nil, err
+	}
+
 	cp := &cniProvider{
 		CNI:           cniHandle,
 		root:          opt.Root,
 		netAccounting: nettracer.Active(),
+		dnsFiles:      dnsFiles,
 	}
 	cleanOldNamespaces(cp)
 
@@ -85,6 +141,45 @@ type cniProvider struct {
 	// prefixesAdded records that the bridge's addresses are classified as
 	// internal; every namespace shares the same bridge.
 	prefixesAdded atomic.Bool
+	// dnsFiles are the dnsname plugin's files, if the network resolves
+	// container hostnames with it.
+	dnsFiles *dnshosts.Files
+
+	// Named namespaces released in the background, and whether Close has
+	// stopped accepting more.
+	releasesMu     sync.Mutex
+	releasesClosed bool
+	releases       sync.WaitGroup
+	releasing      atomic.Int64
+}
+
+// dnsnameFiles returns the dnsname plugin's files from the network
+// configuration list at path, or nil if it does not use the plugin.
+func dnsnameFiles(path string) (*dnshosts.Files, error) {
+	if !strings.HasSuffix(path, ".conflist") {
+		return nil, nil
+	}
+	dt, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var conf struct {
+		Plugins []struct {
+			Type     string `json:"type"`
+			Hosts    string `json:"hosts"`
+			Lockfile string `json:"lockfile"`
+			Pidfile  string `json:"pidfile"`
+		} `json:"plugins"`
+	}
+	if err := json.Unmarshal(dt, &conf); err != nil {
+		return nil, errors.Wrapf(err, "parsing cni config %q", path)
+	}
+	for _, plugin := range conf.Plugins {
+		if plugin.Type == "dnsname" {
+			return &dnshosts.Files{Hosts: plugin.Hosts, Lockfile: plugin.Lockfile, Pidfile: plugin.Pidfile}, nil
+		}
+	}
+	return nil, nil
 }
 
 func (c *cniProvider) initNetwork(lock bool) error {
@@ -104,6 +199,7 @@ func (c *cniProvider) initNetwork(lock bool) error {
 
 func (c *cniProvider) Close() error {
 	c.nsPool.close()
+	c.waitForReleases(backgroundReleaseShutdownTimeout)
 	if c.release != nil {
 		return c.release()
 	}
@@ -313,6 +409,11 @@ func (c *cniProvider) newNS(ctx context.Context, hostname string) (*cniNS, error
 		opts:     nsOpts,
 		vethName: vethName,
 	}
+	if hostname != "" {
+		ns.provider = c
+		ns.hostname = hostname
+		ns.ips = sandboxIPs(cniRes)
+	}
 	if c.netAccounting != nil && ns.vethName != "" && !c.prefixesAdded.Load() {
 		if err := c.netAccounting.AddInternalPrefixesForVeth(ns.vethName); err != nil {
 			bklog.G(ctx).Debugf(
@@ -337,6 +438,9 @@ func (c *cniProvider) newNS(ctx context.Context, hostname string) (*cniNS, error
 
 type cniNS struct {
 	pool          *cniPool
+	provider      *cniProvider
+	hostname      string
+	ips           []net.IP
 	handle        cni.CNI
 	id            string
 	nativeID      string
@@ -356,11 +460,83 @@ func (ns *cniNS) Close() error {
 	if ns.prevSample != nil {
 		ns.offsetSample = ns.prevSample
 	}
-	if ns.pool == nil {
+	switch {
+	case ns.pool != nil:
+		ns.pool.put(ns)
+		return nil
+	case ns.provider != nil:
+		return ns.provider.closeNamed(ns)
+	default:
 		return ns.release()
 	}
-	ns.pool.put(ns)
-	return nil
+}
+
+// sandboxIPs returns the addresses of a namespace's own interfaces, which the
+// dnsname plugin maps its hostname to.
+func sandboxIPs(res *cni.Result) []net.IP {
+	var ips []net.IP
+	for name, iface := range res.Interfaces {
+		if !strings.HasPrefix(name, "eth") || iface.Sandbox == "" {
+			continue
+		}
+		for _, ipConfig := range iface.IPConfigs {
+			ips = append(ips, ipConfig.IP)
+		}
+	}
+	return ips
+}
+
+// closeNamed releases a namespace that has a hostname. Its DNS entry is
+// removed right away, so the hostname stops resolving to it, and a restart
+// under the same hostname resolves only to the new namespace. The rest of the
+// release can wait a long time for the host's network lock under load, so it
+// runs in the background: the namespace's address and devices are its own
+// until then.
+func (c *cniProvider) closeNamed(ns *cniNS) error {
+	var err error
+	if c.dnsFiles != nil && len(ns.ips) > 0 {
+		if err = c.dnsFiles.RemoveHost(ns.hostname, ns.ips); err != nil {
+			err = errors.Wrapf(err, "removing DNS entry of %s", ns.hostname)
+		}
+	}
+
+	c.releasesMu.Lock()
+	if c.releasesClosed {
+		c.releasesMu.Unlock()
+		return stderrors.Join(err, releaseNamed(ns))
+	}
+	c.releases.Add(1)
+	c.releasing.Add(1)
+	c.releasesMu.Unlock()
+
+	go func() {
+		defer c.releases.Done()
+		defer c.releasing.Add(-1)
+		start := time.Now()
+		if err := releaseNamed(ns); err != nil {
+			bklog.L.Warnf("releasing network namespace %s of %s in the background after %s: %s", ns.id, ns.hostname, time.Since(start), err)
+		}
+	}()
+	return err
+}
+
+// waitForReleases stops releasing named namespaces in the background and
+// waits up to timeout for those still being released.
+func (c *cniProvider) waitForReleases(timeout time.Duration) {
+	c.releasesMu.Lock()
+	c.releasesClosed = true
+	c.releasesMu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		c.releases.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(timeout):
+		bklog.L.Warnf("%d network namespaces still being released after %s; the next engine start releases them", c.releasing.Load(), timeout)
+	}
 }
 
 func (ns *cniNS) Sample() (*resourcestypes.NetworkSample, error) {
@@ -403,10 +579,23 @@ func (ns *cniNS) release() error {
 	if err1 := unmountNetNS(ns.nativeID); err1 != nil && err == nil {
 		err = err1
 	}
-	if err1 := deleteNetNS(ns.nativeID); err1 != nil && err == nil {
-		err = err1
+	if err != nil {
+		// Keep the namespace's file, so the next engine start retries the
+		// CNI teardown, which also releases its address.
+		return err
 	}
-	return err
+	return deleteNetNS(ns.nativeID)
+}
+
+// releaseUnmounted retries the CNI teardown of a namespace that no longer
+// exists. Without a namespace, the plugins release what lives outside it,
+// such as its address and firewall rules.
+func (ns *cniNS) releaseUnmounted() error {
+	bklog.L.Tracef("releasing unmounted cni network namespace %s", ns.id)
+	if err := ns.handle.Remove(context.TODO(), ns.id, "", ns.opts...); err != nil {
+		return err
+	}
+	return deleteNetNS(ns.nativeID)
 }
 
 type contextKeyT string

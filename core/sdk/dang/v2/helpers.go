@@ -1558,7 +1558,7 @@ func (c dangConverter) convertList(ctx context.Context, vals []any, fieldType hm
 		return nil, fmt.Errorf("expected list type, got %T", fieldType)
 	}
 
-	listVal := dang.ListValue{ElemType: listT}
+	listVal := dang.ListValue{ElemType: listT.Type}
 	for _, item := range vals {
 		itemVal, err := c.convert(ctx, item, listT.Type)
 		if err != nil {

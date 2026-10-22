@@ -966,8 +966,11 @@ func (c *Cache) lookupCacheForRequestLocked(
 	// that exist only at this decision point; plain field writes of values
 	// already in hand, changing nothing about the lookup itself.
 	if ev := req.CacheEvidence; ev != nil {
+		ev.LookupAtUnixNano = now.UnixNano()
 		if hitRes != nil {
 			ev.HitRoute = match.route
+			ev.HitRemote = hitRes.imported
+			ev.HitMergedAtUnixNano = hitRes.mergedAtUnixNano
 		} else {
 			ev.MissSawExpired = match.sawExpired
 			// Expiry is applied during accumulation, so a non-empty candidate
@@ -1078,6 +1081,9 @@ func (c *Cache) lookupCacheForRequest(
 			// producer's release as this caller's failure. The recorded
 			// session edge stays until session release, exactly as the
 			// requirement re-validation's miss conversion below keeps it.
+			if ev := req.CacheEvidence; ev != nil {
+				ev.MissProducerReleased = true
+			}
 			return nil, false, nil
 		}
 		return nil, false, err
@@ -1092,6 +1098,9 @@ func (c *Cache) lookupCacheForRequest(
 		// singleflight instead. The recorded session edge stays until
 		// session release; over-retaining one result is cheaper than a
 		// dedicated decrement-and-collect path here.
+		if ev := req.CacheEvidence; ev != nil {
+			ev.MissRequirementsGrew = true
+		}
 		return nil, false, nil
 	}
 	if req.IsPersistable {

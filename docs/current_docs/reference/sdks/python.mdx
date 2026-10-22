@@ -56,7 +56,7 @@ dagger module init python --name=my-module
 
 | Argument | Required | Description |
 |---|---|---|
-| `--name` | no | Module name. Without `--name` or `--path`, inferred as `<project>-dev` and installed as the workspace entrypoint. |
+| `--name` | no | Module name. Without `--name` or `--path`, inferred as `<project>-dev` and installed as the workspace main. |
 | `--path` | no | Where to create the module. Default: `<dagger.toml directory>/.dagger/modules/<name>`. A custom path is registered for generation but is not installed. |
 | `--template` | no | Select `default`, `empty`, or `legacy`. Defaults to `default`. |
 | `--python-version` | no | Pin the Python version written into `pyproject.toml`. |

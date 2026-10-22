@@ -637,7 +637,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("err").Doc(`Message of the error to raise. If empty, the error will be ignored.`),
 			),
 
-		dagql.NodeFunc("withExec", s.withExec).
+		dagql.NodeFuncWithDynamicInputs("withExec", s.withExec, s.withExecDynamicInputs).
 			IsPersistable().
 			View(AllVersion).
 			Doc(`Execute a command in the container, and return a new snapshot of the container state after execution.`).
@@ -1703,6 +1703,49 @@ func (s *containerSchema) withError(ctx context.Context, parent dagql.ObjectResu
 	return inst, errors.New(args.Err)
 }
 
+// withExecDynamicInputs gives a process that a module entrypoint starts for a
+// call the module of that call. The module enters the exec's identity, so the
+// module does not depend on which client evaluates the exec, and execs of
+// different modules do not share a result. The process does not get the call:
+// an exec that holds a function call cannot be persisted.
+func (s *containerSchema) withExecDynamicInputs(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Container],
+	args containerExecArgs,
+	req *dagql.CallRequest,
+) error {
+	if args.ModuleContext.Valid {
+		return nil
+	}
+	// The call is not current yet, so the request carries its view.
+	nesting, err := execNesting(core.AfterVersion(defaultNestingVersion).Contains(req.View), args)
+	if err != nil || !nesting {
+		return err
+	}
+	mod, err := core.ModuleProcessModule(ctx)
+	if err != nil || mod.Self() == nil {
+		return err
+	}
+	// The scoped module carries a content digest, so the exec keeps one
+	// identity for the module across clients and sessions.
+	mod, err = core.ImplementationScopedModule(ctx, mod)
+	if err != nil {
+		return err
+	}
+	modID, err := mod.ID()
+	if err != nil {
+		return err
+	}
+	return req.SetArgInput(ctx, "moduleContext", dagql.Opt(dagql.NewID[*core.Module](modID)), false)
+}
+
+func execNesting(defaultNesting bool, args containerExecArgs) (bool, error) {
+	if defaultNesting {
+		return v1Nesting(args.DisableDaggerInDagger, args.DaggerInDaggerNewSession)
+	}
+	return args.ExperimentalPrivilegedNesting, nil
+}
+
 func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerExecArgs) (inst dagql.ObjectResult[*core.Container], _ error) {
 	if args.Stdin != "" && args.RedirectStdin != "" {
 		return inst, fmt.Errorf("cannot set both stdin and redirectStdin")
@@ -1716,11 +1759,9 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 	if args.SkipEntrypoint != nil {
 		args.UseEntrypoint = !*args.SkipEntrypoint
 	}
-	if core.Supports(ctx, defaultNestingVersion) {
-		args.ExperimentalPrivilegedNesting, err = v1Nesting(args.DisableDaggerInDagger, args.DaggerInDaggerNewSession)
-		if err != nil {
-			return inst, err
-		}
+	args.ExperimentalPrivilegedNesting, err = execNesting(core.Supports(ctx, defaultNestingVersion), args)
+	if err != nil {
+		return inst, err
 	}
 	args.LogRedirectedOutput = !core.Supports(ctx, redirectNotLoggedVersion)
 

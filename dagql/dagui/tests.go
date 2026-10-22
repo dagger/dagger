@@ -367,13 +367,21 @@ type TestIndex struct {
 	builtVersion uint64
 
 	// perSpanViews memoizes ViewForSpan per root for the current index
-	// version and DB mutation count. Render passes read the same roots
-	// several times per frame (claims seeding, row predicates, rollups);
-	// without the memo each read rescans every known test span.
+	// version and scoped epoch. Render passes read the same roots several
+	// times per frame (claims seeding, row predicates, rollups) and every
+	// check/tool row asks for its own view.
+	//
+	// scopedEpoch advances on every update that can change some scoped view:
+	// one to a known test span (structure, metadata or status) or to a real
+	// ancestor of one. Scoped view nodes carry aggregate counts and
+	// categories, so status updates must invalidate them too. Updates to
+	// spans unrelated to any test -- the bulk of a live agent session -- leave
+	// the memo intact.
 	perSpanViews    map[SpanID]*TestView
 	perSpanVersion  uint64
-	perSpanDBEpoch  uint64
+	perSpanEpoch    uint64
 	perSpanMemoInit bool
+	scopedEpoch     uint64
 
 	initialScanCount       int
 	structuralRebuildCount int
@@ -445,12 +453,12 @@ func (idx *TestIndex) ViewForSpan(root *Span) *TestView {
 	}
 	idx.View()
 
-	// Serve repeated same-frame reads from the memo; any index change or DB
-	// span add/update (which can extend an ancestor chain) invalidates it.
-	if !idx.perSpanMemoInit || idx.perSpanVersion != idx.version || idx.perSpanDBEpoch != idx.db.mutations {
+	// Serve repeated reads from the memo until an index change or an update
+	// touching a test or one of its ancestors (see scopedEpoch).
+	if !idx.perSpanMemoInit || idx.perSpanVersion != idx.version || idx.perSpanEpoch != idx.scopedEpoch {
 		idx.perSpanViews = make(map[SpanID]*TestView)
 		idx.perSpanVersion = idx.version
-		idx.perSpanDBEpoch = idx.db.mutations
+		idx.perSpanEpoch = idx.scopedEpoch
 		idx.perSpanMemoInit = true
 	}
 	if view, ok := idx.perSpanViews[root.ID]; ok {
@@ -461,29 +469,46 @@ func (idx *TestIndex) ViewForSpan(root *Span) *TestView {
 	return view
 }
 
+// buildViewForSpan builds the view of the tests that roll up to root. Its
+// candidates are root itself and the tests indexed beneath it in
+// testsByAncestor, which View keeps current, so a root with no tests beneath
+// it costs a map lookup rather than a scan of every test in the session.
+// testMayRollUp still decides containment: a boundary or encapsulation between
+// a candidate and root hides it.
 func (idx *TestIndex) buildViewForSpan(root *Span) *TestView {
-	nodesBySpan := make(map[SpanID]*TestNode)
-	for id, span := range idx.knownTestSpans {
-		if span == nil {
-			continue
+	descendants := idx.testsByAncestor[root.ID]
+	nodesBySpan := make(map[SpanID]*TestNode, len(descendants)+1)
+	add := func(span *Span) {
+		if span == nil || !testMayRollUp(span, root, nil) {
+			return
 		}
-		if !testMayRollUp(span, root, nil) {
-			continue
-		}
-		kind, name, fullName, suiteName, ok := testNodeMetadata(span)
-		if !ok {
-			continue
-		}
-		nodesBySpan[id] = &TestNode{
-			ID:        TestNodeID("span:" + span.ID.String()),
-			Kind:      kind,
-			Name:      name,
-			FullName:  fullName,
-			Span:      span,
-			suiteName: suiteName,
+		if node := newTestNode(span); node != nil {
+			nodesBySpan[span.ID] = node
 		}
 	}
+	add(idx.knownTestSpans[root.ID])
+	for id := range descendants {
+		add(idx.knownTestSpans[id])
+	}
+	return buildScopedTestView(nodesBySpan)
+}
 
+func newTestNode(span *Span) *TestNode {
+	kind, name, fullName, suiteName, ok := testNodeMetadata(span)
+	if !ok {
+		return nil
+	}
+	return &TestNode{
+		ID:        TestNodeID("span:" + span.ID.String()),
+		Kind:      kind,
+		Name:      name,
+		FullName:  fullName,
+		Span:      span,
+		suiteName: suiteName,
+	}
+}
+
+func buildScopedTestView(nodesBySpan map[SpanID]*TestNode) *TestView {
 	var roots []*TestNode
 	for _, node := range nodesBySpan {
 		if parent := nearestTestAncestor(node.Span, nodesBySpan); parent != nil {
@@ -526,6 +551,13 @@ func (idx *TestIndex) spanUpdated(span *Span) {
 
 	node := idx.nodesBySpan[span.ID]
 	_, known := idx.knownTestSpans[span.ID]
+
+	// Only tests and their real ancestors shape scoped views. The reverse
+	// index may be stale while a structural rebuild is pending, but marking
+	// that rebuild advanced the version, which invalidates the memo anyway.
+	if hasNodeMetadata || known || node != nil || len(idx.testsByAncestor[span.ID]) > 0 {
+		idx.scopedEpoch++
+	}
 
 	if hasNodeMetadata {
 		idx.knownTestSpans[span.ID] = span
@@ -721,20 +753,12 @@ func (idx *TestIndex) rebuildStructure() {
 		if !included {
 			continue
 		}
-		kind, name, fullName, suiteName, ok := testNodeMetadata(span)
-		if !ok {
+		node := newTestNode(span)
+		if node == nil {
 			idx.indexTestAncestors(id, nil)
 			delete(idx.knownTestSpans, id)
 			delete(idx.globalIncluded, id)
 			continue
-		}
-		node := &TestNode{
-			ID:        TestNodeID("span:" + span.ID.String()),
-			Kind:      kind,
-			Name:      name,
-			FullName:  fullName,
-			Span:      span,
-			suiteName: suiteName,
 		}
 		nodesBySpan[id] = node
 	}

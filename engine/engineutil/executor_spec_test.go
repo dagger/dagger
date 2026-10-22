@@ -3,6 +3,7 @@ package engineutil
 import (
 	"context"
 	"errors"
+	"os"
 	"testing"
 
 	"github.com/containerd/containerd/v2/core/mount"
@@ -159,6 +160,53 @@ func TestSetupNetworkKeepsInsecureExecsOutOfPool(t *testing.T) {
 	require.NotEmpty(t, state.procInfo.Meta.Hostname)
 	require.NotEqual(t, defaultHostname, state.procInfo.Meta.Hostname)
 	require.Equal(t, []string{state.procInfo.Meta.Hostname}, provider.hostnames)
+}
+
+func TestSetupNetworkHostAliasesForExitedService(t *testing.T) {
+	// "dagger-exited-service.invalid" never resolves (RFC 2606), standing in for
+	// a bound service that has already exited and left DNS.
+	setup := func(t *testing.T, skipUnresolvable bool) (*execState, error) {
+		client := &Client{
+			Opts: &Opts{
+				ExecutorRoot: t.TempDir(),
+				NetworkProviders: map[pb.NetMode]bknetwork.Provider{
+					pb.NetMode_UNSET: &recordingNetworkProvider{},
+				},
+			},
+		}
+		state := &execState{
+			procInfo: &executor.ProcessInfo{
+				Meta: executor.Meta{
+					NetMode: pb.NetMode_UNSET,
+				},
+			},
+			execMD: &ExecutionMetadata{
+				HostAliases: map[string][]string{
+					"dagger-exited-service.invalid": {"dep"},
+				},
+				SkipUnresolvableHostAliases: skipUnresolvable,
+			},
+			sessionID: "test-session",
+			cleanups:  &cleanups.Cleanups{},
+		}
+		t.Cleanup(func() {
+			require.NoError(t, state.cleanups.Run())
+		})
+		return state, client.setupNetwork(context.Background(), state)
+	}
+
+	t.Run("fails by default", func(t *testing.T) {
+		_, err := setup(t, false)
+		require.ErrorContains(t, err, "lookup dagger-exited-service.invalid for hosts file")
+	})
+
+	t.Run("skipped for interactive execs", func(t *testing.T) {
+		state, err := setup(t, true)
+		require.NoError(t, err)
+		hosts, err := os.ReadFile(state.hostsFilePath)
+		require.NoError(t, err)
+		require.NotRegexp(t, `\sdep\n`, string(hosts))
+	})
 }
 
 type recordingNetworkProvider struct {

@@ -57,7 +57,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		require.Contains(t, cfg.Modules, "mywolfi")
 		require.Equal(t, ref, cfg.Modules["mywolfi"].Source)
 		require.Empty(t, cfg.Modules["mywolfi"].Pin)
-		require.False(t, cfg.Modules["mywolfi"].Entrypoint)
+		require.False(t, cfg.Modules["mywolfi"].Main)
 		require.NotContains(t, string(configBytes), "pin =")
 
 		require.NoError(t, c.Close())
@@ -188,7 +188,7 @@ func (m *Dep) Greet() string {
 
 		writeWorkspaceConfigFile(t, workdir, `[modules.dep]
 source = "`+depDir+`"
-entrypoint = true
+main = true
 `)
 
 		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "call", "greet")
@@ -349,7 +349,7 @@ source = "existing"
 }
 
 // TestWorkspaceManagedModuleBehavior covers runtime behavior that depends on a
-// module being configured in a workspace, but is not about entrypoint routing.
+// module being configured in a workspace, but is not about workspace main routing.
 func (WorkspaceModulesSuite) TestWorkspaceManagedModuleBehavior(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

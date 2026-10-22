@@ -119,7 +119,8 @@ func (*Probe) Run() error { panic("check evaluated") }
 			require.Equal(t, "dag+check://", path)
 			keys, err := url.ParseQuery(query)
 			require.NoError(t, err)
-			require.Equal(t, "tools/"+platform+"/modules/cases/run", keys.Get("check"))
+			// The parent keys carry the route, so the type key is short.
+			require.Equal(t, "run", keys.Get("check"))
 			keys.Del("check")
 			var values []string
 			for _, keys := range keys {

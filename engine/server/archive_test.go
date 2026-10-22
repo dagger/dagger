@@ -16,7 +16,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
@@ -26,7 +25,6 @@ import (
 	"github.com/dagger/dagger/engine/clientdb"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
-	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -646,13 +644,11 @@ func TestArchiveInitFailureIsNotFatal(t *testing.T) {
 	require.NotNil(t, srv.clientDBs, "live telemetry stores do not depend on archives")
 }
 
-type failingReleaseContainer struct{}
+type failingCloseTracker struct{}
 
-func (failingReleaseContainer) Start(context.Context, bkgw.StartRequest) (bkgw.ContainerProcess, error) {
-	return nil, errors.New("unused")
-}
-func (failingReleaseContainer) Release(context.Context) error {
-	return errors.New("container release failed")
+func (failingCloseTracker) Capture(context.Context, string, map[string]string) {}
+func (failingCloseTracker) Close() error {
+	return errors.New("analytics close failed")
 }
 
 // TestArchiveSealsDespiteUnrelatedTeardownError: only teardown errors that
@@ -673,8 +669,7 @@ func TestArchiveSealsDespiteUnrelatedTeardownError(t *testing.T) {
 		mainClientCallerID: md.ClientID,
 		clientRuntimes:     map[string]*clientRuntime{client.clientID: client},
 		services:           core.NewServices(),
-		analytics:          analytics.New(analytics.Config{DoNotTrack: true}),
-		containers:         map[bkgw.Container]struct{}{failingReleaseContainer{}: {}},
+		analytics:          failingCloseTracker{},
 		shutdownCh:         make(chan struct{}),
 		telemetryPubSub:    srv.telemetryPubSub,
 	}
@@ -687,7 +682,7 @@ func TestArchiveSealsDespiteUnrelatedTeardownError(t *testing.T) {
 	require.NoError(t, sess.ensureArchive(archiveTestTrace))
 	sess.archiveExpected = agentcontrol.Expectation{Agents: map[agentcontrol.Key]int64{}, Subscriptions: map[agentcontrol.EdgeKey]int64{}}
 
-	require.ErrorContains(t, srv.removeDaggerSession(t.Context(), sess), "container release failed")
+	require.ErrorContains(t, srv.removeDaggerSession(t.Context(), sess), "analytics close failed")
 	m, err := srv.archives.Manifest(archiveTestTrace)
 	require.NoError(t, err)
 	require.Equal(t, archive.StateClosed, m.State, "failure: %s", m.Failure)
@@ -964,4 +959,52 @@ func TestArchiveHTTPUnsealedRefusesSealedAndActive(t *testing.T) {
 	require.NoError(t, srv.finalizeSessionArchive(t.Context(), sess, nil))
 	_, err = c.Unsealed(t.Context(), archiveTestTrace)
 	require.ErrorIs(t, err, archive.ErrState, "a sealed archive uses its bootstrap")
+}
+
+// TestArchiveLookupFindsItsSessionsPendingRegistration: a session's archive is
+// registered when its first agent control record reaches the session
+// exporter, after the protected control lane's coalescing delay. A lookup the
+// session makes before then (the CLI's exit-time resume check, right after a
+// short session) must still find the archive.
+func TestArchiveLookupFindsItsSessionsPendingRegistration(t *testing.T) {
+	srv := newTeardownTestServer(t)
+	root := t.TempDir()
+	srv.clientDBs = clientdb.NewDBs(filepath.Join(root, "stores"))
+	manager, err := archive.NewManager(archive.Config{Root: filepath.Join(root, "archives")})
+	require.NoError(t, err)
+	srv.archives = manager
+	srv.telemetryPubSub = NewPubSub(srv)
+
+	md := &engine.ClientMetadata{SessionID: "session", ClientID: "main", ClientSecretToken: "secret"}
+	client := &clientRuntime{clientRecord: &clientRecord{clientID: "main", clientMetadata: md, shutdownCh: make(chan struct{})}}
+	sess := &daggerSession{
+		sessionID:          md.SessionID,
+		mainClientCallerID: md.ClientID,
+		clientRuntimes:     map[string]*clientRuntime{client.clientID: client},
+		telemetryPubSub:    srv.telemetryPubSub,
+	}
+	client.daggerSession = sess
+	installTestClientRecords(sess)
+	require.NoError(t, client.retainTelemetryDB(t.Context()))
+	srv.initializeSessionTelemetry(sess, nil)
+	t.Cleanup(func() {
+		require.NoError(t, sess.loggerProvider.Shutdown(context.Background()))
+		require.NoError(t, sess.tracerProvider.Shutdown(context.Background()))
+		require.NoError(t, client.closeTelemetryDB())
+	})
+
+	ctx := engine.ContextWithClientMetadata(t.Context(), md)
+	ctx = trace.ContextWithSpanContext(ctx, trace.NewSpanContext(trace.SpanContextConfig{TraceID: trace.TraceID{1}, SpanID: trace.SpanID{1}}))
+	sess.loggerProvider.Logger("dagger.io/agent").Emit(ctx, archiveAgent().Record())
+
+	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := srv.serveArchiveHTTP(w, r, sess.clientRecords["main"]); err != nil {
+			t.Errorf("archive HTTP: %v", err)
+		}
+	}))
+	defer httpServer.Close()
+	c, err := archive.NewClientWithURL(httpServer.Client(), httpServer.URL)
+	require.NoError(t, err)
+	_, err = c.Unsealed(t.Context(), archiveTestTrace)
+	require.ErrorIs(t, err, archive.ErrState, "the session's own active archive must be found")
 }

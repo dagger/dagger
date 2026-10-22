@@ -29,7 +29,7 @@ import (
 // this legacy project become a workspace, and what compat rules apply?"
 // rather than generic module-loading arbitration.
 //
-// Native runtime loading and entrypoint arbitration belong in
+// Native runtime loading and main arbitration belong in
 // module_loading_test.go. Compat runtime equivalence tests belong here only as
 // seam coverage between compat inference and native workspace behavior.
 type WorkspaceCompatSuite struct{}
@@ -285,11 +285,11 @@ func (WorkspaceCompatSuite) TestLegacyToolchainCompat(ctx context.Context, t *te
 	})
 }
 
-// TestCompatEntrypointWithLocalDepsGenerate is a regression test for
+// TestCompatMainWithLocalDepsGenerate is a regression test for
 // https://github.com/dagger/dagger/issues/13742: `dagger generate` in a legacy
-// dagger.json project whose root module is the workspace entrypoint and has
+// dagger.json project whose root module is the workspace main and has
 // local dependencies must not fail while loading that module.
-func (WorkspaceCompatSuite) TestCompatEntrypointWithLocalDepsGenerate(ctx context.Context, t *testctx.T) {
+func (WorkspaceCompatSuite) TestCompatMainWithLocalDepsGenerate(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	// Mirrors the shape of github.com/kpenfound/greetings-api: a legacy Go
@@ -472,7 +472,7 @@ type Native {
 		ctr := workspaceBase(t, c).
 			WithNewFile("dagger.toml", `[modules.native]
 source = ".dagger/modules/native"
-entrypoint = true
+main = true
 `).
 			WithNewFile(".dagger/modules/native/dagger.json", `{"name":"native","sdk":{"source":"dang"}}`).
 			WithNewFile(".dagger/modules/native/main.dang", `
@@ -714,7 +714,7 @@ func (WorkspaceCompatSuite) TestCompatMigration(ctx context.Context, t *testctx.
 			"[modules.myapp]",
 			`source = "."`,
 		}, "\n"))
-		require.Contains(t, configOut, `entrypoint = true`)
+		require.Contains(t, configOut, `main = true`)
 
 		moduleOut, err := ctr.WithExec([]string{"cat", "dagger-module.toml"}).Stdout(ctx)
 		require.NoError(t, err)
@@ -984,7 +984,7 @@ func (WorkspaceCompatSuite) TestCompatAndMigratedWorkspaceMatch(ctx context.Cont
 			WithNewFile("ci/main.dang", `
 type Myapp {
   pub greet: String! {
-    "hello from entrypoint"
+    "hello from main"
   }
 }
 `).
@@ -998,17 +998,17 @@ type Helper {
 `)
 	})
 
-	compatEntrypoint, err := base.With(compatDaggerCall("greet")).Stdout(ctx)
+	compatMain, err := base.With(compatDaggerCall("greet")).Stdout(ctx)
 	require.NoError(t, err)
 	compatHelper, err := base.With(compatDaggerCall("helper", "message")).Stdout(ctx)
 	require.NoError(t, err)
 
 	migrated := base.With(compatDaggerExec("workspace", "migrate", "--auto-apply"))
-	migratedEntrypoint, err := migrated.With(compatDaggerCall("greet")).Stdout(ctx)
+	migratedMain, err := migrated.With(compatDaggerCall("greet")).Stdout(ctx)
 	require.NoError(t, err)
 	migratedHelper, err := migrated.With(compatDaggerCall("helper", "message")).Stdout(ctx)
 	require.NoError(t, err)
 
-	require.Equal(t, strings.TrimSpace(compatEntrypoint), strings.TrimSpace(migratedEntrypoint))
+	require.Equal(t, strings.TrimSpace(compatMain), strings.TrimSpace(migratedMain))
 	require.Equal(t, strings.TrimSpace(compatHelper), strings.TrimSpace(migratedHelper))
 }

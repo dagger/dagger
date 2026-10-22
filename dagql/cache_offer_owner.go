@@ -6,7 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"maps"
 	"slices"
+
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 type offerOwnerID uint64
@@ -273,17 +276,55 @@ func clonePartOffers(offers []PersistedPartOffer) ([]PersistedPartOffer, error) 
 	if offers == nil {
 		return nil, nil
 	}
-	// The JSON round trip deliberately copies every nested map and slice,
-	// including layer annotations, before reference relocation can mutate them.
-	data, err := json.Marshal(offers)
-	if err != nil {
-		return nil, fmt.Errorf("%w: copy pending offers: %w", ErrPersistStateNotReady, err)
-	}
-	var cloned []PersistedPartOffer
-	if err := json.Unmarshal(data, &cloned); err != nil {
-		return nil, fmt.Errorf("%w: copy pending offers: %w", ErrPersistStateNotReady, err)
+	cloned := make([]PersistedPartOffer, len(offers))
+	for i, offer := range offers {
+		var err error
+		cloned[i], err = clonePartOffer(offer)
+		if err != nil {
+			return nil, fmt.Errorf("%w: copy pending offers: %w", ErrPersistStateNotReady, err)
+		}
 	}
 	return cloned, nil
+}
+
+// clonePartOffer deep-copies offer: every nested map, slice and pointer,
+// including layer annotations, before reference relocation and the removal
+// of addresses can change the copy. It refuses an offer that can't be encoded
+// as its record is, which only a layer's creation time can make it.
+func clonePartOffer(offer PersistedPartOffer) (PersistedPartOffer, error) {
+	offer.Address.OutputPath = slices.Clone(offer.Address.OutputPath)
+	offer.Value.Platform = clonePlatform(offer.Value.Platform)
+	offer.Value.Services = slices.Clone(offer.Value.Services)
+	for i := range offer.Value.Services {
+		offer.Value.Services[i].Aliases = slices.Clone(offer.Value.Services[i].Aliases)
+	}
+	offer.Chain.Layers = slices.Clone(offer.Chain.Layers)
+	for i := range offer.Chain.Layers {
+		layer := &offer.Chain.Layers[i]
+		layer.Descriptor.URLs = slices.Clone(layer.Descriptor.URLs)
+		layer.Descriptor.Annotations = maps.Clone(layer.Descriptor.Annotations)
+		layer.Descriptor.Data = slices.Clone(layer.Descriptor.Data)
+		layer.Descriptor.Platform = clonePlatform(layer.Descriptor.Platform)
+		if layer.CreatedAt != nil {
+			if _, err := layer.CreatedAt.MarshalJSON(); err != nil {
+				return PersistedPartOffer{}, err
+			}
+			createdAt := *layer.CreatedAt
+			layer.CreatedAt = &createdAt
+		}
+	}
+	offer.Chain.Addresses = maps.Clone(offer.Chain.Addresses)
+	offer.Owner.DependencyIDs = slices.Clone(offer.Owner.DependencyIDs)
+	return offer, nil
+}
+
+func clonePlatform(platform *ocispecs.Platform) *ocispecs.Platform {
+	if platform == nil {
+		return nil
+	}
+	cloned := *platform
+	cloned.OSFeatures = slices.Clone(platform.OSFeatures)
+	return &cloned
 }
 func (res *sharedResult) pendingOffersLocked() ([]PersistedPartOffer, error) {
 	var keys []string

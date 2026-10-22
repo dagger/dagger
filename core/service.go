@@ -601,6 +601,12 @@ func (svc *Service) startContainer(
 		cloned := *execMD
 		execMD = &cloned
 	}
+	if opts.IO != nil && opts.IO.Interactive {
+		// Interactive services ignore dependency exits (see
+		// propagateDependencyExits below), so a bound service that has already
+		// exited must not fail the exec's setup either.
+		execMD.SkipUnresolvableHostAliases = true
+	}
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {

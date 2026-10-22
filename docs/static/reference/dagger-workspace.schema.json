@@ -109,7 +109,7 @@
         "settings": {
           "type": "object"
         },
-        "entrypoint": {
+        "main": {
           "type": "boolean"
         },
         "legacy-default-path": {
@@ -123,6 +123,11 @@
         },
         "check": {
           "$ref": "#/$defs/ModuleSkip"
+        },
+        "entrypoint": {
+          "type": "boolean",
+          "description": "Deprecated alias for main.",
+          "deprecated": true
         }
       },
       "additionalProperties": false,

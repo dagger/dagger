@@ -102,7 +102,7 @@ func runServices(ctx context.Context, dag *dagger.Client, services *core.Artifac
 		for host, mapping := range cfg.Ports {
 			backend := strings.ReplaceAll(mapping.BackendService, ":", "/")
 			for moduleName, module := range cfg.Modules {
-				if module.Entrypoint {
+				if module.Main {
 					backend = strings.TrimPrefix(backend, moduleName+"/")
 				}
 			}

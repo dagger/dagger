@@ -87,10 +87,24 @@ func ExampleDirectory_DockerBuild() {
 	defer client.Close()
 	q := core.NewQuery(client)
 
-	daggerImg := q.Git("https://github.com/dagger/dagger").
+	repo := q.Git("https://github.com/dagger/dagger").
 		Tag("v0.3.0").
-		Tree().
-		DockerBuild()
+		Tree()
+
+	// proxy.golang.org sometimes resets a module download mid-stream, and Go's
+	// default GOPROXY doesn't fall back on that. "|" falls back on any error.
+	goproxy := "https://proxy.golang.org|https://proxy.golang.org|direct"
+	stage := "AS build\n"
+	dockerfile, err := repo.File("Dockerfile").Contents(ctx)
+	if err != nil {
+		panic(err)
+	}
+	if !strings.Contains(dockerfile, stage) {
+		panic("Dockerfile has no " + strconv.Quote(stage) + " stage")
+	}
+	dockerfile = strings.Replace(dockerfile, stage, stage+"ENV GOPROXY="+goproxy+"\n", 1)
+
+	daggerImg := repo.WithNewFile("Dockerfile", dockerfile).DockerBuild()
 
 	out, err := daggerImg.WithExec([]string{"dagger", "version"}).Stdout(ctx)
 	if err != nil {

@@ -3,14 +3,18 @@ package core
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/agentcontrol"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
 func TestControlPublishesComposedSeed(t *testing.T) {
@@ -338,4 +342,72 @@ func TestAgentCreateRejectsInvalidParent(t *testing.T) {
 
 	require.NoError(t, registry.KillAll(t.Context(), nil))
 	require.EqualValues(t, 2, released.Load(), "rejections hold no lease; accepted ones release at teardown")
+}
+
+// heldControlProcessor holds the first agent control record in OnEmit until
+// released, as a slow log pipeline would.
+type heldControlProcessor struct {
+	emitting, release chan struct{}
+	once              sync.Once
+	emitted           atomic.Int32
+}
+
+func (p *heldControlProcessor) OnEmit(_ context.Context, rec *sdklog.Record) error {
+	if agentcontrol.IsRecord(*rec) {
+		p.once.Do(func() {
+			close(p.emitting)
+			<-p.release
+		})
+		p.emitted.Add(1)
+	}
+	return nil
+}
+func (p *heldControlProcessor) Shutdown(context.Context) error   { return nil }
+func (p *heldControlProcessor) ForceFlush(context.Context) error { return nil }
+func (p *heldControlProcessor) Enabled(context.Context, sdklog.EnabledParameters) bool {
+	return true
+}
+
+// FlushControl returns only once the revisions pending when it was called
+// have been emitted, leaving publication open: the server orders a lookup of
+// the session's archive after the records that register it.
+func TestFlushControlWaitsForPendingPublication(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		held := &heldControlProcessor{emitting: make(chan struct{}), release: make(chan struct{})}
+		provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(held))
+		request := engine.NewClientLifecycleLease(engine.ClientLeaseRequest, "request", nil,
+			func(kind engine.ClientLeaseKind, owner string) (*engine.ClientLifecycleLease, error) {
+				return engine.NewClientLifecycleLease(kind, owner, nil, nil), nil
+			})
+		scope, err := engine.NewClientScope(&engine.ClientMetadata{ClientID: "client", SessionID: "session"}, request)
+		require.NoError(t, err)
+		base, err := engine.ContextWithClientScope(telemetry.WithLoggerProvider(context.Background(), provider), scope)
+		require.NoError(t, err)
+		ctx := testAgentContext(t, base, "worker", "worker")
+		agent, ok := AgentFromContext(ctx)
+		require.True(t, ok)
+		registry := NewAgentRuntimes()
+		_, err = registry.Create(ctx, agent, AgentStateIdle, "", false, "")
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = registry.KillAll(context.Background(), errors.New("test done")) })
+
+		<-held.emitting
+		flushed := make(chan error, 1)
+		go func() { flushed <- registry.FlushControl(t.Context()) }()
+		synctest.Wait()
+		select {
+		case err := <-flushed:
+			close(held.release)
+			t.Fatalf("flush returned while the initial revision was still being emitted: %v", err)
+		default:
+		}
+		close(held.release)
+		require.NoError(t, <-flushed)
+		require.GreaterOrEqual(t, held.emitted.Load(), int32(1))
+		second := testAgentContext(t, base, "second", "second")
+		secondAgent, ok := AgentFromContext(second)
+		require.True(t, ok)
+		_, err = registry.Create(second, secondAgent, AgentStateIdle, "", false, "")
+		require.NoError(t, err, "the registry stays open after a flush")
+	})
 }

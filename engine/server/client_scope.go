@@ -26,29 +26,33 @@ func (srv *Server) RegisterNestedClientTransport(
 	metadata *engine.ClientMetadata,
 	parentClientID string,
 ) (*engine.NestedClientTransport, error) {
-	return srv.registerNestedClientTransport(ctx, metadata, parentClientID, "")
+	return srv.registerNestedClientTransport(ctx, metadata, parentClientID, "", false)
 }
 
 // RegisterNestedClientTransportForExec additionally binds a logical nested
 // client to the exact bootstrap attachables channel created by the same exec.
 // The binding is internal proxy state and cannot come from request metadata.
+// fromExecHelper says that the exec's session helper registers the
+// attachables (see ExpectNestedExecAttachables).
 func (srv *Server) RegisterNestedClientTransportForExec(
 	ctx context.Context,
 	metadata *engine.ClientMetadata,
 	parentClientID string,
 	attachablesClientID string,
+	fromExecHelper bool,
 ) (*engine.NestedClientTransport, error) {
 	if attachablesClientID == "" {
 		return nil, errors.New("nested exec transport is missing its attachables client ID")
 	}
-	return srv.registerNestedClientTransport(ctx, metadata, parentClientID, attachablesClientID)
+	return srv.registerNestedClientTransport(ctx, metadata, parentClientID, attachablesClientID, fromExecHelper)
 }
 
 // ExpectNestedExecAttachables records that a nested exec's session helper
 // will register attachablesClientID's attachables, starting alongside the
 // exec's command. Queries then wait for them as long as the exec runs instead
 // of a fixed timeout. fail reports that the helper will not register them, and
-// done that the exec has ended.
+// done that the exec has ended. The exec's clients must be registered with
+// fromExecHelper set, which keeps their waits failing at once after done.
 func (srv *Server) ExpectNestedExecAttachables(sessionID, attachablesClientID string) (fail func(error), done func(), _ error) {
 	srv.daggerSessionsMu.RLock()
 	sess := srv.daggerSessions[sessionID]
@@ -68,6 +72,7 @@ func (srv *Server) registerNestedClientTransport(
 	metadata *engine.ClientMetadata,
 	parentClientID string,
 	attachablesClientID string,
+	fromExecHelper bool,
 ) (_ *engine.NestedClientTransport, rerr error) {
 	if metadata == nil {
 		return nil, errors.New("nested client metadata is nil")
@@ -118,8 +123,8 @@ func (srv *Server) registerNestedClientTransport(
 	// A logical client is bound to its exec's bootstrap client, whose session
 	// helper starts alongside the exec's command: wait for the helper to
 	// connect, as queries do.
-	if attachablesClientID != metadata.ClientID && sess.attachables != nil {
-		if err := sess.attachables.WaitExpected(ctx, attachablesClientID); err != nil {
+	if fromExecHelper && attachablesClientID != metadata.ClientID && sess.attachables != nil {
+		if _, err := sess.attachables.Wait(ctx, attachablesClientID, true); err != nil {
 			return nil, fmt.Errorf("attachables client %q for nested client %q: %w", attachablesClientID, metadata.ClientID, err)
 		}
 	}
@@ -160,15 +165,16 @@ func (srv *Server) registerNestedClientTransport(
 		return nil, err
 	}
 	record := &clientRecord{
-		daggerSession:       sess,
-		clientID:            metadata.ClientID,
-		clientVersion:       metadata.ClientVersion,
-		secretToken:         metadata.ClientSecretToken,
-		shutdownCh:          make(chan struct{}),
-		clientMetadata:      metadataSnapshot,
-		parentClientIDs:     parentIDs,
-		attachablesClientID: attachablesClientID,
-		accepting:           true,
+		daggerSession:             sess,
+		clientID:                  metadata.ClientID,
+		clientVersion:             metadata.ClientVersion,
+		secretToken:               metadata.ClientSecretToken,
+		shutdownCh:                make(chan struct{}),
+		clientMetadata:            metadataSnapshot,
+		parentClientIDs:           parentIDs,
+		attachablesClientID:       attachablesClientID,
+		attachablesFromExecHelper: fromExecHelper,
+		accepting:                 true,
 	}
 	client := &clientRuntime{
 		clientRecord:           record,
@@ -601,6 +607,10 @@ func (sess *daggerSession) closeClientScope(client *clientRuntime) {
 // live-session transition.
 func (sess *daggerSession) markSessionRemoved() {
 	sess.scopeMu.Lock()
+	// Work still running under the session's scopes observes the removal
+	// before anything can fail it: some readers of the removed state do not
+	// take scopeMu.
+	sess.scopeAuthority.Close()
 	sess.state.Store(sessionStateRemoved)
 	sess.scopeMu.Unlock()
 }

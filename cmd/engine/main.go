@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"os/user"
 	"path/filepath"
 	"runtime"
@@ -28,12 +29,8 @@ import (
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetry/networkmetrics"
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
-	"github.com/dagger/dagger/internal/buildkit/util/apicaps"
-	"github.com/dagger/dagger/internal/buildkit/util/appcontext"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/disk"
-	"github.com/dagger/dagger/internal/buildkit/util/stack"
-	"github.com/dagger/dagger/internal/buildkit/version"
 	"github.com/gofrs/flock"
 	"github.com/google/uuid"
 	"github.com/moby/sys/reexec"
@@ -59,7 +56,7 @@ import (
 	telemetry "github.com/dagger/otel-go"
 )
 
-const gracefulStopTimeout = 5 * time.Minute // need to sync disks, which could be expensive
+const gracefulStopTimeout = 5 * time.Minute // session teardown and persisting the dagql cache can take a while
 const ebpfProgramEnvPrefix = "DAGGER_EBPF_PROG_"
 
 type ebpfProgram struct {
@@ -86,9 +83,6 @@ var defaultEbpfPrograms = map[string]struct{}{
 }
 
 func init() {
-	apicaps.ExportedProduct = "dagger-engine"
-	stack.SetVersionInfo(version.Version, version.Revision)
-
 	if reexec.Init() {
 		os.Exit(0)
 	}
@@ -311,6 +305,31 @@ func addFlags(app *cli.App) {
 	}
 }
 
+// signalContext returns a context that is canceled on the first SIGTERM or
+// SIGINT. The third such signal forces the process to exit.
+func signalContext() context.Context {
+	const exitLimit = 3
+
+	signals := make(chan os.Signal, 2048)
+	signal.Notify(signals, unix.SIGTERM, unix.SIGINT)
+
+	ctx, cancel := context.WithCancelCause(context.Background())
+	go func() {
+		for retries := 1; ; retries++ {
+			s := <-signals
+			fmt.Printf("Received signal %s, retries: %d/%d\n", s, retries, exitLimit)
+
+			err := fmt.Errorf("got %d SIGTERM/SIGINTs, forcing shutdown", retries)
+			cancel(err)
+			if retries >= exitLimit {
+				bklog.G(ctx).Error(err.Error())
+				os.Exit(1)
+			}
+		}
+	}()
+	return ctx
+}
+
 func main() { //nolint:gocyclo
 	engineVersion := fmt.Sprintf("%s %s %s", engine.Version, engine.Tag, platforms.DefaultString())
 	cli.VersionPrinter = func(c *cli.Context) {
@@ -318,11 +337,11 @@ func main() { //nolint:gocyclo
 	}
 	app := cli.NewApp()
 	app.Name = "dagger-engine"
-	app.Version = version.Version
+	app.Version = engine.Version
 
 	addFlags(app)
 
-	ctx, cancel := context.WithCancelCause(appcontext.Context())
+	ctx, cancel := context.WithCancelCause(signalContext())
 	var resourceMetrics *sdkmetric.MeterProvider
 	var networkAccounting *nettracer.Tracer
 	var closeCommandPlacement func() error

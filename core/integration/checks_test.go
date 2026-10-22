@@ -893,11 +893,11 @@ skip = ["generate"]
 		require.NotContains(t, out, "alpha-sdk/generate")
 	})
 
-	t.Run("an entrypoint provider drops the module prefix", func(ctx context.Context, t *testctx.T) {
+	t.Run("a workspace main provider drops the module prefix", func(ctx context.Context, t *testctx.T) {
 		config := strings.Replace(alphaOnly,
 			`source = ".dagger/modules/alpha-sdk"`,
 			`source = ".dagger/modules/alpha-sdk"
-entrypoint = true`, 1)
+main = true`, 1)
 		out, err := generated(ctx, t, config).
 			With(daggerNonNestedExec("check", "-l", "-f=link")).
 			CombinedOutput(ctx)

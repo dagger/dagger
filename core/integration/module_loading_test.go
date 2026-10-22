@@ -1,7 +1,7 @@
 package core
 
 // These tests cover how Dagger chooses which module to load for a command. They
-// verify path/ref resolution, precedence between candidates, and entrypoint
+// verify path/ref resolution, precedence between candidates, and workspace main
 // selection for workspace and standalone modules.
 //
 // See also:
@@ -21,7 +21,7 @@ import (
 )
 
 // ModuleLoadingSuite owns native module loading behavior from source resolution
-// through entrypoint arbitration.
+// through workspace main arbitration.
 //
 // Compat workspace detection from legacy dagger.json belongs in
 // workspace_compat_test.go. This file may cover loading edge cases without a
@@ -214,7 +214,7 @@ func (ModuleLoadingSuite) TestModuleSourceResolution(ctx context.Context, t *tes
 		copyTestdataFixture(ctx, t, filepath.Join(workdir, ".dagger", "modules", "test"), "modules", "go", "unicode-path")
 		writeWorkspaceConfigFile(t, workdir, `[modules.test]
 source = ".dagger/modules/test"
-entrypoint = true
+main = true
 `)
 
 		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "call", "hello")
@@ -415,7 +415,7 @@ type App {
 }
 
 // TestAmbientWorkspaceModuleLoading should pin down the baseline runtime shape
-// of a configured workspace: one ambient entrypoint promoted to Query root,
+// of a configured workspace: one ambient main promoted to Query root,
 // sibling modules still loaded under their names, and the same layout visible
 // through dagger functions, dagger call, and GraphQL.
 func (ModuleLoadingSuite) TestAmbientWorkspaceModuleLoading(ctx context.Context, t *testctx.T) {
@@ -432,7 +432,7 @@ func (ModuleLoadingSuite) TestAmbientWorkspaceModuleLoading(ctx context.Context,
 		require.Contains(t, out, "test")
 	})
 
-	t.Run("dagger call entrypoint function", func(ctx context.Context, t *testctx.T) {
+	t.Run("dagger call main function", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerCall("build")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "built!", strings.TrimSpace(out))
@@ -444,13 +444,13 @@ func (ModuleLoadingSuite) TestAmbientWorkspaceModuleLoading(ctx context.Context,
 		require.Equal(t, "lint passed", strings.TrimSpace(out))
 	})
 
-	t.Run("query root exposes entrypoint methods", func(ctx context.Context, t *testctx.T) {
+	t.Run("query root exposes main methods", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerQuery(`{build,lint{check},test{run}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"build":"built!","lint":{"check":"lint passed"},"test":{"run":"tests passed"}}`, out)
 	})
 
-	t.Run("entrypoint module with workspace arg", func(ctx context.Context, t *testctx.T) {
+	t.Run("main module with workspace arg", func(ctx context.Context, t *testctx.T) {
 		ctr := workspaceFixture(t, c, "module-loading/entrypoint-greeter").
 			WithNewFile("hello.txt", "hello from workspace")
 
@@ -459,7 +459,7 @@ func (ModuleLoadingSuite) TestAmbientWorkspaceModuleLoading(ctx context.Context,
 		require.Equal(t, "hello from workspace", strings.TrimSpace(out))
 	})
 
-	t.Run("workspace without ambient entrypoint keeps modules namespaced", func(ctx context.Context, t *testctx.T) {
+	t.Run("workspace without an ambient main keeps modules namespaced", func(ctx context.Context, t *testctx.T) {
 		ctr := workspaceFixture(t, c, "module-loading/namespaced")
 
 		out, err := ctr.With(moduleLoadingDaggerFunctions()).Stdout(ctx)
@@ -485,7 +485,7 @@ func (ModuleLoadingSuite) TestAmbientWorkspaceValidation(ctx context.Context, t 
 
 	out, err := ctr.With(moduleLoadingDaggerExecFail("api", "functions")).CombinedOutput(ctx)
 	require.NoError(t, err)
-	require.Contains(t, out, "multiple distinct ambient entrypoint modules")
+	require.Contains(t, out, "multiple distinct ambient main modules")
 	require.Contains(t, out, "alpha")
 	require.Contains(t, out, "beta")
 }
@@ -499,7 +499,7 @@ func (ModuleLoadingSuite) TestModuleLoadingPrecedence(ctx context.Context, t *te
 		ctr := workspaceBase(t, c).
 			WithNewFile("dagger.toml", `[modules.ambient]
 source = ".dagger/modules/ambient"
-entrypoint = true
+main = true
 `).
 			With(withModuleFixture(t, c, ".dagger/modules/ambient", "dang/ambient-build")).
 			With(withModuleFixture(t, c, "nested", "dang/nested-build")).
@@ -530,7 +530,7 @@ entrypoint = true
 		require.Contains(t, out, "nested")
 	})
 
-	t.Run("extra modules override ambient workspace entrypoint", func(ctx context.Context, t *testctx.T) {
+	t.Run("extra modules override ambient workspace main", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		ctr := workspaceFixture(t, c, "module-loading/ambient-build").
 			With(withModuleFixture(t, c, "extra", "dang/extra-build"))
@@ -557,7 +557,7 @@ entrypoint = true
 }
 
 // TestModuleLoadingDedupeAndConflicts should cover generic module dedupe and
-// the same-tier conflict errors introduced by entrypoint arbitration.
+// the same-tier conflict errors introduced by workspace main arbitration.
 func (ModuleLoadingSuite) TestModuleLoadingDedupeAndConflicts(ctx context.Context, t *testctx.T) {
 	t.Run("duplicate nominations are deduped before arbitration", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
@@ -568,25 +568,25 @@ func (ModuleLoadingSuite) TestModuleLoadingDedupeAndConflicts(ctx context.Contex
 		require.Equal(t, "deduped app", strings.TrimSpace(out))
 	})
 
-	t.Run("multiple distinct extra entrypoints are rejected", func(ctx context.Context, t *testctx.T) {
-		t.Skip("public CLI exposes one --mod entrypoint; multiple extra-module entrypoints are covered at the engine arbitration layer")
+	t.Run("multiple distinct extra mains are rejected", func(ctx context.Context, t *testctx.T) {
+		t.Skip("public CLI exposes one --mod main; multiple extra-module mains are covered at the engine arbitration layer")
 	})
 
-	t.Run("multiple distinct ambient entrypoints are rejected", func(ctx context.Context, t *testctx.T) {
+	t.Run("multiple distinct ambient mains are rejected", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		ctr := workspaceFixture(t, c, "module-loading/multiple-entrypoints")
 
 		out, err := ctr.With(moduleLoadingDaggerExecFail("api", "functions")).CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "multiple distinct ambient entrypoint modules")
+		require.Contains(t, out, "multiple distinct ambient main modules")
 		require.Contains(t, out, "alpha")
 		require.Contains(t, out, "beta")
 	})
 }
 
-// TestEntryPointRootRouting should cover the root-level routing and shadowing
-// edge cases once an entrypoint module wins arbitration.
-func (ModuleLoadingSuite) TestEntrypointRootRouting(ctx context.Context, t *testctx.T) {
+// TestMainRootRouting should cover the root-level routing and shadowing
+// edge cases once a main module wins arbitration.
+func (ModuleLoadingSuite) TestMainRootRouting(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	t.Run("root field shadowing", func(ctx context.Context, t *testctx.T) {
@@ -615,7 +615,7 @@ func (ModuleLoadingSuite) TestEntrypointRootRouting(ctx context.Context, t *test
 	})
 
 	t.Run("self-named method does not recurse", func(ctx context.Context, t *testctx.T) {
-		base := moduleEntrypointFixture(t, c, "test", "dang/root-self-named")
+		base := moduleMainFixture(t, c, "test", "dang/root-self-named")
 
 		out, err := base.With(daggerCall("test")).Stdout(ctx)
 		require.NoError(t, err)
@@ -626,8 +626,8 @@ func (ModuleLoadingSuite) TestEntrypointRootRouting(ctx context.Context, t *test
 		require.Equal(t, "other-result", strings.TrimSpace(out))
 	})
 
-	t.Run("core return types still work through entrypoint proxies", func(ctx context.Context, t *testctx.T) {
-		base := moduleEntrypointFixture(t, c, "dirs", "dang/core-types")
+	t.Run("core return types still work through workspace main proxies", func(ctx context.Context, t *testctx.T) {
+		base := moduleMainFixture(t, c, "dirs", "dang/core-types")
 
 		out, err := base.With(daggerCall("greet")).Stdout(ctx)
 		require.NoError(t, err)
@@ -647,7 +647,7 @@ func (ModuleLoadingSuite) TestEntrypointRootRouting(ctx context.Context, t *test
 	})
 
 	t.Run("directory field does not recurse in container runtime plumbing", func(ctx context.Context, t *testctx.T) {
-		base := moduleEntrypointFixture(t, c, "playground", "go/playground-directory-field")
+		base := moduleMainFixture(t, c, "playground", "go/playground-directory-field")
 
 		out, err := base.With(daggerQuery(`{sayHello, directory{entries}}`)).Stdout(ctx)
 		require.NoError(t, err)

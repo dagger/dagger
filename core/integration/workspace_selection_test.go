@@ -89,7 +89,7 @@ func workspaceSelectionSimpleWorkspace(dir, name, typeName, result string) core.
 		return ctr.
 			WithNewFile(dir+"/dagger.toml", `[modules.`+name+`]
 source = ".dagger/modules/`+name+`"
-entrypoint = true
+main = true
 `).
 			WithNewFile(moduleDir+"/dagger.json", `{"name":"`+name+`","sdk":{"source":"dang"}}`).
 			WithNewFile(moduleDir+"/main.dang", workspaceSelectionDangSource(typeName, "identify", result))
@@ -101,7 +101,7 @@ func workspaceSelectionSimpleWorkspaceDir(c *dagger.Client, name, typeName, resu
 	return core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", `[modules.`+name+`]
 source = ".dagger/modules/`+name+`"
-entrypoint = true
+main = true
 `).
 		WithNewFile(moduleDir+"/dagger.json", `{"name":"`+name+`","sdk":{"source":"dang"}}`).
 		WithNewFile(moduleDir+"/main.dang", workspaceSelectionDangSource(typeName, "identify", result))
@@ -113,7 +113,7 @@ func workspaceSelectionEnvWorkspace(dir, base, ci string) core.WithContainerFunc
 		return ctr.
 			WithNewFile(dir+"/dagger.toml", `[modules.greeter]
 source = ".dagger/modules/greeter"
-entrypoint = true
+main = true
 
 [modules.greeter.settings]
 greeting = "`+base+`"
@@ -137,7 +137,7 @@ type Greeter {
 
 const workspaceSelectionFilesConfig = `[modules.files]
 source = ".dagger/modules/files"
-entrypoint = true
+main = true
 `
 
 const workspaceSelectionFilesModuleSource = `package main
@@ -859,7 +859,7 @@ func (WorkspaceSelectionSuite) TestDeclaredWorkspaceBindingPropagation(ctx conte
 			With(withModuleFixture(t, c, "/work/selected/.dagger/modules/nester", "go/workspace-selection-nester")).
 			WithNewFile("/work/selected/dagger.toml", `[modules.nester]
 source = ".dagger/modules/nester"
-entrypoint = true
+main = true
 
 [modules.nester.settings]
 greeting = "selected-base"
@@ -885,7 +885,7 @@ greeting = "selected-ci"
 			With(withModuleFixture(t, c, "/work/selected/.dagger/modules/nester", "go/workspace-selection-nester")).
 			WithNewFile("/work/selected/dagger.toml", `[modules.nester]
 source = ".dagger/modules/nester"
-entrypoint = true
+main = true
 
 [modules.nester.settings]
 greeting = "selected-base"

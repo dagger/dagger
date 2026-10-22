@@ -86,7 +86,7 @@ type Part struct { Name string }
 
 func collectionSource(c *dagger.Client) *core.Directory {
 	return core.NewQuery(c).Directory().
-		WithNewFile("dagger.toml", "[modules.collections]\nsource = \"./collections\"\nentrypoint = true\n").
+		WithNewFile("dagger.toml", "[modules.collections]\nsource = \"./collections\"\nmain = true\n").
 		WithNewFile("collections/dagger.json", `{"name":"collections","engineVersion":"v1.0.0","sdk":{"source":"go"},"source":"."}`).
 		WithNewFile("collections/main.go", collectionGoSource)
 }
@@ -254,7 +254,7 @@ func (suite *Suite) Run() error { return nil }
 
 func collectionSelectorSourceDir(c *dagger.Client) *core.Directory {
 	return core.NewQuery(c).Directory().
-		WithNewFile("dagger.toml", "[modules.selectors]\nsource = \"./selectors\"\nentrypoint = true\n").
+		WithNewFile("dagger.toml", "[modules.selectors]\nsource = \"./selectors\"\nmain = true\n").
 		WithNewFile("selectors/dagger.json", `{"name":"selectors","engineVersion":"v1.0.0","sdk":{"source":"go"},"source":"."}`).
 		WithNewFile("selectors/main.go", collectionSelectorSource)
 }
@@ -304,9 +304,9 @@ func (CollectionsSuite) TestCLI(ctx context.Context, t *testctx.T) {
 		args []string
 		want string
 	}{
-		{[]string{"list", "-a", "-f", "link", "items/file", "--collections-items-item=a"}, "dag+file://?file=items/file&collections-items-item=a\n"},
-		{[]string{"list", "-a", "-f", "link", "items/file?collections-items-item=a", "other/file?collections-other-item=c"}, "dag+file://?file=items/file&collections-items-item=a\ndag+file://?file=other/file&collections-other-item=c\n"},
-		{[]string{"list", "-a", "-f", "link", "items/file?collections-items-item=a", "--collections-items-item=c"}, "dag+file://?file=items/file&collections-items-item=a\ndag+file://?file=items/file&collections-items-item=c\n"},
+		{[]string{"list", "-a", "-f", "link", "items/file", "--collections-items-item=a"}, "dag+file://?file=file&collections-items-item=a\n"},
+		{[]string{"list", "-a", "-f", "link", "items/file?collections-items-item=a", "other/file?collections-other-item=c"}, "dag+file://?file=file&collections-items-item=a\ndag+file://?file=file&collections-other-item=c\n"},
+		{[]string{"list", "-a", "-f", "link", "items/file?collections-items-item=a", "--collections-items-item=c"}, "dag+file://?file=file&collections-items-item=a\ndag+file://?file=file&collections-items-item=c\n"},
 		{[]string{"list", "collections-items", "items", "-a", "-f", "link"}, "dag+collections-item://?artifact-collections-item=items&collections-items-item=a\ndag+collections-item://?artifact-collections-item=items&collections-items-item=b\ndag+collections-item://?artifact-collections-item=items&collections-items-item=c\n"},
 	} {
 		out, err := base.With(daggerExec(tc.args...)).Stdout(ctx)
@@ -350,7 +350,7 @@ collections +b +broken
 		require.Equal(t, "--collections --collections-items-item=b\n", out)
 		replayed, err := base.With(daggerExec(append([]string{"list", "containers", "-f=link"}, strings.Fields(out)...)...)).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "dag+container://?container=items/broken&collections-items-item=b\n", replayed)
+		require.Equal(t, "dag+container://?container=broken&collections-items-item=b\n", replayed)
 	})
 
 	t.Run("cli output can select the same container", func(ctx context.Context, t *testctx.T) {
@@ -359,7 +359,7 @@ collections +b +broken
 		require.Equal(t, "--collections --collections-items-item=b\n", out)
 		replayed, err := base.With(daggerExec(append([]string{"list", "containers", "-f=link"}, strings.Fields(out)...)...)).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "dag+container://?container=items/broken&collections-items-item=b\n", replayed)
+		require.Equal(t, "dag+container://?container=broken&collections-items-item=b\n", replayed)
 	})
 }
 
@@ -630,7 +630,7 @@ func (*Item) Assistant(base *dagger.LLM) *dagger.LLM { panic("agent evaluated") 
 	t.Run("settings skip schema paths without reading keys", func(ctx context.Context, t *testctx.T) {
 		out, err := base.WithNewFile("dagger.toml", `[modules.collections]
 source = "./collections"
-entrypoint = true
+main = true
 check.skip = ["deferred/load"]
 `).With(daggerExec("check", "-l", "-f=link")).Stdout(ctx)
 		require.NoError(t, err)
@@ -688,15 +688,15 @@ func (CollectionsSuite) TestArtifacts(ctx context.Context, t *testctx.T) {
   ],
   "collection":{"items":[{"uri":"dag://?artifact-collections-items=items","dimensionKeys":[{"dimension":"module","key":"collections"},{"dimension":"type:CollectionsItems","key":"items"}]}]},
   "selected":{"items":[{"uri":"dag://?artifact-collections-item=items&collections-items-item=a","dimensionKeys":[{"dimension":"module","key":"collections"},{"dimension":"/collections/items","key":"a"},{"dimension":"type:CollectionsItem","key":"items"}]}]},
-  "files":{"items":[{"uri":"dag://?file=items/file&collections-items-item=a","value":{"contents":"item:a"}}]},
-  "evaluated":{"values":[{"artifact":{"uri":"dag://?file=items/file&collections-items-item=a"},"value":{"contents":"item:a"},"error":null}]},
-  "excluded":{"withoutUri":{"items":[{"uri":"dag://?file=items/file&collections-items-item=b"}]}},
-  "lazy":{"items":[{"uri":"dag://?container=items/broken&collections-items-item=b"}]},
-  "nested":{"items":[{"uri":"dag://?artifact-collections-part=items/parts&collections-items-item=a&collections-items-part=x","dimensionKeys":[{"dimension":"module","key":"collections"},{"dimension":"/collections/items","key":"a"},{"dimension":"/collections/items/parts","key":"x"},{"dimension":"type:CollectionsPart","key":"items/parts"}]}]},
-  "emptyKey":{"items":[{"uri":"dag://?artifact-collections-part=items/parts&collections-items-item=a&collections-items-part="}]},
+  "files":{"items":[{"uri":"dag://?file=file&collections-items-item=a","value":{"contents":"item:a"}}]},
+  "evaluated":{"values":[{"artifact":{"uri":"dag://?file=file&collections-items-item=a"},"value":{"contents":"item:a"},"error":null}]},
+  "excluded":{"withoutUri":{"items":[{"uri":"dag://?file=file&collections-items-item=b"}]}},
+  "lazy":{"items":[{"uri":"dag://?container=broken&collections-items-item=b"}]},
+  "nested":{"items":[{"uri":"dag://?artifact-collections-part=parts&collections-items-item=a&collections-items-part=x","dimensionKeys":[{"dimension":"module","key":"collections"},{"dimension":"/collections/items","key":"a"},{"dimension":"/collections/items/parts","key":"x"},{"dimension":"type:CollectionsPart","key":"items/parts"}]}]},
+  "emptyKey":{"items":[{"uri":"dag://?artifact-collections-part=parts&collections-items-item=a&collections-items-part="}]},
   "childKeys":{"dimensionKeys":["","x"]},
-  "first":{"filterPath":{"uri":"dag://items/file?/collections/items=c","items":[{"uri":"dag://?file=items/file&collections-items-item=c"}]}},
-  "second":{"filterDimensionKeys":{"uri":"dag://items/file?/collections/items=c","items":[{"uri":"dag://?file=items/file&collections-items-item=c"}]}}
+  "first":{"filterPath":{"uri":"dag://items/file?/collections/items=c","items":[{"uri":"dag://?file=file&collections-items-item=c"}]}},
+  "second":{"filterDimensionKeys":{"uri":"dag://items/file?/collections/items=c","items":[{"uri":"dag://?file=file&collections-items-item=c"}]}}
 }}}`, string(*got))
 }
 
@@ -736,8 +736,8 @@ func (CollectionsSuite) TestDimensionItems(ctx context.Context, t *testctx.T) {
       {"uri":"dag+collections-item://?artifact-collections-item=items&collections-items-item=a","description":"Look up one item.","path":["items"],"dimensionKeys":[{"dimension":"module","key":"collections"},{"dimension":"/collections/items","key":"a"},{"dimension":"type:CollectionsItem","key":"items"}]}
     ],
     "children":[
-      {"uri":"dag://?artifact-collections-part=items/parts&collections-items-item=b&collections-items-part=x","dimensionKeys":[{"dimension":"module","key":"collections"},{"dimension":"/collections/items","key":"b"},{"dimension":"/collections/items/parts","key":"x"},{"dimension":"type:CollectionsPart","key":"items/parts"}]},
-      {"uri":"dag://?artifact-collections-part=items/parts&collections-items-item=a&collections-items-part=x","dimensionKeys":[{"dimension":"module","key":"collections"},{"dimension":"/collections/items","key":"a"},{"dimension":"/collections/items/parts","key":"x"},{"dimension":"type:CollectionsPart","key":"items/parts"}]}
+      {"uri":"dag://?artifact-collections-part=parts&collections-items-item=b&collections-items-part=x","dimensionKeys":[{"dimension":"module","key":"collections"},{"dimension":"/collections/items","key":"b"},{"dimension":"/collections/items/parts","key":"x"},{"dimension":"type:CollectionsPart","key":"items/parts"}]},
+      {"uri":"dag://?artifact-collections-part=parts&collections-items-item=a&collections-items-part=x","dimensionKeys":[{"dimension":"module","key":"collections"},{"dimension":"/collections/items","key":"a"},{"dimension":"/collections/items/parts","key":"x"},{"dimension":"type:CollectionsPart","key":"items/parts"}]}
     ],
     "keys":["x"]
   },
@@ -770,9 +770,9 @@ func (CollectionsSuite) TestArtifactUnion(ctx context.Context, t *testctx.T) {
 		}
 		require.Equal(t, want, got)
 	}
-	assertURIs(joined, []string{"dag://?file=items/file&collections-items-item=a", "dag://?file=items/file&collections-items-item=b"})
-	assertURIs(joined.FilterDimensionKeys("collections-items-item", []string{"b"}), []string{"dag://?file=items/file&collections-items-item=b"})
-	assertURIs(joined.WithoutURI("items/file?collections-items-item=b"), []string{"dag://?file=items/file&collections-items-item=a"})
+	assertURIs(joined, []string{"dag://?file=file&collections-items-item=a", "dag://?file=file&collections-items-item=b"})
+	assertURIs(joined.FilterDimensionKeys("collections-items-item", []string{"b"}), []string{"dag://?file=file&collections-items-item=b"})
+	assertURIs(joined.WithoutURI("items/file?collections-items-item=b"), []string{"dag://?file=file&collections-items-item=a"})
 	_, err := joined.URI(ctx)
 	require.ErrorContains(t, err, "use the individual artifact addresses")
 }
@@ -1153,7 +1153,7 @@ func (CollectionsSuite) TestModuleSelectors(ctx context.Context, t *testctx.T) {
 	base := workspaceBase(t, c).WithNewFile("dagger.toml", `
 [modules.go]
 source = "./tools"
-entrypoint = true
+main = true
 [modules.playwright]
 source = "./tools"
 [modules.format]

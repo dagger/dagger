@@ -60,7 +60,7 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		dagql.Func("withoutUri", s.withoutURI).Doc("Remove artifacts selected by a DAG address. Retain the collection view."),
 		dagql.Func("filterTypes", s.filterTypes).Doc("Keep artifacts of any listed concrete GraphQL type.").Args(dagql.Arg("types"), dagql.Arg("exclude").Doc("Remove the matching artifacts instead.")),
 		dagql.Func("filterPath", s.filterPath).Doc("Match one complete, ordered field sequence exactly."),
-		dagql.Func("filterPathPattern", s.filterPathPattern).Doc("Keep paths that match a glob pattern. A literal path matches exactly. Both module-qualified and entrypoint paths match."),
+		dagql.Func("filterPathPattern", s.filterPathPattern).Doc("Keep paths that match a glob pattern. A literal path matches exactly. Both module-qualified and workspace main paths match."),
 		dagql.Func("filterDimensions", s.filterDimensions).Doc("Keep artifacts selected through any listed dimension."),
 		dagql.Func("filterDimensionKeys", s.filterDimensionKeys).Doc("Keep artifacts with any listed key in this dimension. Replace collection references with matching subsets. Skip absent keys and leave the source view unchanged."),
 		dagql.Func("filterUri", s.filterURI).
@@ -687,7 +687,7 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 	if err != nil {
 		return nil, err
 	}
-	entrypoints, err := workspaceEntrypointNames(ctx, parent.Self())
+	mains, err := workspaceMainNames(ctx, parent.Self())
 	if err != nil {
 		return nil, err
 	}
@@ -701,7 +701,7 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 		if err != nil {
 			return nil, err
 		}
-		reparentWorkspaceTreeRoot(root, mod.Self().Name(), entrypoints[mod.Self().Name()])
+		reparentWorkspaceTreeRoot(root, mod.Self().Name(), mains[mod.Self().Name()])
 		for _, node := range targets {
 			if node == root {
 				continue
@@ -714,7 +714,7 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 		}
 	}
 	if parent.Self().ConfigFile != "" && len(cfg.SDKs) > 0 {
-		sdkNodes, err := s.sdkArtifactNodes(ctx, parent, cfg, entrypoints)
+		sdkNodes, err := s.sdkArtifactNodes(ctx, parent, cfg, mains)
 		if err != nil {
 			return nil, err
 		}
@@ -741,13 +741,21 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 			result.Entries = append(result.Entries, entry)
 		}
 	}
-	for _, entry := range loadFailureArtifacts(parent, cfg, entrypoints, mods, failures) {
+	for _, entry := range loadFailureArtifacts(parent, cfg, mains, mods, failures) {
 		loaded = append(loaded, entry)
 		result.Entries = append(result.Entries, entry)
 	}
 	result.AllDimensions = (&core.Artifacts{Entries: loaded}).DimensionDefinitions()
 	result.SetCollectionRoots(loaded)
+	result.AllPaths = (&core.Artifacts{Entries: loaded}).PathIndex()
 	result.NameEntries()
+	skipped, err := workspaceSkippedPaths(ctx, result, mods, cfg)
+	if err != nil {
+		return nil, err
+	}
+	result.Entries = slices.DeleteFunc(result.Entries, func(entry *core.Artifact) bool {
+		return entry.LoadFailure == nil && skipped[strings.Join(entry.Path, "/")]
+	})
 	slices.SortFunc(result.Entries, func(a, b *core.Artifact) int { return slices.Compare(a.Path, b.Path) })
 	if err := validateArtifactPaths(result.Entries); err != nil {
 		return nil, err
@@ -760,11 +768,11 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 func loadFailureArtifacts(
 	parent dagql.ObjectResult[*core.Workspace],
 	cfg *workspace.Config,
-	entrypoints map[string]bool,
+	mains map[string]bool,
 	mods []dagql.ObjectResult[*core.Module],
 	failures []core.ModuleLoadFailure,
 ) []*core.Artifact {
-	// An entrypoint's shorthand paths cannot start with another module's
+	// A main's shorthand paths cannot start with another module's
 	// address name. Name every module the workspace has, not only those the
 	// include patterns loaded.
 	var moduleNames []string
@@ -776,7 +784,7 @@ func loadFailureArtifacts(
 	for name := range cfg.Modules {
 		addModule(name)
 	}
-	for name := range entrypoints {
+	for name := range mains {
 		addModule(name)
 	}
 	for _, mod := range mods {
@@ -794,9 +802,9 @@ func loadFailureArtifacts(
 		}
 		seen[failure.Name] = true
 		name := core.ArtifactTypeName(failure.Name)
-		// The loader reports whether the failed module is the entrypoint;
-		// the policy that names healthy entrypoints covers the rest.
-		if failure.Entrypoint || entrypoints[failure.Name] {
+		// The loader reports whether the failed module is the main;
+		// the policy that names healthy mains covers the rest.
+		if failure.Entrypoint || mains[failure.Name] {
 			failure.Entrypoint = true
 			failure.Siblings = slices.DeleteFunc(slices.Clone(moduleNames), func(sibling string) bool { return sibling == name })
 		}
@@ -808,7 +816,7 @@ func loadFailureArtifacts(
 	return entries
 }
 
-func (s *workspaceSchema) sdkArtifactNodes(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], cfg *workspace.Config, entrypoints map[string]bool) ([]*core.ModTreeNode, error) {
+func (s *workspaceSchema) sdkArtifactNodes(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], cfg *workspace.Config, mains map[string]bool) ([]*core.ModTreeNode, error) {
 	var nodes []*core.ModTreeNode
 	sdks, err := s.sdks(ctx, parent, struct{}{})
 	if err != nil {
@@ -820,7 +828,7 @@ func (s *workspaceSchema) sdkArtifactNodes(ctx context.Context, parent dagql.Obj
 			return nil, err
 		}
 		provider := cfg.SDKs[sdk.Self().Name].Module
-		reparentWorkspaceTreeRoot(root, provider, entrypoints[provider])
+		reparentWorkspaceTreeRoot(root, provider, mains[provider])
 		targets, err := core.ArtifactNodes(ctx, root)
 		if err != nil {
 			return nil, err
@@ -878,8 +886,6 @@ func (*artifactsSchema) artifactWorkspace(_ context.Context, parent *core.Artifa
 	return dagql.NonNull(parent.Workspace), nil
 }
 
-// Keep planned artifacts in the query graph so value evaluation, remote
-// execution, and saved result IDs all refer to the same batch selection.
 func (*artifactsSchema) loadError(_ context.Context, artifact *core.Artifact, _ struct{}) (string, error) {
 	if artifact.LoadFailure != nil {
 		return artifact.LoadFailure.Message, nil

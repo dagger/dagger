@@ -1333,15 +1333,54 @@ func (c *Cache) EntryInfo(number uint64) (RemoteEntryInfo, bool) {
 	return c.remoteEntryInfoLocked(entry), true
 }
 
+// RemoteHeldEntry is what RemoteEntryInfo reports for one holding and its
+// entry's own facts, without the entry's other holdings, digests, classes or
+// terms.
+type RemoteHeldEntry struct {
+	// Number, Stored, StoredExpiresAtUnix and Recipes are the entry's, as
+	// RemoteEntryInfo reports them.
+	Number              uint64
+	Stored              bool
+	StoredExpiresAtUnix int64
+	Recipes             []digest.Digest
+	// Holding is the holding's description, as in RemoteEntryInfo.Holdings.
+	Holding RemoteHoldingInfo
+}
+
+// RemoteHoldingInfo returns what RemoteEntryInfo reports for the holding key
+// and its entry's own facts, read under one hold. It describes no other
+// holding and none of the entry's classes, so its cost doesn't grow with the
+// entry's holders or classes; it still clones and sorts all of the entry's
+// recipes, and grows with those.
+func (c *Cache) RemoteHoldingInfo(key HolderKey) (RemoteHeldEntry, bool) {
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	entry, h := c.holdingLocked(key)
+	if h == nil {
+		return RemoteHeldEntry{}, false
+	}
+	held := RemoteHeldEntry{Holding: holdingInfo(key, h)}
+	held.Number, held.Stored, held.StoredExpiresAtUnix, held.Recipes = entryFactsLocked(entry)
+	return held, true
+}
+
+// entryFactsLocked returns entry's number, whether it stores a record and
+// that record's expiry, and its recipes, sorted. Requires egraphMu.
+func entryFactsLocked(entry *sharedResult) (number uint64, stored bool, storedExpiresAtUnix int64, recipes []digest.Digest) {
+	if !entry.noValueLocked() {
+		stored, storedExpiresAtUnix = true, entry.expiresAtUnix
+	}
+	recipes = slices.Clone(entry.recipeKeys)
+	slices.Sort(recipes)
+	return uint64(entry.id), stored, storedExpiresAtUnix, recipes
+}
+
 // remoteEntryInfoLocked describes entry: its number, whether it stores a
 // record and that record's expiry, its identity and its holdings. Requires
 // egraphMu.
 func (c *Cache) remoteEntryInfoLocked(entry *sharedResult) RemoteEntryInfo {
-	info := RemoteEntryInfo{Number: uint64(entry.id), Field: entry.description, Recipes: slices.Clone(entry.recipeKeys)}
-	if !entry.noValueLocked() {
-		info.Stored, info.StoredExpiresAtUnix = true, entry.expiresAtUnix
-	}
-	slices.Sort(info.Recipes)
+	info := RemoteEntryInfo{Field: entry.description}
+	info.Number, info.Stored, info.StoredExpiresAtUnix, info.Recipes = entryFactsLocked(entry)
 	digests := map[string]struct{}{}
 	for _, dig := range c.resultIndexedDigests[entry.id] {
 		digests[dig] = struct{}{}

@@ -18,7 +18,7 @@ import (
 func (ModuleSuite) TestBuiltinDangDependencyModules(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	modGen := moduleEntrypointFixture(t, c, "test", "dang/dependency-modules")
+	modGen := moduleMainFixture(t, c, "test", "dang/dependency-modules")
 
 	for _, tc := range []struct {
 		name string

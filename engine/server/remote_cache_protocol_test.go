@@ -2,12 +2,16 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
@@ -185,8 +189,14 @@ func (e *adapterTestEngine) file(t *testing.T, name string) dagql.ObjectResult[*
 // file's state in the cache.
 func (e *adapterTestEngine) publishFile(t *testing.T, name string, receiver dagql.AnyResult) (dagql.ObjectResult[*core.File], *dagql.CacheDecision) {
 	t.Helper()
-	file := &core.File{File: new(core.LazyAccessor[string, *core.File]), Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]), Platform: adapterTestPlatform,
-		Lazy: &core.FileBlobLazy{LazyState: core.NewLazyState(), Filename: name + ".txt", Contents: []byte(name + " bytes"), Permissions: 0o644}}
+	return e.publishLazyFile(t, name, receiver, &core.FileBlobLazy{LazyState: core.NewLazyState(), Filename: name + ".txt", Contents: []byte(name + " bytes"), Permissions: 0o644})
+}
+
+// publishLazyFile publishes a pending file whose body is lazy, as publishFile
+// does.
+func (e *adapterTestEngine) publishLazyFile(t *testing.T, name string, receiver dagql.AnyResult, lazy core.Lazy[*core.File]) (dagql.ObjectResult[*core.File], *dagql.CacheDecision) {
+	t.Helper()
+	file := &core.File{File: new(core.LazyAccessor[string, *core.File]), Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]), Platform: adapterTestPlatform, Lazy: lazy}
 	file.SetPath("/pending")
 	call := &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: name, Type: dagql.NewResultCallType(file.Type())}
 	if receiver != nil {
@@ -219,6 +229,33 @@ func (e *adapterTestEngine) busyFile(t *testing.T, name string) dagql.ObjectResu
 		require.NoError(t, e.cache.Evaluate(ctx, busy))
 	})
 	return busy
+}
+
+// unencodableFileLazy is a pending file body that the persisted file codec
+// has no kind for, so every capture that holds the file fails, and not as
+// busy: the engine refuses to transfer the root.
+type unencodableFileLazy struct {
+	core.LazyState
+}
+
+func (*unencodableFileLazy) Evaluate(context.Context, *core.File) error {
+	return errors.New("unencodable file body: not evaluated in this test")
+}
+
+func (*unencodableFileLazy) AttachDependencies(context.Context, func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	return nil, nil
+}
+
+func (*unencodableFileLazy) EncodePersisted(context.Context, *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	return nil, errors.New("unencodable file body")
+}
+
+// refusedFile publishes a pending file that every capture holding it
+// refuses.
+func (e *adapterTestEngine) refusedFile(t *testing.T, name string) dagql.ObjectResult[*core.File] {
+	t.Helper()
+	res, _ := e.publishLazyFile(t, name, nil, &unencodableFileLazy{LazyState: core.NewLazyState()})
+	return res
 }
 
 func entryNumber(t *testing.T, res dagql.AnyResult) uint64 {
@@ -299,7 +336,8 @@ func TestRemoteCacheAdapterExportSkipsBusyRoots(t *testing.T) {
 	calls := 0
 	err := e.adapter.Export(e.ctx, req, func(_ context.Context, exp remotecache.Export) error {
 		calls++
-		require.Equal(t, []protocol.SkippedRoot{{Number: entryNumber(t, busy), Reason: protocol.SkipBusy}}, exp.Skipped)
+		require.Len(t, exp.Skipped, 1)
+		requireBusySkip(t, entryNumber(t, busy), exp.Skipped[0])
 		require.NotNil(t, exp.Bundle)
 		require.Equal(t, []uint64{entryNumber(t, ready)}, bundleRoots(exp.Bundle))
 		require.Len(t, exp.Bundle.Outputs, 1, "the busy root's output lies outside the closure, and is left out")
@@ -308,6 +346,124 @@ func TestRemoteCacheAdapterExportSkipsBusyRoots(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, 1, calls)
+}
+
+// requireRefused checks that skipped is the one root skipped as refused, with
+// the capture's error as its message.
+func requireRefused(t *testing.T, number uint64, skipped []protocol.SkippedRoot) {
+	t.Helper()
+	require.Len(t, skipped, 1)
+	require.Equal(t, number, skipped[0].Number)
+	require.Equal(t, protocol.SkipRefused, skipped[0].Reason)
+	require.Contains(t, skipped[0].Message, "unsupported lazy type *server.unencodableFileLazy")
+}
+
+// A root the capture refuses with an error that isn't busy fails the capture
+// too. Each root is then probed alone: the refused one is skipped as refused,
+// with its error as the message, and the others go in one bundle with only the outputs their
+// closures hold. A request whose roots are all refused gets no bundle, only
+// skipped. The request's own cancellation is no refusal: it fails the
+// request.
+func TestRemoteCacheAdapterExportSkipsRefusedRoots(t *testing.T) {
+	e := newAdapterTestEngine(t)
+	first := e.file(t, "first")
+	require.NoError(t, e.cache.Evaluate(e.ctx, first))
+	second := e.file(t, "second")
+	require.NoError(t, e.cache.Evaluate(e.ctx, second))
+	refused := e.refusedFile(t, "refused")
+	req := protocol.Export{
+		Roots:   []uint64{entryNumber(t, first), entryNumber(t, refused), entryNumber(t, second)},
+		Outputs: []protocol.ExportOutput{{Number: entryNumber(t, first), Address: snapshotPart}, {Number: entryNumber(t, second), Address: snapshotPart}},
+	}
+	calls := 0
+	err := e.adapter.Export(e.ctx, req, func(_ context.Context, exp remotecache.Export) error {
+		calls++
+		requireRefused(t, entryNumber(t, refused), exp.Skipped)
+		require.NotNil(t, exp.Bundle)
+		require.ElementsMatch(t, []uint64{entryNumber(t, first), entryNumber(t, second)}, bundleRoots(exp.Bundle))
+		require.Len(t, exp.Bundle.Outputs, 2)
+		return nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, calls)
+
+	calls = 0
+	err = e.adapter.Export(e.ctx, protocol.Export{Roots: []uint64{entryNumber(t, refused)}}, func(_ context.Context, exp remotecache.Export) error {
+		calls++
+		require.Nil(t, exp.Bundle)
+		requireRefused(t, entryNumber(t, refused), exp.Skipped)
+		return nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, calls)
+
+	ctx, cancel := context.WithCancel(e.ctx)
+	cancel()
+	err = e.adapter.Export(ctx, protocol.Export{Roots: []uint64{entryNumber(t, refused)}}, func(context.Context, remotecache.Export) error {
+		t.Error("a cancelled request is answered")
+		return nil
+	})
+	require.Error(t, err)
+}
+
+// A refused root's skip carries its error cut to maxSkippedMessageBytes, at a
+// rune boundary.
+func TestSkippedMessageIsBounded(t *testing.T) {
+	short := errors.New("refused")
+	require.Equal(t, "refused", skippedMessage(short))
+	aligned := strings.Repeat("é", maxSkippedMessageBytes)
+	require.Equal(t, aligned[:maxSkippedMessageBytes], skippedMessage(errors.New(aligned)))
+	// A two-byte rune straddles the limit: the cut leaves it out whole.
+	unaligned := "x" + aligned
+	got := skippedMessage(errors.New(unaligned))
+	require.Len(t, got, maxSkippedMessageBytes-1)
+	require.True(t, utf8.ValidString(got))
+	require.Equal(t, unaligned[:maxSkippedMessageBytes-1], got)
+}
+
+// An export's log line counts its skipped roots by reason, and names them
+// with their reasons while there are at most maxLoggedSkippedRoots.
+func TestExportLogAttrs(t *testing.T) {
+	skipped := []protocol.SkippedRoot{
+		{Number: 2, Reason: protocol.SkipGone},
+		{Number: 3, Reason: protocol.SkipBusy},
+		{Number: 4, Reason: protocol.SkipRefused, Message: "refused"},
+	}
+	attrs := logAttrs(exportLogAttrs(protocol.Export{Roots: []uint64{1, 2, 3, 4}}, skipped, nil, time.Second))
+	require.Equal(t, 4, attrs["roots"])
+	require.Equal(t, 3, attrs["skipped"])
+	require.Equal(t, 1, attrs["skipped_gone"])
+	require.Equal(t, 1, attrs["skipped_busy"])
+	require.Equal(t, 1, attrs["skipped_refused"])
+	require.Equal(t, []string{"2:gone", "3:busy", "4:refused"}, attrs["skipped_roots"])
+	require.Equal(t, time.Second, attrs["capture"])
+
+	many := make([]protocol.SkippedRoot, maxLoggedSkippedRoots+1)
+	for i := range many {
+		many[i] = protocol.SkippedRoot{Number: uint64(i + 1), Reason: protocol.SkipBusy}
+	}
+	attrs = logAttrs(exportLogAttrs(protocol.Export{}, many, nil, 0))
+	require.Equal(t, maxLoggedSkippedRoots+1, attrs["skipped_busy"])
+	require.Zero(t, attrs["skipped_refused"])
+	require.NotContains(t, attrs, "skipped_roots", "past the limit, skipped roots are only counted")
+}
+
+// requireBusySkip checks that skip leaves out root, a busyFile, as busy,
+// saying why: its evaluation is running.
+func requireBusySkip(t *testing.T, root uint64, skip protocol.SkippedRoot) {
+	t.Helper()
+	require.Equal(t, root, skip.Number)
+	require.Equal(t, protocol.SkipBusy, skip.Reason)
+	require.Equal(t, fmt.Sprintf("%s: result %d whole evaluation", dagql.ErrPersistStateNotReady, root), skip.Message)
+}
+
+// logAttrs maps a log line's alternating keys and values.
+func logAttrs(attrs []any) map[string]any {
+	m := map[string]any{}
+	for i := 0; i+1 < len(attrs); i += 2 {
+		m[attrs[i].(string)] = attrs[i+1]
+	}
+	return m
 }
 
 // With no root left, consume is called once, with the skipped roots and no
@@ -319,7 +475,9 @@ func TestRemoteCacheAdapterExportWithNoSurvivingRoot(t *testing.T) {
 	err := e.adapter.Export(e.ctx, protocol.Export{Roots: []uint64{entryNumber(t, busy), goneNumber}}, func(_ context.Context, exp remotecache.Export) error {
 		calls++
 		require.Nil(t, exp.Bundle)
-		require.Equal(t, []protocol.SkippedRoot{{Number: goneNumber, Reason: protocol.SkipGone}, {Number: entryNumber(t, busy), Reason: protocol.SkipBusy}}, exp.Skipped)
+		require.Len(t, exp.Skipped, 2)
+		require.Equal(t, protocol.SkippedRoot{Number: goneNumber, Reason: protocol.SkipGone}, exp.Skipped[0])
+		requireBusySkip(t, entryNumber(t, busy), exp.Skipped[1])
 		return nil
 	})
 	require.NoError(t, err)

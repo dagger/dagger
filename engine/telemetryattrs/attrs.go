@@ -588,6 +588,25 @@ const (
 	CacheHitRouteDigest     = "digest"
 	CacheHitRouteStructural = "structural"
 
+	// CacheHitRemoteAttr ("true", hits only, absent otherwise) records that
+	// the value the hit served came from the remote cache: a Cloud merge
+	// installed it, and no local work has replaced it since. A merge that
+	// kept the engine's own value, or a Cloud holding alone, does not count.
+	// The fact survives an engine restart.
+	CacheHitRemoteAttr = "dagger.io/cache.hit.remote"
+	// CacheHitMergedAtAttr (with CacheHitRemoteAttr) is the time the merge
+	// that installed the served value committed, in decimal-string absolute
+	// Unix nanoseconds, comparable with CacheLookupAtAttr. The engine keeps it
+	// in memory only, so it is absent for a value restored after a restart.
+	CacheHitMergedAtAttr = "dagger.io/cache.hit.merged_at_unix_ns"
+
+	// CacheLookupAtAttr is the time the call's cache lookup chose its
+	// candidates, in decimal-string absolute Unix nanoseconds, for hit,
+	// executed and joined calls (an uncached call does no lookup). It is read
+	// under the same lock a merge commits under, so it orders the lookup
+	// against CacheHitMergedAtAttr exactly; the span's start is earlier.
+	CacheLookupAtAttr = "dagger.io/cache.lookup.at_unix_ns"
+
 	// CacheMissIncompatibleCandidatesAttr ("true", executed misses only, absent
 	// otherwise) records that non-expired candidate results existed but none
 	// satisfied this session's resource requirements (secrets/sockets the
@@ -610,6 +629,18 @@ const (
 	// current cache state, not history, so this does NOT mean "first run".
 	// Absent when every input was known.
 	CacheMissUnknownInputAttr = "dagger.io/cache.miss.unknown_input"
+
+	// The two serve-time misses: the lookup chose a hit, and serving it then
+	// failed, so the call executed. Each is "true", executed misses only,
+	// absent otherwise. A call that joined after one stamps neither, as for
+	// the other miss facts.
+	//
+	// CacheMissProducerReleasedAttr: the hit's attachment was refused because
+	// the session that produced it was released first.
+	CacheMissProducerReleasedAttr = "dagger.io/cache.miss.producer_released"
+	// CacheMissRequirementsGrewAttr: the hit's session-resource requirements
+	// grew after it was chosen, beyond what this session has loaded.
+	CacheMissRequirementsGrewAttr = "dagger.io/cache.miss.requirements_grew"
 
 	// CacheSelfDigestAttr is the engine-derived structural self digest of the
 	// call: the operation, its literal arguments (sensitive values redacted),
@@ -691,6 +722,24 @@ const (
 	// with the state beside it: the parts, dependencies and expiry it names
 	// belong to that value. Absent while the count is 0.
 	CacheReplacementsAttr = "dagger.io/cache.replacements"
+
+	// A part installed from a Cloud offer, stamped on the lazy-evaluation
+	// span of the task that installed it, which names the receiving entry
+	// (CacheResultIDAttr). That task installs one part, and the demanding
+	// call is an ancestor of the span by causal parent (WcprofParentAttr,
+	// else the parent). Calls that join an install in progress wait on that
+	// span.
+	//
+	// CacheOfferPartAttr is the installed part's address, as in
+	// CachePartsAttr.
+	CacheOfferPartAttr = "dagger.io/cache.offer.part"
+	// CacheOfferBytesAttr is the decimal-string count of bytes downloaded for
+	// the part: layers the engine already had are not downloaded.
+	CacheOfferBytesAttr = "dagger.io/cache.offer.bytes"
+	// CacheOfferDurationAttr is the decimal-string count of nanoseconds from
+	// the start of the part's import to its install, over which the download
+	// and the layers' application interleave.
+	CacheOfferDurationAttr = "dagger.io/cache.offer.duration_ns"
 
 	// CacheSessionSpansAttr is the decimal-string count of the spans of one
 	// session that carry CacheResultIDAttr, stamped on the session's

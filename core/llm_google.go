@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"iter"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/dagger/dagger/engine/slog"
@@ -703,6 +704,12 @@ func bbiSchemaToGenaiSchema(bbi map[string]any) (*genai.Schema, error) {
 			enum, err := toStringSlice(param)
 			if err != nil {
 				return nil, fmt.Errorf("failed to convert enum field: %w", err)
+			}
+			// Gemini rejects empty enum values. An empty value only stands
+			// for "unset", which omitting the argument already expresses.
+			enum = slices.DeleteFunc(enum, func(v string) bool { return v == "" })
+			if len(enum) == 0 {
+				continue
 			}
 			schema.Enum = enum
 			schema.Format = "enum"
