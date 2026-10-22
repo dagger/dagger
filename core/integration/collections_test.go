@@ -101,58 +101,68 @@ func (CollectionsSuite) TestGoAPI(ctx context.Context, t *testctx.T) {
     keys
     list { name }
     get(key: "a") { name }
-    batch { selected removed }
+    selected removed
     subset(keys: ["c", "b"]) {
       keys
-      batch { selected removed copy { subset(keys: ["c"]) { batch { removed } } } }
-      subset(keys: ["c"]) { keys batch { selected removed } }
-      empty: subset(keys: []) { keys list batch { selected removed } }
+      selected removed copy { subset(keys: ["c"]) { removed } }
+      subset(keys: ["c"]) { keys selected removed }
+      empty: subset(keys: []) { keys list selected removed }
     }
   }
 }`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"items":{
-  "keys":["b","a","c"], "list":[{"name":"item:b"},{"name":"item:a"},{"name":"item:c"}],
-  "get":{"name":"item:a"}, "batch":{"selected":["b","a","c"],"removed":[]},
-  "subset":{"keys":["b","c"],"batch":{"selected":["b","c"],"removed":["a"],"copy":{"subset":{"batch":{"removed":["b","a"]}}}},
-    "subset":{"keys":["c"],"batch":{"selected":["c"],"removed":["b","a"]}},
-    "empty":{"keys":[],"list":[],"batch":{"selected":[],"removed":["b","a","c"]}}
+	require.JSONEq(t, `{
+  "items":{
+    "keys":["b","a","c"],
+    "list":[{"name":"item:b"},{"name":"item:a"},{"name":"item:c"}],
+    "get":{"name":"item:a"},
+    "subset":{
+      "keys":["b","c"],
+      "subset":{"keys":["c"],"selected":["c"],"removed":["b","a"]},
+      "empty":{"keys":[],"list":[],"selected":[],"removed":["b","a","c"]},
+      "selected":["b","c"],
+      "removed":["a"],
+      "copy":{"subset":{"removed":["b","a"]}}
+    },
+    "selected":["b","a","c"],
+    "removed":[]
   }
-}}`, out)
+}`, out)
 	out, err = ctr.With(daggerQueryAt("./collections", `{ selfSubset argumentDelta }`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"selfSubset":["b","a"],"argumentDelta":["d"]}`, out)
 	out, err = ctr.With(daggerQueryAt("./collections", collectionDeltaQuery)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, collectionDeltaExpected, out)
-	out, err = ctr.With(daggerQueryAt("./collections", `{ items { batch { change(names: ["c", "d"]) { batch { deltaCheck { pass } } } } } }`)).Stdout(ctx)
+	out, err = ctr.With(daggerQueryAt("./collections", `{ items { change(names: ["c", "d"]) { deltaCheck { pass } } } }`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"items":{"batch":{"change":{"batch":{"deltaCheck":{"pass":true}}}}}}`, out)
+	require.JSONEq(t, `{"items":{"change":{"deltaCheck":{"pass":true}}}}`, out)
 }
 
 const collectionDeltaQuery = `{ items {
-  batch { change(names: ["c", "d"]) {
+  change(names: ["c", "d"]) {
     keys
-    batch { added removed change(names: ["c", "b", "a"]) { batch { added removed } } }
-    subset(keys: ["d"]) { batch { added removed } }
-  } }
-  subset(keys: ["c"]) { batch {
-    change(names: ["b", "c", "d"]) { batch { added removed } }
-    fresh { keys batch { added removed } }
-  } }
+    added removed change(names: ["c", "b", "a"]) { added removed }
+    subset(keys: ["d"]) { added removed }
+  }
+  subset(keys: ["c"]) {
+    change(names: ["b", "c", "d"]) { added removed }
+    fresh { keys added removed }
+  }
 } }`
 
-const collectionDeltaExpected = `{"items":{
-  "batch":{"change":{
-    "keys":["c","d"],
-    "batch":{"added":["d"],"removed":["b","a"],"change":{"batch":{"added":[],"removed":[]}}},
-    "subset":{"batch":{"added":["d"],"removed":["b","a","c"]}}
-  }},
-  "subset":{"batch":{
-    "change":{"batch":{"added":["d"],"removed":["a"]}},
-    "fresh":{"keys":["z"],"batch":{"added":[],"removed":[]}}
-  }}
-}}`
+const collectionDeltaExpected = `{
+  "items":{
+    "subset":{"change":{"added":["d"],"removed":["a"]},"fresh":{"keys":["z"],"added":[],"removed":[]}},
+    "change":{
+      "keys":["c","d"],
+      "subset":{"added":["d"],"removed":["b","a","c"]},
+      "added":["d"],
+      "removed":["b","a"],
+      "change":{"added":[],"removed":[]}
+    }
+  }
+}`
 
 // The item type of this fixture is reachable only through get, so nothing the
 // author wrote mentions a list of it — only the projected list field does. The
@@ -761,9 +771,9 @@ func (*Test) Get(name string) *Item { return &Item{Name: name} }
 func (tests *Test) Count() int { return len(tests.Keys) }
 type Item struct { Name string }
 `).
-		With(daggerQuery(`{ keys get(key: "a") { name } subset(keys: ["b"]) { batch { count } } }`)).Stdout(ctx)
+		With(daggerQuery(`{ keys get(key: "a") { name } subset(keys: ["b"]) { count } }`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"keys":["a","b"],"get":{"name":"a"},"subset":{"batch":{"count":1}}}`, out)
+	require.JSONEq(t, `{"keys":["a","b"],"get":{"name":"a"},"subset":{"count":1}}`, out)
 }
 
 func (CollectionsSuite) TestEnumKeys(ctx context.Context, t *testctx.T) {
@@ -790,9 +800,9 @@ func (*Test) Get(color Color) *Item { return &Item{Name: string(color)} }
 func (colors *Test) Removed(ctx context.Context) ([]string, error) { return colors.Delta.RemovedKeys(ctx) }
 type Item struct { Name string }
 `).
-		With(daggerQuery(`{ keys get(key: RED) { name } subset(keys: [BLUE]) { keys get(key: BLUE) { name } batch { removed } } }`)).Stdout(ctx)
+		With(daggerQuery(`{ keys get(key: RED) { name } subset(keys: [BLUE]) { keys get(key: BLUE) { name } removed } }`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"keys":["RED","BLUE"],"get":{"name":"red"},"subset":{"keys":["BLUE"],"get":{"name":"blue"},"batch":{"removed":["RED"]}}}`, out)
+	require.JSONEq(t, `{"keys":["RED","BLUE"],"get":{"name":"red"},"subset":{"keys":["BLUE"],"get":{"name":"blue"},"removed":["RED"]}}`, out)
 }
 
 func (CollectionsSuite) TestSDKs(ctx context.Context, t *testctx.T) {
@@ -809,19 +819,22 @@ func (CollectionsSuite) TestSDKs(ctx context.Context, t *testctx.T) {
 			out, err := ctr.With(daggerQuery(`{ items {
   keys
   get(key: "a") { name }
-  batch { selected removed }
+  selected removed
   subset(keys: ["c", "b"]) {
     keys
-    batch { selected removed copy { subset(keys: ["c"]) { batch { removed } } } }
+    selected removed copy { subset(keys: ["c"]) { removed } }
   }
 } }`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"items":{
-  "keys":["b","a","c"], "get":{"name":"item:a"},
-  "batch":{"selected":["b","a","c"],"removed":[]},
-  "subset":{"keys":["b","c"],"batch":{"selected":["b","c"],"removed":["a"],
-    "copy":{"subset":{"batch":{"removed":["b","a"]}}}}}
-}}`, out)
+			require.JSONEq(t, `{
+  "items":{
+    "keys":["b","a","c"],
+    "get":{"name":"item:a"},
+    "subset":{"keys":["b","c"],"selected":["b","c"],"removed":["a"],"copy":{"subset":{"removed":["b","a"]}}},
+    "selected":["b","a","c"],
+    "removed":[]
+  }
+}`, out)
 			out, err = ctr.With(daggerQuery(collectionDeltaQuery)).Stdout(ctx)
 			require.NoError(t, err)
 			require.JSONEq(t, collectionDeltaExpected, out)
