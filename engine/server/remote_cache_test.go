@@ -97,7 +97,7 @@ func TestRemoteCacheAdapterLifetime(t *testing.T) {
 		require.NoError(t, adapter.Stop(boundedContext(t)), "stop is idempotent")
 		_, err := adapter.OfferParts(t.Context(), protocol.Offer{Items: []protocol.OfferItem{{Number: 1, Offers: []protocol.CloudPart{{Offer: renewalOnlyOffer(), CloudNumber: 1}}}}})
 		require.ErrorIs(t, err, ErrRemoteCacheAdapterClosed)
-		_, err = adapter.Merge(t.Context(), protocol.Merge{})
+		_, err = adapter.Merge(t.Context(), 1, protocol.Merge{})
 		require.ErrorIs(t, err, ErrRemoteCacheAdapterClosed)
 		err = adapter.Export(t.Context(), protocol.Export{Roots: []uint64{1}}, func(context.Context, remotecache.Export) error {
 			t.Fatal("a stopped adapter exports nothing")
@@ -107,6 +107,8 @@ func TestRemoteCacheAdapterLifetime(t *testing.T) {
 		_, err = adapter.TakeRenewalRequest(t.Context())
 		require.ErrorIs(t, err, ErrRemoteCacheAdapterClosed)
 		require.Equal(t, dagql.RenewalReplyDiscarded, adapter.ReplyRenewal(dagql.RenewalReply{Unavailable: true}))
+		_, _, err = adapter.TakeLookupMisses(t.Context(), 32, 0)
+		require.ErrorIs(t, err, ErrRemoteCacheAdapterClosed)
 	})
 	t.Run("shutdown context cancels run", func(t *testing.T) {
 		cache := newGCTestCache(t)

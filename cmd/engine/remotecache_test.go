@@ -2,6 +2,7 @@ package main
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -39,7 +40,38 @@ func TestRemoteCacheSettings(t *testing.T) {
 				return
 			}
 			require.True(t, on)
-			require.Equal(t, remotecache.Config{URL: tc.url, Token: tc.token, EngineVersion: engine.Version, EngineName: engineName}, settings)
+			require.Equal(t, remotecache.Config{URL: tc.url, Token: tc.token, EngineVersion: engine.Version, EngineName: engineName, Lookups: true, LookupWait: remotecache.DefaultLookupWait}, settings)
+		})
+	}
+}
+
+// Lookups are on by default, with the default wait; the environment turns
+// them off, or sets the wait, 0 asking without waiting. An invalid wait keeps
+// the default.
+func TestRemoteCacheLookupSettings(t *testing.T) {
+	t.Setenv(envRemoteCacheURL, "https://env.example")
+	t.Setenv("DAGGER_CLOUD_TOKEN", "engine-token")
+	for _, tc := range []struct {
+		name    string
+		lookups string
+		wait    string
+		on      bool
+		want    time.Duration
+	}{
+		{name: "default", on: true, want: 10 * time.Second},
+		{name: "off", lookups: "0", on: false, want: 10 * time.Second},
+		{name: "a wait", wait: "3s", on: true, want: 3 * time.Second},
+		{name: "no wait", wait: "0", on: true, want: 0},
+		{name: "an invalid wait", wait: "soon", on: true, want: 10 * time.Second},
+		{name: "a negative wait", wait: "-1s", on: true, want: 10 * time.Second},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(envRemoteCacheLookups, tc.lookups)
+			t.Setenv(envRemoteCacheLookupWait, tc.wait)
+			settings, on := remoteCacheSettings(config.Config{})
+			require.True(t, on)
+			require.Equal(t, tc.on, settings.Lookups)
+			require.Equal(t, tc.want, settings.LookupWait)
 		})
 	}
 }
