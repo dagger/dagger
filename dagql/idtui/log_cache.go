@@ -163,13 +163,7 @@ func (fe *frontendPretty) scheduleLogSweep() {
 	if len(c.releases) == 0 || c.sweepQueued || fe.reportOnly || fe.tui == nil {
 		return
 	}
-	c.sweepQueued = true
-	time.AfterFunc(logSweepInterval, func() {
-		fe.dispatch(func() {
-			c.sweepQueued = false
-			fe.sweepLogs()
-		})
-	})
+	fe.sweepLogsAfter(logSweepInterval)
 }
 
 // logGroupOf is the group span id belongs to (see the top of this file).
@@ -246,15 +240,7 @@ func (fe *frontendPretty) sweepLogs() {
 	}
 	// A shown span holds its group, requested or not (e.g. a focused roll-up
 	// holding its descendants' copies).
-	terms := map[dagui.SpanID]bool{}
-	for _, m := range [][]dagui.SpanID{keysOf(fe.logs.Logs), keysOf(fe.logs.ToolArgs), keysOf(fe.logs.PrefixWriters)} {
-		for _, id := range m {
-			if _, ok := fe.logReleaseKey(id); ok {
-				// Read on demand, and placed.
-				terms[id] = true
-			}
-		}
-	}
+	terms := fe.onDemandTerminals()
 	for id := range terms {
 		if fe.logsPinned(id, now) {
 			groupFor(id).pinned = true
@@ -274,65 +260,85 @@ func (fe *frontendPretty) sweepLogs() {
 	}
 	if inGrace && len(lru) >= c.size {
 		// Groups shown a moment ago may be evicted once their grace ends.
-		c.sweepQueued = true
-		time.AfterFunc(c.grace, func() {
-			fe.dispatch(func() {
-				c.sweepQueued = false
-				fe.sweepLogs()
-			})
-		})
+		fe.sweepLogsAfter(c.grace)
 	}
 
-	releases := map[dagui.TraceID]*LogRelease{}
-	releaseFor := func(id dagui.SpanID) *LogRelease {
-		key, _ := fe.logReleaseKey(id)
-		r := releases[key]
-		if r == nil {
-			r = &LogRelease{}
-			releases[key] = r
-		}
-		return r
-	}
+	releases := logReleases{}
 	for _, g := range lru {
 		if g.held {
 			continue
 		}
 		for _, id := range g.requests {
-			r := releaseFor(id)
-			r.Spans = append(r.Spans, id)
+			releases.of(fe, id).Spans = append(releases.of(fe, id).Spans, id)
 			delete(fe.requestedLogs, id)
 			delete(fe.liveRequests, id)
 			delete(c.rollUps, id)
 			delete(c.shown, id)
 		}
 	}
-
 	// Drop the terminals no held group covers.
-	drop := map[dagui.SpanID]bool{}
 	for id := range terms {
 		if g := groups[fe.logGroupOf(id, memo)]; g == nil || !g.held {
-			drop[id] = true
-		}
-	}
-	for id := range drop {
-		r := releaseFor(id)
-		r.Dropped = append(r.Dropped, id)
-		delete(fe.logs.Logs, id)
-		delete(fe.logs.ToolArgs, id)
-		delete(fe.logs.PrefixWriters, id)
-		delete(fe.logs.SawEOF, id)
-		if c.mounts[id] == 0 {
-			delete(fe.logsViews, logsViewKey{spanID: id})
-			delete(fe.logsViews, logsViewKey{spanID: id, toolArgs: true})
+			releases.of(fe, id).Dropped = append(releases.of(fe, id).Dropped, id)
+			fe.dropLogTerminal(id)
 		}
 	}
 	// What is not shown is not repainted: a render site that shows it again
 	// asks for it again.
 	for key, r := range releases {
-		if len(r.Spans) > 0 || len(r.Dropped) > 0 {
-			c.releases[key](*r)
+		c.releases[key](*r)
+	}
+}
+
+// sweepLogsAfter sweeps the logs once d has passed.
+func (fe *frontendPretty) sweepLogsAfter(d time.Duration) {
+	c := &fe.logCache
+	c.sweepQueued = true
+	time.AfterFunc(d, func() {
+		fe.dispatch(func() {
+			c.sweepQueued = false
+			fe.sweepLogs()
+		})
+	})
+}
+
+// onDemandTerminals lists the spans holding a terminal of logs read on
+// demand, from a span placed in the tree.
+func (fe *frontendPretty) onDemandTerminals() map[dagui.SpanID]bool {
+	terms := map[dagui.SpanID]bool{}
+	for _, m := range [][]dagui.SpanID{keysOf(fe.logs.Logs), keysOf(fe.logs.ToolArgs), keysOf(fe.logs.PrefixWriters)} {
+		for _, id := range m {
+			if _, ok := fe.logReleaseKey(id); ok {
+				terms[id] = true
+			}
 		}
 	}
+	return terms
+}
+
+// dropLogTerminal forgets everything the frontend holds of a span's logs.
+func (fe *frontendPretty) dropLogTerminal(id dagui.SpanID) {
+	delete(fe.logs.Logs, id)
+	delete(fe.logs.ToolArgs, id)
+	delete(fe.logs.PrefixWriters, id)
+	delete(fe.logs.SawEOF, id)
+	if fe.logCache.mounts[id] == 0 {
+		delete(fe.logsViews, logsViewKey{spanID: id})
+		delete(fe.logsViews, logsViewKey{spanID: id, toolArgs: true})
+	}
+}
+
+// logReleases collects a sweep's releases, by the key of their release.
+type logReleases map[dagui.TraceID]*LogRelease
+
+func (rs logReleases) of(fe *frontendPretty, id dagui.SpanID) *LogRelease {
+	key, _ := fe.logReleaseKey(id)
+	r := rs[key]
+	if r == nil {
+		r = &LogRelease{}
+		rs[key] = r
+	}
+	return r
 }
 
 func keysOf[V any](m map[dagui.SpanID]V) []dagui.SpanID {
