@@ -189,6 +189,80 @@ func TestWaitTelemetryIdle(t *testing.T) {
 	require.Less(t, time.Since(start), time.Second)
 }
 
+// TestTelemetryBarrier: the barrier returns once both subscriptions have
+// delivered through the marks the engine's flush answered, and only then.
+func TestTelemetryBarrier(t *testing.T) {
+	flushes := 0
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != enginetel.LiveFlushPath {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		flushes++
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(enginetel.LiveFlushResult{Spans: 5, Logs: 7})
+	})
+	c := &Client{telemetryHTTP: &httpClient{inner: &http.Client{Transport: handlerTransport{handler}}}}
+	require.ErrorIs(t, c.TelemetryBarrier(t.Context()), ErrTelemetryBarrierUnsupported, "an older engine is never asked")
+	require.Zero(t, flushes)
+
+	c.telemetryFeatures = map[string]bool{enginetel.LiveFeatureFlush: true}
+	done := make(chan error, 1)
+	go func() { done <- c.TelemetryBarrier(t.Context()) }()
+	c.traceDelivered.advance(5)
+	c.logsDelivered.advance(6)
+	select {
+	case err := <-done:
+		t.Fatalf("returned before the logs reached the mark: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	c.logsDelivered.advance(7)
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("barrier never returned")
+	}
+	require.Equal(t, 1, flushes)
+
+	// A subscription that stops short fails the barrier rather than hang it.
+	c = &Client{
+		telemetryHTTP:     c.telemetryHTTP,
+		telemetryFeatures: c.telemetryFeatures,
+	}
+	c.traceDelivered.advance(5)
+	c.logsDelivered.end()
+	require.ErrorContains(t, c.TelemetryBarrier(t.Context()), "ended at cursor 0, before 7")
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	require.ErrorIs(t, (&deliveredCursor{}).wait(ctx, 1), context.Canceled)
+}
+
+// TestSubscriptionTracksDelivery: a subscription's delivered cursor follows
+// the frames its callback returned from, and ends with the subscription.
+func TestSubscriptionTracksDelivery(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", enginetel.LiveContentType)
+		_ = enginetel.WriteLiveHello(w, 0)
+		_ = enginetel.WriteLiveFrame(w, 3, nil)
+		_ = enginetel.WriteLiveFrame(w, 8, nil)
+		_ = enginetel.WriteLiveTerminal(w, 8)
+	})
+	c := &Client{
+		Params:    Params{EngineTrace: tracetest.NewInMemoryExporter(), EngineLogs: nopLogExporter{}},
+		telemetry: new(errgroup.Group),
+	}
+	hc := &httpClient{inner: &http.Client{Transport: handlerTransport{handler}}}
+	require.NoError(t, c.exportTraces(t.Context(), hc))
+	require.NoError(t, c.exportLogs(t.Context(), hc))
+	require.NoError(t, c.telemetry.Wait())
+	for _, d := range []*deliveredCursor{&c.traceDelivered, &c.logsDelivered} {
+		require.EqualValues(t, 8, d.cursor)
+		require.True(t, d.ended)
+	}
+}
+
 func TestSearchLogsClient(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var s archive.LogSearch
