@@ -853,6 +853,17 @@ const (
 	// the end of the import to the install: preparing and committing the
 	// part, and retrying a refused commit.
 	CacheOfferCommitAttr = "dagger.io/cache.offer.commit_ns"
+	// CacheOfferStreamsAttr is the decimal-string count of the most
+	// requests one of the part's blobs had open at once: 1 for a blob read on
+	// one stream, more for a large blob read in ranged chunks.
+	CacheOfferStreamsAttr = "dagger.io/cache.offer.streams"
+	// CacheOfferRangeAttr is whether the blob store answered the part's
+	// ranged requests: "206" when every answer was partial content, "200"
+	// when any was the whole object instead, "off" when no request was made.
+	CacheOfferRangeAttr = "dagger.io/cache.offer.range"
+	// CacheOfferStatusesAttr counts each HTTP status of the part's
+	// requests, as "206=5,403=1", in status order.
+	CacheOfferStatusesAttr = "dagger.io/cache.offer.statuses"
 
 	// CacheSessionSpansAttr is the decimal-string count of the spans of one
 	// session that carry CacheResultIDAttr, stamped on the session's

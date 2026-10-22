@@ -7,7 +7,6 @@ import (
 	"io"
 	"maps"
 	"net/http"
-	"net/http/httptrace"
 	"net/url"
 	"strconv"
 	"sync"
@@ -60,12 +59,15 @@ type PartContentSource struct {
 	bridge    atomic.Pointer[RemoteCacheBridge]
 	mu        sync.Mutex // M: attachment and this cache's exchange state
 	override  atomic.Pointer[partContentOverride]
+	// ranges is how large blobs are read in parallel. Fixed once the
+	// source is in use.
+	ranges partRangeConfig
 }
 
 // NewPartContentSource performs no I/O. In-package fixtures supply their
 // controlled transport here.
 func NewPartContentSource(transport http.RoundTripper) *PartContentSource {
-	return &PartContentSource{transport: transport}
+	return &PartContentSource{transport: transport, ranges: defaultPartRangeConfig()}
 }
 
 // PartContentSource returns the source constructed with the cache.
@@ -104,6 +106,12 @@ var defaultPartTransport = sync.OnceValue(func() http.RoundTripper {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	// Verify the offered compressed bytes unchanged.
 	transport.DisableCompression = true
+	// Many installs, and the chunks of a large blob, fetch from one blob
+	// host at once; keep their connections for reuse. Reading on one stream
+	// keeps the default.
+	if partStreamsSetting() > 1 {
+		transport.MaxIdleConnsPerHost = maxPartIdleConnsPerHost
+	}
 	return transport
 })
 
@@ -246,7 +254,11 @@ func (p *partContentProvider) ReaderAt(ctx context.Context, desc ocispecs.Descri
 	if err != nil {
 		return nil, partContentError(ctx, desc, "provider", err)
 	}
+	if reader := p.rangeReader(ctx, layer.Descriptor, address, renewed); reader != nil {
+		return reader, nil
+	}
 	readerCtx, cancel := context.WithCancelCause(ctx)
+	p.stats.usedStreams(1)
 	return &partHTTPReader{provider: p, desc: layer.Descriptor, parent: ctx, ctx: readerCtx, cancel: cancel, url: address, renewed: renewed}, nil
 }
 
@@ -517,40 +529,7 @@ func (r *partHTTPReader) open(off int64) error {
 }
 
 func (r *partHTTPReader) request(off int64) (*partHTTPStream, *http.Response, error) {
-	ctx, cancel := context.WithCancelCause(r.ctx)
-	if stats := r.provider.stats; stats != nil {
-		ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{GotConn: func(info httptrace.GotConnInfo) {
-			if !info.Reused {
-				stats.connsNew.Add(1)
-			}
-		}})
-	}
-	stream := &partHTTPStream{ctx: ctx, cancel: cancel}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, r.url, nil)
-	if err != nil {
-		stream.close()
-		return nil, nil, err
-	}
-	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", off, r.desc.Size-1))
-	var resp *http.Response
-	_, err = stream.wait(func() (int, error) {
-		sent := time.Now()
-		var err error
-		resp, err = r.provider.client.Do(req) //nolint:bodyclose // The body is handed to the stream wrapper, which closes it in stream.close and its context AfterFunc.
-		r.provider.stats.request(sent)
-		return 0, err
-	})
-	if err != nil {
-		stream.close()
-		return nil, nil, err
-	}
-	stream.body = resp.Body
-	stream.closed = make(chan struct{})
-	stream.stop = context.AfterFunc(ctx, func() {
-		_ = resp.Body.Close()
-		close(stream.closed)
-	})
-	return stream, resp, nil
+	return r.provider.get(r.ctx, r.url, off, r.desc.Size-1)
 }
 
 // accept validates the response for off: a 206 must cover exactly the
@@ -642,6 +621,9 @@ func logOfferInstall(ctx context.Context, receiver AnyResult, source *PartSource
 		attribute.String(telemetryattrs.CacheOfferApplyAttr, ns(timing.Apply)),
 		attribute.String(telemetryattrs.CacheOfferImportAttr, ns(timing.imported)),
 		attribute.String(telemetryattrs.CacheOfferCommitAttr, ns(timing.commit)),
+		attribute.String(telemetryattrs.CacheOfferStreamsAttr, strconv.Itoa(timing.streams)),
+		attribute.String(telemetryattrs.CacheOfferRangeAttr, timing.rangeMode),
+		attribute.String(telemetryattrs.CacheOfferStatusesAttr, timing.statuses),
 	)
 }
 
@@ -698,6 +680,13 @@ type partInstallStats struct {
 	connsNew atomic.Int64
 	// renewNS sums the time getting fresh addresses, in nanoseconds.
 	renewNS atomic.Int64
+	// streams is the most requests one of the install's blobs had open at
+	// once.
+	streams atomic.Int64
+
+	mu sync.Mutex
+	// statuses counts the requests' HTTP statuses.
+	statuses map[int]int
 }
 
 // request counts one request, sent at sent, whose response headers arrived
@@ -734,6 +723,12 @@ type partInstallTiming struct {
 	connsNew int
 	renew    time.Duration
 	readWait time.Duration
+	// streams, rangeMode and statuses are how the blobs were read: the most
+	// requests at once, whether the store answered ranges, and the count of
+	// each HTTP status.
+	streams   int
+	rangeMode string
+	statuses  string
 	snapshots.ImportTiming
 	imported time.Duration
 	// commit runs from the end of the import to the install, or to failure.
@@ -746,6 +741,8 @@ func (t *partInstallTiming) count(stats *partInstallStats, downloaded *countingP
 	t.connsNew = int(stats.connsNew.Load())
 	t.renew = time.Duration(stats.renewNS.Load())
 	t.readWait = time.Duration(downloaded.readNS.Load())
+	t.streams = int(stats.streams.Load())
+	t.rangeMode, t.statuses = stats.httpStatuses()
 }
 
 func (t partInstallTiming) fields() []any {
@@ -760,6 +757,9 @@ func (t partInstallTiming) fields() []any {
 		"fetch", t.Fetch,
 		"apply", t.Apply,
 		"import", t.imported,
+		"streams", t.streams,
+		"range", t.rangeMode,
+		"statuses", t.statuses,
 	}
 }
 
