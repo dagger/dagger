@@ -9,7 +9,9 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -344,6 +346,107 @@ type Main {
 				tc.constructor, tc.typeName, tc.typeName+"Client"), out)
 		})
 	}
+}
+
+// TestClientSchemaVersion checks the client schema an SDK generates a
+// dependency's client from: clientSchemaIntrospectionJSON(clientVersion:)
+// describes core as a client at clientVersion sees it, and the module named by
+// the version it declares, as the engine serves it to that client. Overriding
+// the module's own version with withEngineVersion instead renames it, so a
+// client generated that way wouldn't match what the engine serves.
+func (ModuleNamingSuite) TestClientSchemaVersion(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	module := func(name, version string) string {
+		return "name = \"" + name + "\"\nengineVersion = \"" + version + "\"\nsource = \".\"\n\n[runtime]\nsource = \"dang\"\n"
+	}
+	ws := goGitBase(t, c).
+		WithNewFile("dagger.toml", "[modules.before]\nsource = \"./before\"\n[modules.after]\nsource = \"./after\"\n").
+		WithNewFile("before/dagger-module.toml", module("before", "v1.0.0-beta.20")).
+		WithNewFile("before/main.dang", namingDangSource("Before", "")).
+		WithNewFile("after/dagger-module.toml", module("after", "v1.0.0-beta.21")).
+		WithNewFile("after/main.dang", namingDangSource("After", ""))
+
+	// What the engine serves for each module, to this (beta.21+) client.
+	out, err := ws.With(daggerQuery(`{
+  before { client(baseUrl: "u") { __typename } }
+  after { client(baseURL: "u") { __typename } }
+}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"before": {"client": {"__typename": "BeforeHttpClient"}}, "after": {"client": {"__typename": "AfterHTTPClient"}}}`, out)
+
+	type clientSchema struct {
+		Version string `json:"__schemaVersion"`
+		introSchema
+	}
+	// schemaOf runs a query on moduleSource(refString: ref) that selects
+	// exactly one File's contents somewhere below it, and parses them.
+	schemaOf := func(t *testctx.T, ref, selection string) clientSchema {
+		t.Helper()
+		out, err := ws.With(daggerQuery(`{moduleSource(refString: %q) { %s }}`, ref, selection)).Stdout(ctx)
+		require.NoError(t, err)
+		var contents string
+		var find func(v any)
+		find = func(v any) {
+			m, ok := v.(map[string]any)
+			if !ok {
+				return
+			}
+			for k, child := range m {
+				if s, ok := child.(string); ok && k == "contents" {
+					contents = s
+				}
+				find(child)
+			}
+		}
+		var resp any
+		require.NoError(t, json.Unmarshal([]byte(out), &resp))
+		find(resp)
+		require.NotEmpty(t, contents)
+		var schema clientSchema
+		require.NoError(t, json.Unmarshal([]byte(contents), &schema))
+		return schema
+	}
+	fieldNames := func(typ *introType) []string {
+		var names []string
+		for _, f := range typ.Fields {
+			names = append(names, f.Name)
+		}
+		return names
+	}
+
+	for _, tc := range []struct {
+		name, module, clientVersion string
+		// the core view the schema describes, and whether it has the
+		// identifier API (from v1.0.0-beta.21)
+		view           string
+		formatIDs      bool
+		typeName, base string
+	}{
+		{"beta.20 dependency of a beta.21 client", "./before", "v1.0.0-beta.21", "v1.0.0-beta.21", true, "BeforeHttpClient", "baseUrl"},
+		{"beta.21 dependency of a beta.20 client", "./after", "v1.0.0-beta.20", "v1.0.0-beta.20", false, "AfterHTTPClient", "baseURL"},
+		{"default is the module's own version", "./before", "", "v1.0.0-beta.20", false, "BeforeHttpClient", "baseUrl"},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			field := "clientSchemaIntrospectionJSON"
+			if tc.clientVersion != "" {
+				field = fmt.Sprintf(`clientSchemaIntrospectionJSON(clientVersion: %q)`, tc.clientVersion)
+			}
+			schema := schemaOf(t, tc.module, field+" { contents }")
+			require.Equal(t, tc.view, schema.Version)
+			query := schema.findType("Query")
+			require.NotNil(t, query)
+			require.Equal(t, tc.formatIDs, slices.Contains(fieldNames(query), "formatIdentifiers"))
+			client := schema.findType(tc.typeName)
+			require.NotNil(t, client, "the dependency keeps the names the engine serves it with")
+			require.Contains(t, fieldNames(client), tc.base)
+		})
+	}
+
+	// withEngineVersion makes the module declare another version, and so
+	// renames it: not what the engine serves.
+	schema := schemaOf(t, "./before", `withEngineVersion(version: "v1.0.0-beta.21") { clientSchemaIntrospectionJSON { contents } }`)
+	require.Nil(t, schema.findType("BeforeHttpClient"))
+	require.NotNil(t, schema.findType("BeforeHTTPClient"))
 }
 
 // TestCLIFlags checks the CLI's spelling of an E2E-style argument. The CLI
