@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -332,6 +333,99 @@ func (DirectorySuite) TestOutsideInputsKeyTheView(ctx context.Context, t *testct
 			"subdirectories with equal files must still share work across parents that differ elsewhere")
 	})
 
+	t.Run("repositories", func(ctx context.Context, t *testctx.T) {
+		// Git run on a subdirectory finds a repository above it, or reads one
+		// at its root that can point anywhere, so a subdirectory with either is
+		// keyed by how it was made, not by its content. One under no
+		// repository is still shared.
+		nonce := rand.Text()
+		gitRepo := func(dir, msg string) string {
+			for _, args := range [][]string{
+				{"init", "-q"},
+				{"-c", "user.email=t@example.com", "-c", "user.name=t", "add", "-A"},
+				{"-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-q", "-m", msg},
+			} {
+				cmd := exec.Command("git", args...)
+				cmd.Dir = dir
+				out, err := cmd.CombinedOutput()
+				require.NoError(t, err, string(out))
+			}
+			head, err := exec.Command("git", "-C", dir, "rev-parse", "HEAD").Output()
+			require.NoError(t, err)
+			return strings.TrimSpace(string(head))
+		}
+
+		var apps []*core.Directory
+		var heads, commits []string
+		for _, msg := range []string{"a", "b"} {
+			dir := t.TempDir()
+			writeTree(t, dir, map[string]string{"app/main.txt": nonce, "other.txt": msg}, nil)
+			heads = append(heads, gitRepo(dir, msg))
+			app := host(dir).Directory("app")
+			apps = append(apps, app)
+			commit, err := app.AsGit().Head().Commit(ctx)
+			require.NoError(t, err)
+			commits = append(commits, commit)
+		}
+		require.Equal(t, heads, commits, "git on a subdirectory reads its own parent's repository")
+		require.NotEqual(t, uncachedViewToken(ctx, t, c, apps[0]), uncachedViewToken(ctx, t, c, apps[1]),
+			"subdirectories under different repositories must not share work")
+
+		bare := roots(map[string]string{"app/main.txt": nonce, "objects/.keep": "", "refs/.keep": ""}, nil,
+			map[string]string{"HEAD": "ref: refs/heads/a\n"},
+			map[string]string{"HEAD": "ref: refs/heads/b\n"},
+		)
+		require.NotEqual(t,
+			uncachedViewToken(ctx, t, c, host(bare[0]).Directory("app")),
+			uncachedViewToken(ctx, t, c, host(bare[1]).Directory("app")),
+			"subdirectories under different bare repositories must not share work")
+
+		own := roots(map[string]string{"app/main.txt": nonce, "app/.git/HEAD": "ref: refs/heads/main\n"}, nil,
+			map[string]string{"other.txt": "a"},
+			map[string]string{"other.txt": "b"},
+		)
+		require.NotEqual(t,
+			uncachedViewToken(ctx, t, c, host(own[0]).Directory("app")),
+			uncachedViewToken(ctx, t, c, host(own[1]).Directory("app")),
+			"a subdirectory with its own .git is keyed by how it was made")
+
+		// Each of these makes git or ripgrep read beyond the view's files: the
+		// view itself a bare repository, a repository nested in it pointing
+		// out of it, a worktree-style repository above it, and a Jujutsu
+		// repository above it, which ripgrep counts as one.
+		for name, files := range map[string]map[string]string{
+			"bare view":     {"app/HEAD": "ref: refs/heads/main\n", "app/objects/.keep": "", "app/refs/.keep": "", "app/config": "[include]\n\tpath = ../outside\n"},
+			"nested":        {"app/repo/.git": "gitdir: ../../meta\n"},
+			"worktree-like": {"HEAD": "ref: refs/heads/main\n", "commondir": "../common\n"},
+		} {
+			dirs := roots(map[string]string{"app/main.txt": nonce}, nil,
+				mergeFiles(files, map[string]string{"outside": "a", "meta/HEAD": "a", "common/x": "a"}),
+				mergeFiles(files, map[string]string{"outside": "b", "meta/HEAD": "b", "common/x": "b"}),
+			)
+			require.NotEqual(t,
+				uncachedViewToken(ctx, t, c, host(dirs[0]).Directory("app")),
+				uncachedViewToken(ctx, t, c, host(dirs[1]).Directory("app")),
+				name)
+		}
+		jj := roots(map[string]string{"app/main.txt": nonce, ".gitignore": "*.log\n"}, nil,
+			map[string]string{".jj/repo": "x"},
+			map[string]string{"other.txt": "x"},
+		)
+		require.NotEqual(t,
+			uncachedViewToken(ctx, t, c, host(jj[0]).Directory("app")),
+			uncachedViewToken(ctx, t, c, host(jj[1]).Directory("app")),
+			"a Jujutsu repository above a view changes what search ignores")
+
+		plain := roots(map[string]string{"app/main.txt": nonce}, nil,
+			map[string]string{"other.txt": "a"},
+			map[string]string{"other.txt": "b"},
+		)
+		require.Equal(t,
+			uncachedViewToken(ctx, t, c, host(plain[0]).Directory("app")),
+			uncachedViewToken(ctx, t, c, host(plain[1]).Directory("app")),
+			"subdirectories under no repository still share work")
+	})
+
 	t.Run("unreadable ignore file", func(ctx context.Context, t *testctx.T) {
 		// A parent whose ignore file can't be read still gives a working
 		// subdirectory, keyed by how it was made rather than by its content.
@@ -350,4 +444,15 @@ func (DirectorySuite) TestOutsideInputsKeyTheView(ctx context.Context, t *testct
 		}
 		require.NotEqual(t, uncachedViewToken(ctx, t, c, appA), uncachedViewToken(ctx, t, c, appB))
 	})
+}
+
+func mergeFiles(a, b map[string]string) map[string]string {
+	out := map[string]string{}
+	for k, v := range a {
+		out[k] = v
+	}
+	for k, v := range b {
+		out[k] = v
+	}
+	return out
 }
