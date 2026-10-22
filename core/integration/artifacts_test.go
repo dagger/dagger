@@ -1540,8 +1540,8 @@ func (*Probe) Every() error { return fmt.Errorf("every %s", rand.Text()) }
 		require.NoError(t, json.Unmarshal([]byte(out), &repeated))
 		require.Len(t, repeated.CurrentWorkspace.Artifacts.A, 1)
 		require.Len(t, repeated.CurrentWorkspace.Artifacts.B, 1)
-		require.NotEqual(t, repeated.CurrentWorkspace.Artifacts.A[0].Sync.Error.Message, repeated.CurrentWorkspace.Artifacts.B[0].Sync.Error.Message)
 		require.Equal(t, repeated.CurrentWorkspace.Artifacts.A[0].Sync.Error.Message, repeated.CurrentWorkspace.Artifacts.A[0].Sync.Again.Error.Message)
+		require.NotEqual(t, repeated.CurrentWorkspace.Artifacts.A[0].Sync.Error.Message, repeated.CurrentWorkspace.Artifacts.B[0].Sync.Error.Message)
 	})
 }
 

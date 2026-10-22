@@ -34,14 +34,23 @@ func (s checksSchema) Install(srv *dagql.Server) {
 func (s checksSchema) cachePolicy(ctx context.Context, check dagql.ObjectResult[*core.Check], _ struct{}, req *dagql.CallRequest) error {
 	req.TTL = check.Self().CacheTTL
 	req.DoNotCache = check.Self().Completed
-	if !check.Self().Completed && (check.Self().RemoteArtifact.Self() != nil || check.Self().Generator.Self() != nil) {
-		input, err := dagql.PerCallInput.Resolver(ctx, nil)
-		if err != nil {
-			return err
-		}
-		return req.SetImplicitInput(ctx, dagql.PerCallInput.Name, input)
+	if check.Self().Completed {
+		return nil
 	}
-	return nil
+	var input dagql.ImplicitInput
+	switch {
+	case check.Self().CachePolicy == core.FunctionCachePolicyNever || check.Self().RemoteArtifact.Self() != nil || check.Self().Generator.Self() != nil:
+		input = dagql.PerCallInput
+	case check.Self().CachePolicy == core.FunctionCachePolicyPerSession:
+		input = dagql.PerSessionInput
+	default:
+		return nil
+	}
+	value, err := input.Resolver(ctx, nil)
+	if err != nil {
+		return err
+	}
+	return req.SetImplicitInput(ctx, input.Name, value)
 }
 func (s checksSchema) sync(ctx context.Context, check dagql.ObjectResult[*core.Check], _ struct{}) (dagql.ObjectResult[*core.Check], error) {
 	if check.Self().Completed {
