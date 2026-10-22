@@ -52,6 +52,11 @@ const (
 	RemoteMergeDeadline = "deadline"
 	// RemoteMergeDisconnected: the connection that would carry it ended.
 	RemoteMergeDisconnected = "disconnected"
+	// RemoteMergeStale: the merge arrived and committed nothing, refused
+	// for held rows the engine no longer held.
+	RemoteMergeStale = "stale"
+	// RemoteMergeFailed: the merge arrived and failed.
+	RemoteMergeFailed = "failed"
 )
 
 // RemoteMergeWait is a merge evaluations can wait for. Done closes when it
