@@ -9,7 +9,7 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * An immutable selection of workspace artifacts. Listed types, dimensions, and keys use OR; chained filters use AND. Empty alternatives match nothing; unknown names match nothing but module load failures. Filters never change addresses or dimension identifiers. Module keys match a module's configured or kebab-case name. A module that failed to load has no schema, so its load failure stands in for whatever it would hold: a filter keeps it when the module could hold something the filter selects, and an exclusion drops it only by its own address, such as <module>/** or ?module=<module>.
+ * A selection of workspace artifacts and their immutable collection view. Collection key filters replace collection references with subsets. Static filters change only membership. Listed types, dimensions, and keys use OR; chained filters use AND. Empty alternatives match nothing; unknown names match nothing but module load failures. Filters never change addresses or dimension identifiers. Module keys match a module's configured or kebab-case name. A module that failed to load has no schema, so its load failure stands in for whatever it would hold: a filter keeps it when the module could hold something the filter selects, and an exclusion drops it only by its own address, such as <module>/** or ?module=<module>.
  */
 class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
 {
@@ -98,24 +98,6 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Evaluate the selection in parallel, retaining each result and error.
-     */
-    public function values(?bool $failFast = false, ?Json $arguments = null, ?int $maxConcurrency = 0): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('values');
-        if (null !== $failFast) {
-        $leafQueryBuilder->setArgument('failFast', $failFast);
-        }
-        if (null !== $arguments) {
-        $leafQueryBuilder->setArgument('arguments', $arguments);
-        }
-        if (null !== $maxConcurrency) {
-        $leafQueryBuilder->setArgument('maxConcurrency', $maxConcurrency);
-        }
-        return (array)$this->queryLeaf($leafQueryBuilder, 'values');
-    }
-
-    /**
      * List the modules represented in this selection without evaluating artifact values.
      */
     public function modules(): array
@@ -173,17 +155,7 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Combine two selections, keeping each workspace address once. Different addresses remain distinct even if they return the same object.
-     */
-    public function withArtifacts(Artifacts $artifacts): Artifacts
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withArtifacts');
-        $innerQueryBuilder->setArgument('artifacts', $artifacts);
-        return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Remove artifacts selected by a DAG address.
+     * Remove artifacts selected by a DAG address. Retain the collection view.
      */
     public function withoutUri(string $uri): Artifacts
     {
@@ -236,7 +208,7 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Keep artifacts with any listed key in this dimension.
+     * Keep artifacts with any listed key in this dimension. Replace collection references with matching subsets. Skip absent keys and leave the source view unchanged.
      */
     public function filterDimensionKeys(string $dimension, array $keys): Artifacts
     {
@@ -290,7 +262,7 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Enumerate complete artifacts without evaluating their values.
+     * List artifact descriptions with their collection view. Discover collection keys without evaluating leaf values.
      */
     public function items(): array
     {

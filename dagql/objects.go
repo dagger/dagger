@@ -545,11 +545,31 @@ func (spec *FieldSpec) resolveModule(ctx context.Context, srv *Server) (*ResultC
 
 // Select calls the field on the instance specified by the selector
 func (r ObjectResult[T]) Select(ctx context.Context, s *Server, sel Selector) (AnyResult, error) {
+	ctx = resultScopeFromReceiver(ctx, r)
+	scoped, err := scopeObject(ctx, s, r)
+	if err != nil {
+		return nil, err
+	}
+	r = scoped.(ObjectResult[T])
 	r, preselectResult, err := r.preselect(ctx, s, sel)
 	if err != nil {
 		return nil, err
 	}
-	return r.call(ctx, s, preselectResult.request, preselectResult.inputArgs)
+	result, err := r.call(ctx, s, preselectResult.request, preselectResult.inputArgs)
+	if err != nil {
+		return nil, err
+	}
+	if object, ok := result.(AnyObjectResult); ok {
+		return scopeObject(ctx, s, object)
+	}
+	if _, scoped := UnwrapAs[HasResultScope](result); scoped && CurrentResultScope(ctx) != nil {
+		object, err := s.toSelectable(ctx, result)
+		if err != nil {
+			return nil, err
+		}
+		return scopeObject(ctx, s, object)
+	}
+	return result, nil
 }
 
 type preselectResult struct {
@@ -597,6 +617,13 @@ func (r ObjectResult[T]) preselect(ctx context.Context, srv *Server, sel Selecto
 
 		switch {
 		case namedInput.Value != nil:
+			if scope := CurrentResultScope(ctx); scope != nil {
+				updated, _, err := scopeInput(ctx, srv, scope, namedInput.Value)
+				if err != nil {
+					return r, nil, err
+				}
+				namedInput.Value = updated
+			}
 			inputArgs[argSpec.Name] = namedInput.Value
 			frameArg, err := resultCallArgFromInput(ctx, argSpec.Name, namedInput.Value, argSpec.Sensitive)
 			if err != nil {
@@ -680,6 +707,30 @@ func (r ObjectResult[T]) preselect(ctx context.Context, srv *Server, sel Selecto
 		if err != nil {
 			return r, nil, err
 		}
+	}
+
+	if scope := CurrentResultScope(ctx); scope != nil {
+		for _, argSpec := range field.Spec.Args.Inputs(view) {
+			input, ok := inputArgs[argSpec.Name]
+			if !ok {
+				continue
+			}
+			updated, changed, err := scopeInput(ctx, srv, scope, input)
+			if err != nil {
+				return r, nil, err
+			}
+			if !changed {
+				continue
+			}
+			inputArgs[argSpec.Name] = updated
+			if err := req.SetArgInput(ctx, argSpec.Name, updated, argSpec.Sensitive); err != nil {
+				return r, nil, err
+			}
+		}
+		r.sortCallArgsToSchema(field.Spec, view, req.Args)
+	}
+
+	if field.Spec.GetDynamicInput != nil || CurrentResultScope(ctx) != nil {
 		implicitInputs, err = field.Spec.resolveImplicitInputCallArgs(ctx, inputArgs)
 		if err != nil {
 			typ := r.Type()

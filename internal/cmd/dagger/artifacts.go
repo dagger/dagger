@@ -309,38 +309,12 @@ func runArtifacts(cmd *cobra.Command, addresses []string) error {
 		if err := bindArtifactDimensions(flags, defs); err != nil {
 			return err
 		}
-		var selected *core.Artifacts
-		for _, addr := range parsed {
-			artifacts := ws.Artifacts(core.WorkspaceArtifactsOpts{Include: artifactPaths([]*dagaddress.Address{addr}, flags...)})
-			var pathDefs artifact.Dimensions
-			if len(addr.Query) > 0 {
-				pathDefs, err = artifactDimensions(ctx, ec.Dagger(), artifacts)
-				if err != nil {
-					return err
-				}
-				if err := bindArtifactDimensions(addr.Query, pathDefs); err != nil {
-					return err
-				}
-			}
-			artifacts = listArtifactTargets(artifacts, cmd, defs)
-			addr.Query = append(addr.Query, flags...)
-			if slices.ContainsFunc(addr.Query, func(p dagaddress.Pair) bool { return p.HasKey && strings.HasPrefix(p.Dimension, "type:") }) {
-				paths, err := readArtifactListPaths(ctx, ec.Dagger(), artifacts)
-				if err != nil {
-					return err
-				}
-				artifacts, err = filterArtifactTypeKeys(artifacts, paths, addr)
-				if err != nil {
-					return err
-				}
-			}
-			artifacts = applyArtifactFilters(cmd, addr, artifacts)
-			if selected == nil {
-				selected = artifacts
-			} else {
-				selected = selected.WithArtifacts(artifacts)
-			}
+		selected, err := commandArtifacts(ctx, ec.Dagger(), ws, cmd, addresses, false, flags...)
+		if err != nil {
+			return err
 		}
+		selected = listArtifactTargets(selected, cmd, defs)
+		selected = applyArtifactFilters(cmd, &dagaddress.Address{}, selected)
 		return listArtifactSelection(ctx, ec.Dagger(), selected, cmd)
 	})
 }

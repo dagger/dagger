@@ -30,7 +30,6 @@ func installCollectionSchema(s *moduleSchema, dag *dagql.Server) {
 	dagql.Fields[*core.CollectionTypeDef]{
 		dagql.Func("keyType", s.collectionKeyType).Doc("The type of collection keys."),
 		dagql.Func("valueType", s.collectionValueType).Doc("The object type returned by get."),
-		dagql.Func("batchType", s.collectionBatchType).Doc("The type of batch operations, or null when there are none."),
 	}.Install(dag)
 	dagql.Fields[*core.Query]{
 		dagql.Func("__collectionDelta", s.collectionDelta),
@@ -127,14 +126,6 @@ func (s *moduleSchema) collectionValueType(_ context.Context, def *core.Collecti
 		return dagql.ObjectResult[*core.TypeDef]{}, err
 	}
 	return members.Get.ReturnType, nil
-}
-
-func (s *moduleSchema) collectionBatchType(ctx context.Context, def *core.CollectionTypeDef, _ struct{}) (dagql.Nullable[dagql.ObjectResult[*core.TypeDef]], error) {
-	dag, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return dagql.Null[dagql.ObjectResult[*core.TypeDef]](), err
-	}
-	return core.CollectionBatchType(ctx, dag, def.Object)
 }
 
 func (s *moduleSchema) collectionDelta(_ context.Context, _ *core.Query, args struct{ AddedKeys, RemovedKeys []string }) (*core.CollectionDelta, error) {
