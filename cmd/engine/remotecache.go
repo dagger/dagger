@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/dagger/dagger/engine"
@@ -24,6 +25,12 @@ const (
 	envRemoteCacheLookups    = "_EXPERIMENTAL_DAGGER_REMOTE_CACHE_LOOKUPS"
 	envRemoteCacheLookupWait = "_EXPERIMENTAL_DAGGER_REMOTE_CACHE_LOOKUP_WAIT"
 )
+
+// envRemoteCacheEphemeral, when true as strconv.ParseBool reads it, tells the
+// service that the engine's state does not outlive this run of it, as for a
+// nested engine a check starts as a service, so that the service can forget
+// its cache once it disconnects.
+const envRemoteCacheEphemeral = "_EXPERIMENTAL_DAGGER_REMOTE_CACHE_EPHEMERAL"
 
 // remoteCacheSettings returns the connection to the remote cache service, and
 // whether it is on: when the service URL is set, by the environment or the
@@ -64,7 +71,23 @@ func remoteCacheSettings(cfg config.Config) (remotecache.Config, bool) {
 		EngineName:    engineName,
 		Lookups:       os.Getenv(envRemoteCacheLookups) != "0",
 		LookupWait:    lookupWait,
+		Ephemeral:     remoteCacheEphemeral(),
 	}, true
+}
+
+// remoteCacheEphemeral reports whether envRemoteCacheEphemeral is true. A
+// value strconv.ParseBool does not read leaves the engine a lasting one.
+func remoteCacheEphemeral() bool {
+	value := os.Getenv(envRemoteCacheEphemeral)
+	if value == "" {
+		return false
+	}
+	ephemeral, err := strconv.ParseBool(value)
+	if err != nil {
+		slog.Warn("ignoring invalid "+envRemoteCacheEphemeral, "value", value, "error", err)
+		return false
+	}
+	return ephemeral
 }
 
 // newRemoteCacheIntegration returns the server's remote cache integration, or
