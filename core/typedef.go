@@ -1025,7 +1025,12 @@ func (typeDef *TypeDef) ToInput() dagql.Input {
 	case TypeDefKindBoolean:
 		typed = dagql.Boolean(false)
 	case TypeDefKindScalar:
-		typed = dagql.NewScalar[dagql.String](typeDef.AsScalar.Value.Self().Name, dagql.String(""))
+		scalar := dagql.NewScalar[dagql.String](typeDef.AsScalar.Value.Self().Name, dagql.String(""))
+		if scalar.Name == (Platform{}).TypeName() {
+			typed = platformArgInput{scalar}
+		} else {
+			typed = scalar
+		}
 	case TypeDefKindEnum:
 		typed = &dagql.EnumValueName{Enum: typeDef.AsEnum.Value.Self().Name}
 	case TypeDefKindList:
@@ -1045,6 +1050,31 @@ func (typeDef *TypeDef) ToInput() dagql.Input {
 		typed = dagql.DynamicOptional{Elem: typed}
 	}
 	return typed
+}
+
+// platformArgInput is a module function's Platform argument. Module
+// arguments of core scalars travel as String scalars (CoreModScalar), and a
+// String scalar's literal is the string as the caller spelled it, so it
+// decodes the string as Platform does and keeps it normalized: each platform
+// has one literal, and a call that takes one has one key.
+type platformArgInput struct {
+	dagql.Scalar[dagql.String]
+}
+
+func (in platformArgInput) Decoder() dagql.InputDecoder {
+	return in
+}
+
+func (in platformArgInput) DecodeInput(val any) (dagql.Input, error) {
+	decoded, err := in.Scalar.DecodeInput(val)
+	if err != nil {
+		return nil, err
+	}
+	plat, err := Platform{}.DecodeInput(string(decoded.(dagql.Scalar[dagql.String]).Value))
+	if err != nil {
+		return nil, err
+	}
+	return dagql.NewScalar[dagql.String](in.Name, dagql.String(plat.(Platform).Format())), nil
 }
 
 func (typeDef *TypeDef) ToType() *ast.Type {
