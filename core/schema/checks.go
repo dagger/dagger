@@ -5,19 +5,25 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	telemetry "github.com/dagger/otel-go"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type checksSchema struct{}
 
 func (s checksSchema) Install(srv *dagql.Server) {
 	srv.InstallObject(dagql.NewClass[*core.Check](srv).View(AfterVersion("v1.0.0-0")))
+	run := dagql.NodeFuncWithDynamicInputs("__run", s.run, s.cachePolicy)
+	run.Spec.NoTelemetry = true
 	dagql.Fields[*core.Check]{
 		dagql.Func("__withAddress", func(_ context.Context, check *core.Check, args struct{ Address string }) (*core.Check, error) {
 			copy := check.Clone()
 			copy.Address = args.Address
 			return copy, nil
 		}),
-		dagql.NodeFuncWithDynamicInputs("sync", s.sync, s.cachePolicy).Doc("Run the check and retain its result."),
+		dagql.NodeFunc("sync", s.sync).DoNotCache("Report each check execution request.").Doc("Run the check and retain its result."),
+		run,
 		dagql.NodeFunc("pass", s.pass).DoNotCache("Read the current check result.").Doc("Run the check and return whether it passes."),
 		dagql.NodeFunc("error", s.error).DoNotCache("Read the current check result.").Doc("Run the check and return its failure, if any."),
 	}.Install(srv)
@@ -38,6 +44,41 @@ func (s checksSchema) sync(ctx context.Context, check dagql.ObjectResult[*core.C
 	if check.Self().Completed {
 		return check, nil
 	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Check]{}, err
+	}
+	var failure error
+	if check.Self().RemoteArtifact.Self() == nil {
+		name := check.Self().Address
+		if name == "" {
+			name = check.Self().Function
+		}
+		if name == "" {
+			name = "generator stale"
+		}
+		var span trace.Span
+		ctx, span = core.Tracer(ctx).Start(ctx, name, trace.WithAttributes(
+			attribute.Bool(telemetry.UIRollUpLogsAttr, true),
+			attribute.Bool(telemetry.UIRollUpSpansAttr, true),
+			attribute.String(telemetry.CheckNameAttr, name),
+		))
+		defer func() {
+			span.SetAttributes(attribute.Bool(telemetry.CheckPassedAttr, failure == nil))
+			telemetry.EndWithCause(span, &failure)
+		}()
+	}
+	var result dagql.ObjectResult[*core.Check]
+	if failure = srv.Select(ctx, check, &result, dagql.Selector{Field: "__run"}); failure != nil {
+		return result, failure
+	}
+	if result.Self().Error.Valid {
+		failure = result.Self().Error.Value.Self()
+	}
+	return result, nil
+}
+
+func (s checksSchema) run(ctx context.Context, check dagql.ObjectResult[*core.Check], _ struct{}) (dagql.ObjectResult[*core.Check], error) {
 	result, err := check.Self().Run(ctx)
 	if err != nil {
 		return dagql.ObjectResult[*core.Check]{}, err
