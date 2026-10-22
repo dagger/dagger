@@ -93,6 +93,8 @@ gRPC Grpc
 GraphQL GraphQL
 3D 3D
 2D 2D
+K8s K8s
+K3s K3s
 `
 
 // A released dictionary must never change: every module on it would be
