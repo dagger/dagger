@@ -77,6 +77,27 @@ func TestImportChainLocalStores(t *testing.T) {
 	t.Logf("A, A+B, A: source reads=%d apply calls=%d", provider.Reads.Load(), consumer.Applies.Load())
 }
 
+// A chain import with Timing sums where its time went over the layers: a
+// fresh layer is fetched and applied; a reimported one reuses its snapshot,
+// and is neither.
+func TestImportChainTiming(t *testing.T) {
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	a, _ := producer.Build(t, nil, "a.txt", "timed prefix")
+	ab, _ := producer.Build(t, a, "b.txt", "timed suffix")
+	chain := exportChain(t, ab)
+	require.Len(t, chain.Layers, 2)
+	var fresh bkcache.ImportTiming
+	importChain(t, consumer, &bkcache.ExportChain{Layers: chain.Layers, Provider: chain.Provider, Timing: &fresh})
+	require.Positive(t, fresh.Fetch)
+	require.Positive(t, fresh.Apply)
+	require.GreaterOrEqual(t, fresh.LayerWait, time.Duration(0))
+	var reused bkcache.ImportTiming
+	importChain(t, consumer, &bkcache.ExportChain{Layers: chain.Layers, Provider: chain.Provider, Timing: &reused})
+	require.Zero(t, reused.Fetch)
+	require.Zero(t, reused.Apply)
+	require.EqualValues(t, 2, consumer.Applies.Load())
+}
+
 func TestImportChainSameManager(t *testing.T) {
 	for _, root := range []string{"absent", "scratch", "empty"} {
 		t.Run(root, func(t *testing.T) {
