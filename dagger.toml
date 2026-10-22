@@ -148,7 +148,7 @@ source = "dagger.io/sdk/dang@main"
 check.skip = ["generate/stale"]
 
 [modules.go-sdk]
-source = "dagger.io/sdk/go@main"
+source = "github.com/eunomie/go-sdk@fix-same-repo-clients-beta20"
 
 [modules.go-sdk.settings]
 lock = true

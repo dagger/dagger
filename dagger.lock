@@ -55,6 +55,7 @@
 ["","git-sha",["github.com/dagger/wolfi","main"],"0b73dcbea9c7d63969d747386f96b0694fb4dadc"]
 ["","git-sha",["github.com/dagger/wolfi","refs/heads/main"],"0b73dcbea9c7d63969d747386f96b0694fb4dadc"]
 ["","git-sha",["github.com/eunomie/empty","HEAD"],"8de4cdfd244137aa83243a283d079cc630e3268a"]
+["","git-sha",["github.com/eunomie/go-sdk","fix-same-repo-clients-beta20"],"3f8b1acb3f57e6eb725d684862a0fe0bc778251a"]
 ["","git-sha",["github.com/eunomie/ws-test","HEAD"],"42501096f5759d18410eb629ec6b4c08a7888a0e"]
 ["","git-sha",["github.com/gogo/googleapis","refs/tags/v1.4.1"],"1f0e43f50bc0606e385ffae1bc80b5b231dcd042"]
 ["","git-sha",["github.com/gogo/protobuf","refs/tags/v1.3.2"],"b03c65ea87cdc3521ede29f62fe3ce239267c1bc"]
