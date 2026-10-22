@@ -69,3 +69,36 @@ func TestResolveInDirStaysInDir(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(app, "up"), got)
 }
+
+func TestWithLinksConfined(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	dir := filepath.Join(root, "dir")
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "sub"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "inside.txt"), []byte("inside"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "inside.txt"), []byte("outside"), 0o644))
+	require.NoError(t, os.Symlink("inside.txt", filepath.Join(dir, "within")))
+
+	// No link leaves the directory: the callback gets it as it is.
+	require.NoError(t, withLinksConfined(dir, func(p string) error {
+		require.Equal(t, dir, p)
+		return nil
+	}))
+
+	require.NoError(t, os.Symlink("/inside.txt", filepath.Join(dir, "sub", "abs")))
+	require.NoError(t, os.Symlink("../../inside.txt", filepath.Join(dir, "sub", "up")))
+	require.NoError(t, os.Symlink("abs", filepath.Join(dir, "sub", "chain")))
+	require.NoError(t, withLinksConfined(dir, func(p string) error {
+		require.NotEqual(t, dir, p)
+		for _, name := range []string{"within", "sub/abs", "sub/up", "sub/chain"} {
+			got, err := os.ReadFile(filepath.Join(p, name))
+			require.NoError(t, err, name)
+			require.Equal(t, "inside", string(got), name)
+		}
+		target, err := os.Readlink(filepath.Join(p, "within"))
+		require.NoError(t, err)
+		require.Equal(t, "inside.txt", target, "links within the directory are kept as they are")
+		return nil
+	}))
+}
