@@ -1,11 +1,21 @@
 # Implement filtered artifact views
 
-**Status:** Design handoff. No implementation yet. Defer `Artifacts.withArtifacts()`.
+## Problem
+
+Artifact filters select entries but leave parent collections unchanged. Module code cannot tell which items were selected. The engine groups work through a separate batch API.
+
+## Solution
+
+Give each selection one filtered workspace view. Replace collection references with filtered copies. Let module code share work through normal calls. Keep individual check results. Remove native batching and `Artifacts.values()`. Defer `withArtifacts()`.
+
+**Status:** Design handoff. Not implemented.
 
 Code reviewed: `ce6dc9f9403b52067f5831149eab4871f857185d`. Check the current code before editing.
 
 ## Contents
 
+- [Problem](#problem)
+- [Solution](#solution)
 - [Schema changes](#schema-changes)
 - [Filter behavior](#filter-behavior)
 - [CLI behavior](#cli-behavior)
