@@ -18,22 +18,48 @@ var (
 	classes string
 )
 
-// Render returns the Dagger logo as braille rows, colored for profile.
-// dark selects the rocket color that stays visible on the terminal background.
-func Render(profile termenv.Profile, dark bool) []string {
-	rocket := "#151428"
-	if dark {
-		rocket = "#E8E8F0"
-	}
-	colors := map[byte]string{
-		'2': rocket,
-		'3': "#BA1E45",
-		'4': "#F07D1A",
-		'5': "#40BABF",
-		'6': "#FCC009",
-		'7': "#9A98B8",
-	}
+const (
+	rocket  = '2'
+	petals  = '3'
+	flame   = '4'
+	wings   = '5'
+	exhaust = '6'
+	circle  = '7'
+)
 
+type classColor struct {
+	// dark and light are xterm-256 cube colors: termenv's ANSI256 conversion
+	// returns them unchanged, while it turns some other reds into near-black.
+	dark, light string
+	// ansi is a theme palette slot. Themes keep their normal slots legible on
+	// their own background, so one slot serves both backgrounds. Black, white,
+	// bright black and the bright slots Solarized turns into greys are avoided.
+	ansi termenv.Color
+}
+
+var classColors = map[byte]classColor{
+	rocket:  {dark: "#ffffff", light: "#00005f", ansi: termenv.NoColor{}},
+	petals:  {dark: "#ff005f", light: "#d7005f", ansi: termenv.ANSIRed},
+	flame:   {dark: "#ff8700", light: "#d75f00", ansi: termenv.ANSIBrightRed},
+	wings:   {dark: "#5fd7d7", light: "#008787", ansi: termenv.ANSICyan},
+	exhaust: {dark: "#ffd700", light: "#af8700", ansi: termenv.ANSIYellow},
+	circle:  {dark: "#afafff", light: "#5f5fd7", ansi: termenv.ANSIBlue},
+}
+
+func (c classColor) color(profile termenv.Profile, dark bool) termenv.Color {
+	switch {
+	case profile == termenv.ANSI:
+		return c.ansi
+	case dark:
+		return profile.Color(c.dark)
+	default:
+		return profile.Color(c.light)
+	}
+}
+
+// Render returns the Dagger logo as braille rows, colored for profile.
+// dark selects the colors that stay visible on the terminal background.
+func Render(profile termenv.Profile, dark bool) []string {
 	artRows := strings.Split(strings.TrimSuffix(art, "\n"), "\n")
 	classRows := strings.Split(strings.TrimSuffix(classes, "\n"), "\n")
 	rows := make([]string, len(artRows))
@@ -47,8 +73,8 @@ func Render(profile termenv.Profile, dark bool) []string {
 				end++
 			}
 			run := string(cells[start:end])
-			if hex, ok := colors[class]; ok {
-				run = profile.String(run).Foreground(profile.Color(hex)).String()
+			if c, ok := classColors[class]; ok {
+				run = profile.String(run).Foreground(c.color(profile, dark)).String()
 			}
 			row.WriteString(run)
 			start = end

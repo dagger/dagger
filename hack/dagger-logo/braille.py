@@ -46,7 +46,7 @@ for j in range(grid.shape[0]):
         if g == 1:
             if any(v == 0 for v in nb) or len(nb) < 8:
                 edge[j, i] = 7
-        elif any(v != g for v in nb) or len(nb) < 8:
+        elif g == 2 or any(v != g for v in nb) or len(nb) < 8:
             edge[j, i] = g
 
 colours = dict(palette)
