@@ -8,6 +8,9 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"golang.org/x/mod/semver"
+
+	"github.com/dagger/dagger/engine"
 )
 
 // QueryCloud evaluates a selection on an artifact's value in another engine.
@@ -63,11 +66,19 @@ func (a *Artifact) QueryCloud(ctx context.Context, arguments JSON, fields string
 			}
 		}
 	}
+	// The cloud engine spells filterURI by its own version: engines before
+	// the identifier casing cut only know filterUri, in every view. (Not
+	// APIVersionAtLeast: that clamps a module's bare v1.0.0 to the pre-cut
+	// view, and this is an engine's version.)
+	filterURI := "filterUri"
+	if semver.Compare(engine.APIViewVersion(client.EngineVersion()), engine.IdentifierCasingVersion) >= 0 {
+		filterURI = "filterURI"
+	}
 	err = client.Dagger().Do(ctx, &dagger.Request{
 		Query: `query($workspace: ID!, $path: String!, $uri: String!, $arguments: JSON!) {
 		 node(id: $workspace) { ... on Workspace { artifacts(include: [$path]) {
 		  items { loadError }
-		  filterUri(uri: $uri) { values(arguments: $arguments) { error { message values { name value } } value { ` + fields + ` } } }
+		  ` + filterURI + `(uri: $uri) { values(arguments: $arguments) { error { message values { name value } } value { ` + fields + ` } } }
 		 } } }
 		}`,
 		Variables: map[string]any{"workspace": id, "path": strings.Join(a.Path, "/"), "uri": uri, "arguments": string(arguments)},

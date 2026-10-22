@@ -237,7 +237,11 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("name").Doc(`The remote's name, e.g. "origin" or "upstream".`),
 				dagql.Arg("url").Doc(`The remote's fetch URL.`),
-				dagql.Arg("pushUrl").Doc(`Push destination, when pushes go somewhere other than url. Empty uses url.`),
+				dagql.Arg("pushURL").View(core.CanonicalNamesView).Doc(pushURLDoc),
+				dagql.Arg("pushUrl").View(core.LegacyNamesView).Doc(pushURLDoc),
+				// Workspace checkpoints recorded by engines before the rename
+				// select withRemote(pushUrl:) in view "".
+				dagql.Arg("pushUrl").View(core.RecordedNamesView).Internal(),
 			),
 		dagql.NodeFunc("remotes", s.remotes).
 			View(AfterVersion("v1.0.0-0")).IsPersistable().
@@ -490,7 +494,12 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("sha", s.commitSHA).
 			IsPersistable().
 			Doc(`The full commit SHA.`),
+		dagql.NodeFunc("shortSHA", s.commitShortSHA).
+			View(core.CanonicalNamesView).
+			IsPersistable().
+			Doc(`The abbreviated commit SHA.`),
 		dagql.NodeFunc("shortSha", s.commitShortSHA).
+			View(core.LegacyNamesView).
 			IsPersistable().
 			Doc(`The abbreviated commit SHA.`),
 		dagql.NodeFunc("treeSHA", s.commitTreeSHA).
@@ -524,11 +533,18 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("messageBody", s.commitMessageBody).
 			IsPersistable().
 			Doc(`Commit message body, excluding the headline.`),
+		dagql.NodeFunc("parentSHAs", s.commitParentSHAs).
+			View(core.CanonicalNamesView).
+			IsPersistable().
+			Doc(`Parent commit SHAs.`),
 		dagql.NodeFunc("parentShas", s.commitParentSHAs).
+			View(core.LegacyNamesView).
 			IsPersistable().
 			Doc(`Parent commit SHAs.`),
 	}.Install(srv)
 }
+
+const pushURLDoc = `Push destination, when pushes go somewhere other than url. Empty uses url.`
 
 type gitArgs struct {
 	URL string

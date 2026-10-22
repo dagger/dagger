@@ -376,11 +376,21 @@ func (d *consoleCheckpointDecoder) apply(frame *callpbv1.Call) {
 			fail("invalid withToolResult content")
 			return
 		}
-		callID, _ := args["callId"].(string)
 		errored, _ := args["errored"].(bool)
-		blocks := []consoleTranscriptBlock{{Kind: "TOOL_RESULT", CallID: callID, Text: text, Errored: errored}}
+		blocks := []consoleTranscriptBlock{{Kind: "TOOL_RESULT", CallID: consoleCallID(args), Text: text, Errored: errored}}
 		d.add("USER", nil, "", append(blocks, extra...)...)
 	}
+}
+
+// consoleCallID reads a recorded tool call ID: callID, or callId in calls
+// made in views before the core API's identifier casing renames (and in
+// traces of older engines).
+func consoleCallID(fields map[string]any) string {
+	if id, _ := fields["callID"].(string); id != "" {
+		return id
+	}
+	id, _ := fields["callId"].(string)
+	return id
 }
 
 func consoleFrameArgs(frame *callpbv1.Call, lenient bool) (map[string]any, error) {
@@ -428,7 +438,7 @@ func consoleContentBlocks(value any) []consoleTranscriptBlock {
 		block := consoleTranscriptBlock{
 			Kind:      str("kind"),
 			Text:      str("text"),
-			CallID:    str("callId"),
+			CallID:    consoleCallID(fields),
 			ToolName:  str("toolName"),
 			Arguments: str("arguments"),
 		}

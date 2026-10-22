@@ -387,7 +387,10 @@ type LLMContentBlock struct {
 	Text string `field:"true" json:"text,omitempty" doc:"Text content (for TEXT, THINKING, or TOOL_RESULT kinds)."`
 
 	// Tool call fields (Kind=TOOL_CALL)
-	CallID    string `field:"true" json:"call_id,omitempty" doc:"The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds)."`
+	//
+	// CallID is installed by hand (core/schema/llm.go), as callID or, in views
+	// before engine.IdentifierCasingVersion, callId.
+	CallID    string `json:"call_id,omitempty"`
 	ToolName  string `field:"true" json:"tool_name,omitempty" doc:"The name of the tool called (for TOOL_CALL kind)."`
 	Arguments JSON   `field:"true" json:"arguments,omitempty" doc:"The arguments passed to the tool, JSON-encoded (for TOOL_CALL kind)."`
 
@@ -544,18 +547,22 @@ func (b *LLMContentBlock) ContentText() string {
 }
 
 // LLMContentBlockInput is the input object type for creating content blocks.
+//
+// LegacyCallID is callID in views before engine.IdentifierCasingVersion
+// (core/schema/llm.go shows each view one of them). Decoding accepts either.
 type LLMContentBlockInput struct {
-	Kind      LLMContentBlockKind                       `doc:"The kind of content block."`
-	Text      string                                    `doc:"Text content (for TEXT, THINKING, or TOOL_RESULT kinds)." default:""`
-	CallID    string                                    `doc:"The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds)." default:""`
-	ToolName  string                                    `doc:"The name of the tool to call (for TOOL_CALL kind)." default:""`
-	Arguments JSON                                      `doc:"The arguments to pass to the tool (for TOOL_CALL kind)." default:""`
-	Errored   bool                                      `doc:"Whether the tool call resulted in an error (for TOOL_RESULT kind)." default:"false"`
-	Signature string                                    `doc:"Provider-specific opaque data (e.g. Anthropic thinking signature)." default:""`
-	MIMEType  string                                    `name:"mimeType" doc:"Media MIME type; required for inline data, inferred for a file." default:""`
-	Data      dagql.Optional[dagql.Bytes]               `doc:"Media bytes. Supply exactly one of data or file for media."`
-	File      dagql.Optional[FileID]                    `doc:"A media file to resolve to inline bytes."`
-	Content   []dagql.InputObject[LLMContentBlockInput] `doc:"Ordered TEXT or media blocks returned by a tool." default:"[]"`
+	Kind         LLMContentBlockKind                       `doc:"The kind of content block."`
+	Text         string                                    `doc:"Text content (for TEXT, THINKING, or TOOL_RESULT kinds)." default:""`
+	CallID       string                                    `name:"callID" doc:"The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds)." default:""`
+	LegacyCallID string                                    `name:"callId" doc:"The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds)." default:""`
+	ToolName     string                                    `doc:"The name of the tool to call (for TOOL_CALL kind)." default:""`
+	Arguments    JSON                                      `doc:"The arguments to pass to the tool (for TOOL_CALL kind)." default:""`
+	Errored      bool                                      `doc:"Whether the tool call resulted in an error (for TOOL_RESULT kind)." default:"false"`
+	Signature    string                                    `doc:"Provider-specific opaque data (e.g. Anthropic thinking signature)." default:""`
+	MIMEType     string                                    `name:"mimeType" doc:"Media MIME type; required for inline data, inferred for a file." default:""`
+	Data         dagql.Optional[dagql.Bytes]               `doc:"Media bytes. Supply exactly one of data or file for media."`
+	File         dagql.Optional[FileID]                    `doc:"A media file to resolve to inline bytes."`
+	Content      []dagql.InputObject[LLMContentBlockInput] `doc:"Ordered TEXT or media blocks returned by a tool." default:"[]"`
 }
 
 func (LLMContentBlockInput) TypeName() string {
@@ -572,10 +579,14 @@ func (in LLMContentBlockInput) ToLLMContentBlock() *LLMContentBlock {
 	for _, child := range in.Content {
 		content = append(content, child.Value.ToLLMContentBlock())
 	}
+	callID := in.CallID
+	if callID == "" {
+		callID = in.LegacyCallID
+	}
 	return &LLMContentBlock{
 		Kind:      in.Kind,
 		Text:      in.Text,
-		CallID:    in.CallID,
+		CallID:    callID,
 		ToolName:  in.ToolName,
 		Arguments: in.Arguments,
 		Errored:   in.Errored,
@@ -2064,7 +2075,7 @@ func toolResultSelectors(target *LLM, msgs []*LLMMessage, toolNames map[string]s
 		sel := dagql.Selector{
 			Field: "withToolResult",
 			Args: []dagql.NamedInput{
-				{Name: "callId", Value: dagql.NewString(callID)},
+				{Name: "callID", Value: dagql.NewString(callID)},
 				{Name: "content", Value: dagql.NewString(result.Text)},
 				{Name: "errored", Value: dagql.NewBoolean(result.Errored)},
 			},
@@ -2323,7 +2334,7 @@ func contentBlockInputMap(block *LLMContentBlock) map[string]any {
 	}
 	m := map[string]any{
 		"kind": string(block.Kind), "text": block.Text,
-		"callId": block.CallID, "toolName": block.ToolName,
+		"callID": block.CallID, "toolName": block.ToolName,
 		"arguments": string(block.Arguments), "errored": block.Errored,
 		"signature": block.Signature, "mimeType": block.MIMEType,
 		"content": content,

@@ -84,7 +84,7 @@ func hasModuleRefScope(address *core.Address) bool {
 	return address.BoundWorkspace.Self() != nil || dagaddress.IsAddress(address.Value)
 }
 
-// resolveWorkspaceArtifact is Workspace.artifacts(include: [path]).filterUri(uri).one().
+// resolveWorkspaceArtifact is Workspace.artifacts(include: [path]).filterURI(uri).one().
 // The include pattern narrows module loading to the module the path names.
 // typeName is the expected type, which may name the type key holding the path.
 // A short type key names no module, so when the narrowed load matches nothing,

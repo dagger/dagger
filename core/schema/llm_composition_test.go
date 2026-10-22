@@ -860,11 +860,22 @@ func TestLLMCommittedLeafRestore(t *testing.T) {
 		server.dag = srv
 		return ctx, srv
 	}
+	// Engines before the identifier casing cut recorded withToolResult in the
+	// internal view "" with callId (and content blocks' callId); those
+	// recipes still load.
+	for _, callIDName := range []string{"callID", "callId"} {
+		t.Run(callIDName, func(t *testing.T) {
+			testLLMCommittedLeafRestore(t, newSession, callIDName)
+		})
+	}
+}
+
+func testLLMCommittedLeafRestore(t *testing.T, newSession func(string) (context.Context, *dagql.Server), callIDName string) {
 	ctx, srv := newSession("source")
 	frames := map[string]*callpbv1.Call{}
 	content, err := (dagql.ArrayInput[dagql.InputObject[core.LLMContentBlockInput]]{}).Decoder().DecodeInput([]any{
 		map[string]any{"kind": "TEXT", "text": "recorded answer", "arguments": ""},
-		map[string]any{"kind": "TOOL_CALL", "callId": "call-1", "toolName": "tool", "arguments": "{}"},
+		map[string]any{"kind": "TOOL_CALL", callIDName: "call-1", "toolName": "tool", "arguments": "{}"},
 	})
 	require.NoError(t, err)
 	var committed dagql.ObjectResult[*core.LLM]
@@ -874,7 +885,7 @@ func TestLLMCommittedLeafRestore(t *testing.T) {
 		{Field: "withPrompt", Args: []dagql.NamedInput{{Name: "prompt", Value: dagql.String("hello")}}},
 		{Field: "withResponse", Args: []dagql.NamedInput{{Name: "content", Value: content}}},
 		{Field: "withToolResult", Args: []dagql.NamedInput{
-			{Name: "callId", Value: dagql.String("call-1")},
+			{Name: callIDName, Value: dagql.String("call-1")},
 			{Name: "content", Value: dagql.String("recorded result")},
 			{Name: "errored", Value: dagql.Boolean(false)},
 		}},
@@ -907,6 +918,8 @@ func TestLLMCommittedLeafRestore(t *testing.T) {
 	require.Equal(t, committed.Self().Messages, restored.Self().Messages)
 	require.Equal(t, "recorded answer", restored.Self().Messages[1].TextContent())
 	require.Equal(t, "recorded result", restored.Self().Messages[2].ToolResultContent())
+	require.Equal(t, "call-1", restored.Self().Messages[2].ToolResultCallID())
+	require.Equal(t, "call-1", restored.Self().Messages[1].Content[1].CallID)
 }
 
 func compositionRecipeOwners(t *testing.T, recipe *call.ID, field string) []string {

@@ -102,10 +102,15 @@ func (s *gitSchema) push(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 type withRemoteArgs struct {
 	Name    string
 	URL     string `name:"url"`
-	PushURL string `name:"pushUrl" default:""`
+	PushURL string `name:"pushURL" default:""`
+	// LegacyPushURL is pushURL in views before engine.IdentifierCasingVersion.
+	LegacyPushURL string `name:"pushUrl" default:""`
 }
 
 func (s *gitSchema) withRemote(_ context.Context, parent *core.GitRepository, args withRemoteArgs) (*core.GitRepository, error) {
+	if args.PushURL == "" {
+		args.PushURL = args.LegacyPushURL
+	}
 	if err := validateGitRemoteName(args.Name); err != nil {
 		return nil, err
 	}

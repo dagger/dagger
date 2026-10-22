@@ -34,8 +34,8 @@ func TestArtifactAbsoluteURIOnEmptySelection(t *testing.T) {
 	schema := &artifactsSchema{}
 	empty := (&core.Artifacts{Entries: []*core.Artifact{{TypeName: "Container"}}}).FilterTypes([]string{"Check"}, false)
 	for name, filter := range map[string]func(context.Context, *core.Artifacts, struct{ URI string }) (*core.Artifacts, error){
-		"filterUri":  schema.filterURI,
-		"withoutUri": schema.withoutURI,
+		"filterURI":  schema.filterURI,
+		"withoutURI": schema.withoutURI,
 	} {
 		t.Run(name, func(t *testing.T) {
 			selected, err := filter(t.Context(), empty, struct{ URI string }{"dag://github.com/acme/project@main:verify"})

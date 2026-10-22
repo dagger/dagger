@@ -412,7 +412,10 @@ type workspaceSDKInstallArgs struct {
 	Ref       string
 	Name      string `default:""`
 	Here      bool   `default:"false"`
-	AsSdkName string `default:""`
+	AsSDKName string `name:"asSDKName" default:""`
+	// LegacyAsSDKName is asSDKName in views before
+	// engine.IdentifierCasingVersion.
+	LegacyAsSDKName string `name:"asSdkName" default:""`
 }
 
 func (s *workspaceSchema) withSDK(
@@ -425,12 +428,16 @@ func (s *workspaceSchema) withSDK(
 	if envName, ok := selectedWorkspaceEnv(ctx, parent.Self()); ok {
 		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("SDKs cannot be installed in env %q; install SDKs in the base workspace config", envName)
 	}
+	sdkName := args.AsSDKName
+	if sdkName == "" {
+		sdkName = args.LegacyAsSDKName
+	}
 	return s.withModuleInstall(ctx, parent, workspaceInstallArgs{
 		Ref:       args.Ref,
 		Name:      args.Name,
 		Here:      args.Here,
 		AsSdk:     true,
-		AsSdkName: args.AsSdkName,
+		AsSdkName: sdkName,
 	})
 }
 

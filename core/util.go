@@ -21,6 +21,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -327,6 +328,34 @@ func (maxVersion BeforeVersion) Contains(version call.View) bool {
 var (
 	enumView = AfterVersion("v0.18.11")
 )
+
+// From engine.IdentifierCasingVersion on, the core schema's names are
+// canonical under the identifier casing rules (engine/naming): shortSHA, not
+// shortSha. Views before it keep the old names, and later ones don't have
+// them.
+var (
+	// CanonicalNamesView holds the views with the canonical core names,
+	// including the internal view "" (the latest API).
+	CanonicalNamesView = AfterVersion(engine.IdentifierCasingVersion)
+	// LegacyNamesView holds the views with the old core names.
+	LegacyNamesView = BeforeVersion(engine.IdentifierCasingVersion)
+	// RecordedNamesView is the internal view "", where engines before
+	// engine.IdentifierCasingVersion recorded internal selections with the
+	// old names (workspace checkpoints' withRemote(pushUrl:), agent tool
+	// results' withToolResult(callId:)). The old spellings of those arguments
+	// stay accepted there as internal arguments, so their recipes still load.
+	RecordedNamesView = dagql.ExactView("")
+)
+
+// ViewName is canonical in views with the canonical core names and legacy
+// in older views, for internal selectors that select a renamed field or pass
+// a renamed argument in a caller's view.
+func ViewName(view call.View, canonical, legacy string) string {
+	if CanonicalNamesView.Contains(view) {
+		return canonical
+	}
+	return legacy
+}
 
 // RootPathWithoutFinalSymlink joins a path with a root, evaluating and bounding all
 // symlinks except the final component of the path (i.e. the basename component).

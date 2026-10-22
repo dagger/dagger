@@ -28,6 +28,10 @@ type workspaceSchema struct{}
 
 var _ SchemaResolvers = &workspaceSchema{}
 
+// asSDKNameDoc documents withSDK's asSDKName, spelled asSdkName in views
+// before engine.IdentifierCasingVersion.
+const asSDKNameDoc = "Optional override for the SDK name conventionally derived from the installed module name."
+
 func (s *workspaceSchema) Install(srv *dagql.Server) {
 	currentWorkspaceField := dagql.NodeFunc("currentWorkspace", s.currentWorkspace).
 		NotReplayable("Requires the originating workspace client").
@@ -57,7 +61,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("resolve", s.resolve).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Resolve an address in this workspace.",
-				"A DAG address (dag://<path>) selects exactly one workspace artifact: artifacts.filterUri(value).one(). Its typed loaders use that artifact and never fall back to external resolution.",
+				"A DAG address (dag://<path>) selects exactly one workspace artifact: artifacts.filterURI(value).one(). Its typed loaders use that artifact and never fall back to external resolution.",
 				"A value without the dag:// scheme keeps its external meaning, such as a container image reference.",
 				"The Address retains this workspace across module calls and ID reloads.").
 			Args(dagql.Arg("value").Doc("A DAG address, or an external reference.")),
@@ -359,7 +363,8 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("ref").Doc("SDK module reference to install."),
 				dagql.Arg("name").Doc("Override name for the installed SDK entry."),
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
-				dagql.Arg("asSdkName").Doc("Optional override for the SDK name conventionally derived from the installed module name."),
+				dagql.Arg("asSDKName").View(core.CanonicalNamesView).Doc(asSDKNameDoc),
+				dagql.Arg("asSdkName").View(core.LegacyNamesView).Doc(asSDKNameDoc),
 			),
 		dagql.NodeFunc("withoutSDK", s.withoutSDK).
 			View(AfterVersion("v1.0.0-0")).

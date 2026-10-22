@@ -63,7 +63,7 @@ const contextVizQuery = `query ContextViz($id: ID!) {
         content {
           kind
           text
-          callId
+          callID
           toolName
           arguments
           errored
@@ -107,7 +107,7 @@ type vizMessage struct {
 type vizBlock struct {
 	Kind      string `json:"kind"`
 	Text      string `json:"text"`
-	CallID    string `json:"callId"`
+	CallID    string `json:"callID"`
 	ToolName  string `json:"toolName"`
 	Arguments string `json:"arguments"`
 	Errored   bool   `json:"errored"`

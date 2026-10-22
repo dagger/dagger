@@ -770,7 +770,7 @@ const consoleTranscriptQuery = `query ConsoleTranscript($handle: String!, $name:
         messages {
           role
           origin { kind agentName ref replyTo }
-          content { kind text callId toolName arguments errored }
+          content { kind text callID toolName arguments errored }
         }
       }
     }

@@ -22,6 +22,18 @@ import (
 
 type artifactsSchema struct{}
 
+// filterURI and withoutURI are filterUri and withoutUri in views before
+// engine.IdentifierCasingVersion.
+var (
+	filterURIDoc = []string{
+		"Apply a DAG address as one filter: the chain of path, type, and dimension-key filters it encodes.",
+		"The scheme is optional. The path may be a pattern; an empty path selects all artifacts.",
+		"A module that failed to load keeps its load failure when the module could hold what the address selects, as with every filter (see Artifacts).",
+	}
+	filterURIArg  = dagql.Arg("uri").Doc("A DAG address: [dag[+<type>]://][<path>][?<dimension>=<key>&...]")
+	withoutURIDoc = "Remove artifacts selected by a DAG address."
+)
+
 func (s *artifactsSchema) Install(srv *dagql.Server) {
 	srv.InstallObject(dagql.NewClass[*core.ArtifactPath](srv).View(AfterVersion("v1.0.0-0")))
 	dagql.Fields[*core.ArtifactPath]{}.Install(srv)
@@ -70,24 +82,28 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		dagql.Func("filterParentTypes", s.filterParentTypes).Doc("Keep artifacts whose immediate parent has any listed object type. Artifacts without a typed parent do not match.").Args(dagql.Arg("types"), dagql.Arg("exclude").Doc("Remove the matching artifacts instead.")),
 		dagql.Func("filterParentDirectives", s.filterParentDirectives).Doc("Keep artifacts whose immediate parent has any listed directive. Artifacts without a parent do not match.").Args(dagql.Arg("directives"), dagql.Arg("exclude").Doc("Remove the matching artifacts instead.")),
 		dagql.Func("withArtifacts", s.withArtifacts).Doc("Combine two selections, keeping each workspace address once. Different addresses remain distinct even if they return the same object."),
-		dagql.Func("withoutUri", s.withoutURI).Doc("Remove artifacts selected by a DAG address."),
+		dagql.Func("withoutURI", s.withoutURI).View(core.CanonicalNamesView).Doc(withoutURIDoc),
+		dagql.Func("withoutUri", s.withoutURI).View(core.LegacyNamesView).Doc(withoutURIDoc),
 		dagql.Func("filterTypes", s.filterTypes).Doc("Keep artifacts of any listed concrete GraphQL type.").Args(dagql.Arg("types"), dagql.Arg("exclude").Doc("Remove the matching artifacts instead.")),
 		dagql.Func("filterPath", s.filterPath).Doc("Match one complete, ordered field sequence exactly."),
 		dagql.Func("filterPathPattern", s.filterPathPattern).Doc("Keep paths that match a glob pattern. A literal path matches exactly. Both module-qualified and workspace main paths match."),
 		dagql.Func("filterDimensions", s.filterDimensions).Doc("Keep artifacts selected through any listed dimension."),
 		dagql.Func("filterDimensionKeys", s.filterDimensionKeys).Doc("Keep artifacts with any listed key in this dimension."),
+		dagql.Func("filterURI", s.filterURI).
+			View(core.CanonicalNamesView).
+			Doc(filterURIDoc...).
+			Args(filterURIArg),
 		dagql.Func("filterUri", s.filterURI).
-			Doc("Apply a DAG address as one filter: the chain of path, type, and dimension-key filters it encodes.",
-				"The scheme is optional. The path may be a pattern; an empty path selects all artifacts.",
-				"A module that failed to load keeps its load failure when the module could hold what the address selects, as with every filter (see Artifacts).").
-			Args(dagql.Arg("uri").Doc("A DAG address: [dag[+<type>]://][<path>][?<dimension>=<key>&...]")),
+			View(core.LegacyNamesView).
+			Doc(filterURIDoc...).
+			Args(filterURIArg),
 		dagql.Func("dimensions", s.dimensions).Doc("List dimension identifiers represented in this selection, sorted with no duplicates."),
 		dagql.Func("dimensionKeys", s.dimensionKeys).Doc("List keys represented in this selection for the given dimension, sorted with no duplicates."),
 		dagql.Func("dimensionItems", s.dimensionItems).Doc("List collection items represented in this selection for the given dimension. Preserve parent keys and remove duplicate item addresses. Does not evaluate item values."),
 		dagql.Func("__evaluationItems", s.evaluationItems),
 		dagql.Func("items", s.items).Doc("Enumerate complete artifacts without evaluating their values."),
 		dagql.Func("one", s.one).Doc("Require exactly one artifact; fail if there are zero or multiple matches. Several matches are listed, one address per line."),
-		dagql.Func("uri", s.uri).Doc("The DAG address that selects this whole selection: filterUri(uri) selects the same set."),
+		dagql.Func("uri", s.uri).Doc("The DAG address that selects this whole selection: filterURI(uri) selects the same set."),
 	}.Install(srv)
 	dagql.Fields[*core.Artifact]{
 		dagql.Func("__generator", func(ctx context.Context, a *core.Artifact, args struct{ Arguments core.JSON }) (*core.Generator, error) {
