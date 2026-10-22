@@ -50,6 +50,16 @@ func TestLiveReadLogs(t *testing.T) {
 
 	err = Live{Client: fake}.ReadLogs(t.Context(), "", LogQuery{Spans: spans, Cursor: "{}"}, nil)
 	require.ErrorContains(t, err, "invalid log cursor")
+
+	// A bounded one-shot passes its bound on; one with nothing between its
+	// cursor and its bound asks nothing.
+	err = Live{Client: fake}.ReadLogs(t.Context(), "", LogQuery{Spans: spans, Through: "7"}, func(context.Context, *collogspb.ExportLogsServiceRequest, string) error { return nil })
+	require.NoError(t, err)
+	require.Equal(t, archive.LogQuery{Spans: spans, Through: 7}, fake.got)
+	fake.got = archive.LogQuery{}
+	err = Live{Client: fake}.ReadLogs(t.Context(), "", LogQuery{Spans: spans, Cursor: "7", Through: "7"}, nil)
+	require.NoError(t, err)
+	require.Empty(t, fake.got.Spans)
 }
 
 type fakeStoreLogQuery struct {
