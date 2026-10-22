@@ -20,8 +20,12 @@ func (*agentsSchema) Install(srv *dagql.Server) {
 			return a.Description(), nil
 		}).Doc("The function's description."),
 		dagql.Func("path", func(_ context.Context, a *core.Expertise, _ struct{}) ([]string, error) { return a.Path(), nil }).Doc("The function's path within its module."),
-		dagql.Func("originalModule", func(_ context.Context, a *core.Expertise, _ struct{}) (*core.Module, error) {
-			return a.OriginalModule(), nil
+		// Return the module's own result, not its value: publishing the value
+		// again as a second result would attach it a second time, and a module
+		// that includes itself in its deps would then name that second result,
+		// owned only by this call's session, as its self dependency.
+		dagql.Func("originalModule", func(_ context.Context, a *core.Expertise, _ struct{}) (dagql.ObjectResult[*core.Module], error) {
+			return a.Artifact.Node.OriginalModule, nil
 		}).Doc("The module that defines the function."),
 	}.Install(srv)
 }

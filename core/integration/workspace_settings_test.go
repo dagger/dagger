@@ -31,7 +31,7 @@ func (WorkspaceSuite) TestWorkspaceSettingsCommandGrammar(ctx context.Context, t
 	t.Run("settings supports zero, one, two, or trailing value positional args", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
 source = "modules/aws"
-entrypoint = true
+main = true
 
 [modules.aws.settings]
 region = "us-west-2"
@@ -67,10 +67,10 @@ region = "us-west-2"
 		requireErrOut(t, err, `setting "region" of module "aws" is not a list and accepts a single value`)
 	})
 
-	t.Run("module omission is never supported, even for a single entrypoint module", func(ctx context.Context, t *testctx.T) {
+	t.Run("module omission is never supported, even for a single main module", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.greeter]
 source = "modules/greeter"
-entrypoint = true
+main = true
 
 [modules.greeter.settings]
 greeting = "hello"
@@ -128,7 +128,7 @@ source = "modules/aws"
 	t.Run("settings MODULE shows compact setting table with current effective values", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
 source = "modules/aws"
-entrypoint = true
+main = true
 
 [modules.aws.settings]
 region = "us-west-2"
@@ -147,7 +147,7 @@ secretKey = "op://vault/aws"
 		require.Contains(t, output, "secretKey")
 		require.Contains(t, output, "op://vault/aws")
 		require.NotContains(t, output, "source")
-		require.NotContains(t, output, "entrypoint")
+		require.NotContains(t, output, "main")
 
 		// An unset setting shows its constructor default, marked so it is not
 		// mistaken for a configured value.
@@ -478,7 +478,7 @@ region = "us-west-2"
 			{[]string{"missing", "region", "us-west-2"}, `module "missing" is not installed in the workspace`},
 			{[]string{"aws", "missing", "value"}, `module "aws" has no setting "missing"`},
 			{[]string{"aws", "source", "github.com/acme/aws"}, `module "aws" has no setting "source"`},
-			{[]string{"aws", "entrypoint", "true"}, `module "aws" has no setting "entrypoint"`},
+			{[]string{"aws", "main", "true"}, `module "aws" has no setting "main"`},
 		}
 
 		for _, tt := range tests {
@@ -629,7 +629,7 @@ region = "us-east-1"
 	t.Run("a string setting stores number-looking and quoted values as strings", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
 source = "modules/aws"
-entrypoint = true
+main = true
 `, workspaceSettingsAWSModule("modules/aws", "aws"))
 
 		for _, test := range []struct{ written, stored string }{
@@ -660,7 +660,7 @@ entrypoint = true
 	t.Run("writes through settings are visible immediately through config and runtime behavior", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
 source = "modules/aws"
-entrypoint = true
+main = true
 
 [modules.aws.settings]
 region = "us-west-2"
@@ -686,7 +686,7 @@ region = "us-west-2"
 func (WorkspaceSuite) TestWorkspaceSettingsListValues(ctx context.Context, t *testctx.T) {
 	const vitestConfig = `[modules.vitest]
 source = "modules/vitest"
-entrypoint = true
+main = true
 
 [modules.vitest.settings]
 failFast = false

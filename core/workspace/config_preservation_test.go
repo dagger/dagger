@@ -17,7 +17,7 @@ future = { enabled = true }
 
 [modules."my.module"] # module notes
 source = './module'
-entrypoint = false # keep this comment
+main = false # keep this comment
 pin = 'abc123'
 future = [1, 2]
 
@@ -58,11 +58,11 @@ func TestConfigPreservation(t *testing.T) {
 	})
 
 	t.Run("set one value", func(t *testing.T) {
-		out, err := WriteConfigValue([]byte(preservationConfig), `modules."my.module".entrypoint`, "true")
+		out, err := WriteConfigValue([]byte(preservationConfig), `modules."my.module".main`, "true")
 		require.NoError(t, err)
-		want := strings.Replace(preservationConfig, "entrypoint = false", "entrypoint = true", 1)
+		want := strings.Replace(preservationConfig, "main = false", "main = true", 1)
 		require.Equal(t, want, string(out))
-		again, err := WriteConfigValue(out, `modules."my.module".entrypoint`, "true")
+		again, err := WriteConfigValue(out, `modules."my.module".main`, "true")
 		require.NoError(t, err)
 		require.Equal(t, out, again)
 	})
@@ -74,9 +74,9 @@ func TestConfigPreservation(t *testing.T) {
 	})
 
 	t.Run("unset one value", func(t *testing.T) {
-		out, err := DeleteConfigValue([]byte(preservationConfig), `modules."my.module".entrypoint`)
+		out, err := DeleteConfigValue([]byte(preservationConfig), `modules."my.module".main`)
 		require.NoError(t, err)
-		require.Equal(t, strings.Replace(preservationConfig, "entrypoint = false # keep this comment\n", "", 1), string(out))
+		require.Equal(t, strings.Replace(preservationConfig, "main = false # keep this comment\n", "", 1), string(out))
 	})
 
 	t.Run("unset last setting removes its section and separator", func(t *testing.T) {
@@ -113,9 +113,9 @@ func TestConfigPreservation(t *testing.T) {
 
 	t.Run("line endings and missing final newline", func(t *testing.T) {
 		input := strings.ReplaceAll(strings.TrimSuffix(preservationConfig, "\n"), "\n", "\r\n")
-		out, err := WriteConfigValue([]byte(input), `modules."my.module".entrypoint`, "true")
+		out, err := WriteConfigValue([]byte(input), `modules."my.module".main`, "true")
 		require.NoError(t, err)
-		require.Equal(t, strings.Replace(input, "entrypoint = false", "entrypoint = true", 1), string(out))
+		require.Equal(t, strings.Replace(input, "main = false", "main = true", 1), string(out))
 	})
 
 	t.Run("explicit default is written", func(t *testing.T) {
@@ -173,38 +173,38 @@ func TestConfigPreservationSyntax(t *testing.T) {
 		{
 			name:  "dotted module at root",
 			input: "modules.foo.source = './foo'\n# keep\n",
-			key:   "modules.foo.entrypoint", value: "true",
-			want: "modules.foo.source = './foo'\nmodules.foo.entrypoint = true\n# keep\n",
+			key:   "modules.foo.main", value: "true",
+			want: "modules.foo.source = './foo'\nmodules.foo.main = true\n# keep\n",
 		},
 		{
 			name:  "dotted module in table",
 			input: "[modules]\nfoo.source = './foo'\n",
-			key:   "modules.foo.entrypoint", value: "true",
-			want: "[modules]\nfoo.source = './foo'\nfoo.entrypoint = true\n",
+			key:   "modules.foo.main", value: "true",
+			want: "[modules]\nfoo.source = './foo'\nfoo.main = true\n",
 		},
 		{
 			name:  "inline module",
-			input: "[modules]\nfoo = {source = './foo', entrypoint = false} # keep\n",
-			key:   "modules.foo.entrypoint", value: "true",
-			want: "[modules]\nfoo = {source = './foo', entrypoint = true} # keep\n",
+			input: "[modules]\nfoo = {source = './foo', main = false} # keep\n",
+			key:   "modules.foo.main", value: "true",
+			want: "[modules]\nfoo = {source = './foo', main = true} # keep\n",
 		},
 		{
 			name:  "nested inline addition",
 			input: "modules = {foo = {source = './foo'}}\n",
-			key:   "modules.foo.entrypoint", value: "true",
-			want: "modules = {foo = {source = './foo', entrypoint = true}}\n",
+			key:   "modules.foo.main", value: "true",
+			want: "modules = {foo = {source = './foo', main = true}}\n",
 		},
 		{
 			name:  "inline removal",
-			input: "[modules]\nfoo = {source = './foo', entrypoint = false}\n",
-			key:   "modules.foo.entrypoint", remove: true,
+			input: "[modules]\nfoo = {source = './foo', main = false}\n",
+			key:   "modules.foo.main", remove: true,
 			want: "[modules]\nfoo = {source = './foo'}\n",
 		},
 		{
 			name:  "whitespace in quoted path",
-			input: "[ modules . 'my.module' ]\nsource = './foo'\nentrypoint = false\n",
-			key:   `modules."my.module".entrypoint`, value: "true",
-			want: "[ modules . 'my.module' ]\nsource = './foo'\nentrypoint = true\n",
+			input: "[ modules . 'my.module' ]\nsource = './foo'\nmain = false\n",
+			key:   `modules."my.module".main`, value: "true",
+			want: "[ modules . 'my.module' ]\nsource = './foo'\nmain = true\n",
 		},
 		{
 			name:  "unknown array of tables",

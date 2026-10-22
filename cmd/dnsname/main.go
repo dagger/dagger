@@ -35,6 +35,7 @@ import (
 	"github.com/containernetworking/cni/pkg/types"
 	current "github.com/containernetworking/cni/pkg/types/100"
 	"github.com/containernetworking/cni/pkg/version"
+	"github.com/dagger/dagger/network/dnshosts"
 	"github.com/gofrs/flock"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -58,7 +59,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 	aliases := netConf.RuntimeConfig.Aliases[netConf.Name]
 	// A container with no name and no aliases has nothing to resolve: its
 	// hosts entry would be a bare IP that only makes dnsmasq reload, and that
-	// removeFromFile can never match, so it would stay for the engine's life.
+	// DEL can never match, so it would stay for the engine's life.
 	if podname != "" || len(aliases) > 0 {
 		if err := addHostsEntry(netConf, podname, aliases, ips); err != nil {
 			return err
@@ -94,7 +95,7 @@ func addHostsEntry(netConf *DNSNameConf, podname string, aliases []string, ips [
 		return err
 	}
 	// Now we need to HUP
-	return hup(netConf.Pidfile)
+	return dnshosts.Reload(netConf.Pidfile)
 }
 
 // Do not return an error, otherwise cni will stop
@@ -118,17 +119,37 @@ func cmdDel(args *skel.CmdArgs) error {
 		}
 	}()
 
-	if err := removeFromFile(netConf.Hosts, podname); err != nil {
+	ips, err := getIPs(result)
+	if err != nil {
 		logrus.Error(err)
+		return nil
+	}
+	// Remove only this container's entries: another container may already
+	// have the same hostname, such as a restarted service whose previous
+	// instance is still being torn down.
+	found, err := dnshosts.Remove(netConf.Hosts, podname, ipsOf(ips))
+	if err != nil {
+		logrus.Error(err)
+		return nil
+	}
+	if !found {
+		logrus.Debugf("a record for %s was never found in %s", podname, netConf.Hosts)
 		return nil
 	}
 
 	// Now we need to HUP
-	err = hup(netConf.Pidfile)
-	if err != nil {
+	if err := dnshosts.Reload(netConf.Pidfile); err != nil {
 		logrus.Error(err)
 	}
 	return nil
+}
+
+func ipsOf(nets []*net.IPNet) []net.IP {
+	ips := make([]net.IP, 0, len(nets))
+	for _, n := range nets {
+		ips = append(ips, n.IP)
+	}
+	return ips
 }
 
 func main() {

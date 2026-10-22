@@ -355,7 +355,7 @@ func (h *shellCallHandler) entrypointCall(ctx context.Context, cmd string, args 
 
 	// Command is a function in current context (module or core)
 	if h.isCurrentContextFunction(cmd) {
-		// When MainObject is Query (entrypoint proxy or core-only),
+		// When MainObject is Query (workspace main proxy or core-only),
 		// functions are already on Query - no constructor needed.
 		if def.MainObject.AsObject != nil && def.MainObject.AsObject.Name == "Query" {
 			newSt := h.NewState()

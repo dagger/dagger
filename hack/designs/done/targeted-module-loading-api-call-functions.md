@@ -32,15 +32,15 @@ WorkspaceModuleScope string `json:"workspace_module_scope,omitempty"`
 ```
 
 **The CLI does not interpret the word.** It may be a module name, a function of
-the entrypoint module (the module whose functions are promoted onto the root),
+the workspace main module (the module whose functions are promoted onto the root),
 or a typo. `dagger api call` and `dagger api functions` send it; `shell` and
 everything else don't.
 
 **The engine resolves it** when the introspection arrives:
 
 - the word names a module (kebab-insensitive: `good-mod` matches `goodMod`) →
-  load that module plus the entrypoint module;
-- it names nothing known → load just the entrypoint module when one is
+  load that module plus the workspace main module;
+- it names nothing known → load just the workspace main module when one is
   configured (the word is probably one of its functions), otherwise everything;
 - the hint is honored once per session, then discarded (see below).
 
@@ -91,10 +91,10 @@ later request that needs more modules loads them then.
 
 | Command | Loads |
 |---|---|
-| `api call good fn`, `api functions good`, `api call good --help` | `good` + entrypoint |
-| `api call good-mod fn` (module `goodMod`) | `goodMod` + entrypoint |
-| `api call deploy` (entrypoint function) | entrypoint only |
-| `api call typo fn` | entrypoint if configured, else all; the unknown-command error still fires, though its suggestions come from the smaller tree |
+| `api call good fn`, `api functions good`, `api call good --help` | `good` + workspace main |
+| `api call good-mod fn` (module `goodMod`) | `goodMod` + workspace main |
+| `api call deploy` (workspace main function) | workspace main only |
+| `api call typo fn` | workspace main if configured, else all; the unknown-command error still fires, though its suggestions come from the smaller tree |
 | bare `api call` / `api functions` | all (a full listing needs everything, and still surfaces a broken module) |
 | `api call -o out.txt good fn` | all — the CLI can't safely tell which word is the target, so it sends nothing |
 | `-m <module>`, core mode, `shell`, `mcp`, `api query` | unchanged — no scope sent |
@@ -124,9 +124,9 @@ call fails with that module's error.
 ## Tests
 
 `TestWorkspaceCallNarrowsToRequestedModule` and
-`TestWorkspaceCallNarrowsByCliNameAndEntrypoint`
+`TestWorkspaceCallNarrowsByCliNameAndMain`
 (`core/integration/generators_test.go`, fixtures `generators-broken` and
-`call-narrowing`) cover: exact and kebab-case targets, entrypoint functions,
+`call-narrowing`) cover: exact and kebab-case targets, workspace main functions,
 scoped `--help`, one-shot consumption within a session, and that bare listings
 still load — and surface — a broken module. Unit tests cover the demand filter
 matrix (`engine/server/session_test.go`), metadata plumbing including the

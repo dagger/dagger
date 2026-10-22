@@ -169,12 +169,39 @@ jobs:
           echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=${RUNNER_HOST}" >> $GITHUB_ENV
         shell: bash
 
+      # setup-docker-macos-action runs an explicit `brew update`, which
+      # refreshes Homebrew and every tap on the runner image, so any one fetch
+      # failing fails this job. No step in the action depends on the update:
+      # Lima and Colima come from GitHub releases, and it installs the Docker
+      # formulae with HOMEBREW_NO_AUTO_UPDATE, so they then install from the
+      # runner image's cached Homebrew data. HOMEBREW_NO_AUTO_UPDATE doesn't
+      # stop an explicit `brew update`, so shadow brew for the action and make
+      # only that subcommand a no-op.
+      - name: "Skip brew update in Install Docker"
+        run: |
+          shim="$RUNNER_TEMP/brew-shim"
+          mkdir -p "$shim"
+          real_brew="$(command -v brew)"
+          printf '%s\n' \
+            '#!/bin/bash' \
+            'if [ "${1:-}" = update ]; then' \
+            '  echo "Skipping brew update: taps are not refreshed in this job."' \
+            '  exit 0' \
+            'fi' \
+            "exec \"$real_brew\" \"\$@\"" > "$shim/brew"
+          chmod +x "$shim/brew"
+          echo "$shim" >> "$GITHUB_PATH"
+        shell: bash
       - name: "Install Docker"
         uses: douglascamata/setup-docker-macos-action@v1.1.0
         with:
           lima: v1.2.2
         env:
           HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
+      - name: "Restore brew"
+        if: always()
+        run: rm -f "$RUNNER_TEMP/brew-shim/brew"
+        shell: bash
       - uses: docker/setup-qemu-action@v3
 
       - uses: actions/checkout@v4

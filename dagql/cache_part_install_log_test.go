@@ -5,12 +5,18 @@ import (
 	"context"
 	"encoding/json"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/engine/telemetryattrs"
+	"github.com/dagger/dagger/engine/wcprof"
 )
 
 // A part installed from an offer is logged once, at info level, with the
@@ -69,6 +75,72 @@ func TestOfferInstallLogged(t *testing.T) {
 			duration, err := line["duration"].(json.Number).Int64()
 			require.NoError(t, err)
 			require.Positive(t, duration)
+		})
+	}
+}
+
+// A part installed from an offer is also recorded, once, on the
+// lazy-evaluation span of the task that installed it, which names the
+// receiving entry: the part, the bytes downloaded and the time taken. Here
+// that is the lazy-operation decision's task, which demandPart runs when no
+// source was selected before it. When the producing call's span was captured,
+// the span is the resume span, not the producer's ended span.
+func TestOfferInstallOnItsSpan(t *testing.T) {
+	for _, resume := range []bool{false, true} {
+		name := "lazy op"
+		if resume {
+			name = "resume"
+		}
+		t.Run(name, func(t *testing.T) {
+			chain := newChainFixture(t, "install-span")
+			f := newExhaustionFixture(t, chain)
+			f.attach(t, f.receiver, exhaustionOffer(chain, "", true))
+			var size int64
+			for _, layer := range chain.chain.Layers {
+				size += layer.Descriptor.Size
+			}
+			require.Positive(t, size)
+			sr, _, root := newLazyRecordingRoot("POST /query")
+			f.ctx = trace.ContextWithSpan(f.ctx, root)
+			var producer trace.Span
+			if resume {
+				var producerCtx context.Context
+				producerCtx, producer = Tracer(f.ctx).Start(f.ctx, "Query.receiver")
+				producer.End()
+				f.cache.captureSessionLazySpanContext(producerCtx, cacheTestSessionID(t, f.ctx), f.receiver)
+			}
+
+			require.NoError(t, f.run())
+			require.True(t, f.installed(), "the part installed from its offer")
+			root.End()
+
+			var stamped []sdktrace.ReadOnlySpan
+			for _, s := range sr.Ended() {
+				for _, kv := range s.Attributes() {
+					if string(kv.Key) == telemetryattrs.CacheOfferPartAttr {
+						stamped = append(stamped, s)
+					}
+				}
+			}
+			require.Len(t, stamped, 1, "one span records the install")
+			span := stamped[0]
+			attrs := map[string]attribute.Value{}
+			for _, kv := range span.Attributes() {
+				attrs[string(kv.Key)] = kv.Value
+			}
+			key, err := partAddressKey(f.address)
+			require.NoError(t, err)
+			require.Equal(t, key, attrs[telemetryattrs.CacheOfferPartAttr].AsString())
+			require.Equal(t, strconv.FormatInt(size, 10), attrs[telemetryattrs.CacheOfferBytesAttr].AsString())
+			duration, err := strconv.ParseInt(attrs[telemetryattrs.CacheOfferDurationAttr].AsString(), 10, 64)
+			require.NoError(t, err)
+			require.Positive(t, duration)
+			require.Equal(t, strconv.FormatUint(uint64(f.receiver.cacheSharedResult().id), 10), attrs[telemetryattrs.CacheResultIDAttr].AsString(), "the span names the receiving entry")
+			require.Equal(t, wcprof.OpKindLazy.String(), attrs[telemetryattrs.WcprofOpKindAttr].AsString(), "a lazy-evaluation span")
+			if resume {
+				require.NotEqual(t, producer.SpanContext().SpanID(), span.SpanContext().SpanID())
+				require.True(t, strings.HasPrefix(span.Name(), "resume "), "got %q", span.Name())
+			}
 		})
 	}
 }

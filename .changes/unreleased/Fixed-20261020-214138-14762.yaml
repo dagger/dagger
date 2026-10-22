@@ -1,0 +1,6 @@
+kind: Fixed
+body: Terminal commands no longer intermittently lose their output when the terminal call finishes before the client has shown it. The engine now waits briefly for the client to finish the terminal session.
+time: 2026-10-20T21:41:38.000000000Z
+custom:
+    Author: sipsma
+    PR: "14762"

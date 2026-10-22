@@ -37,7 +37,7 @@ func TestSchemaBuilderMemo(t *testing.T) {
 		require.NotSame(t, withB, memo.Get(base.Prepend(b)), "entry order is part of the key")
 		require.NotSame(t, withB, memo.Get(base.Append(&memoTestMod{name: "b"})),
 			"a different instance with the same name is a different module")
-		require.NotSame(t, withB, memo.Get(base.With(b, InstallOpts{Entrypoint: true})),
+		require.NotSame(t, withB, memo.Get(base.With(b, InstallOpts{Main: true})),
 			"install options are part of the key")
 		require.NotSame(t, withB, memo.Get(base.WithRoot(&Query{}).Append(b)),
 			"servers are built on the root, so it is part of the key")

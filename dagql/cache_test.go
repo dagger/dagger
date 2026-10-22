@@ -8538,8 +8538,9 @@ func TestCacheHitRechecksSessionResourcesAfterLateExplicitDependency(t *testing.
 	}
 	var bInitCalls atomic.Int32
 	bDone := make(chan callOutcome, 1)
+	bReq := &CallRequest{ResultCall: f.frame.clone(), CacheEvidence: NewCacheDecision()}
 	go func() {
-		res, err := f.cache.GetOrInitCall(f.bCtx, slot+"-b", f.srv, &CallRequest{ResultCall: f.frame.clone()}, func(ctx context.Context) (AnyResult, error) {
+		res, err := f.cache.GetOrInitCall(f.bCtx, slot+"-b", f.srv, bReq, func(ctx context.Context) (AnyResult, error) {
 			bInitCalls.Add(1)
 			return NewResultForCall(&cacheTestObject{Value: 99}, f.frame.clone())
 		})
@@ -8559,6 +8560,10 @@ func TestCacheHitRechecksSessionResourcesAfterLateExplicitDependency(t *testing.
 	assert.Assert(t, bShared != nil && bShared.id != 0)
 	assert.Assert(t, bShared.id != f.parentID,
 		"session B was served a result requiring a handle it never bound")
+	// The span says why the chosen hit became a miss.
+	assert.Equal(t, CacheOutcomeExecuted, bReq.CacheEvidence.Outcome)
+	assert.Assert(t, bReq.CacheEvidence.MissRequirementsGrew)
+	assert.Assert(t, !bReq.CacheEvidence.MissProducerReleased)
 
 	f.assertParentRequiresHandle(t)
 	f.releaseSessions(t, slot)
@@ -8741,8 +8746,9 @@ func TestCacheHitConvertsToMissWhenProducerReleaseFailsAttachment(t *testing.T) 
 	}
 	var bInitCalls atomic.Int32
 	bDone := make(chan callOutcome, 1)
+	bReq := &CallRequest{ResultCall: w.frame.clone(), CacheEvidence: NewCacheDecision()}
 	go func() {
-		res, err := w.cache.GetOrInitCall(w.bCtx, slot+"-b", w.srv, &CallRequest{ResultCall: w.frame.clone()}, func(ctx context.Context) (AnyResult, error) {
+		res, err := w.cache.GetOrInitCall(w.bCtx, slot+"-b", w.srv, bReq, func(ctx context.Context) (AnyResult, error) {
 			bInitCalls.Add(1)
 			return NewResultForCall(&cacheTestBlockingAttachObj{
 				Value:         99,
@@ -8764,6 +8770,10 @@ func TestCacheHitConvertsToMissWhenProducerReleaseFailsAttachment(t *testing.T) 
 	bShared := bOut.res.cacheSharedResult()
 	assert.Assert(t, bShared != nil && bShared.id != 0)
 	assert.Assert(t, bShared.id != w.parentID)
+	// The span says why the chosen hit became a miss.
+	assert.Equal(t, CacheOutcomeExecuted, bReq.CacheEvidence.Outcome)
+	assert.Assert(t, bReq.CacheEvidence.MissProducerReleased)
+	assert.Assert(t, !bReq.CacheEvidence.MissRequirementsGrew)
 
 	assert.NilError(t, w.cache.ReleaseSession(w.bCtx, slot+"-b"))
 }

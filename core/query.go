@@ -29,8 +29,8 @@ import (
 type Query struct {
 	Server
 
-	// ConstructorArgs stores arguments to pass to the entrypoint module's
-	// constructor. Set by the `with` field on Query so that entrypoint
+	// ConstructorArgs stores arguments to pass to the workspace main module's
+	// constructor. Set by the `with` field on Query so that workspace main
 	// proxy resolvers can forward them to the constructor.
 	ConstructorArgs map[string]dagql.Input
 
@@ -68,7 +68,7 @@ type Server interface {
 	ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Request, transport *engine.NestedClientTransport, metadata *engine.ClientMetadata, callerClientID string, inertAttachables bool, moduleContext dagql.AnyObjectResult, functionCall dagql.Typed)
 
 	// Stitch in the given module to the list being served to the current client
-	ServeModule(ctx context.Context, mod dagql.ObjectResult[*Module], includeDependencies bool, entrypoint bool) error
+	ServeModule(ctx context.Context, mod dagql.ObjectResult[*Module], includeDependencies bool, main bool) error
 
 	// If the current client is coming from a function, return the module that function is from
 	CurrentModule(context.Context) (dagql.ObjectResult[*Module], error)

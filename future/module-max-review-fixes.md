@@ -102,9 +102,9 @@ unrelated SDK, runtime, or network errors.
 Keep the optional core scope name and the current `generateScope()` interface.
 Module init saves only an explicit name and preserves any existing saved name.
 Before generation, use the saved name or infer one for a module scope. A local
-entrypoint installation that targets the scope supplies its name. Otherwise,
+workspace main installation that targets the scope supplies its name. Otherwise,
 use the scope directory name, with the config-parent or workspace name plus
-`-dev` as the fallback at the workspace root. Multiple matching entrypoint names
+`-dev` as the fallback at the workspace root. Multiple matching main names
 require an explicit scope name. Use the same lookup for SDK module listings.
 Do not write an inferred name into the scope. A scope that contains only clients
 can retain an unused name or leave it empty.

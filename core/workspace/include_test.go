@@ -40,7 +40,7 @@ check-generated = false
 [modules.go]
 source = "github.com/acme/go-toolchain@v1"
 pin = "aaa"
-entrypoint = true
+main = true
 up.skip = ["base-service"]
 
 [modules.go.settings]
@@ -66,12 +66,12 @@ source = "github.com/acme/base@v1"
 	require.NotNil(t, merged.CheckGenerated)
 	require.False(t, *merged.CheckGenerated)
 
-	// The source-less entry inherits its ref, pin, entrypoint and skips, and
+	// The source-less entry inherits its ref, pin, main selection and skips, and
 	// overrides one setting while keeping the others.
 	goEntry := merged.Modules["go"]
 	require.Equal(t, "github.com/acme/go-toolchain@v1", goEntry.Source)
 	require.Equal(t, "aaa", goEntry.Pin)
-	require.True(t, goEntry.Entrypoint)
+	require.True(t, goEntry.Main)
 	require.Equal(t, []string{"base-service"}, goEntry.Up.Skip)
 	require.Equal(t, map[string]any{"version": "1.24", "strict": true}, goEntry.Settings)
 
@@ -148,7 +148,7 @@ check-generated = true
 
 [modules.go]
 source = "github.com/acme/go-toolchain@v1"
-entrypoint = true
+main = true
 up.skip = ["base-service"]
 generate.skip = ["base-client"]
 check.skip = ["lint"]
@@ -174,7 +174,7 @@ source = "github.com/acme/base@v1"
 	require.NotNil(t, merged.CheckGenerated)
 	require.False(t, *merged.CheckGenerated)
 	entry := merged.Modules["go"]
-	require.False(t, entry.Entrypoint)
+	require.False(t, entry.Main)
 	require.Empty(t, entry.Up.Skip)
 	require.Empty(t, entry.Generate.Skip)
 	require.Equal(t, []string{"lint"}, entry.Check.Skip, "a skip list the current config leaves alone is inherited")
@@ -215,7 +215,7 @@ defaults_from_dotenv = true
 
 [modules.go]
 source = "github.com/acme/go-toolchain@v1"
-entrypoint = true
+main = true
 check.skip = ["lint"]
 `
 
@@ -230,7 +230,7 @@ source = "github.com/acme/base@v1"
 
 	require.Equal(t, []string{"base-dist"}, merged.Ignore)
 	require.True(t, merged.DefaultsFromDotEnv)
-	require.True(t, merged.Modules["go"].Entrypoint)
+	require.True(t, merged.Modules["go"].Main)
 	require.Equal(t, []string{"lint"}, merged.Modules["go"].Check.Skip)
 }
 
@@ -437,7 +437,7 @@ func TestExplicitConfigKeys(t *testing.T) {
 	keys, err := ExplicitConfigKeys([]byte(`ignore = []
 
 [modules.go]
-entrypoint = false
+main = false
 check.skip = []
 
 [modules."my.mod"]
@@ -459,7 +459,7 @@ source = "github.com/acme/base@v1"
 
 	for _, key := range []string{
 		"ignore",
-		"modules.go.entrypoint",
+		"modules.go.main",
 		"modules.go.check.skip",
 		"modules.go.settings.version",
 		`modules."my.mod".source`,
@@ -625,23 +625,23 @@ func TestWriteIncludeReplacesACommentedHeader(t *testing.T) {
 func TestExplicitConfigKeysAreCanonical(t *testing.T) {
 	t.Parallel()
 
-	data := []byte("IGNORE = []\n\n[modules.ci]\nENTRYPOINT = false\n\n[modules.ci.settings]\nGoVersion = \"1.24\"\n")
+	data := []byte("IGNORE = []\n\n[modules.ci]\nMAIN = false\n\n[modules.ci.settings]\nGoVersion = \"1.24\"\n")
 	keys, err := ExplicitConfigKeys(data)
 	require.NoError(t, err)
 	require.True(t, keys["ignore"])
-	require.True(t, keys["modules.ci.entrypoint"])
+	require.True(t, keys["modules.ci.main"])
 	require.True(t, keys["modules.ci.settings.GoVersion"])
 
 	current, err := ParseConfig(data)
 	require.NoError(t, err)
 	included := &Config{
 		Ignore:  []string{"base"},
-		Modules: map[string]ModuleEntry{"ci": {Source: "github.com/acme/ci@v1", Entrypoint: true}},
+		Modules: map[string]ModuleEntry{"ci": {Source: "github.com/acme/ci@v1", Main: true}},
 	}
 	merged, err := MergeIncludedConfig(included, current, keys)
 	require.NoError(t, err)
 	require.Empty(t, merged.Ignore)
-	require.False(t, merged.Modules["ci"].Entrypoint)
+	require.False(t, merged.Modules["ci"].Main)
 }
 
 func TestSDKProviderMustBeInstalledLocally(t *testing.T) {

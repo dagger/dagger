@@ -50,6 +50,58 @@ func TestValueTransferForeignForms(t *testing.T) {
 	}
 }
 
+// A foreign payload its family validated stays valid once the family's
+// visitor relocates its references, as a stored bundle relocates the records
+// it copies to its ordinals after validating them. Every foreign family has a
+// sample, and each reference a sample makes, through service bindings, lazy
+// operations, a cache volume's source and module dependencies, is moved.
+func TestValueTransferRelocatedForeignStaysValid(t *testing.T) {
+	samples := map[string]struct {
+		field, native string
+		refs          int
+	}{
+		"File":                 {"", `{"form":"lazy","file":"/data","platform":"linux/amd64","services":[{"serviceResultID":7,"hostname":"db"}],"lazyKind":"file.withName","lazyJSON":{"parentResultID":8,"filename":"x"}}`, 2},
+		"Directory":            {"", `{"form":"lazy","dir":"/","platform":"linux/amd64","services":[{"serviceResultID":7,"hostname":"db"}],"lazyKind":"directory.withFile","lazyJSON":{"parentResultID":8,"destPath":"/a.txt","sourceResultID":9}}`, 3},
+		"Container":            {"withUser", `{"metadata":{"consumed":true,"value":{"platform":"linux/amd64","config":{},"defaultTerminalCmd":{},"services":[{"serviceResultID":7,"hostname":"db"}]}},"parts":{"fs":{"kind":"directory","role":"fs","path":"/","services":[{"serviceResultID":10,"hostname":"cache"}]},"execMeta":{"kind":"absent"}},"lazyJSON":{"parentResultID":8,"name":"root"}}`, 3},
+		"CacheVolume":          {"", `{"form":"native","key":"build","sourceResultID":9,"selector":"/"}`, 1},
+		"ModuleSource":         {"", `{"kind":"LOCAL_SOURCE","moduleName":"test","local":{"ContextDirectoryPath":"/alice/project"},"dependencyResultIDs":[11,12]}`, 2},
+		"HTTPState":            {"", `{"form":"native","url":"https://example.test/file"}`, 0},
+		"ClientFilesyncMirror": {"", `{"form":"native","stableClientID":"alice","drive":"/"}`, 0},
+		"RemoteGitMirror":      {"", `{"form":"native","remoteURL":"https://example.test/repo"}`, 0},
+	}
+	for _, family := range dagql.PersistedObjectFamilies() {
+		codec, ok := family.Transfer.(foreignFamilyCodec)
+		if !ok {
+			continue
+		}
+		sample, ok := samples[string(codec)]
+		require.True(t, ok, "family %s has no sample", family.Name)
+		v := dagql.PersistedPayloadVisit{Payload: json.RawMessage(sample.native)}
+		if sample.field != "" {
+			v.Call = &dagql.ResultCall{Field: sample.field}
+		}
+		foreign, err := codec.NormalizeForeign(v)
+		require.NoError(t, err, family.Name)
+		v.Payload = foreign.JSON
+		require.NoError(t, codec.ValidateForeign(v), family.Name)
+		moved := 0
+		relocated, err := family.Visitor.VisitPersistedReferences(v, func(ref *dagql.PersistedRef) error {
+			if ref.RecipeID == nil && ref.ResultID != 0 {
+				ref.ResultID += 1000
+				moved++
+			}
+			return nil
+		})
+		require.NoError(t, err, family.Name)
+		require.Equal(t, sample.refs, moved, family.Name)
+		if moved > 0 {
+			require.NotEqual(t, string(v.Payload), string(relocated), family.Name)
+		}
+		v.Payload = relocated
+		require.NoError(t, codec.ValidateForeign(v), "%s, relocated", family.Name)
+	}
+}
+
 func TestValueTransferParts(t *testing.T) {
 	raw := json.RawMessage(`{"form":"snapshot","file":"/parent/nested/one","platform":"linux/amd64"}`)
 	codec := foreignFamilyCodec("File")

@@ -35,9 +35,7 @@ func (generatorSchema) changeset(ctx context.Context, parent dagql.ObjectResult[
 	return result, err
 }
 func (generatorSchema) stale(ctx context.Context, parent dagql.ObjectResult[*core.Generator], _ struct{}) (*core.Check, error) {
-	artifact := parent.Self().Artifact.Clone()
-	artifact.Path = append(artifact.Path[:len(artifact.Path):len(artifact.Path)], "stale")
-	artifact.TypeName = "Check"
+	artifact := parent.Self().Artifact.StaleArtifact()
 	address, err := artifact.URI(core.ArtifactURIOpts{DimensionKeys: true})
 	if err != nil {
 		return nil, err

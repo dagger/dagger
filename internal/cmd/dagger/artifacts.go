@@ -441,6 +441,20 @@ type listedArtifact struct {
 	DimensionKeys    []struct{ Dimension, Key string }
 }
 
+// fullPath is the full path in the artifact's type key. URI is a projection,
+// whose type key can be a short suffix; the dimension keys hold the full path.
+func (item listedArtifact) fullPath() string {
+	for _, key := range item.DimensionKeys {
+		if strings.HasPrefix(key.Dimension, "type:") {
+			return key.Key
+		}
+	}
+	if addr, err := dagaddress.Parse(item.URI); err == nil {
+		return addr.ArtifactPath(addr.Types...)
+	}
+	return ""
+}
+
 func readListedArtifacts(ctx context.Context, dag *dagger.Client, selection *core.Artifacts, absolute, typed bool) ([]listedArtifact, error) {
 	id, err := selection.ID(ctx)
 	if err != nil {

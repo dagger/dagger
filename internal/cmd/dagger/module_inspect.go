@@ -36,7 +36,7 @@ func initializeCore(ctx context.Context, dag *dagger.Client) (rdef *moduleDef, r
 // initializeWorkspace loads type definitions from the workspace.
 // Modules are already served by the engine at connect time.
 //
-// The CLI consumes workspace entrypoint methods and module constructors
+// The CLI consumes workspace main methods and module constructors
 // directly from the engine schema's Query root.
 func initializeWorkspace(ctx context.Context, dag *dagger.Client, opts ...loadTypeDefsOpts) (rdef *moduleDef, rerr error) {
 	ctx, span := Tracer().Start(ctx, "load workspace: .")
@@ -54,8 +54,8 @@ func initializeWorkspace(ctx context.Context, dag *dagger.Client, opts ...loadTy
 // initModuleOpts configures how initializeModule serves the module before
 // inspecting it.
 type initModuleOpts struct {
-	// entrypoint promotes the module's main-object methods onto the Query root.
-	entrypoint bool
+	// main promotes the module's main-object methods onto the Query root.
+	main bool
 	// skipDependencies serves only the module itself, without also serving its
 	// dependencies onto the Query root. This matters when several independent
 	// modules are inspected within a single session (e.g. registering init
@@ -93,8 +93,8 @@ func initializeModule(
 	serveCtx, serveSpan := Tracer().Start(ctx, "initializing module", telemetry.Encapsulate())
 	serveOpts := core.ModuleServeOpts{IncludeDependencies: true}
 	for _, o := range opts {
-		if o.entrypoint {
-			serveOpts.Entrypoint = true
+		if o.main {
+			serveOpts.Main = true
 		}
 		if o.skipDependencies {
 			serveOpts.IncludeDependencies = false
@@ -259,7 +259,7 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *core.ModuleS
 // loadTypeDefsOpts configures the loadTypeDefs call.
 type loadTypeDefsOpts struct {
 	// HideCore strips core API functions from the Query type, leaving
-	// only module-sourced functions (constructors, entrypoint proxies).
+	// only module-sourced functions (constructors, main proxies).
 	HideCore bool
 }
 
@@ -349,7 +349,7 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client, opts .
 	rootType.AsObject.Constructor = &modFunction{ReturnType: rootType}
 
 	// MainObject is always Query — all served module constructors and
-	// entrypoint proxy functions live on Query uniformly.
+	// main proxy functions live on Query uniformly.
 	m.MainObject = rootType
 
 	// Use Query.with as the constructor so that constructor flags
@@ -381,10 +381,10 @@ func (m *moduleDef) Long() string {
 	return s
 }
 
-// siblingModuleEntrypoints returns Query root constructors from workspace
+// siblingModuleMains returns Query root constructors from workspace
 // modules other than the current default module. Conflicting CLI names are
 // skipped so the focused module keeps precedence.
-func (m *moduleDef) siblingModuleEntrypoints() []*modFunction {
+func (m *moduleDef) siblingModuleMains() []*modFunction {
 	rootType := m.GetTypeDef("Query")
 	if rootType == nil || rootType.AsObject == nil {
 		return nil
@@ -585,8 +585,8 @@ func (m *moduleDef) HasMainFunction(name string) bool {
 	return m.GetMainFunction(name) != nil
 }
 
-// GetMainFunction returns a function from the main object. When entrypoint
-// proxying is active, MainObject is Query and all Query fields — entrypoint
+// GetMainFunction returns a function from the main object. When main
+// proxying is active, MainObject is Query and all Query fields — main
 // proxy functions, installed module constructors, and core functions — are
 // treated uniformly.
 func (m *moduleDef) GetMainFunction(name string) *modFunction {

@@ -11,60 +11,60 @@ import (
 
 // ModuleInitPlan records installation decisions separately from explicit controls.
 type ModuleInitPlan struct {
-	Install             bool
-	Entrypoint          bool
-	AutomaticInstall    bool
-	AutomaticEntrypoint bool
+	Install          bool
+	Main             bool
+	AutomaticInstall bool
+	AutomaticMain    bool
 }
 
 // PlanModuleInit preserves the implicit rules unless a control is supplied.
-func PlanModuleInit(explicitPath, explicitName bool, install, entrypoint *bool) (ModuleInitPlan, error) {
-	if install != nil && !*install && entrypoint != nil && *entrypoint {
-		return ModuleInitPlan{}, fmt.Errorf("--install=false cannot be combined with --entrypoint")
+func PlanModuleInit(explicitPath, explicitName bool, install, main *bool) (ModuleInitPlan, error) {
+	if install != nil && !*install && main != nil && *main {
+		return ModuleInitPlan{}, fmt.Errorf("--install=false cannot be combined with --main")
 	}
 	plan := ModuleInitPlan{Install: !explicitPath}
 	if install != nil {
 		plan.Install = *install
 	}
-	plan.Entrypoint = plan.Install && !explicitPath && !explicitName
-	if entrypoint != nil {
-		plan.Entrypoint = *entrypoint
+	plan.Main = plan.Install && !explicitPath && !explicitName
+	if main != nil {
+		plan.Main = *main
 	}
-	if plan.Entrypoint {
+	if plan.Main {
 		plan.Install = true
 	}
-	plan.AutomaticInstall = plan.Install && install == nil && (entrypoint == nil || !*entrypoint)
-	plan.AutomaticEntrypoint = plan.Entrypoint && entrypoint == nil
+	plan.AutomaticInstall = plan.Install && install == nil && (main == nil || !*main)
+	plan.AutomaticMain = plan.Main && main == nil
 	return plan, nil
 }
 
 // InferSDKModuleName returns the name an unnamed module scope resolves to. A
-// scope that is the source of exactly one local entrypoint install takes that
+// scope that is the source of exactly one local workspace main install takes that
 // installed name. Otherwise it takes the scope directory name, falling back to
 // a "-dev" name derived from configDir or rootName for a root scope. Multiple
-// matching entrypoint names are an error: such a scope needs an explicit name.
+// matching workspace main names are an error: such a scope needs an explicit name.
 func InferSDKModuleName(cfg *Config, configDir, scopePath, rootName string) (string, error) {
 	name := ""
 	if cfg != nil && scopePath != "" {
-		var entrypoints []string
+		var mains []string
 		for installedName, entry := range cfg.Modules {
-			if !entry.Entrypoint || !IsLocalRef(entry.Source, entry.Pin) {
+			if !entry.Main || !IsLocalRef(entry.Source, entry.Pin) {
 				continue
 			}
 			sourcePath, err := ResolveSDKManagedPath(configDir, entry.Source)
 			if err != nil {
-				return "", fmt.Errorf("entrypoint module %q: %w", installedName, err)
+				return "", fmt.Errorf("workspace main module %q: %w", installedName, err)
 			}
 			if sourcePath == cleanScopeRelPath(scopePath) {
-				entrypoints = append(entrypoints, installedName)
+				mains = append(mains, installedName)
 			}
 		}
-		if len(entrypoints) > 1 {
-			sort.Strings(entrypoints)
-			return "", fmt.Errorf("module scope %q has multiple entrypoint names %q; set an explicit scope name", scopePath, entrypoints)
+		if len(mains) > 1 {
+			sort.Strings(mains)
+			return "", fmt.Errorf("module scope %q has multiple workspace main names %q; set an explicit scope name", scopePath, mains)
 		}
-		if len(entrypoints) == 1 {
-			name = entrypoints[0]
+		if len(mains) == 1 {
+			name = mains[0]
 		}
 	}
 	return ModuleInitName(name, scopePath, configDir, rootName)

@@ -27,7 +27,7 @@ func artifactSource(c *dagger.Client) *core.Directory {
 	return core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", `[modules.provider]
 source = "./provider"
-entrypoint = true
+main = true
 settings.label = "configured"
 [modules.consumer]
 source = "./consumer"
@@ -387,10 +387,10 @@ func (ArtifactsSuite) TestFilterURIUnderFailedModule(ctx context.Context, t *tes
 }`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}})
 	require.ErrorContains(t, err, `no artifact matches; module "staff" failed to load`)
 
-	// A failed entrypoint's shorthand paths start with any name but another
+	// A failed workspace main's shorthand paths start with any name but another
 	// module's.
-	entrypointID, err := failedModuleWorkspace(c).
-		WithNewFile("dagger.toml", "[modules.good]\nsource = \"./good\"\n[modules.staff]\nsource = \"./staff\"\nentrypoint = true\n").
+	mainID, err := failedModuleWorkspace(c).
+		WithNewFile("dagger.toml", "[modules.good]\nsource = \"./good\"\n[modules.staff]\nsource = \"./staff\"\nmain = true\n").
 		AsWorkspace().ID(ctx)
 	require.NoError(t, err)
 	got, err = testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
@@ -401,7 +401,7 @@ func (ArtifactsSuite) TestFilterURIUnderFailedModule(ctx context.Context, t *tes
   narrowed: artifacts(include: ["worker"]) {
     other: filterUri(uri: "dag://good/helper") { items { uri } }
   } } }
-}`, &testutil.QueryOptions{Variables: map[string]any{"ws": entrypointID}})
+}`, &testutil.QueryOptions{Variables: map[string]any{"ws": mainID}})
 	require.NoError(t, err)
 	// Narrowing module loading does not make another module's address look
 	// like a shorthand path.
@@ -795,7 +795,7 @@ func (*Legacy) Output(ctx context.Context) (string, error) {
 	require.Equal(t, "legacy check", strings.TrimSpace(out))
 }
 
-func (ArtifactsSuite) TestExplicitEntrypoint(ctx context.Context, t *testctx.T) {
+func (ArtifactsSuite) TestExplicitMain(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := nativeWorkspaceBase(t, c).WithDirectory(".", artifactSource(c)).
 		WithNewFile("extra/dagger-module.toml", "name = \"extra\"\nengineVersion = \"v1.0.0\"\n[runtime]\nsource = \"dang\"\n").
@@ -894,7 +894,7 @@ func (ArtifactsSuite) TestArtifactsCLI(ctx context.Context, t *testctx.T) {
 	reserved := base.
 		WithNewFile("/work/selected/dagger.toml", `[modules.provider]
 source = "./provider"
-entrypoint = true
+main = true
 `).
 		WithNewFile("/work/selected/provider/main.dang", `type Provider {
   pub types: Directory! { directory }
@@ -1048,7 +1048,7 @@ func (ArtifactsSuite) TestWorkspaceEdits(ctx context.Context, t *testctx.T) {
 	}
 	config := `[modules.provider]
 source = "./provider"
-entrypoint = true
+main = true
 settings.label = "changed"
 [modules.consumer]
 source = "./consumer"
@@ -1081,7 +1081,7 @@ func (ArtifactsSuite) TestAliasAndShorthandSetting(ctx context.Context, t *testc
 	c := connect(ctx, t)
 	wsID, err := artifactSource(c).WithNewFile("dagger.toml", `[modules.provider]
 source = "./provider"
-entrypoint = true
+main = true
 settings.label = "configured"
 [modules.alias]
 source = "./provider"
@@ -1100,15 +1100,15 @@ settings.input = "dag://marker"
 	}
 }
 
-func (ArtifactsSuite) TestAmbiguousEntrypoints(ctx context.Context, t *testctx.T) {
+func (ArtifactsSuite) TestAmbiguousMains(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	wsID, err := artifactSource(c).WithNewFile("dagger.toml", `[modules.first]
 source = "./provider"
-entrypoint = true
+main = true
 settings.label = "first"
 [modules.second]
 source = "./provider"
-entrypoint = true
+main = true
 settings.label = "second"
 `).AsWorkspace().ID(ctx)
 	require.NoError(t, err)
@@ -1137,7 +1137,7 @@ func (ArtifactsSuite) TestCheckReturnTypes(ctx context.Context, t *testctx.T) {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			src := core.NewQuery(c).Directory().WithNewFile("dagger.toml", `[modules.example]
 source = "./example"
-entrypoint = true
+main = true
 `).WithNewFile("example/dagger-module.toml", `name = "example"
 engineVersion = "v1.0.0"
 [runtime]
@@ -1171,7 +1171,7 @@ func (ArtifactsSuite) TestCheckProjection(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	src := core.NewQuery(c).Directory().WithNewFile("dagger.toml", `[modules.example]
 source = "./example"
-entrypoint = true
+main = true
 `).WithNewFile("example/dagger-module.toml", `name = "example"
 engineVersion = "v1.0.0"
 [runtime]
@@ -1226,18 +1226,18 @@ More details."""
  {"uri":"dag://?check=failing","value":{"pass":false,"error":{"message":"check failed"}}},
  {"uri":"dag://?check=passing","value":{"pass":true,"error":null}}
  ]}}`, string(*results))
-	values, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($selection: ID!) {
+	checks, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($selection: ID!) {
  node(id: $selection) { ... on Artifacts {
- values { artifact { uri } error { message } value { ... on Check { pass } } }
+ asChecks { sync { pass error { message } } }
  } }
 }`, opts)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"node":{"values":[
- {"artifact":{"uri":"dag://?check=clean/stale"},"value":{"pass":true},"error":null},
- {"artifact":{"uri":"dag://?check=dirty/stale"},"value":null,"error":{"message":"generated files are not up to date"}},
- {"artifact":{"uri":"dag://?check=failing"},"value":null,"error":{"message":"check failed"}},
- {"artifact":{"uri":"dag://?check=passing"},"value":{"pass":true},"error":null}
- ]}}`, string(*values))
+	require.JSONEq(t, `{"node":{"asChecks":[
+ {"sync":{"pass":true,"error":null}},
+ {"sync":{"pass":false,"error":{"message":"generated files are not up to date"}}},
+ {"sync":{"pass":false,"error":{"message":"check failed"}}},
+ {"sync":{"pass":true,"error":null}}
+ ]}}`, string(*checks))
 
 	base := nativeWorkspaceBase(t, c).WithDirectory(".", src).With(nonNestedDevEngine(c))
 	for _, command := range []string{"generate", "check"} {
@@ -1281,7 +1281,7 @@ func (ArtifactsSuite) TestCommandFilters(ctx context.Context, t *testctx.T) {
 	config := `check-generated = false
 [modules.probe]
 source = "./probe"
-entrypoint = true
+main = true
 check.skip = ["skipped", "scan?"]
 generate.skip = ["skipped-generate"]
 up.skip = ["skipped-service", "skipped-unmarked-service"]
@@ -1312,13 +1312,18 @@ up.skip = ["skipped-service", "skipped-unmarked-service"]
  rawChecks: filterDirectives(directives: ["check"]) { items { uri } }
  rawGenerators: filterDirectives(directives: ["generate"]) { items { uri } }
  rawServices: filterDirectives(directives: ["up"]) { items { uri } }
+ checkPaths: filterTypes(types: ["Check"]) { items { uri } }
+ servicePaths: filterTypes(types: ["Service"]) { items { uri } }
 } } }`, &testutil.QueryOptions{Variables: map[string]any{"id": id}})
 	require.NoError(t, err)
-	// Raw directive filters do not apply workspace settings.
+	// Workspace artifacts omit what the skip settings skip, for every consumer.
+	// check-generated is a command default, so staleness checks remain.
 	raw := map[string][]string{
-		"rawChecks":     {"dag://?check=gen/stale", "dag://?check=scana", "dag://?check=scanb", "dag://?check=skipped", "dag://?check=skipped-generate/stale", "dag://?check=verify"},
-		"rawGenerators": {"dag://?generator=gen", "dag://?generator=skipped-generate"},
-		"rawServices":   {"dag://?service=serve", "dag://?service=skipped-service"},
+		"rawChecks":     {"dag://?check=gen/stale", "dag://?check=verify"},
+		"rawGenerators": {"dag://?generator=gen"},
+		"rawServices":   {"dag://?service=serve"},
+		"checkPaths":    {"dag://?check=gen/stale", "dag://?check=verify"},
+		"servicePaths":  {"dag://?service=serve", "dag://?service=unmarked-service"},
 	}
 	for name, want := range raw {
 		var names []string
@@ -1478,7 +1483,7 @@ func composeArtifactAgents(ctx context.Context, c *dagger.Client, ws *core.Works
 func (ArtifactsSuite) TestCheckCachePolicy(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := nativeWorkspaceBase(t, c).
-		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"./probe\"\nentrypoint = true\n").
+		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"./probe\"\nmain = true\n").
 		WithNewFile("probe/dagger.json", `{"name":"probe","engineVersion":"v1.0.0","sdk":"go"}`).
 		WithNewFile("probe/main.go", `package main
 import ("crypto/rand"; "fmt")
@@ -1536,46 +1541,22 @@ func (*Probe) Every() error { return fmt.Errorf("every %s", rand.Text()) }
 	require.Equal(t, repeated.CurrentWorkspace.Artifacts.A[0].Sync.Error.Message, repeated.CurrentWorkspace.Artifacts.A[0].Sync.Again.Error.Message)
 }
 
-// Materialization errors belong to each result, before consumers read its value.
-func (ArtifactsSuite) TestLazyValueFailures(ctx context.Context, t *testctx.T) {
+// A failed materialization must not discard other check results.
+func (ArtifactsSuite) TestCheckMaterializationFailures(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := nativeWorkspaceBase(t, c).
-		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"./probe\"\nentrypoint = true\n").
+		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"./probe\"\nmain = true\n").
 		WithNewFile("probe/dagger-module.toml", "name = \"probe\"\nengineVersion = \"v1.0.0\"\n[runtime]\nsource = \"dang\"\n").
 		WithNewFile("probe/main.dang", `type Probe {
- pub brokenDirectory: Directory! { container.from("alpine:3.22").withExec(["sh", "-c", "exit 42"]).rootfs }
- pub brokenFile: File! { container.from("alpine:3.22").withExec(["sh", "-c", "exit 43"]).file("/missing") }
- pub good: Directory! { directory.withNewFile("ok", "ok") }
+ pub brokenDirectory: Directory! @check { container.from("alpine:3.22").withExec(["sh", "-c", "exit 42"]).rootfs }
+ pub brokenFile: File! @check { container.from("alpine:3.22").withExec(["sh", "-c", "exit 43"]).file("/missing") }
+ pub good: Directory! @check { directory.withNewFile("ok", "ok") }
 }`)
-	out, err := base.With(daggerQuery(`{
- currentWorkspace { artifacts { filterTypes(types: ["Directory", "File"]) {
-  values { artifact { uri } error { message } value { ... on Directory { entries } ... on File { contents } } }
- } } }
-}`)).Stdout(ctx)
-	require.NoError(t, err)
-	var response struct {
-		CurrentWorkspace struct {
-			Artifacts struct {
-				FilterTypes struct {
-					Values []struct {
-						Artifact struct{ URI string }
-						Error    *struct{ Message string }
-						Value    json.RawMessage
-					}
-				}
-			}
-		}
-	}
-	require.NoError(t, json.Unmarshal([]byte(out), &response))
-	results := response.CurrentWorkspace.Artifacts.FilterTypes.Values
-	require.Len(t, results, 3)
-	for i, code := range []string{"42", "43"} {
-		require.NotNil(t, results[i].Error)
-		require.Contains(t, results[i].Error.Message, code)
-		require.JSONEq(t, "null", string(results[i].Value))
-	}
-	require.Nil(t, results[2].Error)
-	require.JSONEq(t, `{ "entries": ["ok"] }`, string(results[2].Value))
+	out, err := base.With(daggerExecFail("check")).CombinedOutput(ctx)
+	require.NoError(t, err, out)
+	require.Contains(t, out, "exit code: 42")
+	require.Contains(t, out, "exit code: 43")
+	require.Contains(t, out, "1 passed")
 }
 
 func (ArtifactsSuite) TestCheckScaleOut(ctx context.Context, t *testctx.T) {
@@ -1597,7 +1578,7 @@ source = "./good"
 settings.expected = "bound"
 [modules.bad]
 source = "./bad"
-entrypoint = true
+main = true
 `).
 		WithNewFile("marker", "bound").
 		WithNewFile("good/dagger-module.toml", "name = \"good\"\nengineVersion = \"v1.0.0\"\n[runtime]\nsource = \"dang\"\n").
@@ -1646,17 +1627,14 @@ entrypoint = true
   host: file(path: "marker") { contents }
   withNewFile(path: "marker", contents: "overlay") {
    artifacts(include: ["good/verify-overlay"]) {
-    values(arguments: "{\"expectedMarker\":\"overlay\"}") {
-     error { message }
-     value { ... on Check { pass } }
-    }
+    one { value(arguments: "{\"expectedMarker\":\"overlay\"}") { ... on Check { sync { pass error { message } } } } }
    }
   }
  }
 }`).
 		With(daggerNonNestedExec("query", "--no-load-module", "--doc", "scaleout.graphql")).Stdout(ctx)
 	require.NoError(t, err, out)
-	require.JSONEq(t, `{"currentWorkspace":{"host":{"contents":"bound"},"withNewFile":{"artifacts":{"values":[{"error":null,"value":{"pass":true}}]}}}}`, out)
+	require.JSONEq(t, `{"currentWorkspace":{"host":{"contents":"bound"},"withNewFile":{"artifacts":{"one":{"value":{"sync":{"pass":true,"error":null}}}}}}}`, out)
 	// Keep source object handles alive while the remote check consumes them.
 	out, err = base.WithEnvVariable("_EXPERIMENTAL_DAGGER_CHECKS_SCALE_OUT", "1").
 		WithExec([]string{"apk", "add", "python3"}).
@@ -1678,13 +1656,13 @@ def query(document, variables=None):
 
 file_id = query('{ directory { withNewFile(path: "marker", contents: "objects") { file(path: "marker") { id } } } }')["directory"]["withNewFile"]["file"]["id"]
 directory_id = query('query($text: String!) { directory { withNewFile(path: "marker", contents: "objects") { withNewFile(path: "id-text", contents: $text) { id } } } }', {"text": file_id})["directory"]["withNewFile"]["withNewFile"]["id"]
-print(json.dumps(query('query($args: JSON!) { currentWorkspace { artifacts(include: ["good/verify-objects"]) { values(arguments: $args) { error { message } value { ... on Check { pass } } } } } }', {
+print(json.dumps(query('query($args: JSON!) { currentWorkspace { artifacts(include: ["good/verify-objects"]) { one { value(arguments: $args) { ... on Check { sync { pass error { message } } } } } } } }', {
     "args": json.dumps({"source": directory_id, "files": [file_id], "absent": None, "text": file_id}),
 })))
 `).
 		With(daggerNonNestedExec("--no-load-module", "run", "python3", "object-arguments.py")).Stdout(ctx)
 	require.NoError(t, err, out)
-	require.JSONEq(t, `{"currentWorkspace":{"artifacts":{"values":[{"error":null,"value":{"pass":true}}]}}}`, out)
+	require.JSONEq(t, `{"currentWorkspace":{"artifacts":{"one":{"value":{"sync":{"pass":true,"error":null}}}}}}`, out)
 	require.NoError(t, c.Close())
 	sink.read(func(db *dagui.DB) {
 		connections := 0
@@ -1718,7 +1696,7 @@ func (ArtifactsSuite) TestUnknownEnvironment(ctx context.Context, t *testctx.T) 
 func (ArtifactsSuite) TestGeneratorCachePolicy(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := nativeWorkspaceBase(t, c).
-		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"./probe\"\nentrypoint = true\n").
+		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"./probe\"\nmain = true\n").
 		WithNewFile("probe/dagger.json", `{"name":"probe","engineVersion":"v1.0.0","sdk":"go"}`).
 		WithNewFile("probe/main.go", `package main
 import ("crypto/rand"; "fmt"; "dagger/probe/internal/dagger")
@@ -1734,13 +1712,13 @@ func (*Probe) Broken() (*dagger.Changeset, error) { return nil, fmt.Errorf("gene
 `)
 	out, err := base.With(daggerQuery(`{
  currentWorkspace { artifacts(include: ["fresh"]) { filterTypes(types: ["Generator"]) {
-  a: values { value { ... on Generator { first: changeset { after { file(path: "nonce") { contents } } } second: changeset { after { file(path: "nonce") { contents } } } } } }
-  b: values { value { ... on Generator { first: changeset { after { file(path: "nonce") { contents } } } second: changeset { after { file(path: "nonce") { contents } } } } } }
+  a: asGenerators { sync { first: changeset { after { file(path: "nonce") { contents } } } second: changeset { after { file(path: "nonce") { contents } } } } }
+  b: asGenerators { sync { first: changeset { after { file(path: "nonce") { contents } } } second: changeset { after { file(path: "nonce") { contents } } } } }
  } } }
 }`)).Stdout(ctx)
 	require.NoError(t, err)
 	type result struct {
-		Value struct {
+		Sync struct {
 			First, Second struct {
 				After struct{ File struct{ Contents string } }
 			}
@@ -1756,10 +1734,10 @@ func (*Probe) Broken() (*dagger.Changeset, error) { return nil, fmt.Errorf("gene
 	require.Len(t, a, 1)
 	require.Len(t, b, 1)
 	for _, run := range []result{a[0], b[0]} {
-		require.NotEmpty(t, run.Value.First.After.File.Contents)
-		require.Equal(t, run.Value.First.After.File.Contents, run.Value.Second.After.File.Contents)
+		require.NotEmpty(t, run.Sync.First.After.File.Contents)
+		require.Equal(t, run.Sync.First.After.File.Contents, run.Sync.Second.After.File.Contents)
 	}
-	require.NotEqual(t, a[0].Value.First.After.File.Contents, b[0].Value.First.After.File.Contents)
+	require.NotEqual(t, a[0].Sync.First.After.File.Contents, b[0].Sync.First.After.File.Contents)
 	out, err = base.With(daggerQuery(`{
  currentWorkspace { artifacts(include: ["broken/stale"]) { one { value { ... on Check {
   a: error { message }

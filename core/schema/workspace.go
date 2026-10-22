@@ -369,18 +369,31 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc("Name of the installed SDK entry to remove."),
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 			),
-		dagql.NodeFunc("withEntrypoint", s.withEntrypoint).
+		dagql.NodeFunc("withMain", s.withMain).
 			View(AfterVersion("v1.0.0-0")).
 			WithInput(dagql.PerClientInput).
-			Doc("Return this workspace with an installed module selected as its entrypoint.",
-				"Every other entrypoint selection is cleared. Entrypoints live in the base workspace config.").
+			Doc("Return this workspace with an installed module selected as its main.",
+				"Every other main selection is cleared. The main module lives in the base workspace config.").
 			Args(
 				dagql.Arg("name").Doc("Exact installed module name."),
 			),
-		dagql.NodeFunc("withoutEntrypoint", s.withoutEntrypoint).
+		dagql.NodeFunc("withEntrypoint", s.withMain).
 			View(AfterVersion("v1.0.0-0")).
 			WithInput(dagql.PerClientInput).
-			Doc("Return this workspace with no module selected as its entrypoint."),
+			Deprecated("Use withMain.").
+			Doc("Compatibility alias for withMain.").
+			Args(
+				dagql.Arg("name").Doc("Exact installed module name."),
+			),
+		dagql.NodeFunc("withoutMain", s.withoutMain).
+			View(AfterVersion("v1.0.0-0")).
+			WithInput(dagql.PerClientInput).
+			Doc("Return this workspace with no module selected as its main."),
+		dagql.NodeFunc("withoutEntrypoint", s.withoutMain).
+			View(AfterVersion("v1.0.0-0")).
+			WithInput(dagql.PerClientInput).
+			Deprecated("Use withoutMain.").
+			Doc("Compatibility alias for withoutMain."),
 		dagql.NodeFunc("withInitModule", s.withSDKModuleInitialized).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace with a location initialized as a module scope.",
@@ -390,7 +403,8 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc("Module name. The engine infers it from path, the active config file, or the workspace root when omitted."),
 				dagql.Arg("path").Doc("Module path relative to the workspace cwd, or an absolute workspace path. Defaults to .dagger/modules/<name> beside the active workspace config."),
 				dagql.Arg("install").View(AfterVersion("v1.0.0-0")).Doc("Install the module. When omitted, install only if path is omitted."),
-				dagql.Arg("entrypoint").View(AfterVersion("v1.0.0-0")).Doc("Select this module as the entrypoint and install it. False prevents automatic selection. When omitted, select only if both path and name are omitted and the module is installed."),
+				dagql.Arg("main").View(AfterVersion("v1.0.0-0")).Doc("Select this module as the workspace main and install it. False prevents automatic selection. When omitted, select only if both path and name are omitted and the module is installed."),
+				dagql.Arg("entrypoint").View(AfterVersion("v1.0.0-0")).Deprecated("Use main.").Doc("Compatibility alias for main."),
 				dagql.Arg("settings").Doc("Explicit SDK-module constructor setting overrides for this scope."),
 			),
 		dagql.NodeFunc("detectScope", s.sdkModuleDetectScope).
@@ -532,11 +546,16 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("key").Doc("Dotted key path (e.g. modules.greeter.source). Empty for full config."),
 				dagql.Arg("effective").Doc("Include the selected environment, user overrides, and legacy workspace settings."),
 			),
-		dagql.Func("entrypoint", s.entrypoint).
+		dagql.Func("main", s.main).
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Reads live config from host").
-			Doc("Installed name of the module selected as the workspace entrypoint, or an empty string when none is selected.",
+			Doc("Installed name of the module selected as the workspace main, or an empty string when none is selected.",
 				"Reflects the selected env's effective view. Fails if several modules are selected."),
+		dagql.Func("entrypoint", s.main).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Reads live config from host").
+			Deprecated("Use main.").
+			Doc("Compatibility alias for main."),
 		dagql.Func("envList", s.envList).
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Reads live config from host").
@@ -572,7 +591,8 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				"Relative paths in workspace APIs resolve from here."),
 		dagql.NodeFunc("artifacts", s.artifacts).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Discover static object artifacts from workspace modules without evaluating their values.").
+			Doc("Discover static object artifacts from workspace modules without evaluating their values.",
+				"Omits the paths that the workspace's check.skip, generate.skip, and up.skip settings skip.").
 			Args(dagql.Arg("include").Doc("Only include artifacts matching these path patterns, as with checks and services. A path selects that path and its children.")),
 		dagql.NodeFunc("__doctor", s.workspaceDoctor).
 			WithInput(dagql.PerClientInput).
@@ -609,6 +629,9 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.WorkspaceModule]{
+		dagql.Func("entrypoint", s.workspaceModuleEntrypoint).
+			Deprecated("Use main.").
+			Doc("Compatibility alias for main."),
 		dagql.NodeFunc("settings", s.moduleSettings).
 			DoNotCache("Reads live config and module metadata from the workspace").
 			Doc("List constructor-backed settings for this module."),
@@ -909,6 +932,17 @@ func (s *workspaceSchema) workspaceReadPathExists(
 			}
 		}
 	}
+	return s.workspaceBasePathExists(ctx, ws, resolvedPath)
+}
+
+// workspaceBasePathExists excludes host overlay edits: a path created only
+// in the overlay must not become an operand of the host's ripgrep process.
+func (s *workspaceSchema) workspaceBasePathExists(
+	ctx context.Context,
+	ws *core.Workspace,
+	resolvedPath string,
+) (bool, error) {
+	rp := filepath.ToSlash(resolvedPath)
 	if ws.HostPath() != "" && ws.ClientLocalBase() {
 		ctx, err := s.withWorkspaceClientContext(ctx, ws)
 		if err != nil {
@@ -1457,14 +1491,15 @@ func (s *workspaceSchema) search(
 		if err != nil {
 			return nil, fmt.Errorf("search: %w", err)
 		}
+	}
 
-		if _, ok := ws.OverlayChanges(); ok && ws.ClientLocalBase() {
-			overlayResults, err := s.overlaySearchResults(ctx, ws, args)
-			if err != nil {
-				return nil, fmt.Errorf("search: %w", err)
-			}
-			results = mergeSearchResults(results, overlayResults, ws.OverlayPathTouched, args.Limit)
+	// The overlay may be the only source for every requested path.
+	if _, ok := ws.OverlayChanges(); ok && ws.ClientLocalBase() {
+		overlayResults, err := s.overlaySearchResults(ctx, ws, args)
+		if err != nil {
+			return nil, fmt.Errorf("search: %w", err)
 		}
+		results = mergeSearchResults(results, overlayResults, ws.OverlayPathTouched, args.Limit)
 	}
 
 	// Mounted content is readable through the normal workspace file tools, so
@@ -1495,10 +1530,12 @@ func (s *workspaceSchema) search(
 //     source doesn't have it — mounts materialize their own parents, so the
 //     path can exist in the workspace view through the mount alone.
 //
-// Paths uninvolved with mounts pass through untouched, so a genuinely
+// Host overlay edits also shadow the base. Their explicit paths are dropped,
+// and ancestors created only by the overlay are omitted from the host search.
+// Paths uninvolved with mounts or overlays pass through untouched, so a genuinely
 // nonexistent path still errors like today. The boolean reports whether the
 // source-side search should run at all: false when the caller scoped the
-// search entirely to mounted content.
+// search entirely to mounted or host-overlay content.
 func (s *workspaceSchema) searchSourcePaths(
 	ctx context.Context,
 	ws *core.Workspace,
@@ -1507,14 +1544,27 @@ func (s *workspaceSchema) searchSourcePaths(
 	if len(paths) == 0 {
 		return nil, true, nil
 	}
+	hostOverlay := ws.ClientLocalBase() && len(ws.OverlayTouchedPaths()) > 0
 	sourcePaths := make([]string, 0, len(paths))
 	for _, p := range paths {
 		scope := cleanSearchScope(p)
 		if ws.MountedPath(scope) {
 			continue
 		}
-		if ws.HasMountsUnder(scope) {
-			exists, err := s.workspaceReadPathExists(ctx, ws, scope)
+		overlayUnder := false
+		if hostOverlay {
+			if ws.OverlayPathTouched(scope) {
+				continue
+			}
+			for _, touched := range ws.OverlayTouchedPaths() {
+				if scope == "." || strings.HasPrefix(cleanSearchScope(touched), scope+"/") {
+					overlayUnder = true
+					break
+				}
+			}
+		}
+		if ws.HasMountsUnder(scope) || overlayUnder {
+			exists, err := s.workspaceBasePathExists(ctx, ws, scope)
 			if err != nil {
 				return nil, false, err
 			}
@@ -4556,13 +4606,13 @@ func workspaceRemovedModuleNames(ctx context.Context, ws *core.Workspace) (map[s
 	return removed, nil
 }
 
-func reparentWorkspaceTreeRoot(root *core.ModTreeNode, modName string, entrypoint bool) {
+func reparentWorkspaceTreeRoot(root *core.ModTreeNode, modName string, main bool) {
 	if root == nil {
 		return
 	}
 	root.Parent = &core.ModTreeNode{}
 	root.Name = modName
-	root.WorkspaceEntrypoint = entrypoint
+	root.WorkspaceMain = main
 }
 
 func matchWorkspaceInclude(ctx context.Context, node *core.ModTreeNode, include []string) (bool, error) {

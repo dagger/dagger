@@ -1,0 +1,6 @@
+kind: Fixed
+body: Fix field definitions leaking between copied schemas.
+time: 2026-10-19T20:41:59Z
+custom:
+  Author: grouville
+  PR: 14736

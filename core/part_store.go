@@ -197,7 +197,7 @@ type filePartStore struct {
 }
 
 func (s *filePartStore) TryLock() bool {
-	u, err := s.receiver.lockForPersistence()
+	u, err := s.receiver.lockForPublication()
 	if err != nil {
 		return false
 	}
@@ -255,7 +255,7 @@ type directoryPartStore struct {
 }
 
 func (s *directoryPartStore) TryLock() bool {
-	u, err := s.receiver.lockForPersistence()
+	u, err := s.receiver.lockForPublication()
 	if err != nil {
 		return false
 	}

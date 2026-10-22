@@ -30,12 +30,14 @@ func (*Item) Run() error { panic("check evaluated") }
 	for _, tc := range []struct {
 		name, extra string
 		omit        bool
+		// link's type key is short unless a sibling path shares its suffix.
+		link string
 	}{
-		{"one check per item", "", true},
+		{"one check per item", "", true, "run"},
 		{"hidden sibling check", `
 // +check
 func (*Item) Validate() error { panic("check evaluated") }
-`, false},
+`, false, "run"},
 		{"empty descendant collection", `
 func (*Item) Parts() *Parts { return &Parts{Names: []string{}} }
 // +collection
@@ -47,7 +49,7 @@ func (*Parts) Get(key string) *Part { return &Part{} }
 type Part struct{}
 // +check
 func (*Part) Run() error { panic("check evaluated") }
-`, false},
+`, false, "items/run"},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			ctr := base.WithNewFile("collections/main.go", source+tc.extra)
@@ -60,7 +62,7 @@ func (*Part) Run() error { panic("check evaluated") }
 				replay = append(replay, strings.Fields(out)...)
 				links, err := ctr.With(daggerExec(replay...)).Stdout(ctx)
 				require.NoError(t, err)
-				require.Equal(t, "dag+check://?check=items/run&collections-items-item=a\n", links)
+				require.Equal(t, "dag+check://?check="+tc.link+"&collections-items-item=a\n", links)
 			}
 			// The same proof works from schema metadata alone. The collection
 			// constructor and both check functions must remain deferred.

@@ -479,7 +479,7 @@ func nerdctlSetup(ctx context.Context, t *testctx.T, dag *dagger.Client, opts co
 	}
 
 	// build nerdctl from scratch (annoying, but there *is no upstream package*)
-	base := ref.Tree().
+	base := withRetryingGoProxy(ctx, t, ref.Tree(), "AS build-base\n").
 		DockerBuild().
 		WithMountedCache("/run/containerd", core.NewQuery(dag).CacheVolume(opts.name+"-run-containerd")).
 		WithMountedCache("/var/lib/containerd", core.NewQuery(dag).CacheVolume(opts.name+"-containerd")).
@@ -534,6 +534,23 @@ func nerdctlSetup(ctx context.Context, t *testctx.T, dag *dagger.Client, opts co
 	})
 
 	return ctr
+}
+
+// proxy.golang.org sometimes resets a module zip download mid-stream
+// ("stream error: ... INTERNAL_ERROR"). With Go's default GOPROXY
+// ("https://proxy.golang.org,direct") only a 404 or 410 falls through to the
+// next entry, so that fails the build. "|" falls through on any error: retry
+// the proxy once, then fetch from the origin.
+const retryingGoProxy = "https://proxy.golang.org|https://proxy.golang.org|direct"
+
+// withRetryingGoProxy sets retryingGoProxy in the Go build stage of an
+// upstream Dockerfile, right after the line ending in stageSuffix.
+func withRetryingGoProxy(ctx context.Context, t *testctx.T, dir *core.Directory, stageSuffix string) *core.Directory {
+	dockerfile, err := dir.File("Dockerfile").Contents(ctx)
+	require.NoError(t, err)
+	require.Contains(t, dockerfile, stageSuffix)
+	dockerfile = strings.Replace(dockerfile, stageSuffix, stageSuffix+"ENV GOPROXY="+retryingGoProxy+"\n", 1)
+	return dir.WithNewFile("Dockerfile", dockerfile)
 }
 
 func dockerLoadEngine(ctx context.Context, dag *dagger.Client, ctr *core.Container, engineTag string) (*core.Container, error) {

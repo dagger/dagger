@@ -42,15 +42,11 @@ func TestCollectionSchema(t *testing.T) {
 		dagql.Selector{Field: "withObject", Args: []dagql.NamedInput{{Name: "name", Value: dagql.String("Item")}}}))
 	itemID, err := item.ID()
 	require.NoError(t, err)
-	var get, batch dagql.ObjectResult[*core.Function]
+	var get dagql.ObjectResult[*core.Function]
 	require.NoError(t, dag.Select(ctx, dag.Root(), &get,
 		dagql.Selector{Field: "function", Args: []dagql.NamedInput{{Name: "name", Value: dagql.String("lookup")}, {Name: "returnType", Value: dagql.NewID[*core.TypeDef](itemID)}}},
 		dagql.Selector{Field: "withArg", Args: []dagql.NamedInput{{Name: "name", Value: dagql.String("name")}, {Name: "typeDef", Value: dagql.NewID[*core.TypeDef](keyID)}}}))
 	getID, err := get.ID()
-	require.NoError(t, err)
-	require.NoError(t, dag.Select(ctx, dag.Root(), &batch,
-		dagql.Selector{Field: "function", Args: []dagql.NamedInput{{Name: "name", Value: dagql.String("summary")}, {Name: "returnType", Value: dagql.NewID[*core.TypeDef](keyID)}}}))
-	batchID, err := batch.ID()
 	require.NoError(t, err)
 	require.NoError(t, dag.Select(ctx, dag.Root(), &collection,
 		dagql.Selector{Field: "typeDef"},
@@ -59,19 +55,15 @@ func TestCollectionSchema(t *testing.T) {
 		dagql.Selector{Field: "withCollectionKeys", Args: []dagql.NamedInput{{Name: "name", Value: dagql.String("names")}}},
 		dagql.Selector{Field: "withCollectionGet", Args: []dagql.NamedInput{{Name: "name", Value: dagql.String("lookup")}}},
 		dagql.Selector{Field: "withField", Args: []dagql.NamedInput{{Name: "name", Value: dagql.String("names")}, {Name: "typeDef", Value: dagql.NewID[*core.TypeDef](keysID)}}},
-		dagql.Selector{Field: "withFunction", Args: []dagql.NamedInput{{Name: "function", Value: dagql.NewID[*core.Function](getID)}}},
-		dagql.Selector{Field: "withFunction", Args: []dagql.NamedInput{{Name: "function", Value: dagql.NewID[*core.Function](batchID)}}}))
+		dagql.Selector{Field: "withFunction", Args: []dagql.NamedInput{{Name: "function", Value: dagql.NewID[*core.Function](getID)}}}))
 
 	var metadata dagql.ObjectResult[*core.CollectionTypeDef]
 	require.NoError(t, dag.Select(ctx, collection, &metadata, dagql.Selector{Field: "asCollection"}))
-	var gotKey, gotValue, gotBatch dagql.ObjectResult[*core.TypeDef]
+	var gotKey, gotValue dagql.ObjectResult[*core.TypeDef]
 	require.NoError(t, dag.Select(ctx, metadata, &gotKey, dagql.Selector{Field: "keyType"}))
 	require.NoError(t, dag.Select(ctx, metadata, &gotValue, dagql.Selector{Field: "valueType"}))
-	require.NoError(t, dag.Select(ctx, metadata, &gotBatch, dagql.Selector{Field: "batchType"}))
 	require.Equal(t, core.TypeDefKindString, gotKey.Self().Kind)
 	require.Equal(t, "Item", gotValue.Self().AsObject.Value.Self().Name)
-	require.Equal(t, "Items_Batch", gotBatch.Self().AsObject.Value.Self().Name)
-	require.Len(t, gotBatch.Self().AsObject.Value.Self().Functions, 1)
 
 	// asCollection isn't cached per session, but the metadata it returns must
 	// still have an ID that loads in a later request, as the SDKs' AsCollection

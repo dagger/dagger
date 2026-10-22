@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"dagger/gh/internal/dagger"
+	"fmt"
 	"path"
+	"strings"
 )
 
 // Manage releases.
@@ -104,8 +106,25 @@ func (m *Release) Create(
 	//
 	// +optional
 	repo string,
+
+	// If a release for the tag already exists, update its title, notes,
+	// target, draft, prerelease and latest settings and re-upload its assets,
+	// instead of failing. Lets an interrupted release be rerun.
+	//
+	// +optional
+	updateExisting bool,
 ) error {
 	ctr := m.Gh.container(token, repo)
+
+	if updateExisting {
+		exists, err := m.exists(ctx, ctr, tag)
+		if err != nil {
+			return err
+		}
+		if exists {
+			return m.update(ctx, ctr, tag, title, files, draft, preRelease, target, notes, notesFile, latest)
+		}
+	}
 
 	args := []string{
 		"gh", "release", "create",
@@ -187,5 +206,85 @@ func (m *Release) Create(
 
 	_, err := ctr.WithExec(args).Sync(ctx)
 
+	return err
+}
+
+// exists reports whether a release for tag exists.
+func (m *Release) exists(ctx context.Context, ctr *dagger.Container, tag string) (bool, error) {
+	view := ctr.WithExec([]string{"gh", "release", "view", tag, "--json", "tagName"}, dagger.ContainerWithExecOpts{
+		Expect: dagger.ReturnTypeAny,
+	})
+	code, err := view.ExitCode(ctx)
+	if err != nil {
+		return false, err
+	}
+	if code == 0 {
+		return true, nil
+	}
+	stderr, err := view.Stderr(ctx)
+	if err != nil {
+		return false, err
+	}
+	if strings.Contains(stderr, "release not found") {
+		return false, nil
+	}
+	return false, fmt.Errorf("look up release %s: gh exited %d: %s", tag, code, strings.TrimSpace(stderr))
+}
+
+// update edits the existing release for tag and re-uploads its assets.
+func (m *Release) update(
+	ctx context.Context,
+	ctr *dagger.Container,
+	tag string,
+	title string,
+	files []*dagger.File,
+	draft bool,
+	preRelease bool,
+	target string,
+	notes string,
+	notesFile *dagger.File,
+	latest Latest,
+) error {
+	args := []string{
+		"gh", "release", "edit", tag,
+		"--title", title,
+		fmt.Sprintf("--draft=%t", draft),
+		fmt.Sprintf("--prerelease=%t", preRelease),
+	}
+	if target != "" {
+		args = append(args, "--target", target)
+	}
+	if notes != "" {
+		args = append(args, "--notes", notes)
+	}
+	if notesFile != nil {
+		ctr = ctr.WithMountedFile("/work/tmp/notes.md", notesFile)
+		args = append(args, "--notes-file", "/work/tmp/notes.md")
+	}
+	switch latest {
+	case LatestTrue:
+		args = append(args, "--latest=true")
+	case LatestFalse:
+		args = append(args, "--latest=false")
+	}
+	ctr = ctr.WithExec(args)
+
+	if len(files) > 0 {
+		dir := dag.Directory()
+		for _, file := range files {
+			dir = dir.WithFile("", file)
+		}
+		entries, err := dir.Entries(ctx)
+		if err != nil {
+			return err
+		}
+		upload := []string{"gh", "release", "upload", tag, "--clobber"}
+		for _, e := range entries {
+			upload = append(upload, path.Join("/work/assets", e))
+		}
+		ctr = ctr.WithMountedDirectory("/work/assets", dir).WithExec(upload)
+	}
+
+	_, err := ctr.Sync(ctx)
 	return err
 }

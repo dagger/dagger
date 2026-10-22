@@ -7,7 +7,7 @@ body: |
   path and dimension filter of an artifact selection (`filterUri`,
   `filterPath`, `filterPathPattern`, `filterDimensions`, `filterDimensionKeys`,
   and the CLI and agent tools built on them) keeps its load failure when the
-  module could hold what it selects. With a broken entrypoint module, that is
+  module could hold what it selects. With a broken workspace main module, that is
   almost any path that does not start with another module's name. So
   `asExpertise`, `asChangesets` and `asServices` fail with the load error
   instead of finding nothing, and `Workspace.resolve` names it.

@@ -66,7 +66,7 @@ func (ms *mockServer) RegisterNestedClientTransport(context.Context, *engine.Cli
 func (ms *mockServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.NestedClientTransport, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed) {
 }
 
-func (ms *mockServer) ServeModule(ctx context.Context, mod dagql.ObjectResult[*Module], includeDependencies bool, entrypoint bool) error {
+func (ms *mockServer) ServeModule(ctx context.Context, mod dagql.ObjectResult[*Module], includeDependencies bool, main bool) error {
 	return nil
 }
 
@@ -229,6 +229,10 @@ func (ms *mockServer) Clients() []string  { return []string{} }
 
 func (ms *mockServer) CloudEngineClient(context.Context, string, string, []string) (*engineclient.Client, bool, error) {
 	return nil, false, nil
+}
+
+func (ms *mockServer) SharedCloudArtifactClient(context.Context, string) (*engineclient.Client, error) {
+	return nil, nil
 }
 
 func (ms *mockServer) CleanMountNS() *os.File { return nil }

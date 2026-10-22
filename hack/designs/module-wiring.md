@@ -196,14 +196,14 @@ The mechanics:
   type, not a probing `Select`, so a non-match is a clean "not a module ref"
   rather than an error. The match is then confirmed by **module provenance**: core
   `Query` fields (`host`, `git`, `secret`, `container`, `http`, `module`, …) share the
-  root namespace with module entrypoints, but only entrypoints carry a
+  root namespace with workspace main proxy fields, but only those proxies carry a
   `FieldSpec.Module` (the module that provides the field). A field with no `Module` is
   a core field, so it is excluded here and retains its ordinary address meaning. Core
   field names are therefore effectively reserved words that module refs cannot use —
   `git:2.40` stays an image ref, never a module ref. (Checking `FieldSpec.Module`
   rather than a second canonical-root lookup is necessary because on the settings /
   object-flag decode path the current server *is* its own canonical, so both roots
-  carry the module entrypoints.)
+  carry the workspace main proxy fields.)
 - **Typed Select for mismatch errors.** Once committed, resolution runs a two-step
   dagql `Select` from the `Query` root — module field, then function field — into the
   **typed** destination (for example, `*dagql.ObjectResult[*core.Service]` or

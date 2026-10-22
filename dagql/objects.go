@@ -306,7 +306,7 @@ func (class Class[T]) Install(fields ...Field[T]) {
 		if _, exists := class.fields[field.Spec.Name]; !exists {
 			*class.fieldOrder = append(*class.fieldOrder, field.Spec.Name)
 		}
-		class.fields[field.Spec.Name] = append(class.fields[field.Spec.Name], &field)
+		class.fields[field.Spec.Name] = append(slices.Clip(class.fields[field.Spec.Name]), &field)
 	}
 	class.invalidateSchemaCache()
 }
@@ -357,7 +357,7 @@ func (class Class[T]) Extend(spec FieldSpec, fun FieldFunc) {
 	if _, exists := class.fields[spec.Name]; !exists {
 		*class.fieldOrder = append(*class.fieldOrder, spec.Name)
 	}
-	class.fields[spec.Name] = append(class.fields[spec.Name], f)
+	class.fields[spec.Name] = append(slices.Clip(class.fields[spec.Name]), f)
 	class.fieldsL.Unlock()
 
 	// Invalidate cache after releasing the lock to avoid Class[...].fieldsL and
@@ -1065,7 +1065,7 @@ type FieldSpec struct {
 	NotReplayable string
 
 	// NoTelemetry suppresses telemetry (AroundFunc) for this field.
-	// Used for entrypoint proxies that delegate to real fields which
+	// Used for workspace main proxies that delegate to real fields which
 	// emit their own telemetry.
 	NoTelemetry bool
 

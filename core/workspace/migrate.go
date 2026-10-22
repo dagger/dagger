@@ -83,9 +83,9 @@ func addMigratedModuleSDK(wsCfg *Config, sdkSource, preferredInstallName, module
 // migratedScopeNeedsName reports whether a migrated module keeps its name only
 // through an explicit scope name. The inferred name is not written, matching
 // module init: the scope directory name, or the installed name of the local
-// entrypoint at that path, already resolves to the module's name. Inference is
+// workspace main at that path, already resolves to the module's name. Inference is
 // evaluated relative to the config directory, so a root scope with no
-// entrypoint cannot be inferred here and keeps its explicit name.
+// workspace main cannot be inferred here and keeps its explicit name.
 func migratedScopeNeedsName(wsCfg *Config, modulePath, migratedModuleName string) bool {
 	inferred, err := InferSDKModuleName(wsCfg, ".", modulePath, "")
 	return err != nil || inferred != migratedModuleName
@@ -295,7 +295,7 @@ func PlanWorkspaceMigration(compatWorkspace *CompatWorkspace, workspaceRoot stri
 	hoisted := hoistRel != "."
 	if hoisted && cfg.Blueprint != nil {
 		// A subdirectory blueprint config is left as legacy by the caller;
-		// hoisting a blueprint would change the repo-wide entrypoint.
+		// hoisting a blueprint would change the repo-wide main.
 		return nil, fmt.Errorf("subdirectory config with a blueprint cannot be hoisted to the workspace root")
 	}
 
@@ -327,7 +327,7 @@ func PlanWorkspaceMigration(compatWorkspace *CompatWorkspace, workspaceRoot stri
 	if !hasSDK || sourceAtRoot || hoisted {
 		// A module whose source is the project root IS the repo, not a module
 		// owned by a surrounding project: it is not installed into the
-		// workspace and gets no entrypoint. Its SDK runtime is pinned
+		// workspace and is not selected as its main. Its SDK runtime is pinned
 		// separately (as a plain module install) by the migration caller.
 		// A hoisted subdirectory module is likewise never installed into the
 		// repo-wide workspace — only its toolchains are.

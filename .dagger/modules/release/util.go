@@ -78,6 +78,9 @@ func (r Release) githubRelease(
 			Target:    src,
 			NotesFile: notes,
 			Latest:    dagger.GhLatestFalse,
+			// Rerunning a release must not fail on components whose
+			// GitHub release a previous attempt already created.
+			UpdateExisting: true,
 		},
 	)
 }

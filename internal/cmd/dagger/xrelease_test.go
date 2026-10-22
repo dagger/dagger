@@ -1,6 +1,8 @@
 package daggercmd
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -79,4 +81,28 @@ func TestXReleaseProcessEnvWithoutEngineSelection(t *testing.T) {
 		"KEEP=1",
 		"DAGGER_LEAVE_OLD_ENGINE=1",
 	}, env)
+}
+
+func TestXReleaseProcessEnvKeepsExplicitLeaveOldEngine(t *testing.T) {
+	env, _ := xReleaseProcessEnv([]string{"DAGGER_LEAVE_OLD_ENGINE=false", "KEEP=1"})
+
+	require.Equal(t, []string{
+		"DAGGER_LEAVE_OLD_ENGINE=false",
+		"KEEP=1",
+	}, env)
+}
+
+func TestShouldCleanupOldEnginesUsesUserConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	t.Setenv("DAGGER_CONFIG", path)
+	t.Setenv("DAGGER_LEAVE_OLD_ENGINE", "")
+	require.NoError(t, os.Unsetenv("DAGGER_LEAVE_OLD_ENGINE"))
+
+	require.True(t, shouldCleanupOldEngines(), "no file")
+
+	require.NoError(t, os.WriteFile(path, []byte("[engine]\nleave_old_engines = true\n"), 0o600))
+	require.False(t, shouldCleanupOldEngines(), "config keeps engines")
+
+	t.Setenv("DAGGER_LEAVE_OLD_ENGINE", "false")
+	require.True(t, shouldCleanupOldEngines(), "env wins over config")
 }

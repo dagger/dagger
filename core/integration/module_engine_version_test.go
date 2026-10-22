@@ -63,7 +63,7 @@ func (ModuleSuite) TestModuleSchemaVersion(ctx context.Context, t *testctx.T) {
 	t.Run("module", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		work := moduleEntrypointFixture(t, c, "foo", "go/schema-version-module")
+		work := moduleMainFixture(t, c, "foo", "go/schema-version-module")
 		out, err := work.
 			With(daggerQuery("{getVersion}")).
 			Stdout(ctx)
@@ -80,7 +80,7 @@ func (ModuleSuite) TestModuleSchemaVersion(ctx context.Context, t *testctx.T) {
 	t.Run("module deps", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		work := moduleEntrypointFixture(t, c, "foo", "go/schema-version-parent-dep")
+		work := moduleMainFixture(t, c, "foo", "go/schema-version-parent-dep")
 
 		out, err := work.
 			With(daggerQuery("{getVersion}")).

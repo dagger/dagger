@@ -151,6 +151,37 @@ func (host *PartHost) RunNative(ctx context.Context, group LazyGroupKey, parts [
 	return err
 }
 
+// AddDependencies makes each result a dependency of the host's result at once:
+// a value evaluated natively can come to name results it didn't depend on at
+// publication, which its record may name only as dependencies. A part
+// acquired from a source gets them from its descriptor instead. Core calls it
+// from an evaluation body, before the body's output can be persisted, so its
+// lock order is the body's latch, then egraphMu.
+func (host *PartHost) AddDependencies(ctx context.Context, deps []AnyResult) error {
+	if host == nil || len(deps) == 0 {
+		return nil
+	}
+	c := host.cache
+	c.egraphMu.Lock()
+	defer c.egraphMu.Unlock()
+	if _, found := c.resultsByID[host.row.id]; !found {
+		return fmt.Errorf("add part dependencies: result %d was already collected", host.row.id)
+	}
+	for _, dep := range deps {
+		depShared := dep.cacheSharedResult()
+		if depShared == nil || depShared.id == 0 {
+			return fmt.Errorf("add part dependencies: dep %T is not an attached result in this cache", dep)
+		}
+		if _, found := c.resultsByID[depShared.id]; !found {
+			return fmt.Errorf("add part dependencies: dep result %d was already collected", depShared.id)
+		}
+		if err := c.addExplicitDependencyLocked(ctx, host.row, depShared, "part_dependency"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // SetContentDigestAfterEvaluation defers output equivalence until this native
 // attempt has materialized and settled its output. Inline values do not have an
 // independent result identity, so they cannot publish a digest on their owner.

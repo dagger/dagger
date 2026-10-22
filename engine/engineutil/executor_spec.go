@@ -41,7 +41,6 @@ import (
 	"github.com/dagger/dagger/util/cleanups"
 	"github.com/google/uuid"
 	"github.com/moby/sys/user"
-	"github.com/opencontainers/cgroups"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sourcegraph/conc/pool"
 	"go.opentelemetry.io/otel/attribute"
@@ -362,7 +361,14 @@ func (c *Client) setupNetwork(ctx context.Context, state *execState) error {
 			errs = errors.Join(errs, err)
 		}
 		if errs != nil {
-			return fmt.Errorf("lookup %s for hosts file: %w", target, errs)
+			if !state.execMD.SkipUnresolvableHostAliases {
+				return fmt.Errorf("lookup %s for hosts file: %w", target, errs)
+			}
+			bklog.G(ctx).WithError(errs).Warnf("skipping unresolvable host aliases %v for %s", aliases, target)
+			if state.procInfo.Stderr != nil {
+				fmt.Fprintf(state.procInfo.Stderr, "warning: could not resolve bound service %s; skipping its host aliases\r\n", strings.Join(aliases, ", "))
+			}
+			continue
 		}
 
 		for _, ip := range ips {
@@ -482,19 +488,7 @@ func (c *Client) generateBaseSpec(ctx context.Context, state *execState) error {
 	// Reverse cleanup order: delete the container, release its mounts, take
 	// the final parent sample, then release the retained helper counters.
 	state.cleanups.Add("release exec mount accounting", func() error {
-		var err error
-		if state.mountResources != nil {
-			err = state.mountResources.Close()
-		}
-		// runc removes the container leaf, not its accounting parent.
-		// Mount accounting may already have removed the parent.
-		if filepath.IsAbs(state.resourceCgroupPath) && !strings.Contains(state.resourceCgroupPath, ":") {
-			removeErr := os.Remove(filepath.Join("/sys/fs/cgroup", state.resourceCgroupPath))
-			if !errors.Is(removeErr, os.ErrNotExist) {
-				err = errors.Join(err, removeErr)
-			}
-		}
-		return err
+		return releaseExecCgroup(ctx, state.mountResources, state.resourceCgroupPath, hostCgroupOps)
 	})
 	state.cleanups.Add("release workload network accounting", func() error {
 		if state.closeWorkloadNetwork != nil {
@@ -1272,19 +1266,22 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		state.nestedClientMetadata.ClientVersion = version
 	}
 
+	// /.init starts the session helper alongside the command rather than
+	// before it, so the client's queries wait for its attachables. Without
+	// /.init nothing starts a helper, and the default wait applies.
+	fromExecHelper := state.execMD == nil || !state.execMD.NoInit
+
 	transports := newNestedClientTransportManager(
 		ctx,
 		c.SessionHandler,
 		state.nestedClientMetadata,
 		parentClientID,
+		fromExecHelper,
 	)
 	transports.profExecOpID = state.profExecOpID
 	state.cleanups.Add("close nested client transports", cleanups.Infallible(transports.Close))
 
-	// /.init starts the session helper alongside the command rather than
-	// before it, so the client's queries wait for its attachables. Without
-	// /.init nothing starts a helper, and the default wait applies.
-	if state.execMD == nil || !state.execMD.NoInit {
+	if fromExecHelper {
 		fail, done, err := c.SessionHandler.ExpectNestedExecAttachables(state.nestedClientMetadata.SessionID, state.nestedClientMetadata.ClientID)
 		if err != nil {
 			return fmt.Errorf("expect nested client attachables: %w", err)
@@ -1410,6 +1407,9 @@ type nestedClientTransportManager struct {
 	sessionHandler  sessionHandler
 	baseMetadata    *engine.ClientMetadata
 	parentClientID  string
+	// fromExecHelper says that the exec's session helper registers the
+	// attachables of every client it hosts.
+	fromExecHelper bool
 	// profExecOpID is the wcprof op of the exec hosting these clients.
 	profExecOpID uint64
 
@@ -1432,12 +1432,14 @@ func newNestedClientTransportManager(
 	handler sessionHandler,
 	baseMetadata *engine.ClientMetadata,
 	parentClientID string,
+	fromExecHelper bool,
 ) *nestedClientTransportManager {
 	return &nestedClientTransportManager{
 		registrationCtx: ctx,
 		sessionHandler:  handler,
 		baseMetadata:    baseMetadata,
 		parentClientID:  parentClientID,
+		fromExecHelper:  fromExecHelper,
 		transports:      map[string]*nestedClientTransport{},
 	}
 }
@@ -1502,6 +1504,7 @@ func (manager *nestedClientTransportManager) register(client *nestedClientTransp
 		client.metadata,
 		manager.parentClientID,
 		manager.baseMetadata.ClientID,
+		manager.fromExecHelper,
 	)
 
 	manager.mu.Lock()
@@ -1741,9 +1744,7 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 	}
 
 	state.cleanups.Add("runc delete container", func() error {
-		return deleteContainer(ctx, state.id, cgroups.IsCgroup2UnifiedMode(), c.Runc.Delete, func(recoveryCtx context.Context) error {
-			return killContainerCgroup(recoveryCtx, state.id, state.spec.Linux.CgroupsPath)
-		})
+		return c.Runc.Delete(context.WithoutCancel(ctx), state.id, &runc.DeleteOpts{})
 	})
 
 	// Wake the existing sampler when runc starts. The cgroup may not exist at
@@ -1873,7 +1874,7 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 
 	killer := newRunProcKiller(c.Runc, state.id)
 
-	runcCall := func(ctx context.Context, started chan<- int, io runc.IO, pidfile string) error {
+	runcCall := func(ctx context.Context, started chan<- int, io runc.IO, consoleSocket runc.ConsoleSocket, pidfile string) error {
 		/*
 			We need to avoid the following type of race condition, which can result in invalid overlapping overlay mounts:
 			1. Engine creates random (unrelated to this exec) overlay mount like upperdir=B,lowerdir=A
@@ -1976,11 +1977,12 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 			}
 
 			_, err = c.Runc.Run(ctx, state.id, bundle, &runc.CreateOpts{
-				Started:    started,
-				IO:         io,
-				ExtraArgs:  []string{"--keep"},
-				PidFile:    pidFile,
-				ExtraFiles: initFDs.files,
+				Started:       started,
+				IO:            io,
+				ConsoleSocket: consoleSocket,
+				ExtraArgs:     []string{"--keep"},
+				PidFile:       pidFile,
+				ExtraFiles:    initFDs.files,
 			})
 			return err
 		})

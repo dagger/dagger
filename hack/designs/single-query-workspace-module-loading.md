@@ -92,8 +92,8 @@ currentTypeDefs
 For ordinary root fields:
 
 1. If a field matches a workspace module constructor, load that module.
-2. If a field does not match a constructor but there is exactly one workspace entrypoint, load the entrypoint module.
-3. If multiple workspace entrypoints or other ambiguity exists, load all modules.
+2. If a field does not match a constructor but there is exactly one workspace main, load the main module.
+3. If multiple workspace mains or other ambiguity exists, load all modules.
 4. If all fields are core-only, load no workspace modules.
 
 The query is still validated and executed by the normal GraphQL handler after planning.
@@ -137,7 +137,7 @@ Likely changes:
 4. After `ensureWorkspaceLoaded` gathers `client.pendingModules`, filter those pending modules from the peeked fields.
 5. Track whether a `SingleQuery` client has already served a `/query` request and reject subsequent requests.
 6. Refactor `dagger query` so it can set `SingleQuery` without issuing preflight GraphQL calls.
-7. Add tests for request body restoration, root-field extraction, fallback cases, workspace constructor matching, entrypoint fallback, and second-query rejection.
+7. Add tests for request body restoration, root-field extraction, fallback cases, workspace constructor matching, workspace main fallback, and second-query rejection.
 
 ## Status
 

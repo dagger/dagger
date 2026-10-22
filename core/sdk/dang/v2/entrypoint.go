@@ -128,6 +128,7 @@ func (r *entrypointRuntime) Call(
 		}
 	}()
 
+	fnCall.SetModuleProcess()
 	fnCall.SetProcessSpanContext(dagql.UserFacingSpanContext(ctx))
 
 	ctx, span := core.Tracer(ctx).Start(ctx, "call module entrypoint", telemetry.Internal(), telemetry.Encapsulate())

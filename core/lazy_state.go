@@ -45,6 +45,11 @@ type LazyState struct {
 	// groups holds per-group run-once state; nil until the first named-
 	// group use, so ops evaluated whole allocate nothing new.
 	groups map[dagql.LazyGroupKey]*lazyGroupOnce
+	// bodyDone, unless nil, runs after a body succeeds, before its group or
+	// the whole op is consumed and under the same latch, so no persistence
+	// reader sees the body's output before it has run. The value whose op this
+	// is sets it (OnBodyDone).
+	bodyDone atomic.Pointer[func(context.Context, dagql.LazyGroupKey) error]
 }
 
 // lazyGroupOnce is one group's object-side run-once state. mu is held
@@ -78,6 +83,21 @@ func NewLazyState() LazyState {
 	return LazyState{
 		LazyMu: new(sync.Mutex),
 	}
+}
+
+// OnBodyDone sets what runs after each of the op's bodies succeeds, with the
+// group it evaluated (dagql.LazyGroupWhole for the whole op), unless it is
+// already set: an error fails the body. It runs under the body's latch, which
+// persistence readers only try.
+func (lazy *LazyState) OnBodyDone(fn func(context.Context, dagql.LazyGroupKey) error) {
+	lazy.bodyDone.CompareAndSwap(nil, &fn)
+}
+
+func (lazy *LazyState) runBodyDone(ctx context.Context, group dagql.LazyGroupKey) error {
+	if fn := lazy.bodyDone.Load(); fn != nil {
+		return (*fn)(ctx, group)
+	}
+	return nil
 }
 
 // IsEvaluated reports successful whole-operation completion. Named groups
@@ -124,6 +144,10 @@ func (lazy *LazyState) Evaluate(ctx context.Context, typeName string, run func(c
 			lazy.outputRevision.Add(1)
 			return rerr
 		}
+	}
+	if rerr = lazy.runBodyDone(ctx, dagql.LazyGroupWhole); rerr != nil {
+		lazy.outputRevision.Add(1)
+		return rerr
 	}
 	// Publish the revision before completion permits readers to bypass the
 	// body latch. Nothing belonging to this body changes after completion.
@@ -189,6 +213,10 @@ func (lazy *LazyState) EvaluateGroup(ctx context.Context, typeName string, group
 	}()
 
 	if rerr = run(ctx); rerr != nil {
+		lazy.outputRevision.Add(1)
+		return rerr
+	}
+	if rerr = lazy.runBodyDone(ctx, group); rerr != nil {
 		lazy.outputRevision.Add(1)
 		return rerr
 	}

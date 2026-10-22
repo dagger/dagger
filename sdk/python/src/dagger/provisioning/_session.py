@@ -47,6 +47,9 @@ class Pclose(contextlib.AbstractContextManager):
     # which currently has to happen synchronously with the session.
     timeout: int = 300
 
+    # Source of the session's captured stderr, for the error message.
+    session: "_StartedSession | None" = None
+
     def __exit__(self, exc_type, exc_value, traceback):
         # Kill the child process by closing stdin, not via SIGKILL, so it has
         # a chance to drain logs.
@@ -68,7 +71,8 @@ class Pclose(contextlib.AbstractContextManager):
         # avoids raise-within-try (TRY301)
         if self.proc.wait(self.timeout):
             # non-zero exit code
-            msg = make_process_error_msg(self.proc, None, None)
+            stderr = _read_session_stderr(self.session) if self.session else None
+            msg = make_process_error_msg(self.proc, None, stderr)
             raise SessionError(msg)
 
 
@@ -80,7 +84,7 @@ def start_cli_session_sync(cfg: Config, path: str):
         with contextlib.ExitStack() as stack:
             session = stack.enter_context(run(cfg, path))
             params = get_connect_params(session)
-            stack.push(Pclose(session.proc))
+            stack.push(Pclose(session.proc, session=session))
             yield params
     except (OSError, ValueError, TypeError) as e:
         raise SessionError(e) from e

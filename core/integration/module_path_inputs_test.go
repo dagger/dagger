@@ -6,7 +6,7 @@ package core
 //
 // See also:
 // - module_runtime_behavior_test.go: general module execution behavior.
-// - module_loading_test.go: selecting module sources and entrypoints.
+// - module_loading_test.go: selecting module sources and workspace mains.
 
 import (
 	"cmp"
@@ -907,7 +907,7 @@ func (m *Reader) ListIgnoredDefaultDirectory(
 		WithNewFile("filtered/workspace-only.txt", "workspace-only should not be listed").
 		WithNewFile("dagger.toml", `[modules.reader]
 source = "`+remoteRef+`"
-entrypoint = true
+main = true
 `)
 
 	out, err := ctr.With(daggerCall("read-default-file")).Stdout(ctx)

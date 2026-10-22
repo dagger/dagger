@@ -72,7 +72,7 @@ type Server struct {
 	View call.View
 
 	// canonical, if set, is the server without entrypoint sugar.
-	// Entrypoint proxies flatten a module's methods onto the Query root
+	// Workspace main proxies flatten a module's methods onto the Query root
 	// as syntactic convenience; the canonical server preserves the real
 	// namespace where constructors and core fields live unshadowed.
 	//

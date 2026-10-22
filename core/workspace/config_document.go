@@ -23,6 +23,11 @@ func UpdateConfigBytes(existingData []byte, cfg *Config) ([]byte, error) {
 	if len(existingData) == 0 {
 		return SerializeConfig(cfg), nil
 	}
+	var err error
+	existingData, err = canonicalizeLegacyWorkspaceMainKeys(existingData)
+	if err != nil {
+		return nil, err
+	}
 	existing, err := ParseConfig(existingData)
 	if err != nil {
 		return nil, err
@@ -157,8 +162,8 @@ func configDocumentMap(cfg *Config) map[string]any {
 			if entry.Pin != "" {
 				module["pin"] = entry.Pin
 			}
-			if entry.Entrypoint {
-				module["entrypoint"] = true
+			if entry.Main {
+				module["main"] = true
 			}
 			if entry.LegacyDefaultPath {
 				module["legacy-default-path"] = true
@@ -247,8 +252,9 @@ func configDocumentMap(cfg *Config) map[string]any {
 
 // ExplicitConfigKeys returns the dotted paths of every leaf key the config file
 // actually spells out. Merging an included config needs presence, not the Go
-// zero value: `entrypoint = false` and `ignore = []` are overrides of what the
-// include provides, and both parse to the same value as an absent key.
+// zero value: `main = false` (or its deprecated `entrypoint` alias) and
+// `ignore = []` are overrides of what the include provides, and both parse to
+// the same value as an absent key.
 //
 // Schema keys are reported by their canonical name, because the decoder also
 // accepts case variants such as IGNORE. Module names and settings keys are user
@@ -289,6 +295,7 @@ func collectExplicitConfigKeys(tree *toml.Tree, typ reflect.Type, prefix []strin
 			collectExplicitConfigKeys(value, childType, path, keys)
 		case []*toml.Tree:
 		default:
+			path = canonicalConfigParts(path)
 			keys[JoinConfigPath(path...)] = true
 		}
 	}

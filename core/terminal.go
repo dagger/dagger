@@ -290,17 +290,25 @@ func (container *Container) terminal(
 	eg.Go(func() error {
 		waitErr := runningSvc.Wait(egctx)
 		exitCode := 0
+		// An error without an exit code means the shell never ran, e.g. its
+		// container setup failed. Report it rather than just closing with exit 1.
+		var setupErr error
 		if waitErr != nil {
 			exitCode = 1
 			var exitErr *bkgwpb.ExitError
 			if errors.As(waitErr, &exitErr) {
 				exitCode = int(exitErr.ExitCode)
+			} else if egctx.Err() == nil {
+				setupErr = waitErr
 			}
 		}
 
 		err := term.Close(exitCode)
 		if err != nil {
 			return fmt.Errorf("failed to forward exit code: %w", err)
+		}
+		if setupErr != nil {
+			return fmt.Errorf("terminal exited: %w", setupErr)
 		}
 		return nil
 	})

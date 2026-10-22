@@ -12,7 +12,7 @@ body: |
   - A repo that *is* a dagger module (root `dagger.json` with its source at the
     root) converts its config in place and gets a minimal `dagger.toml` that
     only pins its SDK runtime; the module is not installed into the workspace
-    and no `entrypoint = true` is set.
+    and no `main = true` is set.
   - Setup no longer combines migration with module recommendations: applying a
     migration ends the run, and recommendations appear on the next
     `dagger setup` once the workspace is current. Declining the migration

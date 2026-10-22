@@ -139,7 +139,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleVersionUpdate(ctx context.Contex
 		{"source suffix", []string{"mod", "update", remote.repoURL + "@v2"}},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
-			config := fmt.Sprintf("# Keep this comment\n[modules.tools]\nsource = '%s@v1' # request\nentrypoint = false\n", remote.repoURL)
+			config := fmt.Sprintf("# Keep this comment\n[modules.tools]\nsource = '%s@v1' # request\nmain = false\n", remote.repoURL)
 			workdir := newWorkspaceConfigWorkdir(ctx, t, config)
 			out, err := hostDaggerExecRaw(ctx, t, workdir, tc.args...)
 			require.NoError(t, err)
@@ -161,7 +161,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleVersionUpdate(ctx context.Contex
 		})
 	}
 	t.Run("source flag replaces the source and keeps settings", func(ctx context.Context, t *testctx.T) {
-		config := "# Keep this comment\n[modules.tools]\nsource = './old' # request\nentrypoint = false\n\n[modules.tools.settings]\ngreeting = 'hi'\n"
+		config := "# Keep this comment\n[modules.tools]\nsource = './old' # request\nmain = false\n\n[modules.tools.settings]\ngreeting = 'hi'\n"
 		workdir := newWorkspaceConfigWorkdir(ctx, t, config)
 		out, err := hostDaggerExecRaw(ctx, t, workdir, "mod", "update", "tools", "--source="+remote.repoURL+"@v2")
 		require.NoError(t, err, string(out))

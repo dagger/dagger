@@ -191,7 +191,64 @@ func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelectio
 	}
 	return capture, nil
 }
+
+// staleOffersError is a capture's refusal for offers on outputs the captured
+// values already completed. Such an offer is obsolete: it offers a part the
+// value has. Nothing retires it while the engine runs, unlike one on a part
+// installed from it, so the capture's caller retires it (retireStaleOffers)
+// and captures again.
+type staleOffersError struct {
+	offers []staleOffer
+}
+
+// staleOffer is an offer on a completed output, with the row's transfer
+// revision when it was captured: any change to the row's offers moves it.
+type staleOffer struct {
+	row         *sharedResult
+	address     PersistedPartAddress
+	transferRev uint64
+}
+
+func (err *staleOffersError) Error() string {
+	offer := err.offers[0]
+	key, _ := partAddressKey(offer.address)
+	return fmt.Sprintf("%s: unretired offer on completed output %d:%s", ErrPersistStateNotReady, offer.row.id, key)
+}
+
+func (err *staleOffersError) Unwrap() error { return ErrPersistStateNotReady }
+
+// retireStaleOffers retires each stale offer whose row still holds the offers
+// it was captured with, as boot retires those it finds on completed outputs
+// (settleRestoredOffers). An offer whose row changed since is left for the
+// next capture to judge.
+func (c *Cache) retireStaleOffers(ctx context.Context, stale []staleOffer) error {
+	ctx = context.WithoutCancel(ctx)
+	c.egraphMu.Lock()
+	var queue collectionQueue
+	var rerr error
+	// Each row is judged once, before any of its offers is retired: a
+	// retirement moves the revision its other stale offers were captured at.
+	unchanged := map[*sharedResult]bool{}
+	for _, offer := range stale {
+		current, judged := unchanged[offer.row]
+		if !judged {
+			current = c.resultsByID[offer.row.id] == offer.row && offer.row.transferRevision == offer.transferRev
+			unchanged[offer.row] = current
+		}
+		if !current {
+			continue
+		}
+		q, err := c.retirePartOfferLocked(ctx, offer.row, offer.address)
+		queue = append(queue, q...)
+		rerr = errors.Join(rerr, err)
+	}
+	releases, err := c.collectUnownedResultsLocked(ctx, queue)
+	c.egraphMu.Unlock()
+	return errors.Join(rerr, err, runOnReleaseFuncs(ctx, releases))
+}
+
 func (capture *HeldCapturedClosure) copy(ctx context.Context) error {
+	var stale []staleOffer
 	for _, row := range capture.order {
 		rec, err := capture.cache.captureHeldPersistedRecord(ctx, row.shared, row.imported, row.offers, &row.version)
 		if err != nil {
@@ -213,7 +270,7 @@ func (capture *HeldCapturedClosure) copy(ctx context.Context) error {
 			for _, out := range row.outputs {
 				outKey, _ := partAddressKey(out.Address)
 				if key == outKey && out.State != "pending" {
-					return fmt.Errorf("%w: unretired offer on completed output %d:%s", ErrPersistStateNotReady, row.shared.id, key)
+					stale = append(stale, staleOffer{row: row.shared, address: clonePartAddress(offer.Address), transferRev: row.transferRev})
 				}
 			}
 		}
@@ -223,6 +280,11 @@ func (capture *HeldCapturedClosure) copy(ctx context.Context) error {
 		if err := row.version.check(row.shared); err != nil {
 			return err
 		}
+	}
+	// The records still describe their rows, so the completed outputs are
+	// the values' own.
+	if len(stale) > 0 {
+		return &staleOffersError{offers: stale}
 	}
 
 	c := capture.cache
@@ -381,6 +443,8 @@ type ExportedValues struct {
 // It is a capture and never waits: if any row of the closure has a task in
 // flight (an evaluation, a part installation, a sharing slot) it returns
 // ErrPersistStateNotReady having kept nothing, and the caller retries later.
+// An offer it finds on an output the value already completed is obsolete:
+// it retires the offer, as boot does, and captures once more.
 //
 //nolint:gocyclo // one step per export phase over the held closure; splitting hides the order of the steps
 func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection, cfg config.RefConfig, consume func(context.Context, *ExportedValues) error) (rerr error) {
@@ -396,8 +460,22 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 	if err != nil {
 		return err
 	}
+	err = capture.copy(ctx)
+	var stale *staleOffersError
+	if errors.As(err, &stale) {
+		// Retire the obsolete offers outside the capture's holds, then
+		// capture once more.
+		if err := errors.Join(capture.Release(ctx), c.retireStaleOffers(ctx, stale.offers)); err != nil {
+			return err
+		}
+		capture, err = c.holdTransferClosure(ctx, selection)
+		if err != nil {
+			return err
+		}
+		err = capture.copy(ctx)
+	}
 	defer func() { rerr = errors.Join(rerr, capture.Release(ctx)) }()
-	if err := capture.copy(ctx); err != nil {
+	if err != nil {
 		return err
 	}
 	relocate := func(ref *PersistedRef) error {

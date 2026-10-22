@@ -215,10 +215,10 @@
         {
           "defaultValue": null,
           "deprecationReason": null,
-          "description": "Install the module as the entrypoint, promoting its main-object methods onto the Query root",
+          "description": "Install the module as the workspace main, promoting its main-object methods onto the Query root",
           "directives": [],
           "isDeprecated": false,
-          "name": "entrypoint",
+          "name": "main",
           "type": {
             "kind": "SCALAR",
             "name": "Boolean",

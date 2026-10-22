@@ -1,4 +1,5 @@
 import io
+import subprocess
 import sys
 
 import httpx
@@ -131,3 +132,17 @@ def test_stderr(fp: FakeProcess):
         ),
     ):
         ...
+
+
+def test_stderr_on_close(fp: FakeProcess):
+    """The CLI's stderr is reported when the session fails at close."""
+    fp.register(["dagger", "session"], returncode=1)
+    proc = subprocess.Popen(["dagger", "session"], encoding="utf-8")
+    tail = session._TailBuffer()
+    tail.write("Error: shutdown session metrics: context canceled\n")
+    started = session._StartedSession(proc=proc, stderr_tail=tail)
+    with pytest.raises(
+        dagger.ProvisionError,
+        match="shutdown session metrics: context canceled",
+    ):
+        session.Pclose(proc, session=started).__exit__(None, None, None)

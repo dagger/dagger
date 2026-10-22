@@ -792,7 +792,7 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 func (s ChangesetSuite) TestExport(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	modGen := moduleEntrypointFixture(t, c, "test", "go/changeset-export").
+	modGen := moduleMainFixture(t, c, "test", "go/changeset-export").
 		With(daggerCall("dir", "-o", "./outdir"))
 
 	t.Run("export", func(ctx context.Context, t *testctx.T) {

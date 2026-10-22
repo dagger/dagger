@@ -1938,7 +1938,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 
 	md.ExtraModules = slices.Clone(c.ExtraModules)
 	if c.Module != "" {
-		md.ExtraModules = []engine.ExtraModule{{Ref: c.Module, Entrypoint: true}}
+		md.ExtraModules = []engine.ExtraModule{{Ref: c.Module, Main: true}}
 	}
 	if c.Module == "" && c.LoadWorkspaceModules {
 		md.LoadWorkspaceModules = true

@@ -1,0 +1,6 @@
+kind: Fixed
+body: Terminal commands no longer lose their output. Since containers started running with crun, a command that printed and exited quickly in a container or service terminal could show nothing, because crun stopped relaying the terminal as soon as the command exited. The engine now takes the terminal from crun directly and drains it.
+time: 2026-10-19T17:38:22.000000000Z
+custom:
+    Author: sipsma
+    PR: "14728"

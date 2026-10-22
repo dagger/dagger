@@ -13,7 +13,7 @@ import (
 func artifactViewWorkspace(t *testctx.T, c *dagger.Client, source string) *core.Container {
 	t.Helper()
 	return nativeWorkspaceBase(t, c).
-		WithNewFile("dagger.toml", "[modules.view]\nsource = \"./view\"\nentrypoint = true\n").
+		WithNewFile("dagger.toml", "[modules.view]\nsource = \"./view\"\nmain = true\n").
 		WithNewFile("view/dagger-module.toml", "name = \"view\"\nengineVersion = \"v1.0.0\"\n[runtime]\nsource = \"dang\"\n").
 		WithNewFile("view/main.dang", source)
 }
@@ -163,7 +163,8 @@ func (ArtifactsSuite) TestFilteredViewReferences(ctx context.Context, t *testctx
 func (ArtifactsSuite) TestFilteredViewCollectionOrigins(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := artifactViewWorkspace(t, c, `type View {
-  first: Cases! { Cases(names: ["a", "b", "c"]) }
+  pub shared: Cases! = Cases(names: ["a", "b", "c"])
+  first: Cases! { shared }
   second: Cases! { Cases(names: ["b", "c", "d"]) }
   alias: Cases! { first }
   bound: LLM! { llm.withTools(first.subset(keys: ["b", "c"])) }
@@ -171,19 +172,25 @@ func (ArtifactsSuite) TestFilteredViewCollectionOrigins(ctx context.Context, t *
 type Cases @collection {
   pub names: [String!]! @keys
   pub selection: CollectionDelta @delta
-  lookup(name: String!): Case! @get { Case(name: name, parent: self) }
+  lookup(name: String!): Case! @get { Case(name: name, parent: self, alias: self) }
   removed: [String!]! { selection!.removedKeys }
+  narrow: Cases! { self.subset(keys: ["b"]) }
 }
-type Case { pub name: String!; pub parent: Cases! }
+type Case {
+  pub name: String!
+  pub parent: Cases!
+  pub alias: Cases!
+}
 `)
 	out, err := base.With(daggerQuery(`{
  currentWorkspace { artifacts { filterTypes(types: ["ViewCase"]) {
-  filterDimensionKeys(dimension: "/view/first", keys: ["a", "b"]) {
-   filterDimensionKeys(dimension: "/view/alias", keys: ["b", "c"]) {
-    filterDimensionKeys(dimension: "/view/second", keys: ["d"]) {
-     items { path value { ... on ViewCase { name parent { keys removed } } } }
-    }
-   }
+  first: filterDimensionKeys(dimension: "/view/first", keys: ["a", "b"]) {
+   items { value { ... on ViewCase { name alias { keys } parent {
+    keys removed narrow { keys removed }
+   } } } }
+  }
+  second: filterDimensionKeys(dimension: "/view/second", keys: ["d"]) {
+   items { value { ... on ViewCase { name alias { keys } parent { keys removed } } } }
   }
  } } }
  first { keys }
@@ -196,11 +203,15 @@ type Case { pub name: String!; pub parent: Cases! }
 }`)).Stdout(ctx)
 	require.NoError(t, err, out)
 	require.JSONEq(t, `{
- "currentWorkspace":{"artifacts":{"filterTypes":{"filterDimensionKeys":{"filterDimensionKeys":{"filterDimensionKeys":{"items":[
-  {"path":["alias"],"value":{"name":"b","parent":{"keys":["b"],"removed":["a","c"]}}},
-  {"path":["first"],"value":{"name":"b","parent":{"keys":["b"],"removed":["a","c"]}}},
-  {"path":["second"],"value":{"name":"d","parent":{"keys":["d"],"removed":["b","c"]}}}
- ]}}}}}},
+ "currentWorkspace":{"artifacts":{"filterTypes":{
+  "first":{"items":[
+   {"value":{"name":"a","alias":{"keys":["a","b"]},"parent":{"keys":["a","b"],"removed":["c"],"narrow":{"keys":["b"],"removed":["a","c"]}}}},
+   {"value":{"name":"b","alias":{"keys":["a","b"]},"parent":{"keys":["a","b"],"removed":["c"],"narrow":{"keys":["b"],"removed":["a","c"]}}}}
+  ]},
+  "second":{"items":[
+   {"value":{"name":"d","alias":{"keys":["d"]},"parent":{"keys":["d"],"removed":["b","c"]}}}
+  ]}
+ }}},
  "first":{"keys":["a","b","c"]}, "second":{"keys":["b","c","d"]},
  "bound":{"artifacts":{"filterTypes":{"filterDimensionKeys":{"items":[
   {"value":{"name":"c","parent":{"keys":["c"],"removed":["a","b"]}}}

@@ -34,10 +34,10 @@ func (*Collections) Items() *Items {
 func (m *Collections) Other() *Items { return m.Items() }
 func (*Collections) Empty() *Items { return &Items{Names: []string{}} }
 func (m *Collections) SelfSubset(ctx context.Context) ([]string, error) {
-  return dag.Collections().Items().Subset([]string{"c"}).Batch().Removed(ctx)
+  return dag.Collections().Items().Subset([]string{"c"}).Removed(ctx)
 }
 func (m *Collections) ArgumentDelta(ctx context.Context) ([]string, error) {
-  return dag.Collections().Forward(dag.Collections().Items()).Batch().Added(ctx)
+  return dag.Collections().Forward(dag.Collections().Items()).Added(ctx)
 }
 func (m *Collections) Forward(items *Items) *Items {
   items.Names = []string{"d"}
@@ -86,7 +86,7 @@ type Part struct { Name string }
 
 func collectionSource(c *dagger.Client) *core.Directory {
 	return core.NewQuery(c).Directory().
-		WithNewFile("dagger.toml", "[modules.collections]\nsource = \"./collections\"\nentrypoint = true\n").
+		WithNewFile("dagger.toml", "[modules.collections]\nsource = \"./collections\"\nmain = true\n").
 		WithNewFile("collections/dagger.json", `{"name":"collections","engineVersion":"v1.0.0","sdk":{"source":"go"},"source":"."}`).
 		WithNewFile("collections/main.go", collectionGoSource)
 }
@@ -101,58 +101,167 @@ func (CollectionsSuite) TestGoAPI(ctx context.Context, t *testctx.T) {
     keys
     list { name }
     get(key: "a") { name }
-    batch { selected removed }
+     selected removed 
     subset(keys: ["c", "b"]) {
       keys
-      batch { selected removed copy { subset(keys: ["c"]) { batch { removed } } } }
-      subset(keys: ["c"]) { keys batch { selected removed } }
-      empty: subset(keys: []) { keys list batch { selected removed } }
+       selected removed copy { subset(keys: ["c"]) {  removed  } } 
+      subset(keys: ["c"]) { keys  selected removed  }
+      empty: subset(keys: []) { keys list  selected removed  }
     }
   }
 }`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"items":{
-  "keys":["b","a","c"], "list":[{"name":"item:b"},{"name":"item:a"},{"name":"item:c"}],
-  "get":{"name":"item:a"}, "batch":{"selected":["b","a","c"],"removed":[]},
-  "subset":{"keys":["b","c"],"batch":{"selected":["b","c"],"removed":["a"],"copy":{"subset":{"batch":{"removed":["b","a"]}}}},
-    "subset":{"keys":["c"],"batch":{"selected":["c"],"removed":["b","a"]}},
-    "empty":{"keys":[],"list":[],"batch":{"selected":[],"removed":["b","a","c"]}}
+	require.JSONEq(t, `{
+  "items": {
+    "keys": [
+      "b",
+      "a",
+      "c"
+    ],
+    "list": [
+      {
+        "name": "item:b"
+      },
+      {
+        "name": "item:a"
+      },
+      {
+        "name": "item:c"
+      }
+    ],
+    "get": {
+      "name": "item:a"
+    },
+    "subset": {
+      "keys": [
+        "b",
+        "c"
+      ],
+      "subset": {
+        "keys": [
+          "c"
+        ],
+        "selected": [
+          "c"
+        ],
+        "removed": [
+          "b",
+          "a"
+        ]
+      },
+      "empty": {
+        "keys": [],
+        "list": [],
+        "selected": [],
+        "removed": [
+          "b",
+          "a",
+          "c"
+        ]
+      },
+      "selected": [
+        "b",
+        "c"
+      ],
+      "removed": [
+        "a"
+      ],
+      "copy": {
+        "subset": {
+          "removed": [
+            "b",
+            "a"
+          ]
+        }
+      }
+    },
+    "selected": [
+      "b",
+      "a",
+      "c"
+    ],
+    "removed": []
   }
-}}`, out)
+}`, out)
 	out, err = ctr.With(daggerQueryAt("./collections", `{ selfSubset argumentDelta }`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"selfSubset":["b","a"],"argumentDelta":["d"]}`, out)
 	out, err = ctr.With(daggerQueryAt("./collections", collectionDeltaQuery)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, collectionDeltaExpected, out)
-	out, err = ctr.With(daggerQueryAt("./collections", `{ items { batch { change(names: ["c", "d"]) { batch { deltaCheck { pass } } } } } }`)).Stdout(ctx)
+	out, err = ctr.With(daggerQueryAt("./collections", `{ items {  change(names: ["c", "d"]) {  deltaCheck { pass }  }  } }`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"items":{"batch":{"change":{"batch":{"deltaCheck":{"pass":true}}}}}}`, out)
+	require.JSONEq(t, `{
+  "items": {
+    "change": {
+      "deltaCheck": {
+        "pass": true
+      }
+    }
+  }
+}`, out)
 }
 
 const collectionDeltaQuery = `{ items {
-  batch { change(names: ["c", "d"]) {
+   change(names: ["c", "d"]) {
     keys
-    batch { added removed change(names: ["c", "b", "a"]) { batch { added removed } } }
-    subset(keys: ["d"]) { batch { added removed } }
-  } }
-  subset(keys: ["c"]) { batch {
-    change(names: ["b", "c", "d"]) { batch { added removed } }
-    fresh { keys batch { added removed } }
-  } }
+     added removed change(names: ["c", "b", "a"]) {  added removed  } 
+    subset(keys: ["d"]) {  added removed  }
+  } 
+  subset(keys: ["c"]) { 
+    change(names: ["b", "c", "d"]) {  added removed  }
+    fresh { keys  added removed  }
+   }
 } }`
 
-const collectionDeltaExpected = `{"items":{
-  "batch":{"change":{
-    "keys":["c","d"],
-    "batch":{"added":["d"],"removed":["b","a"],"change":{"batch":{"added":[],"removed":[]}}},
-    "subset":{"batch":{"added":["d"],"removed":["b","a","c"]}}
-  }},
-  "subset":{"batch":{
-    "change":{"batch":{"added":["d"],"removed":["a"]}},
-    "fresh":{"keys":["z"],"batch":{"added":[],"removed":[]}}
-  }}
-}}`
+const collectionDeltaExpected = `{
+  "items": {
+    "subset": {
+      "change": {
+        "added": [
+          "d"
+        ],
+        "removed": [
+          "a"
+        ]
+      },
+      "fresh": {
+        "keys": [
+          "z"
+        ],
+        "added": [],
+        "removed": []
+      }
+    },
+    "change": {
+      "keys": [
+        "c",
+        "d"
+      ],
+      "subset": {
+        "added": [
+          "d"
+        ],
+        "removed": [
+          "b",
+          "a",
+          "c"
+        ]
+      },
+      "added": [
+        "d"
+      ],
+      "removed": [
+        "b",
+        "a"
+      ],
+      "change": {
+        "added": [],
+        "removed": []
+      }
+    }
+  }
+}`
 
 // The item type of this fixture is reachable only through get, so nothing the
 // author wrote mentions a list of it — only the projected list field does. The
@@ -183,7 +292,7 @@ func (CollectionsSuite) TestCallCollectionSelectors(ctx context.Context, t *test
 	require.Equal(t, "item:a", out)
 
 	// Repeated selectors address the subset when the function belongs to the
-	// collection's batch type.
+	// collection itself.
 	out, err = base.With(daggerCallAt("./collections", "items", "selected", "--collections-items-item=a", "--collections-items-item=c")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "a\nc\n", out)
@@ -254,7 +363,7 @@ func (suite *Suite) Run() error { return nil }
 
 func collectionSelectorSourceDir(c *dagger.Client) *core.Directory {
 	return core.NewQuery(c).Directory().
-		WithNewFile("dagger.toml", "[modules.selectors]\nsource = \"./selectors\"\nentrypoint = true\n").
+		WithNewFile("dagger.toml", "[modules.selectors]\nsource = \"./selectors\"\nmain = true\n").
 		WithNewFile("selectors/dagger.json", `{"name":"selectors","engineVersion":"v1.0.0","sdk":{"source":"go"},"source":"."}`).
 		WithNewFile("selectors/main.go", collectionSelectorSource)
 }
@@ -304,9 +413,9 @@ func (CollectionsSuite) TestCLI(ctx context.Context, t *testctx.T) {
 		args []string
 		want string
 	}{
-		{[]string{"list", "-a", "-f", "link", "items/file", "--collections-items-item=a"}, "dag+file://?file=items/file&collections-items-item=a\n"},
-		{[]string{"list", "-a", "-f", "link", "items/file?collections-items-item=a", "other/file?collections-other-item=c"}, "dag+file://?file=items/file&collections-items-item=a\ndag+file://?file=other/file&collections-other-item=c\n"},
-		{[]string{"list", "-a", "-f", "link", "items/file?collections-items-item=a", "--collections-items-item=c"}, "dag+file://?file=items/file&collections-items-item=a\ndag+file://?file=items/file&collections-items-item=c\n"},
+		{[]string{"list", "-a", "-f", "link", "items/file", "--collections-items-item=a"}, "dag+file://?file=file&collections-items-item=a\n"},
+		{[]string{"list", "-a", "-f", "link", "items/file?collections-items-item=a", "other/file?collections-other-item=c"}, "dag+file://?file=file&collections-items-item=a\ndag+file://?file=file&collections-other-item=c\n"},
+		{[]string{"list", "-a", "-f", "link", "items/file?collections-items-item=a", "--collections-items-item=c"}, "dag+file://?file=file&collections-items-item=a\ndag+file://?file=file&collections-items-item=c\n"},
 		{[]string{"list", "collections-items", "items", "-a", "-f", "link"}, "dag+collections-item://?artifact-collections-item=items&collections-items-item=a\ndag+collections-item://?artifact-collections-item=items&collections-items-item=b\ndag+collections-item://?artifact-collections-item=items&collections-items-item=c\n"},
 	} {
 		out, err := base.With(daggerExec(tc.args...)).Stdout(ctx)
@@ -350,7 +459,7 @@ collections +b +broken
 		require.Equal(t, "--collections --collections-items-item=b\n", out)
 		replayed, err := base.With(daggerExec(append([]string{"list", "containers", "-f=link"}, strings.Fields(out)...)...)).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "dag+container://?container=items/broken&collections-items-item=b\n", replayed)
+		require.Equal(t, "dag+container://?container=broken&collections-items-item=b\n", replayed)
 	})
 
 	t.Run("cli output can select the same container", func(ctx context.Context, t *testctx.T) {
@@ -359,7 +468,7 @@ collections +b +broken
 		require.Equal(t, "--collections --collections-items-item=b\n", out)
 		replayed, err := base.With(daggerExec(append([]string{"list", "containers", "-f=link"}, strings.Fields(out)...)...)).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "dag+container://?container=items/broken&collections-items-item=b\n", replayed)
+		require.Equal(t, "dag+container://?container=broken&collections-items-item=b\n", replayed)
 	})
 }
 
@@ -630,7 +739,7 @@ func (*Item) Assistant(base *dagger.LLM) *dagger.LLM { panic("agent evaluated") 
 	t.Run("settings skip schema paths without reading keys", func(ctx context.Context, t *testctx.T) {
 		out, err := base.WithNewFile("dagger.toml", `[modules.collections]
 source = "./collections"
-entrypoint = true
+main = true
 check.skip = ["deferred/load"]
 `).With(daggerExec("check", "-l", "-f=link")).Stdout(ctx)
 		require.NoError(t, err)
@@ -653,7 +762,7 @@ func (CollectionsSuite) TestArtifacts(ctx context.Context, t *testctx.T) {
     collection: filterUri(uri: "items") { items { uri dimensionKeys { dimension key } } }
     selected: filterUri(uri: "items?collections-items-item=a") { items { uri dimensionKeys { dimension key } } }
     files: filterUri(uri: "items/file?collections-items-item=a") { items { uri value { ... on File { contents } } } }
-    evaluated: filterUri(uri: "items/file?collections-items-item=a") { values { artifact { uri } value { ... on File { contents } } error { message } } }
+    evaluated: filterUri(uri: "items/file?collections-items-item=a") { items { uri value { ... on File { contents } } } }
     excluded: filterUri(uri: "items/file?collections-items-item=a&collections-items-item=b") { withoutUri(uri: "items/file?collections-items-item=a") { items { uri } } }
     lazy: filterUri(uri: "items/broken?collections-items-item=b") { items { uri } }
     nested: filterUri(uri: "items/parts?collections-items-item=a&collections-items-part=x") { items { uri dimensionKeys { dimension key } } }
@@ -680,7 +789,6 @@ func (CollectionsSuite) TestArtifacts(ctx context.Context, t *testctx.T) {
     {"identifier":"type:Check","name":"check"},
     {"identifier":"type:CollectionsItem","name":"collections-item"},
     {"identifier":"type:CollectionsItems","name":"collections-items"},
-    {"identifier":"type:CollectionsItems_Batch","name":"collections-items-batch"},
     {"identifier":"type:CollectionsPart","name":"collections-part"},
     {"identifier":"type:CollectionsParts","name":"collections-parts"},
     {"identifier":"type:Container","name":"container"},
@@ -688,15 +796,15 @@ func (CollectionsSuite) TestArtifacts(ctx context.Context, t *testctx.T) {
   ],
   "collection":{"items":[{"uri":"dag://?artifact-collections-items=items","dimensionKeys":[{"dimension":"module","key":"collections"},{"dimension":"type:CollectionsItems","key":"items"}]}]},
   "selected":{"items":[{"uri":"dag://?artifact-collections-item=items&collections-items-item=a","dimensionKeys":[{"dimension":"module","key":"collections"},{"dimension":"/collections/items","key":"a"},{"dimension":"type:CollectionsItem","key":"items"}]}]},
-  "files":{"items":[{"uri":"dag://?file=items/file&collections-items-item=a","value":{"contents":"item:a"}}]},
-  "evaluated":{"values":[{"artifact":{"uri":"dag://?file=items/file&collections-items-item=a"},"value":{"contents":"item:a"},"error":null}]},
-  "excluded":{"withoutUri":{"items":[{"uri":"dag://?file=items/file&collections-items-item=b"}]}},
-  "lazy":{"items":[{"uri":"dag://?container=items/broken&collections-items-item=b"}]},
-  "nested":{"items":[{"uri":"dag://?artifact-collections-part=items/parts&collections-items-item=a&collections-items-part=x","dimensionKeys":[{"dimension":"module","key":"collections"},{"dimension":"/collections/items","key":"a"},{"dimension":"/collections/items/parts","key":"x"},{"dimension":"type:CollectionsPart","key":"items/parts"}]}]},
-  "emptyKey":{"items":[{"uri":"dag://?artifact-collections-part=items/parts&collections-items-item=a&collections-items-part="}]},
+  "files":{"items":[{"uri":"dag://?file=file&collections-items-item=a","value":{"contents":"item:a"}}]},
+  "evaluated":{"items":[{"uri":"dag://?file=file&collections-items-item=a","value":{"contents":"item:a"}}]},
+  "excluded":{"withoutUri":{"items":[{"uri":"dag://?file=file&collections-items-item=b"}]}},
+  "lazy":{"items":[{"uri":"dag://?container=broken&collections-items-item=b"}]},
+  "nested":{"items":[{"uri":"dag://?artifact-collections-part=parts&collections-items-item=a&collections-items-part=x","dimensionKeys":[{"dimension":"module","key":"collections"},{"dimension":"/collections/items","key":"a"},{"dimension":"/collections/items/parts","key":"x"},{"dimension":"type:CollectionsPart","key":"items/parts"}]}]},
+  "emptyKey":{"items":[{"uri":"dag://?artifact-collections-part=parts&collections-items-item=a&collections-items-part="}]},
   "childKeys":{"dimensionKeys":["","x"]},
-  "first":{"filterPath":{"uri":"dag://items/file?/collections/items=c","items":[{"uri":"dag://?file=items/file&collections-items-item=c"}]}},
-  "second":{"filterDimensionKeys":{"uri":"dag://items/file?/collections/items=c","items":[{"uri":"dag://?file=items/file&collections-items-item=c"}]}}
+  "first":{"filterPath":{"uri":"dag://items/file?/collections/items=c","items":[{"uri":"dag://?file=file&collections-items-item=c"}]}},
+  "second":{"filterDimensionKeys":{"uri":"dag://items/file?/collections/items=c","items":[{"uri":"dag://?file=file&collections-items-item=c"}]}}
 }}}`, string(*got))
 }
 
@@ -720,7 +828,7 @@ func (CollectionsSuite) TestDimensionItems(ctx context.Context, t *testctx.T) {
       keys: dimensionKeys(dimension: "collections-items-part")
     }
     lazy: filterUri(uri: "items/broken?collections-items-item=b") { dimensionItems(dimension: "collections-items-item") { uri value { __typename } } }
-    batch: filterUri(uri: "items/delta-check?collections-items-item=b") { dimensionItems(dimension: "collections-items-item") { uri value { __typename } } }
+    collectionCheck: filterUri(uri: "items/delta-check?collections-items-item=b") { dimensionItems(dimension: "collections-items-item") { uri value { __typename } } }
     fields: filterTypes(types: ["CollectionsItem"]) {
       dimensionItems(dimension: "collections-other") { uri }
     }
@@ -736,13 +844,13 @@ func (CollectionsSuite) TestDimensionItems(ctx context.Context, t *testctx.T) {
       {"uri":"dag+collections-item://?artifact-collections-item=items&collections-items-item=a","description":"Look up one item.","path":["items"],"dimensionKeys":[{"dimension":"module","key":"collections"},{"dimension":"/collections/items","key":"a"},{"dimension":"type:CollectionsItem","key":"items"}]}
     ],
     "children":[
-      {"uri":"dag://?artifact-collections-part=items/parts&collections-items-item=b&collections-items-part=x","dimensionKeys":[{"dimension":"module","key":"collections"},{"dimension":"/collections/items","key":"b"},{"dimension":"/collections/items/parts","key":"x"},{"dimension":"type:CollectionsPart","key":"items/parts"}]},
-      {"uri":"dag://?artifact-collections-part=items/parts&collections-items-item=a&collections-items-part=x","dimensionKeys":[{"dimension":"module","key":"collections"},{"dimension":"/collections/items","key":"a"},{"dimension":"/collections/items/parts","key":"x"},{"dimension":"type:CollectionsPart","key":"items/parts"}]}
+      {"uri":"dag://?artifact-collections-part=parts&collections-items-item=b&collections-items-part=x","dimensionKeys":[{"dimension":"module","key":"collections"},{"dimension":"/collections/items","key":"b"},{"dimension":"/collections/items/parts","key":"x"},{"dimension":"type:CollectionsPart","key":"items/parts"}]},
+      {"uri":"dag://?artifact-collections-part=parts&collections-items-item=a&collections-items-part=x","dimensionKeys":[{"dimension":"module","key":"collections"},{"dimension":"/collections/items","key":"a"},{"dimension":"/collections/items/parts","key":"x"},{"dimension":"type:CollectionsPart","key":"items/parts"}]}
     ],
     "keys":["x"]
   },
   "lazy":{"dimensionItems":[{"uri":"dag://?artifact-collections-item=items&collections-items-item=b","value":{"__typename":"CollectionsItem"}}]},
-  "batch":{"dimensionItems":[{"uri":"dag://?artifact-collections-item=items&collections-items-item=b","value":{"__typename":"CollectionsItem"}}]},
+  "collectionCheck":{"dimensionItems":[{"uri":"dag://?artifact-collections-item=items&collections-items-item=b","value":{"__typename":"CollectionsItem"}}]},
   "fields":{"dimensionItems":[{"uri":"dag://?artifact-collections-item=other&collections-other-item=b"},{"uri":"dag://?artifact-collections-item=other&collections-other-item=a"},{"uri":"dag://?artifact-collections-item=other&collections-other-item=c"}]},
   "direct":{"filterTypes":{"items":[{"description":"Look up one item."}]}},
   "unknown":[]
@@ -761,9 +869,20 @@ func (*Test) Get(name string) *Item { return &Item{Name: name} }
 func (tests *Test) Count() int { return len(tests.Keys) }
 type Item struct { Name string }
 `).
-		With(daggerQuery(`{ keys get(key: "a") { name } subset(keys: ["b"]) { batch { count } } }`)).Stdout(ctx)
+		With(daggerQuery(`{ keys get(key: "a") { name } subset(keys: ["b"]) {  count  } }`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"keys":["a","b"],"get":{"name":"a"},"subset":{"batch":{"count":1}}}`, out)
+	require.JSONEq(t, `{
+  "keys": [
+    "a",
+    "b"
+  ],
+  "get": {
+    "name": "a"
+  },
+  "subset": {
+    "count": 1
+  }
+}`, out)
 }
 
 func (CollectionsSuite) TestEnumKeys(ctx context.Context, t *testctx.T) {
@@ -790,9 +909,28 @@ func (*Test) Get(color Color) *Item { return &Item{Name: string(color)} }
 func (colors *Test) Removed(ctx context.Context) ([]string, error) { return colors.Delta.RemovedKeys(ctx) }
 type Item struct { Name string }
 `).
-		With(daggerQuery(`{ keys get(key: RED) { name } subset(keys: [BLUE]) { keys get(key: BLUE) { name } batch { removed } } }`)).Stdout(ctx)
+		With(daggerQuery(`{ keys get(key: RED) { name } subset(keys: [BLUE]) { keys get(key: BLUE) { name }  removed  } }`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"keys":["RED","BLUE"],"get":{"name":"red"},"subset":{"keys":["BLUE"],"get":{"name":"blue"},"batch":{"removed":["RED"]}}}`, out)
+	require.JSONEq(t, `{
+  "keys": [
+    "RED",
+    "BLUE"
+  ],
+  "get": {
+    "name": "red"
+  },
+  "subset": {
+    "keys": [
+      "BLUE"
+    ],
+    "get": {
+      "name": "blue"
+    },
+    "removed": [
+      "RED"
+    ]
+  }
+}`, out)
 }
 
 func (CollectionsSuite) TestSDKs(ctx context.Context, t *testctx.T) {
@@ -809,19 +947,52 @@ func (CollectionsSuite) TestSDKs(ctx context.Context, t *testctx.T) {
 			out, err := ctr.With(daggerQuery(`{ items {
   keys
   get(key: "a") { name }
-  batch { selected removed }
+   selected removed 
   subset(keys: ["c", "b"]) {
     keys
-    batch { selected removed copy { subset(keys: ["c"]) { batch { removed } } } }
+     selected removed copy { subset(keys: ["c"]) {  removed  } } 
   }
 } }`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"items":{
-  "keys":["b","a","c"], "get":{"name":"item:a"},
-  "batch":{"selected":["b","a","c"],"removed":[]},
-  "subset":{"keys":["b","c"],"batch":{"selected":["b","c"],"removed":["a"],
-    "copy":{"subset":{"batch":{"removed":["b","a"]}}}}}
-}}`, out)
+			require.JSONEq(t, `{
+  "items": {
+    "keys": [
+      "b",
+      "a",
+      "c"
+    ],
+    "get": {
+      "name": "item:a"
+    },
+    "subset": {
+      "keys": [
+        "b",
+        "c"
+      ],
+      "selected": [
+        "b",
+        "c"
+      ],
+      "removed": [
+        "a"
+      ],
+      "copy": {
+        "subset": {
+          "removed": [
+            "b",
+            "a"
+          ]
+        }
+      }
+    },
+    "selected": [
+      "b",
+      "a",
+      "c"
+    ],
+    "removed": []
+  }
+}`, out)
 			out, err = ctr.With(daggerQuery(collectionDeltaQuery)).Stdout(ctx)
 			require.NoError(t, err)
 			require.JSONEq(t, collectionDeltaExpected, out)
@@ -934,7 +1105,7 @@ func (CollectionsSuite) TestModuleSelectors(ctx context.Context, t *testctx.T) {
 	base := workspaceBase(t, c).WithNewFile("dagger.toml", `
 [modules.go]
 source = "./tools"
-entrypoint = true
+main = true
 [modules.playwright]
 source = "./tools"
 [modules.format]

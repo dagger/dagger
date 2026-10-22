@@ -28,6 +28,7 @@ type benchSession struct {
 	fe      *frontendPretty
 	rootID  dagui.SpanID
 	liveID  dagui.SpanID
+	toolID  dagui.SpanID // the first tool call
 	checkID dagui.SpanID // the first check, a small subtree to zoom into
 	logs    []sdklog.Record
 }
@@ -50,8 +51,12 @@ func newBenchSession(b *testing.B, tools, checks, testsPerCheck int) *benchSessi
 	snaps := []dagui.SpanSnapshot{
 		{ID: rootID, TraceID: traceID, Name: "root", StartTime: start},
 	}
+	var firstToolID dagui.SpanID
 	for i := range tools {
 		toolID := newID()
+		if i == 0 {
+			firstToolID = toolID
+		}
 		snaps = append(snaps, dagui.SpanSnapshot{
 			ID: toolID, TraceID: traceID, ParentID: rootID,
 			Name: fmt.Sprintf("tool %d", i), LLMRole: "assistant", LLMTool: "Run",
@@ -113,6 +118,7 @@ func newBenchSession(b *testing.B, tools, checks, testsPerCheck int) *benchSessi
 		fe:      fe,
 		rootID:  rootID,
 		liveID:  liveID,
+		toolID:  firstToolID,
 		checkID: checkID,
 		logs:    logs,
 	}
@@ -172,5 +178,77 @@ func BenchmarkLiveUpdates(b *testing.B) {
 				b.ReportMetric(float64(len(s.fe.spanTrees)), "trees")
 			})
 		}
+	}
+}
+
+// addToolTestSuite makes the session's first tool call (a Boundary, like a
+// real one) run a nested test suite of the given number of cases: an exec, a
+// suite, parent tests of 100 cases each, and several levels of plain spans
+// between each parent and its cases, about ten hops from a case to the tool.
+func (s *benchSession) addToolTestSuite(cases int) {
+	traceID := prettyTestTraceID()
+	start := time.Unix(100, 0)
+	end := start.Add(time.Second)
+	next := 1 << 24 // clear of newBenchSession's IDs
+	newID := func() dagui.SpanID {
+		id := benchSpanID(next)
+		next++
+		return id
+	}
+	span := func(id, parent dagui.SpanID, name string) dagui.SpanSnapshot {
+		return dagui.SpanSnapshot{
+			ID: id, TraceID: traceID, ParentID: parent, Name: name,
+			StartTime: start, EndTime: end, Final: true,
+		}
+	}
+	tool := span(s.toolID, s.rootID, "tool 0")
+	tool.LLMRole, tool.LLMTool, tool.Boundary = "assistant", "Run", true
+	exec := span(newID(), s.toolID, "exec go test")
+	suite := span(newID(), exec.ID, "pkg")
+	suite.TestSuiteName = "pkg"
+	snaps := []dagui.SpanSnapshot{tool, exec, suite}
+	const casesPerGroup, wrappers = 100, 6
+	for g := 0; g*casesPerGroup < cases; g++ {
+		group := span(newID(), suite.ID, fmt.Sprintf("TestGroup%d", g))
+		group.TestCaseName = group.Name
+		group.TestSuiteName = "pkg"
+		group.TestStatus = dagui.TestStatusSuccess
+		snaps = append(snaps, group)
+		parent := group.ID
+		for w := range wrappers {
+			wrapper := span(newID(), parent, fmt.Sprintf("run %d", w))
+			snaps = append(snaps, wrapper)
+			parent = wrapper.ID
+		}
+		for c := g * casesPerGroup; c < min(cases, (g+1)*casesPerGroup); c++ {
+			tc := span(newID(), parent, fmt.Sprintf("TestGroup%d/case_%d", g, c))
+			tc.TestCaseName = tc.Name
+			tc.TestSuiteName = "pkg"
+			tc.TestStatus = dagui.TestStatusSuccess
+			snaps = append(snaps, tc)
+		}
+	}
+	s.fe.ImportSnapshots(snaps)
+	s.fe.tui.Step()
+}
+
+// BenchmarkToolTestSuite measures frames of a long agent session in which one
+// tool call ran a large test suite, with unrelated span updates streaming in
+// between frames. Every check and collapsed tool row asks for its own scoped
+// test view each frame, so a frame must cost about the same with the suite as
+// without it -- not (rows × tests in the session × ancestor depth).
+func BenchmarkToolTestSuite(b *testing.B) {
+	for _, cases := range []int{0, 10000} {
+		b.Run(fmt.Sprintf("cases=%d", cases), func(b *testing.B) {
+			s := newBenchSession(b, 1000, 0, 0)
+			s.addToolTestSuite(cases)
+			for b.Loop() {
+				s.fe.ImportSnapshots([]dagui.SpanSnapshot{{
+					ID: s.liveID, TraceID: prettyTestTraceID(), ParentID: s.rootID,
+					Name: "live exec", StartTime: time.Unix(100, 0),
+				}})
+				s.fe.tui.Step()
+			}
+		})
 	}
 }

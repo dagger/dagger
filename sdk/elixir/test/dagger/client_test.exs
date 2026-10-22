@@ -58,8 +58,19 @@ defmodule Dagger.ClientTest do
       |> GitRepository.tag("v0.3.0")
       |> GitRef.tree()
 
+    # proxy.golang.org sometimes resets a module download mid-stream, and Go's
+    # default GOPROXY doesn't fall back on that. "|" falls back on any error.
+    goproxy = "https://proxy.golang.org|https://proxy.golang.org|direct"
+    stage = "AS build\n"
+    assert {:ok, dockerfile} = repo |> Directory.file("Dockerfile") |> File.contents()
+    assert dockerfile =~ stage
+
+    dockerfile =
+      String.replace(dockerfile, stage, "#{stage}ENV GOPROXY=#{goproxy}\n", global: false)
+
     assert {:ok, out} =
              repo
+             |> Directory.with_new_file("Dockerfile", dockerfile)
              |> Directory.docker_build()
              |> Container.with_exec(["dagger", "version"])
              |> Container.stdout()

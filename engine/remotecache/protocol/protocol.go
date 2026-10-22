@@ -145,8 +145,12 @@ type SkipReason string
 const (
 	// SkipGone: the engine no longer has the entry.
 	SkipGone SkipReason = "gone"
-	// SkipBusy: the entry could not be captured now; ask again later.
+	// SkipBusy: the entry could not be captured now; ask again later. The
+	// skip's Message says what was busy.
 	SkipBusy SkipReason = "busy"
+	// SkipRefused: the engine refused to capture the entry, and would again;
+	// the skip's Message says why.
+	SkipRefused SkipReason = "refused"
 	// SkipExpired: a merged root had expired when the merge decided.
 	SkipExpired SkipReason = "expired"
 )
@@ -160,10 +164,12 @@ type Exported struct {
 	Skipped  []SkippedRoot      `json:"skipped,omitempty"`
 }
 
-// SkippedRoot is an exported root left out, by number.
+// SkippedRoot is an exported root left out, by number. Message is the
+// engine's error for a busy or refused root, cut to a bounded length.
 type SkippedRoot struct {
-	Number uint64     `json:"number"`
-	Reason SkipReason `json:"reason"`
+	Number  uint64     `json:"number"`
+	Reason  SkipReason `json:"reason"`
+	Message string     `json:"message,omitempty"`
 }
 
 // Upload gives the engine one presigned PUT per blob the service needs from

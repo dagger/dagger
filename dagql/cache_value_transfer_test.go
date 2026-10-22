@@ -158,6 +158,36 @@ func transferTestOffer(t *testing.T, c *Cache, ctx context.Context, parent, chil
 	require.NoError(t, err)
 }
 
+// An offer can be left on a part its value already has: a part can complete
+// without its gate settling it, and only a settlement retires the offer on
+// it. Such an offer is obsolete. A capture that finds one retires it, as boot
+// does, and captures the value; the offer no longer holds every capture of
+// the value busy.
+func TestValueTransferCaptureRetiresAnOfferOnACompletedOutput(t *testing.T) {
+	ctx, c, srv := statePartCache(t, "")
+	t.Cleanup(func() { require.NoError(t, c.CloseDiscardingPersistence()) })
+	value := &statePartValue{}
+	root := persistedListTestResult(t, ctx, c, srv, "root", value)
+	res := root.cacheSharedResult()
+	out, err := c.testOfferParts(ctx, root, []PersistedPartOffer{testLiveOffer()})
+	require.NoError(t, err)
+	require.Equal(t, OfferAccepted, out[0].Outcome)
+	// The part completes, and the gate never settles it.
+	value.done.Store(true)
+	value.rev.Add(1)
+	owners := res.incomingOwnershipCount
+
+	bundle := exportTestBundle(t, ctx, c, root)
+	require.Len(t, bundle.Values, 1)
+	require.Empty(t, bundle.Values[0].Record.Envelope.PendingOffers)
+	c.egraphMu.RLock()
+	offers := len(res.testPartOffers())
+	c.egraphMu.RUnlock()
+	require.Zero(t, offers, "the capture retired the obsolete offer")
+	require.Equal(t, owners, res.incomingOwnershipCount)
+	require.Zero(t, c.activeGlobalOperations.Load())
+}
+
 func TestValueTransferCapture(t *testing.T) {
 	testValueTransferCaptureConcurrent(t)
 	t.Run("direct and offer diamond", func(t *testing.T) {

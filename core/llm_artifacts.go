@@ -63,13 +63,13 @@ func (m *MCP) Artifacts(ctx context.Context, srv *dagql.Server, include []string
 // dropped, unless the module's bindings are fresh constructions (see
 // isFreshConstruction) and the workspace has the module: its artifacts are
 // then the same values, and the workspace's are the ones `dagger list` shows
-// (with entrypoint shorthand, SDK generators and cloud checks), so they win
+// (with workspace main shorthand, SDK generators and cloud checks), so they win
 // over the bound ones. include narrows the bound part the way
 // Workspace.artifacts already narrowed the workspace part, and is recorded as
 // the selection's paths.
 func mergeScopeArtifacts(bound []*Artifact, shadowed, fresh map[string]bool, workspace *Artifacts, include []string) (*Artifacts, error) {
 	// Names resolve in both parts, including entries that include skips.
-	result := &Artifacts{Entries: []*Artifact{}, AllDimensions: artifact.Union(workspace.AllDimensions, (&Artifacts{Entries: bound}).DimensionDefinitions())}
+	result := &Artifacts{Entries: []*Artifact{}, AllDimensions: artifact.Union(workspace.AllDimensions, (&Artifacts{Entries: bound}).DimensionDefinitions()), AllPaths: artifact.UnionPaths(workspace.AllPaths, (&Artifacts{Entries: bound}).PathIndex())}
 	if include != nil {
 		result.Selector.Paths = make([]string, 0, len(include))
 		for _, pattern := range include {
@@ -352,7 +352,7 @@ func schemaHasWorkspaceArtifacts(srv *dagql.Server) bool {
 
 // scopeWorkspaceArtifacts selects Workspace.artifacts on the scope's
 // workspace, so its discovery rules (load failures, SDK generators,
-// entrypoint shorthand) apply unchanged.
+// workspace main shorthand) apply unchanged.
 func scopeWorkspaceArtifacts(ctx context.Context, srv *dagql.Server, ws dagql.ObjectResult[*Workspace], include []string) (*Artifacts, error) {
 	srv = srv.Canonical()
 	sel := dagql.Selector{View: srv.View, Field: "artifacts"}
@@ -539,7 +539,7 @@ func (m *MCP) resolveScopeObject(ctx context.Context, srv *dagql.Server, parsed 
 		return nil, fmt.Errorf("resolve %q: artifact is a %s, not a %s", addr, artifact.TypeName, typeName)
 	}
 	// Guard against reference cycles, as Workspace.resolve does.
-	normalized, err := artifact.URI(ArtifactURIOpts{DimensionKeys: true})
+	normalized, err := artifact.URI(ArtifactURIOpts{DimensionKeys: true, Full: true})
 	if err != nil {
 		return nil, fmt.Errorf("resolve %q: %w", addr, err)
 	}

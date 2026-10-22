@@ -32,11 +32,24 @@ func cleanOldNamespaces(c *cniProvider) {
 				nativeID: filepath.Join(c.root, "net/cni", id),
 				handle:   c.CNI,
 			}
-			if err := ns.release(); err != nil {
+			var err error
+			if isNetNS(ns.nativeID) {
+				err = ns.release()
+			} else {
+				err = ns.releaseUnmounted()
+			}
+			if err != nil {
 				bklog.L.Warningf("failed to release network namespace %q left over from previous run: %s", id, err)
 			}
 		}
 	}()
+}
+
+// isNetNS reports whether path is a mounted network namespace. A namespace
+// whose release failed is kept unmounted, so a later engine start retries it.
+func isNetNS(path string) bool {
+	var st unix.Statfs_t
+	return unix.Statfs(path, &st) == nil && st.Type == unix.NSFS_MAGIC
 }
 
 // unshareAndMount needs to be called in a separate thread
