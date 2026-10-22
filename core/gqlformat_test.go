@@ -115,10 +115,9 @@ func TestNamespaceObjects(t *testing.T) {
 }
 
 // mainTypeSpellings are module names with a main type an SDK or template may
-// spell differently around digits and acronyms, which engine/naming may cut
-// into words differently than the module's name.
+// spell differently around digits and acronyms, which engine/naming cuts into
+// words differently than the module's name, so only a flat match finds them.
 var mainTypeSpellings = []struct{ module, mainType string }{
-	{"k8s-tools", "K8STools"},
 	{"my2go", "My2Go"},
 	{"sha256sum", "Sha256Sum"},
 	{"go-1password", "Go1Password"},
@@ -128,8 +127,15 @@ var mainTypeSpellings = []struct{ module, mainType string }{
 func TestSameDeclaredName(t *testing.T) {
 	t.Parallel()
 
+	// K8s is a dictionary term, so K8STools is k8s-tools by its normalized
+	// name, with no flat match needed.
+	require.Equal(t, LatestNamer.ObjectName("k8s-tools"), LatestNamer.ObjectName("K8STools"))
+	require.Equal(t, "K8sTools", LatestNamer.NamespaceObject("K8STools", "k8s-tools", "k8s-tools"))
+	require.Equal(t, "K8sToolsClient", LatestNamer.NamespaceObject("K8SToolsClient", "k8s-tools", "k8s-tools"))
+
 	for _, tc := range mainTypeSpellings {
 		t.Run(tc.module, func(t *testing.T) {
+			require.NotEqual(t, LatestNamer.ObjectName(tc.module), LatestNamer.ObjectName(tc.mainType), "not a flat-only match")
 			require.True(t, LatestNamer.SameDeclaredName(tc.mainType, tc.module))
 			require.True(t, LatestNamer.SameDeclaredName(tc.module, tc.mainType))
 			// The legacy rules compare exactly as they always did.
@@ -183,6 +189,13 @@ func TestModuleMainObjectSpelling(t *testing.T) {
 			require.Equal(t, strcase.ToCamel(tc.mainType) == strcase.ToCamel(tc.module), ok)
 		})
 	}
+
+	t.Run("k8s term", func(t *testing.T) {
+		mod := &Module{NameField: "k8s-tools", OriginalName: "k8s-tools", ObjectDefs: objects("K8SToolsClient", "K8STools")}
+		main, ok := mod.MainObject()
+		require.True(t, ok)
+		require.Equal(t, "K8STools", main.OriginalName)
+	})
 
 	t.Run("normalized match wins", func(t *testing.T) {
 		mod := &Module{NameField: "postman", OriginalName: "postman", ObjectDefs: objects("PostMan", "Postman")}
