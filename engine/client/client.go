@@ -186,8 +186,10 @@ type Params struct {
 	// frontend reads display text on demand with QueryLogs. Set it only when
 	// nothing receiving EngineLogs needs display text but a frontend that
 	// reads it on demand. The client still asks only an engine that serves
-	// the mode, and, with EngineCloudTelemetry, only one that confirmed it
-	// publishes to Cloud itself; LogsPresence reports the outcome.
+	// the mode and stores the client's own telemetry (IngestsTelemetry: the
+	// frontend reads the client's own display text from the store too), and,
+	// with EngineCloudTelemetry, only one that confirmed it publishes to
+	// Cloud itself; LogsPresence reports the outcome.
 	EngineLogsPresence bool
 
 	// Profile enables engine wall-clock profiling (wcprof) for this session.
@@ -1463,8 +1465,11 @@ func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error
 	c.ingestsTelemetry = exp.engineIngests && c.nestedSessionPort == 0
 	c.publishesTelemetry = c.forwardsWithoutCloud(exp.enginePublishes)
 	c.telemetryFeatures = exp.features
+	// The frontend reads all of the session's display text from the store,
+	// so it must hold this client's own too.
 	c.logsPresence = c.EngineLogsPresence &&
 		exp.features[enginetel.LiveFeatureLogPresence] &&
+		c.ingestsTelemetry &&
 		(!c.EngineCloudTelemetry || exp.enginePublishes)
 	return nil
 }
