@@ -27,6 +27,7 @@ type Check struct {
 	Address         string
 	Inputs          []CallInput
 	Generator       dagql.ObjectResult[*Generator]
+	CachePolicy     FunctionCachePolicy
 	CacheTTL        int64
 	Failure         string
 	Completed       bool

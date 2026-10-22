@@ -106,13 +106,9 @@ type ArtifactURIOpts struct {
 	Absolute      bool
 	DimensionKeys bool
 	TypeAssertion bool
-	// Full prints the stored form of an address with keys: the full path in
-	// the type key, and every item key of a batch. Without it, an address
-	// with keys is a projection, the shortest that selects the same artifact
-	// in the loaded workspace: a short type key (see TypeKeyName), and a
-	// batch that runs its whole collection named by its parent keys. A schema
-	// change can alter a projection, so select by the full address whatever
-	// must keep its meaning.
+	// Full prints the full path in the type key instead of its shortest
+	// unambiguous name in the loaded workspace (see TypeKeyName). A schema
+	// change can alter the short name, so persisted selectors use the full path.
 	Full bool
 }
 
@@ -122,12 +118,8 @@ func (a *Artifact) URI(opts ArtifactURIOpts) (string, error) {
 	var keys []dagaddress.Pair
 	var dimensions []string
 	if opts.DimensionKeys {
-		var collapsed string
-		if !opts.Full {
-			collapsed = a.completeBatchDimension()
-		}
 		for _, key := range a.DimensionKeys {
-			if artifact.IsStaticDimension(key.Dimension) || key.Dimension == collapsed {
+			if artifact.IsStaticDimension(key.Dimension) {
 				continue
 			}
 			keys = append(keys, dagaddress.Pair{Dimension: a.dimensionName(key.Dimension), Key: key.Key, HasKey: true})
@@ -181,32 +173,15 @@ func (a *Artifact) StaleArtifact() *Artifact {
 	return stale
 }
 
-// projectedDimensions are the collection dimensions a projected address keys:
-// every collection dimension on the path, except the dimension of a batch
-// that runs its whole collection.
+// projectedDimensions are the collection dimensions a projected address keys.
 func (a *Artifact) projectedDimensions() []string {
-	collapsed := a.completeBatchDimension()
 	var dimensions []string
 	for _, dim := range a.DimensionDefinitions() {
-		if !artifact.IsStaticDimension(dim.Identifier) && dim.Identifier != collapsed && !slices.Contains(dimensions, dim.Identifier) {
+		if !artifact.IsStaticDimension(dim.Identifier) && !slices.Contains(dimensions, dim.Identifier) {
 			dimensions = append(dimensions, dim.Identifier)
 		}
 	}
 	return dimensions
-}
-
-// completeBatchDimension is the dimension of a batch receiver that runs every
-// item of its collection (see Artifacts.Batch), or "".
-func (a *Artifact) completeBatchDimension() string {
-	for node := a.Node; node != nil; node = node.Parent {
-		if node.CollectionDimension != nil && node.CollectionKeys != nil {
-			if node.CollectionComplete {
-				return node.CollectionDimension.Identifier
-			}
-			return ""
-		}
-	}
-	return ""
 }
 
 // Description is the description of the field that supplies the artifact. A

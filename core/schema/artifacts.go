@@ -886,8 +886,6 @@ func (*artifactsSchema) artifactWorkspace(_ context.Context, parent *core.Artifa
 	return dagql.NonNull(parent.Workspace), nil
 }
 
-// Keep planned artifacts in the query graph so value evaluation, remote
-// execution, and saved result IDs all refer to the same batch selection.
 func (*artifactsSchema) loadError(_ context.Context, artifact *core.Artifact, _ struct{}) (string, error) {
 	if artifact.LoadFailure != nil {
 		return artifact.LoadFailure.Message, nil
