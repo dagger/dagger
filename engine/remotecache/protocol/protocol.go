@@ -121,6 +121,10 @@ type Hello struct {
 	Generation    uint64 `json:"generation"`
 	EngineVersion string `json:"engineVersion"`
 	EngineName    string `json:"engineName"`
+	// HeldRows reports that the engine merges bundles with held rows
+	// (dagql.TransferredValue.Held). The service sends them only to an
+	// engine that sets it.
+	HeldRows bool `json:"heldRows,omitempty"`
 }
 
 // Welcome is the service's reply to Hello.
@@ -192,7 +196,9 @@ type UploadFailure struct {
 }
 
 // Merge gives the engine a bundle of the Cloud's values. Its SenderNumbers
-// are the Cloud's numbers, and its outputs carry GET addresses.
+// are the Cloud's numbers, and its outputs carry GET addresses. A held row
+// names, by recipe, a value the engine is expected to hold; the engine
+// resolves it as it would keep a record of that recipe.
 type Merge struct {
 	Bundle dagql.ValueBundle `json:"bundle"`
 }
@@ -207,6 +213,11 @@ type Merged struct {
 	Values     []MergedValue  `json:"values"`
 	Retained   []RetainedRoot `json:"retained"`
 	Skipped    []SkippedValue `json:"skipped,omitempty"`
+	// Stale are the bundle's held rows the engine didn't hold when the
+	// merge decided: no current entry for the recipe, one with no value of
+	// its own, or an expired one the row hasn't outlived. A reply with Stale
+	// committed nothing, and its Values, Retained and Skipped are empty.
+	Stale []dagql.TransferOrdinal `json:"stale,omitempty"`
 }
 
 // MergedValue is the engine entry a bundle record landed on, and its value
