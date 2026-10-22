@@ -39,6 +39,10 @@
           },
           "type": "object",
           "description": "Registries configures custom registry mirrors, root CAs, and insecure/HTTP access."
+        },
+        "shutdown": {
+          "$ref": "#/$defs/ShutdownConfig",
+          "description": "Shutdown configures how the engine stops."
         }
       },
       "additionalProperties": false,
@@ -209,6 +213,16 @@
         "insecureRootCapabilities": {
           "type": "boolean",
           "description": "InsecureRootCapabilities controls whether the argument of the same name is permitted in Container.withExec - it is allowed by default. Disabling this option ensures that dagger build containers do not run as privileged, and is a basic form of security hardening."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "ShutdownConfig": {
+      "properties": {
+        "gracefulStopTimeout": {
+          "$ref": "#/$defs/Duration",
+          "description": "GracefulStopTimeout bounds the engine's whole stop, from the first SIGTERM or SIGINT to process exit. The final telemetry flushes get what remains of it, at most 30s each. Set it below the grace period of whatever supervises the engine, so that the engine exits on its own rather than being killed. Defaults to 5m."
         }
       },
       "additionalProperties": false,
