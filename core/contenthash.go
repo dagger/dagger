@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"path"
 	"strings"
 
 	bkcontenthash "github.com/dagger/dagger/engine/contenthash"
@@ -12,6 +13,7 @@ import (
 	"resenje.org/singleflight"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/util/hashutil"
 	telemetry "github.com/dagger/otel-go"
 )
 
@@ -37,6 +39,23 @@ func GetContentHashFromDirectory(
 	dagql.TraceEGraphDebug(ctx, "directory_content_hash_from_ref", "phase", "runtime", "path", dirPath, "snapshot_ref_id", snapshot.SnapshotID(), "content_digest", dgst)
 
 	return dgst, nil
+}
+
+// DirectoryContentDigest is the content identity of the directory at dirPath
+// of snapshot. For a whole snapshot it is the content hash of its files. A
+// subdirectory also has a name, which Directory.name reports and the content
+// hash leaves out, so its digest covers the name too: two subdirectories
+// with equal files under different names are not interchangeable.
+func DirectoryContentDigest(ctx context.Context, snapshot bkcache.ImmutableRef, dirPath string) (digest.Digest, error) {
+	dgst, err := GetContentHashFromDirectory(ctx, snapshot, dirPath)
+	if err != nil {
+		return "", err
+	}
+	name := path.Base(path.Clean("/" + dirPath))
+	if name == "/" {
+		return dgst, nil
+	}
+	return hashutil.HashStrings("directory", dgst.String(), "name", name), nil
 }
 
 func GetContentHashFromFile(

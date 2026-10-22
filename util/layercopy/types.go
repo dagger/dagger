@@ -22,6 +22,9 @@ func cleanRel(p string) string {
 type Mount struct {
 	Root  string
 	Mount *mount.Mount
+	// Boundary, if set, is a directory in the mount, with its symlinks
+	// resolved, that paths in it stay within: see BoundedRootPath.
+	Boundary string
 }
 
 type sourceCacheKey struct {

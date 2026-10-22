@@ -343,6 +343,79 @@ func RootPathWithoutFinalSymlink(root, containerPath string) (string, error) {
 	return path.Join(resolvedLinkDir, linkBasename), nil
 }
 
+// ResolveInDir resolves p, a path in the directory at dirPath of the
+// filesystem mounted at root, with that directory as the root: ".." stops at
+// it, and symlinks, absolute ones included, resolve inside it. A Directory is
+// a view of one path in its snapshot, and identified by the content of what it
+// holds, so its paths must not reach what surrounds it.
+func ResolveInDir(root, dirPath, p string) (string, error) {
+	base, err := containerdfs.RootPath(root, dirPath)
+	if err != nil {
+		return "", err
+	}
+	return containerdfs.RootPath(base, path.Join("/", p))
+}
+
+// ResolveInDirWithoutFinalSymlink is ResolveInDir, but leaves a final symlink
+// unresolved, as RootPathWithoutFinalSymlink does.
+func ResolveInDirWithoutFinalSymlink(root, dirPath, p string) (string, error) {
+	base, err := containerdfs.RootPath(root, dirPath)
+	if err != nil {
+		return "", err
+	}
+	return RootPathWithoutFinalSymlink(base, path.Join("/", p))
+}
+
+// leavesDir reports whether resolving p, a path in the directory mounted at
+// base, as containerdfs.RootPath(base, p) does, would leave the directory: by
+// a symlink whose ".." climbs above it, or by an absolute symlink. If it
+// doesn't, p resolves to the same file wherever the directory is mounted, so
+// it can be named by its path in a larger filesystem without depending on
+// anything else there. It reads only the directory.
+func leavesDir(base, p string) (bool, error) {
+	var resolved []string
+	rest := strings.Split(path.Join("/", p), "/")
+	var linksWalked int
+	for len(rest) > 0 {
+		name := rest[0]
+		rest = rest[1:]
+		switch name {
+		case "", ".":
+			continue
+		case "..":
+			if len(resolved) == 0 {
+				return true, nil
+			}
+			resolved = resolved[:len(resolved)-1]
+			continue
+		}
+		resolved = append(resolved, name)
+		fi, err := os.Lstat(filepath.Join(base, filepath.Join(resolved...)))
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return false, err
+		}
+		if fi.Mode()&os.ModeSymlink == 0 {
+			continue
+		}
+		if linksWalked++; linksWalked > 255 {
+			return false, fmt.Errorf("resolving %s: too many links", p)
+		}
+		target, err := os.Readlink(filepath.Join(base, filepath.Join(resolved...)))
+		if err != nil {
+			return false, err
+		}
+		if path.IsAbs(target) {
+			return true, nil
+		}
+		resolved = resolved[:len(resolved)-1]
+		rest = append(strings.Split(target, "/"), rest...)
+	}
+	return false, nil
+}
+
 // RestoreErrPath will restore the path of an error, which is useful for both removing buildkit mount root paths and referencing uncleaned paths
 // Note: TrimErrPathPrefix should be used instead when a root prefix is known
 func RestoreErrPath(err error, path string) error {

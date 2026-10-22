@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -656,7 +657,7 @@ func (lazy *FileSubfileLazy) Evaluate(ctx context.Context, file *File) error {
 		if err != nil {
 			return fmt.Errorf("failed to get parent directory path: %w", err)
 		}
-		finalPath := filepath.Join(parentPath, lazy.Path)
+		finalPath := path.Join(parentPath, path.Join("/", lazy.Path))
 
 		query, err := CurrentQuery(ctx)
 		if err != nil {
@@ -681,6 +682,10 @@ func (lazy *FileSubfileLazy) Evaluate(ctx context.Context, file *File) error {
 		}
 		if parentSnapshot == nil {
 			return fmt.Errorf("file subfile parent snapshot is nil")
+		}
+		finalPath, err = viewSubpath(ctx, parentSnapshot, parentPath, lazy.Path)
+		if err != nil {
+			return RestoreErrPath(err, lazy.Path)
 		}
 
 		reopened, err := query.SnapshotManager().GetBySnapshotID(ctx, parentSnapshot.SnapshotID(), bkcache.NoUpdateLastUsed)

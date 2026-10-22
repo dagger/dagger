@@ -5495,7 +5495,7 @@ func (container *Container) Build(
 	}
 	var dockerfileBytes []byte
 	err = MountRef(ctx, dockerfileRef, func(root string, _ *mount.Mount) error {
-		resolvedDockerfilePath, err := containerdfs.RootPath(root, path.Join(dockerfileSelector, dockerfilePath))
+		resolvedDockerfilePath, err := ResolveInDir(root, dockerfileSelector, dockerfilePath)
 		if err != nil {
 			return err
 		}

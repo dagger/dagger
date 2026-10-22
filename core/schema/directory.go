@@ -67,7 +67,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("pattern").Doc(`Pattern to match (e.g., "*.md").`),
 			),
-		dagql.NodeFunc("search", s.search).
+		dagql.NodeFuncWithDynamicInputs("search", s.search, s.searchDynamicInputs).
 			IsPersistable().
 			Doc(
 				// NOTE: sync with File.search
@@ -93,7 +93,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve (e.g., "README.md").`),
 			),
-		dagql.NodeFunc("withFile", s.withFile).
+		dagql.NodeFuncWithDynamicInputs("withFile", s.withFile, s.withFileDynamicInputs).
 			IsPersistable().
 			Doc(`Retrieves this directory plus the contents of the given file copied to the given path.`).
 			Args(
@@ -150,7 +150,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`Location of the directory to retrieve. Example: "/src"`),
 			),
-		dagql.NodeFunc("withDirectory", s.withDirectory).
+		dagql.NodeFuncWithDynamicInputs("withDirectory", s.withDirectory, s.withDirectoryDynamicInputs).
 			IsPersistable().
 			View(AllVersion).
 			Doc(`Return a snapshot with a directory added`).
@@ -167,7 +167,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("permissions").Doc(`Permission given to the copied directory and contents (e.g., 0755).`).
 					View(AfterVersion("v0.21.0")),
 			),
-		dagql.NodeFunc("__withDirectoryDockerfileCompat", s.withDirectoryDockerfileCompatContentHashed).
+		dagql.NodeFuncWithDynamicInputs("__withDirectoryDockerfileCompat", s.withDirectoryDockerfileCompatContentHashed, s.withDirectoryDockerfileCompatDynamicInputs).
 			IsPersistable().
 			View(AllVersion).
 			Doc(`(Internal-only) Dockerfile-compat directory copy path.`).
@@ -182,7 +182,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 					`If the group is omitted, it defaults to the same as the user.`),
 				dagql.Arg("permissions").Doc(`Permission given to the copied directory and contents (e.g., 0755).`),
 			),
-		dagql.NodeFunc("filter", maintainContentHashing(s.filter)).
+		dagql.NodeFuncWithDynamicInputs("filter", maintainContentHashing(s.filter), s.filterDynamicInputs).
 			Doc(`Return a snapshot with some paths included or excluded`).
 			Args(
 				dagql.Arg("exclude").Doc(`If set, paths matching one of these glob patterns is excluded from the new snapshot. Example: ["node_modules/", ".git*", ".env"]`),
@@ -324,7 +324,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("target").Doc(`Location of the file or directory to link to (e.g., "/existing/file").`),
 				dagql.Arg("linkName").Doc(`Location where the symbolic link will be created (e.g., "/new-file-link").`),
 			),
-		dagql.NodeFunc("chown", s.chown).
+		dagql.NodeFuncWithDynamicInputs("chown", s.chown, s.chownDynamicInputs).
 			IsPersistable().
 			Doc(`Change the owner of the directory contents recursively.`).
 			Args(
@@ -660,7 +660,7 @@ func (s *directorySchema) withDirectoryDockerfileCompatContentHashed(
 	if !ok {
 		return releaseErr(fmt.Errorf("failed to content hash dockerfile copy: directory path unset"))
 	}
-	dgst, err := core.GetContentHashFromDirectory(ctx, snapshot, dirPath)
+	dgst, err := core.DirectoryContentDigest(ctx, snapshot, dirPath)
 	if err != nil {
 		return releaseErr(fmt.Errorf("failed to content hash dockerfile copy: %w", err))
 	}
@@ -2102,7 +2102,7 @@ func maintainContentHashing[A any](
 			if !ok {
 				return res, fmt.Errorf("failed to make directory content hashed: failed to get directory path: unset")
 			}
-			dgst, err := core.GetContentHashFromDirectory(ctx, snapshot, dirPath)
+			dgst, err := core.DirectoryContentDigest(ctx, snapshot, dirPath)
 			if err != nil {
 				return res, fmt.Errorf("failed to make directory content hashed: %w", err)
 			}
@@ -2214,4 +2214,77 @@ func (s *directorySchema) changesetFilter(ctx context.Context, parent dagql.Obje
 	}
 	err = srv.Select(ctx, fullAfter, &inst, dagql.Selector{Field: "changes", Args: []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](fullBeforeID)}}})
 	return inst, err
+}
+
+// ownerAccountsInput keys a call that resolves owner in dir's snapshot by the
+// account databases it reads there (see core.OwnerAccountsInput).
+func ownerAccountsInput(ctx context.Context, dir dagql.ObjectResult[*core.Directory], owner string, req *dagql.CallRequest) error {
+	dgst, err := dir.Self().OwnerAccountsDigest(ctx, dir, owner)
+	if err != nil || dgst == "" {
+		return err
+	}
+	return req.SetImplicitInput(ctx, core.OwnerAccountsInput, dagql.NewString(dgst))
+}
+
+// ancestorIgnoresInput keys a call that applies the ignore files above dir by
+// those files (see core.AncestorIgnoresInput).
+func ancestorIgnoresInput(ctx context.Context, dir dagql.ObjectResult[*core.Directory], names []string, req *dagql.CallRequest) error {
+	dgst, err := dir.Self().AncestorIgnoreDigest(ctx, dir, names)
+	if err != nil || dgst == "" {
+		return err
+	}
+	return req.SetImplicitInput(ctx, core.AncestorIgnoresInput, dagql.NewString(dgst))
+}
+
+// copySourceIgnoresInput keys a copy from src that applies gitignore rules by
+// the ignore files above src.
+func copySourceIgnoresInput(ctx context.Context, src core.DirectoryID, filter core.CopyFilter, req *dagql.CallRequest) error {
+	if !filter.Gitignore {
+		return nil
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return err
+	}
+	srcDir, err := src.Load(ctx, srv)
+	if err != nil {
+		return err
+	}
+	return ancestorIgnoresInput(ctx, srcDir, core.GitignoreFiles, req)
+}
+
+func (s *directorySchema) withFileDynamicInputs(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithFileArgs, req *dagql.CallRequest) error {
+	return ownerAccountsInput(ctx, parent, args.Owner, req)
+}
+
+func (s *directorySchema) withDirectoryDynamicInputs(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithDirectoryArgs, req *dagql.CallRequest) error {
+	if err := ownerAccountsInput(ctx, parent, args.Owner, req); err != nil {
+		return err
+	}
+	return copySourceIgnoresInput(ctx, cmp.Or(args.Source, args.Directory), args.CopyFilter, req)
+}
+
+func (s *directorySchema) withDirectoryDockerfileCompatDynamicInputs(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithDirectoryDockerfileCompatArgs, req *dagql.CallRequest) error {
+	if err := ownerAccountsInput(ctx, parent, args.Owner, req); err != nil {
+		return err
+	}
+	return copySourceIgnoresInput(ctx, args.Source, args.CopyFilter, req)
+}
+
+func (s *directorySchema) filterDynamicInputs(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args FilterArgs, req *dagql.CallRequest) error {
+	if !args.Gitignore {
+		return nil
+	}
+	return ancestorIgnoresInput(ctx, parent, core.GitignoreFiles, req)
+}
+
+func (s *directorySchema) chownDynamicInputs(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args directoryChownArgs, req *dagql.CallRequest) error {
+	return ownerAccountsInput(ctx, parent, args.Owner, req)
+}
+
+func (s *directorySchema) searchDynamicInputs(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args searchArgs, req *dagql.CallRequest) error {
+	if !args.SkipIgnored {
+		return nil
+	}
+	return ancestorIgnoresInput(ctx, parent, core.SearchIgnoreFiles, req)
 }

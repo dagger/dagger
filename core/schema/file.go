@@ -112,7 +112,7 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 				dagql.Arg("timestamp").Doc(`Timestamp to set dir/files in.`,
 					`Formatted in seconds following Unix epoch (e.g., 1672531199).`),
 			),
-		dagql.NodeFunc("chown", s.chown).
+		dagql.NodeFuncWithDynamicInputs("chown", s.chown, s.chownDynamicInputs).
 			IsPersistable().
 			Doc(`Change the owner of the file recursively.`).
 			Args(
@@ -445,4 +445,14 @@ func (s *fileSchema) asJSON(ctx context.Context, parent dagql.ObjectResult[*core
 		return nil, err
 	}
 	return &core.JSONValue{Data: []byte(json)}, nil
+}
+
+// chownDynamicInputs keys a chown to a named owner by the account databases
+// it reads in the file's snapshot (see core.OwnerAccountsInput).
+func (s *fileSchema) chownDynamicInputs(ctx context.Context, parent dagql.ObjectResult[*core.File], args fileChownArgs, req *dagql.CallRequest) error {
+	dgst, err := parent.Self().OwnerAccountsDigest(ctx, parent, args.Owner)
+	if err != nil || dgst == "" {
+		return err
+	}
+	return req.SetImplicitInput(ctx, core.OwnerAccountsInput, dagql.NewString(dgst))
 }
