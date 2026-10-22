@@ -59,6 +59,13 @@ var testVectors = []struct {
 	{"apiS3Bucket", "^API · s3 · bucket", "APIS3Bucket", "apiS3Bucket", "api_s3_bucket", "ApiS3Bucket"},
 	{"HTTP2s", "^HTTP+2s", "HTTP2s", "http2s", "http2s", "Http2s"},
 	{"SHA256s", "^SHA+256s", "SHA256s", "sha256s", "sha256s", "Sha256s"},
+	{"K8STools", "*K8s · tools", "K8sTools", "k8sTools", "k8s_tools", "K8sTools"},
+	{"K8sTools", "*K8s · tools", "K8sTools", "k8sTools", "k8s_tools", "K8sTools"},
+	{"k8s-tools", "*K8s · tools", "K8sTools", "k8sTools", "k8s_tools", "K8sTools"},
+	{"K8S_TOOLS", "*K8s · tools", "K8sTools", "k8sTools", "k8s_tools", "K8sTools"},
+	{"MyK8SCluster", "my · *K8s · cluster", "MyK8sCluster", "myK8sCluster", "my_k8s_cluster", "MyK8sCluster"},
+	{"K3SServer", "*K3s · server", "K3sServer", "k3sServer", "k3s_server", "K3sServer"},
+	{"k3s_server", "*K3s · server", "K3sServer", "k3sServer", "k3s_server", "K3sServer"},
 }
 
 // unknownAcronyms are test vector inputs with acronyms the dictionary doesn't
