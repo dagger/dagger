@@ -2010,7 +2010,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitLoadsCommittedModules(ctx context.C
 	c := connect(ctx, t)
 	daemon, url := gitService(ctx, t, c, core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"modules/probe\"\n").
-		WithNewFile("modules/probe/dagger.json", `{"name":"probe","engineVersion":"v1.0.0","sdk":"go"}`).
+		WithNewFile("modules/probe/dagger.json", `{"name":"probe","engineVersion":"v1.0.0-beta.20","sdk":"go"}`).
 		WithNewFile("modules/probe/main.go", "package main\ntype Probe struct{}\n"))
 	ws := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace().
 		WithNewFile("modules/probe/main.go", `package main

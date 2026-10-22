@@ -120,7 +120,7 @@ source = 'github.com/does/notexist/tools@v2'
 
 func (WorkspaceModulesSuite) TestWorkspaceModuleVersionUpdate(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	content := core.NewQuery(c).Directory().WithNewFile("dagger.json", `{"name":"tools","engineVersion":"v1.0.0","sdk":"go"}`).
+	content := core.NewQuery(c).Directory().WithNewFile("dagger.json", `{"name":"tools","engineVersion":"v1.0.0-beta.20","sdk":"go"}`).
 		WithNewFile("main.go", "package main\ntype Tools struct{}\n")
 	repo := core.NewQuery(c).Container().From(alpineImage).WithExec([]string{"apk", "add", "git"}).With(gitUserConfig).
 		WithDirectory("/src", content).WithWorkdir("/src").WithExec([]string{"git", "init", "-b", "main"}).
@@ -175,7 +175,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleVersionUpdate(ctx context.Contex
 
 		// A local source is relative to the cwd and recorded relative to the config.
 		require.NoError(t, os.MkdirAll(filepath.Join(workdir, "mods", "tools"), 0o755))
-		require.NoError(t, os.WriteFile(filepath.Join(workdir, "mods", "tools", "dagger.json"), []byte(`{"name":"tools","engineVersion":"v1.0.0"}`), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(workdir, "mods", "tools", "dagger.json"), []byte(`{"name":"tools","engineVersion":"v1.0.0-beta.20"}`), 0o644))
 		cmd := hostDaggerCommandRaw(ctx, t, filepath.Join(workdir, "mods"), "mod", "update", "tools", "--source=./tools")
 		out, err = cmd.CombinedOutput()
 		require.NoError(t, err, string(out))
