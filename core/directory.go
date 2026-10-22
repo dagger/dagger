@@ -2057,6 +2057,19 @@ func (dir *Directory) applyPatchFileResult(ctx context.Context, parent dagql.Obj
 	return nil
 }
 
+// withoutGitEnv returns env without Git's own variables, such as GIT_DIR or
+// GIT_CONFIG_*: in the engine's environment they could lead git to a
+// repository or config outside the directory it works on.
+func withoutGitEnv(env []string) []string {
+	out := make([]string, 0, len(env))
+	for _, kv := range env {
+		if !strings.HasPrefix(kv, "GIT_") {
+			out = append(out, kv)
+		}
+	}
+	return out
+}
+
 func applyGitPatch(ctx context.Context, dir string, patch io.Reader, stdio telemetry.SpanStreams, onConflict PatchConflict) error {
 	leaveMarkers := onConflict == PatchConflictLeaveMarkers
 	args := []string{"apply", "--allow-empty"}
@@ -2075,7 +2088,7 @@ func applyGitPatch(ctx context.Context, dir string, patch io.Reader, stdio telem
 	apply := exec.CommandContext(ctx, "git", args...)
 	apply.Dir = dir
 	// wholeFileApplyErrors reads git's messages, so pin their language.
-	apply.Env = append(os.Environ(), "LC_ALL=C")
+	apply.Env = append(withoutGitEnv(os.Environ()), "LC_ALL=C")
 	apply.Stdin = patch
 	apply.Stdout = stdio.Stdout
 	apply.Stderr = stdio.Stderr
