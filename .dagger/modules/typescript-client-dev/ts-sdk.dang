@@ -3,7 +3,7 @@ pub description = "Toolchain to develop the Dagger Typescript SDK"
 type TypescriptClientDev {
   pub nodeVersionPrevLts: String! = "22.22.0"
   pub nodeVersionLts = "24.13.1"
-  pub bunVersion = "1.1.38"
+  pub bunVersion = "1.3.0"
 
   pub workspaceDir: Directory!
     @defaultPath(path: "/")
