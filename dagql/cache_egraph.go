@@ -1244,7 +1244,7 @@ func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 			return fmt.Errorf("teach content digest: result %T has no call frame", res)
 		}
 		oldContentDigest := baseFrame.ContentDigest()
-		frame := baseFrame.fork()
+		frame := baseFrame.forkSame()
 
 		replaced := false
 		var replacedDigest digest.Digest
@@ -1760,7 +1760,7 @@ func (c *Cache) addTransferTermLocked(ctx context.Context, res *sharedResult, te
 			"result", uint64(res.id), "request", term.Request, "max", maxTransferTerms)
 		return
 	}
-	next := frame.fork()
+	next := frame.forkSame()
 	next.TransferTerms = append(next.TransferTerms, term)
 	res.storeResultCall(next)
 	c.traceResultCallFrameUpdated(ctx, res, "transfer_term", frame, next)

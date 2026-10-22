@@ -655,7 +655,7 @@ func VisitEncodedReferences(rec PersistedRecord, visit PersistedRefVisitor) (Per
 	out.Envelope = env
 	out.SnapshotLinks = scopes.links
 	if rec.Call != nil {
-		out.Call = rec.Call.clone()
+		out.Call = rec.Call.cloneSame()
 		if err := visitResultCallReferences(out.Call, nil, visit); err != nil {
 			return PersistedRecord{}, err
 		}

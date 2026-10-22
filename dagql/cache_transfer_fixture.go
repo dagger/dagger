@@ -158,7 +158,7 @@ func (c *Cache) TransferFixtureSnapshot(ctx context.Context, sessionID string, i
 		if err != nil {
 			return report, err
 		}
-		entry := TransferFixtureRow{ResultID: uint64(id), Call: frame.clone(), Imported: row.imported, Offers: offers}
+		entry := TransferFixtureRow{ResultID: uint64(id), Call: frame.cloneSame(), Imported: row.imported, Offers: offers}
 		entry.SnapshotLinks = cloneSnapshotRefLinks(row.loadPayloadState().snapshotOwnerLinks)
 		_, entry.Persisted = c.persistedEdgesByResult[id]
 		for dep := range row.deps {

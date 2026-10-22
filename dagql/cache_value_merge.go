@@ -470,7 +470,7 @@ func (c *Cache) privateMergeCache(ctx context.Context, prep *valueMergePrep, hel
 		rec.ResultID = prep.firstID + id - 1
 		rec.Envelope.ResultID = rec.ResultID
 		rec.Envelope.Imported = true
-		rec.Call = rec.Call.clone()
+		rec.Call = rec.Call.cloneSame()
 		if err := visitResultCallReferences(rec.Call, nil, relocate); err != nil {
 			return nil, err
 		}
@@ -736,7 +736,7 @@ func cloneValueBundle(in ValueBundle) (ValueBundle, error) {
 			return ValueBundle{}, err
 		}
 		value.Record.Envelope = env
-		value.Record.Call = value.Record.Call.clone()
+		value.Record.Call = value.Record.Call.cloneSame()
 		value.Record.SnapshotLinks = cloneSnapshotRefLinks(value.Record.SnapshotLinks)
 		value.DependencyIDs = slices.Clone(value.DependencyIDs)
 		out.Values[i] = value
@@ -1113,7 +1113,7 @@ func (c *Cache) relocateMergeRowsLocked(commit *valueMergeCommit) error {
 		} else {
 			// The record is shared with the preparation: copy what the
 			// commit changes.
-			rec.Call = source.Call.clone()
+			rec.Call = source.Call.cloneSame()
 			offers, err := clonePartOffers(source.Envelope.PendingOffers)
 			if err != nil {
 				return err

@@ -100,7 +100,7 @@ func (c *Cache) capturePartRecord(ctx context.Context, shared *sharedResult, imp
 	if payload.snapshotLinkIntent != nil {
 		payload.snapshotOwnerLinks = cloneSnapshotRefLinks(payload.snapshotLinkIntent.Links)
 	}
-	frame := shared.loadResultCall().clone()
+	frame := shared.loadResultCall().cloneSame()
 	captured := &sharedResult{
 		id:                    shared.id,
 		self:                  payload.self,

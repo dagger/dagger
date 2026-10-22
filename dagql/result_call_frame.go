@@ -227,7 +227,11 @@ type ResultCall struct {
 	// and in persistence, so that an engine that merges the record hits the
 	// call as the engine that ran it does (applyTransferTermsLocked). Like
 	// ProfileSkip, they are EXCLUDED from every digest: they say what else
-	// names the result, not what the result's own call is.
+	// names the result, not what the result's own call is. They belong to
+	// this frame's result alone, so clone and fork leave them out: a frame
+	// derived for another result, a list's element or a new call, must not
+	// name this one. cloneSame and forkSame keep them, for a copy of the
+	// same result's frame.
 	TransferTerms []TransferTerm `json:"transferTerms,omitempty"`
 
 	// recipeDigest is memoized once the frame has reached its finalized
@@ -261,16 +265,15 @@ func (frame *ResultCall) cloneWith(memo resultCallCloneMemo) *ResultCall {
 		return cp
 	}
 	cp := &ResultCall{
-		Kind:          frame.Kind,
-		Type:          frame.Type.clone(),
-		Field:         frame.Field,
-		SyntheticOp:   frame.SyntheticOp,
-		View:          frame.View,
-		Nth:           frame.Nth,
-		EffectIDs:     slices.Clone(frame.EffectIDs),
-		ExtraDigests:  slices.Clone(frame.ExtraDigests),
-		ProfileSkip:   frame.ProfileSkip,
-		TransferTerms: cloneTransferTerms(frame.TransferTerms),
+		Kind:         frame.Kind,
+		Type:         frame.Type.clone(),
+		Field:        frame.Field,
+		SyntheticOp:  frame.SyntheticOp,
+		View:         frame.View,
+		Nth:          frame.Nth,
+		EffectIDs:    slices.Clone(frame.EffectIDs),
+		ExtraDigests: slices.Clone(frame.ExtraDigests),
+		ProfileSkip:  frame.ProfileSkip,
 	}
 	// Register before recursing so a shared (or, defensively, cyclic) sub-DAG
 	// resolves to this same clone instead of being re-expanded into a tree.
@@ -313,9 +316,30 @@ func (frame *ResultCall) fork() *ResultCall {
 		// fork inherits the producer's decision; the element's own immediate
 		// receiver is the list (not a reflection type), so recomputing here would
 		// wrongly profile a reflection-list walk — inheritance is the correct rule.
-		ProfileSkip:   frame.ProfileSkip,
-		TransferTerms: cloneTransferTerms(frame.TransferTerms),
+		ProfileSkip: frame.ProfileSkip,
 	}
+}
+
+// cloneSame is clone for a copy of the same result's frame: it keeps the
+// frame's transfer terms. Use it only where the copy stands for the frame's
+// own result: persisting or transferring it, or replacing it with a changed
+// frame of the same result.
+func (frame *ResultCall) cloneSame() *ResultCall {
+	cp := frame.clone()
+	if cp != nil {
+		cp.TransferTerms = cloneTransferTerms(frame.TransferTerms)
+	}
+	return cp
+}
+
+// forkSame is fork for a changed frame of the same result: it keeps the
+// frame's transfer terms.
+func (frame *ResultCall) forkSame() *ResultCall {
+	cp := frame.fork()
+	if cp != nil {
+		cp.TransferTerms = cloneTransferTerms(frame.TransferTerms)
+	}
+	return cp
 }
 
 // TransferTerm is a call's term on a result it returned, as digests another
