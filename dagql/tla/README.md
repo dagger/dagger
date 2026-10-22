@@ -449,6 +449,62 @@ Reachability probes assert the negation of a witness, and each stopped at it:
 The merge probes disable the publication replace and retire actions, so a
 witness can only come from merge.
 
+**Declined persistence.** A resolver of a persistable field can decline to
+persist its result once it sees it (`dagql.DeclinePersistence`; File.contents
+does over 1 MiB). `FnComplete` chooses whether the call declined, from
+`PersistDeclineChoices`, which is `{FALSE}` unless a configuration overrides
+it, so every other configuration keeps its state space. A declined call's
+publication creates no retention edge, and its fresh value carries the mark
+(`FreshResult`). `PubUnregister` gives a call that adopted a marked value no
+persistence intent either, and `PersistHit` leaves a marked value unpersisted.
+A declined value doesn't replace an entry that has a retention edge in place:
+`PubRetire` retires the entry, and the value registers beside it. `Flush`
+saves the mark with the row and `Restart` restores it, so a declined value kept
+as a dependency of a persisted value stays unpersisted after a restart.
+
+`DeclinedNeverPersisted` checks that a declined value never has a retention
+edge. It reads `declinedTruth`, a property-only copy of the decline that
+`Flush` saves whatever happens to the mark, as `dirtyAtSnapshot` carries a
+verdict across a restart; the actions read the mark, as the code does.
+`PersistableIntentDurable` excludes declined calls and declined adopted values,
+judged by the mark.
+
+Merges are outside the invariant's scope. A merge that keeps a live entry
+retains it as the bundle's root (`decideMergeRowLocked`'s `mergeKeep` in
+`dagql/cache_value_merge.go`, then the commit's root retention), and that is
+the known way a declined entry gains a retention edge: the Cloud's retention
+wins. It needs a Cloud-held root for a recipe whose value the engine declines,
+which no engine declining the same way produces.
+
+The pass configurations are scoped, each stating what it leaves out:
+
+- `persist_decline_live`: two sessions, one call, release, any call may
+  decline, no expiry.
+- `persist_decline_expiry`: the same with expiry, where only the second call
+  may decline (`ExpiryDeclineScenario`). Left out of both: a declining first
+  call whose entry later expires and is replaced or retired by a non-declining
+  call, and, with two invocations, a hit after a replacement.
+- `persist_decline_restart`: cA declines, cB depends on it and is persisted, a
+  restart, then a persistable cA hit (`RestartDeclineScenario`). Left out:
+  other call orders, an unpersistable cB or second cA, a declining cB, and a
+  release or restart before cB.
+
+Each mutation turns one guard off with `GuardOff` and must break
+`DeclinedNeverPersisted`, which shows the guard is reached and needed:
+`hitguard`, `adopt` and `retire` on the unscoped live-and-expiry scope, `flush`
+in the restart scenario. Run one at a time with TLC 1.7.4, 4 workers, -Xmx6g,
+on a local engine, against this specification:
+
+| Configuration | Question | Expected | Distinct states | Depth | Wall seconds |
+| --- | --- | --- | ---: | ---: | ---: |
+| `persist_decline_live` | declines while values are live | clean | 6,980,920 | 46 | 228 |
+| `persist_decline_expiry` | a declined value at an expired entry | clean | 11,434,888 | 49 | 549 |
+| `persist_decline_restart` | a declined dependency across a restart | clean | 114,269 | 66 | 9 |
+| `persist_decline_hitguard` | `PersistHit` without its guard | violates `DeclinedNeverPersisted` | 27,430 | | 4 |
+| `persist_decline_adopt` | `PubUnregister` without reading the adopted value's mark | violates `DeclinedNeverPersisted` | 737,528 | | 25 |
+| `persist_decline_retire` | `PubReplaceInPlace` without its guard | violates `DeclinedNeverPersisted` | 952,685 | | 51 |
+| `persist_decline_flush` | `Flush` without saving the mark | violates `DeclinedNeverPersisted` | 32,721 | | 3 |
+
 **The full suite on this model.** Every configuration in the tla-check
 module's `expectedOutcome` map ran one at a time on the committed
 specification, with the pinned TLC 1.7.4 and 6 workers. Wall seconds

@@ -158,6 +158,21 @@ var expectedOutcome = map[string]string{
 	"recipe_expiry_deps":    "",
 	"recipe_expiry_restart": "",
 	"recipe_merge":          "",
+
+	// green: declined persistence (DeclinePersistence). A value its call
+	// declined to persist never gains a retention edge: not at
+	// publication, not by a later persistable hit, not by a call that
+	// adopts it, not by a replacement in place, and not across a restart.
+	// The pass configurations are scoped (live, expiry and restart
+	// scenarios); each mutation drops one guard, or Flush's saving of the
+	// mark, and must break DeclinedNeverPersisted. See the config headers.
+	"persist_decline_live":     "",
+	"persist_decline_expiry":   "",
+	"persist_decline_restart":  "",
+	"persist_decline_hitguard": "DeclinedNeverPersisted",
+	"persist_decline_adopt":    "DeclinedNeverPersisted",
+	"persist_decline_retire":   "DeclinedNeverPersisted",
+	"persist_decline_flush":    "DeclinedNeverPersisted",
 }
 
 var clientExpectedOutcome = map[string]string{

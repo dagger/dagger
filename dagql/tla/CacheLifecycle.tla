@@ -291,6 +291,24 @@ OneClass == [c \in Calls |-> "k1"]
 \* Convenience values for configs: the scenario-scoping defaults.
 AllSessions == Sessions
 PersistableChoices == IF PersistableIntent THEN BOOLEAN ELSE {FALSE}
+\* Whether a call's resolver may decline to persist its result
+\* (dagql.DeclinePersistence, as File.contents does over its limit). The
+\* default {FALSE} keeps every configuration that doesn't override it at its
+\* previous state space; a configuration about declined persistence
+\* overrides it with BothDeclineChoices.
+PersistDeclineChoices == {FALSE}
+BothDeclineChoices == BOOLEAN
+\* The guards that keep a declined value unpersisted, and Flush's saving of
+\* the mark. Each mutation configuration overrides one with GuardOff to show
+\* DeclinedNeverPersisted catches its loss: PersistHit's (a later
+\* persistable hit), PubUnregister's (a call that adopted a declined value),
+\* PubReplaceInPlace's (a declined value taking over a retention edge), and
+\* Flush's (the mark lost across a restart).
+PersistHitGuard == TRUE
+AdoptHandoffGuard == TRUE
+DeclinedRetireGuard == TRUE
+FlushKeepsDecline == TRUE
+GuardOff == FALSE
 DistinctClasses == [c \in Calls |-> c]
 EquivalenceClasses == {ClassOf[c] : c \in Calls}
 
@@ -747,6 +765,9 @@ ImportedResult(c, persistedFlag, depsSet, ownVal, payloadVal, dirtyAtSnapshotFla
      \* conservative (larger) for them.
      lateDeps |-> {},
      persisted |-> persistedFlag, barrier |-> "none",
+     \* a merged or initial imported value isn't declined; Restart restores
+     \* a saved row's mark, and its truth, over these
+     declined |-> FALSE, declinedTruth |-> FALSE,
      attachErrRefusal |-> FALSE,
      payload |-> payloadVal, decodePhase |-> "idle", decodeErr |-> "none",
      decodeGen |-> 0, persistSyncPending |-> FALSE,
@@ -782,7 +803,8 @@ ImportedResult(c, persistedFlag, depsSet, ownVal, payloadVal, dirtyAtSnapshotFla
 DeadHusk ==
     [call |-> CHOOSE c \in Calls : TRUE, registered |-> FALSE,
      released |-> TRUE, own |-> 0, deps |-> {}, lateDeps |-> {},
-     persisted |-> FALSE, barrier |-> "none",
+     persisted |-> FALSE, declined |-> FALSE, declinedTruth |-> FALSE,
+     barrier |-> "none",
      attachErrRefusal |-> FALSE,
      payload |-> "decoded", decodePhase |-> "idle", decodeErr |-> "none",
      decodeGen |-> 0, persistSyncPending |-> FALSE,
@@ -1138,6 +1160,9 @@ CreateOc(i) ==
              isPersistable |-> invocations[i].persistable,
              \* final-handoff persistence bookkeeping; see PubUnregister:
              needsPersistedEdge |-> FALSE,
+             \* the resolver declined persistence (ongoingCall.persistDecline,
+             \* chosen when the fn returns; see FnComplete)
+             declined |-> FALSE,
              pubState |-> "none", pubBy |-> 0, hold |-> FALSE, resId |-> 0,
              inIndex |-> TRUE,
              \* the callback goroutine holds the operation lease and the
@@ -1329,9 +1354,12 @@ FnComplete(o) ==
     \* when no waiter remains (getOrInitCallInner's goroutine); otherwise
     \* release is delegated to the waiters.
     /\ LET keepLease == ongoingCalls[o].waiters # 0 IN
-       \/ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done", ![o].outcome = "fresh",
-                                               ![o].sharedLease = keepLease]
-       \/ \E r \in LiveInClass(ClassOf[ongoingCalls[o].call]) :
+       \* the resolver may have declined persistence (DeclinePersistence)
+       \* before returning, whichever value it returns
+       \/ \E d \in PersistDeclineChoices :
+            ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done", ![o].outcome = "fresh",
+                                               ![o].sharedLease = keepLease, ![o].declined = d]
+       \/ \E r \in LiveInClass(ClassOf[ongoingCalls[o].call]), d \in PersistDeclineChoices :
             \* the fn returns a result its resolver acquired
             \* (FnInnerLoadClaim/Deliver); possession only - no claim, no
             \* liveness: release marking does not revoke a held value
@@ -1339,7 +1367,7 @@ FnComplete(o) ==
             /\ r \in ongoingCalls[o].acq
             /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done",
                                   ![o].outcome = "reuse", ![o].reuseFrom = r,
-                                  ![o].sharedLease = keepLease]
+                                  ![o].sharedLease = keepLease, ![o].declined = d]
        \/ /\ FnCanFail
           /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].fnState = "done", ![o].fnErr = TRUE,
                                                   ![o].sharedLease = FALSE]
@@ -1547,6 +1575,13 @@ FreshResult(o, lazyArm, handleChoice, deps) ==
      deps |-> deps,
      lateDeps |-> {},
      persisted |-> FALSE,
+     \* the call declined to persist its value (sharedResult.persistDeclined,
+     \* set in initCompletedResult before indexing; a replacement in place
+     \* installs it with the value, replaceResultValueInPlaceLocked)
+     declined |-> ongoingCalls[o].declined,
+     \* property-only: whether the value was declined, which no mutation of
+     \* the mark's saving touches (DeclinedNeverPersisted reads it)
+     declinedTruth |-> ongoingCalls[o].declined,
      barrier |-> "open",
      attachErrRefusal |-> FALSE,
      \* fresh results have their typed payload in memory;
@@ -1741,6 +1776,8 @@ PubReplaceInPlace(o) ==
     /\ \E r \in Current(ongoingCalls[o].call) :
         /\ res[r].expired
         /\ ~UsedByOwnership(r)
+        \* a declined value doesn't take over a retention edge; PubRetire
+        /\ ~(DeclinedRetireGuard /\ ongoingCalls[o].declined /\ res[r].persisted)
         /\ \E lazyArm \in LazyArmChoices, handleChoice \in HandleChoices(o),
               deps \in DepChoices(o) :
             LET old == res[r].deps
@@ -1776,7 +1813,10 @@ PubRetire(o) ==
     /\ ongoingCalls[o].outcome = "fresh"
     /\ \E r \in Current(ongoingCalls[o].call) :
         /\ res[r].expired
-        /\ UsedByOwnership(r)
+        \* or a declined value meets an entry with a retention edge, which a
+        \* replacement in place would hand it (initCompletedResult)
+        /\ \/ UsedByOwnership(r)
+           \/ ongoingCalls[o].declined /\ res[r].persisted
         /\ res' = [res EXCEPT ![r].indexed = FALSE]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, sessionEdges,
                    countedEdges, sessionRelease, evals, epoch, flushed>>
@@ -2070,7 +2110,12 @@ PubUnregister(o) ==
           ![o].needsPersistedEdge =
               /\ ongoingCalls[o].pubState = "done"
               /\ ongoingCalls[o].resId # 0
-              /\ ongoingCalls[o].isPersistable]
+              /\ ongoingCalls[o].isPersistable
+              /\ ~ongoingCalls[o].declined
+              \* nor of a value another call declined, which this one
+              \* adopted: the mark is read with the entry under egraphMu
+              \* (initCompletedResult's resDeclined)
+              /\ ~(AdoptHandoffGuard /\ res[ongoingCalls[o].resId].declined)]
     /\ UNCHANGED <<invocations, res, sessionEdges, countedEdges, sessionRelease,
                    evals, epoch, flushed>>
 
@@ -2274,11 +2319,13 @@ ReadBarrierResourceMismatchMiss(i) ==
 \* after attachment and payload loading succeed. The upsert keeps the expiry
 \* computed during lookup; TTL values are abstracted from this model. The
 \* registration guard prevents resurrection if the result was collected in
-\* the interval before this lock acquisition.
+\* the interval before this lock acquisition. A value its call declined to
+\* persist stays unpersisted; the guard reads the mark in the same section.
 PersistHit(i) ==
     /\ invocations[i].phase = "persistHit"
     /\ LET r == invocations[i].resId
            persisted == IF res[r].registered /\ ~res[r].persisted
+                           /\ ~(PersistHitGuard /\ res[r].declined)
                         THEN [res EXCEPT ![r].persisted = TRUE,
                                          ![r].own = @ + 1]
                         ELSE res
@@ -3072,6 +3119,12 @@ Flush ==
           expired   |-> res[r].expired,
           indexed   |-> res[r].indexed,
           replacements |-> res[r].replacements,
+          \* the decline mark is saved with the row (the saved envelope's
+          \* PersistDeclined)
+          declined  |-> FlushKeepsDecline /\ res[r].declined,
+          \* property-only, saved whatever happens to the mark, as
+          \* dirtyAtSnapshot carries a verdict the restarted engine lacks
+          declinedTruth |-> res[r].declinedTruth,
           dirty     |-> res[r].barrier \in {"open", "closedErr"},
           ownClean  |-> res[r].own =
               PersistedCount(r) + DepParentCount(r)]]]
@@ -3114,7 +3167,7 @@ Restart ==
              \* import separately, so a decoder error cannot replace its oracle.
              \* Every kept row is restored; the recipe index names exactly the
              \* rows it named when they were saved (Current).
-             THEN WithIndexState(ImportedResult(
+             THEN [WithIndexState(ImportedResult(
                     flushed.rows[x].call, flushed.rows[x].persisted, flushed.rows[x].deps,
                     (IF flushed.rows[x].persisted THEN 1 ELSE 0)
                       + Cardinality({y \in 1..Len(flushed.rows) :
@@ -3126,6 +3179,8 @@ Restart ==
                     flushed.rows[x].observed),
                     flushed.rows[x].expired, flushed.rows[x].indexed,
                     flushed.rows[x].replacements)
+                  EXCEPT !.declined = flushed.rows[x].declined,
+                         !.declinedTruth = flushed.rows[x].declinedTruth]
              ELSE DeadHusk]
     /\ invocations' = invocations
     /\ ongoingCalls' = [o \in OngoingCallIds |->
@@ -4171,6 +4226,7 @@ TypeOK ==
     /\ \A o \in OngoingCallIds : ongoingCalls[o].waiters >= 0
     /\ \A o \in OngoingCallIds : ongoingCalls[o].sharedLease \in BOOLEAN
     /\ \A o \in OngoingCallIds : ongoingCalls[o].replaced \in BOOLEAN
+    /\ \A o \in OngoingCallIds : ongoingCalls[o].declined \in BOOLEAN
     /\ \A o \in OngoingCallIds : ongoingCalls[o].acq \subseteq 1..Len(res)
     /\ \A o \in OngoingCallIds : ongoingCalls[o].acqPending \in 0..Len(res)
     /\ \A o \in OngoingCallIds : ongoingCalls[o].attachTarget \in 0..Len(res)
@@ -4211,6 +4267,8 @@ TypeOK ==
          \* invocation leads at most once
          /\ res[r].decodeGen \in 0..MaxInvocations
          /\ res[r].persistSyncPending \in BOOLEAN
+         /\ res[r].declined \in BOOLEAN
+         /\ res[r].declinedTruth \in BOOLEAN
          \* the pending flag exists only for an installed payload: it is
          \* set by a post-install finish and the install never reverts
          /\ res[r].persistSyncPending => res[r].payload = "decoded"
@@ -4323,7 +4381,9 @@ NoHalfAttachedRead ==
 \* Persistence intent is never lost: once a successful call's admission has
 \* closed and its handoff hold has been released, an admitted persistable
 \* request implies the persisted edge exists. This includes a refused or
-\* canceled final waiter because final handoff commits the edge first.
+\* canceled final waiter because final handoff commits the edge first. A
+\* call whose resolver declined persistence has no such intent, and one that
+\* adopted a value another call declined leaves that value unpersisted.
 PersistableIntentDurable ==
     \A o \in OngoingCallIds :
         (/\ ongoingCalls[o].pubState = "done"
@@ -4331,9 +4391,64 @@ PersistableIntentDurable ==
          /\ ongoingCalls[o].waiters = 0
          /\ ~ongoingCalls[o].hold
          /\ ongoingCalls[o].isPersistable
+         /\ ~ongoingCalls[o].declined
          /\ ongoingCalls[o].resId # 0
-         /\ res[ongoingCalls[o].resId].registered)
+         /\ res[ongoingCalls[o].resId].registered
+         /\ ~res[ongoingCalls[o].resId].declined)
             => res[ongoingCalls[o].resId].persisted
+
+\* A value its call declined to persist never gains a retention edge, judged
+\* by declinedTruth, which the mutations of the mark don't touch: not at
+\* publication, not by a later persistable hit, not by a call that adopts it,
+\* not by a replacement in place, and not after a restart, which saves and
+\* restores the mark with the row (as a dependency of a persisted root, a
+\* declined value is saved). Merges are out of its scope: a merge that keeps
+\* a live entry retains it as the bundle's root (decideMergeRowLocked's
+\* mergeKeep, cache_value_merge.go, then the commit's root retention), the
+\* known way a declined entry gains an edge - the Cloud's retention wins. It
+\* needs a Cloud-held root for a recipe whose value the engine declines,
+\* which no engine declining the same way produces. Configurations that
+\* check it run with ModelMerge off.
+DeclinedNeverPersisted ==
+    \A r \in ResultIds : res[r].registered /\ res[r].declinedTruth => ~res[r].persisted
+
+\* Scenario scoping for declined persistence (configurations name these as a
+\* CONSTRAINT, selecting a scenario as ReleaseSessions does; states outside
+\* it are not explored). DeclineScenarioFirst and DeclineScenarioOther are
+\* the two calls of a two-call configuration, picked by CHOOSE.
+DeclineScenarioFirst == CHOOSE c \in Calls : TRUE
+DeclineScenarioOther == CHOOSE c \in Calls : c # DeclineScenarioFirst
+
+\* Across a restart: the invocations are, in order, a call of the first
+\* call, a call of the other, and (after the restart, InvocationLimit) the
+\* first call again; the second and third are persistable; only the first
+\* call's fn may decline. That is a declined value kept only as the
+\* dependency of a persisted value through Flush and Restart, and a
+\* persistable hit on it afterwards. No session releases before the second
+\* call is spawned, so (with DrainOnRelease and no failure injection) the
+\* second call has published before Flush. It leaves out every other order
+\* of calls, an unpersistable second or third call, a declining second
+\* call, and a release or restart before the second call.
+RestartDeclineScenario ==
+    /\ \A i \in InvocationIds :
+         /\ invocations[i].call =
+              (IF i = 2 THEN DeclineScenarioOther ELSE DeclineScenarioFirst)
+         /\ i > 1 => invocations[i].persistable
+    /\ \A o \in OngoingCallIds :
+         ongoingCalls[o].declined => ongoingCalls[o].call = DeclineScenarioFirst
+    /\ (\E s \in Sessions : sessionRelease[s].phase # "live") => Len(invocations) >= 2
+
+\* Expired entries: only the second ongoing call's fn may decline, so a
+\* declined value meets an entry an earlier, non-declining call published
+\* - live (adoption), expired with a retention edge (retirement), or expired
+\* without one (replacement in place, carrying the mark). It leaves out a
+\* first call that declines, which persist_decline_live covers while values
+\* are live but no configuration covers once that declined entry expires
+\* and a non-declining call replaces or retires it; and, with two
+\* invocations, a hit after the replacement (PersistHit's guard, which
+\* persist_decline_hitguard shows is needed).
+ExpiryDeclineScenario ==
+    \A o \in OngoingCallIds : ongoingCalls[o].declined => o = 2
 
 \* Operation-lease failure terminates before an ongoing call, result, or
 \* ownership edge is published. The Go branch also discharges its local
