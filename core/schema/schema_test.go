@@ -22,9 +22,10 @@ import (
 
 // TestReevaluateDirectiveGatedByView checks that @reevaluate, its declaration
 // and its uses, appears only in the API views of engine versions from
-// v1.0.0-beta.17. Module schemas use engine.APIViewVersion, which drops the
-// prerelease, so every v1.0.0 prerelease gets the v1.0.0 view: modules pinned
-// to v0.x keep a schema without @reevaluate, and v1 modules see it.
+// v1.0.0-beta.17. Module schemas use engine.APIViewVersion, which gives every
+// v1.0.0 prerelease before engine.PrereleaseViewsVersion one view past that
+// gate: modules pinned to v0.x keep a schema without @reevaluate, and v1
+// modules see it.
 func TestReevaluateDirectiveGatedByView(t *testing.T) {
 	ctx := context.Background()
 	baseCache, err := dagql.NewCache(ctx, "", nil, nil)
