@@ -2,6 +2,7 @@ package core
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path"
@@ -125,7 +126,8 @@ func isIgnoreFileName(name string) bool {
 const absentState = "absent"
 
 // fileState describes what a reader of p finds there: nothing, a directory,
-// or a file and its contents.
+// or a regular file and its contents. Any other kind of file is an error: it
+// is never opened, since reading a pipe or a device need not end.
 func fileState(p string) (string, error) {
 	info, err := os.Stat(p)
 	switch {
@@ -135,6 +137,8 @@ func fileState(p string) (string, error) {
 		return "", err
 	case info.IsDir():
 		return "directory", nil
+	case !info.Mode().IsRegular():
+		return "", fmt.Errorf("%s is not a regular file", p)
 	}
 	contents, err := os.ReadFile(p)
 	if err != nil {
