@@ -102,3 +102,57 @@ func TestWithLinksConfined(t *testing.T) {
 		return nil
 	}))
 }
+
+func TestOutsideInputsDigest(t *testing.T) {
+	t.Parallel()
+
+	// tree lays out a root with app/ (and lib/, equal to it) and the given
+	// outside files and links.
+	tree := func(files, links map[string]string) string {
+		root := t.TempDir()
+		for _, d := range []string{"app", "lib"} {
+			require.NoError(t, os.MkdirAll(filepath.Join(root, d), 0o755))
+			require.NoError(t, os.WriteFile(filepath.Join(root, d, "main.txt"), []byte("main"), 0o644))
+		}
+		for name, contents := range files {
+			require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(root, name)), 0o755))
+			require.NoError(t, os.WriteFile(filepath.Join(root, name), []byte(contents), 0o644))
+		}
+		for name, target := range links {
+			require.NoError(t, os.Symlink(target, filepath.Join(root, name)))
+		}
+		return root
+	}
+	digest := func(root, dir string) string {
+		dgst, err := outsideInputsDigest(root, filepath.Join(root, dir))
+		require.NoError(t, err)
+		return dgst
+	}
+
+	none := digest(tree(nil, nil), "app")
+	require.Equal(t, none, digest(tree(map[string]string{"other.txt": "x"}, nil), "app"), "other files around it don't count")
+	require.Equal(t, none, digest(tree(nil, nil), "lib"), "without ignore files, where it is doesn't count")
+
+	passwd := digest(tree(map[string]string{"etc/passwd": "app:x:1000:1000::/:/bin/sh\n"}, nil), "app")
+	require.NotEqual(t, none, passwd)
+	require.NotEqual(t, passwd, digest(tree(map[string]string{"etc/passwd": "app:x:2000:2000::/:/bin/sh\n"}, nil), "app"))
+	require.NotEqual(t, none, digest(tree(map[string]string{"etc/group": "app:x:1000:\n"}, nil), "app"))
+
+	ignored := digest(tree(map[string]string{".gitignore": "*.log\n"}, nil), "app")
+	require.NotEqual(t, none, ignored)
+	require.NotEqual(t, ignored, digest(tree(map[string]string{".gitignore": "*.tmp\n"}, nil), "app"))
+	require.Equal(t, ignored, digest(tree(map[string]string{".gitignore": "*.log\n", "other.txt": "x"}, nil), "app"))
+	require.NotEqual(t, ignored, digest(tree(map[string]string{".gitignore": "*.log\n"}, nil), "lib"),
+		"with ignore files above it, where it is counts: their patterns match by path")
+	require.NotEqual(t, none, digest(tree(map[string]string{".ignore": "*.log\n"}, nil), "app"))
+	require.NotEqual(t, none, digest(tree(map[string]string{".git/info/exclude": "*.log\n"}, nil), "app"))
+
+	linked := func(rules string) string {
+		return digest(tree(map[string]string{"rules": rules}, map[string]string{"app/.gitignore": "../rules"}), "app")
+	}
+	require.NotEqual(t, linked("*.log\n"), linked("*.tmp\n"), "an ignore file linked from outside counts")
+
+	loop := tree(nil, map[string]string{".gitignore": ".gitignore"})
+	_, err := outsideInputsDigest(loop, filepath.Join(loop, "app"))
+	require.Error(t, err)
+}

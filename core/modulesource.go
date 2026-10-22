@@ -1750,9 +1750,11 @@ func (src *ModuleSource) LoadContextDir(
 		if err != nil {
 			return inst, fmt.Errorf("failed to content-hash contextual directory: %w", err)
 		}
-		inst, err = inst.WithContentDigest(ctx, dgst)
-		if err != nil {
-			return inst, fmt.Errorf("failed to set contextual directory content digest: %w", err)
+		if dgst != "" {
+			inst, err = inst.WithContentDigest(ctx, dgst)
+			if err != nil {
+				return inst, fmt.Errorf("failed to set contextual directory content digest: %w", err)
+			}
 		}
 	}
 
@@ -2018,6 +2020,9 @@ func (src *ModuleSource) loadContextFromSource(
 		dgst, err := DirectoryContentDigest(ctx, snapshot, dirPath)
 		if err != nil {
 			return inst, err
+		}
+		if dgst == "" {
+			return ctxDir, nil
 		}
 		inst, err = ctxDir.WithContentDigest(ctx, dgst)
 		if err != nil {
