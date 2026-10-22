@@ -14,6 +14,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/opencontainers/go-digest"
@@ -420,6 +421,32 @@ func logDuration(t *testing.T, line map[string]any, key string) time.Duration {
 	return time.Duration(v)
 }
 
+// loggedSession is a session whose JSON log is captured.
+func loggedSession(t *testing.T, adapter Adapter) (*session, *recordingConn, *uploadLogs) {
+	t.Helper()
+	s, conn := testSession(t, adapter)
+	logs := &uploadLogs{}
+	s.cfg.Logger = slog.New(slog.NewJSONHandler(logs, nil))
+	return s, conn, logs
+}
+
+// waitLines waits for n lines with msg, and returns them.
+func (l *uploadLogs) waitLines(t *testing.T, msg string, n int) []map[string]any {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		lines := l.lines(t, msg)
+		if len(lines) >= n {
+			require.Len(t, lines, n)
+			return lines
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("got %d %q lines, want %d", len(lines), msg, n)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 // uploadSession is a session whose JSON log is captured, with one export of
 // data held for upload. It returns the export's ID.
 func uploadSession(t *testing.T, data blobs) (*session, *recordingConn, *uploadLogs, string) {
@@ -428,9 +455,7 @@ func uploadSession(t *testing.T, data blobs) (*session, *recordingConn, *uploadL
 	adapter.export = func(ctx context.Context, req protocol.Export, consume func(context.Context, Export) error) error {
 		return consume(ctx, Export{Bundle: testBundle(), Blobs: data})
 	}
-	s, conn := testSession(t, adapter)
-	logs := &uploadLogs{}
-	s.cfg.Logger = slog.New(slog.NewJSONHandler(logs, nil))
+	s, conn, logs := loggedSession(t, adapter)
 	s.dispatch(request(t, 7, protocol.TypeExport, protocol.Export{Roots: []uint64{12}}))
 	exportID := decode[protocol.Exported](t, conn.next(t)).ExportID
 	require.NotEmpty(t, exportID)
@@ -549,6 +574,172 @@ func TestUploadLoggedFailure(t *testing.T) {
 	require.Contains(t, line["error"], "connection refused")
 	require.NotContains(t, logs.String(), "X-Amz-Signature=secret")
 	require.NotContains(t, logs.String(), "blobs.example")
+}
+
+// Each export logs one line when its chains are released: what it waited
+// for, what it uploaded and how it ended. The waits are a slot, then the
+// service's upload after the bundle is sent; the chains are held over both
+// and the upload.
+func TestExportEndedLogged(t *testing.T) {
+	d1, d2 := digest.FromString("one"), digest.FromString("two")
+	exportOf := func(data blobs) func(context.Context, protocol.Export, func(context.Context, Export) error) error {
+		return func(ctx context.Context, _ protocol.Export, consume func(context.Context, Export) error) error {
+			return consume(ctx, Export{Bundle: testBundle(), Blobs: data})
+		}
+	}
+	okPut := func(_ context.Context, _ string, body io.Reader, _ int64) error {
+		_, err := io.Copy(io.Discard, body)
+		return err
+	}
+	t.Run("uploaded", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			const wait = 200 * time.Millisecond
+			adapter := newFakeAdapter()
+			adapter.export = exportOf(blobs{d1: "first", d2: "second"})
+			s, conn, logs := loggedSession(t, adapter)
+			s.cfg.put = okPut
+			requested := time.Now()
+			s.dispatch(request(t, 7, protocol.TypeExport, protocol.Export{Roots: []uint64{12, 13}}))
+			exportID := decode[protocol.Exported](t, conn.next(t)).ExportID
+			// Once the session waits for the upload, the wait has started.
+			synctest.Wait()
+			time.Sleep(wait)
+			s.dispatch(request(t, 8, protocol.TypeUpload, protocol.Upload{ExportID: exportID, URLs: map[digest.Digest]string{d1: "put-1", d2: "put-2"}}))
+			require.Equal(t, protocol.TypeUploaded, conn.next(t).Type)
+			answered := time.Since(requested)
+			line := logs.waitLines(t, "remote cache export ended", 1)[0]
+			require.Equal(t, "INFO", line["level"])
+			require.Equal(t, "uploaded", line["outcome"])
+			require.Equal(t, exportID, line["export"])
+			require.Equal(t, json.Number("2"), line["roots"])
+			require.Equal(t, json.Number("2"), line["blobs"])
+			require.Equal(t, json.Number("0"), line["failed"])
+			require.Equal(t, json.Number(fmt.Sprint(len("first")+len("second"))), line["bytes"])
+			require.GreaterOrEqual(t, logDuration(t, line, "slot_wait"), time.Duration(0))
+			require.GreaterOrEqual(t, logDuration(t, line, "upload_wait"), wait)
+			require.LessOrEqual(t, logDuration(t, line, "upload_wait"), answered)
+			require.GreaterOrEqual(t, logDuration(t, line, "held"), logDuration(t, line, "upload_wait")+logDuration(t, line, "upload"))
+			require.NotContains(t, line, "error")
+		})
+	})
+	t.Run("no bundle", func(t *testing.T) {
+		adapter := newFakeAdapter()
+		adapter.export = func(ctx context.Context, _ protocol.Export, consume func(context.Context, Export) error) error {
+			return consume(ctx, Export{Skipped: []protocol.SkippedRoot{{Number: 12, Reason: protocol.SkipGone}}})
+		}
+		s, conn, logs := loggedSession(t, adapter)
+		s.dispatch(request(t, 7, protocol.TypeExport, protocol.Export{Roots: []uint64{12}}))
+		require.Empty(t, decode[protocol.Exported](t, conn.next(t)).ExportID)
+		line := logs.waitLines(t, "remote cache export ended", 1)[0]
+		require.Equal(t, "no_bundle", line["outcome"])
+		require.Equal(t, "", line["export"])
+		require.Zero(t, logDuration(t, line, "upload_wait"))
+		require.Equal(t, json.Number("0"), line["blobs"])
+	})
+	t.Run("empty", func(t *testing.T) {
+		adapter := newFakeAdapter()
+		adapter.export = exportOf(blobs{d1: "first"})
+		s, conn, logs := loggedSession(t, adapter)
+		s.dispatch(request(t, 7, protocol.TypeExport, protocol.Export{Roots: []uint64{12}}))
+		exportID := decode[protocol.Exported](t, conn.next(t)).ExportID
+		s.dispatch(request(t, 8, protocol.TypeUpload, protocol.Upload{ExportID: exportID, URLs: map[digest.Digest]string{}}))
+		require.Equal(t, protocol.TypeUploaded, conn.next(t).Type)
+		line := logs.waitLines(t, "remote cache export ended", 1)[0]
+		require.Equal(t, "empty", line["outcome"], "the service asked for no blobs")
+		require.Equal(t, json.Number("0"), line["blobs"])
+	})
+	t.Run("connection dropped", func(t *testing.T) {
+		adapter := newFakeAdapter()
+		adapter.export = exportOf(blobs{})
+		s, conn, logs := loggedSession(t, adapter)
+		s.dispatch(request(t, 7, protocol.TypeExport, protocol.Export{Roots: []uint64{12}}))
+		exportID := decode[protocol.Exported](t, conn.next(t)).ExportID
+		s.cancel(errors.New("connection dropped"))
+		line := logs.waitLines(t, "remote cache export ended", 1)[0]
+		require.Equal(t, "INFO", line["level"])
+		require.Equal(t, "canceled", line["outcome"])
+		require.Equal(t, exportID, line["export"])
+		require.Equal(t, "connection dropped", line["error"])
+	})
+	t.Run("uploaded, then the session ended", func(t *testing.T) {
+		adapter := newFakeAdapter()
+		adapter.export = func(ctx context.Context, _ protocol.Export, consume func(context.Context, Export) error) error {
+			err := consume(ctx, Export{Bundle: testBundle(), Blobs: blobs{d1: "first"}})
+			// The chains are released after the session ends.
+			<-ctx.Done()
+			return err
+		}
+		s, conn, logs := loggedSession(t, adapter)
+		s.cfg.put = okPut
+		s.dispatch(request(t, 7, protocol.TypeExport, protocol.Export{Roots: []uint64{12}}))
+		exportID := decode[protocol.Exported](t, conn.next(t)).ExportID
+		s.dispatch(request(t, 8, protocol.TypeUpload, protocol.Upload{ExportID: exportID, URLs: map[digest.Digest]string{d1: "put-1"}}))
+		require.Equal(t, protocol.TypeUploaded, conn.next(t).Type)
+		s.cancel(errors.New("session ended"))
+		line := logs.waitLines(t, "remote cache export ended", 1)[0]
+		require.Equal(t, "uploaded", line["outcome"], "an export that succeeded is not canceled by a later end")
+		require.NotContains(t, line, "error")
+	})
+	t.Run("failed put", func(t *testing.T) {
+		adapter := newFakeAdapter()
+		adapter.export = exportOf(blobs{d1: "first"})
+		s, conn, logs := loggedSession(t, adapter)
+		s.cfg.put = httpPut(&http.Client{Transport: failingTransport{}}, time.Minute)
+		s.dispatch(request(t, 7, protocol.TypeExport, protocol.Export{Roots: []uint64{12}}))
+		exportID := decode[protocol.Exported](t, conn.next(t)).ExportID
+		s.dispatch(request(t, 8, protocol.TypeUpload, protocol.Upload{ExportID: exportID, URLs: map[digest.Digest]string{d1: "https://blobs.example/put?X-Amz-Signature=secret"}}))
+		require.Equal(t, protocol.TypeUploaded, conn.next(t).Type)
+		line := logs.waitLines(t, "remote cache export ended", 1)[0]
+		require.Equal(t, "uploaded", line["outcome"], "a blob's failure is counted, not the export's")
+		require.Equal(t, json.Number("1"), line["blobs"])
+		require.Equal(t, json.Number("1"), line["failed"])
+		require.Equal(t, json.Number("0"), line["bytes"])
+		require.NotContains(t, logs.String(), "X-Amz-Signature=secret")
+		require.NotContains(t, logs.String(), "blobs.example")
+	})
+}
+
+// An export that waits for a slot logs the wait. The exports that find a
+// free slot take it before the slots fill.
+func TestExportEndedLoggedSlotWait(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const hold = 200 * time.Millisecond
+		entered := make(chan struct{}, 8)
+		finish := make(chan struct{})
+		adapter := newFakeAdapter()
+		adapter.export = func(ctx context.Context, req protocol.Export, consume func(context.Context, Export) error) error {
+			entered <- struct{}{}
+			<-finish
+			return consume(ctx, Export{Skipped: []protocol.SkippedRoot{{Number: req.Roots[0], Reason: protocol.SkipGone}}})
+		}
+		s, conn, logs := loggedSession(t, adapter)
+		dispatched := time.Now()
+		for i := range ExportsInFlight + 1 {
+			s.dispatch(request(t, uint64(i+1), protocol.TypeExport, protocol.Export{Roots: []uint64{uint64(i + 1)}}))
+		}
+		for range ExportsInFlight {
+			<-entered
+		}
+		filled := time.Since(dispatched)
+		// Once the fifth handler waits for a slot, its wait has started.
+		synctest.Wait()
+		time.Sleep(hold)
+		close(finish)
+		<-entered
+		for range ExportsInFlight + 1 {
+			require.Equal(t, protocol.TypeExported, conn.next(t).Type)
+		}
+		lines := logs.waitLines(t, "remote cache export ended", ExportsInFlight+1)
+		var waits []time.Duration
+		for _, line := range lines {
+			waits = append(waits, logDuration(t, line, "slot_wait"))
+		}
+		slices.Sort(waits)
+		for _, w := range waits[:ExportsInFlight] {
+			require.LessOrEqual(t, w, filled, "a free slot is taken before the slots fill")
+		}
+		require.GreaterOrEqual(t, waits[ExportsInFlight], hold, "the fifth export waited for a slot")
+	})
 }
 
 // An exported reply over the message limit is not sent: the export is
