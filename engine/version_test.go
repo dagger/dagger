@@ -197,6 +197,9 @@ func TestAPIViewVersion(t *testing.T) {
 }
 
 func TestAPIVersionAtLeast(t *testing.T) {
+	// a released engine: the v1.0.0 module clamp (ModuleAPIViewVersion) is
+	// off
+	setVersion(t, "v1.0.1")
 	for _, tc := range []struct {
 		version string
 		post    bool
@@ -221,6 +224,44 @@ func TestAPIVersionAtLeast(t *testing.T) {
 			require.Equal(t, v1, APIVersionAtLeast(tc.version, "v1.0.0-beta.17"))
 		})
 	}
+}
+
+// While the engine is a v1.0.0 prerelease or dev build, a module declaring
+// exactly v1.0.0 gets the view of the earlier prereleases; clients, and
+// modules on a released engine, get the release's.
+func TestModuleAPIViewVersion(t *testing.T) {
+	for _, tc := range []struct {
+		engine  string
+		version string
+		view    string
+	}{
+		{engine: "v1.0.0-beta.21", version: "v1.0.0", view: "v1.0.0-beta.20"},
+		{engine: "v1.0.0-beta.21", version: "1.0.0", view: "v1.0.0-beta.20"},
+		{engine: "v1.0.0-beta.21", version: "v1.0.0+abc", view: "v1.0.0-beta.20"},
+		{engine: "v1.0.0-beta.22", version: "v1.0.0", view: "v1.0.0-beta.20"},
+		{engine: "v1.0.0-dev-123", version: "v1.0.0", view: "v1.0.0-beta.20"},
+		{engine: "v1.0.0", version: "v1.0.0", view: "v1.0.0"},
+		{engine: "v1.0.1", version: "v1.0.0", view: "v1.0.0"},
+		{engine: "v0.21.6", version: "v1.0.0", view: "v1.0.0"},
+
+		// only exactly v1.0.0 is clamped
+		{engine: "v1.0.0-beta.21", version: "v1.0.0-dev-123", view: "v1.0.0"},
+		{engine: "v1.0.0-beta.21", version: "v1.0.0-beta.21", view: "v1.0.0-beta.21"},
+		{engine: "v1.0.0-beta.21", version: "v1.0.0-beta.19", view: "v1.0.0-beta.20"},
+		{engine: "v1.0.0-beta.21", version: "v1.0.1", view: "v1.0.1"},
+		{engine: "v1.0.0-beta.21", version: "v0.21.6", view: "v0.21.6"},
+		{engine: "v1.0.0-beta.21", version: "", view: "v1.0.0-beta.21"},
+	} {
+		t.Run(tc.engine+"/"+tc.version, func(t *testing.T) {
+			setVersion(t, tc.engine)
+			require.Equal(t, tc.view, ModuleAPIViewVersion(tc.version))
+			require.Equal(t, semver.Compare(tc.view, IdentifierCasingVersion) >= 0,
+				APIVersionAtLeast(tc.version, IdentifierCasingVersion))
+		})
+	}
+	// clients are not clamped
+	setVersion(t, "v1.0.0-beta.21")
+	require.Equal(t, "v1.0.0", APIViewVersion("v1.0.0"))
 }
 
 // The view constants must agree: earlier v1.0.0 prereleases share one view

@@ -4579,7 +4579,7 @@ func (s *moduleSourceSchema) defaultSchemaBuilderForEngineVersion(
 	baseMods := defaultDeps.Mods()
 	for i, depMod := range baseMods {
 		if coreMod, ok := depMod.(*CoreMod); ok {
-			baseMods[i] = coreMod.WithView(call.View(engine.APIViewVersion(engineVersion)))
+			baseMods[i] = coreMod.WithView(call.View(engine.ModuleAPIViewVersion(engineVersion)))
 		}
 	}
 	return core.NewSchemaBuilder(query, baseMods), nil
