@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -164,6 +165,28 @@ func TestLogsPresenceNegotiation(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestWaitTelemetryIdle(t *testing.T) {
+	c := &Client{}
+	start := time.Now()
+	c.WaitTelemetryIdle(t.Context(), 50*time.Millisecond)
+	require.GreaterOrEqual(t, time.Since(start), 50*time.Millisecond)
+
+	// A batch arriving while it waits pushes the quiet period out.
+	start = time.Now()
+	go func() {
+		time.Sleep(30 * time.Millisecond)
+		c.telemetryFrameAt.Store(time.Now().UnixNano())
+	}()
+	c.WaitTelemetryIdle(t.Context(), 50*time.Millisecond)
+	require.GreaterOrEqual(t, time.Since(start), 80*time.Millisecond)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	start = time.Now()
+	c.WaitTelemetryIdle(ctx, time.Hour)
+	require.Less(t, time.Since(start), time.Second)
 }
 
 func TestSearchLogsClient(t *testing.T) {
