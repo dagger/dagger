@@ -172,6 +172,56 @@ func TestLiveLogsFollowCatchesUpJoiningSpans(t *testing.T) {
 	}, queries[2], "the follow resumes over the grown set from its cursor")
 }
 
+// TestLiveLogsUnknownSpansStayUnclaimed: a follow over a subtree also returns
+// rows of a span the engine has not placed yet, then stops once it is placed
+// elsewhere. Those rows are imported without claiming the span, so rendering
+// it later catches up all its rows rather than only the ones the follow saw;
+// rows the frontend did not ask for are dropped.
+func TestLiveLogsUnknownSpansStayUnclaimed(t *testing.T) {
+	reader := &fakeLogReader{respond: func(q tracesource.LogQuery) []liveLogBatch {
+		switch {
+		case q.Follow && q.Cursor == "":
+			return []liveLogBatch{{rows: []liveLogRow{{span: 1, body: "p1"}, {span: 9, body: "u1"}, {span: 7, body: "noise"}}, cursor: "3"}}
+		case q.Through == "3":
+			return []liveLogBatch{{rows: []liveLogRow{{span: 9, body: "u1"}, {span: 9, body: "u2"}}, cursor: "3"}}
+		}
+		return nil
+	}}
+	out := &bodyCollector{}
+	l := newLiveLogs(reader, "trace", out, true)
+	var mu sync.Mutex
+	requested := map[byte]bool{}
+	l.coverage = func(targets []idtui.LogTarget) []idtui.LogCoverage {
+		mu.Lock()
+		defer mu.Unlock()
+		var got []idtui.LogCoverage
+		for _, target := range targets {
+			switch span := target.Span.SpanID[7]; {
+			case requested[span] || span == 1:
+				got = append(got, idtui.LogCovered)
+			case span == 9:
+				got = append(got, idtui.LogUnknown)
+			default:
+				got = append(got, idtui.LogUncovered)
+			}
+		}
+		return got
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() { defer close(done); l.run(ctx) }()
+	defer func() { cancel(); <-done }()
+
+	l.subscribe(idtui.LogRequest{Span: liveTestSpan(1), Descendants: true})
+	require.Eventually(t, func() bool { return len(out.got()) == 2 }, 5*time.Second, 10*time.Millisecond)
+	mu.Lock()
+	requested[9] = true
+	mu.Unlock()
+	l.subscribe(idtui.LogRequest{Span: liveTestSpan(9)})
+	require.Eventually(t, func() bool { return len(out.got()) == 4 }, 5*time.Second, 10*time.Millisecond)
+	require.Equal(t, []string{"p1", "u1", "u1", "u2"}, out.got(), "the race repeats a line rather than losing the rest")
+}
+
 // TestLiveLogsReadAtFinish: without following (the report), requests only
 // accumulate, and finish reads them all at once from the beginning.
 func TestLiveLogsReadAtFinish(t *testing.T) {
