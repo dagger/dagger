@@ -229,6 +229,18 @@ func TestOfferPartsInlineAndReferencedRows(t *testing.T) {
 		key, err := partAddressKey(offer.Address)
 		require.NoError(t, err)
 		require.Contains(t, row.testPartOffers(), key)
+		// The disposition names the row the address resolved to, and the
+		// address re-rooted at it.
+		require.Equal(t, uint64(row.id), out[0].Target)
+		targetKey, err := partAddressKey(out[0].TargetAddress)
+		require.NoError(t, err)
+		require.Equal(t, key, targetKey)
+
+		// An offer refused before its address resolves names no row.
+		refused, err := c.OfferParts(ctx, list, []CloudPartOffer{{Offer: offer}})
+		require.Error(t, err)
+		require.Equal(t, OfferInvalid, refused[0].Outcome)
+		require.Zero(t, refused[0].Target)
 	}
 }
 
