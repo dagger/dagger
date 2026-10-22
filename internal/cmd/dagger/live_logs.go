@@ -22,8 +22,10 @@ import (
 	"github.com/dagger/dagger/internal/tracesource"
 )
 
-// liveLogsFinishTimeout bounds the telemetry barrier and the final logs'
-// read at exit, so a stuck engine never holds up the command's exit.
+// liveLogsFinishTimeout bounds the exit's wait for the session's telemetry
+// and its read of the final logs, together, so a stuck engine never holds
+// up the command's exit for long. The primary output's read has its own
+// budget (liveLogsPrimaryTimeout).
 const liveLogsFinishTimeout = 10 * time.Second
 
 const (
@@ -748,13 +750,26 @@ const (
 // liveLogsRetryDelay is the pause before retrying the primary output's read.
 var liveLogsRetryDelay = 500 * time.Millisecond
 
+// flushableSpanForwarder is a telemetry.SpanForwarder that flushes its
+// processors, so client.TelemetryBarrier can see what the session delivered
+// through them, not just into them.
+type flushableSpanForwarder struct {
+	telemetry.SpanForwarder
+}
+
+func (f flushableSpanForwarder) ForceFlush(ctx context.Context) error {
+	var errs error
+	for _, p := range f.Processors {
+		errs = errors.Join(errs, p.ForceFlush(ctx))
+	}
+	return errs
+}
+
 // settleLiveLogs waits until the session's telemetry for the work done so
 // far has reached the frontend: exactly, with TelemetryBarrier, or else
 // until it goes quiet.
 func settleLiveLogs(ctx context.Context, sess liveLogsSession) {
-	barrierCtx, cancel := context.WithTimeout(ctx, liveLogsFinishTimeout)
-	err := sess.TelemetryBarrier(barrierCtx)
-	cancel()
+	err := sess.TelemetryBarrier(ctx)
 	if err == nil {
 		return
 	}
@@ -775,12 +790,12 @@ func finishLiveLogs(ctx context.Context, sess liveLogsSession, live *liveLogs) {
 		return
 	}
 	ctx = context.WithoutCancel(ctx)
-	settleLiveLogs(ctx, sess)
+	finishCtx, cancel := context.WithTimeout(ctx, liveLogsFinishTimeout)
+	settleLiveLogs(finishCtx, sess)
 	// Stop following first, so finish catches up the final requests itself,
 	// rather than a follow restart it would cut short.
 	live.stop()
 	lf.RequestFinalLogs()
-	finishCtx, cancel := context.WithTimeout(ctx, liveLogsFinishTimeout)
 	if err := live.finish(finishCtx); err != nil {
 		slog.Warn("error reading the final logs", "err", err)
 	}
