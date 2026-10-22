@@ -59,11 +59,15 @@ type ExportStats struct {
 	RawBytes  int64
 	BlobBytes int64
 	// DiffTime is computing the diffed layers' blobs: reading the mounts,
-	// archiving, compressing and writing the content.
+	// archiving, compressing and writing the content. Layers that build at
+	// once each add their own, so it can exceed the export's wall time.
 	DiffTime time.Duration
 	// LockWait is the wait for the per-snapshot export lock, held by another
 	// export of the same layer.
 	LockWait time.Duration
+	// BuildWait is the wait for a build slot, shared with other exports, to
+	// build the diffed layers' blobs.
+	BuildWait time.Duration
 	// LayersMerged counts the diffed layers whose snapshot carries the
 	// merge-usage label: a merge, a diff application, or a copy committed with
 	// its usage (CommitWithUsage). The Merged sums are their share of
@@ -83,6 +87,7 @@ func (s *ExportStats) Add(o ExportStats) {
 	s.BlobBytes += o.BlobBytes
 	s.DiffTime += o.DiffTime
 	s.LockWait += o.LockWait
+	s.BuildWait += o.BuildWait
 	s.LayersMerged += o.LayersMerged
 	s.MergedRawBytes += o.MergedRawBytes
 	s.MergedBlobBytes += o.MergedBlobBytes
