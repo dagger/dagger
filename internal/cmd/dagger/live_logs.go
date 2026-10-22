@@ -450,34 +450,48 @@ type liveLogSearcher interface {
 	SearchLogs(context.Context, archive.LogSearch) (archive.LogSearchResult, error)
 }
 
+// logSearchPages bounds the pages of matches a frontend's search reads.
+const logSearchPages = 10
+
 // logSearchFunc is a frontend's search of a source's display text
 // (idtui.LogCacheFrontend.SetLogSearch): a case-insensitive substring, as
-// the frontend matches what it holds, up to the store's match limit.
+// the frontend matches what it holds. It reads up to logSearchPages pages of
+// matches, and says when the store had more.
 func logSearchFunc(search func(context.Context, archive.LogSearch) (archive.LogSearchResult, error)) idtui.LogSearchFunc {
-	return func(ctx context.Context, pattern string) ([]idtui.LogTarget, error) {
-		result, err := search(ctx, archive.LogSearch{Pattern: pattern, IgnoreCase: true, Limit: archive.MaxLogSearchLimit})
-		if err != nil {
-			return nil, err
-		}
-		var targets []idtui.LogTarget
+	return func(ctx context.Context, pattern string) (idtui.LogSearchHits, error) {
+		var hits idtui.LogSearchHits
 		seen := map[idtui.LogTarget]bool{}
-		for _, match := range result.Matches {
-			traceID, err1 := trace.TraceIDFromHex(match.TraceID)
-			spanID, err2 := trace.SpanIDFromHex(match.SpanID)
-			if err1 != nil || err2 != nil {
-				continue
+		query := archive.LogSearch{Pattern: pattern, IgnoreCase: true, Limit: archive.MaxLogSearchLimit}
+		for page := 0; ; page++ {
+			result, err := search(ctx, query)
+			if err != nil {
+				return hits, err
 			}
-			target := idtui.LogTarget{
-				Trace:  dagui.TraceID{TraceID: traceID},
-				Span:   dagui.SpanID{SpanID: spanID},
-				Digest: match.Digest,
+			for _, match := range result.Matches {
+				traceID, err1 := trace.TraceIDFromHex(match.TraceID)
+				spanID, err2 := trace.SpanIDFromHex(match.SpanID)
+				if err1 != nil || err2 != nil {
+					continue
+				}
+				target := idtui.LogTarget{
+					Trace:  dagui.TraceID{TraceID: traceID},
+					Span:   dagui.SpanID{SpanID: spanID},
+					Digest: match.Digest,
+				}
+				if !seen[target] {
+					seen[target] = true
+					hits.Targets = append(hits.Targets, target)
+				}
 			}
-			if !seen[target] {
-				seen[target] = true
-				targets = append(targets, target)
+			if !result.More {
+				return hits, nil
 			}
+			if page+1 >= logSearchPages || result.Next <= query.After {
+				hits.Partial = true
+				return hits, nil
+			}
+			query.After = result.Next
 		}
-		return targets, nil
 	}
 }
 

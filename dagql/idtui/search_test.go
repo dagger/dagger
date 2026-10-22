@@ -94,11 +94,12 @@ func TestSearchFindsUnloadedLogs(t *testing.T) {
 	require.Contains(t, sess.fe.searchCountHint("next"), "loaded logs only")
 	require.False(t, sess.Network().fetchedLog(loud))
 
-	sess.fe.SetLogSearch(dagui.TraceID{}, func(_ context.Context, pattern string) ([]LogTarget, error) {
+	sess.fe.SetLogSearch(dagui.TraceID{}, func(_ context.Context, pattern string) (LogSearchHits, error) {
 		if pattern != "needle" {
-			return nil, nil
+			return LogSearchHits{}, nil
 		}
-		return []LogTarget{{Trace: traceID, Span: loud}}, nil
+		// A hit in a span not loaded is counted, and a partial search said.
+		return LogSearchHits{Targets: []LogTarget{{Trace: traceID, Span: loud}, {Trace: traceID, Span: prettyTestSpanID(99)}}, Partial: true}, nil
 	})
 	sess.Render()
 	sess.fe.dispatch(func() { sess.fe.confirmSearch("needle") })
@@ -106,7 +107,10 @@ func TestSearchFindsUnloadedLogs(t *testing.T) {
 		sess.Render()
 		return len(sess.fe.searchMatches) > 0
 	}, 5*time.Second, 10*time.Millisecond)
-	require.NotContains(t, sess.fe.searchCountHint("next"), "loaded logs only")
+	hint := sess.fe.searchCountHint("next")
+	require.NotContains(t, hint, "loaded logs only")
+	require.Contains(t, hint, "more not searched")
+	require.Contains(t, hint, "1 in spans not loaded")
 
 	// The first match is selected as it arrives: the span expands and its
 	// logs are read, and the match becomes the line itself.

@@ -106,12 +106,30 @@ func TestLogSearchFunc(t *testing.T) {
 			{TraceID: "bogus", SpanID: "0000000000000002", Row: 4},
 		}}, nil
 	})
-	targets, err := search(t.Context(), "Needle")
+	hits, err := search(t.Context(), "Needle")
 	require.NoError(t, err)
 	require.Equal(t, archive.LogSearch{Pattern: "Needle", IgnoreCase: true, Limit: archive.MaxLogSearchLimit}, got)
+	require.False(t, hits.Partial)
+	targets := hits.Targets
 	require.Len(t, targets, 2)
 	require.Equal(t, liveTestSpan(1), targets[0].Span)
 	require.Equal(t, "xxh3:out", targets[1].Digest)
+
+	// Pages are read after one another, up to a bound.
+	var afters []int64
+	paged := logSearchFunc(func(_ context.Context, s archive.LogSearch) (archive.LogSearchResult, error) {
+		afters = append(afters, s.After)
+		return archive.LogSearchResult{
+			Matches: []archive.LogMatch{{TraceID: "01000000000000000000000000000000", SpanID: "0000000000000001"}},
+			Next:    s.After + 10,
+			More:    true,
+		}, nil
+	})
+	hits, err = paged(t.Context(), "x")
+	require.NoError(t, err)
+	require.True(t, hits.Partial, "the store had more")
+	require.Len(t, afters, logSearchPages)
+	require.Equal(t, int64(10), afters[1])
 }
 
 // TestTraceLoaderForgetLogs: spans the frontend dropped are fetched again on

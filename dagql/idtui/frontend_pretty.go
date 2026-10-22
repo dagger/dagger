@@ -433,10 +433,14 @@ type frontendPretty struct {
 	searchIdx            int                   // current match index (-1 = none)
 	// logSearches search the sources of logs read on demand, keyed like the
 	// log providers (SetLogSearch); searchRemote holds the spans their
-	// search found the query in, for the search searchGen numbers.
-	logSearches  map[dagui.TraceID]LogSearchFunc
-	searchRemote map[dagui.SpanID]bool
-	searchGen    uint64
+	// search found the query in, for the search searchGen numbers;
+	// searchPartial is set when a source's search stopped early, and
+	// searchUnplaced counts its hits in spans the view cannot place.
+	logSearches    map[dagui.TraceID]LogSearchFunc
+	searchRemote   map[dagui.SpanID]bool
+	searchGen      uint64
+	searchPartial  bool
+	searchUnplaced int
 	// searchNames memoizes the spans whose name matches the search, until
 	// the query or the DB's spans change (see searchNameMatches).
 	searchNames struct {
@@ -3739,11 +3743,8 @@ func (fe *frontendPretty) escHelp() string {
 }
 
 func (fe *frontendPretty) searchCountHint(base string) string {
-	// Without a source to search, logs not loaded are not searched.
-	var scope string
-	if fe.searchLoadedOnly() {
-		scope = ", loaded logs only"
-	}
+	// Logs not loaded may be left out of what was searched.
+	scope := fe.searchScope()
 	if len(fe.searchMatches) == 0 {
 		return base + " (0" + scope + ")"
 	}
