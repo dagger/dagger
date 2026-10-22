@@ -48,6 +48,10 @@ type liveLogs struct {
 	traceID string
 	export  sdklog.Exporter
 	follow  bool
+	// coverage, when set, classifies records by the frontend's requests
+	// (idtui.LiveLogsFrontend.LiveLogsCoverage): a read imports only what
+	// the frontend asked for, and claims only pairs it knows it did.
+	coverage func([]idtui.LogTarget) []idtui.LogCoverage
 
 	mu sync.Mutex
 	// spans are followed (or, without following, read at finish);
@@ -95,6 +99,7 @@ func startLiveLogs(ctx context.Context, fe idtui.Frontend, client tracesource.Li
 	}
 	_, follow := lf.LiveLogs()
 	l := newLiveLogs(tracesource.Live{Client: client}, traceID.String(), nil, follow)
+	l.coverage = lf.LiveLogsCoverage
 	l.export = lf.SetLiveLogs(traceID, l.subscribe)
 	if follow {
 		ctx, cancel := context.WithCancel(ctx)
@@ -252,12 +257,46 @@ func (l *liveLogs) importFollowed(ctx context.Context, req *collogspb.ExportLogs
 	return nil
 }
 
-// importLogs exports the records of req that read owns (see liveLogs).
+// importLogs exports the records of req that read owns (see liveLogs), of
+// those the frontend routes to what it requested.
 func (l *liveLogs) importLogs(ctx context.Context, req *collogspb.ExportLogsServiceRequest, read uint64) error {
+	var coverage []idtui.LogCoverage
+	if l.coverage != nil {
+		var targets []idtui.LogTarget
+		for _, rl := range req.GetResourceLogs() {
+			for _, sl := range rl.GetScopeLogs() {
+				for _, rec := range sl.GetLogRecords() {
+					key := logOwnerOf(rec)
+					var target idtui.LogTarget
+					copy(target.Trace.TraceID[:], rec.GetTraceId())
+					target.Span.SpanID = key.span
+					target.Digest = key.digest
+					targets = append(targets, target)
+				}
+			}
+		}
+		coverage = l.coverage(targets)
+	}
 	l.mu.Lock()
+	i := 0
 	for _, rl := range req.GetResourceLogs() {
 		for _, sl := range rl.GetScopeLogs() {
 			sl.LogRecords = slices.DeleteFunc(sl.LogRecords, func(rec *otlplogsv1.LogRecord) bool {
+				cover := idtui.LogCovered
+				if i < len(coverage) {
+					cover = coverage[i]
+				}
+				i++
+				switch cover {
+				case idtui.LogUncovered:
+					// Not asked for: the read of a span that asks for it
+					// later imports it then.
+					return true
+				case idtui.LogUnknown:
+					// Its span is not placed yet: import it, but without
+					// claiming the pair this read may not keep selecting.
+					return false
+				}
 				key := logOwnerOf(rec)
 				owner, ok := l.owned[key]
 				if !ok {
@@ -350,6 +389,9 @@ func finishLiveLogs(ctx context.Context, sess liveLogsSession, live *liveLogs) {
 	settleCtx, cancelSettle := context.WithTimeout(ctx, 3*time.Second)
 	sess.WaitTelemetryIdle(settleCtx, liveLogsSettle)
 	cancelSettle()
+	// Stop following first, so finish catches up the final requests itself,
+	// rather than a follow restart it would cut short.
+	live.stop()
 	lf.RequestFinalLogs()
 	if err := live.finish(ctx); err != nil {
 		slog.Warn("error reading the final logs", "err", err)
