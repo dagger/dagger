@@ -158,6 +158,22 @@ func transferTestOffer(t *testing.T, c *Cache, ctx context.Context, parent, chil
 	require.NoError(t, err)
 }
 
+// A capture reports where its time went: the wait for the graph lock, the
+// walk under it, and the records' copy.
+func TestValueTransferCapturePhases(t *testing.T) {
+	ctx, c, srv := transferTestCache(t)
+	root := persistedListTestResult(t, ctx, c, srv, "root", &transferTestValue{Text: "phases"})
+	var phases ExportPhases
+	require.NoError(t, c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{root}}, config.RefConfig{}, func(_ context.Context, values *ExportedValues) error {
+		phases = values.Phases
+		return nil
+	}))
+	require.GreaterOrEqual(t, phases.WalkWait, time.Duration(0))
+	require.Positive(t, phases.Walk)
+	require.Positive(t, phases.Copy)
+	require.Zero(t, phases.RetriedStale)
+}
+
 // An offer can be left on a part its value already has: a part can complete
 // without its gate settling it, and only a settlement retires the offer on
 // it. Such an offer is obsolete. A capture that finds one retires it, as boot
@@ -177,7 +193,13 @@ func TestValueTransferCaptureRetiresAnOfferOnACompletedOutput(t *testing.T) {
 	value.rev.Add(1)
 	owners := res.incomingOwnershipCount
 
-	bundle := exportTestBundle(t, ctx, c, root)
+	var bundle ValueBundle
+	var phases ExportPhases
+	require.NoError(t, c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{root}}, config.RefConfig{}, func(_ context.Context, values *ExportedValues) error {
+		bundle, phases = values.Bundle, values.Phases
+		return nil
+	}))
+	require.Equal(t, 1, phases.RetriedStale, "the capture ran again")
 	require.Len(t, bundle.Values, 1)
 	require.Empty(t, bundle.Values[0].Record.Envelope.PendingOffers)
 	c.egraphMu.RLock()

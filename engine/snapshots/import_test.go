@@ -98,6 +98,55 @@ func TestImportChainTiming(t *testing.T) {
 	require.EqualValues(t, 2, consumer.Applies.Load())
 }
 
+// An export's stats count its layers: a fresh snapshot's are diffed into
+// blobs, and exported again they are reused.
+func TestExportChainStats(t *testing.T) {
+	store := testutil.NewStore(t)
+	a, _ := store.Build(t, nil, "a.txt", "stats prefix")
+	ab, _ := store.Build(t, a, "b.txt", "stats suffix")
+	first := exportChain(t, ab)
+	require.Len(t, first.Layers, 2)
+	var size int64
+	for _, layer := range first.Layers {
+		size += layer.Descriptor.Size
+	}
+	require.Equal(t, 2, first.Stats.Layers)
+	require.Equal(t, 2, first.Stats.LayersDiffed)
+	require.Zero(t, first.Stats.LayersReused)
+	require.Equal(t, size, first.Stats.BlobBytes)
+	require.Positive(t, first.Stats.RawBytes)
+	require.Positive(t, first.Stats.DiffTime)
+	require.GreaterOrEqual(t, first.Stats.LockWait, time.Duration(0))
+	second := exportChain(t, ab)
+	require.Equal(t, 2, second.Stats.Layers)
+	require.Equal(t, 2, second.Stats.LayersReused)
+	require.Zero(t, second.Stats.LayersDiffed)
+	require.Zero(t, second.Stats.DiffTime)
+	require.Zero(t, second.Stats.RawBytes)
+	require.Zero(t, second.Stats.BlobBytes)
+}
+
+// A merged snapshot's layer is counted as merged when it is diffed; a plain
+// chain's never is.
+func TestExportChainMergedStats(t *testing.T) {
+	ctx := context.Background()
+	store := testutil.NewStore(t)
+	a, _ := store.Build(t, nil, "a.txt", "merged a")
+	b, _ := store.Build(t, nil, "b.txt", "merged b")
+	plain := exportChain(t, a)
+	exportChain(t, b)
+	require.Zero(t, plain.Stats.LayersMerged)
+	merged, err := store.Manager.Merge(ctx, []bkcache.ImmutableRef{a, b})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, merged.Release(context.Background())) })
+	chain := exportChain(t, merged)
+	require.Len(t, chain.Layers, 1)
+	require.Equal(t, 1, chain.Stats.LayersMerged)
+	require.Equal(t, chain.Layers[0].Descriptor.Size, chain.Stats.MergedBlobBytes)
+	require.Positive(t, chain.Stats.MergedRawBytes)
+	require.Positive(t, chain.Stats.MergedDiffTime)
+}
+
 func TestImportChainSameManager(t *testing.T) {
 	for _, root := range []string{"absent", "scratch", "empty"} {
 		t.Run(root, func(t *testing.T) {
