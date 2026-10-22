@@ -98,6 +98,9 @@ type OpOpts struct {
 	// Bytes is a byte count the op moved (e.g. downloaded or uploaded), when
 	// known at Begin time; see Op.SetBytes.
 	Bytes int64
+	// ResultID is the dagql shared result the op is about, for RecordOp and
+	// RecordOpAt (a begun op takes it at End).
+	ResultID uint64
 	// Start, when set, is when the op began, for an op whose work began
 	// before BeginOp (e.g. at its OTel span's start); zero is now.
 	Start time.Time
@@ -416,6 +419,7 @@ func (r *Recorder) recordOp(ctx context.Context, kind OpKind, class string, opts
 		IdentID:  r.Intern(opts.Ident),
 		ClientID: r.Intern(opts.ClientID),
 		MetaID:   r.internArgv(opts.Argv),
+		ResultID: opts.ResultID,
 		Bytes:    opts.Bytes,
 		StartNS:  startNS,
 		EndNS:    endNS,
