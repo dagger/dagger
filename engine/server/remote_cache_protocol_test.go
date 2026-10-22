@@ -54,7 +54,7 @@ func TestRemoteCacheAdapterMergesABundle(t *testing.T) {
 
 	target := newGCTestCache(t)
 	adapter := newTestRemoteCacheAdapter(t, target)
-	merged, err := adapter.Merge(t.Context(), protocol.Merge{Bundle: bundle})
+	merged, err := adapter.Merge(t.Context(), 1, protocol.Merge{Bundle: bundle})
 	require.NoError(t, err)
 	require.Equal(t, target.Identity().Generation, merged.Generation)
 	require.NotZero(t, merged.EngineTime)
@@ -92,7 +92,7 @@ func TestRemoteCacheAdapterMergeLogsItsClock(t *testing.T) {
 	previous := slog.Default()
 	slog.SetDefault(slog.New(slog.NewJSONHandler(logs, nil)))
 	t.Cleanup(func() { slog.SetDefault(previous) })
-	merged, err := adapter.Merge(t.Context(), protocol.Merge{Bundle: bundle})
+	merged, err := adapter.Merge(t.Context(), 1, protocol.Merge{Bundle: bundle})
 	require.NoError(t, err)
 
 	var lines []map[string]any
@@ -129,7 +129,7 @@ func TestRemoteCacheAdapterAnswersACommittedMergeDespiteAReleaseError(t *testing
 			},
 		}, errors.New("release failed")
 	}
-	merged, err := adapter.Merge(t.Context(), protocol.Merge{})
+	merged, err := adapter.Merge(t.Context(), 1, protocol.Merge{})
 	require.NoError(t, err, "a committed merge is answered merged")
 	require.Equal(t, protocol.Merged{
 		Generation: 4,
@@ -147,7 +147,7 @@ func TestRemoteCacheAdapterAnswersAStaleMerge(t *testing.T) {
 	adapter.mergeValues = func(context.Context, dagql.CacheID, dagql.ValueBundle) (dagql.MergeReply, error) {
 		return dagql.MergeReply{Generation: 4, EngineTimeUnixNano: 42, Stale: []dagql.TransferOrdinal{2, 5}}, nil
 	}
-	merged, err := adapter.Merge(t.Context(), protocol.Merge{})
+	merged, err := adapter.Merge(t.Context(), 1, protocol.Merge{})
 	require.NoError(t, err, "a stale merge is answered merged")
 	require.Equal(t, protocol.Merged{
 		Generation: 4,
@@ -164,8 +164,52 @@ func TestRemoteCacheAdapterMergeRefused(t *testing.T) {
 	adapter.mergeValues = func(context.Context, dagql.CacheID, dagql.ValueBundle) (dagql.MergeReply, error) {
 		return dagql.MergeReply{}, errors.New("the bundle would close a cycle")
 	}
-	_, err := adapter.Merge(t.Context(), protocol.Merge{})
+	_, err := adapter.Merge(t.Context(), 1, protocol.Merge{})
 	require.ErrorContains(t, err, "cycle")
+}
+
+// A merge that answers a lookup goes first: a placement merge that arrives
+// while one is in progress waits until it ends, and placement merges don't
+// wait for each other.
+func TestRemoteCacheAdapterLookupMergesGoFirst(t *testing.T) {
+	adapter := newTestRemoteCacheAdapter(t, newGCTestCache(t))
+	const lookupVersion, placementVersion = 1, 2
+	entered := make(chan int, 4)
+	release := map[int]chan struct{}{lookupVersion: make(chan struct{}), placementVersion: make(chan struct{})}
+	adapter.mergeValues = func(_ context.Context, _ dagql.CacheID, bundle dagql.ValueBundle) (dagql.MergeReply, error) {
+		entered <- bundle.Version
+		<-release[bundle.Version]
+		return dagql.MergeReply{}, errors.New("refused")
+	}
+	merge := func(ctx context.Context, id, lookup uint64, version int) <-chan error {
+		done := make(chan error, 1)
+		go func() {
+			_, err := adapter.Merge(ctx, id, protocol.Merge{Bundle: dagql.ValueBundle{Version: version}, Lookup: lookup})
+			done <- err
+		}()
+		return done
+	}
+	lookup := merge(t.Context(), 10, 3, lookupVersion)
+	require.Equal(t, lookupVersion, <-entered)
+	placement := merge(t.Context(), 11, 0, placementVersion)
+	canceledCtx, cancel := context.WithCancel(t.Context())
+	canceled := merge(canceledCtx, 12, 0, placementVersion)
+	select {
+	case v := <-entered:
+		t.Fatalf("merge %d went while a lookup's merge was in progress", v)
+	case <-time.After(100 * time.Millisecond):
+	}
+	cancel()
+	require.ErrorIs(t, <-canceled, context.Canceled, "a waiting merge ends with its context")
+
+	close(release[lookupVersion])
+	require.ErrorContains(t, <-lookup, "refused")
+	require.Equal(t, placementVersion, <-entered)
+	second := merge(t.Context(), 13, 0, placementVersion)
+	require.Equal(t, placementVersion, <-entered, "placement merges don't wait for each other")
+	close(release[placementVersion])
+	require.ErrorContains(t, <-placement, "refused")
+	require.ErrorContains(t, <-second, "refused")
 }
 
 // adapterTestServer gives the core query the one server facility a file
@@ -778,7 +822,7 @@ func TestRemoteCacheAdapterMergeReturnsWhenCancelled(t *testing.T) {
 	mergeCtx, cancel := context.WithCancel(t.Context())
 	merged := make(chan error, 1)
 	go func() {
-		_, err := adapter.Merge(mergeCtx, protocol.Merge{Bundle: bundle})
+		_, err := adapter.Merge(mergeCtx, 1, protocol.Merge{Bundle: bundle})
 		merged <- err
 	}()
 	select {
