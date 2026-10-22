@@ -864,6 +864,13 @@ const (
 	// CacheOfferStatusesAttr counts each HTTP status of the part's
 	// requests, as "206=5,403=1", in status order.
 	CacheOfferStatusesAttr = "dagger.io/cache.offer.statuses"
+	// CacheOfferAheadAttr is the decimal-string count of the part's layers
+	// whose blob started downloading early, while the layer before it
+	// applied.
+	CacheOfferAheadAttr = "dagger.io/cache.offer.ahead"
+	// CacheOfferJoinedAttr is the decimal-string count of the part's layers
+	// whose blob came from a download another import had in progress.
+	CacheOfferJoinedAttr = "dagger.io/cache.offer.joined"
 
 	// CacheSessionSpansAttr is the decimal-string count of the spans of one
 	// session that carry CacheResultIDAttr, stamped on the session's

@@ -265,8 +265,10 @@ func TestOfferInstallLogsRanges(t *testing.T) {
 		streams  int64
 		mode     string
 		statuses string
+		// ahead counts the upper layer, fetched while the lower applied.
+		ahead int64
 	}{
-		{name: "downloaded", streams: 1, mode: "206", statuses: "206=2"},
+		{name: "downloaded", streams: 1, mode: "206", statuses: "206=2", ahead: 1},
 		{name: "already held", held: true, mode: "off"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -285,7 +287,9 @@ func TestOfferInstallLogsRanges(t *testing.T) {
 			require.Equal(t, tc.streams, line.int(t, "streams"))
 			require.Equal(t, tc.mode, line.fields["range"])
 			require.Equal(t, tc.statuses, line.fields["statuses"])
-			requireFieldOrder(t, line.raw, []string{"import", "streams", "range", "statuses", "commit"})
+			require.Equal(t, tc.ahead, line.int(t, "ahead"))
+			require.Zero(t, line.int(t, "joined"), "the import joined only its own download")
+			requireFieldOrder(t, line.raw, []string{"import", "streams", "range", "statuses", "ahead", "joined", "commit"})
 		})
 	}
 }

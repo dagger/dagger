@@ -63,7 +63,7 @@ func (cm *snapshotManager) ImportImage(
 	}()
 
 	for _, layer := range img.Layers {
-		next, err := cm.importLayer(ctx, layer, current, nil, opts, false, nil)
+		next, err := cm.importLayer(ctx, layer, current, nil, opts, false, nil, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -149,6 +149,7 @@ func (cm *snapshotManager) importLayer(
 	opts ImportImageOpts,
 	chainMode bool,
 	timing *ImportTiming,
+	chain *chainLayer,
 ) (ImmutableRef, error) {
 	diffID, err := diffIDFromDescriptor(desc)
 	if err != nil {
@@ -224,16 +225,22 @@ func (cm *snapshotManager) importLayer(
 	}
 
 	fetchStart := clock.now()
-	source, err := cm.importLayerContent(ctx, desc, provider, chainMode)
+	source, joined, err := cm.importLayerContent(ctx, desc, provider, chainMode, chain)
 	fetched := clock.now()
 	if timing != nil {
 		timing.Fetch += fetched.Sub(fetchStart)
+		if joined {
+			timing.Joined++
+		}
 	}
 	if prof {
 		recordImportPhase(ctx, "snapshot.import.fetch["+source+"]", desc, source, fetchStart, fetched, err)
 	}
 	if err != nil {
 		return nil, err
+	}
+	if chain != nil && chain.fetched != nil {
+		chain.fetched()
 	}
 	if parent != nil {
 		if err := cm.AttachLease(ctx, leaseID, parent.SnapshotID()); err != nil {
@@ -449,19 +456,29 @@ func setImportedImageMetadata(ref *immutableRef, opts ImportImageOpts) error {
 // lifetime like the rest of the builtin images' content.
 const BuiltinLayersLeaseID = "dagger/builtin-image/layers"
 
+// chainLayer is what a chain import passes each of its layer imports: the
+// chain whose import it is, its download of the layer's blob started ahead,
+// if any, and what to run once the layer's blob is in the content store.
+type chainLayer struct {
+	owner   *ExportChain
+	ahead   *contentFetch
+	fetched func()
+}
+
 // importLayerContent pins local bytes before asking the supplied provider.
-// Writer acquisition checks again, before ReaderAt, if another key supplied
-// the same blob since our first lookup. A chain import consults the builtin
-// image store between the two: a layer of a builtin image is then copied
-// from the engine's own files, with no network, and held for the engine's
-// lifetime under BuiltinLayersLeaseID.
-// importLayerContent gets desc's blob into the content store, and returns
-// where it came from: present (already there), builtin (the builtin image
-// store), or download (the provider).
-func (cm *snapshotManager) importLayerContent(ctx context.Context, desc ocispecs.Descriptor, provider content.Provider, chainMode bool) (_ string, rerr error) {
+// A chain import consults the builtin image store between the two: a layer
+// of a builtin image is then copied from the engine's own files, with no
+// network, and held for the engine's lifetime under BuiltinLayersLeaseID.
+// The provider's download goes through the fetch coordinator, which joins a
+// download of the same blob already in progress. It returns where the blob
+// came from: present (already there, including a blob downloaded ahead that
+// is in by then), builtin (the builtin image store), download (this import's
+// own download), or joined (another import's download), and whether it
+// joined another import's download.
+func (cm *snapshotManager) importLayerContent(ctx context.Context, desc ocispecs.Descriptor, provider content.Provider, chainMode bool, chain *chainLayer) (string, bool, error) {
 	present, err := cm.pinContent(ctx, desc)
 	if err != nil || present {
-		return layerSourcePresent, err
+		return layerSourcePresent, false, err
 	}
 	if chainMode {
 		copied, err := cm.copyBuiltinLayer(ctx, desc)
@@ -470,35 +487,43 @@ func (cm *snapshotManager) importLayerContent(ctx context.Context, desc ocispecs
 			// blocks an import: log and download as today.
 			bklog.G(ctx).WithError(err).Warnf("builtin image store could not supply layer %s; downloading it", desc.Digest)
 		} else if copied {
-			return layerSourceBuiltin, nil
+			return layerSourceBuiltin, false, nil
 		}
 	}
 	if provider == nil {
-		return layerSourceDownload, chainError(ctx, chainMode, desc, "provider", errors.Wrapf(cerrdefs.ErrNotFound, "missing local layer %s", desc.Digest))
+		return layerSourceDownload, false, chainError(ctx, chainMode, desc, "provider", errors.Wrapf(cerrdefs.ErrNotFound, "missing local layer %s", desc.Digest))
 	}
-	ref := "snapshot-import-" + rand.Text()
-	writer, err := content.OpenWriter(ctx, cm.ContentStore, content.WithRef(ref), content.WithDescriptor(desc))
-	if cerrdefs.IsAlreadyExists(err) {
-		return layerSourcePresent, nil
+	if !fetchAheadEnabled() {
+		read, err := cm.downloadChainContent(ctx, desc, provider)
+		return downloadSource(false, read, err), false, err
 	}
-	if err != nil {
-		return layerSourceDownload, err
-	}
-	defer func() {
-		_ = writer.Close()
-		if rerr != nil {
-			_ = cm.ContentStore.Abort(context.WithoutCancel(ctx), ref)
+	var owner *ExportChain
+	var ahead *contentFetch
+	if chain != nil {
+		owner = chain.owner
+		if chain.ahead != nil && chain.ahead.desc.Digest == desc.Digest {
+			ahead = chain.ahead
 		}
-	}()
-	reader, err := provider.ReaderAt(ctx, desc)
-	if err != nil {
-		return layerSourceDownload, chainError(ctx, chainMode, desc, "provider", err)
 	}
-	defer reader.Close()
-	if chainMode {
-		return layerSourceDownload, copyChainContent(ctx, writer, reader, desc)
+	joined, read, err := cm.fetchChainContent(ctx, desc, provider, owner, ahead)
+	return downloadSource(joined, read, err), joined, err
+}
+
+// downloadSource is where a layer's blob came from when the provider was
+// asked for it: its import's own download, another import's it joined, or
+// the content store, when another writer stored the blob first and nothing
+// was read.
+func downloadSource(joined, read bool, err error) string {
+	switch {
+	case err != nil:
+		return layerSourceDownload
+	case !read:
+		return layerSourcePresent
+	case joined:
+		return layerSourceJoined
+	default:
+		return layerSourceDownload
 	}
-	return layerSourceDownload, content.Copy(ctx, writer, io.NewSectionReader(reader, 0, reader.Size()), desc.Size, desc.Digest)
 }
 
 // Where importLayerContent found a layer's blob.
@@ -506,6 +531,7 @@ const (
 	layerSourcePresent  = "present"
 	layerSourceBuiltin  = "builtin"
 	layerSourceDownload = "download"
+	layerSourceJoined   = "joined"
 )
 
 // importClock stamps an import's phases when the import's timing or the
@@ -524,13 +550,19 @@ func (c importClock) now() time.Time {
 
 // recordImportPhase records one phase of a layer's import, from start to
 // end, as a profile op: the layer's digest, and its size when the phase
-// moved its bytes (a download or an apply, not a blob already present). A
-// download waits on the network; the rest is the engine's.
+// moved its bytes (an import's own download or an apply, not a blob already
+// present or another import's download it joined). A fetch phase is the
+// time the import still waited for the blob: a download started ahead may
+// have ended before it, and the blob is then present. A download, own or
+// joined, waits on the network; the rest is the engine's.
 func recordImportPhase(ctx context.Context, class string, desc ocispecs.Descriptor, source string, start, end time.Time, err error) {
 	opts := wcprof.OpOpts{Ident: desc.Digest.String(), Bytes: desc.Size}
 	switch source {
 	case layerSourceDownload:
 		opts.WorkType = wcprof.WorkTypeExternal
+	case layerSourceJoined:
+		opts.WorkType = wcprof.WorkTypeExternal
+		opts.Bytes = 0
 	case layerSourcePresent:
 		opts.Bytes = 0
 	}

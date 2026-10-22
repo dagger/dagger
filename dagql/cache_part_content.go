@@ -624,6 +624,8 @@ func logOfferInstall(ctx context.Context, receiver AnyResult, source *PartSource
 		attribute.String(telemetryattrs.CacheOfferStreamsAttr, strconv.Itoa(timing.streams)),
 		attribute.String(telemetryattrs.CacheOfferRangeAttr, timing.rangeMode),
 		attribute.String(telemetryattrs.CacheOfferStatusesAttr, timing.statuses),
+		attribute.String(telemetryattrs.CacheOfferAheadAttr, strconv.Itoa(timing.Ahead)),
+		attribute.String(telemetryattrs.CacheOfferJoinedAttr, strconv.Itoa(timing.Joined)),
 	)
 }
 
@@ -708,8 +710,9 @@ func (s *partInstallStats) renewed(start, end time.Time) {
 }
 
 // partInstallTiming is where one install's time went, as its lines log it.
-// ttfb is part of readWait, readWait of Fetch, and the import's three sums
-// of imported.
+// ttfb is part of readWait, readWait of imported (the next layer's blob is
+// read while the layer before it applies), and the import's three sums of
+// imported.
 type partInstallTiming struct {
 	// waited runs from the demand's start to the install's.
 	waited time.Duration
@@ -760,6 +763,8 @@ func (t partInstallTiming) fields() []any {
 		"streams", t.streams,
 		"range", t.rangeMode,
 		"statuses", t.statuses,
+		"ahead", t.Ahead,
+		"joined", t.Joined,
 	}
 }
 

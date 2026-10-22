@@ -319,6 +319,16 @@ func TestImportChainFailurePrefix(t *testing.T) {
 			failure := &failingLayerProvider{Provider: provider, digest: chain.Layers[1].Descriptor.Digest.String()}
 			if cancelSource {
 				failure.cancel = cancel
+				// The suffix's blob is fetched while the prefix applies; the
+				// cancellation lands once the prefix is in, while the suffix
+				// downloads.
+				failure.wait = func() {
+					for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
+						if len(consumer.Manager.PersistentMetadataRows().ImportedByDiff) > 0 {
+							return
+						}
+					}
+				}
 			}
 
 			ref, err := consumer.Manager.ImportChain(ctx, supplied(chain, failure))
@@ -650,6 +660,8 @@ type failingLayerProvider struct {
 	*testutil.Provider
 	digest string
 	cancel context.CancelFunc
+	// wait, when set, runs before the failure.
+	wait func()
 }
 
 func (p *failingLayerProvider) ReaderAt(ctx context.Context, desc ocispecs.Descriptor) (content.ReaderAt, error) {
@@ -657,12 +669,13 @@ func (p *failingLayerProvider) ReaderAt(ctx context.Context, desc ocispecs.Descr
 	if err != nil || desc.Digest.String() != p.digest {
 		return reader, err
 	}
-	return &failingLayerReader{ReaderAt: reader, cancel: p.cancel}, nil
+	return &failingLayerReader{ReaderAt: reader, cancel: p.cancel, wait: p.wait}, nil
 }
 
 type failingLayerReader struct {
 	content.ReaderAt
 	cancel context.CancelFunc
+	wait   func()
 }
 
 func (r *failingLayerReader) ReadAt(p []byte, off int64) (int, error) {
@@ -672,6 +685,9 @@ func (r *failingLayerReader) ReadAt(p []byte, off int64) (int, error) {
 	n, err := r.ReaderAt.ReadAt(p, off)
 	if err != nil && err != io.EOF {
 		return n, err
+	}
+	if r.wait != nil {
+		r.wait()
 	}
 	if r.cancel != nil {
 		r.cancel()
