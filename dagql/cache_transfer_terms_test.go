@@ -283,3 +283,37 @@ func TestTransferredTermsCapped(t *testing.T) {
 	require.Len(t, terms, maxTransferTerms)
 	require.Equal(t, digest.FromString("request 0"), terms[0].Request, "the first ones are kept")
 }
+
+// A frame derived for another result carries none of the transfer terms of
+// the frame it was derived from: they name that result, and a list's terms
+// on its elements would teach each element the whole list's identity. Here a
+// list result's frame has a term, and its elements' frames, read through
+// NthValue as the server builds a list response, and a persisted list item's
+// frame, have none; neither has a plain copy of the frame, which callers
+// reshape into frames of other calls.
+func TestTransferredTermsStayOffDerivedFrames(t *testing.T) {
+	t.Parallel()
+	ctx, c, srv := transferTestCache(t)
+	frame := &ResultCall{Kind: ResultCallKindField, Field: "keys", Type: NewResultCallType(NewStringArray().Type())}
+	list, err := c.GetOrInitCall(ctx, "test-session", srv, &CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+		return NewResultForCall(NewStringArray("a", "b"), frame)
+	})
+	require.NoError(t, err)
+	shared := list.cacheSharedResult()
+	c.egraphMu.Lock()
+	c.addTransferTermLocked(ctx, shared, TransferTerm{Request: digest.FromString("a list call"), Self: digest.FromString("self")})
+	c.egraphMu.Unlock()
+	listFrame := shared.loadResultCall()
+	require.Len(t, listFrame.TransferTerms, 1, "the list's frame has the term")
+
+	for nth := 1; nth <= 2; nth++ {
+		item, err := list.NthValue(ctx, nth)
+		require.NoError(t, err)
+		itemFrame := item.cacheSharedResult().loadResultCall()
+		require.NotNil(t, itemFrame)
+		require.Empty(t, itemFrame.TransferTerms, "element %d", nth)
+	}
+	require.Empty(t, persistedListItemCall(listFrame, 1).TransferTerms, "a persisted list item")
+	require.Empty(t, listFrame.clone().TransferTerms, "a plain copy")
+	require.Empty(t, listFrame.fork().TransferTerms, "a plain fork")
+}
