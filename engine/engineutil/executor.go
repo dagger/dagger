@@ -108,6 +108,11 @@ type ExecutionMetadata struct {
 	// excluding it from JSON cannot drop it before the emit.
 	ProfArgs []string `json:"-"`
 
+	// CacheMounts is the number of cache volume mounts the exec has, for the
+	// "starting container" log line. Like ProfArgs it is set by core at run
+	// time and json:"-", so it never perturbs a cache key.
+	CacheMounts int `json:"-"`
+
 	// UserFacingSpanCtx is the last user-facing (non-profiling) span of the API
 	// call this exec runs under, captured in core at exec-setup time (see
 	// dagql.UserFacingSpanContext). The executor injects IT as the container's
