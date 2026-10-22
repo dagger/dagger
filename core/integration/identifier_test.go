@@ -157,9 +157,11 @@ func (IdentifierSuite) TestNamingDictionary(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "3D", capitalized["3D"])
 }
 
-// The API is only served to v1.0.0 clients: SDK codegen gates on
+// The API is only served on the views with engine/naming module names
+// (core.IdentifierNamingVersion, v1.0.0-beta.21 and up): SDK codegen gates on
 // Query.formatIdentifiers being in the schema it generates from, so older
-// clients' schemas lack it and their codegen keeps its own conversion.
+// clients' schemas lack it and their codegen keeps its own conversion, the
+// same one the engine keeps for their modules.
 func (IdentifierSuite) TestViews(ctx context.Context, t *testctx.T) {
 	for _, tc := range []struct {
 		name string
@@ -167,6 +169,9 @@ func (IdentifierSuite) TestViews(ctx context.Context, t *testctx.T) {
 		want bool
 	}{
 		{name: "current", want: true},
+		{name: "v1.0.0-beta.21", opts: []dagger.ClientOpt{dagger.WithVersionOverride("v1.0.0-beta.21")}, want: true},
+		{name: "v1.0.0-beta.20", opts: []dagger.ClientOpt{dagger.WithVersionOverride("v1.0.0-beta.20")}},
+		{name: "v1.0.0-0", opts: []dagger.ClientOpt{dagger.WithVersionOverride("v1.0.0-0")}},
 		{name: "v0.21.0", opts: []dagger.ClientOpt{dagger.WithVersionOverride("v0.21.0")}},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
