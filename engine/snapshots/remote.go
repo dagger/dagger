@@ -30,8 +30,9 @@ func (sr *immutableRef) ExportChain(ctx context.Context, refCfg config.RefConfig
 	}
 
 	snapshotIDs := []string{}
-	// merged marks the snapshots a merge or a diff application made, for the
-	// export's stats.
+	// merged marks the snapshots carrying the merge-usage label, for the
+	// export's stats: a merge, a diff application, or a copy committed with
+	// its usage.
 	merged := map[string]bool{}
 	for snapshotID := sr.SnapshotID(); snapshotID != ""; {
 		snapshotIDs = append(snapshotIDs, snapshotID)
