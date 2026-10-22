@@ -1141,9 +1141,12 @@ func (c *Cache) lookupCacheForRequest(
 	if req.IsPersistable {
 		// Only persistable hits pay this second graph-lock acquisition. Keep
 		// the expiry captured at hit selection even if the barrier wait took
-		// long enough to cross a wall-clock second.
+		// long enough to cross a wall-clock second. A value its call declined
+		// to persist stays unpersisted.
 		c.egraphMu.Lock()
-		c.upsertPersistedEdgeLocked(ctx, hitShared, persistedEdgeExpiresAtUnix, false)
+		if !hitShared.persistDeclined {
+			c.upsertPersistedEdgeLocked(ctx, hitShared, persistedEdgeExpiresAtUnix, false)
+		}
 		c.egraphMu.Unlock()
 	}
 

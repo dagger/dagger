@@ -166,9 +166,14 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				return fmt.Errorf("import result %d call_frame_json: %w", resultID, err)
 			}
 
+			// The decline mark goes back onto the entry, not into the
+			// envelope a record of it is captured from.
+			persistDeclined := env.PersistDeclined
+			env.PersistDeclined = false
 			res := &sharedResult{
 				id:                    resultID,
 				imported:              env.Imported,
+				persistDeclined:       persistDeclined,
 				isObject:              env.Kind == persistedResultKindObject,
 				sessionResourceHandle: env.SessionResourceHandle,
 				expiresAtUnix:         row.ExpiresAtUnix,
