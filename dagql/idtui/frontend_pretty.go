@@ -238,6 +238,15 @@ type frontendPretty struct {
 	// or a placeholder a log record created -- whose roll-up decision (and
 	// trace) is unknown until the span arrives.
 	deferredLogs map[dagui.SpanID]bool
+	// liveLogsTrace is the live session's trace while its display text is
+	// read on demand (SetLiveLogs). Display text of its spans arriving on
+	// LogExporter -- this process's own, which the store returns too -- is
+	// dropped; what is read for it arrives on the exporter SetLiveLogs
+	// returns.
+	liveLogsTrace dagui.TraceID
+	// finalLogs makes the eager surfaced-failure fetch run in interactive
+	// mode too, so the final render has what it shows (RequestFinalLogs).
+	finalLogs bool
 
 	// spanProvider lazily fetches a span's children on demand when the user
 	// expands it (or it's surfaced/zoomed). Set by 'dagger trace' to fetch
@@ -3278,11 +3287,14 @@ func (fe *frontendPretty) Shutdown(ctx context.Context) error {
 }
 
 func (fe *frontendPretty) LogExporter() sdklog.Exporter {
-	return prettyLogExporter{fe}
+	return prettyLogExporter{frontendPretty: fe}
 }
 
 type prettyLogExporter struct {
 	*frontendPretty
+	// read is set for the exporter display text read on demand arrives on
+	// (SetLiveLogs), which the live trace's own display text must reach.
+	read bool
 }
 
 func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) error {
@@ -3297,6 +3309,14 @@ func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) er
 			fe.updateSpanTreesForLogs(spanID)
 		}
 		logsCopy = fe.db.IngestLogs(logsCopy)
+		if live := fe.liveLogsTrace; live.IsValid() && !fe.read {
+			// This process's own display text: the store returns it to
+			// the spans that read it, so rendering it here would show it
+			// twice.
+			logsCopy = slices.DeleteFunc(logsCopy, func(log sdklog.Record) bool {
+				return log.TraceID() == live.TraceID
+			})
+		}
 		fe.logs.Export(context.Background(), logsCopy)
 		for spanID := range logSpanIDs {
 			fe.updateLogPagerForLogs(spanID)
@@ -4678,7 +4698,9 @@ func (fe *frontendPretty) recalculateViewLocked() {
 		// over-fetch interactive cares about.
 		if fe.zoomKind() == zoomRoot && len(fe.reportChecks()) == 0 {
 			if tv := fe.reportTestView(); tv == nil || !tv.HasTests() {
-				if prim := fe.primarySpan(); prim.IsValid() {
+				// A live session reading on demand fetches the primary
+				// output once, at exit (SetPrimaryOutput).
+				if prim := fe.primarySpan(); prim.IsValid() && !fe.primaryOutputOnDemand() {
 					fe.requestLogsWith(prim, false)
 				}
 			}
@@ -4732,7 +4754,9 @@ func (fe *frontendPretty) recalculateViewLocked() {
 		// TestView.RequestLogs for test cases, renderErrorCause / renderCauseDetail
 		// for root causes). Fetching here would pull logs for collapsed/off-screen
 		// failures the user never opened -- the over-fetch we're eliminating.
-		if fe.reportOnly {
+		// A live session reading on demand runs it for the interactive final
+		// render too, at exit (RequestFinalLogs), which has no later pass.
+		if fe.reportOnly || fe.finalLogs {
 			for _, row := range fe.rows.Order {
 				if row.Span != nil && row.Span.IsFailed() {
 					fe.requestLogs(row.Span.ID)
