@@ -209,3 +209,9 @@ func TestOutsideInputsDigest(t *testing.T) {
 	_, err := outsideInputsDigest(loop, filepath.Join(loop, "app"))
 	require.Error(t, err)
 }
+
+func TestWithoutGitEnv(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, []string{"PATH=/bin", "HOME=/root"},
+		withoutGitEnv([]string{"PATH=/bin", "GIT_DIR=../x", "HOME=/root", "GIT_CONFIG_COUNT=1"}))
+}
