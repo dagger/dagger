@@ -187,6 +187,7 @@ func withEngineAction(
 		if err != nil {
 			return cleanup.Run, err
 		}
+		params.EngineLogsPresence = liveLogsWanted(ctx)
 
 		// Connect to and run with the engine
 		sess, err := client.Connect(ctx, params)
@@ -195,6 +196,15 @@ func withEngineAction(
 		}
 		cleanup.Add("close dagger session", sess.Close)
 		detach := cliLocalTelemetry.attach(ctx, sess)
+		traceID := dagui.TraceID{TraceID: trace.SpanContextFromContext(ctx).TraceID()}
+		if live := startLiveLogs(ctx, Frontend, sess, sess.LogsPresence(), traceID); live != nil {
+			// After the command's telemetry is handed over, so the store
+			// holds all of its output, and before the session closes.
+			cleanup.Add("read the final logs", func() error {
+				finishLiveLogs(ctx, sess, live)
+				return nil
+			})
+		}
 		cleanup.Add("hand the command's telemetry to the engine", func() error {
 			// Take in what the engine has for the command so far, such as
 			// a session title for its span, before ending it.
