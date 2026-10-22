@@ -971,10 +971,11 @@ func (s *workspaceSchema) workspaceBasePathExists(
 	return false, nil
 }
 
-// resolveRootfs returns a lazy directory reference for a resolved workspace path.
+// resolveRootfs returns a directory reference for a resolved workspace path.
 // Local: per-call host.directory(absPath, include, exclude) via workspace client session.
 // Local with overlay edits: sparse host base + changeset applied on top.
-// Remote: navigates the pre-fetched rootfs.
+// Remote: navigates the pre-fetched rootfs; a filtered read is evaluated and
+// identified by its content (contentKeyedFilteredRead).
 //
 // A host-backed workspace's root carries the checkout's dangling .git pointer
 // file (worktree/submodule); the engine never interprets it -- git-ness is
@@ -1124,9 +1125,50 @@ func (s *workspaceSchema) resolveRootfsFromDirectory(
 		if err != nil {
 			return inst, fmt.Errorf("workspace directory %q (filtering): %w", resolvedPath, err)
 		}
+		return contentKeyedFilteredRead(ctx, resolvedPath, ctxDir)
 	}
 
 	return ctxDir, nil
+}
+
+// contentKeyedFilteredRead identifies a filtered read by the files it selects.
+// Otherwise its identity is its recipe over the workspace root, and a Git
+// root's identity is its commit, so every commit would give every read, and
+// all work on it, a new key even where the selected files are unchanged. Host
+// reads already carry the content digest of their sync.
+//
+// A filtered read is a copy into a fresh directory, so it holds nothing but the
+// selected files and its content hash covers everything it can reach. A
+// subpath read without a filter is a view into the root, which can still
+// reach the root's files, so this adds no content digest to it.
+func contentKeyedFilteredRead(
+	ctx context.Context,
+	resolvedPath string,
+	dir dagql.ObjectResult[*core.Directory],
+) (dagql.ObjectResult[*core.Directory], error) {
+	call, err := dir.ResultCall()
+	if err != nil {
+		return dir, err
+	}
+	if call.ContentDigest() != "" {
+		return dir, nil
+	}
+	if dir.Self() == nil {
+		return dir, fmt.Errorf("workspace directory %q: nil directory result", resolvedPath)
+	}
+	snapshot, err := dir.Self().Snapshot.GetOrEval(ctx, dir.Result)
+	if err != nil {
+		return dir, fmt.Errorf("workspace directory %q: snapshot: %w", resolvedPath, err)
+	}
+	dirPath, err := dir.Self().Dir.GetOrEval(ctx, dir.Result)
+	if err != nil {
+		return dir, fmt.Errorf("workspace directory %q: path: %w", resolvedPath, err)
+	}
+	dgst, err := core.GetContentHashFromDirectory(ctx, snapshot, dirPath)
+	if err != nil {
+		return dir, fmt.Errorf("workspace directory %q: content hash: %w", resolvedPath, err)
+	}
+	return dir.WithContentDigest(ctx, dgst)
 }
 
 // resolveHostOverlayRootfs resolves a read against a host-backed overlay
