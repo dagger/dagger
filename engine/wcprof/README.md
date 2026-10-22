@@ -73,6 +73,12 @@ Current hook points:
   profile's only added cost).
   Lookups and publications record contended waits for the cache's graph
   lock as lock waits on `dagql.Cache.egraphMu`, as an export's walk does.
+- `engine/server/resolver`, registry I/O: an `io` op per image pull
+  (`image.pull`), resolve (`image.resolve`) and push (`image.push`), with the
+  ref as ident and external work type. Under a pull, an `image.fetch` op
+  per blob downloaded (its digest and the bytes read); under
+  a push, an `image.push.blob` op per blob (its digest, and its size when it
+  was sent rather than already in the registry).
 - `engine/snapshots` layer imports (remote-cache installs and image pulls):
   per layer, an `io` op `snapshot.import.fetch[<source>]` (`download`,
   `builtin` or `present`) and `snapshot.import.apply`, with the layer's
@@ -182,7 +188,7 @@ This is a prototype for validating the approach:
   per-session filter).
 - events are kept until dumped; long sessions can hit the event cap (the
   dump and the analyzer both surface the drop count loudly).
-- leaf I/O ops (git fetch, image pull, filesync) are not yet instrumented;
-  they currently show up as self-time of their calling op, and the
+- some leaf I/O (filesync, HTTP fetches, module loading) is not yet
+  instrumented; it shows up as self-time of its calling op, and the
   "dead air" / unexplained-self-time reports are the guide for where to add
   hooks next.
