@@ -24,7 +24,51 @@ type ExportChain struct {
 	Provider content.InfoReaderProvider
 	// Timing, when set, receives where ImportChain's time went.
 	Timing *ImportTiming
-	pin    *resourcePin
+	// Stats are what exporting the chain took.
+	Stats ExportStats
+	pin   *resourcePin
+}
+
+// ExportStats sum what exporting chains took, over their layers.
+type ExportStats struct {
+	// Layers counts the layers emitted.
+	Layers int
+	// LayersReused counts the layers whose blob already existed, and
+	// LayersDiffed those whose blob was computed.
+	LayersReused int
+	LayersDiffed int
+	// RawBytes is the on-disk usage of the diffed layers' snapshots, and
+	// BlobBytes the size of the blobs computed from them.
+	RawBytes  int64
+	BlobBytes int64
+	// DiffTime is computing the diffed layers' blobs: reading the mounts,
+	// archiving, compressing and writing the content.
+	DiffTime time.Duration
+	// LockWait is the wait for the per-snapshot export lock, held by another
+	// export of the same layer.
+	LockWait time.Duration
+	// LayersMerged counts the diffed layers whose snapshot a merge or a diff
+	// application made, and the Merged sums are their share of RawBytes,
+	// BlobBytes and DiffTime.
+	LayersMerged    int
+	MergedRawBytes  int64
+	MergedBlobBytes int64
+	MergedDiffTime  time.Duration
+}
+
+// Add adds o to s.
+func (s *ExportStats) Add(o ExportStats) {
+	s.Layers += o.Layers
+	s.LayersReused += o.LayersReused
+	s.LayersDiffed += o.LayersDiffed
+	s.RawBytes += o.RawBytes
+	s.BlobBytes += o.BlobBytes
+	s.DiffTime += o.DiffTime
+	s.LockWait += o.LockWait
+	s.LayersMerged += o.LayersMerged
+	s.MergedRawBytes += o.MergedRawBytes
+	s.MergedBlobBytes += o.MergedBlobBytes
+	s.MergedDiffTime += o.MergedDiffTime
 }
 
 // ImportTiming sums where a chain import's time went, over its layers. The

@@ -30,12 +30,16 @@ func (sr *immutableRef) ExportChain(ctx context.Context, refCfg config.RefConfig
 	}
 
 	snapshotIDs := []string{}
+	// merged marks the snapshots a merge or a diff application made, for the
+	// export's stats.
+	merged := map[string]bool{}
 	for snapshotID := sr.SnapshotID(); snapshotID != ""; {
 		snapshotIDs = append(snapshotIDs, snapshotID)
 		info, err := sr.cm.Snapshotter.Stat(ctx, snapshotID)
 		if err != nil {
 			return nil, err
 		}
+		_, merged[snapshotID], _ = mergeUsageOf(info)
 		snapshotID = info.Parent
 	}
 	slices.Reverse(snapshotIDs)
@@ -60,7 +64,14 @@ func (sr *immutableRef) ExportChain(ctx context.Context, refCfg config.RefConfig
 		}
 		layer := opened.(*immutableRef)
 
-		desc, hasLayer, err := sr.cm.ensureExportBlob(ctx, parentSnapshotID, layer, refCfg.Compression)
+		before := chain.Stats
+		desc, hasLayer, err := sr.cm.ensureExportBlob(ctx, parentSnapshotID, layer, refCfg.Compression, &chain.Stats)
+		if merged[snapshotID] && chain.Stats.LayersDiffed > before.LayersDiffed {
+			chain.Stats.LayersMerged += chain.Stats.LayersDiffed - before.LayersDiffed
+			chain.Stats.MergedRawBytes += chain.Stats.RawBytes - before.RawBytes
+			chain.Stats.MergedBlobBytes += chain.Stats.BlobBytes - before.BlobBytes
+			chain.Stats.MergedDiffTime += chain.Stats.DiffTime - before.DiffTime
+		}
 		description := layer.GetDescription()
 		createdAt := layer.GetCreatedAt()
 		if releaseErr := layer.Release(context.WithoutCancel(ctx)); releaseErr != nil && err == nil {
@@ -83,6 +94,7 @@ func (sr *immutableRef) ExportChain(ctx context.Context, refCfg config.RefConfig
 				return nil, err
 			}
 			reuseParentID = snapshotID
+			chain.Stats.Layers++
 			chain.Layers = append(chain.Layers, ExportLayer{
 				Descriptor:  desc,
 				Description: description,

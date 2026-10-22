@@ -39,7 +39,11 @@ type HeldCapturedClosure struct {
 	owners map[offerOwnerID]*offerOwner
 	roots  []TransferredRoot
 	// outputs are the selection's outputs the closure holds.
-	outputs     []SelectedValueOutput
+	outputs []SelectedValueOutput
+	// walkWait is the wait for egraphMu before the walk, and walk the walk
+	// under it.
+	walkWait    time.Duration
+	walk        time.Duration
 	releaseOnce sync.Once
 	releaseErr  error
 }
@@ -73,7 +77,10 @@ func (capture *HeldCapturedClosure) Release(ctx context.Context) error {
 //nolint:gocyclo // one classification per held result kind; splitting hides the order of the checks
 func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelection) (*HeldCapturedClosure, error) {
 	capture := &HeldCapturedClosure{cache: c, rows: map[sharedResultID]*capturedTransferRow{}, owners: map[offerOwnerID]*offerOwner{}}
+	lockStart := time.Now()
 	c.egraphMu.Lock()
+	walkStart := time.Now()
+	capture.walkWait = walkStart.Sub(lockStart)
 	seen := map[sharedResultID]uint8{}
 	var walk func(*sharedResult) error
 	walk = func(res *sharedResult) error {
@@ -185,6 +192,7 @@ func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelectio
 		}
 		capture.outputs = append(capture.outputs, output)
 	}
+	capture.walk = time.Since(walkStart)
 	c.egraphMu.Unlock()
 	if err != nil {
 		return nil, errors.Join(err, capture.Release(ctx))
@@ -318,10 +326,12 @@ type SelectedChain struct {
 }
 type SelectedChains struct {
 	Entries []SelectedChain
-	refs    []snapshots.ImmutableRef
-	chains  []*snapshots.ExportChain
-	once    sync.Once
-	err     error
+	// Stats sum what exporting the chains took.
+	Stats  snapshots.ExportStats
+	refs   []snapshots.ImmutableRef
+	chains []*snapshots.ExportChain
+	once   sync.Once
+	err    error
 }
 
 func (chains *SelectedChains) Release(ctx context.Context) error {
@@ -405,6 +415,7 @@ func OpenSelectedChains(ctx context.Context, capture *HeldCapturedClosure, outpu
 			return nil, err
 		}
 		chains.chains = append(chains.chains, chain)
+		chains.Stats.Add(chain.Stats)
 		chains.Entries = append(chains.Entries, SelectedChain{Ordinal: row.ordinal, Address: out.Address, Layers: chain.Layers, Provider: chain.Provider})
 	}
 	return chains, nil
@@ -435,8 +446,23 @@ type ExportedValues struct {
 	// ChainTime is the wall time spent opening the selected chains, which
 	// may compress a layer the first time it is exported.
 	ChainTime time.Duration
+	// Phases are where the capture's time went.
+	Phases ExportPhases
 	// Sources maps bundle ordinals to held source rows; it is not transported.
 	Sources []ImportedValue
+}
+
+// ExportPhases are where a capture that succeeded spent its time.
+type ExportPhases struct {
+	// WalkWait is the wait for the cache's graph lock, and Walk the walk of
+	// the closure under it, which blocks lookups and installs meanwhile.
+	WalkWait time.Duration
+	Walk     time.Duration
+	// Copy is copying the closure's records.
+	Copy time.Duration
+	// RetriedStale is 1 when obsolete offers were retired and the closure
+	// captured again.
+	RetriedStale int
 }
 
 // WithExportedValues captures the selected closure and lends it to consume.
@@ -460,7 +486,10 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 	if err != nil {
 		return err
 	}
+	var phases ExportPhases
+	copyStart := time.Now()
 	err = capture.copy(ctx)
+	phases.Copy = time.Since(copyStart)
 	var stale *staleOffersError
 	if errors.As(err, &stale) {
 		// Retire the obsolete offers outside the capture's holds, then
@@ -472,8 +501,12 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 		if err != nil {
 			return err
 		}
+		phases.RetriedStale = 1
+		copyStart = time.Now()
 		err = capture.copy(ctx)
+		phases.Copy += time.Since(copyStart)
 	}
+	phases.WalkWait, phases.Walk = capture.walkWait, capture.walk
 	defer func() { rerr = errors.Join(rerr, capture.Release(ctx)) }()
 	if err != nil {
 		return err
@@ -656,5 +689,5 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 	for i, row := range capture.order {
 		sources[i] = ImportedValue{Ordinal: row.ordinal, ResultID: uint64(row.shared.id)}
 	}
-	return consume(ctx, &ExportedValues{Bundle: bundle, Chains: chains, ChainTime: chainTime, Sources: sources})
+	return consume(ctx, &ExportedValues{Bundle: bundle, Chains: chains, ChainTime: chainTime, Phases: phases, Sources: sources})
 }
