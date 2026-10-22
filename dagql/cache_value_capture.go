@@ -11,6 +11,7 @@ import (
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/config"
+	"github.com/dagger/dagger/engine/wcprof"
 )
 
 type capturedTransferRow struct {
@@ -194,6 +195,10 @@ func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelectio
 	}
 	capture.walk = time.Since(walkStart)
 	c.egraphMu.Unlock()
+	if wcprof.Enabled(ctx) {
+		wcprof.RecordWaitAt(ctx, "dagql.Cache.egraphMu", wcprof.WaitReasonLock, lockStart, walkStart)
+		wcprof.RecordOpAt(ctx, wcprof.OpKindRemoteCache, "remotecache.export.walk", wcprof.OpOpts{}, walkStart, walkStart.Add(capture.walk), profErrOutcome(err))
+	}
 	if err != nil {
 		return nil, errors.Join(err, capture.Release(ctx))
 	}
@@ -410,7 +415,9 @@ func OpenSelectedChains(ctx context.Context, capture *HeldCapturedClosure, outpu
 			return nil, err
 		}
 		chains.refs = append(chains.refs, ref)
-		chain, err := ref.ExportChain(ctx, cfg)
+		chainCtx, chainOp := profBeginChain(ctx, out.Address)
+		chain, err := ref.ExportChain(chainCtx, cfg)
+		profEndChain(chainOp, chain, uint64(row.shared.id), err)
 		if err != nil {
 			return nil, err
 		}
@@ -489,7 +496,9 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 	var phases ExportPhases
 	copyStart := time.Now()
 	err = capture.copy(ctx)
-	phases.Copy = time.Since(copyStart)
+	copied := time.Now()
+	phases.Copy = copied.Sub(copyStart)
+	profCopy(ctx, copyStart, copied, err)
 	var stale *staleOffersError
 	if errors.As(err, &stale) {
 		// Retire the obsolete offers outside the capture's holds, then
@@ -504,7 +513,9 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 		phases.RetriedStale = 1
 		copyStart = time.Now()
 		err = capture.copy(ctx)
-		phases.Copy += time.Since(copyStart)
+		copied = time.Now()
+		phases.Copy += copied.Sub(copyStart)
+		profCopy(ctx, copyStart, copied, err)
 	}
 	phases.WalkWait, phases.Walk = capture.walkWait, capture.walk
 	defer func() { rerr = errors.Join(rerr, capture.Release(ctx)) }()
@@ -555,7 +566,9 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 		return err
 	}
 	chainStart := time.Now()
-	chains, err := OpenSelectedChains(ctx, capture, capture.outputs, cfg)
+	chainsCtx, chainsOp := wcprof.BeginOp(ctx, wcprof.OpKindRemoteCache, "remotecache.export.chains", wcprof.OpOpts{})
+	chains, err := OpenSelectedChains(chainsCtx, capture, capture.outputs, cfg)
+	chainsOp.EndErr(err)
 	chainTime := time.Since(chainStart)
 	if err != nil {
 		return err
@@ -689,5 +702,6 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 	for i, row := range capture.order {
 		sources[i] = ImportedValue{Ordinal: row.ordinal, ResultID: uint64(row.shared.id)}
 	}
+	profExportedParts(ctx, bundle.Outputs, sources)
 	return consume(ctx, &ExportedValues{Bundle: bundle, Chains: chains, ChainTime: chainTime, Phases: phases, Sources: sources})
 }

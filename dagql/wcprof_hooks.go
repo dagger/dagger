@@ -158,3 +158,58 @@ func profRenewal(ctx context.Context, blob digest.Digest, start, end time.Time, 
 		WorkType: wcprof.WorkTypeExternal,
 	}, start, end, profErrOutcome(err))
 }
+
+// profCopy records a capture's copy of its closure's records, from start to
+// end.
+func profCopy(ctx context.Context, start, end time.Time, err error) {
+	wcprof.RecordOpAt(ctx, wcprof.OpKindRemoteCache, "remotecache.export.copy", wcprof.OpOpts{}, start, end, profErrOutcome(err))
+}
+
+// profBeginChain starts the profile op of opening one exported part's chain,
+// which diffs the layers that have no blob yet.
+func profBeginChain(ctx context.Context, address PersistedPartAddress) (context.Context, *wcprof.Op) {
+	if !wcprof.Enabled(ctx) {
+		return ctx, nil
+	}
+	key, _ := partAddressKey(address)
+	return wcprof.BeginOp(ctx, wcprof.OpKindRemoteCache, "remotecache.export.chain", wcprof.OpOpts{Ident: key})
+}
+
+// profEndChain ends a chain's op with the result it is a part of and the
+// bytes of the blobs it computed: 0 when every layer's blob already existed.
+func profEndChain(op *wcprof.Op, chain *snapshots.ExportChain, resultID uint64, err error) {
+	if op == nil {
+		return
+	}
+	if chain != nil {
+		op.SetBytes(chain.Stats.BlobBytes)
+	}
+	op.EndWithResult(profErrOutcome(err), resultID)
+}
+
+// profExportedParts links each part a bundle offers to its result, with its
+// size: its chain's, which is what a pull of it costs a cache that has none
+// of it. sources maps the bundle's ordinals to results.
+func profExportedParts(ctx context.Context, outputs []TransferredOutput, sources []ImportedValue) {
+	if !wcprof.Enabled(ctx) {
+		return
+	}
+	results := make(map[TransferOrdinal]uint64, len(sources))
+	for _, source := range sources {
+		results[source.Ordinal] = source.ResultID
+	}
+	for _, output := range outputs {
+		if output.Chain == nil {
+			continue
+		}
+		key, err := partAddressKey(output.Address)
+		if err != nil {
+			continue
+		}
+		var size int64
+		for _, layer := range output.Chain.Layers {
+			size += layer.Descriptor.Size
+		}
+		wcprof.Part(ctx, 0, key, results[output.Ordinal], size)
+	}
+}
