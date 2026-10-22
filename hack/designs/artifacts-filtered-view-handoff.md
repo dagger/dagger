@@ -32,22 +32,21 @@ Code reviewed: `ce6dc9f9403b52067f5831149eab4871f857185d`. Check the current cod
 - **Conversions:** Keep `asXXX()` methods. They convert selected artifacts to objects of a specific type, such as `Check`.
 - **Return types:** Keep lists such as `[Check]` for this work. Decide later whether to replace these lists.
 
-Docstrings describe behavior. Comments mark schema changes. No new `Artifacts` fields are added. Other existing fields are omitted.
+Docstrings describe behavior. Comments mark changes. All shown signatures stay unchanged. Other fields are omitted.
 
 ```graphql
 # CHANGED: selected values use the filtered workspace view.
 """A selection of artifacts and the workspace view used to evaluate them."""
 type Artifacts {
-  # UNCHANGED: signature and selection rule.
+  # UNCHANGED.
   """Keep the listed types. If exclude is true, remove them instead."""
   filterTypes(types: [String!]!, exclude: Boolean! = false): Artifacts!
 
   # CHANGED: also reduce collections and replace references in the new view.
-  # UNCHANGED: signature. The source selection stays unchanged.
   """
   Keep artifacts with any listed key in this dimension.
-  For a collection dimension, keep matching keys in each collection.
-  Skip keys absent from a collection. Use the reduced collections in this view.
+  For collections, use matching subsets in the new view. Skip absent keys.
+  Keep the source view unchanged.
   """
   filterDimensionKeys(dimension: String!, keys: [String!]!): Artifacts!
 
@@ -56,7 +55,6 @@ type Artifacts {
   items: [Artifact!]!
 
   # CHANGED: all conversions use this view.
-  # UNCHANGED: names and list return types.
   """Return selected checks without running them. Fail on other types."""
   asChecks: [Check!]!
 
@@ -80,12 +78,10 @@ type Artifacts {
 }
 ```
 
-Remove these fields and types from the target schema:
+Remove the batch fields and types too:
 
 | Field or type | Change |
 |---|---|
-| `Artifacts.values` | Remove the general execution method. Migrate its callers. |
-| `Artifacts.withArtifacts` | Defer union of separate selections. |
 | `<CollectionType>.batch` | Remove the batch namespace. |
 | `<CollectionType>_Batch` | Remove the generated batch type. |
 | `CollectionTypeDef.batchType` | Remove batch type metadata. |
@@ -111,7 +107,7 @@ type GoTests_Batch {
 ```
 
 ```graphql
-# AFTER: ordinary author functions sit beside standard collection methods.
+# AFTER: author functions are on the collection type.
 """A collection of tests."""
 type GoTests {
   # UNCHANGED: standard collection fields and methods.
@@ -138,9 +134,11 @@ type GoTests {
 }
 ```
 
-The collection names and author function above are examples. Do not add new engine types or methods for them.
+These are example module types, not new engine types.
 
-Keep `delta` support. Do not add a public selection type or another general execution method without approval. Confirm any conflict between author method names and standard collection methods.
+Remove check or generator markers from functions that only group item work. Make them helpers, or remove them. Keeping the markers would repeat work through both group and item checks.
+
+Keep `delta` support. Confirm conflicts between author method names and standard collection methods. New public types or methods require approval.
 
 ## Filter behavior
 
@@ -158,7 +156,7 @@ References through other fields and from children to parents must see the same s
 
 Preserve `CollectionBase`, the original collection used to compute `delta`. Do not replace this history reference.
 
-Static field filters remove selected entries only. They do not remove callable fields or change object values. Thus, collection state does not expose the complete artifact selection.
+Static field filters only narrow the selection. They retain the current collection view. Excluded fields remain callable. Collection state therefore does not expose the complete artifact selection.
 
 Keys in one filter are alternatives. Successive filters intersect:
 
@@ -199,9 +197,24 @@ query {
 }
 ```
 
-Listing must not run checks.
+`items` returns artifact descriptions. Here it lists their addresses without running checks.
 
-Keep multiple paths with shared filters. Use one selection. Reject commands that require union of separately filtered addresses. Give a clear error. Do not apply their filters globally, because that can select different combinations.
+Without `-l`, replace `items { uri }` with:
+
+```graphql
+asChecks {
+  sync {
+    pass
+    error { message }
+  }
+}
+```
+
+`sync` runs each check and returns its retained result. Read `pass` and `error` from that result. This avoids separate execution requests for each result field. The CLI fails if any check fails or the query returns an error.
+
+Command scheduling and conversion failures remain open decisions.
+
+Keep multiple paths with shared filters in one selection. Reject separately filtered addresses that require union. Do not apply their filters globally; that can select different combinations.
 
 ## Shared execution
 
@@ -216,22 +229,21 @@ TestBar.check -> module.testResults() -> shared command
 
 Each check reads its own result. Expected test failures must still produce readable results. Handle missing reports and execution failures separately.
 
-Normal call caching can share matching calls. Do not include the current check address in the common helper's identity. Caching does not guarantee exactly one execution.
+Caching can share matching calls. Preserve check addresses for reporting, but keep them out of the helper's cache key. Caching does not guarantee exactly one execution.
 
-Keep individual results when work is shared. A shared trace span cannot have several parents. Define its display separately. Each generator must also return its intended output; do not return the full shared Changeset from every item.
+A shared trace span cannot have several parents. Define its display separately. Each generator must return its intended output; do not return the full shared Changeset from every item.
 
 ## Implementation
 
 1. Confirm the open decisions below.
 2. Build a nested collection example with child-to-parent references and a common results helper.
-3. Implement view state and reference replacement. Copying `Query` alone is insufficient: it does not contain all module objects.
+3. Implement view state and reference replacement. Copying `Query` is insufficient; it does not contain all module objects.
 4. Preserve the view through module calls, stored ID loads, cached results, deferred execution, and objects created later.
-5. Include the collection view in cache identity before lookup. Preserve source objects and IDs. Keep different views separate.
-6. Make CLI callers and `asXXX()` use the same view. Converting to checks must not run them. `asChangesets()` can evaluate source fields.
-7. Fix cloud execution. Send the full view separately from the artifact target. Related checks need a shared execution scope. Current remote checks use separate sessions.
-8. Remove batch code and schema. Preserve ordinary collection methods. Update all affected SDKs, generated clients, and documentation.
-
-Do not claim equivalent cloud performance until sharing is demonstrated.
+5. Include the collection view in the cache key before lookup. Preserve source objects and IDs. Keep different views separate and allow equivalent views to share work.
+6. Migrate every caller of `values()`, including check, generate, start, call, and cloud execution. Keep command settings, argument passing, cancellation, concurrency limits, failure reporting, and trace names. Do not replace the method with a renamed general evaluator.
+7. Make CLI callers and `asXXX()` use the same view.
+8. Fix cloud execution. Send the full view separately from the artifact target. Related checks need a shared execution scope. Current remote checks use separate sessions.
+9. Remove batch code and schema. Migrate group functions and their markers. Update all affected SDKs, generated clients, and documentation.
 
 Start here:
 
@@ -258,15 +270,22 @@ Verify these behaviors:
 - Deferred calls, ID loads, and later objects retain the view.
 - Different views do not share incorrect cached results.
 - Individual checks share helper work and report separate outcomes.
+- Old group functions do not remain marked and repeat item work.
+- Reading pass and error from a retained result does not rerun the check.
 - Listing does not execute checks.
 - Supported CLI calls still work. Unsupported unions fail clearly.
+- Cancellation, concurrency limits, and failure reporting retain their required behavior.
 - Cloud execution preserves the full view and shared work.
 - Schema and SDK output contain only the intended changes.
 
 ## Open decisions
 
-- **Author rules:** Require stable artifact paths and child keys under subset? Recommend computing selection-dependent commands and summaries in functions. A stored Container can contain obsolete test arguments. Keep configuration and parent fields.
+Resolve these rules before implementing the affected behavior:
+
+- **Artifact membership:** Can filtering change child keys below retained items? Proposed rule: keep those paths and keys stable. This is not enforced today.
+- **Stored data:** Proposed guidance: build commands and summaries from current keys when called. A stored Container can retain old test arguments. Keep configuration and parent fields.
 - **Shared references:** Define how filters on different paths combine when they refer to the same collection ID. Traversal order must not decide the subset.
-- **Later objects:** Define how newly created collections receive the correct filter.
-- **Removal filters:** Check `withoutUri` and other removal operations against the new view rules.
+- **Later objects:** Define how a newly created collection maps to the filtered dimension, even if it has a new ID.
+- **Removal filters:** Define whether `withoutUri` changes collection state or only selected entries.
+- **Execution policy:** Define cancellation and concurrency limits. `asChecks()` can fail before returning its list; `values()` can retain other artifact results. Define how commands continue after a conversion failure. The query alone does not preserve this behavior.
 - **Release:** Agree on cloud scope and compatibility for removed fields. Read [version gating](../../internal-docs/version-gating.md). All v1.0.0 prereleases share one schema view; a later beta gate cannot separate them.
