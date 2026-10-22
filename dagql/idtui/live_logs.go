@@ -49,10 +49,11 @@ type LiveLogsFrontend interface {
 	// so after every record exported before it.
 	SetPrimaryOutput([]sdklog.Record)
 	// LiveLogsCoverage tells, for the records a read returned (by the
-	// trace, span and digest a read selects them by), whether the frontend
-	// routes them to a span it requested or to a descendant of one it
-	// requested with its descendants: a read may return more than that.
-	LiveLogsCoverage([]LogTarget) []LogCoverage
+	// trace, span and digest a read selects them by), the span the frontend
+	// routes them to, and whether that is a span it requested or a
+	// descendant of one it requested with its descendants: a read may return
+	// more than that.
+	LiveLogsCoverage([]LogTarget) []LogRoute
 	// LiveLogsActivity tells, for each span, whether more of the display
 	// text it routes may still come (LogActivity). A reader following a
 	// session's logs stops following spans that are idle, so a long
@@ -78,6 +79,14 @@ type LogTarget struct {
 	Trace  dagui.TraceID
 	Span   dagui.SpanID
 	Digest string
+}
+
+// LogRoute is where a frontend routes some records, and whether it asked
+// for them.
+type LogRoute struct {
+	Coverage LogCoverage
+	// Span is the span the records route to; zero when unknown.
+	Span dagui.SpanID
 }
 
 // LogCoverage is whether a frontend asked for some records.
@@ -226,14 +235,14 @@ func (fe *frontendPretty) SetPrimaryOutput(records []sdklog.Record) {
 	})
 }
 
-func (fe *frontendPretty) LiveLogsCoverage(targets []LogTarget) []LogCoverage {
-	coverage := make([]LogCoverage, len(targets))
+func (fe *frontendPretty) LiveLogsCoverage(targets []LogTarget) []LogRoute {
+	routes := make([]LogRoute, len(targets))
 	fe.dispatchWait(func() {
 		for i, t := range targets {
-			coverage[i] = fe.liveLogCoverage(t)
+			routes[i] = fe.liveLogRoute(t)
 		}
 	})
-	return coverage
+	return routes
 }
 
 func (fe *frontendPretty) LiveLogsActivity(spans []dagui.SpanID) []LogActivity {
@@ -273,24 +282,26 @@ func (fe *frontendPretty) liveLogActivity(id dagui.SpanID) LogActivity {
 	return activity
 }
 
-func (fe *frontendPretty) liveLogCoverage(t LogTarget) LogCoverage {
+func (fe *frontendPretty) liveLogRoute(t LogTarget) LogRoute {
 	target := fe.db.LogTarget(t.Trace, t.Span, t.Digest)
 	span, ok := fe.db.Spans.Map[target]
 	if !target.IsValid() || !ok || !span.Received {
-		return LogUnknown
+		return LogRoute{Coverage: LogUnknown}
 	}
+	route := LogRoute{Coverage: LogCovered, Span: target}
 	if _, ok := fe.liveRequests[target]; ok {
-		return LogCovered
+		return route
 	}
 	for id := span.ParentID; id.IsValid(); {
 		parent, ok := fe.db.Spans.Map[id]
 		if !ok || !parent.Received {
-			return LogUnknown
+			return LogRoute{Coverage: LogUnknown, Span: target}
 		}
 		if fe.liveRequests[id] {
-			return LogCovered
+			return route
 		}
 		id = parent.ParentID
 	}
-	return LogUncovered
+	route.Coverage = LogUncovered
+	return route
 }

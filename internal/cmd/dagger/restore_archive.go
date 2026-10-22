@@ -160,17 +160,19 @@ func restoreArchive(ctx context.Context, source archiveRestoreSource, fe archive
 func restoreArchiveDisplay(ctx context.Context, source archiveRestoreSource, fe archiveFrontend, tf idtui.TraceFrontend, traceID dagui.TraceID, traceHex string, importer *enginetel.ArchiveTraceImporter, cut enginetel.ArchiveCut, warn func(error)) func() {
 	historyCtx, cancel := context.WithCancel(ctx)
 	var logFg fetchGroup
-	loader := newTraceLoaderFor(historyCtx, tracesource.NewStore(source, archive.Manifest{
+	store := tracesource.NewStore(source, archive.Manifest{
 		TraceID: traceHex,
 		SealAt:  &cut.SealAt,
 		HighWater: archive.HighWater{
 			Spans: cut.HighWater.Spans, Logs: cut.HighWater.Logs, Metrics: cut.HighWater.Metrics,
 		},
-	}), traceHex, fe)
+	})
+	loader := newTraceLoaderFor(historyCtx, store, traceHex, fe)
 	loader.fullTree = true
 	tf.SetTraceLogProvider(traceID, func(id dagui.SpanID, descendants bool) {
 		loader.fetchLogs(&logFg, id, descendants)
 	})
+	setLogCache(tf, traceID, loader, store, traceHex)
 	tf.SetFetchWaiter(func() { _ = logFg.Wait() })
 	stop := startHistoricalImport(historyCtx, func(ctx context.Context) error {
 		return importArchiveRemainder(ctx, source, traceHex, importer, cut, true)
