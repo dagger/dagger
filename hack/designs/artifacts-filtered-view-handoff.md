@@ -2,11 +2,13 @@
 
 ## Problem
 
-Artifact filters select entries but leave parent collections unchanged. Module code cannot tell which items were selected. The engine groups work through a separate batch API.
+Batching repeats work across levels. A Go test can run three times: individually, in a package batch, and in a module batch.
+
+Artifact filters select entries but leave parent collections unchanged. Module code cannot tell which items were selected.
 
 ## Solution
 
-Give each selection one filtered workspace view. Replace collection references with filtered copies. Let module code share work through normal calls. Keep individual check results. Remove native batching and `Artifacts.values()`. Defer `withArtifacts()`.
+Give each selection one filtered workspace view. Replace collection references with filtered copies. Expose individual checks. Let module code share their work through normal calls. Keep individual check results. Remove native batching and `Artifacts.values()`. Defer `withArtifacts()`.
 
 **Status:** Design handoff. Not implemented.
 
