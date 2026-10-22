@@ -1558,8 +1558,6 @@ func (db *DB) DrainResolvedLogs(spanID SpanID) []sdklog.Record {
 }
 
 func (db *DB) routeLog(record sdklog.Record) (SpanID, *resumeOutputKey) {
-	fallback := SpanID{SpanID: record.SpanID()}
-
 	var targetDig string
 	record.WalkAttributes(func(kv otellog.KeyValue) bool {
 		if kv.Key == telemetry.DagDigestAttr {
@@ -1570,12 +1568,23 @@ func (db *DB) routeLog(record sdklog.Record) (SpanID, *resumeOutputKey) {
 		}
 		return true
 	})
+	return db.routeLogTarget(TraceID{TraceID: record.TraceID()}, SpanID{SpanID: record.SpanID()}, targetDig)
+}
 
+// LogTarget is the span dagui routes a log record of traceID and spanID,
+// carrying digest as its dagger.io/dag.digest (if any), to: see routeLog.
+// It is invalid while the digest's creator has not arrived.
+func (db *DB) LogTarget(traceID TraceID, spanID SpanID, digest string) SpanID {
+	target, _ := db.routeLogTarget(traceID, spanID, digest)
+	return target
+}
+
+func (db *DB) routeLogTarget(traceID TraceID, fallback SpanID, targetDig string) (SpanID, *resumeOutputKey) {
 	if targetDig == "" {
 		return fallback, nil
 	}
 
-	if creator := db.creatorSpanForDigestInTrace(targetDig, record.TraceID()); creator != nil {
+	if creator := db.creatorSpanForDigestInTrace(targetDig, traceID.TraceID); creator != nil {
 		return creator.ID, nil
 	}
 
@@ -1594,7 +1603,7 @@ func (db *DB) routeLog(record sdklog.Record) (SpanID, *resumeOutputKey) {
 	}
 
 	key := resumeOutputKey{
-		TraceID: TraceID{TraceID: record.TraceID()},
+		TraceID: traceID,
 		Output:  targetDig,
 	}
 	return SpanID{}, &key
