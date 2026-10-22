@@ -197,6 +197,9 @@ const (
 	WaitReasonExec
 	// WaitReasonIO: blocked on external I/O.
 	WaitReasonIO
+	// WaitReasonAttach: a publication blocked on a result's dependency
+	// attachment, which another publication or a merge holds open.
+	WaitReasonAttach
 )
 
 var waitReasonNames = map[WaitReason]string{
@@ -207,6 +210,7 @@ var waitReasonNames = map[WaitReason]string{
 	WaitReasonLock:         "lock",
 	WaitReasonExec:         "exec",
 	WaitReasonIO:           "io",
+	WaitReasonAttach:       "attach",
 }
 
 func (r WaitReason) String() string {

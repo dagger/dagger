@@ -33,7 +33,10 @@ Current hook points:
   do-not-cache calls included — this deliberately records what OTel
   suppresses), one shared `call_exec` op per actual resolver execution,
   wait edges from every caller to it, and a `dagql.publishResult` op for
-  publication cost.
+  publication cost. A publication that waits for the dependency attachment
+  another publication, or a merge, holds open on its recipe's entry records an
+  `attach` wait on that publication's op (in a trace, a wait link to its
+  span; a merge has no span to link to).
 - `dagql/cache.go evaluateOne`: one `lazy` op per lazy-evaluation run, classed
   by the call that created the lazy value, with wait edges from the
   triggering and joining ops.

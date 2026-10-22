@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/opencontainers/go-digest"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/snapshots"
@@ -268,5 +269,68 @@ func profLookupFacts(ctx context.Context, op *wcprof.Op, ev *CacheDecision, res 
 		if ev.AdoptedRemote {
 			fact(telemetryattrs.CacheAdoptedRemoteAttr, profResultID(res))
 		}
+	}
+}
+
+// attachHolder is the op and span holding a result's dependency attachment
+// open: its publication's, or a merge's that replaces its value.
+type attachHolder struct {
+	opID uint64
+	span trace.SpanContext
+}
+
+// newAttachHolder returns the holder of an attachment opened under the op
+// opID and the span span, or nil when neither is recorded.
+func newAttachHolder(opID uint64, span trace.Span) *attachHolder {
+	var sc trace.SpanContext
+	if span != nil && span.IsRecording() {
+		sc = span.SpanContext()
+	}
+	if opID == 0 && !sc.IsValid() {
+		return nil
+	}
+	return &attachHolder{opID: opID, span: sc}
+}
+
+// attachWait is a publication's wait for an attachment another holds open.
+type attachWait struct {
+	native  *wcprof.Wait
+	span    trace.Span
+	target  trace.SpanContext
+	startNS int64
+}
+
+// beginAttachWait starts the publication's attach wait on holder, read with
+// waitCh under the attachment's mutex: on the op in ctx, and as a wait link on
+// span when the holder has a span to target. A merge has none, so the trace
+// leaves a wait on one as the publication's own time, as before. An
+// attachment that has closed since is no wait, and its holder may be gone.
+func beginAttachWait(ctx context.Context, span trace.Span, waitCh <-chan struct{}, holder *attachHolder) attachWait {
+	var w attachWait
+	if !wcprof.Enabled(ctx) && (span == nil || !span.IsRecording()) {
+		return w
+	}
+	select {
+	case <-waitCh:
+		return w
+	default:
+	}
+	var target uint64
+	if holder != nil {
+		target, w.target = holder.opID, holder.span
+	}
+	w.native = wcprof.BeginWait(ctx, target, wcprof.WaitReasonAttach)
+	if span != nil && span.IsRecording() && w.target.IsValid() {
+		w.span = span
+		w.startNS = time.Now().UnixNano()
+	}
+	return w
+}
+
+// end records the wait up to now.
+func (w attachWait) end(ctx context.Context) {
+	w.native.End()
+	if w.span != nil {
+		EmitOTelWait(trace.ContextWithSpan(ctx, w.span), w.target, wcprof.WaitReasonAttach, w.startNS, time.Now().UnixNano())
 	}
 }

@@ -2724,6 +2724,9 @@ type sharedResult struct {
 	attachDepsMu     sync.Mutex
 	attachDepsWaitCh chan struct{}
 	attachDepsErr    error
+	// attachHolder is the op and span holding the attachment open, when
+	// either is recorded, for a publication that waits for it.
+	attachHolder *attachHolder
 
 	persistDecodeMu     sync.Mutex
 	persistDecodeWaitCh chan struct{}
@@ -3213,6 +3216,9 @@ type ongoingCall struct {
 	// joiner has a valid wait target (target-before-primitive). Invalid when
 	// telemetry is off.
 	execSpanCtx trace.SpanContext
+	// pubSpan is the OTel dagql.publishResult span of the result's
+	// publication, while it runs.
+	pubSpan trace.Span
 
 	// profSkip snapshots the target call's frame ProfileSkip at claim time (oc.res
 	// is not yet set when joiners wait). Every singleflight wait checks this
@@ -6399,6 +6405,7 @@ func (c *Cache) wait(
 		var pubSpan trace.Span
 		if oc.execSpanCtx.IsValid() {
 			pubSpan = beginOTelPublishResult(context.WithoutCancel(oc.sharedWorkCtx))
+			oc.pubSpan = pubSpan
 		}
 		// Publication's own waits (the graph lock's) belong to pubOp; the
 		// shared execution's op has ended.
@@ -6412,6 +6419,7 @@ func (c *Cache) wait(
 			pubOp.EndWithResult(profErrOutcome(oc.initCompletedResultErr), resID)
 		}
 		EndProfSpan(pubSpan, &oc.initCompletedResultErr)
+		oc.pubSpan = nil
 		c.callsMu.Lock()
 		oc.needsPersistedEdge = oc.initCompletedResultErr == nil &&
 			oc.res != nil &&
@@ -6586,6 +6594,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		if oc.res.attachDepsWaitCh != nil {
 			oc.res.attachDepsErr = err
 			close(oc.res.attachDepsWaitCh)
+			oc.res.attachHolder = nil
 		}
 		oc.res.attachDepsMu.Unlock()
 	}
@@ -6896,23 +6905,26 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		if !cur.noValueLocked() && !c.resultExpiredAtLocked(cur, now.Unix()) {
 			if cur.attachmentState() == resultAttachmentOpen {
 				cur.attachDepsMu.Lock()
-				waitCh := cur.attachDepsWaitCh
+				waitCh, holder := cur.attachDepsWaitCh, cur.attachHolder
 				cur.attachDepsMu.Unlock()
 				var released <-chan struct{}
 				if state := c.sessionLifecycle(sessionID); state != nil {
 					released = state.released
 				}
 				c.egraphMu.Unlock()
+				wait := beginAttachWait(ctx, oc.pubSpan, waitCh, holder)
 				if c.testPublicationWaitsOnAttachment != nil {
 					c.testPublicationWaitsOnAttachment(cur)
 				}
 				select {
 				case <-waitCh:
+					wait.end(ctx)
 					c.egraphMu.Lock()
 					continue
 				case <-released:
 				case <-ctx.Done():
 				}
+				wait.end(ctx)
 				// This publication's session was released, or its caller left,
 				// while another session's attachment is open. Waiting on would
 				// hold the session's release open for as long as that
@@ -7082,6 +7094,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		oc.res.attachDepsMu.Lock()
 		oc.res.attachDepsWaitCh = make(chan struct{})
 		oc.res.attachDepsErr = nil
+		oc.res.attachHolder = newAttachHolder(wcprof.CurrentOpID(ctx), oc.pubSpan)
 		oc.res.attachDepsMu.Unlock()
 	}
 	// The first E unlock of this publication, after direct-edge validation,

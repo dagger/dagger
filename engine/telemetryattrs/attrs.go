@@ -462,7 +462,8 @@ const (
 	WcprofWaitStartUnixNanoAttr = "wcprof.wait.start_unix_ns"
 	WcprofWaitEndUnixNanoAttr   = "wcprof.wait.end_unix_ns"
 	// WcprofWaitReasonAttr (string) names why the waiter blocked: one of
-	// "singleflight", "call_exec", "lazy", "service", "lock", "exec", "io".
+	// "singleflight", "call_exec", "lazy", "service", "lock", "exec", "io",
+	// "attach".
 	WcprofWaitReasonAttr = "wcprof.wait.reason"
 	// WcprofWaitIdentAttr (string) names the awaited resource for waits that
 	// have no target span (reason "lock"), in place of the link's target span id.
