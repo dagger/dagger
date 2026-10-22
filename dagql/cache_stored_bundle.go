@@ -263,7 +263,7 @@ func storedClosureChildrenLocked(res *sharedResult) []sharedResultID {
 // storedBundleValueLocked copies res's stored record into the build,
 // normalized for transfer and relocated to ordinals. Requires egraphMu.
 func (c *Cache) storedBundleValueLocked(build *storedBundleBuild, res *sharedResult) error {
-	normalized, err := storedTransferRecordLocked(res)
+	normalized, err := c.storedTransferRecordLocked(res)
 	if err != nil {
 		return fmt.Errorf("stored bundle: entry %d: %w", res.id, err)
 	}
@@ -318,7 +318,7 @@ type storedTransferRecord struct {
 	call     *ResultCall
 	record   PersistedRecord
 	// size is the entry's value's encoded size in a bundle, once StoredSizes
-	// has measured it (storedValueSizeLocked), with what else it read.
+	// has measured it (measureStoredValue), with what else it read.
 	size atomic.Pointer[storedValueSize]
 }
 
@@ -341,32 +341,66 @@ type storedValueSize struct {
 // The kept record holds both, so neither can be freed and another take its
 // address while it is kept. The result is shared: callers copy what they
 // change. Requires egraphMu.
-func storedTransferRecordLocked(res *sharedResult) (PersistedRecord, error) {
-	env, call := res.persistedEnvelope, res.loadResultCall()
+func (c *Cache) storedTransferRecordLocked(res *sharedResult) (PersistedRecord, error) {
+	normalized, err := normalizeStoredTransfer(res, res.persistedEnvelope, res.loadResultCall())
+	if err != nil {
+		return PersistedRecord{}, err
+	}
+	if c.testStoredTransferNormalized != nil {
+		c.testStoredTransferNormalized()
+	}
+	return keepStoredTransfer(res, normalized).record, nil
+}
+
+// keepStoredTransfer keeps normalized as res's transfer record and returns
+// it, unless a record of the same envelope and call is kept already, which it
+// returns instead: readers normalize at once under egraphMu.RLock, and a
+// record kept first, with its measured size (StoredSizes), stays the one kept.
+// The caller has checked, under egraphMu, that the envelope and call are
+// res's.
+func keepStoredTransfer(res *sharedResult, normalized *storedTransferRecord) *storedTransferRecord {
+	for {
+		kept := res.storedTransfer.Load()
+		if kept != nil && kept.envelope == normalized.envelope && kept.call == normalized.call {
+			return kept
+		}
+		if res.storedTransfer.CompareAndSwap(kept, normalized) {
+			return normalized
+		}
+	}
+}
+
+// normalizeStoredTransfer returns res's transfer record of env and call: the
+// kept one if it is of them, or a new one, normalized and not kept. It reads
+// only env and call, which the cache replaces and never changes in place, so
+// it needs no lock: a caller that read them under egraphMu can normalize
+// after releasing it, and keeps the record (keepStoredTransfer) under
+// egraphMu again only if they are still the entry's (StoredSizes'
+// publishStoredSizes).
+func normalizeStoredTransfer(res *sharedResult, env *PersistedResultEnvelope, call *ResultCall) (*storedTransferRecord, error) {
 	if kept := res.storedTransfer.Load(); kept != nil && kept.envelope == env && kept.call == call {
-		return kept.record, nil
+		return kept, nil
 	}
 	rec, err := normalizeTransferRecord(PersistedRecord{ResultID: uint64(res.id), Envelope: *env, Call: call})
 	if err != nil {
-		return PersistedRecord{}, err
+		return nil, err
 	}
 	rec.Envelope.PendingOffers = nil
 	// A build validates its bundle by shape, so the record's payloads are
 	// checked by their codecs, and its outputs mapped, here.
 	if err := validateTransferPayloads(rec); err != nil {
-		return PersistedRecord{}, err
+		return nil, err
 	}
 	outputs, err := mapTransferredOutputs(rec)
 	if err != nil {
-		return PersistedRecord{}, err
+		return nil, err
 	}
 	for _, output := range outputs {
 		if _, err := partAddressKey(output.Address); err != nil {
-			return PersistedRecord{}, err
+			return nil, err
 		}
 	}
-	res.storedTransfer.Store(&storedTransferRecord{envelope: env, call: call, record: rec})
-	return rec, nil
+	return &storedTransferRecord{envelope: env, call: call, record: rec}, nil
 }
 
 // storedBundleOutputsLocked adds res's outputs to the build: its own stored
