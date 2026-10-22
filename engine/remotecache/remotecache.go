@@ -74,6 +74,9 @@ type Config struct {
 	// EngineVersion and EngineName are sent in hello.
 	EngineVersion string
 	EngineName    string
+	// Ephemeral is sent in hello: the engine's cache does not outlive this
+	// run of it.
+	Ephemeral bool
 	// Logger receives the connection's warnings and errors. Nil discards.
 	Logger *slog.Logger
 	// Lookups asks the service for the calls the engine's cache misses.
