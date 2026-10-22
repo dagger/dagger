@@ -19,8 +19,8 @@ const envRemoteCacheURL = "_EXPERIMENTAL_DAGGER_REMOTE_CACHE_URL"
 
 // envRemoteCacheLookups set to 0 stops the engine asking the service for the
 // calls its cache misses. envRemoteCacheLookupWait sets how long an
-// evaluation waits for a merge the service's answer names, as a duration; 0
-// asks without waiting.
+// evaluation waits for a merge the service's answer names, as a duration. The
+// default is 0: lookups are asked without waiting, and a wait is opt-in.
 const (
 	envRemoteCacheLookups    = "_EXPERIMENTAL_DAGGER_REMOTE_CACHE_LOOKUPS"
 	envRemoteCacheLookupWait = "_EXPERIMENTAL_DAGGER_REMOTE_CACHE_LOOKUP_WAIT"
