@@ -4554,7 +4554,9 @@ func (s *moduleSourceSchema) loadDependencyModulesForEngineVersion(
 
 // loadDefaultSchemaBuilder returns a SchemaBuilder seeded with only the default
 // (core) dependencies, with the core module pinned to src's engine version
-// view. Callers append the user modules they want to expose.
+// view, whose naming rules also name src's declarations (see
+// core.ModuleSource.NamingView). Callers append the user modules they want to
+// expose.
 func (s *moduleSourceSchema) loadDefaultSchemaBuilder(
 	ctx context.Context,
 	src dagql.ObjectResult[*core.ModuleSource],
