@@ -522,8 +522,9 @@ the old strcase code byte for byte:
   selectors (`core/sdk/dang/shared/naming.go`).
 - **Module-level naming** (`namespaceObject`, type and constructor lookups,
   validation) uses `Module.Namer()`, chosen by the module source's
-  `engineVersion` (`ModuleSource.Namer`; a module entrypoint is served at the
-  engine's own version). Module tree CLI paths (checks, generators, artifacts)
+  `engineVersion` (`ModuleSource.Namer`; a module entrypoint's version comes
+  from its `dang.toml`, see [Module entrypoints](#module-entrypoints)). Module
+  tree CLI paths (checks, generators, artifacts)
   use the namer of the module that declared the node, so a legacy dependency
   keeps its old paths inside a new workspace.
 - **Mixed versions.** A dependency's types are installed with *its* rules, so
@@ -795,8 +796,9 @@ existing view mechanism (`AfterVersion` / `BeforeVersion` in `core/util.go`):
 
 - A module's own names are parsed with the version its `engineVersion` selects.
   Modules below `v1.0.0` keep strcase behavior until they bump. A module
-  entrypoint (manifest v2), which declares no `engineVersion`, is served at the
-  engine's own version and gets its rules (see
+  entrypoint (manifest v2) has no `engineVersion` in its manifest; its version
+  is the Dagger version its `dang.toml` declares, `v1.0.0-beta.20` without one,
+  and it gets that version's rules (see
   [Module entrypoints](#module-entrypoints)).
 - A client's codegen uses the version the client connects with.
 - A dictionary addition lands with an engine version and applies only to
@@ -874,18 +876,23 @@ constructor calls, e.g. python-sdk's `sdk/tests/mod/golden/types.dang`), or
 the module points at a shared remote entrypoint that describes its types when
 it loads.
 
-**Naming.** An entrypoint module gets the engine's own version as its
-`EngineVersion` (`initFromModConfig` in `core/schema/modulesource.go`), and so
-the engine's API and naming rules, like any module on a v1 view: its client is
-served at that view, so the typedef constructors its entrypoint calls name by
-the new rules, `Module.Namer` names its namespaced types, constructor and CLI
-paths by them, and its codegen sees `Query.formatIdentifiers`. Dispatch
-doesn't care, since calls carry original names.
+**Naming.** An entrypoint module's `EngineVersion` is the Dagger version that
+the `dang.toml` governing its entrypoint declares (`[imports.Dagger] dagger =
+"vX.Y.Z"`), or `v1.0.0-beta.20` when it declares none (see
+`future/module-manifest-v2/spec.md`, "Versions"). It gets that version's API
+and naming rules, like any module: its client is served at that view, so the
+typedef constructors its entrypoint calls name by its rules, `Module.Namer`
+names its namespaced types, constructor and CLI paths by them, and its codegen
+sees `Query.formatIdentifiers` where its view has it. Dispatch doesn't care,
+since calls carry original names.
 
-Shipping this design renames existing entrypoint modules' acronyms: an SDK
-that registers `getUrl` (Python's own `snake_to_camel` of `get_url`) sees it
-become `getURL`, and a module `tiny`'s `HttpClient` type becomes
-`TinyHTTPClient` (was `TinyHttpClient`). Their old spellings stay accepted as
+An entrypoint module that declares no version thus gets the shared pre-cut
+view, `v1.0.0-beta.20`, and the rules that view has: once the naming rules are
+gated on `engine.IdentifierCasingVersion`, the legacy ones. One that declares
+the cut or later is renamed: an SDK that registers `getUrl`
+(Python's own `snake_to_camel` of `get_url`) sees it become `getURL`, and a
+module `tiny`'s `HttpClient` type becomes `TinyHTTPClient` (was
+`TinyHttpClient`). Their old spellings stay accepted as
 [transition aliases](#transition-aliases), like every module rename, so
 existing callers, generated clients and queries keep working.
 
@@ -893,8 +900,8 @@ existing callers, generated clients and queries keep working.
 later dictionary addition would rename an entrypoint module again on engine
 upgrade, which is what versioning the dictionary (`DictionaryFor`) exists to
 prevent: a module's names follow the version it declares, and an entrypoint
-module declares none. Its names should be decided at `dagger generate`, never
-at load. Two options:
+module declared none until its `dang.toml` could (see the outcome below). Its
+names should be decided at `dagger generate`, never at load. Two options:
 
 - **(A) Final names in the entrypoint.** The generator calls
   `formatIdentifiers` at `dagger generate` and writes final schema names into
@@ -926,6 +933,13 @@ until the module declares one.
 Either option needs a signal in the manifest v2 contract (a naming version,
 or a marker that names are final), which #14038's authors own. Nothing needs
 pinning until the first dictionary addition.
+
+Outcome: (B), declared in the entrypoint's `dang.toml` rather than in the
+`[entrypoint]` table. The Dagger version Dang already reads there is the
+module's engine version, so it pins the API view and naming together. A shared
+remote entrypoint pins through the `dang.toml` of the directory it names. An
+entrypoint that declares no version gets `v1.0.0-beta.20`, not the engine's
+own version, so it no longer follows the engine.
 
 ### Transition aliases
 
