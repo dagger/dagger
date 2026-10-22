@@ -59,14 +59,18 @@ func (ClientSuite) TestLiveLogsOnDemand(ctx context.Context, t *testctx.T) {
 		require.NoError(t, cmd.Run(), "%s", stderr.String())
 		require.Equal(t, "out-1\nout-2\nout-3\n", stdout.String())
 
-		// A failure's output is fetched for the report at exit.
+		// A failure's output is fetched for the report at exit, up to its
+		// last line, written right before the command fails: the exit
+		// barrier waits for it exactly, with no quiet period to guess.
 		args = append([]string{"--progress=report"}, from...)
-		args = append(args, "with-exec", "--args=sh,-c,echo FAILURE-DETAIL-$MARKER; exit 3", "stdout")
+		args = append(args, "with-exec", "--args=sh,-c,echo FAILURE-DETAIL-$MARKER; sleep 1; echo LAST-WORDS-$MARKER; exit 3", "stdout")
 		cmd = exec.CommandContext(ctx, bin, args...)
 		cmd.Env = env
 		out, err := cmd.CombinedOutput()
 		require.Error(t, err)
 		require.Contains(t, string(out), "FAILURE-DETAIL-"+marker)
+		require.Contains(t, string(out), "LAST-WORDS-"+marker)
+		require.NotContains(t, string(out), "error waiting for the session's telemetry")
 	})
 
 	t.Run("tui", func(ctx context.Context, t *testctx.T) {
