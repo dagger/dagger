@@ -2604,6 +2604,12 @@ type sharedResult struct {
 	inlineBorrow *PartHost
 	// Origin is immutable; slots and graph revisions are guarded by egraphMu.
 	imported bool
+	// persistDeclined records that the call that computed the entry's value
+	// declined to persist it (DeclinePersistence), so no hit persists it
+	// either. Set before the entry is indexed, and with the value when a
+	// replacement in place installs another. Guarded by egraphMu once
+	// indexed.
+	persistDeclined bool
 	// mergedAtUnixNano is when the Cloud merge that installed the entry's
 	// value committed, on an engine; 0 for a value the engine computed, and
 	// for one restored after a restart. It goes with the value. Guarded by
@@ -3196,7 +3202,13 @@ type ongoingCall struct {
 	persistedEdgeExpiresAtUnix int64
 	// pendingEdge is that edge until the last waiter creates it, shared with
 	// every waiter's cache evidence. Set with needsPersistedEdge.
-	pendingEdge             *pendingRetention
+	pendingEdge *pendingRetention
+	// persistDecline is the resolver's DeclinePersistence, in sharedWorkCtx,
+	// and resDeclined the published entry's mark, read with the entry under
+	// egraphMu: a call that adopted a value another call declined doesn't
+	// persist it either.
+	persistDecline          *persistDecline
+	resDeclined             bool
 	ttlSeconds              int64
 	initCompletedResultOnce sync.Once
 	handoffHoldActive       bool
@@ -6126,6 +6138,8 @@ func (c *Cache) getOrInitCallInner(
 		}
 		return nil, fmt.Errorf("acquire shared operation lease: %w", err)
 	}
+	decline := &persistDecline{}
+	sharedWorkCtx = context.WithValue(sharedWorkCtx, persistDeclineKey{}, decline)
 	oc := &ongoingCall{
 		callConcurrencyKeys:     callConcKeys,
 		ttlSeconds:              req.TTL,
@@ -6134,6 +6148,7 @@ func (c *Cache) getOrInitCallInner(
 		waiters:                 1,
 		clientScopeLease:        clientScopeLease,
 		sharedWorkCtx:           sharedWorkCtx,
+		persistDecline:          decline,
 		releaseOperationLeaseFn: releaseOperationLease,
 		profOpID:                execOp.ID(),
 		// snapshot the target's skip decision for the OTel wait condition (oc.res is not
@@ -6449,7 +6464,9 @@ func (c *Cache) wait(
 		c.callsMu.Lock()
 		oc.needsPersistedEdge = oc.initCompletedResultErr == nil &&
 			oc.res != nil &&
-			oc.isPersistable.Load()
+			oc.isPersistable.Load() &&
+			!oc.persistDecline.isDeclined() &&
+			!oc.resDeclined
 		if oc.needsPersistedEdge {
 			oc.pendingEdge = &pendingRetention{expiresAtUnix: oc.persistedEdgeExpiresAtUnix}
 		}
@@ -6687,6 +6704,8 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	}
 	if !resWasCacheBacked {
 		oc.res.onRelease = joinOnRelease(c.resultSnapshotLeaseCleanup(oc.res), oc.res.onRelease)
+		// Set before the result is indexed, so every hit sees it.
+		oc.res.persistDeclined = oc.persistDecline.isDeclined()
 	}
 	requestForIndex := req
 	if oc.res.createdAtUnixNano == 0 {
@@ -6986,7 +7005,11 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 			oc.adoptedMergedAt = cur.mergedAtUnixNano
 			break
 		}
-		if c.resultInUseLocked(cur) {
+		// A declined value doesn't take over the entry's retention edge, as
+		// a replacement in place would: it registers beside the entry, as a
+		// value does while the entry is in use.
+		_, retained := c.persistedEdgesByResult[cur.id]
+		if c.resultInUseLocked(cur) || (oc.res.persistDeclined && retained) {
 			c.retireResultLocked(cur)
 			break
 		}
@@ -6995,6 +7018,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		replacedInPlace = true
 		break
 	}
+	oc.resDeclined = oc.res.persistDeclined
 	// A returned cache-backed result can already be visible to lookups.
 	// TTL merge policy for shared results:
 	// - 0 means "no TTL for this writer", not necessarily "never expire globally".

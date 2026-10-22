@@ -14,6 +14,15 @@ import (
 
 type fileSchema struct{}
 
+// fileContentsPersistLimit is the most bytes a File.contents result is
+// persisted with. A check's reads out of other values (go.mod files,
+// include lists, versions and specs) return a few KB to a few hundred KB,
+// and a persisted read reaches another engine as a hit that never opens the
+// file, whose chain can be a whole container's filesystem. Larger reads stay
+// unpersisted, as before, rather than put that many bytes in the cache's
+// records and in every bundle that carries them.
+const fileContentsPersistLimit = 1 << 20
+
 var _ SchemaResolvers = &fileSchema{}
 
 func (s *fileSchema) Install(srv *dagql.Server) {
@@ -41,6 +50,7 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 		Syncer[*core.File]().
 			Doc(`Force evaluation in the engine.`),
 		dagql.NodeFunc("contents", s.contents).
+			IsPersistable().
 			Doc(`Retrieves the contents of the file.`).
 			Args(
 				dagql.Arg("offsetLines").Doc(`Start reading after this line`),
@@ -213,6 +223,9 @@ func (s *fileSchema) contents(ctx context.Context, file dagql.ObjectResult[*core
 	content, err := file.Self().Contents(ctx, file, args.OffsetLines, args.LimitLines)
 	if err != nil {
 		return "", err
+	}
+	if len(content) > fileContentsPersistLimit {
+		dagql.DeclinePersistence(ctx)
 	}
 
 	return dagql.NewString(string(content)), nil
