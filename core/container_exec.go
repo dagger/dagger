@@ -2188,6 +2188,9 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 		// one identical value. ProfArgs is json:"-", so this cannot perturb a cache key.
 		if execMD != nil {
 			execMD.ProfArgs = slices.Clone(metaSpec.Args)
+			// Same in-process pattern, for the executor's "starting
+			// container" log line.
+			execMD.CacheMounts = cacheMountCount(inputMounts)
 			// Same in-process pattern: the executor needs the user-facing span
 			// for the container's traceparent injection, and only core still
 			// knows it here — the executor runs on a detached execution

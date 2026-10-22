@@ -201,9 +201,14 @@ type executorSetupFunc func(context.Context, *execState) error
 // startingContainerLog is the logger for an exec's "starting container" and
 // "container done" lines.
 func startingContainerLog(ctx context.Context, state *execState) *logrus.Entry {
+	cacheMounts := 0
+	if state.execMD != nil {
+		cacheMounts = state.execMD.CacheMounts
+	}
 	lg := bklog.G(ctx).
 		WithField("id", state.id).
-		WithField("args", state.spec.Process.Args)
+		WithField("args", state.spec.Process.Args).
+		WithField("cache_mounts", cacheMounts)
 	if state.execMD != nil {
 		if state.execMD.CallDigest != "" {
 			lg = lg.WithField("call_id", state.execMD.CallDigest)
