@@ -140,7 +140,7 @@ func TestLiveLogsCoverage(t *testing.T) {
 	fe.SetLiveLogs(live, func(LogRequest) {})
 	fe.requestLogs(rollUp)
 	fe.requestLogs(creator)
-	got := fe.LiveLogsCoverage([]LogTarget{
+	routes := fe.LiveLogsCoverage([]LogTarget{
 		{Trace: live, Span: rollUp},
 		{Trace: live, Span: child},
 		{Trace: live, Span: other},
@@ -148,7 +148,13 @@ func TestLiveLogsCoverage(t *testing.T) {
 		{Trace: live, Span: prettyTestSpanID(9)},
 		{Trace: live, Span: other, Digest: "xxh3:unknown"},
 	})
+	var got []LogCoverage
+	for _, route := range routes {
+		got = append(got, route.Coverage)
+	}
 	require.Equal(t, []LogCoverage{LogCovered, LogCovered, LogUncovered, LogCovered, LogUnknown, LogUnknown}, got)
+	require.Equal(t, []dagui.SpanID{rollUp, child, other, creator}, []dagui.SpanID{routes[0].Span, routes[1].Span, routes[2].Span, routes[3].Span},
+		"each route names the span it routes to")
 }
 
 // TestLiveLogsBufferAfterPrimaryOutput: what this process logs after the
