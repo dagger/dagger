@@ -242,3 +242,53 @@ func (CacheVolumeDirSuite) TestListAndPrune(ctx context.Context, t *testctx.T) {
 	out := inspectDir(ctx, t, c, dirVol, `ls /dir/v1/volumes | wc -l`)
 	require.Equal(t, "0\n", out)
 }
+
+// A cache volume's source is evaluated when the volume is created, in both
+// modes, so a source reached through another recipe with the same content
+// makes a downstream exec hit. Remote Git trees publish their content digest
+// only once evaluated: if a directory-backed volume left its source for the
+// exec to evaluate, the exec's lookup would run before the two sources were
+// known to be equivalent, and miss.
+func (CacheVolumeDirSuite) TestEquivalentSourceHits(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	run := func(ctx context.Context, t *testctx.T, e *cacheVolumeDirEngine) (string, string) {
+		q := core.NewQuery(e.client)
+		gitDaemon, repoURL := gitService(ctx, t, e.client, q.Directory().WithNewFile("seed", "seeded"))
+		repo := q.Git(repoURL, core.GitOpts{ExperimentalServiceHost: gitDaemon})
+		// The same commit's files through two recipes: a remote registration
+		// changes the repository's recipe, but not the content digest of a
+		// tree without .git.
+		discardGitDir := core.GitRefTreeOpts{DiscardGitDir: true}
+		plain := repo.Branch("main").Tree(discardGitDir)
+		withRemote := repo.WithRemote("unused", repoURL).Branch("main").Tree(discardGitDir)
+		exec := func(source *core.Directory) string {
+			out, err := q.Container().From(alpineImage).
+				WithMountedCache("/cache", q.CacheVolume("equivalent-source", core.CacheVolumeOpts{Source: source})).
+				WithExec([]string{"sh", "-c", "cat /cache/seed; echo; head -c 16 /dev/urandom | od -An -tx1"}).
+				Stdout(ctx)
+			require.NoError(t, err)
+			return out
+		}
+		return exec(plain), exec(withRemote)
+	}
+
+	for _, mode := range []struct {
+		name string
+		dir  bool
+	}{
+		{name: "option off"},
+		{name: "option on", dir: true},
+	} {
+		t.Run(mode.name, func(ctx context.Context, t *testctx.T) {
+			var opts []func(*core.Container) *core.Container
+			if mode.dir {
+				opts = append(opts, withCacheVolumeDir(ctx, t, core.NewQuery(c).CacheVolume("cvdir-"+rand.Text())))
+			}
+			e := startCacheVolumeDirEngine(ctx, t, c, opts...)
+			defer e.stop(ctx, t)
+			first, second := run(ctx, t, e)
+			require.Contains(t, first, "seeded")
+			require.Equal(t, first, second, "the second exec's source has the same content through another recipe, so the exec hits")
+		})
+	}
+}
