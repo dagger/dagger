@@ -1,0 +1,11 @@
+kind: Fixed
+body: |
+  Executor cleanup no longer deletes through a live mount: when unmounting an
+  exec rootfs or meta mount fails (e.g. EBUSY from a process still using the
+  mount), the temporary mount directories are left intact and the error is
+  reported, instead of their contents being recursively removed through the
+  still-mounted filesystem.
+time: 2026-10-22T14:55:02Z
+custom:
+  Author: goingforstudying-ctrl
+  PR: "14811"
