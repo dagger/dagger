@@ -1226,18 +1226,18 @@ More details."""
  {"uri":"dag://?check=failing","value":{"pass":false,"error":{"message":"check failed"}}},
  {"uri":"dag://?check=passing","value":{"pass":true,"error":null}}
  ]}}`, string(*results))
-	values, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($selection: ID!) {
+	checks, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($selection: ID!) {
  node(id: $selection) { ... on Artifacts {
- values { artifact { uri } error { message } value { ... on Check { pass } } }
+ asChecks { sync { pass error { message } } }
  } }
 }`, opts)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"node":{"values":[
- {"artifact":{"uri":"dag://?check=clean/stale"},"value":{"pass":true},"error":null},
- {"artifact":{"uri":"dag://?check=dirty/stale"},"value":null,"error":{"message":"generated files are not up to date"}},
- {"artifact":{"uri":"dag://?check=failing"},"value":null,"error":{"message":"check failed"}},
- {"artifact":{"uri":"dag://?check=passing"},"value":{"pass":true},"error":null}
- ]}}`, string(*values))
+	require.JSONEq(t, `{"node":{"asChecks":[
+ {"sync":{"pass":true,"error":null}},
+ {"sync":{"pass":false,"error":{"message":"generated files are not up to date"}}},
+ {"sync":{"pass":false,"error":{"message":"check failed"}}},
+ {"sync":{"pass":true,"error":null}}
+ ]}}`, string(*checks))
 
 	base := nativeWorkspaceBase(t, c).WithDirectory(".", src).With(nonNestedDevEngine(c))
 	for _, command := range []string{"generate", "check"} {
@@ -1540,8 +1540,8 @@ func (*Probe) Every() error { return fmt.Errorf("every %s", rand.Text()) }
 		require.NoError(t, json.Unmarshal([]byte(out), &repeated))
 		require.Len(t, repeated.CurrentWorkspace.Artifacts.A, 1)
 		require.Len(t, repeated.CurrentWorkspace.Artifacts.B, 1)
-		require.NotEqual(t, repeated.CurrentWorkspace.Artifacts.A[0].Sync.Error.Message, repeated.CurrentWorkspace.Artifacts.B[0].Sync.Error.Message)
 		require.Equal(t, repeated.CurrentWorkspace.Artifacts.A[0].Sync.Error.Message, repeated.CurrentWorkspace.Artifacts.A[0].Sync.Again.Error.Message)
+		require.NotEqual(t, repeated.CurrentWorkspace.Artifacts.A[0].Sync.Error.Message, repeated.CurrentWorkspace.Artifacts.B[0].Sync.Error.Message)
 	})
 }
 
@@ -1631,17 +1631,14 @@ main = true
   host: file(path: "marker") { contents }
   withNewFile(path: "marker", contents: "overlay") {
    artifacts(include: ["good/verify-overlay"]) {
-    values(arguments: "{\"expectedMarker\":\"overlay\"}") {
-     error { message }
-     value { ... on Check { pass } }
-    }
+    one { value(arguments: "{\"expectedMarker\":\"overlay\"}") { ... on Check { sync { pass error { message } } } } }
    }
   }
  }
 }`).
 		With(daggerNonNestedExec("query", "--no-load-module", "--doc", "scaleout.graphql")).Stdout(ctx)
 	require.NoError(t, err, out)
-	require.JSONEq(t, `{"currentWorkspace":{"host":{"contents":"bound"},"withNewFile":{"artifacts":{"values":[{"error":null,"value":{"pass":true}}]}}}}`, out)
+	require.JSONEq(t, `{"currentWorkspace":{"host":{"contents":"bound"},"withNewFile":{"artifacts":{"one":{"value":{"sync":{"pass":true,"error":null}}}}}}}`, out)
 	// Keep source object handles alive while the remote check consumes them.
 	out, err = base.WithEnvVariable("_EXPERIMENTAL_DAGGER_CHECKS_SCALE_OUT", "1").
 		WithExec([]string{"apk", "add", "python3"}).
@@ -1663,13 +1660,13 @@ def query(document, variables=None):
 
 file_id = query('{ directory { withNewFile(path: "marker", contents: "objects") { file(path: "marker") { id } } } }')["directory"]["withNewFile"]["file"]["id"]
 directory_id = query('query($text: String!) { directory { withNewFile(path: "marker", contents: "objects") { withNewFile(path: "id-text", contents: $text) { id } } } }', {"text": file_id})["directory"]["withNewFile"]["withNewFile"]["id"]
-print(json.dumps(query('query($args: JSON!) { currentWorkspace { artifacts(include: ["good/verify-objects"]) { values(arguments: $args) { error { message } value { ... on Check { pass } } } } } }', {
+print(json.dumps(query('query($args: JSON!) { currentWorkspace { artifacts(include: ["good/verify-objects"]) { one { value(arguments: $args) { ... on Check { sync { pass error { message } } } } } } } }', {
     "args": json.dumps({"source": directory_id, "files": [file_id], "absent": None, "text": file_id}),
 })))
 `).
 		With(daggerNonNestedExec("--no-load-module", "run", "python3", "object-arguments.py")).Stdout(ctx)
 	require.NoError(t, err, out)
-	require.JSONEq(t, `{"currentWorkspace":{"artifacts":{"values":[{"error":null,"value":{"pass":true}}]}}}`, out)
+	require.JSONEq(t, `{"currentWorkspace":{"artifacts":{"one":{"value":{"sync":{"pass":true,"error":null}}}}}}`, out)
 	require.NoError(t, c.Close())
 	sink.read(func(db *dagui.DB) {
 		connections := 0

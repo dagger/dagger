@@ -34,10 +34,10 @@ func (*Collections) Items() *Items {
 func (m *Collections) Other() *Items { return m.Items() }
 func (*Collections) Empty() *Items { return &Items{Names: []string{}} }
 func (m *Collections) SelfSubset(ctx context.Context) ([]string, error) {
-  return dag.Collections().Items().Subset([]string{"c"}).Batch().Removed(ctx)
+  return dag.Collections().Items().Subset([]string{"c"}).Removed(ctx)
 }
 func (m *Collections) ArgumentDelta(ctx context.Context) ([]string, error) {
-  return dag.Collections().Forward(dag.Collections().Items()).Batch().Added(ctx)
+  return dag.Collections().Forward(dag.Collections().Items()).Added(ctx)
 }
 func (m *Collections) Forward(items *Items) *Items {
   items.Names = []string{"d"}
@@ -193,7 +193,7 @@ func (CollectionsSuite) TestCallCollectionSelectors(ctx context.Context, t *test
 	require.Equal(t, "item:a", out)
 
 	// Repeated selectors address the subset when the function belongs to the
-	// collection's batch type.
+	// collection itself.
 	out, err = base.With(daggerCallAt("./collections", "items", "selected", "--collections-items-item=a", "--collections-items-item=c")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "a\nc\n", out)
@@ -663,7 +663,7 @@ func (CollectionsSuite) TestArtifacts(ctx context.Context, t *testctx.T) {
     collection: filterUri(uri: "items") { items { uri dimensionKeys { dimension key } } }
     selected: filterUri(uri: "items?collections-items-item=a") { items { uri dimensionKeys { dimension key } } }
     files: filterUri(uri: "items/file?collections-items-item=a") { items { uri value { ... on File { contents } } } }
-    evaluated: filterUri(uri: "items/file?collections-items-item=a") { values { artifact { uri } value { ... on File { contents } } error { message } } }
+    evaluated: filterUri(uri: "items/file?collections-items-item=a") { items { uri value { ... on File { contents } } } }
     excluded: filterUri(uri: "items/file?collections-items-item=a&collections-items-item=b") { withoutUri(uri: "items/file?collections-items-item=a") { items { uri } } }
     lazy: filterUri(uri: "items/broken?collections-items-item=b") { items { uri } }
     nested: filterUri(uri: "items/parts?collections-items-item=a&collections-items-part=x") { items { uri dimensionKeys { dimension key } } }
@@ -690,7 +690,6 @@ func (CollectionsSuite) TestArtifacts(ctx context.Context, t *testctx.T) {
     {"identifier":"type:Check","name":"check"},
     {"identifier":"type:CollectionsItem","name":"collections-item"},
     {"identifier":"type:CollectionsItems","name":"collections-items"},
-    {"identifier":"type:CollectionsItems_Batch","name":"collections-items-batch"},
     {"identifier":"type:CollectionsPart","name":"collections-part"},
     {"identifier":"type:CollectionsParts","name":"collections-parts"},
     {"identifier":"type:Container","name":"container"},
@@ -699,7 +698,7 @@ func (CollectionsSuite) TestArtifacts(ctx context.Context, t *testctx.T) {
   "collection":{"items":[{"uri":"dag://?artifact-collections-items=items","dimensionKeys":[{"dimension":"module","key":"collections"},{"dimension":"type:CollectionsItems","key":"items"}]}]},
   "selected":{"items":[{"uri":"dag://?artifact-collections-item=items&collections-items-item=a","dimensionKeys":[{"dimension":"module","key":"collections"},{"dimension":"/collections/items","key":"a"},{"dimension":"type:CollectionsItem","key":"items"}]}]},
   "files":{"items":[{"uri":"dag://?file=file&collections-items-item=a","value":{"contents":"item:a"}}]},
-  "evaluated":{"values":[{"artifact":{"uri":"dag://?file=file&collections-items-item=a"},"value":{"contents":"item:a"},"error":null}]},
+  "evaluated":{"items":[{"uri":"dag://?file=file&collections-items-item=a","value":{"contents":"item:a"}}]},
   "excluded":{"withoutUri":{"items":[{"uri":"dag://?file=file&collections-items-item=b"}]}},
   "lazy":{"items":[{"uri":"dag://?container=broken&collections-items-item=b"}]},
   "nested":{"items":[{"uri":"dag://?artifact-collections-part=parts&collections-items-item=a&collections-items-part=x","dimensionKeys":[{"dimension":"module","key":"collections"},{"dimension":"/collections/items","key":"a"},{"dimension":"/collections/items/parts","key":"x"},{"dimension":"type:CollectionsPart","key":"items/parts"}]}]},

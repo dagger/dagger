@@ -1568,6 +1568,8 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) ([]da
 		projectionSpec.ViewFilter = AfterVersion("v1.0.0-0")
 		projectionSpec.IsPersistable = false
 		projectionSpec.TTL = 0
+		projectionSpec.ImplicitInputs = nil
+		projectionSpec.Reevaluate = false
 		fields = append(fields, dagql.Field[*ModuleObject]{
 			Spec: &projectionSpec,
 			Func: func(ctx context.Context, receiver dagql.ObjectResult[*ModuleObject], args map[string]dagql.Input, _ call.View) (dagql.AnyResult, error) {
@@ -1581,7 +1583,8 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) ([]da
 				// wrap it.
 				return dagql.NewObjectResultForCurrentCall(ctx, installed.orCurrent(ctx), &Check{
 					Assertion: dagql.NonNull(dagql.String(fun.Description)),
-					Receiver:  receiver, Function: fun.Name, Inputs: inputs, Workspace: workspace, CacheTTL: field.Spec.TTL,
+					Receiver:  receiver, Function: fun.Name, Inputs: inputs, Workspace: workspace,
+					CachePolicy: fun.derivedCachePolicy(obj.Module.Self()), CacheTTL: field.Spec.TTL,
 				})
 			},
 		})
