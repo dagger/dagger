@@ -91,6 +91,36 @@ func TestStoredSizesPriceHeldEntriesAsHeldRows(t *testing.T) {
 	require.Less(t, got[0].Bytes, full[0].Bytes, "a held row costs less than P's record")
 }
 
+// A held row carries its entry's transfer terms, and is priced with them.
+func TestStoredSizesPriceHeldRowsWithTheirTerms(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, p := storedBundleTestCloud(t, "root")
+	entry := storedBundleTestEntry(cloud, p)
+	cloud.egraphMu.Lock()
+	for _, name := range []string{"one", "two", "three"} {
+		cloud.addTransferTermLocked(ctx, entry, TransferTerm{
+			Request: digest.FromString("request " + name),
+			Self:    digest.FromString("self " + name),
+			Inputs:  []digest.Digest{digest.FromString("input " + name)},
+		})
+	}
+	cloud.egraphMu.Unlock()
+	heldTestHold(t, ctx, cloud, "cache-b", 7, p, 0)
+	held := &HeldBy{Cache: "cache-b", Now: time.Now().Unix()}
+
+	built, err := cloud.StoredBundle(ctx, []uint64{r}, held)
+	require.NoError(t, err)
+	require.Equal(t, []uint64{p}, built.Held)
+	var terms int
+	for _, value := range built.Bundle.Values {
+		terms += len(value.HeldTerms)
+	}
+	require.Equal(t, 3, terms, "P's held row carries its terms")
+	got, err := cloud.StoredSizes(ctx, []uint64{r}, held)
+	require.NoError(t, err)
+	storedSizesTestClose(t, storedSizesTestMeasure(t, built.Bundle), got)
+}
+
 // A stored part that names another entry adds a dependency to its entry
 // without replacing the record: the entry's size is measured again.
 func TestStoredSizesMeasureAgainAfterAPartAddsADependency(t *testing.T) {
