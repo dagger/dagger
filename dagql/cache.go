@@ -5918,6 +5918,14 @@ func (c *Cache) getOrInitCall(
 		ClientID: profClientID(ctx),
 		Start:    ownStart,
 	})
+	// The profile reads why the lookup decided what it did from the decision's
+	// carrier, which a recording span arms; with none, it arms one for this
+	// invocation only, and disarms it after so the span sees what it would
+	// have.
+	armed := req.CacheEvidence == nil
+	if armed {
+		req.CacheEvidence = NewCacheDecision()
+	}
 	if ownSpan.IsValid() {
 		profOp.SetSpan(ownSpan.TraceID(), ownSpan.SpanID())
 	}
@@ -5927,6 +5935,10 @@ func (c *Cache) getOrInitCall(
 		wcprof.MapOTelSpan(ctx, profOp.ID(), sc.TraceID().String(), sc.SpanID().String())
 	}
 	res, err := c.getOrInitCallTakingOver(ctx, sessionID, resolver, req, fn, profOp)
+	profLookupFacts(ctx, profOp, req.CacheEvidence, res)
+	if armed {
+		req.CacheEvidence = nil
+	}
 	outcome := profOp.OutcomeHint()
 	switch {
 	case err != nil:
