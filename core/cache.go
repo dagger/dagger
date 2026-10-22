@@ -54,6 +54,9 @@ type CacheVolume struct {
 	snapshotID      string
 	selector        string
 	releaseSnapshot func(context.Context) error
+	// sourceEvaluated records that a directory-backed volume evaluated its
+	// source; see evaluateSourceLocked.
+	sourceEvaluated bool
 }
 
 func (*CacheVolume) Type() *ast.Type {
@@ -496,8 +499,9 @@ func (cache *CacheVolume) InitializeSnapshot(ctx context.Context) error {
 		// The volume is a directory, made and pinned when an exec mounts
 		// it (lockMountedCaches). A snapshot persisted before the engine
 		// kept volumes there stays owned by this value until the value is
-		// pruned, but isn't used.
-		return nil
+		// pruned, but isn't used. The source is still evaluated now, when
+		// snapshot mode would create the snapshot from it.
+		return cache.evaluateSourceLocked(ctx)
 	}
 
 	query, err := CurrentQuery(ctx)
@@ -620,6 +624,28 @@ func (cache *CacheVolume) sourceSnapshot(ctx context.Context) (bkcache.Immutable
 		}
 	}
 	return sourceRef, sourceSelector, nil
+}
+
+// evaluateSourceLocked evaluates a directory-backed volume's source, once per
+// value, at the points where a snapshot-backed volume creates its snapshot from
+// it. Some sources, such as remote Git trees, become equivalent to the same
+// content reached through another recipe only once evaluated, and an exec that
+// mounts the volume looks itself up before it runs: evaluating the source only
+// when the exec fills the directory would be too late for that lookup to hit.
+// Requires cache.mu.
+func (cache *CacheVolume) evaluateSourceLocked(ctx context.Context) error {
+	if cache.sourceEvaluated || !cache.Source.Valid || cache.Source.Value.Self() == nil {
+		return nil
+	}
+	dagCache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return err
+	}
+	if err := dagCache.Evaluate(ctx, cache.Source.Value); err != nil {
+		return fmt.Errorf("evaluate cache source directory: %w", err)
+	}
+	cache.sourceEvaluated = true
+	return nil
 }
 
 // dirIdentity is the volume's identity in the cache volume directory: the same
