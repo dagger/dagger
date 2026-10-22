@@ -3,6 +3,8 @@ package core
 import (
 	"testing"
 
+	"github.com/iancoleman/strcase"
+
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -109,6 +111,93 @@ func TestNamespaceObjects(t *testing.T) {
 		require.Equal(t, "OtherHTTPClient", LatestNamer.NamespaceObject("MyModHTTPClient", "other", "my-mod"))
 		require.Equal(t, "Other", LatestNamer.NamespaceObject("MyMod", "other", "my-mod"))
 		require.Equal(t, "OtherHttpclient", LegacyNamer.NamespaceObject("MyModHTTPClient", "other", "my-mod"))
+	})
+}
+
+// mainTypeSpellings are module names with a main type an SDK or template may
+// spell differently around digits and acronyms, which engine/naming may cut
+// into words differently than the module's name.
+var mainTypeSpellings = []struct{ module, mainType string }{
+	{"k8s-tools", "K8STools"},
+	{"my2go", "My2Go"},
+	{"sha256sum", "Sha256Sum"},
+	{"go-1password", "Go1Password"},
+	{"e2eapi", "E2Eapi"},
+}
+
+func TestSameDeclaredName(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range mainTypeSpellings {
+		t.Run(tc.module, func(t *testing.T) {
+			require.True(t, LatestNamer.SameDeclaredName(tc.mainType, tc.module))
+			require.True(t, LatestNamer.SameDeclaredName(tc.module, tc.mainType))
+			// The legacy rules compare exactly as they always did.
+			require.Equal(t, strcase.ToCamel(tc.mainType) == strcase.ToCamel(tc.module), LegacyNamer.SameDeclaredName(tc.mainType, tc.module))
+			// The main type is the module: it takes the module's name, and
+			// a type prefixed with it is namespaced under the module once.
+			require.Equal(t, LatestNamer.ObjectName(tc.module), LatestNamer.NamespaceObject(tc.mainType, tc.module, tc.module))
+			require.Equal(t, LatestNamer.ObjectName(tc.module)+"Client", LatestNamer.NamespaceObject(tc.mainType+"Client", tc.module, tc.module))
+			require.Equal(t, LatestNamer.ObjectName("other"), LatestNamer.NamespaceObject(tc.mainType, "other", tc.module))
+		})
+	}
+
+	// Flat matching ends on word boundaries, and only applies to the new
+	// rules: the legacy ones stay as they were.
+	require.False(t, LatestNamer.SameDeclaredName("Postman", "post"))
+	require.Equal(t, "PostPostman", LatestNamer.NamespaceObject("Postman", "post", "post"))
+	require.Equal(t, "PostManPostManager", LatestNamer.NamespaceObject("PostManager", "post-man", "post-man"))
+	require.False(t, LegacyNamer.SameDeclaredName("PostMan", "postman"))
+	require.True(t, LatestNamer.SameDeclaredName("PostMan", "postman"))
+	require.False(t, LatestNamer.SameDeclaredName("", "--"))
+}
+
+// A module finds its main object by its name in any casing: by its rules'
+// normalization first, else the only object that's the same once flattened.
+// Several flat matches are ambiguous and find nothing.
+func TestModuleMainObjectSpelling(t *testing.T) {
+	t.Parallel()
+
+	dag := newTypeDefTestDag(t)
+	objects := func(names ...string) dagql.ObjectResultArray[*TypeDef] {
+		var defs dagql.ObjectResultArray[*TypeDef]
+		for _, name := range names {
+			obj := newTypeDefDetachedResult(t, dag, "obj-"+name, LatestNamer.NewObjectTypeDef(name, "", nil))
+			defs = append(defs, newTypeDefDetachedResult(t, dag, "typedef-"+name, (&TypeDef{}).WithObjectTypeDef(obj)))
+		}
+		return defs
+	}
+
+	for _, tc := range mainTypeSpellings {
+		t.Run(tc.module, func(t *testing.T) {
+			mod := &Module{NameField: tc.module, OriginalName: tc.module, ObjectDefs: objects("Helper", tc.mainType)}
+			main, ok := mod.MainObject()
+			require.True(t, ok)
+			require.Equal(t, tc.mainType, main.OriginalName)
+
+			legacy := &Module{NameField: tc.module, OriginalName: tc.module, ObjectDefs: objects("Helper", tc.mainType),
+				SourceOverrides: &SourceOverrides{EngineVersion: "v0.21.9"}}
+			_, ok = legacy.MainObject()
+			// The legacy rules find it exactly when strcase normalizes both
+			// alike, as they always did.
+			require.Equal(t, strcase.ToCamel(tc.mainType) == strcase.ToCamel(tc.module), ok)
+		})
+	}
+
+	t.Run("normalized match wins", func(t *testing.T) {
+		mod := &Module{NameField: "postman", OriginalName: "postman", ObjectDefs: objects("PostMan", "Postman")}
+		main, ok := mod.MainObject()
+		require.True(t, ok)
+		require.Equal(t, "Postman", main.OriginalName)
+	})
+
+	t.Run("ambiguous flat matches", func(t *testing.T) {
+		// Neither normalizes to e2eapi's E2eapi; both flatten to e2eapi.
+		require.NotEqual(t, LatestNamer.ObjectName("e2eapi"), LatestNamer.ObjectName("E2Eapi"))
+		require.NotEqual(t, LatestNamer.ObjectName("e2eapi"), LatestNamer.ObjectName("E2EApi"))
+		mod := &Module{NameField: "e2eapi", OriginalName: "e2eapi", ObjectDefs: objects("E2Eapi", "E2EApi")}
+		_, ok := mod.MainObject()
+		require.False(t, ok)
 	})
 }
 

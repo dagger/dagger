@@ -360,7 +360,9 @@ func listImplementedFunctions(sdkMod *core.Module) map[string]*core.Function {
 
 		// Skip if it's not the main object.
 		obj := def.Self().AsObject.Value.Self()
-		if namer.FieldName(obj.Name) != namer.FieldName(sdkMod.NameField) {
+		sameName := namer.FieldName(obj.Name) == namer.FieldName(sdkMod.NameField) ||
+			!namer.Legacy() && namer.SameDeclaredName(obj.Name, sdkMod.NameField)
+		if !sameName {
 			continue
 		}
 
