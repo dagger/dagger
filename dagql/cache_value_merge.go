@@ -739,6 +739,7 @@ func cloneValueBundle(in ValueBundle) (ValueBundle, error) {
 		value.Record.Call = value.Record.Call.cloneSame()
 		value.Record.SnapshotLinks = cloneSnapshotRefLinks(value.Record.SnapshotLinks)
 		value.DependencyIDs = slices.Clone(value.DependencyIDs)
+		value.HeldTerms = cloneTransferTerms(value.HeldTerms)
 		out.Values[i] = value
 	}
 	if in.Outputs != nil {
@@ -1447,7 +1448,8 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 // and the sender's holding: on an engine its Cloud holding, on the Cloud the
 // sending engine's holding, adding to change. On the Cloud, the entries the
 // identity joins to another class are affected too. A held row teaches its
-// entry nothing but its Cloud holding. Requires egraphMu for writing.
+// entry only its Cloud holding and the sending entry's transfer terms.
+// Requires egraphMu for writing.
 func (c *Cache) applyMergedIdentitiesLocked(ctx context.Context, commit *valueMergeCommit, change *RemoteChange) {
 	var cloudState *remoteCacheState
 	var joined func(*RemoteChange)
@@ -1457,9 +1459,11 @@ func (c *Cache) applyMergedIdentitiesLocked(ctx context.Context, commit *valueMe
 	}
 	for _, row := range commit.rows {
 		if commit.prep.held[row.ordinal] {
-			// A held row teaches its entry nothing: it is the entry's own
-			// value. Only an engine merges one.
+			// A held row teaches its entry nothing of its own: it is the
+			// entry's own value. Only an engine merges one. It does carry
+			// the sending entry's transfer terms, which the entry may lack.
 			row.res.noteCloudCopyLocked(row.value.SenderNumber, true, row.value.ExpiresAtUnix)
+			c.applyTransferTermsLocked(ctx, row.res, row.value.HeldTerms, row.res.description)
 			continue
 		}
 		frame := row.plan.row.loadResultCall()
@@ -1471,7 +1475,9 @@ func (c *Cache) applyMergedIdentitiesLocked(ctx context.Context, commit *valueMe
 		// sending engine, such as a module function that returned it as an
 		// inner result, as that engine taught them: the record carries them
 		// in its frame. A kept entry takes them onto its own frame too.
-		c.applyTransferTermsLocked(ctx, row.res, row.plan.row.loadResultCall())
+		if incoming := row.plan.row.loadResultCall(); incoming != nil {
+			c.applyTransferTermsLocked(ctx, row.res, incoming.TransferTerms, incoming.Field)
+		}
 		if !c.blobBacked {
 			// The Cloud entry that sent the record stores it, with the
 			// record's expiry.

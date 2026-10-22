@@ -75,6 +75,13 @@ type TransferredValue struct {
 	// entry, and other rows reference the row by its ordinal. Only an
 	// engine merges held rows, from the Cloud (StoredBundle's HeldBy).
 	Held digest.Digest `json:"held,omitempty"`
+	// HeldTerms are a held row's transfer terms: the sending entry's
+	// (ResultCall.TransferTerms), which the row's absent record would carry.
+	// The recipient teaches them onto its own entry, which may not have them
+	// yet: it held the value before they were known, or computed it itself.
+	// A row that isn't held carries its terms in its record's frame, and
+	// none here.
+	HeldTerms []TransferTerm `json:"heldTerms,omitempty"`
 }
 type TransferredRoot struct {
 	Ordinal       TransferOrdinal `json:"ordinal"`

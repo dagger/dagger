@@ -1766,17 +1766,18 @@ func (c *Cache) addTransferTermLocked(ctx context.Context, res *sharedResult, te
 	c.traceResultCallFrameUpdated(ctx, res, "transfer_term", frame, next)
 }
 
-// applyTransferTermsLocked teaches res each transfer term of frame, the
-// frame of a record merged onto res, as the engine that ran the call taught
-// it (applyPreparedResultIdentityLocked, as a remote holding's term is), and
-// keeps it on res's frame, so that res's own records carry it on. A term
-// whose inputs res's cache doesn't know adds only classes of their own: no
-// lookup reaches it until something joins them. Requires egraphMu.
-func (c *Cache) applyTransferTermsLocked(ctx context.Context, res *sharedResult, frame *ResultCall) {
-	if res == nil || frame == nil {
+// applyTransferTermsLocked teaches res each of the transfer terms of a record
+// merged onto res, of field, from the record's frame or a held row, as the
+// engine that ran the call taught it (applyPreparedResultIdentityLocked, as a
+// remote holding's term is), and keeps it on res's frame, so that res's own
+// records carry it on. A term whose inputs res's cache doesn't know adds only
+// classes of their own: no lookup reaches it until something joins them.
+// Requires egraphMu.
+func (c *Cache) applyTransferTermsLocked(ctx context.Context, res *sharedResult, terms []TransferTerm, field string) {
+	if res == nil {
 		return
 	}
-	for _, term := range frame.TransferTerms {
+	for _, term := range terms {
 		if term.Request == "" || term.Self == "" {
 			continue
 		}
@@ -1787,7 +1788,7 @@ func (c *Cache) applyTransferTermsLocked(ctx context.Context, res *sharedResult,
 				provenance[i] = egraphInputProvenanceKind(term.Provenance[i])
 			}
 		}
-		c.applyPreparedResultIdentityLocked(ctx, res, &ResultCall{Kind: ResultCallKindField, Field: frame.Field}, term.Request, term.Self, term.Inputs, provenance, term.Request)
+		c.applyPreparedResultIdentityLocked(ctx, res, &ResultCall{Kind: ResultCallKindField, Field: field}, term.Request, term.Self, term.Inputs, provenance, term.Request)
 		c.addTransferTermLocked(ctx, res, term)
 	}
 }

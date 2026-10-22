@@ -149,11 +149,16 @@ func (c *Cache) storedBundle(roots []uint64, held *HeldBy) (StoredBundleResult, 
 	for _, res := range build.order {
 		if build.held[res.id] {
 			ordinal := build.ordinals[res.id]
-			build.bundle.Values = append(build.bundle.Values, TransferredValue{Ordinal: ordinal, SenderNumber: uint64(res.id), SenderReplacements: res.replacements, Record: PersistedRecord{ResultID: uint64(ordinal)}, ExpiresAtUnix: res.expiresAtUnix})
+			frame := res.loadResultCall()
+			var terms []TransferTerm
+			if frame != nil {
+				terms = cloneTransferTerms(frame.TransferTerms)
+			}
+			build.bundle.Values = append(build.bundle.Values, TransferredValue{Ordinal: ordinal, SenderNumber: uint64(res.id), SenderReplacements: res.replacements, Record: PersistedRecord{ResultID: uint64(ordinal)}, ExpiresAtUnix: res.expiresAtUnix, HeldTerms: terms})
 			if frames == nil {
 				frames = map[TransferOrdinal]*ResultCall{}
 			}
-			frames[ordinal] = res.loadResultCall()
+			frames[ordinal] = frame
 			out.Held = append(out.Held, uint64(res.id))
 			continue
 		}
