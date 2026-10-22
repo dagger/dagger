@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -78,18 +79,16 @@ func (l offerLine) duration(t *testing.T, key string) time.Duration {
 var offerTimingFields = []string{"layers", "requests", "ttfb", "conns_new", "renew", "read_wait", "layer_wait", "fetch", "apply", "import"}
 
 // requireOfferTiming checks the identities every install line's timing
-// holds: the request wait is part of the read wait, the read wait of the
-// import, the import's three sums of the import, and the import and commit
-// of the whole install.
+// holds: the request wait is part of the read wait, the import's three sums
+// of the import, and the import and commit of the whole install. The read
+// wait sums the layers' reads, which run at once, so it can exceed the
+// import.
 func requireOfferTiming(t *testing.T, line offerLine) {
 	t.Helper()
 	for _, key := range append([]string{"waited", "duration", "commit"}, offerTimingFields...) {
 		require.GreaterOrEqual(t, line.int(t, key), int64(0), key)
 	}
 	require.LessOrEqual(t, line.duration(t, "ttfb"), line.duration(t, "read_wait"))
-	// The next layer's blob is read while the layer before it applies, so
-	// the read wait is part of the import, not of the fetch alone.
-	require.LessOrEqual(t, line.duration(t, "read_wait"), line.duration(t, "import"))
 	require.LessOrEqual(t, line.duration(t, "layer_wait")+line.duration(t, "fetch")+line.duration(t, "apply"), line.duration(t, "import"))
 	require.LessOrEqual(t, line.duration(t, "import")+line.duration(t, "commit"), line.duration(t, "duration"))
 }
@@ -178,34 +177,57 @@ func TestOfferInstallLogged(t *testing.T) {
 	}
 }
 
-// Over a real keep-alive transport, the install's second request reuses the
-// connection its first one opened.
+// Over a real keep-alive transport, an install's layers download at once,
+// so a cold transport opens one connection per layer, and a later install
+// reuses them.
 func TestOfferInstallLoggedConnections(t *testing.T) {
 	chain := newChainFixture(t, "install-conns")
+	// The cold install's requests are answered once all are in flight.
+	all := make(chan struct{})
+	var arrived atomic.Int64
+	var warm atomic.Bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		i, err := strconv.Atoi(strings.TrimPrefix(r.URL.Path, "/"))
 		if err != nil || i < 0 || i >= len(chain.blobs) {
 			http.NotFound(w, r)
 			return
 		}
+		if !warm.Load() {
+			if arrived.Add(1) == int64(len(chain.blobs)) {
+				close(all)
+			}
+			select {
+			case <-all:
+			case <-time.After(30 * time.Second):
+				t.Errorf("the cold install's requests were not all in flight at once")
+			}
+		}
 		http.ServeContent(w, r, "blob", time.Time{}, bytes.NewReader(chain.blobs[i]))
 	}))
 	defer server.Close()
-	f := newExhaustionFixture(t, chain)
-	f.cache.partContentSource = NewPartContentSource(server.Client().Transport)
-	offer := exhaustionOffer(chain, "", true)
-	for i := range chain.blobs {
-		offer.Chain.Addresses[chain.digest(i)] = BlobAddress{URL: fmt.Sprintf("%s/%d", server.URL, i)}
-	}
-	f.attach(t, f.receiver, offer)
+	transport := server.Client().Transport
+	install := func() offerLine {
+		f := newExhaustionFixture(t, chain)
+		f.cache.partContentSource = NewPartContentSource(transport)
+		offer := exhaustionOffer(chain, "", true)
+		for i := range chain.blobs {
+			offer.Chain.Addresses[chain.digest(i)] = BlobAddress{URL: fmt.Sprintf("%s/%d", server.URL, i)}
+		}
+		f.attach(t, f.receiver, offer)
 
-	require.NoError(t, f.run())
-	require.True(t, f.installed())
-	installs := f.logs.lines(t, "remote cache part installed")
-	require.Len(t, installs, 1)
-	require.EqualValues(t, 2, installs[0].int(t, "requests"))
-	require.EqualValues(t, 1, installs[0].int(t, "conns_new"), "the second layer reuses the first one's connection")
-	requireOfferTiming(t, installs[0])
+		require.NoError(t, f.run())
+		require.True(t, f.installed())
+		installs := f.logs.lines(t, "remote cache part installed")
+		require.Len(t, installs, 1)
+		require.EqualValues(t, len(chain.blobs), installs[0].int(t, "requests"))
+		requireOfferTiming(t, installs[0])
+		return installs[0]
+	}
+	cold := install()
+	require.EqualValues(t, len(chain.blobs), cold.int(t, "conns_new"), "one connection per layer")
+	warm.Store(true)
+	again := install()
+	require.Zero(t, again.int(t, "conns_new"), "a later install reuses the connections")
 }
 
 // requireFieldOrder checks that keys appear in raw, a JSON line, in order.
@@ -372,8 +394,11 @@ func TestOfferInstallFailedLogged(t *testing.T) {
 		require.Len(t, failed, 1)
 		require.Equal(t, "INFO", failed[0].fields["level"])
 		require.Equal(t, "canceled", failed[0].fields["outcome"])
-		require.EqualValues(t, 1, failed[0].int(t, "requests"))
-		require.Zero(t, failed[0].int(t, "bytes"), "the stalled body gave nothing")
+		// The upper layer downloads while the lower one's body stalls; the
+		// stalled body gave nothing.
+		require.GreaterOrEqual(t, failed[0].int(t, "requests"), int64(1))
+		require.LessOrEqual(t, failed[0].int(t, "requests"), int64(len(chain.blobs)))
+		require.LessOrEqual(t, failed[0].int(t, "bytes"), int64(len(chain.blobs[1])), "at most the upper layer's bytes")
 		require.Empty(t, logs.lines(t, "remote cache part installed"))
 	})
 }

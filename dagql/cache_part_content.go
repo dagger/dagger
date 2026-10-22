@@ -710,8 +710,8 @@ func (s *partInstallStats) renewed(start, end time.Time) {
 }
 
 // partInstallTiming is where one install's time went, as its lines log it.
-// ttfb is part of readWait, readWait of imported (the next layer's blob is
-// read while the layer before it applies), and the import's three sums of
+// ttfb is part of readWait, and the import's three sums of imported.
+// readWait sums the layers' reads, which run at once, so it can exceed
 // imported.
 type partInstallTiming struct {
 	// waited runs from the demand's start to the install's.
