@@ -33,7 +33,7 @@ func ResolveSource(
 	}
 
 	address := src.Self().Entrypoint.Source
-	directory, err := resolveSourceDirectory(ctx, dag, src, address)
+	directory, err := resolveSourceDirectory(ctx, dag, src.Self(), address)
 	if err != nil {
 		return dagql.ObjectResult[*core.ModuleSource]{}, fmt.Errorf("resolve module entrypoint source %q: %w", address, err)
 	}
@@ -103,6 +103,88 @@ func IsLocalSource(ctx context.Context, src *core.ModuleSource) (bool, error) {
 	}
 	kind, err := classifySource(ctx, src, src.Entrypoint.Source)
 	return kind == sourceKindLocal, err
+}
+
+// FindConfigFile finds the file called name that governs the entrypoint
+// source, the way Dang finds a dang.toml: the nearest one in the entrypoint
+// directory or above it, but never above the module directory. It returns the
+// file's path and contents, or found false when there is none.
+//
+// For a local entrypoint the search walks up from the entrypoint directory to
+// the module directory, which every module context holds whole, so the file it
+// finds is the same however the module was loaded, and is part of the module
+// digest. A file above the module directory never counts: a local or Git
+// module context holds only the module's own files there, while a directory
+// source holds whatever its caller passed. A local path that is invalid or
+// missing has no file; the module's types call reports it.
+//
+// A module reference or an address names the entrypoint directory itself, and
+// the search does not leave it: only the directory's own file counts. Finding
+// it resolves the directory, which the module's types call would do anyway.
+func FindConfigFile(
+	ctx context.Context,
+	dag *dagql.Server,
+	src *core.ModuleSource,
+	name string,
+) (path string, contents []byte, found bool, rerr error) {
+	if src.Entrypoint == nil {
+		return "", nil, false, nil
+	}
+	local, err := IsLocalSource(ctx, src)
+	if err != nil {
+		return "", nil, false, err
+	}
+	if !local {
+		address := src.Entrypoint.Source
+		directory, err := resolveSourceDirectory(ctx, dag, src, address)
+		if err != nil {
+			return "", nil, false, fmt.Errorf("resolve module entrypoint source %q: %w", address, err)
+		}
+		return readIfExists(ctx, directory, name, address)
+	}
+
+	subpath, err := sourceSubpath(src, src.Entrypoint.Source)
+	if err != nil || src.ContextDirectory.Self() == nil {
+		return "", nil, false, nil //nolint:nilerr // the types call reports a bad path
+	}
+	contextDir := src.ContextDirectory
+	if _, exists, err := core.CallDirExists(ctx, contextDir, subpath); err != nil || !exists {
+		return "", nil, false, err
+	}
+	moduleDir := cleanSubpath(src.SourceRootSubpath)
+	for dir := filepath.Clean(subpath); ; dir = filepath.Dir(dir) {
+		path, contents, found, err := readIfExists(ctx, contextDir, filepath.Join(dir, name), "")
+		if err != nil || found {
+			return path, contents, found, err
+		}
+		// sourceSubpath keeps the entrypoint inside the module directory,
+		// so the walk reaches it; "." guards the loop all the same.
+		if dir == moduleDir || dir == "." {
+			return "", nil, false, nil
+		}
+	}
+}
+
+// readIfExists reads path from dir if it exists. displayDir, when set, is
+// what the returned path is reported relative to instead of the module.
+func readIfExists(
+	ctx context.Context,
+	dir dagql.ObjectResult[*core.Directory],
+	path string,
+	displayDir string,
+) (string, []byte, bool, error) {
+	_, exists, err := core.CallDirExists(ctx, dir, path)
+	if err != nil || !exists {
+		return "", nil, false, err
+	}
+	contents, err := core.DirectoryReadFile(ctx, dir, path)
+	if err != nil {
+		return "", nil, false, fmt.Errorf("read %s: %w", path, err)
+	}
+	if displayDir != "" {
+		path = displayDir + ":" + path
+	}
+	return path, contents, true, nil
 }
 
 // Workspace returns the workspace to pass to a module entrypoint, with its
@@ -189,12 +271,12 @@ func cleanSubpath(p string) string {
 func resolveSourceDirectory(
 	ctx context.Context,
 	dag *dagql.Server,
-	src dagql.ObjectResult[*core.ModuleSource],
+	src *core.ModuleSource,
 	address string,
 ) (dagql.ObjectResult[*core.Directory], error) {
 	var directory dagql.ObjectResult[*core.Directory]
 
-	kind, err := classifySource(ctx, src.Self(), address)
+	kind, err := classifySource(ctx, src, address)
 	if err != nil {
 		return directory, err
 	}
@@ -209,11 +291,11 @@ func resolveSourceDirectory(
 		return resolveModuleRefDirectory(ctx, dag, address)
 	}
 
-	subpath, err := sourceSubpath(src.Self(), address)
+	subpath, err := sourceSubpath(src, address)
 	if err != nil {
 		return directory, err
 	}
-	contextDir := src.Self().ContextDirectory
+	contextDir := src.ContextDirectory
 	if contextDir.Self() == nil {
 		return directory, fmt.Errorf("module source has no context directory")
 	}

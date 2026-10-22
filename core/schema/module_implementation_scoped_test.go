@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/util/hashutil"
@@ -188,4 +189,63 @@ func TestModuleImplementationScopedKeysGitModulesOnTheirCommit(t *testing.T) {
 	require.Equal(t, dirSource, fromGitSource, "the origin is not part of the module's files")
 	require.NotEqual(t, dir, fromGit)
 	require.NotEqual(t, fromGit, fromLocal)
+}
+
+// The versions of an entrypoint module come from a dang.toml that need not be
+// in its context directory, and decide how its types are named and which API
+// they target, so they key its implementation digest, and through it the
+// persisted _moduleTypesDefinition. Other modules keep their digest.
+func TestSourceImplementationDigestKeysEntrypointVersions(t *testing.T) {
+	ctx := t.Context()
+
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, cache)
+
+	srv := &currentTypeDefsTestServer{}
+	root := core.NewRoot(srv)
+	dag, err := dagql.NewServer(ctx, root)
+	require.NoError(t, err)
+	srv.dag = dag
+	ctx = core.ContextWithQuery(ctx, root)
+	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*core.Directory]{Typed: &core.Directory{}}))
+	dagql.Fields[*core.Directory]{
+		dagql.NodeFunc("digest", func(context.Context, dagql.ObjectResult[*core.Directory], struct{}) (dagql.String, error) {
+			return dagql.String("test-directory-digest"), nil
+		}),
+	}.Install(dag)
+
+	const session = "source-implementation-digest-entrypoint-versions"
+	t.Cleanup(func() { _ = cache.ReleaseSession(context.Background(), session) })
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{ClientID: session, SessionID: session})
+
+	dir := &core.Directory{}
+	dirRes, err := dagql.NewObjectResultForCall(dir, dag, implementationScopedTestSyntheticCall("entrypoint-versions-dir", dir))
+	require.NoError(t, err)
+
+	sourceDigest := func(entrypoint bool, engineVersion, dangVersion string) digest.Digest {
+		t.Helper()
+		src := &core.ModuleSource{
+			Kind:                  core.ModuleSourceKindDir,
+			ModuleName:            "tiny",
+			ModuleOriginalName:    "tiny",
+			ContextDirectory:      dirRes,
+			EngineVersion:         engineVersion,
+			EntrypointDangVersion: dangVersion,
+		}
+		if entrypoint {
+			src.Entrypoint = &modules.ModuleEntrypointConfig{Kind: modules.ModuleEntrypointKindDang, Source: "./entrypoint"}
+		}
+		d, err := src.SourceImplementationDigest(ctx)
+		require.NoError(t, err)
+		return d
+	}
+
+	base := sourceDigest(true, "v1.0.0-beta.20", "2.1")
+	require.Equal(t, base, sourceDigest(true, "v1.0.0-beta.20", "2.1"))
+	require.NotEqual(t, base, sourceDigest(true, "v1.0.0-beta.21", "2.1"), "the engine version keys the digest")
+	require.NotEqual(t, base, sourceDigest(true, "v1.0.0-beta.20", "2.0"), "the Dang version keys the digest")
+
+	require.Equal(t, sourceDigest(false, "v0.20.0", ""), sourceDigest(false, "v1.0.0", ""),
+		"a module that is not an entrypoint keeps its digest")
 }
