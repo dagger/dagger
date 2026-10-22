@@ -1,11 +1,13 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -14,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/opencontainers/go-digest"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/core"
@@ -429,7 +432,7 @@ func TestExportLogAttrs(t *testing.T) {
 		{Number: 3, Reason: protocol.SkipBusy},
 		{Number: 4, Reason: protocol.SkipRefused, Message: "refused"},
 	}
-	attrs := logAttrs(exportLogAttrs(protocol.Export{Roots: []uint64{1, 2, 3, 4}}, skipped, nil, time.Second))
+	attrs := logAttrs(exportLogAttrs(protocol.Export{Roots: []uint64{1, 2, 3, 4}}, skipped, nil, time.Second, exportCapture{}))
 	require.Equal(t, 4, attrs["roots"])
 	require.Equal(t, 3, attrs["skipped"])
 	require.Equal(t, 1, attrs["skipped_gone"])
@@ -442,10 +445,124 @@ func TestExportLogAttrs(t *testing.T) {
 	for i := range many {
 		many[i] = protocol.SkippedRoot{Number: uint64(i + 1), Reason: protocol.SkipBusy}
 	}
-	attrs = logAttrs(exportLogAttrs(protocol.Export{}, many, nil, 0))
+	attrs = logAttrs(exportLogAttrs(protocol.Export{}, many, nil, 0, exportCapture{}))
 	require.Equal(t, maxLoggedSkippedRoots+1, attrs["skipped_busy"])
 	require.Zero(t, attrs["skipped_refused"])
 	require.NotContains(t, attrs, "skipped_roots", "past the limit, skipped roots are only counted")
+}
+
+// The export line's capture phases and chain layers follow the chains' time,
+// in order. With no bundle, those of the capture and the chains are 0, and
+// the adapter's own are still logged.
+func TestExportLogAttrsPhases(t *testing.T) {
+	local := exportCapture{hold: time.Millisecond, attempts: 2, probes: 3, probeTime: 4 * time.Millisecond, probeWalkWait: 5 * time.Microsecond}
+	values := &dagql.ExportedValues{
+		ChainTime: time.Second,
+		Phases:    dagql.ExportPhases{WalkWait: 6 * time.Microsecond, Walk: 7 * time.Microsecond, Copy: 8 * time.Microsecond, RetriedStale: 1},
+		Chains:    &dagql.SelectedChains{Stats: bkcache.ExportStats{Layers: 3, LayersReused: 1, LayersDiffed: 2, RawBytes: 900, BlobBytes: 300, DiffTime: 9 * time.Millisecond, LockWait: 10 * time.Microsecond, LayersMerged: 1, MergedRawBytes: 400, MergedBlobBytes: 100, MergedDiffTime: 3 * time.Millisecond}},
+	}
+	want := []any{
+		"chains", time.Second,
+		"hold", time.Millisecond,
+		"walk_wait", 6 * time.Microsecond,
+		"walk", 7 * time.Microsecond,
+		"copy", 8 * time.Microsecond,
+		"retried_stale", 1,
+		"attempts", 2,
+		"probes", 3,
+		"probe_time", 4 * time.Millisecond,
+		"probe_walk_wait", 5 * time.Microsecond,
+		"layers", 3,
+		"layers_reused", 1,
+		"layers_diffed", 2,
+		"raw_bytes", int64(900),
+		"blob_bytes", int64(300),
+		"diff_time", 9 * time.Millisecond,
+		"lock_wait", 10 * time.Microsecond,
+		"layers_merged", 1,
+		"merged_raw_bytes", int64(400),
+		"merged_blob_bytes", int64(100),
+		"merged_diff_time", 3 * time.Millisecond,
+	}
+	attrs := exportLogAttrs(protocol.Export{Roots: []uint64{1}}, nil, values, 2*time.Second, local)
+	require.Equal(t, want, attrs[len(attrs)-len(want):], "appended after chains, in order")
+	require.Equal(t, 2*time.Second, logAttrs(attrs)["capture"])
+
+	attrs = exportLogAttrs(protocol.Export{Roots: []uint64{1}}, nil, nil, time.Second, local)
+	require.Equal(t, []any{
+		"chains", time.Duration(0),
+		"hold", time.Millisecond,
+		"walk_wait", time.Duration(0),
+		"walk", time.Duration(0),
+		"copy", time.Duration(0),
+		"retried_stale", 0,
+		"attempts", 2,
+		"probes", 3,
+		"probe_time", 4 * time.Millisecond,
+		"probe_walk_wait", 5 * time.Microsecond,
+		"layers", 0,
+		"layers_reused", 0,
+		"layers_diffed", 0,
+		"raw_bytes", int64(0),
+		"blob_bytes", int64(0),
+		"diff_time", time.Duration(0),
+		"lock_wait", time.Duration(0),
+		"layers_merged", 0,
+		"merged_raw_bytes", int64(0),
+		"merged_blob_bytes", int64(0),
+		"merged_diff_time", time.Duration(0),
+	}, attrs[len(attrs)-len(want):])
+}
+
+// An offered part's line names the entry, the row and part its address
+// resolved to, the outcome, and the chain's size and earliest expiry, in
+// order, and never an address.
+func TestOfferLogAttrs(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	l1, l2 := digest.FromString("lower"), digest.FromString("upper")
+	offer := dagql.PersistedPartOffer{
+		Address: dagql.PersistedPartAddress{OutputPath: dagql.PersistedRefPath{}.Field("items").Index(0), Part: "fs"},
+		Chain: dagql.OfferedChain{
+			Layers: []bkcache.ExportLayer{{Descriptor: ocispecs.Descriptor{Digest: l1, Size: 10}}, {Descriptor: ocispecs.Descriptor{Digest: l2, Size: 32}}},
+			Addresses: map[digest.Digest]dagql.BlobAddress{
+				l1: {URL: "https://blobs.example/lower?X-Amz-Signature=secret", ExpiresAtUnix: now.Unix() + 60},
+				l2: {URL: "https://blobs.example/upper?X-Amz-Signature=secret", ExpiresAtUnix: now.Unix() + 30},
+			},
+		},
+	}
+	resolved := dagql.PersistedPartAddress{Part: "fs"}
+	disposition := dagql.OfferDisposition{Address: offer.Address, Outcome: dagql.OfferAccepted, Target: 7, TargetAddress: resolved}
+	attrs := offerLogAttrs(5, offer, disposition, protocol.OfferAccepted, time.Millisecond, now)
+	var keys []string
+	for i := 0; i < len(attrs); i += 2 {
+		keys = append(keys, attrs[i].(string))
+	}
+	require.Equal(t, []string{"entry", "target", "output", "part", "outcome", "replaced", "layers", "bytes", "expires_in", "admit"}, keys)
+	m := logAttrs(attrs)
+	require.Equal(t, uint64(5), m["entry"])
+	require.Equal(t, uint64(7), m["target"])
+	require.Equal(t, resolved.OutputPath.String(), m["output"], "the resolved row's output")
+	require.Equal(t, "fs", m["part"])
+	require.Equal(t, "accepted", m["outcome"])
+	require.Equal(t, false, m["replaced"])
+	require.Equal(t, 2, m["layers"])
+	require.Equal(t, int64(42), m["bytes"])
+	require.InDelta(t, float64(30*time.Second), float64(m["expires_in"].(time.Duration)), float64(time.Second))
+	require.Equal(t, time.Millisecond, m["admit"])
+	require.NotContains(t, fmt.Sprint(attrs), "blobs.example")
+
+	refused := dagql.OfferDisposition{Address: offer.Address, Outcome: dagql.OfferInvalid, Err: errors.New("offer: no Cloud entry number")}
+	m = logAttrs(offerLogAttrs(5, offer, refused, protocol.OfferInvalid, 0, now))
+	require.Equal(t, uint64(0), m["target"])
+	require.Equal(t, offer.Address.OutputPath.String(), m["output"], "before resolution, the offered address")
+	require.Equal(t, "offer: no Cloud entry number", m["error"])
+
+	expired := offer
+	expired.Chain.Addresses = map[digest.Digest]dagql.BlobAddress{l1: {URL: "https://blobs.example/lower", ExpiresAtUnix: now.Unix() - 5}}
+	m = logAttrs(offerLogAttrs(5, expired, disposition, protocol.OfferAccepted, 0, now))
+	require.Negative(t, m["expires_in"].(time.Duration))
+	m = logAttrs(offerLogAttrs(5, dagql.PersistedPartOffer{}, disposition, protocol.OfferAccepted, 0, now))
+	require.Equal(t, time.Duration(0), m["expires_in"], "no address expires")
 }
 
 // requireBusySkip checks that skip leaves out root, a busyFile, as busy,
@@ -505,6 +622,10 @@ func TestRemoteCacheAdapterOfferParts(t *testing.T) {
 		Offer:       dagql.PersistedPartOffer{Address: snapshotPart, Value: dagql.SnapshotValue{Kind: "file", Path: "/offered.txt", Platform: &spec}, Chain: dagql.OfferedChain{Layers: chain.Layers, RenewalKey: "7/snapshot"}},
 		CloudNumber: 7,
 	}
+	logs := &lockedLog{}
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
 	offered, err := e.adapter.OfferParts(e.ctx, protocol.Offer{Items: []protocol.OfferItem{
 		{Number: entryNumber(t, pending), Offers: []protocol.CloudPart{offer}},
 		{Number: entryNumber(t, complete), Offers: []protocol.CloudPart{offer}},
@@ -516,6 +637,43 @@ func TestRemoteCacheAdapterOfferParts(t *testing.T) {
 		{Number: entryNumber(t, complete), Parts: []protocol.OfferedPart{{Address: snapshotPart, Outcome: protocol.OfferAlreadyComplete}}},
 		{Number: goneNumber, Gone: true},
 	}}, offered)
+	// One line per offered part, none for the gone entry.
+	var lines []map[string]any
+	dec := json.NewDecoder(strings.NewReader(logs.String()))
+	dec.UseNumber()
+	for dec.More() {
+		var line map[string]any
+		require.NoError(t, dec.Decode(&line))
+		if line["msg"] == "remote cache part offered" {
+			lines = append(lines, line)
+		}
+	}
+	require.Len(t, lines, 2)
+	for i, item := range offered.Items[:2] {
+		require.Equal(t, json.Number(fmt.Sprint(item.Number)), lines[i]["entry"])
+		require.Equal(t, string(item.Parts[0].Outcome), lines[i]["outcome"])
+		admit, err := lines[i]["admit"].(json.Number).Int64()
+		require.NoError(t, err)
+		require.GreaterOrEqual(t, admit, int64(0))
+	}
+}
+
+// lockedLog is a log destination concurrent writers can share.
+type lockedLog struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (l *lockedLog) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.Write(p)
+}
+
+func (l *lockedLog) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.String()
 }
 
 // attachBlockedInt is an Int whose dependency attachment waits for release,
