@@ -363,7 +363,7 @@ func (DirectorySuite) TestOutsideInputsKeyTheView(ctx context.Context, t *testct
 			heads = append(heads, gitRepo(dir, msg))
 			app := host(dir).Directory("app")
 			apps = append(apps, app)
-			commit, err := app.AsGit().Head().Commit(ctx)
+			commit, err := app.AsGit().Head().CommitSHA(ctx)
 			require.NoError(t, err)
 			commits = append(commits, commit)
 		}
