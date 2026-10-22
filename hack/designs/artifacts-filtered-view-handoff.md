@@ -28,7 +28,9 @@ Code reviewed: `ce6dc9f9403b52067f5831149eab4871f857185d`. Check the current cod
 
 ## Schema changes
 
-Keep the existing filters and `asXXX()` conversions. Change how filtered values are evaluated. Keep the current list return types for this work. Their later review is a separate decision.
+- **Filters:** Keep the existing filter methods. Evaluate selected artifacts against the filtered workspace view.
+- **Conversions:** Keep `asXXX()` methods. They convert selected artifacts to objects of a specific type, such as `Check`.
+- **Return types:** Keep lists such as `[Check]` for this work. Decide later whether to replace these lists.
 
 Relevant target fields are shown below. Other existing fields are omitted.
 
