@@ -204,3 +204,30 @@ func TestLogCachePinsShownSpans(t *testing.T) {
 	sweepInteractive(fe)
 	require.Nil(t, fe.logs.Logs[mounted])
 }
+
+// TestLogPagerOpensUnrenderedSpan: the pager opens on a span whose logs were
+// never rendered, and reads them.
+func TestLogPagerOpensUnrenderedSpan(t *testing.T) {
+	live := dagui.TraceID{TraceID: trace.TraceID{2}}
+	primary, step := prettyTestSpanID(1), prettyTestSpanID(2)
+	start := time.Unix(100, 0)
+	fe := NewWithDB(io.Discard, dagui.NewDB())
+	fe.reportOnly = true
+	fe.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: primary, TraceID: live, Name: "cmd", StartTime: start, Final: true},
+		{ID: step, TraceID: live, ParentID: primary, Name: "step", StartTime: start, HasLogs: true, Final: true},
+	})
+	fe.SetPrimary(primary)
+	var reqs []dagui.SpanID
+	read := fe.SetLiveLogs(live, func(r LogRequest) { reqs = append(reqs, r.Span) })
+
+	span := fe.db.Spans.Map[step]
+	require.True(t, fe.spanHasLogs(span), "a span with logs to read has logs to page")
+	fe.openLogPager(span, "", "")
+	require.Equal(t, []dagui.SpanID{step}, reqs, "opening the pager reads the span's logs")
+	require.NotNil(t, fe.logPager)
+	require.NoError(t, read.Export(context.Background(), []sdklog.Record{liveTestLog(live, step, "paged line\n")}))
+	var buf strings.Builder
+	_ = fe.logPager.Logs.Print(&buf)
+	require.Contains(t, buf.String(), "paged line")
+}
