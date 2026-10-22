@@ -13,6 +13,9 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	otlplogsv1 "go.opentelemetry.io/proto/otlp/logs/v1"
@@ -994,6 +997,20 @@ func (f *fakeExitFrontend) SetPrimaryOutput(records []sdklog.Record) {
 }
 func (f *fakeExitFrontend) LiveLogsCoverage([]idtui.LogTarget) []idtui.LogCoverage { return nil }
 func (f *fakeExitFrontend) LiveLogsActivity([]dagui.SpanID) []idtui.LogActivity { return nil }
+
+// TestFlushableSpanForwarder: the frontend's batching processors hand what
+// the session delivered on when the barrier flushes the forwarder.
+func TestFlushableSpanForwarder(t *testing.T) {
+	frontend := tracetest.NewInMemoryExporter()
+	batch := sdktrace.NewBatchSpanProcessor(frontend, sdktrace.WithBatchTimeout(time.Hour))
+	t.Cleanup(func() { _ = batch.Shutdown(context.Background()) })
+	fwd := flushableSpanForwarder{telemetry.SpanForwarder{Processors: []sdktrace.SpanProcessor{batch}}}
+	sampled := trace.NewSpanContext(trace.SpanContextConfig{TraceID: trace.TraceID{1}, SpanID: trace.SpanID{1}, TraceFlags: trace.FlagsSampled})
+	require.NoError(t, fwd.ExportSpans(t.Context(), tracetest.SpanStubs{{Name: "just ended", SpanContext: sampled}}.Snapshots()))
+	require.Empty(t, frontend.GetSpans())
+	require.NoError(t, fwd.ForceFlush(t.Context()))
+	require.Len(t, frontend.GetSpans(), 1)
+}
 
 type logReaderFunc func(context.Context, string, tracesource.LogQuery, func(context.Context, *collogspb.ExportLogsServiceRequest, string) error) error
 
