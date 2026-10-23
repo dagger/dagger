@@ -48,6 +48,7 @@ func newLazyOperationFixture(t *testing.T) *lazyOperationFixture {
 		&DirectoryGitTreeLazy{LazyState: NewLazyState(), Ref: ref, KeepGitDir: true},
 		&DirectoryGitCommitTreeLazy{LazyState: NewLazyState(), Commit: commit, DiscardGitDir: false, Depth: 7, IncludeTags: true},
 		&DirectoryScratchLazy{LazyState: NewLazyState()},
+		&DirectoryExtractLazy{LazyState: NewLazyState(), Source: fileRes, StripComponents: 2},
 	}}
 }
 
@@ -71,6 +72,9 @@ func attachLazyOperationDirectory(t *testing.T, f *lazyOperationFixture, dir *Di
 	case *DirectoryGitCommitTreeLazy:
 		frame.Field = "tree"
 		receiver = recipe.Commit
+	case *DirectoryExtractLazy:
+		frame.Field = "extract"
+		receiver = recipe.Source
 	default:
 		t.Fatalf("unexpected operation %T", recipe)
 	}
@@ -182,7 +186,13 @@ func TestLazyOperationCodecs(t *testing.T) {
 					require.ErrorContains(t, err, key)
 					_, err = persistedDirectoryLazyVisitors[kind](payload, newPersistedRefWalker(func(*dagql.PersistedRef) error { t.Fatal("invalid ID reached visitor"); return nil }, dagql.PersistedRefPath{}))
 					require.ErrorContains(t, err, key)
-					bad[key] = json.RawMessage(fmt.Sprint(persistedRowID(t, f.cache, f.recipes[1].(*DirectoryGitBundleImportLazy).Bundle.Self().File)))
+					// A row of the wrong type: a File for every recipe but
+					// extract, whose source is one.
+					var wrongType dagql.AnyResult = f.recipes[1].(*DirectoryGitBundleImportLazy).Bundle.Self().File
+					if _, ok := recipe.(*DirectoryExtractLazy); ok {
+						wrongType = f.inputs[0]
+					}
+					bad[key] = json.RawMessage(fmt.Sprint(persistedRowID(t, f.cache, wrongType)))
 					payload, err = json.Marshal(bad)
 					require.NoError(t, err)
 					_, err = decodePersistedDirectoryLazy(f.ctx, dec, kind, payload)

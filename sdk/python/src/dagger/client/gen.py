@@ -8759,6 +8759,31 @@ class File(Type):
         _ctx = self._select("export", _args)
         return await _ctx.execute(str)
 
+    def extract(
+        self,
+        *,
+        strip_components: int | None = 0,
+    ) -> Directory:
+        """Extracts this archive file into a directory.
+
+        The format is detected from the file's contents: zip, or tar, either
+        uncompressed or compressed with gzip, bzip2, xz or zstd.
+
+        An entry whose path would leave the directory is an error.
+
+        Parameters
+        ----------
+        strip_components:
+            Remove this many leading elements from each entry's path, as tar
+            --strip-components does.
+            Entries with no more elements than this are skipped.
+        """
+        _args = [
+            Arg("stripComponents", strip_components, 0),
+        ]
+        _ctx = self._select("extract", _args)
+        return Directory(_ctx)
+
     async def id(self) -> str:
         """A unique identifier for this File.
 

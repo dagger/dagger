@@ -2107,6 +2107,15 @@ export type FileExportOpts = {
   allowParentDirPath?: boolean
 }
 
+export type FileExtractOpts = {
+  /**
+   * Remove this many leading elements from each entry's path, as tar --strip-components does.
+   *
+   * Entries with no more elements than this are skipped.
+   */
+  stripComponents?: number
+}
+
 export type FileSearchOpts = {
   /**
    * Interpret the pattern as a literal string instead of a regular expression.
@@ -10750,6 +10759,21 @@ export class File extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Extracts this archive file into a directory.
+   *
+   * The format is detected from the file's contents: zip, or tar, either uncompressed or compressed with gzip, bzip2, xz or zstd.
+   *
+   * An entry whose path would leave the directory is an error.
+   * @param opts.stripComponents Remove this many leading elements from each entry's path, as tar --strip-components does.
+   *
+   * Entries with no more elements than this are skipped.
+   */
+  extract = (opts?: FileExtractOpts): Directory => {
+    const ctx = this._ctx.select("extract", { ...opts })
+    return new Directory(ctx)
   }
 
   /**

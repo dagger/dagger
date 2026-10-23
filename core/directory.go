@@ -746,6 +746,9 @@ func encodePersistedDirectoryLazy(ctx context.Context, enc *dagql.PersistEncodeC
 	case *DirectoryChownLazy:
 		payload, err := lazy.EncodePersisted(ctx, enc)
 		return persistedDirectoryLazyKindChown, payload, err
+	case *DirectoryExtractLazy:
+		payload, err := lazy.EncodePersisted(ctx, enc)
+		return persistedDirectoryLazyKindExtract, payload, err
 	case *DirectoryMergeChangesetsLazy:
 		payload, err := lazy.EncodePersisted(ctx, enc)
 		return persistedDirectoryLazyKindMergeChangesets, payload, err
@@ -783,6 +786,9 @@ func decodePersistedDirectoryLazy(ctx context.Context, dec *dagql.PersistDecodeC
 
 	case persistedDirectoryLazyKindGitCleaned:
 		return decodeDirectoryGitCleanedLazy(ctx, dec, payload)
+
+	case persistedDirectoryLazyKindExtract:
+		return decodeDirectoryExtractLazy(ctx, dec, payload)
 
 	case persistedDirectoryLazyKindContainerRootFS:
 		var persisted persistedContainerRootFSLazy
