@@ -219,3 +219,81 @@ func TestGitPushApprovalConcurrent(t *testing.T) {
 	wg.Wait()
 	require.EqualValues(t, 1, calls.Load())
 }
+
+func TestGitPushPreapprovedRemotes(t *testing.T) {
+	const remote = "git@example.com:repo"
+	const ref = "refs/heads/main"
+
+	newSession := func(t *testing.T, ownerAllowed, moduleAllowed []string) (*Server, context.Context, *engine.ClientMetadata, *pushPromptServer) {
+		listener := bufconn.Listen(1 << 20)
+		grpcServer := grpc.NewServer()
+		questions := &pushPromptServer{}
+		prompt.RegisterPromptServer(grpcServer, questions)
+		go func() { _ = grpcServer.Serve(listener) }()
+		t.Cleanup(grpcServer.Stop)
+		conn, err := grpc.NewClient("passthrough:///prompt", grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }))
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, conn.Close()) })
+		sess := &daggerSession{sessionID: "session", attachables: newSessionAttachableManager()}
+		sess.state.Store(sessionStateInitialized)
+		newClient := func(id string, allowed []string, parents ...string) *clientRuntime {
+			return &clientRuntime{clientRecord: &clientRecord{
+				clientID: id, daggerSession: sess,
+				clientMetadata:  &engine.ClientMetadata{ClientID: id, SessionID: "session", AllowedGitPushRemotes: allowed},
+				parentClientIDs: parents, metadataSealed: true, accepting: true,
+			}, state: clientStateInitialized, lifecycleLeases: make(map[uint64]clientLifecycleLeaseRecord)}
+		}
+		owner := newClient("owner", ownerAllowed)
+		module := newClient("module", moduleAllowed, "owner")
+		module.mod = sessionTestModuleResult(t, "pusher")
+		sess.clientRuntimes = map[string]*clientRuntime{"owner": owner, "module": module}
+		installTestClientRecords(sess)
+		sess.attachables.callers["owner"] = &sessionAttachableCaller{ctx: t.Context(), conn: conn}
+		scope, err := sess.acquireRootClientScope(module, engine.ClientLeaseRequest, "git push test")
+		require.NoError(t, err)
+		t.Cleanup(scope.Lease().Release)
+		moduleCtx, err := engine.ContextWithClientScope(t.Context(), scope)
+		require.NoError(t, err)
+		return &Server{daggerSessions: map[string]*daggerSession{"session": sess}}, moduleCtx, owner.clientMetadata, questions
+	}
+
+	t.Run("listed remote skips the prompt", func(t *testing.T) {
+		srv, moduleCtx, ownerMD, questions := newSession(t, []string{remote}, nil)
+		md, err := srv.AuthorizeGitPush(moduleCtx, remote, ref, false, false)
+		require.NoError(t, err)
+		require.Equal(t, ownerMD, md.Owner)
+		require.Equal(t, remote, md.Remote)
+		require.Empty(t, questions.requests)
+		// Other destinations still ask.
+		_, err = srv.AuthorizeGitPush(moduleCtx, "git@example.com:other", ref, false, false)
+		require.NoError(t, err)
+		require.Len(t, questions.requests, 1)
+		require.Equal(t, "Allow push to git@example.com:other @ refs/heads/main?", questions.requests[0].Prompt)
+	})
+
+	t.Run("all skips the prompt for any remote", func(t *testing.T) {
+		srv, moduleCtx, _, questions := newSession(t, []string{"all"}, nil)
+		for _, target := range []string{remote, "https://example.com/other"} {
+			md, err := srv.AuthorizeGitPush(moduleCtx, target, ref, false, false)
+			require.NoError(t, err)
+			require.Equal(t, target, md.Remote)
+		}
+		require.Empty(t, questions.requests)
+	})
+
+	t.Run("force push still prompts", func(t *testing.T) {
+		srv, moduleCtx, _, questions := newSession(t, []string{"all"}, nil)
+		_, err := srv.AuthorizeGitPush(moduleCtx, remote, ref, true, false)
+		require.ErrorContains(t, err, "permission denied")
+		require.Len(t, questions.requests, 1)
+		require.Equal(t, "Allow force-push to git@example.com:repo @ refs/heads/main?", questions.requests[0].Prompt)
+	})
+
+	t.Run("module metadata cannot pre-approve", func(t *testing.T) {
+		srv, moduleCtx, _, questions := newSession(t, nil, []string{"all"})
+		_, err := srv.AuthorizeGitPush(moduleCtx, remote, ref, false, false)
+		require.NoError(t, err)
+		require.Len(t, questions.requests, 1)
+	})
+}

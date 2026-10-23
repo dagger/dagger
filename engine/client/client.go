@@ -128,6 +128,8 @@ type Params struct {
 
 	AllowedLLMModules []string
 
+	AllowedGitPushRemotes []string
+
 	PromptHandler prompt.PromptHandler
 	// CLI helper for client-local SSH key unlocking; not a general command hook.
 	SSHAskpassExecutable string
@@ -1918,6 +1920,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		InteractiveCommand:             c.InteractiveCommand,
 		SSHAuthSocketPath:              sshAuthSock,
 		AllowedLLMModules:              c.AllowedLLMModules,
+		AllowedGitPushRemotes:          c.AllowedGitPushRemotes,
 		EagerRuntime:                   c.EagerRuntime,
 		SingleQuery:                    c.SingleQuery,
 		SuppressCompatWorkspaceWarning: c.SuppressCompatWorkspaceWarning,
