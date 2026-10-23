@@ -196,18 +196,18 @@ func TestLiveLogsUnknownSpansStayUnclaimed(t *testing.T) {
 	l := newLiveLogs(reader, "trace", out, true)
 	var mu sync.Mutex
 	requested := map[byte]bool{}
-	l.coverage = func(targets []idtui.LogTarget) []idtui.LogCoverage {
+	l.coverage = func(targets []idtui.LogTarget) []idtui.LogRoute {
 		mu.Lock()
 		defer mu.Unlock()
-		var got []idtui.LogCoverage
+		var got []idtui.LogRoute
 		for _, target := range targets {
 			switch span := target.Span.SpanID[7]; {
 			case requested[span] || span == 1:
-				got = append(got, idtui.LogCovered)
+				got = append(got, idtui.LogRoute{Coverage: idtui.LogCovered, Span: target.Span})
 			case span == 9:
-				got = append(got, idtui.LogUnknown)
+				got = append(got, idtui.LogRoute{Coverage: idtui.LogUnknown})
 			default:
-				got = append(got, idtui.LogUncovered)
+				got = append(got, idtui.LogRoute{Coverage: idtui.LogUncovered, Span: target.Span})
 			}
 		}
 		return got
@@ -337,7 +337,7 @@ func (f *fakeExitFrontend) SetPrimaryOutput(records []sdklog.Record) {
 		f.primary = append(f.primary, rec.Body().AsString())
 	}
 }
-func (f *fakeExitFrontend) LiveLogsCoverage([]idtui.LogTarget) []idtui.LogCoverage { return nil }
+func (f *fakeExitFrontend) LiveLogsCoverage([]idtui.LogTarget) []idtui.LogRoute { return nil }
 
 // TestFinishLiveLogsInterrupted: against a hung engine, an interrupt during
 // the exit ends it promptly -- the TUI's Ctrl-C canceling the run's context,

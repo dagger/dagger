@@ -226,7 +226,8 @@ type frontendPretty struct {
 	// logProvider lazily fetches a span's logs on demand (e.g. on expand, or
 	// when a failure is surfaced). The bool is whether to roll up descendant
 	// logs (span.RollUpLogs). Set by 'dagger trace' to pull recorded logs per
-	// span; nil for live runs. requestedLogs dedups so each span is fetched once.
+	// span; nil for live runs. requestedLogs dedups so each span is fetched once
+	// (until log_cache.go evicts it).
 	logProvider   func(dagui.SpanID, bool)
 	requestedLogs map[dagui.SpanID]bool
 	// traceLogProviders route the requests for one trace's spans
@@ -247,6 +248,9 @@ type frontendPretty struct {
 	// liveRequests holds the live trace's requested spans, each with
 	// whether it rolls up its descendants (LiveLogsCoverage).
 	liveRequests map[dagui.SpanID]bool
+	// logCache bounds the logs read on demand to what is shown, plus a few
+	// recently shown (log_cache.go).
+	logCache logCache
 	// finalLogs makes the eager surfaced-failure fetch run in interactive
 	// mode too, so the final render has what it shows (RequestFinalLogs).
 	finalLogs bool
@@ -427,6 +431,16 @@ type frontendPretty struct {
 	searchMatchSpans     map[dagui.SpanID]bool // fast lookup: does this span have any match?
 	prevSearchMatchSpans map[dagui.SpanID]bool // previous frame's matchSpans for diff-based dirtying
 	searchIdx            int                   // current match index (-1 = none)
+	// logSearches search the sources of logs read on demand, keyed like the
+	// log providers (SetLogSearch); searchRemote holds the spans their
+	// search found the query in, for the search searchGen numbers;
+	// searchPartial is set when a source's search stopped early, and
+	// searchUnplaced counts its hits in spans the view cannot place.
+	logSearches    map[dagui.TraceID]LogSearchFunc
+	searchRemote   map[dagui.SpanID]bool
+	searchGen      uint64
+	searchPartial  bool
+	searchUnplaced int
 	// searchNames memoizes the spans whose name matches the search, until
 	// the query or the DB's spans change (see searchNameMatches).
 	searchNames struct {
@@ -2591,6 +2605,7 @@ func (fe *frontendPretty) requestLogsOnRender(id dagui.SpanID) {
 	if fe.reportOnly {
 		return
 	}
+	fe.touchLogs(id)
 	fe.requestLogs(id)
 }
 
@@ -2680,6 +2695,12 @@ func (fe *frontendPretty) requestLogsWith(id dagui.SpanID, descendants bool) {
 	}
 	fe.requestedLogs[id] = true
 	delete(fe.deferredLogs, id)
+	if descendants {
+		fe.logCache.init()
+		fe.logCache.rollUps[id] = true
+	}
+	fe.touchLogs(id)
+	fe.scheduleLogSweep()
 	provider(id, descendants)
 }
 
@@ -3722,10 +3743,12 @@ func (fe *frontendPretty) escHelp() string {
 }
 
 func (fe *frontendPretty) searchCountHint(base string) string {
+	// Logs not loaded may be left out of what was searched.
+	scope := fe.searchScope()
 	if len(fe.searchMatches) == 0 {
-		return base + " (0)"
+		return base + " (0" + scope + ")"
 	}
-	return fmt.Sprintf("%s (%d/%d)", base, fe.searchIdx+1, len(fe.searchMatches))
+	return fmt.Sprintf("%s (%d/%d%s)", base, fe.searchIdx+1, len(fe.searchMatches), scope)
 }
 
 func KeyEnabled(enabled bool) key.BindingOpt {
@@ -4739,13 +4762,16 @@ func (fe *frontendPretty) recalculateViewLocked() {
 					// bare. So fetch the exec span's own logs directly too -- that's
 					// the result (or error) the LLM saw (see renderMessageLogs).
 					fe.requestLogsWith(n.Span.ID, false)
+					fe.logInView(n.Span.ID)
 					if exec := toolCallExecSpan(n.Span); exec != nil {
 						fe.requestLogsWith(exec.ID, false)
+						fe.logInView(exec.ID)
 					}
 				}
 				reqConversationLogs(n.Children)
 			}
 		}
+		fe.markLogsInView()
 		reqConversationLogs(fe.reportConversation())
 
 		// Eager failure-detail fetch is REPORT-ONLY. The non-interactive report
@@ -7095,6 +7121,7 @@ func (fe *frontendPretty) confirmSearch(query string) {
 	}
 	fe.searchQuery = query
 	fe.searchIdx = -1
+	fe.startLogSearch(query)
 	// Push query to all vterms (triggers midterm Search), read results,
 	// navigate to first match, then update highlights + dirty trees.
 	fe.syncVtermSearchHighlights()

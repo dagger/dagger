@@ -1,10 +1,117 @@
 package idtui
 
 import (
+	"context"
+	"fmt"
 	"strings"
+	"time"
 
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/engine/slog"
 )
+
+// remoteLogRow marks a match a source's search found in a span's logs that
+// the frontend does not hold (yet): navigating to it reads them.
+const remoteLogRow = -2
+
+// LogSearchFunc searches a source's display text for pattern, a
+// case-insensitive substring, and returns the records that match, by the
+// trace, span and digest the frontend routes them by.
+type LogSearchFunc func(ctx context.Context, pattern string) (LogSearchHits, error)
+
+// LogSearchHits are a source's search results.
+type LogSearchHits struct {
+	Targets []LogTarget
+	// Partial is set when the search stopped before the end of the source.
+	Partial bool
+}
+
+// logSearchTimeout bounds a source's search.
+const logSearchTimeout = 30 * time.Second
+
+func (fe *frontendPretty) SetLogSearch(traceID dagui.TraceID, search LogSearchFunc) {
+	fe.dispatch(func() {
+		if fe.logSearches == nil {
+			fe.logSearches = make(map[dagui.TraceID]LogSearchFunc)
+		}
+		fe.logSearches[traceID] = search
+	})
+}
+
+// searchLoadedOnly reports whether a search covers only the logs loaded:
+// some provider reads logs on demand from a source with no search (Cloud).
+func (fe *frontendPretty) searchLoadedOnly() bool {
+	if fe.logProvider != nil && fe.logSearches[dagui.TraceID{}] == nil {
+		return true
+	}
+	for traceID := range fe.traceLogProviders {
+		if fe.logSearches[traceID] == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// searchScope describes what a search may have left out, for the match
+// count: logs not loaded from a source with no search (Cloud), a source's
+// search stopping early, and matches in spans the view cannot place.
+func (fe *frontendPretty) searchScope() string {
+	var scope []string
+	if fe.searchLoadedOnly() {
+		scope = append(scope, "loaded logs only")
+	}
+	if fe.searchPartial {
+		scope = append(scope, "more not searched")
+	}
+	if fe.searchUnplaced > 0 {
+		scope = append(scope, fmt.Sprintf("%d in spans not loaded", fe.searchUnplaced))
+	}
+	if len(scope) == 0 {
+		return ""
+	}
+	return ", " + strings.Join(scope, ", ")
+}
+
+// startLogSearch searches the sources of the logs read on demand for query,
+// so that matches cover the spans not loaded. Results land as remote
+// matches (remoteLogRow) while the query is still the current one.
+func (fe *frontendPretty) startLogSearch(query string) {
+	fe.searchGen++
+	gen := fe.searchGen
+	fe.searchRemote = nil
+	fe.searchPartial = false
+	for _, search := range fe.logSearches {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), logSearchTimeout)
+			defer cancel()
+			hits, err := search(ctx, query)
+			if err != nil {
+				slog.Warn("error searching logs", "err", err)
+				return
+			}
+			fe.dispatch(func() {
+				if fe.searchGen != gen || fe.searchQuery != query {
+					return
+				}
+				fe.searchPartial = fe.searchPartial || hits.Partial
+				for _, t := range hits.Targets {
+					if id := fe.db.LogTarget(t.Trace, t.Span, t.Digest); id.IsValid() {
+						if fe.searchRemote == nil {
+							fe.searchRemote = make(map[dagui.SpanID]bool)
+						}
+						fe.searchRemote[id] = true
+					}
+				}
+				fe.refreshSearchMatches()
+				if fe.searchIdx < 0 && len(fe.searchMatches) > 0 {
+					fe.searchFirstForward()
+					fe.syncSearchState()
+				}
+				fe.Update()
+			})
+		}()
+	}
+}
 
 // searchMatch represents a single search hit: either a span name match or a
 // specific log row inside a span's Vterm output.
@@ -44,6 +151,30 @@ func (fe *frontendPretty) buildSearchMatches() {
 	}
 	for _, span := range fe.searchNameMatches(query) {
 		add(span)
+	}
+	// A source's hit in a span the view cannot place (hidden, e.g. internal)
+	// shows at its nearest placed ancestor; one in a span not loaded at all
+	// is only counted.
+	remote := map[dagui.SpanID]bool{}
+	fe.searchUnplaced = 0
+	for id := range fe.searchRemote {
+		placed := false
+		for cur := id; cur.IsValid(); {
+			span := fe.db.Spans.Map[cur]
+			if span == nil {
+				break
+			}
+			if tree := fe.rowsView.HomeTree(span); tree != nil {
+				matched[tree] = true
+				remote[cur] = true
+				placed = true
+				break
+			}
+			cur = span.ParentID
+		}
+		if !placed {
+			fe.searchUnplaced++
+		}
 	}
 	for toolArgs, logs := range map[bool]map[dagui.SpanID]*Vterm{false: fe.logs.Logs, true: fe.logs.ToolArgs} {
 		for spanID, vt := range logs {
@@ -92,9 +223,18 @@ func (fe *frontendPretty) buildSearchMatches() {
 						fe.searchMatchSpans[spanID] = true
 					}
 				}
+				before := len(fe.searchMatches)
 				appendLogMatches(fe.logs.Logs[spanID], false)
 				if fe.spanVerbosity(tree.Span) >= toolArgsVerbosity {
 					appendLogMatches(fe.logs.ToolArgs[spanID], true)
+				}
+				// 3. A source's search found it in logs not loaded.
+				if remote[spanID] && len(fe.searchMatches) == before {
+					fe.searchMatches = append(fe.searchMatches, searchMatch{
+						spanID: spanID,
+						logRow: remoteLogRow,
+					})
+					fe.searchMatchSpans[spanID] = true
 				}
 			}
 
@@ -194,13 +334,23 @@ func (fe *frontendPretty) refreshSearchMatches() {
 	fe.syncVtermSearchHighlights()
 	fe.buildSearchMatches()
 
-	// Try to preserve the current match position.
+	// Try to preserve the current match position. A remote match whose logs
+	// arrived gives way to the first of the span's lines that match.
 	if oldMatch != (searchMatch{}) {
 		fe.searchIdx = 0
 		for i, m := range fe.searchMatches {
 			if m == oldMatch {
 				fe.searchIdx = i
 				break
+			}
+		}
+		if oldMatch.logRow == remoteLogRow && len(fe.searchMatches) > 0 && fe.searchMatches[fe.searchIdx] != oldMatch {
+			for i, m := range fe.searchMatches {
+				if m.spanID == oldMatch.spanID && m.logRow >= 0 {
+					fe.searchIdx = i
+					fe.scrollToSearchMatch(m)
+					break
+				}
 			}
 		}
 	}
@@ -295,17 +445,26 @@ func (fe *frontendPretty) goToSearchMatch(idx int) {
 	}
 	fe.focus(row)
 
-	// For log matches, expand the span and scroll the vterm.
-	if m.logRow >= 0 {
+	// For log matches, expand the span and scroll the vterm. A remote
+	// match's logs are read as the span expands.
+	if m.logRow >= 0 || m.logRow == remoteLogRow {
 		fe.setExpanded(m.spanID, true)
 		fe.syncAfterExpandToggle(m.spanID)
-		logs := fe.logs.Logs[m.spanID]
-		if m.toolArgs {
-			logs = fe.logs.ToolArgs[m.spanID]
-		}
-		if logs != nil {
-			logs.ScrollToRow(m.logRow)
-		}
+		fe.scrollToSearchMatch(m)
+	}
+}
+
+// scrollToSearchMatch scrolls a log match's vterm to its row.
+func (fe *frontendPretty) scrollToSearchMatch(m searchMatch) {
+	if m.logRow < 0 {
+		return
+	}
+	logs := fe.logs.Logs[m.spanID]
+	if m.toolArgs {
+		logs = fe.logs.ToolArgs[m.spanID]
+	}
+	if logs != nil {
+		logs.ScrollToRow(m.logRow)
 	}
 }
 
@@ -327,6 +486,10 @@ func (fe *frontendPretty) clearSearch() {
 	fe.searchQuery = ""
 	fe.searchMatches = nil
 	fe.searchIdx = -1
+	fe.searchGen++
+	fe.searchRemote = nil
+	fe.searchPartial = false
+	fe.searchUnplaced = 0
 	for _, logs := range []map[dagui.SpanID]*Vterm{fe.logs.Logs, fe.logs.ToolArgs} {
 		for _, vt := range logs {
 			vt.SetSearchHighlight("", -1)
