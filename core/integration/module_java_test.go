@@ -161,7 +161,7 @@ func (JavaSuite) TestDefaultPath(_ context.Context, t *testctx.T) {
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.Equal(t, "dagger.json", out)
+		require.Equal(t, "dagger-module.toml", out)
 	})
 
 	t.Run("can set a path for a dir", func(ctx context.Context, t *testctx.T) {
@@ -196,7 +196,7 @@ func (JavaSuite) TestIgnore(_ context.Context, t *testctx.T) {
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.Contains(t, out, "dagger.json")
+		require.Contains(t, out, "dagger-module.toml")
 		require.Contains(t, out, "pom.xml")
 	})
 
@@ -208,7 +208,7 @@ func (JavaSuite) TestIgnore(_ context.Context, t *testctx.T) {
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.Contains(t, out, "dagger.json")
+		require.Contains(t, out, "dagger-module.toml")
 		require.NotContains(t, out, "pom.xml")
 	})
 
@@ -220,7 +220,7 @@ func (JavaSuite) TestIgnore(_ context.Context, t *testctx.T) {
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.NotContains(t, out, "dagger.json")
+		require.NotContains(t, out, "dagger-module.toml")
 		require.NotContains(t, out, "pom.xml")
 		require.Contains(t, out, "src")
 	})
