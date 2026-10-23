@@ -206,12 +206,8 @@ func (srv *Server) cacheVolumeDirEntries(ctx context.Context) ([]*core.EngineCac
 }
 
 func cacheVolumeDirEntry(e cachevolumedir.Entry) *core.EngineCacheEntry {
-	desc := fmt.Sprintf("cache volume %q (directory)", e.Identity.Key)
-	if e.Format != cachevolumedir.FormatVersion {
-		desc = fmt.Sprintf("cache volume %s (directory, format %d)", e.ID, e.Format)
-	}
 	return &core.EngineCacheEntry{
-		Description:               desc,
+		Description:               fmt.Sprintf("cache volume %q (directory)", e.Identity.Key),
 		DiskSpaceBytes:            int(e.SizeBytes),
 		CreatedTimeUnixNano:       unixNanoOrZero(e.CreatedAt),
 		MostRecentUseTimeUnixNano: unixNanoOrZero(e.LastUsedAt),
