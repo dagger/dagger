@@ -51,3 +51,39 @@ func TestCollectWorkspaceModuleSourcePaths(t *testing.T) {
 		})
 	}
 }
+
+func TestCollectWorkspaceAmbiguousModulePaths(t *testing.T) {
+	configs := map[string]*modules.ModuleConfig{
+		"app": {
+			Dependencies: []*modules.ModuleConfigDependency{
+				nil,
+				{Source: "dep.v1"},
+				{Source: "dep.v1"},
+				{Source: "remote.example/repo"},
+				{Source: "https://remote.example/repo"},
+				{Source: "pinned.example/repo", Pin: "abc"},
+			},
+			Toolchains: []*modules.ModuleConfigDependency{{Source: "tool.v1"}},
+			Blueprint:  &modules.ModuleConfigDependency{Source: "blueprint.v1"},
+			SDK:        &modules.SDK{Source: "sdk.v1"},
+		},
+		"app/dep.v1":              {},
+		"app/tool.v1":             {},
+		"app/blueprint.v1":        {},
+		"app/sdk.v1":              {},
+		"app/remote.example/repo": nil,
+	}
+	reads := map[string]int{}
+	moduleDirs, contentDirs, err := collectWorkspaceModuleReadPaths([]string{"app"}, func(dir string) (*modules.ModuleConfig, error) {
+		reads[dir]++
+		cfg, ok := configs[dir]
+		require.True(t, ok, "unexpected config read: %s", dir)
+		return cfg, nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{"app", "app/blueprint.v1", "app/dep.v1", "app/sdk.v1", "app/tool.v1"}, moduleDirs)
+	require.Equal(t, moduleDirs, contentDirs)
+	for dir := range configs {
+		require.Equal(t, 1, reads[dir], dir)
+	}
+}
