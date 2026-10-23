@@ -1439,27 +1439,37 @@ func (WorkspaceAPISuite) TestLocalModuleInstallDoesNotUploadGitignoredFiles(ctx 
 func (WorkspaceAPISuite) TestWorkspaceDirectoryUsesOverlayGitignore(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	initGitRepo(ctx, t, workdir)
-	require.NoError(t, os.WriteFile(filepath.Join(workdir, ".gitignore"), []byte("/secret/\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, ".gitignore"), []byte("/secret/\n/.venv/\n"), 0o644))
+	require.NoError(t, os.Mkdir(filepath.Join(workdir, ".venv"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, ".venv", "cache"), []byte("ignored\n"), 0o644))
 	require.NoError(t, os.Mkdir(filepath.Join(workdir, "secret"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(workdir, "secret", "value"), []byte("secret\n"), 0o644))
 	require.NoError(t, os.Mkdir(filepath.Join(workdir, "overlay-only"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(workdir, "overlay-only", "value"), []byte("secret\n"), 0o644))
 
-	c := connect(ctx, t, dagger.WithWorkdir(workdir))
+	var logs safeBuffer
+	c := connect(ctx, t, dagger.WithWorkdir(workdir), dagger.WithLogOutput(&logs), dagger.WithVerbosity(2))
 	current := core.NewQuery(c).CurrentWorkspace()
 	visible, err := current.
-		WithNewFile(".gitignore", "").
+		WithNewFile(".gitignore", "/.venv/\n").
 		Directory(".", core.WorkspaceDirectoryOpts{Gitignore: true}).
 		Exists(ctx, "secret/value")
 	require.NoError(t, err)
 	require.True(t, visible, "an overlay can remove an ignore rule")
 
 	hidden, err := current.
-		WithNewFile(".gitignore", "/secret/\n/overlay-only/\n").
+		WithNewFile(".gitignore", "/secret/\n/overlay-only/\n/.venv/\n").
 		Directory(".", core.WorkspaceDirectoryOpts{Gitignore: true}).
 		Exists(ctx, "overlay-only/value")
 	require.NoError(t, err)
 	require.False(t, hidden, "an overlay can add an ignore rule")
+
+	entries, err := current.WithNewFile("docs/.gitignore", "*.tmp\n").
+		Directory("overlay-only", core.WorkspaceDirectoryOpts{Include: []string{"value"}, Gitignore: true}).Entries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"value"}, entries)
+	require.NoError(t, c.Close())
+	require.NotRegexp(t, `(?m)^\d+\s+:\s+(?:┆\s+)*\.venv(?:\s+DONE.*)?$`, logs.String(), "overlay ignore edits must not upload ignored content")
 }
 
 func (WorkspaceAPISuite) TestModuleSourceResolvesWorkspacePaths(ctx context.Context, t *testctx.T) {

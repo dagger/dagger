@@ -17,12 +17,13 @@ import (
 )
 
 type remoteFS struct {
-	callerConn   *grpc.ClientConn
-	clientPath   string
-	includes     []string
-	excludes     []string
-	followPaths  []string
-	useGitIgnore bool
+	callerConn         *grpc.ClientConn
+	clientPath         string
+	includes           []string
+	excludes           []string
+	followPaths        []string
+	useGitIgnore       bool
+	gitIgnoreOverrides map[string]string
 
 	startOnce   sync.Once
 	client      filesync.FileSync_DiffCopyClient
@@ -67,14 +68,24 @@ func (fs *remoteFS) Walk(ctx context.Context, path string, walkFn fs.WalkDirFunc
 
 	var err error
 	fs.client, err = filesync.NewFileSyncClient(fs.callerConn).DiffCopy(engine.LocalImportOpts{
-		Path:            fs.clientPath,
-		UseGitIgnore:    fs.useGitIgnore,
-		IncludePatterns: fs.includes,
-		ExcludePatterns: fs.excludes,
-		FollowPaths:     fs.followPaths,
+		Path:               fs.clientPath,
+		UseGitIgnore:       fs.useGitIgnore,
+		GitIgnoreOverrides: fs.gitIgnoreOverrides,
+		IncludePatterns:    fs.includes,
+		ExcludePatterns:    fs.excludes,
+		FollowPaths:        fs.followPaths,
 	}.AppendToOutgoingContext(ctx))
 	if err != nil {
 		return fmt.Errorf("failed to create diff copy client: %w", err)
+	}
+	if len(fs.gitIgnoreOverrides) > 0 {
+		headers, err := fs.client.Header()
+		if err != nil {
+			return fmt.Errorf("read filesync capabilities: %w", err)
+		}
+		if values := headers.Get(engine.GitIgnoreOverridesHeader); len(values) == 0 || values[0] != "true" {
+			return fmt.Errorf("client does not support overlay .gitignore rules; upgrade the Dagger CLI")
+		}
 	}
 
 	fs.filesByPath = make(map[string]*remoteFile)

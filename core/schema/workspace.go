@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -1161,19 +1162,11 @@ func (s *workspaceSchema) resolveHostOverlayRootfs(
 	// onto a base that lacks them — exactly as building the delta root on an
 	// empty base does. Keeping the base independent of the touched set also keeps
 	// its cache identity stable across edits.
-	// An overlay can change the rules themselves. In that case, apply the
-	// overlay first and evaluate the effective .gitignore files in the engine.
-	// This rare path uses the full host base because the client cannot apply an
-	// ignore file that exists only in the overlay.
-	deferGitignore := gitignore && workspaceOverlayTouchesGitignore(ws)
 	args := []dagql.NamedInput{
 		{Name: "path", Value: dagql.NewString(absPath)},
 	}
 	includes := rerootPatterns(resolvedPath, filter.Include)
-	if deferGitignore {
-		includes = nil
-	}
-	if len(includes) == 0 && !deferGitignore && resolvedPath != "." && resolvedPath != "" {
+	if len(includes) == 0 && resolvedPath != "." && resolvedPath != "" {
 		// No include filter: request only the resolved subtree.
 		subtree := strings.TrimSuffix(resolvedPath, "/")
 		includes = []string{subtree, subtree + "/**"}
@@ -1192,7 +1185,18 @@ func (s *workspaceSchema) resolveHostOverlayRootfs(
 		}
 		args = append(args, dagql.NamedInput{Name: "exclude", Value: arr})
 	}
-	if gitignore && !deferGitignore {
+	if gitignore {
+		overrides, err := workspaceGitignoreOverrides(ctx, changes.Self())
+		if err != nil {
+			return inst, err
+		}
+		if len(overrides) > 0 {
+			data, err := json.Marshal(overrides)
+			if err != nil {
+				return inst, err
+			}
+			args = append(args, dagql.NamedInput{Name: "gitIgnoreOverrides", Value: dagql.NewString(string(data))})
+		}
 		args = append(args,
 			dagql.NamedInput{Name: "gitignore", Value: dagql.NewBoolean(true)},
 			dagql.NamedInput{Name: "gitIgnoreRoot", Value: dagql.NewString(ws.HostPath())},
@@ -1220,18 +1224,33 @@ func (s *workspaceSchema) resolveHostOverlayRootfs(
 
 	// Descend and re-apply the filter: the changeset applies at the workspace
 	// root, so merged also contains touched paths outside the requested scope;
-	// the descent plus filter trims them back out. Usually Git ignore rules were
-	// applied by the client. If the overlay changed those rules, apply them now.
-	return s.resolveRootfsFromDirectory(ctx, srv, ws, merged, resolvedPath, filter, deferGitignore)
+	// the descent plus filter trims them back out. The client applies effective
+	// ignore rules before transfer; explicitly staged overlay files still win.
+	return s.resolveRootfsFromDirectory(ctx, srv, ws, merged, resolvedPath, filter, false)
 }
 
-func workspaceOverlayTouchesGitignore(ws *core.Workspace) bool {
-	for _, touched := range ws.OverlayTouchedPaths() {
-		if path.Base(filepath.ToSlash(touched)) == ".gitignore" {
-			return true
+func workspaceGitignoreOverrides(ctx context.Context, changes *core.Changeset) (map[string]string, error) {
+	paths, err := changes.ComputePaths(ctx)
+	if err != nil {
+		return nil, err
+	}
+	overrides := map[string]string{}
+	for _, removed := range paths.AllRemoved {
+		if path.Base(removed) == ".gitignore" {
+			overrides[removed] = ""
 		}
 	}
-	return false
+	for _, changed := range slices.Concat(paths.Added, paths.Modified) {
+		if path.Base(changed) != ".gitignore" {
+			continue
+		}
+		data, err := core.DirectoryReadFile(ctx, changes.After, changed)
+		if err != nil {
+			return nil, err
+		}
+		overrides[changed] = string(data)
+	}
+	return overrides, nil
 }
 
 // rerootPatterns prefixes filter patterns (relative to a resolved workspace
