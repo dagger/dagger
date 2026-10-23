@@ -241,8 +241,9 @@ func TestOfferOutcomeOf(t *testing.T) {
 	require.Error(t, err)
 }
 
-// A lookup and its answer have the wire names the service reads, and a
-// placement merge carries no lookup.
+// A lookup and its answer have the wire names the service reads. A merge
+// always carries its lookup, 0 for a merge of the service's own placement,
+// and a merge's reply always carries its stale rows.
 func TestLookupShape(t *testing.T) {
 	raw, err := json.Marshal(Lookup{Misses: []LookupMiss{{Recipe: "xxh3:1", Extra: []digest.Digest{"xxh3:2"}, Field: "withExec"}}, WaitMillis: 10000})
 	require.NoError(t, err)
@@ -271,5 +272,8 @@ func TestLookupShape(t *testing.T) {
 
 	raw, err = json.Marshal(Merge{})
 	require.NoError(t, err)
-	require.NotContains(t, string(raw), "lookup")
+	require.Contains(t, string(raw), `"lookup":0`)
+	raw, err = json.Marshal(Merged{})
+	require.NoError(t, err)
+	require.Contains(t, string(raw), `"stale":`)
 }
