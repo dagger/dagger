@@ -107,11 +107,8 @@ var defaultPartTransport = sync.OnceValue(func() http.RoundTripper {
 	// Verify the offered compressed bytes unchanged.
 	transport.DisableCompression = true
 	// Many installs, and the chunks of a large blob, fetch from one blob
-	// host at once; keep their connections for reuse. Reading on one stream
-	// keeps the default.
-	if partStreamsSetting() > 1 {
-		transport.MaxIdleConnsPerHost = maxPartIdleConnsPerHost
-	}
+	// host at once; keep their connections for reuse.
+	transport.MaxIdleConnsPerHost = maxPartIdleConnsPerHost
 	return transport
 })
 

@@ -7,9 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptrace"
-	"os"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -19,11 +17,9 @@ import (
 )
 
 const (
-	// partStreamsEnv sets how many requests a large blob is read with at
-	// once; 1 reads every blob on one stream.
-	partStreamsEnv = "_EXPERIMENTAL_DAGGER_PART_STREAMS"
-	// defaultPartStreams is the requests per large blob, the first included.
-	defaultPartStreams = 4
+	// partStreams is how many requests a large blob is read with at once,
+	// the first included.
+	partStreams = 4
 	// partParallelMinBlob is the smallest blob read in parallel, and
 	// partChunkSize the range each request reads.
 	partParallelMinBlob = 32 << 20
@@ -50,16 +46,9 @@ type partRangeConfig struct {
 	extra *semaphore.Weighted
 }
 
-var partStreamsSetting = sync.OnceValue(func() int {
-	if n, err := strconv.Atoi(os.Getenv(partStreamsEnv)); err == nil && n >= 1 {
-		return n
-	}
-	return defaultPartStreams
-})
-
 func defaultPartRangeConfig() partRangeConfig {
 	return partRangeConfig{
-		streams: partStreamsSetting(),
+		streams: partStreams,
 		minBlob: partParallelMinBlob,
 		chunk:   partChunkSize,
 		retries: partChunkRetries,
