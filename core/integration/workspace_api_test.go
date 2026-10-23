@@ -1462,6 +1462,26 @@ func (WorkspaceAPISuite) TestLocalModuleInstallLoadsIgnoredDependencies(ctx cont
 	require.NotRegexp(t, `(?m)^\d+\s+:\s+(?:┆\s+)*\.venv(?:\s+DONE.*)?$`, logs.String())
 }
 
+func (WorkspaceAPISuite) TestLocalModuleInstallLoadsIgnoredSiblingSource(ctx context.Context, t *testctx.T) {
+	for _, ignored := range []bool{false, true} {
+		t.Run(fmt.Sprintf("ignored=%t", ignored), func(ctx context.Context, t *testctx.T) {
+			workdir := t.TempDir()
+			initGitRepo(ctx, t, workdir)
+			require.NoError(t, os.Mkdir(filepath.Join(workdir, "app"), 0o755))
+			require.NoError(t, os.Mkdir(filepath.Join(workdir, "code"), 0o755))
+			require.NoError(t, os.WriteFile(filepath.Join(workdir, "app", "dagger.json"), []byte(`{"name":"app","sdk":"dang","source":"../code"}`), 0o644))
+			require.NoError(t, os.WriteFile(filepath.Join(workdir, "code", "main.dang"), []byte("type App { pub value: String! { \"ok\" } }\n"), 0o644))
+			if ignored {
+				require.NoError(t, os.WriteFile(filepath.Join(workdir, ".gitignore"), []byte("/code/\n"), 0o644))
+			}
+			c := connect(ctx, t, dagger.WithWorkdir(workdir))
+			current := core.NewQuery(c).CurrentWorkspace()
+			_, err := current.WithModule("app").Changes(core.WorkspaceChangesOpts{From: current}).AddedPaths(ctx)
+			require.NoError(t, err)
+		})
+	}
+}
+
 func (WorkspaceAPISuite) TestWorkspaceDirectoryUsesOverlayGitignore(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	initGitRepo(ctx, t, workdir)

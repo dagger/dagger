@@ -71,8 +71,10 @@ func collectWorkspaceModuleReadPaths(
 		if cfg == nil {
 			continue
 		}
-		if cfg.Source != "" && filepath.IsLocal(cfg.Source) {
-			content[path.Join(dir, filepath.ToSlash(cfg.Source))] = true
+		if cfg.Source != "" && !filepath.IsAbs(cfg.Source) {
+			if source := path.Join(dir, filepath.ToSlash(cfg.Source)); filepath.IsLocal(source) {
+				content[source] = true
+			}
 		}
 		refs := workspace.LocalModuleRefs(cfg)
 		if cfg.Blueprint != nil {

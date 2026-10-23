@@ -32,3 +32,22 @@ func TestCollectWorkspaceModuleReadPaths(t *testing.T) {
 		require.Equal(t, 1, count, dir)
 	}
 }
+
+func TestCollectWorkspaceModuleSourcePaths(t *testing.T) {
+	for _, tc := range []struct {
+		source string
+		want   []string
+	}{
+		{"../code", []string{"app", "code"}},
+		{"../../outside", []string{"app"}},
+		{"/outside", []string{"app"}},
+	} {
+		t.Run(tc.source, func(t *testing.T) {
+			_, content, err := collectWorkspaceModuleReadPaths([]string{"app"}, func(string) (*modules.ModuleConfig, error) {
+				return &modules.ModuleConfig{Source: tc.source}, nil
+			})
+			require.NoError(t, err)
+			require.Equal(t, tc.want, content)
+		})
+	}
+}
