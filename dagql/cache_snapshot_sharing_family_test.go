@@ -29,6 +29,9 @@ type sharePartState struct {
 type shareTestValue struct {
 	Name  string                    `json:"name"`
 	Parts map[string]sharePartState `json:"parts,omitempty"`
+	// NeedsServer makes a store preparation fail with no dagql server to
+	// decode with, as a Directory's or File's snapshot link does.
+	NeedsServer bool `json:"needsServer,omitempty"`
 	// mu guards Parts, links and rev the way a core value's output guard
 	// does: readers copy under it, and a prepared store holds it from TryLock
 	// to Unlock so its Publish cannot race an encoder.
@@ -43,8 +46,9 @@ type shareTestValue struct {
 }
 
 type shareTestEncoded struct {
-	Name  string                    `json:"name"`
-	Parts map[string]sharePartState `json:"parts,omitempty"`
+	Name        string                    `json:"name"`
+	Parts       map[string]sharePartState `json:"parts,omitempty"`
+	NeedsServer bool                      `json:"needsServer,omitempty"`
 }
 
 func (v *shareTestValue) payloadLocked() shareTestEncoded {
@@ -52,7 +56,7 @@ func (v *shareTestValue) payloadLocked() shareTestEncoded {
 	for name, state := range v.Parts {
 		parts[name] = state
 	}
-	return shareTestEncoded{Name: v.Name, Parts: parts}
+	return shareTestEncoded{Name: v.Name, Parts: parts, NeedsServer: v.NeedsServer}
 }
 
 func newShareTestValue(name string, parts map[string]sharePartState) *shareTestValue {
@@ -102,6 +106,9 @@ func (v *shareTestValue) PersistedSnapshotRefLinks() []PersistedSnapshotRefLink 
 // expected output revision, exactly like the File and Directory stores.
 func (v *shareTestValue) PreparePartStore(_ context.Context, dec *PersistDecodeContext, _ PersistedRecord, d PartDescriptor, ref snapshots.ImmutableRef) (PreparedPartStore, error) {
 	v.preparedServer.Store(dec.Server())
+	if v.NeedsServer && dec.Server() == nil {
+		return nil, fmt.Errorf("share test store: persisted decode query: nil dagql server")
+	}
 	if d.SnapshotID == "" {
 		return nil, fmt.Errorf("share test store: donated part %q has no snapshot", d.Address.Part)
 	}
