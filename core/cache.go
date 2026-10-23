@@ -650,14 +650,10 @@ func (cache *CacheVolume) evaluateSourceLocked(ctx context.Context) error {
 // fields that name its lock, with the source as its recipe digest, which is
 // the same in every engine, where its ID is an engine-local handle.
 func (cache *CacheVolume) dirIdentity(ctx context.Context) (cachevolumedir.Identity, error) {
-	sharing := cache.Sharing
-	if sharing == "" {
-		sharing = CacheSharingModeShared
-	}
 	ident := cachevolumedir.Identity{
 		Namespace: cache.Namespace,
 		Key:       cache.Key,
-		Sharing:   string(sharing),
+		Sharing:   string(cache.Sharing),
 		Owner:     cache.Owner,
 	}
 	if cache.Source.Valid && cache.Source.Value.Self() != nil {
