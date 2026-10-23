@@ -10,6 +10,7 @@ import (
 
 	"github.com/dagger/dagger/engine/cachevolumedir"
 	"github.com/dagger/dagger/engine/config"
+	"github.com/dagger/dagger/internal/buildkit/util/disk"
 )
 
 func TestValidateCacheVolumeDir(t *testing.T) {
@@ -65,15 +66,21 @@ func TestCacheVolumeDirPressure(t *testing.T) {
 
 	require.NoError(t, srv.initCacheVolumeDir(config.CacheVolumesConfig{Dir: filepath.Join(root, "cache-volumes")}))
 	t.Cleanup(func() { _ = srv.closeCacheVolumeDir() })
-	srv.cacheVolumesCfg.MinFreeSpace = config.DiskSpace{Bytes: 1}
+	// The default limits want 20% of the filesystem free.
+	dstat := disk.DiskStat{Total: 100e9, Available: 21e9}
+	srv.cacheVolumeDirDiskStat = func(string) (disk.DiskStat, error) { return dstat, nil }
 	require.False(t, srv.cacheVolumeDirPressure(t.Context()))
 
-	// More free space wanted than the filesystem has: pressure, which the
-	// GC monitor acts on.
-	srv.cacheVolumesCfg.MinFreeSpace = config.DiskSpace{Percentage: 100}
-	srv.cacheVolumesCfg.MaxUsedSpace = config.DiskSpace{Bytes: 1 << 50}
+	// Less free than that: pressure, which the GC monitor acts on.
+	dstat.Available = 19e9
 	require.True(t, srv.cacheVolumeDirPressure(t.Context()))
 	require.True(t, srv.localCachePressureGCNeeded(t.Context()))
+
+	// With a capacity, the limit is the directory's use, which GC passes
+	// check; the filesystem's free space isn't.
+	srv.cacheVolumesCfg.Capacity = config.DiskSpace{Bytes: 100e9}
+	require.False(t, srv.cacheVolumeDirPressure(t.Context()))
+	srv.cacheVolumesCfg.Capacity = config.DiskSpace{}
 
 	srv.localCacheGCEnabled = false
 	require.False(t, srv.cacheVolumeDirPressure(t.Context()), "not with GC disabled")
@@ -104,19 +111,40 @@ func TestCacheVolumeDirPolicy(t *testing.T) {
 	srv := &Server{workerRootDir: filepath.Join(root, "worker")}
 	require.NoError(t, srv.initCacheVolumeDir(config.CacheVolumesConfig{Dir: filepath.Join(root, "cache-volumes")}))
 	t.Cleanup(func() { _ = srv.closeCacheVolumeDir() })
+	var statted string
+	srv.cacheVolumeDirDiskStat = func(dir string) (disk.DiskStat, error) {
+		statted = dir
+		return disk.DiskStat{Total: 200e9, Available: 50e9}, nil
+	}
 
+	// Unset capacity: the engine's default limits for the directory's own
+	// filesystem.
 	policy, err := srv.cacheVolumeDirPolicy(false)
 	require.NoError(t, err)
-	require.Positive(t, policy.MaxUsedSpace, "unset space defaults from the directory's filesystem")
-	require.False(t, policy.All)
+	require.Equal(t, srv.cacheVolumeDir.Dir(), statted)
+	require.Equal(t, cachevolumedir.Policy{
+		ReservedSpace:    10e9,
+		MaxUsedSpace:     150e9,
+		MinFreeSpace:     40e9,
+		CurrentFreeSpace: 50e9,
+	}, policy)
 
-	srv.cacheVolumesCfg.MaxUsedSpace = config.DiskSpace{Bytes: 80e9}
-	srv.cacheVolumesCfg.KeepDuration.Duration = 3600e9
+	// A capacity: 80% of it, whatever the filesystem says.
+	srv.cacheVolumesCfg.Capacity = config.DiskSpace{Bytes: 100e9}
 	policy, err = srv.cacheVolumeDirPolicy(true)
 	require.NoError(t, err)
-	require.EqualValues(t, 80e9, policy.MaxUsedSpace)
-	require.EqualValues(t, 3600e9, policy.KeepDuration)
-	require.True(t, policy.All)
+	require.Equal(t, cachevolumedir.Policy{
+		MaxUsedSpace:     80e9,
+		CurrentFreeSpace: 50e9,
+		All:              true,
+	}, policy)
+
+	// The real filesystem, unstubbed.
+	srv.cacheVolumeDirDiskStat = nil
+	srv.cacheVolumesCfg.Capacity = config.DiskSpace{}
+	policy, err = srv.cacheVolumeDirPolicy(false)
+	require.NoError(t, err)
+	require.Positive(t, policy.MaxUsedSpace)
 }
 
 // The GC monitor checks pressure outside gcmu, concurrently with a graceful

@@ -140,7 +140,7 @@ func (srv *Server) PruneEngineLocalCacheEntries(ctx context.Context, opts core.E
 			rerr = errors.Join(rerr, fmt.Errorf("failed to prune dagql cache: %w", err))
 		}
 
-		// The cache volume directory has its own space settings, so explicit
+		// The cache volume directory has its own space limits, so explicit
 		// space overrides, which are about the engine's state disk, leave it
 		// alone. With no options, a prune empties it of every volume not in
 		// use; with the default policy, it applies the directory's own.

@@ -90,35 +90,41 @@ func resolveExistingPrefix(path string) (string, error) {
 	}
 }
 
-// cacheVolumeDirPolicy is the directory's collection policy: its own space
-// settings, defaulting from its own filesystem, and its keep duration. all
-// removes every volume that isn't in use.
+// cacheVolumeDirMaxUsedPercentage is the share of cacheVolumes.capacity the
+// directory's volumes may use.
+const cacheVolumeDirMaxUsedPercentage = 80
+
+// cacheVolumeDirPolicy is the directory's collection policy, from its
+// filesystem's current state. all removes every volume that isn't in use.
 func (srv *Server) cacheVolumeDirPolicy(all bool) (cachevolumedir.Policy, error) {
-	dstat, err := disk.GetDiskStat(srv.cacheVolumeDir.Dir())
+	getDiskStat := disk.GetDiskStat
+	if srv.cacheVolumeDirDiskStat != nil {
+		getDiskStat = srv.cacheVolumeDirDiskStat
+	}
+	dstat, err := getDiskStat(srv.cacheVolumeDir.Dir())
 	if err != nil {
 		return cachevolumedir.Policy{}, fmt.Errorf("get cache volume directory disk stats: %w", err)
 	}
-	space := srv.cacheVolumesCfg.GCSpace
-	if space.IsUnset() {
-		space = DetectDefaultGCCap(dstat)
-	}
+	return newCacheVolumeDirPolicy(srv.cacheVolumesCfg.Capacity, dstat, all), nil
+}
+
+// newCacheVolumeDirPolicy keeps the directory's volumes within 80% of
+// capacity when it's set, and otherwise within the engine's default limits
+// for the directory's own filesystem.
+func newCacheVolumeDirPolicy(capacity config.DiskSpace, dstat disk.DiskStat, all bool) cachevolumedir.Policy {
 	policy := cachevolumedir.Policy{
-		ReservedSpace:    space.ReservedSpace.AsBytes(dstat),
-		MaxUsedSpace:     space.MaxUsedSpace.AsBytes(dstat),
-		MinFreeSpace:     space.MinFreeSpace.AsBytes(dstat),
 		CurrentFreeSpace: dstat.Available,
-		KeepDuration:     srv.cacheVolumesCfg.KeepDuration.Duration,
 		All:              all,
 	}
-	if space.SweepSize != (config.DiskSpace{}) {
-		// As for the engine's other policies: sweep from the maximum toward
-		// the reserved floor by SweepSize.
-		policy.TargetSpace = policy.MaxUsedSpace - space.SweepSize.AsBytes(disk.DiskStat{Total: policy.MaxUsedSpace - policy.ReservedSpace})
-		if policy.TargetSpace <= 0 {
-			policy.TargetSpace = 1
-		}
+	if capacity != (config.DiskSpace{}) {
+		policy.MaxUsedSpace = capacity.AsBytes(dstat) * cacheVolumeDirMaxUsedPercentage / 100
+		return policy
 	}
-	return policy, nil
+	space := DetectDefaultGCCap(dstat)
+	policy.ReservedSpace = space.ReservedSpace.AsBytes(dstat)
+	policy.MaxUsedSpace = space.MaxUsedSpace.AsBytes(dstat)
+	policy.MinFreeSpace = space.MinFreeSpace.AsBytes(dstat)
+	return policy
 }
 
 // collectCacheVolumeDir runs the directory's stage of a collection.
