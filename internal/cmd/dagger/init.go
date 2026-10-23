@@ -12,7 +12,9 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/spf13/cobra"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // initState contains presentation data from a successfully exported workspace.
@@ -25,23 +27,16 @@ func runInit(cmd *cobra.Command, _ []string) error {
 	interactive := canPromptForInit(progress, stdinIsTTY, autoApply)
 	var enableCloud bool
 	err := withSetupSessions(cmd.Context(), nil, func(ctx context.Context, connect func(context.Context) (*client.Client, func(), error)) error {
-		if err := func() error {
-			session, closeSession, err := connect(ctx)
-			if err != nil {
-				return err
-			}
-			defer closeSession()
-			state, err := initializeWorkspaceConfig(ctx, session.Dagger())
-			if err != nil {
-				return err
-			}
-			return printWorkspaceInitialized(cmd, state)
-		}(); err != nil {
+		var ui *initUI
+		if interactive {
+			ui = newInitUI(Frontend, trace.SpanFromContext(ctx), commandPrefixForLocalWorkspace(cmd))
+		}
+		if err := runInitStep(ctx, cmd, connect, ui); err != nil {
 			return err
 		}
 		if interactive {
 			var err error
-			enableCloud, err = offerWorkspaceNextSteps(ctx, cmd, connect)
+			enableCloud, err = offerWorkspaceNextSteps(ctx, cmd, connect, ui)
 			if err != nil {
 				return fmt.Errorf("workspace configuration is ready; optional setup stopped: %w", err)
 			}
@@ -55,6 +50,38 @@ func runInit(cmd *cobra.Command, _ []string) error {
 		return runWorkspaceCloudNextStep(cmd, enableCloud)
 	}
 	return printWorkspaceNextSteps(cmd)
+}
+
+// runInitStep creates or finds the workspace config in its own session. With
+// a command view, the work runs under one encapsulated span the view shows
+// only while it runs or fails, and the result is reported in the view instead
+// of on stdout.
+func runInitStep(ctx context.Context, cmd *cobra.Command, connect func(context.Context) (*client.Client, func(), error), ui *initUI) (rerr error) {
+	if ui != nil {
+		var span trace.Span
+		ctx, span = Tracer().Start(ctx, "Initialize workspace", telemetry.Reveal(), telemetry.Encapsulate())
+		defer telemetry.EndWithCause(span, &rerr)
+		ui.workspaceStarted(spanIDOf(span))
+		defer func() {
+			if rerr != nil {
+				ui.workspaceFailed(rerr)
+			}
+		}()
+	}
+	session, closeSession, err := connect(ctx)
+	if err != nil {
+		return err
+	}
+	defer closeSession()
+	state, err := initializeWorkspaceConfig(ctx, session.Dagger())
+	if err != nil {
+		return err
+	}
+	if ui != nil {
+		ui.workspaceDone(workspaceInitializedMessage(state))
+		return nil
+	}
+	return printWorkspaceInitialized(cmd, state)
 }
 
 func initializeWorkspaceConfig(ctx context.Context, dag *dagger.Client) (*initState, error) {
@@ -80,7 +107,11 @@ func initializeWorkspaceConfig(ctx context.Context, dag *dagger.Client) (*initSt
 }
 
 func printWorkspaceInitialized(cmd *cobra.Command, state *initState) error {
-	out := cmd.OutOrStdout()
+	_, err := fmt.Fprintln(cmd.OutOrStdout(), workspaceInitializedMessage(state))
+	return err
+}
+
+func workspaceInitializedMessage(state *initState) string {
 	verb := "found"
 	if state.Created {
 		verb = "initialized"
@@ -94,8 +125,7 @@ func printWorkspaceInitialized(cmd *cobra.Command, state *initState) error {
 			}
 		}
 	}
-	_, err := fmt.Fprintf(out, "Workspace configuration %s at %s\n", verb, configPath)
-	return err
+	return fmt.Sprintf("Workspace configuration %s at %s", verb, configPath)
 }
 
 func printWorkspaceNextSteps(cmd *cobra.Command) error {
@@ -110,10 +140,12 @@ func canPromptForInit(progress string, stdinIsTTY, apply bool) bool {
 
 // offerWorkspaceNextSteps runs inside its caller's frontend. Each operation
 // connects separately, so recommendations see files written by migration.
-func offerWorkspaceNextSteps(ctx context.Context, cmd *cobra.Command, connect func(context.Context) (*client.Client, func(), error)) (bool, error) {
+// ui may be nil; it is only set by callers hosting the init view.
+func offerWorkspaceNextSteps(ctx context.Context, cmd *cobra.Command, connect func(context.Context) (*client.Client, func(), error), ui *initUI) (bool, error) {
 	prefix := commandPrefixForLocalWorkspace(cmd)
 	return offerInitNextSteps(
 		func(title, command string) (bool, error) {
+			step := command
 			command = prefix + " " + command
 			selected := true
 			form := huh.NewForm(huh.NewGroup(setupCommandChoice(title, command, &selected)))
@@ -125,27 +157,51 @@ func offerWorkspaceNextSteps(ctx context.Context, cmd *cobra.Command, connect fu
 				status = "Selected"
 			}
 			setupMessage(ctx, status+": "+command, status+" command:\n\n    "+command)
+			switch {
+			case step == initRecommendCommand && selected:
+				ui.modulesStarted()
+			case step == initRecommendCommand:
+				ui.modulesSkipped("Skipped. Run later: " + command)
+			case step == initCloudChecksCommand && selected:
+				ui.cloudNext("Enabling cloud checks next.")
+			case step == initCloudChecksCommand:
+				ui.cloudSkipped("Skipped. Run later: " + command)
+			}
 			return selected, nil
 		},
-		func() error {
+		func() (rerr error) {
+			defer func() {
+				if rerr != nil {
+					ui.modulesFailed(rerr)
+				}
+			}()
 			session, closeSession, err := connect(ctx)
 			if err != nil {
 				return err
 			}
 			defer closeSession()
-			recs, install, err := planRecommend(ctx, session.Dagger())
+			recs, install, err := planRecommend(ctx, session.Dagger(), ui)
 			if err != nil || !install {
 				return err
 			}
-			return installRecommended(ctx, session.Dagger(), recs)
+			return installRecommended(ctx, session.Dagger(), recs, ui)
 		},
 		func() bool {
-			remote, _, err := selectedRemoteWorkspaceAddress(ctx, "cloud checks")
-			if err != nil {
-				return false
+			ui.cloudChecking()
+			enabled := func() bool {
+				remote, _, err := selectedRemoteWorkspaceAddress(ctx, "cloud checks")
+				if err != nil {
+					return false
+				}
+				state, ok, err := loadWorkspaceAutocheckState(ctx, remote)
+				return err == nil && ok && state.Enabled
+			}()
+			if enabled {
+				ui.cloudDone("Cloud checks already enabled.")
+			} else {
+				ui.cloudPrompting()
 			}
-			state, ok, err := loadWorkspaceAutocheckState(ctx, remote)
-			return err == nil && ok && state.Enabled
+			return enabled
 		},
 	)
 }
@@ -166,6 +222,12 @@ func runWorkspaceCloudNextStep(cmd *cobra.Command, enableCloud bool) error {
 	return nil
 }
 
+// The optional operations init offers, as subcommands of the local prefix.
+const (
+	initRecommendCommand   = "module recommend"
+	initCloudChecksCommand = "cloud checks on"
+)
+
 // Optional operations are offered in order. An accepted operation finishes
 // before the next offer. Skipping one does not prevent an independent offer.
 func offerInitNextSteps(
@@ -173,7 +235,7 @@ func offerInitNextSteps(
 	recommend func() error,
 	cloudChecksEnabled func() bool,
 ) (bool, error) {
-	accepted, err := prompt("Find and install suitable modules?", "module recommend")
+	accepted, err := prompt("Find and install suitable modules?", initRecommendCommand)
 	if err != nil {
 		return false, err
 	}
@@ -185,7 +247,7 @@ func offerInitNextSteps(
 	if cloudChecksEnabled() {
 		return false, nil
 	}
-	return prompt("Enable cloud checks?", "cloud checks on")
+	return prompt("Enable cloud checks?", initCloudChecksCommand)
 }
 
 func shellQuote(value string) string {
