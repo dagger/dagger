@@ -337,3 +337,71 @@ func TestParseCloneURL(t *testing.T) {
 		})
 	}
 }
+
+func TestRepositoryIdentity(t *testing.T) {
+	for in, want := range map[string]string{
+		"github.com/dagger/dagger":                    "github.com/dagger/dagger",
+		"https://github.com/dagger/dagger":            "github.com/dagger/dagger",
+		"https://github.com/dagger/dagger.git":        "github.com/dagger/dagger",
+		"https://user:token@GitHub.com/dagger/dagger": "github.com/dagger/dagger",
+		"git@github.com:dagger/dagger.git":            "github.com/dagger/dagger",
+		"ssh://git@github.com/dagger/dagger":          "github.com/dagger/dagger",
+		"ssh://git@github.com:22/dagger/dagger":       "github.com/dagger/dagger",
+		"ssh://git@example.com:2222/org/repo":         "example.com:2222/org/repo",
+		"http://172.17.0.4/dagger.git":                "172.17.0.4/dagger",
+		"git://host/repo.git":                         "host/repo",
+		"https://github.com/dagger/dagger/":           "github.com/dagger/dagger",
+		"https://[2001:db8::1]:8443/org/repo":         "[2001:db8::1]:8443/org/repo",
+		"https://[2001:db8::1:8443]/org/repo":         "[2001:db8::1:8443]/org/repo",
+		"https://github.com/org/repo.git/":            "github.com/org/repo",
+		"https://example.com/org/my.git.repo":         "example.com/org/my.git.repo",
+		"https://example.com/org/repo.git.git":        "example.com/org/repo",
+	} {
+		require.Equal(t, want, RepositoryIdentity(in), in)
+		require.Equal(t, want, RepositoryIdentity(want), "idempotent on %s", want)
+	}
+}
+
+func TestRepositoryIdentityHasNoCredentials(t *testing.T) {
+	for _, in := range []string{
+		"https://synthuser:synthsecret@github.com/org/repo.git",
+		"ssh://synthuser:synthsecret@github.com/org/repo",
+		"synthuser:synthsecret@github.com:org/repo.git",
+		"file://synthuser:synthsecret@host/org/repo",
+		"synthuser:synthsecret@",
+		"not a url synthuser:synthsecret@host/org/repo",
+	} {
+		got := RepositoryIdentity(in)
+		require.NotContains(t, got, "synthuser", in)
+		require.NotContains(t, got, "synthsecret", in)
+	}
+}
+
+func TestRepositoryIdentityIsIdempotent(t *testing.T) {
+	inputs := []string{
+		"github.com/Dagger/Dagger",
+		"git@github.com:org/repo.git",
+		"synthuser:synthsecret@example.com:org/repo",
+		"[2001:db8::1]:8443/org/repo",
+	}
+	for _, scheme := range []string{"http", "https", "ssh", "git"} {
+		for _, port := range []string{"", ":22", ":80", ":443", ":8443"} {
+			for _, host := range []string{"github.com", "Example.com", "[2001:db8::1]"} {
+				inputs = append(inputs,
+					scheme+"://"+host+port+"/Org/Repo",
+					scheme+"://git@"+host+port+"/org/repo.git",
+				)
+			}
+		}
+	}
+	for _, in := range inputs {
+		once := RepositoryIdentity(in)
+		require.Equal(t, once, RepositoryIdentity(once), "%s gave %s", in, once)
+		require.NotContains(t, once, "@", in)
+	}
+
+	require.Equal(t, "github.com/org/repo", RepositoryIdentity("https://github.com/Org/Repo"), "GitHub paths are case-insensitive")
+	require.Equal(t, "example.com/Org/Repo", RepositoryIdentity("https://example.com/Org/Repo"))
+	require.Equal(t, "example.com/org/repo", RepositoryIdentity("ssh://git@example.com:443/org/repo"))
+	require.Equal(t, "example.com:8443/org/repo", RepositoryIdentity("ssh://git@example.com:8443/org/repo"))
+}
