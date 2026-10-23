@@ -199,7 +199,7 @@ func writeForwardTestSpans(t *testing.T, srv *Server, from, n int) {
 			EndTime:   time.Now(),
 		}.Snapshot()
 	}
-	require.NoError(t, srv.telemetryPubSub.Spans("main").ExportSpans(t.Context(), spans))
+	require.NoError(t, appendTestSpans(t.Context(), srv.telemetryPubSub, "main", spans))
 }
 
 func writeForwardTestLogs(t *testing.T, srv *Server, records ...otellog.Record) {

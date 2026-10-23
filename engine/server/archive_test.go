@@ -238,7 +238,7 @@ func TestArchiveBootstrapPacksSpanCarriedFrames(t *testing.T) {
 			attribute.String(telemetry.DagCallAttr, encoded),
 		},
 	}.Snapshot()
-	require.NoError(t, sess.telemetryPubSub.Spans("main").ExportSpans(t.Context(), []sdktrace.ReadOnlySpan{span}))
+	require.NoError(t, appendTestSpans(t.Context(), sess.telemetryPubSub, "main", []sdktrace.ReadOnlySpan{span}))
 
 	a := archiveAgent()
 	a.Revision++
