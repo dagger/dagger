@@ -21,7 +21,7 @@ func ModuleDeclaredGitClients(ctx context.Context, dag *dagql.Server, src *Modul
 	if err != nil || read == nil {
 		return nil, err
 	}
-	return workspace.DeclaredGitClients(ctx, src.SourceRootSubpath, read)
+	return workspace.DeclaredGitClients(src.SourceRootSubpath, read)
 }
 
 // moduleTreeReader is nil for a module whose tree this engine cannot reach,
