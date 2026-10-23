@@ -612,7 +612,8 @@ func (p *partPrefetcher) run(ctx context.Context, job *partPrefetchJob) {
 
 // fetch downloads job's wanted blobs, which run registered, and settles
 // each. The large lane downloads one blob at a time; the small lane up to
-// smallStreams at once. After a failure, no blob starts.
+// smallStreams at once. After a failure, no blob starts, nor does one that
+// no offer wants any more.
 func (p *partPrefetcher) fetch(ctx context.Context, job *partPrefetchJob, wanted []ocispecs.Descriptor) (blobs int, bytes int64, failure error) {
 	provider := p.cache.PartContentSource().Provider(ctx, job.record, nil)
 	streams := 1
@@ -634,7 +635,7 @@ func (p *partPrefetcher) fetch(ctx context.Context, job *partPrefetchJob, wanted
 			var release func(context.Context) error
 			fetched := false
 			var err error
-			if !failed {
+			if !failed && p.wanted(job, desc.Digest) {
 				release, fetched, err = p.snapshot.PrefetchContent(ctx, desc, provider, p.cfg.ttl)
 			}
 			mu.Lock()
@@ -655,6 +656,14 @@ func (p *partPrefetcher) fetch(ctx context.Context, job *partPrefetchJob, wanted
 	return blobs, bytes, failure
 }
 
+// wanted reports whether an offer still wants job's download of d.
+func (p *partPrefetcher) wanted(job *partPrefetchJob, d digest.Digest) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	download := p.fetching[d]
+	return download != nil && download.job == job && len(download.offers) > 0
+}
+
 // settle ends desc's download for job: a fetched blob becomes a hold for the
 // offers that still want it, unless none does, it was consumed meanwhile or
 // prefetching closed. It returns the release to run, outside the mutex, for
@@ -668,6 +677,8 @@ func (p *partPrefetcher) settle(job *partPrefetchJob, desc ocispecs.Descriptor, 
 		offers = download.offers
 	}
 	delete(p.fetching, desc.Digest)
+	// The settled download may have been the last one an offer wanted.
+	p.cancelUnwantedLocked(job)
 	_, consumed := p.consumed[desc.Digest]
 	delete(p.consumed, desc.Digest)
 	if !fetched || len(offers) == 0 || consumed || p.closed {
