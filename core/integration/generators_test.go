@@ -50,7 +50,7 @@ func (GeneratorsSuite) TestGenerateDoesNotUploadGitignoredFiles(ctx context.Cont
 	initGitRepo(ctx, t, workdir)
 	require.NoError(t, os.WriteFile(
 		filepath.Join(workdir, ".gitignore"),
-		[]byte("**/.venv/\n/.dagger/modules/scope-sdk/\n"),
+		[]byte("**/.venv/\n/.dagger/modules/scope-sdk/\n/.dagger/modules/shared/\n"),
 		0o644,
 	))
 	require.NoError(t, os.Mkdir(filepath.Join(workdir, ".venv"), 0o755))
@@ -58,6 +58,14 @@ func (GeneratorsSuite) TestGenerateDoesNotUploadGitignoredFiles(ctx context.Cont
 	sdkCache := filepath.Join(workdir, ".dagger", "modules", "scope-sdk", ".venv")
 	require.NoError(t, os.Mkdir(sdkCache, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(sdkCache, "should-not-upload-inside-sdk"), []byte("ignored\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, ".dagger/modules/scope-sdk/dagger.json"), []byte(`{
+  "name": "scope-sdk", "engineVersion": "v1.0.0-beta.11", "sdk": "dang",
+  "dependencies": [{"name": "shared", "source": "../shared"}]
+}`), 0o644))
+	shared := filepath.Join(workdir, ".dagger/modules/shared")
+	require.NoError(t, os.MkdirAll(shared, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(shared, "dagger.json"), []byte(`{"name":"shared","sdk":"dang"}`), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(shared, "main.dang"), []byte("type Shared { pub value: String! { \"ok\" } }\n"), 0o644))
 
 	var logs safeBuffer
 	c := connect(ctx, t, dagger.WithWorkdir(workdir), dagger.WithLogOutput(&logs), dagger.WithVerbosity(2))

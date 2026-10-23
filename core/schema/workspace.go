@@ -1313,7 +1313,11 @@ func (s *workspaceSchema) filteredWorkspaceRootfs(
 	ws *core.Workspace,
 	explicitDirs ...string,
 ) (dagql.ObjectResult[*core.Directory], error) {
-	root, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, true, explicitDirs...)
+	moduleDirs, contentDirs, err := s.workspaceModuleReadPaths(ctx, ws, explicitDirs)
+	if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, err
+	}
+	root, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, true, contentDirs...)
 	if err != nil {
 		return root, err
 	}
@@ -1322,7 +1326,7 @@ func (s *workspaceSchema) filteredWorkspaceRootfs(
 		return root, err
 	}
 	seen := map[string]struct{}{}
-	for _, dir := range explicitDirs {
+	for _, dir := range moduleDirs {
 		dir = filepath.ToSlash(cleanWorkspaceRelPath(dir))
 		if _, ok := seen[dir]; ok {
 			continue

@@ -1438,6 +1438,30 @@ func (WorkspaceAPISuite) TestLocalModuleInstallDoesNotUploadGitignoredFiles(ctx 
 	require.NotRegexp(t, `(?m)^\d+\s+:\s+(?:┆\s+)*\.venv(?:\s+DONE.*)?$`, logs.String(), "local module install must not upload gitignored content")
 }
 
+func (WorkspaceAPISuite) TestLocalModuleInstallLoadsIgnoredDependencies(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, ".gitignore"), []byte("/shared/\n/leaf/\n**/.venv/\n"), 0o644))
+	for name, config := range map[string]string{
+		"app":    `{"name":"app","sdk":"dang","dependencies":[{"name":"shared","source":"../shared"}]}`,
+		"shared": `{"name":"shared","sdk":"dang","dependencies":[{"name":"leaf","source":"../leaf"}]}`,
+		"leaf":   `{"name":"leaf","sdk":"dang"}`,
+	} {
+		dir := filepath.Join(workdir, name)
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, ".venv"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, ".venv", "cache"), []byte("ignored\n"), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "dagger.json"), []byte(config), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "main.dang"), []byte("type "+strings.ToUpper(name[:1])+name[1:]+" { pub value: String! { \"ok\" } }\n"), 0o644))
+	}
+	var logs safeBuffer
+	c := connect(ctx, t, dagger.WithWorkdir(workdir), dagger.WithLogOutput(&logs), dagger.WithVerbosity(2))
+	current := core.NewQuery(c).CurrentWorkspace()
+	_, err := current.WithModule("app").Changes(core.WorkspaceChangesOpts{From: current}).AddedPaths(ctx)
+	require.NoError(t, err)
+	require.NoError(t, c.Close())
+	require.NotRegexp(t, `(?m)^\d+\s+:\s+(?:┆\s+)*\.venv(?:\s+DONE.*)?$`, logs.String())
+}
+
 func (WorkspaceAPISuite) TestWorkspaceDirectoryUsesOverlayGitignore(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	initGitRepo(ctx, t, workdir)
