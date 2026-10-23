@@ -29,10 +29,10 @@ In non-interactive mode, `init` prints commands to run in order:
 ```shell
 #!/bin/sh
 
-# 1. Find and install recommended modules.
+# 1. Find and install suitable modules
 dagger module recommend
 
-# 2. Enable Cloud checks (optional).
+# 2. Enable cloud checks
 dagger cloud checks on
 ```
 
@@ -100,4 +100,3 @@ You are done when at least one Check runs and all Checks pass.
 ## Next steps
 
 - [Set up Cloud Checks](./cloud-checks.mdx) to run the Checks after every push
-- [Platform Guides](./platform-guides/index.mdx) continue from here for a specific platform, such as [daggerizing a Go project](./platform-guides/go/index.mdx)
