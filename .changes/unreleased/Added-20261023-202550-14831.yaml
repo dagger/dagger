@@ -1,0 +1,7 @@
+kind: Added
+body: |
+  The engine's whole stop now has one budget, set with `shutdown.gracefulStopTimeout` in engine.json or `--graceful-stop-timeout` (default 5m). Draining the API listeners, the server's shutdown and the final telemetry flushes all share its deadline, so the engine can be given a stop deadline inside a supervisor's grace period.
+time: 2026-10-23T20:25:50Z
+custom:
+  Author: sipsma
+  PR: "14831"

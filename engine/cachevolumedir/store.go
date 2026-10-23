@@ -1,0 +1,914 @@
+// Package cachevolumedir keeps cache volumes as plain directories under one
+// directory, apart from the engine's snapshots, so that the directory can be
+// handed from one engine to the next.
+//
+// One engine owns the directory at a time. Every volume is named by a digest of
+// its identity and carries its own metadata, so an engine that receives the
+// directory from another can use it with no database.
+//
+// Layout, for format 1:
+//
+//	<dir>/owner.lock             flock held by the owning process
+//	<dir>/v1/volumes/<id>/       one volume
+//	    meta.json                identity and bookkeeping (temp file + rename)
+//	    dirty                    present while the stored size may be stale
+//	    fs/                      the volume's contents
+//	<dir>/v1/tmp/                volumes being created
+//	<dir>/v1/trash/              volumes being removed
+//
+// The store reads and writes only its own format's subdirectory, and leaves
+// anything else under <dir> alone.
+//
+// Every change a crash could interrupt is a rename or a temp-file-and-rename,
+// so the directory is consistent at any point a process stops.
+package cachevolumedir
+
+import (
+	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
+	"math"
+	"os"
+	"path/filepath"
+	"slices"
+	"strconv"
+	"sync"
+	"syscall"
+	"time"
+
+	"golang.org/x/sys/unix"
+)
+
+// FormatVersion is the on-disk format this package writes, as v<N>/ under the
+// directory.
+const FormatVersion = 1
+
+// ErrOwned is returned by Open when another process owns the directory.
+var ErrOwned = errors.New("cache volume directory is owned by another process")
+
+const (
+	ownerLockName = "owner.lock"
+	metaName      = "meta.json"
+	dirtyName     = "dirty"
+	fsName        = "fs"
+
+	// lastUsedWriteInterval throttles rewriting meta.json on every use.
+	lastUsedWriteInterval = time.Minute
+)
+
+// Identity is what names a cache volume. Two calls with equal identities use
+// the same directory, in any engine.
+type Identity struct {
+	Namespace string `json:"namespace,omitempty"`
+	Key       string `json:"key"`
+	Sharing   string `json:"sharing,omitempty"`
+	Owner     string `json:"owner,omitempty"`
+	// Source is the recipe digest of the volume's source directory, or empty.
+	// The recipe includes which subdirectory of its parent the source is, so
+	// the identity needs no separate selector.
+	Source string `json:"source,omitempty"`
+}
+
+// ID is the volume's directory name: the hex SHA-256 of the identity's
+// canonical JSON, versioned.
+func (id Identity) ID() string {
+	// A fixed field order, every field present, and JSON string escaping
+	// keep the encoding canonical.
+	payload, err := json.Marshal(struct {
+		V         int    `json:"v"`
+		Namespace string `json:"namespace"`
+		Key       string `json:"key"`
+		Sharing   string `json:"sharing"`
+		Owner     string `json:"owner"`
+		Source    string `json:"source"`
+	}{FormatVersion, id.Namespace, id.Key, id.Sharing, id.Owner, id.Source})
+	if err != nil {
+		// Marshaling a struct of strings can't fail.
+		panic(err)
+	}
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:])
+}
+
+// Options configures a Store.
+type Options struct {
+	// EngineVersion is recorded in the metadata of volumes this store creates.
+	EngineVersion string
+	// Now is the clock; time.Now when nil.
+	Now func() time.Time
+}
+
+// Store is an owned cache volume directory.
+type Store struct {
+	dir     string
+	formDir string
+	opts    Options
+	lock    *os.File
+
+	// createMu serializes creating each volume.
+	createMu keyedMutex
+	// metaMu serializes read-modify-writes of meta.json files.
+	metaMu sync.Mutex
+
+	// mu guards pins and the moves GC makes, so that a volume is never moved
+	// while pinned and never pinned while half-moved.
+	mu   sync.Mutex
+	pins map[string]*pinState
+	// acquiring counts Acquire calls in progress, which Close waits out like
+	// pins: they may be creating a volume before they hold a pin.
+	acquiring int
+	// stuckBytes are the bytes a failed removal left in trash; they take
+	// space until a later owner's open removes them.
+	stuckBytes int64
+	// pendingBytes are the bytes of volumes moved to trash whose removal
+	// hasn't finished.
+	pendingBytes int64
+	removals     sync.WaitGroup
+	// removalErr collects background removal failures until WaitRemovals
+	// reports them.
+	removalErr error
+
+	// beforeRemove, when set, runs before each background removal; tests
+	// use it to hold removals.
+	beforeRemove func()
+	// removeAll removes a tree; os.RemoveAll, replaced by tests.
+	removeAll func(string) error
+	// trashSize measures what a failed removal left; treeSize, replaced
+	// by tests.
+	trashSize func(context.Context, string) (int64, error)
+	// afterUsage and beforeClearDirty, when set, run at those points of
+	// Collect and of a measurement; tests use them to interleave.
+	afterUsage       func()
+	beforeClearDirty func()
+}
+
+type pinState struct {
+	count   int
+	writers int
+	// writeEpoch counts writable pins taken, so a measurement can tell
+	// whether a writer came and went while it walked.
+	writeEpoch uint64
+	// lastUsedSet is when this process last wrote the volume's lastUsedAt.
+	lastUsedSet time.Time
+}
+
+// Open takes ownership of dir, creating it and its layout if needed, and
+// removes what a previous owner left in tmp/ and trash/. It returns ErrOwned
+// if another process owns dir.
+func Open(dir string, opts Options) (*Store, error) {
+	if opts.Now == nil {
+		opts.Now = time.Now
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, fmt.Errorf("create cache volume directory: %w", err)
+	}
+	lock, err := os.OpenFile(filepath.Join(dir, ownerLockName), os.O_RDWR|os.O_CREATE, 0o644)
+	if err != nil {
+		return nil, fmt.Errorf("open cache volume directory lock: %w", err)
+	}
+	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		lock.Close()
+		if errors.Is(err, unix.EWOULDBLOCK) {
+			return nil, fmt.Errorf("%s: %w", dir, ErrOwned)
+		}
+		return nil, fmt.Errorf("lock cache volume directory: %w", err)
+	}
+	s := &Store{
+		dir:       dir,
+		formDir:   filepath.Join(dir, "v"+strconv.Itoa(FormatVersion)),
+		opts:      opts,
+		lock:      lock,
+		pins:      map[string]*pinState{},
+		removeAll: os.RemoveAll,
+		trashSize: treeSize,
+	}
+	for _, sub := range []string{"volumes", "tmp", "trash"} {
+		if err := os.MkdirAll(filepath.Join(s.formDir, sub), 0o755); err != nil {
+			s.Close()
+			return nil, fmt.Errorf("create cache volume directory layout: %w", err)
+		}
+	}
+	// This process owns the directory now, so anything in tmp/ or trash/ was
+	// left by a previous owner that stopped mid-way.
+	for _, sub := range []string{"tmp", "trash"} {
+		if err := removeContents(filepath.Join(s.formDir, sub)); err != nil {
+			s.Close()
+			return nil, fmt.Errorf("remove leftover cache volumes in %s: %w", sub, err)
+		}
+	}
+	return s, nil
+}
+
+// Dir is the directory the store owns.
+func (s *Store) Dir() string {
+	return s.dir
+}
+
+// ErrPinned is returned by Close when volumes are still pinned.
+var ErrPinned = errors.New("cache volumes are still in use")
+
+// ErrClosed is returned by Acquire once the store is closed.
+var ErrClosed = errors.New("cache volume directory is closed")
+
+// Close gives up ownership. If volumes are still pinned, or acquisitions are
+// still in progress, it keeps ownership and returns ErrPinned: another owner
+// could otherwise collect a volume that is still in use, or sweep one being
+// created. The ownership lock then lasts until the process exits. Once
+// closed, Acquire fails with ErrClosed. Removals in progress keep running
+// until they finish.
+func (s *Store) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.lock == nil {
+		return nil
+	}
+	pinned := 0
+	for _, st := range s.pins {
+		pinned += st.count
+	}
+	if pinned > 0 || s.acquiring > 0 {
+		return fmt.Errorf("keeping ownership of %s: %d pins, %d acquisitions in progress: %w", s.dir, pinned, s.acquiring, ErrPinned)
+	}
+	err := s.lock.Close()
+	s.lock = nil
+	return err
+}
+
+// Closed reports whether the store has given up ownership. A nil store is
+// closed.
+func (s *Store) Closed() bool {
+	if s == nil {
+		return true
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lock == nil
+}
+
+// abandon releases ownership without checking pins, as a crashed process
+// would; for tests.
+func (s *Store) abandon() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.lock != nil {
+		s.lock.Close()
+		s.lock = nil
+	}
+}
+
+// Pin keeps a volume from being collected until it is released.
+type Pin struct {
+	s        *Store
+	id       string
+	path     string
+	writable bool
+	once     sync.Once
+}
+
+// Path is the volume's contents directory, to bind-mount.
+func (p *Pin) Path() string {
+	return p.path
+}
+
+// Release ends the pin. Only the first call counts.
+func (p *Pin) Release() {
+	p.once.Do(func() {
+		p.s.mu.Lock()
+		defer p.s.mu.Unlock()
+		st := p.s.pins[p.id]
+		if st == nil {
+			return
+		}
+		st.count--
+		if p.writable {
+			st.writers--
+		}
+	})
+}
+
+// Acquire pins the volume, creating it first if it doesn't exist: populate
+// fills the new volume's contents directory, which exists and is empty when it
+// is called. Creation of one volume is serialized; a failed populate leaves no
+// volume behind. A writable pin marks the volume's stored size stale until a
+// measurement taken with no writer finds it again.
+func (s *Store) Acquire(ctx context.Context, ident Identity, writable bool, populate func(ctx context.Context, fsDir string) error) (*Pin, error) {
+	id := ident.ID()
+	volDir := s.volumeDir(id)
+
+	// Counted from before any filesystem work, so Close can't give the
+	// directory away under a volume being created.
+	s.mu.Lock()
+	if s.lock == nil {
+		s.mu.Unlock()
+		return nil, fmt.Errorf("acquire cache volume %q: %w", ident.Key, ErrClosed)
+	}
+	s.acquiring++
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		s.acquiring--
+		s.mu.Unlock()
+	}()
+
+	unlock := s.createMu.lock(id)
+	defer unlock()
+
+	// Holding createMu excludes creating this volume elsewhere; s.mu excludes
+	// removing it, and a pinned volume is never removed. A removal can still
+	// land between the check and the pin, so check again under s.mu.
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		exists, err := pathExists(filepath.Join(volDir, fsName))
+		if err != nil {
+			return nil, fmt.Errorf("stat cache volume %s: %w", id, err)
+		}
+		if !exists {
+			if err := s.create(ctx, ident, populate); err != nil {
+				return nil, err
+			}
+		}
+		s.mu.Lock()
+		exists, err = pathExists(filepath.Join(volDir, fsName))
+		if err == nil && exists {
+			break // pin with s.mu held
+		}
+		s.mu.Unlock()
+		if err != nil {
+			return nil, fmt.Errorf("stat cache volume %s: %w", id, err)
+		}
+	}
+	st := s.pins[id]
+	if st == nil {
+		st = &pinState{}
+		s.pins[id] = st
+	}
+	st.count++
+	if writable {
+		st.writers++
+		st.writeEpoch++
+	}
+	now := s.opts.Now()
+	touch := st.lastUsedSet.IsZero() || now.Sub(st.lastUsedSet) >= lastUsedWriteInterval
+	if touch {
+		st.lastUsedSet = now
+	}
+	s.mu.Unlock()
+
+	pin := &Pin{s: s, id: id, path: filepath.Join(volDir, fsName), writable: writable}
+	if writable {
+		// Before the writer can write: a crash from here on leaves the
+		// marker, and the next owner remeasures.
+		if err := writeMarker(filepath.Join(volDir, dirtyName)); err != nil {
+			pin.Release()
+			return nil, fmt.Errorf("mark cache volume %s dirty: %w", id, err)
+		}
+	}
+	if touch {
+		if err := s.updateMeta(id, func(m *meta) { m.LastUsedAt = now }); err != nil {
+			pin.Release()
+			return nil, err
+		}
+	}
+	return pin, nil
+}
+
+func (s *Store) create(ctx context.Context, ident Identity, populate func(ctx context.Context, fsDir string) error) (rerr error) {
+	id := ident.ID()
+	tmp, err := os.MkdirTemp(filepath.Join(s.formDir, "tmp"), id+"-")
+	if err != nil {
+		return fmt.Errorf("create cache volume %s: %w", id, err)
+	}
+	defer func() {
+		if rerr != nil {
+			os.RemoveAll(tmp)
+		}
+	}()
+	// MkdirTemp makes 0700; a volume's root starts as an ordinary directory,
+	// and populate may change it.
+	if err := os.Chmod(tmp, 0o755); err != nil {
+		return fmt.Errorf("create cache volume %s: %w", id, err)
+	}
+	fsDir := filepath.Join(tmp, fsName)
+	if err := os.Mkdir(fsDir, 0o755); err != nil {
+		return fmt.Errorf("create cache volume %s: %w", id, err)
+	}
+	if err := os.Chmod(fsDir, 0o755); err != nil {
+		return fmt.Errorf("create cache volume %s: %w", id, err)
+	}
+	if populate != nil {
+		if err := populate(ctx, fsDir); err != nil {
+			return fmt.Errorf("populate cache volume %q: %w", ident.Key, err)
+		}
+	}
+	now := s.opts.Now()
+	if err := writeJSON(filepath.Join(tmp, metaName), meta{
+		Format:     FormatVersion,
+		ID:         id,
+		Identity:   ident,
+		CreatedAt:  now,
+		CreatedBy:  s.opts.EngineVersion,
+		LastUsedAt: now,
+	}); err != nil {
+		return fmt.Errorf("write cache volume %s metadata: %w", id, err)
+	}
+	// A new volume has no stored size yet.
+	if err := writeMarker(filepath.Join(tmp, dirtyName)); err != nil {
+		return fmt.Errorf("mark cache volume %s dirty: %w", id, err)
+	}
+	if err := os.Rename(tmp, s.volumeDir(id)); err != nil {
+		return fmt.Errorf("publish cache volume %s: %w", id, err)
+	}
+	return nil
+}
+
+// PinnedPath is the contents directory of a volume this process has pinned.
+// Mounting it is safe while the pin is held; it is an error to ask for a
+// volume that isn't pinned, since nothing then keeps it from being removed.
+func (s *Store) PinnedPath(ident Identity) (string, error) {
+	id := ident.ID()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if st := s.pins[id]; st == nil || st.count == 0 {
+		return "", fmt.Errorf("cache volume %q (%s) is not pinned", ident.Key, id)
+	}
+	return filepath.Join(s.volumeDir(id), fsName), nil
+}
+
+// Entry describes one volume in the directory.
+type Entry struct {
+	ID         string
+	Identity   Identity
+	SizeBytes  int64
+	CreatedAt  time.Time
+	LastUsedAt time.Time
+	Pinned     bool
+
+	// path is the volume's directory.
+	path string
+}
+
+// Usage lists the volumes, measuring those whose stored size is stale, and
+// returns the bytes the whole directory uses, including what is still being
+// created or removed.
+func (s *Store) Usage(ctx context.Context) ([]Entry, int64, error) {
+	entries, used, _, err := s.usage(ctx)
+	return entries, used, err
+}
+
+// usage is Usage, also returning the pending-removal bytes it counted.
+func (s *Store) usage(ctx context.Context) ([]Entry, int64, int64, error) {
+	entries, err := s.scan(ctx)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	used := int64(0)
+	for _, e := range entries {
+		used += e.SizeBytes
+	}
+	// Volumes being created count at their current size.
+	tmpBytes, err := treeSize(ctx, filepath.Join(s.formDir, "tmp"))
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	s.mu.Lock()
+	pending, stuck := s.pendingBytes, s.stuckBytes
+	s.mu.Unlock()
+	// Stuck trash takes space, but no removal will free it: only pending
+	// bytes count as being freed.
+	return entries, used + tmpBytes + pending + stuck, pending, nil
+}
+
+// scan lists every volume, measuring stale sizes.
+func (s *Store) scan(ctx context.Context) ([]Entry, error) {
+	vols, err := os.ReadDir(filepath.Join(s.formDir, "volumes"))
+	if err != nil {
+		return nil, fmt.Errorf("read cache volumes: %w", err)
+	}
+	var entries []Entry
+	for _, vol := range vols {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if !vol.IsDir() {
+			continue
+		}
+		e, err := s.volumeEntry(ctx, vol.Name())
+		if errors.Is(err, fs.ErrNotExist) {
+			// Removed while scanning.
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, e)
+	}
+	return entries, nil
+}
+
+func (s *Store) volumeEntry(ctx context.Context, id string) (Entry, error) {
+	volDir := s.volumeDir(id)
+	if _, err := os.Stat(filepath.Join(volDir, fsName)); err != nil {
+		return Entry{}, err
+	}
+	m, err := readMeta(filepath.Join(volDir, metaName))
+	if err != nil {
+		// An unreadable meta.json means "no stored size"; the identity is
+		// lost, but the volume can still be measured and collected.
+		m = meta{Format: FormatVersion, ID: id}
+	}
+	e := Entry{
+		ID:         id,
+		Identity:   m.Identity,
+		CreatedAt:  m.CreatedAt,
+		LastUsedAt: m.LastUsedAt,
+		path:       volDir,
+	}
+	s.mu.Lock()
+	st := s.pins[id]
+	e.Pinned = st != nil && st.count > 0
+	s.mu.Unlock()
+
+	_, dirtyErr := os.Stat(filepath.Join(volDir, dirtyName))
+	stale := dirtyErr == nil || m.SizeBytes == nil
+	if !stale {
+		e.SizeBytes = *m.SizeBytes
+		return e, nil
+	}
+
+	s.mu.Lock()
+	var epoch uint64
+	writersBefore := 0
+	if st := s.pins[id]; st != nil {
+		epoch, writersBefore = st.writeEpoch, st.writers
+	}
+	s.mu.Unlock()
+
+	size, err := treeSize(ctx, filepath.Join(volDir, fsName))
+	if err != nil {
+		return Entry{}, err
+	}
+	e.SizeBytes = size
+
+	// The final check, the size and the marker's removal happen under s.mu,
+	// so a writer can't pin between them: Acquire counts its writer under
+	// s.mu before writing the marker, so either this sees it and keeps the
+	// marker, or the writer's marker comes after the removal.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	settled := writersBefore == 0
+	if st := s.pins[id]; st != nil {
+		settled = settled && st.writers == 0 && st.writeEpoch == epoch
+	}
+	if !settled {
+		// A writer held the volume at some point during the walk: use the
+		// size for now, and keep the marker.
+		return e, nil
+	}
+	if err := s.updateMeta(id, func(m *meta) { m.SizeBytes = &size }); err != nil {
+		return Entry{}, err
+	}
+	// Meta first: a crash between the two leaves the marker, which only costs
+	// another walk.
+	if s.beforeClearDirty != nil {
+		s.beforeClearDirty()
+	}
+	if err := os.Remove(filepath.Join(volDir, dirtyName)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return Entry{}, fmt.Errorf("clear cache volume %s dirty marker: %w", id, err)
+	}
+	return e, nil
+}
+
+// Policy decides what Collect removes. Byte values are resolved; zero means
+// unset. Thresholds work as in the engine's other cache policies.
+type Policy struct {
+	ReservedSpace int64
+	MaxUsedSpace  int64
+	MinFreeSpace  int64
+	// CurrentFreeSpace is the filesystem's free bytes, for MinFreeSpace.
+	CurrentFreeSpace int64
+	// All removes every volume that isn't pinned, whatever the thresholds.
+	All bool
+}
+
+// targetBytes is how many bytes the policy wants freed from usedBytes.
+func (p Policy) targetBytes(usedBytes int64) int64 {
+	if p.All {
+		return math.MaxInt64
+	}
+	target := int64(0)
+	if p.MaxUsedSpace > 0 && usedBytes > p.MaxUsedSpace {
+		target = max(target, usedBytes-max(p.MaxUsedSpace, p.ReservedSpace))
+	}
+	if p.MinFreeSpace > 0 && p.CurrentFreeSpace < p.MinFreeSpace {
+		target = max(target, min(p.MinFreeSpace-p.CurrentFreeSpace, usedBytes-p.ReservedSpace))
+	}
+	return max(target, 0)
+}
+
+// Report is what one Collect removed.
+type Report struct {
+	Removed        []Entry
+	ReclaimedBytes int64
+}
+
+// Collect removes volumes until the policy is met, the least recently used
+// first, never a pinned one. Bytes already being removed count as freed.
+// Removed volumes are moved aside at once and deleted in the background.
+// Collect stops between volumes when ctx ends, leaving the directory
+// consistent.
+func (s *Store) Collect(ctx context.Context, policy Policy) (Report, error) {
+	var report Report
+	if err := ctx.Err(); err != nil {
+		return report, err
+	}
+	entries, used, pending, err := s.usage(ctx)
+	if err != nil {
+		return report, err
+	}
+	if s.afterUsage != nil {
+		s.afterUsage()
+	}
+	need := policy.targetBytes(used)
+	if !policy.All {
+		// What is already being removed counts as freed.
+		need -= pending
+	}
+	if need <= 0 {
+		return report, nil
+	}
+
+	slices.SortStableFunc(entries, func(a, b Entry) int {
+		return a.LastUsedAt.Compare(b.LastUsedAt)
+	})
+	for _, e := range entries {
+		if report.ReclaimedBytes >= need {
+			break
+		}
+		if err := ctx.Err(); err != nil {
+			return report, err
+		}
+		removed, err := s.remove(e)
+		if err != nil {
+			return report, err
+		}
+		if !removed {
+			continue
+		}
+		e.Pinned = false
+		report.Removed = append(report.Removed, e)
+		report.ReclaimedBytes += e.SizeBytes
+	}
+	return report, nil
+}
+
+// remove moves a volume to trash unless it is pinned, and deletes it in the
+// background.
+func (s *Store) remove(e Entry) (bool, error) {
+	trash, err := os.MkdirTemp(filepath.Join(s.formDir, "trash"), "")
+	if err != nil {
+		return false, fmt.Errorf("remove cache volume %s: %w", e.ID, err)
+	}
+	target := filepath.Join(trash, "volume")
+
+	s.mu.Lock()
+	if st := s.pins[e.ID]; st != nil && st.count > 0 {
+		s.mu.Unlock()
+		os.Remove(trash)
+		return false, nil
+	}
+	if err := os.Rename(e.path, target); err != nil {
+		s.mu.Unlock()
+		os.Remove(trash)
+		if errors.Is(err, fs.ErrNotExist) {
+			return false, nil
+		}
+		return false, fmt.Errorf("remove cache volume %s: %w", e.ID, err)
+	}
+	delete(s.pins, e.ID)
+	s.pendingBytes += e.SizeBytes
+	s.removals.Add(1)
+	s.mu.Unlock()
+
+	go func() {
+		defer s.removals.Done()
+		if s.beforeRemove != nil {
+			s.beforeRemove()
+		}
+		err := s.removeAll(trash)
+		var survived int64
+		if err != nil {
+			// What survived still takes space: count it as stuck until a
+			// later owner's open removes it. If it can't be measured,
+			// assume nothing was freed.
+			measured, measureErr := s.trashSize(context.Background(), trash)
+			survived = min(max(measured, 0), e.SizeBytes)
+			if measureErr != nil {
+				survived = e.SizeBytes
+				err = errors.Join(err, fmt.Errorf("measure what survived: %w", measureErr))
+			}
+		}
+		s.mu.Lock()
+		s.pendingBytes -= e.SizeBytes
+		s.stuckBytes += survived
+		if err != nil {
+			s.removalErr = errors.Join(s.removalErr, fmt.Errorf("remove cache volume %s: %w", e.ID, err))
+		}
+		s.mu.Unlock()
+	}()
+	return true, nil
+}
+
+// WaitRemovals waits until every removal Collect started has finished, or ctx
+// ends. It reports the removals that failed since it last reported.
+func (s *Store) WaitRemovals(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		s.removals.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		err := s.removalErr
+		s.removalErr = nil
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (s *Store) volumeDir(id string) string {
+	return filepath.Join(s.formDir, "volumes", id)
+}
+
+type meta struct {
+	Format     int       `json:"format"`
+	ID         string    `json:"id"`
+	Identity   Identity  `json:"identity"`
+	CreatedAt  time.Time `json:"createdAt"`
+	CreatedBy  string    `json:"createdBy,omitempty"`
+	LastUsedAt time.Time `json:"lastUsedAt"`
+	// SizeBytes is the last measured size; nil when never measured.
+	SizeBytes *int64 `json:"sizeBytes,omitempty"`
+}
+
+func (s *Store) updateMeta(id string, update func(*meta)) error {
+	s.metaMu.Lock()
+	defer s.metaMu.Unlock()
+	path := filepath.Join(s.volumeDir(id), metaName)
+	m, err := readMeta(path)
+	if err != nil {
+		m = meta{Format: FormatVersion, ID: id}
+	}
+	update(&m)
+	if err := writeJSON(path, m); err != nil {
+		return fmt.Errorf("write cache volume %s metadata: %w", id, err)
+	}
+	return nil
+}
+
+func readMeta(path string) (meta, error) {
+	var m meta
+	dt, err := os.ReadFile(path)
+	if err != nil {
+		return m, err
+	}
+	err = json.Unmarshal(dt, &m)
+	return m, err
+}
+
+// writeJSON writes v to path through a temp file and a rename, so a reader
+// sees either the old file or the new one.
+func writeJSON(path string, v any) error {
+	dt, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	tmp := path + ".tmp-" + rand.Text()
+	if err := os.WriteFile(tmp, dt, 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
+}
+
+func pathExists(path string) (bool, error) {
+	_, err := os.Stat(path)
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, fs.ErrNotExist):
+		return false, nil
+	}
+	return false, err
+}
+
+func writeMarker(path string) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	return f.Close()
+}
+
+// treeSize is the disk space a tree takes, counting each inode once.
+func treeSize(ctx context.Context, root string) (int64, error) {
+	type inode struct{ dev, ino uint64 }
+	seen := map[inode]struct{}{}
+	var size int64
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				// Changed while walking.
+				return nil
+			}
+			return err
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		info, err := d.Info()
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
+			return err
+		}
+		st, ok := info.Sys().(*syscall.Stat_t)
+		if !ok {
+			size += info.Size()
+			return nil
+		}
+		key := inode{uint64(st.Dev), uint64(st.Ino)} //nolint:unconvert // types differ by platform
+		if _, ok := seen[key]; ok {
+			return nil
+		}
+		seen[key] = struct{}{}
+		size += int64(st.Blocks) * 512 //nolint:unconvert // types differ by platform
+		return nil
+	})
+	if errors.Is(err, fs.ErrNotExist) {
+		return 0, nil
+	}
+	return size, err
+}
+
+func removeContents(dir string) error {
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, ent := range ents {
+		if err := os.RemoveAll(filepath.Join(dir, ent.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// keyedMutex is a mutex per key.
+type keyedMutex struct {
+	mu    sync.Mutex
+	locks map[string]*keyedMutexEntry
+}
+
+type keyedMutexEntry struct {
+	mu    sync.Mutex
+	users int
+}
+
+func (k *keyedMutex) lock(key string) (unlock func()) {
+	k.mu.Lock()
+	if k.locks == nil {
+		k.locks = map[string]*keyedMutexEntry{}
+	}
+	e := k.locks[key]
+	if e == nil {
+		e = &keyedMutexEntry{}
+		k.locks[key] = e
+	}
+	e.users++
+	k.mu.Unlock()
+
+	e.mu.Lock()
+	return func() {
+		e.mu.Unlock()
+		k.mu.Lock()
+		e.users--
+		if e.users == 0 {
+			delete(k.locks, key)
+		}
+		k.mu.Unlock()
+	}
+}

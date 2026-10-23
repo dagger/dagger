@@ -33,6 +33,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/cachevolumedir"
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/wcprof"
@@ -661,6 +662,8 @@ type execMountState struct {
 	Secret   *execSecretMountConfig
 	SSH      *execSSHMountConfig
 	Volume   *execVolumeMountConfig
+	// CacheDir is the pinned directory of a directory-backed cache volume.
+	CacheDir string
 
 	ApplyOutput func(bkcache.ImmutableRef) error
 
@@ -675,7 +678,12 @@ type materializedExecPlan struct {
 	States []*execMountState
 }
 
-func lockMountedCaches(ctx context.Context, mounts []ContainerMount) (func(), error) {
+// lockMountedCaches takes what the mounts' cache volumes need for an exec,
+// and returns its release. When cache volumes are directories, it first pins
+// every mounted volume, creating it if needed, so that it can't be collected
+// from now until release; the mount sites read the pinned paths. Then, for
+// writable LOCKED and PRIVATE mounts, it takes the volumes' locks.
+func lockMountedCaches(ctx context.Context, mounts []ContainerMount) (_ func(), rerr error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get current query for cache locks: %w", err)
@@ -685,23 +693,52 @@ func lockMountedCaches(ctx context.Context, mounts []ContainerMount) (func(), er
 		return nil, fmt.Errorf("missing engine locker")
 	}
 
+	dir := currentCacheVolumeDir()
+	var pins []*cachevolumedir.Pin
+	releasePins := func() {
+		for i := len(pins) - 1; i >= 0; i-- {
+			pins[i].Release()
+		}
+	}
+	defer func() {
+		if rerr != nil {
+			releasePins()
+		}
+	}()
+
 	lockSet := make(map[string]struct{})
 	for i, ctrMount := range mounts {
-		if ctrMount.Readonly || ctrMount.CacheSource == nil || ctrMount.CacheSource.Volume.Self() == nil {
+		if ctrMount.CacheSource == nil || ctrMount.CacheSource.Volume.Self() == nil {
 			continue
 		}
 		cacheSelf := ctrMount.CacheSource.Volume.Self()
-		if !cacheSharingModeLocksWrites(cacheSelf.Sharing) {
+		var dirID string
+		if dir != nil {
+			ident, err := cacheSelf.dirIdentity(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("cache volume identity for mount %d: %w", i, err)
+			}
+			pin, err := dir.Acquire(ctx, ident, !ctrMount.Readonly, cacheSelf.populateDir)
+			if err != nil {
+				return nil, fmt.Errorf("acquire cache volume %q for mount %d: %w", cacheSelf.Key, i, err)
+			}
+			pins = append(pins, pin)
+			dirID = ident.ID()
+		}
+		if ctrMount.Readonly || !cacheSharingModeLocksWrites(cacheSelf.Sharing) {
 			continue
 		}
-		lockKey, err := cacheSelf.lockKey()
-		if err != nil {
-			return nil, fmt.Errorf("cache lock key for mount %d: %w", i, err)
+		lockKey := "cache-volume-dir:" + dirID
+		if dirID == "" {
+			lockKey, err = cacheSelf.lockKey()
+			if err != nil {
+				return nil, fmt.Errorf("cache lock key for mount %d: %w", i, err)
+			}
 		}
 		lockSet[lockKey] = struct{}{}
 	}
 	if len(lockSet) == 0 {
-		return func() {}, nil
+		return releasePins, nil
 	}
 
 	lockKeys := make([]string, 0, len(lockSet))
@@ -722,6 +759,7 @@ func lockMountedCaches(ctx context.Context, mounts []ContainerMount) (func(), er
 		for i := len(lockKeys) - 1; i >= 0; i-- {
 			locker.Unlock(lockKeys[i])
 		}
+		releasePins()
 	}, nil
 }
 
@@ -785,7 +823,13 @@ func prepareMounts(
 			mountable = state.SourceRef
 		}
 
-		if state.Volume != nil {
+		if state.CacheDir != "" {
+			var err error
+			mountable, err = prepareExecCacheDirMount(ctx, state.CacheDir)
+			if err != nil {
+				return err
+			}
+		} else if state.Volume != nil {
 			var err error
 			mountable, err = prepareExecVolumeMount(ctx, state.Volume)
 			if err != nil {
@@ -986,6 +1030,14 @@ func prepareMounts(
 			cacheSrc := ctrMount.CacheSource
 			if cacheSrc.Volume.Self() == nil {
 				return materialized, fmt.Errorf("mount %d has nil cache volume source", i)
+			}
+			if dir := currentCacheVolumeDir(); dir != nil {
+				path, err := pinnedCacheVolumeDir(ctx, dir, cacheSrc.Volume.Self())
+				if err != nil {
+					return materialized, fmt.Errorf("mount %d: %w", i, err)
+				}
+				mountState.CacheDir = path
+				break
 			}
 			if err := EnsureBackingSnapshot(ctx, cacheSrc.Volume); err != nil {
 				return materialized, fmt.Errorf("initialize cache volume snapshot for mount %d: %w", i, err)
@@ -1621,7 +1673,13 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 				mountable = state.SourceRef
 			}
 
-			if state.Volume != nil {
+			if state.CacheDir != "" {
+				var err error
+				mountable, err = prepareExecCacheDirMount(ctx, state.CacheDir)
+				if err != nil {
+					return err
+				}
+			} else if state.Volume != nil {
 				mountable, err = prepareExecVolumeMount(ctx, state.Volume)
 				if err != nil {
 					return err
@@ -1825,6 +1883,14 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 				cacheSrc := ctrMount.CacheSource
 				if cacheSrc.Volume.Self() == nil {
 					return failPrepare(fmt.Errorf("mount %d has nil cache volume source", i))
+				}
+				if dir := currentCacheVolumeDir(); dir != nil {
+					path, err := pinnedCacheVolumeDir(ctx, dir, cacheSrc.Volume.Self())
+					if err != nil {
+						return failPrepare(fmt.Errorf("mount %d: %w", i, err))
+					}
+					mountState.CacheDir = path
+					break
 				}
 				if err := EnsureBackingSnapshot(ctx, cacheSrc.Volume); err != nil {
 					return failPrepare(fmt.Errorf("initialize cache volume snapshot for mount %d: %w", i, err))
@@ -2188,6 +2254,9 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 		// one identical value. ProfArgs is json:"-", so this cannot perturb a cache key.
 		if execMD != nil {
 			execMD.ProfArgs = slices.Clone(metaSpec.Args)
+			// Same in-process pattern, for the executor's "starting
+			// container" log line.
+			execMD.CacheMounts = cacheMountCount(inputMounts)
 			// Same in-process pattern: the executor needs the user-facing span
 			// for the container's traceparent injection, and only core still
 			// knows it here — the executor runs on a detached execution
