@@ -16,6 +16,9 @@
 //	<dir>/v1/tmp/                volumes being created
 //	<dir>/v1/trash/              volumes being removed
 //
+// The store reads and writes only its own format's subdirectory, and leaves
+// anything else under <dir> alone.
+//
 // Every change a crash could interrupt is a rename or a temp-file-and-rename,
 // so the directory is consistent at any point a process stops.
 package cachevolumedir
@@ -34,7 +37,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -191,23 +193,12 @@ func Open(dir string, opts Options) (*Store, error) {
 			return nil, fmt.Errorf("create cache volume directory layout: %w", err)
 		}
 	}
-	// This process owns the directory now, so anything in a tmp/ or trash/,
-	// of any format, was left by a previous owner that stopped mid-way.
-	forms, err := os.ReadDir(dir)
-	if err != nil {
-		s.Close()
-		return nil, fmt.Errorf("read cache volume directory: %w", err)
-	}
-	for _, form := range forms {
-		if _, ok := formatOf(form); !ok {
-			continue
-		}
-		for _, sub := range []string{"tmp", "trash"} {
-			err := removeContents(filepath.Join(dir, form.Name(), sub))
-			if err != nil && !errors.Is(err, fs.ErrNotExist) {
-				s.Close()
-				return nil, fmt.Errorf("remove leftover cache volume %s/%s: %w", form.Name(), sub, err)
-			}
+	// This process owns the directory now, so anything in tmp/ or trash/ was
+	// left by a previous owner that stopped mid-way.
+	for _, sub := range []string{"tmp", "trash"} {
+		if err := removeContents(filepath.Join(s.formDir, sub)); err != nil {
+			s.Close()
+			return nil, fmt.Errorf("remove leftover cache volumes in %s: %w", sub, err)
 		}
 	}
 	return s, nil
@@ -452,11 +443,8 @@ func (s *Store) PinnedPath(ident Identity) (string, error) {
 
 // Entry describes one volume in the directory.
 type Entry struct {
-	ID       string
-	Identity Identity
-	// Format is the volume's on-disk format; volumes of another format have
-	// no identity.
-	Format     int
+	ID         string
+	Identity   Identity
 	SizeBytes  int64
 	CreatedAt  time.Time
 	LastUsedAt time.Time
@@ -497,54 +485,34 @@ func (s *Store) usage(ctx context.Context) ([]Entry, int64, int64, error) {
 	return entries, used + tmpBytes + pending + stuck, pending, nil
 }
 
-// scan lists every volume of every format, measuring stale sizes.
+// scan lists every volume, measuring stale sizes.
 func (s *Store) scan(ctx context.Context) ([]Entry, error) {
-	var entries []Entry
-	forms, err := os.ReadDir(s.dir)
+	vols, err := os.ReadDir(filepath.Join(s.formDir, "volumes"))
 	if err != nil {
-		return nil, fmt.Errorf("read cache volume directory: %w", err)
+		return nil, fmt.Errorf("read cache volumes: %w", err)
 	}
-	for _, form := range forms {
-		format, ok := formatOf(form)
-		if !ok {
+	var entries []Entry
+	for _, vol := range vols {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if !vol.IsDir() {
 			continue
 		}
-		volsDir := filepath.Join(s.dir, form.Name(), "volumes")
-		vols, err := os.ReadDir(volsDir)
+		e, err := s.volumeEntry(ctx, vol.Name())
 		if errors.Is(err, fs.ErrNotExist) {
+			// Removed while scanning.
 			continue
 		}
 		if err != nil {
-			return nil, fmt.Errorf("read cache volumes: %w", err)
+			return nil, err
 		}
-		for _, vol := range vols {
-			if err := ctx.Err(); err != nil {
-				return nil, err
-			}
-			if !vol.IsDir() {
-				continue
-			}
-			var e Entry
-			var err error
-			if format == FormatVersion {
-				e, err = s.currentEntry(ctx, vol.Name())
-			} else {
-				e, err = otherFormatEntry(ctx, filepath.Join(volsDir, vol.Name()), format)
-			}
-			if errors.Is(err, fs.ErrNotExist) {
-				// Removed while scanning.
-				continue
-			}
-			if err != nil {
-				return nil, err
-			}
-			entries = append(entries, e)
-		}
+		entries = append(entries, e)
 	}
 	return entries, nil
 }
 
-func (s *Store) currentEntry(ctx context.Context, id string) (Entry, error) {
+func (s *Store) volumeEntry(ctx context.Context, id string) (Entry, error) {
 	volDir := s.volumeDir(id)
 	if _, err := os.Stat(filepath.Join(volDir, fsName)); err != nil {
 		return Entry{}, err
@@ -558,7 +526,6 @@ func (s *Store) currentEntry(ctx context.Context, id string) (Entry, error) {
 	e := Entry{
 		ID:         id,
 		Identity:   m.Identity,
-		Format:     FormatVersion,
 		CreatedAt:  m.CreatedAt,
 		LastUsedAt: m.LastUsedAt,
 		path:       volDir,
@@ -618,24 +585,6 @@ func (s *Store) currentEntry(ctx context.Context, id string) (Entry, error) {
 	return e, nil
 }
 
-func otherFormatEntry(ctx context.Context, path string, format int) (Entry, error) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return Entry{}, err
-	}
-	size, err := treeSize(ctx, path)
-	if err != nil {
-		return Entry{}, err
-	}
-	return Entry{
-		ID:         filepath.Base(path),
-		Format:     format,
-		SizeBytes:  size,
-		LastUsedAt: info.ModTime(),
-		path:       path,
-	}, nil
-}
-
 // Policy decides what Collect removes. Byte values are resolved; zero means
 // unset. Thresholds work as in the engine's other cache policies.
 type Policy struct {
@@ -679,11 +628,11 @@ type Report struct {
 	ReclaimedBytes int64
 }
 
-// Collect removes volumes until the policy is met: volumes of another format
-// first, then the least recently used, never a pinned one. Bytes already being
-// removed count as freed. Removed volumes are moved aside at once and deleted
-// in the background. Collect stops between volumes when ctx ends, leaving the
-// directory consistent.
+// Collect removes volumes until the policy is met, the least recently used
+// first, never a pinned one. Bytes already being removed count as freed.
+// Removed volumes are moved aside at once and deleted in the background.
+// Collect stops between volumes when ctx ends, leaving the directory
+// consistent.
 func (s *Store) Collect(ctx context.Context, policy Policy) (Report, error) {
 	var report Report
 	if err := ctx.Err(); err != nil {
@@ -706,13 +655,6 @@ func (s *Store) Collect(ctx context.Context, policy Policy) (Report, error) {
 	}
 
 	slices.SortStableFunc(entries, func(a, b Entry) int {
-		aOther, bOther := a.Format != FormatVersion, b.Format != FormatVersion
-		switch {
-		case aOther && !bOther:
-			return -1
-		case !aOther && bOther:
-			return 1
-		}
 		return a.LastUsedAt.Compare(b.LastUsedAt)
 	})
 	now := s.opts.Now()
@@ -723,7 +665,7 @@ func (s *Store) Collect(ctx context.Context, policy Policy) (Report, error) {
 		if err := ctx.Err(); err != nil {
 			return report, err
 		}
-		if !policy.All && policy.KeepDuration > 0 && e.Format == FormatVersion && now.Sub(e.LastUsedAt) < policy.KeepDuration {
+		if !policy.All && policy.KeepDuration > 0 && now.Sub(e.LastUsedAt) < policy.KeepDuration {
 			continue
 		}
 		removed, err := s.remove(e)
@@ -750,12 +692,10 @@ func (s *Store) remove(e Entry) (bool, error) {
 	target := filepath.Join(trash, "volume")
 
 	s.mu.Lock()
-	if e.Format == FormatVersion {
-		if st := s.pins[e.ID]; st != nil && st.count > 0 {
-			s.mu.Unlock()
-			os.Remove(trash)
-			return false, nil
-		}
+	if st := s.pins[e.ID]; st != nil && st.count > 0 {
+		s.mu.Unlock()
+		os.Remove(trash)
+		return false, nil
 	}
 	if err := os.Rename(e.path, target); err != nil {
 		s.mu.Unlock()
@@ -765,9 +705,7 @@ func (s *Store) remove(e Entry) (bool, error) {
 		}
 		return false, fmt.Errorf("remove cache volume %s: %w", e.ID, err)
 	}
-	if e.Format == FormatVersion {
-		delete(s.pins, e.ID)
-	}
+	delete(s.pins, e.ID)
 	s.pendingBytes += e.SizeBytes
 	s.removals.Add(1)
 	s.mu.Unlock()
@@ -896,21 +834,6 @@ func writeMarker(path string) error {
 		return err
 	}
 	return f.Close()
-}
-
-func formatOf(ent fs.DirEntry) (int, bool) {
-	if !ent.IsDir() {
-		return 0, false
-	}
-	n, ok := strings.CutPrefix(ent.Name(), "v")
-	if !ok {
-		return 0, false
-	}
-	format, err := strconv.Atoi(n)
-	if err != nil || format <= 0 || strconv.Itoa(format) != n {
-		return 0, false
-	}
-	return format, true
 }
 
 // treeSize is the disk space a tree takes, counting each inode once.

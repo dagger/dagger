@@ -404,29 +404,6 @@ func TestCollectCountsPendingRemovals(t *testing.T) {
 	require.Less(t, used, int64(3*mib+mib/2))
 }
 
-func TestCollectOtherFormatFirst(t *testing.T) {
-	clock := newFakeClock()
-	dir := t.TempDir()
-	s := openStore(t, dir, clock)
-	use(t, s, Identity{Key: "current"}, true, "f", mib)
-
-	other := filepath.Join(dir, "v2", "volumes", "abc", "fs")
-	require.NoError(t, os.MkdirAll(other, 0o755))
-	writeFile(t, filepath.Join(other, "f"), mib)
-
-	entries, used, err := s.Usage(t.Context())
-	require.NoError(t, err)
-	require.GreaterOrEqual(t, used, int64(2*mib), "other formats count toward usage")
-	require.Len(t, entries, 2)
-
-	report, err := s.Collect(t.Context(), Policy{MaxUsedSpace: mib + mib/2})
-	require.NoError(t, err)
-	require.Len(t, report.Removed, 1)
-	require.Equal(t, 2, report.Removed[0].Format, "another format's volume goes first, though it was never used here")
-	require.NoError(t, s.WaitRemovals(t.Context()))
-	require.NoDirExists(t, filepath.Join(dir, "v2", "volumes", "abc"))
-}
-
 func TestCollectStopsWhenCancelled(t *testing.T) {
 	s := openStore(t, t.TempDir(), nil)
 	for _, key := range []string{"a", "b"} {
@@ -481,20 +458,6 @@ func TestCloseKeepsOwnershipWhilePinned(t *testing.T) {
 	s2, err := Open(dir, Options{})
 	require.NoError(t, err)
 	require.NoError(t, s2.Close())
-}
-
-func TestOpenRemovesOtherFormatsDebris(t *testing.T) {
-	dir := t.TempDir()
-	for _, sub := range []string{"v2/tmp/half-made", "v2/trash/half-gone"} {
-		require.NoError(t, os.MkdirAll(filepath.Join(dir, sub), 0o755))
-		writeFile(t, filepath.Join(dir, sub, "f"), 10)
-	}
-	openStore(t, dir, nil)
-	for _, sub := range []string{"v2/tmp", "v2/trash"} {
-		ents, err := os.ReadDir(filepath.Join(dir, sub))
-		require.NoError(t, err)
-		require.Empty(t, ents, sub)
-	}
 }
 
 // A writer that pins while a measurement is clearing the dirty marker must
