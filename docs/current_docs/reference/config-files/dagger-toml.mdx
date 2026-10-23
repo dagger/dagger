@@ -16,7 +16,8 @@ The machine-readable schema is published at [dagger-workspace.schema.json](/refe
 | --- | --- | --- |
 | `modules` | table | Installed modules, keyed by install name. See [`[modules.<name>]`](#modulesname). |
 | `sdks` | table | Installed SDK providers and their generation scopes. See [`[sdks.<name>]`](#sdksname). |
-| `ports` | table | Host port mappings for services. See [`[ports.<name>]`](#portsname). |
+| `ports` | table | Host port mappings for services, keyed by host port. See [`[ports.<port>]`](#portsport). |
+| `env` | table | Named environment overlays. See [`[env.<name>]`](#envname). |
 | `ignore` | array | Path patterns excluded when loading the workspace. |
 | `defaults_from_dotenv` | bool | Read module constructor defaults from a `.env` file. |
 | `check-generated` | bool | Run generators as checks during `dagger check`, failing when generated files are stale. Defaults to `true`; CLI flags override it. |
@@ -135,13 +136,35 @@ explicit scope name. The inferred name is not written to this field.
 Use `dagger sdk scope name -u` to remove an override. An unnamed scope that
 contains only clients passes an empty name to the SDK.
 
-## `[ports.<name>]`
+## `[ports.<port>]`
+
+Each table is keyed by the host port it opens, such as `[ports.3000]`. `dagger start` forwards that port to the service.
 
 | Key | Type | Description |
 | --- | --- | --- |
-| `backendService` | string | Service that backs this host port. |
+| `backendService` | string | Service that backs this host port, as `<module>:<service>`. |
 | `backendPort` | int | Port on the backing service. |
+
+## `[env.<name>]`
+
+An environment is a named overlay on the workspace's modules. Select one with `--env <name>`. Without `--env`, no overlay applies.
+
+```toml
+[env.ci.modules.go.settings]
+goflags = "-race"
+
+[env.ci.modules.notify]
+source = "github.com/acme/notify"
+```
+
+| Key | Type | Description |
+| --- | --- | --- |
+| `modules.<name>.settings` | table | Settings that shadow the module's `[modules.<name>.settings]` key by key. |
+| `modules.<name>.source` | string | Installs a module only in this environment. |
+| `modules.<name>.pin` | string | Resolved version for `source`. |
+
+An overlay that names a module missing from `[modules]` must give it a `source`. Write settings into an overlay with `dagger module settings --env <name>`.
 
 ## User-level file
 
-The same module settings can be set per-user, outside the repository, in `~/.config/dagger/config.toml`. See [User configuration](../../config/user.mdx).
+The same module settings can be set per-user, outside the repository, in the user-level Dagger config file. See [User configuration](../../config/user.mdx).

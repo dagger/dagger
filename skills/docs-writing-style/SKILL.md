@@ -1,15 +1,13 @@
 ---
 name: docs-writing-style
-description: Writing style for Dagger documentation prose in docs/current_docs. Use when writing, rewriting, or reviewing any docs page (guides, reference, config, getting started) to get the voice, scope, naming, and accuracy right. Complements docs/STYLE_GUIDE.md, which covers mechanics like titles, pronouns, lists, and snippets.
+description: Writing style for Dagger documentation prose in docs/current_docs. Use when writing, rewriting, or reviewing any docs page (getting started, using, config, reference) to get the voice, scope, naming, and accuracy right. Complements docs/STYLE_GUIDE.md, which covers mechanics like titles, pronouns, lists, and snippets.
 ---
 
 # Docs Writing Style
 
 How Dagger docs prose should read. `docs/STYLE_GUIDE.md` covers the mechanics:
 Word Case titles, sentence-case headings, no personal pronouns outside
-guides (the quickstart and `getting-started/platform-guides/` are companion
-journeys and may use
-"you"), list and bold rules, snippet layout. Follow it. This skill
+the quickstart (a companion journey that may use "you"), list and bold rules, snippet layout. Follow it. This skill
 covers what the style guide does not: voice, scope, naming, and accuracy.
 
 ## Voice
@@ -58,8 +56,8 @@ for each before sending a page.
 
 ## Scope
 
-**A page is about its subject, not about the tools it uses.** A guide to
-daggerizing a Go project is not a guide to `dagger module settings`. Show a
+**A page is about its subject, not about the tools it uses.** A page about
+running checks is not a page about `dagger module settings`. Show a
 command once, where the reader needs it, in the form they will type. Do not
 enumerate its other forms, flags, or edge cases. Link to the reference page for
 the full surface.
@@ -72,13 +70,13 @@ on.
 **Say only what the page's reader needs at that step.** A sentence that is true
 but that no reader of this page would act on belongs on a different page or
 nowhere. "List-valued settings are edited in `dagger.toml` directly" was cut
-from the Go guide for this reason: it was also inaccurate, and even the accurate
-version was a detail about the settings command, not about the Go project.
+from a walkthrough for this reason: it was also inaccurate, and even the accurate
+version was a detail about the settings command, not about the project.
 
 **Reference pages are reference.** A page under `reference/` says what a thing
 is, what it exposes, and what its settings mean. Narrative ("first do this, then
-that, here is why") belongs in a guide, and the reference page links to it. When
-a guide starts owning a story, trim the matching reference page toward pure
+that, here is why") belongs in a getting-started or using page, and the reference page links to it.
+When such a page starts owning a story, trim the matching reference page toward pure
 reference.
 
 ## Naming
@@ -92,8 +90,7 @@ reader will type, such as `test-services:go-test-base`.
 what it is. "A module for the project" says only whose it is.
 
 **Sidebar labels match page titles.** Do not set a `label` in `sidebars.ts`
-that abbreviates the title. "Go" under "Guides" is too broad; the page is
-"Daggerize a Go Project". Omit the label so the sidebar inherits the title.
+that abbreviates the title. Omit the label so the sidebar inherits the title.
 
 **Use current, canonical command forms and refs.** Official modules install
 from `dagger.io/<module>` and SDKs from `dagger.io/sdk/<sdk>`. Module verbs live
@@ -138,12 +135,11 @@ ships). It is not fine to guess. Say in the PR what is ahead of the release.
 | "Look at the summary line for skipped tests. If that count is not zero..." | "The summary adds a `skipped` count next to `passed` whenever a test skipped. If that count appears..." | Zero is not printed |
 | "Create a module for the project" | "Create a module for test services" | Purpose, not ownership |
 | `myapp` / `myapp:go-test-base` | `test-services` / `test-services:go-test-base` | A name someone would use |
-| Sidebar label "Go" | (no label; inherits "Daggerize a Go Project") | Label too broad |
 | "The image matches the Go module's default... helper binaries need Go 1.26" | "Use the same release you would otherwise put in `version`. Keep it at Go 1.26 or newer" | Floor versus requirement was ambiguous |
 
 ## Process
 
-- Run `dagger check markdown-lint:lint` and `dagger check docs:check` (the
+- Run `dagger check dag://markdown-lint/lint dag://docs/check` (the second is the
   full site build, which catches broken links). Run `dagger` as it is on your
   PATH and never set `DAGGER_X_RELEASE` in the command.
 - After merging main, grep the edited pages for moved links and renamed

@@ -1,5 +1,3 @@
 The `LLM` type initializes a Large Language Model (LLM).
 
-:::tip `ENV` TYPE
-You use an `LLM` in conjunction with `Env`. The `Env` type is used to represent the environment in which an LLM operates. It allows the LLM to interact with inputs and outputs, such as directories, containers, and custom modules.
-:::
+An `LLM` acts through tools. `withWorkspace` exposes a workspace's modules as tools, the way the Dagger CLI serves them. `withTools` exposes the methods of one object.

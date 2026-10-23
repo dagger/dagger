@@ -208,7 +208,9 @@ the client proxy is not the receiver for this stream.
 ## Accounting boundary
 
 The engine discovers its unified cgroup from `/proc/self/cgroup`. It reports
-CPU and memory charged to that cgroup, including its descendants. In the
+CPU, memory, and network bytes charged to that cgroup, including its
+descendants. Network bytes are split by direction and by internal or external
+traffic. In the
 standard layout, engine processes and helpers are in `/init`, while user
 containers, including nested engines, are in sibling `/buildkit` cgroups.
 Those user workloads are excluded from the parent engine's resource metrics.
