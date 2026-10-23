@@ -66,13 +66,14 @@ func TestCacheVolumeDirPressure(t *testing.T) {
 
 	require.NoError(t, srv.initCacheVolumeDir(config.CacheVolumesConfig{Dir: filepath.Join(root, "cache-volumes")}))
 	t.Cleanup(func() { _ = srv.closeCacheVolumeDir() })
-	// The default limits want 20% of the filesystem free.
-	dstat := disk.DiskStat{Total: 100e9, Available: 21e9}
+	// The default limits want 20% of the filesystem free: 19e9 of 100e9, as
+	// the engine rounds percentages.
+	dstat := disk.DiskStat{Total: 100e9, Available: 19e9}
 	srv.cacheVolumeDirDiskStat = func(string) (disk.DiskStat, error) { return dstat, nil }
 	require.False(t, srv.cacheVolumeDirPressure(t.Context()))
 
 	// Less free than that: pressure, which the GC monitor acts on.
-	dstat.Available = 19e9
+	dstat.Available = 19e9 - 1
 	require.True(t, srv.cacheVolumeDirPressure(t.Context()))
 	require.True(t, srv.localCachePressureGCNeeded(t.Context()))
 
@@ -118,14 +119,14 @@ func TestCacheVolumeDirPolicy(t *testing.T) {
 	}
 
 	// Unset capacity: the engine's default limits for the directory's own
-	// filesystem.
+	// filesystem, with percentages rounded as the engine rounds them.
 	policy, err := srv.cacheVolumeDirPolicy(false)
 	require.NoError(t, err)
 	require.Equal(t, srv.cacheVolumeDir.Dir(), statted)
 	require.Equal(t, cachevolumedir.Policy{
 		ReservedSpace:    10e9,
-		MaxUsedSpace:     150e9,
-		MinFreeSpace:     40e9,
+		MaxUsedSpace:     140e9,
+		MinFreeSpace:     38e9,
 		CurrentFreeSpace: 50e9,
 	}, policy)
 
