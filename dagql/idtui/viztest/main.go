@@ -786,7 +786,7 @@ func (*Viztest) HTTPReadme(ctx context.Context, remote string, version string) (
 
 // +cache="session"
 func (*Viztest) ObjectLists(ctx context.Context) (string, error) {
-	filePtrs, err := dag.Dep().GetFiles(ctx)
+	filePtrs, err := dag.Dep().GetOtherFiles(ctx)
 	if err != nil {
 		return "", err
 	}
