@@ -14,25 +14,62 @@ import (
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-// partPrefetchConfig bounds prefetching offered parts: the smallest blob it
-// fetches, how many offers it fetches at once, the bytes it holds unconsumed,
-// how long it holds them, and how many accepted offers wait for it.
+// partPrefetchLane is one of the prefetcher's two lanes. A blob of at least
+// the config's largeBlob takes the large lane; any smaller blob, the small
+// one. Each lane has its own queue and workers, so small blobs never wait
+// behind a large download.
+type partPrefetchLane int
+
+const (
+	// partPrefetchLarge downloads a job's blobs one at a time: their bytes
+	// are what it bounds.
+	partPrefetchLarge partPrefetchLane = iota
+	// partPrefetchSmall downloads a job's blobs at once, up to smallStreams:
+	// their requests' latency, not their bytes, is what an install would
+	// wait on.
+	partPrefetchSmall
+	partPrefetchLanes
+)
+
+func (l partPrefetchLane) String() string {
+	if l == partPrefetchSmall {
+		return "small"
+	}
+	return "large"
+}
+
+// partPrefetchConfig bounds prefetching offered parts: the size from which a
+// blob takes the large lane, each lane's workers, how many of a small job's
+// blobs download at once, the bytes it holds unconsumed, how long it holds
+// them, and how many accepted offers wait in each lane.
 type partPrefetchConfig struct {
-	minBlob int64
-	workers int
-	budget  int64
-	ttl     time.Duration
-	queue   int
+	largeBlob    int64
+	workers      int
+	smallWorkers int
+	smallStreams int
+	budget       int64
+	ttl          time.Duration
+	queue        int
 }
 
 func defaultPartPrefetchConfig() partPrefetchConfig {
 	return partPrefetchConfig{
-		minBlob: 8 << 20,
-		workers: 2,
-		budget:  4 << 30,
-		ttl:     30 * time.Minute,
-		queue:   256,
+		largeBlob:    8 << 20,
+		workers:      2,
+		smallWorkers: 2,
+		smallStreams: 8,
+		budget:       4 << 30,
+		ttl:          30 * time.Minute,
+		queue:        256,
 	}
+}
+
+// lane is the lane a blob of size takes.
+func (cfg partPrefetchConfig) lane(size int64) partPrefetchLane {
+	if size >= cfg.largeBlob {
+		return partPrefetchLarge
+	}
+	return partPrefetchSmall
 }
 
 // contentPrefetcher is the snapshot manager's prefetch: it downloads a blob
@@ -51,8 +88,8 @@ func WithPartPrefetchRoom(room func(need int64) bool) CacheOption {
 	}
 }
 
-// partPrefetcher downloads the large blobs of accepted offers in the
-// background, before a call demands the part, so that its install finds
+// partPrefetcher downloads the blobs of accepted offers in the background,
+// before a call demands the part, so that its install finds
 // them in the content store or joins their download. It fetches content
 // only: it takes no permit and changes no row. Each blob is held by a lease
 // of its own until the offers naming it are gone, which an install's
@@ -75,9 +112,9 @@ type partPrefetcher struct {
 	mu     sync.Mutex
 	cond   *sync.Cond
 	closed bool
-	queue  []*partPrefetchJob
-	// jobs are the queued and running jobs, by offer.
-	jobs  map[*partOffer]*partPrefetchJob
+	queues [partPrefetchLanes][]*partPrefetchJob
+	// jobs are the queued and running jobs, by offer and lane.
+	jobs  map[partPrefetchJobKey]*partPrefetchJob
 	holds map[digest.Digest]*partPrefetchHold
 	// fetching are the blobs running jobs download.
 	fetching map[digest.Digest]*partPrefetchDownload
@@ -92,11 +129,19 @@ type partPrefetcher struct {
 	pending int64
 }
 
-// partPrefetchJob is one accepted offer to prefetch.
+// partPrefetchJobKey names a job: an offer has one in each lane its blobs
+// take.
+type partPrefetchJobKey struct {
+	offer *partOffer
+	lane  partPrefetchLane
+}
+
+// partPrefetchJob is one accepted offer's blobs of one lane to prefetch.
 type partPrefetchJob struct {
 	row      sharedResultID
 	key      string
 	offer    *partOffer
+	lane     partPrefetchLane
 	record   PersistedPartOffer
 	accepted time.Time
 	// gone is set once the offer is retired; cancel stops a running job;
@@ -119,6 +164,12 @@ type partPrefetchHold struct {
 	release func(context.Context) error
 	offers  map[*partOffer]struct{}
 	expires time.Time
+}
+
+// jobKey is the job's current key. Requires p.mu: a replacement passes the
+// job to its new offer.
+func (job *partPrefetchJob) jobKey() partPrefetchJobKey {
+	return partPrefetchJobKey{offer: job.offer, lane: job.lane}
 }
 
 // partPrefetch returns the cache's prefetcher, starting it on first use, or
@@ -144,11 +195,14 @@ func (c *Cache) partPrefetch(ctx context.Context) *partPrefetcher {
 		cfg = *c.partPrefetchConfig
 	}
 	base, cancel := context.WithCancel(context.Background())
-	p := &partPrefetcher{cache: c, cfg: cfg, snapshot: snapshot, ctx: base, cancel: cancel, logger: slog.FromContext(ctx), wake: make(chan struct{}, 1), jobs: map[*partOffer]*partPrefetchJob{}, holds: map[digest.Digest]*partPrefetchHold{}, fetching: map[digest.Digest]*partPrefetchDownload{}, consumed: map[digest.Digest]time.Time{}}
+	p := &partPrefetcher{cache: c, cfg: cfg, snapshot: snapshot, ctx: base, cancel: cancel, logger: slog.FromContext(ctx), wake: make(chan struct{}, 1), jobs: map[partPrefetchJobKey]*partPrefetchJob{}, holds: map[digest.Digest]*partPrefetchHold{}, fetching: map[digest.Digest]*partPrefetchDownload{}, consumed: map[digest.Digest]time.Time{}}
 	p.cond = sync.NewCond(&p.mu)
-	p.wg.Add(cfg.workers + 1)
+	p.wg.Add(cfg.workers + cfg.smallWorkers + 1)
 	for range cfg.workers {
-		go p.work()
+		go p.work(partPrefetchLarge)
+	}
+	for range cfg.smallWorkers {
+		go p.work(partPrefetchSmall)
 	}
 	go p.expire()
 	c.partPrefetcher.Store(p)
@@ -179,37 +233,54 @@ func (c *Cache) closePartPrefetch() {
 	}
 }
 
-// partOfferAccepted queues an offer the cache just attached for prefetch.
-// It never blocks.
+// partOfferAccepted queues an offer the cache just attached for prefetch: a
+// job in each lane its blobs take. It never blocks.
 func (c *Cache) partOfferAccepted(ctx context.Context, row *sharedResult, key string, offer *partOffer) {
 	p := c.partPrefetch(ctx)
 	if p == nil || offer == nil {
 		return
 	}
-	record, err := clonePartOffer(offer.record)
-	if err != nil {
-		return
+	var wanted [partPrefetchLanes]bool
+	for _, layer := range offer.record.Chain.Layers {
+		wanted[p.cfg.lane(layer.Descriptor.Size)] = true
 	}
-	job := &partPrefetchJob{row: row.id, key: key, offer: offer, record: record, accepted: time.Now()}
-	var dropped *partPrefetchJob
+	var jobs []*partPrefetchJob
+	now := time.Now()
+	for lane := range partPrefetchLanes {
+		if !wanted[lane] {
+			continue
+		}
+		// Each job has its own copy: a replacement refreshes a queued job's.
+		record, err := clonePartOffer(offer.record)
+		if err != nil {
+			return
+		}
+		jobs = append(jobs, &partPrefetchJob{row: row.id, key: key, offer: offer, lane: lane, record: record, accepted: now})
+	}
+	var dropped []*partPrefetchJob
 	p.mu.Lock()
-	if p.closed || p.jobs[offer] != nil {
+	if p.closed {
 		p.mu.Unlock()
 		return
 	}
-	if len(p.queue) >= p.cfg.queue {
-		dropped = p.queue[0]
-		p.queue = p.queue[1:]
-		delete(p.jobs, dropped.offer)
+	for _, job := range jobs {
+		if p.jobs[job.jobKey()] != nil {
+			continue
+		}
+		if queue := p.queues[job.lane]; len(queue) >= p.cfg.queue {
+			dropped = append(dropped, queue[0])
+			p.queues[job.lane] = queue[1:]
+			delete(p.jobs, queue[0].jobKey())
+		}
+		p.queues[job.lane] = append(p.queues[job.lane], job)
+		p.jobs[job.jobKey()] = job
 	}
-	p.queue = append(p.queue, job)
-	p.jobs[offer] = job
-	p.cond.Signal()
+	p.cond.Broadcast()
 	p.mu.Unlock()
 	// Logged outside the mutex, which retirement takes under egraphMu: a
 	// slow log writer must not stall the cache.
-	if dropped != nil {
-		p.log(dropped, "skipped_queue", 0, 0, 0, nil)
+	for _, job := range dropped {
+		p.log(job, "skipped_queue", 0, 0, 0, nil)
 	}
 }
 
@@ -256,9 +327,11 @@ func (p *partPrefetcher) goneLocked(offer *partOffer, next *partOffer, keep ...d
 		}
 		affected[download.job] = struct{}{}
 	}
-	if job := p.jobs[offer]; job != nil {
-		job.gone = true
-		affected[job] = struct{}{}
+	for lane := range partPrefetchLanes {
+		if job := p.jobs[partPrefetchJobKey{offer: offer, lane: lane}]; job != nil {
+			job.gone = true
+			affected[job] = struct{}{}
+		}
 	}
 	for job := range affected {
 		p.cancelUnwantedLocked(job)
@@ -309,14 +382,17 @@ func (c *Cache) partOfferReplaced(old, next *partOffer) {
 		p.goneLocked(old, next, shared...)
 		return
 	}
-	if job := p.jobs[old]; job != nil && p.jobs[next] == nil {
-		delete(p.jobs, old)
-		job.offer = next
-		p.jobs[next] = job
-		if job.cancel == nil {
-			// Queued: run it with the replacement's fresh addresses.
-			if record, err := clonePartOffer(next.record); err == nil {
-				job.record = record
+	for lane := range partPrefetchLanes {
+		oldKey, nextKey := partPrefetchJobKey{offer: old, lane: lane}, partPrefetchJobKey{offer: next, lane: lane}
+		if job := p.jobs[oldKey]; job != nil && p.jobs[nextKey] == nil {
+			delete(p.jobs, oldKey)
+			job.offer = next
+			p.jobs[nextKey] = job
+			if job.cancel == nil {
+				// Queued: run it with the replacement's fresh addresses.
+				if record, err := clonePartOffer(next.record); err == nil {
+					job.record = record
+				}
 			}
 		}
 	}
@@ -384,21 +460,22 @@ func (c *Cache) partPrefetchHeld(layers []snapshots.ExportLayer) int {
 	return n
 }
 
-func (p *partPrefetcher) work() {
+// work runs lane's jobs, one at a time, until the prefetcher closes.
+func (p *partPrefetcher) work(lane partPrefetchLane) {
 	defer p.wg.Done()
 	for {
 		p.mu.Lock()
-		for !p.closed && len(p.queue) == 0 {
+		for !p.closed && len(p.queues[lane]) == 0 {
 			p.cond.Wait()
 		}
 		if p.closed {
 			p.mu.Unlock()
 			return
 		}
-		job := p.queue[0]
-		p.queue = p.queue[1:]
+		job := p.queues[lane][0]
+		p.queues[lane] = p.queues[lane][1:]
 		if job.gone {
-			delete(p.jobs, job.offer)
+			delete(p.jobs, job.jobKey())
 			p.mu.Unlock()
 			continue
 		}
@@ -408,14 +485,14 @@ func (p *partPrefetcher) work() {
 		p.run(ctx, job)
 		cancel()
 		p.mu.Lock()
-		if p.jobs[job.offer] == job {
-			delete(p.jobs, job.offer)
+		if key := job.jobKey(); p.jobs[key] == job {
+			delete(p.jobs, key)
 		}
 		p.mu.Unlock()
 	}
 }
 
-// run prefetches one job's large blobs that no hold has yet.
+// run prefetches the blobs of one job's lane that no hold has yet.
 func (p *partPrefetcher) run(ctx context.Context, job *partPrefetchJob) {
 	start := time.Now()
 	c := p.cache
@@ -466,7 +543,7 @@ func (p *partPrefetcher) run(ctx context.Context, job *partPrefetchJob) {
 	offer = job.offer
 	for _, layer := range job.record.Chain.Layers {
 		desc := layer.Descriptor
-		if desc.Size < p.cfg.minBlob {
+		if p.cfg.lane(desc.Size) != job.lane {
 			continue
 		}
 		address, ok := job.record.Chain.Addresses[desc.Digest]
@@ -520,23 +597,7 @@ func (p *partPrefetcher) run(ctx context.Context, job *partPrefetchJob) {
 		return
 	}
 
-	provider := c.PartContentSource().Provider(ctx, job.record, nil)
-	blobs, bytes := 0, int64(0)
-	var failure error
-	for _, desc := range wanted {
-		var release func(context.Context) error
-		fetched := false
-		if failure == nil {
-			release, fetched, failure = p.snapshot.PrefetchContent(ctx, desc, provider, p.cfg.ttl)
-		}
-		if fetched {
-			blobs++
-			bytes += desc.Size
-		}
-		if release = p.settle(job, desc, release, fetched); release != nil {
-			_ = release(context.WithoutCancel(ctx))
-		}
-	}
+	blobs, bytes, failure := p.fetch(ctx, job, wanted)
 	outcome := "done"
 	if failure != nil {
 		outcome = "error"
@@ -547,6 +608,51 @@ func (p *partPrefetcher) run(ctx context.Context, job *partPrefetchJob) {
 		p.mu.Unlock()
 	}
 	p.log(job, outcome, blobs, bytes, time.Since(start), failure)
+}
+
+// fetch downloads job's wanted blobs, which run registered, and settles
+// each. The large lane downloads one blob at a time; the small lane up to
+// smallStreams at once. After a failure, no blob starts.
+func (p *partPrefetcher) fetch(ctx context.Context, job *partPrefetchJob, wanted []ocispecs.Descriptor) (blobs int, bytes int64, failure error) {
+	provider := p.cache.PartContentSource().Provider(ctx, job.record, nil)
+	streams := 1
+	if job.lane == partPrefetchSmall && p.cfg.smallStreams > 1 {
+		streams = p.cfg.smallStreams
+	}
+	var (
+		mu sync.Mutex
+		wg sync.WaitGroup
+	)
+	slots := make(chan struct{}, streams)
+	for _, desc := range wanted {
+		slots <- struct{}{}
+		wg.Go(func() {
+			defer func() { <-slots }()
+			mu.Lock()
+			failed := failure != nil
+			mu.Unlock()
+			var release func(context.Context) error
+			fetched := false
+			var err error
+			if !failed {
+				release, fetched, err = p.snapshot.PrefetchContent(ctx, desc, provider, p.cfg.ttl)
+			}
+			mu.Lock()
+			if err != nil && failure == nil {
+				failure = err
+			}
+			if fetched {
+				blobs++
+				bytes += desc.Size
+			}
+			mu.Unlock()
+			if release = p.settle(job, desc, release, fetched); release != nil {
+				_ = release(context.WithoutCancel(ctx))
+			}
+		})
+	}
+	wg.Wait()
+	return blobs, bytes, failure
 }
 
 // settle ends desc's download for job: a fetched blob becomes a hold for the
@@ -620,6 +726,7 @@ func (p *partPrefetcher) log(job *partPrefetchJob, outcome string, blobs int, by
 		"entry", uint64(job.row),
 		"output", job.record.Address.OutputPath.String(),
 		"part", string(job.record.Address.Part),
+		"lane", job.lane.String(),
 		"outcome", outcome,
 		"blobs", blobs,
 		"bytes", bytes,

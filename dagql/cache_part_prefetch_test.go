@@ -13,7 +13,8 @@ import (
 )
 
 // prefetchFixture is an exhaustion fixture whose cache prefetches every blob
-// of an accepted offer, with no workers: a test runs each job itself.
+// of an accepted offer in the large lane, with no workers: a test runs each
+// job itself.
 type prefetchFixture struct {
 	*exhaustionFixture
 	chain    chainFixture
@@ -26,7 +27,7 @@ func newPrefetchFixture(t *testing.T, fixed bool, cfg func(*partPrefetchConfig),
 	t.Helper()
 	chain := newChainFixture(t, "prefetch")
 	f := newExhaustionFixture(t, append([]chainFixture{chain}, extra...)...)
-	config := partPrefetchConfig{minBlob: 1, budget: 1 << 30, ttl: time.Hour, queue: 8}
+	config := partPrefetchConfig{largeBlob: 1, budget: 1 << 30, ttl: time.Hour, queue: 8}
 	if cfg != nil {
 		cfg(&config)
 	}
@@ -51,7 +52,7 @@ func (f *prefetchFixture) runJob(t *testing.T) offerLine {
 	t.Helper()
 	p := f.prefetch
 	p.mu.Lock()
-	job := p.jobs[f.offer]
+	job := p.jobs[partPrefetchJobKey{offer: f.offer}]
 	p.mu.Unlock()
 	require.NotNil(t, job)
 	p.run(context.Background(), job)
@@ -95,7 +96,7 @@ func TestPartPrefetchOfferGone(t *testing.T) {
 	f.cache.egraphMu.Unlock()
 	require.NoError(t, err)
 	f.prefetch.mu.Lock()
-	job := f.prefetch.jobs[f.offer]
+	job := f.prefetch.jobs[partPrefetchJobKey{offer: f.offer}]
 	f.prefetch.mu.Unlock()
 	require.NotNil(t, job)
 	f.prefetch.run(context.Background(), job)
@@ -207,7 +208,7 @@ func (f *prefetchFixture) job(t *testing.T, offer *partOffer) *partPrefetchJob {
 	t.Helper()
 	f.prefetch.mu.Lock()
 	defer f.prefetch.mu.Unlock()
-	job := f.prefetch.jobs[offer]
+	job := f.prefetch.jobs[partPrefetchJobKey{offer: offer}]
 	require.NotNil(t, job)
 	return job
 }
