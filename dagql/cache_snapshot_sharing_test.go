@@ -1336,6 +1336,102 @@ func TestSnapshotSharingRefusedSlotReselectsJoinedDemand(t *testing.T) {
 	require.True(t, shareTestHasLink(receiver, "fs-snap"), "the demand installed the part by its ordinary route")
 }
 
+// shareTestServerPair is shareTestPair with values whose store preparation
+// needs a dagql server, as a Directory's or File's does.
+func shareTestServerPair(t *testing.T, ctx context.Context, c *Cache, srv *Server) (AnyResult, AnyResult) {
+	t.Helper()
+	srv.InstallObject(NewClass(srv, ClassOpts[*shareTestValue]{}))
+	donorValue := newShareTestValue("donor", map[string]sharePartState{"fs": {Snapshot: "fs-snap"}})
+	donorValue.NeedsServer = true
+	receiverValue := newShareTestValue("receiver", map[string]sharePartState{"fs": {}})
+	receiverValue.NeedsServer = true
+	donor := persistedListTestResult(t, ctx, c, srv, "server-donor", donorValue)
+	receiver := persistedListTestResult(t, ctx, c, srv, "server-receiver", receiverValue)
+	shareTestEncodedReceiver(t, ctx, c, receiver)
+	partTestEquivalent(t, c, receiver, donor)
+	return donor, receiver
+}
+
+// A slot planned while its receiver was encoded can find it decoded when it
+// prepares, as when a request decodes the row in between. With no
+// preparation server, the slot then has no server for the typed store's
+// decode, so it is not attempted, and a demand that joined it selects again
+// and installs by its ordinary route. It once received the slot's "nil dagql
+// server" decode error and failed.
+func TestSnapshotSharingDecodedAfterPlanReselectsJoinedDemand(t *testing.T) {
+	ctx, c, srv, manager := shareTestCache(t)
+	barrier := newSharePassBarrier(c)
+	donor, receiver := shareTestServerPair(t, ctx, c, srv)
+	row := receiver.cacheSharedResult()
+	address := PersistedPartAddress{Part: "fs"}
+
+	joined := make(chan struct{})
+	var joinOnce, pinOnce sync.Once
+	c.testAfterLazyEvalJoin = func(*lazyEvalAttempt) { joinOnce.Do(func() { close(joined) }) }
+	demandDone := make(chan error, 1)
+	var loaded AnyResult
+	manager.afterPin = func() {
+		// The slot's pin, inside its Prepare, while its generation is active.
+		pinOnce.Do(func() {
+			go func() { demandDone <- c.demandPart(ctx, loaded, address) }()
+			select {
+			case <-joined:
+			case err := <-demandDone:
+				t.Errorf("the demand returned before joining the slot's obtain task: %v", err)
+				demandDone <- err
+			case <-time.After(10 * time.Second):
+				t.Error("the demand never joined the slot's obtain task")
+			}
+		})
+	}
+	release := barrier.holdPasses()
+	shareTestUnite(t, ctx, c, "decoded-after-plan-joined", donor, receiver)
+	require.Equal(t, 1, barrier.awaitEntered(t), "the slot is planned while the receiver is encoded")
+	var err error
+	loaded, err = c.LoadResultByResultID(ctx, "", srv, uint64(row.id))
+	require.NoError(t, err, "a request decodes the receiver before the slot prepares")
+	release()
+	require.Equal(t, 1, barrier.awaitPass(t))
+	select {
+	case err := <-demandDone:
+		require.NoError(t, err, "the joined demand selects again; the slot's missing server never reaches it")
+	case <-time.After(10 * time.Second):
+		t.Fatal("the joined demand never returned")
+	}
+	require.True(t, shareTestHasLink(receiver, "fs-snap"), "the demand installed the part")
+}
+
+// With a registered preparation server, a slot planned while its receiver
+// was encoded prepares with that server when a request decodes the receiver
+// in between, and installs the part.
+func TestSnapshotSharingDecodedAfterPlanUsesPreparationServer(t *testing.T) {
+	ctx, c, srv := transferTestCache(t)
+	manager := &shareTestManager{}
+	c.snapshotManager = manager
+	prepared := newDagqlServerForTest(t, &persistCodecRoot{})
+	require.NoError(t, c.SetPartPreparationContext(func(ctx context.Context) (context.Context, *Server, error) {
+		return ctx, prepared, nil
+	}))
+	require.NoError(t, c.EnableSnapshotSharing())
+	barrier := newSharePassBarrier(c)
+	donor, receiver := shareTestServerPair(t, ctx, c, srv)
+	row := receiver.cacheSharedResult()
+
+	release := barrier.holdPasses()
+	shareTestUnite(t, ctx, c, "decoded-after-plan-prepared", donor, receiver)
+	require.Equal(t, 1, barrier.awaitEntered(t), "the slot is planned while the receiver is encoded")
+	loaded, err := c.LoadResultByResultID(ctx, "", srv, uint64(row.id))
+	require.NoError(t, err, "a request decodes the receiver before the slot prepares")
+	release()
+	require.Equal(t, 1, barrier.awaitPass(t))
+	require.Empty(t, barrier.skipCauses(), "the slot is not skipped")
+	require.Equal(t, int32(1), manager.pins.Load(), "the slot installed the part")
+	value, ok := loaded.Unwrap().(*shareTestValue)
+	require.True(t, ok)
+	require.Same(t, prepared, value.preparedServer.Load(), "the store decoded with the preparation's server")
+	require.Equal(t, "fs-snap", value.Parts["fs"].Snapshot)
+}
+
 // shareTestNoPassYet fails if a pass finishes within a short window. It is the
 // file's one negative wait: the barrier the test holds is what must keep the
 // pass from completing.
