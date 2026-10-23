@@ -45,7 +45,7 @@ func newSizedChainFixture(t *testing.T, tag string, size int) chainFixture {
 func TestPartPrefetchMergedOffer(t *testing.T) {
 	chain := newChainFixture(t, "merged")
 	f := newExhaustionFixture(t, chain)
-	f.cache.partPrefetchConfig = &partPrefetchConfig{minBlob: 1, workers: 1, budget: 1 << 30, ttl: time.Hour, queue: 8}
+	f.cache.partPrefetchConfig = &partPrefetchConfig{largeBlob: 1, workers: 1, budget: 1 << 30, ttl: time.Hour, queue: 8}
 	t.Cleanup(f.cache.closePartPrefetch)
 	bundle, _ := mergeTestSource(t, "merged-root", "pending")
 	require.Len(t, bundle.Values, 1)
@@ -80,7 +80,7 @@ func TestPartPrefetchSmallBlobOwnLane(t *testing.T) {
 		require.Less(t, len(blob), largeBlob)
 	}
 	f := newExhaustionFixture(t, large, small)
-	f.cache.partPrefetchConfig = &partPrefetchConfig{minBlob: largeBlob, workers: 1, budget: 1 << 30, ttl: time.Hour, queue: 8}
+	f.cache.partPrefetchConfig = &partPrefetchConfig{largeBlob: largeBlob, workers: 1, smallWorkers: 1, smallStreams: 8, budget: 1 << 30, ttl: time.Hour, queue: 8}
 	t.Cleanup(f.cache.closePartPrefetch)
 	hold := make(chan struct{})
 	defer close(hold)

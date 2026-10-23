@@ -918,8 +918,19 @@ type valueMergeCommit struct {
 	// final offer is an admitted one (selectMergedOffersLocked).
 	finalOffers map[*sharedResult]map[string]PersistedPartOffer
 	newOffers   map[*sharedResult]map[string]bool
-	roots       []MergedRoot
-	now         int64
+	// attached are the offers applyMergedOffersLocked attached, which the
+	// commit's finish queues for prefetch once egraphMu is released.
+	attached []mergeAttachedOffer
+	roots    []MergedRoot
+	now      int64
+}
+
+// mergeAttachedOffer is an offer a merge attached: the entry, its part key
+// and the offer.
+type mergeAttachedOffer struct {
+	res   *sharedResult
+	key   string
+	offer *partOffer
 }
 
 // planValueMergeLocked decides every record and runs every check that can
@@ -1468,8 +1479,14 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 
 	reply := c.mergeReplyLocked(commit)
 	reply.Change = change
+	attached := commit.attached
 	finish := func(ctx context.Context) error {
 		cleanupCtx := context.WithoutCancel(ctx)
+		// Merged offers are prefetched as offered ones are. An offer the
+		// commit's failure path retired since is skipped when its job runs.
+		for _, a := range attached {
+			c.partOfferAccepted(cleanupCtx, a.res, a.key, a.offer)
+		}
 		c.releaseShareDuplicateHolds(cleanupCtx, duplicates)
 		err := errors.Join(errs, runOnReleaseFuncs(cleanupCtx, releases))
 		for _, r := range replaced {
@@ -1684,8 +1701,8 @@ func (c *Cache) selectMergedOffersLocked(commit *valueMergeCommit) error {
 // while it attaches, every graph is part of the final one checkMergeGraphLocked
 // accepted, so no attachment's own check can refuse it. What the retired
 // offers' owners release is collected with the rest of the commit, at its
-// end, after the final offers hold their owners. Requires egraphMu for
-// writing.
+// end, after the final offers hold their owners. The offers it attaches go
+// to commit.attached, for prefetch. Requires egraphMu for writing.
 func (c *Cache) applyMergedOffersLocked(ctx context.Context, commit *valueMergeCommit) (collectionQueue, error) {
 	var (
 		entries []*sharedResult
@@ -1724,11 +1741,14 @@ func (c *Cache) applyMergedOffersLocked(ctx context.Context, commit *valueMergeC
 				continue
 			}
 			offer.Owner = owner.record
-			if err := c.attachPartOfferLocked(res, offer.Address, &partOffer{record: offer, owner: owner}); err != nil {
+			attached := &partOffer{record: offer, owner: owner}
+			if err := c.attachPartOfferLocked(res, offer.Address, attached); err != nil {
 				more, releaseErr := c.releaseOfferOwnerLocked(ctx, owner)
 				queue = append(queue, more...)
 				errs = errors.Join(errs, err, releaseErr)
+				continue
 			}
+			commit.attached = append(commit.attached, mergeAttachedOffer{res: res, key: key, offer: attached})
 		}
 	}
 	return queue, errs
