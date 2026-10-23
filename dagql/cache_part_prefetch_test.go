@@ -416,6 +416,57 @@ func TestPartPrefetchSharedDownloadAllRetired(t *testing.T) {
 	require.Zero(t, held)
 }
 
+// A job whose offer is retired while it downloads a blob that another
+// offer, whose chain is a prefix of its own, also wants keeps that download
+// for the other offer, and stops there: the blobs only the retired offer
+// wanted are never requested, and their bytes return to the budget.
+func TestPartPrefetchRetiredJobSkipsUnwantedSuffix(t *testing.T) {
+	f := newPrefetchFixture(t, true, nil)
+	shared := "https://fixed.invalid/prefetch/0"
+	suffix := "https://fixed.invalid/prefetch/1"
+	hold := make(chan struct{})
+	f.transport.fault(shared, contentTestFault{stallAfter: -1, hold: hold})
+	firstJob := f.job(t, f.offer)
+	ctx, cancel := context.WithCancel(context.Background())
+	f.prefetch.mu.Lock()
+	firstJob.cancel = cancel
+	f.prefetch.mu.Unlock()
+	done := make(chan struct{})
+	go func() {
+		f.prefetch.run(ctx, firstJob)
+		close(done)
+	}()
+	require.Eventually(t, func() bool {
+		return f.transport.count(shared) > 0
+	}, 10*time.Second, 10*time.Millisecond)
+
+	prefix := chainFixture{tag: f.chain.tag, chain: f.chain.lower, blobs: f.chain.blobs[:1]}
+	require.Equal(t, f.chain.digest(0), prefix.digest(0))
+	f.addDonor(t)
+	f.attach(t, f.donor, exhaustionOffer(prefix, "", true))
+	f.cache.egraphMu.Lock()
+	second := f.donor.cacheSharedResult().partOfferLocked(f.key)
+	f.cache.egraphMu.Unlock()
+	require.NotNil(t, second)
+	f.cache.partOfferAccepted(f.ctx, f.donor.cacheSharedResult(), f.key, second)
+	f.prefetch.run(context.Background(), f.job(t, second))
+
+	f.cache.egraphMu.Lock()
+	_, err := f.cache.retirePartOfferLocked(f.ctx, f.receiver.cacheSharedResult(), f.address)
+	f.cache.egraphMu.Unlock()
+	require.NoError(t, err)
+	close(hold)
+	within(t, done)
+
+	require.Zero(t, f.transport.count(suffix), "a blob only the retired offer wanted is requested")
+	require.Equal(t, map[digest.Digest][]*partOffer{f.chain.digest(0): {second}}, f.holdOffers())
+	f.prefetch.mu.Lock()
+	defer f.prefetch.mu.Unlock()
+	require.Equal(t, f.chain.chain.Layers[0].Descriptor.Size, f.prefetch.held, "only the shared blob's bytes stay held")
+	require.Zero(t, f.prefetch.pending)
+	require.Empty(t, f.prefetch.fetching)
+}
+
 // A hold an install consumed is gone at once: a job that runs after the
 // consumption, before the janitor, doesn't take it up again.
 func TestPartPrefetchConsumedHoldNotRetaken(t *testing.T) {
