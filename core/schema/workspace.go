@@ -1305,7 +1305,7 @@ func (s *workspaceSchema) workspaceOverlayRootfs(ctx context.Context, ws *core.W
 	return s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, false)
 }
 
-// filteredWorkspaceRootfs applies Git ignore rules to workspace content.
+// filteredWorkspaceRootfs applies Git ignore rules to host workspace content.
 // Explicit directories override rules excluding those directories, while their
 // children remain filtered. Module config files are always available.
 func (s *workspaceSchema) filteredWorkspaceRootfs(
@@ -1313,6 +1313,11 @@ func (s *workspaceSchema) filteredWorkspaceRootfs(
 	ws *core.Workspace,
 	explicitDirs ...string,
 ) (dagql.ObjectResult[*core.Directory], error) {
+	// Existing value/Git trees are authoritative snapshots. Applying host
+	// upload rules here would discard committed or explicitly supplied files.
+	if !ws.ClientLocalBase() {
+		return s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, false)
+	}
 	moduleDirs, contentDirs, err := s.workspaceModuleReadPaths(ctx, ws, explicitDirs)
 	if err != nil {
 		return dagql.ObjectResult[*core.Directory]{}, err

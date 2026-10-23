@@ -274,7 +274,7 @@ func (s *workspaceSchema) resolveWorkspaceInstallSource(
 		}
 	}
 	if kind == "" {
-		workspaceRoot, err = s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, true)
+		workspaceRoot, err = s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, ws.ClientLocalBase())
 		if err != nil {
 			return src, "", err
 		}
