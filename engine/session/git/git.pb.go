@@ -49,7 +49,8 @@ const (
 	// The checkout is usable, but capture has no committed baseline.
 	CAPTURE_UNSUPPORTED ErrorInfo_ErrorType = 13
 	// Optional local donor lacks the requested complete object closure.
-	HISTORY_UNAVAILABLE ErrorInfo_ErrorType = 14
+	HISTORY_UNAVAILABLE  ErrorInfo_ErrorType = 14
+	SNAPSHOT_UNSUPPORTED ErrorInfo_ErrorType = 15
 )
 
 var ErrorInfo_ErrorType_name = map[int32]string{
@@ -68,6 +69,7 @@ var ErrorInfo_ErrorType_name = map[int32]string{
 	12: "CAPTURE_FAILED",
 	13: "CAPTURE_UNSUPPORTED",
 	14: "HISTORY_UNAVAILABLE",
+	15: "SNAPSHOT_UNSUPPORTED",
 }
 
 var ErrorInfo_ErrorType_value = map[string]int32{
@@ -86,10 +88,11 @@ var ErrorInfo_ErrorType_value = map[string]int32{
 	"CAPTURE_FAILED":              12,
 	"CAPTURE_UNSUPPORTED":         13,
 	"HISTORY_UNAVAILABLE":         14,
+	"SNAPSHOT_UNSUPPORTED":        15,
 }
 
 func (ErrorInfo_ErrorType) EnumDescriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{20, 0}
+	return fileDescriptor_0d2ecb6e8d788208, []int{25, 0}
 }
 
 type CaptureGitChunk_Kind int32
@@ -110,7 +113,7 @@ var CaptureGitChunk_Kind_value = map[string]int32{
 }
 
 func (CaptureGitChunk_Kind) EnumDescriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{24, 0}
+	return fileDescriptor_0d2ecb6e8d788208, []int{29, 0}
 }
 
 // Import a workspace's committed HEAD and fast-forward the destination under
@@ -1494,6 +1497,399 @@ func (m *PackUncommittedMetadata) GetError() *ErrorInfo {
 	return nil
 }
 
+// SnapshotRequest asks the client to encode the checkout's current working
+// tree as a git bundle. The bundle contains a synthetic commit whose tree is
+// built from the checkout root, including ignored and untracked files, without
+// changing the checkout's index, refs, or worktree.
+type SnapshotRequest struct {
+	CheckoutPath string `protobuf:"bytes,1,opt,name=checkout_path,json=checkoutPath,proto3" json:"checkout_path,omitempty"`
+}
+
+func (m *SnapshotRequest) Reset()      { *m = SnapshotRequest{} }
+func (*SnapshotRequest) ProtoMessage() {}
+func (*SnapshotRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_0d2ecb6e8d788208, []int{20}
+}
+func (m *SnapshotRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *SnapshotRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_SnapshotRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *SnapshotRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SnapshotRequest.Merge(m, src)
+}
+func (m *SnapshotRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *SnapshotRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_SnapshotRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_SnapshotRequest proto.InternalMessageInfo
+
+func (m *SnapshotRequest) GetCheckoutPath() string {
+	if m != nil {
+		return m.CheckoutPath
+	}
+	return ""
+}
+
+// SnapshotResponse streams one metadata message first, then bundle bytes.
+type SnapshotResponse struct {
+	// Types that are valid to be assigned to Msg:
+	//
+	//	*SnapshotResponse_Metadata
+	//	*SnapshotResponse_Chunk
+	Msg isSnapshotResponse_Msg `protobuf_oneof:"msg"`
+}
+
+func (m *SnapshotResponse) Reset()      { *m = SnapshotResponse{} }
+func (*SnapshotResponse) ProtoMessage() {}
+func (*SnapshotResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_0d2ecb6e8d788208, []int{21}
+}
+func (m *SnapshotResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *SnapshotResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_SnapshotResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *SnapshotResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SnapshotResponse.Merge(m, src)
+}
+func (m *SnapshotResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *SnapshotResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_SnapshotResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_SnapshotResponse proto.InternalMessageInfo
+
+type isSnapshotResponse_Msg interface {
+	isSnapshotResponse_Msg()
+	Equal(interface{}) bool
+	MarshalTo([]byte) (int, error)
+	Size() int
+}
+
+type SnapshotResponse_Metadata struct {
+	Metadata *SnapshotMetadata `protobuf:"bytes,1,opt,name=metadata,proto3,oneof" json:"metadata,omitempty"`
+}
+type SnapshotResponse_Chunk struct {
+	Chunk []byte `protobuf:"bytes,2,opt,name=chunk,proto3,oneof" json:"chunk,omitempty"`
+}
+
+func (*SnapshotResponse_Metadata) isSnapshotResponse_Msg() {}
+func (*SnapshotResponse_Chunk) isSnapshotResponse_Msg()    {}
+
+func (m *SnapshotResponse) GetMsg() isSnapshotResponse_Msg {
+	if m != nil {
+		return m.Msg
+	}
+	return nil
+}
+
+func (m *SnapshotResponse) GetMetadata() *SnapshotMetadata {
+	if x, ok := m.GetMsg().(*SnapshotResponse_Metadata); ok {
+		return x.Metadata
+	}
+	return nil
+}
+
+func (m *SnapshotResponse) GetChunk() []byte {
+	if x, ok := m.GetMsg().(*SnapshotResponse_Chunk); ok {
+		return x.Chunk
+	}
+	return nil
+}
+
+// XXX_OneofWrappers is for the internal use of the proto package.
+func (*SnapshotResponse) XXX_OneofWrappers() []interface{} {
+	return []interface{}{
+		(*SnapshotResponse_Metadata)(nil),
+		(*SnapshotResponse_Chunk)(nil),
+	}
+}
+
+type SnapshotMetadata struct {
+	CommitSha    string     `protobuf:"bytes,1,opt,name=commit_sha,json=commitSha,proto3" json:"commit_sha,omitempty"`
+	ObjectFormat string     `protobuf:"bytes,2,opt,name=object_format,json=objectFormat,proto3" json:"object_format,omitempty"`
+	Error        *ErrorInfo `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
+	// remote_url and base_sha identify the exact prerequisite the engine must
+	// fetch before importing this thin bundle. Empty values identify the
+	// self-contained fallback used when the checkout has no usable upstream.
+	RemoteUrl string `protobuf:"bytes,4,opt,name=remote_url,json=remoteUrl,proto3" json:"remote_url,omitempty"`
+	BaseSha   string `protobuf:"bytes,5,opt,name=base_sha,json=baseSha,proto3" json:"base_sha,omitempty"`
+	// base_ref is a fetch hint for servers which reject direct SHA fetches.
+	BaseRef string `protobuf:"bytes,6,opt,name=base_ref,json=baseRef,proto3" json:"base_ref,omitempty"`
+}
+
+func (m *SnapshotMetadata) Reset()      { *m = SnapshotMetadata{} }
+func (*SnapshotMetadata) ProtoMessage() {}
+func (*SnapshotMetadata) Descriptor() ([]byte, []int) {
+	return fileDescriptor_0d2ecb6e8d788208, []int{22}
+}
+func (m *SnapshotMetadata) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *SnapshotMetadata) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_SnapshotMetadata.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *SnapshotMetadata) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SnapshotMetadata.Merge(m, src)
+}
+func (m *SnapshotMetadata) XXX_Size() int {
+	return m.Size()
+}
+func (m *SnapshotMetadata) XXX_DiscardUnknown() {
+	xxx_messageInfo_SnapshotMetadata.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_SnapshotMetadata proto.InternalMessageInfo
+
+func (m *SnapshotMetadata) GetCommitSha() string {
+	if m != nil {
+		return m.CommitSha
+	}
+	return ""
+}
+
+func (m *SnapshotMetadata) GetObjectFormat() string {
+	if m != nil {
+		return m.ObjectFormat
+	}
+	return ""
+}
+
+func (m *SnapshotMetadata) GetError() *ErrorInfo {
+	if m != nil {
+		return m.Error
+	}
+	return nil
+}
+
+func (m *SnapshotMetadata) GetRemoteUrl() string {
+	if m != nil {
+		return m.RemoteUrl
+	}
+	return ""
+}
+
+func (m *SnapshotMetadata) GetBaseSha() string {
+	if m != nil {
+		return m.BaseSha
+	}
+	return ""
+}
+
+func (m *SnapshotMetadata) GetBaseRef() string {
+	if m != nil {
+		return m.BaseRef
+	}
+	return ""
+}
+
+type SnapshotUploadPackRequest struct {
+	// Types that are valid to be assigned to Msg:
+	//
+	//	*SnapshotUploadPackRequest_Open
+	//	*SnapshotUploadPackRequest_Chunk
+	Msg isSnapshotUploadPackRequest_Msg `protobuf_oneof:"msg"`
+}
+
+func (m *SnapshotUploadPackRequest) Reset()      { *m = SnapshotUploadPackRequest{} }
+func (*SnapshotUploadPackRequest) ProtoMessage() {}
+func (*SnapshotUploadPackRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_0d2ecb6e8d788208, []int{23}
+}
+func (m *SnapshotUploadPackRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *SnapshotUploadPackRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_SnapshotUploadPackRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *SnapshotUploadPackRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SnapshotUploadPackRequest.Merge(m, src)
+}
+func (m *SnapshotUploadPackRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *SnapshotUploadPackRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_SnapshotUploadPackRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_SnapshotUploadPackRequest proto.InternalMessageInfo
+
+type isSnapshotUploadPackRequest_Msg interface {
+	isSnapshotUploadPackRequest_Msg()
+	Equal(interface{}) bool
+	MarshalTo([]byte) (int, error)
+	Size() int
+}
+
+type SnapshotUploadPackRequest_Open struct {
+	Open *SnapshotRequest `protobuf:"bytes,1,opt,name=open,proto3,oneof" json:"open,omitempty"`
+}
+type SnapshotUploadPackRequest_Chunk struct {
+	Chunk []byte `protobuf:"bytes,2,opt,name=chunk,proto3,oneof" json:"chunk,omitempty"`
+}
+
+func (*SnapshotUploadPackRequest_Open) isSnapshotUploadPackRequest_Msg()  {}
+func (*SnapshotUploadPackRequest_Chunk) isSnapshotUploadPackRequest_Msg() {}
+
+func (m *SnapshotUploadPackRequest) GetMsg() isSnapshotUploadPackRequest_Msg {
+	if m != nil {
+		return m.Msg
+	}
+	return nil
+}
+
+func (m *SnapshotUploadPackRequest) GetOpen() *SnapshotRequest {
+	if x, ok := m.GetMsg().(*SnapshotUploadPackRequest_Open); ok {
+		return x.Open
+	}
+	return nil
+}
+
+func (m *SnapshotUploadPackRequest) GetChunk() []byte {
+	if x, ok := m.GetMsg().(*SnapshotUploadPackRequest_Chunk); ok {
+		return x.Chunk
+	}
+	return nil
+}
+
+// XXX_OneofWrappers is for the internal use of the proto package.
+func (*SnapshotUploadPackRequest) XXX_OneofWrappers() []interface{} {
+	return []interface{}{
+		(*SnapshotUploadPackRequest_Open)(nil),
+		(*SnapshotUploadPackRequest_Chunk)(nil),
+	}
+}
+
+type SnapshotUploadPackResponse struct {
+	// Types that are valid to be assigned to Msg:
+	//
+	//	*SnapshotUploadPackResponse_Metadata
+	//	*SnapshotUploadPackResponse_Chunk
+	Msg isSnapshotUploadPackResponse_Msg `protobuf_oneof:"msg"`
+}
+
+func (m *SnapshotUploadPackResponse) Reset()      { *m = SnapshotUploadPackResponse{} }
+func (*SnapshotUploadPackResponse) ProtoMessage() {}
+func (*SnapshotUploadPackResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_0d2ecb6e8d788208, []int{24}
+}
+func (m *SnapshotUploadPackResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *SnapshotUploadPackResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_SnapshotUploadPackResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *SnapshotUploadPackResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SnapshotUploadPackResponse.Merge(m, src)
+}
+func (m *SnapshotUploadPackResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *SnapshotUploadPackResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_SnapshotUploadPackResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_SnapshotUploadPackResponse proto.InternalMessageInfo
+
+type isSnapshotUploadPackResponse_Msg interface {
+	isSnapshotUploadPackResponse_Msg()
+	Equal(interface{}) bool
+	MarshalTo([]byte) (int, error)
+	Size() int
+}
+
+type SnapshotUploadPackResponse_Metadata struct {
+	Metadata *SnapshotMetadata `protobuf:"bytes,1,opt,name=metadata,proto3,oneof" json:"metadata,omitempty"`
+}
+type SnapshotUploadPackResponse_Chunk struct {
+	Chunk []byte `protobuf:"bytes,2,opt,name=chunk,proto3,oneof" json:"chunk,omitempty"`
+}
+
+func (*SnapshotUploadPackResponse_Metadata) isSnapshotUploadPackResponse_Msg() {}
+func (*SnapshotUploadPackResponse_Chunk) isSnapshotUploadPackResponse_Msg()    {}
+
+func (m *SnapshotUploadPackResponse) GetMsg() isSnapshotUploadPackResponse_Msg {
+	if m != nil {
+		return m.Msg
+	}
+	return nil
+}
+
+func (m *SnapshotUploadPackResponse) GetMetadata() *SnapshotMetadata {
+	if x, ok := m.GetMsg().(*SnapshotUploadPackResponse_Metadata); ok {
+		return x.Metadata
+	}
+	return nil
+}
+
+func (m *SnapshotUploadPackResponse) GetChunk() []byte {
+	if x, ok := m.GetMsg().(*SnapshotUploadPackResponse_Chunk); ok {
+		return x.Chunk
+	}
+	return nil
+}
+
+// XXX_OneofWrappers is for the internal use of the proto package.
+func (*SnapshotUploadPackResponse) XXX_OneofWrappers() []interface{} {
+	return []interface{}{
+		(*SnapshotUploadPackResponse_Metadata)(nil),
+		(*SnapshotUploadPackResponse_Chunk)(nil),
+	}
+}
+
 type ErrorInfo struct {
 	Type    ErrorInfo_ErrorType `protobuf:"varint,1,opt,name=type,proto3,enum=dagger.git.ErrorInfo_ErrorType" json:"type,omitempty"`
 	Message string              `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
@@ -1502,7 +1898,7 @@ type ErrorInfo struct {
 func (m *ErrorInfo) Reset()      { *m = ErrorInfo{} }
 func (*ErrorInfo) ProtoMessage() {}
 func (*ErrorInfo) Descriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{20}
+	return fileDescriptor_0d2ecb6e8d788208, []int{25}
 }
 func (m *ErrorInfo) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -1558,7 +1954,7 @@ type CaptureGitRequest struct {
 func (m *CaptureGitRequest) Reset()      { *m = CaptureGitRequest{} }
 func (*CaptureGitRequest) ProtoMessage() {}
 func (*CaptureGitRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{21}
+	return fileDescriptor_0d2ecb6e8d788208, []int{26}
 }
 func (m *CaptureGitRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -1623,7 +2019,7 @@ type CaptureGitPolicy struct {
 func (m *CaptureGitPolicy) Reset()      { *m = CaptureGitPolicy{} }
 func (*CaptureGitPolicy) ProtoMessage() {}
 func (*CaptureGitPolicy) Descriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{22}
+	return fileDescriptor_0d2ecb6e8d788208, []int{27}
 }
 func (m *CaptureGitPolicy) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -1726,7 +2122,7 @@ type CaptureGitResponse struct {
 func (m *CaptureGitResponse) Reset()      { *m = CaptureGitResponse{} }
 func (*CaptureGitResponse) ProtoMessage() {}
 func (*CaptureGitResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{23}
+	return fileDescriptor_0d2ecb6e8d788208, []int{28}
 }
 func (m *CaptureGitResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -1809,7 +2205,7 @@ type CaptureGitChunk struct {
 func (m *CaptureGitChunk) Reset()      { *m = CaptureGitChunk{} }
 func (*CaptureGitChunk) ProtoMessage() {}
 func (*CaptureGitChunk) Descriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{24}
+	return fileDescriptor_0d2ecb6e8d788208, []int{29}
 }
 func (m *CaptureGitChunk) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -1886,7 +2282,7 @@ type CaptureGitMetadata struct {
 func (m *CaptureGitMetadata) Reset()      { *m = CaptureGitMetadata{} }
 func (*CaptureGitMetadata) ProtoMessage() {}
 func (*CaptureGitMetadata) Descriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{25}
+	return fileDescriptor_0d2ecb6e8d788208, []int{30}
 }
 func (m *CaptureGitMetadata) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -2067,7 +2463,7 @@ type CaptureGitCandidate struct {
 func (m *CaptureGitCandidate) Reset()      { *m = CaptureGitCandidate{} }
 func (*CaptureGitCandidate) ProtoMessage() {}
 func (*CaptureGitCandidate) Descriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{26}
+	return fileDescriptor_0d2ecb6e8d788208, []int{31}
 }
 func (m *CaptureGitCandidate) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -2138,7 +2534,7 @@ type PreparePushSSHAuthRequest struct {
 func (m *PreparePushSSHAuthRequest) Reset()      { *m = PreparePushSSHAuthRequest{} }
 func (*PreparePushSSHAuthRequest) ProtoMessage() {}
 func (*PreparePushSSHAuthRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{27}
+	return fileDescriptor_0d2ecb6e8d788208, []int{32}
 }
 func (m *PreparePushSSHAuthRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -2182,7 +2578,7 @@ type PreparePushSSHAuthResponse struct {
 func (m *PreparePushSSHAuthResponse) Reset()      { *m = PreparePushSSHAuthResponse{} }
 func (*PreparePushSSHAuthResponse) ProtoMessage() {}
 func (*PreparePushSSHAuthResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{28}
+	return fileDescriptor_0d2ecb6e8d788208, []int{33}
 }
 func (m *PreparePushSSHAuthResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -2241,6 +2637,11 @@ func init() {
 	proto.RegisterType((*PackUncommittedRequest)(nil), "dagger.git.PackUncommittedRequest")
 	proto.RegisterType((*PackUncommittedResponse)(nil), "dagger.git.PackUncommittedResponse")
 	proto.RegisterType((*PackUncommittedMetadata)(nil), "dagger.git.PackUncommittedMetadata")
+	proto.RegisterType((*SnapshotRequest)(nil), "dagger.git.SnapshotRequest")
+	proto.RegisterType((*SnapshotResponse)(nil), "dagger.git.SnapshotResponse")
+	proto.RegisterType((*SnapshotMetadata)(nil), "dagger.git.SnapshotMetadata")
+	proto.RegisterType((*SnapshotUploadPackRequest)(nil), "dagger.git.SnapshotUploadPackRequest")
+	proto.RegisterType((*SnapshotUploadPackResponse)(nil), "dagger.git.SnapshotUploadPackResponse")
 	proto.RegisterType((*ErrorInfo)(nil), "dagger.git.ErrorInfo")
 	proto.RegisterType((*CaptureGitRequest)(nil), "dagger.git.CaptureGitRequest")
 	proto.RegisterType((*CaptureGitPolicy)(nil), "dagger.git.CaptureGitPolicy")
@@ -2255,139 +2656,149 @@ func init() {
 func init() { proto.RegisterFile("git.proto", fileDescriptor_0d2ecb6e8d788208) }
 
 var fileDescriptor_0d2ecb6e8d788208 = []byte{
-	// 2097 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xa4, 0x58, 0xcd, 0x6f, 0xdb, 0xc8,
-	0x15, 0x17, 0xf5, 0x61, 0x49, 0x4f, 0x1f, 0x96, 0x47, 0xb6, 0xa3, 0x38, 0x6b, 0xd9, 0xa1, 0x91,
-	0xd4, 0x68, 0x51, 0x6f, 0xe1, 0xa4, 0xdd, 0x5d, 0xb4, 0x5b, 0x40, 0x96, 0x99, 0x48, 0xb1, 0x2d,
-	0x69, 0x29, 0x2a, 0x8b, 0x2e, 0x0a, 0x10, 0xb4, 0x34, 0x96, 0x58, 0x4b, 0xa4, 0x4a, 0x8e, 0x12,
-	0x1b, 0x6d, 0x81, 0xf6, 0xd0, 0x6b, 0x51, 0xf4, 0xd2, 0x5b, 0xcf, 0x7b, 0xea, 0xdf, 0xd1, 0x63,
-	0x7a, 0x5b, 0xa0, 0x97, 0xc6, 0x01, 0x8a, 0x1e, 0xf7, 0x4f, 0x28, 0xe6, 0x83, 0x14, 0xa9, 0x0f,
-	0x6f, 0x9c, 0xde, 0x38, 0xef, 0xfd, 0xde, 0x9b, 0x37, 0x6f, 0xde, 0xbc, 0x0f, 0x42, 0xba, 0x6f,
-	0x92, 0x83, 0xb1, 0x63, 0x13, 0x1b, 0x41, 0xcf, 0xe8, 0xf7, 0xb1, 0x73, 0xd0, 0x37, 0x89, 0xec,
-	0x00, 0xaa, 0x8c, 0xc7, 0xc3, 0xeb, 0xa3, 0x89, 0xd5, 0x1b, 0x62, 0x15, 0xff, 0x7a, 0x82, 0x5d,
-	0x82, 0x3e, 0x87, 0xd4, 0x08, 0x13, 0xa3, 0x67, 0x10, 0xa3, 0x24, 0xed, 0x4a, 0xfb, 0x99, 0xc3,
-	0x9d, 0x83, 0xa9, 0xd0, 0x41, 0x40, 0xe2, 0x4c, 0xc0, 0x6a, 0x11, 0xd5, 0x17, 0x41, 0x9b, 0x90,
-	0xe8, 0x0e, 0x26, 0xd6, 0x65, 0x29, 0xba, 0x2b, 0xed, 0x67, 0x6b, 0x11, 0x95, 0x2f, 0x8f, 0x12,
-	0x10, 0x1b, 0xb9, 0x7d, 0xf9, 0x3f, 0x12, 0x14, 0x17, 0xa8, 0x40, 0x7b, 0x90, 0xeb, 0x0e, 0x70,
-	0xf7, 0xd2, 0x9e, 0x10, 0x7d, 0x6c, 0x90, 0x01, 0xdb, 0x3a, 0xad, 0x66, 0x3d, 0x62, 0xcb, 0x20,
-	0x03, 0xb4, 0x0d, 0x40, 0x0c, 0xa7, 0x8f, 0x89, 0xee, 0x0e, 0x0c, 0xb6, 0x41, 0x5a, 0x4d, 0x73,
-	0x4a, 0x7b, 0x60, 0xa0, 0x43, 0xd8, 0xc0, 0x57, 0x63, 0xdc, 0x25, 0xb8, 0xa7, 0xbb, 0xc4, 0x20,
-	0x58, 0xef, 0x99, 0x7d, 0xec, 0x92, 0x52, 0x8c, 0x21, 0x8b, 0x1e, 0xb3, 0x4d, 0x79, 0xc7, 0x8c,
-	0x45, 0x55, 0x9e, 0x33, 0x4b, 0x74, 0x07, 0x5f, 0x94, 0xe2, 0x5c, 0xe5, 0xb9, 0x70, 0xc8, 0x05,
-	0xfa, 0x14, 0x4a, 0xa6, 0x45, 0x70, 0xdf, 0x31, 0x88, 0x69, 0x5b, 0xfa, 0x6b, 0xdb, 0xb9, 0x24,
-	0x0e, 0xc6, 0x6c, 0xff, 0x04, 0x03, 0x6f, 0x06, 0xf8, 0x5f, 0x0a, 0x76, 0x7b, 0x60, 0xc8, 0xbf,
-	0x0d, 0x9d, 0x53, 0xc5, 0xee, 0xd8, 0xb6, 0x5c, 0x8c, 0xee, 0x43, 0x6a, 0x80, 0x8d, 0x1e, 0x53,
-	0xc0, 0x8f, 0x98, 0xa4, 0x6b, 0x6a, 0xfe, 0x36, 0xc0, 0xd8, 0x70, 0x2e, 0x71, 0x8f, 0x99, 0x22,
-	0x4e, 0xc7, 0x29, 0xd4, 0x94, 0x1f, 0x40, 0x02, 0x3b, 0x8e, 0xed, 0xb0, 0xd3, 0x64, 0x0e, 0x37,
-	0x82, 0x97, 0xa2, 0x50, 0x46, 0xdd, 0xba, 0xb0, 0x55, 0x8e, 0x91, 0xbf, 0x82, 0xf5, 0xe7, 0x26,
-	0xa9, 0x3a, 0xb8, 0x87, 0x2d, 0x62, 0x1a, 0x43, 0xef, 0x72, 0xb7, 0x20, 0xc5, 0xe2, 0xa0, 0x6b,
-	0x0f, 0xc5, 0xf6, 0xfe, 0x1a, 0x21, 0x88, 0x0f, 0x6c, 0x97, 0x88, 0x9d, 0xd9, 0x37, 0xa5, 0xb1,
-	0xdb, 0xe0, 0x1e, 0x64, 0xdf, 0xf2, 0x9f, 0x24, 0xd8, 0x98, 0x51, 0x2e, 0x0e, 0xf7, 0x33, 0x80,
-	0xae, 0x4f, 0x15, 0xc1, 0xb3, 0x15, 0xb4, 0x73, 0x2a, 0x43, 0x8d, 0xad, 0x45, 0xd4, 0x00, 0x1e,
-	0xfd, 0xd0, 0x3b, 0x60, 0xf4, 0x96, 0x03, 0xd2, 0x80, 0x62, 0xa8, 0xa3, 0x14, 0xac, 0x38, 0xd8,
-	0x9d, 0x0c, 0x89, 0x7c, 0x05, 0xf9, 0xb0, 0xe2, 0x3b, 0x1f, 0x73, 0x0b, 0x52, 0x13, 0x17, 0x3b,
-	0x96, 0x31, 0xc2, 0xe2, 0xa8, 0xfe, 0x9a, 0xe9, 0x32, 0x5c, 0xf7, 0xb5, 0xed, 0xf4, 0x44, 0x7c,
-	0xf8, 0x6b, 0xf9, 0x13, 0x28, 0x50, 0x4f, 0xd8, 0xd6, 0x85, 0xd9, 0xf7, 0x5c, 0xfc, 0x3e, 0x91,
-	0x2c, 0xff, 0x0e, 0xd6, 0x02, 0x82, 0xc2, 0x7d, 0x1f, 0xc3, 0x4a, 0x97, 0x51, 0x84, 0xeb, 0x42,
-	0x1e, 0xf0, 0xe1, 0xb5, 0x88, 0x2a, 0x60, 0x1f, 0xee, 0xb1, 0x0a, 0xa4, 0x7d, 0x7d, 0xe8, 0x29,
-	0x24, 0xb1, 0x45, 0x1c, 0x13, 0xbb, 0x25, 0x69, 0x37, 0x36, 0x7b, 0x65, 0x3e, 0x4e, 0xb1, 0x88,
-	0x73, 0xad, 0x7a, 0x50, 0xf9, 0x53, 0xc8, 0x87, 0x59, 0xa8, 0x00, 0xb1, 0x4b, 0x7c, 0x2d, 0x8e,
-	0x4b, 0x3f, 0xd1, 0x3a, 0x24, 0x5e, 0x19, 0xc3, 0x09, 0x16, 0xbe, 0xe6, 0x0b, 0xf9, 0xa7, 0xb0,
-	0x5e, 0x15, 0xbe, 0x60, 0x2f, 0xf1, 0x4e, 0x8e, 0x9b, 0xc0, 0xc6, 0x8c, 0xb0, 0x70, 0xde, 0x1e,
-	0x64, 0x43, 0x6f, 0x9e, 0x09, 0xd7, 0x22, 0x6a, 0xc6, 0x0d, 0xbc, 0xf6, 0x0f, 0x76, 0x98, 0x05,
-	0xc5, 0x96, 0xd1, 0xbd, 0xf4, 0xb6, 0xbe, 0x8b, 0xc9, 0xcb, 0xd3, 0x52, 0x74, 0x69, 0x5a, 0x92,
-	0xff, 0x20, 0xc1, 0x1a, 0xdb, 0xd0, 0x1e, 0x8d, 0xcc, 0xbb, 0x6d, 0xb7, 0x0d, 0xd0, 0x65, 0x52,
-	0x2c, 0xc7, 0xf0, 0x68, 0x4e, 0x73, 0x4a, 0x7b, 0x60, 0xbc, 0x88, 0xa7, 0xa2, 0x85, 0xd8, 0x8b,
-	0x78, 0x2a, 0x5e, 0x48, 0xa8, 0x8b, 0xed, 0x52, 0x13, 0x3d, 0x3c, 0x66, 0xae, 0x5e, 0x0f, 0x9f,
-	0x59, 0x78, 0xfa, 0xe7, 0x73, 0x05, 0x62, 0x37, 0xe8, 0xc7, 0xa0, 0xcc, 0x87, 0x54, 0x88, 0x37,
-	0xd1, 0xf0, 0xbe, 0x7e, 0x89, 0xb8, 0x25, 0x75, 0x7a, 0xac, 0x69, 0xe2, 0x64, 0x2c, 0x9a, 0x36,
-	0xf7, 0x20, 0x67, 0x9f, 0xff, 0x0a, 0x77, 0x89, 0x7e, 0x61, 0x3b, 0x23, 0xc3, 0x2b, 0x06, 0x59,
-	0x4e, 0x7c, 0xc6, 0x68, 0xd3, 0xdc, 0x1a, 0xff, 0xee, 0xdc, 0x8a, 0x1e, 0xce, 0x44, 0x1a, 0xaf,
-	0x03, 0xa1, 0x38, 0x7b, 0x0a, 0x49, 0x07, 0x8f, 0x6c, 0x82, 0xdd, 0xd2, 0xca, 0xfc, 0x93, 0x9a,
-	0x7a, 0x94, 0x42, 0x54, 0x0f, 0x8a, 0xbe, 0x07, 0xab, 0x93, 0xb1, 0x4b, 0x1c, 0x6c, 0x8c, 0x74,
-	0x4e, 0x2b, 0x25, 0x99, 0xee, 0xbc, 0x47, 0xe6, 0x12, 0xe8, 0x00, 0x8a, 0x03, 0xc3, 0x15, 0x18,
-	0xdd, 0xbf, 0x8c, 0xd4, 0xae, 0xb4, 0x9f, 0x52, 0xd7, 0x06, 0x86, 0xcb, 0x71, 0x9e, 0xe7, 0xe4,
-	0x2f, 0x20, 0x1f, 0xde, 0x93, 0x26, 0x41, 0x96, 0xec, 0xb8, 0x1f, 0xd9, 0x37, 0x7d, 0xbf, 0x13,
-	0x67, 0x28, 0xfc, 0x47, 0x3f, 0xa9, 0x5b, 0xc7, 0x13, 0x77, 0xa0, 0x53, 0x32, 0x77, 0x5b, 0x92,
-	0xae, 0x3b, 0xce, 0x50, 0x36, 0x61, 0x93, 0x5e, 0x52, 0xc7, 0xe2, 0x91, 0x45, 0x68, 0x8d, 0xba,
-	0x43, 0x90, 0x7e, 0x1f, 0xd6, 0xfc, 0xd8, 0xf3, 0x2f, 0x95, 0xef, 0xbc, 0xea, 0x31, 0x6a, 0xfc,
-	0x72, 0xe5, 0xdf, 0xc0, 0xbd, 0xb9, 0xad, 0x44, 0x28, 0x56, 0xe6, 0x42, 0x71, 0x6f, 0x36, 0x14,
-	0x03, 0x62, 0x1f, 0x12, 0x8d, 0x7f, 0x91, 0xe6, 0x76, 0x7f, 0x9f, 0x80, 0xfc, 0x18, 0x8a, 0x16,
-	0x76, 0x09, 0xab, 0xe5, 0x63, 0xdb, 0x35, 0x89, 0xcd, 0xf2, 0x6b, 0x74, 0x37, 0xb6, 0x9f, 0x56,
-	0x11, 0x67, 0xa9, 0x01, 0xce, 0xdd, 0xaa, 0xfb, 0xdf, 0x63, 0x90, 0xf6, 0x89, 0xe8, 0x09, 0xc4,
-	0xc9, 0xf5, 0x98, 0xdf, 0x65, 0x3e, 0xdc, 0xac, 0xf9, 0x20, 0xfe, 0xa5, 0x5d, 0x8f, 0xb1, 0xca,
-	0xc0, 0xa8, 0x04, 0xc9, 0x11, 0x76, 0x5d, 0xa3, 0xef, 0x25, 0x67, 0x6f, 0x29, 0xff, 0x33, 0x2a,
-	0x94, 0x53, 0x34, 0xca, 0x40, 0xb2, 0xd3, 0x38, 0x69, 0x34, 0xbf, 0x6c, 0x14, 0x22, 0xa8, 0x08,
-	0xab, 0xf5, 0xc6, 0xcb, 0xca, 0x69, 0xfd, 0x58, 0x57, 0x95, 0x2f, 0x3a, 0x4a, 0x5b, 0x2b, 0x48,
-	0x28, 0x07, 0xe9, 0x46, 0x53, 0xd3, 0x9f, 0x35, 0x3b, 0x8d, 0xe3, 0x42, 0x94, 0x0a, 0x68, 0xf5,
-	0x33, 0xa5, 0xd9, 0xd1, 0x0a, 0x31, 0xb4, 0x03, 0x0f, 0xaa, 0xaa, 0x72, 0xac, 0x34, 0xb4, 0x7a,
-	0xe5, 0x54, 0x57, 0x15, 0x4d, 0xad, 0x2b, 0x2f, 0x2b, 0xa7, 0xfa, 0xb3, 0x4a, 0xfd, 0x54, 0x39,
-	0x2e, 0xc4, 0xd1, 0x03, 0xb8, 0x57, 0x6d, 0x36, 0x9e, 0xd5, 0x9f, 0xcf, 0x33, 0x13, 0x68, 0x0d,
-	0x72, 0x35, 0xa5, 0x72, 0xac, 0x9f, 0xd5, 0xdb, 0x67, 0x15, 0xad, 0x5a, 0x2b, 0xac, 0xa0, 0x3c,
-	0x00, 0xdd, 0xac, 0xa2, 0xab, 0x4a, 0xab, 0x59, 0x48, 0xa2, 0x55, 0xc8, 0xb4, 0x2a, 0xd5, 0x13,
-	0x4f, 0x26, 0x45, 0x15, 0x76, 0x1a, 0xd5, 0xe6, 0xd9, 0x59, 0x5d, 0xd3, 0x94, 0x63, 0xbd, 0xd3,
-	0x68, 0x77, 0x5a, 0xad, 0xa6, 0xaa, 0x29, 0xc7, 0x85, 0x34, 0xdb, 0xad, 0xa6, 0x54, 0x4f, 0x9a,
-	0x1d, 0x4d, 0x6f, 0x6b, 0x15, 0x4d, 0x99, 0xaa, 0x06, 0xb4, 0x0e, 0x85, 0x6a, 0xa5, 0xa5, 0x75,
-	0x54, 0x45, 0x57, 0x95, 0x17, 0x4a, 0x95, 0x8a, 0x64, 0x10, 0x82, 0xbc, 0x47, 0x15, 0x7b, 0x64,
-	0xd1, 0x3d, 0x28, 0x7a, 0xb4, 0xa0, 0xfe, 0x1c, 0x65, 0xd4, 0xea, 0x6d, 0xad, 0xa9, 0xfe, 0x42,
-	0xef, 0x34, 0x2a, 0x2f, 0x2b, 0xf5, 0xd3, 0xca, 0xd1, 0xa9, 0x52, 0xc8, 0xcb, 0x16, 0xac, 0x55,
-	0x8d, 0x31, 0x99, 0x38, 0xf8, 0xf9, 0x1d, 0xb3, 0xf9, 0x53, 0x58, 0x19, 0xdb, 0x43, 0xb3, 0x7b,
-	0x2d, 0x4a, 0xd6, 0x47, 0xa1, 0x44, 0xe2, 0xeb, 0x6c, 0x31, 0x8c, 0x2a, 0xb0, 0xf2, 0x5f, 0x63,
-	0x50, 0x98, 0x65, 0xd2, 0x2b, 0x37, 0xad, 0xee, 0x70, 0xd2, 0xc3, 0xac, 0xce, 0xa7, 0x55, 0x6f,
-	0x49, 0x39, 0xf8, 0x8a, 0x73, 0x78, 0x84, 0x7a, 0x4b, 0x9a, 0x92, 0x8c, 0xf1, 0xd8, 0xb1, 0x5f,
-	0x19, 0x43, 0x9d, 0xd8, 0x97, 0xd8, 0x72, 0x4b, 0x31, 0x86, 0xc8, 0x7b, 0x64, 0x8d, 0x51, 0xd1,
-	0x27, 0x50, 0x1a, 0x19, 0x57, 0xfa, 0xc4, 0x22, 0x8e, 0xd1, 0xa5, 0x3d, 0xec, 0x85, 0x39, 0xc4,
-	0xfa, 0xf9, 0x35, 0x4d, 0x81, 0x34, 0xa9, 0xc6, 0xd4, 0x8d, 0x91, 0x71, 0xd5, 0xf1, 0xd8, 0xcf,
-	0xcc, 0x21, 0x3e, 0xa2, 0x4c, 0xf4, 0x19, 0xdc, 0x0f, 0x0b, 0x12, 0x9b, 0x18, 0x43, 0x21, 0x99,
-	0x60, 0x92, 0x9b, 0x41, 0x49, 0x8d, 0xb2, 0xb9, 0xe8, 0x01, 0x14, 0xe7, 0xf7, 0xa4, 0x19, 0x57,
-	0xda, 0x4f, 0xa8, 0x6b, 0xb3, 0xdb, 0xb9, 0xe8, 0x09, 0x50, 0x4d, 0xfa, 0x02, 0x0b, 0x93, 0x6c,
-	0x1f, 0xaa, 0x4d, 0x9b, 0xb5, 0xef, 0x31, 0xac, 0x32, 0xa1, 0x80, 0x55, 0x29, 0x86, 0xce, 0x51,
-	0xf4, 0xd4, 0x98, 0x47, 0x90, 0xef, 0x39, 0xf6, 0x78, 0x6a, 0x4d, 0x29, 0xcd, 0xd2, 0x71, 0x8e,
-	0x52, 0x7d, 0x43, 0x68, 0xf3, 0x8c, 0x82, 0xa1, 0xe0, 0x77, 0xce, 0xb3, 0x89, 0xac, 0xbc, 0xf8,
-	0xa2, 0x17, 0xe6, 0xb0, 0x27, 0xc1, 0x1c, 0x96, 0x39, 0x7c, 0xb0, 0x58, 0xb4, 0x4a, 0x21, 0x73,
-	0x09, 0xee, 0x6f, 0x12, 0xac, 0xce, 0x60, 0xd0, 0x53, 0x88, 0x5f, 0x9a, 0x56, 0x4f, 0x64, 0x94,
-	0xdd, 0x5b, 0xd4, 0x1d, 0x9c, 0x98, 0x56, 0x4f, 0x65, 0x68, 0x5a, 0x53, 0x98, 0xfd, 0x2c, 0x91,
-	0xaa, 0xec, 0x5b, 0xae, 0x40, 0x9c, 0x22, 0xd0, 0x7d, 0xd8, 0xf0, 0x9e, 0x4c, 0xb5, 0xd6, 0x69,
-	0x9c, 0xe8, 0xd3, 0xa4, 0x52, 0x82, 0xf5, 0x30, 0xeb, 0xa8, 0xd3, 0x38, 0x3e, 0x55, 0x0a, 0x92,
-	0x4c, 0x5b, 0x95, 0xa8, 0xfc, 0xaf, 0x95, 0xa0, 0xc7, 0xfc, 0xe4, 0xfb, 0x08, 0xf2, 0xbc, 0xa0,
-	0xeb, 0xaf, 0xb0, 0xe3, 0x9a, 0xb6, 0xc5, 0xac, 0xcd, 0xa9, 0x39, 0x4e, 0x7d, 0xc9, 0x89, 0xf3,
-	0xe5, 0x3f, 0xba, 0xa0, 0xfc, 0x6f, 0x03, 0x88, 0x5a, 0x3a, 0xad, 0x74, 0x69, 0x4e, 0xe9, 0x38,
-	0xc3, 0x00, 0x3b, 0x30, 0x23, 0x72, 0x0a, 0xed, 0x30, 0xee, 0x43, 0xea, 0xdc, 0x70, 0x83, 0x33,
-	0x61, 0x92, 0xae, 0x83, 0x7d, 0x09, 0x65, 0xad, 0x84, 0x2b, 0xc4, 0x1e, 0xe4, 0xc4, 0xe0, 0xe9,
-	0x0e, 0x8c, 0xc3, 0x1f, 0xff, 0x84, 0x45, 0x55, 0x5a, 0xcd, 0x72, 0x62, 0x9b, 0xd1, 0x68, 0xab,
-	0x21, 0x40, 0x3c, 0xf2, 0xd2, 0x2c, 0xf2, 0x32, 0x9c, 0xc6, 0xe3, 0xee, 0x21, 0x64, 0x43, 0x53,
-	0x29, 0xf0, 0x6e, 0xe4, 0xf5, 0x74, 0x14, 0xa5, 0x5b, 0x85, 0x5f, 0x48, 0x96, 0xbd, 0x90, 0x6c,
-	0xe8, 0x71, 0xd0, 0xe6, 0x63, 0xe6, 0x21, 0xe5, 0x18, 0x2c, 0x3f, 0x09, 0xbf, 0xa2, 0x47, 0x90,
-	0x77, 0xf1, 0x90, 0x97, 0x6e, 0x6e, 0x55, 0x9e, 0xbf, 0x07, 0x8f, 0xca, 0xed, 0xf2, 0x0b, 0xda,
-	0xea, 0x7b, 0xb4, 0x54, 0x2d, 0x28, 0xfa, 0x69, 0xa6, 0x6b, 0x58, 0x3d, 0xb3, 0x67, 0x50, 0xc5,
-	0x05, 0xd6, 0x3b, 0xed, 0x2c, 0x89, 0x3f, 0x0f, 0xa7, 0x22, 0x4f, 0xd6, 0x27, 0xb9, 0xb4, 0xe9,
-	0xf6, 0x93, 0x6b, 0xa8, 0x5b, 0x5b, 0xe3, 0x4d, 0x77, 0x37, 0x38, 0x44, 0x88, 0xae, 0xed, 0x31,
-	0xac, 0x8a, 0x7b, 0xf6, 0xbb, 0x1e, 0xc4, 0xd0, 0x39, 0x4e, 0x6e, 0xf1, 0xde, 0x27, 0xd8, 0xdd,
-	0x15, 0xff, 0xaf, 0xee, 0x6e, 0xfd, 0x2e, 0xdd, 0xdd, 0xc6, 0x92, 0xee, 0x0e, 0xed, 0x40, 0x46,
-	0x60, 0x59, 0x4b, 0xb7, 0xc9, 0x94, 0x8a, 0x88, 0x6d, 0x18, 0x23, 0xfc, 0x22, 0x9e, 0x4a, 0x16,
-	0x52, 0x2f, 0xe2, 0xa9, 0x4c, 0x21, 0xab, 0xe6, 0xfd, 0x60, 0x61, 0x77, 0x27, 0x7f, 0x2d, 0x41,
-	0x71, 0x81, 0x4f, 0xfd, 0xc1, 0x5f, 0x9a, 0x0e, 0xfe, 0xe8, 0x31, 0xe4, 0xbb, 0x43, 0xc3, 0x75,
-	0xcd, 0x0b, 0xb3, 0xcb, 0xfe, 0x77, 0x88, 0xc7, 0x34, 0x43, 0xa5, 0xe5, 0xc4, 0xcb, 0x81, 0x31,
-	0x66, 0xb4, 0xb7, 0xa4, 0x03, 0x61, 0xb0, 0x24, 0xf0, 0x05, 0x8d, 0xa8, 0x70, 0x91, 0x11, 0xcf,
-	0x28, 0x17, 0xaa, 0x31, 0xf2, 0x13, 0xb8, 0xdf, 0x72, 0xf0, 0xd8, 0x70, 0xd8, 0x45, 0xb4, 0xdb,
-	0xb5, 0xca, 0x84, 0x0c, 0xbc, 0x62, 0xba, 0x49, 0x47, 0x35, 0xe6, 0x54, 0x6e, 0xb1, 0x58, 0xc9,
-	0x9f, 0xc3, 0xd6, 0x22, 0x21, 0x91, 0x76, 0x77, 0x20, 0xe3, 0xda, 0xdd, 0x4b, 0x1c, 0x2a, 0xc0,
-	0xc0, 0x49, 0xb4, 0xfc, 0x1e, 0xfe, 0x71, 0x05, 0x62, 0xcf, 0x4d, 0x82, 0xba, 0x80, 0xe6, 0xd5,
-	0xa0, 0x47, 0xa1, 0x66, 0x73, 0x99, 0x6d, 0x5b, 0x8f, 0xbf, 0x0b, 0x26, 0xac, 0xd1, 0x20, 0xf7,
-	0x1c, 0x07, 0xfe, 0xab, 0xa0, 0xdd, 0xd9, 0x41, 0x7c, 0xf6, 0x7f, 0xce, 0xd6, 0xc3, 0x5b, 0x10,
-	0x42, 0x6b, 0x0d, 0xd2, 0x54, 0x2b, 0x9f, 0xf5, 0x3f, 0x5a, 0x38, 0xda, 0x7b, 0xda, 0xb6, 0x97,
-	0x70, 0xa7, 0xf6, 0x85, 0x66, 0xef, 0xb0, 0x7d, 0x8b, 0x66, 0xfa, 0xb0, 0x7d, 0x8b, 0x07, 0xf7,
-	0x36, 0x64, 0x83, 0xe3, 0x1e, 0xda, 0x59, 0x36, 0x4c, 0x7a, 0x3a, 0x77, 0x97, 0x03, 0xb8, 0xca,
-	0x1f, 0x49, 0xa8, 0x09, 0x30, 0x1d, 0x9f, 0xd1, 0xf6, 0x9c, 0x44, 0x70, 0xac, 0x7e, 0x2f, 0x85,
-	0xbf, 0x84, 0xd5, 0x99, 0x31, 0x00, 0xc9, 0xb7, 0x8c, 0x1a, 0x9e, 0xea, 0xbd, 0x5b, 0x31, 0xbe,
-	0xf6, 0x33, 0x80, 0xe9, 0x23, 0x0c, 0x9b, 0x3b, 0xd7, 0x37, 0x6e, 0x95, 0x97, 0xb1, 0x7d, 0x75,
-	0x2d, 0xc8, 0x04, 0xfe, 0x3d, 0xa2, 0xf2, 0x92, 0xff, 0xb7, 0x9e, 0xc2, 0x9d, 0xa5, 0x7c, 0xae,
-	0x71, 0x5f, 0x3a, 0xfa, 0xec, 0xcd, 0xdb, 0x72, 0xe4, 0x9b, 0xb7, 0xe5, 0xc8, 0xb7, 0x6f, 0xcb,
-	0xd2, 0xef, 0x6f, 0xca, 0xd2, 0xd7, 0x37, 0x65, 0xe9, 0x1f, 0x37, 0x65, 0xe9, 0xcd, 0x4d, 0x59,
-	0xfa, 0xf7, 0x4d, 0x59, 0xfa, 0xef, 0x4d, 0x39, 0xf2, 0xed, 0x4d, 0x59, 0xfa, 0xf3, 0xbb, 0x72,
-	0xe4, 0xcd, 0xbb, 0x72, 0xe4, 0x9b, 0x77, 0xe5, 0xc8, 0x57, 0xb1, 0xbe, 0x49, 0xce, 0x57, 0xd8,
-	0x9f, 0xb7, 0x27, 0xff, 0x0b, 0x00, 0x00, 0xff, 0xff, 0x45, 0x17, 0xfa, 0x51, 0x85, 0x16, 0x00,
-	0x00,
+	// 2259 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xb4, 0x19, 0xcb, 0x6e, 0xdb, 0xd8,
+	0x55, 0xb4, 0x24, 0x4b, 0x3a, 0x7a, 0xfa, 0xca, 0x76, 0x14, 0x27, 0x91, 0x1d, 0x1a, 0x49, 0x8d,
+	0x16, 0xf5, 0x4c, 0x93, 0x74, 0x1e, 0x6d, 0xa7, 0x80, 0x2c, 0x33, 0x96, 0x12, 0x5b, 0xd2, 0x50,
+	0x54, 0x06, 0x1d, 0x14, 0x20, 0x68, 0xe9, 0x5a, 0x62, 0x2d, 0x91, 0x2c, 0x49, 0x25, 0x31, 0xda,
+	0x02, 0xed, 0xae, 0xab, 0xa2, 0xe8, 0xa6, 0xbb, 0xae, 0xe7, 0x53, 0x66, 0x99, 0x65, 0x80, 0x6e,
+	0x1a, 0x07, 0x28, 0x0a, 0x74, 0x33, 0x9f, 0x50, 0xdc, 0x07, 0x29, 0x52, 0xaf, 0xd8, 0x2e, 0x66,
+	0xa7, 0x7b, 0xde, 0x3c, 0xf7, 0xdc, 0xf3, 0x12, 0xa4, 0xfa, 0xba, 0xbb, 0x6f, 0xd9, 0xa6, 0x6b,
+	0x22, 0xe8, 0x69, 0xfd, 0x3e, 0xb6, 0xf7, 0xfb, 0xba, 0x2b, 0xda, 0x80, 0x2a, 0x96, 0x35, 0xbc,
+	0x38, 0x18, 0x1b, 0xbd, 0x21, 0x96, 0xf1, 0x6f, 0xc7, 0xd8, 0x71, 0xd1, 0x17, 0x90, 0x1c, 0x61,
+	0x57, 0xeb, 0x69, 0xae, 0x56, 0x12, 0x76, 0x84, 0xbd, 0xf4, 0xa3, 0xed, 0xfd, 0x09, 0xd3, 0x7e,
+	0x80, 0xe3, 0x84, 0x93, 0xd5, 0x22, 0xb2, 0xcf, 0x82, 0x36, 0x21, 0xde, 0x1d, 0x8c, 0x8d, 0xf3,
+	0xd2, 0xca, 0x8e, 0xb0, 0x97, 0xa9, 0x45, 0x64, 0x76, 0x3c, 0x88, 0x43, 0x74, 0xe4, 0xf4, 0xc5,
+	0x7f, 0x0b, 0x50, 0x9c, 0x23, 0x02, 0xed, 0x42, 0xb6, 0x3b, 0xc0, 0xdd, 0x73, 0x73, 0xec, 0xaa,
+	0x96, 0xe6, 0x0e, 0xa8, 0xea, 0x94, 0x9c, 0xf1, 0x80, 0x2d, 0xcd, 0x1d, 0xa0, 0x7b, 0x00, 0xae,
+	0x66, 0xf7, 0xb1, 0xab, 0x3a, 0x03, 0x8d, 0x2a, 0x48, 0xc9, 0x29, 0x06, 0x69, 0x0f, 0x34, 0xf4,
+	0x08, 0x36, 0xf0, 0x6b, 0x0b, 0x77, 0x5d, 0xdc, 0x53, 0x1d, 0x57, 0x73, 0xb1, 0xda, 0xd3, 0xfb,
+	0xd8, 0x71, 0x4b, 0x51, 0x4a, 0x59, 0xf4, 0x90, 0x6d, 0x82, 0x3b, 0xa4, 0x28, 0x22, 0xf2, 0x94,
+	0x5a, 0xa2, 0xda, 0xf8, 0xac, 0x14, 0x63, 0x22, 0x4f, 0xb9, 0x43, 0xce, 0xd0, 0x67, 0x50, 0xd2,
+	0x0d, 0x17, 0xf7, 0x6d, 0xcd, 0xd5, 0x4d, 0x43, 0x7d, 0x65, 0xda, 0xe7, 0xae, 0x8d, 0x31, 0xd5,
+	0x1f, 0xa7, 0xc4, 0x9b, 0x01, 0xfc, 0x57, 0x1c, 0xdd, 0x1e, 0x68, 0xe2, 0xef, 0x43, 0xdf, 0x29,
+	0x63, 0xc7, 0x32, 0x0d, 0x07, 0xa3, 0xdb, 0x90, 0x1c, 0x60, 0xad, 0x47, 0x05, 0xb0, 0x4f, 0x4c,
+	0x90, 0x33, 0x31, 0xff, 0x1e, 0x80, 0xa5, 0xd9, 0xe7, 0xb8, 0x47, 0x4d, 0xe1, 0x5f, 0xc7, 0x20,
+	0xc4, 0x94, 0x1f, 0x41, 0x1c, 0xdb, 0xb6, 0x69, 0xd3, 0xaf, 0x49, 0x3f, 0xda, 0x08, 0x5e, 0x8a,
+	0x44, 0x10, 0x75, 0xe3, 0xcc, 0x94, 0x19, 0x8d, 0xf8, 0x35, 0xac, 0x1f, 0xe9, 0x6e, 0xd5, 0xc6,
+	0x3d, 0x6c, 0xb8, 0xba, 0x36, 0xf4, 0x2e, 0x77, 0x0b, 0x92, 0x34, 0x0e, 0xba, 0xe6, 0x90, 0xab,
+	0xf7, 0xcf, 0x08, 0x41, 0x6c, 0x60, 0x3a, 0x2e, 0xd7, 0x4c, 0x7f, 0x13, 0x18, 0xbd, 0x0d, 0xe6,
+	0x41, 0xfa, 0x5b, 0xfc, 0x8b, 0x00, 0x1b, 0x53, 0xc2, 0xf9, 0xc7, 0xfd, 0x02, 0xa0, 0xeb, 0x43,
+	0x79, 0xf0, 0x6c, 0x05, 0xed, 0x9c, 0xf0, 0x10, 0x63, 0x6b, 0x11, 0x39, 0x40, 0x8f, 0x7e, 0xec,
+	0x7d, 0xe0, 0xca, 0x92, 0x0f, 0x24, 0x01, 0x45, 0xa9, 0x0e, 0x92, 0xb0, 0x6a, 0x63, 0x67, 0x3c,
+	0x74, 0xc5, 0xd7, 0x90, 0x0b, 0x0b, 0xbe, 0xf6, 0x67, 0x6e, 0x41, 0x72, 0xec, 0x60, 0xdb, 0xd0,
+	0x46, 0x98, 0x7f, 0xaa, 0x7f, 0xa6, 0xb2, 0x34, 0xc7, 0x79, 0x65, 0xda, 0x3d, 0x1e, 0x1f, 0xfe,
+	0x59, 0xfc, 0x14, 0x0a, 0xc4, 0x13, 0xa6, 0x71, 0xa6, 0xf7, 0x3d, 0x17, 0x5f, 0x25, 0x92, 0xc5,
+	0x3f, 0xc0, 0x5a, 0x80, 0x91, 0xbb, 0xef, 0x23, 0x58, 0xed, 0x52, 0x08, 0x77, 0x5d, 0xc8, 0x03,
+	0x3e, 0x79, 0x2d, 0x22, 0x73, 0xb2, 0x9b, 0x7b, 0xac, 0x02, 0x29, 0x5f, 0x1e, 0x7a, 0x02, 0x09,
+	0x6c, 0xb8, 0xb6, 0x8e, 0x9d, 0x92, 0xb0, 0x13, 0x9d, 0xbe, 0x32, 0x9f, 0x4e, 0x32, 0x5c, 0xfb,
+	0x42, 0xf6, 0x48, 0xc5, 0xcf, 0x20, 0x17, 0x46, 0xa1, 0x02, 0x44, 0xcf, 0xf1, 0x05, 0xff, 0x5c,
+	0xf2, 0x13, 0xad, 0x43, 0xfc, 0xa5, 0x36, 0x1c, 0x63, 0xee, 0x6b, 0x76, 0x10, 0x7f, 0x0e, 0xeb,
+	0x55, 0xee, 0x0b, 0xfa, 0x12, 0xaf, 0xe5, 0xb8, 0x31, 0x6c, 0x4c, 0x31, 0x73, 0xe7, 0xed, 0x42,
+	0x26, 0xf4, 0xe6, 0x29, 0x73, 0x2d, 0x22, 0xa7, 0x9d, 0xc0, 0x6b, 0xbf, 0xb1, 0xc3, 0x0c, 0x28,
+	0xb6, 0xb4, 0xee, 0xb9, 0xa7, 0xfa, 0x3a, 0x26, 0x2f, 0x4e, 0x4b, 0x2b, 0x0b, 0xd3, 0x92, 0xf8,
+	0x27, 0x01, 0xd6, 0xa8, 0x42, 0x73, 0x34, 0xd2, 0xaf, 0xa7, 0xee, 0x1e, 0x40, 0x97, 0x72, 0xd1,
+	0x1c, 0xc3, 0xa2, 0x39, 0xc5, 0x20, 0xed, 0x81, 0xf6, 0x2c, 0x96, 0x5c, 0x29, 0x44, 0x9f, 0xc5,
+	0x92, 0xb1, 0x42, 0x5c, 0x9e, 0x6f, 0x97, 0x1c, 0xef, 0x61, 0x8b, 0xba, 0x7a, 0x3d, 0xfc, 0xcd,
+	0xdc, 0xd3, 0xbf, 0x9c, 0x29, 0x10, 0x3b, 0x41, 0x3f, 0x06, 0x79, 0x6e, 0x52, 0x21, 0xde, 0xac,
+	0x84, 0xf5, 0xfa, 0x25, 0x62, 0x49, 0xea, 0xf4, 0x50, 0x93, 0xc4, 0x49, 0x51, 0x24, 0x6d, 0xee,
+	0x42, 0xd6, 0x3c, 0xfd, 0x0d, 0xee, 0xba, 0xea, 0x99, 0x69, 0x8f, 0x34, 0xaf, 0x18, 0x64, 0x18,
+	0xf0, 0x29, 0x85, 0x4d, 0x72, 0x6b, 0xec, 0xc3, 0xb9, 0x15, 0xdd, 0x9f, 0x8a, 0x34, 0x56, 0x07,
+	0x42, 0x71, 0xf6, 0x04, 0x12, 0x36, 0x1e, 0x99, 0x2e, 0x76, 0x4a, 0xab, 0xb3, 0x4f, 0x6a, 0xe2,
+	0x51, 0x42, 0x22, 0x7b, 0xa4, 0xe8, 0x07, 0x90, 0x1f, 0x5b, 0x8e, 0x6b, 0x63, 0x6d, 0xa4, 0x32,
+	0x58, 0x29, 0x41, 0x65, 0xe7, 0x3c, 0x30, 0xe3, 0x40, 0xfb, 0x50, 0x1c, 0x68, 0x0e, 0xa7, 0x51,
+	0xfd, 0xcb, 0x48, 0xee, 0x08, 0x7b, 0x49, 0x79, 0x6d, 0xa0, 0x39, 0x8c, 0xce, 0xf3, 0x9c, 0xf8,
+	0x25, 0xe4, 0xc2, 0x3a, 0x49, 0x12, 0xa4, 0xc9, 0x8e, 0xf9, 0x91, 0xfe, 0x26, 0xef, 0x77, 0x6c,
+	0x0f, 0xb9, 0xff, 0xc8, 0x4f, 0xe2, 0x56, 0x6b, 0xec, 0x0c, 0x54, 0x02, 0x66, 0x6e, 0x4b, 0x90,
+	0x73, 0xc7, 0x1e, 0x8a, 0x3a, 0x6c, 0x92, 0x4b, 0xea, 0x18, 0x2c, 0xb2, 0x5c, 0x52, 0xa3, 0xae,
+	0x11, 0xa4, 0x3f, 0x84, 0x35, 0x3f, 0xf6, 0xfc, 0x4b, 0x65, 0x9a, 0xf3, 0x1e, 0xa2, 0xc6, 0x2e,
+	0x57, 0xfc, 0x1d, 0xdc, 0x9a, 0x51, 0xc5, 0x43, 0xb1, 0x32, 0x13, 0x8a, 0xbb, 0xd3, 0xa1, 0x18,
+	0x60, 0xbb, 0x49, 0x34, 0xfe, 0x4d, 0x98, 0xd1, 0x7e, 0x95, 0x80, 0xfc, 0x08, 0x8a, 0x06, 0x76,
+	0x5c, 0x5a, 0xcb, 0x2d, 0xd3, 0xd1, 0x5d, 0x93, 0xe6, 0xd7, 0x95, 0x9d, 0xe8, 0x5e, 0x4a, 0x46,
+	0x0c, 0x25, 0x07, 0x30, 0xd7, 0xab, 0xee, 0x9f, 0x40, 0xbe, 0x6d, 0x68, 0x96, 0x33, 0x30, 0xaf,
+	0x95, 0x1a, 0xc4, 0x11, 0x14, 0x26, 0x7c, 0xdc, 0x85, 0x3f, 0x9b, 0x71, 0xe1, 0xdd, 0xa0, 0x6e,
+	0x8f, 0xfe, 0x26, 0xbe, 0x7b, 0x2b, 0x4c, 0xf4, 0xf9, 0x4e, 0x0b, 0xa7, 0x27, 0x61, 0x2a, 0x3d,
+	0xcd, 0x3e, 0xd7, 0x95, 0x65, 0xcf, 0xf5, 0x0a, 0xce, 0x22, 0x0a, 0xf9, 0x43, 0x21, 0x61, 0xcc,
+	0x3b, 0x3c, 0x06, 0xe9, 0xb0, 0x18, 0x3f, 0xd5, 0x9c, 0x60, 0x47, 0x97, 0x20, 0x67, 0x9e, 0x55,
+	0x28, 0x8a, 0x64, 0x95, 0xd5, 0x09, 0x4a, 0xc6, 0x67, 0xe2, 0x08, 0x6e, 0x7b, 0x5f, 0xd6, 0xb1,
+	0x86, 0xa6, 0xd6, 0x23, 0x31, 0xe2, 0xdd, 0xc5, 0x4f, 0x20, 0x66, 0x5a, 0xd8, 0xe0, 0xee, 0xbc,
+	0x33, 0xcf, 0x9d, 0x9c, 0xb4, 0x16, 0x91, 0x29, 0xe9, 0x87, 0x3c, 0xf9, 0x0a, 0xb6, 0xe6, 0xa9,
+	0xfb, 0xfe, 0xaf, 0xf0, 0xdb, 0x28, 0xa4, 0x7c, 0x8f, 0xa2, 0xc7, 0x10, 0x73, 0x2f, 0x2c, 0x96,
+	0x35, 0x72, 0xe1, 0xb1, 0xc0, 0x27, 0x62, 0xbf, 0x94, 0x0b, 0x0b, 0xcb, 0x94, 0x18, 0x95, 0x20,
+	0x31, 0xc2, 0x8e, 0xa3, 0xf5, 0xbd, 0x36, 0xc0, 0x3b, 0x8a, 0xff, 0x5d, 0xe1, 0xc2, 0x09, 0x35,
+	0x4a, 0x43, 0xa2, 0xd3, 0x78, 0xde, 0x68, 0x7e, 0xd5, 0x28, 0x44, 0x50, 0x11, 0xf2, 0xf5, 0xc6,
+	0x8b, 0xca, 0x71, 0xfd, 0x50, 0x95, 0xa5, 0x2f, 0x3b, 0x52, 0x5b, 0x29, 0x08, 0x28, 0x0b, 0xa9,
+	0x46, 0x53, 0x51, 0x9f, 0x36, 0x3b, 0x8d, 0xc3, 0xc2, 0x0a, 0x61, 0x50, 0xea, 0x27, 0x52, 0xb3,
+	0xa3, 0x14, 0xa2, 0x68, 0x1b, 0xee, 0x54, 0x65, 0xe9, 0x50, 0x6a, 0x28, 0xf5, 0xca, 0xb1, 0x2a,
+	0x4b, 0x8a, 0x5c, 0x97, 0x5e, 0x54, 0x8e, 0xd5, 0xa7, 0x95, 0xfa, 0xb1, 0x74, 0x58, 0x88, 0xa1,
+	0x3b, 0x70, 0xab, 0xda, 0x6c, 0x3c, 0xad, 0x1f, 0xcd, 0x22, 0xe3, 0x68, 0x0d, 0xb2, 0x35, 0xa9,
+	0x72, 0xa8, 0x9e, 0xd4, 0xdb, 0x27, 0x15, 0xa5, 0x5a, 0x2b, 0xac, 0xa2, 0x1c, 0x00, 0x51, 0x56,
+	0x51, 0x65, 0xa9, 0xd5, 0x2c, 0x24, 0x50, 0x1e, 0xd2, 0xad, 0x4a, 0xf5, 0xb9, 0xc7, 0x93, 0x24,
+	0x02, 0x3b, 0x8d, 0x6a, 0xf3, 0xe4, 0xa4, 0xae, 0x28, 0xd2, 0xa1, 0xda, 0x69, 0xb4, 0x3b, 0xad,
+	0x56, 0x53, 0x56, 0xa4, 0xc3, 0x42, 0x8a, 0x6a, 0xab, 0x49, 0xd5, 0xe7, 0xcd, 0x8e, 0xa2, 0xb6,
+	0x95, 0x8a, 0x22, 0x4d, 0x44, 0x03, 0x5a, 0x87, 0x42, 0xb5, 0xd2, 0x52, 0x3a, 0xb2, 0xa4, 0xca,
+	0xd2, 0x33, 0xa9, 0x4a, 0x58, 0xd2, 0x08, 0x41, 0xce, 0x83, 0x72, 0x1d, 0x19, 0x74, 0x0b, 0x8a,
+	0x1e, 0x2c, 0x28, 0x3f, 0x4b, 0x10, 0xb5, 0x7a, 0x5b, 0x69, 0xca, 0xbf, 0x52, 0x3b, 0x8d, 0xca,
+	0x8b, 0x4a, 0xfd, 0xb8, 0x72, 0x70, 0x2c, 0x15, 0x72, 0xa8, 0x04, 0xeb, 0xed, 0x46, 0xa5, 0xd5,
+	0xae, 0x35, 0x95, 0x10, 0x4b, 0x5e, 0x34, 0x60, 0xad, 0xaa, 0x59, 0xee, 0xd8, 0xc6, 0x47, 0xd7,
+	0xec, 0x28, 0x9e, 0xc0, 0xaa, 0x65, 0x0e, 0xf5, 0xee, 0x05, 0x6f, 0x9b, 0x42, 0xd1, 0x35, 0x91,
+	0xd9, 0xa2, 0x34, 0x32, 0xa7, 0x15, 0xff, 0x1e, 0x85, 0xc2, 0x34, 0x92, 0x04, 0x83, 0x6e, 0x74,
+	0x87, 0xe3, 0x1e, 0xa6, 0xbd, 0x66, 0x4a, 0xf6, 0x8e, 0x04, 0x83, 0x5f, 0x33, 0x0c, 0xcb, 0x92,
+	0xde, 0x91, 0x94, 0x45, 0xcd, 0xb2, 0x6c, 0xf3, 0xa5, 0x36, 0x54, 0x5d, 0xf3, 0x1c, 0x1b, 0x4e,
+	0x29, 0x4a, 0x29, 0x72, 0x1e, 0x58, 0xa1, 0x50, 0xf4, 0x29, 0x94, 0x46, 0xda, 0x6b, 0x75, 0x6c,
+	0xb8, 0xb6, 0xd6, 0x25, 0x73, 0xd4, 0x99, 0x3e, 0xc4, 0xea, 0xe9, 0x05, 0x29, 0xc3, 0xe4, 0xdd,
+	0x47, 0xe5, 0x8d, 0x91, 0xf6, 0xba, 0xe3, 0xa1, 0x9f, 0xea, 0x43, 0x7c, 0x40, 0x90, 0xe8, 0x73,
+	0xb8, 0x1d, 0x66, 0x74, 0x4d, 0x57, 0x1b, 0x72, 0xce, 0x38, 0xe5, 0xdc, 0x0c, 0x72, 0x2a, 0x04,
+	0xcd, 0x58, 0xf7, 0xa1, 0x38, 0xab, 0xd3, 0xa1, 0xe9, 0x22, 0x2e, 0xaf, 0x4d, 0xab, 0x73, 0xd0,
+	0x63, 0x20, 0x92, 0xd4, 0x39, 0x16, 0x26, 0xa8, 0x1e, 0x22, 0x4d, 0x99, 0xb6, 0xef, 0x21, 0xe4,
+	0x29, 0x53, 0xc0, 0xaa, 0x24, 0xa5, 0xce, 0x12, 0xea, 0x89, 0x31, 0x0f, 0x20, 0xd7, 0xb3, 0x4d,
+	0x6b, 0x62, 0x4d, 0x29, 0x45, 0x5b, 0x82, 0x2c, 0x81, 0xfa, 0x86, 0x90, 0x01, 0x0e, 0x05, 0x43,
+	0xc1, 0x9f, 0xde, 0xa6, 0xd3, 0x48, 0x79, 0xfe, 0x45, 0xcf, 0x4d, 0x24, 0x8f, 0x83, 0x89, 0x64,
+	0x2a, 0xeb, 0x4d, 0x58, 0xab, 0x84, 0x64, 0x26, 0xcb, 0xfc, 0x43, 0x80, 0xfc, 0x14, 0x0d, 0x7a,
+	0x02, 0xb1, 0x73, 0xdd, 0xe8, 0xf1, 0x5c, 0xb3, 0xb3, 0x44, 0xdc, 0xfe, 0x73, 0xdd, 0xe8, 0xc9,
+	0x94, 0x9a, 0xf4, 0x35, 0xd4, 0x7e, 0x9a, 0xcd, 0x64, 0xfa, 0x5b, 0xac, 0x40, 0x8c, 0x50, 0xa0,
+	0xdb, 0xb0, 0xe1, 0x3d, 0xa6, 0x6a, 0xad, 0xd3, 0x78, 0xae, 0x4e, 0xd2, 0x4d, 0x09, 0xd6, 0xc3,
+	0xa8, 0x83, 0x4e, 0xe3, 0xf0, 0x58, 0x2a, 0x08, 0x22, 0x69, 0x97, 0x57, 0xc4, 0x7f, 0xae, 0x06,
+	0x3d, 0xe6, 0xd7, 0xb2, 0x07, 0x90, 0x63, 0x55, 0x4a, 0x7d, 0x89, 0x6d, 0x47, 0x37, 0x59, 0xca,
+	0xcf, 0xca, 0x59, 0x06, 0x7d, 0xc1, 0x80, 0x57, 0xab, 0x69, 0xe1, 0x32, 0x15, 0x9d, 0x2e, 0x53,
+	0x13, 0x74, 0x60, 0x4f, 0xc1, 0x20, 0xa4, 0xcb, 0x5d, 0x5e, 0xc5, 0xfc, 0x2e, 0x65, 0x35, 0xdc,
+	0xa5, 0xec, 0x42, 0x96, 0x2f, 0x3f, 0x9c, 0x81, 0xf6, 0xe8, 0xa7, 0x9f, 0xd0, 0xa8, 0x4a, 0xc9,
+	0x19, 0x06, 0x6c, 0x53, 0x18, 0x69, 0x77, 0x39, 0x11, 0x8b, 0xbc, 0x14, 0x8d, 0xbc, 0x34, 0x83,
+	0xb1, 0xb8, 0xbb, 0x0f, 0x99, 0xd0, 0x66, 0x04, 0x58, 0x47, 0xfc, 0x6a, 0xb2, 0x0e, 0x21, 0xaa,
+	0xc2, 0x2f, 0x24, 0x43, 0x5f, 0x48, 0x26, 0xf4, 0x38, 0x48, 0x03, 0x3c, 0xf5, 0x90, 0xb2, 0x94,
+	0x2c, 0x37, 0x0e, 0xbf, 0xa2, 0x07, 0x90, 0x73, 0xf0, 0x90, 0xb5, 0x8f, 0xcc, 0xaa, 0x1c, 0x7b,
+	0x0f, 0x1e, 0x94, 0xd9, 0xe5, 0xf7, 0x09, 0xf9, 0x2b, 0xf4, 0x09, 0x2d, 0x28, 0xfa, 0x69, 0xa6,
+	0xab, 0x19, 0x3d, 0xbd, 0xa7, 0x11, 0xc1, 0x05, 0xda, 0xbf, 0x6f, 0x2f, 0x88, 0x3f, 0x8f, 0x4e,
+	0x46, 0x1e, 0xaf, 0x0f, 0x72, 0xc8, 0xe0, 0xe7, 0x27, 0xd7, 0xd0, 0xc4, 0xb0, 0xc6, 0x06, 0xbf,
+	0x6e, 0x70, 0x90, 0xe5, 0x93, 0xc3, 0x43, 0xc8, 0xf3, 0x7b, 0xf6, 0x3b, 0x6f, 0x44, 0xa9, 0xb3,
+	0x0c, 0xdc, 0x62, 0xfd, 0x77, 0x70, 0xc2, 0x28, 0xfe, 0x5f, 0x13, 0xc6, 0xfa, 0x75, 0x26, 0x8c,
+	0x8d, 0x05, 0x13, 0x06, 0xda, 0x86, 0x34, 0xa7, 0xa5, 0x63, 0xc5, 0x26, 0x15, 0xca, 0x23, 0xb6,
+	0xa1, 0x8d, 0xf0, 0xb3, 0x58, 0x32, 0x51, 0x48, 0x3e, 0x8b, 0x25, 0xd3, 0x85, 0x8c, 0x9c, 0xf3,
+	0x83, 0x85, 0xde, 0x9d, 0xf8, 0x8d, 0x00, 0xc5, 0x39, 0x3e, 0xf5, 0x97, 0x4f, 0xc2, 0x64, 0xf9,
+	0x84, 0x1e, 0x42, 0xae, 0x3b, 0xd4, 0x1c, 0x47, 0x3f, 0xd3, 0xbb, 0x74, 0xe7, 0xc6, 0x1f, 0xd3,
+	0x14, 0x94, 0x94, 0x13, 0x2f, 0x07, 0x46, 0xa9, 0xd1, 0xde, 0x11, 0xad, 0x43, 0x3c, 0x58, 0x12,
+	0xd8, 0x81, 0x44, 0x54, 0xb8, 0xc8, 0xf0, 0x67, 0x94, 0x0d, 0xd5, 0x18, 0xf1, 0x31, 0xdc, 0x6e,
+	0xd9, 0xd8, 0xd2, 0x6c, 0x7a, 0x11, 0xed, 0x76, 0xad, 0x32, 0x76, 0x07, 0x5e, 0x31, 0xdd, 0x84,
+	0x55, 0xee, 0x54, 0x66, 0x31, 0x3f, 0x89, 0x5f, 0xc0, 0xd6, 0x3c, 0x26, 0x9e, 0x76, 0xb7, 0x21,
+	0xed, 0x98, 0xdd, 0x73, 0x1c, 0x2a, 0xc0, 0xc0, 0x40, 0xa4, 0xfc, 0x3e, 0xfa, 0x73, 0x12, 0xa2,
+	0x47, 0xba, 0x8b, 0xba, 0x80, 0x66, 0xc5, 0xa0, 0x07, 0xa1, 0x81, 0x67, 0x91, 0x6d, 0x5b, 0x0f,
+	0x3f, 0x44, 0xc6, 0xad, 0x51, 0x20, 0x7b, 0x84, 0x03, 0xbb, 0x3d, 0xb4, 0x33, 0xbd, 0x0c, 0x9a,
+	0xde, 0x29, 0x6e, 0xdd, 0x5f, 0x42, 0xc1, 0xa5, 0xd6, 0x20, 0x45, 0xa4, 0xb2, 0x7d, 0xd3, 0xdd,
+	0xb9, 0xeb, 0x25, 0x4f, 0xda, 0xbd, 0x05, 0xd8, 0x89, 0x7d, 0xa1, 0xfd, 0x4f, 0xd8, 0xbe, 0x79,
+	0x7b, 0xa5, 0xb0, 0x7d, 0xf3, 0x97, 0x47, 0x6d, 0xc8, 0x04, 0x57, 0x0e, 0x68, 0x7b, 0xd1, 0x42,
+	0xc3, 0x93, 0xb9, 0xb3, 0x98, 0x80, 0x89, 0xfc, 0x58, 0x40, 0x4d, 0x80, 0xc9, 0x0a, 0x07, 0xdd,
+	0x9b, 0xe1, 0x08, 0xae, 0x76, 0xae, 0x24, 0xf0, 0xd7, 0x90, 0x9f, 0x1a, 0x45, 0x91, 0xb8, 0x64,
+	0xdc, 0xf5, 0x44, 0xef, 0x2e, 0xa5, 0xf1, 0xa5, 0x9f, 0x00, 0x4c, 0x1e, 0x61, 0xd8, 0xdc, 0x99,
+	0xbe, 0x71, 0xab, 0xbc, 0x08, 0xed, 0x8b, 0x6b, 0x41, 0x3a, 0xb0, 0xff, 0x46, 0xe5, 0x05, 0xff,
+	0x21, 0x78, 0x02, 0xb7, 0x17, 0xe2, 0x99, 0xc4, 0x3d, 0xe2, 0xcf, 0xac, 0x37, 0xca, 0xb0, 0xab,
+	0x5f, 0x36, 0x59, 0x5d, 0xe5, 0xd6, 0x8f, 0x20, 0xe9, 0x71, 0x2d, 0x97, 0x75, 0x77, 0x3e, 0xd2,
+	0xff, 0xd6, 0x3e, 0xa0, 0xd9, 0xf1, 0x2c, 0xfc, 0x32, 0x17, 0x4e, 0x8b, 0xe1, 0x97, 0xb9, 0x78,
+	0xca, 0xdb, 0x13, 0x3e, 0x16, 0x0e, 0x3e, 0x7f, 0xf3, 0xae, 0x1c, 0x79, 0xfb, 0xae, 0x1c, 0xf9,
+	0xee, 0x5d, 0x59, 0xf8, 0xe3, 0x65, 0x59, 0xf8, 0xe6, 0xb2, 0x2c, 0x7c, 0x7b, 0x59, 0x16, 0xde,
+	0x5c, 0x96, 0x85, 0x7f, 0x5d, 0x96, 0x85, 0xff, 0x5c, 0x96, 0x23, 0xdf, 0x5d, 0x96, 0x85, 0xbf,
+	0xbe, 0x2f, 0x47, 0xde, 0xbc, 0x2f, 0x47, 0xde, 0xbe, 0x2f, 0x47, 0xbe, 0x8e, 0xf6, 0x75, 0xf7,
+	0x74, 0x95, 0x2e, 0xc0, 0x1f, 0xff, 0x2f, 0x00, 0x00, 0xff, 0xff, 0x00, 0xec, 0x3b, 0x35, 0x0c,
+	0x1a, 0x00, 0x00,
 }
 
 func (x ErrorInfo_ErrorType) String() string {
@@ -3301,6 +3712,303 @@ func (this *PackUncommittedMetadata) Equal(that interface{}) bool {
 	}
 	return true
 }
+func (this *SnapshotRequest) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*SnapshotRequest)
+	if !ok {
+		that2, ok := that.(SnapshotRequest)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.CheckoutPath != that1.CheckoutPath {
+		return false
+	}
+	return true
+}
+func (this *SnapshotResponse) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*SnapshotResponse)
+	if !ok {
+		that2, ok := that.(SnapshotResponse)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if that1.Msg == nil {
+		if this.Msg != nil {
+			return false
+		}
+	} else if this.Msg == nil {
+		return false
+	} else if !this.Msg.Equal(that1.Msg) {
+		return false
+	}
+	return true
+}
+func (this *SnapshotResponse_Metadata) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*SnapshotResponse_Metadata)
+	if !ok {
+		that2, ok := that.(SnapshotResponse_Metadata)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.Metadata.Equal(that1.Metadata) {
+		return false
+	}
+	return true
+}
+func (this *SnapshotResponse_Chunk) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*SnapshotResponse_Chunk)
+	if !ok {
+		that2, ok := that.(SnapshotResponse_Chunk)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !bytes.Equal(this.Chunk, that1.Chunk) {
+		return false
+	}
+	return true
+}
+func (this *SnapshotMetadata) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*SnapshotMetadata)
+	if !ok {
+		that2, ok := that.(SnapshotMetadata)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.CommitSha != that1.CommitSha {
+		return false
+	}
+	if this.ObjectFormat != that1.ObjectFormat {
+		return false
+	}
+	if !this.Error.Equal(that1.Error) {
+		return false
+	}
+	if this.RemoteUrl != that1.RemoteUrl {
+		return false
+	}
+	if this.BaseSha != that1.BaseSha {
+		return false
+	}
+	if this.BaseRef != that1.BaseRef {
+		return false
+	}
+	return true
+}
+func (this *SnapshotUploadPackRequest) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*SnapshotUploadPackRequest)
+	if !ok {
+		that2, ok := that.(SnapshotUploadPackRequest)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if that1.Msg == nil {
+		if this.Msg != nil {
+			return false
+		}
+	} else if this.Msg == nil {
+		return false
+	} else if !this.Msg.Equal(that1.Msg) {
+		return false
+	}
+	return true
+}
+func (this *SnapshotUploadPackRequest_Open) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*SnapshotUploadPackRequest_Open)
+	if !ok {
+		that2, ok := that.(SnapshotUploadPackRequest_Open)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.Open.Equal(that1.Open) {
+		return false
+	}
+	return true
+}
+func (this *SnapshotUploadPackRequest_Chunk) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*SnapshotUploadPackRequest_Chunk)
+	if !ok {
+		that2, ok := that.(SnapshotUploadPackRequest_Chunk)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !bytes.Equal(this.Chunk, that1.Chunk) {
+		return false
+	}
+	return true
+}
+func (this *SnapshotUploadPackResponse) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*SnapshotUploadPackResponse)
+	if !ok {
+		that2, ok := that.(SnapshotUploadPackResponse)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if that1.Msg == nil {
+		if this.Msg != nil {
+			return false
+		}
+	} else if this.Msg == nil {
+		return false
+	} else if !this.Msg.Equal(that1.Msg) {
+		return false
+	}
+	return true
+}
+func (this *SnapshotUploadPackResponse_Metadata) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*SnapshotUploadPackResponse_Metadata)
+	if !ok {
+		that2, ok := that.(SnapshotUploadPackResponse_Metadata)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.Metadata.Equal(that1.Metadata) {
+		return false
+	}
+	return true
+}
+func (this *SnapshotUploadPackResponse_Chunk) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*SnapshotUploadPackResponse_Chunk)
+	if !ok {
+		that2, ok := that.(SnapshotUploadPackResponse_Chunk)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !bytes.Equal(this.Chunk, that1.Chunk) {
+		return false
+	}
+	return true
+}
 func (this *ErrorInfo) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
@@ -4042,6 +4750,117 @@ func (this *PackUncommittedMetadata) GoString() string {
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
+func (this *SnapshotRequest) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&git.SnapshotRequest{")
+	s = append(s, "CheckoutPath: "+fmt.Sprintf("%#v", this.CheckoutPath)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *SnapshotResponse) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&git.SnapshotResponse{")
+	if this.Msg != nil {
+		s = append(s, "Msg: "+fmt.Sprintf("%#v", this.Msg)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *SnapshotResponse_Metadata) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&git.SnapshotResponse_Metadata{` +
+		`Metadata:` + fmt.Sprintf("%#v", this.Metadata) + `}`}, ", ")
+	return s
+}
+func (this *SnapshotResponse_Chunk) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&git.SnapshotResponse_Chunk{` +
+		`Chunk:` + fmt.Sprintf("%#v", this.Chunk) + `}`}, ", ")
+	return s
+}
+func (this *SnapshotMetadata) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 10)
+	s = append(s, "&git.SnapshotMetadata{")
+	s = append(s, "CommitSha: "+fmt.Sprintf("%#v", this.CommitSha)+",\n")
+	s = append(s, "ObjectFormat: "+fmt.Sprintf("%#v", this.ObjectFormat)+",\n")
+	if this.Error != nil {
+		s = append(s, "Error: "+fmt.Sprintf("%#v", this.Error)+",\n")
+	}
+	s = append(s, "RemoteUrl: "+fmt.Sprintf("%#v", this.RemoteUrl)+",\n")
+	s = append(s, "BaseSha: "+fmt.Sprintf("%#v", this.BaseSha)+",\n")
+	s = append(s, "BaseRef: "+fmt.Sprintf("%#v", this.BaseRef)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *SnapshotUploadPackRequest) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&git.SnapshotUploadPackRequest{")
+	if this.Msg != nil {
+		s = append(s, "Msg: "+fmt.Sprintf("%#v", this.Msg)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *SnapshotUploadPackRequest_Open) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&git.SnapshotUploadPackRequest_Open{` +
+		`Open:` + fmt.Sprintf("%#v", this.Open) + `}`}, ", ")
+	return s
+}
+func (this *SnapshotUploadPackRequest_Chunk) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&git.SnapshotUploadPackRequest_Chunk{` +
+		`Chunk:` + fmt.Sprintf("%#v", this.Chunk) + `}`}, ", ")
+	return s
+}
+func (this *SnapshotUploadPackResponse) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&git.SnapshotUploadPackResponse{")
+	if this.Msg != nil {
+		s = append(s, "Msg: "+fmt.Sprintf("%#v", this.Msg)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *SnapshotUploadPackResponse_Metadata) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&git.SnapshotUploadPackResponse_Metadata{` +
+		`Metadata:` + fmt.Sprintf("%#v", this.Metadata) + `}`}, ", ")
+	return s
+}
+func (this *SnapshotUploadPackResponse_Chunk) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&git.SnapshotUploadPackResponse_Chunk{` +
+		`Chunk:` + fmt.Sprintf("%#v", this.Chunk) + `}`}, ", ")
+	return s
+}
 func (this *ErrorInfo) GoString() string {
 	if this == nil {
 		return "nil"
@@ -4224,6 +5043,12 @@ type GitClient interface {
 	PackUncommitted(ctx context.Context, in *PackUncommittedRequest, opts ...grpc.CallOption) (Git_PackUncommittedClient, error)
 	CaptureGit(ctx context.Context, in *CaptureGitRequest, opts ...grpc.CallOption) (Git_CaptureGitClient, error)
 	ApplyBundle(ctx context.Context, opts ...grpc.CallOption) (Git_ApplyBundleClient, error)
+	SnapshotState(ctx context.Context, in *SnapshotRequest, opts ...grpc.CallOption) (*CheckoutStateResponse, error)
+	Snapshot(ctx context.Context, in *SnapshotRequest, opts ...grpc.CallOption) (Git_SnapshotClient, error)
+	// Serve a synthetic workspace commit through Git's native upload-pack
+	// protocol. The engine sends protocol bytes after the opening request and
+	// receives the snapshot metadata followed by upload-pack protocol bytes.
+	SnapshotUploadPack(ctx context.Context, opts ...grpc.CallOption) (Git_SnapshotUploadPackClient, error)
 }
 
 type gitClient struct {
@@ -4432,6 +5257,78 @@ func (x *gitApplyBundleClient) CloseAndRecv() (*ApplyBundleResponse, error) {
 	return m, nil
 }
 
+func (c *gitClient) SnapshotState(ctx context.Context, in *SnapshotRequest, opts ...grpc.CallOption) (*CheckoutStateResponse, error) {
+	out := new(CheckoutStateResponse)
+	err := c.cc.Invoke(ctx, "/dagger.git.Git/SnapshotState", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gitClient) Snapshot(ctx context.Context, in *SnapshotRequest, opts ...grpc.CallOption) (Git_SnapshotClient, error) {
+	stream, err := c.cc.NewStream(ctx, &_Git_serviceDesc.Streams[5], "/dagger.git.Git/Snapshot", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &gitSnapshotClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type Git_SnapshotClient interface {
+	Recv() (*SnapshotResponse, error)
+	grpc.ClientStream
+}
+
+type gitSnapshotClient struct {
+	grpc.ClientStream
+}
+
+func (x *gitSnapshotClient) Recv() (*SnapshotResponse, error) {
+	m := new(SnapshotResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (c *gitClient) SnapshotUploadPack(ctx context.Context, opts ...grpc.CallOption) (Git_SnapshotUploadPackClient, error) {
+	stream, err := c.cc.NewStream(ctx, &_Git_serviceDesc.Streams[6], "/dagger.git.Git/SnapshotUploadPack", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &gitSnapshotUploadPackClient{stream}
+	return x, nil
+}
+
+type Git_SnapshotUploadPackClient interface {
+	Send(*SnapshotUploadPackRequest) error
+	Recv() (*SnapshotUploadPackResponse, error)
+	grpc.ClientStream
+}
+
+type gitSnapshotUploadPackClient struct {
+	grpc.ClientStream
+}
+
+func (x *gitSnapshotUploadPackClient) Send(m *SnapshotUploadPackRequest) error {
+	return x.ClientStream.SendMsg(m)
+}
+
+func (x *gitSnapshotUploadPackClient) Recv() (*SnapshotUploadPackResponse, error) {
+	m := new(SnapshotUploadPackResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // GitServer is the server API for Git service.
 type GitServer interface {
 	// Engine-internal: call only after push authorization, never for Git reads.
@@ -4445,6 +5342,12 @@ type GitServer interface {
 	PackUncommitted(*PackUncommittedRequest, Git_PackUncommittedServer) error
 	CaptureGit(*CaptureGitRequest, Git_CaptureGitServer) error
 	ApplyBundle(Git_ApplyBundleServer) error
+	SnapshotState(context.Context, *SnapshotRequest) (*CheckoutStateResponse, error)
+	Snapshot(*SnapshotRequest, Git_SnapshotServer) error
+	// Serve a synthetic workspace commit through Git's native upload-pack
+	// protocol. The engine sends protocol bytes after the opening request and
+	// receives the snapshot metadata followed by upload-pack protocol bytes.
+	SnapshotUploadPack(Git_SnapshotUploadPackServer) error
 }
 
 // UnimplementedGitServer can be embedded to have forward compatible implementations.
@@ -4477,6 +5380,15 @@ func (*UnimplementedGitServer) CaptureGit(req *CaptureGitRequest, srv Git_Captur
 }
 func (*UnimplementedGitServer) ApplyBundle(srv Git_ApplyBundleServer) error {
 	return status.Errorf(codes.Unimplemented, "method ApplyBundle not implemented")
+}
+func (*UnimplementedGitServer) SnapshotState(ctx context.Context, req *SnapshotRequest) (*CheckoutStateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SnapshotState not implemented")
+}
+func (*UnimplementedGitServer) Snapshot(req *SnapshotRequest, srv Git_SnapshotServer) error {
+	return status.Errorf(codes.Unimplemented, "method Snapshot not implemented")
+}
+func (*UnimplementedGitServer) SnapshotUploadPack(srv Git_SnapshotUploadPackServer) error {
+	return status.Errorf(codes.Unimplemented, "method SnapshotUploadPack not implemented")
 }
 
 func RegisterGitServer(s *grpc.Server, srv GitServer) {
@@ -4665,6 +5577,71 @@ func (x *gitApplyBundleServer) Recv() (*ApplyBundleRequest, error) {
 	return m, nil
 }
 
+func _Git_SnapshotState_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SnapshotRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GitServer).SnapshotState(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/dagger.git.Git/SnapshotState",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GitServer).SnapshotState(ctx, req.(*SnapshotRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Git_Snapshot_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(SnapshotRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(GitServer).Snapshot(m, &gitSnapshotServer{stream})
+}
+
+type Git_SnapshotServer interface {
+	Send(*SnapshotResponse) error
+	grpc.ServerStream
+}
+
+type gitSnapshotServer struct {
+	grpc.ServerStream
+}
+
+func (x *gitSnapshotServer) Send(m *SnapshotResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func _Git_SnapshotUploadPack_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(GitServer).SnapshotUploadPack(&gitSnapshotUploadPackServer{stream})
+}
+
+type Git_SnapshotUploadPackServer interface {
+	Send(*SnapshotUploadPackResponse) error
+	Recv() (*SnapshotUploadPackRequest, error)
+	grpc.ServerStream
+}
+
+type gitSnapshotUploadPackServer struct {
+	grpc.ServerStream
+}
+
+func (x *gitSnapshotUploadPackServer) Send(m *SnapshotUploadPackResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func (x *gitSnapshotUploadPackServer) Recv() (*SnapshotUploadPackRequest, error) {
+	m := new(SnapshotUploadPackRequest)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 var _Git_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "dagger.git.Git",
 	HandlerType: (*GitServer)(nil),
@@ -4684,6 +5661,10 @@ var _Git_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CheckoutState",
 			Handler:    _Git_CheckoutState_Handler,
+		},
+		{
+			MethodName: "SnapshotState",
+			Handler:    _Git_SnapshotState_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
@@ -4710,6 +5691,17 @@ var _Git_serviceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "ApplyBundle",
 			Handler:       _Git_ApplyBundle_Handler,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "Snapshot",
+			Handler:       _Git_Snapshot_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "SnapshotUploadPack",
+			Handler:       _Git_SnapshotUploadPack_Handler,
+			ServerStreams: true,
 			ClientStreams: true,
 		},
 	},
@@ -5774,6 +6766,313 @@ func (m *PackUncommittedMetadata) MarshalToSizedBuffer(dAtA []byte) (int, error)
 	return len(dAtA) - i, nil
 }
 
+func (m *SnapshotRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *SnapshotRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SnapshotRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.CheckoutPath) > 0 {
+		i -= len(m.CheckoutPath)
+		copy(dAtA[i:], m.CheckoutPath)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.CheckoutPath)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *SnapshotResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *SnapshotResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SnapshotResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Msg != nil {
+		{
+			size := m.Msg.Size()
+			i -= size
+			if _, err := m.Msg.MarshalTo(dAtA[i:]); err != nil {
+				return 0, err
+			}
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *SnapshotResponse_Metadata) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SnapshotResponse_Metadata) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.Metadata != nil {
+		{
+			size, err := m.Metadata.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintGit(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+func (m *SnapshotResponse_Chunk) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SnapshotResponse_Chunk) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.Chunk != nil {
+		i -= len(m.Chunk)
+		copy(dAtA[i:], m.Chunk)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.Chunk)))
+		i--
+		dAtA[i] = 0x12
+	}
+	return len(dAtA) - i, nil
+}
+func (m *SnapshotMetadata) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *SnapshotMetadata) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SnapshotMetadata) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.BaseRef) > 0 {
+		i -= len(m.BaseRef)
+		copy(dAtA[i:], m.BaseRef)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.BaseRef)))
+		i--
+		dAtA[i] = 0x32
+	}
+	if len(m.BaseSha) > 0 {
+		i -= len(m.BaseSha)
+		copy(dAtA[i:], m.BaseSha)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.BaseSha)))
+		i--
+		dAtA[i] = 0x2a
+	}
+	if len(m.RemoteUrl) > 0 {
+		i -= len(m.RemoteUrl)
+		copy(dAtA[i:], m.RemoteUrl)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.RemoteUrl)))
+		i--
+		dAtA[i] = 0x22
+	}
+	if m.Error != nil {
+		{
+			size, err := m.Error.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintGit(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x1a
+	}
+	if len(m.ObjectFormat) > 0 {
+		i -= len(m.ObjectFormat)
+		copy(dAtA[i:], m.ObjectFormat)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.ObjectFormat)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.CommitSha) > 0 {
+		i -= len(m.CommitSha)
+		copy(dAtA[i:], m.CommitSha)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.CommitSha)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *SnapshotUploadPackRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *SnapshotUploadPackRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SnapshotUploadPackRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Msg != nil {
+		{
+			size := m.Msg.Size()
+			i -= size
+			if _, err := m.Msg.MarshalTo(dAtA[i:]); err != nil {
+				return 0, err
+			}
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *SnapshotUploadPackRequest_Open) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SnapshotUploadPackRequest_Open) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.Open != nil {
+		{
+			size, err := m.Open.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintGit(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+func (m *SnapshotUploadPackRequest_Chunk) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SnapshotUploadPackRequest_Chunk) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.Chunk != nil {
+		i -= len(m.Chunk)
+		copy(dAtA[i:], m.Chunk)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.Chunk)))
+		i--
+		dAtA[i] = 0x12
+	}
+	return len(dAtA) - i, nil
+}
+func (m *SnapshotUploadPackResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *SnapshotUploadPackResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SnapshotUploadPackResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Msg != nil {
+		{
+			size := m.Msg.Size()
+			i -= size
+			if _, err := m.Msg.MarshalTo(dAtA[i:]); err != nil {
+				return 0, err
+			}
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *SnapshotUploadPackResponse_Metadata) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SnapshotUploadPackResponse_Metadata) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.Metadata != nil {
+		{
+			size, err := m.Metadata.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintGit(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+func (m *SnapshotUploadPackResponse_Chunk) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SnapshotUploadPackResponse_Chunk) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.Chunk != nil {
+		i -= len(m.Chunk)
+		copy(dAtA[i:], m.Chunk)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.Chunk)))
+		i--
+		dAtA[i] = 0x12
+	}
+	return len(dAtA) - i, nil
+}
 func (m *ErrorInfo) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
@@ -6869,6 +8168,160 @@ func (m *PackUncommittedMetadata) Size() (n int) {
 	return n
 }
 
+func (m *SnapshotRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.CheckoutPath)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	return n
+}
+
+func (m *SnapshotResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Msg != nil {
+		n += m.Msg.Size()
+	}
+	return n
+}
+
+func (m *SnapshotResponse_Metadata) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Metadata != nil {
+		l = m.Metadata.Size()
+		n += 1 + l + sovGit(uint64(l))
+	}
+	return n
+}
+func (m *SnapshotResponse_Chunk) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Chunk != nil {
+		l = len(m.Chunk)
+		n += 1 + l + sovGit(uint64(l))
+	}
+	return n
+}
+func (m *SnapshotMetadata) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.CommitSha)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	l = len(m.ObjectFormat)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	if m.Error != nil {
+		l = m.Error.Size()
+		n += 1 + l + sovGit(uint64(l))
+	}
+	l = len(m.RemoteUrl)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	l = len(m.BaseSha)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	l = len(m.BaseRef)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	return n
+}
+
+func (m *SnapshotUploadPackRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Msg != nil {
+		n += m.Msg.Size()
+	}
+	return n
+}
+
+func (m *SnapshotUploadPackRequest_Open) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Open != nil {
+		l = m.Open.Size()
+		n += 1 + l + sovGit(uint64(l))
+	}
+	return n
+}
+func (m *SnapshotUploadPackRequest_Chunk) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Chunk != nil {
+		l = len(m.Chunk)
+		n += 1 + l + sovGit(uint64(l))
+	}
+	return n
+}
+func (m *SnapshotUploadPackResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Msg != nil {
+		n += m.Msg.Size()
+	}
+	return n
+}
+
+func (m *SnapshotUploadPackResponse_Metadata) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Metadata != nil {
+		l = m.Metadata.Size()
+		n += 1 + l + sovGit(uint64(l))
+	}
+	return n
+}
+func (m *SnapshotUploadPackResponse_Chunk) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Chunk != nil {
+		l = len(m.Chunk)
+		n += 1 + l + sovGit(uint64(l))
+	}
+	return n
+}
 func (m *ErrorInfo) Size() (n int) {
 	if m == nil {
 		return 0
@@ -7497,6 +8950,121 @@ func (this *PackUncommittedMetadata) String() string {
 		`HeadSha:` + fmt.Sprintf("%v", this.HeadSha) + `,`,
 		`NestedRepositories:` + fmt.Sprintf("%v", this.NestedRepositories) + `,`,
 		`Error:` + strings.Replace(this.Error.String(), "ErrorInfo", "ErrorInfo", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *SnapshotRequest) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&SnapshotRequest{`,
+		`CheckoutPath:` + fmt.Sprintf("%v", this.CheckoutPath) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *SnapshotResponse) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&SnapshotResponse{`,
+		`Msg:` + fmt.Sprintf("%v", this.Msg) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *SnapshotResponse_Metadata) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&SnapshotResponse_Metadata{`,
+		`Metadata:` + strings.Replace(fmt.Sprintf("%v", this.Metadata), "SnapshotMetadata", "SnapshotMetadata", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *SnapshotResponse_Chunk) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&SnapshotResponse_Chunk{`,
+		`Chunk:` + fmt.Sprintf("%v", this.Chunk) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *SnapshotMetadata) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&SnapshotMetadata{`,
+		`CommitSha:` + fmt.Sprintf("%v", this.CommitSha) + `,`,
+		`ObjectFormat:` + fmt.Sprintf("%v", this.ObjectFormat) + `,`,
+		`Error:` + strings.Replace(this.Error.String(), "ErrorInfo", "ErrorInfo", 1) + `,`,
+		`RemoteUrl:` + fmt.Sprintf("%v", this.RemoteUrl) + `,`,
+		`BaseSha:` + fmt.Sprintf("%v", this.BaseSha) + `,`,
+		`BaseRef:` + fmt.Sprintf("%v", this.BaseRef) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *SnapshotUploadPackRequest) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&SnapshotUploadPackRequest{`,
+		`Msg:` + fmt.Sprintf("%v", this.Msg) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *SnapshotUploadPackRequest_Open) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&SnapshotUploadPackRequest_Open{`,
+		`Open:` + strings.Replace(fmt.Sprintf("%v", this.Open), "SnapshotRequest", "SnapshotRequest", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *SnapshotUploadPackRequest_Chunk) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&SnapshotUploadPackRequest_Chunk{`,
+		`Chunk:` + fmt.Sprintf("%v", this.Chunk) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *SnapshotUploadPackResponse) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&SnapshotUploadPackResponse{`,
+		`Msg:` + fmt.Sprintf("%v", this.Msg) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *SnapshotUploadPackResponse_Metadata) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&SnapshotUploadPackResponse_Metadata{`,
+		`Metadata:` + strings.Replace(fmt.Sprintf("%v", this.Metadata), "SnapshotMetadata", "SnapshotMetadata", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *SnapshotUploadPackResponse_Chunk) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&SnapshotUploadPackResponse_Chunk{`,
+		`Chunk:` + fmt.Sprintf("%v", this.Chunk) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -10336,6 +11904,688 @@ func (m *PackUncommittedMetadata) Unmarshal(dAtA []byte) error {
 			if err := m.Error.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipGit(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthGit
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *SnapshotRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowGit
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: SnapshotRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: SnapshotRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field CheckoutPath", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.CheckoutPath = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipGit(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthGit
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *SnapshotResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowGit
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: SnapshotResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: SnapshotResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Metadata", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &SnapshotMetadata{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Msg = &SnapshotResponse_Metadata{v}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Chunk", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := make([]byte, postIndex-iNdEx)
+			copy(v, dAtA[iNdEx:postIndex])
+			m.Msg = &SnapshotResponse_Chunk{v}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipGit(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthGit
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *SnapshotMetadata) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowGit
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: SnapshotMetadata: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: SnapshotMetadata: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field CommitSha", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.CommitSha = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ObjectFormat", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ObjectFormat = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Error", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Error == nil {
+				m.Error = &ErrorInfo{}
+			}
+			if err := m.Error.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field RemoteUrl", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.RemoteUrl = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 5:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field BaseSha", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.BaseSha = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 6:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field BaseRef", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.BaseRef = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipGit(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthGit
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *SnapshotUploadPackRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowGit
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: SnapshotUploadPackRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: SnapshotUploadPackRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Open", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &SnapshotRequest{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Msg = &SnapshotUploadPackRequest_Open{v}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Chunk", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := make([]byte, postIndex-iNdEx)
+			copy(v, dAtA[iNdEx:postIndex])
+			m.Msg = &SnapshotUploadPackRequest_Chunk{v}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipGit(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthGit
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *SnapshotUploadPackResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowGit
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: SnapshotUploadPackResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: SnapshotUploadPackResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Metadata", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &SnapshotMetadata{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Msg = &SnapshotUploadPackResponse_Metadata{v}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Chunk", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := make([]byte, postIndex-iNdEx)
+			copy(v, dAtA[iNdEx:postIndex])
+			m.Msg = &SnapshotUploadPackResponse_Chunk{v}
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
