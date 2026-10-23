@@ -1,0 +1,6 @@
+kind: Security
+body: Require AnyIO 4.14.2 or later to address CVE-2026-63374 in TLS hostname validation.
+time: 2026-10-08T10:50:58.268042686-03:00
+custom:
+    Author: matipan
+    PR: "14570"

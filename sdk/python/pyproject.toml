@@ -27,7 +27,7 @@ classifiers = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "anyio>=3.6.2",
+    "anyio>=4.14.2",
     "cattrs>=25.1.0",
     "gql[httpx]>=4.0",
     # Avoid a broken release with only cp310 wheels.
