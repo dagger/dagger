@@ -217,6 +217,7 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 	}
 
 	params.AllowedLLMModules = allowedLLMModules
+	params.AllowedGitPushRemotes = allowedGitPushRemotes
 
 	params.Profile = profileFlag
 

@@ -19,6 +19,8 @@ var (
 	moduleNoURL       bool
 	allowedLLMModules []string
 
+	allowedGitPushRemotes []string
+
 	installName   string
 	workspaceHere bool
 
@@ -74,6 +76,12 @@ func moduleAddFlags(cmd *cobra.Command, flags *pflag.FlagSet, optional bool) {
 		defaultAllowLLM = strings.Split(allowLLMEnv, ",")
 	}
 	moduleFlags.StringSliceVar(&allowedLLMModules, "allow-llm", defaultAllowLLM, "List of URLs of remote modules allowed to access LLM APIs, or 'all' to allow every loaded module for the entire session")
+
+	var defaultAllowGitPush []string
+	if allowGitPushEnv := os.Getenv("DAGGER_ALLOW_GIT_PUSH"); allowGitPushEnv != "" {
+		defaultAllowGitPush = strings.Split(allowGitPushEnv, ",")
+	}
+	moduleFlags.StringSliceVar(&allowedGitPushRemotes, "allow-git-push", defaultAllowGitPush, "List of remote URLs modules may push to without a prompt, or 'all' to allow every destination; force pushes still prompt")
 
 	// Add the eager module loading flag to disable lazy load on runtime.
 	moduleFlags.BoolVar(&eagerRuntime, "eager-runtime", false, "load module runtime eagerly")

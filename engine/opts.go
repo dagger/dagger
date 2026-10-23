@@ -166,6 +166,9 @@ type ClientMetadata struct {
 	// Modules permitted to access LLM APIs or "all" to allow every loaded module.
 	AllowedLLMModules []string `json:"allowed_llm_modules"`
 
+	// Push destinations modules may push to without a prompt, or "all".
+	AllowedGitPushRemotes []string `json:"allowed_git_push_remotes"`
+
 	// Disable lazy loading on module runtime.
 	EagerRuntime bool `json:"eager_runtime"`
 
