@@ -1,9 +1,209 @@
 ---
-title: "Self-hosting"
+title: "Self-Hosting CI with Dagger"
 slug: /self-hosting
-description: "Run your own Dagger Engines."
+description: "Run checks after each push on Dagger Engines that a team operates."
 ---
 
-# Self-hosting
+import { daggerVersion } from '../partials/version.js';
 
-TODO
+# Self-Hosting CI with Dagger
+
+The Dagger Engine is open source. It runs on any system that can run Linux containers, with or without a Dagger Cloud account.
+
+The other pages of this documentation use [Cloud Checks](../getting-started/cloud-checks.mdx) to run checks after each push. This page explains how to run these checks on infrastructure that a team operates. A CI job on another platform, for example GitHub Actions or GitLab CI, runs `dagger check`. The CLI in that job connects to a self-hosted engine.
+
+On a developer machine, the CLI starts a local engine by default. A self-hosted engine is different. The team operates it as shared infrastructure, and the CLI connects to it through remote execution.
+
+With self-hosted engines, the team controls the infrastructure. The team also operates the engines and assigns checks to them in the configuration. Dagger Cloud makes this assignment at runtime, so checks on Cloud Engines are usually faster.
+
+## How it works
+
+Self-hosted CI with Dagger has two parts:
+
+- **CI runners** start checks. They come from another CI platform. A Git event starts a CI job on a runner, and the job runs `dagger check`
+- **Self-hosted engines** run checks. The CLI on the CI runner connects to an engine through remote execution
+
+| | Dagger Cloud | Self-hosted |
+|---|---|---|
+| Starts checks | Cloud Checks | CI runners |
+| Runs checks | Cloud Engines | Self-hosted engines |
+
+## Why the cache changes how to scale
+
+Most CI platforms scale with a pool of ephemeral machines. Each machine runs one job, then the platform replaces it. The jobs do not depend on a cache, so more machines always help.
+
+Dagger checks depend on the cache. The engine caches all operations by default, and most checks get many results from the cache. A new engine adds compute, but its cache is empty. Thus, a new engine can make checks faster or slower.
+
+Dagger Cloud uses engine telemetry to find the best balance between compute and cache. A self-hosted setup does not have this scheduler. Thus, balance the load in the configuration: assign each check to an engine.
+
+Do not run engines on a pool of ephemeral machines. Each new machine starts with an empty cache.
+
+## Recommended architecture
+
+Give each engine a persistent disk. Then scale in this order:
+
+1. Run all checks on one engine. Make the machine larger until it can easily do the load
+2. When the machine cannot be made larger, split by check. For example, check A runs on engine A, and check B runs on engine B
+3. If an engine is still overloaded, select one or more options:
+   - Split the check into smaller checks. Official Dagger modules can filter by test suite or application directory
+   - Add engines for that check, one at a time. First find the resource that limits the engine: CPU, memory, or disk IO
+   - Run that check on Cloud Engines
+
+## Select the engine in a CI job
+
+In each CI job, set `DAGGER_ENGINE` to the engine for the checks of that job:
+
+| Engine location | `DAGGER_ENGINE` |
+|---|---|
+| Same Kubernetes node as the CI runner | `unix:///run/dagger/engine.sock` |
+| Kubernetes pod, and the CI runner can use `kubectl` | `kube-pod://POD?namespace=NAMESPACE` |
+| Other host on the network | `tcp://HOST:PORT` |
+| Cloud Engines | `cloud` |
+
+Set `DAGGER_ENGINE` in every CI job. If it is not set, the CLI starts an engine on the CI runner. On an ephemeral runner, the cache of that engine is lost after each job.
+
+Install the CLI in the CI job at the same version as the engine.
+
+A `tcp://` address has no authentication. Any system that can connect to the port can run containers on the engine. Make the port available only on a private network that the CI runners use. With `kube-pod://`, the Kubernetes permissions of the CI runner control access to the engine.
+
+To run a check on Cloud Engines, set `DAGGER_ENGINE=cloud` and `DAGGER_CLOUD_TOKEN`. With this token, the CLI also sends the traces of the job to Dagger Cloud.
+
+## Deploy on Kubernetes
+
+The official [Dagger Helm chart](https://github.com/dagger/dagger/tree/main/helm/dagger) is the recommended way to deploy self-hosted engines. It works best when the CI runners also run in the cluster, for example with Actions Runner Controller or the GitLab Runner Kubernetes executor.
+
+By default, the chart deploys the engine as a DaemonSet: one engine on each node. The engine keeps its cache on the disk of the node. A CI runner connects to the engine on its own node, so a load balancer is not necessary.
+
+Use persistent nodes with large, fast disks, for example local NVMe disks. If the cluster replaces a node, the cache of that engine is lost.
+
+### Install the engines
+
+Put the engine nodes in a node pool, and give them a label. This example uses `dagger-pool=checks`.
+
+Create a values file for the pool, `checks.yaml`:
+
+```yaml
+engine:
+  nodeSelector:
+    dagger-pool: checks
+```
+
+Install the chart with a release for the pool:
+
+<CodeBlock language="shell">
+{`helm upgrade --install --namespace dagger --create-namespace \\
+  checks oci://registry.dagger.io/dagger-helm \\
+  --version ${daggerVersion} -f checks.yaml`}
+</CodeBlock>
+
+Always set `--version`. The chart version selects the engine image, and the engine must have the same version as the CLI.
+
+Wait until the engines are ready:
+
+```shell
+kubectl rollout status daemonset/checks-dagger-helm-engine --namespace dagger
+```
+
+In each engine pod, the engine listens on `/run/dagger/engine.sock`. The chart mounts this directory from the node at `/run/dagger-RELEASE-dagger-helm`. For the `checks` release, the path on the node is `/run/dagger-checks-dagger-helm`.
+
+### Connect the CI runners
+
+Add these fields to the runner pod template of the CI platform:
+
+```yaml
+spec:
+  nodeSelector:
+    dagger-pool: checks
+  containers:
+    - name: runner
+      env:
+        - name: DAGGER_ENGINE
+          value: unix:///run/dagger/engine.sock
+      volumeMounts:
+        - name: dagger-socket
+          mountPath: /run/dagger
+  volumes:
+    - name: dagger-socket
+      hostPath:
+        path: /run/dagger-checks-dagger-helm
+```
+
+The `nodeSelector` puts the runner on a node of the pool. The `hostPath` volume gives the runner the socket of the engine on that node.
+
+The socket belongs to group `1001`. If the runner container does not run as root, add `1001` to `securityContext.supplementalGroups` of the pod.
+
+### Split by check
+
+To give a check its own engines, add a node pool for that check. For example, label a second pool `dagger-pool=go-tests`. Then install a second release with a `go-tests.yaml` values file that selects this pool:
+
+<CodeBlock language="shell">
+{`helm upgrade --install --namespace dagger \\
+  go-tests oci://registry.dagger.io/dagger-helm \\
+  --version ${daggerVersion} -f go-tests.yaml`}
+</CodeBlock>
+
+Create a second runner group with the same pod template fields, but with `dagger-pool: go-tests` and the path `/run/dagger-go-tests-dagger-helm`. In the CI configuration, run each check on the runner group of its pool:
+
+```shell
+# CI job on the go-tests runners
+dagger check dag://go/packages/tests/test
+
+# CI job on the checks runners
+dagger check --skip dag://go/packages/tests/test
+```
+
+To add engines for a check, add nodes to its pool. The DaemonSet starts an engine on each new node. Each engine has its own cache, and a CI job uses the cache of the node where its runner starts.
+
+### CI runners outside the cluster
+
+If the CI runners do not run in the cluster, deploy each engine as a StatefulSet with a persistent volume. A StatefulSet release has one engine. Create a values file, `checks.yaml`:
+
+```yaml
+engine:
+  kind: StatefulSet
+  port: 1234
+  statefulSet:
+    persistentVolumeClaim:
+      enabled: true
+      resources:
+        requests:
+          storage: 200Gi
+  hostPath:
+    dataVolume:
+      enabled: false
+```
+
+Install it with the same `helm upgrade --install` command. The chart creates the Service `checks-dagger-helm` on port `1234`. Connect to it with `tcp://`. Use the chart's `service.type` and `service.annotations` values to make the Service available on the network of the CI runners.
+
+If a CI runner can use `kubectl` with permission to run `kubectl exec` in the `dagger` namespace, connect to the pod instead:
+
+```shell
+DAGGER_ENGINE='kube-pod://checks-dagger-helm-engine-0?namespace=dagger' dagger check
+```
+
+To put more than one engine behind one address, use a TCP load balancer with source IP affinity. A CLI session opens more than one connection to the engine, and all of them must go to the same engine. Without affinity, the session fails. On Kubernetes, give the engines of the group a shared label with the chart's `engine.labels` value. Then create a Service that selects this label and sets `sessionAffinity: ClientIP`. If the CI runners connect through NAT with one source IP, all their jobs go to one engine.
+
+## Deploy with Docker
+
+On a host without Kubernetes, run the engine image with Docker:
+
+<CodeBlock language="shell">
+{`docker run -d --name dagger-engine --privileged --restart always \\
+  -v dagger-engine-cache:/var/lib/dagger \\
+  -p 1234:1234 \\
+  registry.dagger.io/engine:v${daggerVersion} \\
+  --addr tcp://0.0.0.0:1234`}
+</CodeBlock>
+
+The `dagger-engine-cache` volume keeps the cache when the container restarts. Connect to the engine with `DAGGER_ENGINE=tcp://HOST:1234`.
+
+To put more than one host behind one address, use a TCP load balancer with source IP affinity, as explained in [CI runners outside the cluster](#ci-runners-outside-the-cluster).
+
+## Configure the engines
+
+The engine reads [`engine.json`](../reference/config-files/engine-json.mdx) at startup. Use it to set the cache size limits for the disk of each engine, and to configure registry mirrors and private registries.
+
+- **Helm chart:** set the `engine.configJson` value
+- **Docker:** mount the file at `/etc/dagger/engine.json`
+
+A few settings, such as registry client certificates, are only available in `engine.toml`. See [Settings only in engine.toml](../reference/config-files/engine-json.mdx#settings-only-in-enginetoml).
