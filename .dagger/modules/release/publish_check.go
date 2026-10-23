@@ -2275,6 +2275,7 @@ func requireNotContains(haystack, needle, msg string) error {
 // every time it is created from the same source. The nested builds stamp
 // that commit, so a commit that changed with the clock would change their
 // cache keys on every run.
+// +check
 func (r *Release) PublishCheckRepoIsDeterministic(
 	ctx context.Context,
 	// Source tree to commit.

@@ -839,8 +839,9 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("PublishCheckRepoIsDeterministic",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Verify that the publish check's release git repo gets the same commit\nevery time it is created from the same source. The nested builds stamp\nthat commit, so a commit that changed with the clock would change their\ncache keys on every run.").
-							WithSourceMap(dag.SourceMap("publish_check.go", 2278, 1)).
-							WithArg("source", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Source tree to commit.", SourceMap: dag.SourceMap("publish_check.go", 2282, 2), DefaultPath: "/"})).
+							WithSourceMap(dag.SourceMap("publish_check.go", 2279, 1)).
+							WithCheck().
+							WithArg("source", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Source tree to commit.", SourceMap: dag.SourceMap("publish_check.go", 2283, 2), DefaultPath: "/"})).
 					WithFunction(
 						dag.Function("PublishWithMockEndpoints",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
