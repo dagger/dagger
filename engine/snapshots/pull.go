@@ -559,10 +559,6 @@ func (cm *snapshotManager) importLayerContent(ctx context.Context, desc ocispecs
 	if provider == nil {
 		return layerSourceDownload, false, chainError(ctx, chainMode, desc, "provider", errors.Wrapf(cerrdefs.ErrNotFound, "missing local layer %s", desc.Digest))
 	}
-	if !fetchAheadEnabled() {
-		read, err := cm.downloadChainContent(ctx, desc, provider)
-		return downloadSource(false, read, err), false, err
-	}
 	var owner *ExportChain
 	var ahead *contentFetch
 	if chain != nil {

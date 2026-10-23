@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
-	"os"
 	"sync"
 
 	"github.com/containerd/containerd/v2/core/content"
@@ -13,11 +12,6 @@ import (
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/sync/semaphore"
 )
-
-// fetchAheadEnv turns fetching chain layers' blobs ahead, and joining
-// downloads, off when set to 0: each import then downloads its own blobs
-// under its own lease, one layer at a time.
-const fetchAheadEnv = "_EXPERIMENTAL_DAGGER_FETCH_AHEAD"
 
 const (
 	// chainAheadWindow is how many layers past the one importing a chain
@@ -34,10 +28,6 @@ const (
 	// import up.
 	maxAheadDownloads = 32
 )
-
-var fetchAheadEnabled = sync.OnceValue(func() bool {
-	return os.Getenv(fetchAheadEnv) != "0"
-})
 
 // errFetchAbandoned cancels a chain-content download no import waits for
 // anymore.

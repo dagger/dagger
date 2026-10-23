@@ -300,7 +300,7 @@ type chainAhead struct {
 // to chainAheadWindow past it. It stops at the first that finds no free slot;
 // a later fill tries that layer again.
 func (a *chainAhead) fill(ctx context.Context, i int) {
-	if a.chain.Provider == nil || !fetchAheadEnabled() {
+	if a.chain.Provider == nil {
 		return
 	}
 	a.next = max(a.next, i+1)
