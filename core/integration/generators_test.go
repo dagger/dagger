@@ -1576,11 +1576,11 @@ func (GeneratorsSuite) TestGeneratorArtifactEvaluation(ctx context.Context, t *t
 	require.NoError(t, err)
 	out, err := modGen.WithWorkdir("hello-with-generators").With(daggerQuery(`{
  currentWorkspace { artifacts(include: ["generate-files"]) { filterTypes(types: ["Generator"]) {
-  values { error { message } value { ... on Generator { changeset { isEmpty } } } }
+  asGenerators { sync { changeset { isEmpty } } }
  } } }
 }`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"currentWorkspace":{"artifacts":{"filterTypes":{"values":[{"error":null,"value":{"changeset":{"isEmpty":false}}}]}}}}`, out)
+	require.JSONEq(t, `{"currentWorkspace":{"artifacts":{"filterTypes":{"asGenerators":[{"sync":{"changeset":{"isEmpty":false}}}]}}}}`, out)
 }
 
 // TestClientSchemaIntrospectionJSON locks in that

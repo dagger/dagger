@@ -110,6 +110,17 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 	// needing to make calls to their own API).
 	switch x := value.(type) {
 	case dagql.ObjectResult[*ModuleObject]:
+		if scope := dagql.CurrentResultScope(ctx); scope != nil {
+			srv, err := CurrentDagqlServer(ctx)
+			if err != nil {
+				return nil, err
+			}
+			scoped, err := scope.Apply(ctx, srv, x)
+			if err != nil {
+				return nil, err
+			}
+			x = scoped.(dagql.ObjectResult[*ModuleObject])
+		}
 		parentCall, err := x.ResultCall()
 		if err != nil {
 			return nil, fmt.Errorf("module object SDK input call frame: %w", err)
@@ -203,6 +214,18 @@ func moduleObjectValueToSDKInput(ctx context.Context, modType ModType, value any
 		case nil:
 			return nil, nil
 		case dagql.AnyResult:
+			if scope := dagql.CurrentResultScope(ctx); scope != nil {
+				if object, ok := value.(dagql.AnyObjectResult); ok {
+					srv, err := CurrentDagqlServer(ctx)
+					if err != nil {
+						return nil, err
+					}
+					value, err = scope.Apply(ctx, srv, object)
+					if err != nil {
+						return nil, err
+					}
+				}
+			}
 			id, err := value.ID()
 			if err != nil {
 				return nil, err
@@ -488,7 +511,7 @@ type ModuleObject struct {
 	TypeDef *ObjectTypeDef
 	Fields  map[string]any
 
-	CollectionBatch bool
+	ArtifactView *ArtifactView
 	// Set once when the value is attached. Ordinary copies retain this reference.
 	CollectionBase dagql.AnyResult
 }
@@ -517,6 +540,7 @@ type persistedModuleObjectValue struct {
 type persistedModuleObjectPayload struct {
 	Fields         map[string]persistedModuleObjectValue `json:"fields,omitempty"`
 	CollectionBase uint64                                `json:"collectionBase,omitempty"`
+	ArtifactView   *persistedArtifactView                `json:"artifactView,omitempty"`
 }
 
 func (obj *ModuleObject) AttachDependencyResults(
@@ -527,7 +551,13 @@ func (obj *ModuleObject) AttachDependencyResults(
 	if obj == nil {
 		return nil, nil
 	}
-	owned, err := obj.attachCollectionBase(self, attach)
+	view, owned, err := obj.ArtifactView.attach(attach)
+	if err != nil {
+		return nil, err
+	}
+	obj.ArtifactView = view
+	base, err := obj.attachCollectionBase(self, attach)
+	owned = append(owned, base...)
 	if err != nil {
 		return nil, err
 	}
@@ -816,6 +846,11 @@ func (obj *ModuleObject) EncodePersistedObject(ctx context.Context, enc *dagql.P
 	payload := persistedModuleObjectPayload{
 		Fields: make(map[string]persistedModuleObjectValue, len(obj.Fields)),
 	}
+	var err error
+	payload.ArtifactView, err = obj.ArtifactView.encode(enc)
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, err
+	}
 	// A base that points to self is restored before the cache publishes it. Encoding
 	// it as a child reference would require recursively decoding the same value.
 	if obj.CollectionBase != nil && obj.CollectionBase.Unwrap() != obj {
@@ -862,10 +897,14 @@ func (obj *ModuleObject) DecodePersistedObject(ctx context.Context, dec *dagql.P
 		fields[name] = decoded
 	}
 	decoded := &ModuleObject{
-		Module:          obj.Module,
-		TypeDef:         obj.TypeDef,
-		Fields:          fields,
-		CollectionBatch: obj.CollectionBatch,
+		Module:  obj.Module,
+		TypeDef: obj.TypeDef,
+		Fields:  fields,
+	}
+	var err error
+	decoded.ArtifactView, err = payload.ArtifactView.decode(ctx, dec)
+	if err != nil {
+		return nil, err
 	}
 	if payload.CollectionBase != 0 {
 		var err error
@@ -1122,9 +1161,6 @@ func persistedModuleObjectFieldName(field reflect.StructField) (string, bool) {
 
 func (obj *ModuleObject) Type() *ast.Type {
 	name := obj.TypeDef.Name
-	if obj.CollectionBatch {
-		name += "_Batch"
-	}
 	return &ast.Type{
 		NamedType: name,
 		NonNull:   true,
@@ -1143,7 +1179,7 @@ func (obj *ModuleObject) TypeDefinition(view call.View) *ast.Definition {
 	if obj.TypeDef.SourceMap.Valid {
 		def.Directives = append(def.Directives, obj.TypeDef.SourceMap.Value.Self().TypeDirective())
 	}
-	if obj.TypeDef.Collection != nil && obj.TypeDef.Collection.Enabled && !obj.CollectionBatch {
+	if obj.TypeDef.Collection != nil && obj.TypeDef.Collection.Enabled {
 		def.Directives = append(def.Directives, &ast.Directive{Name: "collection"})
 	}
 	return def
@@ -1204,6 +1240,11 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server, opts ..
 		return fmt.Errorf("install state setter: %w", err)
 	}
 	fields = append(fields, setter)
+	viewField, err := obj.artifactViewField(dag)
+	if err != nil {
+		return err
+	}
+	fields = append(fields, viewField)
 
 	class.Install(fields...)
 	dag.InstallObject(class, installDirectives...)
@@ -1218,9 +1259,6 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server, opts ..
 }
 
 func (obj *ModuleObject) isMainObject() bool {
-	if obj.CollectionBatch {
-		return false
-	}
 	if src := obj.Module.Self().GetSource(); src != nil && src.Entrypoint != nil {
 		return obj.TypeDef.Constructor.Valid
 	}
@@ -1316,7 +1354,8 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 					Value: v,
 				})
 			}
-			return fn.Call(ctx, &CallOpts{
+			// Constructors build the source graph. Selection applies the view to the result.
+			return fn.Call(dagql.WithResultScope(ctx, nil), &CallOpts{
 				Inputs:       callInput,
 				ParentTyped:  nil,
 				ParentFields: nil,
@@ -1529,6 +1568,8 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) ([]da
 		projectionSpec.ViewFilter = AfterVersion("v1.0.0-0")
 		projectionSpec.IsPersistable = false
 		projectionSpec.TTL = 0
+		projectionSpec.ImplicitInputs = nil
+		projectionSpec.Reevaluate = false
 		fields = append(fields, dagql.Field[*ModuleObject]{
 			Spec: &projectionSpec,
 			Func: func(ctx context.Context, receiver dagql.ObjectResult[*ModuleObject], args map[string]dagql.Input, _ call.View) (dagql.AnyResult, error) {
@@ -1542,8 +1583,8 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) ([]da
 				// wrap it.
 				return dagql.NewObjectResultForCurrentCall(ctx, installed.orCurrent(ctx), &Check{
 					Assertion: dagql.NonNull(dagql.String(fun.Description)),
-					Receiver:  receiver, Function: fun.Name, Inputs: inputs, Workspace: workspace, CacheTTL: field.Spec.TTL,
-					Address: CheckNameFromContext(ctx),
+					Receiver:  receiver, Function: fun.Name, Inputs: inputs, Workspace: workspace,
+					CachePolicy: fun.derivedCachePolicy(obj.Module.Self()), CacheTTL: field.Spec.TTL,
 				})
 			},
 		})

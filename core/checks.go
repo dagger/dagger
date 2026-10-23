@@ -14,54 +14,32 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-type checkNameKey struct{}
-
-type checkSpanKey struct{}
-
-// WithCheckName marks a check already covered by an artifact evaluation span,
-// the span current in ctx. It does not change the check's execution identity.
-func WithCheckName(ctx context.Context, name string) context.Context {
-	ctx = context.WithValue(ctx, checkSpanKey{}, trace.SpanFromContext(ctx))
-	return context.WithValue(ctx, checkNameKey{}, name)
-}
-
-// checkSpanContext returns ctx with the span that covers the running check as
-// its current span, so the check's own output and attributes land on it rather
-// than on whichever (possibly internal) call span is running the check.
-func checkSpanContext(ctx context.Context) context.Context {
-	if span, ok := ctx.Value(checkSpanKey{}).(trace.Span); ok && span.SpanContext().IsValid() {
-		return trace.ContextWithSpan(ctx, span)
-	}
-	return ctx
-}
-
-// CheckNameFromContext returns the check's dag:// address when the current
-// evaluation already named it (see WithCheckName), or "" otherwise. Check
-// constructors use it to record the address on the Check itself so later runs
-// name their span correctly even when reached through a path that does not set
-// the context value.
-func CheckNameFromContext(ctx context.Context) string {
-	name, _ := ctx.Value(checkNameKey{}).(string)
-	return name
-}
-
 // Check is a deferred assertion and its outcome.
 type Check struct {
 	Assertion       dagql.Nullable[dagql.String]                   `field:"true" doc:"The assertion that is false when this check fails."`
 	Report          dagql.Nullable[dagql.ObjectResult[*Directory]] `field:"true" doc:"An optional report produced by the check."`
-	RemoteArtifact  *Artifact
+	RemoteArtifact  dagql.ObjectResult[*Artifact]
 	RemoteArguments JSON
+	Unaddressed     dagql.ObjectResult[*Check]
 	Receiver        dagql.ObjectResult[*ModuleObject]
 	Workspace       dagql.ObjectResult[*Workspace]
 	Function        string
 	Address         string
 	Inputs          []CallInput
 	Generator       dagql.ObjectResult[*Generator]
+	CachePolicy     FunctionCachePolicy
 	CacheTTL        int64
 	Failure         string
 	Completed       bool
 	Passed          bool
 	Error           dagql.Nullable[dagql.ObjectResult[*Error]]
+}
+
+func (c *Check) ResultScope() dagql.ResultScope {
+	if c.Receiver.Self() != nil {
+		return c.Receiver.Self().ResultScope()
+	}
+	return nil
 }
 
 func (*Check) Type() *ast.Type { return &ast.Type{NamedType: "Check", NonNull: true} }
@@ -71,44 +49,17 @@ func (*Check) TypeDescription() string {
 
 func (c *Check) Clone() *Check {
 	copy := *c
-	if c.RemoteArtifact != nil {
-		copy.RemoteArtifact = c.RemoteArtifact.Clone()
-	}
 	return &copy
 }
 
-func (c *Check) Run(ctx context.Context) (_ *Check, rerr error) {
+func (c *Check) Run(ctx context.Context) (*Check, error) {
 	c = c.Clone()
 	if c.Completed {
 		return c, nil
 	}
 	var failure error
-	name := CheckNameFromContext(ctx)
-	// The span covering this check: the artifact evaluation's when it named the
-	// check, or the one started below.
-	spanCtx := checkSpanContext(ctx)
-	if c.RemoteArtifact == nil && name == "" {
-		name = c.Address
-		if name == "" {
-			name = c.Function
-		}
-		if name == "" {
-			name = "generator stale"
-		}
-		var span trace.Span
-		ctx, span = Tracer(ctx).Start(ctx, name, trace.WithAttributes(
-			attribute.Bool(telemetry.UIRollUpLogsAttr, true),
-			attribute.Bool(telemetry.UIRollUpSpansAttr, true),
-			attribute.String(telemetry.CheckNameAttr, name),
-		))
-		spanCtx = ctx
-		defer func() {
-			span.SetAttributes(attribute.Bool(telemetry.CheckPassedAttr, failure == nil))
-			telemetry.EndWithCause(span, &failure)
-		}()
-	}
 	switch {
-	case c.RemoteArtifact != nil:
+	case c.RemoteArtifact.Self() != nil:
 		failure = c.runRemote(ctx)
 	case c.Failure != "":
 		failure = fmt.Errorf("%s", c.Failure)
@@ -128,9 +79,9 @@ func (c *Check) Run(ctx context.Context) (_ *Check, rerr error) {
 				// Stale: running the generator is what fixes this check. Not
 				// when the generator itself failed, which it would just repeat.
 				if uri, err := c.Generator.Self().Artifact.URI(ArtifactURIOpts{DimensionKeys: true}); err == nil {
-					trace.SpanFromContext(spanCtx).SetAttributes(attribute.String(telemetryattrs.CheckGeneratorAttr, uri))
+					trace.SpanFromContext(ctx).SetAttributes(attribute.String(telemetryattrs.CheckGeneratorAttr, uri))
 				}
-				logStalePatch(ctx, spanCtx, srv, changes)
+				logStalePatch(ctx, srv, changes)
 				failure = fmt.Errorf("generated files are not up to date")
 			}
 		}
@@ -151,7 +102,7 @@ func (c *Check) Run(ctx context.Context) (_ *Check, rerr error) {
 // logStalePatch prints the changes a stale generator would make on the
 // check's span: the patch itself, tagged so frontends highlight it like a
 // tool's patch, or a diff-stat summary when the patch is too large to show.
-func logStalePatch(ctx, spanCtx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) {
+func logStalePatch(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) {
 	preview := summarizePatch(ctx, srv, changes, stalePatchLimits)
 	if preview == "" || ctx.Err() != nil {
 		// Canceled (e.g. by fail-fast): the preview is at best a warning about
@@ -165,7 +116,7 @@ func logStalePatch(ctx, spanCtx context.Context, srv *dagql.Server, changes dagq
 	if contentType := toolResultContentType(preview); contentType != "" {
 		attrs = append(attrs, log.String(telemetry.ContentTypeAttr, contentType))
 	}
-	stdio := telemetry.SpanStdio(spanCtx, InstrumentationLibrary, attrs...)
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, attrs...)
 	defer stdio.Close()
 	fmt.Fprint(stdio.Stdout, preview)
 }

@@ -239,6 +239,8 @@ type Server interface {
 	// The list of connected client IDs
 	Clients() []string
 
+	SharedCloudArtifactClient(context.Context, string) (*engineclient.Client, error)
+
 	// Return a client connected to a cloud engine. If bool return is false, the local engine should be used. Session attachables for the returned client will be proxied back to the calling client.
 	CloudEngineClient(
 		ctx context.Context,

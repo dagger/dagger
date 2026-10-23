@@ -757,7 +757,7 @@ fragment FieldParts on FieldTypeDef { name typeDef { ...TypeDefRefParts } }
 		asInterface { name functions { ...FunctionParts } }
 		asInput { name fields { ...FieldParts } }
 		asList { elementTypeDef { ...TypeDefRefParts } }
-		asCollection { keyType { ...TypeDefRefParts } valueType { ...TypeDefRefParts } batchType { ...TypeDefRefParts } }
+		asCollection { keyType { ...TypeDefRefParts } valueType { ...TypeDefRefParts } }
 	}
 }`
 

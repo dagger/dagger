@@ -7,59 +7,216 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-
-	"dagger.io/dagger/core"
+	"sync"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
+	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core/artifact"
 	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/core/workspace"
+	"github.com/dagger/dagger/util/parallel"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/spf13/cobra"
+	"go.opentelemetry.io/otel/attribute"
+	"golang.org/x/sync/semaphore"
 )
+
+type artifactObjectValue struct {
+	ID   core.ID
+	Type string `json:"__typename"`
+}
 
 type artifactValueResult struct {
 	Artifact struct {
 		URI  string
 		Path []string
 	}
-	Value *struct {
-		ID   core.ID
-		Type string `json:"__typename"`
-	}
-	Error *struct {
-		Message string
-		// Values are the error extensions, such as an exec error's output.
-		Values []struct{ Name, Value string }
-	}
+	Value *artifactObjectValue
+	Error *artifactExecutionError
 }
 
-// evaluateArtifacts evaluates the artifacts, at most maxConcurrency at once on
-// the engine. 0 means no limit.
+type artifactExecutionItem struct {
+	ID            core.ID
+	URI           string
+	Path          []string
+	Directives    []string
+	LoadError     string
+	Workspace     *struct{ ID core.ID }
+	DimensionKeys []struct{ Dimension string }
+}
+
+type artifactExecutionError struct {
+	Message string
+	Values  []struct{ Name, Value string }
+}
+
 func evaluateArtifacts(ctx context.Context, dag *dagger.Client, artifacts *core.Artifacts, failFast bool, maxConcurrency int) ([]artifactValueResult, error) {
+	if maxConcurrency < 0 {
+		return nil, fmt.Errorf("maxConcurrency must not be negative: %d", maxConcurrency)
+	}
 	id, err := artifacts.ID(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var response struct {
-		Selection struct{ Values []artifactValueResult }
-	}
-	// Send maxConcurrency only when set, so engines without the argument still
-	// work.
-	params, args := "", ""
-	variables := map[string]any{"id": id, "failFast": failFast}
-	if maxConcurrency > 0 {
-		params, args = ", $maxConcurrency: Int!", ", maxConcurrency: $maxConcurrency"
-		variables["maxConcurrency"] = maxConcurrency
+		Selection struct{ Items []artifactExecutionItem }
 	}
 	err = dag.Do(ctx, &dagger.Request{
-		Query: `query ArtifactValues($id: ID!, $failFast: Boolean!` + params + `) {
-   selection: node(id: $id) { ... on Artifacts { values(failFast: $failFast` + args + `) {
-    artifact { uri path } error { message values { name value } } value { id __typename }
-   } } }
-  }`,
-		Variables: variables,
+		Query: `query($id: ID!) { selection: node(id: $id) { ... on Artifacts {
+		 items { id uri(dimensionKeys: true) path directives loadError workspace { id } dimensionKeys { dimension } }
+		} } }`, Variables: map[string]any{"id": id},
 	}, &dagger.Response{Data: &response})
-	return response.Selection.Values, err
+	if err != nil {
+		return nil, err
+	}
+	results := make([]artifactValueResult, len(response.Selection.Items))
+	jobs := parallel.New().WithFailFast(failFast).WithRollupLogs(true).WithRollupSpans(true)
+	var limit *semaphore.Weighted
+	if maxConcurrency > 0 {
+		limit = semaphore.NewWeighted(int64(maxConcurrency))
+	}
+	var syncFields sync.Map
+	for i, item := range response.Selection.Items {
+		results[i].Artifact.URI, results[i].Artifact.Path = item.URI, item.Path
+		isCheck := slices.ContainsFunc(item.DimensionKeys, func(key struct{ Dimension string }) bool { return key.Dimension == "type:Check" })
+		remote := isCheck && checksScaleOut && item.LoadError == "" && item.Workspace != nil
+		var attrs []attribute.KeyValue
+		if slices.Contains(item.Directives, "generate") {
+			attrs = append(attrs, attribute.String(telemetry.GeneratorNameAttr, item.URI))
+		}
+		jobs = jobs.WithTracing(!isCheck).WithJob(item.URI, func(ctx context.Context) error {
+			err := ctx.Err()
+			if err == nil && limit != nil && !remote {
+				err = limit.Acquire(ctx, 1)
+				if err == nil {
+					defer limit.Release(1)
+				}
+			}
+			if err == nil {
+				err = evaluateArtifactItem(ctx, dag, item.ID, &results[i], &syncFields)
+			}
+			if err != nil {
+				if results[i].Error != nil {
+					return err
+				}
+				results[i].Error = &artifactExecutionError{Message: err.Error()}
+				var extended interface {
+					error
+					Extensions() map[string]any
+				}
+				if errors.As(err, &extended) {
+					for name, value := range extended.Extensions() {
+						encoded, encodeErr := json.Marshal(value)
+						if encodeErr == nil {
+							results[i].Error.Values = append(results[i].Error.Values, struct{ Name, Value string }{name, string(encoded)})
+						}
+					}
+				}
+			}
+			return err
+		}, attrs...)
+	}
+	if err := jobs.Run(ctx); err != nil {
+		for i := range results {
+			if results[i].Value == nil && results[i].Error == nil {
+				results[i].Error = &artifactExecutionError{Message: context.Canceled.Error()}
+			}
+		}
+	}
+	return results, nil
+}
+
+func evaluateArtifactItem(ctx context.Context, dag *dagger.Client, id core.ID, result *artifactValueResult, syncFields *sync.Map) error {
+	var response struct {
+		Node struct {
+			Value *artifactObjectValue
+		}
+	}
+	if err := dag.Do(ctx, &dagger.Request{
+		Query:     `query($id: ID!) { node(id: $id) { ... on Artifact { value { id __typename } } } }`,
+		Variables: map[string]any{"id": id},
+	}, &dagger.Response{Data: &response}); err != nil {
+		return err
+	}
+	result.Value = response.Node.Value
+	if result.Value == nil {
+		return fmt.Errorf("artifact has no value")
+	}
+	typeName := result.Value.Type
+	lookup, _ := syncFields.LoadOrStore(typeName, sync.OnceValues(func() (*introspection.Field, error) {
+		var schema struct{ Type introspection.Type }
+		err := dag.Do(ctx, &dagger.Request{
+			Query: `query($type: String!) { type: __type(name: $type) { fields {
+			 name args { defaultValue type { kind } }
+			 type { kind name ofType { kind name ofType { kind name ofType { kind name } } } }
+			} } }`,
+			Variables: map[string]any{"type": typeName},
+		}, &dagger.Response{Data: &schema})
+		if err != nil {
+			return nil, err
+		}
+		for _, field := range schema.Type.Fields {
+			if field.Name == "sync" && !slices.ContainsFunc(field.Args, func(arg introspection.InputValue) bool {
+				return arg.TypeRef.Kind == introspection.TypeKindNonNull && arg.DefaultValue == nil
+			}) {
+				return field, nil
+			}
+		}
+		return nil, nil
+	}))
+	syncField, err := lookup.(func() (*introspection.Field, error))()
+	if err != nil || syncField == nil {
+		return err
+	}
+	returnType := syncField.TypeRef
+	for returnType.OfType != nil {
+		returnType = returnType.OfType
+	}
+	selection := "sync"
+	retain := syncField.TypeRef.IsObject() && returnType.Name == typeName
+	if retain {
+		selection += " { id"
+		if typeName == "Check" {
+			selection += " pass error { message values { name value } }"
+		}
+		selection += " }"
+	} else if returnType.Kind == introspection.TypeKindObject || returnType.Kind == introspection.TypeKindInterface || returnType.Kind == introspection.TypeKindUnion {
+		selection += " { __typename }"
+	}
+	if !retain {
+		return dag.Do(ctx, &dagger.Request{
+			Query:     `query($id: ID!) { node(id: $id) { ... on ` + typeName + ` { ` + selection + ` } } }`,
+			Variables: map[string]any{"id": result.Value.ID},
+		}, &dagger.Response{})
+	}
+	var completed struct {
+		Node struct {
+			Sync struct {
+				ID    core.ID
+				Pass  bool
+				Error *artifactExecutionError
+			}
+		}
+	}
+	err = dag.Do(ctx, &dagger.Request{
+		Query:     `query($id: ID!) { node(id: $id) { ... on ` + typeName + ` { ` + selection + ` } } }`,
+		Variables: map[string]any{"id": result.Value.ID},
+	}, &dagger.Response{Data: &completed})
+	if err != nil {
+		return err
+	}
+	if completed.Node.Sync.ID != "" {
+		result.Value.ID = completed.Node.Sync.ID
+	}
+	if typeName == "Check" && !completed.Node.Sync.Pass {
+		result.Error = completed.Node.Sync.Error
+		if result.Error == nil {
+			result.Error = &artifactExecutionError{Message: "check failed"}
+		}
+		return errors.New(result.Error.Message)
+	}
+	return nil
 }
 
 func artifactResultErrors(results []artifactValueResult) error {
@@ -109,72 +266,82 @@ func artifactWorkspaceConfig(ctx context.Context, ws *core.Workspace) (*workspac
 	return workspace.ParseConfig([]byte(config))
 }
 
-// commandArtifacts keeps each address's filters scoped to its own path.
+// commandArtifacts applies shared filters to one selection of paths.
 func commandArtifacts(ctx context.Context, dag *dagger.Client, ws *core.Workspace, cmd *cobra.Command, addresses []string, strict bool, keys ...dagaddress.Pair) (*core.Artifacts, error) {
 	parsed, err := parseArtifactAddresses(addresses)
 	if err != nil {
 		return nil, err
 	}
-	// currentWorkspace has a new identity on each call. Resolve it once so
-	// address selections from this command can share a collection batch.
 	workspaceID, err := ws.ID(ctx)
 	if err != nil {
 		return nil, err
 	}
 	ws = core.Ref[*core.Workspace](core.NewQuery(dag), workspaceID)
-	all := ws.Artifacts(core.WorkspaceArtifactsOpts{Include: artifactPaths(parsed, keys...)})
-	filtered := len(keys) > 0
 	for _, address := range parsed {
-		filtered = filtered || len(address.Types) > 0 || len(address.Query) > 0
-	}
-	if !filtered {
-		if strict {
-			if err := requireArtifactModules(ctx, dag, all, nil); err != nil {
-				return nil, err
-			}
+		if len(address.Query) == 0 {
+			continue
 		}
-		return all, nil
-	}
-	var selected *core.Artifacts
-	for _, address := range parsed {
-		selection := ws.Artifacts(core.WorkspaceArtifactsOpts{Include: artifactPaths([]*dagaddress.Address{address}, keys...)})
-		if len(address.Query) > 0 {
-			defs, err := artifactDimensions(ctx, dag, selection)
-			if err != nil {
-				return nil, err
-			}
-			if err := bindArtifactDimensions(address.Query, defs); err != nil {
-				return nil, err
-			}
+		defs, err := artifactDimensions(ctx, dag, ws.Artifacts(core.WorkspaceArtifactsOpts{Include: artifactPaths([]*dagaddress.Address{address}, keys...)}))
+		if err != nil {
+			return nil, err
 		}
-		address.Query = append(address.Query, keys...)
-		if strict {
-			if err := requireArtifactModules(ctx, dag, selection, address.DimensionFilters()); err != nil {
-				return nil, err
-			}
-		}
-		if slices.ContainsFunc(address.Query, func(p dagaddress.Pair) bool { return p.HasKey && strings.HasPrefix(p.Dimension, "type:") }) {
-			targets, err := commandArtifactTargets(ctx, dag, cmd, selection)
-			if err != nil {
-				return nil, err
-			}
-			paths, err := readArtifactListPaths(ctx, dag, targets)
-			if err != nil {
-				return nil, err
-			}
-			selection, err = filterArtifactTypeKeys(selection, paths, address)
-			if err != nil {
-				return nil, err
-			}
-		}
-		selection = filterArtifactAddress(selection, address)
-		if selected == nil {
-			selected = selection
-		} else {
-			selected = selected.WithArtifacts(selection)
+		if err := bindArtifactDimensions(address.Query, defs); err != nil {
+			return nil, err
 		}
 	}
-	return selected, nil
+	shared, err := sharedArtifactFilters(parsed)
+	if err != nil {
+		return nil, err
+	}
+	shared.Query = append(shared.Query, keys...)
+	selection := ws.Artifacts(core.WorkspaceArtifactsOpts{Include: artifactPaths(parsed, keys...)})
+	if strict {
+		if err := requireArtifactModules(ctx, dag, selection, shared.DimensionFilters()); err != nil {
+			return nil, err
+		}
+	}
+	if slices.ContainsFunc(shared.Query, func(p dagaddress.Pair) bool { return p.HasKey && strings.HasPrefix(p.Dimension, "type:") }) {
+		targets, err := commandArtifactTargets(ctx, dag, cmd, selection)
+		if err != nil {
+			return nil, err
+		}
+		paths, err := readArtifactListPaths(ctx, dag, targets)
+		if err != nil {
+			return nil, err
+		}
+		selection, err = filterArtifactTypeKeys(selection, paths, shared)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return filterArtifactAddress(selection, shared), nil
+}
+
+func sharedArtifactFilters(addresses []*dagaddress.Address) (*dagaddress.Address, error) {
+	var previous string
+	for i, address := range addresses {
+		types := slices.Clone(address.Types)
+		slices.Sort(types)
+		types = slices.Compact(types)
+		filters := address.DimensionFilters()
+		for i := range filters {
+			slices.Sort(filters[i].Keys)
+			filters[i].Keys = slices.Compact(filters[i].Keys)
+		}
+		slices.SortFunc(filters, func(a, b dagaddress.DimensionFilter) int { return strings.Compare(a.Dimension, b.Dimension) })
+		encoded, err := json.Marshal(struct {
+			Types      []string
+			Dimensions []dagaddress.DimensionFilter
+		}{types, filters})
+		if err != nil {
+			return nil, err
+		}
+		if i > 0 && string(encoded) != previous {
+			return nil, fmt.Errorf("addresses with different filters require a union of workspace views; use shared filter flags")
+		}
+		previous = string(encoded)
+	}
+	return &dagaddress.Address{Types: slices.Clone(addresses[0].Types), Query: slices.Clone(addresses[0].Query)}, nil
 }
 
 func requireArtifactModules(ctx context.Context, dag *dagger.Client, selection *core.Artifacts, filters []dagaddress.DimensionFilter) error {

@@ -1263,15 +1263,6 @@ func (mod *Module) TypeDefs(ctx context.Context, dag *dagql.Server) (dagql.Objec
 	typeDefs = append(typeDefs, mod.ObjectDefs...)
 	typeDefs = append(typeDefs, mod.InterfaceDefs...)
 	typeDefs = append(typeDefs, mod.EnumDefs...)
-	for _, def := range mod.ObjectDefs {
-		batch, err := CollectionBatchType(ctx, dag, def.Self().AsObject.Value)
-		if err != nil {
-			return nil, err
-		}
-		if batch.Valid {
-			typeDefs = append(typeDefs, batch.Value)
-		}
-	}
 	return typeDefs, nil
 }
 

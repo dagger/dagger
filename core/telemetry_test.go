@@ -231,6 +231,10 @@ func (ms *mockServer) CloudEngineClient(context.Context, string, string, []strin
 	return nil, false, nil
 }
 
+func (ms *mockServer) SharedCloudArtifactClient(context.Context, string) (*engineclient.Client, error) {
+	return nil, nil
+}
+
 func (ms *mockServer) CleanMountNS() *os.File { return nil }
 
 func TestParseCallerCalleeRefs(t *testing.T) {

@@ -16,34 +16,6 @@ defmodule Dagger.CollectionTypeDef do
   @type t() :: %__MODULE__{}
 
   @doc """
-  The type of batch operations, or null when there are none.
-  """
-  @spec batch_type(t()) :: {:ok, Dagger.TypeDef.t() | nil} | {:error, term()}
-  def batch_type(%__MODULE__{} = collection_type_def) do
-    query_builder =
-      collection_type_def.query_builder |> QB.select("batchType") |> QB.select("id")
-
-    case Client.execute(collection_type_def.client, query_builder) do
-      {:ok, nil} ->
-        {:ok, nil}
-
-      {:ok, id} ->
-        {:ok,
-         %Dagger.TypeDef{
-           query_builder:
-             QB.query()
-             |> QB.select("node")
-             |> QB.put_arg("id", id)
-             |> QB.inline_fragment("TypeDef"),
-           client: collection_type_def.client
-         }}
-
-      error ->
-        error
-    end
-  end
-
-  @doc """
   A unique identifier for this CollectionTypeDef.
   """
   @spec id(t()) :: {:ok, String.t()} | {:error, term()}

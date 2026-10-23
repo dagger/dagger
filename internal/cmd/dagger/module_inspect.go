@@ -716,7 +716,6 @@ type modTypeDef struct {
 type modCollection struct {
 	KeyType   *modTypeDef
 	ValueType *modTypeDef
-	BatchType *modTypeDef
 }
 
 func (t *modTypeDef) String() string {

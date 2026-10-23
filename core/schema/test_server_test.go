@@ -199,6 +199,10 @@ func (s *currentTypeDefsTestServer) CloudEngineClient(context.Context, string, s
 	return nil, false, nil
 }
 
+func (s *currentTypeDefsTestServer) SharedCloudArtifactClient(context.Context, string) (*engineclient.Client, error) {
+	return nil, nil
+}
+
 func (s *currentTypeDefsTestServer) CleanMountNS() *os.File { return nil }
 
 func (s *currentTypeDefsTestServer) CurrentWorkspaceLock(context.Context, bool) (*workspace.Lock, bool, error) {

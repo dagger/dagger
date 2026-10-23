@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -82,7 +81,6 @@ type functionCommandPath struct {
 type collectionCallRoute struct {
 	Dimension *artifact.Dimension
 	KeyType   *modTypeDef
-	Batch     bool
 }
 
 type plannedFunctionCall struct {
@@ -729,9 +727,6 @@ func (fc *FuncCommand) addCollectionSelectorFlags(ctx context.Context, cmd *cobr
 			return fmt.Errorf("collection selector --%s conflicts with an argument", name)
 		}
 		usage := fmt.Sprintf("Select %s by `%s`", cliName(route.Dimension.ItemType), route.Dimension.KeyName)
-		if route.Batch {
-			usage += "; may be repeated"
-		}
 		usage += " [required]"
 		cmd.Flags().StringArray(name, nil, usage)
 		flag := cmd.Flags().Lookup(name)
@@ -818,7 +813,7 @@ func (fc *FuncCommand) childCommandPath(parent, child *modFunction, collectionPr
 
 func isCollectionProjectionFunction(name string) bool {
 	switch name {
-	case "keys", "list", "get", "subset", "batch":
+	case "keys", "list", "get", "subset":
 		return true
 	default:
 		return false
@@ -835,7 +830,7 @@ func (fc *FuncCommand) addCollectionFunctionCommands(
 	if parentFn.commandPath == nil {
 		return nil
 	}
-	for _, typeDef := range []*modTypeDef{collection.KeyType, collection.ValueType, collection.BatchType} {
+	for _, typeDef := range []*modTypeDef{collection.KeyType, collection.ValueType} {
 		if typeDef != nil {
 			if err := fc.mod.LoadTypeDef(typeDef); err != nil {
 				return err
@@ -847,40 +842,20 @@ func (fc *FuncCommand) addCollectionFunctionCommands(
 	if err != nil {
 		return err
 	}
-	type candidate struct {
-		fn    *modFunction
-		batch bool
+	provider := collection.ValueType.AsFunctionProvider()
+	if provider == nil {
+		return nil
 	}
-	candidates := map[string][]candidate{}
-	for _, side := range []struct {
-		typeDef *modTypeDef
-		batch   bool
-	}{{collection.ValueType, false}, {collection.BatchType, true}} {
-		if side.typeDef == nil {
-			continue
-		}
-		provider := side.typeDef.AsFunctionProvider()
-		if provider == nil {
-			continue
-		}
-		fns, _, err := GetSupportedFunctions(provider)
-		if err != nil {
-			return err
-		}
-		for _, fn := range fns {
-			name := fn.CmdName()
-			candidates[name] = append(candidates[name], candidate{fn: fn, batch: side.batch})
-		}
+	functions, _, err := GetSupportedFunctions(provider)
+	if err != nil {
+		return err
 	}
-
-	for _, name := range slices.Sorted(maps.Keys(candidates)) {
-		matches := candidates[name]
-		if reserved[name] || len(matches) != 1 {
+	for _, function := range functions {
+		if reserved[function.CmdName()] {
 			continue
 		}
-		match := matches[0]
-		route := &collectionCallRoute{Dimension: dimension, KeyType: collection.KeyType, Batch: match.batch}
-		child := match.fn.commandClone()
+		route := &collectionCallRoute{Dimension: dimension, KeyType: collection.KeyType}
+		child := function.commandClone()
 		child.commandPath = &functionCommandPath{
 			Module: parentFn.commandPath.Module,
 			Fields: append(slices.Clone(parentFn.commandPath.Fields), cliName(child.Name)),
@@ -1044,7 +1019,7 @@ func (fc *FuncCommand) selectCollectionRoute(selectorCmd *cobra.Command, route *
 	if len(values) == 0 {
 		return fmt.Errorf("required collection selector --%s not set", flagName)
 	}
-	if !route.Batch && len(values) != 1 {
+	if len(values) != 1 {
 		return fmt.Errorf("collection selector --%s requires exactly one value", flagName)
 	}
 
@@ -1052,11 +1027,7 @@ func (fc *FuncCommand) selectCollectionRoute(selectorCmd *cobra.Command, route *
 	if err != nil {
 		return fmt.Errorf("invalid value for --%s: %w", flagName, err)
 	}
-	if route.Batch {
-		fc.q = fc.q.Select("subset").Arg("keys", typed).Select("batch")
-	} else {
-		fc.q = fc.q.Select("get").Arg("key", reflect.ValueOf(typed).Index(0).Interface())
-	}
+	fc.q = fc.q.Select("get").Arg("key", reflect.ValueOf(typed).Index(0).Interface())
 	return nil
 }
 

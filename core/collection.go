@@ -101,6 +101,15 @@ func (obj *ObjectTypeDef) CollectionMembers() (*CollectionMembers, error) {
 	if valueType == nil || valueType.Optional || valueType.Kind != TypeDefKindObject {
 		return nil, fmt.Errorf("collection %q get function must return a non-null object", obj.OriginalName)
 	}
+	for _, fn := range obj.Functions {
+		if fn.Self().Name == get.Name {
+			continue
+		}
+		switch fn.Self().Name {
+		case "keys", "list", "get", "subset":
+			return nil, fmt.Errorf("collection %q function %q conflicts with a collection operation", obj.OriginalName, fn.Self().Name)
+		}
+	}
 	members := &CollectionMembers{Keys: keys, Get: get}
 	if delta, ok := obj.FieldByName(deltaName); ok {
 		typ := delta.TypeDef.Self()

@@ -5,8 +5,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/iancoleman/strcase"
-
 	"dagger.io/dagger/core"
 
 	"github.com/dagger/dagger/core/artifact"
@@ -93,10 +91,8 @@ func (index artifactNameIndex) short(dimension, key string, filters []dagaddress
 	return artifact.ShortTypeKey(index.candidates(dimension, filters), key)
 }
 
-// Resolve short type keys as sets (see artifact.ResolveTypeKey): a key that
-// names one operation at two granularities is an error. Apply them through
-// the API so an empty match stays an empty filter, which a link query cannot
-// represent.
+// Apply type-key filters through the API so an empty match stays an empty
+// filter, which a link query cannot represent.
 func filterArtifactTypeKeys(artifacts *core.Artifacts, paths []artifactListPath, filter *dagaddress.Address) (*core.Artifacts, error) {
 	index, err := newArtifactNameIndex(paths)
 	if err != nil {
@@ -107,11 +103,7 @@ func filterArtifactTypeKeys(artifacts *core.Artifacts, paths []artifactListPath,
 		if !pair.HasKey || !strings.HasPrefix(pair.Dimension, "type:") {
 			continue
 		}
-		name := strcase.ToKebab(strings.TrimPrefix(pair.Dimension, "type:"))
-		matches, err := artifact.ResolveTypeKey(index.candidatePaths(pair.Dimension, filter.Query), name, pair.Key)
-		if err != nil {
-			return nil, err
-		}
+		matches := artifact.ResolveTypeKey(index.candidatePaths(pair.Dimension, filter.Query), pair.Key)
 		// A key that names nothing leaves the filter empty.
 		keys[pair.Dimension] = append(keys[pair.Dimension], matches...)
 		if keys[pair.Dimension] == nil {

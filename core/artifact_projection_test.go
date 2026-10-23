@@ -113,37 +113,3 @@ func TestArtifactAmbiguousTypeKey(t *testing.T) {
 		require.Equal(t, want, selected.Entries[0].DimensionKeys[len(selected.Entries[0].DimensionKeys)-1].Key, address)
 	}
 }
-
-// A batch that runs its whole collection keys fewer dimensions, so its short
-// type key is chosen among more paths.
-func TestArtifactBatchProjection(t *testing.T) {
-	all, keys := batchNameFixture()
-	check := all.Entries[0]
-	check.ModuleName, check.TypeName = "app", "Check"
-	// Another check keyed by module only shares the batch's dimensions.
-	module := check.Node.Parent.Parent.Parent
-	all.Entries = append(all.Entries, &Artifact{
-		ModuleName: "app", TypeName: "Check", Path: []string{"modules", "check"}, DimensionKeys: []*ArtifactDimensionKey{},
-		Node: &ModTreeNode{Name: "check", Directives: []string{"check"}, Parent: module},
-	})
-	all.AllDimensions = all.DimensionDefinitions()
-	all.AllPaths = all.PathIndex()
-	all.NameEntries()
-	require.Equal(t, "check", check.TypeKeyName)
-
-	tests, err := all.FilterPath([]string{"modules", "tests", "check"}).expand(t.Context(), keys)
-	require.NoError(t, err)
-	batches, err := tests.Batch(t.Context())
-	require.NoError(t, err)
-	require.Len(t, batches, 2)
-	for _, batch := range batches {
-		name, err := batch.URI(ArtifactURIOpts{DimensionKeys: true})
-		require.NoError(t, err)
-		addr, err := dagaddress.Parse(name)
-		require.NoError(t, err)
-		typeKey, ok := addr.TypeKey("check")
-		require.True(t, ok, name)
-		require.Equal(t, "tests/check", typeKey.Key, name)
-		require.Len(t, addr.Query, 2, "one parent key, no item keys: %s", name)
-	}
-}
