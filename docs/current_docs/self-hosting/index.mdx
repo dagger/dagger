@@ -14,15 +14,7 @@ The other pages of this documentation use [Cloud Checks](../getting-started/clou
 
 On a developer machine, the CLI starts a local engine by default. A self-hosted engine is different. The team operates it as shared infrastructure, and the CLI connects to it through remote execution.
 
-## What self-hosting costs
-
-Self-hosted CI is more work than Cloud Checks, and the checks are usually slower. These are the costs:
-
-- **Operations:** the team operates the engines, their disks, and the CI runners. It upgrades the engines with each Dagger release, because the engine and the CLI must have the same version
-- **Load balancing:** the team assigns checks to engines by hand, and changes the assignment when the load changes. Dagger Cloud does this at runtime
-- **Speed:** a static assignment cannot react to the load or to the contents of each cache. Checks usually take longer than on Cloud Engines
-- **Total cost:** an engine must stay up to keep its cache, so it uses compute when no check runs. The engineering time to operate the engines is also a cost. The total is not always lower than Dagger Cloud
-- **Access control:** Dagger gives no guarantees about authentication or security for a self-hosted engine. The team controls which systems can connect to it
+With self-hosted engines, the team controls the infrastructure. The team also operates the engines and assigns checks to them in the configuration. Dagger Cloud makes this assignment at runtime, so checks on Cloud Engines are usually faster.
 
 ## How it works
 
