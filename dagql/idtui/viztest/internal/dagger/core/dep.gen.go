@@ -25,7 +25,7 @@ func (r *Dep) WithGraphQLQuery(q *querybuilder.Selection) *Dep {
 }
 
 // FailingFunction returns a simple error to test error origin stamping
-func (r *Dep) BubblingFunction(ctx context.Context) error { // dep (../../../../../../dagql/idtui/viztest/dep/main.go:37:1)
+func (r *Dep) BubblingFunction(ctx context.Context) error { // dep (../../../../../../dagql/idtui/viztest/dep/main.go:48:1)
 	if r.bubblingFunction != nil {
 		return nil
 	}
@@ -35,7 +35,7 @@ func (r *Dep) BubblingFunction(ctx context.Context) error { // dep (../../../../
 }
 
 // FailingFunction returns a simple error to test error origin stamping
-func (r *Dep) FailingFunction(ctx context.Context) error { // dep (../../../../../../dagql/idtui/viztest/dep/main.go:32:1)
+func (r *Dep) FailingFunction(ctx context.Context) error { // dep (../../../../../../dagql/idtui/viztest/dep/main.go:43:1)
 	if r.failingFunction != nil {
 		return nil
 	}
@@ -44,7 +44,7 @@ func (r *Dep) FailingFunction(ctx context.Context) error { // dep (../../../../.
 	return q.Execute(ctx)
 }
 
-func (r *Dep) FileContents(ctx context.Context, files []*File) (string, error) { // dep (../../../../../../dagql/idtui/viztest/dep/main.go:19:1)
+func (r *Dep) FileContents(ctx context.Context, files []*File) (string, error) { // dep (../../../../../../dagql/idtui/viztest/dep/main.go:30:1)
 	if r.fileContents != nil {
 		return *r.fileContents, nil
 	}
@@ -78,6 +78,41 @@ func (r *Dep) GetFiles(ctx context.Context) ([]File, error) { // dep (../../../.
 		return out
 	}
 	var response []getFiles
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// GetOtherFiles returns files of its own, which no other golden reads, so
+// the golden that reads them shares no cached result with one that reads
+// GetFiles'.
+func (r *Dep) GetOtherFiles(ctx context.Context) ([]File, error) { // dep (../../../../../../dagql/idtui/viztest/dep/main.go:22:1)
+	q := r.query.Select("getOtherFiles")
+
+	q = q.Select("id")
+
+	type getOtherFiles struct {
+		Id FileID
+	}
+
+	convert := func(fields []getOtherFiles) []File {
+		out := []File{}
+
+		for i := range fields {
+			val := File{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "File")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []getOtherFiles
 
 	q = q.Bind(&response)
 

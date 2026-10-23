@@ -16,6 +16,17 @@ func (*Dep) GetFiles() ([]*dagger.File, error) {
 	}, nil
 }
 
+// GetOtherFiles returns files of its own, which no other golden reads, so
+// the golden that reads them shares no cached result with one that reads
+// GetFiles'.
+func (*Dep) GetOtherFiles() ([]*dagger.File, error) {
+	return []*dagger.File{
+		dag.File("d", "DDD"),
+		dag.File("e", "EEE"),
+		dag.File("f", "FFF"),
+	}, nil
+}
+
 func (*Dep) FileContents(ctx context.Context, files []*dagger.File) (string, error) {
 	var s string
 	for _, f := range files {
