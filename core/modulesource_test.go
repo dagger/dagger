@@ -398,3 +398,48 @@ func TestModuleSourceOriginSymbolic(t *testing.T) {
 	}
 	require.Empty(t, (&ModuleSource{Kind: ModuleSourceKindGit, Git: &GitModuleSource{Symbolic: "github.com/org/repo"}}).OriginSymbolic())
 }
+
+func TestDirDependencySourceArgs(t *testing.T) {
+	t.Parallel()
+
+	dir := func(subpath string, root *string) *ModuleSource {
+		return &ModuleSource{Kind: ModuleSourceKindDir, SourceRootSubpath: subpath, DirSrc: &DirModuleSource{OriginRoot: root}}
+	}
+	// dep is the source asModuleSource builds from the selected arguments.
+	dep := func(t *testing.T, args []dagql.NamedInput) *ModuleSource {
+		t.Helper()
+		src := &ModuleSource{Kind: ModuleSourceKindDir, DirSrc: &DirModuleSource{}}
+		for _, arg := range args {
+			switch arg.Name {
+			case "sourceRootPath":
+				src.SourceRootSubpath = string(arg.Value.(dagql.String))
+			case "originRoot":
+				root := arg.Value.(dagql.Optional[dagql.String]).Value.String()
+				src.DirSrc.OriginRoot = &root
+			}
+		}
+		return src
+	}
+	gitRoot, localRoot := "github.com/dagger/dagger", ""
+
+	goDep := dep(t, dirDependencySourceArgs(dir(".dagger/modules/engine-dev", &gitRoot), "../go"))
+	require.Equal(t, "github.com/dagger/dagger/.dagger/modules/go", goDep.OriginSymbolic())
+
+	require.Equal(t, ".dagger/modules/go",
+		dep(t, dirDependencySourceArgs(dir(".dagger/modules/engine-dev", &localRoot), "../go")).OriginSymbolic())
+
+	// A dependency of a dependency keeps the origin too.
+	codegen := dep(t, dirDependencySourceArgs(dir(".dagger/modules/engine-dev", &gitRoot), "../../../cmd/codegen"))
+	require.Equal(t, "github.com/dagger/dagger/cmd/codegen", codegen.OriginSymbolic())
+	require.Equal(t, "github.com/dagger/dagger/.dagger/modules/go",
+		dep(t, dirDependencySourceArgs(codegen, "../../.dagger/modules/go")).OriginSymbolic())
+
+	// Without an origin the selection is the one it always was.
+	require.Equal(t, []dagql.NamedInput{
+		{Name: "sourceRootPath", Value: dagql.String(".dagger/modules/go")},
+		{Name: "disableFindUp", Value: dagql.Boolean(true)},
+	}, dirDependencySourceArgs(dir(".dagger/modules/engine-dev", nil), "../go"))
+
+	// A path that leaves the tree is no module of the tree.
+	require.Empty(t, dep(t, dirDependencySourceArgs(dir("modules/app", &gitRoot), "../../../outside")).OriginSymbolic())
+}

@@ -2160,6 +2160,23 @@ func (src *ModuleSource) OriginSymbolic() string {
 	}
 }
 
+// dirDependencySourceArgs selects a local dependency of a directory module
+// source in the parent's context directory. The dependency lives in the same
+// tree as its parent, so it keeps the parent's origin: its cache volumes then
+// match the dependency loaded directly, as those of a module the parent serves
+// do.
+func dirDependencySourceArgs(parentSrc *ModuleSource, depSrcRef string) []dagql.NamedInput {
+	depPath := filepath.Join(parentSrc.SourceRootSubpath, depSrcRef)
+	args := []dagql.NamedInput{
+		{Name: "sourceRootPath", Value: dagql.String(depPath)},
+		{Name: "disableFindUp", Value: dagql.Boolean(true)},
+	}
+	if parentSrc.DirSrc != nil && parentSrc.DirSrc.OriginRoot != nil && filepath.IsLocal(depPath) {
+		args = append(args, dagql.NamedInput{Name: "originRoot", Value: dagql.Opt(dagql.String(*parentSrc.DirSrc.OriginRoot))})
+	}
+	return args
+}
+
 type moduleDependencyResolutionKey struct{}
 
 // WithModuleDependencyResolution marks ctx as resolving a module's declared
@@ -2325,13 +2342,9 @@ func ResolveDepToSource(
 
 		case ModuleSourceKindDir:
 			// parent=dir, dep=local
-			depPath := filepath.Join(parentSrc.SourceRootSubpath, depSrcRef)
 			selectors := []dagql.Selector{{
 				Field: "asModuleSource",
-				Args: []dagql.NamedInput{
-					{Name: "sourceRootPath", Value: dagql.String(depPath)},
-					{Name: "disableFindUp", Value: dagql.Boolean(true)},
-				},
+				Args:  dirDependencySourceArgs(parentSrc, depSrcRef),
 			}}
 			if depName != "" {
 				selectors = append(selectors, dagql.Selector{
