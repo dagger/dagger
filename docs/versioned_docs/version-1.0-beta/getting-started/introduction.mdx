@@ -1,11 +1,29 @@
 ---
 title: "Introduction"
-description: "Dagger is a CI orchestration engine. Define your pipelines once, in real code. Run them identically before and after push, locally or at scale."
+description: "Dagger is third-generation CI, after Jenkins and GitHub Actions. It is built to match the speed and scale of coding agents and give them the guardrails and context they need."
 slug: /getting-started/introduction
 ---
 
+import Recording from '@site/src/components/Recording';
+
 # Introduction
 
-Dagger is the missing software stack for CI. It makes your pipelines faster and more repeatable, not by throwing bigger machines at them, but by replacing artisanal scripts with a clean API, real code, and a portable DAG execution engine.
+Dagger is third-generation CI, after Jenkins and GitHub Actions. It is built to match the speed and scale of coding agents and give them the guardrails and context they need.
 
-Once daggerized, your pipeline logic is decoupled from its environment. Trigger it before or after push; run it locally or let our cloud scale it out; spin up multi-container environments just in time; all cached automatically, traced end to end, and extensible in your favorite language.
+Dagger runs every code change — whether machine-generated or handwritten — through the same build and test pipelines, before or after push.
+
+## How it works
+
+Dagger detects your toolchains and recommends [official modules](/reference/modules) for them. You can also write your own.
+
+<Recording id="init" title="Detect and install" />
+
+Modules read your native configuration, eliminating proprietary YAML and config drift. They discover your project as typed artifacts: source code, containers, binaries, generated files, and even tests.
+
+You select artifacts with typed filters, and use them to automate your feedback loop. For example, use test results as a pre-merge or post-merge gate, run a preview environment, or inspect intermediate results in an interactive shell.
+
+Dagger computes artifacts lazily, as an incremental DAG of sandboxed functions, on your machine or on a shared remote engine.
+
+<Recording id="select-compute-use" title="Select, compute, use" />
+
+Dagger is vertically integrated: sandbox, scheduler, container runtime, build cache and tracing share one execution and data model. This enables it to keep up with coding agents by achieving levels of compute and token efficiency that are out of reach for second-generation CI, where each component is a silo.
