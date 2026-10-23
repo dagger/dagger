@@ -167,10 +167,6 @@ func (dev *EngineDev) Container(
 // secret's cache identity is a hash of its plaintext unless it is given a
 // constant cache key (for example env://NAME?cacheKey=KEY); with one, the
 // values stay out of the cache keys of every call that passes them along.
-//
-// It also marks the engine ephemeral, since its state starts empty every run.
-// An engine that supports the flag has the service release its identity soon
-// after it disconnects; older engines ignore it.
 func withRemoteCache(ctr *dagger.Container, remoteCacheURL, cloudURL, cloudToken *dagger.Secret) *dagger.Container {
 	if remoteCacheURL == nil || cloudURL == nil || cloudToken == nil {
 		return ctr
@@ -178,8 +174,7 @@ func withRemoteCache(ctr *dagger.Container, remoteCacheURL, cloudURL, cloudToken
 	return ctr.
 		WithSecretVariable("_EXPERIMENTAL_DAGGER_REMOTE_CACHE_URL", remoteCacheURL).
 		WithSecretVariable("DAGGER_CLOUD_URL", cloudURL).
-		WithSecretVariable("DAGGER_CLOUD_TOKEN", cloudToken).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_REMOTE_CACHE_EPHEMERAL", "1")
+		WithSecretVariable("DAGGER_CLOUD_TOKEN", cloudToken)
 }
 
 func (dev *EngineDev) container(

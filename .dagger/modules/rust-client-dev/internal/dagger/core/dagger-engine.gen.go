@@ -100,11 +100,11 @@ func (r *DaggerEngine) Container(opts ...DaggerEngineContainerOpts) *Container {
 
 // DaggerEngineGraphqlSchemaOpts contains options for DaggerEngine.GraphqlSchema
 type DaggerEngineGraphqlSchemaOpts struct {
-	Version string // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:384:2)
+	Version string // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:379:2)
 }
 
 // Introspect the engine API schema, and return it as a graphql schema
-func (r *DaggerEngine) GraphqlSchema(opts ...DaggerEngineGraphqlSchemaOpts) *File { // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:381:1)
+func (r *DaggerEngine) GraphqlSchema(opts ...DaggerEngineGraphqlSchemaOpts) *File { // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:376:1)
 	q := r.query.Select("graphqlSchema")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
@@ -180,15 +180,15 @@ type DaggerEngineInstallClientOpts struct {
 	//
 	// The client container to configure
 	//
-	Client *Container // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:308:2)
+	Client *Container // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:303:2)
 	//
 	// The engine service to bind
 	//
-	Service *Service // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:311:2)
+	Service *Service // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:306:2)
 }
 
 // Configure the given client container so that it can connect to the given engine service
-func (r *DaggerEngine) InstallClient(opts ...DaggerEngineInstallClientOpts) *Container { // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:304:1)
+func (r *DaggerEngine) InstallClient(opts ...DaggerEngineInstallClientOpts) *Container { // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:299:1)
 	q := r.query.Select("installClient")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `client` optional argument
@@ -208,7 +208,7 @@ func (r *DaggerEngine) InstallClient(opts ...DaggerEngineInstallClientOpts) *Con
 
 // Introspect the engine API schema, and return it as a json-encoded file.
 // This file is used by SDKs to generate clients.
-func (r *DaggerEngine) IntrospectionJSON() *File { // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:368:1)
+func (r *DaggerEngine) IntrospectionJSON() *File { // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:363:1)
 	q := r.query.Select("introspectionJson")
 
 	return &File{
@@ -217,7 +217,7 @@ func (r *DaggerEngine) IntrospectionJSON() *File { // dagger-engine (../../../..
 }
 
 // Build the `introspect` tool which introspects the engine API
-func (r *DaggerEngine) IntrospectionTool() *File { // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:402:1)
+func (r *DaggerEngine) IntrospectionTool() *File { // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:397:1)
 	q := r.query.Select("introspectionTool")
 
 	return &File{
@@ -282,17 +282,17 @@ type DaggerEnginePublishOpts struct {
 	//
 	//
 	// Default: "ghcr.io/dagger/engine"
-	Image string // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:452:2)
+	Image string // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:447:2)
 
-	DryRun bool // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:457:2)
+	DryRun bool // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:452:2)
 
-	RegistryUsername string // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:460:2)
+	RegistryUsername string // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:455:2)
 
-	RegistryPassword *Secret // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:462:2)
+	RegistryPassword *Secret // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:457:2)
 }
 
 // Publish all engine images to a registry
-func (r *DaggerEngine) Publish(ctx context.Context, tag []string, opts ...DaggerEnginePublishOpts) error { // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:447:1)
+func (r *DaggerEngine) Publish(ctx context.Context, tag []string, opts ...DaggerEnginePublishOpts) error { // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:442:1)
 	if r.publish != nil {
 		return nil
 	}
@@ -320,7 +320,7 @@ func (r *DaggerEngine) Publish(ctx context.Context, tag []string, opts ...Dagger
 	return q.Execute(ctx)
 }
 
-func (r *DaggerEngine) ReleaseDryRun(ctx context.Context) error { // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:433:1)
+func (r *DaggerEngine) ReleaseDryRun(ctx context.Context) error { // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:428:1)
 	if r.releaseDryRun != nil {
 		return nil
 	}
@@ -331,27 +331,27 @@ func (r *DaggerEngine) ReleaseDryRun(ctx context.Context) error { // dagger-engi
 
 // DaggerEngineServiceOpts contains options for DaggerEngine.Service
 type DaggerEngineServiceOpts struct {
-	GpuSupport bool // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:248:2)
+	GpuSupport bool // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:243:2)
 
-	SharedCache bool // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:250:2)
+	SharedCache bool // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:245:2)
 
-	Metrics bool // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:252:2)
+	Metrics bool // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:247:2)
 	//
 	// The remote cache service's URL, for the engine to join its remote cache
 	//
-	RemoteCacheURL *Secret // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:255:2)
+	RemoteCacheURL *Secret // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:250:2)
 	//
 	// The Dagger Cloud URL the engine exports its cache events to
 	//
-	CloudURL *Secret // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:258:2)
+	CloudURL *Secret // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:253:2)
 	//
 	// An engine token for the remote cache and Dagger Cloud
 	//
-	CloudToken *Secret // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:261:2)
+	CloudToken *Secret // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:256:2)
 }
 
 // Create a test engine service
-func (r *DaggerEngine) Service(name string, opts ...DaggerEngineServiceOpts) *Service { // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:244:1)
+func (r *DaggerEngine) Service(name string, opts ...DaggerEngineServiceOpts) *Service { // dagger-engine (../../../../../../.dagger/modules/engine-dev/main.go:239:1)
 	q := r.query.Select("service")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `gpuSupport` optional argument
