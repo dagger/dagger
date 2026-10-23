@@ -29,6 +29,11 @@ type LogQuery struct {
 	// the start. Cursors are opaque, and valid only for the same reader and
 	// spans.
 	Cursor string
+	// Through, when set, ends a one-shot read at this cursor (one a
+	// previous batch carried) instead of the source's end: catching newly
+	// selected spans up to where a follow of other spans stands. Only Live
+	// honors it; finite sources end where they end.
+	Through string
 }
 
 // LogReader reads display text for a set of spans. A reader may deliver more
@@ -69,7 +74,15 @@ func (l Live) ReadLogs(ctx context.Context, _ string, q LogQuery, cb func(contex
 	if err != nil {
 		return err
 	}
-	_, err = l.Client.QueryLogs(ctx, archive.LogQuery{Spans: q.Spans, Follow: q.Follow}, cursor, func(next int64, req *collogspb.ExportLogsServiceRequest) error {
+	through, err := rowCursor(q.Through)
+	if err != nil {
+		return err
+	}
+	if q.Through != "" && !q.Follow && through <= cursor {
+		// Nothing lies between the cursor and the bound.
+		return nil
+	}
+	_, err = l.Client.QueryLogs(ctx, archive.LogQuery{Spans: q.Spans, Follow: q.Follow, Through: through}, cursor, func(next int64, req *collogspb.ExportLogsServiceRequest) error {
 		return cb(ctx, req, strconv.FormatInt(next, 10))
 	})
 	return err
