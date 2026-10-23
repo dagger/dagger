@@ -513,12 +513,22 @@ func (c *Cache) shareSlotContext(ctx context.Context, slot *shareSlot) (context.
 		// An encoded receiver decodes nothing as planned, but a request can
 		// decode it before the slot prepares, and the slot then prepares a
 		// typed store. It takes the preparation server when one is
-		// registered, and goes without one, as before, when none is or it
-		// can't be built: the preparation then refuses a typed store.
+		// registered and its donated services pass the same decode
+		// preflight a typed slot's do. Otherwise it plans an encoded install
+		// with no server, as before, and the preparation refuses a typed
+		// store.
 		if prepare := c.partPreparationContext(); prepare != nil {
-			if prepared, srv, err := prepare(ctx); err == nil && srv != nil {
+			prepared, srv, err := prepare(ctx)
+			if err == nil && srv == nil {
+				err = errors.New("preparation context supplied no server")
+			}
+			if err == nil {
+				err = c.preflightShareDecode(prepared, srv, slot.shareServiceRoots())
+			}
+			if err == nil {
 				return srvToContext(prepared, srv), nil
 			}
+			slog.Debug("snapshot sharing slot plans an encoded install only", "row", uint64(slot.receiver.row.id), "part", string(slot.address.Part), "cause", err)
 		}
 		return context.WithValue(ctx, shareSlotPlannedEncodedKey{}, true), nil
 	}
