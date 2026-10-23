@@ -231,9 +231,17 @@ func cloudRerunTargetAddresses(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot determine the target repository: %w; pass -W with a remote workspace", err)
 	}
-	addresses := make([]string, 0, len(cloneRefs))
+	var addresses []string
 	for _, cloneRef := range cloneRefs {
-		addresses = append(addresses, gitref.RefString(cloneRef, workspacePath, version))
+		candidate := gitref.RefString(cloneRef, workspacePath, version)
+		// A remote at a local path, or one that isn't a git host address,
+		// can't have Cloud checks; leave it out rather than fail the lookup.
+		if _, ok, err := parseWorkspaceRemoteAddress(ctx, candidate); err == nil && ok {
+			addresses = append(addresses, candidate)
+		}
+	}
+	if len(addresses) == 0 {
+		return nil, fmt.Errorf("cannot determine the target repository: no git remote of %s is a remote repository; pass -W with a remote workspace", repoRoot)
 	}
 	return addresses, nil
 }
