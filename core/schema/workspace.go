@@ -991,8 +991,9 @@ func (s *workspaceSchema) resolveRootfs(
 	resolvedPath string,
 	filter core.CopyFilter,
 	gitignore bool,
+	explicitDirs ...string,
 ) (dagql.ObjectResult[*core.Directory], error) {
-	inst, err := s.resolveRootfsInner(ctx, ws, resolvedPath, filter, gitignore)
+	inst, err := s.resolveRootfsInner(ctx, ws, resolvedPath, filter, gitignore, explicitDirs...)
 	if err != nil {
 		return inst, err
 	}
@@ -1016,6 +1017,7 @@ func (s *workspaceSchema) resolveRootfsInner(
 	resolvedPath string,
 	filter core.CopyFilter,
 	gitignore bool,
+	explicitDirs ...string,
 ) (inst dagql.ObjectResult[*core.Directory], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -1024,7 +1026,7 @@ func (s *workspaceSchema) resolveRootfsInner(
 
 	if ws.HostPath() != "" && ws.ClientLocalBase() {
 		if changes, ok := ws.OverlayChanges(); ok {
-			return s.resolveHostOverlayRootfs(ctx, srv, ws, changes, resolvedPath, filter, gitignore)
+			return s.resolveHostOverlayRootfs(ctx, srv, ws, changes, resolvedPath, filter, gitignore, explicitDirs...)
 		}
 	}
 
@@ -1070,6 +1072,7 @@ func (s *workspaceSchema) resolveRootfsInner(
 			args = append(args,
 				dagql.NamedInput{Name: "gitignore", Value: dagql.NewBoolean(true)},
 				dagql.NamedInput{Name: "gitIgnoreRoot", Value: dagql.NewString(ws.HostPath())},
+				dagql.NamedInput{Name: "gitIgnoreExplicitDirs", Value: sparseStringInput(explicitDirs)},
 			)
 		}
 		err = srv.Select(ctx, srv.Root(), &inst,
@@ -1145,6 +1148,7 @@ func (s *workspaceSchema) resolveHostOverlayRootfs(
 	resolvedPath string,
 	filter core.CopyFilter,
 	gitignore bool,
+	explicitDirs ...string,
 ) (inst dagql.ObjectResult[*core.Directory], _ error) {
 	hostCtx, err := s.withWorkspaceHostReadContext(ctx, ws)
 	if err != nil {
@@ -1200,6 +1204,7 @@ func (s *workspaceSchema) resolveHostOverlayRootfs(
 		args = append(args,
 			dagql.NamedInput{Name: "gitignore", Value: dagql.NewBoolean(true)},
 			dagql.NamedInput{Name: "gitIgnoreRoot", Value: dagql.NewString(ws.HostPath())},
+			dagql.NamedInput{Name: "gitIgnoreExplicitDirs", Value: sparseStringInput(explicitDirs)},
 		)
 	}
 	var base dagql.ObjectResult[*core.Directory]
@@ -1300,15 +1305,15 @@ func (s *workspaceSchema) workspaceOverlayRootfs(ctx context.Context, ws *core.W
 	return s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, false)
 }
 
-// filteredWorkspaceRootfs applies Git ignore rules to workspace content,
-// then restores explicitly requested directories. For the workspace root,
-// only module config files are restored.
+// filteredWorkspaceRootfs applies Git ignore rules to workspace content.
+// Explicit directories override rules excluding those directories, while their
+// children remain filtered. Module config files are always available.
 func (s *workspaceSchema) filteredWorkspaceRootfs(
 	ctx context.Context,
 	ws *core.Workspace,
 	explicitDirs ...string,
 ) (dagql.ObjectResult[*core.Directory], error) {
-	root, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, true)
+	root, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, true, explicitDirs...)
 	if err != nil {
 		return root, err
 	}
@@ -1323,15 +1328,12 @@ func (s *workspaceSchema) filteredWorkspaceRootfs(
 			continue
 		}
 		seen[dir] = struct{}{}
-		filter := core.CopyFilter{}
+		filter := core.CopyFilter{Include: []string{
+			workspace.ModuleConfigFileName,
+			workspace.LegacyModuleConfigFileName,
+		}}
 		target := dir
 		if dir == "." {
-			// The root itself cannot be hidden. Restore only the config files
-			// that identify an explicit root module.
-			filter.Include = []string{
-				workspace.ModuleConfigFileName,
-				workspace.LegacyModuleConfigFileName,
-			}
 			target = "/"
 		}
 		explicit, err := s.resolveRootfs(ctx, ws, dir, filter, false)

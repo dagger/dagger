@@ -50,11 +50,14 @@ func (GeneratorsSuite) TestGenerateDoesNotUploadGitignoredFiles(ctx context.Cont
 	initGitRepo(ctx, t, workdir)
 	require.NoError(t, os.WriteFile(
 		filepath.Join(workdir, ".gitignore"),
-		[]byte("/.venv/\n/.dagger/modules/scope-sdk/\n"),
+		[]byte("**/.venv/\n/.dagger/modules/scope-sdk/\n"),
 		0o644,
 	))
 	require.NoError(t, os.Mkdir(filepath.Join(workdir, ".venv"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(workdir, ".venv", "should-not-upload"), []byte("ignored\n"), 0o644))
+	sdkCache := filepath.Join(workdir, ".dagger", "modules", "scope-sdk", ".venv")
+	require.NoError(t, os.Mkdir(sdkCache, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(sdkCache, "should-not-upload-inside-sdk"), []byte("ignored\n"), 0o644))
 
 	var logs safeBuffer
 	c := connect(ctx, t, dagger.WithWorkdir(workdir), dagger.WithLogOutput(&logs), dagger.WithVerbosity(2))

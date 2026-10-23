@@ -193,7 +193,7 @@ func (s FilesyncSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error 
 			},
 		})
 		if opts.UseGitIgnore {
-			filteredFS, err = fsxutil.NewGitIgnoreMarkedFS(filteredFS, fsxutil.NewGitIgnoreMatcherWithOverrides(fs, opts.GitIgnoreOverrides))
+			filteredFS, err = fsxutil.NewGitIgnoreMarkedFS(filteredFS, fsxutil.NewGitIgnoreMatcherWithOverrides(fs, opts.GitIgnoreOverrides, opts.GitIgnoreExplicitDirs...))
 			if err != nil {
 				return err
 			}
@@ -201,8 +201,8 @@ func (s FilesyncSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error 
 		if err != nil {
 			return err
 		}
-		if len(opts.GitIgnoreOverrides) > 0 {
-			if err := stream.SendHeader(metadata.Pairs(engine.GitIgnoreOverridesHeader, "true")); err != nil {
+		if len(opts.GitIgnoreOverrides) > 0 || len(opts.GitIgnoreExplicitDirs) > 0 {
+			if err := stream.SendHeader(metadata.Pairs(engine.GitIgnoreOverridesHeader, "true", engine.GitIgnoreExplicitDirsHeader, "true")); err != nil {
 				return err
 			}
 		}

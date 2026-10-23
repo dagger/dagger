@@ -18,7 +18,8 @@ type GitignoreMatcher struct {
 	fs fsutil.FS
 	// Overrides replace rule files without changing the filesystem. An empty
 	// value also represents a removed rule file. Keys are slash-relative paths.
-	overrides map[string]string
+	overrides    map[string]string
+	explicitDirs []string
 
 	// Cache for parsed gitignore files to avoid re-reading
 	gitignoreCache         map[string]gitignore.Matcher
@@ -36,9 +37,10 @@ func NewGitIgnoreMatcher(fs fsutil.FS) *GitignoreMatcher {
 	return gfs
 }
 
-func NewGitIgnoreMatcherWithOverrides(fs fsutil.FS, overrides map[string]string) *GitignoreMatcher {
+func NewGitIgnoreMatcherWithOverrides(fs fsutil.FS, overrides map[string]string, explicitDirs ...string) *GitignoreMatcher {
 	matcher := NewGitIgnoreMatcher(fs)
 	matcher.overrides = overrides
+	matcher.explicitDirs = explicitDirs
 	return matcher
 }
 
@@ -100,6 +102,25 @@ func (gfs *GitignoreMatcher) getGitIgnoreMatcher(dirPath string) (matcher gitign
 		return nil, err
 	}
 	if len(patterns) > 0 {
+		// Selecting a directory overrides rules that exclude that directory,
+		// but preserves rules that match only its children. Choose the deepest
+		// selected ancestor so nested explicit references can cross barriers.
+		var selected string
+		for _, dir := range gfs.explicitDirs {
+			dir = filepath.FromSlash(dir)
+			if dir == "." || dir == "" {
+				continue
+			}
+			if (dirPath == dir || strings.HasPrefix(dirPath, dir+string(filepath.Separator))) && len(dir) > len(selected) {
+				selected = dir
+			}
+		}
+		if selected != "" {
+			components := strings.Split(selected, string(filepath.Separator))
+			patterns = slices.DeleteFunc(slices.Clone(patterns), func(pattern gitignore.Pattern) bool {
+				return pattern.Match(components, true) == gitignore.Exclude
+			})
+		}
 		matcher = gitignore.NewMatcher(patterns)
 	}
 	return matcher, nil

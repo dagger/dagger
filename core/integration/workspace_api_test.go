@@ -1423,7 +1423,9 @@ func (WorkspaceAPISuite) TestLocalModuleInstallDoesNotUploadGitignoredFiles(ctx 
 	require.NoError(t, os.MkdirAll(depDir, 0o755))
 	copyTestdataFixture(ctx, t, depDir, "modules", "go", "minimal-dep")
 	initGitRepo(ctx, t, workdir)
-	require.NoError(t, os.WriteFile(filepath.Join(workdir, ".gitignore"), []byte("/.venv/\n/dep/\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, ".gitignore"), []byte("**/.venv/\n/dep/\n"), 0o644))
+	require.NoError(t, os.Mkdir(filepath.Join(depDir, ".venv"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(depDir, ".venv", "should-not-upload-inside-module"), []byte("ignored\n"), 0o644))
 	require.NoError(t, os.Mkdir(filepath.Join(workdir, ".venv"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(workdir, ".venv", "should-not-upload"), []byte("ignored\n"), 0o644))
 

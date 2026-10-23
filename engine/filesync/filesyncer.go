@@ -32,13 +32,14 @@ func NewFileSyncer(opt FileSyncerOpt) *FileSyncer {
 }
 
 type SnapshotOpts struct {
-	IncludePatterns    []string
-	ExcludePatterns    []string
-	FollowPaths        []string
-	GitIgnore          bool
-	GitIgnoreOverrides map[string]string
-	CacheBuster        string
-	RelativePath       string
+	IncludePatterns       []string
+	ExcludePatterns       []string
+	FollowPaths           []string
+	GitIgnore             bool
+	GitIgnoreOverrides    map[string]string
+	GitIgnoreExplicitDirs []string
+	CacheBuster           string
+	RelativePath          string
 }
 
 func (ls *FileSyncer) Snapshot(
@@ -132,6 +133,7 @@ func (ls *FileSyncer) sync(
 
 	remote := newRemoteFS(callerConn, drive+clientPath, opts.IncludePatterns, opts.ExcludePatterns, opts.FollowPaths, opts.GitIgnore)
 	remote.gitIgnoreOverrides = opts.GitIgnoreOverrides
+	remote.gitIgnoreExplicitDirs = opts.GitIgnoreExplicitDirs
 	local, err := newLocalFS(sharedState, clientPath, opts.IncludePatterns, opts.ExcludePatterns, opts.FollowPaths, opts.RelativePath)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to create local fs: %w", err)

@@ -17,13 +17,14 @@ import (
 )
 
 type remoteFS struct {
-	callerConn         *grpc.ClientConn
-	clientPath         string
-	includes           []string
-	excludes           []string
-	followPaths        []string
-	useGitIgnore       bool
-	gitIgnoreOverrides map[string]string
+	callerConn            *grpc.ClientConn
+	clientPath            string
+	includes              []string
+	excludes              []string
+	followPaths           []string
+	useGitIgnore          bool
+	gitIgnoreOverrides    map[string]string
+	gitIgnoreExplicitDirs []string
 
 	startOnce   sync.Once
 	client      filesync.FileSync_DiffCopyClient
@@ -68,12 +69,13 @@ func (fs *remoteFS) Walk(ctx context.Context, path string, walkFn fs.WalkDirFunc
 
 	var err error
 	fs.client, err = filesync.NewFileSyncClient(fs.callerConn).DiffCopy(engine.LocalImportOpts{
-		Path:               fs.clientPath,
-		UseGitIgnore:       fs.useGitIgnore,
-		GitIgnoreOverrides: fs.gitIgnoreOverrides,
-		IncludePatterns:    fs.includes,
-		ExcludePatterns:    fs.excludes,
-		FollowPaths:        fs.followPaths,
+		Path:                  fs.clientPath,
+		UseGitIgnore:          fs.useGitIgnore,
+		GitIgnoreOverrides:    fs.gitIgnoreOverrides,
+		GitIgnoreExplicitDirs: fs.gitIgnoreExplicitDirs,
+		IncludePatterns:       fs.includes,
+		ExcludePatterns:       fs.excludes,
+		FollowPaths:           fs.followPaths,
 	}.AppendToOutgoingContext(ctx))
 	if err != nil {
 		return fmt.Errorf("failed to create diff copy client: %w", err)
@@ -85,6 +87,15 @@ func (fs *remoteFS) Walk(ctx context.Context, path string, walkFn fs.WalkDirFunc
 		}
 		if values := headers.Get(engine.GitIgnoreOverridesHeader); len(values) == 0 || values[0] != "true" {
 			return fmt.Errorf("client does not support overlay .gitignore rules; upgrade the Dagger CLI")
+		}
+	}
+	if len(fs.gitIgnoreExplicitDirs) > 0 {
+		headers, err := fs.client.Header()
+		if err != nil {
+			return fmt.Errorf("read filesync capabilities: %w", err)
+		}
+		if values := headers.Get(engine.GitIgnoreExplicitDirsHeader); len(values) == 0 || values[0] != "true" {
+			return fmt.Errorf("client does not support explicit directory ignore rules; upgrade the Dagger CLI")
 		}
 	}
 

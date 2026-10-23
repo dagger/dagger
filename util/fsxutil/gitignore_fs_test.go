@@ -40,6 +40,30 @@ func TestGitIgnoreRuleOverrides(t *testing.T) {
 	}
 }
 
+func TestGitIgnoreExplicitDirectoriesKeepChildRules(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".gitignore"), []byte("/vendor/\n**/.venv/\n*.log\n"), 0o600))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "vendor", "dep"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "vendor", "dep", ".gitignore"), []byte("cache/\n"), 0o600))
+	fs, err := fsutil.NewFS(root)
+	require.NoError(t, err)
+	matcher := NewGitIgnoreMatcherWithOverrides(fs, nil, "vendor/dep", "visible")
+	for file, want := range map[string]bool{
+		"vendor/dep/main.go":     false,
+		"vendor/dep/.venv/cache": true,
+		"vendor/dep/cache/value": true,
+		"vendor/dep/debug.log":   true,
+		"vendor/other/main.go":   true,
+		"visible/main.go":        false,
+		"visible/.venv/cache":    true,
+		"visible/debug.log":      true,
+	} {
+		ignored, err := matcher.Matches(file, false)
+		require.NoError(t, err)
+		require.Equal(t, want, ignored, file)
+	}
+}
+
 type walkEntry struct {
 	kind    string
 	ignored bool
