@@ -114,7 +114,6 @@ func (s *session) hello() error {
 		Generation:    generation,
 		EngineVersion: s.cfg.EngineVersion,
 		EngineName:    s.cfg.EngineName,
-		HeldRows:      true,
 		Ephemeral:     s.cfg.Ephemeral,
 	})
 	if err != nil {

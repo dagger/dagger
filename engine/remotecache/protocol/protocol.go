@@ -125,10 +125,6 @@ type Hello struct {
 	Generation    uint64 `json:"generation"`
 	EngineVersion string `json:"engineVersion"`
 	EngineName    string `json:"engineName"`
-	// HeldRows reports that the engine merges bundles with held rows
-	// (dagql.TransferredValue.Held). The service sends them only to an
-	// engine that sets it.
-	HeldRows bool `json:"heldRows,omitempty"`
 	// Ephemeral says the engine's cache does not outlive this run of it, as
 	// for a nested engine a check starts as a service: no later process
 	// comes back under this identity, and it may be killed without a stop.
