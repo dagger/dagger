@@ -204,7 +204,7 @@ type Merge struct {
 	// Lookup is the ID of the engine's Lookup this merge answers, or 0 for
 	// a merge of the service's own placement. The engine commits a merge
 	// that answers a lookup ahead of the others.
-	Lookup uint64 `json:"lookup,omitempty"`
+	Lookup uint64 `json:"lookup"`
 }
 
 // Merged answers Merge with what the merge's commit left, read under the lock
@@ -221,7 +221,7 @@ type Merged struct {
 	// merge decided: no current entry for the recipe, one with no value of
 	// its own, or an expired one the row hasn't outlived. A reply with Stale
 	// committed nothing, and its Values, Retained and Skipped are empty.
-	Stale []dagql.TransferOrdinal `json:"stale,omitempty"`
+	Stale []dagql.TransferOrdinal `json:"stale"`
 }
 
 // MergedValue is the engine entry a bundle record landed on, and its value
