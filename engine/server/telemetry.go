@@ -792,14 +792,18 @@ func fetchSpanBatch(ctx context.Context, db *clientdb.DB, since int64, limit int
 	if len(spans) == 0 {
 		return since, nil, 0, nil
 	}
-	roSpans := make([]sdktrace.ReadOnlySpan, 0, len(spans))
-	for i := range spans {
-		if keep == nil || keep(&spans[i]) {
-			roSpans = append(roSpans, spans[i].ReadOnly())
+	next = spans[len(spans)-1].ID
+	kept := spans
+	if keep != nil {
+		kept = make([]clientdb.Span, 0, len(spans))
+		for i := range spans {
+			if keep(&spans[i]) {
+				kept = append(kept, spans[i])
+			}
 		}
 	}
-	return spans[len(spans)-1].ID, &coltracepb.ExportTraceServiceRequest{
-		ResourceSpans: telemetry.SpansToPB(roSpans),
+	return next, &coltracepb.ExportTraceServiceRequest{
+		ResourceSpans: clientdb.SpansToPB(kept),
 	}, len(spans), nil
 }
 
