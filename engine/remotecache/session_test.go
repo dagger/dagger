@@ -1476,11 +1476,12 @@ func TestLookupMergeOutcomes(t *testing.T) {
 }
 
 // A merge read from the connection reaches the adapter whole, with its
-// envelope's ID, whether the session decodes its body in one pass
-// (_EXPERIMENTAL_DAGGER_REMOTE_CACHE_DECODE_ONCE) or not.
+// envelope's ID: one whose body comes last, as the service writes it, which
+// the session decodes in one pass, and one whose body comes first, which it
+// reads with json.Unmarshal and decodes as it handles the merge.
 func TestMergeReadFromTheConnection(t *testing.T) {
-	for _, once := range []bool{true, false} {
-		t.Run(fmt.Sprint("once=", once), func(t *testing.T) {
+	for _, bodyFirst := range []bool{false, true} {
+		t.Run(fmt.Sprint("bodyFirst=", bodyFirst), func(t *testing.T) {
 			adapter := newFakeAdapter()
 			got := make(chan protocol.Merge, 1)
 			adapter.merge = func(_ context.Context, req protocol.Merge) (protocol.Merged, error) {
@@ -1488,14 +1489,16 @@ func TestMergeReadFromTheConnection(t *testing.T) {
 				return protocol.Merged{Generation: 3}, nil
 			}
 			conn := newServiceConn()
-			cfg := newSettings(Config{})
-			require.True(t, cfg.decodeOnce, "on by default")
-			cfg.decodeOnce = once
-			s := newSession(t.Context(), conn, adapter, cfg)
+			s := newSession(t.Context(), conn, adapter, newSettings(Config{}))
 			t.Cleanup(s.close)
 			s.go_(s.read)
 			sent := protocol.Merge{Bundle: *testBundle(), Lookup: 5}
-			conn.send(t, request(t, 21, protocol.TypeMerge, sent))
+			env := request(t, 21, protocol.TypeMerge, sent)
+			if bodyFirst {
+				conn.inbound <- fmt.Appendf(nil, `{"body":%s,"id":%d,"type":%q}`, env.Body, env.ID, env.Type)
+			} else {
+				conn.send(t, env)
+			}
 			require.Equal(t, sent, within(t, got))
 			require.Equal(t, uint64(21), within(t, adapter.mergeIDs))
 			reply := conn.next(t)
