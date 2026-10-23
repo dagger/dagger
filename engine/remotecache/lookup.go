@@ -10,9 +10,7 @@ import (
 )
 
 // lookups sends the cache's misses to the service, with at most
-// LookupsInFlight lookups unanswered at once, until the session ends or the
-// service refuses a lookup: a service that doesn't know lookups answers with
-// an error, and is not asked again on this connection.
+// LookupsInFlight lookups unanswered at once, until the session ends.
 func (s *session) lookups() {
 	if !s.cfg.Lookups {
 		return
@@ -34,17 +32,15 @@ func (s *session) lookups() {
 		}
 		s.go_(func() {
 			defer func() { <-s.lookupSlots }()
-			if s.lookup(ctx, misses, dropped) {
-				stop()
-			}
+			s.lookup(ctx, misses, dropped)
 		})
 	}
 }
 
 // lookup sends one lookup and expects the merges its answer names, for the
-// misses whose evaluations should wait for them. It reports whether the
-// service refused the lookup.
-func (s *session) lookup(ctx context.Context, misses []dagql.RemoteMiss, dropped uint64) (refused bool) {
+// misses whose evaluations should wait for them. A lookup the service answers
+// with an error has failed, as one it doesn't answer has.
+func (s *session) lookup(ctx context.Context, misses []dagql.RemoteMiss, dropped uint64) {
 	req := protocol.Lookup{
 		Misses:     make([]protocol.LookupMiss, len(misses)),
 		WaitMillis: s.cfg.LookupWait.Milliseconds(),
@@ -58,24 +54,20 @@ func (s *session) lookup(ctx context.Context, misses []dagql.RemoteMiss, dropped
 	defer cancel()
 	env, err := s.requestAs(reqCtx, id, protocol.TypeLookup, req)
 	if err != nil {
-		if env.Type == protocol.TypeError {
-			s.cfg.Logger.Warn("remote cache lookups refused; not sending more on this connection", "lookup", id, "error", err)
-			return true
-		}
 		if context.Cause(ctx) == nil {
 			s.cfg.Logger.Warn("remote cache lookup failed", "lookup", id, "misses", len(misses), "error", err)
 		}
-		return false
+		return
 	}
 	answered := time.Now()
 	var answer protocol.LookedUp
 	if err := env.Decode(&answer); err != nil {
 		s.cfg.Logger.Warn("remote cache lookup: undecodable answer", "lookup", id, "error", err)
-		return false
+		return
 	}
 	if len(answer.Misses) != len(misses) {
 		s.cfg.Logger.Warn("remote cache lookup: answer doesn't match the misses", "lookup", id, "misses", len(misses), "answered", len(answer.Misses))
-		return false
+		return
 	}
 	counts := map[protocol.LookupStatus]int{}
 	waits := 0
@@ -99,7 +91,6 @@ func (s *session) lookup(ctx context.Context, misses []dagql.RemoteMiss, dropped
 		"not_stored", counts[protocol.LookupNotStored],
 		"unknown", counts[protocol.LookupUnknown],
 		"waits", waits)
-	return false
 }
 
 // waitsFor reports whether an evaluation of a missed call waits for the

@@ -1346,18 +1346,17 @@ func TestDefaultLookupWaitWaitsForNothing(t *testing.T) {
 	}
 }
 
-// A service that refuses a lookup isn't sent another on the connection, and
-// an engine with lookups off sends none.
-func TestLookupRefused(t *testing.T) {
+// A lookup the service answers with an error has failed, and the next miss
+// is asked all the same; an engine with lookups off sends none.
+func TestLookupAnsweredWithAnError(t *testing.T) {
 	adapter := newFakeAdapter()
 	s, conn := lookupSession(t, adapter, 10*time.Second)
 	adapter.misses <- lookupMisses(1)
 	env := conn.next(t)
 	require.Equal(t, protocol.TypeLookup, env.Type)
-	s.dispatch(protocol.Envelope{ID: 3, Re: env.ID, Type: protocol.TypeError, Body: json.RawMessage(`{"message": "unexpected request \"lookup\""}`)})
-	require.False(t, within(t, adapter.lookups), "the session stops lookups")
+	s.dispatch(protocol.Envelope{ID: 3, Re: env.ID, Type: protocol.TypeError, Body: json.RawMessage(`{"message": "too large"}`)})
 	adapter.misses <- lookupMisses(1)
-	conn.none(t)
+	require.Equal(t, protocol.TypeLookup, conn.next(t).Type, "the next miss is asked")
 	require.NoError(t, s.ctx.Err(), "the connection survives")
 
 	off := newFakeAdapter()
