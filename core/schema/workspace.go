@@ -1329,41 +1329,42 @@ func (s *workspaceSchema) filteredWorkspaceRootfs(
 		return root, err
 	}
 	seen := map[string]struct{}{}
+	var includes []string
 	for _, dir := range moduleDirs {
 		dir = filepath.ToSlash(cleanWorkspaceRelPath(dir))
 		if _, ok := seen[dir]; ok {
 			continue
 		}
 		seen[dir] = struct{}{}
-		filter := core.CopyFilter{Include: []string{
-			workspace.ModuleConfigFileName,
-			workspace.LegacyModuleConfigFileName,
-		}}
-		target := dir
-		if dir == "." {
-			target = "/"
-		}
-		explicit, err := s.resolveRootfs(ctx, ws, dir, filter, false)
-		if err != nil {
-			return root, err
-		}
-		explicitID, err := explicit.ID()
-		if err != nil {
-			return root, err
-		}
-		var merged dagql.ObjectResult[*core.Directory]
-		if err := srv.Select(ctx, root, &merged, dagql.Selector{
-			Field: "withDirectory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString(target)},
-				{Name: "source", Value: dagql.NewID[*core.Directory](explicitID)},
-			},
-		}); err != nil {
-			return root, fmt.Errorf("restore explicit workspace directory %q: %w", dir, err)
-		}
-		root = merged
+		includes = append(includes,
+			path.Join(dir, workspace.ModuleConfigFileName),
+			path.Join(dir, workspace.LegacyModuleConfigFileName),
+		)
 	}
-	return root, nil
+	if len(includes) == 0 {
+		return root, nil
+	}
+	// Read from the workspace root so missing module directories remain
+	// missing. The caller can then report its normal module validation error.
+	explicit, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{Include: includes}, false)
+	if err != nil {
+		return root, err
+	}
+	explicitID, err := explicit.ID()
+	if err != nil {
+		return root, err
+	}
+	var merged dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, root, &merged, dagql.Selector{
+		Field: "withDirectory",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString("/")},
+			{Name: "source", Value: dagql.NewID[*core.Directory](explicitID)},
+		},
+	}); err != nil {
+		return root, fmt.Errorf("restore explicit workspace module configs: %w", err)
+	}
+	return merged, nil
 }
 
 func requireLocalWorkspace(ws *core.Workspace, operation string) error {
