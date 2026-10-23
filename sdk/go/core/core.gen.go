@@ -9508,6 +9508,34 @@ func (r *File) Export(ctx context.Context, path string, opts ...FileExportOpts) 
 	return response, q.Execute(ctx)
 }
 
+// FileExtractOpts contains options for File.Extract
+type FileExtractOpts struct {
+	// Remove this many leading elements from each entry's path, as tar --strip-components does.
+	//
+	// Entries with no more elements than this are skipped.
+	StripComponents int
+}
+
+// Extracts this archive file into a directory.
+//
+// The format is detected from the file's contents: zip, or tar, either uncompressed or compressed with gzip, bzip2, xz or zstd.
+//
+// An entry whose path would leave the directory is an error.
+func (r *File) Extract(opts ...FileExtractOpts) *Directory {
+	q := r.query.Select("extract")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `stripComponents` optional argument
+		if !querybuilder.IsZeroValue(opts[i].StripComponents) {
+			q = q.Arg("stripComponents", opts[i].StripComponents)
+		}
+	}
+
+	return &Directory{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
 // A unique identifier for this File.
 func (r *File) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {

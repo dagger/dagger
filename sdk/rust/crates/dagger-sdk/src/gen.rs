@@ -9049,6 +9049,13 @@ pub struct FileExportOpts {
     pub allow_parent_dir_path: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct FileExtractOpts {
+    /// Remove this many leading elements from each entry's path, as tar --strip-components does.
+    /// Entries with no more elements than this are skipped.
+    #[builder(setter(into, strip_option), default)]
+    pub strip_components: Option<isize>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct FileAsEnvFileOpts {
     /// Replace "${VAR}" or "$VAR" with the value of other vars
     #[builder(setter(into, strip_option), default)]
@@ -9395,6 +9402,39 @@ impl File {
     pub fn as_json(&self) -> JsonValue {
         let query = self.selection.select("asJSON");
         JsonValue {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Extracts this archive file into a directory.
+    /// The format is detected from the file's contents: zip, or tar, either uncompressed or compressed with gzip, bzip2, xz or zstd.
+    /// An entry whose path would leave the directory is an error.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn extract(&self) -> Directory {
+        let query = self.selection.select("extract");
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Extracts this archive file into a directory.
+    /// The format is detected from the file's contents: zip, or tar, either uncompressed or compressed with gzip, bzip2, xz or zstd.
+    /// An entry whose path would leave the directory is an error.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn extract_opts(&self, opts: FileExtractOpts) -> Directory {
+        let mut query = self.selection.select("extract");
+        if let Some(strip_components) = opts.strip_components {
+            query = query.arg("stripComponents", strip_components);
+        }
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
