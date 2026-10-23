@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/dagger/util/hashutil"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/opencontainers/go-digest"
@@ -2149,15 +2150,29 @@ func (src *ModuleSource) OriginSymbolic() string {
 	if src.Kind != ModuleSourceKindDir || src.DirSrc == nil || src.DirSrc.OriginRoot == nil {
 		return ""
 	}
-	root, subpath := *src.DirSrc.OriginRoot, src.SourceRootSubpath
-	switch {
-	case root == "":
-		return subpath
-	case subpath == ".":
-		return root
-	default:
-		return root + "/" + subpath
+	root := *src.DirSrc.OriginRoot
+	if root == "" {
+		return src.SourceRootSubpath
 	}
+	return repoSymbolic(root, src.SourceRootSubpath)
+}
+
+// RepoSymbolic is the identity of a git module source: its repository,
+// whichever way its clone ref is spelled, and its path in it. It matches
+// OriginSymbolic for the same module served from a tree of that repository.
+func (src *ModuleSource) RepoSymbolic() string {
+	if src.Kind != ModuleSourceKindGit || src.Git == nil {
+		return ""
+	}
+	return repoSymbolic(src.Git.CloneRef, src.SourceRootSubpath)
+}
+
+func repoSymbolic(cloneRef, subpath string) string {
+	identity := gitutil.RepositoryIdentity(cloneRef)
+	if subpath == "." || subpath == "" {
+		return identity
+	}
+	return identity + "/" + subpath
 }
 
 // dirDependencySourceArgs selects a local dependency of a directory module
