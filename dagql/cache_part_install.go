@@ -444,6 +444,13 @@ func (p *PreparedReadyPart) prepareValueStore(ctx context.Context, row *sharedRe
 		return fmt.Errorf("prepare part: typed value has no store")
 	}
 	dec := p.cache.partDecodeContext(ctx, row, p.next).atPath(p.permit.address.OutputPath)
+	if dec.Server() == nil && shareSlotPlannedEncoded(ctx) {
+		// A share slot planned an encoded install, with no preparation
+		// server to take; a request has decoded the receiver since, and its
+		// typed store may need a server to decode, so the slot isn't
+		// attempted.
+		return fmt.Errorf("%w: receiver decoded after its slot was planned, with no server", ErrSnapshotShareIneligible)
+	}
 	d := p.source.Descriptor()
 	d.Address = clonePartAddress(p.permit.address)
 	nextLocal, err := partRecordAt(p.next, p.permit.address.OutputPath)

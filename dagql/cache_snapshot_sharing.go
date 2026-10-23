@@ -510,8 +510,17 @@ func (c *Cache) shareSlotContext(ctx context.Context, slot *shareSlot) (context.
 		ctx = ContextWithCall(ctx, call)
 	}
 	if !slot.receiver.version.payload.hasValue {
-		// An encoded receiver decodes nothing, so it needs no schema at all.
-		return ctx, nil
+		// An encoded receiver decodes nothing as planned, but a request can
+		// decode it before the slot prepares, and the slot then prepares a
+		// typed store. It takes the preparation server when one is
+		// registered, and goes without one, as before, when none is or it
+		// can't be built: the preparation then refuses a typed store.
+		if prepare := c.partPreparationContext(); prepare != nil {
+			if prepared, srv, err := prepare(ctx); err == nil && srv != nil {
+				return srvToContext(prepared, srv), nil
+			}
+		}
+		return context.WithValue(ctx, shareSlotPlannedEncodedKey{}, true), nil
 	}
 	prepare := c.partPreparationContext()
 	if prepare == nil {
@@ -531,6 +540,17 @@ func (c *Cache) shareSlotContext(ctx context.Context, slot *shareSlot) (context.
 		return nil, err
 	}
 	return srvToContext(prepared, srv), nil
+}
+
+// shareSlotPlannedEncodedKey marks the context of a slot planned for an
+// encoded receiver with no preparation server: one that planned an encoded
+// install, which takes no server.
+type shareSlotPlannedEncodedKey struct{}
+
+// shareSlotPlannedEncoded reports whether ctx is such a slot's.
+func shareSlotPlannedEncoded(ctx context.Context) bool {
+	planned, _ := ctx.Value(shareSlotPlannedEncodedKey{}).(bool)
+	return planned
 }
 
 // PartPreparationContext builds the engine-root context and schema-only
