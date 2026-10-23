@@ -112,7 +112,10 @@ func TestInitConsoleShowsCommands(t *testing.T) {
 	}
 	// Commands must also survive in the completed output, after forms close.
 	output := ansi.Strip(stdout.String() + stderr.String())
-	require.Contains(t, output, "module recommend")
-	require.Contains(t, output, "cloud checks on")
-	require.Contains(t, output, "Skipped command:")
+	require.Contains(t, output, "Workspace configuration initialized at")
+	require.Regexp(t, `Skipped\. Run later: dagger .*module recommend`, output)
+	require.Regexp(t, `Skipped\. Run later: dagger .*cloud checks on`, output)
+	// The init view shows outcomes, not the session plumbing behind them.
+	require.NotContains(t, output, "Workspace.configFile")
+	require.NotContains(t, output, "connect")
 }

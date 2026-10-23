@@ -59,7 +59,7 @@ prompt, or --no-apply to preview without changing files.`,
 				}
 				if complete && !moduleOnly && interactive {
 					var err error
-					enableCloud, err = offerWorkspaceNextSteps(ctx, cmd, connect)
+					enableCloud, err = offerWorkspaceNextSteps(ctx, cmd, connect, nil)
 					return err
 				}
 				return nil

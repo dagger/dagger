@@ -39,34 +39,33 @@ func runModuleRecommend(cmd *cobra.Command, _ []string) error {
 		SkipWorkspaceModules: true,
 	}, func(ctx context.Context, engineClient *client.Client) error {
 		dag := engineClient.Dagger()
-		recs, install, err := planRecommend(ctx, dag)
+		recs, install, err := planRecommend(ctx, dag, nil)
 		if err != nil || !install {
 			return err
 		}
-		return installRecommended(ctx, dag, recs)
+		return installRecommended(ctx, dag, recs, nil)
 	})
 }
 
 // planRecommend computes the recommended modules and prompts (via a Frontend
 // form) whether to install them. Workspace setup and module recommend share it.
-// The caller owns the engine session and installs the selected modules.
-func planRecommend(ctx context.Context, dag *dagger.Client) (recs []recommendation, install bool, rerr error) {
-	messageCtx := ctx
-	ctx, span := Tracer().Start(ctx, "Find recommended modules", telemetry.Reveal(), telemetry.Encapsulate())
-	defer telemetry.EndWithCause(span, &rerr)
-
-	recs, err := runRecommend(ctx, dag)
+// The caller owns the engine session and installs the selected modules. ui
+// may be nil; dagger init passes its view to show progress and outcomes.
+func planRecommend(ctx context.Context, dag *dagger.Client, ui *initUI) ([]recommendation, bool, error) {
+	recs, err := findRecommendations(ctx, dag, ui)
 	if err != nil {
 		return nil, false, err
 	}
 	if len(recs) == 0 {
-		setupMessage(messageCtx, "no recommendations", "No recommendations.")
+		ui.modulesDone("No recommendations.")
+		setupMessage(ctx, "no recommendations", "No recommendations.")
 		return nil, false, nil
 	}
+	ui.modulesFound(recs)
 
-	// Keep the selection message outside the scan span so it remains visible
-	// when the scan details are collapsed.
-	recs, err = selectRecommendedModules(messageCtx, recs)
+	// Select outside the scan span, so the scan reads as finished while the
+	// selection prompt is open.
+	recs, err = selectRecommendedModules(ctx, recs, ui)
 	if err != nil {
 		return nil, false, err
 	}
@@ -76,13 +75,21 @@ func planRecommend(ctx context.Context, dag *dagger.Client) (recs []recommendati
 	return recs, true, nil
 }
 
+func findRecommendations(ctx context.Context, dag *dagger.Client, ui *initUI) (_ []recommendation, rerr error) {
+	ctx, span := Tracer().Start(ctx, "Find recommended modules", telemetry.Reveal(), telemetry.Encapsulate())
+	defer telemetry.EndWithCause(span, &rerr)
+	ui.modulesFinding(spanIDOf(span))
+	return runRecommend(ctx, dag)
+}
+
 // installRecommended installs the selected modules in the caller's session.
-func installRecommended(ctx context.Context, dag *dagger.Client, recs []recommendation) error {
+func installRecommended(ctx context.Context, dag *dagger.Client, recs []recommendation, ui *initUI) error {
 	for _, r := range recs {
 		err := func() (rerr error) {
 			installCtx, span := Tracer().Start(ctx, recommendedInstallCommand(r),
 				telemetry.Reveal(), telemetry.Encapsulate())
 			defer telemetry.EndWithCause(span, &rerr)
+			ui.addInstall(spanIDOf(span))
 
 			stdio := telemetry.SpanStdio(installCtx, InstrumentationLibrary)
 			defer stdio.Close()
@@ -91,14 +98,16 @@ func installRecommended(ctx context.Context, dag *dagger.Client, recs []recommen
 		if err != nil {
 			return fmt.Errorf("install %s: %w", r.Module.Repo, err)
 		}
+		ui.addInstalled(r.Module.Name)
 	}
+	ui.modulesInstalled()
 	return nil
 }
 
 // selectRecommendedModules lets the user choose recommendations individually.
 // Every recommendation starts selected, preserving the old affirmative path
 // while allowing irrelevant modules to be toggled off before installation.
-func selectRecommendedModules(ctx context.Context, recs []recommendation) ([]recommendation, error) {
+func selectRecommendedModules(ctx context.Context, recs []recommendation, ui *initUI) ([]recommendation, error) {
 	if autoApply {
 		return recs, nil
 	}
@@ -132,11 +141,13 @@ func selectRecommendedModules(ctx context.Context, recs []recommendation) ([]rec
 		return nil, err
 	}
 	if !install {
+		ui.modulesSkipped(skippedRecommendationsLater())
 		setupMessage(ctx, "recommendations skipped", skippedRecommendations())
 		return nil, nil
 	}
 	selectedRecs := filterRecommendations(recs, selected)
 	if len(selectedRecs) == 0 {
+		ui.modulesSkipped(skippedRecommendationsLater())
 		setupMessage(ctx, "recommendations skipped", skippedRecommendations())
 	} else {
 		setupMessage(ctx, "selected install commands", recommendedInstallCommands(selectedRecs))
@@ -162,6 +173,13 @@ func recommendedInstallCommand(rec recommendation) string {
 
 func skippedRecommendations() string {
 	return "Recommended modules skipped."
+}
+
+// skippedRecommendationsLater says how to come back to skipped
+// recommendations, for the init summary, which is all that remains on screen.
+func skippedRecommendationsLater() string {
+	return "Recommended modules skipped. Run later: " +
+		commandPrefixForLocalWorkspace(moduleRecommendCmd) + " " + initRecommendCommand
 }
 
 func filterRecommendations(recs []recommendation, selected []string) []recommendation {

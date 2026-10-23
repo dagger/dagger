@@ -33,7 +33,7 @@ func TestSelectRecommendedModulesAutoApply(t *testing.T) {
 		{Module: registryModule{Name: "ruff", Repo: "dagger.io/python/ruff"}, Match: "ruff.toml"},
 		{Module: registryModule{Name: "go", Repo: "dagger.io/go"}, Match: "go.mod"},
 	}
-	selected, err := selectRecommendedModules(t.Context(), recs)
+	selected, err := selectRecommendedModules(t.Context(), recs, nil)
 	require.NoError(t, err)
 	require.Equal(t, recs, selected)
 }
@@ -50,7 +50,7 @@ func TestSelectRecommendedModulesNonInteractive(t *testing.T) {
 	})
 	selected, err := selectRecommendedModules(t.Context(), []recommendation{
 		{Module: registryModule{Name: "ruff", Repo: "dagger.io/python/ruff"}, Match: "ruff.toml"},
-	})
+	}, nil)
 	require.NoError(t, err)
 	require.Empty(t, selected)
 }
