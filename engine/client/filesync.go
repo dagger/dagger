@@ -448,24 +448,30 @@ func (s FilesyncSourceProxy) DiffCopy(stream filesync.FileSync_DiffCopyServer) e
 	return grpcutil.ProxyStream[anypb.Any](ctx, clientStream, stream)
 }
 
+// localSearchPath turns a search path into a host path relative to the search
+// root, refusing one that would escape it.
+//
+// Search paths are slash-separated and rooted at the search root whatever the
+// host OS, so a leading "/" is trimmed before the host's rules apply. Testing
+// filepath.IsAbs instead left "/" untouched on Windows, where an absolute path
+// needs a volume: it then cleaned to `\`, which is not local.
+func localSearchPath(p string) (string, error) {
+	cleaned := filepath.Clean(filepath.FromSlash(strings.TrimPrefix(p, "/")))
+	if !filepath.IsLocal(cleaned) {
+		return "", fmt.Errorf("path cannot escape search root: %s", p)
+	}
+	return cleaned, nil
+}
+
 // searchHostPath runs ripgrep (or falls back to grep) on the host filesystem
 // and returns structured search results.
 func searchHostPath(ctx context.Context, root string, opts *engine.LocalSearchOpts) ([]engine.LocalSearchResult, error) {
 	// Validate and normalize explicit search paths so they can't escape root,
 	// the same way Directory.search does.
 	for i, p := range opts.Paths {
-		// If absolute, make it relative to the root
-		cleaned := p
-		if filepath.IsAbs(cleaned) {
-			cleaned = strings.TrimPrefix(cleaned, "/")
-		}
-
-		// Clean the path (e.g., remove ../, ./, etc.)
-		cleaned = filepath.Clean(cleaned)
-
-		// Check if the normalized path would escape the root
-		if !filepath.IsLocal(cleaned) {
-			return nil, fmt.Errorf("path cannot escape search root: %s", p)
+		cleaned, err := localSearchPath(p)
+		if err != nil {
+			return nil, err
 		}
 
 		// Resolve symlinks scoped to root so a symlinked path operand can't
@@ -557,7 +563,7 @@ func parseRipgrepFiles(r io.Reader, limit *int) (results []engine.LocalSearchRes
 		if line == "" {
 			continue
 		}
-		results = append(results, engine.LocalSearchResult{FilePath: line})
+		results = append(results, engine.LocalSearchResult{FilePath: filepath.ToSlash(line)})
 		if limit != nil && len(results) >= *limit {
 			return results, true, nil
 		}
@@ -587,7 +593,9 @@ func parseRipgrepJSON(r io.Reader, limit *int) (results []engine.LocalSearchResu
 		}
 
 		result := engine.LocalSearchResult{
-			FilePath:       data.Path.Text,
+			// Search results are slash-separated, like search paths and glob
+			// results; ripgrep prints host paths, with backslashes on Windows.
+			FilePath:       filepath.ToSlash(data.Path.Text),
 			LineNumber:     data.LineNumber,
 			AbsoluteOffset: data.AbsoluteOffset,
 			MatchedLines:   data.Lines.Text,
@@ -758,7 +766,7 @@ func searchWithGrep(ctx context.Context, root string, opts *engine.LocalSearchOp
 				continue
 			}
 			// Strip leading "./" if present
-			line = strings.TrimPrefix(line, "./")
+			line = strings.TrimPrefix(filepath.ToSlash(line), "./")
 			results = append(results, engine.LocalSearchResult{FilePath: line})
 			if opts.Limit != nil && len(results) >= *opts.Limit {
 				break
@@ -777,7 +785,7 @@ func searchWithGrep(ctx context.Context, root string, opts *engine.LocalSearchOp
 			if len(parts) < 4 {
 				continue
 			}
-			filePath := strings.TrimPrefix(parts[0], "./")
+			filePath := strings.TrimPrefix(filepath.ToSlash(parts[0]), "./")
 			lineNum := 0
 			fmt.Sscanf(parts[1], "%d", &lineNum)
 			byteOffset := 0
