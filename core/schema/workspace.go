@@ -921,19 +921,17 @@ func (s *workspaceSchema) workspaceReadPathExists(
 	ws *core.Workspace,
 	resolvedPath string,
 ) (bool, error) {
-	rp := filepath.ToSlash(resolvedPath)
-	// Overlay edits can create paths that exist in no base source; host-backed
-	// overlays track them as touched paths (tree-backed overlays already fold
-	// edits into the source directory checked below).
-	if overlay, ok := ws.Source().(*core.WorkspaceSourceOverlay); ok {
-		for _, touched := range overlay.TouchedPaths {
-			tp := filepath.ToSlash(touched)
-			if tp == rp || strings.HasPrefix(tp, rp+"/") || rp == "." {
-				return true, nil
-			}
+	rp := path.Clean(filepath.ToSlash(resolvedPath))
+	// The delta contains created paths and parents of edited children. A
+	// touched path (or its descendants) is authoritative even when absent:
+	// deleting it must not expose the old host path again.
+	if delta, ok := ws.OverlayDeltaRoot(); ok {
+		_, exists, err := core.StatFSExists(ctx, &core.DirectoryStatFS{Dir: delta}, rp)
+		if err != nil || exists || ws.OverlayPathTouched(rp) {
+			return exists, err
 		}
 	}
-	return s.workspaceBasePathExists(ctx, ws, resolvedPath)
+	return s.workspaceBasePathExists(ctx, ws, rp)
 }
 
 // workspaceBasePathExists excludes host overlay edits: a path created only

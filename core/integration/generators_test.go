@@ -1714,6 +1714,53 @@ func (GeneratorsSuite) TestWorkspaceGeneratorsSeeOverlayEdits(ctx context.Contex
 	})
 }
 
+func (GeneratorsSuite) TestGenerateRecreatesRemovedScope(ctx context.Context, t *testctx.T) {
+	for _, state := range []string{"existing", "removed", "child removed", "recreated", "parent removed"} {
+		t.Run(state, func(ctx context.Context, t *testctx.T) {
+			fixture, err := filepath.Abs("testdata/workspaces/sdk-scope-generation")
+			require.NoError(t, err)
+			workdir := t.TempDir()
+			require.NoError(t, fs.CopyDir(workdir, fixture))
+			initGitRepo(ctx, t, workdir)
+			scope := "nested"
+			if state == "parent removed" {
+				scope = "nested/child"
+				config := filepath.Join(workdir, "dagger.toml")
+				data, err := os.ReadFile(config)
+				require.NoError(t, err)
+				require.NoError(t, os.WriteFile(config, []byte(strings.ReplaceAll(string(data), ".scopes.nested]", `.scopes."nested/child"]`)), 0o644))
+			}
+			require.NoError(t, os.MkdirAll(filepath.Join(workdir, scope), 0o755))
+			require.NoError(t, os.WriteFile(filepath.Join(workdir, scope, "old.txt"), []byte("old"), 0o644))
+			sdkPath := filepath.Join(workdir, ".dagger/modules/scope-sdk/main.dang")
+			data, err := os.ReadFile(sdkPath)
+			require.NoError(t, err)
+			// Read the scope before the first generated file creates it.
+			data = []byte(strings.Replace(string(data), "ws\n        .withNewFile(", "ws\n        .withNewFile(\"previous.txt\", JSON.encode(ws.directory(\".\").entries))\n        .withNewFile(", 1))
+			require.NoError(t, os.WriteFile(sdkPath, data, 0o644))
+			c := connect(ctx, t, dagger.WithWorkdir(workdir))
+			ws := core.NewQuery(c).CurrentWorkspace()
+			want := []string{}
+			switch state {
+			case "existing":
+				want = []string{"old.txt"}
+			case "removed", "parent removed":
+				ws = ws.WithoutDirectory("nested")
+			case "child removed":
+				ws = ws.WithoutFile("nested/old.txt")
+			case "recreated":
+				ws = ws.WithoutDirectory("nested").WithNewFile("nested/new.txt", "new")
+				want = []string{"new.txt"}
+			}
+			previous, err := ws.SDK("test").Generate().Layer().File(scope + "/previous.txt").Contents(ctx)
+			require.NoError(t, err)
+			var entries []string
+			require.NoError(t, json.Unmarshal([]byte(previous), &entries))
+			require.Equal(t, want, entries)
+		})
+	}
+}
+
 func (GeneratorsSuite) TestGenerateFromModuleDirectoryExportPaths(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	sdkModulePath, err := filepath.Abs("testdata/sdks/module-max-workspace-writer")
