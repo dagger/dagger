@@ -274,7 +274,7 @@ func (s *workspaceSchema) resolveWorkspaceInstallSource(
 		}
 	}
 	if kind == "" {
-		workspaceRoot, err = s.workspaceGitignoredOverlayRootfs(ctx, ws)
+		workspaceRoot, err = s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, true)
 		if err != nil {
 			return src, "", err
 		}

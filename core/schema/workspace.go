@@ -1274,22 +1274,11 @@ func (s *workspaceSchema) workspaceOverlayRootfs(ctx context.Context, ws *core.W
 	}
 	// Whole-tree unfiltered materialization. Callers that can reach a host-backed
 	// workspace must intentionally require ignored content; engine-owned broad
-	// reads should normally use workspaceGitignoredOverlayRootfs instead. For a
+	// reads should normally pass gitignore=true to resolveRootfs instead. For a
 	// host overlay this resolves as full host + changeset via the overlay branch
 	// in resolveRootfs; edits and diffs never come through here (see overlayEdit,
 	// which keeps the changeset delta-native).
 	return s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, false)
-}
-
-// workspaceGitignoredOverlayRootfs resolves the complete workspace view while
-// pruning host content ignored by Git. Overlay edits are applied after the
-// host-side filter, so generated or explicitly staged paths still win even
-// when an existing ignore rule matches them.
-func (s *workspaceSchema) workspaceGitignoredOverlayRootfs(ctx context.Context, ws *core.Workspace) (dagql.ObjectResult[*core.Directory], error) {
-	if ws == nil {
-		return dagql.ObjectResult[*core.Directory]{}, fmt.Errorf("workspace is required")
-	}
-	return s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, true)
 }
 
 // workspaceGitignoredOverlayRootfsWithExplicitDirs keeps broad workspace
@@ -1300,7 +1289,7 @@ func (s *workspaceSchema) workspaceGitignoredOverlayRootfsWithExplicitDirs(
 	ws *core.Workspace,
 	dirs ...string,
 ) (dagql.ObjectResult[*core.Directory], error) {
-	root, err := s.workspaceGitignoredOverlayRootfs(ctx, ws)
+	root, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, true)
 	if err != nil {
 		return root, err
 	}
