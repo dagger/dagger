@@ -99,7 +99,7 @@ module.exports = {
         id: "config/index",
       },
       collapsible: true,
-      collapsed: true,
+      collapsed: false,
       items: [
         "config/user",
         "config/module-wiring",
