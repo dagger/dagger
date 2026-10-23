@@ -783,18 +783,24 @@ func fetchSpanBatch(ctx context.Context, db *clientdb.DB, since int64, limit int
 		return since, nil, 0, nil
 	}
 	next = spans[len(spans)-1].ID
-	kept := spans
-	if keep != nil {
-		kept = make([]clientdb.Span, 0, len(spans))
-		for i := range spans {
-			if keep(&spans[i]) {
-				kept = append(kept, spans[i])
-			}
-		}
-	}
+	kept := keptRows(spans, keep)
 	return next, &coltracepb.ExportTraceServiceRequest{
 		ResourceSpans: clientdb.SpansToPB(kept),
 	}, len(spans), nil
+}
+
+// keptRows returns the rows keep selects, or all of them when keep is nil.
+func keptRows[Row any](rows []Row, keep func(*Row) bool) []Row {
+	if keep == nil {
+		return rows
+	}
+	kept := make([]Row, 0, len(rows))
+	for i := range rows {
+		if keep(&rows[i]) {
+			kept = append(kept, rows[i])
+		}
+	}
+	return kept
 }
 
 // fetchLogBatch is fetchSpanBatch for log records.
@@ -810,15 +816,7 @@ func fetchLogBatch(ctx context.Context, db *clientdb.DB, since int64, limit int,
 		return since, nil, 0, nil
 	}
 	next = logs[len(logs)-1].ID
-	kept := logs
-	if keep != nil {
-		kept = make([]clientdb.Log, 0, len(logs))
-		for i := range logs {
-			if keep(&logs[i]) {
-				kept = append(kept, logs[i])
-			}
-		}
-	}
+	kept := keptRows(logs, keep)
 	return next, &collogspb.ExportLogsServiceRequest{
 		ResourceLogs: clientdb.LogsToPB(kept),
 	}, len(logs), nil
