@@ -1396,7 +1396,13 @@
 # so released binaries keep depending on it.
 [[redirects]]
   from = "/reference/upgrade-to-workspaces"
-  to = "/config/migrate-dagger-json"
+  to = "/migrate-to-v1"
+  status = 301
+
+# The 0.x migration page moved to a top-level slug.
+[[redirects]]
+  from = "/config/migrate-dagger-json"
+  to = "/migrate-to-v1"
   status = 301
 
 # The workspace config schema page moved into the Configuration section.
