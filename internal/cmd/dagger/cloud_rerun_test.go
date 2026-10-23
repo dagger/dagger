@@ -366,6 +366,9 @@ func TestCloudRerunFindsChecksThroughAnyRemote(t *testing.T) {
 	}{
 		{name: "origin is a fork", remotes: [][2]string{{"origin", "git@github.com:someone/mono.git"}, {"upstream", "https://github.com/acme/mono.git"}}},
 		{name: "no origin", remotes: [][2]string{{"upstream", "git@github.com:acme/mono.git"}}},
+		// A remote at a local path can't have Cloud checks; it must not stop
+		// the lookup through the others.
+		{name: "local path remote", remotes: [][2]string{{"backup", "/srv/backup/mono.git"}, {"origin", "git@github.com:acme/mono.git"}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			sha := setupRerunCheckout(t, tc.remotes...)
