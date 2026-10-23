@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -50,7 +51,7 @@ func TestSpanRowsEncodeEachSpansOwnResourceAndScope(t *testing.T) {
 		stub(6, resource.NewSchemaless(attribute.String("service.name", "a")), scopeA),
 	}
 
-	rows := spanRows(spans)
+	rows := encodeTestSpans(spans)
 	require.Len(t, rows, len(spans))
 	for i, span := range spans {
 		require.True(t, rows[i].ok)
@@ -118,7 +119,7 @@ func TestSpanRowsToPBMatchesReadOnlyConversion(t *testing.T) {
 		spans = append(spans, stub.Snapshot())
 	}
 
-	encoded := spanRows(spans)
+	encoded := encodeTestSpans(spans)
 	rows := make([]clientdb.Span, 0, len(encoded))
 	views := make([]sdktrace.ReadOnlySpan, 0, len(encoded))
 	for _, r := range encoded {
@@ -153,10 +154,71 @@ func TestSpanRowsToPBMatchesReadOnlyConversion(t *testing.T) {
 // span exporter does for each target on a span's route.
 func appendTestSpans(ctx context.Context, ps *PubSub, clientID string, spans []sdktrace.ReadOnlySpan) error {
 	var rows []clientdb.Span
-	for _, r := range spanRows(spans) {
+	for _, r := range encodeTestSpans(spans) {
+		if r.err != nil {
+			return r.err
+		}
 		if r.ok {
 			rows = append(rows, r.row)
 		}
 	}
 	return ps.appendSpans(ctx, clientID, rows)
+}
+
+func encodeTestSpans(spans []sdktrace.ReadOnlySpan) []encodedSpanRow {
+	enc := newSpanRowEncoder()
+	rows := make([]encodedSpanRow, len(spans))
+	for i, span := range spans {
+		rows[i] = enc.encode(span)
+	}
+	return rows
+}
+
+type invalidUTF8AttrSpan struct{ sdktrace.ReadOnlySpan }
+
+func (s invalidUTF8AttrSpan) Attributes() []attribute.KeyValue {
+	return append(slices.Clone(s.ReadOnlySpan.Attributes()), attribute.String("invalid", "\xff"))
+}
+
+// A call span that cannot be encoded is skipped, but the payload targets it
+// took must still be settled, or no later claim can deliver the frame.
+func TestSessionSpanExporterSettlesPayloadOfSkippedSpan(t *testing.T) {
+	dbs := clientdb.NewDBs(t.TempDir())
+	sess := &daggerSession{clientRecords: map[string]*clientRecord{}}
+	sess.clientRecords["client"] = &clientRecord{daggerSession: sess, clientID: "client"}
+	exp := sessionSpanExporter{sess: sess, ps: NewPubSub(&Server{clientDBs: dbs})}
+	body, digest := serverCallPayload(t, "lookup", "invalid-utf8")
+	span := invalidUTF8AttrSpan{callSpan(t, "client", 1, body, digest)}
+
+	require.NoError(t, exp.ExportSpans(t.Context(), []sdktrace.ReadOnlySpan{span}))
+	sess.callPayloadMu.Lock()
+	state := sess.callPayloadStates(digest, false)["client"]
+	sess.callPayloadMu.Unlock()
+	require.NotEqual(t, callPayloadWriting, state, "export returned with a payload target still being written")
+}
+
+// A span that panics while encoding fails the exports to the clients it goes
+// to, and no others.
+func TestSessionSpanExporterPanicFailsOnlyItsRoute(t *testing.T) {
+	dbs := clientdb.NewDBs(t.TempDir())
+	sess := &daggerSession{clientRecords: map[string]*clientRecord{}}
+	for _, id := range []string{"parent", "good", "bad"} {
+		sess.clientRecords[id] = &clientRecord{daggerSession: sess, clientID: id}
+	}
+	sess.clientRecords["good"].parentClientIDs = []string{"parent"}
+	sess.clientRecords["bad"].parentClientIDs = []string{"parent"}
+	exp := sessionSpanExporter{sess: sess, ps: NewPubSub(&Server{clientDBs: dbs})}
+	goodBody, goodDigest := serverCallPayload(t, "lookup", "good")
+	badBody, badDigest := serverCallPayload(t, "lookup", "bad")
+	batch := []sdktrace.ReadOnlySpan{
+		callSpan(t, "good", 1, goodBody, goodDigest),
+		panickySpan{callSpan(t, "bad", 2, badBody, badDigest)},
+	}
+
+	require.ErrorContains(t, exp.ExportSpans(t.Context(), batch), "lazy decode exploded")
+	rows, _ := clientRows(t, dbs, "good")
+	require.Len(t, rows, 1, "the panicking span does not go to this client")
+	require.Empty(t, sess.callPayloadMissingTargets(goodDigest, []string{"good"}))
+	rows, _ = clientRows(t, dbs, "bad")
+	require.Empty(t, rows)
 }

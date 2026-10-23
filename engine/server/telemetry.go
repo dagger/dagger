@@ -288,26 +288,33 @@ func (exp sessionSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace
 		routed = append(routed, withoutSpanOrigin(span))
 		routes = append(routes, route)
 	}
-	rows, encodeErr := spanRowsRecovered(routed)
 	// Each target gets its own slice: appending assigns row IDs in place.
 	// The rows' encoded fields are shared, and never modified once written.
+	// Every target on a route gets an entry, even with no rows, so the
+	// payloads taken for it are settled.
+	enc := newSpanRowEncoder()
 	byTarget := map[string][]clientdb.Span{}
-	for i, route := range routes {
-		for _, target := range route {
-			if encodeErr != nil {
-				byTarget[target] = nil
-				continue
+	errByTarget := map[string]error{}
+	for i, span := range routed {
+		encoded := enc.encode(span)
+		for _, target := range routes[i] {
+			targetRows := byTarget[target]
+			switch {
+			case encoded.err != nil:
+				if errByTarget[target] == nil {
+					errByTarget[target] = encoded.err
+				}
+			case encoded.ok:
+				targetRows = append(targetRows, encoded.row)
 			}
-			if rows[i].ok {
-				byTarget[target] = append(byTarget[target], rows[i].row)
-			}
+			byTarget[target] = targetRows
 		}
 	}
 	final := enginetel.IsFinalExportAttempt(ctx)
 	var eg errgroup.Group
 	for target, targetRows := range byTarget {
 		eg.Go(func() error {
-			err := encodeErr
+			err := errByTarget[target]
 			if err == nil {
 				err = exp.ps.appendSpans(ctx, target, targetRows)
 			}
@@ -321,23 +328,6 @@ func (exp sessionSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace
 		})
 	}
 	return eg.Wait()
-}
-
-// spanRowsRecovered encodes spans as DB rows, turning a panic into an error.
-// Spans posted over OTLP are decoded lazily (otel.SpansFromPB), so a malformed
-// field only blows up when encoding reads it -- here, on the span processor's
-// goroutine, outside the HTTP handler's recovery, where a panic would take the
-// whole engine down. The payload is normalized first
-// (enginetel.NormalizeTraceRequest); this is the backstop for whatever that
-// does not anticipate, failing just the batch.
-func spanRowsRecovered(spans []sdktrace.ReadOnlySpan) (_ []encodedSpanRow, rerr error) {
-	defer func() {
-		if r := recover(); r != nil {
-			slog.Error("panic exporting spans", "panic", r, "spans", len(spans), "stack", string(debug.Stack()))
-			rerr = fmt.Errorf("panic exporting %d spans: %v", len(spans), r)
-		}
-	}()
-	return spanRows(spans), nil
 }
 
 func (sessionSpanExporter) ForceFlush(context.Context) error { return nil }
@@ -873,106 +863,131 @@ func (ps *PubSub) MetricsSubscribeHandler(w http.ResponseWriter, r *http.Request
 	})
 }
 
-// encodedSpanRow is one span encoded as a client DB row; ok is false when the
-// span could not be encoded and is skipped.
+// encodedSpanRow is one span encoded as a client DB row. ok is false when
+// the span could not be encoded and is skipped; err is set when encoding it
+// panicked, which fails the export to every client the span goes to.
 type encodedSpanRow struct {
 	row clientdb.Span
 	ok  bool
+	err error
 }
 
-// spanRows encodes spans as client DB rows, in order. A batch's spans mostly
-// share one resource and a few instrumentation scopes, so each distinct one
-// is encoded once and its bytes are shared by the rows that carry it.
-func spanRows(spans []sdktrace.ReadOnlySpan) []encodedSpanRow {
+// spanRowEncoder encodes spans as client DB rows. A session's spans mostly
+// share one resource and a few instrumentation scopes, so it encodes each
+// distinct one once and shares its bytes between the rows that carry it.
+type spanRowEncoder struct {
 	// A resource's encoding is its attributes alone.
-	resources := map[attribute.Distinct][]byte{}
-	scopes := map[instrumentation.Scope][]byte{}
+	resources map[attribute.Distinct][]byte
+	scopes    map[instrumentation.Scope][]byte
+}
 
-	rows := make([]encodedSpanRow, len(spans))
-	for i, span := range spans {
-		traceID := span.SpanContext().TraceID().String()
-		spanID := span.SpanContext().SpanID().String()
-		traceState := span.SpanContext().TraceState().String()
-		parentSpanID := span.Parent().SpanID().String()
-		flags := int64(span.SpanContext().TraceFlags())
-		name := span.Name()
-		kind := span.SpanKind().String()
-		startTime := span.StartTime().UnixNano()
-		endTime := sql.NullInt64{
-			Int64: span.EndTime().UnixNano(),
-			Valid: !span.EndTime().IsZero(),
-		}
-		if span.EndTime().Before(span.StartTime()) {
-			endTime.Int64 = 0
-			endTime.Valid = false
-		}
-		attributes, err := clientdb.MarshalProtoJSONs(telemetry.KeyValues(span.Attributes()))
-		if err != nil {
-			slog.Warn("failed to marshal attributes", "error", err)
-			continue
-		}
-		droppedAttributesCount := int64(span.DroppedAttributes())
-		events, err := clientdb.MarshalProtoJSONs(telemetry.SpanEventsToPB(span.Events()))
-		if err != nil {
-			slog.Warn("failed to marshal events", "error", err)
-			continue
-		}
-		droppedEventsCount := int64(span.DroppedEvents())
-		links, err := clientdb.MarshalProtoJSONs(telemetry.SpanLinksToPB(span.Links()))
-		if err != nil {
-			slog.Warn("failed to marshal links", "error", err)
-			continue
-		}
-		droppedLinksCount := int64(span.DroppedLinks())
-		statusCode := int64(span.Status().Code)
-		statusMessage := span.Status().Description
-		scope := span.InstrumentationScope()
-		instrumentationScope, ok := scopes[scope]
-		if !ok {
-			instrumentationScope, err = protojson.Marshal(telemetry.InstrumentationScopeToPB(scope))
-			if err != nil {
-				slog.Warn("failed to marshal instrumentation scope", "error", err)
-				continue
-			}
-			scopes[scope] = instrumentationScope
-		}
-		res := span.Resource()
-		resource, ok := resources[res.Equivalent()]
-		if !ok {
-			resource, err = protojson.Marshal(telemetry.ResourcePtrToPB(res))
-			if err != nil {
-				slog.Warn("failed to marshal resource", "error", err)
-				continue
-			}
-			resources[res.Equivalent()] = resource
-		}
-
-		rows[i] = encodedSpanRow{ok: true, row: clientdb.Span{
-			TraceID:    traceID,
-			SpanID:     spanID,
-			TraceState: traceState,
-			ParentSpanID: sql.NullString{
-				String: parentSpanID,
-				Valid:  span.Parent().IsValid(),
-			},
-			Flags:                  flags,
-			Name:                   name,
-			Kind:                   kind,
-			StartTime:              startTime,
-			EndTime:                endTime,
-			Attributes:             attributes,
-			DroppedAttributesCount: droppedAttributesCount,
-			Events:                 events,
-			DroppedEventsCount:     droppedEventsCount,
-			Links:                  links,
-			DroppedLinksCount:      droppedLinksCount,
-			StatusCode:             statusCode,
-			StatusMessage:          statusMessage,
-			InstrumentationScope:   instrumentationScope,
-			Resource:               resource,
-		}}
+func newSpanRowEncoder() *spanRowEncoder {
+	return &spanRowEncoder{
+		resources: map[attribute.Distinct][]byte{},
+		scopes:    map[instrumentation.Scope][]byte{},
 	}
-	return rows
+}
+
+// encode encodes span as a DB row, turning a panic into an error. Spans
+// posted over OTLP are decoded lazily (otel.SpansFromPB), so a malformed
+// field only blows up when encoding reads it -- here, on the span
+// processor's goroutine, outside the HTTP handler's recovery, where a panic
+// would take the whole engine down. The payload is normalized first
+// (enginetel.NormalizeTraceRequest); this is the backstop for whatever that
+// does not anticipate, failing just the exports that carry the span.
+func (enc *spanRowEncoder) encode(span sdktrace.ReadOnlySpan) (encoded encodedSpanRow) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("panic exporting span", "panic", r, "stack", string(debug.Stack()))
+			encoded = encodedSpanRow{err: fmt.Errorf("panic exporting span: %v", r)}
+		}
+	}()
+	row, ok := enc.row(span)
+	return encodedSpanRow{row: row, ok: ok}
+}
+
+func (enc *spanRowEncoder) row(span sdktrace.ReadOnlySpan) (clientdb.Span, bool) {
+	traceID := span.SpanContext().TraceID().String()
+	spanID := span.SpanContext().SpanID().String()
+	traceState := span.SpanContext().TraceState().String()
+	parentSpanID := span.Parent().SpanID().String()
+	flags := int64(span.SpanContext().TraceFlags())
+	name := span.Name()
+	kind := span.SpanKind().String()
+	startTime := span.StartTime().UnixNano()
+	endTime := sql.NullInt64{
+		Int64: span.EndTime().UnixNano(),
+		Valid: !span.EndTime().IsZero(),
+	}
+	if span.EndTime().Before(span.StartTime()) {
+		endTime.Int64 = 0
+		endTime.Valid = false
+	}
+	attributes, err := clientdb.MarshalProtoJSONs(telemetry.KeyValues(span.Attributes()))
+	if err != nil {
+		slog.Warn("failed to marshal attributes", "error", err)
+		return clientdb.Span{}, false
+	}
+	droppedAttributesCount := int64(span.DroppedAttributes())
+	events, err := clientdb.MarshalProtoJSONs(telemetry.SpanEventsToPB(span.Events()))
+	if err != nil {
+		slog.Warn("failed to marshal events", "error", err)
+		return clientdb.Span{}, false
+	}
+	droppedEventsCount := int64(span.DroppedEvents())
+	links, err := clientdb.MarshalProtoJSONs(telemetry.SpanLinksToPB(span.Links()))
+	if err != nil {
+		slog.Warn("failed to marshal links", "error", err)
+		return clientdb.Span{}, false
+	}
+	droppedLinksCount := int64(span.DroppedLinks())
+	statusCode := int64(span.Status().Code)
+	statusMessage := span.Status().Description
+	scope := span.InstrumentationScope()
+	instrumentationScope, ok := enc.scopes[scope]
+	if !ok {
+		instrumentationScope, err = protojson.Marshal(telemetry.InstrumentationScopeToPB(scope))
+		if err != nil {
+			slog.Warn("failed to marshal instrumentation scope", "error", err)
+			return clientdb.Span{}, false
+		}
+		enc.scopes[scope] = instrumentationScope
+	}
+	res := span.Resource()
+	resource, ok := enc.resources[res.Equivalent()]
+	if !ok {
+		resource, err = protojson.Marshal(telemetry.ResourcePtrToPB(res))
+		if err != nil {
+			slog.Warn("failed to marshal resource", "error", err)
+			return clientdb.Span{}, false
+		}
+		enc.resources[res.Equivalent()] = resource
+	}
+
+	return clientdb.Span{
+		TraceID:    traceID,
+		SpanID:     spanID,
+		TraceState: traceState,
+		ParentSpanID: sql.NullString{
+			String: parentSpanID,
+			Valid:  span.Parent().IsValid(),
+		},
+		Flags:                  flags,
+		Name:                   name,
+		Kind:                   kind,
+		StartTime:              startTime,
+		EndTime:                endTime,
+		Attributes:             attributes,
+		DroppedAttributesCount: droppedAttributesCount,
+		Events:                 events,
+		DroppedEventsCount:     droppedEventsCount,
+		Links:                  links,
+		DroppedLinksCount:      droppedLinksCount,
+		StatusCode:             statusCode,
+		StatusMessage:          statusMessage,
+		InstrumentationScope:   instrumentationScope,
+		Resource:               resource,
+	}, true
 }
 
 // appendSpans writes span rows to a client's DB.
