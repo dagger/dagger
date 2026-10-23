@@ -474,6 +474,9 @@ func stripTarComponents(r io.Reader, w io.Writer, strip int) error {
 		if err := tw.WriteHeader(hdr); err != nil {
 			return err
 		}
+		// Every entry is extracted in full, as from a zip; a cap would
+		// truncate large entries.
+		//nolint:gosec // G110: Potential DoS vulnerability via decompression bomb (gosec)
 		if _, err := io.Copy(tw, tr); err != nil {
 			return err
 		}
