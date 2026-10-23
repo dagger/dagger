@@ -52,7 +52,13 @@ var cloudRerunCmd = &cobra.Command{
 By default this targets the commit at the current HEAD (matched by SHA, falling
 back to the branch or PR it belongs to) and re-runs the checks that failed. Pass
 --check to pick specific checks by name, --all to re-run everything, or
---commit/--pr to target a different commit.
+--commit/--pr to target a different commit. --commit also accepts the merge
+commit CI tested for a pull request.
+
+The repository is the remote workspace selected with -W, or else whichever of
+the local checkout's git remotes Cloud has checks for, whatever the remote is
+named. Checks are searched in the Cloud orgs you are a member of; pass --org to
+search another org.
 
 Only outermost checks can be re-run; sub-checks run as part of their parent
 check, so name the parent (e.g. "ci:bootstrap", not "ci:bootstrap:lint").
@@ -83,19 +89,22 @@ func init() {
 func (cli *CloudCLI) Rerun(cmd *cobra.Command, _ []string) error {
 	ctx := cmd.Context()
 
-	address, err := cloudRerunTargetAddress(ctx)
+	addresses, err := cloudRerunTargetAddresses(ctx)
 	if err != nil {
 		return err
 	}
 
 	// Load every check on the target commit (unfiltered) so a bad --check name
 	// can be reported against the real list rather than silently matching none.
-	res, selectors, err := cli.loadCloudCheckQueryForWorkspace(ctx, address, nil, true)
+	res, selectors, err := cli.loadCloudCheckQueryForWorkspace(ctx, addresses, nil, true)
 	if err != nil {
 		return err
 	}
 	if len(res.Rows) == 0 {
-		return fmt.Errorf("no Cloud checks found for the target commit; has CI run on it yet? (use 'dagger check' to run locally)")
+		if cloudOrgFlag == "" {
+			return fmt.Errorf("no Cloud checks found for the target commit in the Cloud orgs you are a member of; has CI run on it yet? (pass --org to search another org; use 'dagger check' to run locally)")
+		}
+		return fmt.Errorf("no Cloud checks found for the target commit in Cloud org %q; has CI run on it yet? (use 'dagger check' to run locally)", cloudOrgFlag)
 	}
 
 	commit, _, err := selectCloudCheckCommit(res.Rows, selectors)
@@ -178,33 +187,55 @@ func cloudRerunTrigger(ctx context.Context, client *cloudapi.Client, orgID strin
 	return queued, skipped, nil
 }
 
-// cloudRerunTargetAddress resolves the workspace address whose commit should be
-// re-run: an explicit --commit/--pr override, otherwise the current local
-// checkout's HEAD (honoring -W), matching the workspace commands.
-func cloudRerunTargetAddress(ctx context.Context) (string, error) {
-	if cloudRerunCommit != "" || cloudRerunPR != "" {
-		version := cloudRerunCommit
-		if cloudRerunPR != "" {
-			version = "pull/" + cloudRerunPR + "/head"
-		}
-		info, err := localWorkspaceRemoteInfoForAddress(ctx, workspaceRef)
-		if err != nil {
-			return "", fmt.Errorf("resolve workspace for --commit/--pr: %w", err)
-		}
-		return gitref.RefString(info.cloneRef, info.workspacePath, version), nil
+// cloudRerunTargetAddresses resolves the workspace addresses whose commit should
+// be re-run. The commit is --commit/--pr, or else the clean local checkout's
+// HEAD. The repository is the remote workspace selected with -W, or else every
+// remote of the local checkout (honoring a local -W): the repo CI ran on is
+// often not origin (e.g. "upstream" in a fork checkout), so the Cloud lookup
+// decides which remote has the checks.
+func cloudRerunTargetAddresses(ctx context.Context) ([]string, error) {
+	version := cloudRerunCommit
+	if cloudRerunPR != "" {
+		version = "pull/" + cloudRerunPR + "/head"
 	}
 
-	address, ok, reason, err := checkPastWorkspaceAddress(ctx)
+	address := strings.TrimSpace(workspaceRef)
+	remote, ok, err := parseWorkspaceRemoteAddress(ctx, address)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	if !ok {
-		if reason == "" {
-			reason = "no remote workspace is known"
+	if ok {
+		if version == "" {
+			return []string{address}, nil
 		}
-		return "", fmt.Errorf("cannot determine the target commit: %s; pass --commit or --pr", reason)
+		return []string{gitref.RefString(remote.CloneRef, remote.Path, version)}, nil
 	}
-	return address, nil
+
+	repoRoot, workspacePath, err := localWorkspaceGitPaths(ctx, address)
+	if err != nil {
+		return nil, fmt.Errorf("cannot determine the target commit: %w; pass -W with a remote workspace", err)
+	}
+	if version == "" {
+		dirty, err := gitWorktreeDirty(ctx, repoRoot)
+		if err != nil {
+			return nil, err
+		}
+		if dirty {
+			return nil, fmt.Errorf("cannot determine the target commit: workspace has uncommitted changes; pass --commit or --pr")
+		}
+		if version, err = currentGitCommit(ctx, repoRoot); err != nil {
+			return nil, err
+		}
+	}
+	cloneRefs, err := localGitRemoteCloneRefs(ctx, repoRoot)
+	if err != nil {
+		return nil, fmt.Errorf("cannot determine the target repository: %w; pass -W with a remote workspace", err)
+	}
+	addresses := make([]string, 0, len(cloneRefs))
+	for _, cloneRef := range cloneRefs {
+		addresses = append(addresses, gitref.RefString(cloneRef, workspacePath, version))
+	}
+	return addresses, nil
 }
 
 // cloudRerunTargets picks which of the commit's checks to re-run based on the
