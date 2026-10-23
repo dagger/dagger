@@ -9,9 +9,9 @@
           "type": "string",
           "description": "Dir, when set, keeps every cache volume as a plain directory under this absolute path, apart from the engine's snapshots, instead of as a snapshot. Another engine given the same directory later reuses its volumes. One engine uses the directory at a time: an engine that finds it in use keeps cache volumes as snapshots. It must not be inside the engine's worker state directory."
         },
-        "capacity": {
-          "$ref": "#/$defs/DiskSpace",
-          "description": "Capacity is the provisioned size of the storage that holds Dir, such as a cache volume created at a given size. Set it when the filesystem's own size isn't the limit to keep to. Garbage collection keeps the directory's volumes within 80% of it, removing the least recently used first. When unset, the directory's own filesystem sets the limits, as the engine's defaults do for its state."
+        "capacityBytes": {
+          "type": "integer",
+          "description": "CapacityBytes is the provisioned size, in bytes, of the storage that holds Dir, such as a cache volume created at a given size. Set it when the filesystem's own size isn't the limit to keep to. Garbage collection keeps the directory's volumes within 80% of it, removing the least recently used first. When unset, the directory's own filesystem sets the limits, as the engine's defaults do for its state."
         }
       },
       "additionalProperties": false,

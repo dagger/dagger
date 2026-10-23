@@ -56,13 +56,13 @@ type CacheVolumesConfig struct {
 	// engine's worker state directory.
 	Dir string `json:"dir,omitempty"`
 
-	// Capacity is the provisioned size of the storage that holds Dir, such as
-	// a cache volume created at a given size. Set it when the filesystem's own
-	// size isn't the limit to keep to. Garbage collection keeps the
-	// directory's volumes within 80% of it, removing the least recently used
-	// first. When unset, the directory's own filesystem sets the limits, as
-	// the engine's defaults do for its state.
-	Capacity DiskSpace `json:"capacity,omitempty"`
+	// CapacityBytes is the provisioned size, in bytes, of the storage that
+	// holds Dir, such as a cache volume created at a given size. Set it when
+	// the filesystem's own size isn't the limit to keep to. Garbage collection
+	// keeps the directory's volumes within 80% of it, removing the least
+	// recently used first. When unset, the directory's own filesystem sets the
+	// limits, as the engine's defaults do for its state.
+	CapacityBytes int64 `json:"capacityBytes,omitempty"`
 }
 
 type ShutdownConfig struct {

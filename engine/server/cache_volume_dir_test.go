@@ -79,9 +79,9 @@ func TestCacheVolumeDirPressure(t *testing.T) {
 
 	// With a capacity, the limit is the directory's use, which GC passes
 	// check; the filesystem's free space isn't.
-	srv.cacheVolumesCfg.Capacity = config.DiskSpace{Bytes: 100e9}
+	srv.cacheVolumesCfg.CapacityBytes = 100e9
 	require.False(t, srv.cacheVolumeDirPressure(t.Context()))
-	srv.cacheVolumesCfg.Capacity = config.DiskSpace{}
+	srv.cacheVolumesCfg.CapacityBytes = 0
 
 	srv.localCacheGCEnabled = false
 	require.False(t, srv.cacheVolumeDirPressure(t.Context()), "not with GC disabled")
@@ -131,7 +131,7 @@ func TestCacheVolumeDirPolicy(t *testing.T) {
 	}, policy)
 
 	// A capacity: 80% of it, whatever the filesystem says.
-	srv.cacheVolumesCfg.Capacity = config.DiskSpace{Bytes: 100e9}
+	srv.cacheVolumesCfg.CapacityBytes = 100e9
 	policy, err = srv.cacheVolumeDirPolicy(true)
 	require.NoError(t, err)
 	require.Equal(t, cachevolumedir.Policy{
@@ -142,7 +142,7 @@ func TestCacheVolumeDirPolicy(t *testing.T) {
 
 	// The real filesystem, unstubbed.
 	srv.cacheVolumeDirDiskStat = nil
-	srv.cacheVolumesCfg.Capacity = config.DiskSpace{}
+	srv.cacheVolumesCfg.CapacityBytes = 0
 	policy, err = srv.cacheVolumeDirPolicy(false)
 	require.NoError(t, err)
 	require.Positive(t, policy.MaxUsedSpace)
