@@ -240,6 +240,7 @@ module.exports = {
             "reference/config-files/engine-json",
           ],
         },
+        "reference/glossary",
       ],
     },
 
