@@ -320,6 +320,8 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 		row.noteCloudCopyLocked(item.CloudNumber, item.CloudStored, item.CloudExpiresAtUnix)
 	}
 	var queue collectionQueue
+	// accepted is the offer this call attached, for prefetching.
+	var accepted *partOffer
 	if out.Outcome == OfferAccepted {
 		current := row.partOfferLocked(key)
 		if current != old {
@@ -338,6 +340,9 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 				}
 				transferred = row.partOfferLocked(key) == next
 				out.Replaced = transferred && current != nil
+				if transferred {
+					accepted = next
+				}
 				if !transferred {
 					out.Outcome = OfferInvalid
 				}
@@ -355,6 +360,9 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 	callbacks, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
 	c.egraphMu.Unlock()
 	out.Err = errors.Join(out.Err, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), callbacks))
+	if accepted != nil && out.Outcome == OfferAccepted {
+		c.partOfferAccepted(ctx, row, key, accepted)
+	}
 	return out
 }
 
