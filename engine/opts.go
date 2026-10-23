@@ -32,6 +32,9 @@ const (
 	localDirImportFollowPathsMetaKey     = "followpaths"
 
 	localDirImportGitIgnoreMetaKey = "dagger.gitignore"
+	// GitIgnoreOverridesHeader acknowledges client-side rule overrides.
+	GitIgnoreOverridesHeader    = "dagger-gitignore-overrides"
+	GitIgnoreExplicitDirsHeader = "dagger-gitignore-explicit-dirs"
 
 	// socket session attachable keys
 	SocketURLEncodedKey = "X-Dagger-Socket-URLEncoded"
@@ -373,19 +376,21 @@ func normalizeWorkspaceModuleLoading(loadWorkspaceModules, skipWorkspaceModules 
 }
 
 type LocalImportOpts struct {
-	Path               string           `json:"path"`
-	UseGitIgnore       bool             `json:"use_gitignore"`
-	IncludePatterns    []string         `json:"include_patterns"`
-	ExcludePatterns    []string         `json:"exclude_patterns"`
-	FollowPaths        []string         `json:"follow_paths"`
-	ReadSingleFileOnly bool             `json:"read_single_file_only"`
-	MaxFileSize        int64            `json:"max_file_size"`
-	StatPathOnly       bool             `json:"stat_path_only"`
-	StatReturnAbsPath  bool             `json:"stat_return_abs_path"`
-	StatResolvePath    bool             `json:"stat_resolve_path"`
-	GetAbsPathOnly     bool             `json:"get_abs_path_only"`
-	GlobPattern        string           `json:"glob_pattern"`
-	SearchOpts         *LocalSearchOpts `json:"search_opts,omitempty"`
+	Path                  string            `json:"path"`
+	UseGitIgnore          bool              `json:"use_gitignore"`
+	GitIgnoreOverrides    map[string]string `json:"gitignore_overrides,omitempty"`
+	GitIgnoreExplicitDirs []string          `json:"gitignore_explicit_dirs,omitempty"`
+	IncludePatterns       []string          `json:"include_patterns"`
+	ExcludePatterns       []string          `json:"exclude_patterns"`
+	FollowPaths           []string          `json:"follow_paths"`
+	ReadSingleFileOnly    bool              `json:"read_single_file_only"`
+	MaxFileSize           int64             `json:"max_file_size"`
+	StatPathOnly          bool              `json:"stat_path_only"`
+	StatReturnAbsPath     bool              `json:"stat_return_abs_path"`
+	StatResolvePath       bool              `json:"stat_resolve_path"`
+	GetAbsPathOnly        bool              `json:"get_abs_path_only"`
+	GlobPattern           string            `json:"glob_pattern"`
+	SearchOpts            *LocalSearchOpts  `json:"search_opts,omitempty"`
 }
 
 func (o LocalImportOpts) ToGRPCMD() metadata.MD {

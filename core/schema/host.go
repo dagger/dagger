@@ -171,9 +171,11 @@ type hostDirectoryArgs struct {
 	core.CopyFilter
 	HostDirCacheConfig
 
-	GitIgnoreRoot string   `internal:"true" default:""`
-	FollowPaths   []string `internal:"true" default:"[]"`
-	Gitignore     bool     `default:"false"`
+	GitIgnoreRoot         string   `internal:"true" default:""`
+	GitIgnoreOverrides    string   `internal:"true" default:""`
+	GitIgnoreExplicitDirs []string `internal:"true" default:"[]"`
+	FollowPaths           []string `internal:"true" default:"[]"`
+	Gitignore             bool     `default:"false"`
 }
 
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
@@ -306,11 +308,17 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 	}
 
 	snapshotOpts := filesync.SnapshotOpts{
-		IncludePatterns: includePatterns,
-		ExcludePatterns: excludePatterns,
-		FollowPaths:     followPaths,
-		GitIgnore:       args.Gitignore,
-		RelativePath:    relPathFromRoot,
+		IncludePatterns:       includePatterns,
+		ExcludePatterns:       excludePatterns,
+		FollowPaths:           followPaths,
+		GitIgnore:             args.Gitignore,
+		GitIgnoreExplicitDirs: args.GitIgnoreExplicitDirs,
+		RelativePath:          relPathFromRoot,
+	}
+	if args.GitIgnoreOverrides != "" {
+		if err := json.Unmarshal([]byte(args.GitIgnoreOverrides), &snapshotOpts.GitIgnoreOverrides); err != nil {
+			return inst, fmt.Errorf("decode ignore rule overrides: %w", err)
+		}
 	}
 	if args.NoCache {
 		snapshotOpts.CacheBuster = rand.Text()

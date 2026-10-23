@@ -42,6 +42,29 @@ type workspaceMigrationLegacyLockMove struct {
 
 const workspaceMigrationLockModulesResolveOperation = "modules.resolve"
 
+func (s *workspaceSchema) workspaceMigrationRootfs(
+	ctx context.Context,
+	ws *core.Workspace,
+	extra ...string,
+) (dagql.ObjectResult[*core.Directory], error) {
+	names := []string{
+		workspace.ConfigFileName,
+		workspace.ModuleConfigFileName,
+		workspace.LegacyModuleConfigFileName,
+		workspace.LockFileName,
+		workspace.LegacyLockFilePath,
+		".gitignore",
+	}
+	includes := make([]string, 0, len(names)*2+len(extra))
+	for _, name := range names {
+		includes = append(includes, name, "**/"+name)
+	}
+	for _, file := range extra {
+		includes = append(includes, filepath.ToSlash(file))
+	}
+	return s.resolveRootfs(ctx, ws, ".", core.CopyFilter{Include: includes}, false)
+}
+
 func (plans workspaceMigrationPlanBundle) empty() bool {
 	return len(plans.WorkspacePlans) == 0 &&
 		len(plans.ParentPlans) == 0 &&
@@ -212,7 +235,18 @@ func (s *workspaceSchema) workspaceMigrationGitignoreCleanups(
 	if err != nil {
 		return nil, fmt.Errorf("prepare legacy .gitignore cleanup: %w", err)
 	}
-	rootDir, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, true)
+	explicitDirs := make([]string, 0, len(compatWorkspaces))
+	for _, compatWorkspace := range compatWorkspaces {
+		if compatWorkspace == nil {
+			continue
+		}
+		dir, err := workspaceMigrationProjectRootRelPath(ws, compatWorkspace.ProjectRoot)
+		if err != nil {
+			return nil, err
+		}
+		explicitDirs = append(explicitDirs, dir)
+	}
+	rootDir, err := s.filteredWorkspaceRootfs(ctx, ws, explicitDirs...)
 	if err != nil {
 		return nil, err
 	}
@@ -369,14 +403,7 @@ func (s *workspaceSchema) workspaceMigrationCompatWorkspaces(
 		return nil, nil, fmt.Errorf("workspace migration is local-only")
 	}
 
-	rootDir, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{
-		Exclude: []string{
-			".git",
-			".git/**",
-			"**/.git",
-			"**/.git/**",
-		},
-	}, true)
+	rootDir, err := s.workspaceMigrationRootfs(ctx, ws)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -727,7 +754,11 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 	ctx, span := core.Tracer(ctx).Start(ctx, "build migration changeset", workspaceMigrationWrapperSpanOpts(ctx)...)
 	defer telemetry.EndWithCause(span, &rerr)
 
-	baseDir, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, true)
+	targetPaths, err := workspaceMigrationRootTargetPaths(ws, plans)
+	if err != nil {
+		return changes, err
+	}
+	baseDir, err := s.workspaceMigrationRootfs(ctx, ws, targetPaths...)
 	if err != nil {
 		return changes, err
 	}
@@ -738,10 +769,6 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 		return changes, err
 	}
 
-	targetPaths, err := workspaceMigrationRootTargetPaths(ws, plans)
-	if err != nil {
-		return changes, err
-	}
 	for _, move := range lockMoves {
 		targetPaths = append(targetPaths, move.TargetPath)
 	}

@@ -16,6 +16,10 @@ import (
 
 type GitignoreMatcher struct {
 	fs fsutil.FS
+	// Overrides replace rule files without changing the filesystem. An empty
+	// value also represents a removed rule file. Keys are slash-relative paths.
+	overrides    map[string]string
+	explicitDirs []string
 
 	// Cache for parsed gitignore files to avoid re-reading
 	gitignoreCache         map[string]gitignore.Matcher
@@ -33,12 +37,24 @@ func NewGitIgnoreMatcher(fs fsutil.FS) *GitignoreMatcher {
 	return gfs
 }
 
+func NewGitIgnoreMatcherWithOverrides(fs fsutil.FS, overrides map[string]string, explicitDirs ...string) *GitignoreMatcher {
+	matcher := NewGitIgnoreMatcher(fs)
+	matcher.overrides = overrides
+	matcher.explicitDirs = explicitDirs
+	return matcher
+}
+
 // Matches checks if a path should be ignored based on gitignore rules
 func (gfs *GitignoreMatcher) Matches(path string, isDir bool) (out bool, _ error) {
 	// Clean the path and ensure it's relative
 	path = filepath.Clean(path)
 	if filepath.IsAbs(path) {
 		path = strings.TrimPrefix(path, "/")
+	}
+	// Selected paths include symlink entries and targets of config-file links.
+	// Keep those exact entries without admitting their siblings.
+	if slices.Contains(gfs.explicitDirs, filepath.ToSlash(path)) {
+		return false, nil
 	}
 
 	// Get the directory containing this path
@@ -91,6 +107,30 @@ func (gfs *GitignoreMatcher) getGitIgnoreMatcher(dirPath string) (matcher gitign
 		return nil, err
 	}
 	if len(patterns) > 0 {
+		// Selecting a directory bypasses matches at or above that directory,
+		// but preserves fresh matches below it. Choose the deepest
+		// selected ancestor so nested explicit references can cross barriers.
+		var selected string
+		for _, dir := range gfs.explicitDirs {
+			dir = filepath.FromSlash(dir)
+			if dir == "." || dir == "" {
+				continue
+			}
+			if (dirPath == dir || strings.HasPrefix(dirPath, dir+string(filepath.Separator))) && len(dir) > len(selected) {
+				selected = dir
+			}
+		}
+		if selected != "" {
+			components := strings.Split(selected, string(filepath.Separator))
+			patterns = slices.Clone(patterns)
+			for i, pattern := range patterns {
+				if pattern.Match(components, true) == gitignore.Exclude {
+					rule := *pattern.(*gitignoreRule)
+					rule.explicitDepth = len(components)
+					patterns[i] = &rule
+				}
+			}
+		}
 		matcher = gitignore.NewMatcher(patterns)
 	}
 	return matcher, nil
@@ -126,7 +166,13 @@ func (gfs *GitignoreMatcher) getGitIgnorePatterns(dirPath string) (patterns []gi
 	}
 
 	gitignorePath := filepath.Join(dirPath, ".gitignore")
-	reader, err := gfs.fs.Open(gitignorePath)
+	var reader io.ReadCloser
+	var err error
+	if contents, ok := gfs.overrides[filepath.ToSlash(gitignorePath)]; ok {
+		reader = io.NopCloser(strings.NewReader(contents))
+	} else {
+		reader, err = gfs.fs.Open(gitignorePath)
+	}
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return patterns, nil
@@ -163,12 +209,79 @@ func parseGitIgnoreFile(reader io.Reader, domain []string) ([]gitignore.Pattern,
 			// skip empty lines and comments
 			continue
 		}
-		pattern := gitignore.ParsePattern(line, domain)
-		patterns = append(patterns, pattern)
+		glob := strings.TrimPrefix(line, "!")
+		if !strings.HasSuffix(glob, `\ `) {
+			glob = strings.TrimRight(glob, " ")
+		}
+		dirOnly := strings.HasSuffix(glob, "/")
+		glob = strings.TrimSuffix(glob, "/")
+		if !strings.Contains(glob, "/") {
+			glob = "**/" + glob
+		}
+		patterns = append(patterns, &gitignoreRule{
+			Pattern:     gitignore.ParsePattern(line, domain),
+			glob:        strings.Split(strings.TrimPrefix(glob, "/"), "/"),
+			domainDepth: len(domain),
+			dirOnly:     dirOnly,
+		})
 	}
 
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
 	return patterns, nil
+}
+
+// gitignoreRule retains an exact glob as well as Git's ancestor-aware matcher.
+// An explicit root bypasses ancestor matches, so we must distinguish those
+// from new matches of the same rule against descendants of that root.
+type gitignoreRule struct {
+	gitignore.Pattern
+	glob          []string
+	domainDepth   int
+	dirOnly       bool
+	explicitDepth int
+}
+
+func (rule *gitignoreRule) Match(path []string, isDir bool) gitignore.MatchResult {
+	match := rule.Pattern.Match(path, isDir)
+	if rule.explicitDepth == 0 || match != gitignore.Exclude {
+		return match
+	}
+	for end := rule.explicitDepth + 1; end <= len(path); end++ {
+		if rule.dirOnly && end == len(path) && !isDir {
+			continue
+		}
+		if matchGitignoreGlob(rule.glob, path[rule.domainDepth:end]) {
+			return gitignore.Exclude
+		}
+	}
+	return gitignore.NoMatch
+}
+
+// Match components with the same syntax as go-git's filepath.Match calls.
+// Only a whole-component ** can consume multiple path components.
+func matchGitignoreGlob(pattern, path []string) bool {
+	type position struct{ pattern, path int }
+	seen := map[position]bool{}
+	var match func(int, int) bool
+	match = func(p, n int) bool {
+		pos := position{p, n}
+		if seen[pos] {
+			return false
+		}
+		seen[pos] = true
+		if p == len(pattern) {
+			return n == len(path)
+		}
+		if pattern[p] == "**" {
+			return match(p+1, n) || (n < len(path) && match(p, n+1))
+		}
+		if n == len(path) {
+			return false
+		}
+		matched, err := filepath.Match(pattern[p], path[n])
+		return err == nil && matched && match(p+1, n+1)
+	}
+	return match(0, 0)
 }

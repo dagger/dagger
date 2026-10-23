@@ -4,6 +4,7 @@ import (
 	"context"
 	gofs "io/fs"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/dagger/dagger/internal/fsutil"
@@ -12,6 +13,135 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestGitIgnoreRuleOverrides(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".gitignore"), []byte("old.txt\n.venv/\n"), 0o600))
+	require.NoError(t, os.Mkdir(filepath.Join(root, "nested"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "nested", ".gitignore"), []byte("old.txt\n"), 0o600))
+	fs, err := fsutil.NewFS(root)
+	require.NoError(t, err)
+	matcher := NewGitIgnoreMatcherWithOverrides(fs, map[string]string{
+		".gitignore":         ".venv/\nnew.txt\n",
+		"nested/.gitignore":  "",
+		"created/.gitignore": "secret.txt\n",
+	})
+	for file, want := range map[string]bool{
+		"old.txt":            false,
+		"new.txt":            true,
+		".venv/cache":        true,
+		"nested/old.txt":     false,
+		"nested/new.txt":     true,
+		"created/secret.txt": true,
+	} {
+		ignored, err := matcher.Matches(file, false)
+		require.NoError(t, err)
+		require.Equal(t, want, ignored, file)
+	}
+}
+
+func TestGitIgnoreExplicitDirectoriesKeepChildRules(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".gitignore"), []byte("/vendor/\n**/.venv/\n*.log\n"), 0o600))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "vendor", "dep"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "vendor", "dep", ".gitignore"), []byte("cache/\n"), 0o600))
+	fs, err := fsutil.NewFS(root)
+	require.NoError(t, err)
+	matcher := NewGitIgnoreMatcherWithOverrides(fs, nil, "vendor/dep", "visible")
+	for file, want := range map[string]bool{
+		"vendor/dep/main.go":     false,
+		"vendor/dep/.venv/cache": true,
+		"vendor/dep/cache/value": true,
+		"vendor/dep/debug.log":   true,
+		"vendor/other/main.go":   true,
+		"visible/main.go":        false,
+		"visible/.venv/cache":    true,
+		"visible/debug.log":      true,
+	} {
+		ignored, err := matcher.Matches(file, false)
+		require.NoError(t, err)
+		require.Equal(t, want, ignored, file)
+	}
+}
+
+func TestGitIgnoreExplicitSymlinkEntry(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".gitignore"), []byte("alias\nreal/\n*.log\n"), 0o600))
+	fs, err := fsutil.NewFS(root)
+	require.NoError(t, err)
+	matcher := NewGitIgnoreMatcherWithOverrides(fs, nil, "alias", "real")
+	for p, want := range map[string]bool{"alias": false, "real/main.go": false, "real/debug.log": true} {
+		ignored, err := matcher.Matches(p, false)
+		require.NoError(t, err)
+		require.Equal(t, want, ignored, p)
+	}
+}
+
+func TestGitIgnoreExplicitDirectoriesKeepRecurringRules(t *testing.T) {
+	for _, tc := range []struct {
+		name, rules string
+		paths       map[string]bool
+	}{
+		{"name", "cache/\n", map[string]bool{
+			"cache/module/main.go":        false,
+			"cache/module/cache/artifact": true,
+			"cache/other/main.go":         true,
+		}},
+		{"anchored", "/cache/\n", map[string]bool{
+			"cache/module/main.go":        false,
+			"cache/module/cache/artifact": false,
+		}},
+		{"recursive", "**/cache/\n!**/keep.txt\n", map[string]bool{
+			"cache/module/main.go":               false,
+			"cache/module/nested/cache/artifact": true,
+			"cache/module/nested/cache/keep.txt": false,
+		}},
+		{"subtree", "/cache/**\n!**/main.go\n", map[string]bool{
+			"cache/module/main.go":  false,
+			"cache/module/artifact": true,
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(root, ".gitignore"), []byte(tc.rules), 0o600))
+			fs, err := fsutil.NewFS(root)
+			require.NoError(t, err)
+			matcher := NewGitIgnoreMatcherWithOverrides(fs, nil, "cache/module")
+			for file, want := range tc.paths {
+				ignored, err := matcher.Matches(file, false)
+				require.NoError(t, err)
+				require.Equal(t, want, ignored, file)
+			}
+		})
+	}
+}
+
+func TestGitIgnoreExplicitDirectoriesPreservePatternSyntax(t *testing.T) {
+	for _, tc := range []struct {
+		pattern, rootName, childName string
+	}{
+		{`cache{one,two}/`, "cache{one,two}", "cache{one,two}"},
+		{`cache\{one,two\}/`, "cache{one,two}", "cache{one,two}"},
+		{`cache[12]/`, "cache1", "cache2"},
+		{`cache[^x]/`, "cache1", "cache2"},
+		{`cache[!x]/`, "cache!", "cachex"},
+	} {
+		t.Run(tc.pattern, func(t *testing.T) {
+			root := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(root, ".gitignore"), []byte(tc.pattern+"\n"), 0o600))
+			fs, err := fsutil.NewFS(root)
+			require.NoError(t, err)
+			selected := tc.rootName + "/module"
+			matcher := NewGitIgnoreMatcherWithOverrides(fs, nil, selected)
+			ignored, err := matcher.Matches(selected+"/main.go", false)
+			require.NoError(t, err)
+			require.False(t, ignored)
+			ignored, err = matcher.Matches(selected+"/"+tc.childName+"/artifact", false)
+			require.NoError(t, err)
+			require.True(t, ignored)
+		})
+	}
+}
 
 type walkEntry struct {
 	kind    string
