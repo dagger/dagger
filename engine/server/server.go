@@ -41,6 +41,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/archutil"
+	"github.com/dagger/dagger/internal/buildkit/util/disk"
 	"github.com/dagger/dagger/internal/buildkit/util/entitlements"
 	"github.com/dagger/dagger/internal/buildkit/util/network"
 	"github.com/dagger/dagger/internal/buildkit/util/network/cniprovider"
@@ -139,6 +140,9 @@ type Server struct {
 	// cache volumes are directories (cacheVolumes.dir); nil otherwise.
 	cacheVolumeDir  *cachevolumedir.Store
 	cacheVolumesCfg config.CacheVolumesConfig
+	// cacheVolumeDirDiskStat overrides disk.GetDiskStat for the cache volume
+	// directory when set, for tests.
+	cacheVolumeDirDiskStat func(string) (disk.DiskStat, error)
 
 	snapshotter        ctdsnapshot.Snapshotter
 	snapshotterMDStore *storage.MetaStore // only set for overlay snapshotter right now

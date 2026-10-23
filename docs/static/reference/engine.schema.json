@@ -9,25 +9,9 @@
           "type": "string",
           "description": "Dir, when set, keeps every cache volume as a plain directory under this absolute path, apart from the engine's snapshots, instead of as a snapshot. Another engine given the same directory later reuses its volumes. One engine uses the directory at a time: an engine that finds it in use keeps cache volumes as snapshots. It must not be inside the engine's worker state directory."
         },
-        "keepDuration": {
-          "$ref": "#/$defs/Duration",
-          "description": "KeepDuration keeps volumes used more recently than this from garbage collection."
-        },
-        "reservedSpace": {
+        "capacity": {
           "$ref": "#/$defs/DiskSpace",
-          "description": "ReservedSpace is the minimum amount of disk space this policy is guaranteed to retain. Any usage below this threshold will not be reclaimed during garbage collection."
-        },
-        "maxUsedSpace": {
-          "$ref": "#/$defs/DiskSpace",
-          "description": "MaxUsedSpace is the maximum amount of disk space this policy is allowed to use. Any usage exceeding this limit will be cleaned up during a garbage collection sweep."
-        },
-        "minFreeSpace": {
-          "$ref": "#/$defs/DiskSpace",
-          "description": "MinFreeSpace is the target amount of free disk space the garbage collector will attempt to leave. However, it will never let the available space fall below ReservedSpace."
-        },
-        "sweepSize": {
-          "$ref": "#/$defs/DiskSpace",
-          "description": "SweepSize is the minimum amount of space to sweep during a single gc pass. Either an absolute number of bytes, or a percentage of the \"allowed space\" between reserved and max."
+          "description": "Capacity is the provisioned size of the storage that holds Dir, such as a cache volume created at a given size. Set it when the filesystem's own size isn't the limit to keep to. Garbage collection keeps the directory's volumes within 80% of it, removing the least recently used first. When unset, the directory's own filesystem sets the limits, as the engine's defaults do for its state."
         }
       },
       "additionalProperties": false,

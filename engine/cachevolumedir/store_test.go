@@ -3,6 +3,7 @@ package cachevolumedir
 import (
 	"context"
 	"errors"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -325,7 +326,7 @@ func TestCollectLRUUnderCap(t *testing.T) {
 	require.False(t, ok)
 }
 
-func TestCollectSkipsPinnedAndRecent(t *testing.T) {
+func TestCollectSkipsPinned(t *testing.T) {
 	clock := newFakeClock()
 	s := openStore(t, t.TempDir(), clock)
 	for _, key := range []string{"a", "b", "c"} {
@@ -340,11 +341,6 @@ func TestCollectSkipsPinnedAndRecent(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, report.Removed, 1)
 	require.Equal(t, "b", report.Removed[0].Identity.Key, "the pinned oldest volume is skipped")
-
-	// Everything left is either pinned or used within the keep duration.
-	report, err = s.Collect(t.Context(), Policy{MaxUsedSpace: 1, KeepDuration: 2 * time.Hour})
-	require.NoError(t, err)
-	require.Empty(t, report.Removed)
 }
 
 func TestCollectAllRemovesEverythingUnpinned(t *testing.T) {
@@ -356,7 +352,7 @@ func TestCollectAllRemovesEverythingUnpinned(t *testing.T) {
 	require.NoError(t, err)
 	defer pinned.Release()
 
-	report, err := s.Collect(t.Context(), Policy{All: true, KeepDuration: time.Hour})
+	report, err := s.Collect(t.Context(), Policy{All: true})
 	require.NoError(t, err)
 	require.Len(t, report.Removed, 2)
 	require.NoError(t, s.WaitRemovals(t.Context()))
@@ -364,6 +360,28 @@ func TestCollectAllRemovesEverythingUnpinned(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, entries, 1)
 	require.Equal(t, "c", entries[0].Identity.Key)
+}
+
+func TestPolicyTargetBytes(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		policy Policy
+		used   int64
+		want   int64
+	}{
+		{name: "under every limit", policy: Policy{MaxUsedSpace: 100, MinFreeSpace: 10, CurrentFreeSpace: 50}, used: 80, want: 0},
+		{name: "over the maximum", policy: Policy{MaxUsedSpace: 100}, used: 130, want: 30},
+		{name: "over the maximum, down to the reserve at most", policy: Policy{MaxUsedSpace: 100, ReservedSpace: 110}, used: 130, want: 20},
+		{name: "free space low", policy: Policy{MinFreeSpace: 50, CurrentFreeSpace: 20}, used: 80, want: 30},
+		{name: "free space low, down to the reserve at most", policy: Policy{MinFreeSpace: 50, CurrentFreeSpace: 20, ReservedSpace: 60}, used: 80, want: 20},
+		{name: "both, the larger wins", policy: Policy{MaxUsedSpace: 100, MinFreeSpace: 50, CurrentFreeSpace: 10}, used: 110, want: 40},
+		{name: "used below the reserve", policy: Policy{MinFreeSpace: 50, CurrentFreeSpace: 20, ReservedSpace: 100}, used: 80, want: 0},
+		{name: "all", policy: Policy{All: true}, used: 1, want: math.MaxInt64},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, tc.policy.targetBytes(tc.used))
+		})
+	}
 }
 
 func TestCollectCountsPendingRemovals(t *testing.T) {

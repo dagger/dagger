@@ -591,13 +591,9 @@ type Policy struct {
 	ReservedSpace int64
 	MaxUsedSpace  int64
 	MinFreeSpace  int64
-	TargetSpace   int64
 	// CurrentFreeSpace is the filesystem's free bytes, for MinFreeSpace.
 	CurrentFreeSpace int64
-	// KeepDuration keeps volumes used more recently than this.
-	KeepDuration time.Duration
-	// All removes every volume that isn't pinned, whatever the thresholds
-	// and KeepDuration.
+	// All removes every volume that isn't pinned, whatever the thresholds.
 	All bool
 }
 
@@ -607,17 +603,11 @@ func (p Policy) targetBytes(usedBytes int64) int64 {
 		return math.MaxInt64
 	}
 	target := int64(0)
-	triggered := false
 	if p.MaxUsedSpace > 0 && usedBytes > p.MaxUsedSpace {
-		triggered = true
 		target = max(target, usedBytes-max(p.MaxUsedSpace, p.ReservedSpace))
 	}
 	if p.MinFreeSpace > 0 && p.CurrentFreeSpace < p.MinFreeSpace {
-		triggered = true
 		target = max(target, min(p.MinFreeSpace-p.CurrentFreeSpace, usedBytes-p.ReservedSpace))
-	}
-	if triggered && p.TargetSpace > 0 && usedBytes > p.TargetSpace {
-		target = max(target, usedBytes-max(p.TargetSpace, p.ReservedSpace))
 	}
 	return max(target, 0)
 }
@@ -657,16 +647,12 @@ func (s *Store) Collect(ctx context.Context, policy Policy) (Report, error) {
 	slices.SortStableFunc(entries, func(a, b Entry) int {
 		return a.LastUsedAt.Compare(b.LastUsedAt)
 	})
-	now := s.opts.Now()
 	for _, e := range entries {
 		if report.ReclaimedBytes >= need {
 			break
 		}
 		if err := ctx.Err(); err != nil {
 			return report, err
-		}
-		if !policy.All && policy.KeepDuration > 0 && now.Sub(e.LastUsedAt) < policy.KeepDuration {
-			continue
 		}
 		removed, err := s.remove(e)
 		if err != nil {

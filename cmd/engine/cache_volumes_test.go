@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -27,4 +28,10 @@ func TestCacheVolumesDirFlag(t *testing.T) {
 	require.Empty(t, apply(t, config.Config{}).CacheVolumes.Dir, "off by default")
 	require.Equal(t, "/from/config", apply(t, fromConfig).CacheVolumes.Dir)
 	require.Equal(t, "/from/flag", apply(t, fromConfig, "--cache-volumes-dir", "/from/flag").CacheVolumes.Dir)
+}
+
+func TestCacheVolumesCapacityConfig(t *testing.T) {
+	cfg, err := config.Load(strings.NewReader(`{"cacheVolumes": {"dir": "/cache-volumes", "capacity": "100GB"}}`))
+	require.NoError(t, err)
+	require.Equal(t, config.DiskSpace{Bytes: 100 << 30}, cfg.CacheVolumes.Capacity)
 }
