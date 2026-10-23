@@ -1935,6 +1935,9 @@ func (c *Cache) resultSnapshotLeaseCleanup(res *sharedResult) OnReleaseFunc {
 		seen := make(map[snapshotOwnerKey]struct{})
 		var rerr error
 		for _, link := range res.loadSnapshotOwnerLinks() {
+			if link.Borrowed {
+				continue
+			}
 			key, err := snapshotLinkKey(link)
 			if err != nil {
 				rerr = errors.Join(rerr, err)
@@ -1976,13 +1979,19 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 
 	oldByKey := make(map[snapshotOwnerKey]PersistedSnapshotRefLink, len(oldLinks))
 	newByKey := make(map[snapshotOwnerKey]PersistedSnapshotRefLink, len(links))
+	seenKeys := make(map[snapshotOwnerKey]PersistedSnapshotRefLink, len(links))
 
+	// A borrowed link gets no lease of its own (PersistedSnapshotRefLink),
+	// but is stored with the others: the result's record names every
+	// snapshot it holds.
 	for _, link := range oldLinks {
 		key, err := snapshotLinkKey(link)
 		if err != nil {
 			return err
 		}
-		oldByKey[key] = link
+		if !link.Borrowed {
+			oldByKey[key] = link
+		}
 	}
 	for _, link := range links {
 		key, err := snapshotLinkKey(link)
@@ -1992,7 +2001,7 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 		if link.RefKey == "" {
 			return fmt.Errorf("empty snapshot key")
 		}
-		if prev, found := newByKey[key]; found {
+		if prev, found := seenKeys[key]; found {
 			return fmt.Errorf(
 				"sync result %d snapshot owner leases: conflicting desired links for %q: %q vs %q",
 				res.id,
@@ -2001,7 +2010,10 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 				link.RefKey,
 			)
 		}
-		newByKey[key] = link
+		seenKeys[key] = link
+		if !link.Borrowed {
+			newByKey[key] = link
+		}
 	}
 
 	for key, oldLink := range oldByKey {
@@ -2035,8 +2047,8 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 		}
 	}
 
-	newLinks := make([]PersistedSnapshotRefLink, 0, len(newByKey))
-	for _, link := range newByKey {
+	newLinks := make([]PersistedSnapshotRefLink, 0, len(seenKeys))
+	for _, link := range seenKeys {
 		newLinks = append(newLinks, link)
 	}
 	res.storeSnapshotOwnerLinks(newLinks)

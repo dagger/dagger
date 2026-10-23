@@ -929,6 +929,7 @@ func delegateContainerPart(ctx context.Context, dst *Container, parent dagql.Obj
 			return err
 		}
 		copyContainerDirectoryAccessorValue(dst.ensureFSAccessor(), cloned)
+		dst.markBorrowed(part)
 		return nil
 
 	case part == ContainerPartExecMeta:
@@ -944,6 +945,7 @@ func delegateContainerPart(ctx context.Context, dst *Container, parent dagql.Obj
 				dst.ensureMetaSnapshotAccessor().SetValue(snapshot)
 			}
 		}
+		dst.markBorrowed(part)
 		return nil
 
 	case strings.HasPrefix(string(part), containerPartMountPrefix):
@@ -980,6 +982,7 @@ func delegateContainerPart(ctx context.Context, dst *Container, parent dagql.Obj
 				}
 			}
 		}
+		dst.markBorrowed(part)
 		return nil
 
 	default:
