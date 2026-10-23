@@ -125,10 +125,6 @@ type Hello struct {
 	Generation    uint64 `json:"generation"`
 	EngineVersion string `json:"engineVersion"`
 	EngineName    string `json:"engineName"`
-	// Ephemeral says the engine's cache does not outlive this run of it, as
-	// for a nested engine a check starts as a service: no later process
-	// comes back under this identity, and it may be killed without a stop.
-	Ephemeral bool `json:"ephemeral,omitempty"`
 }
 
 // Welcome is the service's reply to Hello.
