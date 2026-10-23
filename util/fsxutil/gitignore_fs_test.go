@@ -64,6 +64,19 @@ func TestGitIgnoreExplicitDirectoriesKeepChildRules(t *testing.T) {
 	}
 }
 
+func TestGitIgnoreExplicitSymlinkEntry(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".gitignore"), []byte("alias\nreal/\n*.log\n"), 0o600))
+	fs, err := fsutil.NewFS(root)
+	require.NoError(t, err)
+	matcher := NewGitIgnoreMatcherWithOverrides(fs, nil, "alias", "real")
+	for p, want := range map[string]bool{"alias": false, "real/main.go": false, "real/debug.log": true} {
+		ignored, err := matcher.Matches(p, false)
+		require.NoError(t, err)
+		require.Equal(t, want, ignored, p)
+	}
+}
+
 func TestGitIgnoreExplicitDirectoriesKeepRecurringRules(t *testing.T) {
 	for _, tc := range []struct {
 		name, rules string

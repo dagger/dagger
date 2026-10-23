@@ -51,6 +51,11 @@ func (gfs *GitignoreMatcher) Matches(path string, isDir bool) (out bool, _ error
 	if filepath.IsAbs(path) {
 		path = strings.TrimPrefix(path, "/")
 	}
+	// Selected paths include symlink entries and targets of config-file links.
+	// Keep those exact entries without admitting their siblings.
+	if slices.Contains(gfs.explicitDirs, filepath.ToSlash(path)) {
+		return false, nil
+	}
 
 	// Get the directory containing this path
 	var dirPath string

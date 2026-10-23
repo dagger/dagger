@@ -1503,6 +1503,78 @@ func (WorkspaceAPISuite) TestLocalModuleInstallLoadsIgnoredDottedDependency(ctx 
 	}
 }
 
+func (WorkspaceAPISuite) TestLocalModuleInstallLoadsIgnoredSymlinkTargets(ctx context.Context, t *testctx.T) {
+	for _, state := range []string{"direct", "chain", "overlay", "source link"} {
+		t.Run(state, func(ctx context.Context, t *testctx.T) {
+			workdir := t.TempDir()
+			initGitRepo(ctx, t, workdir)
+			require.NoError(t, os.WriteFile(filepath.Join(workdir, ".gitignore"), []byte("/real/\n/dep-real/\n/code/\nalias\nchain\ndep-alias\n**/.venv/\n"), 0o644))
+			for _, dir := range []string{"real", "dep-real", "code"} {
+				require.NoError(t, os.MkdirAll(filepath.Join(workdir, dir, ".venv"), 0o755))
+				require.NoError(t, os.WriteFile(filepath.Join(workdir, dir, ".venv/cache"), []byte("ignored"), 0o644))
+			}
+			source := "."
+			codeDir := "real"
+			if state == "source link" {
+				source = "src"
+				codeDir = "code"
+				require.NoError(t, os.Symlink("../code", filepath.Join(workdir, "real/src")))
+			}
+			require.NoError(t, os.WriteFile(filepath.Join(workdir, "real/dagger.json"), []byte(fmt.Sprintf(`{"name":"app","sdk":"dang","source":%q,"dependencies":[{"name":"dep","source":"../dep-alias"}]}`, source)), 0o644))
+			require.NoError(t, os.WriteFile(filepath.Join(workdir, codeDir, "main.dang"), []byte("type App { pub value: String! { \"ok\" } }\n"), 0o644))
+			require.NoError(t, os.WriteFile(filepath.Join(workdir, "dep-real/dagger.json"), []byte(`{"name":"dep","sdk":"dang"}`), 0o644))
+			require.NoError(t, os.WriteFile(filepath.Join(workdir, "dep-real/main.dang"), []byte("type Dep { pub value: String! { \"ok\" } }\n"), 0o644))
+			if state != "overlay" {
+				target := "real"
+				if state == "chain" {
+					target = "chain"
+					require.NoError(t, os.Symlink("real", filepath.Join(workdir, "chain")))
+				}
+				require.NoError(t, os.Symlink(target, filepath.Join(workdir, "alias")))
+				require.NoError(t, os.Symlink("dep-real", filepath.Join(workdir, "dep-alias")))
+			}
+			var logs safeBuffer
+			c := connect(ctx, t, dagger.WithWorkdir(workdir), dagger.WithLogOutput(&logs), dagger.WithVerbosity(2))
+			ws := core.NewQuery(c).CurrentWorkspace()
+			ref := "alias"
+			if state == "overlay" {
+				ws = ws.WithNewDirectory("links", core.NewQuery(c).Directory().WithSymlink("../real", "alias").WithSymlink("../dep-real", "dep-alias"))
+				ref = "links/alias"
+			}
+			_, err := ws.WithModule(ref).Changes(core.WorkspaceChangesOpts{From: ws}).AddedPaths(ctx)
+			require.NoError(t, err)
+			require.NoError(t, c.Close())
+			require.NotRegexp(t, `(?m)^\d+\s+:\s+(?:┆\s+)*\.venv(?:\s+DONE.*)?$`, logs.String())
+		})
+	}
+}
+
+func (WorkspaceAPISuite) TestLocalModuleInstallLoadsIgnoredConfigLink(ctx context.Context, t *testctx.T) {
+	for _, mode := range []string{"direct", "linked", "unfiltered-linked"} {
+		t.Run(mode, func(ctx context.Context, t *testctx.T) {
+			workdir := t.TempDir()
+			initGitRepo(ctx, t, workdir)
+			require.NoError(t, os.Mkdir(filepath.Join(workdir, "app"), 0755))
+			config := []byte(`{"name":"app","sdk":"dang"}`)
+			require.NoError(t, os.WriteFile(filepath.Join(workdir, ".gitignore"), []byte("/app-config.json\n"), 0644))
+			require.NoError(t, os.WriteFile(filepath.Join(workdir, "app-config.json"), config, 0644))
+			if mode != "direct" {
+				require.NoError(t, os.Symlink("../app-config.json", filepath.Join(workdir, "app/dagger.json")))
+			} else {
+				require.NoError(t, os.WriteFile(filepath.Join(workdir, "app/dagger.json"), config, 0644))
+			}
+			require.NoError(t, os.WriteFile(filepath.Join(workdir, "app/main.dang"), []byte("type App { pub value: String! { \"ok\" } }\n"), 0644))
+			c := connect(ctx, t, dagger.WithWorkdir(workdir))
+			ws := core.NewQuery(c).CurrentWorkspace()
+			if mode == "unfiltered-linked" {
+				ws = core.NewQuery(c).Host().Directory(workdir).AsWorkspace()
+			}
+			_, err := ws.WithModule("app").Changes(core.WorkspaceChangesOpts{From: ws}).AddedPaths(ctx)
+			require.NoError(t, err)
+		})
+	}
+}
+
 func (WorkspaceAPISuite) TestWorkspaceDirectoryUsesOverlayGitignore(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	initGitRepo(ctx, t, workdir)
