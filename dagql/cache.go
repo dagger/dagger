@@ -1969,7 +1969,12 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 	// case is removed rather than left to a later sync's repair.
 	wcprof.Lock(ctx, &res.leaseSyncMu, "dagql.sharedResult.leaseSyncMu")
 	defer res.leaseSyncMu.Unlock()
+	return c.syncResultSnapshotLeasesLocked(ctx, res)
+}
 
+// syncResultSnapshotLeasesLocked is syncResultSnapshotLeases with the result's
+// leaseSyncMu held.
+func (c *Cache) syncResultSnapshotLeasesLocked(ctx context.Context, res *sharedResult) error {
 	links, err := desiredSnapshotLinksForResult(ctx, res, true)
 	if err != nil {
 		return err

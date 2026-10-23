@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/dagger/dagger/dagql"
 )
 
 // A part copied from a result the container depends on is borrowed while it
@@ -38,4 +40,34 @@ func TestContainerBorrowedPartLinks(t *testing.T) {
 	empty.markBorrowed(ContainerPartFS)
 	empty.FS.setValue(partTestDirectory(&partFixtureTestRef{id: "later-fs"}, "/"))
 	require.False(t, empty.PersistedSnapshotRefLinks()[0].Borrowed)
+}
+
+// Read by part, a container names each part's link as it does read whole,
+// and every role the part links under, held or not.
+func TestContainerSnapshotOwnerParts(t *testing.T) {
+	ctr := NewContainer(Platform{OS: "linux", Architecture: "amd64"})
+	ctr.FS.setValue(partTestDirectory(&partFixtureTestRef{id: "fs"}, "/"))
+	ctr.MetaSnapshot.setValue(&partFixtureTestRef{id: "meta"})
+	dir := new(LazyAccessor[*Directory, *Container])
+	dir.setValue(partTestDirectory(&partFixtureTestRef{id: "dir"}, "/"))
+	file := new(LazyAccessor[*File, *Container])
+	ctr.Mounts = []ContainerMount{
+		{Target: "/dir", DirectorySource: dir},
+		{Target: "/file", FileSource: file},
+	}
+	ctr.markBorrowed(ContainerPartMount("/dir"))
+
+	parts := []dagql.PartKey{ContainerPartFS, ContainerPartExecMeta, ContainerPartMount("/dir"), ContainerPartMount("/file"), ContainerPartMetadata}
+	links, roles, ok := ctr.ReadSnapshotOwnerParts(parts)
+	require.True(t, ok)
+	require.ElementsMatch(t, ctr.PersistedSnapshotRefLinks(), links, "all parts read by part are the container read whole")
+	require.ElementsMatch(t, []string{"fs", "meta", "mount_dir:0", "mount_file:0", "mount_dir:1", "mount_file:1"}, roles)
+
+	links, roles, ok = ctr.ReadSnapshotOwnerParts([]dagql.PartKey{ContainerPartMount("/dir")})
+	require.True(t, ok)
+	require.Equal(t, []dagql.PersistedSnapshotRefLink{{RefKey: "dir", Role: "mount_dir:0", Borrowed: true}}, links)
+	require.Equal(t, []string{"mount_dir:0", "mount_file:0"}, roles)
+
+	_, _, ok = ctr.ReadSnapshotOwnerParts([]dagql.PartKey{ContainerPartMount("/elsewhere")})
+	require.False(t, ok, "a part the container doesn't have is read whole")
 }

@@ -108,7 +108,7 @@ func (t *lazyTaskContinuation) finish(ctx context.Context, c *Cache, row *shared
 	}
 	if !t.synced {
 		c.recordPartFixture(row, PersistedPartAddress{}, "owner-sync")
-		if err := c.syncResultSnapshotLeases(ctx, row); err != nil {
+		if err := c.syncInstalledPartLeases(ctx, row, t.token.installed.Load()); err != nil {
 			return err
 		}
 		t.synced = true
