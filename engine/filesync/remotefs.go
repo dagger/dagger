@@ -80,23 +80,8 @@ func (fs *remoteFS) Walk(ctx context.Context, path string, walkFn fs.WalkDirFunc
 	if err != nil {
 		return fmt.Errorf("failed to create diff copy client: %w", err)
 	}
-	if len(fs.gitIgnoreOverrides) > 0 {
-		headers, err := fs.client.Header()
-		if err != nil {
-			return fmt.Errorf("read filesync capabilities: %w", err)
-		}
-		if values := headers.Get(engine.GitIgnoreOverridesHeader); len(values) == 0 || values[0] != "true" {
-			return fmt.Errorf("client does not support overlay .gitignore rules; upgrade the Dagger CLI")
-		}
-	}
-	if len(fs.gitIgnoreExplicitDirs) > 0 {
-		headers, err := fs.client.Header()
-		if err != nil {
-			return fmt.Errorf("read filesync capabilities: %w", err)
-		}
-		if values := headers.Get(engine.GitIgnoreExplicitDirsHeader); len(values) == 0 || values[0] != "true" {
-			return fmt.Errorf("client does not support explicit directory ignore rules; upgrade the Dagger CLI")
-		}
+	if err := fs.checkClientCapabilities(); err != nil {
+		return err
 	}
 
 	fs.filesByPath = make(map[string]*remoteFile)
@@ -209,6 +194,27 @@ func (fs *remoteFS) Walk(ctx context.Context, path string, walkFn fs.WalkDirFunc
 	default:
 		return nil
 	}
+}
+
+func (fs *remoteFS) checkClientCapabilities() error {
+	if len(fs.gitIgnoreOverrides) == 0 && len(fs.gitIgnoreExplicitDirs) == 0 {
+		return nil
+	}
+	headers, err := fs.client.Header()
+	if err != nil {
+		return fmt.Errorf("read filesync capabilities: %w", err)
+	}
+	if len(fs.gitIgnoreOverrides) > 0 {
+		if values := headers.Get(engine.GitIgnoreOverridesHeader); len(values) == 0 || values[0] != "true" {
+			return fmt.Errorf("client does not support overlay .gitignore rules; upgrade the Dagger CLI")
+		}
+	}
+	if len(fs.gitIgnoreExplicitDirs) > 0 {
+		if values := headers.Get(engine.GitIgnoreExplicitDirsHeader); len(values) == 0 || values[0] != "true" {
+			return fmt.Errorf("client does not support explicit directory ignore rules; upgrade the Dagger CLI")
+		}
+	}
+	return nil
 }
 
 // ReadFile implements ReadFS for the remote client's filesystem. It can only be called while a Walk is in progress.
