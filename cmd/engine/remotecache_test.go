@@ -32,7 +32,6 @@ func TestRemoteCacheSettings(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv(envRemoteCacheURL, tc.env)
 			t.Setenv("DAGGER_CLOUD_TOKEN", tc.token)
-			t.Setenv(envRemoteCacheEphemeral, "")
 			settings, on := remoteCacheSettings(tc.cfg)
 			if tc.url == "" {
 				require.False(t, on)
@@ -54,32 +53,6 @@ func TestRemoteCacheLookupsAskedWithoutWaiting(t *testing.T) {
 	require.True(t, on)
 	require.True(t, settings.Lookups)
 	require.Zero(t, settings.LookupWait)
-}
-
-// An engine whose state does not outlive its run says so when
-// _EXPERIMENTAL_DAGGER_REMOTE_CACHE_EPHEMERAL is true, as strconv.ParseBool
-// reads it; any other value leaves it a lasting engine.
-func TestRemoteCacheEphemeral(t *testing.T) {
-	for _, tc := range []struct {
-		env       string
-		ephemeral bool
-	}{
-		{env: "", ephemeral: false},
-		{env: "1", ephemeral: true},
-		{env: "true", ephemeral: true},
-		{env: "0", ephemeral: false},
-		{env: "false", ephemeral: false},
-		{env: "yes please", ephemeral: false},
-	} {
-		t.Run(tc.env, func(t *testing.T) {
-			t.Setenv(envRemoteCacheURL, "https://env.example")
-			t.Setenv("DAGGER_CLOUD_TOKEN", "engine-token")
-			t.Setenv(envRemoteCacheEphemeral, tc.env)
-			settings, on := remoteCacheSettings(config.Config{})
-			require.True(t, on)
-			require.Equal(t, tc.ephemeral, settings.Ephemeral)
-		})
-	}
 }
 
 // Turning the remote cache on turns the engine's cache events on too; when
