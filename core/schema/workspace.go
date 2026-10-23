@@ -1148,9 +1148,9 @@ func (s *workspaceSchema) resolveRootfsFromDirectory(
 //
 // Hashing evaluates the read. A read that fails to evaluate or hash, such as
 // one of a subpath the root doesn't have, is returned as it is, with no content
-// digest, so it keeps the recipe identity it had before. Its evaluation is
-// retried where the read is used, as before, rather than failing the workspace
-// call, so a caller can still handle a missing path, as Directory.exists does.
+// digest, since there is none to give it. That must not fail the workspace
+// call: a missing path is something a caller handles where it uses the read,
+// as Directory.exists does by reporting it missing.
 func contentKeyedFilteredRead(
 	ctx context.Context,
 	resolvedPath string,
