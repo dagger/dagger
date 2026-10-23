@@ -17,14 +17,10 @@ import (
 // engine config's remoteCache.url.
 const envRemoteCacheURL = "_EXPERIMENTAL_DAGGER_REMOTE_CACHE_URL"
 
-// envRemoteCacheLookups set to 0 stops the engine asking the service for the
-// calls its cache misses. envRemoteCacheLookupWait sets how long an
-// evaluation waits for a merge the service's answer names, as a duration. The
-// default is 0: lookups are asked without waiting, and a wait is opt-in.
-const (
-	envRemoteCacheLookups    = "_EXPERIMENTAL_DAGGER_REMOTE_CACHE_LOOKUPS"
-	envRemoteCacheLookupWait = "_EXPERIMENTAL_DAGGER_REMOTE_CACHE_LOOKUP_WAIT"
-)
+// envRemoteCacheLookupWait sets how long an evaluation waits for a merge the
+// service's answer names, as a duration. The default is 0: lookups are asked
+// without waiting, and a wait is opt-in.
+const envRemoteCacheLookupWait = "_EXPERIMENTAL_DAGGER_REMOTE_CACHE_LOOKUP_WAIT"
 
 // envRemoteCacheEphemeral, when true as strconv.ParseBool reads it, tells the
 // service that the engine's state does not outlive this run of it, as for a
@@ -69,7 +65,7 @@ func remoteCacheSettings(cfg config.Config) (remotecache.Config, bool) {
 		Token:         token,
 		EngineVersion: engine.Version,
 		EngineName:    engineName,
-		Lookups:       os.Getenv(envRemoteCacheLookups) != "0",
+		Lookups:       true,
 		LookupWait:    lookupWait,
 		Ephemeral:     remoteCacheEphemeral(),
 	}, true
