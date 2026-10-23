@@ -361,6 +361,32 @@ func (l *spanLookup) hasSpan(spanID string) bool {
 	return found
 }
 
+// beneath reports whether spanID is in scope or reachable from it upward,
+// over the reverse of logScope's downward edges: the parent edge and the
+// span's own cause links. Cycle-safe.
+func (l *spanLookup) beneath(spanID string, scope map[string]bool) bool {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	seen := map[string]bool{}
+	queue := []string{spanID}
+	for len(queue) > 0 {
+		id := queue[0]
+		queue = queue[1:]
+		if scope[id] {
+			return true
+		}
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		if parent, ok := l.parent[id]; ok {
+			queue = append(queue, parent)
+		}
+		queue = append(queue, l.causalParents[id]...)
+	}
+	return false
+}
+
 // allSpanIDs snapshots every span ID the index has seen a snapshot of.
 func (l *spanLookup) allSpanIDs() map[string]struct{} {
 	l.mu.RLock()
@@ -424,6 +450,9 @@ type logLookup struct {
 	traceIndex map[string]uint32
 	spanIDs    []string
 	spanIndex  map[string]uint32
+	// digests interns logMeta.digest; index 0 is the empty digest.
+	digests     []string
+	digestIndex map[string]uint32
 
 	// memoMu guards attrMemo, which caches attribute classes by their bytes.
 	memoMu   sync.Mutex
@@ -432,18 +461,20 @@ type logLookup struct {
 
 func newLogLookup() *logLookup {
 	return &logLookup{
-		rowsBySpan: make(map[string][]int64),
-		metaErrs:   make(map[int64]error),
-		traceIndex: make(map[string]uint32),
-		spanIndex:  make(map[string]uint32),
-		attrMemo:   make(map[string]logAttrClassResult),
+		rowsBySpan:  make(map[string][]int64),
+		metaErrs:    make(map[int64]error),
+		traceIndex:  make(map[string]uint32),
+		spanIndex:   make(map[string]uint32),
+		digests:     []string{""},
+		digestIndex: map[string]uint32{"": 0},
+		attrMemo:    make(map[string]logAttrClassResult),
 	}
 }
 
 func (l *logLookup) add(row Log) { l.addAll([]Log{row}) }
 
 func (l *logLookup) addAll(rows []Log) {
-	flags, errs := l.classify(rows)
+	flags, digests, errs := l.classify(rows)
 	l.mu.Lock()
 	for i, row := range rows {
 		if errs != nil && errs[i] != nil {
@@ -454,6 +485,7 @@ func (l *logLookup) addAll(rows []Log) {
 			size:      logCodec.size(row),
 			trace:     internLocked(l.traceIndex, &l.traceIDs, row.TraceID.String),
 			span:      internLocked(l.spanIndex, &l.spanIDs, row.SpanID.String),
+			digest:    internLocked(l.digestIndex, &l.digests, digests[i]),
 			flags:     flags[i],
 		})
 	}
