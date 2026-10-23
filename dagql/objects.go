@@ -1502,6 +1502,12 @@ func (fields Fields[T]) Install(server *Server) {
 			reason := dep // keep "" if that’s what the module author wrote: @deprecated("") != @deprecated()
 			spec.DeprecatedReason = &reason
 		}
+		switch field.Value.(type) {
+		case String, Int, Float, Boolean:
+			if spec.DoNotCache == "" {
+				spec.DoNotCache = "Scalar getters only read their receiver"
+			}
+		}
 
 		fields = append(fields, Field[T]{
 			Spec: spec,
