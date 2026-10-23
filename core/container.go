@@ -72,9 +72,11 @@ type Container struct {
 	acquiredOpens  sync.Map
 	// borrowedParts holds, by dagql.PartKey, the snapshot ID each part had
 	// when this container copied it from a result it depends on
-	// (delegateContainerPart). That result owns the snapshot, so the part's
-	// link is Borrowed while the part still holds it; a part written after
-	// the copy (a path writer copies, then writes) holds another, its own.
+	// (delegateContainerPart), or mounted it unchanged from one (the
+	// withMountedDirectory and withMountedFile writes). That result owns the
+	// snapshot, so the part's link is Borrowed while the part still holds
+	// it; a part written after the copy (a path writer copies, then writes)
+	// holds another, its own.
 	borrowedParts sync.Map
 	// fromContentDigestSafe tracks whether Container.From can give its result a
 	// content digest based only on the resolved image and platform. It is false
@@ -3887,6 +3889,11 @@ func (lazy *ContainerWithMountedDirectoryLazy) EvaluateContainerGroup(ctx contex
 			}
 			mnt.DirectorySource.SetValue(detached)
 			detached = nil
+			// Mounted as it is, the snapshot is the source's, a result
+			// this one depends on; a chowned copy is a result of its own.
+			if lazy.Owner == "" {
+				container.markBorrowed(ContainerPartMount(target))
+			}
 			return nil
 		})
 	default:
@@ -3993,6 +4000,11 @@ func (lazy *ContainerWithMountedFileLazy) EvaluateContainerGroup(ctx context.Con
 			}
 			mnt.FileSource.SetValue(detached)
 			detached = nil
+			// Mounted as it is, the snapshot is the source's, a result
+			// this one depends on; a chowned copy is a result of its own.
+			if lazy.Owner == "" {
+				container.markBorrowed(ContainerPartMount(target))
+			}
 			return nil
 		})
 	default:
