@@ -133,6 +133,7 @@ type MyCi {
   """
   Start a small web backend.
   """
+  @up
   pub myBackend: Service! {
     backend
   }
@@ -173,8 +174,10 @@ dagger check -l
 ```
 
 ```text
-my-ci:my-check      # Check this module.
-my-ci:my-generate   # Did you "generate an example backend test"?
+MODULE    CHECK     DESCRIPTION
+dang-sdk  stale     staleness check: re-generate modules and clients managed by the Dang SDK
+my-ci     my-check  Check this module.
+my-ci     stale     staleness check: generate an example backend test
 ```
 
 ```shell
@@ -216,10 +219,10 @@ type MyCi {
 
 `pub` makes a member visible to callers. The docstring at the top of the file is the module's summary. `dagger api functions` and `dagger api call --help` show it. Per-member docstrings document individual functions and arguments.
 
-Try it:
+Try it. An installed module is called by its install name, and the workspace's main module is called without one:
 
 ```shell
-dagger api call hello
+dagger api call my-ci hello
 # Hello from Dagger!
 ```
 
@@ -286,7 +289,7 @@ type MyCi {
 ````
 
 ```shell
-dagger api call script --name=dagger
+dagger api call my-ci script --name=dagger
 # #!/bin/sh
 # echo "hello dagger"
 # echo "home is ${HOME}, also $HOME"
@@ -414,7 +417,7 @@ type Security {
 An invalid value produces an error that lists the allowed choices:
 
 ```shell
-dagger api call scan --ref=alpine:latest --severity=FOO
+dagger api call security scan --ref=alpine:latest --severity=FOO
 # Error: value should be one of UNKNOWN, LOW, MEDIUM, HIGH, CRITICAL
 ```
 
@@ -490,8 +493,8 @@ An argument can carry:
 - **Non-null markers.** `!` means required when there is no default. Without it the argument is nullable.
 
 ```shell
-dagger api call build
-dagger api call build --node-version=18
+dagger api call my-ci build
+dagger api call my-ci build --node-version=18
 ```
 
 Constructor arguments, which are members on the primary type set in `new(...)`, give users knobs they can override globally. The constructor also receives the user's [Workspace](#workspace-inputs). Dagger fills that in, and the module reads project files from it:
@@ -521,7 +524,7 @@ type MyCi {
 
 ```shell
 # CLI override
-dagger api call --node-version=18 build
+dagger api call my-ci --node-version=18 build
 
 # Or in dagger.toml
 # [modules.my-ci.settings]
@@ -579,12 +582,12 @@ pub deploy(
 Callers supply secrets through providers:
 
 ```shell
-dagger api call deploy --token=env:DEPLOY_TOKEN        # environment variable
-dagger api call deploy --token=file:./token.txt        # file
-dagger api call deploy --token=cmd:"gh auth token"     # command output
-dagger api call deploy --token=op://vault/item/field   # 1Password
-dagger api call deploy --token=vault://path/to/secret  # HashiCorp Vault
-dagger api call deploy --token=gcp://secret-name       # Google Cloud Secret Manager
+dagger api call my-ci deploy --token=env:DEPLOY_TOKEN        # environment variable
+dagger api call my-ci deploy --token=file:./token.txt        # file
+dagger api call my-ci deploy --token=cmd:"gh auth token"     # command output
+dagger api call my-ci deploy --token=op://vault/item/field   # 1Password
+dagger api call my-ci deploy --token=vault://path/to/secret  # HashiCorp Vault
+dagger api call my-ci deploy --token=gcp://secret-name       # Google Cloud Secret Manager
 ```
 
 A secret is scoped to the module that defines it. To share one across modules, pass it as a function argument.
@@ -690,23 +693,19 @@ Once added, call a dependency in your code by its name, like a function:
 
 ```dang
 type MyCi {
-  pub source: Directory!
-
-  new(ws: Workspace!) {
-    self.source = ws.directory("/")
-    self
-  }
-
-  pub devContainer: Container! {
-    # 'go' is the dependency module. Call it like a function
-    go(source: source).env.withWorkdir("/app")
-  }
-
-  pub test: Void @check {
-    devContainer.withExec(["go", "test", "./..."]).sync
-    null
+  """
+  Greet the team.
+  """
+  pub greeting: String! {
+    # 'hello' is the dependency module, called by its name
+    hello.hello(greeting: "hi", name: "team")
   }
 }
+```
+
+```shell
+dagger api call my-ci greeting
+# hi, team!
 ```
 
 ## Generate and module metadata
@@ -812,13 +811,13 @@ Dang has three first-class function types, each run by a verb. Checks and genera
 
 | Directive | Returns | Run by | Purpose |
 |---|---|---|---|
-| `@check` | `Void` (or a value) | `dagger check` | Validate something, such as a lint, test, or scan. |
+| `@check` | `Void` | `dagger check` | Validate something, such as a lint, test, or scan. |
 | `@generate` | `Changeset` | `dagger generate` | Produce a diff of generated files for review. |
 | none | `Service!` | `dagger start` | Start a long-running service. |
 
 ### Checks {#checks}
 
-A check validates something without requiring arguments. Mark it with `@check` and `dagger check` discovers and runs it. A check passes if it completes without error. It fails if any `withExec` returns a non-zero exit code.
+A check validates something without requiring arguments. Mark it with `@check` and `dagger check` discovers and runs it. A check returns `Void` and passes if it completes without error. Run the container with `.sync`: a `withExec` that exits non-zero fails the check.
 
 ```dang
 type MyCi {
@@ -841,18 +840,6 @@ type MyCi {
       .sync
     null
   }
-}
-```
-
-A check can also return `Container`. Dagger syncs it and uses the exit code:
-
-```dang
-pub lint: Container @check {
-  container
-    .from("golangci/golangci-lint:latest")
-    .withDirectory("/app", source)
-    .withWorkdir("/app")
-    .withExec(["golangci-lint", "run"])
 }
 ```
 
@@ -1039,7 +1026,7 @@ The most direct way to test a Dang module is to call its functions and run its c
 
 ```shell
 # Smoke test. Does it build?
-dagger api call build
+dagger api call my-ci build
 
 # Run all checks
 dagger check
@@ -1083,7 +1070,7 @@ Consumers install your module into their workspace with the `dagger` CLI:
 dagger module install github.com/yourorg/yourrepo/path@v0.1.0
 ```
 
-They can then call its functions (`dagger api call ...`) and run its checks (`dagger check`).
+They can then call its functions by its install name (`dagger api call <name> ...`) and run its checks (`dagger check`).
 
 ## Troubleshooting
 

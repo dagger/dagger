@@ -52,7 +52,7 @@ List also shows invalid old targets. Remove them with their exact listed target.
 If invalid targets remain, removal succeeds and generation is skipped with a warning.
 Correct or remove those targets to resume generation.
 
-The current [Go SDK](../sdks/go.mdx) supports clients in ordinary Go projects. Python, Dang, and Java currently require a Dagger module in the scope. TypeScript and PHP still need an update to the new SDK interface. The bindings pin the engine version the bound module requires, so a client and the module it came from stay in step.
+The Go, Python, TypeScript, and Java SDKs generate clients in ordinary projects as well as in modules. The Dang SDK generates clients in Dang modules. The PHP SDK does not generate clients. The bindings pin the engine version the bound module requires, so a client and the module it came from stay in step.
 
 ## Standalone client libraries
 
