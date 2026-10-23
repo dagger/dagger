@@ -143,13 +143,8 @@ func (s *session) read() {
 }
 
 // readEnvelope reads a message, and a merge request's body with it in one
-// pass, unless decodeOnce is off.
+// pass.
 func (s *session) readEnvelope(data []byte) (protocol.Envelope, any, error) {
-	if !s.cfg.decodeOnce {
-		var env protocol.Envelope
-		err := json.Unmarshal(data, &env)
-		return env, nil, err
-	}
 	return protocol.ReadEnvelope(data, func(env protocol.Envelope) any {
 		if env.Re == 0 && env.Type == protocol.TypeMerge {
 			return &protocol.Merge{}
