@@ -14,6 +14,7 @@ import (
 
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine/archive"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
@@ -652,9 +653,18 @@ type traceLoader struct {
 	primarySet    bool
 
 	// logReq dedups per-span log fetches across the log provider and the
-	// zoom request.
-	logReq map[string]bool
-	logSem chan struct{}
+	// zoom request: the fetch that owns each span's records (see fullTree).
+	logReq    map[string]uint64
+	logFetchN uint64
+	logSem    chan struct{}
+
+	// fullTree is set when the whole span tree is loaded (a restored
+	// session's history): a roll-up imports its descendants' records of
+	// every class under their own span IDs, so the frontend routes each to
+	// its span and a prefixed copy to the roll-up, as in a live run. The
+	// spans whose records a fetch imports are owned by it, so their own
+	// later requests, or overlapping roll-ups, import nothing twice.
+	fullTree bool
 
 	// background backfills (lazy child loads) run on the command's ctx so
 	// they keep working while the TUI is interactive (-E).
@@ -663,10 +673,15 @@ type traceLoader struct {
 }
 
 func newTraceLoader(ctx context.Context, client tracesource.Source, traceID string) *traceLoader {
+	return newTraceLoaderFor(ctx, client, traceID, Frontend)
+}
+
+// newTraceLoaderFor is newTraceLoader importing into fe.
+func newTraceLoaderFor(ctx context.Context, client tracesource.Source, traceID string, fe idtui.Frontend) *traceLoader {
 	importer := enginetel.NewTraceImporter(enginetel.TraceImportSinks{
-		Spans:   Frontend.SpanExporter(),
-		Logs:    Frontend.LogExporter(),
-		Metrics: Frontend.MetricExporter(),
+		Spans:   fe.SpanExporter(),
+		Logs:    fe.LogExporter(),
+		Metrics: fe.MetricExporter(),
 	})
 	// This trace is the whole session: its root is the primary span, not a
 	// second root to render through.
@@ -677,7 +692,7 @@ func newTraceLoader(ctx context.Context, client tracesource.Source, traceID stri
 		traceID:  traceID,
 		importer: importer,
 		filter:   map[dagui.SpanID]bool{{}: true}, // subscribe to roots first
-		logReq:   map[string]bool{},
+		logReq:   map[string]uint64{},
 		logSem:   make(chan struct{}, 8),
 		sem:      make(chan struct{}, 8),
 	}
@@ -826,12 +841,18 @@ func (l *traceLoader) fetchLogs(fg *fetchGroup, id dagui.SpanID, descendants boo
 	}
 	spanHex := id.String()
 	l.mu.Lock()
-	if !id.IsValid() || l.logReq[spanHex] {
+	if !id.IsValid() || l.logReq[spanHex] != 0 {
 		l.mu.Unlock()
 		return
 	}
-	l.logReq[spanHex] = true
+	l.logFetchN++
+	fetch := l.logFetchN
+	l.logReq[spanHex] = fetch
 	l.mu.Unlock()
+	// Without the whole tree, a rolled-up span's descendants aren't loaded
+	// (the priority window doesn't include them), so their records would
+	// route to orphan buffers nothing renders: re-key them to the span.
+	rekey := descendants && !l.fullTree
 	fg.Go(func() error {
 		select {
 		case l.logSem <- struct{}{}:
@@ -840,23 +861,48 @@ func (l *traceLoader) fetchLogs(fg *fetchGroup, id dagui.SpanID, descendants boo
 		}
 		defer func() { <-l.logSem }()
 		sel := cloud.LogSelection{SpanID: spanHex, Descendants: descendants}
-		if descendants {
-			// A rolled-up span's descendants aren't loaded (the priority
-			// window doesn't include them), so their records would route to
-			// orphan buffers nothing renders. Ask for text output only --
-			// the semantic records riding the log channel (span names,
-			// progress, agent state) are per-span facts that must not be
-			// re-attributed -- and attribute it to the span we fetched it
-			// for, like the summary's flat roll-up, so e.g. a failed test
-			// shows its sub-operation's output.
+		if rekey {
+			// Ask for text output only -- the semantic records riding the
+			// log channel (span names, progress, agent state) are per-span
+			// facts that must not be re-attributed -- and attribute it to
+			// the span we fetched it for, like the summary's flat roll-up,
+			// so e.g. a failed test shows its sub-operation's output.
 			sel.Records = cloud.LogRecordsLogs
 		}
-		if err := l.client.FetchLogs(l.ctx, l.traceID, sel, func(ctx context.Context, req *collogspb.ExportLogsServiceRequest) error {
-			if descendants {
-				rekeyLogRecords(req, id)
+		// A transient failure before anything was imported is retried, as
+		// the bulk history import does; a retry after a partial import
+		// would import its records twice.
+		imported := false
+		var err error
+		for attempt := 0; ; attempt++ {
+			err = l.client.FetchLogs(l.ctx, l.traceID, sel, func(ctx context.Context, req *collogspb.ExportLogsServiceRequest) error {
+				imported = true
+				switch {
+				case rekey:
+					rekeyLogRecords(req, id)
+				case descendants:
+					l.claimLogRecords(req, fetch)
+				}
+				return l.importer.ImportLogs(ctx, req)
+			})
+			if err == nil || imported || attempt >= 2 || l.ctx.Err() != nil || !errors.Is(err, archive.ErrTransient) {
+				break
 			}
-			return l.importer.ImportLogs(ctx, req)
-		}); err != nil {
+			select {
+			case <-l.ctx.Done():
+			case <-time.After(time.Duration(attempt+1) * 100 * time.Millisecond):
+			}
+		}
+		if err != nil {
+			if !imported {
+				// Nothing landed, so nothing this fetch owns may block a
+				// later request or an enclosing roll-up from fetching it.
+				l.releaseLogs(fetch)
+			}
+			if l.ctx.Err() != nil {
+				// Exiting: not a failure worth reporting.
+				return l.ctx.Err()
+			}
 			// Warn for interactive mode, where post-drain lazy expands have
 			// no one waiting on the error; the pre-report drain also
 			// collects it, failing the command rather than rendering a
@@ -864,7 +910,8 @@ func (l *traceLoader) fetchLogs(fg *fetchGroup, id dagui.SpanID, descendants boo
 			slog.Warn("error streaming span logs", "span", spanHex, "err", err)
 			return fmt.Errorf("stream span %s logs: %w", spanHex, err)
 		}
-		if !descendants {
+		if !rekey {
+			// Every record class came with the records: call payloads too.
 			return nil
 		}
 		// The text-only class above left out the subtree's call payloads,
@@ -876,11 +923,52 @@ func (l *traceLoader) fetchLogs(fg *fetchGroup, id dagui.SpanID, descendants boo
 			Descendants: true,
 			Records:     cloud.LogRecordsCallPayloads,
 		}, l.importer.ImportLogs); err != nil {
+			if l.ctx.Err() != nil {
+				return l.ctx.Err()
+			}
 			slog.Warn("error streaming span call payloads", "span", spanHex, "err", err)
 			return fmt.Errorf("stream span %s call payloads: %w", spanHex, err)
 		}
 		return nil
 	})
+}
+
+// releaseLogs forgets the spans a fetch owns, so they can be fetched again.
+func (l *traceLoader) releaseLogs(fetch uint64) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for span, owner := range l.logReq {
+		if owner == fetch {
+			delete(l.logReq, span)
+		}
+	}
+}
+
+// claimLogRecords drops the records of spans another fetch owns (a span's own
+// fetch, or an overlapping roll-up), and makes fetch the owner of the rest, so
+// each span's records are imported once however its fetches overlap, and an
+// owned span's own later request is a no-op.
+func (l *traceLoader) claimLogRecords(req *collogspb.ExportLogsServiceRequest, fetch uint64) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, rl := range req.GetResourceLogs() {
+		for _, sl := range rl.GetScopeLogs() {
+			kept := sl.LogRecords[:0]
+			for _, record := range sl.GetLogRecords() {
+				var id dagui.SpanID
+				copy(id.SpanID[:], record.GetSpanId())
+				if id.IsValid() {
+					spanHex := id.String()
+					if owner := l.logReq[spanHex]; owner != 0 && owner != fetch {
+						continue
+					}
+					l.logReq[spanHex] = fetch
+				}
+				kept = append(kept, record)
+			}
+			sl.LogRecords = kept
+		}
+	}
 }
 
 // rekeyLogRecords attributes every record in req to id.
