@@ -126,6 +126,17 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 			Doc(`Interpret this file as a Git bundle by lazily parsing its header.`),
 		dagql.NodeFunc("asJSON", s.asJSON).
 			Doc(`Parse the file contents as JSON.`),
+		dagql.NodeFunc("extract", s.extract).
+			View(AfterVersion("v1.0.0-0")).
+			IsPersistable().
+			Doc(`Extracts this archive file into a directory.`,
+				`The format is detected from the file's contents: zip, or tar, either uncompressed or compressed with gzip, bzip2, xz or zstd.`,
+				`An entry whose path would leave the directory is an error.`).
+			Args(
+				dagql.Arg("stripComponents").Doc(
+					`Remove this many leading elements from each entry's path, as tar --strip-components does.`,
+					`Entries with no more elements than this are skipped.`),
+			),
 	}.Install(srv)
 }
 
@@ -437,6 +448,37 @@ func (s *fileSchema) asGitBundle(
 		return inst, err
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, bundle)
+}
+
+type fileExtractArgs struct {
+	StripComponents int `default:"0"`
+}
+
+func (s *fileSchema) extract(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.File],
+	args fileExtractArgs,
+) (inst dagql.ObjectResult[*core.Directory], err error) {
+	if args.StripComponents < 0 {
+		return inst, fmt.Errorf("stripComponents must not be negative")
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	dir := &core.Directory{
+		Platform: parent.Self().Platform,
+		Services: slices.Clone(parent.Self().Services),
+		Lazy: &core.DirectoryExtractLazy{
+			LazyState:       core.NewLazyState(),
+			Source:          parent,
+			StripComponents: args.StripComponents,
+		},
+		Dir:      new(core.LazyAccessor[string, *core.Directory]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
+	}
+	dir.SetPath("/")
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
 
 func (s *fileSchema) asJSON(ctx context.Context, parent dagql.ObjectResult[*core.File], args struct{}) (*core.JSONValue, error) {

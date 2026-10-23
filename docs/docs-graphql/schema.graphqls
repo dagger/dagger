@@ -3717,6 +3717,23 @@ type File implements Exportable & Node & Syncer {
   """Parse the file contents as JSON."""
   asJSON: JSONValue!
 
+  """
+  Extracts this archive file into a directory.
+
+  The format is detected from the file's contents: zip, or tar, either
+  uncompressed or compressed with gzip, bzip2, xz or zstd.
+
+  An entry whose path would leave the directory is an error.
+  """
+  extract(
+    """
+    Remove this many leading elements from each entry's path, as tar --strip-components does.
+
+    Entries with no more elements than this are skipped.
+    """
+    stripComponents: Int = 0
+  ): Directory!
+
   """Parse as an env file"""
   asEnvFile(
     """Replace "${VAR}" or "$VAR" with the value of other vars"""
