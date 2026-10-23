@@ -40,7 +40,6 @@ func TestGitClientKey(t *testing.T) {
 }
 
 func TestDeclaredGitClients(t *testing.T) {
-	ctx := t.Context()
 	reader := func(files map[string]string) TreeFileReader {
 		return func(rel string) ([]byte, bool, error) {
 			data, ok := files[rel]
@@ -111,6 +110,26 @@ clients = ["github.com/acme/own/client"]
 			want: []string{"github.com/acme/own/client"},
 		},
 		{
+			// A dependency's own config may predate the current schema.
+			name:      "a config with deprecated fields still declares",
+			moduleDir: ".",
+			files: map[string]string{"dagger.toml": `[modules.dev]
+source = ".dagger/modules/dev"
+entrypoint = true
+
+[modules.python-sdk]
+source = "github.com/acme/python-sdk"
+
+[sdks.python]
+module = "python-sdk"
+
+[sdks.python.scopes."."]
+is-module = true
+clients = ["github.com/acme/private/hello"]
+`},
+			want: []string{"github.com/acme/private/hello"},
+		},
+		{
 			name:      "another scope's clients do not count",
 			moduleDir: "modules/unlisted",
 			files:     map[string]string{"dagger.toml": rootConfig},
@@ -127,7 +146,7 @@ clients = ["github.com/acme/own/client"]
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := DeclaredGitClients(ctx, tc.moduleDir, reader(tc.files))
+			got, err := DeclaredGitClients(tc.moduleDir, reader(tc.files))
 			require.NoError(t, err)
 			require.Equal(t, tc.want, got)
 		})
