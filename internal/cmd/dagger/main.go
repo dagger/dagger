@@ -956,7 +956,7 @@ const (
 )
 
 func commandShowsFinalProgress(cmd *cobra.Command) bool {
-	if cmd.CommandPath() == "dagger start" || cmd.CommandPath() == "dagger agent" {
+	if cmd.CommandPath() == "dagger start" || cmd.CommandPath() == "dagger agent" || cmd.CommandPath() == "dagger lock update" {
 		if list, _ := cmd.Flags().GetBool("list"); list {
 			return false
 		}

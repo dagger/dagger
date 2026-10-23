@@ -74,6 +74,22 @@ func TestLockUpdateGlobalFlags(t *testing.T) {
 	}
 }
 
+func TestWorkspaceUpdatesShowFinalProgress(t *testing.T) {
+	for _, path := range [][]string{{"lock", "update"}, {"module", "update"}, {"module", "client", "update"}} {
+		cmd, _, err := rootCmd.Find(path)
+		require.NoError(t, err)
+		require.True(t, commandShowsFinalProgress(cmd), path)
+	}
+
+	root := &cobra.Command{Use: "dagger"}
+	lock := &cobra.Command{Use: "lock"}
+	update := newLockUpdateCmd()
+	root.AddCommand(lock)
+	lock.AddCommand(update)
+	require.NoError(t, update.Flags().Set("list", "true"))
+	require.False(t, commandShowsFinalProgress(update))
+}
+
 func TestWorkspaceCommandAliases(t *testing.T) {
 	cmd, _, err := rootCmd.Find([]string{"ws"})
 	require.NoError(t, err)

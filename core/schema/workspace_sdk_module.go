@@ -15,6 +15,7 @@ import (
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/slog"
+	telemetry "github.com/dagger/otel-go"
 )
 
 type sdkModuleInitArgs struct {
@@ -604,8 +605,11 @@ func (s *workspaceSchema) generateSDKModuleClientSelections(
 		if err != nil {
 			return dagql.ObjectResult[*core.Workspace]{}, err
 		}
+		scopeCtx, scopeSpan := core.Tracer(ctx).Start(ctx,
+			fmt.Sprintf("generate %s scope %s", selection.sdkName, selection.workspaceScope),
+			telemetry.Reveal())
 		updated, err = s.generateSDKModuleScope(
-			ctx,
+			scopeCtx,
 			updated,
 			staged,
 			selected,
@@ -613,6 +617,7 @@ func (s *workspaceSchema) generateSDKModuleClientSelections(
 			selection.workspaceScope,
 			selection.scope,
 		)
+		telemetry.EndWithCause(scopeSpan, &err)
 		if err != nil {
 			return dagql.ObjectResult[*core.Workspace]{}, err
 		}
