@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/dagger/dagger/internal/fsutil"
 	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
 	"github.com/pkg/errors"
@@ -102,8 +103,8 @@ func (gfs *GitignoreMatcher) getGitIgnoreMatcher(dirPath string) (matcher gitign
 		return nil, err
 	}
 	if len(patterns) > 0 {
-		// Selecting a directory overrides rules that exclude that directory,
-		// but preserves rules that match only its children. Choose the deepest
+		// Selecting a directory bypasses matches at or above that directory,
+		// but preserves fresh matches below it. Choose the deepest
 		// selected ancestor so nested explicit references can cross barriers.
 		var selected string
 		for _, dir := range gfs.explicitDirs {
@@ -117,9 +118,14 @@ func (gfs *GitignoreMatcher) getGitIgnoreMatcher(dirPath string) (matcher gitign
 		}
 		if selected != "" {
 			components := strings.Split(selected, string(filepath.Separator))
-			patterns = slices.DeleteFunc(slices.Clone(patterns), func(pattern gitignore.Pattern) bool {
-				return pattern.Match(components, true) == gitignore.Exclude
-			})
+			patterns = slices.Clone(patterns)
+			for i, pattern := range patterns {
+				if pattern.Match(components, true) == gitignore.Exclude {
+					rule := *pattern.(*gitignoreRule)
+					rule.explicitDepth = len(components)
+					patterns[i] = &rule
+				}
+			}
 		}
 		matcher = gitignore.NewMatcher(patterns)
 	}
@@ -199,12 +205,52 @@ func parseGitIgnoreFile(reader io.Reader, domain []string) ([]gitignore.Pattern,
 			// skip empty lines and comments
 			continue
 		}
-		pattern := gitignore.ParsePattern(line, domain)
-		patterns = append(patterns, pattern)
+		glob := strings.TrimPrefix(line, "!")
+		if !strings.HasSuffix(glob, `\ `) {
+			glob = strings.TrimRight(glob, " ")
+		}
+		dirOnly := strings.HasSuffix(glob, "/")
+		glob = strings.TrimSuffix(glob, "/")
+		if !strings.Contains(glob, "/") {
+			glob = "**/" + glob
+		}
+		patterns = append(patterns, &gitignoreRule{
+			Pattern:     gitignore.ParsePattern(line, domain),
+			glob:        strings.TrimPrefix(glob, "/"),
+			domainDepth: len(domain),
+			dirOnly:     dirOnly,
+		})
 	}
 
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
 	return patterns, nil
+}
+
+// gitignoreRule retains an exact glob as well as Git's ancestor-aware matcher.
+// An explicit root bypasses ancestor matches, so we must distinguish those
+// from new matches of the same rule against descendants of that root.
+type gitignoreRule struct {
+	gitignore.Pattern
+	glob          string
+	domainDepth   int
+	dirOnly       bool
+	explicitDepth int
+}
+
+func (rule *gitignoreRule) Match(path []string, isDir bool) gitignore.MatchResult {
+	match := rule.Pattern.Match(path, isDir)
+	if rule.explicitDepth == 0 || match != gitignore.Exclude {
+		return match
+	}
+	for end := rule.explicitDepth + 1; end <= len(path); end++ {
+		if rule.dirOnly && end == len(path) && !isDir {
+			continue
+		}
+		if matched, _ := doublestar.Match(rule.glob, strings.Join(path[rule.domainDepth:end], "/")); matched {
+			return gitignore.Exclude
+		}
+	}
+	return gitignore.NoMatch
 }

@@ -64,6 +64,45 @@ func TestGitIgnoreExplicitDirectoriesKeepChildRules(t *testing.T) {
 	}
 }
 
+func TestGitIgnoreExplicitDirectoriesKeepRecurringRules(t *testing.T) {
+	for _, tc := range []struct {
+		name, rules string
+		paths       map[string]bool
+	}{
+		{"name", "cache/\n", map[string]bool{
+			"cache/module/main.go":        false,
+			"cache/module/cache/artifact": true,
+			"cache/other/main.go":         true,
+		}},
+		{"anchored", "/cache/\n", map[string]bool{
+			"cache/module/main.go":        false,
+			"cache/module/cache/artifact": false,
+		}},
+		{"recursive", "**/cache/\n!**/keep.txt\n", map[string]bool{
+			"cache/module/main.go":               false,
+			"cache/module/nested/cache/artifact": true,
+			"cache/module/nested/cache/keep.txt": false,
+		}},
+		{"subtree", "/cache/**\n!**/main.go\n", map[string]bool{
+			"cache/module/main.go":  false,
+			"cache/module/artifact": true,
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(root, ".gitignore"), []byte(tc.rules), 0o600))
+			fs, err := fsutil.NewFS(root)
+			require.NoError(t, err)
+			matcher := NewGitIgnoreMatcherWithOverrides(fs, nil, "cache/module")
+			for file, want := range tc.paths {
+				ignored, err := matcher.Matches(file, false)
+				require.NoError(t, err)
+				require.Equal(t, want, ignored, file)
+			}
+		})
+	}
+}
+
 type walkEntry struct {
 	kind    string
 	ignored bool
