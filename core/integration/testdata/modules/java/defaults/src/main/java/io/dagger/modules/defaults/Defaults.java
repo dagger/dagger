@@ -31,7 +31,7 @@ public class Defaults {
   }
 
   @Function
-  public String fileName(@DefaultPath("dagger.json") File file)
+  public String fileName(@DefaultPath("dagger-module.toml") File file)
       throws ExecutionException, DaggerQueryException, InterruptedException {
     return file.name();
   }
