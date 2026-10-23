@@ -44,7 +44,7 @@ func (s *workspaceSchema) loadWorkspaceSDKModule(
 		} else {
 			explicitDirs = append(explicitDirs, resolvedSDK)
 		}
-		workspaceRoot, err := s.workspaceGitignoredOverlayRootfsWithExplicitDirs(ctx, ws, explicitDirs...)
+		workspaceRoot, err := s.filteredWorkspaceRootfs(ctx, ws, explicitDirs...)
 		if err != nil {
 			return nil, fmt.Errorf("load workspace SDK-module root: %w", err)
 		}

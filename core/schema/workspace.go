@@ -1281,13 +1281,13 @@ func (s *workspaceSchema) workspaceOverlayRootfs(ctx context.Context, ws *core.W
 	return s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, false)
 }
 
-// workspaceGitignoredOverlayRootfsWithExplicitDirs keeps broad workspace
-// content subject to Git ignore rules, then restores directories that the user
-// named. An explicit local module or SDK path must win over an ignore rule.
-func (s *workspaceSchema) workspaceGitignoredOverlayRootfsWithExplicitDirs(
+// filteredWorkspaceRootfs applies Git ignore rules to workspace content,
+// then restores explicitly requested directories. For the workspace root,
+// only module config files are restored.
+func (s *workspaceSchema) filteredWorkspaceRootfs(
 	ctx context.Context,
 	ws *core.Workspace,
-	dirs ...string,
+	explicitDirs ...string,
 ) (dagql.ObjectResult[*core.Directory], error) {
 	root, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, true)
 	if err != nil {
@@ -1298,7 +1298,7 @@ func (s *workspaceSchema) workspaceGitignoredOverlayRootfsWithExplicitDirs(
 		return root, err
 	}
 	seen := map[string]struct{}{}
-	for _, dir := range dirs {
+	for _, dir := range explicitDirs {
 		dir = filepath.ToSlash(cleanWorkspaceRelPath(dir))
 		if _, ok := seen[dir]; ok {
 			continue

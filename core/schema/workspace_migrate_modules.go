@@ -254,7 +254,7 @@ func (s *workspaceSchema) newModuleMigrationPlanner(ctx context.Context, ws *cor
 		if err != nil {
 			return err
 		}
-		cleanupRoot, err := s.workspaceGitignoredOverlayRootfsWithExplicitDirs(
+		cleanupRoot, err := s.filteredWorkspaceRootfs(
 			workspaceCtx,
 			ws,
 			dir,

@@ -327,7 +327,7 @@ func (s *workspaceSchema) resolveWorkspaceInstallSourceFromRoot(
 	var src dagql.ObjectResult[*core.ModuleSource]
 	var err error
 	if root.Self() == nil {
-		root, err = s.workspaceGitignoredOverlayRootfsWithExplicitDirs(ctx, ws, resolvedPath)
+		root, err = s.filteredWorkspaceRootfs(ctx, ws, resolvedPath)
 		if err != nil {
 			return src, "", err
 		}

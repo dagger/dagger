@@ -246,7 +246,7 @@ func (s *workspaceSchema) workspaceMigrationGitignoreCleanups(
 		}
 		explicitDirs = append(explicitDirs, dir)
 	}
-	rootDir, err := s.workspaceGitignoredOverlayRootfsWithExplicitDirs(ctx, ws, explicitDirs...)
+	rootDir, err := s.filteredWorkspaceRootfs(ctx, ws, explicitDirs...)
 	if err != nil {
 		return nil, err
 	}

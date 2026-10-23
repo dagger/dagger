@@ -1145,7 +1145,7 @@ func (s *workspaceSchema) validateGeneratedModuleConfig(
 	generated dagql.ObjectResult[*core.Workspace],
 	scopePath string,
 ) error {
-	root, err := s.workspaceGitignoredOverlayRootfsWithExplicitDirs(ctx, generated.Self(), scopePath)
+	root, err := s.filteredWorkspaceRootfs(ctx, generated.Self(), scopePath)
 	if err != nil {
 		return err
 	}
