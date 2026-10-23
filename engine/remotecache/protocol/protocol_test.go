@@ -71,6 +71,7 @@ func TestMessagesRoundTrip(t *testing.T) {
 		into func() any
 	}{
 		{TypeHello, Hello{CacheID: "cache-1", Generation: 4, EngineVersion: "v0.20.0", EngineName: "dagger-engine"}, func() any { return &Hello{} }},
+		{TypeHello, Hello{CacheID: "cache-1", Generation: 1, EngineVersion: "v0.20.0", EngineName: "dagger-engine", Ephemeral: true}, func() any { return &Hello{} }},
 		{TypeWelcome, Welcome{}, func() any { return &Welcome{} }},
 		{TypeExport, Export{Roots: []uint64{12, 13}, Outputs: []ExportOutput{{Number: 12, Address: testAddress()}}}, func() any { return &Export{} }},
 		{TypeExported, Exported{ExportID: "x-1", Bundle: &bundle, Skipped: []SkippedRoot{{Number: 13, Reason: SkipBusy}}}, func() any { return &Exported{} }},
@@ -79,6 +80,7 @@ func TestMessagesRoundTrip(t *testing.T) {
 		{TypeUpload, Upload{ExportID: "x-1", URLs: map[digest.Digest]string{layer.Descriptor.Digest: "https://blobs/put"}}, func() any { return &Upload{} }},
 		{TypeUploaded, Uploaded{Done: []digest.Digest{layer.Descriptor.Digest}, Failed: []UploadFailure{{Digest: digest.FromString("other"), Message: "503"}}}, func() any { return &Uploaded{} }},
 		{TypeMerge, Merge{Bundle: bundle}, func() any { return &Merge{} }},
+		{TypeMerge, Merge{Bundle: bundle, Lookup: 31}, func() any { return &Merge{} }},
 		{TypeMerged, Merged{
 			Generation: 4,
 			EngineTime: 1790000000123456789,
@@ -94,6 +96,17 @@ func TestMessagesRoundTrip(t *testing.T) {
 		{TypeRenew, Renew{RenewalKey: "12/fs", Layers: []snapshots.ExportLayer{layer}, NeededBlob: layer.Descriptor.Digest}, func() any { return &Renew{} }},
 		{TypeRenewed, Renewed{Addresses: map[digest.Digest]dagql.BlobAddress{layer.Descriptor.Digest: {URL: "https://blobs/get2", ExpiresAtUnix: 1790007200}}}, func() any { return &Renewed{} }},
 		{TypeRenewed, Renewed{Unavailable: true}, func() any { return &Renewed{} }},
+		{TypeLookup, Lookup{
+			Misses:     []LookupMiss{{Recipe: digest.FromString("recipe"), Extra: []digest.Digest{digest.FromString("extra")}, Field: "withExec"}, {Recipe: digest.FromString("other")}},
+			WaitMillis: 10000,
+		}, func() any { return &Lookup{} }},
+		{TypeLookedUp, LookedUp{Misses: []LookedUpMiss{
+			{Status: LookupMerging, Merge: 40, Parts: LookupPartsComplete},
+			{Status: LookupInFlight, Merge: 38, Parts: LookupPartsPartial},
+			{Status: LookupUnknown},
+			{Status: LookupNotStored},
+			{Status: LookupDeferred},
+		}}, func() any { return &LookedUp{} }},
 		{TypeError, Error{Message: TooLargeMessage}, func() any { return &Error{} }},
 	} {
 		t.Run(string(tc.typ), func(t *testing.T) {
@@ -140,6 +153,10 @@ func derefBody(v any) any {
 		return *b
 	case *Renewed:
 		return *b
+	case *Lookup:
+		return *b
+	case *LookedUp:
+		return *b
 	case *Error:
 		return *b
 	}
@@ -159,6 +176,18 @@ func TestEnvelopeFraming(t *testing.T) {
 	raw, err = json.Marshal(reply)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"id": 9, "re": 17, "type": "error", "body": {"message": "too large"}}`, string(raw))
+}
+
+// A hello says "ephemeral" only for an engine whose cache does not outlive it,
+// so a hello from any other engine reads as before.
+func TestHelloEphemeral(t *testing.T) {
+	raw, err := json.Marshal(Hello{CacheID: "cache-1", Generation: 1, EngineVersion: "v0.20.0", EngineName: "dagger-engine", Ephemeral: true})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"cacheID": "cache-1", "generation": 1, "engineVersion": "v0.20.0", "engineName": "dagger-engine", "ephemeral": true}`, string(raw))
+
+	raw, err = json.Marshal(Hello{CacheID: "cache-1", Generation: 1, EngineVersion: "v0.20.0", EngineName: "dagger-engine"})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"cacheID": "cache-1", "generation": 1, "engineVersion": "v0.20.0", "engineName": "dagger-engine"}`, string(raw))
 }
 
 // An offer names the Cloud counterpart per offered part, not per item.
@@ -196,12 +225,13 @@ func TestReplyType(t *testing.T) {
 		TypeMerge:  TypeMerged,
 		TypeOffer:  TypeOffered,
 		TypeRenew:  TypeRenewed,
+		TypeLookup: TypeLookedUp,
 	} {
 		got, ok := ReplyType(request)
 		require.True(t, ok, request)
 		require.Equal(t, reply, got)
 	}
-	for _, notRequest := range []Type{TypeWelcome, TypeExported, TypeUploaded, TypeMerged, TypeOffered, TypeRenewed, TypeError} {
+	for _, notRequest := range []Type{TypeWelcome, TypeExported, TypeUploaded, TypeMerged, TypeOffered, TypeRenewed, TypeLookedUp, TypeError} {
 		_, ok := ReplyType(notRequest)
 		require.False(t, ok, notRequest)
 	}
@@ -222,4 +252,37 @@ func TestOfferOutcomeOf(t *testing.T) {
 	}
 	_, err := OfferOutcomeOf(dagql.OfferOutcome(200))
 	require.Error(t, err)
+}
+
+// A lookup and its answer have the wire names the service reads, and a
+// placement merge carries no lookup.
+func TestLookupShape(t *testing.T) {
+	raw, err := json.Marshal(Lookup{Misses: []LookupMiss{{Recipe: "xxh3:1", Extra: []digest.Digest{"xxh3:2"}, Field: "withExec"}}, WaitMillis: 10000})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"misses": [{"recipe": "xxh3:1", "extra": ["xxh3:2"], "field": "withExec"}], "waitMillis": 10000}`, string(raw))
+
+	raw, err = json.Marshal(LookedUp{Misses: []LookedUpMiss{{Status: LookupMerging, Merge: 40, Parts: LookupPartsNone}, {Status: LookupUnknown}}})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"misses": [{"status": "merging", "merge": 40, "parts": "none"}, {"status": "unknown"}]}`, string(raw))
+
+	for status, want := range map[LookupStatus]string{
+		LookupUnknown:   "unknown",
+		LookupNotStored: "notStored",
+		LookupInFlight:  "inFlight",
+		LookupMerging:   "merging",
+		LookupDeferred:  "deferred",
+	} {
+		require.Equal(t, want, string(status))
+	}
+	for parts, want := range map[LookupParts]string{
+		LookupPartsComplete: "complete",
+		LookupPartsPartial:  "partial",
+		LookupPartsNone:     "none",
+	} {
+		require.Equal(t, want, string(parts))
+	}
+
+	raw, err = json.Marshal(Merge{})
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), "lookup")
 }

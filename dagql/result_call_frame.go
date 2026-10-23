@@ -220,6 +220,20 @@ type ResultCall struct {
 	// profileSkip in core/telemetry.go.
 	ProfileSkip bool `json:"profileSkip,omitempty"`
 
+	// TransferTerms are the terms of module function calls that returned
+	// this result other than through its own frame: a function that returns
+	// an inner result has the call's term on that result too, and an engine
+	// hits the call by it. They ride with the frame, in a transfer record
+	// and in persistence, so that an engine that merges the record hits the
+	// call as the engine that ran it does (applyTransferTermsLocked). Like
+	// ProfileSkip, they are EXCLUDED from every digest: they say what else
+	// names the result, not what the result's own call is. They belong to
+	// this frame's result alone, so clone and fork leave them out: a frame
+	// derived for another result, a list's element or a new call, must not
+	// name this one. cloneSame and forkSame keep them, for a copy of the
+	// same result's frame.
+	TransferTerms []TransferTerm `json:"transferTerms,omitempty"`
+
 	// recipeDigest is memoized once the frame has reached its finalized
 	// semantic shape. Do not mutate the frame after calling RecipeDigest.
 	recipeDigestOnce sync.Once
@@ -304,6 +318,57 @@ func (frame *ResultCall) fork() *ResultCall {
 		// wrongly profile a reflection-list walk — inheritance is the correct rule.
 		ProfileSkip: frame.ProfileSkip,
 	}
+}
+
+// cloneSame is clone for a copy of the same result's frame: it keeps the
+// frame's transfer terms. Use it only where the copy stands for the frame's
+// own result: persisting or transferring it, or replacing it with a changed
+// frame of the same result.
+func (frame *ResultCall) cloneSame() *ResultCall {
+	cp := frame.clone()
+	if cp != nil {
+		cp.TransferTerms = cloneTransferTerms(frame.TransferTerms)
+	}
+	return cp
+}
+
+// forkSame is fork for a changed frame of the same result: it keeps the
+// frame's transfer terms.
+func (frame *ResultCall) forkSame() *ResultCall {
+	cp := frame.fork()
+	if cp != nil {
+		cp.TransferTerms = cloneTransferTerms(frame.TransferTerms)
+	}
+	return cp
+}
+
+// TransferTerm is a call's term on a result it returned, as digests another
+// engine can resolve: the call's request digest, its self digest, and its
+// ordered structural inputs' digests with their provenance kinds, as the
+// engine that ran the call derived them.
+type TransferTerm struct {
+	Request    digest.Digest   `json:"request"`
+	Self       digest.Digest   `json:"self"`
+	Inputs     []digest.Digest `json:"inputs,omitempty"`
+	Provenance []string        `json:"provenance,omitempty"`
+}
+
+func (term TransferTerm) equal(other TransferTerm) bool {
+	return term.Request == other.Request && term.Self == other.Self &&
+		slices.Equal(term.Inputs, other.Inputs) && slices.Equal(term.Provenance, other.Provenance)
+}
+
+func cloneTransferTerms(terms []TransferTerm) []TransferTerm {
+	if terms == nil {
+		return nil
+	}
+	out := make([]TransferTerm, len(terms))
+	for i, term := range terms {
+		term.Inputs = slices.Clone(term.Inputs)
+		term.Provenance = slices.Clone(term.Provenance)
+		out[i] = term
+	}
+	return out
 }
 
 func (frame *ResultCall) RecipeDigest(ctx context.Context) (digest.Digest, error) {

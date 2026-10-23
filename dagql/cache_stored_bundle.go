@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"sync/atomic"
 	"time"
 )
 
@@ -21,6 +22,45 @@ type StoredBundleResult struct {
 	// known only through holdings.
 	Gone    []uint64
 	NoValue []uint64
+	// Held are the numbers of the entries the bundle carries as held rows.
+	Held []uint64
+}
+
+// HeldBy names the entries of a blob-backed cache whose values a recipient
+// engine cache already holds, for StoredBundle to carry as held rows and
+// StoredSizes to price as such. An entry is held when it has a holding of
+// Cache that hasn't expired at Now (Unix seconds), and isn't in Not, by
+// number: the values the recipient answered stale. Only an entry with a call
+// frame can be held: its recipe names it to the recipient.
+type HeldBy struct {
+	Cache CacheID
+	Now   int64
+	Not   map[uint64]bool
+}
+
+// heldLocked reports whether the recipient holds res. A nil HeldBy holds
+// nothing. Requires egraphMu.
+func (h *HeldBy) heldLocked(res *sharedResult) bool {
+	if h == nil || res.loadResultCall() == nil {
+		return false
+	}
+	if h.Not[uint64(res.id)] {
+		return false
+	}
+	return h.holdsLocked(res)
+}
+
+// holdsLocked reports whether res has a holding of h.Cache that hasn't
+// expired at h.Now: among its holdings of that cache only (cacheHolders),
+// each judged by its own expiry. Requires egraphMu.
+func (h *HeldBy) holdsLocked(res *sharedResult) bool {
+	for number := range res.cacheHolders[h.Cache] {
+		held := res.holders[HolderKey{Cache: h.Cache, Number: number}]
+		if held != nil && (held.expiresAtUnix == 0 || held.expiresAtUnix > h.Now) {
+			return true
+		}
+	}
+	return false
 }
 
 // StoredBundle builds a bundle from the entries of a blob-backed cache, the
@@ -38,7 +78,13 @@ type StoredBundleResult struct {
 //     from an unexpired entry of its class, the lowest number first, through
 //     the placement rule, with its services mapped to rows of this closure of
 //     the same class. A part whose services can't be mapped is left out.
-func (c *Cache) StoredBundle(ctx context.Context, roots []uint64) (StoredBundleResult, error) {
+//
+// An entry held says the recipient holds, a root or not, becomes a held row:
+// its recipe and sending facts, with no record, no outputs, and nothing
+// below it walked. Each held row's recipe is derived from the entry's call
+// frame after egraphMu is released: a replacement keeps the recipe, and
+// deriving can read the cache. A nil held is a bundle with no held rows.
+func (c *Cache) StoredBundle(ctx context.Context, roots []uint64, held *HeldBy) (StoredBundleResult, error) {
 	var out StoredBundleResult
 	if !c.blobBacked {
 		return out, fmt.Errorf("stored bundle: the cache has no blob store")
@@ -46,6 +92,31 @@ func (c *Cache) StoredBundle(ctx context.Context, roots []uint64) (StoredBundleR
 	if err := context.Cause(ctx); err != nil {
 		return out, err
 	}
+	out, frames, err := c.storedBundle(roots, held)
+	if err != nil || len(frames) == 0 {
+		return out, err
+	}
+	for i := range out.Bundle.Values {
+		value := &out.Bundle.Values[i]
+		frame := frames[value.Ordinal]
+		if frame == nil {
+			continue
+		}
+		if value.Held, err = frame.deriveRecipeDigest(c); err != nil {
+			return StoredBundleResult{}, fmt.Errorf("stored bundle: held entry %d recipe: %w", value.SenderNumber, err)
+		}
+	}
+	if err := validateStoredBundle(out.Bundle); err != nil {
+		return StoredBundleResult{}, fmt.Errorf("stored bundle: %w", err)
+	}
+	return out, nil
+}
+
+// storedBundle builds StoredBundle's answer in one hold of egraphMu.RLock,
+// with held rows' recipes left empty, and returns the call frame of each held
+// row by ordinal. A bundle without held rows is validated here.
+func (c *Cache) storedBundle(roots []uint64, held *HeldBy) (StoredBundleResult, map[TransferOrdinal]*ResultCall, error) {
+	var out StoredBundleResult
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
 
@@ -64,19 +135,35 @@ func (c *Cache) StoredBundle(ctx context.Context, roots []uint64) (StoredBundleR
 		}
 	}
 	if len(rootEntries) == 0 {
-		return out, nil
+		return out, nil, nil
 	}
-	build := &storedBundleBuild{now: time.Now().Unix(), ordinals: map[sharedResultID]TransferOrdinal{}}
+	build := &storedBundleBuild{now: time.Now().Unix(), ordinals: map[sharedResultID]TransferOrdinal{}, heldBy: held, held: map[sharedResultID]bool{}}
 	build.bundle.Version = valueBundleVersion
 	visiting := map[sharedResultID]bool{}
 	for _, res := range rootEntries {
 		if err := c.storedBundleVisitLocked(build, res, visiting); err != nil {
-			return StoredBundleResult{}, err
+			return StoredBundleResult{}, nil, err
 		}
 	}
+	var frames map[TransferOrdinal]*ResultCall
 	for _, res := range build.order {
+		if build.held[res.id] {
+			ordinal := build.ordinals[res.id]
+			frame := res.loadResultCall()
+			var terms []TransferTerm
+			if frame != nil {
+				terms = cloneTransferTerms(frame.TransferTerms)
+			}
+			build.bundle.Values = append(build.bundle.Values, TransferredValue{Ordinal: ordinal, SenderNumber: uint64(res.id), SenderReplacements: res.replacements, Record: PersistedRecord{ResultID: uint64(ordinal)}, ExpiresAtUnix: res.expiresAtUnix, HeldTerms: terms})
+			if frames == nil {
+				frames = map[TransferOrdinal]*ResultCall{}
+			}
+			frames[ordinal] = frame
+			out.Held = append(out.Held, uint64(res.id))
+			continue
+		}
 		if err := c.storedBundleValueLocked(build, res); err != nil {
-			return StoredBundleResult{}, err
+			return StoredBundleResult{}, nil, err
 		}
 	}
 	for _, res := range rootEntries {
@@ -87,15 +174,20 @@ func (c *Cache) StoredBundle(ctx context.Context, roots []uint64) (StoredBundleR
 		build.bundle.Roots = append(build.bundle.Roots, TransferredRoot{Ordinal: build.ordinals[res.id], ExpiresAtUnix: expiry})
 	}
 	for _, res := range build.order {
+		if build.held[res.id] {
+			continue
+		}
 		if err := c.storedBundleOutputsLocked(build, res); err != nil {
-			return StoredBundleResult{}, err
+			return StoredBundleResult{}, nil, err
 		}
 	}
-	if err := validateStoredBundle(build.bundle); err != nil {
-		return StoredBundleResult{}, fmt.Errorf("stored bundle: %w", err)
-	}
 	out.Bundle, out.Donors = build.bundle, build.donors
-	return out, nil
+	if frames == nil {
+		if err := validateStoredBundle(build.bundle); err != nil {
+			return StoredBundleResult{}, nil, fmt.Errorf("stored bundle: %w", err)
+		}
+	}
+	return out, frames, nil
 }
 
 // storedBundleBuild is a stored bundle under construction: the closure in
@@ -106,6 +198,10 @@ type storedBundleBuild struct {
 	ordinals map[sharedResultID]TransferOrdinal
 	bundle   ValueBundle
 	donors   []uint64
+	// heldBy says which entries the recipient holds, and held are the
+	// closure's entries that become held rows.
+	heldBy *HeldBy
+	held   map[sharedResultID]bool
 }
 
 // relocate rewrites a reference to an entry of the closure to its ordinal.
@@ -123,7 +219,8 @@ func (build *storedBundleBuild) relocate(ref *PersistedRef) error {
 
 // storedBundleVisitLocked adds res's closure to the build in dependency
 // order: its dependencies, and the entries its own stored parts' owners and
-// services name, before it. Requires egraphMu.
+// services name, before it. An entry the recipient holds is added alone, as
+// a held row. Requires egraphMu.
 func (c *Cache) storedBundleVisitLocked(build *storedBundleBuild, res *sharedResult, visiting map[sharedResultID]bool) error {
 	if build.ordinals[res.id] != 0 {
 		return nil
@@ -131,24 +228,17 @@ func (c *Cache) storedBundleVisitLocked(build *storedBundleBuild, res *sharedRes
 	if visiting[res.id] {
 		return fmt.Errorf("stored bundle: dependency cycle through entry %d", res.id)
 	}
+	if build.heldBy.heldLocked(res) {
+		build.held[res.id] = true
+		build.order = append(build.order, res)
+		build.ordinals[res.id] = TransferOrdinal(len(build.order))
+		return nil
+	}
 	if res.noValueLocked() || res.persistedEnvelope == nil {
 		return fmt.Errorf("stored bundle: entry %d in the closure has no stored record", res.id)
 	}
 	visiting[res.id] = true
-	var children []sharedResultID
-	for dep := range res.deps {
-		children = append(children, dep)
-	}
-	for _, part := range res.storedParts {
-		for _, dep := range part.Owner.DependencyIDs {
-			children = append(children, sharedResultID(dep))
-		}
-		for _, service := range part.Value.Services {
-			children = append(children, sharedResultID(service.ServiceResultID))
-		}
-	}
-	slices.Sort(children)
-	for _, id := range slices.Compact(children) {
+	for _, id := range storedClosureChildrenLocked(res) {
 		child := c.resultsByID[id]
 		if child == nil {
 			return fmt.Errorf("stored bundle: entry %d names missing entry %d", res.id, id)
@@ -163,10 +253,30 @@ func (c *Cache) storedBundleVisitLocked(build *storedBundleBuild, res *sharedRes
 	return nil
 }
 
+// storedClosureChildrenLocked returns what a stored bundle walks below res,
+// sorted: its dependencies, and the entries its own stored parts' owners and
+// services name. Requires egraphMu.
+func storedClosureChildrenLocked(res *sharedResult) []sharedResultID {
+	var children []sharedResultID
+	for dep := range res.deps {
+		children = append(children, dep)
+	}
+	for _, part := range res.storedParts {
+		for _, dep := range part.Owner.DependencyIDs {
+			children = append(children, sharedResultID(dep))
+		}
+		for _, service := range part.Value.Services {
+			children = append(children, sharedResultID(service.ServiceResultID))
+		}
+	}
+	slices.Sort(children)
+	return slices.Compact(children)
+}
+
 // storedBundleValueLocked copies res's stored record into the build,
 // normalized for transfer and relocated to ordinals. Requires egraphMu.
 func (c *Cache) storedBundleValueLocked(build *storedBundleBuild, res *sharedResult) error {
-	normalized, err := storedTransferRecordLocked(res)
+	normalized, err := c.storedTransferRecordLocked(res)
 	if err != nil {
 		return fmt.Errorf("stored bundle: entry %d: %w", res.id, err)
 	}
@@ -220,6 +330,20 @@ type storedTransferRecord struct {
 	envelope *PersistedResultEnvelope
 	call     *ResultCall
 	record   PersistedRecord
+	// size is the entry's value's encoded size in a bundle, once StoredSizes
+	// has measured it (measureStoredValue), with what else it read.
+	size atomic.Pointer[storedValueSize]
+}
+
+// storedValueSize is a measured value size, and the entry's dependency
+// revision, replacement count and expiry it was measured at: a value carries
+// its dependencies, which a stored part can add to without replacing the
+// record, and the other two.
+type storedValueSize struct {
+	dependencyRevision uint64
+	replacements       uint64
+	expiresAtUnix      int64
+	bytes              int64
 }
 
 // storedTransferRecordLocked returns res's stored record normalized for
@@ -230,32 +354,66 @@ type storedTransferRecord struct {
 // The kept record holds both, so neither can be freed and another take its
 // address while it is kept. The result is shared: callers copy what they
 // change. Requires egraphMu.
-func storedTransferRecordLocked(res *sharedResult) (PersistedRecord, error) {
-	env, call := res.persistedEnvelope, res.loadResultCall()
+func (c *Cache) storedTransferRecordLocked(res *sharedResult) (PersistedRecord, error) {
+	normalized, err := normalizeStoredTransfer(res, res.persistedEnvelope, res.loadResultCall())
+	if err != nil {
+		return PersistedRecord{}, err
+	}
+	if c.testStoredTransferNormalized != nil {
+		c.testStoredTransferNormalized()
+	}
+	return keepStoredTransfer(res, normalized).record, nil
+}
+
+// keepStoredTransfer keeps normalized as res's transfer record and returns
+// it, unless a record of the same envelope and call is kept already, which it
+// returns instead: readers normalize at once under egraphMu.RLock, and a
+// record kept first, with its measured size (StoredSizes), stays the one kept.
+// The caller has checked, under egraphMu, that the envelope and call are
+// res's.
+func keepStoredTransfer(res *sharedResult, normalized *storedTransferRecord) *storedTransferRecord {
+	for {
+		kept := res.storedTransfer.Load()
+		if kept != nil && kept.envelope == normalized.envelope && kept.call == normalized.call {
+			return kept
+		}
+		if res.storedTransfer.CompareAndSwap(kept, normalized) {
+			return normalized
+		}
+	}
+}
+
+// normalizeStoredTransfer returns res's transfer record of env and call: the
+// kept one if it is of them, or a new one, normalized and not kept. It reads
+// only env and call, which the cache replaces and never changes in place, so
+// it needs no lock: a caller that read them under egraphMu can normalize
+// after releasing it, and keeps the record (keepStoredTransfer) under
+// egraphMu again only if they are still the entry's (StoredSizes'
+// publishStoredSizes).
+func normalizeStoredTransfer(res *sharedResult, env *PersistedResultEnvelope, call *ResultCall) (*storedTransferRecord, error) {
 	if kept := res.storedTransfer.Load(); kept != nil && kept.envelope == env && kept.call == call {
-		return kept.record, nil
+		return kept, nil
 	}
 	rec, err := normalizeTransferRecord(PersistedRecord{ResultID: uint64(res.id), Envelope: *env, Call: call})
 	if err != nil {
-		return PersistedRecord{}, err
+		return nil, err
 	}
 	rec.Envelope.PendingOffers = nil
 	// A build validates its bundle by shape, so the record's payloads are
 	// checked by their codecs, and its outputs mapped, here.
 	if err := validateTransferPayloads(rec); err != nil {
-		return PersistedRecord{}, err
+		return nil, err
 	}
 	outputs, err := mapTransferredOutputs(rec)
 	if err != nil {
-		return PersistedRecord{}, err
+		return nil, err
 	}
 	for _, output := range outputs {
 		if _, err := partAddressKey(output.Address); err != nil {
-			return PersistedRecord{}, err
+			return nil, err
 		}
 	}
-	res.storedTransfer.Store(&storedTransferRecord{envelope: env, call: call, record: rec})
-	return rec, nil
+	return &storedTransferRecord{envelope: env, call: call, record: rec}, nil
 }
 
 // storedBundleOutputsLocked adds res's outputs to the build: its own stored

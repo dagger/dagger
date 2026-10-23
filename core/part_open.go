@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/slog"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 )
 
@@ -139,11 +140,52 @@ func (container *Container) openNativeFinalPart(ctx context.Context, part dagql.
 	}
 	value, ok := container.storedParts[part]
 	if !ok {
-		return fmt.Errorf("final Container part %s has no descriptor", part)
+		absent, err := container.liveAbsentPart(ctx, part)
+		if err != nil {
+			return fmt.Errorf("final Container part %s has no descriptor: %w", part, err)
+		}
+		if !absent {
+			return fmt.Errorf("final Container part %s has no descriptor", part)
+		}
+		slog.InfoContext(ctx, "remote cache part opened absent", "part", string(part))
+		return nil
 	}
 	if value.Kind == containerPartAbsent {
 		container.setAbsentTransferPart(part)
 		return nil
 	}
 	return container.openStoredContainerPart(ctx, part)
+}
+
+// liveAbsentPart opens a part a live value computed without producing, as
+// an exec metadata part of a container that never ran an exec. Its encoding
+// describes the part as absent (containerPartValue), which the part probe
+// reports complete, so its open must agree rather than fail the call. A part
+// not yet computed is not absent and stays unopened.
+func (container *Container) liveAbsentPart(ctx context.Context, part dagql.PartKey) (bool, error) {
+	lazy, _ := container.lazyForPersistence()
+	unlock, err := container.lockLazyForPersistence(lazy, false)
+	if err != nil {
+		return false, err
+	}
+	defer unlock()
+	if !container.containerPartComputedLocked(ctx, lazy, part) {
+		return false, nil
+	}
+	value, err := container.containerPartValue(part)
+	if err != nil {
+		return false, err
+	}
+	if value.Kind != containerPartAbsent {
+		return false, nil
+	}
+	switch part {
+	case ContainerPartFS:
+		container.ensureFSAccessor().setValue(nil)
+	case ContainerPartExecMeta:
+		container.ensureMetaSnapshotAccessor().setValue(nil)
+	default:
+		return false, nil
+	}
+	return true, nil
 }

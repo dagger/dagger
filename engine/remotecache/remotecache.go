@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/http/httptrace"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -33,6 +34,22 @@ const (
 	// UploadConcurrency is how many blobs the engine uploads at once, across
 	// all its exports.
 	UploadConcurrency = 8
+	// LookupsInFlight is how many lookups the engine has unanswered at once.
+	LookupsInFlight = 4
+	// DefaultLookupWait is how long an evaluation waits, by default, for a
+	// merge a lookup's answer names: none. Lookups are asked without
+	// waiting, so no miss waits on the service; a wait is opt-in, through
+	// the engine's _EXPERIMENTAL_DAGGER_REMOTE_CACHE_LOOKUP_WAIT.
+	DefaultLookupWait time.Duration = 0
+
+	// lookupLinger is how long the engine waits, after a miss, for more
+	// misses to send with it.
+	lookupLinger = 25 * time.Millisecond
+	// lookupTimeout bounds the wait for a lookup's answer.
+	lookupTimeout = 30 * time.Second
+	// endedMerges is how many ended merges a session remembers by ID, so a
+	// lookup's answer that names one doesn't wait for it.
+	endedMerges = 4096
 
 	// Reconnection backoff: from backoffMin, doubling to backoffMax, each
 	// wait moved by up to backoffJitter of itself either way.
@@ -60,8 +77,16 @@ type Config struct {
 	// EngineVersion and EngineName are sent in hello.
 	EngineVersion string
 	EngineName    string
+	// Ephemeral is sent in hello: the engine's cache does not outlive this
+	// run of it.
+	Ephemeral bool
 	// Logger receives the connection's warnings and errors. Nil discards.
 	Logger *slog.Logger
+	// Lookups asks the service for the calls the engine's cache misses.
+	Lookups bool
+	// LookupWait bounds an evaluation's wait for a merge a lookup's answer
+	// names as carrying the call's value. Zero never waits.
+	LookupWait time.Duration
 }
 
 // Adapter is the engine's side of the service's requests: its cache
@@ -73,14 +98,26 @@ type Adapter interface {
 	// while the captured chains stay open. The export's Bundle is nil when no
 	// root survived. The chains are released when consume returns.
 	Export(ctx context.Context, req protocol.Export, consume func(context.Context, Export) error) error
-	// Merge merges a bundle of the service's values into the cache.
-	Merge(ctx context.Context, req protocol.Merge) (protocol.Merged, error)
+	// Merge merges a bundle of the service's values into the cache. id is
+	// the service's request ID, for logs.
+	Merge(ctx context.Context, id uint64, req protocol.Merge) (protocol.Merged, error)
 	// OfferParts places offered parts on the cache's entries by number.
 	OfferParts(ctx context.Context, req protocol.Offer) (protocol.Offered, error)
 	// TakeRenewalRequest waits for the next read that needs fresh download
 	// addresses; ReplyRenewal answers it.
 	TakeRenewalRequest(ctx context.Context) (*dagql.RenewalRequest, error)
 	ReplyRenewal(dagql.RenewalReply) dagql.RenewalReplyDisposition
+	// StartLookups starts queuing the cache's lookup misses for this
+	// connection, with nothing asked yet, and StopLookups stops it.
+	StartLookups()
+	StopLookups()
+	// TakeLookupMisses waits for the cache's next misses, at most limit,
+	// lingering up to linger after the first for more. dropped counts the
+	// misses a full queue refused since the last take.
+	TakeLookupMisses(ctx context.Context, limit int, linger time.Duration) (misses []dagql.RemoteMiss, dropped uint64, err error)
+	// ExpectMerge makes an evaluation of recipe's entry wait until wait
+	// ends, or until deadline.
+	ExpectMerge(recipe digest.Digest, wait *dagql.RemoteMergeWait, deadline time.Time)
 }
 
 // Export is one capture, as Adapter.Export hands it to its consumer.
@@ -97,9 +134,16 @@ type BlobSource interface {
 	ReadBlob(ctx context.Context, dgst digest.Digest) (io.ReadCloser, int64, error)
 }
 
+// envDecodeOnce set to 0 makes the session read a merge's body as it did:
+// json.Unmarshal of the envelope, then Decode of the body
+// (protocol.ReadEnvelope).
+const envDecodeOnce = "_EXPERIMENTAL_DAGGER_REMOTE_CACHE_DECODE_ONCE"
+
 // settings are Run's configuration with the limits and seams tests change.
 type settings struct {
 	Config
+	// decodeOnce decodes a merge's body in one pass (envDecodeOnce).
+	decodeOnce bool
 	dial       func(context.Context) (wsConn, error)
 	put        func(ctx context.Context, url string, body io.Reader, size int64) error
 	maxMessage int
@@ -115,6 +159,7 @@ func newSettings(cfg Config) *settings {
 		put:        httpPut(uploadClient(uploadResponseTimeout), uploadIdleTimeout),
 		maxMessage: protocol.MaxMessageBytes,
 		jitter:     rand.Float64,
+		decodeOnce: os.Getenv(envDecodeOnce) != "0",
 	}
 	s.dial = s.dialService
 	return s

@@ -67,6 +67,21 @@ type TransferredValue struct {
 	Record             PersistedRecord `json:"record"`
 	DependencyIDs      []uint64        `json:"dependencyIDs,omitempty"`
 	ExpiresAtUnix      int64           `json:"expiresAtUnix,omitempty"`
+	// Held, when set, makes this a held row: the recipient's own value of
+	// this recipe stands for the row, which carries no record and no
+	// closure below it. Its Record is empty but for ResultID, it has no
+	// DependencyIDs, and no output names it. SenderNumber,
+	// SenderReplacements and ExpiresAtUnix still describe the sending
+	// entry, and other rows reference the row by its ordinal. Only an
+	// engine merges held rows, from the Cloud (StoredBundle's HeldBy).
+	Held digest.Digest `json:"held,omitempty"`
+	// HeldTerms are a held row's transfer terms: the sending entry's
+	// (ResultCall.TransferTerms), which the row's absent record would carry.
+	// The recipient teaches them onto its own entry, which may not have them
+	// yet: it held the value before they were known, or computed it itself.
+	// A row that isn't held carries its terms in its record's frame, and
+	// none here.
+	HeldTerms []TransferTerm `json:"heldTerms,omitempty"`
 }
 type TransferredRoot struct {
 	Ordinal       TransferOrdinal `json:"ordinal"`

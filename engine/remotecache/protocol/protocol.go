@@ -59,6 +59,8 @@ const (
 	TypeOffered  Type = "offered"
 	TypeRenew    Type = "renew"
 	TypeRenewed  Type = "renewed"
+	TypeLookup   Type = "lookup"
+	TypeLookedUp Type = "lookedUp"
 	TypeError    Type = "error"
 )
 
@@ -78,6 +80,8 @@ func ReplyType(request Type) (Type, bool) {
 		return TypeOffered, true
 	case TypeRenew:
 		return TypeRenewed, true
+	case TypeLookup:
+		return TypeLookedUp, true
 	}
 	return "", false
 }
@@ -121,6 +125,14 @@ type Hello struct {
 	Generation    uint64 `json:"generation"`
 	EngineVersion string `json:"engineVersion"`
 	EngineName    string `json:"engineName"`
+	// HeldRows reports that the engine merges bundles with held rows
+	// (dagql.TransferredValue.Held). The service sends them only to an
+	// engine that sets it.
+	HeldRows bool `json:"heldRows,omitempty"`
+	// Ephemeral says the engine's cache does not outlive this run of it, as
+	// for a nested engine a check starts as a service: no later process
+	// comes back under this identity, and it may be killed without a stop.
+	Ephemeral bool `json:"ephemeral,omitempty"`
 }
 
 // Welcome is the service's reply to Hello.
@@ -192,9 +204,15 @@ type UploadFailure struct {
 }
 
 // Merge gives the engine a bundle of the Cloud's values. Its SenderNumbers
-// are the Cloud's numbers, and its outputs carry GET addresses.
+// are the Cloud's numbers, and its outputs carry GET addresses. A held row
+// names, by recipe, a value the engine is expected to hold; the engine
+// resolves it as it would keep a record of that recipe.
 type Merge struct {
 	Bundle dagql.ValueBundle `json:"bundle"`
+	// Lookup is the ID of the engine's Lookup this merge answers, or 0 for
+	// a merge of the service's own placement. The engine commits a merge
+	// that answers a lookup ahead of the others.
+	Lookup uint64 `json:"lookup,omitempty"`
 }
 
 // Merged answers Merge with what the merge's commit left, read under the lock
@@ -207,6 +225,11 @@ type Merged struct {
 	Values     []MergedValue  `json:"values"`
 	Retained   []RetainedRoot `json:"retained"`
 	Skipped    []SkippedValue `json:"skipped,omitempty"`
+	// Stale are the bundle's held rows the engine didn't hold when the
+	// merge decided: no current entry for the recipe, one with no value of
+	// its own, or an expired one the row hasn't outlived. A reply with Stale
+	// committed nothing, and its Values, Retained and Skipped are empty.
+	Stale []dagql.TransferOrdinal `json:"stale,omitempty"`
 }
 
 // MergedValue is the engine entry a bundle record landed on, and its value
@@ -322,3 +345,72 @@ type Renewed struct {
 	Addresses   map[digest.Digest]dagql.BlobAddress `json:"addresses,omitempty"`
 	Unavailable bool                                `json:"unavailable,omitempty"`
 }
+
+// The bounds of a Lookup.
+const (
+	// LookupMisses is the most misses one Lookup names.
+	LookupMisses = 32
+	// LookupExtras is the most extra digests one miss names.
+	LookupExtras = 8
+)
+
+// Lookup asks the service for the Cloud's values of calls the engine's cache
+// missed. The service answers at once with what it will do for each, and
+// sends what it found as ordinary merges that name the lookup.
+type Lookup struct {
+	Misses []LookupMiss `json:"misses"`
+	// WaitMillis is how long the engine's evaluation of a missed call waits
+	// for a merge the answer names, for the service's metrics.
+	WaitMillis int64 `json:"waitMillis"`
+}
+
+// LookupMiss is one call the engine's cache missed: its recipe digest, and
+// its extra digests, which the engine's own lookup tries after the recipe.
+// Field names the call, for logs.
+type LookupMiss struct {
+	Recipe digest.Digest   `json:"recipe"`
+	Extra  []digest.Digest `json:"extra,omitempty"`
+	Field  string          `json:"field,omitempty"`
+}
+
+// LookedUp answers Lookup, one item per miss, in order. The service sends it
+// before any merge it names.
+type LookedUp struct {
+	Misses []LookedUpMiss `json:"misses"`
+}
+
+// LookedUpMiss is what the service does for one miss. Merge is the ID of the
+// Merge request that carries the call's value, with LookupInFlight and
+// LookupMerging, and Parts says how much of the value's bytes it carries.
+type LookedUpMiss struct {
+	Status LookupStatus `json:"status"`
+	Merge  uint64       `json:"merge,omitempty"`
+	Parts  LookupParts  `json:"parts,omitempty"`
+}
+
+// LookupStatus is what the service does for a missed call.
+type LookupStatus string
+
+const (
+	// LookupUnknown: the Cloud knows none of the call's digests.
+	LookupUnknown LookupStatus = "unknown"
+	// LookupNotStored: the Cloud has no stored, unexpired value of the call.
+	LookupNotStored LookupStatus = "notStored"
+	// LookupInFlight: a merge already sent to the engine carries the value.
+	LookupInFlight LookupStatus = "inFlight"
+	// LookupMerging: a merge sent now, after the answer, carries the value.
+	LookupMerging LookupStatus = "merging"
+	// LookupDeferred: the value goes at the front of the service's queue,
+	// with no merge named.
+	LookupDeferred LookupStatus = "deferred"
+)
+
+// LookupParts is how many of the value's parts a named merge carries bytes
+// for.
+type LookupParts string
+
+const (
+	LookupPartsComplete LookupParts = "complete"
+	LookupPartsPartial  LookupParts = "partial"
+	LookupPartsNone     LookupParts = "none"
+)

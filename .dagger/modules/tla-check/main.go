@@ -36,6 +36,18 @@ const temporalOutcome = "temporal"
 var expectedOutcome = map[string]string{
 	"snapshot_import": "",
 	"snapshot_export": "",
+	// Per-object downloads (fetching chain layers ahead, joining, retrying
+	// another import's failed download). Each mutation re-breaks one
+	// property; see the config headers.
+	"snapshot_download":            "",
+	"snapshot_download_droppin":    "JoinedBlobPresent",
+	"snapshot_download_leaveearly": "ApplyHasBytes",
+	"snapshot_download_ownretry":   "NoOwnRetry",
+	"snapshot_download_aheadreuse": "ReuseBeforeBytes",
+	// Downloads ahead over a window of later layers (parallel layer
+	// downloads), and the mutation that keeps them past a failure.
+	"snapshot_download_window":           "",
+	"snapshot_download_window_keepahead": "CleanupComplete",
 	// green: regression checks over the modeled cache behavior. (The
 	// former core configuration is folded into resources: same bounds,
 	// every core invariant, and strictly more behavior.)
@@ -146,6 +158,21 @@ var expectedOutcome = map[string]string{
 	"recipe_expiry_deps":    "",
 	"recipe_expiry_restart": "",
 	"recipe_merge":          "",
+
+	// green: declined persistence (DeclinePersistence). A value its call
+	// declined to persist never gains a retention edge: not at
+	// publication, not by a later persistable hit, not by a call that
+	// adopts it, not by a replacement in place, and not across a restart.
+	// The pass configurations are scoped (live, expiry and restart
+	// scenarios); each mutation drops one guard, or Flush's saving of the
+	// mark, and must break DeclinedNeverPersisted. See the config headers.
+	"persist_decline_live":     "",
+	"persist_decline_expiry":   "",
+	"persist_decline_restart":  "",
+	"persist_decline_hitguard": "DeclinedNeverPersisted",
+	"persist_decline_adopt":    "DeclinedNeverPersisted",
+	"persist_decline_retire":   "DeclinedNeverPersisted",
+	"persist_decline_flush":    "DeclinedNeverPersisted",
 }
 
 var clientExpectedOutcome = map[string]string{
@@ -538,14 +565,11 @@ func runOne(
 	}
 }
 
-// modelFiles preserves the existing short names and adds the snapshot component.
+// modelFiles preserves the existing short names and adds the snapshot
+// component: snapshot_<name> is SnapshotChain_<name>.cfg.
 func modelFiles(name string) (string, string) {
-	switch name {
-	case "snapshot_import":
-		return "SnapshotChain.tla", "SnapshotChain_import.cfg"
-	case "snapshot_export":
-		return "SnapshotChain.tla", "SnapshotChain_export.cfg"
-	default:
-		return "CacheLifecycle.tla", fmt.Sprintf("CacheLifecycle_%s.cfg", name)
+	if rest, ok := strings.CutPrefix(name, "snapshot_"); ok {
+		return "SnapshotChain.tla", fmt.Sprintf("SnapshotChain_%s.cfg", rest)
 	}
+	return "CacheLifecycle.tla", fmt.Sprintf("CacheLifecycle_%s.cfg", name)
 }

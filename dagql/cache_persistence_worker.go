@@ -163,9 +163,10 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 		snapshot.results = append(snapshot.results, persistResultSnapshot{
 			resultID:              resultID,
 			imported:              res.imported,
+			persistDeclined:       res.persistDeclined,
 			pendingOffers:         offers,
 			storedParts:           res.storedPartsLocked(),
-			frame:                 res.loadResultCall().clone(),
+			frame:                 res.loadResultCall().cloneSame(),
 			self:                  payload.self,
 			isObject:              payload.isObject,
 			hasValue:              payload.hasValue,
@@ -569,6 +570,7 @@ func (c *Cache) persistResultEnvelope(ctx context.Context, snapshot *persistResu
 	defer func() {
 		if rerr == nil && snapshot != nil {
 			encoding.Envelope.Imported = snapshot.imported
+			encoding.Envelope.PersistDeclined = snapshot.persistDeclined
 			encoding.Envelope.PendingOffers, rerr = clonePartOffers(snapshot.pendingOffers)
 			encoding.Envelope.StoredParts = snapshot.storedParts
 		}

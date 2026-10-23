@@ -2626,6 +2626,28 @@ func withRequestTelemetrySuppression(ctx context.Context, r *http.Request) (cont
 	return dagql.WithSkip(ctx), true
 }
 
+// queryRequestSpanAttrs are the attributes of a query's request span, whose
+// parent is the one in ctx. A nested client's request made directly under the
+// traceparent its exec's container got names the exec as its causal parent
+// (wcprof.parent): that traceparent is the call that made the exec, beside the
+// exec, so a profile would otherwise count the client's work as running
+// alongside the exec rather than in it. A request under a span of the
+// client's own keeps that parent: the engine names the exec on that span as
+// the container exports it (telemetry.StampWcprofHost).
+func queryRequestSpanAttrs(ctx context.Context, md *engine.ClientMetadata) []attribute.KeyValue {
+	attrs := []attribute.KeyValue{
+		attribute.Bool(telemetry.UIPassthroughAttr, true),
+	}
+	if engineID := md.CloudScaleOutEngineID; engineID != "" {
+		attrs = append(attrs, attribute.String(telemetry.EngineIDAttr, engineID))
+	}
+	if host := dagql.OTelHostExecFromContext(ctx); host.ExecRun.IsValid() && host.Propagated.IsValid() &&
+		trace.SpanContextFromContext(ctx).SpanID() == host.Propagated.SpanID() {
+		attrs = append(attrs, attribute.String(telemetryattrs.WcprofParentAttr, host.ExecRun.SpanID().String()))
+	}
+	return attrs
+}
+
 func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *clientRuntime) (rerr error) {
 	sess := client.daggerSession
 
@@ -2688,15 +2710,9 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 		// downstream components must use otel.SpanFromContext(ctx).TracerProvider()
 		clientTracer := sess.tracerProvider.Tracer(InstrumentationLibrary)
 		var span trace.Span
-		attrs := []attribute.KeyValue{
-			attribute.Bool(telemetry.UIPassthroughAttr, true),
-		}
-		if engineID := client.clientMetadata.CloudScaleOutEngineID; engineID != "" {
-			attrs = append(attrs, attribute.String(telemetry.EngineIDAttr, engineID))
-		}
 		ctx, span = clientTracer.Start(ctx,
 			fmt.Sprintf("%s %s", r.Method, r.URL.Path),
-			trace.WithAttributes(attrs...),
+			trace.WithAttributes(queryRequestSpanAttrs(ctx, client.clientMetadata)...),
 		)
 		defer telemetry.EndWithCause(span, &rerr)
 

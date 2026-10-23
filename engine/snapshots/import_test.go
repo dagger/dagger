@@ -77,6 +77,83 @@ func TestImportChainLocalStores(t *testing.T) {
 	t.Logf("A, A+B, A: source reads=%d apply calls=%d", provider.Reads.Load(), consumer.Applies.Load())
 }
 
+// A chain import with Timing sums where its time went over the layers: a
+// fresh layer is fetched and applied; a reimported one reuses its snapshot,
+// and is neither.
+func TestImportChainTiming(t *testing.T) {
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	a, _ := producer.Build(t, nil, "a.txt", "timed prefix")
+	ab, _ := producer.Build(t, a, "b.txt", "timed suffix")
+	chain := exportChain(t, ab)
+	require.Len(t, chain.Layers, 2)
+	var fresh bkcache.ImportTiming
+	importChain(t, consumer, &bkcache.ExportChain{Layers: chain.Layers, Provider: chain.Provider, Timing: &fresh})
+	require.Positive(t, fresh.Fetch)
+	require.Positive(t, fresh.Apply)
+	require.GreaterOrEqual(t, fresh.LayerWait, time.Duration(0))
+	var reused bkcache.ImportTiming
+	importChain(t, consumer, &bkcache.ExportChain{Layers: chain.Layers, Provider: chain.Provider, Timing: &reused})
+	require.Zero(t, reused.Fetch)
+	require.Zero(t, reused.Apply)
+	require.EqualValues(t, 2, consumer.Applies.Load())
+}
+
+// An export's stats count its layers: a fresh snapshot's are diffed into
+// blobs, and exported again they are reused.
+func TestExportChainStats(t *testing.T) {
+	store := testutil.NewStore(t)
+	a, _ := store.Build(t, nil, "a.txt", "stats prefix")
+	ab, _ := store.Build(t, a, "b.txt", "stats suffix")
+	first := exportChain(t, ab)
+	require.Len(t, first.Layers, 2)
+	var size int64
+	for _, layer := range first.Layers {
+		size += layer.Descriptor.Size
+	}
+	require.Equal(t, 2, first.Stats.Layers)
+	require.Equal(t, 2, first.Stats.LayersDiffed)
+	require.Zero(t, first.Stats.LayersReused)
+	require.Equal(t, size, first.Stats.BlobBytes)
+	require.Positive(t, first.Stats.RawBytes)
+	require.Positive(t, first.Stats.DiffTime)
+	require.GreaterOrEqual(t, first.Stats.LockWait, time.Duration(0))
+	second := exportChain(t, ab)
+	require.Equal(t, 2, second.Stats.Layers)
+	require.Equal(t, 2, second.Stats.LayersReused)
+	require.Zero(t, second.Stats.LayersDiffed)
+	require.Zero(t, second.Stats.DiffTime)
+	require.Zero(t, second.Stats.RawBytes)
+	require.Zero(t, second.Stats.BlobBytes)
+}
+
+// A snapshot labelled as merged has its layer counted as merged when it is
+// diffed; a plain chain's never is. The labels are the merge-usage ones a merge,
+// a diff application or CommitWithUsage writes (merge.go withMergeUsage); a
+// real merge's diff application needs mount privileges these stores lack.
+func TestExportChainMergedStats(t *testing.T) {
+	ctx := context.Background()
+	store := testutil.NewStore(t)
+	a, _ := store.Build(t, nil, "a.txt", "plain a")
+	plain := exportChain(t, a)
+	require.Zero(t, plain.Stats.LayersMerged)
+	b, _ := store.Build(t, nil, "b.txt", "labelled b")
+	_, err := store.Snapshots.Update(ctx, ctdsnapshots.Info{
+		Name: b.SnapshotID(),
+		Labels: map[string]string{
+			"buildkit.mergeUsageSize":   "4096",
+			"buildkit.mergeUsageInodes": "1",
+		},
+	}, "labels.buildkit.mergeUsageSize", "labels.buildkit.mergeUsageInodes")
+	require.NoError(t, err)
+	chain := exportChain(t, b)
+	require.Len(t, chain.Layers, 1)
+	require.Equal(t, 1, chain.Stats.LayersMerged)
+	require.Equal(t, chain.Layers[0].Descriptor.Size, chain.Stats.MergedBlobBytes)
+	// The export reads a labelled snapshot's usage from its labels.
+	require.Equal(t, int64(4096), chain.Stats.MergedRawBytes)
+	require.Positive(t, chain.Stats.MergedDiffTime)
+}
+
 func TestImportChainSameManager(t *testing.T) {
 	for _, root := range []string{"absent", "scratch", "empty"} {
 		t.Run(root, func(t *testing.T) {
@@ -242,6 +319,16 @@ func TestImportChainFailurePrefix(t *testing.T) {
 			failure := &failingLayerProvider{Provider: provider, digest: chain.Layers[1].Descriptor.Digest.String()}
 			if cancelSource {
 				failure.cancel = cancel
+				// The suffix's blob is fetched while the prefix applies; the
+				// cancellation lands once the prefix is in, while the suffix
+				// downloads.
+				failure.wait = func() {
+					for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
+						if len(consumer.Manager.PersistentMetadataRows().ImportedByDiff) > 0 {
+							return
+						}
+					}
+				}
 			}
 
 			ref, err := consumer.Manager.ImportChain(ctx, supplied(chain, failure))
@@ -573,6 +660,8 @@ type failingLayerProvider struct {
 	*testutil.Provider
 	digest string
 	cancel context.CancelFunc
+	// wait, when set, runs before the failure.
+	wait func()
 }
 
 func (p *failingLayerProvider) ReaderAt(ctx context.Context, desc ocispecs.Descriptor) (content.ReaderAt, error) {
@@ -580,12 +669,13 @@ func (p *failingLayerProvider) ReaderAt(ctx context.Context, desc ocispecs.Descr
 	if err != nil || desc.Digest.String() != p.digest {
 		return reader, err
 	}
-	return &failingLayerReader{ReaderAt: reader, cancel: p.cancel}, nil
+	return &failingLayerReader{ReaderAt: reader, cancel: p.cancel, wait: p.wait}, nil
 }
 
 type failingLayerReader struct {
 	content.ReaderAt
 	cancel context.CancelFunc
+	wait   func()
 }
 
 func (r *failingLayerReader) ReadAt(p []byte, off int64) (int, error) {
@@ -595,6 +685,9 @@ func (r *failingLayerReader) ReadAt(p []byte, off int64) (int, error) {
 	n, err := r.ReaderAt.ReadAt(p, off)
 	if err != nil && err != io.EOF {
 		return n, err
+	}
+	if r.wait != nil {
+		r.wait()
 	}
 	if r.cancel != nil {
 		r.cancel()

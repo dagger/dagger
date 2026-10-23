@@ -152,7 +152,7 @@ func normalizeTransferRecord(rec PersistedRecord) (PersistedRecord, error) {
 	if err != nil {
 		return PersistedRecord{}, err
 	}
-	rec.Call = rec.Call.clone()
+	rec.Call = rec.Call.cloneSame()
 	if err := walkTransferCalls(rec.Call, func(frame *ResultCall) error { frame.ExtraDigests = transferExtras(frame.ExtraDigests); return nil }, func(ref *ResultCallRef) error { ref.shared = nil; return nil }); err != nil {
 		return PersistedRecord{}, err
 	}

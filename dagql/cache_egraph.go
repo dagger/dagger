@@ -5,10 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"time"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/util/hashutil"
 	set "github.com/hashicorp/go-set/v3"
 	"github.com/opencontainers/go-digest"
@@ -608,19 +610,28 @@ type lookupMatch struct {
 	// cache-evidence hit provenance (CacheHitRouteRecipe/Digest/Structural).
 	// Purely observational: candidate gathering and selection are unchanged.
 	route CacheHitRoute
-	// sawExpired records that expiry dropped at least one otherwise-matching
-	// result during candidate accumulation (cache-evidence miss fact).
-	sawExpired bool
+	// expired records what expiry dropped during candidate accumulation
+	// (cache-evidence miss facts).
+	expired expirySeen
+}
+
+// expirySeen records that expiry dropped at least one otherwise-matching
+// result during candidate accumulation, and whether one of them was a value a
+// Cloud merge installed. Cache-evidence miss facts only: candidate gathering
+// is unchanged.
+type expirySeen struct {
+	any    bool
+	remote bool
 }
 
 func newSharedResultSet() *set.TreeSet[*sharedResult] {
 	return set.NewTreeSet(compareSharedResults)
 }
 
-// sawExpired, when non-nil, is set to true if expiry drops at least one
-// otherwise-matching result during accumulation (cache-evidence miss fact);
-// candidate gathering itself is unchanged.
-func (c *Cache) appendDigestResultsLocked(candidates *set.TreeSet[*sharedResult], dig digest.Digest, nowUnix int64, sawExpired *bool) {
+// expired, when non-nil, records the results expiry drops during
+// accumulation (cache-evidence miss facts); candidate gathering itself is
+// unchanged.
+func (c *Cache) appendDigestResultsLocked(candidates *set.TreeSet[*sharedResult], dig digest.Digest, nowUnix int64, expired *expirySeen) {
 	if dig == "" {
 		return
 	}
@@ -629,7 +640,7 @@ func (c *Cache) appendDigestResultsLocked(candidates *set.TreeSet[*sharedResult]
 		return
 	}
 	for resID := range resultSet.Items() {
-		if res := c.servableCandidateLocked(resID, nowUnix, sawExpired); res != nil {
+		if res := c.servableCandidateLocked(resID, nowUnix, expired); res != nil {
 			candidates.Insert(res)
 		}
 	}
@@ -649,8 +660,8 @@ func (c *Cache) appendOutputEqClassResultsLocked(candidates *set.TreeSet[*shared
 }
 
 // servableCandidateLocked returns the result lookup may serve for resID, or
-// nil. sawExpired is set as in appendDigestResultsLocked.
-func (c *Cache) servableCandidateLocked(resID sharedResultID, nowUnix int64, sawExpired *bool) *sharedResult {
+// nil. expired is filled as in appendDigestResultsLocked.
+func (c *Cache) servableCandidateLocked(resID sharedResultID, nowUnix int64, expired *expirySeen) *sharedResult {
 	res := c.resultsByID[resID]
 	if res == nil {
 		return nil
@@ -663,22 +674,23 @@ func (c *Cache) servableCandidateLocked(resID sharedResultID, nowUnix int64, saw
 		return nil
 	}
 	if c.resultExpiredAtLocked(res, nowUnix) {
-		if sawExpired != nil {
-			*sawExpired = true
+		if expired != nil {
+			expired.any = true
+			expired.remote = expired.remote || res.imported
 		}
 		return nil
 	}
 	return res
 }
 
-func (c *Cache) appendTermSetResultsLocked(candidates *set.TreeSet[*sharedResult], termSet *set.TreeSet[egraphTermID], nowUnix int64, sawExpired *bool) {
+func (c *Cache) appendTermSetResultsLocked(candidates *set.TreeSet[*sharedResult], termSet *set.TreeSet[egraphTermID], nowUnix int64, expired *expirySeen) {
 	if termSet == nil {
 		return
 	}
 
 	for termID := range termSet.Items() {
 		for resID := range c.termResults[termID] {
-			if res := c.servableCandidateLocked(resID, nowUnix, sawExpired); res != nil {
+			if res := c.servableCandidateLocked(resID, nowUnix, expired); res != nil {
 				candidates.Insert(res)
 			}
 		}
@@ -702,7 +714,7 @@ func (c *Cache) appendTermSetResultsLocked(candidates *set.TreeSet[*sharedResult
 		}
 		seenOutputEqClasses[outputEqID] = struct{}{}
 		for dig := range c.eqClassToDigests[outputEqID] {
-			c.appendDigestResultsLocked(candidates, digest.Digest(dig), nowUnix, sawExpired)
+			c.appendDigestResultsLocked(candidates, digest.Digest(dig), nowUnix, expired)
 		}
 	}
 }
@@ -768,7 +780,7 @@ func (c *Cache) lookupMatchForDigestsLocked(recipeDigest digest.Digest, extraDig
 	}
 
 	candidates := newSharedResultSet()
-	c.appendDigestResultsLocked(candidates, recipeDigest, nowUnix, &match.sawExpired)
+	c.appendDigestResultsLocked(candidates, recipeDigest, nowUnix, &match.expired)
 	if !candidates.Empty() {
 		match.candidates = candidates
 		match.hitRecipeDigest = true
@@ -776,7 +788,7 @@ func (c *Cache) lookupMatchForDigestsLocked(recipeDigest digest.Digest, extraDig
 		return match
 	}
 	for _, extra := range extraDigests {
-		c.appendDigestResultsLocked(candidates, extra.Digest, nowUnix, &match.sawExpired)
+		c.appendDigestResultsLocked(candidates, extra.Digest, nowUnix, &match.expired)
 	}
 	if !candidates.Empty() {
 		match.candidates = candidates
@@ -830,13 +842,26 @@ func (c *Cache) lookupMatchForCallLocked(
 			match.termSetSize = termSet.Size()
 		}
 		candidates := newSharedResultSet()
-		c.appendTermSetResultsLocked(candidates, termSet, nowUnix, &match.sawExpired)
+		c.appendTermSetResultsLocked(candidates, termSet, nowUnix, &match.expired)
 		if !candidates.Empty() {
 			match.candidates = candidates
 			match.route = CacheHitRouteStructural
 		}
 	}
 	return match
+}
+
+// freshInputsLocked returns the indices of the input classes that are the
+// input of no term: no term can match while one of them is, so they are the
+// inputs new to the cache. nil when there are none. Requires egraphMu.
+func (c *Cache) freshInputsLocked(inputEqIDs []eqClassID) []int {
+	var fresh []int
+	for i, id := range inputEqIDs {
+		if len(c.inputEqClassToTerms[id]) == 0 {
+			fresh = append(fresh, i)
+		}
+	}
+	return fresh
 }
 
 func (c *Cache) indexResultDigestsLocked(res *sharedResult, requestFrame, responseFrame *ResultCall) error {
@@ -972,13 +997,24 @@ func (c *Cache) lookupCacheForRequestLocked(
 			ev.HitRemote = hitRes.imported
 			ev.HitMergedAtUnixNano = hitRes.mergedAtUnixNano
 		} else {
-			ev.MissSawExpired = match.sawExpired
+			ev.MissSawExpired = match.expired.any
+			ev.MissExpiredRemote = match.expired.remote
 			// Expiry is applied during accumulation, so a non-empty candidate
 			// set on a miss means every surviving candidate failed the
 			// session-resource filter.
 			ev.MissIncompatibleCandidates = match.candidates != nil && !match.candidates.Empty()
+			if ev.MissIncompatibleCandidates {
+				for res := range match.candidates.Items() {
+					if res.imported {
+						ev.MissIncompatibleRemote = true
+						break
+					}
+				}
+			}
 			if !match.primaryLookupPossible {
 				ev.MissUnknownInputIndex = match.missingInputIndex
+			} else {
+				ev.MissFreshInputs = c.freshInputsLocked(match.inputEqIDs)
 			}
 		}
 	}
@@ -1012,6 +1048,9 @@ func (c *Cache) lookupCacheForRequestLocked(
 	if err := c.teachResultIdentityLocked(ctx, res, req.ResultCall, requestDigest, requestSelf, requestInputs, requestInputRefs); err != nil {
 		return nil, false, 0, err
 	}
+	if err := c.recordTransferTermLocked(ctx, res, req.ResultCall, requestDigest, requestSelf, requestInputs, requestInputRefs); err != nil {
+		return nil, false, 0, err
+	}
 	retRes := Result[Typed]{
 		shared:   res,
 		hitCache: true,
@@ -1040,7 +1079,7 @@ func (c *Cache) lookupCacheForRequest(
 		return nil, false, nil
 	}
 
-	c.egraphMu.Lock()
+	wcprof.LockRW(ctx, &c.egraphMu, egraphMuProfIdent)
 	// One collector for this E interval: identity teaching can union classes
 	// or insert a new membership, and both are flushed before the unlock.
 	notify, notifyOwner := c.beginShareNotificationsLocked()
@@ -1106,9 +1145,12 @@ func (c *Cache) lookupCacheForRequest(
 	if req.IsPersistable {
 		// Only persistable hits pay this second graph-lock acquisition. Keep
 		// the expiry captured at hit selection even if the barrier wait took
-		// long enough to cross a wall-clock second.
+		// long enough to cross a wall-clock second. A value its call declined
+		// to persist stays unpersisted.
 		c.egraphMu.Lock()
-		c.upsertPersistedEdgeLocked(ctx, hitShared, persistedEdgeExpiresAtUnix, false)
+		if !hitShared.persistDeclined {
+			c.upsertPersistedEdgeLocked(ctx, hitShared, persistedEdgeExpiresAtUnix, false)
+		}
 		c.egraphMu.Unlock()
 	}
 
@@ -1202,7 +1244,7 @@ func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 			return fmt.Errorf("teach content digest: result %T has no call frame", res)
 		}
 		oldContentDigest := baseFrame.ContentDigest()
-		frame := baseFrame.fork()
+		frame := baseFrame.forkSame()
 
 		replaced := false
 		var replacedDigest digest.Digest
@@ -1673,6 +1715,84 @@ func (c *Cache) applyPreparedResultIdentityLocked(ctx context.Context, res *shar
 	}
 }
 
+// maxTransferTerms is how many transfer terms a result's frame keeps: the
+// first ones recorded. A module function returns its inner result to each
+// client with a term over that client's module provenance, so the terms grow
+// with the clients, while a merging engine needs only one whose inputs its
+// classes hold.
+const maxTransferTerms = 8
+
+// recordTransferTermLocked records on res's frame the term of a module
+// function call that returned res, the request's frame with the request's
+// derived digests, so that the term travels with res's record
+// (ResultCall.TransferTerms). A call without module provenance records
+// nothing, nor does res's own call, one of its recipes: its record carries
+// that identity already. Requires egraphMu.
+func (c *Cache) recordTransferTermLocked(ctx context.Context, res *sharedResult, requestFrame *ResultCall, requestDigest, requestSelf digest.Digest, requestInputs []digest.Digest, requestInputRefs []ResultCallStructuralInputRef) error {
+	if res == nil || requestFrame == nil || requestFrame.Module == nil || requestDigest == "" || requestSelf == "" {
+		return nil
+	}
+	if slices.Contains(res.recipeKeys, requestDigest) {
+		return nil
+	}
+	provenance, err := c.inputProvenanceForRefs(requestInputRefs)
+	if err != nil {
+		return err
+	}
+	term := TransferTerm{Request: requestDigest, Self: requestSelf, Inputs: slices.Clone(requestInputs)}
+	for _, kind := range provenance {
+		term.Provenance = append(term.Provenance, string(kind))
+	}
+	c.addTransferTermLocked(ctx, res, term)
+	return nil
+}
+
+// addTransferTermLocked adds the term to res's frame, unless the frame has it,
+// or has maxTransferTerms already, which it logs at debug. The frame is
+// replaced, never changed in place. Requires egraphMu.
+func (c *Cache) addTransferTermLocked(ctx context.Context, res *sharedResult, term TransferTerm) {
+	frame := res.loadResultCall()
+	if frame == nil || slices.ContainsFunc(frame.TransferTerms, term.equal) {
+		return
+	}
+	if len(frame.TransferTerms) >= maxTransferTerms {
+		slog.DebugContext(ctx, "transfer term not kept: the result's frame has the most it keeps",
+			"result", uint64(res.id), "request", term.Request, "max", maxTransferTerms)
+		return
+	}
+	next := frame.forkSame()
+	next.TransferTerms = append(next.TransferTerms, term)
+	res.storeResultCall(next)
+	c.traceResultCallFrameUpdated(ctx, res, "transfer_term", frame, next)
+}
+
+// applyTransferTermsLocked teaches res each of the transfer terms of a record
+// merged onto res, of field, from the record's frame or a held row, as the
+// engine that ran the call taught it (applyPreparedResultIdentityLocked, as a
+// remote holding's term is), and keeps it on res's frame, so that res's own
+// records carry it on. A term whose inputs res's cache doesn't know adds only
+// classes of their own: no lookup reaches it until something joins them.
+// Requires egraphMu.
+func (c *Cache) applyTransferTermsLocked(ctx context.Context, res *sharedResult, terms []TransferTerm, field string) {
+	if res == nil {
+		return
+	}
+	for _, term := range terms {
+		if term.Request == "" || term.Self == "" {
+			continue
+		}
+		provenance := make([]egraphInputProvenanceKind, len(term.Inputs))
+		for i := range provenance {
+			provenance[i] = egraphInputProvenanceKindDigest
+			if i < len(term.Provenance) && term.Provenance[i] != "" {
+				provenance[i] = egraphInputProvenanceKind(term.Provenance[i])
+			}
+		}
+		c.applyPreparedResultIdentityLocked(ctx, res, &ResultCall{Kind: ResultCallKindField, Field: field}, term.Request, term.Self, term.Inputs, provenance, term.Request)
+		c.addTransferTermLocked(ctx, res, term)
+	}
+}
+
 // addFramePostingsLocked posts a frame's recipe digest and extra digests for
 // the result. Requires egraphMu.
 func (c *Cache) addFramePostingsLocked(resID sharedResultID, recipe digest.Digest, extras []call.ExtraDigest) {
@@ -1879,6 +1999,13 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 
 	if err := c.indexResultDigestsLocked(res, requestFrame, responseFrame); err != nil {
 		return err
+	}
+	// A call that returned a result of another call, as a module function
+	// returns an inner result, leaves its term on the result's frame too.
+	if requestFrame != nil && responseFrame != nil && requestFrame != responseFrame && requestDigest != responseDigest {
+		if err := c.recordTransferTermLocked(ctx, res, requestFrame, requestDigest, requestSelf, requestInputs, requestInputRefs); err != nil {
+			return err
+		}
 	}
 	for termID := range c.resultTerms[res.id] {
 		term := c.egraphTerms[termID]

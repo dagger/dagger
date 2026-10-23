@@ -275,6 +275,8 @@ type testLeaseManager struct {
 	next      int
 	leases    map[string]leases.Lease
 	resources map[string][]leases.Resource
+	// afterCreate, when set, runs after each lease is created.
+	afterCreate func(leases.Lease)
 }
 
 func newTestLeaseManager() *testLeaseManager {
@@ -293,12 +295,16 @@ func (m *testLeaseManager) Create(_ context.Context, opts ...leases.Opt) (leases
 	}
 
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	if lease.ID == "" {
 		m.next++
 		lease.ID = fmt.Sprintf("test-lease-%d", m.next)
 	}
 	m.leases[lease.ID] = lease
+	afterCreate := m.afterCreate
+	m.mu.Unlock()
+	if afterCreate != nil {
+		afterCreate(lease)
+	}
 	return lease, nil
 }
 

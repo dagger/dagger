@@ -2,6 +2,7 @@ package main
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -32,6 +33,7 @@ func TestRemoteCacheSettings(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv(envRemoteCacheURL, tc.env)
 			t.Setenv("DAGGER_CLOUD_TOKEN", tc.token)
+			t.Setenv(envRemoteCacheEphemeral, "")
 			settings, on := remoteCacheSettings(tc.cfg)
 			if tc.url == "" {
 				require.False(t, on)
@@ -39,7 +41,76 @@ func TestRemoteCacheSettings(t *testing.T) {
 				return
 			}
 			require.True(t, on)
-			require.Equal(t, remotecache.Config{URL: tc.url, Token: tc.token, EngineVersion: engine.Version, EngineName: engineName}, settings)
+			require.Equal(t, remotecache.Config{URL: tc.url, Token: tc.token, EngineVersion: engine.Version, EngineName: engineName, Lookups: true, LookupWait: remotecache.DefaultLookupWait}, settings)
+		})
+	}
+}
+
+// Lookups are on by default, asked without waiting; the environment turns
+// them off, or sets a wait. An invalid wait keeps the default.
+func TestRemoteCacheLookupSettings(t *testing.T) {
+	t.Setenv(envRemoteCacheURL, "https://env.example")
+	t.Setenv("DAGGER_CLOUD_TOKEN", "engine-token")
+	for _, tc := range []struct {
+		name    string
+		lookups string
+		wait    string
+		on      bool
+		want    time.Duration
+	}{
+		{name: "default", on: true, want: 0},
+		{name: "off", lookups: "0", on: false, want: 0},
+		{name: "a wait", wait: "3s", on: true, want: 3 * time.Second},
+		{name: "no wait", wait: "0", on: true, want: 0},
+		{name: "an invalid wait", wait: "soon", on: true, want: 0},
+		{name: "a negative wait", wait: "-1s", on: true, want: 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(envRemoteCacheLookups, tc.lookups)
+			t.Setenv(envRemoteCacheLookupWait, tc.wait)
+			settings, on := remoteCacheSettings(config.Config{})
+			require.True(t, on)
+			require.Equal(t, tc.on, settings.Lookups)
+			require.Equal(t, tc.want, settings.LookupWait)
+		})
+	}
+}
+
+// By default an engine asks lookups without waiting: no miss waits on the
+// service unless _EXPERIMENTAL_DAGGER_REMOTE_CACHE_LOOKUP_WAIT opts in.
+func TestRemoteCacheLookupWaitIsNoneByDefault(t *testing.T) {
+	t.Setenv(envRemoteCacheURL, "https://env.example")
+	t.Setenv("DAGGER_CLOUD_TOKEN", "engine-token")
+	t.Setenv(envRemoteCacheLookups, "")
+	t.Setenv(envRemoteCacheLookupWait, "")
+	settings, on := remoteCacheSettings(config.Config{})
+	require.True(t, on)
+	require.True(t, settings.Lookups)
+	require.Zero(t, settings.LookupWait)
+}
+
+// An engine whose state does not outlive its run says so when
+// _EXPERIMENTAL_DAGGER_REMOTE_CACHE_EPHEMERAL is true, as strconv.ParseBool
+// reads it; any other value leaves it a lasting engine.
+func TestRemoteCacheEphemeral(t *testing.T) {
+	for _, tc := range []struct {
+		env       string
+		ephemeral bool
+	}{
+		{env: "", ephemeral: false},
+		{env: "1", ephemeral: true},
+		{env: "true", ephemeral: true},
+		{env: "0", ephemeral: false},
+		{env: "false", ephemeral: false},
+		{env: "yes please", ephemeral: false},
+	} {
+		t.Run(tc.env, func(t *testing.T) {
+			t.Setenv(envRemoteCacheURL, "https://env.example")
+			t.Setenv("DAGGER_CLOUD_TOKEN", "engine-token")
+			t.Setenv(envRemoteCacheEphemeral, tc.env)
+			settings, on := remoteCacheSettings(config.Config{})
+			require.True(t, on)
+			require.Equal(t, tc.ephemeral, settings.Ephemeral)
 		})
 	}
 }

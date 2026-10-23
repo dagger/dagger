@@ -1,6 +1,6 @@
 Expected stdout:
 
-AAABBBCCC
+DDDEEEFFF
 
 Expected stderr:
 
@@ -17,25 +17,25 @@ Expected stderr:
 
 $ viztest: Viztest! X.Xs CACHED
 ✔ .objectLists: String! X.Xs
-┃ AAABBBCCC
+┃ DDDEEEFFF
 ├╴$ dep: Dep! X.Xs CACHED
-├╴✔ .getFiles: [File!]! X.Xs
-│ ├╴✔ file(name: "a", contents: "AAA"): File! X.Xs
+├╴✔ .getOtherFiles: [File!]! X.Xs
+│ ├╴$ file(name: "d", contents: "DDD"): File! X.Xs CACHED
 │ │
-│ ├╴✔ file(name: "b", contents: "BBB"): File! X.Xs
+│ ├╴$ file(name: "e", contents: "EEE"): File! X.Xs CACHED
 │ │
-│ ╰╴✔ file(name: "c", contents: "CCC"): File! X.Xs
+│ ╰╴$ file(name: "f", contents: "FFF"): File! X.Xs CACHED
 │
 ╰╴✔ Dep.fileContents(files: [xxh3:XXXXXXXXXXXXXXXX, xxh3:XXXXXXXXXXXXXXXX, xxh3:XXXXXXXXXXXXXXXX]): String! X.Xs
-  ┃ AAABBBCCC
-  ├╴✔ File.contents: String! X.Xs
-  │ ┃ AAA
+  ┃ DDDEEEFFF
+  ├╴$ File.contents: String! X.Xs CACHED
+  │ ┃ DDD
   │
-  ├╴✔ File.contents: String! X.Xs
-  │ ┃ BBB
+  ├╴$ File.contents: String! X.Xs CACHED
+  │ ┃ EEE
   │
-  ╰╴✔ File.contents: String! X.Xs
-    ┃ CCC
+  ╰╴$ File.contents: String! X.Xs CACHED
+    ┃ FFF
 
 
 Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

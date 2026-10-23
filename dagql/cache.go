@@ -2196,6 +2196,17 @@ type Cache struct {
 	testBeforeTransferCommit func()
 	testAfterTransferCommit  func()
 
+	// testStoredSizeMeasure runs before StoredSizes measures each value,
+	// testStoredSizesHold after each hold of egraphMu it takes, with the
+	// hold's length, and testStoredTransferNormalized after a build
+	// normalizes a record and before it keeps it.
+	testStoredSizeMeasure        func()
+	testStoredSizesHold          func(time.Duration)
+	testStoredTransferNormalized func()
+
+	// storedSizeEncodes counts StoredSizes' first measurements of values.
+	storedSizeEncodes atomic.Uint64
+
 	offerOwners      map[offerOwnerID]*offerOwner
 	nextOfferOwnerID offerOwnerID
 	// callsMu protects in-flight call bookkeeping and arbitrary in-memory call maps.
@@ -2593,11 +2604,20 @@ type sharedResult struct {
 	inlineBorrow *PartHost
 	// Origin is immutable; slots and graph revisions are guarded by egraphMu.
 	imported bool
+	// persistDeclined records that the call that computed the entry's value
+	// declined to persist it (DeclinePersistence), so no hit persists it
+	// either. Set before the entry is indexed, and with the value when a
+	// replacement in place installs another. Guarded by egraphMu once
+	// indexed.
+	persistDeclined bool
 	// mergedAtUnixNano is when the Cloud merge that installed the entry's
 	// value committed, on an engine; 0 for a value the engine computed, and
 	// for one restored after a restart. It goes with the value. Guarded by
 	// egraphMu.
 	mergedAtUnixNano int64
+	// remoteLookupWait is the last wait of an evaluation of the entry for a
+	// remote lookup's merge (cache_remote_lookup.go), or nil.
+	remoteLookupWait atomic.Pointer[remoteLookupWait]
 	// storedParts are the parts whose layer chains are in this cache's own
 	// blob store, by part address key. Only a blob-backed cache (the Cloud)
 	// sets them. Guarded by egraphMu.
@@ -2627,6 +2647,13 @@ type sharedResult struct {
 	// that name it. Both guarded by egraphMu.
 	holders    map[HolderKey]*holding
 	recipeKeys []digest.Digest
+	// cacheHolders indexes holders by engine cache: the numbers of each
+	// engine cache's holdings on this entry, so that a read of one cache's
+	// holdings doesn't walk every other cache's (heldLocked, CacheHoldings).
+	// addHoldingLocked and removeHoldingLocked keep it, as they do holders;
+	// the Cloud's own holding on an engine's entry (noteCloudCopyLocked) is
+	// not in it. Guarded by egraphMu.
+	cacheHolders map[CacheID]map[uint64]struct{}
 	// listItems are, on a list entry, the item read at each position of its
 	// value, and listItemOf and listItemNth name that list and position on
 	// such an item (CallRequest.ListItem). Not persisted; guarded by
@@ -2724,6 +2751,9 @@ type sharedResult struct {
 	attachDepsMu     sync.Mutex
 	attachDepsWaitCh chan struct{}
 	attachDepsErr    error
+	// attachHolder is the op and span holding the attachment open, when
+	// either is recorded, for a publication that waits for it.
+	attachHolder *attachHolder
 
 	persistDecodeMu     sync.Mutex
 	persistDecodeWaitCh chan struct{}
@@ -3172,11 +3202,24 @@ type ongoingCall struct {
 	persistedEdgeExpiresAtUnix int64
 	// pendingEdge is that edge until the last waiter creates it, shared with
 	// every waiter's cache evidence. Set with needsPersistedEdge.
-	pendingEdge             *pendingRetention
+	pendingEdge *pendingRetention
+	// persistDecline is the resolver's DeclinePersistence, in sharedWorkCtx,
+	// and resDeclined the published entry's mark, read with the entry under
+	// egraphMu: a call that adopted a value another call declined doesn't
+	// persist it either.
+	persistDecline          *persistDecline
+	resDeclined             bool
 	ttlSeconds              int64
 	initCompletedResultOnce sync.Once
 	handoffHoldActive       bool
 	initCompletedResultErr  error
+	// adopted records that publication adopted the recipe's live current
+	// entry in place of the new value, and adoptedRemote and adoptedMergedAt
+	// that entry's merge origin (cache evidence). Set inside
+	// initCompletedResultOnce, read by waiters after it.
+	adopted         bool
+	adoptedRemote   bool
+	adoptedMergedAt int64
 
 	waitCh                      chan struct{}
 	cancel                      context.CancelCauseFunc
@@ -3206,6 +3249,9 @@ type ongoingCall struct {
 	// joiner has a valid wait target (target-before-primitive). Invalid when
 	// telemetry is off.
 	execSpanCtx trace.SpanContext
+	// pubSpan is the OTel dagql.publishResult span of the result's
+	// publication, while it runs.
+	pubSpan trace.Span
 
 	// profSkip snapshots the target call's frame ProfileSkip at claim time (oc.res
 	// is not yet set when joiners wait). Every singleflight wait checks this
@@ -4627,6 +4673,7 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) (rerr error) {
 		}
 	}()
 
+	c.awaitRemoteMerge(ctx, shared)
 	watch := partReselectWatch{loop: "evaluateOne"}
 	for {
 		watch.again(ctx, shared, PersistedPartAddress{})
@@ -4663,6 +4710,7 @@ func (c *Cache) EvaluateParts(ctx context.Context, res AnyResult, parts ...PartK
 		}
 	}()
 
+	c.awaitRemoteMerge(ctx, shared)
 	watch := partReselectWatch{loop: "EvaluateParts"}
 	for {
 		watch.again(ctx, shared, PersistedPartAddress{})
@@ -5035,8 +5083,10 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 		var lazyOp *wcprof.Op
 		if wcprof.Enabled(evalCtx) {
 			// The run of this result's lazy callback; the class ties the cost back
-			// to the call that created the lazy value.
+			// to the call that created the lazy value, and the ident names the
+			// task (an evaluation, or a part's acquisition or install).
 			evalCtx, lazyOp = wcprof.BeginOp(evalCtx, wcprof.OpKindLazy, profCallClass(resultCall), wcprof.OpOpts{
+				Ident:    string(group),
 				ClientID: profClientID(stackCtx),
 			})
 			attempt.profOpID = lazyOp.ID()
@@ -5811,7 +5861,19 @@ func (c *Cache) getOrInitCall(
 	ctx, profOp := wcprof.BeginOp(ctx, wcprof.OpKindCall, profCallClass(req.ResultCall), wcprof.OpOpts{
 		ClientID: profClientID(ctx),
 	})
+	// The profile reads why the lookup decided what it did from the decision's
+	// carrier, which a recording span arms; with none, it arms one for this
+	// invocation only, and disarms it after so the span sees what it would
+	// have.
+	armed := req.CacheEvidence == nil
+	if armed {
+		req.CacheEvidence = NewCacheDecision()
+	}
 	res, err := c.getOrInitCallTakingOver(ctx, sessionID, resolver, req, fn, profOp)
+	profLookupFacts(ctx, profOp, req.CacheEvidence, res)
+	if armed {
+		req.CacheEvidence = nil
+	}
 	outcome := profOp.OutcomeHint()
 	switch {
 	case err != nil:
@@ -5997,6 +6059,9 @@ func (c *Cache) getOrInitCallInner(
 		c.captureSessionResultInstallSpan(ctx, sessionID, hitRes)
 		return hitRes, nil
 	}
+	if lookup := c.noteRemoteMiss(req, callDigest); ev != nil {
+		ev.MissRemoteLookup = lookup
+	}
 
 	c.callsMu.Lock()
 	if c.ongoingCalls == nil {
@@ -6073,6 +6138,8 @@ func (c *Cache) getOrInitCallInner(
 		}
 		return nil, fmt.Errorf("acquire shared operation lease: %w", err)
 	}
+	decline := &persistDecline{}
+	sharedWorkCtx = context.WithValue(sharedWorkCtx, persistDeclineKey{}, decline)
 	oc := &ongoingCall{
 		callConcurrencyKeys:     callConcKeys,
 		ttlSeconds:              req.TTL,
@@ -6081,6 +6148,7 @@ func (c *Cache) getOrInitCallInner(
 		waiters:                 1,
 		clientScopeLease:        clientScopeLease,
 		sharedWorkCtx:           sharedWorkCtx,
+		persistDecline:          decline,
 		releaseOperationLeaseFn: releaseOperationLease,
 		profOpID:                execOp.ID(),
 		// snapshot the target's skip decision for the OTel wait condition (oc.res is not
@@ -6205,7 +6273,7 @@ func (c *Cache) lookupCacheForDigests(
 		return nil, false, nil
 	}
 
-	c.egraphMu.Lock()
+	wcprof.LockRW(ctx, &c.egraphMu, egraphMuProfIdent)
 	now := time.Now()
 	nowUnix := now.Unix()
 	match := c.lookupMatchForDigestsLocked(recipeDigest, extraDigests, nowUnix)
@@ -6378,8 +6446,12 @@ func (c *Cache) wait(
 		var pubSpan trace.Span
 		if oc.execSpanCtx.IsValid() {
 			pubSpan = beginOTelPublishResult(context.WithoutCancel(oc.sharedWorkCtx))
+			oc.pubSpan = pubSpan
 		}
-		oc.initCompletedResultErr = c.initCompletedResult(context.WithoutCancel(oc.sharedWorkCtx), resolver, oc, req, sessionID)
+		// Publication's own waits (the graph lock's) belong to pubOp; the
+		// shared execution's op has ended.
+		pubCtx := wcprof.ContextWithOpID(context.WithoutCancel(oc.sharedWorkCtx), pubOp.ID())
+		oc.initCompletedResultErr = c.initCompletedResult(pubCtx, resolver, oc, req, sessionID)
 		if pubOp != nil {
 			var resID uint64
 			if oc.res != nil {
@@ -6388,10 +6460,13 @@ func (c *Cache) wait(
 			pubOp.EndWithResult(profErrOutcome(oc.initCompletedResultErr), resID)
 		}
 		EndProfSpan(pubSpan, &oc.initCompletedResultErr)
+		oc.pubSpan = nil
 		c.callsMu.Lock()
 		oc.needsPersistedEdge = oc.initCompletedResultErr == nil &&
 			oc.res != nil &&
-			oc.isPersistable.Load()
+			oc.isPersistable.Load() &&
+			!oc.persistDecline.isDeclined() &&
+			!oc.resDeclined
 		if oc.needsPersistedEdge {
 			oc.pendingEdge = &pendingRetention{expiresAtUnix: oc.persistedEdgeExpiresAtUnix}
 		}
@@ -6431,6 +6506,9 @@ func (c *Cache) wait(
 		// The last waiter creates the edge, possibly after this call's span
 		// ends; until then the span reports it as the publication's.
 		ev.pendingEdge = oc.pendingEdge
+		ev.Adopted = oc.adopted
+		ev.AdoptedRemote = oc.adoptedRemote
+		ev.AdoptedMergedAtUnixNano = oc.adoptedMergedAt
 	}
 
 	retRes := Result[Typed]{
@@ -6559,6 +6637,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		if oc.res.attachDepsWaitCh != nil {
 			oc.res.attachDepsErr = err
 			close(oc.res.attachDepsWaitCh)
+			oc.res.attachHolder = nil
 		}
 		oc.res.attachDepsMu.Unlock()
 	}
@@ -6625,6 +6704,8 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	}
 	if !resWasCacheBacked {
 		oc.res.onRelease = joinOnRelease(c.resultSnapshotLeaseCleanup(oc.res), oc.res.onRelease)
+		// Set before the result is indexed, so every hit sees it.
+		oc.res.persistDeclined = oc.persistDecline.isDeclined()
 	}
 	requestForIndex := req
 	if oc.res.createdAtUnixNano == 0 {
@@ -6820,7 +6901,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	if c.testBeforePublicationIndex != nil {
 		c.testBeforePublicationIndex(oc)
 	}
-	c.egraphMu.Lock()
+	wcprof.LockRW(ctx, &c.egraphMu, egraphMuProfIdent)
 	// One current entry per recipe (cache_current_entry.go). A fresh value is
 	// indexed under the recipe of its stored frame, unless that recipe
 	// already has a current entry: then it adopts a live one (D1), waits for
@@ -6869,23 +6950,26 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		if !cur.noValueLocked() && !c.resultExpiredAtLocked(cur, now.Unix()) {
 			if cur.attachmentState() == resultAttachmentOpen {
 				cur.attachDepsMu.Lock()
-				waitCh := cur.attachDepsWaitCh
+				waitCh, holder := cur.attachDepsWaitCh, cur.attachHolder
 				cur.attachDepsMu.Unlock()
 				var released <-chan struct{}
 				if state := c.sessionLifecycle(sessionID); state != nil {
 					released = state.released
 				}
 				c.egraphMu.Unlock()
+				wait := beginAttachWait(ctx, oc.pubSpan, waitCh, holder)
 				if c.testPublicationWaitsOnAttachment != nil {
 					c.testPublicationWaitsOnAttachment(cur)
 				}
 				select {
 				case <-waitCh:
+					wait.end(ctx)
 					c.egraphMu.Lock()
 					continue
 				case <-released:
 				case <-ctx.Done():
 				}
+				wait.end(ctx)
 				// This publication's session was released, or its caller left,
 				// while another session's attachment is open. Waiting on would
 				// hold the session's release open for as long as that
@@ -6916,9 +7000,16 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 			}
 			resWasCacheBacked = true
 			adoptedCurrent = true
+			oc.adopted = true
+			oc.adoptedRemote = cur.imported
+			oc.adoptedMergedAt = cur.mergedAtUnixNano
 			break
 		}
-		if c.resultInUseLocked(cur) {
+		// A declined value doesn't take over the entry's retention edge, as
+		// a replacement in place would: it registers beside the entry, as a
+		// value does while the entry is in use.
+		_, retained := c.persistedEdgesByResult[cur.id]
+		if c.resultInUseLocked(cur) || (oc.res.persistDeclined && retained) {
 			c.retireResultLocked(cur)
 			break
 		}
@@ -6927,6 +7018,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		replacedInPlace = true
 		break
 	}
+	oc.resDeclined = oc.res.persistDeclined
 	// A returned cache-backed result can already be visible to lookups.
 	// TTL merge policy for shared results:
 	// - 0 means "no TTL for this writer", not necessarily "never expire globally".
@@ -7052,6 +7144,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		oc.res.attachDepsMu.Lock()
 		oc.res.attachDepsWaitCh = make(chan struct{})
 		oc.res.attachDepsErr = nil
+		oc.res.attachHolder = newAttachHolder(wcprof.CurrentOpID(ctx), oc.pubSpan)
 		oc.res.attachDepsMu.Unlock()
 	}
 	// The first E unlock of this publication, after direct-edge validation,
