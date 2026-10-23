@@ -1346,15 +1346,33 @@ func TestDefaultLookupWaitWaitsForNothing(t *testing.T) {
 	}
 }
 
+// liveConn is a recordingConn that writes no message whose context has
+// ended.
+type liveConn struct {
+	*recordingConn
+}
+
+func (c liveConn) Write(ctx context.Context, data []byte) error {
+	if err := context.Cause(ctx); err != nil {
+		return err
+	}
+	return c.recordingConn.Write(ctx, data)
+}
+
 // A lookup the service answers with an error has failed, and the next miss
 // is asked all the same; an engine with lookups off sends none.
 func TestLookupAnsweredWithAnError(t *testing.T) {
 	adapter := newFakeAdapter()
-	s, conn := lookupSession(t, adapter, 10*time.Second)
+	conn := liveConn{newRecordingConn()}
+	s := lookupSessionOn(t, adapter, conn, 10*time.Second)
 	adapter.misses <- lookupMisses(1)
 	env := conn.next(t)
 	require.Equal(t, protocol.TypeLookup, env.Type)
+	// The lookup holds its slot until it has handled its answer, and the
+	// loop holds another while it waits for the next miss.
+	require.Eventually(t, func() bool { return len(s.lookupSlots) == 2 }, 10*time.Second, time.Millisecond)
 	s.dispatch(protocol.Envelope{ID: 3, Re: env.ID, Type: protocol.TypeError, Body: json.RawMessage(`{"message": "too large"}`)})
+	require.Eventually(t, func() bool { return len(s.lookupSlots) < 2 }, 10*time.Second, time.Millisecond, "the lookup handles its error")
 	adapter.misses <- lookupMisses(1)
 	require.Equal(t, protocol.TypeLookup, conn.next(t).Type, "the next miss is asked")
 	require.NoError(t, s.ctx.Err(), "the connection survives")
