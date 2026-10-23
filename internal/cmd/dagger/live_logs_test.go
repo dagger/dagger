@@ -2,6 +2,7 @@ package daggercmd
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"sync"
 	"testing"
@@ -10,6 +11,9 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	otlplogsv1 "go.opentelemetry.io/proto/otlp/logs/v1"
@@ -18,6 +22,7 @@ import (
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/archive"
+	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/internal/tracesource"
 )
 
@@ -276,4 +281,243 @@ func TestLiveLogsFinishCatchesUp(t *testing.T) {
 	l.subscribe(idtui.LogRequest{Span: liveTestSpan(2)})
 	require.NoError(t, l.finish(t.Context()))
 	require.Equal(t, []string{"a1", "b1", "a2", "b2"}, out.got())
+}
+
+type exitEvents struct {
+	mu     sync.Mutex
+	events []string
+}
+
+func (e *exitEvents) add(event string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.events = append(e.events, event)
+}
+
+func (e *exitEvents) got() []string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return slices.Clone(e.events)
+}
+
+type fakeExitSession struct {
+	events  *exitEvents
+	barrier error
+}
+
+func (s fakeExitSession) TelemetryBarrier(context.Context) error {
+	s.events.add("barrier")
+	return s.barrier
+}
+
+func (s fakeExitSession) WaitTelemetryIdle(context.Context, time.Duration) {
+	s.events.add("wait idle")
+}
+
+// fakeExitFrontend requests span 2 for its final render, and takes span 9's
+// output as the primary output.
+type fakeExitFrontend struct {
+	events  *exitEvents
+	live    *liveLogs
+	primary []string
+}
+
+func (f *fakeExitFrontend) LiveLogs() (bool, bool) { return true, false }
+func (f *fakeExitFrontend) SetLiveLogs(dagui.TraceID, func(idtui.LogRequest)) sdklog.Exporter {
+	return nil
+}
+func (f *fakeExitFrontend) RequestFinalLogs() {
+	f.events.add("request final logs")
+	f.live.subscribe(idtui.LogRequest{Span: liveTestSpan(2)})
+}
+func (f *fakeExitFrontend) PrimarySpan() dagui.SpanID { return liveTestSpan(9) }
+func (f *fakeExitFrontend) SetPrimaryOutput(records []sdklog.Record) {
+	f.events.add("set primary output")
+	for _, rec := range records {
+		f.primary = append(f.primary, rec.Body().AsString())
+	}
+}
+func (f *fakeExitFrontend) LiveLogsCoverage([]idtui.LogTarget) []idtui.LogCoverage { return nil }
+
+// TestFinishLiveLogsInterrupted: against a hung engine, an interrupt during
+// the exit ends it promptly -- the TUI's Ctrl-C canceling the run's context,
+// or a SIGINT after the run was already canceled -- whether it hangs in the
+// barrier or in the primary output's read, whose final render gets what was
+// read so far. A run canceled before exit still gets its reads.
+func TestFinishLiveLogsInterrupted(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// canceledRun cancels the run's context before exit; interrupting
+		// is then a SIGINT, and otherwise canceling the run's context.
+		canceledRun, hangBarrier, hangPrimary bool
+	}{
+		{name: "ctrl-c in barrier", hangBarrier: true},
+		{name: "ctrl-c in primary read", hangPrimary: true},
+		{name: "sigint in barrier", canceledRun: true, hangBarrier: true},
+		{name: "sigint in primary read", canceledRun: true, hangPrimary: true},
+		{name: "run canceled before exit", canceledRun: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sigintCtx, sigint := context.WithCancel(t.Context())
+			oldInterrupts := exitInterrupts
+			exitInterrupts = func(ctx context.Context) (context.Context, context.CancelFunc) {
+				ctx, stop := context.WithCancel(ctx)
+				stopAfter := context.AfterFunc(sigintCtx, stop)
+				return ctx, func() { stopAfter(); stop() }
+			}
+			t.Cleanup(func() { exitInterrupts = oldInterrupts })
+
+			events := &exitEvents{}
+			hung := make(chan struct{}, 2)
+			hang := func(ctx context.Context) error {
+				hung <- struct{}{}
+				<-ctx.Done()
+				return ctx.Err()
+			}
+			sess := hangingExitSession{events: events}
+			if tc.hangBarrier {
+				sess.hang = hang
+			}
+			reader := logReaderFunc(func(ctx context.Context, _ string, q tracesource.LogQuery, cb func(context.Context, *collogspb.ExportLogsServiceRequest, string) error) error {
+				span := q.Spans[0].SpanID
+				events.add("read " + span[len(span)-2:])
+				if span != liveTestSpan(9).String() {
+					return nil
+				}
+				if err := cb(ctx, liveLogRequest([]liveLogRow{{span: 9, body: "partial"}}), "1"); err != nil {
+					return err
+				}
+				if tc.hangPrimary {
+					return hang(ctx)
+				}
+				return nil
+			})
+			live := newLiveLogs(reader, "trace", &bodyCollector{}, false)
+			fe := &fakeExitFrontend{events: events, live: live}
+			live.frontend = fe
+
+			runCtx, cancelRun := context.WithCancel(t.Context())
+			defer cancelRun()
+			interrupt := cancelRun
+			if tc.canceledRun {
+				cancelRun()
+				interrupt = sigint
+			}
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				finishLiveLogs(runCtx, sess, live)
+			}()
+			if tc.hangBarrier || tc.hangPrimary {
+				<-hung
+				interrupt()
+			}
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				t.Fatal("exit not interrupted")
+			}
+			require.NotContains(t, events.got(), "wait idle", "no quiet wait once interrupted")
+			require.Contains(t, events.got(), "set primary output")
+			if !tc.hangBarrier {
+				require.Equal(t, []string{"partial"}, fe.primary, "the primary output read so far is written")
+			}
+		})
+	}
+}
+
+type hangingExitSession struct {
+	events *exitEvents
+	hang   func(context.Context) error
+}
+
+func (s hangingExitSession) TelemetryBarrier(ctx context.Context) error {
+	s.events.add("barrier")
+	if s.hang != nil {
+		return s.hang(ctx)
+	}
+	return nil
+}
+
+func (s hangingExitSession) WaitTelemetryIdle(context.Context, time.Duration) {
+	s.events.add("wait idle")
+}
+
+// TestFlushableSpanForwarder: the frontend's batching processors hand what
+// the session delivered on when the barrier flushes the forwarder.
+func TestFlushableSpanForwarder(t *testing.T) {
+	frontend := tracetest.NewInMemoryExporter()
+	batch := sdktrace.NewBatchSpanProcessor(frontend, sdktrace.WithBatchTimeout(time.Hour))
+	t.Cleanup(func() { _ = batch.Shutdown(context.Background()) })
+	fwd := flushableSpanForwarder{telemetry.SpanForwarder{Processors: []sdktrace.SpanProcessor{batch}}}
+	sampled := trace.NewSpanContext(trace.SpanContextConfig{TraceID: trace.TraceID{1}, SpanID: trace.SpanID{1}, TraceFlags: trace.FlagsSampled})
+	require.NoError(t, fwd.ExportSpans(t.Context(), tracetest.SpanStubs{{Name: "just ended", SpanContext: sampled}}.Snapshots()))
+	require.Empty(t, frontend.GetSpans())
+	require.NoError(t, fwd.ForceFlush(t.Context()))
+	require.Len(t, frontend.GetSpans(), 1)
+}
+
+type logReaderFunc func(context.Context, string, tracesource.LogQuery, func(context.Context, *collogspb.ExportLogsServiceRequest, string) error) error
+
+func (f logReaderFunc) ReadLogs(ctx context.Context, traceID string, q tracesource.LogQuery, cb func(context.Context, *collogspb.ExportLogsServiceRequest, string) error) error {
+	return f(ctx, traceID, q, cb)
+}
+
+// TestFinishLiveLogs: at exit, the barrier comes first -- with no quiet
+// wait unless the engine lacks it or it fails -- then the final render's
+// requests and their read, then the primary output, whose failed read is
+// retried whole.
+func TestFinishLiveLogs(t *testing.T) {
+	oldDelay := liveLogsRetryDelay
+	liveLogsRetryDelay = time.Millisecond
+	t.Cleanup(func() { liveLogsRetryDelay = oldDelay })
+
+	for _, tc := range []struct {
+		name    string
+		barrier error
+		want    []string
+	}{
+		{name: "barrier", want: []string{"barrier"}},
+		{name: "older engine", barrier: client.ErrTelemetryBarrierUnsupported, want: []string{"barrier", "wait idle"}},
+		{name: "barrier fails", barrier: errors.New("boom"), want: []string{"barrier", "wait idle"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			events := &exitEvents{}
+			primaryReads := 0
+			reader := logReaderFunc(func(ctx context.Context, _ string, q tracesource.LogQuery, cb func(context.Context, *collogspb.ExportLogsServiceRequest, string) error) error {
+				span := q.Spans[0].SpanID
+				events.add("read " + span[len(span)-2:])
+				switch span {
+				case liveTestSpan(2).String():
+					return cb(ctx, liveLogRequest([]liveLogRow{{span: 2, body: "failure"}}), "3")
+				case liveTestSpan(9).String():
+					primaryReads++
+					if err := cb(ctx, liveLogRequest([]liveLogRow{{span: 9, body: "out"}}), "1"); err != nil {
+						return err
+					}
+					if primaryReads == 1 {
+						return errors.New("connection reset")
+					}
+				}
+				return nil
+			})
+			out := &bodyCollector{}
+			live := newLiveLogs(reader, "trace", out, false)
+			fe := &fakeExitFrontend{events: events, live: live}
+			live.frontend = fe
+
+			finishLiveLogs(t.Context(), fakeExitSession{events: events, barrier: tc.barrier}, live)
+
+			want := append(slices.Clone(tc.want),
+				"request final logs",
+				"read 02",
+				"read 09",
+				"read 09",
+				"set primary output",
+			)
+			require.Equal(t, want, events.got())
+			require.Equal(t, []string{"failure"}, out.got())
+			require.Equal(t, []string{"out"}, fe.primary, "a retried read replaces the failed one's records")
+		})
+	}
 }
