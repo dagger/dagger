@@ -121,7 +121,7 @@ func startEbpfProgram(ctx context.Context, prog ebpfProgram) func() {
 	}
 }
 
-// engineLogWriter carries the engine's log output to stderr once set up.
+// engineLogWriter carries the engine's log output to stderr once it is set up.
 var engineLogWriter *slog.Writer
 
 func addFlags(app *cli.App) {
