@@ -157,6 +157,31 @@ func (c *Client) Unsealed(ctx context.Context, traceID string) (UnsealedArchive,
 	return UnsealedArchive{Cut: manifest.HighWater}, nil
 }
 
+// Inspect discovers a sealed archive's identity and fixed cut without
+// downloading the bootstrap or historical telemetry. Any other state fails
+// with an ErrState request error; see Unsealed for a best-effort read.
+func (c *Client) Inspect(ctx context.Context, traceID string) (Manifest, error) {
+	resp, err := c.get(ctx, archivePath+"/"+url.PathEscape(traceID), nil, "application/json", 0)
+	if err != nil {
+		return Manifest{}, err
+	}
+	defer resp.Body.Close()
+	if err := expectOK(resp); err != nil {
+		return Manifest{}, err
+	}
+	if err := expectContentType(resp, "application/json"); err != nil {
+		return Manifest{}, corrupt(err)
+	}
+	var m Manifest
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&m); err != nil {
+		return Manifest{}, corrupt(fmt.Errorf("decode archive manifest: %w", err))
+	}
+	if m.TraceID != traceID || m.State != StateClosed || m.SealAt == nil || m.HighWater.Spans < 0 || m.HighWater.Logs < 0 || m.HighWater.Metrics < 0 {
+		return Manifest{}, corrupt(errors.New("archive manifest identity, state or cut mismatch"))
+	}
+	return m, nil
+}
+
 // List returns one page of archives.
 func (c *Client) List(ctx context.Context, opts ListOptions) (Page, error) {
 	query := make(url.Values)
@@ -278,6 +303,9 @@ type StreamOptions struct {
 	Cursor    int64
 	HighWater int64
 	Unsealed  bool
+	// Selections are independent reads; resume a cursor only with the same selection.
+	Spans *SpanSelection
+	Logs  *LogSelection
 }
 
 // Traces reads a finite framed trace stream. It returns the last safe resume
@@ -329,7 +357,10 @@ func (c *Client) stream(ctx context.Context, traceID, signal string, opts Stream
 	if cursor < 0 || opts.HighWater < 0 || cursor > opts.HighWater {
 		return cursor, fmt.Errorf("invalid archive stream cursors: cursor=%d high-water=%d", cursor, opts.HighWater)
 	}
-	query := make(url.Values)
+	query, err := opts.SelectionQuery(signal)
+	if err != nil {
+		return cursor, err
+	}
 	if opts.Unsealed {
 		query.Set("unsealed", "1")
 	}
