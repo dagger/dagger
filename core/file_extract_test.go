@@ -6,17 +6,23 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
 
+	"github.com/containerd/containerd/v2/plugins/snapshots/native"
 	"github.com/stretchr/testify/require"
+
+	bkcache "github.com/dagger/dagger/engine/snapshots"
+	bkcontainerd "github.com/dagger/dagger/engine/snapshots/containerd"
 )
 
 type testZipEntry struct {
@@ -184,6 +190,135 @@ func TestExtractZipStripComponents(t *testing.T) {
 		"sub drwxr-xr-x",
 		"sub/b -rw-r--r--",
 	}, listTree(t, dest))
+}
+
+// As tar --strip-components, stripping counts a "." element.
+func TestExtractStripComponentsCountsDot(t *testing.T) {
+	archive := writeTestZip(t,
+		testZipEntry{name: "./LICENSE", body: "license"},
+		testZipEntry{name: "./top/f", body: "f"},
+	)
+	dest, _, err := extractTestArchive(t, archive, 1)
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"LICENSE -rw-r--r--",
+		"top drwxr-xr-x",
+		"top/f -rw-r--r--",
+	}, listTree(t, dest))
+}
+
+// A recorded mode of 000 is kept; only a missing mode gets the default.
+func TestExtractZipZeroMode(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	hdr := &zip.FileHeader{Name: "locked", Method: zip.Deflate}
+	hdr.SetMode(0)
+	_, err := zw.CreateHeader(hdr)
+	require.NoError(t, err)
+	require.NoError(t, zw.Close())
+	archive := filepath.Join(t.TempDir(), "zero.zip")
+	require.NoError(t, os.WriteFile(archive, buf.Bytes(), 0o644))
+	dest, _, err := extractTestArchive(t, archive, 0)
+	require.NoError(t, err)
+	require.Equal(t, []string{"locked ----------"}, listTree(t, dest))
+}
+
+// cancelingReaderAt cancels once more than limit bytes have been read.
+type cancelingReaderAt struct {
+	r      io.ReaderAt
+	limit  int64
+	read   atomic.Int64
+	cancel context.CancelFunc
+}
+
+func (c *cancelingReaderAt) ReadAt(p []byte, off int64) (int, error) {
+	n, err := c.r.ReadAt(p, off)
+	if c.read.Add(int64(n)) > c.limit {
+		c.cancel()
+	}
+	return n, err
+}
+
+// Canceling stops an extraction in the middle of an entry.
+func TestExtractZipCanceled(t *testing.T) {
+	const size = 256 << 20
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	w, err := zw.CreateHeader(&zip.FileHeader{Name: "zeros", Method: zip.Deflate})
+	require.NoError(t, err)
+	chunk := make([]byte, 1<<20)
+	for range size / len(chunk) {
+		_, err := w.Write(chunk)
+		require.NoError(t, err)
+	}
+	require.NoError(t, zw.Close())
+	dest := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// The central directory is read first; cancel a little into the entry.
+	r := &cancelingReaderAt{r: bytes.NewReader(buf.Bytes()), limit: 64 << 10, cancel: cancel}
+	err = extractZip(ctx, r, int64(buf.Len()), dest, 0)
+	require.ErrorIs(t, err, context.Canceled)
+	info, err := os.Stat(filepath.Join(dest, "zeros"))
+	require.NoError(t, err)
+	require.Less(t, info.Size(), int64(size))
+}
+
+func TestExtractTarCanceled(t *testing.T) {
+	archive := writeTestTarGz(t, testTarEntry{name: "f", body: "f"})
+	parent := t.TempDir()
+	dest := filepath.Join(parent, "dest")
+	require.NoError(t, os.Mkdir(dest, 0o755))
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := extractArchive(ctx, archive, dest, 0)
+	require.ErrorIs(t, err, context.Canceled)
+	entries, err := os.ReadDir(dest)
+	require.NoError(t, err)
+	require.Empty(t, entries)
+}
+
+// releaseRecorder records whether the mutable refs its New returns are
+// released.
+type releaseRecorder struct {
+	bkcache.Accessor
+	released bool
+}
+
+func (r *releaseRecorder) New(ctx context.Context, parent bkcache.ImmutableRef, opts ...bkcache.RefOption) (bkcache.MutableRef, error) {
+	ref, err := r.Accessor.New(ctx, parent, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &recordedMutableRef{MutableRef: ref, recorder: r}, nil
+}
+
+type recordedMutableRef struct {
+	bkcache.MutableRef
+	recorder *releaseRecorder
+}
+
+func (r *recordedMutableRef) Release(ctx context.Context) error {
+	r.recorder.released = true
+	return r.MutableRef.Release(ctx)
+}
+
+// A failed extraction releases the snapshot it was writing.
+func TestExtractToSnapshotReleasesOnError(t *testing.T) {
+	snapshotter, err := native.NewSnapshotter(t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, snapshotter.Close()) })
+	sm, err := bkcache.NewSnapshotManager(bkcache.SnapshotManagerOpt{
+		Snapshotter:   bkcontainerd.NewSnapshotter("native", snapshotter, "extract-test"),
+		MountPoolRoot: t.TempDir(),
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, sm.Close()) })
+	recorder := &releaseRecorder{Accessor: sm}
+	archive := writeTestZip(t, testZipEntry{name: "../evil", body: "evil"})
+	_, err = extractToSnapshot(context.Background(), recorder, archive, "test.zip", 0)
+	require.ErrorContains(t, err, "leaves the extraction directory")
+	require.True(t, recorder.released)
 }
 
 func TestExtractZipDuplicateEntries(t *testing.T) {

@@ -108,27 +108,49 @@ func (dir *Directory) Extract(ctx context.Context, src dagql.ObjectResult[*File]
 	if err != nil {
 		return err
 	}
-	newRef, err := query.SnapshotManager().New(ctx, nil,
-		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-		bkcache.WithDescription(fmt.Sprintf("extract %s", path.Base(srcPath))))
-	if err != nil {
+	name := path.Base(srcPath)
+	var snapshot bkcache.ImmutableRef
+	err = src.Self().Mount(ctx, src, func(archivePath string) error {
+		snapshot, err = extractToSnapshot(ctx, query.SnapshotManager(), archivePath, name, stripComponents)
 		return err
-	}
-	err = MountRef(ctx, newRef, func(root string, _ *mount.Mount) error {
-		return src.Self().Mount(ctx, src, func(archivePath string) error {
-			return TrimErrPathPrefix(extractArchive(ctx, archivePath, root, stripComponents), root)
-		})
 	})
 	if err != nil {
-		return fmt.Errorf("extract %s: %w", path.Base(srcPath), err)
-	}
-	snapshot, err := newRef.Commit(ctx)
-	if err != nil {
-		return err
+		if snapshot != nil {
+			err = errors.Join(err, snapshot.Release(context.WithoutCancel(ctx)))
+		}
+		return fmt.Errorf("extract %s: %w", name, err)
 	}
 	dir.SetPath("/")
 	dir.SetSnapshot(snapshot)
 	return nil
+}
+
+// extractToSnapshot extracts the archive at archivePath, named name, into a
+// new snapshot from sm.
+func extractToSnapshot(ctx context.Context, sm bkcache.Accessor, archivePath, name string, stripComponents int) (_ bkcache.ImmutableRef, rerr error) {
+	newRef, err := sm.New(ctx, nil,
+		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription(fmt.Sprintf("extract %s", name)))
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if newRef != nil {
+			rerr = errors.Join(rerr, newRef.Release(context.WithoutCancel(ctx)))
+		}
+	}()
+	err = MountRef(ctx, newRef, func(root string, _ *mount.Mount) error {
+		return TrimErrPathPrefix(extractArchive(ctx, archivePath, root, stripComponents), root)
+	})
+	if err != nil {
+		return nil, err
+	}
+	snapshot, err := newRef.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	newRef = nil
+	return snapshot, nil
 }
 
 // extractArchive extracts the archive at archivePath into dest, an empty
@@ -151,7 +173,21 @@ func extractArchive(ctx context.Context, archivePath, dest string, stripComponen
 	if isZipMagic(magic[:n]) {
 		return extractZip(ctx, f, st.Size(), dest, stripComponents)
 	}
-	return extractTar(f, dest, stripComponents)
+	return extractTar(ctxReader{ctx, f}, dest, stripComponents)
+}
+
+// ctxReader stops reading once ctx is done, so a canceled extraction stops
+// decompressing.
+type ctxReader struct {
+	ctx context.Context
+	r   io.Reader
+}
+
+func (r ctxReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.r.Read(p)
 }
 
 // isZipMagic reports whether b starts a zip: a local file header, or the
@@ -161,24 +197,26 @@ func isZipMagic(b []byte) bool {
 }
 
 // archiveEntryPath is the slash-separated path, relative to the extraction
-// root, that an archive entry named name extracts to, with its first strip
-// elements removed; "" for an entry that is the root, or that stripping
-// removes. As for tar, a leading "/" is dropped; a name that leaves the root
-// is an error.
+// root, that an archive entry named name extracts to; "" for an entry that
+// is the root, or that stripping removes. As tar --strip-components does,
+// the first strip elements of the name as stored are removed, "." elements
+// included, then the rest is cleaned. As for tar, a leading "/" is dropped;
+// a path that leaves the root is an error.
 func archiveEntryPath(name string, strip int) (string, error) {
-	rel := path.Clean(strings.TrimLeft(name, "/"))
+	rel := strings.TrimLeft(name, "/")
+	for range strip {
+		_, after, ok := strings.Cut(rel, "/")
+		if !ok {
+			return "", nil
+		}
+		rel = strings.TrimLeft(after, "/")
+	}
+	rel = path.Clean(rel)
 	if rel == ".." || strings.HasPrefix(rel, "../") {
 		return "", fmt.Errorf("archive entry %q: path leaves the extraction directory", name)
 	}
 	if rel == "." {
 		return "", nil
-	}
-	if strip > 0 {
-		elems := strings.Split(rel, "/")
-		if len(elems) <= strip {
-			return "", nil
-		}
-		rel = strings.Join(elems[strip:], "/")
 	}
 	return rel, nil
 }
@@ -269,7 +307,7 @@ func extractZip(ctx context.Context, r io.ReaderAt, size int64, dest string, str
 			if err := egctx.Err(); err != nil {
 				return err
 			}
-			return writeZipFile(e, filepath.Join(dest, e.path))
+			return writeZipFile(egctx, e, filepath.Join(dest, e.path))
 		})
 	}
 	if err := eg.Wait(); err != nil {
@@ -306,13 +344,14 @@ func extractZip(ctx context.Context, r io.ReaderAt, size int64, dest string, str
 	return nil
 }
 
-// zipEntryPerm is the permission bits e records, or def if it records
-// none: only Unix and macOS creators record them.
+// zipEntryPerm is the permission bits f records, or def if it records
+// none: only Unix and macOS creators record a Unix mode, in the high bits
+// of the external attributes.
 func zipEntryPerm(f *zip.File, mode fs.FileMode, def fs.FileMode) fs.FileMode {
 	switch f.CreatorVersion >> 8 {
 	case zipCreatorUnix, zipCreatorMacOSX:
-		if perm := mode.Perm(); perm != 0 {
-			return perm
+		if f.ExternalAttrs>>16 != 0 {
+			return mode.Perm()
 		}
 	}
 	return def
@@ -323,7 +362,7 @@ var zipCopyBufPool = sync.Pool{New: func() any {
 	return &buf
 }}
 
-func writeZipFile(e *zipEntry, dst string) (rerr error) {
+func writeZipFile(ctx context.Context, e *zipEntry, dst string) (rerr error) {
 	r, err := e.file.Open()
 	if err != nil {
 		return fmt.Errorf("archive entry %q: %w", e.file.Name, err)
@@ -340,7 +379,10 @@ func writeZipFile(e *zipEntry, dst string) (rerr error) {
 	}()
 	buf := zipCopyBufPool.Get().(*[]byte)
 	defer zipCopyBufPool.Put(buf)
-	if _, err := io.CopyBuffer(w, r, *buf); err != nil {
+	if _, err := io.CopyBuffer(w, ctxReader{ctx, r}, *buf); err != nil {
+		if ctx.Err() != nil {
+			return err
+		}
 		return fmt.Errorf("archive entry %q: %w", e.file.Name, err)
 	}
 	if !e.file.Modified.IsZero() {
