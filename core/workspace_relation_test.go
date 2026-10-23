@@ -58,7 +58,7 @@ func localWorkspace(hostPath, clientID, userConfigKey string) *Workspace {
 
 func gitRefWorkspace(ref dagql.Result[*GitRef]) *Workspace {
 	ws := &Workspace{Address: "git-ref://" + ref.Self().Ref.SHA}
-	ws.SetSource(NewWorkspaceSourceGitRef(ref, false))
+	ws.SetSource(NewWorkspaceSourceGitRef(ref))
 	return ws
 }
 

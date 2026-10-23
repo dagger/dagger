@@ -118,7 +118,7 @@ func testWorkspaceGitCheckoutReuse(t *testing.T, discard bool, order string) {
 	require.NoError(t, err)
 	ref = attachedRef.(dagql.ObjectResult[*core.GitRef])
 	base := &core.Workspace{}
-	base.SetSource(core.NewWorkspaceSourceGitRef(ref.Result, false))
+	base.SetSource(core.NewWorkspaceSourceGitRef(ref.Result))
 	overlay := &core.Workspace{}
 	overlay.SetSource(core.NewWorkspaceSourceOverlay(base.Source(), nil, nil, dagql.ObjectResult[*core.Changeset]{}))
 	workspaces := []dagql.ObjectResult[*core.WorkspaceGit]{
@@ -321,7 +321,7 @@ func TestWorkspaceExportBaseCandidate(t *testing.T) {
 			require.NoError(t, err)
 			ref := objectResult(t, srv, "export-ref", &core.GitRef{Repo: objectResult(t, srv, "export-repo", repo), Backend: refBackend, Ref: gitRef})
 			ws := &core.Workspace{}
-			ws.SetSource(core.NewWorkspaceSourceGitRef(ref.Result, false))
+			ws.SetSource(core.NewWorkspaceSourceGitRef(ref.Result))
 			switch scenario {
 			case "live":
 				ws.ClientID = "another-client"
@@ -471,7 +471,7 @@ func TestCheckpointHostHistorySkipsBundles(t *testing.T) {
 	repo := resolverAttach(t, ctx, srv, cache, "captured-host-repo", &core.GitRepository{Backend: &core.RemoteGitRepository{URL: url}})
 	ref := resolverAttach(t, ctx, srv, cache, "captured-host-ref", &core.GitRef{Repo: repo, Ref: &gitutil.Ref{SHA: anchor, Name: anchor}})
 	frozen := &core.Workspace{}
-	frozen.SetSource(core.NewWorkspaceSourceGitRef(ref.Result, false))
+	frozen.SetSource(core.NewWorkspaceSourceGitRef(ref.Result))
 	captured := &core.Workspace{ClientID: owner.ClientID}
 	captured.SetHostPath("/approved")
 	metadata := &gitsession.CaptureGitMetadata{RemoteUrl: url.Remote(), BaseSha: anchor, HeadSha: anchor}
@@ -537,7 +537,7 @@ func TestCheckpointHostHistorySkipsSHA256(t *testing.T) {
 	repo := resolverAttach(t, ctx, srv, cache, "captured-sha256-repo", &core.GitRepository{Backend: &core.RemoteGitRepository{URL: url}})
 	ref := resolverAttach(t, ctx, srv, cache, "captured-sha256-ref", &core.GitRef{Repo: repo, Ref: &gitutil.Ref{SHA: anchor, Name: anchor}})
 	frozen := &core.Workspace{}
-	frozen.SetSource(core.NewWorkspaceSourceGitRef(ref.Result, false))
+	frozen.SetSource(core.NewWorkspaceSourceGitRef(ref.Result))
 	captured := &core.Workspace{ClientID: owner.ClientID}
 	captured.SetHostPath("/approved")
 	metadata := &gitsession.CaptureGitMetadata{RemoteUrl: url.Remote(), BaseSha: anchor, HeadSha: anchor}

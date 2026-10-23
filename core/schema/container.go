@@ -1159,6 +1159,11 @@ func shouldSelectLatestImageRelease(
 
 // if the image ref has a digest, then it's immutable and we don't need to scope it to the session. If it's just a tag, then
 // we scope to the session so that resolution of a tag->digest is cached within the session but not across.
+//
+// Where a workspace lock can pin the tag, the lock in effect is part of the
+// scope too: the calling client's workspace, and any per-client cache scope a
+// lock override sets. Clients of one workspace, such as its module function
+// calls, still share a resolution; clients pinned by different locks do not.
 var fromSessionScopeInput = dagql.ImplicitInput{
 	Name: "fromSessionScope",
 	Resolver: func(ctx context.Context, args map[string]dagql.Input) (dagql.Input, error) {
@@ -1188,9 +1193,44 @@ var fromSessionScopeInput = dagql.ImplicitInput{
 		if clientMD.SessionID == "" {
 			return nil, errors.New("session ID not found in context")
 		}
-		// Tag-only refs are mutable; resolve once per session.
-		return dagql.NewString(clientMD.SessionID), nil
+		// Tag-only refs are mutable; resolve once per session, and per lock
+		// where one can pin them. The API view isn't known yet here, so this
+		// includes views that ignore the lock; they only share less.
+		lockScope, err := fromLockScope(ctx, args)
+		if err != nil {
+			return nil, err
+		}
+		return dagql.NewString(clientMD.SessionID + lockScope), nil
 	},
+}
+
+// fromLockScope names the workspace lock that can pin a container.from tag
+// lookup, as seen by the calling client. It is empty when no lock applies.
+func fromLockScope(ctx context.Context, args map[string]dagql.Input) (string, error) {
+	rawCacheScope, err := dagql.CacheScopeInput.Resolver(ctx, args)
+	if err != nil {
+		return "", err
+	}
+	cacheScope, ok := rawCacheScope.(dagql.String)
+	if !ok {
+		return "", fmt.Errorf("unexpected cache scope input type %T", rawCacheScope)
+	}
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return "", err
+	}
+	ws, err := query.CurrentWorkspace(ctx)
+	if err != nil && !errors.Is(err, core.ErrNoCurrentWorkspace) {
+		return "", err
+	}
+	if (ws == nil || ws.LockFile == "") && cacheScope == "" {
+		return "", nil
+	}
+	var wsClientID, wsAddress, wsLockFile string
+	if ws != nil {
+		wsClientID, wsAddress, wsLockFile = ws.ClientID, ws.Address, ws.LockFile
+	}
+	return ":" + hashutil.HashStrings("fromLockScope", wsClientID, wsAddress, wsLockFile, cacheScope.String()).String(), nil
 }
 
 //nolint:gocyclo

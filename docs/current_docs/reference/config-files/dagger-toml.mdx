@@ -26,6 +26,8 @@ The machine-readable schema is published at [dagger-workspace.schema.json](/refe
 
 Resolved image, Git, and vanity URL lookups are pinned in `dagger.lock` alongside the config. A workspace with multiple `dagger.toml` files can therefore contain multiple lockfiles.
 
+A remote Git workspace, such as `dagger check -W github.com/org/repo@main` or a Dagger Cloud check, uses the `dagger.lock` committed with it. Its pins apply as they do locally, but Dagger never changes the committed file: a lookup that has no entry resolves live and is not recorded.
+
 Run `dagger lock update` without selectors to refresh every supported entry in the selected lockfile. Selectors refresh matching resources:
 
 ```shell

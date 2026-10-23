@@ -10,7 +10,9 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/base64"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -319,18 +321,258 @@ func (LockfileSuite) TestDefaultRejectsConflictedLockfile(ctx context.Context, t
 	require.Equal(t, lockContents, string(lockBytes))
 }
 
-func (LockfileSuite) TestDefaultRemoteCommitDoesNotMutateLock(ctx context.Context, t *testctx.T) {
+// A remote Git workspace, as used by Dagger Cloud checks, applies the pins in
+// its committed dagger.lock. It cannot write back, so a lookup the lock has
+// no entry for resolves live and the committed lock stays as it was.
+func (LockfileSuite) TestDefaultRemoteWorkspaceUsesPins(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	imageRef, err := core.NewQuery(c).Container().From("alpine:3.20").ImageRef(ctx)
+	require.NoError(t, err)
+	_, digest, found := strings.Cut(imageRef, "@")
+	require.True(t, found, "expected canonical image ref with digest: %q", imageRef)
+
+	lock := workspace.NewLock()
+	require.NoError(t, lock.SetLookup(workspace.CoreLockNamespace, workspace.LockOperationOCISHA,
+		[]any{"docker.io/library/alpine:latest"}, digest))
+	require.NoError(t, lock.SetLookup(workspace.CoreLockNamespace, workspace.LockOperationGitSHA,
+		[]any{lockTestGitRepoURL, "refs/heads/" + lockTestGitBranchName}, lockTestGitStaleCommit))
+	lockBytes, err := lock.Marshal()
+	require.NoError(t, err)
+	remote := newRemoteLockWorkspace(ctx, t, c, string(lockBytes))
+
+	workdir := t.TempDir()
+	queryPath := writeQueryDoc(t, workdir, "query.graphql", `{
+  container {
+    from(address: "alpine:latest") {
+      imageRef
+      file(path: "/etc/alpine-release") { contents }
+    }
+  }
+  git(url: "`+lockTestGitRepoURL+`") {
+    branch(name: "`+lockTestGitBranchName+`") { commit }
+  }
+}`)
+	for _, tc := range []struct{ name, ref string }{
+		{"commit", remote.commitRef},
+		{"branch", remote.branchRef},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			out, err := hostDaggerExec(ctx, t, workdir, "--silent", "-W", tc.ref, "query", "--doc", queryPath)
+			require.NoError(t, err)
+			require.Contains(t, string(out), digest)
+			require.Contains(t, string(out), "3.20")
+			require.Contains(t, string(out), lockTestGitStaleCommit)
+			requireRemoteLockUnchanged(ctx, t, c, remote, string(lockBytes))
+			_, err = os.Stat(filepath.Join(workdir, workspace.LockFileName))
+			require.True(t, os.IsNotExist(err), "a remote workspace must not create a local lockfile")
+		})
+	}
+}
+
+func (LockfileSuite) TestDefaultRemoteWorkspaceInvalidPinFails(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	lockContents := mustMarshalOCISHALock(t, "not-a-digest")
 	remote := newRemoteLockWorkspace(ctx, t, c, lockContents)
 	workdir := t.TempDir()
 	queryPath := writeContainerFromQuery(t, workdir)
 
-	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "-W", remote.commitRef, "query", "--doc", queryPath)
+	for _, tc := range []struct{ name, ref string }{
+		{"commit", remote.commitRef},
+		{"branch", remote.branchRef},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			_, err := hostDaggerExec(ctx, t, workdir, "--silent", "-W", tc.ref, "query", "--doc", queryPath)
+			require.ErrorContains(t, err, `invalid lock digest "not-a-digest"`)
+			requireRemoteLockUnchanged(ctx, t, c, remote, lockContents)
+		})
+	}
+}
+
+func (LockfileSuite) TestDefaultRemoteWorkspaceWithoutEntryResolvesLive(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	// The lock pins other lookups than the query makes, as a stale lock does
+	// after the config or code that made its lookups changed.
+	lock := workspace.NewLock()
+	require.NoError(t, lock.SetLookup(workspace.CoreLockNamespace, workspace.LockOperationOCISHA,
+		[]any{"docker.io/library/alpine:3.19"}, "not-a-digest"))
+	require.NoError(t, lock.SetLookup(workspace.CoreLockNamespace, workspace.LockOperationGitSHA,
+		[]any{lockTestGitRepoURL, "refs/heads/not-the-queried-branch"}, "not-a-commit"))
+	staleLock, err := lock.Marshal()
 	require.NoError(t, err)
+
+	workdir := t.TempDir()
+	queryPath := writeQueryDoc(t, workdir, "query.graphql", `{
+  container {
+    from(address: "alpine:latest") { imageRef }
+  }
+  git(url: "`+lockTestGitRepoURL+`") {
+    tag(name: "`+lockTestGitTagName+`") { commit }
+  }
+}`)
+	for _, tc := range []struct {
+		name   string
+		remote remoteLockWorkspace
+		lock   string
+	}{
+		{"absent lock", newRemoteWorkspace(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("dagger.toml", "")), ""},
+		{"empty lock", newRemoteLockWorkspace(ctx, t, c, ""), ""},
+		{"stale lock", newRemoteLockWorkspace(ctx, t, c, string(staleLock)), string(staleLock)},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			for _, ref := range []string{tc.remote.commitRef, tc.remote.branchRef} {
+				out, err := hostDaggerExec(ctx, t, workdir, "--silent", "-W", ref, "query", "--doc", queryPath)
+				require.NoError(t, err)
+				require.Contains(t, string(out), "sha256:")
+				require.NotContains(t, string(out), "not-a-")
+				require.Contains(t, string(out), lockTestGitTagCommit)
+				if tc.lock != "" {
+					requireRemoteLockUnchanged(ctx, t, c, tc.remote, tc.lock)
+				}
+			}
+		})
+	}
+}
+
+// A workspace module whose Git source names a branch loads the commit the
+// committed lock pins, not the branch's current head. This is how a new
+// upstream commit of a module dependency used to reach Dagger Cloud checks.
+func (LockfileSuite) TestRemoteWorkspaceModuleUsesLockedGitRef(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	moduleSource := func(greeting string) string {
+		return "type Greeter {\n  pub hello: String! {\n    \"" + greeting + "\"\n  }\n}\n"
+	}
+	moduleRepo := core.NewQuery(c).Container().From(alpineImage).WithExec([]string{"apk", "add", "git"}).With(gitUserConfig).
+		WithWorkdir("/src").
+		WithNewFile("dagger.json", `{"name":"greeter","engineVersion":"v0.21.9","sdk":{"source":"dang"}}`).
+		WithNewFile("main.dang", moduleSource("pinned")).
+		WithExec([]string{"git", "init", "-b", "main"}).
+		WithExec([]string{"git", "add", "."}).WithExec([]string{"git", "commit", "-m", "pinned"}).
+		WithExec([]string{"git", "tag", "pinned"}).
+		WithNewFile("main.dang", moduleSource("live")).
+		WithExec([]string{"git", "add", "."}).WithExec([]string{"git", "commit", "-m", "live"})
+	module := newRemoteWorkspace(ctx, t, c, moduleRepo.Directory("/src"))
+	pinnedCommit, err := core.NewQuery(c).Git(module.repoURL).Tag("pinned").CommitSHA(ctx)
+	require.NoError(t, err)
+	require.NotEqual(t, module.commit, pinnedCommit)
+
+	config := fmt.Sprintf("[modules.greeter]\nsource = '%s@main'\nmain = true\n", module.repoURL)
+
+	// Let a local run record the module's lock entry, then point it at the
+	// older commit.
+	localDir := newWorkspaceConfigWorkdir(ctx, t, config)
+	out, err := hostDaggerOutput(ctx, t, localDir, "call", "hello")
+	require.NoError(t, err)
+	require.Equal(t, "live", strings.TrimSpace(string(out)))
+	liveLock, err := os.ReadFile(filepath.Join(localDir, workspace.LockFileName))
+	require.NoError(t, err)
+	require.Contains(t, string(liveLock), module.commit)
+	pinnedLock := strings.ReplaceAll(string(liveLock), module.commit, pinnedCommit)
+	require.NoError(t, os.WriteFile(filepath.Join(localDir, workspace.LockFileName), []byte(pinnedLock), 0o600))
+	out, err = hostDaggerOutput(ctx, t, localDir, "call", "hello")
+	require.NoError(t, err)
+	require.Equal(t, "pinned", strings.TrimSpace(string(out)))
+
+	remote := newRemoteWorkspace(ctx, t, c, core.NewQuery(c).Directory().
+		WithNewFile("dagger.toml", config).
+		WithNewFile(workspace.LockFileName, pinnedLock))
+	workdir := t.TempDir()
+	for _, tc := range []struct{ name, ref string }{
+		{"commit", remote.commitRef},
+		{"branch", remote.branchRef},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			out, err := hostDaggerOutput(ctx, t, workdir, "-W", tc.ref, "call", "hello")
+			require.NoError(t, err)
+			require.Equal(t, "pinned", strings.TrimSpace(string(out)))
+		})
+	}
+}
+
+// Selecting a workspace by branch resolves that branch live, before its lock
+// is available. A later lookup of the same ref in the session still gets the
+// pin from the workspace's lock, not the live resolution.
+func (LockfileSuite) TestRemoteWorkspaceSelectorDoesNotBypassOwnPin(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	gitSrv, _ := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("old", "old"))
+	gitSrv, err := gitSrv.Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = gitSrv.Stop(ctx) })
+	shortHost, err := gitSrv.Hostname(ctx)
+	require.NoError(t, err)
+	getentOut, err := core.NewQuery(c).Container().From(alpineImage).
+		WithExec([]string{"getent", "hosts", shortHost}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	fields := strings.Fields(getentOut)
+	require.NotEmpty(t, fields, "unexpected getent output: %q", getentOut)
+	repoURL := "git://" + fields[0] + "/repo.git"
+
+	pinnedCommit, err := core.NewQuery(c).Git(repoURL).Branch("main").CommitSHA(ctx)
+	require.NoError(t, err)
+
+	// The workspace commit pins its own repository's main to the commit before it.
+	lock := workspace.NewLock()
+	require.NoError(t, lock.SetLookup(workspace.CoreLockNamespace, workspace.LockOperationGitSHA,
+		[]any{repoURL, "main"}, pinnedCommit))
+	lockBytes, err := lock.Marshal()
+	require.NoError(t, err)
+	_, err = core.NewQuery(c).Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).With(gitUserConfig).
+		WithServiceBinding("gitsrv", gitSrv).
+		WithEnvVariable("CACHEBUST", rand.Text()).
+		WithExec([]string{"git", "clone", "git://gitsrv/repo.git", "/src"}).
+		WithWorkdir("/src").
+		WithNewFile("dagger.toml", "").
+		WithNewFile(workspace.LockFileName, string(lockBytes)).
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "workspace"}).
+		WithExec([]string{"git", "push", "origin", "HEAD:main"}).
+		Sync(ctx)
+	require.NoError(t, err)
+
+	workdir := t.TempDir()
+	queryPath := writeQueryDoc(t, workdir, "query.graphql", `{
+  git(url: "`+repoURL+`") {
+    ref(name: "main") { commit }
+  }
+}`)
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "-W", repoURL+"@main", "query", "--doc", queryPath)
+	require.NoError(t, err)
+	require.Contains(t, string(out), pinnedCommit)
+}
+
+// Clients of one session can use different workspace locks, here two nested
+// CLIs with their own workspaces. Each gets the image its own lock pins for a
+// tag, not whichever client resolved that tag first.
+func (LockfileSuite) TestNestedClientsUseOwnImagePins(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	digestOf := func(address string) string {
+		imageRef, err := core.NewQuery(c).Container().From(address).ImageRef(ctx)
+		require.NoError(t, err)
+		_, digest, found := strings.Cut(imageRef, "@")
+		require.True(t, found, "expected canonical image ref with digest: %q", imageRef)
+		return digest
+	}
+	for _, tc := range []struct{ release, digest string }{
+		{"3.20", digestOf("alpine:3.20")},
+		{"3.19", digestOf("alpine:3.19")},
+	} {
+		out, err := workspaceBase(t, c).
+			WithNewFile("dagger.toml", "").
+			WithNewFile(workspace.LockFileName, mustMarshalOCISHALock(t, tc.digest)).
+			WithNewFile("query.graphql", containerFromQuery).
+			With(daggerExec("--silent", "query", "--doc", "query.graphql")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, tc.release)
+	}
+}
+
+func requireRemoteLockUnchanged(ctx context.Context, t *testctx.T, c *dagger.Client, remote remoteLockWorkspace, want string) {
+	t.Helper()
 	committedLock, err := core.NewQuery(c).Git(remote.repoURL).Commit(remote.commit).Tree().File(workspace.LockFileName).Contents(ctx)
 	require.NoError(t, err)
-	require.Equal(t, lockContents, committedLock)
+	require.Equal(t, want, committedLock)
 }
 
 func (LockfileSuite) TestUpdateCreatesNewFile(ctx context.Context, t *testctx.T) {

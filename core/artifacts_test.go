@@ -39,7 +39,7 @@ func TestArtifactAbsoluteURI(t *testing.T) {
 			t.Run(remote+"/"+subdir, func(t *testing.T) {
 				ws, err := dagql.NewResultForCall(&Workspace{
 					Address: GitRefString(remote, subdir, "main"),
-					source:  NewWorkspaceSourceGitRef(ref, false),
+					source:  NewWorkspaceSourceGitRef(ref),
 				}, &dagql.ResultCall{})
 				require.NoError(t, err)
 				artifact := &Artifact{

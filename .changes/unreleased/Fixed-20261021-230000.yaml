@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  Remote Git workspaces, including Dagger Cloud checks, now apply the Git, image and version pins in their committed `dagger.lock` instead of resolving those lookups live. The committed lockfile is never changed.
+time: 2026-10-21T23:00:00+00:00
+custom:
+    Author: sipsma
+    PR: ""
