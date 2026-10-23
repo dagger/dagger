@@ -359,8 +359,9 @@ func cloudCheckRowMatches(row cloudCheckRow, selectors cloudCheckSelectorFlags) 
 		if len(values) == 0 {
 			continue
 		}
-		if !cloudDimensionMatches(dim, row.Dimensions[dim], values) &&
-			!(dim == "git-sha" && row.Check.ModuleVersion != "" && cloudDimensionMatches(dim, row.Check.ModuleVersion, values)) {
+		matches := cloudDimensionMatches(dim, row.Dimensions[dim], values) ||
+			dim == "git-sha" && row.Check.ModuleVersion != "" && cloudDimensionMatches(dim, row.Check.ModuleVersion, values)
+		if !matches {
 			return false
 		}
 	}
