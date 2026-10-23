@@ -1,6 +1,7 @@
 package daggercmd
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"slices"
@@ -114,7 +115,8 @@ func writeArtifactTable(out io.Writer, items []listedArtifact, names map[string]
 	if described {
 		header = append(header, "DESCRIPTION")
 	}
-	writer := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
+	buffer := bufio.NewWriter(out)
+	writer := tabwriter.NewWriter(buffer, 0, 4, 2, ' ', 0)
 	if _, err := fmt.Fprintln(writer, strings.Join(header, "\t")); err != nil {
 		return err
 	}
@@ -144,7 +146,10 @@ func writeArtifactTable(out io.Writer, items []listedArtifact, names map[string]
 			return err
 		}
 	}
-	return writer.Flush()
+	if err := writer.Flush(); err != nil {
+		return err
+	}
+	return buffer.Flush()
 }
 
 // compareArtifactDimensions orders the module dimension first and type
