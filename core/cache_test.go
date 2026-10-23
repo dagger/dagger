@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkconfig "github.com/dagger/dagger/engine/snapshots/config"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/internal/buildkit/client"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -652,10 +654,101 @@ func TestCacheVolumeDecodeDistinctPersistedResultsSharingSnapshot(t *testing.T) 
 	require.Equal(t, []string{snapshotID}, managerB.getMutableBySnapshotIDCalls)
 	require.True(t, managerB.mutableSnapshotOpen[snapshotID])
 
+	// After the restart, the volume that opened the snapshot from disk reports
+	// it reopened, and the one that found it already open reports that.
+	require.Equal(t, telemetryattrs.CacheVolumeStateReopened, loadedCacheA.Self().noteMount().state)
+	require.Equal(t, telemetryattrs.CacheVolumeStateOpen, loadedCacheB.Self().noteMount().state)
+	require.Equal(t, telemetryattrs.CacheVolumeStateReused, loadedCacheA.Self().noteMount().state)
+
 	require.NoError(t, loadedCacheA.Self().OnRelease(ctxB))
 	require.True(t, managerB.mutableSnapshotOpen[snapshotID])
 	require.NoError(t, loadedCacheB.Self().OnRelease(ctxB))
 	require.False(t, managerB.mutableSnapshotOpen[snapshotID])
+
+	// A released volume's bookkeeping goes with its snapshot: reacquired, it
+	// reports the snapshot reopened again. This checks the bookkeeping, not
+	// when the engine releases a volume.
+	require.NoError(t, loadedCacheA.Self().InitializeSnapshot(ctxB))
+	require.Equal(t, telemetryattrs.CacheVolumeStateReopened, loadedCacheA.Self().noteMount().state)
+	require.NoError(t, loadedCacheA.Self().OnRelease(ctxB))
+}
+
+func newCacheVolumeMountTest(t *testing.T) (context.Context, *CacheVolume, *cacheVolumeTestSnapshotManager) {
+	t.Helper()
+	manager := &cacheVolumeTestSnapshotManager{
+		newResult: &cacheVolumeTestMutableRef{
+			cacheVolumeTestImmutableRef: cacheVolumeTestImmutableRef{
+				id:         "mutable-1",
+				snapshotID: "snapshot-123",
+			},
+		},
+	}
+	query := &Query{
+		Server: &cacheVolumeTestQueryServer{
+			mockServer:   &mockServer{},
+			cacheManager: manager,
+		},
+	}
+	ctx := ContextWithQuery(context.Background(), query)
+	cache := NewCache("cache-key", "ns", dagql.Null[dagql.ObjectResult[*Directory]](), CacheSharingModeShared, "")
+	return ctx, cache, manager
+}
+
+func TestCacheVolumeMountReportsNewThenReused(t *testing.T) {
+	t.Parallel()
+	ctx, cache, _ := newCacheVolumeMountTest(t)
+
+	require.NoError(t, cache.InitializeSnapshot(ctx))
+	first := cache.noteMount()
+	require.Equal(t, telemetryattrs.CacheVolumeStateNew, first.state)
+	require.Equal(t, "snapshot-123", first.snapshot)
+	require.Equal(t, telemetryattrs.CacheVolumeStateReused, cache.noteMount().state)
+	require.Equal(t, telemetryattrs.CacheVolumeStateReused, cache.noteMount().state)
+}
+
+func TestCacheVolumeConcurrentFirstMountsReportNewOnce(t *testing.T) {
+	t.Parallel()
+	ctx, cache, _ := newCacheVolumeMountTest(t)
+	require.NoError(t, cache.InitializeSnapshot(ctx))
+
+	const mounts = 16
+	states := make(chan string, mounts)
+	var wg sync.WaitGroup
+	for range mounts {
+		wg.Go(func() {
+			states <- cache.noteMount().state
+		})
+	}
+	wg.Wait()
+	close(states)
+	counts := map[string]int{}
+	for state := range states {
+		counts[state]++
+	}
+	require.Equal(t, map[string]int{
+		telemetryattrs.CacheVolumeStateNew:    1,
+		telemetryattrs.CacheVolumeStateReused: mounts - 1,
+	}, counts)
+}
+
+// A snapshot discarded after a failed lease sync takes its bookkeeping with
+// it: the next one starts over.
+func TestCacheVolumeMountAfterDiscardReportsNew(t *testing.T) {
+	t.Parallel()
+	ctx, cache, manager := newCacheVolumeMountTest(t)
+
+	syncOwed, discard, err := cache.ensureBackingSnapshot(ctx)
+	require.NoError(t, err)
+	require.True(t, syncOwed, "a new snapshot owes a lease sync")
+	require.NotNil(t, discard)
+	require.Equal(t, telemetryattrs.CacheVolumeStateNew, cache.noteMount().state)
+	require.NoError(t, discard(ctx))
+
+	_, _, err = cache.ensureBackingSnapshot(ctx)
+	require.NoError(t, err)
+	require.Len(t, manager.newCalls, 2)
+	require.Equal(t, telemetryattrs.CacheVolumeStateNew, cache.noteMount().state)
+	require.Equal(t, telemetryattrs.CacheVolumeStateReused, cache.noteMount().state)
 }
 
 var _ bkcache.ImmutableRef = (*cacheVolumeTestImmutableRef)(nil)

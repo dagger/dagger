@@ -747,6 +747,57 @@ const (
 	CacheSessionSpansAttr = "dagger.io/cache.session.spans"
 )
 
+// Cache volume mounts.
+//
+// When the engine has prepared a cache volume's backing snapshot for an exec
+// or service mount, it reports the preparation on an internal span named
+// "<CacheVolumeMountSpan>: <key>", which also writes one log line with the
+// same facts. The span belongs to the session, so its EngineCacheAttr
+// resource attribute names the engine cache it ran in: another identity is
+// another cache database (a new disk, or the same disk after the engine wiped
+// its cache), another generation on the same identity is another start of
+// that cache, and the same generation is the same engine process.
+const (
+	CacheVolumeMountSpan = "cache volume mount"
+
+	// CacheVolumeKeyAttr is the volume's key. (string)
+	CacheVolumeKeyAttr = "dagger.io/cache_volume.key"
+	// CacheVolumeNamespaceAttr is the volume's namespace, as the engine
+	// resolved it when the caller gave none. (string)
+	CacheVolumeNamespaceAttr = "dagger.io/cache_volume.namespace"
+	// CacheVolumeSharingAttr is the volume's sharing mode: SHARED, LOCKED or
+	// PRIVATE. (string)
+	CacheVolumeSharingAttr = "dagger.io/cache_volume.sharing"
+	// CacheVolumeTargetAttr is the path the volume is mounted at. (string)
+	CacheVolumeTargetAttr = "dagger.io/cache_volume.target"
+	// CacheVolumeSnapshotAttr is the ID of the volume's backing snapshot in
+	// the engine's snapshot store. It stays the same when the engine reopens
+	// the snapshot after a restart. (string)
+	CacheVolumeSnapshotAttr = "dagger.io/cache_volume.snapshot"
+
+	// CacheVolumeStateAttr is how the volume object got its backing snapshot,
+	// reported by the first mount preparation since it got it; later
+	// preparations report CacheVolumeStateReused. It says nothing about the
+	// contents of the volume. (string)
+	CacheVolumeStateAttr = "dagger.io/cache_volume.state"
+	// CacheVolumeStateNew: the engine created the snapshot, without a source
+	// directory.
+	CacheVolumeStateNew = "new"
+	// CacheVolumeStateSeeded: the engine created the snapshot from the
+	// volume's source directory.
+	CacheVolumeStateSeeded = "seeded"
+	// CacheVolumeStateReopened: the engine reopened an existing snapshot from
+	// disk, as after a restart, or after it released the volume and later
+	// restored it from its cache.
+	CacheVolumeStateReopened = "reopened"
+	// CacheVolumeStateOpen: another volume object of the same client already
+	// had the snapshot open.
+	CacheVolumeStateOpen = "open"
+	// CacheVolumeStateReused: a mount of the volume was already prepared
+	// since it got its snapshot.
+	CacheVolumeStateReused = "reused"
+)
+
 // Engine cache events (dagger.io/engine.cache).
 //
 // Outside any session, the engine reports what happens to its dagql cache as
