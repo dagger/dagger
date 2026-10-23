@@ -82,7 +82,8 @@ type Config struct {
 	Ephemeral bool
 	// Logger receives the connection's warnings and errors. Nil discards.
 	Logger *slog.Logger
-	// Lookups asks the service for the calls the engine's cache misses.
+	// Lookups asks the service for the calls the engine's cache misses. The
+	// engine always sets it; a test that serves no lookups leaves it off.
 	Lookups bool
 	// LookupWait bounds an evaluation's wait for a merge a lookup's answer
 	// names as carrying the call's value. Zero never waits.

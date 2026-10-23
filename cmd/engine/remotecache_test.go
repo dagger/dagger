@@ -46,31 +46,27 @@ func TestRemoteCacheSettings(t *testing.T) {
 	}
 }
 
-// Lookups are on by default, asked without waiting; the environment turns
-// them off, or sets a wait. An invalid wait keeps the default.
+// Lookups are asked without waiting by default; the environment sets a
+// wait. An invalid wait keeps the default.
 func TestRemoteCacheLookupSettings(t *testing.T) {
 	t.Setenv(envRemoteCacheURL, "https://env.example")
 	t.Setenv("DAGGER_CLOUD_TOKEN", "engine-token")
 	for _, tc := range []struct {
-		name    string
-		lookups string
-		wait    string
-		on      bool
-		want    time.Duration
+		name string
+		wait string
+		want time.Duration
 	}{
-		{name: "default", on: true, want: 0},
-		{name: "off", lookups: "0", on: false, want: 0},
-		{name: "a wait", wait: "3s", on: true, want: 3 * time.Second},
-		{name: "no wait", wait: "0", on: true, want: 0},
-		{name: "an invalid wait", wait: "soon", on: true, want: 0},
-		{name: "a negative wait", wait: "-1s", on: true, want: 0},
+		{name: "default", want: 0},
+		{name: "a wait", wait: "3s", want: 3 * time.Second},
+		{name: "no wait", wait: "0", want: 0},
+		{name: "an invalid wait", wait: "soon", want: 0},
+		{name: "a negative wait", wait: "-1s", want: 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv(envRemoteCacheLookups, tc.lookups)
 			t.Setenv(envRemoteCacheLookupWait, tc.wait)
 			settings, on := remoteCacheSettings(config.Config{})
 			require.True(t, on)
-			require.Equal(t, tc.on, settings.Lookups)
+			require.True(t, settings.Lookups)
 			require.Equal(t, tc.want, settings.LookupWait)
 		})
 	}
@@ -81,7 +77,6 @@ func TestRemoteCacheLookupSettings(t *testing.T) {
 func TestRemoteCacheLookupWaitIsNoneByDefault(t *testing.T) {
 	t.Setenv(envRemoteCacheURL, "https://env.example")
 	t.Setenv("DAGGER_CLOUD_TOKEN", "engine-token")
-	t.Setenv(envRemoteCacheLookups, "")
 	t.Setenv(envRemoteCacheLookupWait, "")
 	settings, on := remoteCacheSettings(config.Config{})
 	require.True(t, on)
