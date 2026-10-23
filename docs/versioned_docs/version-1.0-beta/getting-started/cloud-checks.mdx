@@ -22,7 +22,7 @@ From your project root:
 dagger cloud checks on
 ```
 
-Dagger gets the repository from the Git `origin` remote. The command prints `on` when Cloud Checks are enabled. If they are already enabled, it makes no change.
+Dagger gets the repository from the Git `origin` remote. The command prints `checks for repo <repository> enabled` when Cloud Checks are enabled. If they are already enabled, it makes no change.
 
 In an interactive terminal, the command offers to complete missing prerequisites:
 
@@ -51,7 +51,7 @@ dagger cloud checks on
 Commit the files that the Quickstart created, then push them:
 
 ```shell
-git add dagger.toml
+git add dagger.toml dagger.lock
 git commit -m "Set up Dagger"
 git push -u origin HEAD
 ```
@@ -63,7 +63,7 @@ If `dagger generate` changed other files, stage those too. Run `git status --sho
 The push started your Checks. Watch them run:
 
 ```shell
-dagger activity
+dagger workspace activity
 ```
 
 Find the row for `Set up Dagger`. It can take a moment to appear. Run the command again until its `CHECKS` column is green.
@@ -82,4 +82,3 @@ You did not write a CI workflow file. You do not maintain a build server. The Ch
 
 - [Run selected Checks](../using/checking.mdx)
 - [Manage Cloud Checks from the CLI](../reference/cli/index.mdx#dagger-cloud-checks)
-- [Platform Guides](./platform-guides/index.mdx) continue from here for a specific platform, such as [daggerizing a Go project](./platform-guides/go/index.mdx)

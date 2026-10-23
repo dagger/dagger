@@ -6,10 +6,6 @@ description: "Develop Dagger modules in TypeScript: create modules, define objec
 
 # TypeScript SDK
 
-:::note
-The TypeScript SDK module still uses the previous beta SDK interface. It needs an update before the current `dagger module init` and module client commands can use it. The module runtime is unchanged.
-:::
-
 The TypeScript SDK lets you write Dagger modules in TypeScript. You define an
 `@object()` class with `@func()` methods, and Dagger exposes those methods as
 API functions that anyone can call from the CLI, from another module, or over
@@ -46,7 +42,7 @@ dagger module init typescript --name=my-module
 `dagger module init` returns a [changeset](../../using/generating.mdx) describing the files to
 create, which Dagger shows you to review before anything is written to disk.
 
-`dagger module init` arguments (SDK-specific options require a compatible SDK):
+`dagger module init` arguments:
 
 | Argument | Required | Description |
 |---|---|---|
@@ -152,9 +148,10 @@ class MyModule {
 }
 ```
 
-Call it like any other module:
+Call your functions exactly like any other installed module, by its install name. The workspace's main module is called without a name, and `-m <path>` loads a module by path for one command:
 
 ```shell
+dagger api call my-module build --src=.
 dagger -m ./.dagger/modules/my-module api call build --src=.
 ```
 
@@ -177,7 +174,7 @@ arguments that callers (or workspace config) can set when they reference the
 module. Store them as fields so other functions can use them.
 
 ```typescript
-import { dag, Directory, object, func } from "@dagger.io/dagger"
+import { dag, Container, Directory, object, func } from "@dagger.io/dagger"
 
 @object()
 class MyModule {
@@ -340,8 +337,8 @@ greet(name = "world"): string {
 ```
 
 ```shell
-dagger api call greet            # Hello, world!
-dagger api call greet --name=Sam # Hello, Sam!
+dagger api call my-module greet            # Hello, world!
+dagger api call my-module greet --name=Sam # Hello, Sam!
 ```
 
 ### Nullability
@@ -505,10 +502,10 @@ async deploy(token: Secret): Promise<string> {
 Callers supply secrets through providers:
 
 ```shell
-dagger api call deploy --token=env:DEPLOY_TOKEN
-dagger api call deploy --token=file:./token.txt
-dagger api call deploy --token=cmd:"gh auth token"
-dagger api call deploy --token=op://vault/item/field
+dagger api call my-module deploy --token=env:DEPLOY_TOKEN
+dagger api call my-module deploy --token=file:./token.txt
+dagger api call my-module deploy --token=cmd:"gh auth token"
+dagger api call my-module deploy --token=op://vault/item/field
 ```
 
 ### Services
@@ -564,7 +561,7 @@ dagger module client update --sdk=typescript
 dagger module client rm dagger.io/go --sdk=typescript
 ```
 
-These commands require the updated TypeScript SDK interface. Client add and remove commands update targets in `dagger.toml`. Client update refreshes `dagger.lock`. All three run generation. Installed module names are not valid client targets.
+Client add and remove commands update targets in `dagger.toml`. Client update refreshes `dagger.lock`. All three run generation. Installed module names are not valid client targets.
 
 A module reference is `[proto://]host/repo[/subpath][@version]`, e.g.
 `github.com/shykes/daggerverse/hello@v0.3.0`. Local paths (`./path/to/module`)
@@ -609,7 +606,7 @@ a changeset:
 dagger generate
 ```
 
-`dagger generate` runs registered SDK scopes and author-defined generators. SDK binding generation requires a compatible TypeScript SDK module.
+`dagger generate` runs registered SDK scopes and author-defined generators.
 
 ### Commit vs. generate
 
@@ -617,14 +614,14 @@ Commit generated SDK files so consumers and CI can build the module. Run `dagger
 
 ## Engine version
 
-`dagger-module.toml`'s `engineVersion` records the engine your module targets. Edit that field to change the requirement, then regenerate bindings with a compatible SDK.
+`dagger-module.toml`'s `engineVersion` records the engine your module targets. Edit that field to change the requirement, then regenerate bindings with `dagger generate`.
 
 ## Checks, generators, directives, and ignore
 
 A useful, reusable module provides at least one first-class function type:
 a **check** (run by `dagger check`), a **generator** (run by `dagger generate`),
-or a **service** (started by `dagger start`). Each is a regular `@func()`. Checks
-and generators also take an additional decorator.
+or a **service** (started by `dagger start`). Each is a regular `@func()` with an
+additional decorator.
 
 ### Checks {#checks}
 
@@ -1035,8 +1032,8 @@ before `dag.<dep>()` resolves.
 `@func()` and `@check()` and that the class is the module's `@object()`.
 
 **CI build fails on missing `sdk/`.** Either commit the generated `sdk/`
-directory, or run `dagger generate` with a compatible SDK as a build step before
+directory, or run `dagger generate` as a build step before
 calling the module.
 
 **Engine version mismatch warnings.** Align `dagger-module.toml`'s `engineVersion`
-with your engine, then regenerate bindings with a compatible SDK.
+with your engine, then regenerate bindings with `dagger generate`.

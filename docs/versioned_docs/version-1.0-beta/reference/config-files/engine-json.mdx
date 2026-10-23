@@ -1,17 +1,90 @@
 ---
 title: "engine.json"
 slug: /reference/config-files/engine-json
-description: "Engine configuration, including garbage collection and opt-in engine resource metrics."
+description: "Engine configuration: log level, registries, security, garbage collection, and resource metrics."
 ---
 
 # engine.json
 
-The Dagger Engine reads `/etc/dagger/engine.json` at startup. For a manually
-started engine container, mount the configuration file at that path. A missing
-file uses the default settings.
+The Dagger Engine reads `/etc/dagger/engine.json` at startup. A missing file
+uses the default settings. If the file has a key that the engine does not
+know, the engine does not start.
+
+- **Helm chart:** put the file contents in the `engine.configJson` value. The
+  chart restarts the engine pods when the value changes
+- **Engine container started by hand:** mount the file at
+  `/etc/dagger/engine.json`, then restart the container after each change
 
 The machine-readable schema is published at
 [engine.schema.json](/reference/engine.schema.json).
+
+A few settings are only available in `engine.toml`. See
+[Settings only in engine.toml](#settings-only-in-enginetoml).
+
+## Log level
+
+`logLevel` sets how much the engine logs:
+
+```json
+{
+  "logLevel": "info"
+}
+```
+
+From the quietest to the most verbose, the levels are `error`, `warn`, `info`,
+`debug`, `debugextra`, and `trace`. The default is `debug`.
+
+## Registries
+
+`registries` changes how the engine connects to a container registry. Use it
+to pull through a mirror, to use a registry that does not have TLS, or to trust
+a private certificate authority. Each key is a registry host, with its port if
+it is not the default:
+
+```json
+{
+  "registries": {
+    "docker.io": {
+      "mirrors": ["mirror.internal:5000"]
+    },
+    "mirror.internal:5000": {
+      "http": true
+    },
+    "registry.internal": {
+      "ca": ["/etc/dagger/certs/internal-ca.pem"]
+    }
+  }
+}
+```
+
+- `mirrors`: hosts that the engine tries first when it pulls from this
+  registry. If a mirror is not available, the engine pulls from the registry
+- `http`: connect with HTTP instead of HTTPS
+- `insecure`: connect with HTTPS, but do not verify the certificate of the
+  registry
+- `ca`: certificate authority files that the engine trusts for this registry.
+  The paths are in the engine container, so mount the files there
+
+A mirror is a registry host too. If the mirror uses HTTP or a private
+certificate authority, give it its own entry, as `mirror.internal:5000` has
+above.
+
+## Security
+
+By default, a `Container.withExec` call can set `insecureRootCapabilities` to
+run with full root capabilities. To refuse these calls on the engine, set
+`security.insecureRootCapabilities` to `false`:
+
+```json
+{
+  "security": {
+    "insecureRootCapabilities": false
+  }
+}
+```
+
+A call that asks for these capabilities then fails with
+`security.insecure is not allowed`.
 
 ## Garbage collection
 
@@ -72,10 +145,17 @@ fills:
 }
 ```
 
-The engine also reads garbage collection settings from `engine.toml`. When
-`engine.json` sets `gc.policies`, the engine ignores the `engine.toml` policies
-and space settings. The `engine.toml` setting `gckeepstorage` corresponds to
-`reservedSpace`, so on its own it does not limit the cache size.
+Other `gc` settings:
+
+- `enabled`: set to `false` to turn off garbage collection. Do this only for a
+  short-lived engine, because the cache then grows until the disk is full
+- `sweepSize`: the minimum amount of space that one pruning pass removes. It is
+  a disk space value, or a percentage of the space between `reservedSpace` and
+  `maxUsedSpace`
+- `dagqlCache.maxEstimatedBytes` and `dagqlCache.targetEstimatedBytes`: limits
+  for the in-memory metadata cache, in bytes. When the estimated size is larger
+  than `maxEstimatedBytes`, the engine prunes it down to
+  `targetEstimatedBytes`. Zero uses the built-in default
 
 ## Engine resource metrics
 
@@ -128,7 +208,9 @@ the client proxy is not the receiver for this stream.
 ## Accounting boundary
 
 The engine discovers its unified cgroup from `/proc/self/cgroup`. It reports
-CPU and memory charged to that cgroup, including its descendants. In the
+CPU, memory, and network bytes charged to that cgroup, including its
+descendants. Network bytes are split by direction and by internal or external
+traffic. In the
 standard layout, engine processes and helpers are in `/init`, while user
 containers, including nested engines, are in sibling `/buildkit` cgroups.
 Those user workloads are excluded from the parent engine's resource metrics.
@@ -164,3 +246,52 @@ was not throttled.** CPU usage still reports the CPU time actually consumed
 by the observed cgroup and its descendants.
 
 See the [Linux cgroup v2 CPU interface documentation](https://docs.kernel.org/admin-guide/cgroup-v2.html#cpu-interface-files).
+
+## Settings only in engine.toml
+
+The engine also reads `/etc/dagger/engine.toml`, which uses the
+[BuildKit `buildkitd.toml` format](https://github.com/moby/buildkit/blob/master/docs/buildkitd.toml.md).
+Use it only for the settings in this section. With the Helm chart, put the file
+contents in the `engine.config` value. Otherwise, mount the file at
+`/etc/dagger/engine.toml`.
+
+### Registry client certificates
+
+If a registry requires a client certificate, set a `keypair` for it:
+
+```toml
+[registry."registry.internal:5000"]
+  ca = ["/etc/dagger/certs/ca.pem"]
+
+  [[registry."registry.internal:5000".keypair]]
+    key = "/etc/dagger/certs/client.key"
+    cert = "/etc/dagger/certs/client.pem"
+```
+
+Keep all the settings for this registry in `engine.toml`. An `engine.json`
+entry for the same host replaces the `engine.toml` entry, including its
+`keypair`.
+
+### DNS search domains and options
+
+`[dns]` adds search domains and resolver options to `/etc/resolv.conf` in each
+container that the engine runs:
+
+```toml
+[dns]
+  searchDomains = ["corp.example"]
+  options = ["ndots:2"]
+```
+
+The engine sets the name server itself, so `nameservers` has no effect.
+
+### Precedence
+
+When both files configure the same thing, `engine.json` wins:
+
+- `logLevel` replaces `debug` and `trace`
+- `security` replaces `insecure-entitlements`
+- A `registries` entry replaces the `[registry]` entry for the same host
+- `gc.policies` replaces the `engine.toml` policies and space settings. The
+  `engine.toml` setting `gckeepstorage` corresponds to `reservedSpace`, so on
+  its own it does not limit the cache size

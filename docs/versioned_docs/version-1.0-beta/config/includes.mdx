@@ -44,7 +44,7 @@ common/dagger.toml      [modules.tester] source = "../shared/tester"
 project-a/dagger.toml   [[include]] source = "../common"
 ```
 
-From `project-a`, `dagger module list` shows `tester` and `dagger call tester …` runs it. For a Git include the same entry is addressed in the repository the config came from — `modules/ci` becomes `<repo>/modules/ci@<commit>`, pinned to the commit the config itself was read at, so the config and the modules it names always come from one revision.
+From `project-a`, `dagger module list` shows `tester` and `dagger api call tester …` runs it. For a Git include the same entry is addressed in the repository the config came from — `modules/ci` becomes `<repo>/modules/ci@<commit>`, pinned to the commit the config itself was read at, so the config and the modules it names always come from one revision.
 
 Some sources have no address on your side: built-in SDK installs, absolute paths, and paths escaping the tree the config came from. If your `dagger.toml`, one of its envs or your user configuration installs that module, that source wins and the include's settings for it still apply. Otherwise the module is left out, with a warning naming it.
 

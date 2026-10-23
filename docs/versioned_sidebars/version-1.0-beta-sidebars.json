@@ -14,23 +14,7 @@
         },
         "getting-started/try-dagger",
         "getting-started/quickstart",
-        "getting-started/cloud-checks",
-        {
-          "type": "category",
-          "label": "Platform Guides",
-          "link": {
-            "type": "doc",
-            "id": "getting-started/platform-guides/index"
-          },
-          "collapsible": true,
-          "collapsed": false,
-          "items": [
-            {
-              "type": "doc",
-              "id": "getting-started/platform-guides/go/index"
-            }
-          ]
-        }
+        "getting-started/cloud-checks"
       ]
     },
     {
@@ -299,7 +283,8 @@
             "reference/config-files/dagger-toml",
             "reference/config-files/engine-json"
           ]
-        }
+        },
+        "reference/glossary"
       ]
     },
     {
