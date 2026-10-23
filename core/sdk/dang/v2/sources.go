@@ -140,7 +140,7 @@ func EntrypointSources(
 			Schema:     intro.Schema,
 			AutoImport: true,
 		})
-		return nil, entryDir.Self().Mount(ctx, entryDir, func(dir string) error {
+		return nil, entryDir.Self().MountConfined(ctx, entryDir, func(dir string) error {
 			ensureModuleSelfTypes(intro.Schema, src, dir)
 			env, err := runEntrypointDir(ctx, dir, true)
 			if err != nil {

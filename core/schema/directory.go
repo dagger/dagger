@@ -660,9 +660,12 @@ func (s *directorySchema) withDirectoryDockerfileCompatContentHashed(
 	if !ok {
 		return releaseErr(fmt.Errorf("failed to content hash dockerfile copy: directory path unset"))
 	}
-	dgst, err := core.GetContentHashFromDirectory(ctx, snapshot, dirPath)
+	dgst, err := core.DirectoryContentDigest(ctx, snapshot, dirPath)
 	if err != nil {
 		return releaseErr(fmt.Errorf("failed to content hash dockerfile copy: %w", err))
+	}
+	if dgst == "" {
+		return res, nil
 	}
 	res, err = res.WithContentDigest(ctx, dgst)
 	if err != nil {
@@ -2102,13 +2105,15 @@ func maintainContentHashing[A any](
 			if !ok {
 				return res, fmt.Errorf("failed to make directory content hashed: failed to get directory path: unset")
 			}
-			dgst, err := core.GetContentHashFromDirectory(ctx, snapshot, dirPath)
+			dgst, err := core.DirectoryContentDigest(ctx, snapshot, dirPath)
 			if err != nil {
 				return res, fmt.Errorf("failed to make directory content hashed: %w", err)
 			}
-			res, err = res.WithContentDigest(ctx, dgst)
-			if err != nil {
-				return res, fmt.Errorf("failed to make directory content hashed: %w", err)
+			if dgst != "" {
+				res, err = res.WithContentDigest(ctx, dgst)
+				if err != nil {
+					return res, fmt.Errorf("failed to make directory content hashed: %w", err)
+				}
 			}
 		}
 		return res, nil
