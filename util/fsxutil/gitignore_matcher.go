@@ -9,7 +9,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/bmatcuk/doublestar/v4"
 	"github.com/dagger/dagger/internal/fsutil"
 	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
 	"github.com/pkg/errors"
@@ -216,7 +215,7 @@ func parseGitIgnoreFile(reader io.Reader, domain []string) ([]gitignore.Pattern,
 		}
 		patterns = append(patterns, &gitignoreRule{
 			Pattern:     gitignore.ParsePattern(line, domain),
-			glob:        strings.TrimPrefix(glob, "/"),
+			glob:        strings.Split(strings.TrimPrefix(glob, "/"), "/"),
 			domainDepth: len(domain),
 			dirOnly:     dirOnly,
 		})
@@ -233,7 +232,7 @@ func parseGitIgnoreFile(reader io.Reader, domain []string) ([]gitignore.Pattern,
 // from new matches of the same rule against descendants of that root.
 type gitignoreRule struct {
 	gitignore.Pattern
-	glob          string
+	glob          []string
 	domainDepth   int
 	dirOnly       bool
 	explicitDepth int
@@ -248,9 +247,36 @@ func (rule *gitignoreRule) Match(path []string, isDir bool) gitignore.MatchResul
 		if rule.dirOnly && end == len(path) && !isDir {
 			continue
 		}
-		if matched, _ := doublestar.Match(rule.glob, strings.Join(path[rule.domainDepth:end], "/")); matched {
+		if matchGitignoreGlob(rule.glob, path[rule.domainDepth:end]) {
 			return gitignore.Exclude
 		}
 	}
 	return gitignore.NoMatch
+}
+
+// Match components with the same syntax as go-git's filepath.Match calls.
+// Only a whole-component ** can consume multiple path components.
+func matchGitignoreGlob(pattern, path []string) bool {
+	type position struct{ pattern, path int }
+	seen := map[position]bool{}
+	var match func(int, int) bool
+	match = func(p, n int) bool {
+		pos := position{p, n}
+		if seen[pos] {
+			return false
+		}
+		seen[pos] = true
+		if p == len(pattern) {
+			return n == len(path)
+		}
+		if pattern[p] == "**" {
+			return match(p+1, n) || (n < len(path) && match(p, n+1))
+		}
+		if n == len(path) {
+			return false
+		}
+		matched, err := filepath.Match(pattern[p], path[n])
+		return err == nil && matched && match(p+1, n+1)
+	}
+	return match(0, 0)
 }

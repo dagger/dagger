@@ -103,6 +103,33 @@ func TestGitIgnoreExplicitDirectoriesKeepRecurringRules(t *testing.T) {
 	}
 }
 
+func TestGitIgnoreExplicitDirectoriesPreservePatternSyntax(t *testing.T) {
+	for _, tc := range []struct {
+		pattern, rootName, childName string
+	}{
+		{`cache{one,two}/`, "cache{one,two}", "cache{one,two}"},
+		{`cache\{one,two\}/`, "cache{one,two}", "cache{one,two}"},
+		{`cache[12]/`, "cache1", "cache2"},
+		{`cache[^x]/`, "cache1", "cache2"},
+		{`cache[!x]/`, "cache!", "cachex"},
+	} {
+		t.Run(tc.pattern, func(t *testing.T) {
+			root := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(root, ".gitignore"), []byte(tc.pattern+"\n"), 0o600))
+			fs, err := fsutil.NewFS(root)
+			require.NoError(t, err)
+			selected := tc.rootName + "/module"
+			matcher := NewGitIgnoreMatcherWithOverrides(fs, nil, selected)
+			ignored, err := matcher.Matches(selected+"/main.go", false)
+			require.NoError(t, err)
+			require.False(t, ignored)
+			ignored, err = matcher.Matches(selected+"/"+tc.childName+"/artifact", false)
+			require.NoError(t, err)
+			require.True(t, ignored)
+		})
+	}
+}
+
 type walkEntry struct {
 	kind    string
 	ignored bool
