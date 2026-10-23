@@ -31,7 +31,10 @@ func TestCacheVolumesDirFlag(t *testing.T) {
 }
 
 func TestCacheVolumesCapacityConfig(t *testing.T) {
-	cfg, err := config.Load(strings.NewReader(`{"cacheVolumes": {"dir": "/cache-volumes", "capacity": "100GB"}}`))
+	cfg, err := config.Load(strings.NewReader(`{"cacheVolumes": {"dir": "/cache-volumes", "capacityBytes": 100000000000}}`))
 	require.NoError(t, err)
-	require.Equal(t, config.DiskSpace{Bytes: 100 << 30}, cfg.CacheVolumes.Capacity)
+	require.EqualValues(t, 100e9, cfg.CacheVolumes.CapacityBytes)
+
+	_, err = config.Load(strings.NewReader(`{"cacheVolumes": {"capacityBytes": "50%"}}`))
+	require.Error(t, err, "a size, not a share of some filesystem")
 }

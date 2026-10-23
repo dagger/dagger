@@ -90,8 +90,8 @@ func resolveExistingPrefix(path string) (string, error) {
 	}
 }
 
-// cacheVolumeDirMaxUsedPercentage is the share of cacheVolumes.capacity the
-// directory's volumes may use.
+// cacheVolumeDirMaxUsedPercentage is the share of cacheVolumes.capacityBytes
+// the directory's volumes may use.
 const cacheVolumeDirMaxUsedPercentage = 80
 
 // cacheVolumeDirPolicy is the directory's collection policy, from its
@@ -105,19 +105,19 @@ func (srv *Server) cacheVolumeDirPolicy(all bool) (cachevolumedir.Policy, error)
 	if err != nil {
 		return cachevolumedir.Policy{}, fmt.Errorf("get cache volume directory disk stats: %w", err)
 	}
-	return newCacheVolumeDirPolicy(srv.cacheVolumesCfg.Capacity, dstat, all), nil
+	return newCacheVolumeDirPolicy(srv.cacheVolumesCfg.CapacityBytes, dstat, all), nil
 }
 
 // newCacheVolumeDirPolicy keeps the directory's volumes within 80% of
-// capacity when it's set, and otherwise within the engine's default limits
-// for the directory's own filesystem.
-func newCacheVolumeDirPolicy(capacity config.DiskSpace, dstat disk.DiskStat, all bool) cachevolumedir.Policy {
+// capacityBytes when it's set, and otherwise within the engine's default
+// limits for the directory's own filesystem.
+func newCacheVolumeDirPolicy(capacityBytes int64, dstat disk.DiskStat, all bool) cachevolumedir.Policy {
 	policy := cachevolumedir.Policy{
 		CurrentFreeSpace: dstat.Available,
 		All:              all,
 	}
-	if capacity != (config.DiskSpace{}) {
-		policy.MaxUsedSpace = capacity.AsBytes(dstat) * cacheVolumeDirMaxUsedPercentage / 100
+	if capacityBytes > 0 {
+		policy.MaxUsedSpace = capacityBytes * cacheVolumeDirMaxUsedPercentage / 100
 		return policy
 	}
 	space := DetectDefaultGCCap(dstat)
