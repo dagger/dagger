@@ -254,7 +254,7 @@ func TestHello(t *testing.T) {
 	hello := conn.next(t)
 	require.Equal(t, protocol.TypeHello, hello.Type)
 	require.Equal(t, uint64(1), hello.ID, "IDs start at 1")
-	require.Equal(t, protocol.Hello{CacheID: "cache-1", Generation: 3, EngineVersion: "v0.20.0", EngineName: "dagger-engine", HeldRows: true}, decode[protocol.Hello](t, hello))
+	require.Equal(t, protocol.Hello{CacheID: "cache-1", Generation: 3, EngineVersion: "v0.20.0", EngineName: "dagger-engine"}, decode[protocol.Hello](t, hello))
 	s.dispatch(protocol.Envelope{ID: 1, Re: hello.ID, Type: protocol.TypeWelcome, Body: json.RawMessage(`{}`)})
 	// Renewals start only after the welcome is consumed. Wait for one before
 	// canceling so the hello reply cannot race with cancellation.
@@ -271,7 +271,7 @@ func TestHelloEphemeral(t *testing.T) {
 	go func() { _, _ = s.serve() }()
 	hello := conn.next(t)
 	require.Equal(t, protocol.TypeHello, hello.Type)
-	require.Equal(t, protocol.Hello{CacheID: "cache-1", Generation: 3, EngineVersion: "v0.20.0", EngineName: "dagger-engine", HeldRows: true, Ephemeral: true}, decode[protocol.Hello](t, hello))
+	require.Equal(t, protocol.Hello{CacheID: "cache-1", Generation: 3, EngineVersion: "v0.20.0", EngineName: "dagger-engine", Ephemeral: true}, decode[protocol.Hello](t, hello))
 	s.cancel(errors.New("done"))
 }
 
