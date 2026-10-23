@@ -392,56 +392,95 @@ func TestExtractZipUnsupportedType(t *testing.T) {
 }
 
 func TestExtractEmpty(t *testing.T) {
+	dest, _, err := extractTestArchive(t, writeTestZip(t), 0)
+	require.NoError(t, err)
+	require.Empty(t, listTree(t, dest))
+
 	var tarBuf bytes.Buffer
 	require.NoError(t, tar.NewWriter(&tarBuf).Close())
 	tarPath := filepath.Join(t.TempDir(), "empty.tar")
 	require.NoError(t, os.WriteFile(tarPath, tarBuf.Bytes(), 0o644))
-	for name, archive := range map[string]string{"zip": writeTestZip(t), "tar": tarPath} {
-		t.Run(name, func(t *testing.T) {
-			dest, _, err := extractTestArchive(t, archive, 0)
+	entries, err := stripTestTar(t, tarPath, 0)
+	require.NoError(t, err)
+	require.Empty(t, entries)
+}
+
+// stripTestTar runs the tar at archive, uncompressed or gzipped, through
+// stripTarComponents and lists the entries it writes as "name", "name =
+// body", "name => hard link target" or "name -> symlink target". The
+// unpacking itself needs a mount namespace, so the integration tests
+// cover it.
+func stripTestTar(t *testing.T, archive string, strip int) ([]string, error) {
+	t.Helper()
+	f, err := os.Open(archive)
+	require.NoError(t, err)
+	defer f.Close()
+	var r io.Reader = f
+	if strings.HasSuffix(archive, ".gz") {
+		gr, err := gzip.NewReader(f)
+		require.NoError(t, err)
+		r = gr
+	}
+	var out bytes.Buffer
+	if err := stripTarComponents(r, &out, strip); err != nil {
+		return nil, err
+	}
+	var entries []string
+	tr := tar.NewReader(&out)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			return entries, nil
+		}
+		require.NoError(t, err)
+		switch hdr.Typeflag {
+		case tar.TypeReg:
+			body, err := io.ReadAll(tr)
 			require.NoError(t, err)
-			require.Empty(t, listTree(t, dest))
-		})
+			entries = append(entries, hdr.Name+" = "+string(body))
+		case tar.TypeLink:
+			entries = append(entries, hdr.Name+" => "+hdr.Linkname)
+		case tar.TypeSymlink:
+			entries = append(entries, hdr.Name+" -> "+hdr.Linkname)
+		default:
+			entries = append(entries, hdr.Name)
+		}
 	}
 }
 
-func TestExtractTarGz(t *testing.T) {
+func TestStripTarComponents(t *testing.T) {
 	archive := writeTestTarGz(t,
 		testTarEntry{name: "top/", typeflag: tar.TypeDir},
 		testTarEntry{name: "top/a", body: "a"},
 		testTarEntry{name: "top/sub/b", body: "b"},
 		testTarEntry{name: "top/hard", typeflag: tar.TypeLink, linkname: "top/a"},
 		testTarEntry{name: "top/soft", typeflag: tar.TypeSymlink, linkname: "a"},
+		testTarEntry{name: "./top/dot", body: "dot"},
 		testTarEntry{name: "loose", body: "dropped"},
 	)
 	t.Run("whole", func(t *testing.T) {
-		dest, _, err := extractTestArchive(t, archive, 0)
+		entries, err := stripTestTar(t, archive, 0)
 		require.NoError(t, err)
 		require.Equal(t, []string{
-			"loose -rw-r--r--",
-			"top drwxr-xr-x",
-			"top/a -rw-r--r--",
-			"top/hard -rw-r--r--",
-			"top/soft Lrwxrwxrwx -> a",
-			"top/sub drwxr-xr-x",
-			"top/sub/b -rw-r--r--",
-		}, listTree(t, dest))
+			"top/",
+			"top/a = a",
+			"top/sub/b = b",
+			"top/hard => top/a",
+			"top/soft -> a",
+			"top/dot = dot",
+			"loose = dropped",
+		}, entries)
 	})
 	t.Run("strip", func(t *testing.T) {
-		dest, _, err := extractTestArchive(t, archive, 1)
+		entries, err := stripTestTar(t, archive, 1)
 		require.NoError(t, err)
 		require.Equal(t, []string{
-			"a -rw-r--r--",
-			"hard -rw-r--r--",
-			"soft Lrwxrwxrwx -> a",
-			"sub drwxr-xr-x",
-			"sub/b -rw-r--r--",
-		}, listTree(t, dest))
-		a, err := os.Stat(filepath.Join(dest, "a"))
-		require.NoError(t, err)
-		hard, err := os.Stat(filepath.Join(dest, "hard"))
-		require.NoError(t, err)
-		require.True(t, os.SameFile(a, hard), "the hard link's target is stripped too")
+			"a = a",
+			"sub/b = b",
+			"hard => a",
+			"soft -> a",
+			"top/dot = dot",
+		}, entries, "the hard link's target is stripped too, and \".\" counts as an element")
 	})
 }
 

@@ -139,15 +139,16 @@ func (FileSuite) TestExtractTarGz(ctx context.Context, t *testctx.T) {
 	for _, e := range []struct {
 		name, body string
 		mode       int64
+		typeflag   byte
+		linkname   string
 	}{
-		{"pkg-1.0/", "", 0o755},
-		{"pkg-1.0/run.sh", "#!/bin/sh\necho run\n", 0o750},
-		{"pkg-1.0/doc/notes.txt", "notes", 0o640},
+		{"pkg-1.0/", "", 0o755, tar.TypeDir, ""},
+		{"pkg-1.0/run.sh", "#!/bin/sh\necho run\n", 0o750, tar.TypeReg, ""},
+		{"pkg-1.0/doc/notes.txt", "notes", 0o640, tar.TypeReg, ""},
+		{"pkg-1.0/run-again", "", 0o750, tar.TypeLink, "pkg-1.0/run.sh"},
+		{"pkg-1.0/latest", "", 0o777, tar.TypeSymlink, "run.sh"},
 	} {
-		hdr := &tar.Header{Name: e.name, Mode: e.mode, Size: int64(len(e.body)), Typeflag: tar.TypeReg}
-		if strings.HasSuffix(e.name, "/") {
-			hdr.Typeflag = tar.TypeDir
-		}
+		hdr := &tar.Header{Name: e.name, Mode: e.mode, Size: int64(len(e.body)), Typeflag: e.typeflag, Linkname: e.linkname}
 		require.NoError(t, tw.WriteHeader(hdr))
 		_, err := tw.Write([]byte(e.body))
 		require.NoError(t, err)
@@ -158,14 +159,27 @@ func (FileSuite) TestExtractTarGz(ctx context.Context, t *testctx.T) {
 
 	entries, err := extractHostArchive(c, dir, "pkg.tar.gz").Glob(ctx, "**")
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"pkg-1.0/", "pkg-1.0/run.sh", "pkg-1.0/doc/", "pkg-1.0/doc/notes.txt"}, entries)
+	require.ElementsMatch(t, []string{"pkg-1.0/", "pkg-1.0/run.sh", "pkg-1.0/doc/", "pkg-1.0/doc/notes.txt", "pkg-1.0/run-again", "pkg-1.0/latest"}, entries)
 
 	stripped := extractHostArchive(c, dir, "pkg.tar.gz", core.FileExtractOpts{StripComponents: 1})
 	extracted, listing := listExtracted(ctx, t, c, stripped)
-	require.Len(t, extracted, 3, listing)
+	require.Len(t, extracted, 5, listing)
 	require.Equal(t, extractedEntry{perm: "750", mtime: extracted["./run.sh"].mtime, kind: "regular file"}, extracted["./run.sh"])
 	require.Equal(t, "640", extracted["./doc/notes.txt"].perm)
 	require.Equal(t, "directory", extracted["./doc"].kind)
+	require.Equal(t, "symbolic link", extracted["./latest"].kind)
+	require.Contains(t, listing, "'./latest' -> 'run.sh'")
+
+	// The hard link's target is stripped too: it links to run.sh.
+	inodes, err := core.NewQuery(c).Container().From(alpineImage).
+		WithMountedDirectory("/x", stripped).
+		WithExec([]string{"stat", "-c", "%i %h", "/x/run.sh", "/x/run-again"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	lines := strings.Split(strings.TrimSpace(inodes), "\n")
+	require.Len(t, lines, 2, inodes)
+	require.Equal(t, lines[0], lines[1], inodes)
+	require.True(t, strings.HasSuffix(lines[0], " 2"), inodes)
 }
 
 func (FileSuite) TestExtractStripComponents(ctx context.Context, t *testctx.T) {
