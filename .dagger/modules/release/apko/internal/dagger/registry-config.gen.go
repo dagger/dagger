@@ -6,6 +6,18 @@ import (
 	"dagger/apko/internal/dagger/core"
 )
 
+// Create an OCI registry configuration file and use it safely with tools, like Helm or Oras.
+//
+// Tools interacting with an OCI registry usually have their own way to authenticate.
+// Helm, for example, provides a command to "login" into a registry, which stores the credentials in a file.
+// That is, however, not a safe way to store credentials, especially not in Dagger.
+// Credentials persisted in the filesystem make their way into Dagger's layer cache.
+//
+// This module creates a configuration file and returns it as a Secret that can be mounted safely into a Container.
+//
+// Be advised that using the tool's built-in authentication mechanism may not work with the configuration file (since it's read only).
+//
+// You can read more about the topic in the readme: https://github.com/sagikazarmark/daggerverse/tree/main/registry-config#resources
 type RegistryConfig = core.RegistryConfig
 
 type WithRegistryConfigFunc = core.WithRegistryConfigFunc

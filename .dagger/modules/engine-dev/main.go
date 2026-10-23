@@ -1,4 +1,3 @@
-// Creates a complete end-to-end build environment with CLI and engine for interactive testing
 package main
 
 import (
@@ -8,12 +7,17 @@ import (
 	"path/filepath"
 	"strings"
 
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/util/parallel"
 	"golang.org/x/mod/semver"
 
 	"dagger/engine-dev/build"
 	"dagger/engine-dev/internal/dagger"
+	clidev "dagger/engine-dev/internal/dagger/clients/cli-dev"
+	"dagger/engine-dev/internal/dagger/clients/codegen"
+	gomod "dagger/engine-dev/internal/dagger/clients/go"
+	"dagger/engine-dev/internal/dagger/clients/wolfi"
 )
 
 func New(
@@ -75,7 +79,7 @@ func vcsInfo(ctx context.Context, ws *dagger.Workspace) (commit string, dirty bo
 		return "", false
 	}
 	git := ws.Git()
-	commit, err := git.Head().Commit(ctx)
+	commit, err := git.Head().CommitSHA(ctx)
 	if err != nil {
 		return "", false
 	}
@@ -85,6 +89,7 @@ func vcsInfo(ctx context.Context, ws *dagger.Workspace) (commit string, dirty bo
 	return commit, dirty
 }
 
+// Creates a complete end-to-end build environment with CLI and engine for interactive testing
 type EngineDev struct {
 	Source *dagger.Directory
 
@@ -185,7 +190,7 @@ func (dev *EngineDev) Container(
 		WithFile(engineEntrypointPath, entrypoint).
 		WithEntrypoint([]string{filepath.Base(engineEntrypointPath)})
 
-	cli := dag.DaggerCli(dagger.DaggerCliOpts{Version: version, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws}).Binary(dagger.DaggerCliBinaryOpts{
+	cli := clidev.New(clidev.CliDevOpts{Source: dev.cliDevSource(), Version: version, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws}).Binary(clidev.CliDevBinaryOpts{
 		Platform: platform,
 	})
 	ctr = ctr.
@@ -225,7 +230,7 @@ func (dev *EngineDev) Service(
 
 	devEngine = devEngine.
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
-		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume(cacheVolumeName), dagger.ContainerWithMountedCacheOpts{
+		WithMountedCache(distconsts.EngineDefaultStateDir, core.NewCacheVolume(cacheVolumeName), dagger.ContainerWithMountedCacheOpts{
 			// Only one engine can safely use a state dir at a time. LOCKED keeps the
 			// cache identity stable while serializing concurrent users.
 			Sharing: dagger.CacheSharingModeLocked,
@@ -260,7 +265,7 @@ func (dev *EngineDev) InstallClient(
 ) (*dagger.Container, error) {
 	if client == nil {
 		// By default, start from a simple base container
-		client = dag.Wolfi().Container()
+		client = wolfi.New().Container()
 	}
 	if service == nil {
 		var err error
@@ -284,7 +289,7 @@ func (dev *EngineDev) InstallClient(
 		WithServiceBinding("dagger-engine", service).
 		// FIXME: retrieve endpoint dynamically?
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-		WithMountedFile(cliPath, dag.DaggerCli(dagger.DaggerCliOpts{Source: dev.Source, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws}).Binary()).
+		WithMountedFile(cliPath, clidev.New(clidev.CliDevOpts{Source: dev.cliDevSource(), VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws}).Binary()).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliPath).
 		WithSymlink(cliPath, "/usr/local/bin/dagger")
 	if cfg := dev.ClientDockerConfig; cfg != nil {
@@ -316,7 +321,7 @@ func (dev *EngineDev) IntrospectionJSON(ctx context.Context) (*dagger.File, erro
 		return nil, err
 	}
 	introspectionJSON := ctr.
-		WithFile("/usr/local/bin/codegen", dag.Codegen(dev.Ws).Binary()).
+		WithFile("/usr/local/bin/codegen", codegen.New(dev.Ws).Binary()).
 		WithExec(withoutOuterSession("codegen", "introspect", "-o", "/schema.json")).
 		File("/schema.json")
 	return introspectionJSON, nil
@@ -345,8 +350,7 @@ func (dev *EngineDev) GraphqlSchema(
 
 // Build the `introspect` tool which introspects the engine API
 func (dev *EngineDev) IntrospectionTool() *dagger.File {
-	return dag.
-		Go(dagger.GoOpts{Source: dev.Source, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws}).
+	return gomod.New(gomod.GoOpts{Source: dev.Source, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws}).
 		Binary("./cmd/introspect")
 }
 
@@ -466,7 +470,7 @@ func (dev *EngineDev) pushTargets(
 	registryUsername *string,
 	registryPassword *dagger.Secret,
 ) error {
-	ctr := dag.Container()
+	ctr := core.NewContainer()
 	if registryUsername != nil && registryPassword != nil {
 		registry, _, _ := strings.Cut(image, "/")
 		ctr = ctr.WithRegistryAuth(registry, *registryUsername, registryPassword)
