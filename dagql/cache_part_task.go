@@ -34,6 +34,36 @@ type PartTaskToken struct {
 	ownerSync       chan struct{}
 	ownerSyncOnce   sync.Once
 	settled         atomic.Bool
+	// alsoFilled are root parts of the row the body filled beyond its
+	// installed outputs, such as a container's delegated parts copied by a
+	// sweep; the owner lease sync after the body covers them too.
+	alsoFilledMu sync.Mutex
+	alsoFilled   []PartKey
+}
+
+// AlsoFilled records root parts of the task's row that its body filled
+// beyond the outputs it installs, so the owner lease sync after the body
+// reconciles them too. A nil token, outside any task, records nothing.
+func (t *PartTaskToken) AlsoFilled(parts ...PartKey) {
+	if t == nil {
+		return
+	}
+	t.alsoFilledMu.Lock()
+	defer t.alsoFilledMu.Unlock()
+	for _, part := range parts {
+		if !slices.Contains(t.alsoFilled, part) {
+			t.alsoFilled = append(t.alsoFilled, part)
+		}
+	}
+}
+
+func (t *PartTaskToken) alsoFilledParts() []PartKey {
+	if t == nil {
+		return nil
+	}
+	t.alsoFilledMu.Lock()
+	defer t.alsoFilledMu.Unlock()
+	return slices.Clone(t.alsoFilled)
 }
 
 // lazyContentIdentity is published only after successful materialization and its
@@ -108,7 +138,7 @@ func (t *lazyTaskContinuation) finish(ctx context.Context, c *Cache, row *shared
 	}
 	if !t.synced {
 		c.recordPartFixture(row, PersistedPartAddress{}, "owner-sync")
-		if err := c.syncInstalledPartLeases(ctx, row, t.token.installed.Load()); err != nil {
+		if err := c.syncTaskPartLeases(ctx, row, t.token); err != nil {
 			return err
 		}
 		t.synced = true

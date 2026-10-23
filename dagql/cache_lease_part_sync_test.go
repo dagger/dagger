@@ -82,7 +82,7 @@ func TestSyncInstalledPartLeases(t *testing.T) {
 	snapshots.attachCalls, snapshots.removeCalls = nil, nil
 	value.links["a"] = PersistedSnapshotRefLink{RefKey: "a2", Role: "a"}
 	value.links["b"] = PersistedSnapshotRefLink{RefKey: "b2", Role: "b"}
-	require.NoError(t, c.syncInstalledPartLeases(ctx, row, installedParts("p:a")))
+	require.NoError(t, c.syncInstalledPartLeases(ctx, row, installedParts("p:a"), nil))
 	require.Equal(t, 1, value.wholeReads, "the part is read alone")
 	require.Equal(t, 1, value.partReads)
 	require.Len(t, snapshots.removeCalls, 1)
@@ -98,21 +98,21 @@ func TestSyncInstalledPartLeases(t *testing.T) {
 	// snapshot loses its lease.
 	snapshots.attachCalls, snapshots.removeCalls = nil, nil
 	delete(value.links, "a")
-	require.NoError(t, c.syncInstalledPartLeases(ctx, row, installedParts("p:a", "p:c")))
+	require.NoError(t, c.syncInstalledPartLeases(ctx, row, installedParts("p:a"), []PartKey{"p:c"}))
 	require.Empty(t, snapshots.attachCalls)
 	require.Len(t, snapshots.removeCalls, 1)
 
 	// A value that can't be read by part, or parts below the row, are synced
 	// whole.
 	value.scopable = false
-	require.NoError(t, c.syncInstalledPartLeases(ctx, row, installedParts("p:b")))
+	require.NoError(t, c.syncInstalledPartLeases(ctx, row, installedParts("p:b"), nil))
 	require.Equal(t, 2, value.wholeReads)
 	value.scopable = true
 	nested := installedParts("p:b")
 	nested.outputs[0].address.OutputPath = PersistedRefPath{}.Field("items")
-	require.NoError(t, c.syncInstalledPartLeases(ctx, row, nested))
+	require.NoError(t, c.syncInstalledPartLeases(ctx, row, nested, nil))
 	require.Equal(t, 3, value.wholeReads)
-	require.NoError(t, c.syncInstalledPartLeases(ctx, row, nil))
+	require.NoError(t, c.syncInstalledPartLeases(ctx, row, nil, nil))
 	require.Equal(t, 4, value.wholeReads)
 
 	require.NoError(t, c.ReleaseSession(ctx, session))

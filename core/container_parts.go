@@ -476,6 +476,8 @@ func (container *Container) consumeFinalParentDelegations(ctx context.Context, o
 		if err := op.EvaluateContainerGroup(ctx, container, delegation); err != nil {
 			return err
 		}
+		// The part is filled by this body, not by its own group's.
+		dagql.PartTaskFromContext(ctx).AlsoFilled(part)
 	}
 	return nil
 }

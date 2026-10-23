@@ -5238,11 +5238,7 @@ func (c *Cache) runLazyEvalBody(callbackCtx context.Context, shared *sharedResul
 			// A native group body run through its row's PartHost records
 			// the parts it filled on token; any other body fills the
 			// whole value, which is synced whole.
-			var installed *InstalledOutputs
-			if token != nil {
-				installed = token.installed.Load()
-			}
-			err = c.syncInstalledPartLeases(callbackCtx, shared, installed)
+			err = c.syncTaskPartLeases(callbackCtx, shared, token)
 		}
 	}
 	if releaseErr := release(context.WithoutCancel(callbackCtx)); releaseErr != nil && err == nil {

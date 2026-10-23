@@ -2,6 +2,7 @@ package dagql
 
 import (
 	"context"
+	"slices"
 
 	"github.com/dagger/dagger/engine/wcprof"
 )
@@ -15,6 +16,16 @@ type SnapshotOwnerPartReader interface {
 	ReadSnapshotOwnerParts(parts []PartKey) (links []PersistedSnapshotRefLink, roles []string, ok bool)
 }
 
+// syncTaskPartLeases is the owner lease sync after a task's body: the parts
+// it installed and those it noted as also filled (AlsoFilled), alone, or the
+// whole result when it installed none.
+func (c *Cache) syncTaskPartLeases(ctx context.Context, res *sharedResult, token *PartTaskToken) error {
+	if token == nil {
+		return c.syncInstalledPartLeases(ctx, res, nil, nil)
+	}
+	return c.syncInstalledPartLeases(ctx, res, token.installed.Load(), token.alsoFilledParts())
+}
+
 // syncInstalledPartLeases is the owner lease sync after an evaluation filled
 // parts of res: it reconciles the leases of those parts alone. The whole
 // sync reads every part of res, and waits for the parts still being filled
@@ -23,11 +34,16 @@ type SnapshotOwnerPartReader interface {
 // filled here are complete, and the parts not read keep the leases they
 // have, so reading only these is coherent. Anything it can't scope, it
 // syncs whole.
-func (c *Cache) syncInstalledPartLeases(ctx context.Context, res *sharedResult, installed *InstalledOutputs) error {
+func (c *Cache) syncInstalledPartLeases(ctx context.Context, res *sharedResult, installed *InstalledOutputs, also []PartKey) error {
 	if c == nil || c.snapshotManager == nil || res == nil || res.id == 0 {
 		return nil
 	}
 	parts, ok := rootParts(installed)
+	for _, part := range also {
+		if !slices.Contains(parts, part) {
+			parts = append(parts, part)
+		}
+	}
 	state := res.loadPayloadState()
 	reader, isReader := state.self.(SnapshotOwnerPartReader)
 	if !ok || !state.hasValue || !isReader {

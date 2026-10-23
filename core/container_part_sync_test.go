@@ -136,3 +136,33 @@ func ownedSnapshots(env *persistedFamiliesTestEnv) []string {
 	}
 	return out
 }
+
+// A group's body that also copies delegated parts from a final parent, as
+// the delegation sweep does, reconciles those parts' leases too: a part the
+// container held a lease for at publication, now copied and so borrowed,
+// loses that lease.
+func TestContainerGroupLeaseSyncCoversSweptParts(t *testing.T) {
+	env := newPersistedFamiliesTestEnv(t, "swept-lease-sync")
+	ctx, cache, srv := env.open(t)
+	parentCtr := NewContainer(Platform{})
+	parentCtr.FS.setValue(containerPersistenceTestDirectory("parent-fs", "/"))
+	parent := env.attach(t, ctx, cache, srv, "parent", parentCtr).(dagql.ObjectResult[*Container])
+	ctr := NewContainer(Platform{})
+	ctr.FS.setValue(containerPersistenceTestDirectory("parent-fs", "/"))
+	ctr.Lazy = &ContainerWithEntrypointLazy{LazyState: NewLazyState(), Parent: parent, Args: []string{"/bin/true"}}
+	res := env.attach(t, ctx, cache, srv, "child", ctr)
+	leases := func() int {
+		n := 0
+		for _, id := range ownedSnapshots(env) {
+			if id == "parent-fs" {
+				n++
+			}
+		}
+		return n
+	}
+	require.Equal(t, 2, leases(), "the child holds its own lease on the snapshot at publication")
+
+	require.NoError(t, cache.EvaluateParts(ctx, res, ContainerPartMetadata))
+	require.True(t, ctr.borrowed(ContainerPartFS, "parent-fs"), "the metadata group's sweep copied the root filesystem")
+	require.Equal(t, 1, leases(), "the copied part's own lease is gone; the parent's keeps the snapshot")
+}
