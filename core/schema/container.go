@@ -637,7 +637,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("err").Doc(`Message of the error to raise. If empty, the error will be ignored.`),
 			),
 
-		dagql.NodeFunc("withExec", s.withExec).
+		dagql.NodeFuncWithDynamicInputs("withExec", s.withExec, s.withExecDynamicInputs).
 			IsPersistable().
 			View(AllVersion).
 			Doc(`Execute a command in the container, and return a new snapshot of the container state after execution.`).
@@ -1159,6 +1159,11 @@ func shouldSelectLatestImageRelease(
 
 // if the image ref has a digest, then it's immutable and we don't need to scope it to the session. If it's just a tag, then
 // we scope to the session so that resolution of a tag->digest is cached within the session but not across.
+//
+// Where a workspace lock can pin the tag, the lock in effect is part of the
+// scope too: the calling client's workspace, and any per-client cache scope a
+// lock override sets. Clients of one workspace, such as its module function
+// calls, still share a resolution; clients pinned by different locks do not.
 var fromSessionScopeInput = dagql.ImplicitInput{
 	Name: "fromSessionScope",
 	Resolver: func(ctx context.Context, args map[string]dagql.Input) (dagql.Input, error) {
@@ -1188,9 +1193,44 @@ var fromSessionScopeInput = dagql.ImplicitInput{
 		if clientMD.SessionID == "" {
 			return nil, errors.New("session ID not found in context")
 		}
-		// Tag-only refs are mutable; resolve once per session.
-		return dagql.NewString(clientMD.SessionID), nil
+		// Tag-only refs are mutable; resolve once per session, and per lock
+		// where one can pin them. The API view isn't known yet here, so this
+		// includes views that ignore the lock; they only share less.
+		lockScope, err := fromLockScope(ctx, args)
+		if err != nil {
+			return nil, err
+		}
+		return dagql.NewString(clientMD.SessionID + lockScope), nil
 	},
+}
+
+// fromLockScope names the workspace lock that can pin a container.from tag
+// lookup, as seen by the calling client. It is empty when no lock applies.
+func fromLockScope(ctx context.Context, args map[string]dagql.Input) (string, error) {
+	rawCacheScope, err := dagql.CacheScopeInput.Resolver(ctx, args)
+	if err != nil {
+		return "", err
+	}
+	cacheScope, ok := rawCacheScope.(dagql.String)
+	if !ok {
+		return "", fmt.Errorf("unexpected cache scope input type %T", rawCacheScope)
+	}
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return "", err
+	}
+	ws, err := query.CurrentWorkspace(ctx)
+	if err != nil && !errors.Is(err, core.ErrNoCurrentWorkspace) {
+		return "", err
+	}
+	if (ws == nil || ws.LockFile == "") && cacheScope == "" {
+		return "", nil
+	}
+	var wsClientID, wsAddress, wsLockFile string
+	if ws != nil {
+		wsClientID, wsAddress, wsLockFile = ws.ClientID, ws.Address, ws.LockFile
+	}
+	return ":" + hashutil.HashStrings("fromLockScope", wsClientID, wsAddress, wsLockFile, cacheScope.String()).String(), nil
 }
 
 //nolint:gocyclo
@@ -1703,6 +1743,49 @@ func (s *containerSchema) withError(ctx context.Context, parent dagql.ObjectResu
 	return inst, errors.New(args.Err)
 }
 
+// withExecDynamicInputs gives a process that a module entrypoint starts for a
+// call the module of that call. The module enters the exec's identity, so the
+// module does not depend on which client evaluates the exec, and execs of
+// different modules do not share a result. The process does not get the call:
+// an exec that holds a function call cannot be persisted.
+func (s *containerSchema) withExecDynamicInputs(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Container],
+	args containerExecArgs,
+	req *dagql.CallRequest,
+) error {
+	if args.ModuleContext.Valid {
+		return nil
+	}
+	// The call is not current yet, so the request carries its view.
+	nesting, err := execNesting(core.AfterVersion(defaultNestingVersion).Contains(req.View), args)
+	if err != nil || !nesting {
+		return err
+	}
+	mod, err := core.ModuleProcessModule(ctx)
+	if err != nil || mod.Self() == nil {
+		return err
+	}
+	// The scoped module carries a content digest, so the exec keeps one
+	// identity for the module across clients and sessions.
+	mod, err = core.ImplementationScopedModule(ctx, mod)
+	if err != nil {
+		return err
+	}
+	modID, err := mod.ID()
+	if err != nil {
+		return err
+	}
+	return req.SetArgInput(ctx, "moduleContext", dagql.Opt(dagql.NewID[*core.Module](modID)), false)
+}
+
+func execNesting(defaultNesting bool, args containerExecArgs) (bool, error) {
+	if defaultNesting {
+		return v1Nesting(args.DisableDaggerInDagger, args.DaggerInDaggerNewSession)
+	}
+	return args.ExperimentalPrivilegedNesting, nil
+}
+
 func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerExecArgs) (inst dagql.ObjectResult[*core.Container], _ error) {
 	if args.Stdin != "" && args.RedirectStdin != "" {
 		return inst, fmt.Errorf("cannot set both stdin and redirectStdin")
@@ -1716,11 +1799,9 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 	if args.SkipEntrypoint != nil {
 		args.UseEntrypoint = !*args.SkipEntrypoint
 	}
-	if core.Supports(ctx, defaultNestingVersion) {
-		args.ExperimentalPrivilegedNesting, err = v1Nesting(args.DisableDaggerInDagger, args.DaggerInDaggerNewSession)
-		if err != nil {
-			return inst, err
-		}
+	args.ExperimentalPrivilegedNesting, err = execNesting(core.Supports(ctx, defaultNestingVersion), args)
+	if err != nil {
+		return inst, err
 	}
 	args.LogRedirectedOutput = !core.Supports(ctx, redirectNotLoggedVersion)
 
@@ -4356,8 +4437,9 @@ func (s *containerSchema) export(ctx context.Context, parent dagql.ObjectResult[
 		return "", err
 	}
 
+	exportCtx, exported := filesyncExport(ctx, parent)
 	_, err = parent.Self().Export(
-		ctx,
+		exportCtx,
 		core.ExportOpts{
 			Dest:              path,
 			PlatformVariants:  variants,
@@ -4366,6 +4448,7 @@ func (s *containerSchema) export(ctx context.Context, parent dagql.ObjectResult[
 			Tar:               true,
 		},
 	)
+	exported(err)
 	if err != nil {
 		return "", err
 	}
@@ -4479,13 +4562,15 @@ func (s *containerSchema) exportImage(
 		}
 	}
 
-	_, err = parent.Self().Export(ctx, core.ExportOpts{
+	exportCtx, exported := filesyncExport(ctx, parent)
+	_, err = parent.Self().Export(exportCtx, core.ExportOpts{
 		Dest:              refName.String(),
 		PlatformVariants:  platformVariants,
 		ForcedCompression: args.ForcedCompression.Value,
 		MediaTypes:        args.MediaTypes,
 		Tar:               false,
 	})
+	exported(err)
 	if err != nil {
 		return core.Void{}, err
 	}

@@ -112,7 +112,7 @@ Under the new design this is wrong in three independent ways.
 bound module only. The bindings contain no `dag.<dep>()` calls, so the git-dep
 loop and `includeDependencies: true` serve modules the client can never
 reference. Both should simply go away — the helper only ever needs to serve the
-one bound module, namespaced (`serve()` with no args, i.e. not an entrypoint).
+one bound module, namespaced (`serve()` with no args, i.e. not the workspace main).
 
 **2. `moduleSource(".")` finds the wrong module.** Local module resolution does
 **find-up for `dagger.json`**: `moduleSource(<local ref>)` →
@@ -218,7 +218,7 @@ resolves from anywhere. It is essentially what the existing git-dep loop already
 does, applied to the bound module itself.
 
 Both modes end in the same `.asModule().serve()` (namespaced — no
-`includeDependencies`, no `entrypoint`); only how the `ModuleSource` is obtained
+`includeDependencies`, no `main`); only how the `ModuleSource` is obtained
 differs.
 
 ```mermaid
@@ -259,7 +259,7 @@ sequenceDiagram
   reached from `dag.currentWorkspace()`.
 - **`moduleSource(".")`** — find-up for `dagger.json`, resolves against the
   client's cwd, wrong under decoupled client/module dirs (see problem #2).
-- **`Module.serve(includeDependencies, entrypoint)`** — still the right *serve*
+- **`Module.serve(includeDependencies, main)`** — still the right *serve*
   mechanism, but its `includeDependencies` arm is now obsolete for clients (deps
   excluded from the schema). Serve the bound module with neither flag
   (namespaced).
@@ -411,7 +411,7 @@ Codegen (**separate**, TypeScript SDK — the client generator now lives there):
 | `ModuleSource.clientSchemaIntrospectionJSON` field | `core/schema/modulesource.go` (`v1.0.0-0`-gated, [#13646](https://github.com/dagger/dagger/pull/13646)) | the schema codegen consumes; hard prerequisite |
 | `CurrentModuleAsSDKClient.moduleSource` | `core/schema/module_as_sdk.go` `currentModuleAsSDKClientModuleSource` ([#13646](https://github.com/dagger/dagger/pull/13646)) | generation-time analog; only reachable from the current module |
 | `resolveClientTargetModule` | `core/schema/workspace_client.go:138` | shared local/remote resolver; **not** reused (its `IsLocalRef` branch-selection mis-routes dotted dir names) |
-| `Module.serve(includeDependencies, entrypoint)` | `core/schema/module.go` | serve mechanism; `includeDependencies` now obsolete for clients |
+| `Module.serve(includeDependencies, main)` | `core/schema/module.go` | serve mechanism; `includeDependencies` now obsolete for clients |
 | `Query.ServeModule` → `serveModule` | `engine/server/session.go` | per-session schema mutation, idempotent/conflict-checked |
 | `SDKManagedClient{Path,Module,Pin}` (client entry written at init) | `core/schema/workspace_client.go:82-89` | config source of truth for the client-path-identity alternative we did not take |
 | Local module resolution / find-up for `dagger.json` | `core/schema/modulesource.go:315-377` (`moduleSource`, `findUpModuleConfig`) | walks **up**, deepest ancestor; the cwd-relative behavior we avoid |

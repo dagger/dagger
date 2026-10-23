@@ -1,0 +1,6 @@
+kind: Fixed
+body: A call shared by several sessions no longer fails for the sessions still waiting on it when the session that started it ends, for example when a superseded CI run is cancelled; a waiting session now runs the work itself.
+time: 2026-10-20T16:19:02Z
+custom:
+  Author: sipsma
+  PR: "14748"

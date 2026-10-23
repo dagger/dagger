@@ -158,6 +158,40 @@ func TestSummarizeContinuation(t *testing.T) {
 		// The toolset diff is still there: the two notices compose.
 		require.Contains(t, out, "Toolset unchanged (1 tools).")
 	})
+
+	t.Run("refreshed system prompts leave the history preserved", func(t *testing.T) {
+		// A reload clears a recorded entry's system prompt and appends it
+		// again: same messages, the system prompt moved to the end.
+		prompt := textMsg(LLMMessageRoleSystem, "worker role")
+		current := append([]*LLMMessage{prompt}, base...)
+		reloaded := append(append([]*LLMMessage{}, base...), textMsg(LLMMessageRoleSystem, "worker role, refreshed"))
+		out := summarizeContinuation(&LLM{Messages: current}, &LLM{Messages: reloaded}, tools, tools)
+		require.NotContains(t, out, "Conversation history replaced")
+		// Dropping a system prompt leaves the history preserved too.
+		out = summarizeContinuation(&LLM{Messages: current}, &LLM{Messages: base}, tools, tools)
+		require.NotContains(t, out, "Conversation history replaced")
+
+		// A changed conversation message is still a replacement.
+		edited := []*LLMMessage{prompt, textMsg(LLMMessageRoleUser, "hello"), textMsg(LLMMessageRoleAssistant, "bye")}
+		out = summarizeContinuation(&LLM{Messages: current}, &LLM{Messages: edited}, tools, tools)
+		require.Contains(t, out, "Conversation history replaced: 3 messages -> 3 messages.")
+	})
+}
+
+func TestSummarizeToolNameCollisions(t *testing.T) {
+	after := map[string][]string{
+		"shared": {"Swapper", "Rival"},
+		"read":   {"Editor", "Godoc"},
+	}
+	require.Equal(t,
+		`Tool name collision: "read" is provided by Editor, Godoc; all of their tools are served under type-prefixed names (editor_read, godoc_read).`+"\n"+
+			`Tool name collision: "shared" is provided by Swapper, Rival; all of their tools are served under type-prefixed names (swapper_shared, rival_shared).`,
+		summarizeToolNameCollisions(nil, after))
+	// Only collisions the continuation introduced are reported.
+	require.Equal(t,
+		`Tool name collision: "shared" is provided by Swapper, Rival; all of their tools are served under type-prefixed names (swapper_shared, rival_shared).`,
+		summarizeToolNameCollisions(map[string][]string{"read": {"Editor", "Godoc"}}, after))
+	require.Empty(t, summarizeToolNameCollisions(after, after))
 }
 
 func TestToolResultSelectors(t *testing.T) {

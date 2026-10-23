@@ -23,8 +23,8 @@ dagger api call test-split --diagnostics test-specific \
   --pkg ./engine/telemetry --run '^TestLogBatchProcessorIdleChurnBounded$' --timeout 1s
 ```
 
-That example intentionally times out. The pinned `otelgotest` currently buffers
-quiet per-test output and does not flush unfinished tests when the package fails.
-Until that runner is fixed, diagnostics must be enabled to retain a timeout's
-panic and test goroutine stacks. The engine watchdog is separate: it captures
-engine goroutines rather than those of the test process.
+That example intentionally times out. Quiet runner output keeps a timeout's
+panic and its list of running tests, followed by the first 64 KiB of the test
+goroutine stacks; the package span's logs keep the whole dump. Diagnostics
+aren't needed to see them. The engine watchdog is separate: it captures engine
+goroutines rather than those of the test process.

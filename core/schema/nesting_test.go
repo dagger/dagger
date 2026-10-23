@@ -97,10 +97,11 @@ func newNestingTestServer(t *testing.T, view call.View) (context.Context, *dagql
 	srv := &currentTypeDefsTestServer{platform: core.Platform{OS: "linux", Architecture: "amd64"}}
 	base, err := NewCoreSchemaBase(ctx, srv)
 	require.NoError(t, err)
-	dag, err := base.Fork(ctx, core.NewRoot(srv), view)
+	root := core.NewRoot(srv)
+	dag, err := base.Fork(ctx, root, view)
 	require.NoError(t, err)
 	srv.dag = dag
-	return ctx, dag
+	return core.ContextWithQuery(ctx, root), dag
 }
 
 // Internal calls use the latest API even on a legacy server.

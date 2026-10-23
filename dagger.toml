@@ -34,7 +34,7 @@ source = ".dagger/modules/go-client-dev"
 legacy-default-path = true
 
 [modules.golang]
-source = "dagger.io/go@pull/45/head"
+source = "dagger.io/go@bf456512ff997f2b03c6404d77f3f1b22b89391b"
 legacy-default-path = true
 
 [modules.golang.settings]
@@ -325,6 +325,10 @@ is-module = true
 is-module = true
 clients = ["dagger.io/linux/alpine"]
 
+[sdks.go.scopes."dagql/idtui/viztest"]
+is-module = true
+clients = ["./dagql/idtui/viztest/dep", "github.com/dagger/dagger-test-modules/versioned@73670b0338c02cdd190f56b34c6e25066c7c8875"]
+
 [sdks.dang.scopes.".dagger/modules/dev"]
 clients = ["./.dagger/modules/engine-dev", "./.dagger/modules/cli-dev"]
 is-module = true
@@ -342,3 +346,6 @@ source = "github.com/dagger/typescript-sdk@main"
 
 [sdks.typescript]
 module = "typescript-sdk"
+
+[modules.reviewer]
+source = "github.com/vito/agents/reviewer"

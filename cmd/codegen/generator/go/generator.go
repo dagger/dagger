@@ -176,6 +176,11 @@ func generateDependencyFiles(
 		depSchema := schema.Include(depName)
 
 		funcs := templates.GoTemplateFuncs(ctx, depSchema, schema, schemaVersion, cfg, pkg, fset, pass)
+		if cfg.ModuleConfig != nil {
+			// Module bindings are written one level below internal/dagger
+			// (see depFilePath), so source map links need one more "..".
+			funcs["ModuleRelPath"] = templates.ModuleRelPath(cfg, internalDaggerCoreDir)
+		}
 		tmpl, err := templates.DepTemplate(funcs)
 		if err != nil {
 			return fmt.Errorf("get dependency template: %w", err)

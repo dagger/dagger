@@ -17,6 +17,13 @@ type ModuleLoadFailure struct {
 	// Message is the described load error (see the engine's
 	// describeLoadFailure).
 	Message string `json:"message"`
+	// Entrypoint reports whether the module is the workspace main, whose
+	// artifact paths may omit the module name; the loader sets it. The legacy
+	// field and JSON name are retained for compatibility with older consumers.
+	// Siblings lists the address names of the workspace's other modules,
+	// which such a shorthand path cannot start with.
+	Entrypoint bool     `json:"entrypoint,omitempty"`
+	Siblings   []string `json:"siblings,omitempty"`
 }
 
 // ModuleLoadMode is how an operation wants a workspace module it cannot load

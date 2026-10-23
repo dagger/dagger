@@ -6,6 +6,13 @@ type Options = {
   docsPath?: string;
 };
 
+type MdxFile = {
+  fullPath: string;
+  title: string;
+  fallbackUrlPath: string;
+  body: string;
+};
+
 // Thanks to @jharrell and Prisma team. Apache-2.0 content
 // https://github.com/prisma/docs/commit/bc5b452b34ebdce8e89ccbe0c7f029e8b6ef1239
 const llmsTxtPlugin = async function pluginLlmsTxt(
@@ -17,7 +24,7 @@ const llmsTxtPlugin = async function pluginLlmsTxt(
     loadContent: async () => {
       const { siteDir } = context;
       const contentDir = path.resolve(siteDir, options.docsPath ?? "current_docs");
-      const allMdx: string[] = [];
+      const allMdx: MdxFile[] = [];
 
       // recursive function to get all mdx files
       const getMdxFiles = async (dir: string) => {
@@ -42,23 +49,22 @@ const llmsTxtPlugin = async function pluginLlmsTxt(
             // Convert file path to URL path by:
             // 1. Removing numeric prefixes (like 100-, 01-, etc.)
             // 2. Removing the .mdx extension
+            // This is only a fallback for files that are not docs (partials);
+            // docs use their permalink, resolved in postBuild.
             let urlPath = relativePath
               .replace(/^\d+-/, "")
               .replace(/\/\d+-/g, "/")
               .replace(/\.mdx$/, "");
 
-            // Construct the full URL
-            const fullUrl = `https://docs.dagger.io/${urlPath}`;
-
             // strip frontmatter
             const contentWithoutFrontmatter = content.replace(/^---\n[\s\S]*?\n---\n/, "");
 
-            // combine title and content with URL
-            const contentWithTitle = title
-              ? `# ${title}\n\nURL: ${fullUrl}\n${contentWithoutFrontmatter}`
-              : contentWithoutFrontmatter;
-
-            allMdx.push(contentWithTitle);
+            allMdx.push({
+              fullPath,
+              title,
+              fallbackUrlPath: `/${urlPath}`,
+              body: contentWithoutFrontmatter,
+            });
           }
         }
       };
@@ -66,12 +72,42 @@ const llmsTxtPlugin = async function pluginLlmsTxt(
       await getMdxFiles(contentDir);
       return { allMdx };
     },
-    postBuild: async ({ content, routes, outDir }) => {
-      const { allMdx } = content as { allMdx: string[] };
+    postBuild: async ({ content, routes, outDir, plugins }) => {
+      const { allMdx } = content as { allMdx: MdxFile[] };
+      const { siteDir, siteConfig } = context;
+
+      // Docs are served at their `slug`, which need not match their file
+      // path. current_docs is also served at /next, while the newest release
+      // snapshot is served at the root. Link each doc to the root copy when
+      // the release has it, and to the /next copy otherwise.
+      type DocMetadata = { id: string; source: string; permalink: string };
+      type LoadedVersion = { versionName: string; isLast: boolean; docs: DocMetadata[] };
+      const docsContent = plugins.find(
+        (plugin) => plugin.name === "docusaurus-plugin-content-docs"
+      )?.content as { loadedVersions?: LoadedVersion[] } | undefined;
+      const loadedVersions = docsContent?.loadedVersions ?? [];
+      const rootPermalinks = new Map<string, string>(
+        loadedVersions
+          .find((version) => version.isLast)
+          ?.docs.map((doc): [string, string] => [doc.id, doc.permalink])
+      );
+      const permalinkById = new Map<string, string>();
+      const permalinkByFile = new Map<string, string>();
+      for (const doc of loadedVersions.find((version) => version.versionName === "current")?.docs ?? []) {
+        const permalink = rootPermalinks.get(doc.id) ?? doc.permalink;
+        permalinkById.set(doc.id, permalink);
+        permalinkByFile.set(path.resolve(siteDir, doc.source.replace(/^@site\//, "")), permalink);
+      }
+
+      // combine title and content with URL
+      const fullMdx = allMdx.map(({ fullPath, title, fallbackUrlPath, body }) => {
+        const fullUrl = `${siteConfig.url}${permalinkByFile.get(fullPath) ?? fallbackUrlPath}`;
+        return title ? `# ${title}\n\nURL: ${fullUrl}\n${body}` : body;
+      });
 
       // Write concatenated MDX content
       const concatenatedPath = path.join(outDir, "llms-full.txt");
-      await fs.promises.writeFile(concatenatedPath, allMdx.join("\n---\n\n"));
+      await fs.promises.writeFile(concatenatedPath, fullMdx.join("\n---\n\n"));
 
       // we need to dig down several layers:
       // find PluginRouteConfig marked by plugin.name === "docusaurus-plugin-content-docs"
@@ -168,7 +204,9 @@ const llmsTxtPlugin = async function pluginLlmsTxt(
 
       // for every single docs route we now parse a path (which is the key) and a title
       const docsRecords = orderedEntries.map(([path, record]) => {
-        return `- [${record.title}](${path}): ${record.description}`;
+        const permalink = permalinkById.get(path);
+        const url = permalink ? `${siteConfig.url}${permalink}` : path;
+        return `- [${record.title}](${url}): ${record.description}`;
       });
 
       // Build up llms.txt file

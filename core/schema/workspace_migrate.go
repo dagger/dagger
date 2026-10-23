@@ -100,7 +100,7 @@ func (s *workspaceSchema) migrateLegacy(
 
 	// A subdirectory config with a blueprint is left as legacy: a blueprint
 	// needs a workspace config, nested dagger.toml files are not created, and
-	// hoisting an entrypoint to the repo root would change repo-wide behavior.
+	// hoisting a workspace main to the repo root would change repo-wide behavior.
 	// Surface the skip as a warning-only step so setup can explain the no-op.
 	if selected := workspaceMigrationSelectedCompatWorkspace(compatWorkspaces); selected != nil &&
 		selected.Config != nil && selected.Config.Blueprint != nil {
@@ -212,7 +212,7 @@ func (s *workspaceSchema) workspaceMigrationGitignoreCleanups(
 	if err != nil {
 		return nil, fmt.Errorf("prepare legacy .gitignore cleanup: %w", err)
 	}
-	rootDir, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, false)
+	rootDir, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, true)
 	if err != nil {
 		return nil, err
 	}
@@ -376,7 +376,7 @@ func (s *workspaceSchema) workspaceMigrationCompatWorkspaces(
 			"**/.git",
 			"**/.git/**",
 		},
-	}, false)
+	}, true)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -727,7 +727,7 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 	ctx, span := core.Tracer(ctx).Start(ctx, "build migration changeset", workspaceMigrationWrapperSpanOpts(ctx)...)
 	defer telemetry.EndWithCause(span, &rerr)
 
-	baseDir, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, false)
+	baseDir, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, true)
 	if err != nil {
 		return changes, err
 	}

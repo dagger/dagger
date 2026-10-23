@@ -10692,8 +10692,8 @@ func (r *Module) SDK() *SDKConfig {
 type ModuleServeOpts struct {
 	// Expose the dependencies of this module to the client
 	IncludeDependencies bool
-	// Install the module as the entrypoint, promoting its main-object methods onto the Query root
-	Entrypoint bool
+	// Install the module as the workspace main, promoting its main-object methods onto the Query root
+	Main bool
 }
 
 // Serve a module's API in the current session.
@@ -10709,9 +10709,9 @@ func (r *Module) Serve(ctx context.Context, opts ...ModuleServeOpts) error {
 		if !querybuilder.IsZeroValue(opts[i].IncludeDependencies) {
 			q = q.Arg("includeDependencies", opts[i].IncludeDependencies)
 		}
-		// `entrypoint` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Entrypoint) {
-			q = q.Arg("entrypoint", opts[i].Entrypoint)
+		// `main` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Main) {
+			q = q.Arg("main", opts[i].Main)
 		}
 	}
 
@@ -12123,7 +12123,7 @@ func (r *Query) CurrentModule() *CurrentModule {
 type CurrentTypeDefsOpts struct {
 	// Return the full referenced typedef closure instead of only top-level served typedefs.
 	ReturnAllTypes bool
-	// Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).
+	// Strip core API functions from the Query type, leaving only module-sourced functions (constructors, workspace main proxies, etc.).
 	//
 	// Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
 	HideCore bool

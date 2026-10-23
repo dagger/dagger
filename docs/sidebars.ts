@@ -101,6 +101,7 @@ module.exports = {
       collapsible: true,
       collapsed: false,
       items: [
+        "config/includes",
         "config/user",
         "config/module-wiring",
         "config/migrate-dagger-json",
@@ -239,6 +240,7 @@ module.exports = {
             "reference/config-files/engine-json",
           ],
         },
+        "reference/glossary",
       ],
     },
 

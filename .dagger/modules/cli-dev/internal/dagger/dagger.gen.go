@@ -123,7 +123,7 @@ type ArtifactPath = core.ArtifactPath
 
 type ArtifactResult = core.ArtifactResult
 
-// An immutable selection of workspace artifacts. Listed types, dimensions, and keys use OR; chained filters use AND. Empty alternatives and unknown names match nothing. Filters never change addresses or dimension identifiers.
+// An immutable selection of workspace artifacts. Listed types, dimensions, and keys use OR; chained filters use AND. Empty alternatives match nothing; unknown names match nothing but module load failures. Filters never change addresses or dimension identifiers. Module keys match a module's configured or kebab-case name. A module that failed to load has no schema, so its load failure stands in for whatever it would hold: a filter keeps it when the module could hold something the filter selects, and an exclusion drops it only by its own address, such as <module>/** or ?module=<module>.
 type Artifacts = core.Artifacts
 
 type WithArtifactsFunc = core.WithArtifactsFunc
@@ -411,7 +411,7 @@ type WithErrorFunc = core.WithErrorFunc
 
 type ErrorValue = core.ErrorValue
 
-// An agent function that can modify a conversation.
+// A function that can modify a conversation.
 type Expertise = core.Expertise
 
 // A definition of a field on a custom object defined in a Module.
@@ -572,6 +572,15 @@ type HTTPState = core.HTTPState
 // Image healthcheck configuration.
 type HealthcheckConfig = core.HealthcheckConfig
 
+// A name parsed into words, which can be formatted in any casing.
+type Identifier = core.Identifier
+
+// IdentifierFormatOpts contains options for Identifier.Format
+type IdentifierFormatOpts = core.IdentifierFormatOpts
+
+// One word of an identifier.
+type IdentifierWord = core.IdentifierWord
+
 // A graphql input type, which is essentially just a group of named args.
 // This is currently only used to represent pre-existing usage of graphql input types
 // in the core API. It is not used by user modules and shouldn't ever be as user
@@ -673,6 +682,9 @@ type ModuleSource = core.ModuleSource
 
 type WithModuleSourceFunc = core.WithModuleSourceFunc
 
+// An entry in the naming dictionary.
+type NamingTerm = core.NamingTerm
+
 // A definition of a custom object defined in a Module.
 type ObjectTypeDef = core.ObjectTypeDef
 
@@ -699,6 +711,9 @@ type EnvFileOpts = core.EnvFileOpts
 
 // FileOpts contains options for Query.File
 type FileOpts = core.FileOpts
+
+// FormatIdentifiersOpts contains options for Query.FormatIdentifiers
+type FormatIdentifiersOpts = core.FormatIdentifiersOpts
 
 // GitOpts contains options for Query.Git
 type GitOpts = core.GitOpts
@@ -938,6 +953,17 @@ type Syncer = core.Syncer
 
 type SyncerClient = core.SyncerClient
 
+// How acronyms and terms are written where a word starts with a capital.
+type AcronymStyle = core.AcronymStyle
+
+const (
+	// HttpClient, Ipv6Address, GitHubRepo
+	AcronymStyleCapitalized AcronymStyle = core.AcronymStyleCapitalized
+
+	// HTTPClient, IPv6Address, GitHubRepo
+	AcronymStyleUppercase AcronymStyle = core.AcronymStyleUppercase
+)
+
 // EXPERIMENTAL: Agent APIs are likely to change.
 //
 // How a message landed in an agent's evaluation.
@@ -1001,6 +1027,29 @@ const (
 
 	// Shares the cache volume amongst many build pipelines
 	CacheSharingModeShared CacheSharingMode = core.CacheSharingModeShared
+)
+
+// A convention for joining words into an identifier.
+type Casing = core.Casing
+
+const (
+	// httpClient
+	CasingCamel Casing = core.CasingCamel
+
+	// httpclient (output only: drops word boundaries)
+	CasingFlat Casing = core.CasingFlat
+
+	// http-client
+	CasingKebab Casing = core.CasingKebab
+
+	// HTTPClient
+	CasingPascal Casing = core.CasingPascal
+
+	// HTTP_CLIENT
+	CasingScreamingSnake Casing = core.CasingScreamingSnake
+
+	// http_client
+	CasingSnake Casing = core.CasingSnake
 )
 
 // Strategy to use when merging changesets with conflicting changes.
@@ -1117,6 +1166,20 @@ const (
 
 	// The remote ref already pointed to this commit.
 	GitPushDispositionUpToDate GitPushDisposition = core.GitPushDispositionUpToDate
+)
+
+// The kind of a word in an identifier.
+type IdentifierWordKind = core.IdentifierWordKind
+
+const (
+	// An acronym, from the dictionary or a run of capitals.
+	IdentifierWordKindAcronym IdentifierWordKind = core.IdentifierWordKindAcronym
+
+	// A dictionary term with a fixed mixed-case spelling (GitHub, IPv6).
+	IdentifierWordKindTerm IdentifierWordKind = core.IdentifierWordKindTerm
+
+	// An ordinary word.
+	IdentifierWordKindWord IdentifierWordKind = core.IdentifierWordKindWord
 )
 
 // Compression algorithm to use for image layers.

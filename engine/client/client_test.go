@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -47,6 +49,50 @@ func TestServeHTTPPreservesArchiveQueries(t *testing.T) {
 	require.True(t, called)
 	require.Equal(t, http.StatusOK, response.Code)
 	require.Equal(t, "archive", response.Body.String())
+}
+
+func TestNestedClientServesItsOwnToken(t *testing.T) {
+	var mu sync.Mutex
+	var engineTokens []string
+	exec := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token, _, _ := r.BasicAuth()
+		mu.Lock()
+		engineTokens = append(engineTokens, token)
+		mu.Unlock()
+		if r.URL.Path == engine.QueryEndpoint {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"data":{"version":"test"}}`))
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	exec.Config.Protocols = new(http.Protocols)
+	exec.Config.Protocols.SetUnencryptedHTTP2(true)
+	exec.Start()
+	defer exec.Close()
+
+	t.Setenv("DAGGER_SESSION_PORT", strconv.Itoa(exec.Listener.Addr().(*net.TCPAddr).Port))
+	t.Setenv("DAGGER_SESSION_TOKEN", "exec-token")
+	c, err := Connect(context.Background(), Params{SecretToken: "child-token"})
+	require.NoError(t, err)
+	defer c.Close()
+
+	query := func(token string) int {
+		req := httptest.NewRequest(http.MethodPost, "/query", strings.NewReader(`{"query":"{version}"}`))
+		req.SetBasicAuth(token, "")
+		rec := httptest.NewRecorder()
+		c.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	require.Equal(t, http.StatusOK, query("child-token"))
+	require.Equal(t, http.StatusUnauthorized, query("exec-token"))
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.NotEmpty(t, engineTokens)
+	for _, token := range engineTokens {
+		require.Equal(t, "exec-token", token)
+	}
 }
 
 func TestTelemetryContextUsesClientLifetime(t *testing.T) {
@@ -401,8 +447,8 @@ func TestClientMetadataUsesExplicitModuleInsteadOfWorkspaceModules(t *testing.T)
 
 	require.False(t, md.LoadWorkspaceModules)
 	require.Equal(t, []engine.ExtraModule{{
-		Ref:        "./explicit",
-		Entrypoint: true,
+		Ref:  "./explicit",
+		Main: true,
 	}}, md.ExtraModules)
 }
 

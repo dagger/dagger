@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  Emulated execs, such as arm64 `withExec`s on an amd64 engine, no longer fail intermittently with `fork/exec /dev/.dagger_qemu_emulator: text file busy` when several run at once.
+time: 2026-10-19T15:35:49Z
+custom:
+  Author: sipsma
+  PR: 14725

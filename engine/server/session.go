@@ -25,7 +25,6 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
-	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	telemetry "github.com/dagger/otel-go"
@@ -147,6 +146,12 @@ type daggerSession struct {
 	shutdownCh        chan struct{}
 	closeShutdownOnce sync.Once
 
+	// telemetryEnded is closed once shutdownTelemetry has written the
+	// session's last telemetry, the session-end carrier included, to the
+	// client stores.
+	telemetryEnded   chan struct{}
+	endTelemetryOnce sync.Once
+
 	// the http endpoints being served (as a map since APIs like shellEndpoint can add more)
 	endpoints  map[string]http.Handler
 	endpointMu sync.RWMutex
@@ -158,6 +163,11 @@ type daggerSession struct {
 	spanExporter   sdktrace.SpanExporter
 	logExporter    sdklog.Exporter
 	telemetryDebug LifecycleTelemetryCounts
+	// workloadTracerProvider sends spans only to the workload export.
+	workloadTracerProvider *sdktrace.TracerProvider
+	// workloadUses holds the results that the session has used, for the
+	// workload export.
+	workloadUses *enginetel.WorkloadUses
 
 	// Dagger Cloud publishing, set up when the main client asked the engine
 	// to publish the session's telemetry. cloudForwarder publishes the spans
@@ -222,9 +232,6 @@ type daggerSession struct {
 	analytics analytics.Tracker
 
 	authProvider *auth.RegistryAuthProvider
-
-	containers   map[bkgw.Container]struct{}
-	containersMu sync.Mutex
 
 	dagqlMu       sync.Mutex
 	dagqlCond     *sync.Cond
@@ -333,6 +340,11 @@ type clientRecord struct {
 	// selected from request metadata.
 	attachablesClientID string
 
+	// attachablesFromExecHelper says that the exec's session helper registers
+	// the attachables, so waits for them end with the exec. Sealed with
+	// attachablesClientID.
+	attachablesFromExecHelper bool
+
 	// Synthetic clients may route host services through this stable ancestor ID.
 	hostServiceProxyClientID string
 
@@ -435,8 +447,13 @@ type clientRuntime struct {
 	// load failures by moduleProgressName; failed modules stay pending to keep
 	// reporting their error
 	failedModules map[string]error
-	// whether an entrypoint module has been served (extras outrank ambient)
-	entrypointServed bool
+	// configErr is a workspace config that could not be made effective — a
+	// failed [[include]], or a module left without a source — for a client
+	// that does not auto-load modules. The workspace still binds, so a config
+	// edit can repair it, and EnsureWorkspaceModules returns it.
+	configErr error
+	// whether a workspace main module has been served (extras outrank ambient)
+	mainServed bool
 	// resolved identities already served, for cross-batch deduplication
 	servedModuleKeys map[string]struct{}
 	// served workspace module names, so demand filters recognize them without
@@ -514,7 +531,8 @@ func (client *clientRuntime) releaseHeavyState() {
 	client.extraModulesLoaded = false
 	client.extraModulesErr = nil
 	client.failedModules = nil
-	client.entrypointServed = false
+	client.configErr = nil
+	client.mainServed = false
 	client.servedModuleKeys = nil
 	client.servedWorkspaceModuleNames = nil
 	client.workspaceModuleScopeConsumed = false
@@ -775,6 +793,9 @@ func (sess *daggerSession) shutdownTelemetry(ctx context.Context) error {
 	if sess.tracerProvider != nil {
 		traceDur += timedProviderOp(ctx, &errs, sess.tracerProvider.Shutdown)
 	}
+	if sess.workloadTracerProvider != nil {
+		traceDur += timedProviderOp(ctx, &errs, sess.workloadTracerProvider.Shutdown)
+	}
 	if sess.loggerProvider != nil {
 		logDur += timedProviderOp(ctx, &errs, sess.loggerProvider.Shutdown)
 	}
@@ -788,6 +809,9 @@ func (sess *daggerSession) shutdownTelemetry(ctx context.Context) error {
 	}
 	for _, client := range clients {
 		errs = errors.Join(errs, client.closeTelemetryDB())
+	}
+	if sess.telemetryEnded != nil {
+		sess.endTelemetryOnce.Do(func() { close(sess.telemetryEnded) })
 	}
 	logClientTelemetryOp(slog.With("sessionID", sess.sessionID), "session telemetry shutdown", start, traceDur, logDur, metricDur, errs)
 	return errs
@@ -917,6 +941,7 @@ func (srv *Server) initializeClientMetrics(client *clientRuntime) {
 
 func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadata *engine.ClientMetadata) {
 	cloudEngine := clientMetadata != nil && clientMetadata.CloudEngine
+	sess.telemetryEnded = make(chan struct{})
 	srv.initializeSessionCloudTelemetry(sess, clientMetadata)
 	spanExporter := sessionSpanExporter{sess: sess, ps: srv.telemetryPubSub}
 	logExporter := sessionLogExporter{sess: sess, ps: srv.telemetryPubSub}
@@ -990,9 +1015,16 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 		spanProcessors++
 	}
 	sess.tracerProvider = sdktrace.NewTracerProvider(tracerOpts...)
+	sess.workloadTracerProvider = srv.workloadExport.WorkloadTracerProvider(sess.sessionID, dagql.NewWcprofLazyParentProcessor())
+	tracerProviders := 1
+	if sess.workloadTracerProvider != nil {
+		tracerProviders++
+		spanProcessors++
+		sess.workloadUses = enginetel.NewWorkloadUses()
+	}
 	sess.loggerProvider = sdklog.NewLoggerProvider(loggerOpts...)
 	sess.telemetryDebug = LifecycleTelemetryCounts{
-		TracerProviders:          1,
+		TracerProviders:          tracerProviders,
 		LoggerProviders:          1,
 		ConfiguredSpanProcessors: spanProcessors,
 		ConfiguredLogProcessors:  logProcessors,
@@ -1034,7 +1066,6 @@ func (srv *Server) initializeDaggerSession(
 		LeaseManager: srv.leaseManager,
 	})
 	failureCleanups.Add("close session resolver", sess.resolver.Close)
-	sess.containers = map[bkgw.Container]struct{}{}
 	sess.dagqlCond = sync.NewCond(&sess.dagqlMu)
 	sess.telemetryPubSub = srv.telemetryPubSub
 	srv.initializeSessionTelemetry(sess, clientMetadata)
@@ -1200,24 +1231,6 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 		sess.dagqlCond.Wait()
 	}
 	sess.dagqlMu.Unlock()
-
-	// Release containers and buildkit state before the final telemetry barrier.
-	// Their cleanup paths may still emit spans, logs, and metrics.
-
-	var releaseGroup errgroup.Group
-	sess.containersMu.Lock()
-	for ctr := range sess.containers {
-		if ctr != nil {
-			releaseGroup.Go(func() error {
-				return ctr.Release(ctx)
-			})
-		}
-	}
-	// Keep the container set closed to mutation until all captured containers have
-	// released, then drop the lock before later cleanup and telemetry barriers.
-	releaseErr := releaseGroup.Wait()
-	sess.containersMu.Unlock()
-	errs = errors.Join(errs, releaseErr)
 
 	// cleanup analytics and telemetry
 	errs = errors.Join(errs, sess.analytics.Close())
@@ -1580,7 +1593,10 @@ func (srv *Server) initializeClientRuntime(
 			servedMods = servedMods.Append(core.NewUserMod(client.mod))
 		}
 		client.servedMods = servedMods.ClientOwned()
-	} else {
+	} else if !opts.InertAttachables {
+		// Only a client that can read its host detects its own workspace. An
+		// in-engine SDK client without a module, such as one that evaluates an
+		// entrypoint's sources, inherits its parent's like a module client.
 		client.pendingWorkspaceLoad = true
 		if clientMD := client.clientMetadata; clientMD != nil && len(clientMD.ExtraModules) > 0 {
 			client.pendingExtraModules = clientMD.ExtraModules
@@ -2553,13 +2569,17 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		return fmt.Errorf("failed to hijack connection: %w", err)
 	}
+	// From here on, a failure closes the connection: net/http no longer owns
+	// it. A nested exec's session helper starts alongside the command, so the
+	// exec can end, closing the helper's connection, in the middle of this
+	// handshake.
 	defer func() {
 		if rerr != nil {
 			conn.Close()
 		}
 	}()
 	if err := conn.SetDeadline(time.Time{}); err != nil {
-		panic(fmt.Errorf("failed to clear deadline: %w", err))
+		return fmt.Errorf("failed to clear deadline: %w", err)
 	}
 
 	// confirm to the client that everything went swimmingly and we're ready to become a gRPC client
@@ -2570,7 +2590,7 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 	resp.Header.Set("Connection", "Upgrade")
 	resp.Header.Set("Upgrade", "h2c")
 	if err := resp.Write(conn); err != nil {
-		panic(fmt.Errorf("failed to write response: %w", err))
+		return fmt.Errorf("failed to write response: %w", err)
 	}
 
 	// The client confirms it has fully read the response and is ready to serve gRPC by sending
@@ -2578,7 +2598,7 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 	// before the response has been fully read, which can mix http and gRPC traffic.
 	ack := make([]byte, 1)
 	if _, err := conn.Read(ack); err != nil {
-		panic(fmt.Errorf("failed to read ack: %w", err))
+		return fmt.Errorf("failed to read ack: %w", err)
 	}
 
 	ctx = record.daggerSession.withAttachablesCancel(ctx, record.clientID)
@@ -2710,6 +2730,8 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 	ctx = telemetry.WithLoggerProvider(ctx, sess.loggerProvider)
 	ctx = telemetry.WithMeterProvider(ctx, client.meterProvider)
 	ctx = enginetel.WithWorkloadReadings(ctx, client.workloadReadings)
+	ctx = enginetel.WithWorkloadTracer(ctx, sess.workloadTracerProvider)
+	ctx = enginetel.WithWorkloadUses(ctx, sess.workloadUses)
 
 	ctx = dagql.ContextWithOperationLeaseProvider(ctx, dagql.OperationLeaseProviderFunc(func(ctx context.Context) (context.Context, func(context.Context) error, error) {
 		if leaseID, ok := leases.FromContext(ctx); ok && leaseID != "" {
@@ -2831,7 +2853,7 @@ func (srv *Server) ensureRequestModulesLoadedWithPostLoad(ctx context.Context, c
 				// runs under client.modulesMu, which also guards
 				// servedWorkspaceModuleNames and workspaceModuleScopeConsumed
 				scope := client.pendingWorkspaceModuleScopeLocked()
-				selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, client.servedWorkspaceModuleNames, client.failedModules, rootFields, scope, client.entrypointServed)
+				selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, client.servedWorkspaceModuleNames, client.failedModules, rootFields, scope, client.mainServed)
 				if applied {
 					scopeApplied = true
 					names := make([]string, 0, len(selected))
@@ -3039,9 +3061,9 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 // Stitch in the given module to the list being served to the current client.
 // When includeDependencies is true, dependency modules are also served with
 // their constructors on the Query root.
-// When entrypoint is true, the module's main-object methods are promoted
+// When main is true, the module's main-object methods are promoted
 // onto the Query root.
-func (srv *Server) ServeModule(ctx context.Context, mod dagql.ObjectResult[*core.Module], includeDependencies bool, entrypoint bool) error {
+func (srv *Server) ServeModule(ctx context.Context, mod dagql.ObjectResult[*core.Module], includeDependencies bool, main bool) error {
 	client, err := srv.executableClientFromContext(ctx)
 	if err != nil {
 		return err
@@ -3050,7 +3072,7 @@ func (srv *Server) ServeModule(ctx context.Context, mod dagql.ObjectResult[*core
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
 
-	if err := srv.serveModule(client, core.NewUserMod(mod), core.InstallOpts{Entrypoint: entrypoint}); err != nil {
+	if err := srv.serveModule(client, core.NewUserMod(mod), core.InstallOpts{Main: main}); err != nil {
 		return err
 	}
 	if includeDependencies {
@@ -3138,7 +3160,7 @@ func (srv *Server) CurrentWorkspaceLock(ctx context.Context, requireWritable boo
 		return nil, false, err
 	}
 	if !requireWritable {
-		lock, ok, err := readImmutableRemoteWorkspaceLock(ctx, client.workspace)
+		lock, ok, err := readRemoteWorkspaceLock(ctx, client.workspace)
 		if err != nil || ok {
 			return lock, ok, err
 		}
@@ -3350,22 +3372,22 @@ func readWorkspaceLockState(ctx context.Context, bk interface {
 	return lock, nil
 }
 
-func readImmutableRemoteWorkspaceLock(ctx context.Context, ws *core.Workspace) (*workspace.Lock, bool, error) {
+// readRemoteWorkspaceLock reads the lock committed with a remote Git
+// workspace. The workspace's tree, config and lock all come from the one
+// commit its selector resolved to when the session loaded it, so the lock
+// applies whether the selector named that commit or a branch or tag. Nothing
+// writes back to it.
+func readRemoteWorkspaceLock(ctx context.Context, ws *core.Workspace) (*workspace.Lock, bool, error) {
 	if ws == nil || ws.LockFile == "" {
 		return nil, false, nil
 	}
-
-	// The remote loader records whether the original workspace selector was a
-	// commit. A resolved SHA alone is insufficient because branches and tags have
-	// one too.
-	source, ok := ws.Source().(*core.WorkspaceSourceGitRef)
-	if !ok || !source.ExplicitCommit {
+	if _, ok := ws.Source().(*core.WorkspaceSourceGitRef); !ok {
 		return nil, false, nil
 	}
 
 	root := ws.Rootfs()
 	if root.Self() == nil {
-		return nil, true, fmt.Errorf("immutable remote Git workspace has no root filesystem")
+		return nil, true, fmt.Errorf("remote Git workspace has no root filesystem")
 	}
 	lock, err := readWorkspaceLockFromRootfs(ctx, root, ws.LockFile)
 	return lock, true, err
@@ -3411,7 +3433,7 @@ func readWorkspaceLockFromRootfs(
 			return nil, conflictErr
 		}
 		console(ctx, "Warning: ignoring invalid workspace lockfile.")
-		slog.WarnContext(ctx, "invalid workspace lockfile in immutable Git workspace; ignoring it", "path", lockPath, "error", err)
+		slog.WarnContext(ctx, "invalid workspace lockfile in remote Git workspace; ignoring it", "path", lockPath, "error", err)
 		return workspace.NewLock(), nil
 	}
 	return lock, nil
@@ -3654,6 +3676,7 @@ func (srv *Server) clientAttachableCallerWithin(
 	record.daggerSession.scopeMu.Lock()
 	inertAttachables := record.inertAttachables
 	attachablesClientID := record.attachablesClientID
+	fromExecHelper := record.attachablesFromExecHelper
 	record.daggerSession.scopeMu.Unlock()
 	if inertAttachables {
 		return nil, status.Error(codes.PermissionDenied, "SDK client access to host session attachables is denied")
@@ -3665,9 +3688,9 @@ func (srv *Server) clientAttachableCallerWithin(
 		caller, _ := record.daggerSession.attachables.Lookup(attachablesClientID)
 		return caller, nil
 	}
-	ctx, cancel := record.daggerSession.attachables.waitContext(ctx, attachablesClientID, timeout)
+	ctx, cancel := record.daggerSession.attachables.waitContext(ctx, timeout, fromExecHelper)
 	defer cancel()
-	caller, err := record.daggerSession.attachables.Wait(ctx, attachablesClientID)
+	caller, err := record.daggerSession.attachables.Wait(ctx, attachablesClientID, fromExecHelper)
 	if err != nil {
 		return nil, err
 	}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"iter"
 	"regexp"
@@ -2450,6 +2451,11 @@ type FunctionCall struct {
 	// module calls. Zero when the call did not originate from an agent turn.
 	callerAgent dagql.ObjectResult[*Agent]
 
+	// composingAgentHandle propagates initial-composition lineage across module
+	// client boundaries without changing callerAgent's provenance semantics.
+	// Like callerAgent, it is set at dispatch and never part of a cache key.
+	composingAgentHandle string
+
 	// processSpan is the span that the processes started for this call parent
 	// their telemetry to, carried engine-side only like callerAgent. A module
 	// entrypoint sets it to the function call span: its module process is
@@ -2462,6 +2468,25 @@ type FunctionCall struct {
 	// to its own span, so that its module process's dependency loading lands
 	// there too (see WithModuleProcessRequest).
 	plumbingSpan trace.SpanContext
+
+	// cacheTTLSeconds is the explicit TTL of the call's function, carried
+	// engine-side only like processSpan. A module entrypoint runs such a call
+	// in a new exec each time dagql evaluates it.
+	cacheTTLSeconds int64
+
+	// moduleProcess marks a call whose runtime runs the function in a process
+	// that the call starts, as a module entrypoint does. That process serves
+	// the module, like the process of a container runtime.
+	moduleProcess bool
+}
+
+// CacheTTLSeconds returns the explicit TTL of the call's function, and 0 when
+// it has none.
+func (fnCall *FunctionCall) CacheTTLSeconds() int64 {
+	if fnCall == nil {
+		return 0
+	}
+	return fnCall.cacheTTLSeconds
 }
 
 // PlumbingSpanContext returns the span holding the work that runs this call
@@ -2492,6 +2517,34 @@ func (fnCall *FunctionCall) ProcessSpanContext() trace.SpanContext {
 // parent their telemetry to.
 func (fnCall *FunctionCall) SetProcessSpanContext(spanCtx trace.SpanContext) {
 	fnCall.processSpan = spanCtx
+}
+
+// SetModuleProcess marks the call of a module entrypoint. The marker is apart
+// from the process span, so serving the module does not depend on telemetry.
+func (fnCall *FunctionCall) SetModuleProcess() {
+	fnCall.moduleProcess = true
+}
+
+// ModuleProcessModule returns the module of the call that the current client
+// runs, if that call runs its function in a process it starts. A process that
+// the call starts serves this module; a process that this process starts gets
+// no call, so it does not.
+func ModuleProcessModule(ctx context.Context) (dagql.ObjectResult[*Module], error) {
+	var none dagql.ObjectResult[*Module]
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return none, err
+	}
+	fnCall, err := query.CurrentFunctionCall(ctx)
+	switch {
+	case errors.Is(err, ErrNoCurrentFunctionCall), errors.Is(err, ErrNoCurrentModule):
+		return none, nil
+	case err != nil:
+		return none, err
+	case fnCall == nil || !fnCall.moduleProcess:
+		return none, nil
+	}
+	return query.CurrentModule(ctx)
 }
 
 // CallerAgent returns the agent whose turn dispatched this function call, if

@@ -111,7 +111,14 @@ func TryNativeWorkspaceMerge(ctx context.Context, working, incoming *Changeset) 
 					return (&gitMergeWorkspace{root: work, dir: "/", workDir: work}).applyContent(ctx, content)
 				}
 			}
-			return nativeWorkspaceMerge(ctx, filepath.Join(gitDir, "objects"), lazy.Ref.Self().Ref.SHA, ws.workDir, paths, apply, phases)
+			baseModes, err := ws.changedFileModes(contents...)
+			if err != nil {
+				return err
+			}
+			if err := nativeWorkspaceMerge(ctx, filepath.Join(gitDir, "objects"), lazy.Ref.Self().Ref.SHA, ws.workDir, paths, apply, phases); err != nil {
+				return err
+			}
+			return ws.restoreChangedFileModes(ctx, baseModes, contents...)
 		})
 		if err == nil {
 			phases.record(ctx, "commit", fnEnd)

@@ -13,6 +13,7 @@ import (
 	"slices"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -532,14 +533,16 @@ func TestTelemetryStreamsConfirmCloudPublishing(t *testing.T) {
 			CloudTelemetryPublisher: engine.CloudTelemetryPublisherEngine,
 		}},
 		{name: "Cloud URL unreachable", md: &engine.ClientMetadata{
-			CloudAuth: basicCloudAuth("dag_test_token"), CloudURL: refusedURL(t),
+			CloudAuth: basicCloudAuth("dag_test_token"), CloudURL: unansweredURL(t),
 			CloudTelemetryPublisher: engine.CloudTelemetryPublisherEngine,
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			sess, root := newCloudTestSession(t, &Server{}, tc.md)
-			t.Cleanup(func() { require.NoError(t, sess.shutdownTelemetry(context.Background())) })
+			// The session's telemetry ends first, as its teardown's does, so
+			// the main client's streams end once drained.
+			require.NoError(t, sess.shutdownTelemetry(context.Background()))
 			shutdownCh := make(chan struct{})
 			close(shutdownCh)
 			root.shutdownCh = shutdownCh
@@ -1018,14 +1021,56 @@ func TestStopCloudTokenRefreshWaitsDespiteSpentBudget(t *testing.T) {
 	require.Less(t, time.Since(start), cloudRefreshFileOpWait)
 }
 
-// refusedURL is a Cloud URL whose port nothing listens on.
-func refusedURL(t *testing.T) string {
+// unansweredURL is a Cloud URL that never answers HTTP: its loopback port
+// stays held, for the rest of t, by a listener that closes every connection
+// at once without a response, so the engine's reachability probe fails. A
+// released port could be taken by another listener before the session probed
+// it, and answer.
+func unansweredURL(t *testing.T) string {
 	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	addr := l.Addr().String()
-	require.NoError(t, l.Close())
-	return "http://" + addr
+	accepting := make(chan struct{})
+	go func() {
+		defer close(accepting)
+		for {
+			conn, err := l.Accept()
+			if errors.Is(err, net.ErrClosed) {
+				return
+			}
+			if err != nil {
+				time.Sleep(time.Millisecond)
+				continue
+			}
+			conn.Close()
+		}
+	}()
+	t.Cleanup(func() {
+		l.Close()
+		<-accepting
+	})
+	return "http://" + l.Addr().String()
+}
+
+// unansweredURL holds its port, and the engine's probe of it fails on the
+// closed connection, not on a timeout. The probe has no bound of its own but
+// its transport's 30s dial timeout, so the context stays below that, and any
+// timeout, the context's or the dial's, fails the test.
+func TestUnansweredURLHoldsItsPort(t *testing.T) {
+	t.Parallel()
+	cloudURL := unansweredURL(t)
+	l, err := net.Listen("tcp", cloudURL[len("http://"):])
+	if err == nil {
+		l.Close()
+		t.Fatal("another listener took the port")
+	}
+	require.ErrorIs(t, err, syscall.EADDRINUSE, "the port is held")
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	err = enginetel.ProbeCloudURL(ctx, cloudURL)
+	require.Error(t, err)
+	var netErr net.Error
+	require.False(t, errors.As(err, &netErr) && netErr.Timeout(), "the probe timed out: %v", err)
 }
 
 // A session whose main client asked the engine to publish, with a Cloud URL
@@ -1036,7 +1081,7 @@ func TestUnreachableCloudURLLeavesTheClientForwarding(t *testing.T) {
 	t.Parallel()
 	sess, root := newCloudTestSession(t, &Server{}, &engine.ClientMetadata{
 		CloudAuth:               basicCloudAuth("dag_test_token"),
-		CloudURL:                refusedURL(t),
+		CloudURL:                unansweredURL(t),
 		CloudTelemetryPublisher: engine.CloudTelemetryPublisherEngine,
 	})
 	t.Cleanup(func() { require.NoError(t, sess.shutdownTelemetry(context.Background())) })

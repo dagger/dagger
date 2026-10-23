@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -60,7 +61,7 @@ func resolveModuleRef(ctx context.Context, address *core.Address, typeName strin
 
 	// Detect cycles on the canonical address, so spellings of one artifact
 	// cannot evade the guard during nested module construction.
-	normalized, err := artifact.URI(core.ArtifactURIOpts{DimensionKeys: true})
+	normalized, err := artifact.URI(core.ArtifactURIOpts{DimensionKeys: true, Full: true})
 	if err != nil {
 		return true, err
 	}
@@ -86,11 +87,19 @@ func hasModuleRefScope(address *core.Address) bool {
 // resolveWorkspaceArtifact is Workspace.artifacts(include: [path]).filterUri(uri).one().
 // The include pattern narrows module loading to the module the path names.
 // typeName is the expected type, which may name the type key holding the path.
+// A short type key names no module, so when the narrowed load matches nothing,
+// resolve against every module.
 func resolveWorkspaceArtifact(ctx context.Context, ws dagql.ObjectResult[*core.Workspace], parsed *dagaddress.Address, uri, typeName string) (*core.Artifact, error) {
-	var include []string
 	if path := parsed.ArtifactPath(core.ArtifactTypeName(typeName)); path != "" {
-		include = []string{path}
+		artifact, err := resolveWorkspaceArtifactIn(ctx, ws, parsed, uri, []string{path})
+		if !errors.Is(err, core.ErrNoArtifactMatch) {
+			return artifact, err
+		}
 	}
+	return resolveWorkspaceArtifactIn(ctx, ws, parsed, uri, nil)
+}
+
+func resolveWorkspaceArtifactIn(ctx context.Context, ws dagql.ObjectResult[*core.Workspace], parsed *dagaddress.Address, uri string, include []string) (*core.Artifact, error) {
 	artifacts, err := (&workspaceSchema{}).collectArtifacts(ctx, ws, include)
 	if err != nil {
 		return nil, fmt.Errorf("resolve %q: %w", uri, err)
@@ -113,11 +122,11 @@ func resolveLegacyModuleRef(ctx context.Context, addr string, dest any) (bool, e
 		if !workspace.IsShortFormModuleRef(addr) {
 			return false, nil
 		}
-		entrypoint, found := workspaceEntrypointModuleName(ctx)
+		main, found := workspaceMainModuleName(ctx)
 		if !found {
 			return false, nil
 		}
-		module, rest = entrypoint, addr
+		module, rest = main, addr
 	} else if module == "" || rest == "" {
 		return false, nil
 	}
@@ -252,14 +261,14 @@ func currentWorkspaceConfig(ctx context.Context) (q *core.Query, ws *core.Worksp
 	return q, ws, cfg, true
 }
 
-// workspaceEntrypointModuleName returns the install name of the entrypoint module.
-func workspaceEntrypointModuleName(ctx context.Context) (string, bool) {
+// workspaceMainModuleName returns the install name of the workspace main module.
+func workspaceMainModuleName(ctx context.Context) (string, bool) {
 	_, _, cfg, ok := currentWorkspaceConfig(ctx)
 	if !ok {
 		return "", false
 	}
 	for name, entry := range cfg.Modules {
-		if entry.Entrypoint {
+		if entry.Main {
 			return name, true
 		}
 	}
@@ -769,7 +778,7 @@ func (s *addressSchema) container(
 	if err != nil {
 		return inst, err
 	}
-	// Desugar through the canonical server so entrypoint proxies on the
+	// Desugar through the canonical server so workspace main proxies on the
 	// outer Query root cannot shadow the core container constructor.
 	coreSrv := srv.Canonical()
 	err = coreSrv.Select(ctx, coreSrv.Root(), &inst, q...)

@@ -1,0 +1,8 @@
+kind: Fixed
+body: |
+  GPU-enabled engine images now include the NVIDIA runtime hook and CLI
+  required for GPU passthrough.
+time: 2026-10-20T21:48:38Z
+custom:
+  Author: grouville
+  PR: 14765

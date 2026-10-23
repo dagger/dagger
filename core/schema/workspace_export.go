@@ -302,9 +302,7 @@ func workspaceExportBaseCandidate(ws *core.Workspace, metadata *gitsession.Captu
 		return none, false
 	}
 	ref := source.Ref.Self()
-	// ExplicitCommit tracks workspace-address intent, not snapshot pinning:
-	// syntheticWorkspaceFromGitRef intentionally leaves it false. Check the
-	// resolved ref selector itself, which capture pins by full SHA.
+	// Check the resolved ref selector itself, which capture pins by full SHA.
 	if ref == nil || ref.Ref == nil || ref.Ref.Name != ref.Ref.SHA || ref.Ref.SHA != metadata.HeadSha || !ref.WorkspaceExportBaseAvailable() {
 		return none, false
 	}

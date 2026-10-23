@@ -9,7 +9,7 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-func (r *Query) Release(ws *Workspace) *Release { // release (../../../../../:0:0)
+func (r *Query) Release(ws *Workspace) *Release { // release (../../../../../../:0:0)
 	assertNotNil("ws", ws)
 	q := r.query.Select("release")
 	q = q.Arg("ws", ws)
@@ -19,7 +19,7 @@ func (r *Query) Release(ws *Workspace) *Release { // release (../../../../../:0:
 	}
 }
 
-type Release struct { // release (../../../../../:0:0)
+type Release struct { // release (../../../../../../:0:0)
 	query *querybuilder.Selection
 
 	id                       *ID
@@ -423,7 +423,7 @@ func (r *Release) TypescriptSDKTargetVersion() *Changeset {
 	}
 }
 
-type ReleaseReport struct { // release (../../../../../:0:0)
+type ReleaseReport struct { // release (../../../../../../:0:0)
 	query *querybuilder.Selection
 
 	commit   *string
@@ -645,7 +645,7 @@ func (r *ReleaseReport) Version(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-type ReleaseReportArtifact struct { // release (../../../../../:0:0)
+type ReleaseReportArtifact struct { // release (../../../../../../:0:0)
 	query *querybuilder.Selection
 
 	id   *ID
@@ -777,7 +777,7 @@ func (r *ReleaseReportArtifact) Tag(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-type ReleaseReportFollowUp struct { // release (../../../../../:0:0)
+type ReleaseReportFollowUp struct { // release (../../../../../../:0:0)
 	query *querybuilder.Selection
 
 	id   *ID

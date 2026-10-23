@@ -2,9 +2,12 @@ package workspace
 
 import (
 	"fmt"
+	"reflect"
 	"slices"
 	"sort"
 	"strings"
+
+	toml "github.com/pelletier/go-toml"
 )
 
 // UpdateConfigBytes applies the differences between the old and new typed
@@ -20,11 +23,20 @@ func UpdateConfigBytes(existingData []byte, cfg *Config) ([]byte, error) {
 	if len(existingData) == 0 {
 		return SerializeConfig(cfg), nil
 	}
+	var err error
+	existingData, err = canonicalizeLegacyWorkspaceMainKeys(existingData)
+	if err != nil {
+		return nil, err
+	}
 	existing, err := ParseConfig(existingData)
 	if err != nil {
 		return nil, err
 	}
 	updated, err := updateConfigTable(existingData, nil, configDocumentMap(existing), configDocumentMap(cfg))
+	if err != nil {
+		return nil, err
+	}
+	updated, err = rewriteIncludeBlocks(updated, existing.Include, cfg.Include)
 	if err != nil {
 		return nil, err
 	}
@@ -150,8 +162,8 @@ func configDocumentMap(cfg *Config) map[string]any {
 			if entry.Pin != "" {
 				module["pin"] = entry.Pin
 			}
-			if entry.Entrypoint {
-				module["entrypoint"] = true
+			if entry.Main {
+				module["main"] = true
 			}
 			if entry.LegacyDefaultPath {
 				module["legacy-default-path"] = true
@@ -236,6 +248,68 @@ func configDocumentMap(cfg *Config) map[string]any {
 		values["sdks"] = sdks
 	}
 	return values
+}
+
+// ExplicitConfigKeys returns the dotted paths of every leaf key the config file
+// actually spells out. Merging an included config needs presence, not the Go
+// zero value: `main = false` (or its deprecated `entrypoint` alias) and
+// `ignore = []` are overrides of what the include provides, and both parse to
+// the same value as an absent key.
+//
+// Schema keys are reported by their canonical name, because the decoder also
+// accepts case variants such as IGNORE. Module names and settings keys are user
+// data and keep their spelling. Array-of-tables blocks are skipped: the only one
+// a config can carry is [[include]], which is replaced wholesale rather than
+// merged.
+func ExplicitConfigKeys(data []byte) (map[string]bool, error) {
+	keys := map[string]bool{}
+	if len(data) == 0 {
+		return keys, nil
+	}
+	tree, err := toml.LoadBytes(data)
+	if err != nil {
+		return nil, fmt.Errorf("parse config keys: %w", err)
+	}
+	collectExplicitConfigKeys(tree, reflect.TypeFor[Config](), nil, keys)
+	return keys, nil
+}
+
+func collectExplicitConfigKeys(tree *toml.Tree, typ reflect.Type, prefix []string, keys map[string]bool) {
+	for typ != nil && typ.Kind() == reflect.Pointer {
+		typ = typ.Elem()
+	}
+	for _, key := range tree.Keys() {
+		name, childType := key, reflect.Type(nil)
+		switch {
+		case typ == nil:
+		case typ.Kind() == reflect.Struct:
+			name, childType = configFieldForKey(typ, key)
+		case typ.Kind() == reflect.Map:
+			childType = typ.Elem()
+		}
+		path := append(slices.Clone(prefix), name)
+		// GetPath, not Get: Get re-splits a dotted key, so a quoted table name
+		// like [modules."my.mod"] would look up my -> mod and miss.
+		switch value := tree.GetPath([]string{key}).(type) {
+		case *toml.Tree:
+			collectExplicitConfigKeys(value, childType, path, keys)
+		case []*toml.Tree:
+		default:
+			path = canonicalConfigParts(path)
+			keys[JoinConfigPath(path...)] = true
+		}
+	}
+}
+
+func configFieldForKey(typ reflect.Type, key string) (string, reflect.Type) {
+	for i := range typ.NumField() {
+		field := typ.Field(i)
+		name := strings.Split(field.Tag.Get("toml"), ",")[0]
+		if name != "" && name != "-" && configDecoderKeyMatches(key, name) {
+			return name, field.Type
+		}
+	}
+	return key, nil
 }
 
 // FormatConfigPathSegment formats one TOML dotted-key path segment.

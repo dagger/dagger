@@ -9,7 +9,7 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-type PhpClientDev struct { // php-client-dev (../../../../../:0:0)
+type PhpClientDev struct { // php-client-dev (../../../../../../:0:0)
 	query *querybuilder.Selection
 
 	id             *ID
@@ -280,7 +280,7 @@ type PhpClientDevOpts struct {
 	ClientDockerConfig *Secret
 }
 
-func (r *Query) PhpClientDev(ws *Workspace, opts ...PhpClientDevOpts) *PhpClientDev { // php-client-dev (../../../../../:0:0)
+func (r *Query) PhpClientDev(ws *Workspace, opts ...PhpClientDevOpts) *PhpClientDev { // php-client-dev (../../../../../../:0:0)
 	assertNotNil("ws", ws)
 	q := r.query.Select("phpClientDev")
 	for i := len(opts) - 1; i >= 0; i-- {

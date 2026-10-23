@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  `dagger run` and `dagger session` inside a `withExec` that joins the caller's session answered HTTP 401 to the token they gave their own child. The client now keeps the exec's token for its own requests to the engine, and checks its children against its own token.
+time: 2026-10-16T12:51:10Z
+custom:
+  Author: eunomie
+  PR: 14708

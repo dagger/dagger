@@ -119,10 +119,10 @@ func moduleFixture(t testing.TB, c *dagger.Client, fixture string) *core.Contain
 		With(withModuleFixture(t, c, ".", fixture))
 }
 
-func moduleEntrypointFixture(t testing.TB, c *dagger.Client, name, fixture string) *core.Container {
+func moduleMainFixture(t testing.TB, c *dagger.Client, name, fixture string) *core.Container {
 	t.Helper()
 	return goGitBase(t, c).
-		With(withModuleEntrypointFixture(t, c, ".", name, fixture))
+		With(withModuleMainFixture(t, c, ".", name, fixture))
 }
 
 func withModuleFixture(t testing.TB, c *dagger.Client, dst, fixture string) core.WithContainerFunc {
@@ -130,7 +130,7 @@ func withModuleFixture(t testing.TB, c *dagger.Client, dst, fixture string) core
 	return withTestdataFixture(t, c, dst, "modules", fixture)
 }
 
-func withModuleEntrypointFixture(t testing.TB, c *dagger.Client, dst, name, fixture string) core.WithContainerFunc {
+func withModuleMainFixture(t testing.TB, c *dagger.Client, dst, name, fixture string) core.WithContainerFunc {
 	t.Helper()
 	moduleDir := fixtureJoin(dst, ".dagger/modules/"+name)
 	configPath := fixtureJoin(dst, "dagger.toml")
@@ -139,7 +139,7 @@ func withModuleEntrypointFixture(t testing.TB, c *dagger.Client, dst, name, fixt
 			With(withModuleFixture(t, c, moduleDir, fixture)).
 			WithNewFile(configPath, fmt.Sprintf(`[modules.%s]
 source = ".dagger/modules/%s"
-entrypoint = true
+main = true
 `, name, name))
 	}
 }

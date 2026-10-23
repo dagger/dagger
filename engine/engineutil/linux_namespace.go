@@ -61,25 +61,22 @@ func runInNetNS[T any](
 	}
 	resultCh := make(chan result, 1)
 
-	var nsPath string
-
-	// need this to extract the namespace file
-	var tmpSpec specs.Spec
+	// Start from a private network namespace, as the OCI spec does, and let
+	// the provider change it. Host networking removes it: there is then
+	// nothing to enter, and no container PID to look up before runc starts.
+	tmpSpec := specs.Spec{Linux: &specs.Linux{
+		Namespaces: []specs.LinuxNamespace{{Type: specs.NetworkNamespace}},
+	}}
 	if state.networkNamespace != nil {
 		if err := state.networkNamespace.Set(&tmpSpec); err != nil {
 			return zero, fmt.Errorf("failed to set network namespace: %w", err)
 		}
-		for _, ns := range tmpSpec.Linux.Namespaces {
-			if ns.Type == specs.NetworkNamespace {
-				nsPath = ns.Path
-			}
-		}
 	}
-	namespaces := []specs.LinuxNamespace{
-		{
-			Type: specs.NetworkNamespace,
-			Path: nsPath, // this known (and needed) ahead of time
-		},
+	var namespaces []specs.LinuxNamespace
+	for _, ns := range tmpSpec.Linux.Namespaces {
+		if ns.Type == specs.NetworkNamespace {
+			namespaces = append(namespaces, ns)
+		}
 	}
 
 	// Wrap the function to match the expected signature and capture result

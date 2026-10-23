@@ -62,9 +62,9 @@ func TestAddMigratedModuleSDK(t *testing.T) {
 		}, cfg.SDKs["go"].Scopes)
 	})
 
-	t.Run("root scope infers the local entrypoint name", func(t *testing.T) {
+	t.Run("root scope infers the local main name", func(t *testing.T) {
 		cfg := &Config{Modules: map[string]ModuleEntry{
-			"myapp": {Source: ".", Entrypoint: true},
+			"myapp": {Source: ".", Main: true},
 		}}
 		AddMigratedModuleSDK(cfg, "go", ".", "myapp")
 		require.Equal(t, map[string]SDKScope{
@@ -72,7 +72,7 @@ func TestAddMigratedModuleSDK(t *testing.T) {
 		}, cfg.SDKs["go"].Scopes)
 	})
 
-	t.Run("root scope without an entrypoint keeps its name", func(t *testing.T) {
+	t.Run("root scope without a workspace main keeps its name", func(t *testing.T) {
 		cfg := &Config{Modules: map[string]ModuleEntry{
 			"myapp": {Source: "."},
 		}}

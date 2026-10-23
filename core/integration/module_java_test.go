@@ -329,6 +329,30 @@ func (JavaSuite) TestEnum(_ context.Context, t *testctx.T) {
 	})
 }
 
+func (JavaSuite) TestTemplate(_ context.Context, t *testctx.T) {
+	t.Run("adds the template to a module without a pom.xml", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := javaModule(t, c, "template-empty").
+			With(daggerShellAt(".", "container-echo hello | stdout")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Contains(t, out, "hello")
+	})
+
+	t.Run("keeps the module's own files", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := javaModule(t, c, "template-keeps-files").
+			With(daggerShellAt(".", "own-function")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Contains(t, out, "own function")
+	})
+}
+
 func (JavaSuite) TestGitRef(ctx context.Context, t *testctx.T) {
 	// A remote git module is the only case that makes the engine resolve its SDK
 	// by version: it fetches github.com/dagger/dagger/sdk/java@<engine version>.

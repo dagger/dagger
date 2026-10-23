@@ -15,6 +15,8 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
+	otellog "go.opentelemetry.io/otel/log"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
@@ -150,7 +152,7 @@ func TestOversizedChangesetSkipsPatchWork(t *testing.T) {
 
 	// No server is needed on the oversized summary: it may not request
 	// asPatch, diffStats, or an exact per-path summary.
-	out := newMCP().summarizePatch(ctx, nil, changes)
+	out := summarizePatch(ctx, nil, changes, toolPatchLimits)
 	require.Contains(t, out, "exceeds the 200-path inspection budget")
 	require.NotContains(t, out, "new/")
 	require.NotContains(t, out, "old/")
@@ -174,9 +176,17 @@ func TestSmallTextChangeset(t *testing.T) {
 		{name: "over line budget across files", stats: []*DiffStat{{Path: "a.txt", Kind: DiffStatKindAdded, AddedLines: patchSummaryMaxLines}, {Path: "b.txt", Kind: DiffStatKindRemoved, RemovedLines: 1}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.want, smallTextChangeset(tc.stats))
+			require.Equal(t, tc.want, toolPatchLimits.smallTextChangeset(tc.stats))
 		})
 	}
+
+	t.Run("limits are tunable", func(t *testing.T) {
+		// A regeneration too long for a model's context still shows as a
+		// patch for a stale generator's check.
+		stats := []*DiffStat{{Path: "a.txt", Kind: DiffStatKindModified, AddedLines: 500, RemovedLines: 500}}
+		require.False(t, toolPatchLimits.smallTextChangeset(stats))
+		require.True(t, stalePatchLimits.smallTextChangeset(stats))
+	})
 }
 
 func TestReadPatchPreview(t *testing.T) {
@@ -195,7 +205,7 @@ func TestReadPatchPreview(t *testing.T) {
 		{name: "text mentioning binary marker", patch: "diff --git a/a b/a\n+GIT binary patch\n", want: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			preview, ok := readPatchPreview(strings.NewReader(tc.patch))
+			preview, ok := toolPatchLimits.readPatchPreview(strings.NewReader(tc.patch))
 			require.Equal(t, tc.want, ok)
 			if ok {
 				require.Equal(t, tc.patch, preview)
@@ -206,13 +216,13 @@ func TestReadPatchPreview(t *testing.T) {
 	}
 
 	t.Run("read error", func(t *testing.T) {
-		preview, ok := readPatchPreview(iotest.ErrReader(io.ErrUnexpectedEOF))
+		preview, ok := toolPatchLimits.readPatchPreview(iotest.ErrReader(io.ErrUnexpectedEOF))
 		require.False(t, ok)
 		require.Empty(t, preview)
 	})
 	t.Run("read is bounded", func(t *testing.T) {
 		r := strings.NewReader(strings.Repeat("x", patchSummaryMaxBytes*2))
-		preview, ok := readPatchPreview(r)
+		preview, ok := toolPatchLimits.readPatchPreview(r)
 		require.False(t, ok)
 		require.Empty(t, preview)
 		require.Equal(t, patchSummaryMaxBytes-1, r.Len())
@@ -632,6 +642,76 @@ func TestCallPayloadRecordsExcludedFromLLMLogs(t *testing.T) {
 	t.Run("automatic tool result", func(t *testing.T) {
 		require.Equal(t, "before\nafter", m.toolLogs(ctx))
 	})
+}
+
+// TestHumanOnlyLogsExcludedFromLLMLogs covers the human-only marker: such a
+// record (e.g. the coloured tool name collision warning) stays in the trace
+// for people, but never reaches a model through ReadLogs or a tool result.
+func TestHumanOnlyLogsExcludedFromLLMLogs(t *testing.T) {
+	const (
+		traceID = "000102030405060708090a0b0c0d0e0f"
+		spanID  = "0000000000000001"
+	)
+
+	// The collision warning carries the marker on every record it writes.
+	recorder := &mediaLogRecorder{}
+	logCtx := telemetry.WithLoggerProvider(t.Context(), sdklog.NewLoggerProvider(sdklog.WithProcessor(recorder)))
+	warnToolNameCollisions(logCtx, map[string][]string{"shared": {"Swapper", "Rival"}})
+	recorder.mu.Lock()
+	require.NotEmpty(t, recorder.records)
+	for _, record := range recorder.records {
+		humanOnly := false
+		record.WalkAttributes(func(kv otellog.KeyValue) bool {
+			if kv.Key == telemetryattrs.LogHumanOnlyAttr {
+				humanOnly = kv.Value.AsBool()
+			}
+			return true
+		})
+		require.True(t, humanOnly)
+	}
+	recorder.mu.Unlock()
+
+	dbs := clientdb.NewDBs(t.TempDir())
+	store, err := dbs.Open(t.Context(), "capture-test")
+	require.NoError(t, err)
+	_, err = store.AppendSpans([]clientdb.Span{{
+		TraceID:    traceID,
+		SpanID:     spanID,
+		Attributes: marshalSpanAttrs(t),
+	}})
+	require.NoError(t, err)
+	scope := "ordinary.logs"
+	humanOnly := &otlpcommonv1.KeyValue{
+		Key:   telemetryattrs.LogHumanOnlyAttr,
+		Value: &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_BoolValue{BoolValue: true}},
+	}
+	_, err = store.AppendLogs([]clientdb.Log{
+		persistedCaptureLog(t, traceID, spanID, scope, stringLogBody("before\n")),
+		persistedCaptureLog(t, traceID, spanID, scope, stringLogBody("\x1b[33mWRN\x1b[0m agent tool name collision\n"), humanOnly),
+		persistedCaptureLog(t, traceID, spanID, scope, stringLogBody("after\n")),
+	})
+	require.NoError(t, err)
+	require.NoError(t, store.Close())
+
+	ctx := ContextWithQuery(t.Context(), &Query{Server: &logCaptureTestServer{
+		mockServer: &mockServer{},
+		dbs:        dbs,
+	}})
+	traceIDValue, err := trace.TraceIDFromHex(traceID)
+	require.NoError(t, err)
+	spanIDValue, err := trace.SpanIDFromHex(spanID)
+	require.NoError(t, err)
+	ctx = trace.ContextWithSpanContext(ctx, trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: traceIDValue,
+		SpanID:  spanIDValue,
+	}))
+	m := newMCP()
+
+	got, err := m.readLogsTool(&dagql.Server{})(ctx, map[string]any{"span": spanID})
+	require.NoError(t, err)
+	require.NotContains(t, got, "collision")
+	require.Contains(t, got, "2 lines available")
+	require.Equal(t, "before\nafter", m.toolLogs(ctx))
 }
 
 // TestCaptureLogLinesIsolatesProducers exercises persisted records across the

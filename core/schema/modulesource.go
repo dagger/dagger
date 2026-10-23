@@ -30,8 +30,6 @@ import (
 	"github.com/dagger/dagger/util/hashutil"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/opencontainers/go-digest"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -253,7 +251,6 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 			Doc(`The module source scoped to implementation identity only, i.e. source code and dependency content rather than client-specific provenance.`),
 		moduleDefinitionField(s.moduleSourceModuleDefinition),
 		moduleTypesDefinitionField(s.moduleSourceModuleTypesDefinition),
-		entrypointResourcesField(s.moduleSourceEntrypointResources),
 		moduleNamespacedDefinitionField(s.moduleSourceNamespacedDefinition),
 		dagql.NodeFunc("introspectionSchemaJSON", s.moduleSourceIntrospectionSchemaJSON).
 			Doc(`The introspection schema JSON file for this module source.`,
@@ -478,6 +475,32 @@ func (s *moduleSourceSchema) workspaceModuleSourceByName(
 	cfg, err := workspace.ParseConfigAt(ctx, contents, filepath.Dir(ws.ConfigFile))
 	if err != nil {
 		return inst, false, fmt.Errorf("failed to parse workspace config: %w", err)
+	}
+	// This path reads dagger.toml directly rather than through the Workspace
+	// object, so it has to apply the includes itself; without it a module an
+	// included config contributes would not resolve by name.
+	includeSource := core.IncludeSource{}
+	explicitKeys := map[string]bool{}
+	if len(cfg.Include) > 0 {
+		dag, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return inst, false, err
+		}
+		includeSource = core.IncludeSource{
+			Dag:       dag,
+			ConfigDir: filepath.Dir(ws.ConfigFile),
+			ReadWorkspaceFile: func(ctx context.Context, wsPath string) ([]byte, error) {
+				return bk.ReadCallerHostFile(ctx, filepath.Join(ws.Root, wsPath))
+			},
+		}
+		explicitKeys, err = workspace.ExplicitConfigKeys(contents)
+		if err != nil {
+			return inst, false, fmt.Errorf("failed to parse workspace config: %w", err)
+		}
+	}
+	cfg, err = core.ApplyIncludes(ctx, includeSource, cfg, explicitKeys, nil)
+	if err != nil {
+		return inst, false, err
 	}
 	entry, ok := cfg.Modules[name]
 	if !ok || entry.Source == "" {
@@ -894,6 +917,10 @@ type directoryAsModuleSourceArgs struct {
 	// (dagger.toml), not a Module (dagger.json). Mirrors the tolerance local
 	// and git module sources already have.
 	AllowNotExists bool `internal:"true" default:"false"`
+
+	// OriginRoot is set when a module loads this directory from its own tree;
+	// see core.DirModuleSource.OriginRoot.
+	OriginRoot dagql.Optional[dagql.String] `internal:"true"`
 }
 
 func (s *moduleSourceSchema) directoryAsModule(
@@ -940,6 +967,10 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 			OriginalContextDir:        contextDir,
 			OriginalSourceRootSubpath: args.SourceRootPath,
 		},
+	}
+	if args.OriginRoot.Valid {
+		root := args.OriginRoot.Value.String()
+		dirSrc.DirSrc.OriginRoot = &root
 	}
 	if args.Workspace.Valid {
 		srv, err := core.CurrentDagqlServer(ctx)
@@ -1027,6 +1058,12 @@ func (s *moduleSourceSchema) workspaceModuleSource(
 			Version:          cmp.Or(ref.Ref.ShortName(), ref.Ref.SHA),
 			Commit:           ref.Ref.SHA,
 			Ref:              ref.Ref.Name,
+		}
+		// Print this source back as repo#ref:subpath, so reloading it doesn't
+		// have to rediscover where the repository ends. SCP-style refs
+		// (git@host:path) have no scheme and can't use that form.
+		if gitref.Scheme(cloneRef).Prefix() != "" {
+			src.Git.Selector = gitref.GitRefSelector
 		}
 		src.Git.Symbolic = cloneRef
 		if sourceRootPath != "." {
@@ -1239,7 +1276,7 @@ func (s *moduleSourceSchema) loadConfiguredModuleSource(ctx context.Context, src
 	if err := eg.Wait(); err != nil {
 		return err
 	}
-	if err := s.loadEntrypointResources(ctx, src); err != nil {
+	if err := s.loadEntrypointSources(ctx, src); err != nil {
 		return err
 	}
 	if err := src.LoadUserDefaults(ctx); err != nil {
@@ -1248,11 +1285,141 @@ func (s *moduleSourceSchema) loadConfiguredModuleSource(ctx context.Context, src
 	return nil
 }
 
+// reloadModuleSourceContext evaluates sources again because a reload replaces
+// the context that held the files sources returned.
+func (s *moduleSourceSchema) reloadModuleSourceContext(ctx context.Context, src *core.ModuleSource) error {
+	if err := s.loadModuleSourceContext(ctx, src); err != nil {
+		return err
+	}
+	return s.loadEntrypointSources(ctx, src)
+}
+
+// loadEntrypointSources adds what the entrypoint's sources member returns to
+// the module context. It runs while the source loads, because dependents and
+// the declaredClients input hash the module digest without loading the module.
+func (s *moduleSourceSchema) loadEntrypointSources(ctx context.Context, src *core.ModuleSource) (rerr error) {
+	if src.Entrypoint == nil {
+		return nil
+	}
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return err
+	}
+	entryDir, local, err := entrypoint.LocalDirectory(ctx, dag, src)
+	if err != nil || !local {
+		return err
+	}
+	declared := false
+	err = entryDir.Self().Mount(ctx, entryDir, func(dir string) error {
+		declared, err = dangv2.DeclaresEntrypointSources(dir)
+		return err
+	})
+	if err != nil {
+		return fmt.Errorf("scan module entrypoint source: %w", err)
+	}
+	if !declared {
+		return nil
+	}
+
+	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("entrypoint sources: %s", src.ModuleName), telemetry.Internal())
+	defer telemetry.EndWithCause(span, &rerr)
+	fail := func(err error) error {
+		return fmt.Errorf("module %q entrypoint %s: %w", src.ModuleName, dangv2.EntrypointSourcesMember, err)
+	}
+
+	workspace, err := entrypoint.SourcesWorkspace(ctx, dag, src)
+	if err != nil {
+		return fail(err)
+	}
+	deps, err := s.defaultSchemaBuilderForEngineVersion(ctx, src.EngineVersion)
+	if err != nil {
+		return fail(err)
+	}
+	schemaFile, err := deps.SchemaIntrospectionJSONFileForModule(ctx)
+	if err != nil {
+		return fail(fmt.Errorf("get entrypoint schema: %w", err))
+	}
+	sources, err := dangv2.EntrypointSources(ctx, src, entryDir, schemaFile, workspace)
+	if err != nil {
+		return fail(err)
+	}
+	configPath := filepath.Join(src.SourceRootSubpath, moduleSourceConfigFilename(src))
+	if _, exists, err := core.StatFSExists(ctx, &core.DirectoryStatFS{Dir: sources}, configPath); err != nil || !exists {
+		return errors.Join(fail(fmt.Errorf("the returned directory has no %s; return the files at their paths from the workspace root", configPath)), err)
+	}
+	moduleContext := src.ContextDirectory
+	if src.Kind == core.ModuleSourceKindDir && src.Workspace.Self() == nil {
+		// A directory source's context is the whole directory. Keep the
+		// module's own files of it, as a Git module context does, so that
+		// sources decides what else the module builds from.
+		err := dag.Select(ctx, src.DirSrc.OriginalContextDir, &moduleContext, dagql.Selector{
+			Field: "filter",
+			Args: []dagql.NamedInput{
+				{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(moduleSourceContextIncludes(src)...))},
+			},
+		})
+		if err != nil {
+			return fail(err)
+		}
+	}
+	contextDir, err := mergeEntrypointSources(ctx, dag, sources, moduleContext)
+	if err != nil {
+		return fail(err)
+	}
+	src.ContextDirectory = contextDir
+	slog.Info("entrypoint sources evaluated", "module", src.ModuleName)
+	return nil
+}
+
+// mergeEntrypointSources overlays the module's own files as the engine loads
+// them without sources, so the module directory holds what it holds without
+// the member, .gitignore handling included. It drops repository metadata from
+// both: .git/config can hold credentials, and .git changes on every fetch.
+func mergeEntrypointSources(
+	ctx context.Context,
+	dag *dagql.Server,
+	sources dagql.ObjectResult[*core.Directory],
+	moduleContext dagql.ObjectResult[*core.Directory],
+) (dagql.ObjectResult[*core.Directory], error) {
+	var merged dagql.ObjectResult[*core.Directory]
+	contextID, err := moduleContext.ID()
+	if err != nil {
+		return merged, err
+	}
+	err = dag.Select(ctx, sources, &merged,
+		dagql.Selector{Field: "withDirectory", Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.String("/")},
+			{Name: "source", Value: dagql.NewID[*core.Directory](contextID)},
+		}},
+		dagql.Selector{Field: "filter", Args: []dagql.NamedInput{
+			{Name: "exclude", Value: dagql.ArrayInput[dagql.String]{".git", "**/.git"}},
+		}},
+	)
+	return merged, err
+}
+
 // load (or re-load) the context directory for the given module source
 func (s *moduleSourceSchema) loadModuleSourceContext(
 	ctx context.Context,
 	src *core.ModuleSource,
 ) error {
+	if src.Kind == core.ModuleSourceKindDir && src.Workspace.Self() == nil {
+		// Directory sources already carry their complete in-engine context.
+		return nil
+	}
+
+	contextDir, err := core.NewModuleSourceFS(nil, src).ContextDirectory(ctx, core.CopyFilter{
+		Include:   moduleSourceContextIncludes(src),
+		Gitignore: src.Workspace.Self() != nil || src.Kind == core.ModuleSourceKindLocal,
+	})
+	if err != nil {
+		return err
+	}
+	src.ContextDirectory = contextDir
+	return nil
+}
+
+func moduleSourceContextIncludes(src *core.ModuleSource) []string {
 	// we load the includes specified by the user in the module config (if any) plus a few
 	// prepended paths that are always loaded
 	fullIncludePaths := []string{
@@ -1271,25 +1438,7 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 		sourcePath = "*"
 	}
 	fullIncludePaths = append(fullIncludePaths, sourcePath)
-
-	if src.Kind == core.ModuleSourceKindDir && src.Workspace.Self() == nil {
-		// Directory sources already carry their complete in-engine context.
-		return nil
-	}
-
-	fullIncludePaths = append(fullIncludePaths, src.RebasedIncludePaths...)
-	if src.EntrypointResourcesLoaded {
-		fullIncludePaths = append(fullIncludePaths, entrypointResourcesGitExclusion...)
-	}
-	contextDir, err := core.NewModuleSourceFS(nil, src).ContextDirectory(ctx, core.CopyFilter{
-		Include:   fullIncludePaths,
-		Gitignore: src.Workspace.Self() != nil || src.Kind == core.ModuleSourceKindLocal,
-	})
-	if err != nil {
-		return err
-	}
-	src.ContextDirectory = contextDir
-	return nil
+	return append(fullIncludePaths, src.RebasedIncludePaths...)
 }
 
 func (s *moduleSourceSchema) moduleSourceSubpath(
@@ -1355,7 +1504,7 @@ func (s *moduleSourceSchema) moduleSourceWithSourceSubpath(
 	}
 
 	// reload context since the subpath impacts what we implicitly include in the load
-	err = s.loadModuleSourceContext(ctx, src)
+	err = s.reloadModuleSourceContext(ctx, src)
 	switch {
 	case err == nil:
 	case codes.NotFound == status.Code(err) && src.Kind == core.ModuleSourceKindLocal:
@@ -1429,7 +1578,7 @@ func (s *moduleSourceSchema) moduleSourceWithIncludes(
 	src.RebasedIncludePaths = append(src.RebasedIncludePaths, rebasedIncludes...)
 
 	// reload context in case includes have changed it
-	err = s.loadModuleSourceContext(ctx, src)
+	err = s.reloadModuleSourceContext(ctx, src)
 	switch {
 	case err == nil:
 	case codes.NotFound == status.Code(err) && src.Kind == core.ModuleSourceKindLocal:
@@ -1473,7 +1622,7 @@ func (s *moduleSourceSchema) moduleSourceWithSDK(
 		// Reload the context directory now that SourceSubpath is set, so that
 		// the source files are included (e.g. an existing main.go). The initial
 		// load may have used empty SourceSubpath which matches no files.
-		err := s.loadModuleSourceContext(ctx, src)
+		err := s.reloadModuleSourceContext(ctx, src)
 		switch {
 		case err == nil:
 		case codes.NotFound == status.Code(err) && src.Kind == core.ModuleSourceKindLocal:
@@ -3979,7 +4128,12 @@ func (s *moduleSourceSchema) moduleSourceImplementationScoped(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get module source implementation digest: %w", err)
 	}
-	scopedDigest := hashutil.HashStrings("ModuleSource._implementationScoped", sourceDigest.String())
+	scopedDigestInputs := []string{"ModuleSource._implementationScoped", sourceDigest.String()}
+	// See moduleImplementationScoped.
+	if origin := src.Self().OriginSymbolic(); origin != "" {
+		scopedDigestInputs = append(scopedDigestInputs, "originSymbolic:"+origin)
+	}
+	scopedDigest := hashutil.HashStrings(scopedDigestInputs...)
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
@@ -4639,227 +4793,6 @@ func (s *moduleSourceSchema) moduleSourceWithoutClient(
 	src.ConfigClients = configClients
 
 	return src, nil
-}
-
-// maxEntrypointResources bounds what one entrypoint adds to the context
-// filter, the digest inputs and the persisted module source.
-const maxEntrypointResources = 1000
-
-// entrypointResourcesGitExclusion keeps repository metadata out of a context
-// that resources widen: .git/config can hold credentials, and .git changes on
-// every fetch, which would change every call key.
-var entrypointResourcesGitExclusion = []string{"!.git", "!**/.git"}
-
-func entrypointResourcesField(resolver dagql.NodeFuncHandler[*core.ModuleSource, entrypointResourcesArgs, dagql.Array[dagql.String]]) dagql.Field[*core.ModuleSource] {
-	return dagql.NodeFunc("_entrypointResources", resolver).
-		IsPersistable().
-		Doc(`The include patterns that the module entrypoint's resources member returns, or an empty list when the entrypoint declares no such member.`,
-			`Keyed on a source whose whole context is the entrypoint directory and on the schema the entrypoint is checked against, so editing other module files does not evaluate the entrypoint again.`).
-		Args(
-			dagql.Arg("introspectionJson").Doc(`The introspection schema JSON file the entrypoint is checked against.`),
-		)
-}
-
-type entrypointResourcesArgs struct {
-	IntrospectionJSON core.FileID `name:"introspectionJson"`
-}
-
-func (s *moduleSourceSchema) moduleSourceEntrypointResources(
-	ctx context.Context,
-	src dagql.ObjectResult[*core.ModuleSource],
-	args entrypointResourcesArgs,
-) (dagql.Array[dagql.String], error) {
-	if src.Self().Entrypoint == nil {
-		return nil, fmt.Errorf("module entrypoint is not configured")
-	}
-	if kind := src.Self().Entrypoint.Kind; kind != modules.ModuleEntrypointKindDang {
-		return nil, fmt.Errorf("unsupported module entrypoint kind %q", kind)
-	}
-	dag, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, err
-	}
-	schema, err := args.IntrospectionJSON.Load(ctx, dag)
-	if err != nil {
-		return nil, fmt.Errorf("load schema introspection json for entrypoint resources: %w", err)
-	}
-	patterns, declared, err := dangv2.EntrypointResources(ctx, src, schema)
-	if err != nil {
-		return nil, err
-	}
-	if declared {
-		slog.Info("entrypoint resources evaluated", "module", src.Self().ModuleName, "patterns", len(patterns))
-	}
-	return dagql.NewStringArray(patterns...), nil
-}
-
-// loadEntrypointResources reloads the module context with the patterns that
-// the entrypoint's resources member returns. It runs while the source loads,
-// because dependents and the declaredClients input hash the module digest
-// without loading the module.
-func (s *moduleSourceSchema) loadEntrypointResources(ctx context.Context, src *core.ModuleSource) (rerr error) {
-	if src.Entrypoint == nil {
-		return nil
-	}
-	dag, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return err
-	}
-	entryDir, local, err := entrypoint.LocalDirectory(ctx, dag, src)
-	if err != nil || !local {
-		return err
-	}
-	mentioned := false
-	err = entryDir.Self().Mount(ctx, entryDir, func(dir string) error {
-		mentioned, err = dangv2.MentionsEntrypointResources(dir)
-		return err
-	})
-	if err != nil {
-		return fmt.Errorf("scan module entrypoint source: %w", err)
-	}
-	if !mentioned {
-		return nil
-	}
-
-	patterns, err := s.selectEntrypointResources(ctx, dag, src, entryDir)
-	if err != nil {
-		return fmt.Errorf("module %q entrypoint %s: %w", src.ModuleName, dangv2.EntrypointResourcesMember, err)
-	}
-	if len(patterns) == 0 {
-		return nil
-	}
-	rebased, err := rebaseEntrypointResources(src, patterns)
-	if err != nil {
-		return fmt.Errorf("module %q entrypoint %s: %w", src.ModuleName, dangv2.EntrypointResourcesMember, err)
-	}
-
-	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("entrypoint resources: %s", src.ModuleName),
-		telemetry.Internal(),
-		trace.WithAttributes(attribute.StringSlice("dagger.io/module.entrypoint.resources", patterns)),
-	)
-	defer telemetry.EndWithCause(span, &rerr)
-
-	src.IncludePaths = append(src.IncludePaths, patterns...)
-	src.RebasedIncludePaths = append(src.RebasedIncludePaths, rebased...)
-	src.EntrypointResourcesLoaded = true
-	if err := s.loadModuleSourceContext(ctx, src); err != nil {
-		return fmt.Errorf("load module context with entrypoint %s: %w", dangv2.EntrypointResourcesMember, err)
-	}
-	if _, ok, err := entrypoint.LocalDirectory(ctx, dag, src); err != nil || !ok {
-		return errors.Join(fmt.Errorf("module %q entrypoint %s exclude the entrypoint source %q", src.ModuleName, dangv2.EntrypointResourcesMember, src.Entrypoint.Source), err)
-	}
-	return nil
-}
-
-// selectEntrypointResources selects _entrypointResources on a source whose
-// whole context is the entrypoint directory. The source is attached under a
-// synthetic call keyed on its content, because the module source that holds
-// it is still loading and has no result to select from.
-func (s *moduleSourceSchema) selectEntrypointResources(
-	ctx context.Context,
-	dag *dagql.Server,
-	src *core.ModuleSource,
-	entryDir dagql.ObjectResult[*core.Directory],
-) ([]string, error) {
-	entrySrc := entrypoint.SourceForDirectory(src, entryDir)
-	entrySrc.Workspace = dagql.ObjectResult[*core.Workspace]{}
-	entrySrcDigest, err := entrySrc.SourceImplementationDigest(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("entrypoint source digest: %w", err)
-	}
-	entrySrcInst, err := dagql.NewObjectResultForCall(entrySrc, dag, &dagql.ResultCall{
-		Kind:        dagql.ResultCallKindSynthetic,
-		SyntheticOp: "entrypoint_resources_source",
-		Type:        dagql.NewResultCallType(entrySrc.Type()),
-		Args: []*dagql.ResultCallArg{{
-			Name: "sourceImplementationDigest",
-			Value: &dagql.ResultCallLiteral{
-				Kind:        dagql.ResultCallLiteralKindString,
-				StringValue: entrySrcDigest.String(),
-			},
-		}},
-	})
-	if err != nil {
-		return nil, err
-	}
-	entrySrcInst, err = entrySrcInst.WithContentDigest(ctx, hashutil.HashStrings("entrypoint_resources_source", entrySrcDigest.String()))
-	if err != nil {
-		return nil, err
-	}
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return nil, err
-	}
-	attached, err := cache.AttachResult(ctx, clientMetadata.SessionID, dag, entrySrcInst)
-	if err != nil {
-		return nil, err
-	}
-	entrySrcRes, ok := attached.(dagql.ObjectResult[*core.ModuleSource])
-	if !ok {
-		return nil, fmt.Errorf("attach entrypoint source: unexpected result %T", attached)
-	}
-
-	deps, err := s.defaultSchemaBuilderForEngineVersion(ctx, src.EngineVersion)
-	if err != nil {
-		return nil, err
-	}
-	schemaFile, err := deps.SchemaIntrospectionJSONFileForModule(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("get entrypoint schema: %w", err)
-	}
-	schemaFileID, err := schemaFile.ID()
-	if err != nil {
-		return nil, fmt.Errorf("get entrypoint schema ID: %w", err)
-	}
-	var patterns []string
-	if err := dag.Select(ctx, entrySrcRes, &patterns, dagql.Selector{
-		Field: "_entrypointResources",
-		Args: []dagql.NamedInput{
-			{Name: "introspectionJson", Value: dagql.NewID[*core.File](schemaFileID)},
-		},
-	}); err != nil {
-		return nil, err
-	}
-	return patterns, nil
-}
-
-// rebaseEntrypointResources validates the patterns and rebases them like
-// include patterns. It refuses what include accepts but cannot mean anything
-// useful here: an empty pattern, a bare or doubled !, a leading / and a
-// pattern that names the whole context root.
-func rebaseEntrypointResources(src *core.ModuleSource, patterns []string) ([]string, error) {
-	if len(patterns) > maxEntrypointResources {
-		return nil, fmt.Errorf("%d patterns exceed the limit of %d", len(patterns), maxEntrypointResources)
-	}
-	rebased := make([]string, 0, len(patterns))
-	for _, pattern := range patterns {
-		path := strings.TrimPrefix(pattern, "!")
-		switch {
-		case path == "":
-			return nil, fmt.Errorf("pattern %q is empty", pattern)
-		case strings.HasPrefix(path, "!"):
-			return nil, fmt.Errorf("pattern %q has more than one leading exclamation mark", pattern)
-		case strings.HasPrefix(path, "/"):
-			return nil, fmt.Errorf("pattern %q is absolute; write it relative to the module directory", pattern)
-		}
-		rebasedPattern, err := rebasePatterns([]string{pattern}, src.SourceRootSubpath)
-		if err != nil {
-			hint := ""
-			if src.Kind == core.ModuleSourceKindLocal && src.SourceRootSubpath == "." {
-				hint = "; no .git directory was found above the module, so its context root is the module directory"
-			}
-			return nil, fmt.Errorf("pattern %q: %w%s", pattern, err, hint)
-		}
-		if strings.TrimPrefix(rebasedPattern[0], "!") == "." {
-			return nil, fmt.Errorf("pattern %q names the whole context root", pattern)
-		}
-		rebased = append(rebased, rebasedPattern...)
-	}
-	return rebased, nil
 }
 
 func rebasePatterns(patterns []string, base string) ([]string, error) {

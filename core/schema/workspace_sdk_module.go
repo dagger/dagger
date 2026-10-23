@@ -23,6 +23,7 @@ type sdkModuleInitArgs struct {
 	Path       string    `default:""`
 	Settings   core.JSON `default:""`
 	Install    dagql.Optional[dagql.Boolean]
+	Main       dagql.Optional[dagql.Boolean]
 	Entrypoint dagql.Optional[dagql.Boolean]
 }
 
@@ -61,8 +62,15 @@ func (s *workspaceSchema) withSDKModuleInitialized(
 	parent dagql.ObjectResult[*core.Workspace],
 	args sdkModuleInitArgs,
 ) (dagql.ObjectResult[*core.Workspace], error) {
-	install, entrypoint := optionalInitControl(args.Install), optionalInitControl(args.Entrypoint)
-	if _, err := workspace.PlanModuleInit(args.Path != "", args.Name != "", install, entrypoint); err != nil {
+	if args.Main.Valid && args.Entrypoint.Valid {
+		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("cannot set both main and deprecated entrypoint")
+	}
+	mainArg := args.Main
+	if args.Entrypoint.Valid {
+		mainArg = args.Entrypoint
+	}
+	install, main := optionalInitControl(args.Install), optionalInitControl(mainArg)
+	if _, err := workspace.PlanModuleInit(args.Path != "", args.Name != "", install, main); err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 	ws := parent.Self()
@@ -104,7 +112,7 @@ func (s *workspaceSchema) withSDKModuleInitialized(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	if err := planSDKModuleInitInstall(staged.Config, staged.ConfigDir, moduleName, modulePath, explicitPath, args.Name != "", install, entrypoint); err != nil {
+	if err := planSDKModuleInitInstall(staged.Config, staged.ConfigDir, moduleName, modulePath, explicitPath, args.Name != "", install, main); err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 	if owner, found, err := moduleScopeOwner(staged.Config, staged.ConfigDir, scopePath); err != nil {
@@ -120,7 +128,7 @@ func (s *workspaceSchema) withSDKModuleInitialized(
 	scope.IsModule = true
 	if args.Name != "" {
 		scope.Name = args.Name
-	} else if scope.Name == "" && (install != nil || entrypoint != nil) {
+	} else if scope.Name == "" && (install != nil || main != nil) {
 		inferredName, err := resolveSDKModuleName(ws, staged.Config, staged.ConfigDir, scopePath, scope.Name)
 		if err != nil {
 			return dagql.ObjectResult[*core.Workspace]{}, err
@@ -151,26 +159,26 @@ func optionalInitControl(value dagql.Optional[dagql.Boolean]) *bool {
 	return &result
 }
 
-func planSDKModuleInitInstall(cfg *workspace.Config, configDir, moduleName, sourcePath string, explicitPath, explicitName bool, install, entrypoint *bool) error {
-	plan, err := workspace.PlanModuleInit(explicitPath, explicitName, install, entrypoint)
+func planSDKModuleInitInstall(cfg *workspace.Config, configDir, moduleName, sourcePath string, explicitPath, explicitName bool, install, main *bool) error {
+	plan, err := workspace.PlanModuleInit(explicitPath, explicitName, install, main)
 	if err != nil {
 		return err
 	}
 	if !plan.Install {
 		return nil
 	}
-	if plan.AutomaticEntrypoint {
-		var entrypoints []string
+	if plan.AutomaticMain {
+		var mains []string
 		for name, entry := range cfg.Modules {
-			if name != moduleName && entry.Entrypoint {
-				entrypoints = append(entrypoints, name)
+			if name != moduleName && entry.Main {
+				mains = append(mains, name)
 			}
 		}
-		if len(entrypoints) > 0 {
-			sort.Strings(entrypoints)
+		if len(mains) > 0 {
+			sort.Strings(mains)
 			return fmt.Errorf(
-				"workspace already has entrypoint module %q; pass --name to initialize an additional namespaced module",
-				entrypoints[0],
+				"workspace already has main module %q; pass --name to initialize an additional namespaced module",
+				mains[0],
 			)
 		}
 	}
@@ -178,8 +186,8 @@ func planSDKModuleInitInstall(cfg *workspace.Config, configDir, moduleName, sour
 	if _, err := planWorkspaceInstallConfig(cfg, workspaceInstallArgs{}, moduleName, sourcePath); err != nil {
 		return err
 	}
-	if plan.Entrypoint {
-		return workspace.SetEntrypoint(cfg, configDir, moduleName)
+	if plan.Main {
+		return workspace.SetMain(cfg, configDir, moduleName)
 	}
 	return nil
 }
@@ -220,7 +228,7 @@ func resolveSDKModuleInit(ws *core.Workspace, pathArg, nameArg string) (string, 
 }
 
 // resolveSDKModuleName computes the name without changing the saved scope.
-// Default init records an entrypoint installation, which preserves its name
+// Default init records a workspace main installation, which preserves its name
 // even when the SDK chooses a different directory for the module.
 func resolveSDKModuleName(ws *core.Workspace, cfg *workspace.Config, configDir, scopePath, name string) (string, error) {
 	if name != "" {

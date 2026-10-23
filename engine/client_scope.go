@@ -25,12 +25,27 @@ const (
 )
 
 // ClientScopeAuthority is an opaque session identity used for strict
-// capability delegation.
-type ClientScopeAuthority struct{ _ byte }
+// capability delegation. It also records the session's removal, so work
+// running under one of its scopes can tell that the session has gone away.
+type ClientScopeAuthority struct{ closed atomic.Bool }
 
 // NewClientScopeAuthority creates an unforgeable-by-identity session token used
 // to reject scopes retained from an older session record with reused string IDs.
 func NewClientScopeAuthority() *ClientScopeAuthority { return &ClientScopeAuthority{} }
+
+// Close records that the owning session has been removed. The session calls it
+// before tearing anything down, so any failure teardown causes is observed
+// after Closed reports true.
+func (authority *ClientScopeAuthority) Close() {
+	if authority != nil {
+		authority.closed.Store(true)
+	}
+}
+
+// Closed reports whether the owning session has been removed.
+func (authority *ClientScopeAuthority) Closed() bool {
+	return authority != nil && authority.closed.Load()
+}
 
 // ClientLifecycleLease is an idempotent handle retaining one client runtime for
 // a specific owner and reason.
@@ -110,6 +125,14 @@ func (lease *ClientLifecycleLease) Held() bool {
 	return lease != nil && lease.held.Load()
 }
 
+// SessionClosed reports whether the session that issued the lease has been
+// removed. Work running under the lease can no longer rely on that session's
+// services, attachables or cache state. Leases issued without a session
+// authority never report closed.
+func (lease *ClientLifecycleLease) SessionClosed() bool {
+	return lease != nil && lease.authority.Closed()
+}
+
 // Release relinquishes the lease exactly once and is safe to call
 // concurrently.
 func (lease *ClientLifecycleLease) Release() {
@@ -132,6 +155,7 @@ type ClientScope struct {
 	clientID              string
 	metadata              []byte
 	useRecipeIDsByDefault bool
+	sdkEntrypoint         bool
 	lease                 *ClientLifecycleLease
 }
 
@@ -156,6 +180,7 @@ func NewClientScope(metadata *ClientMetadata, lease *ClientLifecycleLease) (Clie
 		clientID:              metadata.ClientID,
 		metadata:              snapshot,
 		useRecipeIDsByDefault: metadata.UseRecipeIDsByDefault,
+		sdkEntrypoint:         metadata.SDKEntrypoint,
 		lease:                 lease,
 	}, nil
 }
@@ -175,6 +200,7 @@ func (scope ClientScope) Metadata() (*ClientMetadata, error) {
 		return nil, fmt.Errorf("restore client scope metadata: %w", err)
 	}
 	metadata.UseRecipeIDsByDefault = scope.useRecipeIDsByDefault
+	metadata.SDKEntrypoint = scope.sdkEntrypoint
 	return &metadata, nil
 }
 
@@ -195,6 +221,7 @@ func (scope ClientScope) Clone(kind ClientLeaseKind, ownerID string) (ClientScop
 		clientID:              scope.clientID,
 		metadata:              append([]byte(nil), scope.metadata...),
 		useRecipeIDsByDefault: scope.useRecipeIDsByDefault,
+		sdkEntrypoint:         scope.sdkEntrypoint,
 		lease:                 lease,
 	}, nil
 }
@@ -221,6 +248,7 @@ func (scope ClientScope) Delegate(kind ClientLeaseKind, ownerID string) (ClientS
 		clientID:              scope.clientID,
 		metadata:              append([]byte(nil), scope.metadata...),
 		useRecipeIDsByDefault: scope.useRecipeIDsByDefault,
+		sdkEntrypoint:         scope.sdkEntrypoint,
 		lease:                 lease,
 	}, nil
 }

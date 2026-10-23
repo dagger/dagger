@@ -1542,6 +1542,13 @@ func TestChecksReportNestsSubCheckHeader(t *testing.T) {
 // sub-check (go:lint) also failed, for exercising the RE-RUN section.
 func rerunReportDB(t *testing.T) *dagui.DB {
 	t.Helper()
+	return rerunReportDBWithGenerator(t, "")
+}
+
+// rerunReportDBWithGenerator is rerunReportDB with the failed sub-check marked
+// as the staleness check of the given generator.
+func rerunReportDBWithGenerator(t *testing.T, generator string) *dagui.DB {
+	t.Helper()
 	db := dagui.NewDB()
 	bootstrapID := prettyTestSpanID(1)
 	goLintID := prettyTestSpanID(2)
@@ -1569,6 +1576,8 @@ func rerunReportDB(t *testing.T) *dagui.DB {
 			CheckName: "go:lint",
 			Status:    failed,
 			Final:     true,
+
+			CheckGenerator: generator,
 		},
 	})
 	db.SetPrimarySpan(bootstrapID)
@@ -1616,6 +1625,47 @@ func TestRerunSectionLocalOnlyWithoutNativeCI(t *testing.T) {
 	}
 	if !strings.Contains(joined, "RUN LOCALLY") || !strings.Contains(joined, `dagger check "ci:bootstrap"`) {
 		t.Fatalf("missing local reproduce section:\n%s", joined)
+	}
+	if strings.Contains(joined, "REGENERATE") || strings.Contains(joined, "dagger generate") {
+		t.Fatalf("did not expect a regenerate section without a staleness check:\n%s", joined)
+	}
+}
+
+// TestRerunSectionSuggestsGenerateForStaleCheck covers a failed staleness
+// check, nested or not: re-running it only reproduces the failure, so the
+// report also suggests the generator that fixes it.
+func TestRerunSectionSuggestsGenerateForStaleCheck(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	fe := NewWithDB(io.Discard, rerunReportDBWithGenerator(t, "dag://?generator=go/generate"))
+	fe.recalculateViewLocked()
+
+	lines := fe.renderRerunSection(nil)
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, `dagger check "ci:bootstrap"`) {
+		t.Fatalf("missing local check line:\n%s", joined)
+	}
+	if !strings.Contains(joined, `dagger generate "dag://?generator=go/generate"`) {
+		t.Fatalf("missing generate line:\n%s", joined)
+	}
+	if localIdx, genIdx := indexOfLine(lines, "RUN LOCALLY"), indexOfLine(lines, "REGENERATE"); localIdx < 0 || genIdx <= localIdx {
+		t.Fatalf("expected REGENERATE after RUN LOCALLY (local=%d regenerate=%d):\n%s", localIdx, genIdx, joined)
+	}
+
+	// An agent can't answer generate's apply prompt, so it must be told to apply.
+	fe.FrontendOpts.AgentStyle = true
+	joined = strings.Join(fe.renderRerunSection(nil), "\n")
+	if !strings.Contains(joined, `dagger generate -y "dag://?generator=go/generate"`) {
+		t.Fatalf("agent-style generate line missing -y:\n%s", joined)
+	}
+	fe.FrontendOpts.AgentStyle = false
+
+	// A consumer with its own vocabulary has no CLI to run either command.
+	fe.RerunSuggestion = func(names []string) (string, []string) {
+		return "RE-RUN THIS CHECK", []string{"call the check tool"}
+	}
+	joined = strings.Join(fe.renderRerunSection(nil), "\n")
+	if strings.Contains(joined, "dagger generate") {
+		t.Fatalf("hooked rerun section still suggests the CLI:\n%s", joined)
 	}
 }
 

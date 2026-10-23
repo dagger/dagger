@@ -319,7 +319,7 @@ func TestMergeScopeArtifacts(t *testing.T) {
 	}
 	workspace := []*Artifact{
 		// The workspace's own roster is shadowed by the bound one, including
-		// its load failure and its entrypoint shorthand.
+		// its load failure and its workspace main shorthand.
 		{ModuleName: "roster", Path: []string{"roster", "members"}, TypeName: "Directory"},
 		{ModuleName: "roster", Path: []string{"roster", "load"}, TypeName: "Check", LoadFailure: &ModuleLoadFailure{Name: "roster"}},
 		{ModuleName: "Roster", Path: []string{"lint"}, TypeName: "Check"},
@@ -353,7 +353,7 @@ func TestMergeScopeArtifacts(t *testing.T) {
 	require.Equal(t, "container", narrowed.Entries[0].DimensionNames["type:Container"])
 
 	// A roster bound as a fresh construction has the workspace's values: the
-	// workspace's roster wins, entrypoint shorthand and all.
+	// workspace's roster wins, workspace main shorthand and all.
 	fresh := map[string]bool{"roster": true}
 	all, err = mergeScopeArtifacts(bound, shadowed, fresh, &Artifacts{Entries: workspace}, nil)
 	require.NoError(t, err)

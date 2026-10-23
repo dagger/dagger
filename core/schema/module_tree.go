@@ -49,9 +49,9 @@ func callerTreeModuleSource(
 	}
 	switch src.Kind {
 	case core.ModuleSourceKindGit:
-		return directoryTreeModuleSource(ctx, dag, src.Git.UnfilteredContextDir, target)
+		return directoryTreeModuleSource(ctx, dag, src.Git.UnfilteredContextDir, target, &src.Git.CloneRef)
 	case core.ModuleSourceKindDir:
-		return directoryTreeModuleSource(ctx, dag, src.DirSrc.OriginalContextDir, target)
+		return directoryTreeModuleSource(ctx, dag, src.DirSrc.OriginalContextDir, target, src.DirSrc.OriginRoot)
 	case core.ModuleSourceKindLocal:
 		return hostTreeModuleSource(ctx, dag, src, target)
 	default:
@@ -59,18 +59,27 @@ func callerTreeModuleSource(
 	}
 }
 
+// directoryTreeModuleSource loads the module at target in tree. The source
+// keeps originRoot, the identity of the caller's tree, so its cache volumes
+// are namespaced like the same module loaded directly. A nil originRoot is a
+// tree without one.
 func directoryTreeModuleSource(
 	ctx context.Context,
 	dag *dagql.Server,
 	tree dagql.ObjectResult[*core.Directory],
 	target string,
+	originRoot *string,
 ) (inst dagql.ObjectResult[*core.ModuleSource], _ error) {
 	if tree.Self() == nil {
 		return inst, fmt.Errorf("the calling module's tree is not loaded")
 	}
+	args := []dagql.NamedInput{{Name: "sourceRootPath", Value: dagql.String(target)}}
+	if originRoot != nil {
+		args = append(args, dagql.NamedInput{Name: "originRoot", Value: dagql.Opt(dagql.String(*originRoot))})
+	}
 	err := dag.Select(ctx, tree, &inst, dagql.Selector{
 		Field: "asModuleSource",
-		Args:  []dagql.NamedInput{{Name: "sourceRootPath", Value: dagql.String(target)}},
+		Args:  args,
 	})
 	return inst, err
 }
@@ -126,5 +135,8 @@ func hostTreeModuleSource(
 	); err != nil {
 		return inst, err
 	}
-	return directoryTreeModuleSource(ctx, dag, tree, target)
+	// A local context has no identity of its own: its modules are identified
+	// by their subpath, as a local module source is.
+	localRoot := ""
+	return directoryTreeModuleSource(ctx, dag, tree, target, &localRoot)
 }

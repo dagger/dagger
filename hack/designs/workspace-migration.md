@@ -53,7 +53,7 @@ CompatWorkspace
 
 - the projected workspace config
 - the projected main module
-- the compat entrypoint decision
+- the compatibility workspace main decision
 - migration warnings and reportable gaps
 
 The exact internal Go shape is not part of this document, but it must be one shared engine-owned result used by both compat mode and explicit migration planning.
@@ -83,12 +83,12 @@ An eligible legacy `dagger.json` is one where any of the following is true:
 
 If a legacy `dagger.json` is found but is not eligible, it does not create ambient workspace context.
 
-### 2. Compat Entrypoint
+### 2. Compatibility Workspace Main
 
 Inside `CompatWorkspace`:
 
-- if legacy `blueprint` exists, the blueprint is the compat entrypoint
-- otherwise, the projected main module is the compat entrypoint
+- if legacy `blueprint` exists, the blueprint is the compatibility workspace main
+- otherwise, the projected main module is the compatibility workspace main
 
 ### 3. Legacy Field Scope
 
@@ -99,7 +99,7 @@ Legacy `dagger.json` fields:
 
 are interpreted only while building `CompatWorkspace`.
 
-Generic module loading may still parse and round-trip those fields, but outside compat-workspace construction it must not give them runtime meaning. In particular, ordinary `asModule()` / module serving / extra-module loading must not load related modules or entrypoint behavior from them.
+Generic module loading may still parse and round-trip those fields, but outside compat-workspace construction it must not give them runtime meaning. In particular, ordinary `asModule()` / module serving / extra-module loading must not load related modules or workspace main behavior from them.
 
 If generic module loading encounters those fields:
 

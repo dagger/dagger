@@ -9,7 +9,7 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-func (r *Query) TlaCheck(ws *Workspace) *TlaCheck { // tla-check (../../../../../:0:0)
+func (r *Query) TlaCheck(ws *Workspace) *TlaCheck { // tla-check (../../../../../../:0:0)
 	assertNotNil("ws", ws)
 	q := r.query.Select("tlaCheck")
 	q = q.Arg("ws", ws)
@@ -20,7 +20,7 @@ func (r *Query) TlaCheck(ws *Workspace) *TlaCheck { // tla-check (../../../../..
 	}
 }
 
-type TlaCheck struct { // tla-check (../../../../../:0:0)
+type TlaCheck struct { // tla-check (../../../../../../:0:0)
 	query *querybuilder.Selection
 	// refetchID is set when this object is built through a field marked
 	// @reevaluate: it fetches its ID on every use, so each use evaluates that

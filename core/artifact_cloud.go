@@ -22,11 +22,17 @@ func (a *Artifact) QueryCloud(ctx context.Context, arguments JSON, fields string
 	if err != nil {
 		return err
 	}
-	uri, err := a.URI(ArtifactURIOpts{DimensionKeys: true})
+	// The remote engine loads its own scope, so it selects by the stored
+	// form. People read the projection: the client label and errors.
+	uri, err := a.URI(ArtifactURIOpts{DimensionKeys: true, Full: true})
 	if err != nil {
 		return err
 	}
-	client, remote, err := q.CloudEngineClient(ctx, "", uri, nil)
+	name, err := a.URI(ArtifactURIOpts{DimensionKeys: true})
+	if err != nil {
+		return err
+	}
+	client, remote, err := q.CloudEngineClient(ctx, "", name, nil)
 	if err != nil {
 		return err
 	}
@@ -67,7 +73,7 @@ func (a *Artifact) QueryCloud(ctx context.Context, arguments JSON, fields string
 		Variables: map[string]any{"workspace": id, "path": strings.Join(a.Path, "/"), "uri": uri, "arguments": string(arguments)},
 	}, &dagger.Response{Data: &response})
 	if err != nil {
-		return fmt.Errorf("evaluate %s in cloud engine: %w", uri, err)
+		return fmt.Errorf("evaluate %s in cloud engine: %w", name, err)
 	}
 	results := response.Node.Artifacts.FilterURI.Values
 	if len(results) != 1 {
@@ -78,9 +84,9 @@ func (a *Artifact) QueryCloud(ctx context.Context, arguments JSON, fields string
 			}
 		}
 		if len(loadErrors) > 0 {
-			return fmt.Errorf("load %s in cloud engine: %s", uri, strings.Join(loadErrors, "; "))
+			return fmt.Errorf("load %s in cloud engine: %s", name, strings.Join(loadErrors, "; "))
 		}
-		return fmt.Errorf("expected one result for %s, got %d", uri, len(results))
+		return fmt.Errorf("expected one result for %s, got %d", name, len(results))
 	}
 	if results[0].Error != nil {
 		return results[0].Error

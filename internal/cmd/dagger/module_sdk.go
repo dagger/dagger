@@ -25,6 +25,7 @@ var (
 	moduleInitName        string
 	moduleInitPath        string
 	moduleInitInstall     bool
+	moduleInitMain        bool
 	moduleInitEntrypoint  bool
 	moduleInitNoApply     bool
 	moduleClientAddSDK    string
@@ -129,7 +130,9 @@ func init() {
 	moduleInitCmd.PersistentFlags().StringVarP(&moduleInitName, "name", "n", "", "Module name (inferred when omitted)")
 	moduleInitCmd.PersistentFlags().StringVar(&moduleInitPath, "path", "", "Module path (default: .dagger/modules/<name> beside dagger.toml)")
 	moduleInitCmd.PersistentFlags().BoolVar(&moduleInitInstall, "install", false, "Install the module (default: install when --path is omitted)")
-	moduleInitCmd.PersistentFlags().BoolVar(&moduleInitEntrypoint, "entrypoint", false, "Install and select the module as entrypoint (default: select when --path and --name are omitted)")
+	moduleInitCmd.PersistentFlags().BoolVar(&moduleInitMain, "main", false, "Install and select the module as the workspace main (default: select when --path and --name are omitted)")
+	moduleInitCmd.PersistentFlags().BoolVar(&moduleInitEntrypoint, "entrypoint", false, "Deprecated alias for --main")
+	_ = moduleInitCmd.PersistentFlags().MarkDeprecated("entrypoint", "use --main instead")
 	moduleInitCmd.PersistentFlags().BoolVar(&moduleInitNoApply, "no-apply", false, "Show generated changes without applying them")
 	moduleClientAddCmd.Flags().StringVar(&moduleClientAddSDK, "sdk", "", "Select an installed `SDK` (default: deepest scope)")
 	moduleClientRemoveCmd.Flags().StringVar(&moduleClientRemoveSDK, "sdk", "", "Select an installed `SDK` (default: deepest matching scope)")
@@ -153,8 +156,12 @@ func runSDKModuleInit(cmd *cobra.Command, sdk string) error {
 	if workspaceEnv != "" {
 		return fmt.Errorf("module init does not support --env; SDK scopes live in the base workspace config")
 	}
-	install, entrypoint := moduleInitControl(moduleInitCmd.PersistentFlags(), "install"), moduleInitControl(moduleInitCmd.PersistentFlags(), "entrypoint")
-	plan, err := workspace.PlanModuleInit(moduleInitPath != "", moduleInitName != "", install, entrypoint)
+	install := moduleInitControl(moduleInitCmd.PersistentFlags(), "install")
+	main, err := moduleInitMainControl(moduleInitCmd.PersistentFlags())
+	if err != nil {
+		return err
+	}
+	plan, err := workspace.PlanModuleInit(moduleInitPath != "", moduleInitName != "", install, main)
 	if err != nil {
 		return err
 	}
@@ -167,17 +174,17 @@ func runSDKModuleInit(cmd *cobra.Command, sdk string) error {
 		return err
 	}
 	return mutateSDKModuleWorkspaceWithDisposition(cmd, `
-query ModuleInit($sdk: String!, $name: String, $path: String, $settings: JSON, $install: Boolean, $entrypoint: Boolean) {
+query ModuleInit($sdk: String!, $name: String, $path: String, $settings: JSON, $install: Boolean, $main: Boolean) {
   currentWorkspace {
-    result: withInitModule(sdk: $sdk, name: $name, path: $path, settings: $settings, install: $install, entrypoint: $entrypoint) { id }
+    result: withInitModule(sdk: $sdk, name: $name, path: $path, settings: $settings, install: $install, main: $main) { id }
   }
 }`, map[string]any{
-		"sdk":        sdk,
-		"name":       moduleInitName,
-		"path":       moduleInitPath,
-		"settings":   core.JSON(settings),
-		"install":    install,
-		"entrypoint": entrypoint,
+		"sdk":      sdk,
+		"name":     moduleInitName,
+		"path":     moduleInitPath,
+		"settings": core.JSON(settings),
+		"install":  install,
+		"main":     main,
 	}, disposition, func(ctx context.Context, current *core.Workspace) error {
 		name, err := moduleInitResultName(ctx, current)
 		if err != nil {
@@ -194,6 +201,18 @@ func moduleInitControl(flags *pflag.FlagSet, name string) *bool {
 	}
 	value, _ := flags.GetBool(name)
 	return &value
+}
+
+func moduleInitMainControl(flags *pflag.FlagSet) (*bool, error) {
+	main := moduleInitControl(flags, "main")
+	entrypoint := moduleInitControl(flags, "entrypoint")
+	if main != nil && entrypoint != nil {
+		return nil, fmt.Errorf("cannot use both --main and deprecated --entrypoint")
+	}
+	if main != nil {
+		return main, nil
+	}
+	return entrypoint, nil
 }
 
 func moduleInitResultName(ctx context.Context, current *core.Workspace) (string, error) {
@@ -250,18 +269,18 @@ func moduleInitSuccessMessage(name, modulePath string, plan workspace.ModuleInit
 		}
 		return fmt.Sprintf("Initialized module %q.\nModule was not installed.\n", name)
 	}
-	if plan.Entrypoint && !plan.AutomaticEntrypoint {
-		return fmt.Sprintf("Installed module %q as entrypoint.\n", name)
+	if plan.Main && !plan.AutomaticMain {
+		return fmt.Sprintf("Installed module %q as the workspace main.\n", name)
 	}
 	if plan.AutomaticInstall {
-		if plan.Entrypoint {
-			return fmt.Sprintf("Automatically installed module %q as entrypoint.\n", name)
+		if plan.Main {
+			return fmt.Sprintf("Automatically installed module %q as the workspace main.\n", name)
 		}
 		return fmt.Sprintf("Automatically installed module %q.\n", name)
 	}
 	message := fmt.Sprintf("Installed module %q.\n", name)
-	if plan.AutomaticEntrypoint {
-		message += fmt.Sprintf("Automatically selected module %q as entrypoint.\n", name)
+	if plan.AutomaticMain {
+		message += fmt.Sprintf("Automatically selected module %q as the workspace main.\n", name)
 	}
 	return message
 }

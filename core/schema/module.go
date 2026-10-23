@@ -272,7 +272,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				dagql.Arg("returnAllTypes").Doc(`Return the full referenced typedef closure instead of only top-level served typedefs.`).
 					View(AfterVersion("v0.21.0")),
 				dagql.Arg("hideCore").Doc(
-					`Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).`,
+					`Strip core API functions from the Query type, leaving only module-sourced functions (constructors, workspace main proxies, etc.).`,
 					`Core types (Container, Directory, etc.) are kept so return types and method chaining still work.`,
 				),
 			).
@@ -399,7 +399,8 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				`Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.`).
 			Args(
 				dagql.Arg("includeDependencies").Doc("Expose the dependencies of this module to the client"),
-				dagql.Arg("entrypoint").Doc("Install the module as the entrypoint, promoting its main-object methods onto the Query root"),
+				dagql.Arg("main").Doc("Install the module as the workspace main, promoting its main-object methods onto the Query root"),
+				dagql.Arg("entrypoint").Deprecated("Use main.").Doc("Compatibility alias for main."),
 			),
 
 		dagql.NodeFunc("_implementationScoped", s.moduleImplementationScoped).
@@ -2146,6 +2147,7 @@ func (s *moduleSchema) moduleRuntime(ctx context.Context, mod *core.Module, _ st
 
 func (s *moduleSchema) moduleServe(ctx context.Context, modMeta dagql.ObjectResult[*core.Module], args struct {
 	IncludeDependencies dagql.Optional[dagql.Boolean]
+	Main                dagql.Optional[dagql.Boolean]
 	Entrypoint          dagql.Optional[dagql.Boolean]
 }) (dagql.Nullable[core.Void], error) {
 	void := dagql.Null[core.Void]()
@@ -2156,8 +2158,14 @@ func (s *moduleSchema) moduleServe(ctx context.Context, modMeta dagql.ObjectResu
 	}
 
 	includeDependencies := args.IncludeDependencies.Valid && args.IncludeDependencies.Value.Bool()
-	entrypoint := args.Entrypoint.Valid && args.Entrypoint.Value.Bool()
-	return void, query.ServeModule(ctx, modMeta, includeDependencies, entrypoint)
+	if args.Main.Valid && args.Entrypoint.Valid {
+		return void, fmt.Errorf("cannot set both main and deprecated entrypoint")
+	}
+	main := args.Main.Valid && args.Main.Value.Bool()
+	if args.Entrypoint.Valid {
+		main = args.Entrypoint.Value.Bool()
+	}
+	return void, query.ServeModule(ctx, modMeta, includeDependencies, main)
 }
 
 type serveModuleArgs struct {
@@ -2829,11 +2837,20 @@ func (s *moduleSchema) moduleDependencies(
 	ctx context.Context,
 	mod *core.Module,
 	args struct{},
-) (dagql.Array[*core.Module], error) {
-	depMods := make([]*core.Module, 0, len(mod.Deps.Mods()))
-	for _, dep := range mod.Deps.Mods() {
+) (dagql.ObjectResultArray[*core.Module], error) {
+	return moduleDependencyResults(mod.Deps)
+}
+
+// moduleDependencyResults returns the dependencies' own results, not their
+// values: publishing a dependency's value again as a new result would attach
+// it a second time, and a module that includes itself in its deps (always the
+// case for Dang modules) would then name that new result, owned only by the
+// calling session, as its self dependency.
+func moduleDependencyResults(deps *core.SchemaBuilder) (dagql.ObjectResultArray[*core.Module], error) {
+	depMods := make(dagql.ObjectResultArray[*core.Module], 0, len(deps.Mods()))
+	for _, dep := range deps.Mods() {
 		if depInst := dep.ModuleResult(); depInst.Self() != nil {
-			depMods = append(depMods, depInst.Self())
+			depMods = append(depMods, depInst)
 			continue
 		}
 		switch dep.(type) {
@@ -2939,21 +2956,8 @@ func (s *moduleSchema) currentModuleDependencies(
 	ctx context.Context,
 	mod *core.CurrentModule,
 	args struct{},
-) (dagql.Array[*core.Module], error) {
-	depMods := make([]*core.Module, 0, len(mod.Module.Self().Deps.Mods()))
-	for _, dep := range mod.Module.Self().Deps.Mods() {
-		if depInst := dep.ModuleResult(); depInst.Self() != nil {
-			depMods = append(depMods, depInst.Self())
-			continue
-		}
-		switch dep.(type) {
-		case *CoreMod:
-			// skip
-		default:
-			return nil, fmt.Errorf("unexpected mod dependency type %T", dep)
-		}
-	}
-	return depMods, nil
+) (dagql.ObjectResultArray[*core.Module], error) {
+	return moduleDependencyResults(mod.Module.Self().Deps)
 }
 
 func (s *moduleSchema) currentModuleContextDirectory(
@@ -3170,6 +3174,11 @@ func (s *moduleSchema) moduleImplementationScoped(
 	// its own files do not cover; its commit covers the whole tree.
 	if src.Kind == core.ModuleSourceKindGit && src.Git != nil {
 		scopedDigestInputs = append(scopedDigestInputs, "gitCommit:"+src.Git.Commit)
+	}
+	// The origin namespaces the module's cache volumes, so the same files
+	// served from two origins must not share the execs that create them.
+	if origin := src.OriginSymbolic(); origin != "" {
+		scopedDigestInputs = append(scopedDigestInputs, "originSymbolic:"+origin)
 	}
 	scopedDigest := hashutil.HashStrings(scopedDigestInputs...)
 	dag, err := core.CurrentDagqlServer(ctx)

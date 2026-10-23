@@ -12,8 +12,8 @@ import (
 )
 
 // CheckConfigFields reports workspace fields that the schema does not define.
-// Unknown fields are errors. Legacy SDK fields are only warnings, so that
-// `dagger ws migrate` can load the workspace and migrate them.
+// Unknown fields are errors. Deprecated workspace fields and legacy SDK fields
+// are only warnings, so that old configs can still be loaded and migrated.
 // Settings maps belong to modules and SDKs, so their contents are unrestricted.
 func CheckConfigFields(data []byte, filename string) (warnings []string, _ error) {
 	tree, err := toml.LoadBytes(data)
@@ -50,6 +50,10 @@ func CheckConfigFields(data []byte, filename string) (warnings []string, _ error
 			if typ.Kind() == reflect.Map {
 				childType, known = typ.Elem(), true
 			}
+			if legacyWorkspaceMainPath(parts) {
+				pos := tree.GetPositionPath([]string{key})
+				warnings = append(warnings, fmt.Sprintf("%s:%d:%d: deprecated field %s is accepted for compatibility; use %s", filename, pos.Line, pos.Col, JoinConfigPath(parts...), JoinConfigPath(parts[:2]...)+".main"))
+			}
 			if !known {
 				pos := tree.GetPositionPath([]string{key})
 				if legacySDKConfigPath(parts) {
@@ -59,8 +63,17 @@ func CheckConfigFields(data []byte, filename string) (warnings []string, _ error
 				}
 				continue
 			}
-			if child, ok := tree.GetPath([]string{key}).(*toml.Tree); ok && childType.Kind() != reflect.Interface {
-				visit(child, childType, parts)
+			switch child := tree.GetPath([]string{key}).(type) {
+			case *toml.Tree:
+				if childType.Kind() != reflect.Interface {
+					visit(child, childType, parts)
+				}
+			case []*toml.Tree:
+				if childType.Kind() == reflect.Slice {
+					for _, elem := range child {
+						visit(elem, childType.Elem(), parts)
+					}
+				}
 			}
 		}
 	}
@@ -74,6 +87,10 @@ func CheckConfigFields(data []byte, filename string) (warnings []string, _ error
 		errs = append(errs, fmt.Errorf("%s:%d:%d: unknown field %s", filename, field.pos.Line, field.pos.Col, field.path))
 	}
 	return warnings, errors.Join(errs...)
+}
+
+func legacyWorkspaceMainPath(parts []string) bool {
+	return len(parts) == 3 && configDecoderKeyMatches(parts[0], "modules") && configDecoderKeyMatches(parts[2], "entrypoint")
 }
 
 // legacySDKConfigPath reports whether parts names a legacy SDK field that

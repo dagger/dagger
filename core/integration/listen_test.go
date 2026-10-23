@@ -5,12 +5,16 @@ package core
 // module, and a workspace-backed module smoke test.
 //
 // See also:
-// - module_loading_test.go: current-directory module nomination and entrypoints.
+// - module_loading_test.go: current-directory module nomination and mains.
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -29,7 +33,7 @@ func TestListen(t *testing.T) {
 }
 
 func (ListenSuite) TestDaggerListen(ctx context.Context, t *testctx.T) {
-	t.Run("serves explicit workspace entrypoint", func(ctx context.Context, t *testctx.T) {
+	t.Run("serves explicit workspace main", func(ctx context.Context, t *testctx.T) {
 		workspaceDir := t.TempDir()
 		initGitRepo(ctx, t, workspaceDir)
 		copyTestdataFixture(ctx, t, workspaceDir, "workspaces", "listen-greeter")
@@ -66,7 +70,7 @@ func startListenSession(ctx context.Context, t *testctx.T, workdir string, extra
 	t.Helper()
 
 	addr := reserveListenAddr(t)
-	token := "listen-test-token"
+	token := "listen-" + rand.Text()
 
 	args := append([]string{"listen"}, extraArgs...)
 	args = append(args, "--listen", addr)
@@ -77,23 +81,79 @@ func startListenSession(ctx context.Context, t *testctx.T, workdir string, extra
 	listenCmd.Stderr = testutil.NewTWriter(t)
 	require.NoError(t, listenCmd.Start())
 
-	waitForListenSession(t, addr)
+	waitForListenSession(ctx, t, addr, token)
 	return addr, token
 }
 
-func waitForListenSession(t *testctx.T, addr string) {
+// waitForListenSession waits until the session answers an authenticated
+// query with the expected result. A bare TCP connect isn't enough: the address
+// was only reserved and released, so another test's listener, or a loopback
+// self-connect, can answer on it before the CLI binds it.
+func waitForListenSession(ctx context.Context, t *testctx.T, addr, token string) {
 	t.Helper()
 
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	client := &http.Client{
+		Transport: &http.Transport{DialContext: dialListenSession},
+		Timeout:   5 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	defer client.CloseIdleConnections()
+
+	var lastErr error
 	err := backoff.Retry(func() error {
-		conn, err := net.Dial("tcp", addr)
-		if err != nil {
-			return err
-		}
-		return conn.Close()
-	}, backoff.NewExponentialBackOff(
-		backoff.WithMaxElapsedTime(time.Minute),
-	))
-	require.NoError(t, err)
+		lastErr = probeListenSession(ctx, client, addr, token)
+		return lastErr
+	}, backoff.WithContext(backoff.NewExponentialBackOff(), ctx))
+	require.NoError(t, err, "dagger listen at %s never answered; last probe: %v", addr, lastErr)
+}
+
+func probeListenSession(ctx context.Context, client *http.Client, addr, token string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+addr+"/query", strings.NewReader(`{"query":"{__typename}"}`))
+	if err != nil {
+		return backoff.Permanent(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.SetBasicAuth(token, "")
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("status %s", resp.Status)
+	}
+	var result struct {
+		Data struct {
+			Typename string `json:"__typename"`
+		} `json:"data"`
+		Errors []json.RawMessage `json:"errors"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&result); err != nil {
+		return fmt.Errorf("decode response: %w", err)
+	}
+	if result.Data.Typename != "Query" || len(result.Errors) > 0 {
+		return fmt.Errorf("unexpected response: __typename %q, %d errors", result.Data.Typename, len(result.Errors))
+	}
+	return nil
+}
+
+// dialListenSession dials the session, refusing a loopback self-connect: with
+// nothing bound to the port, the kernel can pick it as the dial's own source
+// port and connect the socket to itself.
+func dialListenSession(ctx context.Context, network, address string) (net.Conn, error) {
+	conn, err := (&net.Dialer{}).DialContext(ctx, network, address)
+	if err != nil {
+		return nil, err
+	}
+	if conn.LocalAddr().String() == conn.RemoteAddr().String() {
+		conn.Close()
+		return nil, fmt.Errorf("self-connect to %s", address)
+	}
+	return conn, nil
 }
 
 func reserveListenAddr(t *testctx.T) string {

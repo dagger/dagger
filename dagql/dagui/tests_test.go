@@ -3,7 +3,9 @@ package dagui
 import (
 	"encoding/binary"
 	"fmt"
+	"math/rand"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -725,6 +727,134 @@ func TestViewForSpanMemoizedPerFrame(t *testing.T) {
 	}
 	if fresh.Counts.Failing != 1 {
 		t.Fatalf("fresh view must include the new failing case, got %+v", fresh.Counts)
+	}
+
+	// Spans unrelated to any test -- most of a live agent session -- cannot
+	// change a scoped view, so they must not rebuild it.
+	other := SpanSnapshot{
+		ID:        testID(9),
+		TraceID:   TraceID{TraceID: trace.TraceID{1}},
+		Name:      "unrelated",
+		StartTime: time.Unix(9, 0),
+	}
+	db.ImportSnapshots([]SpanSnapshot{other})
+	other.EndTime = time.Unix(10, 0)
+	db.ImportSnapshots([]SpanSnapshot{other})
+	if again := db.TestViewForSpan(root); again != fresh {
+		t.Fatal("unrelated span updates must not invalidate scoped views")
+	}
+
+	// A status-only update to a contained test changes the view's aggregates.
+	db.ImportSnapshots([]SpanSnapshot{
+		testSnapshot(3, "case-b", testID(1), TestStatusSuccess),
+	})
+	if updated := db.TestViewForSpan(root); updated == fresh || updated.Counts.Failing != 0 || updated.Counts.Passing != 2 {
+		t.Fatalf("status update must refresh the scoped view, got %+v", updated.Counts)
+	}
+}
+
+// bruteForceTestViewForSpan is the reference ViewForSpan: every test span in
+// the DB that rolls up to root, without the reverse index or the memo.
+func bruteForceTestViewForSpan(db *DB, root *Span) *TestView {
+	nodes := make(map[SpanID]*TestNode)
+	for id, span := range db.Spans.Map {
+		if !testSpanHasNode(span) || !testMayRollUp(span, root, nil) {
+			continue
+		}
+		nodes[id] = newTestNode(span)
+	}
+	return buildScopedTestView(nodes)
+}
+
+func renderTestViewForComparison(view *TestView) string {
+	var out strings.Builder
+	fmt.Fprintf(&out, "counts %+v\n", view.Counts)
+	var walk func([]*TestNode, int)
+	walk = func(nodes []*TestNode, depth int) {
+		for _, node := range nodes {
+			fmt.Fprintf(&out, "%s%s kind=%d name=%q full=%q self=%s category=%s counts=%+v\n",
+				strings.Repeat("  ", depth), node.ID, node.Kind, node.Name, node.FullName,
+				node.SelfCategory, node.Category, node.Counts)
+			walk(node.Children, depth+1)
+		}
+	}
+	walk(view.Roots, 0)
+	return out.String()
+}
+
+// TestViewForSpanMatchesFullScan drives random structural, metadata and status
+// updates -- including late parents (placeholders), reparenting and
+// containment flags -- and checks every span's memoized, reverse-indexed
+// scoped view against a full scan after each one.
+func TestViewForSpanMatchesFullScan(t *testing.T) {
+	const spans = 24
+	for seed := range int64(20) {
+		t.Run(fmt.Sprint(seed), func(t *testing.T) {
+			rng := rand.New(rand.NewSource(seed))
+			db := NewDB()
+			snapshots := make([]SpanSnapshot, spans+1)
+			for i := 1; i <= spans; i++ {
+				snapshots[i] = testSnapshot(byte(i), fmt.Sprintf("span-%d", i), SpanID{}, TestStatusUnset)
+				snapshots[i].TestCaseName = ""
+				if i > 1 {
+					// Parents always have lower IDs, so reparenting can't cycle.
+					snapshots[i].ParentID = testID(byte(1 + rng.Intn(i-1)))
+				}
+			}
+			for step := range 300 {
+				i := 1 + rng.Intn(spans)
+				snap := &snapshots[i]
+				switch rng.Intn(9) {
+				case 0:
+					if snap.TestCaseName == "" {
+						snap.TestCaseName = fmt.Sprintf("case-%d", i)
+					} else {
+						snap.TestCaseName = ""
+					}
+				case 1:
+					if snap.TestSuiteName == "" {
+						snap.TestSuiteName = fmt.Sprintf("suite-%d", rng.Intn(3))
+					} else {
+						snap.TestSuiteName = ""
+					}
+				case 2:
+					snap.Boundary = !snap.Boundary
+				case 3:
+					snap.Encapsulate = !snap.Encapsulate
+				case 4:
+					if i > 1 {
+						snap.ParentID = testID(byte(1 + rng.Intn(i-1)))
+					}
+				case 5:
+					snap.TestStatus = []TestStatus{
+						TestStatusUnset, TestStatusSuccess, TestStatusFailure,
+						TestStatusSkipped, TestStatusInProgress,
+					}[rng.Intn(5)]
+				case 6:
+					if snap.Status.Code == codes.Error {
+						snap.Status.Code = codes.Ok
+					} else {
+						snap.Status.Code = codes.Error
+					}
+				case 7:
+					if snap.EndTime.After(snap.StartTime) {
+						snap.EndTime = snap.StartTime.Add(-time.Second)
+					} else {
+						snap.EndTime = snap.StartTime.Add(time.Second)
+					}
+				case 8:
+					snap.Name = fmt.Sprintf("span-%d-%d", i, step)
+				}
+				db.ImportSnapshots([]SpanSnapshot{*snap})
+				for id, span := range db.Spans.Map {
+					got := renderTestViewForComparison(db.TestViewForSpan(span))
+					want := renderTestViewForComparison(bruteForceTestViewForSpan(db, span))
+					if got != want {
+						t.Fatalf("step %d: scoped view for %s diverged from full scan\ngot:\n%s\nwant:\n%s", step, id, got, want)
+					}
+				}
+			}
+		})
 	}
 }
 

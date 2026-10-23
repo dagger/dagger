@@ -15,7 +15,7 @@ Design plan for documentation changes required to merge the workspace branch.
 | Old Concept | What Happens |
 |---|---|
 | Toolchain | Dropped. Just "module." |
-| Blueprint | Dropped. `entrypoint = true` is a config flag, not a concept. |
+| Blueprint | Dropped. `main = true` selects the workspace main. |
 | Customizations | Deprecated. Module config via `config.*` in workspace config. |
 | `dagger.json` as project config | Moved to `.dagger/config.toml`. `dagger.json` is module-only. |
 
@@ -198,7 +198,7 @@ Content:
 - Clear "if you're new, skip this" signal
 - What changed: `dagger.json` used to serve double duty (module + project config). Now modules (`dagger.json`) and workspaces (`.dagger/config.toml`) are separate.
 - What happened to toolchains: now just modules in your workspace. `dagger install` adds them.
-- What happened to blueprints: now `entrypoint = true` config flag.
+- What happened to blueprints: use the `main = true` config flag.
 - Migration: backwards compat infers workspace from `dagger.json`. Run `dagger migrate` when ready.
 - Command equivalence table (old → new).
 

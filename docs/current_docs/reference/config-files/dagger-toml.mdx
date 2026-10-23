@@ -20,10 +20,13 @@ The machine-readable schema is published at [dagger-workspace.schema.json](/refe
 | `ignore` | array | Path patterns excluded when loading the workspace. |
 | `defaults_from_dotenv` | bool | Read module constructor defaults from a `.env` file. |
 | `check-generated` | bool | Run generators as checks during `dagger check`, failing when generated files are stale. Defaults to `true`; CLI flags override it. |
+| `include` | array of tables | Another config file whose contents are merged underneath this one. See [`[[include]]`](#include). |
 
 ## `dagger.lock`
 
 Resolved image, Git, and vanity URL lookups are pinned in `dagger.lock` alongside the config. A workspace with multiple `dagger.toml` files can therefore contain multiple lockfiles.
+
+A remote Git workspace, such as `dagger check -W github.com/org/repo@main` or a Dagger Cloud check, uses the `dagger.lock` committed with it. Its pins apply as they do locally, but Dagger never changes the committed file: a lookup that has no entry resolves live and is not recorded.
 
 Run `dagger lock update` without selectors to refresh every supported entry in the selected lockfile. Selectors refresh matching resources:
 
@@ -50,6 +53,19 @@ dagger lock update --list dagger
 dagger lock update dagger
 ```
 
+## `[[include]]`
+
+```toml
+[[include]]
+source = "../common"
+```
+
+| Key | Type | Description |
+| --- | --- | --- |
+| `source` | string | Config file to inherit from — a workspace-relative path, or a Git ref such as `github.com/org/base@version`. A source with no file extension names a directory and reaches the `dagger.toml` inside it. |
+
+The included config is merged **underneath** this one, so this workspace wins every conflict, and its own modules come with it. Only one `[[include]]` is resolved for now. See [Includes](../../config/includes.mdx).
+
 ## `[modules.<name>]`
 
 ```toml
@@ -65,11 +81,14 @@ packageManager = "yarn"
 | `source` | string | Module address — a workspace-relative path, or a Git ref such as `github.com/org/mod@version`. |
 | `pin` | string | Resolved version for `source`. |
 | `settings` | table | Module settings. Keys are defined by the module; set them with `dagger module settings`. |
-| `entrypoint` | bool | Marks this module as the workspace entrypoint. |
+| `main` | bool | Marks this module as the workspace main. |
 | `legacy-default-path` | bool | Compatibility flag recorded by workspace migration. |
 | `check` | table | `skip = [...]` — check functions to exclude from `dagger check`. |
 | `generate` | table | `skip = [...]` — generators to exclude from `dagger generate`. |
 | `up` | table | `skip = [...]` — services to exclude from `dagger start`. |
+
+The deprecated `entrypoint` key remains accepted as an alias for `main`.
+Dagger rewrites it to `main` the next time it edits the configuration.
 
 Settings can point at another module's output instead of a literal value — see [Module wiring](../../config/module-wiring.mdx).
 
@@ -108,9 +127,9 @@ Client paths are relative to the directory containing `dagger.toml`. Use `./api`
 
 `module init` saves a scope name only when you set `--name`. It preserves an
 existing saved name. Before generation, an unnamed module scope uses the name
-of its local entrypoint installation, if one exists. Otherwise, it uses the
+of its local main installation, if one exists. Otherwise, it uses the
 scope directory name. A scope at the workspace root uses the config-parent or
-workspace name with `-dev`. Multiple matching entrypoint names require an
+workspace name with `-dev`. Multiple matching main names require an
 explicit scope name. The inferred name is not written to this field.
 
 Use `dagger sdk scope name -u` to remove an override. An unnamed scope that

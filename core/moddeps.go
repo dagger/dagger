@@ -1,4 +1,4 @@
-// DESIGN DOC: hack/designs/entrypoint-proxy.md
+// DESIGN DOC: hack/designs/workspace-main-proxy.md
 
 package core
 
@@ -215,8 +215,8 @@ func (b *SchemaBuilder) With(mod Mod, opts InstallOpts) *SchemaBuilder {
 			if promoted.SkipConstructor && !opts.SkipConstructor {
 				promoted.SkipConstructor = false
 			}
-			if !promoted.Entrypoint && opts.Entrypoint {
-				promoted.Entrypoint = true
+			if !promoted.Main && opts.Main {
+				promoted.Main = true
 			}
 			cp.entries[i].opts = promoted
 			return cp
@@ -259,11 +259,11 @@ func (b *SchemaBuilder) PrimaryMods() []Mod {
 	return mods
 }
 
-// EntrypointMods returns the modules whose fields are exposed at the root.
-func (b *SchemaBuilder) EntrypointMods() []Mod {
+// MainMods returns the modules whose fields are exposed at the root.
+func (b *SchemaBuilder) MainMods() []Mod {
 	var mods []Mod
 	for _, entry := range b.entries {
-		if entry.opts.Entrypoint {
+		if entry.opts.Main {
 			mods = append(mods, entry.mod)
 		}
 	}
@@ -382,16 +382,16 @@ func (b *SchemaBuilder) lazilyLoadSchema(ctx context.Context) (loadedSchema *dag
 		b.loadSchemaFailed.Store(rerr != nil)
 	}()
 
-	var nonEntrypoints, entrypoints []modDepEntry
+	var nonMains, mains []modDepEntry
 	for _, e := range b.entries {
-		if e.opts.Entrypoint {
-			entrypoints = append(entrypoints, e)
+		if e.opts.Main {
+			mains = append(mains, e)
 		} else {
-			nonEntrypoints = append(nonEntrypoints, e)
+			nonMains = append(nonMains, e)
 		}
 	}
 
-	if len(entrypoints) == 0 {
+	if len(mains) == 0 {
 		mods := make([]modInstall, len(b.entries))
 		for i, e := range b.entries {
 			mods[i] = modInstall(e)
@@ -402,7 +402,7 @@ func (b *SchemaBuilder) lazilyLoadSchema(ctx context.Context) (loadedSchema *dag
 	innerMods := make([]modInstall, len(b.entries))
 	for i, e := range b.entries {
 		opts := e.opts
-		opts.Entrypoint = false
+		opts.Main = false
 		innerMods[i] = modInstall{mod: e.mod, opts: opts}
 	}
 	inner, err := buildSchema(ctx, b.root, innerMods)
@@ -411,10 +411,10 @@ func (b *SchemaBuilder) lazilyLoadSchema(ctx context.Context) (loadedSchema *dag
 	}
 
 	outerMods := make([]modInstall, 0, len(b.entries))
-	for _, e := range nonEntrypoints {
+	for _, e := range nonMains {
 		outerMods = append(outerMods, modInstall(e))
 	}
-	for _, e := range entrypoints {
+	for _, e := range mains {
 		outerMods = append(outerMods, modInstall(e))
 	}
 	outer, err := buildSchema(ctx, b.root, outerMods)

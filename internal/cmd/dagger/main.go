@@ -21,10 +21,9 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/google/shlex"
 	"github.com/mattn/go-isatty"
-	"github.com/muesli/reflow/indent"
-	"github.com/muesli/reflow/wordwrap"
 	"github.com/muesli/termenv"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -243,7 +242,7 @@ func init() {
 	cobra.AddTemplateFunc("hasHelpAliases", hasHelpAliases)
 	cobra.AddTemplateFunc("nameAndHelpAliases", nameAndHelpAliases)
 	cobra.AddTemplateFunc("hasParentCommands", hasParentCommands)
-	cobra.AddTemplateFunc("indent", indent.String)
+	cobra.AddTemplateFunc("indent", indentLines)
 	rootCmd.SetUsageTemplate(usageTemplate)
 
 	// hide the help flag as it's ubiquitous and thus noisy
@@ -676,12 +675,8 @@ func xReleaseProcessEnv(environ []string) (env []string, engineEnvs []string) {
 }
 
 func shouldCleanupOldEngines() bool {
-	val, ok := os.LookupEnv("DAGGER_LEAVE_OLD_ENGINE")
-	if !ok {
-		return true
-	}
-	leaveOldEngine, _ := strconv.ParseBool(val)
-	return !leaveOldEngine
+	leave, ok := drivers.LeaveOldEngines()
+	return !ok || !leave
 }
 
 // A command can share a global flag's value under its long name while using
@@ -857,7 +852,7 @@ func workspaceFlagPolicy(cmd *cobra.Command, args []string) string {
 	if isWorkspaceSettingsWriteCommand(cmd, args) && !workspaceSettingsGlobal {
 		return workspaceFlagPolicyLocalOnly
 	}
-	if commandName(cmd) == "workspace entrypoint" && (len(args) == 1 || workspaceEntrypointUnset) {
+	if commandName(cmd) == "workspace main" && (len(args) == 1 || workspaceMainUnset) {
 		return workspaceFlagPolicyLocalOnly
 	}
 
@@ -1305,8 +1300,8 @@ func wrapCmdDescription(name, short string, padding int) string {
 	nameFormat := fmt.Sprintf("  %%-%ds   ", padding)
 	name = fmt.Sprintf(nameFormat, name)
 	if len(name)+len(short) >= width {
-		wrapped := wordwrap.String(short, width-len(name))
-		indented := indent.String(wrapped, uint(len(name)))
+		wrapped := ansi.Wordwrap(short, width-len(name), "-")
+		indented := indentLines(wrapped, uint(len(name)))
 		// first line shouldn't be indented since we're going to prepend the name
 		short = strings.TrimLeftFunc(indented, unicode.IsSpace)
 	}

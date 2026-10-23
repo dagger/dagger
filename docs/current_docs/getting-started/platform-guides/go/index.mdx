@@ -278,7 +278,7 @@ source = "dagger.io/sdk/dang"
 module = "dang-sdk"
 
 [modules.<project>-dev]
-entrypoint = true
+main = true
 source = ".dagger/modules/<project>-dev"
 
 [sdks.dang.scopes.".dagger/modules/<project>-dev"]
@@ -327,7 +327,7 @@ MODULE         SERVICE   DESCRIPTION
 greetings-dev  postgres  A Postgres database for development and tests.
 ```
 
-The `MODULE` column shows the dev module's name, `<project>-dev`. `dagger module init` made it the workspace entrypoint, so the settings command accepts `test-runtime` without the module name and stores the full `dag://<project>-dev/test-runtime` address in `dagger.toml`.
+The `MODULE` column shows the dev module's name, `<project>-dev`. `dagger module init` made it the workspace main, so the settings command accepts `test-runtime` without the module name and stores the full `dag://<project>-dev/test-runtime` address in `dagger.toml`.
 
 ### Make sure the runtime is wired
 

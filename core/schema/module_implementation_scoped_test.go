@@ -179,4 +179,13 @@ func TestModuleImplementationScopedKeysGitModulesOnTheirCommit(t *testing.T) {
 
 	dir, dirSource := scopedDigest("dir", &core.ModuleSource{Kind: core.ModuleSourceKindDir})
 	require.Equal(t, hashutil.HashStrings("Module._implementationScoped", dirSource.String()), dir)
+
+	dirAt := func(root string) *core.ModuleSource {
+		return &core.ModuleSource{Kind: core.ModuleSourceKindDir, DirSrc: &core.DirModuleSource{OriginRoot: &root}}
+	}
+	fromGit, fromGitSource := scopedDigest("dir-from-git", dirAt("github.com/org/repo"))
+	fromLocal, _ := scopedDigest("dir-from-local", dirAt(""))
+	require.Equal(t, dirSource, fromGitSource, "the origin is not part of the module's files")
+	require.NotEqual(t, dir, fromGit)
+	require.NotEqual(t, fromGit, fromLocal)
 }

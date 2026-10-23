@@ -31,6 +31,17 @@ class Void(Scalar):
     resolvers that do not return anything."""
 
 
+class AcronymStyle(Enum):
+    """How acronyms and terms are written where a word starts with a
+    capital."""
+
+    CAPITALIZED = "CAPITALIZED"
+    """HttpClient, Ipv6Address, GitHubRepo"""
+
+    UPPERCASE = "UPPERCASE"
+    """HTTPClient, IPv6Address, GitHubRepo"""
+
+
 class AgentMessageDelivery(Enum):
     """EXPERIMENTAL: Agent APIs are likely to change.  How a message
     landed in an agent's evaluation."""
@@ -87,6 +98,28 @@ class CacheSharingMode(Enum):
 
     SHARED = "SHARED"
     """Shares the cache volume amongst many build pipelines"""
+
+
+class Casing(Enum):
+    """A convention for joining words into an identifier."""
+
+    CAMEL = "CAMEL"
+    """httpClient"""
+
+    FLAT = "FLAT"
+    """httpclient (output only: drops word boundaries)"""
+
+    KEBAB = "KEBAB"
+    """http-client"""
+
+    PASCAL = "PASCAL"
+    """HTTPClient"""
+
+    SCREAMING_SNAKE = "SCREAMING_SNAKE"
+    """HTTP_CLIENT"""
+
+    SNAKE = "SNAKE"
+    """http_client"""
 
 
 class ChangesetMergeConflict(Enum):
@@ -195,6 +228,19 @@ class GitPushDisposition(Enum):
 
     UP_TO_DATE = "UP_TO_DATE"
     """The remote ref already pointed to this commit."""
+
+
+class IdentifierWordKind(Enum):
+    """The kind of a word in an identifier."""
+
+    ACRONYM = "ACRONYM"
+    """An acronym, from the dictionary or a run of capitals."""
+
+    TERM = "TERM"
+    """A dictionary term with a fixed mixed-case spelling (GitHub, IPv6)."""
+
+    WORD = "WORD"
+    """An ordinary word."""
 
 
 class ImageLayerCompression(Enum):
@@ -1098,6 +1144,16 @@ class Agent(Type):
         ]
         return await self._ctx.execute_sync(self, "notify", _args)
 
+    async def parent(self) -> "Agent | None":
+        """The agent that spawned this agent, or null for a root agent.
+
+        .. caution::
+            Experimental: Agent APIs are likely to change.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("parent", _args)
+        return await _ctx.execute_object(Agent)
+
     async def pause(self, *, interrupt: bool | None = False) -> Self:
         """Stop draining the mailbox once the in-flight step completes, or
         immediately with interrupt.
@@ -1626,7 +1682,7 @@ class Artifact(Type):
         return await _ctx.execute(str)
 
     async def path(self) -> list[str]:
-        """Ordered, literal fields to follow. Entrypoint targets use their
+        """Ordered, literal fields to follow. Workspace main targets use their
         shorthand.
 
         Returns
@@ -1703,6 +1759,15 @@ class Artifact(Type):
         ]
         _ctx = self._select("value", _args)
         return _NodeClient(_ctx)
+
+    async def workspace(self) -> "Workspace | None":
+        """The workspace this artifact was discovered in; its address is relative
+        to it. Null for an artifact without a workspace, such as one of an
+        LLM's bound tool objects (see LLM.artifacts).
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("workspace", _args)
+        return await _ctx.execute_object(Workspace)
 
 
 @typecheck
@@ -2165,12 +2230,19 @@ class ArtifactResult(Type):
 class Artifacts(Type):
     """An immutable selection of workspace artifacts. Listed types,
     dimensions, and keys use OR; chained filters use AND. Empty
-    alternatives and unknown names match nothing. Filters never change
-    addresses or dimension identifiers."""
+    alternatives match nothing; unknown names match nothing but module
+    load failures. Filters never change addresses or dimension
+    identifiers. Module keys match a module's configured or kebab-case
+    name. A module that failed to load has no schema, so its load failure
+    stands in for whatever it would hold: a filter keeps it when the
+    module could hold something the filter selects, and an exclusion drops
+    it only by its own address, such as <module>/** or
+    ?module=<module>."""
 
     async def as_changesets(self) -> list["Changeset"]:
         """Convert the selection to Changesets. Fail if any artifact is not a
-        Changeset. Does not apply command filters.
+        Changeset; a module load failure fails with its load error. Does not
+        apply command filters.
         """
         _args: list[Arg] = []
         _ctx = self._select("asChangesets", _args)
@@ -2178,15 +2250,19 @@ class Artifacts(Type):
 
     async def as_checks(self) -> list["Check"]:
         """Convert the selection to Checks. Fail if any artifact is not a Check.
-        Does not apply command filters or run the checks.
+        A module load failure is a Check that fails with its load error. Does
+        not apply command filters or run the checks.
         """
         _args: list[Arg] = []
         _ctx = self._select("asChecks", _args)
         return await _ctx.execute_object_list(Check)
 
     async def as_expertise(self) -> list["Expertise"]:
-        """Convert the selection to expertise without running the functions. Fail
-        if any artifact is not a source of expertise.
+        """Convert the selection to expertise without running the functions. Each
+        must take one LLM! argument and return LLM!; any other arguments must
+        be optional or auto-filled. Agent arguments receive the agent that
+        owns the conversation. A module load failure fails with its load
+        error.
         """
         _args: list[Arg] = []
         _ctx = self._select("asExpertise", _args)
@@ -2194,7 +2270,8 @@ class Artifacts(Type):
 
     async def as_generators(self) -> list["Generator"]:
         """Convert the selection to Generators without running them. Fail if any
-        artifact is not a Generator.
+        artifact is not a Generator. Module load failures are skipped:
+        generating can repair them.
         """
         _args: list[Arg] = []
         _ctx = self._select("asGenerators", _args)
@@ -2202,7 +2279,8 @@ class Artifacts(Type):
 
     async def as_services(self) -> list["Service"]:
         """Convert the selection to Services. Fail if any artifact is not a
-        Service. Does not apply command filters or start the services.
+        Service; a module load failure fails with its load error. Does not
+        apply command filters or start the services.
         """
         _args: list[Arg] = []
         _ctx = self._select("asServices", _args)
@@ -2366,7 +2444,7 @@ class Artifacts(Type):
 
     def filter_path_pattern(self, pattern: str) -> Self:
         """Keep paths that match a glob pattern. A literal path matches exactly.
-        Both module-qualified and entrypoint paths match.
+        Both module-qualified and workspace main paths match.
         """
         _args = [
             Arg("pattern", pattern),
@@ -2401,6 +2479,10 @@ class Artifacts(Type):
 
         The scheme is optional. The path may be a pattern; an empty path
         selects all artifacts.
+
+        A module that failed to load keeps its load failure when the module
+        could hold what the address selects, as with every filter (see
+        Artifacts).
 
         Parameters
         ----------
@@ -8302,10 +8384,18 @@ class ErrorValue(Type):
 
 @typecheck
 class Expertise(Type):
-    """An agent function that can modify a conversation."""
+    """A function that can modify a conversation."""
+
+    def artifact(self) -> Artifact:
+        """The artifact this expertise runs. Look it up again by URI to pick up
+        module changes.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("artifact", _args)
+        return Artifact(_ctx)
 
     async def description(self) -> str:
-        """The agent function's description.
+        """The function's description.
 
         Returns
         -------
@@ -8354,7 +8444,7 @@ class Expertise(Type):
         return await _ctx.execute(str)
 
     async def name(self) -> str:
-        """The agent function's name.
+        """The function's name.
 
         Returns
         -------
@@ -8375,13 +8465,13 @@ class Expertise(Type):
         return await _ctx.execute(str)
 
     def original_module(self) -> "Module":
-        """The module that defines the agent function."""
+        """The module that defines the function."""
         _args: list[Arg] = []
         _ctx = self._select("originalModule", _args)
         return Module(_ctx)
 
     async def path(self) -> list[str]:
-        """The agent function's path within its module.
+        """The function's path within its module.
 
         Returns
         -------
@@ -10354,6 +10444,29 @@ class GitCommit(Type):
         _ctx = self._select("tree", _args)
         return Directory(_ctx)
 
+    async def tree_sha(self) -> str:
+        """The ID of the commit's Git tree object.
+
+        Commits with identical trees have identical contents and file modes.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("treeSHA", _args)
+        return await _ctx.execute(str)
+
 
 @typecheck
 class GitPushResult(Type):
@@ -11799,6 +11912,204 @@ class Host(Type):
 
 
 @typecheck
+class Identifier(Type):
+    """A name parsed into words, which can be formatted in any casing."""
+
+    async def format(
+        self,
+        casing: Casing,
+        *,
+        acronyms: AcronymStyle | None = AcronymStyle.UPPERCASE,
+    ) -> str:
+        """Format the identifier in a casing.
+
+        Parameters
+        ----------
+        casing:
+            The casing to format the identifier in.
+        acronyms:
+            How to write acronyms and terms where a word starts with a
+            capital.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("casing", casing),
+            Arg("acronyms", acronyms, AcronymStyle.UPPERCASE),
+        ]
+        _ctx = self._select("format", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> str:
+        """A unique identifier for this Identifier.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def name(self) -> str:
+        """The name as given.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    async def words(self) -> list["IdentifierWord"]:
+        """The words that make up the name, in order."""
+        _args: list[Arg] = []
+        _ctx = self._select("words", _args)
+        return await _ctx.execute_object_list(IdentifierWord)
+
+
+@typecheck
+class IdentifierWord(Type):
+    """One word of an identifier."""
+
+    async def id(self) -> str:
+        """A unique identifier for this IdentifierWord.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def kind(self) -> IdentifierWordKind:
+        """The kind of word.
+
+        Returns
+        -------
+        IdentifierWordKind
+            The kind of a word in an identifier.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("kind", _args)
+        return await _ctx.execute(IdentifierWordKind)
+
+    async def suffix(self) -> str:
+        """Trailing digits and/or a plural "s", in that order: SHA+"s",
+        OAuth+"2", HTTP+"2s".
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("suffix", _args)
+        return await _ctx.execute(str)
+
+    async def term(self) -> "NamingTerm | None":
+        """The dictionary entry this word matched, if any."""
+        _args: list[Arg] = []
+        _ctx = self._select("term", _args)
+        return await _ctx.execute_object(NamingTerm)
+
+    async def text(self) -> str:
+        """Standard spelling: "client" (WORD), "HTTP" (ACRONYM), "GitHub" (TERM).
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("text", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
 class InputTypeDef(Type):
     """A graphql input type, which is essentially just a group of named
     args. This is currently only used to represent pre-existing usage of
@@ -12292,8 +12603,16 @@ class LLM(Type):
         return Artifacts(_ctx)
 
     def compose(self, expertise: list[Expertise]) -> Self:
-        """Run expertise in list order, passing this conversation through each
-        function. Retain existing contributions.
+        """Run expertise on this conversation, passing it through each function
+        in order, and record it in expertise.
+
+        Composing an entry that is already recorded refreshes its module: the
+        module's contributions are cleared, all of its recorded entries run
+        again, and compatible tool state is kept. Other contributions are
+        untouched.
+
+        Agent arguments receive the agent that owns this conversation. Without
+        one, entries requiring an Agent are skipped.
 
         Parameters
         ----------
@@ -12349,6 +12668,12 @@ class LLM(Type):
         _args: list[Arg] = []
         _ctx = self._select("contextWindow", _args)
         return await _ctx.execute(int | None)
+
+    async def expertise(self) -> list[Expertise]:
+        """Expertise composed into this conversation, in order."""
+        _args: list[Arg] = []
+        _ctx = self._select("expertise", _args)
+        return await _ctx.execute_object_list(Expertise)
 
     def fork(self, label: str) -> Self:
         """Fork the conversation, so that otherwise-identical follow-ups evaluate
@@ -12534,28 +12859,6 @@ class LLM(Type):
         _ctx = self._select("reasoningEffort", _args)
         return await _ctx.execute(str)
 
-    def recompose(self, expertise: list[Expertise]) -> Self:
-        """Run expertise in list order, replacing their modules' contributions
-        and preserving compatible tool state.
-
-        Clear each selected module's contributions once before execution.
-        Retain unowned contributions and contributions from other modules.
-        Keep this LLM's workspace.
-
-        A change to a tool binding's version resets its state. Removed
-        bindings, changed identities, and incompatible state are errors.
-
-        Parameters
-        ----------
-        expertise:
-            The expertise to run. Each reference retains its source workspace.
-        """
-        _args = [
-            Arg("expertise", expertise),
-        ]
-        _ctx = self._select("recompose", _args)
-        return LLM(_ctx)
-
     async def skills(self) -> list["LLMSkill"]:
         """The skills visible to the model, exactly as the ListSkills tool serves
         them: engine-embedded skills, skills installed with withSkills, and
@@ -12568,6 +12871,7 @@ class LLM(Type):
     async def spawn(
         self,
         *,
+        expertise: list[Expertise] | None = None,
         name: str | None = None,
         handle: str | None = None,
         state: AgentState | None = AgentState.IDLE,
@@ -12600,6 +12904,11 @@ class LLM(Type):
 
         Parameters
         ----------
+        expertise:
+            Expertise to compose into the new agent's conversation. Agent
+            arguments receive the new agent, which cannot be used until
+            composition completes; if composition fails, the agent is left
+            STOPPED.
         name:
             Display label for the agent — telemetry and error messages;
             carries no identity. Defaults to a short name derived from the
@@ -12634,6 +12943,7 @@ class LLM(Type):
             If the API returns an error.
         """
         _args = [
+            Arg("expertise", [] if expertise is None else expertise, []),
             Arg("name", name, None),
             Arg("handle", handle, None),
             Arg("state", state, AgentState.IDLE),
@@ -14085,6 +14395,7 @@ class Module(Type):
         self,
         *,
         include_dependencies: bool | None = None,
+        main: bool | None = None,
         entrypoint: bool | None = None,
     ) -> Void | None:
         """Serve a module's API in the current session.
@@ -14096,9 +14407,12 @@ class Module(Type):
         ----------
         include_dependencies:
             Expose the dependencies of this module to the client
+        main:
+            Install the module as the workspace main, promoting its main-
+            object methods onto the Query root
         entrypoint:
-            Install the module as the entrypoint, promoting its main-object
-            methods onto the Query root
+            Compatibility alias for main.
+            .. deprecated:: Use main.
 
         Returns
         -------
@@ -14115,6 +14429,7 @@ class Module(Type):
         """
         _args = [
             Arg("includeDependencies", include_dependencies, None),
+            Arg("main", main, None),
             Arg("entrypoint", entrypoint, None),
         ]
         _ctx = self._select("serve", _args)
@@ -15198,6 +15513,81 @@ class ModuleSource(Type):
 
 
 @typecheck
+class NamingTerm(Type):
+    """An entry in the naming dictionary."""
+
+    async def capitalized(self) -> str:
+        """Spelling in the CAPITALIZED style: "Http", "Ipv6", "GitHub", "Ios".
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("capitalized", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> str:
+        """A unique identifier for this NamingTerm.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def spelling(self) -> str:
+        """Standard spelling: "HTTP", "IPv6", "GitHub", "iOS".
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("spelling", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
 class ObjectTypeDef(Type):
     """A definition of a custom object defined in a Module."""
 
@@ -15621,7 +16011,7 @@ class Query(Root):
             level served typedefs.
         hide_core:
             Strip core API functions from the Query type, leaving only module-
-            sourced functions (constructors, entrypoint proxies, etc.).
+            sourced functions (constructors, workspace main proxies, etc.).
             Core types (Container, Directory, etc.) are kept so return types
             and method chaining still work.
         """
@@ -15754,6 +16144,56 @@ class Query(Root):
         ]
         _ctx = self._select("file", _args)
         return File(_ctx)
+
+    async def format_identifiers(
+        self,
+        names: list[str],
+        casing: Casing,
+        *,
+        acronyms: AcronymStyle | None = AcronymStyle.UPPERCASE,
+        version: str | None = None,
+    ) -> list[str]:
+        """Format many names at once, for codegen. Returns them in input order.
+
+        .. caution::
+            Experimental: Identifier casing APIs are likely to change.
+
+        Parameters
+        ----------
+        names:
+            The names to format, in any casing.
+        casing:
+            The casing to format the names in.
+        acronyms:
+            How to write acronyms and terms where a word starts with a
+            capital.
+        version:
+            The engine version whose naming dictionary to parse the names
+            with, e.g. the __schemaVersion of a schema being generated.
+            Defaults to the caller's engine version.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("names", names),
+            Arg("casing", casing),
+            Arg("acronyms", acronyms, AcronymStyle.UPPERCASE),
+            Arg("version", version, None),
+        ]
+        _ctx = self._select("formatIdentifiers", _args)
+        return await _ctx.execute(list[str])
 
     def function(self, name: str, return_type: "TypeDef") -> Function:
         """Creates a function.
@@ -15908,6 +16348,27 @@ class Query(Root):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
+    def identifier(self, name: str) -> Identifier:
+        """Parse a name in any casing into words.
+
+        Known acronyms and terms come from the naming dictionary; everything
+        else falls back to the case heuristic. Errors on non-ASCII input,
+        input with no letters or digits, or input over 256 bytes.
+
+        .. caution::
+            Experimental: Identifier casing APIs are likely to change.
+
+        Parameters
+        ----------
+        name:
+            The name to parse.
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("identifier", _args)
+        return Identifier(_ctx)
+
     def json(self) -> JSONValue:
         """Initialize a JSON value"""
         _args: list[Arg] = []
@@ -16007,6 +16468,16 @@ class Query(Root):
         ]
         _ctx = self._select("moduleSource", _args)
         return ModuleSource(_ctx)
+
+    async def naming_dictionary(self) -> list[NamingTerm]:
+        """The acronyms and terms used to parse and format identifiers.
+
+        .. caution::
+            Experimental: Identifier casing APIs are likely to change.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("namingDictionary", _args)
+        return await _ctx.execute_object_list(NamingTerm)
 
     async def node(self, id: Type) -> Node | None:
         """Load any object by its ID."""
@@ -17915,6 +18386,9 @@ class Workspace(Type):
         """Discover static object artifacts from workspace modules without
         evaluating their values.
 
+        Omits the paths that the workspace's check.skip, generate.skip, and
+        up.skip settings skip.
+
         Parameters
         ----------
         include:
@@ -18147,11 +18621,10 @@ class Workspace(Type):
         return Directory(_ctx)
 
     async def entrypoint(self) -> str:
-        """Installed name of the module selected as the workspace entrypoint, or
-        an empty string when none is selected.
+        """Compatibility alias for main.
 
-        Reflects the selected env's effective view. Fails if several modules
-        are selected.
+        .. deprecated::
+            Use main.
 
         Returns
         -------
@@ -18167,6 +18640,11 @@ class Workspace(Type):
         QueryError
             If the API returns an error.
         """
+        warnings.warn(
+            'Method "entrypoint" is deprecated: Use main.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args: list[Arg] = []
         _ctx = self._select("entrypoint", _args)
         return await _ctx.execute(str)
@@ -18428,6 +18906,31 @@ class Workspace(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def main(self) -> str:
+        """Installed name of the module selected as the workspace main, or an
+        empty string when none is selected.
+
+        Reflects the selected env's effective view. Fails if several modules
+        are selected.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("main", _args)
         return await _ctx.execute(str)
 
     def migrate(
@@ -18928,17 +19431,21 @@ class Workspace(Type):
         return Workspace(_ctx)
 
     def with_entrypoint(self, name: str) -> Self:
-        """Return this workspace with an installed module selected as its
-        entrypoint.
+        """Compatibility alias for withMain.
 
-        Every other entrypoint selection is cleared. Entrypoints live in the
-        base workspace config.
+        .. deprecated::
+            Use withMain.
 
         Parameters
         ----------
         name:
             Exact installed module name.
         """
+        warnings.warn(
+            'Method "with_entrypoint" is deprecated: Use withMain.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args = [
             Arg("name", name),
         ]
@@ -18980,6 +19487,7 @@ class Workspace(Type):
         name: str | None = "",
         path: str | None = "",
         install: bool | None = None,
+        main: bool | None = None,
         entrypoint: bool | None = None,
         settings: JSON | None = None,
     ) -> Self:
@@ -19001,10 +19509,13 @@ class Workspace(Type):
             active workspace config.
         install:
             Install the module. When omitted, install only if path is omitted.
-        entrypoint:
-            Select this module as the entrypoint and install it. False
+        main:
+            Select this module as the workspace main and install it. False
             prevents automatic selection. When omitted, select only if both
             path and name are omitted and the module is installed.
+        entrypoint:
+            Compatibility alias for main.
+            .. deprecated:: Use main.
         settings:
             Explicit SDK-module constructor setting overrides for this scope.
         """
@@ -19013,6 +19524,7 @@ class Workspace(Type):
             Arg("name", name, ""),
             Arg("path", path, ""),
             Arg("install", install, None),
+            Arg("main", main, None),
             Arg("entrypoint", entrypoint, None),
             Arg("settings", settings, None),
         ]
@@ -19027,6 +19539,23 @@ class Workspace(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("withInitialized", _args)
+        return Workspace(_ctx)
+
+    def with_main(self, name: str) -> Self:
+        """Return this workspace with an installed module selected as its main.
+
+        Every other main selection is cleared. The main module lives in the
+        base workspace config.
+
+        Parameters
+        ----------
+        name:
+            Exact installed module name.
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("withMain", _args)
         return Workspace(_ctx)
 
     def with_module(
@@ -19477,7 +20006,16 @@ class Workspace(Type):
         return Workspace(_ctx)
 
     def without_entrypoint(self) -> Self:
-        """Return this workspace with no module selected as its entrypoint."""
+        """Compatibility alias for withoutMain.
+
+        .. deprecated::
+            Use withoutMain.
+        """
+        warnings.warn(
+            'Method "without_entrypoint" is deprecated: Use withoutMain.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args: list[Arg] = []
         _ctx = self._select("withoutEntrypoint", _args)
         return Workspace(_ctx)
@@ -19511,6 +20049,12 @@ class Workspace(Type):
             Arg("paths", paths),
         ]
         _ctx = self._select("withoutFiles", _args)
+        return Workspace(_ctx)
+
+    def without_main(self) -> Self:
+        """Return this workspace with no module selected as its main."""
+        _args: list[Arg] = []
+        _ctx = self._select("withoutMain", _args)
         return Workspace(_ctx)
 
     def without_module(
@@ -19947,8 +20491,10 @@ class WorkspaceModule(Type):
     """A module entry in the workspace configuration."""
 
     async def entrypoint(self) -> bool:
-        """Whether the module is the workspace entrypoint (functions aliased to
-        Query root).
+        """Compatibility alias for main.
+
+        .. deprecated::
+            Use main.
 
         Returns
         -------
@@ -19962,6 +20508,11 @@ class WorkspaceModule(Type):
         QueryError
             If the API returns an error.
         """
+        warnings.warn(
+            'Method "entrypoint" is deprecated: Use main.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args: list[Arg] = []
         _ctx = self._select("entrypoint", _args)
         return await _ctx.execute(bool)
@@ -20015,6 +20566,26 @@ class WorkspaceModule(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
+
+    async def main(self) -> bool:
+        """Whether the module is the workspace main (functions aliased to Query
+        root).
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("main", _args)
+        return await _ctx.execute(bool)
 
     async def name(self) -> str:
         """The module name.
@@ -20351,6 +20922,7 @@ dag = Client()
 __all__ = [
     "JSON",
     "LLM",
+    "AcronymStyle",
     "Address",
     "Agent",
     "AgentMessage",
@@ -20367,6 +20939,7 @@ __all__ = [
     "Bytes",
     "CacheSharingMode",
     "CacheVolume",
+    "Casing",
     "Changeset",
     "ChangesetMergeConflict",
     "ChangesetsMergeConflict",
@@ -20416,6 +20989,9 @@ __all__ = [
     "HTTPState",
     "HealthcheckConfig",
     "Host",
+    "Identifier",
+    "IdentifierWord",
+    "IdentifierWordKind",
     "ImageLayerCompression",
     "ImageMediaTypes",
     "InputTypeDef",
@@ -20439,6 +21015,7 @@ __all__ = [
     "ModuleSource",
     "ModuleSourceExperimentalFeature",
     "ModuleSourceKind",
+    "NamingTerm",
     "NetworkProtocol",
     "Node",
     "ObjectTypeDef",

@@ -37,6 +37,41 @@ func materializeModuleFiles(refString string) core.WithContainerFunc {
 	return daggerQuery(`{moduleSource(refString:%q){generatedContextDirectory{export(path:".")}}}`, refString)
 }
 
+// TestWorkspaceMigrateDoesNotUploadGitignoredFiles guards against migration
+// uploading the entire host workspace while cleaning legacy generated-code
+// ignores. The Go entries make migration rewrite .gitignore, while the
+// user-owned .venv rule must still prune that directory before filesync walks
+// it. Verbose progress reports every transferred top-level path.
+func (WorkspaceMigrationSuite) TestWorkspaceMigrateDoesNotUploadGitignoredFiles(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, ".gitignore"), []byte(`.venv/
+/dagger.gen.go
+/internal/dagger
+/internal/telemetry
+/.env
+`), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "dagger.json"), []byte(`{
+  "name": "app",
+  "sdk": {"source": "go"},
+  "source": "."
+}`), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "main.go"), []byte(`package main
+
+type App struct{}
+`), 0o644))
+	require.NoError(t, os.Mkdir(filepath.Join(workdir, ".venv"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, ".venv", "should-not-upload"), []byte("ignored\n"), 0o644))
+
+	var logs safeBuffer
+	c := connect(ctx, t, dagger.WithWorkdir(workdir), dagger.WithLogOutput(&logs), dagger.WithVerbosity(2))
+	modified, err := core.NewQuery(c).CurrentWorkspace().Migrate().Changes().ModifiedPaths(ctx)
+	require.NoError(t, err)
+	require.NoError(t, c.Close())
+	require.Contains(t, modified, ".gitignore", "migration must clean legacy generated-code ignores")
+	require.NotRegexp(t, `(?m)^\d+\s+:\s+(?:┆\s+)*\.venv(?:\s+DONE.*)?$`, logs.String(), "migration must not upload gitignored content")
+}
+
 func (WorkspaceMigrationSuite) TestMigrationPlanIdentity(ctx context.Context, t *testctx.T) {
 	for _, moduleOnly := range []bool{false, true} {
 		name := "workspace"
@@ -1324,7 +1359,7 @@ type Hello {
 	})
 
 	t.Run("subdirectory blueprint config fails without changes", func(ctx context.Context, t *testctx.T) {
-		// A blueprint needs a workspace config, and hoisting an entrypoint to
+		// A blueprint needs a workspace config, and hoisting a main module to
 		// the repo root would change repo-wide behavior — the config is left
 		// as legacy, and setup explains the skip instead of claiming there is
 		// nothing to migrate.

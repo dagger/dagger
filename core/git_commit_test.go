@@ -759,6 +759,7 @@ docs: go: remove unnecessary MkdirAll from snippets
 	require.NoError(t, err)
 	require.Equal(t, "c80ac2c13df7d573a069938e01ca13f7a81f0345", meta.SHA)
 	require.Equal(t, "c80ac2c", meta.ShortSHA)
+	require.Equal(t, "5209ad308282b6d6c7d6e4888cd807e29079248b", meta.TreeSHA)
 	require.Equal(t, "Andrea Luzzardi", meta.AuthorName)
 	require.Equal(t, "aluzzardi@gmail.com", meta.AuthorEmail)
 	require.Equal(t, "GitHub", meta.CommitterName)

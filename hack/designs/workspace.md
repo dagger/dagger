@@ -60,7 +60,7 @@ The workspace config file is human-editable and lives at `dagger.toml`:
 # Modules added to this workspace
 [modules.ci]
 source = "modules/ci"
-entrypoint = true
+main = true
 
 [modules.node]
 source = "github.com/dagger/node-toolchain@v1.0"
@@ -241,7 +241,7 @@ When `-m` is used:
 - The specified module is loaded with its functions promoted to the Query root
 - Workspace detection still runs (the engine still knows the workspace root)
 
-If explicit extra modules nominate more than one distinct entrypoint, that is an error.
+If explicit extra modules nominate more than one distinct main, that is an error.
 
 Why `-m` exists:
 
@@ -258,43 +258,43 @@ Multiple loading paths can nominate the same module (workspace config and `-m`).
 
 If multiple paths nominate the same module, the engine loads it once.
 
-After deduplication, the engine performs a separate entrypoint arbitration pass.
+After deduplication, the engine performs a separate main arbitration pass.
 
-#### Entrypoint Module
+#### Workspace Main
 
-A workspace can designate one module as the **entrypoint**. The entrypoint module's methods are promoted to the Query root, so users can write:
+A workspace can designate one module as its **main**. The workspace main module's methods are promoted to the Query root, so users can write:
 
 ```bash
 dagger call build        # instead of 'dagger call ci build'
 ```
 
-Set `entrypoint = true` on a module in `dagger.toml`:
+Set `main = true` on a module in `dagger.toml`:
 
 ```toml
 [modules.ci]
 source = "modules/ci"
-entrypoint = true
+main = true
 ```
 
-At most one module can be the active entrypoint. After deduplication, entrypoint arbitration runs with this precedence:
+At most one module can be the workspace main. After deduplication, main arbitration runs with this precedence:
 
 1. Extra modules (`-m`)
 2. Ambient workspace modules
 
 Cross-tier conflicts are resolved by precedence. Same-tier conflicts are errors. In particular:
 
-- More than one distinct ambient workspace entrypoint is an invalid workspace configuration.
-- More than one distinct extra-module entrypoint is an invalid request.
+- More than one distinct ambient workspace main is an invalid workspace configuration.
+- More than one distinct extra-module main is an invalid request.
 
-The engine installs proxy fields at the Query root for each of the entrypoint module's methods. These proxies are pure routing — there is no ambiguity even when method names overlap with core fields.
+The engine installs proxy fields at the Query root for each of the workspace main module's methods. These proxies are pure routing — there is no ambiguity even when method names overlap with core fields.
 
-If the entrypoint module's constructor has arguments, a `with` field is installed on `Query` to accept them:
+If the workspace main module's constructor has arguments, a `with` field is installed on `Query` to accept them:
 
 ```bash
 dagger call --foo=abc build    # translates to: with(foo: "abc") { build }
 ```
 
-Core fields and existing constructors always win conflicts. If an entrypoint method name conflicts with an existing Query root field, the proxy is skipped — the method remains accessible through the namespaced constructor (`dagger call ci build`). This behavior comes from schema construction, so all clients see the same shape through introspection.
+Core fields and existing constructors always win conflicts. If a workspace main method name conflicts with an existing Query root field, the proxy is skipped — the method remains accessible through the namespaced constructor (`dagger call ci build`). This behavior comes from schema construction, so all clients see the same shape through introspection.
 
 ### Migration
 
@@ -322,8 +322,8 @@ Legacy fields (`blueprint`, `toolchains`) are interpreted **only** while buildin
 
 Inside the compat workspace:
 
-- If a legacy `blueprint` exists, the blueprint module is the compat entrypoint.
-- Otherwise, the projected main module is the compat entrypoint.
+- If a legacy `blueprint` exists, the blueprint module is the compatibility workspace main.
+- Otherwise, the projected main module is the compatibility workspace main.
 
 #### Migration Equivalence
 
@@ -412,7 +412,7 @@ Steps:
    - Rewrite `dependencies[].source` paths relative to new location
    - Rewrite `include` paths relative to new location
 
-3. **Register in `dagger.toml`** with `entrypoint = true` to preserve existing `dagger call <function>` commands.
+3. **Register in `dagger.toml`** with `main = true` to preserve existing `dagger call <function>` commands.
 
 **Toolchains** (triggered by `toolchains` field): Each toolchain becomes a workspace module entry. Source directories are left in place — only the configuration moves.
 
@@ -477,7 +477,7 @@ After `dagger migrate` — `dagger.toml`:
 ```toml
 [modules.dagger-dev]
 source = "modules/dagger-dev"
-entrypoint = true  # preserves 'dagger call <function>' backwards compat
+main = true  # preserves 'dagger call <function>' backwards compat
 
 [modules.changelog]
 source = "../toolchains/changelog"
@@ -680,7 +680,7 @@ The workspace split clarifies what `dagger.json` is: purely a module definition 
 - **`source` is deprecated**: Modules are self-contained packages. `dagger.json` lives alongside the module source, so `source` is always `.` and no longer needs to be specified.
 - **`sdk` is mandatory**: Every module must declare its SDK. The implicit detection from project context is removed.
 - **`toolchains` is removed**: Toolchain configuration moves to workspace `dagger.toml` as module entries.
-- **`blueprint` is removed**: The entrypoint concept moves to workspace `dagger.toml` as `entrypoint = true`.
+- **`blueprint` is removed**: The workspace main concept moves to `dagger.toml` as `main = true`.
 - **Dependencies stay**: Module → module dependencies (`dependencies` field) remain in `dagger.json`. This is code dependency, not project configuration.
 - **Pins stay**: Inline version pins in `dagger.json` remain. Workspace-level pinning uses the lockfile instead (see [Workspace Lockfile](#workspace-lockfile)).
 

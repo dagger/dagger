@@ -1401,7 +1401,9 @@ type changesetExportArgs struct {
 }
 
 func (s *directorySchema) changesetExport(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args changesetExportArgs) (dagql.String, error) {
-	err := parent.Self().Export(ctx, args.Path)
+	exportCtx, exported := filesyncExport(ctx, parent)
+	err := parent.Self().Export(exportCtx, args.Path)
+	exported(err)
 	if err != nil {
 		return "", err
 	}
@@ -1497,7 +1499,9 @@ type dirExportArgs struct {
 }
 
 func (s *directorySchema) export(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args dirExportArgs) (dagql.String, error) {
-	err := parent.Self().Export(ctx, parent, args.Path, !args.Wipe)
+	exportCtx, exported := filesyncExport(ctx, parent)
+	err := parent.Self().Export(exportCtx, parent, args.Path, !args.Wipe)
+	exported(err)
 	if err != nil {
 		return "", err
 	}
@@ -1581,6 +1585,23 @@ func (s *directorySchema) changesetWithChangeset(ctx context.Context, parent dag
 	change, err := args.Changes.Load(ctx, srv)
 	if err != nil {
 		return nil, err
+	}
+
+	if parent.Self().Before.Self().IsScratch() && parent.Self().After.Self().IsScratch() {
+		// An empty starting changeset has nothing to merge. Keep the input's
+		// snapshots instead of round-tripping them through Git, which loses
+		// permission bits. Exclude root Git metadata as the merge does.
+		withoutGit := dagql.Selector{Field: "withoutDirectory", Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString(".git")},
+		}}
+		var before, after dagql.ObjectResult[*core.Directory]
+		if err := srv.Select(ctx, change.Self().Before, &before, withoutGit); err != nil {
+			return nil, err
+		}
+		if err := srv.Select(ctx, change.Self().After, &after, withoutGit); err != nil {
+			return nil, err
+		}
+		return core.NewChangeset(ctx, before, after)
 	}
 
 	var after dagql.ObjectResult[*core.Directory]

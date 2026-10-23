@@ -28,7 +28,7 @@ func artifactSource(c *dagger.Client) *core.Directory {
 	return core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", `[modules.provider]
 source = "./provider"
-entrypoint = true
+main = true
 settings.label = "configured"
 [modules.consumer]
 source = "./consumer"
@@ -313,6 +313,133 @@ func (ArtifactsSuite) TestFilterURI(ctx context.Context, t *testctx.T) {
   node(id: $ws) { ... on Workspace { artifacts { filterUri(uri: $uri) { items { uri } } } } }
 }`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID, "uri": tc.uri}})
 		require.ErrorContains(t, err, tc.want)
+	}
+}
+
+// failedModuleWorkspace has a loaded module with expertise and two modules
+// that fail to load, one named in snake case.
+func failedModuleWorkspace(c *dagger.Client) *core.Directory {
+	return core.NewQuery(c).Directory().
+		WithNewFile("dagger.toml", "[modules.good]\nsource = \"./good\"\n[modules.staff]\nsource = \"./staff\"\n[modules.my_mod]\nsource = \"./my_mod\"\n").
+		WithNewFile("good/dagger-module.toml", "name = \"good\"\nengineVersion = \"v1.0.0\"\n[runtime]\nsource = \"dang\"\n").
+		WithNewFile("good/main.dang", "type Good {\n  pub helper(base: LLM!): LLM! @agent { base }\n}\n").
+		WithNewFile("staff/dagger-module.toml", "name = \"staff\"\nengineVersion = \"v1.0.0\"\n[runtime]\nsource = \"dang\"\n").
+		WithNewFile("staff/main.dang", "invalid source").
+		WithNewFile("my_mod/dagger-module.toml", "name = \"my_mod\"\nengineVersion = \"v1.0.0\"\n[runtime]\nsource = \"dang\"\n").
+		WithNewFile("my_mod/main.dang", "invalid source")
+}
+
+// A module that failed to load keeps its load failure when the module could
+// hold what an address selects, so a lookup reports the failure instead of
+// finding nothing.
+func (ArtifactsSuite) TestFilterURIUnderFailedModule(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	wsID, err := failedModuleWorkspace(c).AsWorkspace().ID(ctx)
+	require.NoError(t, err)
+	got, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
+  node(id: $ws) { ... on Workspace { artifacts {
+    path: filterUri(uri: "dag://staff/worker") { items { uri } }
+    glob: filterUri(uri: "dag://**?expertise=staff/worker") { uri items { uri } }
+    braces: filterUri(uri: "dag://{staff,good}/worker") { items { uri } }
+    typeKey: filterUri(uri: "dag://?expertise=staff/worker") { items { uri } }
+    typed: filterUri(uri: "dag+expertise://?expertise=staff/worker") { items { uri } }
+    item: filterUri(uri: "dag://staff/members/worker?staff-member=chief") { items { uri } }
+    keyOnly: filterUri(uri: "dag://?staff-member=chief") { items { uri } }
+    snakeCase: filterUri(uri: "dag://my_mod/worker") { items { uri } }
+    moduleKey: filterUri(uri: "dag://?module=my_mod") { items { uri } }
+    otherModule: filterUri(uri: "dag://staff/worker?module=good") { items { uri } }
+    otherKey: filterUri(uri: "dag://staff/worker?expertise=good/helper") { items { uri } }
+    emptyChain: filterUri(uri: "dag://?expertise=staff/worker") { filterUri(uri: "dag://?expertise=staff/other") { uri items { uri } } }
+    loaded: filterUri(uri: "dag://?expertise=good/helper") { items { uri } }
+    missing: filterUri(uri: "dag://?expertise=gone/worker") { items { uri } asExpertise { __typename } }
+    withoutModule: withoutUri(uri: "dag://staff/**") { items { uri } }
+    withoutModuleKey: withoutUri(uri: "dag://?module=my-mod") { items { uri } }
+    withoutOne: withoutUri(uri: "dag://?expertise=staff/worker") { items { uri } }
+  } } }
+}`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"node":{"artifacts":{
+  "path":{"items":[{"uri":"dag://?check=staff/load"}]},
+  "glob":{"uri":"dag://**?type:Expertise=staff/worker","items":[{"uri":"dag://?check=staff/load"}]},
+  "braces":{"items":[{"uri":"dag://?check=staff/load"}]},
+  "typeKey":{"items":[{"uri":"dag://?check=staff/load"}]},
+  "typed":{"items":[{"uri":"dag://?check=staff/load"}]},
+  "item":{"items":[{"uri":"dag://?check=staff/load"}]},
+  "keyOnly":{"items":[{"uri":"dag://?check=staff/load"}]},
+  "snakeCase":{"items":[{"uri":"dag://?check=my-mod/load"}]},
+  "moduleKey":{"items":[{"uri":"dag://?check=my-mod/load"}]},
+  "otherModule":{"items":[]},
+  "otherKey":{"items":[]},
+  "emptyChain":{"filterUri":{"uri":"dag://{}","items":[]}},
+  "loaded":{"items":[{"uri":"dag://?expertise=good/helper"}]},
+  "missing":{"items":[],"asExpertise":[]},
+  "withoutModule":{"items":[{"uri":"dag://?expertise=good/helper"},{"uri":"dag://?check=my-mod/load"}]},
+  "withoutModuleKey":{"items":[{"uri":"dag://?expertise=good/helper"},{"uri":"dag://?check=staff/load"}]},
+  "withoutOne":{"items":[{"uri":"dag://?expertise=good/helper"},{"uri":"dag://?check=my-mod/load"},{"uri":"dag://?check=staff/load"}]}
+}}}`, string(*got))
+	// Converting the selection reports the load failure.
+	_, err = testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
+  node(id: $ws) { ... on Workspace { artifacts { filterUri(uri: "dag://?expertise=staff/worker") { asExpertise { __typename } } } } }
+}`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}})
+	require.ErrorContains(t, err, `module "staff"`)
+	// Resolving an address under the failed module names the failure.
+	_, err = testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
+  node(id: $ws) { ... on Workspace { resolve(value: "dag://staff/worker") { container { id } } } }
+}`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}})
+	require.ErrorContains(t, err, `no artifact matches; module "staff" failed to load`)
+
+	// A failed workspace main's shorthand paths start with any name but another
+	// module's.
+	mainID, err := failedModuleWorkspace(c).
+		WithNewFile("dagger.toml", "[modules.good]\nsource = \"./good\"\n[modules.staff]\nsource = \"./staff\"\nmain = true\n").
+		AsWorkspace().ID(ctx)
+	require.NoError(t, err)
+	got, err = testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
+  node(id: $ws) { ... on Workspace { artifacts {
+    shorthand: filterUri(uri: "dag://worker") { items { uri } }
+    other: filterUri(uri: "dag://good/helper") { items { uri } }
+  }
+  narrowed: artifacts(include: ["worker"]) {
+    other: filterUri(uri: "dag://good/helper") { items { uri } }
+  } } }
+}`, &testutil.QueryOptions{Variables: map[string]any{"ws": mainID}})
+	require.NoError(t, err)
+	// Narrowing module loading does not make another module's address look
+	// like a shorthand path.
+	require.JSONEq(t, `{"node":{"artifacts":{
+  "shorthand":{"items":[{"uri":"dag://?check=staff/load"}]},
+  "other":{"items":[{"uri":"dag://?expertise=good/helper"}]}
+},"narrowed":{"other":{"items":[]}}}}`, string(*got))
+}
+
+func (ArtifactsSuite) TestArtifactWorkspace(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	source := core.NewQuery(c).Directory().
+		WithNewFile("dagger.toml", "[modules.binder]\nsource = \"./binder\"\n").
+		WithNewFile("binder/dagger-module.toml", "name = \"binder\"\nengineVersion = \"v1.0.0\"\n[runtime]\nsource = \"dang\"\n").
+		WithNewFile("binder/main.dang", `type Binder {
+  pub docs: Directory! { directory.withNewFile("readme", "docs") }
+  pub bound: Artifacts! { llm.withTools(currentNode).artifacts }
+}`)
+	const query = `query($ws: ID!) {
+  node(id: $ws) { ... on Workspace { artifacts {
+    docs: filterUri(uri: "dag://binder/docs") { one { workspace { file(path: "marker.txt") { contents } } } }
+    bound: filterUri(uri: "dag://binder/bound") { one { value { ... on Artifacts {
+      filterUri(uri: "dag://binder/docs") { one { uri workspace { id } } }
+    } } } }
+  } } }
+}`
+	// Each artifact returns the workspace that discovered it.
+	for _, marker := range []string{"first", "second"} {
+		wsID, err := source.WithNewFile("marker.txt", marker).AsWorkspace().ID(ctx)
+		require.NoError(t, err)
+		got, err := testutil.QueryWithClient[json.RawMessage](c, t, query, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}})
+		require.NoError(t, err)
+		// A bound tool object's artifact has no workspace of its own.
+		require.JSONEq(t, `{"node":{"artifacts":{
+  "docs":{"one":{"workspace":{"file":{"contents":"`+marker+`"}}}},
+  "bound":{"one":{"value":{"filterUri":{"one":{"uri":"dag://?directory=binder/docs","workspace":null}}}}}
+}}}`, string(*got))
 	}
 }
 
@@ -669,7 +796,7 @@ func (*Legacy) Output(ctx context.Context) (string, error) {
 	require.Equal(t, "legacy check", strings.TrimSpace(out))
 }
 
-func (ArtifactsSuite) TestExplicitEntrypoint(ctx context.Context, t *testctx.T) {
+func (ArtifactsSuite) TestExplicitMain(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := nativeWorkspaceBase(t, c).WithDirectory(".", artifactSource(c)).
 		WithNewFile("extra/dagger-module.toml", "name = \"extra\"\nengineVersion = \"v1.0.0\"\n[runtime]\nsource = \"dang\"\n").
@@ -768,7 +895,7 @@ func (ArtifactsSuite) TestArtifactsCLI(ctx context.Context, t *testctx.T) {
 	reserved := base.
 		WithNewFile("/work/selected/dagger.toml", `[modules.provider]
 source = "./provider"
-entrypoint = true
+main = true
 `).
 		WithNewFile("/work/selected/provider/main.dang", `type Provider {
   pub types: Directory! { directory }
@@ -922,7 +1049,7 @@ func (ArtifactsSuite) TestWorkspaceEdits(ctx context.Context, t *testctx.T) {
 	}
 	config := `[modules.provider]
 source = "./provider"
-entrypoint = true
+main = true
 settings.label = "changed"
 [modules.consumer]
 source = "./consumer"
@@ -955,7 +1082,7 @@ func (ArtifactsSuite) TestAliasAndShorthandSetting(ctx context.Context, t *testc
 	c := connect(ctx, t)
 	wsID, err := artifactSource(c).WithNewFile("dagger.toml", `[modules.provider]
 source = "./provider"
-entrypoint = true
+main = true
 settings.label = "configured"
 [modules.alias]
 source = "./provider"
@@ -974,15 +1101,15 @@ settings.input = "dag://marker"
 	}
 }
 
-func (ArtifactsSuite) TestAmbiguousEntrypoints(ctx context.Context, t *testctx.T) {
+func (ArtifactsSuite) TestAmbiguousMains(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	wsID, err := artifactSource(c).WithNewFile("dagger.toml", `[modules.first]
 source = "./provider"
-entrypoint = true
+main = true
 settings.label = "first"
 [modules.second]
 source = "./provider"
-entrypoint = true
+main = true
 settings.label = "second"
 `).AsWorkspace().ID(ctx)
 	require.NoError(t, err)
@@ -1011,7 +1138,7 @@ func (ArtifactsSuite) TestCheckReturnTypes(ctx context.Context, t *testctx.T) {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			src := core.NewQuery(c).Directory().WithNewFile("dagger.toml", `[modules.example]
 source = "./example"
-entrypoint = true
+main = true
 `).WithNewFile("example/dagger-module.toml", `name = "example"
 engineVersion = "v1.0.0"
 [runtime]
@@ -1045,7 +1172,7 @@ func (ArtifactsSuite) TestCheckProjection(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	src := core.NewQuery(c).Directory().WithNewFile("dagger.toml", `[modules.example]
 source = "./example"
-entrypoint = true
+main = true
 `).WithNewFile("example/dagger-module.toml", `name = "example"
 engineVersion = "v1.0.0"
 [runtime]
@@ -1155,7 +1282,7 @@ func (ArtifactsSuite) TestCommandFilters(ctx context.Context, t *testctx.T) {
 	config := `check-generated = false
 [modules.probe]
 source = "./probe"
-entrypoint = true
+main = true
 check.skip = ["skipped", "scan?"]
 generate.skip = ["skipped-generate"]
 up.skip = ["skipped-service", "skipped-unmarked-service"]
@@ -1186,13 +1313,18 @@ up.skip = ["skipped-service", "skipped-unmarked-service"]
  rawChecks: filterDirectives(directives: ["check"]) { items { uri } }
  rawGenerators: filterDirectives(directives: ["generate"]) { items { uri } }
  rawServices: filterDirectives(directives: ["up"]) { items { uri } }
+ checkPaths: filterTypes(types: ["Check"]) { items { uri } }
+ servicePaths: filterTypes(types: ["Service"]) { items { uri } }
 } } }`, &testutil.QueryOptions{Variables: map[string]any{"id": id}})
 	require.NoError(t, err)
-	// Raw directive filters do not apply workspace settings.
+	// Workspace artifacts omit what the skip settings skip, for every consumer.
+	// check-generated is a command default, so staleness checks remain.
 	raw := map[string][]string{
-		"rawChecks":     {"dag://?check=gen/stale", "dag://?check=scana", "dag://?check=scanb", "dag://?check=skipped", "dag://?check=skipped-generate/stale", "dag://?check=verify"},
-		"rawGenerators": {"dag://?generator=gen", "dag://?generator=skipped-generate"},
-		"rawServices":   {"dag://?service=serve", "dag://?service=skipped-service"},
+		"rawChecks":     {"dag://?check=gen/stale", "dag://?check=verify"},
+		"rawGenerators": {"dag://?generator=gen"},
+		"rawServices":   {"dag://?service=serve"},
+		"checkPaths":    {"dag://?check=gen/stale", "dag://?check=verify"},
+		"servicePaths":  {"dag://?service=serve", "dag://?service=unmarked-service"},
 	}
 	for name, want := range raw {
 		var names []string
@@ -1362,7 +1494,13 @@ func composeArtifactAgents(ctx context.Context, c *dagger.Client, ws *core.Works
 	if len(base) > 0 {
 		llm = base[0]
 	}
-	composed := llm.Compose(refs)
+	// Composition runs as an agent: spawn one composed with the entries and
+	// use its seed, the composed conversation.
+	agent, err := llm.Spawn(ctx, core.LLMSpawnOpts{Expertise: refs})
+	if err != nil {
+		return nil, err
+	}
+	composed := agent.Snapshot()
 	id, err := composed.ID(ctx)
 	if err != nil {
 		return nil, err
@@ -1373,7 +1511,7 @@ func composeArtifactAgents(ctx context.Context, c *dagger.Client, ws *core.Works
 func (ArtifactsSuite) TestCheckCachePolicy(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := nativeWorkspaceBase(t, c).
-		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"./probe\"\nentrypoint = true\n").
+		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"./probe\"\nmain = true\n").
 		WithNewFile("probe/dagger.json", `{"name":"probe","engineVersion":"v1.0.0","sdk":"go"}`).
 		WithNewFile("probe/main.go", `package main
 import ("crypto/rand"; "fmt")
@@ -1429,7 +1567,7 @@ func (*Probe) Every() error { return fmt.Errorf("every %s", rand.Text()) }
 func (ArtifactsSuite) TestLazyValueFailures(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := nativeWorkspaceBase(t, c).
-		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"./probe\"\nentrypoint = true\n").
+		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"./probe\"\nmain = true\n").
 		WithNewFile("probe/dagger-module.toml", "name = \"probe\"\nengineVersion = \"v1.0.0\"\n[runtime]\nsource = \"dang\"\n").
 		WithNewFile("probe/main.dang", `type Probe {
  pub brokenDirectory: Directory! { container.from("alpine:3.22").withExec(["sh", "-c", "exit 42"]).rootfs }
@@ -1486,7 +1624,7 @@ source = "./good"
 settings.expected = "bound"
 [modules.bad]
 source = "./bad"
-entrypoint = true
+main = true
 `).
 		WithNewFile("marker", "bound").
 		WithNewFile("good/dagger-module.toml", "name = \"good\"\nengineVersion = \"v1.0.0\"\n[runtime]\nsource = \"dang\"\n").
@@ -1607,7 +1745,7 @@ func (ArtifactsSuite) TestUnknownEnvironment(ctx context.Context, t *testctx.T) 
 func (ArtifactsSuite) TestGeneratorCachePolicy(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := nativeWorkspaceBase(t, c).
-		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"./probe\"\nentrypoint = true\n").
+		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"./probe\"\nmain = true\n").
 		WithNewFile("probe/dagger.json", `{"name":"probe","engineVersion":"v1.0.0","sdk":"go"}`).
 		WithNewFile("probe/main.go", `package main
 import ("crypto/rand"; "fmt"; "dagger/probe/internal/dagger")

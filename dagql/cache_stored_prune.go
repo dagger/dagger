@@ -107,6 +107,7 @@ func (c *Cache) dropValueLocked(ctx context.Context, res *sharedResult) ([]*shar
 	res.deps = nil
 	res.storedParts = nil
 	res.storedRecordBytes = 0
+	res.storedTransfer.Store(nil)
 	res.dependencyOwnershipRevision++
 	res.transferRevision++
 	res.imported = false

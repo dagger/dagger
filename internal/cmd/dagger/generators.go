@@ -18,6 +18,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
+	"github.com/iancoleman/strcase"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -157,7 +158,7 @@ func runGenerators(ctx context.Context, dag *dagger.Client, generators *core.Art
 		}
 		sdkGenerators := map[string]bool{}
 		if len(sdkPaths) > 0 {
-			// Discovery resolves the active entrypoint, including -m overrides.
+			// Discovery resolves the active main, including -m overrides.
 			selected := core.NewQuery(dag).CurrentWorkspace().Artifacts(core.WorkspaceArtifactsOpts{Include: sdkPaths}).FilterTypes([]string{"Generator"})
 			uris, err := artifactURIs(ctx, dag, selected, false)
 			if err != nil {
@@ -222,7 +223,16 @@ func verifyRegeneratedModules(ctx context.Context, dag *dagger.Client, changes *
 		if err != nil {
 			return err
 		}
-		name := strings.TrimSuffix(address.ArtifactPath(address.Types...), "/load")
+		// The failure's path starts with the module's address name, the
+		// kebab-case form of its configured name.
+		loadPath := address.ArtifactPath(address.Types...)
+		addressName := strings.TrimSuffix(loadPath, "/load")
+		name := addressName
+		for configured := range cfg.Modules {
+			if strcase.ToKebab(configured) == addressName {
+				name = configured
+			}
+		}
 		entry, ok := cfg.Modules[name]
 		if !ok || !workspace.IsLocalRef(entry.Source, "") {
 			continue
@@ -247,7 +257,7 @@ func verifyRegeneratedModules(ctx context.Context, dag *dagger.Client, changes *
 				if err != nil {
 					return err
 				}
-				if address.ArtifactPath(address.Types...) == name+"/load" {
+				if address.ArtifactPath(address.Types...) == loadPath {
 					loadErr = fmt.Errorf("still fails to load with this run's changes: %s", strings.TrimSuffix(failure.LoadError, "; run `dagger generate` and commit the generated files"))
 					break
 				}

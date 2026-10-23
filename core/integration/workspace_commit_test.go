@@ -297,6 +297,15 @@ func (WorkspaceSuite) TestWorkspaceWithCommitReconciliationOracle(ctx context.Co
 		{name: "ordinary", pending: func(d *core.Directory) *core.Directory {
 			return d.WithNewFile("file.txt", "selected\n")
 		}, include: []string{"file.txt"}, wantFile: "selected\n"},
+		{name: "unselected private file", pending: func(d *core.Directory) *core.Directory {
+			return d.WithNewFile("file.txt", "selected\n").WithNewFile("private", "private pending\n", core.DirectoryWithNewFileOpts{Permissions: 0o600})
+		}, include: []string{"file.txt"}, wantFile: "selected\n", checkResult: func(result *core.Workspace) {
+			stat, err := result.Directory("/").Stat(ctx, "private")
+			require.NoError(t, err)
+			permissions, err := stat.Permissions(ctx)
+			require.NoError(t, err)
+			require.Equal(t, 0o600, permissions)
+		}},
 		{name: "identical selected overlap with raw metadata", pending: func(d *core.Directory) *core.Directory {
 			return inspector.WithMountedDirectory("/work", d).WithExec([]string{"python3", "-c", `
 import os

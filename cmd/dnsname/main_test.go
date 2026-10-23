@@ -72,3 +72,37 @@ func TestCmdAddHostsEntry(t *testing.T) {
 		})
 	}
 }
+
+// A container's DEL removes only its own entries. A restarted service has the
+// same hostname as its previous instance, and that instance's DEL can run
+// after the new one's ADD.
+func TestCmdDelRemovesOnlyOwnEntries(t *testing.T) {
+	dir := t.TempDir()
+	exited := exec.Command("true")
+	require.NoError(t, exited.Run())
+	pidfile := filepath.Join(dir, "pidfile")
+	require.NoError(t, os.WriteFile(pidfile, []byte(strconv.Itoa(exited.Process.Pid)), 0o600))
+	hosts := filepath.Join(dir, "addnhosts")
+	require.NoError(t, os.WriteFile(hosts, []byte("10.87.0.5\tweb\n10.87.0.7\tdb\n10.87.0.9\tweb\n"), 0o644))
+
+	stdin, err := json.Marshal(map[string]any{
+		"cniVersion": "0.4.0",
+		"name":       "dagger",
+		"type":       "dnsname",
+		"domainName": "dagger.local",
+		"hosts":      hosts,
+		"pidfile":    pidfile,
+		"lockfile":   filepath.Join(dir, "lock"),
+		"prevResult": map[string]any{
+			"cniVersion": "0.4.0",
+			"interfaces": []map[string]any{{"name": "lo"}},
+			"ips":        []map[string]any{{"version": "4", "address": "10.87.0.5/16"}},
+		},
+	})
+	require.NoError(t, err)
+	require.NoError(t, cmdDel(&skel.CmdArgs{ContainerID: "old", StdinData: stdin, Args: "K8S_POD_NAME=web"}))
+
+	got, err := os.ReadFile(hosts)
+	require.NoError(t, err)
+	require.Equal(t, "10.87.0.7\tdb\n10.87.0.9\tweb\n", string(got))
+}

@@ -4,11 +4,15 @@ import (
 	"context"
 	"fmt"
 
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	resourcestypes "github.com/dagger/dagger/internal/buildkit/executor/resources/types"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 )
+
+// NetworkSource names the external network readings in resource availability.
+const NetworkSource = "network"
 
 type BKNetworkSampler interface {
 	Sample() (*resourcestypes.NetworkSample, error)
@@ -118,7 +122,8 @@ func (s *netNSSampler) sample(ctx context.Context) error {
 		mountSample = normalizeNetworkSample(mountSample)
 	}
 
-	if s.baselineSample.ScopeSupported && bkSample.ScopeSupported && mountSample.ScopeSupported {
+	available := s.baselineSample.ScopeSupported && bkSample.ScopeSupported && mountSample.ScopeSupported
+	if available {
 		sample.networkAvailable.add(1)
 		internalRX := bkSample.InternalRxBytes - s.baselineSample.InternalRxBytes + mountSample.InternalRxBytes
 		internalTX := bkSample.InternalTxBytes - s.baselineSample.InternalTxBytes + mountSample.InternalTxBytes
@@ -141,6 +146,9 @@ func (s *netNSSampler) sample(ctx context.Context) error {
 	sample.externalRxBytes.record(ctx)
 	sample.externalTxBytes.record(ctx)
 	sample.networkAvailable.record(ctx)
+	// Without attributed counters, the external bytes of the execution are
+	// unknown, not zero.
+	enginetel.RecordResourceAvailability(ctx, NetworkSource, available)
 
 	return nil
 }

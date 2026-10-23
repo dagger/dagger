@@ -118,7 +118,7 @@ func testWorkspaceGitCheckoutReuse(t *testing.T, discard bool, order string) {
 	require.NoError(t, err)
 	ref = attachedRef.(dagql.ObjectResult[*core.GitRef])
 	base := &core.Workspace{}
-	base.SetSource(core.NewWorkspaceSourceGitRef(ref.Result, false))
+	base.SetSource(core.NewWorkspaceSourceGitRef(ref.Result))
 	overlay := &core.Workspace{}
 	overlay.SetSource(core.NewWorkspaceSourceOverlay(base.Source(), nil, nil, dagql.ObjectResult[*core.Changeset]{}))
 	workspaces := []dagql.ObjectResult[*core.WorkspaceGit]{
@@ -321,7 +321,7 @@ func TestWorkspaceExportBaseCandidate(t *testing.T) {
 			require.NoError(t, err)
 			ref := objectResult(t, srv, "export-ref", &core.GitRef{Repo: objectResult(t, srv, "export-repo", repo), Backend: refBackend, Ref: gitRef})
 			ws := &core.Workspace{}
-			ws.SetSource(core.NewWorkspaceSourceGitRef(ref.Result, false))
+			ws.SetSource(core.NewWorkspaceSourceGitRef(ref.Result))
 			switch scenario {
 			case "live":
 				ws.ClientID = "another-client"
@@ -471,7 +471,7 @@ func TestCheckpointHostHistorySkipsBundles(t *testing.T) {
 	repo := resolverAttach(t, ctx, srv, cache, "captured-host-repo", &core.GitRepository{Backend: &core.RemoteGitRepository{URL: url}})
 	ref := resolverAttach(t, ctx, srv, cache, "captured-host-ref", &core.GitRef{Repo: repo, Ref: &gitutil.Ref{SHA: anchor, Name: anchor}})
 	frozen := &core.Workspace{}
-	frozen.SetSource(core.NewWorkspaceSourceGitRef(ref.Result, false))
+	frozen.SetSource(core.NewWorkspaceSourceGitRef(ref.Result))
 	captured := &core.Workspace{ClientID: owner.ClientID}
 	captured.SetHostPath("/approved")
 	metadata := &gitsession.CaptureGitMetadata{RemoteUrl: url.Remote(), BaseSha: anchor, HeadSha: anchor}
@@ -537,7 +537,7 @@ func TestCheckpointHostHistorySkipsSHA256(t *testing.T) {
 	repo := resolverAttach(t, ctx, srv, cache, "captured-sha256-repo", &core.GitRepository{Backend: &core.RemoteGitRepository{URL: url}})
 	ref := resolverAttach(t, ctx, srv, cache, "captured-sha256-ref", &core.GitRef{Repo: repo, Ref: &gitutil.Ref{SHA: anchor, Name: anchor}})
 	frozen := &core.Workspace{}
-	frozen.SetSource(core.NewWorkspaceSourceGitRef(ref.Result, false))
+	frozen.SetSource(core.NewWorkspaceSourceGitRef(ref.Result))
 	captured := &core.Workspace{ClientID: owner.ClientID}
 	captured.SetHostPath("/approved")
 	metadata := &gitsession.CaptureGitMetadata{RemoteUrl: url.Remote(), BaseSha: anchor, HeadSha: anchor}
@@ -761,14 +761,14 @@ func TestWorkspaceConfigWithCompatFallback(t *testing.T) {
 func TestArtifactNodesByInclude(t *testing.T) {
 	ctx := context.Background()
 	for _, test := range []struct {
-		name       string
-		entrypoint bool
-		include    []string
-		want       int
+		name    string
+		main    bool
+		include []string
+		want    int
 	}{
 		{"qualified", false, []string{"app:generate-*"}, 2},
-		{"entrypoint", true, []string{"generate-*"}, 2},
-		{"entrypoint qualified alias", true, []string{"app:generate-*"}, 2},
+		{"main", true, []string{"generate-*"}, 2},
+		{"main qualified alias", true, []string{"app:generate-*"}, 2},
 		{"single ordinary module requires prefix", false, []string{"generate-*"}, 0},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -778,7 +778,7 @@ func TestArtifactNodesByInclude(t *testing.T) {
 			}
 			matched := 0
 			for _, node := range nodes {
-				node.Parent.WorkspaceEntrypoint = test.entrypoint
+				node.Parent.WorkspaceMain = test.main
 				match, err := matchWorkspaceInclude(ctx, node, test.include)
 				require.NoError(t, err)
 				if match {
@@ -794,9 +794,9 @@ func TestArtifactNodesByInclude(t *testing.T) {
 func TestGenerateCheckPatterns(t *testing.T) {
 	ctx := context.Background()
 	for _, test := range []struct {
-		name       string
-		entrypoint bool
-		patterns   []string
+		name     string
+		main     bool
+		patterns []string
 		// included is whether the patterns select the check as `dagger check`
 		// arguments or --skip values.
 		included bool
@@ -806,8 +806,8 @@ func TestGenerateCheckPatterns(t *testing.T) {
 		{"module name", false, []string{"alpha-sdk"}, true},
 		{"single segment wildcard on the generator", false, []string{"alpha-sdk:*"}, true},
 		{"wildcard on the check name", false, []string{"alpha-sdk:*:stale"}, true},
-		{"entrypoint check name", true, []string{"generate:stale"}, true},
-		{"entrypoint generator name", true, []string{"generate"}, true},
+		{"main check name", true, []string{"generate:stale"}, true},
+		{"main generator name", true, []string{"generate"}, true},
 		{"module-local check name", false, []string{"generate:stale"}, false},
 		{"module-local generator name", false, []string{"generate"}, false},
 		{"other leaf", false, []string{"alpha-sdk:generate:other"}, false},
@@ -815,7 +815,7 @@ func TestGenerateCheckPatterns(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			node := modTreeNode("alpha-sdk", "generate", "stale")
-			node.Parent.Parent.WorkspaceEntrypoint = test.entrypoint
+			node.Parent.Parent.WorkspaceMain = test.main
 			match, err := matchWorkspaceInclude(ctx, node, test.patterns)
 			require.NoError(t, err)
 			require.Equal(t, test.included, match)
@@ -1476,6 +1476,27 @@ func TestPlanWorkspaceInstallConfigSDKNames(t *testing.T) {
 	require.True(t, plan.Changed)
 	require.True(t, plan.Added)
 	require.Equal(t, "go-sdk", cfg.SDKs["custom-go"].Module)
+}
+
+func TestPlanWorkspaceInstallConfigOverSourcelessOverride(t *testing.T) {
+	cfg := &workspace.Config{
+		Include: []workspace.IncludeEntry{{Source: "github.com/acme/base@v1"}},
+		Modules: map[string]workspace.ModuleEntry{
+			"dep": {
+				Pin:      "1111111111111111111111111111111111111111",
+				Settings: map[string]any{"region": "eu"},
+			},
+		},
+	}
+
+	plan, err := planWorkspaceInstallConfig(cfg, workspaceInstallArgs{}, "dep", "github.com/acme/dep@v2")
+	require.NoError(t, err)
+	require.True(t, plan.Changed)
+
+	entry := cfg.Modules["dep"]
+	require.Equal(t, "github.com/acme/dep@v2", entry.Source)
+	require.Empty(t, entry.Pin, "a pin recorded for the inherited ref must not travel to a different source")
+	require.Equal(t, map[string]any{"region": "eu"}, entry.Settings, "the overrides survive the install")
 }
 
 func TestEnvScopedConfigKeyMissingEnv(t *testing.T) {

@@ -2,6 +2,7 @@ package dagql
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -13,6 +14,29 @@ import (
 
 func testLiveOffer() PersistedPartOffer {
 	return PersistedPartOffer{Address: PersistedPartAddress{Part: "snapshot"}, Value: SnapshotValue{Kind: "directory", Path: "/"}}
+}
+
+// An offer delivered again, decoded afresh as the protocol delivers it, is
+// the offer the row holds: its copy compares equal to the held one, so it
+// replaces nothing and leaves the transfer revision as it was.
+func TestOfferDeliveredAgainIsKept(t *testing.T) {
+	ctx, c, srv := transferTestCache(t)
+	r := persistedListTestResult(t, ctx, c, srv, "receiver", &transferTestValue{Text: "pending"})
+	data, err := json.Marshal(storedBenchPart(1))
+	require.NoError(t, err)
+	deliver := func() OfferDisposition {
+		t.Helper()
+		var offer PersistedPartOffer
+		require.NoError(t, json.Unmarshal(data, &offer))
+		out, err := c.testOfferParts(ctx, r, []PersistedPartOffer{offer})
+		require.NoError(t, err)
+		require.Equal(t, OfferAccepted, out[0].Outcome)
+		return out[0]
+	}
+	first := deliver()
+	again := deliver()
+	require.False(t, again.Replaced)
+	require.Equal(t, first.OfferRev, again.OfferRev)
 }
 
 func TestOfferPartsBeforeStart(t *testing.T) {
@@ -155,7 +179,7 @@ func TestOfferPartsResourcesAndSettlement(t *testing.T) {
 	gate.outputs[key] = partOutputState{phase: PartOutputInstalled, task: token, installation: 1}
 	out, err = c.testOfferParts(ctx, r, []PersistedPartOffer{offer})
 	require.NoError(t, err)
-	require.Equal(t, OfferAlreadyComplete, out[0].Outcome)
+	require.Equal(t, OfferExecutionStarted, out[0].Outcome, "an installed output is not complete before it settles")
 	require.NoError(t, c.settlePart(ctx, row, offer.Address, token, 1))
 	require.NoError(t, c.settlePart(ctx, row, offer.Address, token, 1))
 	require.Empty(t, row.testPartOffers())

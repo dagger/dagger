@@ -9,7 +9,7 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-type EngineDev struct { // engine-dev (../../../../../:0:0)
+type EngineDev struct { // engine-dev (../../../../../../:0:0)
 	query *querybuilder.Selection
 	// refetchID is set when this object is built through a field marked
 	// @reevaluate: it fetches its ID on every use, so each use evaluates that
@@ -690,7 +690,7 @@ func (r *EngineDev) WithRace() *EngineDev {
 	}
 }
 
-type EngineDevLoadedEngine struct { // engine-dev (../../../../../:0:0)
+type EngineDevLoadedEngine struct { // engine-dev (../../../../../../:0:0)
 	query *querybuilder.Selection
 	// refetchID is set when this object is built through a field marked
 	// @reevaluate: it fetches its ID on every use, so each use evaluates that
@@ -827,7 +827,7 @@ func (r *EngineDevLoadedEngine) Start(ctx context.Context, opts ...EngineDevLoad
 
 // The result of a profiled test run: the test engine's wcprof recording, and
 // how the tests went.
-type EngineDevTestProfileResult struct { // engine-dev (../../../../../:0:0)
+type EngineDevTestProfileResult struct { // engine-dev (../../../../../../:0:0)
 	query *querybuilder.Selection
 	// refetchID is set when this object is built through a field marked
 	// @reevaluate: it fetches its ID on every use, so each use evaluates that
@@ -952,7 +952,7 @@ type EngineDevOpts struct {
 	ClientDockerConfig *Secret
 }
 
-func (r *Query) EngineDev(ws *Workspace, opts ...EngineDevOpts) *EngineDev { // engine-dev (../../../../../:0:0)
+func (r *Query) EngineDev(ws *Workspace, opts ...EngineDevOpts) *EngineDev { // engine-dev (../../../../../../:0:0)
 	assertNotNil("ws", ws)
 	q := r.query.Select("engineDev")
 	for i := len(opts) - 1; i >= 0; i-- {

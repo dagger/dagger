@@ -1,0 +1,140 @@
+package core
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"dagger.io/dagger/core"
+	"github.com/dagger/testctx"
+	"github.com/stretchr/testify/require"
+)
+
+func (WorkspaceSuite) TestMainTargetNames(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := workspaceBase(t, c).WithNewFile("dagger.toml", `
+[modules.app]
+source = "app"
+main = true
+
+[modules.other]
+source = "other"
+`)
+	for _, name := range []string{"app", "other"} {
+		verify := "null"
+		if name == "other" {
+			verify = `raise "the other module must be selected explicitly"`
+		}
+		base = base.
+			WithNewFile(name+"/dagger-module.toml", fmt.Sprintf("name = %q\nengineVersion = \"latest\"\n[runtime]\nsource = \"dang\"\n", name)).
+			WithNewFile(name+"/main.dang", fmt.Sprintf(`type %s {
+  pub verify: Void @check { %s }
+  pub files(ws: Workspace!): Changeset! @generate {
+    ws.withNewFile(%q, "generated").changes(ws)
+  }
+  pub dev: Container! { container.from("alpine:3.22") }
+  pub web: Service! @up {
+    container.from("nginx:alpine").withExposedPort(80).asService
+  }
+}
+`, strings.ToUpper(name[:1])+name[1:], verify, name+".txt"))
+	}
+	base = base.
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", testCLIBinPath).
+		With(nonNestedDevEngine(c))
+	config, err := base.File("dagger.toml").Contents(ctx)
+	require.NoError(t, err)
+
+	for _, test := range []struct{ command, target, typ string }{
+		{"check", "verify", "check"},
+		{"generate", "files", "generator"},
+		{"shell", "dev", "container"},
+		{"start", "web", "service"},
+	} {
+		t.Run(test.command, func(ctx context.Context, t *testctx.T) {
+			for _, selection := range []struct {
+				args []string
+				want []string
+			}{
+				{want: []string{test.target, "other/" + test.target}},
+				{args: []string{test.target}, want: []string{test.target}},
+				{args: []string{"app:" + test.target}, want: []string{test.target}},
+				{args: []string{"other:" + test.target}, want: []string{"other/" + test.target}},
+				{args: []string{"*:" + test.target}, want: []string{test.target, "other/" + test.target}},
+			} {
+				args := append([]string{test.command, "-l", "-f=link"}, selection.args...)
+				if test.command == "check" {
+					args = append(args, "--generated=false")
+				}
+				out, err := base.With(daggerNonNestedExec(args...)).Stdout(ctx)
+				require.NoError(t, err, strings.Join(args, " "))
+				var want []string
+				for _, target := range selection.want {
+					want = append(want, "dag+"+test.typ+"://?"+test.typ+"="+target)
+				}
+				require.ElementsMatch(t, want, strings.Fields(out), strings.Join(args, " "))
+			}
+
+			ordinary := base.WithNewFile("dagger.toml", strings.Replace(config, "main = true", "main = false", 1))
+			out, err := ordinary.With(daggerNonNestedExec(test.command, "-l", "-f=link", test.target)).Stdout(ctx)
+			require.NoError(t, err)
+			require.NotContains(t, out, test.target)
+
+			out, err = ordinary.WithEnvVariable("DAGGER_MODULE", "./app").
+				With(daggerNonNestedExec(test.command, "-l", "-f=link", test.target)).Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, out, test.target)
+			require.NotContains(t, out, "dag+"+test.typ+"://?"+test.typ+"=app/"+test.target)
+			require.NotContains(t, out, "dag+"+test.typ+"://?"+test.typ+"=other/"+test.target)
+		})
+	}
+
+	t.Run("caller skip only excludes the main", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerNonNestedExec("check", "-l", "-f=link", "--generated=false", "--skip=verify")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "dag+check://?check=other/verify\n", out)
+	})
+
+	t.Run("module settings keep local skip names", func(ctx context.Context, t *testctx.T) {
+		out, err := base.WithNewFile("dagger.toml", config+"\ncheck.skip = [\"verify\"]\n").
+			With(daggerNonNestedExec("check", "-l", "-f=link", "--generated=false")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "dag+check://?check=verify\n", out)
+	})
+
+	t.Run("value workspace uses its own main", func(ctx context.Context, t *testctx.T) {
+		ws := base.Directory("/work").AsWorkspace()
+		checks, err := ws.Artifacts(core.WorkspaceArtifactsOpts{Include: []string{"verify"}}).FilterTypes([]string{"Check"}).Items(ctx)
+		require.NoError(t, err)
+		require.Len(t, checks, 1)
+		name, err := checks[0].URI(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "dag://?check=verify", name)
+
+		changed := ws.WithNewFile("dagger.toml", strings.Replace(config, "main = true", "main = false", 1))
+		checks, err = changed.Artifacts(core.WorkspaceArtifactsOpts{Include: []string{"verify"}}).FilterTypes([]string{"Check"}).Items(ctx)
+		require.NoError(t, err)
+		require.Empty(t, checks)
+	})
+
+	t.Run("run the main generator only", func(ctx context.Context, t *testctx.T) {
+		generated := base.With(daggerNonNestedExec("generate", "files", "-y"))
+		out, err := generated.CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "files")
+		require.NotContains(t, out, "app/files")
+		exists, err := generated.Exists(ctx, "app.txt")
+		require.NoError(t, err)
+		require.True(t, exists)
+		exists, err = generated.Exists(ctx, "other.txt")
+		require.NoError(t, err)
+		require.False(t, exists)
+	})
+
+	t.Run("run the main check only", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerNonNestedExec("check", "verify", "--generated=false")).CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.NotContains(t, out, "app/verify")
+		require.NotContains(t, out, "other/verify")
+	})
+}

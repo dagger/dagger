@@ -22,6 +22,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/wcprof"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.opentelemetry.io/otel/propagation"
@@ -56,6 +57,7 @@ func WithNestedClientServer(
 		return nil, fmt.Errorf("register nested client transport: %w", err)
 	}
 	defer transport.Close()
+	wcprof.Link(ctx, wcprof.LinkKindNestedClient, 0, 0, nestedClientMetadata.ClientID, 0)
 
 	httpSrv := &http.Server{
 		ReadHeaderTimeout: 10 * time.Second,

@@ -204,6 +204,38 @@ func isCoreLLMArg(arg *FunctionArg) bool {
 		typeDef.AsObject.Value.Self().SourceModuleName == ""
 }
 
+func isCoreAgentArg(arg *FunctionArg) bool {
+	typ := arg.TypeDef.Self()
+	return typ.Kind == TypeDefKindObject && typ.AsObject.Valid &&
+		typ.AsObject.Value.Self().Name == "Agent" && typ.AsObject.Value.Self().SourceModuleName == ""
+}
+
+// isExpertiseFunction recognizes a conversation transform independently of
+// @agent nomination. Only nominated functions participate in default composition.
+func isExpertiseFunction(fn *Function) bool {
+	if fn == nil || fn.ReturnType.Self() == nil || !returnsCoreObject(fn, "LLM") {
+		return false
+	}
+	conversations := 0
+	for _, arg := range fn.Args {
+		a := arg.Self()
+		if isCoreLLMArg(a) {
+			if a.TypeDef.Self().Optional {
+				return false
+			}
+			conversations++
+			continue
+		}
+		if isCoreAgentArg(a) {
+			continue
+		}
+		if argRequired(a) {
+			return false
+		}
+	}
+	return conversations == 1
+}
+
 // returnsCoreObject reports whether the function returns the named core object
 // type, non-null. The SourceModuleName guard keeps it to the core type, not a
 // module-local type that happens to share its name.
@@ -251,11 +283,10 @@ func validateGeneratorFunction(obj *ObjectTypeDef, fn *Function) error {
 	return nil
 }
 
-// validateAgentFunction enforces the @expertise contract (hack/designs/workspace-agents.md
-// §3): the function must return LLM! and must declare exactly one required
-// argument, an LLM! (the base the compose fold supplies, whatever it is
-// named). A non-LLM! return, a missing base, or any other required argument is
-// a hard error at module load.
+// validateAgentFunction enforces the nominated expertise contract: one LLM!
+// conversation, an LLM! return, and no caller-required arguments. Agent! is
+// supplied from the conversation's owner, while Workspace/contextual/defaulted
+// arguments retain their ordinary automatic resolution.
 func validateAgentFunction(obj *ObjectTypeDef, fn *Function) error {
 	if !returnsCoreObject(fn, "LLM") {
 		return fmt.Errorf("object %q function %q is marked @agent but does not return LLM!; @agent functions must have the agent(base: LLM!): LLM! shape",
@@ -264,7 +295,7 @@ func validateAgentFunction(obj *ObjectTypeDef, fn *Function) error {
 	baseExempted := false
 	for _, argRes := range fn.Args {
 		arg := argRes.Self()
-		if !argRequired(arg) {
+		if !argRequired(arg) || isCoreAgentArg(arg) {
 			continue
 		}
 		if !baseExempted && isCoreLLMArg(arg) {
@@ -278,30 +309,24 @@ func validateAgentFunction(obj *ObjectTypeDef, fn *Function) error {
 		return fmt.Errorf("object %q function %q is marked @agent but does not declare a required LLM! argument; @agent functions must have the agent(base: LLM!): LLM! shape (the base the compose fold supplies)",
 			obj.OriginalName, fn.OriginalName)
 	}
+	if !isExpertiseFunction(fn) {
+		return fmt.Errorf("object %q function %q is marked @agent but must declare exactly one LLM! conversation argument", obj.OriginalName, fn.OriginalName)
+	}
 	return nil
 }
 
 // functionRequiresCallerArgs reports whether a function has required arguments
-// the caller has to supply, which disqualifies it from no-arg enumeration.
-//
-// Engine-supplied arguments don't count, because nothing is asked of the
-// caller: an @agent function's single required LLM! is the base the compose
-// fold supplies explicitly (hack/designs/workspace-agents.md §3), and a
-// Workspace! — exempted in argRequired, alongside contextual args — resolves
-// from the workspace in scope. Both are declared required so the signature says
-// so, and both are filled in before the call.
+// the caller has to supply. Conversation transforms are discoverable artifacts:
+// asExpertise supplies their LLM and owning Agent at composition time. Only
+// @agent nomination changes their artifact type to Expertise.
 func functionRequiresCallerArgs(fn *Function) bool {
-	baseExempted := false
-	for _, argRes := range fn.Args {
-		arg := argRes.Self()
-		if !argRequired(arg) {
-			continue
+	if isExpertiseFunction(fn) {
+		return false
+	}
+	for _, arg := range fn.Args {
+		if argRequired(arg.Self()) {
+			return true
 		}
-		if fn.IsAgent && !baseExempted && isCoreLLMArg(arg) {
-			baseExempted = true
-			continue
-		}
-		return true
 	}
 	return false
 }
@@ -2291,10 +2316,10 @@ type InstallOpts struct {
 	// be returned through interfaces.
 	SkipConstructor bool
 
-	// Entrypoint installs non-conflicting proxies for the module's
+	// Main installs non-conflicting proxies for the module's
 	// main-object methods on the Query root. The module's namespaced
 	// constructor remains installed separately.
-	Entrypoint bool
+	Main bool
 }
 
 type Mod interface {

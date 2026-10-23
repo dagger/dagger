@@ -5,15 +5,11 @@ package core
 
 import (
 	"context"
-	"io"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/platforms"
-	"github.com/dagger/dagger/engine/engineutil"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/util/archutil"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
@@ -44,56 +40,17 @@ type staticEmulatorMount struct {
 	path string
 }
 
+// Mount bind-mounts the engine's installed emulator read-only, as the init
+// and CLI binaries are mounted. It must not write a copy per exec: a process
+// the engine forks while the copy is open for writing holds that write fd
+// until it execs, and exec of a file open for writing fails with ETXTBSY
+// ("text file busy").
 func (m *staticEmulatorMount) Mount() ([]mount.Mount, func() error, error) {
-	tmpdir, err := os.MkdirTemp("", "dagger-qemu-emulator")
-	if err != nil {
-		return nil, nil, err
-	}
-	var ret bool
-	defer func() {
-		if !ret {
-			os.RemoveAll(tmpdir)
-		}
-	}()
-
-	emulatorPath := filepath.Join(tmpdir, engineutil.DaggerQemuEmulatorMountPoint)
-	if err := copyRegularFile(m.path, emulatorPath, 0o555); err != nil {
-		return nil, nil, err
-	}
-
-	ret = true
-	mounts := []mount.Mount{{
+	return []mount.Mount{{
 		Type:    "bind",
-		Source:  emulatorPath,
+		Source:  m.path,
 		Options: []string{"ro", "bind"},
-	}}
-	return mounts, func() error {
-		return os.RemoveAll(tmpdir)
-	}, nil
-}
-
-func copyRegularFile(srcPath, dstPath string, mode os.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(dstPath), 0o755); err != nil {
-		return err
-	}
-	src, err := os.Open(srcPath)
-	if err != nil {
-		return err
-	}
-	defer src.Close()
-	dst, err := os.OpenFile(dstPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
-	if err != nil {
-		return err
-	}
-	_, copyErr := io.Copy(dst, src)
-	closeErr := dst.Close()
-	if copyErr != nil {
-		return copyErr
-	}
-	if closeErr != nil {
-		return closeErr
-	}
-	return os.Chmod(dstPath, mode)
+	}}, func() error { return nil }, nil
 }
 
 func getEmulator(ctx context.Context, pp ocispecs.Platform) (*emulator, error) {

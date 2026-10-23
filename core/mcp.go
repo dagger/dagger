@@ -136,6 +136,11 @@ type MCP struct {
 	// addresses resolve in this conversation's scope instead (see
 	// MCP.scopeLLM). Like standalone, it survives Clone.
 	scopeBase dagql.ObjectResult[*LLM]
+	// ownerAgent mirrors the served conversation's OwnerAgentHandle (see
+	// LLM.WithOwnerAgent). Agent tool arguments receive this agent, whoever
+	// drives the tools; without one, tools requiring an Agent are hidden.
+	// Like standalone, it survives Clone.
+	ownerAgent string
 	// Configured MCP servers.
 	mcpServers map[string]*MCPServerConfig
 	// Persistent MCP sessions.
@@ -261,6 +266,21 @@ func (m *MCP) currentLLM() dagql.ObjectResult[*LLM] {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.selfLLM
+}
+
+// owningAgent resolves the agent that owns the served conversation, which
+// Agent tool arguments receive. Inside that agent's own loop it is the agent
+// bound into ctx; otherwise the seed-free reference to its runtime, which must
+// be running in this session.
+func (m *MCP) owningAgent(ctx context.Context) (dagql.ObjectResult[*Agent], error) {
+	if agent, ok := AgentFromContext(ctx); ok && agent.Self().Handle == m.ownerAgent {
+		return agent, nil
+	}
+	agent, err := AgentReference(ctx, m.ownerAgent)
+	if err != nil {
+		return agent, fmt.Errorf("conversation's owning agent: %w", err)
+	}
+	return agent, nil
 }
 
 func (m *MCP) Returned() bool {
@@ -432,20 +452,50 @@ const (
 	patchSummaryMaxLines = 100
 )
 
-// changesetTooLarge checks a metadata upper bound before any full path
-// computation, which would verify content and detect renames. An oversized
-// result deliberately has no exact count or path list.
-func changesetTooLarge(ctx context.Context, changes dagql.ObjectResult[*Changeset]) (bool, error) {
-	return changes.Self().PathCountExceeds(ctx, patchSummaryMaxPaths)
+// patchPreviewLimits bounds a changeset preview (see summarizePatch): how many
+// paths it inspects at all, and how large a patch it shows verbatim before
+// falling back to a diff-stat summary.
+type patchPreviewLimits struct {
+	MaxPaths int
+	MaxBytes int
+	MaxLines int
 }
 
-func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) string {
-	tooLarge, err := changesetTooLarge(ctx, changes)
+var (
+	// toolPatchLimits keep a tool result's preview small enough for a model's
+	// context.
+	toolPatchLimits = patchPreviewLimits{
+		MaxPaths: patchSummaryMaxPaths,
+		MaxBytes: patchSummaryMaxBytes,
+		MaxLines: patchSummaryMaxLines,
+	}
+	// stalePatchLimits are for a stale generator's check, whose patch is read by
+	// a person in a terminal or CI log, where seeing what is actually stale
+	// beats a diff-stat. They still bound the work and the size of the log.
+	stalePatchLimits = patchPreviewLimits{
+		MaxPaths: 1000,
+		MaxBytes: 512 * 1024,
+		MaxLines: 2000,
+	}
+)
+
+// tooLarge checks a metadata upper bound before any full path computation,
+// which would verify content and detect renames. An oversized result
+// deliberately has no exact count or path list.
+func (limits patchPreviewLimits) tooLarge(ctx context.Context, changes dagql.ObjectResult[*Changeset]) (bool, error) {
+	return changes.Self().PathCountExceeds(ctx, limits.MaxPaths)
+}
+
+// summarizePatch previews a changeset within limits: the patch itself when it
+// is small and textual, otherwise a diff-stat summary. Shared by tool results
+// and the generator staleness check, so both render the same way.
+func summarizePatch(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset], limits patchPreviewLimits) string {
+	tooLarge, err := limits.tooLarge(ctx, changes)
 	if err != nil {
 		return fmt.Sprintf("WARNING: failed to bound changed paths: %s", err)
 	}
 	if tooLarge {
-		return patchBudgetExceeded()
+		return limits.budgetExceeded()
 	}
 
 	// Inspect stats before generating a patch. Keep these transient entries
@@ -457,13 +507,13 @@ func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dag
 	if len(stats) == 0 {
 		return ""
 	}
-	if smallTextChangeset(stats) {
+	if limits.smallTextChangeset(stats) {
 		var patch dagql.ObjectResult[*File]
 		if err := srv.Select(ctx, changes, &patch, dagql.Selector{
 			View: srv.View, Field: "asPatch",
 		}); err == nil {
 			if r, err := patch.Self().Open(ctx, patch); err == nil {
-				preview, ok := readPatchPreview(r)
+				preview, ok := limits.readPatchPreview(r)
 				r.Close()
 				if ok {
 					return preview
@@ -479,14 +529,15 @@ func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dag
 // what actually changed in the workspace, so it is the one shown, within the
 // same bounds, rather than a second render of the changeset's own.
 func (m *MCP) summarizeAppliedPatch(ctx context.Context, changes dagql.ObjectResult[*Changeset], patch []byte) string {
-	tooLarge, err := changesetTooLarge(ctx, changes)
+	limits := toolPatchLimits
+	tooLarge, err := limits.tooLarge(ctx, changes)
 	if err != nil {
 		return fmt.Sprintf("WARNING: failed to bound changed paths: %s", err)
 	}
 	if tooLarge {
-		return patchBudgetExceeded()
+		return limits.budgetExceeded()
 	}
-	if preview, ok := readPatchPreview(bytes.NewReader(patch)); ok {
+	if preview, ok := limits.readPatchPreview(bytes.NewReader(patch)); ok {
 		return preview
 	}
 	stats, err := changes.Self().DiffStats(ctx)
@@ -499,8 +550,8 @@ func (m *MCP) summarizeAppliedPatch(ctx context.Context, changes dagql.ObjectRes
 	return summarizeDiffStats(stats)
 }
 
-func patchBudgetExceeded() string {
-	return fmt.Sprintf("The change exceeds the %d-path inspection budget; patch omitted. File contents and renames were not inspected for this summary.", patchSummaryMaxPaths)
+func (limits patchPreviewLimits) budgetExceeded() string {
+	return fmt.Sprintf("The change exceeds the %d-path inspection budget; patch omitted. File contents and renames were not inspected for this summary.", limits.MaxPaths)
 }
 
 func summarizeDiffStats(stats []*DiffStat) string {
@@ -519,7 +570,7 @@ func summarizeDiffStats(stats []*DiffStat) string {
 // smallTextChangeset avoids generating obviously large or binary patches.
 // Renames are excluded because asPatch encodes them as delete+add, which can
 // include an entire file even when numstat reports zero changed lines.
-func smallTextChangeset(stats []*DiffStat) bool {
+func (limits patchPreviewLimits) smallTextChangeset(stats []*DiffStat) bool {
 	lines := 0
 	for _, stat := range stats {
 		if strings.HasSuffix(stat.Path, "/") {
@@ -531,7 +582,7 @@ func smallTextChangeset(stats []*DiffStat) bool {
 			return false
 		}
 		lines += stat.AddedLines + stat.RemovedLines
-		if lines > patchSummaryMaxLines {
+		if lines > limits.MaxLines {
 			return false
 		}
 	}
@@ -541,13 +592,13 @@ func smallTextChangeset(stats []*DiffStat) bool {
 // readPatchPreview bounds bytes as well as lines: a single minified line can
 // exceed File.contents' limit. One extra byte distinguishes a complete preview
 // from truncation; binary payloads must never become automatic previews.
-func readPatchPreview(r io.Reader) (string, bool) {
-	buf, err := io.ReadAll(io.LimitReader(r, patchSummaryMaxBytes+1))
-	if err != nil || len(buf) == 0 || len(buf) > patchSummaryMaxBytes {
+func (limits patchPreviewLimits) readPatchPreview(r io.Reader) (string, bool) {
+	buf, err := io.ReadAll(io.LimitReader(r, int64(limits.MaxBytes)+1))
+	if err != nil || len(buf) == 0 || len(buf) > limits.MaxBytes {
 		return "", false
 	}
 	patch := string(buf)
-	if strings.Count(patch, "\n") > patchSummaryMaxLines || strings.Contains(patch, "\nGIT binary patch\n") {
+	if strings.Count(patch, "\n") > limits.MaxLines || strings.Contains(patch, "\nGIT binary patch\n") {
 		return "", false
 	}
 	return patch, true
@@ -781,7 +832,7 @@ func (m *MCP) summarizeWorkspaceDiff(ctx context.Context, srv *dagql.Server, pre
 	}); err != nil {
 		return "", err
 	}
-	return m.summarizePatch(ctx, srv, changes), nil
+	return summarizePatch(ctx, srv, changes, toolPatchLimits), nil
 }
 
 // unionMountPoints returns every root-relative path excluded from a workspace
@@ -997,6 +1048,14 @@ func (m *MCP) adoptLLM(ctx context.Context, srv *dagql.Server, next dagql.Object
 		return "", fmt.Errorf("cannot continue: no conversation is bound to this tool call")
 	}
 
+	if current.Self().OwnerAgentHandle != "" {
+		var err error
+		next, err = WithLLMOwnerAgent(ctx, next, current.Self().OwnerAgentHandle)
+		if err != nil {
+			return "", err
+		}
+	}
+
 	// Load the new toolset now, so a broken env fails the tool call rather than
 	// the next turn. Doubles as the material for the summary below.
 	after, err := next.Self().mcp.Tools(ctx)
@@ -1012,6 +1071,7 @@ func (m *MCP) adoptLLM(ctx context.Context, srv *dagql.Server, next dagql.Object
 
 	// Computed before taking the lock: it evaluates dagql calls.
 	wsNote := m.summarizeContinuationWorkspace(ctx, srv, current.Self(), next.Self())
+	collisionNote := summarizeContinuationCollisions(ctx, current.Self(), next.Self())
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -1023,10 +1083,52 @@ func (m *MCP) adoptLLM(ctx context.Context, srv *dagql.Server, next dagql.Object
 	}
 	m.continuation = next
 	summary := summarizeContinuation(current.Self(), next.Self(), before, after)
+	if collisionNote != "" {
+		summary += "\n" + collisionNote
+	}
 	if wsNote != "" {
 		summary += "\n" + wsNote
 	}
 	return summary, nil
+}
+
+// summarizeContinuationCollisions is the model's plain-text counterpart of
+// WarnToolNameCollisions: it explains the namespaced tool names a continuation
+// introduced, which the toolset diff lists without saying why. Empty when the
+// continuation added no collision, or when they cannot be computed.
+func summarizeContinuationCollisions(ctx context.Context, current, next *LLM) string {
+	if next == nil || next.mcp == nil {
+		return ""
+	}
+	after, err := next.mcp.ToolNameCollisions(ctx)
+	if err != nil || len(after) == 0 {
+		return ""
+	}
+	var before map[string][]string
+	if current != nil && current.mcp != nil {
+		before, _ = current.mcp.ToolNameCollisions(ctx)
+	}
+	return summarizeToolNameCollisions(before, after)
+}
+
+// summarizeToolNameCollisions describes, one line per tool name, the
+// collisions in after that before did not have.
+func summarizeToolNameCollisions(before, after map[string][]string) string {
+	var lines []string
+	for _, name := range slices.Sorted(maps.Keys(after)) {
+		contributors := after[name]
+		if slices.Equal(before[name], contributors) {
+			continue
+		}
+		served := make([]string, len(contributors))
+		for i, typeName := range contributors {
+			served[i] = namespacedToolName(typeName, name)
+		}
+		lines = append(lines, fmt.Sprintf(
+			"Tool name collision: %q is provided by %s; all of their tools are served under type-prefixed names (%s).",
+			name, strings.Join(contributors, ", "), strings.Join(served, ", ")))
+	}
+	return strings.Join(lines, "\n")
 }
 
 // summarizeContinuationWorkspace reports how the continuation's bound
@@ -1060,12 +1162,23 @@ func (m *MCP) summarizeContinuationWorkspace(ctx context.Context, srv *dagql.Ser
 		slog.Warn("failed to summarize continuation workspace change", "error", err)
 		return "Workspace changed."
 	}
+	if strings.TrimSpace(summary) == "" {
+		// A new workspace with the same contents, e.g. a reload's
+		// withUserConfig: nothing the model can act on.
+		return ""
+	}
 	return "Workspace changed:\n" + summary
 }
 
 // historyPreserved reports whether next's message history still contains
 // current's, unchanged, as a prefix — i.e. the conversation was transformed
 // (install/reload) rather than replaced.
+//
+// System prompts are composition, not history: refreshing a recorded entry
+// clears its system prompts and appends them again, so a reload moves them to
+// the end of an otherwise unchanged history. They are left out of the
+// comparison, as the toolset diff is what tells the model what composition
+// changed.
 //
 // This is NOT an acceptance condition: it informs the adoption summary, so
 // the model is told when its history changed shape. Comparing histories by VALUE rather
@@ -1077,15 +1190,23 @@ func historyPreserved(current, next *LLM) bool {
 	if current == nil || next == nil {
 		return false
 	}
-	if len(next.Messages) < len(current.Messages) {
+	before, after := conversationHistory(current.Messages), conversationHistory(next.Messages)
+	if len(after) < len(before) {
 		return false
 	}
-	for i, msg := range current.Messages {
-		if !messagesEqual(msg, next.Messages[i]) {
+	for i, msg := range before {
+		if !messagesEqual(msg, after[i]) {
 			return false
 		}
 	}
 	return true
+}
+
+// conversationHistory is the history without its system prompts.
+func conversationHistory(messages []*LLMMessage) []*LLMMessage {
+	return slices.DeleteFunc(slices.Clone(messages), func(msg *LLMMessage) bool {
+		return msg != nil && msg.Role == LLMMessageRoleSystem
+	})
 }
 
 func messagesEqual(a, b *LLMMessage) bool {
@@ -1240,7 +1361,7 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 	if err := m.overlayChangeset(ctx, srv, placed); err != nil {
 		return "", err
 	}
-	return m.summarizePatch(ctx, srv, changes), nil
+	return summarizePatch(ctx, srv, changes, toolPatchLimits), nil
 }
 
 // refuseGitMetadataChanges fails for a changeset that touches a .git path, at
@@ -2441,7 +2562,8 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 				switch attr.Key {
 				case telemetry.StdioStreamAttr:
 					stream = attr.Value.GetIntValue()
-				case telemetry.StdioEOFAttr, telemetry.LogsVerboseAttr, telemetry.LogsGlobalAttr:
+				case telemetry.StdioEOFAttr, telemetry.LogsVerboseAttr, telemetry.LogsGlobalAttr,
+					telemetryattrs.LogHumanOnlyAttr:
 					if attr.Value.GetBoolValue() {
 						skip = true
 						break dance

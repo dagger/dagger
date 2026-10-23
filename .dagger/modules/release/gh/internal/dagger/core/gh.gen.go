@@ -10,7 +10,7 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-type Gh struct { // gh (../../../../../../:0:0)
+type Gh struct { // gh (../../../../../../../:0:0)
 	query *querybuilder.Selection
 
 	id *ID
@@ -282,7 +282,7 @@ func (r *Gh) WithToken(token *Secret) *Gh {
 	}
 }
 
-type GhPullRequest struct { // gh (../../../../../../:0:0)
+type GhPullRequest struct { // gh (../../../../../../../:0:0)
 	query *querybuilder.Selection
 
 	create *Void
@@ -530,7 +530,7 @@ func (r *GhPullRequest) Review(pullRequest string, opts ...GhPullRequestReviewOp
 }
 
 // TODO: revisit if these should be private
-type GhPullRequestReview struct { // gh (../../../../../../:0:0)
+type GhPullRequestReview struct { // gh (../../../../../../../:0:0)
 	query *querybuilder.Selection
 
 	approve        *Void
@@ -624,7 +624,7 @@ func (r *GhPullRequestReview) RequestChanges(ctx context.Context) error {
 	return q.Execute(ctx)
 }
 
-type GhRelease struct { // gh (../../../../../../:0:0)
+type GhRelease struct { // gh (../../../../../../../:0:0)
 	query *querybuilder.Selection
 
 	create *Void
@@ -669,6 +669,10 @@ type GhReleaseCreateOpts struct {
 	Token *Secret
 	// GitHub repository (e.g. "owner/repo").
 	Repo string
+	// If a release for the tag already exists, update its title, notes,
+	// target, draft, prerelease and latest settings and re-upload its assets,
+	// instead of failing. Lets an interrupted release be rerun.
+	UpdateExisting bool
 }
 
 // Create a new GitHub Release for a repository.
@@ -734,6 +738,10 @@ func (r *GhRelease) Create(ctx context.Context, tag string, title string, opts .
 		if !querybuilder.IsZeroValue(opts[i].Repo) {
 			q = q.Arg("repo", opts[i].Repo)
 		}
+		// `updateExisting` optional argument
+		if !querybuilder.IsZeroValue(opts[i].UpdateExisting) {
+			q = q.Arg("updateExisting", opts[i].UpdateExisting)
+		}
 	}
 	q = q.Arg("tag", tag)
 	q = q.Arg("title", title)
@@ -790,7 +798,7 @@ func (r *GhRelease) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-type GhRepo struct { // gh (../../../../../../:0:0)
+type GhRepo struct { // gh (../../../../../../../:0:0)
 	query *querybuilder.Selection
 
 	id *ID
@@ -893,7 +901,7 @@ type GhOpts struct {
 	Source *Directory
 }
 
-func (r *Query) Gh(opts ...GhOpts) *Gh { // gh (../../../../../../:0:0)
+func (r *Query) Gh(opts ...GhOpts) *Gh { // gh (../../../../../../../:0:0)
 	q := r.query.Select("gh")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `token` optional argument
@@ -923,7 +931,7 @@ func (r *Query) Gh(opts ...GhOpts) *Gh { // gh (../../../../../../:0:0)
 	}
 }
 
-type GhLatest string // gh (../../../../../../:0:0)
+type GhLatest string // gh (../../../../../../../:0:0)
 
 func (GhLatest) IsEnum() {}
 

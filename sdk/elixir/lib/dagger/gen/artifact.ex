@@ -117,7 +117,7 @@ defmodule Dagger.Artifact do
   end
 
   @doc """
-  Ordered, literal fields to follow. Entrypoint targets use their shorthand.
+  Ordered, literal fields to follow. Workspace main targets use their shorthand.
   """
   @spec path(t()) :: {:ok, [String.t()]} | {:error, term()}
   def path(%__MODULE__{} = artifact) do
@@ -158,6 +158,34 @@ defmodule Dagger.Artifact do
       query_builder: query_builder,
       client: artifact.client
     }
+  end
+
+  @doc """
+  The workspace this artifact was discovered in; its address is relative to it. Null for an artifact without a workspace, such as one of an LLM's bound tool objects (see LLM.artifacts).
+  """
+  @spec workspace(t()) :: {:ok, Dagger.Workspace.t() | nil} | {:error, term()}
+  def workspace(%__MODULE__{} = artifact) do
+    query_builder =
+      artifact.query_builder |> QB.select("workspace") |> QB.select("id")
+
+    case Client.execute(artifact.client, query_builder) do
+      {:ok, nil} ->
+        {:ok, nil}
+
+      {:ok, id} ->
+        {:ok,
+         %Dagger.Workspace{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("Workspace"),
+           client: artifact.client
+         }}
+
+      error ->
+        error
+    end
   end
 end
 

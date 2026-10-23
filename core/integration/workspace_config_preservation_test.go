@@ -20,7 +20,7 @@ ignore = [
 
 [modules.go-sdk]
 source = 'github.com/dagger/go-sdk'
-entrypoint = false # keep this comment
+main = false # keep this comment
 
 [modules.go-sdk.as-sdk]
 name = 'go'
@@ -39,8 +39,8 @@ clients = [
 		args          []string
 		before, after string
 	}{
-		{"config set", []string{"ws", "config", "modules.go-sdk.entrypoint", "true"}, "entrypoint = false", "entrypoint = true"},
-		{"config unset", []string{"ws", "config", "modules.go-sdk.entrypoint", "--unset"}, "entrypoint = false # keep this comment\n", ""},
+		{"config set", []string{"ws", "config", "modules.go-sdk.main", "true"}, "main = false", "main = true"},
+		{"config unset", []string{"ws", "config", "modules.go-sdk.main", "--unset"}, "main = false # keep this comment\n", ""},
 		{"SDK scope", []string{"sdk", "scope", "--path=apps/api", "name", "service"}, "name = 'api'", "name = 'service'"},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {

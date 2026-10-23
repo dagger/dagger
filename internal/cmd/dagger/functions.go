@@ -529,7 +529,7 @@ func (fc *FuncCommand) cobraBuilder(ctx context.Context, fn *modFunction) func(*
 		// When the root type is Query and the constructor is the no-op
 		// identity (name == ""), discover `with` from the type's functions
 		// and register its args as local flags. When the constructor IS
-		// `with` (entrypoint proxying), its args are already registered
+		// `with` (main proxying), its args are already registered
 		// by addFlagsForFunction above, but we still need to collect
 		// constructor flags from other modules sharing the Query root.
 		isQueryConstructor := fn.ReturnType != nil &&
@@ -1527,6 +1527,9 @@ func startInteractivePromptMode(ctx context.Context, dag *dagger.Client, respons
 // requests. Keeping title generation explicit prevents generic LLM-returning
 // functions from silently renaming their primary command span.
 type interactivePromptModeOpts struct {
+	// initialAgent was spawned while composing default expertise. Adopt its
+	// runtime rather than spawning the resulting snapshot a second time.
+	initialAgent         *core.Agent
 	restore              traceRestore
 	generateSessionTitle bool
 	// exitedResumable, when set, is called with the session's trace ID once
@@ -1580,8 +1583,16 @@ func startInteractivePromptModeWithResume(ctx context.Context, dag *dagger.Clien
 		}
 	} else {
 		llm := core.Ref[*core.LLM](core.NewQuery(dag), core.ID(llmID))
-		if _, err := handler.initLLM(ctx, llm); err != nil {
+		session, err := handler.initLLM(ctx, llm)
+		if err != nil {
 			return err
+		}
+		if opts.initialAgent != nil {
+			handle, err := opts.initialAgent.Handle(ctx)
+			if err != nil {
+				return err
+			}
+			session.Target().bindRuntime(liveAgent{dag: dag, agent: opts.initialAgent}, handle, "", true)
 		}
 	}
 

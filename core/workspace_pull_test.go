@@ -7,7 +7,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/stretchr/testify/require"
@@ -45,6 +47,20 @@ func (f pullFixture) fold(dirty []string, commits ...string) []WorkspacePullPick
 	picks, err := foldWorkspacePull(f.t.Context(), f.dir, f.git("rev-parse", "source"), dirty, WorkspacePullOpts{MaxCommits: 100, Commits: commits})
 	require.NoError(f.t, err)
 	return picks
+}
+
+// A deadline kills git, which then reports only "signal: killed" (as in CI's
+// "git reset: signal: killed"): the error must name the timeout instead.
+func TestWorkspacePullGitNamesTimeout(t *testing.T) {
+	dir := t.TempDir()
+	// Opening a FIFO without a writer blocks, so git runs until it is killed.
+	fifo := filepath.Join(dir, "fifo")
+	require.NoError(t, syscall.Mkfifo(fifo, 0o600))
+	ctx, cancel := context.WithTimeoutCause(t.Context(), 500*time.Millisecond, errWorkspacePullTimeout)
+	defer cancel()
+	_, err := runWorkspacePullGit(ctx, dir, nil, "hash-object", fifo)
+	require.ErrorIs(t, err, errWorkspacePullTimeout)
+	require.EqualError(t, err, "git hash-object: workspace pull timed out after 2m0s")
 }
 
 func TestWorkspaceExportBaseStorageReady(t *testing.T) {

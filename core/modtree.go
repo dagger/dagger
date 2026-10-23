@@ -28,13 +28,17 @@ type ModTreeNode struct {
 	Directives     []string
 	types          map[string]dagql.ObjectResult[*TypeDef]
 
-	// WorkspaceEntrypoint is set on the module root when its targets are
+	// WorkspaceMain is set on the module root when its targets are
 	// exposed without a module prefix. Path retains the qualified identity.
-	WorkspaceEntrypoint bool
+	WorkspaceMain       bool
 	CollectionDimension *ArtifactDimension
 	CollectionKey       *string
 	// CollectionKeys selects the subset used by an implicit batch node.
 	CollectionKeys []string
+	// CollectionComplete is set on an item whose expansion kept every key of
+	// its receiver. A batch of such items runs the whole collection, so its
+	// display address can omit the item keys.
+	CollectionComplete bool
 }
 
 func (node *ModTreeNode) Path() ModTreePath {
@@ -396,17 +400,17 @@ func (node *ModTreeNode) PathString() string {
 // CommandPath is the path users type to select this target.
 func (node *ModTreeNode) CommandPath() ModTreePath {
 	path := node.Path()
-	if node.inWorkspaceEntrypoint() && len(path) > 0 {
+	if node.inWorkspaceMain() && len(path) > 0 {
 		return path[1:]
 	}
 	return path
 }
 
-// inWorkspaceEntrypoint reports whether node is in the workspace entrypoint
+// inWorkspaceMain reports whether node is in the workspace main
 // module.
-func (node *ModTreeNode) inWorkspaceEntrypoint() bool {
+func (node *ModTreeNode) inWorkspaceMain() bool {
 	for parent := node; parent != nil; parent = parent.Parent {
-		if parent.WorkspaceEntrypoint {
+		if parent.WorkspaceMain {
 			return true
 		}
 	}
@@ -555,6 +559,7 @@ type persistedModTreeNode struct {
 	CollectionDimension    *ArtifactDimension `json:"collectionDimension,omitempty"`
 	CollectionKey          *string            `json:"collectionKey,omitempty"`
 	CollectionKeys         []string           `json:"collectionKeys,omitempty"`
+	CollectionComplete     bool               `json:"collectionComplete,omitempty"`
 	RootValueResultID      uint64             `json:"rootValueResultID,omitempty"`
 	ID                     int                `json:"id"`
 	ParentID               int                `json:"parentID,omitempty"`
@@ -605,6 +610,7 @@ func (enc *persistedModTreeEncoder) Add(node *ModTreeNode) (int, error) {
 		CollectionDimension: node.CollectionDimension,
 		CollectionKey:       node.CollectionKey,
 		CollectionKeys:      node.CollectionKeys,
+		CollectionComplete:  node.CollectionComplete,
 		ID:                  id,
 		ParentID:            parentID,
 		Name:                node.Name,
@@ -658,6 +664,7 @@ func decodePersistedModTree(ctx context.Context, dec *dagql.PersistDecodeContext
 			CollectionDimension: persisted.CollectionDimension,
 			CollectionKey:       persisted.CollectionKey,
 			CollectionKeys:      persisted.CollectionKeys,
+			CollectionComplete:  persisted.CollectionComplete,
 			Name:                persisted.Name,
 			Description:         persisted.Description,
 			Directives:          persisted.Directives,

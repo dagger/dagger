@@ -191,9 +191,6 @@ func (*WorkspaceSourceDirectory) workspaceSource() {}
 
 type WorkspaceSourceGitRef struct {
 	Ref dagql.Result[*GitRef]
-	// ExplicitCommit distinguishes a workspace requested by immutable commit SHA
-	// from a mutable ref that happens to resolve to the same commit.
-	ExplicitCommit bool
 }
 
 func (*WorkspaceSourceGitRef) workspaceSource() {}
@@ -239,10 +236,9 @@ func NewWorkspaceSourceDirectory(root dagql.ObjectResult[*Directory]) WorkspaceS
 	}
 }
 
-func NewWorkspaceSourceGitRef(ref dagql.Result[*GitRef], explicitCommit bool) WorkspaceSource {
+func NewWorkspaceSourceGitRef(ref dagql.Result[*GitRef]) WorkspaceSource {
 	return &WorkspaceSourceGitRef{
-		Ref:            ref,
-		ExplicitCommit: explicitCommit,
+		Ref: ref,
 	}
 }
 
@@ -400,7 +396,7 @@ func (ws *Workspace) OverlayPathTouched(p string) bool {
 	p = path.Clean(filepath.ToSlash(p))
 	for _, touched := range ws.OverlayTouchedPaths() {
 		touched = path.Clean(filepath.ToSlash(touched))
-		if p == touched || strings.HasPrefix(p, touched+"/") {
+		if touched == "." || p == touched || strings.HasPrefix(p, touched+"/") {
 			return true
 		}
 	}
@@ -664,7 +660,6 @@ type persistedWorkspaceSource struct {
 	Kind           string                    `json:"kind"`
 	RootResultID   uint64                    `json:"rootResultID,omitempty"`
 	GitRefResultID uint64                    `json:"gitRefResultID,omitempty"`
-	ExplicitCommit bool                      `json:"explicitCommit,omitempty"`
 	ChangesID      uint64                    `json:"changesID,omitempty"`
 	TouchedPaths   []string                  `json:"touchedPaths,omitempty"`
 	SeededPaths    []string                  `json:"seededPaths,omitempty"`
@@ -707,7 +702,6 @@ func encodePersistedWorkspaceSource(enc *dagql.PersistEncodeContext, src Workspa
 		return &persistedWorkspaceSource{
 			Kind:           persistedWorkspaceSourceGitRef,
 			GitRefResultID: refID,
-			ExplicitCommit: src.ExplicitCommit,
 		}, nil
 	case *WorkspaceSourceOverlay:
 		payload := &persistedWorkspaceSource{Kind: persistedWorkspaceSourceOverlay}
@@ -770,7 +764,7 @@ func decodePersistedWorkspaceSource(
 		if err != nil {
 			return nil, err
 		}
-		return NewWorkspaceSourceGitRef(ref.Result, persisted.ExplicitCommit), nil
+		return NewWorkspaceSourceGitRef(ref.Result), nil
 	case persistedWorkspaceSourceOverlay:
 		base, err := decodePersistedWorkspaceSource(ctx, dec, persisted.Base, rootfs, hostPath)
 		if err != nil {

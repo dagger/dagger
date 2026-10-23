@@ -44,6 +44,23 @@ func (MCPSuite) TestModuleWithoutPrivilegedExposesModuleMethods(ctx context.Cont
 	require.NotContains(t, tools, "compact")
 	require.Contains(t, tools, "annotate")
 	require.Equal(t, "no conversation", callToolText(ctx, t, cli, "annotate", map[string]any{}))
+
+	// Nor is there an agent. A method requiring one is not offered either; an
+	// optional Agent argument is never in the tool's schema and receives null.
+	require.NotContains(t, tools, "wave")
+	require.Contains(t, tools, "nudge")
+	res, err := cli.ListTools(ctx, mcp.ListToolsRequest{})
+	require.NoError(t, err)
+	for _, tool := range res.Tools {
+		if tool.Name == "nudge" {
+			require.NotContains(t, tool.InputSchema.Properties, "me")
+		}
+		// Engine-internal arguments are never the model's to supply either.
+		for name := range tool.InputSchema.Properties {
+			require.False(t, strings.HasPrefix(name, "_"), "tool %q exposes internal argument %q", tool.Name, name)
+		}
+	}
+	require.Equal(t, "no agent", callToolText(ctx, t, cli, "nudge", map[string]any{}))
 }
 
 func (MCPSuite) TestWithoutModuleAndWithoutPrivilegedFails(ctx context.Context, t *testctx.T) {
@@ -84,7 +101,7 @@ func (MCPSuite) TestModuleWithPrivilegedStillExposesModuleMethods(ctx context.Co
 func (MCPSuite) TestFailureIncludesDiagnosticLogs(ctx context.Context, t *testctx.T) {
 	modDir := t.TempDir()
 	for name, contents := range map[string]string{
-		"dagger.toml": "[modules.test]\nsource = \".\"\nentrypoint = true\n",
+		"dagger.toml": "[modules.test]\nsource = \".\"\nmain = true\n",
 		"dagger.json": `{"name":"test","engineVersion":"v1.0.0","sdk":"dang"}`,
 		"main.dang": `type Test {
   broken: Module! {
@@ -143,7 +160,7 @@ func (MCPSuite) TestLLMContentResult(ctx context.Context, t *testctx.T) {
 	const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="
 	modDir := t.TempDir()
 	for name, contents := range map[string]string{
-		"dagger.toml": "[modules.test]\nsource = \".\"\nentrypoint = true\n",
+		"dagger.toml": "[modules.test]\nsource = \".\"\nmain = true\n",
 		"dagger.json": `{"name":"test","engineVersion":"v1.0.0","sdk":"dang"}`,
 		"main.dang": `type Test {
   screenshots: LLMContent! {

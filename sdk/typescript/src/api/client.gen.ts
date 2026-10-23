@@ -16,6 +16,50 @@ export type float = number
 // arises once client.gen.ts `export *`s those dep files.
 export { BaseClient }
 
+/**
+ * How acronyms and terms are written where a word starts with a capital.
+ */
+export enum AcronymStyle {
+  /**
+   * HttpClient, Ipv6Address, GitHubRepo
+   */
+  Capitalized = "CAPITALIZED",
+
+  /**
+   * HTTPClient, IPv6Address, GitHubRepo
+   */
+  Uppercase = "UPPERCASE",
+}
+
+/**
+ * Utility function to convert a AcronymStyle value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+export function AcronymStyleValueToName(value: AcronymStyle): string {
+  switch (value) {
+    case AcronymStyle.Capitalized:
+      return "CAPITALIZED"
+    case AcronymStyle.Uppercase:
+      return "UPPERCASE"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a AcronymStyle name to its value so
+ * it can be properly used inside the module runtime.
+ */
+export function AcronymStyleNameToValue(name: string): AcronymStyle {
+  switch (name) {
+    case "CAPITALIZED":
+      return AcronymStyle.Capitalized
+    case "UPPERCASE":
+      return AcronymStyle.Uppercase
+    default:
+      return name as AcronymStyle
+  }
+}
 export type AddressContainerOpts = {
   /**
    * Resolve the address's image tag live, ignoring the workspace lockfile: neither read a pinned value nor record one.
@@ -433,6 +477,86 @@ export function CacheSharingModeNameToValue(name: string): CacheSharingMode {
       return CacheSharingMode.Shared
     default:
       return name as CacheSharingMode
+  }
+}
+/**
+ * A convention for joining words into an identifier.
+ */
+export enum Casing {
+  /**
+   * httpClient
+   */
+  Camel = "CAMEL",
+
+  /**
+   * httpclient (output only: drops word boundaries)
+   */
+  Flat = "FLAT",
+
+  /**
+   * http-client
+   */
+  Kebab = "KEBAB",
+
+  /**
+   * HTTPClient
+   */
+  Pascal = "PASCAL",
+
+  /**
+   * HTTP_CLIENT
+   */
+  ScreamingSnake = "SCREAMING_SNAKE",
+
+  /**
+   * http_client
+   */
+  Snake = "SNAKE",
+}
+
+/**
+ * Utility function to convert a Casing value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+export function CasingValueToName(value: Casing): string {
+  switch (value) {
+    case Casing.Camel:
+      return "CAMEL"
+    case Casing.Flat:
+      return "FLAT"
+    case Casing.Kebab:
+      return "KEBAB"
+    case Casing.Pascal:
+      return "PASCAL"
+    case Casing.ScreamingSnake:
+      return "SCREAMING_SNAKE"
+    case Casing.Snake:
+      return "SNAKE"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a Casing name to its value so
+ * it can be properly used inside the module runtime.
+ */
+export function CasingNameToValue(name: string): Casing {
+  switch (name) {
+    case "CAMEL":
+      return Casing.Camel
+    case "FLAT":
+      return Casing.Flat
+    case "KEBAB":
+      return Casing.Kebab
+    case "PASCAL":
+      return Casing.Pascal
+    case "SCREAMING_SNAKE":
+      return Casing.ScreamingSnake
+    case "SNAKE":
+      return Casing.Snake
+    default:
+      return name as Casing
   }
 }
 export type ChangesetFilterOpts = {
@@ -2550,6 +2674,70 @@ export type HostTunnelOpts = {
  */
 export type ID = string & { __ID: never }
 
+export type IdentifierFormatOpts = {
+  /**
+   * How to write acronyms and terms where a word starts with a capital.
+   */
+  acronyms?: AcronymStyle
+}
+
+/**
+ * The kind of a word in an identifier.
+ */
+export enum IdentifierWordKind {
+  /**
+   * An acronym, from the dictionary or a run of capitals.
+   */
+  Acronym = "ACRONYM",
+
+  /**
+   * A dictionary term with a fixed mixed-case spelling (GitHub, IPv6).
+   */
+  Term = "TERM",
+
+  /**
+   * An ordinary word.
+   */
+  Word = "WORD",
+}
+
+/**
+ * Utility function to convert a IdentifierWordKind value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+export function IdentifierWordKindValueToName(
+  value: IdentifierWordKind,
+): string {
+  switch (value) {
+    case IdentifierWordKind.Acronym:
+      return "ACRONYM"
+    case IdentifierWordKind.Term:
+      return "TERM"
+    case IdentifierWordKind.Word:
+      return "WORD"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a IdentifierWordKind name to its value so
+ * it can be properly used inside the module runtime.
+ */
+export function IdentifierWordKindNameToValue(
+  name: string,
+): IdentifierWordKind {
+  switch (name) {
+    case "ACRONYM":
+      return IdentifierWordKind.Acronym
+    case "TERM":
+      return IdentifierWordKind.Term
+    case "WORD":
+      return IdentifierWordKind.Word
+    default:
+      return name as IdentifierWordKind
+  }
+}
 /**
  * Compression algorithm to use for image layers.
  */
@@ -2678,6 +2866,11 @@ export type LLMLoopOpts = {
 }
 
 export type LLMSpawnOpts = {
+  /**
+   * Expertise to compose into the new agent's conversation. Agent arguments receive the new agent, which cannot be used until composition completes; if composition fails, the agent is left STOPPED.
+   */
+  expertise?: Expertise[]
+
   /**
    * Display label for the agent — telemetry and error messages; carries no identity. Defaults to a short name derived from the conversation.
    */
@@ -3085,7 +3278,14 @@ export type ModuleServeOpts = {
   includeDependencies?: boolean
 
   /**
-   * Install the module as the entrypoint, promoting its main-object methods onto the Query root
+   * Install the module as the workspace main, promoting its main-object methods onto the Query root
+   */
+  main?: boolean
+
+  /**
+   * Compatibility alias for main.
+   *
+   * @deprecated Use main.
    */
   entrypoint?: boolean
 }
@@ -3333,7 +3533,7 @@ export type ClientCurrentTypeDefsOpts = {
   returnAllTypes?: boolean
 
   /**
-   * Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).
+   * Strip core API functions from the Query type, leaving only module-sourced functions (constructors, workspace main proxies, etc.).
    *
    * Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
    */
@@ -3361,6 +3561,18 @@ export type ClientFileOpts = {
    * Permissions of the new file. Example: 0600
    */
   permissions?: number
+}
+
+export type ClientFormatIdentifiersOpts = {
+  /**
+   * How to write acronyms and terms where a word starts with a capital.
+   */
+  acronyms?: AcronymStyle
+
+  /**
+   * The engine version whose naming dictionary to parse the names with, e.g. the __schemaVersion of a schema being generated. Defaults to the caller's engine version.
+   */
+  version?: string
 }
 
 export type ClientGitOpts = {
@@ -4178,7 +4390,14 @@ export type WorkspaceWithInitModuleOpts = {
   install?: boolean
 
   /**
-   * Select this module as the entrypoint and install it. False prevents automatic selection. When omitted, select only if both path and name are omitted and the module is installed.
+   * Select this module as the workspace main and install it. False prevents automatic selection. When omitted, select only if both path and name are omitted and the module is installed.
+   */
+  main?: boolean
+
+  /**
+   * Compatibility alias for main.
+   *
+   * @deprecated Use main.
    */
   entrypoint?: boolean
 
@@ -4757,6 +4976,21 @@ export class Agent extends BaseClient {
   }
 
   /**
+   * The agent that spawned this agent, or null for a root agent.
+   * @experimental
+   */
+  parent = async (): Promise<Agent | null> => {
+    const ctx = this._ctx.select("parent").select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new Agent(ctx.copy().selectNode(response, "Agent"))
+  }
+
+  /**
    * Stop draining the mailbox once the in-flight step completes, or immediately with interrupt.
    *
    * Pause takes priority over pending work: a mid-turn pause suspends the turn, which resume continues. Messages sent while paused enqueue with QUEUED delivery until a resume.
@@ -5146,7 +5380,7 @@ export class Artifact extends BaseClient {
   }
 
   /**
-   * Ordered, literal fields to follow. Entrypoint targets use their shorthand.
+   * Ordered, literal fields to follow. Workspace main targets use their shorthand.
    */
   path = async (): Promise<string[]> => {
     const ctx = this._ctx.select("path")
@@ -5181,6 +5415,20 @@ export class Artifact extends BaseClient {
   value = (opts?: ArtifactValueOpts): Node => {
     const ctx = this._ctx.select("value", { ...opts })
     return new _NodeClient(ctx)
+  }
+
+  /**
+   * The workspace this artifact was discovered in; its address is relative to it. Null for an artifact without a workspace, such as one of an LLM's bound tool objects (see LLM.artifacts).
+   */
+  workspace = async (): Promise<Workspace | null> => {
+    const ctx = this._ctx.select("workspace").select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new Workspace(ctx.copy().selectNode(response, "Workspace"))
   }
 }
 
@@ -5603,7 +5851,7 @@ export class ArtifactResult extends BaseClient {
 }
 
 /**
- * An immutable selection of workspace artifacts. Listed types, dimensions, and keys use OR; chained filters use AND. Empty alternatives and unknown names match nothing. Filters never change addresses or dimension identifiers.
+ * An immutable selection of workspace artifacts. Listed types, dimensions, and keys use OR; chained filters use AND. Empty alternatives match nothing; unknown names match nothing but module load failures. Filters never change addresses or dimension identifiers. Module keys match a module's configured or kebab-case name. A module that failed to load has no schema, so its load failure stands in for whatever it would hold: a filter keeps it when the module could hold something the filter selects, and an exclusion drops it only by its own address, such as <module>/** or ?module=<module>.
  */
 export class Artifacts extends BaseClient {
   private readonly _id?: ID = undefined
@@ -5635,7 +5883,7 @@ export class Artifacts extends BaseClient {
   }
 
   /**
-   * Convert the selection to Changesets. Fail if any artifact is not a Changeset. Does not apply command filters.
+   * Convert the selection to Changesets. Fail if any artifact is not a Changeset; a module load failure fails with its load error. Does not apply command filters.
    */
   asChangesets = async (): Promise<Changeset[]> => {
     type asChangesets = {
@@ -5652,7 +5900,7 @@ export class Artifacts extends BaseClient {
   }
 
   /**
-   * Convert the selection to Checks. Fail if any artifact is not a Check. Does not apply command filters or run the checks.
+   * Convert the selection to Checks. Fail if any artifact is not a Check. A module load failure is a Check that fails with its load error. Does not apply command filters or run the checks.
    */
   asChecks = async (): Promise<Check[]> => {
     type asChecks = {
@@ -5667,7 +5915,7 @@ export class Artifacts extends BaseClient {
   }
 
   /**
-   * Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise.
+   * Convert the selection to expertise without running the functions. Each must take one LLM! argument and return LLM!; any other arguments must be optional or auto-filled. Agent arguments receive the agent that owns the conversation. A module load failure fails with its load error.
    */
   asExpertise = async (): Promise<Expertise[]> => {
     type asExpertise = {
@@ -5684,7 +5932,7 @@ export class Artifacts extends BaseClient {
   }
 
   /**
-   * Convert the selection to Generators without running them. Fail if any artifact is not a Generator.
+   * Convert the selection to Generators without running them. Fail if any artifact is not a Generator. Module load failures are skipped: generating can repair them.
    */
   asGenerators = async (): Promise<Generator[]> => {
     type asGenerators = {
@@ -5701,7 +5949,7 @@ export class Artifacts extends BaseClient {
   }
 
   /**
-   * Convert the selection to Services. Fail if any artifact is not a Service. Does not apply command filters or start the services.
+   * Convert the selection to Services. Fail if any artifact is not a Service; a module load failure fails with its load error. Does not apply command filters or start the services.
    */
   asServices = async (): Promise<Service[]> => {
     type asServices = {
@@ -5838,7 +6086,7 @@ export class Artifacts extends BaseClient {
   }
 
   /**
-   * Keep paths that match a glob pattern. A literal path matches exactly. Both module-qualified and entrypoint paths match.
+   * Keep paths that match a glob pattern. A literal path matches exactly. Both module-qualified and workspace main paths match.
    */
   filterPathPattern = (pattern: string): Artifacts => {
     const ctx = this._ctx.select("filterPathPattern", { pattern })
@@ -5861,6 +6109,8 @@ export class Artifacts extends BaseClient {
    * Apply a DAG address as one filter: the chain of path, type, and dimension-key filters it encodes.
    *
    * The scheme is optional. The path may be a pattern; an empty path selects all artifacts.
+   *
+   * A module that failed to load keeps its load failure when the module could hold what the address selects, as with every filter (see Artifacts).
    * @param uri A DAG address: [dag[+<type>]://][<path>][?<dimension>=<key>&...]
    */
   filterUri = (uri: string): Artifacts => {
@@ -10113,7 +10363,7 @@ export class ErrorValue extends BaseClient {
 }
 
 /**
- * An agent function that can modify a conversation.
+ * A function that can modify a conversation.
  */
 export class Expertise extends BaseClient {
   private readonly _id?: ID = undefined
@@ -10147,7 +10397,15 @@ export class Expertise extends BaseClient {
   }
 
   /**
-   * The agent function's description.
+   * The artifact this expertise runs. Look it up again by URI to pick up module changes.
+   */
+  artifact = (): Artifact => {
+    const ctx = this._ctx.select("artifact")
+    return new Artifact(ctx)
+  }
+
+  /**
+   * The function's description.
    */
   description = async (): Promise<string> => {
     if (this._description) {
@@ -10162,7 +10420,7 @@ export class Expertise extends BaseClient {
   }
 
   /**
-   * The agent function's name.
+   * The function's name.
    */
   name = async (): Promise<string> => {
     if (this._name) {
@@ -10177,7 +10435,7 @@ export class Expertise extends BaseClient {
   }
 
   /**
-   * The module that defines the agent function.
+   * The module that defines the function.
    */
   originalModule = (): Module_ => {
     const ctx = this._ctx.select("originalModule")
@@ -10185,7 +10443,7 @@ export class Expertise extends BaseClient {
   }
 
   /**
-   * The agent function's path within its module.
+   * The function's path within its module.
    */
   path = async (): Promise<string[]> => {
     const ctx = this._ctx.select("path")
@@ -11633,6 +11891,7 @@ export class GitCommit extends BaseClient {
   private readonly _messageHeadline?: string = undefined
   private readonly _sha?: string = undefined
   private readonly _shortSha?: string = undefined
+  private readonly _treeSHA?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -11651,6 +11910,7 @@ export class GitCommit extends BaseClient {
     _messageHeadline?: string,
     _sha?: string,
     _shortSha?: string,
+    _treeSHA?: string,
   ) {
     super(ctx)
 
@@ -11666,6 +11926,7 @@ export class GitCommit extends BaseClient {
     this._messageHeadline = _messageHeadline
     this._sha = _sha
     this._shortSha = _shortSha
+    this._treeSHA = _treeSHA
   }
 
   /**
@@ -11913,6 +12174,23 @@ export class GitCommit extends BaseClient {
   tree = (opts?: GitCommitTreeOpts): Directory => {
     const ctx = this._ctx.select("tree", { ...opts })
     return new Directory(ctx)
+  }
+
+  /**
+   * The ID of the commit's Git tree object.
+   *
+   * Commits with identical trees have identical contents and file modes.
+   */
+  treeSHA = async (): Promise<string> => {
+    if (this._treeSHA) {
+      return this._treeSHA
+    }
+
+    const ctx = this._ctx.select("treeSHA")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 }
 
@@ -12912,6 +13190,204 @@ export class Host extends BaseClient {
 }
 
 /**
+ * A name parsed into words, which can be formatted in any casing.
+ */
+export class Identifier extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _format?: string = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID, _format?: string, _name?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._format = _format
+    this._name = _name
+  }
+
+  /**
+   * A unique identifier for this Identifier.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Format the identifier in a casing.
+   * @param casing The casing to format the identifier in.
+   * @param opts.acronyms How to write acronyms and terms where a word starts with a capital.
+   */
+  format = async (
+    casing: Casing,
+    opts?: IdentifierFormatOpts,
+  ): Promise<string> => {
+    if (this._format) {
+      return this._format
+    }
+
+    const metadata = {
+      casing: { is_enum: true, value_to_name: CasingValueToName },
+      acronyms: { is_enum: true, value_to_name: AcronymStyleValueToName },
+    }
+
+    const ctx = this._ctx.select("format", {
+      casing,
+      ...opts,
+      __metadata: metadata,
+    })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The name as given.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The words that make up the name, in order.
+   */
+  words = async (): Promise<IdentifierWord[]> => {
+    type words = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("words").select("id")
+
+    const response: Awaited<words[]> = await ctx.execute()
+
+    return response.map(
+      (r) => new IdentifierWord(ctx.copy().selectNode(r.id, "IdentifierWord")),
+    )
+  }
+}
+
+/**
+ * One word of an identifier.
+ */
+export class IdentifierWord extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _kind?: IdentifierWordKind = undefined
+  private readonly _suffix?: string = undefined
+  private readonly _text?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _kind?: IdentifierWordKind,
+    _suffix?: string,
+    _text?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._kind = _kind
+    this._suffix = _suffix
+    this._text = _text
+  }
+
+  /**
+   * A unique identifier for this IdentifierWord.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The kind of word.
+   */
+  kind = async (): Promise<IdentifierWordKind> => {
+    if (this._kind) {
+      return this._kind
+    }
+
+    const ctx = this._ctx.select("kind")
+
+    const response: Awaited<IdentifierWordKind> = await ctx.execute()
+
+    return IdentifierWordKindNameToValue(response)
+  }
+
+  /**
+   * Trailing digits and/or a plural "s", in that order: SHA+"s", OAuth+"2", HTTP+"2s".
+   */
+  suffix = async (): Promise<string> => {
+    if (this._suffix) {
+      return this._suffix
+    }
+
+    const ctx = this._ctx.select("suffix")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The dictionary entry this word matched, if any.
+   */
+  term = async (): Promise<NamingTerm | null> => {
+    const ctx = this._ctx.select("term").select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new NamingTerm(ctx.copy().selectNode(response, "NamingTerm"))
+  }
+
+  /**
+   * Standard spelling: "client" (WORD), "HTTP" (ACRONYM), "GitHub" (TERM).
+   */
+  text = async (): Promise<string> => {
+    if (this._text) {
+      return this._text
+    }
+
+    const ctx = this._ctx.select("text")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
  * A graphql input type, which is essentially just a group of named args.
  * This is currently only used to represent pre-existing usage of graphql input types
  * in the core API. It is not used by user modules and shouldn't ever be as user
@@ -13391,7 +13867,11 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Run expertise in list order, passing this conversation through each function. Retain existing contributions.
+   * Run expertise on this conversation, passing it through each function in order, and record it in expertise.
+   *
+   * Composing an entry that is already recorded refreshes its module: the module's contributions are cleared, all of its recorded entries run again, and compatible tool state is kept. Other contributions are untouched.
+   *
+   * Agent arguments receive the agent that owns this conversation. Without one, entries requiring an Agent are skipped.
    * @param expertise The expertise to run. Each reference retains its source workspace.
    */
   compose = (expertise: Expertise[]): LLM => {
@@ -13427,6 +13907,23 @@ export class LLM extends BaseClient {
     const response: Awaited<number> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Expertise composed into this conversation, in order.
+   */
+  expertise = async (): Promise<Expertise[]> => {
+    type expertise = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("expertise").select("id")
+
+    const response: Awaited<expertise[]> = await ctx.execute()
+
+    return response.map(
+      (r) => new Expertise(ctx.copy().selectNode(r.id, "Expertise")),
+    )
   }
 
   /**
@@ -13541,19 +14038,6 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Run expertise in list order, replacing their modules' contributions and preserving compatible tool state.
-   *
-   * Clear each selected module's contributions once before execution. Retain unowned contributions and contributions from other modules. Keep this LLM's workspace.
-   *
-   * A change to a tool binding's version resets its state. Removed bindings, changed identities, and incompatible state are errors.
-   * @param expertise The expertise to run. Each reference retains its source workspace.
-   */
-  recompose = (expertise: Expertise[]): LLM => {
-    const ctx = this._ctx.select("recompose", { expertise })
-    return new LLM(ctx)
-  }
-
-  /**
    * The skills visible to the model, exactly as the ListSkills tool serves them: engine-embedded skills, skills installed with withSkills, and skills discovered in the workspace.
    */
   skills = async (): Promise<LLMSkill[]> => {
@@ -13578,6 +14062,7 @@ export class LLM extends BaseClient {
    * The loop is not started: the agent spends nothing until it is prompted or resumed, and any input pending on the conversation is stepped then.
    *
    * With a handle, spawn restores an instance instead of minting one: this conversation becomes the committed history of the agent that handle names, so prompting it continues where it left off — rebuild a conversation's ID from a trace, load it, and spawn it under the handle it belonged to. Fails if that instance already has a runtime entry in this session: a restore must happen before anything else addresses the instance, since by then it may have stepped.
+   * @param opts.expertise Expertise to compose into the new agent's conversation. Agent arguments receive the new agent, which cannot be used until composition completes; if composition fails, the agent is left STOPPED.
    * @param opts.name Display label for the agent — telemetry and error messages; carries no identity. Defaults to a short name derived from the conversation.
    * @param opts.handle The runtime handle to restore the instance under, as published on its loop span as dagger.io/agent.id. Omit to mint a fresh instance.
    * @param opts.state The lifecycle state to create the agent in, as facts on the entry: IDLE is ready to be prompted, PAUSED parks it, FAILED holds an error a resume retries past, STOPPED preserves a dormant snapshot that send or resume can relaunch.
@@ -14866,7 +15351,8 @@ export class Module_ extends BaseClient {
    *
    * Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.
    * @param opts.includeDependencies Expose the dependencies of this module to the client
-   * @param opts.entrypoint Install the module as the entrypoint, promoting its main-object methods onto the Query root
+   * @param opts.main Install the module as the workspace main, promoting its main-object methods onto the Query root
+   * @param opts.entrypoint Compatibility alias for main.
    */
   serve = async (opts?: ModuleServeOpts): Promise<void> => {
     if (this._serve) {
@@ -15758,6 +16244,76 @@ export class ModuleSource extends BaseClient {
 }
 
 /**
+ * An entry in the naming dictionary.
+ */
+export class NamingTerm extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _capitalized?: string = undefined
+  private readonly _spelling?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _capitalized?: string,
+    _spelling?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._capitalized = _capitalized
+    this._spelling = _spelling
+  }
+
+  /**
+   * A unique identifier for this NamingTerm.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Spelling in the CAPITALIZED style: "Http", "Ipv6", "GitHub", "Ios".
+   */
+  capitalized = async (): Promise<string> => {
+    if (this._capitalized) {
+      return this._capitalized
+    }
+
+    const ctx = this._ctx.select("capitalized")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Standard spelling: "HTTP", "IPv6", "GitHub", "iOS".
+   */
+  spelling = async (): Promise<string> => {
+    if (this._spelling) {
+      return this._spelling
+    }
+
+    const ctx = this._ctx.select("spelling")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
  * An object with a globally unique ID.
  */
 export interface Node {
@@ -16223,7 +16779,7 @@ export class Client extends BaseClient {
   /**
    * The TypeDef representations of the objects currently being served in the session.
    * @param opts.returnAllTypes Return the full referenced typedef closure instead of only top-level served typedefs.
-   * @param opts.hideCore Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).
+   * @param opts.hideCore Strip core API functions from the Query type, leaving only module-sourced functions (constructors, workspace main proxies, etc.).
    *
    * Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
    */
@@ -16319,6 +16875,36 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Format many names at once, for codegen. Returns them in input order.
+   * @param names The names to format, in any casing.
+   * @param casing The casing to format the names in.
+   * @param opts.acronyms How to write acronyms and terms where a word starts with a capital.
+   * @param opts.version The engine version whose naming dictionary to parse the names with, e.g. the __schemaVersion of a schema being generated. Defaults to the caller's engine version.
+   * @experimental
+   */
+  formatIdentifiers = async (
+    names: string[],
+    casing: Casing,
+    opts?: ClientFormatIdentifiersOpts,
+  ): Promise<string[]> => {
+    const metadata = {
+      casing: { is_enum: true, value_to_name: CasingValueToName },
+      acronyms: { is_enum: true, value_to_name: AcronymStyleValueToName },
+    }
+
+    const ctx = this._ctx.select("formatIdentifiers", {
+      names,
+      casing,
+      ...opts,
+      __metadata: metadata,
+    })
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * Creates a function.
    * @param name Name of the function, in its original format from the implementation language.
    * @param returnType Return type of the function.
@@ -16376,6 +16962,18 @@ export class Client extends BaseClient {
   http = (url: string, opts?: ClientHttpOpts): File => {
     const ctx = this._ctx.select("http", { url, ...opts })
     return new File(ctx)
+  }
+
+  /**
+   * Parse a name in any casing into words.
+   *
+   * Known acronyms and terms come from the naming dictionary; everything else falls back to the case heuristic. Errors on non-ASCII input, input with no letters or digits, or input over 256 bytes.
+   * @param name The name to parse.
+   * @experimental
+   */
+  identifier = (name: string): Identifier => {
+    const ctx = this._ctx.select("identifier", { name })
+    return new Identifier(ctx)
   }
 
   /**
@@ -16442,6 +17040,24 @@ export class Client extends BaseClient {
       __metadata: metadata,
     })
     return new ModuleSource(ctx)
+  }
+
+  /**
+   * The acronyms and terms used to parse and format identifiers.
+   * @experimental
+   */
+  namingDictionary = async (): Promise<NamingTerm[]> => {
+    type namingDictionary = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("namingDictionary").select("id")
+
+    const response: Awaited<namingDictionary[]> = await ctx.execute()
+
+    return response.map(
+      (r) => new NamingTerm(ctx.copy().selectNode(r.id, "NamingTerm")),
+    )
   }
 
   /**
@@ -18060,6 +18676,7 @@ export class Workspace extends BaseClient {
   private readonly _entrypoint?: string = undefined
   private readonly _export?: Void = undefined
   private readonly _findUp?: string = undefined
+  private readonly _main?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -18075,6 +18692,7 @@ export class Workspace extends BaseClient {
     _entrypoint?: string,
     _export?: Void,
     _findUp?: string,
+    _main?: string,
   ) {
     super(ctx)
 
@@ -18087,6 +18705,7 @@ export class Workspace extends BaseClient {
     this._entrypoint = _entrypoint
     this._export = _export
     this._findUp = _findUp
+    this._main = _main
   }
 
   /**
@@ -18121,6 +18740,8 @@ export class Workspace extends BaseClient {
 
   /**
    * Discover static object artifacts from workspace modules without evaluating their values.
+   *
+   * Omits the paths that the workspace's check.skip, generate.skip, and up.skip settings skip.
    * @param opts.include Only include artifacts matching these path patterns, as with checks and services. A path selects that path and its children.
    */
   artifacts = (opts?: WorkspaceArtifactsOpts): Artifacts => {
@@ -18259,9 +18880,8 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Installed name of the module selected as the workspace entrypoint, or an empty string when none is selected.
-   *
-   * Reflects the selected env's effective view. Fails if several modules are selected.
+   * Compatibility alias for main.
+   * @deprecated Use main.
    */
   entrypoint = async (): Promise<string> => {
     if (this._entrypoint) {
@@ -18380,6 +19000,23 @@ export class Workspace extends BaseClient {
     const ctx = this._ctx.select("glob", { pattern })
 
     const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Installed name of the module selected as the workspace main, or an empty string when none is selected.
+   *
+   * Reflects the selected env's effective view. Fails if several modules are selected.
+   */
+  main = async (): Promise<string> => {
+    if (this._main) {
+      return this._main
+    }
+
+    const ctx = this._ctx.select("main")
+
+    const response: Awaited<string> = await ctx.execute()
 
     return response
   }
@@ -18680,10 +19317,9 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Return this workspace with an installed module selected as its entrypoint.
-   *
-   * Every other entrypoint selection is cleared. Entrypoints live in the base workspace config.
+   * Compatibility alias for withMain.
    * @param name Exact installed module name.
+   * @deprecated Use withMain.
    */
   withEntrypoint = (name: string): Workspace => {
     const ctx = this._ctx.select("withEntrypoint", { name })
@@ -18713,7 +19349,8 @@ export class Workspace extends BaseClient {
    * @param opts.name Module name. The engine infers it from path, the active config file, or the workspace root when omitted.
    * @param opts.path Module path relative to the workspace cwd, or an absolute workspace path. Defaults to .dagger/modules/<name> beside the active workspace config.
    * @param opts.install Install the module. When omitted, install only if path is omitted.
-   * @param opts.entrypoint Select this module as the entrypoint and install it. False prevents automatic selection. When omitted, select only if both path and name are omitted and the module is installed.
+   * @param opts.main Select this module as the workspace main and install it. False prevents automatic selection. When omitted, select only if both path and name are omitted and the module is installed.
+   * @param opts.entrypoint Compatibility alias for main.
    * @param opts.settings Explicit SDK-module constructor setting overrides for this scope.
    */
   withInitModule = (
@@ -18731,6 +19368,17 @@ export class Workspace extends BaseClient {
    */
   withInitialized = (): Workspace => {
     const ctx = this._ctx.select("withInitialized")
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with an installed module selected as its main.
+   *
+   * Every other main selection is cleared. The main module lives in the base workspace config.
+   * @param name Exact installed module name.
+   */
+  withMain = (name: string): Workspace => {
+    const ctx = this._ctx.select("withMain", { name })
     return new Workspace(ctx)
   }
 
@@ -18970,7 +19618,8 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Return this workspace with no module selected as its entrypoint.
+   * Compatibility alias for withoutMain.
+   * @deprecated Use withoutMain.
    */
   withoutEntrypoint = (): Workspace => {
     const ctx = this._ctx.select("withoutEntrypoint")
@@ -18992,6 +19641,14 @@ export class Workspace extends BaseClient {
    */
   withoutFiles = (paths: string[]): Workspace => {
     const ctx = this._ctx.select("withoutFiles", { paths })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with no module selected as its main.
+   */
+  withoutMain = (): Workspace => {
+    const ctx = this._ctx.select("withoutMain")
     return new Workspace(ctx)
   }
 
@@ -19366,6 +20023,7 @@ export class WorkspaceMigrationStep extends BaseClient {
 export class WorkspaceModule extends BaseClient {
   private readonly _id?: ID = undefined
   private readonly _entrypoint?: boolean = undefined
+  private readonly _main?: boolean = undefined
   private readonly _name?: string = undefined
   private readonly _source?: string = undefined
 
@@ -19376,6 +20034,7 @@ export class WorkspaceModule extends BaseClient {
     ctx?: Context,
     _id?: ID,
     _entrypoint?: boolean,
+    _main?: boolean,
     _name?: string,
     _source?: string,
   ) {
@@ -19383,6 +20042,7 @@ export class WorkspaceModule extends BaseClient {
 
     this._id = _id
     this._entrypoint = _entrypoint
+    this._main = _main
     this._name = _name
     this._source = _source
   }
@@ -19403,7 +20063,8 @@ export class WorkspaceModule extends BaseClient {
   }
 
   /**
-   * Whether the module is the workspace entrypoint (functions aliased to Query root).
+   * Compatibility alias for main.
+   * @deprecated Use main.
    */
   entrypoint = async (): Promise<boolean> => {
     if (this._entrypoint) {
@@ -19424,6 +20085,21 @@ export class WorkspaceModule extends BaseClient {
     const ctx = this._ctx.select("functions")
 
     const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Whether the module is the workspace main (functions aliased to Query root).
+   */
+  main = async (): Promise<boolean> => {
+    if (this._main) {
+      return this._main
+    }
+
+    const ctx = this._ctx.select("main")
+
+    const response: Awaited<boolean> = await ctx.execute()
 
     return response
   }

@@ -9,7 +9,7 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-type GitReleaser struct { // git-releaser (../../../../:0:0)
+type GitReleaser struct { // git-releaser (../../../../../:0:0)
 	query *querybuilder.Selection
 
 	dryRun  *Void
@@ -168,7 +168,7 @@ type GitReleaserOpts struct {
 	AlpineVersion string
 }
 
-func (r *Query) GitReleaser(opts ...GitReleaserOpts) *GitReleaser { // git-releaser (../../../../:0:0)
+func (r *Query) GitReleaser(opts ...GitReleaserOpts) *GitReleaser { // git-releaser (../../../../../:0:0)
 	q := r.query.Select("gitReleaser")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `alpineVersion` optional argument

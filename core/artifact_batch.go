@@ -41,40 +41,15 @@ func (a *Artifacts) Batch(ctx context.Context) ([]*Artifact, error) {
 			continue
 		}
 		item := target.Parent
-		collection := item.Parent
 		if item.Name != "batch" {
-			id, err := collection.Module.ID()
+			replaced, err := replaceWithBatch(ctx, servers, target)
 			if err != nil {
 				return nil, err
 			}
-			srv := servers[id.EngineResultID()]
-			if srv == nil {
-				srv, err = dagqlServerForModule(ctx, collection.Module)
-				if err != nil {
-					return nil, err
-				}
-				servers[id.EngineResultID()] = srv
-			}
-			typ, err := CollectionBatchType(ctx, srv, collection.Type.Self().AsObject.Value)
-			if err != nil {
-				return nil, err
-			}
-			if !typ.Valid {
+			if !replaced {
 				result = append(result, artifact)
 				continue
 			}
-			receiver := *item
-			receiver.Name, receiver.Type, receiver.DagqlServer = "batch", typ.Value, srv
-			replacement, err := receiver.Child(ctx, target.Name)
-			if err != nil {
-				return nil, err
-			}
-			if replacement == nil || artifactBatchDirective(replacement) != artifactBatchDirective(target) || artifactProjectedTypeName(replacement) != target.Type.Self().ToType().Name() {
-				result = append(result, artifact)
-				continue
-			}
-			replacement.Type = target.Type
-			*target = *replacement
 			item = target.Parent
 		}
 		if item.CollectionKey == nil {
@@ -83,6 +58,9 @@ func (a *Artifacts) Batch(ctx context.Context) ([]*Artifact, error) {
 		key := *item.CollectionKey
 		item.CollectionKey = nil
 		item.CollectionKeys = []string{key}
+		// Exclusions apply after expansion, so they can drop items the
+		// expansion counted as complete.
+		item.CollectionComplete = item.CollectionComplete && len(a.Selector.ExcludedURIs) == 0
 		// Do not merge different workspaces, paths, or parent item combinations.
 		planned.DimensionKeys = slices.DeleteFunc(slices.Clone(planned.DimensionKeys), func(k *ArtifactDimensionKey) bool {
 			return k.Dimension == item.CollectionDimension.Identifier
@@ -120,8 +98,53 @@ func (a *Artifacts) Batch(ctx context.Context) ([]*Artifact, error) {
 				group.keys[key] = struct{}{}
 			}
 			group.receiver.CollectionKeys = append(group.receiver.CollectionKeys, key)
+			group.receiver.CollectionComplete = group.receiver.CollectionComplete && item.CollectionComplete
 		}
 		group.artifact.DimensionKeys = append(group.artifact.DimensionKeys, &ArtifactDimensionKey{Dimension: item.CollectionDimension.Identifier, Key: key})
 	}
+	// A batch that runs its whole collection keys fewer dimensions, which
+	// can need a longer type key.
+	for _, group := range groups {
+		group.artifact.TypeKeyName = a.typeKeyName(group.artifact)
+	}
 	return result, nil
+}
+
+// replaceWithBatch points target at the same operation on its collection's
+// batch receiver. It reports false when the collection has no batch, or the
+// batch has no operation of the same name, directive and type.
+func replaceWithBatch(ctx context.Context, servers map[uint64]*dagql.Server, target *ModTreeNode) (bool, error) {
+	item := target.Parent
+	collection := item.Parent
+	id, err := collection.Module.ID()
+	if err != nil {
+		return false, err
+	}
+	srv := servers[id.EngineResultID()]
+	if srv == nil {
+		srv, err = dagqlServerForModule(ctx, collection.Module)
+		if err != nil {
+			return false, err
+		}
+		servers[id.EngineResultID()] = srv
+	}
+	typ, err := CollectionBatchType(ctx, srv, collection.Type.Self().AsObject.Value)
+	if err != nil {
+		return false, err
+	}
+	if !typ.Valid {
+		return false, nil
+	}
+	receiver := *item
+	receiver.Name, receiver.Type, receiver.DagqlServer = "batch", typ.Value, srv
+	replacement, err := receiver.Child(ctx, target.Name)
+	if err != nil {
+		return false, err
+	}
+	if replacement == nil || artifactBatchDirective(replacement) != artifactBatchDirective(target) || artifactProjectedTypeName(replacement) != target.Type.Self().ToType().Name() {
+		return false, nil
+	}
+	replacement.Type = target.Type
+	*target = *replacement
+	return true, nil
 }

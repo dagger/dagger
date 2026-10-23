@@ -744,6 +744,25 @@ func (r *Agent) Notify(ctx context.Context, subscriber *Agent, opts ...AgentNoti
 	}, nil
 }
 
+// The agent that spawned this agent, or null for a root agent.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *Agent) Parent(ctx context.Context) (*Agent, error) {
+	q := r.query.Select("parent")
+
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
+	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &Agent{
+		query: selectNode(q.Root(), *objectID, "Agent"),
+	}, nil
+}
+
 // AgentPauseOpts contains options for Agent.Pause
 type AgentPauseOpts struct {
 	// Preempt the in-flight step instead of letting it finish. All completed steps are kept and the interrupted turn stays open: messages it consumed remain pending, while unconsumed mailbox messages are discarded. Resume continues the turn from the last committed step. On an idle, never-started, or failed agent there is nothing to preempt, so this is a plain pause.
@@ -1297,7 +1316,7 @@ func (r *Artifact) ModuleName(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Ordered, literal fields to follow. Entrypoint targets use their shorthand.
+// Ordered, literal fields to follow. Workspace main targets use their shorthand.
 func (r *Artifact) Path(ctx context.Context) ([]string, error) {
 	q := r.query.Select("path")
 
@@ -1367,6 +1386,23 @@ func (r *Artifact) Value(opts ...ArtifactValueOpts) Node {
 		query:     q,
 		refetchID: r.refetchID,
 	}
+}
+
+// The workspace this artifact was discovered in; its address is relative to it. Null for an artifact without a workspace, such as one of an LLM's bound tool objects (see LLM.artifacts).
+func (r *Artifact) Workspace(ctx context.Context) (*Workspace, error) {
+	q := r.query.Select("workspace")
+
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
+	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &Workspace{
+		query: selectNode(q.Root(), *objectID, "Workspace"),
+	}, nil
 }
 
 // AsNode returns this Artifact as a Node.
@@ -1961,7 +1997,7 @@ func (r *ArtifactResult) AsNode() Node {
 	}
 }
 
-// An immutable selection of workspace artifacts. Listed types, dimensions, and keys use OR; chained filters use AND. Empty alternatives and unknown names match nothing. Filters never change addresses or dimension identifiers.
+// An immutable selection of workspace artifacts. Listed types, dimensions, and keys use OR; chained filters use AND. Empty alternatives match nothing; unknown names match nothing but module load failures. Filters never change addresses or dimension identifiers. Module keys match a module's configured or kebab-case name. A module that failed to load has no schema, so its load failure stands in for whatever it would hold: a filter keeps it when the module could hold something the filter selects, and an exclusion drops it only by its own address, such as <module>/** or ?module=<module>.
 type Artifacts struct {
 	query *querybuilder.Selection
 	// refetchID is set when this object is built through a field marked
@@ -1990,7 +2026,7 @@ func (r *Artifacts) WithGraphQLQuery(q *querybuilder.Selection) *Artifacts {
 	}
 }
 
-// Convert the selection to Changesets. Fail if any artifact is not a Changeset. Does not apply command filters.
+// Convert the selection to Changesets. Fail if any artifact is not a Changeset; a module load failure fails with its load error. Does not apply command filters.
 func (r *Artifacts) AsChangesets(ctx context.Context) ([]Changeset, error) {
 	q := r.query.Select("asChangesets")
 
@@ -2023,7 +2059,7 @@ func (r *Artifacts) AsChangesets(ctx context.Context) ([]Changeset, error) {
 	return convert(response), nil
 }
 
-// Convert the selection to Checks. Fail if any artifact is not a Check. Does not apply command filters or run the checks.
+// Convert the selection to Checks. Fail if any artifact is not a Check. A module load failure is a Check that fails with its load error. Does not apply command filters or run the checks.
 func (r *Artifacts) AsChecks(ctx context.Context) ([]Check, error) {
 	q := r.query.Select("asChecks")
 
@@ -2056,7 +2092,7 @@ func (r *Artifacts) AsChecks(ctx context.Context) ([]Check, error) {
 	return convert(response), nil
 }
 
-// Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise.
+// Convert the selection to expertise without running the functions. Each must take one LLM! argument and return LLM!; any other arguments must be optional or auto-filled. Agent arguments receive the agent that owns the conversation. A module load failure fails with its load error.
 func (r *Artifacts) AsExpertise(ctx context.Context) ([]Expertise, error) {
 	q := r.query.Select("asExpertise")
 
@@ -2089,7 +2125,7 @@ func (r *Artifacts) AsExpertise(ctx context.Context) ([]Expertise, error) {
 	return convert(response), nil
 }
 
-// Convert the selection to Generators without running them. Fail if any artifact is not a Generator.
+// Convert the selection to Generators without running them. Fail if any artifact is not a Generator. Module load failures are skipped: generating can repair them.
 func (r *Artifacts) AsGenerators(ctx context.Context) ([]Generator, error) {
 	q := r.query.Select("asGenerators")
 
@@ -2122,7 +2158,7 @@ func (r *Artifacts) AsGenerators(ctx context.Context) ([]Generator, error) {
 	return convert(response), nil
 }
 
-// Convert the selection to Services. Fail if any artifact is not a Service. Does not apply command filters or start the services.
+// Convert the selection to Services. Fail if any artifact is not a Service; a module load failure fails with its load error. Does not apply command filters or start the services.
 func (r *Artifacts) AsServices(ctx context.Context) ([]Service, error) {
 	q := r.query.Select("asServices")
 
@@ -2346,7 +2382,7 @@ func (r *Artifacts) FilterPath(path []string) *Artifacts {
 	}
 }
 
-// Keep paths that match a glob pattern. A literal path matches exactly. Both module-qualified and entrypoint paths match.
+// Keep paths that match a glob pattern. A literal path matches exactly. Both module-qualified and workspace main paths match.
 func (r *Artifacts) FilterPathPattern(pattern string) *Artifacts {
 	q := r.query.Select("filterPathPattern")
 	q = q.Arg("pattern", pattern)
@@ -2383,6 +2419,8 @@ func (r *Artifacts) FilterTypes(types []string, opts ...ArtifactsFilterTypesOpts
 // Apply a DAG address as one filter: the chain of path, type, and dimension-key filters it encodes.
 //
 // The scheme is optional. The path may be a pattern; an empty path selects all artifacts.
+//
+// A module that failed to load keeps its load failure when the module could hold what the address selects, as with every filter (see Artifacts).
 func (r *Artifacts) FilterURI(uri string) *Artifacts {
 	q := r.query.Select("filterUri")
 	q = q.Arg("uri", uri)
@@ -5630,6 +5668,8 @@ type ContainerWithMountedFileOpts struct {
 	InheritOwner bool
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
 	Expand bool
+	// Mount the file read-only.
+	ReadOnly bool
 }
 
 // Retrieves this container plus a file mounted at the given path.
@@ -5648,6 +5688,10 @@ func (r *Container) WithMountedFile(path string, source *File, opts ...Container
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
 			q = q.Arg("expand", opts[i].Expand)
+		}
+		// `readOnly` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ReadOnly) {
+			q = q.Arg("readOnly", opts[i].ReadOnly)
 		}
 	}
 	q = q.Arg("path", path)
@@ -8710,7 +8754,7 @@ func (r *ErrorValue) AsNode() Node {
 	}
 }
 
-// An agent function that can modify a conversation.
+// A function that can modify a conversation.
 type Expertise struct {
 	query *querybuilder.Selection
 	// refetchID is set when this object is built through a field marked
@@ -8732,7 +8776,17 @@ func (r *Expertise) WithGraphQLQuery(q *querybuilder.Selection) *Expertise {
 	}
 }
 
-// The agent function's description.
+// The artifact this expertise runs. Look it up again by URI to pick up module changes.
+func (r *Expertise) Artifact() *Artifact {
+	q := r.query.Select("artifact")
+
+	return &Artifact{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// The function's description.
 func (r *Expertise) Description(ctx context.Context) (string, error) {
 	if r.description != nil {
 		return *r.description, nil
@@ -8800,7 +8854,7 @@ func (r *Expertise) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-// The agent function's name.
+// The function's name.
 func (r *Expertise) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -8813,7 +8867,7 @@ func (r *Expertise) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// The module that defines the agent function.
+// The module that defines the function.
 func (r *Expertise) OriginalModule() *Module {
 	q := r.query.Select("originalModule")
 
@@ -8823,7 +8877,7 @@ func (r *Expertise) OriginalModule() *Module {
 	}
 }
 
-// The agent function's path within its module.
+// The function's path within its module.
 func (r *Expertise) Path(ctx context.Context) ([]string, error) {
 	q := r.query.Select("path")
 
@@ -10932,6 +10986,7 @@ type GitCommit struct {
 	messageHeadline *string
 	sha             *string
 	shortSha        *string
+	treeSHA         *string
 }
 
 func (r *GitCommit) WithGraphQLQuery(q *querybuilder.Selection) *GitCommit {
@@ -11267,6 +11322,21 @@ func (r *GitCommit) Tree(opts ...GitCommitTreeOpts) *Directory {
 		query:     q,
 		refetchID: r.refetchID,
 	}
+}
+
+// The ID of the commit's Git tree object.
+//
+// Commits with identical trees have identical contents and file modes.
+func (r *GitCommit) TreeSHA(ctx context.Context) (string, error) {
+	if r.treeSHA != nil {
+		return *r.treeSHA, nil
+	}
+	q := r.query.Select("treeSHA")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // AsNode returns this GitCommit as a Node.
@@ -12697,6 +12767,309 @@ func (r *HealthcheckConfig) AsNode() Node {
 	}
 }
 
+// A name parsed into words, which can be formatted in any casing.
+type Identifier struct {
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	format *string
+	id     *ID
+	name   *string
+}
+
+func (r *Identifier) WithGraphQLQuery(q *querybuilder.Selection) *Identifier {
+	return &Identifier{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// IdentifierFormatOpts contains options for Identifier.Format
+type IdentifierFormatOpts struct {
+	// How to write acronyms and terms where a word starts with a capital.
+	//
+	// Default: UPPERCASE
+	Acronyms AcronymStyle
+}
+
+// Format the identifier in a casing.
+func (r *Identifier) Format(ctx context.Context, casing Casing, opts ...IdentifierFormatOpts) (string, error) {
+	if r.format != nil {
+		return *r.format, nil
+	}
+	q := r.query.Select("format")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `acronyms` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Acronyms) {
+			q = q.Arg("acronyms", opts[i].Acronyms)
+		}
+	}
+	q = q.Arg("casing", casing)
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this Identifier.
+func (r *Identifier) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Identifier) XXX_GraphQLType() string {
+	return "Identifier"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Identifier) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Identifier) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Identifier) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *Identifier) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = Identifier{query: selectNode(dag.QueryBuilder(), id, "Identifier")}
+	return nil
+}
+
+// The name as given.
+func (r *Identifier) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The words that make up the name, in order.
+func (r *Identifier) Words(ctx context.Context) ([]IdentifierWord, error) {
+	q := r.query.Select("words")
+
+	q = q.Select("id")
+
+	type words struct {
+		Id ID
+	}
+
+	convert := func(fields []words) []IdentifierWord {
+		out := []IdentifierWord{}
+
+		for i := range fields {
+			val := IdentifierWord{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "IdentifierWord")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []words
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// AsNode returns this Identifier as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Identifier) AsNode() Node {
+	return &NodeClient{
+		query:     r.query,
+		refetchID: r.refetchID,
+	}
+}
+
+// One word of an identifier.
+type IdentifierWord struct {
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	id     *ID
+	kind   *IdentifierWordKind
+	suffix *string
+	text   *string
+}
+
+func (r *IdentifierWord) WithGraphQLQuery(q *querybuilder.Selection) *IdentifierWord {
+	return &IdentifierWord{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// A unique identifier for this IdentifierWord.
+func (r *IdentifierWord) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *IdentifierWord) XXX_GraphQLType() string {
+	return "IdentifierWord"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *IdentifierWord) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *IdentifierWord) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *IdentifierWord) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *IdentifierWord) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = IdentifierWord{query: selectNode(dag.QueryBuilder(), id, "IdentifierWord")}
+	return nil
+}
+
+// The kind of word.
+func (r *IdentifierWord) Kind(ctx context.Context) (IdentifierWordKind, error) {
+	if r.kind != nil {
+		return *r.kind, nil
+	}
+	q := r.query.Select("kind")
+
+	var response IdentifierWordKind
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Trailing digits and/or a plural "s", in that order: SHA+"s", OAuth+"2", HTTP+"2s".
+func (r *IdentifierWord) Suffix(ctx context.Context) (string, error) {
+	if r.suffix != nil {
+		return *r.suffix, nil
+	}
+	q := r.query.Select("suffix")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The dictionary entry this word matched, if any.
+func (r *IdentifierWord) Term(ctx context.Context) (*NamingTerm, error) {
+	q := r.query.Select("term")
+
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
+	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &NamingTerm{
+		query: selectNode(q.Root(), *objectID, "NamingTerm"),
+	}, nil
+}
+
+// Standard spelling: "client" (WORD), "HTTP" (ACRONYM), "GitHub" (TERM).
+func (r *IdentifierWord) Text(ctx context.Context) (string, error) {
+	if r.text != nil {
+		return *r.text, nil
+	}
+	q := r.query.Select("text")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this IdentifierWord as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *IdentifierWord) AsNode() Node {
+	return &NodeClient{
+		query:     r.query,
+		refetchID: r.refetchID,
+	}
+}
+
 // A graphql input type, which is essentially just a group of named args.
 // This is currently only used to represent pre-existing usage of graphql input types
 // in the core API. It is not used by user modules and shouldn't ever be as user
@@ -13370,7 +13743,11 @@ func (r *LLM) Artifacts(opts ...LLMArtifactsOpts) *Artifacts {
 	}
 }
 
-// Run expertise in list order, passing this conversation through each function. Retain existing contributions.
+// Run expertise on this conversation, passing it through each function in order, and record it in expertise.
+//
+// Composing an entry that is already recorded refreshes its module: the module's contributions are cleared, all of its recorded entries run again, and compatible tool state is kept. Other contributions are untouched.
+//
+// Agent arguments receive the agent that owns this conversation. Without one, entries requiring an Agent are skipped.
 func (r *LLM) Compose(expertise []*Expertise) *LLM {
 	q := r.query.Select("compose")
 	q = q.Arg("expertise", expertise)
@@ -13405,6 +13782,39 @@ func (r *LLM) ContextWindow(ctx context.Context) (int, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Expertise composed into this conversation, in order.
+func (r *LLM) Expertise(ctx context.Context) ([]Expertise, error) {
+	q := r.query.Select("expertise")
+
+	q = q.Select("id")
+
+	type expertise struct {
+		Id ID
+	}
+
+	convert := func(fields []expertise) []Expertise {
+		out := []Expertise{}
+
+		for i := range fields {
+			val := Expertise{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "Expertise")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []expertise
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
 }
 
 // Fork the conversation, so that otherwise-identical follow-ups evaluate independently instead of deduplicating to a single cached result.
@@ -13599,21 +14009,6 @@ func (r *LLM) ReasoningEffort(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Run expertise in list order, replacing their modules' contributions and preserving compatible tool state.
-//
-// Clear each selected module's contributions once before execution. Retain unowned contributions and contributions from other modules. Keep this LLM's workspace.
-//
-// A change to a tool binding's version resets its state. Removed bindings, changed identities, and incompatible state are errors.
-func (r *LLM) Recompose(expertise []*Expertise) *LLM {
-	q := r.query.Select("recompose")
-	q = q.Arg("expertise", expertise)
-
-	return &LLM{
-		query:     q,
-		refetchID: r.refetchID,
-	}
-}
-
 // The skills visible to the model, exactly as the ListSkills tool serves them: engine-embedded skills, skills installed with withSkills, and skills discovered in the workspace.
 func (r *LLM) Skills(ctx context.Context) ([]LLMSkill, error) {
 	q := r.query.Select("skills")
@@ -13649,6 +14044,8 @@ func (r *LLM) Skills(ctx context.Context) ([]LLMSkill, error) {
 
 // LLMSpawnOpts contains options for LLM.Spawn
 type LLMSpawnOpts struct {
+	// Expertise to compose into the new agent's conversation. Agent arguments receive the new agent, which cannot be used until composition completes; if composition fails, the agent is left STOPPED.
+	Expertise []*Expertise
 	// Display label for the agent — telemetry and error messages; carries no identity. Defaults to a short name derived from the conversation.
 	Name string
 	// The runtime handle to restore the instance under, as published on its loop span as dagger.io/agent.id. Omit to mint a fresh instance.
@@ -13677,6 +14074,10 @@ type LLMSpawnOpts struct {
 func (r *LLM) Spawn(ctx context.Context, opts ...LLMSpawnOpts) (*Agent, error) {
 	q := r.query.Select("spawn")
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `expertise` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Expertise) {
+			q = q.Arg("expertise", opts[i].Expertise)
+		}
 		// `name` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Name) {
 			q = q.Arg("name", opts[i].Name)
@@ -15637,7 +16038,10 @@ func (r *Module) SDK(ctx context.Context) (*SDKConfig, error) {
 type ModuleServeOpts struct {
 	// Expose the dependencies of this module to the client
 	IncludeDependencies bool
-	// Install the module as the entrypoint, promoting its main-object methods onto the Query root
+	// Install the module as the workspace main, promoting its main-object methods onto the Query root
+	Main bool
+	// Compatibility alias for main.
+	// Deprecated: Use main.
 	Entrypoint bool
 }
 
@@ -15653,6 +16057,10 @@ func (r *Module) Serve(ctx context.Context, opts ...ModuleServeOpts) error {
 		// `includeDependencies` optional argument
 		if !querybuilder.IsZeroValue(opts[i].IncludeDependencies) {
 			q = q.Arg("includeDependencies", opts[i].IncludeDependencies)
+		}
+		// `main` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Main) {
+			q = q.Arg("main", opts[i].Main)
 		}
 		// `entrypoint` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Entrypoint) {
@@ -16711,6 +17119,118 @@ func (r *ModuleSource) AsSyncer() Syncer {
 	}
 }
 
+// An entry in the naming dictionary.
+type NamingTerm struct {
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	capitalized *string
+	id          *ID
+	spelling    *string
+}
+
+func (r *NamingTerm) WithGraphQLQuery(q *querybuilder.Selection) *NamingTerm {
+	return &NamingTerm{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// Spelling in the CAPITALIZED style: "Http", "Ipv6", "GitHub", "Ios".
+func (r *NamingTerm) Capitalized(ctx context.Context) (string, error) {
+	if r.capitalized != nil {
+		return *r.capitalized, nil
+	}
+	q := r.query.Select("capitalized")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this NamingTerm.
+func (r *NamingTerm) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *NamingTerm) XXX_GraphQLType() string {
+	return "NamingTerm"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *NamingTerm) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *NamingTerm) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *NamingTerm) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *NamingTerm) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = NamingTerm{query: selectNode(dag.QueryBuilder(), id, "NamingTerm")}
+	return nil
+}
+
+// Standard spelling: "HTTP", "IPv6", "GitHub", "iOS".
+func (r *NamingTerm) Spelling(ctx context.Context) (string, error) {
+	if r.spelling != nil {
+		return *r.spelling, nil
+	}
+	q := r.query.Select("spelling")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this NamingTerm as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *NamingTerm) AsNode() Node {
+	return &NodeClient{
+		query:     r.query,
+		refetchID: r.refetchID,
+	}
+}
+
 // A definition of a custom object defined in a Module.
 type ObjectTypeDef struct {
 	query *querybuilder.Selection
@@ -17282,7 +17802,7 @@ func (r *Query) CurrentTimestamp(ctx context.Context) (string, error) {
 type CurrentTypeDefsOpts struct {
 	// Return the full referenced typedef closure instead of only top-level served typedefs.
 	ReturnAllTypes bool
-	// Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).
+	// Strip core API functions from the Query type, leaving only module-sourced functions (constructors, workspace main proxies, etc.).
 	//
 	// Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
 	HideCore bool
@@ -17409,6 +17929,40 @@ func (r *Query) File(name string, contents string, opts ...FileOpts) *File {
 		query:     q,
 		refetchID: r.refetchID,
 	}
+}
+
+// FormatIdentifiersOpts contains options for Query.FormatIdentifiers
+type FormatIdentifiersOpts struct {
+	// How to write acronyms and terms where a word starts with a capital.
+	//
+	// Default: UPPERCASE
+	Acronyms AcronymStyle
+	// The engine version whose naming dictionary to parse the names with, e.g. the __schemaVersion of a schema being generated. Defaults to the caller's engine version.
+	Version string
+}
+
+// Format many names at once, for codegen. Returns them in input order.
+//
+// Experimental: Identifier casing APIs are likely to change.
+func (r *Query) FormatIdentifiers(ctx context.Context, names []string, casing Casing, opts ...FormatIdentifiersOpts) ([]string, error) {
+	q := r.query.Select("formatIdentifiers")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `acronyms` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Acronyms) {
+			q = q.Arg("acronyms", opts[i].Acronyms)
+		}
+		// `version` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
+		}
+	}
+	q = q.Arg("names", names)
+	q = q.Arg("casing", casing)
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // Creates a function.
@@ -17591,6 +18145,21 @@ func (r *Query) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
+// Parse a name in any casing into words.
+//
+// Known acronyms and terms come from the naming dictionary; everything else falls back to the case heuristic. Errors on non-ASCII input, input with no letters or digits, or input over 256 bytes.
+//
+// Experimental: Identifier casing APIs are likely to change.
+func (r *Query) Identifier(name string) *Identifier {
+	q := r.query.Select("identifier")
+	q = q.Arg("name", name)
+
+	return &Identifier{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
 // Initialize a JSON value
 func (r *Query) JSON() *JSONValue {
 	q := r.query.Select("json")
@@ -17700,6 +18269,41 @@ func (r *Query) ModuleSource(refString string, opts ...ModuleSourceOpts) *Module
 		query:     q,
 		refetchID: r.refetchID,
 	}
+}
+
+// The acronyms and terms used to parse and format identifiers.
+//
+// Experimental: Identifier casing APIs are likely to change.
+func (r *Query) NamingDictionary(ctx context.Context) ([]NamingTerm, error) {
+	q := r.query.Select("namingDictionary")
+
+	q = q.Select("id")
+
+	type namingDictionary struct {
+		Id ID
+	}
+
+	convert := func(fields []namingDictionary) []NamingTerm {
+		out := []NamingTerm{}
+
+		for i := range fields {
+			val := NamingTerm{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "NamingTerm")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []namingDictionary
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
 }
 
 // Load any object by its ID.
@@ -20187,6 +20791,7 @@ type Workspace struct {
 	export      *Void
 	findUp      *string
 	id          *ID
+	main        *string
 }
 type WithWorkspaceFunc func(r *Workspace) *Workspace
 
@@ -20226,6 +20831,8 @@ type WorkspaceArtifactsOpts struct {
 }
 
 // Discover static object artifacts from workspace modules without evaluating their values.
+//
+// Omits the paths that the workspace's check.skip, generate.skip, and up.skip settings skip.
 func (r *Workspace) Artifacts(opts ...WorkspaceArtifactsOpts) *Artifacts {
 	q := r.query.Select("artifacts")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -20442,9 +21049,9 @@ func (r *Workspace) Directory(path string, opts ...WorkspaceDirectoryOpts) *Dire
 	}
 }
 
-// Installed name of the module selected as the workspace entrypoint, or an empty string when none is selected.
+// Compatibility alias for main.
 //
-// Reflects the selected env's effective view. Fails if several modules are selected.
+// Deprecated: Use main.
 func (r *Workspace) Entrypoint(ctx context.Context) (string, error) {
 	if r.entrypoint != nil {
 		return *r.entrypoint, nil
@@ -20659,6 +21266,21 @@ func (r *Workspace) UnmarshalJSON(bs []byte) error {
 	}
 	*r = Workspace{query: selectNode(dag.QueryBuilder(), id, "Workspace")}
 	return nil
+}
+
+// Installed name of the module selected as the workspace main, or an empty string when none is selected.
+//
+// Reflects the selected env's effective view. Fails if several modules are selected.
+func (r *Workspace) Main(ctx context.Context) (string, error) {
+	if r.main != nil {
+		return *r.main, nil
+	}
+	q := r.query.Select("main")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // WorkspaceMigrateOpts contains options for Workspace.Migrate
@@ -21179,9 +21801,9 @@ func (r *Workspace) WithDirectory(path string, source *Directory) *Workspace {
 	}
 }
 
-// Return this workspace with an installed module selected as its entrypoint.
+// Compatibility alias for withMain.
 //
-// Every other entrypoint selection is cleared. Entrypoints live in the base workspace config.
+// Deprecated: Use withMain.
 func (r *Workspace) WithEntrypoint(name string) *Workspace {
 	q := r.query.Select("withEntrypoint")
 	q = q.Arg("name", name)
@@ -21225,7 +21847,10 @@ type WorkspaceWithInitModuleOpts struct {
 	Path string
 	// Install the module. When omitted, install only if path is omitted.
 	Install bool
-	// Select this module as the entrypoint and install it. False prevents automatic selection. When omitted, select only if both path and name are omitted and the module is installed.
+	// Select this module as the workspace main and install it. False prevents automatic selection. When omitted, select only if both path and name are omitted and the module is installed.
+	Main bool
+	// Compatibility alias for main.
+	// Deprecated: Use main.
 	Entrypoint bool
 	// Explicit SDK-module constructor setting overrides for this scope.
 	Settings JSON
@@ -21249,6 +21874,10 @@ func (r *Workspace) WithInitModule(sdk string, opts ...WorkspaceWithInitModuleOp
 		if !querybuilder.IsZeroValue(opts[i].Install) {
 			q = q.Arg("install", opts[i].Install)
 		}
+		// `main` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Main) {
+			q = q.Arg("main", opts[i].Main)
+		}
 		// `entrypoint` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Entrypoint) {
 			q = q.Arg("entrypoint", opts[i].Entrypoint)
@@ -21271,6 +21900,19 @@ func (r *Workspace) WithInitModule(sdk string, opts ...WorkspaceWithInitModuleOp
 // Fail if legacy configuration needs workspace migration.
 func (r *Workspace) WithInitialized() *Workspace {
 	q := r.query.Select("withInitialized")
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Return this workspace with an installed module selected as its main.
+//
+// Every other main selection is cleared. The main module lives in the base workspace config.
+func (r *Workspace) WithMain(name string) *Workspace {
+	q := r.query.Select("withMain")
+	q = q.Arg("name", name)
 
 	return &Workspace{
 		query:     q,
@@ -21685,7 +22327,9 @@ func (r *Workspace) WithoutDirectory(path string) *Workspace {
 	}
 }
 
-// Return this workspace with no module selected as its entrypoint.
+// Compatibility alias for withoutMain.
+//
+// Deprecated: Use withoutMain.
 func (r *Workspace) WithoutEntrypoint() *Workspace {
 	q := r.query.Select("withoutEntrypoint")
 
@@ -21710,6 +22354,16 @@ func (r *Workspace) WithoutFile(path string) *Workspace {
 func (r *Workspace) WithoutFiles(paths []string) *Workspace {
 	q := r.query.Select("withoutFiles")
 	q = q.Arg("paths", paths)
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Return this workspace with no module selected as its main.
+func (r *Workspace) WithoutMain() *Workspace {
+	q := r.query.Select("withoutMain")
 
 	return &Workspace{
 		query:     q,
@@ -22330,6 +22984,7 @@ type WorkspaceModule struct {
 
 	entrypoint *bool
 	id         *ID
+	main       *bool
 	name       *string
 	source     *string
 }
@@ -22343,7 +22998,9 @@ func (r *WorkspaceModule) WithGraphQLQuery(q *querybuilder.Selection) *Workspace
 	}
 }
 
-// Whether the module is the workspace entrypoint (functions aliased to Query root).
+// Compatibility alias for main.
+//
+// Deprecated: Use main.
 func (r *WorkspaceModule) Entrypoint(ctx context.Context) (bool, error) {
 	if r.entrypoint != nil {
 		return *r.entrypoint, nil
@@ -22419,6 +23076,19 @@ func (r *WorkspaceModule) UnmarshalJSON(bs []byte) error {
 	}
 	*r = WorkspaceModule{query: selectNode(dag.QueryBuilder(), id, "WorkspaceModule")}
 	return nil
+}
+
+// Whether the module is the workspace main (functions aliased to Query root).
+func (r *WorkspaceModule) Main(ctx context.Context) (bool, error) {
+	if r.main != nil {
+		return *r.main, nil
+	}
+	q := r.query.Select("main")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // The module name.
@@ -23209,6 +23879,63 @@ func (r *SyncerClient) Concrete(ctx context.Context) (Node, error) {
 	}
 }
 
+// How acronyms and terms are written where a word starts with a capital.
+type AcronymStyle string
+
+func (AcronymStyle) IsEnum() {}
+
+func (v AcronymStyle) Name() string {
+	switch v {
+	case AcronymStyleUppercase:
+		return "UPPERCASE"
+	case AcronymStyleCapitalized:
+		return "CAPITALIZED"
+	default:
+		return ""
+	}
+}
+
+func (v AcronymStyle) Value() string {
+	return string(v)
+}
+
+func (v *AcronymStyle) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *AcronymStyle) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "CAPITALIZED":
+		*v = AcronymStyleCapitalized
+	case "UPPERCASE":
+		*v = AcronymStyleUppercase
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// HTTPClient, IPv6Address, GitHubRepo
+	AcronymStyleUppercase AcronymStyle = "UPPERCASE"
+
+	// HttpClient, Ipv6Address, GitHubRepo
+	AcronymStyleCapitalized AcronymStyle = "CAPITALIZED"
+)
+
 // EXPERIMENTAL: Agent APIs are likely to change.
 //
 // How a message landed in an agent's evaluation.
@@ -23484,6 +24211,91 @@ const (
 
 	// Shares the cache volume amongst many build pipelines, but will serialize the writes
 	CacheSharingModeLocked CacheSharingMode = "LOCKED"
+)
+
+// A convention for joining words into an identifier.
+type Casing string
+
+func (Casing) IsEnum() {}
+
+func (v Casing) Name() string {
+	switch v {
+	case CasingPascal:
+		return "PASCAL"
+	case CasingCamel:
+		return "CAMEL"
+	case CasingSnake:
+		return "SNAKE"
+	case CasingScreamingSnake:
+		return "SCREAMING_SNAKE"
+	case CasingKebab:
+		return "KEBAB"
+	case CasingFlat:
+		return "FLAT"
+	default:
+		return ""
+	}
+}
+
+func (v Casing) Value() string {
+	return string(v)
+}
+
+func (v *Casing) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *Casing) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "CAMEL":
+		*v = CasingCamel
+	case "FLAT":
+		*v = CasingFlat
+	case "KEBAB":
+		*v = CasingKebab
+	case "PASCAL":
+		*v = CasingPascal
+	case "SCREAMING_SNAKE":
+		*v = CasingScreamingSnake
+	case "SNAKE":
+		*v = CasingSnake
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// HTTPClient
+	CasingPascal Casing = "PASCAL"
+
+	// httpClient
+	CasingCamel Casing = "CAMEL"
+
+	// http_client
+	CasingSnake Casing = "SNAKE"
+
+	// HTTP_CLIENT
+	CasingScreamingSnake Casing = "SCREAMING_SNAKE"
+
+	// http-client
+	CasingKebab Casing = "KEBAB"
+
+	// httpclient (output only: drops word boundaries)
+	CasingFlat Casing = "FLAT"
 )
 
 // Strategy to use when merging changesets with conflicting changes.
@@ -23969,6 +24781,70 @@ const (
 
 	// The remote ref already pointed to this commit.
 	GitPushDispositionUpToDate GitPushDisposition = "UP_TO_DATE"
+)
+
+// The kind of a word in an identifier.
+type IdentifierWordKind string
+
+func (IdentifierWordKind) IsEnum() {}
+
+func (v IdentifierWordKind) Name() string {
+	switch v {
+	case IdentifierWordKindWord:
+		return "WORD"
+	case IdentifierWordKindAcronym:
+		return "ACRONYM"
+	case IdentifierWordKindTerm:
+		return "TERM"
+	default:
+		return ""
+	}
+}
+
+func (v IdentifierWordKind) Value() string {
+	return string(v)
+}
+
+func (v *IdentifierWordKind) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *IdentifierWordKind) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "ACRONYM":
+		*v = IdentifierWordKindAcronym
+	case "TERM":
+		*v = IdentifierWordKindTerm
+	case "WORD":
+		*v = IdentifierWordKindWord
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// An ordinary word.
+	IdentifierWordKindWord IdentifierWordKind = "WORD"
+
+	// An acronym, from the dictionary or a run of capitals.
+	IdentifierWordKindAcronym IdentifierWordKind = "ACRONYM"
+
+	// A dictionary term with a fixed mixed-case spelling (GitHub, IPv6).
+	IdentifierWordKindTerm IdentifierWordKind = "TERM"
 )
 
 // Compression algorithm to use for image layers.

@@ -109,23 +109,37 @@ func (funcs goTemplateFuncs) HasLocalDependencies() bool {
 }
 
 func (funcs goTemplateFuncs) moduleRelPath(path string) string {
-	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
-		return path
+	return ModuleRelPath(funcs.cfg, "internal/dagger")(path)
+}
+
+// ModuleRelPath returns the ModuleRelPath template function for a file
+// generated into fileDir, a directory relative to the module root. Source
+// map paths are relative to the module's context directory, so the result
+// climbs out of fileDir, then from the module root to the context directory.
+func ModuleRelPath(cfg generator.Config, fileDir string) func(string) string {
+	toModuleRoot, err := filepath.Rel(fileDir, ".")
+	if err != nil {
+		panic(fmt.Sprintf("generated file directory %q must be relative to the module root: %v", fileDir, err))
 	}
 
 	moduleParentPath := ""
-	if funcs.cfg.ModuleConfig != nil {
-		moduleParentPath = funcs.cfg.ModuleConfig.ModuleParentPath
+	if cfg.ModuleConfig != nil {
+		moduleParentPath = cfg.ModuleConfig.ModuleParentPath
 	}
 
-	return filepath.Join(
-		// path to the root of this module (since we're probably in internal/dagger/)
-		"../..",
-		// path from the module root to the context directory
-		moduleParentPath,
-		// path from the context directory to the desired path
-		path,
-	)
+	return func(path string) string {
+		if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
+			return path
+		}
+		return filepath.Join(
+			// path from the generated file's directory to the module root
+			toModuleRoot,
+			// path from the module root to the context directory
+			moduleParentPath,
+			// path from the context directory to the desired path
+			path,
+		)
+	}
 }
 
 func (funcs goTemplateFuncs) getTypes(ps *parseState, strict bool) ([]types.Type, error) {

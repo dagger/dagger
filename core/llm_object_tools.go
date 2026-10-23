@@ -286,7 +286,7 @@ func (m *MCP) BoundToolBindings() ([]boundToolBinding, error) {
 
 // bindWorkspaceModuleTools binds each served workspace module's main object as
 // a toolset, constructing it through the canonical server (which serves module
-// constructors even for entrypoint modules, whose sugared schema only carries
+// constructors even for workspace main modules, whose sugared schema only carries
 // proxies). `dagger mcp` uses this so a workspace module's methods are served
 // as MCP tools without an explicit withTools: the module entrypoint is "the
 // way in" (hack/designs/workspace-agents.md). Modules whose constructors
@@ -553,11 +553,11 @@ func objectToolEligible(field *ast.FieldDefinition, except []string, implicit im
 		return false
 	}
 	for _, arg := range field.Arguments {
-		if implicit.supplies(arg) {
+		if implicit.supplies(arg) || isInternalToolArg(arg) {
 			// MCP supplies this argument; the model does not need an object handle.
 			continue
 		}
-		required := arg.Type.NonNull && arg.DefaultValue == nil
+		required := toolArgRequired(arg)
 		if required && isObjectArg(arg) {
 			if _, ok := liftableObjectArg(arg); !ok {
 				return false
@@ -771,34 +771,64 @@ func liftHint(typeName string) string {
 // none. There an LLM argument is an ordinary object argument the caller cannot
 // satisfy: a required one disqualifies its method (objectToolEligible), and an
 // optional one is exposed by ID like any other object, so it can at least be
-// left unset. Agent is filled from the agent loop dispatching the call (see
-// AgentFromContext), which likewise only exists under a conversation, so it
-// follows the same policy as LLM.
+// left unset. Agent is filled with the agent that owns the conversation (its
+// OwnerAgentHandle, recorded on the MCP as ownerAgent), whoever drives the
+// tools: an agent loop, or a synchronous LLM.loop/step over an owned
+// conversation. An unowned conversation, or a standalone server, has no agent:
+// a method requiring one is hidden rather than offered and then failing, and
+// an optional Agent argument is passed as null. Either way an Agent argument
+// never appears in the model's tool schema, mirroring me on an expertise entry.
 type implicitToolArgs struct {
-	// llm reports whether a conversation is available to fill LLM and Agent
-	// arguments.
+	// llm reports whether a conversation is available to fill LLM arguments.
 	llm bool
+	// agent reports whether an owning agent is available to fill Agent
+	// arguments.
+	agent bool
 }
 
 var (
-	// conversationToolArgs is the policy of tools driven by an LLM.
+	// agentToolArgs is the policy of an owned conversation's tools.
+	agentToolArgs = implicitToolArgs{llm: true, agent: true}
+	// conversationToolArgs is the policy of an unowned conversation's tools.
 	conversationToolArgs = implicitToolArgs{llm: true}
 	// standaloneToolArgs is the policy of tools served without a conversation.
 	standaloneToolArgs = implicitToolArgs{}
 )
 
-// supplies reports whether MCP fills arg itself under this policy.
+// supplies reports whether MCP fills arg itself under this policy. An Agent
+// argument is never the model's to supply: MCP fills it with the owning agent,
+// and without one an optional Agent argument is left null (a required one
+// hides its method, see objectToolEligible).
 func (p implicitToolArgs) supplies(arg *ast.ArgumentDefinition) bool {
+	if isExpectedTypeArg(arg, agentTypeName) {
+		return p.agent || !toolArgRequired(arg)
+	}
 	return isExpectedTypeArg(arg, workspaceTypeName) ||
-		(p.llm && (isExpectedTypeArg(arg, llmTypeName) ||
-			isExpectedTypeArg(arg, agentTypeName)))
+		(p.llm && isExpectedTypeArg(arg, llmTypeName))
+}
+
+// toolArgRequired reports whether a tool argument must be given: non-null with
+// no default.
+func toolArgRequired(arg *ast.ArgumentDefinition) bool {
+	return arg.Type.NonNull && arg.DefaultValue == nil
+}
+
+// isInternalToolArg reports whether an argument is engine-internal (e.g. a
+// core field's recorded contribution owner): the engine fills it, dispatch
+// skips it (see buildObjectMethodSelector), so it never belongs in a tool schema.
+func isInternalToolArg(arg *ast.ArgumentDefinition) bool {
+	return arg.Directives.ForName("internal") != nil
 }
 
 // implicitArgs returns the policy this MCP serves tools under: standalone when
-// no conversation will ever drive it (see MCP.Standalone), else conversation.
+// no conversation will ever drive it (see MCP.Standalone), owned when the
+// conversation has an owning agent, else an unowned conversation.
 func (m *MCP) implicitArgs() implicitToolArgs {
 	if m == nil || m.standalone {
 		return standaloneToolArgs
+	}
+	if m.ownerAgent != "" {
+		return agentToolArgs
 	}
 	return conversationToolArgs
 }
@@ -822,7 +852,7 @@ func objectMethodSchema(schema *ast.Schema, field *ast.FieldDefinition, implicit
 	properties := map[string]any{}
 	var required []string
 	for _, arg := range field.Arguments {
-		if implicit.supplies(arg) {
+		if implicit.supplies(arg) || isInternalToolArg(arg) {
 			continue
 		}
 		argSchema, err := argTypeToJSONSchema(schema, arg.Type)
@@ -1002,6 +1032,11 @@ func (m *MCP) buildObjectMethodSelector(ctx context.Context, srv *dagql.Server, 
 			continue
 		}
 		val, ok := args[arg.Name]
+		if astArg := astField.Arguments.ForName(arg.Name); ok && astArg != nil && isExpectedTypeArg(astArg, agentTypeName) {
+			// An Agent is never the model's to name, so a value given for one
+			// is left in provided and reported as an unknown argument.
+			ok = false
+		}
 		if !ok {
 			implicit, found, err := m.implicitToolInput(ctx, astField, arg)
 			if err != nil {
@@ -1054,9 +1089,10 @@ func (m *MCP) implicitToolInput(ctx context.Context, astField *ast.FieldDefiniti
 	}
 
 	var obj dagql.IDable
+	implicit := m.implicitArgs()
 	switch {
 	case isExpectedTypeArg(astArg, llmTypeName):
-		if !m.implicitArgs().llm {
+		if !implicit.llm {
 			return nil, false, nil
 		}
 		llm := m.currentLLM()
@@ -1065,12 +1101,12 @@ func (m *MCP) implicitToolInput(ctx context.Context, astField *ast.FieldDefiniti
 		}
 		obj = llm
 	case isExpectedTypeArg(astArg, agentTypeName):
-		if !m.implicitArgs().llm {
+		if !implicit.agent {
 			return nil, false, nil
 		}
-		agent, ok := AgentFromContext(ctx)
-		if !ok {
-			return nil, true, errors.New("function requires the calling agent; invoke it from an agent loop (LLM.spawn) — synchronous loop support is planned")
+		agent, err := m.owningAgent(ctx)
+		if err != nil {
+			return nil, true, err
 		}
 		obj = agent
 	default:

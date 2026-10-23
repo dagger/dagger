@@ -126,24 +126,6 @@ func TestModuleSourcePersistenceRetainsSelfCallsCapability(t *testing.T) {
 	require.True(t, decodedSrc.SelfCallsEnabled())
 }
 
-func TestModuleSourcePersistenceRetainsEntrypointResourcesLoaded(t *testing.T) {
-	t.Parallel()
-
-	ctx := t.Context()
-	for _, loaded := range []bool{false, true} {
-		src := &ModuleSource{EntrypointResourcesLoaded: loaded}
-		encoded, err := src.EncodePersistedObject(ctx, dagql.NewPersistEncodeContext(nil, 0, nil))
-		require.NoError(t, err)
-
-		decoded, err := (&ModuleSource{}).DecodePersistedObject(ctx, dagql.NewPersistDecodeContext(nil, 0, nil), encoded.JSON)
-		require.NoError(t, err)
-		decodedSrc, ok := decoded.(*ModuleSource)
-		require.True(t, ok)
-		require.Equal(t, loaded, decodedSrc.EntrypointResourcesLoaded)
-		require.Equal(t, loaded, decodedSrc.Clone().EntrypointResourcesLoaded)
-	}
-}
-
 func TestGitModuleSourceSymbolic(t *testing.T) {
 	testCases := []struct {
 		name         string
@@ -302,6 +284,58 @@ func TestWorkspaceContextDirPath(t *testing.T) {
 	}
 }
 
+func TestModuleSourceContextIsWorkspace(t *testing.T) {
+	t.Parallel()
+
+	localWorkspace := &Workspace{}
+	localWorkspace.SetSource(NewWorkspaceSourceClientLocal("/repo"))
+	overlaidWorkspace := &Workspace{}
+	overlaidWorkspace.SetSource(NewWorkspaceSourceOverlay(NewWorkspaceSourceClientLocal("/repo"), nil, nil, dagql.ObjectResult[*Changeset]{}))
+	valueWorkspace := &Workspace{}
+	valueWorkspace.SetSource(NewWorkspaceSourceDirectory(dagql.ObjectResult[*Directory]{}))
+
+	local := func(contextDir, subpath string) *ModuleSource {
+		return &ModuleSource{
+			Kind:              ModuleSourceKindLocal,
+			SourceRootSubpath: subpath,
+			Local:             &LocalModuleSource{ContextDirectoryPath: contextDir},
+		}
+	}
+	backing, err := dagql.NewResultForCall(&Workspace{}, moduleSourceTestSyntheticCall("workspaceBacking", &Workspace{}))
+	require.NoError(t, err)
+	workspaceBacked := &ModuleSource{
+		Kind:              ModuleSourceKindGit,
+		SourceRootSubpath: "mod",
+		Git:               &GitModuleSource{},
+		Workspace:         dagql.ObjectResult[*Workspace]{Result: backing},
+	}
+
+	testCases := []struct {
+		name     string
+		src      *ModuleSource
+		ws       *Workspace
+		expected bool
+	}{
+		{"local module under the workspace root", local("/repo", "mods/a"), localWorkspace, true},
+		{"local module at the workspace root", local("/repo", "."), localWorkspace, true},
+		{"unclean context path", local("/repo/", "mods/a"), localWorkspace, true},
+		{"overlaid workspace keeps its host root", local("/repo", "mods/a"), overlaidWorkspace, true},
+		{"local module in another repository", local("/other", "reader"), localWorkspace, false},
+		{"local module in a nested repository", local("/repo/vendor/tool", "."), localWorkspace, false},
+		{"local module outside a value workspace", local("/repo", "mods/a"), valueWorkspace, false},
+		{"git module", &ModuleSource{Kind: ModuleSourceKindGit, SourceRootSubpath: "reader", Git: &GitModuleSource{}}, localWorkspace, false},
+		{"git module in a value workspace", &ModuleSource{Kind: ModuleSourceKindGit, Git: &GitModuleSource{}}, valueWorkspace, false},
+		{"workspace-backed module", workspaceBacked, localWorkspace, true},
+		{"directory module", &ModuleSource{Kind: ModuleSourceKindDir, SourceRootSubpath: "mod"}, valueWorkspace, true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.expected, tc.src.contextIsWorkspace(tc.ws))
+		})
+	}
+}
+
 func moduleSourceTestSyntheticCall(op string, typ dagql.Typed) *dagql.ResultCall {
 	return &dagql.ResultCall{
 		Kind:        dagql.ResultCallKindSynthetic,
@@ -342,4 +376,25 @@ func TestLocalContextFilePath(t *testing.T) {
 	src.Local.Foreign = true
 	_, err := fs.ReadFile(t.Context(), "dagger-module.toml")
 	require.ErrorIs(t, err, ErrForeignModuleContext)
+}
+
+func TestModuleSourceOriginSymbolic(t *testing.T) {
+	t.Parallel()
+
+	root := func(s string) *string { return &s }
+	for _, tc := range []struct {
+		root    *string
+		subpath string
+		want    string
+	}{
+		{root("github.com/org/repo"), ".dagger/modules/go", "github.com/org/repo/.dagger/modules/go"},
+		{root("github.com/org/repo"), ".", "github.com/org/repo"},
+		{root(""), ".dagger/modules/go", ".dagger/modules/go"},
+		{root(""), ".", "."},
+		{nil, ".dagger/modules/go", ""},
+	} {
+		src := &ModuleSource{Kind: ModuleSourceKindDir, SourceRootSubpath: tc.subpath, DirSrc: &DirModuleSource{OriginRoot: tc.root}}
+		require.Equal(t, tc.want, src.OriginSymbolic(), tc)
+	}
+	require.Empty(t, (&ModuleSource{Kind: ModuleSourceKindGit, Git: &GitModuleSource{Symbolic: "github.com/org/repo"}}).OriginSymbolic())
 }

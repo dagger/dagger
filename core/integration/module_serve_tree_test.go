@@ -9,7 +9,9 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
+	"strings"
 
 	"dagger.io/dagger/core"
 
@@ -66,6 +68,70 @@ func (m *Caller) NestedMessage(ctx context.Context) (string, error) {
 }
 `, alpineImage)
 
+// serveTreeCachedSource has the caller serve a sibling and call it, so the
+// sibling runs as a module served from the caller's tree.
+const serveTreeCachedSource = `package main
+
+import "context"
+
+func (m *Caller) Cached(ctx context.Context, address, token string) (string, error) {
+	if err := dag.ServeModule(ctx, address); err != nil {
+		return "", err
+	}
+	var log string
+	q := dag.QueryBuilder().Select("hello").Select("cached").Arg("token", token).Bind(&log)
+	return log, q.Execute(ctx)
+}
+`
+
+// serveTreeChainSource has the caller serve the mid module, which serves the
+// next sibling from its own tree in turn.
+const serveTreeChainSource = `package main
+
+import "context"
+
+func (m *Caller) Chain(ctx context.Context, address, next, token string) (string, error) {
+	if err := dag.ServeModule(ctx, address); err != nil {
+		return "", err
+	}
+	var log string
+	q := dag.QueryBuilder().Select("mid").Select("cached").Arg("address", next).Arg("token", token).Bind(&log)
+	return log, q.Execute(ctx)
+}
+`
+
+// serveTreeCachedModules adds a sibling with a cache volume to the tree, and
+// a mid module, a copy of the caller, to serve it through.
+func serveTreeCachedModules(c *dagger.Client) *core.Directory {
+	return serveTreeModules(c).
+		WithNewFile("modules/caller/cached.go", serveTreeCachedSource).
+		WithNewFile("modules/caller/chain.go", serveTreeChainSource).
+		WithNewFile("modules/hello/main.dang", serveTreeCachedHelloSource("serve-tree-"+rand.Text())).
+		WithNewFile("modules/mid/dagger.json", strings.Replace(serveTreeCallerManifest, `"caller"`, `"mid"`, 1)).
+		WithNewFile("modules/mid/main.go", strings.ReplaceAll(serveTreeCallerSource, "Caller", "Mid")).
+		WithNewFile("modules/mid/cached.go", strings.ReplaceAll(serveTreeCachedSource, "Caller", "Mid"))
+}
+
+// serveTreeCachedHelloSource appends a token to a cache volume and returns
+// every token appended so far, which shows the module the volume is shared
+// with.
+func serveTreeCachedHelloSource(key string) string {
+	return fmt.Sprintf(`type Hello {
+  pub message: String! {
+    "hi from hello"
+  }
+
+  pub cached(token: String!): String! {
+    container
+      .from(%q)
+      .withMountedCache("/cache", cacheVolume(%q))
+      .withExec(["sh", "-c", "echo " + token + " >> /cache/log; cat /cache/log"])
+      .stdout
+  }
+}
+`, alpineImage, key)
+}
+
 // serveTreeModules is a tree holding a caller module and a sibling local
 // client that nothing declares.
 func serveTreeModules(c *dagger.Client) *core.Directory {
@@ -92,6 +158,71 @@ func (ModuleLoadingSuite) TestServeModuleCallerTree(ctx context.Context, t *test
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "hi from hello", out)
+	})
+
+	t.Run("sibling served from a git module shares the caches of the same module loaded directly", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		gitDaemon, repoURL := gitService(ctx, t, c, serveTreeCachedModules(c))
+		gitHost, err := gitDaemon.Hostname(ctx)
+		require.NoError(t, err)
+		ctr := goGitBase(t, c).
+			WithServiceBinding(gitHost, gitDaemon).
+			WithNewFile("dagger.toml", "\n")
+
+		out, err := ctr.
+			With(daggerCallAt(repoURL+"#main:modules/caller", "cached", "--address=/modules/hello", "--token=served")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "served\n", out)
+
+		out, err = ctr.
+			With(daggerCallAt(repoURL+"#main:modules/hello", "cached", "--token=direct")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "served\ndirect\n", out)
+	})
+
+	t.Run("sibling served by a served sibling shares the caches of the same module loaded directly", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		gitDaemon, repoURL := gitService(ctx, t, c, serveTreeCachedModules(c))
+		gitHost, err := gitDaemon.Hostname(ctx)
+		require.NoError(t, err)
+		ctr := goGitBase(t, c).
+			WithServiceBinding(gitHost, gitDaemon).
+			WithNewFile("dagger.toml", "\n")
+
+		out, err := ctr.
+			With(daggerCallAt(repoURL+"#main:modules/caller", "chain", "--address=/modules/mid", "--next=../hello", "--token=chained")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "chained\n", out)
+
+		out, err = ctr.
+			With(daggerCallAt(repoURL+"#main:modules/hello", "cached", "--token=direct")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "chained\ndirect\n", out)
+	})
+
+	t.Run("sibling served from a host module shares the caches of the same module loaded directly", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		ctr := goGitBase(t, c).
+			WithNewFile("dagger.toml", `[modules.caller]
+source = "modules/caller"
+`).
+			WithDirectory(".", serveTreeCachedModules(c))
+
+		out, err := ctr.
+			With(daggerCallAt("caller", "cached", "--address=/modules/hello", "--token=served")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "served\n", out)
+
+		out, err = ctr.
+			With(daggerCallAt("./modules/hello", "cached", "--token=direct")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "served\ndirect\n", out)
 	})
 
 	t.Run("directory module serves a sibling from its own directory", func(ctx context.Context, t *testctx.T) {

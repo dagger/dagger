@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 
 	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	telemetry "github.com/dagger/otel-go"
+	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/log"
@@ -40,22 +42,34 @@ func (endpoint *LLMEndpoint) otelHTTPClient(provider string) *http.Client {
 	}
 	base = newCredentialTransport(base, endpoint.AuthTokenSource, endpoint.credentialApplier())
 	return &http.Client{
-		Transport: newLLMOTelTransport(base, provider),
+		// A local endpoint is reached through the client's session, so its
+		// traffic is not external.
+		Transport: newLLMOTelTransport(base, provider, endpoint.dial == nil),
 	}
 }
 
 // llmOTelTransport creates a child OTel span for each LLM HTTP request and
-// logs request/response bodies to span stdio.
+// logs request/response bodies to span stdio. For an external endpoint, it
+// also records each request and response as a workload transfer.
 type llmOTelTransport struct {
 	base     http.RoundTripper
 	provider string
+	external bool
 }
 
-func newLLMOTelTransport(base http.RoundTripper, provider string) http.RoundTripper {
+func newLLMOTelTransport(base http.RoundTripper, provider string, external bool) http.RoundTripper {
 	return &llmOTelTransport{
-		base:     enginetelemetry.NetworkResponseTransport(base, enginetelemetry.RecordNetworkRX),
+		base:     enginetelemetry.NetworkResponseTransport(base, recordLLMResponseBytes),
 		provider: provider,
+		external: external,
 	}
+}
+
+// recordLLMResponseBytes counts received response bytes, before decoding, for
+// the operation and for the workload input of the request.
+func recordLLMResponseBytes(ctx context.Context, bytes int64) {
+	enginetelemetry.RecordNetworkRX(ctx, bytes)
+	enginetelemetry.WorkloadInputFromContext(ctx).Add(bytes)
 }
 
 func (t *llmOTelTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -107,8 +121,19 @@ func (t *llmOTelTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 		req.ContentLength = int64(len(fullBody))
 		fmt.Fprintf(stdio.Stdout, ">>> %s %s\n%s\n", req.Method, req.URL.Path, captured)
 	}
+
+	var input *enginetelemetry.WorkloadTransfer
+	var identity string
+	if t.external {
+		ctx, input = enginetelemetry.StartWorkloadInput(ctx, enginetelemetry.WorkloadTransferLLM)
+		req = req.WithContext(ctx)
+	}
+	if input != nil {
+		identity = llmRequestDigest(req, reqBody)
+	}
 	resp, err := t.base.RoundTrip(req)
 	if err != nil {
+		input.End(identity, err)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		revealTransport(span)
@@ -119,6 +144,14 @@ func (t *llmOTelTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	}
 
 	span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
+
+	// A response shows that the provider received the request, so only now
+	// do its bytes count as sent.
+	if input != nil {
+		_, output := enginetelemetry.StartWorkloadOutput(ctx, enginetelemetry.WorkloadTransferLLM)
+		output.Add(int64(len(reqBody)))
+		output.End(identity, nil)
+	}
 
 	isStreaming := isStreamingResponse(req.Header.Get("Accept"), reqBody,
 		resp.Header.Get("Content-Type"), resp.StatusCode)
@@ -131,6 +164,7 @@ func (t *llmOTelTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 			reader: io.TeeReader(resp.Body, stdio.Stdout),
 			closer: resp.Body,
 			onClose: func() {
+				input.End(identity, nil)
 				span.End()
 				stdio.Close()
 			},
@@ -138,6 +172,7 @@ func (t *llmOTelTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	} else if resp.Body != nil {
 		// Non-streaming: buffer, log, and replace.
 		captured, fullBody, readErr := captureBody(resp.Body)
+		input.End(identity, readErr)
 		if readErr == nil {
 			resp.Body = io.NopCloser(bytes.NewReader(fullBody))
 			fmt.Fprintf(stdio.Stdout, "<<< %d\n%s\n", resp.StatusCode, captured)
@@ -149,6 +184,7 @@ func (t *llmOTelTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 		span.End()
 		stdio.Close()
 	} else {
+		input.End(identity, nil)
 		fmt.Fprintf(stdio.Stdout, "<<< %d (no body)\n", resp.StatusCode)
 		if resp.StatusCode >= 400 {
 			span.SetStatus(codes.Error, httpErrorStatus(resp.StatusCode, nil))
@@ -159,6 +195,15 @@ func (t *llmOTelTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	}
 
 	return resp, nil
+}
+
+// llmRequestDigest identifies the request of a workload transfer without its
+// content.
+func llmRequestDigest(req *http.Request, body []byte) string {
+	digester := digest.Canonical.Digester()
+	fmt.Fprintf(digester.Hash(), "%s %s\n", req.Method, req.URL.Path)
+	digester.Hash().Write(body)
+	return digester.Digest().String()
 }
 
 // revealTransport un-hides a failed LLM HTTP span. The span is marked

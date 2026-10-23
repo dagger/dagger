@@ -1,0 +1,9 @@
+kind: Fixed
+body: |
+  Java SDK modules retry a Maven repository download that fails with a 500,
+  502 or 504 server error, as Maven already does for 429 and 503, before
+  failing to load if the retries are exhausted.
+time: 2026-10-21T18:41:46Z
+custom:
+    Author: sipsma
+    PR: "14775"

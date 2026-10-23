@@ -216,7 +216,7 @@ profile = "alice-dev"
 	t.Run("settings display includes user values", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
 source = "modules/aws"
-entrypoint = true
+main = true
 
 [modules.aws.settings]
 region = "us-east-1"
@@ -390,7 +390,7 @@ func (WorkspaceSuite) TestWorkspaceUserConfigWrites(ctx context.Context, t *test
 		// (create one from scratch with `workspace config -g env.<name>...`).
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
 source = "modules/aws"
-entrypoint = true
+main = true
 
 [modules.aws.settings]
 region = "us-east-1"
@@ -455,7 +455,7 @@ func (WorkspaceSuite) TestWorkspaceUserConfigRemoteWorkspace(ctx context.Context
 	writeWorkspaceSettingsModule(t, hostDir, workspaceSettingsAWSModule("modules/aws", "aws"))
 	writeWorkspaceConfigFile(t, hostDir, `[modules.aws]
 source = "modules/aws"
-entrypoint = true
+main = true
 
 [modules.aws.settings]
 region = "us-east-1"

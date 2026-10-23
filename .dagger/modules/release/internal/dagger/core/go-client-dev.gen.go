@@ -9,7 +9,7 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-type GoClientDev struct { // go-client-dev (../../../../../:0:0)
+type GoClientDev struct { // go-client-dev (../../../../../../:0:0)
 	query *querybuilder.Selection
 
 	id            *ID
@@ -26,7 +26,7 @@ func (r *GoClientDev) WithGraphQLQuery(q *querybuilder.Selection) *GoClientDev {
 }
 
 // Build a container to run the go toolchain
-func (r *GoClientDev) DevContainer() *Container { // go-client-dev (../../../../../:0:0)
+func (r *GoClientDev) DevContainer() *Container { // go-client-dev (../../../../../../:0:0)
 	q := r.query.Select("devContainer")
 
 	return &Container{
@@ -35,7 +35,7 @@ func (r *GoClientDev) DevContainer() *Container { // go-client-dev (../../../../
 }
 
 // Regenerate the Go SDK API
-func (r *GoClientDev) Generate() *Changeset { // go-client-dev (../../../../../:0:0)
+func (r *GoClientDev) Generate() *Changeset { // go-client-dev (../../../../../../:0:0)
 	q := r.query.Select("generate")
 
 	return &Changeset{
@@ -97,19 +97,19 @@ type GoClientDevReleaseOpts struct {
 	//
 	// Source git repository to release
 	//
-	SourceRepo *GitRepository // go-client-dev (../../../../../:0:0)
+	SourceRepo *GitRepository // go-client-dev (../../../../../../:0:0)
 	//
 	// Target git remote to release to
 	//
-	DestRemote string // go-client-dev (../../../../../:0:0)
+	DestRemote string // go-client-dev (../../../../../../:0:0)
 
-	GithubToken *Secret // go-client-dev (../../../../../:0:0)
+	GithubToken *Secret // go-client-dev (../../../../../../:0:0)
 
-	Callback *File // go-client-dev (../../../../../:0:0)
+	Callback *File // go-client-dev (../../../../../../:0:0)
 }
 
 // Publish the Go SDK
-func (r *GoClientDev) Release(ctx context.Context, sourceTag string, opts ...GoClientDevReleaseOpts) error { // go-client-dev (../../../../../:0:0)
+func (r *GoClientDev) Release(ctx context.Context, sourceTag string, opts ...GoClientDevReleaseOpts) error { // go-client-dev (../../../../../../:0:0)
 	if r.release != nil {
 		return nil
 	}
@@ -142,21 +142,21 @@ type GoClientDevReleaseDryRunOpts struct {
 	//
 	// Git repository to fake-release
 	//
-	SourceRepo *GitRepository // go-client-dev (../../../../../:0:0)
+	SourceRepo *GitRepository // go-client-dev (../../../../../../:0:0)
 	//
 	// Git tag to fake-release
 	//
-	SourceTag string // go-client-dev (../../../../../:0:0)
+	SourceTag string // go-client-dev (../../../../../../:0:0)
 	//
 	// Git remote to fake-release to
 	//
-	DestRemote string // go-client-dev (../../../../../:0:0)
+	DestRemote string // go-client-dev (../../../../../../:0:0)
 
-	Callback *File // go-client-dev (../../../../../:0:0)
+	Callback *File // go-client-dev (../../../../../../:0:0)
 }
 
 // Check that releasing works, without actually releasing
-func (r *GoClientDev) ReleaseDryRun(ctx context.Context, opts ...GoClientDevReleaseDryRunOpts) error { // go-client-dev (../../../../../:0:0)
+func (r *GoClientDev) ReleaseDryRun(ctx context.Context, opts ...GoClientDevReleaseDryRunOpts) error { // go-client-dev (../../../../../../:0:0)
 	if r.releaseDryRun != nil {
 		return nil
 	}
@@ -183,7 +183,7 @@ func (r *GoClientDev) ReleaseDryRun(ctx context.Context, opts ...GoClientDevRele
 	return q.Execute(ctx)
 }
 
-func (r *GoClientDev) Source() *Directory { // go-client-dev (../../../../../:0:0)
+func (r *GoClientDev) Source() *Directory { // go-client-dev (../../../../../../:0:0)
 	q := r.query.Select("source")
 
 	return &Directory{
@@ -192,7 +192,7 @@ func (r *GoClientDev) Source() *Directory { // go-client-dev (../../../../../:0:
 }
 
 // Path of the Go SDK source within the workspace
-func (r *GoClientDev) SourcePath(ctx context.Context) (string, error) { // go-client-dev (../../../../../:0:0)
+func (r *GoClientDev) SourcePath(ctx context.Context) (string, error) { // go-client-dev (../../../../../../:0:0)
 	if r.sourcePath != nil {
 		return *r.sourcePath, nil
 	}
@@ -205,7 +205,7 @@ func (r *GoClientDev) SourcePath(ctx context.Context) (string, error) { // go-cl
 }
 
 // Test the Go SDK
-func (r *GoClientDev) Test(ctx context.Context) error { // go-client-dev (../../../../../:0:0)
+func (r *GoClientDev) Test(ctx context.Context) error { // go-client-dev (../../../../../../:0:0)
 	if r.test != nil {
 		return nil
 	}
@@ -215,7 +215,7 @@ func (r *GoClientDev) Test(ctx context.Context) error { // go-client-dev (../../
 }
 
 // Workspace with all the files needed to develop the SDK
-func (r *GoClientDev) WorkspaceDir() *Directory { // go-client-dev (../../../../../:0:0)
+func (r *GoClientDev) WorkspaceDir() *Directory { // go-client-dev (../../../../../../:0:0)
 	q := r.query.Select("workspaceDir")
 
 	return &Directory{
@@ -236,14 +236,14 @@ type GoClientDevOpts struct {
 	//
 	// Workspace with all the files needed to develop the SDK
 	//
-	WorkspaceDir *Directory // go-client-dev (../../../../../:0:0)
+	WorkspaceDir *Directory // go-client-dev (../../../../../../:0:0)
 	//
 	// Path of the Go SDK source within the workspace
 	//
-	SourcePath string // go-client-dev (../../../../../:0:0)
+	SourcePath string // go-client-dev (../../../../../../:0:0)
 }
 
-func (r *Query) GoClientDev(ws *Workspace, opts ...GoClientDevOpts) *GoClientDev { // go-client-dev (../../../../../:0:0)
+func (r *Query) GoClientDev(ws *Workspace, opts ...GoClientDevOpts) *GoClientDev { // go-client-dev (../../../../../../:0:0)
 	assertNotNil("ws", ws)
 	q := r.query.Select("goClientDev")
 	for i := len(opts) - 1; i >= 0; i-- {

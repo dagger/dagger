@@ -264,6 +264,19 @@ defmodule Dagger.GitCommit do
       client: git_commit.client
     }
   end
+
+  @doc """
+  The ID of the commit's Git tree object.
+
+  Commits with identical trees have identical contents and file modes.
+  """
+  @spec tree_sha(t()) :: {:ok, String.t()} | {:error, term()}
+  def tree_sha(%__MODULE__{} = git_commit) do
+    query_builder =
+      git_commit.query_builder |> QB.select("treeSHA")
+
+    Client.execute(git_commit.client, query_builder)
+  end
 end
 
 defimpl Jason.Encoder, for: Dagger.GitCommit do

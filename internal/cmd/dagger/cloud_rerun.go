@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/dagger/dagger/core/artifact"
 	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/core/gitref"
 	cloudapi "github.com/dagger/dagger/internal/cloud"
@@ -218,7 +221,15 @@ func cloudRerunTargets(checks []cloudapi.Check) ([]cloudapi.Check, error) {
 		for _, name := range cloudRerunChecks {
 			// Accept the dag:// address the trace suggests, so the re-run command
 			// it prints works as-is. Cloud check names carry no scheme.
-			if c, ok := byName[stripDAGScheme(name)]; ok {
+			// A trace names a collection check by a projected address, whose
+			// short type key names one Cloud check by suffix.
+			key := stripDAGScheme(name)
+			if _, ok := byName[key]; !ok {
+				if matches := artifact.MatchTypeKey(slices.Sorted(maps.Keys(byName)), key); len(matches) == 1 {
+					key = matches[0]
+				}
+			}
+			if c, ok := byName[key]; ok {
 				targets = append(targets, c)
 			} else {
 				missing = append(missing, name)

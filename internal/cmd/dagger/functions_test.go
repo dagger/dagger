@@ -39,7 +39,7 @@ func TestPrintSyncedObjectIDs(t *testing.T) {
 	}
 }
 
-func TestFindSiblingEntrypoint(t *testing.T) {
+func TestFindSiblingMain(t *testing.T) {
 	defaultType := testObjectTypeDef("DaggerDev", "dagger-dev", "default module")
 	defaultType.AsObject.Functions = []*modFunction{
 		{Name: "hello", ReturnType: testStringTypeDef()},
@@ -58,12 +58,12 @@ func TestFindSiblingEntrypoint(t *testing.T) {
 		Objects:    []*modTypeDef{queryType, defaultType, siblingType},
 	}
 
-	sibling := findSiblingEntrypoint(mod, "python-sdk")
+	sibling := findSiblingMain(mod, "python-sdk")
 	require.NotNil(t, sibling)
 	require.Equal(t, "pythonSdk", sibling.Name)
 }
 
-func TestFunctionListRunIncludesSiblingEntrypoints(t *testing.T) {
+func TestFunctionListRunIncludesSiblingMains(t *testing.T) {
 	provider := &modObject{
 		Name: "DaggerDev",
 		Functions: []*modFunction{
