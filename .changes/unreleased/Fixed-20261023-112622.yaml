@@ -1,0 +1,11 @@
+kind: Fixed
+body: |
+  Workspace searches work from Windows clients. A search rooted at the
+  workspace (`/`) failed with "path cannot escape search root", which kept
+  modules that discover files through `Workspace.search`, such as the
+  dagger/python modules, from listing or running their checks. Results also
+  come back slash-separated, as on Linux and macOS.
+time: 2026-10-23T11:26:22Z
+custom:
+  Author: telchak
+  PR: 14843
