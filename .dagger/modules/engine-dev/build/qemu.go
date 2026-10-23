@@ -51,10 +51,10 @@ func (build *Builder) qemuBins() (*dagger.Directory, []string) {
 		WithNewFile("3-dagger/run-host-binaries-directly.patch", qemuRunHostBinariesPatch)
 
 	// Cross-compile on the build platform with xx rather than building under
-	// emulation for other target platforms. The binaries are handed over in a
-	// new directory: read out of the build container, they would carry its
-	// whole filesystem, toolchain and build tree included, which an engine
-	// pulls in full to reuse them from a remote cache.
+	// emulation for other target platforms. The binaries are written into a
+	// separate mount, which holds only them: read out of the build container's
+	// filesystem, they would carry it, toolchain and build tree included, which
+	// an engine pulls in full to reuse them from a remote cache.
 	out := dag.Container().
 		From(consts.AlpineImage).
 		WithExec([]string{"apk", "add", "--no-cache",
@@ -70,8 +70,9 @@ func (build *Builder) qemuBins() (*dagger.Directory, []string) {
 		WithMountedFile("/qemu.tar.xz", src).
 		WithMountedDirectory("/patches", patches).
 		WithEnvVariable("QEMU_TARGETS", strings.Join(targets, " ")).
+		WithMountedDirectory("/out", dag.Directory()).
 		WithExec([]string{"sh", "-euc", `
-mkdir /src /out
+mkdir /src
 tar -xJf /qemu.tar.xz -C /src --strip-components=1 --exclude='*/roms'
 cd /src
 for p in /patches/*/*.patch; do patch -s -p1 < "$p"; done
@@ -97,5 +98,5 @@ for t in $QEMU_TARGETS; do
 done
 `}).
 		Directory("/out")
-	return freshDir(out), names
+	return out, names
 }

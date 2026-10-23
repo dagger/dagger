@@ -100,16 +100,18 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 			"--package", "codegen",
 			"-o", "/requirements.txt",
 		}).
+		// shiv writes the executable into a separate mount, which holds only
+		// it, rather than into the builder's filesystem with everything else.
+		WithMountedDirectory("/out", dag.Directory()).
 		WithExec([]string{
 			"uvx", "shiv==1.0.8", // this version doesn't need to be constantly updated
 			"--reproducible",
 			"--compressed",
 			"-e", "codegen.cli:main",
-			"-o", "/codegen",
+			"-o", "/out/codegen",
 			"-r", "/requirements.txt",
 		}).
-		File("/codegen")
-	codegen = freshFile("codegen", codegen)
+		File("/out/codegen")
 
 	rootfs := pySrc.
 		// bundle the uv binaries
@@ -144,11 +146,17 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 const TypescriptSDKTSXVersion = "4.15.6"
 
 func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, error) {
+	// Install tsx under its own prefix, whose node_modules is a separate mount
+	// that holds only the package, rather than into the image's global prefix
+	// with npm and everything else. The prefix's bin links stay outside it.
+	// The mount is setgid like the image's global node_modules, so the
+	// package's directories get the same modes.
 	tsxNodeModule := dag.Container(dagger.ContainerOpts{Platform: build.platform}).
 		From(tsdistconsts.DefaultNodeImageRef).
-		WithExec([]string{"npm", "install", "-g", fmt.Sprintf("tsx@%s", TypescriptSDKTSXVersion)}).
-		Directory("/usr/local/lib/node_modules/tsx")
-	tsxNodeModule = freshDir(tsxNodeModule)
+		WithMountedDirectory("/out/lib/node_modules", dag.Directory()).
+		WithExec([]string{"sh", "-ec", `chmod 2755 /out/lib/node_modules
+npm install -g --prefix /out "tsx@$1"`, "sh", TypescriptSDKTSXVersion}).
+		Directory("/out/lib/node_modules/tsx")
 
 	rootfs := dag.Directory().WithDirectory("/", build.source.Directory("sdk/typescript"), dagger.DirectoryWithDirectoryOpts{
 		Include: []string{
@@ -181,14 +189,30 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 		// It's added to the builder only, so it isn't shipped in the SDK image.
 		WithFile("/src/yarn.lock", build.source.File("sdk/typescript/yarn.lock")).
 		WithWorkdir("/src").
-		WithExec([]string{"bun", "install", "--frozen-lockfile"}).
-		// Create introspector binary
-		WithExec([]string{"bun", "build", "src/module/entrypoint/introspection_entrypoint.ts", "--compile", "--outfile", "/bin/ts-introspector"}).
+		WithExec([]string{"bun", "install", "--frozen-lockfile"})
+
+	// Create introspector binary, on its own branch of the builder, and copy
+	// it into a separate mount: only this exec writes it, so it holds only
+	// the binary, in one layer. bun's --compile output is corrupt when
+	// written straight into a mount (it starts with zeros instead of the ELF
+	// header), so it is compiled into the builder's filesystem first.
+	tsIntrospector := bunBuilderCtr.
+		WithMountedDirectory("/out", dag.Directory()).
+		WithExec([]string{"sh", "-ec", `bun build src/module/entrypoint/introspection_entrypoint.ts --compile --outfile /bin/ts-introspector
+cp -p /bin/ts-introspector /out/ts-introspector`}).
+		File("/out/ts-introspector")
+
+	bunBuilderCtr = bunBuilderCtr.
+		// Emit type declaration for these files, into ./dist, read by rollup
+		// below.
+		WithExec([]string{"tsc", "--emitDeclarationOnly"}).
+		// The bundle is written into a separate mount by the two execs below,
+		// each adding a layer: a few KB more to pull than one copied layer,
+		// for no copy and no duplicate snapshot.
+		WithMountedDirectory("/out-node", dag.Directory()).
 		// Build the SDK bundled that contains the whole static library + default client
 		// The bundle works for all runtimes as long as we target node since deno & bun have compatibility API for node.
 		WithExec([]string{"bun", "build", "./src/index.ts", "--external=typescript", "--target=node", "--outfile", "/out-node/core.js"}).
-		// Emit type declaration for these files
-		WithExec([]string{"tsc", "--emitDeclarationOnly"}).
 		WithExec([]string{"bun", "x", "rollup", "-c", "rollup.dts.config.mjs", "-o", "/out-node/core.d.ts"})
 
 	sdkCtrTarball := dag.Container().
@@ -198,10 +222,12 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 		// typescript library when introspecting the user's module.
 		// TODO: As a follow up, this also enable skipping dependencies installation inside the module
 		// runtime if only typescript library is used (by default)
+		// bun installs it into the source tree's node_modules, among the
+		// other dependencies, so it is copied out on its own.
 		WithDirectory("/typescript-library", freshDir(bunBuilderCtr.Directory("/src/node_modules/typescript"))).
-		WithFile("/bin/ts-introspector", freshFile("ts-introspector", bunBuilderCtr.File("/bin/ts-introspector"))).
+		WithFile("/bin/ts-introspector", tsIntrospector).
 		WithDirectory("/tsx_module", tsxNodeModule).
-		WithDirectory("/bundled_lib", freshDir(bunBuilderCtr.Directory("/out-node"))).
+		WithDirectory("/bundled_lib", bunBuilderCtr.Directory("/out-node")).
 		AsTarball(dagger.ContainerAsTarballOpts{
 			ForcedCompression: dagger.ImageLayerCompressionZstd,
 		})
@@ -231,6 +257,12 @@ func (build *Builder) goSDKContent(ctx context.Context) (*sdkContent, error) {
 	sdkCache := dag.Container().
 		From(consts.GolangImage).
 		With(build.goPlatformEnv).
+		// Go fills its caches in separate mounts rather than in the builder's
+		// filesystem with the toolchain and everything else. Each go command
+		// below adds a layer to them: a little more to pull than one copied
+		// layer, for no copy and no duplicate snapshot.
+		WithMountedDirectory("/go/pkg/mod", dag.Directory()).
+		WithMountedDirectory("/root/.cache/go-build", dag.Directory()).
 		// import xx
 		WithDirectory("/", dag.Container().From(consts.XxImage).Rootfs()).
 		// set envs read by xx
@@ -266,8 +298,8 @@ func (build *Builder) goSDKContent(ctx context.Context) (*sdkContent, error) {
 		WithEnvVariable("GOTOOLCHAIN", "auto").
 		WithFile("/usr/local/bin/codegen", build.CodegenBinary()).
 		// these cache directories should match the cache volume locations in the engine's goSDK.base
-		WithDirectory("/go/pkg/mod", freshDir(sdkCache.Directory("/go/pkg/mod"))).
-		WithDirectory("/root/.cache/go-build", freshDir(sdkCache.Directory("/root/.cache/go-build"))).
+		WithDirectory("/go/pkg/mod", sdkCache.Directory("/go/pkg/mod")).
+		WithDirectory("/root/.cache/go-build", sdkCache.Directory("/root/.cache/go-build")).
 		AsTarball(dagger.ContainerAsTarballOpts{
 			ForcedCompression: dagger.ImageLayerCompressionZstd,
 		})

@@ -242,9 +242,15 @@ func (m *Apko) Build(
 
 	args = commonArgs.Process(args)
 
+	// The image is written into a separate mount, which holds only it, rather
+	// than read out of the apko container with everything else in it. The
+	// SBOMs apko writes next to the image by default go to /work instead.
 	return &BuildResult{
-		File: dag.Directory().WithFile("image.tar", container.WithExec(args).File("/work/output/image.tar")).File("image.tar"),
-		Tag:  tag,
+		File: container.
+			WithMountedDirectory("/work/output", dag.Directory()).
+			WithExec(append(args, "--sbom-path", "/work")).
+			File("/work/output/image.tar"),
+		Tag: tag,
 	}
 }
 

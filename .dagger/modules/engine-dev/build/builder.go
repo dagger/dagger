@@ -262,7 +262,7 @@ func (build *Builder) runtimeBin() *dagger.File {
 		"https://github.com/json-c/json-c/archive/refs/tags/json-c-"+consts.JSONCVersion+".tar.gz",
 		dagger.HTTPOpts{Checksum: consts.JSONCChecksum},
 	)
-	crun := dag.Container().
+	return dag.Container().
 		From(consts.AlpineImage).
 		WithEnvVariable("BUILDPLATFORM", "linux/"+runtime.GOARCH).
 		WithEnvVariable("TARGETPLATFORM", string(build.platform)).
@@ -276,6 +276,9 @@ func (build *Builder) runtimeBin() *dagger.File {
 		}).
 		WithFile("/crun.tar.gz", src).
 		WithFile("/json-c.tar.gz", jsonc).
+		// The binary is stripped into a separate mount, which holds only it,
+		// rather than read out of the build container with everything else.
+		WithMountedDirectory("/out", dag.Directory()).
 		WithExec([]string{"sh", "-ec", `
 sysroot=$(xx-info sysroot)
 mkdir -p /json-c/build /src
@@ -288,11 +291,10 @@ tar xzf /crun.tar.gz --strip-components=1 -C /src
 cd /src
 ./configure --host="$(xx-clang --print-target-triple)" CC=xx-clang --disable-systemd --disable-criu LIBS=-largp
 make -j"$(nproc)" LDFLAGS=-all-static
-llvm-strip crun
-xx-verify --static crun
+llvm-strip -o /out/crun crun
+xx-verify --static /out/crun
 `}).
-		File("/src/crun")
-	return freshFile("crun", crun)
+		File("/out/crun")
 }
 
 func (build *Builder) sshfsBin() *dagger.File {
@@ -304,7 +306,7 @@ func (build *Builder) sshfsBin() *dagger.File {
 		Tag("sshfs-" + consts.SSHFSVersion).
 		Tree()
 
-	sshfs := dag.
+	return dag.
 		Wolfi().
 		Container(dagger.WolfiContainerOpts{
 			Packages: []string{
@@ -321,22 +323,21 @@ func (build *Builder) sshfsBin() *dagger.File {
 		WithWorkdir("/src").
 		WithExec([]string{"meson", "setup", "build", "--buildtype=release"}).
 		WithExec([]string{"meson", "compile", "-C", "build"}).
-		File("/src/build/sshfs")
-	return freshFile("sshfs", sshfs)
+		// meson builds the binary in its build tree, inside the source mount;
+		// copy it into a separate mount, which holds only it.
+		WithMountedDirectory("/out", dag.Directory()).
+		WithExec([]string{"cp", "-p", "build/sshfs", "/out/sshfs"}).
+		File("/out/sshfs")
 }
 
-// freshFile returns file on its own in a new directory. A file read out of a
-// build container keeps its backing snapshot: the container's rootfs, or the
+// freshDir returns dir on its own in a new directory. A directory read out of
+// a build container keeps its backing snapshot: the container's rootfs, or the
 // mounted directory it was read from, with everything else in it, such as the
-// toolchain or the build tree. An engine reusing the file from a remote cache
-// pulls whatever of that it is missing. A copy in a new directory holds only
-// the file, and is built from the same inputs, so it is reused across commits
-// as before.
-func freshFile(name string, file *dagger.File) *dagger.File {
-	return dag.Directory().WithFile(name, file).File(name)
-}
-
-// freshDir is freshFile for a directory.
+// toolchain or the build tree. An engine reusing the directory from a remote
+// cache pulls whatever of that it is missing. A copy in a new directory holds
+// only the directory, and is built from the same inputs, so it is reused
+// across commits as before. Where the tool can write its output into a
+// separate mount instead, that mount holds only the output without a copy.
 func freshDir(dir *dagger.Directory) *dagger.Directory {
 	return dag.Directory().WithDirectory(".", dir)
 }
