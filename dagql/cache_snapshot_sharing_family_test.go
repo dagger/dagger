@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/snapshots"
 
 	"github.com/vektah/gqlparser/v2/ast"
@@ -32,6 +33,10 @@ type shareTestValue struct {
 	// NeedsServer makes a store preparation fail with no dagql server to
 	// decode with, as a Directory's or File's snapshot link does.
 	NeedsServer bool `json:"needsServer,omitempty"`
+	// LoadsServices makes a store preparation load the donated part's
+	// services through its decode context, as a Directory's or Container's
+	// does with their service bindings.
+	LoadsServices bool `json:"loadsServices,omitempty"`
 	// mu guards Parts, links and rev the way a core value's output guard
 	// does: readers copy under it, and a prepared store holds it from TryLock
 	// to Unlock so its Publish cannot race an encoder.
@@ -43,12 +48,16 @@ type shareTestValue struct {
 	afterStoreUnlock func()
 	// preparedServer is the server the last store preparation decoded with.
 	preparedServer atomic.Pointer[Server]
+	// sharedServiceLoads counts the services a store preparation under the
+	// snapshot-share marker loaded.
+	sharedServiceLoads atomic.Int64
 }
 
 type shareTestEncoded struct {
-	Name        string                    `json:"name"`
-	Parts       map[string]sharePartState `json:"parts,omitempty"`
-	NeedsServer bool                      `json:"needsServer,omitempty"`
+	Name          string                    `json:"name"`
+	Parts         map[string]sharePartState `json:"parts,omitempty"`
+	NeedsServer   bool                      `json:"needsServer,omitempty"`
+	LoadsServices bool                      `json:"loadsServices,omitempty"`
 }
 
 func (v *shareTestValue) payloadLocked() shareTestEncoded {
@@ -56,7 +65,7 @@ func (v *shareTestValue) payloadLocked() shareTestEncoded {
 	for name, state := range v.Parts {
 		parts[name] = state
 	}
-	return shareTestEncoded{Name: v.Name, Parts: parts, NeedsServer: v.NeedsServer}
+	return shareTestEncoded{Name: v.Name, Parts: parts, NeedsServer: v.NeedsServer, LoadsServices: v.LoadsServices}
 }
 
 func newShareTestValue(name string, parts map[string]sharePartState) *shareTestValue {
@@ -104,10 +113,20 @@ func (v *shareTestValue) PersistedSnapshotRefLinks() []PersistedSnapshotRefLink 
 // PreparePartStore is the typed receiver's writer: a closed assignment that
 // cannot fail, allocate storage or run cleanup once prepared, with its own
 // expected output revision, exactly like the File and Directory stores.
-func (v *shareTestValue) PreparePartStore(_ context.Context, dec *PersistDecodeContext, _ PersistedRecord, d PartDescriptor, ref snapshots.ImmutableRef) (PreparedPartStore, error) {
+func (v *shareTestValue) PreparePartStore(ctx context.Context, dec *PersistDecodeContext, _ PersistedRecord, d PartDescriptor, ref snapshots.ImmutableRef) (PreparedPartStore, error) {
 	v.preparedServer.Store(dec.Server())
 	if v.NeedsServer && dec.Server() == nil {
 		return nil, fmt.Errorf("share test store: persisted decode query: nil dagql server")
+	}
+	if v.LoadsServices && d.Value != nil {
+		for _, svc := range d.Value.Services {
+			if engine.IsSnapshotSharePreparation(ctx) {
+				v.sharedServiceLoads.Add(1)
+			}
+			if _, err := dec.ResultRef(ctx, svc.ServiceResultID); err != nil {
+				return nil, fmt.Errorf("share test store: load service %d: %w", svc.ServiceResultID, err)
+			}
+		}
 	}
 	if d.SnapshotID == "" {
 		return nil, fmt.Errorf("share test store: donated part %q has no snapshot", d.Address.Part)
