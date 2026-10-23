@@ -497,9 +497,7 @@ func (cache *CacheVolume) InitializeSnapshot(ctx context.Context) error {
 	}
 	if currentCacheVolumeDir() != nil {
 		// The volume is a directory, made and pinned when an exec mounts
-		// it (lockMountedCaches). A snapshot persisted before the engine
-		// kept volumes there stays owned by this value until the value is
-		// pruned, but isn't used. The source is still evaluated now, when
+		// it (lockMountedCaches). The source is still evaluated now, when
 		// snapshot mode would create the snapshot from it.
 		return cache.evaluateSourceLocked(ctx)
 	}
