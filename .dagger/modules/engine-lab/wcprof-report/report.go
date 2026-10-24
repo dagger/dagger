@@ -35,10 +35,18 @@ type Options struct {
 	// AgainstName label the two sides.
 	Against           *Graph
 	Name, AgainstName string
+	// By groups the occupancy and compare views by "class" (default) or
+	// "label" (see Graph.LabelBy).
+	By string
+	// Levels is how many ancestor classes the ancestors view keys on.
+	Levels int
+	// FromMS and ToMS bound the window view, in ms from the dump's start;
+	// negative means the op's own start or end.
+	FromMS, ToMS float64
 }
 
 // Views lists the supported report views.
-var Views = []string{"summary", "classes", "breakdown", "clients", "tree", "children", "critpath", "waits", "compare", "events"}
+var Views = []string{"summary", "classes", "breakdown", "clients", "tree", "children", "critpath", "waits", "compare", "ancestors", "occupancy", "window", "events"}
 
 // Report writes the selected view of g to w.
 func Report(w io.Writer, g *Graph, opts Options) error {
@@ -72,6 +80,12 @@ func Report(w io.Writer, g *Graph, opts Options) error {
 		err = critpath(o, g, opts)
 	case "waits":
 		waitsView(o, g, opts)
+	case "ancestors":
+		ancestorsView(o, g, opts)
+	case "occupancy":
+		occupancy(o, g, opts)
+	case "window":
+		err = window(o, g, opts)
 	default:
 		err = fmt.Errorf("unknown view %q (want one of %s)", opts.View, strings.Join(Views, ", "))
 	}
@@ -963,11 +977,11 @@ func compare(o *out, g *Graph, opts Options) error {
 	opsB, internalB := rankable(g.matching(opts.Filter), opts.Filter)
 	aggsA, aggsB := map[string]*classAgg{}, map[string]*classAgg{}
 	var keys []string
-	for _, a := range aggregate(opsA) {
+	for _, a := range aggregateBy(opsA, opts.By) {
 		aggsA[a.Key] = a
 		keys = append(keys, a.Key)
 	}
-	for _, b := range aggregate(opsB) {
+	for _, b := range aggregateBy(opsB, opts.By) {
 		aggsB[b.Key] = b
 		if aggsA[b.Key] == nil {
 			keys = append(keys, b.Key)

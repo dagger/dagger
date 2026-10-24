@@ -41,6 +41,11 @@ func main() {
 	against := flag.String("against", "", "compare view: the baseline dump to compare <dump> against")
 	flag.StringVar(&opts.Name, "name", "", "compare view: label for <dump>")
 	flag.StringVar(&opts.AgainstName, "against-name", "", "compare view: label for the -against dump")
+	label := flag.String("label", "", "regexp over each exec's command (argv joined by spaces) whose first submatch labels the op and the ancestors only it is under (e.g. '\\n# ([^\\n]+)\\n')")
+	flag.StringVar(&opts.By, "by", "class", "occupancy and compare views: group by class or label (needs -label)")
+	flag.IntVar(&opts.Levels, "levels", 3, "ancestors view: ancestor classes to key on")
+	flag.Float64Var(&opts.FromMS, "from", -1, "window view: start, ms from the dump's start (default: the op's start)")
+	flag.Float64Var(&opts.ToMS, "to", -1, "window view: end, ms from the dump's start (default: the op's end)")
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(), "usage: wcprof-report [flags] <dump>\n")
 		flag.PrintDefaults()
@@ -73,6 +78,21 @@ func main() {
 		if opts.Against, err = loadFile(*against); err != nil {
 			fatal(err)
 		}
+	}
+	if opts.By != "class" && opts.By != "label" {
+		fatal(fmt.Errorf("bad -by %q (want class or label)", opts.By))
+	}
+	if *label != "" {
+		re, err := regexp.Compile(*label)
+		if err != nil {
+			fatal(fmt.Errorf("bad -label: %w", err))
+		}
+		g.LabelBy(re)
+		if opts.Against != nil {
+			opts.Against.LabelBy(re)
+		}
+	} else if opts.By == "label" {
+		fatal(fmt.Errorf("-by label needs -label"))
 	}
 	w := bufio.NewWriter(os.Stdout)
 	if err := Report(w, g, opts); err != nil {

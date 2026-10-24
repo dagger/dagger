@@ -25,6 +25,11 @@ type Op struct {
 	End      int64
 	// Open marks ops still running at dump time; End is the dump time.
 	Open bool
+	// Argv is a container-exec op's user command (the recorder's interned
+	// meta), nil for other ops.
+	Argv []string
+	// Label is the op's label (see LabelBy), "" when it has none.
+	Label string
 
 	Parent   *Op
 	Children []*Op // sorted by Start
@@ -117,6 +122,7 @@ func Build(header *wcprof.DumpHeader, events []wcprof.DumpEvent) *Graph {
 				ResultID: ev.ResultID,
 				Start:    ev.StartNS,
 				End:      max(ev.EndNS, ev.StartNS),
+				Argv:     decodeArgv(str(ev.MetaID)),
 			}
 			g.Ops = append(g.Ops, op)
 			g.ByID[op.ID] = op
