@@ -94,6 +94,29 @@ type DumpEvent struct {
 	// never), Outcome released, cancelled or held.
 	Priority  int64 `json:"pri,omitempty"`
 	GrantedNS int64 `json:"gr,omitempty"`
+
+	// Usage events ("e":"usage") carry a resource reading for the op OpID:
+	// ClassID names the scope (see the UsageScope constants), StartNS and
+	// EndNS are when it was read.
+	CPUUserUS    int64 `json:"cu,omitempty"`
+	CPUSystemUS  int64 `json:"cs,omitempty"`
+	MemPeakBytes int64 `json:"mp,omitempty"`
+}
+
+// DumpTypeUsage is the DumpEvent.Type of a resource reading (RecordUsage).
+const DumpTypeUsage = "usage"
+
+func usageDumpEvent(u usageRecord) DumpEvent {
+	return DumpEvent{
+		Type:         DumpTypeUsage,
+		OpID:         u.opID,
+		ClassID:      u.scopeID,
+		StartNS:      u.atNS,
+		EndNS:        u.atNS,
+		CPUUserUS:    u.usage.CPUUserUS,
+		CPUSystemUS:  u.usage.CPUSystemUS,
+		MemPeakBytes: u.usage.MemPeakBytes,
+	}
 }
 
 // Dump event types for reported resources and acquisitions.
@@ -164,6 +187,7 @@ func (r *Recorder) WriteDump(w io.Writer, flush bool) error {
 	// Snapshot (and optionally flush) each shard.
 	var (
 		batches [numShards][]Event
+		usages  [numShards][]usageRecord
 		open    []DumpOpenOp
 		total   int
 	)
@@ -171,10 +195,13 @@ func (r *Recorder) WriteDump(w io.Writer, flush bool) error {
 		sh := &r.shards[i]
 		sh.mu.Lock()
 		batches[i] = sh.events
+		usages[i] = sh.usage
 		if flush {
 			sh.events = nil
+			sh.usage = nil
 		} else {
 			batches[i] = append([]Event(nil), sh.events...)
+			usages[i] = append([]usageRecord(nil), sh.usage...)
 		}
 		for id, oo := range sh.openOps {
 			open = append(open, DumpOpenOp{
@@ -190,7 +217,7 @@ func (r *Recorder) WriteDump(w io.Writer, flush bool) error {
 			})
 		}
 		sh.mu.Unlock()
-		total += len(batches[i])
+		total += len(batches[i]) + len(usages[i])
 	}
 	if flush {
 		r.total.Add(int64(-total))
@@ -219,6 +246,13 @@ func (r *Recorder) WriteDump(w io.Writer, flush bool) error {
 		for _, ev := range batch {
 			if err := enc.Encode(toDumpEvent(ev)); err != nil {
 				return fmt.Errorf("wcprof: encode dump event: %w", err)
+			}
+		}
+	}
+	for _, batch := range usages {
+		for _, u := range batch {
+			if err := enc.Encode(usageDumpEvent(u)); err != nil {
+				return fmt.Errorf("wcprof: encode dump usage: %w", err)
 			}
 		}
 	}

@@ -147,6 +147,12 @@ type execState struct {
 	// profExecOpID is the wcprof exec.run op of this run (0 when not
 	// profiling): the op nested clients of this exec are linked to.
 	profExecOpID uint64
+	// profUsageWanted is set when the exec is profiled (wcprof or OTel), so
+	// its cgroups' usage is read at cleanup (recordExecUsage); profUsage
+	// holds the readings for the exec.run span.
+	profUsageWanted bool
+	profUsageMu     sync.Mutex
+	profUsage       map[string]wcprof.Usage
 
 	// sessionHelperStatus carries /.init's report that a nested client's
 	// session helper failed, and failSessionHelper fails the waits for its
@@ -523,6 +529,9 @@ func (c *Client) generateBaseSpec(ctx context.Context, state *execState) error {
 		return nil
 	})
 	state.cleanups.Add("finish exec mount resource sample", func() error {
+		// After the final parent sample: the resource cgroup's total, the
+		// workload and its mount helpers.
+		defer recordExecUsage(ctx, state, wcprof.UsageScopeExecCgroup)
 		if state.stopResourceSampler != nil {
 			state.stopResourceSampler()
 			return nil
@@ -1760,6 +1769,13 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 			return nil
 		}
 		return c.Runc.Delete(context.WithoutCancel(ctx), state.id, &runc.DeleteOpts{})
+	})
+	// Cleanups run in reverse, so this runs before the delete above, once the
+	// workload's processes have exited: the container's own cgroup still
+	// holds the workload's usage alone.
+	state.cleanups.Add("read exec container usage", func() error {
+		recordExecUsage(ctx, state, wcprof.UsageScopeContainer)
+		return nil
 	})
 
 	// Wake the existing sampler when runc starts. The cgroup may not exist at

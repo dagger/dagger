@@ -213,6 +213,7 @@ func (c *Client) Run(
 		})
 		state.profExecOpID = execOp.ID()
 	}
+	state.profUsageWanted = wcprof.Enabled(ctx) || dagql.OTelProfActive(ctx)
 	// OTel analog of execOp: exec.run nests the container run under
 	// the withExec call_exec span (or the service exec span) via the propagated
 	// ctx, so the offline loader reconstructs the same exec shape from a Cloud
@@ -252,6 +253,7 @@ func (c *Client) Run(
 	)
 	execOp.EndErr(err)
 	if execRunSpan != nil {
+		setExecUsageAttrs(execRunSpan, state)
 		recordExecContentPreferredDigest(execRunSpan, execMD)
 		endOTelExecRun(execRunSpan, &err)
 	}

@@ -307,6 +307,9 @@ const numShards = 16
 type shard struct {
 	mu     sync.Mutex
 	events []Event
+	// usage holds resource readings (RecordUsage), kept apart from events
+	// so the fixed-size Event carries no fields most events would leave empty.
+	usage []usageRecord
 	// openOps tracks begun-but-unfinished ops for dump-time visibility.
 	openOps map[uint64]openOp
 }
