@@ -47,7 +47,10 @@ import (
 type Directory struct {
 	filesystemOutput
 	transferPending *persistedDirectoryPayload
-	Platform        Platform
+	// transferShell is set when the directory decoded from another engine's
+	// record without its recipe, and never changes after.
+	transferShell bool
+	Platform      Platform
 	// Services necessary to provision the directory.
 	Services ServiceBindings
 
@@ -372,6 +375,14 @@ func decodePersistedDirectoryWithSnapshotRole(ctx context.Context, dec *dagql.Pe
 		dir.OutputRev++ // private decoded output, before publication
 		dir.outputMu.Unlock()
 	}()
+	// A record from another engine that holds no download address decodes
+	// as local persistence decodes a pending directory: its recipe armed.
+	if persisted.Form == transferPending && persisted.LazyKind != "" && dec.ArmRecipe() {
+		if err := foreignFamilyCodec("Directory").ValidateForeign(dagql.PersistedPayloadVisit{Payload: payload, Call: dec.Call()}); err != nil {
+			return nil, err
+		}
+		persisted.Form = persistedDirectoryFormLazy
+	}
 	if persisted.Dir != "" && persisted.Form != transferPending {
 		dir.SetPath(persisted.Dir)
 	}
@@ -381,6 +392,7 @@ func decodePersistedDirectoryWithSnapshotRole(ctx context.Context, dec *dagql.Pe
 			return nil, err
 		}
 		dir.transferPending = &persisted
+		dir.transferShell = true
 		if persisted.ValueKnown {
 			dir.SetPath(persisted.Dir)
 		}
@@ -415,6 +427,11 @@ func decodePersistedDirectoryWithSnapshotRole(ctx context.Context, dec *dagql.Pe
 func (*Directory) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	return decodePersistedDirectoryWithSnapshotRole(ctx, dec, payload, "snapshot")
 }
+
+// PartTransferShell reports whether the directory decoded from another
+// engine's record without its recipe, so that its content comes only through
+// part acquisition.
+func (dir *Directory) PartTransferShell() bool { return dir.transferShell }
 
 func loadCanonicalScratchDirectory(ctx context.Context) (string, bkcache.ImmutableRef, error) {
 	query, err := CurrentQuery(ctx)
