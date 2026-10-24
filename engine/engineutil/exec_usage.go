@@ -23,12 +23,16 @@ func execUsageCgroup(resourceCgroupPath, scope string) string {
 	if resourceCgroupPath == "" || !filepath.IsAbs(resourceCgroupPath) || strings.Contains(resourceCgroupPath, ":") {
 		return ""
 	}
-	p := filepath.Join(cgroupMountpoint, resourceCgroupPath)
+	p := filepath.Join(execUsageRoot, resourceCgroupPath)
 	if scope == wcprof.UsageScopeContainer {
 		p = filepath.Join(p, "container")
 	}
 	return p
 }
+
+// execUsageRoot is where execUsageCgroup finds cgroups: the unified
+// hierarchy, or a test's fixture tree.
+var execUsageRoot = cgroupMountpoint
 
 // recordExecUsage reads one usage scope of the exec, for profiling: it
 // attaches the reading to the exec's wcprof exec.run op, and keeps it for the
@@ -36,6 +40,13 @@ func execUsageCgroup(resourceCgroupPath, scope string) string {
 // is profiled (state.profUsageWanted, set at its start).
 func recordExecUsage(ctx context.Context, state *execState, scope string) {
 	if !state.profUsageWanted {
+		return
+	}
+	// When a mount helper could not join the exec's cgroup, the resource
+	// cgroup's total would leave it out: don't present it as inclusive (the
+	// resource sampler skips it the same way). The container's own reading
+	// is unaffected.
+	if scope == wcprof.UsageScopeExecCgroup && state.mountResources != nil && !state.mountResources.Available() {
 		return
 	}
 	dir := execUsageCgroup(state.resourceCgroupPath, scope)
@@ -66,7 +77,10 @@ func setExecUsageAttrs(span trace.Span, state *execState) {
 		span.SetAttributes(
 			attribute.Int64(prefix+"cpu_user_us", u.CPUUserUS),
 			attribute.Int64(prefix+"cpu_system_us", u.CPUSystemUS),
-			attribute.Int64(prefix+"mem_peak_bytes", u.MemPeakBytes),
 		)
+		// A peak that couldn't be read is left out, not reported as zero.
+		if u.MemPeakBytes > 0 {
+			span.SetAttributes(attribute.Int64(prefix+"mem_peak_bytes", u.MemPeakBytes))
+		}
 	}
 }
