@@ -156,17 +156,13 @@ type EGraphDebugEqClass struct {
 }
 
 type CacheDebugOngoingCall struct {
-	CallKey           string `json:"call_key"`
-	ConcurrencyKey    string `json:"concurrency_key,omitempty"`
-	Waiters           int    `json:"waiters"`
-	IsPersistable     bool   `json:"is_persistable"`
-	TTLSeconds        int64  `json:"ttl_seconds,omitempty"`
-	Completed         bool   `json:"completed"`
-	Error             string `json:"error,omitempty"`
-	SharedResultID    uint64 `json:"shared_result_id,omitempty"`
-	ResultDescription string `json:"result_description,omitempty"`
-	ResultRecordType  string `json:"result_record_type,omitempty"`
-	ResultTypeName    string `json:"result_type_name,omitempty"`
+	CallKey        string `json:"call_key"`
+	ConcurrencyKey string `json:"concurrency_key,omitempty"`
+	Waiters        int    `json:"waiters"`
+	IsPersistable  bool   `json:"is_persistable"`
+	TTLSeconds     int64  `json:"ttl_seconds,omitempty"`
+	Completed      bool   `json:"completed"`
+	Error          string `json:"error,omitempty"`
 }
 
 type CacheDebugArbitraryCall struct {
@@ -1648,10 +1644,16 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 				if call == nil {
 					continue
 				}
+				// The callback records its error before closing waitCh, without
+				// callsMu, so read it only after receiving from waitCh. Its
+				// result is published without callsMu too, while the call is
+				// still listed here; a published result is in "results".
 				completed := false
+				var callErr error
 				select {
 				case <-call.waitCh:
 					completed = true
+					callErr = call.err
 				default:
 				}
 				entry := CacheDebugOngoingCall{
@@ -1662,19 +1664,8 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 					TTLSeconds:     call.ttlSeconds,
 					Completed:      completed,
 				}
-				if call.err != nil {
-					entry.Error = call.err.Error()
-				}
-				if call.res != nil {
-					entry.SharedResultID = uint64(call.res.id)
-					entry.ResultDescription = call.res.description
-					entry.ResultRecordType = call.res.recordType
-					state := call.res.loadPayloadState()
-					if typeName := sharedResultObjectTypeName(call.res, state); typeName != "" {
-						entry.ResultTypeName = typeName
-					} else if state.self != nil && state.self.Type() != nil {
-						entry.ResultTypeName = state.self.Type().Name()
-					}
+				if callErr != nil {
+					entry.Error = callErr.Error()
 				}
 				if err := writeElem(entry); err != nil {
 					return err
