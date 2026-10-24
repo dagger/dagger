@@ -31,6 +31,24 @@ type LazyOperationInvocation interface {
 func (c *Cache) partDecodeContext(ctx context.Context, row *sharedResult, record PersistedRecord) *PersistDecodeContext {
 	return NewPersistDecodeContext(CurrentDagqlServer(ctx), uint64(row.id), record.Call).WithSnapshotRoles(record.SnapshotLinks)
 }
+
+// PartTransferShell is a value that can decode from another engine's record
+// as a shell: without its recipe, its parts come only through part
+// acquisition. A value that decoded with its recipe armed (ArmRecipe) is no
+// shell: it evaluates as a value restored from local persistence does.
+type PartTransferShell interface{ PartTransferShell() bool }
+
+// transferShellLocked reports whether row's value res came from another
+// engine's record as a shell. A value that can't tell is taken for one.
+// Requires egraphMu.
+func transferShellLocked(res AnyResult, row *sharedResult) bool {
+	if !row.imported {
+		return false
+	}
+	shell, ok := UnwrapAs[PartTransferShell](res)
+	return !ok || shell.PartTransferShell()
+}
+
 func (c *Cache) usesPartAcquisition(res AnyResult, row *sharedResult) bool {
 	if _, ok := UnwrapAs[HasPartHost](res); !ok {
 		return false
@@ -45,8 +63,9 @@ func (c *Cache) usesPartAcquisition(res AnyResult, row *sharedResult) bool {
 	}
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
+	shell := transferShellLocked(res, row)
 	gate := row.partGate.gate.Load()
-	if !row.imported && !row.partGate.restoredDelegation.Load() && !row.hasPartOffersLocked() && gate == nil {
+	if !shell && !row.partGate.restoredDelegation.Load() && !row.hasPartOffersLocked() && gate == nil {
 		return false
 	}
 	if gate == nil {
@@ -57,7 +76,7 @@ func (c *Cache) usesPartAcquisition(res AnyResult, row *sharedResult) bool {
 	if gate.managed {
 		return true
 	}
-	if !row.imported && !row.partGate.restoredDelegation.Load() && !row.hasPartOffersLocked() {
+	if !shell && !row.partGate.restoredDelegation.Load() && !row.hasPartOffersLocked() {
 		return false
 	}
 	for _, group := range gate.groups {

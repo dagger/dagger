@@ -36,7 +36,10 @@ import (
 type File struct {
 	filesystemOutput
 	transferPending *persistedFilePayload
-	Platform        Platform
+	// transferShell is set when the file decoded from another engine's record
+	// without its recipe, and never changes after.
+	transferShell bool
+	Platform      Platform
 
 	// Services necessary to provision the file.
 	Services ServiceBindings
@@ -348,6 +351,14 @@ func decodePersistedFileWithSnapshotRole(ctx context.Context, dec *dagql.Persist
 		file.OutputRev++ // private decoded output, before publication
 		file.outputMu.Unlock()
 	}()
+	// A record from another engine that holds no download address decodes
+	// as local persistence decodes a pending file: its recipe armed.
+	if persisted.Form == transferPending && persisted.LazyKind != "" && dec.ArmRecipe() {
+		if err := foreignFamilyCodec("File").ValidateForeign(dagql.PersistedPayloadVisit{Payload: payload, Call: dec.Call()}); err != nil {
+			return nil, err
+		}
+		persisted.Form = persistedFileFormLazy
+	}
 	if persisted.File != "" && persisted.Form != transferPending {
 		file.SetPath(persisted.File)
 	}
@@ -357,6 +368,7 @@ func decodePersistedFileWithSnapshotRole(ctx context.Context, dec *dagql.Persist
 			return nil, err
 		}
 		file.transferPending = &persisted
+		file.transferShell = true
 		if persisted.ValueKnown {
 			file.SetPath(persisted.File)
 		}
@@ -391,6 +403,11 @@ func decodePersistedFileWithSnapshotRole(ctx context.Context, dec *dagql.Persist
 func (*File) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	return decodePersistedFileWithSnapshotRole(ctx, dec, payload, "snapshot")
 }
+
+// PartTransferShell reports whether the file decoded from another engine's
+// record without its recipe, so that its content comes only through part
+// acquisition.
+func (file *File) PartTransferShell() bool { return file.transferShell }
 
 type FileBlobLazy struct {
 	LazyState

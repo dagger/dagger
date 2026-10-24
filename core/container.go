@@ -1807,10 +1807,30 @@ func decodePersistedContainerResources(ctx context.Context, dec *dagql.PersistDe
 	return mounts, secrets, sockets, nil
 }
 
+// PartTransferShell reports whether the container decoded from another
+// engine's record without its recipe, so that its parts come only through
+// part acquisition.
+func (container *Container) PartTransferShell() bool {
+	return container.acquiredOutput.Load() != nil
+}
+
 func (*Container) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	var envelope persistedContainerPayload
 	if err := json.Unmarshal(payload, &envelope); err != nil {
 		return nil, fmt.Errorf("decode persisted container payload: %w", err)
+	}
+	// A record from another engine that holds no download address for any
+	// part decodes as local persistence decodes a pending container: its
+	// recipe armed, its parts pending.
+	if envelope.OperationState != "" && len(envelope.LazyJSON) != 0 && dec.ArmRecipe() {
+		kind := ""
+		if dec.Call() != nil {
+			kind = dec.Call().Field
+		}
+		if err := validateTransferOperation(envelope.OperationState, kind, envelope.LazyJSON); err != nil {
+			return nil, err
+		}
+		envelope.OperationState = ""
 	}
 	persisted := envelope.Metadata.Value
 	fs := new(LazyAccessor[*Directory, *Container])
