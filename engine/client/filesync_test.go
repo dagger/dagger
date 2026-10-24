@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -103,7 +104,7 @@ func TestSearchHostPathNestedGitRepo(t *testing.T) {
 			Pattern: "needle",
 		})
 		require.NoError(t, err)
-		require.Contains(t, paths(t, results), filepath.Join("nested", "inner.txt"))
+		require.Contains(t, paths(t, results), "nested/inner.txt")
 	})
 
 	t.Run("nested repo files are searched when honoring ignores", func(t *testing.T) {
@@ -113,7 +114,7 @@ func TestSearchHostPathNestedGitRepo(t *testing.T) {
 		})
 		require.NoError(t, err)
 		found := paths(t, results)
-		require.Contains(t, found, filepath.Join("nested", "inner.txt"))
+		require.Contains(t, found, "nested/inner.txt")
 		require.Contains(t, found, "outer.txt")
 		// the outer repo's own .gitignore is still honored
 		require.NotContains(t, found, "ignored.txt")
@@ -126,7 +127,7 @@ func TestSearchHostPathNestedGitRepo(t *testing.T) {
 			Globs:       []string{"nested/inner.txt"},
 		})
 		require.NoError(t, err)
-		require.Equal(t, []string{filepath.Join("nested", "inner.txt")}, paths(t, results))
+		require.Equal(t, []string{"nested/inner.txt"}, paths(t, results))
 	})
 
 	t.Run("glob matching nothing is empty, not an error", func(t *testing.T) {
@@ -140,6 +141,58 @@ func TestSearchHostPathNestedGitRepo(t *testing.T) {
 		require.NoError(t, err)
 		require.Empty(t, results)
 	})
+
+	t.Run("a path rooted at the search root", func(t *testing.T) {
+		// Workspace searches pass "/" for the workspace root; on Windows it was
+		// refused as escaping the root.
+		results, err := searchHostPath(context.Background(), root, &engine.LocalSearchOpts{
+			Pattern: "needle",
+			Paths:   []string{"/"},
+		})
+		require.NoError(t, err)
+		// ripgrep prints paths under its "." operand as ./outer.txt.
+		var found []string
+		for _, p := range paths(t, results) {
+			found = append(found, path.Clean(p))
+		}
+		require.Contains(t, found, "outer.txt")
+		require.Contains(t, found, "nested/inner.txt")
+
+		results, err = searchHostPath(context.Background(), root, &engine.LocalSearchOpts{
+			Pattern: "needle",
+			Paths:   []string{"/nested"},
+		})
+		require.NoError(t, err)
+		require.Equal(t, []string{"nested/inner.txt"}, paths(t, results))
+	})
+}
+
+// TestLocalSearchPath pins how a search path maps to a path under the search
+// root on every OS: slash-separated, rooted at the search root, and never
+// outside it.
+func TestLocalSearchPath(t *testing.T) {
+	for p, want := range map[string]string{
+		"/":                         ".",
+		".":                         ".",
+		"/src":                      "src",
+		"src":                       "src",
+		"/testdata/project-nested/": filepath.Join("testdata", "project-nested"),
+		"/a/./b/../c":               filepath.Join("a", "c"),
+	} {
+		got, err := localSearchPath(p)
+		require.NoError(t, err, p)
+		require.Equal(t, want, got, p)
+	}
+	for _, p := range []string{"../x", "/../x", "a/../../x", "//server/share"} {
+		_, err := localSearchPath(p)
+		require.ErrorContains(t, err, "path cannot escape search root", p)
+	}
+	if runtime.GOOS == "windows" {
+		for _, p := range []string{`C:\Windows`, `\\server\share`} {
+			_, err := localSearchPath(p)
+			require.ErrorContains(t, err, "path cannot escape search root", p)
+		}
+	}
 }
 
 // TestSearchWithRipgrepNoFilesSearched pins the fix for the case above without
