@@ -165,6 +165,7 @@ func Build(header *wcprof.DumpHeader, events []wcprof.DumpEvent) *Graph {
 			Start:    oo.StartNS,
 			End:      max(dumpRel, oo.StartNS),
 			Open:     true,
+			Argv:     decodeArgv(str(oo.MetaID)),
 		}
 		g.Ops = append(g.Ops, op)
 		g.ByID[op.ID] = op

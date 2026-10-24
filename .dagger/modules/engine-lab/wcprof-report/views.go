@@ -256,6 +256,9 @@ func occupancy(o *out, g *Graph, opts Options) {
 //   - self time: each op's own time (its interval less its children and
 //     waits) in the window, summed across concurrent ops, so it can exceed
 //     the window's length.
+//
+// The chain follows waits into work outside the op's subtree (a shared
+// execution it joined); the other two cover only the op's subtree.
 func window(o *out, g *Graph, opts Options) error {
 	if opts.Op == 0 {
 		return fmt.Errorf("window needs -op")
@@ -316,17 +319,18 @@ func window(o *out, g *Graph, opts Options) error {
 			a.intervals = append(a.intervals, [2]int64{s, e})
 			a.self += uncovered(s, e, op.Children, op.Waits)
 		}
+		// Every child, even one outside the window: its own descendants
+		// can run past it (publication work outlives the call that started
+		// it), so a child's interval doesn't bound its subtree's.
 		for _, c := range op.Children {
-			if c.End > from && c.Start < to {
-				visit(c)
-			}
+			visit(c)
 		}
 	}
 	visit(root)
 	occupied := func(a *acc) int64 { return unionLen(a.intervals) }
 	slices.SortFunc(list, func(a, b *acc) int { return cmp.Or(cmpInt64(occupied(b), occupied(a)), cmp.Compare(a.key, b.key)) })
 	o.printf("")
-	o.printf("occupied wall time per class (union of its ops in the window), and self time (summed across concurrent ops):")
+	o.printf("in the op's subtree (its descendants, not work it waited on elsewhere), occupied wall time per class (union of its ops in the window) and self time (summed across concurrent ops):")
 	o.printf("  %10s %10s %6s  %s", "occupied", "self", "ops", "kind class")
 	for i, a := range list {
 		if i == opts.Top {

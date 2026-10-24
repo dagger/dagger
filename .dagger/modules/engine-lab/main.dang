@@ -790,11 +790,27 @@ type EngineLab {
     links {"type":"link","link",...}. jq runs with -c -r: objects and arrays
     print as compact JSON, strings print raw, so end a filter in `@tsv` or a
     string for plain-text rows. Output is capped at `limit` lines.
+  - `ancestors`: matching ops grouped by their class and the classes of up
+    to `levels` ancestors (count, total and max duration), to see where a
+    class is called from.
+  - `occupancy`: per class, or per label with `by: "label"`, how many
+    matching ops were in progress over time: the mean over the capture, the
+    peak, and the mean in each of `buckets` time buckets.
+  - `window`: for op `op` over its interval, or the part between `from` and
+    `to` (ms from the capture's start), three quantities per class: time on
+    the critical chain (sums to the window), and in the op's subtree,
+    occupied wall time (the union of the class's ops) and self time (summed
+    across concurrent ops).
   - `summary`: the capture summary again.
   - `compare`: the capture against another (`against`, required): per
     class, count, duration total, duration p50 and self total on each side,
     with the delta or ratio, sorted by the largest absolute change in
-    duration total. The filters apply to both sides.
+    duration total. The filters apply to both sides. With `by: "label"`,
+    per label instead of per class.
+
+  `label` is a regexp over each exec's command (its argv joined by spaces);
+  its first submatch labels the exec and each ancestor that has no other
+  label below it, e.g. '\n# ([^\n]+)\n' labels a Go build's ops by package.
 
   `class`, `excludeClass`, `client` and `kind` filter ops in every view (in
   tree and children, they pick the root). Self time is an op's duration
@@ -809,7 +825,7 @@ type EngineLab {
     source: Workspace!,
     """
     classes, breakdown, clients, tree, children, critpath, waits, compare,
-    jq or summary.
+    ancestors, occupancy, window, jq or summary.
     """
     view: String! = "classes",
     """
@@ -838,7 +854,7 @@ type EngineLab {
     """
     kind: String! = "",
     """
-    tree/children/critpath: root op ID (0 = the slowest op matching the
+    tree/children/critpath/window: root op ID (0 = the slowest op matching the
     filters; critpath: every outermost matching op).
     """
     op: Int! = 0,
@@ -856,9 +872,31 @@ type EngineLab {
     """
     sortBy: String! = "",
     """
-    clients: number of time buckets.
+    clients and occupancy: number of time buckets.
     """
     buckets: Int! = 10,
+    """
+    Regexp over each exec's command whose first submatch labels its ops
+    (see above); "" = no labels.
+    """
+    label: String! = "",
+    """
+    occupancy and compare: group by "class" (default) or "label" (needs
+    `label`).
+    """
+    by: String! = "class",
+    """
+    ancestors: how many ancestor classes to group by.
+    """
+    levels: Int! = 3,
+    """
+    window: start, ms from the capture's start (-1 = the op's start).
+    """
+    from: Int! = -1,
+    """
+    window: end, ms from the capture's start (-1 = the op's end).
+    """
+    to: Int! = -1,
     """
     jq: the jq filter applied to each event (jq -c -r), e.g.
     'select(.class == "Query.node") | [.id, .start_ms, .dur_ms] | @tsv'.
@@ -897,6 +935,11 @@ type EngineLab {
       "-top", toString(top),
       "-sort", sortBy,
       "-buckets", toString(buckets),
+      "-label", label,
+      "-by", by,
+      "-levels", toString(levels),
+      "-from", toString(from),
+      "-to", toString(to),
     ]
     if (view == "compare") {
       if (against == "") {

@@ -120,3 +120,48 @@ func TestUnionLen(t *testing.T) {
 		t.Errorf("unionLen = %d, want 30", got)
 	}
 }
+
+func TestWindowIncludesDescendantsThatOutliveTheirParent(t *testing.T) {
+	// Root [0,100]; its child [0,40] starts publication work [40,80] that
+	// outlives it. A window inside [40,80] must count the publication.
+	b := newDump(t)
+	b.op(1, 0, "call", "Root", "c", "executed", 0, 100)
+	b.op(2, 1, "call", "Child", "c", "executed", 0, 40)
+	b.op(3, 2, "internal", "dagql.publishResult", "c", "ok", 40, 80)
+	g := b.graph()
+	got := report(t, g, Options{View: "window", Op: 1, FromMS: 50, ToMS: 70})
+	assertContains(t, got,
+		"(20.00ms)",
+		"     20.00ms    20.00ms      1  internal dagql.publishResult")
+}
+
+func TestOpenOpKeepsItsCommand(t *testing.T) {
+	b := newDump(t)
+	b.op(1, 0, "call", "Directory.sync", "m", "executed", 0, 40)
+	meta, err := json.Marshal([]string{"sh", "-c", "set -e\n# example.com/open\ncompile"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.open = append(b.open, wcprof.DumpOpenOp{
+		OpID: 2, ParentID: 1, Kind: "exec_phase", WorkType: "user",
+		ClassID: b.id("exec.processRun"), MetaID: b.id(string(meta)), StartNS: 10 * msNS,
+	})
+	g := b.graph()
+	op := g.ByID[2]
+	if op == nil || !op.Open || len(op.Argv) != 3 {
+		t.Fatalf("open op: %+v", op)
+	}
+	if n := g.LabelBy(pkgLabel); n != 1 || op.Label != "example.com/open" || g.ByID[1].Label != "example.com/open" {
+		t.Errorf("open op label: matched %d, op %q, parent %q", n, op.Label, g.ByID[1].Label)
+	}
+}
+
+func TestCompareByLabelHeading(t *testing.T) {
+	a, b := twoPackages(t), twoPackages(t)
+	a.LabelBy(pkgLabel)
+	b.LabelBy(pkgLabel)
+	got := report(t, b, Options{View: "compare", By: "label", Against: a})
+	if !strings.Contains(got, "Δself  label") {
+		t.Errorf("compare by label heading:\n%s", got)
+	}
+}

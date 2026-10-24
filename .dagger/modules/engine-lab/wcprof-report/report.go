@@ -1011,8 +1011,12 @@ func compare(o *out, g *Graph, opts Options) error {
 	if len(internalA)+len(internalB) > 0 {
 		o.printf("(left out: %d → %d internal-kind ops; kind: \"internal\" compares them)", len(internalA), len(internalB))
 	}
+	keyHeading := "kind class"
+	if opts.By == "label" {
+		keyHeading = "label"
+	}
 	o.printf("%7s %7s  %9s %9s %10s %6s  %9s %9s %6s  %9s %9s %10s  %s",
-		"n_a", "n_b", "dur_a", "dur_b", "Δdur", "×dur", "p50_a", "p50_b", "×p50", "self_a", "self_b", "Δself", "kind class")
+		"n_a", "n_b", "dur_a", "dur_b", "Δdur", "×dur", "p50_a", "p50_b", "×p50", "self_a", "self_b", "Δself", keyHeading)
 	row := func(a, b *classAgg, label string) {
 		p50A, p50B := quantile(a.Durs, 0.5), quantile(b.Durs, 0.5)
 		o.printf("%7d %7d  %9s %9s %10s %6s  %9s %9s %6s  %9s %9s %10s  %s",
