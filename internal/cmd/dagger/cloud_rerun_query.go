@@ -47,9 +47,9 @@ func (cli *CloudCLI) loadCloudCheckQueryForWorkspace(ctx context.Context, addres
 	}
 
 	baseSelectors := cloudCheckSelectorFlags{
-		GitHubRepo: []string{remote.CloneRef},
-		Workspace:  []string{remote.BaseAddress},
-		Check:      checks,
+		GitRepo:   []string{remote.CloneRef},
+		Workspace: []string{remote.BaseAddress},
+		Check:     checks,
 	}
 
 	client, _, err := cli.cloudClientWithLogin(ctx, login)
@@ -108,9 +108,9 @@ func cloudRowsAndSelectorsForAddress(ctx context.Context, rows []cloudCheckRow, 
 		return nil, cloudCheckSelectorFlags{}, nil
 	}
 	baseSelectors := cloudCheckSelectorFlags{
-		GitHubRepo: []string{remote.CloneRef},
-		Workspace:  []string{remote.BaseAddress},
-		Check:      checks,
+		GitRepo:   []string{remote.CloneRef},
+		Workspace: []string{remote.BaseAddress},
+		Check:     checks,
 	}
 	selectors := cloudWorkspaceSelectors(baseSelectors, remote.Version)
 	var out []cloudCheckRow
@@ -130,7 +130,7 @@ func firstNonEmptyCloudSelector(selectors []cloudCheckSelectorFlags) cloudCheckS
 }
 
 func (f cloudCheckSelectorFlags) hasCloudSelector() bool {
-	return len(f.GitHubRepo) > 0 ||
+	return len(f.GitRepo) > 0 || len(f.GitLabMR) > 0 || len(f.GitHubRepo) > 0 ||
 		len(f.GitHubPR) > 0 ||
 		len(f.GitBranch) > 0 ||
 		len(f.GitTag) > 0 ||
@@ -175,8 +175,10 @@ func selectCloudCheckCommit(rows []cloudCheckRow, selectors cloudCheckSelectorFl
 }
 
 func cloudCheckSubject(row cloudCheckRow, selectors cloudCheckSelectorFlags) string {
-	repo := row.Dimensions["github-repo"]
+	repo := firstNonEmpty(row.Dimensions["git-repo"], row.Dimensions["github-repo"])
 	switch {
+	case selectors.selected("gitlab-mr") || row.Dimensions["gitlab-mr"] != "":
+		return repo + "|mr|" + row.Dimensions["gitlab-mr"]
 	case selectors.selected("github-pr") || row.Dimensions["github-pr"] != "":
 		return repo + "|pr|" + row.Dimensions["github-pr"]
 	case selectors.selected("git-branch") || row.Dimensions["git-branch"] != "":
@@ -192,7 +194,7 @@ func cloudCheckSubject(row cloudCheckRow, selectors cloudCheckSelectorFlags) str
 
 func renderAmbiguousCloudChecks(cmd *cobra.Command, rows []cloudCheckRow) {
 	fmt.Fprintln(cmd.OutOrStdout(), "Selectors match multiple Cloud check subjects. Add more selectors.")
-	renderCloudList(cmd, rows, []string{"github-repo", "github-pr", "git-branch", "git-tag", "git-sha"})
+	renderCloudList(cmd, rows, []string{"git-repo", "github-pr", "gitlab-mr", "git-branch", "git-tag", "git-sha"})
 }
 
 func renderCloudList(cmd *cobra.Command, rows []cloudCheckRow, columns []string) {
