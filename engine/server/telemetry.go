@@ -44,6 +44,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/vito/go-sse/sse"
 )
 
@@ -264,6 +265,13 @@ func (exp sessionSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace
 	// have the protected call span processor retry it and then drop its
 	// routable siblings too. Only store writes, which can succeed on retry,
 	// fail the batch.
+	if wcprof.GloballyEnabled() || exp.sess.wcprofEnabled {
+		rctx := ctx
+		if exp.sess.wcprofEnabled {
+			rctx = wcprof.ContextWithProfiling(ctx)
+		}
+		recordReportedSpans(rctx, spans)
+	}
 	routed := make([]sdktrace.ReadOnlySpan, 0, len(spans))
 	routes := make([][]string, 0, len(spans))
 	payloadsByTarget := map[string][]string{}

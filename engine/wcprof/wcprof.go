@@ -242,12 +242,20 @@ const (
 	// LinkKindReusedResult: op was satisfied by reusing the dagql result
 	// with ResultID (cache hit).
 	LinkKindReusedResult
+	// LinkKindReportedCause: the engine op (from) was caused by the reported
+	// op (target), e.g. a request a reported task made.
+	LinkKindReportedCause
+	// LinkKindUnresolvedSpan: a reported op (from) refers to a span (the
+	// ident, "<trace>/<span>") that wasn't recorded by the time of the dump.
+	LinkKindUnresolvedSpan
 )
 
 var linkKindNames = map[LinkKind]string{
 	LinkKindNestedClient: "nested_client",
 	LinkKindResult:       "result",
 	LinkKindReusedResult: "reused_result",
+	LinkKindReportedCause:  "reported_cause",
+	LinkKindUnresolvedSpan: "unresolved_span",
 }
 
 func (k LinkKind) String() string {
@@ -327,6 +335,9 @@ type Recorder struct {
 	strings stringTable
 
 	shards [numShards]shard
+
+	// reported holds client-reported work (see reported.go).
+	reported reported
 }
 
 // NewRecorder returns a recorder with the given event cap (<=0 means

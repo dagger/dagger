@@ -25,6 +25,21 @@ type DumpHeader struct {
 	// OpenOps are ops begun but not ended at dump time (e.g. in-flight or
 	// hung work).
 	OpenOps []DumpOpenOp `json:"open_ops,omitempty"`
+	// Producers are the clients that reported their own work: per producer,
+	// the spans received and, once it declared them, the count it reported
+	// and how many it failed to export. A producer whose Received is below
+	// its Declared, or that never declared, makes the dump's reported work
+	// incomplete.
+	Producers []DumpProducer `json:"producers,omitempty"`
+}
+
+// DumpProducer is one producer's completeness accounting.
+type DumpProducer struct {
+	Producer string `json:"producer"`
+	Received int64  `json:"received"`
+	Declared int64  `json:"declared,omitempty"`
+	Dropped  int64  `json:"dropped,omitempty"`
+	Complete bool   `json:"complete,omitempty"`
 }
 
 // DumpOpenOp describes an in-progress op at dump time.
@@ -65,7 +80,26 @@ type DumpEvent struct {
 
 	StartNS int64 `json:"s"`
 	EndNS   int64 `json:"d"`
+
+	// Reported ops (see reported.go) also carry their label and producer.
+	LabelID    uint32 `json:"lb,omitempty"`
+	ProducerID uint32 `json:"pr,omitempty"`
+	// Resource events ("e":"resource") describe the resource op OpID.
+	Capacity int64  `json:"cap,omitempty"`
+	PolicyID uint32 `json:"pol,omitempty"`
+	// Acquisition events ("e":"acquisition") describe the acquire op OpID:
+	// TargetID is its resource op, Priority its priority, MetaID its
+	// priority inputs (a JSON object), GrantedNS when it was granted (0 if
+	// never), Outcome released, cancelled or held.
+	Priority  int64 `json:"pri,omitempty"`
+	GrantedNS int64 `json:"gr,omitempty"`
 }
+
+// Dump event types for reported resources and acquisitions.
+const (
+	DumpTypeResource    = "resource"
+	DumpTypeAcquisition = "acquisition"
+)
 
 func eventTypeName(t EventType) string {
 	switch t {
@@ -161,6 +195,9 @@ func (r *Recorder) WriteDump(w io.Writer, flush bool) error {
 		r.total.Add(int64(-total))
 	}
 
+	reportedEvents, producers := r.dumpReported(flush)
+	total += len(reportedEvents)
+
 	header := DumpHeader{
 		SchemaVersion:  DumpSchemaVersion,
 		EpochUnixNano:  r.wallEpoch,
@@ -169,6 +206,7 @@ func (r *Recorder) WriteDump(w io.Writer, flush bool) error {
 		EventCount:     total,
 		Strings:        r.strings.snapshot(),
 		OpenOps:        open,
+		Producers:      producers,
 	}
 
 	bw := bufio.NewWriterSize(w, 1<<20)
@@ -181,6 +219,11 @@ func (r *Recorder) WriteDump(w io.Writer, flush bool) error {
 			if err := enc.Encode(toDumpEvent(ev)); err != nil {
 				return fmt.Errorf("wcprof: encode dump event: %w", err)
 			}
+		}
+	}
+	for _, ev := range reportedEvents {
+		if err := enc.Encode(ev); err != nil {
+			return fmt.Errorf("wcprof: encode reported event: %w", err)
 		}
 	}
 	return bw.Flush()

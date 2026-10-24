@@ -273,3 +273,47 @@ func decimal(attrs map[string]any, key string, required bool) (int64, error) {
 		return 0, fmt.Errorf("%s: unexpected %T", key, v)
 	}
 }
+
+// Record converts what s reports into the recorder's form (see
+// wcprof.RecordReported); ok is false when s reports no op. name is the
+// span's name, the op's class.
+func Record(s Span, name string, r Reported) (op wcprof.ReportedOp, ok bool) {
+	if r.Op == nil {
+		return op, false
+	}
+	op = wcprof.ReportedOp{
+		TraceID:      s.TraceID,
+		SpanID:       s.SpanID,
+		ParentSpanID: r.Op.CausalParent,
+		Kind:         wcprof.ParseOpKind(r.Op.Kind),
+		Work:         wcprof.ParseWorkType(r.Op.WorkType),
+		Name:         name,
+		Label:        r.Op.Label,
+		Producer:     r.Op.Producer,
+		StartUnixNS:  r.Op.StartUnixNS,
+		EndUnixNS:    r.Op.EndUnixNS,
+	}
+	for _, w := range r.Waits {
+		op.Waits = append(op.Waits, wcprof.ReportedWait{
+			TargetTraceID: w.TargetTraceID,
+			TargetSpanID:  w.TargetSpanID,
+			Reason:        wcprof.ParseWaitReason(w.Reason),
+			Ident:         w.Ident,
+			StartUnixNS:   w.StartUnixNS,
+			EndUnixNS:     w.EndUnixNS,
+		})
+	}
+	if r.Resource != nil {
+		op.Resource = &wcprof.ReportedResource{Capacity: r.Resource.Capacity, Policy: r.Resource.Policy}
+	}
+	if a := r.Acquisition; a != nil {
+		op.Acquisition = &wcprof.ReportedAcquisition{
+			ResourceSpanID: a.ResourceID,
+			Priority:       a.Priority,
+			PriorityInputs: a.PriorityInputs,
+			GrantedUnixNS:  a.GrantedUnixNS,
+			Outcome:        a.Outcome,
+		}
+	}
+	return op, true
+}
