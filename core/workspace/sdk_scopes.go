@@ -160,21 +160,32 @@ func mergeSDKScopes(first, second SDKScope) (SDKScope, []string) {
 // ParseConfigAt resolves and reconciles SDK scope paths once the workspace
 // config directory is known. This only changes the in-memory configuration.
 func ParseConfigAt(ctx context.Context, data []byte, configDir string) (*Config, error) {
+	cfg, warnings, err := parseConfigAt(data, configDir)
+	logConfigWarnings(ctx, warnings)
+	return cfg, err
+}
+
+// parseConfigAt keeps derivation independent of the caller's telemetry context.
+func parseConfigAt(data []byte, configDir string) (*Config, []string, error) {
 	cfg, err := ParseConfig(data)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	warnings, err := CheckConfigFields(data, filepath.ToSlash(filepath.Join(configDir, ConfigFileName)))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+	messages, err := ReconcileSDKScopes(cfg, configDir)
+	if err != nil {
+		return nil, warnings, err
+	}
+	return cfg, append(warnings, messages...), nil
+}
+
+func logConfigWarnings(ctx context.Context, warnings []string) {
 	for _, warning := range warnings {
 		slog.GlobalLogger(ctx, "dagger/workspace").Warn(warning)
 	}
-	if err := reconcileSDKScopes(ctx, cfg, configDir); err != nil {
-		return nil, err
-	}
-	return cfg, nil
 }
 
 // UpdateConfigBytesAt checks scope uniqueness at the configuration write
