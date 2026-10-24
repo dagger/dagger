@@ -31,7 +31,7 @@ func main() {
 	flag.StringVar(&excludeClass, "exclude-class", "", "regexp over op classes to leave out (e.g. '^Query\\.')")
 	flag.StringVar(&opts.Filter.Client, "client", "", "substring of the client ID")
 	flag.StringVar(&opts.Filter.Kind, "kind", "", "exact op kind (call, call_exec, lazy, exec, ...)")
-	flag.Uint64Var(&opts.Op, "op", 0, "tree/children/critpath/window views: root op ID (default: slowest matching op; critpath: every outermost matching op)")
+	flag.Uint64Var(&opts.Op, "op", 0, "tree/children/critpath/window views: root op ID (default: slowest matching op; critpath: every outermost matching op; window: required)")
 	flag.IntVar(&opts.Depth, "depth", 6, "tree/critpath views: levels to print below the root")
 	flag.IntVar(&opts.Top, "top", 30, "rows per ranking")
 	flag.StringVar(&opts.Sort, "sort", "", "classes view: self (default), count or dur; children view: start (default), dur or self")

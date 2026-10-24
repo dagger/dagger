@@ -855,7 +855,7 @@ type EngineLab {
     kind: String! = "",
     """
     tree/children/critpath/window: root op ID (0 = the slowest op matching the
-    filters; critpath: every outermost matching op).
+    filters; critpath: every outermost matching op; window: required).
     """
     op: Int! = 0,
     """
