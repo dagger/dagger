@@ -165,6 +165,9 @@ func TestSharedMountDefaultsKeepABuildsOutputs(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	store := testutil.NewStore(t)
+	// The default bound on idle mounts, with a linger long enough that no
+	// mount expires while the test runs, however slow the machine.
+	store.WithSharedMounts(t, time.Hour, 0)
 	const outputs = 2000
 	refs := make([]bkcache.ImmutableRef, outputs)
 	owners := make([]string, outputs)
