@@ -15,6 +15,23 @@ type TestSplit {
   let dumpAfter: [String!]! = if (self.diagnostics) { ["15m", "25m"] } else { [] }
 
   """
+  The remote cache service's URL, for the test engines to join its remote
+  cache. The test engines join only when this, cloudUrl and cloudToken are
+  all set.
+  """
+  remoteCacheUrl: Secret = null
+
+  """
+  The Dagger Cloud URL the test engines export their cache events to
+  """
+  cloudUrl: Secret = null
+
+  """
+  An engine token for the remote cache and Dagger Cloud
+  """
+  cloudToken: Secret = null
+
+  """
   Workspace
   """
   let ws: Workspace!
@@ -34,7 +51,7 @@ type TestSplit {
     """
     ebpf: Boolean,
   ): Void {
-    engineDev(ws: self.ws).test(parallel: parallel, timeout: timeout, race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, ebpf: ebpf, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
+    engineDev(ws: self.ws).test(parallel: parallel, timeout: timeout, race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, ebpf: ebpf, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter, remoteCacheUrl: self.remoteCacheUrl, cloudUrl: self.cloudUrl, cloudToken: self.cloudToken)
   }
 
   let testCliEngineSpecific(
@@ -42,13 +59,22 @@ type TestSplit {
     ebpfProgs: [String!],
     pkg: String! = "./core/integration",
     race: Boolean,
+    """
+    Keep the test engine off the remote cache, for the suites that test the
+    engine's own cache
+    """
+    noRemoteCache: Boolean! = false,
   ): Void {
-    engineDev(ws: self.ws)
+    let dev = engineDev(ws: self.ws)
       .withEngineConfig("worker.oci", [
         "minFreeSpace = \"30%\"",
         "maxUsedSpace = \"50%\"",
       ].join("\n"))
-      .test(race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
+    if (noRemoteCache) {
+      dev.test(race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
+    } else {
+      dev.test(race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter, remoteCacheUrl: self.remoteCacheUrl, cloudUrl: self.cloudUrl, cloudToken: self.cloudToken)
+    }
   }
 
   let testSkip(
@@ -58,7 +84,7 @@ type TestSplit {
     race: Boolean,
     parallel: Int,
   ): Void {
-    engineDev(ws: self.ws).test(parallel: parallel, race: race, skip: skip.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
+    engineDev(ws: self.ws).test(parallel: parallel, race: race, skip: skip.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter, remoteCacheUrl: self.remoteCacheUrl, cloudUrl: self.cloudUrl, cloudToken: self.cloudToken)
   }
 
   """
@@ -237,7 +263,7 @@ type TestSplit {
     # Rendering goldens require their warmup cache to survive session teardown.
     engineDev(ws: self.ws)
       .withEngineConfig("worker.oci", "gc = false")
-      .test(run: "^TestTelemetry$", pkg: "./dagql/idtui", testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
+      .test(run: "^TestTelemetry$", pkg: "./dagql/idtui", testVerbose: self.diagnostics, dumpAfter: self.dumpAfter, remoteCacheUrl: self.remoteCacheUrl, cloudUrl: self.cloudUrl, cloudToken: self.cloudToken)
     testSpecific(["^TestTelemetry$"])
 
     null
@@ -264,14 +290,14 @@ type TestSplit {
   Test cache persistence
   """
   pub testCachePersistence: Void @check {
-    testCliEngineSpecific(["TestCachePersistence"])
+    testCliEngineSpecific(["TestCachePersistence"], noRemoteCache: true)
   }
 
   """
   Test local cache
   """
   pub testLocalCache: Void @check {
-    testCliEngineSpecific(["TestLocalCache"])
+    testCliEngineSpecific(["TestLocalCache"], noRemoteCache: true)
   }
 
   """

@@ -199,7 +199,9 @@ type ElixirClientDev {
   }
 
   let isSemver(version: String!): Boolean! {
-    let binary = go(ws: self.ws, source: currentModule.source.directory("is-semver")).binary("is-semver")
+    # A throwaway helper, not a dagger binary: with noVcs the go toolchain
+    # stamps no dagger commit into it, so it builds once, not once per commit.
+    let binary = go(ws: self.ws, source: currentModule.source.directory("is-semver"), noVcs: true).binary("is-semver")
     let exitCode = devContainer
       .from("alpine:3")
       .withFile("/bin/is-semver", binary)

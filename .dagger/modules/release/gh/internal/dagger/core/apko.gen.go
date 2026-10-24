@@ -206,41 +206,41 @@ type ApkoPublishOpts struct {
 	//
 	// OCI annotations to add. Separate with colon (key:value).
 	//
-	Annotations []string // apko (../../../../../../../.dagger/modules/release/apko/main.go:274:2)
+	Annotations []string // apko (../../../../../../../.dagger/modules/release/apko/main.go:280:2)
 	//
 	// Architectures to build for (e.g., x86_64,ppc64le,arm64) -- default is all, unless specified in config. Can also use 'host' to indicate arch of host this is running on.
 	//
-	Arch []string // apko (../../../../../../../.dagger/modules/release/apko/main.go:279:2)
+	Arch []string // apko (../../../../../../../.dagger/modules/release/apko/main.go:285:2)
 	//
 	// Date used for the timestamps of the files inside the image in RFC3339 format.
 	//
-	BuildDate string // apko (../../../../../../../.dagger/modules/release/apko/main.go:284:2)
+	BuildDate string // apko (../../../../../../../.dagger/modules/release/apko/main.go:290:2)
 	//
 	// Path to extra keys to include in the keyring.
 	//
-	KeyringAppend []string // apko (../../../../../../../.dagger/modules/release/apko/main.go:289:2)
+	KeyringAppend []string // apko (../../../../../../../.dagger/modules/release/apko/main.go:295:2)
 	//
 	// Do not use network to fetch packages (cache must be pre-populated).
 	//
-	Offline bool // apko (../../../../../../../.dagger/modules/release/apko/main.go:294:2)
+	Offline bool // apko (../../../../../../../.dagger/modules/release/apko/main.go:300:2)
 	//
 	// Extra packages to include.
 	//
-	PackageAppend []string // apko (../../../../../../../.dagger/modules/release/apko/main.go:299:2)
+	PackageAppend []string // apko (../../../../../../../.dagger/modules/release/apko/main.go:305:2)
 	//
 	// Path to extra repositories to include.
 	//
-	RepositoryAppend []string // apko (../../../../../../../.dagger/modules/release/apko/main.go:304:2)
+	RepositoryAppend []string // apko (../../../../../../../.dagger/modules/release/apko/main.go:310:2)
 	//
 	// Detect and embed VCS URLs.
 	//
 	//
 	// Default: true
-	Vcs bool // apko (../../../../../../../.dagger/modules/release/apko/main.go:312:2)
+	Vcs bool // apko (../../../../../../../.dagger/modules/release/apko/main.go:318:2)
 }
 
 // Publish a built image from a YAML configuration file.
-func (r *Apko) Publish(ctx context.Context, config *File, tag string, opts ...ApkoPublishOpts) error { // apko (../../../../../../../.dagger/modules/release/apko/main.go:262:1)
+func (r *Apko) Publish(ctx context.Context, config *File, tag string, opts ...ApkoPublishOpts) error { // apko (../../../../../../../.dagger/modules/release/apko/main.go:268:1)
 	assertNotNil("config", config)
 	if r.publish != nil {
 		return nil
@@ -359,7 +359,7 @@ func (r *Apko) AsNode() Node {
 	}
 }
 
-type ApkoBuildResult struct { // apko (../../../../../../../.dagger/modules/release/apko/main.go:251:6)
+type ApkoBuildResult struct { // apko (../../../../../../../.dagger/modules/release/apko/main.go:257:6)
 	query *querybuilder.Selection
 
 	id  *ID
@@ -373,7 +373,7 @@ func (r *ApkoBuildResult) WithGraphQLQuery(q *querybuilder.Selection) *ApkoBuild
 }
 
 // Import the image into a container.
-func (r *ApkoBuildResult) AsContainer() *Container { // apko (../../../../../../../.dagger/modules/release/apko/main.go:257:1)
+func (r *ApkoBuildResult) AsContainer() *Container { // apko (../../../../../../../.dagger/modules/release/apko/main.go:263:1)
 	q := r.query.Select("asContainer")
 
 	return &Container{
@@ -381,7 +381,7 @@ func (r *ApkoBuildResult) AsContainer() *Container { // apko (../../../../../../
 	}
 }
 
-func (r *ApkoBuildResult) File() *File { // apko (../../../../../../../.dagger/modules/release/apko/main.go:252:2)
+func (r *ApkoBuildResult) File() *File { // apko (../../../../../../../.dagger/modules/release/apko/main.go:258:2)
 	q := r.query.Select("file")
 
 	return &File{
@@ -438,7 +438,7 @@ func (r *ApkoBuildResult) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-func (r *ApkoBuildResult) Tag(ctx context.Context) (string, error) { // apko (../../../../../../../.dagger/modules/release/apko/main.go:253:2)
+func (r *ApkoBuildResult) Tag(ctx context.Context) (string, error) { // apko (../../../../../../../.dagger/modules/release/apko/main.go:259:2)
 	if r.tag != nil {
 		return *r.tag, nil
 	}

@@ -144,6 +144,44 @@ func (dev *EngineDev) Container(
 	gpuSupport bool,
 	// +optional
 	version string,
+	// The remote cache service's URL, for the engine to join its remote cache
+	// +optional
+	remoteCacheURL *dagger.Secret,
+	// The Dagger Cloud URL the engine exports its cache events to
+	// +optional
+	cloudURL *dagger.Secret,
+	// An engine token for the remote cache and Dagger Cloud
+	// +optional
+	cloudToken *dagger.Secret,
+) (*dagger.Container, error) {
+	ctr, err := dev.container(ctx, platform, gpuSupport, version)
+	if err != nil {
+		return nil, err
+	}
+	return withRemoteCache(ctr, remoteCacheURL, cloudURL, cloudToken), nil
+}
+
+// withRemoteCache has the engine in ctr join a remote cache when the service
+// URL, the Cloud URL and the engine token are all set, and otherwise returns
+// ctr unchanged. All three are secrets, so their values stay out of logs. A
+// secret's cache identity is a hash of its plaintext unless it is given a
+// constant cache key (for example env://NAME?cacheKey=KEY); with one, the
+// values stay out of the cache keys of every call that passes them along.
+func withRemoteCache(ctr *dagger.Container, remoteCacheURL, cloudURL, cloudToken *dagger.Secret) *dagger.Container {
+	if remoteCacheURL == nil || cloudURL == nil || cloudToken == nil {
+		return ctr
+	}
+	return ctr.
+		WithSecretVariable("_EXPERIMENTAL_DAGGER_REMOTE_CACHE_URL", remoteCacheURL).
+		WithSecretVariable("DAGGER_CLOUD_URL", cloudURL).
+		WithSecretVariable("DAGGER_CLOUD_TOKEN", cloudToken)
+}
+
+func (dev *EngineDev) container(
+	ctx context.Context,
+	platform dagger.Platform,
+	gpuSupport bool,
+	version string,
 ) (*dagger.Container, error) {
 	cfg, err := generateConfig(dev.LogLevel)
 	if err != nil {
@@ -207,6 +245,15 @@ func (dev *EngineDev) Service(
 	sharedCache bool,
 	// +optional
 	metrics bool,
+	// The remote cache service's URL, for the engine to join its remote cache
+	// +optional
+	remoteCacheURL *dagger.Secret,
+	// The Dagger Cloud URL the engine exports its cache events to
+	// +optional
+	cloudURL *dagger.Secret,
+	// An engine token for the remote cache and Dagger Cloud
+	// +optional
+	cloudToken *dagger.Secret,
 ) (*dagger.Service, error) {
 	// Support 256 layers of nested dagger engines :-P
 	dev = dev.IncrementSubnet()
@@ -218,7 +265,7 @@ func (dev *EngineDev) Service(
 		}
 	}
 
-	devEngine, err := dev.Container(ctx, "", gpuSupport, "")
+	devEngine, err := dev.Container(ctx, "", gpuSupport, "", remoteCacheURL, cloudURL, cloudToken)
 	if err != nil {
 		return nil, err
 	}
@@ -270,6 +317,9 @@ func (dev *EngineDev) InstallClient(
 			false, // gpuSupport
 			false, // sharedCache
 			false, // metrics
+			nil,   // remoteCacheURL
+			nil,   // cloudURL
+			nil,   // cloudToken
 		)
 		if err != nil {
 			return nil, err
@@ -430,7 +480,7 @@ func (dev *EngineDev) buildTargets(ctx context.Context, tags []string) ([]target
 		for j, platform := range target.Platforms {
 			jobs = jobs.WithJob(fmt.Sprintf("build %s for %s", target.Name, platform),
 				func(ctx context.Context) error {
-					ctr, err := dev.Container(ctx, platform, target.GPUSupport, releaseVersion)
+					ctr, err := dev.container(ctx, platform, target.GPUSupport, releaseVersion)
 					if err != nil {
 						return err
 					}

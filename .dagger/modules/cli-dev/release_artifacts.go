@@ -107,9 +107,13 @@ func (cli *CliDev) releaseArchive(label string, target cliReleaseTarget) *dagger
 			Permissions: 0o755,
 		})
 
+	// The archive is written into a separate mount, which holds only it. Read
+	// out of the container's filesystem, it would keep that as its backing
+	// snapshot, with everything else in it; an engine reusing the archive
+	// from a remote cache pulls whatever of that it is missing.
 	ctr := releaseArchiveBase().
-		WithDirectory("/input", input).
-		WithExec([]string{"mkdir", "-p", "/out"})
+		WithMountedDirectory("/input", input).
+		WithMountedDirectory("/out", dag.Directory())
 	if target.Windows {
 		return ctr.
 			WithWorkdir("/input").
@@ -129,9 +133,11 @@ func (cli *CliDev) releaseChecksums(dist *dagger.Directory) *dagger.File {
 			Branch: "3.22",
 		}).
 		Container().
-		WithDirectory("/dist", dist).
-		WithExec([]string{"sh", "-ec", `mkdir -p /out
-cd /dist
+		WithMountedDirectory("/dist", dist).
+		// Written into a separate mount, which holds only it, like the
+		// archives.
+		WithMountedDirectory("/out", dag.Directory()).
+		WithExec([]string{"sh", "-ec", `cd /dist
 for file in $(ls | sort); do
 	sha256sum "$file"
 done > /out/checksums.txt`}).

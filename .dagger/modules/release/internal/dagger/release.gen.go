@@ -6,6 +6,9 @@ import (
 	"dagger/release/internal/dagger/core"
 )
 
+// ReleaseOpts contains options for Query.Release
+type ReleaseOpts = core.ReleaseOpts
+
 type Release = core.Release
 
 // ReleaseGetMaintainersOpts contains options for Release.GetMaintainers
@@ -16,6 +19,9 @@ type ReleaseNotifyOpts = core.ReleaseNotifyOpts
 
 // ReleasePublishOpts contains options for Release.Publish
 type ReleasePublishOpts = core.ReleasePublishOpts
+
+// ReleasePublishCheckRepoIsDeterministicOpts contains options for Release.PublishCheckRepoIsDeterministic
+type ReleasePublishCheckRepoIsDeterministicOpts = core.ReleasePublishCheckRepoIsDeterministicOpts
 
 // ReleasePublishWithMockEndpointsOpts contains options for Release.PublishWithMockEndpoints
 type ReleasePublishWithMockEndpointsOpts = core.ReleasePublishWithMockEndpointsOpts
