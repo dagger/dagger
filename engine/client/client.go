@@ -508,11 +508,6 @@ func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
 		return fmt.Errorf("parse runner host: %w", err)
 	}
 
-	driver, err := drivers.GetDriver(ctx, remote.Scheme)
-	if err != nil {
-		return err
-	}
-
 	var cloudToken string
 	if v, ok := os.LookupEnv(drivers.EnvDaggerCloudToken); ok {
 		cloudToken = v
@@ -528,9 +523,17 @@ func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
 		}
 	}
 
-	provisionCtx, provisionSpan := Tracer(ctx).Start(ctx, "starting engine")
-	provisionCtx, provisionCancel := context.WithTimeout(provisionCtx, 10*time.Minute)
-	c.connector, err = driver.Provision(provisionCtx, remote, &drivers.DriverOpts{
+	ctx, span := Tracer(ctx).Start(ctx, "connecting to engine", telemetry.Encapsulate())
+	defer telemetry.EndWithCause(span, &rerr)
+
+	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
+	slog.Debug("connecting", "runner", c.RunnerHost)
+
+	provisionCtx, provisionCancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer provisionCancel()
+	var bkClient *bkclient.Client
+	var bkInfo *bkclient.Info
+	driver, connector, err := drivers.Connect(provisionCtx, remote, &drivers.DriverOpts{
 		DaggerCloudToken: cloudToken,
 		GPUSupport:       os.Getenv(drivers.EnvGPUSupport),
 		Module:           params.Module,
@@ -538,25 +541,20 @@ func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
 		ExecCmd:          params.ExecCmd,
 		ClientID:         c.ID,
 		CloudAuth:        params.CloudAuth,
+	}, func(ctx context.Context, connector drivers.Connector) error {
+		bkCtx, span := Tracer(ctx).Start(ctx, "creating client")
+		var err error
+		bkClient, bkInfo, err = newBuildkitClient(bkCtx, remote, connector)
+		telemetry.EndWithCause(span, &err)
+		if err != nil {
+			return fmt.Errorf("new client: %w", err)
+		}
+		return nil
 	})
-	provisionCancel()
-	telemetry.EndWithCause(provisionSpan, &err)
 	if err != nil {
 		return err
 	}
-
-	ctx, span := Tracer(ctx).Start(ctx, "connecting to engine", telemetry.Encapsulate())
-	defer telemetry.EndWithCause(span, &rerr)
-
-	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
-	slog.Debug("connecting", "runner", c.RunnerHost)
-
-	bkCtx, span := Tracer(ctx).Start(ctx, "creating client")
-	bkClient, bkInfo, err := newBuildkitClient(bkCtx, remote, c.connector)
-	telemetry.EndWithCause(span, &err)
-	if err != nil {
-		return fmt.Errorf("new client: %w", err)
-	}
+	c.connector = connector
 	defer func() {
 		if rerr != nil {
 			rerr = errors.Join(rerr, bkClient.Close())
