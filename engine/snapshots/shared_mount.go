@@ -16,7 +16,11 @@ const (
 	DefaultSharedMountLinger = 30 * time.Second
 	// DefaultMaxIdleSharedMounts bounds the shared read-only mounts nobody is
 	// using that are kept; beyond it, the least recently used are released.
-	DefaultMaxIdleSharedMounts = 512
+	// A build reads the outputs of thousands of execs and reads most of them
+	// again later (a Go build's link reads every package's archive), so the
+	// bound holds a large build's outputs. An idle mount costs a view and a
+	// bind mount, and collection releases idle mounts first.
+	DefaultMaxIdleSharedMounts = 8192
 )
 
 // SharedMounter is a ref whose read-only mounts are shared across the engine:
