@@ -16,7 +16,7 @@
 
 # dagger-java-sdk
 
-![main workflow](https://github.com/dagger/dagger/actions/workflows/test.yml/badge.svg?branch=main)
+![main workflow](https://github.com/dagger/dagger/actions/workflows/checks.yml/badge.svg?branch=main)
 
 A [Dagger.io](https://dagger.io) SDK written in Java.
 
