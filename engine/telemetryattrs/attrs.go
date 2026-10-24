@@ -462,7 +462,8 @@ const (
 	WcprofWaitStartUnixNanoAttr = "wcprof.wait.start_unix_ns"
 	WcprofWaitEndUnixNanoAttr   = "wcprof.wait.end_unix_ns"
 	// WcprofWaitReasonAttr (string) names why the waiter blocked: one of
-	// "singleflight", "call_exec", "lazy", "service", "lock", "exec", "io".
+	// "singleflight", "call_exec", "lazy", "service", "lock", "exec", "io",
+	// or, for a reported task, "dependency".
 	WcprofWaitReasonAttr = "wcprof.wait.reason"
 	// WcprofWaitIdentAttr (string) names the awaited resource for waits that
 	// have no target span (reason "lock"), in place of the link's target span id.
@@ -478,6 +479,43 @@ const (
 	// map[string]any attribute decode bit-exact, like the decimal-string wait
 	// timings above.
 	WcprofExecArgvAttr = "wcprof.exec.argv"
+
+	// Reporting contract: clients and programs inside execs report their own
+	// work, its dependencies and their limited resources with these, on spans
+	// whose WcprofOpKindAttr is "task", "task_group", "resource" or
+	// "acquire". engine/wcprof/contract decodes them.
+	//
+	// WcprofLabelAttr (string) names an op for comparisons, e.g. a Go import
+	// path.
+	WcprofLabelAttr = "wcprof.label"
+	// WcprofProducerAttr (string) identifies the producer of a reported span,
+	// the same on all its spans, for completeness accounting.
+	WcprofProducerAttr = "wcprof.producer"
+	// WcprofResourceNameAttr, WcprofResourceCapacityAttr (decimal string) and
+	// WcprofResourcePolicyAttr ("priority_fifo" or "fifo") describe a
+	// "resource" span. The instance's ID is that span's span ID.
+	WcprofResourceNameAttr     = "wcprof.resource.name"
+	WcprofResourceCapacityAttr = "wcprof.resource.capacity"
+	WcprofResourcePolicyAttr   = "wcprof.resource.policy"
+	// On an "acquire" span: WcprofResourceIDAttr is the resource span's span
+	// ID (lower-hex); WcprofResourcePriorityAttr a decimal string, larger
+	// first; WcprofResourcePriorityInputsAttr an optional JSON object string
+	// of what the priority was computed from; WcprofResourceGrantedUnixNanoAttr
+	// when the unit was granted (decimal string, absent if never); and
+	// WcprofResourceOutcomeAttr "released", "cancelled" or "held". The span
+	// starts at the request and ends at the release.
+	WcprofResourceIDAttr              = "wcprof.resource.id"
+	WcprofResourcePriorityAttr        = "wcprof.resource.priority"
+	WcprofResourcePriorityInputsAttr  = "wcprof.resource.priority_inputs"
+	WcprofResourceGrantedUnixNanoAttr = "wcprof.resource.granted_unix_ns"
+	WcprofResourceOutcomeAttr         = "wcprof.resource.outcome"
+	// A producer's completeness carrier: WcprofProducerCompleteAttr (bool
+	// true) with WcprofProducerSpanCountAttr, the number of its other spans
+	// carrying WcprofProducerAttr, and WcprofProducerDroppedAttr, how many it
+	// failed to export (both decimal strings).
+	WcprofProducerCompleteAttr  = "wcprof.producer.complete"
+	WcprofProducerSpanCountAttr = "wcprof.producer.span_count"
+	WcprofProducerDroppedAttr   = "wcprof.producer.dropped"
 
 	// LinkPurposeWait is a new value for telemetry.LinkPurposeAttr
 	// ("dagger.io/link.purpose"), alongside the existing "cause"/"error_origin"
