@@ -186,8 +186,10 @@ type Params struct {
 	// frontend reads display text on demand with QueryLogs. Set it only when
 	// nothing receiving EngineLogs needs display text but a frontend that
 	// reads it on demand. The client still asks only an engine that serves
-	// the mode, and, with EngineCloudTelemetry, only one that confirmed it
-	// publishes to Cloud itself; LogsPresence reports the outcome.
+	// the mode and stores the client's own telemetry (IngestsTelemetry: the
+	// frontend reads the client's own display text from the store too), and,
+	// with EngineCloudTelemetry, only one that confirmed it publishes to
+	// Cloud itself; LogsPresence reports the outcome.
 	EngineLogsPresence bool
 
 	// Profile enables engine wall-clock profiling (wcprof) for this session.
@@ -226,7 +228,10 @@ type Client struct {
 	// on its trace subscription, and logsPresence whether the log push omits
 	// display text. Both are settled before Connect returns.
 	telemetryFeatures map[string]bool
-	logsPresence      bool
+	// telemetryFrameAt is when the trace or log subscription last delivered
+	// a batch (UnixNano), for WaitTelemetryIdle.
+	telemetryFrameAt atomic.Int64
+	logsPresence     bool
 
 	// ingestsTelemetry and publishesTelemetry record what the engine
 	// answered on this client's trace stream: whether it stores the
@@ -1434,6 +1439,7 @@ func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error
 	}
 
 	if err := exp.Consume(ctx, func(data []byte, encoding liveTelemetryEncoding) error {
+		c.telemetryFrameAt.Store(time.Now().UnixNano())
 		var req coltracepb.ExportTraceServiceRequest
 		if err := unmarshalLiveTelemetry(data, encoding, &req); err != nil {
 			return fmt.Errorf("unmarshal: %w", err)
@@ -1463,8 +1469,11 @@ func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error
 	c.ingestsTelemetry = exp.engineIngests && c.nestedSessionPort == 0
 	c.publishesTelemetry = c.forwardsWithoutCloud(exp.enginePublishes)
 	c.telemetryFeatures = exp.features
+	// The frontend reads all of the session's display text from the store,
+	// so it must hold this client's own too.
 	c.logsPresence = c.EngineLogsPresence &&
 		exp.features[enginetel.LiveFeatureLogPresence] &&
+		c.ingestsTelemetry &&
 		(!c.EngineCloudTelemetry || exp.enginePublishes)
 	return nil
 }
@@ -1482,6 +1491,7 @@ func (c *Client) exportLogs(ctx context.Context, httpClient *httpClient) error {
 	}
 
 	return exp.Consume(ctx, func(data []byte, encoding liveTelemetryEncoding) error {
+		c.telemetryFrameAt.Store(time.Now().UnixNano())
 		var req collogspb.ExportLogsServiceRequest
 		if err := unmarshalLiveTelemetry(data, encoding, &req); err != nil {
 			return fmt.Errorf("unmarshal spans: %w", err)

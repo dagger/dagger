@@ -136,6 +136,10 @@ func (m *LLMTokenMetrics) Aggregate(metricName string, point metricdata.DataPoin
 type DB struct {
 	PrimarySpan SpanID
 	PrimaryLogs map[SpanID][]sdklog.Record
+	// PrimaryLogsOnDemand stops PrimaryLogs from buffering the primary
+	// span's output as it streams in: a frontend reading display text on
+	// demand fetches the primary output once, at exit, instead.
+	PrimaryLogsOnDemand bool
 
 	Epoch, End time.Time
 
@@ -729,6 +733,11 @@ func (db *DB) ingestLogs(logs []sdklog.Record, collectRenderable bool) []sdklog.
 		renderable = make([]sdklog.Record, 0, len(logs))
 	}
 	for _, log := range logs {
+		if IsLogPresence(log) {
+			// a span has display text the frontend reads on demand
+			db.ingestLogPresence(log)
+			continue
+		}
 		if db.ingestSpanName(log) {
 			// live span metadata, not log text
 			continue
@@ -767,7 +776,7 @@ func (db *DB) ingestLogs(logs []sdklog.Record, collectRenderable bool) []sdklog.
 			db.pendingLogsByOutput[*pendingKey] = append(db.pendingLogsByOutput[*pendingKey], log)
 			continue
 		}
-		if spanID == db.PrimarySpan {
+		if spanID == db.PrimarySpan && !db.PrimaryLogsOnDemand {
 			// buffer raw logs so we can write them later
 			db.PrimaryLogs[spanID] = append(db.PrimaryLogs[spanID], log)
 		}
@@ -775,6 +784,37 @@ func (db *DB) ingestLogs(logs []sdklog.Record, collectRenderable bool) []sdklog.
 		db.initSpan(spanID).HasLogs = true
 	}
 	return renderable
+}
+
+// IsLogPresence reports whether record is a body-less presence record
+// (telemetryattrs.LogRolePresence): the engine's stand-in for display text a
+// frontend reads on demand, saying only that the span it routes to has logs.
+func IsLogPresence(record sdklog.Record) bool {
+	var presence bool
+	record.WalkAttributes(func(kv otellog.KeyValue) bool {
+		if kv.Key == telemetryattrs.LogRoleAttr {
+			role, _ := LogValueString(kv.Value)
+			presence = role == telemetryattrs.LogRolePresence
+			return false
+		}
+		return true
+	})
+	return presence
+}
+
+// ingestLogPresence flags the span a presence record routes to (like the
+// display text it stands for, see routeLog) as having logs. One whose digest
+// has no creator yet is parked with the display text awaiting it, and flags
+// the creator when it arrives.
+func (db *DB) ingestLogPresence(record sdklog.Record) {
+	spanID, pendingKey := db.routeLog(record)
+	if pendingKey != nil {
+		db.pendingLogsByOutput[*pendingKey] = append(db.pendingLogsByOutput[*pendingKey], record)
+		return
+	}
+	if spanID.IsValid() {
+		db.initSpan(spanID).HasLogs = true
+	}
 }
 
 func (db *DB) Shutdown(ctx context.Context) error {
@@ -1459,10 +1499,13 @@ func (db *DB) resolvePendingLogs(output string, traceID TraceID) {
 	}
 	delete(db.pendingLogsByOutput, key)
 	for _, record := range pending {
-		if creator.ID == db.PrimarySpan {
+		db.initSpan(creator.ID).HasLogs = true
+		if IsLogPresence(record) {
+			continue
+		}
+		if creator.ID == db.PrimarySpan && !db.PrimaryLogsOnDemand {
 			db.PrimaryLogs[creator.ID] = append(db.PrimaryLogs[creator.ID], record)
 		}
-		db.initSpan(creator.ID).HasLogs = true
 		db.resolvedLogsBySpan[creator.ID] = append(db.resolvedLogsBySpan[creator.ID], record)
 	}
 }
@@ -1488,7 +1531,10 @@ func (db *DB) resolvePendingServiceLogs(span *Span) {
 				continue
 			}
 			claimed = true
-			if span.ID == db.PrimarySpan {
+			if IsLogPresence(record) {
+				continue
+			}
+			if span.ID == db.PrimarySpan && !db.PrimaryLogsOnDemand {
 				db.PrimaryLogs[span.ID] = append(db.PrimaryLogs[span.ID], record)
 			}
 			db.resolvedLogsBySpan[span.ID] = append(db.resolvedLogsBySpan[span.ID], record)
@@ -1512,8 +1558,6 @@ func (db *DB) DrainResolvedLogs(spanID SpanID) []sdklog.Record {
 }
 
 func (db *DB) routeLog(record sdklog.Record) (SpanID, *resumeOutputKey) {
-	fallback := SpanID{SpanID: record.SpanID()}
-
 	var targetDig string
 	record.WalkAttributes(func(kv otellog.KeyValue) bool {
 		if kv.Key == telemetry.DagDigestAttr {
@@ -1524,12 +1568,23 @@ func (db *DB) routeLog(record sdklog.Record) (SpanID, *resumeOutputKey) {
 		}
 		return true
 	})
+	return db.routeLogTarget(TraceID{TraceID: record.TraceID()}, SpanID{SpanID: record.SpanID()}, targetDig)
+}
 
+// LogTarget is the span dagui routes a log record of traceID and spanID,
+// carrying digest as its dagger.io/dag.digest (if any), to: see routeLog.
+// It is invalid while the digest's creator has not arrived.
+func (db *DB) LogTarget(traceID TraceID, spanID SpanID, digest string) SpanID {
+	target, _ := db.routeLogTarget(traceID, spanID, digest)
+	return target
+}
+
+func (db *DB) routeLogTarget(traceID TraceID, fallback SpanID, targetDig string) (SpanID, *resumeOutputKey) {
 	if targetDig == "" {
 		return fallback, nil
 	}
 
-	if creator := db.creatorSpanForDigestInTrace(targetDig, record.TraceID()); creator != nil {
+	if creator := db.creatorSpanForDigestInTrace(targetDig, traceID.TraceID); creator != nil {
 		return creator.ID, nil
 	}
 
@@ -1548,7 +1603,7 @@ func (db *DB) routeLog(record sdklog.Record) (SpanID, *resumeOutputKey) {
 	}
 
 	key := resumeOutputKey{
-		TraceID: TraceID{TraceID: record.TraceID()},
+		TraceID: traceID,
 		Output:  targetDig,
 	}
 	return SpanID{}, &key

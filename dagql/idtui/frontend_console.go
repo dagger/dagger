@@ -262,6 +262,14 @@ func (fe *frontendPretty) serveConsole(ctx context.Context) error {
 		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		io.WriteString(w, detail)
+		// What the frontend holds of the span's logs: with logs read on
+		// demand, only spans it rendered hold any.
+		id := dagui.SpanID{SpanID: sid}
+		held := 0
+		if vt := fe.logs.Logs[id]; vt != nil {
+			held = vt.UsedHeight()
+		}
+		fmt.Fprintf(w, "held log lines: %d (requested: %t)\n", held, fe.requestedLogs[id])
 	})
 	mux.HandleFunc("/id", func(w http.ResponseWriter, r *http.Request) {
 		dig := r.URL.Query().Get("dig")
