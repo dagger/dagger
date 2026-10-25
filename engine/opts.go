@@ -329,6 +329,16 @@ const (
 	// An engine decides once per session, before any stream opens, and answers
 	// every stream of the session alike, reconnects included.
 	CloudTelemetryPublisherHeader = "X-Dagger-Cloud-Telemetry-Publisher"
+
+	// ClientTelemetryIngestHeader, set to ClientTelemetryIngestStore on a
+	// telemetry stream's response, confirms that the engine stores the
+	// telemetry a client posts about itself over its session connection
+	// (POST /v1/traces, /v1/logs and /v1/metrics) in that client's telemetry
+	// store, publishes it to Cloud with the rest of the store, and leaves it
+	// out of the client's own telemetry streams, since the client has it
+	// already.
+	ClientTelemetryIngestHeader = "X-Dagger-Client-Telemetry-Ingest"
+	ClientTelemetryIngestStore  = "store"
 )
 
 func (m ClientMetadata) AppendToHTTPHeaders(h http.Header) http.Header {
