@@ -260,9 +260,9 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 		logProcessors = withoutIndex(logProcessors, local.logs)
 		metricExporters = withoutIndex(metricExporters, local.metrics)
 	}
-	params.EngineTrace = telemetry.SpanForwarder{
+	params.EngineTrace = flushableSpanForwarder{telemetry.SpanForwarder{
 		Processors: spanProcessors,
-	}
+	}}
 	// The engine names the session (Query.setSessionTitle) with a span-name
 	// record on our primary span; apply it to the live span too, so the span
 	// we export carries the title like the frontend shows it.
@@ -281,9 +281,9 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 		params.EngineTraceWithoutCloud = params.EngineTrace
 		params.EngineLogsWithoutCloud = params.EngineLogs
 		params.EngineMetricsWithoutCloud = params.EngineMetrics
-		params.EngineTrace = telemetry.SpanForwarder{
+		params.EngineTrace = flushableSpanForwarder{telemetry.SpanForwarder{
 			Processors: append(slices.Clone(spanProcessors), local.cloud.forwardedSpans),
-		}
+		}}
 		params.EngineLogs = telemetry.LogForwarder{
 			Processors: append(slices.Clone(logProcessors), local.cloud.forwardedLogs, namer),
 		}

@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 
 	telemetry "github.com/dagger/otel-go"
@@ -203,4 +204,29 @@ func writeLogSearchResult(w http.ResponseWriter, result archive.LogSearchResult)
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	return json.NewEncoder(w).Encode(result)
+}
+
+// FlushHandler serves POST enginetel.LiveFlushPath, the client's barrier
+// (enginetel.LiveFeatureFlush). Flushing the session's telemetry writes
+// everything the session recorded so far, its nested clients' included,
+// into the stores it belongs to; what the client posts about itself is
+// stored as it is posted. The store's high-water marks after that are where
+// the client's subscriptions have delivered everything stored for it.
+func (ps *PubSub) FlushHandler(w http.ResponseWriter, r *http.Request, record *clientRecord) error {
+	if sess := record.daggerSession; sess != nil {
+		if err := sess.FlushTelemetry(r.Context(), "client telemetry barrier"); err != nil {
+			http.Error(w, fmt.Sprintf("flush telemetry: %v", err), http.StatusInternalServerError)
+			return nil
+		}
+	}
+	db, err := record.TelemetryDB(r.Context())
+	if err != nil {
+		http.Error(w, fmt.Sprintf("open client db: %v", err), http.StatusInternalServerError)
+		return nil
+	}
+	hw := db.HighWater()
+	db.Close()
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	return json.NewEncoder(w).Encode(enginetel.LiveFlushResult{Spans: hw.Spans, Logs: hw.Logs})
 }

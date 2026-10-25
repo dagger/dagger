@@ -5,6 +5,8 @@ import (
 	"errors"
 	"log/slog"
 	"maps"
+	"os"
+	"os/signal"
 	"slices"
 	"sync"
 	"time"
@@ -17,11 +19,14 @@ import (
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/archive"
+	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/internal/tracesource"
 )
 
-// liveLogsFinishTimeout bounds the reads at exit, so a stuck engine never
-// holds up the command's exit.
+// liveLogsFinishTimeout bounds the exit's wait for the session's telemetry
+// and its read of the final logs, together, so a stuck engine never holds
+// up the command's exit for long. The primary output's read has its own
+// budget (liveLogsPrimaryTimeout).
 const liveLogsFinishTimeout = 10 * time.Second
 
 // liveLogs reads a live session's display text on demand, for the spans
@@ -52,6 +57,8 @@ type liveLogs struct {
 	// (idtui.LiveLogsFrontend.LiveLogsCoverage): a read imports only what
 	// the frontend asked for, and claims only pairs it knows it did.
 	coverage func([]idtui.LogTarget) []idtui.LogCoverage
+	// frontend is the frontend reading, which finishLiveLogs finishes.
+	frontend idtui.LiveLogsFrontend
 
 	mu sync.Mutex
 	// spans are followed (or, without following, read at finish);
@@ -99,6 +106,7 @@ func startLiveLogs(ctx context.Context, fe idtui.Frontend, client tracesource.Li
 	}
 	_, follow := lf.LiveLogs()
 	l := newLiveLogs(tracesource.Live{Client: client}, traceID.String(), nil, follow)
+	l.frontend = lf
 	l.coverage = lf.LiveLogsCoverage
 	l.export = lf.SetLiveLogs(traceID, l.subscribe)
 	if follow {
@@ -367,52 +375,136 @@ func liveLogsWanted(ctx context.Context) bool {
 
 // liveLogsSession is the session a live log reader reads.
 type liveLogsSession interface {
+	TelemetryBarrier(context.Context) error
 	WaitTelemetryIdle(context.Context, time.Duration)
 }
 
-// liveLogsSettle is how long the session's telemetry must stay quiet at exit
-// before the frontend chooses what its final render reads: the spans of work
-// that just ended, still on their way through the engine's batching and the
-// subscriptions' polling, must be there to choose from.
+// liveLogsSettle is how long the session's telemetry must stay quiet at exit,
+// with an engine that predates TelemetryBarrier, before the frontend chooses
+// what its final render reads: the spans of work that just ended, still on
+// their way through the engine's batching and the subscriptions' polling,
+// must be there to choose from.
 const liveLogsSettle = 300 * time.Millisecond
+
+// liveLogsPrimaryTimeout bounds the primary output's read at exit. It is
+// generous: the output is the command's result, usually small, and a slow
+// remote engine must not cut it short. liveLogsPrimaryAttempts bounds the
+// retries of a failed read.
+const (
+	liveLogsPrimaryTimeout  = time.Minute
+	liveLogsPrimaryAttempts = 3
+)
+
+// liveLogsRetryDelay is the pause before retrying the primary output's read.
+var liveLogsRetryDelay = 500 * time.Millisecond
+
+// flushableSpanForwarder is a telemetry.SpanForwarder that flushes its
+// processors, so client.TelemetryBarrier can see what the session delivered
+// through them, not just into them.
+type flushableSpanForwarder struct {
+	telemetry.SpanForwarder
+}
+
+func (f flushableSpanForwarder) ForceFlush(ctx context.Context) error {
+	var errs error
+	for _, p := range f.Processors {
+		errs = errors.Join(errs, p.ForceFlush(ctx))
+	}
+	return errs
+}
+
+// settleLiveLogs waits until the session's telemetry for the work done so
+// far has reached the frontend: exactly, with TelemetryBarrier, or else
+// until it goes quiet.
+func settleLiveLogs(ctx context.Context, sess liveLogsSession) {
+	err := sess.TelemetryBarrier(ctx)
+	if err == nil || ctx.Err() != nil {
+		return
+	}
+	if !errors.Is(err, client.ErrTelemetryBarrierUnsupported) {
+		slog.Warn("error waiting for the session's telemetry", "err", err)
+	}
+	settleCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	sess.WaitTelemetryIdle(settleCtx, liveLogsSettle)
+	cancel()
+}
+
+// exitInterrupts returns a context canceled by an interrupt (SIGINT); it is
+// a variable for tests.
+var exitInterrupts = func(ctx context.Context) (context.Context, context.CancelFunc) {
+	return signal.NotifyContext(ctx, os.Interrupt)
+}
+
+// exitContext is the context of the reads at exit. What ended the command
+// does not cancel it -- an interrupt that canceled the run must not cost its
+// report -- but an interrupt during the reads does: ctx ending from then
+// on (the TUI's Ctrl-C), or another SIGINT.
+func exitContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	exitCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
+	stopAfter := func() bool { return false }
+	if ctx.Err() == nil {
+		stopAfter = context.AfterFunc(ctx, func() { cancel(context.Cause(ctx)) })
+	}
+	sigCtx, stopSignals := exitInterrupts(exitCtx)
+	return sigCtx, func() {
+		stopSignals()
+		stopAfter()
+		cancel(nil)
+	}
+}
 
 // finishLiveLogs reads what the final render shows: the logs the frontend
 // requests for it, and the primary output. It must run before the session
-// closes, which ends its store's reads.
+// closes, which ends its store's reads. An interrupt stops it promptly, and
+// the final render shows what was read by then (see exitContext).
 func finishLiveLogs(ctx context.Context, sess liveLogsSession, live *liveLogs) {
-	lf, ok := Frontend.(idtui.LiveLogsFrontend)
-	if !ok {
+	lf := live.frontend
+	if lf == nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), liveLogsFinishTimeout)
-	defer cancel()
-	settleCtx, cancelSettle := context.WithTimeout(ctx, 3*time.Second)
-	sess.WaitTelemetryIdle(settleCtx, liveLogsSettle)
-	cancelSettle()
+	ctx, stop := exitContext(ctx)
+	defer stop()
+	finishCtx, cancel := context.WithTimeout(ctx, liveLogsFinishTimeout)
+	settleLiveLogs(finishCtx, sess)
 	// Stop following first, so finish catches up the final requests itself,
 	// rather than a follow restart it would cut short.
 	live.stop()
 	lf.RequestFinalLogs()
-	if err := live.finish(ctx); err != nil {
+	if err := live.finish(finishCtx); err != nil && ctx.Err() == nil {
 		slog.Warn("error reading the final logs", "err", err)
 	}
-	records, err := readPrimaryOutput(ctx, live.reader, live.traceID, lf.PrimarySpan())
-	if err != nil {
+	cancel()
+	primaryCtx, cancel := context.WithTimeout(ctx, liveLogsPrimaryTimeout)
+	defer cancel()
+	records, err := readPrimaryOutput(primaryCtx, live.reader, live.traceID, lf.PrimarySpan())
+	if err != nil && ctx.Err() == nil {
 		slog.Warn("error reading the primary output", "err", err)
 	}
 	lf.SetPrimaryOutput(records)
 }
 
 // readPrimaryOutput reads the primary span's output, the process's own
-// included, from the beginning.
+// included, from the beginning. A failed read is retried whole, up to
+// liveLogsPrimaryAttempts times: it is the command's result.
 func readPrimaryOutput(ctx context.Context, reader tracesource.LogReader, traceID string, primary dagui.SpanID) ([]sdklog.Record, error) {
-	var out recordCollector
-	err := reader.ReadLogs(ctx, traceID, tracesource.LogQuery{
-		Spans: []archive.LogSpan{{SpanID: primary.String()}},
-	}, func(ctx context.Context, req *collogspb.ExportLogsServiceRequest, _ string) error {
-		return telemetry.ReexportLogsFromPB(ctx, &out, req)
-	})
-	return out.records, err
+	var err error
+	for attempt := 1; ; attempt++ {
+		var out recordCollector
+		err = reader.ReadLogs(ctx, traceID, tracesource.LogQuery{
+			Spans: []archive.LogSpan{{SpanID: primary.String()}},
+		}, func(ctx context.Context, req *collogspb.ExportLogsServiceRequest, _ string) error {
+			return telemetry.ReexportLogsFromPB(ctx, &out, req)
+		})
+		if err == nil || attempt >= liveLogsPrimaryAttempts || ctx.Err() != nil {
+			return out.records, err
+		}
+		slog.Debug("retrying the primary output's read", "attempt", attempt, "err", err)
+		select {
+		case <-ctx.Done():
+			return out.records, err
+		case <-time.After(liveLogsRetryDelay):
+		}
+	}
 }
 
 type recordCollector struct {
