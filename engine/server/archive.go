@@ -493,7 +493,10 @@ func (srv *Server) serveArchiveHTTP(w http.ResponseWriter, r *http.Request, reco
 	if len(parts) > 2 {
 		return httpErr(errors.New("unknown archive endpoint"), http.StatusNotFound)
 	}
-	if r.Method != http.MethodGet {
+	// Multi-span log reads and searches carry their selection in a POST
+	// body (archive.LogQuery, archive.LogSearch); every other read is a GET.
+	postable := len(parts) == 2 && (parts[1] == "logs" || parts[1] == archiveSearchResource)
+	if r.Method != http.MethodGet && (r.Method != http.MethodPost || !postable) {
 		return httpErr(errors.New("method not allowed"), http.StatusMethodNotAllowed)
 	}
 	m, err := srv.archiveManifest(r.Context(), record.daggerSession, parts[0])
@@ -531,6 +534,11 @@ func (srv *Server) serveArchiveHTTP(w http.ResponseWriter, r *http.Request, reco
 		return serveArchiveBootstrap(w, srv.archives.BootstrapPath(m.TraceID))
 	case "traces", "logs", "metrics":
 		return srv.serveArchiveSignal(w, r, m, cut, unsealed, resource)
+	case archiveSearchResource:
+		if r.Method != http.MethodPost {
+			return httpErr(errors.New("method not allowed"), http.StatusMethodNotAllowed)
+		}
+		return srv.serveArchiveSearch(w, r, m, cut)
 	default:
 		return httpErr(errors.New("unknown archive endpoint"), http.StatusNotFound)
 	}
@@ -574,6 +582,39 @@ func (srv *Server) unsealedArchiveCut(ctx context.Context, m archive.Manifest) (
 	defer db.Close()
 	cut := db.HighWater()
 	return archive.HighWater{Spans: cut.Spans, Logs: cut.Logs, Metrics: cut.Metrics}, nil
+}
+
+// archiveSearchResource is the archive endpoint that searches display text
+// (POST an archive.LogSearch; the reply is an archive.LogSearchResult).
+const archiveSearchResource = "search"
+
+// serveArchiveSearch searches an archive's display text up to its cut.
+func (srv *Server) serveArchiveSearch(w http.ResponseWriter, r *http.Request, m archive.Manifest, cut archive.HighWater) error {
+	var search archive.LogSearch
+	if err := archive.DecodeLogBody(r.Body, &search); err != nil {
+		return httpErr(err, http.StatusBadRequest)
+	}
+	if _, err := search.Matcher(); err != nil {
+		return httpErr(err, http.StatusBadRequest)
+	}
+	db, err := srv.clientDBs.OpenHeld(r.Context(), m.MainClientID)
+	if err != nil {
+		return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureIO, Err: err})
+	}
+	defer db.Close()
+	var scope *clientdb.LogQueryScope
+	if len(search.Spans) > 0 {
+		view, err := db.SpanViewAt(r.Context(), m.TraceID, clientdb.HighWater{Spans: cut.Spans, Logs: cut.Logs, Metrics: cut.Metrics}, nil)
+		if err != nil {
+			return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureCorrupt, Err: err})
+		}
+		scope = view.LogQueryScope(search.Spans)
+	}
+	result, err := db.SearchLogs(r.Context(), search, cut.Logs, m.TraceID, scope)
+	if err != nil {
+		return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureIO, Err: err})
+	}
+	return writeLogSearchResult(w, result)
 }
 
 func serveArchiveBootstrap(w http.ResponseWriter, path string) error {
@@ -626,6 +667,12 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 	if err != nil {
 		return httpErr(err, http.StatusBadRequest)
 	}
+	var logQuery *archive.LogQuery
+	if r.Method == http.MethodPost {
+		if logQuery, err = archiveLogQuery(r, logSelection); err != nil {
+			return httpErr(err, http.StatusBadRequest)
+		}
+	}
 	// Once the session has ended nothing else holds its store, and reopening
 	// replays every row from disk. Keep it open across a burst of selected
 	// reads (along with its cached span topology); the idle hold never blocks
@@ -637,7 +684,7 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 	defer db.Close()
 	var spanView *clientdb.SpanView
 	var logScope map[string]bool
-	if spanSelection != nil || (logSelection != nil && logSelection.Descendants) {
+	if spanSelection != nil || (logSelection != nil && logSelection.Descendants) || logQuery != nil {
 		spanView, err = db.SpanViewAt(r.Context(), m.TraceID, clientdb.HighWater{Spans: cut.Spans, Logs: cut.Logs, Metrics: cut.Metrics}, spanSelection)
 		if err != nil {
 			return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureCorrupt, Err: err})
@@ -649,6 +696,7 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 			logScope = spanView.Scope(logSelection.SpanID, true)
 		}
 	}
+	displayScope := archiveDisplayScope(spanView, logQuery)
 	w.Header().Set("Content-Type", enginetel.LiveContentType)
 	w.Header().Set("Cache-Control", "no-store")
 	defer func() {
@@ -664,6 +712,7 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 		spanView:       spanView,
 		logSelection:   logSelection,
 		logScope:       logScope,
+		displayScope:   displayScope,
 	}
 	batchLimit := otlpBatchSize
 	for cursor < high {
@@ -700,6 +749,28 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 	return enginetel.WriteLiveTerminal(w, high)
 }
 
+// archiveLogQuery decodes a POSTed multi-span log query, which replaces the
+// query-string log selection.
+func archiveLogQuery(r *http.Request, logSelection *archive.LogSelection) (*archive.LogQuery, error) {
+	if logSelection != nil {
+		return nil, errors.New("a log query body excludes query selections")
+	}
+	var q archive.LogQuery
+	if err := archive.DecodeLogBody(r.Body, &q); err != nil {
+		return nil, err
+	}
+	return &q, q.Validate()
+}
+
+// archiveDisplayScope resolves a log query at the archive's span view, which
+// is always built when there is one.
+func archiveDisplayScope(spanView *clientdb.SpanView, logQuery *archive.LogQuery) *clientdb.LogQueryScope {
+	if logQuery == nil {
+		return nil
+	}
+	return spanView.LogQueryScope(logQuery.Spans)
+}
+
 // archiveSignalReader reads batches of one archive's signal rows as OTLP
 // export messages, filtered to its trace and selection.
 type archiveSignalReader struct {
@@ -710,6 +781,8 @@ type archiveSignalReader struct {
 	spanView       *clientdb.SpanView
 	logSelection   *archive.LogSelection
 	logScope       map[string]bool
+	// displayScope, when set, reads display text for a log query instead.
+	displayScope *clientdb.LogQueryScope
 }
 
 // batch reads up to limit signal rows after cursor, through high. next is the
@@ -736,7 +809,15 @@ func (a archiveSignalReader) batch(ctx context.Context, signal string, cursor, h
 		}
 		return &coltracepb.ExportTraceServiceRequest{ResourceSpans: resourceSpans}, rows[len(rows)-1].ID, len(rows), nil
 	case "logs":
-		rows, scanned, err := a.db.SelectLogsRangeMatching(ctx, clientdb.SelectLogsRangeParams{AfterID: cursor, ThroughID: high, Limit: int64(limit)}, a.traceID, a.logScope, a.logSelection, a.includeControl)
+		var rows []clientdb.Log
+		var scanned int64
+		var err error
+		p := clientdb.SelectLogsRangeParams{AfterID: cursor, ThroughID: high, Limit: int64(limit)}
+		if a.displayScope != nil {
+			rows, scanned, err = a.db.SelectDisplayLogs(ctx, p, a.traceID, a.displayScope)
+		} else {
+			rows, scanned, err = a.db.SelectLogsRangeMatching(ctx, p, a.traceID, a.logScope, a.logSelection, a.includeControl)
+		}
 		if err != nil {
 			return nil, 0, 0, err
 		}
