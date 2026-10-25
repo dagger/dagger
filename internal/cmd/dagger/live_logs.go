@@ -13,6 +13,7 @@ import (
 
 	telemetry "github.com/dagger/otel-go"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	otlplogsv1 "go.opentelemetry.io/proto/otlp/logs/v1"
 
@@ -48,6 +49,10 @@ const liveLogsFinishTimeout = 10 * time.Second
 // followed, so each (span, digest) pair -- the unit a query selects rows by
 // -- is owned by the read that first imported it: a catch-up imports
 // nothing of a pair it does not own, which the follow already did.
+//
+// When the frontend lets go of spans (release), they leave the set, and the
+// pairs routing to the spans whose display text it dropped are forgotten, so
+// their next request reads them again from the start.
 type liveLogs struct {
 	reader  tracesource.LogReader
 	traceID string
@@ -56,7 +61,7 @@ type liveLogs struct {
 	// coverage, when set, classifies records by the frontend's requests
 	// (idtui.LiveLogsFrontend.LiveLogsCoverage): a read imports only what
 	// the frontend asked for, and claims only pairs it knows it did.
-	coverage func([]idtui.LogTarget) []idtui.LogCoverage
+	coverage func([]idtui.LogTarget) []idtui.LogRoute
 	// frontend is the frontend reading, which finishLiveLogs finishes.
 	frontend idtui.LiveLogsFrontend
 
@@ -64,13 +69,20 @@ type liveLogs struct {
 	// spans are followed (or, without following, read at finish);
 	// pending joined since and are not caught up yet.
 	spans, pending map[string]archive.LogSpan
+	// catching are the spans of the catch-up in flight.
+	catching map[string]archive.LogSpan
 	// cursor is where the follow of spans stands; "" before it read
 	// anything, when a newcomer needs no catch-up.
 	cursor string
 	// owned maps a (span, digest) pair to the read that imported it first:
 	// 0 for a follow (or finish's read), a catch-up's number otherwise.
-	owned    map[logOwner]uint64
+	owned    map[logOwner]logClaim
 	catchUps uint64
+	// gen counts releases (release); released maps each span the frontend
+	// dropped since the current read began to the release that dropped it:
+	// the read imports nothing more for it.
+	gen      uint64
+	released map[dagui.SpanID]uint64
 	finished bool
 	wake     chan struct{}
 
@@ -82,17 +94,25 @@ type logOwner struct {
 	digest string
 }
 
+// logClaim is the read that owns a pair, and the span the frontend routes
+// its records to.
+type logClaim struct {
+	read   uint64
+	target dagui.SpanID
+}
+
 func newLiveLogs(reader tracesource.LogReader, traceID string, export sdklog.Exporter, follow bool) *liveLogs {
 	return &liveLogs{
-		reader:  reader,
-		traceID: traceID,
-		export:  export,
-		follow:  follow,
-		spans:   map[string]archive.LogSpan{},
-		pending: map[string]archive.LogSpan{},
-		owned:   map[logOwner]uint64{},
-		wake:    make(chan struct{}, 1),
-		stop:    func() {},
+		reader:   reader,
+		traceID:  traceID,
+		export:   export,
+		follow:   follow,
+		spans:    map[string]archive.LogSpan{},
+		pending:  map[string]archive.LogSpan{},
+		owned:    map[logOwner]logClaim{},
+		released: map[dagui.SpanID]uint64{},
+		wake:     make(chan struct{}, 1),
+		stop:     func() {},
 	}
 }
 
@@ -109,6 +129,12 @@ func startLiveLogs(ctx context.Context, fe idtui.Frontend, client tracesource.Li
 	l.frontend = lf
 	l.coverage = lf.LiveLogsCoverage
 	l.export = lf.SetLiveLogs(traceID, l.subscribe)
+	if cf, ok := fe.(idtui.LogCacheFrontend); ok {
+		cf.SetLogRelease(traceID, l.release)
+		if searcher, ok := client.(liveLogSearcher); ok {
+			cf.SetLogSearch(traceID, logSearchFunc(searcher.SearchLogs))
+		}
+	}
 	if follow {
 		ctx, cancel := context.WithCancel(ctx)
 		done := make(chan struct{})
@@ -137,10 +163,61 @@ func (l *liveLogs) subscribe(req idtui.LogRequest) {
 		return
 	}
 	l.pending[span.SpanID] = span
+	l.notify()
+}
+
+func (l *liveLogs) notify() {
 	select {
 	case l.wake <- struct{}{}:
 	default:
 	}
+}
+
+// release lets go of what the frontend dropped (idtui.LogRelease): the
+// spans it no longer requests leave the set, ending the follow so it
+// resumes without them, and the pairs routing to the spans it dropped are
+// forgotten, so a later request imports them again from the start. Like
+// subscribe, it runs on the frontend's event loop.
+func (l *liveLogs) release(r idtui.LogRelease) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.finished {
+		return
+	}
+	l.gen++
+	dropped := make(map[dagui.SpanID]bool, len(r.Dropped))
+	for _, id := range r.Dropped {
+		dropped[id] = true
+		l.released[id] = l.gen
+	}
+	for key, claim := range l.owned {
+		if dropped[claim.target] {
+			delete(l.owned, key)
+		}
+	}
+	var left bool
+	for _, id := range r.Spans {
+		hex := id.String()
+		if _, ok := l.spans[hex]; ok {
+			delete(l.spans, hex)
+			left = true
+		}
+		delete(l.pending, hex)
+		delete(l.catching, hex)
+	}
+	if left {
+		l.notify()
+	}
+}
+
+// beginRead starts a read: no other read is in flight, so the spans
+// released before it no longer matter. It returns the release generation
+// the read starts at.
+func (l *liveLogs) beginRead() uint64 {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	clear(l.released)
+	return l.gen
 }
 
 // run follows the set until ctx ends, or the session's telemetry drains.
@@ -171,8 +248,8 @@ func (l *liveLogs) run(ctx context.Context) {
 			}
 			continue
 		}
-		// A span joining the set ends this follow, to catch it up and
-		// follow the grown set.
+		// A span joining or leaving the set ends this follow, to catch it
+		// up and follow the set as it is now.
 		followCtx, cancel := context.WithCancel(ctx)
 		woken := make(chan struct{})
 		go func() {
@@ -183,7 +260,7 @@ func (l *liveLogs) run(ctx context.Context) {
 			case <-followCtx.Done():
 			}
 		}()
-		err := l.reader.ReadLogs(followCtx, l.traceID, tracesource.LogQuery{Spans: spans, Follow: true, Cursor: cursor}, l.importFollowed)
+		err := l.reader.ReadLogs(followCtx, l.traceID, tracesource.LogQuery{Spans: spans, Follow: true, Cursor: cursor}, l.importFollowed(l.beginRead()))
 		cancel()
 		select {
 		case <-woken:
@@ -218,6 +295,7 @@ func (l *liveLogs) catchUp(ctx context.Context) error {
 	l.mu.Lock()
 	batch := l.pending
 	l.pending = map[string]archive.LogSpan{}
+	l.catching = maps.Clone(batch)
 	cursor := l.cursor
 	l.catchUps++
 	read := l.catchUps
@@ -225,6 +303,7 @@ func (l *liveLogs) catchUp(ctx context.Context) error {
 	if len(batch) == 0 {
 		return nil
 	}
+	start := l.beginRead()
 	var imported bool
 	var err error
 	if cursor != "" {
@@ -233,11 +312,13 @@ func (l *liveLogs) catchUp(ctx context.Context) error {
 			Through: cursor,
 		}, func(ctx context.Context, req *collogspb.ExportLogsServiceRequest, _ string) error {
 			imported = true
-			return l.importLogs(ctx, req, read)
+			return l.importLogs(ctx, req, read, start)
 		})
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	// What the frontend released meanwhile is left out.
+	batch, l.catching = l.catching, nil
 	if err != nil && !imported {
 		// Nothing landed: try these again.
 		for id, span := range batch {
@@ -253,22 +334,26 @@ func (l *liveLogs) catchUp(ctx context.Context) error {
 	return err
 }
 
-// importFollowed imports a batch of the set's own read, which carries the
-// cursor to resume after it.
-func (l *liveLogs) importFollowed(ctx context.Context, req *collogspb.ExportLogsServiceRequest, cursor string) error {
-	if err := l.importLogs(ctx, req, 0); err != nil {
-		return err
+// importFollowed returns the import of the set's own read, which started at
+// release generation start: each batch carries the cursor to resume after
+// it.
+func (l *liveLogs) importFollowed(start uint64) func(context.Context, *collogspb.ExportLogsServiceRequest, string) error {
+	return func(ctx context.Context, req *collogspb.ExportLogsServiceRequest, cursor string) error {
+		if err := l.importLogs(ctx, req, 0, start); err != nil {
+			return err
+		}
+		l.mu.Lock()
+		l.cursor = cursor
+		l.mu.Unlock()
+		return nil
 	}
-	l.mu.Lock()
-	l.cursor = cursor
-	l.mu.Unlock()
-	return nil
 }
 
 // importLogs exports the records of req that read owns (see liveLogs), of
-// those the frontend routes to what it requested.
-func (l *liveLogs) importLogs(ctx context.Context, req *collogspb.ExportLogsServiceRequest, read uint64) error {
-	var coverage []idtui.LogCoverage
+// those the frontend routes to what it requested, leaving out the spans it
+// dropped since the read started (at release generation start).
+func (l *liveLogs) importLogs(ctx context.Context, req *collogspb.ExportLogsServiceRequest, read, start uint64) error {
+	var routes []idtui.LogRoute
 	if l.coverage != nil {
 		var targets []idtui.LogTarget
 		for _, rl := range req.GetResourceLogs() {
@@ -283,19 +368,25 @@ func (l *liveLogs) importLogs(ctx context.Context, req *collogspb.ExportLogsServ
 				}
 			}
 		}
-		coverage = l.coverage(targets)
+		routes = l.coverage(targets)
 	}
 	l.mu.Lock()
 	i := 0
 	for _, rl := range req.GetResourceLogs() {
 		for _, sl := range rl.GetScopeLogs() {
 			sl.LogRecords = slices.DeleteFunc(sl.LogRecords, func(rec *otlplogsv1.LogRecord) bool {
-				cover := idtui.LogCovered
-				if i < len(coverage) {
-					cover = coverage[i]
+				key := logOwnerOf(rec)
+				route := idtui.LogRoute{Coverage: idtui.LogCovered, Span: dagui.SpanID{SpanID: key.span}}
+				if i < len(routes) {
+					route = routes[i]
 				}
 				i++
-				switch cover {
+				if route.Span.IsValid() && l.released[route.Span] > start {
+					// Dropped while this read was in flight: a later
+					// request reads it again.
+					return true
+				}
+				switch route.Coverage {
 				case idtui.LogUncovered:
 					// Not asked for: the read of a span that asks for it
 					// later imports it then.
@@ -305,13 +396,12 @@ func (l *liveLogs) importLogs(ctx context.Context, req *collogspb.ExportLogsServ
 					// claiming the pair this read may not keep selecting.
 					return false
 				}
-				key := logOwnerOf(rec)
-				owner, ok := l.owned[key]
+				claim, ok := l.owned[key]
 				if !ok {
-					l.owned[key] = read
+					l.owned[key] = logClaim{read: read, target: route.Span}
 					return false
 				}
-				return owner != read && read != 0
+				return claim.read != read && read != 0
 			})
 		}
 	}
@@ -352,7 +442,57 @@ func (l *liveLogs) finish(ctx context.Context) error {
 	if len(spans) == 0 {
 		return err
 	}
-	return errors.Join(err, l.reader.ReadLogs(ctx, l.traceID, tracesource.LogQuery{Spans: spans, Cursor: cursor}, l.importFollowed))
+	return errors.Join(err, l.reader.ReadLogs(ctx, l.traceID, tracesource.LogQuery{Spans: spans, Cursor: cursor}, l.importFollowed(l.beginRead())))
+}
+
+// liveLogSearcher is an engine client's search of its own live store.
+type liveLogSearcher interface {
+	SearchLogs(context.Context, archive.LogSearch) (archive.LogSearchResult, error)
+}
+
+// logSearchPages bounds the pages of matches a frontend's search reads.
+const logSearchPages = 10
+
+// logSearchFunc is a frontend's search of a source's display text
+// (idtui.LogCacheFrontend.SetLogSearch): a case-insensitive substring, as
+// the frontend matches what it holds. It reads up to logSearchPages pages of
+// matches, and says when the store had more.
+func logSearchFunc(search func(context.Context, archive.LogSearch) (archive.LogSearchResult, error)) idtui.LogSearchFunc {
+	return func(ctx context.Context, pattern string) (idtui.LogSearchHits, error) {
+		var hits idtui.LogSearchHits
+		seen := map[idtui.LogTarget]bool{}
+		query := archive.LogSearch{Pattern: pattern, IgnoreCase: true, Limit: archive.MaxLogSearchLimit}
+		for page := 0; ; page++ {
+			result, err := search(ctx, query)
+			if err != nil {
+				return hits, err
+			}
+			for _, match := range result.Matches {
+				traceID, err1 := trace.TraceIDFromHex(match.TraceID)
+				spanID, err2 := trace.SpanIDFromHex(match.SpanID)
+				if err1 != nil || err2 != nil {
+					continue
+				}
+				target := idtui.LogTarget{
+					Trace:  dagui.TraceID{TraceID: traceID},
+					Span:   dagui.SpanID{SpanID: spanID},
+					Digest: match.Digest,
+				}
+				if !seen[target] {
+					seen[target] = true
+					hits.Targets = append(hits.Targets, target)
+				}
+			}
+			if !result.More {
+				return hits, nil
+			}
+			if page+1 >= logSearchPages || result.Next <= query.After {
+				hits.Partial = true
+				return hits, nil
+			}
+			query.After = result.Next
+		}
+	}
 }
 
 // liveLogsWanted reports whether to ask the engine for log presence: the
