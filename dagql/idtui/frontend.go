@@ -172,6 +172,10 @@ type TraceFrontend interface {
 	// span is expanded or a failure is surfaced.
 	SetLogProvider(func(id dagui.SpanID, descendants bool))
 	SetSpanProvider(func(id dagui.SpanID))
+	// SetTraceLogProvider registers a log provider for one trace's spans
+	// only, ahead of SetLogProvider's; spans of other traces are not
+	// requested from it.
+	SetTraceLogProvider(traceID dagui.TraceID, provider func(id dagui.SpanID, descendants bool))
 	// SurfacedFailedCheckSpans lists the failed checks' and generators' spans
 	// (plus their error origins and links) whose subtrees the report needs
 	// prefetched.
