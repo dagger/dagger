@@ -151,6 +151,7 @@ func (srv *Server) stopDaggerSession(ctx context.Context, sess *daggerSession) {
 		return
 	}
 	slog.Info("stopping session", "sessionID", sess.sessionID)
+	sess.attachables.TellClosing(ctx, "the session was stopped through the engine API")
 	err := srv.removeDaggerSession(ctx, sess)
 	sess.lifecycleMu.Unlock()
 	srv.retireSession(sess)
@@ -185,6 +186,6 @@ func (srv *Server) CloseEngineSessionClient(ctx context.Context, sessionID, clie
 		sess.markClientClosedLocked(record)
 		sess.scopeMu.Unlock()
 	}
-	sess.attachables.Close(clientID, errors.New("client closed through the engine API"))
+	sess.attachables.Close(ctx, clientID, errors.New("client closed through the engine API"))
 	return nil
 }

@@ -45,6 +45,13 @@ const (
 	// socket session attachable keys
 	SocketURLEncodedKey = "X-Dagger-Socket-URLEncoded"
 
+	// SessionCloseReasonMetaKey carries, on a final health check, why the
+	// engine is about to close a client's session attachables connection on
+	// request: the session was stopped, or the client closed, through the
+	// engine API. A client whose connection the engine closes without it
+	// reports its session as lost.
+	SessionCloseReasonMetaKey = "X-Dagger-Session-Close-Reason"
+
 	// SuppressTelemetryHeader opts a single /query request out of telemetry
 	// when set to "true": no per-request wrapper span, and no dagql call
 	// spans/logs for the request's whole selection. Intended for read-only

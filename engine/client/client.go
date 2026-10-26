@@ -50,6 +50,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -806,7 +807,13 @@ func (c *Client) runSessionAttachables() {
 		c.sessionSrv.Run(ctx)
 		if ctx.Err() == nil && !c.closing.Load() {
 			// Neither Close nor a failed init stopped the attachables: the
-			// engine closed the connection, and with it retired the session.
+			// engine closed the connection. When it said why, the session
+			// or this client was ended on request. Otherwise the engine
+			// retired the session.
+			if reason := c.sessionSrv.health.closeReason(); reason != "" {
+				slog.Debug("engine closed the session attachables", "reason", reason)
+				return nil
+			}
 			err := c.sessionLostError(time.Now())
 			c.sessionLost.Store(&err)
 			slog.Error("engine closed the session", "error", err)
@@ -960,12 +967,16 @@ type SessionAttachablesServer struct {
 // between those checks. When the engine retires a session for failed health
 // checks, a long gap shows the checks stopped reaching this client, and a
 // short one that they kept arriving; it does not say which side stalled.
+//
+// It also records the reason the engine gives, on a final check, before it
+// closes the connection on request (see engine.SessionCloseReasonMetaKey).
 type healthCheckObserver struct {
 	*health.Server
 
 	mu      sync.Mutex
 	last    time.Time
 	longest time.Duration
+	reason  string
 }
 
 func newHealthCheckObserver(start time.Time) *healthCheckObserver {
@@ -974,7 +985,22 @@ func newHealthCheckObserver(start time.Time) *healthCheckObserver {
 
 func (h *healthCheckObserver) Check(ctx context.Context, req *grpc_health_v1.HealthCheckRequest) (*grpc_health_v1.HealthCheckResponse, error) {
 	h.observe(time.Now())
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if reason := md.Get(engine.SessionCloseReasonMetaKey); len(reason) > 0 {
+			h.mu.Lock()
+			h.reason = reason[0]
+			h.mu.Unlock()
+		}
+	}
 	return h.Server.Check(ctx, req)
+}
+
+// closeReason returns the reason the engine gave for closing the connection,
+// or "" if it gave none.
+func (h *healthCheckObserver) closeReason() string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.reason
 }
 
 func (h *healthCheckObserver) observe(now time.Time) {

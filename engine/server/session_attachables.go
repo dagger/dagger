@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"net"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -15,7 +17,9 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/metadata"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
@@ -111,14 +115,29 @@ func (m *sessionAttachableManager) Register(ctx context.Context, clientID string
 	return nil
 }
 
-// Close ends the attachables connection of clientID, if one is open.
-func (m *sessionAttachableManager) Close(clientID string, cause error) {
+// Close ends the attachables connection of clientID, if one is open, once it
+// has told the client why.
+func (m *sessionAttachableManager) Close(ctx context.Context, clientID string, cause error) {
 	m.mu.Lock()
 	caller := m.callers[clientID]
 	m.mu.Unlock()
 	if caller != nil {
+		caller.tellClosing(ctx, cause.Error())
 		caller.cancel(cause)
 	}
+}
+
+// TellClosing tells every client with open attachables why the engine is
+// about to close them.
+func (m *sessionAttachableManager) TellClosing(ctx context.Context, reason string) {
+	m.mu.Lock()
+	callers := slices.Collect(maps.Values(m.callers))
+	m.mu.Unlock()
+	var wg sync.WaitGroup
+	for _, caller := range callers {
+		wg.Go(func() { caller.tellClosing(ctx, reason) })
+	}
+	wg.Wait()
 }
 
 func (m *sessionAttachableManager) Lookup(clientID string) (engineutil.SessionCaller, bool) {
@@ -271,6 +290,27 @@ func (caller *sessionAttachableCaller) Provides(service string) bool {
 
 func (caller *sessionAttachableCaller) Conn() *grpc.ClientConn {
 	return caller.conn
+}
+
+// closeNotifyTimeout bounds how long the engine waits for a client to hear
+// why its attachables are closing. A client that does not answer in time is
+// closed all the same, and reports its session as lost.
+const closeNotifyTimeout = 5 * time.Second
+
+// tellClosing tells the client why the engine is about to close its
+// attachables connection, so it does not report its session as lost. The
+// reason rides on a health check, which the engine already sends on this
+// connection.
+func (caller *sessionAttachableCaller) tellClosing(ctx context.Context, reason string) {
+	if !caller.active() {
+		return
+	}
+	ctx = metadata.AppendToOutgoingContext(ctx, engine.SessionCloseReasonMetaKey, reason)
+	ctx, cancel := context.WithTimeout(ctx, closeNotifyTimeout)
+	defer cancel()
+	if _, err := grpc_health_v1.NewHealthClient(caller.conn).Check(ctx, &grpc_health_v1.HealthCheckRequest{}); err != nil {
+		slog.DebugContext(ctx, "failed to tell client why its attachables close", "error", err)
+	}
 }
 
 func attachableClientConn(ctx context.Context, conn net.Conn) (context.Context, *grpc.ClientConn, error) {

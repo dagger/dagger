@@ -151,6 +151,17 @@ func detachWithOutput(ctx context.Context, t *testctx.T, dir string, args ...str
 	return id, string(out)
 }
 
+var detachedLogLine = regexp.MustCompile(`(?m)^Log: (\S+)$`)
+
+// detachedLog returns the log of the background process a detached command
+// reports.
+func detachedLog(t *testctx.T, out string) string {
+	t.Helper()
+	m := detachedLogLine.FindStringSubmatch(out)
+	require.NotNil(t, m, "no log in output: %s", out)
+	return m[1]
+}
+
 // noLocalProcess is what a detached command prints when it left no process.
 const noLocalProcess = "No local process is running."
 
@@ -375,8 +386,9 @@ func (SessionCLISuite) TestAttachShowsSeveralCommands(ctx context.Context, t *te
 
 func (SessionCLISuite) TestStopEndsBackgroundClients(ctx context.Context, t *testctx.T) {
 	dir := detachWorkspace(t, 23456)
-	id := detach(ctx, t, dir, "start", "--detach")
-	detach(ctx, t, dir, "--session", id, "call", "--detach", "sleepy")
+	id, startOut := detachWithOutput(ctx, t, dir, "start", "--detach")
+	_, callOut := detachWithOutput(ctx, t, dir, "--session", id, "call", "--detach", "sleepy")
+	startLog, callLog := detachedLog(t, startOut), detachedLog(t, callOut)
 
 	var pids []int
 	require.Eventually(t, func() bool {
@@ -397,6 +409,16 @@ func (SessionCLISuite) TestStopEndsBackgroundClients(ctx context.Context, t *tes
 		require.Eventually(t, func() bool { return processGone(pid) }, 30*time.Second, 500*time.Millisecond,
 			"background process %d still running", pid)
 	}
+	// The forwarder ends with the session, as it should: it removes its log,
+	// which it keeps only when it fails. The call it interrupted failed, and
+	// its log says why.
+	if log, err := os.ReadFile(startLog); err == nil {
+		require.Fail(t, "the forwarder kept its log", "%s:\n%s", startLog, log)
+	}
+	log, err := os.ReadFile(callLog)
+	require.NoError(t, err)
+	t.Logf("interrupted call's log:\n%s", log)
+	require.NotContains(t, string(log), "health checks")
 	out, err = hostDaggerExec(ctx, t, dir, "sessions")
 	require.NoError(t, err, string(out))
 	require.NotContains(t, string(out), id)

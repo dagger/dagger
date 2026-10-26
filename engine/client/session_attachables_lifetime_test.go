@@ -22,6 +22,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/metadata"
 )
 
 // The fake engine performs the real attachables upgrade, then calls the real
@@ -226,6 +227,48 @@ func TestSessionClosedByEngineReportsCause(t *testing.T) {
 			err = c.Close()
 			require.ErrorContains(t, err, `engine closed session "lifetime-test"`)
 			require.NotContains(t, err.Error(), "unexpected request")
+		})
+	}
+}
+
+func TestSessionClosedByEngineWithReasonIsNotLost(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("DOCKER_CONFIG", t.TempDir())
+	t.Setenv("SSH_AUTH_SOCK", "")
+	for _, e2e := range []bool{false, true} {
+		t.Run(fmt.Sprintf("e2e=%t", e2e), func(t *testing.T) {
+			c, _, health, attachablesClosed, closeEngine := newAttachablesLifetimeClient(t, e2e)
+			// The engine says why before it closes the connection, as it does
+			// when the session is stopped through its API.
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			ctx = metadata.AppendToOutgoingContext(ctx, engine.SessionCloseReasonMetaKey, "the session was stopped through the engine API")
+			_, err := health.Check(ctx, &grpc_health_v1.HealthCheckRequest{})
+			require.NoError(t, err)
+			closeEngine()
+			select {
+			case <-attachablesClosed:
+			case <-time.After(time.Second):
+				t.Fatal("client did not notice the engine closing attachables")
+			}
+			select {
+			case <-c.AttachablesDone():
+			case <-time.After(time.Second):
+				t.Fatal("attachables lifetime goroutine did not finish")
+			}
+			require.NoError(t, c.SessionLost())
+
+			// Close sends its shutdown request as usual.
+			shutdownCalled := false
+			c.httpClient = &httpClient{inner: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				if req.URL.Path != engine.ShutdownEndpoint {
+					return nil, fmt.Errorf("unexpected path %s", req.URL.Path)
+				}
+				shutdownCalled = true
+				return &http.Response{StatusCode: http.StatusNoContent, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("")), Request: req}, nil
+			})}}
+			require.NoError(t, c.Close())
+			require.True(t, shutdownCalled)
 		})
 	}
 }

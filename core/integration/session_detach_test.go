@@ -202,8 +202,36 @@ func (DetachedSessionSuite) TestStopSession(ctx context.Context, t *testctx.T) {
 				WithExec([]string{"true"}).
 				Sync(ctx)
 			require.Error(t, err)
+			// The engine told it the session was stopped, so it does not
+			// report a lost session.
+			require.NoError(t, member.SessionLost())
+			require.NoError(t, member.Close())
 		})
 	}
+}
+
+func (DetachedSessionSuite) TestCloseClient(ctx context.Context, t *testctx.T) {
+	creator := connectEngineClient(ctx, t, client.Params{DetachedSession: true})
+	stopSessionOnCleanup(ctx, t, creator.SessionID)
+	member := connectEngineClient(ctx, t, client.Params{SessionID: creator.SessionID})
+	_, err := core.NewQuery(member.Dagger()).DefaultPlatform(ctx)
+	require.NoError(t, err)
+
+	err = creator.Dagger().Do(ctx, &dagger.Request{
+		Query:     `query($id: String!, $client: String!) { engine { session(id: $id) { client(id: $client) { close } } } }`,
+		Variables: map[string]any{"id": creator.SessionID, "client": member.ID},
+	}, &dagger.Response{})
+	require.NoError(t, err)
+
+	// The engine told the client it was closed, so it does not report a lost
+	// session.
+	select {
+	case <-member.AttachablesDone():
+	case <-time.After(time.Minute):
+		require.Fail(t, "the closed client's attachables connection is still open")
+	}
+	require.NoError(t, member.SessionLost())
+	require.NoError(t, member.Close())
 }
 
 func (DetachedSessionSuite) TestListSessions(ctx context.Context, t *testctx.T) {
