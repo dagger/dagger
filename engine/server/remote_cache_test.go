@@ -326,9 +326,44 @@ func TestRemoteCacheGracefulStopCutsOffExportsAtTheReserve(t *testing.T) {
 	deadline, _ := ctx.Deadline()
 
 	srv.BeginGracefulStop()
-	require.NoError(t, srv.GracefulStop(ctx))
+	stopped := make(chan error, 1)
+	go func() { stopped <- srv.GracefulStop(ctx) }()
+	// The export lives until the cutoff, a second before the deadline.
+	select {
+	case err := <-exported:
+		t.Fatalf("the export ended before the cutoff: %v", err)
+	case <-time.After(500 * time.Millisecond):
+	}
 	require.ErrorIs(t, <-exported, errServerShuttingDown)
+	require.NoError(t, <-stopped)
 	require.True(t, time.Now().Before(deadline), "the stop ended past its deadline")
+}
+
+// Closing waits for an operation that begins while it waits, and refuses
+// any that begins after it saw none running: an export can't slip in as the
+// last one ends and then be canceled with drain time left.
+func TestInProgressCloseWhenIdle(t *testing.T) {
+	t.Parallel()
+	for range 200 {
+		var p inProgress
+		require.True(t, p.tryBegin())
+		closed := make(chan error, 1)
+		go func() { closed <- p.closeWhenIdle(t.Context()) }()
+		p.end()
+		if !p.tryBegin() {
+			// Closing saw none running first.
+			within(t, closed)
+			continue
+		}
+		select {
+		case <-closed:
+			t.Fatal("closed with an operation in progress")
+		case <-time.After(time.Millisecond):
+		}
+		p.end()
+		within(t, closed)
+		require.False(t, p.tryBegin())
+	}
 }
 
 // With no export in progress, the stop doesn't wait for its deadline.
