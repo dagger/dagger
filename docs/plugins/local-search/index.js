@@ -1,7 +1,7 @@
 // Local, client-side docs search — no external service.
 //
-// At build time this walks the rendered HTML of the *current* (default) docs
-// version and emits a flat `search_index.json` of section-level entries. The
+// At build time this walks the rendered HTML of the default and "next" docs
+// versions and emits a flat `search_index.json` of section-level entries. The
 // search UI (src/theme/SearchBar) fetches that index lazily on first open and
 // does all matching in the browser, so every keystroke is an in-memory lookup
 // with zero network round-trips.
@@ -49,16 +49,21 @@ module.exports = function localSearchPlugin(context, options) {
 
     async postBuild({ outDir, routesPaths }) {
       const nextPrefix = baseUrl + "next/";
+      // versions.json lists snapshots newest first; the first is the default
+      // version served at the root, the rest are archived under /<version>/.
+      const archived = new Set(
+        JSON.parse(
+          fs.readFileSync(path.join(context.siteDir, "versions.json"), "utf8"),
+        ).slice(1),
+      );
       const entries = [];
 
       for (const route of routesPaths) {
         if (!route.startsWith(baseUrl)) continue;
         // Index the default version (served at the root) and the unreleased
         // "next" version, tagging each entry so the UI can scope results to
-        // whichever version the reader is on. Older snapshots are served under
-        // a /<version>/ prefix by Docusaurus, so skipping version-prefixed
-        // routes keeps them out of the index without naming the latest version.
-        if (/^\d+\.\d+\.\d+(\/|$)/.test(route.slice(baseUrl.length))) continue;
+        // whichever version the reader is on. Archived snapshots are skipped.
+        if (archived.has(route.slice(baseUrl.length).split("/")[0])) continue;
         if (exclude.some((frag) => route.includes(frag))) continue;
         const version = route.startsWith(nextPrefix) ? "next" : "";
 
