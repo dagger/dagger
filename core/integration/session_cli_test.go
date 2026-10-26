@@ -122,6 +122,19 @@ source = "dang"
   pub changes: Changeset! {
     directory.withNewFile("x", "y").changes(directory)
   }
+  pub items: Items! {
+    Items(names: ["a", "b"])
+  }
+}
+type Items @collection {
+  pub names: [String!]! @keys
+  lookup(name: String!): Item! @get { Item(name: name) }
+}
+type Item {
+  pub name: String!
+  pub file: File! {
+    directory.withNewFile("value", name).file("value")
+  }
 }
 `, alpineImage, web, port),
 	}
@@ -619,6 +632,7 @@ func (SessionCLISuite) TestDetachKeepsProcessForHostDependencies(ctx context.Con
 		{"changeset", dir, []string{"-W", ref, "call", "--detach", "changes"}},
 		{"core export", dir, []string{"-W", ref, "call", "--detach", "dir", "export", "--path", filepath.Join(dir, "exported")}},
 		{"core up", dir, []string{"-W", ref, "call", "--detach", "web", "up"}},
+		{"core export through a collection", dir, []string{"-W", ref, "call", "--detach", "items", "file", "--m-item=a", "export", "--path", filepath.Join(dir, "item")}},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			_, out := detachWithOutput(ctx, t, tc.dir, tc.args...)

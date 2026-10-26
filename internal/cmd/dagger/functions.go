@@ -86,6 +86,8 @@ type collectionCallRoute struct {
 type plannedFunctionCall struct {
 	fn  *modFunction
 	cmd *cobra.Command
+	// receiver is the type fn is called on.
+	receiver string
 }
 
 // FuncCommand is a config object used to create a dynamic set of commands
@@ -973,15 +975,16 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, fn *modFunction) *cobra.C
 // selector flags can lower back to get/subset calls in the right order.
 func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command) error {
 	if fn.collectionRoute != nil || len(fc.pendingCalls) > 0 {
-		fc.pendingCalls = append(fc.pendingCalls, plannedFunctionCall{fn: fn, cmd: cmd})
+		fc.pendingCalls = append(fc.pendingCalls, plannedFunctionCall{fn: fn, cmd: cmd, receiver: fc.receiver})
 		return nil
 	}
-	return fc.selectFuncNow(fn, cmd)
+	return fc.selectFuncNow(fc.receiver, fn, cmd)
 }
 
-func (fc *FuncCommand) selectFuncNow(fn *modFunction, cmd *cobra.Command) error {
+// selectFuncNow selects fn, called on the receiver type.
+func (fc *FuncCommand) selectFuncNow(receiver string, fn *modFunction, cmd *cobra.Command) error {
 	fc.q = fc.q.Select(fn.Name)
-	if slices.Contains(hostCoreFields[fc.receiver], fn.Name) {
+	if slices.Contains(hostCoreFields[receiver], fn.Name) {
 		fc.hostDependent = true
 	}
 
@@ -1063,7 +1066,7 @@ func (fc *FuncCommand) selectPendingFunctions(selectorCmd *cobra.Command) error 
 				return err
 			}
 		}
-		if err := fc.selectFuncNow(call.fn, call.cmd); err != nil {
+		if err := fc.selectFuncNow(call.receiver, call.fn, call.cmd); err != nil {
 			return err
 		}
 	}
