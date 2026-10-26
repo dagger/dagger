@@ -110,7 +110,7 @@ func TestRemoteCacheAdapterLifetime(t *testing.T) {
 		_, _, err = adapter.TakeLookupMisses(t.Context(), 32, 0)
 		require.ErrorIs(t, err, ErrRemoteCacheAdapterClosed)
 	})
-	t.Run("shutdown context cancels run", func(t *testing.T) {
+	t.Run("the stop, not its start, cancels run", func(t *testing.T) {
 		cache := newGCTestCache(t)
 		ctx, shutdown := context.WithCancelCause(t.Context())
 		srv := &Server{engineCache: cache, shutdownCtx: ctx, shutdownCancel: shutdown}
@@ -119,9 +119,15 @@ func TestRemoteCacheAdapterLifetime(t *testing.T) {
 			return context.Cause(ctx)
 		}}))
 		srv.BeginGracefulStop()
+		select {
+		case <-srv.remoteCacheAdapter.runDone:
+			t.Fatal("run ended when the graceful stop began")
+		case <-time.After(100 * time.Millisecond):
+		}
+		require.True(t, bridgeAttached(cache))
+		require.NoError(t, srv.stopRemoteCacheIntegration(boundedContext(t)))
 		within(t, srv.remoteCacheAdapter.runDone)
 		require.False(t, bridgeAttached(cache))
-		require.NoError(t, srv.stopRemoteCacheIntegration(boundedContext(t)))
 	})
 	t.Run("run exit detaches without failing ordinary work", func(t *testing.T) {
 		cache := newGCTestCache(t)
