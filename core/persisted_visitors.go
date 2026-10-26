@@ -273,6 +273,12 @@ var persistedDirectoryLazyVisitors = map[string]persistedLazyVisitor{
 	persistedDirectoryLazyKindGitCommit: parentAndSource("changesResultID",
 		func(p *persistedDirectoryGitCommitLazy) *uint64 { return &p.ParentResultID },
 		func(p *persistedDirectoryGitCommitLazy) *uint64 { return &p.ChangesResultID }),
+	persistedDirectoryLazyKindExtract: persistedLazyStructVisitor(func(p *persistedDirectoryExtractLazy, w *persistedRefWalker) error {
+		if err := p.validate(); err != nil {
+			return err
+		}
+		return w.child("sourceResultID", &p.SourceResultID)
+	}),
 	persistedDirectoryLazyKindWorkspacePull: parentAndSource("sourceResultID",
 		func(p *persistedDirectoryWorkspacePullLazy) *uint64 { return &p.ParentResultID },
 		func(p *persistedDirectoryWorkspacePullLazy) *uint64 { return &p.SourceResultID }),
