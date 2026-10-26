@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/wcprof"
 	"golang.org/x/sync/errgroup"
 )
@@ -553,6 +554,7 @@ func (c *Cache) runLazyOperationDecision(ctx context.Context, res AnyResult, add
 			c.recordPartFixture(row, address, "lazy-enter")
 			// No source could supply the part: it is computed here.
 			wcprof.Fact(ctx, 0, "part.no_source", uint64(row.id))
+			c.logPartWithoutSource(ctx, row, address, route, record, scan.NoSource)
 			if err := invocation.Run(ctx); err != nil {
 				return err
 			}
@@ -570,6 +572,74 @@ func (c *Cache) runLazyOperationDecision(ctx context.Context, res AnyResult, add
 		}
 		return partRefused("decision: both scans refused")
 	}})
+}
+
+// logPartWithoutSource records a part that no source could supply, which the
+// demand now computes: the entry as the remote cache knows it (the cache, the
+// entry's number and replacement count, and when a merge installed its
+// value), its step and part, and why check's scan found no source. The scan's
+// candidates are the entry and the equivalent entries it looked at; an
+// address one of them held, which the scan passed over, had expired or was
+// tried in this demand and failed. The reason is the first that holds of:
+//   - download_failed: every held address was tried in this demand and
+//     failed;
+//   - offer_unavailable: an address was held, but had expired;
+//   - holder_busy: an equivalent entry was still being written, so the scan
+//     could not read it, or held the part complete but in use;
+//   - no_offer: no candidate held the part or an address for it.
+//
+// origin is merged for a value a merge installed since the engine started,
+// and restored for any other.
+func (c *Cache) logPartWithoutSource(ctx context.Context, row *sharedResult, address PersistedPartAddress, route LazyOperationRoute, record PersistedRecord, check *SourceCheck) {
+	offers, failed, busy := 0, 0, false
+	for _, candidate := range check.candidates {
+		if candidate.row != row && (candidate.unready || (candidate.probe != nil && candidate.probe.LocalComplete && candidate.probe.Busy)) {
+			busy = true
+		}
+		if candidate.offer == nil {
+			continue
+		}
+		offers++
+		if check.demand != nil && check.demand.exhausted(candidate.row.id, address, candidate.offer, candidate.facts.offers) {
+			failed++
+		}
+	}
+	reason := "no_offer"
+	switch {
+	case offers > 0 && failed == offers:
+		reason = "download_failed"
+	case offers > 0:
+		reason = "offer_unavailable"
+	case busy:
+		reason = "holder_busy"
+	}
+	c.egraphMu.RLock()
+	replacements, mergedAt := row.replacements, row.mergedAtUnixNano
+	c.egraphMu.RUnlock()
+	origin := "restored"
+	if mergedAt != 0 {
+		origin = "merged"
+	}
+	part := string(address.Part)
+	if len(address.OutputPath) > 0 {
+		part = address.OutputPath.String() + "/" + part
+	}
+	var field string
+	if record.Call != nil {
+		field = record.Call.Field
+	}
+	slog.InfoContext(ctx, "remote cache part without a source",
+		"cache", c.Identity().ID,
+		"entry", uint64(row.id),
+		"replacements", replacements,
+		"merged_at", mergedAt,
+		"origin", origin,
+		"field", field,
+		"part", part,
+		"group", string(route.Group.Group),
+		"reason", reason,
+		"candidates", len(check.candidates),
+		"offers", offers)
 }
 
 var errLazyEvaluationBusy = errors.New("part operation owns admission")
