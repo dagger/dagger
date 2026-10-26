@@ -22,6 +22,7 @@ import (
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/sdk/instrumentation"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -246,6 +247,8 @@ type sessionSpanExporter struct {
 }
 
 // ExportSpans fans spans out to the per-client DBs on each span's route.
+// Each span is encoded into a DB row once, and that row is written to every
+// target on its route.
 //
 // A call span (one carrying its frame as dagger.io/dag.call) is also the
 // delivery of that frame's payload, so it settles the same per-(digest,
@@ -261,7 +264,8 @@ func (exp sessionSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace
 	// have the protected call span processor retry it and then drop its
 	// routable siblings too. Only store writes, which can succeed on retry,
 	// fail the batch.
-	byTarget := map[string][]sdktrace.ReadOnlySpan{}
+	routed := make([]sdktrace.ReadOnlySpan, 0, len(spans))
+	routes := make([][]string, 0, len(spans))
 	payloadsByTarget := map[string][]string{}
 	for _, span := range spans {
 		origin := spanOriginClientID(span)
@@ -281,16 +285,39 @@ func (exp sessionSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace
 				payloadsByTarget[target] = append(payloadsByTarget[target], digest)
 			}
 		}
-		span = withoutSpanOrigin(span)
-		for _, target := range route {
-			byTarget[target] = append(byTarget[target], span)
+		routed = append(routed, withoutSpanOrigin(span))
+		routes = append(routes, route)
+	}
+	// Each target gets its own slice: appending assigns row IDs in place.
+	// The rows' encoded fields are shared, and never modified once written.
+	// Every target on a route gets an entry, even with no rows, so the
+	// payloads taken for it are settled.
+	enc := newSpanRowEncoder()
+	byTarget := map[string][]clientdb.Span{}
+	errByTarget := map[string]error{}
+	for i, span := range routed {
+		encoded := enc.encode(span)
+		for _, target := range routes[i] {
+			targetRows := byTarget[target]
+			switch {
+			case encoded.err != nil:
+				if errByTarget[target] == nil {
+					errByTarget[target] = encoded.err
+				}
+			case encoded.ok:
+				targetRows = append(targetRows, encoded.row)
+			}
+			byTarget[target] = targetRows
 		}
 	}
 	final := enginetel.IsFinalExportAttempt(ctx)
 	var eg errgroup.Group
-	for target, targetSpans := range byTarget {
+	for target, targetRows := range byTarget {
 		eg.Go(func() error {
-			err := exportSpansRecovered(ctx, exp.ps.Spans(target), targetSpans)
+			err := errByTarget[target]
+			if err == nil {
+				err = exp.ps.appendSpans(ctx, target, targetRows)
+			}
 			for _, digest := range payloadsByTarget[target] {
 				exp.sess.settleCallPayload(digest, []string{target}, err == nil, final)
 			}
@@ -301,22 +328,6 @@ func (exp sessionSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace
 		})
 	}
 	return eg.Wait()
-}
-
-// exportSpansRecovered turns a panic in exp into an error. Spans posted over
-// OTLP are decoded lazily (otel.SpansFromPB), so a malformed field only blows
-// up when the store write reads it -- here, on a fan-out goroutine outside the
-// HTTP handler's recovery, where a panic would take the whole engine down.
-// The payload is normalized first (enginetel.NormalizeTraceRequest); this is
-// the backstop for whatever that does not anticipate, failing just the batch.
-func exportSpansRecovered(ctx context.Context, exp sdktrace.SpanExporter, spans []sdktrace.ReadOnlySpan) (rerr error) {
-	defer func() {
-		if r := recover(); r != nil {
-			slog.Error("panic exporting spans", "panic", r, "spans", len(spans), "stack", string(debug.Stack()))
-			rerr = fmt.Errorf("panic exporting %d spans: %v", len(spans), r)
-		}
-	}()
-	return exp.ExportSpans(ctx, spans)
 }
 
 func (sessionSpanExporter) ForceFlush(context.Context) error { return nil }
@@ -771,15 +782,25 @@ func fetchSpanBatch(ctx context.Context, db *clientdb.DB, since int64, limit int
 	if len(spans) == 0 {
 		return since, nil, 0, nil
 	}
-	roSpans := make([]sdktrace.ReadOnlySpan, 0, len(spans))
-	for i := range spans {
-		if keep == nil || keep(&spans[i]) {
-			roSpans = append(roSpans, spans[i].ReadOnly())
+	next = spans[len(spans)-1].ID
+	kept := keptRows(spans, keep)
+	return next, &coltracepb.ExportTraceServiceRequest{
+		ResourceSpans: clientdb.SpansToPB(kept),
+	}, len(spans), nil
+}
+
+// keptRows returns the rows keep selects, or all of them when keep is nil.
+func keptRows[Row any](rows []Row, keep func(*Row) bool) []Row {
+	if keep == nil {
+		return rows
+	}
+	kept := make([]Row, 0, len(rows))
+	for i := range rows {
+		if keep(&rows[i]) {
+			kept = append(kept, rows[i])
 		}
 	}
-	return spans[len(spans)-1].ID, &coltracepb.ExportTraceServiceRequest{
-		ResourceSpans: telemetry.SpansToPB(roSpans),
-	}, len(spans), nil
+	return kept
 }
 
 // fetchLogBatch is fetchSpanBatch for log records.
@@ -795,15 +816,7 @@ func fetchLogBatch(ctx context.Context, db *clientdb.DB, since int64, limit int,
 		return since, nil, 0, nil
 	}
 	next = logs[len(logs)-1].ID
-	kept := logs
-	if keep != nil {
-		kept = make([]clientdb.Log, 0, len(logs))
-		for i := range logs {
-			if keep(&logs[i]) {
-				kept = append(kept, logs[i])
-			}
-		}
-	}
+	kept := keptRows(logs, keep)
 	return next, &collogspb.ExportLogsServiceRequest{
 		ResourceLogs: clientdb.LogsToPB(kept),
 	}, len(logs), nil
@@ -848,115 +861,153 @@ func (ps *PubSub) MetricsSubscribeHandler(w http.ResponseWriter, r *http.Request
 	})
 }
 
-type clientSpans struct {
-	*PubSub
-	clientID string
+// encodedSpanRow is one span encoded as a client DB row. ok is false when
+// the span could not be encoded and is skipped; err is set when encoding it
+// panicked, which fails the export to every client the span goes to.
+type encodedSpanRow struct {
+	row clientdb.Span
+	ok  bool
+	err error
 }
 
-func (ps *PubSub) Spans(clientID string) sdktrace.SpanExporter {
-	return clientSpans{
-		PubSub:   ps,
-		clientID: clientID,
+// spanRowEncoder encodes spans as client DB rows. A session's spans mostly
+// share one resource and a few instrumentation scopes, so it encodes each
+// distinct one once and shares its bytes between the rows that carry it.
+type spanRowEncoder struct {
+	// A resource's encoding is its attributes alone.
+	resources map[attribute.Distinct][]byte
+	scopes    map[instrumentation.Scope][]byte
+}
+
+func newSpanRowEncoder() *spanRowEncoder {
+	return &spanRowEncoder{
+		resources: map[attribute.Distinct][]byte{},
+		scopes:    map[instrumentation.Scope][]byte{},
 	}
 }
 
-func (ps clientSpans) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
-	slog.ExtraDebug("pubsub exporting spans", "client", ps.clientID, "count", len(spans))
-	start := time.Now()
+// encode encodes span as a DB row, turning a panic into an error. Spans
+// posted over OTLP are decoded lazily (otel.SpansFromPB), so a malformed
+// field only blows up when encoding reads it -- here, on the span
+// processor's goroutine, outside the HTTP handler's recovery, where a panic
+// would take the whole engine down. The payload is normalized first
+// (enginetel.NormalizeTraceRequest); this is the backstop for whatever that
+// does not anticipate, failing just the exports that carry the span.
+func (enc *spanRowEncoder) encode(span sdktrace.ReadOnlySpan) (encoded encodedSpanRow) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("panic exporting span", "panic", r, "stack", string(debug.Stack()))
+			encoded = encodedSpanRow{err: fmt.Errorf("panic exporting span: %v", r)}
+		}
+	}()
+	row, ok := enc.row(span)
+	return encodedSpanRow{row: row, ok: ok}
+}
 
-	var inserts []clientdb.Span
-	for _, span := range spans {
-		traceID := span.SpanContext().TraceID().String()
-		spanID := span.SpanContext().SpanID().String()
-		traceState := span.SpanContext().TraceState().String()
-		parentSpanID := span.Parent().SpanID().String()
-		flags := int64(span.SpanContext().TraceFlags())
-		name := span.Name()
-		kind := span.SpanKind().String()
-		startTime := span.StartTime().UnixNano()
-		endTime := sql.NullInt64{
-			Int64: span.EndTime().UnixNano(),
-			Valid: !span.EndTime().IsZero(),
-		}
-		if span.EndTime().Before(span.StartTime()) {
-			endTime.Int64 = 0
-			endTime.Valid = false
-		}
-		attributes, err := clientdb.MarshalProtoJSONs(telemetry.KeyValues(span.Attributes()))
-		if err != nil {
-			slog.Warn("failed to marshal attributes", "error", err)
-			continue
-		}
-		droppedAttributesCount := int64(span.DroppedAttributes())
-		events, err := clientdb.MarshalProtoJSONs(telemetry.SpanEventsToPB(span.Events()))
-		if err != nil {
-			slog.Warn("failed to marshal events", "error", err)
-			continue
-		}
-		droppedEventsCount := int64(span.DroppedEvents())
-		links, err := clientdb.MarshalProtoJSONs(telemetry.SpanLinksToPB(span.Links()))
-		if err != nil {
-			slog.Warn("failed to marshal links", "error", err)
-			continue
-		}
-		droppedLinksCount := int64(span.DroppedLinks())
-		statusCode := int64(span.Status().Code)
-		statusMessage := span.Status().Description
-		instrumentationScope, err := protojson.Marshal(telemetry.InstrumentationScopeToPB(span.InstrumentationScope()))
+func (enc *spanRowEncoder) row(span sdktrace.ReadOnlySpan) (clientdb.Span, bool) {
+	traceID := span.SpanContext().TraceID().String()
+	spanID := span.SpanContext().SpanID().String()
+	traceState := span.SpanContext().TraceState().String()
+	parentSpanID := span.Parent().SpanID().String()
+	flags := int64(span.SpanContext().TraceFlags())
+	name := span.Name()
+	kind := span.SpanKind().String()
+	startTime := span.StartTime().UnixNano()
+	endTime := sql.NullInt64{
+		Int64: span.EndTime().UnixNano(),
+		Valid: !span.EndTime().IsZero(),
+	}
+	if span.EndTime().Before(span.StartTime()) {
+		endTime.Int64 = 0
+		endTime.Valid = false
+	}
+	attributes, err := clientdb.MarshalProtoJSONs(telemetry.KeyValues(span.Attributes()))
+	if err != nil {
+		slog.Warn("failed to marshal attributes", "error", err)
+		return clientdb.Span{}, false
+	}
+	droppedAttributesCount := int64(span.DroppedAttributes())
+	events, err := clientdb.MarshalProtoJSONs(telemetry.SpanEventsToPB(span.Events()))
+	if err != nil {
+		slog.Warn("failed to marshal events", "error", err)
+		return clientdb.Span{}, false
+	}
+	droppedEventsCount := int64(span.DroppedEvents())
+	links, err := clientdb.MarshalProtoJSONs(telemetry.SpanLinksToPB(span.Links()))
+	if err != nil {
+		slog.Warn("failed to marshal links", "error", err)
+		return clientdb.Span{}, false
+	}
+	droppedLinksCount := int64(span.DroppedLinks())
+	statusCode := int64(span.Status().Code)
+	statusMessage := span.Status().Description
+	scope := span.InstrumentationScope()
+	instrumentationScope, ok := enc.scopes[scope]
+	if !ok {
+		instrumentationScope, err = protojson.Marshal(telemetry.InstrumentationScopeToPB(scope))
 		if err != nil {
 			slog.Warn("failed to marshal instrumentation scope", "error", err)
-			continue
+			return clientdb.Span{}, false
 		}
-		resource, err := protojson.Marshal(telemetry.ResourcePtrToPB(span.Resource()))
+		enc.scopes[scope] = instrumentationScope
+	}
+	res := span.Resource()
+	resource, ok := enc.resources[res.Equivalent()]
+	if !ok {
+		resource, err = protojson.Marshal(telemetry.ResourcePtrToPB(res))
 		if err != nil {
 			slog.Warn("failed to marshal resource", "error", err)
-			continue
+			return clientdb.Span{}, false
 		}
-
-		inserts = append(inserts, clientdb.Span{
-			TraceID:    traceID,
-			SpanID:     spanID,
-			TraceState: traceState,
-			ParentSpanID: sql.NullString{
-				String: parentSpanID,
-				Valid:  span.Parent().IsValid(),
-			},
-			Flags:                  flags,
-			Name:                   name,
-			Kind:                   kind,
-			StartTime:              startTime,
-			EndTime:                endTime,
-			Attributes:             attributes,
-			DroppedAttributesCount: droppedAttributesCount,
-			Events:                 events,
-			DroppedEventsCount:     droppedEventsCount,
-			Links:                  links,
-			DroppedLinksCount:      droppedLinksCount,
-			StatusCode:             statusCode,
-			StatusMessage:          statusMessage,
-			InstrumentationScope:   instrumentationScope,
-			Resource:               resource,
-		})
+		enc.resources[res.Equivalent()] = resource
 	}
 
-	db, err := ps.srv.clientDBs.Open(ctx, ps.clientID)
+	return clientdb.Span{
+		TraceID:    traceID,
+		SpanID:     spanID,
+		TraceState: traceState,
+		ParentSpanID: sql.NullString{
+			String: parentSpanID,
+			Valid:  span.Parent().IsValid(),
+		},
+		Flags:                  flags,
+		Name:                   name,
+		Kind:                   kind,
+		StartTime:              startTime,
+		EndTime:                endTime,
+		Attributes:             attributes,
+		DroppedAttributesCount: droppedAttributesCount,
+		Events:                 events,
+		DroppedEventsCount:     droppedEventsCount,
+		Links:                  links,
+		DroppedLinksCount:      droppedLinksCount,
+		StatusCode:             statusCode,
+		StatusMessage:          statusMessage,
+		InstrumentationScope:   instrumentationScope,
+		Resource:               resource,
+	}, true
+}
+
+// appendSpans writes span rows to a client's DB.
+func (ps *PubSub) appendSpans(ctx context.Context, clientID string, rows []clientdb.Span) error {
+	slog.ExtraDebug("pubsub exporting spans", "client", clientID, "count", len(rows))
+	start := time.Now()
+
+	db, err := ps.srv.clientDBs.Open(ctx, clientID)
 	if err != nil {
 		return fmt.Errorf("get telemetry db: %w", err)
 	}
 	defer db.Close()
 
 	appendStart := time.Now()
-	stats, appendErr := db.AppendSpans(inserts)
-	logTelemetryWrite(ps.clientID, "spans", len(inserts), start, appendStart, stats, appendErr)
+	stats, appendErr := db.AppendSpans(rows)
+	logTelemetryWrite(clientID, "spans", len(rows), start, appendStart, stats, appendErr)
 	if appendErr != nil {
 		return appendErr
 	}
 
 	return nil
 }
-
-func (ps clientSpans) ForceFlush(ctx context.Context) error { return nil }
-func (ps clientSpans) Shutdown(context.Context) error       { return nil }
 
 func (ps *PubSub) Logs(clientID string) sdklog.Exporter {
 	return clientLogs{

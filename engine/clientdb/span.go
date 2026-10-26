@@ -220,3 +220,139 @@ func (ros *readOnlySpan) InstrumentationScope() instrumentation.Scope {
 func (ros *readOnlySpan) Ended() bool {
 	return ros.DB.EndTime.Valid
 }
+
+// SpansToPB converts span rows to OTLP, as telemetry.SpansToPB does for their
+// ReadOnly views, without decoding each row into SDK values and encoding it
+// back. A row's attributes and events were encoded from SDK values, so their
+// OTLP form is passed through as stored. Each distinct resource and
+// instrumentation scope is decoded once per call.
+func SpansToPB(rows []Span) []*otlptracev1.ResourceSpans {
+	if len(rows) == 0 {
+		return nil
+	}
+
+	type decodedResource struct {
+		key attribute.Distinct
+		pb  *otlpresourcev1.Resource
+	}
+	resources := map[string]decodedResource{}
+	scopes := map[string]instrumentation.Scope{}
+
+	type key struct {
+		r  attribute.Distinct
+		is instrumentation.Scope
+	}
+	var rss []*otlptracev1.ResourceSpans
+	rsm := make(map[attribute.Distinct]*otlptracev1.ResourceSpans)
+	ssm := make(map[key]*otlptracev1.ScopeSpans)
+	for i := range rows {
+		row := &rows[i]
+		res, ok := resources[string(row.Resource)]
+		if !ok {
+			r := (&readOnlySpan{DB: row}).Resource()
+			res = decodedResource{key: r.Equivalent(), pb: telemetry.ResourcePtrToPB(r)}
+			resources[string(row.Resource)] = res
+		}
+		scope, ok := scopes[string(row.InstrumentationScope)]
+		if !ok {
+			scope = (&readOnlySpan{DB: row}).InstrumentationScope()
+			scopes[string(row.InstrumentationScope)] = scope
+		}
+
+		k := key{r: res.key, is: scope}
+		scopeSpans, sOk := ssm[k]
+		if !sOk {
+			scopeSpans = &otlptracev1.ScopeSpans{
+				Scope:     telemetry.InstrumentationScopeToPB(scope),
+				Spans:     []*otlptracev1.Span{},
+				SchemaUrl: scope.SchemaURL,
+			}
+			ssm[k] = scopeSpans
+		}
+		scopeSpans.Spans = append(scopeSpans.Spans, row.spanPB())
+
+		rs, rOk := rsm[res.key]
+		if !rOk {
+			rs = &otlptracev1.ResourceSpans{
+				Resource:   res.pb,
+				ScopeSpans: []*otlptracev1.ScopeSpans{scopeSpans},
+			}
+			rsm[res.key] = rs
+			rss = append(rss, rs)
+			continue
+		}
+		if !sOk {
+			rs.ScopeSpans = append(rs.ScopeSpans, scopeSpans)
+		}
+	}
+	return rss
+}
+
+// spanPB is the OTLP span telemetry.SpansToPB makes of span.ReadOnly().
+func (span *Span) spanPB() *otlptracev1.Span {
+	ros := &readOnlySpan{DB: span}
+	tid := ros.SpanContext().TraceID()
+	sid := ros.SpanContext().SpanID()
+
+	var attrs []*otlpcommonv1.KeyValue
+	if err := UnmarshalProtoJSONs(span.Attributes, &otlpcommonv1.KeyValue{}, &attrs); err != nil {
+		slog.Warn("failed to unmarshal attributes", "error", err)
+	}
+	var events []*otlptracev1.Span_Event
+	if err := UnmarshalProtoJSONs(span.Events, &otlptracev1.Span_Event{}, &events); err != nil {
+		slog.Warn("failed to unmarshal events", "error", err)
+	}
+
+	// Links are few; their round trip through SDK values keeps the stream
+	// exactly as it was.
+	pb := &otlptracev1.Span{
+		TraceId:                tid[:],
+		SpanId:                 sid[:],
+		TraceState:             ros.SpanContext().TraceState().String(),
+		Status:                 statusPB(codes.Code(span.StatusCode), span.StatusMessage),
+		StartTimeUnixNano:      uint64(ros.StartTime().UnixNano()),
+		EndTimeUnixNano:        uint64(ros.EndTime().UnixNano()),
+		Links:                  telemetry.SpanLinksToPB(ros.Links()),
+		Kind:                   spanKindPB(span.Kind),
+		Name:                   span.Name,
+		Attributes:             attrs,
+		Events:                 events,
+		DroppedAttributesCount: uint32(span.DroppedAttributesCount),
+		DroppedEventsCount:     uint32(span.DroppedEventsCount),
+		DroppedLinksCount:      uint32(span.DroppedLinksCount),
+		// A stored parent is never remote.
+		Flags: uint32(otlptracev1.SpanFlags_SPAN_FLAGS_CONTEXT_HAS_IS_REMOTE_MASK),
+	}
+	if psid := ros.Parent().SpanID(); psid.IsValid() {
+		pb.ParentSpanId = psid[:]
+	}
+	return pb
+}
+
+func statusPB(code codes.Code, message string) *otlptracev1.Status {
+	c := otlptracev1.Status_STATUS_CODE_UNSET
+	switch code {
+	case codes.Ok:
+		c = otlptracev1.Status_STATUS_CODE_OK
+	case codes.Error:
+		c = otlptracev1.Status_STATUS_CODE_ERROR
+	}
+	return &otlptracev1.Status{Code: c, Message: message}
+}
+
+func spanKindPB(kind string) otlptracev1.Span_SpanKind {
+	switch kind {
+	case "internal":
+		return otlptracev1.Span_SPAN_KIND_INTERNAL
+	case "server":
+		return otlptracev1.Span_SPAN_KIND_SERVER
+	case "client":
+		return otlptracev1.Span_SPAN_KIND_CLIENT
+	case "producer":
+		return otlptracev1.Span_SPAN_KIND_PRODUCER
+	case "consumer":
+		return otlptracev1.Span_SPAN_KIND_CONSUMER
+	default:
+		return otlptracev1.Span_SPAN_KIND_UNSPECIFIED
+	}
+}
