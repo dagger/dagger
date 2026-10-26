@@ -3,6 +3,20 @@
   "$id": "https://github.com/dagger/dagger/engine/config/config",
   "$ref": "#/$defs/Config",
   "$defs": {
+    "CacheVolumesConfig": {
+      "properties": {
+        "dir": {
+          "type": "string",
+          "description": "Dir, when set, keeps every cache volume as a plain directory under this absolute path, apart from the engine's snapshots, instead of as a snapshot. Another engine given the same directory later reuses its volumes. One engine uses the directory at a time: an engine that finds it in use keeps cache volumes as snapshots. It must not be inside the engine's worker state directory."
+        },
+        "capacityBytes": {
+          "type": "integer",
+          "description": "CapacityBytes is the provisioned size, in bytes, of the storage that holds Dir, such as a cache volume created at a given size. Set it when the filesystem's own size isn't the limit to keep to. Garbage collection keeps the directory's volumes within 80% of it, removing the least recently used first. When unset, the directory's own filesystem sets the limits, as the engine's defaults do for its state."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "Config": {
       "properties": {
         "logLevel": {
@@ -39,6 +53,14 @@
           },
           "type": "object",
           "description": "Registries configures custom registry mirrors, root CAs, and insecure/HTTP access."
+        },
+        "shutdown": {
+          "$ref": "#/$defs/ShutdownConfig",
+          "description": "Shutdown configures how the engine stops."
+        },
+        "cacheVolumes": {
+          "$ref": "#/$defs/CacheVolumesConfig",
+          "description": "CacheVolumes configures where the engine keeps cache volumes."
         }
       },
       "additionalProperties": false,
@@ -209,6 +231,16 @@
         "insecureRootCapabilities": {
           "type": "boolean",
           "description": "InsecureRootCapabilities controls whether the argument of the same name is permitted in Container.withExec - it is allowed by default. Disabling this option ensures that dagger build containers do not run as privileged, and is a basic form of security hardening."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "ShutdownConfig": {
+      "properties": {
+        "gracefulStopTimeout": {
+          "$ref": "#/$defs/Duration",
+          "description": "GracefulStopTimeout bounds the engine's whole stop, from the first SIGTERM or SIGINT to process exit. The final telemetry flushes get what remains of it, at most 30s each. Set it below the grace period of whatever supervises the engine, so that the engine exits on its own rather than being killed. Defaults to 5m; when set, it must be positive."
         }
       },
       "additionalProperties": false,

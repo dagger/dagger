@@ -42,6 +42,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/moby/sys/user"
 	"github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/sirupsen/logrus"
 	"github.com/sourcegraph/conc/pool"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -196,6 +197,31 @@ func newExecState(
 }
 
 type executorSetupFunc func(context.Context, *execState) error
+
+// startingContainerLog is the logger for an exec's "starting container" and
+// "container done" lines.
+func startingContainerLog(ctx context.Context, state *execState) *logrus.Entry {
+	cacheMounts := 0
+	if state.execMD != nil {
+		cacheMounts = state.execMD.CacheMounts
+	}
+	lg := bklog.G(ctx).
+		WithField("id", state.id).
+		WithField("args", state.spec.Process.Args).
+		WithField("cache_mounts", cacheMounts)
+	if state.execMD != nil {
+		if state.execMD.CallDigest != "" {
+			lg = lg.WithField("call_id", state.execMD.CallDigest)
+		}
+	}
+	if state.callerClientID != "" {
+		lg = lg.WithField("caller_client_id", state.callerClientID)
+	}
+	if state.nestedClientMetadata != nil && state.nestedClientMetadata.ClientID != "" {
+		lg = lg.WithField("nested_client_id", state.nestedClientMetadata.ClientID)
+	}
+	return lg
+}
 
 //nolint:gocyclo
 func (c *Client) setupNetwork(ctx context.Context, state *execState) error {
@@ -1694,20 +1720,7 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 	}
 	f.Close()
 
-	lg := bklog.G(ctx).
-		WithField("id", state.id).
-		WithField("args", state.spec.Process.Args)
-	if state.execMD != nil {
-		if state.execMD.CallDigest != "" {
-			lg = lg.WithField("call_id", state.execMD.CallDigest)
-		}
-	}
-	if state.callerClientID != "" {
-		lg = lg.WithField("caller_client_id", state.callerClientID)
-	}
-	if state.nestedClientMetadata != nil && state.nestedClientMetadata.ClientID != "" {
-		lg = lg.WithField("nested_client_id", state.nestedClientMetadata.ClientID)
-	}
+	lg := startingContainerLog(ctx, state)
 	lg.Info("starting container")
 	defer func() {
 		lg.WithError(rerr).Info("container done")

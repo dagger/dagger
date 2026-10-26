@@ -31,6 +31,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/cachevolumedir"
 	"github.com/dagger/dagger/engine/config"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	containerdsnapshot "github.com/dagger/dagger/engine/snapshots/containerd"
@@ -40,6 +41,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/archutil"
+	"github.com/dagger/dagger/internal/buildkit/util/disk"
 	"github.com/dagger/dagger/internal/buildkit/util/entitlements"
 	"github.com/dagger/dagger/internal/buildkit/util/network"
 	"github.com/dagger/dagger/internal/buildkit/util/network/cniprovider"
@@ -133,6 +135,14 @@ type Server struct {
 	localContentStore    content.Store
 	contentStore         *containerdsnapshot.Store
 	builtinContentStore  content.Store
+
+	// cacheVolumeDir is the cache volume directory this engine owns, when
+	// cache volumes are directories (cacheVolumes.dir); nil otherwise.
+	cacheVolumeDir  *cachevolumedir.Store
+	cacheVolumesCfg config.CacheVolumesConfig
+	// cacheVolumeDirDiskStat overrides disk.GetDiskStat for the cache volume
+	// directory when set, for tests.
+	cacheVolumeDirDiskStat func(string) (disk.DiskStat, error)
 
 	snapshotter        ctdsnapshot.Snapshotter
 	snapshotterMDStore *storage.MetaStore // only set for overlay snapshotter right now
@@ -303,10 +313,9 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	// setup directories and paths
 	//
 
-	if err := srv.initRootPaths(); err != nil {
+	if err := srv.initStateLocations(cfg.CacheVolumes); err != nil {
 		return nil, err
 	}
-	logStateFilesystem(srv.rootDir)
 
 	// Opened before the local cache state: the snapshot manager takes the
 	// builtin store at construction, for chain imports of builtin layers.
@@ -533,6 +542,16 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	}
 
 	return srv, nil
+}
+
+// initStateLocations sets up where the engine keeps its state: the state root
+// and its paths, and the cache volume directory when one is configured.
+func (srv *Server) initStateLocations(cacheVolumes config.CacheVolumesConfig) error {
+	if err := srv.initRootPaths(); err != nil {
+		return err
+	}
+	logStateFilesystem(srv.rootDir)
+	return srv.initCacheVolumeDir(cacheVolumes)
 }
 
 func (srv *Server) initRootPaths() error {
@@ -1052,6 +1071,10 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 			}
 		})
 	}
+
+	stopPhase("close cache volume directory", func() {
+		err = errors.Join(err, srv.closeCacheVolumeDir())
+	})
 
 	cleanCacheClose := false
 	if srv.engineCache != nil {
