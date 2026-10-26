@@ -143,6 +143,16 @@ func Register(ctx context.Context, meter metric.Meter) (metric.Registration, err
 	return register(ctx, meter, defaultProcRoot, defaultCgroupRoot, slog.Log)
 }
 
+// EngineCgroupDir is the engine process's cgroup v2 directory, found as
+// Register finds it.
+func EngineCgroupDir() (string, error) {
+	r, err := newReader(defaultProcRoot, defaultCgroupRoot)
+	if err != nil {
+		return "", err
+	}
+	return r.dir, nil
+}
+
 func register(ctx context.Context, meter metric.Meter, procRoot, cgroupRoot string, log func(context.Context, slog.Level, string, ...any)) (metric.Registration, error) {
 	r, discoveryErr := newReader(procRoot, cgroupRoot)
 	if errors.Is(discoveryErr, errUnsupportedPlatform) {

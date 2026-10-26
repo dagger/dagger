@@ -181,6 +181,31 @@ func setupDebugHandlers(addr string, eng *server.Server) error {
 		}
 	}))
 
+	// A CPU profile of the engine over the next run of a phase (only
+	// "session" so far: the next session's life, from its initialization to
+	// the end of its removal). The request waits for the run to end; it
+	// disarms if the client leaves before the run starts.
+	m.Handle("/debug/wcprof/profile", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		if eng == nil {
+			http.Error(rw, "engine server not available", http.StatusServiceUnavailable)
+			return
+		}
+		phase := req.URL.Query().Get("phase")
+		if phase != server.PhaseSession {
+			http.Error(rw, fmt.Sprintf("unknown phase %q: want %q", phase, server.PhaseSession), http.StatusBadRequest)
+			return
+		}
+		prof, err := eng.ProfilePhase(req.Context(), phase)
+		if err != nil {
+			http.Error(rw, err.Error(), http.StatusConflict)
+			return
+		}
+		rw.Header().Set("Content-Type", "application/octet-stream")
+		if _, err := rw.Write(prof); err != nil {
+			logrus.WithError(err).Warn("failed writing wcprof phase profile")
+		}
+	}))
+
 	// setting debugaddr is opt-in. permission is defined by listener address
 	trace.AuthRequest = func(_ *http.Request) (bool, bool) {
 		return true, true

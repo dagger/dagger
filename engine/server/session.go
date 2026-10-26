@@ -88,6 +88,10 @@ type daggerSession struct {
 	// off.
 	wcprofEnabled bool
 
+	// phase is the session's run of PhaseSession (wcprof_phase.go): an op
+	// over its life when it is profiled, and an armed CPU profile's marks.
+	phase *phaseRun
+
 	// state is read lock-free by observer paths and written only under
 	// lifecycleMu. The zero value is sessionStateUninitialized.
 	state atomicSessionState
@@ -1098,6 +1102,17 @@ func (srv *Server) initializeDaggerSession(
 	})
 	failureCleanups.Add("close session analytics", sess.analytics.Close)
 
+	phaseCtx := context.Background()
+	if sess.wcprofEnabled {
+		wcprof.EnsureRecorder()
+		phaseCtx = wcprof.ContextWithProfiling(phaseCtx)
+	}
+	sess.phase = srv.beginPhase(phaseCtx, PhaseSession, clientMetadata.SessionID)
+	failureCleanups.Add("end session phase", func() error {
+		sess.phase.end(srv)
+		return nil
+	})
+
 	// NOTE: state is NOT set to sessionStateInitialized here. getOrInitClient
 	// performs that atomic transition as its last step, after the main client
 	// record is published, so observers never see initialized session resources
@@ -1314,6 +1329,7 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 		close(sess.shutdownCh)
 	})
 
+	sess.phase.end(srv)
 	return errs
 }
 
