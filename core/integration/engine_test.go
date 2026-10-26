@@ -293,6 +293,64 @@ func (EngineSuite) TestExecCgroupControllers(ctx context.Context, t *testctx.T) 
 	}
 }
 
+// Once an exec is done, its container is gone from the runtime, whether its
+// process succeeded, failed or couldn't start, and whether the runtime
+// removed it or the engine had to.
+func (EngineSuite) TestExecLeavesNoContainer(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	for _, tc := range []struct {
+		name    string
+		runtime func(*core.Container) *core.Container
+	}{
+		{"runtime removes it", func(ctr *core.Container) *core.Container { return ctr }},
+		{"runtime keeps it", func(ctr *core.Container) *core.Container {
+			// Keep every container after its run, as a run that fails before
+			// the runtime can remove it does.
+			return ctr.
+				WithFile("/usr/local/bin/crun.real", ctr.File(distconsts.RuntimePath)).
+				WithNewFile(distconsts.RuntimePath, `#!/bin/sh
+for arg do
+	shift
+	set -- "$@" "$arg"
+	if [ "$arg" = run ]; then
+		set -- "$@" --keep
+	fi
+done
+exec /usr/local/bin/crun.real "$@"
+`, core.ContainerWithNewFileOpts{Permissions: 0o755})
+		}},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.W[*testing.T]) {
+			// The runtime keeps each container's state in a directory named by
+			// its ID.
+			runtimeState := core.NewQuery(c).CacheVolume("runtime-state-" + rand.Text())
+			devEngineSvc := devEngineContainerAsService(devEngineContainer(c, func(ctr *core.Container) *core.Container {
+				return tc.runtime(ctr).WithMountedCache(distconsts.RuntimeStateRoot, runtimeState)
+			}))
+			_, err := engineClientContainer(ctx, t, c, devEngineSvc).
+				WithExec([]string{"dagger", "query"}, core.ContainerWithExecOpts{
+					Stdin: `{container{from(address:"` + alpineImage + `"){
+						succeeded: withExec(args:["true"]){exitCode}
+						failed: withExec(args:["false"], expect: ANY){exitCode}
+						missing: withExec(args:["/no-such-command"], expect: ANY){exitCode}
+					}}}`,
+					DisableDaggerInDagger: true,
+				}).
+				Sync(ctx)
+			require.NoError(t, err)
+
+			// The runtime's own entries are hidden.
+			containers, err := core.NewQuery(c).Container().From(alpineImage).
+				WithMountedCache("/state", runtimeState).
+				WithExec([]string{"ls", "/state"}).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Empty(t, strings.TrimSpace(containers), "containers left in the runtime")
+		})
+	}
+}
+
 func (EngineSuite) TestDaggerExec(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

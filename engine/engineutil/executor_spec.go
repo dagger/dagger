@@ -1756,7 +1756,13 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 		}
 	}
 
+	// The runtime removes the container itself when its run returns. A run
+	// that failed early, or whose runtime was killed, can leave its state.
+	var runtimeRemoved bool
 	state.cleanups.Add("runc delete container", func() error {
+		if runtimeRemoved {
+			return nil
+		}
 		return c.Runc.Delete(context.WithoutCancel(ctx), state.id, &runc.DeleteOpts{})
 	})
 
@@ -1993,7 +1999,6 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 				Started:       started,
 				IO:            io,
 				ConsoleSocket: consoleSocket,
-				ExtraArgs:     []string{"--keep"},
 				PidFile:       pidFile,
 				ExtraFiles:    initFDs.files,
 			})
@@ -2004,6 +2009,9 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 
 	runErr := c.callWithIO(ctx, state.procInfo, startedCallback, killer, runcCall)
 	endWall := time.Now()
+	if _, err := os.Stat(filepath.Join(c.Runc.Root, state.id)); errors.Is(err, os.ErrNotExist) {
+		runtimeRemoved = true
+	}
 	// Scrub + bound the captured user command ONCE, only when a profile source is
 	// active, and feed the SAME slice to both sinks below so native and OTel carry
 	// a byte-identical argv. It rides only on the user processRun phase (where the
