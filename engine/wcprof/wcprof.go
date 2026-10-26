@@ -251,9 +251,9 @@ const (
 )
 
 var linkKindNames = map[LinkKind]string{
-	LinkKindNestedClient: "nested_client",
-	LinkKindResult:       "result",
-	LinkKindReusedResult: "reused_result",
+	LinkKindNestedClient:   "nested_client",
+	LinkKindResult:         "result",
+	LinkKindReusedResult:   "reused_result",
 	LinkKindReportedCause:  "reported_cause",
 	LinkKindUnresolvedSpan: "unresolved_span",
 }

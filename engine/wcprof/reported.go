@@ -199,6 +199,30 @@ func LinkOTelParent(ctx context.Context, opID uint64, traceID, spanID string) {
 	rp.links = append(rp.links, otelParentLink{opID: opID, parent: spanKey{traceID, spanID}, atNS: r.Now()})
 }
 
+// MapOTelSpan records that the engine op opID was begun under the span
+// (traceID, spanID), e.g. a dagql call under its call span: a reported op
+// whose causal parent is that span (a client inside the call's exec, or the
+// module the call runs) resolves to opID in the dump. The first op mapped to
+// a span keeps it, since calls under a telemetry-suppressed caller share the
+// caller's span and the outermost of them is the one it stands for.
+func MapOTelSpan(ctx context.Context, opID uint64, traceID, spanID string) {
+	r := recorderFor(ctx)
+	if r == nil || opID == 0 || spanID == "" {
+		return
+	}
+	key := spanKey{traceID, spanID}
+	rp := &r.reported
+	rp.mu.Lock()
+	defer rp.mu.Unlock()
+	if rp.opBySpan == nil {
+		rp.opBySpan = map[spanKey]uint64{}
+		rp.producers = map[string]*producerCount{}
+	}
+	if _, seen := rp.opBySpan[key]; !seen {
+		rp.opBySpan[key] = opID
+	}
+}
+
 // dumpReported returns the reported work as dump events, resolving span
 // references, and the producers' counts. With flush, the recorded ops and
 // links are removed (the span-to-op map is kept, so later dumps still resolve
