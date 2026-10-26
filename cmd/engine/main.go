@@ -694,8 +694,6 @@ func main() { //nolint:gocyclo
 			}
 		}
 
-		cancelNetworking(errors.New("shutdown"))
-
 		bklog.G(context.WithoutCancel(ctx)).Infof("stopping server")
 		if os.Getenv("NOTIFY_SOCKET") != "" {
 			notified, notifyErr := sddaemon.SdNotify(false, sddaemon.SdNotifyStopping)
@@ -705,6 +703,10 @@ func main() { //nolint:gocyclo
 		srvStopCtx, srvStopCancel := engineStopBudget.serverContext(ctx)
 		defer srvStopCancel()
 		shutdownServer(srvStopCtx)
+		// Networking, dnsmasq included, outlives the server's stop: the
+		// engine's own lookups resolve through dnsmasq, and the remote cache
+		// exports the stop lets finish upload to hosts they must resolve.
+		cancelNetworking(errors.New("shutdown"))
 
 		return err
 	}
