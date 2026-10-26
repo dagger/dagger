@@ -6,9 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	ctdmount "github.com/containerd/containerd/v2/core/mount"
 	cache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/engine/snapshots/testutil"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"gotest.tools/v3/assert"
@@ -67,6 +69,31 @@ func TestChecksumFileDoesNotWalkParent(t *testing.T) {
 	assert.Assert(t, errors.Is(err, errNotFound), "got %v", err)
 	_, err = newTestCacheContext(t).Checksum(ctx, mnt, "/stamp/missing", ChecksumOpts{FollowLinks: true})
 	assert.Assert(t, err != nil)
+}
+
+// Hashing a file of an immutable snapshot reads it through the snapshot's
+// shared read-only mount, which the snapshot's next reader reuses.
+func TestChecksumUsesSharedMount(t *testing.T) {
+	ctx := context.Background()
+	store := testutil.NewStore(t)
+	// A linger long enough that the mount stays while the test runs.
+	store.WithSharedMounts(t, time.Hour, 0)
+	ref, _ := store.Build(t, nil, "work/b001/_pkg_.a", "archive")
+
+	dgst, err := Checksum(ctx, ref, "/work/b001/_pkg_.a", ChecksumOpts{FollowLinks: true})
+	assert.NilError(t, err)
+	assert.Equal(t, store.LocalMounts.Load(), int64(1), "hashing mounts the shared mount")
+
+	shared, ok := ref.(cache.SharedMounter)
+	assert.Assert(t, ok)
+	_, _, release, err := shared.MountShared(ctx)
+	assert.NilError(t, err)
+	release()
+	assert.Equal(t, store.LocalMounts.Load(), int64(1), "the next reader reuses it")
+
+	want, err := newTestCacheContext(t).Checksum(ctx, bindMountable{testutil.Root(t, ref)}, "/work/b001/_pkg_.a", ChecksumOpts{FollowLinks: true})
+	assert.NilError(t, err)
+	assert.Equal(t, dgst, want)
 }
 
 func writeFile(t *testing.T, root, p, contents string) {
