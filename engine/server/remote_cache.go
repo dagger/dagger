@@ -109,11 +109,29 @@ type inProgress struct {
 	running int
 	// idle closes when running drops to zero.
 	idle chan struct{}
+	// closed refuses later operations, once closeWhenIdle saw none running.
+	closed bool
+}
+
+// tryBegin counts one more operation in progress, unless closeWhenIdle has
+// closed p.
+func (p *inProgress) tryBegin() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed {
+		return false
+	}
+	p.beginLocked()
+	return true
 }
 
 func (p *inProgress) begin() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	p.beginLocked()
+}
+
+func (p *inProgress) beginLocked() {
 	if p.running == 0 {
 		p.idle = make(chan struct{})
 	}
@@ -143,6 +161,27 @@ func (p *inProgress) wait(ctx context.Context) error {
 		return nil
 	case <-ctx.Done():
 		return context.Cause(ctx)
+	}
+}
+
+// closeWhenIdle waits until no operation is in progress and, in the same
+// step, refuses later ones, or returns ctx's cause first. An operation that
+// begins while it waits is waited for too.
+func (p *inProgress) closeWhenIdle(ctx context.Context) error {
+	for {
+		p.mu.Lock()
+		if p.running == 0 {
+			p.closed = true
+			p.mu.Unlock()
+			return nil
+		}
+		idle := p.idle
+		p.mu.Unlock()
+		select {
+		case <-idle:
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		}
 	}
 }
 
@@ -179,8 +218,8 @@ func (a *RemoteCacheAdapter) Stop(ctx context.Context) error {
 	return a.stopErr
 }
 
-// drainExports stops lookups and waits until no export is in progress, or
-// until ctx's deadline less stopReserve.
+// drainExports stops lookups and waits until no export is in progress, then
+// refuses later ones; or it gives up at ctx's deadline less stopReserve.
 func (a *RemoteCacheAdapter) drainExports(ctx context.Context) {
 	a.StopLookups()
 	if deadline, ok := ctx.Deadline(); ok {
@@ -189,7 +228,7 @@ func (a *RemoteCacheAdapter) drainExports(ctx context.Context) {
 		defer cancel()
 	}
 	start := time.Now()
-	if err := a.exports.wait(ctx); err != nil {
+	if err := a.exports.closeWhenIdle(ctx); err != nil {
 		slog.Warn("remote cache exports did not finish before the engine stopped", "waited", time.Since(start), "error", err)
 		return
 	}

@@ -47,10 +47,9 @@ func (a *RemoteCacheAdapter) CacheIdentity() (string, uint64) {
 // with the bundle while its chains stay open, or with no bundle when no root
 // survived.
 func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, consume func(context.Context, remotecache.Export) error) (rerr error) {
-	if a.stopped.Load() {
+	if a.stopped.Load() || !a.exports.tryBegin() {
 		return ErrRemoteCacheAdapterClosed
 	}
-	a.exports.begin()
 	defer a.exports.end()
 	start := time.Now()
 	var local exportCapture
