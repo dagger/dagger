@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	resourcestypes "github.com/dagger/dagger/internal/buildkit/executor/resources/types"
 	"github.com/dagger/dagger/engine/wcprof"
+	resourcestypes "github.com/dagger/dagger/internal/buildkit/executor/resources/types"
 )
 
 func TestExecUsageCgroup(t *testing.T) {
@@ -54,9 +54,11 @@ func usageFixture(t *testing.T, containerPeak string) string {
 
 type unavailableMountResources struct{}
 
-func (unavailableMountResources) Prepare(*exec.Cmd) (func() error, error) { return func() error { return nil }, nil }
-func (unavailableMountResources) Active() bool                         { return true }
-func (unavailableMountResources) Available() bool                      { return false }
+func (unavailableMountResources) Prepare(*exec.Cmd) (func() error, error) {
+	return func() error { return nil }, nil
+}
+func (unavailableMountResources) Active() bool    { return true }
+func (unavailableMountResources) Available() bool { return false }
 func (unavailableMountResources) Sample() (*resourcestypes.NetworkSample, error) {
 	return &resourcestypes.NetworkSample{}, nil
 }
