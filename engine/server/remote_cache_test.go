@@ -306,3 +306,39 @@ func TestRemoteCacheGracefulStopLetsExportsFinish(t *testing.T) {
 		t.Fatal("timed out waiting for the stop")
 	}
 }
+
+// An export that doesn't finish gets until the stop's deadline less the
+// reserve, and is then canceled; the stop still ends cleanly before its
+// deadline.
+func TestRemoteCacheGracefulStopCutsOffExportsAtTheReserve(t *testing.T) {
+	t.Parallel()
+	srv := newGracefulStopServer(t, filepath.Join(t.TempDir(), "cache.db"))
+	exported := slowExport(t, srv, nil)
+	srv.remoteCacheAdapter.stopReserve = time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	deadline, _ := ctx.Deadline()
+
+	srv.BeginGracefulStop()
+	require.NoError(t, srv.GracefulStop(ctx))
+	require.ErrorIs(t, <-exported, errServerShuttingDown)
+	require.True(t, time.Now().Before(deadline), "the stop ended past its deadline")
+}
+
+// With no export in progress, the stop doesn't wait for its deadline.
+func TestRemoteCacheGracefulStopWithoutExportsIsPrompt(t *testing.T) {
+	t.Parallel()
+	srv := newGracefulStopServer(t, filepath.Join(t.TempDir(), "cache.db"))
+	require.NoError(t, srv.startRemoteCacheIntegration(&RemoteCacheIntegrationConfig{Run: func(ctx context.Context, _ *RemoteCacheAdapter) error {
+		<-ctx.Done()
+		return nil
+	}}))
+	srv.remoteCacheAdapter.stopReserve = time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	start := time.Now()
+	srv.BeginGracefulStop()
+	require.NoError(t, srv.GracefulStop(ctx))
+	require.Less(t, time.Since(start), 10*time.Second)
+}

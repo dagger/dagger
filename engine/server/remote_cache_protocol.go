@@ -50,6 +50,8 @@ func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, co
 	if a.stopped.Load() {
 		return ErrRemoteCacheAdapterClosed
 	}
+	a.exports.begin()
+	defer a.exports.end()
 	start := time.Now()
 	var local exportCapture
 	holds := entryHolds{cache: a.cache, held: map[uint64]dagql.AnyResult{}}
