@@ -331,19 +331,23 @@ func renderIDHandleObject(t *testing.T, schemaVersion string) string {
 func TestObjectIDHandlesLoadTheirExpectedType(t *testing.T) {
 	got := renderIDHandleObject(t, "v1.0.0")
 
-	// the parent's own ID keeps loading the parent
+	// the parent's own ID keeps loading the parent; every loaded object keeps
+	// the ID it was loaded from, so passing it on needs no request for its ID
 	require.Contains(t, got, "func (r *LLM) Sync(ctx context.Context) (*LLM, error) {")
 	require.Contains(t, got, `return &LLM{
 		query: selectNode(q.Root(), id, "LLM"),
+		id:    &id,
 	}, nil`)
 	// another object's ID loads that object
 	require.Contains(t, got, "func (r *LLM) Spawn(ctx context.Context) (*Agent, error) {")
 	require.Contains(t, got, `return &Agent{
 		query: selectNode(q.Root(), id, "Agent"),
+		id:    &id,
 	}, nil`)
 	// an interface's ID loads through the interface's client struct
 	require.Contains(t, got, "func (r *LLM) Syncer(ctx context.Context) (Syncer, error) {")
 	require.Contains(t, got, `return &SyncerClient{
 		query: selectNode(q.Root(), id, "Syncer"),
+		id:    &id,
 	}, nil`)
 }
