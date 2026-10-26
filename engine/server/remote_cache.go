@@ -16,14 +16,21 @@ import (
 // Ordinary engines leave it nil. This is not a schema field, listener or
 // service; Run owns the integration's channel consumer and transport.
 type RemoteCacheIntegrationConfig struct {
-	// Run is called once, after local cache initialization, under the server
-	// lifetime context. It must return once that context is canceled, including
-	// for delivered requests' Done signals, and must not hold a cache operation
-	// while waiting for future requests.
+	// Run is called once, after local cache initialization, under a context
+	// that outlives the start of the engine's graceful stop: the stop lets the
+	// exports in progress finish, then cancels it. Run must return once that
+	// context is canceled, including for delivered requests' Done signals, and
+	// must not hold a cache operation while waiting for future requests.
 	Run func(context.Context, *RemoteCacheAdapter) error
 }
 
 var ErrRemoteCacheAdapterClosed = errors.New("remote cache adapter closed")
+
+// remoteCacheStopReserve is the part of the graceful stop's deadline that the
+// exports in progress leave to the stop's later phases: closing and
+// persisting the cache, the final telemetry flushes. Those took up to about
+// 30s on engines that had run a long test suite.
+const remoteCacheStopReserve = 30 * time.Second
 
 var errRemoteCacheIntegrationExited = errors.New("remote cache integration exited")
 
@@ -43,11 +50,16 @@ type RemoteCacheAdapter struct {
 	mergeValues func(context.Context, dagql.CacheID, dagql.ValueBundle) (dagql.MergeReply, error)
 	// lookupMerges counts the merges in progress that answer lookups,
 	// which the others wait for.
-	lookupMerges priorityMerges
+	lookupMerges inProgress
+	// exports counts the exports in progress, which a graceful stop lets
+	// finish.
+	exports inProgress
+	// stopReserve is remoteCacheStopReserve. A test shortens it.
+	stopReserve time.Duration
 }
 
 func newRemoteCacheAdapter(cache *dagql.Cache, bridge *dagql.RemoteCacheBridge) *RemoteCacheAdapter {
-	return &RemoteCacheAdapter{cache: cache, bridge: bridge, cancel: func(error) {}, runDone: make(chan struct{}), mergeValues: cache.MergeValues}
+	return &RemoteCacheAdapter{cache: cache, bridge: bridge, cancel: func(error) {}, runDone: make(chan struct{}), mergeValues: cache.MergeValues, stopReserve: remoteCacheStopReserve}
 }
 
 func (a *RemoteCacheAdapter) TakeRenewalRequest(ctx context.Context) (*dagql.RenewalRequest, error) {
@@ -90,16 +102,16 @@ func (a *RemoteCacheAdapter) TakeLookupMisses(ctx context.Context, limit int, li
 	return misses, dropped, err
 }
 
-// priorityMerges counts the merges in progress that go first. The others
-// wait until none is.
-type priorityMerges struct {
+// inProgress counts operations in progress, and lets others wait until none
+// is.
+type inProgress struct {
 	mu      sync.Mutex
 	running int
 	// idle closes when running drops to zero.
 	idle chan struct{}
 }
 
-func (p *priorityMerges) begin() {
+func (p *inProgress) begin() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.running == 0 {
@@ -108,7 +120,7 @@ func (p *priorityMerges) begin() {
 	p.running++
 }
 
-func (p *priorityMerges) end() {
+func (p *inProgress) end() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.running--
@@ -117,8 +129,8 @@ func (p *priorityMerges) end() {
 	}
 }
 
-// wait returns once no priority merge is in progress, or ctx ends.
-func (p *priorityMerges) wait(ctx context.Context) error {
+// wait returns once no operation is in progress, or ctx ends.
+func (p *inProgress) wait(ctx context.Context) error {
 	p.mu.Lock()
 	if p.running == 0 {
 		p.mu.Unlock()
@@ -142,11 +154,15 @@ func (a *RemoteCacheAdapter) close(cause error) {
 	a.cancel(cause)
 }
 
-// Stop closes the adapter and joins Run within ctx, the deadline engine
-// shutdown already passes. It is idempotent and keeps the first result. A
-// Run that ignores cancellation is reported, not terminated.
+// Stop lets the exports in progress finish, then closes the adapter and joins
+// Run within ctx, the deadline engine shutdown already passes. Lookups stop at
+// once. The exports get until ctx's deadline less stopReserve; the service may
+// still start exports meanwhile, and Stop waits for those too. Without a
+// deadline they get as long as ctx lasts. It is idempotent and keeps the first
+// result. A Run that ignores cancellation is reported, not terminated.
 func (a *RemoteCacheAdapter) Stop(ctx context.Context) error {
 	a.stopOnce.Do(func() {
+		a.drainExports(ctx)
 		a.close(errServerShuttingDown)
 		// A Run that has already returned has stopped, whatever ctx says.
 		select {
@@ -163,6 +179,23 @@ func (a *RemoteCacheAdapter) Stop(ctx context.Context) error {
 	return a.stopErr
 }
 
+// drainExports stops lookups and waits until no export is in progress, or
+// until ctx's deadline less stopReserve.
+func (a *RemoteCacheAdapter) drainExports(ctx context.Context) {
+	a.StopLookups()
+	if deadline, ok := ctx.Deadline(); ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, deadline.Add(-a.stopReserve))
+		defer cancel()
+	}
+	start := time.Now()
+	if err := a.exports.wait(ctx); err != nil {
+		slog.Warn("remote cache exports did not finish before the engine stopped", "waited", time.Since(start), "error", err)
+		return
+	}
+	slog.Info("remote cache exports finished before the engine stopped", "waited", time.Since(start))
+}
+
 // startRemoteCacheIntegration attaches the bridge and starts Run for a newly
 // created attachment. A nil config allocates nothing.
 func (srv *Server) startRemoteCacheIntegration(cfg *RemoteCacheIntegrationConfig) error {
@@ -177,7 +210,9 @@ func (srv *Server) startRemoteCacheIntegration(cfg *RemoteCacheIntegrationConfig
 		return nil
 	}
 	adapter := newRemoteCacheAdapter(srv.engineCache, bridge)
-	ctx, cancel := context.WithCancelCause(srv.shutdownCtx)
+	// The graceful stop's start cancels shutdownCtx; Stop cancels Run once the
+	// exports in progress finish.
+	ctx, cancel := context.WithCancelCause(context.WithoutCancel(srv.shutdownCtx))
 	adapter.cancel = cancel
 	srv.remoteCacheAdapter = adapter
 	go func() {
