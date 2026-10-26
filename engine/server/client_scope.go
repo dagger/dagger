@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/http"
 	"reflect"
 	"slices"
 	"time"
@@ -240,10 +241,11 @@ type childClient struct {
 }
 
 // childClient returns parent's child with clientID, registering it on its
-// first request; ctx holds parent's request scope. Only the ID comes from the
-// child. Its session, token and host access are parent's, as an exec's
-// clients' are the exec's.
-func (srv *Server) childClient(ctx context.Context, parent *clientRuntime, clientID string) (*childClient, error) {
+// first request; ctx holds parent's request scope and header the child's own
+// metadata. Its session, token and host access are parent's, as an exec's
+// clients' are the exec's. Like theirs, its version, labels and what it loads
+// are what it declares on each request.
+func (srv *Server) childClient(ctx context.Context, parent *clientRuntime, clientID string, header http.Header) (*childClient, error) {
 	parent.childrenMu.Lock()
 	defer parent.childrenMu.Unlock()
 	if child, ok := parent.children[clientID]; ok {
@@ -252,10 +254,11 @@ func (srv *Server) childClient(ctx context.Context, parent *clientRuntime, clien
 	if parent.childrenClosed {
 		return nil, fmt.Errorf("client %q is closed", parent.clientID)
 	}
-	metadata, err := parent.daggerSession.clientMetadataSnapshot(parent.clientRecord)
+	parentMetadata, err := parent.daggerSession.clientMetadataSnapshot(parent.clientRecord)
 	if err != nil {
 		return nil, err
 	}
+	metadata := nestedClientMetadataForRequest(header, parentMetadata)
 	metadata.ClientID = clientID
 	transport, err := srv.registerNestedClientTransport(ctx, metadata, parent.clientID, "", false, true)
 	if err != nil {

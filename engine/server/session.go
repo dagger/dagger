@@ -2566,7 +2566,7 @@ func (srv *Server) serveChildClient(ctx context.Context, w http.ResponseWriter, 
 	if md.ClientID == "" {
 		return httpErr(errors.New("child client metadata is missing client ID"), http.StatusBadRequest)
 	}
-	child, err := srv.childClient(ctx, parent, md.ClientID)
+	child, err := srv.childClient(ctx, parent, md.ClientID, h)
 	if err != nil {
 		return httpErr(fmt.Errorf("serve child client %q: %w", md.ClientID, err), http.StatusInternalServerError)
 	}
