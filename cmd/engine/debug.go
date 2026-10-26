@@ -201,7 +201,7 @@ func setupDebugHandlers(addr string, eng *server.Server) error {
 			return
 		}
 		rw.Header().Set("Content-Type", "application/octet-stream")
-		if _, err := rw.Write(prof); err != nil {
+		if _, err := rw.Write(prof); err != nil { //nolint:gosec // G705: a gzipped pprof profile as application/octet-stream, never rendered as HTML.
 			logrus.WithError(err).Warn("failed writing wcprof phase profile")
 		}
 	}))

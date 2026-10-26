@@ -183,9 +183,10 @@ type Server struct {
 	// same trace.
 	wcprofSpanCount *wcprofSpanCounter
 
-	// armedProfile is the CPU profile waiting for a phase's next run, if
-	// any (wcprof_phase.go).
-	armedProfile atomic.Pointer[armedProfile]
+	// armed is the CPU profile armed for a phase's next run, if any
+	// (wcprof_phase.go).
+	armedMu sync.Mutex
+	armed   *armedProfile
 
 	coreSchemaBase   *schema.CoreSchemaBase
 	coreSchemaBaseMu sync.Mutex

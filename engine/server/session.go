@@ -88,8 +88,9 @@ type daggerSession struct {
 	// off.
 	wcprofEnabled bool
 
-	// phase is the session's run of PhaseSession (wcprof_phase.go): an op
-	// over its life when it is profiled, and an armed CPU profile's marks.
+	// phase is the session's run of PhaseSession (wcprof_phase.go), from its
+	// initialization to the end of its removal: an op over it when it is
+	// profiled, and an armed CPU profile's marks. Written under lifecycleMu.
 	phase *phaseRun
 
 	// state is read lock-free by observer paths and written only under
@@ -1101,17 +1102,6 @@ func (srv *Server) initializeDaggerSession(
 		Labels:     sessionAnalyticsLabels(clientMetadata, srv.engineName),
 	})
 	failureCleanups.Add("close session analytics", sess.analytics.Close)
-
-	phaseCtx := context.Background()
-	if sess.wcprofEnabled {
-		wcprof.EnsureRecorder()
-		phaseCtx = wcprof.ContextWithProfiling(phaseCtx)
-	}
-	sess.phase = srv.beginPhase(phaseCtx, PhaseSession, clientMetadata.SessionID)
-	failureCleanups.Add("end session phase", func() error {
-		sess.phase.end(srv)
-		return nil
-	})
 
 	// NOTE: state is NOT set to sessionStateInitialized here. getOrInitClient
 	// performs that atomic transition as its last step, after the main client
@@ -2179,6 +2169,13 @@ func (srv *Server) getOrInitClient(
 	// never see initialized session resources without the root identity.
 	if sess.state.Load() == sessionStateUninitialized {
 		sess.state.Store(sessionStateInitialized)
+		// From here, removal ends the session's phase.
+		phaseCtx := context.Background()
+		if sess.wcprofEnabled {
+			wcprof.EnsureRecorder()
+			phaseCtx = wcprof.ContextWithProfiling(phaseCtx)
+		}
+		sess.phase = srv.beginSessionPhase(phaseCtx, sess.sessionID)
 	}
 	if opts.requestLeaseOut != nil {
 		*opts.requestLeaseOut = requestLease

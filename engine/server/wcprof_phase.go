@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"runtime/pprof"
-	"sync/atomic"
 
 	"golang.org/x/sys/unix"
 
@@ -45,7 +44,7 @@ type engineCPU struct {
 
 func readEngineCPU() engineCPU {
 	var c engineCPU
-	us := func(tv unix.Timeval) int64 { return tv.Sec*1_000_000 + int64(tv.Usec) }
+	us := func(tv unix.Timeval) int64 { return tv.Sec*1_000_000 + tv.Usec }
 	var ru unix.Rusage
 	if unix.Getrusage(unix.RUSAGE_SELF, &ru) == nil {
 		c.process = wcprof.Usage{CPUUserUS: us(ru.Utime), CPUSystemUS: us(ru.Stime)}
@@ -73,24 +72,20 @@ type phaseRun struct {
 	prof  *armedProfile
 }
 
-// beginPhase starts a run of the named phase: when ctx is profiled, an op
-// over it with the engine's CPU counters read at its start; and the CPU
-// profile armed for the phase, if any. Nil when there is neither.
-func (srv *Server) beginPhase(ctx context.Context, name, ident string) *phaseRun {
+// beginSessionPhase starts a session's run of PhaseSession: when ctx is
+// profiled, an op over it with the engine's CPU counters read at its start;
+// and the CPU profile armed for the phase, if any. Nil when there is neither.
+func (srv *Server) beginSessionPhase(ctx context.Context, sessionID string) *phaseRun {
 	var p *phaseRun
 	if wcprof.Enabled(ctx) {
 		p = &phaseRun{ctx: ctx, start: readEngineCPU()}
-		p.ctx, p.op = wcprof.BeginOp(ctx, wcprof.OpKindSessionPhase, name, wcprof.OpOpts{Ident: ident})
+		p.ctx, p.op = wcprof.BeginOp(ctx, wcprof.OpKindSessionPhase, PhaseSession, wcprof.OpOpts{Ident: sessionID})
 	}
-	if a := srv.armedProfile.Load(); a != nil && a.phase == name && a.started.CompareAndSwap(false, true) {
-		if err := pprof.StartCPUProfile(&a.buf); err != nil {
-			a.finish(srv, err)
-		} else {
-			if p == nil {
-				p = &phaseRun{}
-			}
-			p.prof = a
+	if a := srv.startArmedProfile(PhaseSession); a != nil {
+		if p == nil {
+			p = &phaseRun{}
 		}
+		p.prof = a
 	}
 	return p
 }
@@ -103,7 +98,7 @@ func (p *phaseRun) end(srv *Server) {
 	}
 	if p.prof != nil {
 		pprof.StopCPUProfile()
-		p.prof.finish(srv, nil)
+		srv.finishArmedProfile(p.prof, nil)
 	}
 	if p.op == nil {
 		return
@@ -118,44 +113,80 @@ func (p *phaseRun) end(srv *Server) {
 	p.op.End(wcprof.OutcomeOK)
 }
 
-// armedProfile is a CPU profile waiting for the next run of a phase.
+// armedProfile is a CPU profile armed for the next run of a phase. The
+// server's armedMu guards arming, starting and disarming, so a started
+// profile stays armed, and keeps others from arming, until its run ends.
 type armedProfile struct {
 	phase   string
-	started atomic.Bool
+	started bool
 	buf     bytes.Buffer
 	done    chan struct{}
 	err     error
 }
 
-func (a *armedProfile) finish(srv *Server, err error) {
+// startArmedProfile starts the profile armed for phase, if any, and returns
+// it; nil when none is armed or it couldn't start.
+func (srv *Server) startArmedProfile(phase string) *armedProfile {
+	srv.armedMu.Lock()
+	defer srv.armedMu.Unlock()
+	a := srv.armed
+	if a == nil || a.phase != phase || a.started {
+		return nil
+	}
+	if err := pprof.StartCPUProfile(&a.buf); err != nil {
+		srv.armed = nil
+		a.err = err
+		close(a.done)
+		return nil
+	}
+	a.started = true
+	return a
+}
+
+func (srv *Server) finishArmedProfile(a *armedProfile, err error) {
+	srv.armedMu.Lock()
+	defer srv.armedMu.Unlock()
+	if srv.armed == a {
+		srv.armed = nil
+	}
 	a.err = err
-	srv.armedProfile.CompareAndSwap(a, nil)
 	close(a.done)
 }
 
 var errProfileArmed = errors.New("a CPU profile is already armed")
 
 // ProfilePhase arms a CPU profile of the next run of the named phase and
-// returns it in pprof's format once the run ends. It gives up if ctx ends
+// returns it in pprof's format once the run ends. It disarms if ctx ends
 // before the run starts; once started, the profile runs to the run's end.
-// One profile can be armed at a time, and none while another CPU profile
-// runs.
+// One profile can be armed at a time.
 func (srv *Server) ProfilePhase(ctx context.Context, phase string) ([]byte, error) {
 	a := &armedProfile{phase: phase, done: make(chan struct{})}
-	if !srv.armedProfile.CompareAndSwap(nil, a) {
+	srv.armedMu.Lock()
+	if srv.armed != nil {
+		srv.armedMu.Unlock()
 		return nil, errProfileArmed
 	}
+	srv.armed = a
+	srv.armedMu.Unlock()
 	slog.Info("wcprof: CPU profile armed", "phase", phase)
 	select {
 	case <-a.done:
-		if a.err != nil {
-			return nil, a.err
-		}
-		return a.buf.Bytes(), nil
 	case <-ctx.Done():
-		// Disarm. A run that already started the profile still stops it
-		// when it ends.
-		srv.armedProfile.CompareAndSwap(a, nil)
-		return nil, ctx.Err()
+		srv.armedMu.Lock()
+		started := a.started
+		if !started {
+			srv.armed = nil
+		}
+		srv.armedMu.Unlock()
+		if !started {
+			return nil, ctx.Err()
+		}
+		// It started before ctx ended: it is this request's, delivered
+		// at the end of its run.
+		<-a.done
 	}
+	if a.err != nil {
+		return nil, a.err
+	}
+	return a.buf.Bytes(), nil
 }
