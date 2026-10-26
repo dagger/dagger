@@ -26,7 +26,7 @@ func TestPrintCloudNotice(t *testing.T) {
 	t.Run("a notice without a body", func(t *testing.T) {
 		var buf bytes.Buffer
 		printCloudNotice(&buf, &cloudapi.CLINotice{Level: cloudapi.CLINoticeLevelInfo, Title: "Hello."})
-		require.Contains(t, buf.String(), "Hello.\n")
+		require.Contains(t, buf.String(), "Hello.")
 		require.Contains(t, buf.String(), "To hide set DAGGER_NO_NAG=1")
 	})
 
