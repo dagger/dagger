@@ -51,9 +51,7 @@ func (c *Cache) syncInstalledPartLeases(ctx context.Context, res *sharedResult, 
 	}
 
 	wcprof.Lock(ctx, &res.leaseSyncMu, "dagql.sharedResult.leaseSyncMu")
-	_, readOp := wcprof.BeginOp(ctx, wcprof.OpKindInternal, "lease.partLinks", wcprof.OpOpts{})
 	links, roles, ok := reader.ReadSnapshotOwnerParts(parts)
-	readOp.EndErr(nil)
 	if !ok {
 		res.leaseSyncMu.Unlock()
 		return c.syncResultSnapshotLeases(ctx, res)
@@ -93,10 +91,7 @@ func (c *Cache) syncInstalledPartLeases(ctx context.Context, res *sharedResult, 
 			if err != nil {
 				return err
 			}
-			_, removeOp := wcprof.BeginOp(ctx, wcprof.OpKindInternal, "lease.remove", wcprof.OpOpts{})
-			err = c.snapshotManager.RemoveLease(ctx, resultSnapshotLeaseIDForKey(res.id, key))
-			removeOp.EndErr(err)
-			if err != nil {
+			if err := c.snapshotManager.RemoveLease(ctx, resultSnapshotLeaseIDForKey(res.id, key)); err != nil {
 				return err
 			}
 		}
@@ -118,10 +113,7 @@ func (c *Cache) syncInstalledPartLeases(ctx context.Context, res *sharedResult, 
 		}
 		res.snapshotLeaseCleanupRoles[key] = struct{}{}
 		res.payloadMu.Unlock()
-		attachCtx, attachOp := wcprof.BeginOp(ctx, wcprof.OpKindInternal, "lease.attach", wcprof.OpOpts{})
-		err = c.snapshotManager.AttachLease(attachCtx, resultSnapshotLeaseIDForKey(res.id, key), cur.RefKey)
-		attachOp.EndErr(err)
-		if err != nil {
+		if err := c.snapshotManager.AttachLease(ctx, resultSnapshotLeaseIDForKey(res.id, key), cur.RefKey); err != nil {
 			return err
 		}
 	}
