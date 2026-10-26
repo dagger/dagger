@@ -253,3 +253,56 @@ func TestRemoteCacheGracefulStop(t *testing.T) {
 		require.Equal(t, dagql.CachePersistenceResetNone, reopen(t, path))
 	})
 }
+
+// slowExport starts srv's integration with a Run that asks for one export and
+// holds it in progress, as a slow upload does, until release closes or its
+// context ends. It returns once the export is in progress, with the export's
+// result to come.
+func slowExport(t *testing.T, srv *Server, release <-chan struct{}) <-chan error {
+	t.Helper()
+	started, exported := make(chan struct{}), make(chan error, 1)
+	require.NoError(t, srv.startRemoteCacheIntegration(&RemoteCacheIntegrationConfig{Run: func(ctx context.Context, a *RemoteCacheAdapter) error {
+		exported <- a.Export(ctx, protocol.Export{Roots: []uint64{goneNumber}}, func(ctx context.Context, _ remotecache.Export) error {
+			close(started)
+			select {
+			case <-release:
+				return nil
+			case <-ctx.Done():
+				return context.Cause(ctx)
+			}
+		})
+		<-ctx.Done()
+		return nil
+	}}))
+	within(t, started)
+	return exported
+}
+
+// An export in progress when the engine begins its graceful stop finishes:
+// the stop's start doesn't cancel it, and the stop waits for it.
+func TestRemoteCacheGracefulStopLetsExportsFinish(t *testing.T) {
+	t.Parallel()
+	srv := newGracefulStopServer(t, filepath.Join(t.TempDir(), "cache.db"))
+	release := make(chan struct{})
+	exported := slowExport(t, srv, release)
+
+	srv.BeginGracefulStop()
+	stopped := make(chan error, 1)
+	// A stop without a deadline gives the export as long as it takes.
+	go func() { stopped <- srv.GracefulStop(t.Context()) }()
+	select {
+	case err := <-exported:
+		t.Fatalf("the export ended when the stop began: %v", err)
+	case err := <-stopped:
+		t.Fatalf("the stop ended with the export in progress: %v", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+	close(release)
+	require.NoError(t, <-exported)
+	select {
+	case err := <-stopped:
+		require.NoError(t, err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for the stop")
+	}
+}
