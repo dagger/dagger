@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
+	"runtime/pprof"
 	"testing"
 	"time"
 
@@ -134,4 +136,39 @@ func TestProfilePhaseStartedKeepsOwnership(t *testing.T) {
 	require.NoError(t, r.err)
 	require.True(t, bytes.HasPrefix(r.prof, []byte{0x1f, 0x8b}))
 	require.Nil(t, armedOf(srv))
+}
+
+// A profile that fails to start (another CPU profile is running) gives way
+// to the next one armed, and its request disarming late leaves that one be.
+func TestProfilePhaseFailedStartLeavesReplacementArmed(t *testing.T) {
+	require.NoError(t, pprof.StartCPUProfile(io.Discard))
+	srv := &Server{}
+	resA := make(chan error, 1)
+	go func() {
+		_, err := srv.ProfilePhase(context.Background(), PhaseSession)
+		resA <- err
+	}()
+	require.Eventually(t, func() bool { return armedOf(srv) != nil }, 5*time.Second, time.Millisecond)
+	a := armedOf(srv)
+	if p := srv.beginSessionPhase(context.Background(), "s"); p != nil {
+		require.Nil(t, p.prof, "started while another CPU profile ran")
+		p.end(srv)
+	}
+	require.Error(t, <-resA)
+	pprof.StopCPUProfile()
+	require.Nil(t, armedOf(srv))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	resB := make(chan error, 1)
+	go func() {
+		_, err := srv.ProfilePhase(ctx, PhaseSession)
+		resB <- err
+	}()
+	require.Eventually(t, func() bool { return armedOf(srv) != nil }, 5*time.Second, time.Millisecond)
+	b := armedOf(srv)
+	require.NotSame(t, a, b)
+	require.False(t, srv.disarm(a))
+	require.Same(t, b, armedOf(srv), "the failed profile's late disarm removed its replacement")
+	cancel()
+	require.ErrorIs(t, <-resB, context.Canceled)
 }

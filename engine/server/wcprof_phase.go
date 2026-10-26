@@ -153,6 +153,20 @@ func (srv *Server) finishArmedProfile(a *armedProfile, err error) {
 	close(a.done)
 }
 
+// disarm removes a unless a run already started it, and reports whether one
+// did. It leaves alone a profile armed in a's place after a failed start.
+func (srv *Server) disarm(a *armedProfile) (started bool) {
+	srv.armedMu.Lock()
+	defer srv.armedMu.Unlock()
+	if a.started {
+		return true
+	}
+	if srv.armed == a {
+		srv.armed = nil
+	}
+	return false
+}
+
 var errProfileArmed = errors.New("a CPU profile is already armed")
 
 // ProfilePhase arms a CPU profile of the next run of the named phase and
@@ -172,13 +186,7 @@ func (srv *Server) ProfilePhase(ctx context.Context, phase string) ([]byte, erro
 	select {
 	case <-a.done:
 	case <-ctx.Done():
-		srv.armedMu.Lock()
-		started := a.started
-		if !started {
-			srv.armed = nil
-		}
-		srv.armedMu.Unlock()
-		if !started {
+		if !srv.disarm(a) {
 			return nil, ctx.Err()
 		}
 		// It started before ctx ended: it is this request's, delivered
