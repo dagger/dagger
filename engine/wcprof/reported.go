@@ -45,6 +45,8 @@ type ReportedWait struct {
 
 // ReportedResource describes a "resource" op.
 type ReportedResource struct {
+	// Name is the resource's display name, e.g. "gobuild.slots".
+	Name     string
 	Capacity int64
 	Policy   string
 }
@@ -187,7 +189,9 @@ func RecordProducerComplete(ctx context.Context, producer string, spanCount, dro
 
 // LinkOTelParent records that the engine op opID was caused by the span
 // (traceID, spanID), e.g. a request a reported task made: in the dump the
-// link resolves to that span's reported op, if it was recorded.
+// link resolves to that span's reported op, if it was recorded. A flushing
+// dump drops the links it couldn't resolve, as most callers aren't reported
+// spans: take it after the clients have exported their spans.
 func LinkOTelParent(ctx context.Context, opID uint64, traceID, spanID string) {
 	r := recorderFor(ctx)
 	if r == nil || opID == 0 || spanID == "" {
@@ -265,7 +269,7 @@ func (r *Recorder) dumpReported(flush bool) ([]DumpEvent, []DumpProducer) {
 			out = append(out, wd)
 		}
 		if res := ro.resource; res != nil {
-			out = append(out, DumpEvent{Type: DumpTypeResource, OpID: ro.id, Capacity: res.Capacity, PolicyID: r.Intern(res.Policy), StartNS: ev.StartNS, EndNS: ev.EndNS})
+			out = append(out, DumpEvent{Type: DumpTypeResource, OpID: ro.id, IdentID: r.Intern(res.Name), Capacity: res.Capacity, PolicyID: r.Intern(res.Policy), StartNS: ev.StartNS, EndNS: ev.EndNS})
 		}
 		if a := ro.acquisition; a != nil {
 			ad := DumpEvent{Type: DumpTypeAcquisition, OpID: ro.id, Outcome: a.Outcome, Priority: a.Priority, StartNS: ev.StartNS, EndNS: ev.EndNS}

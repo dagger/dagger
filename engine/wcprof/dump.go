@@ -84,7 +84,8 @@ type DumpEvent struct {
 	// Reported ops (see reported.go) also carry their label and producer.
 	LabelID    uint32 `json:"lb,omitempty"`
 	ProducerID uint32 `json:"pr,omitempty"`
-	// Resource events ("e":"resource") describe the resource op OpID.
+	// Resource events ("e":"resource") describe the resource op OpID; IdentID
+	// is its display name.
 	Capacity int64  `json:"cap,omitempty"`
 	PolicyID uint32 `json:"pol,omitempty"`
 	// Acquisition events ("e":"acquisition") describe the acquire op OpID:

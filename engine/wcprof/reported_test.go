@@ -23,8 +23,8 @@ func TestRecordReportedRoundtrip(t *testing.T) {
 		Acquisition: &ReportedAcquisition{ResourceSpanID: "res", Priority: 7, PriorityInputs: map[string]string{"weight": "3"}, GrantedUnixNS: base + 350, Outcome: "released"},
 	})
 	RecordReported(ctx, ReportedOp{TraceID: "t", SpanID: "walk", Kind: OpKindTaskGroup, Name: "walk", Producer: "p1", StartUnixNS: base, EndUnixNS: base + 1000})
-	RecordReported(ctx, ReportedOp{TraceID: "t", SpanID: "res", ParentSpanID: "walk", Kind: OpKindResource, Name: "gobuild.slots", Producer: "p1",
-		StartUnixNS: base, EndUnixNS: base + 1000, Resource: &ReportedResource{Capacity: 16, Policy: "priority_fifo"}})
+	RecordReported(ctx, ReportedOp{TraceID: "t", SpanID: "res", ParentSpanID: "walk", Kind: OpKindResource, Name: "resource", Producer: "p1",
+		StartUnixNS: base, EndUnixNS: base + 1000, Resource: &ReportedResource{Name: "gobuild.slots", Capacity: 16, Policy: "priority_fifo"}})
 	// A repeated export of a recorded span is not recorded twice.
 	RecordReported(ctx, ReportedOp{TraceID: "t", SpanID: "walk", Kind: OpKindTaskGroup, Name: "walk", Producer: "p1", StartUnixNS: base, EndUnixNS: base + 1000})
 	// An unended (live) span is not recorded.
@@ -82,10 +82,10 @@ func TestRecordReportedRoundtrip(t *testing.T) {
 	if len(unresolved) != 1 || header.Strings[unresolved[0].IdentID] != "t/dep" {
 		t.Errorf("unresolved %+v", unresolved)
 	}
-	if res == nil || res.Capacity != 16 || header.Strings[res.PolicyID] != "priority_fifo" || res.OpID != byClass["gobuild.slots"].OpID {
+	if res == nil || res.Capacity != 16 || header.Strings[res.PolicyID] != "priority_fifo" || header.Strings[res.IdentID] != "gobuild.slots" || res.OpID != byClass["resource"].OpID {
 		t.Errorf("resource %+v", res)
 	}
-	if acq == nil || acq.TargetID != byClass["gobuild.slots"].OpID || acq.Priority != 7 || acq.GrantedNS != 350 || acq.Outcome != "released" || header.Strings[acq.MetaID] != `{"weight":"3"}` {
+	if acq == nil || acq.TargetID != byClass["resource"].OpID || acq.Priority != 7 || acq.GrantedNS != 350 || acq.Outcome != "released" || header.Strings[acq.MetaID] != `{"weight":"3"}` {
 		t.Errorf("acquisition %+v", acq)
 	}
 	if len(causes) != 1 || causes[0].ParentID != engineOp.ID() || causes[0].TargetID != pkg.OpID {

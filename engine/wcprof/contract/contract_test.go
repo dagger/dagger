@@ -127,3 +127,15 @@ func TestDecodeIgnoresEngineSpans(t *testing.T) {
 		t.Error("IsReportedKind")
 	}
 }
+
+// A producer may report its work with an existing op kind.
+func TestDecodeExistingKindFromProducer(t *testing.T) {
+	r, err := Decode(Span{SpanID: "c", StartUnixNS: 1, EndUnixNS: 2, Attrs: map[string]any{
+		telemetryattrs.WcprofOpKindAttr:   "exec",
+		telemetryattrs.WcprofWorkTypeAttr: "user",
+		telemetryattrs.WcprofProducerAttr: "p1",
+	}})
+	if err != nil || r.Op == nil || r.Op.Kind != "exec" || r.Op.WorkType != "user" || r.Op.Producer != "p1" {
+		t.Errorf("producer's exec span: %+v %v", r.Op, err)
+	}
+}

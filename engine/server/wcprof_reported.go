@@ -37,8 +37,8 @@ func recordReportedSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) {
 	}
 }
 
-// reportsToWcprof is a cheap check for a reported span: a reported op kind or
-// a producer's completeness carrier, and not an engine span.
+// reportsToWcprof is a cheap check for a reported span: a reported op kind, a
+// producer's ID or a producer's completeness carrier, and not an engine span.
 func reportsToWcprof(span sdktrace.ReadOnlySpan) bool {
 	reported := false
 	for _, kv := range span.Attributes() {
@@ -47,7 +47,7 @@ func reportsToWcprof(span sdktrace.ReadOnlySpan) bool {
 			return false
 		case telemetryattrs.WcprofOpKindAttr:
 			reported = reported || contract.IsReportedKind(kv.Value.AsString())
-		case telemetryattrs.WcprofProducerCompleteAttr:
+		case telemetryattrs.WcprofProducerAttr, telemetryattrs.WcprofProducerCompleteAttr:
 			reported = true
 		}
 	}
@@ -66,7 +66,9 @@ func contractSpan(span sdktrace.ReadOnlySpan) contract.Span {
 	if p := span.Parent(); p.IsValid() {
 		cs.ParentSpanID = p.SpanID().String()
 	}
-	if end := span.EndTime(); !end.IsZero() {
+	// A live snapshot's unset end can arrive as a time before its start
+	// (protobuf round-trips the zero time to one): still running.
+	if end := span.EndTime(); !end.IsZero() && !end.Before(span.StartTime()) {
 		cs.EndUnixNS = end.UnixNano()
 	}
 	for _, l := range span.Links() {

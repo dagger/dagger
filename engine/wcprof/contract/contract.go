@@ -151,8 +151,11 @@ func Decode(s Span) (Reported, error) {
 		r.Complete = &ProducerComplete{Producer: str(s.Attrs, telemetryattrs.WcprofProducerAttr), SpanCount: count, Dropped: dropped}
 		return r, nil
 	}
+	// An op is reported when it has one of the contract's own kinds, or an
+	// existing kind and a producer (e.g. a producer's compile reported as
+	// exec work); the callers have already left out engine spans.
 	kind := str(s.Attrs, telemetryattrs.WcprofOpKindAttr)
-	if !reportedKinds[kind] {
+	if kind == "" || (!reportedKinds[kind] && str(s.Attrs, telemetryattrs.WcprofProducerAttr) == "") {
 		return r, nil
 	}
 	parent := str(s.Attrs, telemetryattrs.WcprofParentAttr)
@@ -304,7 +307,7 @@ func Record(s Span, name string, r Reported) (op wcprof.ReportedOp, ok bool) {
 		})
 	}
 	if r.Resource != nil {
-		op.Resource = &wcprof.ReportedResource{Capacity: r.Resource.Capacity, Policy: r.Resource.Policy}
+		op.Resource = &wcprof.ReportedResource{Name: r.Resource.Name, Capacity: r.Resource.Capacity, Policy: r.Resource.Policy}
 	}
 	if a := r.Acquisition; a != nil {
 		op.Acquisition = &wcprof.ReportedAcquisition{
