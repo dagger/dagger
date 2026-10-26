@@ -1979,6 +1979,15 @@ func (c *Cache) syncResultSnapshotLeasesLocked(ctx context.Context, res *sharedR
 	if err != nil {
 		return err
 	}
+	// A snapshot a dependency already holds is borrowed, as a part copied
+	// from a dependency is: the dependency is kept while res keeps its
+	// value, so its hold keeps the snapshot.
+	held := c.snapshotsHeldByDependencies(res)
+	for i := range links {
+		if _, ok := held[links[i].RefKey]; ok {
+			links[i].Borrowed = true
+		}
+	}
 
 	oldLinks := res.loadSnapshotOwnerLinks()
 
@@ -2059,6 +2068,26 @@ func (c *Cache) syncResultSnapshotLeasesLocked(ctx context.Context, res *sharedR
 	res.storeSnapshotOwnerLinks(newLinks)
 
 	return nil
+}
+
+// snapshotsHeldByDependencies returns the snapshots the results res depends
+// on hold, owned or borrowed.
+func (c *Cache) snapshotsHeldByDependencies(res *sharedResult) map[string]struct{} {
+	c.egraphMu.RLock()
+	deps := make([]*sharedResult, 0, len(res.deps))
+	for id := range res.deps {
+		if dep := c.resultsByID[id]; dep != nil {
+			deps = append(deps, dep)
+		}
+	}
+	c.egraphMu.RUnlock()
+	held := map[string]struct{}{}
+	for _, dep := range deps {
+		for _, link := range dep.loadSnapshotOwnerLinks() {
+			held[link.RefKey] = struct{}{}
+		}
+	}
+	return held
 }
 
 func (c *Cache) SyncResultSnapshotOwnerLeases(ctx context.Context, res AnyResult) (rerr error) {
