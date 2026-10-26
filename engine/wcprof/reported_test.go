@@ -6,6 +6,7 @@ import (
 	"testing"
 )
 
+//nolint:gocyclo // one round trip through every reported kind; the metric counts its checks together
 func TestRecordReportedRoundtrip(t *testing.T) {
 	r := withTestRecorder(t, 0)
 	ctx := context.Background()

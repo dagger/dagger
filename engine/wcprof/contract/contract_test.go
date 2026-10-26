@@ -11,8 +11,8 @@ import (
 
 func waitLink(target, reason string, start, end string) Link {
 	return Link{TraceID: "t1", SpanID: target, Attrs: map[string]any{
-		telemetry.LinkPurposeAttr:                 telemetryattrs.LinkPurposeWait,
-		telemetryattrs.WcprofWaitReasonAttr:       reason,
+		telemetry.LinkPurposeAttr:                  telemetryattrs.LinkPurposeWait,
+		telemetryattrs.WcprofWaitReasonAttr:        reason,
 		telemetryattrs.WcprofWaitStartUnixNanoAttr: start,
 		telemetryattrs.WcprofWaitEndUnixNanoAttr:   end,
 	}}
@@ -84,14 +84,14 @@ func TestDecodeResourceAndAcquire(t *testing.T) {
 
 func TestDecodeRejectsMalformed(t *testing.T) {
 	for name, attrs := range map[string]map[string]any{
-		"resource without capacity": {telemetryattrs.WcprofOpKindAttr: "resource", telemetryattrs.WcprofResourcePolicyAttr: "fifo"},
-		"resource with zero capacity": {telemetryattrs.WcprofOpKindAttr: "resource", telemetryattrs.WcprofResourceCapacityAttr: "0", telemetryattrs.WcprofResourcePolicyAttr: "fifo"},
+		"resource without capacity":    {telemetryattrs.WcprofOpKindAttr: "resource", telemetryattrs.WcprofResourcePolicyAttr: "fifo"},
+		"resource with zero capacity":  {telemetryattrs.WcprofOpKindAttr: "resource", telemetryattrs.WcprofResourceCapacityAttr: "0", telemetryattrs.WcprofResourcePolicyAttr: "fifo"},
 		"resource with unknown policy": {telemetryattrs.WcprofOpKindAttr: "resource", telemetryattrs.WcprofResourceCapacityAttr: "2", telemetryattrs.WcprofResourcePolicyAttr: "lifo"},
-		"acquire without resource": {telemetryattrs.WcprofOpKindAttr: "acquire", telemetryattrs.WcprofResourceOutcomeAttr: OutcomeCancelled},
-		"released without a grant": {telemetryattrs.WcprofOpKindAttr: "acquire", telemetryattrs.WcprofResourceIDAttr: "r", telemetryattrs.WcprofResourceOutcomeAttr: OutcomeReleased},
-		"unknown outcome": {telemetryattrs.WcprofOpKindAttr: "acquire", telemetryattrs.WcprofResourceIDAttr: "r", telemetryattrs.WcprofResourceGrantedUnixNanoAttr: "1", telemetryattrs.WcprofResourceOutcomeAttr: "lost"},
-		"bad priority inputs": {telemetryattrs.WcprofOpKindAttr: "acquire", telemetryattrs.WcprofResourceIDAttr: "r", telemetryattrs.WcprofResourceOutcomeAttr: OutcomeCancelled, telemetryattrs.WcprofResourcePriorityInputsAttr: "{"},
-		"non-decimal priority": {telemetryattrs.WcprofOpKindAttr: "acquire", telemetryattrs.WcprofResourceIDAttr: "r", telemetryattrs.WcprofResourceOutcomeAttr: OutcomeCancelled, telemetryattrs.WcprofResourcePriorityAttr: "high"},
+		"acquire without resource":     {telemetryattrs.WcprofOpKindAttr: "acquire", telemetryattrs.WcprofResourceOutcomeAttr: OutcomeCancelled},
+		"released without a grant":     {telemetryattrs.WcprofOpKindAttr: "acquire", telemetryattrs.WcprofResourceIDAttr: "r", telemetryattrs.WcprofResourceOutcomeAttr: OutcomeReleased},
+		"unknown outcome":              {telemetryattrs.WcprofOpKindAttr: "acquire", telemetryattrs.WcprofResourceIDAttr: "r", telemetryattrs.WcprofResourceGrantedUnixNanoAttr: "1", telemetryattrs.WcprofResourceOutcomeAttr: "lost"},
+		"bad priority inputs":          {telemetryattrs.WcprofOpKindAttr: "acquire", telemetryattrs.WcprofResourceIDAttr: "r", telemetryattrs.WcprofResourceOutcomeAttr: OutcomeCancelled, telemetryattrs.WcprofResourcePriorityInputsAttr: "{"},
+		"non-decimal priority":         {telemetryattrs.WcprofOpKindAttr: "acquire", telemetryattrs.WcprofResourceIDAttr: "r", telemetryattrs.WcprofResourceOutcomeAttr: OutcomeCancelled, telemetryattrs.WcprofResourcePriorityAttr: "high"},
 	} {
 		if _, err := Decode(Span{SpanID: "x", Attrs: attrs}); err == nil {
 			t.Errorf("%s: no error", name)
