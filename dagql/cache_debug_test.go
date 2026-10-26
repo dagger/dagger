@@ -2,7 +2,10 @@ package dagql
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"path/filepath"
 	"runtime"
@@ -109,6 +112,70 @@ func TestDebugCacheSnapshotWithQueuedWriter(t *testing.T) {
 			}
 			assert.DeepEqual(t, snapshot.Results[1].ResultCallInputDigests, []string{snapshot.Results[0].ResultCallRecipeDigest})
 		})
+	}
+}
+
+// A call's callback records its error, and publication records its result,
+// outside callsMu, while the call is still listed as ongoing. Snapshots taken
+// under callsMu as calls complete and publish must not read either unsynchronized
+// (run under -race).
+func TestDebugCacheSnapshotConcurrentWithCallCompletion(t *testing.T) {
+	ctx := cacheTestContext(t.Context())
+	c, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+
+	stop := make(chan struct{})
+	snapshotDone := make(chan error, 1)
+	go func() {
+		for {
+			select {
+			case <-stop:
+				snapshotDone <- nil
+				return
+			default:
+			}
+			if err := c.WriteDebugCacheSnapshot(io.Discard); err != nil {
+				snapshotDone <- err
+				return
+			}
+		}
+	}()
+
+	errCallback := errors.New("callback failed")
+	callErrs := make(chan error, 8)
+	var wg sync.WaitGroup
+	for i := range 8 {
+		wg.Go(func() {
+			for j := range 25 {
+				field := fmt.Sprintf("debug-snapshot-%d-%d", i, j)
+				frame := cacheTestIntCall(field)
+				_, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
+					ResultCall:     frame,
+					ConcurrencyKey: field,
+				}, func(context.Context) (AnyResult, error) {
+					runtime.Gosched()
+					if j%2 == 1 {
+						return nil, errCallback
+					}
+					return cacheTestIntResult(frame, j), nil
+				})
+				if j%2 == 1 && !errors.Is(err, errCallback) {
+					callErrs <- fmt.Errorf("call %s: got %s, want the callback's error", field, fmt.Sprint(err))
+					return
+				}
+				if j%2 == 0 && err != nil {
+					callErrs <- fmt.Errorf("call %s: %w", field, err)
+					return
+				}
+			}
+		})
+	}
+	wg.Wait()
+	close(stop)
+	assert.NilError(t, <-snapshotDone)
+	close(callErrs)
+	for err := range callErrs {
+		t.Error(err)
 	}
 }
 
