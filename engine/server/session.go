@@ -2486,7 +2486,9 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		requestOpts.requestLeaseOut = &requestLease
 		switch r.URL.Path {
 		case engine.SessionAttachablesEndpoint, engine.InitEndpoint, engine.ShutdownEndpoint:
-			requestOpts.BootstrapOnly = true
+			// A child's request needs its parent's executable scope to register
+			// the child, whatever the child asks for.
+			requestOpts.BootstrapOnly = len(childMetadata) == 0
 		}
 		client, cleanup, err := srv.getOrInitClient(ctx, &requestOpts)
 		if err != nil {
