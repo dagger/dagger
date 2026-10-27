@@ -177,3 +177,58 @@ func TestCallRecordsItsOwnSpan(t *testing.T) {
 		require.False(t, ok, "%s: a call without its own span records none, not the span it runs under", class)
 	}
 }
+
+// TestLazySpanStartsWithItsNativeOp: a lazy evaluation's span starts where
+// its native op starts, not after the evaluation's span preparation.
+func TestLazySpanStartsWithItsNativeOp(t *testing.T) {
+	sr, tr := newLazySkipRecorder()
+	wcprof.EnsureRecorder()
+	profCtx, testOp := wcprof.BeginOp(wcprof.ContextWithProfiling(t.Context()), wcprof.OpKindInternal, "test", wcprof.OpOpts{})
+	defer testOp.End(wcprof.OutcomeOK)
+	baseCtx := cacheTestContext(profCtx)
+	c, err := NewCache(baseCtx, "", nil, nil)
+	require.NoError(t, err)
+	baseCtx = ContextWithCache(baseCtx, c)
+	srv := cacheTestServer(t)
+	callerCtx, caller := tr.Start(baseCtx, "POST /query")
+	frame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestObject{}).Type()),
+		Field: "lazy-start-test",
+	}
+	resAny, err := c.GetOrInitCall(callerCtx, cacheTestSessionID(t, baseCtx), srv, &CallRequest{ResultCall: frame},
+		func(context.Context) (AnyResult, error) {
+			return cacheTestObjectResultWithValue(t, srv, frame, &cacheTestObject{
+				Value:    1,
+				lazyEval: func(context.Context) error { return nil },
+			}), nil
+		})
+	require.NoError(t, err)
+	require.NoError(t, c.Evaluate(callerCtx, resAny.(ObjectResult[*cacheTestObject])))
+	caller.End()
+
+	var buf bytes.Buffer
+	require.NoError(t, wcprof.Active().WriteDump(&buf, false))
+	header, events, err := wcprof.ReadDump(&buf)
+	require.NoError(t, err)
+	spans := map[uint64]wcprof.DumpEvent{}
+	var lazy *wcprof.DumpEvent
+	for i, ev := range events {
+		switch {
+		case ev.Type == "span":
+			spans[ev.OpID] = ev
+		case ev.Type == "op" && ev.OpID > testOp.ID() && ev.OpKind == wcprof.OpKindLazy.String() && header.Strings[ev.ClassID] == "Query.lazy-start-test":
+			lazy = &events[i]
+		}
+	}
+	require.NotNil(t, lazy)
+	sev, ok := spans[lazy.OpID]
+	require.True(t, ok, "the lazy op recorded no span")
+	for _, s := range sr.Ended() {
+		if s.SpanContext().SpanID().String() == sev.SpanID {
+			require.Equal(t, header.EpochUnixNano+lazy.StartNS, s.StartTime().UnixNano(), "the lazy span starts apart from its native op")
+			return
+		}
+	}
+	t.Fatal("the lazy op's span wasn't exported")
+}
