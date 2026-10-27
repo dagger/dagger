@@ -1063,7 +1063,7 @@ sleep infinity
 	// Starting an ordinary read must not auto-load the identity file.
 	serviceID, err := sshSvc.ID(ctx)
 	require.NoError(t, err)
-	_, err = cli.With(daggerQuery(`{ git(url: %q, experimentalServiceHost: %q) { head { commitSHA } } }`, repoURL, serviceID)).Sync(ctx)
+	_, err = cli.With(daggerQuery(`{ git(url: %q, experimentalServiceHost: %q) { head { commitSha } } }`, repoURL, serviceID)).Sync(ctx)
 	require.Error(t, err)
 	requireErrOut(t, err, "SSH URLs are not supported without an SSH socket")
 
@@ -1114,10 +1114,10 @@ sleep infinity
 						local: file(path: "local.txt") { contents }
 						git {
 							head {
-								commitSHA
+								commitSha
 								asRepository {
 									ref(name: "ssh-push") {
-										commitSHA
+										commitSha
 										tree(discardGitDir: true) { entries }
 									}
 								}
@@ -1151,10 +1151,10 @@ sleep infinity
 						"local": {"contents": "local commit\n"},
 						"git": {
 							"head": {
-								"commitSHA": %q,
+								"commitSha": %q,
 								"asRepository": {
 									"ref": {
-										"commitSHA": %q,
+										"commitSha": %q,
 										"tree": {"entries": ["README.md", "pushed.txt"]}
 									}
 								}
@@ -1172,8 +1172,8 @@ sleep infinity
 			resolver := client.
 				WithNewFile("/resolver/dagger.json", `{"name":"resolver","engineVersion":"latest","sdk":{"source":"dang"}}`).
 				WithNewFile("/resolver/main.dang", `type Resolver {
-  resolve(ws: Workspace!, name: String!): String! { ws.git.head.asRepository.ref(name: name).commitSHA }
-  direct(url: String!, name: String!): String! { git(url).ref(name: name).commitSHA }
+  resolve(ws: Workspace!, name: String!): String! { ws.git.head.asRepository.ref(name: name).commitSha }
+  direct(url: String!, name: String!): String! { git(url).ref(name: name).commitSha }
 }`)
 			script := func(script string) (string, string, int) {
 				ran := resolver.WithExec([]string{"dagger", "script", "-m", "/resolver"}, core.ContainerWithExecOpts{

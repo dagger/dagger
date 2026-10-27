@@ -55,6 +55,27 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 		currentWorkspaceField,
 	}.Install(srv)
 
+	// withSdk and withoutSdk are withSDK and withoutSDK in views before
+	// engine.IdentifierCasingVersion.
+	withSDKField := dagql.NodeFunc("withSdk", s.withSDK).
+		View(AfterVersion("v1.0.0-0")).
+		WithInput(dagql.PerClientInput).
+		Doc("Return this workspace with an SDK installed in its config.").
+		Args(
+			dagql.Arg("ref").Doc("SDK module reference to install."),
+			dagql.Arg("name").Doc("Override name for the installed SDK entry."),
+			dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
+			dagql.Arg("asSdkName").Doc("Optional override for the SDK name conventionally derived from the installed module name."),
+		)
+	withoutSDKField := dagql.NodeFunc("withoutSdk", s.withoutSDK).
+		View(AfterVersion("v1.0.0-0")).
+		WithInput(dagql.PerClientInput).
+		Doc("Return this workspace with an SDK removed from its config.").
+		Args(
+			dagql.Arg("name").Doc("Name of the installed SDK entry to remove."),
+			dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
+		)
+
 	dagql.Fields[*core.Workspace]{
 		dagql.NodeFunc("resolve", s.resolve).
 			View(AfterVersion("v1.0.0-0")).
@@ -353,24 +374,10 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc("Installed module name or source to remove. Version selectors are not accepted."),
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 			),
-		dagql.NodeFunc("withSDK", s.withSDK).
-			View(AfterVersion("v1.0.0-0")).
-			WithInput(dagql.PerClientInput).
-			Doc("Return this workspace with an SDK installed in its config.").
-			Args(
-				dagql.Arg("ref").Doc("SDK module reference to install."),
-				dagql.Arg("name").Doc("Override name for the installed SDK entry."),
-				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
-				dagql.Arg("asSdkName").Doc("Optional override for the SDK name conventionally derived from the installed module name."),
-			),
-		dagql.NodeFunc("withoutSDK", s.withoutSDK).
-			View(AfterVersion("v1.0.0-0")).
-			WithInput(dagql.PerClientInput).
-			Doc("Return this workspace with an SDK removed from its config.").
-			Args(
-				dagql.Arg("name").Doc("Name of the installed SDK entry to remove."),
-				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
-			),
+		casedField(withSDKField),
+		legacyField(withSDKField, "withSDK"),
+		casedField(withoutSDKField),
+		legacyField(withoutSDKField, "withoutSDK"),
 		dagql.NodeFunc("withMain", s.withMain).
 			View(AfterVersion("v1.0.0-0")).
 			WithInput(dagql.PerClientInput).
