@@ -90,6 +90,7 @@ func (cache *CacheVolume) ensureBackingSnapshot(ctx context.Context) (bool, func
 			cache.mu.Lock()
 			snapshot, releaseSnapshot := cache.snapshot, cache.releaseSnapshot
 			cache.snapshot, cache.releaseSnapshot, cache.snapshotID = nil, nil, ""
+			cache.origin, cache.mounts = "", 0
 			cache.mu.Unlock()
 			if releaseSnapshot != nil {
 				return releaseSnapshot(ctx)

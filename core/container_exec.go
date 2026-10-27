@@ -724,6 +724,7 @@ func lockMountedCaches(ctx context.Context, mounts []ContainerMount) (_ func(), 
 			}
 			pins = append(pins, pin)
 			dirID = ident.ID()
+			reportCacheVolumeDirMount(ctx, cacheSelf, ctrMount.Target, dirID, pin)
 		}
 		if ctrMount.Readonly || !cacheSharingModeLocksWrites(cacheSelf.Sharing) {
 			continue
@@ -1039,7 +1040,7 @@ func prepareMounts(
 				mountState.CacheDir = path
 				break
 			}
-			if err := EnsureBackingSnapshot(ctx, cacheSrc.Volume); err != nil {
+			if err := mountCacheVolume(ctx, cacheSrc.Volume, ctrMount.Target); err != nil {
 				return materialized, fmt.Errorf("initialize cache volume snapshot for mount %d: %w", i, err)
 			}
 			cacheSnapshot := cacheSrc.Volume.Self().getSnapshot()
@@ -1892,7 +1893,7 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 					mountState.CacheDir = path
 					break
 				}
-				if err := EnsureBackingSnapshot(ctx, cacheSrc.Volume); err != nil {
+				if err := mountCacheVolume(ctx, cacheSrc.Volume, ctrMount.Target); err != nil {
 					return failPrepare(fmt.Errorf("initialize cache volume snapshot for mount %d: %w", i, err))
 				}
 				cacheSnapshot := cacheSrc.Volume.Self().getSnapshot()
