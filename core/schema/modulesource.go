@@ -991,6 +991,10 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 		return inst, fmt.Errorf("failed to find dir module config: %w", err)
 	}
 	if !found {
+		if err := rejectGitignoredModulePaths(ctx, contextDir, dirSrc.SourceRootSubpath); err != nil {
+			return inst, err
+		}
+
 		if !args.AllowNotExists {
 			return inst, fmt.Errorf("dir module source does not contain a dagger config file")
 		}
@@ -1251,6 +1255,9 @@ func (s *moduleSourceSchema) loadConfiguredModuleSource(ctx context.Context, src
 	eg.Go(func() error {
 		if err := s.loadModuleSourceContext(ctx, src); err != nil {
 			return fmt.Errorf("load module source context: %w", err)
+		}
+		if err := checkModuleSourceGitignore(ctx, src); err != nil {
+			return err
 		}
 		if src.SDK != nil {
 			loaded, err := sdk.NewLoader().SDKForModule(ctx, query, src.SDK, src)

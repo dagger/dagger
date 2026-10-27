@@ -3,6 +3,7 @@ package schema
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -263,11 +264,24 @@ func (s *workspaceSchema) resolveWorkspaceInstallSource(
 	kind := core.FastModuleSourceKindCheck(ref, "")
 	var workspaceRoot dagql.ObjectResult[*core.Directory]
 	if kind == "" {
-		workspaceRoot, err = s.workspaceOverlayRootfs(ctx, ws)
-		if err != nil {
-			return src, "", err
+		if resolvedPath, pathErr := resolveWorkspacePath(ref, ws.Cwd); pathErr == nil {
+			exists, err := s.workspaceReadPathExists(ctx, ws, resolvedPath)
+			if err != nil {
+				return src, "", err
+			}
+			if exists {
+				kind = core.ModuleSourceKindLocal
+			}
 		}
-		parsed, err := core.ParseRefString(ctx, &core.DirectoryStatFS{Dir: workspaceRoot}, ref, "")
+	}
+	if kind == "" {
+		// The bounded existence check above already ruled out a local path.
+		// Preserve ParseRefString's remote parsing and fallback without loading
+		// workspace contents merely to repeat that check.
+		missing := core.StatFSFunc(func(context.Context, string) (string, *core.Stat, error) {
+			return "", nil, os.ErrNotExist
+		})
+		parsed, err := core.ParseRefString(ctx, missing, ref, "")
 		if err != nil {
 			return src, "", fmt.Errorf("parse module ref %q: %w", ref, err)
 		}
@@ -316,7 +330,7 @@ func (s *workspaceSchema) resolveWorkspaceInstallSourceFromRoot(
 	var src dagql.ObjectResult[*core.ModuleSource]
 	var err error
 	if root.Self() == nil {
-		root, err = s.workspaceOverlayRootfs(ctx, ws)
+		root, err = s.filteredWorkspaceRootfs(ctx, ws)
 		if err != nil {
 			return src, "", err
 		}
@@ -326,6 +340,16 @@ func (s *workspaceSchema) resolveWorkspaceInstallSourceFromRoot(
 		return src, "", fmt.Errorf("check module source %q: %w", ref, err)
 	}
 	if !found {
+		if ws.ClientLocalBase() {
+			rules, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{Include: moduleIgnoreFiles(resolvedPath)}, false)
+			if err != nil {
+				return src, "", err
+			}
+			if err := rejectGitignoredModulePaths(ctx, rules, resolvedPath); err != nil {
+				return src, "", err
+			}
+		}
+
 		return src, "", fmt.Errorf("ref %q does not point to an initialized module", ref)
 	}
 	if err := srv.Select(ctx, root, &src, dagql.Selector{

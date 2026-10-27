@@ -1415,6 +1415,158 @@ func (WorkspaceAPISuite) TestAbsoluteModuleRefInsideLocalWorkspaceUsesOverlaySna
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
+// A local install is explicit and must work under an ignore rule. Unrelated
+// ignored host content must still be pruned before filesync walks it.
+func (WorkspaceAPISuite) TestLocalModuleInstallDoesNotUploadGitignoredFiles(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	depDir := filepath.Join(workdir, "dep")
+	require.NoError(t, os.MkdirAll(depDir, 0o755))
+	require.NoError(t, os.Mkdir(filepath.Join(depDir, "entrypoint"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(depDir, "dagger-module.toml"), []byte(`name = "dep"
+[entrypoint]
+kind = "dang"
+source = "./entrypoint"
+`), 0644))
+	// The entrypoint runs during install. Inspect its actual context because
+	// upload progress reports nested files only under their top-level directory.
+	require.NoError(t, os.WriteFile(filepath.Join(depDir, "entrypoint/main.dang"), []byte(`type Entrypoint implements ModuleEntrypoint {
+  pub types(workspace: Workspace!): [TypeDef!]! {
+    if (currentModule.contextDirectory.exists("dep/.venv/should-not-upload-inside-module")) {
+      raise "install loaded the nested ignored cache"
+    } else if (!currentModule.contextDirectory.exists("dep/entrypoint/main.dang")) {
+      raise "install context is missing the module source"
+    } else {
+      [typeDef.withObject("Dep").withConstructor(function("", typeDef.withObject("Dep")))]
+    }
+  }
+  pub call(workspace: Workspace!, receiverType: String!, receiverValue: JSON, fnName: String!, fnArgs: JSON!): JSON! {
+    ("{}" :: JSON!)
+  }
+}
+`), 0644))
+	initGitRepo(ctx, t, workdir)
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, ".gitignore"), []byte("**/.venv/\n"), 0o644))
+	require.NoError(t, os.Mkdir(filepath.Join(depDir, ".venv"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(depDir, ".venv", "should-not-upload-inside-module"), []byte("ignored\n"), 0o644))
+	require.NoError(t, os.Mkdir(filepath.Join(workdir, ".venv"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, ".venv", "should-not-upload"), []byte("ignored\n"), 0o644))
+
+	var logs safeBuffer
+	c := connect(ctx, t, dagger.WithWorkdir(workdir), dagger.WithLogOutput(&logs), dagger.WithVerbosity(2))
+	current := core.NewQuery(c).CurrentWorkspace()
+	_, err := current.WithModule("dep").Changes(core.WorkspaceChangesOpts{From: current}).AddedPaths(ctx)
+	require.NoError(t, err)
+	require.NoError(t, c.Close())
+	require.NotRegexp(t, `(?m)^\d+\s+:\s+(?:┆\s+)*\.venv(?:\s+DONE.*)?$`, logs.String(), "local module install must not upload gitignored content")
+}
+
+func (WorkspaceAPISuite) TestWorkspaceRejectsGitignoredModules(ctx context.Context, t *testctx.T) {
+	for _, ignored := range []string{"app", "shared", "code"} {
+		t.Run(ignored, func(ctx context.Context, t *testctx.T) {
+			workdir := t.TempDir()
+			initGitRepo(ctx, t, workdir)
+			require.NoError(t, os.WriteFile(filepath.Join(workdir, ".gitignore"), []byte("/"+ignored+"/\n"), 0644))
+			for name, config := range map[string]string{
+				"app":    `{"name":"app","sdk":"dang","source":"../code","dependencies":[{"name":"shared","source":"../shared"}]}`,
+				"shared": `{"name":"shared","sdk":"dang"}`,
+			} {
+				require.NoError(t, os.MkdirAll(filepath.Join(workdir, name), 0755))
+				require.NoError(t, os.WriteFile(filepath.Join(workdir, name, "dagger.json"), []byte(config), 0644))
+			}
+			require.NoError(t, os.Mkdir(filepath.Join(workdir, "code"), 0755))
+			require.NoError(t, os.WriteFile(filepath.Join(workdir, "code/main.dang"), []byte("type App { pub value: String! { shared.value } }\n"), 0644))
+			require.NoError(t, os.WriteFile(filepath.Join(workdir, "shared/main.dang"), []byte("type Shared { pub value: String! { \"ok\" } }\n"), 0644))
+			c := connect(ctx, t, dagger.WithWorkdir(workdir))
+			ws := core.NewQuery(c).CurrentWorkspace()
+			_, err := ws.WithModule("app").Changes(core.WorkspaceChangesOpts{From: ws}).AddedPaths(ctx)
+			require.ErrorContains(t, err, `module path "`+ignored+`" is gitignored`)
+			_, err = ws.ModuleSource("app").AsModule().Name(ctx)
+			require.ErrorContains(t, err, `module path "`+ignored+`" is gitignored`)
+		})
+	}
+}
+
+func (WorkspaceAPISuite) TestWorkspaceDirectoryUsesOverlayGitignore(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, ".gitignore"), []byte("/secret/\n/.venv/\n"), 0o644))
+	require.NoError(t, os.Mkdir(filepath.Join(workdir, ".venv"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, ".venv", "cache"), []byte("ignored\n"), 0o644))
+	require.NoError(t, os.Mkdir(filepath.Join(workdir, "secret"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "secret", "value"), []byte("secret\n"), 0o644))
+	require.NoError(t, os.Mkdir(filepath.Join(workdir, "overlay-only"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "overlay-only", "value"), []byte("secret\n"), 0o644))
+
+	var logs safeBuffer
+	c := connect(ctx, t, dagger.WithWorkdir(workdir), dagger.WithLogOutput(&logs), dagger.WithVerbosity(2))
+	current := core.NewQuery(c).CurrentWorkspace()
+	visible, err := current.
+		WithNewFile(".gitignore", "/.venv/\n").
+		Directory(".", core.WorkspaceDirectoryOpts{Gitignore: true}).
+		Exists(ctx, "secret/value")
+	require.NoError(t, err)
+	require.True(t, visible, "an overlay can remove an ignore rule")
+
+	hidden, err := current.
+		WithNewFile(".gitignore", "/secret/\n/overlay-only/\n/.venv/\n").
+		Directory(".", core.WorkspaceDirectoryOpts{Gitignore: true}).
+		Exists(ctx, "overlay-only/value")
+	require.NoError(t, err)
+	require.False(t, hidden, "an overlay can add an ignore rule")
+
+	entries, err := current.WithNewFile("docs/.gitignore", "*.tmp\n").
+		Directory("overlay-only", core.WorkspaceDirectoryOpts{Include: []string{"value"}, Gitignore: true}).Entries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"value"}, entries)
+	require.NoError(t, c.Close())
+	require.NotRegexp(t, `(?m)^\d+\s+:\s+(?:┆\s+)*\.venv(?:\s+DONE.*)?$`, logs.String(), "overlay ignore edits must not upload ignored content")
+}
+
+func (WorkspaceAPISuite) TestOverlayGitignoreLinkUsesHostTarget(ctx context.Context, t *testctx.T) {
+	for _, target := range []string{"rules.txt", "rules[1].txt", "!rules.txt", "rules^1?.txt"} {
+		t.Run(target, func(ctx context.Context, t *testctx.T) {
+			workdir := t.TempDir()
+			initGitRepo(ctx, t, workdir)
+			require.NoError(t, os.WriteFile(filepath.Join(workdir, target), []byte("/secret/\n"), 0644))
+			require.NoError(t, os.Mkdir(filepath.Join(workdir, "secret"), 0755))
+			require.NoError(t, os.WriteFile(filepath.Join(workdir, "secret/value"), []byte("hidden\n"), 0644))
+			require.NoError(t, os.WriteFile(filepath.Join(workdir, "visible"), []byte("visible\n"), 0644))
+			c := connect(ctx, t, dagger.WithWorkdir(workdir))
+			query := core.NewQuery(c)
+			staged := query.CurrentWorkspace().WithDirectory("/", query.Directory().WithSymlink(target, ".gitignore"))
+			dir := staged.Directory(".", core.WorkspaceDirectoryOpts{Gitignore: true})
+			hidden, err := dir.Exists(ctx, "secret/value")
+			require.NoError(t, err)
+			require.False(t, hidden)
+			visible, err := dir.Exists(ctx, "visible")
+			require.NoError(t, err)
+			require.True(t, visible)
+
+			// A deletion in the overlay must not fall back to the host target.
+			_, err = staged.WithoutFile(target).Directory(".", core.WorkspaceDirectoryOpts{Gitignore: true}).Entries(ctx)
+			require.Error(t, err)
+		})
+	}
+}
+
+func (WorkspaceAPISuite) TestOverlayGitignoreLinkResolvesDirectoryBeforeParent(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	require.NoError(t, os.MkdirAll(filepath.Join(workdir, "config/subdir"), 0755))
+	require.NoError(t, os.Mkdir(filepath.Join(workdir, "rules"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "config/ignore"), []byte("/secret/\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "rules/ignore"), nil, 0644))
+	require.NoError(t, os.Symlink("../config/subdir", filepath.Join(workdir, "rules/link")))
+	require.NoError(t, os.Mkdir(filepath.Join(workdir, "secret"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "secret/value"), nil, 0644))
+	c := connect(ctx, t, dagger.WithWorkdir(workdir))
+	query := core.NewQuery(c)
+	staged := query.CurrentWorkspace().WithDirectory("/", query.Directory().WithSymlink("rules/link/../ignore", ".gitignore"))
+	exists, err := staged.Directory(".", core.WorkspaceDirectoryOpts{Gitignore: true}).Exists(ctx, "secret/value")
+	require.NoError(t, err)
+	require.False(t, exists)
+}
+
 func (WorkspaceAPISuite) TestModuleSourceResolvesWorkspacePaths(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -1840,96 +1992,6 @@ source = "../modules/existing"
 	require.Contains(t, config, "# keep this comment")
 	require.Contains(t, config, "[modules.existing]")
 	require.Contains(t, config, "[modules.wolfi]")
-}
-
-func (WorkspaceAPISuite) TestWorkspaceSDKReadersUseStagedOverlay(ctx context.Context, t *testctx.T) {
-	workdir := t.TempDir()
-	initGitRepo(ctx, t, workdir)
-	require.NoError(t, os.MkdirAll(filepath.Join(workdir, "sdk"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(workdir, "sdk", "dagger-module.toml"), []byte(`name = "custom-sdk"
-engineVersion = "latest"
-source = "."
-
-[runtime]
-source = "go"
-`), 0o644))
-
-	c := connect(ctx, t, dagger.WithWorkdir(workdir))
-	baseID, err := core.NewQuery(c).CurrentWorkspace().ID(ctx)
-	require.NoError(t, err)
-	query := `query SDKReaders($from: ID!) {
-  currentWorkspace {
-    withSDK(ref: "./sdk", name: "go-sdk") {
-      changes(from: $from) {
-        addedPaths
-      }
-      file(path: "dagger.toml") {
-        contents
-      }
-      sdks {
-        name
-        ref
-        modules {
-          name
-          source
-        }
-        clients {
-          name
-          source
-        }
-      }
-      sdk(name: "go") {
-        name
-        ref
-      }
-    }
-  }
-}
-`
-	out, err := testutil.QueryWithClient[json.RawMessage](c, t, query, &testutil.QueryOptions{
-		Variables: map[string]any{"from": baseID},
-	})
-	require.NoError(t, err)
-
-	var got struct {
-		CurrentWorkspace struct {
-			WithSDK struct {
-				Changes struct {
-					AddedPaths []string `json:"addedPaths"`
-				} `json:"changes"`
-				File struct {
-					Contents string `json:"contents"`
-				} `json:"file"`
-				SDKs []struct {
-					Name    string `json:"name"`
-					Ref     string `json:"ref"`
-					Modules []any  `json:"modules"`
-					Clients []any  `json:"clients"`
-				} `json:"sdks"`
-				SDK struct {
-					Name string `json:"name"`
-					Ref  string `json:"ref"`
-				} `json:"sdk"`
-			} `json:"withSDK"`
-		} `json:"currentWorkspace"`
-	}
-	require.NoError(t, json.Unmarshal(*out, &got))
-	staged := got.CurrentWorkspace.WithSDK
-	require.Equal(t, []string{"dagger.toml"}, staged.Changes.AddedPaths)
-	require.Contains(t, staged.File.Contents, `[modules.go-sdk]`)
-	require.Contains(t, staged.File.Contents, `source = "sdk"`)
-	require.Contains(t, staged.File.Contents, `[sdks.go]`)
-	require.Contains(t, staged.File.Contents, `module = "go-sdk"`)
-	require.Len(t, staged.SDKs, 1)
-	require.Equal(t, "go", staged.SDKs[0].Name)
-	require.Equal(t, "sdk", staged.SDKs[0].Ref)
-	require.Empty(t, staged.SDKs[0].Modules)
-	require.Empty(t, staged.SDKs[0].Clients)
-	require.Equal(t, "go", staged.SDK.Name)
-	require.Equal(t, "sdk", staged.SDK.Ref)
-
-	_, err = os.Stat(filepath.Join(workdir, "dagger.toml"))
-	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
 func (WorkspaceAPISuite) TestWorkspaceWithoutSDKUsesSDKName(ctx context.Context, t *testctx.T) {

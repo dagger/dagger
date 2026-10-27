@@ -12,6 +12,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -22,6 +23,7 @@ import (
 	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
+	"github.com/containerd/continuity/fs"
 	workspacecfg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/util/lockfile"
 	"github.com/dagger/testctx"
@@ -36,6 +38,53 @@ func TestGenerators(t *testing.T) {
 
 func generatorsTestEnv(t *testctx.T, c *dagger.Client) (*core.Container, error) {
 	return specificTestEnv(t, c, "generators")
+}
+
+// SDK-scope generation needs a complete workspace view, but the host side of
+// that view must still prune ignored content before filesync walks it.
+func (GeneratorsSuite) TestGenerateDoesNotUploadGitignoredFiles(ctx context.Context, t *testctx.T) {
+	fixture, err := filepath.Abs("testdata/workspaces/sdk-scope-generation")
+	require.NoError(t, err)
+	workdir := t.TempDir()
+	require.NoError(t, fs.CopyDir(workdir, fixture))
+	initGitRepo(ctx, t, workdir)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(workdir, ".gitignore"),
+		[]byte("**/.venv/\n"),
+		0o644,
+	))
+	require.NoError(t, os.Mkdir(filepath.Join(workdir, ".venv"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, ".venv", "should-not-upload"), []byte("ignored\n"), 0o644))
+	sdkCache := filepath.Join(workdir, ".dagger", "modules", "scope-sdk", ".venv")
+	require.NoError(t, os.Mkdir(sdkCache, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(sdkCache, "should-not-upload-inside-sdk"), []byte("ignored\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, ".dagger/modules/scope-sdk/dagger.json"), []byte(`{
+  "name": "scope-sdk", "engineVersion": "v1.0.0-beta.11", "sdk": "dang",
+  "dependencies": [{"name": "shared", "source": "../shared"}]
+}`), 0o644))
+	shared := filepath.Join(workdir, ".dagger/modules/shared")
+	require.NoError(t, os.MkdirAll(shared, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(shared, "dagger.json"), []byte(`{"name":"shared","sdk":"dang"}`), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(shared, "main.dang"), []byte("type Shared { pub value: String! { \"ok\" } }\n"), 0o644))
+
+	// Inspect the context loaded for the SDK itself, before it generates files.
+	sdkFile := filepath.Join(workdir, ".dagger/modules/scope-sdk/main.dang")
+	sdkCode, err := os.ReadFile(sdkFile)
+	require.NoError(t, err)
+	sdkCode = []byte(strings.Replace(string(sdkCode), "let generated = if (isModule)", `let generated = if (currentModule.contextDirectory.exists(".dagger/modules/scope-sdk/.venv/should-not-upload-inside-sdk")) {
+      raise "generation loaded the nested ignored cache"
+    } else if (!currentModule.contextDirectory.exists(".dagger/modules/scope-sdk/main.dang")) {
+      raise "generation context is missing the SDK source"
+    } else if (isModule)`, 1))
+	require.NoError(t, os.WriteFile(sdkFile, sdkCode, 0644))
+
+	var logs safeBuffer
+	c := connect(ctx, t, dagger.WithWorkdir(workdir), dagger.WithLogOutput(&logs), dagger.WithVerbosity(2))
+	empty, err := core.NewQuery(c).CurrentWorkspace().SDK("test").Generate().IsEmpty(ctx)
+	require.NoError(t, err)
+	require.False(t, empty)
+	require.NoError(t, c.Close())
+	require.NotRegexp(t, `(?m)^\d+\s+:\s+(?:┆\s+)*\.venv(?:\s+DONE.*)?$`, logs.String(), "generate must not upload gitignored content")
 }
 
 func (GeneratorsSuite) TestGeneratorsDirectSDK(ctx context.Context, t *testctx.T) {
@@ -1681,6 +1730,53 @@ func (GeneratorsSuite) TestWorkspaceGeneratorsSeeOverlayEdits(ctx context.Contex
 		require.NoError(t, err)
 		require.Contains(t, out, "generated from: B-OVERLAY")
 	})
+}
+
+func (GeneratorsSuite) TestGenerateRecreatesRemovedScope(ctx context.Context, t *testctx.T) {
+	for _, state := range []string{"existing", "removed", "child removed", "recreated", "parent removed"} {
+		t.Run(state, func(ctx context.Context, t *testctx.T) {
+			fixture, err := filepath.Abs("testdata/workspaces/sdk-scope-generation")
+			require.NoError(t, err)
+			workdir := t.TempDir()
+			require.NoError(t, fs.CopyDir(workdir, fixture))
+			initGitRepo(ctx, t, workdir)
+			scope := "nested"
+			if state == "parent removed" {
+				scope = "nested/child"
+				config := filepath.Join(workdir, "dagger.toml")
+				data, err := os.ReadFile(config)
+				require.NoError(t, err)
+				require.NoError(t, os.WriteFile(config, []byte(strings.ReplaceAll(string(data), ".scopes.nested]", `.scopes."nested/child"]`)), 0o644))
+			}
+			require.NoError(t, os.MkdirAll(filepath.Join(workdir, scope), 0o755))
+			require.NoError(t, os.WriteFile(filepath.Join(workdir, scope, "old.txt"), []byte("old"), 0o644))
+			sdkPath := filepath.Join(workdir, ".dagger/modules/scope-sdk/main.dang")
+			data, err := os.ReadFile(sdkPath)
+			require.NoError(t, err)
+			// Read the scope before the first generated file creates it.
+			data = []byte(strings.Replace(string(data), "ws\n        .withNewFile(", "ws\n        .withNewFile(\"previous.txt\", JSON.encode(ws.directory(\".\").entries))\n        .withNewFile(", 1))
+			require.NoError(t, os.WriteFile(sdkPath, data, 0o644))
+			c := connect(ctx, t, dagger.WithWorkdir(workdir))
+			ws := core.NewQuery(c).CurrentWorkspace()
+			want := []string{}
+			switch state {
+			case "existing":
+				want = []string{"old.txt"}
+			case "removed", "parent removed":
+				ws = ws.WithoutDirectory("nested")
+			case "child removed":
+				ws = ws.WithoutFile("nested/old.txt")
+			case "recreated":
+				ws = ws.WithoutDirectory("nested").WithNewFile("nested/new.txt", "new")
+				want = []string{"new.txt"}
+			}
+			previous, err := ws.SDK("test").Generate().Layer().File(scope + "/previous.txt").Contents(ctx)
+			require.NoError(t, err)
+			var entries []string
+			require.NoError(t, json.Unmarshal([]byte(previous), &entries))
+			require.Equal(t, want, entries)
+		})
+	}
 }
 
 func (GeneratorsSuite) TestGenerateFromModuleDirectoryExportPaths(ctx context.Context, t *testctx.T) {
