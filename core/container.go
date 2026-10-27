@@ -5081,7 +5081,9 @@ func decodePersistedContainerRecipe(
 			LazyState: NewLazyState(),
 			Parent:    parent,
 		}, nil
-	case "withGPU", "experimentalWithGPU", "experimentalWithAllGPUs":
+	case "withGPU", "experimentalWithGPU", "experimentalWithAllGPUs",
+		// spelled so from engine.IdentifierCasingVersion on
+		"withGpu", "experimentalWithGpu", "experimentalWithAllGpus":
 		var persisted persistedContainerSetGPUsLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container setGPUs lazy payload: %w", err)
