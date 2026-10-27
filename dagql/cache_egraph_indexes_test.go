@@ -650,8 +650,8 @@ func TestCacheExactDigestPostingRemoval(t *testing.T) {
 	c.egraphMu.Lock()
 	before := len(c.resultIndexedDigests[shared.id])
 	for _, dig := range expectedDigests {
-		c.addResultDigestPostingLocked(shared.id, dig, resultDigestPostingExact)
-		c.addResultDigestPostingLocked(shared.id, dig, resultDigestPostingExact)
+		c.addResultDigestPostingLocked(shared.id, dig)
+		c.addResultDigestPostingLocked(shared.id, dig)
 	}
 	after := len(c.resultIndexedDigests[shared.id])
 	indexErr := cacheDerivedIndexesErrorLocked(c)
@@ -698,7 +698,7 @@ func TestCacheBroadImportedPostingRemoval(t *testing.T) {
 	// marker remains authoritative while the new posting is recorded exactly.
 	mixedID := f.allResultIDs[0]
 	mixedDigest := digest.FromString("broad-imported-later-exact").String()
-	f.cache.addResultDigestPostingLocked(mixedID, mixedDigest, resultDigestPostingExact)
+	f.cache.addResultDigestPostingLocked(mixedID, mixedDigest)
 	_, stillBroad := f.cache.broadlyIndexedResults[mixedID]
 	mixedDigests := slices.Clone(f.cache.resultIndexedDigests[mixedID])
 	type fixtureState struct {

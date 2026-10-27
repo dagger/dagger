@@ -22,7 +22,7 @@ func TestRestoredDigestPostingRemovalKeepsRuntimePostingsAfterMerge(t *testing.T
 	assert.Assert(t, len(digests) > 1)
 	c.mergeEqClassesLocked(f.ctx, first, second)
 	// A new observation applies only to this digest, even after the classes merge.
-	c.addResultDigestPostingLocked(survivor, digests[0], resultDigestPostingExact)
+	c.addResultDigestPostingLocked(survivor, digests[0])
 	c.egraphMu.Unlock()
 
 	for _, id := range removed {

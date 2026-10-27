@@ -29,12 +29,12 @@ func TestCacheImportedDigestPostingsRemainLocalAfterMerge(t *testing.T) {
 			"merging output classes changed the imported posting for %s", dig)
 	}
 	// Teaching one digest about a result must not teach its imported aliases.
-	c.addResultDigestPostingLocked(fromSecond, digests[0], resultDigestPostingExact)
+	c.addResultDigestPostingLocked(fromSecond, digests[0])
 	assert.Assert(t, c.egraphResultsByDigest[digests[0]].Contains(fromSecond))
 	assert.Assert(t, !c.egraphResultsByDigest[digests[1]].Contains(fromSecond))
 	// Repeated insertion must not duplicate a result already in the shared set.
 	fromFirst := before[digests[0]][0]
-	c.addResultDigestPostingLocked(fromFirst, digests[0], resultDigestPostingExact)
+	c.addResultDigestPostingLocked(fromFirst, digests[0])
 	assert.Equal(t, len(before[digests[0]])+1, c.egraphResultsByDigest[digests[0]].Size())
 	c.egraphMu.Unlock()
 

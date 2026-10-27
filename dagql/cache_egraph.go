@@ -17,13 +17,6 @@ import (
 type eqClassID uint64
 type egraphTermID uint64
 
-type resultDigestPostingKind uint8
-
-const (
-	resultDigestPostingExact resultDigestPostingKind = iota
-	resultDigestPostingBroad
-)
-
 // egraphTerm is purely symbolic: operation shape + canonicalized input/output
 // equivalence state.
 //
@@ -867,19 +860,9 @@ func (c *Cache) indexResultDigestsLocked(res *sharedResult, requestFrame, respon
 
 // addResultDigestPostingLocked requires egraphMu and an e-graph initialized by
 // initEgraphLocked.
-func (c *Cache) addResultDigestPostingLocked(resID sharedResultID, dig string, kind resultDigestPostingKind) {
+func (c *Cache) addResultDigestPostingLocked(resID sharedResultID, dig string) {
 	if resID == 0 || dig == "" {
 		return
-	}
-	switch kind {
-	case resultDigestPostingExact, resultDigestPostingBroad:
-	default:
-		return
-	}
-	// Legacy broad insertion is not represented by an imported snapshot.
-	// Keep its existing class-wide removal path, including after a restore.
-	if kind == resultDigestPostingBroad {
-		delete(c.restoredDigestGroups, resID)
 	}
 	results := c.egraphResultsByDigest[dig]
 	if results == nil {
@@ -887,7 +870,7 @@ func (c *Cache) addResultDigestPostingLocked(resID sharedResultID, dig string, k
 		c.egraphResultsByDigest[dig] = results
 	}
 	inserted := results.Insert(resID)
-	if kind == resultDigestPostingExact && inserted {
+	if inserted {
 		c.resultIndexedDigests[resID] = append(c.resultIndexedDigests[resID], dig)
 	}
 }
@@ -1684,9 +1667,9 @@ func (c *Cache) applyPreparedResultIdentityLocked(ctx context.Context, res *shar
 // addFramePostingsLocked posts a frame's recipe digest and extra digests for
 // the result. Requires egraphMu.
 func (c *Cache) addFramePostingsLocked(resID sharedResultID, recipe digest.Digest, extras []call.ExtraDigest) {
-	c.addResultDigestPostingLocked(resID, recipe.String(), resultDigestPostingExact)
+	c.addResultDigestPostingLocked(resID, recipe.String())
 	for _, extra := range extras {
-		c.addResultDigestPostingLocked(resID, extra.Digest.String(), resultDigestPostingExact)
+		c.addResultDigestPostingLocked(resID, extra.Digest.String())
 	}
 }
 
