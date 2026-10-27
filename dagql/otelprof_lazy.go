@@ -171,10 +171,14 @@ func (c *Cache) beginOTelLazyOp(evalCtx context.Context, sharedID sharedResultID
 			// installs. An evaluation finding install spans the anchor doesn't
 			// link, or another call than the one it links, carries them all and
 			// becomes the anchor.
+			// The anchor is marked, so a reader that loads only it knows later
+			// evaluations link it rather than the call.
 			anchorCtx, anchored := c.sessionLazyAnchorFor(clientMD.SessionID, sharedID, originalSpanCtx, installCtxs)
 			links := []trace.Link{{SpanContext: anchorCtx}}
+			attrs := []attribute.KeyValue{attribute.String(telemetryattrs.WcprofOpKindAttr, wcprof.OpKindLazy.String())}
 			if !anchored {
 				links = lazyResumeLinks(originalSpanCtx, installCtxs)
+				attrs = append(attrs, attribute.Bool(telemetryattrs.LazyAnchorAttr, true))
 			}
 			resumeCtx, resumeSpan := Tracer(evalCtx).Start(
 				evalCtx,
@@ -182,7 +186,7 @@ func (c *Cache) beginOTelLazyOp(evalCtx context.Context, sharedID sharedResultID
 				append([]trace.SpanStartOption{
 					trace.WithLinks(links...),
 					telemetry.Passthrough(),
-					trace.WithAttributes(attribute.String(telemetryattrs.WcprofOpKindAttr, wcprof.OpKindLazy.String())),
+					trace.WithAttributes(attrs...),
 				}, opts...)...,
 			)
 			if !anchored {
