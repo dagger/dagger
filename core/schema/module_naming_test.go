@@ -62,7 +62,7 @@ func TestTypeDefNamingCacheIdentity(t *testing.T) {
 		return view, dag
 	}
 
-	view, dag := fork("v1.0.0-beta.21")
+	view, dag := fork(cutVersion)
 	for _, c := range namingConstructors {
 		objType, ok := dag.ObjectType(c.typeName)
 		require.True(t, ok, c.typeName)
@@ -101,9 +101,9 @@ func TestTypeDefNamingCacheIdentity(t *testing.T) {
 	// Interleaved, so each side would get the other's cached result if the
 	// view weren't in the calls' identity.
 	for _, tc := range []struct{ version, object, field string }{
-		{"v1.0.0-beta.21", "HTTPClient", "e2eTest"},
-		{"v1.0.0-beta.20", "Httpclient", "e2ETest"},
-		{"v1.0.0-beta.21", "HTTPClient", "e2eTest"},
+		{cutVersion, "HTTPClient", "e2eTest"},
+		{preCutView, "Httpclient", "e2ETest"},
+		{cutVersion, "HTTPClient", "e2eTest"},
 		{"v1.0.0-0", "Httpclient", "e2ETest"},
 		{"v1.0.0-beta.19", "Httpclient", "e2ETest"},
 	} {

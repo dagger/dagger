@@ -51,8 +51,8 @@ func cliName(name string) string {
 }
 
 // legacyCLIName is cliName by the legacy strcase rules, which name the
-// fields of modules older than engine v1.0.0-beta.21
-// (engine.IdentifierCasingVersion).
+// fields of modules that declare an engine version before
+// engine.IdentifierCasingVersion.
 func legacyCLIName(name string) string {
 	return strcase.ToKebab(name)
 }

@@ -11,6 +11,7 @@ import (
 	dangshared "github.com/dagger/dagger/core/sdk/dang/shared"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 )
 
 type testQuery struct{}
@@ -56,7 +57,7 @@ func TestNamingSelectors(t *testing.T) {
 		dagql.Func("withObject", module).View(core.AllVersion),
 	}.Install(srv)
 
-	src := &core.ModuleSource{EngineVersion: "v1.0.0-beta.21"}
+	src := &core.ModuleSource{EngineVersion: engine.IdentifierCasingVersion}
 	ctx := dangshared.WithModuleNaming(t.Context(), src)
 	view := src.NamingView()
 
