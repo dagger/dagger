@@ -132,7 +132,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitResolvedIdentityReplay(ctx context.
 			email, err := restored.Git().Head().TargetCommit().AuthorEmail(ctx)
 			require.NoError(t, err)
 			require.Equal(t, tc.wantEmail, email)
-			parents, err := restored.Git().Head().TargetCommit().ParentShas(ctx)
+			parents, err := restored.Git().Head().TargetCommit().ParentSHAs(ctx)
 			require.NoError(t, err)
 			require.Len(t, parents, 1)
 			// A new commit samples the restoring client, rather than inheriting
