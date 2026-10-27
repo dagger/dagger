@@ -296,6 +296,22 @@ func (cm *snapshotManager) SnapshotSize(ctx context.Context, snapshotID string) 
 	return usage.Size, nil
 }
 
+// SnapshotUsage is the disk usage of the snapshot's own directory: what
+// applying its layer wrote, without its parents or its content blobs.
+func (cm *snapshotManager) SnapshotUsage(ctx context.Context, snapshotID string) (int64, error) {
+	if snapshotID == "" {
+		return 0, errors.New("snapshot usage: empty snapshot ID")
+	}
+	usage, err := cm.Snapshotter.Usage(ctx, snapshotID)
+	if err != nil {
+		if cerrdefs.IsNotFound(err) {
+			return 0, errors.Wrap(errNotFound, snapshotID)
+		}
+		return 0, errors.Wrapf(err, "failed to get usage for %s", snapshotID)
+	}
+	return usage.Size, nil
+}
+
 func (cm *snapshotManager) SnapshotParent(ctx context.Context, snapshotID string) (string, error) {
 	if snapshotID == "" {
 		return "", errors.New("snapshot parent: empty snapshot ID")

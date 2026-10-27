@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	stdslog "log/slog"
+	"sync"
 	"testing"
 	"time"
 
@@ -228,11 +229,17 @@ func (f *prefetchFixture) holdOffers() map[digest.Digest][]*partOffer {
 }
 
 // The disk check counts the unwritten bytes every running job reserved, not
-// only this job's: two jobs can't both pass on the same free space.
+// only this job's: two jobs can't both pass on the same free space. The
+// import ahead that follows the job counts them too.
 func TestPartPrefetchDiskRoomCountsPending(t *testing.T) {
 	f := newPrefetchFixture(t, true, nil)
-	var asked []int64
+	var (
+		mu    sync.Mutex
+		asked []int64
+	)
 	f.cache.partPrefetchRoom = func(need int64) bool {
+		mu.Lock()
+		defer mu.Unlock()
 		asked = append(asked, need)
 		return true
 	}
@@ -241,11 +248,14 @@ func TestPartPrefetchDiskRoomCountsPending(t *testing.T) {
 	f.prefetch.pending = other
 	f.prefetch.mu.Unlock()
 	require.Equal(t, "done", f.runJob(t).fields["outcome"])
+	require.Equal(t, "done", f.aheadLine(t).fields["outcome"])
 	var size int64
 	for _, layer := range f.chain.chain.Layers {
 		size += layer.Descriptor.Size
 	}
-	require.Equal(t, []int64{other + size}, asked)
+	mu.Lock()
+	require.Equal(t, []int64{other + size, other + size}, asked, "the job's check, then the import ahead's")
+	mu.Unlock()
 	f.prefetch.mu.Lock()
 	defer f.prefetch.mu.Unlock()
 	require.EqualValues(t, other, f.prefetch.pending, "the job's bytes are written; the other job's remain")
