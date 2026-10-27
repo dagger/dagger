@@ -980,13 +980,14 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	// attributable from the engine log alone.
 	stopStart := time.Now()
 	// While the engine records, the stop and each of its phases are ops, and
-	// the stop dump is rewritten as each phase begins and ends, so an engine
-	// killed in a phase, or between two, leaves a dump that shows where.
+	// the stop dump is rewritten (in the background: a phase doesn't wait for
+	// it) as each phase begins and ends, so an engine killed in a phase, or
+	// between two, leaves a dump that shows where.
 	stopCtx, stopOp := wcprof.BeginOp(context.WithoutCancel(ctx), wcprof.OpKindInternal, "engine.stop", wcprof.OpOpts{})
 	stopPhase := func(name string, fn func()) {
 		slog.Debug("graceful stop phase starting", "phase", name)
-		phaseCtx, phaseOp := wcprof.BeginOp(stopCtx, wcprof.OpKindInternal, "engine.stop."+name, wcprof.OpOpts{})
-		srv.writeStopDump(phaseCtx)
+		_, phaseOp := wcprof.BeginOp(stopCtx, wcprof.OpKindInternal, "engine.stop."+name, wcprof.OpOpts{})
+		srv.requestStopDump()
 		start := time.Now()
 		// A stage that runs long is usually waiting in the kernel; name the
 		// threads doing so while they still are.
@@ -997,12 +998,12 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 		fn()
 		slow.Stop()
 		phaseOp.End(wcprof.OutcomeOK)
-		srv.writeStopDump(stopCtx)
+		srv.requestStopDump()
 		slog.Info("graceful stop phase done", "phase", name, "duration", time.Since(start))
 	}
 	defer func() {
 		stopOp.EndErr(err)
-		srv.writeStopDump(context.WithoutCancel(ctx))
+		srv.requestStopDump()
 		slog.Info("graceful stop done", "duration", time.Since(stopStart), "error", err)
 	}()
 
@@ -1166,12 +1167,10 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	return err
 }
 
-// writeStopDump rewrites the engine's stop dump (wcprof.WriteStopDump) while
-// it records, the write an op under ctx's.
-func (srv *Server) writeStopDump(ctx context.Context) {
-	if err := wcprof.WriteStopDump(ctx, wcprof.StopDumpPath(srv.rootDir)); err != nil {
-		slog.Warn("wcprof stop dump", "error", err)
-	}
+// requestStopDump asks for the engine's stop dump to be rewritten
+// (wcprof.RequestStopDump) while it records, without waiting for the write.
+func (srv *Server) requestStopDump() {
+	wcprof.RequestStopDump(wcprof.StopDumpPath(srv.rootDir))
 }
 
 func (srv *Server) SnapshotManager() bkcache.SnapshotManager {

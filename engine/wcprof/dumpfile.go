@@ -19,11 +19,11 @@ func StopDumpPath(root string) string {
 // path, so a reader, or an engine killed mid-write, never leaves a partial
 // dump. It does nothing when profiling was never enabled.
 //
-// The engine writes its stop dump this way (WriteStopDump) when it receives
-// SIGTERM, as each graceful-stop phase and final drain begins and ends: an
-// engine killed before it exits leaves the dump of its last finished write,
-// with the work still running then as open ops. It compresses at gzip's
-// fastest level, since it runs inside the stop it records.
+// The engine writes its stop dump this way (RequestStopDump) when it receives
+// SIGTERM, and as each graceful-stop phase and final drain begins and ends:
+// an engine killed before it exits leaves the dump of its last finished
+// write, with the work still running then as open ops. It compresses at
+// gzip's fastest level, since it runs during the stop it records.
 func WriteDumpFile(path string) (err error) {
 	r := Active()
 	if r == nil {
@@ -59,27 +59,90 @@ func WriteDumpFile(path string) (err error) {
 	return os.Rename(tmp.Name(), path)
 }
 
-// stopDumpMu makes stop dump writers take turns, so a snapshot taken earlier
-// can't be renamed over one taken later.
-var stopDumpMu sync.Mutex
-
-// stopDumpHook runs inside a stop dump write, holding stopDumpMu; tests set it
-// to watch writers take turns.
+// stopDumpHook runs at the start of each stop dump write, on the writer;
+// tests set it to hold or count writes.
 var stopDumpHook = func() {}
 
-// WriteStopDump writes the engine's stop dump to path (WriteDumpFile) while
-// the engine records everything (GloballyEnabled); otherwise it does nothing.
-// The write is an op of its own, wcprof.stopDump, under ctx's op, so its cost
-// reads as the write's, not as that op's own time. Writers take turns.
-func WriteStopDump(ctx context.Context, path string) error {
+// stopDumper is the stop dump's one writer. A write of a large recording
+// takes seconds, so the stop doesn't wait for it: a request marks the dump
+// out of date and starts the writer if it isn't running, and requests made
+// while a write runs become one more write, from the state at its start.
+// One writer also means an older snapshot can't be renamed over a newer one.
+var stopDumper struct {
+	mu      sync.Mutex
+	changed *sync.Cond
+	path    string
+	pending bool
+	running bool
+	// started and finished count writes; err is the last finished one's.
+	started, finished uint64
+	err               error
+}
+
+func init() {
+	stopDumper.changed = sync.NewCond(&stopDumper.mu)
+}
+
+// RequestStopDump asks for the engine's stop dump at path to be rewritten,
+// while the engine records everything (GloballyEnabled), and returns without
+// waiting for the write. Each write is an op of its own, wcprof.stopDump.
+// The dump on disk lags the latest request by at most the write in progress
+// and one more; FlushStopDump waits for it.
+func RequestStopDump(path string) {
+	if !GloballyEnabled() {
+		return
+	}
+	stopDumper.mu.Lock()
+	requestStopDumpLocked(path)
+	stopDumper.mu.Unlock()
+}
+
+func requestStopDumpLocked(path string) {
+	stopDumper.path = path
+	stopDumper.pending = true
+	if !stopDumper.running {
+		stopDumper.running = true
+		go writeStopDumps()
+	}
+}
+
+// FlushStopDump asks for the stop dump at path to be rewritten and waits for
+// a write that began after the call, returning its error: the engine's last
+// state before it exits is then on disk.
+func FlushStopDump(path string) error {
 	if !GloballyEnabled() {
 		return nil
 	}
-	_, op := BeginOp(ctx, OpKindInternal, "wcprof.stopDump", OpOpts{})
-	stopDumpMu.Lock()
-	stopDumpHook()
-	err := WriteDumpFile(path)
-	stopDumpMu.Unlock()
-	op.EndErr(err)
-	return err
+	stopDumper.mu.Lock()
+	defer stopDumper.mu.Unlock()
+	requestStopDumpLocked(path)
+	// the write serving this request is the next one to start
+	want := stopDumper.started + 1
+	for stopDumper.finished < want {
+		stopDumper.changed.Wait()
+	}
+	return stopDumper.err
+}
+
+// writeStopDumps writes the stop dump while one is pending, then stops.
+func writeStopDumps() {
+	stopDumper.mu.Lock()
+	for stopDumper.pending {
+		stopDumper.pending = false
+		path := stopDumper.path
+		stopDumper.started++
+		n := stopDumper.started
+		stopDumper.mu.Unlock()
+
+		_, op := BeginOp(context.Background(), OpKindInternal, "wcprof.stopDump", OpOpts{})
+		stopDumpHook()
+		err := WriteDumpFile(path)
+		op.EndErr(err)
+
+		stopDumper.mu.Lock()
+		stopDumper.finished, stopDumper.err = n, err
+		stopDumper.changed.Broadcast()
+	}
+	stopDumper.running = false
+	stopDumper.mu.Unlock()
 }

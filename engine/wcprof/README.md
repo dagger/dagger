@@ -100,18 +100,23 @@ dropped and counted in the dump header's `dropped_events`.
   whole buffer, unflushed, to `<engine root>/wcprof/stop.ndjson.gz`
   (`wcprof.StopDumpPath`): on the stop signal (`engine.stop.signal`), when
   each stop phase starts and ends (`engine.stop.<phase>` ops under
-  `engine.stop`, waiting for a running garbage collection included), when
-  the server's stop ends, and when each telemetry drain after it starts and
-  ends (`engine.exit.<step>`). Each write replaces the file atomically and is
+  `engine.stop`, waiting for a running garbage collection included), when the
+  server's stop ends, and when each telemetry drain after it starts and ends
+  (`engine.exit.<step>`). Each write replaces the file atomically and is
   itself a `wcprof.stopDump` op, so an engine killed mid-stop leaves the last
-  complete dump, with the phase it was in as an open op. The write that
-  produced a dump is open in it too, as a `wcprof.stopDump` op, since it
-  snapshots the recorder before it ends. So after a fully drained stop, the
-  dump an engine leaves has that write as its only open op; a phase still
-  running when the stop gave up on it (its deadline passed) stays open
-  beside it. In a dump taken mid-stop, the work running at the snapshot is
-  open as well: the stop, its current phase, and any dump write waiting its
-  turn. An open op alone doesn't prove the work was cut off.
+  complete dump, with the phase it was in as an open op. Writes run in the
+  background, one at a time, so the stop doesn't wait for them (a large
+  recording's dump takes seconds to write): requests made during a write
+  become one more write, from the state at its start. The dump on disk lags
+  the stop by at most the write in progress and one more; as it exits, the
+  engine waits for one last write, so a stop that finishes leaves its whole
+  record. The write that produced a dump is open in it too, as a
+  `wcprof.stopDump` op, since it snapshots the recorder before it ends. So
+  after a fully drained stop, the dump an engine leaves has that write as its
+  only open op; a phase still running when the stop gave up on it (its
+  deadline passed) stays open beside it. In a dump taken mid-stop, the work
+  running at the snapshot is open as well: the stop and its current phase. An
+  open op alone doesn't prove the work was cut off.
 
 Typical dev-engine workflow:
 

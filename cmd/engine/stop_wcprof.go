@@ -12,40 +12,39 @@ import (
 // (wcprof.StopDumpPath of its state directory), once main knows it.
 var stopDumpPath atomic.Pointer[string]
 
-// recordStopSignal records the first SIGTERM or SIGINT as an op and writes
-// the stop dump to path beside the signal's handling, while the engine
-// records: what's running at the signal, an export racing the stop
-// included, is then in the dump even if the engine is killed before its
-// graceful stop starts. The returned channel closes once the dump is
-// written.
-func recordStopSignal(path string) <-chan struct{} {
-	written := make(chan struct{})
-	ctx, op := wcprof.BeginOp(context.Background(), wcprof.OpKindInternal, "engine.stop.signal", wcprof.OpOpts{})
+// recordStopSignal records the first SIGTERM or SIGINT as an op and asks for
+// the stop dump at path, while the engine records: what's running at the
+// signal, an export racing the stop included, is then in the dump even if the
+// engine is killed before its graceful stop starts. It doesn't wait for the
+// write, so the signal's handling doesn't either.
+func recordStopSignal(path string) {
+	_, op := wcprof.BeginOp(context.Background(), wcprof.OpKindInternal, "engine.stop.signal", wcprof.OpOpts{})
 	op.End(wcprof.OutcomeOK)
-	go func() {
-		defer close(written)
-		if err := wcprof.WriteStopDump(ctx, path); err != nil {
-			slog.Warn("wcprof stop dump", "error", err)
-		}
-	}()
-	return written
+	wcprof.RequestStopDump(path)
 }
 
 // exitStep runs one of the engine's final drains, after its server stopped,
-// as an op, engine.exit.<name>, with the stop dump rewritten as it begins and
-// ends, so an engine killed during a drain leaves a dump that shows which.
+// as an op, engine.exit.<name>, with the stop dump rewritten (in the
+// background) as it begins and ends, so an engine killed during a drain
+// leaves a dump that shows which.
 func exitStep(name string, fn func()) {
 	path := stopDumpPath.Load()
-	ctx, op := wcprof.BeginOp(context.Background(), wcprof.OpKindInternal, "engine.exit."+name, wcprof.OpOpts{})
+	_, op := wcprof.BeginOp(context.Background(), wcprof.OpKindInternal, "engine.exit."+name, wcprof.OpOpts{})
 	if path != nil {
-		if err := wcprof.WriteStopDump(ctx, *path); err != nil {
-			slog.Warn("wcprof stop dump", "error", err)
-		}
+		wcprof.RequestStopDump(*path)
 	}
 	fn()
 	op.End(wcprof.OutcomeOK)
 	if path != nil {
-		if err := wcprof.WriteStopDump(context.Background(), *path); err != nil {
+		wcprof.RequestStopDump(*path)
+	}
+}
+
+// flushStopDump waits, as the engine exits, for its stop dump to hold its
+// last state: the one write of the stop it waits for.
+func flushStopDump() {
+	if path := stopDumpPath.Load(); path != nil {
+		if err := wcprof.FlushStopDump(*path); err != nil {
 			slog.Warn("wcprof stop dump", "error", err)
 		}
 	}
