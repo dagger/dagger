@@ -10,8 +10,8 @@
 //
 // Recording can be enabled two ways:
 //
-//   - Engine-global: the _DAGGER_WCPROF environment variable, the engine's
-//     --wcprof flag, or POSTing "on" to the /debug/wcprof/enabled endpoint.
+//   - Engine-global: the engine's --wcprof flag, or POSTing "on" to the
+//     /debug/wcprof/enabled endpoint.
 //     All work on the engine is recorded until "off" is POSTed to the same
 //     endpoint.
 //   - Per-session: a client connecting with ClientMetadata.Profile set (the
@@ -25,7 +25,6 @@
 package wcprof
 
 import (
-	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -366,12 +365,6 @@ var (
 	globalOn atomic.Bool
 )
 
-func init() {
-	if os.Getenv("_DAGGER_WCPROF") != "" {
-		EnableGlobal()
-	}
-}
-
 // Active returns the recorder, or nil if profiling was never enabled. The
 // recorder outlives DisableGlobal so buffered events can still be dumped;
 // use GloballyEnabled/Enabled to ask whether work is being recorded.
@@ -405,20 +398,7 @@ func EnsureRecorder() {
 	if global.Load() != nil {
 		return
 	}
-	maxEvents := int64(0)
-	if v := os.Getenv("_DAGGER_WCPROF_MAX_EVENTS"); v != "" {
-		// best-effort parse; ignore malformed values
-		var parsed int64
-		for _, c := range v {
-			if c < '0' || c > '9' {
-				parsed = 0
-				break
-			}
-			parsed = parsed*10 + int64(c-'0')
-		}
-		maxEvents = parsed
-	}
-	global.CompareAndSwap(nil, NewRecorder(maxEvents))
+	global.CompareAndSwap(nil, NewRecorder(defaultMaxEvents))
 }
 
 //

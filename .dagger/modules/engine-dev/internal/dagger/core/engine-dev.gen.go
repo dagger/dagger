@@ -494,7 +494,7 @@ type EngineDevTestProfileOpts struct {
 // Run core engine tests against an engine recording a wcprof wall-clock
 // profile, and return the recording.
 //
-// The test engine records every session from startup (_DAGGER_WCPROF=1). The
+// The test engine records every session from startup (its --wcprof flag). The
 // dump is fetched from its debug endpoint after `go test` exits, whether or
 // not the tests passed, so a failing run still yields a profile. Benchmark
 // tests gated on _DAGGER_BENCH are opted in, since profiling is what they are

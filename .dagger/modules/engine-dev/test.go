@@ -118,7 +118,7 @@ const benchTestsEnv = "_DAGGER_BENCH"
 // Run core engine tests against an engine recording a wcprof wall-clock
 // profile, and return the recording.
 //
-// The test engine records every session from startup (_DAGGER_WCPROF=1). The
+// The test engine records every session from startup (its --wcprof flag). The
 // dump is fetched from its debug endpoint after `go test` exits, whether or
 // not the tests passed, so a failing run still yields a profile. Benchmark
 // tests gated on _DAGGER_BENCH are opted in, since profiling is what they are
@@ -497,10 +497,6 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string, wcp
 	// during our test suite
 	devEngine = devEngine.
 		WithEnvVariable("_DAGGER_ENGINE_SYSTEMENV_GODEBUG", "goindex=0")
-	if wcprof {
-		// Read at engine startup (engine/wcprof's init): record everything.
-		devEngine = devEngine.WithEnvVariable("_DAGGER_WCPROF", "1")
-	}
 	devEnginePlatform, err := devEngine.Platform(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -520,6 +516,18 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string, wcp
 			Permissions: 0o755,
 		})
 
+	engineArgs := []string{
+		"--addr", "unix:///run/dagger-engine.sock",
+		"--addr", "tcp://0.0.0.0:1234",
+		"--network-name", "dagger-dev",
+		"--network-cidr", "10.88.0.0/16",
+		"--debugaddr", "0.0.0.0:6060",
+	}
+	if wcprof {
+		// Record all of the engine's work from startup.
+		engineArgs = append(engineArgs, "--wcprof")
+	}
+
 	engineRunVol := dag.CacheVolume("dagger-dev-engine-test-varrun" + rand.Text())
 	registrySvc := registry()
 	devEngineSvc := devEngine.
@@ -530,13 +538,7 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string, wcp
 		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume("dagger-dev-engine-test-state"+rand.Text())).
 		WithMountedCache("/run", engineRunVol).
 		AsService(dagger.ContainerAsServiceOpts{
-			Args: []string{
-				"--addr", "unix:///run/dagger-engine.sock",
-				"--addr", "tcp://0.0.0.0:1234",
-				"--network-name", "dagger-dev",
-				"--network-cidr", "10.88.0.0/16",
-				"--debugaddr", "0.0.0.0:6060",
-			},
+			Args:                     engineArgs,
 			UseEntrypoint:            true,
 			InsecureRootCapabilities: true,
 		})

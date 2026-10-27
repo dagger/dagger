@@ -165,7 +165,7 @@ func addFlags(app *cli.App) {
 		},
 		cli.BoolFlag{
 			Name:   "wcprof",
-			Usage:  "enable experimental wall-clock profiling for all work on the engine (also enabled by the _DAGGER_WCPROF env var; toggleable at runtime via the /debug/wcprof/enabled debug endpoint)",
+			Usage:  "enable experimental wall-clock profiling for all work on the engine (toggleable at runtime via the /debug/wcprof/enabled debug endpoint)",
 			Hidden: true,
 		},
 		cli.BoolFlag{

@@ -70,7 +70,7 @@ Two scopes:
   up as an unresolved wait (modeled by the analyzer as a fixed delay) since
   the other session's execution wasn't recorded.
 - **Engine-global**: record everything. Enable at startup with the engine's
-  `--wcprof` flag (hidden) or `_DAGGER_WCPROF=1`, or at runtime by POSTing to
+  `--wcprof` flag (hidden), or at runtime by POSTing to
   the debug endpoint:
 
   ```bash
@@ -84,8 +84,8 @@ Two scopes:
   recorded ops finish; `on` re-enables on the same recorder (dumps from
   before and after merge cleanly since the epoch is unchanged).
 
-`_DAGGER_WCPROF_MAX_EVENTS=N` overrides the event cap (default ~4M),
-read when the recorder is first created.
+The recorder keeps up to ~4M events (about 300 MB); events past that are
+dropped and counted in the dump header's `dropped_events`.
 
 - Dump: `GET http://<engine-debug-addr>/debug/wcprof/dump` streams a JSON
   header line (string tables, open ops) followed by one JSON event per line,
