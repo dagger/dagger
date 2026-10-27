@@ -1,6 +1,10 @@
 package dagql
 
-import "context"
+import (
+	"context"
+
+	"go.opentelemetry.io/otel/trace"
+)
 
 // CallRequest is the mutable planning-time wrapper around the semantic
 // ResultCall shape, plus request-only cache policy that does not belong in
@@ -49,6 +53,12 @@ type CallRequest struct {
 	// internal CallRequest constructions that never pass through AroundFunc
 	// leave it nil.
 	CacheEvidence *CacheDecision
+
+	// ownSpan is the span the server's telemetry started for this
+	// invocation, which its native call op records; invalid when the call
+	// runs under a span that isn't its own. Per-invocation like
+	// CacheEvidence, so Clone leaves it out.
+	ownSpan trace.SpanContext
 }
 
 func (req *CallRequest) Clone() *CallRequest {

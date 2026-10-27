@@ -77,10 +77,14 @@ func endOTelExecRun(span trace.Span, errPtr *error) {
 //   - started.IsZero() means the process never started (a setup failure); native
 //     then records only containerStart over the whole interval, charged the run
 //     error — mirrored here.
+//   - containerStartOp and processRunOp are the native phase ops (0 when the
+//     native recorder is off), which record the phase spans emitted for them.
+//     The OTel processRun also spans native's runtimeStart phase, which has
+//     no span of its own.
 //   - work_type=user is set on processRun ONLY: marking the whole run "user" would
 //     mislabel engine container-setup overhead (not sub-ms — the original wcprof
 //     headline was a serial container-setup tax) as the user's slow command.
-func emitOTelExecSplit(ctx context.Context, id string, start, started, end time.Time, runErr error, argv []string) {
+func emitOTelExecSplit(ctx context.Context, id string, start, started, end time.Time, runErr error, argv []string, containerStartOp, processRunOp uint64) {
 	if !dagql.OTelProfActive(ctx) {
 		return
 	}
@@ -88,23 +92,29 @@ func emitOTelExecSplit(ctx context.Context, id string, start, started, end time.
 		// process never started: the engine-setup phase ran the whole interval and
 		// carries the failure (native: containerStart over [start,end] with the run
 		// error). No processRun, so no argv (it stays the blob, consistent with native).
-		emitOTelExecPhase(ctx, "exec.containerStart", id, start, end, false, runErr, nil)
+		recordPhaseSpan(ctx, containerStartOp, emitOTelExecPhase(ctx, "exec.containerStart", id, start, end, false, runErr, nil))
 		return
 	}
 	// the container started: engine overhead is [start,started] (it succeeded in
 	// starting, so no error), the user's process is [started,end] and carries any
 	// run error (native: containerStart OutcomeOK + processRun WorkTypeUser). Argv
 	// rides ONLY on the user processRun phase, where the scalable self-time lives.
-	emitOTelExecPhase(ctx, "exec.containerStart", id, start, started, false, nil, nil)
-	emitOTelExecPhase(ctx, "exec.processRun", id, started, end, true, runErr, argv)
+	recordPhaseSpan(ctx, containerStartOp, emitOTelExecPhase(ctx, "exec.containerStart", id, start, started, false, nil, nil))
+	recordPhaseSpan(ctx, processRunOp, emitOTelExecPhase(ctx, "exec.processRun", id, started, end, true, runErr, argv))
+}
+
+// recordPhaseSpan records sc as the span of the native phase op opID.
+func recordPhaseSpan(ctx context.Context, opID uint64, sc trace.SpanContext) {
+	wcprof.RecordSpan(ctx, opID, sc.TraceID(), sc.SpanID())
 }
 
 // emitOTelExecPhase emits one exec phase span [start,end] as a passthrough child
 // of exec.run, classified exec_phase (matching native's OpKindExecPhase). user
 // sets work_type=user (the process-run phase); err sets an error status so the
 // loader records the phase's outcome. On the user phase, argv (when present) is
-// stamped as the scalar JSON-array string the loader compiles into Op.Argv.
-func emitOTelExecPhase(ctx context.Context, name, id string, start, end time.Time, user bool, err error, argv []string) {
+// stamped as the scalar JSON-array string the loader compiles into Op.Argv. It
+// returns the span's context.
+func emitOTelExecPhase(ctx context.Context, name, id string, start, end time.Time, user bool, err error, argv []string) trace.SpanContext {
 	attrs := []attribute.KeyValue{
 		attribute.String(telemetryattrs.WcprofOpKindAttr, wcprof.OpKindExecPhase.String()),
 		attribute.String(telemetry.DagDigestAttr, id),
@@ -131,4 +141,5 @@ func emitOTelExecPhase(ctx context.Context, name, id string, start, end time.Tim
 		span.SetStatus(codes.Error, err.Error())
 	}
 	span.End(trace.WithTimestamp(end))
+	return span.SpanContext()
 }

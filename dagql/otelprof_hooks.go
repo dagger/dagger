@@ -43,6 +43,17 @@ func OTelProfActive(ctx context.Context) bool {
 	return trace.SpanFromContext(ctx).IsRecording()
 }
 
+// RecordOpSpan records span as the OTel span a native op owns, emitted for
+// the same work (wcprof.Op.SetSpan), so the dump names it. A nil op or span
+// records nothing.
+func RecordOpSpan(op *wcprof.Op, span trace.Span) {
+	if op == nil || span == nil {
+		return
+	}
+	sc := span.SpanContext()
+	op.SetSpan(sc.TraceID(), sc.SpanID())
+}
+
 // beginOTelCallExec starts the call_exec span for a resolver execution on the
 // call's detached context, mirroring native's execOp (cache.go getOrInitCall).
 // The returned context carries the span, so the resolver's sub-call spans nest

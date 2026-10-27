@@ -5103,6 +5103,7 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 		if OTelProfActive(evalCtx) && !producerSkip {
 			lazyCallbackCtx, lazySpan, lazyIsResume = c.beginOTelLazyOp(evalCtx, shared.id, group, resultCall, storedPart)
 			attempt.spanCtx = lazySpan.SpanContext()
+			RecordOpSpan(lazyOp, lazySpan)
 		}
 		g.attempt = attempt
 		shared.lazyMu.Unlock()
@@ -5861,6 +5862,9 @@ func (c *Cache) getOrInitCall(
 	ctx, profOp := wcprof.BeginOp(ctx, wcprof.OpKindCall, profCallClass(req.ResultCall), wcprof.OpOpts{
 		ClientID: profClientID(ctx),
 	})
+	if req.ownSpan.IsValid() {
+		profOp.SetSpan(req.ownSpan.TraceID(), req.ownSpan.SpanID())
+	}
 	res, err := c.getOrInitCallTakingOver(ctx, sessionID, resolver, req, fn, profOp)
 	outcome := profOp.OutcomeHint()
 	switch {
@@ -6111,6 +6115,7 @@ func (c *Cache) getOrInitCallInner(
 	var execSpan trace.Span
 	if OTelProfActive(callCtx) && !req.ResultCall.ProfileSkip {
 		callCtx, execSpan = beginOTelCallExec(callCtx, callKey, profCallClass(req.ResultCall))
+		RecordOpSpan(execOp, execSpan)
 	}
 	sharedWorkCtx, releaseOperationLease, err := withOperationLease(withoutOperationLease(callCtx))
 	if err != nil {
@@ -6428,6 +6433,7 @@ func (c *Cache) wait(
 		var pubSpan trace.Span
 		if oc.execSpanCtx.IsValid() {
 			pubSpan = beginOTelPublishResult(context.WithoutCancel(oc.sharedWorkCtx))
+			RecordOpSpan(pubOp, pubSpan)
 		}
 		oc.initCompletedResultErr = c.initCompletedResult(context.WithoutCancel(oc.sharedWorkCtx), resolver, oc, req, sessionID)
 		if pubOp != nil {

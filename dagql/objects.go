@@ -13,6 +13,7 @@ import (
 
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
@@ -732,7 +733,11 @@ func (r ObjectResult[T]) call(
 		ctx = ContextWithTrivialField(ctx)
 	}
 	if s.telemetry != nil && !field.Spec.NoTelemetry {
+		prevSpan := trace.SpanContextFromContext(ctx)
 		telemetryCtx, done := s.telemetry(ctx, req)
+		if sc := trace.SpanContextFromContext(telemetryCtx); sc.IsValid() && sc.SpanID() != prevSpan.SpanID() {
+			req.ownSpan = sc
+		}
 		defer func() {
 			var cached bool
 			if res != nil {

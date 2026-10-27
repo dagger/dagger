@@ -1316,6 +1316,7 @@ func (ss *Services) startWithKey(
 			var startSpan trace.Span
 			if dagql.OTelProfActive(svcCtx) {
 				svcCtx, startSpan = beginOTelServiceStart(svcCtx, key.Digest.String())
+				dagql.RecordOpSpan(profOp, startSpan)
 			}
 			start := &startingService{
 				running:  running,
