@@ -1126,6 +1126,57 @@ func (c *Cache) sessionLazySpanContext(sessionID string, resultID sharedResultID
 	return spanCtx, true
 }
 
+// sessionLazyAnchor is the evaluation of a lazy result in a session that
+// carries the result's cause links, and the install spans it links. Later
+// evaluations of the result in the session link only the anchor.
+type sessionLazyAnchor struct {
+	spanCtx  trace.SpanContext
+	installs []trace.SpanContext // sorted by compareSpanContexts
+}
+
+// sessionLazyAnchorFor returns the session's anchor for resultID if it links
+// every one of installCtxs, sorted by compareSpanContexts.
+func (c *Cache) sessionLazyAnchorFor(sessionID string, resultID sharedResultID, installCtxs []trace.SpanContext) (trace.SpanContext, bool) {
+	c.sessionMu.Lock()
+	anchor, ok := c.sessionLazyAnchors[sessionID][resultID]
+	c.sessionMu.Unlock()
+	if !ok || !spanContextsCover(anchor.installs, installCtxs) {
+		return trace.SpanContext{}, false
+	}
+	return anchor.spanCtx, true
+}
+
+func (c *Cache) recordSessionLazyAnchor(sessionID string, resultID sharedResultID, spanCtx trace.SpanContext, installCtxs []trace.SpanContext) {
+	c.sessionMu.Lock()
+	defer c.sessionMu.Unlock()
+	// Same released-session refusal as the other session telemetry writers.
+	if c.sessionLifecycle(sessionID).lifecycle.Load()&cacheSessionReleasedBit != 0 {
+		return
+	}
+	if c.sessionLazyAnchors == nil {
+		c.sessionLazyAnchors = make(map[string]map[sharedResultID]sessionLazyAnchor)
+	}
+	if c.sessionLazyAnchors[sessionID] == nil {
+		c.sessionLazyAnchors[sessionID] = make(map[sharedResultID]sessionLazyAnchor)
+	}
+	c.sessionLazyAnchors[sessionID][resultID] = sessionLazyAnchor{spanCtx: spanCtx, installs: installCtxs}
+}
+
+// spanContextsCover reports whether have holds every span context in want.
+// Both are sorted by compareSpanContexts.
+func spanContextsCover(have, want []trace.SpanContext) bool {
+	i := 0
+	for _, w := range want {
+		for i < len(have) && compareSpanContexts(have[i], w) < 0 {
+			i++
+		}
+		if i == len(have) || compareSpanContexts(have[i], w) != 0 {
+			return false
+		}
+	}
+	return true
+}
+
 // captureSessionResultInstallSpan records the current span context as an
 // install site for res in the given session. This wires explicit provenance
 // for lazy failure attribution: the resume span of a later-failing lazy value
@@ -1659,6 +1710,7 @@ func (c *Cache) cleanupReleasedSession(plan *cacheSessionReleasePlan) error {
 	delete(c.sessionArbitraryCallKeysBySession, plan.sessionID)
 	delete(c.sessionLazySpansBySession, plan.sessionID)
 	delete(c.sessionResultInstallSpans, plan.sessionID)
+	delete(c.sessionLazyAnchors, plan.sessionID)
 	delete(c.sessionResourcesBySession, plan.sessionID)
 	delete(c.sessionVolatileVarsBySession, plan.sessionID)
 	delete(c.sessionHandlesBySession, plan.sessionID)
@@ -2622,7 +2674,10 @@ type Cache struct {
 	// module API call returns are recorded once on the returned result with
 	// ownsClosure set, and lookups resolve closure ownership on demand by
 	// walking dep edges upward via depParents.
-	sessionResultInstallSpans    map[string]map[sharedResultID]*sessionResultInstalls
+	sessionResultInstallSpans map[string]map[sharedResultID]*sessionResultInstalls
+	// sessionLazyAnchors holds, per session and result, the evaluation that
+	// carries the result's cause links; see beginOTelLazyOp.
+	sessionLazyAnchors           map[string]map[sharedResultID]sessionLazyAnchor
 	sessionResourcesBySession    map[string]map[SessionResourceHandle]*sessionResourceBindings
 	sessionHandlesBySession      map[string]*set.TreeSet[SessionResourceHandle]
 	sessionVolatileVarsBySession map[string]map[string]string

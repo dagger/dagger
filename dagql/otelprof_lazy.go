@@ -162,9 +162,19 @@ func (c *Cache) beginOTelLazyOp(evalCtx context.Context, sharedID sharedResultID
 			// Lazy failure attribution: link the resume span back to all API spans
 			// that installed/own this result in the session (dagui interprets
 			// cause-purpose links as "this resume is the cause of those installs
-			// failing"). Unchanged from the original goroutine emit.
+			// failing").
 			installCtxs := c.sessionResultInstallSpanContexts(clientMD.SessionID, sharedID)
-			links := lazyResumeLinks(originalSpanCtx, installCtxs)
+			// Only the result's first evaluation in the session carries these
+			// links, as its anchor; later ones link only the anchor, which dagui
+			// follows back to the same spans. Part demand runs many evaluations
+			// of a result, and links on each grew the trace by evaluations ×
+			// installs. An evaluation finding install spans the anchor doesn't
+			// link carries them all and becomes the anchor.
+			anchorCtx, anchored := c.sessionLazyAnchorFor(clientMD.SessionID, sharedID, installCtxs)
+			links := []trace.Link{{SpanContext: anchorCtx}}
+			if !anchored {
+				links = lazyResumeLinks(originalSpanCtx, installCtxs)
+			}
 			resumeCtx, resumeSpan := Tracer(evalCtx).Start(
 				evalCtx,
 				spanName,
@@ -174,6 +184,11 @@ func (c *Cache) beginOTelLazyOp(evalCtx context.Context, sharedID sharedResultID
 					trace.WithAttributes(attribute.String(telemetryattrs.WcprofOpKindAttr, wcprof.OpKindLazy.String())),
 				}, opts...)...,
 			)
+			if !anchored {
+				// Under the result's lazyMu: no other evaluation of it is
+				// choosing its links meanwhile.
+				c.recordSessionLazyAnchor(clientMD.SessionID, sharedID, resumeSpan.SpanContext(), installCtxs)
+			}
 			callbackCtx := trace.ContextWithSpan(resumeCtx, resumedCallbackSpan{
 				Span: resumeSpan,
 				sc:   originalSpanCtx,

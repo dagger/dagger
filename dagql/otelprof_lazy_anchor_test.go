@@ -1,6 +1,7 @@
 package dagql
 
 import (
+	"context"
 	"slices"
 	"testing"
 
@@ -91,4 +92,39 @@ func TestLazyEvaluationsLinkTheirAnchor(t *testing.T) {
 	assert.DeepEqual(t, linked(anchorB), ids(append([]trace.SpanContext{producerB}, installsB...)...))
 	assert.DeepEqual(t, linked(evaluate("session-b", "execOutputs")), ids(anchorB.SpanContext()))
 	assert.DeepEqual(t, linked(evaluate("session-a", "execOutputs")), ids(regrown.SpanContext()))
+}
+
+// Releasing a session drops its lazy evaluation anchors with its other
+// telemetry state.
+func TestLazyEvaluationAnchorsReleasedWithSession(t *testing.T) {
+	t.Parallel()
+	baseCtx := cacheTestContext(t.Context())
+	c, err := NewCache(baseCtx, "", nil, nil)
+	assert.NilError(t, err)
+	ctx := ContextWithCache(baseCtx, c)
+	sessionID := cacheTestSessionID(t, ctx)
+
+	sr, rootCtx, root := newLazyRecordingRoot("POST /query")
+	defer root.End()
+	_, producer := Tracer(rootCtx).Start(rootCtx, "Container.withExec")
+	producer.End()
+	reqCall := cacheTestIntCall("lazy-anchor-release")
+	res, err := c.GetOrInitCall(trace.ContextWithSpanContext(ctx, producer.SpanContext()), sessionID, noopTypeResolver{}, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(reqCall, 1), nil
+	})
+	assert.NilError(t, err)
+	resultID := res.cacheSharedResult().id
+
+	evalCtx := engine.ContextWithClientMetadata(rootCtx, &engine.ClientMetadata{SessionID: sessionID, ClientID: "client-1"})
+	_, lazySpan, isResume := c.beginOTelLazyOp(evalCtx, resultID, LazyGroupWhole, reqCall, "")
+	assert.Assert(t, isResume)
+	var evalErr error
+	endOTelLazyOp(lazySpan, nil, isResume, resultID, false, false, "", lazySpanCacheState{}, &evalErr)
+	spanBySpanID(t, sr.Ended(), lazySpan.SpanContext().SpanID())
+	_, anchored := c.sessionLazyAnchorFor(sessionID, resultID, nil)
+	assert.Assert(t, anchored)
+
+	cacheTestReleaseSession(t, c, ctx)
+	_, anchored = c.sessionLazyAnchorFor(sessionID, resultID, nil)
+	assert.Assert(t, !anchored)
 }
