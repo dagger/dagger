@@ -41,8 +41,9 @@ type dangSourceRunner func(context.Context, string) (dang.ValueScope, error)
 // to the namespaced names present in its runtime schema (e.g. "ModuleAOverlay")
 // when marshaling received values back into GraphQL queries.
 type dangModule struct {
-	name         string // installed, namespaced module name
-	originalName string // module name as written in source
+	name         string     // installed, namespaced module name
+	originalName string     // module name as written in source
+	namer        core.Namer // the naming rules of the module's engine version
 }
 
 func (r *runtime) eval(
@@ -73,7 +74,7 @@ func (r *runtime) eval(
 		}
 
 		self := moduleContext.Self()
-		module := dangModule{name: self.Name(), originalName: self.OriginalName}
+		module := dangModule{name: self.Name(), originalName: self.OriginalName, namer: self.Namer()}
 
 		result, err := callDangFunction(ctx, env, fnCall, module)
 		if err != nil {
@@ -107,6 +108,10 @@ func evalDangSource(
 	runSource dangSourceRunner,
 	withEnv func(context.Context, dang.ValueScope) ([]byte, error),
 ) ([]byte, error) {
+	if src := modSource.Self(); src != nil {
+		// Name the module's typedefs by the module's naming rules.
+		ctx = dangshared.WithModuleNaming(ctx, src)
+	}
 	return dangshared.WithNestedClientServer(ctx, query, nestedClientMetadata, inertAttachables, fnCall, moduleContext, func(ctx context.Context, gqlClient graphql.Client) ([]byte, error) {
 		schema, err := loadDangSchema(ctx, schemaFile)
 		if err != nil {
@@ -353,7 +358,8 @@ func retainDangObjectDirectives(ctx context.Context, env dang.ValueScope, dir st
 // yields the type as it lives in the runtime schema (carrying a GraphQL id,
 // implementing Node), not the bare local type.
 //
-// The names are namespaced (via core.NamespaceObject) to match what the engine
+// The names are namespaced (via core.Namer.NamespaceObject, by the module's
+// naming rules) to match what the engine
 // installs and what the runtime schema exposes once Module.IncludeSelfInDeps is
 // in effect: the main object keeps the module's final name, secondary types are
 // module-prefixed (a `type Widget` in module `Test` becomes `TestWidget`).
@@ -375,8 +381,9 @@ func ensureModuleSelfTypes(schema *introspection.Schema, src *core.ModuleSource,
 		return
 	}
 
+	namer := src.Namer()
 	for _, localName := range moduleDeclaredTypeNames(modSrcDir, moduleName) {
-		schemaName := core.NamespaceObject(localName, moduleName, src.ModuleOriginalName)
+		schemaName := namer.NamespaceObject(localName, moduleName, src.ModuleOriginalName)
 		if schema.Types.Get(schemaName) != nil {
 			continue
 		}
@@ -882,7 +889,7 @@ func initDangModule(ctx context.Context, srv *dagql.Server, env dang.ValueScope)
 		}
 	}
 
-	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
+	if err := srv.Select(ctx, srv.Root(), &res, dangshared.NamingSelectors(ctx, srv, sels...)...); err != nil {
 		return res, err
 	}
 
@@ -975,7 +982,7 @@ func createFunction(ctx context.Context, srv *dagql.Server, mod *dang.Type, name
 		})
 	}
 
-	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
+	if err := srv.Select(ctx, srv.Root(), &res, dangshared.NamingSelectors(ctx, srv, sels...)...); err != nil {
 		return res, fmt.Errorf("failed to create function: %w", err)
 	}
 
@@ -1230,7 +1237,7 @@ func createObjectTypeDef(ctx context.Context, srv *dagql.Server, name string, mo
 		}
 	}
 
-	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
+	if err := srv.Select(ctx, srv.Root(), &res, dangshared.NamingSelectors(ctx, srv, sels...)...); err != nil {
 		return res, fmt.Errorf("failed to create object typedef: %w", err)
 	}
 	if localTypes.contains(classMod) {
@@ -1338,7 +1345,7 @@ func dangTypeToTypeDef(ctx context.Context, srv *dagql.Server, dangType hm.Type,
 		return res, fmt.Errorf("unknown type: %T: %s", dangType, dangType)
 	}
 
-	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
+	if err := srv.Select(ctx, srv.Root(), &res, dangshared.NamingSelectors(ctx, srv, sels...)...); err != nil {
 		return res, fmt.Errorf("failed to select typedef: %w", err)
 	}
 	if mod, ok := dangType.(*dang.Type); ok && localTypes.contains(mod) {
@@ -1373,7 +1380,7 @@ func createEnumTypeDef(ctx context.Context, srv *dagql.Server, name string, enum
 		})
 	}
 
-	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
+	if err := srv.Select(ctx, srv.Root(), &res, dangshared.NamingSelectors(ctx, srv, sels...)...); err != nil {
 		return res, fmt.Errorf("failed to create enum typedef: %w", err)
 	}
 	if mod, ok := enumMod.Mod.(*dang.Type); ok && localTypes.contains(mod) {
@@ -1445,7 +1452,7 @@ func createInterfaceTypeDef(ctx context.Context, srv *dagql.Server, name string,
 		}
 	}
 
-	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
+	if err := srv.Select(ctx, srv.Root(), &res, dangshared.NamingSelectors(ctx, srv, sels...)...); err != nil {
 		return res, fmt.Errorf("failed to create interface typedef: %w", err)
 	}
 	if localTypes.contains(mod) {
@@ -1591,7 +1598,7 @@ func (c dangConverter) schemaTypeName(schema *introspection.Schema, name string)
 	if schema != nil && schema.Types.Get(name) != nil {
 		return name
 	}
-	namespaced := core.NamespaceObject(name, c.module.name, c.module.originalName)
+	namespaced := c.module.namer.NamespaceObject(name, c.module.name, c.module.originalName)
 	if schema == nil || schema.Types.Get(namespaced) != nil {
 		return namespaced
 	}

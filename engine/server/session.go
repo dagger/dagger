@@ -1608,11 +1608,13 @@ func (srv *Server) initializeClientRuntime(
 		client.mod = modInst
 
 		// A module client that didn't declare its version gets the core view
-		// of the module it calls from: its engineVersion, capped at the
-		// engine's view.
+		// of the module it calls from: the view of the engine version it
+		// declares, capped at the engine's own
+		// (engine.ModuleAPIViewVersion), whose naming rules the typedefs
+		// its runtime declares are named by (see
+		// core.ModuleSource.NamingView).
 		if !client.clientMetadata.ClientVersionDeclared {
-			engineVersion := client.mod.Self().Source.Value.Self().EngineVersion
-			coreView = call.View(engine.ModuleAPIViewVersion(engineVersion))
+			coreView = client.mod.Self().Source.Value.Self().NamingView()
 			client.dag.View = coreView
 			coreMod = coreSchemaBase.CoreMod(coreView)
 		}

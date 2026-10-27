@@ -25,7 +25,7 @@ const formatIdentifiersDoNotCache = "Formatting is pure and much cheaper than ca
 // codegen gates on Query.formatIdentifiers being in the schema it generates
 // from, so this is also where codegen starts formatting names through the
 // engine: it must be exactly the views on which the engine names modules by
-// engine/naming (core.IdentifierNamingVersion), so both use the same view.
+// engine/naming (core.NamerForView), so both use the same view.
 func (s identifierSchema) Install(srv *dagql.Server) {
 	view := core.IdentifierNamingView
 
