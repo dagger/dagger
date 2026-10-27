@@ -72,9 +72,7 @@ type Store struct {
 
 func NewStore(t testing.TB) *Store {
 	t.Helper()
-	return newStore(t, t.TempDir(), "native", func(root string) (ctdsnapshots.Snapshotter, error) {
-		return native.NewSnapshotter(root)
-	})
+	return newStore(t, t.TempDir(), "native", native.NewSnapshotter)
 }
 
 func newStore(t testing.TB, root, snapshotter string, newSnapshotter func(root string) (ctdsnapshots.Snapshotter, error)) *Store {
