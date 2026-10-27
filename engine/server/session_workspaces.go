@@ -1440,7 +1440,9 @@ func filterPendingWorkspaceModulesForRootFields(mods []pendingModule, served map
 
 	servedFields := make(map[string]struct{}, len(served))
 	for name := range served {
-		servedFields[strcase.ToLowerCamel(name)] = struct{}{}
+		for _, field := range core.FieldNameCandidates(name) {
+			servedFields[field] = struct{}{}
+		}
 	}
 
 	selected := make([]bool, len(mods))
@@ -1454,7 +1456,7 @@ func filterPendingWorkspaceModulesForRootFields(mods []pendingModule, served map
 		}
 		matched := false
 		for i, mod := range mods {
-			if pendingModuleRootFieldName(mod) == field {
+			if slices.Contains(pendingModuleRootFieldNames(mod), field) {
 				selected[i] = true
 				matched = true
 			}
@@ -1598,11 +1600,13 @@ func pendingWorkspaceMainIndexes(mods []pendingModule) []int {
 	return indexes
 }
 
-func pendingModuleRootFieldName(mod pendingModule) string {
+func pendingModuleRootFieldNames(mod pendingModule) []string {
+	// The constructor is named by the module's rules, which aren't known
+	// before it loads: accept the spelling of either.
 	if mod.Name != "" {
-		return strcase.ToLowerCamel(mod.Name)
+		return core.FieldNameCandidates(mod.Name)
 	}
-	return strcase.ToLowerCamel(moduleProgressName(mod))
+	return core.FieldNameCandidates(moduleProgressName(mod))
 }
 
 func isCoreRootField(field string) bool {
