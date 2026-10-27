@@ -47,6 +47,9 @@ type Ref interface {
 type ImmutableRef interface {
 	Ref
 	ExportChain(ctx context.Context, cfg config.RefConfig) (*ExportChain, error)
+	// ExportFileChain exports the file at filePath in the ref's filesystem
+	// as a chain of its own content.
+	ExportFileChain(ctx context.Context, cfg config.RefConfig, filePath string) (*ExportChain, error)
 }
 
 type MutableRef interface {
