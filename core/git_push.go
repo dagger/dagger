@@ -46,7 +46,7 @@ func (opts GitPushOpts) Ref(source *gitutil.Ref) (string, error) {
 		branch = "refs/heads/" + branch
 	}
 	if opts.ExpectedRemoteSHA != "" && !gitPushSHA(opts.ExpectedRemoteSHA) {
-		return "", fmt.Errorf("expectedRemoteSHA must be a full lowercase object ID, or empty for a non-force push")
+		return "", fmt.Errorf("the expected remote SHA must be a full lowercase object ID, or empty for a non-force push")
 	}
 	return branch, nil
 }
