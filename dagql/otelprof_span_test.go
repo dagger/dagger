@@ -276,3 +276,50 @@ func TestCallOpCoversTelemetryCompletion(t *testing.T) {
 	inner := ops[wcprof.OpKindCall.String()][0]
 	require.Less(t, inner.EndNS-inner.StartNS, int64(hold), "the nested call took its parent's completion")
 }
+
+// TestCallOpStartsWithItsSpan: a call's native op starts where the server's
+// telemetry started its span, so the work between them (the telemetry's
+// preparation, here a hold) is the call's, as its span already has it.
+func TestCallOpStartsWithItsSpan(t *testing.T) {
+	const hold = 5 * time.Millisecond
+	sr, tr := newLazySkipRecorder()
+	wcprof.EnsureRecorder()
+	c, err := NewCache(t.Context(), "", nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, c.Close(context.Background())) })
+	srv := newDagqlServerForTest(t, &persistCodecRoot{})
+	Fields[*persistCodecRoot]{
+		Func("started", func(context.Context, *persistCodecRoot, struct{}) (Int, error) { return NewInt(1), nil }),
+	}.Install(srv)
+	srv.Around(func(ctx context.Context, req *CallRequest) (context.Context, func(AnyResult, bool, *error)) {
+		ctx, span := tr.Start(ctx, "Query.started")
+		time.Sleep(hold)
+		return ctx, func(AnyResult, bool, *error) { span.End() }
+	})
+	ctx := persistDecodeOwnerContext(t, c, srv, "start-session")
+	ctx, testOp := wcprof.BeginOp(wcprof.ContextWithProfiling(ctx), wcprof.OpKindInternal, "test", wcprof.OpOpts{})
+	_, err = srv.root.Select(ctx, srv, Selector{Field: "started"})
+	require.NoError(t, err)
+	testOp.End(wcprof.OutcomeOK)
+
+	var span sdktrace.ReadOnlySpan
+	for _, s := range sr.Ended() {
+		if s.Name() == "Query.started" {
+			span = s
+		}
+	}
+	require.NotNil(t, span)
+	var buf bytes.Buffer
+	require.NoError(t, wcprof.Active().WriteDump(&buf, false))
+	header, events, err := wcprof.ReadDump(&buf)
+	require.NoError(t, err)
+	for _, ev := range events {
+		if ev.Type == "op" && ev.OpID > testOp.ID() && ev.OpKind == wcprof.OpKindCall.String() && header.Strings[ev.ClassID] == "Query.started" {
+			// the op's start is the span's on the recorder's monotonic clock,
+			// so read back on the wall clock it can be nanoseconds apart
+			require.InDelta(t, span.StartTime().UnixNano(), header.EpochUnixNano+ev.StartNS, float64(time.Microsecond), "the call op starts apart from its span")
+			return
+		}
+	}
+	t.Fatal("no call op")
+}
