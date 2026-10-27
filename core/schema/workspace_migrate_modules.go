@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
@@ -90,7 +91,11 @@ func (s *workspaceSchema) stageWorkspaceMigration(ctx context.Context, ws *core.
 			}
 			return stage, nil
 		}
-		stage.base, err = s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, true)
+		stage.base, err = s.workspaceMigrationRootfs(ctx, ws)
+		if err != nil {
+			return nil, err
+		}
+		stage.base, err = s.workspaceMigrationResolveFiles(ctx, ws, stage.base, stage.configPath)
 		if err != nil {
 			return nil, err
 		}
@@ -115,6 +120,14 @@ func (s *workspaceSchema) stageWorkspaceMigration(ctx context.Context, ws *core.
 		}
 	}
 	if err := stage.ensureConfig(ctx, ws.Cwd, configs); err != nil {
+		return nil, err
+	}
+	stage.base, err = s.workspaceMigrationResolveFiles(ctx, ws, stage.base, stage.configPath)
+	if err != nil {
+		return nil, err
+	}
+	stage.staged, err = s.workspaceMigrationResolveFiles(ctx, ws, stage.staged, stage.configPath)
+	if err != nil {
 		return nil, err
 	}
 	if err := stage.resolveSDKs(ctx, configs); err != nil {
@@ -177,7 +190,7 @@ func (s *workspaceSchema) migrateModule(ctx context.Context, ws *core.Workspace,
 	if ws.HostPath() == "" {
 		return nil, fmt.Errorf("module migration is local-only")
 	}
-	base, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, true)
+	base, err := s.workspaceMigrationRootfs(ctx, ws)
 	if err != nil {
 		return nil, err
 	}
@@ -204,9 +217,11 @@ type moduleMigrationPlanner struct {
 	active        map[string]bool
 	warnings      []string
 	readFile      func(string) ([]byte, error)
+	resolveFiles  func(dagql.ObjectResult[*core.Directory], ...string) (dagql.ObjectResult[*core.Directory], error)
 	writes        map[string][]byte
 	removed       map[string]bool
 	cleanupModule func(string, *modules.ModuleConfig) error
+	checkModule   func(string) error
 	cleanups      []workspaceMigrationGitignoreCleanup
 }
 
@@ -215,7 +230,20 @@ func (s *workspaceSchema) newModuleMigrationPlanner(ctx context.Context, ws *cor
 		configPath: configPath,
 		files:      map[string]bool{}, visited: map[string]bool{}, active: map[string]bool{},
 		writes: map[string][]byte{}, removed: map[string]bool{},
-		readFile: func(file string) ([]byte, error) { return core.DirectoryReadFile(ctx, staged, file) },
+		readFile: func(file string) ([]byte, error) { return s.workspaceMigrationReadFile(ctx, ws, staged, file) },
+		resolveFiles: func(root dagql.ObjectResult[*core.Directory], files ...string) (dagql.ObjectResult[*core.Directory], error) {
+			return s.workspaceMigrationResolveFiles(ctx, ws, root, files...)
+		},
+	}
+
+	if ws.ClientLocalBase() {
+		planner.checkModule = func(dir string) error {
+			rules, err := s.workspaceMigrationResolveFiles(ctx, ws, staged, moduleIgnoreFiles(dir)...)
+			if err != nil {
+				return err
+			}
+			return rejectGitignoredModulePaths(ctx, rules, dir)
+		}
 	}
 	if configPath != "" {
 		data, err := planner.readFile(configPath)
@@ -242,8 +270,24 @@ func (s *workspaceSchema) newModuleMigrationPlanner(ctx context.Context, ws *cor
 			}
 		}
 	}
+
+	cleanupRoot := sync.OnceValues(func() (dagql.ObjectResult[*core.Directory], error) {
+		return s.workspaceMigrationCleanupRootfs(ctx, ws, staged)
+	})
 	planner.cleanupModule = func(dir string, cfg *modules.ModuleConfig) error {
 		if cfg.SDK == nil {
+			return nil
+		}
+
+		cleanupPath, err := workspaceMigrationGitignorePath(dir, cfg.Source)
+		if err != nil {
+			return err
+		}
+		exists, err := workspaceMigrationPathExists(ctx, staged, cleanupPath)
+		if err != nil {
+			return err
+		}
+		if !exists {
 			return nil
 		}
 		workspaceCtx, err := s.withWorkspaceClientContext(ctx, ws)
@@ -254,8 +298,13 @@ func (s *workspaceSchema) newModuleMigrationPlanner(ctx context.Context, ws *cor
 		if err != nil {
 			return err
 		}
+		merged, err := cleanupRoot()
+		if err != nil {
+			return err
+		}
+
 		projectRoot := filepath.Join(ws.HostPath(), filepath.FromSlash(dir))
-		cleanup, err := s.workspaceMigrationGitignoreCleanup(workspaceCtx, srv, ws, staged, &workspace.CompatWorkspace{
+		cleanup, err := s.workspaceMigrationGitignoreCleanup(workspaceCtx, srv, ws, merged, &workspace.CompatWorkspace{
 			Config: cfg, ProjectRoot: projectRoot,
 			ConfigPath: filepath.Join(projectRoot, workspace.LegacyModuleConfigFileName),
 		})
@@ -300,7 +349,6 @@ func (p *moduleMigrationPlanner) requiredModules(convertedModules []string) erro
 }
 
 func (p *moduleMigrationPlanner) result(ctx context.Context, base, staged dagql.ObjectResult[*core.Directory]) (*core.WorkspaceMigration, error) {
-	moduleBase := staged
 	if p.config != nil {
 		updated, err := migrationConfigBytes(p.configData, p.config)
 		if err != nil {
@@ -316,6 +364,21 @@ func (p *moduleMigrationPlanner) result(ctx context.Context, base, staged dagql.
 	}
 	sort.Strings(paths)
 	var err error
+	if p.resolveFiles != nil {
+		selected := append([]string(nil), paths...)
+		for _, cleanup := range p.cleanups {
+			selected = append(selected, cleanup.Path)
+		}
+		base, err = p.resolveFiles(base, selected...)
+		if err != nil {
+			return nil, err
+		}
+		staged, err = p.resolveFiles(staged, selected...)
+		if err != nil {
+			return nil, err
+		}
+	}
+	moduleBase := staged
 	for _, file := range paths {
 		staged, err = withWorkspaceMigrationFile(ctx, staged, file, p.writes[file], "module migration configuration")
 		if err != nil {
@@ -523,6 +586,9 @@ func (p *moduleMigrationPlanner) module(dir string, explicit, followDependencies
 	if err != nil {
 		return fmt.Errorf("read %s: %w", readPath, err)
 	}
+	if err := p.checkModulePaths(dir, cfg.Source); err != nil {
+		return err
+	}
 	var plan *workspace.ModuleMigrationPlan
 	if legacy {
 		plan, err = workspace.PlanModuleMigration(cfg, false)
@@ -554,6 +620,19 @@ func (p *moduleMigrationPlanner) module(dir string, explicit, followDependencies
 		p.removed[legacyPath] = true
 		delete(p.files, legacyPath)
 		p.files[nativePath] = true
+	}
+	return nil
+}
+
+func (p *moduleMigrationPlanner) checkModulePaths(dir, source string) error {
+	if p.checkModule == nil {
+		return nil
+	}
+	if err := p.checkModule(dir); err != nil {
+		return err
+	}
+	if source != "" {
+		return p.checkModule(path.Join(dir, source))
 	}
 	return nil
 }

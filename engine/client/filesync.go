@@ -193,13 +193,18 @@ func (s FilesyncSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error 
 			},
 		})
 		if opts.UseGitIgnore {
-			filteredFS, err = fsxutil.NewGitIgnoreMarkedFS(filteredFS, fsxutil.NewGitIgnoreMatcher(fs))
+			filteredFS, err = fsxutil.NewGitIgnoreMarkedFS(filteredFS, fsxutil.NewGitIgnoreMatcherWithOverrides(fs, opts.GitIgnoreOverrides))
 			if err != nil {
 				return err
 			}
 		}
 		if err != nil {
 			return err
+		}
+		if len(opts.GitIgnoreOverrides) > 0 {
+			if err := stream.SendHeader(metadata.Pairs(engine.GitIgnoreOverridesHeader, "true")); err != nil {
+				return err
+			}
 		}
 		return fsutil.Send(stream.Context(), stream, filteredFS, nil)
 	}
@@ -443,6 +448,15 @@ func (s FilesyncSourceProxy) DiffCopy(stream filesync.FileSync_DiffCopyServer) e
 	clientStream, err := s.Client.DiffCopy(grpcutil.IncomingToOutgoingContext(ctx))
 	if err != nil {
 		return fmt.Errorf("create client filesync source diffcopy stream: %w", err)
+	}
+
+	// Forward capabilities before the first packet commits response headers.
+	headers, err := clientStream.Header()
+	if err != nil {
+		return fmt.Errorf("read client filesync source headers: %w", err)
+	}
+	if err := stream.SendHeader(headers); err != nil {
+		return fmt.Errorf("forward client filesync source headers: %w", err)
 	}
 
 	return grpcutil.ProxyStream[anypb.Any](ctx, clientStream, stream)

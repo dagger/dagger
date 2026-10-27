@@ -248,7 +248,7 @@ func (s *workspaceSchema) workspaceOverlayContextSource(
 	srv *dagql.Server,
 	parent dagql.ObjectResult[*core.Workspace],
 ) (none dagql.Optional[core.ModuleSourceID], _ error) {
-	root, err := s.workspaceOverlayRootfs(ctx, parent.Self())
+	root, err := s.resolveRootfs(ctx, parent.Self(), ".", core.CopyFilter{}, false)
 	if err != nil {
 		return none, err
 	}

@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -921,19 +922,17 @@ func (s *workspaceSchema) workspaceReadPathExists(
 	ws *core.Workspace,
 	resolvedPath string,
 ) (bool, error) {
-	rp := filepath.ToSlash(resolvedPath)
-	// Overlay edits can create paths that exist in no base source; host-backed
-	// overlays track them as touched paths (tree-backed overlays already fold
-	// edits into the source directory checked below).
-	if overlay, ok := ws.Source().(*core.WorkspaceSourceOverlay); ok {
-		for _, touched := range overlay.TouchedPaths {
-			tp := filepath.ToSlash(touched)
-			if tp == rp || strings.HasPrefix(tp, rp+"/") || rp == "." {
-				return true, nil
-			}
+	rp := path.Clean(filepath.ToSlash(resolvedPath))
+	// The delta contains created paths and parents of edited children. A
+	// touched path (or its descendants) is authoritative even when absent:
+	// deleting it must not expose the old host path again.
+	if delta, ok := ws.OverlayDeltaRoot(); ok {
+		_, exists, err := core.StatFSExists(ctx, &core.DirectoryStatFS{Dir: delta}, rp)
+		if err != nil || exists || ws.OverlayPathTouched(rp) {
+			return exists, err
 		}
 	}
-	return s.workspaceBasePathExists(ctx, ws, resolvedPath)
+	return s.workspaceBasePathExists(ctx, ws, rp)
 }
 
 // workspaceBasePathExists excludes host overlay edits: a path created only
@@ -1247,6 +1246,17 @@ func (s *workspaceSchema) resolveHostOverlayRootfs(
 		args = append(args, dagql.NamedInput{Name: "exclude", Value: arr})
 	}
 	if gitignore {
+		overrides, err := s.workspaceGitignoreOverrides(ctx, ws, changes.Self())
+		if err != nil {
+			return inst, err
+		}
+		if len(overrides) > 0 {
+			data, err := json.Marshal(overrides)
+			if err != nil {
+				return inst, err
+			}
+			args = append(args, dagql.NamedInput{Name: "gitIgnoreOverrides", Value: dagql.NewString(string(data))})
+		}
 		args = append(args,
 			dagql.NamedInput{Name: "gitignore", Value: dagql.NewBoolean(true)},
 			dagql.NamedInput{Name: "gitIgnoreRoot", Value: dagql.NewString(ws.HostPath())},
@@ -1274,10 +1284,34 @@ func (s *workspaceSchema) resolveHostOverlayRootfs(
 
 	// Descend and re-apply the filter: the changeset applies at the workspace
 	// root, so merged also contains touched paths outside the requested scope;
-	// the descent plus filter trims them back out. Gitignore was already applied
-	// host-side — the sparse tree lacks the .gitignore context to re-evaluate it,
-	// and overlay edits win even for ignored paths.
+	// the descent plus filter trims them back out. The client applies effective
+	// ignore rules before transfer; explicitly staged overlay files still win.
 	return s.resolveRootfsFromDirectory(ctx, srv, ws, merged, resolvedPath, filter, false)
+}
+
+func (s *workspaceSchema) workspaceGitignoreOverrides(ctx context.Context, ws *core.Workspace, changes *core.Changeset) (map[string]string, error) {
+	paths, err := changes.ComputePaths(ctx)
+	if err != nil {
+		return nil, err
+	}
+	overrides := map[string]string{}
+	for _, removed := range paths.AllRemoved {
+		if path.Base(removed) == ".gitignore" {
+			overrides[removed] = ""
+		}
+	}
+	for _, changed := range slices.Concat(paths.Added, paths.Modified) {
+		if path.Base(changed) != ".gitignore" {
+			continue
+		}
+		data, err := s.workspaceReadMetadataFile(ctx, ws, changed)
+		if err != nil {
+			return nil, err
+		}
+		overrides[changed] = string(data)
+	}
+
+	return overrides, nil
 }
 
 // rerootPatterns prefixes filter patterns (relative to a resolved workspace
@@ -1318,12 +1352,19 @@ func (s *workspaceSchema) workspaceOverlayRootfs(ctx context.Context, ws *core.W
 	if ws.HostPath() == "" {
 		return rootfs, fmt.Errorf("workspace has no root filesystem")
 	}
-	// Whole-tree materialization: legitimate for callers that need the full
-	// workspace as a Directory (module-source loading, install flows). For a
-	// host overlay this resolves as full host + changeset via the overlay
-	// branch in resolveRootfs; edits and diffs never come through here (see
-	// overlayEdit, which keeps the changeset delta-native).
+	// Whole-tree unfiltered materialization. Callers that can reach a host-backed
+	// workspace must intentionally require ignored content; engine-owned broad
+	// reads should normally pass gitignore=true to resolveRootfs instead. For a
+	// host overlay this resolves as full host + changeset via the overlay branch
+	// in resolveRootfs; edits and diffs never come through here (see overlayEdit,
+	// which keeps the changeset delta-native).
 	return s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, false)
+}
+
+// filteredWorkspaceRootfs applies upload ignore rules only to host workspaces.
+// Existing value and Git trees remain authoritative.
+func (s *workspaceSchema) filteredWorkspaceRootfs(ctx context.Context, ws *core.Workspace) (dagql.ObjectResult[*core.Directory], error) {
+	return s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, ws.ClientLocalBase())
 }
 
 func requireLocalWorkspace(ws *core.Workspace, operation string) error {
