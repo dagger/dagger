@@ -14,10 +14,10 @@ import (
 // largest real-world corpus of canonical names. Type names are canonical as
 // PascalCase with acronyms in capitals (JSONValue). Field and argument names
 // are canonical as camelCase with acronyms written like words (filterUri,
-// asJson), the convention modules get from v1.0.0-beta.21 on; every one is
-// canonical with the Initial dictionary except these, which spell acronyms in
-// capitals and predate that convention. They're due to be renamed in a
-// separate change; until then this list is the exceptions.
+// asJson), the convention modules get from engine.IdentifierCasingVersion on.
+// Every one is canonical with the Initial dictionary except these, which spell
+// acronyms in capitals and predate that convention. A separate change renames
+// them; until then this list is the exceptions.
 var nonCanonicalCoreNames = map[string]bool{
 	"asJSON":                        true,
 	"clientSchemaIntrospectionJSON": true,
