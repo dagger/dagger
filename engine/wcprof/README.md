@@ -105,7 +105,14 @@ dropped and counted in the dump header's `dropped_events`.
   the server's stop ends, and when each telemetry drain after it starts and
   ends (`engine.exit.<step>`). Each write replaces the file atomically and is
   itself a `wcprof.stopDump` op, so an engine killed mid-stop leaves the last
-  complete dump, with the phase it was in as an open op.
+  complete dump, with the phase it was in as an open op. The write that
+  produced a dump is open in it too, as a `wcprof.stopDump` op, since it
+  snapshots the recorder before it ends. So after a fully drained stop, the
+  dump an engine leaves has that write as its only open op; a phase still
+  running when the stop gave up on it (its deadline passed) stays open
+  beside it. In a dump taken mid-stop, the work running at the snapshot is
+  open as well: the stop, its current phase, and any dump write waiting its
+  turn. An open op alone doesn't prove the work was cut off.
 
 Typical dev-engine workflow:
 
