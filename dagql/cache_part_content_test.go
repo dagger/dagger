@@ -922,6 +922,8 @@ type exhaustionFixture struct {
 	address   PersistedPartAddress
 	// logs captures the lines logged through ctx.
 	logs *offerLogs
+	// store is the cache's snapshot store.
+	store *testutil.Store
 }
 
 func newExhaustionFixture(t *testing.T, chains ...chainFixture) *exhaustionFixture {
@@ -929,7 +931,7 @@ func newExhaustionFixture(t *testing.T, chains ...chainFixture) *exhaustionFixtu
 	store := testutil.NewStore(t)
 	ctx, c, srv := transferTestCache(t)
 	c.snapshotManager = store.Manager
-	f := &exhaustionFixture{cache: c, srv: srv, transport: newContentTestTransport(), operation: new(renewalFallbackOperation), address: PersistedPartAddress{Part: "snapshot"}, logs: &offerLogs{}}
+	f := &exhaustionFixture{cache: c, srv: srv, transport: newContentTestTransport(), operation: new(renewalFallbackOperation), address: PersistedPartAddress{Part: "snapshot"}, logs: &offerLogs{}, store: store}
 	ctx = f.logs.into(ctx)
 	f.ctx = ctx
 	for _, chain := range chains {
