@@ -1,8 +1,3 @@
-Expected stdout:
-
-Check@xxh3:XXXXXXXXXXXXXXXX
-
-
 Expected stderr:
 
 CHECKS  ✘ 1 failed
@@ -31,5 +26,6 @@ CHECKS  ✘ 1 failed
 RUN LOCALLY
   dagger check "testSummary"
 
+Error: nested test failed
 
 Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1
