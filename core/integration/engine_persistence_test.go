@@ -1631,6 +1631,34 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		require.Contains(t, out, "included-ignore")
 	})
 
+	t.Run("passing check result survives restart", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "persist-check-result-state-" + rand.Text()
+		nonce := rand.Text()
+		checkModule := func(engineClient *dagger.Client) *core.Container {
+			return core.NewQuery(engineClient).Container().From(alpineImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, engineClient)).
+				WithDirectory("/work", core.NewQuery(engineClient).Host().Directory(testDataPath(t, "checks", "check-caching"))).
+				WithWorkdir("/work").
+				WithNewFile("nonce.go", "package main\n\nconst nonce = \""+nonce+"\"\n")
+		}
+
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
+		checkCachingRun(ctx, t, checkModule(engineClientA), core.ReturnTypeSuccess, "check", "pass")
+		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
+		upstreamSvcA = nil
+		engineSvcA = nil
+		engineClientA = nil
+
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
+		modB := checkModule(engineClientB)
+		checkCachingRun(ctx, t, modB, core.ReturnTypeSuccess, "check", "pass")
+		require.Equal(t, "1", checkCachingRuns(ctx, t, modB, "--name", "pass"),
+			"a passing check whose inputs are unchanged must not run again after a restart")
+	})
+
 	t.Run("container withExec output on host mount survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		stateKey := "persist-container-host-mount-state-" + rand.Text()
