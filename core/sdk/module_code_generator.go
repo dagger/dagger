@@ -51,11 +51,11 @@ func (sdk *codeGeneratorModule) Codegen(
 		Field: "codegen",
 		Args: []dagql.NamedInput{
 			{
-				Name:  "modSource",
+				Name:  sdk.mod.argName("modSource"),
 				Value: dagql.NewID[*core.ModuleSource](sourceID),
 			},
 			{
-				Name:  "introspectionJson",
+				Name:  sdk.mod.argName("introspectionJson"),
 				Value: dagql.NewID[*core.File](schemaJSONFileID),
 			},
 		},
