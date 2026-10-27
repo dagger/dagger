@@ -7875,15 +7875,23 @@ type ImageLayerCompression string
 
 var ImageLayerCompressions = dagql.NewEnum[ImageLayerCompression]()
 
+// ImageLayerCompression and ImageMediaTypes members are SCREAMING_SNAKE_CASE
+// (GZIP, OCI, ...), the spelling of their values, which every view since
+// enumView has. Their PascalCase spellings (Gzip, OCIMediaTypes, ...) are
+// only in views before engine.IdentifierCasingVersion, where they are still
+// listed as the members, and the SCREAMING_SNAKE_CASE spellings as their
+// aliases, as before the values were renamed (AliasViewPrimary). Either
+// spelling decodes to the same value in every view, so a value flowing out
+// to a caller or module is one every view since enumView has.
 var (
-	CompressionGzip         = ImageLayerCompressions.Register("Gzip")
-	_                       = ImageLayerCompressions.AliasView("GZIP", "Gzip", enumView)
-	CompressionZstd         = ImageLayerCompressions.Register("Zstd")
-	_                       = ImageLayerCompressions.AliasView("ZSTD", "Zstd", enumView)
-	CompressionEStarGZ      = ImageLayerCompressions.Register("EStarGZ")
-	_                       = ImageLayerCompressions.AliasView("ESTARGZ", "EStarGZ", enumView)
-	CompressionUncompressed = ImageLayerCompressions.Register("Uncompressed")
-	_                       = ImageLayerCompressions.AliasView("UNCOMPRESSED", "Uncompressed", enumView)
+	CompressionGzip         = ImageLayerCompressions.RegisterView("GZIP", enumView)
+	_                       = ImageLayerCompressions.AliasViewPrimary("Gzip", CompressionGzip, LegacyNamesView)
+	CompressionZstd         = ImageLayerCompressions.RegisterView("ZSTD", enumView)
+	_                       = ImageLayerCompressions.AliasViewPrimary("Zstd", CompressionZstd, LegacyNamesView)
+	CompressionEStarGZ      = ImageLayerCompressions.RegisterView("ESTARGZ", enumView)
+	_                       = ImageLayerCompressions.AliasViewPrimary("EStarGZ", CompressionEStarGZ, LegacyNamesView)
+	CompressionUncompressed = ImageLayerCompressions.RegisterView("UNCOMPRESSED", enumView)
+	_                       = ImageLayerCompressions.AliasViewPrimary("Uncompressed", CompressionUncompressed, LegacyNamesView)
 )
 
 func (proto ImageLayerCompression) Type() *ast.Type {
@@ -7905,15 +7913,44 @@ func (proto ImageLayerCompression) ToLiteral() call.Literal {
 	return ImageLayerCompressions.Literal(proto)
 }
 
+func (proto ImageLayerCompression) ViewLiteral(view call.View) call.Literal {
+	return ImageLayerCompressions.ViewLiteral(proto, view)
+}
+
+// UnmarshalJSON decodes either spelling to the value, so values recorded
+// with the old spelling (Gzip, in persisted results) still compare equal to
+// the members.
+func (proto *ImageLayerCompression) UnmarshalJSON(data []byte) error {
+	return unmarshalEnumJSON(data, ImageLayerCompressions, proto)
+}
+
+// unmarshalEnumJSON decodes a JSON string to the value of the member it
+// spells in enum, or as is if it spells none.
+func unmarshalEnumJSON[T interface {
+	dagql.Input
+	~string
+}](data []byte, enum *dagql.EnumValues[T], dest *T) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	if val, err := enum.Lookup(s); err == nil {
+		*dest = val
+		return nil
+	}
+	*dest = T(s)
+	return nil
+}
+
 type ImageMediaTypes string
 
 var ImageMediaTypesEnum = dagql.NewEnum[ImageMediaTypes]()
 
 var (
-	OCIMediaTypes    = ImageMediaTypesEnum.Register("OCIMediaTypes")
-	_                = ImageMediaTypesEnum.AliasView("OCI", "OCIMediaTypes", enumView)
-	DockerMediaTypes = ImageMediaTypesEnum.Register("DockerMediaTypes")
-	_                = ImageMediaTypesEnum.AliasView("DOCKER", "DockerMediaTypes", enumView)
+	OCIMediaTypes    = ImageMediaTypesEnum.RegisterView("OCI", enumView)
+	_                = ImageMediaTypesEnum.AliasViewPrimary("OCIMediaTypes", OCIMediaTypes, LegacyNamesView)
+	DockerMediaTypes = ImageMediaTypesEnum.RegisterView("DOCKER", enumView)
+	_                = ImageMediaTypesEnum.AliasViewPrimary("DockerMediaTypes", DockerMediaTypes, LegacyNamesView)
 )
 
 func (proto ImageMediaTypes) Type() *ast.Type {
@@ -7933,6 +7970,17 @@ func (proto ImageMediaTypes) Decoder() dagql.InputDecoder {
 
 func (proto ImageMediaTypes) ToLiteral() call.Literal {
 	return ImageMediaTypesEnum.Literal(proto)
+}
+
+func (proto ImageMediaTypes) ViewLiteral(view call.View) call.Literal {
+	return ImageMediaTypesEnum.ViewLiteral(proto, view)
+}
+
+// UnmarshalJSON decodes either spelling to the value, so values recorded
+// with the old spelling (OCIMediaTypes, in persisted results) still compare
+// equal to the members.
+func (proto *ImageMediaTypes) UnmarshalJSON(data []byte) error {
+	return unmarshalEnumJSON(data, ImageMediaTypesEnum, proto)
 }
 
 type ReturnTypes string
