@@ -10,7 +10,7 @@ import (
 )
 
 // composeProjectionFixture mirrors the docker compose module: up on each
-// service item, keyed by project and service, and up on the services batch,
+// service item, keyed by project and service, and up on the services collection helper,
 // keyed by project only.
 func composeProjectionFixture() (*Artifacts, artifactCollectionKeyFunc) {
 	project := &ArtifactDimension{Identifier: "/docker/compose/projects", Name: "docker-compose-project", QualifiedName: "docker-compose-projects-project"}
@@ -27,8 +27,8 @@ func composeProjectionFixture() (*Artifacts, artifactCollectionKeyFunc) {
 		},
 		{
 			ModuleName: "docker", TypeName: "Service", DimensionKeys: []*ArtifactDimensionKey{},
-			Path: []string{"docker", "compose", "projects", "services", "batch", "up"},
-			Node: &ModTreeNode{Name: "up", Parent: &ModTreeNode{Name: "batch", Parent: services}},
+			Path: []string{"docker", "compose", "projects", "services", "all", "up"},
+			Node: &ModTreeNode{Name: "up", Parent: &ModTreeNode{Name: "all", Parent: services}},
 		},
 	}}
 	all.AllDimensions = all.DimensionDefinitions()
@@ -60,11 +60,11 @@ func TestArtifactProjection(t *testing.T) {
 	}
 	require.Equal(t, []string{
 		"dag://?service=up&docker-compose-project=e2e&docker-compose-service=web",
-		"dag://?service=batch/up&docker-compose-project=e2e",
+		"dag://?service=all/up&docker-compose-project=e2e",
 	}, projected)
 	require.Equal(t, []string{
 		"dag://?service=docker/compose/projects/services/up&docker-compose-project=e2e&docker-compose-service=web",
-		"dag://?service=docker/compose/projects/services/batch/up&docker-compose-project=e2e",
+		"dag://?service=docker/compose/projects/services/all/up&docker-compose-project=e2e",
 	}, full)
 	// An address without keys keeps the full path, its stable name.
 	uri, err := all.Entries[0].URI(ArtifactURIOpts{})
@@ -87,20 +87,23 @@ func TestArtifactProjection(t *testing.T) {
 	}
 }
 
-// The item's short type key names it only with its service key. Without it,
-// the key matches the batch path too, which is an error, never their union.
-func TestArtifactAmbiguousTypeKey(t *testing.T) {
+// A suffix selects every matching path. More specific keys retain exact
+// selection, and a service dimension excludes the collection-level helper.
+func TestArtifactTypeKeySuffixUnion(t *testing.T) {
 	all, keys := composeProjectionFixture()
 	addr, err := dagaddress.Parse("dag://?service=up&docker-compose-project=e2e")
 	require.NoError(t, err)
 	selected, err := all.FilterURI(addr)
 	require.NoError(t, err)
-	_, err = selected.expand(t.Context(), keys)
-	require.ErrorContains(t, err, "service=up is ambiguous: it matches docker/compose/projects/services/batch/up, docker/compose/projects/services/up")
+	expanded, err := selected.expand(t.Context(), keys)
+	require.NoError(t, err)
+	require.Len(t, expanded.Entries, 2)
+	require.Equal(t, []string{"docker", "compose", "projects", "services", "up"}, expanded.Entries[0].Path)
+	require.Equal(t, []string{"docker", "compose", "projects", "services", "all", "up"}, expanded.Entries[1].Path)
 
 	for address, want := range map[string]string{
 		"dag://?service=services/up&docker-compose-project=e2e":                         "docker/compose/projects/services/up",
-		"dag://?service=batch/up&docker-compose-project=e2e":                            "docker/compose/projects/services/batch/up",
+		"dag://?service=all/up&docker-compose-project=e2e":                              "docker/compose/projects/services/all/up",
 		"dag://?service=docker/compose/projects/services/up&docker-compose-project=e2e": "docker/compose/projects/services/up",
 	} {
 		addr, err := dagaddress.Parse(address)
@@ -114,13 +117,12 @@ func TestArtifactAmbiguousTypeKey(t *testing.T) {
 	}
 }
 
-// A batch that runs its whole collection keys fewer dimensions, so its short
-// type key is chosen among more paths.
-func TestArtifactBatchProjection(t *testing.T) {
-	all, keys := batchNameFixture()
+// An item check keeps its test dimension, so its short type key remains
+// distinct from a parent-level check through that dimension.
+func TestArtifactItemProjection(t *testing.T) {
+	all, keys := artifactItemNameFixture()
 	check := all.Entries[0]
 	check.ModuleName, check.TypeName = "app", "Check"
-	// Another check keyed by module only shares the batch's dimensions.
 	module := check.Node.Parent.Parent.Parent
 	all.Entries = append(all.Entries, &Artifact{
 		ModuleName: "app", TypeName: "Check", Path: []string{"modules", "check"}, DimensionKeys: []*ArtifactDimensionKey{},
@@ -129,21 +131,17 @@ func TestArtifactBatchProjection(t *testing.T) {
 	all.AllDimensions = all.DimensionDefinitions()
 	all.AllPaths = all.PathIndex()
 	all.NameEntries()
-	require.Equal(t, "check", check.TypeKeyName)
-
 	tests, err := all.FilterPath([]string{"modules", "tests", "check"}).expand(t.Context(), keys)
 	require.NoError(t, err)
-	batches, err := tests.Batch(t.Context())
-	require.NoError(t, err)
-	require.Len(t, batches, 2)
-	for _, batch := range batches {
-		name, err := batch.URI(ArtifactURIOpts{DimensionKeys: true})
+	require.Len(t, tests.Entries, 4)
+	for _, item := range tests.Entries {
+		name, err := item.URI(ArtifactURIOpts{DimensionKeys: true})
 		require.NoError(t, err)
 		addr, err := dagaddress.Parse(name)
 		require.NoError(t, err)
 		typeKey, ok := addr.TypeKey("check")
 		require.True(t, ok, name)
-		require.Equal(t, "tests/check", typeKey.Key, name)
-		require.Len(t, addr.Query, 2, "one parent key, no item keys: %s", name)
+		require.Equal(t, "check", typeKey.Key, name)
+		require.Len(t, addr.Query, 3, "type, parent and item keys: %s", name)
 	}
 }

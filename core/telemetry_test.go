@@ -66,6 +66,10 @@ func (ms *mockServer) RegisterNestedClientTransport(context.Context, *engine.Cli
 func (ms *mockServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.NestedClientTransport, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed) {
 }
 
+func (*mockServer) SharedCloudArtifactClient(context.Context, string) (*engineclient.Client, error) {
+	panic("unexpected SharedCloudArtifactClient")
+}
+
 func (ms *mockServer) ServeModule(ctx context.Context, mod dagql.ObjectResult[*Module], includeDependencies bool, main bool) error {
 	return nil
 }

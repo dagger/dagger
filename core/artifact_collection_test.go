@@ -9,14 +9,22 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/core/dagaddress"
+	"github.com/dagger/dagger/dagql"
 	"github.com/stretchr/testify/require"
 )
 
-func collectionArtifactFixture() *Artifacts {
+func collectionArtifactFixture(t *testing.T) *Artifacts {
+	t.Helper()
+	// Filtered expansion records the owning module and schema path. These
+	// detached values supply metadata only; every item key below is bound.
+	module, err := dagql.NewResultForCall(&Module{NameField: "app"}, moduleObjectTestSyntheticCall("fixtureModule", &Module{}))
+	require.NoError(t, err)
+	typ, err := dagql.NewResultForCall((&TypeDef{}).WithKind(TypeDefKindString), moduleObjectTestSyntheticCall("fixtureType", &TypeDef{}))
+	require.NoError(t, err)
 	artifacts := &Artifacts{}
 	for _, field := range []string{"items", "other"} {
 		dim := &ArtifactDimension{Identifier: "app/" + field, Name: "item", QualifiedName: "app-" + field}
-		collection := &ModTreeNode{Name: field}
+		collection := &ModTreeNode{Name: field, Module: dagql.ObjectResult[*Module]{Result: module}, Type: dagql.ObjectResult[*TypeDef]{Result: typ}}
 		artifacts.Entries = append(artifacts.Entries, &Artifact{Path: []string{field}, Node: collection, TypeName: "Items"})
 		for _, key := range []string{"b", "a"} {
 			artifacts.Entries = append(artifacts.Entries, &Artifact{
@@ -201,7 +209,7 @@ func TestArtifactCollectionExpansionPrunesParents(t *testing.T) {
 }
 
 func TestArtifactCollectionDimensionBinding(t *testing.T) {
-	all := collectionArtifactFixture()
+	all := collectionArtifactFixture(t)
 	// A path filter does not narrow name resolution.
 	for _, selected := range []*Artifacts{all, all.FilterPath([]string{"items"})} {
 		_, err := selected.FilterDimensionKeys("item", []string{"a"}).BindDimensions()
@@ -233,7 +241,7 @@ func TestArtifactCollectionDimensionBinding(t *testing.T) {
 }
 
 func TestArtifactCollectionDimensionAlternatives(t *testing.T) {
-	all := collectionArtifactFixture()
+	all := collectionArtifactFixture(t)
 	selected := all.FilterDimensions([]string{"app-items", "app-other"})
 	expanded, err := selected.Expand(context.Background())
 	require.NoError(t, err)
@@ -249,7 +257,7 @@ func TestArtifactCollectionDimensionAlternatives(t *testing.T) {
 }
 
 func TestArtifactCollectionExactEndpoints(t *testing.T) {
-	all := collectionArtifactFixture()
+	all := collectionArtifactFixture(t)
 	collection, err := all.FilterPath([]string{"items"}).Expand(context.Background())
 	require.NoError(t, err)
 	require.Len(t, collection.Entries, 1)
@@ -271,7 +279,7 @@ func TestArtifactCollectionExactEndpoints(t *testing.T) {
 }
 
 func TestArtifactCollectionExclusions(t *testing.T) {
-	all, err := collectionArtifactFixture().FilterPattern("items*")
+	all, err := collectionArtifactFixture(t).FilterPattern("items*")
 	require.NoError(t, err)
 	exclusion, err := dagaddress.Parse("items?app-items=a")
 	require.NoError(t, err)
