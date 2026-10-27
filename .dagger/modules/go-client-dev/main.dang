@@ -12,6 +12,7 @@ type GoClientDev {
     "!cmd/codegen",
     "!engine/slog",
     "!engine/distconsts",
+    "!engine/naming",
     "!internal/fsutil",
   ])
 
