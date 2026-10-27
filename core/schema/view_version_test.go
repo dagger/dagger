@@ -15,6 +15,14 @@ import (
 	"github.com/dagger/dagger/engine"
 )
 
+// The identifier casing cut, and the view every v1.0.0 prerelease before it
+// shares: that of the last release before the cut. Tests derive them from the
+// engine's constants, so moving the cut needs no test edits.
+var (
+	cutVersion = engine.IdentifierCasingVersion
+	preCutView = engine.APIViewVersion("v1.0.0-0")
+)
+
 // Callers' declared versions, mapped to views as the engine does, against
 // view gates at the identifier casing cut and at boundaries set while views
 // dropped prereleases.
@@ -30,8 +38,9 @@ var viewGateCases = []struct {
 	{version: "v1.0.0-beta.7", v1: true},
 	{version: "v1.0.0-beta.19", v1: true},
 	{version: "v1.0.0-beta.20", v1: true},
-	{version: "v1.0.0-beta.21", post: true, v1: true},
-	{version: "v1.0.0-beta.22", post: true, v1: true},
+	{version: preCutView, v1: true},
+	{version: cutVersion, post: true, v1: true},
+	{version: "v1.0.0-rc.1", post: true, v1: true},
 	{version: "v1.0.0-dev-0123456789ab", post: true, v1: true},
 	{version: "v1.0.0", post: true, v1: true},
 }
@@ -110,13 +119,13 @@ func TestViewGateCacheIdentity(t *testing.T) {
 		return out
 	}
 
-	require.Equal(t, "v1.0.0-beta.20", selectIn("v1.0.0-beta.19", "v1"))
-	require.Equal(t, "v1.0.0-beta.20", selectIn("v1.0.0-beta.20", "v1"))
-	require.Equal(t, "v1.0.0-beta.21", selectIn("v1.0.0-beta.21", "v1"))
+	require.Equal(t, preCutView, selectIn("v1.0.0-beta.19", "v1"))
+	require.Equal(t, preCutView, selectIn(preCutView, "v1"))
+	require.Equal(t, cutVersion, selectIn(cutVersion, "v1"))
 	require.Equal(t, "v1.0.0", selectIn("v1.0.0", "v1"))
 
-	first := selectIn("v1.0.0-beta.20", "unscoped")
-	require.Equal(t, first, selectIn("v1.0.0-beta.21", "unscoped"),
+	first := selectIn(preCutView, "unscoped")
+	require.Equal(t, first, selectIn(cutVersion, "unscoped"),
 		"unscoped fields share one cached result across views")
 }
 
@@ -148,8 +157,8 @@ func TestPreCutCoreSchemaShared(t *testing.T) {
 		return dag.SchemaForView(view), out.String()
 	}
 
-	_, want := schemaFor("v1.0.0-beta.20")
-	for _, version := range []string{"v1.0.0-0", "v1.0.0-beta.7", "v1.0.0-beta.19"} {
+	_, want := schemaFor(preCutView)
+	for _, version := range []string{"v1.0.0-0", "v1.0.0-beta.7", "v1.0.0-beta.19", "v1.0.0-beta.20"} {
 		schema, got := schemaFor(version)
 		require.Equal(t, want, got, "schema for %s", version)
 		require.NotNil(t, schema.Types["Workspace"], version)
