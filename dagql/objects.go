@@ -18,6 +18,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/engine/wcprof"
 )
 
 // Class is a class of Object types.
@@ -733,10 +734,16 @@ func (r ObjectResult[T]) call(
 		ctx = ContextWithTrivialField(ctx)
 	}
 	if s.telemetry != nil && !field.Spec.NoTelemetry {
-		prevSpan := trace.SpanContextFromContext(ctx)
+		recording := wcprof.Enabled(ctx)
+		var prevSpan trace.SpanContext
+		if recording {
+			prevSpan = trace.SpanContextFromContext(ctx)
+		}
 		telemetryCtx, done := s.telemetry(ctx, req)
-		if sc := trace.SpanContextFromContext(telemetryCtx); sc.IsValid() && sc.SpanID() != prevSpan.SpanID() {
-			req.ownSpan = sc
+		if recording {
+			if sc := trace.SpanContextFromContext(telemetryCtx); sc.IsValid() && sc.SpanID() != prevSpan.SpanID() {
+				telemetryCtx = withOwnCallSpan(telemetryCtx, req.ResultCall, sc)
+			}
 		}
 		defer func() {
 			var cached bool

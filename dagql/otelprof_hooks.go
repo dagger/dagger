@@ -54,6 +54,32 @@ func RecordOpSpan(op *wcprof.Op, span trace.Span) {
 	op.SetSpan(sc.TraceID(), sc.SpanID())
 }
 
+type ownCallSpanKey struct{}
+
+// ownCallSpanValue is the span the server's telemetry started for one call's
+// invocation, and that call's frame.
+type ownCallSpanValue struct {
+	call *ResultCall
+	sc   trace.SpanContext
+}
+
+// withOwnCallSpan records, while wcprof records, the span the server's
+// telemetry started for call, for its native call op (ownCallSpan).
+func withOwnCallSpan(ctx context.Context, call *ResultCall, sc trace.SpanContext) context.Context {
+	return context.WithValue(ctx, ownCallSpanKey{}, ownCallSpanValue{call: call, sc: sc})
+}
+
+// ownCallSpan is the span the server's telemetry started for call, or an
+// invalid one when it started none. The value is keyed to the call's frame,
+// so a call nested under it, or made internally without the server, isn't
+// given the span of the call it runs under.
+func ownCallSpan(ctx context.Context, call *ResultCall) trace.SpanContext {
+	if v, ok := ctx.Value(ownCallSpanKey{}).(ownCallSpanValue); ok && v.call == call {
+		return v.sc
+	}
+	return trace.SpanContext{}
+}
+
 // beginOTelCallExec starts the call_exec span for a resolver execution on the
 // call's detached context, mirroring native's execOp (cache.go getOrInitCall).
 // The returned context carries the span, so the resolver's sub-call spans nest

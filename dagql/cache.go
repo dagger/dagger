@@ -5862,8 +5862,8 @@ func (c *Cache) getOrInitCall(
 	ctx, profOp := wcprof.BeginOp(ctx, wcprof.OpKindCall, profCallClass(req.ResultCall), wcprof.OpOpts{
 		ClientID: profClientID(ctx),
 	})
-	if req.ownSpan.IsValid() {
-		profOp.SetSpan(req.ownSpan.TraceID(), req.ownSpan.SpanID())
+	if sc := ownCallSpan(ctx, req.ResultCall); sc.IsValid() {
+		profOp.SetSpan(sc.TraceID(), sc.SpanID())
 	}
 	res, err := c.getOrInitCallTakingOver(ctx, sessionID, resolver, req, fn, profOp)
 	outcome := profOp.OutcomeHint()

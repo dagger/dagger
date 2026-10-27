@@ -122,7 +122,8 @@ func TestNativeOpsRecordTheirOTelSpans(t *testing.T) {
 }
 
 // TestCallRecordsItsOwnSpan: a call the server's telemetry gave its own span
-// records that span; one it didn't records none.
+// records that span; one it didn't records none, even nested under one that
+// did.
 func TestCallRecordsItsOwnSpan(t *testing.T) {
 	sr, tr := newLazySkipRecorder()
 	wcprof.EnsureRecorder()
@@ -131,7 +132,15 @@ func TestCallRecordsItsOwnSpan(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, c.Close(context.Background())) })
 	srv := newDagqlServerForTest(t, &persistCodecRoot{})
 	Fields[*persistCodecRoot]{
-		Func("spanned", func(context.Context, *persistCodecRoot, struct{}) (Int, error) { return NewInt(1), nil }),
+		// spanned's resolver makes a nested call, which has no span of its
+		// own and runs under spanned's
+		Func("spanned", func(ctx context.Context, _ *persistCodecRoot, _ struct{}) (Int, error) {
+			if _, err := srv.root.Select(ctx, srv, Selector{Field: "nested"}); err != nil {
+				return 0, err
+			}
+			return NewInt(1), nil
+		}),
+		Func("nested", func(context.Context, *persistCodecRoot, struct{}) (Int, error) { return NewInt(3), nil }),
 		Func("unspanned", func(context.Context, *persistCodecRoot, struct{}) (Int, error) { return NewInt(2), nil }),
 	}.Install(srv)
 	srv.Around(func(ctx context.Context, req *CallRequest) (context.Context, func(AnyResult, bool, *error)) {
@@ -161,8 +170,10 @@ func TestCallRecordsItsOwnSpan(t *testing.T) {
 	ops, spans := recordedOps(t, "Query.spanned", testOp.ID())
 	require.Len(t, ops[wcprof.OpKindCall.String()], 1)
 	requireOpSpan(t, spans, ops[wcprof.OpKindCall.String()][0], spanned)
-	ops, spans = recordedOps(t, "Query.unspanned", testOp.ID())
-	require.Len(t, ops[wcprof.OpKindCall.String()], 1)
-	_, ok := spans[ops[wcprof.OpKindCall.String()][0].OpID]
-	require.False(t, ok, "a call without its own span records none")
+	for _, class := range []string{"Query.unspanned", "Query.nested"} {
+		ops, spans = recordedOps(t, class, testOp.ID())
+		require.Len(t, ops[wcprof.OpKindCall.String()], 1, class)
+		_, ok := spans[ops[wcprof.OpKindCall.String()][0].OpID]
+		require.False(t, ok, "%s: a call without its own span records none, not the span it runs under", class)
+	}
 }
