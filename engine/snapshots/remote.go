@@ -229,6 +229,7 @@ func (cm *snapshotManager) exportChains(ctx context.Context, refs []*immutableRe
 	if work != nil {
 		for _, export := range exports {
 			if export.pending == 0 {
+				work.Begin(ctx, export.index)
 				work.End(export.index, 0, nil)
 			}
 		}
