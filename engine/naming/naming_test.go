@@ -367,14 +367,18 @@ func checkRoundTrip(t *testing.T, name string) {
 
 // Guarantee 2: formatting a formatted name again changes nothing. With
 // guarantee 3 (canonical names come back unchanged) this is the same check:
-// a formatted name is canonical for its casing.
+// a formatted name is canonical for its casing. It holds in either acronym
+// style: module field names are CAMEL/CAPITALIZED, and the engine normalizes
+// them again when it looks them up.
 func checkIdempotent(t *testing.T, name string) {
 	t.Helper()
 	id := mustParse(t, name)
 	for _, c := range []Casing{Pascal, Camel, Snake, ScreamingSnake} {
-		once := id.Format(c, Uppercase)
-		if twice := mustParse(t, once).Format(c, Uppercase); twice != once {
-			t.Errorf("%q in %s: %q formats again as %q", name, c, once, twice)
+		for _, s := range AcronymStyles {
+			once := id.Format(c, s)
+			if twice := mustParse(t, once).Format(c, s); twice != once {
+				t.Errorf("%q in %s/%s: %q formats again as %q", name, c, s, once, twice)
+			}
 		}
 	}
 }
