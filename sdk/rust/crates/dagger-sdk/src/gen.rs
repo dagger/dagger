@@ -2763,7 +2763,7 @@ impl Cloud {
     }
     /// The trace URL for the current session
     pub async fn trace_url(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("traceURL");
+        let query = self.selection.select("traceUrl");
         query.execute(self.graphql_client.clone()).await
     }
 }
@@ -3679,7 +3679,7 @@ impl Container {
             query = query.arg("protocol", protocol);
         }
         if let Some(insecure_skip_tls_verify) = opts.insecure_skip_tls_verify {
-            query = query.arg("insecureSkipTLSVerify", insecure_skip_tls_verify);
+            query = query.arg("insecureSkipTlsVerify", insecure_skip_tls_verify);
         }
         if let Some(no_lock) = opts.no_lock {
             query = query.arg("noLock", no_lock);
@@ -5535,7 +5535,7 @@ impl Container {
             query = query.arg("protocol", protocol);
         }
         if let Some(insecure_skip_tls_verify) = opts.insecure_skip_tls_verify {
-            query = query.arg("insecureSkipTLSVerify", insecure_skip_tls_verify);
+            query = query.arg("insecureSkipTlsVerify", insecure_skip_tls_verify);
         }
         query.execute(self.graphql_client.clone()).await
     }
@@ -6193,7 +6193,7 @@ impl Container {
     /// Configures all GPUs available on the host to be accessible to this container.
     /// This currently works with NVIDIA devices only, and requires the engine to run with GPU support enabled.
     pub fn with_gpu(&self) -> Container {
-        let query = self.selection.select("withGPU");
+        let query = self.selection.select("withGpu");
         Container {
             proc: self.proc.clone(),
             selection: query,
@@ -6207,7 +6207,7 @@ impl Container {
     ///
     /// * `devices` - List of devices to be accessible to this container.
     pub fn experimental_with_gpu(&self, devices: Vec<impl Into<String>>) -> Container {
-        let mut query = self.selection.select("experimentalWithGPU");
+        let mut query = self.selection.select("experimentalWithGpu");
         query = query.arg(
             "devices",
             devices
@@ -6223,8 +6223,8 @@ impl Container {
     }
     /// Configures all available GPUs on the host to be accessible to this container.
     /// This currently works for Nvidia devices only.
-    pub fn experimental_with_all_gp_us(&self) -> Container {
-        let query = self.selection.select("experimentalWithAllGPUs");
+    pub fn experimental_with_all_gpus(&self) -> Container {
+        let query = self.selection.select("experimentalWithAllGpus");
         Container {
             proc: self.proc.clone(),
             selection: query,
@@ -9450,7 +9450,7 @@ impl File {
     }
     /// Parse the file contents as JSON.
     pub fn as_json(&self) -> JsonValue {
-        let query = self.selection.select("asJSON");
+        let query = self.selection.select("asJson");
         JsonValue {
             proc: self.proc.clone(),
             selection: query,
@@ -10207,7 +10207,7 @@ impl GeneratedCode {
     }
     /// Set the list of paths to mark generated in version control.
     pub fn with_vcs_generated_paths(&self, paths: Vec<impl Into<String>>) -> GeneratedCode {
-        let mut query = self.selection.select("withVCSGeneratedPaths");
+        let mut query = self.selection.select("withVcsGeneratedPaths");
         query = query.arg(
             "paths",
             paths.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
@@ -10220,7 +10220,7 @@ impl GeneratedCode {
     }
     /// Set the list of paths to ignore in version control.
     pub fn with_vcs_ignored_paths(&self, paths: Vec<impl Into<String>>) -> GeneratedCode {
-        let mut query = self.selection.select("withVCSIgnoredPaths");
+        let mut query = self.selection.select("withVcsIgnoredPaths");
         query = query.arg(
             "paths",
             paths.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
@@ -10381,6 +10381,11 @@ impl GitBundle {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Commits that must already exist wherever this bundle is applied.
+    pub async fn prerequisite_shas(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("prerequisiteShas");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Bundle format version (2 or 3).
     pub async fn version(&self) -> Result<isize, DaggerError> {
         let query = self.selection.select("version");
@@ -10407,11 +10412,6 @@ impl GitBundle {
                 graphql_client: self.graphql_client.clone(),
             })
             .collect())
-    }
-    /// Commits that must already exist wherever this bundle is applied.
-    pub async fn prerequisite_sh_as(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("prerequisiteSHAs");
-        query.execute(self.graphql_client.clone()).await
     }
 }
 impl Node for GitBundle {
@@ -10706,7 +10706,7 @@ impl GitCommit {
     /// The ID of the commit's Git tree object.
     /// Commits with identical trees have identical contents and file modes.
     pub async fn tree_sha(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("treeSHA");
+        let query = self.selection.select("treeSha");
         query.execute(self.graphql_client.clone()).await
     }
     /// Git author date, in RFC3339 format.
@@ -10802,14 +10802,14 @@ impl GitPushResult {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The previous remote object ID; empty when the ref was created.
+    pub async fn previous_sha(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("previousSha");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// The fully qualified remote ref.
     pub async fn r#ref(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("ref");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// The previous remote object ID; empty when the ref was created.
-    pub async fn previous_sha(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("previousSHA");
         query.execute(self.graphql_client.clone()).await
     }
     /// The object ID pushed to the remote.
@@ -10962,7 +10962,7 @@ impl GitRef {
             query = query.arg("branch", branch);
         }
         if let Some(expected_remote_sha) = opts.expected_remote_sha {
-            query = query.arg("expectedRemoteSHA", expected_remote_sha);
+            query = query.arg("expectedRemoteSha", expected_remote_sha);
         }
         GitPushResult {
             proc: self.proc.clone(),
@@ -10981,7 +10981,7 @@ impl GitRef {
     }
     /// The resolved commit SHA at this ref.
     pub async fn commit_sha(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("commitSHA");
+        let query = self.selection.select("commitSha");
         query.execute(self.graphql_client.clone()).await
     }
     /// The filesystem tree at this ref.
@@ -13572,7 +13572,7 @@ impl Llm {
     /// * `name` - The name of the MCP server
     /// * `service` - The MCP service to run and communicate with over stdio
     pub fn with_mcp_server(&self, name: impl Into<String>, service: impl IntoID<Id>) -> Llm {
-        let mut query = self.selection.select("withMCPServer");
+        let mut query = self.selection.select("withMcpServer");
         query = query.arg("name", name.into());
         query = query.arg_lazy(
             "service",
@@ -14573,7 +14573,7 @@ impl Module {
     /// This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
     /// Note: this is in the context of a module, so some core types may be hidden.
     pub fn introspection_schema_json(&self) -> File {
-        let query = self.selection.select("introspectionSchemaJSON");
+        let query = self.selection.select("introspectionSchemaJson");
         File {
             proc: self.proc.clone(),
             selection: query,
@@ -14998,7 +14998,7 @@ impl ModuleSource {
     ///
     /// * `source` - The SDK source to set.
     pub fn with_sdk(&self, source: impl Into<String>) -> ModuleSource {
-        let mut query = self.selection.select("withSDK");
+        let mut query = self.selection.select("withSdk");
         query = query.arg("source", source.into());
         ModuleSource {
             proc: self.proc.clone(),
@@ -15277,7 +15277,7 @@ impl ModuleSource {
     /// This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
     /// Note: this is in the context of a module, so some core types may be hidden.
     pub fn introspection_schema_json(&self) -> File {
-        let query = self.selection.select("introspectionSchemaJSON");
+        let query = self.selection.select("introspectionSchemaJson");
         File {
             proc: self.proc.clone(),
             selection: query,
@@ -15285,9 +15285,9 @@ impl ModuleSource {
         }
     }
     /// The client-facing introspection schema JSON file for this module source.
-    /// This is the schema consumed by client codegen: unlike introspectionSchemaJSON (the module-facing schema), it hides no core types and installs this module (reached via dag.<moduleName>) so a generated client can bind it. The module's dependencies are excluded: a client is generated for a single module plus core, not its dependency graph.
+    /// This is the schema consumed by client codegen: unlike introspectionSchemaJson (the module-facing schema), it hides no core types and installs this module (reached via dag.<moduleName>) so a generated client can bind it. The module's dependencies are excluded: a client is generated for a single module plus core, not its dependency graph.
     pub fn client_schema_introspection_json(&self) -> File {
-        let query = self.selection.select("clientSchemaIntrospectionJSON");
+        let query = self.selection.select("clientSchemaIntrospectionJson");
         File {
             proc: self.proc.clone(),
             selection: query,
@@ -15315,12 +15315,12 @@ impl ModuleSource {
     }
     /// The URL to the source's git repo in a web browser. Only valid for git sources.
     pub async fn html_url(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("htmlURL");
+        let query = self.selection.select("htmlUrl");
         query.execute(self.graphql_client.clone()).await
     }
     /// The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket).
     pub async fn html_repo_url(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("htmlRepoURL");
+        let query = self.selection.select("htmlRepoUrl");
         query.execute(self.graphql_client.clone()).await
     }
     /// The specified version of the git repo this source points to.
@@ -19996,7 +19996,7 @@ impl Workspace {
     /// * `r#ref` - SDK module reference to install.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_sdk(&self, r#ref: impl Into<String>) -> Workspace {
-        let mut query = self.selection.select("withSDK");
+        let mut query = self.selection.select("withSdk");
         query = query.arg("ref", r#ref.into());
         Workspace {
             proc: self.proc.clone(),
@@ -20015,7 +20015,7 @@ impl Workspace {
         r#ref: impl Into<String>,
         opts: WorkspaceWithSdkOpts<'a>,
     ) -> Workspace {
-        let mut query = self.selection.select("withSDK");
+        let mut query = self.selection.select("withSdk");
         query = query.arg("ref", r#ref.into());
         if let Some(name) = opts.name {
             query = query.arg("name", name);
@@ -20039,7 +20039,7 @@ impl Workspace {
     /// * `name` - Name of the installed SDK entry to remove.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn without_sdk(&self, name: impl Into<String>) -> Workspace {
-        let mut query = self.selection.select("withoutSDK");
+        let mut query = self.selection.select("withoutSdk");
         query = query.arg("name", name.into());
         Workspace {
             proc: self.proc.clone(),
@@ -20058,7 +20058,7 @@ impl Workspace {
         name: impl Into<String>,
         opts: WorkspaceWithoutSdkOpts,
     ) -> Workspace {
-        let mut query = self.selection.select("withoutSDK");
+        let mut query = self.selection.select("withoutSdk");
         query = query.arg("name", name.into());
         if let Some(here) = opts.here {
             query = query.arg("here", here);
@@ -21482,11 +21482,11 @@ pub enum FileType {
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum FunctionCachePolicy {
-    #[serde(rename = "Default")]
+    #[serde(rename = "DEFAULT")]
     Default,
-    #[serde(rename = "Never")]
+    #[serde(rename = "NEVER")]
     Never,
-    #[serde(rename = "PerSession")]
+    #[serde(rename = "PER_SESSION")]
     PerSession,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
@@ -21511,27 +21511,21 @@ pub enum IdentifierWordKind {
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ImageLayerCompression {
-    #[serde(rename = "EStarGZ")]
-    EStarGz,
     #[serde(rename = "ESTARGZ")]
     Estargz,
-    #[serde(rename = "Gzip")]
+    #[serde(rename = "GZIP")]
     Gzip,
-    #[serde(rename = "Uncompressed")]
+    #[serde(rename = "UNCOMPRESSED")]
     Uncompressed,
-    #[serde(rename = "Zstd")]
+    #[serde(rename = "ZSTD")]
     Zstd,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ImageMediaTypes {
     #[serde(rename = "DOCKER")]
     Docker,
-    #[serde(rename = "DockerMediaTypes")]
-    DockerMediaTypes,
     #[serde(rename = "OCI")]
     Oci,
-    #[serde(rename = "OCIMediaTypes")]
-    OciMediaTypes,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum LlmContentBlockKind {
