@@ -32,7 +32,8 @@ func gitPackTestMirror(t *testing.T) (source, mirror string, git *gitutil.GitCLI
 	repo, git, mirror := gitMirrorTestRepo(t, source)
 	refs, err := gitRefsToFetch(t.Context(), git, 0, []*RemoteGitRef{{Ref: &gitutil.Ref{SHA: next}}})
 	require.NoError(t, err)
-	require.NoError(t, repo.fetchObjects(t.Context(), git, 0, true, refs))
+	_, err = repo.fetchObjects(t.Context(), git, 0, true, refs)
+	require.NoError(t, err)
 	return source, mirror, git, base, next
 }
 
@@ -51,7 +52,7 @@ func gitPackTestCheckoutFrom(t *testing.T, mirror string, mirrorGit *gitutil.Git
 	var tmpref, method string
 	var err error
 	if pack {
-		tmpref, method, err = copyGitCheckout(ctx, git, mirrorGit, gitDir, ref, 0)
+		tmpref, method, err = copyGitCheckout(ctx, git, mirrorGit, gitDir, ref, 0, nil)
 	} else {
 		tmpref, err = fetchGitCheckout(ctx, git, "file://"+mirror, ref, 0)
 		method = "fetch"
@@ -155,7 +156,8 @@ func TestGitCheckoutPackFallsBackToFetch(t *testing.T) {
 		repo, mirrorGit, mirror := gitMirrorTestRepo(t, source)
 		refs, err := gitRefsToFetch(t.Context(), mirrorGit, 0, []*RemoteGitRef{{Ref: &gitutil.Ref{SHA: base}}})
 		require.NoError(t, err)
-		require.NoError(t, repo.fetchObjects(t.Context(), mirrorGit, 0, true, refs))
+		_, err = repo.fetchObjects(t.Context(), mirrorGit, 0, true, refs)
+		require.NoError(t, err)
 		ref := &gitutil.Ref{SHA: base}
 		// The tags are checked before packing: the fallback must not follow
 		// a full-history pack it then throws away.
