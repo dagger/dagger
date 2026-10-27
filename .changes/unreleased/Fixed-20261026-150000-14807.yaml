@@ -1,0 +1,13 @@
+kind: Fixed
+body: |
+    Install, generate, and workspace migration now apply .gitignore rules before
+    uploading host workspace files. Modules and local dependencies under ignored
+    directories are unsupported and report the ignored path.
+
+    Workspace edits to .gitignore now affect host uploads. These edits require a
+    CLI that supports overlay ignore rules. An older CLI connected to a newer
+    engine receives an error that asks the user to upgrade the CLI.
+time: 2026-10-26T15:00:00-07:00
+custom:
+    Author: tiborvass
+    PR: "14807"
