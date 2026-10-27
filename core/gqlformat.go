@@ -40,15 +40,15 @@ func formatGqlDescription(desc string) string {
 // (including v1.0.0-0, which shares their pre-cut view) keeps the strcase
 // rules.
 //
-// SDK generators decide which naming rules to apply by whether the schema
-// they generate from has Query.formatIdentifiers, which is installed on the
-// same view: the two must line up exactly.
+// SDK generators decide which naming rules to apply by the engine version the
+// target module declares (and the engine's own version), not by the schema:
+// the identifier API (Query.formatIdentifiers and friends) is served on every
+// v1 view, and its version argument selects the dictionary.
 const IdentifierNamingVersion = engine.IdentifierCasingVersion
 
 // IdentifierNamingView is the API views whose names follow engine/naming:
-// the views of IdentifierNamingVersion and later. It gates both how modules
-// are named (NamerForView) and the identifier API (Query.formatIdentifiers
-// and friends).
+// the views of IdentifierNamingVersion and later. It gates how modules are
+// named (NamerForView).
 var IdentifierNamingView dagql.ViewFilter = AfterVersion(IdentifierNamingVersion)
 
 // Namer normalizes module-declared names (types, fields, functions,
@@ -167,14 +167,14 @@ func (n Namer) Dictionary() *naming.Dictionary {
 // format parses name with n's dictionary and formats it. A name the parser
 // rejects (non-ASCII, or no letters or digits) is returned unchanged:
 // schema validation reports it.
-func (n Namer) format(name string, casing naming.Casing) string {
-	key := formatKey{dict: n.dict, casing: casing, name: name}
+func (n Namer) format(name string, casing naming.Casing, style naming.AcronymStyle) string {
+	key := formatKey{dict: n.dict, casing: casing, style: style, name: name}
 	if formatted, ok := formatCache.Load(key); ok {
 		return formatted.(string)
 	}
 	formatted := name
 	if id, err := n.dict.Parse(name); err == nil {
-		formatted = id.Format(casing, naming.Uppercase)
+		formatted = id.Format(casing, style)
 	}
 	formatCache.Store(key, formatted)
 	return formatted
@@ -188,24 +188,37 @@ var formatCache sync.Map
 type formatKey struct {
 	dict   *naming.Dictionary
 	casing naming.Casing
+	style  naming.AcronymStyle
 	name   string
 }
 
+// TypeAcronyms and FieldAcronyms are how the new naming rules write acronyms
+// and terms in schema names, following the prevailing GraphQL convention:
+// type names keep them in capitals (JSONValue, HTTPClient), while field,
+// function and argument names write them like words (asJson, baseUrl,
+// httpClient). Enum members are SCREAMING_SNAKE and CLI names kebab-case,
+// which the acronym style doesn't affect.
+const (
+	TypeAcronyms  = naming.Uppercase
+	FieldAcronyms = naming.Capitalized
+)
+
 // ObjectName is the schema name of an object, interface, enum or scalar:
-// PascalCase.
+// PascalCase, with acronyms in capitals (HTTPClient).
 func (n Namer) ObjectName(name string) string {
 	if n.Legacy() {
 		return strcase.ToCamel(name)
 	}
-	return n.format(name, naming.Pascal)
+	return n.format(name, naming.Pascal, TypeAcronyms)
 }
 
-// FieldName is the schema name of a field or function: camelCase.
+// FieldName is the schema name of a field or function: camelCase, with
+// acronyms written like words (baseUrl, httpClient).
 func (n Namer) FieldName(name string) string {
 	if n.Legacy() {
 		return strcase.ToLowerCamel(name)
 	}
-	return n.format(name, naming.Camel)
+	return n.format(name, naming.Camel, FieldAcronyms)
 }
 
 // ArgName is the schema name of an argument: camelCase.
@@ -223,7 +236,7 @@ func (n Namer) EnumMemberName(name string) string {
 	if n.Legacy() {
 		return strcase.ToScreamingSnake(name)
 	}
-	return n.format(name, naming.ScreamingSnake)
+	return n.format(name, naming.ScreamingSnake, TypeAcronyms)
 }
 
 // CLIName is the CLI spelling of a name: kebab-case. Characters that can't
@@ -248,7 +261,7 @@ func (n Namer) CLIName(name string) string {
 		}
 		lead := len(trimmed)
 		trimmed = strings.TrimRight(trimmed, nameSeparators)
-		b.WriteString(n.format(trimmed, naming.Kebab))
+		b.WriteString(n.format(trimmed, naming.Kebab, TypeAcronyms))
 		if end < len(name) && len(trimmed) < lead && trimmed != "" {
 			b.WriteByte('-')
 		}
@@ -314,7 +327,7 @@ func (n Namer) NamespaceObject(objOriginalName, modFinalName, modOriginalName st
 		rest = obj.Words[k:]
 	}
 	words := append(append([]naming.Word(nil), final.Words...), rest...)
-	return naming.Identifier{Words: words}.Format(naming.Pascal, naming.Uppercase)
+	return naming.Identifier{Words: words}.Format(naming.Pascal, TypeAcronyms)
 }
 
 // flatName is name lowercased, with everything but ASCII letters and digits

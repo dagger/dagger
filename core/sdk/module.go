@@ -69,9 +69,9 @@ func (sdk *module) CloneForModuleSource(*core.ModuleSource) core.SDK {
 }
 
 // argName is the schema name the SDK module gives an argument of one of the
-// SDK interface functions, by the naming rules of its engine version: the
-// introspectionJson argument is introspectionJSON in an SDK module at
-// core.IdentifierNamingVersion or later.
+// SDK interface functions, by the naming rules of its engine version. The
+// rules agree on introspectionJson: strcase lowercases the acronym, and
+// engine/naming writes field acronyms like words.
 func (sdk *module) argName(name string) string {
 	return sdk.mod.Self().Namer().ArgName(name)
 }

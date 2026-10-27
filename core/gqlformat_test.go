@@ -235,9 +235,8 @@ func TestNamerForView(t *testing.T) {
 	}
 }
 
-// The identifier API is installed on exactly the views that name modules by
-// engine/naming: SDK codegen picks its naming rules by whether the schema
-// has Query.formatIdentifiers.
+// Modules are named by engine/naming on exactly IdentifierNamingView. (The
+// identifier API is served on every v1 view, regardless.)
 func TestIdentifierNamingView(t *testing.T) {
 	t.Parallel()
 
@@ -314,7 +313,8 @@ func TestModuleSourceNaming(t *testing.T) {
 	}
 	require.False(t, entrypoint.Namer().Legacy())
 	require.Equal(t, call.View("v1.0.0-beta.21"), entrypoint.NamingView())
-	require.Equal(t, "getURL", entrypoint.Namer().FieldName("getUrl"))
+	require.Equal(t, "getUrl", entrypoint.Namer().FieldName("getURL"))
+	require.Equal(t, "httpClient", entrypoint.Namer().FieldName("HTTPClient"))
 	require.Equal(t, "MyModHTTPClient", entrypoint.Namer().NamespaceObject("HttpClient", "my-mod", "my-mod"))
 
 	legacyEntrypoint := &ModuleSource{
@@ -326,17 +326,17 @@ func TestModuleSourceNaming(t *testing.T) {
 	beta := &ModuleSource{EngineVersion: "v1.0.0-beta.21"}
 	require.False(t, beta.Namer().Legacy())
 	require.Equal(t, call.View("v1.0.0-beta.21"), beta.NamingView())
-	require.Equal(t, "getURL", beta.Namer().FieldName("getUrl"))
+	require.Equal(t, "httpClient", beta.Namer().FieldName("HTTPClient"))
 
 	oldBeta := &ModuleSource{EngineVersion: "v1.0.0-beta.19"}
 	require.True(t, oldBeta.Namer().Legacy())
 	require.Equal(t, call.View("v1.0.0-beta.20"), oldBeta.NamingView())
-	require.Equal(t, "getUrl", oldBeta.Namer().FieldName("getUrl"))
+	require.Equal(t, "httpclient", oldBeta.Namer().FieldName("HTTPClient"))
 
 	legacy := &ModuleSource{EngineVersion: "v0.21.9"}
 	require.True(t, legacy.Namer().Legacy())
 	require.Equal(t, call.View("v0.21.9"), legacy.NamingView())
-	require.Equal(t, "getUrl", legacy.Namer().FieldName("getUrl"))
+	require.Equal(t, "httpclient", legacy.Namer().FieldName("HTTPClient"))
 
 	var none *ModuleSource
 	require.Equal(t, call.View(""), none.NamingView())
@@ -384,9 +384,38 @@ func TestNamerNames(t *testing.T) {
 		{
 			name:   "userIds",
 			object: [2]string{"UserIds", "UserIDs"},
-			field:  [2]string{"userIds", "userIDs"},
+			field:  [2]string{"userIds", "userIds"},
 			enum:   [2]string{"USER_IDS", "USER_IDS"},
 			cli:    [2]string{"user-ids", "user-ids"},
+		},
+		// Fields write acronyms like words, types in capitals.
+		{
+			name:   "asJSON",
+			object: [2]string{"AsJson", "AsJSON"},
+			field:  [2]string{"asJson", "asJson"},
+			enum:   [2]string{"AS_JSON", "AS_JSON"},
+			cli:    [2]string{"as-json", "as-json"},
+		},
+		{
+			name:   "baseURL",
+			object: [2]string{"BaseUrl", "BaseURL"},
+			field:  [2]string{"baseUrl", "baseUrl"},
+			enum:   [2]string{"BASE_URL", "BASE_URL"},
+			cli:    [2]string{"base-url", "base-url"},
+		},
+		{
+			name:   "myK8sCluster",
+			object: [2]string{"MyK8SCluster", "MyK8sCluster"},
+			field:  [2]string{"myK8SCluster", "myK8sCluster"},
+			enum:   [2]string{"MY_K_8_S_CLUSTER", "MY_K8S_CLUSTER"},
+			cli:    [2]string{"my-k-8-s-cluster", "my-k8s-cluster"},
+		},
+		{
+			name:   "fromGitHubIPv6",
+			object: [2]string{"FromGitHubIpv6", "FromGitHubIPv6"},
+			field:  [2]string{"fromGitHubIpv6", "fromGitHubIpv6"},
+			enum:   [2]string{"FROM_GIT_HUB_I_PV_6", "FROM_GITHUB_IPV6"},
+			cli:    [2]string{"from-git-hub-i-pv-6", "from-github-ipv6"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -408,7 +437,7 @@ func TestNamerFixedPoints(t *testing.T) {
 	for _, name := range []string{"ModuleAOverlay", "ModuleBFileOverlay", "LLMMessage", "JSONValue", "MyModHTTPClient", "LLMTokenUsage"} {
 		require.Equal(t, name, LatestNamer.ObjectName(name))
 	}
-	for _, name := range []string{"loadFooFromID", "withExec", "prerequisiteSHAs", "e2eTest"} {
+	for _, name := range []string{"withExec", "prerequisiteShas", "e2eTest", "asJson", "httpClient", "fromGitHubIpv6", "k8sTools"} {
 		require.Equal(t, name, LatestNamer.FieldName(name))
 	}
 }
