@@ -11,18 +11,34 @@ import (
 )
 
 // Core schema names are written by hand, not normalized, so they're the
-// largest real-world corpus of canonical names. Every field and argument name
-// is canonical with the Initial dictionary except these, which predate the
-// casing rules and are due to be renamed (keeping their old spellings as
-// hidden aliases).
+// largest real-world corpus of canonical names. Type names are canonical as
+// PascalCase with acronyms in capitals (JSONValue). Field and argument names
+// are canonical as camelCase with acronyms written like words (filterUri,
+// asJson), the convention modules get from v1.0.0-beta.21 on; every one is
+// canonical with the Initial dictionary except these, which spell acronyms in
+// capitals and predate that convention. They're due to be renamed in a
+// separate change; until then this list is the exceptions.
 var nonCanonicalCoreNames = map[string]bool{
-	"asSdkName":  true,
-	"callId":     true,
-	"filterUri":  true,
-	"parentShas": true,
-	"pushUrl":    true,
-	"shortSha":   true,
-	"withoutUri": true,
+	"asJSON":                        true,
+	"clientSchemaIntrospectionJSON": true,
+	"commitSHA":                     true,
+	"expectedRemoteSHA":             true,
+	"experimentalWithAllGPUs":       true,
+	"experimentalWithGPU":           true,
+	"htmlRepoURL":                   true,
+	"htmlURL":                       true,
+	"insecureSkipTLSVerify":         true,
+	"introspectionSchemaJSON":       true,
+	"prerequisiteSHAs":              true,
+	"previousSHA":                   true,
+	"traceURL":                      true,
+	"treeSHA":                       true,
+	"withGPU":                       true,
+	"withMCPServer":                 true,
+	"withSDK":                       true,
+	"withVCSGeneratedPaths":         true,
+	"withVCSIgnoredPaths":           true,
+	"withoutSDK":                    true,
 }
 
 func loadCoreSchema(t *testing.T) *ast.SchemaDocument {
@@ -86,7 +102,7 @@ func TestCoreSchemaCanonical(t *testing.T) {
 
 	var nonCanonical []string
 	for _, name := range names.members {
-		if got := mustParse(t, name).Format(Camel, Uppercase); got != name {
+		if got := mustParse(t, name).Format(Camel, Capitalized); got != name {
 			nonCanonical = append(nonCanonical, name)
 			if !nonCanonicalCoreNames[name] {
 				t.Errorf("field/argument %q is not canonical: %q", name, got)
@@ -95,7 +111,7 @@ func TestCoreSchemaCanonical(t *testing.T) {
 	}
 	t.Logf("%d non-canonical field/argument names: %v", len(nonCanonical), nonCanonical)
 	for name := range nonCanonicalCoreNames {
-		if got := mustParse(t, name).Format(Camel, Uppercase); got == name {
+		if got := mustParse(t, name).Format(Camel, Capitalized); got == name {
 			t.Errorf("%q is canonical now; drop it from the allowlist", name)
 		}
 	}

@@ -118,26 +118,27 @@ func (ModuleNamingSuite) TestGoAcronyms(ctx context.Context, t *testctx.T) {
 	client := schema.Types.Get("TestHTTPClient")
 	require.NotNil(t, client, "module types keep their acronyms")
 	require.Nil(t, schema.Types.Get("TestHttpclient"))
-	require.ElementsMatch(t, []string{"baseURL", "getURL", "id"}, namingFieldNames(client))
-	getURL := namingField(t, client, "getURL")
+	// Fields, functions and arguments write acronyms like words.
+	require.ElementsMatch(t, []string{"baseUrl", "getUrl", "id"}, namingFieldNames(client))
+	getURL := namingField(t, client, "getUrl")
 	require.Equal(t, "path", getURL.Args[0].Name)
 
 	test := schema.Types.Get("Test")
 	require.NotNil(t, test)
-	require.Equal(t, "baseURL", namingField(t, test, "client").Args[0].Name)
+	require.Equal(t, "baseUrl", namingField(t, test, "client").Args[0].Name)
 	require.Equal(t, "e2eTest", namingField(t, test, "run").Args[0].Name)
 
-	out, err := modGen.With(daggerQuery(`{client(baseURL:"https://example.com"){getURL(path:"/x")}}`)).Stdout(ctx)
+	out, err := modGen.With(daggerQuery(`{client(baseUrl:"https://example.com"){getUrl(path:"/x")} run(e2eTest:"x")}`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"client":{"getURL":"https://example.com/x"}}`, out)
+	require.JSONEq(t, `{"client":{"getUrl":"https://example.com/x"},"run":"ran x"}`, out)
 
 	out, err = modGen.With(daggerCall("client", "--base-url=https://example.com", "get-url", "--path=/y")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "https://example.com/y", strings.TrimSpace(out))
 
 	// The legacy spellings are not part of the module's schema.
-	_, err = modGen.With(daggerQuery(`{client(baseUrl:"https://example.com"){getUrl(path:"/x")}}`)).Stdout(ctx)
-	requireErrOut(t, err, "baseUrl")
+	_, err = modGen.With(daggerQuery(`{run(e2ETest:"x")}`)).Stdout(ctx)
+	requireErrOut(t, err, "e2ETest")
 
 	// Enum members are named by the new rules too.
 	arch := schema.Types.Get("TestArch")
@@ -193,13 +194,13 @@ func (ModuleNamingSuite) TestGoAcronymsVersions(ctx context.Context, t *testctx.
 				client := schema.Types.Get("TestHTTPClient")
 				require.NotNil(t, client)
 				require.Nil(t, schema.Types.Get("TestHttpclient"))
-				require.ElementsMatch(t, []string{"baseURL", "getURL", "id"}, namingFieldNames(client))
-				require.Equal(t, "baseURL", namingField(t, test, "client").Args[0].Name)
+				require.ElementsMatch(t, []string{"baseUrl", "getUrl", "id"}, namingFieldNames(client))
+				require.Equal(t, "baseUrl", namingField(t, test, "client").Args[0].Name)
 				require.Equal(t, "e2eTest", namingField(t, test, "run").Args[0].Name)
 
-				out, err := modGen.With(daggerQuery(`{client(baseURL:"https://example.com"){getURL(path:"/x")}}`)).Stdout(ctx)
+				out, err := modGen.With(daggerQuery(`{client(baseUrl:"https://example.com"){getUrl(path:"/x")} run(e2eTest:"x")}`)).Stdout(ctx)
 				require.NoError(t, err)
-				require.JSONEq(t, `{"client":{"getURL":"https://example.com/x"}}`, out)
+				require.JSONEq(t, `{"client":{"getUrl":"https://example.com/x"},"run":"ran x"}`, out)
 				return
 			}
 
@@ -210,9 +211,9 @@ func (ModuleNamingSuite) TestGoAcronymsVersions(ctx context.Context, t *testctx.
 			require.Equal(t, "baseUrl", namingField(t, test, "client").Args[0].Name)
 			require.Equal(t, "e2ETest", namingField(t, test, "run").Args[0].Name)
 
-			out, err := modGen.With(daggerQuery(`{client(baseUrl:"https://example.com"){getUrl(path:"/x")}}`)).Stdout(ctx)
+			out, err := modGen.With(daggerQuery(`{client(baseUrl:"https://example.com"){getUrl(path:"/x")} run(e2ETest:"x")}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"client":{"getUrl":"https://example.com/x"}}`, out)
+			require.JSONEq(t, `{"client":{"getUrl":"https://example.com/x"},"run":"ran x"}`, out)
 		})
 	}
 }
@@ -271,14 +272,16 @@ func (ModuleNamingSuite) TestSameTypeDefsAcrossVersions(ctx context.Context, t *
 		WithNewFile("after/main.dang", namingDangSource("After", namingDangCoreTypeRef))
 
 	// The new rules' reference to a core type whose name starts with an
-	// acronym resolves to the core type, not to a namespaced copy.
+	// acronym resolves to the core type, not to a namespaced copy. Fields
+	// write acronyms like words by either rules here (baseUrl); type names
+	// keep them in capitals by the new ones only.
 	const query = `{
   before { client(baseUrl: "https://a.example") { __typename baseUrl getUrl(path: "/x") } }
-  after { client(baseURL: "https://b.example") { __typename baseURL getURL(path: "/y") } greeting { asString } }
+  after { client(baseUrl: "https://b.example") { __typename baseUrl getUrl(path: "/y") } greeting { asString } }
 }`
 	const want = `{
   "before": {"client": {"__typename": "BeforeHttpClient", "baseUrl": "https://a.example", "getUrl": "https://a.example/x"}},
-  "after": {"client": {"__typename": "AfterHTTPClient", "baseURL": "https://b.example", "getURL": "https://b.example/y"}, "greeting": {"asString": "hi"}}
+  "after": {"client": {"__typename": "AfterHTTPClient", "baseUrl": "https://b.example", "getUrl": "https://b.example/y"}, "greeting": {"asString": "hi"}}
 }`
 	out, err := ws.With(daggerQuery(query)).Stdout(ctx)
 	require.NoError(t, err)
@@ -287,7 +290,7 @@ func (ModuleNamingSuite) TestSameTypeDefsAcrossVersions(ctx context.Context, t *
 	// Each module alone, in either order, gets the same names: nothing one
 	// module's load cached leaks into the other's.
 	for _, mod := range []struct{ path, query, want string }{
-		{"after", `{client(baseURL: "u") { __typename baseURL }}`, `{"client": {"__typename": "AfterHTTPClient", "baseURL": "u"}}`},
+		{"after", `{client(baseUrl: "u") { __typename baseUrl }}`, `{"client": {"__typename": "AfterHTTPClient", "baseUrl": "u"}}`},
 		{"before", `{client(baseUrl: "u") { __typename baseUrl }}`, `{"client": {"__typename": "BeforeHttpClient", "baseUrl": "u"}}`},
 	} {
 		out, err := ws.With(daggerQueryAt(mod.path, mod.query)).Stdout(ctx)
@@ -402,10 +405,10 @@ class Test:
 	// language a module is written in.
 	client := schema.Types.Get("TestHTTPClient")
 	require.NotNil(t, client)
-	require.ElementsMatch(t, []string{"baseURL", "getURL", "id"}, namingFieldNames(client))
+	require.ElementsMatch(t, []string{"baseUrl", "getUrl", "id"}, namingFieldNames(client))
 	test := schema.Types.Get("Test")
 	require.NotNil(t, test)
-	require.Equal(t, "baseURL", namingField(t, test, "client").Args[0].Name)
+	require.Equal(t, "baseUrl", namingField(t, test, "client").Args[0].Name)
 	require.Equal(t, "e2eTest", namingField(t, test, "run").Args[0].Name)
 
 	out, err := modGen.With(daggerCall("client", "--base-url=https://example.com", "get-url", "--path=/y")).Stdout(ctx)
