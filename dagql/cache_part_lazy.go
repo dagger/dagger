@@ -10,6 +10,10 @@ import (
 	"github.com/dagger/dagger/engine/snapshots"
 )
 
+// partCleanup releases what a part's install or a lazy operation built, once.
+// An installed row keeps it in its release chain and its installed outputs,
+// which live as long as the row, so a cleanup that has run drops its
+// function and with it everything the function captured.
 type partCleanup struct {
 	mu   sync.Mutex
 	done bool
@@ -26,6 +30,7 @@ func (p *partCleanup) release(ctx context.Context) error {
 		return err
 	}
 	p.done = true
+	p.fn = nil
 	return nil
 }
 func (c *Cache) publishEvaluatedParts(ctx context.Context, res AnyResult, demanded PersistedPartAddress, produced PersistedRecord, original *OriginalPermit, cleanup *partCleanup, demand *PartDemandState) error {

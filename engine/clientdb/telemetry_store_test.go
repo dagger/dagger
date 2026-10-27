@@ -245,7 +245,7 @@ func TestHasDescendants(t *testing.T) {
 	for _, spanID := range []string{installSpan, trigger, serviceSpan, leaf, waiter, selfParent} {
 		scope := store.lookup.logScope(spanID)
 		delete(scope, spanID)
-		for _, target := range store.lookup.causalParents[spanID] {
+		for _, target := range store.lookup.causalParentsOf(spanID) {
 			delete(scope, target)
 		}
 		require.Equal(t, len(scope) > 0, store.HasDescendants(spanID),
