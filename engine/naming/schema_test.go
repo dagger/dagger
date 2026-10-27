@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/vektah/gqlparser/v2/ast"
@@ -11,34 +12,21 @@ import (
 )
 
 // Core schema names are written by hand, not normalized, so they're the
-// largest real-world corpus of canonical names. Type names are canonical as
-// PascalCase with acronyms in capitals (JSONValue). Field and argument names
-// are canonical as camelCase with acronyms written like words (filterUri,
-// asJson), the convention modules get from engine.IdentifierCasingVersion on.
-// Every one is canonical with the Initial dictionary except these, which spell
-// acronyms in capitals and predate that convention. A separate change renames
-// them; until then this list is the exceptions.
-var nonCanonicalCoreNames = map[string]bool{
-	"asJSON":                        true,
-	"clientSchemaIntrospectionJSON": true,
-	"commitSHA":                     true,
-	"expectedRemoteSHA":             true,
-	"experimentalWithAllGPUs":       true,
-	"experimentalWithGPU":           true,
-	"htmlRepoURL":                   true,
-	"htmlURL":                       true,
-	"insecureSkipTLSVerify":         true,
-	"introspectionSchemaJSON":       true,
-	"prerequisiteSHAs":              true,
-	"previousSHA":                   true,
-	"traceURL":                      true,
-	"treeSHA":                       true,
-	"withGPU":                       true,
-	"withMCPServer":                 true,
-	"withSDK":                       true,
-	"withVCSGeneratedPaths":         true,
-	"withVCSIgnoredPaths":           true,
-	"withoutSDK":                    true,
+// largest real-world corpus of conventional names. docs/docs-graphql's
+// schema is the latest view, which follows the GraphQL casing convention
+// (from engine.IdentifierCasingVersion on): type names are PascalCase with
+// uppercase acronyms (HTTPClient), field, argument and input field names
+// camelCase with capitalized acronyms (asJson), and enum values
+// SCREAMING_SNAKE_CASE. These names don't, and are allowed to; keep it
+// empty, and give the reason for any name added. (core/schema's
+// TestCoreSchemaGraphQLCasing checks the live schema's views too.)
+var nonConventionalCoreNames = map[string]bool{}
+
+// legacyLoaderName reports a legacy load<Type>FromID root field, kept as it
+// is for old clients and replaced by node(id:). They're not in the latest
+// view, but would be exempt.
+func legacyLoaderName(name string) bool {
+	return strings.HasPrefix(name, "load") && strings.HasSuffix(name, "FromID")
 }
 
 func loadCoreSchema(t *testing.T) *ast.SchemaDocument {
@@ -89,40 +77,35 @@ func collectCoreNames(t *testing.T) coreNames {
 	return coreNames{sorted(types), sorted(members), sorted(enumValues)}
 }
 
-func TestCoreSchemaCanonical(t *testing.T) {
+func TestCoreSchemaConventional(t *testing.T) {
 	names := collectCoreNames(t)
 	t.Logf("%d type names, %d field/argument names, %d enum values",
 		len(names.types), len(names.members), len(names.enumValues))
 
 	for _, name := range names.types {
-		if got := mustParse(t, name).Format(Pascal, Uppercase); got != name {
-			t.Errorf("type %q is not canonical: %q", name, got)
+		if got := mustParse(t, name).Format(Pascal, Uppercase); got != name && !nonConventionalCoreNames[name] {
+			t.Errorf("type %q is not conventional: %q", name, got)
 		}
 	}
-
-	var nonCanonical []string
 	for _, name := range names.members {
-		if got := mustParse(t, name).Format(Camel, Capitalized); got != name {
-			nonCanonical = append(nonCanonical, name)
-			if !nonCanonicalCoreNames[name] {
-				t.Errorf("field/argument %q is not canonical: %q", name, got)
-			}
+		if legacyLoaderName(name) {
+			continue
+		}
+		if got := mustParse(t, name).Format(Camel, Capitalized); got != name && !nonConventionalCoreNames[name] {
+			t.Errorf("field/argument %q is not conventional: %q", name, got)
 		}
 	}
-	t.Logf("%d non-canonical field/argument names: %v", len(nonCanonical), nonCanonical)
-	for name := range nonCanonicalCoreNames {
-		if got := mustParse(t, name).Format(Camel, Capitalized); got == name {
-			t.Errorf("%q is canonical now; drop it from the allowlist", name)
-		}
-	}
-
-	var legacyEnumValues []string
 	for _, name := range names.enumValues {
-		if got := mustParse(t, name).Format(ScreamingSnake, Uppercase); got != name {
-			legacyEnumValues = append(legacyEnumValues, name)
+		if got := mustParse(t, name).Format(ScreamingSnake, Uppercase); got != name && !nonConventionalCoreNames[name] {
+			t.Errorf("enum value %q is not conventional: %q", name, got)
 		}
 	}
-	t.Logf("%d non-canonical enum values: %v", len(legacyEnumValues), legacyEnumValues)
+	for name := range nonConventionalCoreNames {
+		id := mustParse(t, name)
+		if id.Format(Pascal, Uppercase) == name || id.Format(Camel, Capitalized) == name || id.Format(ScreamingSnake, Uppercase) == name {
+			t.Errorf("%q is conventional now; drop it from the allowlist", name)
+		}
+	}
 }
 
 // The guarantees hold across the core schema, not just the test vectors.
