@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -63,7 +64,8 @@ func TestValueTransferPartsSelectedChain(t *testing.T) {
 		opened, err := consumer.Manager.ImportChain(ctx, &bkcache.ExportChain{Layers: entry.Layers, Provider: entry.Provider})
 		require.NoError(t, err)
 		defer opened.Release(context.WithoutCancel(ctx))
-		testutil.CheckFile(t, opened, "private.txt", "whole parent bytes")
+		require.Len(t, entry.Layers, 1, "a file's chain holds the file alone")
+		require.NoFileExists(t, filepath.Join(testutil.Root(t, opened), "private.txt"))
 		testutil.CheckFile(t, opened, "visible/value.txt", "selected bytes")
 		return nil
 	})
@@ -90,6 +92,85 @@ func TestValueTransferPartsSelectedChain(t *testing.T) {
 		return nil
 	}))
 }
+// What the File operations that look past the file see: a named chown
+// resolves through the account databases of the File's filesystem, and
+// withName renames next to its siblings.
+type pastTheFile struct {
+	owner   string
+	renamed string
+}
+
+func lookPastTheFile(t *testing.T, ctx context.Context, file dagql.ObjectResult[*File]) pastTheFile {
+	t.Helper()
+	newFile := func() *File {
+		return &File{File: new(LazyAccessor[string, *File]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]), Platform: file.Self().Platform}
+	}
+	chowned := newFile()
+	require.NoError(t, chowned.Chown(ctx, file, "auser:agroup"))
+	chownedRef, _ := chowned.Snapshot.Peek()
+	t.Cleanup(func() { require.NoError(t, chownedRef.Release(context.Background())) })
+	chownedPath, _ := chowned.File.Peek()
+	info, err := os.Lstat(filepath.Join(testutil.Root(t, chownedRef), chownedPath))
+	require.NoError(t, err)
+	stat := info.Sys().(*syscall.Stat_t)
+	renamed := newFile()
+	require.NoError(t, renamed.WithName(ctx, file, "output"))
+	renamedRef, _ := renamed.Snapshot.Peek()
+	t.Cleanup(func() { require.NoError(t, renamedRef.Release(context.Background())) })
+	renamedPath, _ := renamed.File.Peek()
+	contents, err := os.ReadFile(filepath.Join(testutil.Root(t, renamedRef), renamedPath))
+	require.NoError(t, err)
+	return pastTheFile{owner: fmt.Sprintf("%d:%d", stat.Uid, stat.Gid), renamed: string(contents)}
+}
+
+// A File exported as its own content behaves on the importing cache as on the
+// one that made it, for the operations that look past the file. A named chown
+// resolves the source's names, and withName replaces a directory that sat
+// next to the file in the source, which the File can't otherwise see.
+func TestValueTransferFileLooksPastItselfTheSame(t *testing.T) {
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	write := func(t *testing.T, root, name, value string) {
+		path := filepath.Join(root, name)
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0755))
+		require.NoError(t, os.WriteFile(path, []byte(value), 0640))
+	}
+	base, _ := producer.BuildWith(t, nil, func(root string) {
+		write(t, root, "etc/passwd", "auser:x:1234:4321::/home/auser:/bin/sh\n")
+		write(t, root, "etc/group", "agroup:x:4321:\n")
+		write(t, root, "src/output/keep.txt", "sibling bytes")
+	})
+	tree, _ := producer.BuildWith(t, base, func(root string) { write(t, root, "src/go.mod", "module example\n") })
+	ctx, cache, srv := transferCache(t, producer, filepath.Join(t.TempDir(), "a.db"), "a")
+	file := &File{File: new(LazyAccessor[string, *File]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]), Platform: Platform{OS: "linux", Architecture: "amd64"}}
+	file.SetPath("/src/go.mod")
+	file.SetSnapshot(tree)
+	fileResult := attachTransferObject(t, ctx, cache, srv, "a", "goMod", file)
+	require.NoError(t, cache.Evaluate(ctx, fileResult))
+	local := lookPastTheFile(t, ctx, fileResult)
+	require.Equal(t, pastTheFile{owner: "1234:4321", renamed: "module example\n"}, local)
+
+	var bundle dagql.ValueBundle
+	selection := dagql.ValueSelection{Roots: []dagql.AnyResult{fileResult}, Outputs: []dagql.SelectedValueOutput{{Result: fileResult, Address: dagql.PersistedPartAddress{Part: "snapshot"}}}}
+	require.NoError(t, cache.WithExportedValues(ctx, selection, config.RefConfig{Compression: compression.New(compression.Uncompressed)}, func(ctx context.Context, values *dagql.ExportedValues) error {
+		bundle = values.Bundle
+		require.Len(t, values.Chains.Entries, 1)
+		entry := values.Chains.Entries[0]
+		opened, err := consumer.Manager.ImportChain(ctx, &bkcache.ExportChain{Layers: entry.Layers, Provider: entry.Provider})
+		require.NoError(t, err)
+		defer opened.Release(context.WithoutCancel(ctx))
+		require.NoDirExists(t, filepath.Join(testutil.Root(t, opened), "src/output"), "the importing cache gets the file's own content")
+		return nil
+	}))
+	bctx, b, bsrv := transferCache(t, consumer, filepath.Join(t.TempDir(), "b.db"), "b")
+	reply, err := b.MergeValues(bctx, dagql.CloudCacheID, bundle)
+	require.NoError(t, err)
+	loaded, err := b.LoadResultByResultID(bctx, "b", bsrv, reply.Imported()[0].ResultID)
+	require.NoError(t, err)
+	imported := loaded.(dagql.ObjectResult[*File])
+	require.NoError(t, b.Evaluate(bctx, imported))
+	require.Equal(t, local, lookPastTheFile(t, bctx, imported))
+}
+
 func mustTransferPath(t *testing.T, ctx context.Context, file dagql.ObjectResult[*File]) string {
 	t.Helper()
 	path, err := file.Self().PathOrEval(ctx, file)

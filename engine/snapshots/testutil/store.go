@@ -165,6 +165,21 @@ func (s *Store) GC(t testing.TB) {
 // owner lease. The caller can release that owner independently of returned refs.
 func (s *Store) Build(t testing.TB, parent bkcache.ImmutableRef, name, value string) (bkcache.ImmutableRef, string) {
 	t.Helper()
+	if name == "" {
+		return s.BuildWith(t, parent, nil)
+	}
+	return s.BuildWith(t, parent, func(root string) {
+		path := filepath.Join(root, name)
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0755))
+		require.NoError(t, os.WriteFile(path, []byte(value), 0640))
+		require.NoError(t, os.Chtimes(path, FileTime, FileTime))
+	})
+}
+
+// BuildWith is Build with write making the layer's changes under its root. A
+// nil write makes no changes.
+func (s *Store) BuildWith(t testing.TB, parent bkcache.ImmutableRef, write func(root string)) (bkcache.ImmutableRef, string) {
+	t.Helper()
 	ctx := context.Background()
 	owner, err := s.Leases.Create(ctx, leases.WithRandomID())
 	require.NoError(t, err)
@@ -176,15 +191,12 @@ func (s *Store) Build(t testing.TB, parent bkcache.ImmutableRef, name, value str
 	mounter := bkcache.LocalMounter(mounted)
 	root, err := mounter.Mount()
 	require.NoError(t, err)
-	if name != "" {
-		path := filepath.Join(root, name)
-		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0755))
-		require.NoError(t, os.WriteFile(path, []byte(value), 0640))
-		require.NoError(t, os.Chtimes(path, FileTime, FileTime))
+	if write != nil {
+		write(root)
 	}
 	require.NoError(t, mounter.Unmount())
 	var ref bkcache.ImmutableRef
-	if name == "" {
+	if write == nil {
 		// No filesystem changes were made. Exercise the ordinary commit path
 		// with known empty usage, as snapshot diff application can supply.
 		ref, err = mut.CommitWithUsage(ctx, ctdsnapshots.Usage{})
