@@ -131,7 +131,7 @@ Each implementation recovers that information with different heuristics.
 | Suffix | Trailing digits and/or a plural `s`, in that order, attached to an acronym or term: `SHA`+`s`, `OAuth`+`2`, `HTTP`+`2s`. The plural ends the word. An ordinary word keeps its digits in its text. |
 | Casing | The joining convention: `PASCAL`, `CAMEL`, `SNAKE`, `SCREAMING_SNAKE`, `KEBAB`, `FLAT`. |
 | Acronym style | How acronyms and terms are written where a word starts with a capital: `UPPERCASE` (`HTTPClient`) or `CAPITALIZED` (`HttpClient`). |
-| Canonical name | `format(parse(x), casing, UPPERCASE)` for the casing the schema uses at that position. |
+| Canonical name | `format(parse(x), casing, style)` for the casing and acronym style the schema uses at that position: `PASCAL`/`UPPERCASE` for types (`HTTPClient`), `CAMEL`/`CAPITALIZED` for fields and arguments (`httpClient`, `baseUrl`), `SCREAMING_SNAKE` for enum values (see [Schema casing convention](#schema-casing-convention)). |
 | Dictionary | The engine's versioned list of acronyms and terms. |
 
 ## Parsing
@@ -301,6 +301,27 @@ The suffix is appended as is (lowercase `s`, digits), except in
 
 `FLAT` exists for Go package names and Python module names. It drops all
 boundaries, so it is output-only: it doesn't round-trip.
+
+### Schema casing convention
+
+Schema names follow the prevailing GraphQL convention, which is also what
+agents are trained on: acronyms in capitals in type names, written like words
+in field and argument names (`avatarUrl`, `databaseId`):
+
+| position | casing / acronyms | examples |
+| --- | --- | --- |
+| types (objects, interfaces, enums, scalars, inputs) | `PASCAL`/`UPPERCASE` | `JSONValue`, `HTTPClient` |
+| fields, functions, arguments (and collection members) | `CAMEL`/`CAPITALIZED` | `asJson`, `baseUrl`, `filterUri`, `httpClient` |
+| enum values | `SCREAMING_SNAKE` | `HTTP_CLIENT`, `E2E_TEST` |
+| CLI commands and flags | `KEBAB` | `--base-url` |
+
+Terms keep their entry's `capitalized` form in fields (`githubRepo`,
+`fromGitHubIpv6`, `myK8sCluster`). The core schema mixes both acronym styles
+in fields today (`traceURL` but `pushUrl`, `commitSHA` but `shortSha`); v1.0
+is the time to settle on one. The convention applies to module names from
+`v1.0.0-beta.21` on (see [The gate](#the-gate)); the core fields that write
+acronyms in capitals are exceptions until they're renamed (see
+[Core schema](#core-schema)).
 
 ## The Dictionary
 
@@ -496,9 +517,11 @@ Notes:
 - `Casing` and `AcronymStyle` can gain values later without breaking anyone.
 - Like every object in the schema, `IdentifierWord` and `NamingTerm` also
   implement `Node`.
-- The API is `@experimental` and visible to clients at engine version
-  `v1.0.0-beta.21` (`IdentifierNamingVersion`) and above: the same views
-  whose modules are named by the new rules (see [The gate](#the-gate)).
+- The API is `@experimental` and visible to clients on every v1 view
+  (`v1.0.0-0` and above), including the views whose modules keep the strcase
+  names. Which rules a module's names follow is decided by the engine version
+  it declares (see [The gate](#the-gate)), not by the API's presence; the
+  `version` argument of `formatIdentifiers` selects the dictionary.
 
 ## Engine Integration
 
@@ -510,7 +533,7 @@ the old strcase code byte for byte:
 | legacy (strcase) | `Namer` with a dictionary |
 | --- | --- |
 | `gqlObjectName` (`strcase.ToCamel`) | `ObjectName`: `PASCAL` / `UPPERCASE` |
-| `gqlFieldName`, `gqlArgName` (`strcase.ToLowerCamel`) | `FieldName`, `ArgName`: `CAMEL` / `UPPERCASE` |
+| `gqlFieldName`, `gqlArgName` (`strcase.ToLowerCamel`) | `FieldName`, `ArgName`: `CAMEL` / `CAPITALIZED` |
 | `gqlEnumMemberName` (`strcase.ToScreamingSnake`) | `EnumMemberName`: `SCREAMING_SNAKE` |
 | `namespaceObject` prefix check (`'A' <= rest[0] <= 'Z'`) | `NamespaceObject`: the object's words start with the module's words |
 | `strcase.ToKebab` for CLI paths and addresses (`core/modtree.go`, `core/artifacts.go`, `core/schema/address.go`, `engine/server/session_workspaces.go`) | `CLIName`: `KEBAB`, keeping glob and path characters |
@@ -544,12 +567,12 @@ the old strcase code byte for byte:
   name matching (`FieldNameCandidates`, `SameCLIName`, `artifactPatterns`)
   accept both the legacy and the new spelling, since they run before the
   module's version is known.
-- **SDK runtime arguments.** SDK modules at the new version receive the
-  `introspectionJSON` argument instead of `introspectionJson`.
+- **SDK runtime arguments.** SDK interface arguments keep their names across
+  the cut: `introspectionJson` is spelled alike by strcase and by the new
+  field convention.
 - **Go module codegen** (`cmd/codegen`) can't import `core`, so
-  `module_naming.go` mirrors `Namer`. It gates like SDK codegen, on
-  `Query.formatIdentifiers` being in the schema it generates from, so it can't
-  disagree with the engine (see [The gate](#the-gate)).
+  `module_naming.go` mirrors `Namer`. It gates like SDK codegen, on the
+  engine version the module declares (see [The gate](#the-gate)).
 
 ### CLI
 
@@ -578,8 +601,8 @@ Codegen asks the engine to format the schema's names, with
 `Query.formatIdentifiers` (see
 [Formatting names in codegen](#formatting-names-in-codegen)), so the formatting
 rules and the dictionary live only in the engine. Each SDK keeps its old
-converter only as the fallback for schemas without `formatIdentifiers`, so
-older schemas generate byte-identical code.
+converter as the fallback for modules that declare an engine version before
+the cut, so they generate byte-identical code.
 
 The principle is **"when in Rome"**: each SDK follows its own language's
 acronym convention, not one house style. Go writes initialisms in capitals
@@ -589,7 +612,7 @@ acronym convention, not one house style. Go writes initialisms in capitals
 
 | SDK | types | methods / fields | args | enum values |
 | --- | --- | --- | --- | --- |
-| GraphQL schema | `PASCAL`/`UPPERCASE` | `CAMEL`/`UPPERCASE` | `CAMEL`/`UPPERCASE` | `SCREAMING_SNAKE` |
+| GraphQL schema | `PASCAL`/`UPPERCASE` | `CAMEL`/`CAPITALIZED` | `CAMEL`/`CAPITALIZED` | `SCREAMING_SNAKE` |
 | Go | `PASCAL`/`UPPERCASE` | `PASCAL`/`UPPERCASE` | `CAMEL`/`UPPERCASE` | `PASCAL`/`UPPERCASE` |
 | TypeScript | schema name (`PASCAL`/`UPPERCASE`) | `CAMEL`/`UPPERCASE` | `CAMEL`/`UPPERCASE` | `PASCAL`/`CAPITALIZED` |
 | Python | schema name | `SNAKE` | `SNAKE` | `SCREAMING_SNAKE` (value: schema value) |
@@ -622,7 +645,10 @@ runtime also sends the module's own enum members by their schema names in
 calls through its interfaces (the engine names them `SCREAMING_SNAKE`).
 
 TypeScript's own convention is ambiguous (`XMLHttpRequest`, `innerHTML`).
-Members follow the schema's `UPPERCASE` (`filterURI`, `callID`), and enum
+Members were to follow the schema's `UPPERCASE` (`filterURI`, `callID`), from
+before the schema settled on `CAPITALIZED` fields (see
+[Schema casing convention](#schema-casing-convention)); whether they follow it
+to `filterUri` is the TypeScript SDK's call. Enum
 members keep the `PASCAL`/`CAPITALIZED` form the generator always wrote
 (`Tcp`, `Oci`).
 
@@ -695,11 +721,11 @@ predict those names. Before invoking a function of a module that declares
 interfaces, they ask the engine with `Query.formatIdentifiers`, in batches, and
 use the results for selections, argument keys and `node(id:)` type names (the
 TypeScript runtime namespaces each interface the way the engine does,
-comparing words). The gate is
-the field itself: a runtime's session is served at its module's view, which
-has `formatIdentifiers` exactly when the engine names the module by the new
-rules (see [The gate](#the-gate)), so older modules keep the conversion they
-always used. Go module codegen mirrors `Namer` instead (see
+comparing words). The gate is the engine version the module declares: from
+`v1.0.0-beta.21` on, the engine names the module by the new rules (see
+[The gate](#the-gate)), and older modules keep the conversion they always
+used. The identifier API is on every v1 view, so its presence says nothing
+about which rules apply. Go module codegen mirrors `Namer` instead (see
 [Which namer applies](#which-namer-applies)).
 
 ### Formatting names in codegen
@@ -729,14 +755,17 @@ In Go, `cmd/codegen/introspection` has the helpers: `Schema.Names` collects the
 names, `FormatNames` makes the calls (in batches, if the list gets large), and
 `Schema.LoadFormattedNames` / `Schema.FormattedName` keep the maps on the
 schema for the generators. `cmd/codegen` connects to the engine whenever it
-generates from introspection JSON that has `Query.formatIdentifiers`.
+generates for a module or client at the new rules (see the gate below).
 
-**Gate:** the schema being generated. If it has no `Query.formatIdentifiers`
-(schema views before `v1.0.0-beta.21`, the identifier API's gate, or older
-engines), codegen formats nothing through the engine and keeps its legacy
-converter, so older modules and clients regenerate byte-identical code. A
-name missing from a map (one that isn't among the schema's names) also gets
-the legacy converter.
+**Gate:** the engine version the target module declares, plus the engine's
+own `version`. A module that declares a version before `v1.0.0-beta.21`, or
+an engine older than the identifier API, gets no names formatted through the
+engine: codegen keeps its legacy converter, so older modules and clients
+regenerate byte-identical code. The gate is not the schema: the identifier API
+(`identifier`, `formatIdentifiers`, `namingDictionary`) is served on every v1
+view (`v1.0.0-0` on), including the views whose modules keep the strcase
+names, so a generator exec at any v1 view can call it. A name missing from a
+map (one that isn't among the schema's names) also gets the legacy converter.
 
 **Offline generators** get the names from the online step, as a sidecar file
 next to the introspection JSON, which stays unchanged:
@@ -754,8 +783,8 @@ codegen introspect -o schema.json \
 ```
 
 Each key is a `CASING:ACRONYMS` pair of `Casing` and `AcronymStyle` values, and
-maps every schema name to its formatted form. A schema without
-`Query.formatIdentifiers` gets `{}`. A generator uses its legacy converter for a
+maps every schema name to its formatted form. A module before the cut gets
+`{}`. A generator uses its legacy converter for a
 format or name the file doesn't have, so the same gate applies.
 
 **Module runtimes** hand their codegen the same sidecar. The Python, PHP,
@@ -764,8 +793,8 @@ the runtime formats the module schema's names itself and mounts the file for
 codegen (Python asks for `SNAKE:UPPERCASE`; PHP and Elixir for the formats
 their generators use; Java for `CAMEL:CAPITALIZED`, `PASCAL:CAPITALIZED` and
 `SCREAMING_SNAKE:UPPERCASE`, in `sdk/java/runtime/names.go`). The runtime
-modules declare `engineVersion` v1.0.0, so their own sessions have
-`formatIdentifiers`; they call it with `version` set to the module schema's
+modules' own sessions have `formatIdentifiers` whatever v1 version they
+declare; they call it with `version` set to the module schema's
 `__schemaVersion`, so the names are parsed with the dictionary of the module's
 version, not the runtime's.
 
@@ -827,10 +856,12 @@ view (`ModuleSource.NamingView`, `engine.APIViewVersion` of its
 view, so modules released against those betas keep the strcase names they
 shipped with, byte for byte.
 A prerelease engine refuses a module declaring a view past its own (exactly
-`v1.0.0`, say), so no engine names a module by rules it doesn't have. The same
-view gates `Query.formatIdentifiers`,
-which SDK codegen and the Python and TypeScript runtimes check, so a module's
-codegen and runtime always agree with the engine on its names.
+`v1.0.0`, say), so no engine names a module by rules it doesn't have. SDK
+codegen and the Python and TypeScript runtimes gate on the same version: the
+one the module declares, checked against the engine's `version`. They don't
+gate on `Query.formatIdentifiers` being in the schema, which is served on every
+v1 view (from `v1.0.0-0`), so they can call it from generator execs at any v1
+view.
 
 There are no aliases for the old spellings: a module's schema has exactly the
 names of its own rules, and bumping `engineVersion` past the cut is an opt-in
@@ -882,14 +913,15 @@ version, and so the engine's API and naming rules; reading a version the
 entrypoint declares is separate work. Its client is served at that view, so
 the typedef constructors its entrypoint calls name by those rules,
 `Module.Namer` names its namespaced types, constructor and CLI paths by them,
-and its codegen sees `Query.formatIdentifiers` exactly when they're the new
-rules. Dispatch doesn't care, since calls carry original names.
+and its codegen gates on that same version. Dispatch doesn't care, since calls
+carry original names.
 
-Served at an engine version past the cut, existing entrypoint modules' acronyms
-are renamed: an SDK that registers `getUrl` (Python's own `snake_to_camel` of
-`get_url`) sees it become `getURL`, and a module `tiny`'s `HttpClient` type
-becomes `TinyHTTPClient` (was `TinyHttpClient`). There are no aliases for the
-old spellings.
+Served at an engine version past the cut, existing entrypoint modules' type
+acronyms are renamed: a module `tiny`'s `HttpClient` type becomes
+`TinyHTTPClient` (was `TinyHttpClient`). Fields keep acronyms written like
+words, so an SDK that registers `getUrl` (Python's own `snake_to_camel` of
+`get_url`) keeps `getUrl`; names with digits or terms still change
+(`e2ETest` → `e2eTest`). There are no aliases for the old spellings.
 
 **Pinned naming.** A later dictionary addition would rename an entrypoint
 module again on engine upgrade, which is what versioning the dictionary
@@ -1087,7 +1119,10 @@ contain runs of capitals or dictionary terms get their real casing back:
   resolve to the core type instead of a namespaced copy.
 - CLI flags: `E2ETest` → `--e2e-test` (was `--e-2-e-test`, which is still
   accepted).
-- Python arguments: `com_url` → `comURL` (was `comUrl`).
+- Fields, functions and arguments with digits or dictionary terms:
+  `e2ETest` → `e2eTest`, `myK8SCluster` → `myK8sCluster`. Acronyms in fields
+  stay written like words, as strcase wrote them (`baseUrl`, Python's
+  `com_url` → `comUrl`).
 - Enum members with digits or dictionary terms: `ARM_64` → `ARM64`,
   `GIT_HUB` → `GITHUB`.
 
@@ -1101,15 +1136,29 @@ member spellings it printed before, on its side only.
 
 Core names are written by hand in Go and are *not* run through the
 normalizer. Measured against `docs/docs-graphql/schema.graphqls` with the
-initial dictionary, before the API above added its own (canonical) names:
+initial dictionary, by the [schema casing
+convention](#schema-casing-convention):
 
-- All 126 type names are already canonical.
-- 696 of 703 field/argument names are already canonical. The 7 exceptions:
-  `asSdkName`, `callId`, `filterUri`, `parentShas`, `pushUrl`, `shortSha`,
-  `withoutUri`.
+- All type names are already canonical (`PASCAL`/`UPPERCASE`).
+- All but 20 field/argument names are already canonical
+  (`CAMEL`/`CAPITALIZED`, e.g. `filterUri`, `pushUrl`, `shortSha`). The
+  exceptions write acronyms in capitals: `asJSON`,
+  `clientSchemaIntrospectionJSON`, `commitSHA`, `expectedRemoteSHA`,
+  `experimentalWithAllGPUs`, `experimentalWithGPU`, `htmlRepoURL`, `htmlURL`,
+  `insecureSkipTLSVerify`, `introspectionSchemaJSON`, `prerequisiteSHAs`,
+  `previousSHA`, `traceURL`, `treeSHA`, `withGPU`, `withMCPServer`,
+  `withSDK`, `withVCSGeneratedPaths`, `withVCSIgnoredPaths`, `withoutSDK`.
+  Renaming them is a separate change.
 - One enum still uses legacy PascalCase values with no `SCREAMING_SNAKE`
   aliases: `FunctionCachePolicy` (`Default`, `PerSession`, `Never`).
   `ImageLayerCompression` and `ImageMediaTypes` already have aliases.
+
+> **Superseded.** An earlier revision of this design took fields'
+> acronyms in capitals as the convention, and planned the opposite renames
+> on the views with the new rules: `GitCommit.shortSHA` and `parentSHAs`,
+> `Artifacts.filterURI` and `withoutURI`, `LLMContentBlock.callID`, ... The
+> rest of this section, and [What changes for SDK
+> users](#what-changes-for-sdk-users), still describe that plan.
 
 These are renamed on the views with the new rules, with their old spellings
 kept as hidden aliases there ([Transition aliases](#transition-aliases),
@@ -1247,9 +1296,9 @@ the `engine/naming` tests.
    know survive only formats that keep capitals (`PASCAL`, and `CAMEL` after the
    first word, with `UPPERCASE`).
 2. **Idempotence.** Formatting the result again changes nothing:
-   `format(parse(format(parse(x), C, UPPERCASE)), C, UPPERCASE)` equals
-   `format(parse(x), C, UPPERCASE)` for `PASCAL`, `CAMEL`, `SNAKE` and
-   `SCREAMING_SNAKE`.
+   `format(parse(format(parse(x), C, S)), C, S)` equals
+   `format(parse(x), C, S)` for `PASCAL`, `CAMEL`, `SNAKE` and
+   `SCREAMING_SNAKE`, in either style `S`.
 3. **Canonical names come back unchanged.** This is what makes
    `withFinalTypeName` unnecessary, and why every core type name passes
    through unchanged.
