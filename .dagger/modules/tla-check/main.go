@@ -157,6 +157,8 @@ var expectedOutcome = map[string]string{
 	// mutation: the claim trusts the session edge read at selection, so
 	// two overlapping hits of one session both add an ownership unit.
 	"shared_claims_stale_edge": "OwnershipExact",
+	// mutation of shared_claims_prune at its bounds, as above.
+	"shared_claims_prune_stale_edge": "OwnershipExact",
 }
 
 var clientExpectedOutcome = map[string]string{
