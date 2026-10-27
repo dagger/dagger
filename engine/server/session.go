@@ -1214,10 +1214,17 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	ctx, cancel := context.WithTimeout(teardownCtx, 60*time.Second)
 	defer cancel()
 
+	// A profiled session records its removal and the removal's main steps as
+	// ops under the session's own op. They are native only, like that op: the
+	// session's telemetry is itself shut down here.
+	teardown := sess.phase.beginTeardown()
+
+	step := teardown.beginStep("session.stopServices")
 	if err := sess.services.StopSessionServices(ctx, sess.sessionID); err != nil {
 		slog.Warn("error stopping services", "error", err)
 		errs = errors.Join(errs, fmt.Errorf("stop client services: %w", err))
 	}
+	step.end()
 
 	slog.Debug("stopped services")
 
@@ -1246,12 +1253,14 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	// before shutting telemetry down below: it makes the per-trace span count EXACT
 	// (no query is still creating spans) and means a late query's telemetry is
 	// recorded before its provider closes rather than lost.
+	step = teardown.beginStep("session.drainQueries")
 	sess.dagqlMu.Lock()
 	sess.dagqlClosing = true
 	for sess.dagqlInFlight > 0 {
 		sess.dagqlCond.Wait()
 	}
 	sess.dagqlMu.Unlock()
+	step.end()
 
 	// cleanup analytics and telemetry
 	errs = errors.Join(errs, sess.analytics.Close())
@@ -1264,6 +1273,7 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	// WaitSessionRelease turns that handoff into the completion barrier required
 	// before the final telemetry flush: cleanup hooks may themselves emit spans,
 	// logs, or metrics.
+	step = teardown.beginStep("session.releaseCache")
 	beforeDagqlEntries := srv.engineCache.Size()
 	beforeDagqlStats := srv.engineCache.EntryStats()
 	cacheReleaseErr := srv.engineCache.ReleaseSession(ctx, sess.sessionID)
@@ -1282,6 +1292,7 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 		slog.Error("error waiting for client scopes to drain", "error", err)
 		errs = errors.Join(errs, fmt.Errorf("wait for client scopes: %w", err))
 	}
+	step.end()
 	sess.schemaBuilderMemo.Store(nil)
 	afterDagqlEntries := srv.engineCache.Size()
 	afterDagqlStats := srv.engineCache.EntryStats()
@@ -1307,18 +1318,21 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	// delivery barrier for the session-owned providers.
 	telemetryCtx, cancelTelemetry := context.WithTimeout(teardownCtx, 60*time.Second)
 	defer cancelTelemetry()
+	step = teardown.beginStep("session.shutdownTelemetry")
 	srv.stampSessionComplete(telemetryCtx, sess)
 	srv.wcprofSpanCount.Reap(sess.wcprofTraceID)
 	telemetryErr := sess.shutdownTelemetry(telemetryCtx)
 	errs = errors.Join(errs, telemetryErr)
 	archiveErrs = errors.Join(archiveErrs, telemetryErr)
 	errs = errors.Join(errs, srv.finalizeSessionArchive(telemetryCtx, sess, archiveErrs))
+	step.end()
 
 	// ensure this chan is closed even if the client never explicitly called the /shutdown endpoint
 	sess.closeShutdownOnce.Do(func() {
 		close(sess.shutdownCh)
 	})
 
+	teardown.end()
 	sess.phase.end(srv)
 	return errs
 }

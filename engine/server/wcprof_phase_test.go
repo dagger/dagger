@@ -172,3 +172,50 @@ func TestProfilePhaseFailedStartLeavesReplacementArmed(t *testing.T) {
 	cancel()
 	require.ErrorIs(t, <-resB, context.Canceled)
 }
+
+// A profiled run's steps are ops under its op, nested as begun; an
+// unprofiled run's are no-ops.
+func TestPhaseSteps(t *testing.T) {
+	wcprof.EnsureRecorder()
+	ctx := wcprof.ContextWithProfiling(context.Background())
+	srv := &Server{}
+	p := srv.beginSessionPhase(ctx, "phase-steps-session")
+	require.NotNil(t, p)
+	teardown := p.beginTeardown()
+	step := teardown.beginStep("session.releaseCache")
+	step.end()
+	teardown.end()
+	p.end(srv)
+
+	var buf bytes.Buffer
+	require.NoError(t, wcprof.Active().WriteDump(&buf, false))
+	header, events, err := wcprof.ReadDump(&buf)
+	require.NoError(t, err)
+	parents := map[uint64]uint64{}
+	var sessionID, teardownID, stepID uint64
+	for _, ev := range events {
+		if ev.Type != "op" {
+			continue
+		}
+		parents[ev.OpID] = ev.ParentID
+		switch {
+		case header.Strings[ev.ClassID] == PhaseSession && header.Strings[ev.IdentID] == "phase-steps-session":
+			sessionID = ev.OpID
+		case header.Strings[ev.ClassID] == "session.teardown":
+			teardownID = ev.OpID
+		case header.Strings[ev.ClassID] == "session.releaseCache":
+			stepID = ev.OpID
+		}
+	}
+	require.NotZero(t, sessionID, "no session phase op")
+	require.NotZero(t, teardownID, "no teardown op")
+	require.NotZero(t, stepID, "no step op")
+	require.Equal(t, sessionID, parents[teardownID], "teardown under the session")
+	require.Equal(t, teardownID, parents[stepID], "step under the teardown")
+
+	// Not profiled: no run, or a run only for an armed profile; its steps do
+	// nothing.
+	var none *phaseRun
+	none.beginTeardown().beginStep("x").end()
+	(&phaseRun{}).beginTeardown().end()
+}

@@ -113,6 +113,44 @@ func (p *phaseRun) end(srv *Server) {
 	p.op.End(wcprof.OutcomeOK)
 }
 
+// phaseStep is one step of a phase run, recorded as its own op under the
+// run's op (or under an enclosing step's) when the run is profiled. Its methods
+// work on a nil step, so callers need no profiling checks.
+type phaseStep struct {
+	ctx context.Context
+	op  *wcprof.Op
+}
+
+// beginTeardown begins the run's removal step, "session.teardown", directly
+// under its op. Nil when the run isn't profiled.
+func (p *phaseRun) beginTeardown() *phaseStep {
+	if p == nil || p.op == nil {
+		return nil
+	}
+	return beginPhaseStep(p.ctx, "session.teardown")
+}
+
+// beginStep begins a step within this one.
+func (s *phaseStep) beginStep(name string) *phaseStep {
+	if s == nil {
+		return nil
+	}
+	return beginPhaseStep(s.ctx, name)
+}
+
+func beginPhaseStep(ctx context.Context, name string) *phaseStep {
+	ctx, op := wcprof.BeginOp(ctx, wcprof.OpKindSessionPhase, name, wcprof.OpOpts{})
+	return &phaseStep{ctx: ctx, op: op}
+}
+
+// end ends the step.
+func (s *phaseStep) end() {
+	if s == nil {
+		return
+	}
+	s.op.End(wcprof.OutcomeOK)
+}
+
 // armedProfile is a CPU profile armed for the next run of a phase. The
 // server's armedMu guards arming, starting and disarming, so a started
 // profile stays armed, and keeps others from arming, until its run ends.
