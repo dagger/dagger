@@ -619,7 +619,6 @@ func TestPartPrefetchAheadReleasedAtClose(t *testing.T) {
 	require.Zero(t, f.snapshotCount(t))
 }
 
-
 // aheadLines returns the logged imports ahead, waiting until there are n.
 func (f *prefetchFixture) aheadLines(t *testing.T, n int) []offerLine {
 	t.Helper()
@@ -659,8 +658,11 @@ func TestPartPrefetchAheadAfterSkippedReplacement(t *testing.T) {
 	require.Equal(t, "done", f.aheadLines(t, 2)[1].fields["outcome"], "the replacement imports ahead")
 }
 
-// An install that arrives while its chain imports ahead waits for it, reuses
-// what it unpacked, and that is counted both as unpacked ahead and as used.
+// An install that arrives while its chain imports ahead reuses what the
+// import ahead unpacked, and what that unpacked is counted both as unpacked
+// ahead and as used. Which of them applies the layers after the first one the
+// import ahead holds up is up to the scheduler, and the install may retire
+// the offer before the import ahead logs: each layer is still applied once.
 func TestPartPrefetchAheadCountsDemandMidImport(t *testing.T) {
 	f := newPrefetchFixture(t, true, nil)
 	entered, release := make(chan struct{}), make(chan struct{})
@@ -694,14 +696,38 @@ func TestPartPrefetchAheadCountsDemandMidImport(t *testing.T) {
 	require.NoError(t, <-installed)
 	require.True(t, f.installed())
 	ahead := f.aheadLines(t, 1)[0]
-	require.Equal(t, "done", ahead.fields["outcome"])
-	require.EqualValues(t, 2, ahead.int(t, "unpacked_layers"))
-	require.EqualValues(t, 2, f.store.Applies.Load(), "the install unpacks nothing")
+	require.Contains(t, []string{"done", "offer_gone"}, ahead.fields["outcome"])
+	require.EqualValues(t, 2, f.store.Applies.Load(), "each layer is applied once")
+	unpacked := ahead.int(t, "unpacked_layers")
+	require.Positive(t, unpacked, "the import ahead applied the layer it held up")
 	var used []offerLine
 	require.Eventually(t, func() bool {
 		used = f.logs.lines(t, "remote cache part ahead used")
 		return len(used) > 0
 	}, 10*time.Second, 10*time.Millisecond)
-	require.EqualValues(t, 2, used[0].int(t, "layers"))
+	require.Equal(t, unpacked, used[0].int(t, "layers"))
 	require.Equal(t, ahead.int(t, "unpacked"), used[0].int(t, "unpacked"))
+}
+
+// What an import ahead unpacked stops being counted once no import ahead
+// holds it any more, even when the last one to go reused it rather than
+// unpacking it: an install of it after that unpacks it again.
+func TestPartPrefetchAheadForgottenWithLastHolder(t *testing.T) {
+	f := newPrefetchFixture(t, true, nil)
+	require.Equal(t, "done", f.runJob(t).fields["outcome"])
+	require.EqualValues(t, 2, f.aheadLines(t, 1)[0].int(t, "unpacked_layers"))
+	donor := f.donorOffer(t)
+	f.prefetch.run(context.Background(), f.job(t, donor))
+	reused := f.aheadLines(t, 2)[1]
+	require.Equal(t, "done", reused.fields["outcome"])
+	require.Zero(t, reused.int(t, "unpacked_layers"), "the donor's import ahead reuses the snapshots")
+	for _, row := range []AnyResult{f.receiver, f.donor} {
+		f.cache.egraphMu.Lock()
+		_, err := f.cache.retirePartOfferLocked(f.ctx, row.cacheSharedResult(), f.address)
+		f.cache.egraphMu.Unlock()
+		require.NoError(t, err)
+	}
+	f.prefetch.mu.Lock()
+	defer f.prefetch.mu.Unlock()
+	require.Empty(t, f.prefetch.aheadBytes, "no import ahead holds those layers")
 }
