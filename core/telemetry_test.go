@@ -51,6 +51,10 @@ type mockServer struct {
 	lockWritable   bool
 }
 
+func (*mockServer) CurrentClientModules(context.Context) ([]WorkspaceClientModule, error) {
+	return nil, nil
+}
+
 func (*mockServer) AuthorizeGitPush(context.Context, string, string, bool, bool) (*GitPushAuthorization, error) {
 	panic("unexpected AuthorizeGitPush")
 }

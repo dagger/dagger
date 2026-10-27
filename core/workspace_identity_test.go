@@ -87,6 +87,14 @@ func TestWorkspaceContentIdentity(t *testing.T) {
 			ws.SetModuleClients(map[string][]string{".dagger/modules/a": {".dagger/modules/b"}})
 			return ws
 		},
+		"client modules": func(ws *Workspace) *Workspace {
+			ws.SetClientModules([]WorkspaceClientModule{{Name: "extra", Digest: digest.FromString("extra")}})
+			return ws
+		},
+		"a client module's main flag": func(ws *Workspace) *Workspace {
+			ws.SetClientModules([]WorkspaceClientModule{{Name: "extra", Digest: digest.FromString("extra"), Main: true}})
+			return ws
+		},
 		"user config key": func(ws *Workspace) *Workspace {
 			ws.SetUserConfigKey("github.com/acme/repo")
 			return ws
@@ -140,7 +148,7 @@ func TestWorkspaceContentIdentityCoversEveryField(t *testing.T) {
 	covered := map[string]bool{
 		"source": true, "rootfs": true, "mounts": true, "mountPoints": true,
 		"compatWorkspace": true, "userConfigKey": true, "userConfigOverlay": true,
-		"selectedEnv": true, "moduleClients": true,
+		"selectedEnv": true, "moduleClients": true, "clientModules": true,
 		"Address": true, "Cwd": true, "ConfigFile": true, "LockFile": true,
 	}
 	// The client route says where host operations go, not what the

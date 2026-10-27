@@ -783,6 +783,16 @@ func (s *workspaceSchema) currentWorkspace(
 	if err != nil {
 		return inst, err
 	}
+	// Artifact discovery also lists the modules the client served beside the
+	// workspace's own, so they are part of a workspace identified by content.
+	if ws.HasContentIdentity() {
+		mods, err := parent.Self().Server.CurrentClientModules(ctx)
+		if err != nil {
+			return inst, err
+		}
+		ws = ws.Clone()
+		ws.SetClientModules(mods)
+	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
@@ -4563,6 +4573,13 @@ func (s *workspaceSchema) workspaceTargetModules(
 	if parentResult.Self().IsValueWorkspace() {
 		return mods, failures, nil
 	}
+	unrecorded, err := unrecordedClientModules(ctx, parentResult.Self())
+	if err != nil {
+		return nil, nil, err
+	}
+	mods = slices.DeleteFunc(mods, func(mod dagql.ObjectResult[*core.Module]) bool {
+		return unrecorded[mod.Self().Name()]
+	})
 
 	// The served modules above are the workspace as it was on disk when the
 	// session started. Re-resolve whatever the workspace's pending overlay
@@ -4638,6 +4655,35 @@ func ensureWorkspaceModulesLoaded(ctx context.Context, include []string, mode co
 		return nil, err
 	}
 	return query.Server.EnsureWorkspaceModules(ctx, include, mode)
+}
+
+// unrecordedClientModules returns the names of the modules the client served
+// beside the workspace's own that ws didn't record when it was loaded. A
+// workspace identified by its content covers the modules it recorded, so
+// discovery through it must not see others.
+func unrecordedClientModules(ctx context.Context, ws *core.Workspace) (map[string]bool, error) {
+	if !ws.HasContentIdentity() {
+		return nil, nil
+	}
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	live, err := query.Server.CurrentClientModules(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("current client modules: %w", err)
+	}
+	recorded := map[string]core.WorkspaceClientModule{}
+	for _, mod := range ws.ClientModules() {
+		recorded[mod.Name] = mod
+	}
+	unrecorded := map[string]bool{}
+	for _, mod := range live {
+		if rec, ok := recorded[mod.Name]; !ok || rec.Digest != mod.Digest {
+			unrecorded[mod.Name] = true
+		}
+	}
+	return unrecorded, nil
 }
 
 func currentWorkspacePrimaryModules(ctx context.Context) ([]dagql.ObjectResult[*core.Module], error) {

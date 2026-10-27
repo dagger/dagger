@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 
 	workspacepkg "github.com/dagger/dagger/core/workspace"
@@ -59,4 +60,26 @@ func TestWorkspacePersistsUserConfig(t *testing.T) {
 	restored := decoded.(*Workspace)
 	require.Equal(t, "example.com/repo", restored.UserConfigKey())
 	require.Equal(t, overlay, restored.UserConfigOverlay())
+}
+
+// TestWorkspacePersistsClientModules checks that a workspace restored from the
+// disk cache keeps the client modules it recorded, which its identity covers.
+func TestWorkspacePersistsClientModules(t *testing.T) {
+	ctx := t.Context()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, cache.Close(context.Background())) })
+	ctx = dagql.ContextWithCache(ctx, cache)
+	srv := newCoreDagqlServerForTest(t, &Query{})
+	mods := []WorkspaceClientModule{
+		{Name: "extra-a", Digest: digest.FromString("a"), Main: true},
+		{Name: "extra-b", Digest: digest.FromString("b")},
+	}
+	ws := &Workspace{Address: "git://example.com/repo", Cwd: ".", ConfigFile: "dagger.toml"}
+	ws.SetClientModules(mods)
+	encoded, err := ws.EncodePersistedObject(ctx, dagql.NewPersistEncodeContext(cache, 0, nil))
+	require.NoError(t, err)
+	decoded, err := (&Workspace{}).DecodePersistedObject(ctx, dagql.NewPersistDecodeContext(srv, 0, nil), encoded.JSON)
+	require.NoError(t, err)
+	require.Equal(t, mods, decoded.(*Workspace).ClientModules())
 }

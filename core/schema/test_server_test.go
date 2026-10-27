@@ -31,6 +31,10 @@ type currentTypeDefsTestServer struct {
 	workspaceLockErr error
 }
 
+func (*currentTypeDefsTestServer) CurrentClientModules(context.Context) ([]core.WorkspaceClientModule, error) {
+	return nil, nil
+}
+
 func (*currentTypeDefsTestServer) AuthorizeGitPush(context.Context, string, string, bool, bool) (*core.GitPushAuthorization, error) {
 	panic("unexpected AuthorizeGitPush")
 }

@@ -99,6 +99,7 @@ func (ws *Workspace) ContentIdentity(ctx context.Context) (_ digest.Digest, ok b
 		{"userConfigKey", ws.userConfigKey},
 		{"selectedEnv", ws.selectedEnv},
 		{"moduleClients", ws.moduleClients},
+		{"clientModules", ws.clientModules},
 		{"address", ws.Address},
 		{"cwd", ws.Cwd},
 		{"configFile", ws.ConfigFile},
@@ -115,6 +116,12 @@ func (ws *Workspace) ContentIdentity(ctx context.Context) (_ digest.Digest, ok b
 	}
 	parts = append(parts, "userConfigOverlay", userConfigOverlay)
 	return hashutil.HashStrings(parts...), true, nil
+}
+
+// HasContentIdentity reports whether ws has a ContentIdentity: its source is a
+// Git ref or an in-engine directory, or edits on top of one.
+func (ws *Workspace) HasContentIdentity() bool {
+	return ws != nil && contentIdentifiableSource(ws.source)
 }
 
 func contentIdentifiableSource(src WorkspaceSource) bool {
