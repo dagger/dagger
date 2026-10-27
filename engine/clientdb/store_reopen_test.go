@@ -186,8 +186,10 @@ func TestStoreRegistryIndexesAppendOnlyRowsForFirstReader(t *testing.T) {
 	require.Equal(t, []int64{1, 2, 3}, reader.LogRowIDsForSpans(map[string]struct{}{"child": {}}))
 }
 
-// Rows appended while the first reader builds the indexes are indexed exactly
-// once each.
+// Appends from another goroutine run on while the first reader builds the
+// indexes, and every row ends up indexed once. Whether they overlap the build
+// is up to the scheduler; TestLogStreamIndexesRowsAppendedDuringReplay forces
+// the overlap.
 func TestStoreRegistryIndexesRowsAppendedDuringFirstRead(t *testing.T) {
 	registry := NewDBs(t.TempDir())
 	registry.tailBudget = 512

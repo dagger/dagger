@@ -206,3 +206,43 @@ func blockSpillWrites(stream *logStream[Metric]) (<-chan struct{}, chan<- struct
 	}
 	return started, release
 }
+
+// Rows appended while ensureIndexed replays the stream are indexed by its
+// catch-up, before Append takes over: every row once, in ID order.
+func TestLogStreamIndexesRowsAppendedDuringReplay(t *testing.T) {
+	var (
+		stream  *logStream[Metric]
+		indexed []int64
+	)
+	appendRows := func(n int) {
+		rows := make([]Metric, n)
+		for i := range rows {
+			rows[i].Data = []byte("row")
+		}
+		_, err := stream.Append(rows)
+		require.NoError(t, err)
+	}
+	stream, err := openLogStream(t.Context(), filepath.Join(t.TempDir(), "metrics.log"), metricCodec, 64, nil, func(rows []Metric) {
+		replaying := len(indexed) == 0
+		for _, row := range rows {
+			indexed = append(indexed, row.ID)
+		}
+		if replaying {
+			// The replay has read its first batch and not yet handed over.
+			appendRows(10)
+		}
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, stream.close()) })
+
+	appendRows(indexBatchRows + 5)
+	require.Empty(t, indexed, "rows are indexed only once a reader needs them")
+	require.NoError(t, stream.ensureIndexed(t.Context()))
+	appendRows(3)
+
+	want := make([]int64, indexBatchRows+5+10+3)
+	for i := range want {
+		want[i] = int64(i + 1)
+	}
+	require.Equal(t, want, indexed)
+}
