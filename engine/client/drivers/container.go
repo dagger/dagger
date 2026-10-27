@@ -428,7 +428,7 @@ type containerCreateOpts struct {
 // previous executions of the engine at different versions (which
 // are identified by looking for containers with the prefix
 // "dagger-engine-").
-func (d *imageDriver) create(ctx context.Context, opts containerCreateOpts, dopts *DriverOpts) (target *url.URL, rerr error) {
+func (d *imageDriver) create(ctx context.Context, opts containerCreateOpts, dopts *DriverOpts) (target *url.URL, rerr error) { //nolint:gocyclo
 	ctx, span := otel.Tracer("").Start(ctx, "create container")
 	defer telemetry.EndWithCause(span, &rerr)
 	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
