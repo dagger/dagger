@@ -211,6 +211,32 @@ func TestArtifactMainLoadFailure(t *testing.T) {
 	}
 }
 
+// A module that failed to load has no known engine version, so its failure
+// answers to the spelling of its name by either naming rules: a legacy module
+// lists its artifacts as e-2-e-tests, a current one as e2e-tests.
+func TestArtifactLoadFailureLegacySpelling(t *testing.T) {
+	all := &Artifacts{Entries: []*Artifact{
+		{ModuleName: "coll", Path: []string{"coll", "helper"}, TypeName: "Expertise"},
+		loadFailureArtifact("e2e-tests"),
+	}}
+	all.AllDimensions = all.DimensionDefinitions()
+	failure := ArtifactTypeName("e2e-tests") + "/load"
+	for uri, want := range map[string][]string{
+		"dag://e2e-tests/lint":                         {failure},
+		"dag://e-2-e-tests/lint":                       {failure},
+		"dag://e-2-e-*/lint":                           {failure},
+		"dag://?module=e2e-tests":                      {failure},
+		"dag://?module=e-2-e-tests":                    {failure},
+		"dag://e-2-e-tests/items/x?e-2-e-tests-item=a": {failure},
+		"dag://coll/helper":                            {"coll/helper"},
+	} {
+		t.Run(uri, func(t *testing.T) {
+			selected := filterURI(t, all, uri)
+			require.Equal(t, want, schemaPaths(t, selected))
+		})
+	}
+}
+
 func TestExpandBraces(t *testing.T) {
 	require.Equal(t, []string{"a"}, expandBraces("a"))
 	require.Equal(t, []string{"a/x", "b/x"}, expandBraces("{a,b}/x"))
