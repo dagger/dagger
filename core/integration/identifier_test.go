@@ -14,6 +14,7 @@ import (
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/naming"
 	"github.com/dagger/dagger/internal/testutil"
 )
@@ -157,18 +158,22 @@ func (IdentifierSuite) TestNamingDictionary(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "3D", capitalized["3D"])
 }
 
-// The API is served on every v1 view, including the views whose modules keep
-// the legacy strcase names (before core.IdentifierNamingVersion,
-// v1.0.0-beta.21): SDK codegen picks its naming rules by the engine version a
-// module declares, not by whether the schema has Query.formatIdentifiers.
+// The API is served on every v1 view, including the pre-cut view whose
+// modules keep the legacy strcase names (before
+// engine.IdentifierCasingVersion): SDK codegen picks its naming rules by the
+// engine version a module declares, not by whether the schema has
+// Query.formatIdentifiers.
 func (IdentifierSuite) TestViews(ctx context.Context, t *testctx.T) {
+	cut := engine.IdentifierCasingVersion
+	preCut := engine.APIViewVersion("v1.0.0-0")
 	for _, tc := range []struct {
 		name string
 		opts []dagger.ClientOpt
 		want bool
 	}{
 		{name: "current", want: true},
-		{name: "v1.0.0-beta.21", opts: []dagger.ClientOpt{dagger.WithVersionOverride("v1.0.0-beta.21")}, want: true},
+		{name: cut, opts: []dagger.ClientOpt{dagger.WithVersionOverride(cut)}, want: true},
+		{name: preCut, opts: []dagger.ClientOpt{dagger.WithVersionOverride(preCut)}, want: true},
 		{name: "v1.0.0-beta.20", opts: []dagger.ClientOpt{dagger.WithVersionOverride("v1.0.0-beta.20")}, want: true},
 		{name: "v1.0.0-0", opts: []dagger.ClientOpt{dagger.WithVersionOverride("v1.0.0-0")}, want: true},
 		{name: "v0.21.0", opts: []dagger.ClientOpt{dagger.WithVersionOverride("v0.21.0")}},
