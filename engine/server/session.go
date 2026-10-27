@@ -37,6 +37,7 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/mod/semver"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -1563,6 +1564,12 @@ func (srv *Server) initializeClientRuntime(
 		return fmt.Errorf("failed to initialize core schema base: %w", err)
 	}
 	coreView := call.View(engine.APIViewVersion(client.clientVersion))
+	if client.clientMetadata.ClientVersionDeclared {
+		engineView := call.View(engine.APIViewVersion(engine.Version))
+		if semver.Compare(string(coreView), string(engineView)) > 0 {
+			coreView = engineView
+		}
+	}
 	client.dag, err = coreSchemaBase.Fork(ctx, client.dagqlRoot, coreView)
 	if err != nil {
 		return fmt.Errorf("failed to fork core schema base: %w", err)
@@ -1588,15 +1595,18 @@ func (srv *Server) initializeClientRuntime(
 		}
 		client.mod = modInst
 
-		// this is needed to set the view of the core api as compatible
-		// with the module we're currently calling from
-		engineVersion := client.mod.Self().Source.Value.Self().EngineVersion
-		coreView = call.View(engine.APIViewVersion(engineVersion))
-		client.dag.View = coreView
-		coreMod = coreSchemaBase.CoreMod(coreView)
+		if !client.clientMetadata.ClientVersionDeclared {
+			engineVersion := client.mod.Self().Source.Value.Self().EngineVersion
+			coreView = call.View(engine.APIViewVersion(engineVersion))
+			client.dag.View = coreView
+			coreMod = coreSchemaBase.CoreMod(coreView)
+		}
 
 		client.defaultDeps = core.NewSchemaBuilder(client.dagqlRoot, []core.Mod{coreMod})
 		servedMods := client.mod.Self().Deps.WithRoot(client.dagqlRoot)
+		if client.clientMetadata.ClientVersionDeclared {
+			servedMods = servedMods.WithCoreMod(coreMod)
+		}
 		if len(client.mod.Self().ObjectDefs) > 0 {
 			servedMods = servedMods.Append(core.NewUserMod(client.mod))
 		}
@@ -2367,7 +2377,10 @@ func nestedClientMetadataForRequest(h http.Header, nestedClientMetadata *engine.
 	var userConfigPath string
 	var llmConfig *engine.LLMConfig
 	if md, _ := engine.ClientMetadataFromHTTPHeaders(h); md != nil {
-		clientMetadata.ClientVersion = md.ClientVersion
+		if md.ClientVersion != "" {
+			clientMetadata.ClientVersion = md.ClientVersion
+			clientMetadata.ClientVersionDeclared = true
+		}
 		clientMetadata.AllowedLLMModules = slices.Clone(md.AllowedLLMModules)
 		extraModules = md.ExtraModules
 		loadWorkspaceModules = md.LoadWorkspaceModules

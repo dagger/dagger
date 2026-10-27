@@ -111,6 +111,7 @@ func TestContainerNestedTransportsAreExactPerRequestClient(t *testing.T) {
 		SessionID:         "session",
 		ClientID:          "proxy-template",
 		ClientSecretToken: "proxy-secret",
+		ClientVersion:     engine.Version,
 	}, "parent", true)
 
 	request := func(metadata engine.ClientMetadata) (*engine.NestedClientTransport, *engine.ClientMetadata, int, error) {
@@ -123,12 +124,15 @@ func TestContainerNestedTransportsAreExactPerRequestClient(t *testing.T) {
 		ClientID:          "first",
 		SessionID:         "untrusted-session",
 		ClientSecretToken: "untrusted-secret",
+		ClientVersion:     "v0.21.6",
 	})
 	require.NoError(t, err)
 	require.Zero(t, status)
 	require.Equal(t, "first", firstMetadata.ClientID)
 	require.Equal(t, "session", firstMetadata.SessionID)
 	require.Equal(t, "proxy-secret", firstMetadata.ClientSecretToken)
+	require.Equal(t, "v0.21.6", firstMetadata.ClientVersion)
+	require.True(t, firstMetadata.ClientVersionDeclared)
 	require.False(t, first.Closed())
 	require.Equal(t, int32(1), handler.registered.Load())
 

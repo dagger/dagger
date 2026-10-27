@@ -133,7 +133,8 @@ type ClientMetadata struct {
 	ClientStableID string `json:"client_stable_id"`
 
 	// ClientVersion is the version string of the client that make the request.
-	ClientVersion string `json:"client_version"`
+	ClientVersion         string `json:"client_version"`
+	ClientVersionDeclared bool   `json:"-"`
 
 	// (Optional) Pipeline labels for e.g. vcs info like branch, commit, etc.
 	Labels map[string]string `json:"labels"`

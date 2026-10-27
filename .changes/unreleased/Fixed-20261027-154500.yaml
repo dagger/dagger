@@ -1,0 +1,10 @@
+kind: Fixed
+body: |
+  Honor `DAGGER_CLIENT_VERSION` on nested execs so generated module entrypoints
+  can select the core API view their library targets. Nested clients that
+  announce their own version keep that version. Declared views are capped at
+  the running engine's version while module context is preserved.
+time: 2026-10-27T15:45:00Z
+custom:
+  Author: eunomie
+  PR: ""
