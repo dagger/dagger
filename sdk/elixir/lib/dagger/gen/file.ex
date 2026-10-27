@@ -51,7 +51,7 @@ defmodule Dagger.File do
   @spec as_json(t()) :: Dagger.JSONValue.t()
   def as_json(%__MODULE__{} = file) do
     query_builder =
-      file.query_builder |> QB.select("asJSON")
+      file.query_builder |> QB.select("asJson")
 
     %Dagger.JSONValue{
       query_builder: query_builder,

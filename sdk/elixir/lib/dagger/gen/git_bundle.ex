@@ -54,10 +54,10 @@ defmodule Dagger.GitBundle do
   @doc """
   Commits that must already exist wherever this bundle is applied.
   """
-  @spec prerequisite_sh_as(t()) :: {:ok, [String.t()]} | {:error, term()}
-  def prerequisite_sh_as(%__MODULE__{} = git_bundle) do
+  @spec prerequisite_shas(t()) :: {:ok, [String.t()]} | {:error, term()}
+  def prerequisite_shas(%__MODULE__{} = git_bundle) do
     query_builder =
-      git_bundle.query_builder |> QB.select("prerequisiteSHAs")
+      git_bundle.query_builder |> QB.select("prerequisiteShas")
 
     Client.execute(git_bundle.client, query_builder)
   end
