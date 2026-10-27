@@ -502,6 +502,22 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     }
 
     /**
+     * Retrieves this container plus the given files mounted read-only in a directory at the given path.
+     *
+     * Each file appears under the base name of its path. The directory holds nothing else, and nothing can be written to it.
+     */
+    public function withMountedFiles(string $path, array $sources, ?bool $expand = false): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMountedFiles');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('sources', $sources);
+        if (null !== $expand) {
+        $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieves this container plus a temporary directory mounted at the given path. Any writes will be ephemeral to a single withExec call; they will not be persisted to subsequent withExecs.
      */
     public function withMountedTemp(string $path, ?int $size = null, ?bool $expand = false): Container

@@ -118,6 +118,7 @@ var (
 	_ LazyContainerParts = (*ContainerWithMountedCacheLazy)(nil)
 	_ LazyContainerParts = (*ContainerWithMountedTempLazy)(nil)
 	_ LazyContainerParts = (*ContainerWithMountedVolumeLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithMountedFilesLazy)(nil)
 	_ LazyContainerParts = (*ContainerWithMountedSecretLazy)(nil)
 	_ LazyContainerParts = (*ContainerWithoutMountLazy)(nil)
 	_ LazyContainerParts = (*ContainerWithUnixSocketLazy)(nil)
@@ -262,6 +263,10 @@ func (lazy *ContainerWithMountedTempLazy) ContainerLazyParent() dagql.ObjectResu
 }
 
 func (lazy *ContainerWithMountedVolumeLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithMountedFilesLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
 	return lazy.Parent
 }
 

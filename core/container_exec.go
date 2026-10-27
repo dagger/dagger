@@ -662,6 +662,7 @@ type execMountState struct {
 	Secret   *execSecretMountConfig
 	SSH      *execSSHMountConfig
 	Volume   *execVolumeMountConfig
+	Files    *execFilesMountConfig
 	// CacheDir is the pinned directory of a directory-backed cache volume.
 	CacheDir string
 
@@ -833,6 +834,12 @@ func prepareMounts(
 		} else if state.Volume != nil {
 			var err error
 			mountable, err = prepareExecVolumeMount(ctx, state.Volume)
+			if err != nil {
+				return err
+			}
+		} else if state.Files != nil {
+			var err error
+			mountable, err = prepareExecFilesMount(ctx, state.Files)
 			if err != nil {
 				return err
 			}
@@ -1057,6 +1064,13 @@ func prepareMounts(
 			mountState.Volume = &execVolumeMountConfig{
 				Volume: ctrMount.VolumeSource.Volume,
 			}
+
+		case ctrMount.FilesSource != nil:
+			files, err := execMountedFiles(ctx, ctrMount.FilesSource)
+			if err != nil {
+				return materialized, fmt.Errorf("mount %d: %w", i, err)
+			}
+			mountState.Files = files
 
 		case ctrMount.TmpfsSource != nil:
 			mountState.MountType = pb.MountType_TMPFS
@@ -1685,6 +1699,11 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 				if err != nil {
 					return err
 				}
+			} else if state.Files != nil {
+				mountable, err = prepareExecFilesMount(ctx, state.Files)
+				if err != nil {
+					return err
+				}
 			} else {
 				switch state.MountType {
 				case pb.MountType_BIND:
@@ -1910,6 +1929,13 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 				mountState.Volume = &execVolumeMountConfig{
 					Volume: ctrMount.VolumeSource.Volume,
 				}
+
+			case ctrMount.FilesSource != nil:
+				files, err := execMountedFiles(ctx, ctrMount.FilesSource)
+				if err != nil {
+					return failPrepare(fmt.Errorf("mount %d: %w", i, err))
+				}
+				mountState.Files = files
 
 			case ctrMount.TmpfsSource != nil:
 				mountState.MountType = pb.MountType_TMPFS

@@ -416,6 +416,13 @@ type ContainerWithMountedVolumeLazy struct {
 	Readonly bool
 }
 
+type ContainerWithMountedFilesLazy struct {
+	LazyState
+	Parent dagql.ObjectResult[*Container]
+	Target string
+	Files  []MountedFile
+}
+
 type ContainerWithMountedTempLazy struct {
 	LazyState
 	Parent dagql.ObjectResult[*Container]
@@ -494,6 +501,8 @@ type ContainerMount struct {
 	CacheSource *CacheMountSource
 	// The mounted volume.
 	VolumeSource *VolumeMountSource
+	// The mounted files, read-only.
+	FilesSource *FilesMountSource
 	// The mounted tmpfs.
 	TmpfsSource *TmpfsMountSource
 }
@@ -506,6 +515,18 @@ type CacheMountSource struct {
 type VolumeMountSource struct {
 	// The volume backing this mount.
 	Volume dagql.ObjectResult[*Volume]
+}
+
+// FilesMountSource is a read-only directory holding exactly the given files,
+// each under its name. It has no snapshot of its own: an exec links the files
+// into a directory of its own for the run.
+type FilesMountSource struct {
+	Files []MountedFile
+}
+
+type MountedFile struct {
+	Name string
+	File dagql.ObjectResult[*File]
 }
 
 type TmpfsMountSource struct {
@@ -522,6 +543,9 @@ type persistedContainerMountPayload struct {
 	CacheSourceResultID  uint64 `json:"cacheSourceResultID,omitempty"`
 	VolumeSourceResultID uint64 `json:"volumeSourceResultID,omitempty"`
 	TmpfsSize            int    `json:"tmpfsSize,omitempty"`
+	// FilesSourceResultIDs and FilesSourceNames pair up, one per file.
+	FilesSourceResultIDs []uint64 `json:"filesSourceResultIDs,omitempty"`
+	FilesSourceNames     []string `json:"filesSourceNames,omitempty"`
 }
 
 type persistedContainerSecretPayload struct {
@@ -543,8 +567,24 @@ const (
 	persistedContainerMountKindFile      = "file"
 	persistedContainerMountKindCache     = "cache"
 	persistedContainerMountKindVolume    = "volume"
+	persistedContainerMountKindFiles     = "files"
 	persistedContainerMountKindTmpfs     = "tmpfs"
 )
+
+func decodePersistedMountedFiles(ctx context.Context, dec *dagql.PersistDecodeContext, persisted persistedContainerMountPayload) ([]MountedFile, error) {
+	if len(persisted.FilesSourceResultIDs) != len(persisted.FilesSourceNames) {
+		return nil, fmt.Errorf("decode persisted container files mount %q: %d files for %d names", persisted.Target, len(persisted.FilesSourceResultIDs), len(persisted.FilesSourceNames))
+	}
+	files := make([]MountedFile, len(persisted.FilesSourceResultIDs))
+	for i, id := range persisted.FilesSourceResultIDs {
+		file, err := loadPersistedObjectResultByResultID[*File](ctx, dec, id, "container mount file")
+		if err != nil {
+			return nil, err
+		}
+		files[i] = MountedFile{Name: persisted.FilesSourceNames[i], File: file}
+	}
+	return files, nil
+}
 
 type persistedContainerPayload struct {
 	OperationState string                                   `json:"operationState,omitempty"`
@@ -805,6 +845,13 @@ type persistedContainerWithMountedVolumeLazy struct {
 	Target         string `json:"target"`
 	VolumeResultID uint64 `json:"volumeResultID"`
 	Readonly       bool   `json:"readonly,omitempty"`
+}
+
+type persistedContainerWithMountedFilesLazy struct {
+	ParentResultID uint64   `json:"parentResultID"`
+	Target         string   `json:"target"`
+	FileResultIDs  []uint64 `json:"fileResultIDs"`
+	FileNames      []string `json:"fileNames"`
 }
 
 type persistedContainerWithMountedTempLazy struct {
@@ -1225,6 +1272,18 @@ func (container *Container) AttachDependencyResultsKinds(
 			mnt.VolumeSource.Volume = volume
 			owned = append(owned, dagql.DependencyResult{Result: volume, Owned: true})
 		}
+		if mnt.FilesSource != nil {
+			files := slices.Clone(mnt.FilesSource.Files)
+			for j := range files {
+				file, err := attachFileResult(attach, files[j].File, fmt.Sprintf("attach container files mount %q", mnt.Target))
+				if err != nil {
+					return nil, err
+				}
+				files[j].File = file
+				owned = append(owned, dagql.DependencyResult{Result: file, Owned: true})
+			}
+			mnt.FilesSource = &FilesMountSource{Files: files}
+		}
 	}
 	for i := range container.Secrets {
 		secret := &container.Secrets[i]
@@ -1632,6 +1691,16 @@ func (container *Container) encodeContainerMetadata(enc *dagql.PersistEncodeCont
 				return persistedContainerMetadataValue{}, err
 			}
 			encoded.VolumeSourceResultID = id
+		case mnt.FilesSource != nil:
+			encoded.Kind = persistedContainerMountKindFiles
+			for _, f := range mnt.FilesSource.Files {
+				id, err := encodePersistedObjectRef(enc, f.File, fmt.Sprintf("files mount %q", mnt.Target))
+				if err != nil {
+					return persistedContainerMetadataValue{}, err
+				}
+				encoded.FilesSourceResultIDs = append(encoded.FilesSourceResultIDs, id)
+				encoded.FilesSourceNames = append(encoded.FilesSourceNames, f.Name)
+			}
 		case mnt.TmpfsSource != nil:
 			encoded.Kind = persistedContainerMountKindTmpfs
 			encoded.TmpfsSize = mnt.TmpfsSource.Size
@@ -1695,6 +1764,12 @@ func decodePersistedContainerResources(ctx context.Context, dec *dagql.PersistDe
 				return nil, nil, nil, err
 			}
 			mnt.VolumeSource = &VolumeMountSource{Volume: volumeRes}
+		case persistedContainerMountKindFiles:
+			files, err := decodePersistedMountedFiles(ctx, dec, persistedMount)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			mnt.FilesSource = &FilesMountSource{Files: files}
 		case persistedContainerMountKindTmpfs:
 			mnt.TmpfsSource = &TmpfsMountSource{Size: persistedMount.TmpfsSize}
 		default:
@@ -4316,6 +4391,62 @@ func (lazy *ContainerWithMountedVolumeLazy) EncodePersisted(ctx context.Context,
 	})
 }
 
+func (lazy *ContainerWithMountedFilesLazy) Evaluate(ctx context.Context, container *Container) error {
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithMountedFilesLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerWithMountedFilesLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withMountedFiles", container, lazy.Parent, group, func(ctx context.Context) error {
+		_, err := container.WithMountedFiles(ctx, lazy.Target, lazy.Files)
+		return err
+	})
+}
+
+func (lazy *ContainerWithMountedFilesLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withMountedFiles parent")
+	if err != nil {
+		return nil, err
+	}
+	deps := []dagql.AnyResult{parent}
+	files := slices.Clone(lazy.Files)
+	for i := range files {
+		file, err := attachFileResult(attach, files[i].File, "attach container withMountedFiles file")
+		if err != nil {
+			return nil, err
+		}
+		files[i].File = file
+		deps = append(deps, file)
+	}
+	lazy.Parent = parent
+	lazy.Files = files
+	return deps, nil
+}
+
+func (lazy *ContainerWithMountedFilesLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withMountedFiles parent")
+	if err != nil {
+		return nil, err
+	}
+	persisted := persistedContainerWithMountedFilesLazy{
+		ParentResultID: parentID,
+		Target:         lazy.Target,
+		FileResultIDs:  make([]uint64, len(lazy.Files)),
+		FileNames:      make([]string, len(lazy.Files)),
+	}
+	for i, f := range lazy.Files {
+		persisted.FileResultIDs[i], err = encodePersistedObjectRef(enc, f.File, "container withMountedFiles file")
+		if err != nil {
+			return nil, err
+		}
+		persisted.FileNames[i] = f.Name
+	}
+	return json.Marshal(persisted)
+}
+
 func (lazy *ContainerWithMountedTempLazy) Evaluate(ctx context.Context, container *Container) error {
 	return container.evaluateAllLazyGroups(ctx, lazy)
 }
@@ -5277,6 +5408,29 @@ func decodePersistedContainerRecipe(
 			Target:    persisted.Target,
 			Volume:    volume,
 			Readonly:  persisted.Readonly,
+		}, nil
+	case "withMountedFiles":
+		var persisted persistedContainerWithMountedFilesLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return nil, fmt.Errorf("decode persisted container withMountedFiles lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withMountedFiles parent")
+		if err != nil {
+			return nil, err
+		}
+		files, err := decodePersistedMountedFiles(ctx, dec, persistedContainerMountPayload{
+			Target:               persisted.Target,
+			FilesSourceResultIDs: persisted.FileResultIDs,
+			FilesSourceNames:     persisted.FileNames,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return &ContainerWithMountedFilesLazy{
+			LazyState: NewLazyState(),
+			Parent:    parent,
+			Target:    persisted.Target,
+			Files:     files,
 		}, nil
 	case "withMountedTemp":
 		var persisted persistedContainerWithMountedTempLazy
@@ -6451,6 +6605,26 @@ func (container *Container) WithMountedVolume(
 }
 
 // mutates container caller must have handled cloning or creating a new child.
+func (container *Container) WithMountedFiles(
+	_ context.Context,
+	target string,
+	files []MountedFile,
+) (*Container, error) {
+	target = absPath(container.Config.WorkingDir, target)
+
+	container.Mounts = container.Mounts.With(ContainerMount{
+		Target:      target,
+		Readonly:    true,
+		FilesSource: &FilesMountSource{Files: slices.Clone(files)},
+	})
+
+	// set image ref to empty string
+	container.ImageRef = ""
+
+	return container, nil
+}
+
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithMountedTemp(ctx context.Context, target string, size int) (*Container, error) {
 	target = absPath(container.Config.WorkingDir, target)
 
@@ -6689,6 +6863,10 @@ func locatePath(
 
 			if mnt.CacheSource != nil {
 				return nil, "", fmt.Errorf("%s: cannot retrieve path from cache", containerPath)
+			}
+
+			if mnt.FilesSource != nil {
+				return nil, "", fmt.Errorf("%s: cannot retrieve path from a files mount", containerPath)
 			}
 
 			relPath, err := filepath.Rel(mnt.Target, containerPath)
