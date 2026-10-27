@@ -533,6 +533,7 @@ func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
 	c.connector, err = driver.Provision(provisionCtx, remote, &drivers.DriverOpts{
 		DaggerCloudToken: cloudToken,
 		GPUSupport:       os.Getenv(drivers.EnvGPUSupport),
+		GOGC:             os.Getenv("GOGC"),
 		Module:           params.Module,
 		Function:         params.Function,
 		ExecCmd:          params.ExecCmd,

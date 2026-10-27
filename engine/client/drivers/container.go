@@ -539,6 +539,11 @@ func (d *imageDriver) create(ctx context.Context, opts containerCreateOpts, dopt
 	if dopts.DaggerCloudToken != "" {
 		runOptions.env = append(runOptions.env, fmt.Sprintf("%s=%s", EnvDaggerCloudToken, dopts.DaggerCloudToken))
 	}
+	if dopts.GOGC != "" {
+		// Users set the engine's garbage collection target with Go's
+		// standard variable.
+		runOptions.env = append(runOptions.env, "GOGC="+dopts.GOGC)
+	}
 	if dopts.GPUSupport != "" {
 		runOptions.gpus = true
 		runOptions.env = append(runOptions.env, fmt.Sprintf("%s=%s", EnvGPUSupport, dopts.GPUSupport))

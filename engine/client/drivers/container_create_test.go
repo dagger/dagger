@@ -40,6 +40,36 @@ func TestImageDriverCreateEnablesLoopbackDebugListener(t *testing.T) {
 	require.Equal(t, []string{"1234:1234"}, backend.runOpts.ports)
 }
 
+// A user's GOGC reaches an engine the driver starts, so the engine's garbage
+// collection target can be set with Go's standard variable; without one, the
+// engine keeps its own default.
+func TestImageDriverCreatePassesGOGC(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		gogc string
+		want []string
+	}{
+		{gogc: "400", want: []string{"GOGC=400"}},
+		{gogc: "off", want: []string{"GOGC=off"}},
+		{gogc: "", want: nil},
+	} {
+		backend := &captureContainerBackend{}
+		driver := &imageDriver{backend: backend}
+		_, err := driver.create(t.Context(), containerCreateOpts{
+			imageRef: "registry.example.com/dagger-engine:v0.21.0",
+		}, &DriverOpts{GOGC: tc.gogc})
+		require.NoError(t, err)
+		var got []string
+		for _, env := range backend.runOpts.env {
+			if strings.HasPrefix(env, "GOGC=") {
+				got = append(got, env)
+			}
+		}
+		require.Equal(t, tc.want, got, "GOGC %q", tc.gogc)
+	}
+}
+
 // An engine that already exists is started by name and connected to
 // without listing the host's containers first; engines of other versions
 // are still removed, in the background, and the engine in use never is.

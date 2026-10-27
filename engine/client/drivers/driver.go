@@ -39,6 +39,7 @@ type Connector interface {
 type DriverOpts struct {
 	DaggerCloudToken string
 	GPUSupport       string
+	GOGC             string
 	Module           string
 	Function         string
 	ExecCmd          []string

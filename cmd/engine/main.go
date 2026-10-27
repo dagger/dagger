@@ -16,6 +16,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 
@@ -342,7 +343,17 @@ func signalContext() context.Context {
 	return ctx
 }
 
+// defaultGCPercent is the engine's garbage collection target when GOGC isn't
+// set. The engine allocates heavily while it runs many execs, and at Go's
+// default of 100 its collector was its largest CPU cost; 200 trades some
+// peak memory for a fraction of that work. A non-empty GOGC wins as usual;
+// an empty one counts as unset, as the CLI doesn't pass it on.
+const defaultGCPercent = 200
+
 func main() { //nolint:gocyclo
+	if os.Getenv("GOGC") == "" {
+		debug.SetGCPercent(defaultGCPercent)
+	}
 	engineVersion := fmt.Sprintf("%s %s %s", engine.Version, engine.Tag, platforms.DefaultString())
 	cli.VersionPrinter = func(c *cli.Context) {
 		fmt.Println(engineVersion)
