@@ -138,7 +138,9 @@ func TestGracefulStopDumpShowsAHungPhase(t *testing.T) {
 		_, open, _ := stopDump(t, srv)
 		return open["engine.stop.stop remote cache integration"]
 	}, 10*time.Second, 20*time.Millisecond, "the hung phase never showed as an open op in the stop dump")
+	// let the stop finish on its own: cancelling it would return
+	// GracefulStop while its last phase still writes into the test's
+	// directory
 	releaseOnce.Do(func() { close(release) })
-	cancel()
 	<-stopped
 }
