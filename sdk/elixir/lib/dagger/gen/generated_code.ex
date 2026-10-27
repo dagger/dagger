@@ -69,7 +69,7 @@ defmodule Dagger.GeneratedCode do
   def with_vcs_generated_paths(%__MODULE__{} = generated_code, paths) do
     query_builder =
       generated_code.query_builder
-      |> QB.select("withVCSGeneratedPaths")
+      |> QB.select("withVcsGeneratedPaths")
       |> QB.put_arg("paths", paths)
 
     %Dagger.GeneratedCode{
@@ -85,7 +85,7 @@ defmodule Dagger.GeneratedCode do
   def with_vcs_ignored_paths(%__MODULE__{} = generated_code, paths) do
     query_builder =
       generated_code.query_builder
-      |> QB.select("withVCSIgnoredPaths")
+      |> QB.select("withVcsIgnoredPaths")
       |> QB.put_arg("paths", paths)
 
     %Dagger.GeneratedCode{

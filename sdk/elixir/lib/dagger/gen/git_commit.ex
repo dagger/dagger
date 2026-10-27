@@ -273,7 +273,7 @@ defmodule Dagger.GitCommit do
   @spec tree_sha(t()) :: {:ok, String.t()} | {:error, term()}
   def tree_sha(%__MODULE__{} = git_commit) do
     query_builder =
-      git_commit.query_builder |> QB.select("treeSHA")
+      git_commit.query_builder |> QB.select("treeSha")
 
     Client.execute(git_commit.client, query_builder)
   end
