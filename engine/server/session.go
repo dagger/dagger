@@ -159,6 +159,9 @@ type daggerSession struct {
 	// Session-owned trace and log pipelines capture an origin client ID from
 	// each emission context and resolve the immutable ancestry graph at export.
 	tracerProvider *sdktrace.TracerProvider
+	// spanQueue counts the spans of the bounded live span lane, to report
+	// those it dropped when the session's telemetry shuts down.
+	spanQueue      enginetel.SpanQueueCounts
 	loggerProvider *sdklog.LoggerProvider
 	spanExporter   sdktrace.SpanExporter
 	logExporter    sdklog.Exporter
@@ -799,7 +802,12 @@ func (sess *daggerSession) shutdownTelemetry(ctx context.Context) error {
 		logDur = timedProviderOp(ctx, &errs, sess.loggerProvider.ForceFlush)
 	}
 	if sess.tracerProvider != nil {
-		traceDur += timedProviderOp(ctx, &errs, sess.tracerProvider.Shutdown)
+		var shutdownErr error
+		traceDur += timedProviderOp(ctx, &shutdownErr, sess.tracerProvider.Shutdown)
+		errs = errors.Join(errs, shutdownErr)
+		// The bounded lane drops spans rather than stall the session; report
+		// how many.
+		sess.spanQueue.LogShutdown(slog.With("sessionID", sess.sessionID), shutdownErr)
 	}
 	if sess.workloadTracerProvider != nil {
 		traceDur += timedProviderOp(ctx, &errs, sess.workloadTracerProvider.Shutdown)
@@ -988,7 +996,7 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 	callSpans := enginetel.NewCallSpanProcessor(spanExporter)
 	tracerOpts = append(tracerOpts,
 		sdktrace.WithSpanProcessor(callSpans),
-		sdktrace.WithSpanProcessor(enginetel.WithoutCallSpans(enginetel.NewLargeQueueLiveSpanProcessor(spanExporter))),
+		sdktrace.WithSpanProcessor(enginetel.WithoutCallSpans(enginetel.NewCountedLargeQueueLiveSpanProcessor(spanExporter, &sess.spanQueue))),
 	)
 	loggerResource, err := withSessionResource(telemetry.Resource, resourceAttrs)
 	if err != nil {
