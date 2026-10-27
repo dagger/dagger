@@ -16,6 +16,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
@@ -578,14 +579,32 @@ func TestContainerRestoreReportingAndBookkeepingRetry(t *testing.T) {
 			attrs := containerPersistenceSpanAttrs(opens[1].Attributes())
 			require.True(t, attrs[telemetry.CachedAttr].AsBool())
 			require.Equal(t, pendingSibling, attrs[telemetryattrs.DagPartialAttr].AsBool())
-			for _, span := range opens {
-				foundCause := false
+			// Each attempt's failure reaches its install call through cause
+			// links, as dagui follows them: its own link to the install, or
+			// the earlier attempt's, which a later attempt links instead.
+			ended := map[trace.SpanID]sdktrace.ReadOnlySpan{}
+			for _, span := range recorder.Ended() {
+				ended[span.SpanContext().SpanID()] = span
+			}
+			var reachesInstall func(span sdktrace.ReadOnlySpan, hops int) bool
+			reachesInstall = func(span sdktrace.ReadOnlySpan, hops int) bool {
 				for _, link := range span.Links() {
-					if link.SpanContext.SpanID() == install.SpanContext().SpanID() && containerPersistenceSpanAttrs(link.Attributes)[telemetry.LinkPurposeAttr].AsString() == telemetry.LinkPurposeCause {
-						foundCause = true
+					switch containerPersistenceSpanAttrs(link.Attributes)[telemetry.LinkPurposeAttr].AsString() {
+					case "", telemetry.LinkPurposeCause:
+					default:
+						continue
+					}
+					if link.SpanContext.SpanID() == install.SpanContext().SpanID() {
+						return true
+					}
+					if earlier, ok := ended[link.SpanContext.SpanID()]; ok && hops > 0 && reachesInstall(earlier, hops-1) {
+						return true
 					}
 				}
-				require.True(t, foundCause, "stored attempts retain their install call's failure attribution")
+				return false
+			}
+			for _, span := range opens {
+				require.True(t, reachesInstall(span, len(opens)), "stored attempts retain their install call's failure attribution")
 			}
 			if pendingSibling {
 				require.NoError(t, cache.EvaluateParts(ctx, res, ContainerPartExecMeta))
