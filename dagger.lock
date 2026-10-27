@@ -35,6 +35,7 @@
 ["","git-sha",["github.com/dagger/dang-sdk","main"],"14ba9d349167cb32b3a06f4229f534509a30ac62"]
 ["","git-sha",["github.com/dagger/dang-sdk","refs/tags/v0.1"],"29090a071374b5adaa5ad5b3ce00524afe01dcc2"]
 ["","git-sha",["github.com/dagger/dang-sdk","refs/tags/v1.0.1"],"6dde4a9ca2cb598bf281ba36778d2428ad53aa48"]
+["","git-sha",["github.com/dagger/go","1f569c89804001af6629e3facd5a55137be01aac"],"1f569c89804001af6629e3facd5a55137be01aac"]
 ["","git-sha",["github.com/dagger/go","pull/45/head"],"1c4c0fba5bd123d36bd7e74008880e9b9c098479"]
 ["","git-sha",["github.com/dagger/go","refs/heads/main"],"bf456512ff997f2b03c6404d77f3f1b22b89391b"]
 ["","git-sha",["github.com/dagger/go","refs/tags/v0.1.0"],"0b68a41656546134aa6b5c0a439fd1ffcd2ecae9"]
