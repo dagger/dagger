@@ -92,6 +92,7 @@ func TestValueTransferPartsSelectedChain(t *testing.T) {
 		return nil
 	}))
 }
+
 // What the File operations that look past the file see: a named chown
 // resolves through the account databases of the File's filesystem, and
 // withName renames next to its siblings.
