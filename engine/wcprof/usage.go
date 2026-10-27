@@ -14,12 +14,13 @@ type Usage struct {
 
 // Usage scopes of an exec.
 const (
-	// UsageScopeContainer is the exec's container cgroup: the workload's own
-	// processes, read after they exit and before the container is deleted.
-	UsageScopeContainer = "container"
 	// UsageScopeExecCgroup is the exec's resource cgroup: the workload and the
 	// mount helpers that run beside it, read after mount teardown.
 	UsageScopeExecCgroup = "exec_cgroup"
+	// UsageScopeMountHelpers is the mount helpers' own cgroup inside the
+	// exec's resource cgroup, read with it, and only when a helper ran: the
+	// workload's usage is the exec cgroup's less this.
+	UsageScopeMountHelpers = "mount_helpers"
 )
 
 type usageRecord struct {

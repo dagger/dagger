@@ -529,8 +529,10 @@ func (c *Client) generateBaseSpec(ctx context.Context, state *execState) error {
 		return nil
 	})
 	state.cleanups.Add("finish exec mount resource sample", func() error {
-		// After the final parent sample: the resource cgroup's total, the
-		// workload and its mount helpers.
+		// After the final parent sample, with the helpers' cgroup not yet
+		// removed: the resource cgroup's total, the workload and its mount
+		// helpers, and the helpers' own share.
+		defer recordExecUsage(ctx, state, wcprof.UsageScopeMountHelpers)
 		defer recordExecUsage(ctx, state, wcprof.UsageScopeExecCgroup)
 		if state.stopResourceSampler != nil {
 			state.stopResourceSampler()
@@ -1770,14 +1772,6 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 		}
 		return c.Runc.Delete(context.WithoutCancel(ctx), state.id, &runc.DeleteOpts{})
 	})
-	// Cleanups run in reverse, so this runs before the delete above, once the
-	// workload's processes have exited: the container's own cgroup still
-	// holds the workload's usage alone.
-	state.cleanups.Add("read exec container usage", func() error {
-		recordExecUsage(ctx, state, wcprof.UsageScopeContainer)
-		return nil
-	})
-
 	// Wake the existing sampler when runc starts. The cgroup may not exist at
 	// that point; the final cleanup sample also covers short executions.
 	var readingsStarted chan struct{}

@@ -15,17 +15,17 @@ import (
 )
 
 // execUsageCgroup is the cgroup an exec's usage scope is read from: its
-// resource cgroup, or that cgroup's "container" child, the workload's own
-// cgroup as generateBaseSpec sets it. "" when the resource cgroup isn't a
-// filesystem path (a systemd scope), where generateBaseSpec doesn't nest the
-// container either.
+// resource cgroup, or that cgroup's "sshfs" child, where the exec's mount
+// helpers run (see networkmetrics' execMountResources). "" when the resource
+// cgroup isn't a filesystem path (a systemd scope), where mount helpers get
+// no cgroup of their own either.
 func execUsageCgroup(resourceCgroupPath, scope string) string {
 	if resourceCgroupPath == "" || !filepath.IsAbs(resourceCgroupPath) || strings.Contains(resourceCgroupPath, ":") {
 		return ""
 	}
 	p := filepath.Join(execUsageRoot, resourceCgroupPath)
-	if scope == wcprof.UsageScopeContainer {
-		p = filepath.Join(p, "container")
+	if scope == wcprof.UsageScopeMountHelpers {
+		p = filepath.Join(p, "sshfs")
 	}
 	return p
 }
@@ -43,10 +43,15 @@ func recordExecUsage(ctx context.Context, state *execState, scope string) {
 		return
 	}
 	// When a mount helper could not join the exec's cgroup, the resource
-	// cgroup's total would leave it out: don't present it as inclusive (the
-	// resource sampler skips it the same way). The container's own reading
-	// is unaffected.
-	if scope == wcprof.UsageScopeExecCgroup && state.mountResources != nil && !state.mountResources.Available() {
+	// cgroup's total would leave it out, and the helpers' cgroup wouldn't hold
+	// it: read neither (the resource sampler skips the exec's samples the
+	// same way).
+	if state.mountResources != nil && !state.mountResources.Available() {
+		return
+	}
+	// The helpers' cgroup exists only once a helper ran; without one, the
+	// exec cgroup's reading is the workload's alone.
+	if scope == wcprof.UsageScopeMountHelpers && (state.mountResources == nil || !state.mountResources.Active()) {
 		return
 	}
 	dir := execUsageCgroup(state.resourceCgroupPath, scope)
