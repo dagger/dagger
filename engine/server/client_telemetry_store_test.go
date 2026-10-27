@@ -1,13 +1,16 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func TestClientRuntimeRetainsTelemetryStoresUntilReclamation(t *testing.T) {
@@ -89,4 +92,78 @@ func TestClientRuntimeRetainsTelemetryStoresUntilReclamation(t *testing.T) {
 	require.Empty(t, sess.clientRuntimes)
 	require.Equal(t, clientdb.OpenStats{}, srv.clientDBs.OpenStats())
 	require.NoError(t, srv.clientDBs.Close())
+}
+
+// A client's store closes when its runtime is reclaimed, but telemetry for the
+// client can still arrive afterwards: the session's shutdown flush exports
+// whatever its processors still hold. Appending that must not replay the
+// store's history, which for a long-running client took longer than the 10s
+// the CLI gives shutdown. A context whose deadline has already passed stands
+// in for the shutdown's: an append that reads no history never consults it.
+func TestLateExportToReclaimedClientDoesNotReplayStore(t *testing.T) {
+	srv := &Server{clientDBs: clientdb.NewDBs(t.TempDir())}
+	t.Cleanup(func() { require.NoError(t, srv.clientDBs.Close()) })
+	ps := NewPubSub(srv)
+	sess := &daggerSession{
+		sessionID:       "session",
+		telemetryPubSub: ps,
+		clientRuntimes:  make(map[string]*clientRuntime),
+	}
+	sess.state.Store(sessionStateInitialized)
+	client := &clientRuntime{
+		clientRecord: &clientRecord{clientID: "client", daggerSession: sess},
+		state:        clientStateInitialized,
+	}
+	sess.clientRuntimes[client.clientID] = client
+	require.NoError(t, client.retainTelemetryDB(t.Context()))
+	installTestClientRecords(sess)
+
+	const traceID = "00000000000000000000000000000001"
+	spanRow := func(i int) clientdb.Span {
+		return clientdb.Span{TraceID: traceID, SpanID: fmt.Sprintf("%016x", i), Name: fmt.Sprintf("span-%d", i)}
+	}
+	const history = 2000
+	spans := make([]clientdb.Span, history)
+	logs := make([]sdklog.Record, history)
+	for i := range history {
+		spans[i] = spanRow(i + 1)
+		logs[i].SetBody(log.StringValue(fmt.Sprintf("history-%d", i)))
+	}
+	require.NoError(t, ps.appendSpans(t.Context(), client.clientID, spans))
+	require.NoError(t, ps.Logs(client.clientID).Export(t.Context(), logs))
+
+	sess.scopeMu.Lock()
+	reclamation := sess.maybeBeginClientRuntimeReclamationLocked(client)
+	sess.scopeMu.Unlock()
+	sess.finishClientRuntimeReclamation(reclamation)
+	require.Equal(t, clientdb.OpenStats{}, srv.clientDBs.OpenStats())
+
+	expired, cancel := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+	defer cancel()
+	late := spanRow(history + 1)
+	lateSpanID, err := trace.SpanIDFromHex(late.SpanID)
+	require.NoError(t, err)
+	var lateLog sdklog.Record
+	lateLog.SetBody(log.StringValue("late"))
+	lateLog.SetSpanID(lateSpanID)
+	require.NoError(t, ps.appendSpans(expired, client.clientID, []clientdb.Span{late}))
+	require.NoError(t, ps.Logs(client.clientID).Export(expired, []sdklog.Record{lateLog}))
+	require.Equal(t, clientdb.OpenStats{}, srv.clientDBs.OpenStats())
+
+	// A reader sees the history and the late rows, and finds them through the
+	// store's indexes.
+	reader, err := client.clientRecord.TelemetryDB(t.Context())
+	require.NoError(t, err)
+	defer reader.Close()
+	require.True(t, reader.HasSpan(spanRow(1).SpanID))
+	require.True(t, reader.HasSpan(late.SpanID))
+	require.Len(t, reader.SpanIDs(), history+1)
+	row, err := reader.SelectSpan(t.Context(), clientdb.SelectSpanParams{TraceID: traceID, SpanID: late.SpanID})
+	require.NoError(t, err)
+	require.Equal(t, int64(history+1), row.ID)
+	require.Equal(t, late.Name, row.Name)
+	lateLogs, err := reader.SelectLogsForSpans(t.Context(), map[string]struct{}{late.SpanID: {}}, 0)
+	require.NoError(t, err)
+	require.Len(t, lateLogs, 1)
+	require.Equal(t, int64(history+1), lateLogs[0].ID)
 }
