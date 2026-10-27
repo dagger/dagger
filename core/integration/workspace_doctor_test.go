@@ -88,6 +88,10 @@ func New(
  tags []string,
  // +optional
  dir *dagger.Directory,
+ // +optional
+ token *dagger.Secret,
+ // +optional
+ tokens []*dagger.Secret,
 ) *Probe { panic("doctor must not invoke the constructor") }
 func (p *Probe) Hello() string { return "hello" }
 `}
@@ -111,6 +115,10 @@ func (p *Provider) Directory() *dagger.Directory { return dag.Directory() }
 		{name: "invalid primitive", settings: "count = \"not-an-int\"\n", fail: true, want: []string{"ERROR", "count"}},
 		{name: "invalid bool", settings: "enabled = 42\n", fail: true, want: []string{"ERROR", "enabled"}},
 		{name: "invalid address", settings: "dir = \"/does-not-exist\"\n", fail: true, want: []string{`FAIL Module settings "probe"`, "dir"}},
+		{name: "secret settings with provider schemes", settings: "token = \"env://PROBE_TOKEN\"\ntokens = [\"env://PROBE_TOKEN\", \"cmd://echo shh\"]\n", want: []string{`PASS Module settings "probe"`}},
+		{name: "bare secret setting", settings: "token = \"PROBE_TOKEN\"\n", fail: true, want: []string{`FAIL Module settings "probe"`, "secret address must name its provider with a scheme"}},
+		{name: "secret shorthand setting", settings: "token = \"env:PROBE_TOKEN\"\n", fail: true, want: []string{`FAIL Module settings "probe"`, "secret address must name its provider with a scheme"}},
+		{name: "bare secret list element", settings: "tokens = [\"env://PROBE_TOKEN\", \"PROBE_TOKEN\"]\n", fail: true, want: []string{`FAIL Module settings "probe"`, "secret address must name its provider with a scheme"}},
 		{name: "selected environment", settings: "count = 3\n", extra: "[env.bad.modules.probe.settings]\ntyppo = true\n", args: []string{"--env=bad"}, fail: true, want: []string{`FAIL Module settings "probe"`, "typpo"}},
 		{name: "continue after load failure", extra: "[modules.broken]\nsource = \"does-not-exist\"\n", fail: true, want: []string{`FAIL Module loading "broken"`, `PASS Module settings "probe"`}},
 	} {

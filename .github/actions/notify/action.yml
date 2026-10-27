@@ -19,4 +19,4 @@ runs:
         DISCORD_WEBHOOK: ${{ inputs.discord-webhook }}
       with:
         module: "github.com/gerhard/daggerverse/notify@2024-02-13"
-        function: discord --webhook-url env:DISCORD_WEBHOOK --message '${{ inputs.message }}'
+        function: discord --webhook-url env://DISCORD_WEBHOOK --message '${{ inputs.message }}'

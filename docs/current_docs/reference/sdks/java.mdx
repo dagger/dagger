@@ -672,9 +672,9 @@ public class MyModule {
 Callers supply secrets through providers on the CLI:
 
 ```shell
-dagger api call my-module github-api --token=env:GITHUB_TOKEN     # environment variable
-dagger api call my-module github-api --token=file:./token.txt      # file
-dagger api call my-module github-api --token=cmd:"gh auth token"   # command output
+dagger api call my-module github-api --token=env://GITHUB_TOKEN     # environment variable
+dagger api call my-module github-api --token=file://./token.txt      # file
+dagger api call my-module github-api --token="cmd://gh auth token"   # command output
 dagger api call my-module github-api --token=op://vault/item/field # 1Password
 ```
 

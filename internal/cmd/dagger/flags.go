@@ -6,7 +6,6 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
-	"log/slog"
 	"reflect"
 	"strconv"
 	"strings"
@@ -361,8 +360,9 @@ func (v *fileValue) Get(ctx context.Context, c *dagger.Client, _ *core.ModuleSou
 	return core.NewQuery(c).CurrentWorkspace().Resolve(v.address).File().Sync(ctx)
 }
 
-// secretValue is a pflag.Value that builds a core.Secret from a name and a
-// plaintext value.
+// secretValue is a pflag.Value that builds a core.Secret from a secret
+// provider address (env://NAME, file://PATH, cmd://COMMAND, ...) or a DAG
+// address.
 type secretValue struct {
 	address string
 }
@@ -381,9 +381,6 @@ func (v *secretValue) String() string {
 }
 
 func (v *secretValue) Get(ctx context.Context, c *dagger.Client, _ *core.ModuleSource, _ *modFunctionArg) (any, error) {
-	if !strings.Contains(v.address, ":") {
-		slog.Warn("deprecation: missig URI scheme in secret argument \"" + v.address + "\". Add env:// prefix to prevent errors in future versions")
-	}
 	return core.NewQuery(c).CurrentWorkspace().Resolve(v.address).Secret(), nil
 }
 

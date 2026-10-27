@@ -730,7 +730,8 @@ type Myapp {
       "name": "defaults",
       "source": "./toolchain",
       "customizations": [
-        {"argument": "greeting", "default": "bonjour"}
+        {"argument": "greeting", "default": "bonjour"},
+        {"argument": "password", "default": "PASSWORD"}
       ]
     }
   ]
@@ -748,6 +749,9 @@ type Myapp {
 			"[modules.defaults.settings]",
 			`greeting = "bonjour"`,
 		}, "\n"))
+		// A secret customization relied on the bare-name shorthand for an
+		// environment variable, which secret settings no longer accept.
+		require.Contains(t, configOut, `password = "env://PASSWORD"`)
 	})
 
 	t.Run("dot dagger source remains in place", func(ctx context.Context, t *testctx.T) {

@@ -502,9 +502,9 @@ async deploy(token: Secret): Promise<string> {
 Callers supply secrets through providers:
 
 ```shell
-dagger api call my-module deploy --token=env:DEPLOY_TOKEN
-dagger api call my-module deploy --token=file:./token.txt
-dagger api call my-module deploy --token=cmd:"gh auth token"
+dagger api call my-module deploy --token=env://DEPLOY_TOKEN
+dagger api call my-module deploy --token=file://./token.txt
+dagger api call my-module deploy --token="cmd://gh auth token"
 dagger api call my-module deploy --token=op://vault/item/field
 ```
 

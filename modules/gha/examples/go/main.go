@@ -14,7 +14,7 @@ func (m *Examples) GhaSecrets() *dagger.Directory {
 			dag.Gha().Workflow("deploy docs").
 				WithJob(dag.Gha().Job(
 					"deploy-docs",
-					"deploy-docs --source=. --password env:$DOCS_SERVER_PASSWORD",
+					"deploy-docs --source=. --password env://DOCS_SERVER_PASSWORD",
 					dagger.GhaJobOpts{
 						Secrets: []string{"DOCS_SERVER_PASSWORD"},
 					}),

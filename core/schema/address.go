@@ -946,15 +946,13 @@ func (s *addressSchema) secret(
 		}
 	}
 	addr := r.Self().Value
-	// MY_SECRET -> env://MY_SECRET
-	if !strings.Contains(addr, ":") {
-		addr = "env://" + addr
-	}
-	// legacy format:
-	// env:MY_SECRET -> env://MY_SECRET
-	secretSource, val, _ := strings.Cut(addr, ":")
-	if !strings.HasPrefix(val, "//") {
-		addr = secretSource + "://" + val
+	if !hasSecretScheme(addr) {
+		if core.Supports(ctx, secretSchemeRequiredVersion) {
+			// The value is not echoed: a value without a scheme is often a
+			// plaintext secret pasted where its reference belongs.
+			return inst, errors.New(missingSecretSchemeMessage)
+		}
+		addr = legacySecretAddress(addr)
 	}
 
 	// Parse the address to separate the base address from query parameters
@@ -988,6 +986,48 @@ func (s *addressSchema) secret(
 		return inst, err
 	}
 	return inst, nil
+}
+
+// secretSchemeRequiredVersion is the API version from which a secret address
+// must name its provider with a full scheme (env://NAME, file://PATH,
+// cmd://COMMAND, ...). Clients and modules on earlier API versions keep the
+// shorthands that legacySecretAddress expands.
+const secretSchemeRequiredVersion = "v1.0.0-0"
+
+const missingSecretSchemeMessage = "secret address must name its provider with a scheme, such as env://NAME, file://PATH or cmd://COMMAND"
+
+// hasSecretScheme reports whether addr starts with a "<provider>://" scheme,
+// where the provider is a URI scheme name (a letter, then letters, digits,
+// "+", "-" or ".").
+func hasSecretScheme(addr string) bool {
+	scheme, rest, ok := strings.Cut(addr, ":")
+	if !ok || scheme == "" || !strings.HasPrefix(rest, "//") {
+		return false
+	}
+	for i, r := range scheme {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z':
+		case i > 0 && (r >= '0' && r <= '9' || r == '+' || r == '-' || r == '.'):
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// legacySecretAddress expands the secret address shorthands of API versions
+// before secretSchemeRequiredVersion: a bare NAME reads the environment
+// variable NAME (env://NAME), and <provider>:VALUE means <provider>://VALUE.
+// An address that already has a scheme is returned unchanged.
+func legacySecretAddress(addr string) string {
+	scheme, rest, ok := strings.Cut(addr, ":")
+	if !ok {
+		return "env://" + addr
+	}
+	if strings.HasPrefix(rest, "//") {
+		return addr
+	}
+	return scheme + "://" + rest
 }
 
 func selectSecret(addr, cacheKey string) []dagql.Selector {

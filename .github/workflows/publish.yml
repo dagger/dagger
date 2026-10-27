@@ -54,22 +54,22 @@ jobs:
             --tag="${{ github.ref_name }}" --commit="${{ github.sha }}" \
             --registry-image="$DAGGER_ENGINE_IMAGE" \
             --registry-username="$DAGGER_ENGINE_IMAGE_USERNAME" \
-            --registry-password=env:DAGGER_ENGINE_IMAGE_PASSWORD \
-            --github-token=env:GITHUB_TOKEN \
+            --registry-password=env://DAGGER_ENGINE_IMAGE_PASSWORD \
+            --github-token=env://GITHUB_TOKEN \
             --github-org-name="$GITHUB_ORG_NAME" \
-            --netlify-token=env:NETLIFY_TOKEN \
-            --pypi-token=env:PYPI_TOKEN \
+            --netlify-token=env://NETLIFY_TOKEN \
+            --pypi-token=env://PYPI_TOKEN \
             --pypi-repo="$PYPI_REPO" \
-            --npm-token=env:NPM_TOKEN \
-            --hex-apikey=env:HEX_API_KEY \
-            --cargo-registry-token=env:CARGO_REGISTRY_TOKEN \
-            --aws-access-key-id=env:AWS_ACCESS_KEY_ID \
-            --aws-secret-access-key=env:AWS_SECRET_ACCESS_KEY \
+            --npm-token=env://NPM_TOKEN \
+            --hex-apikey=env://HEX_API_KEY \
+            --cargo-registry-token=env://CARGO_REGISTRY_TOKEN \
+            --aws-access-key-id=env://AWS_ACCESS_KEY_ID \
+            --aws-secret-access-key=env://AWS_SECRET_ACCESS_KEY \
             --aws-region="$AWS_REGION" \
             --aws-bucket="$AWS_BUCKET" \
             --aws-cloudfront-distribution="$AWS_CLOUDFRONT_DISTRIBUTION" \
             --artefacts-fqdn="$ARTEFACTS_FQDN" \
-            --discord-webhook=env:DISCORD_WEBHOOK \
+            --discord-webhook=env://DISCORD_WEBHOOK \
             markdown
           redirect: /tmp/release-report
         env:
@@ -124,7 +124,7 @@ jobs:
         env:
           RELEASE_DAGGER_CI_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
         with:
-          function: open-pr --to="${{ github.ref_name }}" --github-token=env:RELEASE_DAGGER_CI_TOKEN --github-assignee="${{ github.actor }}"
+          function: open-pr --to="${{ github.ref_name }}" --github-token=env://RELEASE_DAGGER_CI_TOKEN --github-assignee="${{ github.actor }}"
           module: github.com/dagger/dagger.io/infra/dagger-version-manager@main
 
   # TODO: daggerize provisioning tests

@@ -344,18 +344,6 @@ func (CallSuite) TestArgTypes(ctx context.Context, t *testctx.T) {
 			require.Equal(t, "shhh", out)
 		})
 
-		t.Run("env (legacy explicit)", func(ctx context.Context, t *testctx.T) {
-			out, err := modGen.With(daggerCallAt(".", "insecure", "--token", "env:TOPSECRET")).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "shhh", out)
-		})
-
-		t.Run("env (legacy implicit)", func(ctx context.Context, t *testctx.T) {
-			out, err := modGen.With(daggerCallAt(".", "insecure", "--token", "TOPSECRET")).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "shhh", out)
-		})
-
 		t.Run("file", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCallAt(".", "insecure", "--token", "file:///mysupersecret")).Stdout(ctx)
 			require.NoError(t, err)
@@ -366,26 +354,22 @@ func (CallSuite) TestArgTypes(ctx context.Context, t *testctx.T) {
 			require.Equal(t, "file shhh", out)
 		})
 
-		t.Run("file (legacy)", func(ctx context.Context, t *testctx.T) {
-			out, err := modGen.With(daggerCallAt(".", "insecure", "--token", "file:/mysupersecret")).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "file shhh", out)
-
-			out, err = modGen.With(daggerCallAt(".", "insecure", "--token", "file:~/homesupersecret")).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "file shhh", out)
-		})
-
 		t.Run("cmd", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCallAt(".", "insecure", "--token", "cmd://echo -n cmd shhh")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "cmd shhh", out)
 		})
 
-		t.Run("cmd (legacy)", func(ctx context.Context, t *testctx.T) {
-			out, err := modGen.With(daggerCallAt(".", "insecure", "--token", "cmd:echo -n cmd shhh")).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "cmd shhh", out)
+		t.Run("address without a provider scheme", func(ctx context.Context, t *testctx.T) {
+			for _, addr := range []string{
+				"TOPSECRET",
+				"env:TOPSECRET",
+				"file:/mysupersecret",
+				"cmd:echo -n cmd shhh",
+			} {
+				_, err := modGen.With(daggerCallAt(".", "insecure", "--token", addr)).Stdout(ctx)
+				requireErrOut(t, err, "secret address must name its provider with a scheme")
+			}
 		})
 	})
 

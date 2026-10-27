@@ -535,23 +535,23 @@ func (env *publishCheckEnv) runReleasePublish(ctx context.Context, engine *dagge
   --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" \
   --registry-image "` + publishCheckRegistryImage + `" \
   --registry-username "` + publishCheckRegistryUser + `" \
-  --registry-password=env:REGISTRY_PASSWORD \
-  --github-token=env:FAKE_GITHUB_TOKEN \
+  --registry-password=env://REGISTRY_PASSWORD \
+  --github-token=env://FAKE_GITHUB_TOKEN \
   --github-org-name "dagger" \
   --github-host "github.test" \
   --github-ca-cert "/github-ca.pem" \
-  --netlify-token=env:FAKE_NETLIFY_TOKEN \
+  --netlify-token=env://FAKE_NETLIFY_TOKEN \
   --netlify-apiurl "http://mock:8080/netlify/api/v1" \
-  --pypi-token=env:FAKE_PYPI_TOKEN \
+  --pypi-token=env://FAKE_PYPI_TOKEN \
   --pypi-url "http://mock:8080/pypi/legacy/" \
-  --npm-token=env:FAKE_NPM_TOKEN \
+  --npm-token=env://FAKE_NPM_TOKEN \
   --npm-registry-url "http://verdaccio:4873" \
-  --hex-apikey=env:FAKE_HEX_API_KEY \
+  --hex-apikey=env://FAKE_HEX_API_KEY \
   --hex-apiurl "http://mock:8080/hex/api" \
-  --cargo-registry-token=env:FAKE_CARGO_REGISTRY_TOKEN \
+  --cargo-registry-token=env://FAKE_CARGO_REGISTRY_TOKEN \
   --cargo-registry-index "sparse+http://mock:8080/cargo/" \
-  --aws-access-key-id=env:AWS_ACCESS_KEY_ID \
-  --aws-secret-access-key=env:AWS_SECRET_ACCESS_KEY \
+  --aws-access-key-id=env://AWS_ACCESS_KEY_ID \
+  --aws-secret-access-key=env://AWS_SECRET_ACCESS_KEY \
   --aws-region "us-east-1" \
   --aws-bucket "$AWS_BUCKET" \
   --aws-cloudfront-distribution "$AWS_CLOUDFRONT_DISTRIBUTION" \

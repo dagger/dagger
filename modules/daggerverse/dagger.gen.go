@@ -255,7 +255,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					WithFunction(
 						dag.Function("DeployPreviewWithDaggerMain",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
-							WithDescription("Deploy preview environment running Dagger main: dagger call --github-token=env:GITHUB_PAT deploy-preview-with-dagger-main").
+							WithDescription("Deploy preview environment running Dagger main: dagger call --github-token=env://GITHUB_PAT deploy-preview-with-dagger-main").
 							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
 							WithSourceMap(dag.SourceMap("main.go", 62, 1)).
 							WithArg("target", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 64, 2)}).
