@@ -235,7 +235,7 @@ defmodule Dagger.Container do
   end
 
   @deprecated """
-  Use \\"withGPU\\" instead.
+  Use \\"withGpu\\" instead.
   """
   @doc """
   Configures all available GPUs on the host to be accessible to this container.
@@ -245,7 +245,7 @@ defmodule Dagger.Container do
   @spec experimental_with_all_gpus(t()) :: Dagger.Container.t()
   def experimental_with_all_gpus(%__MODULE__{} = container) do
     query_builder =
-      container.query_builder |> QB.select("experimentalWithAllGPUs")
+      container.query_builder |> QB.select("experimentalWithAllGpus")
 
     %Dagger.Container{
       query_builder: query_builder,
@@ -254,7 +254,7 @@ defmodule Dagger.Container do
   end
 
   @deprecated """
-  Use \\"withGPU\\" instead, which exposes all GPUs available on the host.
+  Use \\"withGpu\\" instead, which exposes all GPUs available on the host.
   """
   @doc """
   Configures the provided list of devices to be accessible to this container.
@@ -265,7 +265,7 @@ defmodule Dagger.Container do
   def experimental_with_gpu(%__MODULE__{} = container, devices) do
     query_builder =
       container.query_builder
-      |> QB.select("experimentalWithGPU")
+      |> QB.select("experimentalWithGpu")
       |> QB.put_arg("devices", devices)
 
     %Dagger.Container{
@@ -405,7 +405,7 @@ defmodule Dagger.Container do
         )
       )
       |> QB.maybe_put_arg("protocol", optional_args[:protocol])
-      |> QB.maybe_put_arg("insecureSkipTLSVerify", optional_args[:insecure_skip_tls_verify])
+      |> QB.maybe_put_arg("insecureSkipTlsVerify", optional_args[:insecure_skip_tls_verify])
       |> QB.maybe_put_arg("noLock", optional_args[:no_lock])
 
     %Dagger.Container{
@@ -586,7 +586,7 @@ defmodule Dagger.Container do
         )
       )
       |> QB.maybe_put_arg("protocol", optional_args[:protocol])
-      |> QB.maybe_put_arg("insecureSkipTLSVerify", optional_args[:insecure_skip_tls_verify])
+      |> QB.maybe_put_arg("insecureSkipTlsVerify", optional_args[:insecure_skip_tls_verify])
       |> QB.maybe_put_arg("sourceDateEpoch", optional_args[:source_date_epoch])
 
     Client.execute(container.client, query_builder)
@@ -1113,7 +1113,7 @@ defmodule Dagger.Container do
   @spec with_gpu(t()) :: Dagger.Container.t()
   def with_gpu(%__MODULE__{} = container) do
     query_builder =
-      container.query_builder |> QB.select("withGPU")
+      container.query_builder |> QB.select("withGpu")
 
     %Dagger.Container{
       query_builder: query_builder,
