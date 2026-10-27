@@ -249,7 +249,7 @@ func TestImportChainOverlaySharedLayersApplyOnce(t *testing.T) {
 
 // An import whose layer fails to apply while the others apply leaves no
 // lease or partial content behind, and no uncommitted snapshot once
-// collected.
+// collected; a later import of the chain then succeeds.
 func TestImportChainOverlayFailureReleasesEverything(t *testing.T) {
 	t.Parallel()
 	const layers, failing = 6, 2
@@ -267,6 +267,20 @@ func TestImportChainOverlayFailureReleasesEverything(t *testing.T) {
 	require.ErrorIs(t, err, errApply)
 	consumer.GC(t)
 	assertNoTemporaryResources(t, consumer)
+	// Nothing of the failed import holds the chain's layers: importing the
+	// chain again applies them.
+	consumer.BeforeApply = nil
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	ref, err = consumer.Manager.ImportChain(ctx, supplied(chain, chain.Provider))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, ref.Release(context.Background())) })
+	want := map[string]string{}
+	for i := range layers {
+		want[fmt.Sprintf("layer-%02d.txt", i)] = fmt.Sprintf("file 640 layer %d", i)
+	}
+	require.Equal(t, want, testutil.OverlayTree(t, ref))
+	requireParents(t, consumer, ref, layers)
 }
 
 // wantWithout returns tree without path's entries below dir.
