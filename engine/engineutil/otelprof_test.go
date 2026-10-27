@@ -244,7 +244,7 @@ func TestEmitExecSplitRecordsPhaseSpans(t *testing.T) {
 // known, runc creating the container is its own internal exec.runtimeStart
 // phase between the container start and the process run, as native records
 // it, and names its native op; one released after the run ended is ignored,
-// as native ignores it.
+// as native ignores it, and one released at the start makes no span.
 func TestEmitExecSplitRuntimeStart(t *testing.T) {
 	wcprof.EnsureRecorder()
 	sr, ctx, root := newRecordingRoot("Container.withExec")
@@ -256,6 +256,7 @@ func TestEmitExecSplitRuntimeStart(t *testing.T) {
 	rtOp := wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.runtimeStart", wcprof.OpOpts{}, 4, 13, wcprof.OutcomeOK)
 	emitOTelExecSplit(ctx, "exec-runtime-start", start, started, released, end, nil, []string{"go"}, execPhaseOps{runtimeStart: rtOp})
 	emitOTelExecSplit(ctx, "exec-runtime-late", start, started, end.Add(time.Millisecond), end, nil, nil, execPhaseOps{})
+	emitOTelExecSplit(ctx, "exec-runtime-at-start", start, started, started, end, nil, nil, execPhaseOps{})
 	root.End()
 	ended := sr.Ended()
 
@@ -291,6 +292,12 @@ func TestEmitExecSplitRuntimeStart(t *testing.T) {
 	}
 	if phase("exec.runtimeStart", "exec-runtime-late") != nil {
 		t.Fatal("a release after the run ended must not make a runtimeStart span")
+	}
+	if phase("exec.runtimeStart", "exec-runtime-at-start") != nil {
+		t.Fatal("a release at the container's start must make no runtimeStart span: it would have no length, and a store reads a span that ends at its start as never ended")
+	}
+	if pr := phase("exec.processRun", "exec-runtime-at-start"); pr == nil || !pr.StartTime().Equal(started) {
+		t.Fatalf("with a release at the start, processRun starts at the started callback, got %v", pr)
 	}
 	if pr := phase("exec.processRun", "exec-runtime-late"); pr == nil || !pr.StartTime().Equal(started) {
 		t.Fatalf("without a usable release, processRun starts at the started callback, got %v", pr)
