@@ -1,6 +1,9 @@
 package core
 
 import (
+	"fmt"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/iancoleman/strcase"
@@ -214,6 +217,28 @@ func TestModuleMainObjectSpelling(t *testing.T) {
 	})
 }
 
+// The identifier casing cut, the view every v1.0.0 prerelease before it
+// shares, and the release after it. Tests derive them from the engine's
+// constants, so moving the cut needs no test edits.
+var (
+	cutVersion   = engine.IdentifierCasingVersion
+	preCutView   = engine.APIViewVersion("v1.0.0-0")
+	afterCutBeta = betaAfter(engine.IdentifierCasingVersion)
+)
+
+// betaAfter returns the beta after version, a vX.Y.Z-beta.N.
+func betaAfter(version string) string {
+	base, num, ok := strings.Cut(version, "-beta.")
+	if !ok {
+		panic(version + " is not a beta")
+	}
+	n, err := strconv.Atoi(num)
+	if err != nil {
+		panic(version + " is not a beta")
+	}
+	return fmt.Sprintf("%s-beta.%d", base, n+1)
+}
+
 func TestNamerForView(t *testing.T) {
 	t.Parallel()
 
@@ -224,9 +249,10 @@ func TestNamerForView(t *testing.T) {
 		{"", false},
 		{"v1.0.0", false},
 		{"v1.2.3", false},
-		{"v1.0.0-beta.21", false},
-		{"v1.0.0-beta.22", false},
+		{call.View(cutVersion), false},
+		{call.View(afterCutBeta), false},
 		{"v1.0.0-rc.1", false},
+		{call.View(preCutView), true},
 		{"v1.0.0-beta.20", true},
 		{"v0.21.5", true},
 		{"v0.9.9", true},
@@ -241,16 +267,15 @@ func TestIdentifierNamingView(t *testing.T) {
 	t.Parallel()
 
 	require.Equal(t, engine.IdentifierCasingVersion, IdentifierNamingVersion)
-	for _, view := range []call.View{"", "v0.21.5", "v1.0.0-beta.20", "v1.0.0-beta.21", "v1.0.0", "v1.2.3"} {
+	for _, view := range []call.View{"", "v0.21.5", "v1.0.0-beta.20", call.View(preCutView), call.View(cutVersion), "v1.0.0", "v1.2.3"} {
 		require.Equal(t, !NamerForView(view).Legacy(), IdentifierNamingView.Contains(view), "view %q", view)
 	}
 }
 
-// A module gets the new naming rules from IdentifierNamingVersion
-// (v1.0.0-beta.21) on. Every earlier v1.0.0 prerelease, v1.0.0-0 included,
-// shares the v1.0.0-beta.20 view and keeps the legacy rules; dev builds of
-// v1.0.0 share the release's view and get the new ones, as does v1.0.0
-// itself.
+// A module gets the new naming rules from IdentifierNamingVersion on. Every
+// earlier v1.0.0 prerelease, v1.0.0-0 included, shares the pre-cut view and
+// keeps the legacy rules; dev builds of v1.0.0 share the release's view and
+// get the new ones, as does v1.0.0 itself.
 func TestNamerForEngineVersion(t *testing.T) {
 	t.Parallel()
 
@@ -264,8 +289,9 @@ func TestNamerForEngineVersion(t *testing.T) {
 		{"v1.0.0-beta.15", true},
 		{"v1.0.0-beta.19", true},
 		{"v1.0.0-beta.20", true},
-		{"v1.0.0-beta.21", false},
-		{"v1.0.0-beta.22", false},
+		{preCutView, true},
+		{cutVersion, false},
+		{afterCutBeta, false},
 		{"v1.0.0-beta.17-dev-123", false},
 		{"v1.0.0-dev-123", false},
 		{"v1.0.0-rc.1", false},
@@ -308,11 +334,11 @@ func TestModuleSourceNaming(t *testing.T) {
 	t.Parallel()
 
 	entrypoint := &ModuleSource{
-		EngineVersion: "v1.0.0-beta.21",
+		EngineVersion: cutVersion,
 		Entrypoint:    &modules.ModuleEntrypointConfig{Kind: "dang", Source: "./sdk/entrypoint"},
 	}
 	require.False(t, entrypoint.Namer().Legacy())
-	require.Equal(t, call.View("v1.0.0-beta.21"), entrypoint.NamingView())
+	require.Equal(t, call.View(cutVersion), entrypoint.NamingView())
 	require.Equal(t, "getUrl", entrypoint.Namer().FieldName("getURL"))
 	require.Equal(t, "httpClient", entrypoint.Namer().FieldName("HTTPClient"))
 	require.Equal(t, "MyModHTTPClient", entrypoint.Namer().NamespaceObject("HttpClient", "my-mod", "my-mod"))
@@ -323,14 +349,14 @@ func TestModuleSourceNaming(t *testing.T) {
 	}
 	require.True(t, legacyEntrypoint.Namer().Legacy())
 
-	beta := &ModuleSource{EngineVersion: "v1.0.0-beta.21"}
+	beta := &ModuleSource{EngineVersion: cutVersion}
 	require.False(t, beta.Namer().Legacy())
-	require.Equal(t, call.View("v1.0.0-beta.21"), beta.NamingView())
+	require.Equal(t, call.View(cutVersion), beta.NamingView())
 	require.Equal(t, "httpClient", beta.Namer().FieldName("HTTPClient"))
 
 	oldBeta := &ModuleSource{EngineVersion: "v1.0.0-beta.19"}
 	require.True(t, oldBeta.Namer().Legacy())
-	require.Equal(t, call.View("v1.0.0-beta.20"), oldBeta.NamingView())
+	require.Equal(t, call.View(preCutView), oldBeta.NamingView())
 	require.Equal(t, "httpclient", oldBeta.Namer().FieldName("HTTPClient"))
 
 	legacy := &ModuleSource{EngineVersion: "v0.21.9"}
