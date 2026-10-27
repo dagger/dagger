@@ -248,8 +248,9 @@ func TestImportChainOverlaySharedLayersApplyOnce(t *testing.T) {
 }
 
 // An import whose layer fails to apply while the others apply leaves no
-// lease or partial content behind, and no uncommitted snapshot once
-// collected; a later import of the chain then succeeds.
+// lease or partial content behind, and nothing holds the chain's layers: a
+// later import of the chain succeeds, and once it is released nothing is left
+// uncommitted.
 func TestImportChainOverlayFailureReleasesEverything(t *testing.T) {
 	t.Parallel()
 	const layers, failing = 6, 2
@@ -265,22 +266,27 @@ func TestImportChainOverlayFailureReleasesEverything(t *testing.T) {
 	ref, err := consumer.Manager.ImportChain(context.Background(), supplied(chain, chain.Provider))
 	require.Nil(t, ref)
 	require.ErrorIs(t, err, errApply)
-	consumer.GC(t)
-	assertNoTemporaryResources(t, consumer)
-	// Nothing of the failed import holds the chain's layers: importing the
-	// chain again applies them.
+	owners, err := consumer.Leases.List(context.Background())
+	require.NoError(t, err)
+	require.Empty(t, owners)
+	writes, err := consumer.Content.ListStatuses(context.Background())
+	require.NoError(t, err)
+	require.Empty(t, writes)
+
 	consumer.BeforeApply = nil
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	ref, err = consumer.Manager.ImportChain(ctx, supplied(chain, chain.Provider))
 	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, ref.Release(context.Background())) })
 	want := map[string]string{}
 	for i := range layers {
 		want[fmt.Sprintf("layer-%02d.txt", i)] = fmt.Sprintf("file 640 layer %d", i)
 	}
 	require.Equal(t, want, testutil.OverlayTree(t, ref))
 	requireParents(t, consumer, ref, layers)
+	require.NoError(t, ref.Release(context.Background()))
+	consumer.GC(t)
+	assertNoTemporaryResources(t, consumer)
 }
 
 // wantWithout returns tree without path's entries below dir.
