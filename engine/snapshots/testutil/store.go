@@ -12,6 +12,7 @@ import (
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/diff"
+	"github.com/containerd/containerd/v2/core/diff/apply"
 	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/containerd/containerd/v2/core/metadata"
 	"github.com/containerd/containerd/v2/core/mount"
@@ -64,22 +65,32 @@ type Store struct {
 	LocalUnmounts atomic.Int64
 	// BeforeLocalUnmount runs before each of those unmounts.
 	BeforeLocalUnmount func()
+
+	// snapshotter names the store's snapshotter: native or overlayfs.
+	snapshotter string
 }
 
 func NewStore(t testing.TB) *Store {
 	t.Helper()
-	s := &Store{root: t.TempDir()}
+	return newStore(t, t.TempDir(), "native", func(root string) (ctdsnapshots.Snapshotter, error) {
+		return native.NewSnapshotter(root)
+	})
+}
+
+func newStore(t testing.TB, root, snapshotter string, newSnapshotter func(root string) (ctdsnapshots.Snapshotter, error)) *Store {
+	t.Helper()
+	s := &Store{root: root, snapshotter: snapshotter}
 	rawContent, err := local.NewStore(filepath.Join(s.root, "content"))
 	require.NoError(t, err)
-	rawSnapshots, err := native.NewSnapshotter(filepath.Join(s.root, "snapshots"))
+	rawSnapshots, err := newSnapshotter(filepath.Join(s.root, "snapshots"))
 	require.NoError(t, err)
 	db, err := bolt.Open(filepath.Join(s.root, "metadata.db"), 0600, nil)
 	require.NoError(t, err)
-	s.DB = metadata.NewDB(db, rawContent, map[string]ctdsnapshots.Snapshotter{"native": rawSnapshots})
+	s.DB = metadata.NewDB(db, rawContent, map[string]ctdsnapshots.Snapshotter{snapshotter: rawSnapshots})
 	require.NoError(t, s.DB.Init(context.Background()))
 	s.Leases = bkcache.NewLeaseManager(metadata.NewLeaseManager(s.DB), Namespace)
 	s.Content = containerdsnapshot.NewContentStore(s.DB.ContentStore(), Namespace)
-	s.Snapshots = containerdsnapshot.NewSnapshotter("native", s.DB.Snapshotter("native"), Namespace)
+	s.Snapshots = containerdsnapshot.NewSnapshotter(snapshotter, s.DB.Snapshotter(snapshotter), Namespace)
 	s.openManager(t)
 	t.Cleanup(func() {
 		require.NoError(t, s.Manager.Close())
@@ -96,10 +107,14 @@ func (s *Store) openManager(t testing.TB) {
 	// observed wrapper the manager uses, so BeforeWrite sees a fallback
 	// diff's blob writes as it sees the manager's own.
 	observed := observedContent{Store: s.Content, owner: s}
+	var applier diff.Applier = inPlaceApplier{store: observed}
+	if s.snapshotter == "overlayfs" {
+		applier = apply.NewFileSystemApplier(observed)
+	}
 	s.Manager, err = bkcache.NewSnapshotManager(bkcache.SnapshotManagerOpt{
 		Snapshotter: &observedSnapshotter{Snapshotter: s.Snapshots, store: s}, ContentStore: observed,
 		LeaseManager:   &observedLeases{Manager: s.Leases, store: s},
-		Applier:        &observedApplier{Applier: inPlaceApplier{store: observed}, store: s},
+		Applier:        &observedApplier{Applier: applier, store: s},
 		Differ:         &observedDiffer{Comparer: inPlaceDiffer{store: observed}, store: s},
 		MountPoolRoot:  filepath.Join(s.root, "mounts"),
 		BuiltinContent: s.Builtin,
