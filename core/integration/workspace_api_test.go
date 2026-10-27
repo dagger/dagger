@@ -1523,9 +1523,13 @@ func (WorkspaceAPISuite) TestWorkspaceDirectoryUsesOverlayGitignore(ctx context.
 }
 
 func (WorkspaceAPISuite) TestOverlayGitignoreLinkUsesHostTarget(ctx context.Context, t *testctx.T) {
+	root := t.TempDir()
 	for _, target := range []string{"rules.txt", "rules[1].txt", "!rules.txt", "rules^1?.txt"} {
 		t.Run(target, func(ctx context.Context, t *testctx.T) {
-			workdir := t.TempDir()
+			// Keep the metacharacters in the target filename, not the host path
+			// used by filesync's parent-directory include/exclude patterns.
+			workdir, err := os.MkdirTemp(root, "workspace-")
+			require.NoError(t, err)
 			initGitRepo(ctx, t, workdir)
 			require.NoError(t, os.WriteFile(filepath.Join(workdir, target), []byte("/secret/\n"), 0644))
 			require.NoError(t, os.Mkdir(filepath.Join(workdir, "secret"), 0755))

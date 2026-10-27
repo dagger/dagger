@@ -147,8 +147,10 @@ func (l *spanLookup) addLocked(row Span, causalTargets []string) {
 		(bytes.Contains(row.Attributes, testCaseNameAttrMarker) || bytes.Contains(row.Attributes, testSuiteNameAttrMarker)) {
 		l.testSpans[row.SpanID] = struct{}{}
 	}
+	var parentKnown bool
 	if row.ParentSpanID.Valid {
-		if _, known := l.parent[row.SpanID]; !known {
+		_, parentKnown = l.parent[row.SpanID]
+		if !parentKnown {
 			l.parent[row.SpanID] = row.ParentSpanID.String
 		}
 	}
@@ -159,13 +161,10 @@ func (l *spanLookup) addLocked(row Span, causalTargets []string) {
 	l.firstRow[key] = row.ID
 	if row.ParentSpanID.Valid {
 		children := l.children[row.ParentSpanID.String]
-		// A repeated span ID in another trace is vanishingly rare, but the
-		// children map follows the SQL query's span-ID-only identity and must
-		// remain unique if it happens.
-		for _, child := range children {
-			if child == row.SpanID {
-				return
-			}
+		// New span IDs cannot already be in a child list. Only a repeated
+		// ID in another trace needs the span-ID-only uniqueness check.
+		if parentKnown && slices.Contains(children, row.SpanID) {
+			return
 		}
 		l.children[row.ParentSpanID.String] = append(children, row.SpanID)
 	}
