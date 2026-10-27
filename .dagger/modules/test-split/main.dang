@@ -374,11 +374,12 @@ type TestSplit {
   }
 
   """
-  Test eBPF network accounting of engine subprocesses and executor workloads
-  in a privileged test container
+  Test eBPF network accounting of engine subprocesses and executor workloads,
+  and the trees of chains imported onto overlayfs, whose whiteouts and opaque
+  directories need privileges, in a privileged test container
   """
   pub testEbpf: Void @check {
-    testSpecific(["^TestCommandAccounting$", "^TestWorkloadAccounting$"], pkg: "./engine/ebpf/nettracer", ebpf: true)
+    testSpecific(["^TestCommandAccounting$", "^TestWorkloadAccounting$", "^TestImportChainOverlayTree$"], pkg: "./engine/ebpf/nettracer ./engine/snapshots", ebpf: true)
   }
 
   """
