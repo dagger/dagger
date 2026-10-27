@@ -51,6 +51,31 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			),
 	}.Install(srv)
 
+	// withGpu, experimentalWithGpu and experimentalWithAllGpus are spelled
+	// withGPU, experimentalWithGPU and experimentalWithAllGPUs in views before
+	// engine.IdentifierCasingVersion.
+	withGPUField := dagql.NodeFunc("withGpu", s.withAllGPUs).
+		View(AfterVersion(gpuAPIVersion)).
+		Doc(`Configures all GPUs available on the host to be accessible to this container.`,
+			`This currently works with NVIDIA devices only, and requires the engine to run with GPU support enabled.`)
+	experimentalWithGPUField := func(withGPU string) dagql.Field[*core.Container] {
+		return dagql.NodeFunc("experimentalWithGpu", s.withGPU).
+			View(AfterVersion(gpuAPIVersion)).
+			Doc(`Configures the provided list of devices to be accessible to this container.`,
+				`This currently works for Nvidia devices only.`).
+			Args(
+				dagql.Arg("devices").Doc(`List of devices to be accessible to this container.`),
+			).
+			Deprecated(fmt.Sprintf(`Use %q instead, which exposes all GPUs available on the host.`, withGPU))
+	}
+	experimentalWithAllGPUsField := func(withGPU string) dagql.Field[*core.Container] {
+		return dagql.NodeFunc("experimentalWithAllGpus", s.withAllGPUs).
+			View(AfterVersion(gpuAPIVersion)).
+			Doc(`Configures all available GPUs on the host to be accessible to this container.`,
+				`This currently works for Nvidia devices only.`).
+			Deprecated(fmt.Sprintf(`Use %q instead.`, withGPU))
+	}
+
 	dagql.Fields[*core.Container]{
 		Syncer[*core.Container]().
 			Doc(`Forces evaluation of the pipeline in the engine.`,
@@ -86,8 +111,9 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`Protocol to use for registry communication.`,
 					`Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.`).
 					View(AfterVersion("v1.0.0-0")),
-				dagql.Arg("insecureSkipTLSVerify").Doc(`Allow HTTPS registry communication without verifying the server certificate.`).
-					View(AfterVersion("v1.0.0-0")),
+				casedArg(insecureSkipTLSVerifyArg),
+				legacyArg(insecureSkipTLSVerifyArg, "insecureSkipTLSVerify"),
+				unfilteredFieldLegacyArg("insecureSkipTLSVerify"),
 				dagql.Arg("noLock").
 					View(AfterVersion("v1.0.0-beta.15")).
 					Doc(`Ignore the workspace lockfile for this lookup.`),
@@ -780,8 +806,9 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`Protocol to use for registry communication.`,
 					`Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.`).
 					View(AfterVersion("v1.0.0-0")),
-				dagql.Arg("insecureSkipTLSVerify").Doc(`Allow HTTPS registry communication without verifying the server certificate.`).
-					View(AfterVersion("v1.0.0-0")),
+				casedArg(insecureSkipTLSVerifyArg),
+				legacyArg(insecureSkipTLSVerifyArg, "insecureSkipTLSVerify"),
+				unfilteredFieldLegacyArg("insecureSkipTLSVerify"),
 			),
 
 		dagql.NodeFunc("platform", s.platform).
@@ -1049,10 +1076,8 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				absolutely necessary and only with trusted commands.`),
 			),
 
-		dagql.NodeFunc("withGPU", s.withAllGPUs).
-			View(AfterVersion(gpuAPIVersion)).
-			Doc(`Configures all GPUs available on the host to be accessible to this container.`,
-				`This currently works with NVIDIA devices only, and requires the engine to run with GPU support enabled.`),
+		casedField(withGPUField),
+		legacyField(withGPUField, "withGPU"),
 
 		dagql.NodeFunc("experimentalWithGPU", s.withGPU).
 			View(BeforeVersion(gpuAPIVersion)).
@@ -1062,25 +1087,16 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("devices").Doc(`List of devices to be accessible to this container.`),
 			),
-		dagql.NodeFunc("experimentalWithGPU", s.withGPU).
-			View(AfterVersion(gpuAPIVersion)).
-			Doc(`Configures the provided list of devices to be accessible to this container.`,
-				`This currently works for Nvidia devices only.`).
-			Args(
-				dagql.Arg("devices").Doc(`List of devices to be accessible to this container.`),
-			).
-			Deprecated(`Use "withGPU" instead, which exposes all GPUs available on the host.`),
+		casedField(experimentalWithGPUField("withGpu")),
+		legacyField(experimentalWithGPUField("withGPU"), "experimentalWithGPU"),
 
 		dagql.NodeFunc("experimentalWithAllGPUs", s.withAllGPUs).
 			View(BeforeVersion(gpuAPIVersion)).
 			Doc(`EXPERIMENTAL API! Subject to change/removal at any time.`,
 				`Configures all available GPUs on the host to be accessible to this container.`,
 				`This currently works for Nvidia devices only.`),
-		dagql.NodeFunc("experimentalWithAllGPUs", s.withAllGPUs).
-			View(AfterVersion(gpuAPIVersion)).
-			Doc(`Configures all available GPUs on the host to be accessible to this container.`,
-				`This currently works for Nvidia devices only.`).
-			Deprecated(`Use "withGPU" instead.`),
+		casedField(experimentalWithAllGPUsField("withGpu")),
+		legacyField(experimentalWithAllGPUsField("withGPU"), "experimentalWithAllGPUs"),
 	}.Install(srv)
 
 	dagql.Fields[*core.TerminalLegacy]{
@@ -1126,13 +1142,37 @@ type containerFromArgs struct {
 	Version               string `default:""`
 	RegistryService       dagql.Optional[core.ServiceID]
 	Protocol              dagql.Optional[core.RegistryProtocol]
-	InsecureSkipTLSVerify bool `name:"insecureSkipTLSVerify" default:"false"`
-	NoLock                bool `name:"noLock" default:"false"`
+	InsecureSkipTLSVerify bool `name:"insecureSkipTlsVerify" default:"false"`
+	// LegacyInsecureSkipTLSVerify is insecureSkipTlsVerify in views before
+	// engine.IdentifierCasingVersion (see insecureSkipTLSVerifyArg).
+	LegacyInsecureSkipTLSVerify bool `name:"insecureSkipTLSVerify" default:"false"`
+	NoLock                      bool `name:"noLock" default:"false"`
 }
 
-func registryTransportFromArgs(protocol dagql.Optional[core.RegistryProtocol], insecureSkipTLSVerify bool) (serverresolver.RegistryTransport, error) {
+// insecureSkipTLSVerifyArg is Container.from's and publish's
+// insecureSkipTlsVerify, spelled insecureSkipTLSVerify in views before
+// engine.IdentifierCasingVersion. Neither field has a view filter, so their
+// calls are selected in view "" whatever the caller's view: the old
+// spelling also stays an internal argument there
+// (unfilteredFieldLegacyArg), or a caller before the cut would have it
+// dropped.
+var insecureSkipTLSVerifyArg = dagql.Arg("insecureSkipTlsVerify").
+	Doc(`Allow HTTPS registry communication without verifying the server certificate.`).
+	View(AfterVersion("v1.0.0-0"))
+
+// insecureSkipTLSVerify is whether either spelling of insecureSkipTlsVerify
+// is set, and the name of the one set, for errors.
+func insecureSkipTLSVerify(cased, legacy bool) (bool, string) {
+	if legacy && !cased {
+		return true, "insecureSkipTLSVerify"
+	}
+	return cased, "insecureSkipTlsVerify"
+}
+
+func registryTransportFromArgs(protocol dagql.Optional[core.RegistryProtocol], skipVerify, legacySkipVerify bool) (serverresolver.RegistryTransport, error) {
+	insecureSkipTLSVerify, argName := insecureSkipTLSVerify(skipVerify, legacySkipVerify)
 	if protocol.Valid && protocol.Value == core.RegistryProtocolHTTP && insecureSkipTLSVerify {
-		return serverresolver.RegistryTransport{}, errors.New("insecureSkipTLSVerify cannot be used with HTTP registry protocol")
+		return serverresolver.RegistryTransport{}, fmt.Errorf("%s cannot be used with HTTP registry protocol", argName)
 	}
 
 	if !protocol.Valid {
@@ -1263,7 +1303,7 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	if err != nil {
 		return inst, fmt.Errorf("failed to get registry resolver: %w", err)
 	}
-	registryTransport, err := registryTransportFromArgs(args.Protocol, args.InsecureSkipTLSVerify)
+	registryTransport, err := registryTransportFromArgs(args.Protocol, args.InsecureSkipTLSVerify, args.LegacyInsecureSkipTLSVerify)
 	if err != nil {
 		return inst, err
 	}
@@ -2812,7 +2852,10 @@ type containerPublishArgs struct {
 	MediaTypes            core.ImageMediaTypes `default:"OCI"`
 	RegistryService       dagql.Optional[core.ServiceID]
 	Protocol              dagql.Optional[core.RegistryProtocol]
-	InsecureSkipTLSVerify bool `name:"insecureSkipTLSVerify" default:"false"`
+	InsecureSkipTLSVerify bool `name:"insecureSkipTlsVerify" default:"false"`
+	// LegacyInsecureSkipTLSVerify is insecureSkipTlsVerify in views before
+	// engine.IdentifierCasingVersion (see insecureSkipTLSVerifyArg).
+	LegacyInsecureSkipTLSVerify bool `name:"insecureSkipTLSVerify" default:"false"`
 }
 
 func evaluateContainerImageParts(
@@ -2849,7 +2892,7 @@ func (s *containerSchema) publish(ctx context.Context, parent dagql.ObjectResult
 	if err := evaluateContainerImageParts(ctx, cache, append([]dagql.ObjectResult[*core.Container]{parent}, variantResults...)...); err != nil {
 		return "", err
 	}
-	registryTransport, err := registryTransportFromArgs(args.Protocol, args.InsecureSkipTLSVerify)
+	registryTransport, err := registryTransportFromArgs(args.Protocol, args.InsecureSkipTLSVerify, args.LegacyInsecureSkipTLSVerify)
 	if err != nil {
 		return "", err
 	}

@@ -68,7 +68,7 @@ func (GitSuite) TestGitBundleRoundTripAndStockInterop(ctx context.Context, t *te
 					id
 					version
 					objectFormat
-					prerequisiteSHAs
+					prerequisiteShas
 					refs { name sha }
 					file: asFile { id size }
 					validated: validate { version }
@@ -101,7 +101,7 @@ func (GitSuite) TestGitBundleRoundTripAndStockInterop(ctx context.Context, t *te
 		node(id: $file) {
 			... on File {
 				bundle: asGitBundle {
-					version objectFormat prerequisiteSHAs refs { name sha }
+					version objectFormat prerequisiteShas refs { name sha }
 				}
 			}
 		}
@@ -129,7 +129,7 @@ func (GitSuite) TestGitBundleRoundTripAndStockInterop(ctx context.Context, t *te
 			... on GitRepository {
 				withBundle(bundle: $bundle, prerequisiteRef: "refs/heads/main") {
 					ref(name: $head) {
-						commitSHA
+						commitSha
 						tree(discardGitDir: true) { file(path: "local.txt") { contents } }
 					}
 				}
@@ -148,7 +148,7 @@ func (GitSuite) TestGitBundleRoundTripAndStockInterop(ctx context.Context, t *te
 		node(id: $repo) {
 			... on GitRepository {
 				withBundle(bundle: $bundle, prerequisiteRef: "refs/heads/main") {
-					ref(name: "refs/dagger/bundle/prerequisites/0") { commitSHA }
+					ref(name: "refs/dagger/bundle/prerequisites/0") { commitSha }
 				}
 			}
 		}
@@ -456,7 +456,7 @@ func (GitSuite) TestGitBundleImportAfterPrerequisiteRefAdvances(ctx context.Cont
 			... on GitRepository {
 				withBundle(bundle: $bundle, prerequisiteRef: "refs/heads/main") {
 					ref(name: $head) {
-						commitSHA
+						commitSha
 						tree(discardGitDir: true) { entries }
 					}
 				}

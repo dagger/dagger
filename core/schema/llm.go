@@ -61,6 +61,14 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				dagql.Arg("mimeType").Doc(`The media MIME type, e.g. "image/png".`),
 			),
 	}.Install(srv)
+	// withMcpServer is withMCPServer in views before
+	// engine.IdentifierCasingVersion.
+	withMCPServerField := dagql.Func("withMcpServer", s.withMCPServer).
+		Doc("Add an external MCP server to the LLM").
+		Args(
+			dagql.Arg("name").Doc("The name of the MCP server"),
+			dagql.Arg("service").Doc("The MCP service to run and communicate with over stdio"),
+		)
 	dagql.Fields[*core.LLM]{
 		dagql.Func("__withOwnerAgent", func(_ context.Context, llm *core.LLM, args struct{ Handle string }) (*core.LLM, error) {
 			return llm.WithOwnerAgent(args.Handle), nil
@@ -249,12 +257,8 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			),
 		dagql.Func("withoutDefaultSystemPrompt", s.withoutDefaultSystemPrompt).
 			Doc("Disable the default system prompt"),
-		dagql.Func("withMCPServer", s.withMCPServer).
-			Doc("Add an external MCP server to the LLM").
-			Args(
-				dagql.Arg("name").Doc("The name of the MCP server"),
-				dagql.Arg("service").Doc("The MCP service to run and communicate with over stdio"),
-			),
+		casedField(withMCPServerField),
+		legacyField(withMCPServerField, "withMCPServer"),
 		withLLMCallerOwner(dagql.Func("withSkills", s.withSkills)).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Install skills from a directory, adding them to the skills the model discovers with ListSkills and reads with ReadSkill. " +

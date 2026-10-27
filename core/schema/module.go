@@ -352,6 +352,13 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			),
 	}.Install(dag)
 
+	// introspectionSchemaJson is introspectionSchemaJSON in views before
+	// engine.IdentifierCasingVersion.
+	moduleIntrospectionSchemaJSONField := dagql.Func("introspectionSchemaJson", s.moduleIntrospectionSchemaJSON).
+		Doc(`The introspection schema JSON file for this module.`,
+			`This file represents the schema visible to the module's source code, including all core types and those from the dependencies.`,
+			`Note: this is in the context of a module, so some core types may be hidden.`)
+
 	dagql.Fields[*core.Module]{
 		dagql.Func("contextSource", func(_ context.Context, mod *core.Module, _ struct{}) (dagql.Nullable[dagql.ObjectResult[*core.ModuleSource]], error) {
 			return mod.ContextSource, nil
@@ -363,10 +370,8 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		dagql.Func("dependencies", s.moduleDependencies).
 			Doc(`The dependencies of the module.`),
 
-		dagql.Func("introspectionSchemaJSON", s.moduleIntrospectionSchemaJSON).
-			Doc(`The introspection schema JSON file for this module.`,
-				`This file represents the schema visible to the module's source code, including all core types and those from the dependencies.`,
-				`Note: this is in the context of a module, so some core types may be hidden.`),
+		casedField(moduleIntrospectionSchemaJSONField),
+		legacyField(moduleIntrospectionSchemaJSONField, "introspectionSchemaJSON"),
 
 		dagql.NodeFunc("generatedContextDirectory", s.moduleGeneratedContextDirectory).
 			Doc(`The generated files and directories made on top of the module source's context directory.`),
