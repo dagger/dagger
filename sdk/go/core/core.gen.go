@@ -632,6 +632,7 @@ func (r *Agent) Notify(ctx context.Context, subscriber *Agent, opts ...AgentNoti
 	}
 	return &Agent{
 		query: selectNode(q.Root(), id, "Agent"),
+		id:    &id,
 	}, nil
 }
 
@@ -682,6 +683,7 @@ func (r *Agent) Pause(ctx context.Context, opts ...AgentPauseOpts) (*Agent, erro
 	}
 	return &Agent{
 		query: selectNode(q.Root(), id, "Agent"),
+		id:    &id,
 	}, nil
 }
 
@@ -705,6 +707,7 @@ func (r *Agent) Reseed(ctx context.Context, conversation *LLM) (*Agent, error) {
 	}
 	return &Agent{
 		query: selectNode(q.Root(), id, "Agent"),
+		id:    &id,
 	}, nil
 }
 
@@ -724,6 +727,7 @@ func (r *Agent) Resume(ctx context.Context) (*Agent, error) {
 	}
 	return &Agent{
 		query: selectNode(q.Root(), id, "Agent"),
+		id:    &id,
 	}, nil
 }
 
@@ -780,6 +784,7 @@ func (r *Agent) Send(ctx context.Context, message string, opts ...AgentSendOpts)
 	}
 	return &AgentMessage{
 		query: selectNode(q.Root(), id, "AgentMessage"),
+		id:    &id,
 	}, nil
 }
 
@@ -840,6 +845,7 @@ func (r *Agent) Stop(ctx context.Context, opts ...AgentStopOpts) (*Agent, error)
 	}
 	return &Agent{
 		query: selectNode(q.Root(), id, "Agent"),
+		id:    &id,
 	}, nil
 }
 
@@ -857,6 +863,7 @@ func (r *Agent) Wait(ctx context.Context) (*Agent, error) {
 	}
 	return &Agent{
 		query: selectNode(q.Root(), id, "Agent"),
+		id:    &id,
 	}, nil
 }
 
@@ -2906,6 +2913,7 @@ func (r *Changeset) Sync(ctx context.Context) (*Changeset, error) {
 	}
 	return &Changeset{
 		query: selectNode(q.Root(), id, "Changeset"),
+		id:    &id,
 	}, nil
 }
 
@@ -4644,6 +4652,7 @@ func (r *Container) Sync(ctx context.Context) (*Container, error) {
 	}
 	return &Container{
 		query: selectNode(q.Root(), id, "Container"),
+		id:    &id,
 	}, nil
 }
 
@@ -7136,6 +7145,7 @@ func (r *Directory) Sync(ctx context.Context) (*Directory, error) {
 	}
 	return &Directory{
 		query: selectNode(q.Root(), id, "Directory"),
+		id:    &id,
 	}, nil
 }
 
@@ -9737,6 +9747,7 @@ func (r *File) Sync(ctx context.Context) (*File, error) {
 	}
 	return &File{
 		query: selectNode(q.Root(), id, "File"),
+		id:    &id,
 	}, nil
 }
 
@@ -14477,6 +14488,7 @@ func (r *LLM) Spawn(ctx context.Context, opts ...LLMSpawnOpts) (*Agent, error) {
 	}
 	return &Agent{
 		query: selectNode(q.Root(), id, "Agent"),
+		id:    &id,
 	}, nil
 }
 
@@ -14512,6 +14524,7 @@ func (r *LLM) Sync(ctx context.Context) (*LLM, error) {
 	}
 	return &LLM{
 		query: selectNode(q.Root(), id, "LLM"),
+		id:    &id,
 	}, nil
 }
 
@@ -16388,6 +16401,7 @@ func (r *Module) Sync(ctx context.Context) (*Module, error) {
 	}
 	return &Module{
 		query: selectNode(q.Root(), id, "Module"),
+		id:    &id,
 	}, nil
 }
 
@@ -17079,6 +17093,7 @@ func (r *ModuleSource) Sync(ctx context.Context) (*ModuleSource, error) {
 	}
 	return &ModuleSource{
 		query: selectNode(q.Root(), id, "ModuleSource"),
+		id:    &id,
 	}, nil
 }
 
@@ -19772,6 +19787,7 @@ func (r *Service) Start(ctx context.Context) (*Service, error) {
 	}
 	return &Service{
 		query: selectNode(q.Root(), id, "Service"),
+		id:    &id,
 	}, nil
 }
 
@@ -19797,6 +19813,7 @@ func (r *Service) Stop(ctx context.Context, opts ...ServiceStopOpts) (*Service, 
 	}
 	return &Service{
 		query: selectNode(q.Root(), id, "Service"),
+		id:    &id,
 	}, nil
 }
 
@@ -19810,6 +19827,7 @@ func (r *Service) Sync(ctx context.Context) (*Service, error) {
 	}
 	return &Service{
 		query: selectNode(q.Root(), id, "Service"),
+		id:    &id,
 	}, nil
 }
 
@@ -20322,6 +20340,7 @@ func (r *Terminal) Sync(ctx context.Context) (*Terminal, error) {
 	}
 	return &Terminal{
 		query: selectNode(q.Root(), id, "Terminal"),
+		id:    &id,
 	}, nil
 }
 
@@ -23959,6 +23978,7 @@ func (r *SyncerClient) Sync(ctx context.Context) (Syncer, error) {
 	}
 	return &SyncerClient{
 		query: selectNode(q.Root(), id, "Syncer"),
+		id:    &id,
 	}, nil
 }
 
