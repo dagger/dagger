@@ -290,6 +290,34 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			),
 	}.Install(srv)
 
+	// GitRef.push(expectedRemoteSha:) and commitSha are spelled
+	// expectedRemoteSHA and commitSHA in views before
+	// engine.IdentifierCasingVersion; so are GitPushResult.previousSha,
+	// GitBundle.prerequisiteShas and GitCommit.treeSha (previousSHA,
+	// prerequisiteSHAs, treeSHA).
+	expectedRemoteSHAArg := dagql.Arg("expectedRemoteSha").Doc("Optional lease: a full lowercase object ID allows replacement only if the remote ref still has that value. Checked even for up-to-date pushes. Empty or omitted uses normal non-force rules, creating the ref if it does not exist.")
+	commitSHAField := dagql.NodeFunc("commitSha", s.fetchCommit).
+		IsPersistable().
+		View(AfterVersion("v1.0.0-0")).
+		Doc(`The resolved commit SHA at this ref.`)
+	deprecatedCommitField := func(commitSHA string) dagql.Field[*core.GitRef] {
+		return dagql.NodeFunc("commit", s.fetchCommit).
+			IsPersistable().
+			View(AfterVersion("v1.0.0-0")).
+			Doc(`The resolved commit id at this ref.`).
+			Deprecated(fmt.Sprintf(`Use %q instead.`, commitSHA))
+	}
+	previousSHAField := accessorField("previousSha", func(result *core.GitPushResult) dagql.String {
+		return dagql.NewString(result.PreviousSHA)
+	}, "The previous remote object ID; empty when the ref was created.")
+	prerequisiteSHAsField := accessorField("prerequisiteShas", func(bundle *core.GitBundle) dagql.Array[dagql.String] {
+		return dagql.NewStringArray(bundle.PrerequisiteSHAs...)
+	}, "Commits that must already exist wherever this bundle is applied.")
+	treeSHAField := dagql.NodeFunc("treeSha", s.commitTreeSHA).
+		IsPersistable().
+		Doc(`The ID of the commit's Git tree object.`,
+			`Commits with identical trees have identical contents and file modes.`)
+
 	dagql.Fields[*core.GitRef]{
 		dagql.Func("__workspaceExportBaseReady", func(ctx context.Context, ref *core.GitRef, _ struct{}) (dagql.Boolean, error) {
 			ready, err := ref.WorkspaceExportBaseReady(ctx)
@@ -305,14 +333,13 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			Args(dagql.Arg("to").Doc("Destination remote repository. Defaults to the origin remote's push routing, or the source's repository URL when none is registered. Required when the source has no remote URL."),
 				dagql.Arg("remote").Doc("Name of a registered remote to push to (see GitRepository.withRemote). Defaults to origin. The remote's push URLs, or its URL, become the destination; more than one push URL requires an explicit to instead."),
 				dagql.Arg("branch").Doc("Destination branch; a refs/ prefix is used verbatim. Defaults to this ref's branch name. Required for detached and non-branch refs."),
-				dagql.Arg("expectedRemoteSHA").Doc("Optional lease: a full lowercase object ID allows replacement only if the remote ref still has that value. Checked even for up-to-date pushes. Empty or omitted uses normal non-force rules, creating the ref if it does not exist.")),
+				casedArg(expectedRemoteSHAArg),
+				legacyArg(expectedRemoteSHAArg, "expectedRemoteSHA")),
 		dagql.NodeFunc("targetCommit", s.targetCommit).
 			View(AfterVersion("v1.0.0-0")).
 			Doc(`The commit this ref resolves to.`),
-		dagql.NodeFunc("commitSHA", s.fetchCommit).
-			IsPersistable().
-			View(AfterVersion("v1.0.0-0")).
-			Doc(`The resolved commit SHA at this ref.`),
+		casedField(commitSHAField),
+		legacyField(commitSHAField, "commitSHA"),
 		dagql.NodeFunc("__fullCheckout", s.fullCheckout).
 			IsPersistable().
 			Doc(`(Internal-only) Materialize full history and Git metadata regardless of keepGitDir.`),
@@ -338,11 +365,8 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			IsPersistable().
 			View(BeforeVersion("v1.0.0-0")).
 			Doc(`The resolved commit id at this ref.`),
-		dagql.NodeFunc("commit", s.fetchCommit).
-			IsPersistable().
-			View(AfterVersion("v1.0.0-0")).
-			Doc(`The resolved commit id at this ref.`).
-			Deprecated(`Use "commitSHA" instead.`),
+		casedField(deprecatedCommitField("commitSha")),
+		legacyField(deprecatedCommitField("commitSHA"), "commit"),
 		dagql.NodeFunc("name", s.fetchRef).
 			IsPersistable().
 			View(AfterVersion("v1.0.0-0")).
@@ -431,7 +455,10 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 	srv.InstallObject(dagql.NewClass[*core.GitPushResult](srv).View(AfterVersion("v1.0.0-0")))
 	core.GitPushDispositions.Install(srv, AfterVersion("v1.0.0-0"))
-	dagql.Fields[*core.GitPushResult]{}.Install(srv)
+	dagql.Fields[*core.GitPushResult]{
+		casedField(previousSHAField),
+		legacyField(previousSHAField, "previousSHA"),
+	}.Install(srv)
 	dagql.Fields[*core.Query]{
 		dagql.Func("__gitPushResult", s.pushResult).View(AfterVersion("v1.0.0-0")).
 			Doc("(Internal-only) Reconstruct a completed push receipt without contacting the remote."),
@@ -446,6 +473,8 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("asFile", s.bundleAsFile).
 			IsPersistable().
 			Doc(`Return the bundle bytes as a File.`),
+		casedField(prerequisiteSHAsField),
+		legacyField(prerequisiteSHAsField, "prerequisiteSHAs"),
 	}.Install(srv)
 	dagql.Fields[*core.GitBundleRef]{}.Install(srv)
 
@@ -493,10 +522,8 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("shortSha", s.commitShortSHA).
 			IsPersistable().
 			Doc(`The abbreviated commit SHA.`),
-		dagql.NodeFunc("treeSHA", s.commitTreeSHA).
-			IsPersistable().
-			Doc(`The ID of the commit's Git tree object.`,
-				`Commits with identical trees have identical contents and file modes.`),
+		casedField(treeSHAField),
+		legacyField(treeSHAField, "treeSHA"),
 		dagql.NodeFunc("authoredDate", s.commitAuthoredDate).
 			IsPersistable().
 			Doc(`Git author date, in RFC3339 format.`),

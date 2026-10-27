@@ -177,7 +177,7 @@ func resolveWorkspaceResetTarget(ctx context.Context, srv *dagql.Server, checkou
 	if err := srv.Select(ctx, checkout, &sha,
 		dagql.Selector{Field: "asGit"},
 		dagql.Selector{Field: "ref", Args: []dagql.NamedInput{{Name: "name", Value: dagql.NewString(target)}}},
-		dagql.Selector{Field: "commitSHA"},
+		dagql.Selector{Field: "commitSha"},
 	); err != nil {
 		return "", fmt.Errorf("resolve %q in this workspace's repository: %w", target, err)
 	}
