@@ -579,7 +579,7 @@ func (VolumeSuite) TestModuleCannotConstructSSHFSVolume(ctx context.Context, t *
 	_, err := moduleFixture(t, c, "go/sshfs-volume-constructor-denied").
 		With(daggerCallAt(".", "fn")).
 		Sync(ctx)
-	requireErrOut(t, err, "SshfsVolume")
+	requireErrOut(t, err, "SSHFSVolume")
 	requireErrOut(t, err, "undefined")
 }
 
