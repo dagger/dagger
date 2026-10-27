@@ -92,9 +92,9 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble, Node,
     /**
      * Update the module source with a new SDK.
      */
-    public function withSDK(string $source): ModuleSource
+    public function withSdk(string $source): ModuleSource
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSDK');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSdk');
         $innerQueryBuilder->setArgument('source', $source);
         return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -301,20 +301,20 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble, Node,
      *
      * Note: this is in the context of a module, so some core types may be hidden.
      */
-    public function introspectionSchemaJSON(): File
+    public function introspectionSchemaJson(): File
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('introspectionSchemaJSON');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('introspectionSchemaJson');
         return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
      * The client-facing introspection schema JSON file for this module source.
      *
-     * This is the schema consumed by client codegen: unlike introspectionSchemaJSON (the module-facing schema), it hides no core types and installs this module (reached via dag.<moduleName>) so a generated client can bind it. The module's dependencies are excluded: a client is generated for a single module plus core, not its dependency graph.
+     * This is the schema consumed by client codegen: unlike introspectionSchemaJson (the module-facing schema), it hides no core types and installs this module (reached via dag.<moduleName>) so a generated client can bind it. The module's dependencies are excluded: a client is generated for a single module plus core, not its dependency graph.
      */
-    public function clientSchemaIntrospectionJSON(): File
+    public function clientSchemaIntrospectionJson(): File
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('clientSchemaIntrospectionJSON');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('clientSchemaIntrospectionJson');
         return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -340,19 +340,19 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble, Node,
     /**
      * The URL to the source's git repo in a web browser. Only valid for git sources.
      */
-    public function htmlURL(): string
+    public function htmlUrl(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('htmlURL');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'htmlURL');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('htmlUrl');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'htmlUrl');
     }
 
     /**
      * The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket).
      */
-    public function htmlRepoURL(): string
+    public function htmlRepoUrl(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('htmlRepoURL');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'htmlRepoURL');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('htmlRepoUrl');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'htmlRepoUrl');
     }
 
     /**
