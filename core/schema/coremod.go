@@ -968,7 +968,19 @@ func (enum *CoreModEnum) ConvertToSDKInput(ctx context.Context, value dagql.Type
 	if !ok {
 		return nil, fmt.Errorf("CoreModEnum.ConvertToSDKInput: found no enum type")
 	}
-	return s.DecodeInput(input)
+	decoded, err := s.DecodeInput(input)
+	if err != nil {
+		return nil, err
+	}
+	// Spell the value as the receiving module's schema does: a module from
+	// before engine.IdentifierCasingVersion has GZIP's old spelling Gzip, and
+	// its SDK may only know that one.
+	if viewed, ok := decoded.(dagql.ViewLiteraler); ok {
+		if view, ok := core.SDKViewFromContext(ctx); ok {
+			return viewed.ViewLiteral(view).ToInput(), nil
+		}
+	}
+	return decoded, nil
 }
 
 func (enum *CoreModEnum) CollectContent(ctx context.Context, value dagql.AnyResult, content *core.CollectedContent) error {
