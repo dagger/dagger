@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"strconv"
+	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -57,27 +58,33 @@ func RecordOpSpan(op *wcprof.Op, span trace.Span) {
 type ownCallSpanKey struct{}
 
 // ownCallSpanValue is the span the server's telemetry started for one call's
-// invocation, and that call's frame.
+// invocation, its start when the span tells it, and that call's frame.
 type ownCallSpanValue struct {
-	call *ResultCall
-	sc   trace.SpanContext
+	call  *ResultCall
+	sc    trace.SpanContext
+	start time.Time
 }
 
 // withOwnCallSpan records, while wcprof records, the span the server's
 // telemetry started for call, for its native call op (ownCallSpan).
-func withOwnCallSpan(ctx context.Context, call *ResultCall, sc trace.SpanContext) context.Context {
-	return context.WithValue(ctx, ownCallSpanKey{}, ownCallSpanValue{call: call, sc: sc})
+func withOwnCallSpan(ctx context.Context, call *ResultCall, span trace.Span) context.Context {
+	v := ownCallSpanValue{call: call, sc: span.SpanContext()}
+	if s, ok := span.(interface{ StartTime() time.Time }); ok {
+		v.start = s.StartTime()
+	}
+	return context.WithValue(ctx, ownCallSpanKey{}, v)
 }
 
-// ownCallSpan is the span the server's telemetry started for call, or an
-// invalid one when it started none. The value is keyed to the call's frame,
-// so a call nested under it, or made internally without the server, isn't
-// given the span of the call it runs under.
-func ownCallSpan(ctx context.Context, call *ResultCall) trace.SpanContext {
+// ownCallSpan is the span the server's telemetry started for call and its
+// start (zero when the span doesn't tell it), or an invalid span when it
+// started none. The value is keyed to the call's frame, so a call nested
+// under it, or made internally without the server, isn't given the span of
+// the call it runs under.
+func ownCallSpan(ctx context.Context, call *ResultCall) (trace.SpanContext, time.Time) {
 	if v, ok := ctx.Value(ownCallSpanKey{}).(ownCallSpanValue); ok && v.call == call {
-		return v.sc
+		return v.sc, v.start
 	}
-	return trace.SpanContext{}
+	return trace.SpanContext{}, time.Time{}
 }
 
 type callOpEndKey struct{}

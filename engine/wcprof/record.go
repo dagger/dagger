@@ -94,6 +94,9 @@ type OpOpts struct {
 	// JSON-array string and interns it as the op's MetaID, so offline analysis
 	// can rank the exec by its real command. Empty for non-exec ops.
 	Argv []string
+	// Start, when set, is when the op began, for an op whose work began
+	// before BeginOp (e.g. at its OTel span's start); zero is now.
+	Start time.Time
 }
 
 // internArgv marshals argv to the canonical scalar JSON-array string and interns
@@ -121,6 +124,10 @@ func BeginOp(ctx context.Context, kind OpKind, class string, opts OpOpts) (conte
 	if r == nil {
 		return ctx, nil
 	}
+	startNS := r.Now()
+	if !opts.Start.IsZero() {
+		startNS = int64(opts.Start.Sub(r.epoch))
+	}
 	op := &Op{
 		r:        r,
 		id:       r.newOpID(),
@@ -131,7 +138,7 @@ func BeginOp(ctx context.Context, kind OpKind, class string, opts OpOpts) (conte
 		identID:  r.Intern(opts.Ident),
 		clientID: r.Intern(opts.ClientID),
 		metaID:   r.internArgv(opts.Argv),
-		startNS:  r.Now(),
+		startNS:  startNS,
 	}
 	sh := r.shardFor(op.id)
 	sh.mu.Lock()

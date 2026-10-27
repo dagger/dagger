@@ -746,8 +746,8 @@ func (r ObjectResult[T]) call(
 		}
 		telemetryCtx, done := s.telemetry(ctx, req)
 		if recording {
-			if sc := trace.SpanContextFromContext(telemetryCtx); sc.IsValid() && sc.SpanID() != prevSpan.SpanID() {
-				telemetryCtx = withOwnCallSpan(telemetryCtx, req.ResultCall, sc)
+			if span := trace.SpanFromContext(telemetryCtx); span.SpanContext().IsValid() && span.SpanContext().SpanID() != prevSpan.SpanID() {
+				telemetryCtx = withOwnCallSpan(telemetryCtx, req.ResultCall, span)
 			}
 		}
 		defer func() {
