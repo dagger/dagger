@@ -288,6 +288,7 @@ func (c *entrypointContract) workspaceArgs(
 }
 
 func runEntrypointDir(ctx context.Context, sourceDir string, sources bool) (dang.ValueScope, error) {
+	ctx = withDangSyntaxCache(ctx)
 	dir, err := os.MkdirTemp("", "dagger-module-entrypoint-")
 	if err != nil {
 		return nil, fmt.Errorf("create module entrypoint directory: %w", err)

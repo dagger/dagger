@@ -107,6 +107,7 @@ func evalDangSource(
 	runSource dangSourceRunner,
 	withEnv func(context.Context, dang.ValueScope) ([]byte, error),
 ) ([]byte, error) {
+	ctx = withDangSyntaxCache(ctx)
 	return dangshared.WithNestedClientServer(ctx, query, nestedClientMetadata, inertAttachables, fnCall, moduleContext, func(ctx context.Context, gqlClient graphql.Client) ([]byte, error) {
 		var intro introspection.Response
 		f, err := schemaFile.Self().Open(ctx, dagql.ObjectResult[*core.File]{Result: schemaFile})
