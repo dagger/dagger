@@ -74,6 +74,19 @@ TYPE_DEF_FILE: typing.Final[str] = os.getenv("DAGGER_MODULE_FILE", "/module.json
 T = TypeVar("T", bound=type)
 
 
+def _cache_policy(name: str, legacy_name: str) -> "dagger.FunctionCachePolicy":
+    """The cache policy member of the module's schema.
+
+    The client is generated for the module's engine version: from
+    v1.0.0-beta.22 on, its members are SCREAMING_SNAKE_CASE (NEVER), and
+    PascalCase (Never) before.
+    """
+    try:
+        return dagger.FunctionCachePolicy[name]
+    except KeyError:
+        return dagger.FunctionCachePolicy[legacy_name]
+
+
 class Module:
     """Builder for a :py:class:`dagger.Module`."""
 
@@ -215,15 +228,15 @@ class Module:
                 if func.cache_policy is not None:
                     if func.cache_policy == "never":
                         func_def = func_def.with_cache_policy(
-                            dagger.FunctionCachePolicy.Never,
+                            _cache_policy("NEVER", "Never"),
                         )
                     elif func.cache_policy == "session":
                         func_def = func_def.with_cache_policy(
-                            dagger.FunctionCachePolicy.PerSession,
+                            _cache_policy("PER_SESSION", "PerSession"),
                         )
                     elif func.cache_policy != "":
                         func_def = func_def.with_cache_policy(
-                            dagger.FunctionCachePolicy.Default,
+                            _cache_policy("DEFAULT", "Default"),
                             time_to_live=func.cache_policy,
                         )
                 if deprecated := func.deprecated:
