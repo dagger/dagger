@@ -7,8 +7,10 @@ import (
 )
 
 // FirstVersion is the engine version that introduced identifier parsing,
-// with the Initial dictionary. The engine names modules that declare an older
-// engineVersion with its previous (strcase) rules instead; see
+// with the Initial dictionary. Dictionaries compare by base version, so every
+// v1.0.0 prerelease selects it too; which modules the engine names with it at
+// all is decided by its own gate (core.IdentifierNamingVersion,
+// v1.0.0-beta.21), and older modules keep the previous (strcase) rules. See
 // hack/designs/identifier-casing.md.
 const FirstVersion = "v1.0.0"
 

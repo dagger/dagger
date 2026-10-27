@@ -3436,6 +3436,20 @@ func TestFilterPendingWorkspaceModulesForRootFields(t *testing.T) {
 		require.Equal(t, []pendingModule{mods[0]}, filtered)
 	})
 
+	// The constructor's spelling depends on the module's naming rules,
+	// which aren't known before it loads: either selects it.
+	t.Run("constructor by either naming rules", func(t *testing.T) {
+		t.Parallel()
+
+		api := []pendingModule{mods[0], {Kind: moduleLoadKindAmbient, Name: "my-api"}, mods[1]}
+		for _, field := range []string{"myAPI", "myApi"} {
+			filtered := filterPendingWorkspaceModulesForRootFields(api, nil, nil, []string{field})
+			require.Equal(t, []pendingModule{api[1]}, filtered, field)
+			filtered = filterPendingWorkspaceModulesForRootFields(api, map[string]struct{}{"my-api": {}}, nil, []string{field})
+			require.Empty(t, filtered, field)
+		}
+	})
+
 	t.Run("introspection loads all", func(t *testing.T) {
 		t.Parallel()
 
