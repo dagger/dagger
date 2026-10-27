@@ -1199,14 +1199,15 @@ class Test:
 
 				// The fixture declares "latest", a view past
 				// engine.IdentifierCasingVersion: ESTARGZ is the member, and the
-				// value, in and out; the old spelling still decodes.
+				// value, in and out. The old spelling still decodes as an
+				// argument.
 				out, err := modGen.With(daggerQuery(`{fromImageLayerCompression(imageLayerCompression: "ESTARGZ")}`)).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "ESTARGZ", gjson.Get(out, "fromImageLayerCompression").String())
 
-				out, err = modGen.With(daggerQuery(`{toImageLayerCompression(imageLayerCompression: "EStarGZ")}`)).Stdout(ctx)
+				out, err = modGen.With(daggerQuery(`{fromImageLayerCompression(imageLayerCompression: "EStarGZ")}`)).Stdout(ctx)
 				require.NoError(t, err)
-				require.Equal(t, "ESTARGZ", gjson.Get(out, "toImageLayerCompression").String())
+				require.Equal(t, "ESTARGZ", gjson.Get(out, "fromImageLayerCompression").String())
 
 				out, err = modGen.With(daggerQuery(`{toImageLayerCompression(imageLayerCompression: "ESTARGZ")}`)).Stdout(ctx)
 				require.NoError(t, err)
