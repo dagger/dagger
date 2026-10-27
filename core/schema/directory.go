@@ -133,6 +133,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("paths").Doc(`Paths of the files to remove (e.g., ["/file.txt"]).`),
 			),
 		dagql.NodeFunc("exists", s.exists).
+			IsPersistable().
 			Doc(`check if a file or directory exists`).
 			Args(
 				dagql.Arg("path").Doc(`Path to check (e.g., "/file.txt").`),
