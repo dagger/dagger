@@ -738,6 +738,11 @@ func (r ObjectResult[T]) call(
 		var prevSpan trace.SpanContext
 		if recording {
 			prevSpan = trace.SpanContextFromContext(ctx)
+			// the call's native op ends after the telemetry below completes
+			// the call, on this goroutine: deferred first, it runs last
+			var opEnd *callOpEnd
+			ctx, opEnd = withCallOpEnd(ctx, req.ResultCall)
+			defer opEnd.end()
 		}
 		telemetryCtx, done := s.telemetry(ctx, req)
 		if recording {

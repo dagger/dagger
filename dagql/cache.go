@@ -5885,7 +5885,9 @@ func (c *Cache) getOrInitCall(
 	case outcome == wcprof.OutcomeNone:
 		outcome = wcprof.OutcomeOK
 	}
-	profOp.EndWithResult(outcome, profResultID(res))
+	if !handOverCallOpEnd(ctx, req.ResultCall, profOp, outcome, profResultID(res)) {
+		profOp.EndWithResult(outcome, profResultID(res))
+	}
 	return res, err
 }
 

@@ -80,6 +80,43 @@ func ownCallSpan(ctx context.Context, call *ResultCall) trace.SpanContext {
 	return trace.SpanContext{}
 }
 
+type callOpEndKey struct{}
+
+// callOpEnd is a call's native op end, handed from the cache to the server
+// so the op ends after the server's telemetry completes the call.
+type callOpEnd struct {
+	call     *ResultCall
+	op       *wcprof.Op
+	outcome  wcprof.Outcome
+	resultID uint64
+}
+
+// withCallOpEnd makes the server the one to end call's native op (end),
+// after its telemetry's completion. The value is keyed to the call's frame,
+// so a call nested under it ends its own op as before.
+func withCallOpEnd(ctx context.Context, call *ResultCall) (context.Context, *callOpEnd) {
+	e := &callOpEnd{call: call}
+	return context.WithValue(ctx, callOpEndKey{}, e), e
+}
+
+// handOverCallOpEnd hands call's native op end to the server when it asked
+// for it (withCallOpEnd), reporting whether it did.
+func handOverCallOpEnd(ctx context.Context, call *ResultCall, op *wcprof.Op, outcome wcprof.Outcome, resultID uint64) bool {
+	e, ok := ctx.Value(callOpEndKey{}).(*callOpEnd)
+	if !ok || e.call != call || e.op != nil || op == nil {
+		return false
+	}
+	e.op, e.outcome, e.resultID = op, outcome, resultID
+	return true
+}
+
+// end ends the handed-over op; nothing when none was handed over.
+func (e *callOpEnd) end() {
+	if e.op != nil {
+		e.op.EndWithResult(e.outcome, e.resultID)
+	}
+}
+
 // beginOTelCallExec starts the call_exec span for a resolver execution on the
 // call's detached context, mirroring native's execOp (cache.go getOrInitCall).
 // The returned context carries the span, so the resolver's sub-call spans nest
