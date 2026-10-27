@@ -1432,7 +1432,11 @@ func (specs InputSpecs) ArgumentDefinitions(view call.View) []*ast.ArgumentDefin
 			Type:        arg.Type.Type(),
 		}
 		if arg.Default != nil {
-			schemaArg.DefaultValue = arg.Default.ToLiteral().ToAST()
+			if viewed, ok := arg.Default.(ViewLiteraler); ok {
+				schemaArg.DefaultValue = viewed.ViewLiteral(view).ToAST()
+			} else {
+				schemaArg.DefaultValue = arg.Default.ToLiteral().ToAST()
+			}
 		}
 		if len(arg.Directives) > 0 {
 			schemaArg.Directives = slices.Clone(arg.Directives)
