@@ -21,7 +21,14 @@ import (
 const (
 	EngineVersionMetaKey = "X-Dagger-Engine"
 
-	ClientMetadataMetaKey  = "X-Dagger-Client-Metadata"
+	ClientMetadataMetaKey = "X-Dagger-Client-Metadata"
+	// ChildClientMetadataMetaKey carries the client metadata of a Dagger client
+	// that another client serves to its own child processes, as `dagger api
+	// with-session` does. Each client between the child and the engine appends
+	// the metadata of the client it serves, so the last value is the direct
+	// child of the client the request's own metadata names.
+	ChildClientMetadataMetaKey = "X-Dagger-Child-Client-Metadata"
+
 	localImportOptsMetaKey = "X-Dagger-Local-Import-Opts"
 	localExportOptsMetaKey = "X-Dagger-Local-Export-Opts"
 

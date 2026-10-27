@@ -1589,6 +1589,15 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A child that is a Dagger client itself, such as the CLI, sends its own
+	// client metadata. Pass it on as this client's child, so the engine serves
+	// it as a nested client of this one, with a lifetime of its own, rather
+	// than as this client.
+	if md := r.Header.Get(engine.ClientMetadataMetaKey); md != "" {
+		r.Header.Add(engine.ChildClientMetadataMetaKey, md)
+		r.Header.Del(engine.ClientMetadataMetaKey)
+	}
+
 	proxyReq := &http.Request{
 		Method: r.Method,
 		URL: &url.URL{

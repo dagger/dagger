@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -93,6 +94,68 @@ func TestNestedClientServesItsOwnToken(t *testing.T) {
 	for _, token := range engineTokens {
 		require.Equal(t, "exec-token", token)
 	}
+}
+
+func TestClientServesChildClients(t *testing.T) {
+	var mu sync.Mutex
+	var forwarded []http.Header
+	exec := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == engine.QueryEndpoint {
+			mu.Lock()
+			forwarded = append(forwarded, r.Header.Clone())
+			mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"data":{"version":"test"}}`))
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	exec.Config.Protocols = new(http.Protocols)
+	exec.Config.Protocols.SetUnencryptedHTTP2(true)
+	exec.Start()
+	defer exec.Close()
+
+	t.Setenv("DAGGER_SESSION_PORT", strconv.Itoa(exec.Listener.Addr().(*net.TCPAddr).Port))
+	t.Setenv("DAGGER_SESSION_TOKEN", "exec-token")
+	c, err := Connect(context.Background(), Params{SecretToken: "parent-token"})
+	require.NoError(t, err)
+	defer c.Close()
+
+	childMetadata := func(id string) string {
+		return engine.ClientMetadata{ClientID: id}.AppendToHTTPHeaders(http.Header{}).Get(engine.ClientMetadataMetaKey)
+	}
+	query := func(header http.Header) http.Header {
+		req := httptest.NewRequest(http.MethodPost, "/query", strings.NewReader(`{"query":"{version}"}`))
+		maps.Copy(req.Header, header)
+		req.SetBasicAuth("parent-token", "")
+		rec := httptest.NewRecorder()
+		c.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code)
+		mu.Lock()
+		defer mu.Unlock()
+		return forwarded[len(forwarded)-1]
+	}
+	requireFrom := func(t *testing.T, h http.Header, clientID string, children ...string) {
+		t.Helper()
+		md, err := engine.ClientMetadataFromHTTPHeaders(h)
+		require.NoError(t, err)
+		require.Equal(t, clientID, md.ClientID)
+		require.Equal(t, children, h.Values(engine.ChildClientMetadataMetaKey))
+	}
+
+	// An SDK client sends no metadata and is served as this client.
+	requireFrom(t, query(http.Header{}), c.ID)
+
+	// A CLI child is passed on as this client's child.
+	requireFrom(t, query(http.Header{
+		engine.ClientMetadataMetaKey: {childMetadata("child")},
+	}), c.ID, childMetadata("child"))
+
+	// A child serving a child of its own passes it on behind itself.
+	requireFrom(t, query(http.Header{
+		engine.ClientMetadataMetaKey:      {childMetadata("child")},
+		engine.ChildClientMetadataMetaKey: {childMetadata("grandchild")},
+	}), c.ID, childMetadata("grandchild"), childMetadata("child"))
 }
 
 func TestTelemetryContextUsesClientLifetime(t *testing.T) {

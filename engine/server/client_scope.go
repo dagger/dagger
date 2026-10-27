@@ -1,10 +1,13 @@
 package server
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"net/http"
 	"reflect"
 	"slices"
 	"time"
@@ -26,7 +29,7 @@ func (srv *Server) RegisterNestedClientTransport(
 	metadata *engine.ClientMetadata,
 	parentClientID string,
 ) (*engine.NestedClientTransport, error) {
-	return srv.registerNestedClientTransport(ctx, metadata, parentClientID, "", false)
+	return srv.registerNestedClientTransport(ctx, metadata, parentClientID, "", false, false)
 }
 
 // RegisterNestedClientTransportForExec additionally binds a logical nested
@@ -44,7 +47,7 @@ func (srv *Server) RegisterNestedClientTransportForExec(
 	if attachablesClientID == "" {
 		return nil, errors.New("nested exec transport is missing its attachables client ID")
 	}
-	return srv.registerNestedClientTransport(ctx, metadata, parentClientID, attachablesClientID, fromExecHelper)
+	return srv.registerNestedClientTransport(ctx, metadata, parentClientID, attachablesClientID, fromExecHelper, false)
 }
 
 // ExpectNestedExecAttachables records that a nested exec's session helper
@@ -67,12 +70,17 @@ func (srv *Server) ExpectNestedExecAttachables(sessionID, attachablesClientID st
 	return fail, done, nil
 }
 
+// registerNestedClientTransport registers a nested client of the client whose
+// scope ctx holds. With hostFromParent, the client reaches the host the way
+// its parent does, through the parent's attachables, instead of through
+// attachablesClientID.
 func (srv *Server) registerNestedClientTransport(
 	ctx context.Context,
 	metadata *engine.ClientMetadata,
 	parentClientID string,
 	attachablesClientID string,
 	fromExecHelper bool,
+	hostFromParent bool,
 ) (_ *engine.NestedClientTransport, rerr error) {
 	if metadata == nil {
 		return nil, errors.New("nested client metadata is nil")
@@ -145,9 +153,20 @@ func (srv *Server) registerNestedClientTransport(
 	if err != nil {
 		return nil, fmt.Errorf("validate client ancestry: %w", err)
 	}
-	attachablesClientID, err = sess.validateNestedTransportAttachables(metadata, parentIDs, attachablesClientID)
-	if err != nil {
-		return nil, err
+	var inertAttachables bool
+	var hostServiceProxyClientID string
+	if hostFromParent {
+		sess.scopeMu.Lock()
+		attachablesClientID = cmp.Or(parentRecord.attachablesClientID, parentRecord.clientID)
+		fromExecHelper = parentRecord.attachablesFromExecHelper
+		inertAttachables = parentRecord.inertAttachables
+		hostServiceProxyClientID = parentRecord.hostServiceProxyClientID
+		sess.scopeMu.Unlock()
+	} else {
+		attachablesClientID, err = sess.validateNestedTransportAttachables(metadata, parentIDs, attachablesClientID)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	parentScope, err := scope.Delegate(engine.ClientLeaseChild, metadata.ClientID)
@@ -174,6 +193,8 @@ func (srv *Server) registerNestedClientTransport(
 		parentClientIDs:           parentIDs,
 		attachablesClientID:       attachablesClientID,
 		attachablesFromExecHelper: fromExecHelper,
+		hostServiceProxyClientID:  hostServiceProxyClientID,
+		inertAttachables:          inertAttachables,
 		accepting:                 true,
 	}
 	client := &clientRuntime{
@@ -210,6 +231,58 @@ func (srv *Server) registerNestedClientTransport(
 	sess.clientMu.Unlock()
 	sess.scopeMu.Unlock()
 	return transport, nil
+}
+
+// childClient is a nested client that a client serves to its own child
+// processes, such as a CLI run under `dagger api with-session`.
+type childClient struct {
+	transport *engine.NestedClientTransport
+	metadata  *engine.ClientMetadata
+}
+
+// childClient returns parent's child with clientID, registering it on its
+// first request; ctx holds parent's request scope and header the child's own
+// metadata. Its session, token and host access are parent's, as an exec's
+// clients' are the exec's. Like theirs, its version, labels and what it loads
+// are what it declares on each request.
+func (srv *Server) childClient(ctx context.Context, parent *clientRuntime, clientID string, header http.Header) (*childClient, error) {
+	parent.childrenMu.Lock()
+	defer parent.childrenMu.Unlock()
+	if child, ok := parent.children[clientID]; ok {
+		return child, nil
+	}
+	if parent.childrenClosed {
+		return nil, fmt.Errorf("client %q is closed", parent.clientID)
+	}
+	parentMetadata, err := parent.daggerSession.clientMetadataSnapshot(parent.clientRecord)
+	if err != nil {
+		return nil, err
+	}
+	metadata := nestedClientMetadataForRequest(header, parentMetadata)
+	metadata.ClientID = clientID
+	transport, err := srv.registerNestedClientTransport(ctx, metadata, parent.clientID, "", false, true)
+	if err != nil {
+		return nil, err
+	}
+	child := &childClient{transport: transport, metadata: metadata}
+	if parent.children == nil {
+		parent.children = map[string]*childClient{}
+	}
+	parent.children[clientID] = child
+	return child, nil
+}
+
+// closeChildren closes the clients that record serves to its child processes,
+// which reach the engine only through it, and refuses new ones. It must run
+// without the session's locks held, since closing a child takes them.
+func (record *clientRecord) closeChildren() {
+	record.childrenMu.Lock()
+	record.childrenClosed = true
+	children := slices.Collect(maps.Values(record.children))
+	record.childrenMu.Unlock()
+	for _, child := range children {
+		child.transport.Close()
+	}
 }
 
 // validateNestedTransportAttachables seals a logical nested client to the
@@ -365,6 +438,7 @@ func (sess *daggerSession) closeNestedClientTransport(record *clientRecord) {
 	reclamation := sess.maybeBeginClientRuntimeReclamationLocked(client)
 	sess.scopeMu.Unlock()
 
+	record.closeChildren()
 	transport.Release()
 	sess.finishClientRuntimeReclamation(reclamation)
 }
@@ -599,6 +673,7 @@ func (sess *daggerSession) closeClientScope(client *clientRuntime) {
 	reclamation := sess.maybeBeginClientRuntimeReclamationLocked(client)
 	sess.scopeMu.Unlock()
 
+	client.closeChildren()
 	transport.Release()
 	sess.finishClientRuntimeReclamation(reclamation)
 }

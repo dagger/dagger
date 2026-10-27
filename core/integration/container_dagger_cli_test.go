@@ -171,6 +171,7 @@ exit "$rc"
 		WithNewFile("/query.sh", queryScript).
 		WithNewFile("/session.sh", sessionScript).
 		WithNewFile("/version.graphql", "{ version }").
+		WithNewFile("/host.graphql", `{ host { file(path: "/version.graphql") { contents } } }`).
 		WithEnvVariable("ID", rand.Text())
 
 	for _, nesting := range []struct {
@@ -182,31 +183,54 @@ exit "$rc"
 	} {
 		t.Run(nesting.name, func(ctx context.Context, t *testctx.T) {
 			for _, tc := range []struct {
-				name    string
-				args    []string
-				wantErr string
+				name string
+				args []string
+				want string
 			}{
-				{"dagger run", []string{"dagger", "run", "sh", "/query.sh"}, ""},
-				{"dagger session", []string{"sh", "/session.sh", "sh", "/query.sh"}, ""},
+				{"dagger run", []string{"dagger", "run", "sh", "/query.sh"}, `{"data":{"version":`},
+				{"dagger session", []string{"sh", "/session.sh", "sh", "/query.sh"}, `{"data":{"version":`},
 				{
 					"dagger run, CLI child",
 					[]string{"dagger", "run", "dagger", "query", "--doc", "/version.graphql"},
-					"connecting a Dagger CLI to the session served by `dagger run` is not supported yet",
+					`"version":`,
 				},
 				{
 					"dagger session, CLI child",
 					[]string{"sh", "/session.sh", "dagger", "query", "--doc", "/version.graphql"},
-					"connecting a Dagger CLI to the session served by `dagger session` is not supported yet",
+					`"version":`,
+				},
+				{
+					"with-session, CLI child",
+					[]string{"dagger", "api", "with-session", "dagger", "query", "--doc", "/version.graphql"},
+					`"version":`,
+				},
+				{
+					// The child reaches the host through its parent.
+					"with-session, CLI child reads the host",
+					[]string{"dagger", "api", "with-session", "dagger", "query", "--doc", "/host.graphql"},
+					"{ version }",
+				},
+				{
+					// A child's shutdown ends only the child: the next child
+					// and the parent's own session still work.
+					"with-session, CLI children in turn",
+					[]string{"dagger", "api", "with-session", "sh", "-ec", `
+dagger query --doc /version.graphql
+dagger query --doc /version.graphql
+sh /query.sh
+`},
+					`{"data":{"version":`,
+				},
+				{
+					"with-session, CLI grandchild",
+					[]string{"dagger", "api", "with-session", "dagger", "api", "with-session", "dagger", "query", "--doc", "/host.graphql"},
+					"{ version }",
 				},
 			} {
 				t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 					out, err := ctr.WithExec(tc.args, nesting.opts).Stdout(ctx)
-					if tc.wantErr != "" {
-						requireErrOut(t, err, tc.wantErr)
-						return
-					}
 					require.NoError(t, err)
-					require.Contains(t, out, `{"data":{"version":`)
+					require.Contains(t, out, tc.want)
 				})
 			}
 		})

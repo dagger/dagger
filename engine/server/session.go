@@ -351,6 +351,14 @@ type clientRecord struct {
 	// SDK clients execute inside the engine and have no host-side attachables.
 	// Reject their attachable lookups instead of waiting or proxying to an ancestor.
 	inertAttachables bool
+
+	// children are the nested clients this client serves to its own child
+	// processes, by client ID (see serveChildClient). A closed child stays, so
+	// its ID is never bound again. Once childrenClosed is set, the client has
+	// closed and takes no new children.
+	childrenMu     sync.Mutex
+	children       map[string]*childClient
+	childrenClosed bool
 }
 
 // clientRuntime is reclaimable executable state for a client record. A runtime
@@ -2458,9 +2466,11 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		return srv.serveArchiveHTTP(w, r.WithContext(ctx), record)
 	}
 
+	childMetadata := r.Header.Values(engine.ChildClientMetadataMetaKey)
+
 	mux := http.NewServeMux()
-	switch r.URL.Path {
-	case "/v1/traces", "/v1/logs", "/v1/metrics":
+	switch path := r.URL.Path; {
+	case len(childMetadata) == 0 && (path == "/v1/traces" || path == "/v1/logs" || path == "/v1/metrics"):
 		// Telemetry subscriptions require only the stable client record.
 		record, err := srv.clientRecordFromIDs(clientMetadata.SessionID, clientMetadata.ClientID)
 		if err != nil {
@@ -2476,7 +2486,9 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		requestOpts.requestLeaseOut = &requestLease
 		switch r.URL.Path {
 		case engine.SessionAttachablesEndpoint, engine.InitEndpoint, engine.ShutdownEndpoint:
-			requestOpts.BootstrapOnly = true
+			// A child's request needs its parent's executable scope to register
+			// the child, whatever the child asks for.
+			requestOpts.BootstrapOnly = len(childMetadata) == 0
 		}
 		client, cleanup, err := srv.getOrInitClient(ctx, &requestOpts)
 		if err != nil {
@@ -2517,6 +2529,10 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 			}
 		}()
 
+		if len(childMetadata) > 0 {
+			return srv.serveChildClient(ctx, w, r, client, childMetadata)
+		}
+
 		sess := client.daggerSession
 		ctx = analytics.WithContext(ctx, sess.analytics)
 		r = r.WithContext(ctx)
@@ -2533,6 +2549,38 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 	}
 
 	mux.ServeHTTP(w, r)
+	return nil
+}
+
+// serveChildClient serves a request that parent forwarded for a Dagger client
+// it serves to its own child processes. The child joins the session as a
+// nested client of parent, like a CLI in a container exec joins its caller's
+// session, so its shutdown ends only itself. ctx holds parent's request scope,
+// which registers the child; the child's request itself runs in r's context.
+func (srv *Server) serveChildClient(ctx context.Context, w http.ResponseWriter, r *http.Request, parent *clientRuntime, childMetadata []string) error {
+	direct := childMetadata[len(childMetadata)-1]
+	h := http.Header{}
+	h.Set(engine.ClientMetadataMetaKey, direct)
+	md, err := engine.ClientMetadataFromHTTPHeaders(h)
+	if err != nil {
+		return httpErr(fmt.Errorf("invalid child client metadata: %w", err), http.StatusBadRequest)
+	}
+	if md.ClientID == "" {
+		return httpErr(errors.New("child client metadata is missing client ID"), http.StatusBadRequest)
+	}
+	child, err := srv.childClient(ctx, parent, md.ClientID, h)
+	if err != nil {
+		return httpErr(fmt.Errorf("serve child client %q: %w", md.ClientID, err), http.StatusInternalServerError)
+	}
+
+	// The request now speaks for the child, and carries on the children it
+	// serves in turn.
+	r.Header.Set(engine.ClientMetadataMetaKey, direct)
+	r.Header.Del(engine.ChildClientMetadataMetaKey)
+	for _, grandchild := range childMetadata[:len(childMetadata)-1] {
+		r.Header.Add(engine.ChildClientMetadataMetaKey, grandchild)
+	}
+	srv.ServeHTTPToNestedClient(w, r, child.transport, child.metadata, parent.clientID, false, nil, nil)
 	return nil
 }
 
