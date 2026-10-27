@@ -1,0 +1,7 @@
+kind: Changed
+body: |
+  A function that takes a workspace backed by a Git ref or an in-engine directory is now reused when the workspace's content is the same, across calls, sessions and engines, instead of running again. Local host checkouts are unchanged.
+time: 2026-10-27T22:29:22Z
+custom:
+  Author: sipsma
+  PR: ""
