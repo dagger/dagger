@@ -183,6 +183,37 @@ func TestAcquireCreatesOnceAndReuses(t *testing.T) {
 	require.FileExists(t, filepath.Join(pin.Path(), "written"))
 }
 
+// A pin says whether its Acquire created the volume, and whether it is the
+// store's first pin on the volume, so a caller can tell a new volume, one an
+// earlier owner of the directory left, and one this store already had.
+func TestAcquireSaysHowItGotTheVolume(t *testing.T) {
+	dir := t.TempDir()
+	ident := Identity{Namespace: "mainClient", Key: "k"}
+	acquire := func(s *Store) (created, first bool) {
+		pin, err := s.Acquire(t.Context(), ident, false, emptyPopulate)
+		require.NoError(t, err)
+		defer pin.Release()
+		return pin.Created(), pin.FirstPin()
+	}
+
+	s := openStore(t, dir, nil)
+	created, first := acquire(s)
+	require.True(t, created, "a new volume is created")
+	require.True(t, first)
+	created, first = acquire(s)
+	require.False(t, created)
+	require.False(t, first, "the store already pinned it")
+
+	require.NoError(t, s.Close())
+	s2 := openStore(t, dir, nil)
+	created, first = acquire(s2)
+	require.False(t, created, "the volume came with the directory")
+	require.True(t, first, "the new owner hadn't pinned it")
+	created, first = acquire(s2)
+	require.False(t, created)
+	require.False(t, first)
+}
+
 func TestAcquireConcurrentCreatesOnce(t *testing.T) {
 	s := openStore(t, t.TempDir(), nil)
 	ident := Identity{Key: "k"}

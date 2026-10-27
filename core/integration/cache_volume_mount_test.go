@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"dagger.io/dagger"
 	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -21,6 +22,7 @@ const (
 	cacheVolumeSharingAttr   = "dagger.io/cache_volume.sharing"
 	cacheVolumeTargetAttr    = "dagger.io/cache_volume.target"
 	cacheVolumeSnapshotAttr  = "dagger.io/cache_volume.snapshot"
+	cacheVolumeDirAttr       = "dagger.io/cache_volume.dir"
 	cacheVolumeStateAttr     = "dagger.io/cache_volume.state"
 )
 
@@ -30,6 +32,22 @@ type cacheVolumeMountLine struct {
 	Cache string            `json:"cache"`
 	Name  string            `json:"name"`
 	Attrs map[string]string `json:"attrs"`
+}
+
+// mountCacheVolumeIn runs cmd in an exec on engine that mounts the cache
+// volume named volume at /cache, and returns its output.
+func mountCacheVolumeIn(ctx context.Context, t *testctx.T, c *dagger.Client, cli *core.File, cloud telemetrySplitCloud, engine *core.Service, volume, cmd string) string {
+	t.Helper()
+	// A new command each time, so no exec is a cache hit that skips the
+	// mount.
+	script := fmt.Sprintf(`container | from %s | with-mounted-cache /cache %s | with-exec -- sh -c '%s; : %s' | stdout`,
+		alpineImage, volume, cmd, rand.Text())
+	out, err := telemetrySplitClient(ctx, t, c, cli, engine, cloud).
+		WithEnvVariable("CACHEBUSTER", rand.Text()).
+		WithExec([]string{"/bin/dagger", "-c", script}, core.ContainerWithExecOpts{DisableDaggerInDagger: true}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	return strings.TrimSpace(out)
 }
 
 // An exec that mounts a cache volume reports the volume and how the engine
@@ -54,16 +72,7 @@ func (ClientSuite) TestCacheVolumeMountDiagnostic(ctx context.Context, t *testct
 	sentinel := rand.Text()
 
 	mount := func(engine *core.Service, volume, cmd string) string {
-		// A new command each time, so no exec is a cache hit that skips the
-		// mount.
-		script := fmt.Sprintf(`container | from %s | with-mounted-cache /cache %s | with-exec -- sh -c '%s; : %s' | stdout`,
-			alpineImage, volume, cmd, rand.Text())
-		out, err := telemetrySplitClient(ctx, t, c, cli, engine, cloud).
-			WithEnvVariable("CACHEBUSTER", rand.Text()).
-			WithExec([]string{"/bin/dagger", "-c", script}, core.ContainerWithExecOpts{DisableDaggerInDagger: true}).
-			Stdout(ctx)
-		require.NoError(t, err)
-		return strings.TrimSpace(out)
+		return mountCacheVolumeIn(ctx, t, c, cli, cloud, engine, volume, cmd)
 	}
 	const readOrEmpty = "cat /cache/sentinel 2>/dev/null || echo empty"
 	stop := func(engine *core.Service) {
@@ -153,4 +162,87 @@ func (ClientSuite) TestCacheVolumeMountDiagnostic(ctx context.Context, t *testct
 	require.Equal(t, snapshot[newVolume], snapshot[reused], "the same engine reused the snapshot")
 	require.Equal(t, snapshot[newVolume], snapshot[reopened], "the restarted engine reopened the same snapshot")
 	require.NotEqual(t, snapshot[newVolume], snapshot[fresh], "a new key gets its own snapshot")
+}
+
+// With cacheVolumes.dir, a mount reports the volume's ID in the directory in
+// place of a snapshot, and how this engine got the volume: new, left in the
+// directory by an earlier engine, or already mounted by this one.
+//
+// The first engine creates a volume in the directory, writes a sentinel into
+// it and mounts it again. The second engine, on a state of its own, gets the
+// directory, reads the sentinel back from the volume the first one left, and
+// mounts a key the directory doesn't have as new.
+func (ClientSuite) TestCacheVolumeDirMountDiagnostic(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	cloud := newTelemetrySplitCloud(t, c)
+	cli := daggerCliFile(t, c)
+	dirVol := core.NewQuery(c).CacheVolume("dagger-cache-volume-dir-mount-" + rand.Text())
+	key := "cache-volume-dir-mount-" + rand.Text()
+	freshKey := "cache-volume-dir-mount-fresh-" + rand.Text()
+	sentinel := rand.Text()
+
+	mount := func(engine *core.Service, volume, cmd string) string {
+		return mountCacheVolumeIn(ctx, t, c, cli, cloud, engine, volume, cmd)
+	}
+	const readOrEmpty = "cat /cache/sentinel 2>/dev/null || echo empty"
+	start := func() *core.Service {
+		return engineEventsEngine(ctx, t, c, cloud, "dagger-cache-volume-dir-mount-state-"+rand.Text(), withCacheVolumeDir(ctx, t, dirVol))
+	}
+	stop := func(engine *core.Service) {
+		_, err := engine.Stop(ctx)
+		require.NoError(t, err)
+	}
+
+	engine := start()
+	require.Equal(t, sentinel, mount(engine, key, "echo "+sentinel+" > /cache/sentinel && cat /cache/sentinel"))
+	require.Equal(t, sentinel, mount(engine, key, readOrEmpty))
+	stop(engine)
+
+	engine = start()
+	require.Equal(t, sentinel, mount(engine, key, readOrEmpty), "the next engine gets the volume with the directory")
+	require.Equal(t, "empty", mount(engine, freshKey, readOrEmpty))
+	stop(engine)
+
+	var mounts []cacheVolumeMountLine
+	for _, span := range readTelemetrySplitLines[cacheVolumeMountLine](ctx, t, cloud, "v1/traces.json.spans") {
+		if _, ok := span.Attrs[cacheVolumeKeyAttr]; ok {
+			mounts = append(mounts, span)
+		}
+	}
+	require.Len(t, mounts, 4, "one mount span per exec")
+
+	// The engines have their own states, so their own caches; the second
+	// is the one that mounted the fresh key.
+	var second string
+	for _, span := range mounts {
+		if span.Attrs[cacheVolumeKeyAttr] == freshKey {
+			second, _, _ = strings.Cut(span.Cache, "/")
+		}
+	}
+	require.NotEmpty(t, second)
+
+	type observed struct{ engine, key, state string }
+	var got []observed
+	dirID := map[observed]string{}
+	for _, span := range mounts {
+		require.Equal(t, "/cache", span.Attrs[cacheVolumeTargetAttr])
+		require.Empty(t, span.Attrs[cacheVolumeSnapshotAttr], "a directory-backed volume has no snapshot")
+		require.NotEmpty(t, span.Attrs[cacheVolumeDirAttr])
+		which := "first"
+		if id, _, _ := strings.Cut(span.Cache, "/"); id == second {
+			which = "second"
+		}
+		o := observed{which, span.Attrs[cacheVolumeKeyAttr], span.Attrs[cacheVolumeStateAttr]}
+		got = append(got, o)
+		dirID[o] = span.Attrs[cacheVolumeDirAttr]
+	}
+	newVolume := observed{"first", key, "new"}
+	reused := observed{"first", key, "reused"}
+	reopened := observed{"second", key, "reopened"}
+	fresh := observed{"second", freshKey, "new"}
+	require.ElementsMatch(t, []observed{newVolume, reused, reopened, fresh}, got)
+
+	require.Equal(t, dirID[newVolume], dirID[reused])
+	require.Equal(t, dirID[newVolume], dirID[reopened], "the second engine mounted the volume the first one left")
+	require.NotEqual(t, dirID[newVolume], dirID[fresh], "a new key gets its own volume")
 }
