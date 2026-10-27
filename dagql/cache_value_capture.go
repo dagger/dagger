@@ -392,22 +392,13 @@ func OpenSelectedChains(ctx context.Context, capture *HeldCapturedClosure, outpu
 			rerr = errors.Join(rerr, chains.Release(ctx))
 		}
 	}()
-	// Each chain's profile op is open while the export opens it; an output
-	// that fails before the chains open ends the ops begun so far.
-	var chainOps []*wcprof.Op
 	var chainResults []uint64
-	defer func() {
-		for i, op := range chainOps {
-			profEndChain(op, nil, chainResults[i], rerr)
-		}
-	}()
 	// opened holds each entry's chain: a File's, which travels as its own
 	// content, as soon as it is exported; the others' once they open
 	// together. batched indexes the entries opening together.
 	var opened []*snapshots.ExportChain
 	var batched []int
 	var batchRefs []snapshots.ImmutableRef
-	var batchCtxs []context.Context
 	seen := map[string]bool{}
 	for _, selected := range outputs {
 		row, out, err := selectedCapturedOutput(capture, selected)
@@ -431,13 +422,18 @@ func OpenSelectedChains(ctx context.Context, capture *HeldCapturedClosure, outpu
 			return nil, err
 		}
 		chains.refs = append(chains.refs, ref)
-		chainCtx, chainOp := profBeginChain(ctx, out.Address)
+		chainResults = append(chainResults, uint64(row.shared.id))
 		chains.Entries = append(chains.Entries, SelectedChain{Ordinal: row.ordinal, Address: out.Address})
 		// A File is its content: it travels as a chain of its own, not as
 		// the filesystem it was taken from.
 		if out.ValueKind == "file" && out.Value != nil {
+			chainCtx, chainOp := profBeginChain(ctx, out.Address)
 			chain, err := ref.ExportFileChain(chainCtx, cfg, out.Value.Path)
-			profEndChain(chainOp, chain, uint64(row.shared.id), err)
+			var blobBytes int64
+			if chain != nil {
+				blobBytes = chain.Stats.BlobBytes
+			}
+			profEndChain(chainOp, blobBytes, uint64(row.shared.id), err)
 			if err != nil {
 				return nil, err
 			}
@@ -449,21 +445,25 @@ func OpenSelectedChains(ctx context.Context, capture *HeldCapturedClosure, outpu
 		opened = append(opened, nil)
 		batched = append(batched, len(chains.Entries)-1)
 		batchRefs = append(batchRefs, ref)
-		batchCtxs = append(batchCtxs, chainCtx)
-		chainOps = append(chainOps, chainOp)
-		chainResults = append(chainResults, uint64(row.shared.id))
 	}
 	// The other outputs' chains open as one export, so that their layers
-	// build together and a layer they share builds once.
-	batch, err := snapshots.ExportChains(ctx, batchRefs, batchCtxs, cfg)
-	for i, op := range chainOps {
-		var chain *snapshots.ExportChain
-		if err == nil {
-			chain = batch[i]
+	// build together and a layer they share builds once. Each chain's
+	// profile op spans its own builds; the export's op spans the rest.
+	var work *snapshots.ChainWork
+	if wcprof.Enabled(ctx) {
+		chainOps := make([]*wcprof.Op, len(batchRefs))
+		work = &snapshots.ChainWork{
+			Begin: func(ctx context.Context, i int) context.Context {
+				chainCtx, op := profBeginChain(ctx, chains.Entries[batched[i]].Address)
+				chainOps[i] = op
+				return chainCtx
+			},
+			End: func(i int, blobBytes int64, err error) {
+				profEndChain(chainOps[i], blobBytes, chainResults[batched[i]], err)
+			},
 		}
-		profEndChain(op, chain, chainResults[i], err)
 	}
-	chainOps = nil
+	batch, err := snapshots.ExportChains(ctx, batchRefs, work, cfg)
 	if err != nil {
 		return nil, err
 	}
