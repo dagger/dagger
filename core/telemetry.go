@@ -86,7 +86,8 @@ func AroundFunc(
 			payloadKeys = store
 		}
 		if seenKeys, seenKeysErr := q.TelemetrySeenKeyStore(ctx); seenKeysErr == nil {
-			if !dagql.ShouldEmitTelemetry(ctx, seenKeys, callDigest.String(), req.DoNotCache) {
+			repeat := req.DoNotCache && !req.DeduplicateTelemetry
+			if !dagql.ShouldEmitTelemetry(ctx, seenKeys, callDigest.String(), repeat) {
 				recordCallPayloads(ctx, payloadKeys, callDigest.String(), req.ResultCall)
 				return ctx, dagql.NoopDone
 			}
