@@ -125,7 +125,7 @@ func TestGitBundleSchema(t *testing.T) {
 
 	bundleType := schema.Types.Get("GitBundle")
 	require.NotNil(t, bundleType)
-	for _, name := range []string{"version", "objectFormat", "refs", "prerequisiteSHAs", "validate", "asFile"} {
+	for _, name := range []string{"version", "objectFormat", "refs", "prerequisiteShas", "validate", "asFile"} {
 		require.NotNil(t, schemaField(bundleType, name), name)
 	}
 	bundleRefType := schema.Types.Get("GitBundleRef")

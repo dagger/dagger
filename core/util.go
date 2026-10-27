@@ -21,6 +21,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -327,6 +328,58 @@ func (maxVersion BeforeVersion) Contains(version call.View) bool {
 var (
 	enumView = AfterVersion("v0.18.11")
 )
+
+// From engine.IdentifierCasingVersion on, core field, argument and input
+// field names follow the GraphQL casing convention: camelCase, with acronyms
+// capitalized like words (asJson, withGpu, commitSha). Views before it keep
+// the old spellings (asJSON, withGPU, commitSHA), and later ones don't have
+// them: no view has both.
+var (
+	// CasedNamesView holds the views with the conventional core names,
+	// including the internal view "" (the latest API).
+	CasedNamesView = AfterVersion(engine.IdentifierCasingVersion)
+	// LegacyNamesView holds the views with the old core names.
+	LegacyNamesView = BeforeVersion(engine.IdentifierCasingVersion)
+	// UnfilteredFieldView is the internal view "", where dagql selects every
+	// call to a field without a view filter, whatever its caller's view. An
+	// argument renamed on such a field keeps its old spelling there, as an
+	// internal argument, so a caller before the cut still passes it.
+	UnfilteredFieldView = dagql.ExactView("")
+)
+
+// ViewName is cased in views with the conventional core names and legacy
+// in older views, for internal selectors that select a renamed field or pass
+// a renamed argument in a caller's view.
+func ViewName(view call.View, cased, legacy string) string {
+	if CasedNamesView.Contains(view) {
+		return cased
+	}
+	return legacy
+}
+
+// ViewIntersection contains the views every one of its filters contains. A
+// nil filter (the global view) contains every view.
+type ViewIntersection []dagql.ViewFilter
+
+var _ dagql.ViewFilter = ViewIntersection{}
+
+func (filters ViewIntersection) Contains(view call.View) bool {
+	for _, filter := range filters {
+		if filter != nil && !filter.Contains(view) {
+			return false
+		}
+	}
+	return true
+}
+
+// WithinView is filter restricted to the views of within: within itself
+// when filter is the global view (nil).
+func WithinView(filter, within dagql.ViewFilter) dagql.ViewFilter {
+	if filter == nil {
+		return within
+	}
+	return ViewIntersection{filter, within}
+}
 
 // RootPathWithoutFinalSymlink joins a path with a root, evaluating and bounding all
 // symlinks except the final component of the path (i.e. the basename component).

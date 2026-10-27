@@ -335,6 +335,10 @@ var persistedContainerRecipeVisitors = map[string]persistedLazyVisitor{
 	"withGPU":                   parentOnly(func(p *persistedContainerSetGPUsLazy) *uint64 { return &p.ParentResultID }),
 	"experimentalWithGPU":       parentOnly(func(p *persistedContainerSetGPUsLazy) *uint64 { return &p.ParentResultID }),
 	"experimentalWithAllGPUs":   parentOnly(func(p *persistedContainerSetGPUsLazy) *uint64 { return &p.ParentResultID }),
+	// The GPU fields' names from engine.IdentifierCasingVersion on.
+	"withGpu":                 parentOnly(func(p *persistedContainerSetGPUsLazy) *uint64 { return &p.ParentResultID }),
+	"experimentalWithGpu":     parentOnly(func(p *persistedContainerSetGPUsLazy) *uint64 { return &p.ParentResultID }),
+	"experimentalWithAllGpus": parentOnly(func(p *persistedContainerSetGPUsLazy) *uint64 { return &p.ParentResultID }),
 	"withAnnotation":            parentOnly(func(p *persistedContainerWithAnnotationLazy) *uint64 { return &p.ParentResultID }),
 	"withoutAnnotation":         parentOnly(func(p *persistedContainerWithoutAnnotationLazy) *uint64 { return &p.ParentResultID }),
 	"withSecretVariable":        parentAndSource("secretResultID", func(p *persistedContainerWithSecretVariableLazy) *uint64 { return &p.ParentResultID }, func(p *persistedContainerWithSecretVariableLazy) *uint64 { return &p.SecretResultID }),
