@@ -5138,7 +5138,6 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			if err == nil && spec == nil {
 				err = c.completeNativePartTask(callbackCtx, installationToken)
 			}
-			lazyOp.EndWithResult(profErrOutcome(err), uint64(shared.id))
 
 			shared.lazyMu.Lock()
 			attempt.err = err
@@ -5206,6 +5205,9 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			if c.testAfterLazyEvalFinish != nil {
 				c.testAfterLazyEvalFinish(attempt)
 			}
+			// The op ends as its waiters are released: what they wait for
+			// after the body (retiring the attempt, the span's end) is its time.
+			lazyOp.EndWithResult(profErrOutcome(err), uint64(shared.id))
 			close(attempt.done)
 			// Sharing's completion trigger runs after the D unlock and after
 			// the waiter wake, so a waiter never waits for it. Only a
