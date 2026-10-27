@@ -219,7 +219,11 @@ func (cm *snapshotManager) importLayer(
 		return nil, err
 	}
 	mut = nil
-	return cm.recordImportedLayer(ctx, ref, desc, diffID, opts, blobKey, diffKey)
+	ref, err = cm.recordImportedLayer(ctx, ref, desc, diffID, opts, blobKey, diffKey)
+	if err == nil && chain != nil && chain.owner != nil && chain.owner.Applied != nil {
+		chain.owner.Applied(ctx, desc, ref.SnapshotID())
+	}
+	return ref, err
 }
 
 // acquireImportLock takes the import lock key names, adding the wait to the
