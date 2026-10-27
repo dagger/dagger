@@ -73,15 +73,15 @@ func (sdk *clientGeneratorModule) GenerateClient(
 
 	generateClientsArgs := []dagql.NamedInput{
 		{
-			Name:  "modSource",
+			Name:  sdk.mod.argName("modSource"),
 			Value: dagql.NewID[*core.ModuleSource](modSourceID),
 		},
 		{
-			Name:  "introspectionJson",
+			Name:  sdk.mod.argName("introspectionJson"),
 			Value: dagql.NewID[*core.File](schemaJSONFileID),
 		},
 		{
-			Name:  "outputDir",
+			Name:  sdk.mod.argName("outputDir"),
 			Value: dagql.String(outputDir),
 		},
 	}

@@ -311,7 +311,7 @@ func (m *MCP) bindWorkspaceModuleTools(ctx context.Context) (*MCP, error) {
 		if mod == nil || mod.Name() == ModuleName {
 			continue
 		}
-		ctorName := gqlFieldName(mod.Name())
+		ctorName := mod.ConstructorName()
 		spec, ok := canonical.Root().ObjectType().FieldSpec(ctorName, canonical.View)
 		if !ok {
 			continue
@@ -395,10 +395,16 @@ func (m *MCP) boundToolsets(srv *dagql.Server) ([]bindingToolset, error) {
 }
 
 // namespacedToolName qualifies a tool name with its bound object's type, e.g.
-// TuiQa's `start` becomes `tuiQa_start` — the type rendered as its GraphQL
-// field name, matching how the module is spelled elsewhere in the API.
+// TuiQa's `start` becomes `tuiQa_start` — the type rendered as a GraphQL
+// field name, by the latest naming rules (tool names are only seen by LLMs,
+// and the type name doesn't say which module's rules made it).
 func namespacedToolName(typeName, toolName string) string {
-	return gqlFieldName(typeName) + "_" + toolName
+	return toolNamespace(typeName) + "_" + toolName
+}
+
+// toolNamespace is the prefix namespacedToolName gives a type's tools.
+func toolNamespace(typeName string) string {
+	return LatestNamer.FieldName(typeName)
 }
 
 // namespacedTypes decides which bound-object types must serve their tools under

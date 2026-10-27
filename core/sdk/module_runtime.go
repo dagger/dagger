@@ -9,7 +9,8 @@ import (
 	telemetry "github.com/dagger/otel-go"
 )
 
-// moduleRuntime's introspection argument, as registered in the SDK module's schema.
+// moduleRuntime's introspection argument, as the legacy naming rules spell it
+// in the SDK module's schema; see (*module).argName.
 const introspectionJSONArgName = "introspectionJson"
 
 // A SDK module that implements the `Runtime` interface
@@ -42,7 +43,7 @@ func (sdk *runtimeModule) Runtime(
 	}
 	args := []dagql.NamedInput{
 		{
-			Name:  "modSource",
+			Name:  sdk.mod.argName("modSource"),
 			Value: dagql.NewID[*core.ModuleSource](sourceID),
 		},
 	}
@@ -57,7 +58,7 @@ func (sdk *runtimeModule) Runtime(
 			return nil, fmt.Errorf("failed to get schema introspection json ID during %s module sdk runtime: %w", sdk.mod.mod.Self().Name(), err)
 		}
 		args = append(args, dagql.NamedInput{
-			Name:  introspectionJSONArgName,
+			Name:  sdk.mod.argName(introspectionJSONArgName),
 			Value: dagql.NewID[*core.File](schemaJSONFileID),
 		})
 	}

@@ -30,12 +30,18 @@ func SelectTypeDefWithServer(ctx context.Context, dag *dagql.Server, sels ...dag
 // Callers that *reconstruct* a typedef referencing a type by its already-final,
 // module-namespaced GraphQL name (e.g. "ModuleAOverlay") — whether to serve it
 // or to look it up via Deps.ModTypeFor — build it with the public
-// withObject/withInterface/withEnum/withScalar fields, which run the name
-// through strcase.ToCamel. That is correct when an SDK supplies a raw type name,
-// but wrong for an already-final name: ToCamel is not idempotent, so a name
-// whose camelCased form ends in a lone capital abutting a PascalCase word (e.g.
-// "ModuleAOverlay") gets lowercased to "ModuleAoverlay", diverging from the
-// installed type and breaking cross-module references and matching. This
+// withObject/withInterface/withEnum/withScalar fields, which normalize the name
+// by the naming rules of the call's view. That is correct when an SDK supplies a
+// raw type name, but can be wrong for an already-final name.
+//
+// With the engine/naming rules (modules at IdentifierNamingVersion and up) a
+// final name is a fixed point, so for those names this is a no-op. It stays
+// for the legacy strcase rules, which aren't idempotent ("ModuleAOverlay"
+// becomes "ModuleAoverlay"), and for final names made by one set of rules
+// and re-normalized by the other: a legacy module's "MyModUserIds" respelled
+// "MyModUserIDs" by a call at a newer view, or a newer module's
+// "MyModHTTPClient" respelled "MyModHttpclient" by a call at a legacy view.
+// It can go once no supported engine version uses the legacy rules. This
 // re-applies the intended name with no normalization (the __withName fields
 // store verbatim; see (*ObjectTypeDef).WithName).
 func withFinalTypeName(ctx context.Context, td dagql.ObjectResult[*TypeDef], name string) (dagql.ObjectResult[*TypeDef], error) {
