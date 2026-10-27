@@ -3240,7 +3240,7 @@ type Cloud struct {
 	refetchID bool
 
 	id       *ID
-	traceURL *string
+	traceUrl *string
 }
 
 func (r *Cloud) WithGraphQLQuery(q *querybuilder.Selection) *Cloud {
@@ -3300,10 +3300,10 @@ func (r *Cloud) MarshalJSON() ([]byte, error) {
 
 // The trace URL for the current session
 func (r *Cloud) TraceURL(ctx context.Context) (string, error) {
-	if r.traceURL != nil {
-		return *r.traceURL, nil
+	if r.traceUrl != nil {
+		return *r.traceUrl, nil
 	}
-	q := r.query.Select("traceURL")
+	q := r.query.Select("traceUrl")
 
 	var response string
 
@@ -3818,7 +3818,7 @@ type ContainerAsTarballOpts struct {
 	//
 	// Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
 	//
-	// Default: OCIMediaTypes
+	// Default: OCI
 	MediaTypes ImageMediaTypes
 }
 
@@ -4027,9 +4027,9 @@ func (r *Container) ExitCode(ctx context.Context) (int, error) {
 //
 // This currently works for Nvidia devices only.
 //
-// Deprecated: Use "withGPU" instead.
+// Deprecated: Use "withGpu" instead.
 func (r *Container) ExperimentalWithAllGPUs() *Container {
-	q := r.query.Select("experimentalWithAllGPUs")
+	q := r.query.Select("experimentalWithAllGpus")
 
 	return &Container{
 		query:     q,
@@ -4041,9 +4041,9 @@ func (r *Container) ExperimentalWithAllGPUs() *Container {
 //
 // This currently works for Nvidia devices only.
 //
-// Deprecated: Use "withGPU" instead, which exposes all GPUs available on the host.
+// Deprecated: Use "withGpu" instead, which exposes all GPUs available on the host.
 func (r *Container) ExperimentalWithGPU(devices []string) *Container {
-	q := r.query.Select("experimentalWithGPU")
+	q := r.query.Select("experimentalWithGpu")
 	q = q.Arg("devices", devices)
 
 	return &Container{
@@ -4066,7 +4066,7 @@ type ContainerExportOpts struct {
 	//
 	// Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
 	//
-	// Default: OCIMediaTypes
+	// Default: OCI
 	MediaTypes ImageMediaTypes
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
@@ -4120,7 +4120,7 @@ type ContainerExportImageOpts struct {
 	//
 	// Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
 	//
-	// Default: OCIMediaTypes
+	// Default: OCI
 	MediaTypes ImageMediaTypes
 }
 
@@ -4243,9 +4243,9 @@ func (r *Container) From(address string, opts ...ContainerFromOpts) *Container {
 		if !querybuilder.IsZeroValue(opts[i].Protocol) {
 			q = q.Arg("protocol", opts[i].Protocol)
 		}
-		// `insecureSkipTLSVerify` optional argument
+		// `insecureSkipTlsVerify` optional argument
 		if !querybuilder.IsZeroValue(opts[i].InsecureSkipTLSVerify) {
-			q = q.Arg("insecureSkipTLSVerify", opts[i].InsecureSkipTLSVerify)
+			q = q.Arg("insecureSkipTlsVerify", opts[i].InsecureSkipTLSVerify)
 		}
 		// `noLock` optional argument
 		if !querybuilder.IsZeroValue(opts[i].NoLock) {
@@ -4398,7 +4398,7 @@ type ContainerLayerOpts struct {
 	ForcedCompression ImageLayerCompression
 	// Media types to use for image layers. Defaults to OCI.
 	//
-	// Default: OCIMediaTypes
+	// Default: OCI
 	MediaTypes ImageMediaTypes
 }
 
@@ -4431,7 +4431,7 @@ type ContainerManifestOpts struct {
 	ForcedCompression ImageLayerCompression
 	// Media types to use for image layers. Defaults to OCI.
 	//
-	// Default: OCIMediaTypes
+	// Default: OCI
 	MediaTypes ImageMediaTypes
 }
 
@@ -4492,7 +4492,7 @@ type ContainerPublishOpts struct {
 	//
 	// Defaults to "OCI", which is compatible with most recent registries, but "Docker" may be needed for older registries without OCI support.
 	//
-	// Default: OCIMediaTypes
+	// Default: OCI
 	MediaTypes ImageMediaTypes
 	// Service to use as the registry endpoint for the image address.
 	//
@@ -4535,9 +4535,9 @@ func (r *Container) Publish(ctx context.Context, address string, opts ...Contain
 		if !querybuilder.IsZeroValue(opts[i].Protocol) {
 			q = q.Arg("protocol", opts[i].Protocol)
 		}
-		// `insecureSkipTLSVerify` optional argument
+		// `insecureSkipTlsVerify` optional argument
 		if !querybuilder.IsZeroValue(opts[i].InsecureSkipTLSVerify) {
-			q = q.Arg("insecureSkipTLSVerify", opts[i].InsecureSkipTLSVerify)
+			q = q.Arg("insecureSkipTlsVerify", opts[i].InsecureSkipTLSVerify)
 		}
 	}
 	q = q.Arg("address", address)
@@ -5288,7 +5288,7 @@ func (r *Container) WithFiles(path string, sources []*File, opts ...ContainerWit
 //
 // This currently works with NVIDIA devices only, and requires the engine to run with GPU support enabled.
 func (r *Container) WithGPU() *Container {
-	q := r.query.Select("withGPU")
+	q := r.query.Select("withGpu")
 
 	return &Container{
 		query:     q,
@@ -9443,7 +9443,7 @@ func (r *File) AsGitBundle() *GitBundle {
 
 // Parse the file contents as JSON.
 func (r *File) AsJSON() *JSONValue {
-	q := r.query.Select("asJSON")
+	q := r.query.Select("asJson")
 
 	return &JSONValue{
 		query:     q,
@@ -10797,7 +10797,7 @@ func (r *GeneratedCode) MarshalJSON() ([]byte, error) {
 }
 
 // List of paths to mark generated in version control (i.e. .gitattributes).
-func (r *GeneratedCode) VcsGeneratedPaths(ctx context.Context) ([]string, error) {
+func (r *GeneratedCode) VCSGeneratedPaths(ctx context.Context) ([]string, error) {
 	q := r.query.Select("vcsGeneratedPaths")
 
 	var response []string
@@ -10807,7 +10807,7 @@ func (r *GeneratedCode) VcsGeneratedPaths(ctx context.Context) ([]string, error)
 }
 
 // List of paths to ignore in version control (i.e. .gitignore).
-func (r *GeneratedCode) VcsIgnoredPaths(ctx context.Context) ([]string, error) {
+func (r *GeneratedCode) VCSIgnoredPaths(ctx context.Context) ([]string, error) {
 	q := r.query.Select("vcsIgnoredPaths")
 
 	var response []string
@@ -10818,7 +10818,7 @@ func (r *GeneratedCode) VcsIgnoredPaths(ctx context.Context) ([]string, error) {
 
 // Set the list of paths to mark generated in version control.
 func (r *GeneratedCode) WithVCSGeneratedPaths(paths []string) *GeneratedCode {
-	q := r.query.Select("withVCSGeneratedPaths")
+	q := r.query.Select("withVcsGeneratedPaths")
 	q = q.Arg("paths", paths)
 
 	return &GeneratedCode{
@@ -10829,7 +10829,7 @@ func (r *GeneratedCode) WithVCSGeneratedPaths(paths []string) *GeneratedCode {
 
 // Set the list of paths to ignore in version control.
 func (r *GeneratedCode) WithVCSIgnoredPaths(paths []string) *GeneratedCode {
-	q := r.query.Select("withVCSIgnoredPaths")
+	q := r.query.Select("withVcsIgnoredPaths")
 	q = q.Arg("paths", paths)
 
 	return &GeneratedCode{
@@ -11061,7 +11061,7 @@ func (r *GitBundle) ObjectFormat(ctx context.Context) (string, error) {
 
 // Commits that must already exist wherever this bundle is applied.
 func (r *GitBundle) PrerequisiteSHAs(ctx context.Context) ([]string, error) {
-	q := r.query.Select("prerequisiteSHAs")
+	q := r.query.Select("prerequisiteShas")
 
 	var response []string
 
@@ -11216,7 +11216,7 @@ func (r *GitBundleRef) Name(ctx context.Context) (string, error) {
 }
 
 // The object ID the advertised ref resolves to.
-func (r *GitBundleRef) Sha(ctx context.Context) (string, error) {
+func (r *GitBundleRef) SHA(ctx context.Context) (string, error) {
 	if r.sha != nil {
 		return *r.sha, nil
 	}
@@ -11257,7 +11257,7 @@ type GitCommit struct {
 	messageHeadline *string
 	sha             *string
 	shortSha        *string
-	treeSHA         *string
+	treeSha         *string
 }
 
 func (r *GitCommit) WithGraphQLQuery(q *querybuilder.Selection) *GitCommit {
@@ -11486,7 +11486,7 @@ func (r *GitCommit) MessageHeadline(ctx context.Context) (string, error) {
 }
 
 // Parent commit SHAs.
-func (r *GitCommit) ParentShas(ctx context.Context) ([]string, error) {
+func (r *GitCommit) ParentSHAs(ctx context.Context) ([]string, error) {
 	q := r.query.Select("parentShas")
 
 	var response []string
@@ -11525,7 +11525,7 @@ func (r *GitCommit) ReleaseTag(ctx context.Context, opts ...GitCommitReleaseTagO
 }
 
 // The full commit SHA.
-func (r *GitCommit) Sha(ctx context.Context) (string, error) {
+func (r *GitCommit) SHA(ctx context.Context) (string, error) {
 	if r.sha != nil {
 		return *r.sha, nil
 	}
@@ -11538,7 +11538,7 @@ func (r *GitCommit) Sha(ctx context.Context) (string, error) {
 }
 
 // The abbreviated commit SHA.
-func (r *GitCommit) ShortSha(ctx context.Context) (string, error) {
+func (r *GitCommit) ShortSHA(ctx context.Context) (string, error) {
 	if r.shortSha != nil {
 		return *r.shortSha, nil
 	}
@@ -11590,10 +11590,10 @@ func (r *GitCommit) Tree(opts ...GitCommitTreeOpts) *Directory {
 //
 // Commits with identical trees have identical contents and file modes.
 func (r *GitCommit) TreeSHA(ctx context.Context) (string, error) {
-	if r.treeSHA != nil {
-		return *r.treeSHA, nil
+	if r.treeSha != nil {
+		return *r.treeSha, nil
 	}
-	q := r.query.Select("treeSHA")
+	q := r.query.Select("treeSha")
 
 	var response string
 
@@ -11620,7 +11620,7 @@ type GitPushResult struct {
 
 	disposition *GitPushDisposition
 	id          *ID
-	previousSHA *string
+	previousSha *string
 	ref         *string
 	sha         *string
 }
@@ -11695,10 +11695,10 @@ func (r *GitPushResult) MarshalJSON() ([]byte, error) {
 
 // The previous remote object ID; empty when the ref was created.
 func (r *GitPushResult) PreviousSHA(ctx context.Context) (string, error) {
-	if r.previousSHA != nil {
-		return *r.previousSHA, nil
+	if r.previousSha != nil {
+		return *r.previousSha, nil
 	}
-	q := r.query.Select("previousSHA")
+	q := r.query.Select("previousSha")
 
 	var response string
 
@@ -11720,7 +11720,7 @@ func (r *GitPushResult) Ref(ctx context.Context) (string, error) {
 }
 
 // The object ID pushed to the remote.
-func (r *GitPushResult) Sha(ctx context.Context) (string, error) {
+func (r *GitPushResult) SHA(ctx context.Context) (string, error) {
 	if r.sha != nil {
 		return *r.sha, nil
 	}
@@ -11750,7 +11750,7 @@ type GitRef struct {
 	refetchID bool
 
 	commit    *string
-	commitSHA *string
+	commitSha *string
 	contains  *bool
 	id        *ID
 	name      *string
@@ -11812,7 +11812,7 @@ func (r *GitRef) AsWorkspace(opts ...GitRefAsWorkspaceOpts) *Workspace {
 
 // The resolved commit id at this ref.
 //
-// Deprecated: Use "commitSHA" instead.
+// Deprecated: Use "commitSha" instead.
 func (r *GitRef) Commit(ctx context.Context) (string, error) {
 	if r.commit != nil {
 		return *r.commit, nil
@@ -11827,10 +11827,10 @@ func (r *GitRef) Commit(ctx context.Context) (string, error) {
 
 // The resolved commit SHA at this ref.
 func (r *GitRef) CommitSHA(ctx context.Context) (string, error) {
-	if r.commitSHA != nil {
-		return *r.commitSHA, nil
+	if r.commitSha != nil {
+		return *r.commitSha, nil
 	}
-	q := r.query.Select("commitSHA")
+	q := r.query.Select("commitSha")
 
 	var response string
 
@@ -12017,9 +12017,9 @@ func (r *GitRef) Push(opts ...GitRefPushOpts) *GitPushResult {
 		if !querybuilder.IsZeroValue(opts[i].Branch) {
 			q = q.Arg("branch", opts[i].Branch)
 		}
-		// `expectedRemoteSHA` optional argument
+		// `expectedRemoteSha` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ExpectedRemoteSHA) {
-			q = q.Arg("expectedRemoteSHA", opts[i].ExpectedRemoteSHA)
+			q = q.Arg("expectedRemoteSha", opts[i].ExpectedRemoteSHA)
 		}
 	}
 
@@ -14640,7 +14640,7 @@ func (r *LLM) WithContentFile(file *File, opts ...LLMWithContentFileOpts) *LLM {
 // Add an external MCP server to the LLM
 func (r *LLM) WithMCPServer(name string, service *Service) *LLM {
 	assertNotNil("service", service)
-	q := r.query.Select("withMCPServer")
+	q := r.query.Select("withMcpServer")
 	q = q.Arg("name", name)
 	q = q.Arg("service", service)
 
@@ -16275,7 +16275,7 @@ func (r *Module) Interfaces(ctx context.Context) ([]TypeDef, error) {
 //
 // Note: this is in the context of a module, so some core types may be hidden.
 func (r *Module) IntrospectionSchemaJSON() *File {
-	q := r.query.Select("introspectionSchemaJSON")
+	q := r.query.Select("introspectionSchemaJson")
 
 	return &File{
 		query:     q,
@@ -16623,8 +16623,8 @@ type ModuleSource struct {
 	configExists              *bool
 	digest                    *string
 	engineVersion             *string
-	htmlRepoURL               *string
-	htmlURL                   *string
+	htmlRepoUrl               *string
+	htmlUrl                   *string
 	id                        *ID
 	kind                      *ModuleSourceKind
 	localContextDirectoryPath *string
@@ -16693,9 +16693,9 @@ func (r *ModuleSource) Blueprint() *ModuleSource {
 
 // The client-facing introspection schema JSON file for this module source.
 //
-// This is the schema consumed by client codegen: unlike introspectionSchemaJSON (the module-facing schema), it hides no core types and installs this module (reached via dag.<moduleName>) so a generated client can bind it. The module's dependencies are excluded: a client is generated for a single module plus core, not its dependency graph.
+// This is the schema consumed by client codegen: unlike introspectionSchemaJson (the module-facing schema), it hides no core types and installs this module (reached via dag.<moduleName>) so a generated client can bind it. The module's dependencies are excluded: a client is generated for a single module plus core, not its dependency graph.
 func (r *ModuleSource) ClientSchemaIntrospectionJSON() *File {
-	q := r.query.Select("clientSchemaIntrospectionJSON")
+	q := r.query.Select("clientSchemaIntrospectionJson")
 
 	return &File{
 		query:     q,
@@ -16891,10 +16891,10 @@ func (r *ModuleSource) GeneratedContextDirectory() *Directory {
 
 // The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket).
 func (r *ModuleSource) HTMLRepoURL(ctx context.Context) (string, error) {
-	if r.htmlRepoURL != nil {
-		return *r.htmlRepoURL, nil
+	if r.htmlRepoUrl != nil {
+		return *r.htmlRepoUrl, nil
 	}
-	q := r.query.Select("htmlRepoURL")
+	q := r.query.Select("htmlRepoUrl")
 
 	var response string
 
@@ -16904,10 +16904,10 @@ func (r *ModuleSource) HTMLRepoURL(ctx context.Context) (string, error) {
 
 // The URL to the source's git repo in a web browser. Only valid for git sources.
 func (r *ModuleSource) HTMLURL(ctx context.Context) (string, error) {
-	if r.htmlURL != nil {
-		return *r.htmlURL, nil
+	if r.htmlUrl != nil {
+		return *r.htmlUrl, nil
 	}
-	q := r.query.Select("htmlURL")
+	q := r.query.Select("htmlUrl")
 
 	var response string
 
@@ -16967,7 +16967,7 @@ func (r *ModuleSource) MarshalJSON() ([]byte, error) {
 //
 // Note: this is in the context of a module, so some core types may be hidden.
 func (r *ModuleSource) IntrospectionSchemaJSON() *File {
-	q := r.query.Select("introspectionSchemaJSON")
+	q := r.query.Select("introspectionSchemaJson")
 
 	return &File{
 		query:     q,
@@ -17276,7 +17276,7 @@ func (r *ModuleSource) WithName(name string) *ModuleSource {
 
 // Update the module source with a new SDK.
 func (r *ModuleSource) WithSDK(source string) *ModuleSource {
-	q := r.query.Select("withSDK")
+	q := r.query.Select("withSdk")
 	q = q.Arg("source", source)
 
 	return &ModuleSource{
@@ -18756,8 +18756,8 @@ func (r *Query) SourceMap(filename string, line int, column int) *SourceMap {
 	}
 }
 
-// SshfsVolumeOpts contains options for Query.SshfsVolume
-type SshfsVolumeOpts struct {
+// SSHFSVolumeOpts contains options for Query.SSHFSVolume
+type SSHFSVolumeOpts struct {
 	// known_hosts material used to verify the remote host key. Required unless insecureSkipHostKeyCheck is true.
 	KnownHosts *Secret
 	// Optional cache equivalence key. If set, volumes with the same cacheKey may be considered equivalent for cache lookups, still subject to their resource dependencies.
@@ -18769,7 +18769,7 @@ type SshfsVolumeOpts struct {
 }
 
 // Constructs an SSHFS volume.
-func (r *Query) SshfsVolume(endpoint string, privateKey *Secret, opts ...SshfsVolumeOpts) *Volume {
+func (r *Query) SSHFSVolume(endpoint string, privateKey *Secret, opts ...SSHFSVolumeOpts) *Volume {
 	assertNotNil("privateKey", privateKey)
 	q := r.query.Select("sshfsVolume")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -21684,7 +21684,7 @@ func (r *Workspace) SDK(name string) *WorkspaceSDK {
 }
 
 // Installed SDKs.
-func (r *Workspace) Sdks(ctx context.Context) ([]WorkspaceSDK, error) {
+func (r *Workspace) SDKs(ctx context.Context) ([]WorkspaceSDK, error) {
 	q := r.query.Select("sdks")
 
 	q = q.Select("id")
@@ -22350,7 +22350,7 @@ type WorkspaceWithSDKOpts struct {
 
 // Return this workspace with an SDK installed in its config.
 func (r *Workspace) WithSDK(ref string, opts ...WorkspaceWithSDKOpts) *Workspace {
-	q := r.query.Select("withSDK")
+	q := r.query.Select("withSdk")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `name` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Name) {
@@ -22674,7 +22674,7 @@ type WorkspaceWithoutSDKOpts struct {
 
 // Return this workspace with an SDK removed from its config.
 func (r *Workspace) WithoutSDK(name string, opts ...WorkspaceWithoutSDKOpts) *Workspace {
-	q := r.query.Select("withoutSDK")
+	q := r.query.Select("withoutSdk")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `here` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Here) {
@@ -24827,11 +24827,11 @@ func (FunctionCachePolicy) IsEnum() {}
 func (v FunctionCachePolicy) Name() string {
 	switch v {
 	case FunctionCachePolicyDefault:
-		return "Default"
+		return "DEFAULT"
 	case FunctionCachePolicyPerSession:
-		return "PerSession"
+		return "PER_SESSION"
 	case FunctionCachePolicyNever:
-		return "Never"
+		return "NEVER"
 	default:
 		return ""
 	}
@@ -24860,11 +24860,11 @@ func (v *FunctionCachePolicy) UnmarshalJSON(dt []byte) error {
 	switch s {
 	case "":
 		*v = ""
-	case "Default":
+	case "DEFAULT":
 		*v = FunctionCachePolicyDefault
-	case "Never":
+	case "NEVER":
 		*v = FunctionCachePolicyNever
-	case "PerSession":
+	case "PER_SESSION":
 		*v = FunctionCachePolicyPerSession
 	default:
 		return fmt.Errorf("invalid enum value %q", s)
@@ -24873,11 +24873,11 @@ func (v *FunctionCachePolicy) UnmarshalJSON(dt []byte) error {
 }
 
 const (
-	FunctionCachePolicyDefault FunctionCachePolicy = "Default"
+	FunctionCachePolicyDefault FunctionCachePolicy = "DEFAULT"
 
-	FunctionCachePolicyPerSession FunctionCachePolicy = "PerSession"
+	FunctionCachePolicyPerSession FunctionCachePolicy = "PER_SESSION"
 
-	FunctionCachePolicyNever FunctionCachePolicy = "Never"
+	FunctionCachePolicyNever FunctionCachePolicy = "NEVER"
 )
 
 // How a Git push updated the remote ref.
@@ -25023,13 +25023,13 @@ func (ImageLayerCompression) IsEnum() {}
 func (v ImageLayerCompression) Name() string {
 	switch v {
 	case ImageLayerCompressionGzip:
-		return "Gzip"
+		return "GZIP"
 	case ImageLayerCompressionZstd:
-		return "Zstd"
-	case ImageLayerCompressionEstarGz:
-		return "EStarGZ"
+		return "ZSTD"
+	case ImageLayerCompressionEstargz:
+		return "ESTARGZ"
 	case ImageLayerCompressionUncompressed:
-		return "Uncompressed"
+		return "UNCOMPRESSED"
 	default:
 		return ""
 	}
@@ -25058,15 +25058,13 @@ func (v *ImageLayerCompression) UnmarshalJSON(dt []byte) error {
 	switch s {
 	case "":
 		*v = ""
-	case "EStarGZ":
-		*v = ImageLayerCompressionEstarGz
 	case "ESTARGZ":
 		*v = ImageLayerCompressionEstargz
-	case "Gzip":
+	case "GZIP":
 		*v = ImageLayerCompressionGzip
-	case "Uncompressed":
+	case "UNCOMPRESSED":
 		*v = ImageLayerCompressionUncompressed
-	case "Zstd":
+	case "ZSTD":
 		*v = ImageLayerCompressionZstd
 	default:
 		return fmt.Errorf("invalid enum value %q", s)
@@ -25075,14 +25073,13 @@ func (v *ImageLayerCompression) UnmarshalJSON(dt []byte) error {
 }
 
 const (
-	ImageLayerCompressionGzip ImageLayerCompression = "Gzip"
+	ImageLayerCompressionGzip ImageLayerCompression = "GZIP"
 
-	ImageLayerCompressionZstd ImageLayerCompression = "Zstd"
+	ImageLayerCompressionZstd ImageLayerCompression = "ZSTD"
 
-	ImageLayerCompressionEstarGz ImageLayerCompression = "EStarGZ"
-	ImageLayerCompressionEstargz ImageLayerCompression = ImageLayerCompressionEstarGz
+	ImageLayerCompressionEstargz ImageLayerCompression = "ESTARGZ"
 
-	ImageLayerCompressionUncompressed ImageLayerCompression = "Uncompressed"
+	ImageLayerCompressionUncompressed ImageLayerCompression = "UNCOMPRESSED"
 )
 
 // Mediatypes to use in published or exported image metadata.
@@ -25092,10 +25089,10 @@ func (ImageMediaTypes) IsEnum() {}
 
 func (v ImageMediaTypes) Name() string {
 	switch v {
-	case ImageMediaTypesOcimediaTypes:
-		return "OCIMediaTypes"
-	case ImageMediaTypesDockerMediaTypes:
-		return "DockerMediaTypes"
+	case ImageMediaTypesOci:
+		return "OCI"
+	case ImageMediaTypesDocker:
+		return "DOCKER"
 	default:
 		return ""
 	}
@@ -25126,12 +25123,8 @@ func (v *ImageMediaTypes) UnmarshalJSON(dt []byte) error {
 		*v = ""
 	case "DOCKER":
 		*v = ImageMediaTypesDocker
-	case "DockerMediaTypes":
-		*v = ImageMediaTypesDockerMediaTypes
 	case "OCI":
 		*v = ImageMediaTypesOci
-	case "OCIMediaTypes":
-		*v = ImageMediaTypesOcimediaTypes
 	default:
 		return fmt.Errorf("invalid enum value %q", s)
 	}
@@ -25139,11 +25132,9 @@ func (v *ImageMediaTypes) UnmarshalJSON(dt []byte) error {
 }
 
 const (
-	ImageMediaTypesOcimediaTypes ImageMediaTypes = "OCIMediaTypes"
-	ImageMediaTypesOci           ImageMediaTypes = ImageMediaTypesOcimediaTypes
+	ImageMediaTypesOci ImageMediaTypes = "OCI"
 
-	ImageMediaTypesDockerMediaTypes ImageMediaTypes = "DockerMediaTypes"
-	ImageMediaTypesDocker           ImageMediaTypes = ImageMediaTypesDockerMediaTypes
+	ImageMediaTypesDocker ImageMediaTypes = "DOCKER"
 )
 
 // The kind of content in a message block.
@@ -26413,9 +26404,9 @@ func NewSourceMap(filename string, line int, column int) *SourceMap {
 }
 
 // Constructs an SSHFS volume.
-func SshfsVolume(endpoint string, privateKey *Secret, opts ...SshfsVolumeOpts) *Volume {
+func SSHFSVolume(endpoint string, privateKey *Secret, opts ...SSHFSVolumeOpts) *Volume {
 	root := initRoot()
-	return root.SshfsVolume(endpoint, privateKey, opts...)
+	return root.SSHFSVolume(endpoint, privateKey, opts...)
 }
 
 // Create a new TypeDef.
