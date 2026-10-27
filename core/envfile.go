@@ -217,7 +217,7 @@ func cutFlexPrefix(s, flexPrefix string) (after string, found bool) {
 		// The same by the latest naming rules: e2eTests_, e2e_tests_
 		// rather than e2ETests_, e_2_e_tests_.
 		func(s string) string { return LatestNamer.FieldName(s) + "_" },
-		func(s string) string { return LatestNamer.format(s, naming.Snake) + "_" },
+		func(s string) string { return LatestNamer.format(s, naming.Snake, FieldAcronyms) + "_" },
 	} {
 		prefix := toPrefix(flexPrefix)
 		if len(s) < len(prefix) {
