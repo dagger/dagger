@@ -35,7 +35,7 @@ func largeCaptureFixture(b *testing.B) (*clientdb.DBs, string) {
 		b.Fatal(err)
 	}
 	rows := make([]clientdb.Span, 0, spans)
-	rows = append(rows, clientdb.Span{TraceID: traceID, SpanID: root, Name: "root", StartTime: 1, EndTime: sql.NullInt64{Int64: 2, Valid: true}, Attributes: emptyAttrs, InstrumentationScope: []byte("{}"), Resource: []byte("{}"), Links: []byte("[]"), Events: []byte("[]")})
+	rows = append(rows, clientdb.Span{TraceID: traceID, SpanID: root, Name: "root", StartTime: 1, EndTime: sql.NullInt64{Int64: 2, Valid: true}, Attributes: emptyAttrs})
 	for i := 1; i < spans; i++ {
 		// Children 1..fanout hang off the root; every later span hangs off a
 		// span up to `depth` levels above it in its test's subtree.
@@ -49,7 +49,7 @@ func largeCaptureFixture(b *testing.B) (*clientdb.DBs, string) {
 		rows = append(rows, clientdb.Span{
 			TraceID: traceID, SpanID: spanHex(i), ParentSpanID: validSpanID(spanHex(parent)),
 			Name: "span " + strconv.Itoa(i), StartTime: int64(i + 1), EndTime: sql.NullInt64{Int64: int64(i + 2), Valid: true},
-			Attributes: emptyAttrs, InstrumentationScope: []byte("{}"), Resource: []byte("{}"), Links: []byte("[]"), Events: []byte("[]"),
+			Attributes: emptyAttrs,
 		})
 	}
 	dbs := clientdb.NewDBs(b.TempDir())
@@ -85,7 +85,6 @@ func largeCaptureFixture(b *testing.B) (*clientdb.DBs, string) {
 			Body:                 body,
 			Attributes:           stdout,
 			InstrumentationScope: scope,
-			Resource:             []byte("{}"),
 		})
 		if len(batch) == cap(batch) || i == logs-1 {
 			if _, err := store.AppendLogs(batch); err != nil {

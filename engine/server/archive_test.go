@@ -400,8 +400,7 @@ func TestArchiveHistoryStripsOversizedSpanAttributes(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.AppendSpans([]clientdb.Span{{
 		TraceID: archiveTestTrace, SpanID: fmt.Sprintf("%016x", 1), Name: "huge call",
-		Resource: []byte("{}"), InstrumentationScope: []byte("{}"),
-		Attributes: attrs, Links: []byte("[]"), Events: []byte("[]"),
+		Attributes: attrs,
 	}})
 	require.NoError(t, err)
 	manifest := archive.Manifest{TraceID: archiveTestTrace, MainClientID: "main", HighWater: archive.HighWater{Spans: 1}}
@@ -468,8 +467,6 @@ func appendArchiveSignalRow(t *testing.T, db *clientdb.DB, signal string, index 
 	case "traces":
 		_, err := db.AppendSpans([]clientdb.Span{{
 			TraceID: traceID, SpanID: fmt.Sprintf("%016x", index), Name: value,
-			Resource: []byte("{}"), InstrumentationScope: []byte("{}"),
-			Attributes: []byte("[]"), Links: []byte("[]"), Events: []byte("[]"),
 		}})
 		require.NoError(t, err)
 	case "logs":
