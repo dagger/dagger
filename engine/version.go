@@ -187,9 +187,9 @@ const PrereleaseViewsVersion = "v1.0.0-beta.22"
 const basePrereleaseView = "v1.0.0-beta.21"
 
 // IdentifierCasingVersion is the first engine version with the identifier
-// casing rules: new module naming rules and the renamed core API (e.g.
-// GitCommit.shortSHA). Gate on it with a view filter,
-// View(AfterVersion(engine.IdentifierCasingVersion)) and
+// casing rules: new module naming rules and the core API renamed to the
+// GraphQL casing convention (e.g. GitRef.commitSha). Gate on it with a view
+// filter, View(AfterVersion(engine.IdentifierCasingVersion)) and
 // View(BeforeVersion(engine.IdentifierCasingVersion)), in a resolver with
 // core.Supports(ctx, engine.IdentifierCasingVersion), and for a declared
 // version outside a call with APIVersionAtLeast.
