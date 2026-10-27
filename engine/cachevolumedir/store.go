@@ -267,12 +267,25 @@ type Pin struct {
 	id       string
 	path     string
 	writable bool
+	created  bool
+	first    bool
 	once     sync.Once
 }
 
 // Path is the volume's contents directory, to bind-mount.
 func (p *Pin) Path() string {
 	return p.path
+}
+
+// Created reports whether the Acquire that took this pin created the volume.
+func (p *Pin) Created() bool {
+	return p.created
+}
+
+// FirstPin reports whether this is the store's first pin on the volume since
+// it took the directory, or since it last removed the volume.
+func (p *Pin) FirstPin() bool {
+	return p.first
 }
 
 // Release ends the pin. Only the first call counts.
@@ -321,6 +334,7 @@ func (s *Store) Acquire(ctx context.Context, ident Identity, writable bool, popu
 	// Holding createMu excludes creating this volume elsewhere; s.mu excludes
 	// removing it, and a pinned volume is never removed. A removal can still
 	// land between the check and the pin, so check again under s.mu.
+	var created bool
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -333,6 +347,7 @@ func (s *Store) Acquire(ctx context.Context, ident Identity, writable bool, popu
 			if err := s.create(ctx, ident, populate); err != nil {
 				return nil, err
 			}
+			created = true
 		}
 		s.mu.Lock()
 		exists, err = pathExists(filepath.Join(volDir, fsName))
@@ -345,7 +360,8 @@ func (s *Store) Acquire(ctx context.Context, ident Identity, writable bool, popu
 		}
 	}
 	st := s.pins[id]
-	if st == nil {
+	first := st == nil
+	if first {
 		st = &pinState{}
 		s.pins[id] = st
 	}
@@ -361,7 +377,7 @@ func (s *Store) Acquire(ctx context.Context, ident Identity, writable bool, popu
 	}
 	s.mu.Unlock()
 
-	pin := &Pin{s: s, id: id, path: filepath.Join(volDir, fsName), writable: writable}
+	pin := &Pin{s: s, id: id, path: filepath.Join(volDir, fsName), writable: writable, created: created, first: first}
 	if writable {
 		// Before the writer can write: a crash from here on leaves the
 		// marker, and the next owner remeasures.

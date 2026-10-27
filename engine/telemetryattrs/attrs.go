@@ -750,7 +750,8 @@ const (
 // Cache volume mounts.
 //
 // When the engine has prepared a cache volume's backing snapshot for an exec
-// or service mount, it reports the preparation on an internal span named
+// or service mount, or with cacheVolumes.dir has acquired its directory, it
+// reports the preparation on an internal span named
 // "<CacheVolumeMountSpan>: <key>", which also writes one log line with the
 // same facts. The span belongs to the session, so its EngineCacheAttr
 // resource attribute names the engine cache it ran in: another identity is
@@ -774,27 +775,36 @@ const (
 	// the engine's snapshot store. It stays the same when the engine reopens
 	// the snapshot after a restart. (string)
 	CacheVolumeSnapshotAttr = "dagger.io/cache_volume.snapshot"
+	// CacheVolumeDirAttr is, with cacheVolumes.dir, the volume's ID in the
+	// cache volume directory, set in place of CacheVolumeSnapshotAttr. Every
+	// engine given the directory gives the volume the same ID. (string)
+	CacheVolumeDirAttr = "dagger.io/cache_volume.dir"
 
 	// CacheVolumeStateAttr is how the volume object got its backing snapshot,
 	// reported by the first mount preparation since it got it; later
-	// preparations report CacheVolumeStateReused. It says nothing about the
-	// contents of the volume. (string)
+	// preparations report CacheVolumeStateReused. With cacheVolumes.dir, it
+	// is how this engine got the volume's directory, reported by the
+	// engine's first mount of it. It says nothing about the contents of the
+	// volume. (string)
 	CacheVolumeStateAttr = "dagger.io/cache_volume.state"
-	// CacheVolumeStateNew: the engine created the snapshot, without a source
-	// directory.
+	// CacheVolumeStateNew: the engine created the snapshot, or the
+	// directory, without a source directory.
 	CacheVolumeStateNew = "new"
-	// CacheVolumeStateSeeded: the engine created the snapshot from the
-	// volume's source directory.
+	// CacheVolumeStateSeeded: the engine created the snapshot, or the
+	// directory, from the volume's source directory.
 	CacheVolumeStateSeeded = "seeded"
 	// CacheVolumeStateReopened: the engine reopened an existing snapshot from
 	// disk, as after a restart, or after it released the volume and later
-	// restored it from its cache.
+	// restored it from its cache. With cacheVolumes.dir: the volume was
+	// already in the directory when this engine first mounted it, left by an
+	// earlier engine or an earlier run of this one.
 	CacheVolumeStateReopened = "reopened"
 	// CacheVolumeStateOpen: another volume object of the same client already
-	// had the snapshot open.
+	// had the snapshot open. Not reported with cacheVolumes.dir.
 	CacheVolumeStateOpen = "open"
 	// CacheVolumeStateReused: a mount of the volume was already prepared
-	// since it got its snapshot.
+	// since it got its snapshot; with cacheVolumes.dir, this engine already
+	// mounted the volume.
 	CacheVolumeStateReused = "reused"
 )
 

@@ -724,6 +724,7 @@ func lockMountedCaches(ctx context.Context, mounts []ContainerMount) (_ func(), 
 			}
 			pins = append(pins, pin)
 			dirID = ident.ID()
+			reportCacheVolumeDirMount(ctx, cacheSelf, ctrMount.Target, dirID, pin)
 		}
 		if ctrMount.Readonly || !cacheSharingModeLocksWrites(cacheSelf.Sharing) {
 			continue

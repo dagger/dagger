@@ -751,38 +751,66 @@ func (cache *CacheVolume) noteMount() cacheVolumeMount {
 }
 
 // mountCacheVolume readies a cache volume's backing snapshot for an exec or
-// service mount at target, then reports the preparation on an internal span
-// (see telemetryattrs.CacheVolumeMountSpan). The span starts only once the
-// snapshot is ready, so a failure is attributed as before.
+// service mount at target, then reports the preparation (see
+// reportCacheVolumeMount). The report starts only once the snapshot is ready,
+// so a failure is attributed as before.
 func mountCacheVolume(ctx context.Context, vol dagql.ObjectResult[*CacheVolume], target string) error {
 	if err := EnsureBackingSnapshot(ctx, vol); err != nil {
 		return err
 	}
 	cache := vol.Self()
 	mount := cache.noteMount()
+	reportCacheVolumeMount(ctx, cache, target, mount.state,
+		telemetryattrs.CacheVolumeSnapshotAttr, mount.snapshot)
+	return nil
+}
 
+// reportCacheVolumeDirMount reports a mount at target of a directory-backed
+// cache volume, as pinned for it (see reportCacheVolumeMount). The first pin
+// this engine takes on the volume reports how the engine got it: created, or
+// found in the directory.
+func reportCacheVolumeDirMount(ctx context.Context, cache *CacheVolume, target, dirID string, pin *cachevolumedir.Pin) {
+	state := telemetryattrs.CacheVolumeStateReused
+	switch {
+	case pin.Created() && cache.Source.Valid:
+		state = telemetryattrs.CacheVolumeStateSeeded
+	case pin.Created():
+		state = telemetryattrs.CacheVolumeStateNew
+	case pin.FirstPin():
+		state = telemetryattrs.CacheVolumeStateReopened
+	}
+	reportCacheVolumeMount(ctx, cache, target, state, telemetryattrs.CacheVolumeDirAttr, dirID)
+}
+
+// reportCacheVolumeMount reports a prepared mount of a cache volume at target
+// on an internal span (see telemetryattrs.CacheVolumeMountSpan), with the
+// volume's storage as idAttr: its snapshot or its directory.
+func reportCacheVolumeMount(ctx context.Context, cache *CacheVolume, target, state, idAttr, id string) {
 	attrs := []attribute.KeyValue{
 		attribute.String(telemetryattrs.CacheVolumeKeyAttr, cache.Key),
 		attribute.String(telemetryattrs.CacheVolumeNamespaceAttr, cache.Namespace),
 		attribute.String(telemetryattrs.CacheVolumeSharingAttr, string(cache.Sharing)),
 		attribute.String(telemetryattrs.CacheVolumeTargetAttr, target),
-		attribute.String(telemetryattrs.CacheVolumeSnapshotAttr, mount.snapshot),
-		attribute.String(telemetryattrs.CacheVolumeStateAttr, mount.state),
+		attribute.String(idAttr, id),
+		attribute.String(telemetryattrs.CacheVolumeStateAttr, state),
+	}
+	idName := "snapshot"
+	if idAttr == telemetryattrs.CacheVolumeDirAttr {
+		idName = "dir"
 	}
 	args := []any{
 		"key", cache.Key,
 		"namespace", cache.Namespace,
 		"sharing", string(cache.Sharing),
 		"target", target,
-		"snapshot", mount.snapshot,
-		"state", mount.state,
+		idName, id,
+		"state", state,
 	}
 
 	ctx, span := Tracer(ctx).Start(ctx, telemetryattrs.CacheVolumeMountSpan+": "+cache.Key,
 		telemetry.Internal(), trace.WithAttributes(attrs...))
 	defer telemetry.EndWithCause(span, nil)
 	slog.SpanLogger(ctx, InstrumentationLibrary).Info(telemetryattrs.CacheVolumeMountSpan, args...)
-	return nil
 }
 
 type CacheSharingMode string
