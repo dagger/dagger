@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
@@ -41,6 +42,82 @@ type workspaceMigrationLegacyLockMove struct {
 }
 
 const workspaceMigrationLockModulesResolveOperation = "modules.resolve"
+
+func (s *workspaceSchema) workspaceMigrationRootfs(
+	ctx context.Context,
+	ws *core.Workspace,
+	extra ...string,
+) (dagql.ObjectResult[*core.Directory], error) {
+	names := []string{
+		workspace.ConfigFileName,
+		workspace.ModuleConfigFileName,
+		workspace.LegacyModuleConfigFileName,
+		workspace.LockFileName,
+		workspace.LegacyLockFilePath,
+		".gitignore",
+	}
+	includes := make([]string, 0, len(names)*2+len(extra))
+	for _, name := range names {
+		includes = append(includes, name, "**/"+name)
+	}
+	for _, file := range extra {
+		includes = append(includes, filepath.ToSlash(file))
+	}
+	// Discover names without following links in unrelated projects. Resolve
+	// selected metadata only when a migration phase reads or edits it.
+	return s.resolveRootfs(ctx, ws, ".", core.CopyFilter{Include: includes}, false)
+}
+
+// workspaceMigrationResolveFiles fills missing link targets only for selected
+// files. Call it on both diff inputs before editing a link target, so importing
+// that target does not appear as a new file in the migration changeset.
+func (s *workspaceSchema) workspaceMigrationResolveFiles(ctx context.Context, ws *core.Workspace, root dagql.ObjectResult[*core.Directory], files ...string) (dagql.ObjectResult[*core.Directory], error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return root, err
+	}
+	for _, file := range files {
+		// Inspect the link itself: its target may be absent from this sparse tree.
+		st, err := root.Self().Stat(ctx, root, srv, file, true)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return root, err
+		}
+		if st.FileType != core.FileTypeSymlink {
+			continue
+		}
+		if _, err := core.DirectoryReadFile(ctx, root, file); err == nil {
+			// Preserve targets already supplied or changed by an earlier phase.
+			continue
+		}
+		metadata, err := s.workspaceMetadataRootfs(ctx, ws, file)
+		if err != nil {
+			return root, fmt.Errorf("resolve migration metadata %q: %w", file, err)
+		}
+		id, err := metadata.ID()
+		if err != nil {
+			return root, err
+		}
+		root, err = workspaceMigrationSelectDirectory(ctx, root, "withDirectory", []dagql.NamedInput{
+			{Name: "path", Value: dagql.String("/")},
+			{Name: "source", Value: dagql.NewID[*core.Directory](id)},
+		})
+		if err != nil {
+			return root, err
+		}
+	}
+	return root, nil
+}
+
+func (s *workspaceSchema) workspaceMigrationReadFile(ctx context.Context, ws *core.Workspace, root dagql.ObjectResult[*core.Directory], file string) ([]byte, error) {
+	root, err := s.workspaceMigrationResolveFiles(ctx, ws, root, file)
+	if err != nil {
+		return nil, err
+	}
+	return core.DirectoryReadFile(ctx, root, file)
+}
 
 func (plans workspaceMigrationPlanBundle) empty() bool {
 	return len(plans.WorkspacePlans) == 0 &&
@@ -212,10 +289,13 @@ func (s *workspaceSchema) workspaceMigrationGitignoreCleanups(
 	if err != nil {
 		return nil, fmt.Errorf("prepare legacy .gitignore cleanup: %w", err)
 	}
-	rootDir, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, true)
+	metadata, err := s.workspaceMigrationRootfs(ctx, ws)
 	if err != nil {
 		return nil, err
 	}
+	cleanupRoot := sync.OnceValues(func() (dagql.ObjectResult[*core.Directory], error) {
+		return s.workspaceMigrationCleanupRootfs(ctx, ws, metadata)
+	})
 
 	cleanups := make([]workspaceMigrationGitignoreCleanup, 0, len(compatWorkspaces))
 	for _, compatWorkspace := range compatWorkspaces {
@@ -226,6 +306,26 @@ func (s *workspaceSchema) workspaceMigrationGitignoreCleanups(
 		// generated-code ignore rules must stay.
 		if workspaceMigrationLeavesModuleLegacy(compatWorkspace) {
 			continue
+		}
+
+		dir, err := workspaceMigrationProjectRootRelPath(ws, compatWorkspace.ProjectRoot)
+		if err != nil {
+			return nil, err
+		}
+		cleanupPath, err := workspaceMigrationGitignorePath(dir, compatWorkspace.Config.Source)
+		if err != nil {
+			return nil, err
+		}
+		exists, err := workspaceMigrationPathExists(ctx, metadata, cleanupPath)
+		if err != nil {
+			return nil, err
+		}
+		if !exists {
+			continue
+		}
+		rootDir, err := cleanupRoot()
+		if err != nil {
+			return nil, err
 		}
 		cleanup, err := s.workspaceMigrationGitignoreCleanup(ctx, srv, ws, rootDir, compatWorkspace)
 		if err != nil {
@@ -253,11 +353,20 @@ func (s *workspaceSchema) workspaceMigrationGitignoreCleanup(
 	if err != nil {
 		return nil, err
 	}
-	sourcePath := compatWorkspace.Config.Source
-	if sourcePath != "" && !filepath.IsLocal(sourcePath) {
-		return nil, fmt.Errorf("module source path %q escapes its project", sourcePath)
+	if ws.ClientLocalBase() {
+		rootDir, err = s.workspaceMigrationResolveFiles(ctx, ws, rootDir, moduleIgnoreFiles(projectRoot, path.Join(projectRoot, compatWorkspace.Config.Source))...)
+		if err != nil {
+			return nil, err
+		}
+		if err := rejectGitignoredModulePaths(ctx, rootDir, projectRoot, path.Join(projectRoot, compatWorkspace.Config.Source)); err != nil {
+			return nil, err
+		}
 	}
-	cleanupPath := path.Join(filepath.ToSlash(projectRoot), filepath.ToSlash(sourcePath), ".gitignore")
+	cleanupPath, err := workspaceMigrationGitignorePath(projectRoot, compatWorkspace.Config.Source)
+	if err != nil {
+		return nil, err
+	}
+
 	// Check the file before loading the legacy SDK or running its generator.
 	exists, err := workspaceMigrationPathExists(ctx, rootDir, cleanupPath)
 	if err != nil {
@@ -265,6 +374,10 @@ func (s *workspaceSchema) workspaceMigrationGitignoreCleanup(
 	}
 	if !exists {
 		return nil, nil
+	}
+	rootDir, err = s.workspaceMigrationResolveFiles(ctx, ws, rootDir, path.Join(projectRoot, workspace.LegacyModuleConfigFileName), cleanupPath)
+	if err != nil {
+		return nil, err
 	}
 	var source dagql.ObjectResult[*core.ModuleSource]
 	// Load the same snapshot used for planning. A host path would discard
@@ -369,18 +482,11 @@ func (s *workspaceSchema) workspaceMigrationCompatWorkspaces(
 		return nil, nil, fmt.Errorf("workspace migration is local-only")
 	}
 
-	rootDir, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{
-		Exclude: []string{
-			".git",
-			".git/**",
-			"**/.git",
-			"**/.git/**",
-		},
-	}, true)
+	rootDir, err := s.workspaceMigrationRootfs(ctx, ws)
 	if err != nil {
 		return nil, nil, err
 	}
-	configPaths, discoveryWarnings, err := workspaceMigrationLegacyConfigPaths(ctx, rootDir, ws)
+	configPaths, discoveryWarnings, err := s.workspaceMigrationLegacyConfigPaths(ctx, rootDir, ws)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -413,7 +519,7 @@ func (s *workspaceSchema) workspaceMigrationCompatWorkspaces(
 			continue
 		}
 
-		data, err := bk.ReadCallerHostFile(workspaceCtx, configPath)
+		data, err := s.workspaceMigrationReadFile(ctx, ws, rootDir, cp.Path)
 		if err != nil {
 			return nil, nil, fmt.Errorf("reading legacy module config %s: %w", cp.Path, err)
 		}
@@ -438,7 +544,7 @@ type workspaceMigrationConfigPath struct {
 	DiscoveredLocalModule bool
 }
 
-func workspaceMigrationLegacyConfigPaths(
+func (s *workspaceSchema) workspaceMigrationLegacyConfigPaths(
 	ctx context.Context,
 	rootDir dagql.ObjectResult[*core.Directory],
 	ws *core.Workspace,
@@ -462,7 +568,7 @@ func workspaceMigrationLegacyConfigPaths(
 		projectRoot = ""
 	}
 
-	discovered, warnings, err := workspaceMigrationDiscoverLocalModules(ctx, rootDir, projectRoot, []string{selectedConfig})
+	discovered, warnings, err := s.workspaceMigrationDiscoverLocalModules(ctx, ws, rootDir, projectRoot, []string{selectedConfig})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -490,8 +596,9 @@ func workspaceMigrationLegacyConfigPaths(
 // the workspace, that have no dagger.json, or that define their own workspace
 // semantics (toolchains/blueprint) are skipped — safely, since a legacy
 // dagger.json still loads.
-func workspaceMigrationDiscoverLocalModules(
+func (s *workspaceSchema) workspaceMigrationDiscoverLocalModules(
 	ctx context.Context,
+	ws *core.Workspace,
 	rootDir dagql.ObjectResult[*core.Directory],
 	projectRoot string,
 	seedPaths []string,
@@ -507,7 +614,7 @@ func workspaceMigrationDiscoverLocalModules(
 	}
 	stack := make([]frame, 0, len(seedPaths))
 	for _, p := range seedPaths {
-		cfg, err := workspaceMigrationReadLegacyModuleConfig(ctx, rootDir, p)
+		cfg, err := s.workspaceMigrationReadLegacyModuleConfig(ctx, ws, rootDir, p)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -550,7 +657,7 @@ func workspaceMigrationDiscoverLocalModules(
 			if !exists {
 				continue
 			}
-			cfg, err := workspaceMigrationReadLegacyModuleConfig(ctx, rootDir, cfgPath)
+			cfg, err := s.workspaceMigrationReadLegacyModuleConfig(ctx, ws, rootDir, cfgPath)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -569,12 +676,13 @@ func workspaceMigrationDiscoverLocalModules(
 	return discovered, warnings, nil
 }
 
-func workspaceMigrationReadLegacyModuleConfig(
+func (s *workspaceSchema) workspaceMigrationReadLegacyModuleConfig(
 	ctx context.Context,
+	ws *core.Workspace,
 	rootDir dagql.ObjectResult[*core.Directory],
 	relPath string,
 ) (*modules.ModuleConfig, error) {
-	data, err := core.DirectoryReadFile(ctx, rootDir, path.Clean(relPath))
+	data, err := s.workspaceMigrationReadFile(ctx, ws, rootDir, path.Clean(relPath))
 	if err != nil {
 		return nil, fmt.Errorf("read legacy module config %q: %w", relPath, err)
 	}
@@ -727,21 +835,29 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 	ctx, span := core.Tracer(ctx).Start(ctx, "build migration changeset", workspaceMigrationWrapperSpanOpts(ctx)...)
 	defer telemetry.EndWithCause(span, &rerr)
 
-	baseDir, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, true)
+	targetPaths, err := workspaceMigrationRootTargetPaths(ws, plans)
+	if err != nil {
+		return changes, err
+	}
+	baseDir, err := s.workspaceMigrationRootfs(ctx, ws, targetPaths...)
+	if err != nil {
+		return changes, err
+	}
+	var cleanupPaths []string
+	for _, cleanup := range plans.GitignoreCleanups {
+		cleanupPaths = append(cleanupPaths, cleanup.Path)
+	}
+	baseDir, err = s.workspaceMigrationResolveFiles(ctx, ws, baseDir, cleanupPaths...)
 	if err != nil {
 		return changes, err
 	}
 	updatedDir := baseDir
 
-	lockMoves, err := workspaceMigrationLegacyLockMoves(ctx, ws, baseDir, plans)
+	lockMoves, err := s.workspaceMigrationLegacyLockMoves(ctx, ws, baseDir, plans)
 	if err != nil {
 		return changes, err
 	}
 
-	targetPaths, err := workspaceMigrationRootTargetPaths(ws, plans)
-	if err != nil {
-		return changes, err
-	}
 	for _, move := range lockMoves {
 		targetPaths = append(targetPaths, move.TargetPath)
 	}
@@ -793,7 +909,8 @@ func applyWorkspaceMigrationGitignoreCleanups(
 	}
 	for _, cleanup := range cleanups {
 		cleanupPath := path.Clean(filepath.ToSlash(cleanup.Path))
-		stat, err := dir.Self().Stat(ctx, dir, srv, cleanupPath, true)
+		// The selected target is loaded; preserve its permissions when editing.
+		stat, err := dir.Self().Stat(ctx, dir, srv, cleanupPath, false)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
 		}
@@ -1058,7 +1175,7 @@ func workspaceMigrationRootTargetPaths(ws *core.Workspace, plans workspaceMigrat
 	return paths, nil
 }
 
-func workspaceMigrationLegacyLockMoves(
+func (s *workspaceSchema) workspaceMigrationLegacyLockMoves(
 	ctx context.Context,
 	ws *core.Workspace,
 	baseDir dagql.ObjectResult[*core.Directory],
@@ -1079,7 +1196,7 @@ func workspaceMigrationLegacyLockMoves(
 		if !exists {
 			continue
 		}
-		data, err := core.DirectoryReadFile(ctx, baseDir, path.Clean(filepath.ToSlash(sourcePath)))
+		data, err := s.workspaceMigrationReadFile(ctx, ws, baseDir, path.Clean(filepath.ToSlash(sourcePath)))
 		if err != nil {
 			return nil, fmt.Errorf("read legacy workspace lock %q: %w", sourcePath, err)
 		}
@@ -1280,7 +1397,8 @@ func workspaceMigrationPathExists(
 	if err != nil {
 		return false, err
 	}
-	_, err = baseDir.Self().Stat(ctx, baseDir, srv, path.Clean(filepath.ToSlash(filePath)), false)
+	// A link exists even when its target has not been loaded yet.
+	_, err = baseDir.Self().Stat(ctx, baseDir, srv, path.Clean(filepath.ToSlash(filePath)), true)
 	if err == nil {
 		return true, nil
 	}
@@ -1441,4 +1559,34 @@ func workspaceMigrationPlanBundleWarnings(plans workspaceMigrationPlanBundle) []
 		}
 	}
 	return warnings
+}
+
+func workspaceMigrationGitignorePath(projectRoot, sourcePath string) (string, error) {
+	if sourcePath != "" && !filepath.IsLocal(sourcePath) {
+		return "", fmt.Errorf("module source path %q escapes its project", sourcePath)
+	}
+	return path.Join(filepath.ToSlash(projectRoot), filepath.ToSlash(sourcePath), ".gitignore"), nil
+}
+
+// Cleanup needs source files only when a legacy ignore file exists. Reuse one
+// filtered root for all modules and retain the staged migration metadata.
+func (s *workspaceSchema) workspaceMigrationCleanupRootfs(ctx context.Context, ws *core.Workspace, metadata dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+	root, err := s.filteredWorkspaceRootfs(ctx, ws)
+	if err != nil {
+		return root, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return root, err
+	}
+	id, err := metadata.ID()
+	if err != nil {
+		return root, err
+	}
+	var merged dagql.ObjectResult[*core.Directory]
+	err = srv.Select(ctx, root, &merged, dagql.Selector{Field: "withDirectory", Args: []dagql.NamedInput{
+		{Name: "path", Value: dagql.String("/")},
+		{Name: "source", Value: dagql.NewID[*core.Directory](id)},
+	}})
+	return merged, err
 }

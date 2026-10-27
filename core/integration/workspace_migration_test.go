@@ -72,6 +72,130 @@ type App struct{}
 	require.NotRegexp(t, `(?m)^\d+\s+:\s+(?:┆\s+)*\.venv(?:\s+DONE.*)?$`, logs.String(), "migration must not upload gitignored content")
 }
 
+func (WorkspaceMigrationSuite) TestMigrateRejectsIgnoredModule(ctx context.Context, t *testctx.T) {
+	for _, ignored := range []string{"app", "app/src"} {
+		t.Run(ignored, func(ctx context.Context, t *testctx.T) {
+			workdir := t.TempDir()
+			initGitRepo(ctx, t, workdir)
+			require.NoError(t, os.WriteFile(filepath.Join(workdir, ".gitignore"), []byte("/"+ignored+"/\n"), 0644))
+			require.NoError(t, os.MkdirAll(filepath.Join(workdir, "app/src"), 0755))
+			require.NoError(t, os.WriteFile(filepath.Join(workdir, "app/dagger.json"), []byte(`{"name":"app","sdk":"dang","source":"src"}`), 0644))
+			require.NoError(t, os.WriteFile(filepath.Join(workdir, "app/src/.gitignore"), []byte("generated\n"), 0644))
+			c := connect(ctx, t, dagger.WithWorkdir(workdir))
+			changes := core.NewQuery(c).CurrentWorkspace().MigrateModule(core.WorkspaceMigrateModuleOpts{Path: "app"}).Changes()
+			_, err := changes.AddedPaths(ctx)
+			require.ErrorContains(t, err, `module path "`+ignored+`" is gitignored`)
+		})
+	}
+}
+
+func (WorkspaceMigrationSuite) TestMigrateLinkedModuleConfig(ctx context.Context, t *testctx.T) {
+	for _, kind := range []string{"direct", "chained", "directory component", "literal target"} {
+		t.Run(kind, func(ctx context.Context, t *testctx.T) {
+			root := t.TempDir()
+			initGitRepo(ctx, t, root)
+			writeWorkspaceConfigFile(t, root, "[modules.app]\nsource = './app'\n")
+			require.NoError(t, os.Mkdir(filepath.Join(root, "app"), 0755))
+			require.NoError(t, os.WriteFile(filepath.Join(root, "app-config.json"), []byte(`{"name":"app","sdk":"dang"}`), 0644))
+			target := "../app-config.json"
+			switch kind {
+			case "chained":
+				require.NoError(t, os.Symlink("app-config.json", filepath.Join(root, "config-link")))
+				target = "../config-link"
+			case "literal target":
+				require.NoError(t, os.Rename(filepath.Join(root, "app-config.json"), filepath.Join(root, "!app-config[1].json")))
+				target = "../!app-config[1].json"
+			case "directory component":
+				require.NoError(t, os.Mkdir(filepath.Join(root, "real-configs"), 0755))
+				require.NoError(t, os.Rename(filepath.Join(root, "app-config.json"), filepath.Join(root, "real-configs/app.json")))
+				require.NoError(t, os.Symlink("real-configs", filepath.Join(root, "configs")))
+				target = "../configs/app.json"
+			}
+			require.NoError(t, os.Symlink(target, filepath.Join(root, "app/dagger.json")))
+			require.NoError(t, os.WriteFile(filepath.Join(root, "unrelated-payload"), []byte("must not upload"), 0644))
+			var logs safeBuffer
+			c := connect(ctx, t, dagger.WithWorkdir(root), dagger.WithLogOutput(&logs), dagger.WithVerbosity(2))
+			changes := core.NewQuery(c).CurrentWorkspace().MigrateModule(core.WorkspaceMigrateModuleOpts{Path: "app"}).Changes()
+			added, err := changes.AddedPaths(ctx)
+			require.NoError(t, err)
+			require.Contains(t, added, "app/dagger-module.toml")
+			require.NoError(t, c.Close())
+			require.NotRegexp(t, `(?m)^\d+\s+:\s+(?:┆\s+)*unrelated-payload(?:\s+DONE.*)?$`, logs.String())
+		})
+	}
+}
+
+// Unselected metadata can contain links that cannot be read in this workspace.
+// Migration must not resolve them while discovering the selected module.
+func (WorkspaceMigrationSuite) TestMigrateLeavesUnrelatedMetadataLinks(ctx context.Context, t *testctx.T) {
+	root := t.TempDir()
+	initGitRepo(ctx, t, root)
+	writeWorkspaceConfigFile(t, root, "[modules.app]\nsource = './app'\n")
+	require.NoError(t, os.Mkdir(filepath.Join(root, "app"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "app/dagger.json"), []byte(`{"name":"app","sdk":"dang"}`), 0644))
+	external := filepath.Join(t.TempDir(), "ignore")
+	require.NoError(t, os.WriteFile(external, []byte("*.tmp\n"), 0644))
+	for name, target := range map[string]string{
+		"external/.gitignore":   external,
+		"missing/dagger.json":   "missing-target",
+		"directory/dagger.json": "../app",
+	} {
+		require.NoError(t, os.MkdirAll(filepath.Join(root, filepath.Dir(name)), 0755))
+		require.NoError(t, os.Symlink(target, filepath.Join(root, name)))
+	}
+	c := connect(ctx, t, dagger.WithWorkdir(root))
+	changes := core.NewQuery(c).CurrentWorkspace().MigrateModule(core.WorkspaceMigrateModuleOpts{Path: "app"}).Changes()
+	added, err := changes.AddedPaths(ctx)
+	require.NoError(t, err)
+	require.Contains(t, added, "app/dagger-module.toml")
+	removed, err := changes.RemovedPaths(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"app/dagger.json"}, removed)
+	modified, err := changes.ModifiedPaths(ctx)
+	require.NoError(t, err)
+	for _, file := range append(added, modified...) {
+		require.NotContains(t, file, "external/")
+		require.NotContains(t, file, "missing/")
+		require.NotContains(t, file, "directory/")
+	}
+}
+
+func (WorkspaceMigrationSuite) TestMigrateIgnoredMetadata(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(workdir, ".gitignore"),
+		[]byte("/.dagger/\n/dagger.json\n"),
+		0o644,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(workdir, "dagger.json"),
+		[]byte(`{"name":"app","sdk":"go","source":"."}`),
+		0o644,
+	))
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "main.go"), []byte("package main\n\ntype App struct{}\n"), 0o644))
+	legacyLock := workspace.NewLock()
+	require.NoError(t, legacyLock.SetLookup(
+		"",
+		"oci-sha",
+		[]any{"docker.io/library/alpine:latest"},
+		"sha256:"+strings.Repeat("0", 64),
+	))
+	lockData, err := legacyLock.Marshal()
+	require.NoError(t, err)
+	require.NoError(t, os.Mkdir(filepath.Join(workdir, ".dagger"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, ".dagger", "lock"), lockData, 0o644))
+
+	c := connect(ctx, t, dagger.WithWorkdir(workdir))
+	changes := core.NewQuery(c).CurrentWorkspace().Migrate().Changes()
+	added, err := changes.AddedPaths(ctx)
+	require.NoError(t, err)
+	require.Contains(t, added, "dagger.lock")
+	removed, err := changes.RemovedPaths(ctx)
+	require.NoError(t, err)
+	require.Contains(t, removed, ".dagger/lock")
+}
+
 func (WorkspaceMigrationSuite) TestMigrationPlanIdentity(ctx context.Context, t *testctx.T) {
 	for _, moduleOnly := range []bool{false, true} {
 		name := "workspace"
@@ -1511,7 +1635,7 @@ type Myapp {
   "toolchains": [
     {"name": "tc", "source": "`+source+`", "pin": "`+pin+`"}
   ]
-}`, func(ctr *core.Container) *core.Container {
+	}`, func(ctr *core.Container) *core.Container {
 			return ctr.WithNewFile(".dagger/lock", string(existingLockBytes))
 		})
 
