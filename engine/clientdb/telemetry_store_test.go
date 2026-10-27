@@ -270,11 +270,11 @@ func TestScopedSpanSelectors(t *testing.T) {
 		// Check/test markers are byte-scanned from the encoded attributes.
 		{
 			TraceID: "trace-a", SpanID: "check", ParentSpanID: validString("root"),
-			Attributes: []byte(`[{"key":"` + telemetry.CheckNameAttr + `","value":{"stringValue":"lint"}}]`),
+			Attributes: stringAttrsList(t, telemetry.CheckNameAttr, "lint"),
 		},
 		{
 			TraceID: "trace-a", SpanID: "test", ParentSpanID: validString("root"),
-			Attributes: []byte(`[{"key":"test.case.name","value":{"stringValue":"TestFoo"}}]`),
+			Attributes: stringAttrsList(t, "test.case.name", "TestFoo"),
 		},
 	}
 	_, err = store.AppendSpans(spans)
@@ -389,7 +389,7 @@ func spanLink(t *testing.T, traceID, spanID, purpose string) sdktrace.Link {
 
 func linksJSON(t *testing.T, links ...sdktrace.Link) []byte {
 	t.Helper()
-	data, err := MarshalProtoJSONs(telemetry.SpanLinksToPB(links))
+	data, err := MarshalProtoList(telemetry.SpanLinksToPB(links))
 	require.NoError(t, err)
 	return data
 }

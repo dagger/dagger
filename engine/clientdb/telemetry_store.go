@@ -302,12 +302,12 @@ func (l *spanLookup) causalParentsLocked(spanID string) []string {
 }
 
 // Marker byte strings for the raw-attribute prefilter in addLocked. The
-// attributes column is a protojson-encoded KeyValue list, so an attribute's
-// presence implies its quoted key appears verbatim.
+// attributes column is a binary KeyValue list (MarshalProtoList), so an
+// attribute's presence implies its key bytes appear verbatim.
 var (
-	checkNameAttrMarker     = []byte(`"` + telemetry.CheckNameAttr + `"`)
-	testCaseNameAttrMarker  = []byte(`"` + string(semconv.TestCaseNameKey) + `"`)
-	testSuiteNameAttrMarker = []byte(`"` + string(semconv.TestSuiteNameKey) + `"`)
+	checkNameAttrMarker     = []byte(telemetry.CheckNameAttr)
+	testCaseNameAttrMarker  = []byte(string(semconv.TestCaseNameKey))
+	testSuiteNameAttrMarker = []byte(string(semconv.TestSuiteNameKey))
 )
 
 // causalLinkTargets decodes row's span links and returns the span IDs it
@@ -316,12 +316,11 @@ var (
 // purpose, which imply causality — are parent→child edges; other purposes
 // (error_origin, wait) are not.
 func causalLinkTargets(row Span) []string {
-	if len(row.Links) <= len("[]") {
-		// no links: nil, or an empty JSON array
+	if len(row.Links) == 0 {
 		return nil
 	}
 	var linksPB []*otlptracev1.Span_Link
-	if err := UnmarshalProtoJSONs(row.Links, &otlptracev1.Span_Link{}, &linksPB); err != nil {
+	if err := UnmarshalProtoList(row.Links, &otlptracev1.Span_Link{}, &linksPB); err != nil {
 		slog.Warn("failed to unmarshal span links", "span", row.SpanID, "error", err)
 		return nil
 	}

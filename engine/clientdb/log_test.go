@@ -8,7 +8,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	otlpresourcev1 "go.opentelemetry.io/proto/otlp/resource/v1"
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -18,7 +17,7 @@ func TestLogsToPBAllowsSchemalessResources(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	attrs, err := MarshalProtoJSONs([]*otlpcommonv1.KeyValue{
+	attrs, err := MarshalProtoList([]*otlpcommonv1.KeyValue{
 		{
 			Key: "stdio.stream",
 			Value: &otlpcommonv1.AnyValue{
@@ -28,10 +27,10 @@ func TestLogsToPBAllowsSchemalessResources(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	scope, err := protojson.Marshal(&otlpcommonv1.InstrumentationScope{Name: "test-logger"})
+	scope, err := proto.Marshal(&otlpcommonv1.InstrumentationScope{Name: "test-logger"})
 	require.NoError(t, err)
 
-	resource, err := protojson.Marshal(&otlpresourcev1.Resource{
+	resource, err := proto.Marshal(&otlpresourcev1.Resource{
 		Attributes: []*otlpcommonv1.KeyValue{
 			{
 				Key: "service.name",

@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	storeFormatVersion byte  = 1
+	storeFormatVersion byte  = 2
 	sparseIndexStride  int64 = 256
 	spillBufferSize          = 64 << 10
 )

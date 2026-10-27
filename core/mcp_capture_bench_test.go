@@ -9,7 +9,6 @@ import (
 
 	telemetry "github.com/dagger/otel-go"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/dagger/dagger/engine/clientdb"
@@ -31,7 +30,7 @@ func largeCaptureFixture(b *testing.B) (*clientdb.DBs, string) {
 	)
 	spanHex := func(i int) string { return fmt.Sprintf("%016x", i+1) }
 	root := spanHex(0)
-	emptyAttrs, err := clientdb.MarshalProtoJSONs([]*otlpcommonv1.KeyValue(nil))
+	emptyAttrs, err := clientdb.MarshalProtoList([]*otlpcommonv1.KeyValue(nil))
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -63,14 +62,14 @@ func largeCaptureFixture(b *testing.B) (*clientdb.DBs, string) {
 			b.Fatal(err)
 		}
 	}
-	stdout, err := clientdb.MarshalProtoJSONs([]*otlpcommonv1.KeyValue{{
+	stdout, err := clientdb.MarshalProtoList([]*otlpcommonv1.KeyValue{{
 		Key:   telemetry.StdioStreamAttr,
 		Value: &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_IntValue{IntValue: 1}},
 	}})
 	if err != nil {
 		b.Fatal(err)
 	}
-	scope, err := protojson.Marshal(&otlpcommonv1.InstrumentationScope{Name: "bench"})
+	scope, err := proto.Marshal(&otlpcommonv1.InstrumentationScope{Name: "bench"})
 	if err != nil {
 		b.Fatal(err)
 	}

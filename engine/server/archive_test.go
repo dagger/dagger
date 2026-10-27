@@ -40,7 +40,6 @@ import (
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	otlpmetricsv1 "go.opentelemetry.io/proto/otlp/metrics/v1"
 	otlpresourcev1 "go.opentelemetry.io/proto/otlp/resource/v1"
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -393,7 +392,7 @@ func TestArchiveHistoryStripsOversizedSpanAttributes(t *testing.T) {
 	str := func(k, v string) *otlpcommonv1.KeyValue {
 		return &otlpcommonv1.KeyValue{Key: k, Value: &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_StringValue{StringValue: v}}}
 	}
-	attrs, err := clientdb.MarshalProtoJSONs([]*otlpcommonv1.KeyValue{
+	attrs, err := clientdb.MarshalProtoList([]*otlpcommonv1.KeyValue{
 		str(telemetry.DagDigestAttr, "xxh3:aaaa"),
 		str(telemetry.DagCallAttr, strings.Repeat("A", 4096)),
 		str("big", strings.Repeat("b", 600)),
@@ -481,7 +480,7 @@ func appendArchiveSignalRow(t *testing.T, db *clientdb.DB, signal string, index 
 		_, err = db.AppendLogs([]clientdb.Log{row})
 		require.NoError(t, err)
 	case "metrics":
-		data, err := protojson.Marshal(&otlpmetricsv1.ResourceMetrics{
+		data, err := proto.Marshal(&otlpmetricsv1.ResourceMetrics{
 			Resource: &otlpresourcev1.Resource{},
 			ScopeMetrics: []*otlpmetricsv1.ScopeMetrics{{
 				Scope: &otlpcommonv1.InstrumentationScope{}, Metrics: []*otlpmetricsv1.Metric{{Name: value}},
