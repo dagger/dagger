@@ -37,6 +37,10 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 			),
 	}.Install(srv)
 
+	// asJson is asJSON in views before engine.IdentifierCasingVersion.
+	asJSONField := dagql.NodeFunc("asJson", s.asJSON).
+		Doc(`Parse the file contents as JSON.`)
+
 	dagql.Fields[*core.File]{
 		Syncer[*core.File]().
 			Doc(`Force evaluation in the engine.`),
@@ -124,8 +128,8 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 			View(AfterVersion("v1.0.0-beta.10")).
 			IsPersistable().
 			Doc(`Interpret this file as a Git bundle by lazily parsing its header.`),
-		dagql.NodeFunc("asJSON", s.asJSON).
-			Doc(`Parse the file contents as JSON.`),
+		casedField(asJSONField),
+		legacyField(asJSONField, "asJSON"),
 		dagql.NodeFunc("extract", s.extract).
 			View(AfterVersion("v1.0.0-0")).
 			IsPersistable().
