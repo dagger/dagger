@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -231,4 +232,47 @@ func TestLazySpanStartsWithItsNativeOp(t *testing.T) {
 		}
 	}
 	t.Fatal("the lazy op's span wasn't exported")
+}
+
+// TestCallOpCoversTelemetryCompletion: a call's native op ends after the
+// server's telemetry has completed the call (the span's attributes and
+// end), which runs on the caller's goroutine, so that work is the call's
+// and not its parent's. A call nested under it ends as before.
+func TestCallOpCoversTelemetryCompletion(t *testing.T) {
+	const hold = 50 * time.Millisecond
+	wcprof.EnsureRecorder()
+	c, err := NewCache(t.Context(), "", nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, c.Close(context.Background())) })
+	srv := newDagqlServerForTest(t, &persistCodecRoot{})
+	Fields[*persistCodecRoot]{
+		Func("completed", func(ctx context.Context, _ *persistCodecRoot, _ struct{}) (Int, error) {
+			if _, err := srv.root.Select(ctx, srv, Selector{Field: "inner"}); err != nil {
+				return 0, err
+			}
+			return NewInt(1), nil
+		}),
+		Func("inner", func(context.Context, *persistCodecRoot, struct{}) (Int, error) { return NewInt(2), nil }),
+	}.Install(srv)
+	srv.Around(func(ctx context.Context, req *CallRequest) (context.Context, func(AnyResult, bool, *error)) {
+		if req.Field != "completed" {
+			return ctx, NoopDone
+		}
+		return ctx, func(AnyResult, bool, *error) { time.Sleep(hold) }
+	})
+	ctx := persistDecodeOwnerContext(t, c, srv, "completion-session")
+	ctx, testOp := wcprof.BeginOp(wcprof.ContextWithProfiling(ctx), wcprof.OpKindInternal, "test", wcprof.OpOpts{})
+	_, err = srv.root.Select(ctx, srv, Selector{Field: "completed"})
+	require.NoError(t, err)
+	testOp.End(wcprof.OutcomeOK)
+
+	ops, _ := recordedOps(t, "Query.completed", testOp.ID())
+	require.Len(t, ops[wcprof.OpKindCall.String()], 1)
+	call := ops[wcprof.OpKindCall.String()][0]
+	require.GreaterOrEqual(t, call.EndNS-call.StartNS, int64(hold), "the call op ends before its telemetry's completion")
+	require.Equal(t, wcprof.OutcomeExecuted.String(), call.Outcome)
+	ops, _ = recordedOps(t, "Query.inner", testOp.ID())
+	require.Len(t, ops[wcprof.OpKindCall.String()], 1)
+	inner := ops[wcprof.OpKindCall.String()][0]
+	require.Less(t, inner.EndNS-inner.StartNS, int64(hold), "the nested call took its parent's completion")
 }
