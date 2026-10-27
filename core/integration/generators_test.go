@@ -1653,8 +1653,8 @@ func (GeneratorsSuite) TestClientSchemaIntrospectionJSON(ctx context.Context, t 
 
 	modGen := moduleFixture(t, c, "go/minimal")
 
-	clientTypes, clientQueryFields := introspectModuleSourceSchema(ctx, t, modGen, "clientSchemaIntrospectionJSON")
-	moduleTypes, moduleQueryFields := introspectModuleSourceSchema(ctx, t, modGen, "introspectionSchemaJSON")
+	clientTypes, clientQueryFields := introspectModuleSourceSchema(ctx, t, modGen, "clientSchemaIntrospectionJson")
+	moduleTypes, moduleQueryFields := introspectModuleSourceSchema(ctx, t, modGen, "introspectionSchemaJson")
 
 	// No hidden types in the client-facing schema: Host and Engine* (both hidden
 	// from the module-facing schema) are present.

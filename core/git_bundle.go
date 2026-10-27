@@ -53,7 +53,10 @@ type GitBundle struct {
 	Version          int             `field:"true" doc:"Bundle format version (2 or 3)."`
 	ObjectFormat     string          `field:"true" name:"objectFormat" doc:"Object format capability: sha1 or sha256."`
 	Refs             []*GitBundleRef `field:"true" doc:"Refs advertised by the bundle and the object IDs they resolve to."`
-	PrerequisiteSHAs []string        `field:"true" name:"prerequisiteSHAs" doc:"Commits that must already exist wherever this bundle is applied."`
+	// PrerequisiteSHAs is installed by hand (core/schema/git.go), as
+	// prerequisiteShas or, in views before engine.IdentifierCasingVersion,
+	// prerequisiteSHAs.
+	PrerequisiteSHAs []string
 }
 
 // GitBundleRef is a ref advertised by a Git bundle.

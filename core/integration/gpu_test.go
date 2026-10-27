@@ -250,9 +250,9 @@ func (GPUSuite) TestWithGPUDeviceEnv(ctx context.Context, t *testctx.T) {
 		field string
 		want  string
 	}{
-		{name: "withGPU", field: "withGPU", want: "all"},
-		{name: "deprecated experimentalWithAllGPUs", field: "experimentalWithAllGPUs", want: "all"},
-		{name: "deprecated experimentalWithGPU", field: `experimentalWithGPU(devices: ["GPU-aaaa", "GPU-bbbb"])`, want: "GPU-aaaa,GPU-bbbb"},
+		{name: "withGpu", field: "withGpu", want: "all"},
+		{name: "deprecated experimentalWithAllGpus", field: "experimentalWithAllGpus", want: "all"},
+		{name: "deprecated experimentalWithGpu", field: `experimentalWithGpu(devices: ["GPU-aaaa", "GPU-bbbb"])`, want: "GPU-aaaa,GPU-bbbb"},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			out, err := clientCtr.
@@ -272,7 +272,7 @@ func (GPUSuite) TestWithGPUInjectsHook(ctx context.Context, t *testctx.T) {
 	clientCtr := engineClientContainer(ctx, t, c, gpuDevEngine(c, false))
 
 	_, err := clientCtr.
-		WithNewFile("/query.graphql", gpuQuery("withGPU")).
+		WithNewFile("/query.graphql", gpuQuery("withGpu")).
 		WithExec([]string{"dagger", "query", "--doc", "/query.graphql"}, core.ContainerWithExecOpts{DisableDaggerInDagger: true}).
 		Sync(ctx)
 	requireErrOut(t, err, "nvidia-container-runtime-hook")
