@@ -1081,7 +1081,7 @@ type Cloud implements Node {
   id: ID!
 
   """The trace URL for the current session"""
-  traceURL: String!
+  traceUrl: String!
 }
 
 type CollectionDelta implements Node {
@@ -1180,7 +1180,7 @@ type Container implements Exportable & Node & Syncer {
     """
     Allow HTTPS registry communication without verifying the server certificate.
     """
-    insecureSkipTLSVerify: Boolean = false
+    insecureSkipTlsVerify: Boolean = false
 
     """Ignore the workspace lockfile for this lookup."""
     noLock: Boolean = false
@@ -2117,7 +2117,7 @@ type Container implements Exportable & Node & Syncer {
     Defaults to "OCI", which is compatible with most recent registries, but
     "Docker" may be needed for older registries without OCI support.
     """
-    mediaTypes: ImageMediaTypes = OCIMediaTypes
+    mediaTypes: ImageMediaTypes = OCI
 
     """
     Service to use as the registry endpoint for the image address.
@@ -2136,7 +2136,7 @@ type Container implements Exportable & Node & Syncer {
     """
     Allow HTTPS registry communication without verifying the server certificate.
     """
-    insecureSkipTLSVerify: Boolean = false
+    insecureSkipTlsVerify: Boolean = false
   ): String! @reevaluate
 
   """The platform this container executes and publishes as."""
@@ -2179,7 +2179,7 @@ type Container implements Exportable & Node & Syncer {
     Defaults to OCI, which is largely compatible with most recent container
     runtimes, but Docker may be needed for older runtimes without OCI support.
     """
-    mediaTypes: ImageMediaTypes = OCIMediaTypes
+    mediaTypes: ImageMediaTypes = OCI
 
     """
     Replace "${VAR}" or "$VAR" in the value of path according to the current
@@ -2217,7 +2217,7 @@ type Container implements Exportable & Node & Syncer {
     Defaults to OCI, which is largely compatible with most recent container
     runtimes, but Docker may be needed for older runtimes without OCI support.
     """
-    mediaTypes: ImageMediaTypes = OCIMediaTypes
+    mediaTypes: ImageMediaTypes = OCI
   ): Void!
 
   """
@@ -2248,7 +2248,7 @@ type Container implements Exportable & Node & Syncer {
     Defaults to OCI, which is largely compatible with most recent container
     runtimes, but Docker may be needed for older runtimes without OCI support.
     """
-    mediaTypes: ImageMediaTypes = OCIMediaTypes
+    mediaTypes: ImageMediaTypes = OCI
   ): File!
 
   """Reads the container from an OCI tarball."""
@@ -2311,7 +2311,7 @@ type Container implements Exportable & Node & Syncer {
     forcedCompression: ImageLayerCompression
 
     """Media types to use for image layers. Defaults to OCI."""
-    mediaTypes: ImageMediaTypes = OCIMediaTypes
+    mediaTypes: ImageMediaTypes = OCI
   ): File!
 
   """
@@ -2333,7 +2333,7 @@ type Container implements Exportable & Node & Syncer {
     forcedCompression: ImageLayerCompression
 
     """Media types to use for image layers. Defaults to OCI."""
-    mediaTypes: ImageMediaTypes = OCIMediaTypes
+    mediaTypes: ImageMediaTypes = OCI
   ): File!
 
   """
@@ -2501,24 +2501,24 @@ type Container implements Exportable & Node & Syncer {
 
   This currently works with NVIDIA devices only, and requires the engine to run with GPU support enabled.
   """
-  withGPU: Container!
+  withGpu: Container!
 
   """
   Configures the provided list of devices to be accessible to this container.
 
   This currently works for Nvidia devices only.
   """
-  experimentalWithGPU(
+  experimentalWithGpu(
     """List of devices to be accessible to this container."""
     devices: [String!]!
-  ): Container! @deprecated(reason: "Use \"withGPU\" instead, which exposes all GPUs available on the host.")
+  ): Container! @deprecated(reason: "Use \"withGpu\" instead, which exposes all GPUs available on the host.")
 
   """
   Configures all available GPUs on the host to be accessible to this container.
 
   This currently works for Nvidia devices only.
   """
-  experimentalWithAllGPUs: Container! @deprecated(reason: "Use \"withGPU\" instead.")
+  experimentalWithAllGpus: Container! @deprecated(reason: "Use \"withGpu\" instead.")
 
   """
   Turn the container into a Service.
@@ -3736,7 +3736,7 @@ type File implements Exportable & Node & Syncer {
   asGitBundle: GitBundle!
 
   """Parse the file contents as JSON."""
-  asJSON: JSONValue!
+  asJson: JSONValue!
 
   """
   Extracts this archive file into a directory.
@@ -3948,9 +3948,9 @@ type FunctionArg implements Node {
 
 """The behavior configured for function result caching."""
 enum FunctionCachePolicy {
-  Default
-  PerSession
-  Never
+  DEFAULT
+  PER_SESSION
+  NEVER
 }
 
 """An active function call."""
@@ -4007,10 +4007,10 @@ type GeneratedCode implements Node {
   id: ID!
 
   """Set the list of paths to mark generated in version control."""
-  withVCSGeneratedPaths(paths: [String!]!): GeneratedCode!
+  withVcsGeneratedPaths(paths: [String!]!): GeneratedCode!
 
   """Set the list of paths to ignore in version control."""
-  withVCSIgnoredPaths(paths: [String!]!): GeneratedCode!
+  withVcsIgnoredPaths(paths: [String!]!): GeneratedCode!
 
   """The directory containing the generated code."""
   code: Directory!
@@ -4057,6 +4057,9 @@ type GitBundle implements Node {
   """Return the bundle bytes as a File."""
   asFile: File!
 
+  """Commits that must already exist wherever this bundle is applied."""
+  prerequisiteShas: [String!]!
+
   """Bundle format version (2 or 3)."""
   version: Int!
 
@@ -4065,9 +4068,6 @@ type GitBundle implements Node {
 
   """Refs advertised by the bundle and the object IDs they resolve to."""
   refs: [GitBundleRef!]!
-
-  """Commits that must already exist wherever this bundle is applied."""
-  prerequisiteSHAs: [String!]!
 }
 
 """A ref advertised by a Git bundle."""
@@ -4135,7 +4135,7 @@ type GitCommit implements Node {
 
   Commits with identical trees have identical contents and file modes.
   """
-  treeSHA: String!
+  treeSha: String!
 
   """Git author date, in RFC3339 format."""
   authoredDate: String!
@@ -4190,11 +4190,11 @@ type GitPushResult implements Node {
   """A unique identifier for this GitPushResult."""
   id: ID!
 
+  """The previous remote object ID; empty when the ref was created."""
+  previousSha: String!
+
   """The fully qualified remote ref."""
   ref: String!
-
-  """The previous remote object ID; empty when the ref was created."""
-  previousSHA: String!
 
   """The object ID pushed to the remote."""
   sha: String!
@@ -4246,14 +4246,14 @@ type GitRef implements Node {
     or omitted uses normal non-force rules, creating the ref if it does not
     exist.
     """
-    expectedRemoteSHA: String = ""
+    expectedRemoteSha: String = ""
   ): GitPushResult! @reevaluate
 
   """The commit this ref resolves to."""
   targetCommit: GitCommit!
 
   """The resolved commit SHA at this ref."""
-  commitSHA: String!
+  commitSha: String!
 
   """The filesystem tree at this ref."""
   tree(
@@ -4268,7 +4268,7 @@ type GitRef implements Node {
   ): Directory!
 
   """The resolved commit id at this ref."""
-  commit: String! @deprecated(reason: "Use \"commitSHA\" instead.")
+  commit: String! @deprecated(reason: "Use \"commitSha\" instead.")
 
   """The resolved name of this ref."""
   name: String!
@@ -4799,22 +4799,16 @@ enum IdentifierWordKind {
 
 """Compression algorithm to use for image layers."""
 enum ImageLayerCompression {
-  Gzip
-  Zstd
-  EStarGZ
-  Uncompressed
-  GZIP @enumValue(value: "Gzip")
-  ZSTD @enumValue(value: "Zstd")
-  ESTARGZ @enumValue(value: "EStarGZ")
-  UNCOMPRESSED @enumValue(value: "Uncompressed")
+  GZIP
+  ZSTD
+  ESTARGZ
+  UNCOMPRESSED
 }
 
 """Mediatypes to use in published or exported image metadata."""
 enum ImageMediaTypes {
-  OCIMediaTypes
-  DockerMediaTypes
-  OCI @enumValue(value: "OCIMediaTypes")
-  DOCKER @enumValue(value: "DockerMediaTypes")
+  OCI
+  DOCKER
 }
 
 """
@@ -5184,7 +5178,7 @@ type LLM implements Node & Syncer {
   withoutDefaultSystemPrompt: LLM!
 
   """Add an external MCP server to the LLM"""
-  withMCPServer(
+  withMcpServer(
     """The name of the MCP server"""
     name: String!
 
@@ -5689,7 +5683,7 @@ type Module implements Node & Syncer {
 
   Note: this is in the context of a module, so some core types may be hidden.
   """
-  introspectionSchemaJSON: File!
+  introspectionSchemaJson: File!
 
   """
   The generated files and directories made on top of the module source's context directory.
@@ -5824,7 +5818,7 @@ type ModuleSource implements Node & Syncer {
   ): ModuleSource!
 
   """Update the module source with a new SDK."""
-  withSDK(
+  withSdk(
     """The SDK source to set."""
     source: String!
   ): ModuleSource!
@@ -5958,18 +5952,18 @@ type ModuleSource implements Node & Syncer {
 
   Note: this is in the context of a module, so some core types may be hidden.
   """
-  introspectionSchemaJSON: File!
+  introspectionSchemaJson: File!
 
   """
   The client-facing introspection schema JSON file for this module source.
 
-  This is the schema consumed by client codegen: unlike introspectionSchemaJSON
+  This is the schema consumed by client codegen: unlike introspectionSchemaJson
   (the module-facing schema), it hides no core types and installs this module
   (reached via dag.<moduleName>) so a generated client can bind it. The module's
   dependencies are excluded: a client is generated for a single module plus
   core, not its dependency graph.
   """
-  clientSchemaIntrospectionJSON: File!
+  clientSchemaIntrospectionJson: File!
 
   """
   The directory containing the module configuration and source code (source code may be in a subdir).
@@ -5987,12 +5981,12 @@ type ModuleSource implements Node & Syncer {
   """
   The URL to the source's git repo in a web browser. Only valid for git sources.
   """
-  htmlURL: String!
+  htmlUrl: String!
 
   """
   The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket).
   """
-  htmlRepoURL: String!
+  htmlRepoUrl: String!
 
   """The specified version of the git repo this source points to."""
   version: String!
@@ -7822,7 +7816,7 @@ type Workspace implements Node {
   ): Workspace!
 
   """Return this workspace with an SDK installed in its config."""
-  withSDK(
+  withSdk(
     """SDK module reference to install."""
     ref: String!
 
@@ -7839,7 +7833,7 @@ type Workspace implements Node {
   ): Workspace!
 
   """Return this workspace with an SDK removed from its config."""
-  withoutSDK(
+  withoutSdk(
     """Name of the installed SDK entry to remove."""
     name: String!
 
