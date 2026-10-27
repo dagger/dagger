@@ -17,6 +17,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/moby/locker"
+	"github.com/moby/sys/userns"
 	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
@@ -153,6 +154,13 @@ type snapshotManager struct {
 	ownerLeaseLocker    *locker.Locker
 	// fetches runs chain-content downloads, one per blob.
 	fetches contentFetches
+	// applyLayersApart says ImportChain may apply a chain's layers at once,
+	// each into a snapshot of its own prepared with no parent, and rebase
+	// them onto their parents in order: containerd's overlay snapshotter
+	// keeps each snapshot's own directory apart from its parents' and
+	// rebases on commit. A layer's whiteouts are written as overlay
+	// whiteouts, whose device nodes can't be made in a user namespace.
+	applyLayersApart bool
 	// backgroundReleases releases read-only mounts off their callers' paths.
 	backgroundReleases *backgroundReleases
 	// sharedMounts keeps one read-only mount per snapshot for its readers.
@@ -185,6 +193,7 @@ func NewSnapshotManager(opt SnapshotManagerOpt) (SnapshotManager, error) {
 		ownerLeaseLocker:       locker.New(),
 		backgroundReleases:     newBackgroundReleases(maxPendingReleases),
 		localMounter:           opt.LocalMounter,
+		applyLayersApart:       opt.Snapshotter.Name() == "overlayfs" && !userns.RunningInUserNS(),
 	}
 	if cm.localMounter == nil {
 		cm.localMounter = func(ms []mount.Mount) Mounter { return LocalMounterWithMounts(ms) }
