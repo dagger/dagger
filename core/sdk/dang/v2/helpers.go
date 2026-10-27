@@ -118,13 +118,6 @@ func evalDangSource(
 			return nil, fmt.Errorf("decode schema: %w", err)
 		}
 
-		ctx = dang.ContextWithImportConfigs(ctx, dang.ImportConfig{
-			Name:       "Dagger",
-			Client:     gqlClient,
-			Schema:     intro.Schema,
-			AutoImport: true,
-		})
-
 		// Route the program's stdout/stderr to the USER-FACING span, not
 		// whatever span happens to be current. A module function call runs
 		// under dagql's call_exec profiling span (dagql/otelprof_hooks.go
@@ -157,7 +150,21 @@ func evalDangSource(
 			// for its declared types. At runtime the served schema already
 			// includes the module's own types (Module.IncludeSelfInDeps), so
 			// this is a no-op then.
-			ensureModuleSelfTypes(intro.Schema, modSource.Self(), modSrcDir)
+			// The implementation-scoped source retains its original name. The
+			// operational module owns the names actually installed in this schema.
+			selfSource := modSource.Self()
+			if forTypeDefs {
+				// Definitions use source names; core namespaces them when installing
+				// the module. Emitting installed names here would prefix them twice.
+				selfSource = &core.ModuleSource{ModuleName: selfSource.ModuleOriginalName, ModuleOriginalName: selfSource.ModuleOriginalName}
+			} else if self := moduleContext.Self(); self != nil {
+				selfSource = &core.ModuleSource{ModuleName: self.Name(), ModuleOriginalName: self.OriginalName}
+			}
+			ensureModuleSelfTypes(intro.Schema, selfSource, modSrcDir)
+			ctx = dang.ContextWithImportConfigs(ctx, dang.ImportConfig{
+				Name: "Dagger", Client: gqlClient, Schema: intro.Schema, AutoImport: true,
+				Aliases: moduleSelfAliases(selfSource, modSrcDir),
+			})
 
 			env, err = runSource(ctx, modSrcDir)
 			if err != nil {

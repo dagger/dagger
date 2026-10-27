@@ -524,6 +524,17 @@ func (DangSuite) TestNullableSDKInputObjectFields(_ context.Context, t *testctx.
 }
 
 func (DangSuite) TestSelfCallReturningOwnType(_ context.Context, t *testctx.T) {
+	t.Run("self calls keep source names when installed under an alias", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		mod := moduleMainFixture(t, c, "renamed", "dang/self-calls")
+		out, err := mod.With(daggerCall("self-message")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello from field", strings.TrimSpace(out))
+		out, err = mod.With(daggerCall("widget-label", "--label", "aliased widget")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "aliased widget", strings.TrimSpace(out))
+	})
+
 	// A self-call that returns the module's own object type surfaces as the
 	// object's GraphQL ID (a string), since the object lives in the module's
 	// runtime schema. The runtime must load that ID back into the object
