@@ -5,10 +5,10 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func readDumpFile(t *testing.T, path string) (*DumpHeader, []DumpEvent) {
@@ -82,74 +82,124 @@ func TestWriteDumpFileWithoutRecorder(t *testing.T) {
 	}
 }
 
-func TestWriteStopDumpOnlyWhileRecording(t *testing.T) {
+func TestRequestStopDumpOnlyWhileRecording(t *testing.T) {
 	// a recorder that exists but no longer records everything writes no
 	// stop dump: the engine profiled once, then turned recording off
 	withTestRecorder(t, 0)
 	globalOn.Store(false)
 	path := StopDumpPath(t.TempDir())
-	WriteStopDump(context.Background(), path)
+	RequestStopDump(path)
+	if err := FlushStopDump(path); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("stat = %v, want no stop dump while not recording", err)
 	}
 }
 
-func TestWriteStopDumpIsAnOpUnderItsCaller(t *testing.T) {
-	// the write is an op of its own, under the op whose context it runs in,
-	// so its cost reads as the write's and not as that op's own time
+// holdStopDumpWrites makes each stop dump write wait for release, and
+// counts the writes.
+func holdStopDumpWrites(t *testing.T) (release func(), writes *atomic.Int32) {
+	t.Helper()
+	gate := make(chan struct{})
+	var once sync.Once
+	writes = &atomic.Int32{}
+	prev := stopDumpHook
+	stopDumpHook = func() {
+		writes.Add(1)
+		<-gate
+	}
+	release = func() { once.Do(func() { close(gate) }) }
+	t.Cleanup(func() {
+		release()
+		stopDumpHook = prev
+	})
+	return release, writes
+}
+
+func TestRequestStopDumpDoesNotWait(t *testing.T) {
+	// asking for a stop dump doesn't wait for the write, which for a large
+	// recorder takes seconds: a stop phase asks and goes on
 	withTestRecorder(t, 0)
 	path := StopDumpPath(t.TempDir())
-	ctx, phase := BeginOp(context.Background(), OpKindInternal, "engine.stop.phase", OpOpts{})
-	WriteStopDump(ctx, path)
-	phase.End(OutcomeOK)
-	WriteStopDump(context.Background(), path)
-	h, evs := readDumpFile(t, path)
-	var phaseID, writeParent uint64
-	for _, ev := range evs {
-		switch h.Strings[ev.ClassID] {
-		case "engine.stop.phase":
-			phaseID = ev.OpID
-		case "wcprof.stopDump":
-			if writeParent == 0 {
-				writeParent = ev.ParentID
-			}
-		}
+	release, _ := holdStopDumpWrites(t)
+	asked := make(chan struct{})
+	go func() {
+		RequestStopDump(path)
+		close(asked)
+	}()
+	select {
+	case <-asked:
+	case <-time.After(5 * time.Second):
+		t.Fatal("RequestStopDump waited for the write")
 	}
-	if phaseID == 0 || writeParent != phaseID {
-		t.Fatalf("first stopDump op's parent = %d, want the phase op %d", writeParent, phaseID)
+	release()
+	if err := FlushStopDump(path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("no stop dump after the flush: %v", err)
 	}
 }
 
-func TestWriteStopDumpSerializesWriters(t *testing.T) {
-	// writers from different goroutines (a signal's, a phase's, the stop's
-	// end) take turns, so an older snapshot can't be renamed over a newer
-	// one
+func TestStopDumpRequestsCoalesce(t *testing.T) {
+	// requests made while a write runs become one more write, from the
+	// latest state, not one each
 	withTestRecorder(t, 0)
 	path := StopDumpPath(t.TempDir())
-	var inside, most atomic.Int32
-	prev := stopDumpHook
-	stopDumpHook = func() {
-		n := inside.Add(1)
-		for {
-			m := most.Load()
-			if n <= m || most.CompareAndSwap(m, n) {
-				break
+	release, writes := holdStopDumpWrites(t)
+	RequestStopDump(path)
+	deadline := time.Now().Add(5 * time.Second)
+	for writes.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	for range 10 {
+		RequestStopDump(path)
+	}
+	_, late := BeginOp(context.Background(), OpKindInternal, "engine.stop.late", OpOpts{})
+	RequestStopDump(path)
+	release()
+	if err := FlushStopDump(path); err != nil {
+		t.Fatal(err)
+	}
+	if n := writes.Load(); n > 3 {
+		t.Fatalf("%d writes for 12 requests and a flush, want them coalesced (at most 3)", n)
+	}
+	h, _ := readDumpFile(t, path)
+	var found bool
+	for _, oo := range h.OpenOps {
+		found = found || h.Strings[oo.ClassID] == "engine.stop.late"
+	}
+	if !found {
+		t.Fatal("the flushed dump lacks the op begun before the last request")
+	}
+	late.End(OutcomeOK)
+}
+
+func TestStopDumpWriteIsAnOp(t *testing.T) {
+	// each write is an op of its own, wcprof.stopDump, so its cost reads as
+	// the write's; it runs on its own, so it's under no other op
+	withTestRecorder(t, 0)
+	path := StopDumpPath(t.TempDir())
+	RequestStopDump(path)
+	if err := FlushStopDump(path); err != nil {
+		t.Fatal(err)
+	}
+	RequestStopDump(path)
+	if err := FlushStopDump(path); err != nil {
+		t.Fatal(err)
+	}
+	h, evs := readDumpFile(t, path)
+	var writes int
+	for _, ev := range evs {
+		if ev.Type == "op" && h.Strings[ev.ClassID] == "wcprof.stopDump" {
+			writes++
+			if ev.ParentID != 0 {
+				t.Fatalf("stop dump write under op %d, want none", ev.ParentID)
 			}
 		}
-		runtime.Gosched()
-		inside.Add(-1)
 	}
-	t.Cleanup(func() { stopDumpHook = prev })
-	var wg sync.WaitGroup
-	for range 8 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			WriteStopDump(context.Background(), path)
-		}()
-	}
-	wg.Wait()
-	if most.Load() != 1 {
-		t.Fatalf("%d stop dump writers ran at once, want 1", most.Load())
+	if writes == 0 {
+		t.Fatal("no ended wcprof.stopDump op in the dump")
 	}
 }

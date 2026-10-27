@@ -3,6 +3,7 @@ package server
 import (
 	"compress/gzip"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -21,9 +22,18 @@ func recordGlobally(t *testing.T) {
 	t.Cleanup(wcprof.DisableGlobal)
 }
 
-// readStopDump reads the server's stop dump.
+// flushStopDumpAtCleanup has the test wait, before its directories go, for
+// the stop dump writes the server asked for.
+func flushStopDumpAtCleanup(t *testing.T, srv *Server) {
+	t.Helper()
+	t.Cleanup(func() { _ = wcprof.FlushStopDump(wcprof.StopDumpPath(srv.rootDir)) })
+}
+
+// readStopDump reads the server's stop dump, once the writes asked for so
+// far are on disk.
 func readStopDump(t *testing.T, srv *Server) (*wcprof.DumpHeader, []wcprof.DumpEvent) {
 	t.Helper()
+	require.NoError(t, wcprof.FlushStopDump(wcprof.StopDumpPath(srv.rootDir)))
 	f, err := os.Open(wcprof.StopDumpPath(srv.rootDir))
 	require.NoError(t, err)
 	defer f.Close()
@@ -56,14 +66,14 @@ func TestGracefulStopRecordsItsPhases(t *testing.T) {
 	// them all, ended
 	recordGlobally(t)
 	srv := newGracefulStopServer(t, filepath.Join(t.TempDir(), "cache.db"))
+	flushStopDumpAtCleanup(t, srv)
 	require.NoError(t, srv.GracefulStop(boundedContext(t)))
 	ended, _ := stopDump(t, srv)
 	for _, class := range []string{"engine.stop", "engine.stop.stop remote cache integration", "engine.stop.wait for garbage collection", "engine.stop.remove sessions", "engine.stop.close metadata DBs"} {
 		require.True(t, ended[class], "stop dump lacks %q; has %v", class, ended)
 	}
 	// within this stop (the recorder outlives each test, so earlier stops'
-	// ops are there too): its phases are under it, and its phases' dump
-	// writes under them
+	// ops are there too): its phases are under it
 	h, evs := readStopDump(t, srv)
 	var stop *wcprof.DumpEvent
 	for i, ev := range evs {
@@ -80,11 +90,33 @@ func TestGracefulStopRecordsItsPhases(t *testing.T) {
 		}
 	}
 	require.NotZero(t, phase, "this stop has no remove-sessions phase")
-	var underPhase bool
-	for _, ev := range evs {
-		underPhase = underPhase || (ev.Type == "op" && h.Strings[ev.ClassID] == "wcprof.stopDump" && ev.ParentID == phase)
+}
+
+func TestGracefulStopDoesNotWaitForItsDump(t *testing.T) {
+	// with a recorder holding enough events that one stop dump write takes
+	// a while, as a test-base engine's does (about 1.6 s for 1.1M events),
+	// the stop doesn't wait for its dump: each phase asks for a rewrite and
+	// goes on, instead of waiting for two writes
+	recordGlobally(t)
+	ctx := context.Background()
+	for range 200_000 {
+		_, op := wcprof.BeginOp(ctx, wcprof.OpKindInternal, "test.filler", wcprof.OpOpts{})
+		op.End(wcprof.OutcomeOK)
 	}
-	require.True(t, underPhase, "no stop dump write under this stop's remove-sessions phase")
+	// drop the filler, so later tests' dumps stay small
+	t.Cleanup(func() { _ = wcprof.Active().WriteDump(io.Discard, true) })
+	start := time.Now()
+	require.NoError(t, wcprof.WriteDumpFile(filepath.Join(t.TempDir(), "probe.ndjson.gz")))
+	oneWrite := time.Since(start)
+
+	srv := newGracefulStopServer(t, filepath.Join(t.TempDir(), "cache.db"))
+	flushStopDumpAtCleanup(t, srv)
+	start = time.Now()
+	require.NoError(t, srv.GracefulStop(boundedContext(t)))
+	took := time.Since(start)
+	require.Less(t, took, 3*oneWrite, "the stop took %s, waiting for its dump writes of %s each", took, oneWrite)
+	ended, _ := stopDump(t, srv)
+	require.True(t, ended["engine.stop"], "the flushed stop dump lacks the ended stop")
 }
 
 func TestGracefulStopWritesNoDumpWhenNotRecording(t *testing.T) {
@@ -93,6 +125,7 @@ func TestGracefulStopWritesNoDumpWhenNotRecording(t *testing.T) {
 	recordGlobally(t)
 	wcprof.DisableGlobal()
 	srv := newGracefulStopServer(t, filepath.Join(t.TempDir(), "cache.db"))
+	flushStopDumpAtCleanup(t, srv)
 	require.NoError(t, srv.GracefulStop(boundedContext(t)))
 	_, err := os.Stat(wcprof.StopDumpPath(srv.rootDir))
 	require.True(t, os.IsNotExist(err), "stat = %v, want no stop dump", err)
@@ -103,6 +136,7 @@ func TestGracefulStopDumpShowsAHungPhase(t *testing.T) {
 	// stop dump as an open op, written when the phase began
 	recordGlobally(t)
 	srv := newGracefulStopServer(t, filepath.Join(t.TempDir(), "cache.db"))
+	flushStopDumpAtCleanup(t, srv)
 	release := make(chan struct{})
 	var releaseOnce sync.Once
 	defer releaseOnce.Do(func() { close(release) })

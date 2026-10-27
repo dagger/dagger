@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -18,12 +17,9 @@ func TestRecordStopSignal(t *testing.T) {
 	wcprof.EnableGlobal()
 	t.Cleanup(wcprof.DisableGlobal)
 	path := wcprof.StopDumpPath(filepath.Join(t.TempDir(), "state"))
-	written := recordStopSignal(path)
-	select {
-	case <-written:
-	case <-time.After(10 * time.Second):
-		t.Fatal("the signal's stop dump was never written")
-	}
+	t.Cleanup(func() { _ = wcprof.FlushStopDump(path) })
+	recordStopSignal(path)
+	require.NoError(t, wcprof.FlushStopDump(path))
 	f, err := os.Open(path)
 	require.NoError(t, err)
 	defer f.Close()
@@ -38,9 +34,11 @@ func TestRecordStopSignal(t *testing.T) {
 	require.True(t, found, "stop dump has no engine.stop.signal op")
 }
 
-// stopDumpClasses reads a stop dump: its ended ops' and open ops' names.
+// stopDumpClasses reads a stop dump, once the writes asked for so far are on
+// disk: its ended ops' and open ops' names.
 func stopDumpClasses(t *testing.T, path string) (ended, open map[string]bool) {
 	t.Helper()
+	require.NoError(t, wcprof.FlushStopDump(path))
 	f, err := os.Open(path)
 	require.NoError(t, err)
 	defer f.Close()
@@ -69,6 +67,7 @@ func TestExitStepRecordsAFinalDrain(t *testing.T) {
 	path := wcprof.StopDumpPath(filepath.Join(t.TempDir(), "state"))
 	stopDumpPath.Store(&path)
 	t.Cleanup(func() { stopDumpPath.Store(nil) })
+	t.Cleanup(func() { _ = wcprof.FlushStopDump(path) })
 	var openDuring bool
 	exitStep("flush engine events", func() {
 		_, open := stopDumpClasses(t, path)
