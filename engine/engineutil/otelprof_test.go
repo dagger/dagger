@@ -91,7 +91,7 @@ func TestEmitExecSplitProducesLoaderShape(t *testing.T) {
 	started := time.Now()
 	time.Sleep(12 * time.Millisecond)
 	end := time.Now()
-	emitOTelExecSplit(ctx, stateID, start, started, end, nil, []string{"go", "build", "./..."}, 0, 0)
+	emitOTelExecSplit(ctx, stateID, start, started, time.Time{}, end, nil, []string{"go", "build", "./..."}, execPhaseOps{})
 	var nilErr error
 	endOTelExecRun(execRun, &nilErr)
 	root.End()
@@ -167,7 +167,7 @@ func TestEmitExecSplitSetupFailure(t *testing.T) {
 	runErr := errors.New("setup failed: mount error")
 	// started == zero time: the process never started. A non-nil argv is supplied to
 	// prove it never leaks onto the engine-setup span when there is no user process.
-	emitOTelExecSplit(ctx, "exec-state-id-fail", start, time.Time{}, end, runErr, []string{"go", "build"}, 0, 0)
+	emitOTelExecSplit(ctx, "exec-state-id-fail", start, time.Time{}, time.Time{}, end, runErr, []string{"go", "build"}, execPhaseOps{})
 	endOTelExecRun(execRun, &runErr)
 	root.End()
 	ended := sr.Ended()
@@ -201,9 +201,9 @@ func TestEmitExecSplitRecordsPhaseSpans(t *testing.T) {
 	end := started.Add(12 * time.Millisecond)
 	startOp := wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.containerStart", wcprof.OpOpts{}, 0, 4, wcprof.OutcomeOK)
 	runOp := wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.processRun", wcprof.OpOpts{}, 4, 16, wcprof.OutcomeOK)
-	emitOTelExecSplit(ctx, "exec-phase-spans", start, started, end, nil, nil, startOp, runOp)
+	emitOTelExecSplit(ctx, "exec-phase-spans", start, started, time.Time{}, end, nil, nil, execPhaseOps{containerStart: startOp, processRun: runOp})
 	failOp := wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.containerStart", wcprof.OpOpts{}, 0, 4, wcprof.OutcomeError)
-	emitOTelExecSplit(ctx, "exec-phase-spans-fail", start, time.Time{}, end, errors.New("boom"), nil, failOp, 0)
+	emitOTelExecSplit(ctx, "exec-phase-spans-fail", start, time.Time{}, time.Time{}, end, errors.New("boom"), nil, execPhaseOps{containerStart: failOp})
 	root.End()
 
 	var buf bytes.Buffer
@@ -238,4 +238,79 @@ func TestEmitExecSplitRecordsPhaseSpans(t *testing.T) {
 			t.Errorf("op %d span = %q, want %q", op, spanOf[op], want)
 		}
 	}
+}
+
+// TestEmitExecSplitRuntimeStart: when runc's release of the workload is
+// known, runc creating the container is its own internal exec.runtimeStart
+// phase between the container start and the process run, as native records
+// it, and names its native op; one released after the run ended is ignored,
+// as native ignores it.
+func TestEmitExecSplitRuntimeStart(t *testing.T) {
+	wcprof.EnsureRecorder()
+	sr, ctx, root := newRecordingRoot("Container.withExec")
+	ctx = wcprof.ContextWithProfiling(ctx)
+	start := time.Now()
+	started := start.Add(4 * time.Millisecond)
+	released := started.Add(9 * time.Millisecond)
+	end := released.Add(12 * time.Millisecond)
+	rtOp := wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.runtimeStart", wcprof.OpOpts{}, 4, 13, wcprof.OutcomeOK)
+	emitOTelExecSplit(ctx, "exec-runtime-start", start, started, released, end, nil, []string{"go"}, execPhaseOps{runtimeStart: rtOp})
+	emitOTelExecSplit(ctx, "exec-runtime-late", start, started, end.Add(time.Millisecond), end, nil, nil, execPhaseOps{})
+	root.End()
+	ended := sr.Ended()
+
+	phase := func(name, ident string) sdktrace.ReadOnlySpan {
+		for _, s := range ended {
+			if v, _ := attrStr(s, telemetry.DagDigestAttr); s.Name() == name && v == ident {
+				return s
+			}
+		}
+		return nil
+	}
+	rt := phase("exec.runtimeStart", "exec-runtime-start")
+	if rt == nil {
+		t.Fatal("no exec.runtimeStart span")
+	}
+	if !rt.StartTime().Equal(started) || !rt.EndTime().Equal(released) {
+		t.Fatalf("runtimeStart = [%v,%v], want [%v,%v]", rt.StartTime(), rt.EndTime(), started, released)
+	}
+	if k, _ := attrStr(rt, telemetryattrs.WcprofOpKindAttr); k != wcprof.OpKindExecPhase.String() {
+		t.Fatalf("runtimeStart kind = %q, want exec_phase", k)
+	}
+	if !attrBool(rt, telemetry.UIInternalAttr) || !attrBool(rt, telemetry.UIPassthroughAttr) {
+		t.Fatal("runtimeStart must be internal and passthrough")
+	}
+	if _, ok := attrStr(rt, telemetryattrs.WcprofWorkTypeAttr); ok {
+		t.Fatal("runtimeStart is engine work, not user work")
+	}
+	if pr := phase("exec.processRun", "exec-runtime-start"); pr == nil || !pr.StartTime().Equal(released) || !pr.EndTime().Equal(end) {
+		t.Fatalf("processRun must run from the release to the end, got %v", pr)
+	}
+	if cs := phase("exec.containerStart", "exec-runtime-start"); cs == nil || !cs.EndTime().Equal(started) {
+		t.Fatalf("containerStart must end at the started callback, got %v", cs)
+	}
+	if phase("exec.runtimeStart", "exec-runtime-late") != nil {
+		t.Fatal("a release after the run ended must not make a runtimeStart span")
+	}
+	if pr := phase("exec.processRun", "exec-runtime-late"); pr == nil || !pr.StartTime().Equal(started) {
+		t.Fatalf("without a usable release, processRun starts at the started callback, got %v", pr)
+	}
+
+	var buf bytes.Buffer
+	if err := wcprof.Active().WriteDump(&buf, false); err != nil {
+		t.Fatal(err)
+	}
+	_, events, err := wcprof.ReadDump(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ev := range events {
+		if ev.Type == "span" && ev.OpID == rtOp {
+			if ev.SpanID != rt.SpanContext().SpanID().String() {
+				t.Fatalf("runtimeStart op span = %s, want %s", ev.SpanID, rt.SpanContext().SpanID())
+			}
+			return
+		}
+	}
+	t.Fatal("the runtimeStart op recorded no span")
 }

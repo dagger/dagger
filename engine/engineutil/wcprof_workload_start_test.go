@@ -56,3 +56,24 @@ func TestWorkloadReleasedUnknown(t *testing.T) {
 	require.Zero(t, workloadReleasedNS("", 1, now), "not profiling: no pid file was requested")
 	require.Zero(t, workloadReleasedNS(missing, 0, now), "the container never started")
 }
+
+// TestWorkloadReleasedAt: the release on the wall clock, for the span side,
+// is the pid file's time, clamped to the started callback, and zero when
+// unknown.
+func TestWorkloadReleasedAt(t *testing.T) {
+	pidFile := filepath.Join(t.TempDir(), "init.pid")
+	startedWall := time.Now()
+	writePidFile(t, pidFile)
+	stamped := startedWall.Add(30 * time.Millisecond)
+	require.NoError(t, os.Chtimes(pidFile, stamped, stamped))
+	require.True(t, workloadReleasedAt(pidFile, startedWall).Equal(stamped))
+
+	early := startedWall.Add(-4 * time.Millisecond)
+	require.NoError(t, os.Chtimes(pidFile, early, early))
+	require.True(t, workloadReleasedAt(pidFile, startedWall).Equal(startedWall), "clamped to the start")
+
+	missing := filepath.Join(t.TempDir(), "init.pid")
+	require.True(t, workloadReleasedAt(missing, startedWall).IsZero(), "runc never wrote the pid file")
+	require.True(t, workloadReleasedAt("", startedWall).IsZero(), "no pid file was requested")
+	require.True(t, workloadReleasedAt(pidFile, time.Time{}).IsZero(), "the container never started")
+}
