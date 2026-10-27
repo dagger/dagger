@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -1451,17 +1452,25 @@ const (
 // whole before the fallback. The result is the same either way: ref's
 // history in the checkout's own object database under the returned tmpref,
 // and the tags a fetch would have followed. method reports which copy ran.
-func copyGitCheckout(ctx context.Context, checkoutGit, source *gitutil.GitCLI, gitDir string, ref *gitutil.Ref, depth int) (tmpref, method string, _ error) {
+func copyGitCheckout(ctx context.Context, checkoutGit, source *gitutil.GitCLI, gitDir string, ref *gitutil.Ref, depth int, fetched *gitMirrorFetch) (tmpref, method string, _ error) {
 	sourceURL, err := source.URL(ctx)
 	if err != nil {
 		return "", "", fmt.Errorf("could not find git dir: %w", err)
 	}
 	var pack, discard func(context.Context) error
-	if depth <= 0 {
+	switch {
+	case depth <= 0:
 		pack = func(ctx context.Context) (err error) {
 			tmpref, err = packGitCheckout(ctx, checkoutGit, source, ref)
 			return err
 		}
+	case fetched != nil && fetched.sha == ref.SHA && fetched.depth == depth:
+		pack = func(ctx context.Context) (err error) {
+			tmpref, err = fetchedGitCheckout(ctx, checkoutGit, gitDir, fetched)
+			return err
+		}
+	}
+	if pack != nil {
 		discard = func(context.Context) error {
 			tmpref = ""
 			return os.RemoveAll(gitDir)
@@ -1472,6 +1481,57 @@ func copyGitCheckout(ctx context.Context, checkoutGit, source *gitutil.GitCLI, g
 		return err
 	})
 	return tmpref, method, err
+}
+
+// fetchedGitCheckout initializes the checkout like fetchGitCheckout and gives
+// it the pack and shallow file that fetching the same commit at the same
+// depth into an empty mirror just wrote: a fetch from the mirror would write
+// the same objects and boundaries again, re-indexing every object of the
+// pack, where copying it needs none.
+func fetchedGitCheckout(ctx context.Context, checkoutGit *gitutil.GitCLI, gitDir string, fetched *gitMirrorFetch) (string, error) {
+	if _, err := checkoutGit.Run(ctx, "-c", "init.defaultBranch=main", "init"); err != nil {
+		return "", err
+	}
+	packDir := filepath.Join(gitDir, "objects", "pack")
+	for _, ext := range []string{".pack", ".idx", ".rev"} {
+		src := fetched.pack + ext
+		if ext == ".rev" {
+			if _, err := os.Lstat(src); errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+		}
+		if err := copyGitFile(src, filepath.Join(packDir, filepath.Base(src))); err != nil {
+			return "", err
+		}
+	}
+	if err := copyGitFile(filepath.Join(fetched.gitDir, "shallow"), filepath.Join(gitDir, "shallow")); err != nil {
+		return "", err
+	}
+	tmpref := "refs/dagger.tmp/" + rand.Text()
+	if _, err := checkoutGit.Run(ctx, "update-ref", tmpref, fetched.sha); err != nil {
+		return "", err
+	}
+	return tmpref, nil
+}
+
+// copyGitFile copies src to the new file dst with src's permissions.
+func copyGitFile(src, dst string) (rerr error) {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	info, err := in.Stat()
+	if err != nil {
+		return err
+	}
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, info.Mode().Perm())
+	if err != nil {
+		return err
+	}
+	defer func() { rerr = errors.Join(rerr, out.Close()) }()
+	_, err = io.Copy(out, in)
+	return err
 }
 
 // packGitCheckout initializes the checkout like fetchGitCheckout and gives it
