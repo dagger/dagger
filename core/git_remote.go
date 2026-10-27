@@ -462,7 +462,15 @@ func (repo *RemoteGitRepository) setupWithSSHAuthSock(ctx context.Context, sshAu
 }
 
 func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, includeTags bool, refs []GitRefBackend, fn func(context.Context, *gitutil.GitCLI) error) (retErr error) {
-	return repo.initRemote(ctx, func(ctx context.Context, remote string) (rerr error) {
+	return repo.mountFetched(ctx, depth, includeTags, refs, func(ctx context.Context, git *gitutil.GitCLI, _ *gitMirrorFetch) error {
+		return fn(ctx, git)
+	})
+}
+
+// mountFetched is mount, also giving fn what the hold's fetch brought when
+// it filled a mirror the hold created (see gitMirrorFetchedPack), or nil.
+func (repo *RemoteGitRepository) mountFetched(ctx context.Context, depth int, includeTags bool, refs []GitRefBackend, fn func(context.Context, *gitutil.GitCLI, *gitMirrorFetch) error) (retErr error) {
+	return repo.initRemote(ctx, func(ctx context.Context, remote string, created bool) (rerr error) {
 		git, cleanup, err := repo.setup(ctx)
 		if err != nil {
 			return err
@@ -477,7 +485,7 @@ func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, includeTa
 		if err != nil {
 			return err
 		}
-		err = repo.fetch(ctx, git, depth, includeTags, fetchRefs)
+		retried, err := repo.fetch(ctx, git, depth, includeTags, fetchRefs)
 		if err != nil {
 			return err
 		}
@@ -486,8 +494,71 @@ func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, includeTa
 			return fmt.Errorf("failed to expire reflog for remote %s: %w", repo.URL.Remote(), err)
 		}
 
-		return fn(ctx, git)
+		fetched, err := gitMirrorFetchedForCheckout(remote, created, depth, includeTags, fetchRefs, retried)
+		if err != nil {
+			return err
+		}
+		return fn(ctx, git, fetched)
 	})
+}
+
+// gitMirrorFetch is what one fetch brought into a mirror that held nothing
+// before it: one commit's history to a depth, as one pack.
+type gitMirrorFetch struct {
+	sha   string
+	depth int
+	// gitDir is the mirror's, which holds the fetch's shallow file.
+	gitDir string
+	// pack is the pack's path without its extension; its index and reverse
+	// index sit beside it.
+	pack string
+}
+
+// gitMirrorFetchedForCheckout returns what the hold's fetch of refs brought
+// into the mirror at gitDir, when it is exactly one commit's history at depth
+// a checkout of that commit at that depth would fetch out of the mirror: the
+// hold created the mirror, and fetched one commit by itself, without tags.
+// A retry by the commit's named ref fetched the ref's tip instead, whose
+// history can hold more. Otherwise, or when the fetch left more than one
+// pack, it returns nil.
+func gitMirrorFetchedForCheckout(gitDir string, created bool, depth int, includeTags bool, refs []*RemoteGitRef, retried bool) (*gitMirrorFetch, error) {
+	if !created || depth <= 0 || includeTags || len(refs) != 1 || retried {
+		return nil, nil
+	}
+	return gitMirrorFetchedPack(gitDir, refs[0].SHA, depth)
+}
+
+// gitMirrorFetchedPack returns what the fetch of sha at depth brought into
+// the mirror at gitDir, which held nothing before it: then its one pack holds
+// exactly that history, and its shallow file exactly that fetch's
+// boundaries, as a fetch of the same commit at the same depth from the mirror
+// would write them. It returns nil when the fetch left anything but one pack:
+// git unpacks a small fetch into loose objects instead.
+func gitMirrorFetchedPack(gitDir, sha string, depth int) (*gitMirrorFetch, error) {
+	objects := filepath.Join(gitDir, "objects")
+	packs, err := filepath.Glob(filepath.Join(objects, "pack", "pack-*.pack"))
+	if err != nil {
+		return nil, err
+	}
+	if len(packs) != 1 {
+		return nil, nil
+	}
+	entries, err := os.ReadDir(objects)
+	if err != nil {
+		return nil, err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() && len(entry.Name()) == 2 {
+			loose, err := os.ReadDir(filepath.Join(objects, entry.Name()))
+			if err != nil {
+				return nil, err
+			}
+			if len(loose) > 0 {
+				return nil, nil
+			}
+		}
+	}
+	return &gitMirrorFetch{sha: sha, depth: depth, gitDir: gitDir, pack: strings.TrimSuffix(packs[0], ".pack")}, nil
 }
 
 // gitRefsToFetch checks mirror coverage and retains existing commits, including
@@ -541,15 +612,17 @@ func gitRefsToFetch(ctx context.Context, git *gitutil.GitCLI, depth int, refs []
 	return fetchRefs, nil
 }
 
-func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI, depth int, includeTags bool, refs []*RemoteGitRef) (rerr error) {
+// fetch fetches refs into the mirror; retried says the remote refused a
+// commit and its named ref was fetched instead (see fetchObjects).
+func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI, depth int, includeTags bool, refs []*RemoteGitRef) (retried bool, rerr error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	if len(refs) == 0 && !includeTags {
 		// Nothing requested: avoid an implicit broad fetch from origin.
-		return nil
+		return false, nil
 	}
 
 	// Encapsulated like the resolver's "pulling" span: hidden unless it
@@ -563,11 +636,11 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 
 	svcs, err := query.Services(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get services: %w", err)
+		return false, fmt.Errorf("failed to get services: %w", err)
 	}
 	detach, _, err := svcs.StartBindings(ctx, repo.Services)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer detach()
 
@@ -576,9 +649,11 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 
 // fetchObjects operates on the private mirror; service bindings and progress
 // streams are supplied by fetch so the Git protocol can also be tested directly.
-func (repo *RemoteGitRepository) fetchObjects(ctx context.Context, git *gitutil.GitCLI, depth int, includeTags bool, refs []*RemoteGitRef) error {
+// retried says the remote refused a commit, and its named ref was fetched
+// instead.
+func (repo *RemoteGitRepository) fetchObjects(ctx context.Context, git *gitutil.GitCLI, depth int, includeTags bool, refs []*RemoteGitRef) (retried bool, _ error) {
 	if len(refs) == 0 && !includeTags {
-		return nil
+		return false, nil
 	}
 
 	// Fetch by object SHA in the hot path (`--no-tags`), and only retry by named refs for SHA-incompatible remotes.
@@ -586,12 +661,12 @@ func (repo *RemoteGitRepository) fetchObjects(ctx context.Context, git *gitutil.
 
 	gitDir, err := git.GitDir(ctx)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	depth, err = mirrorFetchDepth(ctx, git, gitDir, depth)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	shaRefSpecs := make([]string, len(refs))
@@ -676,27 +751,28 @@ func (repo *RemoteGitRepository) fetchObjects(ctx context.Context, git *gitutil.
 		err = runFetch(shaRefSpecs)
 		if err != nil {
 			if !errors.Is(err, gitutil.ErrSHAFetchUnsupported) {
-				return fmt.Errorf("failed to fetch remote %s: %w", repo.URL.Remote(), err)
+				return false, fmt.Errorf("failed to fetch remote %s: %w", repo.URL.Remote(), err)
 			}
 
 			namedSpecs := namedFetchRefSpecs(refs)
 			if len(namedSpecs) == 0 {
-				return fmt.Errorf("failed to fetch remote %s: %w", repo.URL.Remote(), err)
+				return false, fmt.Errorf("failed to fetch remote %s: %w", repo.URL.Remote(), err)
 			}
 			defer cleanupScratchFetchRefs(namedSpecs)
 
 			logger.Debug("git fetch by sha failed; retrying with named refs", "remote", repo.URL.Remote(), "refspec_count", len(namedSpecs))
+			retried = true
 			if retryErr := runFetch(namedSpecs); retryErr != nil {
-				return fmt.Errorf("failed to fetch remote %s: sha fetch failed: %w; named-ref retry failed: %w", repo.URL.Remote(), err, retryErr)
+				return retried, fmt.Errorf("failed to fetch remote %s: sha fetch failed: %w; named-ref retry failed: %w", repo.URL.Remote(), err, retryErr)
 			}
 			if verifyErr := verifyFetchedSHAs(refs); verifyErr != nil {
-				return fmt.Errorf("failed to fetch remote %s: named-ref retry verification failed: %w", repo.URL.Remote(), verifyErr)
+				return retried, fmt.Errorf("failed to fetch remote %s: named-ref retry verification failed: %w", repo.URL.Remote(), verifyErr)
 			}
 			// The named ref may have moved since resolution. Retain the verified
 			// pinned SHA, not the scratch ref's potentially newer target.
 			for _, ref := range refs {
 				if _, pinErr := git.Run(ctx, "update-ref", fetchedGitRef(ref.SHA), ref.SHA); pinErr != nil {
-					return fmt.Errorf("failed to retain fetched sha %s: %w", ref.SHA, pinErr)
+					return retried, fmt.Errorf("failed to retain fetched sha %s: %w", ref.SHA, pinErr)
 				}
 			}
 			logger.Debug("git fetch named-ref retry succeeded", "remote", repo.URL.Remote(), "refspec_count", len(namedSpecs))
@@ -705,11 +781,11 @@ func (repo *RemoteGitRepository) fetchObjects(ctx context.Context, git *gitutil.
 
 	if includeTags {
 		if tagErr := runFetchTags(); tagErr != nil {
-			return fmt.Errorf("failed to hydrate tags for remote %s: %w", repo.URL.Remote(), tagErr)
+			return retried, fmt.Errorf("failed to hydrate tags for remote %s: %w", repo.URL.Remote(), tagErr)
 		}
 	}
 
-	return nil
+	return retried, nil
 }
 
 // mirrorFetchDepth returns the depth to fetch into the mirror at gitDir.
@@ -774,7 +850,9 @@ func namedFetchRefSpecs(refs []*RemoteGitRef) []string {
 	return refSpecs
 }
 
-func (repo *RemoteGitRepository) initRemote(ctx context.Context, fn func(ctx context.Context, dir string) error) (retErr error) {
+// initRemote holds the mirror's lock and runs fn in the mounted mirror;
+// created says the mirror was empty and initialized for this hold.
+func (repo *RemoteGitRepository) initRemote(ctx context.Context, fn func(ctx context.Context, dir string, created bool) error) (retErr error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return err
@@ -860,7 +938,7 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, fn func(ctx con
 		}
 	}
 
-	return fn(ctx, dir)
+	return fn(ctx, dir, initializeRepo)
 }
 
 func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool, remotes []GitRemote, upstreamRemote *string) (_ *Directory, rerr error) {
@@ -906,9 +984,9 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 		checkoutGit := git.New(gitutil.WithWorkTree(checkoutDir), gitutil.WithGitDir(checkoutDirGit))
 
 		var tmpref string
-		err := ref.mount(ctx, depth, includeTags, func(ctx context.Context, mirrorGit *gitutil.GitCLI) error {
+		err := ref.repo.mountFetched(ctx, depth, includeTags, []GitRefBackend{ref}, func(ctx context.Context, mirrorGit *gitutil.GitCLI, fetched *gitMirrorFetch) error {
 			var err error
-			tmpref, _, err = copyGitCheckout(ctx, checkoutGit, mirrorGit, checkoutDirGit, ref.Ref, depth)
+			tmpref, _, err = copyGitCheckout(ctx, checkoutGit, mirrorGit, checkoutDirGit, ref.Ref, depth, fetched)
 			return err
 		})
 		if err != nil {
