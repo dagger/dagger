@@ -582,8 +582,8 @@ func (d *PartDemandState) exhaust(source *PartSourceLease, err error) {
 
 // logOfferInstall records a part installed from an offer: the entry, the part,
 // the bytes downloaded for it and the time from the start of the import to
-// the install, over which the download and the layers' application
-// alternate, layer by layer. A layer the import reused or already had is not
+// the install, over which the layers download and apply
+// (snapshots.ImportTiming). A layer the import reused or already had is not
 // downloaded. Then where the time went, before and during the install. It
 // logs them, and stamps them on the span of ctx: the lazy-evaluation span of
 // the task that installed the part, which names the entry.
