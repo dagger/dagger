@@ -3437,15 +3437,17 @@ func TestFilterPendingWorkspaceModulesForRootFields(t *testing.T) {
 	})
 
 	// The constructor's spelling depends on the module's naming rules,
-	// which aren't known before it loads: either selects it.
+	// which aren't known before it loads: either selects it. (The rules
+	// spell acronyms in fields alike, myApi, but not digits: e2eTests by
+	// engine/naming, e2ETests by strcase.)
 	t.Run("constructor by either naming rules", func(t *testing.T) {
 		t.Parallel()
 
-		api := []pendingModule{mods[0], {Kind: moduleLoadKindAmbient, Name: "my-api"}, mods[1]}
-		for _, field := range []string{"myAPI", "myApi"} {
+		api := []pendingModule{mods[0], {Kind: moduleLoadKindAmbient, Name: "e2e-tests"}, mods[1]}
+		for _, field := range []string{"e2eTests", "e2ETests"} {
 			filtered := filterPendingWorkspaceModulesForRootFields(api, nil, nil, []string{field})
 			require.Equal(t, []pendingModule{api[1]}, filtered, field)
-			filtered = filterPendingWorkspaceModulesForRootFields(api, map[string]struct{}{"my-api": {}}, nil, []string{field})
+			filtered = filterPendingWorkspaceModulesForRootFields(api, map[string]struct{}{"e2e-tests": {}}, nil, []string{field})
 			require.Empty(t, filtered, field)
 		}
 	})
