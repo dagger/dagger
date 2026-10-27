@@ -704,7 +704,9 @@ func (sr *immutableRef) release(ctx context.Context) (rerr error) {
 	return nil
 }
 
-func (sr *mutableRef) commit(ctx context.Context, usage *snapshots.Usage) (_ *immutableRef, rerr error) {
+// commit commits sr. opts go to the snapshotter's commit, after the merge
+// usage, when one is given.
+func (sr *mutableRef) commit(ctx context.Context, usage *snapshots.Usage, opts ...snapshots.Opt) (_ *immutableRef, rerr error) {
 	if sr.released {
 		return nil, errors.Wrapf(errInvalid, "invalid mutable ref %p", sr)
 	}
@@ -720,6 +722,7 @@ func (sr *mutableRef) commit(ctx context.Context, usage *snapshots.Usage) (_ *im
 	if usage != nil {
 		commitOpts = append(commitOpts, withMergeUsage(*usage))
 	}
+	commitOpts = append(commitOpts, opts...)
 	if err := sr.cm.Snapshotter.Commit(ctx, id, sr.SnapshotID(), commitOpts...); err != nil {
 		return nil, errors.Wrapf(err, "failed to commit %s to immutable %s", sr.SnapshotID(), id)
 	}
@@ -828,6 +831,24 @@ func (sr *mutableRef) Commit(ctx context.Context) (ImmutableRef, error) {
 	defer sr.mu.Unlock()
 
 	return sr.commit(ctx, nil)
+}
+
+// commitOnto commits sr, prepared with no parent, as parent's child: the
+// snapshotter rebases it. Only a snapshotter that layers each snapshot's own
+// directory over its parents' can, which cm.applyLayersApart says.
+func (sr *mutableRef) commitOnto(ctx context.Context, parent ImmutableRef) (*immutableRef, error) {
+	ctx, err := EnsureLease(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "ensure lease for snapshot commit")
+	}
+
+	sr.cm.mu.Lock()
+	defer sr.cm.mu.Unlock()
+
+	sr.mu.Lock()
+	defer sr.mu.Unlock()
+
+	return sr.commit(ctx, nil, snapshots.WithParent(parent.SnapshotID()))
 }
 
 func (sr *mutableRef) CommitWithUsage(ctx context.Context, usage snapshots.Usage) (ImmutableRef, error) {

@@ -10,6 +10,7 @@ import (
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/diff"
 	"github.com/containerd/containerd/v2/core/leases"
+	"github.com/containerd/containerd/v2/core/mount"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/internal/buildkit/client"
@@ -140,7 +141,6 @@ func (cm *snapshotManager) ImportImage(
 	return current, nil
 }
 
-//nolint:gocyclo // Keep snapshot reuse, content ownership, and apply cleanup in one import flow.
 func (cm *snapshotManager) importLayer(
 	ctx context.Context,
 	desc ocispecs.Descriptor,
@@ -162,22 +162,11 @@ func (cm *snapshotManager) importLayer(
 	}
 
 	// The stamps feed the import's timing sums and the profile alike.
-	prof := wcprof.Enabled(ctx)
-	clock := importClock{timing: timing, prof: prof}
-	lockKey := importedLayerDiffLockKey(parentSnapshotID, diffID)
-	waitStart := clock.now()
-	unlock, err := cm.importLayerLocker.acquire(ctx, lockKey)
-	waited := clock.now()
-	if timing != nil {
-		timing.LayerWait += waited.Sub(waitStart)
-	}
-	if prof {
-		wcprof.RecordWaitAt(ctx, "snapshots.importLayer", wcprof.WaitReasonLock, waitStart, waited)
-	}
+	clock := importClock{timing: timing, prof: wcprof.Enabled(ctx)}
+	unlock, err := cm.acquireImportLock(ctx, importedLayerDiffLockKey(parentSnapshotID, diffID), clock)
 	if err != nil {
 		return nil, err
 	}
-
 	defer unlock()
 
 	blobKey := ImportedLayerBlobKey{
@@ -188,7 +177,70 @@ func (cm *snapshotManager) importLayer(
 		ParentSnapshotID: parentSnapshotID,
 		DiffID:           diffID,
 	}
+	if ref, err := cm.reuseImportedLayer(ctx, blobKey, diffKey, opts); err != nil || ref != nil {
+		return ref, err
+	}
 
+	if err := cm.fetchLayerContent(ctx, desc, provider, chainMode, chain, clock); err != nil {
+		return nil, err
+	}
+	if chain != nil && chain.fetched != nil {
+		chain.fetched()
+	}
+	leaseID, _ := leases.FromContext(ctx)
+	if parent != nil {
+		if err := cm.AttachLease(ctx, leaseID, parent.SnapshotID()); err != nil {
+			return nil, err
+		}
+	}
+
+	mut, err := cm.New(
+		ctx,
+		parent,
+		nil,
+		WithRecordType(opts.RecordType),
+		WithDescription(fmt.Sprintf("import snapshot layer %s", desc.Digest)),
+		WithImageRef(opts.ImageRef),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if mut != nil {
+			_ = mut.Release(context.WithoutCancel(ctx))
+		}
+	}()
+	if err := cm.applyLayer(ctx, mut, desc, chainMode, clock, false); err != nil {
+		return nil, err
+	}
+
+	ref, err := mut.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	mut = nil
+	return cm.recordImportedLayer(ctx, ref, desc, diffID, opts, blobKey, diffKey)
+}
+
+// acquireImportLock takes the import lock key names, adding the wait to the
+// clock's timing and profile.
+func (cm *snapshotManager) acquireImportLock(ctx context.Context, key string, clock importClock) (func(), error) {
+	waitStart := clock.now()
+	unlock, err := cm.importLayerLocker.acquire(ctx, key)
+	waited := clock.now()
+	if clock.timing != nil {
+		clock.timing.LayerWait += waited.Sub(waitStart)
+	}
+	if clock.prof {
+		wcprof.RecordWaitAt(ctx, "snapshots.importLayer", wcprof.WaitReasonLock, waitStart, waited)
+	}
+	return unlock, err
+}
+
+// reuseImportedLayer returns the snapshot the engine already imported for a
+// layer on the same parent, by its blob or its diff, or nil when it has none.
+// Requires the layer's import lock.
+func (cm *snapshotManager) reuseImportedLayer(ctx context.Context, blobKey ImportedLayerBlobKey, diffKey ImportedLayerDiffKey, opts ImportImageOpts) (ImmutableRef, error) {
 	cm.mu.Lock()
 	byBlob := cm.importedLayerByBlob[blobKey]
 	byDiff := cm.importedLayerByDiff[diffKey]
@@ -223,55 +275,42 @@ func (cm *snapshotManager) importLayer(
 		}
 		cm.mu.Unlock()
 	}
+	return nil, nil
+}
 
+// fetchLayerContent gets desc's blob into the content store, linked to ctx's
+// lease, adding the time to the clock's timing and profile.
+func (cm *snapshotManager) fetchLayerContent(ctx context.Context, desc ocispecs.Descriptor, provider content.Provider, chainMode bool, chain *chainLayer, clock importClock) error {
 	fetchStart := clock.now()
 	source, joined, err := cm.importLayerContent(ctx, desc, provider, chainMode, chain)
 	fetched := clock.now()
-	if timing != nil {
-		timing.Fetch += fetched.Sub(fetchStart)
+	if clock.timing != nil {
+		clock.timing.Fetch += fetched.Sub(fetchStart)
 		if joined {
-			timing.Joined++
+			clock.timing.Joined++
 		}
 	}
-	if prof {
+	if clock.prof {
 		recordImportPhase(ctx, "snapshot.import.fetch["+source+"]", desc, source, fetchStart, fetched, err)
 	}
-	if err != nil {
-		return nil, err
-	}
-	if chain != nil && chain.fetched != nil {
-		chain.fetched()
-	}
-	if parent != nil {
-		if err := cm.AttachLease(ctx, leaseID, parent.SnapshotID()); err != nil {
-			return nil, err
-		}
-	}
+	return err
+}
 
-	mut, err := cm.New(
-		ctx,
-		parent,
-		nil,
-		WithRecordType(opts.RecordType),
-		WithDescription(fmt.Sprintf("import snapshot layer %s", desc.Digest)),
-		WithImageRef(opts.ImageRef),
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if mut != nil {
-			_ = mut.Release(context.WithoutCancel(ctx))
-		}
-	}()
-
+// applyLayer applies desc's blob to mut. apart says mut was prepared with no
+// parent for a rebase on commit (cm.applyLayersApart): its directory is then
+// written in place, with the layer's whiteouts as overlay whiteouts, as it is
+// for a snapshot with parents.
+func (cm *snapshotManager) applyLayer(ctx context.Context, mut MutableRef, desc ocispecs.Descriptor, chainMode bool, clock importClock, apart bool) error {
 	mountable, err := mut.Mount(ctx, false)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	mounts, unmount, err := mountable.Mount()
 	if err != nil {
-		return nil, err
+		return err
+	}
+	if apart {
+		mounts = upperOverlay(mounts)
 	}
 	var applyOpts []diff.ApplyOpt
 	var unpack *ProgressTracker
@@ -284,21 +323,25 @@ func (cm *snapshotManager) importLayer(
 	applyStart := clock.now()
 	appliedDesc, err := cm.Applier.Apply(ctx, desc, mounts, applyOpts...)
 	applied := clock.now()
-	if timing != nil {
-		timing.Apply += applied.Sub(applyStart)
+	if clock.timing != nil {
+		clock.timing.Apply += applied.Sub(applyStart)
 	}
-	if prof {
+	if clock.prof {
 		recordImportPhase(ctx, "snapshot.import.apply", desc, "", applyStart, applied, err)
 	}
 	if err != nil {
 		_ = unmount()
-		return nil, chainError(ctx, chainMode, desc, "apply", err)
+		return chainError(ctx, chainMode, desc, "apply", err)
 	}
 	// The snapshot is found again by diffID, so its content must be the
 	// diffID's, as containerd's unpacker also requires.
-	if appliedDesc.Digest != diffID {
+	diffID, err := diffIDFromDescriptor(desc)
+	if err == nil && appliedDesc.Digest != diffID {
+		err = errors.Errorf("wrong diff id %s calculated on extraction, expected %s", appliedDesc.Digest, diffID)
+	}
+	if err != nil {
 		_ = unmount()
-		return nil, chainError(ctx, chainMode, desc, "apply", errors.Errorf("wrong diff id %s calculated on extraction, expected %s", appliedDesc.Digest, diffID))
+		return chainError(ctx, chainMode, desc, "apply", err)
 	}
 	if unpack != nil {
 		// a successful apply consumed the whole blob even if the
@@ -306,16 +349,32 @@ func (cm *snapshotManager) importLayer(
 		unpack.Update(desc.Size)
 		unpack.Finish()
 	}
-	if err := unmount(); err != nil {
-		return nil, err
-	}
+	return unmount()
+}
 
-	ref, err := mut.Commit(ctx)
-	if err != nil {
-		return nil, err
+// upperOverlay turns the bind mount of a snapshot prepared with no parent
+// into an overlay mount of its directory alone, as containerd's own parallel
+// unpack does: containerd's applier then writes an overlay mount's upper
+// directory in place, converting whiteouts, and never mounts it.
+func upperOverlay(mounts []mount.Mount) []mount.Mount {
+	if len(mounts) != 1 || mounts[0].Type != "bind" {
+		return mounts
 	}
-	mut = nil
+	m := mount.Mount{Type: "overlay", Source: "overlay"}
+	for _, o := range mounts[0].Options {
+		if o != "rbind" {
+			m.Options = append(m.Options, o)
+		}
+	}
+	m.Options = append(m.Options, "upperdir="+mounts[0].Source)
+	return []mount.Mount{m}
+}
 
+// recordImportedLayer records ref, just committed from desc's blob, as the
+// layer's import on its parent: its blob metadata, its content and the
+// engine's import indexes. It takes ownership of ref, which it releases on
+// failure. Requires the layer's import lock.
+func (cm *snapshotManager) recordImportedLayer(ctx context.Context, ref ImmutableRef, desc ocispecs.Descriptor, diffID digest.Digest, opts ImportImageOpts, blobKey ImportedLayerBlobKey, diffKey ImportedLayerDiffKey) (ImmutableRef, error) {
 	imported, ok := ref.(*immutableRef)
 	if !ok {
 		_ = ref.Release(context.WithoutCancel(ctx))
@@ -385,6 +444,7 @@ func (cm *snapshotManager) importLayer(
 		return nil, err
 	}
 
+	leaseID, _ := leases.FromContext(ctx)
 	if err := cm.AttachLease(ctx, leaseID, ref.SnapshotID()); err != nil {
 		_ = ref.Release(context.WithoutCancel(ctx))
 		return nil, err
