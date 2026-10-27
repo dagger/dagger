@@ -17,13 +17,6 @@ import (
 type eqClassID uint64
 type egraphTermID uint64
 
-type resultDigestPostingKind uint8
-
-const (
-	resultDigestPostingExact resultDigestPostingKind = iota
-	resultDigestPostingBroad
-)
-
 // egraphTerm is purely symbolic: operation shape + canonicalized input/output
 // equivalence state.
 //
@@ -207,7 +200,7 @@ func (c *Cache) initEgraphLocked() {
 		c.egraphTermsByTermDigest = make(map[string]*set.TreeSet[egraphTermID])
 	}
 	if c.egraphResultsByDigest == nil {
-		c.egraphResultsByDigest = make(map[string]*set.TreeSet[sharedResultID])
+		c.egraphResultsByDigest = make(map[string]*resultDigestPosting)
 	}
 	if c.resultIndexedDigests == nil {
 		c.resultIndexedDigests = make(map[sharedResultID][]string)
@@ -867,22 +860,17 @@ func (c *Cache) indexResultDigestsLocked(res *sharedResult, requestFrame, respon
 
 // addResultDigestPostingLocked requires egraphMu and an e-graph initialized by
 // initEgraphLocked.
-func (c *Cache) addResultDigestPostingLocked(resID sharedResultID, dig string, kind resultDigestPostingKind) {
+func (c *Cache) addResultDigestPostingLocked(resID sharedResultID, dig string) {
 	if resID == 0 || dig == "" {
-		return
-	}
-	switch kind {
-	case resultDigestPostingExact, resultDigestPostingBroad:
-	default:
 		return
 	}
 	results := c.egraphResultsByDigest[dig]
 	if results == nil {
-		results = newSharedResultIDSet()
+		results = &resultDigestPosting{}
 		c.egraphResultsByDigest[dig] = results
 	}
 	inserted := results.Insert(resID)
-	if kind == resultDigestPostingExact && inserted {
+	if inserted {
 		c.resultIndexedDigests[resID] = append(c.resultIndexedDigests[resID], dig)
 	}
 }
@@ -918,7 +906,9 @@ func (c *Cache) removeResultDigestsLocked(resID sharedResultID, outputEqClasses 
 	for _, dig := range c.resultIndexedDigests[resID] {
 		c.removeResultDigestPostingLocked(resID, dig)
 	}
-	if _, broad := c.broadlyIndexedResults[resID]; broad {
+	if groups := c.restoredDigestGroups[resID]; len(groups) != 0 {
+		c.removeImportedPostingGroupsLocked(resID, groups)
+	} else if _, broad := c.broadlyIndexedResults[resID]; broad {
 		for outputEqID := range outputEqClasses {
 			outputEqID = c.findEqClassLocked(outputEqID)
 			if outputEqID == 0 {
@@ -930,6 +920,7 @@ func (c *Cache) removeResultDigestsLocked(resID sharedResultID, outputEqClasses 
 		}
 	}
 	delete(c.resultIndexedDigests, resID)
+	delete(c.restoredDigestGroups, resID)
 	delete(c.broadlyIndexedResults, resID)
 }
 
@@ -1676,9 +1667,9 @@ func (c *Cache) applyPreparedResultIdentityLocked(ctx context.Context, res *shar
 // addFramePostingsLocked posts a frame's recipe digest and extra digests for
 // the result. Requires egraphMu.
 func (c *Cache) addFramePostingsLocked(resID sharedResultID, recipe digest.Digest, extras []call.ExtraDigest) {
-	c.addResultDigestPostingLocked(resID, recipe.String(), resultDigestPostingExact)
+	c.addResultDigestPostingLocked(resID, recipe.String())
 	for _, extra := range extras {
-		c.addResultDigestPostingLocked(resID, extra.Digest.String(), resultDigestPostingExact)
+		c.addResultDigestPostingLocked(resID, extra.Digest.String())
 	}
 }
 
@@ -2018,6 +2009,7 @@ func (c *Cache) maybeResetEgraphLocked() {
 	c.egraphResultsByDigest = nil
 	c.resultIndexedDigests = nil
 	c.broadlyIndexedResults = nil
+	c.restoredDigestGroups = nil
 	c.resultsByID = nil
 	c.resultPayloadBytes = 0
 	c.holderEntries = nil

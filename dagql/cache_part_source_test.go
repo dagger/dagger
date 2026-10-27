@@ -40,7 +40,7 @@ func partTestEquivalent(t *testing.T, c *Cache, receiver, donor AnyResult) {
 	dig, err := receiver.cacheSharedResult().loadResultCall().deriveRecipeDigest(c)
 	require.NoError(t, err)
 	c.egraphMu.Lock()
-	c.addResultDigestPostingLocked(donor.cacheSharedResult().id, dig.String(), resultDigestPostingExact)
+	c.addResultDigestPostingLocked(donor.cacheSharedResult().id, dig.String())
 	c.egraphMu.Unlock()
 }
 func TestPartSourceSelection(t *testing.T) {

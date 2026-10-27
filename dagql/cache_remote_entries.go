@@ -1179,7 +1179,7 @@ func (c *Cache) teachRemoteIdentityLocked(ctx context.Context, entry *sharedResu
 			continue
 		}
 		ids = append(ids, c.ensureEqClassForDigestLocked(ctx, dig.String()))
-		c.addResultDigestPostingLocked(entry.id, dig.String(), resultDigestPostingExact)
+		c.addResultDigestPostingLocked(entry.id, dig.String())
 	}
 	outputEqID := c.mergeEqClassesLocked(ctx, ids...)
 	if outputEqID == 0 {

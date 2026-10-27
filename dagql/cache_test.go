@@ -4940,7 +4940,7 @@ func TestCacheReleaseRemovesRecordedDigestPostingAfterOutputClassMerge(t *testin
 
 	// Removal covers production-recorded exact postings and broad imported
 	// postings, not arbitrary white-box mutations that bypass bookkeeping.
-	c.addResultDigestPostingLocked(shared.id, foreignDigest.String(), resultDigestPostingExact)
+	c.addResultDigestPostingLocked(shared.id, foreignDigest.String())
 	c.egraphMu.Unlock()
 	assert.Assert(t, outputClassCount > 0)
 	assert.Assert(t, initialOutputEqID != 0)
