@@ -789,7 +789,7 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 		}
 	}
 
-	for causal := range span.CausalSpans {
+	for causal := range span.attributedCauses {
 		// propagate activity and failure, since causal spans inherit both
 		if propagate(causal, true, true) {
 			span.db.update(causal)
@@ -872,7 +872,7 @@ func (span *Span) updateRollUpAncestors() {
 	}
 
 	// Add causal parents to queue
-	span.CausalSpans(func(causal *Span) bool {
+	span.attributedCauses(func(causal *Span) bool {
 		queue = append(queue, causal)
 		return true
 	})
@@ -905,7 +905,7 @@ func (span *Span) updateRollUpAncestors() {
 		}
 
 		// Add this ancestor's causal parents to queue
-		current.CausalSpans(func(causal *Span) bool {
+		current.attributedCauses(func(causal *Span) bool {
 			queue = append(queue, causal)
 			return true
 		})
@@ -1133,6 +1133,17 @@ func (span *Span) CausalSpans(f func(*Span) bool) {
 	}
 }
 
+// attributedCauses iterates over the spans that cause this span, as
+// CausalSpans does, passing through lazy evaluations. A later evaluation of a
+// lazy result may link an earlier one rather than the call that returned the
+// result; its status and activity belong to that call, not to the earlier
+// evaluation or the call that started it.
+func (span *Span) attributedCauses(f func(*Span) bool) {
+	span.CausalSpans(func(cause *Span) bool {
+		return cause.isLazyEvaluation() || f(cause)
+	})
+}
+
 func (span *Span) EffectSpans(f func(*Span) bool) {
 	for _, span := range span.effectsViaLinks.Spans() {
 		if !f(span) {
@@ -1165,7 +1176,7 @@ func (span *Span) IsPending() bool {
 // actually finished all deferred work. Blocked resumptions and successful
 // partial resumptions do not count: the work is still pending.
 func (span *Span) hasResolvedEffects() bool {
-	for _, effect := range span.effectsViaLinks.Spans() {
+	for effect := range span.continuations {
 		// This remains an any test. A partial effect may remain recorded after
 		// a sibling finishes, but that later non-partial effect resolves pending.
 		if !effect.Blocked && !effect.Partial {
@@ -1173,6 +1184,57 @@ func (span *Span) hasResolvedEffects() bool {
 		}
 	}
 	return false
+}
+
+// continuations iterates over the spans that continue this span's work: its
+// effects, and in turn the effects of those that are lazy evaluations. A
+// later evaluation of a lazy result may link an earlier one rather than the
+// call that returned the result.
+func (span *Span) continuations(f func(*Span) bool) {
+	var seen map[*Span]bool
+	for _, effect := range span.effectsViaLinks.Spans() {
+		if !f(effect) {
+			return
+		}
+		if !effect.isLazyEvaluation() || effect.effectsViaLinks.Len() == 0 {
+			continue
+		}
+		if seen == nil {
+			// a later evaluation may link both this span and an earlier one
+			seen = map[*Span]bool{span: true}
+			for _, direct := range span.effectsViaLinks.Spans() {
+				seen[direct] = true
+			}
+		}
+		if !effect.laterContinuations(f, seen) {
+			return
+		}
+	}
+}
+
+// laterContinuations iterates over the effects of a lazy evaluation not yet
+// seen, and in turn theirs, for continuations.
+func (span *Span) laterContinuations(f func(*Span) bool, seen map[*Span]bool) bool {
+	for _, effect := range span.effectsViaLinks.Spans() {
+		if seen[effect] {
+			continue
+		}
+		seen[effect] = true
+		if !f(effect) {
+			return false
+		}
+		if effect.isLazyEvaluation() && !effect.laterContinuations(f, seen) {
+			return false
+		}
+	}
+	return true
+}
+
+// isLazyEvaluation reports whether the span evaluates a lazy result for the
+// call that returned it: a resume, or the opening of a stored part.
+func (span *Span) isLazyEvaluation() bool {
+	return strings.HasPrefix(span.Name, "resume ") ||
+		strings.HasPrefix(span.Name, "open stored part (")
 }
 
 func (span *Span) PendingReason() (bool, []string) {
