@@ -13,6 +13,11 @@ import (
 // installed twice, under that name in the views from the cut on and under
 // its old spelling in earlier ones, each within the views it had before. No
 // view has both spellings.
+//
+// A renamed field that had no view filter is view-scoped now: dagql records
+// the caller's view in its calls, where it recorded the internal view "", so
+// callers of different views (beta.22, beta.23, v1.0.0, and each pre-cut
+// view) no longer share its cached or persisted results.
 
 // casedField is field in the views with the conventional core names.
 func casedField[T dagql.Typed](field dagql.Field[T]) dagql.Field[T] {

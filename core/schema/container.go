@@ -1612,7 +1612,7 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	}
 	if registryTransport.InsecureSkipTLSVerify {
 		fromArgs = append(fromArgs, dagql.NamedInput{
-			Name:  "insecureSkipTLSVerify",
+			Name:  "insecureSkipTlsVerify",
 			Value: dagql.Boolean(true),
 		})
 	}
