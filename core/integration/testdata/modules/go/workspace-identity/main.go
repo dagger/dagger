@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"strconv"
+	"strings"
 
 	"dagger/probe/internal/dagger"
 )
@@ -28,6 +30,50 @@ func (m *Probe) Check(ws *dagger.Workspace) string {
 // +check
 func (m *Probe) Verify() error {
 	return nil
+}
+
+// Recorded is a check that takes the workspace like a lint check does, and
+// records each run of its body, so tests can count how often it really ran.
+// +check
+func (m *Probe) Recorded(ctx context.Context, ws *dagger.Workspace) error {
+	log, err := runLog(ctx, ws)
+	if err != nil {
+		return err
+	}
+	_, err = log.
+		WithEnvVariable("NONCE", rand.Text()).
+		WithExec([]string{"sh", "-c", "echo recorded >> /runs/log"}).
+		Sync(ctx)
+	return err
+}
+
+// Runs counts the recorded runs of Recorded's body.
+// +cache="never"
+func (m *Probe) Runs(ctx context.Context, ws *dagger.Workspace) (int, error) {
+	log, err := runLog(ctx, ws)
+	if err != nil {
+		return 0, err
+	}
+	out, err := log.
+		WithEnvVariable("NONCE", rand.Text()).
+		WithExec([]string{"sh", "-c", "grep -cx recorded /runs/log || true"}).
+		Stdout(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(strings.TrimSpace(out))
+}
+
+// runLog keeps the record of runs in a cache volume named after the
+// workspace's nonce, so tests with different content don't share it.
+func runLog(ctx context.Context, ws *dagger.Workspace) (*dagger.Container, error) {
+	nonce, err := ws.File("nonce.txt").Contents(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return dag.Container().
+		From("alpine:3").
+		WithMountedCache("/runs", dag.CacheVolume("workspace-identity-runs-"+strings.TrimSpace(nonce))), nil
 }
 
 // Config reads the effective config through the workspace this object was

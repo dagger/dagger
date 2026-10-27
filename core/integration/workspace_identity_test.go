@@ -138,6 +138,15 @@ func (WorkspaceSuite) TestGitWorkspaceIdentity(ctx context.Context, t *testctx.T
 		require.NotContains(t, listB, "extra-a")
 	})
 
+	// The check itself, not only a function, is reused: a check's result is
+	// cached across sessions, and the workspace it takes has the same key.
+	t.Run("a check given the same Git workspace runs once across sessions", func(ctx context.Context, t *testctx.T) {
+		remoteRef := remote(ctx, t)
+		workspaceIdentityExec(ctx, t, ctr, true, "check", "-W", remoteRef, "recorded")
+		workspaceIdentityExec(ctx, t, ctr, true, "check", "-W", remoteRef, "recorded")
+		require.Equal(t, "1", workspaceIdentityCall(ctx, t, ctr, "-W", remoteRef, "runs"))
+	})
+
 	t.Run("a check on other content runs again", func(ctx context.Context, t *testctx.T) {
 		require.NotEqual(t,
 			workspaceIdentityCall(ctx, t, ctr, "-W", remote(ctx, t), "check"),
