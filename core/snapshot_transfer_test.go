@@ -79,14 +79,16 @@ func TestSnapshotTransferTypedAdoptionAndRestart(t *testing.T) {
 		ids[i], err = cache.PersistedResultID(result)
 		require.NoError(t, err)
 	}
-	assertTypedSnapshotOwners(t, consumer, imported.SnapshotID(), 3)
+	// The container and the file own the snapshot. The rootfs selection
+	// depends on the container, which holds it, so it borrows.
+	assertTypedSnapshotOwners(t, consumer, imported.SnapshotID(), 2)
 	require.NoError(t, cache.ReleaseSession(ctx, "before"))
 	require.NoError(t, cache.Close(ctx))
 	sentinel, err := consumer.Leases.Create(context.Background(), leases.WithID("unrelated-temporary"), bkcache.MakeTemporary)
 	require.NoError(t, err)
 	remaining, err := consumer.Leases.List(context.Background())
 	require.NoError(t, err)
-	require.Len(t, remaining, 5)
+	require.Len(t, remaining, 4)
 	for _, owner := range remaining {
 		resources, err := consumer.Leases.ListResources(context.Background(), owner)
 		require.NoError(t, err)
@@ -102,6 +104,8 @@ func TestSnapshotTransferTypedAdoptionAndRestart(t *testing.T) {
 	require.NoError(t, bkcache.ReleaseTransferLeasesAfterRestart(ctx, consumer.Leases))
 	remaining, err = consumer.Leases.List(ctx)
 	require.NoError(t, err)
+	// Borrowed links aren't persisted: after the restart the rootfs
+	// selection's imported link attaches a lease of its own again.
 	require.Len(t, remaining, 4, "startup must remove the old transfer lease")
 	var sentinelSurvives bool
 	for _, owner := range remaining {
@@ -152,7 +156,7 @@ func TestSnapshotTransferTypedAdoptionAndRestart(t *testing.T) {
 	require.Equal(t, []string{"b.txt"}, entries)
 	contents = demandedFileContents(t, ctx, loadedFile)
 	require.Equal(t, "typed suffix", string(contents))
-	assertTypedSnapshotOwners(t, consumer, imported.SnapshotID(), 3)
+	assertTypedSnapshotOwners(t, consumer, imported.SnapshotID(), 2)
 	require.EqualValues(t, 2, provider.Reads.Load())
 	require.EqualValues(t, 2, consumer.Applies.Load())
 	require.NoError(t, cache.ReleaseSession(ctx, "after"))
