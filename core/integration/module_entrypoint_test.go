@@ -418,9 +418,9 @@ var nonceEntrypointSource = fmt.Sprintf(`type Entrypoint implements ModuleEntryp
       typeDef
         .withObject("Nonces")
         .withConstructor(function("", typeDef.withObject("Nonces")))
-        .withFunction(function("Ttl", nonce).withCachePolicy(FunctionCachePolicy.Default, timeToLive: "3s"))
-        .withFunction(function("Never", nonce).withCachePolicy(FunctionCachePolicy.Never))
-        .withFunction(function("Session", nonce).withCachePolicy(FunctionCachePolicy.PerSession))
+        .withFunction(function("Ttl", nonce).withCachePolicy(FunctionCachePolicy.DEFAULT, timeToLive: "3s"))
+        .withFunction(function("Never", nonce).withCachePolicy(FunctionCachePolicy.NEVER))
+        .withFunction(function("Session", nonce).withCachePolicy(FunctionCachePolicy.PER_SESSION))
         .withFunction(function("Failing", nonce)),
     ]
   }
@@ -562,9 +562,9 @@ var sharedContainerEntrypointSource = fmt.Sprintf(`type Entrypoint implements Mo
       typeDef
         .withObject("Shared")
         .withConstructor(function("", typeDef.withObject("Shared")))
-        .withFunction(function("Short", typeDef.withObject("Container")).withCachePolicy(FunctionCachePolicy.Default, timeToLive: "1s"))
-        .withFunction(function("Long", typeDef.withObject("Container")).withCachePolicy(FunctionCachePolicy.Default, timeToLive: "60s"))
-        .withFunction(function("Runs", typeDef.withKind(TypeDefKind.STRING_KIND)).withCachePolicy(FunctionCachePolicy.Never)),
+        .withFunction(function("Short", typeDef.withObject("Container")).withCachePolicy(FunctionCachePolicy.DEFAULT, timeToLive: "1s"))
+        .withFunction(function("Long", typeDef.withObject("Container")).withCachePolicy(FunctionCachePolicy.DEFAULT, timeToLive: "60s"))
+        .withFunction(function("Runs", typeDef.withKind(TypeDefKind.STRING_KIND)).withCachePolicy(FunctionCachePolicy.NEVER)),
     ]
   }
 
@@ -645,7 +645,7 @@ var tracedEntrypointSource = fmt.Sprintf(`type Entrypoint implements ModuleEntry
         .withConstructor(function("", typeDef.withObject("Traced")))
         .withFunction(
           function("Body", typeDef.withKind(TypeDefKind.STRING_KIND))
-            .withCachePolicy(FunctionCachePolicy.Never),
+            .withCachePolicy(FunctionCachePolicy.NEVER),
         ),
     ]
   }
