@@ -4,8 +4,10 @@ import (
 	"context"
 	stderrors "errors"
 	"slices"
+	"sync"
 	"time"
 
+	"github.com/containerd/containerd/v2/core/leases"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
@@ -25,13 +27,25 @@ func (sr *immutableRef) ExportChain(ctx context.Context, refCfg config.RefConfig
 	return chains[0], nil
 }
 
+// ChainWork marks the span of each chain's own work in an export, for a
+// profile: the builds of the layers the chain is the first to have. Begin
+// is called when chain i's first build starts and returns the context its
+// builds run under; End is called when its last build ends, with the bytes
+// of the blobs they computed and the first error. A chain with no layer of
+// its own begins and ends once the export is planned. The export's planning
+// and its pinning of the built blobs into each chain belong to the export,
+// not to a chain.
+type ChainWork struct {
+	Begin func(ctx context.Context, i int) context.Context
+	End   func(i int, blobBytes int64, err error)
+}
+
 // ExportChains exports refs' chains as one export, as ExportChain exports
 // each: the layers they lack blobs for build up to refCfg.Builds at once, and
-// a layer the chains share builds once. chainCtxs, when not nil, holds each
-// ref's own context, which the work done for its chain runs under. It
-// returns the chains in refs' order; on error it returns none, and every
-// chain it opened is released.
-func ExportChains(ctx context.Context, refs []ImmutableRef, chainCtxs []context.Context, refCfg config.RefConfig) (_ []*ExportChain, rerr error) {
+// a layer the chains share builds once. work, when not nil, marks each
+// chain's own work. It returns the chains in refs' order; on error it
+// returns none, and every chain it opened is released.
+func ExportChains(ctx context.Context, refs []ImmutableRef, work *ChainWork, refCfg config.RefConfig) (_ []*ExportChain, rerr error) {
 	var cm *snapshotManager
 	own := make([]*immutableRef, 0, len(refs))
 	for _, ref := range refs {
@@ -44,7 +58,7 @@ func ExportChains(ctx context.Context, refs []ImmutableRef, chainCtxs []context.
 		own = append(own, sr)
 	}
 	if len(own) > 0 {
-		return cm.exportChains(ctx, own, chainCtxs, refCfg)
+		return cm.exportChains(ctx, own, work, refCfg)
 	}
 	// Refs of other kinds, or of several managers, export one at a time.
 	chains := make([]*ExportChain, 0, len(refs))
@@ -57,10 +71,17 @@ func ExportChains(ctx context.Context, refs []ImmutableRef, chainCtxs []context.
 	}()
 	for i, ref := range refs {
 		chainCtx := ctx
-		if chainCtxs != nil {
-			chainCtx = chainCtxs[i]
+		if work != nil {
+			chainCtx = work.Begin(ctx, i)
 		}
 		chain, err := ref.ExportChain(chainCtx, refCfg)
+		if work != nil {
+			var blobBytes int64
+			if chain != nil {
+				blobBytes = chain.Stats.BlobBytes
+			}
+			work.End(i, blobBytes, err)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -74,11 +95,51 @@ type chainExport struct {
 	chain *ExportChain
 	// ctx carries the chain's pin, which leases what exporting it writes.
 	ctx context.Context
+	// index is the chain's place in the export, for its ChainWork.
+	index int
 	// snapshotIDs are the chain's snapshots, root first, and merged marks
 	// those carrying the merge-usage label, for the export's stats: a merge,
 	// a diff application, or a copy committed with its usage.
 	snapshotIDs []string
 	merged      map[string]bool
+
+	// The chain's own builds: how many are still to end, the context they
+	// run under once the first has begun, the bytes of the blobs they
+	// computed and their first error.
+	mu        sync.Mutex
+	pending   int
+	workCtx   context.Context
+	blobBytes int64
+	workErr   error
+}
+
+// beginBuild returns the context one of the chain's builds runs under,
+// beginning the chain's work with its first build.
+func (export *chainExport) beginBuild(ctx context.Context, work *ChainWork) context.Context {
+	export.mu.Lock()
+	defer export.mu.Unlock()
+	if export.workCtx == nil {
+		export.workCtx = ctx
+		if work != nil {
+			export.workCtx = work.Begin(ctx, export.index)
+		}
+	}
+	return export.workCtx
+}
+
+// endBuild records one of the chain's builds as ended, ending the chain's
+// work with its last.
+func (export *chainExport) endBuild(work *ChainWork, blobBytes int64, err error) {
+	export.mu.Lock()
+	defer export.mu.Unlock()
+	export.blobBytes += blobBytes
+	if export.workErr == nil {
+		export.workErr = err
+	}
+	export.pending--
+	if export.pending == 0 && work != nil {
+		work.End(export.index, export.blobBytes, export.workErr)
+	}
 }
 
 // layerBuild is ensuring one layer's blob, for the first chain of the export
@@ -107,7 +168,7 @@ type layerBuild struct {
 // first, it pins each layer's blob into the chain and records the chain's
 // layers and stats, as exporting the chains one after another would: a
 // layer an earlier chain built counts as reused.
-func (cm *snapshotManager) exportChains(ctx context.Context, refs []*immutableRef, chainCtxs []context.Context, refCfg config.RefConfig) (_ []*ExportChain, rerr error) {
+func (cm *snapshotManager) exportChains(ctx context.Context, refs []*immutableRef, work *ChainWork, refCfg config.RefConfig) (_ []*ExportChain, rerr error) {
 	exports := make([]*chainExport, 0, len(refs))
 	defer func() {
 		if rerr != nil {
@@ -119,17 +180,14 @@ func (cm *snapshotManager) exportChains(ctx context.Context, refs []*immutableRe
 	builds := map[string]*layerBuild{}
 	var planned []*layerBuild
 	for i, sr := range refs {
-		chainCtx := ctx
-		if chainCtxs != nil {
-			chainCtx = chainCtxs[i]
-		}
-		pin, pinCtx, err := cm.newResourcePin(chainCtx)
+		pin, pinCtx, err := cm.newResourcePin(ctx)
 		if err != nil {
 			return nil, err
 		}
 		export := &chainExport{
 			chain:  &ExportChain{Provider: cm.ContentStore, pin: pin},
 			ctx:    pinCtx,
+			index:  i,
 			merged: map[string]bool{},
 		}
 		exports = append(exports, export)
@@ -164,10 +222,18 @@ func (cm *snapshotManager) exportChains(ctx context.Context, refs []*immutableRe
 			}
 			builds[snapshotID] = build
 			planned = append(planned, build)
+			export.pending++
 		}
 	}
 
-	if err := cm.buildExportLayers(ctx, planned, refCfg); err != nil {
+	if work != nil {
+		for _, export := range exports {
+			if export.pending == 0 {
+				work.End(export.index, 0, nil)
+			}
+		}
+	}
+	if err := cm.buildExportLayers(ctx, planned, work, refCfg); err != nil {
 		return nil, err
 	}
 
@@ -236,17 +302,20 @@ func (cm *snapshotManager) assembleExportChain(export *chainExport, builds map[s
 }
 
 // buildExportLayers ensures the planned layers' blobs, up to
-// refCfg.Builds.Workers at once, each under its chain's context and pin. The
-// first failure cancels the others.
-func (cm *snapshotManager) buildExportLayers(ctx context.Context, planned []*layerBuild, refCfg config.RefConfig) error {
+// refCfg.Builds.Workers at once, each in its chain's work and under its
+// chain's pin. The first failure cancels the others.
+func (cm *snapshotManager) buildExportLayers(ctx context.Context, planned []*layerBuild, work *ChainWork, refCfg config.RefConfig) error {
 	eg, egCtx := errgroup.WithContext(ctx)
 	eg.SetLimit(max(refCfg.Builds.Workers, 1))
 	for _, build := range planned {
-		eg.Go(func() error {
+		eg.Go(func() (err error) {
+			owner := build.owner
+			workCtx := owner.beginBuild(ctx, work)
+			defer func() { owner.endBuild(work, build.stats.BlobBytes, err) }()
 			if err := egCtx.Err(); err != nil {
 				return err
 			}
-			buildCtx, cancel := context.WithCancelCause(build.owner.ctx)
+			buildCtx, cancel := context.WithCancelCause(leases.WithLease(workCtx, owner.chain.pin.id))
 			defer cancel(nil)
 			stop := context.AfterFunc(egCtx, func() { cancel(context.Cause(egCtx)) })
 			defer stop()

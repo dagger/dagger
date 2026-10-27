@@ -169,8 +169,9 @@ func profCopy(ctx context.Context, start, end time.Time, err error) {
 	wcprof.RecordOpAt(ctx, wcprof.OpKindRemoteCache, "remotecache.export.copy", wcprof.OpOpts{}, start, end, profErrOutcome(err))
 }
 
-// profBeginChain starts the profile op of opening one exported part's chain,
-// which diffs the layers that have no blob yet.
+// profBeginChain starts the profile op of one exported part's chain: the
+// builds of the layers it is the first in its export to have, which diff the
+// layers that have no blob yet.
 func profBeginChain(ctx context.Context, address PersistedPartAddress) (context.Context, *wcprof.Op) {
 	if !wcprof.Enabled(ctx) {
 		return ctx, nil
@@ -181,13 +182,11 @@ func profBeginChain(ctx context.Context, address PersistedPartAddress) (context.
 
 // profEndChain ends a chain's op with the result it is a part of and the
 // bytes of the blobs it computed: 0 when every layer's blob already existed.
-func profEndChain(op *wcprof.Op, chain *snapshots.ExportChain, resultID uint64, err error) {
+func profEndChain(op *wcprof.Op, blobBytes int64, resultID uint64, err error) {
 	if op == nil {
 		return
 	}
-	if chain != nil {
-		op.SetBytes(chain.Stats.BlobBytes)
-	}
+	op.SetBytes(blobBytes)
 	op.EndWithResult(profErrOutcome(err), resultID)
 }
 
