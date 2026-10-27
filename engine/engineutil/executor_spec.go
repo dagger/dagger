@@ -536,7 +536,7 @@ func (c *Client) generateBaseSpec(ctx context.Context, state *execState) error {
 	baseSpec, ociSpecCleanup, err := oci.GenerateSpec(
 		ctx,
 		state.procInfo.Meta,
-		state.mounts,
+		withRuntimeBoundMountsOwn(state.mounts),
 		state.id,
 		state.resolvConfPath,
 		state.hostsFilePath,
@@ -671,13 +671,9 @@ func (c *Client) setupRootfs(ctx context.Context, state *execState) error {
 		case mnt.Destination == MetaMountDestPath:
 			metaMount = &mnt
 
-		case mnt.Destination == DaggerQemuEmulatorMountPoint,
-			strings.HasPrefix(mnt.Destination, DaggerCLIDir+"/"),
-			strings.HasPrefix(mnt.Destination, "/dev/pipes/"):
+		case runtimeBoundMount(mnt.Destination):
 			// Keep specific sub-mounts of /dev in the OCI spec so that runc processes
-			// them after the /dev tmpfs mount. The qemu emulator is at
-			// /dev/.dagger_qemu_emulator, the dagger CLI is under /dev/.dagger/ and
-			// /dev/pipes/ is used by heredoc processing.
+			// them after the /dev tmpfs mount.
 			filteredMounts = append(filteredMounts, mnt)
 
 		case containerfs.IsSpecialMountType(mnt.Type):
@@ -2054,4 +2050,34 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 	}
 	emitOTelExecSplit(ctx, state.id, profStartWall, profStartedWallTime, endWall, runErr, profArgv)
 	return exitError(ctx, state.exitCodePath, runErr, state.procInfo.Meta.ValidExitCodes)
+}
+
+// runtimeBoundMount reports whether the container runtime, not the engine,
+// binds a mount: the sub-mounts of /dev, which must come after the runtime's
+// /dev tmpfs. The qemu emulator is at /dev/.dagger_qemu_emulator, the dagger
+// CLI is under /dev/.dagger/ and /dev/pipes/ is used by heredoc processing.
+func runtimeBoundMount(dest string) bool {
+	return dest == DaggerQemuEmulatorMountPoint ||
+		strings.HasPrefix(dest, DaggerCLIDir+"/") ||
+		strings.HasPrefix(dest, "/dev/pipes/")
+}
+
+// withRuntimeBoundMountsOwn returns mounts with each runtime-bound mount's
+// source hiding a shared read-only mount. The runtime binds those in a mount
+// namespace forked from the one the engine started with, which doesn't see the
+// shared mounts the engine makes later, so they get a mount of their own.
+func withRuntimeBoundMountsOwn(mounts []executor.Mount) []executor.Mount {
+	out := make([]executor.Mount, len(mounts))
+	for i, m := range mounts {
+		if runtimeBoundMount(m.Dest) {
+			m.Src = ownMountable{m.Src}
+		}
+		out[i] = m
+	}
+	return out
+}
+
+// ownMountable is a mount source with only its own Mount.
+type ownMountable struct {
+	executor.Mountable
 }
