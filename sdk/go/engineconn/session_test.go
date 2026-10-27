@@ -258,3 +258,42 @@ head -c 1048576 /dev/zero >&2
 	require.ErrorContains(t, conn.Close(), "write log output: log output broken")
 	require.Less(t, time.Since(start), 20*time.Second)
 }
+
+func flagArg(args []string, flag string) (string, bool) {
+	for i, a := range args {
+		if a == flag && i+1 < len(args) {
+			return args[i+1], true
+		}
+	}
+	return "", false
+}
+
+func TestCLISessionArgsAnnounceLibraryVersionByDefault(t *testing.T) {
+	t.Parallel()
+
+	value, ok := flagArg(cliSessionArgs(&Config{}), "--version")
+	require.True(t, ok, "session args announce a version by default")
+	require.Equal(t, CLIVersion, value, "the announced version is the library's own release")
+}
+
+func TestCLISessionArgsVersionOverrideWins(t *testing.T) {
+	t.Parallel()
+
+	value, ok := flagArg(cliSessionArgs(&Config{VersionOverride: "v9.9.9"}), "--version")
+	require.True(t, ok)
+	require.Equal(t, "v9.9.9", value, "an explicit override wins over the default")
+	require.NotContains(t, cliSessionArgs(&Config{VersionOverride: "v9.9.9"}), CLIVersion)
+}
+
+// The existing-session path reuses the session named by DAGGER_SESSION_PORT
+// without spawning a CLI, so it announces no version and the default cannot
+// change what that session was started with.
+func TestGetExistingSessionAnnouncesNoVersion(t *testing.T) {
+	t.Setenv("DAGGER_SESSION_PORT", "1234")
+	t.Setenv("DAGGER_SESSION_TOKEN", "secret")
+
+	conn, err := Get(context.Background(), &Config{})
+	require.NoError(t, err)
+	defer conn.Close()
+	require.IsType(t, &sessionEnvConn{}, conn, "no CLI session is spawned, so no --version is sent")
+}
