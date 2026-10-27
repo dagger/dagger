@@ -43,6 +43,20 @@ func (m *CheckCaching) Never(ctx context.Context) error {
 	return record(ctx, "never")
 }
 
+// A check that reads a file outside the module, so its input can change
+// while the module stays the same
+// +check
+func (m *CheckCaching) Input(
+	ctx context.Context,
+	// +defaultPath="/input"
+	src *dagger.Directory,
+) error {
+	if _, err := src.File("value.txt").Contents(ctx); err != nil {
+		return err
+	}
+	return record(ctx, "input")
+}
+
 // Runs counts the recorded runs of a check's body.
 // +cache="never"
 func (m *CheckCaching) Runs(ctx context.Context, name string) (int, error) {

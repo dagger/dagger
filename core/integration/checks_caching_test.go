@@ -68,6 +68,22 @@ func (ChecksSuite) TestChecksCachedAcrossSessions(ctx context.Context, t *testct
 		require.Equal(t, "1", checkCachingRuns(ctx, t, mod, "--name", "pass"))
 	})
 
+	// The check reads a file at the repository root, outside the module, so
+	// changing it changes only the check's input.
+	t.Run("a check runs again when its input changes", func(ctx context.Context, t *testctx.T) {
+		mod := checkCachingModule(env, "check-caching").
+			WithNewFile("/work/input/value.txt", "a")
+		checkCachingRun(ctx, t, mod, core.ReturnTypeSuccess, "check", "input")
+		checkCachingRun(ctx, t, mod, core.ReturnTypeSuccess, "check", "input")
+		require.Equal(t, "1", checkCachingRuns(ctx, t, mod, "--name", "input"),
+			"the same input must reuse the check's result")
+
+		changed := mod.WithNewFile("/work/input/value.txt", "b")
+		checkCachingRun(ctx, t, changed, core.ReturnTypeSuccess, "check", "input")
+		require.Equal(t, "2", checkCachingRuns(ctx, t, changed, "--name", "input"),
+			"a changed input must run the check again")
+	})
+
 	t.Run("a failing check runs again in the next session", func(ctx context.Context, t *testctx.T) {
 		mod := checkCachingModule(env, "check-caching")
 		checkCachingRun(ctx, t, mod, core.ReturnTypeFailure, "check", "fail")
