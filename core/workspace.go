@@ -651,6 +651,11 @@ type persistedWorkspacePayload struct {
 	SelectedEnv     string                        `json:"selectedEnv,omitempty"`
 	ModuleClients   map[string][]string           `json:"moduleClients,omitempty"`
 
+	UserConfigKey string `json:"userConfigKey,omitempty"`
+	// UserConfigOverlay is encoded with EncodeUserWorkspaceOverlay, which
+	// keeps setting values' types.
+	UserConfigOverlay string `json:"userConfigOverlay,omitempty"`
+
 	// Decode-only names from main's pre-workspace-selection payload.
 	LegacyPath       string `json:"path,omitempty"`
 	LegacyConfigPath string `json:"configPath,omitempty"`
@@ -799,7 +804,14 @@ func (ws *Workspace) EncodePersistedObject(ctx context.Context, enc *dagql.Persi
 		HostPath:        ws.hostPath,
 		SelectedEnv:     ws.selectedEnv,
 		ModuleClients:   ws.moduleClients,
+
+		UserConfigKey: ws.userConfigKey,
 	}
+	userConfigOverlay, err := workspacepkg.EncodeUserWorkspaceOverlay(ws.userConfigOverlay)
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted workspace: %w", err)
+	}
+	payload.UserConfigOverlay = userConfigOverlay
 	if ws.rootfs.Self() != nil {
 		rootfsID, err := encodePersistedObjectRef(enc, ws.rootfs, "workspace rootfs")
 		if err != nil {
@@ -881,7 +893,14 @@ func (*Workspace) DecodePersistedObject(ctx context.Context, dec *dagql.PersistD
 		hostPath:        persisted.HostPath,
 		selectedEnv:     persisted.SelectedEnv,
 		moduleClients:   persisted.ModuleClients,
+
+		userConfigKey: persisted.UserConfigKey,
 	}
+	userConfigOverlay, err := workspacepkg.DecodeUserWorkspaceOverlay(persisted.UserConfigOverlay)
+	if err != nil {
+		return nil, fmt.Errorf("decode persisted workspace: %w", err)
+	}
+	ws.userConfigOverlay = userConfigOverlay
 	if persisted.Source != nil {
 		src, err := decodePersistedWorkspaceSource(ctx, dec, persisted.Source, rootfs, persisted.HostPath)
 		if err != nil {
