@@ -3695,13 +3695,23 @@ func (srv *Server) CurrentClientModules(ctx context.Context) ([]core.WorkspaceCl
 	for _, mod := range served.MainMods() {
 		mainNames[mod.Name()] = true
 	}
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var mods []core.WorkspaceClientModule
 	for _, name := range names {
 		mod, ok := served.Lookup(name)
 		if !ok || mod.ModuleResult().Self() == nil {
 			continue
 		}
-		dgst, err := mod.ModuleResult().ContentPreferredDigest(ctx)
+		// The served module's own key is per client; its implementation's is
+		// the same wherever the same module is loaded.
+		var scoped dagql.ObjectResult[*core.Module]
+		if err := dag.Select(ctx, mod.ModuleResult(), &scoped, dagql.Selector{Field: "_implementationScoped"}); err != nil {
+			return nil, fmt.Errorf("client module %s: %w", name, err)
+		}
+		dgst, err := scoped.ContentPreferredDigest(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("client module %s: %w", name, err)
 		}
