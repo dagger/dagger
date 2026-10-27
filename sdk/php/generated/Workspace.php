@@ -562,9 +562,9 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Return this workspace with an SDK installed in its config.
      */
-    public function withSDK(string $ref, ?string $name = '', ?bool $here = false, ?string $asSdkName = ''): Workspace
+    public function withSdk(string $ref, ?string $name = '', ?bool $here = false, ?string $asSdkName = ''): Workspace
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSDK');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSdk');
         $innerQueryBuilder->setArgument('ref', $ref);
         if (null !== $name) {
         $innerQueryBuilder->setArgument('name', $name);
@@ -581,9 +581,9 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Return this workspace with an SDK removed from its config.
      */
-    public function withoutSDK(string $name, ?bool $here = false): Workspace
+    public function withoutSdk(string $name, ?bool $here = false): Workspace
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutSDK');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutSdk');
         $innerQueryBuilder->setArgument('name', $name);
         if (null !== $here) {
         $innerQueryBuilder->setArgument('here', $here);
