@@ -161,9 +161,8 @@ type partPrefetchAhead struct {
 	ref     snapshots.ImmutableRef
 	cancel  context.CancelFunc
 	expires time.Time
-	// layers are its chain's blobs; applied those it unpacked itself.
-	layers  []digest.Digest
-	applied []digest.Digest
+	// layers are its chain's blobs.
+	layers []digest.Digest
 	// gone is set once it is taken out of aheads: its import, if still
 	// running, then releases what it imported.
 	gone bool
@@ -411,10 +410,11 @@ func (p *partPrefetcher) dropAheadLocked(offer *partOffer, a *partPrefetchAhead)
 	p.forgetAheadLocked(a)
 }
 
-// forgetAheadLocked stops counting the layers a, out of aheads, unpacked that
-// no other import ahead holds: an install of them later unpacks them again.
+// forgetAheadLocked stops counting the layers of a's chain, a out of aheads,
+// that no other import ahead holds, whichever import unpacked them: an
+// install of them later unpacks them again.
 func (p *partPrefetcher) forgetAheadLocked(a *partPrefetchAhead) {
-	for _, d := range a.applied {
+	for _, d := range a.layers {
 		held := false
 		for _, other := range p.aheads {
 			held = held || slices.Contains(other.layers, d)
@@ -864,7 +864,6 @@ func (p *partPrefetcher) importAhead(ctx context.Context, offer *partOffer, row 
 			p.mu.Lock()
 			if !a.gone {
 				p.aheadBytes[desc.Digest] = size
-				a.applied = append(a.applied, desc.Digest)
 			}
 			p.mu.Unlock()
 			mu.Lock()
