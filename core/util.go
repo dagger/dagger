@@ -347,16 +347,6 @@ var (
 	UnfilteredFieldView = dagql.ExactView("")
 )
 
-// ViewName is cased in views with the conventional core names and legacy
-// in older views, for internal selectors that select a renamed field or pass
-// a renamed argument in a caller's view.
-func ViewName(view call.View, cased, legacy string) string {
-	if CasedNamesView.Contains(view) {
-		return cased
-	}
-	return legacy
-}
-
 // ViewIntersection contains the views every one of its filters contains. A
 // nil filter (the global view) contains every view.
 type ViewIntersection []dagql.ViewFilter

@@ -4554,7 +4554,7 @@ func publishAndRead(ctx context.Context, registry *core.Service, ref string, opt
 			)).
 			Stderr(ctx)
 		require.NoError(t, err)
-		require.Contains(t, stderr, "insecureSkipTLSVerify cannot be used with HTTP registry protocol")
+		require.Contains(t, stderr, "insecureSkipTlsVerify cannot be used with HTTP registry protocol")
 	})
 }
 
