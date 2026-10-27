@@ -3754,7 +3754,7 @@ func (ContainerSuite) TestImport(ctx context.Context, t *testctx.T) {
 	t.Run("Docker", func(ctx context.Context, t *testctx.T) {
 		out, err := sdkcore.NewQuery(c).Container().
 			Import(sdkcore.NewQuery(c).Container().From(alpineImage).WithEnvVariable("FOO", "bar").AsTarball(sdkcore.ContainerAsTarballOpts{
-				MediaTypes: sdkcore.ImageMediaTypesDockerMediaTypes,
+				MediaTypes: sdkcore.ImageMediaTypesDocker,
 			})).
 			WithExec([]string{"sh", "-c", "echo $FOO"}).Stdout(ctx)
 		require.NoError(t, err)
@@ -5099,7 +5099,7 @@ func (ContainerSuite) TestForceCompression(ctx context.Context, t *testctx.T) {
 			"application/vnd.oci.image.layer.v1.tar",
 		},
 		{
-			sdkcore.ImageLayerCompressionEstarGz,
+			sdkcore.ImageLayerCompressionEstargz,
 			"application/vnd.oci.image.layer.v1.tar+gzip",
 		},
 	} {
@@ -5166,11 +5166,11 @@ func (ContainerSuite) TestMediaTypes(ctx context.Context, t *testctx.T) {
 			"application/vnd.oci.image.layer.v1.tar+gzip",
 		},
 		{
-			sdkcore.ImageMediaTypesOcimediaTypes,
+			sdkcore.ImageMediaTypesOci,
 			"application/vnd.oci.image.layer.v1.tar+gzip",
 		},
 		{
-			sdkcore.ImageMediaTypesDockerMediaTypes,
+			sdkcore.ImageMediaTypesDocker,
 			"application/vnd.docker.image.rootfs.diff.tar.gzip",
 		},
 	} {
@@ -5286,7 +5286,7 @@ func (ContainerSuite) TestImageLoadCompatibility(ctx context.Context, t *testctx
 
 	for _, dockerVersion := range []string{"20.10", "23.0", "24.0"} {
 		dockerc := dockerSetup(ctx, t, c, containerSetupOpts{name: t.Name(), version: dockerVersion})
-		for _, mediaType := range []sdkcore.ImageMediaTypes{sdkcore.ImageMediaTypesOcimediaTypes, sdkcore.ImageMediaTypesDockerMediaTypes} {
+		for _, mediaType := range []sdkcore.ImageMediaTypes{sdkcore.ImageMediaTypesOci, sdkcore.ImageMediaTypesDocker} {
 			for _, compression := range []sdkcore.ImageLayerCompression{sdkcore.ImageLayerCompressionGzip, sdkcore.ImageLayerCompressionZstd, sdkcore.ImageLayerCompressionUncompressed} {
 				t.Run(fmt.Sprintf("%s-%s-%s-%s", t.Name(), dockerVersion, mediaType, compression), func(ctx context.Context, t *testctx.T) {
 					tmpdir := t.TempDir()

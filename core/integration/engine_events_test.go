@@ -549,7 +549,7 @@ func (ProvisionSuite) TestImageDriverEngineEventsNeedEnable(ctx context.Context,
 		}
 		ctr, err := loadEngineTar(ctx, dockerc, "docker", tag, engineImage.AsTarball(core.ContainerAsTarballOpts{
 			ForcedCompression: core.ImageLayerCompressionGzip,
-			MediaTypes:        core.ImageMediaTypesDockerMediaTypes,
+			MediaTypes:        core.ImageMediaTypesDocker,
 		}))
 		require.NoError(t, err)
 
