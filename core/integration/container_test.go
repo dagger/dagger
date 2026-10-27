@@ -1753,6 +1753,46 @@ func (ContainerSuite) TestWithMountedFileReadOnly(ctx context.Context, t *testct
 	})
 }
 
+func (ContainerSuite) TestWithMountedReadOnlyFromExecOutput(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	out := sdkcore.NewQuery(c).Container().From(alpineImage).
+		WithExec([]string{"sh", "-c", "mkdir -p /out/sub && echo dir-content > /out/sub/f && echo file-content > /out/g"})
+	dir := out.Directory("/out/sub")
+	file := out.File("/out/g")
+	check := []string{"sh", "-c", "cat /d/f /g; if touch /d/x 2>/dev/null; then echo writable; else echo readonly; fi"}
+
+	reader := func(n string) *sdkcore.Container {
+		return sdkcore.NewQuery(c).Container().From(alpineImage).
+			WithEnvVariable("N", n).
+			WithMountedDirectory("/d", dir, sdkcore.ContainerWithMountedDirectoryOpts{ReadOnly: true}).
+			WithMountedFile("/g", file, sdkcore.ContainerWithMountedFileOpts{ReadOnly: true}).
+			WithExec(check)
+	}
+
+	// Readers of the same snapshot at once, and after them.
+	var eg errgroup.Group
+	for _, n := range []string{"1", "2", "3"} {
+		eg.Go(func() error {
+			got, err := reader(n).Stdout(ctx)
+			if err != nil {
+				return err
+			}
+			if got != "dir-content\nfile-content\nreadonly\n" {
+				return fmt.Errorf("reader %s: %q", n, got)
+			}
+			return nil
+		})
+	}
+	require.NoError(t, eg.Wait())
+	got, err := reader("4").Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "dir-content\nfile-content\nreadonly\n", got)
+
+	contents, err := dir.File("f").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "dir-content\n", contents)
+}
+
 func (ContainerSuite) TestWithMountedFile(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	dirRes, err := testutil.QueryWithClient[struct {

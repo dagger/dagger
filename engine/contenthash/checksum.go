@@ -195,6 +195,19 @@ func (m *mount) mount(ctx context.Context) (string, error) {
 	if m.mountPath != "" {
 		return m.mountPath, nil
 	}
+	if shared, ok := m.mountable.(cache.SharedMounter); ok {
+		// An immutable snapshot's readers share one read-only mount.
+		mp, _, release, err := shared.MountShared(ctx)
+		if err != nil {
+			return "", err
+		}
+		m.mountPath = mp
+		m.unmount = func() error {
+			release()
+			return nil
+		}
+		return mp, nil
+	}
 	mounts, err := m.mountable.Mount(ctx, true)
 	if err != nil {
 		return "", err

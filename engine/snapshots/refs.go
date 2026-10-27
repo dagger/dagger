@@ -284,6 +284,9 @@ type mutableRef struct {
 	mountCache      MountableRef
 	triggerLastUsed bool
 	sizeG           flightcontrol.Group[int64]
+	// onScratch is set when the snapshot was prepared on the empty scratch
+	// snapshot, so its mounts can use its upper directory in place.
+	onScratch bool
 }
 
 // hold ref lock before calling
@@ -793,6 +796,9 @@ func (sr *mutableRef) mutableMount(ctx context.Context, readonly bool) (_ Mounta
 		if sr.GetRecordType() == client.UsageRecordTypeCacheMount {
 			mnt = sr.cm.mountPool.setSharable(mnt)
 		}
+		if sr.onScratch {
+			mnt = upperInPlace{mnt}
+		}
 		sr.mountCache = mnt
 	}
 	if readonly {
@@ -860,6 +866,35 @@ func (sr *mutableRef) release(ctx context.Context) (rerr error) {
 	sr.released = true
 	rec.locked = false
 	return rec.remove(ctx)
+}
+
+// upperInPlace mounts a snapshot prepared on the empty scratch snapshot from
+// its upper directory alone. An overlay whose only lower layer is empty shows
+// exactly its upper directory, and writes through it land there, so a bind of
+// the upper directory is the same filesystem without an overlay mount.
+type upperInPlace struct {
+	MountableRef
+}
+
+func (m upperInPlace) Mount() ([]mount.Mount, func() error, error) {
+	mounts, release, err := m.MountableRef.Mount()
+	if err != nil || len(mounts) != 1 || mounts[0].Type != "overlay" {
+		return mounts, release, err
+	}
+	var upper string
+	lowers := 0
+	for _, opt := range mounts[0].Options {
+		switch {
+		case strings.HasPrefix(opt, "upperdir="):
+			upper = strings.TrimPrefix(opt, "upperdir=")
+		case strings.HasPrefix(opt, "lowerdir="):
+			lowers += len(strings.Split(strings.TrimPrefix(opt, "lowerdir="), ":"))
+		}
+	}
+	if upper == "" || lowers != 1 {
+		return mounts, release, nil
+	}
+	return []mount.Mount{{Type: "bind", Source: upper, Options: []string{"rbind"}}}, release, nil
 }
 
 func setReadonly(mounts MountableRef) MountableRef {
