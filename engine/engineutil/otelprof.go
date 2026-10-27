@@ -79,10 +79,11 @@ func endOTelExecRun(span trace.Span, errPtr *error) {
 //     then records only containerStart over the whole interval, charged the run
 //     error — mirrored here.
 //   - released is when runc released the workload (zero when unknown). When
-//     it is known and no later than end, runc creating the container is its
-//     own exec.runtimeStart phase [started, released] and processRun starts
-//     at released, as native records them. runtimeStart is internal: it is
-//     profiling detail, not a row for the trace UI.
+//     it is after started and no later than end, runc creating the container
+//     is its own exec.runtimeStart phase [started, released] and processRun
+//     starts at released, as native records them. A release at the start
+//     makes no span. runtimeStart is internal: it is profiling detail, not a
+//     row for the trace UI.
 //   - ops are the native phase ops (0 when the native recorder is off), which
 //     record the phase spans emitted for them.
 //   - work_type=user is set on processRun ONLY: marking the whole run "user" would
@@ -105,7 +106,9 @@ func emitOTelExecSplit(ctx context.Context, id string, start, started, released,
 	// rides ONLY on the user processRun phase, where the scalable self-time lives.
 	recordPhaseSpan(ctx, ops.containerStart, emitOTelExecPhase(ctx, "exec.containerStart", id, start, started, false, nil, nil))
 	processStart := started
-	if !released.IsZero() && !released.After(end) {
+	// a release at the start has no runtimeStart phase to show: a span with
+	// no length would read as one that never ended
+	if released.After(started) && !released.After(end) {
 		recordPhaseSpan(ctx, ops.runtimeStart, emitOTelExecPhase(ctx, "exec.runtimeStart", id, started, released, false, nil, nil, telemetry.Internal()))
 		processStart = released
 	}
