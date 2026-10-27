@@ -13,9 +13,10 @@ import (
 	"github.com/dagger/dagger/engine/wcprof"
 )
 
-// recordedOps reads the recorder's dump: its ops of the given class, by
-// kind, and each op's span event.
-func recordedOps(t *testing.T, class string) (map[string][]wcprof.DumpEvent, map[uint64]wcprof.DumpEvent) {
+// recordedOps reads the recorder's dump: its ops of the given class recorded
+// after the op after, which the test began first, by kind, and each op's
+// span event. The recorder outlives a test, and op IDs only increase.
+func recordedOps(t *testing.T, class string, after uint64) (map[string][]wcprof.DumpEvent, map[uint64]wcprof.DumpEvent) {
 	t.Helper()
 	var buf bytes.Buffer
 	require.NoError(t, wcprof.Active().WriteDump(&buf, false))
@@ -26,7 +27,9 @@ func recordedOps(t *testing.T, class string) (map[string][]wcprof.DumpEvent, map
 	for _, ev := range events {
 		switch ev.Type {
 		case "op":
-			ops[ev.OpKind] = append(ops[ev.OpKind], ev)
+			if ev.OpID > after {
+				ops[ev.OpKind] = append(ops[ev.OpKind], ev)
+			}
 		case "span":
 			spans[ev.OpID] = ev
 		}
@@ -72,7 +75,9 @@ func otelSpanOfKind(t *testing.T, ended []sdktrace.ReadOnlySpan, kind, name stri
 func TestNativeOpsRecordTheirOTelSpans(t *testing.T) {
 	sr, tr := newLazySkipRecorder()
 	wcprof.EnsureRecorder()
-	baseCtx := cacheTestContext(wcprof.ContextWithProfiling(t.Context()))
+	profCtx, testOp := wcprof.BeginOp(wcprof.ContextWithProfiling(t.Context()), wcprof.OpKindInternal, "test", wcprof.OpOpts{})
+	defer testOp.End(wcprof.OutcomeOK)
+	baseCtx := cacheTestContext(profCtx)
 	c, err := NewCache(baseCtx, "", nil, nil)
 	require.NoError(t, err)
 	baseCtx = ContextWithCache(baseCtx, c)
@@ -97,7 +102,7 @@ func TestNativeOpsRecordTheirOTelSpans(t *testing.T) {
 	caller.End()
 	ended := sr.Ended()
 
-	ops, spans := recordedOps(t, "Query.op-span-test")
+	ops, spans := recordedOps(t, "Query.op-span-test", testOp.ID())
 	require.Len(t, ops[wcprof.OpKindCallExec.String()], 1)
 	exec := ops[wcprof.OpKindCallExec.String()][0]
 	requireOpSpan(t, spans, exec, otelSpanOfKind(t, ended, wcprof.OpKindCallExec.String(), ""))
@@ -137,7 +142,9 @@ func TestCallRecordsItsOwnSpan(t *testing.T) {
 		return ctx, func(AnyResult, bool, *error) { span.End() }
 	})
 	ctx := persistDecodeOwnerContext(t, c, srv, "own-span-session")
-	ctx, caller := tr.Start(wcprof.ContextWithProfiling(ctx), "POST /query")
+	ctx, testOp := wcprof.BeginOp(wcprof.ContextWithProfiling(ctx), wcprof.OpKindInternal, "test", wcprof.OpOpts{})
+	defer testOp.End(wcprof.OutcomeOK)
+	ctx, caller := tr.Start(ctx, "POST /query")
 	_, err = srv.root.Select(ctx, srv, Selector{Field: "spanned"})
 	require.NoError(t, err)
 	_, err = srv.root.Select(ctx, srv, Selector{Field: "unspanned"})
@@ -151,10 +158,10 @@ func TestCallRecordsItsOwnSpan(t *testing.T) {
 		}
 	}
 	require.True(t, spanned.IsValid())
-	ops, spans := recordedOps(t, "Query.spanned")
+	ops, spans := recordedOps(t, "Query.spanned", testOp.ID())
 	require.Len(t, ops[wcprof.OpKindCall.String()], 1)
 	requireOpSpan(t, spans, ops[wcprof.OpKindCall.String()][0], spanned)
-	ops, spans = recordedOps(t, "Query.unspanned")
+	ops, spans = recordedOps(t, "Query.unspanned", testOp.ID())
 	require.Len(t, ops[wcprof.OpKindCall.String()], 1)
 	_, ok := spans[ops[wcprof.OpKindCall.String()][0].OpID]
 	require.False(t, ok, "a call without its own span records none")
