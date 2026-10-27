@@ -3027,7 +3027,10 @@ func (dir *Directory) copyFiles(
 	for _, src := range srcs {
 		inputs = append(inputs, src)
 	}
-	if err := cache.Evaluate(ctx, inputs...); err != nil {
+	evalCtx, step := dagql.BeginStep(ctx, "withFiles.evalInputs")
+	err = cache.Evaluate(evalCtx, inputs...)
+	step.End(err)
+	if err != nil {
 		return err
 	}
 	ourDir, err := parent.Self().Dir.GetOrEval(ctx, parent.Result)
@@ -3076,15 +3079,21 @@ func (dir *Directory) copyFiles(
 	if len(srcs) == 1 {
 		description = fmt.Sprintf("withfile %s %s", copyDestPaths[0], filepath.Base(srcPaths[0]))
 	}
-	newRef, err := query.SnapshotManager().New(ctx, dirCacheRef, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+	newCtx, step := dagql.BeginStep(ctx, "withFiles.new")
+	newRef, err := query.SnapshotManager().New(newCtx, dirCacheRef, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription(description))
+	step.End(err)
 	if err != nil {
 		return err
 	}
-	defer newRef.Release(context.WithoutCancel(ctx))
+	defer func() {
+		relCtx, step := dagql.BeginStep(context.WithoutCancel(ctx), "withFiles.release")
+		step.End(newRef.Release(relCtx))
+	}()
 
 	var usage snapshots.Usage
-	if err := MountRef(ctx, newRef, func(root string, destMnt *mount.Mount) (rerr error) {
+	copyCtx, copyStep := dagql.BeginStep(ctx, "withFiles.mountDestAndCopy")
+	err = MountRef(copyCtx, newRef, func(root string, destMnt *mount.Mount) (rerr error) {
 		var ownership *Ownership
 		if owner != "" {
 			var err error
@@ -3112,7 +3121,8 @@ func (dir *Directory) copyFiles(
 				DestPathHintIsDir: destPathHintIsDirectory[i],
 			}
 
-			if err := MountRef(ctx, srcCacheRefs[i], func(srcRoot string, srcMnt *mount.Mount) error {
+			srcCtx, srcStep := dagql.BeginStep(copyCtx, "withFiles.mountSource")
+			err := MountRef(srcCtx, srcCacheRefs[i], func(srcRoot string, srcMnt *mount.Mount) error {
 				if attemptUnpackDockerCompatibility {
 					resolvedSrcPath, err := containerdfs.RootPath(srcRoot, srcPath)
 					if err != nil {
@@ -3129,19 +3139,30 @@ func (dir *Directory) copyFiles(
 						return nil
 					}
 				}
-				return copier.CopyFile(ctx, layercopy.Mount{Root: srcRoot, Mount: srcMnt}, srcPath, destPath, opts)
-			}, mountRefAsReadOnly); err != nil {
+				_, step := dagql.BeginStep(srcCtx, "withFiles.copyFile")
+				err := copier.CopyFile(ctx, layercopy.Mount{Root: srcRoot, Mount: srcMnt}, srcPath, destPath, opts)
+				step.End(err)
+				return err
+			}, mountRefAsReadOnly)
+			srcStep.End(err)
+			if err != nil {
 				return err
 			}
 		}
 
+		_, step := dagql.BeginStep(copyCtx, "withFiles.usage")
 		usage, err = copier.Usage()
+		step.End(err)
 		return err
-	}); err != nil {
+	})
+	copyStep.End(err)
+	if err != nil {
 		return err
 	}
 
-	snap, err := newRef.CommitWithUsage(ctx, usage)
+	commitCtx, step := dagql.BeginStep(ctx, "withFiles.commit")
+	snap, err := newRef.CommitWithUsage(commitCtx, usage)
+	step.End(err)
 	if err != nil {
 		return err
 	}

@@ -13,10 +13,12 @@ type CleanupF = func() error
 
 type Cleanups struct {
 	funcs []CleanupF
+	names []string
 }
 
 type CleanupFunc struct {
-	fn CleanupF
+	fn   CleanupF
+	name string
 }
 
 func (c *Cleanups) Add(msg string, f CleanupF) CleanupFunc {
@@ -33,7 +35,8 @@ func (c *Cleanups) Add(msg string, f CleanupF) CleanupFunc {
 		return err
 	})
 	c.funcs = append(c.funcs, fOnce)
-	return CleanupFunc{fOnce}
+	c.names = append(c.names, msg)
+	return CleanupFunc{fOnce, msg}
 }
 
 // ReAdd allows you to decide to run an already added cleanup function at a later time. Once readded,
@@ -43,6 +46,7 @@ func (c *Cleanups) Add(msg string, f CleanupF) CleanupFunc {
 // connection in all cases).
 func (c *Cleanups) ReAdd(f CleanupFunc) CleanupFunc {
 	c.funcs = append(c.funcs, f.fn)
+	c.names = append(c.names, f.name)
 	return f
 }
 
@@ -50,6 +54,16 @@ func (c *Cleanups) Run() error {
 	var rerr error
 	for i := len(c.funcs) - 1; i >= 0; i-- {
 		rerr = errors.Join(rerr, c.funcs[i]())
+	}
+	return rerr
+}
+
+// RunEach is Run, with each cleanup run through run, which gets the name it
+// was added with (e.g. to record it as a profiling step).
+func (c *Cleanups) RunEach(run func(name string, cleanup CleanupF) error) error {
+	var rerr error
+	for i := len(c.funcs) - 1; i >= 0; i-- {
+		rerr = errors.Join(rerr, run(c.names[i], c.funcs[i]))
 	}
 	return rerr
 }

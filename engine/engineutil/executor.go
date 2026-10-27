@@ -273,6 +273,16 @@ func recordExecContentPreferredDigest(span trace.Span, execMD *ExecutionMetadata
 	}
 }
 
+// cleanupStepName is the profiling step of the exec cleanup named name:
+// "exec.cleanup." and the name, without a mount target it ends with, so
+// the steps' names stay a bounded set.
+func cleanupStepName(name string) string {
+	if i := strings.Index(name, " /"); i >= 0 {
+		name = name[:i]
+	}
+	return "exec.cleanup." + name
+}
+
 // namedSetupFunc pairs an executor setup phase with a stable name used for
 // profiling and logging.
 type namedSetupFunc struct {
@@ -294,7 +304,19 @@ func (c *Client) run(
 		c.runningMu.Unlock()
 
 		close(state.done)
-		if err := state.cleanups.Run(); err != nil {
+		runCleanups := state.cleanups.Run
+		if wcprof.Enabled(ctx) {
+			// A profiled exec records each cleanup as a step.
+			runCleanups = func() error {
+				return state.cleanups.RunEach(func(name string, cleanup cleanups.CleanupF) error {
+					_, step := dagql.BeginStep(ctx, cleanupStepName(name))
+					err := cleanup()
+					step.End(err)
+					return err
+				})
+			}
+		}
+		if err := runCleanups(); err != nil {
 			bklog.G(ctx).Errorf("executor run failed to cleanup: %v", err)
 			rerr = errors.Join(rerr, &ExecCleanupError{Err: err})
 		}
