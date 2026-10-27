@@ -379,6 +379,7 @@ func callEntrypointMethod(
 	}, dangModule{
 		name:         moduleContext.Self().Name(),
 		originalName: moduleContext.Self().OriginalName,
+		namer:        moduleContext.Self().Namer(),
 	})
 }
 

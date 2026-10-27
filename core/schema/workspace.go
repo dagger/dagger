@@ -4622,6 +4622,7 @@ func workspaceIncludePatterns(includeArg dagql.Optional[dagql.ArrayInput[dagql.S
 
 func matchWorkspaceIncludePath(
 	ctx context.Context,
+	namer core.Namer,
 	path core.ModTreePath,
 	include []string,
 ) (bool, error) {
@@ -4632,12 +4633,12 @@ func matchWorkspaceIncludePath(
 		return false, nil
 	}
 	for _, pattern := range include {
-		if match, err := path.Glob(ctx, pattern); err != nil {
+		if match, err := path.Glob(ctx, namer, pattern); err != nil {
 			return false, err
 		} else if match {
 			return true, nil
 		}
-		if match, err := path.Glob(ctx, pattern+":**"); err != nil || match {
+		if match, err := path.Glob(ctx, namer, pattern+":**"); err != nil || match {
 			return match, err
 		}
 	}
@@ -4803,10 +4804,10 @@ func matchWorkspaceInclude(ctx context.Context, node *core.ModTreeNode, include 
 	if err != nil || match {
 		return match, err
 	}
-	if match, err := matchWorkspaceIncludePath(ctx, node.Path(), include); err != nil || match {
+	if match, err := matchWorkspaceIncludePath(ctx, node.Namer(), node.Path(), include); err != nil || match {
 		return match, err
 	}
-	return matchWorkspaceIncludePath(ctx, node.CommandPath(), include)
+	return matchWorkspaceIncludePath(ctx, node.Namer(), node.CommandPath(), include)
 }
 
 // withWorkspaceClientContext stamps the workspace owner's immutable client

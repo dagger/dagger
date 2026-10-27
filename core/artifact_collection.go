@@ -315,9 +315,9 @@ func (a *Artifacts) DimensionItems(dimension string) ([]*Artifact, error) {
 			itemNode.CollectionKeys = nil
 			item := *selected
 			item.Node = &itemNode
-			item.Path = itemNode.CommandPath().CliCase()
+			item.Path = itemNode.CommandCLIPath()
 			if len(item.Path) == 0 {
-				item.Path = itemNode.Path().CliCase()
+				item.Path = itemNode.CLIPath()
 			}
 			item.TypeName = itemNode.ObjectType().Name
 			item.Directives = nil
@@ -654,14 +654,17 @@ func walkArtifactNodes(ctx context.Context, node *ModTreeNode, visit func(*ModTr
 		return err
 	}
 	if members != nil {
+		// The path segments spell the node's path, by its module's rules (see
+		// ModTreeNode.CLIPath).
+		namer := node.Namer()
 		path := []string{}
 		parent := node
 		for parent.Parent != nil && parent.CollectionDimension == nil {
-			path = append(path, ArtifactTypeName(parent.Name))
+			path = append(path, namer.CLIName(parent.Name))
 			parent = parent.Parent
 		}
 		slices.Reverse(path)
-		prefix := "/" + ArtifactTypeName(node.Module.Self().Name())
+		prefix := "/" + namer.CLIName(node.Module.Self().Name())
 		if parent.CollectionDimension != nil {
 			prefix = parent.CollectionDimension.Identifier
 		}
@@ -677,7 +680,16 @@ func walkArtifactNodes(ctx context.Context, node *ModTreeNode, visit func(*ModTr
 			KeyDescription: members.Get.Args[0].Self().Description,
 		}
 		qualified := strings.Split(strings.TrimPrefix(identifier, "/"), "/")
-		itemName := strings.TrimPrefix(dim.Name, qualified[0]+"-")
+		// The item type's name is spelled by the latest rules
+		// (ArtifactTypeName), the identifier by the module's: trim the module
+		// prefix by either spelling.
+		itemName := dim.Name
+		for _, prefix := range []string{qualified[0], ArtifactTypeName(node.Module.Self().Name())} {
+			if rest, ok := strings.CutPrefix(itemName, prefix+"-"); ok {
+				itemName = rest
+				break
+			}
+		}
 		qualified = append(qualified, itemName)
 		dim.QualifiedName = strings.Join(qualified, "-")
 		item := &ModTreeNode{Parent: node, Name: "get", Type: members.Get.ReturnType, Description: members.Get.Description,
