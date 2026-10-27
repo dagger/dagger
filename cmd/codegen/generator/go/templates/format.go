@@ -10,6 +10,7 @@ import (
 // to format GraphQL type into Golang.
 type FormatTypeFunc struct {
 	scope string
+	namer goNamer
 }
 
 func (f *FormatTypeFunc) WithScope(scope string) generator.FormatTypeFuncs {
@@ -50,21 +51,21 @@ func (f *FormatTypeFunc) FormatKindScalarDefault(representation string, refName 
 	if obj, ok := strings.CutSuffix(refName, "ID"); input && ok && obj != "" {
 		// Legacy schemas used per-object FooID scalars. Keep accepting them
 		// as object inputs, but modern schemas use ID + @expectedType instead.
-		representation += "*" + f.scope + formatName(obj)
+		representation += "*" + f.scope + f.namer.formatName(obj)
 	} else {
-		representation += f.scope + formatName(refName)
+		representation += f.scope + f.namer.formatName(refName)
 	}
 
 	return representation
 }
 
 func (f *FormatTypeFunc) FormatKindObject(representation string, refName string, input bool) string {
-	representation += f.scope + formatName(refName)
+	representation += f.scope + f.namer.formatName(refName)
 	return representation
 }
 
 func (f *FormatTypeFunc) FormatKindInputObject(representation string, refName string, input bool) string {
-	representation += f.scope + formatName(refName)
+	representation += f.scope + f.namer.formatName(refName)
 	return representation
 }
 

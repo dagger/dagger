@@ -52,7 +52,7 @@ func (funcs goTemplateFuncs) isCoreLibrary() bool {
 // package as the generated types. In that case, prefix the function with
 // "New" instead.
 func (funcs goTemplateFuncs) coreConstructorName(f introspection.Field) string {
-	name := formatName(f.Name)
+	name := funcs.formatName(f.Name)
 	if funcs.schema.Types.Get(name) != nil {
 		return "New" + name
 	}
