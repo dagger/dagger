@@ -993,7 +993,7 @@ func (ps *PubSub) appendSpans(ctx context.Context, clientID string, rows []clien
 	slog.ExtraDebug("pubsub exporting spans", "client", clientID, "count", len(rows))
 	start := time.Now()
 
-	db, err := ps.srv.clientDBs.Open(ctx, clientID)
+	db, err := ps.srv.clientDBs.OpenForAppend(ctx, clientID)
 	if err != nil {
 		return fmt.Errorf("get telemetry db: %w", err)
 	}
@@ -1036,7 +1036,7 @@ func (ps clientLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 		inserts = append(inserts, insert)
 	}
 
-	db, err := ps.srv.clientDBs.Open(ctx, ps.clientID)
+	db, err := ps.srv.clientDBs.OpenForAppend(ctx, ps.clientID)
 	if err != nil {
 		return fmt.Errorf("get telemetry db: %w", err)
 	}
@@ -1213,7 +1213,7 @@ func (ps clientMetrics) Export(ctx context.Context, metrics *metricdata.Resource
 		return fmt.Errorf("marshal metrics to pb: %w", err)
 	}
 
-	db, err := ps.srv.clientDBs.Open(ctx, ps.clientID)
+	db, err := ps.srv.clientDBs.OpenForAppend(ctx, ps.clientID)
 	if err != nil {
 		return fmt.Errorf("get telemetry db: %w", err)
 	}

@@ -46,9 +46,16 @@ type logStream[Row any] struct {
 	budget     int64
 	hardCap    int64
 	spill      *spillFile[Row]
-	onAppend   func([]Row)
 	cond       *sync.Cond
 	capWaiters int
+
+	// index feeds rows to the store's in-memory indexes. Rows are indexed
+	// only once a reader needs them: until ensureIndexed has caught up,
+	// appends leave indexing to it. See ensureIndexed.
+	index     func([]Row)
+	indexed   bool
+	indexMu   sync.Mutex
+	indexedTo int64 // owned by the indexMu holder
 
 	spillReq      chan struct{}
 	checkpointReq chan checkpointRequest
@@ -71,10 +78,10 @@ func openLogStream[Row any](
 	path string,
 	codec rowCodec[Row],
 	budget int64,
-	onRecover func(Row),
-	onAppend func([]Row),
+	pos *spillPosition,
+	index func([]Row),
 ) (*logStream[Row], error) {
-	spill, err := openSpillFile(ctx, path, codec, onRecover)
+	spill, err := openSpillFile(ctx, path, codec, pos)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +102,7 @@ func openLogStream[Row any](
 		budget:        budget,
 		hardCap:       hardCap,
 		spill:         spill,
-		onAppend:      onAppend,
+		index:         index,
 		spillReq:      make(chan struct{}, 1),
 		checkpointReq: make(chan checkpointRequest),
 		closeReq:      make(chan chan error),
@@ -161,8 +168,8 @@ func (s *logStream[Row]) append(rows []Row) (AppendStats, error) {
 		s.codec.setID(&rows[i], s.nextID)
 		s.nextID++
 	}
-	if s.onAppend != nil {
-		s.onAppend(rows)
+	if s.indexed {
+		s.index(rows)
 	}
 	s.tail = append(s.tail, rows...)
 	s.tailSizes = append(s.tailSizes, sizes...)
@@ -454,6 +461,51 @@ func (s *logStream[Row]) highWater() int64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.nextID - 1
+}
+
+// ensureIndexed feeds every row the stream holds to its index, in ID order,
+// and then has Append index new rows as they arrive. A store opened only to
+// append never calls it, so reopening a store for a late write reads none of
+// its rows; the first reader pays for the replay instead.
+//
+// Rows appended while it reads are caught up on before Append takes over: it
+// hands over under the stream mutex, only once it has indexed every row
+// assigned an ID, so each row is indexed exactly once. A failed or canceled
+// call keeps what it indexed, and the next call carries on from there.
+func (s *logStream[Row]) ensureIndexed(ctx context.Context) error {
+	if s.index == nil {
+		return nil
+	}
+	s.indexMu.Lock()
+	defer s.indexMu.Unlock()
+	for {
+		s.mu.Lock()
+		if !s.indexed && s.nextID-1 == s.indexedTo {
+			s.indexed = true
+		}
+		indexed := s.indexed
+		s.mu.Unlock()
+		if indexed {
+			return nil
+		}
+		rows, err := s.Since(ctx, s.indexedTo, indexBatchRows)
+		if err != nil {
+			return err
+		}
+		if len(rows) > 0 {
+			s.index(rows)
+			s.indexedTo = s.codec.getID(rows[len(rows)-1])
+		}
+	}
+}
+
+// indexBatchRows bounds the rows ensureIndexed holds in memory at once.
+const indexBatchRows = 16 * int(sparseIndexStride)
+
+// position reports where the stream's file ends, for a later reopen. It is
+// only meaningful once the stream has been closed without error.
+func (s *logStream[Row]) position() *spillPosition {
+	return s.spill.position()
 }
 
 func (s *logStream[Row]) Range(ctx context.Context, after, through int64, limit int) ([]Row, error) {

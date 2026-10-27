@@ -136,8 +136,8 @@ func TestStoreRegistryCloseWaitsForInflightOpen(t *testing.T) {
 		finishOpen := make(chan struct{})
 		releaseOpen := sync.OnceFunc(func() { close(finishOpen) })
 		defer releaseOpen()
-		registry.openStore = func(ctx context.Context, root, clientID string, budget int64) (*DB, error) {
-			store, err := openStore(ctx, root, clientID, budget)
+		registry.openStore = func(ctx context.Context, root, clientID string, budget int64, pos *storePosition) (*DB, error) {
+			store, err := openStoreStreams(ctx, root, clientID, budget, pos)
 			if err != nil {
 				return nil, err
 			}

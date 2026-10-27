@@ -112,13 +112,6 @@ func newSpanLookup() *spanLookup {
 	}
 }
 
-func (l *spanLookup) add(row Span) {
-	targets := causalLinkTargets(row)
-	l.mu.Lock()
-	l.addLocked(row, targets)
-	l.mu.Unlock()
-}
-
 func (l *spanLookup) addAll(rows []Span) {
 	targets := make([][]string, len(rows))
 	for i, row := range rows {
@@ -581,15 +574,6 @@ func newLogLookup() *logLookup {
 	return &logLookup{rowsBySpan: make(map[string][]int64)}
 }
 
-func (l *logLookup) add(row Log) {
-	if !row.SpanID.Valid {
-		return
-	}
-	l.mu.Lock()
-	l.rowsBySpan[row.SpanID.String] = append(l.rowsBySpan[row.SpanID.String], row.ID)
-	l.mu.Unlock()
-}
-
 func (l *logLookup) addAll(rows []Log) {
 	l.mu.Lock()
 	for _, row := range rows {
@@ -637,9 +621,33 @@ type DB struct {
 	closeFn  func() error
 }
 
-func openStore(ctx context.Context, root, clientID string, tailBudget int64) (_ *DB, rerr error) {
+// storePosition is where each of a closed store's streams ends; see
+// spillPosition.
+type storePosition struct {
+	spans, logs, metrics *spillPosition
+}
+
+// openStore opens a client's store with its indexes built.
+func openStore(ctx context.Context, root, clientID string, tailBudget int64) (*DB, error) {
+	store, err := openStoreStreams(ctx, root, clientID, tailBudget, nil)
+	if err != nil {
+		return nil, err
+	}
+	if err := store.ensureIndexed(ctx); err != nil {
+		return nil, errors.Join(err, store.closeStreams())
+	}
+	return store, nil
+}
+
+// openStoreStreams opens a client's store without indexing the rows it
+// already holds; see ensureIndexed. A non-nil pos is where the store's
+// streams ended when it was last closed.
+func openStoreStreams(ctx context.Context, root, clientID string, tailBudget int64, pos *storePosition) (_ *DB, rerr error) {
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, fmt.Errorf("mkdir %s: %w", root, err)
+	}
+	if pos == nil {
+		pos = &storePosition{}
 	}
 
 	store := &DB{
@@ -661,10 +669,7 @@ func openStore(ctx context.Context, root, clientID string, tailBudget int64) (_ 
 		filepath.Join(root, clientID+".spans.log"),
 		spanCodec,
 		tailBudget,
-		func(row Span) {
-			store.lookup.add(row)
-			store.callIdx.addSpan(row)
-		},
+		pos.spans,
 		func(rows []Span) {
 			store.lookup.addAll(rows)
 			store.callIdx.addSpans(rows)
@@ -678,11 +683,7 @@ func openStore(ctx context.Context, root, clientID string, tailBudget int64) (_ 
 		filepath.Join(root, clientID+".logs.log"),
 		logCodec,
 		tailBudget,
-		func(row Log) {
-			store.logIdx.add(row)
-			store.callIdx.addLog(row)
-			store.archiveIdx.add(row)
-		},
+		pos.logs,
 		func(rows []Log) {
 			store.logIdx.addAll(rows)
 			store.callIdx.addLogs(rows)
@@ -697,7 +698,7 @@ func openStore(ctx context.Context, root, clientID string, tailBudget int64) (_ 
 		filepath.Join(root, clientID+".metrics.log"),
 		metricCodec,
 		tailBudget,
-		nil,
+		pos.metrics,
 		nil,
 	)
 	if err != nil {
@@ -705,6 +706,29 @@ func openStore(ctx context.Context, root, clientID string, tailBudget int64) (_ 
 	}
 	store.closeFn = store.closeStreams
 	return store, nil
+}
+
+// ensureIndexed builds the store's indexes over the rows it holds, if they
+// aren't built yet, and keeps them current from then on. Every selector that
+// answers from an index relies on it; the registry's Open calls it.
+func (s *DB) ensureIndexed(ctx context.Context) error {
+	if err := s.spans.ensureIndexed(ctx); err != nil {
+		return fmt.Errorf("index spans: %w", err)
+	}
+	if err := s.logs.ensureIndexed(ctx); err != nil {
+		return fmt.Errorf("index logs: %w", err)
+	}
+	return nil
+}
+
+// position reports where the store's streams end. It is only meaningful once
+// the store has been closed without error.
+func (s *DB) position() *storePosition {
+	return &storePosition{
+		spans:   s.spans.position(),
+		logs:    s.logs.position(),
+		metrics: s.metrics.position(),
+	}
 }
 
 func (s *DB) AppendSpans(rows []Span) (AppendStats, error) {

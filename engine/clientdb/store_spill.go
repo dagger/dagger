@@ -46,11 +46,24 @@ type spillFile[Row any] struct {
 	index           []spillIndexEntry
 }
 
+// spillPosition is where a closed spill file ends: enough to reopen it for
+// appends and reads without scanning its frames again. The store registry
+// keeps it for the stores it closes; see DBs.
+type spillPosition struct {
+	size     int64
+	rowCount int64
+	lastID   int64
+	index    []spillIndexEntry
+}
+
+// openSpillFile opens the spill file at path. With pos, the position the file
+// was last closed at, it resumes there; without, it scans the file to find
+// where it ends.
 func openSpillFile[Row any](
 	ctx context.Context,
 	path string,
 	codec rowCodec[Row],
-	onRecover func(Row),
+	pos *spillPosition,
 ) (_ *spillFile[Row], rerr error) {
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
@@ -87,7 +100,9 @@ func openSpillFile[Row any](
 		codec:     codec,
 		committed: size,
 	}
-	if err := spill.recover(ctx, size, onRecover); err != nil {
+	if pos != nil {
+		spill.resume(pos)
+	} else if err := spill.recover(ctx, size); err != nil {
 		return nil, err
 	}
 	if _, err := file.Seek(spill.writeOffset, io.SeekStart); err != nil {
@@ -110,11 +125,18 @@ func (s *spillFile[Row]) write(buf []byte) (int, error) {
 	return s.file.Write(buf)
 }
 
-func (s *spillFile[Row]) recover(ctx context.Context, size int64, onRecover func(Row)) error {
+// recover scans the file's frames to find where it ends: the last row ID, the
+// sparse index and the write offset. It reads each frame's row ID alone and
+// decodes no rows; the store indexes rows only when a reader needs them (see
+// logStream.ensureIndexed).
+func (s *spillFile[Row]) recover(ctx context.Context, size int64) error {
 	scanner := newFrameScanner(s.file, 1, size)
+	defer scanner.release()
+	var payload []byte
 	for {
 		frameOffset := scanner.offset
-		payload, err := scanner.next()
+		var err error
+		payload, err = scanner.nextInto(payload[:0])
 		if errors.Is(err, io.EOF) {
 			break
 		}
@@ -130,11 +152,10 @@ func (s *spillFile[Row]) recover(ctx context.Context, size int64, onRecover func
 		if err != nil {
 			return fmt.Errorf("read spill frame at %d: %w", frameOffset, err)
 		}
-		row, err := s.codec.decode(payload)
+		id, err := frameRowID(payload)
 		if err != nil {
 			return fmt.Errorf("decode spill frame at %d: %w", frameOffset, err)
 		}
-		id := s.codec.getID(row)
 		if id <= s.lastID {
 			return fmt.Errorf("spill row ID %d is not greater than previous ID %d", id, s.lastID)
 		}
@@ -143,9 +164,6 @@ func (s *spillFile[Row]) recover(ctx context.Context, size int64, onRecover func
 		}
 		s.rowCount++
 		s.lastID = id
-		if onRecover != nil {
-			onRecover(row)
-		}
 		if s.rowCount%sparseIndexStride == 0 {
 			select {
 			case <-ctx.Done():
@@ -159,6 +177,30 @@ func (s *spillFile[Row]) recover(ctx context.Context, size int64, onRecover func
 	s.committed = size
 	s.committedLastID = s.lastID
 	return nil
+}
+
+// resume picks up where a closed spill file of the same size ended, in place
+// of recover.
+func (s *spillFile[Row]) resume(pos *spillPosition) {
+	s.rowCount = pos.rowCount
+	s.lastID = pos.lastID
+	s.index = pos.index
+	s.writeOffset = pos.size
+	s.committed = pos.size
+	s.committedLastID = pos.lastID
+}
+
+// position reports where the file ends. It is only meaningful once the file
+// has been closed without error.
+func (s *spillFile[Row]) position() *spillPosition {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return &spillPosition{
+		size:     s.writeOffset,
+		rowCount: s.rowCount,
+		lastID:   s.lastID,
+		index:    s.index,
+	}
 }
 
 func (s *spillFile[Row]) append(rows []Row) error {

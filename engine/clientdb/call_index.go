@@ -58,16 +58,6 @@ var (
 	callPayloadContentMarker = []byte(telemetryattrs.CallPayloadContentType)
 )
 
-func (l *callLookup) addSpan(row Span) {
-	digest, ok := spanCallDigest(row)
-	if !ok {
-		return
-	}
-	l.mu.Lock()
-	l.spanRow[digest] = row.ID
-	l.mu.Unlock()
-}
-
 func (l *callLookup) addSpans(rows []Span) {
 	l.mu.Lock()
 	for _, row := range rows {
@@ -172,18 +162,6 @@ func wireStringValue(v []byte) (string, bool) {
 		v = v[n:]
 	}
 	return "", false
-}
-
-func (l *callLookup) addLog(row Log) {
-	digest, ok := logCallDigest(row)
-	if !ok {
-		return
-	}
-	l.mu.Lock()
-	if _, seen := l.logRow[digest]; !seen {
-		l.logRow[digest] = row.ID
-	}
-	l.mu.Unlock()
 }
 
 func (l *callLookup) addLogs(rows []Log) {
