@@ -570,9 +570,9 @@ the old strcase code byte for byte:
 - **SDK runtime arguments.** SDK interface arguments keep their names across
   the cut: `introspectionJson` is spelled alike by strcase and by the new
   field convention.
-- **Go module codegen** (`cmd/codegen`) can't import `core`, so
-  `module_naming.go` mirrors `Namer`. It gates like SDK codegen, on the
-  engine version the module declares (see [The gate](#the-gate)).
+- **Go module codegen** (`cmd/codegen`) can't import `core`, so it would have
+  to mirror `Namer`, gating like SDK codegen on the engine version the module
+  declares. It doesn't yet: see the Known gaps under [The gate](#the-gate).
 
 ### CLI
 
@@ -883,7 +883,10 @@ Known gaps:
   without an engine connection; whoever wires it should resolve names through
   the engine like the runtimes do (see [Module runtimes](#module-runtimes)).
 - CLI naming follows the CLI's engine version, not each module's (see
-  [CLI](#cli)).
+  [CLI](#cli)). For a legacy module whose name has digits or terms (`k8s`),
+  `dagger call` spells its collection selectors by the latest rules
+  (`--k8s-cluster`) while the engine's artifact dimensions, and so
+  `dagger list` and `check`, spell them by the module's (`--k-8-s-cluster`).
 - The in-repo Go module codegen (`cmd/codegen`) still names a module's own
   types, fields and arguments in its self-binding schema by strcase, so a Go
   module at the new rules that references a core type starting with an
@@ -1462,7 +1465,7 @@ vendor or port from:
 Porting engine-formatted names (`formatIdentifiers` or the names sidecar, with
 the legacy fallback) to each of them is a follow-up per repository. Until an
 SDK has it, it keeps its legacy converter, which the gate makes byte-identical
-for schemas without `formatIdentifiers` anyway. Those SDKs also generate the
+for modules before the cut anyway. Those SDKs also generate the
 manifest v2 entrypoints, where pinned naming would land (see
 [Module entrypoints](#module-entrypoints)).
 
@@ -1488,12 +1491,12 @@ manifest v2 entrypoints, where pinned naming would land (see
    interface calls) through `formatIdentifiers`.
 8. Bump the Python, PHP, Elixir and Java runtimes' `engineVersion` to v1, and
    format their codegen sidecars with `formatIdentifiers` and `version`.
-9. Name every module on a v1 view by the new rules, manifest v2 entrypoint
-   modules included, keeping their legacy names as hidden aliases; then let a
-   generated entrypoint pin its naming version (see
+9. Name modules that declare `engine.IdentifierCasingVersion` or later by the
+   new rules, manifest v2 entrypoint modules included, with no aliases for the
+   old spellings; then let a generated entrypoint pin its naming version (see
    [Module entrypoints](#module-entrypoints)).
 
 Steps 1–8 are done for the in-repo SDKs, except step 4's deletion, which waits
-on the legacy path. Step 9's aliases are done; pinning waits on a manifest v2
-signal. Porting to the extracted SDKs is a follow-up (see
-[SDK Extraction](#sdk-extraction)).
+on the legacy path. Step 9's naming is done (the aliases of an earlier
+revision were dropped); pinning waits on a manifest v2 signal. Porting to the
+extracted SDKs is a follow-up (see [SDK Extraction](#sdk-extraction)).
