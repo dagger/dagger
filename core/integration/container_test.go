@@ -1793,6 +1793,88 @@ func (ContainerSuite) TestWithMountedReadOnlyFromExecOutput(ctx context.Context,
 	require.Equal(t, "dir-content\n", contents)
 }
 
+func (ContainerSuite) TestWithMountedFiles(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	dir := sdkcore.NewQuery(c).Directory().
+		WithNewFile("a/one.txt", "one").
+		WithNewFile("b/two.txt", "two").
+		WithNewFile("c/one.txt", "another one")
+	one, two := dir.File("a/one.txt"), dir.File("b/two.txt")
+	ctr := sdkcore.NewQuery(c).Container().From(alpineImage)
+
+	t.Run("each file under its name", func(ctx context.Context, t *testctx.T) {
+		out, err := ctr.WithMountedFiles("/mnt/files", []*sdkcore.File{one, two}).
+			WithExec([]string{"sh", "-c", "ls -A /mnt/files; cat /mnt/files/one.txt /mnt/files/two.txt"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "one.txt\ntwo.txt\nonetwo", out)
+	})
+
+	t.Run("read-only", func(ctx context.Context, t *testctx.T) {
+		out, err := ctr.WithMountedFiles("/mnt/files", []*sdkcore.File{one}).
+			WithExec([]string{"sh", "-c", `
+				if echo more >> /mnt/files/one.txt 2>/dev/null; then echo wrote-file; fi
+				if touch /mnt/files/new 2>/dev/null; then echo created-file; fi
+				if rm /mnt/files/one.txt 2>/dev/null; then echo removed-file; fi
+				cat /mnt/files/one.txt`}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "one", out)
+
+		contents, err := one.Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "one", contents)
+	})
+
+	t.Run("empty list", func(ctx context.Context, t *testctx.T) {
+		out, err := ctr.WithMountedFiles("/mnt/files", []*sdkcore.File{}).
+			WithExec([]string{"sh", "-c", "test -d /mnt/files && ls -A /mnt/files"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Empty(t, out)
+	})
+
+	t.Run("root is an error", func(ctx context.Context, t *testctx.T) {
+		for _, root := range []string{"/", "/work/.."} {
+			_, err := ctr.WithMountedFiles(root, []*sdkcore.File{one}).Sync(ctx)
+			requireErrOut(t, err, "cannot mount files at the container's root")
+		}
+	})
+
+	t.Run("duplicate names are an error", func(ctx context.Context, t *testctx.T) {
+		_, err := ctr.WithMountedFiles("/mnt/files", []*sdkcore.File{one, dir.File("c/one.txt")}).Sync(ctx)
+		requireErrOut(t, err, `have the same name "one.txt"`)
+	})
+
+	t.Run("missing file is an error", func(ctx context.Context, t *testctx.T) {
+		_, err := ctr.WithMountedFiles("/mnt/files", []*sdkcore.File{one, dir.File("no-such-file")}).
+			WithExec([]string{"true"}).
+			Sync(ctx)
+		requireErrOut(t, err, "no-such-file")
+	})
+
+	t.Run("paths can't be read back", func(ctx context.Context, t *testctx.T) {
+		mounted := ctr.WithMountedFiles("/mnt/files", []*sdkcore.File{one})
+		_, err := mounted.Directory("/mnt/files").Entries(ctx)
+		requireErrOut(t, err, "cannot retrieve path from a files mount")
+		_, err = mounted.File("/mnt/files/one.txt").Contents(ctx)
+		requireErrOut(t, err, "cannot retrieve path from a files mount")
+	})
+
+	t.Run("exec is cached", func(ctx context.Context, t *testctx.T) {
+		run := func() (string, error) {
+			return ctr.WithMountedFiles("/mnt/files", []*sdkcore.File{one, two}).
+				WithExec([]string{"sh", "-c", "head -c 16 /dev/urandom | od -An -tx1"}).
+				Stdout(ctx)
+		}
+		first, err := run()
+		require.NoError(t, err)
+		second, err := run()
+		require.NoError(t, err)
+		require.Equal(t, first, second)
+	})
+}
+
 func (ContainerSuite) TestWithMountedFile(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	dirRes, err := testutil.QueryWithClient[struct {

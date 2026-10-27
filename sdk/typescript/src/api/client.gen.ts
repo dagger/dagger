@@ -1393,6 +1393,13 @@ export type ContainerWithMountedFileOpts = {
   readOnly?: boolean
 }
 
+export type ContainerWithMountedFilesOpts = {
+  /**
+   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/lib").
+   */
+  expand?: boolean
+}
+
 export type ContainerWithMountedSecretOpts = {
   /**
    * A user:group to set for the mounted secret.
@@ -8048,6 +8055,23 @@ export class Container extends BaseClient {
     opts?: ContainerWithMountedFileOpts,
   ): Container => {
     const ctx = this._ctx.select("withMountedFile", { path, source, ...opts })
+    return new Container(ctx)
+  }
+
+  /**
+   * Retrieves this container plus the given files mounted read-only in a directory at the given path.
+   *
+   * Each file appears under the base name of its path. The directory holds nothing else, and nothing can be written to it.
+   * @param path Location of the directory holding the files (e.g., "/work/lib").
+   * @param sources Identifiers of the files to mount. Two files with the same base name are an error.
+   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/lib").
+   */
+  withMountedFiles = (
+    path: string,
+    sources: File[],
+    opts?: ContainerWithMountedFilesOpts,
+  ): Container => {
+    const ctx = this._ctx.select("withMountedFiles", { path, sources, ...opts })
     return new Container(ctx)
   }
 

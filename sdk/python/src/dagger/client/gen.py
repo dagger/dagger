@@ -5178,6 +5178,39 @@ class Container(Type):
         _ctx = self._select("withMountedFile", _args)
         return Container(_ctx)
 
+    def with_mounted_files(
+        self,
+        path: str,
+        sources: list["File"],
+        *,
+        expand: bool | None = False,
+    ) -> Self:
+        """Retrieves this container plus the given files mounted read-only in a
+        directory at the given path.
+
+        Each file appears under the base name of its path. The directory holds
+        nothing else, and nothing can be written to it.
+
+        Parameters
+        ----------
+        path:
+            Location of the directory holding the files (e.g., "/work/lib").
+        sources:
+            Identifiers of the files to mount. Two files with the same base
+            name are an error.
+        expand:
+            Replace "${VAR}" or "$VAR" in the value of path according to the
+            current environment variables defined in the container (e.g.
+            "/$VAR/lib").
+        """
+        _args = [
+            Arg("path", path),
+            Arg("sources", sources),
+            Arg("expand", expand, False),
+        ]
+        _ctx = self._select("withMountedFiles", _args)
+        return Container(_ctx)
+
     def with_mounted_secret(
         self,
         path: str,

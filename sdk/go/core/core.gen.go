@@ -5459,6 +5459,32 @@ func (r *Container) WithMountedFile(path string, source *File, opts ...Container
 	}
 }
 
+// ContainerWithMountedFilesOpts contains options for Container.WithMountedFiles
+type ContainerWithMountedFilesOpts struct {
+	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/lib").
+	Expand bool
+}
+
+// Retrieves this container plus the given files mounted read-only in a directory at the given path.
+//
+// Each file appears under the base name of its path. The directory holds nothing else, and nothing can be written to it.
+func (r *Container) WithMountedFiles(path string, sources []*File, opts ...ContainerWithMountedFilesOpts) *Container {
+	q := r.query.Select("withMountedFiles")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `expand` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Expand) {
+			q = q.Arg("expand", opts[i].Expand)
+		}
+	}
+	q = q.Arg("path", path)
+	q = q.Arg("sources", sources)
+
+	return &Container{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
 // ContainerWithMountedSecretOpts contains options for Container.WithMountedSecret
 type ContainerWithMountedSecretOpts struct {
 	// A user:group to set for the mounted secret.

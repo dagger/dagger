@@ -359,16 +359,22 @@ var persistedContainerRecipeVisitors = map[string]persistedLazyVisitor{
 	"__withMountedPathDockerfileCompat": parentAndSource("sourceResultID", func(p *persistedContainerWithMountedPathDockerfileCompatLazy) *uint64 { return &p.ParentResultID }, func(p *persistedContainerWithMountedPathDockerfileCompatLazy) *uint64 { return &p.SourceResultID }),
 	"withMountedCache":                  parentAndSource("cacheResultID", func(p *persistedContainerWithMountedCacheLazy) *uint64 { return &p.ParentResultID }, func(p *persistedContainerWithMountedCacheLazy) *uint64 { return &p.CacheResultID }),
 	"withMountedVolume":                 parentAndSource("volumeResultID", func(p *persistedContainerWithMountedVolumeLazy) *uint64 { return &p.ParentResultID }, func(p *persistedContainerWithMountedVolumeLazy) *uint64 { return &p.VolumeResultID }),
-	"withMountedTemp":                   parentOnly(func(p *persistedContainerWithMountedTempLazy) *uint64 { return &p.ParentResultID }),
-	"withMountedSecret":                 parentAndSource("sourceResultID", func(p *persistedContainerWithMountedSecretLazy) *uint64 { return &p.ParentResultID }, func(p *persistedContainerWithMountedSecretLazy) *uint64 { return &p.SourceResultID }),
-	"withoutMount":                      parentOnly(func(p *persistedContainerWithoutMountLazy) *uint64 { return &p.ParentResultID }),
-	"withoutDirectory":                  parentOnly(func(p *persistedContainerWithoutPathLazy) *uint64 { return &p.ParentResultID }),
-	"withoutFile":                       parentOnly(func(p *persistedContainerWithoutPathLazy) *uint64 { return &p.ParentResultID }),
-	"withoutFiles":                      parentOnly(func(p *persistedContainerWithoutPathLazy) *uint64 { return &p.ParentResultID }),
-	"withSymlink":                       parentOnly(func(p *persistedContainerWithSymlinkLazy) *uint64 { return &p.ParentResultID }),
-	"withUnixSocket":                    parentAndSource("sourceResultID", func(p *persistedContainerWithUnixSocketLazy) *uint64 { return &p.ParentResultID }, func(p *persistedContainerWithUnixSocketLazy) *uint64 { return &p.SourceResultID }),
-	"withoutUnixSocket":                 parentOnly(func(p *persistedContainerWithoutUnixSocketLazy) *uint64 { return &p.ParentResultID }),
-	"import":                            parentAndSource("sourceResultID", func(p *persistedContainerImportLazy) *uint64 { return &p.ParentResultID }, func(p *persistedContainerImportLazy) *uint64 { return &p.SourceResultID }),
+	"withMountedFiles": persistedLazyStructVisitor(func(p *persistedContainerWithMountedFilesLazy, w *persistedRefWalker) error {
+		if err := w.child("parentResultID", &p.ParentResultID); err != nil {
+			return err
+		}
+		return w.children("fileResultIDs", p.FileResultIDs)
+	}),
+	"withMountedTemp":   parentOnly(func(p *persistedContainerWithMountedTempLazy) *uint64 { return &p.ParentResultID }),
+	"withMountedSecret": parentAndSource("sourceResultID", func(p *persistedContainerWithMountedSecretLazy) *uint64 { return &p.ParentResultID }, func(p *persistedContainerWithMountedSecretLazy) *uint64 { return &p.SourceResultID }),
+	"withoutMount":      parentOnly(func(p *persistedContainerWithoutMountLazy) *uint64 { return &p.ParentResultID }),
+	"withoutDirectory":  parentOnly(func(p *persistedContainerWithoutPathLazy) *uint64 { return &p.ParentResultID }),
+	"withoutFile":       parentOnly(func(p *persistedContainerWithoutPathLazy) *uint64 { return &p.ParentResultID }),
+	"withoutFiles":      parentOnly(func(p *persistedContainerWithoutPathLazy) *uint64 { return &p.ParentResultID }),
+	"withSymlink":       parentOnly(func(p *persistedContainerWithSymlinkLazy) *uint64 { return &p.ParentResultID }),
+	"withUnixSocket":    parentAndSource("sourceResultID", func(p *persistedContainerWithUnixSocketLazy) *uint64 { return &p.ParentResultID }, func(p *persistedContainerWithUnixSocketLazy) *uint64 { return &p.SourceResultID }),
+	"withoutUnixSocket": parentOnly(func(p *persistedContainerWithoutUnixSocketLazy) *uint64 { return &p.ParentResultID }),
+	"import":            parentAndSource("sourceResultID", func(p *persistedContainerImportLazy) *uint64 { return &p.ParentResultID }, func(p *persistedContainerImportLazy) *uint64 { return &p.SourceResultID }),
 	"withExec": persistedLazyStructVisitor(func(p *persistedContainerExecLazy, w *persistedRefWalker) error {
 		if err := w.child("parentResultID", &p.ParentResultID); err != nil {
 			return err
@@ -423,6 +429,9 @@ var persistedContainerVisitor = persistedPayloadVisitorFunc(func(v dagql.Persist
 				return err
 			}
 			if err := mount.child("volumeSourceResultID", &p.Metadata.Value.Mounts[i].VolumeSourceResultID); err != nil {
+				return err
+			}
+			if err := mount.children("filesSourceResultIDs", p.Metadata.Value.Mounts[i].FilesSourceResultIDs); err != nil {
 				return err
 			}
 		}
