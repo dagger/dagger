@@ -1197,23 +1197,39 @@ class Test:
 				c := connect(ctx, t)
 				modGen := moduleFixture(t, c, tc.fixture)
 
+				// The fixture declares "latest", a view past
+				// engine.IdentifierCasingVersion: ESTARGZ is the member, and the
+				// value, in and out; the old spelling still decodes.
 				out, err := modGen.With(daggerQuery(`{fromImageLayerCompression(imageLayerCompression: "ESTARGZ")}`)).Stdout(ctx)
 				require.NoError(t, err)
-				require.Equal(t, "EStarGZ", gjson.Get(out, "fromImageLayerCompression").String())
-
-				_, err = modGen.With(daggerQuery(`{fromImageLayerCompression(imageLayerCompression: "EStarGZ")}`)).Stdout(ctx)
-				require.NoError(t, err)
-				require.Equal(t, "EStarGZ", gjson.Get(out, "fromImageLayerCompression").String())
+				require.Equal(t, "ESTARGZ", gjson.Get(out, "fromImageLayerCompression").String())
 
 				out, err = modGen.With(daggerQuery(`{toImageLayerCompression(imageLayerCompression: "EStarGZ")}`)).Stdout(ctx)
 				require.NoError(t, err)
-				require.Equal(t, "EStarGZ", gjson.Get(out, "toImageLayerCompression").String())
+				require.Equal(t, "ESTARGZ", gjson.Get(out, "toImageLayerCompression").String())
 
 				out, err = modGen.With(daggerQuery(`{toImageLayerCompression(imageLayerCompression: "ESTARGZ")}`)).Stdout(ctx)
 				require.NoError(t, err)
-				require.Equal(t, "EStarGZ", gjson.Get(out, "toImageLayerCompression").String())
+				require.Equal(t, "ESTARGZ", gjson.Get(out, "toImageLayerCompression").String())
 			})
 		}
+
+		// A module from before the cut has both spellings: its SDK maps the
+		// value it receives (ESTARGZ) to its member (EStarGZ), and the engine
+		// maps the old spelling it returns to the value.
+		t.Run("go before the cut", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			modGen := moduleFixture(t, c, "go/type-enum-type-04").
+				WithNewFile("dagger.json", `{"name":"test","engineVersion":"v1.0.0-beta.20","sdk":{"source":"go"}}`)
+
+			out, err := modGen.With(daggerQuery(`{fromImageLayerCompression(imageLayerCompression: "ESTARGZ")}`)).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "EStarGZ", gjson.Get(out, "fromImageLayerCompression").String())
+
+			out, err = modGen.With(daggerQuery(`{toImageLayerCompression(imageLayerCompression: "EStarGZ")}`)).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "ESTARGZ", gjson.Get(out, "toImageLayerCompression").String())
+		})
 	})
 }
 
