@@ -2,6 +2,7 @@ package wcprof
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"sync"
 )
@@ -338,6 +339,41 @@ func RecordOp(ctx context.Context, kind OpKind, class string, opts OpOpts, start
 		EndNS:    endNS,
 	})
 	return id
+}
+
+// SetSpan records the OTel span the op owns, the span the engine emits for
+// the same work, so offline analysis can join the op to the span's
+// attributes. A zero trace or span ID records nothing.
+func (op *Op) SetSpan(traceID [16]byte, spanID [8]byte) {
+	if op == nil {
+		return
+	}
+	op.r.recordSpan(op.id, traceID, spanID)
+}
+
+// RecordSpan is SetSpan for an op recorded by ID (RecordOp).
+func RecordSpan(ctx context.Context, opID uint64, traceID [16]byte, spanID [8]byte) {
+	r := recorderFor(ctx)
+	if r == nil || opID == 0 {
+		return
+	}
+	r.recordSpan(opID, traceID, spanID)
+}
+
+func (r *Recorder) recordSpan(opID uint64, traceID [16]byte, spanID [8]byte) {
+	if traceID == ([16]byte{}) || spanID == ([8]byte{}) {
+		return
+	}
+	now := r.Now()
+	r.append(r.shardFor(opID), Event{
+		Type:     EventTypeSpan,
+		OpID:     opID,
+		TargetID: binary.BigEndian.Uint64(traceID[:8]),
+		ResultID: binary.BigEndian.Uint64(traceID[8:]),
+		ParentID: binary.BigEndian.Uint64(spanID[:]),
+		StartNS:  now,
+		EndNS:    now,
+	})
 }
 
 // Link records a non-blocking correlation from fromOpID (0 means the current

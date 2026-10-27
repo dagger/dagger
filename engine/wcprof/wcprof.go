@@ -43,6 +43,9 @@ const (
 	// EventTypeLink is a non-blocking correlation between an op and another
 	// op or an interned identifier.
 	EventTypeLink
+	// EventTypeSpan names the OTel span an op owns: the span the engine
+	// emits for the same work.
+	EventTypeSpan
 )
 
 // OpKind classifies operations.
@@ -242,6 +245,8 @@ func (k LinkKind) String() string {
 //     waiting on a named resource, in which case IdentID names it).
 //   - Link: ParentID is the from-op, TargetID an op (optional), IdentID an
 //     interned identifier (optional), ResultID a dagql result (optional).
+//   - Span: OpID is the op, TargetID and ResultID the high and low halves of
+//     its span's trace ID, ParentID the span ID, all big-endian.
 type Event struct {
 	Type     EventType
 	OpKind   OpKind
