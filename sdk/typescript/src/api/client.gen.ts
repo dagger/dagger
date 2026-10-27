@@ -890,7 +890,7 @@ export type ContainerFromOpts = {
   /**
    * Allow HTTPS registry communication without verifying the server certificate.
    */
-  insecureSkipTLSVerify?: boolean
+  insecureSkipTlsVerify?: boolean
 
   /**
    * Ignore the workspace lockfile for this lookup.
@@ -972,7 +972,7 @@ export type ContainerPublishOpts = {
   /**
    * Allow HTTPS registry communication without verifying the server certificate.
    */
-  insecureSkipTLSVerify?: boolean
+  insecureSkipTlsVerify?: boolean
 
   /**
    * Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
@@ -2341,9 +2341,9 @@ export type FunctionWithDeprecatedOpts = {
  * The behavior configured for function result caching.
  */
 export enum FunctionCachePolicy {
-  Default = "Default",
-  Never = "Never",
-  PerSession = "PerSession",
+  Default = "DEFAULT",
+  Never = "NEVER",
+  PerSession = "PER_SESSION",
 }
 
 /**
@@ -2355,11 +2355,11 @@ export function FunctionCachePolicyValueToName(
 ): string {
   switch (value) {
     case FunctionCachePolicy.Default:
-      return "Default"
+      return "DEFAULT"
     case FunctionCachePolicy.Never:
-      return "Never"
+      return "NEVER"
     case FunctionCachePolicy.PerSession:
-      return "PerSession"
+      return "PER_SESSION"
     default:
       return value
   }
@@ -2373,11 +2373,11 @@ export function FunctionCachePolicyNameToValue(
   name: string,
 ): FunctionCachePolicy {
   switch (name) {
-    case "Default":
+    case "DEFAULT":
       return FunctionCachePolicy.Default
-    case "Never":
+    case "NEVER":
       return FunctionCachePolicy.Never
-    case "PerSession":
+    case "PER_SESSION":
       return FunctionCachePolicy.PerSession
     default:
       return name as FunctionCachePolicy
@@ -2530,7 +2530,7 @@ export type GitRefPushOpts = {
   /**
    * Optional lease: a full lowercase object ID allows replacement only if the remote ref still has that value. Checked even for up-to-date pushes. Empty or omitted uses normal non-force rules, creating the ref if it does not exist.
    */
-  expectedRemoteSHA?: string
+  expectedRemoteSha?: string
 }
 
 export type GitRefTreeOpts = {
@@ -2792,11 +2792,10 @@ export function IdentifierWordKindNameToValue(
  * Compression algorithm to use for image layers.
  */
 export enum ImageLayerCompression {
-  EStarGz = "EStarGZ",
-  Estargz = ImageLayerCompression.EStarGz,
-  Gzip = "Gzip",
-  Uncompressed = "Uncompressed",
-  Zstd = "Zstd",
+  Estargz = "ESTARGZ",
+  Gzip = "GZIP",
+  Uncompressed = "UNCOMPRESSED",
+  Zstd = "ZSTD",
 }
 
 /**
@@ -2807,14 +2806,14 @@ export function ImageLayerCompressionValueToName(
   value: ImageLayerCompression,
 ): string {
   switch (value) {
-    case ImageLayerCompression.EStarGz:
-      return "EStarGZ"
+    case ImageLayerCompression.Estargz:
+      return "ESTARGZ"
     case ImageLayerCompression.Gzip:
-      return "Gzip"
+      return "GZIP"
     case ImageLayerCompression.Uncompressed:
-      return "Uncompressed"
+      return "UNCOMPRESSED"
     case ImageLayerCompression.Zstd:
-      return "Zstd"
+      return "ZSTD"
     default:
       return value
   }
@@ -2828,13 +2827,13 @@ export function ImageLayerCompressionNameToValue(
   name: string,
 ): ImageLayerCompression {
   switch (name) {
-    case "EStarGZ":
-      return ImageLayerCompression.EStarGz
-    case "Gzip":
+    case "ESTARGZ":
+      return ImageLayerCompression.Estargz
+    case "GZIP":
       return ImageLayerCompression.Gzip
-    case "Uncompressed":
+    case "UNCOMPRESSED":
       return ImageLayerCompression.Uncompressed
-    case "Zstd":
+    case "ZSTD":
       return ImageLayerCompression.Zstd
     default:
       return name as ImageLayerCompression
@@ -2844,10 +2843,8 @@ export function ImageLayerCompressionNameToValue(
  * Mediatypes to use in published or exported image metadata.
  */
 export enum ImageMediaTypes {
-  Docker = "DockerMediaTypes",
-  DockerMediaTypes = ImageMediaTypes.Docker,
-  Oci = "OCIMediaTypes",
-  OciMediaTypes = ImageMediaTypes.Oci,
+  Docker = "DOCKER",
+  Oci = "OCI",
 }
 
 /**
@@ -6642,16 +6639,16 @@ export class ClientFilesyncMirror extends BaseClient {
  */
 export class Cloud extends BaseClient {
   private readonly _id?: ID = undefined
-  private readonly _traceURL?: string = undefined
+  private readonly _traceUrl?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: ID, _traceURL?: string) {
+  constructor(ctx?: Context, _id?: ID, _traceUrl?: string) {
     super(ctx)
 
     this._id = _id
-    this._traceURL = _traceURL
+    this._traceUrl = _traceUrl
   }
 
   /**
@@ -6672,12 +6669,12 @@ export class Cloud extends BaseClient {
   /**
    * The trace URL for the current session
    */
-  traceURL = async (): Promise<string> => {
-    if (this._traceURL) {
-      return this._traceURL
+  traceUrl = async (): Promise<string> => {
+    if (this._traceUrl) {
+      return this._traceUrl
     }
 
-    const ctx = this._ctx.select("traceURL")
+    const ctx = this._ctx.select("traceUrl")
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -7180,10 +7177,10 @@ export class Container extends BaseClient {
    * Configures all available GPUs on the host to be accessible to this container.
    *
    * This currently works for Nvidia devices only.
-   * @deprecated Use "withGPU" instead.
+   * @deprecated Use "withGpu" instead.
    */
-  experimentalWithAllGPUs = (): Container => {
-    const ctx = this._ctx.select("experimentalWithAllGPUs")
+  experimentalWithAllGpus = (): Container => {
+    const ctx = this._ctx.select("experimentalWithAllGpus")
     return new Container(ctx)
   }
 
@@ -7192,10 +7189,10 @@ export class Container extends BaseClient {
    *
    * This currently works for Nvidia devices only.
    * @param devices List of devices to be accessible to this container.
-   * @deprecated Use "withGPU" instead, which exposes all GPUs available on the host.
+   * @deprecated Use "withGpu" instead, which exposes all GPUs available on the host.
    */
-  experimentalWithGPU = (devices: string[]): Container => {
-    const ctx = this._ctx.select("experimentalWithGPU", { devices })
+  experimentalWithGpu = (devices: string[]): Container => {
+    const ctx = this._ctx.select("experimentalWithGpu", { devices })
     return new Container(ctx)
   }
 
@@ -7329,7 +7326,7 @@ export class Container extends BaseClient {
    * @param opts.protocol Protocol to use for registry communication.
    *
    * Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
-   * @param opts.insecureSkipTLSVerify Allow HTTPS registry communication without verifying the server certificate.
+   * @param opts.insecureSkipTlsVerify Allow HTTPS registry communication without verifying the server certificate.
    * @param opts.noLock Ignore the workspace lockfile for this lookup.
    */
   from = (address: string, opts?: ContainerFromOpts): Container => {
@@ -7490,7 +7487,7 @@ export class Container extends BaseClient {
    * @param opts.protocol Protocol to use for registry communication.
    *
    * Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
-   * @param opts.insecureSkipTLSVerify Allow HTTPS registry communication without verifying the server certificate.
+   * @param opts.insecureSkipTlsVerify Allow HTTPS registry communication without verifying the server certificate.
    * @param opts.sourceDateEpoch Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
    *
    * Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
@@ -7911,8 +7908,8 @@ export class Container extends BaseClient {
    *
    * This currently works with NVIDIA devices only, and requires the engine to run with GPU support enabled.
    */
-  withGPU = (): Container => {
-    const ctx = this._ctx.select("withGPU")
+  withGpu = (): Container => {
+    const ctx = this._ctx.select("withGpu")
     return new Container(ctx)
   }
 
@@ -10667,8 +10664,8 @@ export class File extends BaseClient {
   /**
    * Parse the file contents as JSON.
    */
-  asJSON = (): JSONValue => {
-    const ctx = this._ctx.select("asJSON")
+  asJson = (): JSONValue => {
+    const ctx = this._ctx.select("asJson")
     return new JSONValue(ctx)
   }
 
@@ -11604,16 +11601,16 @@ export class GeneratedCode extends BaseClient {
   /**
    * Set the list of paths to mark generated in version control.
    */
-  withVCSGeneratedPaths = (paths: string[]): GeneratedCode => {
-    const ctx = this._ctx.select("withVCSGeneratedPaths", { paths })
+  withVcsGeneratedPaths = (paths: string[]): GeneratedCode => {
+    const ctx = this._ctx.select("withVcsGeneratedPaths", { paths })
     return new GeneratedCode(ctx)
   }
 
   /**
    * Set the list of paths to ignore in version control.
    */
-  withVCSIgnoredPaths = (paths: string[]): GeneratedCode => {
-    const ctx = this._ctx.select("withVCSIgnoredPaths", { paths })
+  withVcsIgnoredPaths = (paths: string[]): GeneratedCode => {
+    const ctx = this._ctx.select("withVcsIgnoredPaths", { paths })
     return new GeneratedCode(ctx)
   }
 
@@ -11756,8 +11753,8 @@ export class GitBundle extends BaseClient {
   /**
    * Commits that must already exist wherever this bundle is applied.
    */
-  prerequisiteSHAs = async (): Promise<string[]> => {
-    const ctx = this._ctx.select("prerequisiteSHAs")
+  prerequisiteShas = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("prerequisiteShas")
 
     const response: Awaited<string[]> = await ctx.execute()
 
@@ -11895,7 +11892,7 @@ export class GitCommit extends BaseClient {
   private readonly _messageHeadline?: string = undefined
   private readonly _sha?: string = undefined
   private readonly _shortSha?: string = undefined
-  private readonly _treeSHA?: string = undefined
+  private readonly _treeSha?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -11914,7 +11911,7 @@ export class GitCommit extends BaseClient {
     _messageHeadline?: string,
     _sha?: string,
     _shortSha?: string,
-    _treeSHA?: string,
+    _treeSha?: string,
   ) {
     super(ctx)
 
@@ -11930,7 +11927,7 @@ export class GitCommit extends BaseClient {
     this._messageHeadline = _messageHeadline
     this._sha = _sha
     this._shortSha = _shortSha
-    this._treeSHA = _treeSHA
+    this._treeSha = _treeSha
   }
 
   /**
@@ -12185,12 +12182,12 @@ export class GitCommit extends BaseClient {
    *
    * Commits with identical trees have identical contents and file modes.
    */
-  treeSHA = async (): Promise<string> => {
-    if (this._treeSHA) {
-      return this._treeSHA
+  treeSha = async (): Promise<string> => {
+    if (this._treeSha) {
+      return this._treeSha
     }
 
-    const ctx = this._ctx.select("treeSHA")
+    const ctx = this._ctx.select("treeSha")
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -12204,7 +12201,7 @@ export class GitCommit extends BaseClient {
 export class GitPushResult extends BaseClient {
   private readonly _id?: ID = undefined
   private readonly _disposition?: GitPushDisposition = undefined
-  private readonly _previousSHA?: string = undefined
+  private readonly _previousSha?: string = undefined
   private readonly _ref?: string = undefined
   private readonly _sha?: string = undefined
 
@@ -12215,7 +12212,7 @@ export class GitPushResult extends BaseClient {
     ctx?: Context,
     _id?: ID,
     _disposition?: GitPushDisposition,
-    _previousSHA?: string,
+    _previousSha?: string,
     _ref?: string,
     _sha?: string,
   ) {
@@ -12223,7 +12220,7 @@ export class GitPushResult extends BaseClient {
 
     this._id = _id
     this._disposition = _disposition
-    this._previousSHA = _previousSHA
+    this._previousSha = _previousSha
     this._ref = _ref
     this._sha = _sha
   }
@@ -12261,12 +12258,12 @@ export class GitPushResult extends BaseClient {
   /**
    * The previous remote object ID; empty when the ref was created.
    */
-  previousSHA = async (): Promise<string> => {
-    if (this._previousSHA) {
-      return this._previousSHA
+  previousSha = async (): Promise<string> => {
+    if (this._previousSha) {
+      return this._previousSha
     }
 
-    const ctx = this._ctx.select("previousSHA")
+    const ctx = this._ctx.select("previousSha")
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -12310,7 +12307,7 @@ export class GitPushResult extends BaseClient {
 export class GitRef extends BaseClient {
   private readonly _id?: ID = undefined
   private readonly _commit?: string = undefined
-  private readonly _commitSHA?: string = undefined
+  private readonly _commitSha?: string = undefined
   private readonly _contains?: boolean = undefined
   private readonly _name?: string = undefined
   private readonly _ref?: string = undefined
@@ -12322,7 +12319,7 @@ export class GitRef extends BaseClient {
     ctx?: Context,
     _id?: ID,
     _commit?: string,
-    _commitSHA?: string,
+    _commitSha?: string,
     _contains?: boolean,
     _name?: string,
     _ref?: string,
@@ -12331,7 +12328,7 @@ export class GitRef extends BaseClient {
 
     this._id = _id
     this._commit = _commit
-    this._commitSHA = _commitSHA
+    this._commitSha = _commitSha
     this._contains = _contains
     this._name = _name
     this._ref = _ref
@@ -12373,7 +12370,7 @@ export class GitRef extends BaseClient {
 
   /**
    * The resolved commit id at this ref.
-   * @deprecated Use "commitSHA" instead.
+   * @deprecated Use "commitSha" instead.
    */
   commit = async (): Promise<string> => {
     if (this._commit) {
@@ -12390,12 +12387,12 @@ export class GitRef extends BaseClient {
   /**
    * The resolved commit SHA at this ref.
    */
-  commitSHA = async (): Promise<string> => {
-    if (this._commitSHA) {
-      return this._commitSHA
+  commitSha = async (): Promise<string> => {
+    if (this._commitSha) {
+      return this._commitSha
     }
 
-    const ctx = this._ctx.select("commitSHA")
+    const ctx = this._ctx.select("commitSha")
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -12473,7 +12470,7 @@ export class GitRef extends BaseClient {
    * @param opts.to Destination remote repository. Defaults to the origin remote's push routing, or the source's repository URL when none is registered. Required when the source has no remote URL.
    * @param opts.remote Name of a registered remote to push to (see GitRepository.withRemote). Defaults to origin. The remote's push URLs, or its URL, become the destination; more than one push URL requires an explicit to instead.
    * @param opts.branch Destination branch; a refs/ prefix is used verbatim. Defaults to this ref's branch name. Required for detached and non-branch refs.
-   * @param opts.expectedRemoteSHA Optional lease: a full lowercase object ID allows replacement only if the remote ref still has that value. Checked even for up-to-date pushes. Empty or omitted uses normal non-force rules, creating the ref if it does not exist.
+   * @param opts.expectedRemoteSha Optional lease: a full lowercase object ID allows replacement only if the remote ref still has that value. Checked even for up-to-date pushes. Empty or omitted uses normal non-force rules, creating the ref if it does not exist.
    */
   push = (opts?: GitRefPushOpts): GitPushResult => {
     const ctx = this._ctx.select("push", { ...opts })
@@ -14174,8 +14171,8 @@ export class LLM extends BaseClient {
    * @param name The name of the MCP server
    * @param service The MCP service to run and communicate with over stdio
    */
-  withMCPServer = (name: string, service: Service): LLM => {
-    const ctx = this._ctx.select("withMCPServer", { name, service })
+  withMcpServer = (name: string, service: Service): LLM => {
+    const ctx = this._ctx.select("withMcpServer", { name, service })
     return new LLM(ctx)
   }
 
@@ -15285,8 +15282,8 @@ export class Module_ extends BaseClient {
    *
    * Note: this is in the context of a module, so some core types may be hidden.
    */
-  introspectionSchemaJSON = (): File => {
-    const ctx = this._ctx.select("introspectionSchemaJSON")
+  introspectionSchemaJson = (): File => {
+    const ctx = this._ctx.select("introspectionSchemaJson")
     return new File(ctx)
   }
 
@@ -15527,8 +15524,8 @@ export class ModuleSource extends BaseClient {
   private readonly _configExists?: boolean = undefined
   private readonly _digest?: string = undefined
   private readonly _engineVersion?: string = undefined
-  private readonly _htmlRepoURL?: string = undefined
-  private readonly _htmlURL?: string = undefined
+  private readonly _htmlRepoUrl?: string = undefined
+  private readonly _htmlUrl?: string = undefined
   private readonly _kind?: ModuleSourceKind = undefined
   private readonly _localContextDirectoryPath?: string = undefined
   private readonly _moduleName?: string = undefined
@@ -15553,8 +15550,8 @@ export class ModuleSource extends BaseClient {
     _configExists?: boolean,
     _digest?: string,
     _engineVersion?: string,
-    _htmlRepoURL?: string,
-    _htmlURL?: string,
+    _htmlRepoUrl?: string,
+    _htmlUrl?: string,
     _kind?: ModuleSourceKind,
     _localContextDirectoryPath?: string,
     _moduleName?: string,
@@ -15576,8 +15573,8 @@ export class ModuleSource extends BaseClient {
     this._configExists = _configExists
     this._digest = _digest
     this._engineVersion = _engineVersion
-    this._htmlRepoURL = _htmlRepoURL
-    this._htmlURL = _htmlURL
+    this._htmlRepoUrl = _htmlRepoUrl
+    this._htmlUrl = _htmlUrl
     this._kind = _kind
     this._localContextDirectoryPath = _localContextDirectoryPath
     this._moduleName = _moduleName
@@ -15641,10 +15638,10 @@ export class ModuleSource extends BaseClient {
   /**
    * The client-facing introspection schema JSON file for this module source.
    *
-   * This is the schema consumed by client codegen: unlike introspectionSchemaJSON (the module-facing schema), it hides no core types and installs this module (reached via dag.<moduleName>) so a generated client can bind it. The module's dependencies are excluded: a client is generated for a single module plus core, not its dependency graph.
+   * This is the schema consumed by client codegen: unlike introspectionSchemaJson (the module-facing schema), it hides no core types and installs this module (reached via dag.<moduleName>) so a generated client can bind it. The module's dependencies are excluded: a client is generated for a single module plus core, not its dependency graph.
    */
-  clientSchemaIntrospectionJSON = (): File => {
-    const ctx = this._ctx.select("clientSchemaIntrospectionJSON")
+  clientSchemaIntrospectionJson = (): File => {
+    const ctx = this._ctx.select("clientSchemaIntrospectionJson")
     return new File(ctx)
   }
 
@@ -15807,12 +15804,12 @@ export class ModuleSource extends BaseClient {
   /**
    * The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket).
    */
-  htmlRepoURL = async (): Promise<string> => {
-    if (this._htmlRepoURL) {
-      return this._htmlRepoURL
+  htmlRepoUrl = async (): Promise<string> => {
+    if (this._htmlRepoUrl) {
+      return this._htmlRepoUrl
     }
 
-    const ctx = this._ctx.select("htmlRepoURL")
+    const ctx = this._ctx.select("htmlRepoUrl")
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -15822,12 +15819,12 @@ export class ModuleSource extends BaseClient {
   /**
    * The URL to the source's git repo in a web browser. Only valid for git sources.
    */
-  htmlURL = async (): Promise<string> => {
-    if (this._htmlURL) {
-      return this._htmlURL
+  htmlUrl = async (): Promise<string> => {
+    if (this._htmlUrl) {
+      return this._htmlUrl
     }
 
-    const ctx = this._ctx.select("htmlURL")
+    const ctx = this._ctx.select("htmlUrl")
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -15841,8 +15838,8 @@ export class ModuleSource extends BaseClient {
    *
    * Note: this is in the context of a module, so some core types may be hidden.
    */
-  introspectionSchemaJSON = (): File => {
-    const ctx = this._ctx.select("introspectionSchemaJSON")
+  introspectionSchemaJson = (): File => {
+    const ctx = this._ctx.select("introspectionSchemaJson")
     return new File(ctx)
   }
 
@@ -16128,8 +16125,8 @@ export class ModuleSource extends BaseClient {
    * Update the module source with a new SDK.
    * @param source The SDK source to set.
    */
-  withSDK = (source: string): ModuleSource => {
-    const ctx = this._ctx.select("withSDK", { source })
+  withSdk = (source: string): ModuleSource => {
+    const ctx = this._ctx.select("withSdk", { source })
     return new ModuleSource(ctx)
   }
 
@@ -19498,8 +19495,8 @@ export class Workspace extends BaseClient {
    * @param opts.here Write to the workspace config directory at the workspace cwd.
    * @param opts.asSdkName Optional override for the SDK name conventionally derived from the installed module name.
    */
-  withSDK = (ref: string, opts?: WorkspaceWithSdkOpts): Workspace => {
-    const ctx = this._ctx.select("withSDK", { ref, ...opts })
+  withSdk = (ref: string, opts?: WorkspaceWithSdkOpts): Workspace => {
+    const ctx = this._ctx.select("withSdk", { ref, ...opts })
     return new Workspace(ctx)
   }
 
@@ -19688,8 +19685,8 @@ export class Workspace extends BaseClient {
    * @param name Name of the installed SDK entry to remove.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
    */
-  withoutSDK = (name: string, opts?: WorkspaceWithoutSdkOpts): Workspace => {
-    const ctx = this._ctx.select("withoutSDK", { name, ...opts })
+  withoutSdk = (name: string, opts?: WorkspaceWithoutSdkOpts): Workspace => {
+    const ctx = this._ctx.select("withoutSdk", { name, ...opts })
     return new Workspace(ctx)
   }
 
