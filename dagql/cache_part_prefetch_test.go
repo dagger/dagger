@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	ctdsnapshots "github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
@@ -529,3 +530,80 @@ func TestPartPrefetchRetiredBeforeRegistration(t *testing.T) {
 		return holds == 0 && held == 0
 	}, 10*time.Second, 10*time.Millisecond)
 }
+
+// aheadLine waits for the offer's import ahead to be logged, and returns it.
+func (f *prefetchFixture) aheadLine(t *testing.T) offerLine {
+	t.Helper()
+	var line offerLine
+	require.Eventually(t, func() bool {
+		lines := f.logs.lines(t, "remote cache part applied ahead")
+		if len(lines) == 0 {
+			return false
+		}
+		line = lines[len(lines)-1]
+		return true
+	}, 10*time.Second, 10*time.Millisecond, "the offer's chain was never imported ahead")
+	return line
+}
+
+// snapshotCount is how many snapshots the cache's store holds after a
+// collection.
+func (f *prefetchFixture) snapshotCount(t *testing.T) int {
+	t.Helper()
+	f.store.GC(t)
+	n := 0
+	require.NoError(t, f.store.Snapshots.Walk(context.Background(), func(context.Context, ctdsnapshots.Info) error {
+		n++
+		return nil
+	}))
+	return n
+}
+
+// Once an offer's blobs are prefetched, its chain is imported ahead of
+// demand: the part's install then unpacks nothing, and its layers count as
+// used.
+func TestPartPrefetchAppliesAhead(t *testing.T) {
+	f := newPrefetchFixture(t, true, nil)
+	require.Equal(t, "done", f.runJob(t).fields["outcome"])
+	ahead := f.aheadLine(t)
+	require.Equal(t, "done", ahead.fields["outcome"])
+	require.EqualValues(t, 2, ahead.int(t, "layers"))
+	require.EqualValues(t, 2, ahead.int(t, "unpacked_layers"))
+	require.Positive(t, ahead.int(t, "unpacked"))
+	require.EqualValues(t, 2, f.store.Applies.Load(), "both layers unpacked ahead")
+
+	require.NoError(t, f.run())
+	require.True(t, f.installed())
+	installs := f.logs.lines(t, "remote cache part installed")
+	require.Len(t, installs, 1)
+	require.Zero(t, installs[0].int(t, "bytes"), "the install downloads nothing")
+	require.EqualValues(t, 2, f.store.Applies.Load(), "the install unpacks nothing")
+	used := f.logs.lines(t, "remote cache part ahead used")
+	require.Len(t, used, 1)
+	require.EqualValues(t, 2, used[0].int(t, "layers"))
+	require.Equal(t, ahead.int(t, "unpacked"), used[0].int(t, "unpacked"))
+}
+
+// An import ahead is released with its offer: once retired, the snapshots it
+// unpacked are collected.
+func TestPartPrefetchAheadReleasedWithOffer(t *testing.T) {
+	f := newPrefetchFixture(t, true, nil)
+	require.Equal(t, "done", f.runJob(t).fields["outcome"])
+	require.Equal(t, "done", f.aheadLine(t).fields["outcome"])
+	require.Positive(t, f.snapshotCount(t), "the import ahead holds its snapshots")
+	f.cache.egraphMu.Lock()
+	_, err := f.cache.retirePartOfferLocked(f.ctx, f.receiver.cacheSharedResult(), f.address)
+	f.cache.egraphMu.Unlock()
+	require.NoError(t, err)
+	require.Eventually(t, func() bool { return f.snapshotCount(t) == 0 }, 10*time.Second, 10*time.Millisecond)
+}
+
+// Closing prefetching releases its imports ahead.
+func TestPartPrefetchAheadReleasedAtClose(t *testing.T) {
+	f := newPrefetchFixture(t, true, nil)
+	require.Equal(t, "done", f.runJob(t).fields["outcome"])
+	require.Equal(t, "done", f.aheadLine(t).fields["outcome"])
+	f.cache.closePartPrefetch()
+	require.Zero(t, f.snapshotCount(t))
+}
+
