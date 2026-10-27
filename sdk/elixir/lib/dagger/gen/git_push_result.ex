@@ -46,7 +46,7 @@ defmodule Dagger.GitPushResult do
   @spec previous_sha(t()) :: {:ok, String.t()} | {:error, term()}
   def previous_sha(%__MODULE__{} = git_push_result) do
     query_builder =
-      git_push_result.query_builder |> QB.select("previousSHA")
+      git_push_result.query_builder |> QB.select("previousSha")
 
     Client.execute(git_push_result.client, query_builder)
   end

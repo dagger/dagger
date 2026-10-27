@@ -439,7 +439,7 @@ defmodule Dagger.LLM do
   def with_mcp_server(%__MODULE__{} = llm, name, service) do
     query_builder =
       llm.query_builder
-      |> QB.select("withMCPServer")
+      |> QB.select("withMcpServer")
       |> QB.put_arg("name", name)
       |> QB.put_arg("service", Dagger.ID.id!(service))
 
