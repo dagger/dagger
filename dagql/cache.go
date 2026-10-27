@@ -1935,6 +1935,9 @@ func (c *Cache) resultSnapshotLeaseCleanup(res *sharedResult) OnReleaseFunc {
 		seen := make(map[snapshotOwnerKey]struct{})
 		var rerr error
 		for _, link := range res.loadSnapshotOwnerLinks() {
+			if link.Borrowed {
+				continue
+			}
 			key, err := snapshotLinkKey(link)
 			if err != nil {
 				rerr = errors.Join(rerr, err)
@@ -1966,23 +1969,43 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 	// case is removed rather than left to a later sync's repair.
 	wcprof.Lock(ctx, &res.leaseSyncMu, "dagql.sharedResult.leaseSyncMu")
 	defer res.leaseSyncMu.Unlock()
+	return c.syncResultSnapshotLeasesLocked(ctx, res)
+}
 
+// syncResultSnapshotLeasesLocked is syncResultSnapshotLeases with the result's
+// leaseSyncMu held.
+func (c *Cache) syncResultSnapshotLeasesLocked(ctx context.Context, res *sharedResult) error {
 	links, err := desiredSnapshotLinksForResult(ctx, res, true)
 	if err != nil {
 		return err
+	}
+	// A snapshot a dependency already holds is borrowed, as a part copied
+	// from a dependency is: the dependency is kept while res keeps its
+	// value, so its hold keeps the snapshot.
+	held := c.snapshotsHeldByDependencies(res)
+	for i := range links {
+		if _, ok := held[links[i].RefKey]; ok {
+			links[i].Borrowed = true
+		}
 	}
 
 	oldLinks := res.loadSnapshotOwnerLinks()
 
 	oldByKey := make(map[snapshotOwnerKey]PersistedSnapshotRefLink, len(oldLinks))
 	newByKey := make(map[snapshotOwnerKey]PersistedSnapshotRefLink, len(links))
+	seenKeys := make(map[snapshotOwnerKey]PersistedSnapshotRefLink, len(links))
 
+	// A borrowed link gets no lease of its own (PersistedSnapshotRefLink),
+	// but is stored with the others: the result's record names every
+	// snapshot it holds.
 	for _, link := range oldLinks {
 		key, err := snapshotLinkKey(link)
 		if err != nil {
 			return err
 		}
-		oldByKey[key] = link
+		if !link.Borrowed {
+			oldByKey[key] = link
+		}
 	}
 	for _, link := range links {
 		key, err := snapshotLinkKey(link)
@@ -1992,7 +2015,7 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 		if link.RefKey == "" {
 			return fmt.Errorf("empty snapshot key")
 		}
-		if prev, found := newByKey[key]; found {
+		if prev, found := seenKeys[key]; found {
 			return fmt.Errorf(
 				"sync result %d snapshot owner leases: conflicting desired links for %q: %q vs %q",
 				res.id,
@@ -2001,7 +2024,10 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 				link.RefKey,
 			)
 		}
-		newByKey[key] = link
+		seenKeys[key] = link
+		if !link.Borrowed {
+			newByKey[key] = link
+		}
 	}
 
 	for key, oldLink := range oldByKey {
@@ -2035,13 +2061,33 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 		}
 	}
 
-	newLinks := make([]PersistedSnapshotRefLink, 0, len(newByKey))
-	for _, link := range newByKey {
+	newLinks := make([]PersistedSnapshotRefLink, 0, len(seenKeys))
+	for _, link := range seenKeys {
 		newLinks = append(newLinks, link)
 	}
 	res.storeSnapshotOwnerLinks(newLinks)
 
 	return nil
+}
+
+// snapshotsHeldByDependencies returns the snapshots the results res depends
+// on hold, owned or borrowed.
+func (c *Cache) snapshotsHeldByDependencies(res *sharedResult) map[string]struct{} {
+	c.egraphMu.RLock()
+	deps := make([]*sharedResult, 0, len(res.deps))
+	for id := range res.deps {
+		if dep := c.resultsByID[id]; dep != nil {
+			deps = append(deps, dep)
+		}
+	}
+	c.egraphMu.RUnlock()
+	held := map[string]struct{}{}
+	for _, dep := range deps {
+		for _, link := range dep.loadSnapshotOwnerLinks() {
+			held[link.RefKey] = struct{}{}
+		}
+	}
+	return held
 }
 
 func (c *Cache) SyncResultSnapshotOwnerLeases(ctx context.Context, res AnyResult) (rerr error) {
@@ -5218,7 +5264,10 @@ func (c *Cache) runLazyEvalBody(callbackCtx context.Context, shared *sharedResul
 		if continuation != nil {
 			err = continuation.finish(callbackCtx, c, shared)
 		} else {
-			err = c.syncResultSnapshotLeases(callbackCtx, shared)
+			// A native group body run through its row's PartHost records
+			// the parts it filled on token; any other body fills the
+			// whole value, which is synced whole.
+			err = c.syncTaskPartLeases(callbackCtx, shared, token)
 		}
 	}
 	if releaseErr := release(context.WithoutCancel(callbackCtx)); releaseErr != nil && err == nil {

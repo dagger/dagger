@@ -81,7 +81,7 @@ func attachDelegationChild(t *testing.T, ctx context.Context, cache *dagql.Cache
 }
 
 func TestPartDelegationRealStore(t *testing.T) {
-	for _, mode := range []string{"ready-parent", "pending-parent", "sync-retry", "native-restart", "ready-parent-over-chain", "ordinary-ready-tie", "child-chain-first", "late-child", "child-and-parent-failure"} {
+	for _, mode := range []string{"ready-parent", "pending-parent", "borrowed-sync", "native-restart", "ready-parent-over-chain", "ordinary-ready-tie", "child-chain-first", "late-child", "child-and-parent-failure"} {
 		t.Run(mode, func(t *testing.T) {
 			aStore, bStore := testutil.NewStore(t), testutil.NewStore(t)
 			actx, a, asrv := transferCache(t, aStore, "", "a")
@@ -135,15 +135,15 @@ func TestPartDelegationRealStore(t *testing.T) {
 					t.Fatal("exact parent disappeared")
 					return 0
 				}
-				if mode == "ready-parent" || mode == "sync-retry" || mode == "ready-parent-over-chain" || mode == "ordinary-ready-tie" {
+				if mode == "ready-parent" || mode == "borrowed-sync" || mode == "ready-parent-over-chain" || mode == "ordinary-ready-tie" {
 					exact, err := b.LoadResultByResultID(bctx, "", bsrv, parentID)
 					require.NoError(t, err)
 					prepareCtx := bctx
-					if mode == "sync-retry" {
+					if mode == "borrowed-sync" {
 						prepareCtx = engine.ContextWithClientMetadata(bctx, &engine.ClientMetadata{ClientID: "parent-preparation", SessionID: "parent-preparation"})
 					}
 					require.NoError(t, b.EvaluateParts(prepareCtx, exact, ContainerPartFS))
-					if mode == "sync-retry" {
+					if mode == "borrowed-sync" {
 						// Evaluation wakes its caller before the worker drops its parent
 						// hold. Exclude that hold from the child-sync failure baseline.
 						cachetest.ReleaseSessionAndWait(t, prepareCtx, b, "parent-preparation")
@@ -168,13 +168,28 @@ func TestPartDelegationRealStore(t *testing.T) {
 				switch mode {
 				case "late-child":
 					testLateChildDelegation(t, bctx, b, got, provider, addDonor)
-				case "sync-retry":
-					before, pins, releases := parentHolds(), observed.pins.Load(), observed.pinReleaseAttempts.Load()
+				case "borrowed-sync":
+					// A delegated child's snapshot is its parent's, which the
+					// parent holds, so the child borrows it and its owner sync
+					// writes nothing. An attach would fail loudly.
+					before, pins, releases, attaches := parentHolds(), observed.pins.Load(), observed.pinReleaseAttempts.Load(), observed.ownerAttempts.Load()
 					observed.failOwner.Store(true)
-					require.ErrorIs(t, b.EvaluateParts(bctx, got, ContainerPartFS), errPartInjectedOwner)
-					require.Equal(t, before, parentHolds(), "temporary parent hold survived failed child sync")
+					require.NoError(t, b.EvaluateParts(bctx, got, ContainerPartFS))
+					require.Equal(t, attaches, observed.ownerAttempts.Load(), "a delegated child attaches no owner lease")
+					observed.failOwner.Store(false)
+					require.Equal(t, before, parentHolds(), "temporary parent hold released")
 					require.Equal(t, pins+1, observed.pins.Load())
-					require.Equal(t, releases, observed.pinReleaseAttempts.Load(), "child pin must survive failed sync")
+					require.Equal(t, releases+1, observed.pinReleaseAttempts.Load(), "child pin released once its sync succeeds")
+					var fsLinks []dagql.PersistedSnapshotRefLink
+					for _, row := range b.DebugEGraphSnapshot().Results {
+						if row.SharedResultID == imported[0].ResultID {
+							fsLinks = row.SnapshotLinks
+						}
+					}
+					require.NotEmpty(t, fsLinks)
+					for _, link := range fsLinks {
+						require.True(t, link.Borrowed, "child link %+v is borrowed", link)
+					}
 				}
 				require.NoError(t, b.EvaluateParts(bctx, got, ContainerPartFS))
 				require.Equal(t, "/child", got.Self().Config.WorkingDir)

@@ -70,6 +70,14 @@ type Container struct {
 	partHost       atomic.Pointer[dagql.PartHost]
 	acquiredOutput atomic.Pointer[containerAcquiredOutput]
 	acquiredOpens  sync.Map
+	// borrowedParts holds, by dagql.PartKey, the snapshot ID each part had
+	// when this container copied it from a result it depends on
+	// (delegateContainerPart), or mounted it unchanged from one (the
+	// withMountedDirectory and withMountedFile writes). That result owns the
+	// snapshot, so the part's link is Borrowed while the part still holds
+	// it; a part written after the copy (a path writer copies, then writes)
+	// holds another, its own.
+	borrowedParts sync.Map
 	// fromContentDigestSafe tracks whether Container.From can give its result a
 	// content digest based only on the resolved image and platform. It is false
 	// by default so derived containers conservatively retain their call identity.
@@ -1298,46 +1306,10 @@ func (container *Container) PersistedSnapshotRefLinks() []dagql.PersistedSnapsho
 	if container == nil {
 		return nil
 	}
-	var links []dagql.PersistedSnapshotRefLink
-	if container.MetaSnapshot != nil {
-		if snapshot, ok := container.MetaSnapshot.Peek(); ok && snapshot != nil {
-			links = append(links, dagql.PersistedSnapshotRefLink{
-				RefKey: snapshot.SnapshotID(),
-				Role:   "meta",
-			})
-		}
-	}
-	if container.FS != nil {
-		if dir, ok := container.FS.Peek(); ok && dir != nil {
-			if snapshot, ok := dir.Snapshot.Peek(); ok && snapshot != nil {
-				links = append(links, dagql.PersistedSnapshotRefLink{
-					RefKey: snapshot.SnapshotID(),
-					Role:   "fs",
-				})
-			}
-		}
-	}
-	for i, mnt := range container.Mounts {
-		if mnt.DirectorySource != nil {
-			if dir, ok := mnt.DirectorySource.Peek(); ok && dir != nil {
-				if snapshot, ok := dir.Snapshot.Peek(); ok && snapshot != nil {
-					links = append(links, dagql.PersistedSnapshotRefLink{
-						RefKey: snapshot.SnapshotID(),
-						Role:   fmt.Sprintf("mount_dir:%d", i),
-					})
-				}
-			}
-		}
-		if mnt.FileSource != nil {
-			if file, ok := mnt.FileSource.Peek(); ok && file != nil {
-				if snapshot, ok := file.Snapshot.Peek(); ok && snapshot != nil {
-					links = append(links, dagql.PersistedSnapshotRefLink{
-						RefKey: snapshot.SnapshotID(),
-						Role:   fmt.Sprintf("mount_file:%d", i),
-					})
-				}
-			}
-		}
+	links := container.metaLinks(nil)
+	links = container.fsLinks(links)
+	for i := range container.Mounts {
+		links = container.mountLinks(links, i)
 	}
 	for _, stored := range container.storedParts {
 		if stored.SnapshotID != "" {
@@ -1350,6 +1322,162 @@ func (container *Container) PersistedSnapshotRefLinks() []dagql.PersistedSnapsho
 		}
 	}
 	return links
+}
+
+// ReadSnapshotOwnerParts returns the snapshot links parts hold now, as
+// PersistedSnapshotRefLinks names them, and every role those parts link
+// under, held or not. It reads each part as it stands and doesn't wait for
+// the container's other evaluations, so the owner sync after one part is
+// filled doesn't wait on the parts still being filled. A container acquired
+// as a whole, or restored from persistence, is read whole instead (ok false).
+func (container *Container) ReadSnapshotOwnerParts(parts []dagql.PartKey) (links []dagql.PersistedSnapshotRefLink, roles []string, ok bool) {
+	if container == nil {
+		return nil, nil, false
+	}
+	container.lazyOpMu.Lock()
+	defer container.lazyOpMu.Unlock()
+	if container.acquiredOutput.Load() != nil || len(container.storedParts) > 0 {
+		return nil, nil, false
+	}
+	for _, part := range parts {
+		switch {
+		case part == ContainerPartFS:
+			roles = append(roles, containerFSRole)
+			links = container.fsLinks(links)
+		case part == ContainerPartExecMeta:
+			roles = append(roles, containerMetaRole)
+			links = container.metaLinks(links)
+		case strings.HasPrefix(string(part), containerPartMountPrefix):
+			target := strings.TrimPrefix(string(part), containerPartMountPrefix)
+			i := slices.IndexFunc(container.Mounts, func(mnt ContainerMount) bool { return mnt.Target == target })
+			if i < 0 {
+				return nil, nil, false
+			}
+			roles = append(roles, mountDirRole(i), mountFileRole(i))
+			links = container.mountLinks(links, i)
+		}
+	}
+	return links, roles, true
+}
+
+const (
+	containerFSRole   = "fs"
+	containerMetaRole = "meta"
+)
+
+func mountDirRole(i int) string  { return fmt.Sprintf("mount_dir:%d", i) }
+func mountFileRole(i int) string { return fmt.Sprintf("mount_file:%d", i) }
+
+// metaLinks appends the exec metadata part's link, if it holds a snapshot.
+func (container *Container) metaLinks(links []dagql.PersistedSnapshotRefLink) []dagql.PersistedSnapshotRefLink {
+	if container.MetaSnapshot != nil {
+		if snapshot, ok := container.MetaSnapshot.Peek(); ok && snapshot != nil {
+			links = append(links, dagql.PersistedSnapshotRefLink{
+				RefKey:   snapshot.SnapshotID(),
+				Role:     containerMetaRole,
+				Borrowed: container.borrowed(ContainerPartExecMeta, snapshot.SnapshotID()),
+			})
+		}
+	}
+	return links
+}
+
+// fsLinks appends the root filesystem part's link, if it holds a snapshot.
+func (container *Container) fsLinks(links []dagql.PersistedSnapshotRefLink) []dagql.PersistedSnapshotRefLink {
+	if container.FS != nil {
+		if dir, ok := container.FS.Peek(); ok && dir != nil {
+			if snapshot, ok := dir.Snapshot.Peek(); ok && snapshot != nil {
+				links = append(links, dagql.PersistedSnapshotRefLink{
+					RefKey:   snapshot.SnapshotID(),
+					Role:     containerFSRole,
+					Borrowed: container.borrowed(ContainerPartFS, snapshot.SnapshotID()),
+				})
+			}
+		}
+	}
+	return links
+}
+
+// mountLinks appends the link of mount i's source, if it holds a snapshot.
+func (container *Container) mountLinks(links []dagql.PersistedSnapshotRefLink, i int) []dagql.PersistedSnapshotRefLink {
+	mnt := container.Mounts[i]
+	if mnt.DirectorySource != nil {
+		if dir, ok := mnt.DirectorySource.Peek(); ok && dir != nil {
+			if snapshot, ok := dir.Snapshot.Peek(); ok && snapshot != nil {
+				links = append(links, dagql.PersistedSnapshotRefLink{
+					RefKey:   snapshot.SnapshotID(),
+					Role:     mountDirRole(i),
+					Borrowed: container.borrowed(ContainerPartMount(mnt.Target), snapshot.SnapshotID()),
+				})
+			}
+		}
+	}
+	if mnt.FileSource != nil {
+		if file, ok := mnt.FileSource.Peek(); ok && file != nil {
+			if snapshot, ok := file.Snapshot.Peek(); ok && snapshot != nil {
+				links = append(links, dagql.PersistedSnapshotRefLink{
+					RefKey:   snapshot.SnapshotID(),
+					Role:     mountFileRole(i),
+					Borrowed: container.borrowed(ContainerPartMount(mnt.Target), snapshot.SnapshotID()),
+				})
+			}
+		}
+	}
+	return links
+}
+
+// borrowed reports whether part holds snapshotID because this container
+// copied it from a result it depends on (borrowedParts).
+func (container *Container) borrowed(part dagql.PartKey, snapshotID string) bool {
+	copied, ok := container.borrowedParts.Load(part)
+	return ok && snapshotID != "" && copied == snapshotID
+}
+
+// markBorrowed records the snapshot part holds as copied from a result this
+// container depends on (borrowedParts). A part without a snapshot records
+// nothing.
+func (container *Container) markBorrowed(part dagql.PartKey) {
+	if id := container.partSnapshotID(part); id != "" {
+		container.borrowedParts.Store(part, id)
+	}
+}
+
+// partSnapshotID is the snapshot ID part holds now, or "".
+func (container *Container) partSnapshotID(part dagql.PartKey) string {
+	var snapshot bkcache.ImmutableRef
+	switch part {
+	case ContainerPartFS:
+		if container.FS != nil {
+			if dir, ok := container.FS.Peek(); ok && dir != nil {
+				snapshot, _ = dir.Snapshot.Peek()
+			}
+		}
+	case ContainerPartExecMeta:
+		if container.MetaSnapshot != nil {
+			snapshot, _ = container.MetaSnapshot.Peek()
+		}
+	default:
+		target, ok := strings.CutPrefix(string(part), containerPartMountPrefix)
+		if !ok {
+			return ""
+		}
+		mnt := container.mountAt(target)
+		switch {
+		case mnt == nil:
+		case mnt.DirectorySource != nil:
+			if dir, ok := mnt.DirectorySource.Peek(); ok && dir != nil {
+				snapshot, _ = dir.Snapshot.Peek()
+			}
+		case mnt.FileSource != nil:
+			if file, ok := mnt.FileSource.Peek(); ok && file != nil {
+				snapshot, _ = file.Snapshot.Peek()
+			}
+		}
+	}
+	if snapshot == nil {
+		return ""
+	}
+	return snapshot.SnapshotID()
 }
 
 func (container *Container) CacheUsageIdentities() []string {
@@ -3823,6 +3951,11 @@ func (lazy *ContainerWithMountedDirectoryLazy) EvaluateContainerGroup(ctx contex
 			}
 			mnt.DirectorySource.SetValue(detached)
 			detached = nil
+			// Mounted as it is, the snapshot is the source's, a result
+			// this one depends on; a chowned copy is a result of its own.
+			if lazy.Owner == "" {
+				container.markBorrowed(ContainerPartMount(target))
+			}
 			return nil
 		})
 	default:
@@ -3929,6 +4062,11 @@ func (lazy *ContainerWithMountedFileLazy) EvaluateContainerGroup(ctx context.Con
 			}
 			mnt.FileSource.SetValue(detached)
 			detached = nil
+			// Mounted as it is, the snapshot is the source's, a result
+			// this one depends on; a chowned copy is a result of its own.
+			if lazy.Owner == "" {
+				container.markBorrowed(ContainerPartMount(target))
+			}
 			return nil
 		})
 	default:
