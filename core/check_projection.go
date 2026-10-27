@@ -7,7 +7,9 @@ import (
 	"github.com/dagger/dagger/dagql"
 )
 
-// runFunction invokes the author function only when a check result is requested.
+// runFunction runs the author function only when a check result is
+// requested. It selects the check's hidden run field, which is cached like
+// the function itself, so an unchanged check is a cache hit.
 func (c *Check) runFunction(ctx context.Context) error {
 	receiver := c.Receiver.Self()
 	srv, err := dagqlServerForModule(ctx, receiver.Module)
@@ -17,26 +19,27 @@ func (c *Check) runFunction(ctx context.Context) error {
 	if c.Workspace.Self() != nil {
 		ctx = WorkspaceToContext(ctx, c.Workspace)
 	}
-	fn, ok := receiver.TypeDef.FunctionByName(c.Function)
-	if !ok {
+	if _, ok := receiver.TypeDef.FunctionByName(c.Function); !ok {
 		return fmt.Errorf("check function %q is missing", c.Function)
 	}
-	callable, err := NewModFunction(ctx, receiver.Module, receiver.TypeDef, fn)
-	if err != nil {
-		return err
-	}
-	result, err := callable.Call(ctx, &CallOpts{
-		ParentTyped: c.Receiver, ParentFields: receiver.Fields, Inputs: c.Inputs, Server: srv,
-	})
-	if err != nil {
-		return err
-	}
-	if obj, ok := result.(dagql.AnyObjectResult); ok {
-		if sync, ok := obj.ObjectType().FieldSpec("sync", srv.View); ok && !sync.Args.HasRequired(srv.View) {
-			return srv.Select(ctx, obj, &result, dagql.Selector{Field: "sync"})
+	args := make([]dagql.NamedInput, 0, len(c.Inputs))
+	for _, input := range c.Inputs {
+		value, ok := input.Value.(dagql.Input)
+		if !ok {
+			return fmt.Errorf("check %q argument %q is %T, not an input", c.Function, input.Name, input.Value)
 		}
+		args = append(args, dagql.NamedInput{Name: input.Name, Value: value})
 	}
-	return err
+	var result dagql.AnyResult
+	return srv.Select(ctx, c.Receiver, &result, dagql.Selector{
+		Field: checkRunFieldName(c.Function),
+		Args:  args,
+	})
+}
+
+// checkRunFieldName is the hidden field that runs a check function's body.
+func checkRunFieldName(function string) string {
+	return "__check_" + function
 }
 
 func (c *Check) AttachDependencyResults(ctx context.Context, _ dagql.AnyResult, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
