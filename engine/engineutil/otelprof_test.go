@@ -10,6 +10,7 @@ package engineutil
 // analyzer; their end-to-end coverage is exercised there via fixtures.)
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"testing"
@@ -90,7 +91,7 @@ func TestEmitExecSplitProducesLoaderShape(t *testing.T) {
 	started := time.Now()
 	time.Sleep(12 * time.Millisecond)
 	end := time.Now()
-	emitOTelExecSplit(ctx, stateID, start, started, end, nil, []string{"go", "build", "./..."})
+	emitOTelExecSplit(ctx, stateID, start, started, end, nil, []string{"go", "build", "./..."}, 0, 0)
 	var nilErr error
 	endOTelExecRun(execRun, &nilErr)
 	root.End()
@@ -166,7 +167,7 @@ func TestEmitExecSplitSetupFailure(t *testing.T) {
 	runErr := errors.New("setup failed: mount error")
 	// started == zero time: the process never started. A non-nil argv is supplied to
 	// prove it never leaks onto the engine-setup span when there is no user process.
-	emitOTelExecSplit(ctx, "exec-state-id-fail", start, time.Time{}, end, runErr, []string{"go", "build"})
+	emitOTelExecSplit(ctx, "exec-state-id-fail", start, time.Time{}, end, runErr, []string{"go", "build"}, 0, 0)
 	endOTelExecRun(execRun, &runErr)
 	root.End()
 	ended := sr.Ended()
@@ -185,5 +186,56 @@ func TestEmitExecSplitSetupFailure(t *testing.T) {
 	}
 	if !cs.StartTime().Equal(start) || !cs.EndTime().Equal(end) {
 		t.Fatalf("failed containerStart must span the whole [%v,%v], got [%v,%v]", start, end, cs.StartTime(), cs.EndTime())
+	}
+}
+
+// TestEmitExecSplitRecordsPhaseSpans: the native exec phases name the phase
+// spans emitted for them; a run whose process never started has only its
+// container start.
+func TestEmitExecSplitRecordsPhaseSpans(t *testing.T) {
+	wcprof.EnsureRecorder()
+	sr, ctx, root := newRecordingRoot("Container.withExec")
+	ctx = wcprof.ContextWithProfiling(ctx)
+	start := time.Now()
+	started := start.Add(4 * time.Millisecond)
+	end := started.Add(12 * time.Millisecond)
+	startOp := wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.containerStart", wcprof.OpOpts{}, 0, 4, wcprof.OutcomeOK)
+	runOp := wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.processRun", wcprof.OpOpts{}, 4, 16, wcprof.OutcomeOK)
+	emitOTelExecSplit(ctx, "exec-phase-spans", start, started, end, nil, nil, startOp, runOp)
+	failOp := wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.containerStart", wcprof.OpOpts{}, 0, 4, wcprof.OutcomeError)
+	emitOTelExecSplit(ctx, "exec-phase-spans-fail", start, time.Time{}, end, errors.New("boom"), nil, failOp, 0)
+	root.End()
+
+	var buf bytes.Buffer
+	if err := wcprof.Active().WriteDump(&buf, false); err != nil {
+		t.Fatal(err)
+	}
+	_, events, err := wcprof.ReadDump(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spanOf := map[uint64]string{}
+	for _, ev := range events {
+		if ev.Type == "span" {
+			spanOf[ev.OpID] = ev.SpanID
+		}
+	}
+	phase := func(name, ident string) string {
+		for _, s := range sr.Ended() {
+			if v, _ := attrStr(s, telemetry.DagDigestAttr); s.Name() == name && v == ident {
+				return s.SpanContext().SpanID().String()
+			}
+		}
+		t.Fatalf("no %s span for %s", name, ident)
+		return ""
+	}
+	for op, want := range map[uint64]string{
+		startOp: phase("exec.containerStart", "exec-phase-spans"),
+		runOp:   phase("exec.processRun", "exec-phase-spans"),
+		failOp:  phase("exec.containerStart", "exec-phase-spans-fail"),
+	} {
+		if spanOf[op] != want {
+			t.Errorf("op %d span = %q, want %q", op, spanOf[op], want)
+		}
 	}
 }
