@@ -319,9 +319,9 @@ Terms keep their entry's `capitalized` form in fields (`githubRepo`,
 `fromGitHubIpv6`, `myK8sCluster`). The core schema mixes both acronym styles
 in fields today (`traceURL` but `pushUrl`, `commitSHA` but `shortSha`); v1.0
 is the time to settle on one. The convention applies to module names from
-`v1.0.0-beta.21` on (see [The gate](#the-gate)); the core fields that write
-acronyms in capitals are exceptions until they're renamed (see
-[Core schema](#core-schema)).
+`v1.0.0-beta.22` (`engine.IdentifierCasingVersion`) on (see
+[The gate](#the-gate)); the core fields that write acronyms in capitals are
+exceptions until they're renamed (see [Core schema](#core-schema)).
 
 ## The Dictionary
 
@@ -722,7 +722,7 @@ interfaces, they ask the engine with `Query.formatIdentifiers`, in batches, and
 use the results for selections, argument keys and `node(id:)` type names (the
 TypeScript runtime namespaces each interface the way the engine does,
 comparing words). The gate is the engine version the module declares: from
-`v1.0.0-beta.21` on, the engine names the module by the new rules (see
+`v1.0.0-beta.22` on, the engine names the module by the new rules (see
 [The gate](#the-gate)), and older modules keep the conversion they always
 used. The identifier API is on every v1 view, so its presence says nothing
 about which rules apply. Go module codegen mirrors `Namer` instead (see
@@ -758,7 +758,7 @@ schema for the generators. `cmd/codegen` connects to the engine whenever it
 generates for a module or client at the new rules (see the gate below).
 
 **Gate:** the engine version the target module declares, plus the engine's
-own `version`. A module that declares a version before `v1.0.0-beta.21`, or
+own `version`. A module that declares a version before `v1.0.0-beta.22`, or
 an engine older than the identifier API, gets no names formatted through the
 engine: codegen keeps its legacy converter, so older modules and clients
 regenerate byte-identical code. The gate is not the schema: the identifier API
@@ -831,7 +831,7 @@ The algorithm and the dictionary are selected by engine version through the
 existing view mechanism (`AfterVersion` / `BeforeVersion` in `core/util.go`):
 
 - A module's own names are parsed with the version its `engineVersion` selects.
-  Modules below `IdentifierNamingVersion` (`v1.0.0-beta.21`) keep strcase
+  Modules below `IdentifierNamingVersion` (`v1.0.0-beta.22`) keep strcase
   behavior until they bump. A module entrypoint (manifest v2) is named by
   whatever engine version its `ModuleSource` ends up with, like any other
   module (see [Module entrypoints](#module-entrypoints)).
@@ -1109,7 +1109,7 @@ Other gaps:
 
 ### What changes for module authors (on bump)
 
-A module that declares an `engineVersion` of `v1.0.0-beta.21` or later
+A module that declares an `engineVersion` of `v1.0.0-beta.22` or later
 (`latest`, a later prerelease, or `v1.0.0`, which a prerelease engine
 refuses) gets the new rules. Module type, field and argument names that
 contain runs of capitals or dictionary terms get their real casing back:
@@ -1148,17 +1148,19 @@ convention](#schema-casing-convention):
   `insecureSkipTLSVerify`, `introspectionSchemaJSON`, `prerequisiteSHAs`,
   `previousSHA`, `traceURL`, `treeSHA`, `withGPU`, `withMCPServer`,
   `withSDK`, `withVCSGeneratedPaths`, `withVCSIgnoredPaths`, `withoutSDK`.
-  Renaming them is a separate change.
+  Renaming them is a separate change, which drops the old names outright,
+  with no deprecated duplicates.
 - One enum still uses legacy PascalCase values with no `SCREAMING_SNAKE`
   aliases: `FunctionCachePolicy` (`Default`, `PerSession`, `Never`).
   `ImageLayerCompression` and `ImageMediaTypes` already have aliases.
 
 > **Superseded.** An earlier revision of this design took fields'
 > acronyms in capitals as the convention, and planned the opposite renames
-> on the views with the new rules: `GitCommit.shortSHA` and `parentSHAs`,
-> `Artifacts.filterURI` and `withoutURI`, `LLMContentBlock.callID`, ... The
-> rest of this section, and [What changes for SDK
-> users](#what-changes-for-sdk-users), still describe that plan.
+> on the views with the new rules, keeping the old spellings as hidden
+> aliases: `GitCommit.shortSHA` and `parentSHAs`, `Artifacts.filterURI` and
+> `withoutURI`, `LLMContentBlock.callID`, ... The rest of this section, and
+> [What changes for SDK users](#what-changes-for-sdk-users), still describe
+> that plan.
 
 These are renamed on the views with the new rules, with their old spellings
 kept as hidden aliases there ([Transition aliases](#transition-aliases),
@@ -1401,10 +1403,12 @@ copy: they get formatted names from the engine.
    it out. .NET uses `CAPITALIZED`, and `Identifier.words` carries what's needed
    if the .NET SDK ever wants the exact form. A third `AcronymStyle` value can be
    added later without breaking anyone.
-2. **Renaming the 8 non-canonical core names** before 1.0, with deprecated
-   aliases, or keeping them on an allowlist. Resolved: renamed on the views
-   with the new rules, with the old spellings as hidden aliases there (see
-   [Core schema](#core-schema)).
+2. **Renaming the non-canonical core names** before 1.0, with deprecated
+   aliases, or keeping them on an allowlist. Resolved: the fields that write
+   acronyms in capitals (`asJSON`, `withGPU`, ...; see
+   [Core schema](#core-schema)) are renamed in a separate change, which drops
+   the old names outright, with no deprecated duplicates. (An earlier
+   resolution renamed the opposite set and kept hidden aliases.)
 3. **Offline codegen.** Some SDK codegen paths were thought to run without an
    engine session. Resolved: nearly all codegen has an engine connection, or
    reads its input from a step that has one, so codegen asks the engine to
@@ -1428,12 +1432,19 @@ copy: they get formatted names from the engine.
    [What changes for SDK users](#what-changes-for-sdk-users)).
 6. **TypeScript's convention.** The ecosystem writes acronyms both ways. The
    generator uses `UPPERCASE` members and `CAPITALIZED` enum members today;
-   confirm with the TypeScript maintainers.
+   confirm with the TypeScript maintainers, now that schema fields are
+   `CAPITALIZED` (see [Schema casing convention](#schema-casing-convention)).
 7. **Input object field names.** Rust and Elixir (and possibly Python) had
    existing bugs where an input object field is sent by its SDK name rather
    than its schema name. The new codegen maps renamed fields back to their
    wire names without changing behavior; the underlying bugs are a separate
    fix.
+8. **Dependency clients across the cut.** An SDK that generates a module's
+   dependency clients from
+   `withEngineVersion(consumer).clientSchemaIntrospectionJSON` formats them
+   by the consumer's version, so a dependency on the other side of the cut
+   can be named by other rules than its bindings assume. Resolved: accepted
+   for the beta, with no `clientVersion` argument to pick per dependency.
 
 ## SDK Extraction
 
