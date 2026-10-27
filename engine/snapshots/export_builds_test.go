@@ -224,6 +224,34 @@ func TestExportChainsWorkEndsWithOwnBuilds(t *testing.T) {
 	require.Zero(t, ended[1])
 }
 
+// A chain whose layers an earlier chain of the export builds has no work of
+// its own, and still begins and ends it once.
+func TestExportChainsSharedChainWork(t *testing.T) {
+	store := testutil.NewStore(t)
+	a, _ := store.Build(t, nil, "a.txt", "shared root")
+	ab, _ := store.Build(t, a, "b.txt", "suffix")
+	var mu sync.Mutex
+	began, ended := map[int]int{}, map[int]int{}
+	work := &bkcache.ChainWork{
+		Begin: func(ctx context.Context, i int) context.Context {
+			mu.Lock()
+			defer mu.Unlock()
+			began[i]++
+			return ctx
+		},
+		End: func(i int, blobBytes int64, err error) {
+			assert.NoError(t, err)
+			mu.Lock()
+			defer mu.Unlock()
+			assert.Equal(t, 1, began[i], "chain %d ended its work without beginning it", i)
+			ended[i]++
+		},
+	}
+	exportChainsWork(t, []bkcache.ImmutableRef{ab, a}, work, buildsConfig(2, nil))
+	require.Equal(t, map[int]int{0: 1, 1: 1}, began)
+	require.Equal(t, map[int]int{0: 1, 1: 1}, ended)
+}
+
 // statCounts keeps a chain's counts, without its sizes and times.
 func statCounts(stats bkcache.ExportStats) bkcache.ExportStats {
 	return bkcache.ExportStats{Layers: stats.Layers, LayersDiffed: stats.LayersDiffed, LayersReused: stats.LayersReused}
