@@ -8,7 +8,7 @@ buffers with interned strings, and all heavy analysis happens offline.
 
 ## What it records
 
-Three event types, written by hooks at the engine's blocking choke points:
+Four event types, written by hooks at the engine's blocking choke points:
 
 - **ops**: timed intervals with a *kind* (`call`, `call_exec`, `lazy`, `exec`,
   `exec_phase`, `service_start`, `session_phase`, ...), a *class* (e.g.
@@ -23,6 +23,13 @@ Three event types, written by hooks at the engine's blocking choke points:
   nested client Y" so module-function calls back into the API are stitched
   under the exec that made them (wcprof-report puts them under the exec's
   `exec.processRun`, or its `exec.workload` when the run is split).
+- **spans**: the OTel span an op owns, when telemetry is on and the engine
+  emits a span for the same work: a `call` with its own span, `call_exec`,
+  `dagql.publishResult`, `lazy`, `exec`, its `exec.containerStart` and
+  `exec.processRun` phases (the OTel `exec.processRun` also covers native's
+  `exec.runtimeStart`), and `service_start`. Dumped as
+  `{"e":"span","id":<op>,"tr":<trace ID>,"sp":<span ID>}` in hex, so offline
+  analysis can join an op to its span's attributes exactly.
 
 Current hook points:
 
@@ -90,6 +97,15 @@ dropped and counted in the dump header's `dropped_events`.
 - Dump: `GET http://<engine-debug-addr>/debug/wcprof/dump` streams a JSON
   header line (string tables, open ops) followed by one JSON event per line,
   and flushes the buffer (pass `?flush=0` to keep it).
+- Dump at stop: with engine-global recording on, a stopping engine writes the
+  whole buffer, unflushed, to `<engine root>/wcprof/stop.ndjson.gz`
+  (`wcprof.StopDumpPath`): on the stop signal (`engine.stop.signal`), when
+  each stop phase starts and ends (`engine.stop.<phase>` ops under
+  `engine.stop`, waiting for a running garbage collection included), when
+  the server's stop ends, and when each telemetry drain after it starts and
+  ends (`engine.exit.<step>`). Each write replaces the file atomically and is
+  itself a `wcprof.stopDump` op, so an engine killed mid-stop leaves the last
+  complete dump, with the phase it was in as an open op.
 
 Typical dev-engine workflow:
 
