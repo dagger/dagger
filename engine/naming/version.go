@@ -26,9 +26,11 @@ var releases = []struct {
 // DictionaryFor returns the dictionary for a module or client that declares
 // engineVersion: the newest dictionary introduced at or before it.
 //
-// Versions compare by their base version, like engine API views: every
-// prerelease of vX.Y.Z (v1.0.0-beta.15, v1.0.0-dev-123) selects vX.Y.Z's
-// dictionary. An empty version means the latest, as an empty view does.
+// Versions compare by their base version: every prerelease of vX.Y.Z
+// (v1.0.0-beta.15, v1.0.0-dev-123) selects vX.Y.Z's dictionary. Unlike engine
+// API views, which order prereleases from engine.PrereleaseViewsVersion on,
+// dictionaries are base-version granular. An empty version means the latest,
+// as an empty view does.
 // Versions older than FirstVersion, and invalid versions, get Initial; callers
 // that need the pre-naming behavior for those check FirstVersion themselves.
 func DictionaryFor(engineVersion string) *Dictionary {
