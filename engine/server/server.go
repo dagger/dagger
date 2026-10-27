@@ -68,6 +68,7 @@ import (
 	"github.com/dagger/dagger/engine/server/resolver"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
+	"github.com/dagger/dagger/engine/wcprof"
 )
 
 type Server struct {
@@ -978,8 +979,14 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	// caller bounds the whole stop, so a stage that stalls must be
 	// attributable from the engine log alone.
 	stopStart := time.Now()
+	// While the engine records, the stop and each of its phases are ops, and
+	// the stop dump is rewritten as each phase begins and once the stop ends,
+	// so an engine killed in a phase leaves a dump that shows it.
+	_, stopOp := wcprof.BeginOp(context.WithoutCancel(ctx), wcprof.OpKindInternal, "engine.stop", wcprof.OpOpts{})
 	stopPhase := func(name string, fn func()) {
 		slog.Debug("graceful stop phase starting", "phase", name)
+		_, phaseOp := wcprof.BeginOp(context.WithoutCancel(ctx), wcprof.OpKindInternal, "engine.stop."+name, wcprof.OpOpts{})
+		srv.writeStopDump()
 		start := time.Now()
 		// A stage that runs long is usually waiting in the kernel; name the
 		// threads doing so while they still are.
@@ -989,9 +996,12 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 		})
 		fn()
 		slow.Stop()
+		phaseOp.End(wcprof.OutcomeOK)
 		slog.Info("graceful stop phase done", "phase", name, "duration", time.Since(start))
 	}
 	defer func() {
+		stopOp.EndErr(err)
+		srv.writeStopDump()
 		slog.Info("graceful stop done", "duration", time.Since(stopStart), "error", err)
 	}()
 
@@ -1152,6 +1162,21 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 		err = errors.Join(err, adapterStopErr, ctx.Err())
 	}
 	return err
+}
+
+// writeStopDump rewrites the engine's stop dump (wcprof.WriteDumpFile), when
+// it records. The write is an op of its own, inside the phase it runs in, so
+// a reader can tell its cost from the phase's.
+func (srv *Server) writeStopDump() {
+	if wcprof.Active() == nil {
+		return
+	}
+	_, op := wcprof.BeginOp(context.Background(), wcprof.OpKindInternal, "wcprof.stopDump", wcprof.OpOpts{})
+	err := wcprof.WriteDumpFile(wcprof.StopDumpPath(srv.rootDir))
+	op.EndErr(err)
+	if err != nil {
+		slog.Warn("wcprof stop dump", "error", err)
+	}
 }
 
 func (srv *Server) SnapshotManager() bkcache.SnapshotManager {

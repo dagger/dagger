@@ -324,6 +324,11 @@ func signalContext() context.Context {
 		for retries := 1; ; retries++ {
 			s := <-signals
 			engineStopBudget.start()
+			if retries == 1 {
+				if path := stopDumpPath.Load(); path != nil {
+					recordStopSignal(*path)
+				}
+			}
 			fmt.Printf("Received signal %s, retries: %d/%d\n", s, retries, exitLimit)
 
 			err := fmt.Errorf("got %d SIGTERM/SIGINTs, forcing shutdown", retries)
@@ -556,6 +561,8 @@ func main() { //nolint:gocyclo
 			return err
 		}
 		bkcfg.Root = root
+		dumpPath := wcprof.StopDumpPath(root)
+		stopDumpPath.Store(&dumpPath)
 
 		if err := os.MkdirAll(root, 0o700); err != nil {
 			return fmt.Errorf("failed to create %s: %w", root, err)
