@@ -24,6 +24,10 @@ type ExportChain struct {
 	Provider content.InfoReaderProvider
 	// Timing, when set, receives where ImportChain's time went.
 	Timing *ImportTiming
+	// Applied, when set, is told of each layer ImportChain applies itself,
+	// with the snapshot it committed, while it still holds the layer's
+	// import lock: before any other import can reuse the snapshot.
+	Applied func(ctx context.Context, desc ocispecs.Descriptor, snapshotID string)
 	// Stats are what exporting the chain took.
 	Stats ExportStats
 	pin   *resourcePin
