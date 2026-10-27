@@ -114,13 +114,15 @@ func cleanVersion(v string) string {
 // Compatibility gating compares *base* versions — prerelease and build
 // metadata stripped (see BaseVersion) — NOT strict semver precedence.
 //
-// Why: dev builds carry a prerelease suffix (e.g. "v0.2.0-dev-<commit>"). Under
+// Why: every build reports the VERSION file's version, which on main is the
+// next, not yet tagged release (e.g. "v1.0.0-beta.22"); a dev build adds only
+// build metadata ("+<commit>", see FullVersion), which semver ignores. Under
 // strict semver a prerelease ranks *below* its release and is *ordered against
 // other prereleases of the same base*. That has two unwanted effects for our
 // engine<->client<->module handshake:
-//   - two dev builds cut from the same base version would reject each other
-//     (their suffixes differ), and
-//   - a dev build would be considered "older" than the release it was cut from,
+//   - a gate set to one prerelease would reject the earlier prereleases of the
+//     same base, and
+//   - a prerelease would be considered "older" than the release it precedes,
 //     failing a ">= that release" gate against itself.
 //
 // Collapsing every prerelease of vX.Y.Z to vX.Y.Z fixes both. The deliberate
