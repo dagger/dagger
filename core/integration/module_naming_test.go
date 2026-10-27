@@ -2,10 +2,11 @@ package core
 
 // Module type, field, function and argument names are normalized by the
 // naming rules of the engine version a module declares: engine/naming from
-// core.IdentifierNamingVersion (v1.0.0-beta.21) on, strcase before. Every
-// earlier v1.0.0 prerelease, v1.0.0-0 included, keeps strcase. There are no
-// aliases: a module's schema has the names of its own rules only. See
-// hack/designs/identifier-casing.md.
+// engine.IdentifierCasingVersion on, strcase before. Every earlier v1.0.0
+// prerelease, v1.0.0-0 included, keeps strcase. There are no aliases: a
+// module's schema has the names of its own rules only. Types write acronyms in
+// capitals (HTTPClient); fields, functions and arguments write them like words
+// (baseUrl). See hack/designs/identifier-casing.md.
 
 import (
 	"context"
@@ -17,6 +18,16 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/cmd/codegen/introspection"
+	"github.com/dagger/dagger/engine"
+)
+
+// namingCut is the first engine version whose modules are named by
+// engine/naming, and namingPreCut the view every v1.0.0 prerelease before it
+// shares. Derived from the engine's constants, so moving the cut needs no
+// test edits.
+var (
+	namingCut    = engine.IdentifierCasingVersion
+	namingPreCut = engine.APIViewVersion("v1.0.0-0")
 )
 
 type ModuleNamingSuite struct{}
@@ -168,17 +179,17 @@ func (ModuleNamingSuite) TestGoAcronyms(ctx context.Context, t *testctx.T) {
 }
 
 // TestGoAcronymsVersions checks the cut: a module that declares
-// v1.0.0-beta.21 or later gets the new names, and one that declares any
-// earlier version, v1.0.0 prereleases included, keeps the strcase names it
-// always had, byte for byte.
+// engine.IdentifierCasingVersion or later gets the new names, and one that
+// declares any earlier version, v1.0.0 prereleases included, keeps the strcase
+// names it always had, byte for byte.
 func (ModuleNamingSuite) TestGoAcronymsVersions(ctx context.Context, t *testctx.T) {
 	for _, tc := range []struct {
 		version string
 		legacy  bool
 	}{
-		{"v1.0.0-beta.21", false},
+		{namingCut, false},
+		{namingPreCut, true},
 		{"v1.0.0-beta.20", true},
-		{"v1.0.0-beta.19", true},
 		{"v1.0.0-0", true},
 		{"v0.21.9", true},
 	} {
@@ -255,10 +266,11 @@ const namingDangCoreTypeRef = `
 
 // TestSameTypeDefsAcrossVersions checks that the naming rules are kept apart
 // by version, with no cache cross-talk: two modules served side by side, one
-// declaring v1.0.0-beta.20 and one v1.0.0-beta.21, declare identically named
-// typedefs. Their runtimes make the same typedef constructor calls
-// (withObject("HttpClient"), withField("baseUrl"), ...), differing only in
-// the view the calls record, and each module must get its own rules' names.
+// declaring the last pre-cut version and one engine.IdentifierCasingVersion,
+// declare identically named typedefs. Their runtimes make the same typedef
+// constructor calls (withObject("HttpClient"), withField("baseUrl"), ...),
+// differing only in the view the calls record, and each module must get its
+// own rules' names.
 func (ModuleNamingSuite) TestSameTypeDefsAcrossVersions(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	module := func(name, version string) string {
@@ -266,9 +278,9 @@ func (ModuleNamingSuite) TestSameTypeDefsAcrossVersions(ctx context.Context, t *
 	}
 	ws := goGitBase(t, c).
 		WithNewFile("dagger.toml", "[modules.before]\nsource = \"./before\"\n[modules.after]\nsource = \"./after\"\n").
-		WithNewFile("before/dagger-module.toml", module("before", "v1.0.0-beta.20")).
+		WithNewFile("before/dagger-module.toml", module("before", namingPreCut)).
 		WithNewFile("before/main.dang", namingDangSource("Before", "")).
-		WithNewFile("after/dagger-module.toml", module("after", "v1.0.0-beta.21")).
+		WithNewFile("after/dagger-module.toml", module("after", namingCut)).
 		WithNewFile("after/main.dang", namingDangSource("After", namingDangCoreTypeRef))
 
 	// The new rules' reference to a core type whose name starts with an
@@ -316,7 +328,7 @@ func (ModuleNamingSuite) TestMainTypeSpelling(ctx context.Context, t *testctx.T)
 			c := connect(ctx, t)
 			ws := goGitBase(t, c).
 				WithNewFile("dagger.toml", "[modules."+tc.module+"]\nsource = \"./"+tc.module+"\"\n").
-				WithNewFile(tc.module+"/dagger-module.toml", "name = \""+tc.module+"\"\nengineVersion = \"v1.0.0-beta.21\"\nsource = \".\"\n\n[runtime]\nsource = \"dang\"\n").
+				WithNewFile(tc.module+"/dagger-module.toml", "name = \""+tc.module+"\"\nengineVersion = \""+namingCut+"\"\nsource = \".\"\n\n[runtime]\nsource = \"dang\"\n").
 				WithNewFile(tc.module+"/main.dang", strings.ReplaceAll(`type MainClient {
   pub name: String!
 
