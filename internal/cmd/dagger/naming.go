@@ -24,27 +24,30 @@ import (
 // cliDictionary is the naming dictionary of this CLI's engine version.
 var cliDictionary = naming.DictionaryFor(engine.Version)
 
-func formatCLI(name string, casing naming.Casing, legacy func(string) string) string {
+func formatCLI(name string, casing naming.Casing, style naming.AcronymStyle, legacy func(string) string) string {
 	id, err := cliDictionary.Parse(name)
 	if err != nil {
 		return legacy(name)
 	}
-	return id.Format(casing, naming.Uppercase)
+	return id.Format(casing, style)
 }
 
-// gqlObjectName converts casing to a GraphQL object name.
+// gqlObjectName converts casing to a GraphQL object name: PascalCase with
+// acronyms in capitals (HTTPClient), as the engine names module types.
 func gqlObjectName(name string) string {
-	return formatCLI(name, naming.Pascal, strcase.ToCamel)
+	return formatCLI(name, naming.Pascal, naming.Uppercase, strcase.ToCamel)
 }
 
-// gqlFieldName converts casing to a GraphQL field name.
+// gqlFieldName converts casing to a GraphQL field name: camelCase with
+// acronyms written like words (baseUrl), as the engine names module fields,
+// functions and arguments.
 func gqlFieldName(name string) string {
-	return formatCLI(name, naming.Camel, strcase.ToLowerCamel)
+	return formatCLI(name, naming.Camel, naming.Capitalized, strcase.ToLowerCamel)
 }
 
 // cliName converts casing to the CLI convention (kebab).
 func cliName(name string) string {
-	return formatCLI(name, naming.Kebab, strcase.ToKebab)
+	return formatCLI(name, naming.Kebab, naming.Uppercase, strcase.ToKebab)
 }
 
 // legacyCLIName is cliName by the legacy strcase rules, which name the
