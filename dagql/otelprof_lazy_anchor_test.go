@@ -10,6 +10,7 @@ import (
 	"gotest.tools/v3/assert"
 
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
 // A lazy result's evaluations in a session carry its cause links once. The
@@ -18,6 +19,8 @@ import (
 // result gains an install span the anchor doesn't link, the next evaluation
 // links them all and becomes the anchor. Part demand runs many evaluations
 // of one result, so links per evaluation must not grow with its installs.
+// Each anchor is marked as one, so a reader can tell that later evaluations
+// link it rather than the call.
 func TestLazyEvaluationsLinkTheirAnchor(t *testing.T) {
 	t.Parallel()
 	const resultID = sharedResultID(7)
@@ -64,6 +67,14 @@ func TestLazyEvaluationsLinkTheirAnchor(t *testing.T) {
 		slices.Sort(ids)
 		return ids
 	}
+	isAnchor := func(s sdktrace.ReadOnlySpan) bool {
+		for _, attr := range s.Attributes() {
+			if string(attr.Key) == telemetryattrs.LazyAnchorAttr {
+				return attr.Value.AsBool()
+			}
+		}
+		return false
+	}
 	ids := func(ctxs ...trace.SpanContext) []string {
 		var ids []string
 		for _, ctx := range ctxs {
@@ -76,20 +87,25 @@ func TestLazyEvaluationsLinkTheirAnchor(t *testing.T) {
 	producer, installs := startSession("session-a", 50)
 	anchor := evaluate("session-a", "metadata")
 	assert.DeepEqual(t, linked(anchor), ids(append([]trace.SpanContext{producer}, installs...)...))
+	assert.Assert(t, isAnchor(anchor), "the first evaluation is marked as the anchor")
 	for _, group := range []LazyGroupKey{"execOutputs", "metadata", LazyGroupWhole, "execOutputs"} {
-		assert.DeepEqual(t, linked(evaluate("session-a", group)), ids(anchor.SpanContext()))
+		later := evaluate("session-a", group)
+		assert.DeepEqual(t, linked(later), ids(anchor.SpanContext()))
+		assert.Assert(t, !isAnchor(later), "a later evaluation is not marked")
 	}
 
 	installs = append(installs, span("Container.stdout"))
 	c.recordSessionResultInstallSpanLocked(t.Context(), "session-a", resultID, installs[len(installs)-1], false)
 	regrown := evaluate("session-a", "execOutputs")
 	assert.DeepEqual(t, linked(regrown), ids(append([]trace.SpanContext{producer}, installs...)...))
+	assert.Assert(t, isAnchor(regrown), "an evaluation that takes the anchor's place is marked")
 	assert.DeepEqual(t, linked(evaluate("session-a", "metadata")), ids(regrown.SpanContext()))
 
 	// Each session has its own anchor.
 	producerB, installsB := startSession("session-b", 3)
 	anchorB := evaluate("session-b", "metadata")
 	assert.DeepEqual(t, linked(anchorB), ids(append([]trace.SpanContext{producerB}, installsB...)...))
+	assert.Assert(t, isAnchor(anchorB))
 	assert.DeepEqual(t, linked(evaluate("session-b", "execOutputs")), ids(anchorB.SpanContext()))
 	assert.DeepEqual(t, linked(evaluate("session-a", "execOutputs")), ids(regrown.SpanContext()))
 }
