@@ -5,12 +5,14 @@ import (
 	"fmt"
 	stdslog "log/slog"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	ctdsnapshots "github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/opencontainers/go-digest"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
 )
 
@@ -617,3 +619,89 @@ func TestPartPrefetchAheadReleasedAtClose(t *testing.T) {
 	require.Zero(t, f.snapshotCount(t))
 }
 
+
+// aheadLines returns the logged imports ahead, waiting until there are n.
+func (f *prefetchFixture) aheadLines(t *testing.T, n int) []offerLine {
+	t.Helper()
+	var lines []offerLine
+	require.Eventually(t, func() bool {
+		lines = f.logs.lines(t, "remote cache part applied ahead")
+		return len(lines) >= n
+	}, 10*time.Second, 10*time.Millisecond, "fewer than %d imports ahead", n)
+	return lines
+}
+
+// An import ahead that a replacement of its offer took over, and that then
+// found no room, leaves nothing behind: the replacement's next job imports
+// ahead once there is room.
+func TestPartPrefetchAheadAfterSkippedReplacement(t *testing.T) {
+	f := newPrefetchFixture(t, true, nil)
+	entered, resume := make(chan struct{}), make(chan bool)
+	var calls atomic.Int64
+	f.cache.partPrefetchRoom = func(int64) bool {
+		if calls.Add(1) != 2 {
+			return true
+		}
+		// The job's check passed; the first import ahead's waits.
+		close(entered)
+		return <-resume
+	}
+	require.Equal(t, "done", f.runJob(t).fields["outcome"])
+	select {
+	case <-entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the import ahead never checked for room")
+	}
+	fresh := f.replace(t, exhaustionOffer(f.chain, "", true))
+	resume <- false
+	require.Equal(t, "skipped_budget", f.aheadLines(t, 1)[0].fields["outcome"])
+	f.prefetch.run(context.Background(), f.job(t, fresh))
+	require.Equal(t, "done", f.aheadLines(t, 2)[1].fields["outcome"], "the replacement imports ahead")
+}
+
+// An install that arrives while its chain imports ahead waits for it, reuses
+// what it unpacked, and that is counted both as unpacked ahead and as used.
+func TestPartPrefetchAheadCountsDemandMidImport(t *testing.T) {
+	f := newPrefetchFixture(t, true, nil)
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	f.store.BeforeApply = func(ctx context.Context, _ ocispecs.Descriptor) error {
+		first := false
+		once.Do(func() {
+			first = true
+			close(entered)
+		})
+		if !first {
+			return nil
+		}
+		select {
+		case <-release:
+			return nil
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		}
+	}
+	require.Equal(t, "done", f.runJob(t).fields["outcome"])
+	select {
+	case <-entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the import ahead never applied a layer")
+	}
+	installed := make(chan error, 1)
+	go func() { installed <- f.run() }()
+	require.Never(t, func() bool { return len(installed) > 0 }, 200*time.Millisecond, 10*time.Millisecond, "the install waits for the layer the import ahead applies")
+	close(release)
+	require.NoError(t, <-installed)
+	require.True(t, f.installed())
+	ahead := f.aheadLines(t, 1)[0]
+	require.Equal(t, "done", ahead.fields["outcome"])
+	require.EqualValues(t, 2, ahead.int(t, "unpacked_layers"))
+	require.EqualValues(t, 2, f.store.Applies.Load(), "the install unpacks nothing")
+	var used []offerLine
+	require.Eventually(t, func() bool {
+		used = f.logs.lines(t, "remote cache part ahead used")
+		return len(used) > 0
+	}, 10*time.Second, 10*time.Millisecond)
+	require.EqualValues(t, 2, used[0].int(t, "layers"))
+	require.Equal(t, ahead.int(t, "unpacked"), used[0].int(t, "unpacked"))
+}
