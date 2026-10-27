@@ -25,11 +25,10 @@ Four event types, written by hooks at the engine's blocking choke points:
   `exec.processRun`, or its `exec.workload` when the run is split).
 - **spans**: the OTel span an op owns, when telemetry is on and the engine
   emits a span for the same work: a `call` with its own span, `call_exec`,
-  `dagql.publishResult`, `lazy`, `exec`, its `exec.containerStart` and
-  `exec.processRun` phases (the OTel `exec.processRun` also covers native's
-  `exec.runtimeStart`), and `service_start`. Dumped as
-  `{"e":"span","id":<op>,"tr":<trace ID>,"sp":<span ID>}` in hex, so offline
-  analysis can join an op to its span's attributes exactly.
+  `dagql.publishResult`, `lazy`, `exec`, its `exec.containerStart`,
+  `exec.runtimeStart` and `exec.processRun` phases, and `service_start`.
+  Dumped as `{"e":"span","id":<op>,"tr":<trace ID>,"sp":<span ID>}` in hex,
+  so offline analysis can join an op to its span's attributes exactly.
 
 Current hook points:
 
