@@ -42,7 +42,7 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         ?string $version = '',
         ?Service $registryService = null,
         ?RegistryProtocol $protocol = null,
-        ?bool $insecureSkipTLSVerify = false,
+        ?bool $insecureSkipTlsVerify = false,
         ?bool $noLock = false,
     ): Container {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('from');
@@ -56,8 +56,8 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         if (null !== $protocol) {
         $innerQueryBuilder->setArgument('protocol', $protocol);
         }
-        if (null !== $insecureSkipTLSVerify) {
-        $innerQueryBuilder->setArgument('insecureSkipTLSVerify', $insecureSkipTLSVerify);
+        if (null !== $insecureSkipTlsVerify) {
+        $innerQueryBuilder->setArgument('insecureSkipTlsVerify', $insecureSkipTlsVerify);
         }
         if (null !== $noLock) {
         $innerQueryBuilder->setArgument('noLock', $noLock);
@@ -1035,7 +1035,7 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         ?ImageMediaTypes $mediaTypes = null,
         ?Service $registryService = null,
         ?RegistryProtocol $protocol = null,
-        ?bool $insecureSkipTLSVerify = false,
+        ?bool $insecureSkipTlsVerify = false,
     ): string {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('publish');
         $leafQueryBuilder->setArgument('address', $address);
@@ -1054,8 +1054,8 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         if (null !== $protocol) {
         $leafQueryBuilder->setArgument('protocol', $protocol);
         }
-        if (null !== $insecureSkipTLSVerify) {
-        $leafQueryBuilder->setArgument('insecureSkipTLSVerify', $insecureSkipTLSVerify);
+        if (null !== $insecureSkipTlsVerify) {
+        $leafQueryBuilder->setArgument('insecureSkipTlsVerify', $insecureSkipTlsVerify);
         }
         return (string)$this->queryLeaf($leafQueryBuilder, 'publish');
     }
@@ -1411,9 +1411,9 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
      *
      * This currently works with NVIDIA devices only, and requires the engine to run with GPU support enabled.
      */
-    public function withGPU(): Container
+    public function withGpu(): Container
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withGPU');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withGpu');
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -1422,9 +1422,9 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
      *
      * This currently works for Nvidia devices only.
      */
-    public function experimentalWithGPU(array $devices): Container
+    public function experimentalWithGpu(array $devices): Container
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('experimentalWithGPU');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('experimentalWithGpu');
         $innerQueryBuilder->setArgument('devices', $devices);
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -1434,9 +1434,9 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
      *
      * This currently works for Nvidia devices only.
      */
-    public function experimentalWithAllGPUs(): Container
+    public function experimentalWithAllGpus(): Container
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('experimentalWithAllGPUs');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('experimentalWithAllGpus');
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
