@@ -80,10 +80,9 @@ type contentPrefetcher interface {
 
 // chainAheadImporter is the snapshot manager's chain import, with which
 // prefetching unpacks an offered part's layers once all its blobs are held,
-// and its snapshots' parents and own usage, which count what that unpacked.
+// and its snapshots' own usage, which counts what that unpacked.
 type chainAheadImporter interface {
 	ImportChain(ctx context.Context, chain *snapshots.ExportChain) (snapshots.ImmutableRef, error)
-	SnapshotParent(ctx context.Context, snapshotID string) (string, error)
 	SnapshotUsage(ctx context.Context, snapshotID string) (int64, error)
 }
 
@@ -152,10 +151,8 @@ type partPrefetcher struct {
 	// rows are the entries of accepted offers, which name them in logs.
 	rows map[*partOffer]sharedResultID
 	// aheadBytes is the unpacked size of each layer an import ahead
-	// unpacked that no install has used yet; installedLayers the layers an
-	// install pinned, which an import ahead no longer counts.
-	aheadBytes      map[digest.Digest]int64
-	installedLayers map[digest.Digest]struct{}
+	// unpacked that no install has used yet.
+	aheadBytes map[digest.Digest]int64
 }
 
 // partPrefetchAhead is an offer's chain imported ahead of demand: ref holds
@@ -164,6 +161,9 @@ type partPrefetchAhead struct {
 	ref     snapshots.ImmutableRef
 	cancel  context.CancelFunc
 	expires time.Time
+	// layers are its chain's blobs; applied those it unpacked itself.
+	layers  []digest.Digest
+	applied []digest.Digest
 	// gone is set once it is taken out of aheads: its import, if still
 	// running, then releases what it imported.
 	gone bool
@@ -236,7 +236,7 @@ func (c *Cache) partPrefetch(ctx context.Context) *partPrefetcher {
 		cfg = *c.partPrefetchConfig
 	}
 	base, cancel := context.WithCancel(context.Background())
-	p := &partPrefetcher{cache: c, cfg: cfg, snapshot: snapshot, importer: importer, ctx: base, cancel: cancel, logger: slog.FromContext(ctx), wake: make(chan struct{}, 1), jobs: map[partPrefetchJobKey]*partPrefetchJob{}, holds: map[digest.Digest]*partPrefetchHold{}, fetching: map[digest.Digest]*partPrefetchDownload{}, consumed: map[digest.Digest]time.Time{}, aheads: map[*partOffer]*partPrefetchAhead{}, rows: map[*partOffer]sharedResultID{}, aheadBytes: map[digest.Digest]int64{}, installedLayers: map[digest.Digest]struct{}{}}
+	p := &partPrefetcher{cache: c, cfg: cfg, snapshot: snapshot, importer: importer, ctx: base, cancel: cancel, logger: slog.FromContext(ctx), wake: make(chan struct{}, 1), jobs: map[partPrefetchJobKey]*partPrefetchJob{}, holds: map[digest.Digest]*partPrefetchHold{}, fetching: map[digest.Digest]*partPrefetchDownload{}, consumed: map[digest.Digest]time.Time{}, aheads: map[*partOffer]*partPrefetchAhead{}, rows: map[*partOffer]sharedResultID{}, aheadBytes: map[digest.Digest]int64{}}
 	p.cond = sync.NewCond(&p.mu)
 	p.wg.Add(cfg.workers + cfg.smallWorkers + 1)
 	for range cfg.workers {
@@ -408,6 +408,21 @@ func (p *partPrefetcher) dropAheadLocked(offer *partOffer, a *partPrefetchAhead)
 	a.gone = true
 	a.cancel()
 	p.droppedAheads = append(p.droppedAheads, a)
+	p.forgetAheadLocked(a)
+}
+
+// forgetAheadLocked stops counting the layers a, out of aheads, unpacked that
+// no other import ahead holds: an install of them later unpacks them again.
+func (p *partPrefetcher) forgetAheadLocked(a *partPrefetchAhead) {
+	for _, d := range a.applied {
+		held := false
+		for _, other := range p.aheads {
+			held = held || slices.Contains(other.layers, d)
+		}
+		if !held {
+			delete(p.aheadBytes, d)
+		}
+	}
 }
 
 // cancelUnwantedLocked stops a running job none of whose downloads any
@@ -502,7 +517,6 @@ func (c *Cache) partPrefetchConsumed(layers []snapshots.ExportLayer) {
 	usedLayers := 0
 	for _, layer := range layers {
 		d := layer.Descriptor.Digest
-		p.installedLayers[d] = struct{}{}
 		if b, ok := p.aheadBytes[d]; ok {
 			delete(p.aheadBytes, d)
 			used += b
@@ -807,6 +821,9 @@ func (p *partPrefetcher) checkAheadLocked(offer *partOffer) {
 	}
 	ctx, cancel := context.WithCancel(p.ctx)
 	a := &partPrefetchAhead{cancel: cancel, expires: expires}
+	for _, layer := range layers {
+		a.layers = append(a.layers, layer.Descriptor.Digest)
+	}
 	p.aheads[offer] = a
 	p.wg.Add(1)
 	go p.importAhead(ctx, offer, p.rows[offer], a)
@@ -825,23 +842,44 @@ func (p *partPrefetcher) importAhead(ctx context.Context, offer *partOffer, row 
 		size += layer.Descriptor.Size
 	}
 	var (
-		ref      snapshots.ImmutableRef
-		err      error
-		timing   snapshots.ImportTiming
+		ref     snapshots.ImmutableRef
+		err     error
+		timing  snapshots.ImportTiming
+		outcome = "done"
+		// unpacked and applied count the layers this import applied
+		// itself, each recorded before another import can reuse it.
+		mu       sync.Mutex
 		unpacked int64
 		applied  int
-		outcome  = "done"
 	)
+	chain := &snapshots.ExportChain{
+		Layers:   record.Chain.Layers,
+		Provider: p.cache.PartContentSource().Provider(ctx, record, nil),
+		Timing:   &timing,
+		Applied: func(ctx context.Context, desc ocispecs.Descriptor, snapshotID string) {
+			size, err := p.importer.SnapshotUsage(ctx, snapshotID)
+			if err != nil {
+				return
+			}
+			p.mu.Lock()
+			if !a.gone {
+				p.aheadBytes[desc.Digest] = size
+				a.applied = append(a.applied, desc.Digest)
+			}
+			p.mu.Unlock()
+			mu.Lock()
+			unpacked += size
+			applied++
+			mu.Unlock()
+		},
+	}
 	p.mu.Lock()
 	need := p.pending + size
 	p.mu.Unlock()
 	if !p.cache.partPrefetchRoom(need) {
 		outcome = "skipped_budget"
 	} else {
-		ref, err = p.importer.ImportChain(ctx, &snapshots.ExportChain{Layers: record.Chain.Layers, Provider: p.cache.PartContentSource().Provider(ctx, record, nil), Timing: &timing})
-		if err == nil {
-			unpacked, applied = p.countAhead(ctx, ref, record.Chain.Layers)
-		} else {
+		if ref, err = p.importer.ImportChain(ctx, chain); err != nil {
 			outcome = "error"
 		}
 	}
@@ -850,7 +888,14 @@ func (p *partPrefetcher) importAhead(ctx context.Context, offer *partOffer, row 
 	if keep {
 		a.ref = ref
 	} else if !a.gone {
-		delete(p.aheads, offer)
+		// Under whichever offer holds it now: a replacement with the same
+		// meaning takes it over while it imports.
+		for holder, current := range p.aheads {
+			if current == a {
+				delete(p.aheads, holder)
+			}
+		}
+		p.forgetAheadLocked(a)
 	}
 	if a.gone && outcome != "skipped_budget" {
 		outcome, err = "offer_gone", nil
@@ -859,6 +904,8 @@ func (p *partPrefetcher) importAhead(ctx context.Context, offer *partOffer, row 
 	if ref != nil && !keep {
 		_ = ref.Release(context.WithoutCancel(ctx))
 	}
+	mu.Lock()
+	defer mu.Unlock()
 	args := []any{
 		"entry", uint64(row),
 		"output", record.Address.OutputPath.String(),
@@ -874,41 +921,6 @@ func (p *partPrefetcher) importAhead(ctx context.Context, offer *partOffer, row 
 		args = append(args, "error", err.Error())
 	}
 	p.logger.Info("remote cache part applied ahead", args...)
-}
-
-// countAhead records the unpacked size of each of the chain's layers, by
-// its imported snapshot, that no import ahead counted and no install used
-// before, and returns their sum and count.
-func (p *partPrefetcher) countAhead(ctx context.Context, ref snapshots.ImmutableRef, layers []snapshots.ExportLayer) (int64, int) {
-	sizes := make([]int64, len(layers))
-	id := ref.SnapshotID()
-	for i := len(layers) - 1; i >= 0 && id != ""; i-- {
-		size, err := p.importer.SnapshotUsage(ctx, id)
-		if err != nil {
-			return 0, 0
-		}
-		sizes[i] = size
-		if id, err = p.importer.SnapshotParent(ctx, id); err != nil {
-			return 0, 0
-		}
-	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	var total int64
-	n := 0
-	for i, layer := range layers {
-		d := layer.Descriptor.Digest
-		if _, ok := p.aheadBytes[d]; ok {
-			continue
-		}
-		if _, ok := p.installedLayers[d]; ok {
-			continue
-		}
-		p.aheadBytes[d] = sizes[i]
-		total += sizes[i]
-		n++
-	}
-	return total, n
 }
 
 // expire releases the holds whose offers are all gone or whose TTL passed.

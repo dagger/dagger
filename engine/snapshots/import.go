@@ -145,7 +145,7 @@ func (cm *snapshotManager) importChainApart(ctx context.Context, chain *ExportCh
 			err = importInOrder(i)
 		} else {
 			var ref ImmutableRef
-			ref, err = cm.commitAppliedLayer(ctx, applied.mut, chain.Layers[i].Descriptor, *current, chain.Timing)
+			ref, err = cm.commitAppliedLayer(ctx, applied.mut, chain.Layers[i].Descriptor, *current, chain)
 			applied.mut = nil
 			if err == nil {
 				if *current != nil {
@@ -218,10 +218,11 @@ func (cm *snapshotManager) applyChainLayer(ctx context.Context, chain *ExportCha
 	return applied
 }
 
-// commitAppliedLayer commits mut, desc's layer applied apart, onto parent,
-// unless the engine has imported the layer on parent meanwhile: it then
-// reuses that and releases mut. It takes ownership of mut.
-func (cm *snapshotManager) commitAppliedLayer(ctx context.Context, mut MutableRef, desc ocispecs.Descriptor, parent ImmutableRef, timing *ImportTiming) (_ ImmutableRef, rerr error) {
+// commitAppliedLayer commits mut, desc's layer of chain applied apart, onto
+// parent, unless the engine has imported the layer on parent meanwhile: it
+// then reuses that and releases mut. It takes ownership of mut.
+func (cm *snapshotManager) commitAppliedLayer(ctx context.Context, mut MutableRef, desc ocispecs.Descriptor, parent ImmutableRef, chain *ExportChain) (_ ImmutableRef, rerr error) {
+	timing := chain.Timing
 	defer func() {
 		if mut != nil {
 			_ = mut.Release(context.WithoutCancel(ctx))
@@ -260,7 +261,11 @@ func (cm *snapshotManager) commitAppliedLayer(ctx context.Context, mut MutableRe
 		return nil, err
 	}
 	mut = nil
-	return cm.recordImportedLayer(ctx, ref, desc, diffID, ImportImageOpts{}, blobKey, diffKey)
+	ref, err = cm.recordImportedLayer(ctx, ref, desc, diffID, ImportImageOpts{}, blobKey, diffKey)
+	if err == nil && chain.Applied != nil {
+		chain.Applied(ctx, desc, ref.SnapshotID())
+	}
+	return ref, err
 }
 
 // chainLocalPrefix is how many of chain's first layers the engine has
