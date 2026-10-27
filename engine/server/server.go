@@ -406,6 +406,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 
 	srv.runc = &runc.Runc{
 		Command:   distconsts.RuntimePath,
+		Root:      distconsts.RuntimeStateRoot,
 		Log:       filepath.Join(srv.executorRootDir, "runc-log.json"),
 		LogFormat: runc.JSON,
 		Setpgid:   true,
