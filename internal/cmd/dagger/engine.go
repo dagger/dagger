@@ -479,7 +479,8 @@ type configuredCloudExportersFunc func(context.Context) (sdktrace.SpanExporter, 
 // cloudTelemetryIndexes locates the CLI's Dagger Cloud exporters in the
 // pipeline telemetry.Init builds: the span processor's index in the
 // telemetry.SpanProcessors Init sets, and the log and metric exporters'
-// indexes among the ones Init appends, in Config order, to
+// indexes among the ones Init appends, in Config order (explicit log
+// processors precede live log exporters), to
 // telemetry.LogProcessors and telemetry.MetricExporters. Each is -1 when the
 // CLI does not export to Cloud.
 type cloudTelemetryIndexes struct {
@@ -516,7 +517,7 @@ func engineTelemetryConfigWithCloud(ctx context.Context, configuredCloudExporter
 	cloud := noCloudTelemetry
 	if !frontendTelemetryDisabled(ctx) {
 		cfg.LiveTraceExporters = append(cfg.LiveTraceExporters, Frontend.SpanExporter())
-		cfg.LiveLogExporters = append(cfg.LiveLogExporters, Frontend.LogExporter())
+		cfg.LogProcessors = append(cfg.LogProcessors, telemetry.NewBlockingLogProcessor(Frontend.LogExporter()))
 		cfg.LiveMetricExporters = append(cfg.LiveMetricExporters, Frontend.MetricExporter())
 	}
 	if !skipSharedTelemetryExporters {
@@ -530,7 +531,7 @@ func engineTelemetryConfigWithCloud(ctx context.Context, configuredCloudExporter
 			// the pipeline by telemetry.Init, same as a LiveTraceExporter would be.)
 			cloud = cloudTelemetryIndexes{
 				spans:   len(cfg.SpanProcessors),
-				logs:    len(cfg.LiveLogExporters),
+				logs:    len(cfg.LogProcessors) + len(cfg.LiveLogExporters),
 				metrics: len(cfg.LiveMetricExporters),
 			}
 			cfg.SpanProcessors = append(cfg.SpanProcessors, enginetel.NewLargeQueueLiveSpanProcessor(spans))
