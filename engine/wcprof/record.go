@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"sync"
+	"time"
 )
 
 type opCtxKey struct{}
@@ -146,6 +147,14 @@ func BeginOp(ctx context.Context, kind OpKind, class string, opts OpOpts) (conte
 	}
 	sh.mu.Unlock()
 	return ContextWithOpID(ctx, op.id), op
+}
+
+// StartTime is when the op began, or the zero time for a nil handle.
+func (op *Op) StartTime() time.Time {
+	if op == nil {
+		return time.Time{}
+	}
+	return op.r.epoch.Add(time.Duration(op.startNS))
 }
 
 // ID returns the op's ID, or 0 for a nil handle.

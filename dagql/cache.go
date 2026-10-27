@@ -5101,7 +5101,13 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			storedPart = reporting.LazyGroupStoredPart(group)
 		}
 		if OTelProfActive(evalCtx) && !producerSkip {
-			lazyCallbackCtx, lazySpan, lazyIsResume = c.beginOTelLazyOp(evalCtx, shared.id, group, resultCall, storedPart)
+			// the span starts where the native op does: the preparation
+			// between them is the evaluation's own
+			var startOpts []trace.SpanStartOption
+			if start := lazyOp.StartTime(); !start.IsZero() {
+				startOpts = append(startOpts, trace.WithTimestamp(start))
+			}
+			lazyCallbackCtx, lazySpan, lazyIsResume = c.beginOTelLazyOp(evalCtx, shared.id, group, resultCall, storedPart, startOpts...)
 			attempt.spanCtx = lazySpan.SpanContext()
 			RecordOpSpan(lazyOp, lazySpan)
 		}
