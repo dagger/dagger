@@ -41,6 +41,15 @@ class GitBundle extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Commits that must already exist wherever this bundle is applied.
+     */
+    public function prerequisiteShas(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('prerequisiteShas');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'prerequisiteShas');
+    }
+
+    /**
      * Bundle format version (2 or 3).
      */
     public function version(): int
@@ -65,14 +74,5 @@ class GitBundle extends Client\AbstractObject implements Client\IdAble, Node
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('refs');
         return (array)$this->queryLeaf($leafQueryBuilder, 'refs');
-    }
-
-    /**
-     * Commits that must already exist wherever this bundle is applied.
-     */
-    public function prerequisiteSHAs(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('prerequisiteSHAs');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'prerequisiteSHAs');
     }
 }
