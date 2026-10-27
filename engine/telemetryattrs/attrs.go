@@ -148,6 +148,11 @@ const (
 	// resumption does not resolve the owning API span's pending state. (bool)
 	DagPartialAttr = "dagger.io/dag.partial"
 
+	// LazyAnchorAttr marks a lazy result's evaluation span that carries the
+	// result's cause links in its session: later evaluations of the result
+	// in the session link only this span. (bool)
+	LazyAnchorAttr = "dagger.io/lazy.anchor"
+
 	// GenerateSkippedAttr marks a span reporting a workspace module that
 	// best-effort `dagger generate` skipped because it could not be loaded. The
 	// TUI collects these into a persisted "SKIPPED MODULES" final-report section
