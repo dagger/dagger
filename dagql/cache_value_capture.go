@@ -416,7 +416,14 @@ func OpenSelectedChains(ctx context.Context, capture *HeldCapturedClosure, outpu
 		}
 		chains.refs = append(chains.refs, ref)
 		chainCtx, chainOp := profBeginChain(ctx, out.Address)
-		chain, err := ref.ExportChain(chainCtx, cfg)
+		// A File is its content: it travels as a chain of its own, not as
+		// the filesystem it was taken from.
+		var chain *snapshots.ExportChain
+		if out.ValueKind == "file" && out.Value != nil {
+			chain, err = ref.ExportFileChain(chainCtx, cfg, out.Value.Path)
+		} else {
+			chain, err = ref.ExportChain(chainCtx, cfg)
+		}
 		profEndChain(chainOp, chain, uint64(row.shared.id), err)
 		if err != nil {
 			return nil, err
