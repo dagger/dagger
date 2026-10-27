@@ -147,22 +147,27 @@ func TestContainerGroupLeaseSyncCoversSweptParts(t *testing.T) {
 	parentCtr := NewContainer(Platform{})
 	parentCtr.FS.setValue(containerPersistenceTestDirectory("parent-fs", "/"))
 	parent := env.attach(t, ctx, cache, srv, "parent", parentCtr).(dagql.ObjectResult[*Container])
+	// The child starts with a root filesystem of its own, so it holds a
+	// lease the sweep must remove; a snapshot its parent holds would be
+	// borrowed from the start.
 	ctr := NewContainer(Platform{})
-	ctr.FS.setValue(containerPersistenceTestDirectory("parent-fs", "/"))
+	ctr.FS.setValue(containerPersistenceTestDirectory("child-fs", "/"))
 	ctr.Lazy = &ContainerWithEntrypointLazy{LazyState: NewLazyState(), Parent: parent, Args: []string{"/bin/true"}}
 	res := env.attach(t, ctx, cache, srv, "child", ctr)
-	leases := func() int {
+	leases := func(snapshot string) int {
 		n := 0
 		for _, id := range ownedSnapshots(env) {
-			if id == "parent-fs" {
+			if id == snapshot {
 				n++
 			}
 		}
 		return n
 	}
-	require.Equal(t, 2, leases(), "the child holds its own lease on the snapshot at publication")
+	require.Equal(t, 1, leases("child-fs"), "the child holds its own lease on its snapshot at publication")
+	require.Equal(t, 1, leases("parent-fs"), "the parent holds its own lease on its snapshot")
 
 	require.NoError(t, cache.EvaluateParts(ctx, res, ContainerPartMetadata))
 	require.True(t, ctr.borrowed(ContainerPartFS, "parent-fs"), "the metadata group's sweep copied the root filesystem")
-	require.Equal(t, 1, leases(), "the copied part's own lease is gone; the parent's keeps the snapshot")
+	require.Equal(t, 0, leases("child-fs"), "the replaced part's own lease is gone")
+	require.Equal(t, 1, leases("parent-fs"), "the parent's lease keeps the copied snapshot")
 }
