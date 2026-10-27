@@ -12,8 +12,14 @@ func TestCLINaming(t *testing.T) {
 	require.Equal(t, "user-ids", cliName("userIDs"))
 	require.Equal(t, "docker-config", cliName("dockerConfig"))
 
-	require.Equal(t, []string{"myLLMMod", "myLlmMod"}, fieldNameCandidates("my-llm-mod"))
+	// Fields are camelCase with acronyms written like words, so the new
+	// rules spell myLlmMod as strcase did, but not e2eTest.
+	require.Equal(t, []string{"myLlmMod"}, fieldNameCandidates("my-llm-mod"))
+	require.Equal(t, []string{"e2eTest", "e2ETest"}, fieldNameCandidates("e2e-test"))
 	require.Equal(t, []string{"myMod"}, fieldNameCandidates("my-mod"))
+	require.Equal(t, "httpClient", gqlFieldName("HTTPClient"))
+	require.Equal(t, "asJson", gqlFieldName("asJSON"))
+	require.Equal(t, "HTTPClient", gqlObjectName("httpClient"))
 
 	require.True(t, sameObjectName("MyModHTTPClient", "MyModHTTPClient"))
 	require.True(t, sameObjectName("MyModHttpclient", "MyModHTTPClient"))
@@ -50,13 +56,13 @@ func TestFindFunctionByCmdName(t *testing.T) {
 // rules' spelling, so a legacy module's collection selectors don't repeat
 // the module name.
 func TestChildCommandPathConstructor(t *testing.T) {
-	fc := &FuncCommand{mod: &moduleDef{Name: "my-llm-mod"}}
+	fc := &FuncCommand{mod: &moduleDef{Name: "e2e-test"}}
 	parent := &modFunction{}
-	for _, constructor := range []string{"myLLMMod", "myLlmMod"} {
-		path := fc.childCommandPath(parent, &modFunction{Name: constructor, SourceModuleName: "my-llm-mod"}, false)
-		require.Equal(t, "my-llm-mod", path.Module, constructor)
+	for _, constructor := range []string{"e2eTest", "e2ETest"} {
+		path := fc.childCommandPath(parent, &modFunction{Name: constructor, SourceModuleName: "e2e-test"}, false)
+		require.Equal(t, "e2e-test", path.Module, constructor)
 		require.Empty(t, path.Fields, constructor)
 	}
-	path := fc.childCommandPath(parent, &modFunction{Name: "other", SourceModuleName: "my-llm-mod"}, false)
+	path := fc.childCommandPath(parent, &modFunction{Name: "other", SourceModuleName: "e2e-test"}, false)
 	require.Equal(t, []string{"other"}, path.Fields)
 }

@@ -80,12 +80,13 @@ func (n Namer) NewFunction(name string, returnType dagql.ObjectResult[*TypeDef])
 	}
 }
 
-// functionName is the schema name of a function: FieldName, but by the
-// legacy rules a loadFooFromID function keeps its spelling of ID, which
-// strcase writes "Id". engine/naming spells it right already.
+// functionName is the schema name of a function: FieldName, but a
+// loadFooFromID function keeps its spelling of ID, like the core loaders
+// (load<Type>FromID), where strcase and the new rules' acronyms-as-words
+// field convention would write "Id".
 func (n Namer) functionName(name string) string {
 	gqlName := n.FieldName(name)
-	if n.Legacy() && strings.HasPrefix(name, "load") && strings.HasSuffix(name, "FromID") && strings.HasSuffix(gqlName, "FromId") {
+	if strings.HasPrefix(name, "load") && strings.HasSuffix(name, "FromID") && strings.HasSuffix(gqlName, "FromId") {
 		gqlName = strings.TrimSuffix(gqlName, "FromId") + "FromID"
 	}
 	return gqlName

@@ -89,7 +89,7 @@ func TestTypeDefNamingCacheIdentity(t *testing.T) {
 				{Name: "name", Value: dagql.String("HTTPClient")},
 			}},
 			dagql.Selector{Field: "withField", View: view, Args: []dagql.NamedInput{
-				{Name: "name", Value: dagql.String("baseURL")},
+				{Name: "name", Value: dagql.String("e2eTest")},
 				{Name: "typeDef", Value: dagql.NewID[*core.TypeDef](typeDefID)},
 			}},
 		))
@@ -101,11 +101,11 @@ func TestTypeDefNamingCacheIdentity(t *testing.T) {
 	// Interleaved, so each side would get the other's cached result if the
 	// view weren't in the calls' identity.
 	for _, tc := range []struct{ version, object, field string }{
-		{"v1.0.0-beta.21", "HTTPClient", "baseURL"},
-		{"v1.0.0-beta.20", "Httpclient", "baseUrl"},
-		{"v1.0.0-beta.21", "HTTPClient", "baseURL"},
-		{"v1.0.0-0", "Httpclient", "baseUrl"},
-		{"v1.0.0-beta.19", "Httpclient", "baseUrl"},
+		{"v1.0.0-beta.21", "HTTPClient", "e2eTest"},
+		{"v1.0.0-beta.20", "Httpclient", "e2ETest"},
+		{"v1.0.0-beta.21", "HTTPClient", "e2eTest"},
+		{"v1.0.0-0", "Httpclient", "e2ETest"},
+		{"v1.0.0-beta.19", "Httpclient", "e2ETest"},
 	} {
 		object, field := names(tc.version)
 		require.Equal(t, tc.object, object, tc.version)
