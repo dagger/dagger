@@ -1016,7 +1016,7 @@ defmodule Dagger.Workspace do
   def with_sdk(%__MODULE__{} = workspace, ref, optional_args \\ []) do
     query_builder =
       workspace.query_builder
-      |> QB.select("withSDK")
+      |> QB.select("withSdk")
       |> QB.put_arg("ref", ref)
       |> QB.maybe_put_arg("name", optional_args[:name])
       |> QB.maybe_put_arg("here", optional_args[:here])
@@ -1302,7 +1302,7 @@ defmodule Dagger.Workspace do
   def without_sdk(%__MODULE__{} = workspace, name, optional_args \\ []) do
     query_builder =
       workspace.query_builder
-      |> QB.select("withoutSDK")
+      |> QB.select("withoutSdk")
       |> QB.put_arg("name", name)
       |> QB.maybe_put_arg("here", optional_args[:here])
 
