@@ -9,10 +9,11 @@ output.
 Dagger serves a schema view for each module based on that module's configured
 `engineVersion`, unless its client declares a version. An entrypoint can set
 `DAGGER_CLIENT_VERSION` on the exec that starts its module process. A nested
-client that sends the client metadata header declares its own version. The
-engine serves each declared core view capped at the running engine's view and
-keeps the module context. Clients without a declaration keep the module's view.
-Dependency modules keep their configured versions.
+client that sends the client metadata header declares its own version. Inside a
+module, the engine caps a declared core view at the running engine's view. The
+engine keeps the module context. A module client without a declaration keeps
+the module's view. Outside a module, the engine uses the announced view without
+a cap. Dependency modules keep their configured versions.
 
 Views are base-version granular. `engine.APIViewVersion` drops the prerelease
 and build suffixes, so every prerelease of a version shares that version's view:

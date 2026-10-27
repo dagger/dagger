@@ -1564,7 +1564,7 @@ func (srv *Server) initializeClientRuntime(
 		return fmt.Errorf("failed to initialize core schema base: %w", err)
 	}
 	coreView := call.View(engine.APIViewVersion(client.clientVersion))
-	if client.clientMetadata.ClientVersionDeclared {
+	if opts.ModuleContext.Self() != nil && client.clientMetadata.ClientVersionDeclared {
 		engineView := call.View(engine.APIViewVersion(engine.Version))
 		if semver.Compare(string(coreView), string(engineView)) > 0 {
 			coreView = engineView

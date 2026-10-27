@@ -29,13 +29,19 @@ func TestDeclaredClientVersion(t *testing.T) {
 		{name: "nested CLI keeps its version", version: engine.Version, declared: true, headerVersion: "v0.21.6", moduleVersion: engine.Version, want: "v0.21.6"},
 		{name: "nested CLI declares without exec variable", version: engine.Version, headerVersion: "v0.21.6", moduleVersion: engine.Version, want: "v0.21.6"},
 		{name: "nested CLI engine cap", version: "v0.21.6", declared: true, headerVersion: "v99.0.0", moduleVersion: "v0.21.6", want: engine.APIViewVersion(engine.Version)},
+		{name: "nested CLI explicit engine cap", version: "v2.0.0", headerVersion: "v2.0.0", moduleVersion: "v0.21.6", want: engine.APIViewVersion(engine.Version)},
+		{name: "nested CLI explicit dev engine cap", version: "v2.0.0-dev-123", headerVersion: "v2.0.0-dev-123", moduleVersion: "v0.21.6", want: engine.APIViewVersion(engine.Version)},
 		{name: "undeclared module client", version: "v0.21.6", moduleVersion: engine.Version, want: engine.APIViewVersion(engine.Version)},
 		{name: "legacy module", version: engine.Version, moduleVersion: "v0.21.6", want: "v0.21.6"},
 		{name: "cap at engine not module", version: "v99.0.0", declared: true, moduleVersion: "v0.21.6", want: engine.APIViewVersion(engine.Version)},
 		{name: "beta view", version: "v1.0.0-beta.18", declared: true, moduleVersion: engine.Version, want: "v1.0.0"},
 		{name: "unprefixed version", version: "0.21.6", declared: true, moduleVersion: engine.Version, want: "v0.21.6"},
 		{name: "declared container client", version: "v0.21.6", declared: true, want: "v0.21.6"},
-		{name: "declared container cap", version: "v99.0.0", declared: true, want: engine.APIViewVersion(engine.Version)},
+		{name: "declared container remains uncapped", version: "v99.0.0", declared: true, want: "v99.0.0"},
+		{name: "standalone explicit", version: "v2.0.0", headerVersion: "v2.0.0", want: "v2.0.0"},
+		{name: "standalone explicit dev", version: "v2.0.0-dev-123", headerVersion: "v2.0.0-dev-123", want: "v2.0.0"},
+		{name: "standalone headerless explicit", version: "v2.0.0", want: "v2.0.0"},
+		{name: "standalone headerless explicit dev", version: "v2.0.0-dev-123", want: "v2.0.0"},
 		{name: "undeclared version remains uncapped", version: "v99.0.0", want: "v99.0.0"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -97,8 +103,10 @@ func TestDeclaredClientVersion(t *testing.T) {
 				require.NoError(t, client.closeTelemetryDB())
 			}()
 			require.Equal(t, call.View(tc.want), client.dag.View)
+			require.Equal(t, requestMetadata.ClientVersion, client.clientVersion)
 			require.Equal(t, tc.declared || tc.headerVersion != "", client.clientMetadata.ClientVersionDeclared)
 			require.Same(t, opts.FunctionCall, client.fnCall)
+			require.Equal(t, tc.moduleVersion != "", client.mod.Self() != nil)
 			if tc.moduleVersion != "" {
 				require.Same(t, opts.ModuleContext.Self(), client.mod.Self())
 				originalCore, ok := client.mod.Self().Deps.Lookup(core.ModuleName)
