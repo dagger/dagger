@@ -137,13 +137,15 @@ func (c *Client) exportCommitOpts(
 	}
 	if forceCompression != "" {
 		switch forceCompression {
-		case "Gzip":
+		// ImageLayerCompression values, and their spellings before the
+		// identifier casing renames
+		case "GZIP", "Gzip":
 			forceCompression = "gzip"
-		case "Zstd":
+		case "ZSTD", "Zstd":
 			forceCompression = "zstd"
-		case "EStarGZ":
+		case "ESTARGZ", "EStarGZ":
 			forceCompression = "estargz"
-		case "Uncompressed":
+		case "UNCOMPRESSED", "Uncompressed":
 			forceCompression = "uncompressed"
 		}
 		ctype, err := compression.Parse(forceCompression)

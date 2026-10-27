@@ -1019,7 +1019,12 @@ func cacheDirectiveSelector(ctx context.Context, env dang.ValueScope, directive 
 		switch arg.Key {
 		case "policy":
 			if s, ok := val.(string); ok {
-				policy = core.FunctionCachePolicy(s)
+				// The member is spelled for the module's view: NEVER, or Never
+				// before engine.IdentifierCasingVersion. Both decode to the policy.
+				policy, err = core.FunctionCachePolicyEnum.Lookup(s)
+				if err != nil {
+					return dagql.Selector{}, fmt.Errorf("@cache policy: %w", err)
+				}
 			}
 		case "ttl":
 			if s, ok := val.(string); ok {

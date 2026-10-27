@@ -506,11 +506,27 @@ type FunctionCachePolicy string
 
 var FunctionCachePolicyEnum = dagql.NewEnum[FunctionCachePolicy]()
 
+// From engine.IdentifierCasingVersion on, the members are DEFAULT,
+// PER_SESSION and NEVER, the spelling of the values. Earlier views have
+// Default, PerSession and Never instead, aliases of them (AliasViewPrimary);
+// no view has both. Either spelling decodes to the same value in every view.
+// Values recorded before the rename (in persisted typedefs) are normalized
+// when decoded (UnmarshalJSON).
 var (
-	FunctionCachePolicyDefault    = FunctionCachePolicyEnum.Register("Default")
-	FunctionCachePolicyPerSession = FunctionCachePolicyEnum.Register("PerSession")
-	FunctionCachePolicyNever      = FunctionCachePolicyEnum.Register("Never")
+	FunctionCachePolicyDefault    = FunctionCachePolicyEnum.RegisterView("DEFAULT", CasedNamesView)
+	_                             = FunctionCachePolicyEnum.AliasViewPrimary("Default", FunctionCachePolicyDefault, LegacyNamesView)
+	FunctionCachePolicyPerSession = FunctionCachePolicyEnum.RegisterView("PER_SESSION", CasedNamesView)
+	_                             = FunctionCachePolicyEnum.AliasViewPrimary("PerSession", FunctionCachePolicyPerSession, LegacyNamesView)
+	FunctionCachePolicyNever      = FunctionCachePolicyEnum.RegisterView("NEVER", CasedNamesView)
+	_                             = FunctionCachePolicyEnum.AliasViewPrimary("Never", FunctionCachePolicyNever, LegacyNamesView)
 )
+
+// UnmarshalJSON decodes either spelling of a policy to its value, so values
+// recorded with the old spelling (Never, in persisted typedefs) still compare
+// equal to the members.
+func (proto *FunctionCachePolicy) UnmarshalJSON(data []byte) error {
+	return unmarshalEnumJSON(data, FunctionCachePolicyEnum, proto)
+}
 
 func (proto FunctionCachePolicy) Type() *ast.Type {
 	return &ast.Type{
@@ -529,6 +545,10 @@ func (proto FunctionCachePolicy) Decoder() dagql.InputDecoder {
 
 func (proto FunctionCachePolicy) ToLiteral() call.Literal {
 	return FunctionCachePolicyEnum.Literal(proto)
+}
+
+func (proto FunctionCachePolicy) ViewLiteral(view call.View) call.Literal {
+	return FunctionCachePolicyEnum.ViewLiteral(proto, view)
 }
 
 type FunctionArg struct {
