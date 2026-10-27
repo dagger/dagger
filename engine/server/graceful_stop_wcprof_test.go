@@ -21,9 +21,8 @@ func recordGlobally(t *testing.T) {
 	t.Cleanup(wcprof.DisableGlobal)
 }
 
-// stopDump reads the server's stop dump: the names of its ended ops and of
-// its open ones, and each ended op's parent's name.
-func stopDump(t *testing.T, srv *Server) (ended, open map[string]bool, parents map[string]map[string]bool) {
+// readStopDump reads the server's stop dump.
+func readStopDump(t *testing.T, srv *Server) (*wcprof.DumpHeader, []wcprof.DumpEvent) {
 	t.Helper()
 	f, err := os.Open(wcprof.StopDumpPath(srv.rootDir))
 	require.NoError(t, err)
@@ -32,6 +31,14 @@ func stopDump(t *testing.T, srv *Server) (ended, open map[string]bool, parents m
 	require.NoError(t, err)
 	h, evs, err := wcprof.ReadDump(zr)
 	require.NoError(t, err)
+	return h, evs
+}
+
+// stopDump reads the server's stop dump: the names of its ended ops and of
+// its open ones, and each ended op's parent's name.
+func stopDump(t *testing.T, srv *Server) (ended, open map[string]bool, parents map[string]map[string]bool) {
+	t.Helper()
+	h, evs := readStopDump(t, srv)
 	ended, open, parents = map[string]bool{}, map[string]bool{}, map[string]map[string]bool{}
 	names := map[uint64]string{}
 	for _, ev := range evs {
@@ -63,15 +70,34 @@ func TestGracefulStopRecordsItsPhases(t *testing.T) {
 	recordGlobally(t)
 	srv := newGracefulStopServer(t, filepath.Join(t.TempDir(), "cache.db"))
 	require.NoError(t, srv.GracefulStop(boundedContext(t)))
-	ended, _, parents := stopDump(t, srv)
+	ended, _, _ := stopDump(t, srv)
 	for _, class := range []string{"engine.stop", "engine.stop.stop remote cache integration", "engine.stop.wait for garbage collection", "engine.stop.remove sessions", "engine.stop.close metadata DBs"} {
 		require.True(t, ended[class], "stop dump lacks %q; has %v", class, ended)
 	}
-	// phases are under the stop, and the dump writes under the phase or
-	// stop they ran in, never roots of their own
-	require.Equal(t, map[string]bool{"engine.stop": true}, parents["engine.stop.remove sessions"])
-	require.NotContains(t, parents["wcprof.stopDump"], "", "a stop dump write is a root op")
-	require.True(t, parents["wcprof.stopDump"]["engine.stop.remove sessions"], "no stop dump write under a phase: %v", parents["wcprof.stopDump"])
+	// within this stop (the recorder outlives each test, so earlier stops'
+	// ops are there too): its phases are under it, and its phases' dump
+	// writes under them
+	h, evs := readStopDump(t, srv)
+	var stop *wcprof.DumpEvent
+	for i, ev := range evs {
+		if ev.Type == "op" && h.Strings[ev.ClassID] == "engine.stop" && (stop == nil || ev.StartNS > stop.StartNS) {
+			stop = &evs[i]
+		}
+	}
+	require.NotNil(t, stop)
+	var phase uint64
+	for _, ev := range evs {
+		if ev.Type == "op" && h.Strings[ev.ClassID] == "engine.stop.remove sessions" && ev.StartNS >= stop.StartNS {
+			require.Equal(t, stop.OpID, ev.ParentID, "the phase isn't under its stop")
+			phase = ev.OpID
+		}
+	}
+	require.NotZero(t, phase, "this stop has no remove-sessions phase")
+	var underPhase bool
+	for _, ev := range evs {
+		underPhase = underPhase || (ev.Type == "op" && h.Strings[ev.ClassID] == "wcprof.stopDump" && ev.ParentID == phase)
+	}
+	require.True(t, underPhase, "no stop dump write under this stop's remove-sessions phase")
 }
 
 func TestGracefulStopWritesNoDumpWhenNotRecording(t *testing.T) {
