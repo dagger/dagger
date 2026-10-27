@@ -1356,6 +1356,14 @@ func (file *File) WithName(ctx context.Context, parent dagql.ObjectResult[*File]
 		if err != nil {
 			return err
 		}
+		// A File sees nothing next to it, so a directory at the new name
+		// mustn't make the rename fail: it is replaced, as a file there is
+		// by the rename itself.
+		if info, err := os.Lstat(dst); err == nil && info.IsDir() {
+			if err := os.RemoveAll(dst); err != nil {
+				return TrimErrPathPrefix(err, root)
+			}
+		}
 		err = os.Rename(src, dst)
 		if err != nil {
 			return TrimErrPathPrefix(err, root)
