@@ -32,10 +32,11 @@ func formatGqlDescription(desc string) string {
 // rules they were built against, byte for byte. See
 // hack/designs/identifier-casing.md, "The gate".
 //
-// The gate is an API view, so it's base-version granular like every view
-// (engine.APIViewVersion): every v1.0.0 prerelease shares the v1.0.0 view and
-// gets the new rules. The old spellings of the module names they changed stay
-// accepted as hidden aliases (see ModuleNameAliases).
+// The gate is an API view (engine.APIViewVersion), and every v1.0.0
+// prerelease's view is past it: those before engine.PrereleaseViewsVersion
+// share one pre-cut view, and later ones keep their own. So every v1.0.0
+// prerelease gets the new rules. The old spellings of the module names they
+// changed stay accepted as hidden aliases (see ModuleNameAliases).
 const IdentifierNamingVersion = "v1.0.0-0"
 
 func gqlObjectName(name string) string {
