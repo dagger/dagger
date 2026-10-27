@@ -669,22 +669,23 @@ func walkArtifactNodes(ctx context.Context, node *ModTreeNode, visit func(*ModTr
 			prefix = parent.CollectionDimension.Identifier
 		}
 		identifier := strings.Join(append([]string{prefix}, path...), "/")
-		// The namespaced name keeps short names unique across modules.
+		// The namespaced name keeps short names unique across modules. It's
+		// spelled by the module's rules, like the identifier, so a legacy
+		// module's selectors keep their names (k-8-s-cluster).
 		itemType := members.Get.ReturnType.Self().AsObject.Value.Self().Name
 		dim := &ArtifactDimension{
 			Kind: "COLLECTION", CollectionType: obj.Name,
 			Identifier:     identifier,
-			Name:           ArtifactTypeName(itemType),
+			Name:           namer.CLIName(itemType),
 			ItemType:       itemType,
 			KeyName:        members.Get.Args[0].Self().Name,
 			KeyDescription: members.Get.Args[0].Self().Description,
 		}
 		qualified := strings.Split(strings.TrimPrefix(identifier, "/"), "/")
-		// The item type's name is spelled by the latest rules
-		// (ArtifactTypeName), the identifier by the module's: trim the module
-		// prefix by either spelling.
+		// Trim the module prefix (the identifier's first segment, spelled by
+		// the same rules) from the item name.
 		itemName := dim.Name
-		for _, prefix := range []string{qualified[0], ArtifactTypeName(node.Module.Self().Name())} {
+		for _, prefix := range []string{qualified[0], namer.CLIName(node.Module.Self().Name())} {
 			if rest, ok := strings.CutPrefix(itemName, prefix+"-"); ok {
 				itemName = rest
 				break
