@@ -78,6 +78,28 @@ type `+typeName+` {
 `)
 }
 
+// workspaceIdentityListerModule is an extra module whose functions call the
+// lister module, beside it at ../lister, with the workspace.
+func workspaceIdentityListerModule(c *dagger.Client, name, typeName string) *core.Directory {
+	return core.NewQuery(c).Directory().
+		WithNewFile("dagger.json", `{"name":"`+name+`","sdk":{"source":"dang"},"dependencies":[{"name":"lister","source":"../lister"}]}`).
+		WithNewFile("main.dang", `
+type `+typeName+` {
+  pub verify: Void @check {
+    null
+  }
+
+  pub list(ws: Workspace!): [String!]! {
+    lister.list(ws: ws)
+  }
+
+  pub token(ws: Workspace!): String! {
+    lister.token(ws: ws)
+  }
+}
+`)
+}
+
 func (WorkspaceSuite) TestGitWorkspaceIdentity(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	ctr := core.NewQuery(c).Container().From(alpineImage).
@@ -136,6 +158,32 @@ func (WorkspaceSuite) TestGitWorkspaceIdentity(ctx context.Context, t *testctx.T
 		require.NotContains(t, listA, "extra-b")
 		require.Contains(t, listB, "extra-b")
 		require.NotContains(t, listB, "extra-a")
+	})
+
+	// A function that lists artifacts inside its body runs only when it isn't
+	// reused, so its key must cover the extra modules the client loaded: the
+	// same extra modules reuse its result, different ones run it again. Each
+	// extra module calls the same function in a shared dependency, so only the
+	// workspace can tell the two clients apart.
+	t.Run("a function listing artifacts is keyed by the client's extra modules", func(ctx context.Context, t *testctx.T) {
+		remoteRef := remote(ctx, t)
+		// The extra modules and their dependency share one Git repository, the
+		// context a local module's dependency must stay within.
+		withExtras := goGitBase(t, c).
+			WithDirectory("/work/lister", core.NewQuery(c).Host().Directory(testDataPath(t, "modules", "go", "workspace-identity-lister"))).
+			WithDirectory("/work/extra-a", workspaceIdentityListerModule(c, "extra-a", "ExtraA")).
+			WithDirectory("/work/extra-b", workspaceIdentityListerModule(c, "extra-b", "ExtraB"))
+		listA := workspaceIdentityExec(ctx, t, withExtras, false, "call", "-W", remoteRef, "-m", "/work/extra-a", "list")
+		listB := workspaceIdentityExec(ctx, t, withExtras, false, "call", "-W", remoteRef, "-m", "/work/extra-b", "list")
+		require.Contains(t, listA, "extra-a")
+		require.NotContains(t, listA, "extra-b")
+		require.Contains(t, listB, "extra-b")
+		require.NotContains(t, listB, "extra-a")
+
+		require.Equal(t,
+			workspaceIdentityCall(ctx, t, withExtras, "-W", remoteRef, "-m", "/work/extra-a", "token"),
+			workspaceIdentityCall(ctx, t, withExtras, "-W", remoteRef, "-m", "/work/extra-a", "token"),
+			"the same extra modules must reuse a function given the workspace")
 	})
 
 	// The check itself, not only a function, is reused: a check's result is
