@@ -38,8 +38,10 @@ func TestFieldsInstallMarksReflectedAccessorsTrivial(t *testing.T) {
 		require.False(t, spec.NoTelemetry, name)
 		if name == "value" || name == "name" || name == "ratio" || name == "enabled" {
 			require.NotEmpty(t, spec.DoNotCache, name)
+			require.True(t, spec.DeduplicateTelemetry, name)
 		} else {
 			require.Empty(t, spec.DoNotCache, name)
+			require.False(t, spec.DeduplicateTelemetry, name)
 		}
 	}
 }
@@ -64,7 +66,9 @@ func TestReflectedScalarGettersKeepValuesAndTracing(t *testing.T) {
 	var item ObjectResult[*reflectedAccessorTestObject]
 	require.NoError(t, srv.Select(ctx, srv.Root(), &item, Selector{Field: "item"}))
 	var calls, hits atomic.Int32
-	srv.Around(func(ctx context.Context, _ *CallRequest) (context.Context, func(AnyResult, bool, *error)) {
+	srv.Around(func(ctx context.Context, req *CallRequest) (context.Context, func(AnyResult, bool, *error)) {
+		require.True(t, req.DeduplicateTelemetry)
+		require.True(t, req.Clone().DeduplicateTelemetry)
 		return ctx, func(_ AnyResult, cached bool, _ *error) {
 			calls.Add(1)
 			if cached {

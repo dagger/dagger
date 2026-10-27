@@ -655,6 +655,7 @@ func (r ObjectResult[T]) preselect(ctx context.Context, srv *Server, sel Selecto
 		TTL:                  field.Spec.TTL,
 		DoNotCache:           field.Spec.DoNotCache != "",
 		IsPersistable:        field.Spec.IsPersistable,
+		DeduplicateTelemetry: field.Spec.DeduplicateTelemetry,
 		PassthroughTelemetry: field.Spec.PassthroughTelemetry,
 		// The immediate receiver's type name is free here (r is the receiver);
 		// core.AroundFunc reads it to make the static profile-skip decision without
@@ -1017,6 +1018,10 @@ type FieldSpec struct {
 	// Used for workspace main proxies that delegate to real fields which
 	// emit their own telemetry.
 	NoTelemetry bool
+
+	// DeduplicateTelemetry keeps session span deduplication for uncached
+	// fields that only read immutable values.
+	DeduplicateTelemetry bool
 
 	// Trivial marks fields that only unwrap data from their receiver rather
 	// than performing meaningful work. Their telemetry spans are internal, and
@@ -1506,6 +1511,7 @@ func (fields Fields[T]) Install(server *Server) {
 		case String, Int, Float, Boolean:
 			if spec.DoNotCache == "" {
 				spec.DoNotCache = "Scalar getters only read their receiver"
+				spec.DeduplicateTelemetry = true
 			}
 		}
 
