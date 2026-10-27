@@ -16,11 +16,17 @@ type gitPushArgs struct {
 	To                dagql.Optional[dagql.ID[*core.GitRepository]]
 	Remote            string `default:""`
 	Branch            string `default:""`
-	ExpectedRemoteSHA string `name:"expectedRemoteSHA" default:""`
+	ExpectedRemoteSHA string `name:"expectedRemoteSha" default:""`
+	// LegacyExpectedRemoteSHA is expectedRemoteSha in views before
+	// engine.IdentifierCasingVersion.
+	LegacyExpectedRemoteSHA string `name:"expectedRemoteSHA" default:""`
 }
 
 func (s *gitSchema) push(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], args gitPushArgs) (dagql.ObjectResult[*core.GitPushResult], error) {
 	var inst dagql.ObjectResult[*core.GitPushResult]
+	if args.ExpectedRemoteSHA == "" {
+		args.ExpectedRemoteSHA = args.LegacyExpectedRemoteSHA
+	}
 	opts := core.GitPushOpts{Branch: args.Branch, ExpectedRemoteSHA: args.ExpectedRemoteSHA}
 	if _, err := opts.Ref(parent.Self().Ref); err != nil {
 		return inst, err

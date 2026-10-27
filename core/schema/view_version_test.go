@@ -162,6 +162,7 @@ func TestPreCutCoreSchemaShared(t *testing.T) {
 		schema, got := schemaFor(version)
 		require.Equal(t, want, got, "schema for %s", version)
 		require.NotNil(t, schema.Types["Workspace"], version)
+		// the pre-cut spelling of withGpu
 		require.NotNil(t, schema.Types["Container"].Fields.ForName("withGPU"), version)
 		require.NotNil(t, schema.Types["Container"].Fields.ForName("withExec").Arguments.ForName("disableDaggerInDagger"), version)
 		require.Contains(t, schema.Directives, "reevaluate", version)
