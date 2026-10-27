@@ -16,6 +16,9 @@ import (
 
 type GitignoreMatcher struct {
 	fs fsutil.FS
+	// Overrides replace rule files without changing the filesystem. An empty
+	// value also represents a removed rule file. Keys are slash-relative paths.
+	overrides map[string]string
 
 	// Cache for parsed gitignore files to avoid re-reading
 	gitignoreCache         map[string]gitignore.Matcher
@@ -31,6 +34,12 @@ func NewGitIgnoreMatcher(fs fsutil.FS) *GitignoreMatcher {
 		gitignoreCachePatterns: make(map[string][]gitignore.Pattern),
 	}
 	return gfs
+}
+
+func NewGitIgnoreMatcherWithOverrides(fs fsutil.FS, overrides map[string]string) *GitignoreMatcher {
+	matcher := NewGitIgnoreMatcher(fs)
+	matcher.overrides = overrides
+	return matcher
 }
 
 // Matches checks if a path should be ignored based on gitignore rules
@@ -126,7 +135,13 @@ func (gfs *GitignoreMatcher) getGitIgnorePatterns(dirPath string) (patterns []gi
 	}
 
 	gitignorePath := filepath.Join(dirPath, ".gitignore")
-	reader, err := gfs.fs.Open(gitignorePath)
+	var reader io.ReadCloser
+	var err error
+	if contents, ok := gfs.overrides[filepath.ToSlash(gitignorePath)]; ok {
+		reader = io.NopCloser(strings.NewReader(contents))
+	} else {
+		reader, err = gfs.fs.Open(gitignorePath)
+	}
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return patterns, nil
@@ -163,8 +178,7 @@ func parseGitIgnoreFile(reader io.Reader, domain []string) ([]gitignore.Pattern,
 			// skip empty lines and comments
 			continue
 		}
-		pattern := gitignore.ParsePattern(line, domain)
-		patterns = append(patterns, pattern)
+		patterns = append(patterns, gitignore.ParsePattern(line, domain))
 	}
 
 	if err := scanner.Err(); err != nil {
