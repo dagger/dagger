@@ -228,9 +228,9 @@ class File extends Client\AbstractObject implements Client\IdAble, Exportable, N
     /**
      * Parse the file contents as JSON.
      */
-    public function asJSON(): JsonValue
+    public function asJson(): JsonValue
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asJSON');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asJson');
         return new \Dagger\JsonValue($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
