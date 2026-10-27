@@ -262,6 +262,8 @@ func containerRoutingMetadata(p persistedContainerMetadataValue) (*Container, er
 			mount.CacheSource = new(CacheMountSource)
 		case persistedContainerMountKindVolume:
 			mount.VolumeSource = new(VolumeMountSource)
+		case persistedContainerMountKindFiles:
+			mount.FilesSource = new(FilesMountSource)
 		case persistedContainerMountKindTmpfs:
 			mount.TmpfsSource = new(TmpfsMountSource)
 		default:

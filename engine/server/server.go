@@ -338,6 +338,8 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	//
 	os.RemoveAll(filepath.Join(srv.executorRootDir, "hosts"))
 	os.RemoveAll(filepath.Join(srv.executorRootDir, "resolv.conf"))
+	// and the files mounts of execs a previous run didn't finish
+	os.RemoveAll(filepath.Join(srv.rootDir, core.FilesMountDir))
 
 	//
 	// set up client DBs, and the telemetry pub/sub which writes to it
