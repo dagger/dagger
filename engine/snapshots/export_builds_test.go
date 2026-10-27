@@ -12,6 +12,7 @@ import (
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/semaphore"
 )
@@ -51,7 +52,12 @@ func trackDiffs(store *testutil.Store, want int64, wait time.Duration) *atomic.I
 
 func exportChains(t *testing.T, refs []bkcache.ImmutableRef, cfg config.RefConfig) []*bkcache.ExportChain {
 	t.Helper()
-	chains, err := bkcache.ExportChains(context.Background(), refs, nil, cfg)
+	return exportChainsWork(t, refs, nil, cfg)
+}
+
+func exportChainsWork(t *testing.T, refs []bkcache.ImmutableRef, work *bkcache.ChainWork, cfg config.RefConfig) []*bkcache.ExportChain {
+	t.Helper()
+	chains, err := bkcache.ExportChains(context.Background(), refs, work, cfg)
 	require.NoError(t, err)
 	for _, chain := range chains {
 		t.Cleanup(func() { require.NoError(t, chain.Release(context.Background())) })
@@ -134,31 +140,88 @@ func TestExportChainsSharedPrefix(t *testing.T) {
 	testutil.CheckFile(t, imported, "c.txt", "second suffix")
 }
 
-// Each layer builds under the context of the first chain that has it, so
+// Each layer builds within the work of the first chain that has it, so
 // what its build records lands under that chain.
-func TestExportChainsBuildUnderChainContext(t *testing.T) {
+func TestExportChainsBuildUnderChainWork(t *testing.T) {
 	store := testutil.NewStore(t)
 	a, _ := store.Build(t, nil, "a.txt", "shared root")
 	ab, _ := store.Build(t, a, "b.txt", "first suffix")
 	ac, _ := store.Build(t, a, "c.txt", "second suffix")
 	type chainKey struct{}
 	var mu sync.Mutex
-	builtUnder := map[string]int{}
+	builtUnder := map[int]int{}
 	store.BeforeDiff = func(ctx context.Context) error {
-		name, _ := ctx.Value(chainKey{}).(string)
+		i, ok := ctx.Value(chainKey{}).(int)
+		if !ok {
+			return errors.New("a build ran outside its chain's work")
+		}
 		mu.Lock()
 		defer mu.Unlock()
-		builtUnder[name]++
+		builtUnder[i]++
 		return nil
 	}
+	ended := map[int]int64{}
+	work := &bkcache.ChainWork{
+		Begin: func(ctx context.Context, i int) context.Context {
+			return context.WithValue(ctx, chainKey{}, i)
+		},
+		End: func(i int, blobBytes int64, err error) {
+			assert.NoError(t, err)
+			mu.Lock()
+			defer mu.Unlock()
+			ended[i] = blobBytes
+		},
+	}
 	ctx := context.Background()
-	chainCtxs := []context.Context{context.WithValue(ctx, chainKey{}, "first"), context.WithValue(ctx, chainKey{}, "second")}
-	chains, err := bkcache.ExportChains(ctx, []bkcache.ImmutableRef{ab, ac}, chainCtxs, buildsConfig(4, nil))
+	chains, err := bkcache.ExportChains(ctx, []bkcache.ImmutableRef{ab, ac}, work, buildsConfig(4, nil))
 	require.NoError(t, err)
 	for _, chain := range chains {
 		require.NoError(t, chain.Release(ctx))
 	}
-	require.Equal(t, map[string]int{"first": 2, "second": 1}, builtUnder)
+	require.Equal(t, map[int]int{0: 2, 1: 1}, builtUnder)
+	require.Len(t, ended, 2)
+	require.Equal(t, chains[0].Stats.BlobBytes, ended[0])
+	require.Equal(t, chains[1].Stats.BlobBytes, ended[1])
+}
+
+// A chain's work ends with its own builds: a chain whose blob already
+// exists ends while another chain of the export is still diffing, so a
+// profile doesn't charge it with the other's diff.
+func TestExportChainsWorkEndsWithOwnBuilds(t *testing.T) {
+	store := testutil.NewStore(t)
+	reused, _ := store.Build(t, nil, "reused.txt", "already exported")
+	exportChains(t, []bkcache.ImmutableRef{reused}, buildsConfig(1, nil))
+	fresh, _ := store.Build(t, nil, "fresh.txt", "built now")
+	reusedEnded := make(chan struct{})
+	store.BeforeDiff = func(ctx context.Context) error {
+		select {
+		case <-reusedEnded:
+			return nil
+		case <-time.After(5 * time.Second):
+			return errors.New("the reused chain's work stayed open through the other chain's diff")
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	var mu sync.Mutex
+	ended := map[int]int64{}
+	work := &bkcache.ChainWork{
+		Begin: func(ctx context.Context, _ int) context.Context { return ctx },
+		End: func(i int, blobBytes int64, err error) {
+			assert.NoError(t, err)
+			mu.Lock()
+			ended[i] = blobBytes
+			mu.Unlock()
+			if i == 1 {
+				close(reusedEnded)
+			}
+		},
+	}
+	chains := exportChainsWork(t, []bkcache.ImmutableRef{fresh, reused}, work, buildsConfig(2, nil))
+	require.Equal(t, 1, chains[0].Stats.LayersDiffed)
+	require.Equal(t, 1, chains[1].Stats.LayersReused)
+	require.Positive(t, ended[0])
+	require.Zero(t, ended[1])
 }
 
 // statCounts keeps a chain's counts, without its sizes and times.
