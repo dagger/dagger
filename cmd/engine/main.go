@@ -324,15 +324,15 @@ func signalContext() context.Context {
 		for retries := 1; ; retries++ {
 			s := <-signals
 			engineStopBudget.start()
+			fmt.Printf("Received signal %s, retries: %d/%d\n", s, retries, exitLimit)
+
+			err := fmt.Errorf("got %d SIGTERM/SIGINTs, forcing shutdown", retries)
+			cancel(err)
 			if retries == 1 {
 				if path := stopDumpPath.Load(); path != nil {
 					recordStopSignal(*path)
 				}
 			}
-			fmt.Printf("Received signal %s, retries: %d/%d\n", s, retries, exitLimit)
-
-			err := fmt.Errorf("got %d SIGTERM/SIGINTs, forcing shutdown", retries)
-			cancel(err)
 			if retries >= exitLimit {
 				bklog.G(ctx).Error(err.Error())
 				os.Exit(1)
@@ -708,13 +708,18 @@ func main() { //nolint:gocyclo
 		// The server's close emitted engine.stop and queued every event on the
 		// event provider; flush them before the global providers close.
 		// Each final flush gets what remains of the stop budget, at most
-		// stopFlushTimeout.
-		flushCtx, flushCancel := engineStopBudget.flushContext(ctx)
-		eventExport.shutdownAtExit(flushCtx)
-		flushCancel()
-		flushCtx, flushCancel = engineStopBudget.flushContext(ctx)
-		closeResourceMetrics(flushCtx, resourceMetrics)
-		flushCancel()
+		// stopFlushTimeout. Each drain is a step of the recorded stop
+		// (exitStep), so a kill during one shows which.
+		exitStep("flush engine events", func() {
+			flushCtx, flushCancel := engineStopBudget.flushContext(ctx)
+			eventExport.shutdownAtExit(flushCtx)
+			flushCancel()
+		})
+		exitStep("close resource metrics", func() {
+			flushCtx, flushCancel := engineStopBudget.flushContext(ctx)
+			closeResourceMetrics(flushCtx, resourceMetrics)
+			flushCancel()
+		})
 		if closeCommandPlacement != nil {
 			if err := closeCommandPlacement(); err != nil {
 				bklog.G(ctx).WithError(err).Warn("command cgroup cleanup incomplete")
@@ -729,13 +734,15 @@ func main() { //nolint:gocyclo
 		}
 		// Providers finish before the engine-owned workload export drains.
 		// Their shared processor/exporter wrappers do not close it.
-		telemetry.Close()
+		exitStep("close telemetry", telemetry.Close)
 		if workloadExport != nil {
-			flushCtx, cancel := engineStopBudget.flushContext(ctx)
-			if err := workloadExport.Shutdown(flushCtx); err != nil {
-				bklog.G(ctx).WithError(err).Warn("workload export shutdown incomplete")
-			}
-			cancel()
+			exitStep("drain workload export", func() {
+				flushCtx, cancel := engineStopBudget.flushContext(ctx)
+				if err := workloadExport.Shutdown(flushCtx); err != nil {
+					bklog.G(ctx).WithError(err).Warn("workload export shutdown incomplete")
+				}
+				cancel()
+			})
 		}
 		return nil
 	}

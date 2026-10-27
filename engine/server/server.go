@@ -980,13 +980,13 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	// attributable from the engine log alone.
 	stopStart := time.Now()
 	// While the engine records, the stop and each of its phases are ops, and
-	// the stop dump is rewritten as each phase begins and once the stop ends,
-	// so an engine killed in a phase leaves a dump that shows it.
-	_, stopOp := wcprof.BeginOp(context.WithoutCancel(ctx), wcprof.OpKindInternal, "engine.stop", wcprof.OpOpts{})
+	// the stop dump is rewritten as each phase begins and ends, so an engine
+	// killed in a phase, or between two, leaves a dump that shows where.
+	stopCtx, stopOp := wcprof.BeginOp(context.WithoutCancel(ctx), wcprof.OpKindInternal, "engine.stop", wcprof.OpOpts{})
 	stopPhase := func(name string, fn func()) {
 		slog.Debug("graceful stop phase starting", "phase", name)
-		_, phaseOp := wcprof.BeginOp(context.WithoutCancel(ctx), wcprof.OpKindInternal, "engine.stop."+name, wcprof.OpOpts{})
-		srv.writeStopDump()
+		phaseCtx, phaseOp := wcprof.BeginOp(stopCtx, wcprof.OpKindInternal, "engine.stop."+name, wcprof.OpOpts{})
+		srv.writeStopDump(phaseCtx)
 		start := time.Now()
 		// A stage that runs long is usually waiting in the kernel; name the
 		// threads doing so while they still are.
@@ -997,11 +997,12 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 		fn()
 		slow.Stop()
 		phaseOp.End(wcprof.OutcomeOK)
+		srv.writeStopDump(stopCtx)
 		slog.Info("graceful stop phase done", "phase", name, "duration", time.Since(start))
 	}
 	defer func() {
 		stopOp.EndErr(err)
-		srv.writeStopDump()
+		srv.writeStopDump(context.WithoutCancel(ctx))
 		slog.Info("graceful stop done", "duration", time.Since(stopStart), "error", err)
 	}()
 
@@ -1029,7 +1030,8 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	}
 
 	if srv.engineCache != nil {
-		srv.gcmu.Lock()
+		// A scheduled garbage collection holds gcmu while it runs.
+		stopPhase("wait for garbage collection", srv.gcmu.Lock)
 		defer srv.gcmu.Unlock()
 	}
 
@@ -1164,17 +1166,10 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	return err
 }
 
-// writeStopDump rewrites the engine's stop dump (wcprof.WriteDumpFile), when
-// it records. The write is an op of its own, inside the phase it runs in, so
-// a reader can tell its cost from the phase's.
-func (srv *Server) writeStopDump() {
-	if wcprof.Active() == nil {
-		return
-	}
-	_, op := wcprof.BeginOp(context.Background(), wcprof.OpKindInternal, "wcprof.stopDump", wcprof.OpOpts{})
-	err := wcprof.WriteDumpFile(wcprof.StopDumpPath(srv.rootDir))
-	op.EndErr(err)
-	if err != nil {
+// writeStopDump rewrites the engine's stop dump (wcprof.WriteStopDump) while
+// it records, the write an op under ctx's.
+func (srv *Server) writeStopDump(ctx context.Context) {
+	if err := wcprof.WriteStopDump(ctx, wcprof.StopDumpPath(srv.rootDir)); err != nil {
 		slog.Warn("wcprof stop dump", "error", err)
 	}
 }

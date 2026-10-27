@@ -2,8 +2,10 @@ package wcprof
 
 import (
 	"compress/gzip"
+	"context"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
 // StopDumpPath is where an engine with state directory root keeps the dump
@@ -17,11 +19,11 @@ func StopDumpPath(root string) string {
 // path, so a reader, or an engine killed mid-write, never leaves a partial
 // dump. It does nothing when profiling was never enabled.
 //
-// The engine writes its stop dump this way when it receives SIGTERM, as each
-// graceful-stop phase begins, and once the stop ends: an engine killed before
-// it exits leaves the dump of its last finished write, with the work still
-// running then as open ops. It compresses at gzip's fastest level, since it
-// runs inside the stop it records.
+// The engine writes its stop dump this way (WriteStopDump) when it receives
+// SIGTERM, as each graceful-stop phase and final drain begins and ends: an
+// engine killed before it exits leaves the dump of its last finished write,
+// with the work still running then as open ops. It compresses at gzip's
+// fastest level, since it runs inside the stop it records.
 func WriteDumpFile(path string) (err error) {
 	r := Active()
 	if r == nil {
@@ -55,4 +57,29 @@ func WriteDumpFile(path string) (err error) {
 		return err
 	}
 	return os.Rename(tmp.Name(), path)
+}
+
+// stopDumpMu makes stop dump writers take turns, so a snapshot taken earlier
+// can't be renamed over one taken later.
+var stopDumpMu sync.Mutex
+
+// stopDumpHook runs inside a stop dump write, holding stopDumpMu; tests set it
+// to watch writers take turns.
+var stopDumpHook = func() {}
+
+// WriteStopDump writes the engine's stop dump to path (WriteDumpFile) while
+// the engine records everything (GloballyEnabled); otherwise it does nothing.
+// The write is an op of its own, wcprof.stopDump, under ctx's op, so its cost
+// reads as the write's, not as that op's own time. Writers take turns.
+func WriteStopDump(ctx context.Context, path string) error {
+	if !GloballyEnabled() {
+		return nil
+	}
+	_, op := BeginOp(ctx, OpKindInternal, "wcprof.stopDump", OpOpts{})
+	stopDumpMu.Lock()
+	stopDumpHook()
+	err := WriteDumpFile(path)
+	stopDumpMu.Unlock()
+	op.EndErr(err)
+	return err
 }
