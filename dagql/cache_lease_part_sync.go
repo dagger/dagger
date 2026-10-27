@@ -81,7 +81,17 @@ func (c *Cache) syncInstalledPartLeases(ctx context.Context, res *sharedResult, 
 		newByRole[link.Role] = link
 	}
 
-	// As the whole sync does: a borrowed link has no lease of its own.
+	if err := c.reconcilePartLeases(ctx, res, oldByRole, newByRole); err != nil {
+		return err
+	}
+	res.storeSnapshotOwnerLinks(append(kept, links...))
+	return nil
+}
+
+// reconcilePartLeases removes the leases of the read parts' old links that
+// changed and attaches the new links' leases. As the whole sync does, a
+// borrowed link has no lease of its own.
+func (c *Cache) reconcilePartLeases(ctx context.Context, res *sharedResult, oldByRole, newByRole map[string]PersistedSnapshotRefLink) error {
 	for role, old := range oldByRole {
 		if old.Borrowed {
 			continue
@@ -117,7 +127,6 @@ func (c *Cache) syncInstalledPartLeases(ctx context.Context, res *sharedResult, 
 			return err
 		}
 	}
-	res.storeSnapshotOwnerLinks(append(kept, links...))
 	return nil
 }
 

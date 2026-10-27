@@ -1445,14 +1445,14 @@ func (container *Container) markBorrowed(part dagql.PartKey) {
 // partSnapshotID is the snapshot ID part holds now, or "".
 func (container *Container) partSnapshotID(part dagql.PartKey) string {
 	var snapshot bkcache.ImmutableRef
-	switch {
-	case part == ContainerPartFS:
+	switch part {
+	case ContainerPartFS:
 		if container.FS != nil {
 			if dir, ok := container.FS.Peek(); ok && dir != nil {
 				snapshot, _ = dir.Snapshot.Peek()
 			}
 		}
-	case part == ContainerPartExecMeta:
+	case ContainerPartExecMeta:
 		if container.MetaSnapshot != nil {
 			snapshot, _ = container.MetaSnapshot.Peek()
 		}
