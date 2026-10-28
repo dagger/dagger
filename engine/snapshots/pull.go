@@ -483,6 +483,10 @@ func (cm *snapshotManager) linkContentToContextLease(ctx context.Context, desc o
 	return nil
 }
 
+// recordSnapshotContent records desc's blob as the snapshot's, and attaches
+// it to every lease that owns the snapshot, unless it already is attached to
+// every one (snapshotContentOwned): a layer walked again writes nothing for
+// its owners.
 func (cm *snapshotManager) recordSnapshotContent(snapshotID string, desc ocispecs.Descriptor) error {
 	if snapshotID == "" || desc.Digest == "" {
 		return nil
@@ -492,6 +496,10 @@ func (cm *snapshotManager) recordSnapshotContent(snapshotID string, desc ocispec
 		cm.snapshotContentDigests[snapshotID] = make(map[digest.Digest]struct{})
 	}
 	cm.snapshotContentDigests[snapshotID][desc.Digest] = struct{}{}
+	if _, owned := cm.snapshotContentOwned[snapshotID][desc.Digest]; owned {
+		cm.mu.Unlock()
+		return nil
+	}
 	leaseIDs := make([]string, 0, len(cm.snapshotOwnerLeases[snapshotID]))
 	for leaseID := range cm.snapshotOwnerLeases[snapshotID] {
 		leaseIDs = append(leaseIDs, leaseID)
@@ -507,6 +515,14 @@ func (cm *snapshotManager) recordSnapshotContent(snapshotID string, desc ocispec
 			return errors.Wrapf(err, "attach content %s to owner lease %s", desc.Digest, leaseID)
 		}
 	}
+	// Every owner read above has the blob, and an owner added since had it
+	// attached before it became one.
+	cm.mu.Lock()
+	if cm.snapshotContentOwned[snapshotID] == nil {
+		cm.snapshotContentOwned[snapshotID] = make(map[digest.Digest]struct{})
+	}
+	cm.snapshotContentOwned[snapshotID][desc.Digest] = struct{}{}
+	cm.mu.Unlock()
 	return nil
 }
 
