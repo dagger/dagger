@@ -18,20 +18,29 @@ import (
 // request whose history drops the signature.
 func TestOpenAIChatReturnsGeminiThoughtSignatures(t *testing.T) {
 	const signature = "c2lnbmVkLWJ5LWdlbWluaS0z"
-	// With parallel calls Gemini signs only the first one. One line, so it
-	// fits in a server-sent event's data line.
-	toolCalls := `[` +
-		`{"index":0,"id":"call_1","type":"function","function":{"name":"read","arguments":"{\"path\":\"a.go\"}"},` +
-		`"extra_content":{"google":{"thought_signature":"` + signature + `"}}},` +
-		`{"index":1,"id":"call_2","type":"function","function":{"name":"read","arguments":"{\"path\":\"b.go\"}"}}` +
-		`]`
+	// With parallel calls Gemini signs only the first one. Kept on one line,
+	// so each fits in a server-sent event's data line.
+	call1 := `"index":0,"id":"call_1","type":"function","function":{"name":"read","arguments":"{\"path\":\"a.go\"}"}`
+	call2 := `{"index":1,"id":"call_2","type":"function","function":{"name":"read","arguments":"{\"path\":\"b.go\"}"}}`
+	signed := `"extra_content":{"google":{"thought_signature":"` + signature + `"}}`
+	toolCalls := `[{` + call1 + `,` + signed + `},` + call2 + `]`
 
-	for _, streaming := range []bool{false, true} {
-		name := "non-streaming"
-		if streaming {
-			name = "streaming"
-		}
-		t.Run(name, func(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		streaming bool
+		deltas    []string
+	}{
+		{name: "non-streaming"},
+		{name: "streaming", streaming: true, deltas: []string{
+			`{"role":"assistant","tool_calls":` + toolCalls + `}`,
+		}},
+		// Nothing says which chunk carries the signature.
+		{name: "streaming, signature in a later chunk", streaming: true, deltas: []string{
+			`{"role":"assistant","tool_calls":[{` + call1 + `},` + call2 + `]}`,
+			`{"tool_calls":[{"index":0,` + signed + `}]}`,
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			requestBody := make(chan []byte, 1)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				body, err := io.ReadAll(r.Body)
@@ -54,12 +63,13 @@ func TestOpenAIChatReturnsGeminiThoughtSignatures(t *testing.T) {
 				}
 				if req.Stream {
 					w.Header().Set("Content-Type", "text/event-stream")
-					delta := `{"role":"assistant","tool_calls":` + toolCalls + `}`
-					finish := "tool_calls"
+					deltas, finish := tc.deltas, "tool_calls"
 					if answer {
-						delta, finish = `{"role":"assistant","content":"done"}`, "stop"
+						deltas, finish = []string{`{"role":"assistant","content":"done"}`}, "stop"
 					}
-					_, _ = io.WriteString(w, `data: {"id":"test","object":"chat.completion.chunk","choices":[{"index":0,"delta":`+delta+`}]}`+"\n\n")
+					for _, delta := range deltas {
+						_, _ = io.WriteString(w, `data: {"id":"test","object":"chat.completion.chunk","choices":[{"index":0,"delta":`+delta+`}]}`+"\n\n")
+					}
 					_, _ = io.WriteString(w, `data: {"id":"test","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"`+finish+`"}]}`+"\n\n")
 					_, _ = io.WriteString(w, "data: [DONE]\n\n")
 					return
@@ -74,7 +84,7 @@ func TestOpenAIChatReturnsGeminiThoughtSignatures(t *testing.T) {
 			}))
 			t.Cleanup(server.Close)
 
-			client := newOpenAIClient(&LLMEndpoint{Model: "gemini-3-flash", Provider: Other, BaseURL: server.URL}, "", !streaming)
+			client := newOpenAIClient(&LLMEndpoint{Model: "gemini-3-flash", Provider: Other, BaseURL: server.URL}, "", !tc.streaming)
 			tools := []LLMTool{{Name: "read", Schema: map[string]any{"type": "object"}}}
 			history := llmTestHistory()
 
