@@ -18,6 +18,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
+	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/images"
@@ -7166,6 +7167,7 @@ func (container *Container) Publish(
 	ref string,
 	platformVariants []*Container,
 	forcedCompression ImageLayerCompression,
+	sourceDateEpoch *time.Time,
 	mediaTypes ImageMediaTypes,
 	registryServices ServiceBindings,
 	registryTransport serverresolver.RegistryTransport,
@@ -7190,7 +7192,7 @@ func (container *Container) Publish(
 	}
 	defer detach()
 
-	resp, err := bk.PublishContainerImage(ctx, inputByPlatform, ref, useOCIMediaTypes(mediaTypes), string(forcedCompression), network, registryTransport)
+	resp, err := bk.PublishContainerImage(ctx, inputByPlatform, ref, useOCIMediaTypes(mediaTypes), string(forcedCompression), sourceDateEpoch, network, registryTransport)
 	if err != nil {
 		return "", err
 	}
@@ -7322,6 +7324,7 @@ type ExportOpts struct {
 	Dest              string
 	PlatformVariants  []*Container
 	ForcedCompression ImageLayerCompression
+	SourceDateEpoch   *time.Time
 	MediaTypes        ImageMediaTypes
 	Tar               bool
 	LeaseID           string
@@ -7414,6 +7417,7 @@ func (container *Container) Export(ctx context.Context, opts ExportOpts) (*specs
 			ctx,
 			opts.PlatformVariants,
 			opts.ForcedCompression,
+			opts.SourceDateEpoch,
 			opts.MediaTypes,
 			"container.tar",
 		)
@@ -7452,7 +7456,7 @@ func (container *Container) Export(ctx context.Context, opts ExportOpts) (*specs
 		return nil, err
 	}
 
-	resp, err := bk.ExportContainerImage(ctx, opts.Dest, inputByPlatform, string(opts.ForcedCompression), opts.Tar, opts.LeaseID, useOCIMediaTypes(opts.MediaTypes))
+	resp, err := bk.ExportContainerImage(ctx, opts.Dest, inputByPlatform, string(opts.ForcedCompression), opts.SourceDateEpoch, opts.Tar, opts.LeaseID, useOCIMediaTypes(opts.MediaTypes))
 	if err != nil {
 		return nil, err
 	}

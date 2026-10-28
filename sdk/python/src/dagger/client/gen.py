@@ -3481,6 +3481,7 @@ class Container(Type):
         *,
         platform_variants: "list[Container] | None" = None,
         forced_compression: ImageLayerCompression | None = None,
+        source_date_epoch: int | None = None,
         media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
     ) -> "File":
         """Package the container state as an OCI image, and return it as a tar
@@ -3499,6 +3500,14 @@ class Container(Type):
             compression algorithms for different layers). If this is unset and
             a layer has no compressed blob in the engine's cache, then it will
             be compressed using Gzip.
+        source_date_epoch:
+            Clamp the image's timestamps to this time, so that rebuilding
+            unchanged content produces the same image.
+            Formatted in seconds following Unix epoch (e.g., 1672531199). File
+            timestamps in every layer and the image's creation times that are
+            later than this are set to it, as with BuildKit's rewrite-
+            timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this
+            costs time on each export.
         media_types:
             Use the specified media types for the image's layers.
             Defaults to OCI, which is largely compatible with most recent
@@ -3512,6 +3521,7 @@ class Container(Type):
                 [],
             ),
             Arg("forcedCompression", forced_compression, None),
+            Arg("sourceDateEpoch", source_date_epoch, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
         ]
         _ctx = self._select("asTarball", _args)
@@ -3769,6 +3779,7 @@ class Container(Type):
         *,
         platform_variants: "list[Container] | None" = None,
         forced_compression: ImageLayerCompression | None = None,
+        source_date_epoch: int | None = None,
         media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
         expand: bool | None = False,
     ) -> str:
@@ -3793,6 +3804,14 @@ class Container(Type):
             compression algorithms for different layers). If this is unset and
             a layer has no compressed blob in the engine's cache, then it will
             be compressed using Gzip.
+        source_date_epoch:
+            Clamp the image's timestamps to this time, so that rebuilding
+            unchanged content produces the same image.
+            Formatted in seconds following Unix epoch (e.g., 1672531199). File
+            timestamps in every layer and the image's creation times that are
+            later than this are set to it, as with BuildKit's rewrite-
+            timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this
+            costs time on each export.
         media_types:
             Use the specified media types for the exported image's layers.
             Defaults to OCI, which is largely compatible with most recent
@@ -3825,6 +3844,7 @@ class Container(Type):
                 [],
             ),
             Arg("forcedCompression", forced_compression, None),
+            Arg("sourceDateEpoch", source_date_epoch, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
             Arg("expand", expand, False),
         ]
@@ -3837,6 +3857,7 @@ class Container(Type):
         *,
         platform_variants: "list[Container] | None" = None,
         forced_compression: ImageLayerCompression | None = None,
+        source_date_epoch: int | None = None,
         media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
     ) -> Void:
         """Exports the container as an image to the host's container image store.
@@ -3856,6 +3877,14 @@ class Container(Type):
             compression algorithms for different layers). If this is unset and
             a layer has no compressed blob in the engine's cache, then it will
             be compressed using Gzip.
+        source_date_epoch:
+            Clamp the image's timestamps to this time, so that rebuilding
+            unchanged content produces the same image.
+            Formatted in seconds following Unix epoch (e.g., 1672531199). File
+            timestamps in every layer and the image's creation times that are
+            later than this are set to it, as with BuildKit's rewrite-
+            timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this
+            costs time on each export.
         media_types:
             Use the specified media types for the exported image's layers.
             Defaults to OCI, which is largely compatible with most recent
@@ -3883,6 +3912,7 @@ class Container(Type):
                 [],
             ),
             Arg("forcedCompression", forced_compression, None),
+            Arg("sourceDateEpoch", source_date_epoch, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
         ]
         _ctx = self._select("exportImage", _args)
@@ -4189,6 +4219,7 @@ class Container(Type):
         *,
         platform_variants: "list[Container] | None" = None,
         forced_compression: ImageLayerCompression | None = None,
+        source_date_epoch: int | None = None,
         media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
         registry_service: "Service | None" = None,
         protocol: RegistryProtocol | None = None,
@@ -4217,6 +4248,14 @@ class Container(Type):
             compression algorithms for different layers). If this is unset and
             a layer has no compressed blob in the engine's cache, then it will
             be compressed using Gzip.
+        source_date_epoch:
+            Clamp the image's timestamps to this time, so that rebuilding
+            unchanged content produces the same image.
+            Formatted in seconds following Unix epoch (e.g., 1672531199). File
+            timestamps in every layer and the image's creation times that are
+            later than this are set to it, as with BuildKit's rewrite-
+            timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this
+            costs time on each export.
         media_types:
             Use the specified media types for the published image's layers.
             Defaults to "OCI", which is compatible with most recent
@@ -4254,6 +4293,7 @@ class Container(Type):
                 [],
             ),
             Arg("forcedCompression", forced_compression, None),
+            Arg("sourceDateEpoch", source_date_epoch, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
             Arg("registryService", registry_service, None),
             Arg("protocol", protocol, None),

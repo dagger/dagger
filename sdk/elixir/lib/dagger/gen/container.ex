@@ -61,6 +61,7 @@ defmodule Dagger.Container do
   @spec as_tarball(t(), [
           {:platform_variants, [Dagger.Container.t()]},
           {:forced_compression, Dagger.ImageLayerCompression.t() | nil},
+          {:source_date_epoch, integer() | nil},
           {:media_types, Dagger.ImageMediaTypes.t() | nil}
         ]) :: Dagger.File.t()
   def as_tarball(%__MODULE__{} = container, optional_args \\ []) do
@@ -75,6 +76,7 @@ defmodule Dagger.Container do
         )
       )
       |> QB.maybe_put_arg("forcedCompression", optional_args[:forced_compression])
+      |> QB.maybe_put_arg("sourceDateEpoch", optional_args[:source_date_epoch])
       |> QB.maybe_put_arg("mediaTypes", optional_args[:media_types])
 
     %Dagger.File{
@@ -280,6 +282,7 @@ defmodule Dagger.Container do
   @spec export(t(), String.t(), [
           {:platform_variants, [Dagger.Container.t()]},
           {:forced_compression, Dagger.ImageLayerCompression.t() | nil},
+          {:source_date_epoch, integer() | nil},
           {:media_types, Dagger.ImageMediaTypes.t() | nil},
           {:expand, boolean() | nil}
         ]) :: {:ok, String.t()} | {:error, term()}
@@ -296,6 +299,7 @@ defmodule Dagger.Container do
         )
       )
       |> QB.maybe_put_arg("forcedCompression", optional_args[:forced_compression])
+      |> QB.maybe_put_arg("sourceDateEpoch", optional_args[:source_date_epoch])
       |> QB.maybe_put_arg("mediaTypes", optional_args[:media_types])
       |> QB.maybe_put_arg("expand", optional_args[:expand])
 
@@ -308,6 +312,7 @@ defmodule Dagger.Container do
   @spec export_image(t(), String.t(), [
           {:platform_variants, [Dagger.Container.t()]},
           {:forced_compression, Dagger.ImageLayerCompression.t() | nil},
+          {:source_date_epoch, integer() | nil},
           {:media_types, Dagger.ImageMediaTypes.t() | nil}
         ]) :: :ok | {:error, term()}
   def export_image(%__MODULE__{} = container, name, optional_args \\ []) do
@@ -323,6 +328,7 @@ defmodule Dagger.Container do
         )
       )
       |> QB.maybe_put_arg("forcedCompression", optional_args[:forced_compression])
+      |> QB.maybe_put_arg("sourceDateEpoch", optional_args[:source_date_epoch])
       |> QB.maybe_put_arg("mediaTypes", optional_args[:media_types])
 
     case Client.execute(container.client, query_builder) do
@@ -552,6 +558,7 @@ defmodule Dagger.Container do
   @spec publish(t(), String.t(), [
           {:platform_variants, [Dagger.Container.t()]},
           {:forced_compression, Dagger.ImageLayerCompression.t() | nil},
+          {:source_date_epoch, integer() | nil},
           {:media_types, Dagger.ImageMediaTypes.t() | nil},
           {:registry_service, Dagger.Service.t() | nil},
           {:protocol, Dagger.RegistryProtocol.t() | nil},
@@ -570,6 +577,7 @@ defmodule Dagger.Container do
         )
       )
       |> QB.maybe_put_arg("forcedCompression", optional_args[:forced_compression])
+      |> QB.maybe_put_arg("sourceDateEpoch", optional_args[:source_date_epoch])
       |> QB.maybe_put_arg("mediaTypes", optional_args[:media_types])
       |> QB.maybe_put_arg(
         "registryService",

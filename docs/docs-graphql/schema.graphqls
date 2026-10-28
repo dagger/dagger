@@ -2112,6 +2112,17 @@ type Container implements Exportable & Node & Syncer {
     forcedCompression: ImageLayerCompression
 
     """
+    Clamp the image's timestamps to this time, so that rebuilding unchanged content produces the same image.
+
+    Formatted in seconds following Unix epoch (e.g., 1672531199). File
+    timestamps in every layer and the image's creation times that are later than
+    this are set to it, as with BuildKit's rewrite-timestamp and
+    SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each
+    export.
+    """
+    sourceDateEpoch: Int
+
+    """
     Use the specified media types for the published image's layers.
 
     Defaults to "OCI", which is compatible with most recent registries, but
@@ -2174,6 +2185,17 @@ type Container implements Exportable & Node & Syncer {
     forcedCompression: ImageLayerCompression
 
     """
+    Clamp the image's timestamps to this time, so that rebuilding unchanged content produces the same image.
+
+    Formatted in seconds following Unix epoch (e.g., 1672531199). File
+    timestamps in every layer and the image's creation times that are later than
+    this are set to it, as with BuildKit's rewrite-timestamp and
+    SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each
+    export.
+    """
+    sourceDateEpoch: Int
+
+    """
     Use the specified media types for the exported image's layers.
 
     Defaults to OCI, which is largely compatible with most recent container
@@ -2212,6 +2234,17 @@ type Container implements Exportable & Node & Syncer {
     forcedCompression: ImageLayerCompression
 
     """
+    Clamp the image's timestamps to this time, so that rebuilding unchanged content produces the same image.
+
+    Formatted in seconds following Unix epoch (e.g., 1672531199). File
+    timestamps in every layer and the image's creation times that are later than
+    this are set to it, as with BuildKit's rewrite-timestamp and
+    SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each
+    export.
+    """
+    sourceDateEpoch: Int
+
+    """
     Use the specified media types for the exported image's layers.
 
     Defaults to OCI, which is largely compatible with most recent container
@@ -2241,6 +2274,17 @@ type Container implements Exportable & Node & Syncer {
     Gzip.
     """
     forcedCompression: ImageLayerCompression
+
+    """
+    Clamp the image's timestamps to this time, so that rebuilding unchanged content produces the same image.
+
+    Formatted in seconds following Unix epoch (e.g., 1672531199). File
+    timestamps in every layer and the image's creation times that are later than
+    this are set to it, as with BuildKit's rewrite-timestamp and
+    SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each
+    export.
+    """
+    sourceDateEpoch: Int
 
     """
     Use the specified media types for the image's layers.

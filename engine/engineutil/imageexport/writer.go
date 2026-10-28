@@ -431,8 +431,7 @@ func (w *Writer) rewriteExportChainWithEpoch(ctx context.Context, opts CommitOpt
 		eg.Go(func() error {
 			rewrittenDesc, err := rewriteImageLayerWithEpoch(ctx, cs, desc, opts.RefCfg.Compression, opts.Epoch, immutableDiffID)
 			if err != nil {
-				bklog.G(ctx).WithError(err).Warnf("failed to rewrite layer %d/%d to match source-date-epoch %d (%s)", i+1, len(descs), opts.Epoch.Unix(), opts.Epoch.String())
-				return nil
+				return errors.Wrapf(err, "failed to rewrite layer %d/%d to match source-date-epoch %d (%s)", i+1, len(descs), opts.Epoch.Unix(), opts.Epoch.String())
 			}
 			if rewrittenDesc != nil {
 				layers[i].Descriptor = *rewrittenDesc

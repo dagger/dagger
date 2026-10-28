@@ -1032,6 +1032,7 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         string $address,
         ?array $platformVariants = null,
         ?ImageLayerCompression $forcedCompression = null,
+        ?int $sourceDateEpoch = null,
         ?ImageMediaTypes $mediaTypes = null,
         ?Service $registryService = null,
         ?RegistryProtocol $protocol = null,
@@ -1044,6 +1045,9 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         }
         if (null !== $forcedCompression) {
         $leafQueryBuilder->setArgument('forcedCompression', $forcedCompression);
+        }
+        if (null !== $sourceDateEpoch) {
+        $leafQueryBuilder->setArgument('sourceDateEpoch', $sourceDateEpoch);
         }
         if (null !== $mediaTypes) {
         $leafQueryBuilder->setArgument('mediaTypes', $mediaTypes);
@@ -1078,6 +1082,7 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         string $path,
         ?array $platformVariants = null,
         ?ImageLayerCompression $forcedCompression = null,
+        ?int $sourceDateEpoch = null,
         ?ImageMediaTypes $mediaTypes = null,
         ?bool $expand = false,
     ): string {
@@ -1088,6 +1093,9 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         }
         if (null !== $forcedCompression) {
         $leafQueryBuilder->setArgument('forcedCompression', $forcedCompression);
+        }
+        if (null !== $sourceDateEpoch) {
+        $leafQueryBuilder->setArgument('sourceDateEpoch', $sourceDateEpoch);
         }
         if (null !== $mediaTypes) {
         $leafQueryBuilder->setArgument('mediaTypes', $mediaTypes);
@@ -1105,6 +1113,7 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         string $name,
         ?array $platformVariants = null,
         ?ImageLayerCompression $forcedCompression = null,
+        ?int $sourceDateEpoch = null,
         ?ImageMediaTypes $mediaTypes = null,
     ): void {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('exportImage');
@@ -1114,6 +1123,9 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         }
         if (null !== $forcedCompression) {
         $leafQueryBuilder->setArgument('forcedCompression', $forcedCompression);
+        }
+        if (null !== $sourceDateEpoch) {
+        $leafQueryBuilder->setArgument('sourceDateEpoch', $sourceDateEpoch);
         }
         if (null !== $mediaTypes) {
         $leafQueryBuilder->setArgument('mediaTypes', $mediaTypes);
@@ -1127,6 +1139,7 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     public function asTarball(
         ?array $platformVariants = null,
         ?ImageLayerCompression $forcedCompression = null,
+        ?int $sourceDateEpoch = null,
         ?ImageMediaTypes $mediaTypes = null,
     ): File {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asTarball');
@@ -1135,6 +1148,9 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         }
         if (null !== $forcedCompression) {
         $innerQueryBuilder->setArgument('forcedCompression', $forcedCompression);
+        }
+        if (null !== $sourceDateEpoch) {
+        $innerQueryBuilder->setArgument('sourceDateEpoch', $sourceDateEpoch);
         }
         if (null !== $mediaTypes) {
         $innerQueryBuilder->setArgument('mediaTypes', $mediaTypes);

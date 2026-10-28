@@ -770,6 +770,13 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					compression algorithms for different layers). If this is unset and a
 					layer has no compressed blob in the engine's cache, then it will be
 					compressed using Gzip.`),
+				dagql.Arg("sourceDateEpoch").Doc(
+					`Clamp the image's timestamps to this time, so that rebuilding unchanged content produces the same image.`,
+					`Formatted in seconds following Unix epoch (e.g., 1672531199). File
+					timestamps in every layer and the image's creation times that are later
+					than this are set to it, as with BuildKit's rewrite-timestamp and
+					SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each
+					export.`),
 				dagql.Arg("mediaTypes").Doc(
 					`Use the specified media types for the published image's layers.`,
 					`Defaults to "OCI", which is compatible with most recent
@@ -810,6 +817,13 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					compression algorithms for different layers). If this is unset and a
 					layer has no compressed blob in the engine's cache, then it will be
 					compressed using Gzip.`),
+				dagql.Arg("sourceDateEpoch").Doc(
+					`Clamp the image's timestamps to this time, so that rebuilding unchanged content produces the same image.`,
+					`Formatted in seconds following Unix epoch (e.g., 1672531199). File
+					timestamps in every layer and the image's creation times that are later
+					than this are set to it, as with BuildKit's rewrite-timestamp and
+					SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each
+					export.`),
 				dagql.Arg("mediaTypes").Doc(
 					`Use the specified media types for the exported image's layers.`,
 					`Defaults to OCI, which is largely compatible with most recent
@@ -839,6 +853,13 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					compression algorithms for different layers). If this is unset and a
 					layer has no compressed blob in the engine's cache, then it will be
 					compressed using Gzip.`),
+				dagql.Arg("sourceDateEpoch").Doc(
+					`Clamp the image's timestamps to this time, so that rebuilding unchanged content produces the same image.`,
+					`Formatted in seconds following Unix epoch (e.g., 1672531199). File
+					timestamps in every layer and the image's creation times that are later
+					than this are set to it, as with BuildKit's rewrite-timestamp and
+					SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each
+					export.`),
 				dagql.Arg("mediaTypes").Doc(
 					`Use the specified media types for the exported image's layers.`,
 					`Defaults to OCI, which is largely compatible with most recent
@@ -860,6 +881,13 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					compression algorithms for different layers). If this is unset and a
 					layer has no compressed blob in the engine's cache, then it will be
 					compressed using Gzip.`),
+				dagql.Arg("sourceDateEpoch").Doc(
+					`Clamp the image's timestamps to this time, so that rebuilding unchanged content produces the same image.`,
+					`Formatted in seconds following Unix epoch (e.g., 1672531199). File
+					timestamps in every layer and the image's creation times that are later
+					than this are set to it, as with BuildKit's rewrite-timestamp and
+					SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each
+					export.`),
 				dagql.Arg("mediaTypes").Doc(`Use the specified media types for the image's layers.`,
 					`Defaults to OCI, which is largely compatible with most recent
 					container runtimes, but Docker may be needed for older runtimes without
@@ -2822,6 +2850,7 @@ type containerPublishArgs struct {
 	Address               dagql.String
 	PlatformVariants      []core.ContainerID `default:"[]"`
 	ForcedCompression     dagql.Optional[core.ImageLayerCompression]
+	SourceDateEpoch       dagql.Optional[dagql.Int]
 	MediaTypes            core.ImageMediaTypes `default:"OCI"`
 	RegistryService       dagql.Optional[core.ServiceID]
 	Protocol              dagql.Optional[core.RegistryProtocol]
@@ -2888,6 +2917,7 @@ func (s *containerSchema) publish(ctx context.Context, parent dagql.ObjectResult
 		args.Address.String(),
 		variants,
 		args.ForcedCompression.Value,
+		sourceDateEpochArg(args.SourceDateEpoch),
 		args.MediaTypes,
 		registryServices,
 		registryTransport,
@@ -4488,6 +4518,7 @@ type containerExportArgs struct {
 	Path              string
 	PlatformVariants  []core.ContainerID `default:"[]"`
 	ForcedCompression dagql.Optional[core.ImageLayerCompression]
+	SourceDateEpoch   dagql.Optional[dagql.Int]
 	MediaTypes        core.ImageMediaTypes `default:"OCI"`
 	Expand            bool                 `default:"false"`
 }
@@ -4531,6 +4562,7 @@ func (s *containerSchema) export(ctx context.Context, parent dagql.ObjectResult[
 			Dest:              path,
 			PlatformVariants:  variants,
 			ForcedCompression: args.ForcedCompression.Value,
+			SourceDateEpoch:   sourceDateEpochArg(args.SourceDateEpoch),
 			MediaTypes:        args.MediaTypes,
 			Tar:               true,
 		},
@@ -4558,9 +4590,20 @@ func (s *containerSchema) exportLegacy(ctx context.Context, parent dagql.ObjectR
 	return true, nil
 }
 
+// sourceDateEpochArg converts an optional sourceDateEpoch argument, in seconds
+// since the Unix epoch, to the time image export clamps timestamps to.
+func sourceDateEpochArg(arg dagql.Optional[dagql.Int]) *time.Time {
+	if !arg.Valid {
+		return nil
+	}
+	epoch := time.Unix(arg.Value.Int64(), 0).UTC()
+	return &epoch
+}
+
 type containerAsTarballArgs struct {
 	PlatformVariants  []core.ContainerID `default:"[]"`
 	ForcedCompression dagql.Optional[core.ImageLayerCompression]
+	SourceDateEpoch   dagql.Optional[dagql.Int]
 	MediaTypes        core.ImageMediaTypes `default:"OCI"`
 }
 
@@ -4592,6 +4635,7 @@ func (s *containerSchema) asTarball(
 		Parent:            parent,
 		PlatformVariants:  platformVariants,
 		ForcedCompression: args.ForcedCompression.Value,
+		SourceDateEpoch:   sourceDateEpochArg(args.SourceDateEpoch),
 		MediaTypes:        args.MediaTypes,
 	})
 }
@@ -4609,6 +4653,7 @@ type containerExportImageArgs struct {
 
 	PlatformVariants  []core.ContainerID `default:"[]"`
 	ForcedCompression dagql.Optional[core.ImageLayerCompression]
+	SourceDateEpoch   dagql.Optional[dagql.Int]
 	MediaTypes        core.ImageMediaTypes `default:"OCI"`
 }
 
@@ -4654,6 +4699,7 @@ func (s *containerSchema) exportImage(
 		Dest:              refName.String(),
 		PlatformVariants:  platformVariants,
 		ForcedCompression: args.ForcedCompression.Value,
+		SourceDateEpoch:   sourceDateEpochArg(args.SourceDateEpoch),
 		MediaTypes:        args.MediaTypes,
 		Tar:               false,
 	})
