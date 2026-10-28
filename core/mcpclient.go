@@ -3,7 +3,6 @@ package core
 import (
 	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -159,15 +158,17 @@ func (t *ServiceMCPConnection) Read(context.Context) (jsonrpc.Message, error) {
 }
 
 // Write implements [mcp.Connection.Write], appending a newline delimiter after the message.
+//
+// Write may be called concurrently, so the message and its delimiter go out
+// in a single pipe write, which the pipe never interleaves with another.
 func (t *ServiceMCPConnection) Write(_ context.Context, msg jsonrpc.Message) error {
 	data, err := jsonrpc.EncodeMessage(msg)
 	if err != nil {
 		return err
 	}
 
-	_, err1 := t.stdinW.Write(data)
-	_, err2 := t.stdinW.Write([]byte{'\n'})
-	return errors.Join(err1, err2)
+	_, err = t.stdinW.Write(append(data, '\n'))
+	return err
 }
 
 func (t *ServiceMCPConnection) Close() error {
