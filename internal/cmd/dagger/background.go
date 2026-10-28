@@ -242,10 +242,10 @@ func runsWithoutHost(returnType *modTypeDef) bool {
 	if outputPath != "" || shellOnError {
 		return false
 	}
-	// After the call, an LLM opens an interactive prompt, and a changeset is
-	// applied to the host.
+	// After the call, an LLM opens an interactive prompt, a changeset is
+	// applied to the host, and a check's result says whether it failed.
 	switch returnType.Name() {
-	case LLM, Changeset:
+	case LLM, Changeset, Check:
 		return false
 	}
 	return true

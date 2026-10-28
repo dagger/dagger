@@ -125,6 +125,9 @@ source = "dang"
   pub items: Items! {
     Items(names: ["a", "b"])
   }
+  pub verify: Void @check {
+    null
+  }
 }
 type Items @collection {
   pub names: [String!]! @keys
@@ -633,6 +636,7 @@ func (SessionCLISuite) TestDetachKeepsProcessForHostDependencies(ctx context.Con
 		{"core export", dir, []string{"-W", ref, "call", "--detach", "dir", "export", "--path", filepath.Join(dir, "exported")}},
 		{"core up", dir, []string{"-W", ref, "call", "--detach", "web", "up"}},
 		{"core export through a collection", dir, []string{"-W", ref, "call", "--detach", "items", "file", "--m-item=a", "export", "--path", filepath.Join(dir, "item")}},
+		{"check", dir, []string{"-W", ref, "call", "--detach", "verify"}},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			_, out := detachWithOutput(ctx, t, tc.dir, tc.args...)
