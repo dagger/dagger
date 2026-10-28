@@ -314,10 +314,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	if opts.EngineEvents != nil {
 		srv.engineEventExport = opts.EngineEvents
 		srv.engineEvents = newEngineEventEmitter(opts.EngineEvents.Logger())
-		srv.engineEventShutdownBudget = engineEventShutdownTimeout
-		if srv.stateDiscarded {
-			srv.engineEventShutdownBudget = DiscardedStateStopReserve
-		}
+		srv.engineEventShutdownBudget = engineEventShutdownBudget(srv.stateDiscarded)
 	}
 	srv.shutdownCtx, srv.shutdownCancel = context.WithCancelCause(context.Background())
 
@@ -1180,23 +1177,7 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 		stopPhase("wait for read-only mount releases", releaser.WaitForBackgroundReleases)
 	}
 
-	switch {
-	case srv.engineCache != nil && srv.localCacheGCEnabled && !discard:
-		stopPhase("prune local cache", func() {
-			if gcErr := srv.gcLocked(ctx, localCacheGCGracefulShutdown); gcErr != nil {
-				err = errors.Join(err, fmt.Errorf("failed to prune local cache during graceful shutdown: %w", gcErr))
-			}
-		})
-	case srv.localCacheGCEnabled && srv.cacheVolumeDir != nil && discard:
-		// Of the prune, only the cache volume directory's collection
-		// outlives the engine: it keeps the volumes handed to the next
-		// engine within their capacity.
-		stopPhase("collect cache volume directory", func() {
-			if gcErr := srv.collectCacheVolumeDirAtShutdown(ctx); gcErr != nil {
-				err = errors.Join(err, fmt.Errorf("failed to collect cache volume directory during graceful shutdown: %w", gcErr))
-			}
-		})
-	}
+	err = errors.Join(err, srv.collectAtStop(ctx, stopPhase))
 
 	stopPhase("close cache volume directory", func() {
 		err = errors.Join(err, srv.closeCacheVolumeDir())
@@ -1289,6 +1270,31 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 		err = errors.Join(err, adapterStopErr, dbCloseErr)
 	case <-ctx.Done():
 		err = errors.Join(err, adapterStopErr, ctx.Err())
+	}
+	return err
+}
+
+// collectAtStop runs the stop's garbage collection, as one stop phase: the
+// prune, or, with the state discarded, only the part of it that outlives the
+// engine, the cache volume directory's collection, which keeps the volumes
+// handed to the next engine within their capacity.
+func (srv *Server) collectAtStop(ctx context.Context, stopPhase func(string, func())) (err error) {
+	if !srv.localCacheGCEnabled {
+		return nil
+	}
+	switch {
+	case !srv.stateDiscarded && srv.engineCache != nil:
+		stopPhase("prune local cache", func() {
+			if gcErr := srv.gcLocked(ctx, localCacheGCGracefulShutdown); gcErr != nil {
+				err = fmt.Errorf("failed to prune local cache during graceful shutdown: %w", gcErr)
+			}
+		})
+	case srv.stateDiscarded && srv.cacheVolumeDir != nil:
+		stopPhase("collect cache volume directory", func() {
+			if gcErr := srv.collectCacheVolumeDirAtShutdown(ctx); gcErr != nil {
+				err = fmt.Errorf("failed to collect cache volume directory during graceful shutdown: %w", gcErr)
+			}
+		})
 	}
 	return err
 }
