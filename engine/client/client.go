@@ -13,6 +13,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"os"
 	"slices"
@@ -1501,12 +1502,81 @@ func (c *Client) shutdownServer() error {
 
 	req.SetBasicAuth(c.engineToken(), "")
 
+	timing := newRequestTiming()
+	req = req.WithContext(httptrace.WithClientTrace(ctx, timing.trace()))
+
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("do shutdown: %w", err)
+		return fmt.Errorf("do shutdown (%s): %w", timing, err)
 	}
 
 	return resp.Body.Close()
+}
+
+// requestTiming records how far a request to the engine got, so an error can
+// say whether the request waited for a connection or for the engine's answer.
+// The transport may retry a request on another connection; the timing then
+// describes the last attempt.
+type requestTiming struct {
+	start time.Time
+
+	mu       sync.Mutex
+	attempts int
+	gotConn  time.Duration
+	reused   bool
+	wrote    time.Duration
+}
+
+func newRequestTiming() *requestTiming {
+	return &requestTiming{start: time.Now()}
+}
+
+func (t *requestTiming) trace() *httptrace.ClientTrace {
+	return &httptrace.ClientTrace{
+		GetConn: func(string) {
+			t.mu.Lock()
+			defer t.mu.Unlock()
+			t.attempts++
+			t.gotConn, t.reused, t.wrote = 0, false, 0
+		},
+		GotConn: func(info httptrace.GotConnInfo) {
+			t.mu.Lock()
+			defer t.mu.Unlock()
+			t.gotConn = time.Since(t.start)
+			t.reused = info.Reused
+		},
+		WroteRequest: func(httptrace.WroteRequestInfo) {
+			t.mu.Lock()
+			defer t.mu.Unlock()
+			t.wrote = time.Since(t.start)
+		},
+	}
+}
+
+func (t *requestTiming) String() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	elapsed := time.Since(t.start).Round(time.Millisecond)
+	var s string
+	switch {
+	case t.gotConn == 0:
+		s = fmt.Sprintf("no connection to the engine after %s", elapsed)
+	case t.wrote == 0:
+		s = fmt.Sprintf("%s connection after %s, request not sent after %s", t.connKind(), t.gotConn.Round(time.Millisecond), elapsed)
+	default:
+		s = fmt.Sprintf("%s connection after %s, request sent after %s, no response after %s", t.connKind(), t.gotConn.Round(time.Millisecond), t.wrote.Round(time.Millisecond), elapsed)
+	}
+	if t.attempts > 1 {
+		s = fmt.Sprintf("connection attempt %d: %s", t.attempts, s)
+	}
+	return s
+}
+
+func (t *requestTiming) connKind() string {
+	if t.reused {
+		return "reused"
+	}
+	return "new"
 }
 
 func (c *Client) withClientCloseCancel(ctx context.Context) (context.Context, context.CancelCauseFunc, error) {
