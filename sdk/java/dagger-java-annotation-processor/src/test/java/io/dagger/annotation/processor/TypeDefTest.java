@@ -83,7 +83,7 @@ public class TypeDefTest {
 
   @Test
   public void testTypeDefEnum() throws ClassNotFoundException {
-    var v = ImageMediaTypes.DockerMediaTypes;
+    var v = ImageMediaTypes.DOCKER;
     assertThat(
             DaggerType.of(new TypeInfo(v.getClass().getCanonicalName(), TypeKind.DECLARED.name()))
                 .toDaggerTypeDef()
@@ -93,7 +93,7 @@ public class TypeDefTest {
 
   @Test
   public void testTypeDefUserDefinedEnum() throws ClassNotFoundException {
-    var v = ImageMediaTypes.DockerMediaTypes;
+    var v = ImageMediaTypes.DOCKER;
     Set<String> enums = new HashSet<>();
     enums.add("io.dagger.java.module.Severity");
     DaggerType.setKnownEnums(enums);
