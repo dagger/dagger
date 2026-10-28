@@ -122,9 +122,6 @@ func loadPersistedSnapshotLinkByResultID(ctx context.Context, dec *dagql.Persist
 	if dec.SnapshotScope().OwnerResultID == 0 {
 		return dagql.PersistedSnapshotRefLink{}, fmt.Errorf("load persisted %s snapshot link: zero storage owner", label)
 	}
-	if _, err := persistedDecodeQuery(dec); err != nil {
-		return dagql.PersistedSnapshotRefLink{}, fmt.Errorf("load persisted %s snapshot link query: %w", label, err)
-	}
 	link, err := dec.SnapshotRole(ctx, role)
 	if err != nil {
 		return dagql.PersistedSnapshotRefLink{}, fmt.Errorf("load persisted %s snapshot link: %w", label, err)
@@ -137,9 +134,6 @@ func loadPersistedSnapshotLinkByResultID(ctx context.Context, dec *dagql.Persist
 func loadPersistedSnapshotLinksByResultID(ctx context.Context, dec *dagql.PersistDecodeContext, label string) ([]dagql.PersistedSnapshotRefLink, error) {
 	if dec.SnapshotScope().OwnerResultID == 0 {
 		return nil, fmt.Errorf("load persisted %s snapshot links: zero storage owner", label)
-	}
-	if _, err := persistedDecodeQuery(dec); err != nil {
-		return nil, fmt.Errorf("load persisted %s snapshot links query: %w", label, err)
 	}
 	links, err := dec.SnapshotRoles(ctx)
 	if err != nil {
