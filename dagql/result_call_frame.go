@@ -230,6 +230,10 @@ type ResultCall struct {
 	// so that derivedRecipeDigest can read them without deriving them.
 	recipeDigestDerived atomic.Bool
 
+	// moduleResultIDs memoizes ModuleResultIDs for this frame, valid only for the
+	// frame generation it was computed in (see resultCallFrameGeneration).
+	moduleResultIDs atomic.Pointer[moduleResultIDsMemo]
+
 	// contentPreferredDigest is memoized once the frame has reached its
 	// finalized semantic shape. Do not mutate the frame after calling
 	// ContentPreferredDigest.

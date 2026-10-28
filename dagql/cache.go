@@ -2934,6 +2934,9 @@ func (res *sharedResult) storeResultCall(frame *ResultCall) {
 		return
 	}
 	res.resultCallMu.Lock()
+	if res.resultCall != nil && res.resultCall != frame {
+		resultCallFrameGeneration.Add(1)
+	}
 	res.resultCall = frame
 	res.resultCallMu.Unlock()
 }

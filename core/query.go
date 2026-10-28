@@ -400,26 +400,26 @@ func (q *Query) ModDepsForCall(ctx context.Context, rootCall *dagql.ResultCall) 
 	if err != nil {
 		return nil, err
 	}
-	decisions := map[uint64]dagql.ObjectResult[*Module]{}
-	if err := cache.WalkResultCall(rootCall, func(ref *dagql.ResultCallRef, frame *dagql.ResultCall) error {
-		if ref == nil || ref.ResultID == 0 || frame == nil || frame.Type == nil || frame.Type.NamedType != "Module" {
-			return nil
-		}
-		if inst, ok := decisions[ref.ResultID]; ok {
-			return appendModule(inst)
-		}
-		res, err := cache.LoadResultByResultIDForSchema(ctx, clientMetadata.SessionID, dag, ref.ResultID, installed)
+	// The Module results the call graph references are memoized per frame by
+	// the cache (ModuleResultIDs), so a handle load doesn't walk the receiver's
+	// whole call graph again. Loading them for this session's schema still
+	// happens on every call: which modules a session may load is decided here.
+	moduleIDs, err := cache.ModuleResultIDs(ctx, rootCall)
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range moduleIDs {
+		res, err := cache.LoadResultByResultIDForSchema(ctx, clientMetadata.SessionID, dag, id, installed)
 		if err != nil {
-			return fmt.Errorf("load module result %d: %w", ref.ResultID, err)
+			return nil, fmt.Errorf("load module result %d: %w", id, err)
 		}
 		modInst, ok := res.(dagql.ObjectResult[*Module])
 		if !ok {
-			return fmt.Errorf("result %d is %T, not module result", ref.ResultID, res)
+			return nil, fmt.Errorf("result %d is %T, not module result", id, res)
 		}
-		decisions[ref.ResultID] = modInst
-		return appendModule(modInst)
-	}); err != nil {
-		return nil, err
+		if err := appendModule(modInst); err != nil {
+			return nil, err
+		}
 	}
 	// Share one schema server per module set: without this, every handle
 	// load (node(id:), interface loads) rebuilds a server and reinstalls
