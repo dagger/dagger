@@ -128,6 +128,10 @@ type RemoteHoldingUpdate struct {
 type RemoteChange struct {
 	Candidates []HolderKey
 	Recipes    []digest.Digest
+	// Saved reports that the operation changed what a save of the cache
+	// writes, beyond the holdings, which aren't saved: a call kept on a
+	// stored entry, or the entry's expiry.
+	Saved bool
 	// recipes is the set of Recipes, which a merge's change can list by the
 	// thousand.
 	recipes map[digest.Digest]struct{}
@@ -425,7 +429,7 @@ func (c *Cache) AttachRemoteHolding(ctx context.Context, key HolderKey, desc Rem
 		affected = true
 	}
 	c.teachRemoteIdentityLocked(ctx, entry, desc.Field, desc.Recipe, desc.Request, desc.ContentDigest, desc.Term)
-	c.keepCallLocked(entry, desc, kept)
+	change.Saved = c.keepCallLocked(entry, desc, kept)
 	if desc.Request != "" && desc.Request != desc.Recipe {
 		if _, ok := c.entriesByRecipe[desc.Request]; !ok {
 			c.indexRecipeLocked(desc.Request, entry)
