@@ -35,6 +35,26 @@ func ContextWithProfiling(ctx context.Context) context.Context {
 	return context.WithValue(ctx, profCtxKey{}, true)
 }
 
+type requestArrivalKey struct{}
+
+// ContextWithRequestArrival marks a request's ctx with when the engine
+// received it, so the op for serving it can start there and show the routing
+// before it (RequestArrival). Nothing is marked when no recorder exists, as
+// whether the request's session records is only known later.
+func ContextWithRequestArrival(ctx context.Context, t time.Time) context.Context {
+	if Active() == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, requestArrivalKey{}, t)
+}
+
+// RequestArrival is when the engine received ctx's request
+// (ContextWithRequestArrival), or the zero time.
+func RequestArrival(ctx context.Context) time.Time {
+	t, _ := ctx.Value(requestArrivalKey{}).(time.Time)
+	return t
+}
+
 // Enabled reports whether work running under ctx should be recorded. Call
 // sites use it to skip computing op metadata (class/ident strings) when
 // profiling is off. When profiling has never been enabled this is a single
