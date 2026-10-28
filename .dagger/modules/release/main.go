@@ -305,7 +305,11 @@ func (r *Release) Publish( //nolint:gocyclo
 				})
 			},
 			dryRun: func(ctx context.Context) error {
-				return goclientdev.New(r.Workspace).ReleaseDryRun(ctx, goclientdev.GoClientDevReleaseDryRunOpts{SourceRepo: sdkSourceRepo})
+				return goclientdev.New(r.Workspace).ReleaseDryRun(ctx, goclientdev.GoClientDevReleaseDryRunOpts{
+					SourceRepo: sdkSourceRepo,
+					SourceTag:  tag,
+					DestRemote: goSdkDestRemote,
+				})
 			},
 		},
 		{
