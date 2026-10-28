@@ -3101,6 +3101,12 @@ pub struct ContainerWithMountedFileOpts<'a> {
     pub read_only: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ContainerWithMountedFilesOpts {
+    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/lib").
+    #[builder(setter(into, strip_option), default)]
+    pub expand: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithMountedTempOpts {
     /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
@@ -4425,6 +4431,50 @@ impl Container {
         }
         if let Some(read_only) = opts.read_only {
             query = query.arg("readOnly", read_only);
+        }
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this container plus the given files mounted read-only in a directory at the given path.
+    /// Each file appears under the base name of its path. The directory holds nothing else, and nothing can be written to it.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the directory holding the files (e.g., "/work/lib").
+    /// * `sources` - Identifiers of the files to mount. Two files with the same base name are an error.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_mounted_files(&self, path: impl Into<String>, sources: Vec<Id>) -> Container {
+        let mut query = self.selection.select("withMountedFiles");
+        query = query.arg("path", path.into());
+        query = query.arg("sources", sources);
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this container plus the given files mounted read-only in a directory at the given path.
+    /// Each file appears under the base name of its path. The directory holds nothing else, and nothing can be written to it.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the directory holding the files (e.g., "/work/lib").
+    /// * `sources` - Identifiers of the files to mount. Two files with the same base name are an error.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_mounted_files_opts(
+        &self,
+        path: impl Into<String>,
+        sources: Vec<Id>,
+        opts: ContainerWithMountedFilesOpts,
+    ) -> Container {
+        let mut query = self.selection.select("withMountedFiles");
+        query = query.arg("path", path.into());
+        query = query.arg("sources", sources);
+        if let Some(expand) = opts.expand {
+            query = query.arg("expand", expand);
         }
         Container {
             proc: self.proc.clone(),
@@ -9049,6 +9099,13 @@ pub struct FileExportOpts {
     pub allow_parent_dir_path: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct FileExtractOpts {
+    /// Remove this many leading elements from each entry's path, as tar --strip-components does.
+    /// Entries with no more elements than this are skipped.
+    #[builder(setter(into, strip_option), default)]
+    pub strip_components: Option<isize>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct FileAsEnvFileOpts {
     /// Replace "${VAR}" or "$VAR" with the value of other vars
     #[builder(setter(into, strip_option), default)]
@@ -9395,6 +9452,39 @@ impl File {
     pub fn as_json(&self) -> JsonValue {
         let query = self.selection.select("asJSON");
         JsonValue {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Extracts this archive file into a directory.
+    /// The format is detected from the file's contents: zip, or tar, either uncompressed or compressed with gzip, bzip2, xz or zstd.
+    /// An entry whose path would leave the directory is an error.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn extract(&self) -> Directory {
+        let query = self.selection.select("extract");
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Extracts this archive file into a directory.
+    /// The format is detected from the file's contents: zip, or tar, either uncompressed or compressed with gzip, bzip2, xz or zstd.
+    /// An entry whose path would leave the directory is an error.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn extract_opts(&self, opts: FileExtractOpts) -> Directory {
+        let mut query = self.selection.select("extract");
+        if let Some(strip_components) = opts.strip_components {
+            query = query.arg("stripComponents", strip_components);
+        }
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

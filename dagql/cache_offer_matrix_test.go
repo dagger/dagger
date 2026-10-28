@@ -68,7 +68,7 @@ func TestOfferPartsPreparationWindow(t *testing.T) {
 		require.Equal(t, OfferAccepted, out[0].Outcome)
 		row := receiver.cacheSharedResult()
 		c.egraphMu.Lock()
-		owners := depRow.incomingOwnershipCount
+		owners := depRow.incomingOwnershipCount.Load()
 		queue, err := c.retirePartOfferLocked(ctx, row, testLiveOffer().Address)
 		var callbacks []OnReleaseFunc
 		if err == nil {
@@ -106,7 +106,7 @@ func TestOfferPartsPreparationWindow(t *testing.T) {
 				next = offerWith(other)
 			}
 			c.egraphMu.RLock()
-			depBase, otherBase, revision := dep.cacheSharedResult().incomingOwnershipCount, other.cacheSharedResult().incomingOwnershipCount, row.transferRevision
+			depBase, otherBase, revision := dep.cacheSharedResult().incomingOwnershipCount.Load(), other.cacheSharedResult().incomingOwnershipCount.Load(), row.transferRevision
 			c.egraphMu.RUnlock()
 			onSecondRevisionRead(object, func() { bumpGateRevision(c, row) })
 			out, err := c.testOfferParts(ctx, receiver, []PersistedPartOffer{next})
@@ -115,7 +115,7 @@ func TestOfferPartsPreparationWindow(t *testing.T) {
 			require.False(t, out[0].Replaced)
 			c.egraphMu.RLock()
 			currentRevision := row.transferRevision
-			depOwners, otherOwners := dep.cacheSharedResult().incomingOwnershipCount, other.cacheSharedResult().incomingOwnershipCount
+			depOwners, otherOwners := dep.cacheSharedResult().incomingOwnershipCount.Load(), other.cacheSharedResult().incomingOwnershipCount.Load()
 			offerCount, ownerCount := len(row.testPartOffers()), len(c.offerOwners)
 			slot := row.testPartOffers()[key]
 			var slotOwner *offerOwner
@@ -245,7 +245,7 @@ func (f *settlementFixture) replacement() PersistedPartOffer {
 func (f *settlementFixture) counts() (first, second int64) {
 	f.cache.egraphMu.RLock()
 	defer f.cache.egraphMu.RUnlock()
-	return f.first.cacheSharedResult().incomingOwnershipCount, f.second.cacheSharedResult().incomingOwnershipCount
+	return f.first.cacheSharedResult().incomingOwnershipCount.Load(), f.second.cacheSharedResult().incomingOwnershipCount.Load()
 }
 
 func (f *settlementFixture) requireSettled(t *testing.T, firstBase, secondBase int64) {

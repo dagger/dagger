@@ -40,6 +40,9 @@ func (family foreignFamilyCodec) DescribeParts(v dagql.PersistedPayloadVisit) ([
 			for _, mount := range m.Mounts {
 				add(mount.CacheSourceResultID)
 				add(mount.VolumeSourceResultID)
+				for _, id := range mount.FilesSourceResultIDs {
+					add(id)
+				}
 			}
 			for _, secret := range m.Secrets {
 				add(secret.SecretResultID)

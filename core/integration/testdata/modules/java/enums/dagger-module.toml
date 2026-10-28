@@ -1,0 +1,5 @@
+name = "my-module"
+engineVersion = "v1.0.0"
+
+[runtime]
+source = "../../sdk/java"

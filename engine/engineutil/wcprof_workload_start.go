@@ -2,6 +2,7 @@ package engineutil
 
 import (
 	"os"
+	"time"
 )
 
 // workloadReleasedNS returns when runc released the container's workload, as
@@ -30,4 +31,21 @@ func workloadReleasedNS(pidFile string, startedNS, startedWallNS int64) int64 {
 		return 0
 	}
 	return max(startedNS+fi.ModTime().UnixNano()-startedWallNS, startedNS)
+}
+
+// workloadReleasedAt is workloadReleasedNS on the wall clock, for the OTel
+// exec split: the pid file's modification time, no earlier than the started
+// callback's wall-clock time, or zero when that is unknown.
+func workloadReleasedAt(pidFile string, startedWall time.Time) time.Time {
+	if pidFile == "" || startedWall.IsZero() {
+		return time.Time{}
+	}
+	fi, err := os.Stat(pidFile)
+	if err != nil {
+		return time.Time{}
+	}
+	if t := fi.ModTime(); t.After(startedWall) {
+		return t
+	}
+	return startedWall
 }

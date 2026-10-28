@@ -632,6 +632,7 @@ func (r *Agent) Notify(ctx context.Context, subscriber *Agent, opts ...AgentNoti
 	}
 	return &Agent{
 		query: selectNode(q.Root(), id, "Agent"),
+		id:    &id,
 	}, nil
 }
 
@@ -682,6 +683,7 @@ func (r *Agent) Pause(ctx context.Context, opts ...AgentPauseOpts) (*Agent, erro
 	}
 	return &Agent{
 		query: selectNode(q.Root(), id, "Agent"),
+		id:    &id,
 	}, nil
 }
 
@@ -705,6 +707,7 @@ func (r *Agent) Reseed(ctx context.Context, conversation *LLM) (*Agent, error) {
 	}
 	return &Agent{
 		query: selectNode(q.Root(), id, "Agent"),
+		id:    &id,
 	}, nil
 }
 
@@ -724,6 +727,7 @@ func (r *Agent) Resume(ctx context.Context) (*Agent, error) {
 	}
 	return &Agent{
 		query: selectNode(q.Root(), id, "Agent"),
+		id:    &id,
 	}, nil
 }
 
@@ -780,6 +784,7 @@ func (r *Agent) Send(ctx context.Context, message string, opts ...AgentSendOpts)
 	}
 	return &AgentMessage{
 		query: selectNode(q.Root(), id, "AgentMessage"),
+		id:    &id,
 	}, nil
 }
 
@@ -840,6 +845,7 @@ func (r *Agent) Stop(ctx context.Context, opts ...AgentStopOpts) (*Agent, error)
 	}
 	return &Agent{
 		query: selectNode(q.Root(), id, "Agent"),
+		id:    &id,
 	}, nil
 }
 
@@ -857,6 +863,7 @@ func (r *Agent) Wait(ctx context.Context) (*Agent, error) {
 	}
 	return &Agent{
 		query: selectNode(q.Root(), id, "Agent"),
+		id:    &id,
 	}, nil
 }
 
@@ -2906,6 +2913,7 @@ func (r *Changeset) Sync(ctx context.Context) (*Changeset, error) {
 	}
 	return &Changeset{
 		query: selectNode(q.Root(), id, "Changeset"),
+		id:    &id,
 	}, nil
 }
 
@@ -4644,6 +4652,7 @@ func (r *Container) Sync(ctx context.Context) (*Container, error) {
 	}
 	return &Container{
 		query: selectNode(q.Root(), id, "Container"),
+		id:    &id,
 	}, nil
 }
 
@@ -5443,6 +5452,32 @@ func (r *Container) WithMountedFile(path string, source *File, opts ...Container
 	}
 	q = q.Arg("path", path)
 	q = q.Arg("source", source)
+
+	return &Container{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// ContainerWithMountedFilesOpts contains options for Container.WithMountedFiles
+type ContainerWithMountedFilesOpts struct {
+	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/lib").
+	Expand bool
+}
+
+// Retrieves this container plus the given files mounted read-only in a directory at the given path.
+//
+// Each file appears under the base name of its path. The directory holds nothing else, and nothing can be written to it.
+func (r *Container) WithMountedFiles(path string, sources []*File, opts ...ContainerWithMountedFilesOpts) *Container {
+	q := r.query.Select("withMountedFiles")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `expand` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Expand) {
+			q = q.Arg("expand", opts[i].Expand)
+		}
+	}
+	q = q.Arg("path", path)
+	q = q.Arg("sources", sources)
 
 	return &Container{
 		query:     q,
@@ -7136,6 +7171,7 @@ func (r *Directory) Sync(ctx context.Context) (*Directory, error) {
 	}
 	return &Directory{
 		query: selectNode(q.Root(), id, "Directory"),
+		id:    &id,
 	}, nil
 }
 
@@ -9508,6 +9544,34 @@ func (r *File) Export(ctx context.Context, path string, opts ...FileExportOpts) 
 	return response, q.Execute(ctx)
 }
 
+// FileExtractOpts contains options for File.Extract
+type FileExtractOpts struct {
+	// Remove this many leading elements from each entry's path, as tar --strip-components does.
+	//
+	// Entries with no more elements than this are skipped.
+	StripComponents int
+}
+
+// Extracts this archive file into a directory.
+//
+// The format is detected from the file's contents: zip, or tar, either uncompressed or compressed with gzip, bzip2, xz or zstd.
+//
+// An entry whose path would leave the directory is an error.
+func (r *File) Extract(opts ...FileExtractOpts) *Directory {
+	q := r.query.Select("extract")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `stripComponents` optional argument
+		if !querybuilder.IsZeroValue(opts[i].StripComponents) {
+			q = q.Arg("stripComponents", opts[i].StripComponents)
+		}
+	}
+
+	return &Directory{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
 // A unique identifier for this File.
 func (r *File) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
@@ -9709,6 +9773,7 @@ func (r *File) Sync(ctx context.Context) (*File, error) {
 	}
 	return &File{
 		query: selectNode(q.Root(), id, "File"),
+		id:    &id,
 	}, nil
 }
 
@@ -14449,6 +14514,7 @@ func (r *LLM) Spawn(ctx context.Context, opts ...LLMSpawnOpts) (*Agent, error) {
 	}
 	return &Agent{
 		query: selectNode(q.Root(), id, "Agent"),
+		id:    &id,
 	}, nil
 }
 
@@ -14484,6 +14550,7 @@ func (r *LLM) Sync(ctx context.Context) (*LLM, error) {
 	}
 	return &LLM{
 		query: selectNode(q.Root(), id, "LLM"),
+		id:    &id,
 	}, nil
 }
 
@@ -16360,6 +16427,7 @@ func (r *Module) Sync(ctx context.Context) (*Module, error) {
 	}
 	return &Module{
 		query: selectNode(q.Root(), id, "Module"),
+		id:    &id,
 	}, nil
 }
 
@@ -17051,6 +17119,7 @@ func (r *ModuleSource) Sync(ctx context.Context) (*ModuleSource, error) {
 	}
 	return &ModuleSource{
 		query: selectNode(q.Root(), id, "ModuleSource"),
+		id:    &id,
 	}, nil
 }
 
@@ -19744,6 +19813,7 @@ func (r *Service) Start(ctx context.Context) (*Service, error) {
 	}
 	return &Service{
 		query: selectNode(q.Root(), id, "Service"),
+		id:    &id,
 	}, nil
 }
 
@@ -19769,6 +19839,7 @@ func (r *Service) Stop(ctx context.Context, opts ...ServiceStopOpts) (*Service, 
 	}
 	return &Service{
 		query: selectNode(q.Root(), id, "Service"),
+		id:    &id,
 	}, nil
 }
 
@@ -19782,6 +19853,7 @@ func (r *Service) Sync(ctx context.Context) (*Service, error) {
 	}
 	return &Service{
 		query: selectNode(q.Root(), id, "Service"),
+		id:    &id,
 	}, nil
 }
 
@@ -20294,6 +20366,7 @@ func (r *Terminal) Sync(ctx context.Context) (*Terminal, error) {
 	}
 	return &Terminal{
 		query: selectNode(q.Root(), id, "Terminal"),
+		id:    &id,
 	}, nil
 }
 
@@ -23931,6 +24004,7 @@ func (r *SyncerClient) Sync(ctx context.Context) (Syncer, error) {
 	}
 	return &SyncerClient{
 		query: selectNode(q.Root(), id, "Syncer"),
+		id:    &id,
 	}, nil
 }
 

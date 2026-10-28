@@ -506,8 +506,24 @@ func (db *DB) ImportSnapshots(snapshots []SpanSnapshot) {
 		db.integrateSpan(span)
 		spans[i] = span
 	}
+	propagateStatus(spans)
+}
+
+// propagateStatus propagates the status of a batch of spans just integrated.
+// A lazy evaluation in the batch may link continuations received before it,
+// whose status reached only it while it was unknown; propagate theirs again,
+// now that it links on to the call that returned the result.
+func propagateStatus(spans []*Span) {
 	for _, span := range spans {
 		span.PropagateStatusToParentsAndLinks()
+	}
+	for _, span := range spans {
+		if !span.isLazyEvaluation() {
+			continue
+		}
+		for effect := range span.continuations {
+			effect.PropagateStatusToParentsAndLinks()
+		}
 	}
 }
 
@@ -600,9 +616,7 @@ func (db *DB) ExportSpans(ctx context.Context, otelSpans []sdktrace.ReadOnlySpan
 	for i, otelSpan := range otelSpans {
 		spans[i] = db.recordOTelSpan(otelSpan)
 	}
-	for _, span := range spans {
-		span.PropagateStatusToParentsAndLinks()
-	}
+	propagateStatus(spans)
 	return nil
 }
 

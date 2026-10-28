@@ -14,6 +14,9 @@ const (
 const (
 	RuntimePath    = "/usr/local/bin/crun"
 	DaggerInitPath = "/usr/local/bin/dagger-init"
+	// RuntimeStateRoot is where the runtime keeps each container's state, in
+	// a directory named by the container's ID.
+	RuntimeStateRoot = "/run/crun"
 	// DaggerInitSessionPath is the session-attachables helper of nested
 	// clients, mounted into their containers at InitSessionContainerPath.
 	DaggerInitSessionPath    = "/usr/local/bin/dagger-init-session"

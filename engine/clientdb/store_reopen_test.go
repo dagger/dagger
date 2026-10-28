@@ -112,4 +112,123 @@ func TestStoreRegistryReopenRecoversState(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(1), stale[0].ID)
 	require.NoError(t, reopened.Close())
+
+	// A new registry, as after an engine restart, knows nothing of where the
+	// store ended and finds it by scanning.
+	restarted, err := NewDBs(registry.Root).Open(t.Context(), "client")
+	require.NoError(t, err)
+	require.Equal(t, int64(602), restarted.spans.nextID)
+	require.Equal(t, int64(602), restarted.logs.nextID)
+	require.Equal(t, int64(602), restarted.metrics.nextID)
+	span, err = restarted.SelectSpan(t.Context(), SelectSpanParams{TraceID: "trace", SpanID: "child"})
+	require.NoError(t, err)
+	require.Equal(t, int64(2), span.ID)
+	beneath, err = restarted.SelectLogsBeneathSpan(t.Context(), SelectLogsBeneathSpanParams{
+		SpanID: validString("root"),
+		Limit:  10,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []int64{1, 2, 3, 601}, logIDs(beneath))
+	require.NoError(t, restarted.Close())
+}
+
+// A store opened only to append indexes nothing; the first reader indexes
+// every row it holds, including rows appended through that handle, in the
+// order they were appended, and later appends are indexed as they arrive.
+func TestStoreRegistryIndexesAppendOnlyRowsForFirstReader(t *testing.T) {
+	registry := NewDBs(t.TempDir())
+	registry.tailBudget = 512
+
+	store, err := registry.Open(t.Context(), "client")
+	require.NoError(t, err)
+	_, err = store.AppendSpans([]Span{
+		{TraceID: "trace", SpanID: "root"},
+		{TraceID: "trace", SpanID: "child", ParentSpanID: validString("root"), Attributes: []byte("first-row")},
+	})
+	require.NoError(t, err)
+	_, err = store.AppendLogs([]Log{{SpanID: validString("child"), Body: []byte("before")}})
+	require.NoError(t, err)
+	require.NoError(t, store.Close())
+
+	appender, err := registry.OpenForAppend(t.Context(), "client")
+	require.NoError(t, err)
+	defer appender.Close()
+	fillers := make([]Span, 600)
+	for i := range fillers {
+		fillers[i] = Span{TraceID: "trace", SpanID: fmt.Sprintf("filler-%d", i)}
+	}
+	_, err = appender.AppendSpans(fillers)
+	require.NoError(t, err)
+	_, err = appender.AppendSpans([]Span{
+		{TraceID: "trace", SpanID: "child", ParentSpanID: validString("root"), Attributes: []byte("later-row")},
+	})
+	require.NoError(t, err)
+	_, err = appender.AppendLogs([]Log{{SpanID: validString("child"), Body: []byte("appended")}})
+	require.NoError(t, err)
+
+	reader, err := registry.Open(t.Context(), "client")
+	require.NoError(t, err)
+	defer reader.Close()
+	require.Same(t, appender, reader)
+	first, err := reader.SelectSpan(t.Context(), SelectSpanParams{TraceID: "trace", SpanID: "child"})
+	require.NoError(t, err)
+	require.Equal(t, []byte("first-row"), first.Attributes)
+	latest, err := reader.SelectSpansLatest(t.Context(), map[string]struct{}{"child": {}})
+	require.NoError(t, err)
+	require.Len(t, latest, 1)
+	require.Equal(t, []byte("later-row"), latest[0].Attributes)
+	require.Len(t, reader.SpanIDs(), 602)
+	require.Equal(t, map[string]struct{}{"child": {}}, reader.ChildSpanIDs("root"))
+	require.Equal(t, []int64{1, 2}, reader.LogRowIDsForSpans(map[string]struct{}{"child": {}}))
+
+	_, err = appender.AppendLogs([]Log{{SpanID: validString("child"), Body: []byte("after")}})
+	require.NoError(t, err)
+	require.Equal(t, []int64{1, 2, 3}, reader.LogRowIDsForSpans(map[string]struct{}{"child": {}}))
+}
+
+// Appends from another goroutine run on while the first reader builds the
+// indexes, and every row ends up indexed once. Whether they overlap the build
+// is up to the scheduler; TestLogStreamIndexesRowsAppendedDuringReplay forces
+// the overlap.
+func TestStoreRegistryIndexesRowsAppendedDuringFirstRead(t *testing.T) {
+	registry := NewDBs(t.TempDir())
+	registry.tailBudget = 512
+
+	appender, err := registry.OpenForAppend(t.Context(), "client")
+	require.NoError(t, err)
+	defer appender.Close()
+	appendBatch := func(batch int) error {
+		logs := make([]Log, 50)
+		for i := range logs {
+			logs[i] = Log{SpanID: validString("span"), Body: []byte(fmt.Sprintf("log-%d-%d", batch, i))}
+		}
+		_, err := appender.AppendLogs(logs)
+		return err
+	}
+	const before, during = 40, 40
+	for batch := range before {
+		require.NoError(t, appendBatch(batch))
+	}
+
+	appended := make(chan error, 1)
+	go func() {
+		for batch := range during {
+			if err := appendBatch(before + batch); err != nil {
+				appended <- err
+				return
+			}
+		}
+		appended <- nil
+	}()
+	reader, err := registry.Open(t.Context(), "client")
+	require.NoError(t, err)
+	defer reader.Close()
+	require.NoError(t, <-appended)
+
+	rows := reader.LogRowIDsForSpans(map[string]struct{}{"span": {}})
+	want := make([]int64, (before+during)*50)
+	for i := range want {
+		want[i] = int64(i + 1)
+	}
+	require.Equal(t, want, rows)
 }

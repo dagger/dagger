@@ -256,6 +256,65 @@ func TestContainerDefaultPlatformCacheIdentity(t *testing.T) {
 	require.Equal(t, recipeDigest(omittedARM64), recipeDigest(nullOnARM64))
 }
 
+// Spellings that name one platform give one recipe. A platform argument
+// enters the recipe as the literal of its decoded value, so the decoder's
+// spelling is the key's: "linux/arm64/v8" from an unnormalized default spec
+// must key as "linux/arm64" does, while variants that differ stay apart.
+func TestContainerPlatformSpellingsShareRecipe(t *testing.T) {
+	ctx := context.Background()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, cache.Close(context.Background()))
+	})
+	ctx = dagql.ContextWithCache(ctx, cache)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID:  "container-platform-spelling-client",
+		SessionID: "container-platform-spelling-session",
+	})
+
+	srv := &currentTypeDefsTestServer{platform: core.Platform{OS: "linux", Architecture: "amd64"}}
+	root := core.NewRoot(srv)
+	coreSchemaBase, err := NewCoreSchemaBase(ctx, srv)
+	require.NoError(t, err)
+	dag, err := coreSchemaBase.Fork(ctx, root, "")
+	require.NoError(t, err)
+	srv.dag = dag
+
+	recipeDigest := func(spelling string) string {
+		t.Helper()
+		platform, err := core.Platform{}.DecodeInput(spelling)
+		require.NoError(t, err)
+		var ctr dagql.ObjectResult[*core.Container]
+		require.NoError(t, dag.Select(ctx, dag.Root(), &ctr, dagql.Selector{
+			Field: "container",
+			Args:  []dagql.NamedInput{{Name: "platform", Value: dagql.Opt(platform.(core.Platform))}},
+		}))
+		id, err := ctr.RecipeID(ctx)
+		require.NoError(t, err)
+		return id.Digest().String()
+	}
+
+	for _, spellings := range [][]string{
+		{"linux/arm64", "linux/arm64/v8", "linux/aarch64"},
+		{"linux/amd64", "linux/amd64/v1", "linux/x86_64"},
+		{"linux/arm/v7", "linux/arm", "linux/armhf"},
+		{"linux/arm/v6", "linux/armel"},
+	} {
+		want := recipeDigest(spellings[0])
+		for _, spelling := range spellings[1:] {
+			require.Equal(t, want, recipeDigest(spelling), "%s against %s", spelling, spellings[0])
+		}
+	}
+	for _, pair := range [][2]string{
+		{"linux/arm/v6", "linux/arm/v7"},
+		{"linux/arm64", "linux/arm64/v9"},
+		{"linux/amd64", "linux/amd64/v2"},
+	} {
+		require.NotEqual(t, recipeDigest(pair[0]), recipeDigest(pair[1]), "%s against %s", pair[0], pair[1])
+	}
+}
+
 func TestCloneContainerForSchemaChildDisablesFromContentDigest(t *testing.T) {
 	t.Parallel()
 

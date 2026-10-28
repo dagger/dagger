@@ -334,36 +334,43 @@ func (c *Client) OrgDetails(ctx context.Context, orgName string) (*OrgDetails, e
 	return data.Org, nil
 }
 
-const getOrgPaymentStatusOperation = `
-query GetOrgPaymentStatus($org: String!) {
+const getOrgCLINoticeOperation = `
+query GetOrgCLINotice($org: String!) {
 	org(name: $org) {
-		subscription {
-			status
-			trialEnd
-			hasPaymentMethod
+		cliNotice {
+			level
+			title
+			body
 		}
 	}
 }
 `
 
-// PaymentStatus is an org's subscription status and whether its billing
-// customer has a payment method.
-type PaymentStatus struct {
-	Status           string  `json:"status"`
-	TrialEnd         *string `json:"trialEnd,omitempty"`
-	HasPaymentMethod bool    `json:"hasPaymentMethod"`
+// CLINoticeLevel is how prominently the CLI shows a CLINotice.
+type CLINoticeLevel string
+
+const (
+	CLINoticeLevelInfo    CLINoticeLevel = "INFO"
+	CLINoticeLevelWarning CLINoticeLevel = "WARNING"
+)
+
+// CLINotice is a message Cloud has for the CLI's user about an org, such as
+// a trial reminder. Cloud chooses it from the org's current state.
+type CLINotice struct {
+	Level CLINoticeLevel `json:"level"`
+	Title string         `json:"title"`
+	Body  string         `json:"body"`
 }
 
-// OrgPaymentStatus returns the org's subscription status and whether it has
-// a payment method to charge when its trial ends. Cloud keeps the latter
-// current from billing webhooks, so asking is cheap.
-func (c *Client) OrgPaymentStatus(ctx context.Context, orgName string) (*PaymentStatus, error) {
+// OrgCLINotice returns the notice Cloud has for the org, or nil when it has
+// none.
+func (c *Client) OrgCLINotice(ctx context.Context, orgName string) (*CLINotice, error) {
 	var data struct {
 		Org *struct {
-			Subscription PaymentStatus `json:"subscription"`
+			CLINotice *CLINotice `json:"cliNotice"`
 		} `json:"org"`
 	}
-	if err := c.doGraphQL(ctx, "GetOrgPaymentStatus", getOrgPaymentStatusOperation, map[string]any{
+	if err := c.doGraphQL(ctx, "GetOrgCLINotice", getOrgCLINoticeOperation, map[string]any{
 		"org": orgName,
 	}, &data); err != nil {
 		return nil, err
@@ -371,7 +378,7 @@ func (c *Client) OrgPaymentStatus(ctx context.Context, orgName string) (*Payment
 	if data.Org == nil {
 		return nil, fmt.Errorf("org %q not found", orgName)
 	}
-	return &data.Org.Subscription, nil
+	return data.Org.CLINotice, nil
 }
 
 const createPortalSessionOperation = `

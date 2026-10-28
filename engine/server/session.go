@@ -37,6 +37,7 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/mod/semver"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -159,6 +160,9 @@ type daggerSession struct {
 	// Session-owned trace and log pipelines capture an origin client ID from
 	// each emission context and resolve the immutable ancestry graph at export.
 	tracerProvider *sdktrace.TracerProvider
+	// spanQueue counts the spans of the bounded live span lane, to report
+	// those it dropped when the session's telemetry shuts down.
+	spanQueue      enginetel.SpanQueueCounts
 	loggerProvider *sdklog.LoggerProvider
 	spanExporter   sdktrace.SpanExporter
 	logExporter    sdklog.Exporter
@@ -351,6 +355,14 @@ type clientRecord struct {
 	// SDK clients execute inside the engine and have no host-side attachables.
 	// Reject their attachable lookups instead of waiting or proxying to an ancestor.
 	inertAttachables bool
+
+	// children are the nested clients this client serves to its own child
+	// processes, by client ID (see serveChildClient). A closed child stays, so
+	// its ID is never bound again. Once childrenClosed is set, the client has
+	// closed and takes no new children.
+	childrenMu     sync.Mutex
+	children       map[string]*childClient
+	childrenClosed bool
 }
 
 // clientRuntime is reclaimable executable state for a client record. A runtime
@@ -381,6 +393,9 @@ type clientRuntime struct {
 	// the set of modules being served to this client, with per-module
 	// install policy (constructor vs type-only)
 	servedMods *core.SchemaBuilder
+	// the names of the served modules the client served itself, with -m or
+	// through the API, as opposed to its workspace's (guarded by stateMu)
+	clientModuleNames map[string]struct{}
 	// the default deps that each client/module starts out with (currently just core)
 	defaultDeps *core.SchemaBuilder
 	// schema builders memoized per module set for this client's handle
@@ -507,6 +522,7 @@ func (client *clientRuntime) releaseHeavyState() {
 	client.dagqlRoot = nil
 	client.mod = dagql.ObjectResult[*core.Module]{}
 	client.servedMods = nil
+	client.clientModuleNames = nil
 	client.defaultDeps = nil
 	client.schemaBuilderMemo = nil
 	client.fnCall = nil
@@ -791,7 +807,12 @@ func (sess *daggerSession) shutdownTelemetry(ctx context.Context) error {
 		logDur = timedProviderOp(ctx, &errs, sess.loggerProvider.ForceFlush)
 	}
 	if sess.tracerProvider != nil {
-		traceDur += timedProviderOp(ctx, &errs, sess.tracerProvider.Shutdown)
+		var shutdownErr error
+		traceDur += timedProviderOp(ctx, &shutdownErr, sess.tracerProvider.Shutdown)
+		errs = errors.Join(errs, shutdownErr)
+		// The bounded lane drops spans rather than stall the session; report
+		// how many.
+		sess.spanQueue.LogShutdown(slog.With("sessionID", sess.sessionID), shutdownErr)
 	}
 	if sess.workloadTracerProvider != nil {
 		traceDur += timedProviderOp(ctx, &errs, sess.workloadTracerProvider.Shutdown)
@@ -980,7 +1001,7 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 	callSpans := enginetel.NewCallSpanProcessor(spanExporter)
 	tracerOpts = append(tracerOpts,
 		sdktrace.WithSpanProcessor(callSpans),
-		sdktrace.WithSpanProcessor(enginetel.WithoutCallSpans(enginetel.NewLargeQueueLiveSpanProcessor(spanExporter))),
+		sdktrace.WithSpanProcessor(enginetel.WithoutCallSpans(enginetel.NewCountedLargeQueueLiveSpanProcessor(spanExporter, &sess.spanQueue))),
 	)
 	loggerResource, err := withSessionResource(telemetry.Resource, resourceAttrs)
 	if err != nil {
@@ -1555,6 +1576,12 @@ func (srv *Server) initializeClientRuntime(
 		return fmt.Errorf("failed to initialize core schema base: %w", err)
 	}
 	coreView := call.View(engine.APIViewVersion(client.clientVersion))
+	if opts.ModuleContext.Self() != nil && client.clientMetadata.ClientVersionDeclared {
+		engineView := call.View(engine.APIViewVersion(engine.Version))
+		if semver.Compare(string(coreView), string(engineView)) > 0 {
+			coreView = engineView
+		}
+	}
 	client.dag, err = coreSchemaBase.Fork(ctx, client.dagqlRoot, coreView)
 	if err != nil {
 		return fmt.Errorf("failed to fork core schema base: %w", err)
@@ -1580,15 +1607,18 @@ func (srv *Server) initializeClientRuntime(
 		}
 		client.mod = modInst
 
-		// this is needed to set the view of the core api as compatible
-		// with the module we're currently calling from
-		engineVersion := client.mod.Self().Source.Value.Self().EngineVersion
-		coreView = call.View(engine.APIViewVersion(engineVersion))
-		client.dag.View = coreView
-		coreMod = coreSchemaBase.CoreMod(coreView)
+		if !client.clientMetadata.ClientVersionDeclared {
+			engineVersion := client.mod.Self().Source.Value.Self().EngineVersion
+			coreView = call.View(engine.APIViewVersion(engineVersion))
+			client.dag.View = coreView
+			coreMod = coreSchemaBase.CoreMod(coreView)
+		}
 
 		client.defaultDeps = core.NewSchemaBuilder(client.dagqlRoot, []core.Mod{coreMod})
 		servedMods := client.mod.Self().Deps.WithRoot(client.dagqlRoot)
+		if client.clientMetadata.ClientVersionDeclared {
+			servedMods = servedMods.WithCoreMod(coreMod)
+		}
 		if len(client.mod.Self().ObjectDefs) > 0 {
 			servedMods = servedMods.Append(core.NewUserMod(client.mod))
 		}
@@ -2359,7 +2389,10 @@ func nestedClientMetadataForRequest(h http.Header, nestedClientMetadata *engine.
 	var userConfigPath string
 	var llmConfig *engine.LLMConfig
 	if md, _ := engine.ClientMetadataFromHTTPHeaders(h); md != nil {
-		clientMetadata.ClientVersion = md.ClientVersion
+		if md.ClientVersion != "" {
+			clientMetadata.ClientVersion = md.ClientVersion
+			clientMetadata.ClientVersionDeclared = true
+		}
 		clientMetadata.AllowedLLMModules = slices.Clone(md.AllowedLLMModules)
 		extraModules = md.ExtraModules
 		loadWorkspaceModules = md.LoadWorkspaceModules
@@ -2458,9 +2491,11 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		return srv.serveArchiveHTTP(w, r.WithContext(ctx), record)
 	}
 
+	childMetadata := r.Header.Values(engine.ChildClientMetadataMetaKey)
+
 	mux := http.NewServeMux()
-	switch r.URL.Path {
-	case "/v1/traces", "/v1/logs", "/v1/metrics":
+	switch path := r.URL.Path; {
+	case len(childMetadata) == 0 && (path == "/v1/traces" || path == "/v1/logs" || path == "/v1/metrics"):
 		// Telemetry subscriptions require only the stable client record.
 		record, err := srv.clientRecordFromIDs(clientMetadata.SessionID, clientMetadata.ClientID)
 		if err != nil {
@@ -2476,7 +2511,9 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		requestOpts.requestLeaseOut = &requestLease
 		switch r.URL.Path {
 		case engine.SessionAttachablesEndpoint, engine.InitEndpoint, engine.ShutdownEndpoint:
-			requestOpts.BootstrapOnly = true
+			// A child's request needs its parent's executable scope to register
+			// the child, whatever the child asks for.
+			requestOpts.BootstrapOnly = len(childMetadata) == 0
 		}
 		client, cleanup, err := srv.getOrInitClient(ctx, &requestOpts)
 		if err != nil {
@@ -2517,6 +2554,10 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 			}
 		}()
 
+		if len(childMetadata) > 0 {
+			return srv.serveChildClient(ctx, w, r, client, childMetadata)
+		}
+
 		sess := client.daggerSession
 		ctx = analytics.WithContext(ctx, sess.analytics)
 		r = r.WithContext(ctx)
@@ -2533,6 +2574,38 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 	}
 
 	mux.ServeHTTP(w, r)
+	return nil
+}
+
+// serveChildClient serves a request that parent forwarded for a Dagger client
+// it serves to its own child processes. The child joins the session as a
+// nested client of parent, like a CLI in a container exec joins its caller's
+// session, so its shutdown ends only itself. ctx holds parent's request scope,
+// which registers the child; the child's request itself runs in r's context.
+func (srv *Server) serveChildClient(ctx context.Context, w http.ResponseWriter, r *http.Request, parent *clientRuntime, childMetadata []string) error {
+	direct := childMetadata[len(childMetadata)-1]
+	h := http.Header{}
+	h.Set(engine.ClientMetadataMetaKey, direct)
+	md, err := engine.ClientMetadataFromHTTPHeaders(h)
+	if err != nil {
+		return httpErr(fmt.Errorf("invalid child client metadata: %w", err), http.StatusBadRequest)
+	}
+	if md.ClientID == "" {
+		return httpErr(errors.New("child client metadata is missing client ID"), http.StatusBadRequest)
+	}
+	child, err := srv.childClient(ctx, parent, md.ClientID, h)
+	if err != nil {
+		return httpErr(fmt.Errorf("serve child client %q: %w", md.ClientID, err), http.StatusInternalServerError)
+	}
+
+	// The request now speaks for the child, and carries on the children it
+	// serves in turn.
+	r.Header.Set(engine.ClientMetadataMetaKey, direct)
+	r.Header.Del(engine.ChildClientMetadataMetaKey)
+	for _, grandchild := range childMetadata[:len(childMetadata)-1] {
+		r.Header.Add(engine.ChildClientMetadataMetaKey, grandchild)
+	}
+	srv.ServeHTTPToNestedClient(w, r, child.transport, child.metadata, parent.clientID, false, nil, nil)
 	return nil
 }
 
@@ -3071,6 +3144,7 @@ func (srv *Server) ServeModule(ctx context.Context, mod dagql.ObjectResult[*core
 
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
+	defer client.noteClientModulesLocked(client.servedMods)
 
 	if err := srv.serveModule(client, core.NewUserMod(mod), core.InstallOpts{Main: main}); err != nil {
 		return err
@@ -3614,6 +3688,65 @@ func (srv *Server) CurrentServedDeps(ctx context.Context) (*core.SchemaBuilder, 
 		return nil, err
 	}
 	return client.servedMods, nil
+}
+
+// Return the modules the current client served beside its workspace's own,
+// with -m or through the API, sorted by name. A module served only for its
+// types, such as a dependency of a main module, isn't listed by artifact
+// discovery and isn't returned.
+func (srv *Server) CurrentClientModules(ctx context.Context) ([]core.WorkspaceClientModule, error) {
+	client, err := srv.workspaceRuntimeFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	client.stateMu.Lock()
+	served := client.servedMods
+	names := slices.Sorted(maps.Keys(client.clientModuleNames))
+	client.stateMu.Unlock()
+	if served == nil {
+		return nil, nil
+	}
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var mods []core.WorkspaceClientModule
+	for _, name := range names {
+		mod, ok := served.Lookup(name)
+		if !ok || mod.ModuleResult().Self() == nil {
+			continue
+		}
+		opts, _ := served.InstallOpts(name)
+		if opts.SkipConstructor {
+			continue
+		}
+		// The served module's own key is per client; its implementation's is
+		// the same wherever the same module is loaded.
+		var scoped dagql.ObjectResult[*core.Module]
+		if err := dag.Select(ctx, mod.ModuleResult(), &scoped, dagql.Selector{Field: "_implementationScoped"}); err != nil {
+			return nil, fmt.Errorf("client module %s: %w", name, err)
+		}
+		dgst, err := scoped.ContentPreferredDigest(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("client module %s: %w", name, err)
+		}
+		mods = append(mods, core.WorkspaceClientModule{Name: name, Digest: dgst, Main: opts.Main})
+	}
+	return mods, nil
+}
+
+// noteClientModulesLocked records the modules served since before as ones
+// the client served itself. client.stateMu must be held.
+func (client *clientRuntime) noteClientModulesLocked(before *core.SchemaBuilder) {
+	for _, mod := range client.servedMods.Mods() {
+		if _, ok := before.Lookup(mod.Name()); ok {
+			continue
+		}
+		if client.clientModuleNames == nil {
+			client.clientModuleNames = make(map[string]struct{})
+		}
+		client.clientModuleNames[mod.Name()] = struct{}{}
+	}
 }
 
 // The Client metadata of the main client caller (i.e. the one who created the

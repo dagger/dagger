@@ -567,6 +567,29 @@ func (WorkspaceCompatSuite) TestConstructorOptionalEmptySecret(ctx context.Conte
 	require.Equal(t, "", out)
 }
 
+func (WorkspaceCompatSuite) TestConstructorSecretDefaultRequiresScheme(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := nestedDaggerContainer(t, c, "go", "defaults").
+		WithEnvVariable("PASSWORD", "topsecret").
+		WithWorkdir("defaults")
+	for _, envFile := range []string{
+		"password=PASSWORD",
+		"password=env:PASSWORD",
+		"secrets=env://PASSWORD,PASSWORD",
+	} {
+		t.Run(envFile, func(ctx context.Context, t *testctx.T) {
+			stderr, err := base.
+				WithNewFile(".env", envFile).
+				WithExec([]string{"dagger", "call", "-m", ".", "list-secrets"}, core.ContainerWithExecOpts{
+					Expect: core.ReturnTypeFailure,
+				}).
+				Stderr(ctx)
+			require.NoError(t, err)
+			require.Contains(t, stderr, "secret address must name its provider with a scheme")
+		})
+	}
+}
+
 func (WorkspaceCompatSuite) TestConstructorPlaintextSecretDefault(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	ctr := daggerCliBase(t, c).

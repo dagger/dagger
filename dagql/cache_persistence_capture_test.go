@@ -322,7 +322,7 @@ func TestCapturePersistedRecordOwnershipAndCancellation(t *testing.T) {
 				cacheTestReleaseSession(t, c, ctx)
 				c.egraphMu.RLock()
 				registered := c.resultsByID[res.cacheSharedResult().id]
-				owners := res.cacheSharedResult().incomingOwnershipCount
+				owners := res.cacheSharedResult().incomingOwnershipCount.Load()
 				c.egraphMu.RUnlock()
 				require.Same(t, res.cacheSharedResult(), registered)
 				require.Equal(t, int64(1), owners)
@@ -368,12 +368,12 @@ func TestCapturePersistedRecordErrorsAndClose(t *testing.T) {
 		injected := errors.New("codec failed")
 		obj.encode = func(context.Context) error { return injected }
 		c.egraphMu.RLock()
-		owners := res.cacheSharedResult().incomingOwnershipCount
+		owners := res.cacheSharedResult().incomingOwnershipCount.Load()
 		c.egraphMu.RUnlock()
 		_, err = c.CapturePersistedRecord(ctx, res)
 		require.ErrorIs(t, err, injected)
 		c.egraphMu.RLock()
-		after := res.cacheSharedResult().incomingOwnershipCount
+		after := res.cacheSharedResult().incomingOwnershipCount.Load()
 		c.egraphMu.RUnlock()
 		require.Equal(t, owners, after)
 		require.Zero(t, c.activeGlobalOperations.Load())
@@ -456,12 +456,12 @@ func TestCapturePersistedRecordInitialAttachment(t *testing.T) {
 			assertCaptureDoesNotLeak := func() error {
 				t.Helper()
 				c.egraphMu.RLock()
-				owners := shared.incomingOwnershipCount
+				owners := shared.incomingOwnershipCount.Load()
 				c.egraphMu.RUnlock()
 				operations := c.activeGlobalOperations.Load()
 				_, err := c.CapturePersistedRecord(ctx, res)
 				c.egraphMu.RLock()
-				after := shared.incomingOwnershipCount
+				after := shared.incomingOwnershipCount.Load()
 				c.egraphMu.RUnlock()
 				require.Equal(t, owners, after)
 				require.Equal(t, operations, c.activeGlobalOperations.Load())

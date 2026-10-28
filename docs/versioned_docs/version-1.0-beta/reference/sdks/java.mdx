@@ -184,13 +184,13 @@ The rules:
 - A method may throw any exception. A thrown exception fails the function, and its message is the error the caller sees, so make it actionable (`throw new IllegalArgumentException("cannot divide by zero")`). Generated client calls that resolve against the engine declare `ExecutionException`, `DaggerQueryException`, and `InterruptedException`. A container command that exits non-zero throws `DaggerExecException`, which forwards the exit code, command, and output to the caller. Functions that use these calls declare those exceptions, or a broad `throws Exception`.
 - `@Function(value = "name")` renames a function in the API; `@Function(description = "...")` and `@Object(description = "...")` override the Javadoc description.
 
-Call your functions like any other module's, from the directory that contains `dagger-module.toml` or with `-m <path>`:
+Call your functions exactly like any other installed module, by its install name. The workspace's main module is called without a name, and `-m <path>` loads a module by path for one command:
 
 ```shell
-dagger api call hello --name=World --greeting=Hello
+dagger api call my-module hello --name=World --greeting=Hello
 # Hello, World!
 
-dagger api call loud-hello --name=World --greeting=Hello
+dagger api call my-module loud-hello --name=World --greeting=Hello
 # HELLO, WORLD!
 ```
 
@@ -393,7 +393,7 @@ public class MyModule {
 Enums also work as return values and inside lists (`List<Severity>`, `Severity[]`). Pass a value outside the enum and you get an error listing the allowed choices:
 
 ```shell
-dagger api call scan --ref=alpine:latest --severity=FOO
+dagger api call my-module scan --ref=alpine:latest --severity=FOO
 # Error: value should be one of UNKNOWN, LOW, MEDIUM, HIGH, CRITICAL
 ```
 
@@ -473,7 +473,7 @@ Only the main object's parameterized constructor becomes a Dagger constructor. O
 You can then chain on the CLI and API:
 
 ```shell
-dagger api call dagger-organization members url
+dagger api call my-module dagger-organization members url
 ```
 
 ### Interfaces
@@ -672,10 +672,10 @@ public class MyModule {
 Callers supply secrets through providers on the CLI:
 
 ```shell
-dagger api call github-api --token=env:GITHUB_TOKEN     # environment variable
-dagger api call github-api --token=file:./token.txt      # file
-dagger api call github-api --token=cmd:"gh auth token"   # command output
-dagger api call github-api --token=op://vault/item/field # 1Password
+dagger api call my-module github-api --token=env:GITHUB_TOKEN     # environment variable
+dagger api call my-module github-api --token=file:./token.txt      # file
+dagger api call my-module github-api --token=cmd:"gh auth token"   # command output
+dagger api call my-module github-api --token=op://vault/item/field # 1Password
 ```
 
 ### Services
@@ -884,10 +884,6 @@ Editing a function's body needs no regeneration. Changing the *shape* of your mo
 
 Apply and commit the resulting changeset. This keeps the generated client in sync with the functions and dependencies available to your module.
 
-:::note
-A `.dagger-java-sdk-skip-generate` marker in a module or one of its ancestors skips Java generation for that module.
-:::
-
 :::tip
 The `.gitignore` does not cover generated files; commit them with your module. It ignores only `target/` (Maven build output) and local-only files such as `.env`.
 :::
@@ -913,7 +909,7 @@ A module worth reusing provides at least one of the three first-class function t
 
 | Annotation | Return type | Run by | Purpose |
 |---|---|---|---|
-| `@Check` | `void` (or `Container`) | `dagger check` | validate the project (test/lint/scan) |
+| `@Check` | `void` | `dagger check` | validate the project (test/lint/scan) |
 | `@Generate` | `Changeset` | `dagger generate` | produce a diff to apply to the workspace |
 | none | `Service` | `dagger start` | start a long-running service |
 
@@ -964,7 +960,7 @@ public Container compile(
 
 ### Checks {#checks}
 
-Annotate a function with `@Check` (in addition to `@Function`) to make it a check, a validation function such as a test, lint, or scan that takes no caller arguments. `dagger check` discovers and runs every check a module exposes. A check fails when it throws, or when it returns a `Container` whose execution exits non-zero.
+Annotate a function with `@Check` (in addition to `@Function`) to make it a check, a validation function such as a test, lint, or scan that takes no caller arguments. `dagger check` discovers and runs every check a module exposes. A check returns `void` and fails when it throws. To check a command, run the container with `sync()`: a non-zero exit throws `DaggerExecException`, which fails the check.
 
 ```java
 /** Lint the project. */
@@ -979,16 +975,9 @@ public void lint() throws Exception {
       .withExec(List.of("golangci-lint", "run"))
       .sync();
 }
-
-/** A check can also return a container; a non-zero exit fails the check. */
-@Function
-@Check
-public Container build() {
-  return dag().container().from("alpine:3").withExec(List.of("true"));
-}
 ```
 
-A `void` check must actually execute something, such as `sync()`, `stdout()`, or another resolving call, because builder methods alone are lazy. You can also declare checks on custom object types to group them, for example a `Test` object with `lint` and `unit` checks reached through a `test()` function on the main object.
+A check must actually execute something, such as `sync()`, `stdout()`, or another resolving call, because builder methods alone are lazy. You can also declare checks on custom object types to group them, for example a `Test` object with `lint` and `unit` checks reached through a `test()` function on the main object.
 
 ### Generators {#generators}
 
@@ -1029,7 +1018,7 @@ public Service web() {
 }
 ```
 
-Like checks, services can live on custom object types so you can group related services, for example an `Infra` object with a `database` service, which `dagger start -l` lists as `infra:database`. This is the same `Service` type described under [Services](#services) above.
+Like checks, services can live on custom object types so you can group related services, for example an `Infra` object with a `database` service, which `dagger start -l` lists as `infra/database`. This is the same `Service` type described under [Services](#services) above.
 
 ## Testing Java modules
 
@@ -1078,7 +1067,7 @@ For behavior that exercises containers and the Dagger API, write functions in yo
 
 ```shell
 # Smoke test: does it build?
-dagger api call build
+dagger api call my-module build
 
 # Run all checks
 dagger check
@@ -1138,15 +1127,15 @@ A module reference follows `[proto://]host/repo[/subpath][@version]`. The versio
 
 ## Troubleshooting
 
-**`dagger init` / `dagger develop` not found.** Install the Java SDK with `dagger module install dagger.io/sdk/java`, scaffold with `dagger module init java --name <name>`, and regenerate with `dagger generate`.
+**`dagger init` created a workspace but no module.** `dagger init` sets up the workspace's `dagger.toml`. Install the Java SDK with `dagger module install dagger.io/sdk/java`, scaffold the module with `dagger module init java --name <name>`, and regenerate with `dagger generate`.
+
+**`dagger develop` not found.** Regenerate with `dagger generate`.
 
 **Nothing was written after `dagger module init`.** The command returns a changeset. Review and accept it, or rerun with `-y` to apply without prompting.
 
 **"is missing its generated file `src/generated/java/io/dagger/gen/entrypoint/Entrypoint.java`".** The runtime refuses to build a module without a committed entrypoint. Run `dagger generate`, apply the changeset, and commit the result. That applies when the module is consumed from Git too.
 
 **A new function or object doesn't show up.** Run `dagger generate`. The entrypoint under `src/generated/java` registers your functions with the engine and must be regenerated whenever annotated code changes, not only when dependencies change.
-
-**`dagger generate` does not regenerate the module.** Look for a `.dagger-java-sdk-skip-generate` marker in the module or one of its ancestors.
 
 **"The class … must be public if annotated with @Object" / "must have a public no-argument constructor".** Every `@Object` class must be public and instantiable without arguments. Keep the no-argument constructor even when you add a parameterized one.
 

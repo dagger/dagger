@@ -6,7 +6,7 @@ description: "Personal overrides that stay out of the repository"
 
 # User configuration
 
-Some values shouldn't be committed: private account profiles, local paths, personal development clusters. Those live in your user-level Dagger config file, `~/.config/dagger/config.toml`, or the file named by `$DAGGER_CONFIG`.
+Some values shouldn't be committed: private account profiles, local paths, personal development clusters. Those live in your user-level Dagger config file, `config.toml` in the `dagger` directory under the user config directory, or the file named by `$DAGGER_CONFIG`. The user config directory is `$XDG_CONFIG_HOME` when it is set. Otherwise it is `~/.config` on Linux, `~/Library/Application Support` on macOS, and `%LOCALAPPDATA%` on Windows.
 
 The file is shared with other Dagger subsystems (such as `[llm]`). Workspace overrides sit in a `[workspaces.*]` section, keyed by the workspace's Git remote:
 
@@ -40,7 +40,9 @@ dagger -W https://github.com/acme/api settings -g aws profile alice-dev
 
 ## What can be stored
 
-Workspace overrides hold only module settings: `modules.<name>.settings.*`. Because one key spans every branch and clone of a repository, an entry for a module that doesn't exist in the current checkout is ignored there rather than being an error.
+Workspace overrides hold module settings, always applied (`modules.<name>.settings.*`) or scoped to an [environment](../reference/config-files/dagger-toml.mdx#envname) (`env.<env>.modules.<name>.settings.*`). These are the keys `-g` writes. A hand-written `source`, with an optional `pin`, adds or replaces a module, and a user environment is merged over a repository environment of the same name.
+
+Because one key spans every branch and clone of a repository, an entry for a module that doesn't exist in the current checkout, and has no `source`, is ignored there rather than being an error.
 
 ## Workspace key
 

@@ -77,7 +77,22 @@ func (srv *Server) EngineLocalCachePolicy() *dagqlCachePrunePolicy {
 // Return all the cache entries in the local cache. No support for filtering yet.
 func (srv *Server) EngineLocalCacheEntries(ctx context.Context) (*core.EngineCacheEntrySet, error) {
 	entries := srv.engineCache.UsageEntriesAll(ctx)
-	return engineCacheEntrySetFromUsage(entries), nil
+	set := engineCacheEntrySetFromUsage(entries)
+	dirEntries, err := srv.cacheVolumeDirEntries(ctx)
+	if err != nil {
+		return nil, err
+	}
+	addEngineCacheEntries(set, dirEntries)
+	return set, nil
+}
+
+// addEngineCacheEntries adds entries to set, keeping its totals.
+func addEngineCacheEntries(set *core.EngineCacheEntrySet, entries []*core.EngineCacheEntry) {
+	for _, entry := range entries {
+		set.EntriesList = append(set.EntriesList, entry)
+		set.DiskSpaceBytes += entry.DiskSpaceBytes
+	}
+	set.EntryCount = len(set.EntriesList)
 }
 
 // Prune the local cache of releaseable entries. With no options, preserve the
@@ -105,8 +120,9 @@ func (srv *Server) PruneEngineLocalCacheEntries(ctx context.Context, opts core.E
 	}
 
 	var (
-		report dagql.CachePruneReport
-		rerr   error
+		report     dagql.CachePruneReport
+		dirRemoved []*core.EngineCacheEntry
+		rerr       error
 	)
 	if pruneDisk {
 		dstat, _ := disk.GetDiskStat(srv.rootDir)
@@ -122,6 +138,18 @@ func (srv *Server) PruneEngineLocalCacheEntries(ctx context.Context, opts core.E
 		srv.emitPruneEvent(report.DroppedEdges)
 		if err != nil {
 			rerr = errors.Join(rerr, fmt.Errorf("failed to prune dagql cache: %w", err))
+		}
+
+		// The cache volume directory has its own space limits, so explicit
+		// space overrides, which are about the engine's state disk, leave it
+		// alone. With no options, a prune empties it of every volume not in
+		// use; with the default policy, it applies the directory's own.
+		if maxUsed, reserved, minFree, target := trimmedPruneOpts(opts); maxUsed == "" && reserved == "" && minFree == "" && target == "" {
+			dirReport, err := srv.collectCacheVolumeDir(ctx, !opts.UseDefaultPolicy)
+			rerr = errors.Join(rerr, err)
+			for _, e := range dirReport.Removed {
+				dirRemoved = append(dirRemoved, cacheVolumeDirEntry(e))
+			}
 		}
 	}
 
@@ -140,10 +168,12 @@ func (srv *Server) PruneEngineLocalCacheEntries(ctx context.Context, opts core.E
 	if rerr != nil {
 		return nil, rerr
 	}
-	if len(report.Entries) == 0 {
-		return &core.EngineCacheEntrySet{}, nil
+	set := &core.EngineCacheEntrySet{}
+	if len(report.Entries) > 0 {
+		set = engineCacheEntrySetFromUsage(report.Entries)
 	}
-	return engineCacheEntrySetFromUsage(report.Entries), nil
+	addEngineCacheEntries(set, dirRemoved)
+	return set, nil
 }
 
 func engineLocalCachePruneModes(opts core.EngineCachePruneOptions, automaticGCEnabled bool) (disk, metadata bool) {
@@ -346,8 +376,22 @@ func (srv *Server) gcLocked(ctx context.Context, reason localCacheGCReason) erro
 		return nil
 	}
 
+	var rerr error
+	if reason == localCacheGCGracefulShutdown {
+		// The directory goes first at shutdown: it's cheap, and it decides
+		// whether the directory handed to the next engine stays under its
+		// cap.
+		rerr = srv.collectCacheVolumeDirAtShutdown(ctx)
+	}
+
 	srv.releaseIdleSharedMounts(ctx)
-	rerr := srv.pruneLocalCacheLocked(ctx, reason)
+	rerr = errors.Join(rerr, srv.pruneLocalCacheLocked(ctx, reason))
+	if reason != localCacheGCGracefulShutdown && srv.localCacheGCEnabled {
+		if _, err := srv.collectCacheVolumeDir(ctx, false); err != nil {
+			bklog.G(ctx).Errorf("cache volume directory gc error: %+v", err)
+			rerr = errors.Join(rerr, err)
+		}
+	}
 
 	// A prune collects garbage itself when it removes entries, but leases
 	// are also released outside any prune. Collect whatever is still
@@ -492,7 +536,7 @@ func (srv *Server) localCachePressureGCNeeded(ctx context.Context) bool {
 	if srv.localCacheGCEnabled && srv.engineCache != nil && !srv.metadataPruneMonitorBlocked.Load() {
 		metadataPressure = srv.engineCache.MetadataEstimate().EstimatedBytes > srv.dagqlCacheMaxEstimatedBytes
 	}
-	return diskPressure || metadataPressure
+	return diskPressure || metadataPressure || srv.cacheVolumeDirPressure(ctx)
 }
 
 func localCacheDiskPressureGCNeeded(policies []dagqlCachePrunePolicy, dstat disk.DiskStat) bool {

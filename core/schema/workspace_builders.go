@@ -8,6 +8,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
+	telemetry "github.com/dagger/otel-go"
 )
 
 type stagedWorkspaceConfig struct {
@@ -784,7 +785,10 @@ func (s *workspaceSchema) withUpdatedLockEntries(
 	// credential discovery, but make nested resolver calls ignore stale pins
 	// and avoid writing entries of their own.
 	updateCtx := withWorkspaceLookupLockRefresh(operationCtx)
-	if _, err := core.UpdateWorkspaceLockEntries(updateCtx, query, lock, selectors); err != nil {
+	refreshCtx, refreshSpan := core.Tracer(updateCtx).Start(updateCtx, "update lock entries", telemetry.Reveal())
+	_, err = core.UpdateWorkspaceLockEntries(refreshCtx, query, lock, selectors)
+	telemetry.EndWithCause(refreshSpan, &err)
+	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("update workspace lock: %w", err)
 	}
 

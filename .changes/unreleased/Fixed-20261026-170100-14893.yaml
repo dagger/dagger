@@ -1,0 +1,9 @@
+kind: Fixed
+body: |
+  A `dagger.toml` module setting for a constructor argument that is a list of
+  objects, such as `[Secret]` or `[Directory]`, no longer fails to load the
+  module with `failed to decode dagql default value`.
+time: 2026-10-26T17:01:00Z
+custom:
+  Author: marcosnils
+  PR: "14893"

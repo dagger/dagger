@@ -58,7 +58,7 @@ dagger module init python --name=my-module
 |---|---|---|
 | `--name` | no | Module name. Without `--name` or `--path`, inferred as `<project>-dev` and installed as the workspace main. |
 | `--path` | no | Where to create the module. Default: `<dagger.toml directory>/.dagger/modules/<name>`. A custom path is registered for generation but is not installed. |
-| `--template` | no | Select `default`, `empty`, or `legacy`. Defaults to `default`. |
+| `--template` | no | Select `default` or `empty`. Defaults to `default`. |
 | `--python-version` | no | Pin the Python version written into `pyproject.toml`. |
 | `--use-uv` | no | Enable [uv](https://docs.astral.sh/uv/) for the generated project (default on). |
 | `--base-image` | no | Override the runtime base image in `pyproject.toml`. |
@@ -372,8 +372,8 @@ class Severity(enum.Enum):
 @object_type
 class MyModule:
     @function
-    def scan(self, ref: str, severity: Severity) -> str:
-        return (
+    async def scan(self, ref: str, severity: Severity) -> str:
+        return await (
             dag.container()
             .from_("aquasec/trivy:0.50.4")
             .with_exec(["trivy", "image", "--severity=" + severity.value, ref])
@@ -605,7 +605,7 @@ Dagger has three first-class function types, each run by its own verb. You mark 
 
 | Decorator | Return type | Run by | Purpose |
 |---|---|---|---|
-| `@check` | `str` (or any value; non-zero exit fails) | `dagger check` | Validate something (lint, test). |
+| `@check` | `None` | `dagger check` | Validate something (lint, test). |
 | `@generate` | `dagger.Changeset` | `dagger generate` | Produce a changeset of edits to the source. |
 | none | `dagger.Service` | `dagger start` | Start a long-running service. |
 
@@ -615,7 +615,7 @@ Both decorators are exported from `dagger.mod` and re-exported from `dagger`, so
 from dagger import check, generate
 ```
 
-A **check** validates something and fails the run on a non-zero exit. Combine `@function` with `@check`:
+A **check** validates something and returns `None`. To check a command, run the container with `sync()`: a non-zero exit fails the check. Combine `@function` with `@check`:
 
 ```python
 import dagger
@@ -632,30 +632,30 @@ class MyModule:
 
     @function
     @check
-    async def lint(self) -> str:
+    async def lint(self) -> None:
         """Lint the code"""
-        return await (
+        await (
             dag.container()
             .from_("python:3.12")
             .with_directory("/app", self.source)
             .with_workdir("/app")
             .with_exec(["pip", "install", "ruff"])
             .with_exec(["ruff", "check", "."])
-            .stdout()
+            .sync()
         )
 
     @function
     @check
-    async def test(self) -> str:
+    async def test(self) -> None:
         """Run unit tests"""
-        return await (
+        await (
             dag.container()
             .from_("python:3.12")
             .with_directory("/app", self.source)
             .with_workdir("/app")
             .with_exec(["pip", "install", "pytest", "-e", "."])
             .with_exec(["pytest"])
-            .stdout()
+            .sync()
         )
 ```
 
@@ -904,13 +904,13 @@ class MyModule:
 
     @function
     @check
-    async def unit_test(self) -> str:
+    async def unit_test(self) -> None:
         """Run pytest"""
-        return await self._app().with_exec(["pytest", "-q"]).stdout()
+        await self._app().with_exec(["pytest", "-q"]).sync()
 
     @function
     @check
-    async def integration_test(self) -> str:
+    async def integration_test(self) -> None:
         """Run tests against a Postgres service"""
         db = (
             dag.container()
@@ -919,12 +919,12 @@ class MyModule:
             .with_exposed_port(5432)
             .as_service()
         )
-        return await (
+        await (
             self._app()
             .with_service_binding("db", db)
             .with_env_variable("DATABASE_URL", "postgres://postgres:test@db:5432/postgres")
             .with_exec(["pytest", "-q", "-m", "integration"])
-            .stdout()
+            .sync()
         )
 ```
 
@@ -997,7 +997,7 @@ echo 3.12 > .python-version
 </TabItem>
 <TabItem value="pip">
 
-Match the Python version Dagger uses (3.13 by default, unless overridden in `pyproject.toml` or `.python-version`):
+Match the Python version Dagger uses (3.14 by default, unless overridden in `pyproject.toml` or `.python-version`):
 
 ```shell
 python -m venv .venv
@@ -1009,12 +1009,12 @@ python -m pip install -r requirements.lock -e ./sdk -e .
 </Tabs>
 
 :::tip
-If `.venv` lives inside the module, add it to `.gitignore` **and** to `"include": ["!.venv"]` in `dagger-module.toml` so it isn't uploaded to the runtime container.
+If `.venv` lives inside the module, add it to `.gitignore` **and** to `include = ["!.venv"]` in `dagger-module.toml` so it isn't uploaded to the runtime container.
 :::
 
 ### Python build configuration (`pyproject.toml`)
 
-`dagger-module.toml` declares `runtime.source: "python"`; the Python-specific build settings (Python version, base image, whether to use uv) live in `pyproject.toml` and can be read or edited with `mod config`:
+`dagger-module.toml` declares `runtime.source = "python"`; the Python-specific build settings (Python version, base image, whether to use uv) live in `pyproject.toml` and can be read or edited with `mod config`:
 
 ```shell
 # Read the current configuration
@@ -1047,12 +1047,13 @@ dagger module install github.com/you/your-module@v0.1.0
 or call it ad hoc:
 
 ```shell
-dagger -m github.com/you/your-module@v0.1.0 api call <function> ...
+dagger api call -m github.com/you/your-module@v0.1.0 <function> ...
 ```
 
 ## Troubleshooting
 
-- **`dagger init` / `dagger develop` not found.** Install the Python SDK with `dagger module install dagger.io/sdk/python`, then use `dagger module init python` and `dagger generate`.
+- **`dagger init` created a workspace but no module.** `dagger init` sets up the workspace's `dagger.toml`. Install the Python SDK with `dagger module install dagger.io/sdk/python`, scaffold the module with `dagger module init python --name <name>`, and regenerate bindings with `dagger generate`.
+- **`dagger develop` not found.** Regenerate bindings with `dagger generate`.
 - **`init` "didn't write any files."** `init` returns a changeset; review and apply it to write the files into your workspace.
 - **IDE has no autocompletion / `import dagger` unresolved.** The `sdk/` client must be generated and installed into an active `.venv`. Run `dagger generate` and `uv sync` / `uv pip install -e ./sdk -e .`.
 - **A dependency isn't showing up on `dag`.** Add it with `dagger module client add <ref> --sdk=python` from the module directory, then apply the changeset.

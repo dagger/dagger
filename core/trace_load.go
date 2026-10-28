@@ -21,7 +21,6 @@ import (
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -121,12 +120,12 @@ func (s *inspectionTraceSink) ImportSpans(ctx context.Context, req *coltracepb.E
 
 func (s *inspectionTraceSink) ImportLogs(_ context.Context, req *collogspb.ExportLogsServiceRequest) error {
 	for _, resource := range req.GetResourceLogs() {
-		res, err := protojson.Marshal(resource.GetResource())
+		res, err := proto.Marshal(resource.GetResource())
 		if err != nil {
 			return err
 		}
 		for _, scope := range resource.GetScopeLogs() {
-			instr, err := protojson.Marshal(scope.GetScope())
+			instr, err := proto.Marshal(scope.GetScope())
 			if err != nil {
 				return err
 			}
@@ -136,7 +135,7 @@ func (s *inspectionTraceSink) ImportLogs(_ context.Context, req *collogspb.Expor
 				if tid != "" && tid != s.traceID {
 					return fmt.Errorf("unexpected trace ID in Cloud logs")
 				}
-				attrs, err := clientdb.MarshalProtoJSONs(rec.GetAttributes())
+				attrs, err := clientdb.MarshalProtoList(rec.GetAttributes())
 				if err != nil {
 					return err
 				}
@@ -177,26 +176,26 @@ type inspectionSpanExporter struct{ db *clientdb.DB }
 func (e inspectionSpanExporter) Shutdown(context.Context) error { return nil }
 func (e inspectionSpanExporter) ExportSpans(_ context.Context, spans []sdktrace.ReadOnlySpan) error {
 	for _, resource := range telemetry.SpansToPB(spans) {
-		res, err := protojson.Marshal(resource.GetResource())
+		res, err := proto.Marshal(resource.GetResource())
 		if err != nil {
 			return err
 		}
 		for _, scope := range resource.GetScopeSpans() {
-			instr, err := protojson.Marshal(scope.GetScope())
+			instr, err := proto.Marshal(scope.GetScope())
 			if err != nil {
 				return err
 			}
 			rows := make([]clientdb.Span, 0, len(scope.GetSpans()))
 			for _, span := range scope.GetSpans() {
-				attrs, err := clientdb.MarshalProtoJSONs(span.GetAttributes())
+				attrs, err := clientdb.MarshalProtoList(span.GetAttributes())
 				if err != nil {
 					return err
 				}
-				events, err := clientdb.MarshalProtoJSONs(span.GetEvents())
+				events, err := clientdb.MarshalProtoList(span.GetEvents())
 				if err != nil {
 					return err
 				}
-				links, err := clientdb.MarshalProtoJSONs(span.GetLinks())
+				links, err := clientdb.MarshalProtoList(span.GetLinks())
 				if err != nil {
 					return err
 				}

@@ -15,6 +15,7 @@ import (
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/slog"
+	telemetry "github.com/dagger/otel-go"
 )
 
 type sdkModuleInitArgs struct {
@@ -604,8 +605,11 @@ func (s *workspaceSchema) generateSDKModuleClientSelections(
 		if err != nil {
 			return dagql.ObjectResult[*core.Workspace]{}, err
 		}
+		scopeCtx, scopeSpan := core.Tracer(ctx).Start(ctx,
+			fmt.Sprintf("generate %s scope %s", selection.sdkName, selection.workspaceScope),
+			telemetry.Reveal())
 		updated, err = s.generateSDKModuleScope(
-			ctx,
+			scopeCtx,
 			updated,
 			staged,
 			selected,
@@ -613,6 +617,7 @@ func (s *workspaceSchema) generateSDKModuleClientSelections(
 			selection.workspaceScope,
 			selection.scope,
 		)
+		telemetry.EndWithCause(scopeSpan, &err)
 		if err != nil {
 			return dagql.ObjectResult[*core.Workspace]{}, err
 		}
@@ -996,7 +1001,7 @@ func (s *workspaceSchema) generateSDKModuleScope(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	scoped, err := workspaceAtSDKModuleScope(ctx, ws, workspaceScope)
+	scoped, err := s.workspaceAtSDKModuleScope(ctx, ws, workspaceScope)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
@@ -1020,7 +1025,7 @@ func (s *workspaceSchema) generateSDKModuleScope(
 	return generated, nil
 }
 
-func workspaceAtSDKModuleScope(
+func (s *workspaceSchema) workspaceAtSDKModuleScope(
 	ctx context.Context,
 	ws dagql.ObjectResult[*core.Workspace],
 	scopePath string,
@@ -1042,21 +1047,11 @@ func workspaceAtSDKModuleScope(
 	// scope before it writes its first file. Do not replace an existing scope.
 	prepared := rooted
 	if cleanWorkspaceRelPath(scopePath) != "." {
-		var rootDir dagql.ObjectResult[*core.Directory]
-		if err := dag.Select(ctx, rooted, &rootDir, dagql.Selector{
-			Field: "directory",
-			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String(".")}},
-		}); err != nil {
-			return prepared, fmt.Errorf("inspect SDK-module workspace root: %w", err)
-		}
-		var exists dagql.Boolean
-		if err := dag.Select(ctx, rootDir, &exists, dagql.Selector{
-			Field: "exists",
-			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String(scopePath)}},
-		}); err != nil {
+		exists, err := s.workspaceReadPathExists(ctx, rooted.Self(), scopePath)
+		if err != nil {
 			return prepared, fmt.Errorf("inspect SDK-module scope %q: %w", scopePath, err)
 		}
-		if !exists.Bool() {
+		if !exists {
 			var empty dagql.ObjectResult[*core.Directory]
 			if err := dag.Select(ctx, dag.Root(), &empty, dagql.Selector{Field: "directory"}); err != nil {
 				return prepared, fmt.Errorf("create empty SDK-module scope %q: %w", scopePath, err)
@@ -1155,7 +1150,7 @@ func (s *workspaceSchema) validateGeneratedModuleConfig(
 	generated dagql.ObjectResult[*core.Workspace],
 	scopePath string,
 ) error {
-	root, err := s.workspaceOverlayRootfs(ctx, generated.Self())
+	root, err := s.filteredWorkspaceRootfs(ctx, generated.Self())
 	if err != nil {
 		return err
 	}

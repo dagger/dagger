@@ -92,6 +92,42 @@ func TestTypeDefConversions(t *testing.T) {
 	}
 }
 
+// A module function's Platform argument decodes normalized, as the core
+// API's does: spellings of one platform give one literal, and so one key,
+// and the value stays the String scalar module arguments travel as.
+func TestPlatformArgInputNormalizes(t *testing.T) {
+	dag := newTypeDefTestDag(t)
+	platformRes := newTypeDefDetachedResult(t, dag, "platformScalarTypeDef", &ScalarTypeDef{Name: "Platform"})
+	platformType := &TypeDef{Kind: TypeDefKindScalar, AsScalar: dagql.NonNull(platformRes)}
+	optionalType := &TypeDef{Kind: TypeDefKindScalar, AsScalar: dagql.NonNull(platformRes), Optional: true}
+	listType := &TypeDef{Kind: TypeDefKindList, AsList: dagql.NonNull(newTypeDefDetachedResult(t, dag, "platformListTypeDef", &ListTypeDef{
+		ElementTypeDef: newTypeDefDetachedResult(t, dag, "platformElemTypeDef", platformType),
+	}))}
+
+	literal := func(def *TypeDef, val any) string {
+		t.Helper()
+		input, err := def.ToInput().Decoder().DecodeInput(val)
+		require.NoError(t, err)
+		return input.ToLiteral().Display()
+	}
+
+	input, err := platformType.ToInput().Decoder().DecodeInput("linux/arm64/v8")
+	require.NoError(t, err)
+	require.Equal(t, dagql.NewScalar[dagql.String]("Platform", "linux/arm64"), input)
+
+	for _, def := range []*TypeDef{platformType, optionalType} {
+		require.Equal(t, literal(def, "linux/arm64"), literal(def, "linux/arm64/v8"))
+		require.Equal(t, literal(def, "linux/arm/v7"), literal(def, "linux/arm"))
+		require.NotEqual(t, literal(def, "linux/arm/v6"), literal(def, "linux/arm/v7"))
+	}
+	require.Equal(t,
+		literal(listType, []any{"linux/arm64", "linux/amd64"}),
+		literal(listType, []any{"linux/aarch64/v8", "linux/x86_64"}))
+
+	_, err = platformType.ToInput().Decoder().DecodeInput("windows98")
+	require.ErrorContains(t, err, "unknown operating system or architecture")
+}
+
 func TestFunctionCallReturnValueStoresDecodedJSON(t *testing.T) {
 	fnCall := newFunctionCall(FunctionCall{Name: "fn"})
 

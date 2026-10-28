@@ -170,15 +170,17 @@ func requireSessionCacheSpanCounts(t *testctx.T, spans []cacheSpanLine) map[stri
 
 // engineEventsEngine is a dev engine with the given state that exports its
 // cache events to the fake Cloud under its own token, with no automatic
-// garbage collection, so an explicit prune is its only one.
-func engineEventsEngine(ctx context.Context, t *testctx.T, c *dagger.Client, cloud telemetrySplitCloud, state string) *core.Service {
+// garbage collection, so an explicit prune is its only one. withs then apply
+// to its container.
+func engineEventsEngine(ctx context.Context, t *testctx.T, c *dagger.Client, cloud telemetrySplitCloud, state string, withs ...func(*core.Container) *core.Container) *core.Service {
 	enable := engineWithConfig(ctx, t, engineConfigWithEnabled(false), func(_ context.Context, _ *testctx.T, cfg config.Config) config.Config {
 		cfg.Telemetry.EngineEvents = true
 		return cfg
 	})
-	engine, err := devEngineContainerAsService(devEngineContainerWithStateKey(c, state, enable, func(ctr *core.Container) *core.Container {
+	withs = append([]func(*core.Container) *core.Container{enable, func(ctr *core.Container) *core.Container {
 		return cloud.bind(ctr).WithEnvVariable("DAGGER_CLOUD_TOKEN", "test")
-	})).Start(ctx)
+	}}, withs...)
+	engine, err := devEngineContainerAsService(devEngineContainerWithStateKey(c, state, withs...)).Start(ctx)
 	require.NoError(t, err)
 	return engine
 }

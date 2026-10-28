@@ -39,6 +39,43 @@ func TestPrintSyncedObjectIDs(t *testing.T) {
 	}
 }
 
+func TestHandleCheckResponse(t *testing.T) {
+	check := testObjectTypeDef("Check", "", "")
+	checks := &modTypeDef{Kind: core.TypeDefKindListKind, AsList: &modList{ElementTypeDef: check}}
+	id, err := call.NewEngineResultID(42, call.NewType(&ast.Type{NamedType: "Check", NonNull: true})).Encode()
+	require.NoError(t, err)
+	var printedID bytes.Buffer
+	require.NoError(t, printEncodedID(&printedID, id))
+	passing := map[string]any{"id": id, "error": nil}
+	failing := map[string]any{"id": id, "error": map[string]any{"message": "check failed: exit code: 1"}}
+	for _, tc := range []struct {
+		name     string
+		typ      *modTypeDef
+		response any
+		want     string
+		fail     bool
+	}{
+		{name: "passing", typ: check, response: passing, want: printedID.String()},
+		{name: "failing", typ: check, response: failing, fail: true},
+		{name: "passing list", typ: checks, response: []any{map[string]any{"id": passing}}, want: "- " + printedID.String()},
+		{name: "mixed list", typ: checks, response: []any{map[string]any{"id": passing}, map[string]any{"id": failing}}, fail: true},
+		{name: "null", typ: check, want: "null\n"},
+		{name: "empty list", typ: checks, response: []any{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var out bytes.Buffer
+			err := handleResponse(t.Context(), nil, tc.typ, tc.response, &out, io.Discard, false)
+			if tc.fail {
+				require.ErrorContains(t, err, "check failed: exit code: 1")
+				require.Empty(t, out.String())
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tc.want, out.String())
+			}
+		})
+	}
+}
+
 func TestFindSiblingMain(t *testing.T) {
 	defaultType := testObjectTypeDef("DaggerDev", "dagger-dev", "default module")
 	defaultType.AsObject.Functions = []*modFunction{

@@ -69,14 +69,6 @@ func TestLoadTraceInspectionTools(t *testing.T) {
 	logs, err := fixture.SelectLogsSince(t.Context(), clientdb.SelectLogsSinceParams{Limit: 100})
 	require.NoError(t, err)
 	require.Len(t, logs, 5)
-	for i := range logs {
-		if len(logs[i].Resource) == 0 {
-			logs[i].Resource = []byte("{}")
-		}
-		if len(logs[i].InstrumentationScope) == 0 {
-			logs[i].InstrumentationScope = []byte("{}")
-		}
-	}
 	logReq := &collogspb.ExportLogsServiceRequest{ResourceLogs: clientdb.LogsToPB(logs)}
 	var requests atomic.Int32
 	var denied atomic.Bool
@@ -123,7 +115,7 @@ func TestLoadTraceInspectionTools(t *testing.T) {
 	live, err := dbs.Open(t.Context(), "capture-test")
 	require.NoError(t, err)
 	defer live.Close()
-	_, err = live.AppendSpans([]clientdb.Span{{TraceID: "11111111111111111111111111111111", SpanID: "1111111111111111", Name: "live session", Attributes: []byte("[]"), Events: []byte("[]"), Links: []byte("[]"), Resource: []byte("{}"), InstrumentationScope: []byte("{}")}})
+	_, err = live.AppendSpans([]clientdb.Span{{TraceID: "11111111111111111111111111111111", SpanID: "1111111111111111", Name: "live session"}})
 	require.NoError(t, err)
 	meta := &engine.ClientMetadata{CloudAuth: &auth.Cloud{Token: &oauth2.Token{TokenType: "Bearer", AccessToken: secret}}}
 	ctx := ContextWithQuery(t.Context(), &Query{Server: &logCaptureTestServer{mockServer: &mockServer{clientMetadata: meta}, dbs: dbs}})
@@ -239,10 +231,6 @@ func TestLoadTracePreservesOrdinaryWorkInReport(t *testing.T) {
 				rows[i].EndTime.Valid = true
 				rows[i].EndTime.Int64 = 2000000000
 				rows[i].Attributes = marshalSpanAttrs(t)
-				rows[i].Events = []byte("[]")
-				rows[i].Links = []byte("[]")
-				rows[i].Resource = []byte("{}")
-				rows[i].InstrumentationScope = []byte("{}")
 				if revealed && i == 2 {
 					rows[i].Attributes = marshalSpanAttrs(t, &otlpcommonv1.KeyValue{
 						Key:   telemetry.UIRevealAttr,

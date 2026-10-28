@@ -162,3 +162,16 @@ func TestSchemaBuilderMemoOwnsACopy(t *testing.T) {
 		require.False(t, derived.clientOwned, name)
 	}
 }
+
+func TestSchemaBuilderWithCoreMod(t *testing.T) {
+	oldCore := &memoTestMod{name: ModuleName}
+	newCore := &memoTestMod{name: ModuleName}
+	dependency := &memoTestMod{name: "dependency"}
+	root := &Query{}
+	original := NewSchemaBuilder(root, []Mod{oldCore}).With(dependency, InstallOpts{Main: true, SkipConstructor: true})
+	replaced := original.WithCoreMod(newCore)
+	require.Same(t, root, replaced.root)
+	require.Equal(t, []Mod{newCore, dependency}, replaced.Mods())
+	require.Equal(t, original.entries[1], replaced.entries[1])
+	require.Equal(t, []Mod{oldCore, dependency}, original.Mods())
+}

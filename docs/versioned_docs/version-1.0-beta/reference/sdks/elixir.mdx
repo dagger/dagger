@@ -159,13 +159,13 @@ Key rules:
 - `use Dagger.Mod.Object` imports `dag/0`, which returns the client for the Dagger API. Use `dag()` to start any pipeline.
 - A function fails when it raises or returns an `{:error, reason}` tuple. The SDK accepts and unwraps `{:ok, value}`, so you can return the result of a leaf call such as `Dagger.Container.stdout/1` directly.
 
-Call your functions exactly like any other module, from the directory that contains `dagger-module.toml` or with `-m <path>`:
+`dagger module init --name my-module` installs the module in the workspace as `my-module`. Call an installed module's functions by that name. The workspace main module is called without a name, and `-m <path>` loads a module by path:
 
 ```shell
-dagger api call hello --name=World --greeting=Hello
+dagger api call my-module hello --name=World --greeting=Hello
 # Hello, World!
 
-dagger api call loud-hello --name=World --greeting=Hello
+dagger api call my-module loud-hello --name=World --greeting=Hello
 # HELLO, WORLD!
 ```
 
@@ -208,10 +208,10 @@ end
 ```
 
 ```shell
-dagger api call --name=Elixir greeting
+dagger api call my-module --name=Elixir greeting
 # Hello, Elixir!
 
-dagger api call with-name --name=Dagger greeting
+dagger api call my-module with-name --name=Dagger greeting
 # Hello, Dagger!
 ```
 
@@ -332,7 +332,7 @@ Inside the function the argument arrives as an atom (`:HIGH`). The enum module a
 Passing a value outside the enum fails with an error that lists the allowed choices:
 
 ```shell
-dagger api call scan --ref=alpine:latest --severity=FOO
+dagger api call my-module scan --ref=alpine:latest --severity=FOO
 # Error: value should be one of UNKNOWN, LOW, MEDIUM, HIGH, CRITICAL
 ```
 
@@ -390,7 +390,7 @@ end
 You can then chain calls on the CLI and API:
 
 ```shell
-dagger api call dagger-organization member --username=jane url
+dagger api call my-module dagger-organization member --username=jane url
 ```
 
 ### Deprecation
@@ -537,10 +537,10 @@ end
 Callers supply secrets through providers on the CLI:
 
 ```shell
-dagger api call github-api --token=env:GITHUB_TOKEN     # environment variable
-dagger api call github-api --token=file:./token.txt      # file
-dagger api call github-api --token=cmd:"gh auth token"   # command output
-dagger api call github-api --token=op://vault/item/field # 1Password
+dagger api call my-module github-api --token=env:GITHUB_TOKEN     # environment variable
+dagger api call my-module github-api --token=file:./token.txt      # file
+dagger api call my-module github-api --token=cmd:"gh auth token"   # command output
+dagger api call my-module github-api --token=op://vault/item/field # 1Password
 ```
 
 ### Services
@@ -649,7 +649,7 @@ The three first-class function types are checks, generators, and services. A use
 
 | Attribute | Return type | Run by | Purpose |
 |---|---|---|---|
-| `@check true` | `Dagger.Void.t()` (or `Dagger.Container.t()`) | `dagger check` | validate the project (test/lint/scan) |
+| `@check true` | `Dagger.Void.t()` | `dagger check` | validate the project (test/lint/scan) |
 
 :::note
 The Elixir SDK has no equivalent of the `@generate` marker, so an Elixir module cannot expose generators to `dagger generate`. A `defn` may still return `Dagger.Changeset.t()` for callers to use explicitly. Services need no marker: a `defn` that returns `Dagger.Service.t()` and takes no required arguments is a service for `dagger start`. If you need generators, write that module in [Go](./go.mdx), [Python](./python.mdx), [TypeScript](./typescript.mdx), or [Dang](./dang.mdx). This is the main limitation to weigh before picking Elixir for a module.
@@ -685,7 +685,7 @@ For a path-defaulted `Dagger.Directory.t()` argument, the `ignore:` option does 
 
 ### Checks {#checks}
 
-Set `@check true` on a function to make it a check, a validation function (test, lint, scan) that takes no caller arguments. `dagger check` discovers and runs every check a module exposes. A check fails when it raises or returns `{:error, reason}`, or when it returns a `Dagger.Container.t()` whose execution exits non-zero.
+Set `@check true` on a function to make it a check, a validation function (test, lint, scan) that takes no caller arguments. `dagger check` discovers and runs every check a module exposes. A check returns `Dagger.Void.t()`. It fails when it raises or returns `{:error, reason}`. To run a container as a check, pipe it through `Dagger.Container.sync/1` and return its error: a non-zero exit fails the check.
 
 ```elixir
 @doc """
@@ -704,17 +704,6 @@ defn lint(self) :: Dagger.Void.t() do
     {:ok, _} -> :ok
     error -> error
   end
-end
-
-@doc """
-A check can also return a container; a non-zero exit fails the check.
-"""
-@check true
-defn build() :: Dagger.Container.t() do
-  dag()
-  |> Dagger.Client.container()
-  |> Dagger.Container.from("alpine:3")
-  |> Dagger.Container.with_exec(["true"])
 end
 ```
 
@@ -778,7 +767,7 @@ For behavior that exercises containers and the Dagger API, write functions in yo
 
 ```shell
 # Smoke test: does it build?
-dagger api call build
+dagger api call my-module build
 
 # Run all checks
 dagger check

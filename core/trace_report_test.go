@@ -374,7 +374,7 @@ func TestTraceFailureNavigationLoadsExternalOrigin(t *testing.T) {
 	const checksumID = "00000000000000ff"
 	_, err := store.AppendSpans([]clientdb.Span{
 		{TraceID: traceID, SpanID: checksumID, Name: "checksum exec", StartTime: 100, EndTime: sql.NullInt64{Int64: 200, Valid: true},
-			StatusCode: int64(codes.Error), Attributes: marshalSpanAttrs(t), Links: []byte("[]")},
+			StatusCode: int64(codes.Error), Attributes: marshalSpanAttrs(t)},
 		{TraceID: traceID, SpanID: ids["build"], Name: "failed installer", StartTime: 100, EndTime: sql.NullInt64{Int64: 200, Valid: true},
 			StatusCode: int64(codes.Error), Attributes: marshalSpanAttrs(t),
 			Links: marshalPurposeLink(t, traceID, checksumID, telemetry.LinkPurposeErrorOrigin)},
@@ -421,7 +421,7 @@ func TestInspectionErrorsThroughDispatch(t *testing.T) {
 			store, err := dbs.Open(t.Context(), "capture-test")
 			require.NoError(t, err)
 			defer store.Close()
-			_, err = store.AppendSpans([]clientdb.Span{{TraceID: traceID, SpanID: spanID, Name: "quiet", Attributes: []byte("[]"), Links: []byte("[]")}})
+			_, err = store.AppendSpans([]clientdb.Span{{TraceID: traceID, SpanID: spanID, Name: "quiet"}})
 			require.NoError(t, err)
 			if tc.tool == "ReadTrace" {
 				_, err = store.AppendLogs([]clientdb.Log{persistedCaptureLog(t, traceID, spanID, "stdout", stringLogBody("partial output must not disguise failure\n"))})
@@ -474,7 +474,7 @@ func TestAutomaticDecorationRemainsBestEffort(t *testing.T) {
 	store, err := dbs.Open(t.Context(), "capture-test")
 	require.NoError(t, err)
 	defer store.Close()
-	_, err = store.AppendSpans([]clientdb.Span{{TraceID: traceID, SpanID: spanID, Name: "work", Attributes: []byte("[]"), Links: []byte("[]")}})
+	_, err = store.AppendSpans([]clientdb.Span{{TraceID: traceID, SpanID: spanID, Name: "work"}})
 	require.NoError(t, err)
 	_, err = store.AppendLogs([]clientdb.Log{persistedCaptureLog(t, traceID, spanID, "stdout", stringLogBody("own output\n"))})
 	require.NoError(t, err)
@@ -537,15 +537,6 @@ func TestImportedFailureNavigationThroughTools(t *testing.T) {
 		for i := range spans {
 			spans[i].StartTime = 100
 			spans[i].EndTime = sql.NullInt64{Int64: 200, Valid: true}
-			if spans[i].Attributes == nil {
-				spans[i].Attributes = []byte("[]")
-			}
-			if spans[i].Links == nil {
-				spans[i].Links = []byte("[]")
-			}
-			spans[i].Events = []byte("[]")
-			spans[i].Resource = []byte("{}")
-			spans[i].InstrumentationScope = []byte("{}")
 		}
 		if _, err := store.AppendSpans(spans); err != nil {
 			return err

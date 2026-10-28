@@ -102,6 +102,16 @@ func (b *SchemaBuilder) WithRoot(root *Query) *SchemaBuilder {
 	return cp
 }
 
+func (b *SchemaBuilder) WithCoreMod(mod Mod) *SchemaBuilder {
+	cp := b.Clone()
+	for i, entry := range cp.entries {
+		if entry.mod.Name() == ModuleName {
+			cp.entries[i].mod = mod
+		}
+	}
+	return cp
+}
+
 func (b *SchemaBuilder) Prepend(mods ...Mod) *SchemaBuilder {
 	extra := make([]modDepEntry, len(mods))
 	for i, m := range mods {
@@ -236,6 +246,20 @@ func (b *SchemaBuilder) Lookup(name string) (Mod, bool) {
 		}
 	}
 	return nil, false
+}
+
+// InstallOpts returns the install policy of the served module with the given
+// name.
+func (b *SchemaBuilder) InstallOpts(name string) (InstallOpts, bool) {
+	if b == nil {
+		return InstallOpts{}, false
+	}
+	for _, e := range b.entries {
+		if e.mod.Name() == name {
+			return e.opts, true
+		}
+	}
+	return InstallOpts{}, false
 }
 
 func (b *SchemaBuilder) Mods() []Mod {

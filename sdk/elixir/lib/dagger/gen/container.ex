@@ -1214,6 +1214,27 @@ defmodule Dagger.Container do
   end
 
   @doc """
+  Retrieves this container plus the given files mounted read-only in a directory at the given path.
+
+  Each file appears under the base name of its path. The directory holds nothing else, and nothing can be written to it.
+  """
+  @spec with_mounted_files(t(), String.t(), [String.t()], [{:expand, boolean() | nil}]) ::
+          Dagger.Container.t()
+  def with_mounted_files(%__MODULE__{} = container, path, sources, optional_args \\ []) do
+    query_builder =
+      container.query_builder
+      |> QB.select("withMountedFiles")
+      |> QB.put_arg("path", path)
+      |> QB.put_arg("sources", sources)
+      |> QB.maybe_put_arg("expand", optional_args[:expand])
+
+    %Dagger.Container{
+      query_builder: query_builder,
+      client: container.client
+    }
+  end
+
+  @doc """
   Retrieves this container plus a secret mounted into a file at the given path.
   """
   @spec with_mounted_secret(t(), String.t(), Dagger.Secret.t(), [

@@ -5178,6 +5178,39 @@ class Container(Type):
         _ctx = self._select("withMountedFile", _args)
         return Container(_ctx)
 
+    def with_mounted_files(
+        self,
+        path: str,
+        sources: list["File"],
+        *,
+        expand: bool | None = False,
+    ) -> Self:
+        """Retrieves this container plus the given files mounted read-only in a
+        directory at the given path.
+
+        Each file appears under the base name of its path. The directory holds
+        nothing else, and nothing can be written to it.
+
+        Parameters
+        ----------
+        path:
+            Location of the directory holding the files (e.g., "/work/lib").
+        sources:
+            Identifiers of the files to mount. Two files with the same base
+            name are an error.
+        expand:
+            Replace "${VAR}" or "$VAR" in the value of path according to the
+            current environment variables defined in the container (e.g.
+            "/$VAR/lib").
+        """
+        _args = [
+            Arg("path", path),
+            Arg("sources", sources),
+            Arg("expand", expand, False),
+        ]
+        _ctx = self._select("withMountedFiles", _args)
+        return Container(_ctx)
+
     def with_mounted_secret(
         self,
         path: str,
@@ -8758,6 +8791,31 @@ class File(Type):
         ]
         _ctx = self._select("export", _args)
         return await _ctx.execute(str)
+
+    def extract(
+        self,
+        *,
+        strip_components: int | None = 0,
+    ) -> Directory:
+        """Extracts this archive file into a directory.
+
+        The format is detected from the file's contents: zip, or tar, either
+        uncompressed or compressed with gzip, bzip2, xz or zstd.
+
+        An entry whose path would leave the directory is an error.
+
+        Parameters
+        ----------
+        strip_components:
+            Remove this many leading elements from each entry's path, as tar
+            --strip-components does.
+            Entries with no more elements than this are skipped.
+        """
+        _args = [
+            Arg("stripComponents", strip_components, 0),
+        ]
+        _ctx = self._select("extract", _args)
+        return Directory(_ctx)
 
     async def id(self) -> str:
         """A unique identifier for this File.

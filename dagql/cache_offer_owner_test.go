@@ -25,7 +25,7 @@ func TestValueTransferOfferCopyFailure(t *testing.T) {
 	for _, offer := range row.testPartOffers() {
 		offer.record.Chain.Layers = []snapshots.ExportLayer{{CreatedAt: &invalid}}
 	}
-	before := row.incomingOwnershipCount
+	before := row.incomingOwnershipCount.Load()
 	c.egraphMu.Unlock()
 	_, err := c.CapturePersistedRecord(ctx, root)
 	require.ErrorIs(t, err, ErrPersistStateNotReady)
@@ -36,7 +36,7 @@ func TestValueTransferOfferCopyFailure(t *testing.T) {
 	require.ErrorIs(t, err, ErrPersistStateNotReady)
 	// Both failed captures released the graph lock and leaked no capture hold.
 	c.egraphMu.Lock()
-	after := row.incomingOwnershipCount
+	after := row.incomingOwnershipCount.Load()
 	for _, offer := range row.testPartOffers() {
 		offer.record.Chain.Layers = nil
 	}
@@ -159,7 +159,7 @@ func TestValueTransferOfferOwners(t *testing.T) {
 		if _, err := c.recomputeRequiredSessionResourcesLocked(s); err != nil {
 			return err
 		}
-		base = s.incomingOwnershipCount
+		base = s.incomingOwnershipCount.Load()
 		makeOffer := func(part PartKey, dep *sharedResult) (*partOffer, error) {
 			owner, err := c.newOfferOwnerLocked(ctx, PersistedOfferOwner{DependencyIDs: []uint64{uint64(dep.id), uint64(dep.id)}})
 			if err != nil {
@@ -181,7 +181,7 @@ func TestValueTransferOfferOwners(t *testing.T) {
 		if err := c.testAttachPartOfferLocked(r, second.record.Address, second); err != nil {
 			return err
 		}
-		initialOwners = s.incomingOwnershipCount
+		initialOwners = s.incomingOwnershipCount.Load()
 		if r.requiredSessionResources != nil {
 			receiverRequirements = *r.requiredSessionResources
 		}
@@ -200,19 +200,19 @@ func TestValueTransferOfferOwners(t *testing.T) {
 		}
 		replacementQueueCount = len(queue)
 		holds, slots = first.owner.holds, first.owner.slots
-		replacedOwners = s.incomingOwnershipCount
+		replacedOwners = s.incomingOwnershipCount.Load()
 		if err := c.addExplicitDependencyLocked(ctx, r, s, "installed output"); err != nil {
 			return err
 		}
 		receiverRequiresSocket = cacheTestSessionResourceSetContains(r.requiredSessionResources, "socket")
 		dependentRequiresSocket = cacheTestSessionResourceSetContains(dependent.requiredSessionResources, "socket")
-		installedOwners = s.incomingOwnershipCount
+		installedOwners = s.incomingOwnershipCount.Load()
 		queue, err = c.releaseOfferOwnerLocked(ctx, first.owner)
 		if err != nil {
 			return err
 		}
 		releasedQueueCount = len(queue)
-		releasedOwners = s.incomingOwnershipCount
+		releasedOwners = s.incomingOwnershipCount.Load()
 		cycle, err := makeOffer("fs", dependent)
 		if err != nil {
 			return err
@@ -226,7 +226,7 @@ func TestValueTransferOfferOwners(t *testing.T) {
 		if _, err := c.retirePartOfferLocked(ctx, r, replacement.record.Address); err != nil {
 			return err
 		}
-		retiredOwners = s.incomingOwnershipCount
+		retiredOwners = s.incomingOwnershipCount.Load()
 		return nil
 	}()
 	require.NoError(t, err)
@@ -259,7 +259,7 @@ func TestValueTransferOfferOwners(t *testing.T) {
 	c.egraphMu.Lock()
 	_, err = c.releaseOfferOwnerLocked(ctx, second.owner)
 	ownerCount := len(c.offerOwners)
-	finalOwners := s.incomingOwnershipCount
+	finalOwners := s.incomingOwnershipCount.Load()
 	c.egraphMu.Unlock()
 	require.NoError(t, err)
 	require.Zero(t, ownerCount)
@@ -292,7 +292,7 @@ func TestValueTransferOwnerPersistence(t *testing.T) {
 	require.True(t, IsImportedResult(Result[Typed]{shared: restored}))
 	require.Empty(t, restored.deps)
 	require.Len(t, restored.testPartOffers(), 1)
-	require.Equal(t, int64(1), c.resultsByID[s.id].incomingOwnershipCount)
+	require.Equal(t, int64(1), c.resultsByID[s.id].incomingOwnershipCount.Load())
 	require.Len(t, c.offerOwners, 1)
 	_, removed, err := c.removePersistedEdge(context.WithoutCancel(ctx), r.id)
 	require.NoError(t, err)

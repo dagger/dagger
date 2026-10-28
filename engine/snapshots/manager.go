@@ -154,6 +154,10 @@ type snapshotManager struct {
 	localMounter func([]mount.Mount) Mounter
 
 	mountPool sharableMountPool
+
+	// scratchAttached is set once the scratch lease is attached; guarded by
+	// scratchMu.
+	scratchAttached bool
 }
 
 func NewSnapshotManager(opt SnapshotManagerOpt) (SnapshotManager, error) {
@@ -467,6 +471,7 @@ func (cm *snapshotManager) New(ctx context.Context, s ImmutableRef, opts ...RefO
 		cm:              cm,
 		refMetadata:     refMetadata{snapshotID: rec.md.getSnapshotID(), md: rec.md},
 		triggerLastUsed: true,
+		onScratch:       isScratchSnapshotID(parentSnapshotID),
 	}
 	bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
 	return ref, nil

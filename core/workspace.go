@@ -12,6 +12,7 @@ import (
 	workspacepkg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/util/gitutil"
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -142,6 +143,13 @@ type Workspace struct {
 	// moduleClients maps a module scope path to the local client targets its
 	// config declares, as read when this workspace was loaded. Internal only.
 	moduleClients map[string][]string
+
+	// clientModules are the modules the loading client served beside the
+	// workspace's own, with -m or through the API, when a workspace that holds
+	// its own content was loaded. Artifact discovery depends on them, so they
+	// are part of the workspace's identity, and discovery through this
+	// workspace sees no others. Internal only.
+	clientModules []WorkspaceClientModule
 
 	Address    string `field:"true" doc:"Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces."`
 	Cwd        string
@@ -507,6 +515,25 @@ func (ws *Workspace) SetUserConfigOverlay(overlay *workspacepkg.UserWorkspaceOve
 	ws.userConfigOverlay = overlay
 }
 
+// WorkspaceClientModule is a module a client served beside its workspace's
+// own, identified by its content.
+type WorkspaceClientModule struct {
+	Name   string        `json:"name"`
+	Digest digest.Digest `json:"digest"`
+	Main   bool          `json:"main,omitempty"`
+}
+
+func (ws *Workspace) ClientModules() []WorkspaceClientModule {
+	if ws == nil {
+		return nil
+	}
+	return ws.clientModules
+}
+
+func (ws *Workspace) SetClientModules(mods []WorkspaceClientModule) {
+	ws.clientModules = mods
+}
+
 func (ws *Workspace) SelectedEnv() string {
 	if ws == nil {
 		return ""
@@ -650,6 +677,12 @@ type persistedWorkspacePayload struct {
 	HostPath        string                        `json:"hostPath,omitempty"`
 	SelectedEnv     string                        `json:"selectedEnv,omitempty"`
 	ModuleClients   map[string][]string           `json:"moduleClients,omitempty"`
+	ClientModules   []WorkspaceClientModule       `json:"clientModules,omitempty"`
+
+	UserConfigKey string `json:"userConfigKey,omitempty"`
+	// UserConfigOverlay is encoded with EncodeUserWorkspaceOverlay, which
+	// keeps setting values' types.
+	UserConfigOverlay string `json:"userConfigOverlay,omitempty"`
 
 	// Decode-only names from main's pre-workspace-selection payload.
 	LegacyPath       string `json:"path,omitempty"`
@@ -799,7 +832,15 @@ func (ws *Workspace) EncodePersistedObject(ctx context.Context, enc *dagql.Persi
 		HostPath:        ws.hostPath,
 		SelectedEnv:     ws.selectedEnv,
 		ModuleClients:   ws.moduleClients,
+		ClientModules:   ws.clientModules,
+
+		UserConfigKey: ws.userConfigKey,
 	}
+	userConfigOverlay, err := workspacepkg.EncodeUserWorkspaceOverlay(ws.userConfigOverlay)
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted workspace: %w", err)
+	}
+	payload.UserConfigOverlay = userConfigOverlay
 	if ws.rootfs.Self() != nil {
 		rootfsID, err := encodePersistedObjectRef(enc, ws.rootfs, "workspace rootfs")
 		if err != nil {
@@ -881,7 +922,15 @@ func (*Workspace) DecodePersistedObject(ctx context.Context, dec *dagql.PersistD
 		hostPath:        persisted.HostPath,
 		selectedEnv:     persisted.SelectedEnv,
 		moduleClients:   persisted.ModuleClients,
+		clientModules:   persisted.ClientModules,
+
+		userConfigKey: persisted.UserConfigKey,
 	}
+	userConfigOverlay, err := workspacepkg.DecodeUserWorkspaceOverlay(persisted.UserConfigOverlay)
+	if err != nil {
+		return nil, fmt.Errorf("decode persisted workspace: %w", err)
+	}
+	ws.userConfigOverlay = userConfigOverlay
 	if persisted.Source != nil {
 		src, err := decodePersistedWorkspaceSource(ctx, dec, persisted.Source, rootfs, persisted.HostPath)
 		if err != nil {
@@ -1007,6 +1056,7 @@ func attachWorkspaceSource(
 func (ws *Workspace) Clone() *Workspace {
 	cp := *ws
 	cp.mountPoints = slices.Clone(ws.mountPoints)
+	cp.clientModules = slices.Clone(ws.clientModules)
 	return &cp
 }
 

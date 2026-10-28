@@ -1842,7 +1842,7 @@ func TestTelemetryRoutesClientsAndAncestorsExactlyOnce(t *testing.T) {
 
 	originAttr := func(attrsJSON []byte) string {
 		var attrs []*otlpcommonv1.KeyValue
-		require.NoError(t, clientdb.UnmarshalProtoJSONs(attrsJSON, &otlpcommonv1.KeyValue{}, &attrs))
+		require.NoError(t, clientdb.UnmarshalProtoList(attrsJSON, &otlpcommonv1.KeyValue{}, &attrs))
 		for _, attr := range attrs {
 			if attr.Key == telemetryattrs.TelemetryOriginClientIDAttr {
 				return attr.Value.GetStringValue()
@@ -4231,7 +4231,7 @@ func TestSessionLogExporterRoutesCallPayloadOnlyToMissingTargets(t *testing.T) {
 		seenBodies := map[string]bool{}
 		for _, row := range rows {
 			var attrs []*otlpcommonv1.KeyValue
-			require.NoError(t, clientdb.UnmarshalProtoJSONs(row.Attributes, &otlpcommonv1.KeyValue{}, &attrs))
+			require.NoError(t, clientdb.UnmarshalProtoList(row.Attributes, &otlpcommonv1.KeyValue{}, &attrs))
 			var hasPayload, hasExtra bool
 			for _, attr := range attrs {
 				require.NotEqual(t, telemetryattrs.TelemetryOriginClientIDAttr, attr.Key,

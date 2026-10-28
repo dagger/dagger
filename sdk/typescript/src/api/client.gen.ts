@@ -1393,6 +1393,13 @@ export type ContainerWithMountedFileOpts = {
   readOnly?: boolean
 }
 
+export type ContainerWithMountedFilesOpts = {
+  /**
+   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/lib").
+   */
+  expand?: boolean
+}
+
 export type ContainerWithMountedSecretOpts = {
   /**
    * A user:group to set for the mounted secret.
@@ -2105,6 +2112,15 @@ export type FileExportOpts = {
    * If allowParentDirPath is true, the path argument can be a directory path, in which case the file will be created in that directory.
    */
   allowParentDirPath?: boolean
+}
+
+export type FileExtractOpts = {
+  /**
+   * Remove this many leading elements from each entry's path, as tar --strip-components does.
+   *
+   * Entries with no more elements than this are skipped.
+   */
+  stripComponents?: number
 }
 
 export type FileSearchOpts = {
@@ -8043,6 +8059,23 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Retrieves this container plus the given files mounted read-only in a directory at the given path.
+   *
+   * Each file appears under the base name of its path. The directory holds nothing else, and nothing can be written to it.
+   * @param path Location of the directory holding the files (e.g., "/work/lib").
+   * @param sources Identifiers of the files to mount. Two files with the same base name are an error.
+   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/lib").
+   */
+  withMountedFiles = (
+    path: string,
+    sources: File[],
+    opts?: ContainerWithMountedFilesOpts,
+  ): Container => {
+    const ctx = this._ctx.select("withMountedFiles", { path, sources, ...opts })
+    return new Container(ctx)
+  }
+
+  /**
    * Retrieves this container plus a secret mounted into a file at the given path.
    * @param path Location of the secret file (e.g., "/tmp/secret.txt").
    * @param source Identifier of the secret to mount.
@@ -10750,6 +10783,21 @@ export class File extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Extracts this archive file into a directory.
+   *
+   * The format is detected from the file's contents: zip, or tar, either uncompressed or compressed with gzip, bzip2, xz or zstd.
+   *
+   * An entry whose path would leave the directory is an error.
+   * @param opts.stripComponents Remove this many leading elements from each entry's path, as tar --strip-components does.
+   *
+   * Entries with no more elements than this are skipped.
+   */
+  extract = (opts?: FileExtractOpts): Directory => {
+    const ctx = this._ctx.select("extract", { ...opts })
+    return new Directory(ctx)
   }
 
   /**

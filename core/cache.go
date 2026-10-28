@@ -4,16 +4,44 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
+	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"syscall"
 
+	"github.com/containerd/containerd/v2/core/mount"
+	ctrdfs "github.com/containerd/continuity/fs"
+	"github.com/dagger/dagger/engine/cachevolumedir"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
+	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 )
+
+// cacheVolumeDir is the engine's cache volume directory when it keeps cache
+// volumes there instead of as snapshots (cacheVolumes.dir). One engine = one
+// Server, so a process-global is sufficient, as for SetWorkspaceInvalidator.
+var cacheVolumeDir atomic.Pointer[cachevolumedir.Store]
+
+// SetCacheVolumeDir makes cache volumes directories in store; nil keeps them
+// as snapshots.
+func SetCacheVolumeDir(store *cachevolumedir.Store) {
+	cacheVolumeDir.Store(store)
+}
+
+func currentCacheVolumeDir() *cachevolumedir.Store {
+	return cacheVolumeDir.Load()
+}
 
 // CacheVolume is a persistent volume with a globally scoped identifier.
 type CacheVolume struct {
@@ -31,6 +59,15 @@ type CacheVolume struct {
 	snapshotID      string
 	selector        string
 	releaseSnapshot func(context.Context) error
+	// sourceEvaluated records that a directory-backed volume evaluated its
+	// source; see evaluateSourceLocked.
+	sourceEvaluated bool
+
+	// origin is how this object got its current snapshot, as a
+	// telemetryattrs.CacheVolumeState value, and mounts counts the exec mounts
+	// prepared since. Both are reset with the snapshot.
+	origin string
+	mounts int
 }
 
 func (*CacheVolume) Type() *ast.Type {
@@ -91,6 +128,7 @@ func (cache *CacheVolume) OnRelease(ctx context.Context) error {
 	releaseSnapshot := cache.releaseSnapshot
 	cache.snapshot = nil
 	cache.releaseSnapshot = nil
+	cache.origin, cache.mounts = "", 0
 	cache.mu.Unlock()
 
 	if releaseSnapshot != nil {
@@ -469,13 +507,23 @@ func (cache *CacheVolume) InitializeSnapshot(ctx context.Context) error {
 	if cache.snapshot != nil {
 		return nil
 	}
+	if currentCacheVolumeDir() != nil {
+		// The volume is a directory, made and pinned when an exec mounts
+		// it (lockMountedCaches). The source is still evaluated now, when
+		// snapshot mode would create the snapshot from it.
+		return cache.evaluateSourceLocked(ctx)
+	}
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return err
 	}
 	if cache.snapshotID != "" {
+		// acquire opens the snapshot only when no volume of this client has it
+		// open yet.
+		origin := telemetryattrs.CacheVolumeStateOpen
 		ref, releaseSnapshot, err := query.cacheVolumes().acquire(ctx, cache.snapshotID, func(ctx context.Context) (bkcache.MutableRef, error) {
+			origin = telemetryattrs.CacheVolumeStateReopened
 			ref, err := query.SnapshotManager().GetMutableBySnapshotID(
 				ctx,
 				cache.snapshotID,
@@ -493,66 +541,16 @@ func (cache *CacheVolume) InitializeSnapshot(ctx context.Context) error {
 		}
 		cache.snapshot = ref
 		cache.releaseSnapshot = releaseSnapshot
+		cache.origin, cache.mounts = origin, 0
 		if cache.selector == "" {
 			cache.selector = "/"
 		}
 		return nil
 	}
 
-	var source dagql.ObjectResult[*Directory]
-	if cache.Source.Valid {
-		source = cache.Source.Value
-	}
-
-	if cache.Owner != "" {
-		if source.Self() == nil {
-			srv, err := CurrentDagqlServer(ctx)
-			if err != nil {
-				return err
-			}
-			if err := srv.Select(ctx, srv.Root(), &source, dagql.Selector{Field: "directory"}); err != nil {
-				return fmt.Errorf("failed to create scratch source directory for cache owner: %w", err)
-			}
-		}
-
-		srv, err := CurrentDagqlServer(ctx)
-		if err != nil {
-			return err
-		}
-		chowned := dagql.ObjectResult[*Directory]{}
-		if err := srv.Select(ctx, source, &chowned, dagql.Selector{
-			Field: "chown",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(".")},
-				{Name: "owner", Value: dagql.String(cache.Owner)},
-			},
-		}); err != nil {
-			return fmt.Errorf("failed to chown cache source directory: %w", err)
-		}
-		source = chowned
-	}
-
-	sourceSelector := "/"
-	var sourceRef bkcache.ImmutableRef
-	if source.Self() != nil {
-		dagCache, err := dagql.EngineCache(ctx)
-		if err != nil {
-			return err
-		}
-		if err := dagCache.Evaluate(ctx, source); err != nil {
-			return fmt.Errorf("evaluate cache source directory: %w", err)
-		}
-		sourceSelector, err = source.Self().Dir.GetOrEval(ctx, source.Result)
-		if err != nil {
-			return fmt.Errorf("failed to get cache source selector: %w", err)
-		}
-		if sourceSelector == "" {
-			sourceSelector = "/"
-		}
-		sourceRef, err = source.Self().Snapshot.GetOrEval(ctx, source.Result)
-		if err != nil {
-			return fmt.Errorf("failed to get cache source snapshot: %w", err)
-		}
+	sourceRef, sourceSelector, err := cache.sourceSnapshot(ctx)
+	if err != nil {
+		return err
 	}
 
 	newRef, err := query.SnapshotManager().New(
@@ -573,11 +571,246 @@ func (cache *CacheVolume) InitializeSnapshot(ctx context.Context) error {
 	cache.snapshot = newRef
 	cache.snapshotID = newRef.SnapshotID()
 	cache.releaseSnapshot = releaseSnapshot
+	cache.origin, cache.mounts = telemetryattrs.CacheVolumeStateNew, 0
+	if cache.Source.Valid {
+		cache.origin = telemetryattrs.CacheVolumeStateSeeded
+	}
 	if sourceSelector == "" {
 		sourceSelector = "/"
 	}
 	cache.selector = sourceSelector
 	return nil
+}
+
+// sourceSnapshot is the snapshot a new volume starts from, and the selected
+// path within it: the source directory, chowned to the owner if one is set
+// (an empty directory chowned, for an owner with no source). It is nil when
+// the volume has neither.
+func (cache *CacheVolume) sourceSnapshot(ctx context.Context) (bkcache.ImmutableRef, string, error) {
+	var source dagql.ObjectResult[*Directory]
+	if cache.Source.Valid {
+		source = cache.Source.Value
+	}
+
+	if cache.Owner != "" {
+		if source.Self() == nil {
+			srv, err := CurrentDagqlServer(ctx)
+			if err != nil {
+				return nil, "", err
+			}
+			if err := srv.Select(ctx, srv.Root(), &source, dagql.Selector{Field: "directory"}); err != nil {
+				return nil, "", fmt.Errorf("failed to create scratch source directory for cache owner: %w", err)
+			}
+		}
+
+		srv, err := CurrentDagqlServer(ctx)
+		if err != nil {
+			return nil, "", err
+		}
+		chowned := dagql.ObjectResult[*Directory]{}
+		if err := srv.Select(ctx, source, &chowned, dagql.Selector{
+			Field: "chown",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(".")},
+				{Name: "owner", Value: dagql.String(cache.Owner)},
+			},
+		}); err != nil {
+			return nil, "", fmt.Errorf("failed to chown cache source directory: %w", err)
+		}
+		source = chowned
+	}
+
+	sourceSelector := "/"
+	var sourceRef bkcache.ImmutableRef
+	if source.Self() != nil {
+		dagCache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return nil, "", err
+		}
+		if err := dagCache.Evaluate(ctx, source); err != nil {
+			return nil, "", fmt.Errorf("evaluate cache source directory: %w", err)
+		}
+		sourceSelector, err = source.Self().Dir.GetOrEval(ctx, source.Result)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to get cache source selector: %w", err)
+		}
+		if sourceSelector == "" {
+			sourceSelector = "/"
+		}
+		sourceRef, err = source.Self().Snapshot.GetOrEval(ctx, source.Result)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to get cache source snapshot: %w", err)
+		}
+	}
+	return sourceRef, sourceSelector, nil
+}
+
+// evaluateSourceLocked evaluates a directory-backed volume's source, once per
+// value, at the points where a snapshot-backed volume creates its snapshot from
+// it. Some sources, such as remote Git trees, become equivalent to the same
+// content reached through another recipe only once evaluated, and an exec that
+// mounts the volume looks itself up before it runs: evaluating the source only
+// when the exec fills the directory would be too late for that lookup to hit.
+// Requires cache.mu.
+func (cache *CacheVolume) evaluateSourceLocked(ctx context.Context) error {
+	if cache.sourceEvaluated || !cache.Source.Valid || cache.Source.Value.Self() == nil {
+		return nil
+	}
+	dagCache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return err
+	}
+	if err := dagCache.Evaluate(ctx, cache.Source.Value); err != nil {
+		return fmt.Errorf("evaluate cache source directory: %w", err)
+	}
+	cache.sourceEvaluated = true
+	return nil
+}
+
+// dirIdentity is the volume's identity in the cache volume directory: the same
+// fields that name its lock, with the source as its recipe digest, which is
+// the same in every engine, where its ID is an engine-local handle.
+func (cache *CacheVolume) dirIdentity(ctx context.Context) (cachevolumedir.Identity, error) {
+	ident := cachevolumedir.Identity{
+		Namespace: cache.Namespace,
+		Key:       cache.Key,
+		Sharing:   string(cache.Sharing),
+		Owner:     cache.Owner,
+	}
+	if cache.Source.Valid && cache.Source.Value.Self() != nil {
+		dgst, err := cache.Source.Value.RecipeDigest(ctx)
+		if err != nil {
+			return ident, fmt.Errorf("cache volume %q source recipe digest: %w", cache.Key, err)
+		}
+		ident.Source = dgst.String()
+	}
+	return ident, nil
+}
+
+// populateDir fills a new directory-backed volume as InitializeSnapshot starts
+// a snapshot: with the selected subtree of its (chowned) source, the root
+// taking that subtree's mode and owner. With neither source nor owner the
+// directory stays empty.
+func (cache *CacheVolume) populateDir(ctx context.Context, fsDir string) error {
+	sourceRef, selector, err := cache.sourceSnapshot(ctx)
+	if err != nil {
+		return err
+	}
+	if sourceRef == nil {
+		return nil
+	}
+	return MountRef(ctx, sourceRef, func(root string, _ *mount.Mount) error {
+		src, err := ctrdfs.RootPath(root, selector)
+		if err != nil {
+			return fmt.Errorf("resolve cache volume source %q: %w", selector, err)
+		}
+		if err := fscopy.Copy(ctx, root, selector, fsDir, "/", fscopy.WithCopyInfo(fscopy.CopyInfo{
+			CopyDirContents:                true,
+			AlwaysReplaceExistingDestPaths: true,
+		})); err != nil {
+			return fmt.Errorf("copy cache volume source: %w", err)
+		}
+		info, err := os.Lstat(src)
+		if err != nil {
+			return fmt.Errorf("stat cache volume source: %w", err)
+		}
+		if st, ok := info.Sys().(*syscall.Stat_t); ok {
+			if err := os.Lchown(fsDir, int(st.Uid), int(st.Gid)); err != nil {
+				return fmt.Errorf("chown cache volume root: %w", err)
+			}
+		}
+		if err := os.Chmod(fsDir, info.Mode()&(fs.ModePerm|fs.ModeSetuid|fs.ModeSetgid|fs.ModeSticky)); err != nil {
+			return fmt.Errorf("chmod cache volume root: %w", err)
+		}
+		return nil
+	}, mountRefAsReadOnly)
+}
+
+// cacheVolumeMount is what one mount preparation saw of a cache volume.
+type cacheVolumeMount struct {
+	snapshot string
+	state    string
+}
+
+// noteMount counts a mount preparation of the volume's current snapshot and
+// returns what it saw. The first preparation since the volume got its snapshot
+// reports how it got it; later ones report it reused.
+func (cache *CacheVolume) noteMount() cacheVolumeMount {
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+
+	mount := cacheVolumeMount{state: telemetryattrs.CacheVolumeStateReused}
+	if cache.mounts == 0 {
+		mount.state = cache.origin
+	}
+	cache.mounts++
+	if cache.snapshot != nil {
+		mount.snapshot = cache.snapshot.SnapshotID()
+	}
+	return mount
+}
+
+// mountCacheVolume readies a cache volume's backing snapshot for an exec or
+// service mount at target, then reports the preparation (see
+// reportCacheVolumeMount). The report starts only once the snapshot is ready,
+// so a failure is attributed as before.
+func mountCacheVolume(ctx context.Context, vol dagql.ObjectResult[*CacheVolume], target string) error {
+	if err := EnsureBackingSnapshot(ctx, vol); err != nil {
+		return err
+	}
+	cache := vol.Self()
+	mount := cache.noteMount()
+	reportCacheVolumeMount(ctx, cache, target, mount.state,
+		telemetryattrs.CacheVolumeSnapshotAttr, mount.snapshot)
+	return nil
+}
+
+// reportCacheVolumeDirMount reports a mount at target of a directory-backed
+// cache volume, as pinned for it (see reportCacheVolumeMount). The first pin
+// this engine takes on the volume reports how the engine got it: created, or
+// found in the directory.
+func reportCacheVolumeDirMount(ctx context.Context, cache *CacheVolume, target, dirID string, pin *cachevolumedir.Pin) {
+	state := telemetryattrs.CacheVolumeStateReused
+	switch {
+	case pin.Created() && cache.Source.Valid:
+		state = telemetryattrs.CacheVolumeStateSeeded
+	case pin.Created():
+		state = telemetryattrs.CacheVolumeStateNew
+	case pin.FirstPin():
+		state = telemetryattrs.CacheVolumeStateReopened
+	}
+	reportCacheVolumeMount(ctx, cache, target, state, telemetryattrs.CacheVolumeDirAttr, dirID)
+}
+
+// reportCacheVolumeMount reports a prepared mount of a cache volume at target
+// on an internal span (see telemetryattrs.CacheVolumeMountSpan), with the
+// volume's storage as idAttr: its snapshot or its directory.
+func reportCacheVolumeMount(ctx context.Context, cache *CacheVolume, target, state, idAttr, id string) {
+	attrs := []attribute.KeyValue{
+		attribute.String(telemetryattrs.CacheVolumeKeyAttr, cache.Key),
+		attribute.String(telemetryattrs.CacheVolumeNamespaceAttr, cache.Namespace),
+		attribute.String(telemetryattrs.CacheVolumeSharingAttr, string(cache.Sharing)),
+		attribute.String(telemetryattrs.CacheVolumeTargetAttr, target),
+		attribute.String(idAttr, id),
+		attribute.String(telemetryattrs.CacheVolumeStateAttr, state),
+	}
+	idName := "snapshot"
+	if idAttr == telemetryattrs.CacheVolumeDirAttr {
+		idName = "dir"
+	}
+	args := []any{
+		"key", cache.Key,
+		"namespace", cache.Namespace,
+		"sharing", string(cache.Sharing),
+		"target", target,
+		idName, id,
+		"state", state,
+	}
+
+	ctx, span := Tracer(ctx).Start(ctx, telemetryattrs.CacheVolumeMountSpan+": "+cache.Key,
+		telemetry.Internal(), trace.WithAttributes(attrs...))
+	defer telemetry.EndWithCause(span, nil)
+	slog.SpanLogger(ctx, InstrumentationLibrary).Info(telemetryattrs.CacheVolumeMountSpan, args...)
 }
 
 type CacheSharingMode string
@@ -633,4 +866,16 @@ func (mode *CacheSharingMode) UnmarshalJSON(payload []byte) error {
 	*mode = CacheSharingMode(strings.ToUpper(str))
 
 	return nil
+}
+
+// cacheMountCount is the number of cache volume mounts among mounts, read-only
+// ones included.
+func cacheMountCount(mounts []ContainerMount) int {
+	n := 0
+	for _, mnt := range mounts {
+		if mnt.CacheSource != nil {
+			n++
+		}
+	}
+	return n
 }

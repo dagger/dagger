@@ -194,5 +194,23 @@ func loadModuleRegistry() []registryModule {
 			Repo:        "dagger.io/js/playwright",
 			Recommend:   SimpleRecommend("**/playwright.config.*"),
 		},
+		{
+			Name:        "android",
+			Description: "Run test, lint, and build on Android projects",
+			Repo:        "dagger.io/android",
+			Recommend:   SimpleRecommend("**/AndroidManifest.xml"),
+		},
+		{
+			Name:        "swift",
+			Description: "Test and build Swift packages",
+			Repo:        "dagger.io/apple/swift",
+			Recommend:   SimpleRecommend("**/Package.swift"),
+		},
+		{
+			Name:        "maven",
+			Description: "Run tests and builds with Maven",
+			Repo:        "dagger.io/java/maven",
+			Recommend:   SimpleRecommend("**/pom.xml"),
+		},
 	}
 }

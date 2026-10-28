@@ -49,6 +49,7 @@ var (
 const (
 	Directory     string = "Directory"
 	Changeset     string = "Changeset"
+	Check         string = "Check"
 	Container     string = "Container"
 	File          string = "File"
 	Secret        string = "Secret"
@@ -1228,7 +1229,15 @@ func handleObjectLeaf(q *querybuilder.Selection, typeDef *modTypeDef) *querybuil
 	// TODO: Replace with interface when possible.
 	if hasSync {
 		if syncReturnsObject {
-			return q.SelectWithAlias("id", "sync").Select("id")
+			q = q.SelectWithAlias("id", "sync")
+			if typeDef.Name() == Check {
+				// Check.sync retains failures as data instead of returning an
+				// API error. Read the outcome as well as the ID so call can fail.
+				return q.SelectMixed([]string{"id"}, map[string]*querybuilder.Selection{
+					"error": querybuilder.Query().Select("message"),
+				})
+			}
+			return q.Select("id")
 		}
 		return q.SelectWithAlias("id", "sync")
 	}
@@ -1266,6 +1275,10 @@ func handleResponse(ctx context.Context, dag *dagger.Client, returnType *modType
 		return handleChangesetResponse(ctx, dag, response, autoApply)
 	} else {
 		switch returnType.Name() {
+		case Check:
+			if err := checkResponseError(response); err != nil {
+				return err
+			}
 		case LLM:
 			return startInteractivePromptMode(ctx, dag, response)
 		case Changeset:
@@ -1316,6 +1329,26 @@ func handleResponse(ctx context.Context, dag *dagger.Client, returnType *modType
 	}
 
 	return err
+}
+
+// checkResponseError handles a single check or a list of checks. List results
+// retain the id alias around each sync result, just as printID expects.
+func checkResponseError(response any) error {
+	switch v := response.(type) {
+	case []any:
+		var failures []error
+		for _, item := range v {
+			failures = append(failures, checkResponseError(item))
+		}
+		return errors.Join(failures...)
+	case map[string]any:
+		if failure, ok := v["error"].(map[string]any); ok {
+			return fmt.Errorf("%v", failure["message"])
+		}
+		return checkResponseError(v["id"])
+	default:
+		return nil
+	}
 }
 
 func toChangeset(dag *dagger.Client, item any) (*core.Changeset, error) {

@@ -1,0 +1,9 @@
+kind: Changed
+body: |
+  An object returned by a field that returns an ID, such as `sync`, keeps that
+  ID, so passing it on as an argument no longer asks the engine for its ID
+  again.
+time: 2026-10-27T06:00:00.000000000+00:00
+custom:
+    Author: sipsma
+    PR: "14870"

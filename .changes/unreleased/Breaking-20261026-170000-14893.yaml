@@ -1,0 +1,21 @@
+kind: Breaking
+body: |
+  Secret addresses must name their provider with a full `<provider>://`
+  scheme, such as `env://NAME`, `file://PATH` or `cmd://COMMAND`.
+
+  A bare `NAME` no longer reads the environment variable `NAME`, and the
+  `env:NAME`, `file:PATH` and `cmd:COMMAND` shorthands are no longer accepted.
+  This applies to secret function arguments on the CLI, secret module settings
+  in `dagger.toml` and the user config, legacy `dagger.json` customizations,
+  `.env` defaults, and `Address.secret`. The error does not echo the value,
+  which may be a pasted plaintext secret.
+
+  `dagger workspace migrate` rewrites secret settings in `dagger.toml` to the
+  full form, keeping their meaning: `NAME` becomes `env://NAME`, and
+  `env:NAME` becomes `env://NAME`.
+
+  Clients and modules on API versions before v1.0.0 keep the old behavior.
+time: 2026-10-26T17:00:00Z
+custom:
+  Author: marcosnils
+  PR: "14893"

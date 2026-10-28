@@ -4,6 +4,7 @@ import (
 	"context"
 	gofs "io/fs"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/dagger/dagger/internal/fsutil"
@@ -12,6 +13,32 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestGitIgnoreRuleOverrides(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".gitignore"), []byte("old.txt\n.venv/\n"), 0o600))
+	require.NoError(t, os.Mkdir(filepath.Join(root, "nested"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "nested", ".gitignore"), []byte("old.txt\n"), 0o600))
+	fs, err := fsutil.NewFS(root)
+	require.NoError(t, err)
+	matcher := NewGitIgnoreMatcherWithOverrides(fs, map[string]string{
+		".gitignore":         ".venv/\nnew.txt\n",
+		"nested/.gitignore":  "",
+		"created/.gitignore": "secret.txt\n",
+	})
+	for file, want := range map[string]bool{
+		"old.txt":            false,
+		"new.txt":            true,
+		".venv/cache":        true,
+		"nested/old.txt":     false,
+		"nested/new.txt":     true,
+		"created/secret.txt": true,
+	} {
+		ignored, err := matcher.Matches(file, false)
+		require.NoError(t, err)
+		require.Equal(t, want, ignored, file)
+	}
+}
 
 type walkEntry struct {
 	kind    string

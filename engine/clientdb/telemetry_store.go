@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -53,26 +54,47 @@ type spanLookup struct {
 	// Duplicate snapshots are suppressed when firstRow is populated, leaving
 	// one copy of each child span ID in its parent's slice.
 	children map[string][]string
-	// causalChildren indexes cause-purpose span links: linked (target) span ID
-	// → linking span IDs. dagui treats such links as parent→child edges (the
-	// linking span joins the linked span's ChildSpans; see dagql/dagui/db.go),
-	// so the descendant walk follows them too — e.g. a service's long-lived
-	// exec span cause-links to the API spans that installed the Service value
-	// (Container.asService and friends), and the service's logs belong beneath
-	// them. Unlike children, this index is fed from EVERY snapshot row of a
-	// span, not just the first: links are added to live spans over time
+	// The cause-purpose span links index both ways. dagui treats a cause
+	// link as a parent→child edge (the linking span joins the linked span's
+	// ChildSpans; see dagql/dagui/db.go), so the descendant walk follows them
+	// from linked (target) span to linking span — e.g. a service's
+	// long-lived exec span cause-links to the API spans that installed the
+	// Service value (Container.asService and friends), and the service's
+	// logs belong beneath them. The log-scope walk also seeds from the other
+	// end, linking span to target: the service's stdio log records are
+	// deliberately attributed to those install spans (core/service.go routes
+	// them there), so reading logs "beneath" the exec span must reach the
+	// install spans' rows too.
+	//
+	// Unlike children, links are fed from EVERY snapshot row of a span, not
+	// just the first: links are added to live spans over time
 	// (RunningService.addOriginSpanContexts), so later snapshots carry edges
 	// the first row lacked.
-	causalChildren map[string][]string
-	// causalParents is causalChildren's reverse: linking span ID → linked
-	// (target) span IDs — dagui's causesViaLinks direction. It seeds the
-	// log-scope walk from the other end of a cause link: a service's exec
-	// span cause-links the API spans that installed the Service value, and
-	// the service's stdio log records are deliberately attributed to those
-	// install spans (core/service.go routes them there), so reading logs
-	// "beneath" the exec span must reach the install spans' rows too. Fed
-	// from every snapshot row, like causalChildren.
-	causalParents map[string][]string
+	//
+	// Many spans carry the same set of cause links — every lazy evaluation
+	// of a result links the API spans that installed it — so each distinct
+	// set is stored once, with the spans that carry it, over interned span
+	// IDs. The index grows with the spans and the distinct sets, not with
+	// the links: thousands of spans sharing hundreds of links cost thousands
+	// of entries, not millions.
+	causalIDs  map[string]uint32
+	causalName []string
+	linkSets   []causalLinkSet
+	linkSetIDs map[string]uint32
+	// spanLinkSet maps a linking span to the set it carries.
+	spanLinkSet map[uint32]uint32
+	// targetLinkSets maps a linked span to the sets that contain it.
+	targetLinkSets map[uint32][]uint32
+	// freeLinkSets are the slots of sets emptied by spans whose links grew,
+	// for reuse.
+	freeLinkSets []uint32
+}
+
+// causalLinkSet is one distinct set of cause-link targets and the spans
+// whose links are exactly that set.
+type causalLinkSet struct {
+	targets []uint32 // sorted
+	members []uint32
 }
 
 func newSpanLookup() *spanLookup {
@@ -83,16 +105,11 @@ func newSpanLookup() *spanLookup {
 		checkSpans:     make(map[string]struct{}),
 		testSpans:      make(map[string]struct{}),
 		children:       make(map[string][]string),
-		causalChildren: make(map[string][]string),
-		causalParents:  make(map[string][]string),
+		causalIDs:      make(map[string]uint32),
+		linkSetIDs:     make(map[string]uint32),
+		spanLinkSet:    make(map[uint32]uint32),
+		targetLinkSets: make(map[uint32][]uint32),
 	}
-}
-
-func (l *spanLookup) add(row Span) {
-	targets := causalLinkTargets(row)
-	l.mu.Lock()
-	l.addLocked(row, targets)
-	l.mu.Unlock()
 }
 
 func (l *spanLookup) addAll(rows []Span) {
@@ -111,16 +128,7 @@ func (l *spanLookup) addLocked(row Span, causalTargets []string) {
 	// Link edges are indexed before (and regardless of) the duplicate-snapshot
 	// suppression below: a later snapshot of an already-seen span may carry
 	// links its first row lacked.
-	for _, target := range causalTargets {
-		kids := l.causalChildren[target]
-		if !slices.Contains(kids, row.SpanID) {
-			l.causalChildren[target] = append(kids, row.SpanID)
-		}
-		parents := l.causalParents[row.SpanID]
-		if !slices.Contains(parents, target) {
-			l.causalParents[row.SpanID] = append(parents, target)
-		}
-	}
+	l.addCauseLinksLocked(row.SpanID, causalTargets)
 	// Likewise per-row, not per-span: the newest snapshot is the span's
 	// current state, and check/test markers may only appear on a snapshot
 	// taken after the attribute was set.
@@ -132,8 +140,10 @@ func (l *spanLookup) addLocked(row Span, causalTargets []string) {
 		(bytes.Contains(row.Attributes, testCaseNameAttrMarker) || bytes.Contains(row.Attributes, testSuiteNameAttrMarker)) {
 		l.testSpans[row.SpanID] = struct{}{}
 	}
+	var parentKnown bool
 	if row.ParentSpanID.Valid {
-		if _, known := l.parent[row.SpanID]; !known {
+		_, parentKnown = l.parent[row.SpanID]
+		if !parentKnown {
 			l.parent[row.SpanID] = row.ParentSpanID.String
 		}
 	}
@@ -144,25 +154,153 @@ func (l *spanLookup) addLocked(row Span, causalTargets []string) {
 	l.firstRow[key] = row.ID
 	if row.ParentSpanID.Valid {
 		children := l.children[row.ParentSpanID.String]
-		// A repeated span ID in another trace is vanishingly rare, but the
-		// children map follows the SQL query's span-ID-only identity and must
-		// remain unique if it happens.
-		for _, child := range children {
-			if child == row.SpanID {
-				return
-			}
+		// New span IDs cannot already be in a child list. Only a repeated
+		// ID in another trace needs the span-ID-only uniqueness check.
+		if parentKnown && slices.Contains(children, row.SpanID) {
+			return
 		}
 		l.children[row.ParentSpanID.String] = append(children, row.SpanID)
 	}
 }
 
+// addCauseLinksLocked adds targets to the set of spans spanID cause-links.
+// A span keeps one set: links that grow it move the span to the larger set.
+func (l *spanLookup) addCauseLinksLocked(spanID string, targets []string) {
+	if len(targets) == 0 {
+		return
+	}
+	span := l.causalIDLocked(spanID)
+	old, linked := l.spanLinkSet[span]
+	var current []uint32
+	if linked {
+		current = l.linkSets[old].targets
+	}
+	next := current
+	for _, target := range targets {
+		id := l.causalIDLocked(target)
+		i, found := slices.BinarySearch(next, id)
+		if found {
+			continue
+		}
+		if len(next) == len(current) {
+			next = slices.Clone(current)
+		}
+		next = slices.Insert(next, i, id)
+	}
+	if linked && len(next) == len(current) {
+		return
+	}
+	if linked {
+		members := l.linkSets[old].members
+		i := slices.Index(members, span)
+		l.linkSets[old].members = slices.Delete(members, i, i+1)
+		if len(l.linkSets[old].members) == 0 {
+			l.dropLinkSetLocked(old)
+		}
+	}
+	set := l.linkSetLocked(next)
+	l.linkSets[set].members = append(l.linkSets[set].members, span)
+	l.spanLinkSet[span] = set
+}
+
+func (l *spanLookup) causalIDLocked(spanID string) uint32 {
+	if id, ok := l.causalIDs[spanID]; ok {
+		return id
+	}
+	id := uint32(len(l.causalName))
+	l.causalIDs[spanID] = id
+	l.causalName = append(l.causalName, spanID)
+	return id
+}
+
+// linkSetLocked returns the set with exactly targets (sorted), adding it.
+func (l *spanLookup) linkSetLocked(targets []uint32) uint32 {
+	key := linkSetKey(targets)
+	if set, ok := l.linkSetIDs[key]; ok {
+		return set
+	}
+	var set uint32
+	if n := len(l.freeLinkSets); n > 0 {
+		set = l.freeLinkSets[n-1]
+		l.freeLinkSets = l.freeLinkSets[:n-1]
+		l.linkSets[set] = causalLinkSet{targets: targets}
+	} else {
+		set = uint32(len(l.linkSets))
+		l.linkSets = append(l.linkSets, causalLinkSet{targets: targets})
+	}
+	l.linkSetIDs[key] = set
+	for _, target := range targets {
+		l.targetLinkSets[target] = append(l.targetLinkSets[target], set)
+	}
+	return set
+}
+
+// dropLinkSetLocked removes a set no span carries any more, so that a span
+// whose links grow leaves nothing behind.
+func (l *spanLookup) dropLinkSetLocked(set uint32) {
+	targets := l.linkSets[set].targets
+	delete(l.linkSetIDs, linkSetKey(targets))
+	for _, target := range targets {
+		sets := l.targetLinkSets[target]
+		i := slices.Index(sets, set)
+		if sets = slices.Delete(sets, i, i+1); len(sets) == 0 {
+			delete(l.targetLinkSets, target)
+		} else {
+			l.targetLinkSets[target] = sets
+		}
+	}
+	l.linkSets[set] = causalLinkSet{}
+	l.freeLinkSets = append(l.freeLinkSets, set)
+}
+
+func linkSetKey(targets []uint32) string {
+	key := make([]byte, 0, 4*len(targets))
+	for _, id := range targets {
+		key = binary.LittleEndian.AppendUint32(key, id)
+	}
+	return string(key)
+}
+
+// causalChildrenLocked calls f with each span that cause-links to spanID.
+func (l *spanLookup) causalChildrenLocked(spanID string, f func(string) bool) {
+	target, ok := l.causalIDs[spanID]
+	if !ok {
+		return
+	}
+	for _, set := range l.targetLinkSets[target] {
+		for _, member := range l.linkSets[set].members {
+			if !f(l.causalName[member]) {
+				return
+			}
+		}
+	}
+}
+
+// causalParentsLocked returns the spans spanID cause-links to.
+func (l *spanLookup) causalParentsLocked(spanID string) []string {
+	span, ok := l.causalIDs[spanID]
+	if !ok {
+		return nil
+	}
+	set, ok := l.spanLinkSet[span]
+	if !ok {
+		return nil
+	}
+	targets := l.linkSets[set].targets
+	parents := make([]string, len(targets))
+	for i, target := range targets {
+		parents[i] = l.causalName[target]
+	}
+	return parents
+}
+
 // Marker byte strings for the raw-attribute prefilter in addLocked. The
-// attributes column is a protojson-encoded KeyValue list, so an attribute's
-// presence implies its quoted key appears verbatim.
+// attributes column is a binary KeyValue list (MarshalProtoList), so an
+// attribute's presence implies its key bytes appear verbatim.
 var (
-	checkNameAttrMarker     = []byte(`"` + telemetry.CheckNameAttr + `"`)
-	testCaseNameAttrMarker  = []byte(`"` + string(semconv.TestCaseNameKey) + `"`)
-	testSuiteNameAttrMarker = []byte(`"` + string(semconv.TestSuiteNameKey) + `"`)
+	checkNameAttrMarker     = []byte(telemetry.CheckNameAttr)
+	testCaseNameAttrMarker  = []byte(string(semconv.TestCaseNameKey))
+	testSuiteNameAttrMarker = []byte(string(semconv.TestSuiteNameKey))
 )
 
 // causalLinkTargets decodes row's span links and returns the span IDs it
@@ -171,12 +309,11 @@ var (
 // purpose, which imply causality — are parent→child edges; other purposes
 // (error_origin, wait) are not.
 func causalLinkTargets(row Span) []string {
-	if len(row.Links) <= len("[]") {
-		// no links: nil, or an empty JSON array
+	if len(row.Links) == 0 {
 		return nil
 	}
 	var linksPB []*otlptracev1.Span_Link
-	if err := UnmarshalProtoJSONs(row.Links, &otlptracev1.Span_Link{}, &linksPB); err != nil {
+	if err := UnmarshalProtoList(row.Links, &otlptracev1.Span_Link{}, &linksPB); err != nil {
 		slog.Warn("failed to unmarshal span links", "span", row.SpanID, "error", err)
 		return nil
 	}
@@ -216,12 +353,24 @@ func (l *spanLookup) first(traceID, spanID string) (int64, bool) {
 	return id, found
 }
 
-// causalChildrenOf returns the span IDs that cause-link to the given span.
+// causalChildrenOf returns the span IDs that cause-link to the given span, in
+// no particular order.
 func (l *spanLookup) causalChildrenOf(spanID string) []string {
+	var kids []string
 	l.mu.RLock()
-	kids := append([]string(nil), l.causalChildren[spanID]...)
+	l.causalChildrenLocked(spanID, func(kid string) bool {
+		kids = append(kids, kid)
+		return true
+	})
 	l.mu.RUnlock()
 	return kids
+}
+
+// causalParentsOf returns the span IDs the given span cause-links to.
+func (l *spanLookup) causalParentsOf(spanID string) []string {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.causalParentsLocked(spanID)
 }
 
 // hasDescendants reports whether root has anything nested beneath it, over
@@ -241,12 +390,12 @@ func (l *spanLookup) hasDescendants(root string) bool {
 			return true
 		}
 	}
-	for _, kid := range l.causalChildren[root] {
-		if kid != root {
-			return true
-		}
-	}
-	return false
+	descendant := false
+	l.causalChildrenLocked(root, func(kid string) bool {
+		descendant = kid != root
+		return !descendant
+	})
+	return descendant
 }
 
 // logScope returns every span whose log rows belong to a capture rooted at
@@ -266,7 +415,7 @@ func (l *spanLookup) hasDescendants(root string) bool {
 // not drag unrelated subtrees into the capture.
 func (l *spanLookup) logScope(root string) map[string]struct{} {
 	l.mu.RLock()
-	seeds := append([]string{root}, l.causalParents[root]...)
+	seeds := append([]string{root}, l.causalParentsLocked(root)...)
 	l.mu.RUnlock()
 
 	scope := make(map[string]struct{}, len(seeds))
@@ -284,7 +433,10 @@ func (l *spanLookup) logScope(root string) map[string]struct{} {
 
 		l.mu.RLock()
 		children := append([]string(nil), l.children[parent]...)
-		children = append(children, l.causalChildren[parent]...)
+		l.causalChildrenLocked(parent, func(kid string) bool {
+			children = append(children, kid)
+			return true
+		})
 		l.mu.RUnlock()
 
 		for _, child := range children {
@@ -377,17 +529,18 @@ func (l *spanLookup) allSpanIDs() map[string]struct{} {
 func (l *spanLookup) directChildren(spanID string) map[string]struct{} {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
-	kids := make(map[string]struct{}, len(l.children[spanID])+len(l.causalChildren[spanID]))
+	kids := make(map[string]struct{}, len(l.children[spanID]))
 	for _, kid := range l.children[spanID] {
 		if kid != spanID {
 			kids[kid] = struct{}{}
 		}
 	}
-	for _, kid := range l.causalChildren[spanID] {
+	l.causalChildrenLocked(spanID, func(kid string) bool {
 		if kid != spanID {
 			kids[kid] = struct{}{}
 		}
-	}
+		return true
+	})
 	return kids
 }
 
@@ -419,15 +572,6 @@ type logLookup struct {
 
 func newLogLookup() *logLookup {
 	return &logLookup{rowsBySpan: make(map[string][]int64)}
-}
-
-func (l *logLookup) add(row Log) {
-	if !row.SpanID.Valid {
-		return
-	}
-	l.mu.Lock()
-	l.rowsBySpan[row.SpanID.String] = append(l.rowsBySpan[row.SpanID.String], row.ID)
-	l.mu.Unlock()
 }
 
 func (l *logLookup) addAll(rows []Log) {
@@ -477,9 +621,33 @@ type DB struct {
 	closeFn  func() error
 }
 
-func openStore(ctx context.Context, root, clientID string, tailBudget int64) (_ *DB, rerr error) {
+// storePosition is where each of a closed store's streams ends; see
+// spillPosition.
+type storePosition struct {
+	spans, logs, metrics *spillPosition
+}
+
+// openStore opens a client's store with its indexes built.
+func openStore(ctx context.Context, root, clientID string, tailBudget int64) (*DB, error) {
+	store, err := openStoreStreams(ctx, root, clientID, tailBudget, nil)
+	if err != nil {
+		return nil, err
+	}
+	if err := store.ensureIndexed(ctx); err != nil {
+		return nil, errors.Join(err, store.closeStreams())
+	}
+	return store, nil
+}
+
+// openStoreStreams opens a client's store without indexing the rows it
+// already holds; see ensureIndexed. A non-nil pos is where the store's
+// streams ended when it was last closed.
+func openStoreStreams(ctx context.Context, root, clientID string, tailBudget int64, pos *storePosition) (_ *DB, rerr error) {
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, fmt.Errorf("mkdir %s: %w", root, err)
+	}
+	if pos == nil {
+		pos = &storePosition{}
 	}
 
 	store := &DB{
@@ -501,10 +669,7 @@ func openStore(ctx context.Context, root, clientID string, tailBudget int64) (_ 
 		filepath.Join(root, clientID+".spans.log"),
 		spanCodec,
 		tailBudget,
-		func(row Span) {
-			store.lookup.add(row)
-			store.callIdx.addSpan(row)
-		},
+		pos.spans,
 		func(rows []Span) {
 			store.lookup.addAll(rows)
 			store.callIdx.addSpans(rows)
@@ -518,11 +683,7 @@ func openStore(ctx context.Context, root, clientID string, tailBudget int64) (_ 
 		filepath.Join(root, clientID+".logs.log"),
 		logCodec,
 		tailBudget,
-		func(row Log) {
-			store.logIdx.add(row)
-			store.callIdx.addLog(row)
-			store.archiveIdx.add(row)
-		},
+		pos.logs,
 		func(rows []Log) {
 			store.logIdx.addAll(rows)
 			store.callIdx.addLogs(rows)
@@ -537,7 +698,7 @@ func openStore(ctx context.Context, root, clientID string, tailBudget int64) (_ 
 		filepath.Join(root, clientID+".metrics.log"),
 		metricCodec,
 		tailBudget,
-		nil,
+		pos.metrics,
 		nil,
 	)
 	if err != nil {
@@ -545,6 +706,29 @@ func openStore(ctx context.Context, root, clientID string, tailBudget int64) (_ 
 	}
 	store.closeFn = store.closeStreams
 	return store, nil
+}
+
+// ensureIndexed builds the store's indexes over the rows it holds, if they
+// aren't built yet, and keeps them current from then on. Every selector that
+// answers from an index relies on it; the registry's Open calls it.
+func (s *DB) ensureIndexed(ctx context.Context) error {
+	if err := s.spans.ensureIndexed(ctx); err != nil {
+		return fmt.Errorf("index spans: %w", err)
+	}
+	if err := s.logs.ensureIndexed(ctx); err != nil {
+		return fmt.Errorf("index logs: %w", err)
+	}
+	return nil
+}
+
+// position reports where the store's streams end. It is only meaningful once
+// the store has been closed without error.
+func (s *DB) position() *storePosition {
+	return &storePosition{
+		spans:   s.spans.position(),
+		logs:    s.logs.position(),
+		metrics: s.metrics.position(),
+	}
 }
 
 func (s *DB) AppendSpans(rows []Span) (AppendStats, error) {

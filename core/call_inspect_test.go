@@ -88,12 +88,6 @@ func callInspectStore(t *testing.T, id *call.ID, withhold ...string) (*clientdb.
 				stringAttr(telemetry.DagDigestAttr, recipe.RootDigest),
 				stringAttr(telemetry.DagCallAttr, encodedRoot))},
 	}
-	for i := range spans {
-		spans[i].Links = []byte("[]")
-		spans[i].Events = []byte("[]")
-		spans[i].Resource = []byte("{}")
-		spans[i].InstrumentationScope = []byte("{}")
-	}
 	_, err = store.AppendSpans(spans)
 	require.NoError(t, err)
 

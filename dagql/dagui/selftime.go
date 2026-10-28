@@ -474,7 +474,7 @@ func (span *Span) collectWaitWindows(dst *[]waitWindow, row *Span, now time.Time
 				child.collectOwnWaits(dst, row, now)
 			}
 		}
-		for _, effect := range span.effectsViaLinks.Spans() {
+		for effect := range span.continuations {
 			effect.collectOwnWaits(dst, row, now)
 			for _, child := range effect.ChildSpans.Spans() {
 				if child.Name == effect.Name {
@@ -721,7 +721,11 @@ func resolveBlocker(target *Span) *Span {
 // filtered frontend needs to perform the same resolution after import.
 func resolveBlockerPath(target *Span, visit func(*Span)) *Span {
 	for depth := 0; target != nil && depth < 10; depth++ {
-		if !strings.HasPrefix(target.Name, "resume ") {
+		// A resume resolves through its causes. So does any lazy evaluation
+		// it reaches: a later evaluation of a lazy result may link an earlier
+		// one rather than the call that returned the result.
+		if !strings.HasPrefix(target.Name, "resume ") &&
+			(depth == 0 || !target.isLazyEvaluation()) {
 			return target
 		}
 		var next *Span

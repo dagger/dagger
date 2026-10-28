@@ -596,7 +596,7 @@ func TestCacheReleaseCascadePreservesCallbacksAndCleansDerivedIndexes(t *testing
 	assert.NilError(t, c.AddExplicitDependency(ctxParent, parent, child, "derived-index-cascade"))
 
 	c.egraphMu.Lock()
-	childOwners := child.cacheSharedResult().incomingOwnershipCount
+	childOwners := child.cacheSharedResult().incomingOwnershipCount.Load()
 	indexErr := cacheDerivedIndexesErrorLocked(c)
 	c.egraphMu.Unlock()
 	assert.Equal(t, int64(2), childOwners)
@@ -650,8 +650,8 @@ func TestCacheExactDigestPostingRemoval(t *testing.T) {
 	c.egraphMu.Lock()
 	before := len(c.resultIndexedDigests[shared.id])
 	for _, dig := range expectedDigests {
-		c.addResultDigestPostingLocked(shared.id, dig, resultDigestPostingExact)
-		c.addResultDigestPostingLocked(shared.id, dig, resultDigestPostingExact)
+		c.addResultDigestPostingLocked(shared.id, dig)
+		c.addResultDigestPostingLocked(shared.id, dig)
 	}
 	after := len(c.resultIndexedDigests[shared.id])
 	indexErr := cacheDerivedIndexesErrorLocked(c)
@@ -698,7 +698,7 @@ func TestCacheBroadImportedPostingRemoval(t *testing.T) {
 	// marker remains authoritative while the new posting is recorded exactly.
 	mixedID := f.allResultIDs[0]
 	mixedDigest := digest.FromString("broad-imported-later-exact").String()
-	f.cache.addResultDigestPostingLocked(mixedID, mixedDigest, resultDigestPostingExact)
+	f.cache.addResultDigestPostingLocked(mixedID, mixedDigest)
 	_, stillBroad := f.cache.broadlyIndexedResults[mixedID]
 	mixedDigests := slices.Clone(f.cache.resultIndexedDigests[mixedID])
 	type fixtureState struct {
@@ -712,7 +712,7 @@ func TestCacheBroadImportedPostingRemoval(t *testing.T) {
 		_, persisted := f.cache.persistedEdgesByResult[resultID]
 		state := fixtureState{present: res != nil, persisted: persisted}
 		if res != nil {
-			state.owners, state.deps = res.incomingOwnershipCount, len(res.deps)
+			state.owners, state.deps = res.incomingOwnershipCount.Load(), len(res.deps)
 		}
 		fixtures[resultID] = state
 	}

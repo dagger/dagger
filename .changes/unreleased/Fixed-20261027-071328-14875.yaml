@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  A Dagger CLI started inside `dagger api with-session`, `dagger run` or `dagger session` now joins that session as its own client, instead of being refused. It shares the session and its access to host files, and its exit ends only itself.
+time: 2026-10-27T07:13:28Z
+custom:
+  Author: sipsma
+  PR: 14875

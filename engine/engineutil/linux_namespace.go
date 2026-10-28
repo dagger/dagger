@@ -425,7 +425,7 @@ func ShutdownGlobalNamespaceWorkerPool() {
 // getContainerPID asks the container runtime for the PID of a running
 // container's init process.
 func getContainerPID(containerID string) (int, error) {
-	state, err := (&runc.Runc{Command: distconsts.RuntimePath}).State(context.Background(), containerID)
+	state, err := (&runc.Runc{Command: distconsts.RuntimePath, Root: distconsts.RuntimeStateRoot}).State(context.Background(), containerID)
 	if err != nil {
 		return 0, fmt.Errorf("get state of container %s: %w", containerID, err)
 	}

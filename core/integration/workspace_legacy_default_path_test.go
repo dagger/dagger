@@ -117,6 +117,14 @@ legacy-default-path = true
 // Value workspaces load legacy toolchains with their own root as the
 // +defaultPath context, including pending edits.
 func (WorkspaceLegacyDefaultPathSuite) TestToolchainDefaultPathResolvesFromValueWorkspace(ctx context.Context, t *testctx.T) {
+	testToolchainDefaultPathFromValueWorkspace(ctx, t, false)
+}
+
+func (WorkspaceLegacyDefaultPathSuite) TestToolchainFileDefaultPathResolvesFromValueWorkspace(ctx context.Context, t *testctx.T) {
+	testToolchainDefaultPathFromValueWorkspace(ctx, t, true)
+}
+
+func testToolchainDefaultPathFromValueWorkspace(ctx context.Context, t *testctx.T, fileDefault bool) {
 	const (
 		workspaceMarker = "from workspace root"
 		toolMarker      = "from tool module source"
@@ -125,6 +133,33 @@ func (WorkspaceLegacyDefaultPathSuite) TestToolchainDefaultPathResolvesFromValue
 	c := connect(ctx, t)
 
 	readerFixture := core.NewQuery(c).Host().Directory(testDataPath(t, "modules", "go/legacy-default-path-reader"))
+	// File defaults read the context source directly. Directory defaults can
+	// use the attached workspace and would not detect a filtered context.
+	if fileDefault {
+		readerFixture = readerFixture.WithNewFile("main.go", `package main
+
+import (
+    "context"
+    "fmt"
+    "dagger/reader/internal/dagger"
+)
+
+type Reader struct { Source *dagger.File }
+
+func New(
+    // +defaultPath="/workspace-marker.txt"
+    source *dagger.File,
+) *Reader { return &Reader{Source: source} }
+
+// +check
+func (m *Reader) CheckMarker(ctx context.Context) error {
+    contents, err := m.Source.Contents(ctx)
+    if err != nil { return err }
+    if contents != "from workspace root" { return fmt.Errorf("unexpected marker: %q", contents) }
+    return nil
+}
+`)
+	}
 	source := core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", `[modules.reader]
 source = "tool"
@@ -138,8 +173,9 @@ legacy-default-path = true
 		name string
 		ws   *core.Workspace
 	}{
-		{"directory", source.AsWorkspace()},
-		{"git", core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace()},
+		{"directory", source.WithNewFile(".gitignore", "/workspace-marker.txt\n").AsWorkspace()},
+		{"git", core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace().
+			WithNewFile(".gitignore", "/workspace-marker.txt\n")},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			ws := tc.ws

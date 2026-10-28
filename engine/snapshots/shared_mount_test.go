@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -154,6 +155,35 @@ func TestSharedMountIdleCap(t *testing.T) {
 	require.NoError(t, b.Release(ctx))
 	require.NoError(t, store.Manager.RemoveLease(ctx, aOwner))
 	require.NoError(t, store.Manager.RemoveLease(ctx, bOwner))
+}
+
+// A build reads the outputs of thousands of execs through their shared
+// mounts, and reads most of them again later: a Go build's link reads every
+// package's archive. With the default bounds, every output's mount is still
+// there when it is read again.
+func TestSharedMountDefaultsKeepABuildsOutputs(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := testutil.NewStore(t)
+	// The default bound on idle mounts, with a linger long enough that no
+	// mount expires while the test runs, however slow the machine.
+	store.WithSharedMounts(t, time.Hour, 0)
+	const outputs = 2000
+	refs := make([]bkcache.ImmutableRef, outputs)
+	owners := make([]string, outputs)
+	for i := range outputs {
+		refs[i], owners[i] = buildSnapshot(t, store, nil, "out.txt", strconv.Itoa(i))
+		require.Equal(t, strconv.Itoa(i), readShared(t, refs[i], "out.txt"))
+	}
+	for i, ref := range refs {
+		require.Equal(t, strconv.Itoa(i), readShared(t, ref, "out.txt"))
+	}
+	require.EqualValues(t, outputs, store.LocalMounts.Load(), "every output was mounted once")
+
+	for i, ref := range refs {
+		require.NoError(t, ref.Release(ctx))
+		require.NoError(t, store.Manager.RemoveLease(ctx, owners[i]))
+	}
 }
 
 // Readers acquiring and releasing shared mounts while lingers run out, the

@@ -443,7 +443,7 @@ func (LockfileSuite) TestRemoteWorkspaceModuleUsesLockedGitRef(ctx context.Conte
 	}
 	moduleRepo := core.NewQuery(c).Container().From(alpineImage).WithExec([]string{"apk", "add", "git"}).With(gitUserConfig).
 		WithWorkdir("/src").
-		WithNewFile("dagger.json", `{"name":"greeter","engineVersion":"v0.21.9","sdk":{"source":"dang"}}`).
+		WithNewFile("dagger-module.toml", "name = \"greeter\"\nengineVersion = \"v1.0.0\"\n[runtime]\nsource = \"dang\"\n").
 		WithNewFile("main.dang", moduleSource("pinned")).
 		WithExec([]string{"git", "init", "-b", "main"}).
 		WithExec([]string{"git", "add", "."}).WithExec([]string{"git", "commit", "-m", "pinned"}).
@@ -654,7 +654,7 @@ func (LockfileSuite) TestUpdateRefreshesExistingGitEntry(ctx context.Context, t 
 	writeEmptyWorkspaceConfig(t, workdir)
 	lockPath, originalLock := writeGitRefLock(t, workdir, "git.branch", lockTestGitBranchName, lockTestGitBranchCommit)
 
-	out, err := hostDaggerExec(ctx, t, workdir, "lock", "update")
+	out, err := hostDaggerOutput(ctx, t, workdir, "lock", "update")
 	require.NoError(t, err)
 	require.Equal(t, "Updated dagger.lock", strings.TrimSpace(string(out)))
 

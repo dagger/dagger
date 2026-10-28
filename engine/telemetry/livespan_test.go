@@ -1,6 +1,7 @@
 package telemetry
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"sync"
@@ -11,6 +12,8 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/dagger/dagger/engine/slog"
 )
 
 // gatedExporter blocks every ExportSpans call until released, simulating a span
@@ -115,4 +118,106 @@ func TestLiveSpanProcessorBoundedNonBlocking(t *testing.T) {
 	// half of the trade): nothing below the full queue was dropped.
 	require.GreaterOrEqual(t, got, LargeSpanQueueSize,
 		"spans within queue capacity must be retained, not dropped")
+}
+
+// The bounded lane counts what it drops: with the consumer stalled through a
+// burst, the count is exactly the spans emitted that the consumer never got,
+// and without overflow it is zero.
+func TestSpanQueueCountsDrops(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		emitted int
+	}{
+		{name: "overflow", emitted: 2 * LargeSpanQueueSize},
+		{name: "within capacity", emitted: LargeSpanQueueSize / 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			exp := &gatedExporter{gate: make(chan struct{})}
+			var counts SpanQueueCounts
+			proc := NewCountedLargeQueueLiveSpanProcessor(exp, &counts)
+			span := tracetest.SpanStub{
+				Name: "test-span",
+				SpanContext: trace.NewSpanContext(trace.SpanContextConfig{
+					TraceID:    trace.TraceID{1},
+					TraceFlags: trace.FlagsSampled,
+				}),
+				StartTime: time.Now(),
+				EndTime:   time.Now(),
+			}
+			for i := range tc.emitted {
+				// distinct spans, so export coalescing keeps them all
+				var spanID trace.SpanID
+				binary.BigEndian.PutUint64(spanID[:], uint64(i+1))
+				span.SpanContext = span.SpanContext.WithSpanID(spanID)
+				proc.OnEnd(span.Snapshot())
+			}
+			// The batch processor never queues an unsampled span, so it
+			// isn't one the lane dropped.
+			unsampled := span
+			unsampled.SpanContext = unsampled.SpanContext.WithTraceFlags(0)
+			proc.OnEnd(unsampled.Snapshot())
+
+			close(exp.gate)
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+			require.NoError(t, proc.Shutdown(ctx))
+
+			got := exp.exportedCount()
+			require.Equal(t, int64(tc.emitted-got), counts.Dropped())
+			require.Equal(t, int64(tc.emitted), counts.Queued())
+			if tc.emitted > LargeSpanQueueSize {
+				require.Positive(t, counts.Dropped())
+			} else {
+				require.Zero(t, counts.Dropped())
+			}
+		})
+	}
+}
+
+// A shutdown cut short by its deadline leaves spans the queue still hands on
+// afterwards: the report must not call them dropped, only once the queue has
+// drained may it give a final count.
+func TestSpanQueueCountsShutdownCutShort(t *testing.T) {
+	t.Parallel()
+	exp := &gatedExporter{gate: make(chan struct{})}
+	var counts SpanQueueCounts
+	proc := NewCountedLargeQueueLiveSpanProcessor(exp, &counts)
+	span := tracetest.SpanStub{
+		Name: "test-span",
+		SpanContext: trace.NewSpanContext(trace.SpanContextConfig{
+			TraceID:    trace.TraceID{1},
+			TraceFlags: trace.FlagsSampled,
+		}),
+		StartTime: time.Now(),
+		EndTime:   time.Now(),
+	}
+	const emitted = 100 // well within the queue's capacity: nothing overflows
+	for i := range emitted {
+		var spanID trace.SpanID
+		binary.BigEndian.PutUint64(spanID[:], uint64(i+1))
+		span.SpanContext = span.SpanContext.WithSpanID(spanID)
+		proc.OnEnd(span.Snapshot())
+	}
+
+	// The exporter is stalled, so the shutdown runs out of time.
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	shutdownErr := proc.Shutdown(ctx)
+	require.Error(t, shutdownErr)
+	var out bytes.Buffer
+	counts.LogShutdown(slog.New(slog.NewTextHandler(&out, nil)), shutdownErr)
+	require.Contains(t, out.String(), `msg="session telemetry span count incomplete"`)
+	require.NotContains(t, out.String(), "dropped")
+
+	// The queue still hands its spans on once the exporter resumes: none of
+	// them was dropped.
+	close(exp.gate)
+	require.Eventually(t, func() bool { return exp.exportedCount() == emitted }, 30*time.Second, 10*time.Millisecond)
+	require.Zero(t, counts.Dropped())
+	out.Reset()
+	counts.LogShutdown(slog.New(slog.NewTextHandler(&out, nil)), nil)
+	require.Contains(t, out.String(), `msg="session telemetry dropped spans"`)
+	require.Contains(t, out.String(), "dropped=0")
 }

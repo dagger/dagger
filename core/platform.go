@@ -60,7 +60,11 @@ func (Platform) DecodeInput(val any) (dagql.Input, error) {
 		if err != nil {
 			return nil, err
 		}
-		return Platform(plat), nil
+		// Parse keeps some spellings of one platform apart, such as
+		// "linux/arm64/v8" and "linux/arm64". Normalize, as the engine does
+		// wherever it resolves or compares platforms, so that each platform
+		// has one value, and a call that takes one has one key.
+		return Platform(platforms.Normalize(plat)), nil
 	default:
 		return nil, fmt.Errorf("cannot convert %T to Platform", val)
 	}

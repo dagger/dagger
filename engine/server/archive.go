@@ -23,9 +23,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
-	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/log"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
@@ -576,13 +574,13 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 				return errors.New("archive span stream truncated before cut")
 			}
 			next, rowCount = rows[len(rows)-1].ID, len(rows)
-			var spans []sdktrace.ReadOnlySpan
+			var spans []clientdb.Span
 			for _, row := range rows {
 				if row.TraceID == m.TraceID {
-					spans = append(spans, row.ReadOnly())
+					spans = append(spans, row)
 				}
 			}
-			message = &coltracepb.ExportTraceServiceRequest{ResourceSpans: telemetry.SpansToPB(spans)}
+			message = &coltracepb.ExportTraceServiceRequest{ResourceSpans: clientdb.SpansToPB(spans)}
 		case "logs":
 			rows, err := db.SelectLogsRange(r.Context(), clientdb.SelectLogsRangeParams{AfterID: cursor, ThroughID: high, Limit: int64(batchLimit)})
 			if err != nil {

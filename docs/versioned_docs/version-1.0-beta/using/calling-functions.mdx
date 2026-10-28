@@ -69,7 +69,7 @@ A function that discovers the units of a project, such as Go packages or test fi
 | `subset` | A collection of the items with the given keys |
 | `batch` | Functions that run once over every item in the collection |
 
-Select an item with `get` and keep chaining from it. In [Dagger Shell](../reference/cli/index.mdx#dagger-shell), list the tests in one Go package:
+Select an item with `get` and keep chaining from it. In [Dagger Shell](../reference/glossary.mdx#dagger-shell), list the tests in one Go package:
 
 ```shell
 dagger -c 'go | packages | get store | tests | keys'

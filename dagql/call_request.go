@@ -21,6 +21,10 @@ type CallRequest struct {
 	// by recipe could assemble a list that is neither.
 	ListItem bool
 
+	// DeduplicateTelemetry keeps session span deduplication for uncached
+	// calls that only read immutable values.
+	DeduplicateTelemetry bool
+
 	// PassthroughTelemetry keeps the call span available for trace metadata while
 	// asking the UI to show its children in its place.
 	PassthroughTelemetry bool
@@ -62,6 +66,7 @@ func (req *CallRequest) Clone() *CallRequest {
 		DoNotCache:           req.DoNotCache,
 		IsPersistable:        req.IsPersistable,
 		ListItem:             req.ListItem,
+		DeduplicateTelemetry: req.DeduplicateTelemetry,
 		PassthroughTelemetry: req.PassthroughTelemetry,
 		ReceiverTypeName:     req.ReceiverTypeName,
 		// CacheEvidence is deliberately NOT carried over: it is per-invocation

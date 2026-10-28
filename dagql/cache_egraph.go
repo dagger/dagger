@@ -17,13 +17,6 @@ import (
 type eqClassID uint64
 type egraphTermID uint64
 
-type resultDigestPostingKind uint8
-
-const (
-	resultDigestPostingExact resultDigestPostingKind = iota
-	resultDigestPostingBroad
-)
-
 // egraphTerm is purely symbolic: operation shape + canonicalized input/output
 // equivalence state.
 //
@@ -207,7 +200,7 @@ func (c *Cache) initEgraphLocked() {
 		c.egraphTermsByTermDigest = make(map[string]*set.TreeSet[egraphTermID])
 	}
 	if c.egraphResultsByDigest == nil {
-		c.egraphResultsByDigest = make(map[string]*set.TreeSet[sharedResultID])
+		c.egraphResultsByDigest = make(map[string]*resultDigestPosting)
 	}
 	if c.resultIndexedDigests == nil {
 		c.resultIndexedDigests = make(map[sharedResultID][]string)
@@ -693,7 +686,7 @@ func (c *Cache) appendTermSetResultsLocked(candidates *set.TreeSet[*sharedResult
 		if term == nil {
 			continue
 		}
-		outputEqID := c.findEqClassLocked(term.outputEqID)
+		outputEqID := c.eqClassRootLocked(term.outputEqID)
 		if outputEqID == 0 {
 			continue
 		}
@@ -785,6 +778,8 @@ func (c *Cache) lookupMatchForDigestsLocked(recipeDigest digest.Digest, extraDig
 	return match
 }
 
+// lookupMatchForCallLocked only reads the e-graph: the caller holds egraphMu
+// for reading or writing.
 func (c *Cache) lookupMatchForCallLocked(
 	frame *ResultCall,
 	recipeDigest digest.Digest,
@@ -815,7 +810,7 @@ func (c *Cache) lookupMatchForCallLocked(
 			match.missingInputIndex = i
 			break
 		}
-		root := c.findEqClassLocked(classID)
+		root := c.eqClassRootLocked(classID)
 		if root == 0 {
 			match.primaryLookupPossible = false
 			match.missingInputIndex = i
@@ -867,22 +862,17 @@ func (c *Cache) indexResultDigestsLocked(res *sharedResult, requestFrame, respon
 
 // addResultDigestPostingLocked requires egraphMu and an e-graph initialized by
 // initEgraphLocked.
-func (c *Cache) addResultDigestPostingLocked(resID sharedResultID, dig string, kind resultDigestPostingKind) {
+func (c *Cache) addResultDigestPostingLocked(resID sharedResultID, dig string) {
 	if resID == 0 || dig == "" {
-		return
-	}
-	switch kind {
-	case resultDigestPostingExact, resultDigestPostingBroad:
-	default:
 		return
 	}
 	results := c.egraphResultsByDigest[dig]
 	if results == nil {
-		results = newSharedResultIDSet()
+		results = &resultDigestPosting{}
 		c.egraphResultsByDigest[dig] = results
 	}
 	inserted := results.Insert(resID)
-	if kind == resultDigestPostingExact && inserted {
+	if inserted {
 		c.resultIndexedDigests[resID] = append(c.resultIndexedDigests[resID], dig)
 	}
 }
@@ -918,7 +908,9 @@ func (c *Cache) removeResultDigestsLocked(resID sharedResultID, outputEqClasses 
 	for _, dig := range c.resultIndexedDigests[resID] {
 		c.removeResultDigestPostingLocked(resID, dig)
 	}
-	if _, broad := c.broadlyIndexedResults[resID]; broad {
+	if groups := c.restoredDigestGroups[resID]; len(groups) != 0 {
+		c.removeImportedPostingGroupsLocked(resID, groups)
+	} else if _, broad := c.broadlyIndexedResults[resID]; broad {
 		for outputEqID := range outputEqClasses {
 			outputEqID = c.findEqClassLocked(outputEqID)
 			if outputEqID == 0 {
@@ -930,6 +922,7 @@ func (c *Cache) removeResultDigestsLocked(resID sharedResultID, outputEqClasses 
 		}
 	}
 	delete(c.resultIndexedDigests, resID)
+	delete(c.restoredDigestGroups, resID)
 	delete(c.broadlyIndexedResults, resID)
 }
 
@@ -937,7 +930,11 @@ func (c *Cache) removeResultDigestsLocked(resID sharedResultID, outputEqClasses 
 // It first attempts direct digest lookup using the request recipe/extra digests. If that misses,
 // it falls back to the canonical term lookup using (self, input eq-classes).
 //
-// This method assumes egraphMu is already held by the caller.
+// With readOnly set the caller holds only the egraphMu read lock. A miss and a
+// plain recipe-digest hit change nothing in the e-graph and are answered as
+// usual; any other hit would teach the e-graph the request's identity, so it
+// changes nothing and reports needsWrite, and the caller retries the lookup
+// under the write lock. Without readOnly the caller holds the write lock.
 func (c *Cache) lookupCacheForRequestLocked(
 	ctx context.Context,
 	sessionID string,
@@ -946,13 +943,14 @@ func (c *Cache) lookupCacheForRequestLocked(
 	requestSelf digest.Digest,
 	requestInputs []digest.Digest,
 	requestInputRefs []ResultCallStructuralInputRef,
-) (AnyResult, bool, int64, error) {
+	readOnly bool,
+) (_ AnyResult, hit bool, persistedEdgeExpiresAtUnix int64, needsWrite bool, _ error) {
 	if req == nil || req.ResultCall == nil {
-		return nil, false, 0, nil
+		return nil, false, 0, false, nil
 	}
 	now := time.Now()
 	nowUnix := now.Unix()
-	persistedEdgeExpiresAtUnix := candidateSharedResultExpiryUnix(nowUnix, req.TTL)
+	persistedEdgeExpiresAtUnix = candidateSharedResultExpiryUnix(nowUnix, req.TTL)
 	var match lookupMatch
 	if req.ListItem {
 		match = c.lookupMatchForListItemLocked(req, nowUnix)
@@ -985,7 +983,7 @@ func (c *Cache) lookupCacheForRequestLocked(
 
 	if hitRes == nil {
 		c.traceLookupMissNoMatch(ctx, requestDigest.String(), match.primaryLookupPossible, match.missingInputIndex, match.termDigest, match.termSetSize)
-		return nil, false, 0, nil
+		return nil, false, 0, false, nil
 	}
 
 	// fast-path: if we got a very simple recipe-digest hit we can skip trying to teach the egraph anything new
@@ -996,7 +994,10 @@ func (c *Cache) lookupCacheForRequestLocked(
 			hitCache: true,
 		}
 		c.traceLookupHit(ctx, requestDigest.String(), hitRes, match.termDigest)
-		return retRes, true, 0, nil
+		return retRes, true, 0, false, nil
+	}
+	if readOnly {
+		return nil, false, 0, true, nil
 	}
 
 	// We have a cache hit. Teach this request identity onto the existing shared
@@ -1010,14 +1011,34 @@ func (c *Cache) lookupCacheForRequestLocked(
 	)
 	touchSharedResultLastUsed(res, now.UnixNano())
 	if err := c.teachResultIdentityLocked(ctx, res, req.ResultCall, requestDigest, requestSelf, requestInputs, requestInputRefs); err != nil {
-		return nil, false, 0, err
+		return nil, false, 0, false, err
 	}
 	retRes := Result[Typed]{
 		shared:   res,
 		hitCache: true,
 	}
 	c.traceLookupHit(ctx, requestDigest.String(), res, match.termDigest)
-	return retRes, true, persistedEdgeExpiresAtUnix, nil
+	return retRes, true, persistedEdgeExpiresAtUnix, false, nil
+}
+
+// claimLookupHitLocked records the session's ownership of a selected hit and
+// captures its requirement generation. The caller holds egraphMu for reading
+// or writing, in the same critical section that selected the hit.
+func (c *Cache) claimLookupHitLocked(ctx context.Context, sessionID string, retRes AnyResult) (*sharedResult, int, uint64, error) {
+	hitShared := retRes.cacheSharedResult()
+	if hitShared == nil || hitShared.id == 0 {
+		return nil, 0, 0, fmt.Errorf("lookup cache for request: hit missing shared result ID")
+	}
+	_, trackedCount, err := c.acquireSessionResultLocked(ctx, sessionID, hitShared)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	// Capture the requirement generation inside the same critical section
+	// that ran the selection-time subset check. Captured after the unlock, a
+	// concurrent growth's bump could already be reflected in the captured
+	// value, the serve-time comparison would see equality, and the stale
+	// serve would go through.
+	return hitShared, trackedCount, hitShared.requiredSessionResourcesGen.Load(), nil
 }
 
 func (c *Cache) lookupCacheForRequest(
@@ -1040,33 +1061,42 @@ func (c *Cache) lookupCacheForRequest(
 		return nil, false, nil
 	}
 
-	c.egraphMu.Lock()
-	// One collector for this E interval: identity teaching can union classes
-	// or insert a new membership, and both are flushed before the unlock.
-	notify, notifyOwner := c.beginShareNotificationsLocked()
-	retRes, hit, persistedEdgeExpiresAtUnix, err := c.lookupCacheForRequestLocked(ctx, sessionID, req, requestDigest, requestSelf, requestInputs, requestInputRefs)
-	if err != nil || !hit {
-		c.flushShareNotificationsLocked(ctx, notify, notifyOwner)
-		c.egraphMu.Unlock()
+	// Most lookups are a miss or a plain recipe-digest hit. Neither changes
+	// the e-graph, and the hit's session claim changes only state with its
+	// own synchronization, so they run under the read lock and concurrent
+	// lookups do not queue behind each other.
+	c.egraphMu.RLock()
+	retRes, hit, persistedEdgeExpiresAtUnix, needsWrite, err := c.lookupCacheForRequestLocked(ctx, sessionID, req, requestDigest, requestSelf, requestInputs, requestInputRefs, true)
+	if err != nil || (!hit && !needsWrite) {
+		c.egraphMu.RUnlock()
 		return retRes, hit, err
 	}
-
-	hitShared := retRes.cacheSharedResult()
-	if hitShared == nil || hitShared.id == 0 {
+	var (
+		hitShared              *sharedResult
+		trackedCount           int
+		requiredGenAtSelection uint64
+	)
+	if hit {
+		hitShared, trackedCount, requiredGenAtSelection, err = c.claimLookupHitLocked(ctx, sessionID, retRes)
+		c.egraphMu.RUnlock()
+	} else {
+		// The hit teaches the e-graph: look it up again under the write lock.
+		c.egraphMu.RUnlock()
+		c.egraphMu.Lock()
+		// One collector for this E interval: identity teaching can union
+		// classes or insert a new membership, and both are flushed before
+		// the unlock.
+		notify, notifyOwner := c.beginShareNotificationsLocked()
+		retRes, hit, persistedEdgeExpiresAtUnix, _, err = c.lookupCacheForRequestLocked(ctx, sessionID, req, requestDigest, requestSelf, requestInputs, requestInputRefs, false)
+		if err == nil && hit {
+			hitShared, trackedCount, requiredGenAtSelection, err = c.claimLookupHitLocked(ctx, sessionID, retRes)
+		}
 		c.flushShareNotificationsLocked(ctx, notify, notifyOwner)
 		c.egraphMu.Unlock()
-		return nil, false, fmt.Errorf("lookup cache for request: hit missing shared result ID")
+		if err == nil && !hit {
+			return retRes, false, nil
+		}
 	}
-
-	_, trackedCount, err := c.acquireSessionResultLocked(ctx, sessionID, hitShared)
-	// Capture the requirement generation inside the same critical section
-	// that ran the selection-time subset check. Captured after the unlock, a
-	// concurrent growth's bump could already be reflected in the captured
-	// value, the serve-time comparison would see equality, and the stale
-	// serve would go through.
-	requiredGenAtSelection := hitShared.requiredSessionResourcesGen.Load()
-	c.flushShareNotificationsLocked(ctx, notify, notifyOwner)
-	c.egraphMu.Unlock()
 	if err != nil {
 		return nil, false, err
 	}
@@ -1676,9 +1706,9 @@ func (c *Cache) applyPreparedResultIdentityLocked(ctx context.Context, res *shar
 // addFramePostingsLocked posts a frame's recipe digest and extra digests for
 // the result. Requires egraphMu.
 func (c *Cache) addFramePostingsLocked(resID sharedResultID, recipe digest.Digest, extras []call.ExtraDigest) {
-	c.addResultDigestPostingLocked(resID, recipe.String(), resultDigestPostingExact)
+	c.addResultDigestPostingLocked(resID, recipe.String())
 	for _, extra := range extras {
-		c.addResultDigestPostingLocked(resID, extra.Digest.String(), resultDigestPostingExact)
+		c.addResultDigestPostingLocked(resID, extra.Digest.String())
 	}
 }
 
@@ -2018,6 +2048,7 @@ func (c *Cache) maybeResetEgraphLocked() {
 	c.egraphResultsByDigest = nil
 	c.resultIndexedDigests = nil
 	c.broadlyIndexedResults = nil
+	c.restoredDigestGroups = nil
 	c.resultsByID = nil
 	c.resultPayloadBytes = 0
 	c.holderEntries = nil

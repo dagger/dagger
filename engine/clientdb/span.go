@@ -1,7 +1,6 @@
 package clientdb
 
 import (
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
@@ -16,7 +15,7 @@ import (
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	otlpresourcev1 "go.opentelemetry.io/proto/otlp/resource/v1"
 	otlptracev1 "go.opentelemetry.io/proto/otlp/trace/v1"
-	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -97,48 +96,47 @@ func (ros *readOnlySpan) EndTime() time.Time {
 	return time.Time{}
 }
 
-func UnmarshalProtoJSONs[T proto.Message](pb []byte, base T, out *[]T) error {
-	var msgs []json.RawMessage
-	if err := json.Unmarshal(pb, &msgs); err != nil {
-		return fmt.Errorf("failed to json unmarshal: %w", err)
-	}
-	protos := make([]T, len(msgs))
-	for i, msg := range msgs {
-		pl := proto.Clone(base).(T)
-		if err := protojson.Unmarshal(msg, pl); err != nil {
-			return fmt.Errorf("failed to protojson unmarshal %s into %T: %w", msg, pl, err)
+// UnmarshalProtoList decodes a list MarshalProtoList encoded, cloning base
+// for each element.
+func UnmarshalProtoList[T proto.Message](pb []byte, base T, out *[]T) error {
+	var protos []T
+	for len(pb) > 0 {
+		msg, n := protowire.ConsumeBytes(pb)
+		if n < 0 {
+			return fmt.Errorf("failed to decode list element: %w", protowire.ParseError(n))
 		}
-		protos[i] = pl
+		pl := proto.Clone(base).(T)
+		if err := proto.Unmarshal(msg, pl); err != nil {
+			return fmt.Errorf("failed to proto unmarshal into %T: %w", pl, err)
+		}
+		protos = append(protos, pl)
+		pb = pb[n:]
 	}
 	*out = protos
 	return nil
 }
 
-// MarshalProtoJSONs encodes protos as a JSON array of their protojson
-// encodings. Each element is appended as protojson wrote it: wrapping them in
-// json.RawMessage for json.Marshal would validate and re-compact every element
-// a second time, which costs as much as encoding it. Readers parse the array
-// (UnmarshalProtoJSONs), and the byte scans over it (e.g. protoJSONStringAttr)
-// tolerate protojson's whitespace.
-func MarshalProtoJSONs[T proto.Message](protos []T) ([]byte, error) {
-	buf := append(make([]byte, 0, 64*len(protos)+2), '[')
-	for i, msg := range protos {
-		if i > 0 {
-			buf = append(buf, ',')
-		}
+// MarshalProtoList encodes protos as a sequence of length-delimited binary
+// protobuf messages, the store's form for attribute, event and link lists.
+// Binary rather than JSON: encoding and decoding these lists was a large
+// share of the engine's CPU in builds with many execs.
+func MarshalProtoList[T proto.Message](protos []T) ([]byte, error) {
+	buf := make([]byte, 0, 64*len(protos))
+	for _, msg := range protos {
+		buf = protowire.AppendVarint(buf, uint64(proto.Size(msg)))
 		var err error
-		buf, err = protojson.MarshalOptions{}.MarshalAppend(buf, msg)
+		buf, err = proto.MarshalOptions{UseCachedSize: true}.MarshalAppend(buf, msg)
 		if err != nil {
-			return nil, fmt.Errorf("failed to protojson marshal: %w", err)
+			return nil, fmt.Errorf("failed to proto marshal: %w", err)
 		}
 	}
-	return append(buf, ']'), nil
+	return buf, nil
 }
 
 // Attributes returns the attributes of the span
 func (ros *readOnlySpan) Attributes() []attribute.KeyValue {
 	var attrs []*otlpcommonv1.KeyValue
-	if err := UnmarshalProtoJSONs(ros.DB.Attributes, &otlpcommonv1.KeyValue{}, &attrs); err != nil {
+	if err := UnmarshalProtoList(ros.DB.Attributes, &otlpcommonv1.KeyValue{}, &attrs); err != nil {
 		slog.Warn("failed to unmarshal attributes", "error", err)
 	}
 	return telemetry.AttributesFromProto(attrs)
@@ -147,7 +145,7 @@ func (ros *readOnlySpan) Attributes() []attribute.KeyValue {
 // Links returns the links of the span
 func (ros *readOnlySpan) Links() []sdktrace.Link {
 	var links []*otlptracev1.Span_Link
-	if err := UnmarshalProtoJSONs(ros.DB.Links, &otlptracev1.Span_Link{}, &links); err != nil {
+	if err := UnmarshalProtoList(ros.DB.Links, &otlptracev1.Span_Link{}, &links); err != nil {
 		slog.Warn("failed to unmarshal links", "error", err)
 	}
 	return telemetry.SpanLinksFromPB(links)
@@ -156,7 +154,7 @@ func (ros *readOnlySpan) Links() []sdktrace.Link {
 // Events returns the events of the span
 func (ros *readOnlySpan) Events() []sdktrace.Event {
 	var events []*otlptracev1.Span_Event
-	if err := UnmarshalProtoJSONs(ros.DB.Events, &otlptracev1.Span_Event{}, &events); err != nil {
+	if err := UnmarshalProtoList(ros.DB.Events, &otlptracev1.Span_Event{}, &events); err != nil {
 		slog.Warn("failed to unmarshal events", "error", err)
 	}
 	return telemetry.SpanEventsFromPB(events)
@@ -193,7 +191,7 @@ func (ros *readOnlySpan) ChildSpanCount() int {
 // Resource returns the resource associated with the span
 func (ros *readOnlySpan) Resource() *resource.Resource {
 	res := &otlpresourcev1.Resource{}
-	if err := protojson.Unmarshal(ros.DB.Resource, res); err != nil {
+	if err := proto.Unmarshal(ros.DB.Resource, res); err != nil {
 		slog.Warn("failed to unmarshal resource", "error", err)
 	}
 	return resource.NewSchemaless(telemetry.AttributesFromProto(res.Attributes)...)
@@ -208,9 +206,9 @@ func (ros *readOnlySpan) InstrumentationLibrary() instrumentation.Library {
 
 // InstrumentationScope returns the instrumentation scope
 func (ros *readOnlySpan) InstrumentationScope() instrumentation.Scope {
-	// Assuming instrumentation scope is stored as JSON and needs to be parsed
+	// The instrumentation scope is stored as binary protobuf.
 	is := &otlpcommonv1.InstrumentationScope{}
-	if err := protojson.Unmarshal(ros.DB.InstrumentationScope, is); err != nil {
+	if err := proto.Unmarshal(ros.DB.InstrumentationScope, is); err != nil {
 		return instrumentation.Scope{}
 	}
 	return telemetry.InstrumentationScopeFromPB(is)
@@ -219,4 +217,140 @@ func (ros *readOnlySpan) InstrumentationScope() instrumentation.Scope {
 // Ended returns whether the span has ended
 func (ros *readOnlySpan) Ended() bool {
 	return ros.DB.EndTime.Valid
+}
+
+// SpansToPB converts span rows to OTLP, as telemetry.SpansToPB does for their
+// ReadOnly views, without decoding each row into SDK values and encoding it
+// back. A row's attributes and events were encoded from SDK values, so their
+// OTLP form is passed through as stored. Each distinct resource and
+// instrumentation scope is decoded once per call.
+func SpansToPB(rows []Span) []*otlptracev1.ResourceSpans {
+	if len(rows) == 0 {
+		return nil
+	}
+
+	type decodedResource struct {
+		key attribute.Distinct
+		pb  *otlpresourcev1.Resource
+	}
+	resources := map[string]decodedResource{}
+	scopes := map[string]instrumentation.Scope{}
+
+	type key struct {
+		r  attribute.Distinct
+		is instrumentation.Scope
+	}
+	var rss []*otlptracev1.ResourceSpans
+	rsm := make(map[attribute.Distinct]*otlptracev1.ResourceSpans)
+	ssm := make(map[key]*otlptracev1.ScopeSpans)
+	for i := range rows {
+		row := &rows[i]
+		res, ok := resources[string(row.Resource)]
+		if !ok {
+			r := (&readOnlySpan{DB: row}).Resource()
+			res = decodedResource{key: r.Equivalent(), pb: telemetry.ResourcePtrToPB(r)}
+			resources[string(row.Resource)] = res
+		}
+		scope, ok := scopes[string(row.InstrumentationScope)]
+		if !ok {
+			scope = (&readOnlySpan{DB: row}).InstrumentationScope()
+			scopes[string(row.InstrumentationScope)] = scope
+		}
+
+		k := key{r: res.key, is: scope}
+		scopeSpans, sOk := ssm[k]
+		if !sOk {
+			scopeSpans = &otlptracev1.ScopeSpans{
+				Scope:     telemetry.InstrumentationScopeToPB(scope),
+				Spans:     []*otlptracev1.Span{},
+				SchemaUrl: scope.SchemaURL,
+			}
+			ssm[k] = scopeSpans
+		}
+		scopeSpans.Spans = append(scopeSpans.Spans, row.spanPB())
+
+		rs, rOk := rsm[res.key]
+		if !rOk {
+			rs = &otlptracev1.ResourceSpans{
+				Resource:   res.pb,
+				ScopeSpans: []*otlptracev1.ScopeSpans{scopeSpans},
+			}
+			rsm[res.key] = rs
+			rss = append(rss, rs)
+			continue
+		}
+		if !sOk {
+			rs.ScopeSpans = append(rs.ScopeSpans, scopeSpans)
+		}
+	}
+	return rss
+}
+
+// spanPB is the OTLP span telemetry.SpansToPB makes of span.ReadOnly().
+func (span *Span) spanPB() *otlptracev1.Span {
+	ros := &readOnlySpan{DB: span}
+	tid := ros.SpanContext().TraceID()
+	sid := ros.SpanContext().SpanID()
+
+	var attrs []*otlpcommonv1.KeyValue
+	if err := UnmarshalProtoList(span.Attributes, &otlpcommonv1.KeyValue{}, &attrs); err != nil {
+		slog.Warn("failed to unmarshal attributes", "error", err)
+	}
+	var events []*otlptracev1.Span_Event
+	if err := UnmarshalProtoList(span.Events, &otlptracev1.Span_Event{}, &events); err != nil {
+		slog.Warn("failed to unmarshal events", "error", err)
+	}
+
+	// Links are few; their round trip through SDK values keeps the stream
+	// exactly as it was.
+	pb := &otlptracev1.Span{
+		TraceId:                tid[:],
+		SpanId:                 sid[:],
+		TraceState:             ros.SpanContext().TraceState().String(),
+		Status:                 statusPB(codes.Code(span.StatusCode), span.StatusMessage),
+		StartTimeUnixNano:      uint64(ros.StartTime().UnixNano()),
+		EndTimeUnixNano:        uint64(ros.EndTime().UnixNano()),
+		Links:                  telemetry.SpanLinksToPB(ros.Links()),
+		Kind:                   spanKindPB(span.Kind),
+		Name:                   span.Name,
+		Attributes:             attrs,
+		Events:                 events,
+		DroppedAttributesCount: uint32(span.DroppedAttributesCount),
+		DroppedEventsCount:     uint32(span.DroppedEventsCount),
+		DroppedLinksCount:      uint32(span.DroppedLinksCount),
+		// A stored parent is never remote.
+		Flags: uint32(otlptracev1.SpanFlags_SPAN_FLAGS_CONTEXT_HAS_IS_REMOTE_MASK),
+	}
+	if psid := ros.Parent().SpanID(); psid.IsValid() {
+		pb.ParentSpanId = psid[:]
+	}
+	return pb
+}
+
+func statusPB(code codes.Code, message string) *otlptracev1.Status {
+	c := otlptracev1.Status_STATUS_CODE_UNSET
+	switch code {
+	case codes.Ok:
+		c = otlptracev1.Status_STATUS_CODE_OK
+	case codes.Error:
+		c = otlptracev1.Status_STATUS_CODE_ERROR
+	}
+	return &otlptracev1.Status{Code: c, Message: message}
+}
+
+func spanKindPB(kind string) otlptracev1.Span_SpanKind {
+	switch kind {
+	case "internal":
+		return otlptracev1.Span_SPAN_KIND_INTERNAL
+	case "server":
+		return otlptracev1.Span_SPAN_KIND_SERVER
+	case "client":
+		return otlptracev1.Span_SPAN_KIND_CLIENT
+	case "producer":
+		return otlptracev1.Span_SPAN_KIND_PRODUCER
+	case "consumer":
+		return otlptracev1.Span_SPAN_KIND_CONSUMER
+	default:
+		return otlptracev1.Span_SPAN_KIND_UNSPECIFIED
+	}
 }

@@ -169,7 +169,7 @@ func cloudRepoOwner(repo string) string {
 // loadCloudCheckQueryForWorkspace, for the workspace commands that don't need
 // the owning org/client or the matched selectors.
 func (cli *CloudCLI) loadCloudCheckRowsForWorkspace(ctx context.Context, address string, checks []string, login bool) ([]cloudCheckRow, error) {
-	res, _, err := cli.loadCloudCheckQueryForWorkspace(ctx, address, checks, login)
+	res, _, err := cli.loadCloudCheckQueryForWorkspace(ctx, []string{address}, checks, login)
 	if err != nil {
 		return nil, err
 	}
@@ -349,13 +349,19 @@ func filterCloudCheckRows(rows []cloudCheckRow, selectors cloudCheckSelectorFlag
 	return out
 }
 
+// cloudCheckRowMatches reports whether row matches every selector. A git-sha
+// selector also matches the version the check ran on: Cloud files a pull
+// request's checks under the PR head commit, while their commit statuses link
+// the merge commit CI tested, which is the checks' module version.
 func cloudCheckRowMatches(row cloudCheckRow, selectors cloudCheckSelectorFlags) bool {
 	for _, dim := range cloudCheckDimensions {
 		values := selectors.values(dim)
 		if len(values) == 0 {
 			continue
 		}
-		if !cloudDimensionMatches(dim, row.Dimensions[dim], values) {
+		matches := cloudDimensionMatches(dim, row.Dimensions[dim], values) ||
+			dim == "git-sha" && row.Check.ModuleVersion != "" && cloudDimensionMatches(dim, row.Check.ModuleVersion, values)
+		if !matches {
 			return false
 		}
 	}

@@ -1524,6 +1524,35 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) ([]da
 		legacy.Spec = &legacySpec
 		fields = append(fields, legacy)
 
+		// The check's body runs through this hidden field, keyed and cached
+		// like the function's own field, so a check whose inputs haven't
+		// changed is reused across sessions and engines as its @cache policy
+		// allows. It also runs the container an older module's check may
+		// return, so a result is kept only when the whole check passed.
+		runSpec := *field.Spec
+		runSpec.Name = checkRunFieldName(fun.Name)
+		authoredFunc := field.Func
+		fields = append(fields, dagql.Field[*ModuleObject]{
+			Spec: &runSpec,
+			Func: func(ctx context.Context, receiver dagql.ObjectResult[*ModuleObject], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
+				result, err := authoredFunc(ctx, receiver, args, view)
+				if err != nil {
+					return nil, err
+				}
+				obj, ok := result.(dagql.AnyObjectResult)
+				if !ok {
+					return result, nil
+				}
+				srv := installed.orCurrent(ctx)
+				if sync, ok := obj.ObjectType().FieldSpec("sync", srv.View); ok && !sync.Args.HasRequired(srv.View) {
+					if err := srv.Select(ctx, obj, &result, dagql.Selector{Field: "sync"}); err != nil {
+						return nil, err
+					}
+				}
+				return result, nil
+			},
+		})
+
 		projectionSpec := *field.Spec
 		projectionSpec.Type = fun.ReturnType.Self().ToTyped()
 		projectionSpec.ViewFilter = AfterVersion("v1.0.0-0")

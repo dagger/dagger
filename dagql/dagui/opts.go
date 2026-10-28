@@ -203,6 +203,10 @@ func (opts FrontendOpts) ShouldShow(db *DB, span *Span) bool {
 	// 	return false
 	// }
 	if opts.GCThreshold > 0 &&
+		// A passthrough span's children are shown in its place, and hiding a
+		// span hides everything beneath it. Its own age must not drop them:
+		// the engine's "POST /query" ends OK even when a call under it failed.
+		!span.Passthrough &&
 		time.Since(span.EndTime) > opts.GCThreshold &&
 		verbosity < ShowCompletedVerbosity {
 		// stop showing steps that ended after a given threshold

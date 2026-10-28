@@ -118,6 +118,26 @@ defmodule Dagger.File do
   end
 
   @doc """
+  Extracts this archive file into a directory.
+
+  The format is detected from the file's contents: zip, or tar, either uncompressed or compressed with gzip, bzip2, xz or zstd.
+
+  An entry whose path would leave the directory is an error.
+  """
+  @spec extract(t(), [{:strip_components, integer() | nil}]) :: Dagger.Directory.t()
+  def extract(%__MODULE__{} = file, optional_args \\ []) do
+    query_builder =
+      file.query_builder
+      |> QB.select("extract")
+      |> QB.maybe_put_arg("stripComponents", optional_args[:strip_components])
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: file.client
+    }
+  end
+
+  @doc """
   A unique identifier for this File.
   """
   @spec id(t()) :: {:ok, String.t()} | {:error, term()}

@@ -306,14 +306,14 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					WithFunction(
 						dag.Function("Discord",
 							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
-							WithDescription("Message a Discord webhook: `dagger call discord --webhook-url=env:DISCORD_WEBHOOK --message=\"👋 from Dagger notify module\"`").
+							WithDescription("Message a Discord webhook: `dagger call discord --webhook-url=env://DISCORD_WEBHOOK --message=\"👋 from Dagger notify module\"`").
 							WithSourceMap(dag.SourceMap("main.go", 21, 1)).
 							WithArg("webhookURL", dag.TypeDef().WithObject("Secret"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 23, 2)}).
 							WithArg("message", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 24, 2)})).
 					WithFunction(
 						dag.Function("Slack",
 							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
-							WithDescription("Message a specific Slack channel: `dagger call slack --token=env:SLACK_TOKEN --channel-id=C07PBDE3U57 --color=\"#FC0\" --message=\"👋 from Dagger notify module\"`").
+							WithDescription("Message a specific Slack channel: `dagger call slack --token=env://SLACK_TOKEN --channel-id=C07PBDE3U57 --color=\"#FC0\" --message=\"👋 from Dagger notify module\"`").
 							WithSourceMap(dag.SourceMap("main.go", 50, 1)).
 							WithArg("token", dag.TypeDef().WithObject("Secret"), dagger.FunctionWithArgOpts{Description: "The slack token to authenticate with the slack organization", SourceMap: dag.SourceMap("main.go", 53, 2)}).
 							WithArg("color", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "The sidebar color of the message", SourceMap: dag.SourceMap("main.go", 55, 2)}).

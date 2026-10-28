@@ -1016,7 +1016,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					WithFunction(
 						dag.Function("TestProfile",
 							dag.TypeDef().WithObject("TestProfileResult")).
-							WithDescription("Run core engine tests against an engine recording a wcprof wall-clock\nprofile, and return the recording.\n\nThe test engine records every session from startup (_DAGGER_WCPROF=1). The\ndump is fetched from its debug endpoint after `go test` exits, whether or\nnot the tests passed, so a failing run still yields a profile. Benchmark\ntests gated on _DAGGER_BENCH are opted in, since profiling is what they are\nfor: select them with `run` like any other test.").
+							WithDescription("Run core engine tests against an engine recording a wcprof wall-clock\nprofile, and return the recording.\n\nThe test engine records every session from startup (its --wcprof flag). The\ndump is fetched from its debug endpoint after `go test` exits, whether or\nnot the tests passed, so a failing run still yields a profile. Benchmark\ntests gated on _DAGGER_BENCH are opted in, since profiling is what they are\nfor: select them with `run` like any other test.").
 							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
 							WithSourceMap(dag.SourceMap("test.go", 127, 1)).
 							WithArg("run", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Only run these tests", SourceMap: dag.SourceMap("test.go", 131, 2)}).

@@ -10,7 +10,7 @@ Send Discord notifications via a [Webhook URL](https://support.discord.com/hc/en
 export DISCORD_WEBHOOK=<your-discord-webhook-here>
 
 dagger call -m github.com/gerhard/daggerverse/notify \
-    discord --webhook-url env:DISCORD_WEBHOOK --message 'Hi from Dagger Notify Module 👋'
+    discord --webhook-url env://DISCORD_WEBHOOK --message 'Hi from Dagger Notify Module 👋'
 ```
 
 ## Slack
@@ -46,7 +46,7 @@ export SLACK_TOKEN="xoxb-not-a-real-token-this-will-not-work"
 
 dagger call slack \ 
   --channel-id="<CHANNEL_ID>" \
-  --token=env:SLACK_TOKEN \
+  --token=env://SLACK_TOKEN \
   --color="#2596be" \
   --message="Hello world!" \
   --title="My title" \
@@ -56,7 +56,7 @@ dagger call slack \
 
 dagger call slack \
   --channel-id="<CHANNEL_ID>" \
-  --token=env:SLACK_TOKEN \
+  --token=env://SLACK_TOKEN \
   --color="danger" \
   --message="This is a reply in a thread" \
   --thread-id="ID from the previous output command"

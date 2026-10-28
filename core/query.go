@@ -82,6 +82,11 @@ type Server interface {
 	// Return the modules being served to the current client
 	CurrentServedDeps(context.Context) (*SchemaBuilder, error)
 
+	// Return the modules the current client served beside its workspace's
+	// own, with -m or through the API, that artifact discovery lists, sorted
+	// by name
+	CurrentClientModules(context.Context) ([]WorkspaceClientModule, error)
+
 	// The Client metadata of the main client caller (i.e. the one who created
 	// the session, typically the CLI invoked by the user)
 	MainClientCallerMetadata(context.Context) (*engine.ClientMetadata, error)

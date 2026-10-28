@@ -108,20 +108,15 @@ func evalDangSource(
 	withEnv func(context.Context, dang.ValueScope) ([]byte, error),
 ) ([]byte, error) {
 	return dangshared.WithNestedClientServer(ctx, query, nestedClientMetadata, inertAttachables, fnCall, moduleContext, func(ctx context.Context, gqlClient graphql.Client) ([]byte, error) {
-		var intro introspection.Response
-		f, err := schemaFile.Self().Open(ctx, dagql.ObjectResult[*core.File]{Result: schemaFile})
+		schema, err := loadDangSchema(ctx, schemaFile)
 		if err != nil {
-			return nil, fmt.Errorf("open schema file: %w", err)
-		}
-		defer f.Close()
-		if err := json.NewDecoder(f).Decode(&intro); err != nil {
-			return nil, fmt.Errorf("decode schema: %w", err)
+			return nil, err
 		}
 
 		ctx = dang.ContextWithImportConfigs(ctx, dang.ImportConfig{
 			Name:       "Dagger",
 			Client:     gqlClient,
-			Schema:     intro.Schema,
+			Schema:     schema,
 			AutoImport: true,
 		})
 
@@ -157,7 +152,7 @@ func evalDangSource(
 			// for its declared types. At runtime the served schema already
 			// includes the module's own types (Module.IncludeSelfInDeps), so
 			// this is a no-op then.
-			ensureModuleSelfTypes(intro.Schema, modSource.Self(), modSrcDir)
+			ensureModuleSelfTypes(schema, modSource.Self(), modSrcDir)
 
 			env, err = runSource(ctx, modSrcDir)
 			if err != nil {
@@ -179,6 +174,57 @@ func evalDangSource(
 
 		return withEnv(ctx, env)
 	})
+}
+
+// loadDangSchema reuses decoding of an immutable schema File through the engine
+// cache. Clients and inferred types remain local to each native invocation.
+func loadDangSchema(ctx context.Context, file dagql.Result[*core.File]) (*introspection.Schema, error) {
+	read := func(ctx context.Context) (*introspection.Schema, error) {
+		f, err := file.Self().Open(ctx, dagql.ObjectResult[*core.File]{Result: file})
+		if err != nil {
+			return nil, fmt.Errorf("open schema file: %w", err)
+		}
+		defer f.Close()
+		var intro introspection.Response
+		if err := json.NewDecoder(f).Decode(&intro); err != nil {
+			return nil, fmt.Errorf("decode schema: %w", err)
+		}
+		return intro.Schema, nil
+	}
+	id, idErr := file.ID()
+	if idErr != nil {
+		return read(ctx)
+	}
+	key, err := id.Encode()
+	if err != nil {
+		return nil, err
+	}
+	return cachedDangSchema(ctx, key, read)
+}
+
+func cachedDangSchema(ctx context.Context, key string, read func(context.Context) (*introspection.Schema, error)) (*introspection.Schema, error) {
+	cache, cacheErr := dagql.EngineCache(ctx)
+	metadata, metadataErr := engine.ClientMetadataFromContext(ctx)
+	if cacheErr != nil || metadataErr != nil {
+		return read(ctx)
+	}
+	result, err := cache.GetOrInitArbitrary(ctx, metadata.SessionID, "native-dang-schema:"+key,
+		func(ctx context.Context) (any, error) { return read(ctx) })
+	if err != nil {
+		return nil, err
+	}
+	schema, ok := result.Value().(*introspection.Schema)
+	if !ok {
+		return nil, fmt.Errorf("invalid Dang schema cache result %T", result.Value())
+	}
+	if schema == nil {
+		return nil, nil
+	}
+	// ensureModuleSelfTypes appends placeholders for the current module. Keep
+	// its wrapper and type-list storage separate from the cached schema.
+	local := *schema
+	local.Types = slices.Clone(schema.Types)
+	return &local, nil
 }
 
 // dangSourceError is the span error for a module whose Dang source failed to

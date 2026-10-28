@@ -259,9 +259,10 @@ type frontendPretty struct {
 	// exactly which spans it printed, so it names them here rather than the
 	// renderer guessing at "the root and its children".
 	//
-	// Only the span-tree's inline logs are suppressed; the roll-up sections
-	// (TESTS' failing-case output, surfaced failures) render through their own
-	// views and are unaffected.
+	// The span-tree's inline logs and, when it is one of them, the primary
+	// span's output written after the report are suppressed; the roll-up
+	// sections (TESTS' failing-case output, surfaced failures) render through
+	// their own views and are unaffected.
 	reportHideLogSpans map[dagui.SpanID]bool
 
 	// reportScopedSubtree marks a report as scoped to one subtree (e.g. a
@@ -3090,7 +3091,11 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 		}
 	}
 
-	// Write the primary output log to stdout/stderr.
+	// Write the primary output log to stdout/stderr, unless the report's
+	// caller prints the primary span's output itself (reportHideLogSpans).
+	if fe.reportOnly && fe.reportHideLogSpans[fe.primarySpan()] {
+		return nil
+	}
 	if fe.reportOnly {
 		// In report mode a failed run's root cause is already rendered above
 		// (renderRootCauseSection); the primary span's stderr stream is that

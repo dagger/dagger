@@ -57,7 +57,7 @@ func New(
 	return dgvs, nil
 }
 
-// Deploy preview environment running Dagger main: dagger call --github-token=env:GITHUB_PAT deploy-preview-with-dagger-main
+// Deploy preview environment running Dagger main: dagger call --github-token=env://GITHUB_PAT deploy-preview-with-dagger-main
 // +cache="session"
 func (h *Daggerverse) DeployPreviewWithDaggerMain(
 	ctx context.Context,

@@ -1,0 +1,12 @@
+kind: Fixed
+body: |
+  When a command failed in a module call, such as installing a module from a
+  missing ref, the CLI's final report could leave out the module source that
+  failed and print only the innermost error. This happened when the CLI ran
+  under a propagated trace (in CI, tests or SDK-driven runs) and the report was
+  rendered more than a second after the request finished. The report now keeps
+  the failed call that names the source.
+time: 2026-10-22T18:22:02Z
+custom:
+    Author: sipsma
+    PR: "14819"

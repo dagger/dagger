@@ -184,7 +184,7 @@ func run(cmd *cobra.Command, args []string) error {
 		// shell because Ctrl+C sends to the process group.)
 		ensureChildProcessesAreKilled(subCmd)
 
-		srv := sessionServer(ctx, "dagger run", engineClient)
+		srv := sessionServer(ctx, engineClient)
 		go srv.Serve(sessionL)
 
 		var cmdErr error
@@ -213,23 +213,14 @@ func run(cmd *cobra.Command, args []string) error {
 }
 
 // sessionServer serves the session of `dagger run` or `dagger session` to
-// child processes. It speaks unencrypted HTTP/2, the only protocol of a Dagger
-// CLI's engine client, so that a CLI child can read why it is refused.
-func sessionServer(ctx context.Context, command string, sess http.Handler) *http.Server {
+// child processes. It speaks unencrypted HTTP/2 as well as HTTP/1, since
+// HTTP/2 is the only protocol of a Dagger CLI's engine client.
+func sessionServer(ctx context.Context, sess http.Handler) *http.Server {
 	protocols := new(http.Protocols)
 	protocols.SetHTTP1(true)
 	protocols.SetUnencryptedHTTP2(true)
 	return &http.Server{
-		// Of the clients that reach this server, only a Dagger CLI sends client
-		// metadata. It would reach the engine as this session's own client, so
-		// its shutdown would end that client.
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Header.Get(engine.ClientMetadataMetaKey) != "" {
-				http.Error(w, "connecting a Dagger CLI to the session served by `"+command+"` is not supported yet", http.StatusNotImplemented)
-				return
-			}
-			sess.ServeHTTP(w, r)
-		}),
+		Handler: sess,
 		// NOTE: no ReadHeaderTimeout (gosec G112) — see cmd/engine/main.go. On
 		// Go >= 1.26.6 it becomes a hard lifetime cap on unencrypted HTTP/2
 		// connections.

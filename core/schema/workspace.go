@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -20,6 +21,7 @@ import (
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"golang.org/x/mod/semver"
 )
@@ -414,6 +416,9 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("sdk").Doc("SDK name to probe. Required."),
 			),
 		dagql.NodeFunc("withClient", s.withSDKModuleClient).
+			// Adding or refreshing a client can resolve its module live, through the
+			// calling client.
+			WithInput(dagql.PerClientInput).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace with a generated module client added to one SDK scope.",
 				"Select the deepest detected or registered scope. Fail if several SDKs have that deepest scope.").
@@ -432,6 +437,9 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("sdk").Doc("Optional SDK name. Search all installed SDKs when omitted."),
 			),
 		dagql.NodeFunc("withUpdatedClients", s.withUpdatedSDKModuleClients).
+			// Adding or refreshing a client can resolve its module live, through the
+			// calling client.
+			WithInput(dagql.PerClientInput).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace with the selected module clients updated.",
 				"The engine re-reads the source of each selected client target and writes the lock entries that those targets reach.",
@@ -479,6 +487,8 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 			),
 		dagql.NodeFunc("withUpdatedLock", s.withUpdatedLock).
+			// Refreshing resolves versions live, through the calling client.
+			WithInput(dagql.PerClientInput).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace with refreshed lockfile state.",
 				"SDK client scopes are regenerated unless noGenerate is true.").
@@ -486,6 +496,8 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("noGenerate").Doc("Do not regenerate SDK client scopes."),
 			),
 		dagql.NodeFunc("__withUpdatedLock", s.withSelectedUpdatedLock).
+			// Refreshing resolves versions live, through the calling client.
+			WithInput(dagql.PerClientInput).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace with selected lockfile entries refreshed.").
 			Args(
@@ -590,6 +602,9 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				`The workspace root is returned as "/".`,
 				"Relative paths in workspace APIs resolve from here."),
 		dagql.NodeFunc("artifacts", s.artifacts).
+			// Discovery goes through the calling client's loaded modules,
+			// which aren't part of the workspace's content.
+			WithInput(dagql.PerClientInput).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Discover static object artifacts from workspace modules without evaluating their values.",
 				"Omits the paths that the workspace's check.skip, generate.skip, and up.skip settings skip.").
@@ -768,11 +783,36 @@ func (s *workspaceSchema) currentWorkspace(
 	if err != nil {
 		return inst, err
 	}
+	// Artifact discovery also lists the modules the client served beside the
+	// workspace's own, so they are part of a workspace identified by content.
+	if ws.HasContentIdentity() {
+		mods, err := parent.Self().Server.CurrentClientModules(ctx)
+		if err != nil {
+			return inst, err
+		}
+		ws = ws.Clone()
+		ws.SetClientModules(mods)
+	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
+	if err != nil {
+		return inst, err
+	}
+	// Each call is keyed separately, since a host checkout can change between
+	// calls. A workspace that holds its own content (a Git ref or an in-engine
+	// directory) can't, so identify it by that content: functions that take it
+	// then hit across calls, sessions and engines.
+	identity, ok, err := ws.ContentIdentity(ctx)
+	if err != nil {
+		return inst, err
+	}
+	if ok {
+		return inst.WithContentDigest(ctx, identity)
+	}
+	return inst, nil
 }
 
 func (s *workspaceSchema) cwd(
@@ -920,19 +960,17 @@ func (s *workspaceSchema) workspaceReadPathExists(
 	ws *core.Workspace,
 	resolvedPath string,
 ) (bool, error) {
-	rp := filepath.ToSlash(resolvedPath)
-	// Overlay edits can create paths that exist in no base source; host-backed
-	// overlays track them as touched paths (tree-backed overlays already fold
-	// edits into the source directory checked below).
-	if overlay, ok := ws.Source().(*core.WorkspaceSourceOverlay); ok {
-		for _, touched := range overlay.TouchedPaths {
-			tp := filepath.ToSlash(touched)
-			if tp == rp || strings.HasPrefix(tp, rp+"/") || rp == "." {
-				return true, nil
-			}
+	rp := path.Clean(filepath.ToSlash(resolvedPath))
+	// The delta contains created paths and parents of edited children. A
+	// touched path (or its descendants) is authoritative even when absent:
+	// deleting it must not expose the old host path again.
+	if delta, ok := ws.OverlayDeltaRoot(); ok {
+		_, exists, err := core.StatFSExists(ctx, &core.DirectoryStatFS{Dir: delta}, rp)
+		if err != nil || exists || ws.OverlayPathTouched(rp) {
+			return exists, err
 		}
 	}
-	return s.workspaceBasePathExists(ctx, ws, resolvedPath)
+	return s.workspaceBasePathExists(ctx, ws, rp)
 }
 
 // workspaceBasePathExists excludes host overlay edits: a path created only
@@ -971,10 +1009,11 @@ func (s *workspaceSchema) workspaceBasePathExists(
 	return false, nil
 }
 
-// resolveRootfs returns a lazy directory reference for a resolved workspace path.
+// resolveRootfs returns a directory reference for a resolved workspace path.
 // Local: per-call host.directory(absPath, include, exclude) via workspace client session.
 // Local with overlay edits: sparse host base + changeset applied on top.
-// Remote: navigates the pre-fetched rootfs.
+// Remote: navigates the pre-fetched rootfs; a filtered read is evaluated and
+// identified by its content (contentKeyedFilteredRead).
 //
 // A host-backed workspace's root carries the checkout's dangling .git pointer
 // file (worktree/submodule); the engine never interprets it -- git-ness is
@@ -1124,9 +1163,69 @@ func (s *workspaceSchema) resolveRootfsFromDirectory(
 		if err != nil {
 			return inst, fmt.Errorf("workspace directory %q (filtering): %w", resolvedPath, err)
 		}
+		return contentKeyedFilteredRead(ctx, resolvedPath, ctxDir)
 	}
 
 	return ctxDir, nil
+}
+
+// contentKeyedFilteredRead identifies a filtered read by the files it selects.
+// Otherwise its identity is its recipe over the workspace root, and a Git
+// root's identity is its commit, so every commit would give every read, and
+// all work on it, a new key even where the selected files are unchanged. Reads
+// from an unedited host workspace are host.directory syncs, which already carry
+// the content digest of what they synced. Reads from a host workspace with
+// overlay edits, under a mounted path or from a rootless local workspace read
+// from a Directory root, and come through here.
+//
+// A filtered read is a copy into a fresh directory, so it holds nothing but the
+// selected files and its content hash covers everything it can reach. A
+// subpath read without a filter is a view into the root, which can still
+// reach the root's files, so this adds no content digest to it.
+//
+// Hashing evaluates the read. A read that fails to evaluate or hash, such as
+// one of a subpath the root doesn't have, is returned as it is, with no content
+// digest, since there is none to give it. That must not fail the workspace
+// call: a missing path is something a caller handles where it uses the read,
+// as Directory.exists does by reporting it missing.
+func contentKeyedFilteredRead(
+	ctx context.Context,
+	resolvedPath string,
+	dir dagql.ObjectResult[*core.Directory],
+) (dagql.ObjectResult[*core.Directory], error) {
+	call, err := dir.ResultCall()
+	if err != nil {
+		return dir, err
+	}
+	if call.ContentDigest() != "" {
+		return dir, nil
+	}
+	if dir.Self() == nil {
+		return dir, fmt.Errorf("workspace directory %q: nil directory result", resolvedPath)
+	}
+	dgst, ok := filteredReadContentHash(ctx, dir)
+	if !ok {
+		return dir, nil
+	}
+	return dir.WithContentDigest(ctx, dgst)
+}
+
+// filteredReadContentHash evaluates a filtered read and returns the content
+// hash of its files, or false if the read fails to evaluate or hash.
+func filteredReadContentHash(ctx context.Context, dir dagql.ObjectResult[*core.Directory]) (digest.Digest, bool) {
+	snapshot, err := dir.Self().Snapshot.GetOrEval(ctx, dir.Result)
+	if err != nil {
+		return "", false
+	}
+	dirPath, err := dir.Self().Dir.GetOrEval(ctx, dir.Result)
+	if err != nil {
+		return "", false
+	}
+	dgst, err := core.GetContentHashFromDirectory(ctx, snapshot, dirPath)
+	if err != nil {
+		return "", false
+	}
+	return dgst, true
 }
 
 // resolveHostOverlayRootfs resolves a read against a host-backed overlay
@@ -1185,6 +1284,17 @@ func (s *workspaceSchema) resolveHostOverlayRootfs(
 		args = append(args, dagql.NamedInput{Name: "exclude", Value: arr})
 	}
 	if gitignore {
+		overrides, err := s.workspaceGitignoreOverrides(ctx, ws, changes.Self())
+		if err != nil {
+			return inst, err
+		}
+		if len(overrides) > 0 {
+			data, err := json.Marshal(overrides)
+			if err != nil {
+				return inst, err
+			}
+			args = append(args, dagql.NamedInput{Name: "gitIgnoreOverrides", Value: dagql.NewString(string(data))})
+		}
 		args = append(args,
 			dagql.NamedInput{Name: "gitignore", Value: dagql.NewBoolean(true)},
 			dagql.NamedInput{Name: "gitIgnoreRoot", Value: dagql.NewString(ws.HostPath())},
@@ -1212,10 +1322,34 @@ func (s *workspaceSchema) resolveHostOverlayRootfs(
 
 	// Descend and re-apply the filter: the changeset applies at the workspace
 	// root, so merged also contains touched paths outside the requested scope;
-	// the descent plus filter trims them back out. Gitignore was already applied
-	// host-side — the sparse tree lacks the .gitignore context to re-evaluate it,
-	// and overlay edits win even for ignored paths.
+	// the descent plus filter trims them back out. The client applies effective
+	// ignore rules before transfer; explicitly staged overlay files still win.
 	return s.resolveRootfsFromDirectory(ctx, srv, ws, merged, resolvedPath, filter, false)
+}
+
+func (s *workspaceSchema) workspaceGitignoreOverrides(ctx context.Context, ws *core.Workspace, changes *core.Changeset) (map[string]string, error) {
+	paths, err := changes.ComputePaths(ctx)
+	if err != nil {
+		return nil, err
+	}
+	overrides := map[string]string{}
+	for _, removed := range paths.AllRemoved {
+		if path.Base(removed) == ".gitignore" {
+			overrides[removed] = ""
+		}
+	}
+	for _, changed := range slices.Concat(paths.Added, paths.Modified) {
+		if path.Base(changed) != ".gitignore" {
+			continue
+		}
+		data, err := s.workspaceReadMetadataFile(ctx, ws, changed)
+		if err != nil {
+			return nil, err
+		}
+		overrides[changed] = string(data)
+	}
+
+	return overrides, nil
 }
 
 // rerootPatterns prefixes filter patterns (relative to a resolved workspace
@@ -1256,12 +1390,19 @@ func (s *workspaceSchema) workspaceOverlayRootfs(ctx context.Context, ws *core.W
 	if ws.HostPath() == "" {
 		return rootfs, fmt.Errorf("workspace has no root filesystem")
 	}
-	// Whole-tree materialization: legitimate for callers that need the full
-	// workspace as a Directory (module-source loading, install flows). For a
-	// host overlay this resolves as full host + changeset via the overlay
-	// branch in resolveRootfs; edits and diffs never come through here (see
-	// overlayEdit, which keeps the changeset delta-native).
+	// Whole-tree unfiltered materialization. Callers that can reach a host-backed
+	// workspace must intentionally require ignored content; engine-owned broad
+	// reads should normally pass gitignore=true to resolveRootfs instead. For a
+	// host overlay this resolves as full host + changeset via the overlay branch
+	// in resolveRootfs; edits and diffs never come through here (see overlayEdit,
+	// which keeps the changeset delta-native).
 	return s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, false)
+}
+
+// filteredWorkspaceRootfs applies upload ignore rules only to host workspaces.
+// Existing value and Git trees remain authoritative.
+func (s *workspaceSchema) filteredWorkspaceRootfs(ctx context.Context, ws *core.Workspace) (dagql.ObjectResult[*core.Directory], error) {
+	return s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, ws.ClientLocalBase())
 }
 
 func requireLocalWorkspace(ws *core.Workspace, operation string) error {
@@ -4432,6 +4573,13 @@ func (s *workspaceSchema) workspaceTargetModules(
 	if parentResult.Self().IsValueWorkspace() {
 		return mods, failures, nil
 	}
+	unrecorded, err := unrecordedClientModules(ctx, parentResult.Self())
+	if err != nil {
+		return nil, nil, err
+	}
+	mods = slices.DeleteFunc(mods, func(mod dagql.ObjectResult[*core.Module]) bool {
+		return unrecorded[mod.Self().Name()]
+	})
 
 	// The served modules above are the workspace as it was on disk when the
 	// session started. Re-resolve whatever the workspace's pending overlay
@@ -4507,6 +4655,35 @@ func ensureWorkspaceModulesLoaded(ctx context.Context, include []string, mode co
 		return nil, err
 	}
 	return query.Server.EnsureWorkspaceModules(ctx, include, mode)
+}
+
+// unrecordedClientModules returns the names of the modules the client served
+// beside the workspace's own that ws didn't record when it was loaded. A
+// workspace identified by its content covers the modules it recorded, so
+// discovery through it must not see others.
+func unrecordedClientModules(ctx context.Context, ws *core.Workspace) (map[string]bool, error) {
+	if !ws.HasContentIdentity() {
+		return nil, nil
+	}
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	live, err := query.Server.CurrentClientModules(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("current client modules: %w", err)
+	}
+	recorded := map[string]core.WorkspaceClientModule{}
+	for _, mod := range ws.ClientModules() {
+		recorded[mod.Name] = mod
+	}
+	unrecorded := map[string]bool{}
+	for _, mod := range live {
+		if rec, ok := recorded[mod.Name]; !ok || rec.Digest != mod.Digest {
+			unrecorded[mod.Name] = true
+		}
+	}
+	return unrecorded, nil
 }
 
 func currentWorkspacePrimaryModules(ctx context.Context) ([]dagql.ObjectResult[*core.Module], error) {

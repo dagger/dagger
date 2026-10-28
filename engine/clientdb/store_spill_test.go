@@ -43,18 +43,27 @@ func TestSpillFileAppendReadAndRecover(t *testing.T) {
 	require.False(t, found)
 
 	require.NoError(t, spill.close())
+	pos := spill.position()
 
-	var recovered []Metric
-	spill, err = openSpillFile(t.Context(), path, metricCodec, func(row Metric) {
-		recovered = append(recovered, row)
-	})
-	require.NoError(t, err)
-	require.Equal(t, want, recovered)
-	require.Equal(t, int64(600), spill.lastID)
-	require.Equal(t, int64(600), spill.committedLastID)
-	require.Equal(t, int64(600), spill.rowCount)
-	require.Len(t, spill.index, 3)
-	require.NoError(t, spill.close())
+	// A reopen without a position scans the file; one with the position the
+	// file was closed at resumes there. Both end up in the same place.
+	for _, pos := range []*spillPosition{nil, pos} {
+		spill, err = openSpillFile(t.Context(), path, metricCodec, pos)
+		require.NoError(t, err)
+		require.Equal(t, int64(600), spill.lastID)
+		require.Equal(t, int64(600), spill.committedLastID)
+		require.Equal(t, int64(600), spill.rowCount)
+		require.Equal(t, info.Size(), spill.writeOffset)
+		require.Equal(t, spill.index, []spillIndexEntry{
+			{id: 1, offset: 1},
+			{id: 257, offset: spill.index[1].offset},
+			{id: 513, offset: spill.index[2].offset},
+		})
+		recovered, err := spill.readSince(t.Context(), 0, 1000)
+		require.NoError(t, err)
+		require.Equal(t, want, recovered)
+		require.NoError(t, spill.close())
+	}
 }
 
 // TestSpillFileReadIDs covers the batch reader a scoped load uses: one pass

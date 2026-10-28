@@ -797,25 +797,6 @@ func TestSelectedRemoteWorkspaceAddressInfersLocalGitWorkspace(t *testing.T) {
 	require.Equal(t, "services/api", remote.Path)
 }
 
-func TestInferCleanLocalWorkspaceRemoteAddressUsesHeadCommit(t *testing.T) {
-	repo, workspaceDir, sha := setupCleanWorkspaceRepo(t)
-
-	t.Chdir(workspaceDir)
-	remote, address, dirty, err := inferCleanLocalWorkspaceRemoteAddress(t.Context(), "")
-	require.NoError(t, err)
-	require.False(t, dirty)
-	require.Equal(t, "github.com/acme/mono/services/api@"+sha, address)
-	require.Equal(t, "github.com/acme/mono", remote.CloneRef)
-	require.Equal(t, "services/api", remote.Path)
-	require.Equal(t, sha, remote.Version)
-
-	require.NoError(t, os.WriteFile(filepath.Join(repo, "untracked.txt"), []byte("dirty\n"), 0o600))
-	_, address, dirty, err = inferCleanLocalWorkspaceRemoteAddress(t.Context(), "")
-	require.NoError(t, err)
-	require.True(t, dirty)
-	require.Empty(t, address)
-}
-
 func TestCurrentWorkspaceRemoteAddress(t *testing.T) {
 	oldWorkspaceRef := workspaceRef
 	t.Cleanup(func() {

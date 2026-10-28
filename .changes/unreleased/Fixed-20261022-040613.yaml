@@ -1,0 +1,11 @@
+kind: Fixed
+body: |
+  A filtered read from a workspace loaded from a Git ref, or from
+  `Directory.asWorkspace`, such as `ws.directory("/", include: [...])`, is now
+  identified by the files it selects, as reads from a host workspace already
+  were. Work built on such a read is reused from one commit to the next when
+  the selected files are unchanged, instead of running again on every commit.
+time: 2026-10-22T04:06:13Z
+custom:
+    Author: sipsma
+    PR: ""

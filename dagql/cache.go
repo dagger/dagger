@@ -783,8 +783,12 @@ func (c *Cache) reopenWiped(ctx context.Context, dbPath, closeMsg, wipeMsg strin
 }
 
 // acquireSessionResultLocked records a session edge and its ownership unit in
-// one critical section. The caller must hold egraphMu; this function nests
-// sessionMu inside it.
+// one critical section. The caller must hold egraphMu, for reading or
+// writing; this function nests sessionMu inside it. The edge is recorded
+// under sessionMu and the ownership unit is an atomic increment, so
+// concurrent claims under the read lock do not race, and no collection or
+// release can run between the result's selection and its claim: those take
+// the write lock.
 func (c *Cache) acquireSessionResultLocked(ctx context.Context, sessionID string, shared *sharedResult) (bool, int, error) {
 	if c == nil || sessionID == "" || shared == nil || shared.id == 0 {
 		return false, 0, nil
@@ -824,9 +828,9 @@ func (c *Cache) trackSessionResult(ctx context.Context, sessionID string, res An
 		return nil
 	}
 
-	c.egraphMu.Lock()
+	c.egraphMu.RLock()
 	_, trackedCount, err := c.acquireSessionResultLocked(ctx, sessionID, shared)
-	c.egraphMu.Unlock()
+	c.egraphMu.RUnlock()
 	if err != nil {
 		return err
 	}
@@ -1778,8 +1782,8 @@ func (c *Cache) incrementIncomingOwnershipLocked(ctx context.Context, res *share
 	if c == nil || res == nil {
 		return
 	}
-	res.incomingOwnershipCount++
-	c.traceRefAcquired(ctx, res, res.incomingOwnershipCount)
+	count := res.incomingOwnershipCount.Add(1)
+	c.traceRefAcquired(ctx, res, count)
 }
 
 func (c *Cache) enqueueCollectibleResultLocked(queue []*sharedResult, res *sharedResult) []*sharedResult {
@@ -1789,7 +1793,7 @@ func (c *Cache) enqueueCollectibleResultLocked(queue []*sharedResult, res *share
 	if _, found := c.resultsByID[res.id]; !found {
 		return queue
 	}
-	if res.incomingOwnershipCount != 0 {
+	if res.incomingOwnershipCount.Load() != 0 {
 		return queue
 	}
 	return append(queue, res)
@@ -1799,10 +1803,10 @@ func (c *Cache) decrementIncomingOwnershipLocked(ctx context.Context, res *share
 	if c == nil || res == nil {
 		return queue, nil
 	}
-	res.incomingOwnershipCount--
-	c.traceRefReleased(ctx, res, res.incomingOwnershipCount)
-	if res.incomingOwnershipCount < 0 {
-		c.traceRefUnderflow(ctx, res, res.incomingOwnershipCount)
+	count := res.incomingOwnershipCount.Add(-1)
+	c.traceRefReleased(ctx, res, count)
+	if count < 0 {
+		c.traceRefUnderflow(ctx, res, count)
 		return queue, fmt.Errorf("incoming ownership underflow for result %d", res.id)
 	}
 	return c.enqueueCollectibleResultLocked(queue, res), nil
@@ -1825,7 +1829,7 @@ func (c *Cache) collectUnownedResultsLocked(ctx context.Context, queue []*shared
 		if _, found := c.resultsByID[res.id]; !found {
 			continue
 		}
-		if res.incomingOwnershipCount != 0 {
+		if res.incomingOwnershipCount.Load() != 0 {
 			continue
 		}
 
@@ -1935,6 +1939,9 @@ func (c *Cache) resultSnapshotLeaseCleanup(res *sharedResult) OnReleaseFunc {
 		seen := make(map[snapshotOwnerKey]struct{})
 		var rerr error
 		for _, link := range res.loadSnapshotOwnerLinks() {
+			if link.Borrowed {
+				continue
+			}
 			key, err := snapshotLinkKey(link)
 			if err != nil {
 				rerr = errors.Join(rerr, err)
@@ -1966,23 +1973,43 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 	// case is removed rather than left to a later sync's repair.
 	wcprof.Lock(ctx, &res.leaseSyncMu, "dagql.sharedResult.leaseSyncMu")
 	defer res.leaseSyncMu.Unlock()
+	return c.syncResultSnapshotLeasesLocked(ctx, res)
+}
 
+// syncResultSnapshotLeasesLocked is syncResultSnapshotLeases with the result's
+// leaseSyncMu held.
+func (c *Cache) syncResultSnapshotLeasesLocked(ctx context.Context, res *sharedResult) error {
 	links, err := desiredSnapshotLinksForResult(ctx, res, true)
 	if err != nil {
 		return err
+	}
+	// A snapshot a dependency already holds is borrowed, as a part copied
+	// from a dependency is: the dependency is kept while res keeps its
+	// value, so its hold keeps the snapshot.
+	held := c.snapshotsHeldByDependencies(res)
+	for i := range links {
+		if _, ok := held[links[i].RefKey]; ok {
+			links[i].Borrowed = true
+		}
 	}
 
 	oldLinks := res.loadSnapshotOwnerLinks()
 
 	oldByKey := make(map[snapshotOwnerKey]PersistedSnapshotRefLink, len(oldLinks))
 	newByKey := make(map[snapshotOwnerKey]PersistedSnapshotRefLink, len(links))
+	seenKeys := make(map[snapshotOwnerKey]PersistedSnapshotRefLink, len(links))
 
+	// A borrowed link gets no lease of its own (PersistedSnapshotRefLink),
+	// but is stored with the others: the result's record names every
+	// snapshot it holds.
 	for _, link := range oldLinks {
 		key, err := snapshotLinkKey(link)
 		if err != nil {
 			return err
 		}
-		oldByKey[key] = link
+		if !link.Borrowed {
+			oldByKey[key] = link
+		}
 	}
 	for _, link := range links {
 		key, err := snapshotLinkKey(link)
@@ -1992,7 +2019,7 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 		if link.RefKey == "" {
 			return fmt.Errorf("empty snapshot key")
 		}
-		if prev, found := newByKey[key]; found {
+		if prev, found := seenKeys[key]; found {
 			return fmt.Errorf(
 				"sync result %d snapshot owner leases: conflicting desired links for %q: %q vs %q",
 				res.id,
@@ -2001,7 +2028,10 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 				link.RefKey,
 			)
 		}
-		newByKey[key] = link
+		seenKeys[key] = link
+		if !link.Borrowed {
+			newByKey[key] = link
+		}
 	}
 
 	for key, oldLink := range oldByKey {
@@ -2035,13 +2065,33 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 		}
 	}
 
-	newLinks := make([]PersistedSnapshotRefLink, 0, len(newByKey))
-	for _, link := range newByKey {
+	newLinks := make([]PersistedSnapshotRefLink, 0, len(seenKeys))
+	for _, link := range seenKeys {
 		newLinks = append(newLinks, link)
 	}
 	res.storeSnapshotOwnerLinks(newLinks)
 
 	return nil
+}
+
+// snapshotsHeldByDependencies returns the snapshots the results res depends
+// on hold, owned or borrowed.
+func (c *Cache) snapshotsHeldByDependencies(res *sharedResult) map[string]struct{} {
+	c.egraphMu.RLock()
+	deps := make([]*sharedResult, 0, len(res.deps))
+	for id := range res.deps {
+		if dep := c.resultsByID[id]; dep != nil {
+			deps = append(deps, dep)
+		}
+	}
+	c.egraphMu.RUnlock()
+	held := map[string]struct{}{}
+	for _, dep := range deps {
+		for _, link := range dep.loadSnapshotOwnerLinks() {
+			held[link.RefKey] = struct{}{}
+		}
+	}
+	return held
 }
 
 func (c *Cache) SyncResultSnapshotOwnerLeases(ctx context.Context, res AnyResult) (rerr error) {
@@ -2363,11 +2413,12 @@ type Cache struct {
 
 	// Reverse index from any known result-associated digest to materialized results.
 	// This includes request recipe+extra digests and result recipe+extra digests.
-	egraphResultsByDigest map[string]*set.TreeSet[sharedResultID]
+	egraphResultsByDigest map[string]*resultDigestPosting
 	// Exact reverse postings recorded for ordinary runtime results. Imported
 	// class-wide postings are deliberately omitted and marked broad instead.
 	resultIndexedDigests  map[sharedResultID][]string
 	broadlyIndexedResults map[sharedResultID]struct{}
+	restoredDigestGroups  map[sharedResultID][]*importedPostingGroup
 
 	// Explicit retained-root edges for persisted results.
 	persistedEdgesByResult map[sharedResultID]persistedEdge
@@ -2718,8 +2769,11 @@ type sharedResult struct {
 	recordType               string
 
 	// incomingOwnershipCount is the authoritative liveness count derived from
-	// session edges, persisted edges, and result dependency edges.
-	incomingOwnershipCount int64
+	// session edges, persisted edges, and result dependency edges. It is atomic
+	// because a session claim increments it under the egraphMu read lock;
+	// every decrement, and every check that drives collection, holds the
+	// write lock, so no claim can run concurrently with them.
+	incomingOwnershipCount atomic.Int64
 
 	attachDepsMu     sync.Mutex
 	attachDepsWaitCh chan struct{}
@@ -3311,18 +3365,15 @@ func (c *Cache) normalizePendingResultCallRefs(ctx context.Context, frame *Resul
 // dependency attachment finished cleanly: publication adoption skips the
 // attach barrier and commits persistence at the handoff without re-checking
 // attachment, so adoption must never swap to a result whose attachment could
-// still fail.
+// still fail. It only reads the e-graph: the caller holds egraphMu for
+// reading or writing.
 func (c *Cache) canonicalEquivalentSharedResultLocked(sessionID string, res *sharedResult, nowUnix int64, requireCleanAttachment bool) *sharedResult {
 	if res == nil || res.id == 0 {
 		return nil
 	}
 
 	candidates := newSharedResultSet()
-	for outputEqID := range c.outputEqClassesForResultLocked(res.id) {
-		outputEqID = c.findEqClassLocked(outputEqID)
-		if outputEqID == 0 {
-			continue
-		}
+	for outputEqID := range c.outputEqClassRootsLocked(res.id) {
 		c.appendOutputEqClassResultsLocked(candidates, outputEqID, nowUnix)
 	}
 	if requireCleanAttachment {
@@ -5054,8 +5105,15 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			storedPart = reporting.LazyGroupStoredPart(group)
 		}
 		if OTelProfActive(evalCtx) && !producerSkip {
-			lazyCallbackCtx, lazySpan, lazyIsResume = c.beginOTelLazyOp(evalCtx, shared.id, group, resultCall, storedPart)
+			// the span starts where the native op does: the preparation
+			// between them is the evaluation's own
+			var startOpts []trace.SpanStartOption
+			if start := lazyOp.StartTime(); !start.IsZero() {
+				startOpts = append(startOpts, trace.WithTimestamp(start))
+			}
+			lazyCallbackCtx, lazySpan, lazyIsResume = c.beginOTelLazyOp(evalCtx, shared.id, group, resultCall, storedPart, startOpts...)
 			attempt.spanCtx = lazySpan.SpanContext()
+			RecordOpSpan(lazyOp, lazySpan)
 		}
 		g.attempt = attempt
 		shared.lazyMu.Unlock()
@@ -5090,7 +5148,6 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			if err == nil && spec == nil {
 				err = c.completeNativePartTask(callbackCtx, installationToken)
 			}
-			lazyOp.EndWithResult(profErrOutcome(err), uint64(shared.id))
 
 			shared.lazyMu.Lock()
 			attempt.err = err
@@ -5158,6 +5215,9 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			if c.testAfterLazyEvalFinish != nil {
 				c.testAfterLazyEvalFinish(attempt)
 			}
+			// The op ends as its waiters are released: what they wait for
+			// after the body (retiring the attempt, the span's end) is its time.
+			lazyOp.EndWithResult(profErrOutcome(err), uint64(shared.id))
 			close(attempt.done)
 			// Sharing's completion trigger runs after the D unlock and after
 			// the waiter wake, so a waiter never waits for it. Only a
@@ -5218,7 +5278,10 @@ func (c *Cache) runLazyEvalBody(callbackCtx context.Context, shared *sharedResul
 		if continuation != nil {
 			err = continuation.finish(callbackCtx, c, shared)
 		} else {
-			err = c.syncResultSnapshotLeases(callbackCtx, shared)
+			// A native group body run through its row's PartHost records
+			// the parts it filled on token; any other body fills the
+			// whole value, which is synced whole.
+			err = c.syncTaskPartLeases(callbackCtx, shared, token)
 		}
 	}
 	if releaseErr := release(context.WithoutCancel(callbackCtx)); releaseErr != nil && err == nil {
@@ -5808,9 +5871,16 @@ func (c *Cache) getOrInitCall(
 	if !wcprof.Enabled(ctx) || req == nil || req.ResultCall == nil {
 		return c.getOrInitCallTakingOver(ctx, sessionID, resolver, req, fn, nil)
 	}
+	// a call the server's telemetry spanned starts where its span did: the
+	// telemetry's preparation since is the call's
+	ownSpan, ownStart := ownCallSpan(ctx, req.ResultCall)
 	ctx, profOp := wcprof.BeginOp(ctx, wcprof.OpKindCall, profCallClass(req.ResultCall), wcprof.OpOpts{
 		ClientID: profClientID(ctx),
+		Start:    ownStart,
 	})
+	if ownSpan.IsValid() {
+		profOp.SetSpan(ownSpan.TraceID(), ownSpan.SpanID())
+	}
 	res, err := c.getOrInitCallTakingOver(ctx, sessionID, resolver, req, fn, profOp)
 	outcome := profOp.OutcomeHint()
 	switch {
@@ -5823,7 +5893,9 @@ func (c *Cache) getOrInitCall(
 	case outcome == wcprof.OutcomeNone:
 		outcome = wcprof.OutcomeOK
 	}
-	profOp.EndWithResult(outcome, profResultID(res))
+	if !handOverCallOpEnd(ctx, req.ResultCall, profOp, outcome, profResultID(res)) {
+		profOp.EndWithResult(outcome, profResultID(res))
+	}
 	return res, err
 }
 
@@ -6061,6 +6133,7 @@ func (c *Cache) getOrInitCallInner(
 	var execSpan trace.Span
 	if OTelProfActive(callCtx) && !req.ResultCall.ProfileSkip {
 		callCtx, execSpan = beginOTelCallExec(callCtx, callKey, profCallClass(req.ResultCall))
+		RecordOpSpan(execOp, execSpan)
 	}
 	sharedWorkCtx, releaseOperationLease, err := withOperationLease(withoutOperationLease(callCtx))
 	if err != nil {
@@ -6378,6 +6451,7 @@ func (c *Cache) wait(
 		var pubSpan trace.Span
 		if oc.execSpanCtx.IsValid() {
 			pubSpan = beginOTelPublishResult(context.WithoutCancel(oc.sharedWorkCtx))
+			RecordOpSpan(pubOp, pubSpan)
 		}
 		oc.initCompletedResultErr = c.initCompletedResult(context.WithoutCancel(oc.sharedWorkCtx), resolver, oc, req, sessionID)
 		if pubOp != nil {

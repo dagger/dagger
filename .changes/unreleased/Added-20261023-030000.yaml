@@ -1,0 +1,8 @@
+kind: Added
+body: |
+  New `File.extract` API to extract a zip or tar archive into a `Directory` without running a container.
+  The format is detected from the file's contents: zip, or tar, either uncompressed or compressed with gzip, bzip2, xz or zstd. `stripComponents` removes leading path elements as `tar --strip-components` does.
+time: 2026-10-23T03:00:00Z
+custom:
+  Author: sipsma
+  PR: ""

@@ -169,7 +169,7 @@ needs no engine:
 
 `engineTest(pkg, run, wcprofCapture: "<name>")` runs the tests through
 engine-dev's `testProfile`: the ephemeral test engine records from startup
-(`_DAGGER_WCPROF=1`), and after `go test` exits its dump is kept as a capture
+(its `--wcprof` flag), and after `go test` exits its dump is kept as a capture
 under `<name>`, alongside the ones `wcprofCapture` takes from the `start`
 engine. No `start`/`wcprofEnable` needed. The result reports the test verdict
 and exit code, the output tail, and the capture summary; a failing run still

@@ -1,0 +1,6 @@
+kind: Added
+body: Add support for enum registration
+time: 2026-09-15T00:00:00.000000000Z
+custom:
+    Author: Neirda24 charjr
+    PR: "14152"

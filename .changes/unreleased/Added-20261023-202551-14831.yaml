@@ -1,0 +1,7 @@
+kind: Added
+body: |
+  With `cacheVolumes.dir` in engine.json, or `--cache-volumes-dir`, the engine keeps cache volumes as plain directories under that path, apart from its other state, so they can live on separate storage and be handed to another engine that later gets the same directory. `cacheVolumes.capacityBytes` gives the provisioned size of that storage when its filesystem doesn't enforce it; the engine keeps the directory's volumes within 80% of it.
+time: 2026-10-23T20:25:51Z
+custom:
+  Author: sipsma
+  PR: "14831"

@@ -388,6 +388,50 @@ func (PlatformSuite) TestCacheMounts(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 }
 
+// Spellings that name one platform, as containerd's normalization defines
+// it, give one platform and so one key: a client that mixes them, such as
+// "linux/arm64/v8" from an unnormalized default spec beside "linux/arm64",
+// must get one result, not one per spelling. Spellings of platforms that
+// differ stay apart.
+func (PlatformSuite) TestEquivalentSpellingsShareKeys(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	want := core.Platform("linux/arm64")
+	var firstID core.ID
+	for _, spelling := range []core.Platform{"linux/arm64", "linux/arm64/v8", "linux/aarch64"} {
+		ctr := core.NewQuery(c).Container(core.ContainerOpts{Platform: spelling})
+
+		// Clients receive handle-form IDs that reference one engine-local
+		// cached result, so equal IDs mean the spellings share a key.
+		id, err := ctr.ID(ctx)
+		require.NoError(t, err)
+		if firstID == "" {
+			firstID = id
+		}
+		require.Equal(t, firstID, id, "spelling %s got a result of its own", spelling)
+
+		platform, err := ctr.Platform(ctx)
+		require.NoError(t, err)
+		require.Equal(t, want, platform, "spelling %s", spelling)
+	}
+
+	for _, tc := range []struct {
+		spellings []core.Platform
+		want      core.Platform
+	}{
+		{[]core.Platform{"linux/arm", "linux/arm/v7", "linux/armhf"}, "linux/arm/v7"},
+		{[]core.Platform{"linux/arm/v6", "linux/armel"}, "linux/arm/v6"},
+		{[]core.Platform{"linux/arm64/v9"}, "linux/arm64/v9"},
+		{[]core.Platform{"linux/amd64/v2"}, "linux/amd64/v2"},
+	} {
+		for _, spelling := range tc.spellings {
+			platform, err := core.NewQuery(c).Container(core.ContainerOpts{Platform: spelling}).Platform(ctx)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, platform, "spelling %s", spelling)
+		}
+	}
+}
+
 func (PlatformSuite) TestInvalid(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

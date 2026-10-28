@@ -2,7 +2,8 @@ package core
 
 // These tests cover `dagger check`, which discovers and runs module check
 // functions. They verify listing and running checks from SDK modules, legacy
-// compat blueprints, and workspace-installed modules.
+// compat blueprints, and workspace-installed modules, plus checks called via
+// `dagger api call`.
 //
 // See also:
 // - generators_test.go: generator discovery and execution.
@@ -108,6 +109,41 @@ func (ChecksSuite) TestChecksDirectSDK(ctx context.Context, t *testctx.T) {
 			require.Regexp(t, "failing-check.*ERROR", out)
 			require.Regexp(t, "failing-container.*ERROR", out)
 			require.NoError(t, err)
+		})
+	}
+}
+
+func (ChecksSuite) TestChecksAPICall(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base, err := checksTestEnv(t, c)
+	require.NoError(t, err)
+	base = base.WithNewFile("dagger.toml", `[modules.hello-with-checks]
+source = "hello-with-checks"
+`)
+
+	for _, tc := range []struct {
+		name string
+		fail bool
+	}{
+		{name: "passing-check"},
+		{name: "failing-check", fail: true},
+		{name: "passing-container"},
+		{name: "failing-container", fail: true},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			ctr := base.WithExec([]string{"dagger", "api", "call", "hello-with-checks", tc.name}, core.ContainerWithExecOpts{
+				Expect: core.ReturnTypeAny,
+			})
+			exitCode, err := ctr.ExitCode(ctx)
+			require.NoError(t, err)
+			if tc.fail {
+				require.NotZero(t, exitCode, "a failing check must make dagger api call fail")
+				out, err := ctr.CombinedOutput(ctx)
+				require.NoError(t, err)
+				require.Contains(t, out, "ERROR")
+			} else {
+				require.Zero(t, exitCode, "a passing check must make dagger api call succeed")
+			}
 		})
 	}
 }

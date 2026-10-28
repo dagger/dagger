@@ -9,7 +9,6 @@ import (
 
 	telemetry "github.com/dagger/otel-go"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/dagger/dagger/engine/clientdb"
@@ -31,12 +30,12 @@ func largeCaptureFixture(b *testing.B) (*clientdb.DBs, string) {
 	)
 	spanHex := func(i int) string { return fmt.Sprintf("%016x", i+1) }
 	root := spanHex(0)
-	emptyAttrs, err := clientdb.MarshalProtoJSONs([]*otlpcommonv1.KeyValue(nil))
+	emptyAttrs, err := clientdb.MarshalProtoList([]*otlpcommonv1.KeyValue(nil))
 	if err != nil {
 		b.Fatal(err)
 	}
 	rows := make([]clientdb.Span, 0, spans)
-	rows = append(rows, clientdb.Span{TraceID: traceID, SpanID: root, Name: "root", StartTime: 1, EndTime: sql.NullInt64{Int64: 2, Valid: true}, Attributes: emptyAttrs, InstrumentationScope: []byte("{}"), Resource: []byte("{}"), Links: []byte("[]"), Events: []byte("[]")})
+	rows = append(rows, clientdb.Span{TraceID: traceID, SpanID: root, Name: "root", StartTime: 1, EndTime: sql.NullInt64{Int64: 2, Valid: true}, Attributes: emptyAttrs})
 	for i := 1; i < spans; i++ {
 		// Children 1..fanout hang off the root; every later span hangs off a
 		// span up to `depth` levels above it in its test's subtree.
@@ -50,7 +49,7 @@ func largeCaptureFixture(b *testing.B) (*clientdb.DBs, string) {
 		rows = append(rows, clientdb.Span{
 			TraceID: traceID, SpanID: spanHex(i), ParentSpanID: validSpanID(spanHex(parent)),
 			Name: "span " + strconv.Itoa(i), StartTime: int64(i + 1), EndTime: sql.NullInt64{Int64: int64(i + 2), Valid: true},
-			Attributes: emptyAttrs, InstrumentationScope: []byte("{}"), Resource: []byte("{}"), Links: []byte("[]"), Events: []byte("[]"),
+			Attributes: emptyAttrs,
 		})
 	}
 	dbs := clientdb.NewDBs(b.TempDir())
@@ -63,14 +62,14 @@ func largeCaptureFixture(b *testing.B) (*clientdb.DBs, string) {
 			b.Fatal(err)
 		}
 	}
-	stdout, err := clientdb.MarshalProtoJSONs([]*otlpcommonv1.KeyValue{{
+	stdout, err := clientdb.MarshalProtoList([]*otlpcommonv1.KeyValue{{
 		Key:   telemetry.StdioStreamAttr,
 		Value: &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_IntValue{IntValue: 1}},
 	}})
 	if err != nil {
 		b.Fatal(err)
 	}
-	scope, err := protojson.Marshal(&otlpcommonv1.InstrumentationScope{Name: "bench"})
+	scope, err := proto.Marshal(&otlpcommonv1.InstrumentationScope{Name: "bench"})
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -86,7 +85,6 @@ func largeCaptureFixture(b *testing.B) (*clientdb.DBs, string) {
 			Body:                 body,
 			Attributes:           stdout,
 			InstrumentationScope: scope,
-			Resource:             []byte("{}"),
 		})
 		if len(batch) == cap(batch) || i == logs-1 {
 			if _, err := store.AppendLogs(batch); err != nil {

@@ -93,16 +93,28 @@ func (e *engineEventExport) Shutdown(ctx context.Context) error {
 	return e.shutdownErr
 }
 
-// shutdownAtExit shuts the export down, bounded, when the server did not.
+// shutdownAtExit shuts the export down, bounded, when the server did not. It
+// ignores ctx's cancellation but keeps its deadline, the caller's flush budget.
 func (e *engineEventExport) shutdownAtExit(ctx context.Context) {
 	if !e.Enabled() {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), engineEventShutdownTimeout)
+	ctx, cancel := detachedFlushContext(ctx, engineEventShutdownTimeout)
 	defer cancel()
 	if err := e.Shutdown(ctx); err != nil {
 		slog.Error("failed to export engine cache events at shutdown", "error", err)
 	}
+}
+
+// detachedFlushContext returns a context for a final flush that ignores ctx's
+// cancellation, so a stopping engine still flushes, but keeps ctx's deadline,
+// the stop budget, and ends after maxFlush if that is sooner.
+func detachedFlushContext(ctx context.Context, maxFlush time.Duration) (context.Context, context.CancelFunc) {
+	deadline := time.Now().Add(maxFlush)
+	if budget, ok := ctx.Deadline(); ok && budget.Before(deadline) {
+		deadline = budget
+	}
+	return context.WithDeadline(context.WithoutCancel(ctx), deadline)
 }
 
 // InitTelemetry sets up the engine process's telemetry and returns its
@@ -235,7 +247,7 @@ func closeResourceMetrics(ctx context.Context, provider *sdkmetric.MeterProvider
 	if provider == nil {
 		return
 	}
-	flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	flushCtx, cancel := detachedFlushContext(ctx, 30*time.Second)
 	defer cancel()
 	if err := provider.Shutdown(flushCtx); err != nil {
 		slog.Warn("failed to shut down engine resource metrics", "error", err)

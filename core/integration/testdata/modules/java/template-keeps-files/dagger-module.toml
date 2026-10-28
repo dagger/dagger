@@ -1,0 +1,5 @@
+name = "template-keeps-files"
+engineVersion = "v1.0.0"
+
+[runtime]
+source = "../../sdk/java"

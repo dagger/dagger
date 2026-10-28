@@ -235,6 +235,22 @@ class File extends Client\AbstractObject implements Client\IdAble, Exportable, N
     }
 
     /**
+     * Extracts this archive file into a directory.
+     *
+     * The format is detected from the file's contents: zip, or tar, either uncompressed or compressed with gzip, bzip2, xz or zstd.
+     *
+     * An entry whose path would leave the directory is an error.
+     */
+    public function extract(?int $stripComponents = 0): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('extract');
+        if (null !== $stripComponents) {
+        $innerQueryBuilder->setArgument('stripComponents', $stripComponents);
+        }
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Parse as an env file
      */
     public function asEnvFile(?bool $expand = null): EnvFile

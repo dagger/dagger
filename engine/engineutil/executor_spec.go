@@ -42,6 +42,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/moby/sys/user"
 	"github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/sirupsen/logrus"
 	"github.com/sourcegraph/conc/pool"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -196,6 +197,31 @@ func newExecState(
 }
 
 type executorSetupFunc func(context.Context, *execState) error
+
+// startingContainerLog is the logger for an exec's "starting container" and
+// "container done" lines.
+func startingContainerLog(ctx context.Context, state *execState) *logrus.Entry {
+	cacheMounts := 0
+	if state.execMD != nil {
+		cacheMounts = state.execMD.CacheMounts
+	}
+	lg := bklog.G(ctx).
+		WithField("id", state.id).
+		WithField("args", state.spec.Process.Args).
+		WithField("cache_mounts", cacheMounts)
+	if state.execMD != nil {
+		if state.execMD.CallDigest != "" {
+			lg = lg.WithField("call_id", state.execMD.CallDigest)
+		}
+	}
+	if state.callerClientID != "" {
+		lg = lg.WithField("caller_client_id", state.callerClientID)
+	}
+	if state.nestedClientMetadata != nil && state.nestedClientMetadata.ClientID != "" {
+		lg = lg.WithField("nested_client_id", state.nestedClientMetadata.ClientID)
+	}
+	return lg
+}
 
 //nolint:gocyclo
 func (c *Client) setupNetwork(ctx context.Context, state *execState) error {
@@ -510,7 +536,7 @@ func (c *Client) generateBaseSpec(ctx context.Context, state *execState) error {
 	baseSpec, ociSpecCleanup, err := oci.GenerateSpec(
 		ctx,
 		state.procInfo.Meta,
-		state.mounts,
+		withRuntimeBoundMountsOwn(state.mounts),
 		state.id,
 		state.resolvConfPath,
 		state.hostsFilePath,
@@ -645,13 +671,9 @@ func (c *Client) setupRootfs(ctx context.Context, state *execState) error {
 		case mnt.Destination == MetaMountDestPath:
 			metaMount = &mnt
 
-		case mnt.Destination == DaggerQemuEmulatorMountPoint,
-			strings.HasPrefix(mnt.Destination, DaggerCLIDir+"/"),
-			strings.HasPrefix(mnt.Destination, "/dev/pipes/"):
+		case runtimeBoundMount(mnt.Destination):
 			// Keep specific sub-mounts of /dev in the OCI spec so that runc processes
-			// them after the /dev tmpfs mount. The qemu emulator is at
-			// /dev/.dagger_qemu_emulator, the dagger CLI is under /dev/.dagger/ and
-			// /dev/pipes/ is used by heredoc processing.
+			// them after the /dev tmpfs mount.
 			filteredMounts = append(filteredMounts, mnt)
 
 		case containerfs.IsSpecialMountType(mnt.Type):
@@ -1265,6 +1287,10 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	if version, ok := state.origEnvMap["_EXPERIMENTAL_DAGGER_VERSION"]; ok {
 		state.nestedClientMetadata.ClientVersion = version
 	}
+	if version := state.origEnvMap["DAGGER_CLIENT_VERSION"]; version != "" {
+		state.nestedClientMetadata.ClientVersion = version
+		state.nestedClientMetadata.ClientVersionDeclared = true
+	}
 
 	// /.init starts the session helper alongside the command rather than
 	// before it, so the client's queries wait for its attachables. Without
@@ -1450,6 +1476,7 @@ func (manager *nestedClientTransportManager) transportForRequest(req *http.Reque
 	// distinction is syntactic: a malformed or explicitly empty identity never
 	// falls through to the proxy identity.
 	clientID := manager.baseMetadata.ClientID
+	var declaredVersion string
 	if req.Header.Get(engine.ClientMetadataMetaKey) != "" {
 		requestMetadata, err := engine.ClientMetadataFromHTTPHeaders(req.Header)
 		if err != nil {
@@ -1459,6 +1486,7 @@ func (manager *nestedClientTransportManager) transportForRequest(req *http.Reque
 			return nil, nil, http.StatusBadRequest, errors.New("nested client metadata is missing client ID")
 		}
 		clientID = requestMetadata.ClientID
+		declaredVersion = requestMetadata.ClientVersion
 	}
 
 	manager.mu.Lock()
@@ -1471,11 +1499,12 @@ func (manager *nestedClientTransportManager) transportForRequest(req *http.Reque
 		return client.await(req.Context())
 	}
 
-	// The request chooses only its fresh logical client ID. Session identity,
-	// authentication, ancestry, and inherited capabilities are all sealed by
-	// the exec-created proxy metadata.
 	metadata := *manager.baseMetadata
 	metadata.ClientID = clientID
+	if declaredVersion != "" {
+		metadata.ClientVersion = declaredVersion
+		metadata.ClientVersionDeclared = true
+	}
 	client := &nestedClientTransport{
 		metadata: &metadata,
 		ready:    make(chan struct{}),
@@ -1694,20 +1723,7 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 	}
 	f.Close()
 
-	lg := bklog.G(ctx).
-		WithField("id", state.id).
-		WithField("args", state.spec.Process.Args)
-	if state.execMD != nil {
-		if state.execMD.CallDigest != "" {
-			lg = lg.WithField("call_id", state.execMD.CallDigest)
-		}
-	}
-	if state.callerClientID != "" {
-		lg = lg.WithField("caller_client_id", state.callerClientID)
-	}
-	if state.nestedClientMetadata != nil && state.nestedClientMetadata.ClientID != "" {
-		lg = lg.WithField("nested_client_id", state.nestedClientMetadata.ClientID)
-	}
+	lg := startingContainerLog(ctx, state)
 	lg.Info("starting container")
 	defer func() {
 		lg.WithError(rerr).Info("container done")
@@ -1743,7 +1759,13 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 		}
 	}
 
+	// The runtime removes the container itself when its run returns. A run
+	// that failed early, or whose runtime was killed, can leave its state.
+	var runtimeRemoved bool
 	state.cleanups.Add("runc delete container", func() error {
+		if runtimeRemoved {
+			return nil
+		}
 		return c.Runc.Delete(context.WithoutCancel(ctx), state.id, &runc.DeleteOpts{})
 	})
 
@@ -1867,8 +1889,10 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 
 	// With wcprof on, runc writes a pid file once the workload is released,
 	// which splits runc's container start-up from the user's process run.
+	// runc's pid file marks when it released the workload, which splits
+	// exec.runtimeStart from exec.processRun for both profiling sources
 	var pidFile string
-	if wcprof.Enabled(ctx) {
+	if wcprof.Enabled(ctx) || dagql.OTelProfActive(ctx) {
 		pidFile = filepath.Join(bundle, "init.pid")
 	}
 
@@ -1980,7 +2004,6 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 				Started:       started,
 				IO:            io,
 				ConsoleSocket: consoleSocket,
-				ExtraArgs:     []string{"--keep"},
 				PidFile:       pidFile,
 				ExtraFiles:    initFDs.files,
 			})
@@ -1991,6 +2014,9 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 
 	runErr := c.callWithIO(ctx, state.procInfo, startedCallback, killer, runcCall)
 	endWall := time.Now()
+	if _, err := os.Stat(filepath.Join(c.Runc.Root, state.id)); errors.Is(err, os.ErrNotExist) {
+		runtimeRemoved = true
+	}
 	// Scrub + bound the captured user command ONCE, only when a profile source is
 	// active, and feed the SAME slice to both sinks below so native and OTel carry
 	// a byte-identical argv. It rides only on the user processRun phase (where the
@@ -1999,6 +2025,8 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 	if wcprof.Enabled(ctx) || dagql.OTelProfActive(ctx) {
 		profArgv = execProfArgv(state)
 	}
+	// the native phases the OTel split's phase spans are emitted for
+	var phaseOps execPhaseOps
 	if wcprof.Enabled(ctx) {
 		// split engine overhead (creating/starting the container) from the
 		// user's process runtime
@@ -2008,22 +2036,23 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 			outcome = wcprof.OutcomeError
 		}
 		if startedNS := profStartedNS.Load(); startedNS > 0 {
-			wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.containerStart", wcprof.OpOpts{Ident: state.id}, profStartNS, startedNS, wcprof.OutcomeOK)
+			phaseOps.containerStart = wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.containerStart", wcprof.OpOpts{Ident: state.id}, profStartNS, startedNS, wcprof.OutcomeOK)
 			processStartNS := startedNS
 			if releasedNS := workloadReleasedNS(pidFile, startedNS, profStartedWall.Load()); releasedNS != 0 && releasedNS <= endNS {
 				// runc creating the container, up to releasing the workload
-				wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.runtimeStart", wcprof.OpOpts{Ident: state.id}, startedNS, releasedNS, wcprof.OutcomeOK)
+				phaseOps.runtimeStart = wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.runtimeStart", wcprof.OpOpts{Ident: state.id}, startedNS, releasedNS, wcprof.OutcomeOK)
 				processStartNS = releasedNS
 			}
 			runID := wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.processRun", wcprof.OpOpts{Ident: state.id, WorkType: wcprof.WorkTypeUser, Argv: profArgv}, processStartNS, endNS, outcome)
+			phaseOps.processRun = runID
 			if initStartedNS, spawnedNS, exitedNS, ok := initTiming.read(); ok {
 				recordProcessRunSplit(ctx, runID, state.id, profArgv, processStartNS, endNS, initStartedNS, spawnedNS, exitedNS, outcome)
 			}
 		} else {
-			wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.containerStart", wcprof.OpOpts{Ident: state.id}, profStartNS, endNS, outcome)
+			phaseOps.containerStart = wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.containerStart", wcprof.OpOpts{Ident: state.id}, profStartNS, endNS, outcome)
 		}
 	}
-	// OTel exec split: the same containerStart/processRun boundary,
+	// OTel exec split: the same containerStart/runtimeStart/processRun boundaries,
 	// emitted as backdated children of the exec.run span so a slow user process
 	// headlines as user work (work_type=user) rather than engine overhead.
 	// emitOTelExecSplit self-gates on telemetry being active.
@@ -2031,6 +2060,40 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 	if ns := profStartedWall.Load(); ns > 0 {
 		profStartedWallTime = time.Unix(0, ns)
 	}
-	emitOTelExecSplit(ctx, state.id, profStartWall, profStartedWallTime, endWall, runErr, profArgv)
+	var releasedWall time.Time
+	if dagql.OTelProfActive(ctx) {
+		releasedWall = workloadReleasedAt(pidFile, profStartedWallTime)
+	}
+	emitOTelExecSplit(ctx, state.id, profStartWall, profStartedWallTime, releasedWall, endWall, runErr, profArgv, phaseOps)
 	return exitError(ctx, state.exitCodePath, runErr, state.procInfo.Meta.ValidExitCodes)
+}
+
+// runtimeBoundMount reports whether the container runtime, not the engine,
+// binds a mount: the sub-mounts of /dev, which must come after the runtime's
+// /dev tmpfs. The qemu emulator is at /dev/.dagger_qemu_emulator, the dagger
+// CLI is under /dev/.dagger/ and /dev/pipes/ is used by heredoc processing.
+func runtimeBoundMount(dest string) bool {
+	return dest == DaggerQemuEmulatorMountPoint ||
+		strings.HasPrefix(dest, DaggerCLIDir+"/") ||
+		strings.HasPrefix(dest, "/dev/pipes/")
+}
+
+// withRuntimeBoundMountsOwn returns mounts with each runtime-bound mount's
+// source hiding a shared read-only mount. The runtime binds those in a mount
+// namespace forked from the one the engine started with, which doesn't see the
+// shared mounts the engine makes later, so they get a mount of their own.
+func withRuntimeBoundMountsOwn(mounts []executor.Mount) []executor.Mount {
+	out := make([]executor.Mount, len(mounts))
+	for i, m := range mounts {
+		if runtimeBoundMount(m.Dest) {
+			m.Src = ownMountable{m.Src}
+		}
+		out[i] = m
+	}
+	return out
+}
+
+// ownMountable is a mount source with only its own Mount.
+type ownMountable struct {
+	executor.Mountable
 }

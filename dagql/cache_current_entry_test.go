@@ -664,7 +664,7 @@ func TestCachePublicationReplacementClearsImportAndOffers(t *testing.T) {
 	require.NoError(t, err)
 	transferTestOffer(t, b, bctx, imported, child)
 	b.egraphMu.RLock()
-	childOwners := b.resultsByID[child.cacheSharedResult().id].incomingOwnershipCount
+	childOwners := b.resultsByID[child.cacheSharedResult().id].incomingOwnershipCount.Load()
 	require.Len(t, b.resultsByID[importedID].testPartOffers(), 1)
 	b.egraphMu.RUnlock()
 	currentEntryTestExpire(b, imported)
@@ -679,7 +679,7 @@ func TestCachePublicationReplacementClearsImportAndOffers(t *testing.T) {
 	require.False(t, shared.imported)
 	require.Empty(t, shared.testPartOffers())
 	if childShared := b.resultsByID[child.cacheSharedResult().id]; childShared != nil {
-		require.Equal(t, childOwners-1, childShared.incomingOwnershipCount, "the dropped offer's owner no longer holds its dependency")
+		require.Equal(t, childOwners-1, childShared.incomingOwnershipCount.Load(), "the dropped offer's owner no longer holds its dependency")
 	}
 }
 

@@ -222,10 +222,10 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 
 	params.CloudURLCallback = func(ctx context.Context, url string, msg string, logged bool) {
 		Frontend.SetCloudURL(ctx, url, msg, logged)
-		// A trace goes to a Cloud org: remind the user after the command if
-		// the org is in its trial without a payment method.
+		// A trace goes to a Cloud org: show any notice Cloud has about it
+		// after the command.
 		if logged {
-			startTrialReminder(ctx, os.Stderr)
+			startCloudNotice(ctx, os.Stderr)
 		}
 	}
 

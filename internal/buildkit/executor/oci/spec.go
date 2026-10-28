@@ -13,6 +13,7 @@ import (
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/containerd/v2/pkg/namespaces"
 	"github.com/containerd/containerd/v2/pkg/oci"
+	"github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/util/network"
@@ -173,6 +174,15 @@ func GenerateSpec(ctx context.Context, meta executor.Meta, mounts []executor.Mou
 		if m.Src == nil {
 			return nil, nil, errors.Errorf("mount %s has no source", m.Dest)
 		}
+		if mnt, release, ok, err := sharedReadonlyMount(ctx, m); ok {
+			if err != nil {
+				releaseAll()
+				return nil, nil, err
+			}
+			releasers = append(releasers, release)
+			s.Mounts = append(s.Mounts, mnt)
+			continue
+		}
 		mountable, err := m.Src.Mount(ctx, m.Readonly)
 		if err != nil {
 			releaseAll()
@@ -235,6 +245,51 @@ func GenerateSpec(ctx context.Context, meta executor.Meta, mounts []executor.Mou
 	}
 
 	return s, releaseAll, nil
+}
+
+// sharedMounter is a source whose read-only mounts are shared across the
+// engine, as an immutable snapshot ref's are.
+type sharedMounter interface {
+	MountShared(ctx context.Context) (root string, m mount.Mount, release func(), err error)
+}
+
+// sharedReadonlyMount mounts a read-only mount of an immutable snapshot from
+// the snapshot's shared read-only mount: the container binds its selected path
+// from there. Every reader of the snapshot uses that one mount, so the exec
+// creates no view of the snapshot and mounts nothing itself. The snapshot
+// can't change, so the selected path resolved here is the one the runtime
+// binds. ok is false when the mount is not one of these.
+func sharedReadonlyMount(ctx context.Context, m executor.Mount) (_ specs.Mount, _ func() error, ok bool, _ error) {
+	shared, isShared := m.Src.(sharedMounter)
+	if !m.Readonly || !isShared {
+		return specs.Mount{}, nil, false, nil
+	}
+	root, _, release, err := shared.MountShared(ctx)
+	if err != nil {
+		return specs.Mount{}, nil, true, errors.Wrapf(err, "failed to mount %s", m.Dest)
+	}
+	src, err := fs.RootPath(root, m.Selector)
+	if err == nil {
+		_, err = os.Stat(src)
+	}
+	if err != nil {
+		release()
+		var perr *os.PathError
+		if errors.As(err, &perr) && strings.HasPrefix(perr.Path, root) {
+			perr.Path = m.Selector
+		}
+		return specs.Mount{}, nil, true, errors.WithStack(err)
+	}
+	b := bind(src, true)
+	return specs.Mount{
+			Destination: m.Dest,
+			Type:        b.Type,
+			Source:      b.Source,
+			Options:     b.Options,
+		}, func() error {
+			release()
+			return nil
+		}, true, nil
 }
 
 type mountRef struct {

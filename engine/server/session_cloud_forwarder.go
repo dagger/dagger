@@ -237,7 +237,7 @@ func newCloudForwarder(sessionID, clientID string, db *clientdb.DB, spans sdktra
 func forwardSpanRow(row *clientdb.Span) bool { return !cloudPublishedRow(row.Attributes) }
 func forwardLogRow(row *clientdb.Log) bool   { return !cloudPublishedRow(row.Attributes) }
 
-var cloudPublishedAttrKey = []byte(`"` + telemetryattrs.TelemetryCloudPublishedAttr + `"`)
+var cloudPublishedAttrKey = []byte(telemetryattrs.TelemetryCloudPublishedAttr)
 
 // cloudPublishedRow reports whether a row's stored attributes carry the
 // published marker. The byte search keeps the common case cheap; a hit is
@@ -247,7 +247,7 @@ func cloudPublishedRow(attrs []byte) bool {
 		return false
 	}
 	var kvs []*otlpcommonv1.KeyValue
-	if err := clientdb.UnmarshalProtoJSONs(attrs, &otlpcommonv1.KeyValue{}, &kvs); err != nil {
+	if err := clientdb.UnmarshalProtoList(attrs, &otlpcommonv1.KeyValue{}, &kvs); err != nil {
 		return false
 	}
 	for _, kv := range kvs {

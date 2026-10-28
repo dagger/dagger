@@ -2535,7 +2535,7 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 
 		for _, log := range logs {
 			var logAttrs []*otlpcommonv1.KeyValue
-			if err := clientdb.UnmarshalProtoJSONs(log.Attributes, &otlpcommonv1.KeyValue{}, &logAttrs); err != nil {
+			if err := clientdb.UnmarshalProtoList(log.Attributes, &otlpcommonv1.KeyValue{}, &logAttrs); err != nil {
 				slog.Warn("failed to unmarshal log attributes", "error", err)
 				continue
 			}
@@ -2791,7 +2791,7 @@ func (f *internalSpanFilter) classifyLogSpanUncached(ctx context.Context, traceI
 		return false, false, err
 	}
 	var spanAttrs []*otlpcommonv1.KeyValue
-	if err := clientdb.UnmarshalProtoJSONs(span.Attributes, &otlpcommonv1.KeyValue{}, &spanAttrs); err != nil {
+	if err := clientdb.UnmarshalProtoList(span.Attributes, &otlpcommonv1.KeyValue{}, &spanAttrs); err != nil {
 		slog.Warn("failed to unmarshal span attributes", "error", err)
 		return true, false, nil
 	}
@@ -2847,7 +2847,7 @@ func (f *internalSpanFilter) beneathInternal(ctx context.Context, traceID, spanI
 		return false, err
 	}
 	var spanAttrs []*otlpcommonv1.KeyValue
-	if err := clientdb.UnmarshalProtoJSONs(span.Attributes, &otlpcommonv1.KeyValue{}, &spanAttrs); err != nil {
+	if err := clientdb.UnmarshalProtoList(span.Attributes, &otlpcommonv1.KeyValue{}, &spanAttrs); err != nil {
 		slog.Warn("failed to unmarshal span attributes", "error", err)
 		f.memo[spanID] = false
 		return false, nil
@@ -2909,7 +2909,7 @@ func (f *internalSpanFilter) serviceInstallSpan(ctx context.Context, traceID, sp
 			return false, err
 		}
 		var childAttrs []*otlpcommonv1.KeyValue
-		if err := clientdb.UnmarshalProtoJSONs(child.Attributes, &otlpcommonv1.KeyValue{}, &childAttrs); err != nil {
+		if err := clientdb.UnmarshalProtoList(child.Attributes, &otlpcommonv1.KeyValue{}, &childAttrs); err != nil {
 			slog.Warn("failed to unmarshal span attributes", "error", err)
 			continue
 		}

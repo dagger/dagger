@@ -93,7 +93,10 @@ my-module/
 └── internal/
     └── dagger/                   # generated: the typed Dagger client
         ├── dagger.gen.go
-        └── my-module.gen.go
+        ├── my-module.gen.go
+        └── core/
+            ├── core.gen.go
+            └── my-module.gen.go
 ```
 
 :::note
@@ -160,13 +163,13 @@ Key rules:
 - The first parameter may be a `context.Context`; it does not appear as a Dagger argument and is supplied by the runtime.
 - A method may return an error as its last value; a non-nil error fails the function.
 
-Call your functions exactly like any other module, from the directory that contains `dagger-module.toml` (or with `-m <path>`):
+Call your functions exactly like any other installed module, by its install name. The workspace's main module is called without a name, and `-m <path>` loads a module by path for one command:
 
 ```shell
-dagger api call hello --name=World --greeting=Hello
+dagger api call my-module hello --name=World --greeting=Hello
 # Hello, World!
 
-dagger api call loud-hello --name=World --greeting=Hello
+dagger api call my-module loud-hello --name=World --greeting=Hello
 # HELLO, WORLD!
 ```
 
@@ -331,7 +334,7 @@ func (m *MyModule) Scan(ctx context.Context, ref string, severity Severity) (str
 Passing a value outside the enum produces a clear error listing the allowed choices:
 
 ```shell
-dagger api call scan --ref=alpine:latest --severity=FOO
+dagger api call my-module scan --ref=alpine:latest --severity=FOO
 # Error: value should be one of UNKNOWN, LOW, MEDIUM, HIGH, CRITICAL
 ```
 
@@ -377,7 +380,7 @@ func (account *Account) URL() string {
 This enables chaining on the CLI and API:
 
 ```shell
-dagger api call dagger-organization members url
+dagger api call my-module dagger-organization members url
 ```
 
 ### Interfaces
@@ -553,10 +556,10 @@ func (m *MyModule) GithubApi(
 Callers supply secrets through providers on the CLI:
 
 ```shell
-dagger api call github-api --token=env:GITHUB_TOKEN     # environment variable
-dagger api call github-api --token=file:./token.txt      # file
-dagger api call github-api --token=cmd:"gh auth token"   # command output
-dagger api call github-api --token=op://vault/item/field # 1Password
+dagger api call my-module github-api --token=env:GITHUB_TOKEN     # environment variable
+dagger api call my-module github-api --token=file:./token.txt      # file
+dagger api call my-module github-api --token=cmd:"gh auth token"   # command output
+dagger api call my-module github-api --token=op://vault/item/field # 1Password
 ```
 
 ### Services
@@ -743,7 +746,7 @@ A useful, reusable module provides at least one of the three first-class functio
 
 | Pragma | Return type | Run by | Purpose |
 |---|---|---|---|
-| `// +check` | `error` (or `*dagger.Container`) | `dagger check` | validate the project (test/lint/scan) |
+| `// +check` | `error` | `dagger check` | validate the project (test/lint/scan) |
 | `// +generate` | `*dagger.Changeset` | `dagger generate` | produce a diff to apply to the workspace |
 | none | `*dagger.Service` | `dagger start` | start a long-running service |
 
@@ -781,7 +784,7 @@ func New(ws *dagger.Workspace) *MyModule {
 
 ### Checks {#checks}
 
-Mark a function with the `// +check` pragma to make it a **check**, a validation function (test, lint, scan) that takes no caller arguments. `dagger check` discovers and runs every check a module exposes. A check fails when it returns a non-nil `error`, or when it returns a `*dagger.Container` whose execution exits non-zero.
+Mark a function with the `// +check` pragma to make it a **check**, a validation function (test, lint, scan) that takes no caller arguments. `dagger check` discovers and runs every check a module exposes. A check returns only an `error`, and fails when that error is non-nil. To check a command, run the container with `Sync` and return its error: a non-zero exit fails the check.
 
 ```go
 // Lint the project.
@@ -795,13 +798,6 @@ func (m *MyModule) Lint(ctx context.Context) error {
 		WithExec([]string{"golangci-lint", "run"}).
 		Sync(ctx)
 	return err
-}
-
-// A check can also return a container; a non-zero exit fails the check.
-//
-// +check
-func (m *MyModule) Build() *dagger.Container {
-	return dag.Container().From("alpine:3").WithExec([]string{"true"})
 }
 ```
 
@@ -1019,7 +1015,7 @@ For behavior that exercises containers and the Dagger API, write functions in yo
 
 ```shell
 # Smoke test: does it build?
-dagger api call build
+dagger api call my-module build
 
 # Run all checks
 dagger check
@@ -1097,7 +1093,9 @@ A module reference follows `[proto://]host/repo[/subpath][@version]`; the versio
 
 ## Troubleshooting
 
-**`dagger init` / `dagger develop` not found.** Install the Go SDK with `dagger module install dagger.io/sdk/go`, scaffold with `dagger module init go --name <name>`, and regenerate with `dagger generate`.
+**`dagger init` created a workspace but no module.** `dagger init` sets up the workspace's `dagger.toml`. Install the Go SDK with `dagger module install dagger.io/sdk/go`, scaffold the module with `dagger module init go --name <name>`, and regenerate bindings with `dagger generate`.
+
+**`dagger develop` not found.** Regenerate bindings with `dagger generate`.
 
 **Nothing was written after `dagger module init go`.** The command returns a changeset. Review and accept it, or rerun with `-y` to apply without prompting.
 

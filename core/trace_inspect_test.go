@@ -72,16 +72,6 @@ func traceInspectStore(t *testing.T) (*clientdb.DB, map[string]string) {
 			Attributes: marshalSpanAttrs(t, boolAttr(telemetryattrs.ServiceAttr), stringAttr(telemetryattrs.ServiceNameAttr, "cache")),
 			Links:      marshalCauseLink(t, traceID, ids["install"])},
 	}
-	for i := range spans {
-		// Well-formed empty payloads, so decoding into dagui doesn't log
-		// a warning per row.
-		if spans[i].Links == nil {
-			spans[i].Links = []byte("[]")
-		}
-		spans[i].Events = []byte("[]")
-		spans[i].Resource = []byte("{}")
-		spans[i].InstrumentationScope = []byte("{}")
-	}
 	_, err = store.AppendSpans(spans)
 	require.NoError(t, err)
 	return store, ids
@@ -152,7 +142,6 @@ func TestFindSpansFullTestIdentity(t *testing.T) {
 		rows[i].TraceID = "000102030405060708090a0b0c0d0e0f"
 		rows[i].StartTime = int64(100 + i)
 		rows[i].EndTime = sql.NullInt64{Int64: 200, Valid: true}
-		rows[i].Links = []byte("[]")
 	}
 	_, err := store.AppendSpans(rows)
 	require.NoError(t, err)
@@ -192,8 +181,6 @@ func TestFindSpansImportedOrder(t *testing.T) {
 	for _, rows := range groups {
 		for i := range rows {
 			rows[i].EndTime = sql.NullInt64{Int64: rows[i].StartTime + 1, Valid: true}
-			rows[i].Attributes, rows[i].Links, rows[i].Events = []byte("[]"), []byte("[]"), []byte("[]")
-			rows[i].Resource, rows[i].InstrumentationScope = []byte("{}"), []byte("{}")
 		}
 		_, err := live.ImportTrace(ctx, rows[0].TraceID, func(dst *clientdb.DB) error {
 			_, err := dst.AppendSpans(rows)

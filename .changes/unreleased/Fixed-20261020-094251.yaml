@@ -1,0 +1,6 @@
+kind: Fixed
+body: '`dagger lock update` now shows lock refresh and SDK client regeneration progress instead of looking stuck.'
+time: 2026-10-20T09:42:51+00:00
+custom:
+    Author: eunomie
+    PR: "14861"

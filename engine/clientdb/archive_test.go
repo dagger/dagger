@@ -58,7 +58,7 @@ func TestArchiveIndexRevisionAndReopening(t *testing.T) {
 			attrs = append(attrs, &commonpb.KeyValue{Key: kv.Key, Value: telemetry.LogValueToPB(kv.Value)})
 			return true
 		})
-		encoded, err := MarshalProtoJSONs(attrs)
+		encoded, err := MarshalProtoList(attrs)
 		require.NoError(t, err)
 		body, err := proto.Marshal(telemetry.LogValueToPB(r.Body()))
 		require.NoError(t, err)
@@ -136,7 +136,7 @@ func TestArchiveCallPayloadFromSpan(t *testing.T) {
 	require.NoError(t, err)
 	encoded := base64.StdEncoding.EncodeToString(payload)
 	spanRow := func(trace, spanID, digest string) Span {
-		return Span{TraceID: trace, SpanID: spanID, StartTime: 42, Attributes: stringAttrsJSON(t,
+		return Span{TraceID: trace, SpanID: spanID, StartTime: 42, Attributes: stringAttrsList(t,
 			telemetry.DagDigestAttr, digest, telemetry.DagCallAttr, encoded)}
 	}
 	_, err = db.AppendSpans([]Span{

@@ -416,6 +416,16 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					View(AfterVersion("v1.0.0-beta.17")),
 			),
 
+		dagql.NodeFunc("withMountedFiles", s.withMountedFiles).
+			Doc(`Retrieves this container plus the given files mounted read-only in a directory at the given path.`,
+				`Each file appears under the base name of its path. The directory holds nothing else, and nothing can be written to it.`).
+			Args(
+				dagql.Arg("path").Doc(`Location of the directory holding the files (e.g., "/work/lib").`),
+				dagql.Arg("sources").Doc(`Identifiers of the files to mount. Two files with the same base name are an error.`),
+				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
+					`environment variables defined in the container (e.g. "/$VAR/lib").`),
+			),
+
 		dagql.NodeFunc("__withMountedPathDockerfileCompat", s.withMountedPathDockerfileCompat).
 			Doc(`(Internal-only) Dockerfile-compat bind mount path.`).
 			Args(
@@ -2927,6 +2937,70 @@ func (s *containerSchema) withMountedFile(ctx context.Context, parent dagql.Obje
 		Readonly:   args.ReadOnly,
 		FileSource: new(core.LazyAccessor[*core.File, *core.Container]),
 	})
+	return ctr, nil
+}
+
+type containerWithMountedFilesArgs struct {
+	Path    string
+	Sources []core.FileID
+	Expand  bool `default:"false"`
+}
+
+func (s *containerSchema) withMountedFiles(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedFilesArgs) (*core.Container, error) {
+	if err := evaluateContainerMetadata(ctx, parent); err != nil {
+		return nil, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get server: %w", err)
+	}
+
+	files, err := dagql.LoadIDResults(ctx, srv, args.Sources)
+	if err != nil {
+		return nil, err
+	}
+	paths, err := core.SourceFilePaths(ctx, files)
+	if err != nil {
+		return nil, err
+	}
+	mounted := make([]core.MountedFile, len(files))
+	byName := make(map[string]string, len(files))
+	for i, filePath := range paths {
+		name := path.Base(filePath)
+		if other, dup := byName[name]; dup {
+			return nil, fmt.Errorf("container withMountedFiles: %q and %q have the same name %q", other, filePath, name)
+		}
+		byName[name] = filePath
+		mounted[i] = core.MountedFile{Name: name, File: files[i]}
+	}
+
+	target, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
+	if err != nil {
+		return nil, err
+	}
+	target = absPath(parent.Self().Config.WorkingDir, target)
+	if path.Clean(target) == "/" {
+		return nil, fmt.Errorf("container withMountedFiles: cannot mount files at the container's root")
+	}
+
+	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+	ctr.Lazy = &core.ContainerWithMountedFilesLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Target:    target,
+		Files:     mounted,
+	}
+	ctr.Mounts = ctr.Mounts.With(core.ContainerMount{
+		Target:      target,
+		Readonly:    true,
+		FilesSource: &core.FilesMountSource{Files: mounted},
+	})
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
+	}
 	return ctr, nil
 }
 

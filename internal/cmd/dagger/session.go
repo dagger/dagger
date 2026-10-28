@@ -118,7 +118,7 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 		// logs we need to reveal everything.
 		Frontend.RevealAllSpans()
 
-		srv := sessionServer(ctx, "dagger session", sess)
+		srv := sessionServer(ctx, sess)
 
 		paramBytes, err := json.Marshal(connectParams{
 			Port:         port,

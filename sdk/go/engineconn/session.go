@@ -85,14 +85,22 @@ func cliSessionArgs(cfg *Config) []string {
 
 	version := getSDKVersion()
 
+	// Announce this library's own release by default, so a standalone client
+	// is served the API view its generated code was built for even when the
+	// session runs a CLI of a different build (a custom
+	// _EXPERIMENTAL_DAGGER_CLI_BIN or the PATH fallback). An explicit
+	// WithVersionOverride wins.
+	announcedVersion := cfg.VersionOverride
+	if announcedVersion == "" {
+		announcedVersion = CLIVersion
+	}
+
 	flagsAndValues := []flagValue{
 		{"--workdir", cfg.Workdir},
 		{"--workspace", cfg.Workspace},
 		{"--label", "dagger.io/sdk.name:go"},
 		{"--label", fmt.Sprintf("dagger.io/sdk.version:%s", version)},
-	}
-	if cfg.VersionOverride != "" {
-		flagsAndValues = append(flagsAndValues, flagValue{"--version", cfg.VersionOverride})
+		{"--version", announcedVersion},
 	}
 
 	for _, pair := range flagsAndValues {

@@ -445,17 +445,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			}
 		}
 
-		for resultID := range c.resultsByID {
-			outputEqClasses := c.outputEqClassesForResultLocked(resultID)
-			if len(outputEqClasses) > 0 {
-				c.markResultBroadlyIndexedLocked(resultID)
-			}
-			for outputEqID := range outputEqClasses {
-				for dig := range c.eqClassToDigests[outputEqID] {
-					c.addResultDigestPostingLocked(resultID, dig, resultDigestPostingBroad)
-				}
-			}
-		}
+		c.restoreDigestPostingsLocked()
 
 		// Only move the result-ID counter forward: numeric result IDs must be
 		// engine-lifetime unique, so importing must never re-expose an ID the

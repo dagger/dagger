@@ -30,9 +30,15 @@ func (cm *snapshotManager) Scratch(ctx context.Context) (ImmutableRef, error) {
 		if err := cm.createScratchSnapshot(ctx); err != nil {
 			return nil, err
 		}
+		cm.scratchAttached = false
 	}
-	if err := cm.AttachLease(ctx, scratchLeaseID, scratchSnapshotID); err != nil {
-		return nil, err
+	// The scratch lease keeps the snapshot for good: attaching it once per
+	// manager is enough, rather than a metadata write per empty directory.
+	if !cm.scratchAttached {
+		if err := cm.AttachLease(ctx, scratchLeaseID, scratchSnapshotID); err != nil {
+			return nil, err
+		}
+		cm.scratchAttached = true
 	}
 	return cm.GetBySnapshotID(ctx, scratchSnapshotID, NoUpdateLastUsed)
 }

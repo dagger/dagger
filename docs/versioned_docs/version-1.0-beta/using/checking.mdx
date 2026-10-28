@@ -34,15 +34,15 @@ dagger check -l --all
 ```
 
 ```text
-MODULE         GO-PACKAGE  GO-TEST       GOLANGCI-LINT-PROJECT  CHECK  DESCRIPTION
+MODULE         GOLANGCI-LINT-PROJECT  GO-PACKAGE  GO-TEST       CHECK  DESCRIPTION
 dang-sdk                                                        stale  staleness check: re-generate modules and clients managed by the Dang SDK
-go             .                                                stale  staleness check: run go generate in this package
-go             store                                            stale  staleness check: run go generate in this package
-go             version                                          stale  staleness check: run go generate in this package
-go             .           TestHello                            test   Run this test.
-go             store       TestDatabase                         test   Run this test.
-go             store       TestFixture                          test   Run this test.
-golangci-lint                            .                      lint   Run golangci-lint in this project.
+golangci-lint  .                                                lint   Run golangci-lint in this project.
+go                                    .                         stale  staleness check: run go generate in this package
+go                                    store                     stale  staleness check: run go generate in this package
+go                                    version                   stale  staleness check: run go generate in this package
+go                                    .           TestHello     test   Run this test.
+go                                    store       TestDatabase  test   Run this test.
+go                                    store       TestFixture   test   Run this test.
 ```
 
 A row with `*` is listed even when the module found no items. If a module's rows disappear with `--all`, it found nothing to check, which usually means the project lacks the config file the module looks for, such as `.golangci.yml`.
@@ -115,10 +115,10 @@ The same selection works as query parameters on a DAG link. Each parameter is a 
 dagger check 'dag://go/packages/tests/test?go-package=store&go-test=TestFixture'
 ```
 
-A module can run a selection together instead of one item at a time. The Go module runs the selected tests of one package with a single `go test` command, for example. The report names each run by a link that puts the path in a `check` parameter, followed by the keys it covered. Pass it to `dagger check` to run that selection again:
+A module can run a selection together instead of one item at a time. The Go module runs the selected tests of one package with a single `go test` command, for example. The report names each run by a link. Its `check` parameter holds the shortest path that identifies the check, and the other parameters hold the keys that select the run. A run over every test in `store` names only the package. Pass the link to `dagger check` to run that selection again:
 
 ```text
-✔ dag://?check=go/packages/tests/test&go-package=store&go-test=TestFixture&go-test=TestDatabase 5.3s OK
+✔ dag://?check=test&go-package=store 5.3s OK
 ```
 
 ### Select a workspace

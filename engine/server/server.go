@@ -31,6 +31,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/cachevolumedir"
 	"github.com/dagger/dagger/engine/config"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	containerdsnapshot "github.com/dagger/dagger/engine/snapshots/containerd"
@@ -40,6 +41,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/archutil"
+	"github.com/dagger/dagger/internal/buildkit/util/disk"
 	"github.com/dagger/dagger/internal/buildkit/util/entitlements"
 	"github.com/dagger/dagger/internal/buildkit/util/network"
 	"github.com/dagger/dagger/internal/buildkit/util/network/cniprovider"
@@ -66,6 +68,7 @@ import (
 	"github.com/dagger/dagger/engine/server/resolver"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
+	"github.com/dagger/dagger/engine/wcprof"
 )
 
 type Server struct {
@@ -133,6 +136,14 @@ type Server struct {
 	localContentStore    content.Store
 	contentStore         *containerdsnapshot.Store
 	builtinContentStore  content.Store
+
+	// cacheVolumeDir is the cache volume directory this engine owns, when
+	// cache volumes are directories (cacheVolumes.dir); nil otherwise.
+	cacheVolumeDir  *cachevolumedir.Store
+	cacheVolumesCfg config.CacheVolumesConfig
+	// cacheVolumeDirDiskStat overrides disk.GetDiskStat for the cache volume
+	// directory when set, for tests.
+	cacheVolumeDirDiskStat func(string) (disk.DiskStat, error)
 
 	snapshotter        ctdsnapshot.Snapshotter
 	snapshotterMDStore *storage.MetaStore // only set for overlay snapshotter right now
@@ -210,8 +221,6 @@ type Server struct {
 
 	secretSalt []byte
 }
-
-var configureBboltDefaultsOnce sync.Once
 
 type localCacheStateResetReason string
 
@@ -303,10 +312,9 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	// setup directories and paths
 	//
 
-	if err := srv.initRootPaths(); err != nil {
+	if err := srv.initStateLocations(cfg.CacheVolumes); err != nil {
 		return nil, err
 	}
-	logStateFilesystem(srv.rootDir)
 
 	// Opened before the local cache state: the snapshot manager takes the
 	// builtin store at construction, for chain imports of builtin layers.
@@ -329,6 +337,8 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	//
 	os.RemoveAll(filepath.Join(srv.executorRootDir, "hosts"))
 	os.RemoveAll(filepath.Join(srv.executorRootDir, "resolv.conf"))
+	// and the files mounts of execs a previous run didn't finish
+	os.RemoveAll(filepath.Join(srv.rootDir, core.FilesMountDir))
 
 	//
 	// set up client DBs, and the telemetry pub/sub which writes to it
@@ -397,6 +407,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 
 	srv.runc = &runc.Runc{
 		Command:   distconsts.RuntimePath,
+		Root:      distconsts.RuntimeStateRoot,
 		Log:       filepath.Join(srv.executorRootDir, "runc-log.json"),
 		LogFormat: runc.JSON,
 		Setpgid:   true,
@@ -533,6 +544,16 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	}
 
 	return srv, nil
+}
+
+// initStateLocations sets up where the engine keeps its state: the state root
+// and its paths, and the cache volume directory when one is configured.
+func (srv *Server) initStateLocations(cacheVolumes config.CacheVolumesConfig) error {
+	if err := srv.initRootPaths(); err != nil {
+		return err
+	}
+	logStateFilesystem(srv.rootDir)
+	return srv.initCacheVolumeDir(cacheVolumes)
 }
 
 func (srv *Server) initRootPaths() error {
@@ -821,18 +842,15 @@ func (srv *Server) mkdirBaseDirs() (err error) {
 	return nil
 }
 
-func configureBboltDefaults() {
-	configureBboltDefaultsOnce.Do(func() {
-		// Some containerd snapshotter constructors open bbolt internally with nil
-		// options, so set the process default before those paths can run.
-		bolt.DefaultOptions.FreelistType = bolt.FreelistMapType
-		bolt.DefaultOptions.NoStatistics = true
-	})
+// Some containerd snapshotter constructors open bbolt internally with nil
+// options, so the process default is set before anything can open a database,
+// and never while one opens.
+func init() {
+	bolt.DefaultOptions.FreelistType = bolt.FreelistMapType
+	bolt.DefaultOptions.NoStatistics = true
 }
 
 func (srv *Server) initBoltDBs() (err error) {
-	configureBboltDefaults()
-
 	defer func() {
 		if panicErr := recover(); panicErr != nil {
 			err = fmt.Errorf("panic while initializing boltdbs: %v", panicErr)
@@ -956,8 +974,15 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	// caller bounds the whole stop, so a stage that stalls must be
 	// attributable from the engine log alone.
 	stopStart := time.Now()
+	// While the engine records, the stop and each of its phases are ops, and
+	// the stop dump is rewritten (in the background: a phase doesn't wait for
+	// it) as each phase begins and ends, so an engine killed in a phase, or
+	// between two, leaves a dump that shows where.
+	stopCtx, stopOp := wcprof.BeginOp(context.WithoutCancel(ctx), wcprof.OpKindInternal, "engine.stop", wcprof.OpOpts{})
 	stopPhase := func(name string, fn func()) {
 		slog.Debug("graceful stop phase starting", "phase", name)
+		_, phaseOp := wcprof.BeginOp(stopCtx, wcprof.OpKindInternal, "engine.stop."+name, wcprof.OpOpts{})
+		srv.requestStopDump()
 		start := time.Now()
 		// A stage that runs long is usually waiting in the kernel; name the
 		// threads doing so while they still are.
@@ -967,9 +992,13 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 		})
 		fn()
 		slow.Stop()
+		phaseOp.End(wcprof.OutcomeOK)
+		srv.requestStopDump()
 		slog.Info("graceful stop phase done", "phase", name, "duration", time.Since(start))
 	}
 	defer func() {
+		stopOp.EndErr(err)
+		srv.requestStopDump()
 		slog.Info("graceful stop done", "duration", time.Since(stopStart), "error", err)
 	}()
 
@@ -997,7 +1026,8 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	}
 
 	if srv.engineCache != nil {
-		srv.gcmu.Lock()
+		// A scheduled garbage collection holds gcmu while it runs.
+		stopPhase("wait for garbage collection", srv.gcmu.Lock)
 		defer srv.gcmu.Unlock()
 	}
 
@@ -1052,6 +1082,10 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 			}
 		})
 	}
+
+	stopPhase("close cache volume directory", func() {
+		err = errors.Join(err, srv.closeCacheVolumeDir())
+	})
 
 	cleanCacheClose := false
 	if srv.engineCache != nil {
@@ -1126,6 +1160,12 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 		err = errors.Join(err, adapterStopErr, ctx.Err())
 	}
 	return err
+}
+
+// requestStopDump asks for the engine's stop dump to be rewritten
+// (wcprof.RequestStopDump) while it records, without waiting for the write.
+func (srv *Server) requestStopDump() {
+	wcprof.RequestStopDump(wcprof.StopDumpPath(srv.rootDir))
 }
 
 func (srv *Server) SnapshotManager() bkcache.SnapshotManager {

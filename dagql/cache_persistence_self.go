@@ -673,6 +673,13 @@ type PersistedSnapshotRefLink struct {
 	RefKey     string
 	Role       string
 	OutputPath PersistedRefPath `json:"outputPath,omitempty"`
+	// Borrowed marks a snapshot the result holds only as a copy of a part
+	// of a result it depends on, which owns it: that result outlives this
+	// one (a dependency is kept while its dependents keep their values), so
+	// its owner lease keeps the snapshot, and the owner lease sync attaches
+	// none for this result. It isn't persisted: after a restart, the copy's
+	// imported links attach leases of their own again.
+	Borrowed bool `json:"borrowed,omitempty"`
 }
 
 // PersistedSnapshotRefLinkProvider is the shared interface used by persistable

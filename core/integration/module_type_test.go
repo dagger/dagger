@@ -987,6 +987,10 @@ export class Test {
 			out, err := modGen.With(daggerQuery(`{fromPlatform(platform: "linux/amd64")}`)).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "linux/amd64", gjson.Get(out, "fromPlatform").String())
+			// A function gets a platform normalized, however it was spelled.
+			out, err = modGen.With(daggerQuery(`{fromPlatform(platform: "linux/arm64/v8")}`)).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "linux/arm64", gjson.Get(out, "fromPlatform").String())
 			_, err = modGen.With(daggerQuery(`{fromPlatform(platform: "invalid")}`)).Stdout(ctx)
 			requireErrOut(t, err, "unknown operating system or architecture")
 

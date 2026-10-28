@@ -1,0 +1,8 @@
+kind: Changed
+body: |
+  A check's result is now cached like any other function's, as its `@cache` policy says, so a check whose inputs haven't changed is reused in a new session for up to its cache lifetime (7 days by default) instead of running again.
+  A failing check runs again in the next session. Mark a check `@cache(policy: "Never")` if it depends on something outside its inputs, such as a live service, or `@cache(policy: "PerSession")` to run it once per session.
+time: 2026-10-27T19:24:33Z
+custom:
+  Author: sipsma
+  PR: "14899"

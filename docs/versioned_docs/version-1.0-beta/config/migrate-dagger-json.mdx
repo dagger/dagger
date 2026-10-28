@@ -141,7 +141,7 @@ Add `-m .` to the commands that call the module's functions.
 
 ### Toolchains and blueprints
 
-Each toolchain is installed in `dagger.toml` as a module. A local toolchain is converted in place, like any other module. A remote toolchain keeps its pinned version. Customizations are converted to module settings, when possible. Dagger cannot migrate a `blueprint`.
+Each toolchain is installed in `dagger.toml` as a module. A local toolchain is converted in place, like any other module. A remote toolchain keeps its pinned version. Customizations are converted to module settings, when possible. A `blueprint` at the repository root is installed as the workspace main. Dagger cannot migrate a `blueprint` in a subdirectory.
 
 For a module in `.dagger` with a local toolchain in `toolchains/lint` and a remote one, the resulting `dagger.toml` is:
 

@@ -57,8 +57,8 @@ func cacheOwnershipError(c *Cache, activeHolds ...*ongoingCall) error {
 				expected[resultID]++
 			}
 		}
-		if shared.incomingOwnershipCount != expected[resultID] {
-			return fmt.Errorf("result %d ownership count: got %v, want %v", resultID, shared.incomingOwnershipCount, expected[resultID])
+		if shared.incomingOwnershipCount.Load() != expected[resultID] {
+			return fmt.Errorf("result %d ownership count: got %v, want %v", resultID, shared.incomingOwnershipCount.Load(), expected[resultID])
 		}
 
 		for depID := range shared.deps {
@@ -251,7 +251,7 @@ func TestCacheRefusedFinalWaiterCommitsPersistenceBeforeHandoffRelease(t *testin
 	shared := res.cacheSharedResult()
 	c.egraphMu.RLock()
 	_, persisted := c.persistedEdgesByResult[shared.id]
-	ownershipCount := shared.incomingOwnershipCount
+	ownershipCount := shared.incomingOwnershipCount.Load()
 	c.egraphMu.RUnlock()
 	assert.Assert(t, persisted)
 	assert.Equal(t, ownershipCount, int64(1))

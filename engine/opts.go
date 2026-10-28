@@ -21,7 +21,14 @@ import (
 const (
 	EngineVersionMetaKey = "X-Dagger-Engine"
 
-	ClientMetadataMetaKey  = "X-Dagger-Client-Metadata"
+	ClientMetadataMetaKey = "X-Dagger-Client-Metadata"
+	// ChildClientMetadataMetaKey carries the client metadata of a Dagger client
+	// that another client serves to its own child processes, as `dagger api
+	// with-session` does. Each client between the child and the engine appends
+	// the metadata of the client it serves, so the last value is the direct
+	// child of the client the request's own metadata names.
+	ChildClientMetadataMetaKey = "X-Dagger-Child-Client-Metadata"
+
 	localImportOptsMetaKey = "X-Dagger-Local-Import-Opts"
 	localExportOptsMetaKey = "X-Dagger-Local-Export-Opts"
 
@@ -32,6 +39,8 @@ const (
 	localDirImportFollowPathsMetaKey     = "followpaths"
 
 	localDirImportGitIgnoreMetaKey = "dagger.gitignore"
+	// GitIgnoreOverridesHeader acknowledges client-side rule overrides.
+	GitIgnoreOverridesHeader = "dagger-gitignore-overrides"
 
 	// socket session attachable keys
 	SocketURLEncodedKey = "X-Dagger-Socket-URLEncoded"
@@ -126,7 +135,8 @@ type ClientMetadata struct {
 	ClientStableID string `json:"client_stable_id"`
 
 	// ClientVersion is the version string of the client that make the request.
-	ClientVersion string `json:"client_version"`
+	ClientVersion         string `json:"client_version"`
+	ClientVersionDeclared bool   `json:"-"`
 
 	// (Optional) Pipeline labels for e.g. vcs info like branch, commit, etc.
 	Labels map[string]string `json:"labels"`
@@ -373,19 +383,20 @@ func normalizeWorkspaceModuleLoading(loadWorkspaceModules, skipWorkspaceModules 
 }
 
 type LocalImportOpts struct {
-	Path               string           `json:"path"`
-	UseGitIgnore       bool             `json:"use_gitignore"`
-	IncludePatterns    []string         `json:"include_patterns"`
-	ExcludePatterns    []string         `json:"exclude_patterns"`
-	FollowPaths        []string         `json:"follow_paths"`
-	ReadSingleFileOnly bool             `json:"read_single_file_only"`
-	MaxFileSize        int64            `json:"max_file_size"`
-	StatPathOnly       bool             `json:"stat_path_only"`
-	StatReturnAbsPath  bool             `json:"stat_return_abs_path"`
-	StatResolvePath    bool             `json:"stat_resolve_path"`
-	GetAbsPathOnly     bool             `json:"get_abs_path_only"`
-	GlobPattern        string           `json:"glob_pattern"`
-	SearchOpts         *LocalSearchOpts `json:"search_opts,omitempty"`
+	Path               string            `json:"path"`
+	UseGitIgnore       bool              `json:"use_gitignore"`
+	GitIgnoreOverrides map[string]string `json:"gitignore_overrides,omitempty"`
+	IncludePatterns    []string          `json:"include_patterns"`
+	ExcludePatterns    []string          `json:"exclude_patterns"`
+	FollowPaths        []string          `json:"follow_paths"`
+	ReadSingleFileOnly bool              `json:"read_single_file_only"`
+	MaxFileSize        int64             `json:"max_file_size"`
+	StatPathOnly       bool              `json:"stat_path_only"`
+	StatReturnAbsPath  bool              `json:"stat_return_abs_path"`
+	StatResolvePath    bool              `json:"stat_resolve_path"`
+	GetAbsPathOnly     bool              `json:"get_abs_path_only"`
+	GlobPattern        string            `json:"glob_pattern"`
+	SearchOpts         *LocalSearchOpts  `json:"search_opts,omitempty"`
 }
 
 func (o LocalImportOpts) ToGRPCMD() metadata.MD {

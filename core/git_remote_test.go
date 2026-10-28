@@ -86,7 +86,8 @@ func gitMirrorTestFetch(t *testing.T, repo *RemoteGitRepository, git *gitutil.Gi
 	ctx := context.Background()
 	refs, err := gitRefsToFetch(ctx, git, depth, []*RemoteGitRef{{Ref: &gitutil.Ref{SHA: sha}}})
 	require.NoError(t, err)
-	require.NoError(t, repo.fetchObjects(ctx, git, depth, false, refs))
+	_, err = repo.fetchObjects(ctx, git, depth, false, refs)
+	require.NoError(t, err)
 }
 
 func gitMirrorTestTrace(t *testing.T, git *gitutil.GitCLI, fn func(*gitutil.GitCLI)) (string, int) {
@@ -241,7 +242,7 @@ func TestGitCheckoutIndependentAfterFetch(t *testing.T) {
 			ref := &gitutil.Ref{SHA: next, Name: tc.refName}
 			checkout := t.TempDir()
 			checkoutGit := gitutil.NewGitCLI(gitutil.WithWorkTree(checkout), gitutil.WithGitDir(filepath.Join(checkout, ".git")))
-			tmpref, method, err := copyGitCheckout(ctx, checkoutGit, git, filepath.Join(checkout, ".git"), ref, tc.depth)
+			tmpref, method, err := copyGitCheckout(ctx, checkoutGit, git, filepath.Join(checkout, ".git"), ref, tc.depth, nil)
 			require.NoError(t, err)
 			require.Equal(t, tc.method, method)
 
@@ -283,7 +284,7 @@ func TestGitMirrorFetchNamedFallback(t *testing.T) {
 			}))
 			// The branch moved to next after base was resolved. Only a full
 			// fallback fetch can materialize the pinned base in this fixture.
-			err := repo.fetchObjects(context.Background(), git, depth, false, []*RemoteGitRef{{Ref: &gitutil.Ref{Name: "refs/heads/main", SHA: base}}})
+			_, err := repo.fetchObjects(context.Background(), git, depth, false, []*RemoteGitRef{{Ref: &gitutil.Ref{Name: "refs/heads/main", SHA: base}}})
 			require.Equal(t, 1, rejections)
 			if depth == 0 {
 				require.NoError(t, err)

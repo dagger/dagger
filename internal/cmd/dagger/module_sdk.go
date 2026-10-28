@@ -185,7 +185,7 @@ query ModuleInit($sdk: String!, $name: String, $path: String, $settings: JSON, $
 		"settings": core.JSON(settings),
 		"install":  install,
 		"main":     main,
-	}, disposition, func(ctx context.Context, current *core.Workspace) error {
+	}, disposition, false, func(ctx context.Context, current *core.Workspace) error {
 		name, err := moduleInitResultName(ctx, current)
 		if err != nil {
 			return err
@@ -348,7 +348,7 @@ func mutateSDKModuleWorkspace(
 	if err != nil {
 		return err
 	}
-	return mutateSDKModuleWorkspaceWithDisposition(cmd, query, variables, disposition, afterApply)
+	return mutateSDKModuleWorkspaceWithDisposition(cmd, query, variables, disposition, true, afterApply)
 }
 
 // sdkModuleDisposition picks how an SDK-module workspace change is applied.
@@ -373,12 +373,19 @@ func mutateSDKModuleWorkspaceWithDisposition(
 	query string,
 	variables map[string]any,
 	disposition changesetDisposition,
+	primarySpan bool,
 	afterApply func(context.Context, *core.Workspace) error,
 ) error {
 	return withEngine(cmd.Context(), client.Params{
 		SkipWorkspaceModules:           true,
 		SuppressCompatWorkspaceWarning: true,
 	}, func(ctx context.Context, ec *client.Client) error {
+		out := cmd.OutOrStdout()
+		if primarySpan {
+			spanCtx, stdio, end := startPrimarySpan(ctx, cmd)
+			defer end()
+			ctx, out = spanCtx, stdio.Stdout
+		}
 		dag := ec.Dagger()
 		var result struct {
 			CurrentWorkspace struct {
@@ -396,7 +403,7 @@ func mutateSDKModuleWorkspaceWithDisposition(
 
 		current := core.NewQuery(dag).CurrentWorkspace()
 		updated := core.Ref[*core.Workspace](core.NewQuery(dag), result.CurrentWorkspace.Result.ID)
-		applied, err := handleWorkspaceResponseWithDisposition(ctx, dag, current, updated, disposition, cmd.OutOrStdout())
+		applied, err := handleWorkspaceResponseWithDisposition(ctx, dag, current, updated, disposition, out)
 		if err != nil || !applied || afterApply == nil {
 			return err
 		}

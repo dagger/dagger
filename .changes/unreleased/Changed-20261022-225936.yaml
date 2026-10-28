@@ -1,0 +1,7 @@
+kind: Changed
+body: |
+  Platform arguments are normalized, so spellings of one platform share a cache key: `linux/arm64/v8`, `linux/aarch64` and `linux/arm64` all read `linux/arm64`, and `linux/arm` reads `linux/arm/v7`. A container reports its platform in the normalized form, and a module function given a platform receives the normalized string. Platforms whose variants differ, such as `linux/arm/v6` and `linux/arm/v7`, stay distinct. Results cached under an alias spelling may need rebuilding under the normalized key.
+time: 2026-10-22T22:59:36Z
+custom:
+  Author: sipsma
+  PR: "14834"

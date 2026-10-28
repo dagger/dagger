@@ -108,7 +108,7 @@ func TestPartHostInlineAllPartsRetriesCapture(t *testing.T) {
 			gate.managed = true
 			row.partGate.active.Store(true)
 			gate.mu.Unlock()
-			before := row.incomingOwnershipCount
+			before := row.incomingOwnershipCount.Load()
 			c.egraphMu.Unlock()
 
 			realErr := errors.New("inline capture failed")
@@ -146,7 +146,7 @@ func TestPartHostInlineAllPartsRetriesCapture(t *testing.T) {
 			}
 			t.Logf("observed %d acquisition attempt releases", attempts)
 			c.egraphMu.RLock()
-			after := row.incomingOwnershipCount
+			after := row.incomingOwnershipCount.Load()
 			c.egraphMu.RUnlock()
 			require.Equal(t, before, after, "each discovery attempt releases its row hold")
 			require.Zero(t, sibling.metadataOpens.Load())

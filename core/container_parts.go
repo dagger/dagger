@@ -118,6 +118,7 @@ var (
 	_ LazyContainerParts = (*ContainerWithMountedCacheLazy)(nil)
 	_ LazyContainerParts = (*ContainerWithMountedTempLazy)(nil)
 	_ LazyContainerParts = (*ContainerWithMountedVolumeLazy)(nil)
+	_ LazyContainerParts = (*ContainerWithMountedFilesLazy)(nil)
 	_ LazyContainerParts = (*ContainerWithMountedSecretLazy)(nil)
 	_ LazyContainerParts = (*ContainerWithoutMountLazy)(nil)
 	_ LazyContainerParts = (*ContainerWithUnixSocketLazy)(nil)
@@ -262,6 +263,10 @@ func (lazy *ContainerWithMountedTempLazy) ContainerLazyParent() dagql.ObjectResu
 }
 
 func (lazy *ContainerWithMountedVolumeLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
+	return lazy.Parent
+}
+
+func (lazy *ContainerWithMountedFilesLazy) ContainerLazyParent() dagql.ObjectResult[*Container] {
 	return lazy.Parent
 }
 
@@ -476,6 +481,8 @@ func (container *Container) consumeFinalParentDelegations(ctx context.Context, o
 		if err := op.EvaluateContainerGroup(ctx, container, delegation); err != nil {
 			return err
 		}
+		// The part is filled by this body, not by its own group's.
+		dagql.PartTaskFromContext(ctx).AlsoFilled(part)
 	}
 	return nil
 }
@@ -929,6 +936,7 @@ func delegateContainerPart(ctx context.Context, dst *Container, parent dagql.Obj
 			return err
 		}
 		copyContainerDirectoryAccessorValue(dst.ensureFSAccessor(), cloned)
+		dst.markBorrowed(part)
 		return nil
 
 	case part == ContainerPartExecMeta:
@@ -944,6 +952,7 @@ func delegateContainerPart(ctx context.Context, dst *Container, parent dagql.Obj
 				dst.ensureMetaSnapshotAccessor().SetValue(snapshot)
 			}
 		}
+		dst.markBorrowed(part)
 		return nil
 
 	case strings.HasPrefix(string(part), containerPartMountPrefix):
@@ -980,6 +989,7 @@ func delegateContainerPart(ctx context.Context, dst *Container, parent dagql.Obj
 				}
 			}
 		}
+		dst.markBorrowed(part)
 		return nil
 
 	default:

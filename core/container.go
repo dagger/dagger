@@ -70,6 +70,14 @@ type Container struct {
 	partHost       atomic.Pointer[dagql.PartHost]
 	acquiredOutput atomic.Pointer[containerAcquiredOutput]
 	acquiredOpens  sync.Map
+	// borrowedParts holds, by dagql.PartKey, the snapshot ID each part had
+	// when this container copied it from a result it depends on
+	// (delegateContainerPart), or mounted it unchanged from one (the
+	// withMountedDirectory and withMountedFile writes). That result owns the
+	// snapshot, so the part's link is Borrowed while the part still holds
+	// it; a part written after the copy (a path writer copies, then writes)
+	// holds another, its own.
+	borrowedParts sync.Map
 	// fromContentDigestSafe tracks whether Container.From can give its result a
 	// content digest based only on the resolved image and platform. It is false
 	// by default so derived containers conservatively retain their call identity.
@@ -408,6 +416,13 @@ type ContainerWithMountedVolumeLazy struct {
 	Readonly bool
 }
 
+type ContainerWithMountedFilesLazy struct {
+	LazyState
+	Parent dagql.ObjectResult[*Container]
+	Target string
+	Files  []MountedFile
+}
+
 type ContainerWithMountedTempLazy struct {
 	LazyState
 	Parent dagql.ObjectResult[*Container]
@@ -486,6 +501,8 @@ type ContainerMount struct {
 	CacheSource *CacheMountSource
 	// The mounted volume.
 	VolumeSource *VolumeMountSource
+	// The mounted files, read-only.
+	FilesSource *FilesMountSource
 	// The mounted tmpfs.
 	TmpfsSource *TmpfsMountSource
 }
@@ -498,6 +515,18 @@ type CacheMountSource struct {
 type VolumeMountSource struct {
 	// The volume backing this mount.
 	Volume dagql.ObjectResult[*Volume]
+}
+
+// FilesMountSource is a read-only directory holding exactly the given files,
+// each under its name. It has no snapshot of its own: an exec links the files
+// into a directory of its own for the run.
+type FilesMountSource struct {
+	Files []MountedFile
+}
+
+type MountedFile struct {
+	Name string
+	File dagql.ObjectResult[*File]
 }
 
 type TmpfsMountSource struct {
@@ -514,6 +543,9 @@ type persistedContainerMountPayload struct {
 	CacheSourceResultID  uint64 `json:"cacheSourceResultID,omitempty"`
 	VolumeSourceResultID uint64 `json:"volumeSourceResultID,omitempty"`
 	TmpfsSize            int    `json:"tmpfsSize,omitempty"`
+	// FilesSourceResultIDs and FilesSourceNames pair up, one per file.
+	FilesSourceResultIDs []uint64 `json:"filesSourceResultIDs,omitempty"`
+	FilesSourceNames     []string `json:"filesSourceNames,omitempty"`
 }
 
 type persistedContainerSecretPayload struct {
@@ -535,8 +567,24 @@ const (
 	persistedContainerMountKindFile      = "file"
 	persistedContainerMountKindCache     = "cache"
 	persistedContainerMountKindVolume    = "volume"
+	persistedContainerMountKindFiles     = "files"
 	persistedContainerMountKindTmpfs     = "tmpfs"
 )
+
+func decodePersistedMountedFiles(ctx context.Context, dec *dagql.PersistDecodeContext, persisted persistedContainerMountPayload) ([]MountedFile, error) {
+	if len(persisted.FilesSourceResultIDs) != len(persisted.FilesSourceNames) {
+		return nil, fmt.Errorf("decode persisted container files mount %q: %d files for %d names", persisted.Target, len(persisted.FilesSourceResultIDs), len(persisted.FilesSourceNames))
+	}
+	files := make([]MountedFile, len(persisted.FilesSourceResultIDs))
+	for i, id := range persisted.FilesSourceResultIDs {
+		file, err := loadPersistedObjectResultByResultID[*File](ctx, dec, id, "container mount file")
+		if err != nil {
+			return nil, err
+		}
+		files[i] = MountedFile{Name: persisted.FilesSourceNames[i], File: file}
+	}
+	return files, nil
+}
 
 type persistedContainerPayload struct {
 	OperationState string                                   `json:"operationState,omitempty"`
@@ -797,6 +845,13 @@ type persistedContainerWithMountedVolumeLazy struct {
 	Target         string `json:"target"`
 	VolumeResultID uint64 `json:"volumeResultID"`
 	Readonly       bool   `json:"readonly,omitempty"`
+}
+
+type persistedContainerWithMountedFilesLazy struct {
+	ParentResultID uint64   `json:"parentResultID"`
+	Target         string   `json:"target"`
+	FileResultIDs  []uint64 `json:"fileResultIDs"`
+	FileNames      []string `json:"fileNames"`
 }
 
 type persistedContainerWithMountedTempLazy struct {
@@ -1217,6 +1272,18 @@ func (container *Container) AttachDependencyResultsKinds(
 			mnt.VolumeSource.Volume = volume
 			owned = append(owned, dagql.DependencyResult{Result: volume, Owned: true})
 		}
+		if mnt.FilesSource != nil {
+			files := slices.Clone(mnt.FilesSource.Files)
+			for j := range files {
+				file, err := attachFileResult(attach, files[j].File, fmt.Sprintf("attach container files mount %q", mnt.Target))
+				if err != nil {
+					return nil, err
+				}
+				files[j].File = file
+				owned = append(owned, dagql.DependencyResult{Result: file, Owned: true})
+			}
+			mnt.FilesSource = &FilesMountSource{Files: files}
+		}
 	}
 	for i := range container.Secrets {
 		secret := &container.Secrets[i]
@@ -1298,46 +1365,10 @@ func (container *Container) PersistedSnapshotRefLinks() []dagql.PersistedSnapsho
 	if container == nil {
 		return nil
 	}
-	var links []dagql.PersistedSnapshotRefLink
-	if container.MetaSnapshot != nil {
-		if snapshot, ok := container.MetaSnapshot.Peek(); ok && snapshot != nil {
-			links = append(links, dagql.PersistedSnapshotRefLink{
-				RefKey: snapshot.SnapshotID(),
-				Role:   "meta",
-			})
-		}
-	}
-	if container.FS != nil {
-		if dir, ok := container.FS.Peek(); ok && dir != nil {
-			if snapshot, ok := dir.Snapshot.Peek(); ok && snapshot != nil {
-				links = append(links, dagql.PersistedSnapshotRefLink{
-					RefKey: snapshot.SnapshotID(),
-					Role:   "fs",
-				})
-			}
-		}
-	}
-	for i, mnt := range container.Mounts {
-		if mnt.DirectorySource != nil {
-			if dir, ok := mnt.DirectorySource.Peek(); ok && dir != nil {
-				if snapshot, ok := dir.Snapshot.Peek(); ok && snapshot != nil {
-					links = append(links, dagql.PersistedSnapshotRefLink{
-						RefKey: snapshot.SnapshotID(),
-						Role:   fmt.Sprintf("mount_dir:%d", i),
-					})
-				}
-			}
-		}
-		if mnt.FileSource != nil {
-			if file, ok := mnt.FileSource.Peek(); ok && file != nil {
-				if snapshot, ok := file.Snapshot.Peek(); ok && snapshot != nil {
-					links = append(links, dagql.PersistedSnapshotRefLink{
-						RefKey: snapshot.SnapshotID(),
-						Role:   fmt.Sprintf("mount_file:%d", i),
-					})
-				}
-			}
-		}
+	links := container.metaLinks(nil)
+	links = container.fsLinks(links)
+	for i := range container.Mounts {
+		links = container.mountLinks(links, i)
 	}
 	for _, stored := range container.storedParts {
 		if stored.SnapshotID != "" {
@@ -1350,6 +1381,162 @@ func (container *Container) PersistedSnapshotRefLinks() []dagql.PersistedSnapsho
 		}
 	}
 	return links
+}
+
+// ReadSnapshotOwnerParts returns the snapshot links parts hold now, as
+// PersistedSnapshotRefLinks names them, and every role those parts link
+// under, held or not. It reads each part as it stands and doesn't wait for
+// the container's other evaluations, so the owner sync after one part is
+// filled doesn't wait on the parts still being filled. A container acquired
+// as a whole, or restored from persistence, is read whole instead (ok false).
+func (container *Container) ReadSnapshotOwnerParts(parts []dagql.PartKey) (links []dagql.PersistedSnapshotRefLink, roles []string, ok bool) {
+	if container == nil {
+		return nil, nil, false
+	}
+	container.lazyOpMu.Lock()
+	defer container.lazyOpMu.Unlock()
+	if container.acquiredOutput.Load() != nil || len(container.storedParts) > 0 {
+		return nil, nil, false
+	}
+	for _, part := range parts {
+		switch {
+		case part == ContainerPartFS:
+			roles = append(roles, containerFSRole)
+			links = container.fsLinks(links)
+		case part == ContainerPartExecMeta:
+			roles = append(roles, containerMetaRole)
+			links = container.metaLinks(links)
+		case strings.HasPrefix(string(part), containerPartMountPrefix):
+			target := strings.TrimPrefix(string(part), containerPartMountPrefix)
+			i := slices.IndexFunc(container.Mounts, func(mnt ContainerMount) bool { return mnt.Target == target })
+			if i < 0 {
+				return nil, nil, false
+			}
+			roles = append(roles, mountDirRole(i), mountFileRole(i))
+			links = container.mountLinks(links, i)
+		}
+	}
+	return links, roles, true
+}
+
+const (
+	containerFSRole   = "fs"
+	containerMetaRole = "meta"
+)
+
+func mountDirRole(i int) string  { return fmt.Sprintf("mount_dir:%d", i) }
+func mountFileRole(i int) string { return fmt.Sprintf("mount_file:%d", i) }
+
+// metaLinks appends the exec metadata part's link, if it holds a snapshot.
+func (container *Container) metaLinks(links []dagql.PersistedSnapshotRefLink) []dagql.PersistedSnapshotRefLink {
+	if container.MetaSnapshot != nil {
+		if snapshot, ok := container.MetaSnapshot.Peek(); ok && snapshot != nil {
+			links = append(links, dagql.PersistedSnapshotRefLink{
+				RefKey:   snapshot.SnapshotID(),
+				Role:     containerMetaRole,
+				Borrowed: container.borrowed(ContainerPartExecMeta, snapshot.SnapshotID()),
+			})
+		}
+	}
+	return links
+}
+
+// fsLinks appends the root filesystem part's link, if it holds a snapshot.
+func (container *Container) fsLinks(links []dagql.PersistedSnapshotRefLink) []dagql.PersistedSnapshotRefLink {
+	if container.FS != nil {
+		if dir, ok := container.FS.Peek(); ok && dir != nil {
+			if snapshot, ok := dir.Snapshot.Peek(); ok && snapshot != nil {
+				links = append(links, dagql.PersistedSnapshotRefLink{
+					RefKey:   snapshot.SnapshotID(),
+					Role:     containerFSRole,
+					Borrowed: container.borrowed(ContainerPartFS, snapshot.SnapshotID()),
+				})
+			}
+		}
+	}
+	return links
+}
+
+// mountLinks appends the link of mount i's source, if it holds a snapshot.
+func (container *Container) mountLinks(links []dagql.PersistedSnapshotRefLink, i int) []dagql.PersistedSnapshotRefLink {
+	mnt := container.Mounts[i]
+	if mnt.DirectorySource != nil {
+		if dir, ok := mnt.DirectorySource.Peek(); ok && dir != nil {
+			if snapshot, ok := dir.Snapshot.Peek(); ok && snapshot != nil {
+				links = append(links, dagql.PersistedSnapshotRefLink{
+					RefKey:   snapshot.SnapshotID(),
+					Role:     mountDirRole(i),
+					Borrowed: container.borrowed(ContainerPartMount(mnt.Target), snapshot.SnapshotID()),
+				})
+			}
+		}
+	}
+	if mnt.FileSource != nil {
+		if file, ok := mnt.FileSource.Peek(); ok && file != nil {
+			if snapshot, ok := file.Snapshot.Peek(); ok && snapshot != nil {
+				links = append(links, dagql.PersistedSnapshotRefLink{
+					RefKey:   snapshot.SnapshotID(),
+					Role:     mountFileRole(i),
+					Borrowed: container.borrowed(ContainerPartMount(mnt.Target), snapshot.SnapshotID()),
+				})
+			}
+		}
+	}
+	return links
+}
+
+// borrowed reports whether part holds snapshotID because this container
+// copied it from a result it depends on (borrowedParts).
+func (container *Container) borrowed(part dagql.PartKey, snapshotID string) bool {
+	copied, ok := container.borrowedParts.Load(part)
+	return ok && snapshotID != "" && copied == snapshotID
+}
+
+// markBorrowed records the snapshot part holds as copied from a result this
+// container depends on (borrowedParts). A part without a snapshot records
+// nothing.
+func (container *Container) markBorrowed(part dagql.PartKey) {
+	if id := container.partSnapshotID(part); id != "" {
+		container.borrowedParts.Store(part, id)
+	}
+}
+
+// partSnapshotID is the snapshot ID part holds now, or "".
+func (container *Container) partSnapshotID(part dagql.PartKey) string {
+	var snapshot bkcache.ImmutableRef
+	switch part {
+	case ContainerPartFS:
+		if container.FS != nil {
+			if dir, ok := container.FS.Peek(); ok && dir != nil {
+				snapshot, _ = dir.Snapshot.Peek()
+			}
+		}
+	case ContainerPartExecMeta:
+		if container.MetaSnapshot != nil {
+			snapshot, _ = container.MetaSnapshot.Peek()
+		}
+	default:
+		target, ok := strings.CutPrefix(string(part), containerPartMountPrefix)
+		if !ok {
+			return ""
+		}
+		mnt := container.mountAt(target)
+		switch {
+		case mnt == nil:
+		case mnt.DirectorySource != nil:
+			if dir, ok := mnt.DirectorySource.Peek(); ok && dir != nil {
+				snapshot, _ = dir.Snapshot.Peek()
+			}
+		case mnt.FileSource != nil:
+			if file, ok := mnt.FileSource.Peek(); ok && file != nil {
+				snapshot, _ = file.Snapshot.Peek()
+			}
+		}
+	}
+	if snapshot == nil {
+		return ""
+	}
+	return snapshot.SnapshotID()
 }
 
 func (container *Container) CacheUsageIdentities() []string {
@@ -1504,6 +1691,16 @@ func (container *Container) encodeContainerMetadata(enc *dagql.PersistEncodeCont
 				return persistedContainerMetadataValue{}, err
 			}
 			encoded.VolumeSourceResultID = id
+		case mnt.FilesSource != nil:
+			encoded.Kind = persistedContainerMountKindFiles
+			for _, f := range mnt.FilesSource.Files {
+				id, err := encodePersistedObjectRef(enc, f.File, fmt.Sprintf("files mount %q", mnt.Target))
+				if err != nil {
+					return persistedContainerMetadataValue{}, err
+				}
+				encoded.FilesSourceResultIDs = append(encoded.FilesSourceResultIDs, id)
+				encoded.FilesSourceNames = append(encoded.FilesSourceNames, f.Name)
+			}
 		case mnt.TmpfsSource != nil:
 			encoded.Kind = persistedContainerMountKindTmpfs
 			encoded.TmpfsSize = mnt.TmpfsSource.Size
@@ -1567,6 +1764,12 @@ func decodePersistedContainerResources(ctx context.Context, dec *dagql.PersistDe
 				return nil, nil, nil, err
 			}
 			mnt.VolumeSource = &VolumeMountSource{Volume: volumeRes}
+		case persistedContainerMountKindFiles:
+			files, err := decodePersistedMountedFiles(ctx, dec, persistedMount)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			mnt.FilesSource = &FilesMountSource{Files: files}
 		case persistedContainerMountKindTmpfs:
 			mnt.TmpfsSource = &TmpfsMountSource{Size: persistedMount.TmpfsSize}
 		default:
@@ -3823,6 +4026,11 @@ func (lazy *ContainerWithMountedDirectoryLazy) EvaluateContainerGroup(ctx contex
 			}
 			mnt.DirectorySource.SetValue(detached)
 			detached = nil
+			// Mounted as it is, the snapshot is the source's, a result
+			// this one depends on; a chowned copy is a result of its own.
+			if lazy.Owner == "" {
+				container.markBorrowed(ContainerPartMount(target))
+			}
 			return nil
 		})
 	default:
@@ -3929,6 +4137,11 @@ func (lazy *ContainerWithMountedFileLazy) EvaluateContainerGroup(ctx context.Con
 			}
 			mnt.FileSource.SetValue(detached)
 			detached = nil
+			// Mounted as it is, the snapshot is the source's, a result
+			// this one depends on; a chowned copy is a result of its own.
+			if lazy.Owner == "" {
+				container.markBorrowed(ContainerPartMount(target))
+			}
 			return nil
 		})
 	default:
@@ -4176,6 +4389,62 @@ func (lazy *ContainerWithMountedVolumeLazy) EncodePersisted(ctx context.Context,
 		VolumeResultID: volumeID,
 		Readonly:       lazy.Readonly,
 	})
+}
+
+func (lazy *ContainerWithMountedFilesLazy) Evaluate(ctx context.Context, container *Container) error {
+	return container.evaluateAllLazyGroups(ctx, lazy)
+}
+
+func (lazy *ContainerWithMountedFilesLazy) ContainerLazyGroups(_ context.Context, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	return templateAContainerGroups(ctr, parts)
+}
+
+func (lazy *ContainerWithMountedFilesLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
+	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withMountedFiles", container, lazy.Parent, group, func(ctx context.Context) error {
+		_, err := container.WithMountedFiles(ctx, lazy.Target, lazy.Files)
+		return err
+	})
+}
+
+func (lazy *ContainerWithMountedFilesLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withMountedFiles parent")
+	if err != nil {
+		return nil, err
+	}
+	deps := []dagql.AnyResult{parent}
+	files := slices.Clone(lazy.Files)
+	for i := range files {
+		file, err := attachFileResult(attach, files[i].File, "attach container withMountedFiles file")
+		if err != nil {
+			return nil, err
+		}
+		files[i].File = file
+		deps = append(deps, file)
+	}
+	lazy.Parent = parent
+	lazy.Files = files
+	return deps, nil
+}
+
+func (lazy *ContainerWithMountedFilesLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container withMountedFiles parent")
+	if err != nil {
+		return nil, err
+	}
+	persisted := persistedContainerWithMountedFilesLazy{
+		ParentResultID: parentID,
+		Target:         lazy.Target,
+		FileResultIDs:  make([]uint64, len(lazy.Files)),
+		FileNames:      make([]string, len(lazy.Files)),
+	}
+	for i, f := range lazy.Files {
+		persisted.FileResultIDs[i], err = encodePersistedObjectRef(enc, f.File, "container withMountedFiles file")
+		if err != nil {
+			return nil, err
+		}
+		persisted.FileNames[i] = f.Name
+	}
+	return json.Marshal(persisted)
 }
 
 func (lazy *ContainerWithMountedTempLazy) Evaluate(ctx context.Context, container *Container) error {
@@ -5139,6 +5408,29 @@ func decodePersistedContainerRecipe(
 			Target:    persisted.Target,
 			Volume:    volume,
 			Readonly:  persisted.Readonly,
+		}, nil
+	case "withMountedFiles":
+		var persisted persistedContainerWithMountedFilesLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return nil, fmt.Errorf("decode persisted container withMountedFiles lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container withMountedFiles parent")
+		if err != nil {
+			return nil, err
+		}
+		files, err := decodePersistedMountedFiles(ctx, dec, persistedContainerMountPayload{
+			Target:               persisted.Target,
+			FilesSourceResultIDs: persisted.FileResultIDs,
+			FilesSourceNames:     persisted.FileNames,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return &ContainerWithMountedFilesLazy{
+			LazyState: NewLazyState(),
+			Parent:    parent,
+			Target:    persisted.Target,
+			Files:     files,
 		}, nil
 	case "withMountedTemp":
 		var persisted persistedContainerWithMountedTempLazy
@@ -6313,6 +6605,26 @@ func (container *Container) WithMountedVolume(
 }
 
 // mutates container caller must have handled cloning or creating a new child.
+func (container *Container) WithMountedFiles(
+	_ context.Context,
+	target string,
+	files []MountedFile,
+) (*Container, error) {
+	target = absPath(container.Config.WorkingDir, target)
+
+	container.Mounts = container.Mounts.With(ContainerMount{
+		Target:      target,
+		Readonly:    true,
+		FilesSource: &FilesMountSource{Files: slices.Clone(files)},
+	})
+
+	// set image ref to empty string
+	container.ImageRef = ""
+
+	return container, nil
+}
+
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithMountedTemp(ctx context.Context, target string, size int) (*Container, error) {
 	target = absPath(container.Config.WorkingDir, target)
 
@@ -6551,6 +6863,10 @@ func locatePath(
 
 			if mnt.CacheSource != nil {
 				return nil, "", fmt.Errorf("%s: cannot retrieve path from cache", containerPath)
+			}
+
+			if mnt.FilesSource != nil {
+				return nil, "", fmt.Errorf("%s: cannot retrieve path from a files mount", containerPath)
 			}
 
 			relPath, err := filepath.Rel(mnt.Target, containerPath)
