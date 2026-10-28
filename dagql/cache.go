@@ -2721,6 +2721,11 @@ type sharedResult struct {
 	// the Cloud's own holding on an engine's entry (noteCloudCopyLocked) is
 	// not in it. Guarded by egraphMu.
 	cacheHolders map[CacheID]map[uint64]struct{}
+	// calls are, on the Cloud, the calls its engines reported returning this
+	// entry other than its own, by request digest, which StoredBundle sends
+	// with the entry (cache_call_records.go). They own nothing and go with
+	// the entry. Persisted and guarded by egraphMu.
+	calls map[digest.Digest]*keptCall
 	// listItems are, on a list entry, the item read at each position of its
 	// value, and listItemOf and listItemNth name that list and position on
 	// such an item (CallRequest.ListItem). Not persisted; guarded by

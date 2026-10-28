@@ -100,6 +100,10 @@ type RemoteHolding struct {
 	// it, a use of the entry (0: unknown). The entry's last use never moves
 	// back.
 	UsedAtUnixNano int64
+	// Call is the call as its span encodes it (dagger.io/dag.call), when
+	// the call returned the entry of another recipe (Request is not
+	// Recipe). The entry keeps it, to send with the entry.
+	Call string
 }
 
 // RemoteHoldingUpdate is what a later report adds to an existing holding: the
@@ -401,6 +405,10 @@ func (c *Cache) AttachRemoteHolding(ctx context.Context, key HolderKey, desc Rem
 	if err != nil {
 		return change, fmt.Errorf("attach remote holding %s/%d: %w", key.Cache, key.Number, err)
 	}
+	kept, err := newKeptCall(desc)
+	if err != nil {
+		return change, fmt.Errorf("attach remote holding %s/%d: %w", key.Cache, key.Number, err)
+	}
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
 	c.initEgraphLocked()
@@ -414,6 +422,7 @@ func (c *Cache) AttachRemoteHolding(ctx context.Context, key HolderKey, desc Rem
 		affected = true
 	}
 	c.teachRemoteIdentityLocked(ctx, entry, desc.Field, desc.Recipe, desc.Request, desc.ContentDigest, desc.Term)
+	c.keepCallLocked(entry, desc, kept)
 	if desc.Request != "" && desc.Request != desc.Recipe {
 		if _, ok := c.entriesByRecipe[desc.Request]; !ok {
 			c.indexRecipeLocked(desc.Request, entry)

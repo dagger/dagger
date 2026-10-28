@@ -24,6 +24,12 @@ type StoredBundleResult struct {
 	NoValue []uint64
 	// Held are the numbers of the entries the bundle carries as held rows.
 	Held []uint64
+	// CallInputs are the numbers of the entries the bundle carries as
+	// roots only because a call it sends has them as inputs, and
+	// UnsendableCalls counts the terms of its entries' kept calls it sends
+	// no call for: none had inputs it could place.
+	CallInputs      []uint64
+	UnsendableCalls int
 }
 
 // HeldBy names the entries of a blob-backed cache whose values a recipient
@@ -145,6 +151,11 @@ func (c *Cache) storedBundle(roots []uint64, held *HeldBy) (StoredBundleResult, 
 			return StoredBundleResult{}, nil, err
 		}
 	}
+	build.rootSeen = seenRoot
+	if err := c.storedBundleCallsLocked(build); err != nil {
+		return StoredBundleResult{}, nil, fmt.Errorf("stored bundle: %w", err)
+	}
+	rootEntries = append(rootEntries, build.callRoots...)
 	var frames map[TransferOrdinal]*ResultCall
 	for _, res := range build.order {
 		if build.held[res.id] {
@@ -177,6 +188,7 @@ func (c *Cache) storedBundle(roots []uint64, held *HeldBy) (StoredBundleResult, 
 		}
 	}
 	out.Bundle, out.Donors = build.bundle, build.donors
+	out.CallInputs, out.UnsendableCalls = build.callInputs, build.unsendableCalls
 	if frames == nil {
 		if err := validateStoredBundle(build.bundle); err != nil {
 			return StoredBundleResult{}, nil, fmt.Errorf("stored bundle: %w", err)
@@ -197,6 +209,14 @@ type storedBundleBuild struct {
 	// closure's entries that become held rows.
 	heldBy *HeldBy
 	held   map[sharedResultID]bool
+	// rootSeen are the roots' entries, and callRoots the entries added as
+	// roots for the inputs of calls the bundle sends, callInputs their
+	// numbers, and unsendableCalls the terms it sends no call for
+	// (storedBundleCallsLocked).
+	rootSeen        map[sharedResultID]bool
+	callRoots       []*sharedResult
+	callInputs      []uint64
+	unsendableCalls int
 }
 
 // relocate rewrites a reference to an entry of the closure to its ordinal.
