@@ -233,15 +233,18 @@ type partRangeChunk struct {
 
 func (r *partRangeReader) Size() int64 { return r.desc.Size }
 
-// Close cancels every request and waits for the workers to stop.
+// Close cancels every request and waits for the workers to stop, and for a
+// read in progress, which may still read a chunk through.
 func (r *partRangeReader) Close() error {
 	r.cancel(nil)
 	r.wg.Wait()
 	r.release()
+	r.readMu.Lock()
 	r.mu.Lock()
 	single := r.single
 	r.releaseSlotsLocked(r.taken)
 	r.mu.Unlock()
+	r.readMu.Unlock()
 	if single != nil {
 		return single.Close()
 	}
@@ -301,12 +304,14 @@ func (r *partRangeReader) ReadAt(p []byte, off int64) (int, error) {
 }
 
 // chunkFor returns chunk idx, starting the workers on the first read, or nil
-// when the rest of the blob is read on one stream: idx lies outside the
-// window, or that move already happened.
+// when the rest of the blob is read on one stream: idx lies behind the read
+// offset, or past it at a chunk no worker has claimed, or that move already
+// happened. Waiting for such a chunk could leave the engine's held-chunk
+// slots with the chunks before it, which no read reads through.
 func (r *partRangeReader) chunkFor(idx int64) *partRangeChunk {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.single != nil || idx < r.low || idx >= r.low+int64(r.window) {
+	if r.single != nil || idx < r.low || (idx > r.low && idx >= r.next) {
 		return nil
 	}
 	if !r.started {
@@ -352,13 +357,15 @@ func (r *partRangeReader) chunkLocked(idx int64) *partRangeChunk {
 	return c
 }
 
-// readThrough drops chunk idx, which the reader has read to its end, making
-// room for a worker to fetch another: the window moves past it, and the slots
-// of the claimed chunks up to it go back.
+// readThrough drops chunk idx, which the reader has read to its end, and any
+// it skipped, making room for a worker to fetch another: the window moves
+// past it, and the slots of the claimed chunks up to it go back.
 func (r *partRangeReader) readThrough(idx int64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	delete(r.held, idx)
+	for i := r.low; i <= idx; i++ {
+		delete(r.held, i)
+	}
 	r.releaseSlotsLocked(min(r.next, idx+1) - r.low)
 	r.low = idx + 1
 	r.cond.Broadcast()
