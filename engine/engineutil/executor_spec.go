@@ -1882,8 +1882,10 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 
 	// With wcprof on, runc writes a pid file once the workload is released,
 	// which splits runc's container start-up from the user's process run.
+	// runc's pid file marks when it released the workload, which splits
+	// exec.runtimeStart from exec.processRun for both profiling sources
 	var pidFile string
-	if wcprof.Enabled(ctx) {
+	if wcprof.Enabled(ctx) || dagql.OTelProfActive(ctx) {
 		pidFile = filepath.Join(bundle, "init.pid")
 	}
 
@@ -2016,6 +2018,8 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 	if wcprof.Enabled(ctx) || dagql.OTelProfActive(ctx) {
 		profArgv = execProfArgv(state)
 	}
+	// the native phases the OTel split's phase spans are emitted for
+	var phaseOps execPhaseOps
 	if wcprof.Enabled(ctx) {
 		// split engine overhead (creating/starting the container) from the
 		// user's process runtime
@@ -2025,22 +2029,23 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 			outcome = wcprof.OutcomeError
 		}
 		if startedNS := profStartedNS.Load(); startedNS > 0 {
-			wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.containerStart", wcprof.OpOpts{Ident: state.id}, profStartNS, startedNS, wcprof.OutcomeOK)
+			phaseOps.containerStart = wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.containerStart", wcprof.OpOpts{Ident: state.id}, profStartNS, startedNS, wcprof.OutcomeOK)
 			processStartNS := startedNS
 			if releasedNS := workloadReleasedNS(pidFile, startedNS, profStartedWall.Load()); releasedNS != 0 && releasedNS <= endNS {
 				// runc creating the container, up to releasing the workload
-				wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.runtimeStart", wcprof.OpOpts{Ident: state.id}, startedNS, releasedNS, wcprof.OutcomeOK)
+				phaseOps.runtimeStart = wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.runtimeStart", wcprof.OpOpts{Ident: state.id}, startedNS, releasedNS, wcprof.OutcomeOK)
 				processStartNS = releasedNS
 			}
 			runID := wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.processRun", wcprof.OpOpts{Ident: state.id, WorkType: wcprof.WorkTypeUser, Argv: profArgv}, processStartNS, endNS, outcome)
+			phaseOps.processRun = runID
 			if initStartedNS, spawnedNS, exitedNS, ok := initTiming.read(); ok {
 				recordProcessRunSplit(ctx, runID, state.id, profArgv, processStartNS, endNS, initStartedNS, spawnedNS, exitedNS, outcome)
 			}
 		} else {
-			wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.containerStart", wcprof.OpOpts{Ident: state.id}, profStartNS, endNS, outcome)
+			phaseOps.containerStart = wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.containerStart", wcprof.OpOpts{Ident: state.id}, profStartNS, endNS, outcome)
 		}
 	}
-	// OTel exec split: the same containerStart/processRun boundary,
+	// OTel exec split: the same containerStart/runtimeStart/processRun boundaries,
 	// emitted as backdated children of the exec.run span so a slow user process
 	// headlines as user work (work_type=user) rather than engine overhead.
 	// emitOTelExecSplit self-gates on telemetry being active.
@@ -2048,7 +2053,11 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 	if ns := profStartedWall.Load(); ns > 0 {
 		profStartedWallTime = time.Unix(0, ns)
 	}
-	emitOTelExecSplit(ctx, state.id, profStartWall, profStartedWallTime, endWall, runErr, profArgv)
+	var releasedWall time.Time
+	if dagql.OTelProfActive(ctx) {
+		releasedWall = workloadReleasedAt(pidFile, profStartedWallTime)
+	}
+	emitOTelExecSplit(ctx, state.id, profStartWall, profStartedWallTime, releasedWall, endWall, runErr, profArgv, phaseOps)
 	return exitError(ctx, state.exitCodePath, runErr, state.procInfo.Meta.ValidExitCodes)
 }
 

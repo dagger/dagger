@@ -13,10 +13,12 @@ import (
 
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/engine/wcprof"
 )
 
 // Class is a class of Object types.
@@ -732,7 +734,22 @@ func (r ObjectResult[T]) call(
 		ctx = ContextWithTrivialField(ctx)
 	}
 	if s.telemetry != nil && !field.Spec.NoTelemetry {
+		recording := wcprof.Enabled(ctx)
+		var prevSpan trace.SpanContext
+		if recording {
+			prevSpan = trace.SpanContextFromContext(ctx)
+			// the call's native op ends after the telemetry below completes
+			// the call, on this goroutine: deferred first, it runs last
+			var opEnd *callOpEnd
+			ctx, opEnd = withCallOpEnd(ctx, req.ResultCall)
+			defer opEnd.end()
+		}
 		telemetryCtx, done := s.telemetry(ctx, req)
+		if recording {
+			if span := trace.SpanFromContext(telemetryCtx); span.SpanContext().IsValid() && span.SpanContext().SpanID() != prevSpan.SpanID() {
+				telemetryCtx = withOwnCallSpan(telemetryCtx, req.ResultCall, span)
+			}
+		}
 		defer func() {
 			var cached bool
 			if res != nil {

@@ -2,6 +2,8 @@ package wcprof
 
 import (
 	"bufio"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -57,6 +59,10 @@ type DumpEvent struct {
 	ClientID uint32 `json:"cl,omitempty"`
 	MetaID   uint32 `json:"m,omitempty"`
 
+	// TraceID and SpanID are a span event's OTel span, in lower-case hex.
+	TraceID string `json:"tr,omitempty"`
+	SpanID  string `json:"sp,omitempty"`
+
 	StartNS int64 `json:"s"`
 	EndNS   int64 `json:"d"`
 }
@@ -69,6 +75,8 @@ func eventTypeName(t EventType) string {
 		return "wait"
 	case EventTypeLink:
 		return "link"
+	case EventTypeSpan:
+		return "span"
 	default:
 		return "invalid"
 	}
@@ -97,6 +105,14 @@ func toDumpEvent(ev Event) DumpEvent {
 		out.Reason = ev.Reason.String()
 	case EventTypeLink:
 		out.LinkKind = ev.LinkKind.String()
+	case EventTypeSpan:
+		var trace [16]byte
+		var span [8]byte
+		binary.BigEndian.PutUint64(trace[:8], ev.TargetID)
+		binary.BigEndian.PutUint64(trace[8:], ev.ResultID)
+		binary.BigEndian.PutUint64(span[:], ev.ParentID)
+		out.TraceID, out.SpanID = hex.EncodeToString(trace[:]), hex.EncodeToString(span[:])
+		out.ParentID, out.TargetID, out.ResultID = 0, 0, 0
 	}
 	return out
 }

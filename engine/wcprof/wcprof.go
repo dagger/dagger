@@ -10,8 +10,8 @@
 //
 // Recording can be enabled two ways:
 //
-//   - Engine-global: the _DAGGER_WCPROF environment variable, the engine's
-//     --wcprof flag, or POSTing "on" to the /debug/wcprof/enabled endpoint.
+//   - Engine-global: the engine's --wcprof flag, or POSTing "on" to the
+//     /debug/wcprof/enabled endpoint.
 //     All work on the engine is recorded until "off" is POSTed to the same
 //     endpoint.
 //   - Per-session: a client connecting with ClientMetadata.Profile set (the
@@ -25,7 +25,6 @@
 package wcprof
 
 import (
-	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -44,6 +43,9 @@ const (
 	// EventTypeLink is a non-blocking correlation between an op and another
 	// op or an interned identifier.
 	EventTypeLink
+	// EventTypeSpan names the OTel span an op owns: the span the engine
+	// emits for the same work.
+	EventTypeSpan
 )
 
 // OpKind classifies operations.
@@ -243,6 +245,8 @@ func (k LinkKind) String() string {
 //     waiting on a named resource, in which case IdentID names it).
 //   - Link: ParentID is the from-op, TargetID an op (optional), IdentID an
 //     interned identifier (optional), ResultID a dagql result (optional).
+//   - Span: OpID is the op, TargetID and ResultID the high and low halves of
+//     its span's trace ID, ParentID the span ID, all big-endian.
 type Event struct {
 	Type     EventType
 	OpKind   OpKind
@@ -366,12 +370,6 @@ var (
 	globalOn atomic.Bool
 )
 
-func init() {
-	if os.Getenv("_DAGGER_WCPROF") != "" {
-		EnableGlobal()
-	}
-}
-
 // Active returns the recorder, or nil if profiling was never enabled. The
 // recorder outlives DisableGlobal so buffered events can still be dumped;
 // use GloballyEnabled/Enabled to ask whether work is being recorded.
@@ -405,20 +403,7 @@ func EnsureRecorder() {
 	if global.Load() != nil {
 		return
 	}
-	maxEvents := int64(0)
-	if v := os.Getenv("_DAGGER_WCPROF_MAX_EVENTS"); v != "" {
-		// best-effort parse; ignore malformed values
-		var parsed int64
-		for _, c := range v {
-			if c < '0' || c > '9' {
-				parsed = 0
-				break
-			}
-			parsed = parsed*10 + int64(c-'0')
-		}
-		maxEvents = parsed
-	}
-	global.CompareAndSwap(nil, NewRecorder(maxEvents))
+	global.CompareAndSwap(nil, NewRecorder(defaultMaxEvents))
 }
 
 //

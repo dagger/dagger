@@ -5101,8 +5101,15 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			storedPart = reporting.LazyGroupStoredPart(group)
 		}
 		if OTelProfActive(evalCtx) && !producerSkip {
-			lazyCallbackCtx, lazySpan, lazyIsResume = c.beginOTelLazyOp(evalCtx, shared.id, group, resultCall, storedPart)
+			// the span starts where the native op does: the preparation
+			// between them is the evaluation's own
+			var startOpts []trace.SpanStartOption
+			if start := lazyOp.StartTime(); !start.IsZero() {
+				startOpts = append(startOpts, trace.WithTimestamp(start))
+			}
+			lazyCallbackCtx, lazySpan, lazyIsResume = c.beginOTelLazyOp(evalCtx, shared.id, group, resultCall, storedPart, startOpts...)
 			attempt.spanCtx = lazySpan.SpanContext()
+			RecordOpSpan(lazyOp, lazySpan)
 		}
 		g.attempt = attempt
 		shared.lazyMu.Unlock()
@@ -5137,7 +5144,6 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			if err == nil && spec == nil {
 				err = c.completeNativePartTask(callbackCtx, installationToken)
 			}
-			lazyOp.EndWithResult(profErrOutcome(err), uint64(shared.id))
 
 			shared.lazyMu.Lock()
 			attempt.err = err
@@ -5205,6 +5211,9 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			if c.testAfterLazyEvalFinish != nil {
 				c.testAfterLazyEvalFinish(attempt)
 			}
+			// The op ends as its waiters are released: what they wait for
+			// after the body (retiring the attempt, the span's end) is its time.
+			lazyOp.EndWithResult(profErrOutcome(err), uint64(shared.id))
 			close(attempt.done)
 			// Sharing's completion trigger runs after the D unlock and after
 			// the waiter wake, so a waiter never waits for it. Only a
@@ -5858,9 +5867,16 @@ func (c *Cache) getOrInitCall(
 	if !wcprof.Enabled(ctx) || req == nil || req.ResultCall == nil {
 		return c.getOrInitCallTakingOver(ctx, sessionID, resolver, req, fn, nil)
 	}
+	// a call the server's telemetry spanned starts where its span did: the
+	// telemetry's preparation since is the call's
+	ownSpan, ownStart := ownCallSpan(ctx, req.ResultCall)
 	ctx, profOp := wcprof.BeginOp(ctx, wcprof.OpKindCall, profCallClass(req.ResultCall), wcprof.OpOpts{
 		ClientID: profClientID(ctx),
+		Start:    ownStart,
 	})
+	if ownSpan.IsValid() {
+		profOp.SetSpan(ownSpan.TraceID(), ownSpan.SpanID())
+	}
 	res, err := c.getOrInitCallTakingOver(ctx, sessionID, resolver, req, fn, profOp)
 	outcome := profOp.OutcomeHint()
 	switch {
@@ -5873,7 +5889,9 @@ func (c *Cache) getOrInitCall(
 	case outcome == wcprof.OutcomeNone:
 		outcome = wcprof.OutcomeOK
 	}
-	profOp.EndWithResult(outcome, profResultID(res))
+	if !handOverCallOpEnd(ctx, req.ResultCall, profOp, outcome, profResultID(res)) {
+		profOp.EndWithResult(outcome, profResultID(res))
+	}
 	return res, err
 }
 
@@ -6111,6 +6129,7 @@ func (c *Cache) getOrInitCallInner(
 	var execSpan trace.Span
 	if OTelProfActive(callCtx) && !req.ResultCall.ProfileSkip {
 		callCtx, execSpan = beginOTelCallExec(callCtx, callKey, profCallClass(req.ResultCall))
+		RecordOpSpan(execOp, execSpan)
 	}
 	sharedWorkCtx, releaseOperationLease, err := withOperationLease(withoutOperationLease(callCtx))
 	if err != nil {
@@ -6428,6 +6447,7 @@ func (c *Cache) wait(
 		var pubSpan trace.Span
 		if oc.execSpanCtx.IsValid() {
 			pubSpan = beginOTelPublishResult(context.WithoutCancel(oc.sharedWorkCtx))
+			RecordOpSpan(pubOp, pubSpan)
 		}
 		oc.initCompletedResultErr = c.initCompletedResult(context.WithoutCancel(oc.sharedWorkCtx), resolver, oc, req, sessionID)
 		if pubOp != nil {

@@ -2,8 +2,10 @@ package wcprof
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"sync"
+	"time"
 )
 
 type opCtxKey struct{}
@@ -92,6 +94,9 @@ type OpOpts struct {
 	// JSON-array string and interns it as the op's MetaID, so offline analysis
 	// can rank the exec by its real command. Empty for non-exec ops.
 	Argv []string
+	// Start, when set, is when the op began, for an op whose work began
+	// before BeginOp (e.g. at its OTel span's start); zero is now.
+	Start time.Time
 }
 
 // internArgv marshals argv to the canonical scalar JSON-array string and interns
@@ -119,6 +124,10 @@ func BeginOp(ctx context.Context, kind OpKind, class string, opts OpOpts) (conte
 	if r == nil {
 		return ctx, nil
 	}
+	startNS := r.Now()
+	if !opts.Start.IsZero() {
+		startNS = int64(opts.Start.Sub(r.epoch))
+	}
 	op := &Op{
 		r:        r,
 		id:       r.newOpID(),
@@ -129,7 +138,7 @@ func BeginOp(ctx context.Context, kind OpKind, class string, opts OpOpts) (conte
 		identID:  r.Intern(opts.Ident),
 		clientID: r.Intern(opts.ClientID),
 		metaID:   r.internArgv(opts.Argv),
-		startNS:  r.Now(),
+		startNS:  startNS,
 	}
 	sh := r.shardFor(op.id)
 	sh.mu.Lock()
@@ -145,6 +154,14 @@ func BeginOp(ctx context.Context, kind OpKind, class string, opts OpOpts) (conte
 	}
 	sh.mu.Unlock()
 	return ContextWithOpID(ctx, op.id), op
+}
+
+// StartTime is when the op began, or the zero time for a nil handle.
+func (op *Op) StartTime() time.Time {
+	if op == nil {
+		return time.Time{}
+	}
+	return op.r.epoch.Add(time.Duration(op.startNS))
 }
 
 // ID returns the op's ID, or 0 for a nil handle.
@@ -338,6 +355,41 @@ func RecordOp(ctx context.Context, kind OpKind, class string, opts OpOpts, start
 		EndNS:    endNS,
 	})
 	return id
+}
+
+// SetSpan records the OTel span the op owns, the span the engine emits for
+// the same work, so offline analysis can join the op to the span's
+// attributes. A zero trace or span ID records nothing.
+func (op *Op) SetSpan(traceID [16]byte, spanID [8]byte) {
+	if op == nil {
+		return
+	}
+	op.r.recordSpan(op.id, traceID, spanID)
+}
+
+// RecordSpan is SetSpan for an op recorded by ID (RecordOp).
+func RecordSpan(ctx context.Context, opID uint64, traceID [16]byte, spanID [8]byte) {
+	r := recorderFor(ctx)
+	if r == nil || opID == 0 {
+		return
+	}
+	r.recordSpan(opID, traceID, spanID)
+}
+
+func (r *Recorder) recordSpan(opID uint64, traceID [16]byte, spanID [8]byte) {
+	if traceID == ([16]byte{}) || spanID == ([8]byte{}) {
+		return
+	}
+	now := r.Now()
+	r.append(r.shardFor(opID), Event{
+		Type:     EventTypeSpan,
+		OpID:     opID,
+		TargetID: binary.BigEndian.Uint64(traceID[:8]),
+		ResultID: binary.BigEndian.Uint64(traceID[8:]),
+		ParentID: binary.BigEndian.Uint64(spanID[:]),
+		StartNS:  now,
+		EndNS:    now,
+	})
 }
 
 // Link records a non-blocking correlation from fromOpID (0 means the current

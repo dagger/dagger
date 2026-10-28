@@ -650,11 +650,14 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 // fetchObjects operates on the private mirror; service bindings and progress
 // streams are supplied by fetch so the Git protocol can also be tested directly.
 // retried says the remote refused a commit, and its named ref was fetched
-// instead.
-func (repo *RemoteGitRepository) fetchObjects(ctx context.Context, git *gitutil.GitCLI, depth int, includeTags bool, refs []*RemoteGitRef) (retried bool, _ error) {
+// instead. The fetch is recorded as a git.mirror.fetch op, under the mirror's
+// hold when the caller holds it, so a profile tells it from the rest of the hold.
+func (repo *RemoteGitRepository) fetchObjects(ctx context.Context, git *gitutil.GitCLI, depth int, includeTags bool, refs []*RemoteGitRef) (retried bool, rerr error) {
 	if len(refs) == 0 && !includeTags {
 		return false, nil
 	}
+	ctx, op := wcprof.BeginOp(ctx, wcprof.OpKindIO, "git.mirror.fetch", wcprof.OpOpts{Ident: remoteGitLockPrefix + repo.URL.RedactedRemote(), WorkType: wcprof.WorkTypeEngine})
+	defer func() { op.EndErr(rerr) }()
 
 	// Fetch by object SHA in the hot path (`--no-tags`), and only retry by named refs for SHA-incompatible remotes.
 	logger := slog.SpanLogger(ctx, InstrumentationLibrary)

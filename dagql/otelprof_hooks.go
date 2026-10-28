@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"strconv"
+	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -41,6 +42,86 @@ const publishResultSpanName = "dagql.publishResult"
 // recording here?" answered identically everywhere.
 func OTelProfActive(ctx context.Context) bool {
 	return trace.SpanFromContext(ctx).IsRecording()
+}
+
+// RecordOpSpan records span as the OTel span a native op owns, emitted for
+// the same work (wcprof.Op.SetSpan), so the dump names it. A nil op or span
+// records nothing.
+func RecordOpSpan(op *wcprof.Op, span trace.Span) {
+	if op == nil || span == nil {
+		return
+	}
+	sc := span.SpanContext()
+	op.SetSpan(sc.TraceID(), sc.SpanID())
+}
+
+type ownCallSpanKey struct{}
+
+// ownCallSpanValue is the span the server's telemetry started for one call's
+// invocation, its start when the span tells it, and that call's frame.
+type ownCallSpanValue struct {
+	call  *ResultCall
+	sc    trace.SpanContext
+	start time.Time
+}
+
+// withOwnCallSpan records, while wcprof records, the span the server's
+// telemetry started for call, for its native call op (ownCallSpan).
+func withOwnCallSpan(ctx context.Context, call *ResultCall, span trace.Span) context.Context {
+	v := ownCallSpanValue{call: call, sc: span.SpanContext()}
+	if s, ok := span.(interface{ StartTime() time.Time }); ok {
+		v.start = s.StartTime()
+	}
+	return context.WithValue(ctx, ownCallSpanKey{}, v)
+}
+
+// ownCallSpan is the span the server's telemetry started for call and its
+// start (zero when the span doesn't tell it), or an invalid span when it
+// started none. The value is keyed to the call's frame, so a call nested
+// under it, or made internally without the server, isn't given the span of
+// the call it runs under.
+func ownCallSpan(ctx context.Context, call *ResultCall) (trace.SpanContext, time.Time) {
+	if v, ok := ctx.Value(ownCallSpanKey{}).(ownCallSpanValue); ok && v.call == call {
+		return v.sc, v.start
+	}
+	return trace.SpanContext{}, time.Time{}
+}
+
+type callOpEndKey struct{}
+
+// callOpEnd is a call's native op end, handed from the cache to the server
+// so the op ends after the server's telemetry completes the call.
+type callOpEnd struct {
+	call     *ResultCall
+	op       *wcprof.Op
+	outcome  wcprof.Outcome
+	resultID uint64
+}
+
+// withCallOpEnd makes the server the one to end call's native op (end),
+// after its telemetry's completion. The value is keyed to the call's frame,
+// so a call nested under it ends its own op as before.
+func withCallOpEnd(ctx context.Context, call *ResultCall) (context.Context, *callOpEnd) {
+	e := &callOpEnd{call: call}
+	return context.WithValue(ctx, callOpEndKey{}, e), e
+}
+
+// handOverCallOpEnd hands call's native op end to the server when it asked
+// for it (withCallOpEnd), reporting whether it did.
+func handOverCallOpEnd(ctx context.Context, call *ResultCall, op *wcprof.Op, outcome wcprof.Outcome, resultID uint64) bool {
+	e, ok := ctx.Value(callOpEndKey{}).(*callOpEnd)
+	if !ok || e.call != call || e.op != nil || op == nil {
+		return false
+	}
+	e.op, e.outcome, e.resultID = op, outcome, resultID
+	return true
+}
+
+// end ends the handed-over op; nothing when none was handed over.
+func (e *callOpEnd) end() {
+	if e.op != nil {
+		e.op.EndWithResult(e.outcome, e.resultID)
+	}
 }
 
 // beginOTelCallExec starts the call_exec span for a resolver execution on the

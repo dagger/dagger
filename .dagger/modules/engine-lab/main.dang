@@ -628,7 +628,6 @@ type EngineLab {
     let svc = svcDev
       .container
       .withExposedPort(1234)
-      .withEnvVariable("_DAGGER_WCPROF", "1")
       .withMountedCache(
         "/var/lib/dagger",
         cacheVolume(volume),
@@ -639,6 +638,7 @@ type EngineLab {
           "--network-name", "dagger-lab",
           "--network-cidr", svcDev.networkCidr,
           "--debugaddr", "0.0.0.0:" + toString(debugPort),
+          "--wcprof",
         ],
         useEntrypoint: true,
         insecureRootCapabilities: true,

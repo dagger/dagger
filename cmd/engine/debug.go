@@ -170,7 +170,7 @@ func setupDebugHandlers(addr string, eng *server.Server) error {
 	m.Handle("/debug/wcprof/dump", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		rec := wcprof.Active()
 		if rec == nil {
-			http.Error(rw, "wcprof was never enabled (POST 'on' to /debug/wcprof/enabled, connect a client with --profile, start the engine with --wcprof, or set _DAGGER_WCPROF=1)", http.StatusServiceUnavailable)
+			http.Error(rw, "wcprof was never enabled (POST 'on' to /debug/wcprof/enabled, connect a client with --profile, or start the engine with --wcprof)", http.StatusServiceUnavailable)
 			return
 		}
 		// flush by default; pass ?flush=0 to keep events buffered
