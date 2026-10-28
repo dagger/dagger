@@ -56,7 +56,7 @@ func (c *Cache) WithTransferFixtureRoots(ctx context.Context, sessionID string, 
 	}
 	roots := make([]AnyResult, len(rows))
 	for i, row := range rows {
-		if !c.sessionStillSatisfiesResourceRequirements(sessionID, row, gens[i]) {
+		if !c.sessionStillSatisfiesResourceRequirements(ctx, sessionID, row, gens[i]) {
 			return fmt.Errorf("fixture root %d: session resource requirements changed", row.id)
 		}
 		roots[i] = Result[Typed]{shared: row}

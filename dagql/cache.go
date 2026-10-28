@@ -799,7 +799,7 @@ func (c *Cache) acquireSessionResultLocked(ctx context.Context, sessionID string
 		return false, 0, nil
 	}
 
-	c.sessionMu.Lock()
+	wcprof.Lock(ctx, &c.sessionMu, sessionsLockIdent)
 	defer c.sessionMu.Unlock()
 	if c.sessionLifecycle(sessionID).lifecycle.Load()&cacheSessionReleasedBit != 0 {
 		return false, 0, fmt.Errorf("%w: %q", ErrCacheSessionReleased, sessionID)
@@ -1091,7 +1091,7 @@ func (c *Cache) captureSessionLazySpanContext(ctx context.Context, sessionID str
 		return
 	}
 
-	c.sessionMu.Lock()
+	wcprof.Lock(ctx, &c.sessionMu, sessionsLockIdent)
 	// A detached writer arriving after release must not recreate the session
 	// maps ReleaseSession deleted: session IDs are single-use, so nothing
 	// would ever delete the recreated entry again.
@@ -1158,7 +1158,7 @@ func (c *Cache) captureSessionResultInstallSpan(ctx context.Context, sessionID s
 	// span out across every result in the closure.
 	call := CurrentCall(ctx)
 	ownsClosure := call != nil && call.Module != nil
-	c.recordSessionResultInstallSpanLocked(sessionID, shared.id, spanCtx, ownsClosure)
+	c.recordSessionResultInstallSpanLocked(ctx, sessionID, shared.id, spanCtx, ownsClosure)
 }
 
 // sessionResultInstallSpan is one recorded install site for a result in a
@@ -1170,8 +1170,8 @@ type sessionResultInstallSpan struct {
 	ownsClosure bool
 }
 
-func (c *Cache) recordSessionResultInstallSpanLocked(sessionID string, resultID sharedResultID, spanCtx trace.SpanContext, ownsClosure bool) {
-	c.sessionMu.Lock()
+func (c *Cache) recordSessionResultInstallSpanLocked(ctx context.Context, sessionID string, resultID sharedResultID, spanCtx trace.SpanContext, ownsClosure bool) {
+	wcprof.Lock(ctx, &c.sessionMu, sessionsLockIdent)
 	defer c.sessionMu.Unlock()
 	// Same released-session refusal as the lazy-span writer: never recreate
 	// a single-use session's telemetry maps after release deleted them.
@@ -2244,8 +2244,14 @@ func wipeSQLiteFiles(dbPath string) error {
 	return nil
 }
 
-// egraphLockIdent names egraphMu in profiles' lock waits.
-const egraphLockIdent = "dagql.egraph"
+// Names of the cache's locks in profiles' lock waits.
+const (
+	egraphLockIdent        = "dagql.egraph"
+	sessionsLockIdent      = "dagql.sessions"
+	resultDepsLockIdent    = "dagql.result.deps"
+	resultDecodeLockIdent  = "dagql.result.decode"
+	resultPayloadLockIdent = "dagql.result.payload"
+)
 
 type Cache struct {
 	partFixture              atomic.Pointer[partFixtureState]
@@ -6361,7 +6367,7 @@ func (c *Cache) lookupCacheForDigests(
 	if c.testBeforeServeRequirementRecheck != nil {
 		c.testBeforeServeRequirementRecheck(hitShared)
 	}
-	if !c.sessionStillSatisfiesResourceRequirements(sessionID, hitShared, requiredGenAtSelection) {
+	if !c.sessionStillSatisfiesResourceRequirements(ctx, sessionID, hitShared, requiredGenAtSelection) {
 		// The required set grew after this hit was selected; fall through
 		// to the singleflight, keeping the recorded session edge (see
 		// lookupCacheForRequest).
@@ -6486,7 +6492,13 @@ func (c *Cache) wait(
 			pubSpan = beginOTelPublishResult(context.WithoutCancel(oc.sharedWorkCtx))
 			RecordOpSpan(pubOp, pubSpan)
 		}
-		oc.initCompletedResultErr = c.initCompletedResult(context.WithoutCancel(oc.sharedWorkCtx), resolver, oc, req, sessionID)
+		pubCtx := context.WithoutCancel(oc.sharedWorkCtx)
+		if pubOp != nil {
+			// what publication waits for is publication's, not the ended
+			// execution's
+			pubCtx = wcprof.ContextWithOpID(pubCtx, pubOp.ID())
+		}
+		oc.initCompletedResultErr = c.initCompletedResult(pubCtx, resolver, oc, req, sessionID)
 		if pubOp != nil {
 			var resID uint64
 			if oc.res != nil {

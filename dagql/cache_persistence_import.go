@@ -8,6 +8,7 @@ import (
 
 	"github.com/dagger/dagger/dagql/call"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -748,7 +749,7 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 	if res == nil {
 		return hit, nil
 	}
-	res.attachDepsMu.Lock()
+	wcprof.Lock(ctx, &res.attachDepsMu, resultDepsLockIdent)
 	attachDepsWaitCh := res.attachDepsWaitCh
 	res.attachDepsMu.Unlock()
 	if attachDepsWaitCh != nil {
@@ -757,7 +758,7 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 		case <-ctx.Done():
 			return nil, context.Cause(ctx)
 		}
-		res.attachDepsMu.Lock()
+		wcprof.Lock(ctx, &res.attachDepsMu, resultDepsLockIdent)
 		attachDepsErr := res.attachDepsErr
 		res.attachDepsMu.Unlock()
 		if attachDepsErr != nil {
@@ -771,7 +772,7 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 			return nil, fmt.Errorf("ensure persisted hit value loaded: invalid object payload state for result %d (hasValue=true, self=nil)", res.id)
 		}
 		if state.hasValue || state.persistedEnvelope == nil {
-			res.persistDecodeMu.Lock()
+			wcprof.Lock(ctx, &res.persistDecodeMu, resultDecodeLockIdent)
 			leaseSyncPending := res.persistLeaseSyncPending
 			res.persistDecodeMu.Unlock()
 			if !leaseSyncPending {
@@ -795,7 +796,7 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 		if c.testPersistDecodePreLock != nil {
 			c.testPersistDecodePreLock(uint64(res.id))
 		}
-		res.persistDecodeMu.Lock()
+		wcprof.Lock(ctx, &res.persistDecodeMu, resultDecodeLockIdent)
 		if res.persistDecodeWaitCh != nil {
 			waitCh := res.persistDecodeWaitCh
 			res.persistDecodeMu.Unlock()
@@ -809,7 +810,7 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 				return nil, context.Cause(ctx)
 			}
 
-			res.persistDecodeMu.Lock()
+			wcprof.Lock(ctx, &res.persistDecodeMu, resultDecodeLockIdent)
 			decodeErr := res.persistDecodeErr
 			decodeRetry := res.persistDecodeRetry
 			res.persistDecodeMu.Unlock()
@@ -860,7 +861,7 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 		// next demand retry just that instead of serving the value with
 		// the owner-lease set unsynchronized.
 		finishPersistDecode := func(err error, installed bool) {
-			res.persistDecodeMu.Lock()
+			wcprof.Lock(ctx, &res.persistDecodeMu, resultDecodeLockIdent)
 			res.persistDecodeErr = err
 			// A failure after the leader's session was removed is that
 			// removal's, whatever the error, as for shared calls: the
@@ -936,7 +937,7 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 				return nil, err
 			}
 
-			res.payloadMu.Lock()
+			wcprof.WriteLock(ctx, &res.payloadMu, resultPayloadLockIdent)
 			if res.hasValue || res.persistedEnvelope == nil || res.payloadRevision != state.payloadRevision {
 				res.payloadMu.Unlock()
 				if release := decoded.cacheSharedResult().onRelease; release != nil {

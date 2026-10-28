@@ -174,7 +174,7 @@ func (c *Cache) loadSelectedResultByResultID(ctx context.Context, sessionID stri
 		if c.testBeforeServeRequirementRecheck != nil {
 			c.testBeforeServeRequirementRecheck(lookup.res)
 		}
-		if !c.sessionStillSatisfiesResourceRequirements(sessionID, lookup.res, lookup.requiredGenAtCheck) {
+		if !c.sessionStillSatisfiesResourceRequirements(ctx, sessionID, lookup.res, lookup.requiredGenAtCheck) {
 			// The required set grew after the requirement pre-check in
 			// sharedResultByResultID; refuse rather than serve. The session
 			// edge recorded there stays until session release.

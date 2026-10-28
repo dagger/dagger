@@ -728,14 +728,14 @@ func (c *Cache) sessionSatisfiesResourceRequirementsLocked(sessionID string, res
 // generation is serving the exact set the selection check validated and
 // skips the locked re-check; on a mismatch the full locked subset check
 // decides.
-func (c *Cache) sessionStillSatisfiesResourceRequirements(sessionID string, res *sharedResult, requiredGenAtSelection uint64) bool {
+func (c *Cache) sessionStillSatisfiesResourceRequirements(ctx context.Context, sessionID string, res *sharedResult, requiredGenAtSelection uint64) bool {
 	if res == nil {
 		return true
 	}
 	if res.requiredSessionResourcesGen.Load() == requiredGenAtSelection {
 		return true
 	}
-	c.egraphMu.RLock()
+	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
 	defer c.egraphMu.RUnlock()
 	return c.sessionSatisfiesResourceRequirementsLocked(sessionID, res)
 }
@@ -1127,7 +1127,7 @@ func (c *Cache) lookupCacheForRequest(
 	if c.testBeforeServeRequirementRecheck != nil {
 		c.testBeforeServeRequirementRecheck(hitShared)
 	}
-	if !c.sessionStillSatisfiesResourceRequirements(sessionID, hitShared, requiredGenAtSelection) {
+	if !c.sessionStillSatisfiesResourceRequirements(ctx, sessionID, hitShared, requiredGenAtSelection) {
 		// The required set grew after this hit was selected (an attached or
 		// late explicit dep carried requirements), so serving would hand
 		// the session a result it no longer satisfies. Fall through to the
