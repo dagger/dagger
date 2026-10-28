@@ -2764,12 +2764,13 @@ DecodeInstall(i) ==
        \* to import and publication and is read under egraphMu. (The install
        \* used to copy both fields from the shell, which reduced a non-leaf's
        \* stored set to its own handle and raced the lookup filter's read.)
-       \* Whether the value may decode armed is fixed here, from the
-       \* offers the row holds now (decodeArmsRecipe, before DecodeResult): a
-       \* merged row holding an offer decodes as a shell, and an offer that
-       \* retires later doesn't arm it.
+       \* Whether the value may decode armed is fixed here, from what
+       \* the row holds now (decodeArmsRecipe, before DecodeResult): a merged
+       \* row holding an offer, or a part it already acquired, decodes as a
+       \* shell (containerHoldsAcquiredPart), and an offer that retires later
+       \* doesn't arm it.
        /\ res' = [res EXCEPT ![r] = InstallContainerParts([res[r] EXCEPT !.payload = "decoded",
-                     !.decodeArm = ~(res[r].cloudRow /\ res[r].offers # {})])]
+                     !.decodeArm = ~(res[r].cloudRow /\ (res[r].offers # {} \/ res[r].acquired # {}))])]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, sessionEdges,
                    countedEdges, sessionRelease, evals, epoch, flushed>>
 
