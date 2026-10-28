@@ -48,6 +48,20 @@ var expectedOutcome = map[string]string{
 	// downloads), and the mutation that keeps them past a failure.
 	"snapshot_download_window":           "",
 	"snapshot_download_window_keepahead": "CleanupComplete",
+	// Layers applied apart (overlayfs): each missing layer applies into a
+	// snapshot of its own under its chain-ID lock and commits in order.
+	"snapshot_apart":           "",
+	"snapshot_apart_window":    "",
+	"snapshot_apart_export":    "",
+	"snapshot_apart_keeplater": "CleanupComplete",
+	"snapshot_apart_nolock":    "ChainApplyExclusive",
+	"snapshot_apart_skipreuse": "ReuseBeforeBytes",
+	// Background prefetch: TTL holds, the import ahead of demand, and close.
+	"snapshot_prefetch":              "",
+	"snapshot_prefetch_apart":        "",
+	"snapshot_prefetch_leaveearly":   "PrefetchHeldPresent",
+	"snapshot_prefetch_keptgone":     "AheadRefTracked",
+	"snapshot_prefetch_closedropped": "PrefetchClosed",
 	// green: regression checks over the modeled cache behavior. (The
 	// former core configuration is folded into resources: same bounds,
 	// every core invariant, and strictly more behavior.)
