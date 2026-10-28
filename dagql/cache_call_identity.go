@@ -17,7 +17,11 @@ type callIdentity struct {
 	recipe digest.Digest
 	self   digest.Digest
 	inputs []digest.Digest
-	extras []call.ExtraDigest
+	// witnesses marks the inputs that are a digest-witnessed string's
+	// digest rather than an entry's recipe: a cache that makes the call
+	// reproduces them from the literal.
+	witnesses []bool
+	extras    []call.ExtraDigest
 }
 
 // callIdentityFromPB derives a call's identity from the call as its span
@@ -52,8 +56,9 @@ func callIdentityFromPB(pb *callpbv1.Call) (callIdentity, error) {
 	id := callIdentity{field: pb.Field, recipe: recipe, self: self, extras: frame.ExtraDigests}
 	for _, ref := range refs {
 		var dig digest.Digest
+		witness := ref.Digest != ""
 		switch {
-		case ref.Digest != "":
+		case witness:
 			dig = ref.Digest
 		default:
 			if dig, err = dec.digestOf(ref.Result); err != nil {
@@ -61,6 +66,7 @@ func callIdentityFromPB(pb *callpbv1.Call) (callIdentity, error) {
 			}
 		}
 		id.inputs = append(id.inputs, dig)
+		id.witnesses = append(id.witnesses, witness)
 	}
 	return id, nil
 }
