@@ -596,6 +596,66 @@ func TestPartPrefetchAppliesAhead(t *testing.T) {
 	require.Equal(t, ahead.int(t, "unpacked"), used[0].int(t, "unpacked"))
 }
 
+// An import ahead starts with the offer's first prefetched blob and applies
+// each layer as its own blob lands: the first layer is unpacked while the
+// last blob still downloads. It requests no blob itself, and the install
+// then unpacks nothing.
+func TestPartPrefetchAheadAppliesLayersAsTheyLand(t *testing.T) {
+	f := newPrefetchFixture(t, true, nil)
+	hold := make(chan struct{})
+	f.transport.fault("https://fixed.invalid/prefetch/1", contentTestFault{stallAfter: -1, hold: hold})
+	applied := make(chan struct{})
+	var once sync.Once
+	f.store.BeforeApply = func(_ context.Context, desc ocispecs.Descriptor) error {
+		if desc.Digest == f.chain.digest(0) {
+			once.Do(func() { close(applied) })
+		}
+		return nil
+	}
+	job := f.job(t, f.offer)
+	done := make(chan struct{})
+	go func() {
+		f.prefetch.run(context.Background(), job)
+		close(done)
+	}()
+	select {
+	case <-applied:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the first layer was not unpacked before the last blob landed")
+	}
+	require.Empty(t, f.logs.lines(t, "remote cache part applied ahead"), "the import ahead waits for the last blob")
+	close(hold)
+	within(t, done)
+	ahead := f.aheadLine(t)
+	require.Equal(t, "done", ahead.fields["outcome"])
+	require.EqualValues(t, 2, ahead.int(t, "unpacked_layers"))
+	require.Equal(t, 2, f.transport.total(), "one request per blob, the prefetch's")
+
+	require.NoError(t, f.run())
+	require.True(t, f.installed())
+	require.EqualValues(t, 2, f.store.Applies.Load(), "the install unpacks nothing")
+	require.Equal(t, 2, f.transport.total(), "the install made no request")
+}
+
+// An import ahead never requests a blob itself: when prefetching one fails,
+// it gives up after the layers before it, and the install downloads that
+// blob.
+func TestPartPrefetchAheadLeavesAFailedBlobToTheInstall(t *testing.T) {
+	f := newPrefetchFixture(t, true, nil)
+	url := "https://fixed.invalid/prefetch/1"
+	f.transport.fault(url, contentTestFault{corrupt: true, stallAfter: -1})
+	require.Equal(t, "error", f.runJob(t).fields["outcome"])
+	ahead := f.aheadLine(t)
+	require.Equal(t, "not_prefetched", ahead.fields["outcome"])
+	require.EqualValues(t, 1, ahead.int(t, "unpacked_layers"), "the first layer was unpacked as its blob landed")
+	require.Equal(t, 1, f.transport.count(url), "the prefetch's request only")
+
+	f.transport.fault(url, contentTestFault{stallAfter: -1})
+	require.NoError(t, f.run())
+	require.True(t, f.installed())
+	require.Equal(t, 2, f.transport.count(url), "the install downloaded what the prefetch could not")
+}
+
 // An import ahead is released with its offer: once retired, the snapshots it
 // unpacked are collected.
 func TestPartPrefetchAheadReleasedWithOffer(t *testing.T) {
