@@ -464,7 +464,40 @@ type listedArtifact struct {
 	PresenceNames    map[string]string `json:"-"`
 	CollectionItem   bool              `json:"-"`
 	URI, Description string
+	ModuleName       string
+	Path             []string
 	DimensionKeys    []struct{ Dimension, Key string }
+}
+
+// The address already carries every runtime key. Read the row's static path
+// and module alongside it instead of loading an object per dimension key.
+func (item *listedArtifact) keysFromAddress(definitions artifact.Dimensions) error {
+	address, err := dagaddress.Parse(item.URI)
+	if err != nil {
+		return err
+	}
+	item.DimensionKeys = nil
+	if item.ModuleName != "" {
+		item.DimensionKeys = append(item.DimensionKeys, struct{ Dimension, Key string }{artifact.ModuleDimension, item.ModuleName})
+	}
+	var typeDimension string
+	for _, pair := range address.Query {
+		dimension, err := definitions.Resolve(pair.Dimension)
+		if err != nil {
+			return err
+		}
+		if strings.HasPrefix(dimension, "type:") {
+			typeDimension = dimension
+			continue
+		}
+		if pair.HasKey && dimension != artifact.ModuleDimension {
+			item.DimensionKeys = append(item.DimensionKeys, struct{ Dimension, Key string }{dimension, pair.Key})
+		}
+	}
+	if typeDimension != "" {
+		item.DimensionKeys = append(item.DimensionKeys, struct{ Dimension, Key string }{typeDimension, strings.Join(item.Path, "/")})
+	}
+	return nil
 }
 
 // fullPath is the full path in the artifact's type key. URI is a projection,
@@ -487,12 +520,26 @@ func readListedArtifacts(ctx context.Context, dag *dagger.Client, selection *cor
 		return nil, err
 	}
 	var response struct {
-		Node struct{ Items []listedArtifact }
+		Node struct {
+			Items       []listedArtifact
+			Definitions artifact.Dimensions
+		}
 	}
 	err = dag.Do(ctx, &dagger.Request{Query: `query($id: ID!, $absolute: Boolean!, $typeAssertion: Boolean!) {
-  node(id: $id) { ... on Artifacts { items { uri(absolute: $absolute, typeAssertion: $typeAssertion) description dimensionKeys { dimension key } } } }
+	 node(id: $id) { ... on Artifacts {
+	   definitions: dimensionDefinitions { kind identifier name qualifiedName itemType }
+	   items { uri(absolute: $absolute, typeAssertion: $typeAssertion) description moduleName path }
+	 } }
  }`, Variables: map[string]any{"id": id, "absolute": absolute, "typeAssertion": typed}}, &dagger.Response{Data: &response})
-	return response.Node.Items, err
+	if err != nil {
+		return nil, err
+	}
+	for i := range response.Node.Items {
+		if err := response.Node.Items[i].keysFromAddress(response.Node.Definitions); err != nil {
+			return nil, err
+		}
+	}
+	return response.Node.Items, nil
 }
 
 func readListedDimensionItems(ctx context.Context, dag *dagger.Client, selection *core.Artifacts, dimension string, absolute, expand bool) ([]listedArtifact, error) {

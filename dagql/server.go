@@ -50,10 +50,8 @@ type Server struct {
 	typeDefFilters map[string]ViewFilter
 	directives     map[string]DirectiveSpec
 
-	schemas       map[call.View]*ast.Schema
-	schemaDigests map[call.View]digest.Digest
-	schemaOnces   map[call.View]*sync.Once
-	schemaLock    *sync.Mutex
+	schemaASTCache *SchemaASTCache
+	schemaLock     *sync.Mutex
 
 	installLock  *sync.RWMutex
 	installHooks []InstallHook
@@ -233,9 +231,7 @@ func newBlankServer() *Server {
 		typeDefFilters: map[string]ViewFilter{},
 		directives:     map[string]DirectiveSpec{},
 		installLock:    &sync.RWMutex{},
-		schemas:        make(map[call.View]*ast.Schema),
-		schemaDigests:  make(map[call.View]digest.Digest),
-		schemaOnces:    make(map[call.View]*sync.Once),
+		schemaASTCache: &SchemaASTCache{},
 		schemaLock:     &sync.Mutex{},
 	}
 	srv.self = weak.Make(srv)
@@ -325,9 +321,8 @@ func (m *interfaceTyped) Type() *ast.Type {
 
 func (s *Server) invalidateSchemaCache() {
 	s.schemaLock.Lock()
-	clear(s.schemas)
-	clear(s.schemaDigests)
-	clear(s.schemaOnces)
+	// Another equivalent server may still use the previous immutable AST.
+	s.schemaASTCache = &SchemaASTCache{}
 	s.schemaLock.Unlock()
 }
 
@@ -958,94 +953,94 @@ func (s *Server) Schema() *ast.Schema {
 }
 
 func (s *Server) SchemaForView(view call.View) *ast.Schema {
+	return s.schemaASTForView(view).schema
+}
+
+func (s *Server) schemaASTForView(view call.View) *schemaASTEntry {
 	s.reconcileInterfaceImplsIfDirty()
 	s.installLock.RLock()
 	defer s.installLock.RUnlock()
 	s.schemaLock.Lock()
 	defer s.schemaLock.Unlock()
+	return s.schemaASTCache.get(view, s.buildSchemaAST)
+}
 
-	if s.schemaOnces[view] == nil {
-		s.schemaOnces[view] = &sync.Once{}
+// buildSchemaAST reads metadata while installLock is held. The result carries
+// no server-specific execution state and is immutable after publication.
+func (s *Server) buildSchemaAST(view call.View) (*ast.Schema, digest.Digest) {
+	queryType := s.Root().Type().Name()
+	schema := &ast.Schema{
+		Types:         make(map[string]*ast.Definition),
+		PossibleTypes: make(map[string][]*ast.Definition),
 	}
-
-	s.schemaOnces[view].Do(func() {
-		queryType := s.Root().Type().Name()
-		schema := &ast.Schema{
-			Types:         make(map[string]*ast.Definition),
-			PossibleTypes: make(map[string][]*ast.Definition),
+	sortutil.RangeSorted(s.objects, func(_ string, t ObjectType) {
+		if !typeVisibleInView(t, view) {
+			return
 		}
-		sortutil.RangeSorted(s.objects, func(_ string, t ObjectType) {
-			if !typeVisibleInView(t, view) {
-				return
-			}
-			def := definition(ast.Object, t, view)
-			if def.Name == queryType {
-				schema.Query = def
-			}
-			schema.AddTypes(def)
-			schema.AddPossibleType(def.Name, def)
+		def := definition(ast.Object, t, view)
+		if def.Name == queryType {
+			schema.Query = def
+		}
+		schema.AddTypes(def)
+		schema.AddPossibleType(def.Name, def)
 
-			// Also register this object as a possible type for each interface it
-			// declares via def.Interfaces.
-			for _, ifaceName := range def.Interfaces {
-				schema.AddPossibleType(ifaceName, def)
-			}
-		})
-		// Emit interface definitions.
-		sortutil.RangeSorted(s.interfaces, func(_ string, iface *Interface) {
-			if !typeVisibleInView(iface, view) {
-				return
-			}
-			def := iface.Definition(view)
-			schema.AddTypes(def)
-		})
-		sortutil.RangeSorted(s.scalars, func(name string, t ScalarType) {
-			if filter, ok := s.scalarFilters[name]; ok && !filter.Contains(view) {
-				return
-			}
-			def := definition(ast.Scalar, t, view)
-			schema.AddTypes(def)
-			schema.AddPossibleType(def.Name, def)
-		})
-		sortutil.RangeSorted(s.typeDefs, func(name string, t TypeDef) {
-			if !typeVisibleInView(t, view) {
-				return
-			}
-			if filter, ok := s.typeDefFilters[name]; ok && !filter.Contains(view) {
-				return
-			}
-			def := t.TypeDefinition(view)
-			schema.AddTypes(def)
-			schema.AddPossibleType(def.Name, def)
-		})
-		schema.Directives = map[string]*ast.DirectiveDefinition{}
-		hiddenDirectives := map[string]bool{}
-		sortutil.RangeSorted(s.directives, func(n string, d DirectiveSpec) {
-			if d.ViewFilter != nil && !d.ViewFilter.Contains(view) {
-				hiddenDirectives[n] = true
-				return
-			}
-			schema.Directives[n] = d.DirectiveDefinition(view)
-		})
-		// A directive hidden in this view must not be used in it either.
-		if len(hiddenDirectives) > 0 {
-			for _, def := range schema.Types {
-				def.Directives = withoutDirectives(def.Directives, hiddenDirectives)
-				for _, field := range def.Fields {
-					field.Directives = withoutDirectives(field.Directives, hiddenDirectives)
-					for _, arg := range field.Arguments {
-						arg.Directives = withoutDirectives(arg.Directives, hiddenDirectives)
-					}
+		// Also register this object as a possible type for each interface it
+		// declares via def.Interfaces.
+		for _, ifaceName := range def.Interfaces {
+			schema.AddPossibleType(ifaceName, def)
+		}
+	})
+	// Emit interface definitions.
+	sortutil.RangeSorted(s.interfaces, func(_ string, iface *Interface) {
+		if !typeVisibleInView(iface, view) {
+			return
+		}
+		def := iface.Definition(view)
+		schema.AddTypes(def)
+	})
+	sortutil.RangeSorted(s.scalars, func(name string, t ScalarType) {
+		if filter, ok := s.scalarFilters[name]; ok && !filter.Contains(view) {
+			return
+		}
+		def := definition(ast.Scalar, t, view)
+		schema.AddTypes(def)
+		schema.AddPossibleType(def.Name, def)
+	})
+	sortutil.RangeSorted(s.typeDefs, func(name string, t TypeDef) {
+		if !typeVisibleInView(t, view) {
+			return
+		}
+		if filter, ok := s.typeDefFilters[name]; ok && !filter.Contains(view) {
+			return
+		}
+		def := t.TypeDefinition(view)
+		schema.AddTypes(def)
+		schema.AddPossibleType(def.Name, def)
+	})
+	schema.Directives = map[string]*ast.DirectiveDefinition{}
+	hiddenDirectives := map[string]bool{}
+	sortutil.RangeSorted(s.directives, func(n string, d DirectiveSpec) {
+		if d.ViewFilter != nil && !d.ViewFilter.Contains(view) {
+			hiddenDirectives[n] = true
+			return
+		}
+		schema.Directives[n] = d.DirectiveDefinition(view)
+	})
+	// A directive hidden in this view must not be used in it either.
+	if len(hiddenDirectives) > 0 {
+		for _, def := range schema.Types {
+			def.Directives = withoutDirectives(def.Directives, hiddenDirectives)
+			for _, field := range def.Fields {
+				field.Directives = withoutDirectives(field.Directives, hiddenDirectives)
+				for _, arg := range field.Arguments {
+					arg.Directives = withoutDirectives(arg.Directives, hiddenDirectives)
 				}
 			}
 		}
-		h := xxh3.New()
-		json.NewEncoder(h).Encode(schema)
-		s.schemas[view] = schema
-		s.schemaDigests[view] = digest.NewDigest(hashutil.XXH3, h)
-	})
-
-	return s.schemas[view]
+	}
+	h := xxh3.New()
+	json.NewEncoder(h).Encode(schema)
+	return schema, digest.NewDigest(hashutil.XXH3, h)
 }
 
 // withoutDirectives returns dirs without the directives named in hidden.
@@ -1074,10 +1069,7 @@ func typeVisibleInView(t Type, view call.View) bool {
 
 // SchemaDigest returns the digest of the current schema.
 func (s *Server) SchemaDigest() digest.Digest {
-	s.Schema() // ensure it's built
-	s.schemaLock.Lock()
-	defer s.schemaLock.Unlock()
-	return s.schemaDigests[s.View]
+	return s.schemaASTForView(s.View).digest
 }
 
 // Complexity returns the complexity of the given field.

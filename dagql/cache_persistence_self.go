@@ -42,6 +42,11 @@ const persistedResultEnvelopeVersion = 5
 type PersistedResultEnvelope struct {
 	Imported      bool                 `json:"imported,omitempty"`
 	PendingOffers []PersistedPartOffer `json:"pendingOffers,omitempty"`
+	// PersistDeclined is the entry's mark that its call declined to persist
+	// its value (sharedResult.persistDeclined). Only a saved envelope
+	// carries it: restore takes it back onto the entry, and no record sent
+	// to another cache carries it.
+	PersistDeclined bool `json:"persistDeclined,omitempty"`
 	// StoredParts are a blob-backed cache's stored parts of the value, which
 	// only its saved envelope carries: in memory they stay on the entry, so
 	// no record sent to an engine carries them.
