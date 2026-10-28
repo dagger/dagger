@@ -126,6 +126,51 @@ func TestExportChainStats(t *testing.T) {
 	require.Zero(t, second.Stats.BlobBytes)
 }
 
+// computedLayers lists, for each of chain's layers, whether the export
+// computed its blob.
+func computedLayers(chain *bkcache.ExportChain) []bool {
+	marks := make([]bool, len(chain.Layers))
+	for i, layer := range chain.Layers {
+		marks[i] = layer.Computed
+	}
+	return marks
+}
+
+// An export marks the layers whose blobs it computed. A fresh snapshot's
+// blob is computed; exported again, or imported elsewhere and exported
+// from there, the blob already exists and is used as it is.
+func TestExportChainMarksComputedLayers(t *testing.T) {
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	a, _ := producer.Build(t, nil, "a.txt", "computed prefix")
+	ab, _ := producer.Build(t, a, "b.txt", "computed suffix")
+	first := exportChain(t, ab)
+	require.Equal(t, []bool{true, true}, computedLayers(first), "a fresh chain's blobs are computed")
+	require.Equal(t, []bool{false, false}, computedLayers(exportChain(t, ab)), "exported again, its blobs are used as they are")
+	imported := importChain(t, consumer, supplied(first, first.Provider))
+	require.Equal(t, []bool{false, false}, computedLayers(exportChain(t, imported)), "an imported chain's blobs are used as they are")
+}
+
+// A layer whose blob was lost since it was recorded has its blob computed
+// again by the next export.
+func TestExportChainMarksALostBlobComputed(t *testing.T) {
+	ctx := context.Background()
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	a, _ := producer.Build(t, nil, "a.txt", "lost blob")
+	chain := exportChain(t, a)
+	imported := importChain(t, consumer, supplied(chain, chain.Provider))
+	owners, err := consumer.Leases.List(ctx)
+	require.NoError(t, err)
+	require.Len(t, owners, 1)
+	// Keep the snapshot under a lease that names only it, and lose its blob.
+	keep := flatLeaseNamingOnly(t, consumer, "snapshot-only", imported.SnapshotID())
+	t.Cleanup(func() { require.NoError(t, consumer.Leases.Delete(ctx, keep)) })
+	require.NoError(t, consumer.Leases.Delete(ctx, owners[0]))
+	consumer.GC(t)
+	_, err = consumer.Content.Info(ctx, chain.Layers[0].Descriptor.Digest)
+	require.True(t, cerrdefs.IsNotFound(err), "the blob is lost")
+	require.Equal(t, []bool{true}, computedLayers(exportChain(t, imported)), "the lost blob is computed again")
+}
+
 // A snapshot labelled as merged has its layer counted as merged when it is
 // diffed; a plain chain's never is. The labels are the merge-usage ones a merge,
 // a diff application or CommitWithUsage writes (merge.go withMergeUsage); a

@@ -12,6 +12,12 @@ type ExportLayer struct {
 	Descriptor  ocispecs.Descriptor
 	Description string
 	CreatedAt   *time.Time
+	// Computed is set when the export computed the layer's blob: it diffed
+	// and compressed the layer's snapshot, or converted the snapshot's
+	// stored blob to the export's compression. It is clear when the export
+	// used a blob that already existed, such as a pulled image layer's or
+	// one an earlier export computed.
+	Computed bool
 }
 
 type ExportChain struct {
