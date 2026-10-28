@@ -114,6 +114,9 @@ type Store struct {
 	createMu keyedMutex
 	// metaMu serializes read-modify-writes of meta.json files.
 	metaMu sync.Mutex
+	// collectMu serializes Collect: each decides from the usage it reads,
+	// which another's removals would change under it.
+	collectMu sync.Mutex
 
 	// mu guards pins and the moves GC makes, so that a volume is never moved
 	// while pinned and never pinned while half-moved.
@@ -638,8 +641,10 @@ type Report struct {
 // first, never a pinned one. Bytes already being removed count as freed.
 // Removed volumes are moved aside at once and deleted in the background.
 // Collect stops between volumes when ctx ends, leaving the directory
-// consistent.
+// consistent. Collections run one at a time.
 func (s *Store) Collect(ctx context.Context, policy Policy) (Report, error) {
+	s.collectMu.Lock()
+	defer s.collectMu.Unlock()
 	var report Report
 	if err := ctx.Err(); err != nil {
 		return report, err
