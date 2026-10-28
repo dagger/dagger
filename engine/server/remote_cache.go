@@ -32,6 +32,13 @@ var ErrRemoteCacheAdapterClosed = errors.New("remote cache adapter closed")
 // 30s on engines that had run a long test suite.
 const remoteCacheStopReserve = 30 * time.Second
 
+// DiscardedStateStopReserve is remoteCacheStopReserve for an engine whose
+// state is discarded (state.discarded): its stop's later phases are only
+// the sessions' end, the telemetry flushes and the cache volume directory,
+// each under 0.5s on CI engines. The final telemetry flushes after the stop
+// are each bounded by it too.
+const DiscardedStateStopReserve = 10 * time.Second
+
 var errRemoteCacheIntegrationExited = errors.New("remote cache integration exited")
 
 // RemoteCacheAdapter forwards control calls to its cache and renewal calls to
@@ -249,6 +256,9 @@ func (srv *Server) startRemoteCacheIntegration(cfg *RemoteCacheIntegrationConfig
 		return nil
 	}
 	adapter := newRemoteCacheAdapter(srv.engineCache, bridge)
+	if srv.stateDiscarded {
+		adapter.stopReserve = DiscardedStateStopReserve
+	}
 	// The graceful stop's start cancels shutdownCtx; Stop cancels Run once the
 	// exports in progress finish.
 	ctx, cancel := context.WithCancelCause(context.WithoutCancel(srv.shutdownCtx))
