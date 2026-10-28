@@ -15,6 +15,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -74,7 +75,7 @@ func (t *ModuleObjectType) ConvertFromSDKResult(ctx context.Context, value any) 
 		obj := &ModuleObject{
 			Module:  t.mod,
 			TypeDef: t.typeDef,
-			Fields:  value,
+			Fields:  maps.Clone(value),
 		}
 		if err := obj.restoreCollectionBase(ctx); err != nil {
 			return nil, err
@@ -114,6 +115,23 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 			srv, err := CurrentDagqlServer(ctx)
 			if err != nil {
 				return nil, err
+			}
+			// Inline stored objects are reconstructed from SDK data. Attach
+			// their source before a view needs its ID and collection base.
+			if _, err := x.ID(); err != nil {
+				cache, err := dagql.EngineCache(ctx)
+				if err != nil {
+					return nil, err
+				}
+				metadata, err := engine.ClientMetadataFromContext(ctx)
+				if err != nil {
+					return nil, err
+				}
+				attached, err := cache.AttachResult(ctx, metadata.SessionID, srv, x)
+				if err != nil {
+					return nil, err
+				}
+				x = attached.(dagql.ObjectResult[*ModuleObject])
 			}
 			scoped, err := scope.Apply(ctx, srv, x)
 			if err != nil {
@@ -160,6 +178,13 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 }
 
 func (t *ModuleObjectType) objectToSDKInput(ctx context.Context, parentCall *dagql.ResultCall, obj *ModuleObject) (map[string]any, error) {
+	if obj.ArtifactView != nil {
+		var err error
+		parentCall, err = artifactViewSourceCall(ctx, parentCall)
+		if err != nil {
+			return nil, err
+		}
+	}
 	fields, err := obj.collectionSDKFields(ctx)
 	if err != nil {
 		return nil, err
@@ -281,7 +306,16 @@ func moduleObjectValueToSDKInput(ctx context.Context, modType ModType, value any
 		case []any:
 			items := make([]any, 0, len(value))
 			for i, item := range value {
-				updated, err := moduleObjectValueToSDKInput(ctx, modType.Underlying, item)
+				itemCtx := ctx
+				if current := dagql.CurrentCall(ctx); current != nil {
+					itemCall := cloneResultCall(current)
+					itemCall.Nth = int64(i + 1)
+					if itemCall.Type != nil {
+						itemCall.Type = itemCall.Type.Elem
+					}
+					itemCtx = dagql.ContextWithCall(ctx, itemCall)
+				}
+				updated, err := moduleObjectValueToSDKInput(itemCtx, modType.Underlying, item)
 				if err != nil {
 					return nil, fmt.Errorf("item %d: %w", i, err)
 				}

@@ -361,6 +361,17 @@ func TestModuleObjectConvertToSDKInputUsesCurrentFieldID(t *testing.T) {
 	assert.Equal(t, expectedEnc, fields["ref"])
 }
 
+func TestModuleObjectConvertFromSDKResultOwnsFields(t *testing.T) {
+	obj := NewObjectTypeDef("StoredSelection", "", nil)
+	ctx := dagql.ContextWithCall(t.Context(), moduleObjectTestSyntheticCall("storedSelection", &ModuleObject{TypeDef: obj}))
+	fields := map[string]any{"name": "original"}
+	typ := &ModuleObjectType{typeDef: obj}
+	result, err := typ.ConvertFromSDKResult(ctx, fields)
+	assert.NilError(t, err)
+	result.Unwrap().(*ModuleObject).Fields["name"] = "attached"
+	assert.Equal(t, "original", fields["name"], "attaching a converted object must not mutate stored SDK data")
+}
+
 func TestModuleObjectConvertToSDKInputRewritesStoredResults(t *testing.T) {
 	t.Parallel()
 

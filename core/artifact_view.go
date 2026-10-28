@@ -16,6 +16,27 @@ import (
 
 const artifactViewField = "__withArtifactView"
 
+// Stored fields belong to the source object. A view wraps that object but does
+// not publish a second tree of its inline fields. Derive their SDK call frames
+// from the source, then apply the active view to each stored reference.
+func artifactViewSourceCall(ctx context.Context, frame *dagql.ResultCall) (*dagql.ResultCall, error) {
+	for frame != nil && frame.Field == artifactViewField && frame.Receiver != nil {
+		if frame.Receiver.Call != nil {
+			frame = frame.Receiver.Call
+			continue
+		}
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return nil, err
+		}
+		frame, err = cache.ResultCallByResultID(ctx, "", frame.Receiver.ResultID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return frame, nil
+}
+
 type artifactViewRule struct {
 	Dimension  string
 	Type       string
