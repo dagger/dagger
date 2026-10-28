@@ -72,6 +72,9 @@ func (cm *snapshotManager) LoadPersistentMetadata(rows PersistentMetadataRows) e
 	defer cm.mu.Unlock()
 
 	cm.snapshotContentDigests = make(map[string]map[digest.Digest]struct{}, len(rows.SnapshotContent))
+	// The loaded blobs are attached to the owners again as they are
+	// recorded, before any is known to be attached to every one.
+	cm.snapshotContentOwned = make(map[string]map[digest.Digest]struct{})
 	for _, row := range rows.SnapshotContent {
 		if row.SnapshotID == "" || row.Digest == "" {
 			continue
