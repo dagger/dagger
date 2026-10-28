@@ -80,6 +80,7 @@
 ["","oci-sha",["docker.io/library/alpine:3.16.2"],"sha256:65a2763f593ae85fab3b5406dc9e80f744ec5b449f269b699b5efd37a07ad32e"]
 ["","oci-sha",["docker.io/library/alpine:3.20"],"sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc"]
 ["","oci-sha",["docker.io/library/alpine:3.22.1"],"sha256:4bcff63911fcb4448bd4fdacec207030997caf25e9bea4045fa6c8c44de311d1"]
+["","oci-sha",["docker.io/library/alpine:latest"],"sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a"]
 ["","oci-sha",["docker.io/library/busybox:1.38.0"],"sha256:fd7dc98638c8e305f4dc34e979f1c0fdfdcaeb0fbf8fcff77ae834b6da3d7e6e"]
 ["","oci-sha",["docker.io/library/docker:cli"],"sha256:6fae2214c3121a28d5aa639d09032f61310b7c9c75ffbad1025f261a1b621800"]
 ["","oci-sha",["docker.io/library/eclipse-temurin:21-jre"],"sha256:227118764cccd3c3294617061aaa93a08309c63a395eefa83e6b35032992ea99"]
