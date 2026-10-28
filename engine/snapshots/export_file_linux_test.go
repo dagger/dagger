@@ -76,3 +76,25 @@ func TestExportFileChainThroughASymlinkIsWhole(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, chain.Release(context.Background())) })
 	require.Len(t, chain.Layers, 2)
 }
+
+// A file that travels as its own content reports its own size. One reached
+// through a symlink travels as its whole chain, and reports none.
+func TestOwnFileSize(t *testing.T) {
+	store := testutil.NewStore(t)
+	sizer, ok := store.Manager.(interface {
+		OwnFileSize(ctx context.Context, snapshotID, filePath string) (int64, bool, error)
+	})
+	require.True(t, ok, "the snapshot manager reports own file sizes")
+	tree, _ := store.BuildWith(t, nil, func(root string) {
+		writeExportFile(t, root, "src/go.mod", "module example\n")
+		writeExportFile(t, root, "real/big.bin", strings.Repeat("x", 1<<20))
+		require.NoError(t, os.Symlink("real", filepath.Join(root, "link")))
+	})
+	size, own, err := sizer.OwnFileSize(context.Background(), tree.SnapshotID(), "/src/go.mod")
+	require.NoError(t, err)
+	require.True(t, own)
+	require.EqualValues(t, len("module example\n"), size)
+	_, own, err = sizer.OwnFileSize(context.Background(), tree.SnapshotID(), "/link/big.bin")
+	require.NoError(t, err)
+	require.False(t, own, "a file reached through a symlink travels as its chain")
+}
