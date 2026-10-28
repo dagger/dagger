@@ -5,7 +5,7 @@ let goSdkRemote = "https://github.com/dagger/go-sdk"
 # Move this pin only to a reviewed github.com/dagger/go-sdk commit for which
 # compareCodegen reports no difference: its dagger-go-sdk-codegen generates
 # the core bindings that the Go SDK releases.
-let goSdkCodegenCommit = "837cf067bade8d6897cfb928ac5555fc505c838e"
+let goSdkCodegenCommit = "885a03b270bb27357187cebc8074c8c6e0a7b4c3"
 
 let goSdkCodegenImage = "golang:1.26.1-alpine"
 
