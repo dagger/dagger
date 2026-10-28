@@ -548,9 +548,15 @@ the old strcase code byte for byte:
   key, and they normalize with `NamerFromContext` (the namer for the current
   call's view). A module runtime's client is served at the module's view
   (`ModuleSource.NamingView`), so its typedefs are named by the module's
-  rules. Public constructors pass the view on to the internal `__*` selects
-  they make; the in-engine Dang runtime stamps its module's view on its naming
-  selectors (`core/sdk/dang/shared/naming.go`).
+  rules. A runtime client that declares its own version (`DAGGER_CLIENT_VERSION`
+  or the client metadata header) is served that version's core API instead,
+  but its typedef constructors still select at the module's view: the engine
+  stamps it on their selections (`core.ContextWithNamingView`), so declared
+  client versions move only the core API, and the module's declarations are
+  always named by the module's version. Public constructors pass the view on
+  to the internal `__*` selects they make; the in-engine Dang runtime stamps
+  its module's view on its naming selectors
+  (`core/sdk/dang/shared/naming.go`).
 - **Module-level naming** (`namespaceObject`, type and constructor lookups,
   validation) uses `Module.Namer()`, chosen by the module source's
   `engineVersion` (`ModuleSource.Namer`; a module entrypoint is served at the
