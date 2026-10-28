@@ -320,6 +320,7 @@ func newApplySnapshotDiffTestManager(t testing.TB) *snapshotManager {
 		snapshotContentDigests: map[string]map[digest.Digest]struct{}{},
 		importedLayerByBlob:    map[ImportedLayerBlobKey]string{},
 		importedLayerByDiff:    map[ImportedLayerDiffKey]string{},
+		layerImported:          make(chan struct{}),
 		snapshotOwnerLeases:    map[string]map[string]struct{}{},
 		ownerLeaseLocker:       locker.New(),
 	}

@@ -456,6 +456,7 @@ func (cm *snapshotManager) recordImportedLayer(ctx context.Context, ref Immutabl
 	cm.mu.Lock()
 	cm.importedLayerByBlob[blobKey] = ref.SnapshotID()
 	cm.importedLayerByDiff[diffKey] = ref.SnapshotID()
+	cm.layerImportedLocked()
 	cm.mu.Unlock()
 
 	return ref, nil
