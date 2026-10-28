@@ -18,6 +18,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/containerd/containerd/v2/pkg/sys"
 	"github.com/containerd/platforms"
@@ -1024,10 +1025,47 @@ func getListener(addr string, uid, gid int, tlsConfig *tls.Config) (net.Listener
 			logrus.Warnf("TLS is not enabled for %s. enabling mutual TLS authentication is highly recommended", addr)
 			return l, nil
 		}
-		return tls.NewListener(l, tlsConfig), nil
+		return newTLSListener(l, tlsConfig), nil
 	default:
 		return nil, fmt.Errorf("addr %s not supported", addr)
 	}
+}
+
+// newTLSListener terminates TLS and hands net/http connections it treats as
+// plaintext. net/http only accepts prior-knowledge HTTP/2 on connections that
+// are not a *tls.Conn, and the tls:// client driver speaks prior-knowledge
+// HTTP/2, without ALPN up to v1.0.0-beta.21.
+func newTLSListener(l net.Listener, config *tls.Config) net.Listener {
+	return tlsTerminatingListener{tls.NewListener(l, config)}
+}
+
+type tlsTerminatingListener struct {
+	net.Listener
+}
+
+func (l tlsTerminatingListener) Accept() (net.Conn, error) {
+	conn, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	return &tlsTerminatedConn{Conn: conn, tls: conn.(*tls.Conn)}, nil
+}
+
+type tlsTerminatedConn struct {
+	net.Conn
+	tls       *tls.Conn
+	handshake sync.Once
+}
+
+// Read logs a failed handshake, since net/http stops reporting handshake
+// errors once it no longer sees a *tls.Conn.
+func (c *tlsTerminatedConn) Read(b []byte) (int, error) {
+	c.handshake.Do(func() {
+		if err := c.tls.Handshake(); err != nil {
+			logrus.Warnf("TLS handshake error from %s: %v", c.RemoteAddr(), err)
+		}
+	})
+	return c.Conn.Read(b)
 }
 
 func serverCredentials(cfg bkconfig.TLSConfig) (*tls.Config, error) {
@@ -1051,6 +1089,7 @@ func serverCredentials(cfg bkconfig.TLSConfig) (*tls.Config, error) {
 	tlsConf := &tls.Config{
 		Certificates: []tls.Certificate{certificate},
 		MinVersion:   tls.VersionTLS12,
+		NextProtos:   []string{"h2", "http/1.1"},
 	}
 	if caFile != "" {
 		certPool := x509.NewCertPool()
