@@ -2893,9 +2893,17 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 		if profiledSession {
 			ctx = wcprof.ContextWithProfiling(ctx)
 		}
+		// a request the engine stamped on arrival is served from then: its
+		// routing here is the op's first part
+		arrival := wcprof.RequestArrival(ctx)
+		routedNS := wcprof.NowNS()
 		ctx, profServeOp = wcprof.BeginOp(ctx, wcprof.OpKindSessionPhase, "session.serveQuery", wcprof.OpOpts{
 			ClientID: client.clientID,
+			Start:    arrival,
 		})
+		if !arrival.IsZero() {
+			wcprof.RecordOp(ctx, wcprof.OpKindSessionPhase, "session.route", wcprof.OpOpts{ClientID: client.clientID}, wcprof.TimeNS(arrival), routedNS, wcprof.OutcomeOK)
+		}
 		if callerSpan.IsValid() {
 			// Resolves, in the dump, to the caller's op when the caller
 			// reported itself (see engine/wcprof/contract).
