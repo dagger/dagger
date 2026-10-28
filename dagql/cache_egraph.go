@@ -1049,6 +1049,8 @@ func (c *Cache) lookupCacheForRequestLocked(
 // write. The caller holds egraphMu, for reading or writing; the request's
 // recipe digest is derived before the lookup, so deriving it here reads the
 // memoized value without taking the lock again.
+//
+//nolint:gocyclo // One read-only check per write the hit's write path could make; splitting them would hide that they mirror it.
 func (c *Cache) hitTeachesNothingLocked(
 	res *sharedResult,
 	req *CallRequest,
