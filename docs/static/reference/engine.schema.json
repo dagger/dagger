@@ -254,7 +254,7 @@
       "properties": {
         "discarded": {
           "type": "boolean",
-          "description": "Discarded reports that the engine's state directory doesn't outlive the engine: it's destroyed when the engine stops, as a machine's own disk is destroyed with the machine, and no later engine reads it. The engine's stop then does only what outlives it: it finishes its remote cache exports, flushes its telemetry, and collects and closes the cache volume directory. It skips what only a later start on the same state would use: garbage collection, saving its cache, closing its databases and releasing its network namespaces. Set it where the deployment decides that the state isn't kept."
+          "description": "Discarded reports that the engine's state directory doesn't outlive the engine: it's destroyed when the engine stops, as a machine's own disk is destroyed with the machine, and no later engine reads it. The engine's stop then does only what outlives it: it finishes its remote cache exports, flushes its telemetry, and collects and closes the cache volume directory. It skips what only a later start on the same state would use: garbage collection, saving its cache, closing its databases and releasing its network namespaces. Its exports then leave 10s of the stop budget to the rest of the stop, not 30s, and each final telemetry flush gets at most 10s. Set it where the deployment decides that the state isn't kept."
         }
       },
       "additionalProperties": false,

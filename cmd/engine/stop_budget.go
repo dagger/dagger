@@ -11,6 +11,7 @@ import (
 	"github.com/urfave/cli"
 
 	"github.com/dagger/dagger/engine/config"
+	"github.com/dagger/dagger/engine/server"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -36,11 +37,13 @@ type stopBudget struct {
 
 	mu      sync.Mutex
 	timeout time.Duration
-	started time.Time
+	// flushTimeout bounds each final flush: stopFlushTimeout, or less.
+	flushTimeout time.Duration
+	started      time.Time
 }
 
 func newStopBudget(now func() time.Time) *stopBudget {
-	return &stopBudget{now: now, timeout: defaultGracefulStopTimeout}
+	return &stopBudget{now: now, timeout: defaultGracefulStopTimeout, flushTimeout: stopFlushTimeout}
 }
 
 // setTimeout sets the budget's length.
@@ -48,6 +51,13 @@ func (b *stopBudget) setTimeout(timeout time.Duration) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.timeout = timeout
+}
+
+// setFlushTimeout sets the bound of each final flush.
+func (b *stopBudget) setFlushTimeout(timeout time.Duration) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.flushTimeout = timeout
 }
 
 // start marks the start of the stop. Only the first call counts.
@@ -78,11 +88,14 @@ func (b *stopBudget) serverContext(parent context.Context) (context.Context, con
 }
 
 // flushContext returns a context, detached from parent's cancellation, for one
-// final flush: it ends after stopFlushTimeout, or with the budget if that is
+// final flush: it ends after its flush timeout, or with the budget if that is
 // sooner.
 func (b *stopBudget) flushContext(parent context.Context) (context.Context, context.CancelFunc) {
 	deadline := b.deadline()
-	if capped := b.now().Add(stopFlushTimeout); capped.Before(deadline) {
+	b.mu.Lock()
+	flushTimeout := b.flushTimeout
+	b.mu.Unlock()
+	if capped := b.now().Add(flushTimeout); capped.Before(deadline) {
 		deadline = capped
 	}
 	return context.WithDeadline(context.WithoutCancel(parent), deadline)
@@ -107,6 +120,16 @@ func gracefulStopTimeoutSetting(c *cli.Context, cfg config.Config) (time.Duratio
 		return 0, fmt.Errorf("shutdown.gracefulStopTimeout must be positive, got %s", timeout)
 	}
 	return timeout, nil
+}
+
+// stopFlushTimeoutSetting returns the bound of each final flush. With the
+// state discarded, the server's exports leave it only
+// server.DiscardedStateStopReserve of the budget, which each flush fits in.
+func stopFlushTimeoutSetting(cfg config.Config) time.Duration {
+	if cfg.State.Discarded {
+		return server.DiscardedStateStopReserve
+	}
+	return stopFlushTimeout
 }
 
 // stopListeners stops the API listeners within ctx, the stop budget. The

@@ -58,8 +58,10 @@ type StateConfig struct {
 	// cache exports, flushes its telemetry, and collects and closes the cache
 	// volume directory. It skips what only a later start on the same state
 	// would use: garbage collection, saving its cache, closing its databases
-	// and releasing its network namespaces. Set it where the deployment
-	// decides that the state isn't kept.
+	// and releasing its network namespaces. Its exports then leave 10s of
+	// the stop budget to the rest of the stop, not 30s, and each final
+	// telemetry flush gets at most 10s. Set it where the deployment decides
+	// that the state isn't kept.
 	Discarded bool `json:"discarded,omitempty"`
 }
 
