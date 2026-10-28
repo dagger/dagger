@@ -523,7 +523,9 @@ const cloudMetricQueueSize = 256
 // background, each export within the bound. The session's teardown gets one
 // bound for draining what is left, the export in flight and releasing the
 // exporter. Beyond cloudMetricQueueSize the oldest whole collection is
-// dropped; with cumulative temporality that loses resolution, not totals.
+// dropped, and with it the samples it carries.
+//
+// The readers over it collect with delta temporality: see Temporality.
 type cloudMetricQueue struct {
 	next  sdkmetric.Exporter
 	bound cloudFlushBound
@@ -561,8 +563,15 @@ func newCloudMetricQueue(next sdkmetric.Exporter, bound cloudFlushBound) *cloudM
 	return q
 }
 
-func (q *cloudMetricQueue) Temporality(kind sdkmetric.InstrumentKind) metricdata.Temporality {
-	return q.next.Temporality(kind)
+// Temporality is delta, like the client's own metric stream that the CLI
+// forwarded to Cloud before the engine published it. Cloud stores every gauge
+// point it receives as a sample at the point's time. With cumulative
+// temporality a reader re-exports every gauge series it ever saw at each
+// collection, stamped with the collection time: each span's readings would
+// repeat as new samples until its client closed, and a long-lived client
+// would keep every series in memory and resend them all, without bound.
+func (q *cloudMetricQueue) Temporality(sdkmetric.InstrumentKind) metricdata.Temporality {
+	return metricdata.DeltaTemporality
 }
 
 func (q *cloudMetricQueue) Aggregation(kind sdkmetric.InstrumentKind) sdkmetric.Aggregation {
