@@ -17,7 +17,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-const ManifestVersion = 4
+const ManifestVersion = 5
 
 const (
 	DefaultTTL   = 7 * 24 * time.Hour

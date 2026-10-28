@@ -147,8 +147,10 @@ func (l *spanLookup) addLocked(row Span, causalTargets []string) {
 		(bytes.Contains(row.Attributes, testCaseNameAttrMarker) || bytes.Contains(row.Attributes, testSuiteNameAttrMarker)) {
 		l.testSpans[row.SpanID] = struct{}{}
 	}
+	var parentKnown bool
 	if row.ParentSpanID.Valid {
-		if _, known := l.parent[row.SpanID]; !known {
+		_, parentKnown = l.parent[row.SpanID]
+		if !parentKnown {
 			l.parent[row.SpanID] = row.ParentSpanID.String
 		}
 	}
@@ -159,13 +161,10 @@ func (l *spanLookup) addLocked(row Span, causalTargets []string) {
 	l.firstRow[key] = row.ID
 	if row.ParentSpanID.Valid {
 		children := l.children[row.ParentSpanID.String]
-		// A repeated span ID in another trace is vanishingly rare, but the
-		// children map follows the SQL query's span-ID-only identity and must
-		// remain unique if it happens.
-		for _, child := range children {
-			if child == row.SpanID {
-				return
-			}
+		// New span IDs cannot already be in a child list. Only a repeated
+		// ID in another trace needs the span-ID-only uniqueness check.
+		if parentKnown && slices.Contains(children, row.SpanID) {
+			return
 		}
 		l.children[row.ParentSpanID.String] = append(children, row.SpanID)
 	}
@@ -303,12 +302,12 @@ func (l *spanLookup) causalParentsLocked(spanID string) []string {
 }
 
 // Marker byte strings for the raw-attribute prefilter in addLocked. The
-// attributes column is a protojson-encoded KeyValue list, so an attribute's
-// presence implies its quoted key appears verbatim.
+// attributes column is a binary KeyValue list (MarshalProtoList), so an
+// attribute's presence implies its key bytes appear verbatim.
 var (
-	checkNameAttrMarker     = []byte(`"` + telemetry.CheckNameAttr + `"`)
-	testCaseNameAttrMarker  = []byte(`"` + string(semconv.TestCaseNameKey) + `"`)
-	testSuiteNameAttrMarker = []byte(`"` + string(semconv.TestSuiteNameKey) + `"`)
+	checkNameAttrMarker     = []byte(telemetry.CheckNameAttr)
+	testCaseNameAttrMarker  = []byte(string(semconv.TestCaseNameKey))
+	testSuiteNameAttrMarker = []byte(string(semconv.TestSuiteNameKey))
 )
 
 // causalLinkTargets decodes row's span links and returns the span IDs it
@@ -317,12 +316,11 @@ var (
 // purpose, which imply causality — are parent→child edges; other purposes
 // (error_origin, wait) are not.
 func causalLinkTargets(row Span) []string {
-	if len(row.Links) <= len("[]") {
-		// no links: nil, or an empty JSON array
+	if len(row.Links) == 0 {
 		return nil
 	}
 	var linksPB []*otlptracev1.Span_Link
-	if err := UnmarshalProtoJSONs(row.Links, &otlptracev1.Span_Link{}, &linksPB); err != nil {
+	if err := UnmarshalProtoList(row.Links, &otlptracev1.Span_Link{}, &linksPB); err != nil {
 		slog.Warn("failed to unmarshal span links", "span", row.SpanID, "error", err)
 		return nil
 	}

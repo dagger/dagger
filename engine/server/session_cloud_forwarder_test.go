@@ -19,11 +19,13 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
+	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/clientdb"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
 // Cloud export behaviors of the forwarder tests' exporters.
@@ -529,8 +531,12 @@ func TestCloudPublishedRow(t *testing.T) {
 		}
 	}
 	require.Equal(t, []string{"plain"}, bodies)
-	require.False(t, cloudPublishedRow([]byte(`[{"key":"note","value":{"stringValue":"\"dagger.io/telemetry.cloud_published\""}}]`)),
-		"the key named in a value is not the marker")
+	note, err := clientdb.MarshalProtoList([]*otlpcommonv1.KeyValue{{
+		Key:   "note",
+		Value: &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_StringValue{StringValue: telemetryattrs.TelemetryCloudPublishedAttr}},
+	}})
+	require.NoError(t, err)
+	require.False(t, cloudPublishedRow(note), "the key named in a value is not the marker")
 }
 
 // The existing forwarder keeps the store alive and publishes its remaining

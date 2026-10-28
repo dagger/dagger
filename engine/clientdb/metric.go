@@ -7,7 +7,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/instrumentation"
 	otlpmetricsv1 "go.opentelemetry.io/proto/otlp/metrics/v1"
-	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 func MetricsToPB(dbMetrics []Metric) []*otlpmetricsv1.ResourceMetrics {
@@ -25,7 +25,7 @@ func MetricsToPB(dbMetrics []Metric) []*otlpmetricsv1.ResourceMetrics {
 
 	for _, dbMetric := range dbMetrics {
 		var metricResourcePB otlpmetricsv1.ResourceMetrics
-		if err := protojson.Unmarshal(dbMetric.Data, &metricResourcePB); err != nil {
+		if err := proto.Unmarshal(dbMetric.Data, &metricResourcePB); err != nil {
 			slog.Error("failed to unmarshal metric resource", "error", err, "metric", dbMetric)
 			continue
 		}

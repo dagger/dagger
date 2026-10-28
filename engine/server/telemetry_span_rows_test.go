@@ -56,10 +56,10 @@ func TestSpanRowsEncodeEachSpansOwnResourceAndScope(t *testing.T) {
 	for i, span := range spans {
 		require.True(t, rows[i].ok)
 		require.Equal(t, span.SpanContext().SpanID().String(), rows[i].row.SpanID)
-		wantRes, err := protojson.Marshal(telemetry.ResourcePtrToPB(span.Resource()))
+		wantRes, err := proto.Marshal(telemetry.ResourcePtrToPB(span.Resource()))
 		require.NoError(t, err)
 		require.Equal(t, string(wantRes), string(rows[i].row.Resource), "span %d resource", i)
-		wantScope, err := protojson.Marshal(telemetry.InstrumentationScopeToPB(span.InstrumentationScope()))
+		wantScope, err := proto.Marshal(telemetry.InstrumentationScopeToPB(span.InstrumentationScope()))
 		require.NoError(t, err)
 		require.Equal(t, string(wantScope), string(rows[i].row.InstrumentationScope), "span %d scope", i)
 	}

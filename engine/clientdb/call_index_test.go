@@ -12,7 +12,7 @@ import (
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
-func stringAttrsJSON(t *testing.T, kvs ...string) []byte {
+func stringAttrsList(t *testing.T, kvs ...string) []byte {
 	t.Helper()
 	require.Zero(t, len(kvs)%2)
 	attrs := make([]*otlpcommonv1.KeyValue, 0, len(kvs)/2)
@@ -22,7 +22,7 @@ func stringAttrsJSON(t *testing.T, kvs ...string) []byte {
 			Value: &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_StringValue{StringValue: kvs[i+1]}},
 		})
 	}
-	encoded, err := MarshalProtoJSONs(attrs)
+	encoded, err := MarshalProtoList(attrs)
 	require.NoError(t, err)
 	return encoded
 }
@@ -39,7 +39,7 @@ func callPayloadLog(t *testing.T, frame *callpbv1.Call) Log {
 	return Log{
 		SpanID:     validString("span"),
 		Body:       body,
-		Attributes: stringAttrsJSON(t, telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
+		Attributes: stringAttrsList(t, telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
 	}
 }
 
@@ -53,12 +53,12 @@ func TestCallIndex(t *testing.T) {
 	// frame (unusable for a rebuild), one is unrelated. A later snapshot of
 	// the framed span must win.
 	spans := []Span{
-		{TraceID: "t", SpanID: "framed", Attributes: stringAttrsJSON(t,
+		{TraceID: "t", SpanID: "framed", Attributes: stringAttrsList(t,
 			telemetry.DagDigestAttr, "xxh3:aaaa", telemetry.DagCallAttr, "AAAA")},
-		{TraceID: "t", SpanID: "bare", Attributes: stringAttrsJSON(t,
+		{TraceID: "t", SpanID: "bare", Attributes: stringAttrsList(t,
 			telemetry.DagDigestAttr, "xxh3:bbbb")},
-		{TraceID: "t", SpanID: "plain", Attributes: stringAttrsJSON(t, "k", "v")},
-		{TraceID: "t", SpanID: "framed", Attributes: stringAttrsJSON(t,
+		{TraceID: "t", SpanID: "plain", Attributes: stringAttrsList(t, "k", "v")},
+		{TraceID: "t", SpanID: "framed", Attributes: stringAttrsList(t,
 			telemetry.DagDigestAttr, "xxh3:aaaa", telemetry.DagCallAttr, "AAAA", "later", "yes")},
 	}
 	_, err = store.AppendSpans(spans)
@@ -107,24 +107,27 @@ func TestCallIndex(t *testing.T) {
 	require.Equal(t, int64(3), frames[2].Log.ID)
 }
 
-func TestProtoJSONStringAttr(t *testing.T) {
-	marker := []byte(`"` + telemetry.DagDigestAttr + `"`)
+func TestListStringAttr(t *testing.T) {
+	digest := telemetry.DagDigestAttr
+	intAttr := &otlpcommonv1.KeyValue{Key: digest, Value: &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_IntValue{IntValue: 1}}}
+	notString, err := MarshalProtoList([]*otlpcommonv1.KeyValue{intAttr})
+	require.NoError(t, err)
 	for _, tc := range []struct {
 		name  string
-		attrs string
+		attrs []byte
 		want  string
 		ok    bool
 	}{
-		{"compact", `[{"key":"dagger.io/dag.digest","value":{"stringValue":"xxh3:abc"}}]`, "xxh3:abc", true},
-		{"spaced", `[{"key": "dagger.io/dag.digest", "value": {"stringValue" : "xxh3:abc"}}]`, "xxh3:abc", true},
-		{"key bytes inside an earlier value", `[{"key":"x","value":{"stringValue":"dagger.io/dag.digest"}},{"key":"dagger.io/dag.digest","value":{"stringValue":"xxh3:abc"}}]`, "xxh3:abc", true},
-		{"key bytes only inside a value", `[{"key":"x","value":{"stringValue":"dagger.io/dag.digest"}},{"key":"y","value":{"stringValue":"z"}}]`, "", false},
-		{"absent", `[{"key":"x","value":{"stringValue":"y"}}]`, "", false},
-		{"not a string", `[{"key":"dagger.io/dag.digest","value":{"intValue":"1"}}]`, "", false},
-		{"escaped", `[{"key":"dagger.io/dag.digest","value":{"stringValue":"a\"b"}}]`, "", false},
+		{"present", stringAttrsList(t, digest, "xxh3:abc"), "xxh3:abc", true},
+		{"key bytes inside an earlier value", stringAttrsList(t, "x", digest, digest, "xxh3:abc"), "xxh3:abc", true},
+		{"key bytes only inside a value", stringAttrsList(t, "x", digest, "y", "z"), "", false},
+		{"absent", stringAttrsList(t, "x", "y"), "", false},
+		{"not a string", notString, "", false},
+		{"empty", nil, "", false},
+		{"truncated", stringAttrsList(t, digest, "xxh3:abc")[:5], "", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, ok := protoJSONStringAttr([]byte(tc.attrs), marker)
+			got, ok := listStringAttr(tc.attrs, digest)
 			require.Equal(t, tc.ok, ok)
 			require.Equal(t, tc.want, got)
 		})

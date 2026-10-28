@@ -140,8 +140,9 @@ func (wcprofLazyParentProcessor) ForceFlush(context.Context) error { return nil 
 // producer case the name stays "resume <field>" (UI-load-bearing), so the
 // loader's class for that op is "resume <field>" rather than native's
 // profCallClass — a benign divergence because the lazy op's self-time is ~0 and
-// it never ranks in the bottleneck oracle.
-func (c *Cache) beginOTelLazyOp(evalCtx context.Context, sharedID sharedResultID, group LazyGroupKey, resultCall *ResultCall, storedPart PartKey) (context.Context, trace.Span, bool) {
+// it never ranks in the bottleneck oracle. opts add to the span's start
+// options: the cache passes the native lazy op's start.
+func (c *Cache) beginOTelLazyOp(evalCtx context.Context, sharedID sharedResultID, group LazyGroupKey, resultCall *ResultCall, storedPart PartKey, opts ...trace.SpanStartOption) (context.Context, trace.Span, bool) {
 	if clientMD, err := engine.ClientMetadataFromContext(evalCtx); err == nil && clientMD.SessionID != "" {
 		if originalSpanCtx, ok := c.sessionLazySpanContext(clientMD.SessionID, sharedID); ok {
 			spanName := "resume lazy evaluation"
@@ -167,9 +168,11 @@ func (c *Cache) beginOTelLazyOp(evalCtx context.Context, sharedID sharedResultID
 			resumeCtx, resumeSpan := Tracer(evalCtx).Start(
 				evalCtx,
 				spanName,
-				trace.WithLinks(links...),
-				telemetry.Passthrough(),
-				trace.WithAttributes(attribute.String(telemetryattrs.WcprofOpKindAttr, wcprof.OpKindLazy.String())),
+				append([]trace.SpanStartOption{
+					trace.WithLinks(links...),
+					telemetry.Passthrough(),
+					trace.WithAttributes(attribute.String(telemetryattrs.WcprofOpKindAttr, wcprof.OpKindLazy.String())),
+				}, opts...)...,
 			)
 			callbackCtx := trace.ContextWithSpan(resumeCtx, resumedCallbackSpan{
 				Span: resumeSpan,
@@ -188,8 +191,10 @@ func (c *Cache) beginOTelLazyOp(evalCtx context.Context, sharedID sharedResultID
 	callbackCtx, lazySpan := Tracer(evalCtx).Start(
 		evalCtx,
 		spanName,
-		telemetry.Passthrough(),
-		trace.WithAttributes(attribute.String(telemetryattrs.WcprofOpKindAttr, wcprof.OpKindLazy.String())),
+		append([]trace.SpanStartOption{
+			telemetry.Passthrough(),
+			trace.WithAttributes(attribute.String(telemetryattrs.WcprofOpKindAttr, wcprof.OpKindLazy.String())),
+		}, opts...)...,
 	)
 	return MarkProfilingSpan(callbackCtx, prev), lazySpan, false
 }

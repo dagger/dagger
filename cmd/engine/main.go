@@ -165,7 +165,7 @@ func addFlags(app *cli.App) {
 		},
 		cli.BoolFlag{
 			Name:   "wcprof",
-			Usage:  "enable experimental wall-clock profiling for all work on the engine (also enabled by the _DAGGER_WCPROF env var; toggleable at runtime via the /debug/wcprof/enabled debug endpoint)",
+			Usage:  "enable experimental wall-clock profiling for all work on the engine (toggleable at runtime via the /debug/wcprof/enabled debug endpoint)",
 			Hidden: true,
 		},
 		cli.BoolFlag{
@@ -328,6 +328,11 @@ func signalContext() context.Context {
 
 			err := fmt.Errorf("got %d SIGTERM/SIGINTs, forcing shutdown", retries)
 			cancel(err)
+			if retries == 1 {
+				if path := stopDumpPath.Load(); path != nil {
+					recordStopSignal(*path)
+				}
+			}
 			if retries >= exitLimit {
 				bklog.G(ctx).Error(err.Error())
 				os.Exit(1)
@@ -556,6 +561,8 @@ func main() { //nolint:gocyclo
 			return err
 		}
 		bkcfg.Root = root
+		dumpPath := wcprof.StopDumpPath(root)
+		stopDumpPath.Store(&dumpPath)
 
 		if err := os.MkdirAll(root, 0o700); err != nil {
 			return fmt.Errorf("failed to create %s: %w", root, err)
@@ -701,13 +708,18 @@ func main() { //nolint:gocyclo
 		// The server's close emitted engine.stop and queued every event on the
 		// event provider; flush them before the global providers close.
 		// Each final flush gets what remains of the stop budget, at most
-		// stopFlushTimeout.
-		flushCtx, flushCancel := engineStopBudget.flushContext(ctx)
-		eventExport.shutdownAtExit(flushCtx)
-		flushCancel()
-		flushCtx, flushCancel = engineStopBudget.flushContext(ctx)
-		closeResourceMetrics(flushCtx, resourceMetrics)
-		flushCancel()
+		// stopFlushTimeout. Each drain is a step of the recorded stop
+		// (exitStep), so a kill during one shows which.
+		exitStep("flush engine events", func() {
+			flushCtx, flushCancel := engineStopBudget.flushContext(ctx)
+			eventExport.shutdownAtExit(flushCtx)
+			flushCancel()
+		})
+		exitStep("close resource metrics", func() {
+			flushCtx, flushCancel := engineStopBudget.flushContext(ctx)
+			closeResourceMetrics(flushCtx, resourceMetrics)
+			flushCancel()
+		})
 		if closeCommandPlacement != nil {
 			if err := closeCommandPlacement(); err != nil {
 				bklog.G(ctx).WithError(err).Warn("command cgroup cleanup incomplete")
@@ -722,14 +734,17 @@ func main() { //nolint:gocyclo
 		}
 		// Providers finish before the engine-owned workload export drains.
 		// Their shared processor/exporter wrappers do not close it.
-		telemetry.Close()
+		exitStep("close telemetry", telemetry.Close)
 		if workloadExport != nil {
-			flushCtx, cancel := engineStopBudget.flushContext(ctx)
-			if err := workloadExport.Shutdown(flushCtx); err != nil {
-				bklog.G(ctx).WithError(err).Warn("workload export shutdown incomplete")
-			}
-			cancel()
+			exitStep("drain workload export", func() {
+				flushCtx, cancel := engineStopBudget.flushContext(ctx)
+				if err := workloadExport.Shutdown(flushCtx); err != nil {
+					bklog.G(ctx).WithError(err).Warn("workload export shutdown incomplete")
+				}
+				cancel()
+			})
 		}
+		flushStopDump()
 		return nil
 	}
 
