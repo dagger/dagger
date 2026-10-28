@@ -41,6 +41,9 @@ const (
 // Error messages both sides recognize.
 const (
 	TooLargeMessage = "too large"
+	// StaleSettle ends a settle whose period is no longer the engine's
+	// current one, or that an open with a later period superseded.
+	StaleSettle = "stale settle"
 )
 
 // Type names a message.
@@ -61,6 +64,10 @@ const (
 	TypeRenewed  Type = "renewed"
 	TypeLookup   Type = "lookup"
 	TypeLookedUp Type = "lookedUp"
+	TypeOpen     Type = "open"
+	TypeOpened   Type = "opened"
+	TypeSettle   Type = "settle"
+	TypeSettled  Type = "settled"
 	TypeError    Type = "error"
 )
 
@@ -82,6 +89,10 @@ func ReplyType(request Type) (Type, bool) {
 		return TypeRenewed, true
 	case TypeLookup:
 		return TypeLookedUp, true
+	case TypeOpen:
+		return TypeOpened, true
+	case TypeSettle:
+		return TypeSettled, true
 	}
 	return "", false
 }
@@ -125,10 +136,51 @@ type Hello struct {
 	Generation    uint64 `json:"generation"`
 	EngineVersion string `json:"engineVersion"`
 	EngineName    string `json:"engineName"`
+	// Period is the engine's current idle period (Open), and Settled is set
+	// when the engine connects already settled for it: the service then asks
+	// it for nothing until an Open with a later period.
+	Period  uint64 `json:"period"`
+	Settled bool   `json:"settled,omitempty"`
 }
 
 // Welcome is the service's reply to Hello.
 type Welcome struct{}
+
+// Open tells the service that a session started on an engine with no live
+// session: its idle periods are numbered from 1, and Period is the one that
+// begins when the sessions now starting have ended. The service may ask the
+// engine for exports again, and a settle for an earlier period is stale.
+type Open struct {
+	Period uint64 `json:"period"`
+}
+
+// Opened is the service's reply to Open.
+type Opened struct{}
+
+// Settle asks the service, once the engine has no live session, to finish
+// what it wants of the engine for Period: Sessions are the sessions that
+// ended and that no Settled has covered, kept across canceled requests and
+// reconnections.
+type Settle struct {
+	Period   uint64          `json:"period"`
+	Sessions []SettleSession `json:"sessions"`
+}
+
+// SettleSession is one ended session: ID is the engine session's ID, as its
+// telemetry names it (dagger.io/engine.session), and Marker is set when the
+// engine sent the session's completion marker, the span the service reads as
+// its end row. A session without one has no end row to wait for.
+type SettleSession struct {
+	ID     string `json:"id"`
+	Marker bool   `json:"marker"`
+}
+
+// Settled is the service's reply to Settle, sent once it is done with every
+// listed session and has no export of the engine in flight or still to ask
+// for. The service then asks
+// the engine for nothing until an Open with a later period. A settle for a
+// period that is not the engine's current one ends with StaleSettle instead.
+type Settled struct{}
 
 // Export asks the engine for the values of some of its entries, by number,
 // and the selected parts' bytes.
