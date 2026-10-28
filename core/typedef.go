@@ -261,20 +261,11 @@ func (fn *Function) FieldSpec(ctx context.Context, mod Mod) (dagql.FieldSpec, er
 	spec.Directives = append(spec.Directives, fn.Directives()...)
 	for _, arg := range fn.Args {
 		argSelf := arg.Self()
-		modType, ok, err := mod.ModTypeFor(ctx, argSelf.TypeDef.Self(), true)
-		if err != nil {
-			return spec, fmt.Errorf("failed to get typedef for arg %q: %w", argSelf.Name, err)
-		}
-		if !ok {
-			return spec, fmt.Errorf("failed to get typedef for arg %q", argSelf.Name)
-		}
-
-		argTypeDef, err := modType.TypeDef(ctx)
+		argTypeDef, err := canonicalFunctionArgType(ctx, mod, argSelf.TypeDef)
 		if err != nil {
 			return spec, fmt.Errorf("failed to resolve canonical typedef for arg %q: %w", argSelf.Name, err)
 		}
-
-		input := argTypeDef.Self().ToInput()
+		input := argTypeDef.ToInput()
 		var defaultVal dagql.Input
 		if argSelf.DefaultValue != nil {
 			var val any
@@ -300,7 +291,7 @@ func (fn *Function) FieldSpec(ctx context.Context, mod Mod) (dagql.FieldSpec, er
 		}
 		// Add @expectedType directive for ID-typed arguments (objects and interfaces).
 		// Walk through list wrappers to find the underlying object/interface type.
-		expectedTypeDef := argTypeDef.Self()
+		expectedTypeDef := argTypeDef
 		for expectedTypeDef.Kind == TypeDefKindList && expectedTypeDef.AsList.Valid {
 			expectedTypeDef = expectedTypeDef.AsList.Value.Self().ElementTypeDef.Self()
 		}

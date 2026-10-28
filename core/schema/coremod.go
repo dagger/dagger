@@ -194,6 +194,15 @@ func (m *CoreMod) ForkSchema(ctx context.Context, root *core.Query, view call.Vi
 	return m.base.Fork(ctx, root, view)
 }
 
+// SchemaASTCacheKey identifies immutable installed metadata. CoreMod wrappers
+// are made per client, but their schema comes from this same base and view.
+func (m *CoreMod) SchemaASTCacheKey() string {
+	if m.base == nil {
+		return ""
+	}
+	return fmt.Sprintf("%p:%s", m.base, m.view)
+}
+
 func (m *CoreMod) WithView(view call.View) *CoreMod {
 	return &CoreMod{
 		base: m.base,
