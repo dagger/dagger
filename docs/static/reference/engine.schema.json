@@ -61,6 +61,10 @@
         "cacheVolumes": {
           "$ref": "#/$defs/CacheVolumesConfig",
           "description": "CacheVolumes configures where the engine keeps cache volumes."
+        },
+        "state": {
+          "$ref": "#/$defs/StateConfig",
+          "description": "State describes what becomes of the engine's state directory."
         }
       },
       "additionalProperties": false,
@@ -241,6 +245,16 @@
         "gracefulStopTimeout": {
           "$ref": "#/$defs/Duration",
           "description": "GracefulStopTimeout bounds the engine's whole stop, from the first SIGTERM or SIGINT to process exit. The final telemetry flushes get what remains of it, at most 30s each. Set it below the grace period of whatever supervises the engine, so that the engine exits on its own rather than being killed. Defaults to 5m; when set, it must be positive."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "StateConfig": {
+      "properties": {
+        "discarded": {
+          "type": "boolean",
+          "description": "Discarded reports that the engine's state directory doesn't outlive the engine: it's destroyed when the engine stops, as a machine's own disk is destroyed with the machine, and no later engine reads it. The engine's stop then does only what outlives it: it finishes its remote cache exports, flushes its telemetry, and collects and closes the cache volume directory. It skips what only a later start on the same state would use: garbage collection, saving its cache, closing its databases and releasing its network namespaces. Set it where the deployment decides that the state isn't kept."
         }
       },
       "additionalProperties": false,
