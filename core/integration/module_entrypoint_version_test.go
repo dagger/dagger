@@ -10,6 +10,8 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
+
+	"github.com/dagger/dagger/engine"
 )
 
 // entrypointVersionModule is a workspace with module tiny, whose entrypoint is
@@ -75,8 +77,8 @@ func helloEntrypointSource(extra string) string {
 
 // A manifest v2 module declares its engine version in the dang.toml that
 // governs its entrypoint, as `[imports.Dagger] dagger = "..."`. Without one, it
-// is v1.0.0-beta.20, the last release before the naming cut, whatever engine
-// loads it.
+// is v1.0.0-beta.20, which lands on the view every v1.0.0 prerelease before the
+// naming cut shares, whatever engine loads it.
 func (ModuleSuite) TestDangModuleEntrypointEngineVersion(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	source := helloEntrypointSource("")
@@ -295,4 +297,86 @@ func (ModuleSuite) TestDangModuleEntrypointVersionlessCachePolicies(ctx context.
 	require.NotEqual(t, queryNonce(t, c, "never"), queryNonce(t, c, "never"))
 	session := queryNonce(t, c, "session")
 	require.Equal(t, session, queryNonce(t, c, "session"))
+}
+
+// cutEntrypointSource is an entrypoint that spells a FunctionCachePolicy
+// member as policy, which type checks only at a view that has that spelling,
+// and declares an HttpClient type, whose namespaced name shows which naming
+// rules the module gets.
+func cutEntrypointSource(policy string) string {
+	return `type Entrypoint implements ModuleEntrypoint {
+  pub types(workspace: Workspace!): [TypeDef!]! {
+    [
+      typeDef
+        .withObject("Tiny")
+        .withConstructor(function("", typeDef.withObject("Tiny")))
+        .withFunction(function("Client", typeDef.withObject("HttpClient")).withCachePolicy(FunctionCachePolicy.` + policy + `)),
+      typeDef
+        .withObject("HttpClient")
+        .withFunction(function("Ping", typeDef.withKind(TypeDefKind.STRING_KIND))),
+    ]
+  }
+
+  pub call(
+    workspace: Workspace!,
+    receiverType: String!,
+    receiverValue: JSON,
+    fnName: String!,
+    fnArgs: JSON!,
+  ): JSON! {
+    if (fnName == "Ping") {
+      ("\"pong\"" :: JSON!)
+    } else {
+      ("{}" :: JSON!)
+    }
+  }
+}
+`
+}
+
+// An entrypoint that declares no version is served the shared pre-cut view
+// on an engine past the cut (engine.IdentifierCasingVersion): the core API
+// before the renames (FunctionCachePolicy.Never) and the legacy naming rules
+// (TinyHttpClient). One whose dang.toml declares the cut gets the renamed API
+// (FunctionCachePolicy.NEVER) and the new rules (TinyHTTPClient). Neither
+// view has the other's spelling.
+func (ModuleSuite) TestDangModuleEntrypointNamingCut(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	declaresCut := map[string]string{
+		"entrypoint/dang.toml": "[imports.Dagger]\ndagger = \"" + engine.IdentifierCasingVersion + "\"\n",
+	}
+
+	for _, tc := range []struct {
+		name     string
+		files    map[string]string
+		policy   string
+		typeName string
+	}{
+		{name: "versionless", policy: "Never", typeName: "TinyHttpClient"},
+		{name: "declares the cut", files: declaresCut, policy: "NEVER", typeName: "TinyHTTPClient"},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			out, err := entrypointVersionModule(t, c, cutEntrypointSource(tc.policy), tc.files).
+				With(daggerQuery(`{tiny{client{__typename ping}}}`)).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.JSONEq(t, `{"tiny":{"client":{"__typename":"`+tc.typeName+`","ping":"pong"}}}`, out)
+		})
+	}
+
+	for _, tc := range []struct {
+		name   string
+		files  map[string]string
+		policy string
+	}{
+		{name: "versionless spells the new member", policy: "NEVER"},
+		{name: "declares the cut and spells the old member", files: declaresCut, policy: "Never"},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			_, err := entrypointVersionModule(t, c, cutEntrypointSource(tc.policy), tc.files).
+				With(daggerQuery(`{tiny{client{ping}}}`)).
+				Sync(ctx)
+			requireErrOut(t, err, tc.policy)
+		})
+	}
 }
