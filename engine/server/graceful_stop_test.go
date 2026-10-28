@@ -139,6 +139,24 @@ func TestGracefulStopWithDiscardedStateKeepsWhatOutlivesTheEngine(t *testing.T) 
 	require.ElementsMatch(t, []string{"mid", "new"}, keys, "the next engine doesn't get the volumes within their capacity")
 }
 
+func TestDiscardedStateStopEndsTheRunningGC(t *testing.T) {
+	// a stop with discarded state abandons a garbage collection that's
+	// running: the pass ends when the stop begins, so that its collection of
+	// the cache volume directory doesn't hold up the stop's own. With kept
+	// state the stop waits for it, as before.
+	for _, discarded := range []bool{false, true} {
+		srv := newGracefulStopServer(t, filepath.Join(t.TempDir(), "cache.db"))
+		srv.stateDiscarded = discarded
+		ctx := srv.backgroundGCContext()
+		srv.BeginGracefulStop()
+		if discarded {
+			require.ErrorIs(t, context.Cause(ctx), errServerShuttingDown, "the pass goes on after the stop began")
+		} else {
+			require.NoError(t, ctx.Err(), "the pass ended when the stop began, with kept state")
+		}
+	}
+}
+
 var errNetworkProviderClose = errors.New("network provider close failed")
 
 type failingNetworkProvider struct{}
