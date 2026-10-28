@@ -2267,7 +2267,8 @@ type sdkViewKey struct{}
 
 // contextWithSDKView records the API view of the module's source, the view
 // its SDK's generated code has, for values converted to its SDK's inputs
-// (SDKViewFromContext).
+// (SDKViewFromContext): the view of its engine version, capped at the
+// engine's (engine.ModuleAPIViewVersion), like ModuleSource.NamingView.
 func (mod *Module) contextWithSDKView(ctx context.Context) context.Context {
 	version := ""
 	switch {
@@ -2276,7 +2277,7 @@ func (mod *Module) contextWithSDKView(ctx context.Context) context.Context {
 	case mod.Source.Valid && mod.Source.Value.Self() != nil:
 		version = mod.Source.Value.Self().EngineVersion
 	}
-	view := engine.APIViewVersion(version)
+	view := engine.ModuleAPIViewVersion(version)
 	if !semver.IsValid(view) {
 		return ctx
 	}

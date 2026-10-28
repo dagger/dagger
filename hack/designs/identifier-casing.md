@@ -913,8 +913,9 @@ receiver's view:
 - enum leaves of query results, for the client's view;
 - core enum arguments passed into a module function, for the module's view
   (`CoreModEnum.ConvertToSDKInput`), the view of its `engineVersion` by
-  `engine.APIViewVersion`: a module that declares none gets the engine's own
-  view, and one whose version isn't semver counts as v0.11.9.
+  `engine.ModuleAPIViewVersion`: a module that declares none gets the engine's
+  own view, one declaring a version past the engine's gets the engine's view
+  too, and one whose version isn't semver counts as v0.11.9.
 
 **Guard tests.** `TestCoreSchemaGraphQLCasing` (`core/schema`) checks every
 type, field, argument, input field and enum value of the live schema's views
