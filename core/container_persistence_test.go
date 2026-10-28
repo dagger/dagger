@@ -356,6 +356,94 @@ func TestContainerPersistedPartsIgnorePendingAccessorSeeds(t *testing.T) {
 	require.Empty(t, links)
 }
 
+// A live container that never ran an exec computes its exec metadata as
+// absent; its encoding, and so the part probe, report that part complete.
+// Opening it on the demand path must agree instead of failing the call with
+// "final Container part execMeta has no descriptor". A part not yet computed
+// still has nothing to open.
+func TestContainerOpenLiveAbsentPart(t *testing.T) {
+	ctx := t.Context()
+	op := &containerPartsTestBaseOp{LazyState: NewLazyState()}
+	ctr := &Container{Lazy: op, FS: new(LazyAccessor[*Directory, *Container]), MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container])}
+	execMeta := dagql.PersistedPartAddress{Part: ContainerPartExecMeta}
+
+	require.NoError(t, op.EvaluateContainerGroup(ctx, ctr, ContainerLazyGroupMetadata))
+	require.ErrorContains(t, ctr.OpenPart(ctx, execMeta), "final Container part execMeta has no descriptor", "a part not yet computed is not absent")
+	_, set := ctr.MetaSnapshot.Peek()
+	require.False(t, set)
+
+	require.NoError(t, op.EvaluateContainerGroup(ctx, ctr, containerDelegationGroup(ContainerPartExecMeta)))
+	_, parts, _, err := ctr.encodeContainerPartsLocked(ctx, nil, op)
+	require.NoError(t, err)
+	require.Equal(t, containerPartAbsent, parts[ContainerPartExecMeta].Kind, "the probe reports this part complete")
+
+	require.NoError(t, ctr.OpenPart(ctx, execMeta))
+	meta, set := ctr.MetaSnapshot.Peek()
+	require.True(t, set)
+	require.Nil(t, meta)
+	require.NoError(t, ctr.OpenPart(ctx, execMeta), "an opened part opens again")
+	require.EqualValues(t, 1, op.execMetaRuns.Load(), "opening runs no body")
+}
+
+// The same mismatch through the cache's demand: a live container computes a
+// part absent, then an offer for another of its parts puts its row under part
+// acquisition, as a remote cache lookup does. Demanding the absent part probes
+// it complete and opens it, and the call must succeed, for the exec metadata
+// and for the filesystem.
+func TestContainerDemandLiveAbsentPart(t *testing.T) {
+	for _, test := range []struct {
+		absent, offered dagql.PartKey
+		kind            string
+	}{
+		{absent: ContainerPartExecMeta, offered: ContainerPartFS, kind: containerPartDirectory},
+		{absent: ContainerPartFS, offered: ContainerPartExecMeta, kind: containerPartSnapshot},
+	} {
+		t.Run(string(test.absent), func(t *testing.T) {
+			ctx, cache, srv, session := newContainerPartsTestCtx(t)
+			platform := Platform{OS: "linux", Architecture: "amd64"}
+			parentCtr := NewContainer(platform)
+			// Pending parent parts keep the final-delegation sweep from
+			// computing the offered part.
+			parentCtr.Lazy = &containerPartsTestBaseOp{LazyState: NewLazyState()}
+			parent := attachContainerPartsTestResult(t, ctx, cache, srv, session, "live-absent-parent", parentCtr)
+			ctr := NewContainer(platform)
+			op := &captureContainerGroupsOp{ContainerWithLabelLazy: ContainerWithLabelLazy{LazyState: NewLazyState(), Parent: parent, Name: "live", Value: "absent"}}
+			ctr.Lazy = op
+			// The recorded call names the recipe, as a real row's does, so the
+			// offer can route the row's parts.
+			res := attachTransferObject(t, ctx, cache, srv, session, "withLabel", ctr)
+			var runs atomic.Int32
+			op.body = func(_ *Container, group dagql.LazyGroupKey) {
+				if group == containerDelegationGroup(test.absent) {
+					runs.Add(1)
+				}
+			}
+			require.NoError(t, cache.EvaluateParts(ctx, res, ContainerPartMetadata, test.absent))
+			require.EqualValues(t, 1, runs.Load())
+
+			offer := dagql.PersistedPartOffer{Address: dagql.PersistedPartAddress{Part: test.offered}, Value: dagql.SnapshotValue{Kind: test.kind, Path: "/"}}
+			out, err := cache.OfferParts(ctx, res, []dagql.CloudPartOffer{{Offer: offer, CloudNumber: 1}})
+			require.NoError(t, err)
+			require.Equal(t, dagql.OfferAccepted, out[0].Outcome, "the offer puts the row under part acquisition")
+
+			require.NoError(t, cache.EvaluateParts(ctx, res, test.absent))
+			ctr = res.Self()
+			var set bool
+			if test.absent == ContainerPartFS {
+				var dir *Directory
+				dir, set = ctr.FS.Peek()
+				require.Nil(t, dir)
+			} else {
+				var meta bkcache.ImmutableRef
+				meta, set = ctr.MetaSnapshot.Peek()
+				require.Nil(t, meta)
+			}
+			require.True(t, set, "the part opened absent")
+			require.EqualValues(t, 1, runs.Load(), "opening runs no body")
+		})
+	}
+}
+
 func TestContainerPersistedJointOutputsSeedOriginalAndOpenIndependently(t *testing.T) {
 	manager := newContainerPersistenceTestSnapshots()
 	server := &cacheVolumeTestQueryServer{mockServer: &mockServer{}, cacheManager: manager}
