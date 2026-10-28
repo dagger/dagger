@@ -644,30 +644,15 @@ func main() { //nolint:gocyclo
 		// start serving on the listeners for actual clients
 		bklog.G(ctx).Debug("starting main engine api listeners")
 		srv.Register(grpcServer)
-		protocols := new(http.Protocols)
-		protocols.SetHTTP1(true)
-		protocols.SetUnencryptedHTTP2(true)
-		httpServer = &http.Server{
-			// NOTE: do NOT set ReadHeaderTimeout here (gosec G112). As of Go
-			// 1.26.6, net/http arms a connection-level read deadline from
-			// ReadHeaderTimeout *before* handing an unencrypted HTTP/2
-			// connection off to the HTTP/2 server, and the HTTP/2 server only
-			// disarms that deadline when ReadTimeout > 0. The result is a hard
-			// cap on connection lifetime: every client connection dies after
-			// ReadHeaderTimeout no matter how active it is, and since all of a
-			// client's streams share one h2 connection, any query outliving it
-			// fails with `Post "http://dagger/query": unexpected EOF`.
-			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("content-type"), "application/grpc") {
-					// The docs on grpcServer.ServeHTTP warn that some features are missing vs. serving fully "native" gRPC,
-					// but in practice it seems to work fine for us and only be relevant for some advanced features we don't use.
-					grpcServer.ServeHTTP(w, r)
-					return
-				}
-				srv.ServeHTTP(w, r)
-			}),
-			Protocols: protocols,
-		}
+		httpServer = newAPIServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("content-type"), "application/grpc") {
+				// The docs on grpcServer.ServeHTTP warn that some features are missing vs. serving fully "native" gRPC,
+				// but in practice it seems to work fine for us and only be relevant for some advanced features we don't use.
+				grpcServer.ServeHTTP(w, r)
+				return
+			}
+			srv.ServeHTTP(w, r)
+		}))
 		errCh := make(chan error, 1)
 		if err := serveAPI(bkcfg.GRPC, httpServer, errCh); err != nil {
 			return err
@@ -754,6 +739,25 @@ func main() { //nolint:gocyclo
 		}
 		fmt.Fprintf(os.Stderr, "dagger-engine: %+v\n", err)
 		os.Exit(1)
+	}
+}
+
+func newAPIServer(handler http.Handler) *http.Server {
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	protocols.SetUnencryptedHTTP2(true)
+	return &http.Server{
+		// NOTE: do NOT set ReadHeaderTimeout here (gosec G112). As of Go
+		// 1.26.6, net/http arms a connection-level read deadline from
+		// ReadHeaderTimeout *before* handing an unencrypted HTTP/2
+		// connection off to the HTTP/2 server, and the HTTP/2 server only
+		// disarms that deadline when ReadTimeout > 0. The result is a hard
+		// cap on connection lifetime: every client connection dies after
+		// ReadHeaderTimeout no matter how active it is, and since all of a
+		// client's streams share one h2 connection, any query outliving it
+		// fails with `Post "http://dagger/query": unexpected EOF`.
+		Handler:   handler,
+		Protocols: protocols,
 	}
 }
 
