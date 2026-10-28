@@ -3906,11 +3906,13 @@ OfferArrive(r, p) ==
 
 \* A demand that takes part acquisition first makes the row managed, in its
 \* own step: usesPartAcquisition sets gate.managed before the demand reaches
-\* TryAcquire, and other demands can run in between.
+\* TryAcquire, and other demands can run in between. It routes a decoded
+\* value only: usesPartAcquisition asks the typed value for its part host.
 EvalEnterAcquisition(e) ==
     /\ ModelOffers
     /\ evals[e].phase = "demand"
     /\ LET r == evals[e].target IN
+       /\ res[r].payload = "decoded"
        /\ ~res[r].managed
        /\ UsesAcquisition(res[r])
        /\ evals[e].curGroup = MappedGroup(res[r], evals[e].part)
@@ -3928,7 +3930,10 @@ EvalEnterAcquisition(e) ==
 \* retrying its bookkeeping (EvalStartAttempt, EvalJoin); otherwise an offer
 \* is installed, and its offer
 \* retires once the part settles, or with no offer the step re-runs. Both
-\* write the part (acquired). NativeGroupTaken is TryAcquire's check.
+\* write the part (acquired), and publishing it leaves the value a shell: a
+\* container installs its acquired output (PartTransferShell), and a file or
+\* directory drops its recipe (core/part_store.go), so no native body runs
+\* for it after. NativeGroupTaken is TryAcquire's check.
 EvalAcquire(e) ==
     /\ ModelOffers
     /\ evals[e].phase = "demand"
@@ -3947,7 +3952,8 @@ EvalAcquire(e) ==
           \/ /\ GroupParts(g) \cap res[r].nativeWrote = {}
              /\ (~TryAcquireGuard \/ ~NativeGroupTaken(res[r], g))
        /\ res' = [res EXCEPT ![r].acquired = IF done THEN @ ELSE @ \cup {p},
-                             ![r].offers = IF done THEN @ ELSE @ \ {p}]
+                             ![r].offers = IF done THEN @ ELSE @ \ {p},
+                             ![r].shell = @ \/ ~done]
        /\ evals' = [evals EXCEPT ![e].phase = "returnDone",
                                  ![e].foreignCancel = FALSE]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
