@@ -8,6 +8,7 @@ import (
 	"runtime/pprof"
 	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/sys/unix"
 
@@ -41,7 +42,18 @@ const (
 	// /proc/stat, which a container shares with its host: user (with nice),
 	// system (with interrupts), iowait, steal and idle, summed over its cores.
 	UsageScopeMachine = "machine"
+	// UsageScopeMachineSample is the machine, as UsageScopeMachine, over one
+	// stretch of the phase: read every machineSampleInterval while it runs,
+	// each reading covers the time since the phase's previous one (or its
+	// start), and its time is the stretch's end. The last stretch ends with
+	// the phase.
+	UsageScopeMachineSample = "machine_sample"
 )
+
+// machineSampleInterval is how often a profiled phase reads the machine's
+// CPU: fine enough to place a slow stretch of about a second, for one small
+// file read.
+const machineSampleInterval = 100 * time.Millisecond
 
 type engineCPU struct {
 	process, children wcprof.Usage
@@ -102,6 +114,45 @@ func parseMachineCPU(stat []byte) (wcprof.Usage, bool) {
 	}, true
 }
 
+// sampleMachine records the machine's CPU on the op opID every
+// machineSampleInterval, from the reading start, until the returned func is
+// called; that records the last stretch and returns once it's recorded.
+func sampleMachine(ctx context.Context, opID uint64, start wcprof.Usage) func() {
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		prev := start
+		sample := func() {
+			stat, err := os.ReadFile("/proc/stat")
+			if err != nil {
+				return
+			}
+			cur, ok := parseMachineCPU(stat)
+			if !ok {
+				return
+			}
+			wcprof.RecordUsage(ctx, opID, UsageScopeMachineSample, usageSince(prev, cur))
+			prev = cur
+		}
+		ticker := time.NewTicker(machineSampleInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				sample()
+			case <-stop:
+				sample()
+				return
+			}
+		}
+	}()
+	return func() {
+		close(stop)
+		<-done
+	}
+}
+
 func usageSince(start, end wcprof.Usage) wcprof.Usage {
 	return wcprof.Usage{
 		CPUUserUS:   end.CPUUserUS - start.CPUUserUS,
@@ -118,6 +169,9 @@ type phaseRun struct {
 	op    *wcprof.Op
 	start engineCPU
 	prof  *armedProfile
+	// stopSampling stops sampling the machine and waits for its last
+	// reading.
+	stopSampling func()
 }
 
 // beginSessionPhase starts a session's run of PhaseSession: when ctx is
@@ -128,6 +182,9 @@ func (srv *Server) beginSessionPhase(ctx context.Context, sessionID string) *pha
 	if wcprof.Enabled(ctx) {
 		p = &phaseRun{ctx: ctx, start: readEngineCPU()}
 		p.ctx, p.op = wcprof.BeginOp(ctx, wcprof.OpKindSessionPhase, PhaseSession, wcprof.OpOpts{Ident: sessionID})
+		if p.start.machineOK {
+			p.stopSampling = sampleMachine(p.ctx, p.op.ID(), p.start.machine)
+		}
 	}
 	if a := srv.startArmedProfile(PhaseSession); a != nil {
 		if p == nil {
@@ -150,6 +207,9 @@ func (p *phaseRun) end(srv *Server) {
 	}
 	if p.op == nil {
 		return
+	}
+	if p.stopSampling != nil {
+		p.stopSampling()
 	}
 	end := readEngineCPU()
 	id := p.op.ID()
