@@ -19,6 +19,17 @@ let withBoundedGoBuilds(ctr: Container!): Container! {
     .withEnvVariable("GOFLAGS", "-p=" + goBuildJobs)
 }
 
+# dagger-go-sdk-codegen asks the engine's naming API how to spell each
+# identifier for the schema's version.
+let withGoSdkCodegenCore(ctr: Container!): Container! {
+  ctr.withExec([
+    "dagger-go-sdk-codegen", "core",
+    "--output", "./core",
+    "--dag-output", "./dag",
+    "--introspection-json-path", "/schema.json",
+  ], experimentalPrivilegedNesting: true)
+}
+
 # Paths that a schema capture's engine commit may differ in from the
 # candidate: generated bindings, this module and Git metadata are not engine
 # inputs.
@@ -173,7 +184,7 @@ type GoClientDev {
       .module(ws: sdk, path: ".", findUp: false)
       .archives(ws: sdk, dependencies: true, packages: ["."], noTests: true)
     # A Go image: dagger-go-sdk-codegen finds sdk/go's module with the go command.
-    container
+    let ctr = container
       .from(golang.image(version: "1.27"))
       .withFile("/usr/local/bin/dagger-go-sdk-codegen", goSdkCodegen)
       .withFile("/usr/local/bin/export-driver", engine.exportDriver)
@@ -185,14 +196,7 @@ type GoClientDev {
       .withEnvVariable("GOLANGCI_EXPORT_COMPILE", "never")
       .withDirectory("/src", src)
       .withWorkdir("/src/" + sourcePath)
-      # dagger-go-sdk-codegen asks the engine's naming API how to spell each
-      # identifier for the schema's version.
-      .withExec([
-        "dagger-go-sdk-codegen", "core",
-        "--output", "./core",
-        "--dag-output", "./dag",
-        "--introspection-json-path", "/schema.json",
-      ], experimentalPrivilegedNesting: true)
+    withGoSdkCodegenCore(ctr)
       .directory("/src")
       .changes(src)
   }
@@ -300,23 +304,17 @@ type GoClientDev {
         generatorCommit,
       ))
       .withWorkdir("sdk/go")
-    let generateCore = [
-      "dagger-go-sdk-codegen", "core",
-      "--output", "./core",
-      "--dag-output", "./dag",
-      "--introspection-json-path", "/schema.json",
-    ]
     container
       .from(goSdkCodegenImage)
       .withMountedFile("/compare-codegen.sh", script)
       .withMountedDirectory("/capture", schemaCapture)
       .withMountedDirectory("/candidate", candidate.directory(sourcePath))
       .withMountedDirectory("/embedded", embedded)
-      .withMountedDirectory("/external", external.withExec(generateCore).directory("."))
+      .withMountedDirectory("/external", withGoSdkCodegenCore(external).directory("."))
       .withMountedDirectory(
         "/external-rerun",
         # a distinct exec, so the rerun does not hit the first run's cache
-        external.withEnvVariable("CODEGEN_RUN", "2").withExec(generateCore).directory("."),
+        withGoSdkCodegenCore(external.withEnvVariable("CODEGEN_RUN", "2")).directory("."),
       )
       .withEnvVariable("CANDIDATE_REF", sourceTag)
       .withEnvVariable("CANDIDATE_COMMIT", commit)
