@@ -1139,14 +1139,18 @@ converters, so none of them carries a copy.
 5. The core renames at the cut, enum values spelled for the receiver's view,
    Go codegen by `engine/naming`, and the in-repo clients regenerated
    (#14895).
+6. Manifest v2 entrypoint versions from `dang.toml`, with versionless
+   entrypoints pinned to the pre-cut view (see
+   [Module entrypoints](#module-entrypoints)).
 
-Steps 1 and 2 are merged; 3–5 are a stack of drafts. Not done:
+Steps 1 and 2 are merged; 3–6 are a stack of drafts. Not done:
 
 - deleting `strcase.ConfigureAcronym` in `core/llm.go` / `core/json.go` and
   the `withFinalTypeName` workaround, which wait on dropping modules below
   the cut;
-- pinning an entrypoint module's naming version, which waits on a manifest v2
-  signal (see [Module entrypoints](#module-entrypoints));
+- the SDK generators writing the `dang.toml` Dagger version into the
+  entrypoints they generate, so a regenerated entrypoint moves past the cut
+  (see [Module entrypoints](#module-entrypoints));
 - a version argument for `clientSchemaIntrospectionJson` (see
   [Accepted breaks](#accepted-breaks));
 - the Go module self-binding names (see the Known gaps under
