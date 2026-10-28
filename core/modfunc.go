@@ -183,6 +183,8 @@ func cachePolicyNever(spec dagql.FieldSpec) bool {
 func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]*FunctionCallArgValue, error) {
 	callInputs := make([]*FunctionCallArgValue, len(opts.Inputs))
 	hasArg := map[string]bool{}
+	// Core enum values are spelled as the module's own schema spells them.
+	ctx = fn.mod.Self().contextWithSDKView(ctx)
 
 	for i, input := range opts.Inputs {
 		arg, ok := fn.lookupArg(input.Name)
