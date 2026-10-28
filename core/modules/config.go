@@ -169,7 +169,7 @@ func parseLegacyModuleConfigJSON(src []byte) (*ModuleConfigWithUserFields, error
 
 func checkModuleConfigVersion(version string) error {
 	version = engine.NormalizeVersion(version)
-	if !engine.CheckMaxAPIViewCompatibility(version, engine.Version) {
+	if !engine.CheckMaxVersionCompatibility(version, engine.BaseVersion(engine.Version)) {
 		return fmt.Errorf("module requires dagger %s, but you have %s", version, engine.Version)
 	}
 	return nil

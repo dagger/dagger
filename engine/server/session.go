@@ -37,7 +37,6 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
-	"golang.org/x/mod/semver"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -1575,12 +1574,13 @@ func (srv *Server) initializeClientRuntime(
 	if err != nil {
 		return fmt.Errorf("failed to initialize core schema base: %w", err)
 	}
+	// A client's core view is that of the version it runs. A module client
+	// that declared its version (e.g. an SDK library announcing itself) is
+	// capped at the engine's view, like a module's engineVersion
+	// (ModuleAPIViewVersion): it runs inside a module this engine loaded.
 	coreView := call.View(engine.APIViewVersion(client.clientVersion))
 	if opts.ModuleContext.Self() != nil && client.clientMetadata.ClientVersionDeclared {
-		engineView := call.View(engine.APIViewVersion(engine.Version))
-		if semver.Compare(string(coreView), string(engineView)) > 0 {
-			coreView = engineView
-		}
+		coreView = call.View(engine.ModuleAPIViewVersion(client.clientVersion))
 	}
 	client.dag, err = coreSchemaBase.Fork(ctx, client.dagqlRoot, coreView)
 	if err != nil {
@@ -1607,9 +1607,12 @@ func (srv *Server) initializeClientRuntime(
 		}
 		client.mod = modInst
 
+		// A module client that didn't declare its version gets the core view
+		// of the module it calls from: its engineVersion, capped at the
+		// engine's view.
 		if !client.clientMetadata.ClientVersionDeclared {
 			engineVersion := client.mod.Self().Source.Value.Self().EngineVersion
-			coreView = call.View(engine.APIViewVersion(engineVersion))
+			coreView = call.View(engine.ModuleAPIViewVersion(engineVersion))
 			client.dag.View = coreView
 			coreMod = coreSchemaBase.CoreMod(coreView)
 		}

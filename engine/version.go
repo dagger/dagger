@@ -136,17 +136,13 @@ func CheckVersionCompatibility(version string, minVersion string) bool {
 	return semver.Compare(BaseVersion(version), BaseVersion(minVersion)) >= 0
 }
 
-// CheckMaxAPIViewCompatibility reports whether an engine at maxVersion serves
-// the API a module declaring version asks for: whether the module's API view
-// (APIViewVersion) is not past the engine's.
-//
-// It compares views, not base versions, so prereleases from
-// PrereleaseViewsVersion on are ordered: an engine at PrereleaseViewsVersion
-// refuses a module declaring a later prerelease, or v1.0.0, whose API it
-// doesn't have. Dev builds still share their release's view, so two dev
-// builds of a version accept each other's modules.
-func CheckMaxAPIViewCompatibility(version string, maxVersion string) bool {
-	return semver.Compare(APIViewVersion(version), APIViewVersion(maxVersion)) <= 0
+// CheckMaxVersionCompatibility reports whether version's base version is not
+// past maxVersion's. An engine refuses a module declaring a later base version
+// (e.g. v2.0.1 on v2.0.0). A later prerelease of the engine's own base
+// version, or the release itself, loads: ModuleAPIViewVersion caps its view
+// at the engine's.
+func CheckMaxVersionCompatibility(version string, maxVersion string) bool {
+	return semver.Compare(BaseVersion(version), BaseVersion(maxVersion)) <= 0
 }
 
 func NormalizeVersion(version string) string {
@@ -232,13 +228,32 @@ func APIViewVersion(version string) string {
 	}
 }
 
-// APIVersionAtLeast reports whether a client or module that declares
+// ModuleAPIViewVersion returns the API view for a module that declares
+// engineVersion version: its APIViewVersion, capped at the engine's own
+// (APIViewVersion(Version)). A module declaring a later prerelease than the
+// engine, or the release itself, loads and is served the engine's view, the
+// newest API the engine has; e.g. a v1.0.0-beta.22 engine serves a module
+// declaring v1.0.0 the v1.0.0-beta.22 view. A later base version is refused
+// before it gets a view (CheckMaxVersionCompatibility).
+//
+// Use it wherever a module's engineVersion becomes a view: its core schema,
+// its client sessions, and gates on its declared version (APIVersionAtLeast).
+// A module client that declares its own version is capped by it too.
+func ModuleAPIViewVersion(version string) string {
+	view := APIViewVersion(version)
+	if engineView := APIViewVersion(Version); semver.Compare(view, engineView) > 0 {
+		return engineView
+	}
+	return view
+}
+
+// APIVersionAtLeast reports whether a module that declares engineVersion
 // version gets the API of minVersion or later: whether its API view
-// (APIViewVersion) is at or past minVersion, comparing prereleases. It is a
-// view gate, AfterVersion(minVersion), for a declared version that is not
-// carried by a call, such as a module's engineVersion.
+// (ModuleAPIViewVersion) is at or past minVersion, comparing prereleases. It
+// is a view gate, AfterVersion(minVersion), for a module's declared version
+// where no call carries the view.
 func APIVersionAtLeast(version, minVersion string) bool {
-	return semver.Compare(APIViewVersion(version), minVersion) >= 0
+	return semver.Compare(ModuleAPIViewVersion(version), minVersion) >= 0
 }
 
 func BaseVersion(version string) string {
