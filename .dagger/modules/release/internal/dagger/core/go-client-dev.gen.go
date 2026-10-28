@@ -16,6 +16,7 @@ type GoClientDev struct { // go-client-dev (../../../../../../:0:0)
 	id             *ID
 	release        *Void
 	releaseDryRun  *Void
+	sourceDiffTest *Void
 	sourcePath     *string
 	test           *Void
 }
@@ -243,15 +244,25 @@ func (r *GoClientDev) ReleaseDryRun(ctx context.Context, opts ...GoClientDevRele
 
 // GoClientDevSchemaCaptureOpts contains options for GoClientDev.SchemaCapture
 type GoClientDevSchemaCaptureOpts struct {
+	//
+	// Git repository of the commit
+	//
+	SourceRepo *GitRepository // go-client-dev (../../../../../../:0:0)
+
 	Script *File // go-client-dev (../../../../../../:0:0)
 }
 
 // Introspect the dev engine, and record the engine image that answered: the
-// commit stamped into its dagger-engine binary, the binary's SHA-256 and the
-// digest of its root filesystem
+// commit stamped into its dagger-engine binary, the binary's SHA-256, the
+// digest of its root filesystem, and the manifest of the source it was built
+// from, which must have the content of the commit
 func (r *GoClientDev) SchemaCapture(commit string, opts ...GoClientDevSchemaCaptureOpts) *Directory { // go-client-dev (../../../../../../:0:0)
 	q := r.query.Select("schemaCapture")
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `sourceRepo` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SourceRepo) {
+			q = q.Arg("sourceRepo", opts[i].SourceRepo)
+		}
 		// `script` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Script) {
 			q = q.Arg("script", opts[i].Script)
@@ -270,6 +281,18 @@ func (r *GoClientDev) Source() *Directory { // go-client-dev (../../../../../../
 	return &Directory{
 		query: q,
 	}
+}
+
+// Check that comparing an engine source with its commit catches changed,
+// untracked and deleted engine inputs, and ignores Git metadata, modification
+// times and paths that engine-dev does not build from
+func (r *GoClientDev) SourceDiffTest(ctx context.Context) error { // go-client-dev (../../../../../../:0:0)
+	if r.sourceDiffTest != nil {
+		return nil
+	}
+	q := r.query.Select("sourceDiffTest")
+
+	return q.Execute(ctx)
 }
 
 // Path of the Go SDK source within the workspace
