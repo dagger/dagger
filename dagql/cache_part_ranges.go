@@ -71,9 +71,15 @@ func defaultPartRangeConfig() partRangeConfig {
 	}
 }
 
-// get requests bytes start to end of the blob at url. The stream's context
-// is canceled by its close, by ctx and by the idle bound.
+// get requests bytes start to end of the blob at url, once the provider's
+// bound on requests in flight has room. The stream's context is canceled by
+// its close, by ctx and by the idle bound; its close frees its place.
 func (p *partContentProvider) get(ctx context.Context, url string, start, end int64) (*partHTTPStream, *http.Response, error) {
+	if p.requests != nil {
+		if err := p.requests.Acquire(ctx, 1); err != nil {
+			return nil, nil, err
+		}
+	}
 	ctx, cancel := context.WithCancelCause(ctx)
 	if stats := p.stats; stats != nil {
 		ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{GotConn: func(info httptrace.GotConnInfo) {
@@ -83,6 +89,9 @@ func (p *partContentProvider) get(ctx context.Context, url string, start, end in
 		}})
 	}
 	stream := &partHTTPStream{ctx: ctx, cancel: cancel}
+	if p.requests != nil {
+		stream.release = func() { p.requests.Release(1) }
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		stream.close()
@@ -440,8 +449,12 @@ func (r *partRangeReader) work() {
 		idx := r.next
 		r.next++
 		r.taken++
+		last := r.next == r.chunks
 		c := r.chunkLocked(idx)
 		r.mu.Unlock()
+		if last {
+			r.provider.claimedBlob(r.desc.Digest)
+		}
 		data, err := r.fetch(idx)
 		c.data, c.err = data, err
 		close(c.done)
