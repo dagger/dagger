@@ -69,6 +69,45 @@ func TestPhaseRecordsEngineCPU(t *testing.T) {
 	require.GreaterOrEqual(t, total, int64(25_000), "50ms of the machine's time: %+v", machine)
 }
 
+// A profiled phase samples the machine's CPU while it runs: readings in time
+// order, each covering the stretch since the previous one, the last ending with
+// the phase, and none after it.
+func TestPhaseSamplesMachineCPU(t *testing.T) {
+	wcprof.EnsureRecorder()
+	ctx := wcprof.ContextWithProfiling(context.Background())
+	srv := &Server{}
+	p := srv.beginSessionPhase(ctx, "phase-sample-session")
+	require.NotNil(t, p)
+	time.Sleep(3*machineSampleInterval + machineSampleInterval/2)
+	p.end(srv)
+	time.Sleep(2 * machineSampleInterval)
+
+	var buf bytes.Buffer
+	require.NoError(t, wcprof.Active().WriteDump(&buf, false))
+	header, events, err := wcprof.ReadDump(&buf)
+	require.NoError(t, err)
+	var op wcprof.DumpEvent
+	for _, ev := range events {
+		if ev.Type == "op" && header.Strings[ev.ClassID] == PhaseSession && header.Strings[ev.IdentID] == "phase-sample-session" {
+			op = ev
+		}
+	}
+	require.NotZero(t, op.OpID, "no session phase op")
+	var samples []wcprof.DumpEvent
+	for _, ev := range events {
+		if ev.Type == wcprof.DumpTypeUsage && ev.OpID == op.OpID && header.Strings[ev.ClassID] == UsageScopeMachineSample {
+			samples = append(samples, ev)
+		}
+	}
+	require.GreaterOrEqual(t, len(samples), 3, "readings over about 3.5 intervals")
+	prev := op.StartNS
+	for _, s := range samples {
+		require.GreaterOrEqual(t, s.StartNS, prev, "readings out of order")
+		require.LessOrEqual(t, s.StartNS, op.EndNS, "a reading after the phase ended")
+		prev = s.StartNS
+	}
+}
+
 // The machine's CPU times come from /proc/stat's first line, in its 10 ms
 // ticks, with nice counted as user and interrupts as system.
 func TestParseMachineCPU(t *testing.T) {
