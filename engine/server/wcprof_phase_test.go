@@ -390,3 +390,42 @@ func TestPhaseSteps(t *testing.T) {
 	none.beginTeardown().beginStep("x").end()
 	(&phaseRun{}).beginTeardown().end()
 }
+
+// A profiled phase samples the engine's Go GC while it runs: the CPU its GC
+// used in each stretch, and its heap and scan sizes.
+func TestPhaseSamplesGoRuntime(t *testing.T) {
+	wcprof.EnsureRecorder()
+	ctx := wcprof.ContextWithProfiling(context.Background())
+	srv := &Server{}
+	p := srv.beginSessionPhase(ctx, "phase-gc-session")
+	require.NotNil(t, p)
+	var keep [][]byte
+	for range 5 {
+		keep = append(keep, make([]byte, 8<<20))
+		runtime.GC()
+		time.Sleep(machineSampleInterval)
+	}
+	p.end(srv)
+	runtime.KeepAlive(keep)
+
+	var buf bytes.Buffer
+	require.NoError(t, wcprof.Active().WriteDump(&buf, false))
+	header, events, err := wcprof.ReadDump(&buf)
+	require.NoError(t, err)
+	var samples []wcprof.DumpEvent
+	for _, ev := range events {
+		if ev.Type == wcprof.DumpTypeUsage && ev.OpID == p.op.ID() && header.Strings[ev.ClassID] == UsageScopeGoRuntimeSample {
+			samples = append(samples, ev)
+		}
+	}
+	require.GreaterOrEqual(t, len(samples), 2, "samples while it ran, and the last at its end")
+	var gcCPU int64
+	for _, s := range samples {
+		gcCPU += s.GCAssistUS + s.GCDedicatedUS + s.GCIdleUS + s.GCPauseUS
+		require.Positive(t, s.HeapGoalBytes, "%+v", s)
+		require.Positive(t, s.ScanStackBytes, "%+v", s)
+	}
+	require.Positive(t, gcCPU, "five forced GCs used no GC CPU: %+v", samples)
+	last := samples[len(samples)-1]
+	require.GreaterOrEqual(t, last.HeapLiveBytes, int64(40<<20), "40 MiB kept live: %+v", last)
+}
