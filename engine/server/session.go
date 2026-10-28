@@ -75,6 +75,9 @@ type daggerSession struct {
 	// archivePendingTitle is a title published before the archive existed.
 	archivePendingTitle pendingArchiveTitle
 	mainClientCallerID  string
+	// cloudClaimID is the Dagger Cloud claim the main client connected under,
+	// set when the session is initialized.
+	cloudClaimID string
 
 	// schemaBuilderMemo holds the schemas built for module dependency sets
 	// (e.g. a Module's Deps) by any of the session's clients. A function
@@ -1291,6 +1294,8 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	sess.beginClientScopeTeardown()
 	sess.beginClosing()
 	sess.endMainClientAttachables()
+	// The session counts as live until its teardown ends.
+	defer srv.sessionLedger.sessionEnded(sess.mainClientCallerID, sess.cloudClaimID)
 
 	// check if the local cache needs pruning after session is removed, prune if so
 	defer func() {
@@ -2345,6 +2350,7 @@ func (srv *Server) getOrInitClient(
 	// LAST step, after the main client record has been published — so observers
 	// never see initialized session resources without the root identity.
 	if sess.state.Load() == sessionStateUninitialized {
+		sess.cloudClaimID = opts.CloudClaimID
 		sess.state.Store(sessionStateInitialized)
 		// From here, removal ends the session's phase.
 		phaseCtx := context.Background()
@@ -2353,6 +2359,7 @@ func (srv *Server) getOrInitClient(
 			phaseCtx = wcprof.ContextWithProfiling(phaseCtx)
 		}
 		sess.phase = srv.beginSessionPhase(phaseCtx, sess.sessionID)
+		srv.sessionLedger.sessionStarted(sess.mainClientCallerID, sess.cloudClaimID)
 	}
 	if opts.requestLeaseOut != nil {
 		*opts.requestLeaseOut = requestLease
