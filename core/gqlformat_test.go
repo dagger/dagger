@@ -371,6 +371,46 @@ func TestModuleSourceNaming(t *testing.T) {
 	require.False(t, (&Module{}).Namer().Legacy(), "a module without a source is named by the latest rules")
 }
 
+// A module declaring a version past the engine's is served the engine's
+// view, and named by that view's rules: an engine at the cut names a module
+// declaring v1.0.0 or a later beta by engine/naming, and a pre-cut engine
+// names a module declaring the cut or v1.0.0 by strcase, the only rules it
+// has. Not parallel: it sets engine.Version.
+func TestModuleNamingCappedAtEngine(t *testing.T) {
+	oldVersion := engine.Version
+	t.Cleanup(func() { engine.Version = oldVersion })
+
+	for _, tc := range []struct {
+		engine, version string
+		view            string
+		legacy          bool
+	}{
+		{engine: cutVersion, version: "v1.0.0", view: cutVersion},
+		{engine: cutVersion, version: "v1.0.0-rc.1", view: cutVersion},
+		{engine: cutVersion, version: afterCutBeta, view: cutVersion},
+		{engine: cutVersion, version: cutVersion, view: cutVersion},
+		{engine: cutVersion, version: "v1.0.0-beta.19", view: preCutView, legacy: true},
+		{engine: preCutView, version: "v1.0.0", view: preCutView, legacy: true},
+		{engine: preCutView, version: cutVersion, view: preCutView, legacy: true},
+		{engine: preCutView, version: afterCutBeta, view: preCutView, legacy: true},
+		{engine: afterCutBeta, version: "v1.0.0", view: afterCutBeta},
+		{engine: afterCutBeta, version: cutVersion, view: cutVersion},
+	} {
+		engine.Version = tc.engine
+		msg := fmt.Sprintf("module at %s on engine %s", tc.version, tc.engine)
+		src := &ModuleSource{EngineVersion: tc.version}
+		require.Equal(t, call.View(tc.view), src.NamingView(), msg)
+		require.Equal(t, tc.legacy, src.Namer().Legacy(), msg)
+		require.Equal(t, tc.legacy, NamerForEngineVersion(tc.version).Legacy(), msg)
+		require.Equal(t, tc.legacy, (&Module{SourceOverrides: &SourceOverrides{EngineVersion: tc.version}}).Namer().Legacy(), msg)
+		wantType := "MyModHTTPClient"
+		if tc.legacy {
+			wantType = "MyModHttpClient"
+		}
+		require.Equal(t, wantType, src.Namer().NamespaceObject("HttpClient", "my-mod", "my-mod"), msg)
+	}
+}
+
 func TestNamerNames(t *testing.T) {
 	t.Parallel()
 
