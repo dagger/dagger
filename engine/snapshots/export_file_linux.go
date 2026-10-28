@@ -91,6 +91,32 @@ func (sr *immutableRef) ExportFileChain(ctx context.Context, refCfg config.RefCo
 	return committed.ExportChain(ctx, refCfg)
 }
 
+// OwnFileSize reports the size of the file at filePath in the snapshot when
+// the file travels as its own content, as ExportFileChain sends it: a regular
+// file reached through directories only. own is false for any other path,
+// whose export is the snapshot's whole chain.
+func (cm *snapshotManager) OwnFileSize(ctx context.Context, snapshotID, filePath string) (size int64, own bool, rerr error) {
+	opened, err := cm.GetBySnapshotID(ctx, snapshotID, NoUpdateLastUsed)
+	if err != nil {
+		return 0, false, err
+	}
+	defer func() { rerr = stderrors.Join(rerr, opened.Release(context.WithoutCancel(ctx))) }()
+	root, _, release, err := opened.(*immutableRef).MountShared(ctx)
+	if err != nil {
+		return 0, false, err
+	}
+	defer release()
+	filePath = path.Clean("/" + filePath)
+	if own, err := ownsItsContent(root, filePath); err != nil || !own {
+		return 0, false, err
+	}
+	info, err := os.Lstat(filepath.Join(root, filePath))
+	if err != nil {
+		return 0, false, err
+	}
+	return info.Size(), true, nil
+}
+
 // ownsItsContent reports whether the file at filePath under root can travel
 // as its own content: a regular file reached through directories only.
 func ownsItsContent(root, filePath string) (bool, error) {
