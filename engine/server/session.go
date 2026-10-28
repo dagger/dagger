@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	gqlgen "github.com/99designs/gqlgen/graphql"
 	"github.com/Khan/genqlient/graphql"
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/leases"
@@ -3066,7 +3067,17 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 		return gqlErr(fmt.Errorf("failed to get schema: %w", err), http.StatusBadRequest)
 	}
 
+	queryCtx := ctx
+	if profiling {
+		var queryOp *wcprof.Op
+		queryCtx, queryOp = wcprof.BeginOp(ctx, wcprof.OpKindSessionPhase, "session.query", wcprof.OpOpts{ClientID: client.clientID})
+		defer queryOp.End(wcprof.OutcomeOK)
+		r = r.WithContext(queryCtx)
+	}
+
+	_, handlerStep := dagql.BeginStep(queryCtx, "graphql.handler")
 	gqlSrv := schema.Handler()
+	handlerStep.End(nil)
 	// NB: break glass when needed, in dagql.NewDefaultHandler, since the handler is shared by
 	// every request to this schema:
 	// gqlSrv.AroundResponses(func(ctx context.Context, next graphql.ResponseHandler) *graphql.Response {
@@ -3076,13 +3087,19 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 	// 	return res
 	// })
 
-	if profiling {
-		queryCtx, queryOp := wcprof.BeginOp(ctx, wcprof.OpKindSessionPhase, "session.query", wcprof.OpOpts{ClientID: client.clientID})
-		defer queryOp.End(wcprof.OutcomeOK)
-		r = r.WithContext(queryCtx)
+	if !profiling {
+		gqlSrv.ServeHTTP(w, r)
+		return nil
 	}
-
+	// the response is written once its handler returns it
+	var written time.Time
+	gqlSrv.AroundResponses(func(ctx context.Context, next gqlgen.ResponseHandler) *gqlgen.Response {
+		res := next(ctx)
+		written = time.Now()
+		return res
+	})
 	gqlSrv.ServeHTTP(w, r)
+	dagql.RecordStep(queryCtx, "graphql.write", written, time.Now())
 	return nil
 }
 

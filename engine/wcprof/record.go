@@ -351,6 +351,16 @@ func NowNS() int64 {
 	return r.Now()
 }
 
+// TimeNS returns t as a recorder-relative timestamp, like NowNS, for an op
+// whose boundaries another library timed. 0 when profiling is disabled.
+func TimeNS(t time.Time) int64 {
+	r := Active()
+	if r == nil {
+		return 0
+	}
+	return int64(t.Sub(r.epoch))
+}
+
 // RecordOp records an already-completed op interval with explicit
 // timestamps (from NowNS). Useful when an op's boundaries are observed from
 // callbacks where holding an *Op handle would race. Returns the op ID, or 0

@@ -2,6 +2,7 @@ package dagql
 
 import (
 	"context"
+	"time"
 
 	"github.com/dagger/dagger/engine/wcprof"
 )
@@ -26,6 +27,27 @@ func BeginStep(ctx context.Context, name string) (context.Context, Step) {
 	}
 	ctx, op := wcprof.BeginOp(ctx, wcprof.OpKindInternal, name, wcprof.OpOpts{})
 	return ctx, Step{op: op}
+}
+
+// RecordStep records a step that already ran from start to end, timed by
+// someone else (such as gqlgen's own timings of a request), the same way
+// BeginStep does. Nothing can run under it.
+func RecordStep(ctx context.Context, name string, start, end time.Time) {
+	if !wcprof.Enabled(ctx) || start.IsZero() || end.IsZero() {
+		return
+	}
+	wcprof.RecordOp(ctx, wcprof.OpKindInternal, name, wcprof.OpOpts{}, wcprof.TimeNS(start), wcprof.TimeNS(end), wcprof.OutcomeOK)
+	if OTelProfActive(ctx) {
+		_, span := Tracer(ctx).Start(ctx, name,
+			telemetry.Passthrough(),
+			telemetry.Internal(),
+			trace.WithTimestamp(start),
+			trace.WithAttributes(
+				attribute.String(telemetryattrs.WcprofOpKindAttr, wcprof.OpKindInternal.String()),
+			),
+		)
+		span.End(trace.WithTimestamp(end))
+	}
 }
 
 // End ends the step, failed when err isn't nil.
