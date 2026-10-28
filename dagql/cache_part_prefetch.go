@@ -2,6 +2,8 @@ package dagql
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"maps"
 	"slices"
 	"sync"
@@ -79,8 +81,8 @@ type contentPrefetcher interface {
 }
 
 // chainAheadImporter is the snapshot manager's chain import, with which
-// prefetching unpacks an offered part's layers once all its blobs are held,
-// and its snapshots' own usage, which counts what that unpacked.
+// prefetching unpacks an offered part's layers as their blobs land, and its
+// snapshots' own usage, which counts what that unpacked.
 type chainAheadImporter interface {
 	ImportChain(ctx context.Context, chain *snapshots.ExportChain) (snapshots.ImmutableRef, error)
 	SnapshotUsage(ctx context.Context, snapshotID string) (int64, error)
@@ -103,10 +105,11 @@ func WithPartPrefetchRoom(room func(need int64) bool) CacheOption {
 // of its own until the offers naming it are gone, which an install's
 // settlement retires, until its TTL passes, or until the cache closes.
 //
-// Once every blob of an offer's chain is held for it, the chain is imported
-// into snapshots too, ahead of demand: the part's install then finds each
-// layer imported already and unpacks nothing. The import is held like a
-// blob, until the offer is gone, its TTL passes or the cache closes.
+// Once a blob of an offer's chain is held for it, the chain is imported into
+// snapshots too, ahead of demand, each layer as prefetching lands its blob:
+// the part's install then finds each layer imported already and unpacks
+// nothing. The import is held like a blob, until the offer is gone, its TTL
+// passes or the cache closes.
 type partPrefetcher struct {
 	cache    *Cache
 	cfg      partPrefetchConfig
@@ -134,6 +137,10 @@ type partPrefetcher struct {
 	holds map[digest.Digest]*partPrefetchHold
 	// fetching are the blobs running jobs download.
 	fetching map[digest.Digest]*partPrefetchDownload
+	// changed is closed, and replaced, whenever a blob is held, a download
+	// ends or a job's downloads may no longer come: imports ahead waiting
+	// for a blob look again.
+	changed chan struct{}
 	// dropped are holds taken out of holds, for the janitor to release.
 	dropped []*partPrefetchHold
 	// consumed are the blobs an install has pinned since, by when: a hold
@@ -184,7 +191,8 @@ type partPrefetchJob struct {
 	record   PersistedPartOffer
 	accepted time.Time
 	// gone is set once the offer is retired; cancel stops a running job;
-	// digests are the blobs a running job downloads.
+	// digests are the blobs a running job downloads, set once it registers
+	// them.
 	gone    bool
 	cancel  context.CancelFunc
 	digests []digest.Digest
@@ -235,7 +243,7 @@ func (c *Cache) partPrefetch(ctx context.Context) *partPrefetcher {
 		cfg = *c.partPrefetchConfig
 	}
 	base, cancel := context.WithCancel(context.Background())
-	p := &partPrefetcher{cache: c, cfg: cfg, snapshot: snapshot, importer: importer, ctx: base, cancel: cancel, logger: slog.FromContext(ctx), wake: make(chan struct{}, 1), jobs: map[partPrefetchJobKey]*partPrefetchJob{}, holds: map[digest.Digest]*partPrefetchHold{}, fetching: map[digest.Digest]*partPrefetchDownload{}, consumed: map[digest.Digest]time.Time{}, aheads: map[*partOffer]*partPrefetchAhead{}, rows: map[*partOffer]sharedResultID{}, aheadBytes: map[digest.Digest]int64{}}
+	p := &partPrefetcher{cache: c, cfg: cfg, snapshot: snapshot, importer: importer, ctx: base, cancel: cancel, logger: slog.FromContext(ctx), wake: make(chan struct{}, 1), jobs: map[partPrefetchJobKey]*partPrefetchJob{}, holds: map[digest.Digest]*partPrefetchHold{}, fetching: map[digest.Digest]*partPrefetchDownload{}, changed: make(chan struct{}), consumed: map[digest.Digest]time.Time{}, aheads: map[*partOffer]*partPrefetchAhead{}, rows: map[*partOffer]sharedResultID{}, aheadBytes: map[digest.Digest]int64{}}
 	p.cond = sync.NewCond(&p.mu)
 	p.wg.Add(cfg.workers + cfg.smallWorkers + 1)
 	for range cfg.workers {
@@ -325,6 +333,7 @@ func (c *Cache) partOfferAccepted(ctx context.Context, row *sharedResult, key st
 			dropped = append(dropped, queue[0])
 			p.queues[job.lane] = queue[1:]
 			delete(p.jobs, queue[0].jobKey())
+			p.changedLocked()
 		}
 		p.queues[job.lane] = append(p.queues[job.lane], job)
 		p.jobs[job.jobKey()] = job
@@ -390,6 +399,7 @@ func (p *partPrefetcher) goneLocked(offer *partOffer, next *partOffer, keep ...d
 	for job := range affected {
 		p.cancelUnwantedLocked(job)
 	}
+	p.changedLocked()
 	delete(p.rows, offer)
 	if a := p.aheads[offer]; a != nil {
 		p.dropAheadLocked(offer, a)
@@ -437,6 +447,12 @@ func (p *partPrefetcher) cancelUnwantedLocked(job *partPrefetchJob) {
 		}
 	}
 	job.cancel()
+}
+
+// changedLocked lets the imports ahead waiting for a blob look again.
+func (p *partPrefetcher) changedLocked() {
+	close(p.changed)
+	p.changed = make(chan struct{})
 }
 
 func (p *partPrefetcher) wakeLocked() {
@@ -590,6 +606,7 @@ func (p *partPrefetcher) work(lane partPrefetchLane) {
 		if key := job.jobKey(); p.jobs[key] == job {
 			delete(p.jobs, key)
 		}
+		p.changedLocked()
 		p.mu.Unlock()
 	}
 }
@@ -687,6 +704,8 @@ func (p *partPrefetcher) run(ctx context.Context, job *partPrefetchJob) {
 		p.fetching[desc.Digest] = &partPrefetchDownload{job: job, offers: map[*partOffer]struct{}{offer: {}}}
 		job.digests = append(job.digests, desc.Digest)
 	}
+	// A blob it skipped, its address expired, is no longer coming.
+	p.changedLocked()
 	p.mu.Unlock()
 	if !c.partPrefetchRoom(pending) {
 		p.mu.Lock()
@@ -695,6 +714,7 @@ func (p *partPrefetcher) run(ctx context.Context, job *partPrefetchJob) {
 		for _, desc := range wanted {
 			delete(p.fetching, desc.Digest)
 		}
+		p.changedLocked()
 		p.mu.Unlock()
 		p.log(job, "skipped_budget", 0, 0, time.Since(start), nil)
 		return
@@ -780,6 +800,7 @@ func (p *partPrefetcher) settle(job *partPrefetchJob, desc ocispecs.Descriptor, 
 		offers = download.offers
 	}
 	delete(p.fetching, desc.Digest)
+	p.changedLocked()
 	// The settled download may have been the last one an offer wanted.
 	p.cancelUnwantedLocked(job)
 	_, consumed := p.consumed[desc.Digest]
@@ -795,29 +816,29 @@ func (p *partPrefetcher) settle(job *partPrefetchJob, desc ocispecs.Descriptor, 
 	return nil
 }
 
-// checkAheadLocked starts importing offer's chain ahead of demand once every
-// one of its blobs is held for it, unless it is imported or importing
-// already. Requires p.mu.
+// checkAheadLocked starts importing offer's chain ahead of demand once one
+// of its blobs is held for it, unless it is imported or importing already.
+// Requires p.mu.
 func (p *partPrefetcher) checkAheadLocked(offer *partOffer) {
 	if p.importer == nil || p.closed || p.aheads[offer] != nil {
 		return
 	}
 	layers := offer.record.Chain.Layers
-	if len(layers) == 0 {
-		return
-	}
 	expires := time.Time{}
 	for _, layer := range layers {
 		h := p.holds[layer.Descriptor.Digest]
 		if h == nil {
-			return
+			continue
 		}
 		if _, ok := h.offers[offer]; !ok {
-			return
+			continue
 		}
 		if expires.IsZero() || h.expires.Before(expires) {
 			expires = h.expires
 		}
+	}
+	if expires.IsZero() {
+		return
 	}
 	ctx, cancel := context.WithCancel(p.ctx)
 	a := &partPrefetchAhead{cancel: cancel, expires: expires}
@@ -829,10 +850,12 @@ func (p *partPrefetcher) checkAheadLocked(offer *partOffer) {
 	go p.importAhead(ctx, offer, p.rows[offer], a)
 }
 
-// importAhead imports offer's chain from the held blobs, which unpacks each
-// layer the engine doesn't have yet, and keeps the import until a is
-// dropped. The engine's disk must have room for at least the chain's
-// compressed bytes, beyond the bytes running jobs have yet to write.
+// importAhead imports offer's chain, which unpacks each layer the engine
+// doesn't have yet as soon as its blob is held, and keeps the import until a
+// is dropped. It downloads nothing itself: a blob whose download isn't coming
+// for the offer leaves the chain to its install. The engine's disk must have
+// room for at least the chain's compressed bytes, beyond the bytes running
+// jobs have yet to write.
 func (p *partPrefetcher) importAhead(ctx context.Context, offer *partOffer, row sharedResultID, a *partPrefetchAhead) {
 	defer p.wg.Done()
 	start := time.Now()
@@ -853,9 +876,11 @@ func (p *partPrefetcher) importAhead(ctx context.Context, offer *partOffer, row 
 		applied  int
 	)
 	chain := &snapshots.ExportChain{
-		Layers:   record.Chain.Layers,
-		Provider: p.cache.PartContentSource().Provider(ctx, record, nil),
-		Timing:   &timing,
+		Layers: record.Chain.Layers,
+		Await: func(ctx context.Context, desc ocispecs.Descriptor) error {
+			return p.awaitBlob(ctx, a, desc)
+		},
+		Timing: &timing,
 		Applied: func(ctx context.Context, desc ocispecs.Descriptor, snapshotID string) {
 			size, err := p.importer.SnapshotUsage(ctx, snapshotID)
 			if err != nil {
@@ -878,7 +903,9 @@ func (p *partPrefetcher) importAhead(ctx context.Context, offer *partOffer, row 
 	if !p.cache.partPrefetchRoom(need) {
 		outcome = "skipped_budget"
 	} else {
-		if ref, err = p.importer.ImportChain(ctx, chain); err != nil {
+		if ref, err = p.importer.ImportChain(ctx, chain); errors.Is(err, errPartPrefetchNotComing) {
+			outcome = "not_prefetched"
+		} else if err != nil {
 			outcome = "error"
 		}
 	}
@@ -920,6 +947,54 @@ func (p *partPrefetcher) importAhead(ctx context.Context, offer *partOffer, row 
 		args = append(args, "error", err.Error())
 	}
 	p.logger.Info("remote cache part applied ahead", args...)
+}
+
+// errPartPrefetchNotComing stops an import ahead that needs a blob no
+// download is coming for.
+var errPartPrefetchNotComing = errors.New("no prefetch of the blob is coming")
+
+// awaitBlob waits until desc's blob is held, which puts it in the content
+// store, for a's import. It gives up once no download of it is coming for
+// a's offer: none runs for the offer, and the offer's job in desc's lane is
+// neither queued nor yet to register its downloads.
+func (p *partPrefetcher) awaitBlob(ctx context.Context, a *partPrefetchAhead, desc ocispecs.Descriptor) error {
+	for {
+		p.mu.Lock()
+		if p.holds[desc.Digest] != nil {
+			p.mu.Unlock()
+			return nil
+		}
+		coming := false
+		// Under whichever offer holds it now, as a replacement may have
+		// taken it over.
+		for offer, current := range p.aheads {
+			if current == a {
+				coming = p.comingLocked(offer, desc)
+			}
+		}
+		changed := p.changed
+		p.mu.Unlock()
+		if !coming {
+			return fmt.Errorf("%w: %s", errPartPrefetchNotComing, desc.Digest)
+		}
+		select {
+		case <-changed:
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		}
+	}
+}
+
+// comingLocked reports whether a download of desc's blob is coming for
+// offer. Requires p.mu.
+func (p *partPrefetcher) comingLocked(offer *partOffer, desc ocispecs.Descriptor) bool {
+	if download := p.fetching[desc.Digest]; download != nil {
+		if _, ok := download.offers[offer]; ok {
+			return true
+		}
+	}
+	job := p.jobs[partPrefetchJobKey{offer: offer, lane: p.cfg.lane(desc.Size)}]
+	return job != nil && !job.gone && job.digests == nil
 }
 
 // expire releases the holds whose offers are all gone or whose TTL passed.
