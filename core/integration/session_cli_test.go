@@ -646,6 +646,28 @@ func (SessionCLISuite) TestDetachKeepsProcessForHostDependencies(ctx context.Con
 	}
 }
 
+func (SessionCLISuite) TestNestedClientRefusesDetachAndSession(ctx context.Context, t *testctx.T) {
+	dir := detachWorkspace(t, 23466)
+
+	// A CLI under dagger run is a nested client of that command's session.
+	// It runs through sh, so that dagger run does not take its global flags.
+	nested := func(ctx context.Context, t *testctx.T, args string) ([]byte, error) {
+		return hostDaggerExec(ctx, t, dir, "run", "sh", "-c", daggerCliPath(t)+" "+args)
+	}
+
+	t.Run("detach", func(ctx context.Context, t *testctx.T) {
+		out, err := nested(ctx, t, "call --detach echo --msg hi")
+		require.Error(t, err)
+		require.Contains(t, string(out), "--detach is not supported inside another Dagger session")
+	})
+
+	t.Run("session", func(ctx context.Context, t *testctx.T) {
+		out, err := nested(ctx, t, "--session no-such-session call echo --msg hi")
+		require.Error(t, err)
+		require.Contains(t, string(out), "--session is not supported inside another Dagger session")
+	})
+}
+
 func (SessionCLISuite) TestStartNoForward(ctx context.Context, t *testctx.T) {
 	const port = 23465
 	dir := detachWorkspace(t, port)

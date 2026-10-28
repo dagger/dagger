@@ -285,6 +285,9 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 	params.Profile = profileFlag
 
 	if sessionFlag != "" {
+		if inNestedSession() {
+			return params, errors.New("--session is not supported inside another Dagger session (DAGGER_SESSION_PORT is set)")
+		}
 		params.SessionID = sessionFlag
 		params.JoinExistingSession = true
 	}

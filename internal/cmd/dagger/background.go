@@ -173,6 +173,9 @@ func finishBackground(err error, code int) {
 // runDetached starts the current command in the background and reports what
 // it says once it has started.
 func runDetached(out io.Writer) error {
+	if inNestedSession() {
+		return errors.New("--detach is not supported inside another Dagger session (DAGGER_SESSION_PORT is set)")
+	}
 	// Remove the --detach this command consumed. It comes before any
 	// function name, so it is the first one.
 	var args []string
@@ -222,6 +225,14 @@ func runDetached(out io.Writer) error {
 		}
 	}
 	return fmt.Errorf("background command exited before it started\nLog: %s", logPath)
+}
+
+// inNestedSession reports whether this process runs inside another client's
+// session, as under `dagger run` or in a container exec. Its client then joins
+// that session as a nested client, whatever session it asks for.
+func inNestedSession() bool {
+	_, ok := os.LookupEnv("DAGGER_SESSION_PORT")
+	return ok
 }
 
 // runsWithoutHost reports whether a call that returns returnType, and whose
