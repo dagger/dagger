@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/dagger/dagger/dagql"
@@ -122,6 +123,29 @@ func TestDangSchemaCacheIsolationAndRetry(t *testing.T) {
 	require.NoError(t, cache.WaitSessionRelease(ctx, "schema-test"))
 	require.Zero(t, cache.EntryStats().CompletedArbitrary, "decoded schemas must leave with their last session")
 	require.Zero(t, cache.EntryStats().OngoingArbitrary)
+}
+
+// Cache work can still be running when a test ends, and the test's cleanup
+// must wait for it: Go cancels t.Context before cleanups run, so closing the
+// cache with that context gave up on the work and failed the test.
+func TestSchemaCacheContextWaitsForWorkInFlight(t *testing.T) {
+	ctx := schemaCacheContext(t)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	go func() {
+		// Not t.Context: the read must stay in flight past the test's end.
+		_, _ = cachedDangSchema(context.WithoutCancel(ctx), "in-flight", func(context.Context) (*introspection.Schema, error) {
+			close(started)
+			<-release
+			return nil, errors.New("released")
+		})
+	}()
+	<-started
+	// Cleanups run last-registered first, so this one runs before
+	// schemaCacheContext's, which closes the cache with the read in flight.
+	t.Cleanup(func() {
+		time.AfterFunc(100*time.Millisecond, func() { close(release) })
+	})
 }
 
 type schemaCacheClient string
