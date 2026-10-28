@@ -81,6 +81,9 @@ type Opts struct {
 	ApparmorProfile     string
 	SELinux             bool
 	Entitlements        entitlements.Set
+	// OOMScoreAdj is every exec's OOM score, set so that the kernel kills an
+	// exec before the engine when memory runs out.
+	OOMScoreAdj int
 
 	HostMntNS  *os.File
 	CleanMntNS *os.File

@@ -293,6 +293,76 @@ func (EngineSuite) TestExecCgroupControllers(ctx context.Context, t *testctx.T) 
 	}
 }
 
+// When memory runs out, the kernel's OOM killer kills an exec before the
+// engine, whose death would end every session on it, including when the
+// engine was started with OOM protection, as in a Kubernetes Guaranteed pod.
+func (EngineSuite) TestExecOOMScoreAboveEngine(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	for _, tc := range []struct {
+		name       string
+		startScore string
+	}{
+		{"default start score", ""},
+		// Kubernetes gives every container of a Guaranteed pod -997.
+		{"protected start score", "-997"},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.W[*testing.T]) {
+			// Each runtime command the engine runs starts with the engine's
+			// OOM score; a wrapper around the runtime records it.
+			scores := core.NewQuery(c).CacheVolume("oom-scores-" + rand.Text())
+			devEngineSvc := devEngineContainerAsService(devEngineContainer(c, func(ctr *core.Container) *core.Container {
+				ctr = ctr.
+					WithMountedCache("/oom-scores", scores).
+					WithFile("/usr/local/bin/crun.real", ctr.File(distconsts.RuntimePath)).
+					WithNewFile(distconsts.RuntimePath, `#!/bin/sh
+cat /proc/self/oom_score_adj > /oom-scores/engine
+exec /usr/local/bin/crun.real "$@"
+`, core.ContainerWithNewFileOpts{Permissions: 0o755})
+				if tc.startScore == "" {
+					return ctr
+				}
+				entrypoint, err := ctr.Entrypoint(ctx)
+				require.NoError(t, err)
+				return ctr.WithEntrypoint(append([]string{"sh", "-c",
+					`echo ` + tc.startScore + ` > /proc/self/oom_score_adj && exec "$0" "$@"`,
+				}, entrypoint...))
+			}))
+			stdout, err := engineClientContainer(ctx, t, c, devEngineSvc).
+				WithExec([]string{"dagger", "query"}, core.ContainerWithExecOpts{
+					Stdin:                 `{container{from(address:"` + alpineImage + `"){withExec(args:["cat","/proc/self/oom_score_adj"]){stdout}}}}`,
+					DisableDaggerInDagger: true,
+				}).
+				Stdout(ctx)
+			require.NoError(t, err)
+			var res struct {
+				Container struct {
+					From struct {
+						WithExec struct {
+							Stdout string
+						}
+					}
+				}
+			}
+			require.NoError(t, json.Unmarshal([]byte(stdout), &res))
+			execScore, err := strconv.Atoi(strings.TrimSpace(res.Container.From.WithExec.Stdout))
+			require.NoError(t, err)
+
+			engineOut, err := core.NewQuery(c).Container().From(alpineImage).
+				WithMountedCache("/oom-scores", scores).
+				WithExec([]string{"cat", "/oom-scores/engine"}).
+				Stdout(ctx)
+			require.NoError(t, err)
+			engineScore, err := strconv.Atoi(strings.TrimSpace(engineOut))
+			require.NoError(t, err)
+
+			// -999 is the lowest score that leaves the engine killable.
+			require.Equal(t, -999, engineScore, "the engine's OOM score")
+			require.Equal(t, 0, execScore, "an exec's OOM score")
+		})
+	}
+}
+
 // Once an exec is done, its container is gone from the runtime, whether its
 // process succeeded, failed or couldn't start, and whether the runtime
 // removed it or the engine had to.
