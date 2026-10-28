@@ -1261,3 +1261,52 @@ func TestShutdownCloudFlushWaitsOnlyWhenTheTokenMayNeedRefresh(t *testing.T) {
 		}
 	})
 }
+
+func TestShutdownPreparesTokenWithoutWaitingForCloudUpload(t *testing.T) {
+	for _, expiry := range []time.Time{time.Now().Add(time.Second), time.Now().Add(-time.Second)} {
+		t.Run(expiry.String(), func(t *testing.T) {
+			sess := &daggerSession{cloudBound: cloudFlushBound{timeout: time.Second}}
+			sess.setCloudTokenExpiry(expiry)
+			refreshes := 0
+			handoff := &cloudTokenHandoff{refresh: func(context.Context) (*oauth2.Token, error) {
+				refreshes++
+				token := &oauth2.Token{AccessToken: "new-token", Expiry: time.Now().Add(time.Hour)}
+				sess.setCloudTokenExpiry(token.Expiry)
+				return token, nil
+			}}
+			sess.cloudPrepareToken = func(ctx context.Context) error { _, err := handoff.token(ctx); return err }
+			sess.cloudFlushers = []func(context.Context){func(context.Context) { t.Fatal("shutdown waited for Cloud upload") }}
+			sess.flushSessionCloudTelemetryForShutdown(t.Context())
+			require.Equal(t, 1, refreshes)
+			// Once the client is gone, the exporters use the exact prepared token.
+			handoff.refresh = func(context.Context) (*oauth2.Token, error) {
+				t.Fatal("refresh accessed the closed client")
+				return nil, nil
+			}
+			token, err := handoff.token(t.Context())
+			require.NoError(t, err)
+			require.Equal(t, "new-token", token.AccessToken)
+		})
+	}
+}
+
+func TestShutdownTokenPreparationFailureKeepsBoundedDrain(t *testing.T) {
+	sess := &daggerSession{cloudBound: cloudFlushBound{timeout: time.Second}}
+	sess.setCloudTokenExpiry(time.Now().Add(-time.Second))
+	sess.cloudPrepareToken = func(context.Context) error { return errors.New("refresh unavailable") }
+	drained := false
+	sess.cloudFlushers = []func(context.Context){func(context.Context) { drained = true }}
+	sess.flushSessionCloudTelemetryForShutdown(t.Context())
+	require.True(t, drained, "failed refresh must retain the existing final upload attempt")
+}
+
+func TestCloudTokenHandoffHonorsCanceledContext(t *testing.T) {
+	h := &cloudTokenHandoff{refresh: func(context.Context) (*oauth2.Token, error) {
+		t.Fatal("refresh started after cancellation")
+		return nil, nil
+	}}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, err := h.token(ctx)
+	require.ErrorIs(t, err, context.Canceled)
+}

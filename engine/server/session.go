@@ -186,7 +186,8 @@ type daggerSession struct {
 	cloudFlushers []func(context.Context)
 	// cloudRefresh admits OAuth token refreshes until the main client's
 	// shutdown starts.
-	cloudRefresh *cloudRefreshGate
+	cloudRefresh      *cloudRefreshGate
+	cloudPrepareToken func(context.Context) error
 	// cloudTokenExpiry is when the session's Cloud token expires, in Unix
 	// nanoseconds, or zero when it does not. Token refreshes update it.
 	cloudTokenExpiry atomic.Int64

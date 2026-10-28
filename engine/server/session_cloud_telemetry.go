@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -57,13 +58,15 @@ func (srv *Server) initializeSessionCloudTelemetry(sess *daggerSession, md *engi
 		return
 	}
 	sess.setCloudTokenExpiry(md.CloudAuth.Token.Expiry)
-	tokenRefresh := enginetel.BoundedTokenRefresh(func(ctx context.Context) (*oauth2.Token, error) {
+	handoff := &cloudTokenHandoff{refresh: func(ctx context.Context) (*oauth2.Token, error) {
 		token, err := srv.refreshSessionCloudToken(ctx, sess, md.CredentialsPath)
 		if err == nil && token != nil {
 			sess.setCloudTokenExpiry(token.Expiry)
 		}
 		return token, err
-	})
+	}}
+	sess.cloudPrepareToken = func(ctx context.Context) error { _, err := handoff.token(ctx); return err }
+	tokenRefresh := enginetel.BoundedTokenRefresh(handoff.token)
 	spans, logs, metrics, err := enginetel.NewCloudExporters(context.Background(), md.CloudAuth, tokenRefresh, md.CloudURL)
 	if err != nil {
 		slog.Warn("session telemetry not published to Cloud: cannot configure the Cloud exporters", "session", sess.sessionID, "error", err)
@@ -379,6 +382,13 @@ func (srv *Server) refreshSessionCloudToken(ctx context.Context, sess *daggerSes
 			return sess.engineUtilClient.ReplaceCallerHostFile(ctx, data, credentialsPath, 0o600)
 		},
 		refresh: func(ctx context.Context, token *oauth2.Token) (*oauth2.Token, error) {
+			// Shutdown may request refresh before the normal OAuth expiry
+			// margin, so the resulting access token can outlive the client.
+			if !token.Expiry.IsZero() && time.Until(token.Expiry) <= cloudTokenRefreshMargin {
+				copy := *token
+				copy.Expiry = time.Now().Add(-time.Second)
+				token = &copy
+			}
 			source, err := cloudauth.TokenSource(ctx, token)
 			if err != nil {
 				return nil, err
@@ -758,6 +768,13 @@ func (sess *daggerSession) cloudFlushCanOutliveClient(now time.Time) bool {
 // forwarder keeps publishing; the shutdown's FlushTelemetry barrier still
 // makes the client's telemetry durable in the local store.
 func (sess *daggerSession) flushSessionCloudTelemetryForShutdown(ctx context.Context) {
+	if !sess.cloudFlushCanOutliveClient(time.Now()) && sess.cloudPrepareToken != nil {
+		// Refresh and persist credentials while attachables still exist.
+		// Upload itself can then finish on the existing background forwarder.
+		sess.cloudBound.bounded(ctx, "prepare Cloud token for background upload", func(ctx context.Context) error {
+			return sess.cloudPrepareToken(ctx)
+		})
+	}
 	if !sess.cloudFlushCanOutliveClient(time.Now()) {
 		sess.flushSessionCloudTelemetry(ctx)
 	}
@@ -828,4 +845,42 @@ func (sess *daggerSession) postedMetricExporters(client sdkmetric.Exporter) []sd
 		return []sdkmetric.Exporter{client}
 	}
 	return []sdkmetric.Exporter{client, enginetel.SharedMetricExporter{Exporter: sess.cloudMetrics}}
+}
+
+// cloudTokenHandoff shares the prepared access token with all three exporters.
+// Refresh still reads and replaces the client's credential file before exit;
+// the engine retains only the resulting token, not the client's attachables.
+type cloudTokenHandoff struct {
+	cached   atomic.Pointer[oauth2.Token]
+	inflight singleflight.Group
+	refresh  func(context.Context) (*oauth2.Token, error)
+}
+
+func (h *cloudTokenHandoff) token(ctx context.Context) (*oauth2.Token, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, context.Cause(ctx)
+	}
+	if token := h.cached.Load(); token != nil && token.Valid() {
+		return token, nil
+	}
+	done := h.inflight.DoChan("refresh", func() (any, error) {
+		if token := h.cached.Load(); token != nil && token.Valid() {
+			return token, nil
+		}
+		token, err := h.refresh(ctx)
+		if err == nil && token != nil {
+			h.cached.Store(token)
+		}
+		return token, err
+	})
+	select {
+	case <-ctx.Done():
+		return nil, context.Cause(ctx)
+	case result := <-done:
+		if result.Err != nil {
+			return nil, result.Err
+		}
+		token, _ := result.Val.(*oauth2.Token)
+		return token, nil
+	}
 }
