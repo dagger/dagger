@@ -207,6 +207,24 @@ var expectedOutcome = map[string]string{
 	"persist_decline_adopt":    "DeclinedNeverPersisted",
 	"persist_decline_retire":   "DeclinedNeverPersisted",
 	"persist_decline_flush":    "DeclinedNeverPersisted",
+
+	// green: part sources. A merged row with no download address
+	// decodes armed and evaluates natively, as a restored row does; a row
+	// with an offer, or a shell, goes managed at a demand unless a native
+	// attempt is in flight, and stays managed. One writer per part. Each
+	// mutation drops one rule; each probe must reach its witness. See the
+	// config headers.
+	"part_sources_merge":                     "",
+	"part_sources_import":                    "",
+	"part_sources_late_offer_over_native":    "OnePartWriter",
+	"part_sources_not_sticky":                "OnePartWriter",
+	"part_sources_imported_predicate":        "ManagedOnlyWithSource",
+	"probe_part_sources_armed_native":        "ProbeArmedCloudNative",
+	"probe_part_sources_late_offer":          "ProbeLateOfferInstalled",
+	"probe_part_sources_shell":               "ProbeShellAcquired",
+	"probe_part_sources_armed_managed":       "ProbeArmedWithOfferManaged",
+	"part_sources_running_guard_off":         "NativeRunStaysNative",
+	"part_sources_tryacquire_guard_only_off": "OnePartWriter",
 }
 
 var clientExpectedOutcome = map[string]string{
