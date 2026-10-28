@@ -16,6 +16,13 @@ engine keeps the module context. A module client without a declaration keeps
 the module's view. Outside a module, the engine uses the announced view without
 a cap. Dependency modules keep their configured versions.
 
+A manifest v2 module (a `dagger-module.toml` with an `[entrypoint]` table) has
+no `engineVersion`: its version is the `[imports.Dagger] dagger` key of the
+`dang.toml` governing its entrypoint, and `v1.0.0-beta.20` without one, which
+lands on the shared pre-cut view below (see
+`future/module-manifest-v2/spec.md`, "Versions"). It then gets its view like
+any module.
+
 `engine.APIViewVersion` maps a declared version to its view:
 
 - Releases keep their own view (`v0.21.6`, `v1.0.0`). Build metadata is
