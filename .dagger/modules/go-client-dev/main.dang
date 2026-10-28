@@ -1,5 +1,49 @@
 pub description = "Toolchain to develop the Dagger Go SDK"
 
+let goSdkRemote = "https://github.com/dagger/go-sdk"
+
+# Move this pin only to a reviewed github.com/dagger/go-sdk commit for which
+# compareCodegen reports no difference: its dagger-go-sdk-codegen generates
+# the core bindings that the Go SDK releases.
+let goSdkCodegenCommit = "d4c37977dcc89b4950b46189b04b837fcd324125"
+
+let goSdkCodegenImage = "golang:1.26.1-alpine"
+
+# Go builds use every CPU by default; bound them so that generation and its
+# comparison stay light beside other work on a shared engine.
+let goBuildJobs = "2"
+
+let withBoundedGoBuilds(ctr: Container!): Container! {
+  ctr
+    .withEnvVariable("GOMAXPROCS", goBuildJobs)
+    .withEnvVariable("GOFLAGS", "-p=" + goBuildJobs)
+}
+
+# Paths that a schema capture's engine commit may differ in from the
+# candidate: generated bindings, this module and Git metadata are not engine
+# inputs.
+let schemaInputs(tree: Directory!): Directory! {
+  tree
+    .withoutDirectory(".git")
+    .withoutFile("sdk/go/core/core.gen.go")
+    .withoutFile("sdk/go/core/codecs.gen.go")
+    .withoutFile("sdk/go/dag/dag.gen.go")
+    .withoutDirectory(".dagger/modules/go-client-dev")
+}
+
+let buildGoSdkCodegen(repo: GitRepository!, commit: String!): File! {
+  withBoundedGoBuilds(container.from(goSdkCodegenImage))
+    .withEnvVariable("CGO_ENABLED", "0")
+    .withEnvVariable("GOTOOLCHAIN", "local")
+    .withMountedDirectory(
+      "/src",
+      repo.commit(commit).tree.directory("cmd/dagger-go-sdk-codegen"),
+    )
+    .withWorkdir("/src")
+    .withExec(["go", "build", "-mod=readonly", "-trimpath", "-o", "/out/dagger-go-sdk-codegen", "."])
+    .file("/out/dagger-go-sdk-codegen")
+}
+
 type GoClientDev {
   """
   Workspace with all the files needed to develop the SDK
@@ -53,6 +97,52 @@ type GoClientDev {
   }
 
   """
+  Build dagger-go-sdk-codegen at the pinned github.com/dagger/go-sdk commit
+  """
+  pub goSdkCodegen: File! {
+    buildGoSdkCodegen(git(goSdkRemote), goSdkCodegenCommit)
+  }
+
+  """
+  Introspect the API of the dev engine, as a JSON file
+  """
+  pub introspectionJson: File! {
+    devContainer
+      .withExec(["go", "-C", "../..", "run", "./cmd/codegen", "introspect", "-o", "/schema.json"])
+      .file("/schema.json")
+  }
+
+  """
+  Introspect the dev engine, and record the engine image that answered: the
+  commit stamped into its dagger-engine binary, the binary's SHA-256 and the
+  digest of its root filesystem
+  """
+  pub schemaCapture(
+    """
+    Commit that the dev engine's dagger-engine binary must be stamped with
+    """
+    commit: String!,
+    # Rooted at the context directory: dagger.toml loads go-client with
+    # legacy-default-path, which resolves a relative default from the
+    # workspace root, not from this module.
+    script: File! @defaultPath(path: "/.dagger/modules/go-client-dev/capture-schema.sh"),
+  ): Directory! {
+    # Service builds its engine with this same container call, so this is the
+    # image that introspectionJson queried.
+    let engine = engineDev(ws: self.ws).container
+    container
+      .from(goSdkCodegenImage)
+      .withFile("/capture/schema.json", introspectionJson)
+      .withNewFile("/capture/engine-rootfs.digest", engine.rootfs.digest + "\n")
+      .withNewFile("/capture/engine-commit", commit + "\n")
+      .withFile("/engine/dagger-engine", engine.file("/usr/local/bin/dagger-engine"))
+      .withMountedFile("/capture-schema.sh", script)
+      .withWorkdir("/capture")
+      .withExec(["sh", "/capture-schema.sh"])
+      .directory("/capture")
+  }
+
+  """
   Regenerate the Go SDK API
   """
   pub generate: Changeset! @generate {
@@ -90,6 +180,107 @@ type GoClientDev {
       sourcePath: sourcePath,
       callback: callback,
     )
+  }
+
+  """
+  Check that dagger-go-sdk-codegen generates the same core bindings as the
+  embedded cmd/codegen of a release candidate, from the same schema, and that
+  the candidate commits them
+  """
+  pub compareCodegen(
+    """
+    Git repository of the release candidate
+    """
+    sourceRepo: GitRepository! @defaultPath(path: "/"),
+    """
+    Git ref of the release candidate
+    """
+    sourceTag: String!,
+    """
+    Commit that sourceTag must resolve to
+    """
+    expectedCommit: String!,
+    """
+    schemaCapture of an engine built from the release candidate
+    """
+    schemaCapture: Directory!,
+    """
+    Git repository to build dagger-go-sdk-codegen from, instead of github.com/dagger/go-sdk
+    """
+    goSdkRepo: GitRepository = null,
+    """
+    Commit to build dagger-go-sdk-codegen from, instead of the pinned one
+    """
+    goSdkCommit: String = null,
+    # Rooted at the context directory, as in schemaCapture.
+    script: File! @defaultPath(path: "/.dagger/modules/go-client-dev/compare-codegen.sh"),
+  ): String! {
+    let commit = sourceRepo.ref(sourceTag).commit
+    if (commit != expectedCommit) {
+      raise sourceTag + " resolves to " + commit + ", not " + expectedCommit
+    }
+    let candidate = sourceRepo.commit(commit).tree
+    let engineCommit = schemaCapture.file("engine-commit").contents.trimSpace
+    let engineSource = if (engineCommit == commit) { "candidate" } else {
+      # Compare contents only: checkouts of different commits differ in
+      # metadata such as modification times.
+      let inputs = container
+        .from(goSdkCodegenImage)
+        .withMountedDirectory("/engine", schemaInputs(sourceRepo.commit(engineCommit).tree))
+        .withMountedDirectory("/candidate", schemaInputs(candidate))
+        .withExec(["diff", "-rq", "/engine", "/candidate"], expect: ReturnType.ANY)
+      if (inputs.exitCode != 0) {
+        raise "the schema comes from an engine at " + engineCommit + ", whose engine inputs differ from " + commit + ":\n" + inputs.stdout + inputs.stderr
+      }
+      "candidate with other generated bindings"
+    }
+    let generatorRepo = if (goSdkRepo == null) { git(goSdkRemote) } else { goSdkRepo }
+    let generatorRepoName = if (goSdkRepo == null) { goSdkRemote } else { "goSdkRepo argument" }
+    let generatorCommit = if (goSdkCommit == null) { goSdkCodegenCommit } else { goSdkCommit }
+    let env = withBoundedGoBuilds(go(ws: self.ws, source: candidate).env).withMountedFile(
+      "/schema.json",
+      schemaCapture.file("schema.json"),
+    )
+    let embedded = env
+      .withExec(["go", "build", "-o", "/usr/local/bin/codegen", "./cmd/codegen"])
+      .withExec([
+        "codegen", "generate-library",
+        "--output", "./sdk/go",
+        "--introspection-json-path", "/schema.json",
+      ])
+      .directory("sdk/go")
+    let external = env
+      .withFile("/usr/local/bin/dagger-go-sdk-codegen", buildGoSdkCodegen(
+        generatorRepo,
+        generatorCommit,
+      ))
+      .withWorkdir("sdk/go")
+    let generateCore = [
+      "dagger-go-sdk-codegen", "core",
+      "--output", "./core",
+      "--dag-output", "./dag",
+      "--introspection-json-path", "/schema.json",
+    ]
+    container
+      .from(goSdkCodegenImage)
+      .withMountedFile("/compare-codegen.sh", script)
+      .withMountedDirectory("/capture", schemaCapture)
+      .withMountedDirectory("/candidate", candidate.directory(sourcePath))
+      .withMountedDirectory("/embedded", embedded)
+      .withMountedDirectory("/external", external.withExec(generateCore).directory("."))
+      .withMountedDirectory(
+        "/external-rerun",
+        # a distinct exec, so the rerun does not hit the first run's cache
+        external.withEnvVariable("CODEGEN_RUN", "2").withExec(generateCore).directory("."),
+      )
+      .withEnvVariable("CANDIDATE_REF", sourceTag)
+      .withEnvVariable("CANDIDATE_COMMIT", commit)
+      .withEnvVariable("ENGINE_SOURCE", engineSource)
+      .withEnvVariable("GENERATOR_REPO", generatorRepoName)
+      .withEnvVariable("GENERATOR_COMMIT", generatorCommit)
+      .withEnvVariable("PINNED_GENERATOR_COMMIT", goSdkCodegenCommit)
+      .withExec(["sh", "/compare-codegen.sh"])
+      .stdout
   }
 
   """
