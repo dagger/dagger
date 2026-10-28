@@ -78,30 +78,39 @@ func TestPhaseSamplesMachineCPU(t *testing.T) {
 	srv := &Server{}
 	p := srv.beginSessionPhase(ctx, "phase-sample-session")
 	require.NotNil(t, p)
-	time.Sleep(3*machineSampleInterval + machineSampleInterval/2)
+	samples := func() (wcprof.DumpEvent, []wcprof.DumpEvent) {
+		var buf bytes.Buffer
+		require.NoError(t, wcprof.Active().WriteDump(&buf, false))
+		header, events, err := wcprof.ReadDump(&buf)
+		require.NoError(t, err)
+		var op wcprof.DumpEvent
+		var got []wcprof.DumpEvent
+		for _, ev := range events {
+			switch {
+			case ev.Type == "op" && ev.OpID == p.op.ID():
+				op = ev
+			case ev.Type == wcprof.DumpTypeUsage && ev.OpID == p.op.ID() && header.Strings[ev.ClassID] == UsageScopeMachineSample:
+				got = append(got, ev)
+			}
+		}
+		return op, got
+	}
+	for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(machineSampleInterval) {
+		if _, got := samples(); len(got) >= 2 {
+			break
+		}
+		require.True(t, time.Now().Before(deadline), "the running phase took no readings")
+	}
 	p.end(srv)
+	op, got := samples()
 	time.Sleep(2 * machineSampleInterval)
+	_, after := samples()
+	require.Len(t, after, len(got), "readings after the phase ended")
 
-	var buf bytes.Buffer
-	require.NoError(t, wcprof.Active().WriteDump(&buf, false))
-	header, events, err := wcprof.ReadDump(&buf)
-	require.NoError(t, err)
-	var op wcprof.DumpEvent
-	for _, ev := range events {
-		if ev.Type == "op" && header.Strings[ev.ClassID] == PhaseSession && header.Strings[ev.IdentID] == "phase-sample-session" {
-			op = ev
-		}
-	}
 	require.NotZero(t, op.OpID, "no session phase op")
-	var samples []wcprof.DumpEvent
-	for _, ev := range events {
-		if ev.Type == wcprof.DumpTypeUsage && ev.OpID == op.OpID && header.Strings[ev.ClassID] == UsageScopeMachineSample {
-			samples = append(samples, ev)
-		}
-	}
-	require.GreaterOrEqual(t, len(samples), 3, "readings over about 3.5 intervals")
+	require.GreaterOrEqual(t, len(got), 3, "readings while it ran, and the last at its end")
 	prev := op.StartNS
-	for _, s := range samples {
+	for _, s := range got {
 		require.GreaterOrEqual(t, s.StartNS, prev, "readings out of order")
 		require.LessOrEqual(t, s.StartNS, op.EndNS, "a reading after the phase ended")
 		prev = s.StartNS
