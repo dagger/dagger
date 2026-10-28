@@ -1071,7 +1071,8 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	// it) as each phase begins and ends, so an engine killed in a phase, or
 	// between two, leaves a dump that shows where.
 	stopCtx, stopOp := wcprof.BeginOp(context.WithoutCancel(ctx), wcprof.OpKindInternal, "engine.stop", wcprof.OpOpts{})
-	stopPhase := func(name string, fn func()) {
+	// stopPhaseOutcome is stopPhase for a phase that says how it ended.
+	stopPhaseOutcome := func(name string, fn func() wcprof.Outcome) {
 		slog.Debug("graceful stop phase starting", "phase", name)
 		_, phaseOp := wcprof.BeginOp(stopCtx, wcprof.OpKindInternal, "engine.stop."+name, wcprof.OpOpts{})
 		srv.requestStopDump()
@@ -1082,11 +1083,17 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 			slog.Warn("graceful stop phase is slow", "phase", name, "elapsed", time.Since(start),
 				"threads", engineutil.DescribeUninterruptibleThreads("/proc/self"))
 		})
-		fn()
+		outcome := fn()
 		slow.Stop()
-		phaseOp.End(wcprof.OutcomeOK)
+		phaseOp.End(outcome)
 		srv.requestStopDump()
 		slog.Info("graceful stop phase done", "phase", name, "duration", time.Since(start))
+	}
+	stopPhase := func(name string, fn func()) {
+		stopPhaseOutcome(name, func() wcprof.Outcome {
+			fn()
+			return wcprof.OutcomeOK
+		})
 	}
 	defer func() {
 		stopOp.EndErr(err)
@@ -1108,10 +1115,15 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 
 	// Decide the integration's stop outcome before draining sessions or closing
 	// the cache, and join Run outside gcmu and every cache lock. A failed stop
-	// keeps the cache checkpoint dirty and is returned.
+	// keeps the cache checkpoint dirty and is returned. The phase ends
+	// canceled when the drain cut exports off.
 	var adapterStopErr error
-	stopPhase("stop remote cache integration", func() {
+	stopPhaseOutcome("stop remote cache integration", func() wcprof.Outcome {
 		adapterStopErr = srv.stopRemoteCacheIntegration(ctx)
+		if srv.remoteCacheExportsCut() {
+			return wcprof.OutcomeCanceled
+		}
+		return wcprof.OutcomeOK
 	})
 	if adapterStopErr != nil {
 		slog.Error("failed to stop remote cache integration", "error", adapterStopErr)
