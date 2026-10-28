@@ -43,6 +43,9 @@ type session struct {
 	uploadSlots chan struct{}
 	// lookupSlots bounds the lookups unanswered.
 	lookupSlots chan struct{}
+	// opened is the last idle period the service was told of, in the hello
+	// or an open. Only hello and then settles use it.
+	opened uint64
 
 	mu sync.Mutex
 	// pending are the engine's requests waiting for their replies, by ID.
@@ -80,6 +83,7 @@ func (s *session) serve() (bool, error) {
 	s.go_(s.ping)
 	s.go_(s.renewals)
 	s.go_(s.lookups)
+	s.go_(s.settles)
 	<-s.ctx.Done()
 	return true, context.Cause(s.ctx)
 }
@@ -102,6 +106,8 @@ func (s *session) go_(f func()) {
 
 func (s *session) hello() error {
 	cacheID, generation := s.adapter.CacheIdentity()
+	settle, _ := s.adapter.SettleState()
+	s.opened = settle.Period
 	ctx, cancel := context.WithTimeout(s.ctx, helloTimeout)
 	defer cancel()
 	reply, err := s.request(ctx, protocol.TypeHello, protocol.Hello{
@@ -109,6 +115,8 @@ func (s *session) hello() error {
 		Generation:    generation,
 		EngineVersion: s.cfg.EngineVersion,
 		EngineName:    s.cfg.EngineName,
+		Period:        settle.Period,
+		Settled:       settle.Settled && !settle.Live,
 	})
 	if err != nil {
 		return fmt.Errorf("hello: %w", err)
@@ -177,6 +185,80 @@ func (s *session) dispatchBody(env protocol.Envelope, body any) {
 	default:
 		s.go_(func() { s.replyError(env, fmt.Errorf("unexpected request %q", env.Type)) })
 	}
+}
+
+// settles tells the service of each new idle period at once (open), and,
+// once no session is live, asks it to settle, until the connection ends. A
+// settle is abandoned when its period ends or the engine gives up on it.
+func (s *session) settles() {
+	for s.ctx.Err() == nil {
+		state, changed := s.adapter.SettleState()
+		switch {
+		case state.Period > s.opened:
+			if _, err := s.request(s.ctx, protocol.TypeOpen, protocol.Open{Period: state.Period}); err != nil {
+				if s.ctx.Err() != nil {
+					return
+				}
+				s.cfg.Logger.Warn("remote cache: open failed", "period", state.Period, "error", err)
+			}
+			s.opened = state.Period
+			continue
+		case state.settling():
+			s.settle(state)
+			continue
+		}
+		select {
+		case <-changed:
+		case <-s.ctx.Done():
+			return
+		}
+	}
+}
+
+// settle asks the service to settle state's period, and records its Settled.
+// It returns once the service answers, or the period ends, or the engine
+// gives up on it.
+func (s *session) settle(state SettleState) {
+	ctx, cancel := context.WithCancel(s.ctx)
+	defer cancel()
+	go func() {
+		for {
+			current, changed := s.adapter.SettleState()
+			if current.Period != state.Period || !current.settling() {
+				cancel()
+				return
+			}
+			select {
+			case <-changed:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	reply, err := s.request(ctx, protocol.TypeSettle, protocol.Settle{Period: state.Period, Sessions: state.Sessions})
+	switch {
+	case err == nil && reply.Type == protocol.TypeSettled:
+		s.adapter.Settled(state.Period, state.Sessions)
+		return
+	case ctx.Err() != nil:
+		// Abandoned: the next state says what to do.
+		return
+	case reply.Type == protocol.TypeError && isStaleSettle(reply):
+		// The service has a later period; the engine's open for it is on its way.
+	default:
+		s.cfg.Logger.Warn("remote cache: settle failed", "period", state.Period, "error", err)
+	}
+	// Ask again only once something changes.
+	_, changed := s.adapter.SettleState()
+	select {
+	case <-changed:
+	case <-ctx.Done():
+	}
+}
+
+func isStaleSettle(reply protocol.Envelope) bool {
+	var e protocol.Error
+	return reply.Decode(&e) == nil && e.Message == protocol.StaleSettle
 }
 
 // ping checks the connection every PingInterval, and ends the session on a
