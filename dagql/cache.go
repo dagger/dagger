@@ -6978,6 +6978,19 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 				unindexed = true
 				break
 			}
+			// Indexing reads the adopted entry's frame's recipe digest under
+			// egraphMu. A frame stored by another path, such as the copy of
+			// the request frame a null row gets, may not have it yet:
+			// deriving it resolves inputs under egraphMu, so it is derived
+			// with the lock released, and the decision is made again.
+			if frame := cur.loadResultCall(); frame != nil {
+				if _, derived, _ := frame.derivedRecipeDigest(); !derived {
+					c.egraphMu.Unlock()
+					_, _ = frame.deriveRecipeDigest(c) // a failure is kept on the frame, and indexing returns it
+					c.egraphMu.Lock()
+					continue
+				}
+			}
 			// The adopted entry's handoff hold is taken in this critical
 			// section, as the cache-backed adoption above does.
 			discardedValue = oc.res.onRelease

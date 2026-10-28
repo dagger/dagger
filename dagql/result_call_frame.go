@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"sync"
+	"sync/atomic"
 
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/opencontainers/go-digest"
@@ -225,6 +226,9 @@ type ResultCall struct {
 	recipeDigestOnce sync.Once
 	recipeDigestErr  error
 	recipeDigest     digest.Digest
+	// recipeDigestDerived is set once recipeDigest and recipeDigestErr are,
+	// so that derivedRecipeDigest can read them without deriving them.
+	recipeDigestDerived atomic.Bool
 
 	// contentPreferredDigest is memoized once the frame has reached its
 	// finalized semantic shape. Do not mutate the frame after calling
@@ -863,8 +867,23 @@ func (frame *ResultCall) recipeDigestWithVisiting(c *Cache, visiting map[sharedR
 		frame.recipeDigest, frame.recipeDigestErr = frame.digestWithInputs(func(ref *ResultCallRef) (digest.Digest, error) {
 			return recipeDigestForResultCallRef(c, ref, visiting)
 		})
+		frame.recipeDigestDerived.Store(true)
 	})
 	return frame.recipeDigest, frame.recipeDigestErr
+}
+
+// derivedRecipeDigest returns the frame's recipe digest, or the error
+// deriving it gave, and whether it has been derived. It never derives it, so
+// a caller holding the cache's graph lock can call it: deriving resolves an
+// input known only by its result ID under that lock.
+func (frame *ResultCall) derivedRecipeDigest() (digest.Digest, bool, error) {
+	if frame == nil {
+		return "", true, nil
+	}
+	if !frame.recipeDigestDerived.Load() {
+		return "", false, nil
+	}
+	return frame.recipeDigest, true, frame.recipeDigestErr
 }
 
 // Share the byte encoding so content-free graphs have exactly recipe identity.
