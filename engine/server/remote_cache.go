@@ -52,6 +52,9 @@ type RemoteCacheAdapter struct {
 	runDone  chan struct{}
 	stopOnce sync.Once
 	stopErr  error
+	// exportsCut is set by Stop when its drain cut exports off at the
+	// drain's deadline.
+	exportsCut bool
 	// mergeValues is the cache's MergeValues. A test replaces it to return a
 	// committed reply with a release error.
 	mergeValues func(context.Context, dagql.CacheID, dagql.ValueBundle) (dagql.MergeReply, error)
@@ -208,7 +211,7 @@ func (a *RemoteCacheAdapter) close(cause error) {
 // result. A Run that ignores cancellation is reported, not terminated.
 func (a *RemoteCacheAdapter) Stop(ctx context.Context) error {
 	a.stopOnce.Do(func() {
-		a.drainExports(ctx)
+		a.exportsCut = !a.drainExports(ctx)
 		a.close(errServerShuttingDown)
 		// A Run that has already returned has stopped, whatever ctx says.
 		select {
@@ -226,8 +229,9 @@ func (a *RemoteCacheAdapter) Stop(ctx context.Context) error {
 }
 
 // drainExports stops lookups and waits until no export is in progress, then
-// refuses later ones; or it gives up at ctx's deadline less stopReserve.
-func (a *RemoteCacheAdapter) drainExports(ctx context.Context) {
+// refuses later ones; or it gives up at ctx's deadline less stopReserve. It
+// reports whether the exports finished.
+func (a *RemoteCacheAdapter) drainExports(ctx context.Context) bool {
 	a.StopLookups()
 	if deadline, ok := ctx.Deadline(); ok {
 		var cancel context.CancelFunc
@@ -237,9 +241,10 @@ func (a *RemoteCacheAdapter) drainExports(ctx context.Context) {
 	start := time.Now()
 	if err := a.exports.closeWhenIdle(ctx); err != nil {
 		slog.Warn("remote cache exports did not finish before the engine stopped", "waited", time.Since(start), "error", err)
-		return
+		return false
 	}
 	slog.Info("remote cache exports finished before the engine stopped", "waited", time.Since(start))
+	return true
 }
 
 // startRemoteCacheIntegration attaches the bridge and starts Run for a newly
@@ -281,6 +286,12 @@ func (srv *Server) stopRemoteCacheIntegration(ctx context.Context) error {
 		return nil
 	}
 	return srv.remoteCacheAdapter.Stop(ctx)
+}
+
+// remoteCacheExportsCut reports whether the integration's stop cut exports
+// off at its drain's deadline.
+func (srv *Server) remoteCacheExportsCut() bool {
+	return srv.remoteCacheAdapter != nil && srv.remoteCacheAdapter.exportsCut
 }
 
 func validateRemoteCacheIntegration(cfg *RemoteCacheIntegrationConfig) error {
