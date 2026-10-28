@@ -916,7 +916,12 @@ receiver's view:
   (`CoreModEnum.ConvertToSDKInput`), the view of its `engineVersion` by
   `engine.ModuleAPIViewVersion`: a module that declares none gets the engine's
   own view, one declaring a version past the engine's gets the engine's view
-  too, and one whose version isn't semver counts as v0.11.9.
+  too, and one whose version isn't semver counts as v0.11.9. A module whose
+  runtime client declares its own version (`DAGGER_CLIENT_VERSION`) still
+  gets them spelled for that view, not the declared client's: the engine
+  converts them before the runtime connects. Every spelling decodes in every
+  view, so only code comparing the raw value with its SDK's constant can
+  tell.
 
 **Guard tests.** `TestCoreSchemaGraphQLCasing` (`core/schema`) checks every
 type, field, argument, input field and enum value of the live schema's views
