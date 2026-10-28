@@ -152,6 +152,69 @@ func TestImportChainOverlayAppliesEachLayerAsItsBlobArrives(t *testing.T) {
 	require.EqualValues(t, 2, consumer.Applies.Load())
 }
 
+// A layer that waits for its blob stops waiting once another import of the
+// chain has imported it. That import never waits behind the later layers
+// the waiting import applied and holds until their ordered commit: both
+// finish, and each layer is applied once.
+func TestImportChainOverlayAwaitEndsOnceAnotherImportHasTheLayer(t *testing.T) {
+	t.Parallel()
+	producer, consumer := testutil.NewStore(t), testutil.NewOverlayStore(t)
+	chain := layeredChain(t, producer, "layer", 2)
+	first, last := chain.Layers[0].Descriptor, chain.Layers[1].Descriptor
+	lastApplied := make(chan struct{})
+	var once sync.Once
+	consumer.BeforeApply = func(_ context.Context, desc ocispecs.Descriptor) error {
+		if desc.Digest == last.Digest {
+			once.Do(func() { close(lastApplied) })
+		}
+		return nil
+	}
+	// The first layer's blob never arrives by Await.
+	await := func(ctx context.Context, desc ocispecs.Descriptor) error {
+		if desc.Digest == first.Digest {
+			<-ctx.Done()
+			return context.Cause(ctx)
+		}
+		data, err := content.ReadBlob(ctx, chain.Provider, desc)
+		if err != nil {
+			return err
+		}
+		return content.WriteBlob(ctx, consumer.Content, "awaited-"+desc.Digest.Encoded(), bytes.NewReader(data), desc)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	type imported struct {
+		ref bkcache.ImmutableRef
+		err error
+	}
+	waiting := make(chan imported, 1)
+	go func() {
+		ref, err := consumer.Manager.ImportChain(ctx, &bkcache.ExportChain{Layers: chain.Layers, Await: await})
+		waiting <- imported{ref, err}
+	}()
+	select {
+	case <-lastApplied:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the last layer did not apply while the first one's blob was awaited")
+	}
+	supplying := make(chan imported, 1)
+	go func() {
+		ref, err := consumer.Manager.ImportChain(ctx, supplied(chain, chain.Provider))
+		supplying <- imported{ref, err}
+	}()
+	for name, ch := range map[string]chan imported{"the supplied import": supplying, "the waiting import": waiting} {
+		select {
+		case got := <-ch:
+			require.NoError(t, got.err, name)
+			t.Cleanup(func() { require.NoError(t, got.ref.Release(context.Background())) })
+			require.Equal(t, map[string]string{"layer-00.txt": "file 640 layer 0", "layer-01.txt": "file 640 layer 1"}, testutil.OverlayTree(t, got.ref), name)
+		case <-time.After(10 * time.Second):
+			t.Fatalf("%s did not finish", name)
+		}
+	}
+	require.EqualValues(t, 2, consumer.Applies.Load(), "each layer is applied once")
+}
+
 // Layers applied apart give the tree overlayfs shows for the chain applied
 // in order: a whiteout hides a file and a directory of the layers below it,
 // and an opaque directory everything below it; a file replaced keeps the
