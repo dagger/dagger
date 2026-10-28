@@ -2152,7 +2152,7 @@ func (AgentRuntimeSuite) TestRosterAddressingFromModule(ctx context.Context, t *
 //   - hire awaits the opening turn INSIDE the module call, so turn 1
 //     completes while the spawning client is alive, as in the staff hire
 //     shape — then stores the worker handle in module state and returns;
-//   - the second exchange is module-mediated (ask = resume + send + response,
+//   - the second exchange is module-mediated (ask = send + resume + response,
 //     resolving the worker from module state), issued from a fresh
 //     function-call client of its own — the staff ask shape.
 func (AgentRuntimeSuite) TestSendAfterSpawnerReleased(ctx context.Context, t *testctx.T) {
@@ -2235,7 +2235,7 @@ func (AgentRuntimeSuite) TestSendAfterSpawnerReleased(ctx context.Context, t *te
 	require.Equal(t, firstReply, lastReply)
 
 	// The second exchange, issued the way the live scenario issues it:
-	// through the module — ask (resume + send + response) runs inside a fresh
+	// through the module — ask (send + resume + response) runs inside a fresh
 	// function-call client of its own, resolving the worker handle from the
 	// module's own state, while the LOOP still runs on the released spawner
 	// call's context. Bounded: a hang here is the bug, reported as a
@@ -2338,8 +2338,8 @@ func (AgentRuntimeSuite) TestAgentArgumentAfterSpawnerReleased(ctx context.Conte
 	rebuilt, _ := sink.rebuild(t, c, node)
 	require.Equal(t, "IDLE", rebuilt.state(ctx, t))
 
-	// The same handle as a module function ARGUMENT: askAgent resumes,
-	// sends and awaits on the Agent the caller passed in, inside a fresh
+	// The same handle as a module function ARGUMENT: askAgent sends,
+	// resumes and awaits on the Agent the caller passed in, inside a fresh
 	// function-call client. Bounded: a hang here reports as a deadline
 	// error rather than wedging CI.
 	askCtx, cancelAsk := context.WithTimeout(ctx, 90*time.Second)
