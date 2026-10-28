@@ -17,9 +17,14 @@ import (
 )
 
 const (
-	// The shortened timeouts the upload tests run with.
+	// The shortened timeouts a test means an upload to trip.
 	testUploadIdle     = 200 * time.Millisecond
 	testUploadResponse = 200 * time.Millisecond
+	// testUploadPatient is a timeout an upload must not trip: many times the
+	// waits it makes, so that a loaded machine's scheduling delays don't cut
+	// it off. With 200 ms, such an upload was cut off as stalled when a
+	// 16-core machine ran four test suites at once.
+	testUploadPatient = time.Second
 	// testUploadGuard is how long a test waits before it calls an upload
 	// hung.
 	testUploadGuard = 10 * time.Second
@@ -89,24 +94,26 @@ func putWithin(t *testing.T, put func(context.Context, string, io.Reader, int64)
 // all and never answers. Either way the upload fails within the timeouts,
 // and its error doesn't name the signed address.
 func TestStalledUploadFails(t *testing.T) {
-	put := httpPut(uploadClient(testUploadResponse), testUploadIdle)
 	for _, tc := range []struct {
 		name     string
 		readBody bool
 		// size fills the connection's buffers when the store reads nothing.
-		size  int64
+		size int64
+		// put has the short timeout of the stall the case makes, and the
+		// patient one for the phase that must go through.
+		put   func(context.Context, string, io.Reader, int64) error
 		check func(*testing.T, error)
 	}{
-		{name: "the blob store reads none of the body", readBody: false, size: 64 << 20, check: func(t *testing.T, err error) {
+		{name: "the blob store reads none of the body", readBody: false, size: 64 << 20, put: httpPut(uploadClient(testUploadPatient), testUploadIdle), check: func(t *testing.T, err error) {
 			require.ErrorIs(t, err, errUploadStalled)
 		}},
-		{name: "the blob store reads the body and never answers", readBody: true, size: 1 << 20, check: func(t *testing.T, err error) {
+		{name: "the blob store reads the body and never answers", readBody: true, size: 1 << 20, put: httpPut(uploadClient(testUploadResponse), testUploadPatient), check: func(t *testing.T, err error) {
 			require.ErrorContains(t, err, "timeout awaiting response headers")
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			address := stallingBlobStore(t, tc.readBody)
-			err := putWithin(t, put, address, io.LimitReader(zeros{}, tc.size), tc.size)
+			err := putWithin(t, tc.put, address, io.LimitReader(zeros{}, tc.size), tc.size)
 			require.Error(t, err)
 			require.NotContains(t, err.Error(), "secret")
 			tc.check(t, err)
@@ -155,15 +162,25 @@ func TestStalledHTTP2UploadFails(t *testing.T) {
 			srv.StartTLS()
 			t.Cleanup(srv.Close)
 			t.Cleanup(func() { close(release) })
-			client := uploadClient(testUploadResponse)
+			client := uploadClient(testUploadPatient)
 			transport := client.Transport.(*http.Transport)
 			transport.TLSClientConfig = srv.Client().Transport.(*http.Transport).TLSClientConfig.Clone()
 			t.Cleanup(transport.CloseIdleConnections)
 
 			// A section reader, as the adapter's blobs are.
 			body := &eofBody{Reader: io.NewSectionReader(bytes.NewReader(make([]byte, tc.size)), 0, tc.size)}
-			err := putWithin(t, httpPut(client, testUploadIdle), srv.URL+"/put?X-Amz-Signature=secret", body, tc.size)
-			require.Equal(t, 2, <-proto, "the upload used HTTP/2")
+			// A patient idle timeout: the upload must reach the blob store's
+			// handler, and send up to the stall the case makes, before the
+			// stall cuts it off. Over TLS the request takes more steps to
+			// reach the handler: under CPU contention, 1 s left it unreached
+			// in 10 of 40 uploads.
+			err := putWithin(t, httpPut(client, 5*testUploadPatient), srv.URL+"/put?X-Amz-Signature=secret", body, tc.size)
+			select {
+			case major := <-proto:
+				require.Equal(t, 2, major, "the upload used HTTP/2")
+			case <-time.After(testUploadGuard):
+				t.Fatalf("the upload never reached the blob store's handler: %v", err)
+			}
 			require.ErrorIs(t, err, errUploadStalled)
 			require.NotContains(t, err.Error(), "secret")
 			require.Equal(t, tc.afterEOF, body.eof.Load(), "where the upload stalled")
@@ -180,11 +197,13 @@ func TestSlowUploadIsNotCutOff(t *testing.T) {
 		received.Store(n)
 	}))
 	t.Cleanup(srv.Close)
-	put := httpPut(uploadClient(testUploadResponse), testUploadIdle)
-	const size = 8 << 10
+	put := httpPut(uploadClient(testUploadPatient), testUploadPatient)
+	// 12 pieces 100 ms apart: longer than the idle timeout in all, with every
+	// pause a tenth of it.
+	const size = 12 << 10
 	start := time.Now()
-	require.NoError(t, putWithin(t, put, srv.URL, &slowBody{remaining: size, pause: testUploadIdle / 2}, size))
-	require.Greater(t, time.Since(start), 2*testUploadIdle, "the upload took longer than the idle timeout in all")
+	require.NoError(t, putWithin(t, put, srv.URL, &slowBody{remaining: size, pause: testUploadPatient / 10}, size))
+	require.Greater(t, time.Since(start), testUploadPatient, "the upload took longer than the idle timeout in all")
 	require.Equal(t, int64(size), received.Load())
 }
 
@@ -197,7 +216,9 @@ func TestStalledUploadFreesItsSlot(t *testing.T) {
 		return consume(ctx, Export{Bundle: testBundle(), Blobs: blobs{stalled: "stalled blob", good: "good blob"}})
 	}
 	s, conn := testSession(t, adapter)
-	s.cfg.put = httpPut(uploadClient(testUploadResponse), testUploadIdle)
+	// The good upload must finish; the stalled one still fails, at the
+	// response timeout.
+	s.cfg.put = httpPut(uploadClient(testUploadPatient), testUploadPatient)
 	s.uploadSlots = make(chan struct{}, 1)
 	store := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body)
