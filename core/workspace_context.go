@@ -151,7 +151,7 @@ func workspaceHostRoutingContext(ctx context.Context, ws *Workspace) (context.Co
 	if err != nil {
 		return nil, err
 	}
-	clientMetadata, err := query.SpecificClientMetadata(ctx, ws.ClientID)
+	clientMetadata, err := workspaceClientMetadata(ctx, query, ws)
 	if err != nil {
 		return nil, fmt.Errorf("workspace client metadata: %w", err)
 	}

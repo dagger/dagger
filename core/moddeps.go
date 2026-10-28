@@ -238,6 +238,20 @@ func (b *SchemaBuilder) Lookup(name string) (Mod, bool) {
 	return nil, false
 }
 
+// InstallOpts returns the install policy of the served module with the given
+// name.
+func (b *SchemaBuilder) InstallOpts(name string) (InstallOpts, bool) {
+	if b == nil {
+		return InstallOpts{}, false
+	}
+	for _, e := range b.entries {
+		if e.mod.Name() == name {
+			return e.opts, true
+		}
+	}
+	return InstallOpts{}, false
+}
+
 func (b *SchemaBuilder) Mods() []Mod {
 	if b == nil {
 		return nil

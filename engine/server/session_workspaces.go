@@ -1219,6 +1219,7 @@ func (srv *Server) ensureExtraModulesLoadedLocked(ctx context.Context, client *c
 
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
+	defer client.noteClientModulesLocked(client.servedMods)
 	if err := srv.serveResolvedModuleLoadsLocked(client, loads, resolvedLoads); err != nil {
 		return stick(err)
 	}

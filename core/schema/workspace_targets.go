@@ -21,8 +21,17 @@ func workspaceMainNames(ctx context.Context, ws *core.Workspace) (map[string]boo
 		if err != nil {
 			return nil, fmt.Errorf("current served deps: %w", err)
 		}
+		unrecorded, err := unrecordedClientModules(ctx, ws)
+		if err != nil {
+			return nil, err
+		}
 		for _, mod := range served.MainMods() {
-			names[mod.Name()] = true
+			if !unrecorded[mod.Name()] {
+				names[mod.Name()] = true
+			}
+		}
+		for _, mod := range ws.ClientModules() {
+			names[mod.Name] = mod.Main
 		}
 		if ws.ConfigFile == "" || !ws.OverlayPathTouched(ws.ConfigFile) {
 			return names, nil

@@ -416,6 +416,9 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("sdk").Doc("SDK name to probe. Required."),
 			),
 		dagql.NodeFunc("withClient", s.withSDKModuleClient).
+			// Adding or refreshing a client can resolve its module live, through the
+			// calling client.
+			WithInput(dagql.PerClientInput).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace with a generated module client added to one SDK scope.",
 				"Select the deepest detected or registered scope. Fail if several SDKs have that deepest scope.").
@@ -434,6 +437,9 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("sdk").Doc("Optional SDK name. Search all installed SDKs when omitted."),
 			),
 		dagql.NodeFunc("withUpdatedClients", s.withUpdatedSDKModuleClients).
+			// Adding or refreshing a client can resolve its module live, through the
+			// calling client.
+			WithInput(dagql.PerClientInput).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace with the selected module clients updated.",
 				"The engine re-reads the source of each selected client target and writes the lock entries that those targets reach.",
@@ -481,6 +487,8 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 			),
 		dagql.NodeFunc("withUpdatedLock", s.withUpdatedLock).
+			// Refreshing resolves versions live, through the calling client.
+			WithInput(dagql.PerClientInput).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace with refreshed lockfile state.",
 				"SDK client scopes are regenerated unless noGenerate is true.").
@@ -488,6 +496,8 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("noGenerate").Doc("Do not regenerate SDK client scopes."),
 			),
 		dagql.NodeFunc("__withUpdatedLock", s.withSelectedUpdatedLock).
+			// Refreshing resolves versions live, through the calling client.
+			WithInput(dagql.PerClientInput).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace with selected lockfile entries refreshed.").
 			Args(
@@ -592,6 +602,9 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				`The workspace root is returned as "/".`,
 				"Relative paths in workspace APIs resolve from here."),
 		dagql.NodeFunc("artifacts", s.artifacts).
+			// Discovery goes through the calling client's loaded modules,
+			// which aren't part of the workspace's content.
+			WithInput(dagql.PerClientInput).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Discover static object artifacts from workspace modules without evaluating their values.",
 				"Omits the paths that the workspace's check.skip, generate.skip, and up.skip settings skip.").
@@ -770,11 +783,36 @@ func (s *workspaceSchema) currentWorkspace(
 	if err != nil {
 		return inst, err
 	}
+	// Artifact discovery also lists the modules the client served beside the
+	// workspace's own, so they are part of a workspace identified by content.
+	if ws.HasContentIdentity() {
+		mods, err := parent.Self().Server.CurrentClientModules(ctx)
+		if err != nil {
+			return inst, err
+		}
+		ws = ws.Clone()
+		ws.SetClientModules(mods)
+	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
+	if err != nil {
+		return inst, err
+	}
+	// Each call is keyed separately, since a host checkout can change between
+	// calls. A workspace that holds its own content (a Git ref or an in-engine
+	// directory) can't, so identify it by that content: functions that take it
+	// then hit across calls, sessions and engines.
+	identity, ok, err := ws.ContentIdentity(ctx)
+	if err != nil {
+		return inst, err
+	}
+	if ok {
+		return inst.WithContentDigest(ctx, identity)
+	}
+	return inst, nil
 }
 
 func (s *workspaceSchema) cwd(
@@ -4535,6 +4573,13 @@ func (s *workspaceSchema) workspaceTargetModules(
 	if parentResult.Self().IsValueWorkspace() {
 		return mods, failures, nil
 	}
+	unrecorded, err := unrecordedClientModules(ctx, parentResult.Self())
+	if err != nil {
+		return nil, nil, err
+	}
+	mods = slices.DeleteFunc(mods, func(mod dagql.ObjectResult[*core.Module]) bool {
+		return unrecorded[mod.Self().Name()]
+	})
 
 	// The served modules above are the workspace as it was on disk when the
 	// session started. Re-resolve whatever the workspace's pending overlay
@@ -4610,6 +4655,35 @@ func ensureWorkspaceModulesLoaded(ctx context.Context, include []string, mode co
 		return nil, err
 	}
 	return query.Server.EnsureWorkspaceModules(ctx, include, mode)
+}
+
+// unrecordedClientModules returns the names of the modules the client served
+// beside the workspace's own that ws didn't record when it was loaded. A
+// workspace identified by its content covers the modules it recorded, so
+// discovery through it must not see others.
+func unrecordedClientModules(ctx context.Context, ws *core.Workspace) (map[string]bool, error) {
+	if !ws.HasContentIdentity() {
+		return nil, nil
+	}
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	live, err := query.Server.CurrentClientModules(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("current client modules: %w", err)
+	}
+	recorded := map[string]core.WorkspaceClientModule{}
+	for _, mod := range ws.ClientModules() {
+		recorded[mod.Name] = mod
+	}
+	unrecorded := map[string]bool{}
+	for _, mod := range live {
+		if rec, ok := recorded[mod.Name]; !ok || rec.Digest != mod.Digest {
+			unrecorded[mod.Name] = true
+		}
+	}
+	return unrecorded, nil
 }
 
 func currentWorkspacePrimaryModules(ctx context.Context) ([]dagql.ObjectResult[*core.Module], error) {

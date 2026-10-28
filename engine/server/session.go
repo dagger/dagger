@@ -392,6 +392,9 @@ type clientRuntime struct {
 	// the set of modules being served to this client, with per-module
 	// install policy (constructor vs type-only)
 	servedMods *core.SchemaBuilder
+	// the names of the served modules the client served itself, with -m or
+	// through the API, as opposed to its workspace's (guarded by stateMu)
+	clientModuleNames map[string]struct{}
 	// the default deps that each client/module starts out with (currently just core)
 	defaultDeps *core.SchemaBuilder
 	// schema builders memoized per module set for this client's handle
@@ -518,6 +521,7 @@ func (client *clientRuntime) releaseHeavyState() {
 	client.dagqlRoot = nil
 	client.mod = dagql.ObjectResult[*core.Module]{}
 	client.servedMods = nil
+	client.clientModuleNames = nil
 	client.defaultDeps = nil
 	client.schemaBuilderMemo = nil
 	client.fnCall = nil
@@ -3127,6 +3131,7 @@ func (srv *Server) ServeModule(ctx context.Context, mod dagql.ObjectResult[*core
 
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
+	defer client.noteClientModulesLocked(client.servedMods)
 
 	if err := srv.serveModule(client, core.NewUserMod(mod), core.InstallOpts{Main: main}); err != nil {
 		return err
@@ -3670,6 +3675,65 @@ func (srv *Server) CurrentServedDeps(ctx context.Context) (*core.SchemaBuilder, 
 		return nil, err
 	}
 	return client.servedMods, nil
+}
+
+// Return the modules the current client served beside its workspace's own,
+// with -m or through the API, sorted by name. A module served only for its
+// types, such as a dependency of a main module, isn't listed by artifact
+// discovery and isn't returned.
+func (srv *Server) CurrentClientModules(ctx context.Context) ([]core.WorkspaceClientModule, error) {
+	client, err := srv.workspaceRuntimeFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	client.stateMu.Lock()
+	served := client.servedMods
+	names := slices.Sorted(maps.Keys(client.clientModuleNames))
+	client.stateMu.Unlock()
+	if served == nil {
+		return nil, nil
+	}
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var mods []core.WorkspaceClientModule
+	for _, name := range names {
+		mod, ok := served.Lookup(name)
+		if !ok || mod.ModuleResult().Self() == nil {
+			continue
+		}
+		opts, _ := served.InstallOpts(name)
+		if opts.SkipConstructor {
+			continue
+		}
+		// The served module's own key is per client; its implementation's is
+		// the same wherever the same module is loaded.
+		var scoped dagql.ObjectResult[*core.Module]
+		if err := dag.Select(ctx, mod.ModuleResult(), &scoped, dagql.Selector{Field: "_implementationScoped"}); err != nil {
+			return nil, fmt.Errorf("client module %s: %w", name, err)
+		}
+		dgst, err := scoped.ContentPreferredDigest(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("client module %s: %w", name, err)
+		}
+		mods = append(mods, core.WorkspaceClientModule{Name: name, Digest: dgst, Main: opts.Main})
+	}
+	return mods, nil
+}
+
+// noteClientModulesLocked records the modules served since before as ones
+// the client served itself. client.stateMu must be held.
+func (client *clientRuntime) noteClientModulesLocked(before *core.SchemaBuilder) {
+	for _, mod := range client.servedMods.Mods() {
+		if _, ok := before.Lookup(mod.Name()); ok {
+			continue
+		}
+		if client.clientModuleNames == nil {
+			client.clientModuleNames = make(map[string]struct{})
+		}
+		client.clientModuleNames[mod.Name()] = struct{}{}
+	}
 }
 
 // The Client metadata of the main client caller (i.e. the one who created the
