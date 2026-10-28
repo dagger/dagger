@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"time"
 
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/opencontainers/go-digest"
@@ -56,26 +57,37 @@ func decodeKeptCall(encoded string, request digest.Digest) (*keptCall, error) {
 	return &keptCall{encoded: encoded, id: id}, nil
 }
 
-// keepCallLocked keeps kept, a call that returned entry, on entry, and gives
-// the entry the call's expiry: as a local cache does when a call completes
-// returning an existing entry, the entry's expiry is the earliest of its
-// calls'. A call already kept isn't a new completion: a span read again, or
-// reporting a call of the entry's value before a later export replaced it,
-// leaves the entry's expiry as it is. It reports whether it changed a stored
-// entry, which a save writes. Requires egraphMu for writing.
-func (c *Cache) keepCallLocked(entry *sharedResult, kept *keptCall, expiresAtUnix int64) bool {
-	if kept == nil {
+// keepCallLocked keeps kept, a call that returned entry, on entry, once per
+// request digest, and gives the entry the expiry the span reports: as a
+// local cache does when a call completes returning an existing entry, the
+// entry's expiry is the earliest of its calls'. A completion expires after
+// it, so an expiry already past reports a value that has expired, which a
+// later export may have replaced with this one: a span read again, or read
+// late, that says nothing of the entry's value, and is left out. A request
+// digest names a computation, not a completion, so a call already kept can
+// still report a new one. It reports whether it changed a stored entry,
+// which a save writes. Requires egraphMu for writing.
+func (c *Cache) keepCallLocked(entry *sharedResult, desc RemoteHolding, kept *keptCall) bool {
+	if desc.Request == "" || desc.Request == desc.Recipe {
 		return false
 	}
-	if _, ok := entry.calls[kept.id.recipe]; ok {
-		return false
+	changed := false
+	if desc.ExpiresAtUnix > time.Now().Unix() {
+		if expires := mergeSharedResultExpiryUnix(entry.expiresAtUnix, desc.ExpiresAtUnix); expires != entry.expiresAtUnix {
+			entry.expiresAtUnix = expires
+			changed = true
+		}
 	}
-	if entry.calls == nil {
-		entry.calls = make(map[digest.Digest]*keptCall)
+	if kept != nil {
+		if _, ok := entry.calls[kept.id.recipe]; !ok {
+			if entry.calls == nil {
+				entry.calls = make(map[digest.Digest]*keptCall)
+			}
+			entry.calls[kept.id.recipe] = kept
+			changed = true
+		}
 	}
-	entry.calls[kept.id.recipe] = kept
-	entry.expiresAtUnix = mergeSharedResultExpiryUnix(entry.expiresAtUnix, expiresAtUnix)
-	return !entry.noValueLocked() && entry.persistedEnvelope != nil
+	return changed && !entry.noValueLocked() && entry.persistedEnvelope != nil
 }
 
 // storedBundleCallsLocked adds to the build, for each of its entries, one of
