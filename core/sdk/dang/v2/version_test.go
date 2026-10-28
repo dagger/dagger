@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/vito/dang/v2/pkg/dang"
+	"golang.org/x/mod/semver"
 
 	"github.com/dagger/dagger/engine"
 )
@@ -62,7 +63,7 @@ dagger = "0.19"
 			dang:   "2.1",
 		},
 		{
-			// The naming cut is a prerelease, v1.0.0-beta.21, so a declared
+			// The naming cut is a prerelease, v1.0.0-beta.22, so a declared
 			// prerelease must reach the engine as is.
 			name: "dagger prerelease",
 			config: ptr(`[imports.Dagger]
@@ -184,20 +185,24 @@ func TestDefaultEntrypointVersions(t *testing.T) {
 	require.Equal(t, dang.DefaultVersion, defaults.Dang)
 	require.Equal(t, "2.1", defaults.DangString())
 
-	// It is the view from before the naming cut, which generated entrypoints
-	// that declare nothing were written against.
+	// It is the shared pre-cut view, the one every v1.0.0 prerelease before
+	// the cut gets and which generated entrypoints that declare nothing were
+	// written against: before the core renames and the new naming rules.
+	require.Equal(t, engine.ModuleAPIViewVersion("v1.0.0-0"), engine.ModuleAPIViewVersion(defaults.Engine))
+	require.Equal(t, engine.ModuleAPIViewVersion("v1.0.0-beta.21"), engine.ModuleAPIViewVersion(defaults.Engine))
 	require.False(t, engine.APIVersionAtLeast(defaults.Engine, engine.IdentifierCasingVersion))
 	require.True(t, engine.APIVersionAtLeast(engine.IdentifierCasingVersion, engine.IdentifierCasingVersion))
 }
 
 // A declared version goes through the same checks as a dagger.json
 // engineVersion, which compare base versions: a later beta of this engine's
-// release is accepted there, so it is here, and the module's view then comes
-// from engine.ModuleAPIViewVersion like any module's.
+// release, or the release itself, is accepted there, so it is here, and the
+// module's view then comes from engine.ModuleAPIViewVersion like any
+// module's, capped at the engine's own view.
 func TestResolveEntrypointVersionsLikeEngineVersion(t *testing.T) {
 	t.Parallel()
 
-	for _, declared := range []string{"v1.0.0", "v1.0.0-beta.19", "v1.0.0-beta.21", "v1.0.0-beta.999", "v0.20.0"} {
+	for _, declared := range []string{"v1.0.0", "v1.0.0-beta.19", "v1.0.0-beta.21", "v1.0.0-beta.22", "v1.0.0-beta.999", "v0.20.0"} {
 		t.Run(declared, func(t *testing.T) {
 			t.Parallel()
 			versions, err := ResolveEntrypointVersions(context.Background(), "dang.toml", []byte("[imports.Dagger]\ndagger = \""+declared+"\"\n"))
@@ -208,6 +213,9 @@ func TestResolveEntrypointVersionsLikeEngineVersion(t *testing.T) {
 			}
 			require.NoError(t, err)
 			require.Equal(t, declared, versions.Engine)
+			view := engine.ModuleAPIViewVersion(versions.Engine)
+			require.LessOrEqual(t, semver.Compare(view, engine.APIViewVersion(engine.Version)), 0,
+				"a declared version past the engine's is served the engine's view")
 		})
 	}
 }
