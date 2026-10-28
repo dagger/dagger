@@ -145,10 +145,6 @@ type snapshotManager struct {
 	snapshotContentDigests map[string]map[digest.Digest]struct{}
 	importedLayerByBlob    map[ImportedLayerBlobKey]string
 	importedLayerByDiff    map[ImportedLayerDiffKey]string
-	// layerImported is closed, and replaced, whenever a layer is added to
-	// the import indexes: chain imports waiting for a layer's blob look
-	// again. Under mu.
-	layerImported          chan struct{}
 	snapshotOwnerLeases    map[string]map[string]struct{}
 	// leaseOwnedSnapshots is snapshotOwnerLeases by lease: the snapshots
 	// each lease owns, so that removing a lease visits only those.
@@ -156,6 +152,10 @@ type snapshotManager struct {
 	importLayerLocker   keyedLocker
 	exportLayerLocker   keyedLocker
 	ownerLeaseLocker    *locker.Locker
+	// layerImported is closed, and replaced, whenever a layer is added to
+	// the import indexes: chain imports waiting for a layer's blob look
+	// again. Under mu.
+	layerImported chan struct{}
 	// fetches runs chain-content downloads, one per blob.
 	fetches contentFetches
 	// applyLayersApart says ImportChain may apply a chain's layers at once,
