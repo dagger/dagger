@@ -89,8 +89,8 @@ func TestCacheReadPathsShareEgraphLock(t *testing.T) {
 		})
 	})
 
-	// A persistable hit teaches the e-graph and records a retention edge,
-	// so it still takes the write lock, and still hits.
+	// The first persistable hit records a retention edge, so it still takes
+	// the write lock, and still hits.
 	res, err := c.GetOrInitCall(ctx, "persistable", noopTypeResolver{}, &CallRequest{ResultCall: cacheTestIntCall("shared-lock"), IsPersistable: true}, func(context.Context) (AnyResult, error) {
 		return nil, fmt.Errorf("persistable hit executed the call")
 	})
@@ -102,11 +102,66 @@ func TestCacheReadPathsShareEgraphLock(t *testing.T) {
 	c.egraphMu.RUnlock()
 	assert.Assert(t, retained)
 
+	// A repeat persistable hit finds its identity taught and its edge in
+	// place: it changes nothing, so it stays under the read lock.
+	t.Run("repeat persistable hit", func(t *testing.T) {
+		runWhileEgraphReadLocked(t, c, func() error {
+			res, err := c.GetOrInitCall(ctx, "persistable-again", noopTypeResolver{}, &CallRequest{ResultCall: cacheTestIntCall("shared-lock"), IsPersistable: true}, func(context.Context) (AnyResult, error) {
+				return nil, fmt.Errorf("repeat persistable hit executed the call")
+			})
+			if err != nil {
+				return err
+			}
+			if !res.HitCache() || res.cacheSharedResult().id != seededID {
+				return fmt.Errorf("expected a hit on result %d, got hit=%v result %d", seededID, res.HitCache(), res.cacheSharedResult().id)
+			}
+			return nil
+		})
+	})
+
 	assertCacheOwnershipExact(t, c)
-	for _, sessionID := range []string{"seed", "hit", "miss", "track", "load", "persistable"} {
+	for _, sessionID := range []string{"seed", "hit", "miss", "track", "load", "persistable", "persistable-again"} {
 		assert.NilError(t, c.ReleaseSession(ctx, sessionID))
 	}
 	assertCacheOwnershipExact(t, c)
+}
+
+// A part-host result with no part state, or with its gate already managed,
+// answers usesPartAcquisition under the read lock; only starting to manage a
+// gate needs the write lock.
+func TestCachePartAcquisitionAnswersUnderReadLock(t *testing.T) {
+	ctx, c, srv := persistedListTestCache(t, "")
+	srv.InstallObject(NewClass(srv, ClassOpts[*inlineCaptureTestValue]{}))
+	value := &inlineCaptureTestValue{}
+	frame := persistCodecFrame("part-acquisition", value)
+	res, err := c.GetOrInitCall(ctx, "part-acquisition", noopTypeResolver{}, &CallRequest{ResultCall: frame}, func(context.Context) (AnyResult, error) {
+		r, err := NewResultForCall(value, frame)
+		return r, err
+	})
+	assert.NilError(t, err)
+	row := res.cacheSharedResult()
+
+	runWhileEgraphReadLocked(t, c, func() error {
+		if c.usesPartAcquisition(res, row) {
+			return fmt.Errorf("part acquisition for a result with no part state")
+		}
+		return nil
+	})
+
+	c.egraphMu.Lock()
+	gate := row.partGate.loadOrCreate()
+	gate.mu.Lock()
+	gate.managed = true
+	row.partGate.active.Store(true)
+	gate.mu.Unlock()
+	c.egraphMu.Unlock()
+	runWhileEgraphReadLocked(t, c, func() error {
+		if !c.usesPartAcquisition(res, row) {
+			return fmt.Errorf("no part acquisition for a result whose gate is managed")
+		}
+		return nil
+	})
+	assert.NilError(t, c.ReleaseSession(ctx, "part-acquisition"))
 }
 
 // Concurrent sessions hitting, tracking and loading the same results under
