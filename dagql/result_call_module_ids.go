@@ -87,83 +87,20 @@ func (c *Cache) moduleResultIDs(frame *ResultCall, r *moduleIDsRebuild) ([]uint6
 		}
 	}
 
-	var ids []uint64
-	seen := map[uint64]struct{}{}
-	add := func(list []uint64) {
-		for _, id := range list {
-			if _, ok := seen[id]; !ok {
-				seen[id] = struct{}{}
-				ids = append(ids, id)
-			}
-		}
-	}
-	cyclic := false
-
-	var walkLiteral func(*ResultCallLiteral) error
-	walkRef := func(ref *ResultCallRef) error {
-		if ref == nil {
-			return nil
-		}
-		child := ref.Call
-		if child == nil {
-			if ref.ResultID == 0 {
-				return nil
-			}
-			child = c.resultCallByResultID(sharedResultID(ref.ResultID))
-			if child == nil {
-				return fmt.Errorf("missing result call frame for result %d", ref.ResultID)
-			}
-		}
-		if ref.ResultID != 0 && child.Type != nil && child.Type.NamedType == "Module" {
-			add([]uint64{ref.ResultID})
-		}
-		childIDs, childCyclic, err := c.moduleResultIDs(child, r)
-		if err != nil {
-			return err
-		}
-		cyclic = cyclic || childCyclic
-		add(childIDs)
-		return nil
-	}
-	walkLiteral = func(lit *ResultCallLiteral) error {
-		if lit == nil {
-			return nil
-		}
-		switch lit.Kind {
-		case ResultCallLiteralKindResultRef:
-			return walkRef(lit.ResultRef)
-		case ResultCallLiteralKindList:
-			for _, item := range lit.ListItems {
-				if err := walkLiteral(item); err != nil {
-					return err
-				}
-			}
-		case ResultCallLiteralKindObject:
-			for _, field := range lit.ObjectFields {
-				if field == nil {
-					continue
-				}
-				if err := walkLiteral(field.Value); err != nil {
-					return fmt.Errorf("field %q: %w", field.Name, err)
-				}
-			}
-		}
-		return nil
-	}
-
+	w := &moduleIDsFrameWalk{c: c, r: r, seen: map[uint64]struct{}{}}
 	if frame.Module != nil {
-		if err := walkRef(frame.Module.ResultRef); err != nil {
+		if err := w.ref(frame.Module.ResultRef); err != nil {
 			return nil, false, fmt.Errorf("module %q: %w", frame.Module.Name, err)
 		}
 	}
-	if err := walkRef(frame.Receiver); err != nil {
+	if err := w.ref(frame.Receiver); err != nil {
 		return nil, false, fmt.Errorf("receiver: %w", err)
 	}
 	for _, arg := range frame.Args {
 		if arg == nil {
 			continue
 		}
-		if err := walkLiteral(arg.Value); err != nil {
+		if err := w.literal(arg.Value); err != nil {
 			return nil, false, fmt.Errorf("arg %q: %w", arg.Name, err)
 		}
 	}
@@ -171,13 +108,85 @@ func (c *Cache) moduleResultIDs(frame *ResultCall, r *moduleIDsRebuild) ([]uint6
 		if input == nil {
 			continue
 		}
-		if err := walkLiteral(input.Value); err != nil {
+		if err := w.literal(input.Value); err != nil {
 			return nil, false, fmt.Errorf("implicit input %q: %w", input.Name, err)
 		}
 	}
+	ids, cyclic := w.ids, w.cyclic
 	r.done[frame] = moduleIDsDone{ids: ids, cyclic: cyclic}
 	if !cyclic {
 		frame.moduleResultIDs.Store(&moduleResultIDsMemo{gen: r.gen, ids: ids})
 	}
 	return ids, cyclic, nil
+}
+
+// moduleIDsFrameWalk collects one frame's module result IDs from the frames it
+// references, each ID once, in the order WalkResultCall visits them.
+type moduleIDsFrameWalk struct {
+	c      *Cache
+	r      *moduleIDsRebuild
+	ids    []uint64
+	seen   map[uint64]struct{}
+	cyclic bool
+}
+
+func (w *moduleIDsFrameWalk) add(list []uint64) {
+	for _, id := range list {
+		if _, ok := w.seen[id]; !ok {
+			w.seen[id] = struct{}{}
+			w.ids = append(w.ids, id)
+		}
+	}
+}
+
+func (w *moduleIDsFrameWalk) ref(ref *ResultCallRef) error {
+	if ref == nil {
+		return nil
+	}
+	child := ref.Call
+	if child == nil {
+		if ref.ResultID == 0 {
+			return nil
+		}
+		child = w.c.resultCallByResultID(sharedResultID(ref.ResultID))
+		if child == nil {
+			return fmt.Errorf("missing result call frame for result %d", ref.ResultID)
+		}
+	}
+	if ref.ResultID != 0 && child.Type != nil && child.Type.NamedType == "Module" {
+		w.add([]uint64{ref.ResultID})
+	}
+	childIDs, childCyclic, err := w.c.moduleResultIDs(child, w.r)
+	if err != nil {
+		return err
+	}
+	w.cyclic = w.cyclic || childCyclic
+	w.add(childIDs)
+	return nil
+}
+
+func (w *moduleIDsFrameWalk) literal(lit *ResultCallLiteral) error {
+	if lit == nil {
+		return nil
+	}
+	switch lit.Kind {
+	case ResultCallLiteralKindResultRef:
+		return w.ref(lit.ResultRef)
+	case ResultCallLiteralKindList:
+		for _, item := range lit.ListItems {
+			if err := w.literal(item); err != nil {
+				return err
+			}
+		}
+	case ResultCallLiteralKindObject:
+		for _, field := range lit.ObjectFields {
+			if field == nil {
+				continue
+			}
+			if err := w.literal(field.Value); err != nil {
+				return fmt.Errorf("field %q: %w", field.Name, err)
+			}
+		}
+	}
+	return nil
 }
