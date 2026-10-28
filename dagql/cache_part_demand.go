@@ -33,6 +33,14 @@ func (c *Cache) usesPartAcquisition(res AnyResult, row *sharedResult) bool {
 	if _, ok := UnwrapAs[HasPartHost](res); !ok {
 		return false
 	}
+	// Most calls find no part state at all, or a gate already managed; both
+	// answers only read, so the write lock is taken only to start managing.
+	c.egraphMu.RLock()
+	settled, uses := c.partAcquisitionSettledLocked(row)
+	c.egraphMu.RUnlock()
+	if settled {
+		return uses
+	}
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
 	gate := row.partGate.gate.Load()
@@ -59,6 +67,26 @@ func (c *Cache) usesPartAcquisition(res AnyResult, row *sharedResult) bool {
 	row.partGate.active.Store(true)
 	gate.revision++
 	return true
+}
+// partAcquisitionSettledLocked answers usesPartAcquisition without writing
+// when it can: false for a row with no part state at all, true for a row
+// whose gate is already managed. settled is false when the answer needs the
+// write lock. The caller holds egraphMu, for reading or writing.
+func (c *Cache) partAcquisitionSettledLocked(row *sharedResult) (settled, uses bool) {
+	gate := row.partGate.gate.Load()
+	if gate == nil {
+		if !row.imported && !row.partGate.restoredDelegation.Load() && !row.hasPartOffersLocked() {
+			return true, false
+		}
+		return false, false
+	}
+	gate.mu.Lock()
+	managed := gate.managed
+	gate.mu.Unlock()
+	if managed {
+		return true, true
+	}
+	return false, false
 }
 func (c *Cache) evaluateAcquiredParts(ctx context.Context, res AnyResult, row *sharedResult, parts []PartKey) (rerr error) {
 	return c.evaluateAcquiredScope(ctx, res, row, nil, parts)

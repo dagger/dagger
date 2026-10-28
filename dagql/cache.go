@@ -1631,6 +1631,24 @@ func (c *Cache) snapshotSessionResultIDsCancelable(checker *pruneCancellationChe
 }
 
 // upsertPersistedEdgeLocked requires egraphMu for writing.
+// persistedEdgeUpsertUnchangedLocked reports whether a pruneable
+// upsertPersistedEdgeLocked of res with expiresAtUnix would change nothing:
+// res is no longer registered, or its edge exists and the expiry merge keeps
+// it as it is. The caller holds egraphMu, for reading or writing.
+func (c *Cache) persistedEdgeUpsertUnchangedLocked(res *sharedResult, expiresAtUnix int64) bool {
+	if c == nil || res == nil || res.id == 0 {
+		return true
+	}
+	if _, found := c.resultsByID[res.id]; !found {
+		return true
+	}
+	edge, found := c.persistedEdgesByResult[res.id]
+	if !found {
+		return false
+	}
+	return edge.unpruneable || mergeSharedResultExpiryUnix(edge.expiresAtUnix, expiresAtUnix) == edge.expiresAtUnix
+}
+
 func (c *Cache) upsertPersistedEdgeLocked(ctx context.Context, res *sharedResult, expiresAtUnix int64, unpruneable bool) {
 	if c == nil || res == nil || res.id == 0 {
 		return
