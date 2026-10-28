@@ -119,6 +119,17 @@ type fakeAdapter struct {
 	lookups   chan bool
 	takeLimit atomic.Int64
 	mergeIDs  chan uint64
+	// settle is what SettleState returns, settleCh closes when setSettle
+	// changes it, and settled receives the Settled calls.
+	settleMu sync.Mutex
+	settle   SettleState
+	settleCh chan struct{}
+	settled  chan settledCall
+}
+
+type settledCall struct {
+	period   uint64
+	sessions []protocol.SettleSession
 }
 
 func newFakeAdapter() *fakeAdapter {
@@ -128,7 +139,45 @@ func newFakeAdapter() *fakeAdapter {
 		misses:   make(chan []dagql.RemoteMiss, 8),
 		lookups:  make(chan bool, 8),
 		mergeIDs: make(chan uint64, 64),
+		settled:  make(chan settledCall, 8),
 	}
+}
+
+func (a *fakeAdapter) SettleState() (SettleState, <-chan struct{}) {
+	a.settleMu.Lock()
+	defer a.settleMu.Unlock()
+	if a.settleCh == nil {
+		a.settleCh = make(chan struct{})
+	}
+	state := a.settle
+	state.Sessions = slices.Clone(state.Sessions)
+	return state, a.settleCh
+}
+
+// setSettle changes what SettleState returns.
+func (a *fakeAdapter) setSettle(state SettleState) {
+	a.settleMu.Lock()
+	defer a.settleMu.Unlock()
+	a.settle = state
+	if a.settleCh != nil {
+		close(a.settleCh)
+		a.settleCh = nil
+	}
+}
+
+// Settled records the call and, as the server's ledger does, marks the
+// period settled with the sessions covered.
+func (a *fakeAdapter) Settled(period uint64, sessions []protocol.SettleSession) {
+	a.settleMu.Lock()
+	if a.settle.Period == period {
+		a.settle.Settled, a.settle.Sessions = true, nil
+		if a.settleCh != nil {
+			close(a.settleCh)
+			a.settleCh = nil
+		}
+	}
+	a.settleMu.Unlock()
+	a.settled <- settledCall{period: period, sessions: sessions}
 }
 
 func (a *fakeAdapter) CacheIdentity() (string, uint64) { return "cache-1", 3 }

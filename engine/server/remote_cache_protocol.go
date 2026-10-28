@@ -51,6 +51,17 @@ func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, co
 		return ErrRemoteCacheAdapterClosed
 	}
 	defer a.exports.end()
+	ctx, release, ok := a.paused.begin(ctx)
+	if !ok {
+		// The engine has given up its remote-cache work until a session
+		// starts: every root is refused.
+		skipped := make([]protocol.SkippedRoot, len(req.Roots))
+		for i, number := range req.Roots {
+			skipped[i] = protocol.SkippedRoot{Number: number, Reason: protocol.SkipRefused, Message: errRemoteCacheTimedOut.Error()}
+		}
+		return consume(ctx, remotecache.Export{Skipped: skipped})
+	}
+	defer release()
 	start := time.Now()
 	var local exportCapture
 	holds := entryHolds{cache: a.cache, held: map[uint64]dagql.AnyResult{}}

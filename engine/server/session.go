@@ -1294,8 +1294,12 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	sess.beginClientScopeTeardown()
 	sess.beginClosing()
 	sess.endMainClientAttachables()
-	// The session counts as live until its teardown ends.
-	defer srv.sessionLedger.sessionEnded(sess.mainClientCallerID, sess.cloudClaimID)
+	// The session counts as live until its teardown ends, and then says
+	// whether it sent its completion marker.
+	var marker bool
+	defer func() {
+		srv.sessionLedger.sessionEnded(sess.sessionID, sess.mainClientCallerID, sess.cloudClaimID, marker)
+	}()
 
 	// check if the local cache needs pruning after session is removed, prune if so
 	defer func() {
@@ -1427,7 +1431,7 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	telemetryCtx, cancelTelemetry := context.WithTimeout(teardownCtx, 60*time.Second)
 	defer cancelTelemetry()
 	step = teardown.beginStep("session.shutdownTelemetry")
-	srv.stampSessionComplete(telemetryCtx, sess)
+	marker = srv.stampSessionComplete(telemetryCtx, sess)
 	srv.wcprofSpanCount.Reap(sess.wcprofTraceID)
 	telemetryErr := sess.shutdownTelemetry(telemetryCtx)
 	errs = errors.Join(errs, telemetryErr)
@@ -1541,21 +1545,22 @@ func (srv *Server) getOrCreateSessionLocked(sessionID, clientID string) (*dagger
 // first session to end in a shared trace reaps it, so a later session can
 // have cache spans and a zero wcprof count. The carrier is sent when either
 // count is above zero, and carries the wcprof count only when it is; the
-// loader ignores a carrier with no count.
-func (srv *Server) stampSessionComplete(ctx context.Context, sess *daggerSession) {
+// loader ignores a carrier with no count. It reports whether it sent the
+// carrier: the remote cache service reads it as the session's end.
+func (srv *Server) stampSessionComplete(ctx context.Context, sess *daggerSession) bool {
 	if !sess.wcprofTraceID.IsValid() || !sess.wcprofRootSpanID.IsValid() {
-		return
+		return false
 	}
 	n := srv.wcprofSpanCount.Final(sess.wcprofTraceID)
 	cacheSpans := sess.cacheSpans.Count()
 	if n == 0 && cacheSpans == 0 {
-		return
+		return false
 	}
 	sess.clientMu.RLock()
 	mainRecord := sess.clientRecords[sess.mainClientCallerID]
 	sess.clientMu.RUnlock()
 	if mainRecord == nil || sess.tracerProvider == nil {
-		return
+		return false
 	}
 	// Parent the carrier at the recorded session-root span so it inherits this
 	// trace (a teardown ctx carries no span); the loader excludes it from ops, but a
@@ -1582,6 +1587,7 @@ func (srv *Server) stampSessionComplete(ctx context.Context, sess *daggerSession
 		trace.WithAttributes(attrs...),
 	)
 	span.End()
+	return true
 }
 
 type ClientInitOpts struct {

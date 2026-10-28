@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/remotecache"
+	"github.com/dagger/dagger/engine/remotecache/protocol"
 )
 
 // RemoteCacheIntegrationConfig injects an in-process remote cache integration.
@@ -41,6 +43,10 @@ const DiscardedStateStopReserve = 10 * time.Second
 
 var errRemoteCacheIntegrationExited = errors.New("remote cache integration exited")
 
+// errRemoteCacheTimedOut cancels the exports in progress once the engine
+// gives up its remote-cache work (remoteCacheSettleBound).
+var errRemoteCacheTimedOut = errors.New("remote cache: the engine gave up its remote-cache work after its last session ended")
+
 // RemoteCacheAdapter forwards control calls to its cache and renewal calls to
 // the one bridge attached for it, never to a later attachment.
 type RemoteCacheAdapter struct {
@@ -64,8 +70,78 @@ type RemoteCacheAdapter struct {
 	// exports counts the exports in progress, which a graceful stop lets
 	// finish.
 	exports inProgress
+	// paused refuses the service's exports while the engine has given up its
+	// remote-cache work, and cancels the exports in progress when it does.
+	paused exportPause
+	// ledger is the server's, whose settle state the adapter reports to Run;
+	// nil for an adapter of no server.
+	ledger *sessionLedger
 	// stopReserve is remoteCacheStopReserve. A test shortens it.
 	stopReserve time.Duration
+}
+
+// SettleState reports where the engine stands in settling with the
+// service, and a channel closed when that next changes.
+func (a *RemoteCacheAdapter) SettleState() (remotecache.SettleState, <-chan struct{}) {
+	if a.ledger == nil {
+		return remotecache.SettleState{}, nil
+	}
+	return a.ledger.settleState()
+}
+
+// Settled records the service's Settled for a settle of period that listed
+// sessions.
+func (a *RemoteCacheAdapter) Settled(period uint64, sessions []protocol.SettleSession) {
+	if a.ledger != nil {
+		a.ledger.settledFor(period, sessions)
+	}
+}
+
+// exportPause refuses exports while paused, and cancels the exports in
+// progress when it pauses.
+type exportPause struct {
+	mu      sync.Mutex
+	paused  bool
+	next    uint64
+	running map[uint64]context.CancelCauseFunc
+}
+
+// begin admits an export unless paused, under a context pause cancels;
+// release ends it.
+func (p *exportPause) begin(ctx context.Context) (_ context.Context, release func(), ok bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.paused {
+		return ctx, func() {}, false
+	}
+	ctx, cancel := context.WithCancelCause(ctx)
+	id := p.next
+	p.next++
+	if p.running == nil {
+		p.running = map[uint64]context.CancelCauseFunc{}
+	}
+	p.running[id] = cancel
+	return ctx, func() {
+		p.mu.Lock()
+		delete(p.running, id)
+		p.mu.Unlock()
+		cancel(nil)
+	}, true
+}
+
+func (p *exportPause) pause() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.paused = true
+	for _, cancel := range p.running {
+		cancel(errRemoteCacheTimedOut)
+	}
+}
+
+func (p *exportPause) resume() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.paused = false
 }
 
 func newRemoteCacheAdapter(cache *dagql.Cache, bridge *dagql.RemoteCacheBridge) *RemoteCacheAdapter {
@@ -148,6 +224,13 @@ func (p *inProgress) beginLocked() {
 	p.running++
 }
 
+// count returns how many operations are in progress.
+func (p *inProgress) count() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.running
+}
+
 func (p *inProgress) end() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -200,6 +283,9 @@ func (p *inProgress) closeWhenIdle(ctx context.Context) error {
 func (a *RemoteCacheAdapter) close(cause error) {
 	a.stopped.Store(true)
 	a.cache.DetachRemoteCacheBridge(a.bridge)
+	if a.ledger != nil {
+		a.ledger.detachRemote()
+	}
 	a.cancel(cause)
 }
 
@@ -264,6 +350,8 @@ func (srv *Server) startRemoteCacheIntegration(cfg *RemoteCacheIntegrationConfig
 	if srv.stateDiscarded {
 		adapter.stopReserve = DiscardedStateStopReserve
 	}
+	adapter.ledger = &srv.sessionLedger
+	srv.sessionLedger.attachRemote(adapter.exports.count, adapter.paused.pause, adapter.paused.resume)
 	// The graceful stop's start cancels shutdownCtx; Stop cancels Run once the
 	// exports in progress finish.
 	ctx, cancel := context.WithCancelCause(context.WithoutCancel(srv.shutdownCtx))
