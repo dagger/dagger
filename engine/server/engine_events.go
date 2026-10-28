@@ -29,6 +29,15 @@ type EngineEventExport interface {
 // the emitter's drain and the export's flush.
 const engineEventShutdownTimeout = 30 * time.Second
 
+// engineEventShutdownBudget is the events' shutdown budget: with the state
+// discarded, it fits in the stop's reserve, which is shorter.
+func engineEventShutdownBudget(stateDiscarded bool) time.Duration {
+	if stateDiscarded {
+		return DiscardedStateStopReserve
+	}
+	return engineEventShutdownTimeout
+}
+
 type queuedEngineEvent struct {
 	kind  string
 	cache string
