@@ -31,6 +31,8 @@ type DumpHeader struct {
 	// its Declared, or that never declared, makes the dump's reported work
 	// incomplete.
 	Producers []DumpProducer `json:"producers,omitempty"`
+	// Machine describes the machine the engine ran on.
+	Machine *DumpMachine `json:"machine,omitempty"`
 }
 
 // DumpProducer is one producer's completeness accounting.
@@ -261,6 +263,7 @@ func (r *Recorder) WriteDump(w io.Writer, flush bool) error {
 		Strings:        r.strings.snapshot(),
 		OpenOps:        open,
 		Producers:      producers,
+		Machine:        machineFacts(),
 	}
 
 	bw := bufio.NewWriterSize(w, 1<<20)
