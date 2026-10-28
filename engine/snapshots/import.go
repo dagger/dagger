@@ -17,10 +17,10 @@ import (
 //
 // The blobs of the layers after the one importing are downloaded ahead, up to
 // chainAheadWindow of them, from the first layer the engine doesn't already
-// have imported. Layers apply strictly in order, unless the snapshotter can
-// rebase (cm.applyLayersApart): the layers from that first one then apply at
-// once, up to chainAheadWindow of them, and are committed onto their parents
-// in order.
+// have imported, unless the chain's blobs arrive by chain.Await. Layers apply
+// strictly in order, unless the snapshotter can rebase (cm.applyLayersApart):
+// the layers from that first one then apply at once, up to chainAheadWindow
+// of them, and are committed onto their parents in order.
 func (cm *snapshotManager) ImportChain(ctx context.Context, chain *ExportChain) (_ ImmutableRef, rerr error) {
 	if chain == nil {
 		return nil, fmt.Errorf("import snapshot chain: nil chain")
@@ -70,6 +70,11 @@ func (cm *snapshotManager) ImportChain(ctx context.Context, chain *ExportChain) 
 		apartFrom = first
 	}
 	for i := range apartFrom {
+		if i >= first && chain.Await != nil && cm.chainLocalPrefix(chain) <= i {
+			if err := chain.Await(ctx, chain.Layers[i].Descriptor); err != nil {
+				return nil, err
+			}
+		}
 		if err := importInOrder(i); err != nil {
 			return nil, err
 		}
@@ -184,7 +189,8 @@ func chainIDsFrom(chain *ExportChain) ([]digest.Digest, error) {
 // prepared with no parent, under the import lock of the layer's chain. Another
 // import of the same layers holds that lock until it has committed the
 // layer, which this import then reuses: it applies nothing. held is the
-// layer's download started ahead, if any, which it lets go of.
+// layer's download started ahead, if any, which it lets go of. A chain whose
+// blobs arrive by chain.Await waits for the layer's before taking the lock.
 func (cm *snapshotManager) applyChainLayer(ctx context.Context, chain *ExportChain, i int, chainID digest.Digest, held *contentFetch) (applied appliedLayer) {
 	desc := chain.Layers[i].Descriptor
 	clock := importClock{timing: &applied.timing, prof: wcprof.Enabled(ctx)}
@@ -195,6 +201,11 @@ func (cm *snapshotManager) applyChainLayer(ctx context.Context, chain *ExportCha
 			cm.leaveFetch(ctx, held)
 		}
 	}()
+	if chain.Await != nil && cm.chainLocalPrefix(chain) <= i {
+		if applied.err = chain.Await(ctx, desc); applied.err != nil {
+			return applied
+		}
+	}
 	applied.unlock, applied.err = cm.acquireImportLock(ctx, "chain/"+chainID.String(), clock)
 	if applied.err != nil {
 		return applied
