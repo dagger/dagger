@@ -36,6 +36,9 @@ func schemaCacheContext(t testing.TB) context.Context {
 	require.NoError(t, err)
 	ctx = dagql.ContextWithCache(ctx, cache)
 	t.Cleanup(func() {
+		// Go cancels t.Context before cleanups run; wait for cache work
+		// still in flight rather than giving up on it.
+		ctx := context.WithoutCancel(ctx)
 		require.NoError(t, cache.ReleaseSession(ctx, "schema-test"))
 		require.NoError(t, cache.Close(ctx))
 	})
