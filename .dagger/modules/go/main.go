@@ -16,12 +16,14 @@ import (
 	toml "github.com/pelletier/go-toml"
 
 	"github.com/containerd/platforms"
-	"github.com/dagger/dagger/modules/go/internal/dagger"
+	"github.com/dagger/dagger/modules/go/internal/dagger/clients/wolfi"
 	"github.com/dagger/dagger/util/parallel"
+
+	"dagger.io/dagger/core"
 )
 
 const (
-	defaultPlatform        = dagger.Platform("")
+	defaultPlatform        = core.Platform("")
 	moduleConfigFilename   = "dagger-module.toml"
 	legacyModuleConfigFile = "dagger.json"
 )
@@ -34,23 +36,23 @@ func New(
 
 	// Project source directory
 	// +defaultPath="/"
-	source *dagger.Directory,
+	source *core.Directory,
 	// Go version
 	// +optional
 	// +default="1.26"
 	version string,
 	// Use a custom module cache
 	// +optional
-	moduleCache *dagger.CacheVolume,
+	moduleCache *core.CacheVolume,
 
 	// Use a custom build cache
 	// +optional
-	buildCache *dagger.CacheVolume,
+	buildCache *core.CacheVolume,
 
 	// Use a custom base container.
 	// The container must have Go installed.
 	// +optional
-	base *dagger.Container,
+	base *core.Container,
 
 	// Pass arguments to 'go build -ldflags'
 	// +optional
@@ -97,7 +99,7 @@ func New(
 	// precedence over ws. Omitted → no stamping.
 	//
 	// +optional
-	ws *dagger.Workspace,
+	ws *core.Workspace,
 
 	// Resolved VCS commit to stamp, forwarded by a parent toolchain. Takes
 	// precedence over ws so the Workspace never enters this build's cache key.
@@ -109,17 +111,17 @@ func New(
 	vcsDirty bool,
 ) *Go {
 	if source == nil {
-		source = dag.Directory()
+		source = core.NewDirectory()
 	}
 	if moduleCache == nil {
 		// Cache volumes should be namespaced by module, but they aren't (yet).
 		// For now, we namespace them explicitly here.
-		moduleCache = dag.CacheVolume("github.com/dagger/dagger/modules/go:modules")
+		moduleCache = core.NewCacheVolume("github.com/dagger/dagger/modules/go:modules")
 	}
 	if buildCache == nil {
 		// Cache volumes should be namespaced by module, but they aren't (yet).
 		// For now, we namespace them explicitly here.
-		buildCache = dag.CacheVolume("github.com/dagger/dagger/modules/go:build")
+		buildCache = core.NewCacheVolume("github.com/dagger/dagger/modules/go:build")
 	}
 	customBase := base != nil
 	if base == nil {
@@ -139,13 +141,12 @@ func New(
 		if len(extraPackages) > 0 {
 			packages = append(packages, extraPackages...)
 		}
-		base = dag.
-			Wolfi().
-			Container(dagger.WolfiContainerOpts{Packages: packages}).
+		base = wolfi.New().
+			Container(wolfi.WolfiContainerOpts{Packages: packages}).
 			WithEnvVariable("GOLANG_VERSION", version).
 			WithEnvVariable("GOPATH", "/go").
-			WithEnvVariable("PATH", "${GOPATH}/bin:${PATH}", dagger.ContainerWithEnvVariableOpts{Expand: true}).
-			WithDirectory("/usr/local/bin", dag.Directory()).
+			WithEnvVariable("PATH", "${GOPATH}/bin:${PATH}", core.ContainerWithEnvVariableOpts{Expand: true}).
+			WithDirectory("/usr/local/bin", core.NewDirectory()).
 			// Configure caches
 			WithMountedCache("/go/pkg/mod", moduleCache).
 			WithMountedCache("/root/.cache/go-build", buildCache).
@@ -209,16 +210,16 @@ type Go struct {
 	Version string
 
 	// Project source directory
-	Source *dagger.Directory
+	Source *core.Directory
 
 	// Go module cache
-	ModuleCache *dagger.CacheVolume
+	ModuleCache *core.CacheVolume
 
 	// Go build cache
-	BuildCache *dagger.CacheVolume
+	BuildCache *core.CacheVolume
 
 	// Base container from which to run all operations
-	Base *dagger.Container
+	Base *core.Container
 
 	// Pass arguments to 'go build -ldflags'
 	Ldflags []string
@@ -256,7 +257,7 @@ type AssociativeArray[T any] []struct {
 func (p *Go) Download(ctx context.Context) (*Go, error) {
 	_, err := p.Base.
 		// run `go mod download` with only go.mod files (re-run only if mod files have changed)
-		WithDirectory("", p.Source, dagger.ContainerWithDirectoryOpts{
+		WithDirectory("", p.Source, core.ContainerWithDirectoryOpts{
 			Include: []string{"**/go.mod", "**/go.sum"},
 		}).
 		WithEnvVariable("CACHE_BUSTER", time.Now().Format("20060102-150405.000")).
@@ -274,13 +275,13 @@ func (p *Go) Download(ctx context.Context) (*Go, error) {
 //   - Mount the source code
 func (p *Go) Env(
 	// +optional
-	platform dagger.Platform,
-) *dagger.Container {
+	platform core.Platform,
+) *core.Container {
 	return p.Base.
 		// Go's module index keys imports by path, size and mtime, so normalized
 		// Git trees can alias across builds sharing GOCACHE. Keep the compiled
 		// artifact cache, but read imports from source (dagger/dagger#8031).
-		WithEnvVariable("GODEBUG", "${GODEBUG},goindex=0", dagger.ContainerWithEnvVariableOpts{Expand: true}).
+		WithEnvVariable("GODEBUG", "${GODEBUG},goindex=0", core.ContainerWithEnvVariableOpts{Expand: true}).
 		// Configure CGO
 		WithEnvVariable("CGO_ENABLED", func() string {
 			if p.Cgo {
@@ -289,7 +290,7 @@ func (p *Go) Env(
 			return "0"
 		}()).
 		// Configure platform
-		With(func(c *dagger.Container) *dagger.Container {
+		With(func(c *core.Container) *core.Container {
 			if platform == "" {
 				return c
 			}
@@ -308,7 +309,7 @@ func (p *Go) Env(
 			return c
 		}).
 		// Configure experiments
-		With(func(c *dagger.Container) *dagger.Container {
+		With(func(c *core.Container) *core.Container {
 			if len(p.Experiment) == 0 {
 				return c
 			}
@@ -347,12 +348,12 @@ func (p *Go) Build(
 	noDwarf bool,
 	// Target build platform
 	// +optional
-	platform dagger.Platform,
+	platform core.Platform,
 	// Output directory
 	// +optional
 	// +default="./bin/"
 	output string,
-) (*dagger.Directory, error) {
+) (*core.Directory, error) {
 	if p.Race {
 		p.Cgo = true
 	}
@@ -386,7 +387,7 @@ func (p *Go) Build(
 	for _, pkg := range mainPkgs {
 		env = env.WithExec(goCommand(cmd, []string{pkg}, ldflags, p.Tags, p.Values, p.Race))
 	}
-	return dag.Directory().WithDirectory(output, env.Directory(output)), nil
+	return core.NewDirectory().WithDirectory(output, env.Directory(output)), nil
 }
 
 // Build a single main package, and return the compiled binary
@@ -402,8 +403,8 @@ func (p *Go) Binary(
 	noDwarf bool,
 	// Target build platform
 	// +optional
-	platform dagger.Platform,
-) (*dagger.File, error) {
+	platform core.Platform,
+) (*core.File, error) {
 	dir, err := p.Build(
 		ctx,
 		[]string{pkg},
@@ -533,7 +534,7 @@ func goCommand(
 	return cmd
 }
 
-func (p *Go) findParentDirs(ctx context.Context, dir *dagger.Directory, filename string, include []string, exclude []string) ([]string, []string, error) {
+func (p *Go) findParentDirs(ctx context.Context, dir *core.Directory, filename string, include []string, exclude []string) ([]string, []string, error) {
 	entries, err := dir.Glob(ctx, "**/"+filename)
 	if err != nil {
 		return nil, nil, err
@@ -571,7 +572,7 @@ func (p *Go) Modules(
 	return mods, nil
 }
 
-func (p *Go) TidyModule(module string) (*dagger.Changeset, error) {
+func (p *Go) TidyModule(module string) (*core.Changeset, error) {
 	tidyModDir := p.Env(defaultPlatform).
 		WithWorkdir(module).
 		WithExec([]string{"go", "mod", "tidy"}).
@@ -586,12 +587,12 @@ func (p *Go) Tidy(
 	ctx context.Context,
 	include []string, // +optional
 	exclude []string, // +optional
-) (*dagger.Changeset, error) {
+) (*core.Changeset, error) {
 	modules, err := p.Modules(ctx, include, exclude)
 	if err != nil {
 		return nil, err
 	}
-	tidyModules := make([]*dagger.Changeset, len(modules))
+	tidyModules := make([]*core.Changeset, len(modules))
 	jobs := parallel.New().
 		// On a large repo this can run dozens of parallel go mod tidy jobs,
 		// which can lead to OOM or extreme CPU usage, so we limit parallelism
@@ -606,12 +607,12 @@ func (p *Go) Tidy(
 	if err := jobs.Run(ctx); err != nil {
 		return nil, err
 	}
-	return dag.Changeset().WithChangesets(tidyModules), nil
+	return core.NewChangeset().WithChangesets(tidyModules), nil
 }
 
 // Generate Dagger runtime files for Go SDK modules in the configured source.
 // +generate
-func (p *Go) GenerateDaggerRuntimes(ctx context.Context) (*dagger.Changeset, error) {
+func (p *Go) GenerateDaggerRuntimes(ctx context.Context) (*core.Changeset, error) {
 	before := p.Source
 
 	modules, err := p.Modules(ctx, nil, nil)
@@ -619,7 +620,7 @@ func (p *Go) GenerateDaggerRuntimes(ctx context.Context) (*dagger.Changeset, err
 		return nil, err
 	}
 
-	layers := make([]*dagger.Directory, len(modules))
+	layers := make([]*core.Directory, len(modules))
 	jobs := parallel.New().
 		WithLimit(p.Limit)
 	for i, module := range modules {
@@ -666,7 +667,7 @@ func (p *Go) GenerateDaggerRuntime(ctx context.Context, start string) (*Go, erro
 	return p, nil
 }
 
-func (p *Go) generateDaggerRuntimeLayer(ctx context.Context, start string) (*dagger.Directory, bool, error) {
+func (p *Go) generateDaggerRuntimeLayer(ctx context.Context, start string) (*core.Directory, bool, error) {
 	var isInside bool
 	var daggerModPath string
 	if err := parallel.Run(ctx, "check for dagger runtime", func(ctx context.Context) error {
@@ -715,12 +716,12 @@ func (p *Go) generateDaggerRuntimeLayer(ctx context.Context, start string) (*dag
 		return nil, false, nil
 	}
 
-	var layer *dagger.Directory
+	var layer *core.Directory
 	if err := parallel.Run(ctx, "generate dagger runtime: "+daggerModPath, func(ctx context.Context) error {
 		// 4. Match! Load the module and generate its files
 		var err error
 		layer, err = p.Source.
-			AsModule(dagger.DirectoryAsModuleOpts{SourceRootPath: daggerModPath}).
+			AsModule(core.DirectoryAsModuleOpts{SourceRootPath: daggerModPath}).
 			GeneratedContextDirectory().Sync(ctx)
 		return err
 	}); err != nil {
