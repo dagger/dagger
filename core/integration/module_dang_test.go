@@ -647,3 +647,20 @@ func dangModule(t *testctx.T, c *dagger.Client, moduleName string) *core.Contain
 		WithDirectory("testdata/modules/dang/"+moduleName, core.NewQuery(c).Host().Directory(modSrc)).
 		WithWorkdir("/work/testdata/modules/dang/" + moduleName)
 }
+
+// TestSourceLinksStayInContext checks that the Dang runtime reads a module's
+// sources as the engine resolves them, within the module's context: an
+// absolute symlink among them points into the context, not at the engine's
+// own filesystem.
+func (DangSuite) TestSourceLinksStayInContext(ctx context.Context, t *testctx.T) {
+	ctr := goGitBase(t, connect(ctx, t)).
+		WithNewFile("/work/mod/dagger.json", `{"name":"test","engineVersion":"latest","sdk":{"source":"dang"}}`).
+		WithNewFile("/work/mod/src/real.dang", `type Test {
+  value: String! { "inside the context" }
+}`).
+		WithExec([]string{"ln", "-s", "/mod/src/real.dang", "/work/mod/main.dang"})
+
+	out, err := ctr.With(daggerCallAt("mod", "value")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "inside the context", strings.TrimSpace(out))
+}

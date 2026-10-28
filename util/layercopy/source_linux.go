@@ -10,13 +10,13 @@ import (
 	"strings"
 	"syscall"
 
-	continuityfs "github.com/containerd/continuity/fs"
 	"github.com/containerd/continuity/sysx"
 	"golang.org/x/sys/unix"
 )
 
 type source struct {
 	root         string
+	boundary     string
 	realRoot     string
 	layers       []string
 	overlay      bool
@@ -49,7 +49,7 @@ func newSource(m Mount) (*source, error) {
 		return nil, fmt.Errorf("source root is empty")
 	}
 
-	s := &source{root: m.Root, realRoot: m.Root}
+	s := &source{root: m.Root, realRoot: m.Root, boundary: m.Boundary}
 	if m.Mount == nil {
 		return s, nil
 	}
@@ -75,7 +75,7 @@ func (s *source) selectBase(srcPath string, followFinalSymlink bool) error {
 		return nil
 	}
 
-	baseView, err := rootPath(s.root, srcPath, followFinalSymlink)
+	baseView, err := BoundedRootPath(s.root, s.boundary, srcPath, followFinalSymlink)
 	if err != nil {
 		return err
 	}
@@ -322,19 +322,7 @@ func (s *source) overlayAncestorMinLayer(rel string) (int, error) {
 }
 
 func rootPath(root, p string, followFinalSymlink bool) (string, error) {
-	p = filepath.Join("/", p)
-	if p == "/" {
-		return root, nil
-	}
-	if followFinalSymlink {
-		return continuityfs.RootPath(root, p)
-	}
-	dir, base := filepath.Split(p)
-	resolvedDir, err := continuityfs.RootPath(root, dir)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(resolvedDir, base), nil
+	return BoundedRootPath(root, "", p, followFinalSymlink)
 }
 
 func isWhiteout(info os.FileInfo) bool {

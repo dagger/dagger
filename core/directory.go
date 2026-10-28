@@ -31,6 +31,7 @@ import (
 	"github.com/dagger/dagger/util/patternmatcher"
 	"github.com/dustin/go-humanize"
 	"github.com/vektah/gqlparser/v2/ast"
+	"golang.org/x/sys/unix"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -1340,6 +1341,46 @@ func (lazy *DirectoryWithNewDirectoryLazy) EncodePersisted(ctx context.Context, 
 	return json.Marshal(persistedDirectoryWithNewDirectoryLazy{ParentResultID: parentID, Dest: lazy.Dest, Permissions: lazy.Permissions})
 }
 
+// viewSubpath returns where p, a path in the directory at dirPath of
+// snapshot, is in the snapshot, resolved with the directory as the root (see
+// ResolveInDir). It keeps p as written, so names stay as given, when that
+// resolves to the same file however the directory is surrounded; otherwise,
+// when resolving it leaves the directory, it returns the resolved path. It
+// reads only the directory, so whatever is selected, and its name, depend on
+// nothing else in the snapshot.
+func viewSubpath(ctx context.Context, snapshot bkcache.ImmutableRef, dirPath, p string) (string, error) {
+	written := path.Join(dirPath, path.Join("/", p))
+	if snapshot == nil {
+		return written, nil
+	}
+	out := written
+	err := MountRef(ctx, snapshot, func(root string, _ *mount.Mount) error {
+		base, err := containerdfs.RootPath(root, dirPath)
+		if err != nil {
+			return err
+		}
+		if base == root {
+			// The directory is the whole snapshot: nothing surrounds it.
+			return nil
+		}
+		leaves, err := leavesDir(base, p)
+		if err != nil || !leaves {
+			return err
+		}
+		resolved, err := containerdfs.RootPath(base, path.Join("/", p))
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(root, resolved)
+		if err != nil {
+			return err
+		}
+		out = path.Join("/", filepath.ToSlash(rel))
+		return nil
+	}, mountRefAsReadOnly)
+	return out, err
+}
+
 func (lazy *DirectorySubdirectoryLazy) Evaluate(ctx context.Context, dir *Directory) error {
 	return dir.evaluateLazy(ctx, &lazy.LazyState, "Directory.directory", func(ctx context.Context) error {
 		cache, err := dagql.EngineCache(ctx)
@@ -1357,7 +1398,7 @@ func (lazy *DirectorySubdirectoryLazy) Evaluate(ctx context.Context, dir *Direct
 
 		finalDir := parentDir
 		if cleanDotsAndSlashes(lazy.Subdir) != "" {
-			finalDir = path.Join(parentDir, lazy.Subdir)
+			finalDir = path.Join(parentDir, path.Join("/", lazy.Subdir))
 
 			query, err := CurrentQuery(ctx)
 			if err != nil {
@@ -1392,6 +1433,12 @@ func (lazy *DirectorySubdirectoryLazy) Evaluate(ctx context.Context, dir *Direct
 			dir.SetPath(scratchDir)
 			dir.SetSnapshot(scratchSnapshot)
 			return nil
+		}
+		if finalDir != parentDir {
+			finalDir, err = viewSubpath(ctx, parentSnapshot, parentDir, lazy.Subdir)
+			if err != nil {
+				return RestoreErrPath(err, lazy.Subdir)
+			}
 		}
 		dir.SetPath(finalDir)
 
@@ -1599,12 +1646,11 @@ func (dir *Directory) Entries(ctx context.Context, self dagql.ObjectResult[*Dire
 	if err != nil {
 		return nil, err
 	}
-	src = path.Join(dirPath, src)
 	if snapshot == nil {
 		err = errEmptyResultRef
 	} else {
 		err = MountRef(ctx, snapshot, func(root string, _ *mount.Mount) error {
-			resolvedDir, err := containerdfs.RootPath(root, src)
+			resolvedDir, err := ResolveInDir(root, dirPath, src)
 			if err != nil {
 				return err
 			}
@@ -1782,7 +1828,7 @@ func (dir *Directory) WithNewFile(ctx context.Context, parent dagql.ObjectResult
 		return err
 	}
 	err = MountRef(ctx, newRef, func(root string, _ *mount.Mount) error {
-		resolvedDest, err := containerdfs.RootPath(root, path.Join(parentDir, dest))
+		resolvedDest, err := ResolveInDir(root, parentDir, dest)
 		if err != nil {
 			return err
 		}
@@ -1935,12 +1981,17 @@ func (dir *Directory) withoutPathsFromSnapshot(ctx context.Context, parentSnapsh
 
 	var anyPathsRemoved bool
 	err = MountRef(ctx, newRef, func(root string, _ *mount.Mount) error {
+		// Paths resolve with the directory as the root (see ResolveInDir).
+		base, err := containerdfs.RootPath(root, dirPath)
+		if err != nil {
+			return err
+		}
 		for _, p := range paths {
-			p = path.Join(dirPath, p)
+			p = path.Join("/", p)
 			var matches []string
 			if strings.Contains(p, "*") {
 				var err error
-				matches, err = layercopy.ResolveWildcards(root, p, true)
+				matches, err = layercopy.ResolveWildcards(base, p, true)
 				if err != nil {
 					return err
 				}
@@ -1949,7 +2000,7 @@ func (dir *Directory) withoutPathsFromSnapshot(ctx context.Context, parentSnapsh
 			}
 
 			for _, m := range matches {
-				fullPath, err := RootPathWithoutFinalSymlink(root, m)
+				fullPath, err := RootPathWithoutFinalSymlink(base, m)
 				if err != nil {
 					return err
 				}
@@ -2012,6 +2063,19 @@ func (dir *Directory) applyPatchFileResult(ctx context.Context, parent dagql.Obj
 	return nil
 }
 
+// withoutGitEnv returns env without Git's own variables, such as GIT_DIR or
+// GIT_CONFIG_*: in the engine's environment they could lead git to a
+// repository or config outside the directory it works on.
+func withoutGitEnv(env []string) []string {
+	out := make([]string, 0, len(env))
+	for _, kv := range env {
+		if !strings.HasPrefix(kv, "GIT_") {
+			out = append(out, kv)
+		}
+	}
+	return out
+}
+
 func applyGitPatch(ctx context.Context, dir string, patch io.Reader, stdio telemetry.SpanStreams, onConflict PatchConflict) error {
 	leaveMarkers := onConflict == PatchConflictLeaveMarkers
 	args := []string{"apply", "--allow-empty"}
@@ -2030,7 +2094,7 @@ func applyGitPatch(ctx context.Context, dir string, patch io.Reader, stdio telem
 	apply := exec.CommandContext(ctx, "git", args...)
 	apply.Dir = dir
 	// wholeFileApplyErrors reads git's messages, so pin their language.
-	apply.Env = append(os.Environ(), "LC_ALL=C")
+	apply.Env = append(withoutGitEnv(os.Environ()), "LC_ALL=C")
 	apply.Stdin = patch
 	apply.Stdout = stdio.Stdout
 	apply.Stderr = stdio.Stderr
@@ -2371,7 +2435,7 @@ func (dir *Directory) Subfile(ctx context.Context, parent dagql.ObjectResult[*Di
 		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
 	}
 	if parentDir, ok := parent.Self().Dir.Peek(); ok {
-		subfile.SetPath(filepath.Join(parentDir, file))
+		subfile.SetPath(path.Join(parentDir, path.Join("/", file)))
 	}
 	return subfile, nil
 }
@@ -2495,9 +2559,12 @@ func (dir *Directory) withDirectory(
 	}
 	defer newRef.Release(context.WithoutCancel(ctx))
 
-	destDir = directoryWithDirectoryDest(ourDir, destDir)
 	var usage snapshots.Usage
 	if err := MountRef(ctx, newRef, func(destRoot string, destMnt *mount.Mount) error {
+		boundary, destDir, err := viewDest(destRoot, ourDir, destDir)
+		if err != nil {
+			return err
+		}
 		var ownership *Ownership
 		if owner != "" {
 			var err error
@@ -2518,7 +2585,7 @@ func (dir *Directory) withDirectory(
 			ReplaceExisting: true,
 		}
 
-		copier, err := layercopy.NewCopier(layercopy.Mount{Root: destRoot, Mount: destMnt})
+		copier, err := layercopy.NewCopier(layercopy.Mount{Root: destRoot, Mount: destMnt, Boundary: boundary})
 		if err != nil {
 			return err
 		}
@@ -2573,13 +2640,51 @@ func materializedDirectorySnapshotAndPath(dir *Directory) (bkcache.ImmutableRef,
 	return dirRef, dirPath, nil
 }
 
-func directoryWithDirectoryDest(baseDir, destDir string) string {
-	destDirTrailingSlash := strings.HasSuffix(destDir, "/") || strings.HasSuffix(destDir, "/.")
-	destDir = path.Join(baseDir, destDir)
-	if destDirTrailingSlash && !strings.HasSuffix(destDir, "/") {
-		destDir += "/"
+// viewBase returns where the directory at dirPath is in the filesystem
+// mounted at root, with its symlinks resolved: the boundary that copies into
+// or out of it stay within (see layercopy.BoundedRootPath).
+func viewBase(root, dirPath string) (string, error) {
+	base, err := containerdfs.RootPath(root, dirPath)
+	if err != nil {
+		return "", err
 	}
-	return destDir
+	rel, err := filepath.Rel(root, base)
+	if err != nil {
+		return "", err
+	}
+	return path.Join("/", filepath.ToSlash(rel)), nil
+}
+
+// viewDest returns the boundary of the directory at dirPath in the
+// filesystem mounted at root (see viewBase), and dest, a destination path in
+// that directory, as a path under it for the copier to resolve within it. A
+// trailing slash is kept, since copies read it as "into this directory".
+func viewDest(root, dirPath, dest string) (boundary, out string, _ error) {
+	boundary, err := viewBase(root, dirPath)
+	if err != nil {
+		return "", "", err
+	}
+	out = path.Join(boundary, path.Join("/", dest))
+	if (strings.HasSuffix(dest, "/") || strings.HasSuffix(dest, "/.")) && !strings.HasSuffix(out, "/") {
+		out += "/"
+	}
+	return boundary, out, nil
+}
+
+// newViewCopier returns a copier into the directory at dirPath of the
+// filesystem mounted at root, with the directory as its boundary, and writes
+// dests, destination paths in the directory, to out as paths for it (see
+// viewDest).
+func newViewCopier(root string, mnt *mount.Mount, dirPath string, dests, out []string) (*layercopy.Copier, error) {
+	var boundary string
+	for i, dest := range dests {
+		var err error
+		boundary, out[i], err = viewDest(root, dirPath, dest)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return layercopy.NewCopier(layercopy.Mount{Root: root, Mount: mnt, Boundary: boundary})
 }
 
 //nolint:gocyclo
@@ -2630,10 +2735,7 @@ func (dir *Directory) WithDirectoryDockerfileCompat(
 		return fmt.Errorf("failed to get current query: %w", err)
 	}
 	destDirTrailingSlash := strings.HasSuffix(destDir, "/") || strings.HasSuffix(destDir, "/.")
-	destDir = path.Join(ourDir, destDir)
-	if destDirTrailingSlash && !strings.HasSuffix(destDir, "/") {
-		destDir += "/"
-	}
+	destDirArg := destDir
 
 	var parentRoot string
 	var releaseParent func() error
@@ -2658,6 +2760,10 @@ func (dir *Directory) WithDirectoryDockerfileCompat(
 
 	var usage snapshots.Usage
 	if err := MountRef(ctx, newRef, func(copyDest string, destMnt *mount.Mount) error {
+		boundary, destDir, err := viewDest(copyDest, ourDir, destDirArg)
+		if err != nil {
+			return err
+		}
 		var ownership *Ownership
 		if owner != "" {
 			ownerRoot := copyDest
@@ -2671,7 +2777,7 @@ func (dir *Directory) WithDirectoryDockerfileCompat(
 			}
 		}
 
-		copier, err := layercopy.NewCopier(layercopy.Mount{Root: copyDest, Mount: destMnt})
+		copier, err := layercopy.NewCopier(layercopy.Mount{Root: copyDest, Mount: destMnt, Boundary: boundary})
 		if err != nil {
 			return err
 		}
@@ -2699,17 +2805,20 @@ func (dir *Directory) WithDirectoryDockerfileCompat(
 		}
 
 		if err := MountRef(ctx, srcRef, func(mntedSrcPath string, srcMnt *mount.Mount) error {
+			// Source paths resolve with the source directory as the root
+			// (see layercopy.BoundedRootPath).
+			srcBoundary, err := viewBase(mntedSrcPath, srcDir)
+			if err != nil {
+				return err
+			}
+			srcMount := layercopy.Mount{Root: mntedSrcPath, Mount: srcMnt, Boundary: srcBoundary}
 			if attemptUnpackDockerCompatibility && srcPath != "" {
-				srcPathCopy := srcPath
-				if srcDir != "" && srcDir != "/" {
-					srcPathCopy = srcDir + "/" + srcPathCopy
-				}
 				didUnpack, err := attemptCopyArchiveUnpack(
 					ctx,
 					copier,
-					layercopy.Mount{Root: mntedSrcPath, Mount: srcMnt},
+					srcMount,
 					destDir,
-					[]string{strings.TrimPrefix(srcPathCopy, "/")},
+					[]string{strings.TrimPrefix(path.Join("/", srcPath), "/")},
 					filter.Exclude,
 					filter.Gitignore,
 					ownership,
@@ -2724,15 +2833,15 @@ func (dir *Directory) WithDirectoryDockerfileCompat(
 				}
 			}
 
-			pathsToCopy := []string{srcDir}
+			pathsToCopy := []string{srcBoundary}
 			if srcPath != "" {
-				srcPathWithDir := srcPath
-				if srcDir != "" && srcDir != "/" {
-					srcPathWithDir = srcDir + "/" + srcPathWithDir
-				}
-				pathsToCopy, err = layercopy.ResolveWildcards(mntedSrcPath, srcPathWithDir, true)
+				matches, err := layercopy.ResolveWildcards(path.Join(mntedSrcPath, srcBoundary), path.Join("/", srcPath), true)
 				if err != nil {
 					return err
+				}
+				pathsToCopy = make([]string, len(matches))
+				for i, m := range matches {
+					pathsToCopy[i] = path.Join(srcBoundary, path.Join("/", m))
 				}
 			}
 
@@ -2744,18 +2853,18 @@ func (dir *Directory) WithDirectoryDockerfileCompat(
 					if parentRoot != "" {
 						existsRoot = parentRoot
 					}
-					resolvedExistsPath, err := containerdfs.RootPath(existsRoot, destDirPath)
+					resolvedExistsPath, err := layercopy.BoundedRootPath(existsRoot, boundary, destDirPath, true)
 					if err != nil {
 						return err
 					}
 					if _, err := os.Lstat(resolvedExistsPath); err != nil {
-						err = TrimErrPathPrefix(err, path.Join(mntedSrcPath, srcDir))
+						err = TrimErrPathPrefix(err, path.Join(mntedSrcPath, srcBoundary))
 						err = TrimErrPathPrefix(err, existsRoot)
 						return err
 					}
 				}
-				if err := copier.Copy(ctx, layercopy.Mount{Root: mntedSrcPath, Mount: srcMnt}, srcPath, copyDestPath, opts); err != nil {
-					err = TrimErrPathPrefix(err, path.Join(mntedSrcPath, srcDir))
+				if err := copier.Copy(ctx, srcMount, srcPath, copyDestPath, opts); err != nil {
+					err = TrimErrPathPrefix(err, path.Join(mntedSrcPath, srcBoundary))
 					err = TrimErrPathPrefix(err, copyDest)
 					return fmt.Errorf("failed to copy source directory: %w", err)
 				}
@@ -2796,7 +2905,8 @@ func attemptCopyArchiveUnpack(
 		return false, nil
 	}
 
-	matches, ok, err := resolveAttemptUnpackMatches(srcMount.Root, includePatterns)
+	srcBase := filepath.Join(srcMount.Root, srcMount.Boundary)
+	matches, ok, err := resolveAttemptUnpackMatches(srcBase, includePatterns)
 	if err != nil {
 		return false, err
 	}
@@ -2817,8 +2927,11 @@ func attemptCopyArchiveUnpack(
 		DestPathHintIsDir: destPathHintIsDirectory,
 	}
 
-	for _, src := range matches {
-		resolvedSrcPath, err := containerdfs.RootPath(srcMount.Root, src)
+	for _, match := range matches {
+		// Matches are in the source directory; the copier takes them as
+		// paths under its boundary.
+		src := path.Join("/", srcMount.Boundary, match)
+		resolvedSrcPath, err := layercopy.BoundedRootPath(srcMount.Root, srcMount.Boundary, src, true)
 		if err != nil {
 			return false, err
 		}
@@ -2861,7 +2974,7 @@ func copyAttemptUnpackNonArchiveSingleFile(
 	opts layercopy.CopyOptions,
 	destPathHintIsDirectory bool,
 ) (bool, error) {
-	resolvedSrcPath, err := containerdfs.RootPath(srcMount.Root, srcPatternPath)
+	resolvedSrcPath, err := layercopy.BoundedRootPath(srcMount.Root, srcMount.Boundary, srcPatternPath, true)
 	if err != nil {
 		return false, err
 	}
@@ -2956,8 +3069,8 @@ func isArchivePath(path string) bool {
 	return err == nil
 }
 
-func ensureCopyDestParentExists(ctx context.Context, baseRef bkcache.ImmutableRef, destPath string) error {
-	parentPath := filepath.Dir(path.Clean(destPath))
+func ensureCopyDestParentExists(ctx context.Context, baseRef bkcache.ImmutableRef, dirPath, destPath string) error {
+	parentPath := filepath.Dir(path.Join("/", destPath))
 	if parentPath == "." {
 		parentPath = "/"
 	}
@@ -2970,7 +3083,7 @@ func ensureCopyDestParentExists(ctx context.Context, baseRef bkcache.ImmutableRe
 	}
 
 	return MountRef(ctx, baseRef, func(root string, _ *mount.Mount) error {
-		resolvedParentPath, err := containerdfs.RootPath(root, parentPath)
+		resolvedParentPath, err := ResolveInDir(root, dirPath, parentPath)
 		if err != nil {
 			return err
 		}
@@ -3065,9 +3178,9 @@ func (dir *Directory) copyFiles(
 	copyDestPaths := make([]string, len(destPaths))
 	for i, destPath := range destPaths {
 		destPathHintIsDirectory[i] = strings.HasSuffix(destPath, "/") || strings.HasSuffix(destPath, "/.")
-		copyDestPaths[i] = path.Join(ourDir, destPath)
+		copyDestPaths[i] = path.Join(ourDir, path.Join("/", destPath))
 		if doNotCreateDestPath {
-			if err := ensureCopyDestParentExists(ctx, dirCacheRef, copyDestPaths[i]); err != nil {
+			if err := ensureCopyDestParentExists(ctx, dirCacheRef, ourDir, destPaths[i]); err != nil {
 				return err
 			}
 		}
@@ -3094,12 +3207,11 @@ func (dir *Directory) copyFiles(
 			}
 		}
 
-		copier, err := layercopy.NewCopier(layercopy.Mount{Root: root, Mount: destMnt})
+		copier, err := newViewCopier(root, destMnt, ourDir, destPaths, copyDestPaths)
 		if err != nil {
 			return err
 		}
 		defer copier.Close()
-
 		for i := range srcs {
 			// Copy each file as its own withFile would: a later copy may
 			// replace an earlier destination, so do not link to it.
@@ -3149,7 +3261,7 @@ func (dir *Directory) copyFiles(
 	return nil
 }
 
-func (dir *Directory) WithTimestamps(ctx context.Context, parent dagql.ObjectResult[*Directory], unix int) error {
+func (dir *Directory) WithTimestamps(ctx context.Context, parent dagql.ObjectResult[*Directory], timestamp int) error {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return err
@@ -3175,7 +3287,7 @@ func (dir *Directory) WithTimestamps(ctx context.Context, parent dagql.ObjectRes
 		parentSnapshot,
 		nil,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-		bkcache.WithDescription(fmt.Sprintf("withTimestamps %d", unix)),
+		bkcache.WithDescription(fmt.Sprintf("withTimestamps %d", timestamp)),
 	)
 	if err != nil {
 		return err
@@ -3189,8 +3301,10 @@ func (dir *Directory) WithTimestamps(ctx context.Context, parent dagql.ObjectRes
 			if err != nil {
 				return err
 			}
-			modTime := time.Unix(int64(unix), 0)
-			return os.Chtimes(path, modTime, modTime)
+			// Set a symlink's own times: following it could reach a file
+			// outside the directory.
+			ts := unix.NsecToTimespec(time.Unix(int64(timestamp), 0).UnixNano())
+			return unix.UtimesNanoAt(unix.AT_FDCWD, path, []unix.Timespec{ts, ts}, unix.AT_SYMLINK_NOFOLLOW)
 		})
 	})
 	if err != nil {
@@ -3239,7 +3353,7 @@ func (dir *Directory) WithNewDirectory(ctx context.Context, parent dagql.ObjectR
 	// the overlay layer chain without changing any files.
 	var alreadyExists bool
 	err = MountRef(ctx, parentSnapshot, func(root string, _ *mount.Mount) error {
-		resolvedDir, err := containerdfs.RootPath(root, path.Join(parentDir, dest))
+		resolvedDir, err := ResolveInDir(root, parentDir, dest)
 		if err != nil {
 			return err
 		}
@@ -3298,7 +3412,7 @@ func (dir *Directory) WithNewDirectory(ctx context.Context, parent dagql.ObjectR
 		return err
 	}
 	err = MountRef(ctx, newRef, func(root string, _ *mount.Mount) error {
-		resolvedDir, err := containerdfs.RootPath(root, path.Join(parentDir, dest))
+		resolvedDir, err := ResolveInDir(root, parentDir, dest)
 		if err != nil {
 			return err
 		}
@@ -3522,7 +3636,13 @@ func (dir *Directory) applyChangesToSnapshot(
 
 	var usage snapshots.Usage
 	err = MountRef(ctx, newRef, func(root string, destMnt *mount.Mount) error {
-		copier, err := layercopy.NewCopier(layercopy.Mount{Root: root, Mount: destMnt})
+		// Changes apply within the target directory (see
+		// layercopy.BoundedRootPath).
+		boundary, err := viewBase(root, targetDir)
+		if err != nil {
+			return err
+		}
+		copier, err := layercopy.NewCopier(layercopy.Mount{Root: root, Mount: destMnt, Boundary: boundary})
 		if err != nil {
 			return err
 		}
@@ -3531,6 +3651,7 @@ func (dir *Directory) applyChangesToSnapshot(
 		if err := removeChangesetPaths(root, targetDir, paths.Removed); err != nil {
 			return err
 		}
+		targetDir := boundary
 
 		if srcSnapshot != nil {
 			err = MountRef(ctx, srcSnapshot, func(srcRoot string, srcMnt *mount.Mount) error {
@@ -3576,7 +3697,7 @@ func changesetPathsEmpty(paths *ChangesetPaths) bool {
 
 func removeChangesetPaths(root, targetDir string, removed []string) error {
 	for _, p := range removed {
-		fullPath, err := RootPathWithoutFinalSymlink(root, path.Join(targetDir, p))
+		fullPath, err := ResolveInDirWithoutFinalSymlink(root, targetDir, p)
 		if err != nil {
 			return err
 		}
@@ -3772,20 +3893,26 @@ func (dir *Directory) Stat(ctx context.Context, self dagql.ObjectResult[*Directo
 	}
 
 	osStatFunc := os.Stat
-	rootPathFunc := containerdfs.RootPath
+	rootPathFunc := ResolveInDir
 	if doNotFollowSymlinks {
 		// symlink testing requires the Lstat call, which does NOT follow symlinks
 		osStatFunc = os.Lstat
-		// similarly, containerdfs.RootPath can't be used, since it follows symlinks
-		rootPathFunc = RootPathWithoutFinalSymlink
+		// similarly, the final symlink must not be resolved
+		rootPathFunc = ResolveInDirWithoutFinalSymlink
 	}
 
 	var fileInfo os.FileInfo
+	var isDir bool
 	err = MountRef(ctx, immutableRef, func(root string, _ *mount.Mount) error {
-		resolvedPath, err := rootPathFunc(root, path.Join(dirPath, targetPath))
+		resolvedPath, err := rootPathFunc(root, dirPath, targetPath)
 		if err != nil {
 			return err
 		}
+		base, err := containerdfs.RootPath(root, dirPath)
+		if err != nil {
+			return err
+		}
+		isDir = resolvedPath == base
 		fileInfo, err = osStatFunc(resolvedPath)
 		return TrimErrPathPrefix(err, root)
 	})
@@ -3802,6 +3929,12 @@ func (dir *Directory) Stat(ctx context.Context, self dagql.ObjectResult[*Directo
 		Size:        int(fileInfo.Size()),
 		Name:        fileInfo.Name(),
 		Permissions: int(fileInfo.Mode().Perm()),
+	}
+	if isDir && path.Clean(dirPath) != "/" {
+		// The directory itself, however the path led back to it, goes by its
+		// own name, as Directory.name reports it, even if it was selected
+		// through a symlink.
+		stat.Name = path.Base(dirPath)
 	}
 
 	if m.IsDir() {
@@ -3905,9 +4038,8 @@ func (dir *Directory) WithSymlink(ctx context.Context, parent dagql.ObjectResult
 		return err
 	}
 	err = MountRef(ctx, newRef, func(root string, _ *mount.Mount) error {
-		fullLinkName := path.Join(parentDir, linkName)
-		linkDir, linkBasename := filepath.Split(fullLinkName)
-		resolvedLinkDir, err := containerdfs.RootPath(root, linkDir)
+		linkDir, linkBasename := filepath.Split(path.Join("/", linkName))
+		resolvedLinkDir, err := ResolveInDir(root, parentDir, linkDir)
 		if err != nil {
 			return err
 		}
@@ -4039,8 +4171,7 @@ func (dir *Directory) Chown(ctx context.Context, parent dagql.ObjectResult[*Dire
 			return fmt.Errorf("failed to parse ownership %s: %w", owner, err)
 		}
 
-		chownPath := path.Join(parentDir, chownPath)
-		chownPath, err = containerdfs.RootPath(root, chownPath)
+		chownPath, err := ResolveInDir(root, parentDir, chownPath)
 		if err != nil {
 			return err
 		}

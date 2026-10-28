@@ -108,7 +108,7 @@ func evalDangSource(
 
 		modCtx := modSource.Self().ContextDirectory
 		var env dang.ValueScope
-		err = modCtx.Self().Mount(ctx, modCtx, func(path string) error {
+		err = modCtx.Self().MountConfined(ctx, modCtx, func(path string) error {
 			modSrcDir := filepath.Join(path, modSource.Self().SourceSubpath)
 			env, err = runSource(ctx, modSrcDir)
 			if err != nil {
