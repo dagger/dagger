@@ -23,10 +23,11 @@ type ExportChain struct {
 	Prefixes map[string]int
 	Provider content.InfoReaderProvider
 	// Await, when set, is how the blobs of ImportChain's layers arrive, with
-	// no Provider: each layer the engine hasn't imported yet, by the time it
-	// is reached, waits for Await to return before taking its blob from the
-	// content store, and nothing is downloaded ahead. Await returns once the
-	// blob is in the content store; a layer that waits holds no import lock.
+	// no Provider: each layer the engine hasn't imported yet waits for Await
+	// to return before taking its blob from the content store, and nothing
+	// is downloaded ahead. Await returns once the blob is in the content
+	// store. A layer that waits holds no import lock, and stops waiting, its
+	// Await's context canceled, once another import has imported it.
 	Await func(ctx context.Context, desc ocispecs.Descriptor) error
 	// Timing, when set, receives where ImportChain's time went.
 	Timing *ImportTiming

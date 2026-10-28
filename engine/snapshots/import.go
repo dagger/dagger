@@ -70,8 +70,8 @@ func (cm *snapshotManager) ImportChain(ctx context.Context, chain *ExportChain) 
 		apartFrom = first
 	}
 	for i := range apartFrom {
-		if i >= first && chain.Await != nil && cm.chainLocalPrefix(chain) <= i {
-			if err := chain.Await(ctx, chain.Layers[i].Descriptor); err != nil {
+		if i >= first {
+			if err := cm.awaitLayer(ctx, chain, i); err != nil {
 				return nil, err
 			}
 		}
@@ -201,10 +201,8 @@ func (cm *snapshotManager) applyChainLayer(ctx context.Context, chain *ExportCha
 			cm.leaveFetch(ctx, held)
 		}
 	}()
-	if chain.Await != nil && cm.chainLocalPrefix(chain) <= i {
-		if applied.err = chain.Await(ctx, desc); applied.err != nil {
-			return applied
-		}
+	if applied.err = cm.awaitLayer(ctx, chain, i); applied.err != nil {
+		return applied
 	}
 	applied.unlock, applied.err = cm.acquireImportLock(ctx, "chain/"+chainID.String(), clock)
 	if applied.err != nil {
@@ -277,6 +275,55 @@ func (cm *snapshotManager) commitAppliedLayer(ctx context.Context, mut MutableRe
 		chain.Applied(ctx, desc, ref.SnapshotID())
 	}
 	return ref, err
+}
+
+// awaitLayer waits for chain.Await, when set, to bring layer i's blob in,
+// unless the engine has imported the layer by then. Once another import has
+// imported it, the wait ends: that import supplied the layer, and it may be
+// waiting for a later one this import applied and holds until its ordered
+// commit.
+func (cm *snapshotManager) awaitLayer(ctx context.Context, chain *ExportChain, i int) error {
+	if chain.Await == nil {
+		return nil
+	}
+	imported := cm.layerImportedSignal()
+	if cm.chainLocalPrefix(chain) > i {
+		return nil
+	}
+	awaitCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	awaited := make(chan error, 1)
+	go func() {
+		awaited <- chain.Await(awaitCtx, chain.Layers[i].Descriptor)
+	}()
+	for {
+		select {
+		case err := <-awaited:
+			return err
+		case <-imported:
+		}
+		imported = cm.layerImportedSignal()
+		if cm.chainLocalPrefix(chain) > i {
+			cancel()
+			<-awaited
+			return nil
+		}
+	}
+}
+
+// layerImportedSignal is closed once a layer is next added to the import
+// indexes.
+func (cm *snapshotManager) layerImportedSignal() <-chan struct{} {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	return cm.layerImported
+}
+
+// layerImportedLocked tells the chain imports waiting for a layer's blob
+// that a layer was added to the import indexes. Requires cm.mu.
+func (cm *snapshotManager) layerImportedLocked() {
+	close(cm.layerImported)
+	cm.layerImported = make(chan struct{})
 }
 
 // chainLocalPrefix is how many of chain's first layers the engine has
