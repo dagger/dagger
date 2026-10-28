@@ -59,6 +59,9 @@ type contentTestTransport struct {
 	// opened, when set and buffered, is signaled once per response body
 	// without ever blocking the transport.
 	opened chan struct{}
+	// rangeHolds delay each response to a request for that Range header
+	// until the channel is closed.
+	rangeHolds map[string]<-chan struct{}
 }
 
 func newContentTestTransport() *contentTestTransport {
@@ -75,6 +78,17 @@ func (tr *contentTestTransport) fault(url string, fault contentTestFault) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	tr.faults[url] = fault
+}
+
+// holdRange delays every response to a request for spec, a Range header
+// value, until hold is closed.
+func (tr *contentTestTransport) holdRange(spec string, hold <-chan struct{}) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if tr.rangeHolds == nil {
+		tr.rangeHolds = map[string]<-chan struct{}{}
+	}
+	tr.rangeHolds[spec] = hold
 }
 
 func (tr *contentTestTransport) count(url string) int {
@@ -101,13 +115,17 @@ func (tr *contentTestTransport) RoundTrip(req *http.Request) (*http.Response, er
 	tr.ranges = append(tr.ranges, req.Header.Get("Range"))
 	data, ok := tr.objects[url]
 	fault, faulted := tr.faults[url]
+	rangeHold := tr.rangeHolds[req.Header.Get("Range")]
 	tr.mu.Unlock()
 	if served <= fault.truncateFirst {
 		fault.truncate = true
 	}
-	if fault.hold != nil {
+	for _, hold := range []<-chan struct{}{fault.hold, rangeHold} {
+		if hold == nil {
+			continue
+		}
 		select {
-		case <-fault.hold:
+		case <-hold:
 		case <-req.Context().Done():
 			return nil, context.Cause(req.Context())
 		}
