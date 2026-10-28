@@ -70,8 +70,10 @@ func (a *Artifact) mayContainPath(pattern string, glob bool) bool {
 			}
 		}
 		// A main's shorthand path starts with any of its fields,
-		// which no other module's name can be.
-		if a.LoadFailure.Entrypoint && (isGlob || !slices.Contains(a.LoadFailure.Siblings, first)) {
+		// which no other module's name can be, by either naming rules: a
+		// sibling's artifacts are spelled by its own (e-2-e-tests for a
+		// legacy e2e-tests).
+		if a.LoadFailure.Entrypoint && (isGlob || !slices.ContainsFunc(a.LoadFailure.Siblings, func(sibling string) bool { return SameCLIName(first, sibling) })) {
 			return true
 		}
 	}
@@ -103,7 +105,9 @@ func (a *Artifact) mayHaveDimension(id string, keys []string) bool {
 	case namedByModule(id):
 		// An unknown name of one of the module's collections.
 		return true
-	case slices.ContainsFunc(a.LoadFailure.Siblings, func(sibling string) bool { return namedBy(id, sibling) }):
+	case slices.ContainsFunc(a.LoadFailure.Siblings, func(sibling string) bool {
+		return namedBy(id, sibling) || namedBy(id, LegacyNamer.CLIName(sibling))
+	}):
 		// Another module's collection.
 		return false
 	default:
