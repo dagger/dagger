@@ -51,7 +51,7 @@ func AroundFunc(
 	if dagql.IsSkipped(ctx) {
 		return ctx, dagql.NoopDone
 	}
-	introspection, receiver := introspectionInfo(ctx, req.ResultCall)
+	introspection, internalRoot, receiver := introspectionInfo(ctx, req.ResultCall)
 	if introspection {
 		return dagql.WithSkip(ctx), dagql.NoopDone
 	}
@@ -157,8 +157,9 @@ func AroundFunc(
 	}
 
 	// Getter accessors are real calls, so retain their trace metadata, but mark
-	// them as internal machinery rather than presenting them as work.
-	if dagql.IsInternal(ctx) || dagql.CurrentFieldIsTrivial(ctx) {
+	// them as internal machinery rather than presenting them as work. So are a
+	// module's calls on its own behalf (internalRootFields).
+	if dagql.IsInternal(ctx) || dagql.CurrentFieldIsTrivial(ctx) || internalRoot {
 		attrs = append(attrs, attribute.Bool(telemetry.UIInternalAttr, true))
 	}
 	if req.PassthroughTelemetry {
@@ -642,7 +643,7 @@ func fieldSpecForCall(ctx context.Context, frame *dagql.ResultCall) (dagql.Field
 // These queries tend to be very large and are not interesting for users to
 // see.
 func isIntrospection(ctx context.Context, frame *dagql.ResultCall) bool {
-	introspection, _ := introspectionInfo(ctx, frame)
+	introspection, _, _ := introspectionInfo(ctx, frame)
 	return introspection
 }
 
@@ -655,7 +656,6 @@ var introspectionRootFields = map[string]struct{}{
 	"__schemaJSONFile":    {},
 	"__schemaVersion":     {},
 	"currentTypeDefs":     {},
-	"currentModule":       {},
 	"currentFunctionCall": {},
 	"function":            {},
 	"typeDef":             {},
@@ -674,6 +674,16 @@ var introspectionRootFields = map[string]struct{}{
 	"__inputTypeDef":      {},
 	"__scalarTypeDef":     {},
 	"__enumTypeDef":       {},
+}
+
+// internalRootFields are the Query-level root fields that begin a module's
+// calls on its own behalf, such as reading its own source through
+// currentModule. Unlike introspection, those calls do real work that later
+// calls build on, so the remote cache must learn them from telemetry: they are
+// emitted, marked internal, which keeps them out of the UI below verbosity 3.
+// Profiling still skips the root call itself (profileSkip).
+var internalRootFields = map[string]struct{}{
+	"currentModule": {},
 }
 
 // reflectionTypeNames are the GraphQL type-system reflection object types. EVERY
@@ -750,28 +760,32 @@ func profileSkip(receiverTypeName, field string) bool {
 		if _, ok := introspectionRootFields[field]; ok {
 			return true
 		}
+		if _, ok := internalRootFields[field]; ok {
+			return true
+		}
 	}
 	return false
 }
 
-func introspectionInfo(ctx context.Context, frame *dagql.ResultCall) (bool, *dagql.ResultCall) {
+// introspectionInfo reports whether frame is an introspection call, hidden from
+// telemetry with everything under it; whether its root is one of
+// internalRootFields, emitted but marked internal; and its immediate receiver.
+func introspectionInfo(ctx context.Context, frame *dagql.ResultCall) (introspection, internalRoot bool, immediateReceiver *dagql.ResultCall) {
 	if frame == nil {
-		return false, nil
+		return false, false, nil
 	}
 
 	cur := frame
-	var immediateReceiver *dagql.ResultCall
 	for cur != nil {
 		if cur.Receiver == nil {
-			if _, ok := introspectionRootFields[cur.Field]; ok {
-				return true, immediateReceiver
-			}
-			return false, immediateReceiver
+			_, introspection = introspectionRootFields[cur.Field]
+			_, internalRoot = internalRootFields[cur.Field]
+			return introspection, internalRoot, immediateReceiver
 		}
 
 		receiver, err := cur.ReceiverCall(ctx)
 		if err != nil || receiver == nil {
-			return false, immediateReceiver
+			return false, false, immediateReceiver
 		}
 		if cur == frame {
 			immediateReceiver = receiver
@@ -786,10 +800,10 @@ func introspectionInfo(ctx context.Context, frame *dagql.ResultCall) (bool, *dag
 					"withArg",
 					"withSourceMap",
 					"withDescription":
-					return true, immediateReceiver
+					return true, false, immediateReceiver
 				}
 				if strings.HasPrefix(cur.Field, "__") {
-					return true, immediateReceiver
+					return true, false, immediateReceiver
 				}
 			case "TypeDef":
 				switch cur.Field {
@@ -805,10 +819,10 @@ func introspectionInfo(ctx context.Context, frame *dagql.ResultCall) (bool, *dag
 					"withEnum",
 					"withEnumValue",
 					"withEnumMember":
-					return true, immediateReceiver
+					return true, false, immediateReceiver
 				}
 				if strings.HasPrefix(cur.Field, "__") {
-					return true, immediateReceiver
+					return true, false, immediateReceiver
 				}
 			case "FunctionArg",
 				"ObjectTypeDef",
@@ -819,7 +833,7 @@ func introspectionInfo(ctx context.Context, frame *dagql.ResultCall) (bool, *dag
 				"EnumTypeDef",
 				"EnumMemberTypeDef":
 				if strings.HasPrefix(cur.Field, "__") {
-					return true, immediateReceiver
+					return true, false, immediateReceiver
 				}
 			}
 		}
@@ -827,7 +841,7 @@ func introspectionInfo(ctx context.Context, frame *dagql.ResultCall) (bool, *dag
 		cur = receiver
 	}
 
-	return false, immediateReceiver
+	return false, false, immediateReceiver
 }
 
 // isMeta returns true if any type in the ID is "too meta" to show to the user,
