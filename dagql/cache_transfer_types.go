@@ -93,6 +93,20 @@ type ValueBundle struct {
 	Roots   []TransferredRoot   `json:"roots"`
 	Values  []TransferredValue  `json:"values"`
 	Outputs []TransferredOutput `json:"outputs,omitempty"`
+	// Calls are calls that returned one of the bundle's entries other than
+	// their own, which a cache that runs them indexes on the entry they
+	// returned. Only the Cloud sends them, from the call spans it read.
+	Calls []TransferredCall `json:"calls,omitempty"`
+}
+
+// TransferredCall is a call that returned an existing entry: the call as its
+// span encodes it (ResultCall.callPB, the dagger.io/dag.call attribute), and
+// the row of the entry it returned. A merge derives the call's identity from
+// the encoding and teaches it onto that entry, as the entry's cache did when
+// the call completed. It owns nothing.
+type TransferredCall struct {
+	Call  string          `json:"call"`
+	Value TransferOrdinal `json:"value"`
 }
 type ImportedValue struct {
 	Ordinal  TransferOrdinal
