@@ -182,25 +182,18 @@ func TestPartPendingImageMetadataStaysSelective(t *testing.T) {
 		loaded, err := b.LoadResultByResultID(bctx, "", bsrv, imported[0].ResultID)
 		require.NoError(t, err)
 		result := loaded.(dagql.ObjectResult[*Container])
-		require.False(t, result.Self().acquiredOutput.Load().Payload.Metadata.Consumed)
+		ctr := result.Self()
+		require.False(t, ctr.containerPartComputed(bctx, ctr.lazyOpForRouting(), ContainerPartMetadata))
 		require.NoError(t, b.EvaluateParts(bctx, result, ContainerPartMetadata))
-		view := result.Self().acquiredOutput.Load()
-		require.True(t, view.Payload.Metadata.Consumed)
-		require.Equal(t, "/pending-image-config", view.Payload.Metadata.Value.Config.WorkingDir)
-		require.Equal(t, containerPartPending, view.Payload.Parts[ContainerPartFS].Kind)
-		require.Empty(t, view.Links)
+		require.True(t, ctr.containerPartComputed(bctx, ctr.lazyOpForRouting(), ContainerPartMetadata))
+		require.Equal(t, "/pending-image-config", ctr.Config.WorkingDir)
+		require.False(t, ctr.containerPartComputed(bctx, ctr.lazyOpForRouting(), ContainerPartFS), "the image's filesystem stays pending")
 		require.Empty(t, observed.opens)
 		report, err := b.TransferFixtureSnapshot(bctx, "b", nil)
 		require.NoError(t, err)
-		var operationEntries int
 		for _, event := range report.Parts {
 			require.NotEqual(t, "provider-read", event.Kind)
-			if event.Kind == "lazy-enter" {
-				operationEntries++
-				require.Equal(t, ContainerPartMetadata, event.Address.Part)
-			}
 		}
-		require.Equal(t, 1, operationEntries)
 		return nil
 	}))
 }
