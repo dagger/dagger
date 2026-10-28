@@ -31,7 +31,6 @@ $ viztest: Viztest! X.Xs CACHED
 │ ┃ X:M XX XXX 20XX XX:XX:XX.XXX * Server initialized
 │ ┃ X:M XX XXX 20XX XX:XX:XX.XXX * Ready to accept connections tcp
 │ ╰╴✔ 6379/tcp X.Xs
-│   ┃ XX:XX:XX WRN port not ready host=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local error="dial tcp 10.XX.XX.XX:6379: connect: connection refused" elapsed=X.Xs
 │   ┃ XX:XX:XX INF port is healthy host=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local endpoint=10.XX.XX.XX:6379
 │
 ├╴○ Container.withServiceBinding(
