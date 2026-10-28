@@ -87,6 +87,7 @@ type GoClientDev {
       sourceTag: sourceTag,
       destRemote: destRemote,
       destTag: version,
+      sourcePath: sourcePath,
       callback: callback,
     )
   }
