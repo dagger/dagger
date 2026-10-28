@@ -17,9 +17,9 @@ const identifierExperimental = "Identifier casing APIs are likely to change."
 // identifierVersion is the first engine version with the identifier API: it's
 // served on every v1 view, including the views whose modules keep the legacy
 // strcase names (before core.IdentifierNamingVersion). Which naming rules a
-// module follows is decided by the engine version it declares, not by the
-// presence of this API; formatIdentifiers' version argument selects the
-// dictionary.
+// module follows is decided by the engine version it declares, capped at the
+// engine's own (core.ModuleSource.NamingView), not by the presence of this
+// API; formatIdentifiers' version argument selects the dictionary.
 const identifierVersion = "v1.0.0-0"
 
 // formatIdentifiersDoNotCache is why formatIdentifiers skips the cache: it's
