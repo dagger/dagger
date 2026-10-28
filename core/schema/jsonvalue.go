@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"maps"
-	"slices"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -179,50 +177,19 @@ func (s jsonvalueSchema) asArray(ctx context.Context, obj *core.JSONValue, args 
 }
 
 func (s jsonvalueSchema) fields(ctx context.Context, obj *core.JSONValue, args struct{}) ([]dagql.String, error) {
-	var v any
-	if err := json.Unmarshal(obj.Data, &v); err != nil {
-		return nil, err
-	}
-	m, ok := v.(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("value is not an object")
-	}
-
-	// Sort the keys so the same contents always list the same fields: results
-	// are cached by call, so a resolver's output must not depend on map order.
-	result := make([]dagql.String, 0, len(m))
-	for _, key := range slices.Sorted(maps.Keys(m)) {
-		result = append(result, dagql.String(key))
-	}
-	return result, nil
-}
-
-func (s jsonvalueSchema) field(ctx context.Context, obj *core.JSONValue, args struct {
-	Path []dagql.String
-}) (*core.JSONValue, error) {
-	var v any
-	if err := json.Unmarshal(obj.Data, &v); err != nil {
-		return nil, err
-	}
-
-	current := v
-	for _, pathSegment := range args.Path {
-		m, ok := current.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("can't lookup field '%s' in non-object value", pathSegment.String())
-		}
-		val, exists := m[pathSegment.String()]
-		if !exists {
-			return nil, fmt.Errorf("no such field: '%s'", pathSegment.String())
-		}
-		current = val
-	}
-
-	data, err := json.Marshal(current)
+	names, err := obj.FieldNames()
 	if err != nil {
 		return nil, err
 	}
-	return &core.JSONValue{Data: data}, nil
+	return dagql.NewStringArray(names...), nil
+}
+
+func (s jsonvalueSchema) field(ctx context.Context, obj *core.JSONValue, args struct{ Path []dagql.String }) (*core.JSONValue, error) {
+	path := make([]string, len(args.Path))
+	for i, segment := range args.Path {
+		path[i] = segment.String()
+	}
+	return obj.FieldAt(path)
 }
 
 func (s jsonvalueSchema) withField(ctx context.Context, obj *core.JSONValue, args struct {

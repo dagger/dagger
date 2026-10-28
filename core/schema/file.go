@@ -486,5 +486,5 @@ func (s *fileSchema) asJSON(ctx context.Context, parent dagql.ObjectResult[*core
 	if err != nil {
 		return nil, err
 	}
-	return &core.JSONValue{Data: []byte(json)}, nil
+	return core.NewIndexedJSONValue([]byte(json)), nil
 }
