@@ -15,7 +15,6 @@ import (
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -121,13 +120,14 @@ func (mod *Module) Name() string {
 	return mod.NameField
 }
 
-// EngineView is the API view of the engine version the module declares, or
-// the empty (latest) view for a module without a source.
+// EngineView is the API view of the engine version the module declares,
+// capped at the engine's (see ModuleSource.NamingView), or the empty
+// (latest) view for a module without a source.
 func (mod *Module) EngineView() call.View {
 	if mod == nil || !mod.Source.Valid || mod.Source.Value.Self() == nil {
 		return ""
 	}
-	return call.View(engine.APIViewVersion(mod.Source.Value.Self().EngineVersion))
+	return mod.Source.Value.Self().NamingView()
 }
 
 // Namer normalizes the module's own names: the rules of the engine version

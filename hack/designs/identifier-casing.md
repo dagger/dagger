@@ -849,14 +849,16 @@ Module normalization is gated on the API view, at `IdentifierNamingVersion`
 (`engine.IdentifierCasingVersion`, `v1.0.0-beta.22`, `core/gqlformat.go`):
 `NamerForView` gives the strcase rules to views before it and engine/naming to
 the rest (`IdentifierNamingView`), and a module is named by the rules of its
-view (`ModuleSource.NamingView`, `engine.APIViewVersion` of its
-`engineVersion`). Views keep their prerelease from `v1.0.0-beta.22`
+view (`ModuleSource.NamingView`, `engine.ModuleAPIViewVersion` of its
+`engineVersion`, capped at the engine's own view). Views keep their
+prerelease from `v1.0.0-beta.22`
 (`engine.PrereleaseViewsVersion`) on, and every earlier v1.0.0 prerelease
 (`v1.0.0-0`, `v1.0.0-beta.1` to `v1.0.0-beta.21`) shares the `v1.0.0-beta.21`
 view, so modules released against those betas keep the strcase names they
 shipped with, byte for byte.
-A prerelease engine refuses a module declaring a view past its own (exactly
-`v1.0.0`, say), so no engine names a module by rules it doesn't have. SDK
+A prerelease engine serves a module declaring a view past its own (a later
+beta, or exactly `v1.0.0`) at its own view, and names it by that view's
+rules, so no engine names a module by rules it doesn't have. SDK
 codegen and the Python and TypeScript runtimes gate on the same version: the
 one the module declares, checked against the engine's `version`. They don't
 gate on `Query.formatIdentifiers` being in the schema, which is served on every
@@ -1113,8 +1115,8 @@ Other gaps:
 ### What changes for module authors (on bump)
 
 A module that declares an `engineVersion` of `v1.0.0-beta.22` or later
-(`latest`, a later prerelease, or `v1.0.0`, which a prerelease engine
-refuses) gets the new rules. Module type, field and argument names that
+(`latest`, a later prerelease, or `v1.0.0`, which a prerelease engine serves
+at its own view) gets the new rules. Module type, field and argument names that
 contain runs of capitals or dictionary terms get their real casing back:
 
 - `MyModHttpclient` → `MyModHTTPClient`
