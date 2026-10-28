@@ -219,6 +219,9 @@ type Server struct {
 	shutdownCtx    context.Context
 	shutdownCancel context.CancelCauseFunc
 	shuttingDown   atomic.Bool
+	// stateDiscarded is the config's state.discarded: the state directory
+	// doesn't outlive the engine, so its stop skips the work on it.
+	stateDiscarded bool
 
 	//
 	// dagql cache
@@ -303,6 +306,8 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 
 		daggerSessions:     make(map[string]*daggerSession),
 		releasedSessionIDs: make(map[string]struct{}),
+
+		stateDiscarded: cfg.State.Discarded,
 
 		locker: locker.New(),
 	}

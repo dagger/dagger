@@ -45,6 +45,22 @@ type Config struct {
 
 	// CacheVolumes configures where the engine keeps cache volumes.
 	CacheVolumes CacheVolumesConfig `json:"cacheVolumes,omitempty"`
+
+	// State describes what becomes of the engine's state directory.
+	State StateConfig `json:"state,omitempty"`
+}
+
+type StateConfig struct {
+	// Discarded reports that the engine's state directory doesn't outlive
+	// the engine: it's destroyed when the engine stops, as a machine's own
+	// disk is destroyed with the machine, and no later engine reads it. The
+	// engine's stop then does only what outlives it: it finishes its remote
+	// cache exports, flushes its telemetry, and collects and closes the cache
+	// volume directory. It skips what only a later start on the same state
+	// would use: garbage collection, saving its cache, closing its databases
+	// and releasing its network namespaces. Set it where the deployment
+	// decides that the state isn't kept.
+	Discarded bool `json:"discarded,omitempty"`
 }
 
 type CacheVolumesConfig struct {
