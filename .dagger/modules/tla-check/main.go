@@ -224,7 +224,7 @@ var expectedOutcome = map[string]string{
 	"probe_part_sources_shell":               "ProbeShellAcquired",
 	"probe_part_sources_armed_managed":       "ProbeArmedWithOfferManaged",
 	"part_sources_running_guard_off":         "NativeRunStaysNative",
-	"part_sources_tryacquire_guard_only_off": "OnePartWriter",
+	"part_sources_tryacquire_guard_only_off": "",
 }
 
 var clientExpectedOutcome = map[string]string{
