@@ -428,17 +428,22 @@ func TestCallRecordReportsWhatASaveWrites(t *testing.T) {
 	require.False(t, change.Saved, "the same call again")
 }
 
-// A call span read again, or reporting a call of a value a later export
-// replaced, doesn't move the replacement's expiry back: a call's expiry goes
-// to the entry once, when the call is first kept, as a local cache gives an
-// entry a call's expiry when the call completes.
-func TestCallRecordReplayKeepsAReplacementsExpiry(t *testing.T) {
+// A call span with an expiry already past reports a value that has expired:
+// read again, or read late from a client the Cloud hasn't seen, it doesn't
+// move back the expiry of a fresh value a later export stored. A new
+// completion of a call already kept, with an expiry to come, still gives the
+// entry its expiry.
+func TestCallRecordPastExpiriesLeaveAReplacementAlone(t *testing.T) {
 	t.Parallel()
 	ctx, cloud := storedPartTestCache(t, WithBlobStore())
 	test := newCallRecordTest(t, ctx, cloud)
 	old := test.span(t, true, time.Now().Add(-time.Hour).Unix())
 	test.attach(t, ctx, old)
-	// Another engine exports a fresh value of the same recipe.
+	entry := storedBundleTestEntry(cloud, test.number)
+	// The value expires, and another engine exports a fresh one.
+	cloud.egraphMu.Lock()
+	entry.expiresAtUnix = time.Now().Add(-time.Minute).Unix()
+	cloud.egraphMu.Unlock()
 	bctx, b, srv := transferTestCache(t)
 	frame := callRecordTestFrame("inner")
 	refreshed, err := b.GetOrInitCall(bctx, "test-session", srv,
@@ -449,17 +454,38 @@ func TestCallRecordReplayKeepsAReplacementsExpiry(t *testing.T) {
 	require.NoError(t, err)
 	_, err = cloud.MergeValues(ctx, "cache-b", exportTestBundle(t, bctx, b, refreshed))
 	require.NoError(t, err)
-	entry := storedBundleTestEntry(cloud, test.number)
-	cloud.egraphMu.RLock()
-	expires := entry.expiresAtUnix
-	cloud.egraphMu.RUnlock()
-	require.Greater(t, expires, time.Now().Unix())
-	// The reader reads the old call span again.
+	expiry := func() int64 {
+		cloud.egraphMu.RLock()
+		defer cloud.egraphMu.RUnlock()
+		return entry.expiresAtUnix
+	}
+	expires := expiry()
+	require.Greater(t, expires, time.Now().Unix(), "the fresh value")
+
+	// The reader reads the old span again.
 	test.attach(t, ctx, old)
+	require.Equal(t, expires, expiry())
+
+	// A client the Cloud hasn't seen reports, late, a call of the old value.
+	other := callRecordTestFrame("outer")
+	other.ImplicitInputs = []*ResultCallArg{{Name: "cachePerClient", Value: &ResultCallLiteral{Kind: ResultCallLiteralKindString, StringValue: "late-client"}}}
+	late := test.span(t, true, time.Now().Add(-time.Hour).Unix())
+	pb, err := other.callPB(b)
+	require.NoError(t, err)
+	late.Request = digest.Digest(pb.Digest)
+	late.Call, err = pb.Encode()
+	require.NoError(t, err)
+	test.attach(t, ctx, late)
 	cloud.egraphMu.RLock()
-	after := entry.expiresAtUnix
+	kept := len(entry.calls)
 	cloud.egraphMu.RUnlock()
-	require.Equal(t, expires, after)
+	require.Equal(t, 2, kept, "the late client's call is kept")
+	require.Equal(t, expires, expiry(), "its past expiry says nothing of the fresh value")
+
+	// The first client completes the call again, with an earlier expiry.
+	renewed := time.Now().Add(time.Minute).Unix()
+	test.attach(t, ctx, test.span(t, true, renewed))
+	require.Equal(t, renewed, expiry(), "a new completion of a kept call")
 }
 
 // A call that reaches an engine which already has the entry, in full or as a
