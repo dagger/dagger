@@ -71,6 +71,12 @@ func TestMessagesRoundTrip(t *testing.T) {
 		into func() any
 	}{
 		{TypeHello, Hello{CacheID: "cache-1", Generation: 4, EngineVersion: "v0.20.0", EngineName: "dagger-engine"}, func() any { return &Hello{} }},
+		{TypeHello, Hello{CacheID: "cache-1", Generation: 5, EngineVersion: "v0.20.0", EngineName: "dagger-engine", Period: 3, Settled: true}, func() any { return &Hello{} }},
+		{TypeOpen, Open{Period: 4}, func() any { return &Open{} }},
+		{TypeOpened, Opened{}, func() any { return &Opened{} }},
+		{TypeSettle, Settle{Period: 4, Sessions: []SettleSession{{ID: "sess-1", Marker: true}, {ID: "sess-2"}}}, func() any { return &Settle{} }},
+		{TypeSettled, Settled{}, func() any { return &Settled{} }},
+		{TypeError, Error{Message: StaleSettle}, func() any { return &Error{} }},
 		{TypeWelcome, Welcome{}, func() any { return &Welcome{} }},
 		{TypeExport, Export{Roots: []uint64{12, 13}, Outputs: []ExportOutput{{Number: 12, Address: testAddress()}}}, func() any { return &Export{} }},
 		{TypeExported, Exported{ExportID: "x-1", Bundle: &bundle, Skipped: []SkippedRoot{{Number: 13, Reason: SkipBusy}}}, func() any { return &Exported{} }},
@@ -155,6 +161,14 @@ func derefBody(v any) any {
 		return *b
 	case *LookedUp:
 		return *b
+	case *Open:
+		return *b
+	case *Opened:
+		return *b
+	case *Settle:
+		return *b
+	case *Settled:
+		return *b
 	case *Error:
 		return *b
 	}
@@ -212,12 +226,14 @@ func TestReplyType(t *testing.T) {
 		TypeOffer:  TypeOffered,
 		TypeRenew:  TypeRenewed,
 		TypeLookup: TypeLookedUp,
+		TypeOpen:   TypeOpened,
+		TypeSettle: TypeSettled,
 	} {
 		got, ok := ReplyType(request)
 		require.True(t, ok, request)
 		require.Equal(t, reply, got)
 	}
-	for _, notRequest := range []Type{TypeWelcome, TypeExported, TypeUploaded, TypeMerged, TypeOffered, TypeRenewed, TypeLookedUp, TypeError} {
+	for _, notRequest := range []Type{TypeWelcome, TypeExported, TypeUploaded, TypeMerged, TypeOffered, TypeRenewed, TypeLookedUp, TypeOpened, TypeSettled, TypeError} {
 		_, ok := ReplyType(notRequest)
 		require.False(t, ok, notRequest)
 	}
