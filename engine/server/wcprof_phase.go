@@ -58,11 +58,18 @@ const (
 	// anonymous memory, file pages, and the part of both in transparent huge
 	// pages.
 	UsageScopeEngineCgroupSample = "engine_cgroup_sample"
+	// UsageScopeGoRuntimeSample is the engine process's Go garbage collector
+	// over one stretch of the phase, read every machineSampleInterval while
+	// it runs: the CPU its GC used, by class, since the previous reading (the
+	// runtime's estimates, which it updates at GC events, so a stretch can
+	// carry an earlier one's CPU); and at the reading's time, the live heap,
+	// the heap goal, and the scannable heap, stacks and globals.
+	UsageScopeGoRuntimeSample = "go_runtime_sample"
 )
 
 // machineSampleInterval is how often a profiled phase reads the machine's
-// CPU and the engine's memory: fine enough to place a slow stretch of about
-// a second, for two small file reads.
+// CPU, the engine's memory and its Go GC: fine enough to place a slow
+// stretch of about a second, for two small file reads and a runtime read.
 const machineSampleInterval = 100 * time.Millisecond
 
 // engineCgroupDir finds the engine's cgroup; tests replace it.
@@ -78,6 +85,8 @@ type engineReading struct {
 	cgroupDir string
 	machine   wcprof.Usage
 	machineOK bool
+	// goGC is the Go runtime's GC readings, as readGoGC reads them.
+	goGC wcprof.Usage
 }
 
 func readEngine() engineReading {
@@ -88,6 +97,7 @@ func readEngine() engineReading {
 		c.process = wcprof.Usage{CPUUserUS: us(ru.Utime), CPUSystemUS: us(ru.Stime), MinorFaults: ru.Minflt, MajorFaults: ru.Majflt}
 	}
 	readGoRuntime(&c.process)
+	c.goGC = readGoGC()
 	if unix.Getrusage(unix.RUSAGE_CHILDREN, &ru) == nil {
 		c.children = wcprof.Usage{CPUUserUS: us(ru.Utime), CPUSystemUS: us(ru.Stime), MinorFaults: ru.Minflt, MajorFaults: ru.Majflt}
 	}
@@ -133,6 +143,53 @@ func readGoRuntime(u *wcprof.Usage) {
 	}
 }
 
+// goGCMetrics are the Go runtime's GC readings readGoGC reads, in the order
+// it reads them: CPU by class, in seconds, then sizes in bytes.
+var goGCMetrics = []string{
+	"/cpu/classes/gc/mark/assist:cpu-seconds",
+	"/cpu/classes/gc/mark/dedicated:cpu-seconds",
+	"/cpu/classes/gc/mark/idle:cpu-seconds",
+	"/cpu/classes/gc/pause:cpu-seconds",
+	"/gc/heap/live:bytes",
+	"/gc/heap/goal:bytes",
+	"/gc/scan/heap:bytes",
+	"/gc/scan/stack:bytes",
+	"/gc/scan/globals:bytes",
+}
+
+// readGoGC reads this process's GC: its cumulative CPU by class, and its
+// heap and scan sizes now. A reading the runtime doesn't support stays 0.
+func readGoGC() wcprof.Usage {
+	samples := make([]metrics.Sample, len(goGCMetrics))
+	for i, name := range goGCMetrics {
+		samples[i].Name = name
+	}
+	metrics.Read(samples)
+	us := func(i int) int64 {
+		if v := samples[i].Value; v.Kind() == metrics.KindFloat64 {
+			return int64(v.Float64() * 1e6)
+		}
+		return 0
+	}
+	bytes := func(i int) int64 {
+		if v := samples[i].Value; v.Kind() == metrics.KindUint64 {
+			return int64(v.Uint64())
+		}
+		return 0
+	}
+	return wcprof.Usage{
+		GCAssistUS:       us(0),
+		GCDedicatedUS:    us(1),
+		GCIdleUS:         us(2),
+		GCPauseUS:        us(3),
+		HeapLiveBytes:    bytes(4),
+		HeapGoalBytes:    bytes(5),
+		ScanHeapBytes:    bytes(6),
+		ScanStackBytes:   bytes(7),
+		ScanGlobalsBytes: bytes(8),
+	}
+}
+
 // procStatTickUS is a /proc/stat tick in microseconds: the kernel reports
 // these times in USER_HZ, which is 100 on Linux.
 const procStatTickUS = 10_000
@@ -164,16 +221,25 @@ func parseMachineCPU(stat []byte) (wcprof.Usage, bool) {
 }
 
 // samplePhase records, on the op opID every machineSampleInterval, the
-// machine's CPU since the previous reading (from start's, when it has one) and
-// the memory of the engine's cgroup (when start found it), until the returned
-// func is called; that records a last sample and returns once it's recorded.
+// machine's CPU since the previous reading (from start's, when it has one),
+// the memory of the engine's cgroup (when start found it), and the engine's
+// Go GC, until the returned func is called; that records a last sample and
+// returns once it's recorded.
 func samplePhase(ctx context.Context, opID uint64, start engineReading) func() {
 	stop := make(chan struct{})
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		prev := start.machine
+		prev, prevGC := start.machine, start.goGC
 		sample := func() {
+			gc := readGoGC()
+			stretch := gc
+			stretch.GCAssistUS -= prevGC.GCAssistUS
+			stretch.GCDedicatedUS -= prevGC.GCDedicatedUS
+			stretch.GCIdleUS -= prevGC.GCIdleUS
+			stretch.GCPauseUS -= prevGC.GCPauseUS
+			wcprof.RecordUsage(ctx, opID, UsageScopeGoRuntimeSample, stretch)
+			prevGC = gc
 			if start.machineOK {
 				if stat, err := os.ReadFile("/proc/stat"); err == nil {
 					if cur, ok := parseMachineCPU(stat); ok {
@@ -233,8 +299,8 @@ type phaseRun struct {
 	op    *wcprof.Op
 	start engineReading
 	prof  *armedProfile
-	// stopSampling stops sampling the machine and the engine's memory, and
-	// waits for its last sample.
+	// stopSampling stops sampling the machine, the engine's memory and its
+	// Go GC, and waits for its last sample.
 	stopSampling func()
 	// unwatch stops the session watch's timer for this run, if it had one.
 	unwatch func()
@@ -249,9 +315,7 @@ func (srv *Server) beginSessionPhase(ctx context.Context, sessionID string) *pha
 	if wcprof.Enabled(ctx) {
 		p = &phaseRun{ctx: ctx, start: readEngine()}
 		p.ctx, p.op = wcprof.BeginOp(ctx, wcprof.OpKindSessionPhase, PhaseSession, wcprof.OpOpts{Ident: sessionID})
-		if p.start.machineOK || p.start.cgroupDir != "" {
-			p.stopSampling = samplePhase(p.ctx, p.op.ID(), p.start)
-		}
+		p.stopSampling = samplePhase(p.ctx, p.op.ID(), p.start)
 	}
 	if a := srv.startArmedProfile(PhaseSession); a != nil {
 		if p == nil {

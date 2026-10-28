@@ -116,6 +116,16 @@ type DumpEvent struct {
 	MemAnonBytes int64 `json:"manon,omitempty"`
 	MemFileBytes int64 `json:"mfile,omitempty"`
 	MemHugeBytes int64 `json:"mhuge,omitempty"`
+
+	GCAssistUS       int64 `json:"gca,omitempty"`
+	GCDedicatedUS    int64 `json:"gcd,omitempty"`
+	GCIdleUS         int64 `json:"gci,omitempty"`
+	GCPauseUS        int64 `json:"gcp,omitempty"`
+	HeapLiveBytes    int64 `json:"hlive,omitempty"`
+	HeapGoalBytes    int64 `json:"hgoal,omitempty"`
+	ScanHeapBytes    int64 `json:"sheap,omitempty"`
+	ScanStackBytes   int64 `json:"sstack,omitempty"`
+	ScanGlobalsBytes int64 `json:"sglob,omitempty"`
 }
 
 // DumpTypeUsage is the DumpEvent.Type of a resource reading (RecordUsage).
@@ -144,6 +154,16 @@ func usageDumpEvent(u usageRecord) DumpEvent {
 		MemAnonBytes: u.usage.MemAnonBytes,
 		MemFileBytes: u.usage.MemFileBytes,
 		MemHugeBytes: u.usage.MemHugeBytes,
+
+		GCAssistUS:       u.usage.GCAssistUS,
+		GCDedicatedUS:    u.usage.GCDedicatedUS,
+		GCIdleUS:         u.usage.GCIdleUS,
+		GCPauseUS:        u.usage.GCPauseUS,
+		HeapLiveBytes:    u.usage.HeapLiveBytes,
+		HeapGoalBytes:    u.usage.HeapGoalBytes,
+		ScanHeapBytes:    u.usage.ScanHeapBytes,
+		ScanStackBytes:   u.usage.ScanStackBytes,
+		ScanGlobalsBytes: u.usage.ScanGlobalsBytes,
 	}
 }
 
