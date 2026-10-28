@@ -1807,6 +1807,18 @@ func decodePersistedContainerResources(ctx context.Context, dec *dagql.PersistDe
 	return mounts, secrets, sockets, nil
 }
 
+// containerHoldsAcquiredPart reports whether a transferred container's
+// record holds a part this engine acquired: transfer leaves every part it
+// carries pending or absent.
+func containerHoldsAcquiredPart(parts map[dagql.PartKey]persistedContainerPart) bool {
+	for _, part := range parts {
+		if part.Kind != containerPartPending && part.Kind != containerPartAbsent {
+			return true
+		}
+	}
+	return false
+}
+
 // PartTransferShell reports whether the container decoded from another
 // engine's record without its recipe, so that its parts come only through
 // part acquisition.
@@ -1821,8 +1833,10 @@ func (*Container) DecodePersistedObject(ctx context.Context, dec *dagql.PersistD
 	}
 	// A record from another engine that holds no download address for any
 	// part decodes as local persistence decodes a pending container: its
-	// recipe armed, its parts pending.
-	armed := envelope.OperationState != "" && len(envelope.LazyJSON) != 0 && dec.ArmRecipe()
+	// recipe armed, its parts pending. One that already acquired a part
+	// stays a shell: a group's parts complete together locally, so a
+	// recipe can't keep one of them and compute the rest.
+	armed := envelope.OperationState != "" && len(envelope.LazyJSON) != 0 && dec.ArmRecipe() && !containerHoldsAcquiredPart(envelope.Parts)
 	if armed {
 		kind := ""
 		if dec.Call() != nil {
