@@ -217,7 +217,7 @@ func TestPartRangeReadsPastAHeldChunk(t *testing.T) {
 // bound taken, its streams wait, and every chunk's slot goes back once the
 // blob is read.
 func TestPartRangeReadsHeldChunkBound(t *testing.T) {
-	const size = 16 << 20
+	const size = 40 << 20
 	transport, source, offer, data, stats := rangeTestReader(t, size, func(cfg *partRangeConfig) {
 		cfg.chunk = 1 << 20
 		cfg.window = 12
@@ -226,6 +226,7 @@ func TestPartRangeReadsHeldChunkBound(t *testing.T) {
 	hold := make(chan struct{})
 	transport.holdRange("bytes=0-1048575", hold)
 	reader, _ := openRangeTest(t, source, offer, nil, stats)
+	require.IsType(t, &partRangeReader{}, reader, "the blob is read in ranges")
 	read := make(chan string, 1)
 	go func() {
 		got, _ := readRangeTest(t, reader, size)
