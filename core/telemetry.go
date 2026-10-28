@@ -156,10 +156,7 @@ func AroundFunc(
 		attrs = append(attrs, attribute.StringSlice(telemetry.DagInputsAttr, inputs))
 	}
 
-	// Getter accessors are real calls, so retain their trace metadata, but mark
-	// them as internal machinery rather than presenting them as work. So are a
-	// module's calls on its own behalf (internalRootFields).
-	if dagql.IsInternal(ctx) || dagql.CurrentFieldIsTrivial(ctx) || internalRoot {
+	if isUIInternal(ctx, internalRoot) {
 		attrs = append(attrs, attribute.Bool(telemetry.UIInternalAttr, true))
 	}
 	if req.PassthroughTelemetry {
@@ -202,6 +199,14 @@ func AroundFunc(
 		recordCacheEvidence(ctx, span, req.CacheEvidence, res)
 		logResult(ctx, res, req.ResultCall)
 	}
+}
+
+// isUIInternal reports whether a call's span is internal machinery rather
+// than work to present: an engine-internal select, a getter accessor (a real
+// call, so it keeps its trace metadata), or a module's call on its own behalf
+// (internalRootFields).
+func isUIInternal(ctx context.Context, internalRoot bool) bool {
+	return dagql.IsInternal(ctx) || dagql.CurrentFieldIsTrivial(ctx) || internalRoot
 }
 
 type moduleProcessRequestKey struct{}
