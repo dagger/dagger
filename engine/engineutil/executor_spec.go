@@ -619,7 +619,8 @@ var systemRootfsUnmountOps = rootfsUnmountOps{
 // the earlier unmount cleanup succeeded, so a plain os.Remove is enough. If
 // the unmount failed (e.g. EBUSY because a process still uses the mount), a
 // recursive remove would walk into the still-live mount and delete its
-// contents; os.Remove fails with ENOTEMPTY instead and leaves them untouched.
+// contents; os.Remove fails with EBUSY on the live mount point instead and
+// leaves them untouched.
 func removeMountTempDir(path string) error {
 	return os.Remove(path)
 }
