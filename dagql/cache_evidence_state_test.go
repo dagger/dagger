@@ -387,14 +387,21 @@ type statePartValue struct {
 	done       atomic.Bool
 	lazy       bool
 	absentMeta bool
+	// snapshotID and file, when set, are what the part probe reports of the
+	// completed "snapshot" part: its snapshot, and the path of the file it is,
+	// for a value that is a File.
+	snapshotID string
+	file       string
 	block      chan struct{}
 	host       atomic.Pointer[PartHost]
 	rev        atomic.Uint64
 }
 
 type persistedStatePartValue struct {
-	Done       bool `json:"done"`
-	AbsentMeta bool `json:"absentMeta,omitempty"`
+	Done       bool   `json:"done"`
+	AbsentMeta bool   `json:"absentMeta,omitempty"`
+	SnapshotID string `json:"snapshotID,omitempty"`
+	File       string `json:"file,omitempty"`
 }
 
 func (*statePartValue) Type() *ast.Type {
@@ -402,7 +409,7 @@ func (*statePartValue) Type() *ast.Type {
 }
 
 func (v *statePartValue) EncodePersistedObject(context.Context, *PersistEncodeContext) (PersistedObjectEncoding, error) {
-	raw, err := json.Marshal(persistedStatePartValue{Done: v.done.Load(), AbsentMeta: v.absentMeta})
+	raw, err := json.Marshal(persistedStatePartValue{Done: v.done.Load(), AbsentMeta: v.absentMeta, SnapshotID: v.snapshotID, File: v.file})
 	return PersistedObjectEncoding{JSON: raw}, err
 }
 
@@ -411,7 +418,7 @@ func (*statePartValue) DecodePersistedObject(_ context.Context, _ *PersistDecode
 	if err := json.Unmarshal(raw, &persisted); err != nil {
 		return nil, err
 	}
-	value := &statePartValue{absentMeta: persisted.AbsentMeta}
+	value := &statePartValue{absentMeta: persisted.AbsentMeta, snapshotID: persisted.SnapshotID, file: persisted.File}
 	value.done.Store(persisted.Done)
 	return value, nil
 }
@@ -471,10 +478,21 @@ func (statePartCodec) DescribeParts(v PersistedPayloadVisit) ([]PartProbe, error
 	if err != nil {
 		return nil, err
 	}
+	var persisted persistedStatePartValue
+	if err := json.Unmarshal(v.Payload, &persisted); err != nil {
+		return nil, err
+	}
 	probes := make([]PartProbe, 0, len(outputs))
 	for _, out := range outputs {
 		// As core's probe does, an absent output is locally complete.
-		probes = append(probes, PartProbe{Descriptor: PartDescriptor{Address: out.Address, Absent: out.State == "absent"}, LocalComplete: out.State == "completed" || out.State == "absent"})
+		desc := PartDescriptor{Address: out.Address, Absent: out.State == "absent"}
+		if out.Address.Part == "snapshot" && out.State == "completed" {
+			desc.SnapshotID = persisted.SnapshotID
+			if persisted.File != "" {
+				desc.Value = &SnapshotValue{Kind: "file", Path: persisted.File}
+			}
+		}
+		probes = append(probes, PartProbe{Descriptor: desc, LocalComplete: out.State == "completed" || out.State == "absent"})
 	}
 	return probes, nil
 }
