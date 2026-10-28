@@ -678,6 +678,27 @@ func TestRecordCacheEvidenceCacheState(t *testing.T) {
 	assert.DeepEqual(t, []string{`{"part":"fs"}`}, mapped[1].Value.AsStringSlice())
 }
 
+// A call span carries its parts' raw sizes beside the parts, index-aligned,
+// when the state has them, as on an engine with the remote cache; without
+// them, as elsewhere, it carries none.
+func TestCacheStateAttrsPartSizes(t *testing.T) {
+	t.Parallel()
+	parts := []string{`{"part":"fs"}`, `{"part":"meta"}`}
+	sizes := func(attrs []attribute.KeyValue) ([]string, bool) {
+		for _, kv := range attrs {
+			if kv.Key == attribute.Key(telemetryattrs.CachePartSizesAttr) {
+				return kv.Value.AsStringSlice(), true
+			}
+		}
+		return nil, false
+	}
+	got, ok := sizes(cacheStateAttrs(dagql.CacheResultState{Parts: parts, PartSizes: []int64{94896128, 0}}))
+	assert.Assert(t, ok, "the sizes are stamped beside the parts")
+	assert.DeepEqual(t, []string{"94896128", "0"}, got)
+	_, ok = sizes(cacheStateAttrs(dagql.CacheResultState{Parts: parts}))
+	assert.Assert(t, !ok, "no sizes are stamped without them")
+}
+
 // evidenceTestChain builds a result whose frame has a receiver chain of n
 // inline calls with an argument each, like a container built up step by step.
 func evidenceTestChain(t testing.TB, n int, content digest.Digest) dagql.AnyResult {
