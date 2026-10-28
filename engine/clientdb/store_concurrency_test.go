@@ -38,6 +38,7 @@ func TestLogStreamConcurrentProperty(t *testing.T) {
 		},
 	)
 	require.NoError(t, err)
+	require.NoError(t, stream.ensureIndexed(t.Context()))
 
 	errCh := make(chan error, writers+readers)
 	stopReaders := make(chan struct{})

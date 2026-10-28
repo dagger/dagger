@@ -21,10 +21,17 @@ var errDBsClosed = errors.New("telemetry store registry is closed")
 
 // DBs owns the refcounted set of open per-client telemetry stores. Live client
 // runtimes and readers retain references; the final Close releases the streams.
+//
+// A store whose last reference closes is reopened when telemetry for its
+// client arrives late, for example from the session's shutdown flush after the
+// client's runtime was reclaimed. DBs remembers where each closed store's
+// streams ended, so such a reopen appends without scanning the store; see
+// OpenForAppend.
 type DBs struct {
 	Root string
 
 	open        map[string]*DB
+	closedAt    map[string]*storePosition
 	opening     int
 	closed      bool
 	mu          sync.RWMutex
@@ -32,7 +39,7 @@ type DBs struct {
 
 	perStoreLock *locker.Locker
 	tailBudget   int64
-	openStore    func(context.Context, string, string, int64) (*DB, error)
+	openStore    func(context.Context, string, string, int64, *storePosition) (*DB, error)
 }
 
 // OpenStats is a measured snapshot of currently open telemetry stores.
@@ -57,15 +64,36 @@ func NewDBs(root string) *DBs {
 	r := &DBs{
 		Root:         root,
 		open:         make(map[string]*DB),
+		closedAt:     make(map[string]*storePosition),
 		perStoreLock: locker.New(),
 		tailBudget:   telemetryTailBudget,
-		openStore:    openStore,
+		openStore:    openStoreStreams,
 	}
 	r.openingCond = sync.NewCond(&r.mu)
 	return r
 }
 
+// Open returns a reference to the client's store, with its indexes built
+// over every row it holds. Close the reference when done with it.
 func (r *DBs) Open(ctx context.Context, clientID string) (*DB, error) {
+	store, err := r.OpenForAppend(ctx, clientID)
+	if err != nil {
+		return nil, err
+	}
+	// Built outside the per-store lock: appends to the store go on while it
+	// is built, and ensureIndexed catches up on them.
+	if err := store.ensureIndexed(ctx); err != nil {
+		return nil, errors.Join(err, store.Close())
+	}
+	return store, nil
+}
+
+// OpenForAppend returns a reference to the client's store for appending
+// telemetry. Unlike Open it doesn't build the store's indexes, so reopening a
+// closed store this way reads none of its rows; the selectors that answer
+// from the indexes must not be used through it. Close the reference when done
+// with it.
+func (r *DBs) OpenForAppend(ctx context.Context, clientID string) (*DB, error) {
 	r.perStoreLock.Lock(clientID)
 	defer r.perStoreLock.Unlock(clientID)
 
@@ -79,10 +107,12 @@ func (r *DBs) Open(ctx context.Context, clientID string) (*DB, error) {
 		r.mu.Unlock()
 		return store, nil
 	}
+	pos := r.closedAt[clientID]
+	delete(r.closedAt, clientID)
 	r.opening++
 	r.mu.Unlock()
 
-	store, err := r.openStore(ctx, r.Root, clientID, r.tailBudget)
+	store, err := r.openStore(ctx, r.Root, clientID, r.tailBudget, pos)
 
 	r.mu.Lock()
 	r.opening--
@@ -123,7 +153,13 @@ func (r *DBs) close(store *DB) error {
 	}
 	delete(r.open, store.clientID)
 	r.mu.Unlock()
-	return store.closeStreams()
+	if err := store.closeStreams(); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	r.closedAt[store.clientID] = store.position()
+	r.mu.Unlock()
+	return nil
 }
 
 // Close prevents new stores from opening and waits for in-flight opens.
@@ -194,6 +230,7 @@ func (r *DBs) GC(keep map[string]bool) error {
 			r.perStoreLock.Unlock(group.clientID)
 			continue
 		}
+		delete(r.closedAt, group.clientID)
 		r.mu.Unlock()
 		for _, name := range group.names {
 			if err := os.RemoveAll(filepath.Join(r.Root, name)); err != nil {
@@ -216,9 +253,12 @@ func (r *DBs) GC(keep map[string]bool) error {
 func (r *DBs) Remove(clientID string) (bool, error) {
 	r.perStoreLock.Lock(clientID)
 	defer r.perStoreLock.Unlock(clientID)
-	r.mu.RLock()
+	r.mu.Lock()
 	used := r.open[clientID] != nil
-	r.mu.RUnlock()
+	if !used {
+		delete(r.closedAt, clientID)
+	}
+	r.mu.Unlock()
 	if used {
 		return false, nil
 	}

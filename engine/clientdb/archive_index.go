@@ -94,7 +94,6 @@ func newArchiveLookup() *archiveLookup {
 
 var controlVersionMarker = []byte(agentcontrol.VersionAttr)
 
-func (idx *archiveLookup) add(row Log) { idx.addAll([]Log{row}) }
 func (idx *archiveLookup) addAll(rows []Log) {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
