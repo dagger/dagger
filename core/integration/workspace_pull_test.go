@@ -13,6 +13,7 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/engineconn"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -200,8 +201,18 @@ func (WorkspaceSuite) TestWorkspacePullIncrementalCheckout(ctx context.Context, 
 // source-only tree. Live, and replayed from recipes after pruning the cache,
 // every local HEAD's tree must be a delta: freezing a receiver for a commit
 // or a pull already materializes its HEAD's tree, so a parent is never cold.
+// A dedicated nested engine is used because the test requires an unrestricted
+// prune of the engine-wide cache.
 func (WorkspaceSuite) TestWorkspacePullColdTrees(ctx context.Context, t *testctx.T) {
-	c, sink := connectWithTrace(ctx, t)
+	outer := connect(ctx, t)
+	engineSvc, err := core.NewQuery(outer).Host().Tunnel(devEngineContainerAsService(devEngineContainer(outer))).Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { engineSvc.Stop(ctx) })
+	endpoint, err := engineSvc.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
+	require.NoError(t, err)
+	nested := engineconn.Config{RunnerHost: endpoint, LogOutput: testutil.NewTWriter(t)}
+
+	c, sink := connectWithTrace(ctx, t, nested)
 	content := core.NewQuery(c).Directory().
 		WithNewFile(".gitattributes", "*.txt text eol=lf\n").
 		WithNewFile("base.txt", "base\n").
@@ -275,10 +286,11 @@ git -C /root/srv/repo.git config uploadpack.allowAnySHA1InWant true
 	// Replay both recipes on an engine that has forgotten everything, like a
 	// resumed session: concurrently, as restored agents are.
 	replay := func() map[string]map[string]bool {
-		pruner := connect(ctx, t)
+		pruner, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
+		require.NoError(t, err)
 		require.NoError(t, core.NewQuery(pruner).Engine().LocalCache().Prune(ctx))
 		require.NoError(t, pruner.Close())
-		cold, coldSink := connectWithTrace(ctx, t)
+		cold, coldSink := connectWithTrace(ctx, t, nested)
 		var eg errgroup.Group
 		replayedPending := make(map[string][]string, len(ids))
 		var mu sync.Mutex
