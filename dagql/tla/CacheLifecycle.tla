@@ -885,6 +885,7 @@ ImportedResult(c, persistedFlag, depsSet, ownVal, payloadVal, dirtyAtSnapshotFla
      \* part sources (ModelOffers): none until a merge or an offer brings one
      offers |-> {}, managed |-> FALSE, shell |-> FALSE, cloudRow |-> FALSE,
      acquired |-> {}, nativeWrote |-> {},
+     decodeArm |-> TRUE, armedWithOffer |-> FALSE,
      attachErrRefusal |-> FALSE,
      payload |-> payloadVal, decodePhase |-> "idle", decodeErr |-> "none",
      decodeGen |-> 0, persistSyncPending |-> FALSE,
@@ -923,6 +924,7 @@ DeadHusk ==
      persisted |-> FALSE, declined |-> FALSE, declinedTruth |-> FALSE,
      offers |-> {}, managed |-> FALSE, shell |-> FALSE, cloudRow |-> FALSE,
      acquired |-> {}, nativeWrote |-> {},
+     decodeArm |-> TRUE, armedWithOffer |-> FALSE,
      barrier |-> "none",
      attachErrRefusal |-> FALSE,
      payload |-> "decoded", decodePhase |-> "idle", decodeErr |-> "none",
@@ -1813,6 +1815,7 @@ FreshResult(o, lazyArm, handleChoice, deps) ==
      \* a computed value has its parts: no offers, native, no writer yet
      offers |-> {}, managed |-> FALSE, shell |-> FALSE, cloudRow |-> FALSE,
      acquired |-> {}, nativeWrote |-> {},
+     decodeArm |-> TRUE, armedWithOffer |-> FALSE,
      barrier |-> "open",
      attachErrRefusal |-> FALSE,
      \* fresh results have their typed payload in memory;
@@ -2761,7 +2764,12 @@ DecodeInstall(i) ==
        \* to import and publication and is read under egraphMu. (The install
        \* used to copy both fields from the shell, which reduced a non-leaf's
        \* stored set to its own handle and raced the lookup filter's read.)
-       /\ res' = [res EXCEPT ![r] = InstallContainerParts([res[r] EXCEPT !.payload = "decoded"])]
+       \* Whether the value may decode armed is fixed here, from the
+       \* offers the row holds now (decodeArmsRecipe, before DecodeResult): a
+       \* merged row holding an offer decodes as a shell, and an offer that
+       \* retires later doesn't arm it.
+       /\ res' = [res EXCEPT ![r] = InstallContainerParts([res[r] EXCEPT !.payload = "decoded",
+                     !.decodeArm = ~(res[r].cloudRow /\ res[r].offers # {})])]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, sessionEdges,
                    countedEdges, sessionRelease, evals, epoch, flushed>>
 
@@ -3831,12 +3839,12 @@ ImportedLazyArm(r) ==
     /\ res[r].imported
     /\ res[r].payload = "decoded"
     \* A row restored from disk arms whenever it carries a recipe; a
-    \* merged (Cloud) row arms only when it holds no offer at decode, and
-    \* otherwise decodes as a shell (ImportedShell). A shell or a managed row
-    \* never arms.
+    \* merged (Cloud) row arms only when it held no offer at decode
+    \* (decodeArm), and otherwise decodes as a shell (ImportedShell). A shell
+    \* or a managed row never arms.
     /\ ~res[r].shell
     /\ ~res[r].managed
-    /\ res[r].cloudRow => res[r].offers = {}
+    /\ res[r].decodeArm
     \* A decoded lazy form re-arms whole: all groups pending together. The
     \* guard generalizes registerLazyEvaluation's per-result clauses to
     \* every group (no attempt on any group, nothing stored, not complete,
@@ -3849,7 +3857,9 @@ ImportedLazyArm(r) ==
          /\ ~res[r].lazySyncPending[g]
          /\ res[r].lazyPhase[g] = "idle"
     /\ res' = [res EXCEPT ![r].lazyCb = [g \in LazyGroups |-> "armed"],
-                          ![r].lazyConsumed = [g \in LazyGroups |-> FALSE]]
+                          ![r].lazyConsumed = [g \in LazyGroups |-> FALSE],
+                          \* property-only (ProbeArmedWithOfferManaged)
+                          ![r].armedWithOffer = res[r].offers # {}]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, sessionEdges,
                    countedEdges, sessionRelease, evals, epoch, flushed>>
 
@@ -3929,7 +3939,12 @@ EvalAcquire(e) ==
        /\ evals[e].curGroup = MappedGroup(res[r], p)
        /\ res[r].managed
        /\ sessionRelease[evals[e].sess].phase = "live"
-       /\ done \/ ~TryAcquireGuard \/ ~NativeGroupTaken(res[r], g)
+       \* A native body's installed output is joined before TryAcquire
+       \* (PartOutputInstalled), and TryAcquire refuses an output that isn't
+       \* pending, whatever the guard; the guard is its Running-group check.
+       /\ \/ done
+          \/ /\ GroupParts(g) \cap res[r].nativeWrote = {}
+             /\ (~TryAcquireGuard \/ ~NativeGroupTaken(res[r], g))
        /\ res' = [res EXCEPT ![r].acquired = IF done THEN @ ELSE @ \cup {p},
                              ![r].offers = IF done THEN @ ELSE @ \ {p}]
        /\ evals' = [evals EXCEPT ![e].phase = "returnDone",
@@ -4203,6 +4218,10 @@ EvalSyncFinish(r, g) ==
              ![r].lazyWaiters[g] = 0,
              ![r].lazyComplete[g] = @ \/ outcome = "syncOk",
              ![r].lazySyncPending[g] = outcome # "syncOk",
+             \* a settled native output retires its parts' offers
+             \* (settlePart's retirePartOfferLocked); failed bookkeeping
+             \* keeps them
+             ![r].offers = IF outcome = "syncOk" THEN @ \ GroupParts(g) ELSE @,
              ![r].lazyTokenSession[g] = 0]
         /\ evals' = LatchEvalOutcomes(r, g,
              CASE outcome = "syncOk" -> "latchedDone"
@@ -4676,6 +4695,8 @@ TypeOK ==
          /\ res[r].managed \in BOOLEAN
          /\ res[r].shell \in BOOLEAN
          /\ res[r].cloudRow \in BOOLEAN
+         /\ res[r].decodeArm \in BOOLEAN
+         /\ res[r].armedWithOffer \in BOOLEAN
          \* the pending flag exists only for an installed payload: it is
          \* set by a post-install finish and the install never reverts
          /\ res[r].persistSyncPending => res[r].payload = "decoded"
@@ -4844,6 +4865,7 @@ ProbeShellAcquired ==
 ProbeArmedWithOfferManaged ==
     ~\E r \in ResultIds :
         /\ res[r].registered /\ ~res[r].cloudRow /\ res[r].managed
+        /\ res[r].armedWithOffer
         /\ \E g \in LazyGroups : res[r].lazyCb[g] = "armed"
 
 \* Persistence intent is never lost: once a successful call's admission has
