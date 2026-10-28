@@ -1822,7 +1822,8 @@ func (*Container) DecodePersistedObject(ctx context.Context, dec *dagql.PersistD
 	// A record from another engine that holds no download address for any
 	// part decodes as local persistence decodes a pending container: its
 	// recipe armed, its parts pending.
-	if envelope.OperationState != "" && len(envelope.LazyJSON) != 0 && dec.ArmRecipe() {
+	armed := envelope.OperationState != "" && len(envelope.LazyJSON) != 0 && dec.ArmRecipe()
+	if armed {
 		kind := ""
 		if dec.Call() != nil {
 			kind = dec.Call().Field
@@ -1919,7 +1920,13 @@ func (*Container) DecodePersistedObject(ctx context.Context, dec *dagql.PersistD
 			return nil, err
 		}
 	}
-	if err := container.installContainerParts(ctx, dec, envelope.Metadata.Consumed, envelope.Parts, links, recipe); err != nil {
+	metadataConsumed, parts := envelope.Metadata.Consumed, envelope.Parts
+	if _, refined := recipe.(LazyContainerParts); armed && recipe != nil && !refined {
+		// A whole operation computes every part in one run. Local
+		// persistence saves it, before that run, with none of them.
+		metadataConsumed, parts = false, nil
+	}
+	if err := container.installContainerParts(ctx, dec, metadataConsumed, parts, links, recipe); err != nil {
 		return nil, fmt.Errorf("decode persisted container: %w", err)
 	}
 	return container, nil
