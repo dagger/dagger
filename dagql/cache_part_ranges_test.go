@@ -301,6 +301,35 @@ func TestPartRangeReadsForwardRead(t *testing.T) {
 	require.NoError(t, reader.Close())
 }
 
+// A provider's bound on requests in flight caps its blobs' ranged reads: with
+// room for two, two chunks are requested while one is held, every place
+// comes back once the blob is read, and the blob arrives whole.
+func TestPartRangeReadsProviderRequestBound(t *testing.T) {
+	const size = 40 << 20
+	transport, source, offer, data, _ := rangeTestReader(t, size, func(cfg *partRangeConfig) {
+		cfg.chunk = 1 << 20
+	})
+	hold := make(chan struct{})
+	transport.holdRange("bytes=0-1048575", hold)
+	provider := source.Provider(t.Context(), offer, nil).(*partContentProvider)
+	provider.requests = semaphore.NewWeighted(2)
+	opened, err := provider.ReaderAt(t.Context(), offer.Chain.Layers[0].Descriptor)
+	require.NoError(t, err)
+	reader := opened.(contentReader)
+	require.IsType(t, &partRangeReader{}, reader, "the blob is read in ranges")
+	read := make(chan string, 1)
+	go func() {
+		got, _ := readRangeTest(t, reader, size)
+		read <- got
+	}()
+	require.Eventually(t, func() bool { return transport.total() == 2 }, 10*time.Second, 10*time.Millisecond, "the bound's requests are made")
+	require.Never(t, func() bool { return transport.total() > 2 }, 200*time.Millisecond, 10*time.Millisecond, "no request past the bound is made")
+	close(hold)
+	require.True(t, within(t, read) == data, "the blob's bytes arrive whole and in order")
+	require.NoError(t, reader.Close())
+	require.True(t, provider.requests.TryAcquire(2), "every request's place is returned")
+}
+
 // The engine-wide budget bounds the extra streams: a reader that finds none
 // left reads its blob on one stream, and a closed reader's streams go back.
 func TestPartRangeReadsStreamBudget(t *testing.T) {

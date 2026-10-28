@@ -14,6 +14,7 @@ import (
 	"github.com/dagger/dagger/engine/snapshots"
 	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
+	"golang.org/x/sync/semaphore"
 )
 
 // partPrefetchLane is one of the prefetcher's two lanes. A blob of at least
@@ -734,7 +735,10 @@ func (p *partPrefetcher) run(ctx context.Context, job *partPrefetchJob) {
 }
 
 // fetch downloads job's wanted blobs, which run registered, and settles
-// each. The large lane downloads one blob at a time; the small lane up to
+// each. The large lane downloads the blobs in order, each starting once the
+// one before it has started its last request, with the job's requests in
+// flight bounded by partStreams: a slow response at a blob's end leaves the
+// other streams to the next blob. The small lane downloads up to
 // smallStreams at once. After a failure, no blob starts, nor does one that
 // no offer wants any more.
 func (p *partPrefetcher) fetch(ctx context.Context, job *partPrefetchJob, wanted []ocispecs.Descriptor) (blobs int, bytes int64, failure error) {
@@ -746,12 +750,29 @@ func (p *partPrefetcher) fetch(ctx context.Context, job *partPrefetchJob, wanted
 	var (
 		mu sync.Mutex
 		wg sync.WaitGroup
+		// frees lets the next blob start, by blob.
+		frees = map[digest.Digest]func(){}
 	)
+	if parts, ok := provider.(*partContentProvider); ok && job.lane == partPrefetchLarge {
+		parts.requests = semaphore.NewWeighted(partStreams)
+		parts.claimed = func(d digest.Digest) {
+			mu.Lock()
+			free := frees[d]
+			mu.Unlock()
+			if free != nil {
+				free()
+			}
+		}
+	}
 	slots := make(chan struct{}, streams)
 	for _, desc := range wanted {
 		slots <- struct{}{}
+		free := sync.OnceFunc(func() { <-slots })
+		mu.Lock()
+		frees[desc.Digest] = free
+		mu.Unlock()
 		wg.Go(func() {
-			defer func() { <-slots }()
+			defer free()
 			mu.Lock()
 			failed := failure != nil
 			mu.Unlock()
