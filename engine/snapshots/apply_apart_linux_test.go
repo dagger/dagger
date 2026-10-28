@@ -115,6 +115,43 @@ func TestImportChainOverlayAppliesLayersAtOnce(t *testing.T) {
 	require.EqualValues(t, layers, consumer.Applies.Load())
 }
 
+// A chain whose blobs arrive by Await applies each layer as soon as its own
+// blob is in: a later layer applies while an earlier one's blob is still
+// awaited. The tree is the chain's, one snapshot per layer.
+func TestImportChainOverlayAppliesEachLayerAsItsBlobArrives(t *testing.T) {
+	t.Parallel()
+	producer, consumer := testutil.NewStore(t), testutil.NewOverlayStore(t)
+	chain := layeredChain(t, producer, "layer", 2)
+	first, last := chain.Layers[0].Descriptor, chain.Layers[1].Descriptor
+	lastApplied := make(chan struct{})
+	consumer.BeforeApply = func(_ context.Context, desc ocispecs.Descriptor) error {
+		if desc.Digest == last.Digest {
+			close(lastApplied)
+		}
+		return nil
+	}
+	await := func(ctx context.Context, desc ocispecs.Descriptor) error {
+		if desc.Digest == first.Digest {
+			select {
+			case <-lastApplied:
+			case <-time.After(10 * time.Second):
+				return errors.New("the last layer did not apply while the first one's blob was awaited")
+			case <-ctx.Done():
+				return context.Cause(ctx)
+			}
+		}
+		data, err := content.ReadBlob(ctx, chain.Provider, desc)
+		if err != nil {
+			return err
+		}
+		return content.WriteBlob(ctx, consumer.Content, "awaited-"+desc.Digest.Encoded(), bytes.NewReader(data), desc)
+	}
+	ref := importChain(t, consumer, &bkcache.ExportChain{Layers: chain.Layers, Await: await})
+	require.Equal(t, map[string]string{"layer-00.txt": "file 640 layer 0", "layer-01.txt": "file 640 layer 1"}, testutil.OverlayTree(t, ref))
+	requireParents(t, consumer, ref, 2)
+	require.EqualValues(t, 2, consumer.Applies.Load())
+}
+
 // Layers applied apart give the tree overlayfs shows for the chain applied
 // in order: a whiteout hides a file and a directory of the layers below it,
 // and an opaque directory everything below it; a file replaced keeps the
