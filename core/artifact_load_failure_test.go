@@ -185,10 +185,12 @@ func TestArtifactLoadFailureDimensionAlternatives(t *testing.T) {
 func TestArtifactMainLoadFailure(t *testing.T) {
 	app := loadFailureArtifact("app")
 	app.LoadFailure.Entrypoint = true
-	app.LoadFailure.Siblings = []string{"coll"}
+	app.LoadFailure.Siblings = []string{"coll", "e2e-tests"}
 	all := &Artifacts{Entries: []*Artifact{
 		app,
 		{ModuleName: "coll", Path: []string{"coll", "helper"}, TypeName: "Expertise"},
+		// a legacy sibling's artifacts are spelled by the legacy rules
+		{ModuleName: "e2e-tests", Path: []string{LegacyNamer.CLIName("e2e-tests"), "lint"}, TypeName: "Check"},
 	}}
 	all.AllDimensions = all.DimensionDefinitions()
 	for uri, want := range map[string][]string{
@@ -202,6 +204,10 @@ func TestArtifactMainLoadFailure(t *testing.T) {
 		"dag://coll/helper":            {"coll/helper"},
 		"dag://?expertise=coll/helper": {"coll/helper"},
 		"dag://?coll-item=a":           {},
+		// ...by either spelling of a legacy module's name
+		"dag://e-2-e-tests/lint":    {"e-2-e-tests/lint"},
+		"dag://e2e-tests/lint":      {"e-2-e-tests/lint"},
+		"dag://?e-2-e-tests-item=a": {},
 	} {
 		t.Run(uri, func(t *testing.T) {
 			selected := filterURI(t, all, uri)
