@@ -68,6 +68,7 @@ func (c *Cache) usesPartAcquisition(res AnyResult, row *sharedResult) bool {
 	gate.revision++
 	return true
 }
+
 // partAcquisitionSettledLocked answers usesPartAcquisition without writing
 // whenever its answer needs no write, in the same order as the write path:
 // true for a managed gate, false for a row with no part state, false while
