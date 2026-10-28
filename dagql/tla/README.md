@@ -791,11 +791,15 @@ every other configuration keeps its state space):
 
 - **Offers.** A merged record can carry a download address (an offer) for a
   part, and an offer can arrive later on any row (`OfferArrive`). Settling a
-  part retires its offer.
-- **Decode.** A merged row arms its recipe when it holds no offer and has a
-  recipe (`ImportedLazyArm`); otherwise it decodes as a shell, with nothing
-  for dagql to evaluate (`ImportedShell`). A row restored from disk arms
-  whenever it has a recipe; a row with no recipe is a shell either way.
+  part retires its offer, whether acquisition or a native body computed it;
+  failed native bookkeeping keeps it.
+- **Decode.** A merged row arms its recipe when, at decode, it holds no
+  offer and no part it already acquired, and has a recipe
+  (`ImportedLazyArm`); otherwise it decodes as a shell, with nothing for
+  dagql to evaluate (`ImportedShell`). The choice is made at decode
+  (`decodeArm`): an offer that retires later doesn't arm a shell. A row
+  restored from disk arms whenever it has a recipe; a row with no recipe is
+  a shell either way.
 - **Native or managed.** A demand goes through part acquisition when the row
   is managed already, or has an offer or is a shell and no native body is
   running for it (`UsesAcquisition`). That demand first marks the row managed
@@ -803,11 +807,13 @@ every other configuration keeps its state space):
   gate's managed flag before TryAcquire. Managed is sticky until the value is
   replaced.
 - **Acquisition** (`EvalAcquire`), one atomic decision per demanded part:
-  done if the part is complete or acquired; refused while a native run holds
-  the group, either running or having written it (the gate's Running and
-  Evaluated, `NativeGroupTaken`); otherwise install the offer, or re-run when
-  there is none. A demand on a part a native body already wrote joins that
-  native installation and retries its bookkeeping, managed or not.
+  done if the part is complete or acquired; refused for a part a native body
+  already wrote (its installed output, joined before TryAcquire and refused
+  by it in every configuration) and, under `TryAcquireGuard`, for a group
+  with a native attempt in flight (the gate's Running check); otherwise
+  install the offer, or re-run when there is none. A demand on a part a
+  native body already wrote joins that native installation and retries its
+  bookkeeping, managed or not.
 
 Properties: `OnePartWriter` (no part is written both by acquisition and by a
 native body), `ManagedOnlyWithSource` (a row goes managed only with an offer
@@ -827,27 +833,32 @@ The configurations use one part in one group:
 - `part_sources_import`: lazy_import's restored starting graphs, without release, with
   late offers.
 
-Run with the pinned TLC 1.7.4 on an arm64 spot machine (16 CPUs), two JVMs
-at a time (8 workers, 13 GB), behind the 10 GB disk guard. A mutation's or
-probe's count is where TLC stopped, which varies with worker order:
+Run with the pinned TLC 1.7.4 through `tla-check one`, one JVM per
+configuration (16 workers, 8 GB), three at a time, on an arm64 spot machine
+(m8gd.4xlarge, 16 CPUs). A mutation's or probe's count is where TLC
+stopped, which varies with worker order:
 
 | Configuration | Question | Expected | Distinct states | Depth |
 | --- | --- | --- | ---: | ---: |
-| `part_sources_import` | restored rows, late offers, native and managed | clean | 28,926,193 | 42 |
-| `part_sources_merge` | merged rows, armed or shells, late offers | clean | 97,709 | 38 |
-| `part_sources_late_offer_over_native` | no running check and no TryAcquire check | violates `OnePartWriter` | 35,660 | 10 |
-| `part_sources_tryacquire_guard_only_off` | TryAcquire takes a group a native body wrote | violates `OnePartWriter` | 60,655 | 11 |
-| `part_sources_running_guard_off` | a row goes managed while a native body runs | violates `NativeRunStaysNative` | 19,755 | 9 |
-| `part_sources_not_sticky` | managed resets after an install | violates `OnePartWriter` | 2,828 | 15 |
-| `part_sources_imported_predicate` | the old predicate: imported means managed | violates `ManagedOnlyWithSource` | 1,048 | 5 |
-| `probe_part_sources_armed_native` | an armed merged row completes natively | witness | 1,140 | 13 |
-| `probe_part_sources_late_offer` | an armed row installs a late offer | witness | 9,804 | 8 |
-| `probe_part_sources_shell` | a shell's part is acquired | witness | 713 | 12 |
-| `probe_part_sources_armed_managed` | a restored row armed with an offer goes managed | witness | 5,605 | 7 |
+| `part_sources_import` | restored rows, late offers, native and managed | clean | 28,516,968 | 42 |
+| `part_sources_merge` | merged rows, armed or shells, late offers | clean | 88,994 | 38 |
+| `part_sources_tryacquire_guard_only_off` | no TryAcquire Running check | clean | 28,516,968 | 42 |
+| `part_sources_late_offer_over_native` | no running check and no TryAcquire Running check | violates `OnePartWriter` | 33,428 | 10 |
+| `part_sources_running_guard_off` | a row goes managed while a native body runs | violates `NativeRunStaysNative` | 21,832 | 9 |
+| `part_sources_not_sticky` | managed resets after an install | violates `OnePartWriter` | 3,876 | 16 |
+| `part_sources_imported_predicate` | the old predicate: imported means managed | violates `ManagedOnlyWithSource` | 1,171 | 5 |
+| `probe_part_sources_armed_native` | an armed merged row completes natively | witness | 885 | 12 |
+| `probe_part_sources_late_offer` | an armed row installs a late offer | witness | 10,679 | 8 |
+| `probe_part_sources_shell` | a shell's part is acquired | witness | 1,028 | 12 |
+| `probe_part_sources_armed_managed` | a restored row armed with an offer goes managed | witness | 7,321 | 7 |
 
-`part_sources_tryacquire_guard_only_off` fails where a native body wrote a part, its
-bookkeeping failed and a late offer arrived: TryAcquire's refusal of an
-Evaluated group is what keeps one writer there. With the running check off
-alone, one writer still holds, but the row goes managed in mid-run, so its
+Either running check alone keeps one writer per part. With the check in
+`usesPartAcquisition` on, a row never goes managed while a native attempt
+is in flight, so acquisition never meets one: `part_sources_tryacquire_guard_only_off`
+reaches exactly `part_sources_import`'s states. With that check off alone, one writer
+still holds through TryAcquire, but the row goes managed in mid-run, so its
 later demands take acquisition instead of native evaluation
-(`part_sources_running_guard_off`).
+(`part_sources_running_guard_off`). With both off, acquisition takes a part a native
+body is computing (`part_sources_late_offer_over_native`). `part_sources_not_sticky`'s witness
+is a merged row that armed with no offer, got a late one, went managed and
+acquired its part, then forgot managed and ran its recipe over it.
