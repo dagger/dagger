@@ -62,6 +62,11 @@ var expectedOutcome = map[string]string{
 	"snapshot_prefetch_leaveearly":   "PrefetchHeldPresent",
 	"snapshot_prefetch_keptgone":     "AheadRefTracked",
 	"snapshot_prefetch_closedropped": "PrefetchClosed",
+	// The import ahead's wait for each blob (ExportChain.Await).
+	"snapshot_prefetch_await_underlock":    "AwaitHoldsNoLock",
+	"snapshot_prefetch_await_liveness":     "",
+	"snapshot_prefetch_await_ignoresindex": temporalOutcome,
+	"snapshot_prefetch_await_nogiveup":     temporalOutcome,
 	// green: regression checks over the modeled cache behavior. (The
 	// former core configuration is folded into resources: same bounds,
 	// every core invariant, and strictly more behavior.)
