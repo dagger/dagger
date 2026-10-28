@@ -18,6 +18,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/containerd/containerd/v2/pkg/sys"
 	"github.com/containerd/platforms"
@@ -644,30 +645,15 @@ func main() { //nolint:gocyclo
 		// start serving on the listeners for actual clients
 		bklog.G(ctx).Debug("starting main engine api listeners")
 		srv.Register(grpcServer)
-		protocols := new(http.Protocols)
-		protocols.SetHTTP1(true)
-		protocols.SetUnencryptedHTTP2(true)
-		httpServer = &http.Server{
-			// NOTE: do NOT set ReadHeaderTimeout here (gosec G112). As of Go
-			// 1.26.6, net/http arms a connection-level read deadline from
-			// ReadHeaderTimeout *before* handing an unencrypted HTTP/2
-			// connection off to the HTTP/2 server, and the HTTP/2 server only
-			// disarms that deadline when ReadTimeout > 0. The result is a hard
-			// cap on connection lifetime: every client connection dies after
-			// ReadHeaderTimeout no matter how active it is, and since all of a
-			// client's streams share one h2 connection, any query outliving it
-			// fails with `Post "http://dagger/query": unexpected EOF`.
-			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("content-type"), "application/grpc") {
-					// The docs on grpcServer.ServeHTTP warn that some features are missing vs. serving fully "native" gRPC,
-					// but in practice it seems to work fine for us and only be relevant for some advanced features we don't use.
-					grpcServer.ServeHTTP(w, r)
-					return
-				}
-				srv.ServeHTTP(w, r)
-			}),
-			Protocols: protocols,
-		}
+		httpServer = newAPIServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("content-type"), "application/grpc") {
+				// The docs on grpcServer.ServeHTTP warn that some features are missing vs. serving fully "native" gRPC,
+				// but in practice it seems to work fine for us and only be relevant for some advanced features we don't use.
+				grpcServer.ServeHTTP(w, r)
+				return
+			}
+			srv.ServeHTTP(w, r)
+		}))
 		errCh := make(chan error, 1)
 		if err := serveAPI(bkcfg.GRPC, httpServer, errCh); err != nil {
 			return err
@@ -754,6 +740,25 @@ func main() { //nolint:gocyclo
 		}
 		fmt.Fprintf(os.Stderr, "dagger-engine: %+v\n", err)
 		os.Exit(1)
+	}
+}
+
+func newAPIServer(handler http.Handler) *http.Server {
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	protocols.SetUnencryptedHTTP2(true)
+	return &http.Server{
+		// NOTE: do NOT set ReadHeaderTimeout here (gosec G112). As of Go
+		// 1.26.6, net/http arms a connection-level read deadline from
+		// ReadHeaderTimeout *before* handing an unencrypted HTTP/2
+		// connection off to the HTTP/2 server, and the HTTP/2 server only
+		// disarms that deadline when ReadTimeout > 0. The result is a hard
+		// cap on connection lifetime: every client connection dies after
+		// ReadHeaderTimeout no matter how active it is, and since all of a
+		// client's streams share one h2 connection, any query outliving it
+		// fails with `Post "http://dagger/query": unexpected EOF`.
+		Handler:   handler,
+		Protocols: protocols,
 	}
 }
 
@@ -1020,10 +1025,47 @@ func getListener(addr string, uid, gid int, tlsConfig *tls.Config) (net.Listener
 			logrus.Warnf("TLS is not enabled for %s. enabling mutual TLS authentication is highly recommended", addr)
 			return l, nil
 		}
-		return tls.NewListener(l, tlsConfig), nil
+		return newTLSListener(l, tlsConfig), nil
 	default:
 		return nil, fmt.Errorf("addr %s not supported", addr)
 	}
+}
+
+// newTLSListener terminates TLS and hands net/http connections it treats as
+// plaintext. net/http only accepts prior-knowledge HTTP/2 on connections that
+// are not a *tls.Conn, and the tls:// client driver speaks prior-knowledge
+// HTTP/2, without ALPN up to v1.0.0-beta.21.
+func newTLSListener(l net.Listener, config *tls.Config) net.Listener {
+	return tlsTerminatingListener{tls.NewListener(l, config)}
+}
+
+type tlsTerminatingListener struct {
+	net.Listener
+}
+
+func (l tlsTerminatingListener) Accept() (net.Conn, error) {
+	conn, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	return &tlsTerminatedConn{Conn: conn, tls: conn.(*tls.Conn)}, nil
+}
+
+type tlsTerminatedConn struct {
+	net.Conn
+	tls       *tls.Conn
+	handshake sync.Once
+}
+
+// Read logs a failed handshake, since net/http stops reporting handshake
+// errors once it no longer sees a *tls.Conn.
+func (c *tlsTerminatedConn) Read(b []byte) (int, error) {
+	c.handshake.Do(func() {
+		if err := c.tls.Handshake(); err != nil {
+			logrus.Warnf("TLS handshake error from %s: %v", c.RemoteAddr(), err)
+		}
+	})
+	return c.Conn.Read(b)
 }
 
 func serverCredentials(cfg bkconfig.TLSConfig) (*tls.Config, error) {
@@ -1047,6 +1089,7 @@ func serverCredentials(cfg bkconfig.TLSConfig) (*tls.Config, error) {
 	tlsConf := &tls.Config{
 		Certificates: []tls.Certificate{certificate},
 		MinVersion:   tls.VersionTLS12,
+		NextProtos:   []string{"h2", "http/1.1"},
 	}
 	if caFile != "" {
 		certPool := x509.NewCertPool()

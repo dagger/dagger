@@ -22,13 +22,16 @@ func listenFD(addr string, tlsConfig *tls.Config) (net.Listener, error) {
 		listeners []net.Listener
 	)
 	// socket activation
-	if tlsConfig != nil {
-		listeners, err = activation.TLSListeners(tlsConfig)
-	} else {
-		listeners, err = activation.Listeners()
-	}
+	listeners, err = activation.Listeners()
 	if err != nil {
 		return nil, err
+	}
+	if tlsConfig != nil {
+		for i, l := range listeners {
+			if l.Addr().Network() == "tcp" {
+				listeners[i] = newTLSListener(l, tlsConfig)
+			}
+		}
 	}
 
 	if len(listeners) == 0 {
