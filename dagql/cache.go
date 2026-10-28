@@ -7036,7 +7036,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 				if _, derived, _ := frame.derivedRecipeDigest(); !derived {
 					c.egraphMu.Unlock()
 					_, _ = frame.deriveRecipeDigest(c) // a failure is kept on the frame, and indexing returns it
-					c.egraphMu.Lock()
+					wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 					continue
 				}
 			}
