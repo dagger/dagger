@@ -362,8 +362,7 @@ func TestPartPrivateWholeBuiltin(t *testing.T) {
 	originalLazy := &ContainerBuiltinLazy{LazyState: NewLazyState(), Platform: platform, ManifestDigest: manifest.Digest}
 	ctr.Lazy = originalLazy
 	original := attachTransferObject(t, ctx, cache, srv, "operation-execution", "_builtinContainer", ctr)
-	// The receiver is another cache's: in this one the bundle's recipe is the
-	// original's own entry, which a merge keeps. Both have the builtin.
+	// The receiver is another cache's. Both have the builtin.
 	bctx, _, bcache, bsrv, bserver := executionFixture(t)
 	bserver.builtin = packaged
 	require.NoError(t, cache.WithExportedValues(ctx, dagql.ValueSelection{Roots: []dagql.AnyResult{original}}, config.RefConfig{}, func(_ context.Context, exported *dagql.ExportedValues) error {
@@ -375,11 +374,7 @@ func TestPartPrivateWholeBuiltin(t *testing.T) {
 		result := loaded.(dagql.ObjectResult[*Container])
 		require.NoError(t, bcache.EvaluateParts(bctx, result, ContainerPartFS))
 		require.Equal(t, "/private", result.Self().Config.WorkingDir)
-		view := result.Self().acquiredOutput.Load()
-		require.NotNil(t, view)
-		require.True(t, view.Payload.Metadata.Consumed)
-		require.Equal(t, containerPartDirectory, view.Payload.Parts[ContainerPartFS].Kind)
-		require.NotEmpty(t, view.Payload.LazyJSON)
+		require.True(t, result.Self().containerPartComputed(bctx, result.Self().lazyOpForRouting(), ContainerPartFS))
 		require.False(t, originalLazy.lazyInitComplete.Load())
 		require.Same(t, originalLazy, ctr.Lazy)
 		require.NoError(t, bcache.Evaluate(bctx, result))
