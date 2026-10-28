@@ -63,7 +63,8 @@ func TestExportReusedLayerWritesNoOwnerLeases(t *testing.T) {
 	}
 	_, again := export(child)
 	require.Equal(t, base, again, "fifty more owners of the reused layers make no more metadata writes")
-	for _, owner := range owners {
+	owns(parentOwner, blobs[:1]) // the parent's owner owns the parent alone
+	for _, owner := range owners[1:] {
 		owns(owner, blobs)
 	}
 
