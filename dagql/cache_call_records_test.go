@@ -428,11 +428,11 @@ func TestCallRecordReportsWhatASaveWrites(t *testing.T) {
 	require.False(t, change.Saved, "the same call again")
 }
 
-// A call span with an expiry already past reports a value that has expired:
-// read again, or read late from a client the Cloud hasn't seen, it doesn't
-// move back the expiry of a fresh value a later export stored. A new
-// completion of a call already kept, with an expiry to come, still gives the
-// entry its expiry.
+// A call span with an expiry already past reports a call that has expired:
+// read again, or read late from a client the Cloud hasn't seen, it neither
+// keeps its call nor moves back the expiry of a fresh value a later export
+// stored. A completion with an expiry to come still gives the entry its
+// expiry.
 func TestCallRecordPastExpiriesLeaveAReplacementAlone(t *testing.T) {
 	t.Parallel()
 	ctx, cloud := storedPartTestCache(t, WithBlobStore())
@@ -479,13 +479,30 @@ func TestCallRecordPastExpiriesLeaveAReplacementAlone(t *testing.T) {
 	cloud.egraphMu.RLock()
 	kept := len(entry.calls)
 	cloud.egraphMu.RUnlock()
-	require.Equal(t, 2, kept, "the late client's call is kept")
+	require.Zero(t, kept, "neither expired call is kept")
 	require.Equal(t, expires, expiry(), "its past expiry says nothing of the fresh value")
 
 	// The first client completes the call again, with an earlier expiry.
 	renewed := time.Now().Add(time.Minute).Unix()
 	test.attach(t, ctx, test.span(t, true, renewed))
-	require.Equal(t, renewed, expiry(), "a new completion of a kept call")
+	require.Equal(t, renewed, expiry(), "a new completion")
+	// And once more, sooner: a call already kept still reports completions.
+	sooner := time.Now().Add(30 * time.Second).Unix()
+	test.attach(t, ctx, test.span(t, true, sooner))
+	require.Equal(t, sooner, expiry(), "a new completion of a kept call")
+}
+
+// The first span of a call that has already expired, read late, gives no
+// engine the call: a fresh engine runs it.
+func TestCallRecordLateFirstCallStaysExpired(t *testing.T) {
+	t.Parallel()
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	test := newCallRecordTest(t, ctx, cloud)
+	test.attach(t, ctx, test.span(t, true, time.Now().Add(-time.Second).Unix()))
+	built, err := cloud.StoredBundle(ctx, []uint64{test.number}, nil)
+	require.NoError(t, err)
+	require.Empty(t, built.Bundle.Calls)
+	require.False(t, test.freshHits(t, built.Bundle))
 }
 
 // A call that reaches an engine which already has the entry, in full or as a
@@ -541,4 +558,58 @@ func TestCallRecordExpiresOnAnEntryTheEngineHad(t *testing.T) {
 			require.True(t, ran, "the call runs again once its expiry passes")
 		})
 	}
+}
+
+// A bundle can carry, below a live root, a row whose Cloud value has expired,
+// with its calls. An engine that has its own unexpired value of that recipe
+// keeps it, learns the calls, and keeps its own expiry: the call hits there.
+func TestCallRecordOnAnExpiredRowLeavesTheEnginesValueAlone(t *testing.T) {
+	t.Parallel()
+	cloudCtx, cloud := storedPartTestCache(t, WithBlobStore())
+	ctx, producer, srv := transferTestCache(t)
+	frame := callRecordTestFrame("outer")
+	inner := persistedListTestResult(t, ctx, producer, srv, "inner", &transferTestValue{Text: "inner"})
+	_, err := producer.GetOrInitCall(ctx, "test-session", srv, &CallRequest{ResultCall: frame, IsPersistable: true},
+		func(context.Context) (AnyResult, error) { return inner, nil })
+	require.NoError(t, err)
+	parent := persistedListTestResult(t, ctx, producer, srv, "parent", &transferTestValue{Text: "parent"})
+	transferTestDependency(producer, ctx, parent, inner)
+	numbers := storedPersistenceTestMerge(t, cloudCtx, cloud, exportTestBundle(t, ctx, producer, parent))
+	require.Len(t, numbers, 1)
+	test := &callRecordTest{ctx: ctx, producer: producer, frame: frame, inner: inner, cloud: cloud}
+	test.attach(t, cloudCtx, test.span(t, true, 0))
+	// The Cloud's inner expires; its live parent still carries it.
+	var innerNumber uint64
+	cloud.egraphMu.Lock()
+	for id, res := range cloud.resultsByID {
+		if call := res.loadResultCall(); call != nil && call.Field == "inner" {
+			res.expiresAtUnix = time.Now().Add(-time.Minute).Unix()
+			innerNumber = uint64(id)
+		}
+	}
+	cloud.egraphMu.Unlock()
+	require.NotZero(t, innerNumber)
+	built, err := cloud.StoredBundle(cloudCtx, numbers, nil)
+	require.NoError(t, err)
+	require.Len(t, built.Bundle.Calls, 1)
+
+	// A fresh engine made its own inner minutes ago.
+	freshCtx, fresh, freshSrv := transferTestCache(t)
+	own := persistedListTestResult(t, freshCtx, fresh, freshSrv, "inner", &transferTestValue{Text: "inner"})
+	fresh.egraphMu.RLock()
+	before := own.cacheSharedResult().expiresAtUnix
+	fresh.egraphMu.RUnlock()
+	_, err = fresh.MergeValues(freshCtx, CloudCacheID, built.Bundle)
+	require.NoError(t, err)
+	fresh.egraphMu.RLock()
+	after := own.cacheSharedResult().expiresAtUnix
+	fresh.egraphMu.RUnlock()
+	require.Equal(t, before, after, "the engine's own value keeps its expiry")
+	hit, err := fresh.GetOrInitCall(freshCtx, "test-session", freshSrv, &CallRequest{ResultCall: frame.clone(), IsPersistable: true},
+		func(context.Context) (AnyResult, error) {
+			t.Fatal("the call ran: the engine's value expired, or the call wasn't learned")
+			return nil, nil
+		})
+	require.NoError(t, err)
+	require.True(t, hit.HitCache())
 }
