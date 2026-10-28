@@ -129,7 +129,6 @@ require (
 	github.com/morikuni/aec v1.1.0
 	github.com/muesli/termenv v0.16.0
 	github.com/openai/openai-go/v3 v3.61.0
-	github.com/opencontainers/cgroups v0.0.6
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/opencontainers/runtime-spec v1.3.0
@@ -157,7 +156,7 @@ require (
 	github.com/vishvananda/netlink v1.3.1
 	github.com/vito/bubbline v0.0.0-20250312195236-5f4f49d6ebcb
 	github.com/vito/dang v1.0.1
-	github.com/vito/dang/v2 v2.1.5-0.20261022140822-177d598346d8
+	github.com/vito/dang/v2 v2.2.0
 	github.com/vito/go-interact v1.0.2
 	github.com/vito/go-sse v1.1.3
 	github.com/vito/midterm v0.2.5
