@@ -376,7 +376,7 @@ func (WorkspaceAPISuite) TestRootlessCurrentWorkspace(ctx context.Context, t *te
 }
 `)
 
-	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	out, err := hostDaggerOutput(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
 	require.NoError(t, err)
 	require.JSONEq(t, `{
 		"currentWorkspace": {
@@ -1126,7 +1126,7 @@ func (WorkspaceAPISuite) TestWorkspaceExportStaysOnCurrentClient(ctx context.Con
 	moduleDir := filepath.Join(workdir, "sandbox")
 	copyTestdataFixture(ctx, t, moduleDir, "modules", "go", "workspace-export-sandbox")
 
-	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "call", "-m", "./sandbox", "try-export")
+	out, err := hostDaggerOutput(ctx, t, workdir, "--silent", "call", "-m", "./sandbox", "try-export")
 	require.NoError(t, err, string(out))
 	require.Equal(t, "refused", strings.TrimSpace(string(out)),
 		"an inherited workspace is not a default export destination on the calling client")
@@ -1180,7 +1180,7 @@ func (WorkspaceAPISuite) TestHostWorkspaceGitLog(ctx context.Context, t *testctx
   }
 }
 `)
-	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	out, err := hostDaggerOutput(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
 	require.NoError(t, err)
 
 	var got struct {
@@ -2055,7 +2055,7 @@ clients = ["github.com/example/beta"]
   }
 }
 `)
-	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	out, err := hostDaggerOutput(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
 	require.NoError(t, err)
 
 	var got struct {
@@ -2636,13 +2636,13 @@ func (WorkspaceAPISuite) TestWorkspaceBoundLLMAcrossSessions(ctx context.Context
 	// LLM explicitly bound to this session's workspace via the injected arg.
 	// LLM.tools derives the tool schema from the bound workspace, which routes
 	// through the workspace's owning client.
-	out1, err := hostDaggerExec(ctx, t, workdir, "--silent", "-m", "./agentmod", "call", "agent", "tools")
+	out1, err := hostDaggerOutput(ctx, t, workdir, "--silent", "-m", "./agentmod", "call", "agent", "tools")
 	require.NoError(t, err)
 
 	// A new session must not inherit the first session's workspace client
 	// binding from cache: the cached LLM requires resources bound in the first
 	// session, so this call re-resolves against the new session's own workspace.
-	out2, err := hostDaggerExec(ctx, t, workdir, "--silent", "-m", "./agentmod", "call", "agent", "tools")
+	out2, err := hostDaggerOutput(ctx, t, workdir, "--silent", "-m", "./agentmod", "call", "agent", "tools")
 	require.NoError(t, err, "second session must not fail on a stale workspace client binding")
 	require.Equal(t, string(out1), string(out2))
 }

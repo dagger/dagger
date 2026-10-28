@@ -54,7 +54,7 @@ func (LockfileSuite) TestWithoutFileKeepsSiblings(ctx context.Context, t *testct
     }
   }
 }`)
-	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	out, err := hostDaggerOutput(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
 	require.NoError(t, err)
 	var got struct {
 		CurrentWorkspace struct {

@@ -93,7 +93,7 @@ source = "github.com/dagger/dagger/modules/wolfi"
 	})
 
 	t.Run("scalar value", func(ctx context.Context, t *testctx.T) {
-		out, err := hostDaggerExec(ctx, t, workdir, "workspace", "config", "modules.greeter.source")
+		out, err := hostDaggerOutput(ctx, t, workdir, "workspace", "config", "modules.greeter.source")
 		require.NoError(t, err)
 		require.Equal(t, "modules/greeter", strings.TrimSpace(string(out)))
 	})
@@ -124,11 +124,11 @@ main = true
 		_, err = hostDaggerExec(ctx, t, workdir, "workspace", "config", "modules.greeter.main", "false")
 		require.NoError(t, err)
 
-		out, err := hostDaggerExec(ctx, t, workdir, "workspace", "config", "modules.greeter.source")
+		out, err := hostDaggerOutput(ctx, t, workdir, "workspace", "config", "modules.greeter.source")
 		require.NoError(t, err)
 		require.Equal(t, "github.com/acme/greeter", strings.TrimSpace(string(out)))
 
-		out, err = hostDaggerExec(ctx, t, workdir, "workspace", "config", "modules.greeter.main")
+		out, err = hostDaggerOutput(ctx, t, workdir, "workspace", "config", "modules.greeter.main")
 		require.NoError(t, err)
 		require.Equal(t, "false", strings.TrimSpace(string(out)))
 	})
@@ -268,7 +268,7 @@ func (WorkspaceSuite) TestWorkspaceConfigReadWithoutNativeConfig(ctx context.Con
 		workdir := t.TempDir()
 		initGitRepo(ctx, t, workdir)
 
-		out, err := hostDaggerExec(ctx, t, workdir, "workspace", "config")
+		out, err := hostDaggerOutput(ctx, t, workdir, "workspace", "config")
 		require.NoError(t, err)
 		require.Empty(t, string(out))
 	})
@@ -279,7 +279,7 @@ func (WorkspaceSuite) TestWorkspaceConfigReadWithoutNativeConfig(ctx context.Con
 		require.NoError(t, os.WriteFile(filepath.Join(workdir, workspace.ModuleConfigFileName), []byte(`name = "app"
 `), 0o644))
 
-		out, err := hostDaggerExec(ctx, t, workdir, "workspace", "config")
+		out, err := hostDaggerOutput(ctx, t, workdir, "workspace", "config")
 		require.NoError(t, err)
 		require.Empty(t, string(out))
 	})
@@ -313,7 +313,7 @@ func (WorkspaceSuite) TestCurrentWorkspaceConfigBoundary(ctx context.Context, t 
 
 	initGitRepo(ctx, t, workdir)
 
-	out, err := hostDaggerExec(ctx, t, nestedDir, "--silent", "query", "--doc", "query.graphql")
+	out, err := hostDaggerOutput(ctx, t, nestedDir, "--silent", "query", "--doc", "query.graphql")
 	require.NoError(t, err)
 	require.JSONEq(t, fmt.Sprintf(`{
 		"currentWorkspace": {
@@ -383,11 +383,11 @@ retries = 3
 tags = ["smoke", "nightly"]
 `, workspaceSettingsVitestModule("modules/vitest", "vitest"))
 
-		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "call", "vitest", "fail-fast")
+		out, err := hostDaggerOutput(ctx, t, workdir, "--silent", "call", "vitest", "fail-fast")
 		require.NoError(t, err)
 		require.Equal(t, "true", strings.TrimSpace(string(out)))
 
-		out, err = hostDaggerExec(ctx, t, workdir, "--silent", "call", "vitest", "retries")
+		out, err = hostDaggerOutput(ctx, t, workdir, "--silent", "call", "vitest", "retries")
 		require.NoError(t, err)
 		require.Equal(t, "3", strings.TrimSpace(string(out)))
 
@@ -491,11 +491,11 @@ func (m *Beta) Greeting() string {
 `,
 		})
 
-		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "call", "alpha", "greeting")
+		out, err := hostDaggerOutput(ctx, t, workdir, "--silent", "call", "alpha", "greeting")
 		require.NoError(t, err)
 		require.Equal(t, "hello alpha", strings.TrimSpace(string(out)))
 
-		out, err = hostDaggerExec(ctx, t, workdir, "--silent", "call", "beta", "greeting")
+		out, err = hostDaggerOutput(ctx, t, workdir, "--silent", "call", "beta", "greeting")
 		require.NoError(t, err)
 		require.Equal(t, "hello beta", strings.TrimSpace(string(out)))
 	})
@@ -587,7 +587,7 @@ source = "modules/inner"
 `)
 		require.NoError(t, os.MkdirAll(nestedDir, 0o755))
 
-		out, err := hostDaggerExec(ctx, t, nestedDir, "workspace", "config", "modules.inner.source")
+		out, err := hostDaggerOutput(ctx, t, nestedDir, "workspace", "config", "modules.inner.source")
 		require.NoError(t, err)
 		require.Equal(t, "modules/inner", strings.TrimSpace(string(out)))
 

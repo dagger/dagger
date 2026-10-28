@@ -458,7 +458,7 @@ source = "hello-with-generate-checks"
 	})
 
 	t.Run("--generated=true flag overrides the config", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerExec("check", "-l", "-f=cli", "--generated=true")).CombinedOutput(ctx)
+		out, err := base.With(daggerExec("check", "-l", "-f=cli", "--generated=true")).Stdout(ctx)
 		require.NoError(t, err, out)
 		require.Regexp(t, `(?m)^--hello-with-generate-checks --check=empty-generate/stale '--generated=true'\s+# staleness check:`, out)
 		require.Regexp(t, `(?m)^--hello-with-generate-checks --check=non-empty-generate/stale '--generated=true'\s+# staleness check:`, out)
@@ -539,7 +539,7 @@ func (ChecksSuite) TestChecksReportUnloadableModules(ctx context.Context, t *tes
 	t.Run("listing succeeds and names the module that could not be loaded", func(ctx context.Context, t *testctx.T) {
 		out, err := base.
 			With(daggerExec("check", "-l")).
-			CombinedOutput(ctx)
+			Stdout(ctx)
 		require.NoError(t, err, out)
 		require.Regexp(t, `(?m)^good +verify`, out)
 		require.Regexp(t, `(?m)^bad +load`, out)
@@ -869,7 +869,7 @@ name = "beta"
 	t.Run("list includes the derived check", func(ctx context.Context, t *testctx.T) {
 		out, err := generated(ctx, t, alphaOnly).
 			With(daggerNonNestedExec("check", "-l", "-f=cli")).
-			CombinedOutput(ctx)
+			Stdout(ctx)
 		require.NoError(t, err, out)
 		// Generator exposes its stale check at a child address.
 		require.Regexp(t, `(?m)^--alpha-sdk\s+# staleness check:`, out)
@@ -879,7 +879,7 @@ name = "beta"
 		// The up-to-date leaf exists so the two lists never show the same name.
 		out, err := generated(ctx, t, alphaOnly).
 			With(daggerNonNestedExec("generate", "-l", "-f=cli")).
-			CombinedOutput(ctx)
+			Stdout(ctx)
 		require.NoError(t, err, out)
 		require.Regexp(t, `(?m)^--alpha-sdk\s+#`, out)
 		require.NotContains(t, out, "/stale")
@@ -936,7 +936,7 @@ skip = ["generate"]
 main = true`, 1)
 		out, err := generated(ctx, t, config).
 			With(daggerNonNestedExec("check", "-l", "-f=link")).
-			CombinedOutput(ctx)
+			Stdout(ctx)
 		require.NoError(t, err, out)
 		require.Equal(t, "dag+check://?check=generate/stale\n", out)
 		require.NotContains(t, out, "alpha-sdk/generate")

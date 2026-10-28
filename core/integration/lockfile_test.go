@@ -628,7 +628,7 @@ func (LockfileSuite) TestUpdateSelectsEntriesAndLists(ctx context.Context, t *te
 		{"lock", "update", "--list", selector},
 		{"lock", "update", "-l", selector},
 	} {
-		out, err := hostDaggerExec(ctx, t, workdir, args...)
+		out, err := hostDaggerOutput(ctx, t, workdir, args...)
 		require.NoError(t, err)
 		require.Equal(t, selector, strings.TrimSpace(string(out)))
 		afterList, err := os.ReadFile(lockPath)

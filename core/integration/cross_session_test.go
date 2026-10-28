@@ -446,7 +446,7 @@ settings.base = "dag://workspace-container-provider/dockerfile-image"
 	prime, err := hostDaggerExecRaw(ctx, t, app, "--silent", "call", "workspace-container-provider", "context-directory", "entries")
 	require.NoError(t, err, string(prime))
 
-	out, err := hostDaggerExecRaw(ctx, t, app, "--silent", "call", "service-ref-consumer", "container-provided-by")
+	out, err := hostDaggerOutput(ctx, t, app, "--silent", "call", "service-ref-consumer", "container-provided-by")
 	require.NoError(t, err, string(out))
 	require.Equal(t, "workspace-container-provider:dockerfile", strings.TrimSpace(string(out)))
 }

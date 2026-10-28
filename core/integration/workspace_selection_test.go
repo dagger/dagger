@@ -542,11 +542,11 @@ func (WorkspaceSelectionSuite) TestSelectedWorkspaceFileIO(ctx context.Context, 
 	assertWorkspaceReads := func(ctx context.Context, t *testctx.T, workdir string, selection []string, want string) {
 		t.Helper()
 
-		out, err := hostDaggerExec(ctx, t, workdir, daggerCallArgs(selection, false, "read-workspace-arg")...)
+		out, err := hostDaggerOutput(ctx, t, workdir, daggerCallArgs(selection, false, "read-workspace-arg")...)
 		require.NoError(t, err)
 		require.Equal(t, want, strings.TrimSpace(string(out)))
 
-		out, err = hostDaggerExec(ctx, t, workdir, daggerCallArgs(selection, false, "read-declared-workspace")...)
+		out, err = hostDaggerOutput(ctx, t, workdir, daggerCallArgs(selection, false, "read-declared-workspace")...)
 		require.NoError(t, err)
 		require.Equal(t, want, strings.TrimSpace(string(out)))
 	}
@@ -724,7 +724,7 @@ func (WorkspaceSelectionSuite) TestSelectedWorkspaceFileIO(ctx context.Context, 
 
 		// The module must read its own export, while host directories stay clean;
 		// this catches nested clients attaching exports to the wrong session.
-		out, err := hostDaggerExec(ctx, t, workdir, daggerCallArgs(selection, false, "export-from-module")...)
+		out, err := hostDaggerOutput(ctx, t, workdir, daggerCallArgs(selection, false, "export-from-module")...)
 		require.NoError(t, err)
 		require.Equal(t, "exported from module runtime", strings.TrimSpace(string(out)))
 

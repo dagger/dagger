@@ -147,7 +147,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		initGitRepo(ctx, t, workdir)
 
 		ref := "github.com/dagger/dagger/modules/wolfi@v0.20.2"
-		out, err := hostDaggerExecRaw(ctx, t, workdir, "module", "install", ref)
+		out, err := hostDaggerOutput(ctx, t, workdir, "module", "install", ref)
 		require.NoError(t, err)
 		require.Equal(t,
 			"Created workspace config in "+workdir+"\n"+
@@ -191,7 +191,7 @@ source = "`+depDir+`"
 main = true
 `)
 
-		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "call", "greet")
+		out, err := hostDaggerOutput(ctx, t, workdir, "--silent", "call", "greet")
 		require.NoError(t, err)
 		require.Equal(t, "hello from absolute workspace module", strings.TrimSpace(string(out)))
 	})
