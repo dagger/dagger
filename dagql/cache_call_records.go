@@ -60,23 +60,24 @@ func decodeKeptCall(encoded string, request digest.Digest) (*keptCall, error) {
 // keepCallLocked keeps kept, a call that returned entry, on entry, once per
 // request digest, and gives the entry the expiry the span reports: as a
 // local cache does when a call completes returning an existing entry, the
-// entry's expiry is the earliest of its calls'. A completion expires after
-// it, so an expiry already past reports a value that has expired, which a
-// later export may have replaced with this one: a span read again, or read
-// late, that says nothing of the entry's value, and is left out. A request
-// digest names a computation, not a completion, so a call already kept can
-// still report a new one. It reports whether it changed a stored entry,
-// which a save writes. Requires egraphMu for writing.
+// entry's expiry is the earliest of its calls'. A request digest names a
+// computation, not a completion, so a call already kept can still report a
+// new one. A completion expires after it, so a span whose expiry has passed
+// reports a call that has expired, which no engine may hit: it is read again,
+// or read late, and neither its call nor its expiry is kept. It reports
+// whether it changed a stored entry, which a save writes. Requires egraphMu
+// for writing.
 func (c *Cache) keepCallLocked(entry *sharedResult, desc RemoteHolding, kept *keptCall) bool {
 	if desc.Request == "" || desc.Request == desc.Recipe {
 		return false
 	}
+	if desc.ExpiresAtUnix != 0 && desc.ExpiresAtUnix <= time.Now().Unix() {
+		return false
+	}
 	changed := false
-	if desc.ExpiresAtUnix > time.Now().Unix() {
-		if expires := mergeSharedResultExpiryUnix(entry.expiresAtUnix, desc.ExpiresAtUnix); expires != entry.expiresAtUnix {
-			entry.expiresAtUnix = expires
-			changed = true
-		}
+	if expires := mergeSharedResultExpiryUnix(entry.expiresAtUnix, desc.ExpiresAtUnix); expires != entry.expiresAtUnix {
+		entry.expiresAtUnix = expires
+		changed = true
 	}
 	if kept != nil {
 		if _, ok := entry.calls[kept.id.recipe]; !ok {
