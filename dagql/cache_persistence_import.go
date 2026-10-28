@@ -30,6 +30,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 		termInputRows           []persistdb.MirrorTermInput
 		resultOutputEqClassRows []persistdb.MirrorResultOutputEqClass
 		persistedEdgeRows       []persistdb.MirrorPersistedEdge
+		resultCallRows          []persistdb.MirrorResultCall
 		resultDepRows           []persistdb.MirrorResultDep
 		resultSnapshotRows      []persistdb.MirrorResultSnapshotLink
 		snapshotContentRows     []persistdb.MirrorSnapshotContentLink
@@ -47,6 +48,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 	listMirrorRows(lists, listCtx, "term_inputs", &termInputRows, c.pdb.ListMirrorTermInputs)
 	listMirrorRows(lists, listCtx, "result_output_eq_classes", &resultOutputEqClassRows, c.pdb.ListMirrorResultOutputEqClasses)
 	listMirrorRows(lists, listCtx, "persisted_edges", &persistedEdgeRows, c.pdb.ListMirrorPersistedEdges)
+	listMirrorRows(lists, listCtx, "result_calls", &resultCallRows, c.pdb.ListMirrorResultCalls)
 	listMirrorRows(lists, listCtx, "result_deps", &resultDepRows, c.pdb.ListMirrorResultDeps)
 	listMirrorRows(lists, listCtx, "result_snapshot_links", &resultSnapshotRows, c.pdb.ListMirrorResultSnapshotLinks)
 	listMirrorRows(lists, listCtx, "snapshot_content_links", &snapshotContentRows, c.pdb.ListMirrorSnapshotContentLinks)
@@ -204,6 +206,21 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			}
 			c.putResultLocked(res)
 			c.traceImportResultLoaded(ctx, importRunID, resultID, row.CallFrameJSON)
+		}
+
+		for _, row := range resultCallRows {
+			res := c.resultsByID[sharedResultID(row.ResultID)]
+			if res == nil {
+				return fmt.Errorf("import result_call %d: missing result", row.ResultID)
+			}
+			kept, err := decodeKeptCall(row.Call, digest.Digest(row.RequestDigest))
+			if err != nil {
+				return fmt.Errorf("import result_call %d: %w", row.ResultID, err)
+			}
+			if res.calls == nil {
+				res.calls = make(map[digest.Digest]*keptCall)
+			}
+			res.calls[kept.id.recipe] = kept
 		}
 
 		for _, row := range persistedEdgeRows {
