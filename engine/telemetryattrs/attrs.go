@@ -819,6 +819,15 @@ const (
 	// lazy-evaluation span, it lists them as the attempt left them. The
 	// attribute is omitted when there are none.
 	CachePartsAttr = "dagger.io/cache.parts"
+	// CachePartSizesAttr lists the raw, uncompressed size of each part in
+	// CachePartsAttr, index-aligned, as decimal byte counts (native string
+	// array). A File that travels as its own content is its file's size;
+	// another part is the sum of the usage each layer of its snapshot chain
+	// recorded when it was committed, which overcounts files a later layer
+	// replaced or deleted. A part with no filesystem bytes is 0. It is stamped
+	// only by an engine with the remote cache, beside CachePartsAttr, and
+	// omitted when a size could not be read.
+	CachePartSizesAttr = "dagger.io/cache.parts.sizes"
 	// CacheTypeAttr is the name of the entry's type, such as "Container".
 	CacheTypeAttr = "dagger.io/cache.type"
 	// CacheReplacementsAttr is the decimal-string count of the times the

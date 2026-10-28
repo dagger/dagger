@@ -151,6 +151,10 @@ type CacheResultState struct {
 	ExpiresAtUnix int64
 	// Parts are the part addresses of the entry's complete parts, sorted.
 	Parts []string
+	// PartSizes are the raw sizes of Parts, index-aligned, on an engine with
+	// the remote cache (completePartKeysAndSizes); nil elsewhere, and when a
+	// size could not be read.
+	PartSizes []int64
 	// Replacements counts the replacements of the entry's value in place;
 	// the state above describes the current value.
 	Replacements uint64
