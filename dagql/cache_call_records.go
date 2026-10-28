@@ -58,22 +58,28 @@ func decodeKeptCall(encoded string, request digest.Digest) (*keptCall, error) {
 
 // keepCallLocked keeps kept, a call that returned entry, on entry, and gives
 // the entry the call's expiry: as a local cache does when a call returns an
-// existing entry, the entry's expiry is the earliest of its calls'. Requires
+// existing entry, the entry's expiry is the earliest of its calls'. It
+// reports whether it changed a stored entry, which a save writes. Requires
 // egraphMu for writing.
-func (c *Cache) keepCallLocked(entry *sharedResult, desc RemoteHolding, kept *keptCall) {
+func (c *Cache) keepCallLocked(entry *sharedResult, desc RemoteHolding, kept *keptCall) bool {
 	if desc.Request == "" || desc.Request == desc.Recipe {
-		return
+		return false
 	}
-	entry.expiresAtUnix = mergeSharedResultExpiryUnix(entry.expiresAtUnix, desc.ExpiresAtUnix)
-	if kept == nil {
-		return
+	changed := false
+	if expires := mergeSharedResultExpiryUnix(entry.expiresAtUnix, desc.ExpiresAtUnix); expires != entry.expiresAtUnix {
+		entry.expiresAtUnix = expires
+		changed = true
 	}
-	if entry.calls == nil {
-		entry.calls = make(map[digest.Digest]*keptCall)
+	if kept != nil {
+		if entry.calls == nil {
+			entry.calls = make(map[digest.Digest]*keptCall)
+		}
+		if _, ok := entry.calls[kept.id.recipe]; !ok {
+			entry.calls[kept.id.recipe] = kept
+			changed = true
+		}
 	}
-	if _, ok := entry.calls[kept.id.recipe]; !ok {
-		entry.calls[kept.id.recipe] = kept
-	}
+	return changed && !entry.noValueLocked() && entry.persistedEnvelope != nil
 }
 
 // storedBundleCallsLocked adds to the build, for each of its entries, one of

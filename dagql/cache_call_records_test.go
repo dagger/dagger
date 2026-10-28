@@ -412,3 +412,76 @@ func TestCallRecordPrefersAnInputTheRecipientHolds(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, encodedB, built.Bundle.Calls[0].Call)
 }
+
+// Keeping a call on a stored entry, or giving it a call's expiry, is a change
+// a save writes; a second report of the same call is not.
+func TestCallRecordReportsWhatASaveWrites(t *testing.T) {
+	t.Parallel()
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	test := newCallRecordTest(t, ctx, cloud)
+	key := HolderKey{Cache: "cache-a", Number: uint64(test.inner.cacheSharedResult().id)}
+	change, err := cloud.AttachRemoteHolding(ctx, key, test.span(t, true, 0))
+	require.NoError(t, err)
+	require.True(t, change.Saved, "a new call")
+	change, err = cloud.AttachRemoteHolding(ctx, key, test.span(t, true, 0))
+	require.NoError(t, err)
+	require.False(t, change.Saved, "the same call again")
+	change, err = cloud.AttachRemoteHolding(ctx, key, test.span(t, true, time.Now().Add(time.Hour).Unix()))
+	require.NoError(t, err)
+	require.True(t, change.Saved, "a shorter expiry")
+}
+
+// A call that reaches an engine which already has the entry, in full or as a
+// held row, gives the entry its expiry there too: once that passes, the call
+// runs again, as it would where it was made.
+func TestCallRecordExpiresOnAnEntryTheEngineHad(t *testing.T) {
+	t.Parallel()
+	for name, held := range map[string]bool{"full row": false, "held row": true} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			ctx, cloud := storedPartTestCache(t, WithBlobStore())
+			test := newCallRecordTest(t, ctx, cloud)
+			initial, err := cloud.StoredBundle(ctx, []uint64{test.number}, nil)
+			require.NoError(t, err)
+			freshCtx, fresh, srv := transferTestCache(t)
+			_, err = fresh.MergeValues(freshCtx, CloudCacheID, initial.Bundle)
+			require.NoError(t, err)
+			var heldBy *HeldBy
+			if held {
+				own := test.span(t, false, 0)
+				own.Request = own.Recipe
+				_, err = cloud.AttachRemoteHolding(ctx, HolderKey{Cache: "fresh", Number: 1}, own)
+				require.NoError(t, err)
+				heldBy = &HeldBy{Cache: "fresh", Now: time.Now().Unix()}
+			}
+			expires := time.Now().Add(2 * time.Second).Unix()
+			test.attach(t, ctx, test.span(t, true, expires))
+			built, err := cloud.StoredBundle(ctx, []uint64{test.number}, heldBy)
+			require.NoError(t, err)
+			require.Len(t, built.Bundle.Calls, 1)
+			if held {
+				require.Len(t, built.Held, 1)
+			}
+			_, err = fresh.MergeValues(freshCtx, CloudCacheID, built.Bundle)
+			require.NoError(t, err)
+			before, err := fresh.GetOrInitCall(freshCtx, "test-session", srv,
+				&CallRequest{ResultCall: test.frame.clone(), IsPersistable: true},
+				func(context.Context) (AnyResult, error) {
+					t.Fatal("the call was not taught")
+					return nil, nil
+				})
+			require.NoError(t, err)
+			require.True(t, before.HitCache())
+			time.Sleep(time.Until(time.Unix(expires+1, 0)))
+			ran := false
+			_, err = fresh.GetOrInitCall(freshCtx, "test-session", srv,
+				&CallRequest{ResultCall: test.frame.clone(), IsPersistable: true},
+				func(context.Context) (AnyResult, error) {
+					ran = true
+					return NewResultForCall(&transferTestValue{Text: "ran again"}, test.frame)
+				})
+			require.NoError(t, err)
+			require.True(t, ran, "the call runs again once its expiry passes")
+		})
+	}
+}
