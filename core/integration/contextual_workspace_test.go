@@ -11,6 +11,7 @@ package core
 import (
 	"context"
 	"crypto/rand"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -254,6 +255,68 @@ func (ContextualWorkspaceSuite) TestContextualWorkspaceCaching(ctx context.Conte
 		out, err := second.CombinedOutput(ctx)
 		require.NoError(t, err)
 		require.NotContains(t, out, marker)
+	})
+
+	// A remote workspace's reads come from a Git tree, whose identity is its
+	// commit. Work on a read must still be reused across commits that leave
+	// the files it selects unchanged, as it is for a local checkout.
+	t.Run("unrelated commits of a remote workspace do not invalidate scoped workspace inputs", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		// Unique per run, so earlier runs can't satisfy the test.
+		nonce := rand.Text()
+		repo := core.NewQuery(c).Container().From(alpineImage).
+			WithExec([]string{"apk", "add", "git"}).
+			With(gitUserConfig).
+			WithWorkdir("/src").
+			WithExec([]string{"git", "init"}).
+			WithNewFile("dagger.toml", "[modules.builder]\nsource = \".dagger/modules/builder\"\n").
+			WithNewFile(".dagger/modules/builder/dagger.json", `{"name":"builder","engineVersion":"latest","sdk":{"source":"dang"}}`).
+			WithNewFile(".dagger/modules/builder/main.dang", `type Builder {
+  pub build(ws: Workspace!): String! {
+    Dagger.container
+      .from("`+alpineImage+`")
+      .withMountedCache("/cache", cacheVolume("builder"))
+      .withMountedDirectory("/src", ws.directory("/", include: ["app/**"], gitignore: true))
+      .withExec(["sh", "-c", "ls -R /src >/dev/null && cat /proc/sys/kernel/random/uuid"])
+      .stdout
+  }
+}
+`).
+			WithNewFile("app/main.txt", nonce).
+			WithNewFile("README.md", "one").
+			WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "one"})
+		readmeOnly := repo.
+			WithNewFile("README.md", "two").
+			WithExec([]string{"git", "commit", "-am", "two"})
+		appChange := readmeOnly.
+			WithNewFile("app/main.txt", nonce+" changed").
+			WithExec([]string{"git", "commit", "-am", "three"})
+		commitOf := func(ctr *core.Container) string {
+			out, err := ctr.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
+			require.NoError(t, err)
+			return strings.TrimSpace(out)
+		}
+		repoURL := strings.TrimSuffix(workspaceSelectionRemoteRef(ctx, t, c, appChange.Directory("/src")), "@main")
+
+		base := nativeWorkspaceBase(t, c)
+		runs := 0
+		build := func(ctr *core.Container) string {
+			runs++
+			// Each run is its own CLI session, as each CI run is.
+			out, err := base.
+				WithEnvVariable("RUN", strconv.Itoa(runs)).
+				With(workspaceSelectionDaggerCall("-W", repoURL+"@"+commitOf(ctr), "builder", "build")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			return strings.TrimSpace(out)
+		}
+
+		first := build(repo)
+		require.NotEmpty(t, first)
+		require.Equal(t, first, build(repo), "another session at the same commit must reuse the exec")
+		require.Equal(t, first, build(readmeOnly), "a commit outside the read's selection must reuse the exec")
+		require.NotEqual(t, first, build(appChange), "a commit inside the read's selection must re-run the exec")
 	})
 
 	t.Run("relevant file changes invalidate cache", func(ctx context.Context, t *testctx.T) {
