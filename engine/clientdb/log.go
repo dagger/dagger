@@ -11,7 +11,6 @@ import (
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	otlplogsv1 "go.opentelemetry.io/proto/otlp/logs/v1"
 	otlpresourcev1 "go.opentelemetry.io/proto/otlp/resource/v1"
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -32,7 +31,7 @@ func LogsToPB(dbLog []Log) []*otlplogsv1.ResourceLogs {
 	for _, sd := range dbLog {
 		var res *sdkresource.Resource
 		var resPb otlpresourcev1.Resource
-		if err := protojson.Unmarshal(sd.Resource, &resPb); err != nil {
+		if err := proto.Unmarshal(sd.Resource, &resPb); err != nil {
 			slog.Error("failed to unmarshal log resource", "error", err, "log", sd)
 			continue
 		} else {
@@ -40,7 +39,7 @@ func LogsToPB(dbLog []Log) []*otlplogsv1.ResourceLogs {
 		}
 		var scope instrumentation.Scope
 		var scopePb otlpcommonv1.InstrumentationScope
-		if err := protojson.Unmarshal(sd.InstrumentationScope, &scopePb); err != nil {
+		if err := proto.Unmarshal(sd.InstrumentationScope, &scopePb); err != nil {
 			slog.Error("failed to unmarshal instrumentation scope", "error", err, "log", sd)
 			continue
 		} else {
@@ -66,7 +65,7 @@ func LogsToPB(dbLog []Log) []*otlplogsv1.ResourceLogs {
 			continue
 		}
 		var attrs []*otlpcommonv1.KeyValue
-		if err := UnmarshalProtoJSONs(sd.Attributes, &otlpcommonv1.KeyValue{}, &attrs); err != nil {
+		if err := UnmarshalProtoList(sd.Attributes, &otlpcommonv1.KeyValue{}, &attrs); err != nil {
 			slog.Warn("failed to unmarshal log attributes", "error", err)
 			continue
 		}

@@ -8,6 +8,7 @@ import (
 
 	telemetry "github.com/dagger/otel-go"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/dagger/dagger/dagql/call/callpbv1"
@@ -48,14 +49,13 @@ func newCallLookup() *callLookup {
 	}
 }
 
-// Marker byte strings for the raw-attribute scans below. The attributes
-// column is a protojson-encoded KeyValue list, so an attribute's presence
-// implies its quoted key (or value) appears verbatim.
+// Marker byte strings for the raw-attribute prefilters below. The attributes
+// column is a binary KeyValue list (MarshalProtoList), so an attribute's
+// presence implies its key (or string value) bytes appear verbatim. A match
+// can also come from other bytes, so each prefilter is confirmed by decoding.
 var (
-	dagDigestAttrMarker      = []byte(`"` + telemetry.DagDigestAttr + `"`)
-	dagCallAttrMarker        = []byte(`"` + telemetry.DagCallAttr + `"`)
-	callPayloadContentMarker = []byte(`"` + telemetryattrs.CallPayloadContentType + `"`)
-	stringValueMarker        = []byte(`"stringValue"`)
+	dagCallAttrMarker        = []byte(telemetry.DagCallAttr)
+	callPayloadContentMarker = []byte(telemetryattrs.CallPayloadContentType)
 )
 
 func (l *callLookup) addSpan(row Span) {
@@ -86,70 +86,92 @@ func spanCallDigest(row Span) (string, bool) {
 	if !bytes.Contains(row.Attributes, dagCallAttrMarker) {
 		return "", false
 	}
-	return protoJSONStringAttr(row.Attributes, dagDigestAttrMarker)
+	return listStringAttr(row.Attributes, telemetry.DagDigestAttr)
 }
 
-// protoJSONStringAttr extracts the string value of the attribute whose quoted
-// key is marker from a protojson-encoded KeyValue list, without decoding the
-// list. It expects the OTLP shape {"key": K, "value": {"stringValue": V}}
-// with the key before the value, and tolerates protojson's deliberately
-// unstable whitespace. A marker match that isn't in key position (the same
-// bytes inside some other attribute's value) is skipped. Values with escape
-// sequences are refused: this is for digests, which have none.
-func protoJSONStringAttr(attrs, marker []byte) (string, bool) {
-	for from := 0; from < len(attrs); {
-		at := bytes.Index(attrs[from:], marker)
-		if at < 0 {
+// listStringAttr returns the string value of the attribute named key in a
+// binary KeyValue list (MarshalProtoList), reading the wire format without
+// decoding the list. It reports false when the attribute is absent or its
+// value isn't a string.
+func listStringAttr(attrs []byte, key string) (string, bool) {
+	for len(attrs) > 0 {
+		kv, n := protowire.ConsumeBytes(attrs)
+		if n < 0 {
 			return "", false
 		}
-		at += from
-		from = at + 1
-		if !precededByKey(attrs[:at]) {
+		attrs = attrs[n:]
+		k, v, ok := wireKeyValue(kv)
+		if !ok {
+			return "", false
+		}
+		if string(k) != key {
 			continue
 		}
-		rest := attrs[at+len(marker):]
-		at = bytes.Index(rest, stringValueMarker)
-		if at < 0 {
-			return "", false
-		}
-		rest = rest[at+len(stringValueMarker):]
-		// Skip the colon and whitespace to the opening quote.
-		open := bytes.IndexByte(rest, '"')
-		if open < 0 {
-			return "", false
-		}
-		for _, c := range rest[:open] {
-			switch c {
-			case ':', ' ', '\t', '\n', '\r':
-			default:
-				return "", false
-			}
-		}
-		rest = rest[open+1:]
-		end := bytes.IndexByte(rest, '"')
-		if end < 0 {
-			return "", false
-		}
-		value := rest[:end]
-		if bytes.IndexByte(value, '\\') >= 0 {
-			return "", false
-		}
-		return string(value), true
+		return wireStringValue(v)
 	}
 	return "", false
 }
 
-var keyMarker = []byte(`"key"`)
+// KeyValue and AnyValue field numbers, from the OTLP common proto.
+const (
+	keyValueKeyField    protowire.Number = 1
+	keyValueValueField  protowire.Number = 2
+	anyValueStringField protowire.Number = 1
+)
 
-// precededByKey reports whether prefix ends with `"key":` modulo whitespace,
-// i.e. whether the bytes that follow it are an attribute's key.
-func precededByKey(prefix []byte) bool {
-	prefix = bytes.TrimRight(prefix, " \t\n\r")
-	if len(prefix) == 0 || prefix[len(prefix)-1] != ':' {
-		return false
+// wireKeyValue splits an encoded KeyValue into its key and encoded value.
+func wireKeyValue(kv []byte) (key, value []byte, ok bool) {
+	for len(kv) > 0 {
+		num, typ, n := protowire.ConsumeTag(kv)
+		if n < 0 {
+			return nil, nil, false
+		}
+		kv = kv[n:]
+		if typ == protowire.BytesType && (num == keyValueKeyField || num == keyValueValueField) {
+			b, n := protowire.ConsumeBytes(kv)
+			if n < 0 {
+				return nil, nil, false
+			}
+			if num == keyValueKeyField {
+				key = b
+			} else {
+				value = b
+			}
+			kv = kv[n:]
+			continue
+		}
+		n = protowire.ConsumeFieldValue(num, typ, kv)
+		if n < 0 {
+			return nil, nil, false
+		}
+		kv = kv[n:]
 	}
-	prefix = bytes.TrimRight(prefix[:len(prefix)-1], " \t\n\r")
-	return bytes.HasSuffix(prefix, keyMarker)
+	return key, value, true
+}
+
+// wireStringValue returns the string an encoded AnyValue holds, if it holds
+// one.
+func wireStringValue(v []byte) (string, bool) {
+	for len(v) > 0 {
+		num, typ, n := protowire.ConsumeTag(v)
+		if n < 0 {
+			return "", false
+		}
+		v = v[n:]
+		if num == anyValueStringField && typ == protowire.BytesType {
+			b, n := protowire.ConsumeBytes(v)
+			if n < 0 {
+				return "", false
+			}
+			return string(b), true
+		}
+		n = protowire.ConsumeFieldValue(num, typ, v)
+		if n < 0 {
+			return "", false
+		}
+		v = v[n:]
+	}
+	return "", false
 }
 
 func (l *callLookup) addLog(row Log) {

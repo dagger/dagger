@@ -20,7 +20,6 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/dagger/dagger/dagql"
@@ -814,9 +813,9 @@ func persistedCaptureLog(t *testing.T, traceID, spanID, scope string, body *otlp
 	t.Helper()
 	bodyBytes, err := proto.Marshal(body)
 	require.NoError(t, err)
-	attrBytes, err := clientdb.MarshalProtoJSONs(attrs)
+	attrBytes, err := clientdb.MarshalProtoList(attrs)
 	require.NoError(t, err)
-	scopeBytes, err := protojson.Marshal(&otlpcommonv1.InstrumentationScope{Name: scope})
+	scopeBytes, err := proto.Marshal(&otlpcommonv1.InstrumentationScope{Name: scope})
 	require.NoError(t, err)
 	return clientdb.Log{
 		TraceID:              sql.NullString{String: traceID, Valid: true},
@@ -1273,7 +1272,7 @@ func boolAttr(key string) *otlpcommonv1.KeyValue {
 
 func marshalSpanAttrs(t *testing.T, attrs ...*otlpcommonv1.KeyValue) []byte {
 	t.Helper()
-	data, err := clientdb.MarshalProtoJSONs(attrs)
+	data, err := clientdb.MarshalProtoList(attrs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1295,7 +1294,7 @@ func marshalPurposeLink(t *testing.T, traceID, spanID, purpose string) []byte {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, err := clientdb.MarshalProtoJSONs(telemetry.SpanLinksToPB([]sdktrace.Link{{
+	data, err := clientdb.MarshalProtoList(telemetry.SpanLinksToPB([]sdktrace.Link{{
 		SpanContext: trace.NewSpanContext(trace.SpanContextConfig{TraceID: tid, SpanID: sid}),
 		Attributes:  []attribute.KeyValue{attribute.String(telemetry.LinkPurposeAttr, purpose)},
 	}}))
