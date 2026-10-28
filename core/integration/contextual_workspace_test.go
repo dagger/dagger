@@ -11,7 +11,6 @@ package core
 import (
 	"context"
 	"crypto/rand"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -300,16 +299,9 @@ func (ContextualWorkspaceSuite) TestContextualWorkspaceCaching(ctx context.Conte
 		repoURL := strings.TrimSuffix(workspaceSelectionRemoteRef(ctx, t, c, appChange.Directory("/src")), "@main")
 
 		base := nativeWorkspaceBase(t, c)
-		runs := 0
 		build := func(ctr *core.Container) string {
-			runs++
-			// Each run is its own CLI session, as each CI run is.
-			out, err := base.
-				WithEnvVariable("RUN", strconv.Itoa(runs)).
-				With(workspaceSelectionDaggerCall("-W", repoURL+"@"+commitOf(ctr), "builder", "build")).
-				Stdout(ctx)
-			require.NoError(t, err)
-			return strings.TrimSpace(out)
+			// Each run is its own session, as each CI run is.
+			return workspaceIdentityCall(ctx, t, base, "-W", repoURL+"@"+commitOf(ctr), "builder", "build")
 		}
 
 		first := build(repo)
