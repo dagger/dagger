@@ -601,6 +601,45 @@ func TestConcurrentCollectsDoNotOvershoot(t *testing.T) {
 	require.Equal(t, 1, <-removed+<-removed, "the collections removed more than one volume")
 }
 
+// A collection waiting for another to finish gives up at its own deadline:
+// a stop's collection mustn't wait out a garbage collection's past the stop's
+// budget.
+func TestCollectWaitingForAnotherEndsWithItsContext(t *testing.T) {
+	s := openStore(t, t.TempDir(), nil)
+	use(t, s, Identity{Key: "a"}, true, "f", mib)
+	release := make(chan struct{})
+	held := make(chan struct{})
+	s.afterUsage = func() {
+		close(held)
+		<-release
+	}
+	first := make(chan error, 1)
+	go func() {
+		_, err := s.Collect(context.Background(), Policy{})
+		first <- err
+	}()
+	<-held
+
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+	waited := make(chan error, 1)
+	go func() {
+		_, err := s.Collect(ctx, Policy{})
+		waited <- err
+	}()
+	select {
+	case err := <-waited:
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+	case <-time.After(5 * time.Second):
+		close(release)
+		<-first
+		<-waited
+		t.Fatal("the collection waited for the other past its deadline")
+	}
+	close(release)
+	require.NoError(t, <-first)
+}
+
 func TestFailedRemovalStaysCounted(t *testing.T) {
 	clock := newFakeClock()
 	dir := t.TempDir()
