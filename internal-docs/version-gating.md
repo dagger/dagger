@@ -10,6 +10,13 @@ Dagger serves a schema view for each module based on that module's configured
 `engineVersion`. A module pinned to an older engine version should see the API
 surface that existed for that version, even when running on a newer engine.
 
+A manifest v2 module (a `dagger-module.toml` with an `[entrypoint]` table) has
+no `engineVersion`: its version is the `[imports.Dagger] dagger` key of the
+`dang.toml` governing its entrypoint, and `v1.0.0-beta.20` without one, which
+lands on the shared pre-cut view below (see
+`future/module-manifest-v2/spec.md`, "Versions"). It then gets its view like
+any module.
+
 `engine.APIViewVersion` maps a declared version to its view:
 
 - Releases keep their own view (`v0.21.6`, `v1.0.0`). Build metadata is
