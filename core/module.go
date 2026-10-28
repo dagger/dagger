@@ -11,10 +11,12 @@ import (
 	"time"
 
 	"github.com/vektah/gqlparser/v2/ast"
+	"golang.org/x/mod/semver"
 
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -2259,6 +2261,35 @@ func (mod *Module) sourceEngineVersionAfter(version string) bool {
 		return AfterVersion(version).Contains(call.View(mod.SourceOverrides.EngineVersion))
 	}
 	return mod.Source.Valid && AfterVersion(version).Contains(call.View(mod.Source.Value.Self().EngineVersion))
+}
+
+type sdkViewKey struct{}
+
+// contextWithSDKView records the API view of the module's source, the view
+// its SDK's generated code has, for values converted to its SDK's inputs
+// (SDKViewFromContext).
+func (mod *Module) contextWithSDKView(ctx context.Context) context.Context {
+	version := ""
+	switch {
+	case mod.SourceOverrides != nil:
+		version = mod.SourceOverrides.EngineVersion
+	case mod.Source.Valid && mod.Source.Value.Self() != nil:
+		version = mod.Source.Value.Self().EngineVersion
+	}
+	view := engine.APIViewVersion(version)
+	if !semver.IsValid(view) {
+		return ctx
+	}
+	return context.WithValue(ctx, sdkViewKey{}, call.View(view))
+}
+
+// SDKViewFromContext is the API view of the module whose SDK inputs are being
+// converted, if any: enum values its schema spells differently, like a core
+// enum's old spellings in modules from before engine.IdentifierCasingVersion,
+// are spelled for it.
+func SDKViewFromContext(ctx context.Context) (call.View, bool) {
+	view, ok := ctx.Value(sdkViewKey{}).(call.View)
+	return view, ok
 }
 
 // modulePath gets the prefix for the file sourcemaps, so that the sourcemap is

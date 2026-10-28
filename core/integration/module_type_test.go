@@ -1215,22 +1215,28 @@ class Test:
 			})
 		}
 
-		// A module from before the cut has both spellings: its SDK maps the
-		// value it receives (ESTARGZ) to its member (EStarGZ), and the engine
-		// maps the old spelling it returns to the value.
-		t.Run("go before the cut", func(ctx context.Context, t *testctx.T) {
-			c := connect(ctx, t)
-			modGen := moduleFixture(t, c, "go/type-enum-type-04").
-				WithNewFile("dagger.json", `{"name":"test","engineVersion":"v1.0.0-beta.20","sdk":{"source":"go"}}`)
+		// A module from before the cut gets the value spelled as its schema
+		// spells it (EStarGZ), and the engine maps the old spelling it
+		// returns to the value.
+		for _, tc := range []struct{ sdk, fixture string }{
+			{"go", "go/type-enum-type-04"},
+			{"typescript", "typescript/type-enum-type-05"},
+			{"python", "python/type-enum-type-06"},
+		} {
+			t.Run(tc.sdk+" before the cut", func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
+				modGen := moduleFixture(t, c, tc.fixture).
+					WithNewFile("dagger.json", fmt.Sprintf(`{"name":"test","engineVersion":"v1.0.0-beta.20","sdk":{"source":%q}}`, tc.sdk))
 
-			out, err := modGen.With(daggerQuery(`{fromImageLayerCompression(imageLayerCompression: "ESTARGZ")}`)).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "EStarGZ", gjson.Get(out, "fromImageLayerCompression").String())
+				out, err := modGen.With(daggerQuery(`{fromImageLayerCompression(imageLayerCompression: "ESTARGZ")}`)).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "EStarGZ", gjson.Get(out, "fromImageLayerCompression").String())
 
-			out, err = modGen.With(daggerQuery(`{toImageLayerCompression(imageLayerCompression: "EStarGZ")}`)).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "ESTARGZ", gjson.Get(out, "toImageLayerCompression").String())
-		})
+				out, err = modGen.With(daggerQuery(`{toImageLayerCompression(imageLayerCompression: "EStarGZ")}`)).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "ESTARGZ", gjson.Get(out, "toImageLayerCompression").String())
+			})
+		}
 	})
 }
 
