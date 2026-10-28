@@ -38,6 +38,9 @@ func (s *workspaceSchema) migrate(ctx context.Context, ws *core.Workspace, args 
 	if err := stage.migrateConfig(ctx); err != nil {
 		return nil, err
 	}
+	if err := s.migrateSecretSettings(ctx, ws, stage); err != nil {
+		return nil, err
+	}
 	planner, err := s.newModuleMigrationPlanner(ctx, ws, stage.staged, stage.configPath)
 	if err != nil {
 		return nil, err

@@ -17,7 +17,7 @@ import (
 
 type Notify struct{}
 
-// Message a Discord webhook: `dagger call discord --webhook-url=env:DISCORD_WEBHOOK --message="👋 from Dagger notify module"`
+// Message a Discord webhook: `dagger call discord --webhook-url=env://DISCORD_WEBHOOK --message="👋 from Dagger notify module"`
 func (n *Notify) Discord(
 	ctx context.Context,
 	webhookURL *dagger.Secret,
@@ -46,7 +46,7 @@ func (n *Notify) Discord(
 	return fmt.Sprintf("MESSAGE SENT AT: %s\n%s\n", m.CreatedAt, m.Content), err
 }
 
-// Message a specific Slack channel: `dagger call slack --token=env:SLACK_TOKEN --channel-id=C07PBDE3U57 --color="#FC0" --message="👋 from Dagger notify module"`
+// Message a specific Slack channel: `dagger call slack --token=env://SLACK_TOKEN --channel-id=C07PBDE3U57 --color="#FC0" --message="👋 from Dagger notify module"`
 func (n *Notify) Slack(
 	ctx context.Context,
 	// The slack token to authenticate with the slack organization

@@ -402,11 +402,21 @@ func (mod *Module) ObjectUserDefaults(ctx context.Context, objName string) (*Env
 	return modDefaults.Namespace(ctx, objName)
 }
 
+func isObjectListTypeDef(typeDef *TypeDef) bool {
+	return typeDef != nil &&
+		typeDef.Kind == TypeDefKindList &&
+		typeDef.AsList.Valid &&
+		typeDef.AsList.Value.Self() != nil &&
+		typeDef.AsList.Value.Self().ElementTypeDef.Self() != nil &&
+		typeDef.AsList.Value.Self().ElementTypeDef.Self().Kind == TypeDefKindObject
+}
+
 // ApplyWorkspaceDefaultsToTypeDefs updates constructor arg typedefs based on
 // workspace settings, so that --help displays the correct default values.
 // For primitive types (string, int, bool, float), it sets arg.DefaultValue
-// to the JSON representation. For object types (Secret, Directory, etc.),
-// it marks the arg as optional (since a default will be resolved at call time).
+// to the JSON representation. For object types (Secret, Directory, etc.) and
+// lists of them, it marks the arg as optional (since a default will be
+// resolved at call time).
 //
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (mod *Module) ApplyWorkspaceDefaultsToTypeDefs(ctx context.Context, dag *dagql.Server) error {
@@ -431,7 +441,9 @@ func (mod *Module) ApplyWorkspaceDefaultsToTypeDefs(ctx context.Context, dag *da
 				continue
 			}
 			updatedArg := arg
-			if argSelf.TypeDef.Self().Kind == TypeDefKindObject {
+			// Object and object-list settings are addresses that resolve at
+			// call time, so they have no default value to show.
+			if argSelf.TypeDef.Self().Kind == TypeDefKindObject || isObjectListTypeDef(argSelf.TypeDef.Self()) {
 				if !argSelf.TypeDef.Self().Optional {
 					var updatedTypeDef dagql.ObjectResult[*TypeDef]
 					if err := dag.Select(ctx, argSelf.TypeDef, &updatedTypeDef, dagql.Selector{

@@ -27,7 +27,7 @@ type DaggerverseDeployPreviewWithDaggerMainOpts struct {
 	GithubAssignee string
 }
 
-// Deploy preview environment running Dagger main: dagger call --github-token=env:GITHUB_PAT deploy-preview-with-dagger-main
+// Deploy preview environment running Dagger main: dagger call --github-token=env://GITHUB_PAT deploy-preview-with-dagger-main
 func (r *Daggerverse) DeployPreviewWithDaggerMain(ctx context.Context, target string, opts ...DaggerverseDeployPreviewWithDaggerMainOpts) error {
 	if r.deployPreviewWithDaggerMain != nil {
 		return nil
