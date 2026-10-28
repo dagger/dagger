@@ -468,7 +468,10 @@ The engine reads the versions when it loads the module source, before it
 evaluates `sources`. A `dang.toml` that `sources` returns does not change them.
 `sources` runs at the module's API view, as `types` and `call` do.
 `ModuleSource.engineVersion` reports the Dagger version, and
-`withEngineVersion` overrides it as for any module.
+`withEngineVersion` overrides it for that source, as for any module. The
+override is not written back: a version 2 manifest has no `engineVersion`, so
+the next load reads the `dang.toml` again, and changing the version is done
+there.
 
 Defaults:
 
@@ -489,6 +492,12 @@ It gets none of the API that changes at the cut, such as the renamed
 (`Never`, `PerSession`, `Default`), nor the new naming rules.
 Following the running engine would change the API and the type names of an
 entrypoint that declares nothing with every engine release.
+
+Dang's own tooling reads `dagger = true` differently: its LSP and CLI connect
+through `dagger session` without a version, and so type check the
+entrypoint against the API of the `dagger` CLI that runs them, while the
+engine serves it the pinned pre-cut view. Past the cut they disagree on the
+renamed API, so an entrypoint should declare its Dagger version.
 
 **Decision: an undeclared Dang version is 2.1.** That is Dang's
 `DefaultVersion`, which Dang uses for a `dang.toml` without the key. The
