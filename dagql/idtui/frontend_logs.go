@@ -82,6 +82,13 @@ func (fe *frontendLogs) Run(ctx context.Context, opts dagui.FrontendOpts, f func
 	if cleanup != nil {
 		runErr = errors.Join(runErr, cleanup())
 	}
+	if failure := outputDrainFailure(runErr); failure != nil {
+		return failure
+	}
+	// A timed-out telemetry shutdown can leave an export in flight. Final
+	// reads must share its lock; canceled exports waiting on it are rejected.
+	fe.mu.Lock()
+	defer fe.mu.Unlock()
 	if _, ok := renderQuietError(fe.out, runErr); ok {
 		return normalizeFrontendExit(runErr, fe.db)
 	}
@@ -264,6 +271,9 @@ type logsLogExporter struct {
 func (e *logsLogExporter) Export(ctx context.Context, records []sdklog.Record) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	return e.streamingLogExporter.Export(ctx, records)
 }
 

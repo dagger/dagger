@@ -1768,6 +1768,10 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 		fe.err = fe.runWithTUI(ctx, run)
 	}
 
+	if failure := outputDrainFailure(fe.err); failure != nil {
+		return failure
+	}
+
 	// Print the final report. Normally it goes to stderr so a redirected stdout
 	// stays the command's result. But `dagger trace` (fe.traceID is only set by
 	// its SetTraceID) driven by an agent has no separate result stream -- the
@@ -2770,6 +2774,9 @@ func (fe *frontendPretty) runWithTUI(ctx context.Context, run func(context.Conte
 			fe.tui.Stop()
 			fe.termStopped = true
 
+			if isOutputDrainError(fe.err) {
+				return fe.err
+			}
 			// if the ctx was canceled, we don't need to return whatever random garbage
 			// error string we got back; just return the ctx err.
 			if fe.runCtx.Err() != nil {
@@ -2968,11 +2975,9 @@ func (fe *frontendPretty) spawnRun() {
 		if !fe.NoExit || fe.interrupted {
 			if cleanup != nil {
 				go func() {
-					if cleanErr := cleanup(); cleanErr != nil {
-						slog.Error("cleanup failed", "err", cleanErr)
-					}
+					resultErr := errors.Join(err, cleanup())
 					fe.dispatch(func() {
-						fe.handleDone(err)
+						fe.handleDone(resultErr)
 					})
 				}()
 			} else {
@@ -2982,7 +2987,7 @@ func (fe *frontendPretty) spawnRun() {
 			fe.cleanup = func() {
 				if cleanup != nil {
 					if cleanErr := cleanup(); cleanErr != nil {
-						slog.Error("cleanup failed", "err", cleanErr)
+						fe.dispatch(func() { fe.err = errors.Join(fe.err, cleanErr) })
 					}
 				}
 			}
@@ -2995,6 +3000,12 @@ func (fe *frontendPretty) handleDone(err error) {
 	slog.Debug("run finished", "err", err)
 	fe.done = true
 	fe.err = err
+	if isOutputDrainError(err) {
+		// A failed log drain may never deliver exporter EOF.
+		fe.quitting = true
+		fe.doQuit()
+		return
+	}
 	if fe.eof && (!fe.NoExit || fe.interrupted) {
 		fe.quitting = true
 		fe.doQuit()

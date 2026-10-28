@@ -2,13 +2,19 @@ package daggercmd
 
 import (
 	"context"
+	"io"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
+	"github.com/dagger/dagger/util/cleanups"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -78,16 +84,16 @@ func TestEngineTelemetryConfigDefaultsToFrontendAndCloud(t *testing.T) {
 	})
 
 	require.True(t, cfg.Detect)
-	require.Equal(t, cloudTelemetryIndexes{spans: 0, logs: 1, metrics: 1}, cloud,
+	require.Equal(t, cloudTelemetryIndexes{spans: 0, logs: 0, metrics: 1}, cloud,
 		"the indexes locate the Cloud exporters, so engine telemetry can be forwarded without them")
-	require.Equal(t, []sdklog.Exporter{localLogs}, withoutIndex(cfg.LiveLogExporters, cloud.logs))
+	require.Empty(t, withoutIndex(cfg.LiveLogExporters, cloud.logs), "frontend logs are installed separately with a blocking processor")
 	require.Equal(t, []sdkmetric.Exporter{localMetrics}, withoutIndex(cfg.LiveMetricExporters, cloud.metrics))
 	require.Empty(t, withoutIndex(cfg.SpanProcessors, cloud.spans))
 	require.Len(t, frontend.SpanExporterCalls(), 1)
-	require.Len(t, frontend.LogExporterCalls(), 1)
+	require.Empty(t, frontend.LogExporterCalls())
 	require.Len(t, frontend.MetricExporterCalls(), 1)
 	require.Equal(t, []sdktrace.SpanExporter{localSpans}, cfg.LiveTraceExporters)
-	require.Equal(t, []sdklog.Exporter{localLogs, cloudLogs}, cfg.LiveLogExporters)
+	require.Equal(t, []sdklog.Exporter{cloudLogs}, cfg.LiveLogExporters)
 	require.Equal(t, []sdkmetric.Exporter{localMetrics, cloudMetrics}, cfg.LiveMetricExporters)
 	require.Len(t, cfg.SpanProcessors, 1, "Cloud spans use their independent large-queue processor")
 	t.Cleanup(func() {
@@ -294,3 +300,74 @@ func TestConfiguredRunnerHost(t *testing.T) {
 		require.Equal(t, engine.DefaultCloudRunnerHost, configuredRunnerHost())
 	})
 }
+
+// A full local queue must not hang EOF emission or report successful output
+// delivery. Even a late successful export must not resume the canceled queue.
+func TestCLIOutputDrainFailure(t *testing.T) {
+	exporter := &cliDrainBlockedExporter{
+		entered: make(chan struct{}), release: make(chan struct{}), done: make(chan struct{}),
+	}
+	release := sync.OnceFunc(func() { close(exporter.release) })
+	defer release()
+	processor := enginetel.NewBlockingLogProcessor(exporter, 1, 1, 0)
+	ctx := telemetry.WithLoggerProvider(t.Context(), sdklog.NewLoggerProvider(sdklog.WithProcessor(processor)))
+	t.Cleanup(func() {
+		release()
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		processor.Shutdown(cleanupCtx)
+	})
+	var record sdklog.Record
+	require.NoError(t, processor.OnEmit(ctx, &record))
+	select {
+	case <-exporter.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("export did not start")
+	}
+	require.NoError(t, processor.OnEmit(ctx, &record)) // fill the waiting queue
+	result := make(chan error, 1)
+	go func() {
+		result <- idtui.NewLogs(io.Discard).Run(ctx, dagui.FrontendOpts{Silent: true}, func(ctx context.Context) (cleanups.CleanupF, error) {
+			return func() error {
+				drainCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+				defer cancel()
+				return &idtui.OutputDrainError{Err: drainCLIOutput(drainCtx, processor)}
+			}, nil
+		})
+	}()
+	select {
+	case err := <-result:
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+		var exit idtui.ExitError
+		require.ErrorAs(t, err, &exit)
+		require.Equal(t, 1, exit.Code(), "incomplete output must fail the command")
+	case <-time.After(5 * time.Second):
+		t.Fatal("EOF emission or final rendering exceeded the drain deadline")
+	}
+	release()
+	select {
+	case <-exporter.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("exporter cleanup did not finish")
+	}
+	require.Equal(t, int64(1), exporter.calls.Load(), "late success must not resume the canceled queue")
+}
+
+type cliDrainBlockedExporter struct {
+	entered, release, done chan struct{}
+	calls                  atomic.Int64
+}
+
+func (e *cliDrainBlockedExporter) Export(context.Context, []sdklog.Record) error {
+	if e.calls.Add(1) == 1 {
+		close(e.entered)
+	}
+	<-e.release // deliberately ignore cancellation, like blocked terminal I/O
+	return nil
+}
+
+func (e *cliDrainBlockedExporter) Shutdown(context.Context) error {
+	close(e.done)
+	return nil
+}
+func (*cliDrainBlockedExporter) ForceFlush(context.Context) error { return nil }
