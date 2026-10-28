@@ -122,6 +122,46 @@ func TestPartWholeLazyOperationMixedRestart(t *testing.T) {
 	}))
 }
 
+// An evaluated whole operation, such as a builtin image, that came from
+// another engine with no download address for any part is computed again by
+// its operation, as one restored from local disk is, rather than searched
+// for part by part.
+func TestPartWholeOperationWithoutAddressesRunsItsOperation(t *testing.T) {
+	actx, _, a, asrv, aServer := executionFixture(t)
+	b := newExecutionFixture(t)
+	packaged, err := local.NewStore(t.TempDir())
+	require.NoError(t, err)
+	aServer.builtin, b.server.builtin = packaged, packaged
+	configJSON := []byte(`{"architecture":"amd64","os":"linux","rootfs":{"type":"layers","diff_ids":[]},"config":{"WorkingDir":"/whole"}}`)
+	cfg := ocispec.Descriptor{MediaType: ocispec.MediaTypeImageConfig, Digest: digest.FromBytes(configJSON), Size: int64(len(configJSON))}
+	require.NoError(t, content.WriteBlob(actx, packaged, "config", bytes.NewReader(configJSON), cfg))
+	raw, err := json.Marshal(ocispec.Manifest{Versioned: specs.Versioned{SchemaVersion: 2}, MediaType: ocispec.MediaTypeImageManifest, Config: cfg, Layers: []ocispec.Descriptor{}})
+	require.NoError(t, err)
+	manifest := ocispec.Descriptor{MediaType: ocispec.MediaTypeImageManifest, Digest: digest.FromBytes(raw), Size: int64(len(raw))}
+	require.NoError(t, content.WriteBlob(actx, packaged, "manifest", bytes.NewReader(raw), manifest))
+	ctr, err := BuiltInContainer(actx, Platform{OS: "linux", Architecture: "amd64"}, manifest.Digest.String())
+	require.NoError(t, err)
+	original := attachTransferObject(t, actx, a, asrv, "operation-execution", "_builtinContainer", ctr)
+	require.NoError(t, a.Evaluate(actx, original))
+	b.cache.EnableTransferFixtureParts()
+	require.NoError(t, a.WithExportedValues(actx, dagql.ValueSelection{Roots: []dagql.AnyResult{original}}, config.RefConfig{}, func(_ context.Context, exported *dagql.ExportedValues) error {
+		reply, err := b.cache.MergeValues(b.ctx, dagql.CloudCacheID, exported.Bundle)
+		require.NoError(t, err)
+		loaded, err := b.cache.LoadResultByResultID(b.ctx, "", b.srv, reply.Imported()[0].ResultID)
+		require.NoError(t, err)
+		result := loaded.(dagql.ObjectResult[*Container])
+		require.NoError(t, b.cache.Evaluate(b.ctx, result))
+		require.Equal(t, "/whole", result.Self().Config.WorkingDir)
+		require.False(t, dagql.HasPendingLazyComputation(result), "the container is computed")
+		report, err := b.cache.TransferFixtureSnapshot(b.ctx, "operation-execution", nil)
+		require.NoError(t, err)
+		for _, event := range report.Parts {
+			require.NotEqual(t, "lazy-enter", event.Kind, "no part is searched for and then computed for want of a source")
+		}
+		return nil
+	}))
+}
+
 func TestPartPendingImageMetadataStaysSelective(t *testing.T) {
 	aStore, bStore := testutil.NewStore(t), testutil.NewStore(t)
 	actx, a, asrv := transferCache(t, aStore, "", "a")
