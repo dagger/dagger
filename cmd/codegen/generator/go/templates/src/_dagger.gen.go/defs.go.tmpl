@@ -221,32 +221,53 @@ func WrapClient(c graphql.Client) graphql.Client {
 	return errorWrappedClient{c}
 }
 
-// dag is this package's own connection, used only by the generated
-// UnmarshalJSON methods above to build a query root when deserializing an
-// object from its ID. It lives here, self-contained, rather than reusing
-// the connect-layer package's dag (internal/dagger.dag), because this
-// package can't import that one without creating a cycle. It talks to the
-// same underlying engine session either way, since both read it from the
-// same environment variables.
-var dag *Query
+// The decoder and connect layer share a lazy transport. Importing bindings,
+// constructing handles, and decoding IDs must not require a Dagger session.
+var dag = NewQuery(ModuleGraphQLClient())
 
-func init() {
-	dag = NewQuery(getClientParams())
+var defaultModuleClient moduleClient
+
+// ModuleGraphQLClient returns the module session's shared transport. Session
+// configuration is read on the first request, not during package initialization.
+func ModuleGraphQLClient() graphql.Client {
+	return &defaultModuleClient
 }
 
-func getClientParams() graphql.Client {
+type moduleClient struct {
+	mu sync.Mutex
+	client graphql.Client
+}
+
+func (c *moduleClient) MakeRequest(ctx context.Context, req *graphql.Request, resp *graphql.Response) error {
+	c.mu.Lock()
+	client := c.client
+	if client == nil {
+		var err error
+		client, err = getClientParams()
+		if err != nil {
+			c.mu.Unlock()
+			// Do not cache missing configuration: a session may be attached later.
+			return err
+		}
+		c.client = client
+	}
+	c.mu.Unlock()
+	return client.MakeRequest(ctx, req, resp)
+}
+
+func getClientParams() (graphql.Client, error) {
 	portStr, ok := os.LookupEnv("DAGGER_SESSION_PORT")
 	if !ok {
-		panic("DAGGER_SESSION_PORT is not set")
+		return nil, fmt.Errorf("DAGGER_SESSION_PORT is not set; run this call in a Dagger session")
 	}
 	port, err := strconv.Atoi(portStr)
 	if err != nil {
-		panic(fmt.Errorf("DAGGER_SESSION_PORT %q is invalid: %w", portStr, err))
+		return nil, fmt.Errorf("DAGGER_SESSION_PORT %q is invalid: %w", portStr, err)
 	}
 
 	sessionToken := os.Getenv("DAGGER_SESSION_TOKEN")
 	if sessionToken == "" {
-		panic("DAGGER_SESSION_TOKEN is not set")
+		return nil, fmt.Errorf("DAGGER_SESSION_TOKEN is not set; run this call in a Dagger session")
 	}
 
 	host := fmt.Sprintf("127.0.0.1:%d", port)
@@ -269,7 +290,7 @@ func getClientParams() graphql.Client {
 			return dialTransport.RoundTrip(r)
 		}),
 	}
-	return graphql.NewClient(fmt.Sprintf("http://%s/query", host), httpClient)
+	return graphql.NewClient(fmt.Sprintf("http://%s/query", host), httpClient), nil
 }
 
 func fallbackSpanContext(ctx context.Context) context.Context {
