@@ -232,6 +232,27 @@ func DaggerDispatch(ctx context.Context, parentJSON []byte, parentName string, f
 				}
 			}
 			return (*Release).GetMaintainers(&parent, ctx, githubOrgName, githubToken)
+		case "GoSdkPublishCheck":
+			var parent Release
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var source *core.GitRepository
+			if inputArgs["source"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["source"]), &source)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg source", err))
+				}
+			}
+			var callback *core.File
+			if inputArgs["callback"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["callback"]), &callback)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg callback", err))
+				}
+			}
+			return nil, (*Release).GoSdkPublishCheck(&parent, ctx, source, callback)
 		case "HelmTargetVersion":
 			var parent Release
 			err = json.Unmarshal(parentJSON, &parent)

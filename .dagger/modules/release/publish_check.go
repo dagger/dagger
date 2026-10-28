@@ -2169,10 +2169,17 @@ grep -F "return '`+env.releaseVersion+`';" php-sdk/src/Connection/version.php
 }
 
 func gitSmartHTTPServiceDir(hostname string, dir *dagger.Directory) (*dagger.Service, string) {
+	return gitSmartHTTPService(hostname, dir).WithHostname("git"), "http://" + hostname
+}
+
+// hostname only names the repository in go-get responses; the service keeps
+// its content-derived hostname, which other modules can resolve.
+func gitSmartHTTPService(hostname string, dir *dagger.Directory) *dagger.Service {
 	tmpl := template.Must(template.New("").Parse(`
 server {
 	listen       80;
 	server_name  localhost;
+	client_max_body_size 0;
 
 	location ~ ^/(.*)$ {
 		if ($arg_go-get = "1") {
@@ -2198,7 +2205,7 @@ server {
 		RepoURL:    "http://" + hostname + "/repo",
 	})
 
-	svc := core.NewContainer().
+	return core.NewContainer().
 		From("nginx").
 		WithExec([]string{"sh", "-lc", `
 set -eux
@@ -2212,10 +2219,7 @@ test -x /usr/lib/git-core/git-http-backend
 		WithEnvVariable("CACHE_BUSTER", time.Now().Format(time.RFC3339Nano)).
 		WithExposedPort(80).
 		WithEntrypoint([]string{"sh", "-lc", "spawn-fcgi -s /var/run/fcgiwrap.socket -M 766 /usr/sbin/fcgiwrap && exec nginx -g 'daemon off;'"}).
-		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true}).
-		WithHostname("git")
-
-	return svc, "http://" + hostname
+		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
 }
 
 func gitUserConfig(ctr *dagger.Container) *dagger.Container {

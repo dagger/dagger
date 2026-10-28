@@ -27,6 +27,8 @@ type ContainerWithMountedCacheOpts = core.ContainerWithMountedCacheOpts
 type Directory = core.Directory
 type Error = core.Error
 type File = core.File
+type GitRefTreeOpts = core.GitRefTreeOpts
+type GitRepository = core.GitRepository
 type ID = core.ID
 
 const NetworkProtocolTcp = core.NetworkProtocolTcp
@@ -35,6 +37,7 @@ type Node = core.Node
 type Platform = core.Platform
 type Secret = core.Secret
 type Service = core.Service
+type ServiceEndpointOpts = core.ServiceEndpointOpts
 type ServiceStopOpts = core.ServiceStopOpts
 type Workspace = core.Workspace
 type WorkspaceDirectoryOpts = core.WorkspaceDirectoryOpts
