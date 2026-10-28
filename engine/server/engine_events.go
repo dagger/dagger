@@ -178,7 +178,15 @@ func (srv *Server) stopEngineEvents(ctx context.Context, clean bool) {
 			SavedEntries: srv.engineCache.PersistedResults(),
 		})
 	}
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), srv.engineEventShutdownBudget)
+	shutdownCtx := context.WithoutCancel(ctx)
+	if deadline, ok := ctx.Deadline(); ok && srv.stateDiscarded {
+		// The budget is part of the stop's reserve, which the final
+		// telemetry flushes need too: it ends with the stop.
+		var cancelAtDeadline context.CancelFunc
+		shutdownCtx, cancelAtDeadline = context.WithDeadline(shutdownCtx, deadline)
+		defer cancelAtDeadline()
+	}
+	ctx, cancel := context.WithTimeout(shutdownCtx, srv.engineEventShutdownBudget)
 	defer cancel()
 	if err := srv.engineEvents.Close(ctx); err != nil {
 		slog.Warn("engine cache events not drained before shutdown", "error", err, "dropped", srv.engineEvents.Dropped())
