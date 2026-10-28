@@ -2140,6 +2140,7 @@ func gitSmartHTTPService(hostname string, dir *dagger.Directory) *dagger.Service
 server {
 	listen       80;
 	server_name  localhost;
+	# Pushing a full repository history exceeds the 1m default.
 	client_max_body_size 0;
 
 	location ~ ^/(.*)$ {
