@@ -67,9 +67,7 @@ func TestWorkspaceContentIdentity(t *testing.T) {
 			ws.Address = "git-ref://elsewhere"
 			return ws
 		},
-		"overlay": func(ws *Workspace) *Workspace {
-			return withOverlay(ws)
-		},
+		"overlay": withOverlay,
 		"mounts": func(ws *Workspace) *Workspace {
 			ws.mounts = f.directory("mounted")
 			ws.mountPoints = []string{"vendor"}
@@ -124,7 +122,7 @@ func TestWorkspaceContentIdentity(t *testing.T) {
 
 	t.Run("host-backed and rootless workspaces have none", func(t *testing.T) {
 		for name, ws := range map[string]*Workspace{
-			"host checkout": localWorkspace("/host/ws", "client", ""),
+			"host checkout":            localWorkspace("/host/ws", "client", ""),
 			"host checkout with edits": withOverlay(localWorkspace("/host/ws", "client", "")),
 			"rootless": func() *Workspace {
 				ws := &Workspace{Address: "file:///host/ws", ClientID: "client"}
