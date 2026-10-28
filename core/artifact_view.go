@@ -267,6 +267,11 @@ func (obj *ModuleObject) artifactViewField(srv *dagql.Server) (dagql.Field[*Modu
 	return dagql.Field[*ModuleObject]{
 		Spec: &dagql.FieldSpec{
 			Name: artifactViewField, Type: obj, Module: module, ModuleProvider: provider,
+			// Views carry concrete installed SDK types. Equal source content
+			// under another installation name cannot reuse this result.
+			GetDynamicInput: func(ctx context.Context, _ dagql.AnyResult, _ map[string]dagql.Input, _ call.View, req *dagql.CallRequest) error {
+				return req.SetImplicitInput(ctx, "artifactViewType", dagql.String(obj.TypeDef.Name))
+			},
 			Args: dagql.NewInputSpecs(dagql.InputSpec{Name: "view", Type: dagql.InputObject[artifactViewInput]{}}),
 		},
 		Func: func(ctx context.Context, self dagql.ObjectResult[*ModuleObject], args map[string]dagql.Input, _ call.View) (dagql.AnyResult, error) {
