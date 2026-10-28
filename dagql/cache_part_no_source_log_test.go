@@ -45,11 +45,12 @@ func TestPartWithoutSourceLogged(t *testing.T) {
 			offers:     1,
 		},
 		{
-			name: "an equivalent entry still being written",
+			name: "an equivalent entry still being written, with an address",
 			setup: func(t *testing.T, f *exhaustionFixture) {
 				busy := &transferTestValue{Text: "pending"}
 				f.donor = persistedListTestResult(t, f.ctx, f.cache, f.srv, "donor", busy)
 				partTestEquivalent(t, f.cache, f.receiver, f.donor)
+				f.attach(t, f.donor, exhaustionOffer(chain, "", true))
 				busy.unready.Store(true)
 			},
 			reason:     "holder_busy",
