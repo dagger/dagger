@@ -59,6 +59,14 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 		}
 		rows[id] = row
 	}
+	for i, transferred := range bundle.Calls {
+		if transferred.Call == "" {
+			return nil, fmt.Errorf("call %d: no call", i)
+		}
+		if _, ok := rows[uint64(transferred.Value)]; !ok {
+			return nil, fmt.Errorf("call %d: value %d is no row", i, transferred.Value)
+		}
+	}
 	named := map[uint64]bool{}
 	for _, output := range bundle.Outputs {
 		named[uint64(output.Ordinal)] = true

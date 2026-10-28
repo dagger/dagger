@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/wcprof"
 )
 
@@ -326,6 +327,15 @@ type valueMergePrep struct {
 	// preparation stops once they are known.
 	held  map[uint64]bool
 	stale []TransferOrdinal
+	// calls are the bundle's calls, each with its identity derived from
+	// its encoding, for the rows of the entries they returned.
+	calls []mergedCall
+}
+
+// mergedCall is a bundle's call to teach onto the entry of a row.
+type mergedCall struct {
+	value uint64
+	id    callIdentity
 }
 
 // mergeStaleError is planValueMergeLocked's answer when a held row doesn't
@@ -392,6 +402,9 @@ func (c *Cache) prepareValueMerge(ctx context.Context, input ValueBundle, skipKe
 		row := &prep.bundle.Values[i]
 		prep.index[uint64(row.Ordinal)] = row
 	}
+	if prep.calls, err = c.prepareMergedCalls(prep.bundle.Calls); err != nil {
+		return nil, err
+	}
 	heldFrames := c.resolveHeldRows(prep)
 	if len(prep.stale) > 0 {
 		return prep, nil
@@ -444,6 +457,30 @@ func (c *Cache) prepareValueMerge(ctx context.Context, input ValueBundle, skipKe
 		return nil, err
 	}
 	return prep, nil
+}
+
+// prepareMergedCalls derives the identity of each of a bundle's calls from its
+// encoding. Only an engine merges calls: the Cloud learns calls from spans.
+func (c *Cache) prepareMergedCalls(calls []TransferredCall) ([]mergedCall, error) {
+	if len(calls) == 0 {
+		return nil, nil
+	}
+	if c.blobBacked {
+		return nil, fmt.Errorf("merge values: the bundle carries calls, which only an engine merges")
+	}
+	merged := make([]mergedCall, 0, len(calls))
+	for i, transferred := range calls {
+		var pb callpbv1.Call
+		if err := pb.Decode(transferred.Call); err != nil {
+			return nil, fmt.Errorf("merge values: call %d: %w", i, err)
+		}
+		id, err := callIdentityFromPB(&pb)
+		if err != nil {
+			return nil, fmt.Errorf("merge values: call %d: %w", i, err)
+		}
+		merged = append(merged, mergedCall{value: uint64(transferred.Value), id: id})
+	}
+	return merged, nil
 }
 
 // privateMergeCache builds the private cache a preparation derives the
@@ -726,7 +763,7 @@ func (c *Cache) embedMergedParts(bundle *ValueBundle) {
 // untouched, without encoding its payloads: each record field by field, and
 // the outputs, which carry no payload, by a JSON round trip.
 func cloneValueBundle(in ValueBundle) (ValueBundle, error) {
-	out := ValueBundle{Version: in.Version, Roots: slices.Clone(in.Roots)}
+	out := ValueBundle{Version: in.Version, Roots: slices.Clone(in.Roots), Calls: slices.Clone(in.Calls)}
 	if in.Values != nil {
 		out.Values = make([]TransferredValue, len(in.Values))
 	}
@@ -1475,9 +1512,30 @@ func (c *Cache) applyMergedIdentitiesLocked(ctx context.Context, commit *valueMe
 		}
 		c.mergeSenderHoldingLocked(ctx, cloudState, commit, row, change)
 	}
+	for _, merged := range commit.prep.calls {
+		row := commit.byOrdinal[merged.value]
+		if row == nil || row.res == nil {
+			continue
+		}
+		c.teachCallIdentityLocked(ctx, row.res, merged.id)
+	}
 	if joined != nil {
 		joined(change)
 	}
+}
+
+// teachCallIdentityLocked teaches res a call that returned it, as
+// indexWaitResultInEgraphLocked does when the call completes: the call's
+// recipe digest joins res's class, and the call's term, over its inputs'
+// classes, outputs that class. The call's inputs are known by digest only.
+// Requires egraphMu for writing.
+func (c *Cache) teachCallIdentityLocked(ctx context.Context, res *sharedResult, id callIdentity) {
+	provenance := make([]egraphInputProvenanceKind, len(id.inputs))
+	for i := range provenance {
+		provenance[i] = egraphInputProvenanceKindDigest
+	}
+	frame := &ResultCall{Kind: ResultCallKindField, Field: id.field, ExtraDigests: id.extras}
+	c.applyPreparedResultIdentityLocked(ctx, res, frame, id.recipe, id.self, id.inputs, provenance, id.recipe)
 }
 
 // mergeReplacement is a replacement in place that a merge made, for the work
