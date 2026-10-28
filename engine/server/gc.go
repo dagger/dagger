@@ -346,9 +346,16 @@ func (srv *Server) gc() {
 	srv.gcmu.Lock()
 	defer srv.gcmu.Unlock()
 
-	if err := srv.gcLocked(context.Background(), localCacheGCScheduled); err != nil {
-		bklog.G(context.Background()).Errorf("gc error: %+v", err)
+	ctx := srv.backgroundGCContext()
+	if err := srv.gcLocked(ctx, localCacheGCScheduled); err != nil {
+		bklog.G(ctx).Errorf("gc error: %+v", err)
 	}
+}
+
+// backgroundGCContext is the context of the passes the engine starts on its
+// own: after sessions end, and under disk pressure.
+func (srv *Server) backgroundGCContext() context.Context {
+	return context.Background()
 }
 
 func (srv *Server) gcAfterSessionCompletion() {
@@ -357,7 +364,7 @@ func (srv *Server) gcAfterSessionCompletion() {
 }
 
 func (srv *Server) gcIfLocalCachePressure() {
-	ctx := context.Background()
+	ctx := srv.backgroundGCContext()
 
 	srv.gcmu.Lock()
 	defer srv.gcmu.Unlock()
