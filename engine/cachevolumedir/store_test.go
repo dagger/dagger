@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -562,6 +563,42 @@ func TestCollectDoesNotOvershootWhenARemovalFinishes(t *testing.T) {
 	report, err = s.Collect(t.Context(), policy)
 	require.NoError(t, err)
 	require.Empty(t, report.Removed, "the usage it read already counted the finished removal as pending")
+}
+
+// Two collections at once, as a stop's and a garbage collection's that it
+// didn't wait for, remove what one would: neither decides from a usage that
+// the other's removals are about to change.
+func TestConcurrentCollectsDoNotOvershoot(t *testing.T) {
+	clock := newFakeClock()
+	s := openStore(t, t.TempDir(), clock)
+	for _, key := range []string{"a", "b", "c", "d"} {
+		use(t, s, Identity{Key: key}, true, "f", mib)
+		clock.Advance(time.Minute)
+	}
+	policy := Policy{MaxUsedSpace: 3*mib + mib/2}
+
+	// each collection, once it has read the usage, waits for the other to
+	// read it too, or for a second if the other can't yet
+	var reads atomic.Int32
+	both := make(chan struct{})
+	s.afterUsage = func() {
+		if reads.Add(1) == 2 {
+			close(both)
+		}
+		select {
+		case <-both:
+		case <-time.After(time.Second):
+		}
+	}
+	removed := make(chan int, 2)
+	for range 2 {
+		go func() {
+			report, err := s.Collect(context.Background(), policy)
+			assert.NoError(t, err)
+			removed <- len(report.Removed)
+		}()
+	}
+	require.Equal(t, 1, <-removed+<-removed, "the collections removed more than one volume")
 }
 
 func TestFailedRemovalStaysCounted(t *testing.T) {
