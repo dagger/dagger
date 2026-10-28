@@ -35,6 +35,7 @@ check() {
 echo "candidate ref       $CANDIDATE_REF"
 echo "candidate commit    $CANDIDATE_COMMIT"
 echo "engine commit       $(cat /capture/engine-commit) ($ENGINE_SOURCE)"
+echo "engine source       sha256:$(sha256sum /capture/engine-source.sha256sum | cut -d' ' -f1) manifest, same content as the engine commit"
 echo "engine binary       sha256:$(cat /capture/engine-binary.sha256)"
 echo "engine rootfs       $(cat /capture/engine-rootfs.digest)"
 echo "schema sha256       $(cat /capture/schema.sha256)"
