@@ -487,11 +487,18 @@ func TestPartPrefetchRetiredJobSkipsUnwantedSuffix(t *testing.T) {
 	close(hold)
 	within(t, done)
 
-	require.Zero(t, f.transport.count(suffix), "a blob only the retired offer wanted is requested")
+	// The suffix's download may start before the retirement, as the shared
+	// blob's last request does: it is requested once at most, and not held
+	// past the retirement.
+	require.LessOrEqual(t, f.transport.count(suffix), 1, "a blob only the retired offer wanted is requested again")
+	require.Eventually(t, func() bool {
+		f.prefetch.mu.Lock()
+		defer f.prefetch.mu.Unlock()
+		return f.prefetch.held == f.chain.chain.Layers[0].Descriptor.Size
+	}, 10*time.Second, 10*time.Millisecond, "only the shared blob's bytes stay held")
 	require.Equal(t, map[digest.Digest][]*partOffer{f.chain.digest(0): {second}}, f.holdOffers())
 	f.prefetch.mu.Lock()
 	defer f.prefetch.mu.Unlock()
-	require.Equal(t, f.chain.chain.Layers[0].Descriptor.Size, f.prefetch.held, "only the shared blob's bytes stay held")
 	require.Zero(t, f.prefetch.pending)
 	require.Empty(t, f.prefetch.fetching)
 }
@@ -686,8 +693,9 @@ func TestPartPrefetchNextBlobStartsAtTheTail(t *testing.T) {
 		f.prefetch.run(context.Background(), job)
 		close(done)
 	}()
-	require.Eventually(t, func() bool { return f.transport.count(next) == 1 }, 10*time.Second, 10*time.Millisecond, "the next blob is requested while the first one's response is late")
-	require.Equal(t, 1, f.transport.count(first))
+	require.Eventually(t, func() bool {
+		return f.transport.count(first) == 1 && f.transport.count(next) == 1
+	}, 10*time.Second, 10*time.Millisecond, "the next blob is requested while the first one's response is late")
 	close(hold)
 	within(t, done)
 	require.Equal(t, "done", f.logs.lines(t, "remote cache part prefetched")[0].fields["outcome"])

@@ -302,15 +302,16 @@ func TestPartRangeReadsForwardRead(t *testing.T) {
 }
 
 // A provider's bound on requests in flight caps its blobs' ranged reads: with
-// room for two, two chunks are requested while one is held, every place
-// comes back once the blob is read, and the blob arrives whole.
+// room for two and every response held, two chunks are requested and no
+// third; every place comes back once the blob is read, and the blob arrives
+// whole.
 func TestPartRangeReadsProviderRequestBound(t *testing.T) {
 	const size = 40 << 20
 	transport, source, offer, data, _ := rangeTestReader(t, size, func(cfg *partRangeConfig) {
 		cfg.chunk = 1 << 20
 	})
 	hold := make(chan struct{})
-	transport.holdRange("bytes=0-1048575", hold)
+	transport.fault("https://blobs.invalid/blob", contentTestFault{stallAfter: -1, hold: hold})
 	provider := source.Provider(t.Context(), offer, nil).(*partContentProvider)
 	provider.requests = semaphore.NewWeighted(2)
 	opened, err := provider.ReaderAt(t.Context(), offer.Chain.Layers[0].Descriptor)
