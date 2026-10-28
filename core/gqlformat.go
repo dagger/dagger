@@ -82,21 +82,24 @@ func NamerForView(view call.View) Namer {
 }
 
 // NamerForEngineVersion returns the Namer for a module that declares
-// engineVersion in its dagger.json.
+// engineVersion in its dagger.json: the rules of its view, capped at the
+// engine's (see ModuleSource.NamingView).
 func NamerForEngineVersion(engineVersion string) Namer {
-	return NamerForView(call.View(engine.APIViewVersion(engineVersion)))
+	return (&ModuleSource{EngineVersion: engineVersion}).Namer()
 }
 
 // NamingView is the API view the module is served at, and whose naming rules
-// name its declarations: the view of its engine version, as
-// engine.APIViewVersion maps it. That includes workspace main modules
-// (manifest v2): they're named by whatever engine version their ModuleSource
-// has, like any other module.
+// name its declarations: the view of its engine version, capped at the
+// engine's own, as engine.ModuleAPIViewVersion maps it. A module declaring a
+// version past the engine's (say v1.0.0 on a v1.0.0-beta.22 engine) is
+// served, and named by, the engine's view. That includes workspace main
+// modules (manifest v2): they're named by whatever engine version their
+// ModuleSource has, like any other module.
 func (src *ModuleSource) NamingView() call.View {
 	if src == nil {
 		return ""
 	}
-	return call.View(engine.APIViewVersion(src.EngineVersion))
+	return call.View(engine.ModuleAPIViewVersion(src.EngineVersion))
 }
 
 // Namer normalizes the names the module declares: the rules of NamingView.
