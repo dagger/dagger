@@ -779,3 +779,75 @@ The reachability probe
 `ProbeTaughtHit == ~\E i \in DOMAIN invocations : invocations[i].path = "hit" /\ invocations[i].phase = "readBarrier" /\ res[invocations[i].resId].call # invocations[i].call /\ res[invocations[i].resId].imported`
 is violated at 391 distinct states. A lookup of one call claims a merged
 entry of the other, so the configuration reaches the case it is for.
+
+## Part sources
+
+A record from another engine that holds no download address for any of its
+parts decodes with its recipe armed, as a value restored from local
+persistence does, and is evaluated natively: its inputs are read in memory
+instead of searched for hop by hop. The model adds this behind `ModelOffers`
+(a scenario switch: off, no row has an offer, is managed or is a shell, and
+every other configuration keeps its state space):
+
+- **Offers.** A merged record can carry a download address (an offer) for a
+  part, and an offer can arrive later on any row (`OfferArrive`). Settling a
+  part retires its offer.
+- **Decode.** A merged row arms its recipe when it holds no offer and has a
+  recipe (`ImportedLazyArm`); otherwise it decodes as a shell, with nothing
+  for dagql to evaluate (`ImportedShell`). A row restored from disk arms
+  whenever it has a recipe; a row with no recipe is a shell either way.
+- **Native or managed.** A demand goes through part acquisition when the row
+  is managed already, or has an offer or is a shell and no native body is
+  running for it (`UsesAcquisition`). That demand first marks the row managed
+  in its own step (`EvalEnterAcquisition`), as `usesPartAcquisition` sets the
+  gate's managed flag before TryAcquire. Managed is sticky until the value is
+  replaced.
+- **Acquisition** (`EvalAcquire`), one atomic decision per demanded part:
+  done if the part is complete or acquired; refused while a native run holds
+  the group, either running or having written it (the gate's Running and
+  Evaluated, `NativeGroupTaken`); otherwise install the offer, or re-run when
+  there is none. A demand on a part a native body already wrote joins that
+  native installation and retries its bookkeeping, managed or not.
+
+Properties: `OnePartWriter` (no part is written both by acquisition and by a
+native body), `ManagedOnlyWithSource` (a row goes managed only with an offer
+or as a shell), `NativeRunStaysNative` (never while a native body runs, the
+running check's job), and `ManagedSticky`. `EvalDoneComplete` accepts an
+acquired part.
+
+Not modeled: the gate's internal exclusion between acquisition writers (one
+atomic decision here), a failed download (it re-runs, still one writer), a
+recipe's parents decoding when it arms, and part delegation
+(`ModelPartDelegation` is off in these configurations).
+
+The configurations use one part in one group:
+
+- `part_sources_merge`: a merged root of `cA`, one invocation hitting it or computing
+  its own value, two evaluators, late offers on any row.
+- `part_sources_import`: lazy_import's restored starting graphs, without release, with
+  late offers.
+
+Run with the pinned TLC 1.7.4 on an arm64 spot machine (16 CPUs), two JVMs
+at a time (8 workers, 13 GB), behind the 10 GB disk guard. A mutation's or
+probe's count is where TLC stopped, which varies with worker order:
+
+| Configuration | Question | Expected | Distinct states | Depth |
+| --- | --- | --- | ---: | ---: |
+| `part_sources_import` | restored rows, late offers, native and managed | clean | 28,926,193 | 42 |
+| `part_sources_merge` | merged rows, armed or shells, late offers | clean | 97,709 | 38 |
+| `part_sources_late_offer_over_native` | no running check and no TryAcquire check | violates `OnePartWriter` | 35,660 | 10 |
+| `part_sources_tryacquire_guard_only_off` | TryAcquire takes a group a native body wrote | violates `OnePartWriter` | 60,655 | 11 |
+| `part_sources_running_guard_off` | a row goes managed while a native body runs | violates `NativeRunStaysNative` | 19,755 | 9 |
+| `part_sources_not_sticky` | managed resets after an install | violates `OnePartWriter` | 2,828 | 15 |
+| `part_sources_imported_predicate` | the old predicate: imported means managed | violates `ManagedOnlyWithSource` | 1,048 | 5 |
+| `probe_part_sources_armed_native` | an armed merged row completes natively | witness | 1,140 | 13 |
+| `probe_part_sources_late_offer` | an armed row installs a late offer | witness | 9,804 | 8 |
+| `probe_part_sources_shell` | a shell's part is acquired | witness | 713 | 12 |
+| `probe_part_sources_armed_managed` | a restored row armed with an offer goes managed | witness | 5,605 | 7 |
+
+`part_sources_tryacquire_guard_only_off` fails where a native body wrote a part, its
+bookkeeping failed and a late offer arrived: TryAcquire's refusal of an
+Evaluated group is what keeps one writer there. With the running check off
+alone, one writer still holds, but the row goes managed in mid-run, so its
+later demands take acquisition instead of native evaluation
+(`part_sources_running_guard_off`).

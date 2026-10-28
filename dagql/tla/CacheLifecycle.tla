@@ -114,6 +114,14 @@
 (*     AddExplicitDependency, WithSessionResourceHandle). Numeric result   *)
 (*     IDs are engine-lifetime unique, so those guards only refuse         *)
 (*     mutations for already-collected results; Go tests carry them.       *)
+(*   - Part sources (ModelOffers): a row's parts can have a download       *)
+(*     address (an offer), from a merge or later. A row is evaluated       *)
+(*     natively (its recipe through the lazy path) or managed (part        *)
+(*     acquisition: install an offer, or re-run when nothing has one).     *)
+(*     Acquisition is one atomic decision per demanded part; the gate's    *)
+(*     internal exclusion between acquisition writers is not modeled. A    *)
+(*     download's failure (a re-run instead) and a tip decoding its       *)
+(*     parents at arming are not modeled either.                           *)
 (*   - Every modeled cache operation has session metadata. The             *)
 (*     implementation also uses a cache-wide operation count when metadata *)
 (*     is absent; shutdown treats both counts identically.                 *)
@@ -359,6 +367,27 @@ AdoptHandoffGuard == TRUE
 DeclinedRetireGuard == TRUE
 FlushKeepsDecline == TRUE
 GuardOff == FALSE
+\* Part sources. ModelOffers is a scenario switch: off, no row ever has
+\* an offer, is managed or is a shell, and every configuration that doesn't
+\* turn it on keeps its state space. A configuration turns it on with
+\* ModelOffers <- OffersOn. The guards below keep part writers apart; each
+\* mutation configuration overrides one with GuardOff:
+\*   - AcquireRunningGuard: a demand keeps a row native while one of its
+\*     groups has a native body running (usesPartAcquisition's
+\*     LazyEvaluationRunning check, dagql/cache_part_demand.go);
+\*   - TryAcquireGuard: acquisition doesn't take a part whose group has a
+\*     native attempt in flight (the gate's TryAcquire, GateExecutionStarted);
+\*   - ManagedStickyGuard: a managed row stays managed until its value is
+\*     replaced (gate.managed);
+\*   - ShellPredicateGuard: a row goes managed only for an offer or because
+\*     it is a shell, not because it is imported (the armed-decode predicate; without
+\*     it, usesPartAcquisition's old row.imported test).
+ModelOffers == FALSE
+OffersOn == TRUE
+AcquireRunningGuard == TRUE
+TryAcquireGuard == TRUE
+ManagedStickyGuard == TRUE
+ShellPredicateGuard == TRUE
 DistinctClasses == [c \in Calls |-> c]
 EquivalenceClasses == {ClassOf[c] : c \in Calls}
 
@@ -458,6 +487,29 @@ GroupNeedClosure(g) ==
 \* lead/join guard that enforces resolution-phase ordering.
 GroupNeedsMet(rec, g) ==
     \A h \in LazyGroups : <<g, h>> \in GroupNeeds => rec.lazyComplete[h]
+
+\* PART SOURCES (ModelOffers). Whether a demand on rec goes through part
+\* acquisition (usesPartAcquisition): the row is managed already, or it has
+\* an offer or is a shell (a row with no recipe) and none of its groups has
+\* a native body running - then this demand makes it managed. Without
+\* ShellPredicateGuard (the old predicate), an imported row counts too.
+\* A native body is running for one of the row's groups: the gate's group is
+\* LazyEvaluationRunning from RunNative until the body returns, when it
+\* becomes Evaluated, before the bookkeeping.
+NativeBodyRunning(rec) ==
+    \E g \in LazyGroups : rec.lazyPhase[g] \in {"running", "sweeping"}
+\* A native run holds group g in the part gate: an attempt is in flight
+\* (Running), or its body wrote the group's parts (Evaluated). nativeWrote is
+\* the gate's record of a native run's write set.
+NativeGroupTaken(rec, g) ==
+    \/ rec.lazyPhase[g] # "idle"
+    \/ GroupParts(g) \cap rec.nativeWrote # {}
+UsesAcquisition(rec) ==
+    \/ rec.managed
+    \/ /\ \/ rec.offers # {}
+          \/ rec.shell
+          \/ ~ShellPredicateGuard /\ rec.imported
+       /\ ~(AcquireRunningGuard /\ NativeBodyRunning(rec))
 
 \* Sessions are interchangeable with each other, and so are calls: the spec
 \* never treats any one specially. Declaring that symmetry (SYMMETRY Symm
@@ -830,6 +882,9 @@ ImportedResult(c, persistedFlag, depsSet, ownVal, payloadVal, dirtyAtSnapshotFla
      \* a merged or initial imported value isn't declined; Restart restores
      \* a saved row's mark, and its truth, over these
      declined |-> FALSE, declinedTruth |-> FALSE,
+     \* part sources (ModelOffers): none until a merge or an offer brings one
+     offers |-> {}, managed |-> FALSE, shell |-> FALSE, cloudRow |-> FALSE,
+     acquired |-> {}, nativeWrote |-> {},
      attachErrRefusal |-> FALSE,
      payload |-> payloadVal, decodePhase |-> "idle", decodeErr |-> "none",
      decodeGen |-> 0, persistSyncPending |-> FALSE,
@@ -866,6 +921,8 @@ DeadHusk ==
     [call |-> CHOOSE c \in Calls : TRUE, registered |-> FALSE,
      released |-> TRUE, own |-> 0, deps |-> {}, lateDeps |-> {},
      persisted |-> FALSE, declined |-> FALSE, declinedTruth |-> FALSE,
+     offers |-> {}, managed |-> FALSE, shell |-> FALSE, cloudRow |-> FALSE,
+     acquired |-> {}, nativeWrote |-> {},
      barrier |-> "none",
      attachErrRefusal |-> FALSE,
      payload |-> "decoded", decodePhase |-> "idle", decodeErr |-> "none",
@@ -1753,6 +1810,9 @@ FreshResult(o, lazyArm, handleChoice, deps) ==
      \* property-only: whether the value was declined, which no mutation of
      \* the mark's saving touches (DeclinedNeverPersisted reads it)
      declinedTruth |-> ongoingCalls[o].declined,
+     \* a computed value has its parts: no offers, native, no writer yet
+     offers |-> {}, managed |-> FALSE, shell |-> FALSE, cloudRow |-> FALSE,
+     acquired |-> {}, nativeWrote |-> {},
      barrier |-> "open",
      attachErrRefusal |-> FALSE,
      \* fresh results have their typed payload in memory;
@@ -3167,6 +3227,10 @@ MergeLive ==
     /\ ~flushed.closing
     /\ \E c \in Calls, withDep \in BOOLEAN :
        \E dc \in (IF withDep THEN Calls \ {c} ELSE {c}) :
+       \* the offers the bundle carries for a stored root or dependency
+       \* (applyMergedOffersLocked); a kept entry gets later offers through
+       \* OfferArrive
+       \E rootOffers, depOffers \in (IF ModelOffers THEN SUBSET LazyParts ELSE {{}}) :
         LET tr == MergeTarget(c)
             td == MergeTarget(dc)
             depKind == IF withDep THEN td.kind ELSE "none"
@@ -3177,6 +3241,8 @@ MergeLive ==
                        [] depKind \in {"keep", "replace"} -> td.r
                        [] OTHER -> 0
             rootDeps == IF withDep THEN {depId} ELSE {}
+            \* a stored merged value: a Cloud row with the bundle's offers
+            cloud(rec, offs) == [rec EXCEPT !.cloudRow = ModelOffers, !.offers = offs]
             \* a created, retired-and-created or replaced root stores the
             \* incoming record; a kept root keeps its value
             rootStores == tr.kind # "keep"
@@ -3199,13 +3265,13 @@ MergeLive ==
                         \/ (depKind = "retire" /\ x = td.r) ->
                          [res[x] EXCEPT !.indexed = FALSE, !.own = @ + delta(x)]
                   [] depKind = "replace" /\ x = td.r ->
-                         [MergedRecord(dc, res[x].handle, {}, OwnHandleReq(res[x].handle))
+                         [cloud(MergedRecord(dc, res[x].handle, {}, OwnHandleReq(res[x].handle)), depOffers)
                             EXCEPT !.persisted = res[x].persisted,
                                    !.own = res[x].own + delta(x),
                                    !.decodeGen = res[x].decodeGen,
                                    !.replacements = res[x].replacements + 1]
                   [] tr.kind = "replace" /\ x = tr.r ->
-                         [MergedRecord(c, res[x].handle, rootDeps, rootRequired(res[x].handle))
+                         [cloud(MergedRecord(c, res[x].handle, rootDeps, rootRequired(res[x].handle)), rootOffers)
                             EXCEPT !.persisted = TRUE,
                                    !.own = res[x].own + delta(x),
                                    !.decodeGen = res[x].decodeGen,
@@ -3213,9 +3279,9 @@ MergeLive ==
                   [] tr.kind = "keep" /\ x = tr.r ->
                          [res[x] EXCEPT !.persisted = TRUE, !.own = @ + delta(x)]
                   [] OTHER -> [res[x] EXCEPT !.own = @ + delta(x)]]
-            newDep == [MergedRecord(dc, "none", {}, {})
+            newDep == [cloud(MergedRecord(dc, "none", {}, {}), depOffers)
                          EXCEPT !.own = IF rootStores THEN 1 ELSE 0]
-            newRoot == [MergedRecord(c, "none", rootDeps, rootRequired("none"))
+            newRoot == [cloud(MergedRecord(c, "none", rootDeps, rootRequired("none")), rootOffers)
                           EXCEPT !.persisted = TRUE, !.own = 1]
             merged == existing
                         \o (IF depNew THEN <<newDep>> ELSE <<>>)
@@ -3764,6 +3830,13 @@ ImportedLazyArm(r) ==
     /\ res[r].registered
     /\ res[r].imported
     /\ res[r].payload = "decoded"
+    \* A row restored from disk arms whenever it carries a recipe; a
+    \* merged (Cloud) row arms only when it holds no offer at decode, and
+    \* otherwise decodes as a shell (ImportedShell). A shell or a managed row
+    \* never arms.
+    /\ ~res[r].shell
+    /\ ~res[r].managed
+    /\ res[r].cloudRow => res[r].offers = {}
     \* A decoded lazy form re-arms whole: all groups pending together. The
     \* guard generalizes registerLazyEvaluation's per-result clauses to
     \* every group (no attempt on any group, nothing stored, not complete,
@@ -3777,6 +3850,102 @@ ImportedLazyArm(r) ==
          /\ res[r].lazyPhase[g] = "idle"
     /\ res' = [res EXCEPT ![r].lazyCb = [g \in LazyGroups |-> "armed"],
                           ![r].lazyConsumed = [g \in LazyGroups |-> FALSE]]
+    /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, sessionEdges,
+                   countedEdges, sessionRelease, evals, epoch, flushed>>
+
+\* The other decode (ModelOffers): a row whose content is pending decodes as
+\* a shell - the record, with nothing for dagql to evaluate - when it is a
+\* merged row holding an offer, or when it has no recipe at all (a step
+\* that passes a parent's part through, which restore also leaves as a
+\* shell, restoredDelegation). The model doesn't track recipes, so any
+\* imported row may be a recipe-less one. Every demand on a shell goes
+\* through acquisition.
+ImportedShell(r) ==
+    /\ ModelLazy
+    /\ ModelOffers
+    /\ ~ModelContainerPartPersistence
+    /\ r \in ResultIds
+    /\ res[r].registered
+    /\ res[r].imported
+    /\ res[r].payload = "decoded"
+    /\ ~res[r].shell
+    /\ ~res[r].managed
+    /\ \A g \in LazyGroups :
+         /\ res[r].lazyCb[g] = "none"
+         /\ ~res[r].lazyComplete[g]
+         /\ ~res[r].lazySyncPending[g]
+         /\ res[r].lazyPhase[g] = "idle"
+    /\ res' = [res EXCEPT ![r].shell = TRUE]
+    /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, sessionEdges,
+                   countedEdges, sessionRelease, evals, epoch, flushed>>
+
+\* A later offer for a part (a later merge's applyMergedOffersLocked, or an
+\* Offer request): any time, for a part not yet complete or acquired. The
+\* row's next demand decides native or managed (UsesAcquisition).
+OfferArrive(r, p) ==
+    /\ ModelOffers
+    /\ r \in ResultIds
+    /\ res[r].registered
+    /\ p \notin res[r].offers
+    /\ p \notin res[r].acquired
+    /\ ~res[r].lazyComplete[PartGroupOf[p]]
+    /\ res' = [res EXCEPT ![r].offers = @ \cup {p}]
+    /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, sessionEdges,
+                   countedEdges, sessionRelease, evals, epoch, flushed>>
+
+\* A demand that takes part acquisition first makes the row managed, in its
+\* own step: usesPartAcquisition sets gate.managed before the demand reaches
+\* TryAcquire, and other demands can run in between.
+EvalEnterAcquisition(e) ==
+    /\ ModelOffers
+    /\ evals[e].phase = "demand"
+    /\ LET r == evals[e].target IN
+       /\ ~res[r].managed
+       /\ UsesAcquisition(res[r])
+       /\ evals[e].curGroup = MappedGroup(res[r], evals[e].part)
+       /\ res' = [res EXCEPT ![r].managed = TRUE]
+    /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, sessionEdges,
+                   countedEdges, sessionRelease, evals, epoch, flushed>>
+
+\* Acquisition for a demanded part of a managed row, one atomic decision
+\* (TryAcquire, PrepareOriginal and the install or re-run): a part already
+\* complete natively or acquired is done; a part
+\* whose group has a native attempt in flight, or whose group a native body
+\* already wrote (the gate's Evaluated group, its write set recorded as
+\* installed, even if bookkeeping then failed), gets GateExecutionStarted: the
+\* action is disabled, and the demand joins the native installation instead,
+\* retrying its bookkeeping (EvalStartAttempt, EvalJoin); otherwise an offer
+\* is installed, and its offer
+\* retires once the part settles, or with no offer the step re-runs. Both
+\* write the part (acquired). NativeGroupTaken is TryAcquire's check.
+EvalAcquire(e) ==
+    /\ ModelOffers
+    /\ evals[e].phase = "demand"
+    /\ LET r == evals[e].target
+           p == evals[e].part
+           g == PartGroupOf[p]
+           done == p \in res[r].acquired \/ res[r].lazyComplete[g]
+       IN
+       /\ evals[e].curGroup = MappedGroup(res[r], p)
+       /\ res[r].managed
+       /\ sessionRelease[evals[e].sess].phase = "live"
+       /\ done \/ ~TryAcquireGuard \/ ~NativeGroupTaken(res[r], g)
+       /\ res' = [res EXCEPT ![r].acquired = IF done THEN @ ELSE @ \cup {p},
+                             ![r].offers = IF done THEN @ ELSE @ \ {p}]
+       /\ evals' = [evals EXCEPT ![e].phase = "returnDone",
+                                 ![e].foreignCancel = FALSE]
+    /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex,
+                   sessionEdges, countedEdges, sessionRelease, epoch, flushed>>
+
+\* Mutation only (ManagedStickyGuard off): the gate forgets it is managed
+\* while no native attempt is in flight.
+GateUnmanage(r) ==
+    /\ ~ManagedStickyGuard
+    /\ r \in ResultIds
+    /\ res[r].registered
+    /\ res[r].managed
+    /\ ~NativeBodyRunning(res[r])
+    /\ res' = [res EXCEPT ![r].managed = FALSE]
     /\ UNCHANGED <<invocations, ongoingCalls, ongoingCallIndex, sessionEdges,
                    countedEdges, sessionRelease, evals, epoch, flushed>>
 
@@ -3796,6 +3965,8 @@ ImportedLazyArm(r) ==
 \* records completion without running either the sweep or lease sync again.
 EvalNoWork(e) ==
     /\ evals[e].phase = "demand"
+    \* a demand that goes through part acquisition takes EvalAcquire instead
+    /\ ~UsesAcquisition(res[evals[e].target])
     /\ LET r == evals[e].target
            k == evals[e].curGroup
            main == MappedGroup(res[evals[e].target], evals[e].part)
@@ -3830,6 +4001,13 @@ EvalNoWork(e) ==
 \* before the attempt exists, never inside a body.
 EvalStartAttempt(e) ==
     /\ evals[e].phase = "demand"
+    \* RunNative is refused for a managed row, and a demand that makes the
+    \* row managed takes EvalAcquire. A bookkeeping-only attempt runs no body
+    \* and no RunNative: a demand on a part a native body already wrote joins
+    \* that native installation and retries its bookkeeping, managed or not
+    \* (demandPart → joinPartInstallation → evaluateGroup).
+    /\ \/ ~UsesAcquisition(res[evals[e].target])
+       \/ ~StartsLazyBody(res[evals[e].target], evals[e].curGroup)
     /\ LET r == evals[e].target
            k == evals[e].curGroup
            s == evals[e].sess
@@ -3892,6 +4070,9 @@ EvalStartAttemptRefused(e) ==
 \* callers join this cache attempt normally. No second body starts here.
 EvalJoin(e) ==
     /\ evals[e].phase = "demand"
+    \* a managed row's demand joins only a bookkeeping-only native attempt
+    /\ \/ ~UsesAcquisition(res[evals[e].target])
+       \/ res[evals[e].target].lazyPhase[evals[e].curGroup] = "syncing"
     /\ LET r == evals[e].target
            k == evals[e].curGroup
            s == evals[e].sess
@@ -3968,12 +4149,14 @@ EvalBodyFinish(r, g) ==
                            THEN @ \cup GroupParts(g) ELSE @,
                        ![r].successfulOpens = @ \cup OpeningParts(res[r], g),
                        ![r].lazyConsumed[g] = TRUE,
+                       ![r].nativeWrote = IF ModelOffers THEN @ \cup GroupParts(g) ELSE @,
                        ![r].lazyPhase[g] = IF cacheWaiting THEN AfterBodyPhase(r) ELSE @]
                  ELSE [res EXCEPT
                                   ![r].successfulOpens = @ \cup OpeningParts(res[r], g),
                                   ![r].partComputed = IF ModelContainerPartPersistence /\ g \in OriginalGroups
                                       THEN @ \cup GroupParts(g) ELSE @,
                                   ![r].lazyConsumed[g] = TRUE,
+                                  ![r].nativeWrote = IF ModelOffers THEN @ \cup GroupParts(g) ELSE @,
                                   ![r].lazyCb[g] = IF AfterBodyPhase(r) = "syncing"
                                                   THEN "none" ELSE @,
                                   ![r].lazyPhase[g] = AfterBodyPhase(r)]
@@ -4182,6 +4365,7 @@ Next ==
     \/ EvalDirectMetadata
     \/ \E e \in EvalIds :
          \/ EvalNoWork(e) \/ EvalStartAttempt(e) \/ EvalStartAttemptRefused(e)
+         \/ EvalEnterAcquisition(e) \/ EvalAcquire(e)
          \/ EvalJoin(e) \/ EvalCallbackClose(e) \/ EvalWake(e)
          \/ EvalAbandon(e) \/ EvalOperationExit(e)
          \/ EvalResolveDemand(e)
@@ -4189,7 +4373,8 @@ Next ==
          EvalBodyFinish(r, g) \/ EvalSyncFinish(r, g)
            \/ EvalDelegateDemand(r, g)
            \/ EvalSweepDelegation(r, g) \/ EvalSweepDone(r, g)
-    \/ \E r \in 1..Len(res) : ImportedLazyArm(r)
+    \/ \E r \in 1..Len(res) : ImportedLazyArm(r) \/ ImportedShell(r) \/ GateUnmanage(r)
+    \/ \E r \in 1..Len(res), p \in LazyParts : OfferArrive(r, p)
     \/ \E s \in Sessions : EvalCallbackTokenExit(s)
     \/ BeginClose
     \/ Flush
@@ -4265,6 +4450,7 @@ WaiterProgress(i) ==
 \* code performs it unconditionally before entering the requested group.
 EvalProgress(e) ==
     \/ EvalNoWork(e) \/ EvalStartAttempt(e) \/ EvalStartAttemptRefused(e)
+    \/ EvalEnterAcquisition(e) \/ EvalAcquire(e)
     \/ EvalJoin(e) \/ EvalWake(e) \/ EvalOperationExit(e)
     \/ EvalResolveDemand(e)
 
@@ -4484,6 +4670,12 @@ TypeOK ==
          /\ res[r].persistSyncPending \in BOOLEAN
          /\ res[r].declined \in BOOLEAN
          /\ res[r].declinedTruth \in BOOLEAN
+         /\ res[r].offers \subseteq LazyParts
+         /\ res[r].acquired \subseteq LazyParts
+         /\ res[r].nativeWrote \subseteq LazyParts
+         /\ res[r].managed \in BOOLEAN
+         /\ res[r].shell \in BOOLEAN
+         /\ res[r].cloudRow \in BOOLEAN
          \* the pending flag exists only for an installed payload: it is
          \* set by a post-install finish and the install never reverts
          /\ res[r].persistSyncPending => res[r].payload = "decoded"
@@ -4592,6 +4784,67 @@ ReturnedHitSatisfied ==
 \* finished cleanly.
 NoHalfAttachedRead ==
     \A i \in InvocationIds : invocations[i].phase = "done" => invocations[i].retBarrierOK
+
+\* PART SOURCES (ModelOffers). One writer per part: no part is written both
+\* by acquisition (an installed offer or a managed re-run) and by a native
+\* body, and nothing of a group is acquired while a native body for it runs.
+OnePartWriter ==
+    \A r \in ResultIds :
+        res[r].registered =>
+            /\ res[r].acquired \cap res[r].nativeWrote = {}
+            /\ \A g \in LazyGroups :
+                 res[r].lazyPhase[g] \in {"running", "sweeping"}
+                     => res[r].acquired \cap GroupParts(g) = {}
+
+\* A row becomes managed only in a step where it has an offer or is a shell
+\* (an armed row with no address stays native). An action property: an
+\* address can retire after the row went managed, and managed stays.
+ManagedOnlyWithSource ==
+    [][\A r \in 1..Len(res) :
+         (~res[r].managed /\ res'[r].managed) => (res[r].offers # {} \/ res[r].shell)]_vars
+
+\* Managed is sticky until the value is replaced (gate.managed).
+ManagedSticky ==
+    [][\A r \in 1..Len(res) :
+         (/\ res[r].managed
+          /\ res'[r].registered
+          /\ res'[r].replacements = res[r].replacements
+          /\ epoch' = epoch)
+             => res'[r].managed]_vars
+
+\* A row being evaluated natively stays native: it never becomes managed
+\* while a native body for one of its groups is running. That is what the
+\* running check is for; without it a demand would make the row managed in
+\* mid-run, and its later demands would take acquisition instead of native
+\* evaluation. One writer per part doesn't depend on it (TryAcquire).
+NativeRunStaysNative ==
+    [][\A r \in 1..Len(res) :
+         (~res[r].managed /\ res'[r].managed) => ~NativeBodyRunning(res[r])]_vars
+
+\* Reachability probes for part sources (each expected violated):
+\*   - an armed Cloud row completes natively, never managed;
+\*   - an armed row that received a late offer goes managed and installs it;
+\*   - a shell's part is acquired;
+\*   - a restored row armed while holding an offer goes managed (the decode
+\*     arms a row with an offer, and the next demand still takes acquisition).
+ProbeArmedCloudNative ==
+    ~\E r \in ResultIds :
+        /\ res[r].registered /\ res[r].cloudRow /\ ~res[r].managed
+        /\ \E g \in LazyGroups : res[r].lazyComplete[g] /\ GroupParts(g) \subseteq res[r].nativeWrote
+ProbeLateOfferInstalled ==
+    [][\A r \in 1..Len(res), p \in LazyParts :
+         ~(/\ res[r].registered
+           /\ ~res[r].shell
+           /\ res[r].lazyCb[PartGroupOf[p]] = "armed"
+           /\ p \in res[r].offers
+           /\ p \notin res[r].acquired
+           /\ p \in res'[r].acquired)]_vars
+ProbeShellAcquired ==
+    ~\E r \in ResultIds : res[r].registered /\ res[r].shell /\ res[r].acquired # {}
+ProbeArmedWithOfferManaged ==
+    ~\E r \in ResultIds :
+        /\ res[r].registered /\ ~res[r].cloudRow /\ res[r].managed
+        /\ \E g \in LazyGroups : res[r].lazyCb[g] = "armed"
 
 \* Persistence intent is never lost: once a successful call's admission has
 \* closed and its handoff hold has been released, an admitted persistable
@@ -4831,7 +5084,9 @@ LazyMutualExclusion ==
 EvalDoneComplete ==
     \A e \in EvalIds :
         evals[e].phase = "done" =>
-            res[evals[e].target].lazyComplete[MappedGroup(res[evals[e].target], evals[e].part)]
+            \/ res[evals[e].target].lazyComplete[MappedGroup(res[evals[e].target], evals[e].part)]
+            \* or acquisition wrote the part (ModelOffers)
+            \/ evals[e].part \in res[evals[e].target].acquired
 
 \* Completion is only ever recorded with every stage of THAT group
 \* settled: the object-side callback consumed, no bookkeeping pending, no
