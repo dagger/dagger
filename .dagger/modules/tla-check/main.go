@@ -13,7 +13,7 @@ import (
 	"strings"
 	"sync"
 
-	"dagger/tla-check/internal/dagger"
+	"dagger.io/dagger/core"
 )
 
 const (
@@ -173,24 +173,24 @@ var clientExpectedOutcome = map[string]string{
 
 type TlaCheck struct {
 	// The dagql/tla spec directory.
-	Source *dagger.Directory
+	Source *core.Directory
 
 	// The engine/server/tla spec directory.
-	ClientSource *dagger.Directory
+	ClientSource *core.Directory
 }
 
-func New(ws *dagger.Workspace) *TlaCheck {
+func New(ws *core.Workspace) *TlaCheck {
 	return &TlaCheck{
-		Source:       ws.Directory("/dagql/tla", dagger.WorkspaceDirectoryOpts{}),
-		ClientSource: ws.Directory("/engine/server/tla", dagger.WorkspaceDirectoryOpts{}),
+		Source:       ws.Directory("/dagql/tla", core.WorkspaceDirectoryOpts{}),
+		ClientSource: ws.Directory("/engine/server/tla", core.WorkspaceDirectoryOpts{}),
 	}
 }
 
 // base returns a container with Java, the checksum-verified TLC jar, and
 // the spec directory mounted.
-func (m *TlaCheck) base(source *dagger.Directory) *dagger.Container {
-	jar := dag.HTTP(tla2toolsURL)
-	return dag.Container().
+func (m *TlaCheck) base(source *core.Directory) *core.Container {
+	jar := core.HTTP(tla2toolsURL)
+	return core.NewContainer().
 		From(javaBaseImage).
 		WithFile("/tla2tools.jar", jar).
 		WithExec([]string{"sh", "-c",
@@ -475,7 +475,7 @@ func reportFailures(model string, failures []runFailure, total int) error {
 // parsed instead.
 func runOne(
 	ctx context.Context,
-	base *dagger.Container,
+	base *core.Container,
 	specName,
 	configPrefix,
 	name,
