@@ -2244,7 +2244,7 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 					rerr = err
 					return
 				}
-				if err := terminalContainer.TerminalExecError(ctx, callID, callDig, terminalContainerRes, execMD, &meta, rerr); err != nil {
+				if err := terminalContainer.TerminalExecError(ctx, callID, callDig, terminalContainerRes, execMD, &meta, state.Opts.ExperimentalPrivilegedNesting, state.ModuleContext, rerr); err != nil {
 					rerr = err
 					return
 				}

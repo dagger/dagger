@@ -157,7 +157,7 @@ func (container *Container) Terminal(
 	containerRes dagql.ObjectResult[*Container],
 	args *TerminalArgs,
 ) error {
-	return container.terminal(ctx, selectedID, selectedDigest, containerRes, args, nil, nil, nil)
+	return container.terminal(ctx, selectedID, selectedDigest, containerRes, args, nil, nil, false, dagql.ObjectResult[*Module]{}, nil)
 }
 
 func (container *Container) TerminalExecError(
@@ -167,9 +167,11 @@ func (container *Container) TerminalExecError(
 	containerRes dagql.ObjectResult[*Container],
 	execMD *engineutil.ExecutionMetadata,
 	execMeta *executor.Meta,
+	execNesting bool,
+	execModuleContext dagql.ObjectResult[*Module],
 	execErr error,
 ) error {
-	return container.terminal(ctx, selectedID, selectedDigest, containerRes, nil, execMD, execMeta, execErr)
+	return container.terminal(ctx, selectedID, selectedDigest, containerRes, nil, execMD, execMeta, execNesting, execModuleContext, execErr)
 }
 
 func (container *Container) terminal(
@@ -180,6 +182,8 @@ func (container *Container) terminal(
 	args *TerminalArgs,
 	execMD *engineutil.ExecutionMetadata,
 	execMeta *executor.Meta,
+	execNesting bool,
+	execModuleContext dagql.ObjectResult[*Module],
 	execErr error,
 ) error {
 	if containerRes.Self() == nil {
@@ -243,10 +247,14 @@ func (container *Container) terminal(
 			InsecureRootCapabilities:      args.InsecureRootCapabilities.Value.Bool(),
 		})
 	} else {
+		// give the terminal the same nested Dagger access as the failed exec,
+		// so a nested client can be debugged the way it ran
 		svc = &Service{
-			Container: containerRes,
-			ExecMD:    execMD,
-			ExecMeta:  execMeta,
+			Container:                     containerRes,
+			ExecMD:                        execMD,
+			ExecMeta:                      execMeta,
+			ExperimentalPrivilegedNesting: execNesting,
+			ModuleContext:                 execModuleContext,
 		}
 	}
 	if err != nil {
