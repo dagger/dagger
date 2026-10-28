@@ -222,8 +222,6 @@ type Server struct {
 	secretSalt []byte
 }
 
-var configureBboltDefaultsOnce sync.Once
-
 type localCacheStateResetReason string
 
 const (
@@ -844,18 +842,15 @@ func (srv *Server) mkdirBaseDirs() (err error) {
 	return nil
 }
 
-func configureBboltDefaults() {
-	configureBboltDefaultsOnce.Do(func() {
-		// Some containerd snapshotter constructors open bbolt internally with nil
-		// options, so set the process default before those paths can run.
-		bolt.DefaultOptions.FreelistType = bolt.FreelistMapType
-		bolt.DefaultOptions.NoStatistics = true
-	})
+// Some containerd snapshotter constructors open bbolt internally with nil
+// options, so the process default is set before anything can open a database,
+// and never while one opens.
+func init() {
+	bolt.DefaultOptions.FreelistType = bolt.FreelistMapType
+	bolt.DefaultOptions.NoStatistics = true
 }
 
 func (srv *Server) initBoltDBs() (err error) {
-	configureBboltDefaults()
-
 	defer func() {
 		if panicErr := recover(); panicErr != nil {
 			err = fmt.Errorf("panic while initializing boltdbs: %v", panicErr)
