@@ -324,6 +324,88 @@ are in `prepared-race-20260905T085744` and `assembled-race-20260905T085911`.
 `final-evidence.md` reconciles source revisions, commands, counts and limitations.
 No full TLA or Go suite was run for this implementation.
 
+## Snapshot chains: layers applied apart, and prefetch
+
+`SnapshotChain.tla` models two more engine behaviours behind constants that
+the earlier configurations leave off.
+
+**Layers applied apart (`ModelApart`).** On containerd's overlay
+snapshotter outside a user namespace, `ImportChain` applies every missing
+layer at once, each into a mutable snapshot with no parent, and commits them
+onto their parents in layer order (`importChainApart` and `applyChainLayer`
+in `engine/snapshots/import.go`). In the model, each importer gets one
+goroutine per layer (`ap`), from the first layer its index walk found
+missing. A goroutine takes the layer's chain-ID lock (`clocks`). Under that
+lock it either skips a layer the indexes now have, or gets the layer's bytes
+and applies them. It ends holding its mutable snapshot and the lock. The
+importer's main loop takes the results in order. It commits an applied
+layer under the key lock unless the index already has the layer, imports a
+skipped layer in order, and fails on a failed layer. A failed import first
+waits for every goroutine to end, then releases every later result. A later
+layer can therefore finish applying after an earlier one has failed.
+
+- `ChainApplyExclusive`: two imports never hold one chain layer applied apart
+  at the same time.
+- `CleanupComplete` now also requires a finished import to hold no
+  goroutine result and no chain lock.
+- `ReuseBeforeBytes` now also rejects committing an applied layer over a
+  snapshot that was chosen and survives.
+
+**Prefetch (`ModelPrefetch`).** The prefetcher (`dagql/cache_part_prefetch.go`)
+joins or starts a layer's download with no chain owner. It links the blob
+into a TTL lease of its own, then leaves the download. Once every blob of a
+chain is held, it imports the chain ahead of demand (`importAhead`). In the
+model, importer 2 runs that import and owner 2 keeps its ref. Importer 1 and
+owner 1 are demand. Offers are not modelled. Any hold may be released at
+any time, which covers retirement, TTL and an install consuming the blob.
+Any import ahead may be dropped at any time, which covers retirement,
+replacement by an offer of another meaning, and TTL. A replacement of the
+same meaning changes nothing in the model. A dropped import ahead waits in
+`droppedAheads` for the janitor. An import that ends after its drop releases
+its own ref. Close cancels every job and import ahead, waits for them all,
+then releases everything.
+
+- `PrefetchHeldPresent`: a held blob is present.
+- `AheadRefTracked`: an import ahead's kept ref is always in `aheads` or
+  `droppedAheads`.
+- `PrefetchClosed`: a closed prefetcher holds no blob, no download and no
+  import ahead.
+
+Limits of the bounds: the window is wider than every modelled chain, so
+all goroutines start together. Each layer is prefetched at most once. One
+import ahead runs at a time. Deadlock is not checked, because the runner
+passes `-deadlock`.
+
+Each configuration's header says what it checks. The runs below used the
+pinned TLC on a 16-core machine through `tla-check one`, on 2026-10-28.
+Every run ended with its expected outcome. A mutation's count is where
+TLC stopped at the violation; it varies a little from run to run.
+
+| Configuration | Expected outcome | Distinct states | Depth | Wall time |
+| --- | --- | ---: | ---: | ---: |
+| `snapshot_apart` | clean | 987,911 | 62 | 8 s |
+| `snapshot_apart_window` | clean | 111,745 | 42 | 2 s |
+| `snapshot_apart_export` | clean | 1,245,593 | 53 | 9 s |
+| `snapshot_apart_keeplater` | violates `CleanupComplete` | 692 | 8 | <1 s |
+| `snapshot_apart_nolock` | violates `ChainApplyExclusive` | 27,784 | 13 | 1 s |
+| `snapshot_apart_skipreuse` | violates `ReuseBeforeBytes` | 130,764 | 17 | 2 s |
+| `snapshot_prefetch` | clean | 27,657,346 | 62 | 155 s |
+| `snapshot_prefetch_apart` | clean | 97,674,679 | 71 | 686 s |
+| `snapshot_prefetch_leaveearly` | violates `PrefetchHeldPresent` | 1,923 | 9 | <1 s |
+| `snapshot_prefetch_keptgone` | violates `AheadRefTracked` | 277,650 | 18 | 2 s |
+| `snapshot_prefetch_closedropped` | violates `PrefetchClosed` | 465,676 | 20 | 2 s |
+
+With both new constants off, the existing configurations keep exactly
+the distinct-state counts of the model before this change: `import`
+1,328,781, `export` 11,278,293, `download` 12,909,703 and `download_window`
+4,509,264. The existing mutations still violate their named properties.
+
+The reachability probes in the `apart`, `apart_export` and `prefetch`
+headers each reached their witness. With three import starts, `apart`
+passed at 106,384,020 distinct states (depth 86, 14 minutes), on a revision
+of this change before the commit evidence moved to the lookup. That is
+too large to register, so `apart` allows two.
+
 ## One current entry per recipe
 
 The model keeps at most one current entry per call, the entry the recipe
