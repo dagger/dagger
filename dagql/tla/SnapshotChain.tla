@@ -75,9 +75,12 @@
 (* joins or starts a download as holder 3 with no chain (a nil owner),   *)
 (* then links the blob into a TTL lease of its own and leaves. That      *)
 (* lease goes when its TTL passes, its offers are retired or an install  *)
-(* consumes the blob: PrefetchExpire, enabled at any time. Once every    *)
-(* blob of a chain is held, importer 2 imports it ahead of demand         *)
-(* (importAhead) and keeps its ref as owner 2 until the ahead is dropped  *)
+(* consumes the blob: PrefetchExpire, enabled at any time. Once a blob   *)
+(* of a chain is held, importer 2 imports it ahead of demand (importAhead) *)
+(* with no provider: each layer it lacks waits for its blob's hold        *)
+(* (Await), unless the indexes get the layer first, and gives up once no  *)
+(* prefetch of the blob is coming; it never downloads. It keeps its ref   *)
+(* as owner 2 until the ahead is dropped                                  *)
 (* (retirement, replacement by another meaning, TTL) and the janitor or  *)
 (* close releases it; an import that ends after the drop releases its   *)
 (* own. Importer 1 and owner 1 are demand. Offers are abstracted away: a  *)
@@ -101,7 +104,8 @@ CONSTANTS NumLayers, MaxStarts, MaxSnapshots, LocalBuild, SourceCanFail,
           MutDropDownloadPin, MutLeaveBeforeLink, MutRetryOwn, MutAheadSkipsReuse,
           MutAheadKeptOnFailure, MutApartKeptOnFailure, MutApartNoChainLock,
           MutApartSkipsReuse, MutPrefetchLeaveEarly, MutAheadKeptWhenGone,
-          MutCloseSkipsDropped
+          MutCloseSkipsDropped, MutAwaitUnderLock, MutAwaitIgnoresIndex,
+          MutAwaitNoGiveUp
 Importers == {1, 2}
 Owners == {1, 2}
 Layers == 1..NumLayers
@@ -122,11 +126,14 @@ OwnerIDs == {0} \cup Holders
 (* and owner 2 the ref it keeps; importer 1 and owner 1 are demand.        *)
 AheadImporter == 2
 Demand(i) == ~ModelPrefetch \/ i # AheadImporter
+(* The import ahead's chain has no provider: its blobs arrive by Await    *)
+(* (ExportChain.Await, partPrefetcher.awaitBlob), and it downloads nothing.*)
+AwaitChain(i) == ModelPrefetch /\ i = AheadImporter
 (* An apart layer's goroutine (applyChainLayer): running, or ended with its *)
 (* result waiting in its channel, holding its mutable snapshot ("applied")  *)
 (* and, once acquired, its chain lock. "committed": the main loop has      *)
 (* committed it and holds the lock until the layer's import ends.          *)
-SlotRunning == {"lock", "fetch", "waitDl", "ready", "applying"}
+SlotRunning == {"awaitBlob", "lock", "fetch", "waitDl", "ready", "applying"}
 SlotEnded == {"applied", "skipped", "failed"}
 
 VARIABLES snapshots, blobs, index, workers, locks, owners, producer,
@@ -336,6 +343,7 @@ FetchBad(i) == bad \cup
 (* Without downloads: the importer's own writer (importLayerContent).    *)
 Fetch(i) ==
     /\ ~ModelDownloads
+    /\ ~AwaitChain(i)
     /\ workers[i].phase = "fetch"
     /\ workers' = [workers EXCEPT ![i].phase = "reading", ![i].write = TRUE]
     /\ seen' = seen \cup {"fetch"}
@@ -346,6 +354,7 @@ Fetch(i) ==
 (* ahead (held), or joins one in progress, or starts one (joinFetch).    *)
 FetchHeld(i) ==
     /\ ModelDownloads
+    /\ ~AwaitChain(i)
     /\ workers[i].phase = "fetch"
     /\ workers[i].layer \in workers[i].aheads
     /\ workers' = [workers EXCEPT ![i].phase = "waitDl"]
@@ -355,6 +364,7 @@ FetchHeld(i) ==
 
 FetchJoin(i) ==
     /\ ModelDownloads
+    /\ ~AwaitChain(i)
     /\ workers[i].phase = "fetch"
     /\ workers[i].layer \notin workers[i].aheads
     /\ LET o == Src(workers[i].layer) IN
@@ -372,6 +382,7 @@ FetchJoin(i) ==
 (* apply, a later layer's download starts, unless its blob is present.   *)
 FetchAhead(i, l) ==
     /\ ModelDownloads
+    /\ ~AwaitChain(i)
     /\ \/ workers[i].phase = "ready"
        \/ workers[i].phase = "lock" /\ workers[i].layer >= workers[i].first
     /\ l \in (workers[i].layer + 1)..workers[i].target
@@ -462,6 +473,64 @@ OwnFailure(i) ==
     /\ UNCHANGED <<snapshots, blobs, index, locks, owners, producer, starts, bad, downloadVars, apartVars, aheadVars>>
 
 
+(* Awaiting a blob (awaitLayer, with partPrefetcher.awaitBlob as Await).  *)
+(* Without apart, each layer of the import ahead from the first missing   *)
+(* one waits before its key lock; applied apart, each goroutine waits      *)
+(* before its chain lock (MutAwaitUnderLock: after it).                    *)
+AwaitsInOrder(i, l) == AwaitChain(i) /\ ~ModelApart /\ l >= workers[i].first
+(* The wait ends with the blob held (it is then in the content store), or *)
+(* once the indexes have the layer (layerImportedSignal, chainLocalPrefix; *)
+(* MutAwaitIgnoresIndex never ends so).                                    *)
+AwaitReady(l) ==
+    \/ pf[l].phase = "held"
+    \/ ~MutAwaitIgnoresIndex /\ WalkIndex(0, 1, l) > l
+(* Await gives up once no download of the blob is coming for the offer:   *)
+(* none held, and none running or queued (comingLocked), or the ahead out *)
+(* of aheads. MutAwaitNoGiveUp keeps waiting.                              *)
+AwaitHopeless(l) ==
+    /\ ~MutAwaitNoGiveUp
+    /\ pf[l].phase # "held"
+    /\ pf[l].phase = "gone" \/ ahead # "live"
+
+AwaitBlob(i) ==
+    /\ workers[i].phase = "awaitBlob"
+    /\ AwaitReady(workers[i].layer)
+    /\ workers' = [workers EXCEPT ![i].phase = "lock"]
+    /\ seen' = seen \cup (IF pf[workers[i].layer].phase # "held" THEN {"awaitIndexed"} ELSE {"awaitHeld"})
+    /\ UNCHANGED <<snapshots, blobs, index, locks, owners, producer, starts, bad, downloadVars, apartVars, aheadVars>>
+
+AwaitGiveUp(i) ==
+    /\ workers[i].phase = "awaitBlob"
+    /\ AwaitHopeless(workers[i].layer)
+    /\ workers' = [workers EXCEPT ![i].phase = "cleanup"]
+    /\ seen' = seen \cup {"awaitGiveUp"}
+    /\ UNCHANGED <<snapshots, blobs, index, locks, owners, producer, starts, bad, downloadVars, apartVars, aheadVars>>
+
+SlotAwait(i, l) ==
+    /\ ap[i][l] = "awaitBlob"
+    /\ AwaitReady(l)
+    /\ ap' = [ap EXCEPT ![i][l] = IF MutAwaitUnderLock THEN "fetch" ELSE "lock"]
+    /\ seen' = seen \cup (IF pf[l].phase # "held" THEN {"awaitIndexed"} ELSE {"awaitHeld"})
+         \cup (IF pf[l].phase # "held" /\ \E m \in Layers : m > l /\ clocks[m] = i
+               THEN {"awaitIndexedHoldingLater"} ELSE {})
+    /\ UNCHANGED <<snapshots, blobs, index, workers, locks, owners, producer, starts, bad, downloadVars, clocks, aheadVars>>
+
+SlotAwaitGiveUp(i, l) ==
+    /\ ap[i][l] = "awaitBlob"
+    /\ AwaitHopeless(l)
+    /\ ap' = [ap EXCEPT ![i][l] = "failed"]
+    /\ seen' = seen \cup {"awaitGiveUp"}
+    /\ UNCHANGED <<snapshots, blobs, index, workers, locks, owners, producer, starts, bad, downloadVars, clocks, aheadVars>>
+
+(* An Await chain needs bytes it lacks: with no provider the layer fails  *)
+(* (importLayerContent's missing local layer).                            *)
+NoProvider(i) ==
+    /\ AwaitChain(i)
+    /\ workers[i].phase = "fetch"
+    /\ workers' = [workers EXCEPT ![i].phase = "cleanup"]
+    /\ seen' = seen \cup {"awaitedBlobGone"}
+    /\ UNCHANGED <<snapshots, blobs, index, locks, owners, producer, starts, bad, downloadVars, apartVars, aheadVars>>
+
 (* Applying apart (ModelApart; import.go importChainApart).              *)
 (* importChainApart: from the first layer the walk found missing, each    *)
 (* layer's goroutine starts (applyChainLayer) with its download held      *)
@@ -473,7 +542,9 @@ ApartStart(i) ==
     /\ workers[i].layer >= workers[i].first
     /\ ap[i][workers[i].layer] = "none"
     /\ ap' = [ap EXCEPT ![i] = [l \in Layers |->
-               IF l >= workers[i].layer /\ l <= workers[i].target THEN "lock" ELSE @[l]]]
+               IF l >= workers[i].layer /\ l <= workers[i].target
+               THEN IF AwaitChain(i) /\ ~MutAwaitUnderLock THEN "awaitBlob" ELSE "lock"
+               ELSE @[l]]]
     /\ workers' = [workers EXCEPT ![i].phase = "await"]
     /\ seen' = seen \cup {"apart"}
     /\ UNCHANGED <<snapshots, blobs, index, locks, owners, producer, starts, bad,
@@ -500,19 +571,25 @@ SlotLock(i, l) ==
        THEN /\ ap' = [ap EXCEPT ![i][l] = "skipped"]
             /\ SlotEnd(i, l)
             /\ seen' = seen \cup {"apartSkip"}
-       ELSE /\ ap' = [ap EXCEPT ![i][l] = "fetch"]
+       ELSE /\ ap' = [ap EXCEPT ![i][l] =
+                    IF AwaitChain(i) /\ MutAwaitUnderLock THEN "awaitBlob" ELSE "fetch"]
             /\ UNCHANGED <<workers, dl, seen>>
     /\ UNCHANGED <<snapshots, blobs, index, locks, owners, producer, starts, bad, pf, aheadVars>>
 
 (* fetchLayerContent, importLayerContent: a present blob is pinned        *)
 (* (pinContent, pin and check in one step here); else the download held  *)
 (* ahead is awaited, or one is joined or started (fetchChainContent).     *)
+(* An Await chain has no provider: an absent blob fails the layer.        *)
 SlotFetch(i, l) ==
     /\ ap[i][l] = "fetch"
     /\ IF l \in blobs
        THEN /\ workers' = [workers EXCEPT ![i].pins.bytes = @ \cup {l}]
             /\ ap' = [ap EXCEPT ![i][l] = "ready"]
             /\ UNCHANGED <<dl, seen>>
+       ELSE IF AwaitChain(i)
+       THEN /\ ap' = [ap EXCEPT ![i][l] = "failed"]
+            /\ SlotEnd(i, l)
+            /\ seen' = seen \cup {"awaitedBlobGone"}
        ELSE /\ ap' = [ap EXCEPT ![i][l] = "waitDl"]
             /\ dl' = IF l \in workers[i].aheads THEN dl
                      ELSE [dl EXCEPT ![Src(l)] = Join(Src(l), i)]
@@ -632,6 +709,15 @@ PrefetchStart(l) ==
     /\ seen' = seen \cup {"prefetchStart"}
     /\ UNCHANGED <<snapshots, blobs, index, workers, locks, owners, producer, starts, bad, apartVars, aheadVars>>
 
+(* A job holds no blob for the layer: it found it stored (PrefetchContent *)
+(* fetched nothing), its address expired, the budget or disk had no room, *)
+(* the queue dropped it, or its offer went before it ran.                 *)
+PrefetchSkip(l) ==
+    /\ ModelPrefetch
+    /\ pf[l].phase = "none"
+    /\ pf' = [pf EXCEPT ![l].phase = "gone"]
+    /\ UNCHANGED <<snapshots, blobs, index, workers, locks, owners, producer, starts, seen, bad, dl, apartVars, aheadVars>>
+
 (* PrefetchContent's fetchChainContent links the blob into the TTL lease  *)
 (* while the download holds it, then leaves; settle makes it a hold.      *)
 (* MutPrefetchLeaveEarly leaves first and links after (PrefetchLink).     *)
@@ -686,8 +772,8 @@ PrefetchExpire(l) ==
     /\ seen' = seen \cup {"prefetchExpire"}
     /\ UNCHANGED <<snapshots, blobs, index, workers, locks, owners, producer, starts, bad, dl, apartVars, aheadVars>>
 
-(* checkAheadLocked: once every blob of an offer's chain is held, its     *)
-(* chain is imported ahead of demand (importAhead's ImportChain), by the  *)
+(* checkAheadLocked: once a blob of an offer's chain is held, its chain   *)
+(* is imported ahead of demand (importAhead's ImportChain), by the        *)
 (* AheadImporter, under a chain owner of its own. One import ahead at a  *)
 (* time here; Go may run a gone one beside its replacement's.            *)
 AheadStart ==
@@ -698,9 +784,11 @@ AheadStart ==
     /\ workers[AheadImporter].phase \in {"idle", "done", "failed"}
     /\ owners[AheadImporter].tip = 0
     /\ \E target \in Layers :
-         /\ \A l \in 1..target : pf[l].phase = "held"
-         /\ workers' = [workers EXCEPT ![AheadImporter] = [EmptyWorker EXCEPT
-              !.phase = "lock", !.target = target, !.first = WalkIndex(0, 1, target)]]
+         /\ \E l \in 1..target : pf[l].phase = "held"
+         /\ LET first == WalkIndex(0, 1, target) IN
+            workers' = [workers EXCEPT ![AheadImporter] = [EmptyWorker EXCEPT
+              !.phase = IF ~ModelApart /\ first = 1 THEN "awaitBlob" ELSE "lock",
+              !.target = target, !.first = first]]
     /\ starts' = starts + 1
     /\ dl' = [o \in Objects |-> Disown(dl[o], AheadImporter)]
     /\ ahead' = "live"
@@ -826,7 +914,8 @@ Advance(i) ==
            l == workers[i].layer IN
        /\ workers' = [workers EXCEPT ![i].prefix = workers[i].handle,
             ![i].phase = IF l = workers[i].target THEN "returned"
-                         ELSE IF ap[i][l + 1] # "none" THEN "await" ELSE "lock",
+                         ELSE IF ap[i][l + 1] # "none" THEN "await"
+                         ELSE IF AwaitsInOrder(i, l + 1) THEN "awaitBlob" ELSE "lock",
             ![i].layer = IF workers[i].layer = workers[i].target THEN @ ELSE @ + 1,
             ![i].aheads = @ \ {workers[i].layer}]
        /\ dl' = IF held THEN [dl EXCEPT ![Src(workers[i].layer)] =
@@ -864,8 +953,9 @@ Release(o) ==
     /\ UNCHANGED <<snapshots, blobs, index, workers, locks, producer, starts, seen, bad, downloadVars, apartVars, aheadVars>>
 
 (* Failure includes a canceled source/apply or a caller abandoning a ref. *)
+(* The import ahead is also canceled once dropped or closing.           *)
 Fail(i) ==
-    /\ SourceCanFail
+    /\ SourceCanFail \/ (AwaitChain(i) /\ (ahead # "live" \/ pclose # "open"))
     /\ workers[i].phase \notin {"idle", "done", "failed", "cleanup"}
     /\ workers' = [workers EXCEPT ![i].phase = "cleanup"]
     /\ seen' = IF workers[i].prefix # 0 THEN seen \cup {"prefixFailure"} ELSE seen
@@ -984,12 +1074,13 @@ Next ==
          \/ Link(i) \/ RetryDownload(i) \/ OwnFailure(i)
          \/ \E o \in Owners : Adopt(i, o)
          \/ ApartStart(i) \/ Await(i) \/ CommitApart(i)
-         \/ \E l \in Layers : SlotLock(i, l) \/ SlotFetch(i, l) \/ SlotWait(i, l)
+         \/ AwaitBlob(i) \/ AwaitGiveUp(i) \/ NoProvider(i)
+         \/ \E l \in Layers : SlotAwait(i, l) \/ SlotAwaitGiveUp(i, l) \/ SlotLock(i, l) \/ SlotFetch(i, l) \/ SlotWait(i, l)
               \/ SlotRetry(i, l) \/ SlotOwnFailure(i, l) \/ SlotApply(i, l)
               \/ SlotApplied(i, l) \/ SlotFail(i, l)
     \/ \E o \in Objects : DownloadDone(o) \/ DownloadFail(o)
     \/ \E l \in Layers : PrefetchStart(l) \/ PrefetchSettle(l) \/ PrefetchLink(l)
-         \/ PrefetchRetry(l) \/ PrefetchGiveUp(l) \/ PrefetchCancel(l) \/ PrefetchExpire(l)
+         \/ PrefetchSkip(l) \/ PrefetchRetry(l) \/ PrefetchGiveUp(l) \/ PrefetchCancel(l) \/ PrefetchExpire(l)
     \/ AheadStart \/ AheadEnd \/ AheadFailed \/ AheadDrop \/ AheadJanitor
     \/ PrefetchClose \/ PrefetchCloseDone
     \/ \E o \in Owners : Release(o)
@@ -1060,6 +1151,21 @@ CleanupComplete ==
          /\ \A k \in Keys : locks[k] # i
          /\ workers[i].aheads = {} /\ \A o \in Objects : ~Holds(i, o)
          /\ \A l \in Layers : ap[i][l] = "none" /\ clocks[l] # i
+(* A layer awaiting its blob holds no lock of its own layer, so another  *)
+(* import of it never waits behind the wait.                              *)
+AwaitHoldsNoLock == \A i \in Importers :
+    /\ workers[i].phase = "awaitBlob" => locks[Key(i)] # i
+    /\ \A l \in Layers : ap[i][l] = "awaitBlob" => clocks[l] # i
+(* Liveness: a wait whose outcome is settled (blob held, layer indexed,  *)
+(* or nothing coming) ends, under fairness of the wait's own steps only. *)
+Waiting(l) == \/ workers[AheadImporter].phase = "awaitBlob" /\ workers[AheadImporter].layer = l
+              \/ ap[AheadImporter][l] = "awaitBlob"
+Settled(l) == \/ pf[l].phase \in {"held", "gone"} \/ WalkIndex(0, 1, l) > l
+              \/ ahead # "live"
+AwaitEnds == \A l \in Layers : (Waiting(l) /\ Settled(l)) ~> (~Waiting(l) \/ ~Settled(l))
+LiveSpec == Spec
+    /\ WF_vars(AwaitBlob(AheadImporter) \/ AwaitGiveUp(AheadImporter))
+    /\ \A l \in Layers : WF_vars(SlotAwait(AheadImporter, l) \/ SlotAwaitGiveUp(AheadImporter, l))
 (* A prefetch hold's TTL lease has the blob: it is linked while the       *)
 (* download still holds it.                                               *)
 PrefetchHeldPresent == \A l \in Layers : pf[l].phase = "held" => l \in blobs

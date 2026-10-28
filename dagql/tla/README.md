@@ -353,7 +353,7 @@ layer can therefore finish applying after an earlier one has failed.
 
 **Prefetch (`ModelPrefetch`).** The prefetcher (`dagql/cache_part_prefetch.go`)
 joins or starts a layer's download with no chain owner. It links the blob
-into a TTL lease of its own, then leaves the download. Once every blob of a
+into a TTL lease of its own, then leaves the download. Once one blob of a
 chain is held, it imports the chain ahead of demand (`importAhead`). In the
 model, importer 2 runs that import and owner 2 keeps its ref. Importer 1 and
 owner 1 are demand. Offers are not modelled. Any hold may be released at
@@ -371,6 +371,33 @@ then releases everything.
 - `PrefetchClosed`: a closed prefetcher holds no blob, no download and no
   import ahead.
 
+**The import ahead's wait for each blob.** The import ahead has no provider:
+its chain's blobs arrive through `ExportChain.Await`, which is
+`partPrefetcher.awaitBlob`, and it never downloads anything itself. Each
+layer it lacks waits for its blob before taking that layer's lock: the key
+lock when layers apply in order, or the chain-ID lock when they apply apart
+(`awaitLayer` in `engine/snapshots/import.go`). The wait ends when the
+blob's hold lands, or when another import has indexed the layer. The wait
+gives up when no prefetch of the blob is coming, or when the import ahead
+has been dropped. After the wait, a blob that has since gone from the
+content store fails the layer. A job may also end without a hold
+(`PrefetchSkip`), for example when the blob was already stored or the
+queue dropped the job.
+
+- `AwaitHoldsNoLock`: a layer waiting for its blob holds no lock on its own
+  layer, so another import of that layer never waits behind the wait.
+- `AwaitEnds` (liveness): a wait whose outcome is settled ends. Settled
+  means the blob is held, the layer is indexed, nothing is coming, or the
+  import ahead was dropped. Fairness covers only the wait's own steps, so
+  downloads, prefetches and the other import may stall.
+
+Below the model's abstraction: a prefetch job's blobs have no order among
+themselves, since any layer's prefetch may start at any time. Requests,
+streams and ranged-read chunks are not modelled; their bounds are in-memory
+semaphores that hold no lease and no content. A blob downloaded for an offer
+retired meanwhile settles with no hold, which is a hold released at once
+(`PrefetchSettle`, then `PrefetchExpire`).
+
 Limits of the bounds: the window is wider than every modelled chain, so
 all goroutines start together. Each layer is prefetched at most once. One
 import ahead runs at a time. Deadlock is not checked, because the runner
@@ -385,23 +412,27 @@ TLC stopped at the violation; it varies a little from run to run.
 | --- | --- | ---: | ---: | ---: |
 | `snapshot_apart` | clean | 987,911 | 62 | 8 s |
 | `snapshot_apart_window` | clean | 111,745 | 42 | 2 s |
-| `snapshot_apart_export` | clean | 1,245,593 | 53 | 9 s |
-| `snapshot_apart_keeplater` | violates `CleanupComplete` | 692 | 8 | <1 s |
-| `snapshot_apart_nolock` | violates `ChainApplyExclusive` | 27,784 | 13 | 1 s |
-| `snapshot_apart_skipreuse` | violates `ReuseBeforeBytes` | 130,764 | 17 | 2 s |
-| `snapshot_prefetch` | clean | 27,657,346 | 62 | 155 s |
-| `snapshot_prefetch_apart` | clean | 97,674,679 | 71 | 686 s |
-| `snapshot_prefetch_leaveearly` | violates `PrefetchHeldPresent` | 1,923 | 9 | <1 s |
-| `snapshot_prefetch_keptgone` | violates `AheadRefTracked` | 277,650 | 18 | 2 s |
-| `snapshot_prefetch_closedropped` | violates `PrefetchClosed` | 465,676 | 20 | 2 s |
+| `snapshot_apart_export` | clean | 1,245,593 | 53 | 10 s |
+| `snapshot_apart_keeplater` | violates `CleanupComplete` | 875 | 8 | <1 s |
+| `snapshot_apart_nolock` | violates `ChainApplyExclusive` | 26,186 | 13 | 1 s |
+| `snapshot_apart_skipreuse` | violates `ReuseBeforeBytes` | 127,137 | 17 | 2 s |
+| `snapshot_prefetch` | clean | 43,028,020 | 60 | 271 s |
+| `snapshot_prefetch_apart` | clean | 216,270,535 | 71 | 1,836 s |
+| `snapshot_prefetch_leaveearly` | violates `PrefetchHeldPresent` | 2,334 | 9 | <1 s |
+| `snapshot_prefetch_keptgone` | violates `AheadRefTracked` | 869,037 | 20 | 5 s |
+| `snapshot_prefetch_closedropped` | violates `PrefetchClosed` | 1,181,324 | 21 | 6 s |
+| `snapshot_prefetch_await_underlock` | violates `AwaitHoldsNoLock` | 8,339 | 10 | <1 s |
+| `snapshot_prefetch_await_liveness` | clean, `AwaitEnds` holds | 6,829,329 | 59 | 409 s |
+| `snapshot_prefetch_await_ignoresindex` | violates `AwaitEnds` | 67,483 | — | 3 s |
+| `snapshot_prefetch_await_nogiveup` | violates `AwaitEnds` | 65,063 | — | 3 s |
 
 With both new constants off, the existing configurations keep exactly
 the distinct-state counts of the model before this change: `import`
 1,328,781, `export` 11,278,293, `download` 12,909,703 and `download_window`
 4,509,264. The existing mutations still violate their named properties.
 
-The reachability probes in the `apart`, `apart_export` and `prefetch`
-headers each reached their witness. With three import starts, `apart`
+The reachability probes in the `apart`, `apart_export`, `prefetch` and
+`prefetch_apart` headers each reached their witness. With three import starts, `apart`
 passed at 106,384,020 distinct states (depth 86, 14 minutes), on a revision
 of this change before the commit evidence moved to the lookup. That is
 too large to register, so `apart` allows two.
