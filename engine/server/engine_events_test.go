@@ -372,3 +372,23 @@ func TestEngineEventsShutdownWithinBudget(t *testing.T) {
 	srv.engineEvents.Emit(telemetryattrs.EngineEventStop, dagql.CacheIdentity{}, time.Now(), telemetryattrs.EngineStopEvent{})
 	require.Equal(t, dropped+1, srv.engineEvents.Dropped(), "an event after the shutdown is dropped")
 }
+
+// With the state discarded, the events' shutdown also ends with the stop's
+// own deadline: its budget is part of the stop's reserve, which the final
+// telemetry flushes need too.
+func TestEngineEventsShutdownEndsWithTheStopWhenStateIsDiscarded(t *testing.T) {
+	t.Parallel()
+	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(enginetel.NewBlockingLogProcessor(unavailableEventExporter{}, 2, 1, 0)))
+	export := &engineEventTestExport{provider: provider}
+	srv := &Server{stateDiscarded: true, engineEvents: newEngineEventEmitter(export.Logger()), engineEventExport: export, engineEventShutdownBudget: DiscardedStateStopReserve}
+	for range 1000 {
+		srv.engineEvents.Emit(telemetryattrs.EngineEventPrune, dagql.CacheIdentity{}, time.Now(), telemetryattrs.EnginePruneEvent{})
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	srv.stopEngineEvents(ctx, false)
+	elapsed := time.Since(start)
+	require.Less(t, elapsed, 5*time.Second, "shutdown took %s with 300ms left of the stop", elapsed)
+}
