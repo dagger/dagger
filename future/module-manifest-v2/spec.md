@@ -431,7 +431,7 @@ written against in a `dang.toml`, with the keys Dang defines:
 dang = "2.1"
 
 [imports.Dagger]
-dagger = "v1.0.0-beta.21"
+dagger = "v1.0.0-beta.22"
 ```
 
 | Key | Meaning |
@@ -443,10 +443,12 @@ The Dagger version is the module's engine version, as `engineVersion` is for a
 previous-format module. It selects the core API view of the entrypoint and of
 the module's functions, the naming rules of the module's types, and the default
 function caching, through the same checks and view mapping as an
-`engineVersion`. The engine refuses a version newer than itself with
+`engineVersion`. The engine refuses a later base version than its own with
 `module requires dagger <version>, but you have <engine version>`, and a
-version older than the oldest module version it supports. Two imports that
-declare different Dagger versions are an error.
+version older than the oldest module version it supports. A later prerelease
+of its own base version, or that release itself, loads and is served the
+engine's own view, the newest API it has (`engine.ModuleAPIViewVersion`). Two
+imports that declare different Dagger versions are an error.
 
 The engine reads the `dang.toml` that governs the entrypoint by Dang's rules,
 restricted to the module:
@@ -478,11 +480,13 @@ Defaults:
 
 **Decision: an undeclared Dagger version is v1.0.0-beta.20.** Entrypoints
 written before the key existed were served at the engine that ran them, from
-v1.0.0-beta.16 to v1.0.0-beta.20: the v1 API, Dang 2.1 and the naming rules
-from before the cut at v1.0.0-beta.21. The default is the last of those
-releases, and it is pinned. Its API view is the shared view of every v1.0.0
-prerelease before the cut, so it gets none of the API that changes at the cut,
-such as renamed enum values that generated entrypoints spell the old way.
+v1.0.0-beta.16 to v1.0.0-beta.21: the v1 API, Dang 2.1 and the naming rules
+from before the cut at v1.0.0-beta.22 (`engine.IdentifierCasingVersion`).
+Every one of those releases has the same API view, the shared view of every
+v1.0.0 prerelease before the cut, and the default lands on it; it is pinned.
+It gets none of the API that changes at the cut, such as the renamed
+`FunctionCachePolicy` members that generated entrypoints spell the old way
+(`Never`, `PerSession`, `Default`), nor the new naming rules.
 Following the running engine would change the API and the type names of an
 entrypoint that declares nothing with every engine release.
 
