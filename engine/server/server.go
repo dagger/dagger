@@ -233,7 +233,10 @@ type Server struct {
 	//
 	// session+client state
 	//
-	daggerSessions     map[string]*daggerSession // session id -> session state
+	daggerSessions map[string]*daggerSession // session id -> session state
+	// sessionLedger counts the live root sessions by client and claim, for
+	// the engine's status (ServeStatus).
+	sessionLedger      sessionLedger
 	releasedSessionIDs map[string]struct{}
 	daggerSessionsMu   sync.RWMutex
 	clientDBs          *clientdb.DBs
