@@ -257,6 +257,7 @@ const (
 	engineOOMScoreAdj = -999
 )
 
+//nolint:gocyclo // engine setup is an intentionally linear sequence of steps.
 func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	if err := validateRemoteCacheIntegration(opts.RemoteCacheIntegration); err != nil {
 		return nil, err
