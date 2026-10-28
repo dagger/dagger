@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -18,7 +19,9 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/client/drivers"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
+	"github.com/dagger/dagger/internal/cloud"
 	"github.com/stretchr/testify/require"
 	"github.com/vito/go-sse/sse"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
@@ -261,6 +264,21 @@ func TestClientMetadataReportsCloudEngine(t *testing.T) {
 			require.Equal(t, test.want, client.clientMetadata().CloudEngine)
 		})
 	}
+}
+
+// A client sends the Dagger Cloud claim it connects under: its Cloud
+// connector's, from the engine assignment's claim_id, or else the one its
+// launcher gave it in DAGGER_CLOUD_CLAIM_ID.
+func TestClientMetadataCarriesTheCloudClaim(t *testing.T) {
+	t.Setenv(cloudClaimIDEnvName, "claim-from-launcher")
+	require.Equal(t, "claim-from-launcher", (&Client{}).clientMetadata().CloudClaimID)
+
+	var spec cloud.EngineSpec
+	require.NoError(t, json.Unmarshal([]byte(`{"instance_id":"engine-1","claim_id":"claim-from-assignment"}`), &spec))
+	connected := &Client{connector: &drivers.DaggerCloudConnector{EngineSpec: spec}}
+	md := connected.clientMetadata()
+	require.Equal(t, "claim-from-assignment", md.CloudClaimID)
+	require.Equal(t, "engine-1", md.CloudScaleOutEngineID)
 }
 
 func TestOTLPConsumerReconnectsFromLastCursor(t *testing.T) {

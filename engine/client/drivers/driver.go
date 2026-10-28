@@ -34,6 +34,10 @@ type Connector interface {
 
 	// If available, a unique identifier for the engine, otherwise empty string.
 	EngineID() string
+
+	// If available, the identifier of the claim on the engine that its
+	// provisioner issued with it, otherwise empty string.
+	ClaimID() string
 }
 
 type DriverOpts struct {

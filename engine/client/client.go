@@ -86,6 +86,10 @@ const (
 	cacheExportsConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_EXPORT_CONFIG"
 	// allow enabling scale-out of checks to support cloud
 	enableChecksScaleOutEnvName = "_EXPERIMENTAL_DAGGER_CHECKS_SCALE_OUT"
+	// cloudClaimIDEnvName carries the Dagger Cloud claim identifier to a
+	// client connected straight to an assigned engine; a Cloud connector
+	// carries its own.
+	cloudClaimIDEnvName = "DAGGER_CLOUD_CLAIM_ID"
 	// shutdown timeout, default is 10s
 	shutdownTimeoutEnvName = "_EXPERIMENTAL_DAGGER_SHUTDOWN_TIMEOUT"
 )
@@ -2017,8 +2021,12 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 	}
 
 	var remoteEngineID string
+	cloudClaimID := os.Getenv(cloudClaimIDEnvName)
 	if c.connector != nil {
 		remoteEngineID = c.connector.EngineID()
+		if claimID := c.connector.ClaimID(); claimID != "" {
+			cloudClaimID = claimID
+		}
 	}
 
 	md := engine.ClientMetadata{
@@ -2044,6 +2052,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		CloudAuth:                      c.CloudAuth,
 		EnableCloudScaleOut:            c.EnableCloudScaleOut,
 		CloudScaleOutEngineID:          remoteEngineID,
+		CloudClaimID:                   cloudClaimID,
 		Profile:                        c.Profile,
 		ProfileEBPF:                    c.ProfileEBPF,
 	}
