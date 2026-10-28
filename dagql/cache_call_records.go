@@ -30,7 +30,8 @@ type keptCall struct {
 }
 
 // newKeptCall derives the call a span reports returning an entry of another
-// recipe, or returns nil when it reports none.
+// recipe, or returns nil when it reports none. An error is the call's alone:
+// the span's holding attaches without it.
 func newKeptCall(desc RemoteHolding) (*keptCall, error) {
 	if desc.Call == "" || desc.Request == "" || desc.Request == desc.Recipe {
 		return nil, nil
@@ -143,7 +144,9 @@ func (c *Cache) keptCallTermsLocked(res *sharedResult) [][]*keptCall {
 
 // placeableCallLocked chooses, of calls that derive one term, the first whose
 // every input the recipient holds or the build carries; else the first whose
-// every input the Cloud stores, with the input entries the build must add.
+// every input the Cloud stores, with the input entries the build must add. A
+// digest-witnessed string's digest needs neither: the recipient's own call
+// reproduces it.
 // It returns nil when there is neither. Requires egraphMu.
 func (c *Cache) placeableCallLocked(build *storedBundleBuild, group []*keptCall) (*keptCall, []*sharedResult) {
 	var fallback *keptCall
@@ -151,7 +154,11 @@ func (c *Cache) placeableCallLocked(build *storedBundleBuild, group []*keptCall)
 	for _, kept := range group {
 		placed, stored := true, true
 		var add []*sharedResult
-		for _, input := range kept.id.inputs {
+		for i, input := range kept.id.inputs {
+			if kept.id.witnesses[i] {
+				// The recipient's own call reproduces a witness.
+				continue
+			}
 			entry := c.entryOfOwnRecipeLocked(input)
 			switch {
 			case entry == nil:
