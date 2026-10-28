@@ -1046,6 +1046,14 @@ func (srv *Server) Clients() []string {
 // DBs. The DBs run without syncing (bolt NoSync=true plus
 // NoFreelistSync/NoGrowSync, SQLite synchronous=OFF) for performance, and the
 // stop does not sync them either; see the comment at the end.
+//
+// When the state directory is discarded (stateDiscarded), nothing reads it
+// again, so the stop does only what outlives the engine: the remote cache
+// exports, the sessions' end and the telemetry flushes, and the cache volume
+// directory's collection and close. It doesn't wait for a garbage collection
+// that's running, which is abandoned, and it neither prunes, saves the cache,
+// closes the DBs, releases read-only mounts nor releases the network
+// namespaces.
 func (srv *Server) GracefulStop(ctx context.Context) error {
 	srv.BeginGracefulStop()
 
@@ -1106,7 +1114,8 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 		slog.Error("failed to stop remote cache integration", "error", adapterStopErr)
 	}
 
-	if srv.engineCache != nil {
+	discard := srv.stateDiscarded
+	if srv.engineCache != nil && !discard {
 		// A scheduled garbage collection holds gcmu while it runs.
 		stopPhase("wait for garbage collection", srv.gcmu.Lock)
 		defer srv.gcmu.Unlock()
@@ -1143,7 +1152,7 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 		}
 	})
 
-	if srv.clientDBs != nil {
+	if srv.clientDBs != nil && !discard {
 		stopPhase("close client DBs", func() {
 			err = errors.Join(err, srv.clientDBs.Close())
 		})
@@ -1152,14 +1161,24 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	// Shared read-only mounts nobody is using, and the releases running in
 	// the background, are released before the final collection and before
 	// the metadata DBs close.
-	if releaser, ok := srv.workerCache.(bkcache.ReadOnlyMountReleaser); ok {
+	if releaser, ok := srv.workerCache.(bkcache.ReadOnlyMountReleaser); ok && !discard {
 		stopPhase("wait for read-only mount releases", releaser.WaitForBackgroundReleases)
 	}
 
-	if srv.engineCache != nil && srv.localCacheGCEnabled {
+	switch {
+	case srv.engineCache != nil && srv.localCacheGCEnabled && !discard:
 		stopPhase("prune local cache", func() {
 			if gcErr := srv.gcLocked(ctx, localCacheGCGracefulShutdown); gcErr != nil {
 				err = errors.Join(err, fmt.Errorf("failed to prune local cache during graceful shutdown: %w", gcErr))
+			}
+		})
+	case srv.localCacheGCEnabled && srv.cacheVolumeDir != nil && discard:
+		// Of the prune, only the cache volume directory's collection
+		// outlives the engine: it keeps the volumes handed to the next
+		// engine within their capacity.
+		stopPhase("collect cache volume directory", func() {
+			if gcErr := srv.collectCacheVolumeDirAtShutdown(ctx); gcErr != nil {
+				err = errors.Join(err, fmt.Errorf("failed to collect cache volume directory during graceful shutdown: %w", gcErr))
 			}
 		})
 	}
@@ -1169,7 +1188,7 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	})
 
 	cleanCacheClose := false
-	if srv.engineCache != nil {
+	if srv.engineCache != nil && !discard {
 		stopPhase("close dagql cache", func() {
 			if closeErr := srv.engineCache.CloseWithShutdownError(ctx, adapterStopErr); closeErr != nil {
 				slog.Error("failed to close base dagql cache", "error", closeErr)
@@ -1183,12 +1202,18 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 		srv.stopEngineEvents(ctx, cleanCacheClose)
 	})
 
-	stopPhase("close network providers", func() {
-		err = errors.Join(err, srv.engineUtilOpts.Close())
-	})
+	if !discard {
+		stopPhase("close network providers", func() {
+			err = errors.Join(err, srv.engineUtilOpts.Close())
+		})
+	}
 
 	// Shutdown the global namespace worker pool
 	stopPhase("stop namespace worker pool", engineutil.ShutdownGlobalNamespaceWorkerPool)
+
+	if discard {
+		return errors.Join(err, adapterStopErr)
+	}
 
 	var eg errgroup.Group
 	eg.Go(func() error {
