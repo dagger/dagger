@@ -435,6 +435,13 @@ func cacheStateAttrs(state dagql.CacheResultState) []attribute.KeyValue {
 	}
 	if len(state.Parts) > 0 {
 		attrs = append(attrs, attribute.StringSlice(telemetryattrs.CachePartsAttr, state.Parts))
+		if len(state.PartSizes) == len(state.Parts) {
+			sizes := make([]string, len(state.PartSizes))
+			for i, size := range state.PartSizes {
+				sizes[i] = strconv.FormatInt(size, 10)
+			}
+			attrs = append(attrs, attribute.StringSlice(telemetryattrs.CachePartSizesAttr, sizes))
+		}
 	}
 	if state.Replacements != 0 {
 		attrs = append(attrs, attribute.String(telemetryattrs.CacheReplacementsAttr, strconv.FormatUint(state.Replacements, 10)))
