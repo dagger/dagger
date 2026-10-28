@@ -36,12 +36,15 @@ type Usage struct {
 	MemAnonBytes int64
 	MemFileBytes int64
 	MemHugeBytes int64
-	// GCAssistUS, GCDedicatedUS, GCIdleUS and GCPauseUS are the CPU a Go
-	// process's GC used, by class: mark assists by allocating goroutines,
-	// dedicated and idle mark workers, and stop-the-world pauses.
-	// HeapLiveBytes and HeapGoalBytes are its live heap and the heap size its
-	// next GC aims for; ScanHeapBytes, ScanStackBytes and ScanGlobalsBytes
-	// what a GC would scan. Only Go runtime sample scopes have them.
+	// GCAssistUS, GCDedicatedUS, GCIdleUS and GCPauseUS are the CPU time a
+	// Go process's GC took, by class, as the runtime estimates it: mark
+	// assists by allocating goroutines, dedicated and idle mark workers, and
+	// stop-the-world pauses, counted as the pause's duration times GOMAXPROCS
+	// rather than processor time used. HeapLiveBytes is the heap the last GC
+	// marked live, and HeapGoalBytes the heap size the next GC aims for.
+	// ScanHeapBytes and ScanGlobalsBytes are the scannable heap and globals
+	// now, and ScanStackBytes the stack the last GC scanned. Only Go runtime
+	// sample scopes have them; see runtime/metrics for the definitions.
 	GCAssistUS       int64
 	GCDedicatedUS    int64
 	GCIdleUS         int64
