@@ -4,11 +4,11 @@ import (
 	"os"
 	"runtime"
 	"strings"
-	"sync"
 )
 
 // DumpMachine is what a dump records about the machine its engine ran on,
-// read once per engine process. A fact that couldn't be read is left out.
+// read at each dump, since settings such as transparent huge pages can change
+// while an engine runs. A fact that couldn't be read is left out.
 type DumpMachine struct {
 	// KernelRelease and KernelVersion are the kernel's release (as uname -r)
 	// and its build string (as uname -v), which names the preemption models
@@ -29,8 +29,6 @@ type DumpMachine struct {
 	CPUs       int `json:"cpus"`
 	GOMAXPROCS int `json:"gomaxprocs"`
 }
-
-var machineFacts = sync.OnceValue(readMachine)
 
 func readMachine() *DumpMachine {
 	read := func(path string) string {
