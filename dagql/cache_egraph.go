@@ -840,11 +840,16 @@ func (c *Cache) indexResultDigestsLocked(res *sharedResult, requestFrame, respon
 	}
 	c.initEgraphLocked()
 
+	// The frames' recipe digests are derived before egraphMu is taken:
+	// deriving one resolves its inputs under egraphMu.
 	indexFrame := func(frame *ResultCall) error {
 		if frame == nil {
 			return nil
 		}
-		dig, err := frame.deriveRecipeDigest(c)
+		dig, derived, err := frame.derivedRecipeDigest()
+		if !derived {
+			return fmt.Errorf("frame %s indexed before its recipe digest was derived", frame.Field)
+		}
 		if err != nil {
 			return err
 		}
