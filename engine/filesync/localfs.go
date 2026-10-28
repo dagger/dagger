@@ -126,7 +126,8 @@ func newParentLocalFS(sharedState *MirrorSharedState, chain []string, copyPath s
 }
 
 // mirrorChainFS walks a chain of directories in the mirror, each one beneath
-// the one before, stopping at the first that the mirror doesn't have yet.
+// the one before, stopping at the first that the mirror doesn't have yet or
+// has as something other than a directory.
 type mirrorChainFS struct {
 	root  string
 	chain []string
@@ -145,6 +146,11 @@ func (m mirrorChainFS) Walk(_ context.Context, _ string, walkFn fs.WalkDirFunc) 
 		stat.Path = dir
 		if err := walkFn(dir, &StatInfo{stat}, nil); err != nil {
 			return err
+		}
+		if !os.FileMode(stat.Mode).IsDir() {
+			// Like any walk, don't look beneath a non-directory: the paths
+			// below a symlink would resolve through it.
+			return nil
 		}
 	}
 	return nil

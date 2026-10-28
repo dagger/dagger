@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -203,6 +204,10 @@ func (chain parentChainFS) Walk(_ context.Context, _ string, walkFn fs.WalkDirFu
 	for _, stat := range chain {
 		if err := walkFn(stat.Path, &StatInfo{stat}, nil); err != nil {
 			return err
+		}
+		if !os.FileMode(stat.Mode).IsDir() {
+			// as mirrorChainFS does
+			return nil
 		}
 	}
 	return nil

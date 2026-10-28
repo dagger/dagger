@@ -66,3 +66,36 @@ func makeUnwalkableDir(t *testing.T, dir string) {
 	}
 	require.NoError(t, unix.Close(fd))
 }
+
+// A parent that an earlier upload left in the mirror as a symlink, and that
+// the client now has as a directory, is replaced by a directory holding the
+// rest of the chain. The chain beneath the old symlink isn't read through it,
+// even when what it points to matches the client's.
+func TestSyncParentDirsReplacesMirrorSymlinkInChain(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	root := t.TempDir()
+	target := filepath.Join(root, "link", "target")
+	require.NoError(t, os.MkdirAll(target, 0o755))
+	info, err := os.Stat(target)
+	require.NoError(t, err)
+
+	mirror := t.TempDir()
+	mirrorRoot := filepath.Join(mirror, root)
+	behindLink := filepath.Join(mirrorRoot, "real", "target")
+	require.NoError(t, os.MkdirAll(behindLink, 0o755))
+	require.NoError(t, os.Chmod(behindLink, info.Mode().Perm()))
+	require.NoError(t, os.Chtimes(behindLink, info.ModTime(), info.ModTime()))
+	require.NoError(t, os.Symlink("real", filepath.Join(mirrorRoot, "link")))
+
+	syncer := &FileSyncer{}
+	conn := serveFilesync(t, client.FilesyncSource{})
+	require.NoError(t, syncer.syncParentDirs(ctx, NewMirrorSharedState(mirror), conn, target, "", SnapshotOpts{}))
+
+	for _, dir := range []string{filepath.Join(mirrorRoot, "link"), filepath.Join(mirrorRoot, "link", "target")} {
+		info, err := os.Lstat(dir)
+		require.NoError(t, err)
+		require.True(t, info.IsDir(), dir)
+	}
+}
