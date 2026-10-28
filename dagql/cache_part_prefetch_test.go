@@ -232,7 +232,8 @@ func (f *prefetchFixture) holdOffers() map[digest.Digest][]*partOffer {
 
 // The disk check counts the unwritten bytes every running job reserved, not
 // only this job's: two jobs can't both pass on the same free space. The
-// import ahead that follows the job counts them too.
+// import ahead, which starts with the first blob while the last one still
+// downloads, counts them too, that last blob's included.
 func TestPartPrefetchDiskRoomCountsPending(t *testing.T) {
 	f := newPrefetchFixture(t, true, nil)
 	var (
@@ -245,19 +246,34 @@ func TestPartPrefetchDiskRoomCountsPending(t *testing.T) {
 		asked = append(asked, need)
 		return true
 	}
+	hold := make(chan struct{})
+	f.transport.fault("https://fixed.invalid/prefetch/1", contentTestFault{stallAfter: -1, hold: hold})
 	const other = 1000
 	f.prefetch.mu.Lock()
 	f.prefetch.pending = other
 	f.prefetch.mu.Unlock()
-	require.Equal(t, "done", f.runJob(t).fields["outcome"])
-	require.Equal(t, "done", f.aheadLine(t).fields["outcome"])
+	job := f.job(t, f.offer)
+	done := make(chan struct{})
+	go func() {
+		f.prefetch.run(context.Background(), job)
+		close(done)
+	}()
 	var size int64
 	for _, layer := range f.chain.chain.Layers {
 		size += layer.Descriptor.Size
 	}
+	last := f.chain.chain.Layers[1].Descriptor.Size
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(asked) == 2
+	}, 10*time.Second, 10*time.Millisecond, "the import ahead never checked for room")
 	mu.Lock()
-	require.Equal(t, []int64{other + size, other + size}, asked, "the job's check, then the import ahead's")
+	require.Equal(t, []int64{other + size, other + last + size}, asked, "the job's check, then the import ahead's while the last blob downloads")
 	mu.Unlock()
+	close(hold)
+	within(t, done)
+	require.Equal(t, "done", f.aheadLine(t).fields["outcome"])
 	f.prefetch.mu.Lock()
 	defer f.prefetch.mu.Unlock()
 	require.EqualValues(t, other, f.prefetch.pending, "the job's bytes are written; the other job's remain")
