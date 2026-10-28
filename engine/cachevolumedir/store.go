@@ -114,9 +114,10 @@ type Store struct {
 	createMu keyedMutex
 	// metaMu serializes read-modify-writes of meta.json files.
 	metaMu sync.Mutex
-	// collectMu serializes Collect: each decides from the usage it reads,
-	// which another's removals would change under it.
-	collectMu sync.Mutex
+	// collecting holds a token while a Collect runs: each decides from the
+	// usage it reads, which another's removals would change under it. A
+	// Collect waiting for the token gives up when its context ends.
+	collecting chan struct{}
 
 	// mu guards pins and the moves GC makes, so that a volume is never moved
 	// while pinned and never pinned while half-moved.
@@ -182,13 +183,14 @@ func Open(dir string, opts Options) (*Store, error) {
 		return nil, fmt.Errorf("lock cache volume directory: %w", err)
 	}
 	s := &Store{
-		dir:       dir,
-		formDir:   filepath.Join(dir, "v"+strconv.Itoa(FormatVersion)),
-		opts:      opts,
-		lock:      lock,
-		pins:      map[string]*pinState{},
-		removeAll: os.RemoveAll,
-		trashSize: treeSize,
+		dir:        dir,
+		formDir:    filepath.Join(dir, "v"+strconv.Itoa(FormatVersion)),
+		opts:       opts,
+		lock:       lock,
+		pins:       map[string]*pinState{},
+		removeAll:  os.RemoveAll,
+		trashSize:  treeSize,
+		collecting: make(chan struct{}, 1),
 	}
 	for _, sub := range []string{"volumes", "tmp", "trash"} {
 		if err := os.MkdirAll(filepath.Join(s.formDir, sub), 0o755); err != nil {
@@ -641,11 +643,16 @@ type Report struct {
 // first, never a pinned one. Bytes already being removed count as freed.
 // Removed volumes are moved aside at once and deleted in the background.
 // Collect stops between volumes when ctx ends, leaving the directory
-// consistent. Collections run one at a time.
+// consistent. Collections run one at a time; one waiting for another stops
+// waiting when ctx ends.
 func (s *Store) Collect(ctx context.Context, policy Policy) (Report, error) {
-	s.collectMu.Lock()
-	defer s.collectMu.Unlock()
 	var report Report
+	select {
+	case s.collecting <- struct{}{}:
+		defer func() { <-s.collecting }()
+	case <-ctx.Done():
+		return report, ctx.Err()
+	}
 	if err := ctx.Err(); err != nil {
 		return report, err
 	}
