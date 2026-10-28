@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  Decode `Identifier`, `IdentifierWord` and `NamingTerm` values, so module
+  functions accept arguments of these types.
+time: 2026-10-28T19:13:37Z
+custom:
+    Author: eunomie
