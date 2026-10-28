@@ -426,9 +426,40 @@ func TestCallRecordReportsWhatASaveWrites(t *testing.T) {
 	change, err = cloud.AttachRemoteHolding(ctx, key, test.span(t, true, 0))
 	require.NoError(t, err)
 	require.False(t, change.Saved, "the same call again")
-	change, err = cloud.AttachRemoteHolding(ctx, key, test.span(t, true, time.Now().Add(time.Hour).Unix()))
+}
+
+// A call span read again, or reporting a call of a value a later export
+// replaced, doesn't move the replacement's expiry back: a call's expiry goes
+// to the entry once, when the call is first kept, as a local cache gives an
+// entry a call's expiry when the call completes.
+func TestCallRecordReplayKeepsAReplacementsExpiry(t *testing.T) {
+	t.Parallel()
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	test := newCallRecordTest(t, ctx, cloud)
+	old := test.span(t, true, time.Now().Add(-time.Hour).Unix())
+	test.attach(t, ctx, old)
+	// Another engine exports a fresh value of the same recipe.
+	bctx, b, srv := transferTestCache(t)
+	frame := callRecordTestFrame("inner")
+	refreshed, err := b.GetOrInitCall(bctx, "test-session", srv,
+		&CallRequest{ResultCall: frame, IsPersistable: true, TTL: 3600},
+		func(context.Context) (AnyResult, error) {
+			return NewResultForCall(&transferTestValue{Text: "refreshed"}, frame)
+		})
 	require.NoError(t, err)
-	require.True(t, change.Saved, "a shorter expiry")
+	_, err = cloud.MergeValues(ctx, "cache-b", exportTestBundle(t, bctx, b, refreshed))
+	require.NoError(t, err)
+	entry := storedBundleTestEntry(cloud, test.number)
+	cloud.egraphMu.RLock()
+	expires := entry.expiresAtUnix
+	cloud.egraphMu.RUnlock()
+	require.Greater(t, expires, time.Now().Unix())
+	// The reader reads the old call span again.
+	test.attach(t, ctx, old)
+	cloud.egraphMu.RLock()
+	after := entry.expiresAtUnix
+	cloud.egraphMu.RUnlock()
+	require.Equal(t, expires, after)
 }
 
 // A call that reaches an engine which already has the entry, in full or as a
