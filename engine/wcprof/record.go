@@ -39,12 +39,8 @@ type requestArrivalKey struct{}
 
 // ContextWithRequestArrival marks a request's ctx with when the engine
 // received it, so the op for serving it can start there and show the routing
-// before it (RequestArrival). Nothing is marked when no recorder exists, as
-// whether the request's session records is only known later.
+// before it (RequestArrival).
 func ContextWithRequestArrival(ctx context.Context, t time.Time) context.Context {
-	if Active() == nil {
-		return ctx
-	}
 	return context.WithValue(ctx, requestArrivalKey{}, t)
 }
 

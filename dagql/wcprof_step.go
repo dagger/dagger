@@ -2,9 +2,17 @@ package dagql
 
 import (
 	"context"
+	"net/http"
 	"time"
 
+	"github.com/99designs/gqlgen/graphql"
+	"github.com/99designs/gqlgen/graphql/handler"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/engine/wcprof"
+	telemetry "github.com/dagger/otel-go"
 )
 
 // Step is one step inside an engine operation, such as each phase of
@@ -48,6 +56,27 @@ func RecordStep(ctx context.Context, name string, start, end time.Time) {
 		)
 		span.End(trace.WithTimestamp(end))
 	}
+}
+
+// ServeHTTPWithWriteStep serves r with h, a handler built for r alone, and,
+// when r is profiled, records writing its response as the graphql.write step:
+// from the handler returning the response to its being written. A WebSocket
+// connection (gqlgen's own test for one), which writes many responses, each
+// as it's ready, records none.
+func ServeHTTPWithWriteStep(h *handler.Server, w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if !wcprof.Enabled(ctx) || r.Header.Get("Upgrade") != "" {
+		h.ServeHTTP(w, r)
+		return
+	}
+	var returned time.Time
+	h.AroundResponses(func(ctx context.Context, next graphql.ResponseHandler) *graphql.Response {
+		res := next(ctx)
+		returned = time.Now()
+		return res
+	})
+	h.ServeHTTP(w, r)
+	RecordStep(ctx, "graphql.write", returned, time.Now())
 }
 
 // End ends the step, failed when err isn't nil.

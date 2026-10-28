@@ -1381,7 +1381,10 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		// connections, which would kill every module function call that runs
 		// longer than it.
 		Handler: http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
-			req = req.WithContext(wcprof.ContextWithRequestArrival(req.Context(), time.Now()))
+			if wcprof.Active() != nil {
+				// whether the request's session records is only known later
+				req = req.WithContext(wcprof.ContextWithRequestArrival(req.Context(), time.Now()))
+			}
 			transport, metadata, status, err := transports.transportForRequest(req)
 			if err != nil {
 				http.Error(resp, err.Error(), status)

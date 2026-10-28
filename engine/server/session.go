@@ -19,7 +19,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	gqlgen "github.com/99designs/gqlgen/graphql"
 	"github.com/Khan/genqlient/graphql"
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/leases"
@@ -2976,19 +2975,7 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 	// 	return res
 	// })
 
-	if !profiling {
-		gqlSrv.ServeHTTP(w, r)
-		return nil
-	}
-	// the response is written once its handler returns it
-	var written time.Time
-	gqlSrv.AroundResponses(func(ctx context.Context, next gqlgen.ResponseHandler) *gqlgen.Response {
-		res := next(ctx)
-		written = time.Now()
-		return res
-	})
-	gqlSrv.ServeHTTP(w, r)
-	dagql.RecordStep(queryCtx, "graphql.write", written, time.Now())
+	dagql.ServeHTTPWithWriteStep(gqlSrv, w, r)
 	return nil
 }
 
