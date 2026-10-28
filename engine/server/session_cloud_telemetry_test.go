@@ -228,12 +228,14 @@ func newCloudTestSession(t *testing.T, srv *Server, md *engine.ClientMetadata) (
 }
 
 // publishRestToCloud ends the session's telemetry and waits for its forwarder
-// to publish the rest of the store to Cloud and release.
+// and its metric queue to publish the rest to Cloud and release.
 func publishRestToCloud(ctx context.Context, t *testing.T, sess *daggerSession) {
 	t.Helper()
 	require.NoError(t, sess.shutdownTelemetry(ctx))
 	require.NotNil(t, sess.cloudForwarder)
 	require.NoError(t, sess.cloudForwarder.waitReleased(ctx))
+	require.NotNil(t, sess.cloudMetrics)
+	require.NoError(t, sess.cloudMetrics.waitReleased(ctx))
 }
 
 // emitCloudTestTelemetry emits one span, one log record and one metric point
@@ -722,6 +724,7 @@ func TestPostedTelemetryReachesCloudOnce(t *testing.T) {
 			require.NoError(t, sess.shutdownTelemetry(ctx))
 			if publishing {
 				require.NoError(t, sess.cloudForwarder.waitReleased(ctx))
+				require.NoError(t, sess.cloudMetrics.waitReleased(ctx))
 			}
 			_, cloudSpans, cloudLogs, cloudMetrics := receiver.snapshot()
 			count := func(names []string, name string) int {
