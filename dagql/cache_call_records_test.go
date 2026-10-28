@@ -32,8 +32,14 @@ func callRecordTestFrame(field string) *ResultCall {
 
 func newCallRecordTest(t *testing.T, cloudCtx context.Context, cloud *Cache) *callRecordTest {
 	t.Helper()
+	return newCallRecordTestOf(t, cloudCtx, cloud, callRecordTestFrame("outer"))
+}
+
+// newCallRecordTestOf is newCallRecordTest with the call frame.
+func newCallRecordTestOf(t *testing.T, cloudCtx context.Context, cloud *Cache, frame *ResultCall) *callRecordTest {
+	t.Helper()
 	ctx, producer, srv := transferTestCache(t)
-	test := &callRecordTest{ctx: ctx, producer: producer, frame: callRecordTestFrame("outer"), cloud: cloud}
+	test := &callRecordTest{ctx: ctx, producer: producer, frame: frame, cloud: cloud}
 	test.inner = persistedListTestResult(t, ctx, producer, srv, "inner", &transferTestValue{Text: "inner"})
 	got, err := producer.GetOrInitCall(ctx, "test-session", srv,
 		&CallRequest{ResultCall: test.frame, IsPersistable: true},
@@ -195,16 +201,45 @@ func TestCallRecordIsKeptOnce(t *testing.T) {
 	require.Equal(t, 1, calls)
 }
 
-// A span whose encoded call isn't the call it reports is refused.
-func TestCallRecordRefusesAMismatchedCall(t *testing.T) {
+// A span whose encoded call isn't the call it reports attaches its holding,
+// with the call left out.
+func TestCallRecordLeavesOutAMismatchedCall(t *testing.T) {
 	t.Parallel()
 	ctx, cloud := storedPartTestCache(t, WithBlobStore())
 	test := newCallRecordTest(t, ctx, cloud)
 	desc := test.span(t, true, 0)
 	desc.Request = digest.FromString("another request")
-	key := HolderKey{Cache: "cache-a", Number: uint64(test.inner.cacheSharedResult().id)}
+	key := HolderKey{Cache: "cache-b", Number: 7}
 	_, err := cloud.AttachRemoteHolding(ctx, key, desc)
-	require.ErrorContains(t, err, "encodes call")
+	require.NoError(t, err)
+	info, ok := cloud.RemoteEntryInfo(key)
+	require.True(t, ok, "the holding attached")
+	require.Equal(t, test.number, info.Number)
+	entry := storedBundleTestEntry(cloud, test.number)
+	cloud.egraphMu.RLock()
+	calls := len(entry.calls)
+	cloud.egraphMu.RUnlock()
+	require.Zero(t, calls)
+}
+
+// A call whose input is a digest-witnessed string's digest, which no entry
+// stands for, is sent: the recipient's own call reproduces the digest.
+func TestCallRecordWithAWitnessInputIsSent(t *testing.T) {
+	t.Parallel()
+	frame := callRecordTestFrame("outer")
+	frame.Args = []*ResultCallArg{{Name: "execMD", Value: &ResultCallLiteral{
+		Kind:                 ResultCallLiteralKindDigestedString,
+		DigestedStringValue:  `{"clientID":"a"}`,
+		DigestedStringDigest: digest.FromString("exec metadata"),
+	}}}
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	test := newCallRecordTestOf(t, ctx, cloud, frame)
+	test.attach(t, ctx, test.span(t, true, 0))
+	built, err := cloud.StoredBundle(ctx, []uint64{test.number}, nil)
+	require.NoError(t, err)
+	require.Len(t, built.Bundle.Calls, 1)
+	require.Zero(t, built.UnsendableCalls)
+	require.True(t, test.freshHits(t, built.Bundle))
 }
 
 // receiverTestFrame is a receiver's call as client makes it: its recipe is

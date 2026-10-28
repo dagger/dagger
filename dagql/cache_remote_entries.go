@@ -407,7 +407,10 @@ func (c *Cache) AttachRemoteHolding(ctx context.Context, key HolderKey, desc Rem
 	}
 	kept, err := newKeptCall(desc)
 	if err != nil {
-		return change, fmt.Errorf("attach remote holding %s/%d: %w", key.Cache, key.Number, err)
+		// The holding is what the span reports; a call this cache can't
+		// derive is left out, and sent nowhere.
+		slog.Warn("remote holding call left out", "cache", key.Cache, "number", key.Number, "error", err)
+		kept = nil
 	}
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
