@@ -280,7 +280,10 @@ func (r *Release) Publish( //nolint:gocyclo
 				})
 			},
 			dryRun: func(ctx context.Context) error {
-				return dag.GoClientDev(r.Workspace).ReleaseDryRun(ctx)
+				return dag.GoClientDev(r.Workspace).ReleaseDryRun(ctx, dagger.GoClientDevReleaseDryRunOpts{
+					SourceTag:  tag,
+					DestRemote: goSdkDestRemote,
+				})
 			},
 		},
 		{
