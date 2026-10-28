@@ -167,3 +167,38 @@ func TestPreCutCoreSchemaShared(t *testing.T) {
 		require.Contains(t, schema.Directives, "reevaluate", version)
 	}
 }
+
+// A module declaring a view past the engine's is served the engine's: an
+// engine at the cut serves a module declaring v1.0.0 the cut's API, past its
+// gate, and its __schemaVersion reports the cut, not v1.0.0. A pre-cut module
+// keeps its own view.
+func TestModuleViewCappedAtEngine(t *testing.T) {
+	oldVersion := engine.Version
+	engine.Version = cutVersion
+	t.Cleanup(func() { engine.Version = oldVersion })
+
+	_, srv := newViewGateTestServer(t)
+	for _, tc := range []struct {
+		version string
+		view    string
+		post    bool
+	}{
+		{version: "v1.0.0", view: cutVersion, post: true},
+		{version: "v1.0.0-rc.1", view: cutVersion, post: true},
+		{version: cutVersion, view: cutVersion, post: true},
+		{version: "v1.0.0-beta.19", view: preCutView},
+	} {
+		t.Run(tc.version, func(t *testing.T) {
+			view := call.View(engine.ModuleAPIViewVersion(tc.version))
+			require.Equal(t, call.View(tc.view), view)
+			fields := srv.SchemaForView(view).Query.Fields
+			require.Equal(t, tc.post, fields.ForName("postCut") != nil, "postCut in view %s", view)
+			require.Equal(t, !tc.post, fields.ForName("preCut") != nil, "preCut in view %s", view)
+			require.Equal(t, tc.post, engine.APIVersionAtLeast(tc.version, engine.IdentifierCasingVersion))
+
+			data, err := getSchemaJSON(nil, nil, view, srv)
+			require.NoError(t, err)
+			require.Equal(t, tc.view, decodeSchemaResponse(t, data).SchemaVersion)
+		})
+	}
+}

@@ -39,13 +39,20 @@ declaring `v1.0.0-beta.19` or `v1.0.0-0`. SDK codegens compare it with strict
 semver (e.g. nullable objects from `v1.0.0-beta.10`); the shared view keeps
 those checks unchanged for pre-cut callers.
 
-Clients and modules get their view from the same mapping. A module's view is
-that of the `engineVersion` it declares; an engine refuses to load a module
-whose view is past its own (`engine.CheckMaxAPIViewCompatibility`), so a
-v1.0.0-beta.22 engine refuses modules declaring `v1.0.0-beta.23` or `v1.0.0`.
-Dev builds share their release's view, so they accept any module of their
-version. In-repo fixtures must not declare bare `v1.0.0`: a dev engine built
-from `main` is a prerelease, and refuses them.
+Clients and modules get their view from the same mapping, but a module's is
+capped at the engine's own (`engine.ModuleAPIViewVersion`): a module declaring
+an `engineVersion` whose view is past the engine's loads, and is served the
+engine's view, the newest API it has. A v1.0.0-beta.22 engine serves modules
+declaring `v1.0.0-beta.23` or `v1.0.0` the `v1.0.0-beta.22` view, and their
+`__schemaVersion` reports it. Dev builds have their release's view, so they
+serve every prerelease of their version its own view. Only a later base version
+is refused (`engine.CheckMaxVersionCompatibility`): a v2.0.0 engine refuses a
+module declaring `v2.0.1`. Use `ModuleAPIViewVersion`, not `APIViewVersion`,
+wherever a module's `engineVersion` becomes a view.
+
+In-repo fixtures may declare bare `v1.0.0`, and get the engine's view, past
+every gate the engine has. Prefer an explicit prerelease when a fixture tests
+API on one side of a cut: its view then doesn't move with the engine.
 
 A client's version is that of the dagger CLI that starts its session
 (`dagger session --version` overrides it), or the engine's for a nested client,
@@ -58,9 +65,9 @@ Gate on it like any version:
 `View(AfterVersion(engine.IdentifierCasingVersion))`,
 `View(BeforeVersion(engine.IdentifierCasingVersion))`,
 `core.Supports(ctx, engine.IdentifierCasingVersion)`, and
-`engine.APIVersionAtLeast(declared, engine.IdentifierCasingVersion)` for a
-declared version that is not carried by a call, such as a module's
-`engineVersion`.
+`engine.APIVersionAtLeast(engineVersion, engine.IdentifierCasingVersion)` for
+a module's declared `engineVersion`, which no call carries (it compares the
+capped view).
 
 ### If the cut slips a release
 
@@ -85,7 +92,7 @@ the next release:
    and in tests. Fixtures pinned to an earlier beta, such as
    `v1.0.0-beta.20`, stay pre-cut and need no change; fixtures declaring the
    old cut to test API past it must move to the new one; fixtures declaring
-   bare `v1.0.0` must be pinned to a prerelease.
+   bare `v1.0.0` get the engine's view either way.
 4. Downstream PRs and branches that build on the cut (the identifier casing
    changes) need the same bump wherever their gates, fixtures or docs declare
    the cut version.
@@ -138,8 +145,9 @@ interface:
    callers before and after it. Do not gate at a v1.0.0 prerelease before it:
    those callers share one view. Do not gate at bare `v1.0.0` unless the API
    is for the release only: under strict semver every beta is older.
-   In tests, build views from declared versions with `engine.APIViewVersion`,
-   not raw prerelease strings, so they match what callers actually get.
+   In tests, build views from declared versions with `engine.APIViewVersion`
+   for clients and `engine.ModuleAPIViewVersion` for modules, not raw
+   prerelease strings, so they match what callers actually get.
 3. If replacing old shape with new shape, gate the legacy shape with
    `View(BeforeVersion("<cutover>"))` and the new shape with
    `View(AfterVersion("<cutover>"))`.
@@ -189,7 +197,8 @@ A module declaring a v1.0.0 prerelease before `v1.0.0-beta.22`, such as
 `v1.0.0-beta.12` or `v1.0.0-0`, gets the shared `v1.0.0-beta.21` view, which
 has the whole v1 API gated before the cut. A fixture that exercises API gated
 at the cut or later must declare a prerelease at or past it, such as
-`v1.0.0-beta.22`. Do not declare bare `v1.0.0`: prerelease engines refuse it.
+`v1.0.0-beta.22`. Bare `v1.0.0` gets the engine's view, which moves with the
+engine (a prerelease engine caps it), so prefer an explicit prerelease.
 Do not leave a fixture pinned to `v0.21.x` if it
 uses v1-only workspace fields; it may fail before the test reaches its
 assertions because SDK/runtime generation uses the older schema view.

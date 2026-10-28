@@ -12,6 +12,7 @@ import (
 	"context"
 
 	"dagger.io/dagger/core"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -75,6 +76,21 @@ func (ModuleSuite) TestModuleSchemaVersion(ctx context.Context, t *testctx.T) {
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "v0.11.0")
+	})
+
+	// A module declaring a view past the engine's loads, and is served the
+	// engine's: a prerelease engine (main's VERSION) serves a module declaring
+	// bare v1.0.0 its own view, not the release's.
+	t.Run("module past engine", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		work := moduleMainFixture(t, c, "foo", "go/schema-version-module").
+			WithNewFile(".dagger/modules/foo/dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v1.0.0"}`)
+		out, err := work.
+			With(daggerQuery("{getVersion}")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"getVersion": "`+engine.ModuleAPIViewVersion("v1.0.0")+`"}`, out)
 	})
 
 	t.Run("module deps", func(ctx context.Context, t *testctx.T) {

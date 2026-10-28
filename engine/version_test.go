@@ -223,6 +223,9 @@ func TestAPIViewVersion(t *testing.T) {
 func TestAPIVersionAtLeast(t *testing.T) {
 	lastPreCut, _, _ := cutVersions(t)
 	casing := IdentifierCasingVersion
+	// a dev build of v1.0.0 has the release's view, so no case is capped
+	// below its own view (see TestModuleAPIViewVersion)
+	setVersion(t, "v1.0.0-dev-123")
 	for _, tc := range []struct {
 		version string
 		post    bool
@@ -250,45 +253,105 @@ func TestAPIVersionAtLeast(t *testing.T) {
 	}
 }
 
-// An engine refuses a module whose API view is past its own: prereleases are
-// ordered from PrereleaseViewsVersion on, and dev builds share their
-// release's view.
-func TestMaxAPIViewCompatibility(t *testing.T) {
+// A module whose view is past the engine's is served the engine's view
+// instead: a later prerelease of the engine's base version, or the release,
+// is capped, not refused. Earlier views are unchanged.
+func TestModuleAPIViewVersion(t *testing.T) {
 	lastPreCut, cut, afterCut := cutVersions(t)
+	for _, tc := range []struct {
+		engine  string
+		version string
+		view    string
+	}{
+		// past the engine's view: capped at it
+		{engine: cut, version: afterCut, view: cut},
+		{engine: cut, version: "v1.0.0-rc.1", view: cut},
+		{engine: cut, version: "v1.0.0", view: cut},
+		{engine: cut, version: "1.0.0", view: cut},
+		{engine: cut, version: "v1.0.0+abcdef12", view: cut},
+		{engine: cut, version: "v1.0.0-dev-123", view: cut},
+		{engine: cut + "+abcdef12", version: "v1.0.0", view: cut},
+
+		// at or before it: unchanged
+		{engine: cut, version: cut, view: cut},
+		{engine: cut, version: cut + "+abcdef12", view: cut},
+		{engine: cut, version: lastPreCut, view: lastPreCut},
+		{engine: cut, version: "v1.0.0-beta.19", view: lastPreCut},
+		{engine: cut, version: "v1.0.0-0", view: lastPreCut},
+		{engine: cut, version: "v0.21.6", view: "v0.21.6"},
+		{engine: cut, version: "", view: cut},
+		{engine: cut, version: "foobar", view: presemverModuleVersion},
+
+		// a later beta engine serves the cut's modules their own view
+		{engine: afterCut, version: cut, view: cut},
+		{engine: afterCut, version: "v1.0.0", view: afterCut},
+
+		// pre-cut engines share one view, so they serve each other's modules
+		// theirs, and the cut's modules that view
+		{engine: lastPreCut, version: "v1.0.0-beta.19", view: lastPreCut},
+		{engine: "v1.0.0-beta.19", version: lastPreCut, view: lastPreCut},
+		{engine: lastPreCut, version: cut, view: lastPreCut},
+		{engine: lastPreCut, version: "v1.0.0", view: lastPreCut},
+
+		// dev builds have their release's view, past every prerelease
+		{engine: "v1.0.0-dev-123", version: afterCut, view: afterCut},
+		{engine: "v1.0.0-dev-123", version: "v1.0.0", view: "v1.0.0"},
+		{engine: "v1.0.0-dev-123", version: "v1.0.0-dev-456", view: "v1.0.0"},
+		{engine: "v1.0.0-dev-123", version: "", view: "v1.0.0"},
+
+		// released engines
+		{engine: "v1.0.0", version: "v1.0.0", view: "v1.0.0"},
+		{engine: "v1.0.0", version: afterCut, view: afterCut},
+		{engine: "v1.0.1", version: "v1.0.0", view: "v1.0.0"},
+
+		// a later base version is refused (CheckMaxVersionCompatibility),
+		// but would be capped too
+		{engine: "v2.0.0", version: "v2.0.1", view: "v2.0.0"},
+		{engine: "v1.0.0-dev-123", version: "v1.0.1", view: "v1.0.0"},
+	} {
+		t.Run(tc.engine+"/"+tc.version, func(t *testing.T) {
+			setVersion(t, tc.engine)
+			require.Equal(t, tc.view, ModuleAPIViewVersion(tc.version))
+			require.Equal(t, semver.Compare(tc.view, IdentifierCasingVersion) >= 0,
+				APIVersionAtLeast(tc.version, IdentifierCasingVersion))
+		})
+	}
+	// clients are not capped
 	setVersion(t, cut)
+	require.Equal(t, "v1.0.0", APIViewVersion("v1.0.0"))
+}
+
+// An engine refuses a module only for a later base version. Every
+// prerelease, dev build and build of the engine's base version loads, capped
+// by ModuleAPIViewVersion.
+func TestMaxVersionCompatibility(t *testing.T) {
+	lastPreCut, cut, afterCut := cutVersions(t)
 	for _, tc := range []struct {
 		engine     string
 		version    string
 		compatible bool
 	}{
 		{engine: cut, version: cut, compatible: true},
-		{engine: cut, version: cut + "+abcdef12", compatible: true},
 		{engine: cut, version: lastPreCut, compatible: true},
-		{engine: cut, version: "v1.0.0-0", compatible: true},
 		{engine: cut, version: "v0.21.6", compatible: true},
-		{engine: cut, version: "", compatible: true},
-		{engine: cut, version: afterCut},
-		{engine: cut, version: "v1.0.0-rc.1"},
-		{engine: cut, version: "v1.0.0"},
-		{engine: cut, version: "v1.0.0-dev-123"},
-
-		// pre-cut engines share one view, so they accept each other's
-		// modules, but not the cut's
-		{engine: lastPreCut, version: "v1.0.0-beta.19", compatible: true},
-		{engine: "v1.0.0-beta.19", version: lastPreCut, compatible: true},
-		{engine: lastPreCut, version: cut},
-
-		// dev builds share their release's view
-		{engine: "v1.0.0-dev-123", version: afterCut, compatible: true},
+		{engine: cut, version: afterCut, compatible: true},
+		{engine: cut, version: "v1.0.0-rc.1", compatible: true},
+		{engine: cut, version: "v1.0.0", compatible: true},
+		{engine: cut, version: "v1.0.0+abcdef12", compatible: true},
+		{engine: cut, version: "v1.0.0-dev-123", compatible: true},
+		{engine: lastPreCut, version: "v1.0.0", compatible: true},
 		{engine: "v1.0.0-dev-123", version: "v1.0.0", compatible: true},
-		{engine: "v1.0.0-dev-123", version: "v1.0.0-dev-456", compatible: true},
-		{engine: "v1.0.0-dev-123", version: "v1.0.1"},
-
 		{engine: "v1.0.0", version: "v1.0.0", compatible: true},
+		{engine: "v2.0.0", version: "v1.0.0", compatible: true},
+
+		{engine: cut, version: "v1.0.1"},
+		{engine: cut, version: "v1.1.0-beta.1"},
+		{engine: "v1.0.0-dev-123", version: "v1.0.1"},
 		{engine: "v2.0.0", version: "v2.0.1"},
+		{engine: "v2.0.0", version: "v100.0.0"},
 	} {
 		t.Run(tc.engine+"/"+tc.version, func(t *testing.T) {
-			require.Equal(t, tc.compatible, CheckMaxAPIViewCompatibility(tc.version, tc.engine))
+			require.Equal(t, tc.compatible, CheckMaxVersionCompatibility(tc.version, BaseVersion(tc.engine)))
 		})
 	}
 }
