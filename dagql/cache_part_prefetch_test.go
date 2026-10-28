@@ -672,6 +672,29 @@ func TestPartPrefetchAheadLeavesAFailedBlobToTheInstall(t *testing.T) {
 	require.Equal(t, 2, f.transport.count(url), "the install downloaded what the prefetch could not")
 }
 
+// The large lane starts a job's next blob once the blob before it has started
+// its last request: a late response at a blob's end doesn't hold the next
+// blob's download back.
+func TestPartPrefetchNextBlobStartsAtTheTail(t *testing.T) {
+	f := newPrefetchFixture(t, true, nil)
+	hold := make(chan struct{})
+	first, next := "https://fixed.invalid/prefetch/0", "https://fixed.invalid/prefetch/1"
+	f.transport.fault(first, contentTestFault{stallAfter: -1, hold: hold})
+	job := f.job(t, f.offer)
+	done := make(chan struct{})
+	go func() {
+		f.prefetch.run(context.Background(), job)
+		close(done)
+	}()
+	require.Eventually(t, func() bool { return f.transport.count(next) == 1 }, 10*time.Second, 10*time.Millisecond, "the next blob is requested while the first one's response is late")
+	require.Equal(t, 1, f.transport.count(first))
+	close(hold)
+	within(t, done)
+	require.Equal(t, "done", f.logs.lines(t, "remote cache part prefetched")[0].fields["outcome"])
+	holds, _ := f.holds()
+	require.Equal(t, 2, holds, "both blobs are held")
+}
+
 // An import ahead is released with its offer: once retired, the snapshots it
 // unpacked are collected.
 func TestPartPrefetchAheadReleasedWithOffer(t *testing.T) {
