@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"strings"
 
+	"dagger.io/dagger/core"
 	"github.com/BurntSushi/toml"
 	"golang.org/x/mod/semver"
 
-	"dagger/rust-client-dev/internal/dagger"
+	enginedev "dagger/rust-client-dev/internal/dagger/clients/engine-dev"
 )
 
 const (
@@ -27,37 +28,37 @@ const (
 
 // Develop the Dagger Rust SDK (experimental)
 type RustClientDev struct {
-	OriginalWorkspace *dagger.Directory // +private
-	Workspace         *dagger.Directory // +private
-	SourcePath        string            // +private
-	BaseContainer     *dagger.Container
-	Ws                *dagger.Workspace // +private
+	OriginalWorkspace *core.Directory // +private
+	Workspace         *core.Directory // +private
+	SourcePath        string          // +private
+	BaseContainer     *core.Container
+	Ws                *core.Workspace // +private
 }
 
 func New(
 	// A directory with all the files needed to develop the SDK
-	workspace *dagger.Workspace,
+	workspace *core.Workspace,
 	// The path of the SDK source in the workspace
 	// +default="sdk/rust"
 	sourcePath string,
 	// A docker config file with credentials to install on clients.
 	// +optional
-	clientDockerConfig *dagger.Secret,
+	clientDockerConfig *core.Secret,
 ) *RustClientDev {
-	rustSrc := workspace.Directory("/", dagger.WorkspaceDirectoryOpts{
+	rustSrc := workspace.Directory("/", core.WorkspaceDirectoryOpts{
 		Exclude: []string{"*", "!sdk/rust/crates", "!sdk/rust/Cargo.lock", "!sdk/rust/Cargo.toml"},
 	})
 
-	baseContainer := dag.Container().
+	baseContainer := core.NewContainer().
 		From(rustSdkImage+"@"+rustSdkImageDigest).
 		WithEnvVariable("CARGO_HOME", "/root/.cargo").
-		WithMountedCache("/root/.cargo", dag.CacheVolume("rust-cargo-"+rustSdkImage)).
+		WithMountedCache("/root/.cargo", core.NewCacheVolume("rust-cargo-"+rustSdkImage)).
 		WithWorkdir("/src").
 		// FIXME: not all functions need a full engine build. Do this lazily as needed
-		With(func(c *dagger.Container) *dagger.Container {
-			return dag.DaggerEngine(workspace, dagger.DaggerEngineOpts{
+		With(func(c *core.Container) *core.Container {
+			return enginedev.New(workspace, enginedev.EngineDevOpts{
 				ClientDockerConfig: clientDockerConfig,
-			}).InstallClient(dagger.DaggerEngineInstallClientOpts{Client: c})
+			}).InstallClient(enginedev.EngineDevInstallClientOpts{Client: c})
 		})
 
 	return &RustClientDev{
@@ -76,7 +77,7 @@ func (t *RustClientDev) DevContainer(
 	// to develop the Rust SDK.
 	// +default="false"
 	runInstall bool,
-) *dagger.Container {
+) *core.Container {
 	if !runInstall {
 		return t.BaseContainer.
 			WithMountedDirectory(".", t.Workspace).
@@ -85,7 +86,7 @@ func (t *RustClientDev) DevContainer(
 
 	// Source for installation (without code) to benefit
 	// from caches.
-	installSrc := t.Workspace.Filter(dagger.DirectoryFilterOpts{
+	installSrc := t.Workspace.Filter(core.DirectoryFilterOpts{
 		Include: []string{
 			"**/Cargo.toml",
 			"**/Cargo.lock",
@@ -115,7 +116,7 @@ func (t *RustClientDev) DevContainer(
 }
 
 // Source returns the source directory for the Rust SDK.
-func (t *RustClientDev) Source() *dagger.Directory {
+func (t *RustClientDev) Source() *core.Directory {
 	return t.Workspace.Directory(t.SourcePath)
 }
 
@@ -152,22 +153,22 @@ func (t *RustClientDev) Test(ctx context.Context) error {
 
 // Regenerate the Rust SDK API client.
 // +generate
-func (t *RustClientDev) APIClient() *dagger.Changeset {
+func (t *RustClientDev) APIClient() *core.Changeset {
 	return t.WithGeneratedClient().Changes()
 }
 
-func (t *RustClientDev) Changes() *dagger.Changeset {
+func (t *RustClientDev) Changes() *core.Changeset {
 	return t.Workspace.Changes(t.OriginalWorkspace)
 }
 
 func (t *RustClientDev) WithGeneratedClient() *RustClientDev {
 	relLayer := t.DevContainer(true).
-		WithMountedFile("/introspection.json", dag.DaggerEngine(t.Ws).IntrospectionJSON()).
+		WithMountedFile("/introspection.json", enginedev.New(t.Ws).IntrospectionJSON()).
 		WithExec([]string{"cargo", "run", "-p", "dagger-bootstrap", "generate", "/introspection.json", "--output", rustGeneratedClientFilePath}).
 		WithExec([]string{"cargo", "fix", "--all", "--allow-no-vcs"}).
 		WithExec([]string{"cargo", "fmt"}).
 		Directory(".").
-		Filter(dagger.DirectoryFilterOpts{
+		Filter(core.DirectoryFilterOpts{
 			Exclude: []string{"target"},
 		})
 
@@ -254,7 +255,7 @@ func (t *RustClientDev) Release(
 	// Source git tag to release
 	sourceTag string,
 
-	cargoRegistryToken *dagger.Secret,
+	cargoRegistryToken *core.Secret,
 
 	// Cargo registry index URL to publish to instead of crates.io.
 	// +optional
@@ -288,7 +289,7 @@ func (t *RustClientDev) Release(
 
 func (t *RustClientDev) releaseContainer(
 	versionFlag string,
-) *dagger.Container {
+) *core.Container {
 	return t.DevContainer(false).
 		WithExec([]string{"cargo", "install", "cargo-edit@" + cargoEditVersion, "--locked"}).
 		WithExec([]string{"cargo", "set-version", "-p", rustSdkCrate, versionFlag})

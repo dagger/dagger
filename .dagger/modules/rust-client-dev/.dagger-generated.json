@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "files": {
+    "dagger.dispatch.gen.go": "b3b7b785fe07e178875d28f87f22b896d4831e74e33f91a734945af263ec04ae",
+    "dagger.gen.go": "a2963e44bafff5bd5b4436b21a195b7f55ad6404e019e4853283fcc27126116f",
+    "internal/dagger/dagger.gen.go": "e9b6a23da6f14335d37dfa1484a6d93a6c2b2bfdef518bf445bb839425f53e22",
+    "internal/dagger/entrypoint/main.dang": "7e943e9febc436078538bd2f052f2a8f962073a3312d2999af82861e0c8cb97a",
+    "internal/dagger/rust-client-dev.gen.go": "2bdb1f24783ab2b6e7148fff13a963e120e8511070791f826f8e7015158862c0"
+  }
+}
