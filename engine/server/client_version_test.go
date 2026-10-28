@@ -1,10 +1,11 @@
 package server
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/dagger/dagger/core"
@@ -15,6 +16,97 @@ import (
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/stretchr/testify/require"
 )
+
+// versionTestClient is a nested client announcing version, inside a module
+// declaring moduleVersion unless that is empty.
+type versionTestClient struct {
+	version       string
+	declared      bool
+	moduleVersion string
+	headerVersion string
+}
+
+// initVersionTestClient registers and initializes tc's client, and returns
+// it with the context of its requests.
+func initVersionTestClient(t *testing.T, tc versionTestClient) (context.Context, *clientRuntime, *ClientInitOpts) {
+	t.Helper()
+	srv, sess, parent, ctx, requestScope := newNestedTransportTestFixture(t)
+	t.Cleanup(func() { requestScope.Lease().Release() })
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, cache.Close(context.Background())) })
+	ctx = dagql.ContextWithCache(ctx, cache)
+	srv.engineCache = cache
+	srv.clientDBs = clientdb.NewDBs(t.TempDir())
+	srv.telemetryPubSub = NewPubSub(srv)
+	sess.telemetryPubSub = srv.telemetryPubSub
+	sess.engineUtilClient = new(engineutil.Client)
+	t.Cleanup(func() { require.NoError(t, srv.clientDBs.Close()) })
+
+	metadata := nestedTransportTestMetadata("client")
+	metadata.ClientVersion = tc.version
+	metadata.ClientVersionDeclared = tc.declared
+	header := http.Header{}
+	if tc.headerVersion != "" {
+		header = (engine.ClientMetadata{ClientID: metadata.ClientID, ClientVersion: tc.headerVersion}).AppendToHTTPHeaders(header)
+		metadata = nestedClientMetadataForRequest(header, metadata)
+	}
+	transport, err := srv.RegisterNestedClientTransport(ctx, metadata, parent.clientID)
+	require.NoError(t, err)
+	t.Cleanup(func() { transport.Close() })
+	client := sess.clientRuntimes[metadata.ClientID]
+	requestMetadata := nestedClientMetadataForRequest(header, metadata)
+	require.NoError(t, mergeClientMetadataForTest(sess, client, requestMetadata))
+	require.NoError(t, sealClientMetadataForTest(sess, client))
+	ctx = engine.ContextWithClientMetadata(ctx, requestMetadata)
+	clientScope, err := sess.acquireRootClientScope(client, engine.ClientLeaseRequest, "version test")
+	require.NoError(t, err)
+	t.Cleanup(func() { clientScope.Lease().Release() })
+	ctx, err = engine.ContextWithClientScope(ctx, clientScope)
+	require.NoError(t, err)
+
+	opts := &ClientInitOpts{ClientMetadata: requestMetadata, FunctionCall: &core.FunctionCall{}}
+	base, err := srv.getCoreSchemaBase(ctx)
+	require.NoError(t, err)
+	if tc.moduleVersion != "" {
+		root := core.NewRoot(srv)
+		// a loaded module's deps carry its capped view
+		// (defaultSchemaBuilderForEngineVersion)
+		view := call.View(engine.ModuleAPIViewVersion(tc.moduleVersion))
+		dag, err := base.Fork(ctx, root, view)
+		require.NoError(t, err)
+		source, err := dagql.NewObjectResultForCall(&core.ModuleSource{EngineVersion: tc.moduleVersion}, dag, &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: "versionSource", Type: dagql.NewResultCallType((&core.ModuleSource{}).Type())})
+		require.NoError(t, err)
+		opts.ModuleContext, err = dagql.NewObjectResultForCall(&core.Module{
+			NameField: "version-test", Source: dagql.NonNull(source),
+			Deps: core.NewSchemaBuilder(root, []core.Mod{base.CoreMod(view)}),
+		}, dag, &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: "versionModule", Type: dagql.NewResultCallType((&core.Module{}).Type())})
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, srv.initializeClientRuntime(ctx, client, opts))
+	t.Cleanup(func() {
+		require.NoError(t, client.meterProvider.Shutdown(context.Background()))
+		require.NoError(t, client.closeTelemetryDB())
+	})
+	return core.ContextWithQuery(ctx, client.dagqlRoot), client, opts
+}
+
+// queryVersionTestClient serves query to client, as serveQuery does, and
+// returns the response body.
+func queryVersionTestClient(ctx context.Context, t *testing.T, client *clientRuntime, query string) string {
+	t.Helper()
+	served, err := client.servedMods.Schema(ctx)
+	require.NoError(t, err)
+	body, err := json.Marshal(map[string]string{"query": query})
+	require.NoError(t, err)
+	req := httptest.NewRequest(http.MethodPost, "/query", bytes.NewReader(body)).WithContext(client.withModuleNaming(ctx))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	dagql.NewDefaultHandler(served).ServeHTTP(resp, req)
+	require.Equal(t, http.StatusOK, resp.Code, resp.Body.String())
+	return resp.Body.String()
+}
 
 func TestDeclaredClientVersion(t *testing.T) {
 	for _, tc := range []struct {
@@ -50,67 +142,14 @@ func TestDeclaredClientVersion(t *testing.T) {
 		{name: "undeclared version remains uncapped", version: "v99.0.0", want: "v99.0.0"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			srv, sess, parent, ctx, requestScope := newNestedTransportTestFixture(t)
-			defer requestScope.Lease().Release()
-			cache, err := dagql.NewCache(ctx, "", nil, nil)
-			require.NoError(t, err)
-			t.Cleanup(func() { require.NoError(t, cache.Close(context.Background())) })
-			ctx = dagql.ContextWithCache(ctx, cache)
-			srv.engineCache = cache
-			srv.clientDBs = clientdb.NewDBs(t.TempDir())
-			srv.telemetryPubSub = NewPubSub(srv)
-			sess.telemetryPubSub = srv.telemetryPubSub
-			sess.engineUtilClient = new(engineutil.Client)
-			t.Cleanup(func() { require.NoError(t, srv.clientDBs.Close()) })
-
-			metadata := nestedTransportTestMetadata("client")
-			metadata.ClientVersion = tc.version
-			metadata.ClientVersionDeclared = tc.declared
-			header := http.Header{}
-			if tc.headerVersion != "" {
-				header = (engine.ClientMetadata{ClientID: metadata.ClientID, ClientVersion: tc.headerVersion}).AppendToHTTPHeaders(header)
-				metadata = nestedClientMetadataForRequest(header, metadata)
-			}
-			transport, err := srv.RegisterNestedClientTransport(ctx, metadata, parent.clientID)
-			require.NoError(t, err)
-			defer transport.Close()
-			client := sess.clientRuntimes[metadata.ClientID]
-			requestMetadata := nestedClientMetadataForRequest(header, metadata)
-			require.NoError(t, mergeClientMetadataForTest(sess, client, requestMetadata))
-			require.NoError(t, sealClientMetadataForTest(sess, client))
-			ctx = engine.ContextWithClientMetadata(ctx, requestMetadata)
-			clientScope, err := sess.acquireRootClientScope(client, engine.ClientLeaseRequest, "version test")
-			require.NoError(t, err)
-			defer clientScope.Lease().Release()
-			ctx, err = engine.ContextWithClientScope(ctx, clientScope)
-			require.NoError(t, err)
-
-			opts := &ClientInitOpts{ClientMetadata: requestMetadata, FunctionCall: &core.FunctionCall{}}
-			base, err := srv.getCoreSchemaBase(ctx)
-			require.NoError(t, err)
-			if tc.moduleVersion != "" {
-				root := core.NewRoot(srv)
-				// a loaded module's deps carry its capped view
-				// (defaultSchemaBuilderForEngineVersion)
-				view := call.View(engine.ModuleAPIViewVersion(tc.moduleVersion))
-				dag, err := base.Fork(ctx, root, view)
-				require.NoError(t, err)
-				source, err := dagql.NewObjectResultForCall(&core.ModuleSource{EngineVersion: tc.moduleVersion}, dag, &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: "versionSource", Type: dagql.NewResultCallType((&core.ModuleSource{}).Type())})
-				require.NoError(t, err)
-				opts.ModuleContext, err = dagql.NewObjectResultForCall(&core.Module{
-					NameField: "version-test", Source: dagql.NonNull(source),
-					Deps: core.NewSchemaBuilder(root, []core.Mod{base.CoreMod(view)}),
-				}, dag, &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: "versionModule", Type: dagql.NewResultCallType((&core.Module{}).Type())})
-				require.NoError(t, err)
-			}
-
-			require.NoError(t, srv.initializeClientRuntime(ctx, client, opts))
-			defer func() {
-				require.NoError(t, client.meterProvider.Shutdown(context.Background()))
-				require.NoError(t, client.closeTelemetryDB())
-			}()
+			ctx, client, opts := initVersionTestClient(t, versionTestClient{
+				version:       tc.version,
+				declared:      tc.declared,
+				moduleVersion: tc.moduleVersion,
+				headerVersion: tc.headerVersion,
+			})
 			require.Equal(t, call.View(tc.want), client.dag.View)
-			require.Equal(t, requestMetadata.ClientVersion, client.clientVersion)
+			require.Equal(t, opts.ClientMetadata.ClientVersion, client.clientVersion)
 			require.Equal(t, tc.declared || tc.headerVersion != "", client.clientMetadata.ClientVersionDeclared)
 			require.Same(t, opts.FunctionCall, client.fnCall)
 			require.Equal(t, tc.moduleVersion != "", client.mod.Self() != nil)
@@ -121,18 +160,54 @@ func TestDeclaredClientVersion(t *testing.T) {
 				originalView, _ := originalCore.View()
 				require.Equal(t, call.View(engine.ModuleAPIViewVersion(tc.moduleVersion)), originalView)
 			}
-			ctx = core.ContextWithQuery(ctx, client.dagqlRoot)
 			served, err := client.servedMods.Schema(ctx)
 			require.NoError(t, err)
 			require.Equal(t, call.View(tc.want), served.View)
-			req := httptest.NewRequest(http.MethodPost, "/query", strings.NewReader(`{"query":"{ __schemaVersion }"}`)).WithContext(ctx)
-			req.Header.Set("Content-Type", "application/json")
-			resp := httptest.NewRecorder()
-			dagql.NewDefaultHandler(served).ServeHTTP(resp, req)
-			require.Equal(t, http.StatusOK, resp.Code)
-			require.JSONEq(t, `{"data":{"__schemaVersion":"`+tc.want+`"}}`, resp.Body.String())
+			require.JSONEq(t, `{"data":{"__schemaVersion":"`+tc.want+`"}}`, queryVersionTestClient(ctx, t, client, "{ __schemaVersion }"))
 			_, reevaluate := served.Schema().Directives["reevaluate"]
 			require.Equal(t, tc.want != "v0.21.6", reevaluate)
+		})
+	}
+}
+
+// A declared client version moves only the core API a module's code sees: the
+// typedefs its runtime registers are named by the module's own rules (its
+// NamingView), on either side of the identifier casing cut.
+func TestDeclaredModuleClientNaming(t *testing.T) {
+	const preCut = "v1.0.0-beta.20"
+	cut := engine.IdentifierCasingVersion
+	for _, tc := range []struct {
+		name     string
+		client   versionTestClient
+		coreView string
+		typeName string
+	}{
+		{
+			name:     "pre-cut module, post-cut client",
+			client:   versionTestClient{version: cut, declared: true, moduleVersion: preCut},
+			coreView: cut,
+			typeName: "Httpclient",
+		},
+		{
+			name:     "post-cut module, pre-cut client",
+			client:   versionTestClient{version: "v0.21.6", declared: true, moduleVersion: cut},
+			coreView: "v0.21.6",
+			typeName: "HTTPClient",
+		},
+		{
+			name:     "pre-cut module, undeclared client",
+			client:   versionTestClient{version: cut, moduleVersion: preCut},
+			coreView: engine.APIViewVersion(preCut),
+			typeName: "Httpclient",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, client, _ := initVersionTestClient(t, tc.client)
+			require.Equal(t, call.View(tc.coreView), client.dag.View)
+			require.JSONEq(t, `{"data":{"__schemaVersion":"`+tc.coreView+`"}}`, queryVersionTestClient(ctx, t, client, "{ __schemaVersion }"))
+			require.JSONEq(t,
+				`{"data":{"typeDef":{"withObject":{"asObject":{"name":"`+tc.typeName+`"}}}}}`,
+				queryVersionTestClient(ctx, t, client, `{ typeDef { withObject(name: "HTTPClient") { asObject { name } } } }`))
 		})
 	}
 }

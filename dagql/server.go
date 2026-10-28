@@ -2596,6 +2596,38 @@ func (s *Server) typeConditionMatches(condition string, objectTypeName string) b
 	return false
 }
 
+// SelectorViewFunc picks the view a GraphQL selection of typeName.field
+// records and resolves at, instead of the server's: ok is false to keep the
+// server's view.
+type SelectorViewFunc func(typeName, field string) (view call.View, ok bool)
+
+type selectorViewsCtx struct{}
+
+// ContextWithSelectorViews makes the GraphQL queries executed with ctx select
+// the view-scoped fields fn picks at the view it picks rather than the
+// server's, so their calls (IDs and cache keys) record that view. A field
+// that doesn't exist at the picked view keeps the server's.
+func ContextWithSelectorViews(ctx context.Context, fn SelectorViewFunc) context.Context {
+	return context.WithValue(ctx, selectorViewsCtx{}, fn)
+}
+
+// selectorView is the view a view-scoped selection sel of class records: the
+// one ContextWithSelectorViews picks, or sel's own.
+func selectorView(ctx context.Context, class ObjectType, sel Selector) call.View {
+	fn, _ := ctx.Value(selectorViewsCtx{}).(SelectorViewFunc)
+	if fn == nil {
+		return sel.View
+	}
+	view, ok := fn(class.TypeName(), sel.Field)
+	if !ok || view == sel.View {
+		return sel.View
+	}
+	if spec, ok := class.FieldSpec(sel.Field, view); !ok || spec.ViewFilter == nil {
+		return sel.View
+	}
+	return view
+}
+
 func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.OperationContext, self *ast.Type, astSels ast.SelectionSet) ([]Selection, error) {
 	vars := gqlOp.Variables
 
@@ -2633,6 +2665,9 @@ func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.Operatio
 			sel, resType, err := parser.ParseField(ctx, s.View, x, vars)
 			if err != nil {
 				return nil, fmt.Errorf("parse field %q: %w", x.Name, err)
+			}
+			if sel.View != "" && class != nil {
+				sel.View = selectorView(ctx, class, sel)
 			}
 			var subsels []Selection
 			if len(x.SelectionSet) > 0 {
