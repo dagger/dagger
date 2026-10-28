@@ -624,6 +624,17 @@ func (fn *ModuleFunction) UserDefault(ctx context.Context, argName string) (*Use
 		}
 	}
 
+	// Discover whether this function has any defaults before acquiring the
+	// caller's host metadata. Empty namespaces cannot expand environment values,
+	// and schema installation visits this path once for every argument.
+	defaults, err := fn.UserDefaults(ctx)
+	if err != nil {
+		return nil, false, fmt.Errorf("lookup defaults for function %q: %w", fn.metadata.Name, err)
+	}
+	if len(defaults.Environ) == 0 {
+		return nil, false, nil
+	}
+
 	// PATH B: existing .env pipeline (completely unchanged)
 	// We need access to the main client's context for resolving system env variables
 	// (otherwise we may resolve them in the module container's context)
@@ -637,12 +648,6 @@ func (fn *ModuleFunction) UserDefault(ctx context.Context, argName string) (*Use
 		return nil, false, fmt.Errorf("access main client: %w", err)
 	}
 	mainCtx := engine.ContextWithClientMetadata(ctx, mainClient)
-	// Get all defaults for this function
-	// FIXME: we shouldn't need the main client context here (we don't need to evaluate env values yet)
-	defaults, err := fn.UserDefaults(mainCtx)
-	if err != nil {
-		return nil, false, fmt.Errorf("lookup defaults for function %q: %w", fn.metadata.Name, err)
-	}
 	userInput, ok, err := defaults.LookupCaseInsensitive(mainCtx, arg.Self().Name)
 	if err != nil {
 		return nil, false, err

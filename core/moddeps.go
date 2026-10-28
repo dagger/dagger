@@ -159,6 +159,12 @@ func (b *SchemaBuilder) Append(mods ...Mod) *SchemaBuilder {
 type SchemaBuilderMemo struct {
 	mu       sync.Mutex
 	builders map[string]*SchemaBuilder
+
+	// canonicalArgTypes reuses immutable argument metadata across the schemas
+	// of nested clients. It never shares their query roots or installed fields.
+	canonicalArgTypes map[string]*canonicalArgType
+	modTypes          map[modTypeMemoKey]*modTypeMemoEntry
+	schemaASTs        map[string]*dagql.SchemaASTCache
 }
 
 func NewSchemaBuilderMemo() *SchemaBuilderMemo {
@@ -194,9 +200,16 @@ func (m *SchemaBuilderMemo) Get(b *SchemaBuilder) *SchemaBuilder {
 // anything else (core) by instance. Entry order and install options are part
 // of the key, since both shape the built schema.
 func (b *SchemaBuilder) memoKey() (string, bool) {
+	entries, ok := schemaEntriesKey(b.entries, false)
+	if !ok {
+		return "", false
+	}
+	return fmt.Sprintf("r%p;%s", b.root, entries), true
+}
+
+func schemaEntriesKey(entries []modDepEntry, metadataOnly bool) (string, bool) {
 	var key strings.Builder
-	fmt.Fprintf(&key, "r%p;", b.root)
-	for _, e := range b.entries {
+	for _, e := range entries {
 		switch mod := e.mod.(type) {
 		case *userMod:
 			id, err := mod.res.ID()
@@ -205,6 +218,14 @@ func (b *SchemaBuilder) memoKey() (string, bool) {
 			}
 			fmt.Fprintf(&key, "m%d", id.EngineResultID())
 		default:
+			if metadataOnly {
+				if stable, ok := mod.(interface{ SchemaASTCacheKey() string }); ok {
+					if identity := stable.SchemaASTCacheKey(); identity != "" {
+						fmt.Fprintf(&key, "c%d:%s", len(identity), identity)
+						break
+					}
+				}
+			}
 			if reflect.ValueOf(mod).Kind() != reflect.Pointer {
 				return "", false
 			}

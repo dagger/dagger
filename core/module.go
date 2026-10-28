@@ -2437,7 +2437,7 @@ func (mod *userMod) Install(ctx context.Context, dag *dagql.Server, opts ...Inst
 }
 
 func (mod *userMod) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (ModType, bool, error) {
-	return mod.modTypeFor(ctx, typeDef, checkDirectDeps)
+	return memoizedModType(ctx, mod, typeDef, checkDirectDeps)
 }
 
 func (mod *userMod) TypeDefs(ctx context.Context, dag *dagql.Server) (dagql.ObjectResultArray[*TypeDef], error) {
