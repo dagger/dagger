@@ -348,7 +348,7 @@ func TestScratchDirectoryAcquisition(t *testing.T) {
 				want = 2
 			}
 			require.EqualValues(t, want, observed.calls.Load())
-			require.Equal(t, want, scratchCount(t, ctx, b, "b", row))
+			require.Zero(t, scratchCount(t, ctx, b, "b", row), "the merged scratch directory is computed by its recipe, never searched for")
 			t.Logf("scratch mode=%s acquisition=%s scratch-calls=%d provider-reads=0", mode, time.Since(started), observed.calls.Load())
 			entries := demandedDirectoryEntries(t, ctx, result)
 			require.Empty(t, entries)
