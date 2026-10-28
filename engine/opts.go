@@ -204,6 +204,12 @@ type ClientMetadata struct {
 	// rather than being told what it is by the client connecting to it.
 	CloudScaleOutEngineID string `json:"cloud_scale_out_engine_id,omitempty"`
 
+	// CloudClaimID is the identifier Dagger Cloud issued with the engine
+	// assignment this client connects under. The engine reports it with the
+	// client once the client's sessions have ended, so Cloud closes exactly
+	// that claim. It is opaque to the engine.
+	CloudClaimID string `json:"cloud_claim_id,omitempty"`
+
 	// ExtraModules specifies additional modules to load at connect time.
 	// When Main is true, the module's main-object methods are proxied onto
 	// the Query root in addition to its namespaced constructor.
