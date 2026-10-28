@@ -133,6 +133,20 @@ func IsNamingField(typeName, field string) bool {
 	return namingFields[typeName][field]
 }
 
+// ContextWithNamingView makes the GraphQL queries executed with ctx select
+// the typedef constructors that normalize names (IsNamingField) at view, the
+// NamingView of the module whose client sends them, whatever the client's
+// own core view. A module client that declares its version
+// (DAGGER_CLIENT_VERSION, or the client metadata header) is served the core
+// API of that version, but the declarations its runtime registers are still
+// named by the module's rules; the view is recorded in their calls, so it is
+// part of their IDs and cache keys.
+func ContextWithNamingView(ctx context.Context, view call.View) context.Context {
+	return dagql.ContextWithSelectorViews(ctx, func(typeName, field string) (call.View, bool) {
+		return view, IsNamingField(typeName, field)
+	})
+}
+
 // CallerView is the API view of the caller of the current field: the view
 // recorded in the call when the field is view-scoped, else the view of the
 // current server. Empty when neither is known.
@@ -149,7 +163,9 @@ func CallerView(ctx context.Context) call.View {
 // NamerFromContext returns the Namer for the view of the current call. Only
 // fields with a view filter record the caller's view in their call (and
 // cache key); the typedef constructors that normalize names have one, so a
-// module's runtime gets the Namer of the engine version the module declares.
+// module's runtime gets the Namer of the engine version the module declares,
+// at its core view or, for a client that declared its own version, at the
+// view ContextWithNamingView stamps.
 func NamerFromContext(ctx context.Context) Namer {
 	if cur := dagql.CurrentCall(ctx); cur != nil {
 		return NamerForView(cur.View)
