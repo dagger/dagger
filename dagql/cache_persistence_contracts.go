@@ -30,6 +30,7 @@ func (prov cachePersistInputProvenance) validate() error {
 
 type persistResultSnapshot struct {
 	imported              bool
+	persistDeclined       bool
 	pendingOffers         []PersistedPartOffer
 	storedParts           []PersistedPartOffer
 	resultID              sharedResultID

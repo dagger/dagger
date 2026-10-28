@@ -145,6 +145,9 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 	}
 	cur.imported = fresh.imported
 	cur.mergedAtUnixNano = fresh.mergedAtUnixNano
+	// A declined value never meets a retention edge here: its publication
+	// retires an entry that has one instead.
+	cur.persistDeclined = fresh.persistDeclined
 	cur.inlineBorrow = fresh.inlineBorrow
 	cur.sessionResourceHandle = fresh.sessionResourceHandle
 	cur.requiredSessionResources = fresh.requiredSessionResources
