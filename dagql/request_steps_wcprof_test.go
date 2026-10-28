@@ -2,11 +2,15 @@ package dagql_test
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/99designs/gqlgen/client"
+	"github.com/99designs/gqlgen/graphql"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/dagql"
@@ -25,8 +29,11 @@ func TestRequestStepsWcprof(t *testing.T) {
 	srv := newExternalDagqlServerForTest(t, Query{})
 	points.Install[Query](srv)
 
+	var serving sync.WaitGroup
 	serve := func(profiled bool) *client.Client {
 		return client.New(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			serving.Add(1)
+			defer serving.Done()
 			ctx := engine.ContextWithClientMetadata(r.Context(), testClientMetadata())
 			ctx = dagql.ContextWithCache(ctx, cache)
 			if profiled {
@@ -35,7 +42,7 @@ func TestRequestStepsWcprof(t *testing.T) {
 				ctx, op = wcprof.BeginOp(ctx, wcprof.OpKindSessionPhase, "steptest.query", wcprof.OpOpts{})
 				defer op.End(wcprof.OutcomeOK)
 			}
-			dagql.ServeHTTPWithWriteStep(dagql.NewDefaultHandler(srv), w, r.WithContext(ctx))
+			dagql.ServeHTTPWithWriteStep(dagql.NewDefaultHandler(oneResponse{srv}), w, r.WithContext(ctx))
 		}))
 	}
 	const query = `query { point(x: 6, y: 7) { shiftLeft { x } } }`
@@ -98,10 +105,33 @@ func TestRequestStepsWcprof(t *testing.T) {
 	resolves := countSteps(t, "graphql.resolve")
 	require.NoError(t, serve(true).WebsocketOnce(query, &res))
 	require.Equal(t, 5, res.Point.ShiftLeft.X)
-	// gqlgen's WebSocket transport asks for responses until there are none,
-	// so the query may resolve more than once before the connection closes
-	require.Greater(t, countSteps(t, "graphql.resolve"), resolves, "the WebSocket query wasn't profiled")
+	// a write step would be recorded once the connection's handler returns
+	served := make(chan struct{})
+	go func() { serving.Wait(); close(served) }()
+	select {
+	case <-served:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the WebSocket connection's handler didn't return")
+	}
+	require.Equal(t, resolves+1, countSteps(t, "graphql.resolve"), "the WebSocket query wasn't profiled")
 	require.Equal(t, writes, countSteps(t, "graphql.write"), "the WebSocket query recorded a write step")
+}
+
+// oneResponse serves each operation's first response only. gqlgen's WebSocket
+// transport asks for responses until there are none, and dagql's never runs
+// out, so without it a query over a WebSocket resolves until the test ends.
+type oneResponse struct{ *dagql.Server }
+
+func (s oneResponse) Exec(ctx context.Context) graphql.ResponseHandler {
+	next := s.Server.Exec(ctx)
+	var done bool
+	return func(ctx context.Context) *graphql.Response {
+		if done {
+			return nil
+		}
+		done = true
+		return next(ctx)
+	}
 }
 
 // underOp reports whether ev is (transitively) under the op with id.
