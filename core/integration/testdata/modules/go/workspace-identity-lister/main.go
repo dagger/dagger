@@ -11,6 +11,13 @@ import (
 
 type Lister struct{}
 
+// Verify is a check, so artifact discovery lists this module when it's
+// served as a listed module rather than only as a dependency's types.
+// +check
+func (m *Lister) Verify() error {
+	return nil
+}
+
 // List lists the modules artifact discovery finds through ws. Calls with the
 // same inputs are reused.
 func (m *Lister) List(ctx context.Context, ws *dagger.Workspace) ([]string, error) {

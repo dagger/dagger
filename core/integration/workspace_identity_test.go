@@ -186,6 +186,26 @@ func (WorkspaceSuite) TestGitWorkspaceIdentity(ctx context.Context, t *testctx.T
 			"the same extra modules must reuse a function given the workspace")
 	})
 
+	// Serving a module's dependencies lists them. dagger script serves the
+	// -m module's dependencies, so the shared lister becomes listed for that
+	// client only, and its list must not be another client's.
+	t.Run("a function listing artifacts is keyed by which modules are listed", func(ctx context.Context, t *testctx.T) {
+		remoteRef := remote(ctx, t)
+		withExtras := goGitBase(t, c).
+			WithDirectory("/work/lister", core.NewQuery(c).Host().Directory(testDataPath(t, "modules", "go", "workspace-identity-lister"))).
+			WithDirectory("/work/extra-a", workspaceIdentityListerModule(c, "extra-a", "ExtraA"))
+		called := workspaceIdentityExec(ctx, t, withExtras, false, "call", "-W", remoteRef, "-m", "/work/extra-a", "list")
+		require.NotContains(t, called, "lister")
+		scripted, err := withExtras.
+			WithEnvVariable("CACHE_BUST", rand.Text()).
+			WithExec([]string{"dagger", "script", "-W", remoteRef, "-m", "/work/extra-a"}, core.ContainerWithExecOpts{
+				Stdin: "list",
+			}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, scripted, "lister")
+	})
+
 	// The check itself, not only a function, is reused: a check's result is
 	// cached across sessions, and the workspace it takes has the same key.
 	t.Run("a check given the same Git workspace runs once across sessions", func(ctx context.Context, t *testctx.T) {
