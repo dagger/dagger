@@ -170,8 +170,10 @@ func TestImportChainOverlayAwaitEndsOnceAnotherImportHasTheLayer(t *testing.T) {
 		return nil
 	}
 	// The first layer's blob never arrives by Await.
+	firstAwaited := make(chan struct{})
 	await := func(ctx context.Context, desc ocispecs.Descriptor) error {
 		if desc.Digest == first.Digest {
+			close(firstAwaited)
 			<-ctx.Done()
 			return context.Cause(ctx)
 		}
@@ -192,10 +194,14 @@ func TestImportChainOverlayAwaitEndsOnceAnotherImportHasTheLayer(t *testing.T) {
 		ref, err := consumer.Manager.ImportChain(ctx, &bkcache.ExportChain{Layers: chain.Layers, Await: await})
 		waiting <- imported{ref, err}
 	}()
-	select {
-	case <-lastApplied:
-	case <-time.After(10 * time.Second):
-		t.Fatal("the last layer did not apply while the first one's blob was awaited")
+	// The supplied import starts once the first layer waits and the last
+	// is applied.
+	for name, ch := range map[string]chan struct{}{"the first layer's wait": firstAwaited, "the last layer's apply": lastApplied} {
+		select {
+		case <-ch:
+		case <-time.After(10 * time.Second):
+			t.Fatalf("%s did not start", name)
+		}
 	}
 	supplying := make(chan imported, 1)
 	go func() {
