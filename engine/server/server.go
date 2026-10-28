@@ -315,6 +315,9 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		srv.engineEventExport = opts.EngineEvents
 		srv.engineEvents = newEngineEventEmitter(opts.EngineEvents.Logger())
 		srv.engineEventShutdownBudget = engineEventShutdownTimeout
+		if srv.stateDiscarded {
+			srv.engineEventShutdownBudget = DiscardedStateStopReserve
+		}
 	}
 	srv.shutdownCtx, srv.shutdownCancel = context.WithCancelCause(context.Background())
 

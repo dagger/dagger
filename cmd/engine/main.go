@@ -437,6 +437,7 @@ func main() { //nolint:gocyclo
 			return err
 		}
 		engineStopBudget.setTimeout(stopTimeout)
+		engineStopBudget.setFlushTimeout(stopFlushTimeoutSetting(cfg))
 		applyCacheVolumesFlags(c, &cfg)
 		if cfg.Telemetry.WorkloadExport {
 			workloadExport, err = enginetel.NewWorkloadExport(ctx, engineInstanceID)
