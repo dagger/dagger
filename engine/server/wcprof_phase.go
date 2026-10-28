@@ -60,10 +60,11 @@ const (
 	UsageScopeEngineCgroupSample = "engine_cgroup_sample"
 	// UsageScopeGoRuntimeSample is the engine process's Go garbage collector
 	// over one stretch of the phase, read every machineSampleInterval while
-	// it runs: the CPU its GC used, by class, since the previous reading (the
+	// it runs: the CPU its GC took, by class, since the previous reading (the
 	// runtime's estimates, which it updates at GC events, so a stretch can
-	// carry an earlier one's CPU); and at the reading's time, the live heap,
-	// the heap goal, and the scannable heap, stacks and globals.
+	// carry an earlier one's CPU); and at the reading's time, the live heap as
+	// of the last GC, the heap goal, the scannable heap and globals, and the
+	// stack the last GC scanned (see wcprof.Usage).
 	UsageScopeGoRuntimeSample = "go_runtime_sample"
 )
 
