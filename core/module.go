@@ -120,18 +120,9 @@ func (mod *Module) Name() string {
 	return mod.NameField
 }
 
-// EngineView is the API view of the engine version the module declares,
-// capped at the engine's (see ModuleSource.NamingView), or the empty
-// (latest) view for a module without a source.
-func (mod *Module) EngineView() call.View {
-	if mod == nil || !mod.Source.Valid || mod.Source.Value.Self() == nil {
-		return ""
-	}
-	return mod.Source.Value.Self().NamingView()
-}
-
 // Namer normalizes the module's own names: the rules of the engine version
-// it declares (see ModuleSource.Namer), or of SourceOverrides' when set.
+// it declares (see ModuleSource.Namer), or of SourceOverrides' when set. A
+// module without a source is named by the latest rules.
 func (mod *Module) Namer() Namer {
 	if mod.SourceOverrides != nil {
 		return NamerForEngineVersion(mod.SourceOverrides.EngineVersion)
@@ -139,7 +130,7 @@ func (mod *Module) Namer() Namer {
 	if src := mod.GetSource(); src != nil {
 		return src.Namer()
 	}
-	return NamerForView(mod.EngineView())
+	return LatestNamer
 }
 
 // ConstructorName is the name of the module's constructor field on Query:

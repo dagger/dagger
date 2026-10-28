@@ -721,10 +721,11 @@ predict those names. Before invoking a function of a module that declares
 interfaces, they ask the engine with `Query.formatIdentifiers`, in batches, and
 use the results for selections, argument keys and `node(id:)` type names (the
 TypeScript runtime namespaces each interface the way the engine does,
-comparing words). The gate is the engine version the module declares: from
-`v1.0.0-beta.22` on, the engine names the module by the new rules (see
-[The gate](#the-gate)), and older modules keep the conversion they always
-used. The identifier API is on every v1 view, so its presence says nothing
+comparing words). The gate is the module's naming view: the engine version
+it declares, capped at the engine's own (`ModuleSource.NamingView`). When both
+are `v1.0.0-beta.22` or later, the engine names the module by the new rules
+(see [The gate](#the-gate)); otherwise the module keeps the conversion it
+always used. The identifier API is on every v1 view, so its presence says nothing
 about which rules apply. Go module codegen mirrors `Namer` instead (see
 [Which namer applies](#which-namer-applies)).
 
@@ -757,11 +758,15 @@ names, `FormatNames` makes the calls (in batches, if the list gets large), and
 schema for the generators. `cmd/codegen` connects to the engine whenever it
 generates for a module or client at the new rules (see the gate below).
 
-**Gate:** the engine version the target module declares, plus the engine's
-own `version`. A module that declares a version before `v1.0.0-beta.22`, or
-an engine older than the identifier API, gets no names formatted through the
-engine: codegen keeps its legacy converter, so older modules and clients
-regenerate byte-identical code. The gate is not the schema: the identifier API
+**Gate:** the engine version the target module declares, capped at the
+engine's own `version`, as the engine names it (`ModuleSource.NamingView`,
+`engine.ModuleAPIViewVersion`). If the module declares a version before
+`v1.0.0-beta.22`, or the engine is older than that, no names are formatted
+through the engine: codegen keeps its legacy converter, so older modules and
+clients regenerate byte-identical code. In particular, a `v1.0.0-beta.21`
+engine serves the identifier API but names every module by strcase, so a
+module declaring `v1.0.0-beta.22` or bare `v1.0.0` keeps the legacy converter
+on it. The gate is not the schema: the identifier API
 (`identifier`, `formatIdentifiers`, `namingDictionary`) is served on every v1
 view (`v1.0.0-0` on), including the views whose modules keep the strcase
 names, so a generator exec at any v1 view can call it. A name missing from a
@@ -859,8 +864,8 @@ shipped with, byte for byte.
 A prerelease engine serves a module declaring a view past its own (a later
 beta, or exactly `v1.0.0`) at its own view, and names it by that view's
 rules, so no engine names a module by rules it doesn't have. SDK
-codegen and the Python and TypeScript runtimes gate on the same version: the
-one the module declares, checked against the engine's `version`. They don't
+codegen and the Python and TypeScript runtimes gate on the same view: the
+version the module declares, capped at the engine's `version`. They don't
 gate on `Query.formatIdentifiers` being in the schema, which is served on every
 v1 view (from `v1.0.0-0`), so they can call it from generator execs at any v1
 view.
