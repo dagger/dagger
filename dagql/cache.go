@@ -1772,7 +1772,7 @@ func (c *Cache) upsertPersistedEdgeLocked(ctx context.Context, res *sharedResult
 // counts, so a prune that drops it is seen. It reports false once res has
 // left the cache.
 func (c *Cache) resultState(ctx context.Context, res *sharedResult, pendingEdge *pendingRetention) (CacheResultState, bool) {
-	parts := c.completePartKeys(ctx, res)
+	parts, sizes := c.completePartKeysAndSizes(ctx, res)
 	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
 	defer c.egraphMu.RUnlock()
 	if c.resultsByID[res.id] != res {
@@ -1782,6 +1782,7 @@ func (c *Cache) resultState(ctx context.Context, res *sharedResult, pendingEdge 
 		Deps:          sortedResultIDs(res.deps),
 		ExpiresAtUnix: res.expiresAtUnix,
 		Parts:         parts,
+		PartSizes:     sizes,
 		Replacements:  res.replacements,
 	}
 	edge, found := c.persistedEdgesByResult[res.id]
