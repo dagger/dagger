@@ -13,8 +13,10 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/opencontainers/go-digest"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -518,6 +520,47 @@ func TestValueTransferPersistenceDecodePublication(t *testing.T) {
 
 func (v *transferTestValue) PersistedSnapshotRefLinks() []PersistedSnapshotRefLink {
 	return cloneSnapshotRefLinks(v.links)
+}
+
+// ResolveChainPrefixes gives a prefix output the first layers of the chain it
+// names, which it shares, and refuses a prefix that names no output carrying a
+// chain, more layers than that chain has, or none.
+func TestResolveChainPrefixes(t *testing.T) {
+	t.Parallel()
+	fs := PersistedPartAddress{Part: "fs"}
+	layer := func(s string) snapshots.ExportLayer {
+		return snapshots.ExportLayer{Descriptor: ocispecs.Descriptor{Digest: digest.FromString(s), Size: 1}}
+	}
+	chain := []snapshots.ExportLayer{layer("a"), layer("b"), layer("c")}
+	bundle := func(prefix ChainPrefix, extra ...TransferredOutput) *ValueBundle {
+		return &ValueBundle{Outputs: append([]TransferredOutput{
+			{Ordinal: 3, Address: fs, State: "completed", Chain: &OfferedChain{Layers: chain}},
+			{Ordinal: 2, Address: fs, State: "completed", Prefix: &prefix},
+		}, extra...)}
+	}
+
+	b := bundle(ChainPrefix{Ordinal: 3, Address: fs, Layers: 2})
+	require.NoError(t, ResolveChainPrefixes(b))
+	require.Nil(t, b.Outputs[1].Prefix)
+	require.Equal(t, chain[:2], b.Outputs[1].Chain.Layers)
+	require.Equal(t, 2, cap(b.Outputs[1].Chain.Layers), "an append to the prefix's layers can't reach its chain's")
+	require.Same(t, &chain[0], &b.Outputs[1].Chain.Layers[0], "the layers are the chain's own")
+
+	for _, tc := range []struct {
+		name   string
+		bundle *ValueBundle
+	}{
+		{"no layers", bundle(ChainPrefix{Ordinal: 3, Address: fs, Layers: 0})},
+		{"more layers than the chain", bundle(ChainPrefix{Ordinal: 3, Address: fs, Layers: 4})},
+		{"no such output", bundle(ChainPrefix{Ordinal: 9, Address: fs, Layers: 1})},
+		{"another part of the output", bundle(ChainPrefix{Ordinal: 3, Address: PersistedPartAddress{Part: "other"}, Layers: 1})},
+		{"an output that is itself a prefix", bundle(ChainPrefix{Ordinal: 2, Address: fs, Layers: 1})},
+		{"a chain and a prefix both", bundle(ChainPrefix{Ordinal: 3, Address: fs, Layers: 1}, TransferredOutput{Ordinal: 4, Address: fs, State: "completed", Chain: &OfferedChain{Layers: chain}, Prefix: &ChainPrefix{Ordinal: 3, Address: fs, Layers: 1}})},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Error(t, ResolveChainPrefixes(tc.bundle))
+		})
+	}
 }
 
 // A prefix candidate that delegates to a parent part the bundle offers gets

@@ -322,10 +322,10 @@ func TestValueMergeChainSecondBundleLandsOnTheParent(t *testing.T) {
 }
 
 // transferOutputChainLengths returns the bundle's output chain lengths,
-// sorted.
+// sorted, a prefix's resolved to the layers of the chain it names.
 func transferOutputChainLengths(bundle dagql.ValueBundle) []int {
 	var lengths []int
-	for _, output := range bundle.Outputs {
+	for _, output := range resolvedTransferOutputs(bundle) {
 		if output.Chain != nil {
 			lengths = append(lengths, len(output.Chain.Layers))
 		}
@@ -335,15 +335,26 @@ func transferOutputChainLengths(bundle dagql.ValueBundle) []int {
 }
 
 // transferOutputOrdinals returns the ordinals of the bundle's outputs with a
-// chain, by their chain length.
+// chain, by their chain length, a prefix's resolved to the layers of the
+// chain it names.
 func transferOutputOrdinals(bundle dagql.ValueBundle) map[dagql.TransferOrdinal]int {
 	out := map[dagql.TransferOrdinal]int{}
-	for _, output := range bundle.Outputs {
+	for _, output := range resolvedTransferOutputs(bundle) {
 		if output.Chain != nil {
 			out[output.Ordinal] = len(output.Chain.Layers)
 		}
 	}
 	return out
+}
+
+// resolvedTransferOutputs returns the bundle's outputs with each prefix
+// resolved to the layers of the chain it names, leaving the bundle as it was.
+func resolvedTransferOutputs(bundle dagql.ValueBundle) []dagql.TransferredOutput {
+	bundle.Outputs = slices.Clone(bundle.Outputs)
+	if err := dagql.ResolveChainPrefixes(&bundle); err != nil {
+		panic(err)
+	}
+	return bundle.Outputs
 }
 
 // transferOrdinalOf returns the bundle ordinal of a sending cache's entry.
@@ -389,9 +400,53 @@ func TestValueExportPrefixesOfAChainOfTen(t *testing.T) {
 		require.Equal(t, []string{snapshot.SnapshotID()}, observed.opens, "only the tenth step's snapshot is opened")
 		require.Positive(t, ex.ChainTime, "the time opening the chain took")
 		require.Equal(t, []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, transferOutputChainLengths(ex.Bundle))
-		for _, output := range ex.Bundle.Outputs {
+		for _, output := range resolvedTransferOutputs(ex.Bundle) {
 			require.Equal(t, ex.Chains.Entries[0].Layers[:len(output.Chain.Layers)], output.Chain.Layers, "each is a prefix of the selected chain")
 		}
+		return nil
+	}))
+}
+
+// The prefixes of a selected chain name it and how many of its layers they
+// take, instead of carrying the layers again: a chain of ten's bundle carries
+// ten layers, not the fifty-five of every prefix's own copy.
+func TestValueExportPrefixesNameTheirChain(t *testing.T) {
+	store := testutil.NewStore(t)
+	ctx, cache, srv := transferCache(t, store, "", "a")
+	platform := Platform{OS: "linux", Architecture: "amd64"}
+	var snapshot bkcache.ImmutableRef
+	var step dagql.ObjectResult[*Container]
+	for i := range 10 {
+		snapshot, _ = store.Build(t, snapshot, fmt.Sprintf("named-%d.txt", i), fmt.Sprintf("named %d", i))
+		ctr := NewContainer(platform)
+		ctr.FS.setValue(partTestDirectory(snapshot, "/"))
+		if i == 0 {
+			step = attachTransferObject(t, ctx, cache, srv, "a", "namedBase", ctr)
+		} else {
+			step = attachDelegationChild(t, ctx, cache, srv, "a", "namedStep", step, ctr)
+		}
+	}
+	fs := dagql.PersistedPartAddress{Part: "fs"}
+	selection := dagql.ValueSelection{Roots: []dagql.AnyResult{step}, Outputs: []dagql.SelectedValueOutput{{Result: step, Address: fs}}}
+	require.NoError(t, cache.WithExportedValues(ctx, selection, config.RefConfig{Compression: compression.New(compression.Uncompressed)}, func(_ context.Context, ex *dagql.ExportedValues) error {
+		selected := transferOrdinalOf(t, cache, ex.Bundle, step)
+		var layers int
+		var prefixes []int
+		for _, output := range ex.Bundle.Outputs {
+			if output.Chain != nil {
+				require.Equal(t, selected, output.Ordinal, "only the selected output carries its chain")
+				require.Nil(t, output.Prefix)
+				layers += len(output.Chain.Layers)
+				continue
+			}
+			require.NotNil(t, output.Prefix, "a prefix names its chain")
+			require.Equal(t, selected, output.Prefix.Ordinal)
+			require.Equal(t, fs, output.Prefix.Address)
+			prefixes = append(prefixes, output.Prefix.Layers)
+		}
+		require.Equal(t, 10, layers, "the bundle carries each layer once")
+		slices.Sort(prefixes)
+		require.Equal(t, []int{1, 2, 3, 4, 5, 6, 7, 8, 9}, prefixes)
 		return nil
 	}))
 }
