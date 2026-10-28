@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"runtime/pprof"
+	"strconv"
+	"strings"
 
 	"golang.org/x/sys/unix"
 
@@ -34,12 +37,18 @@ const (
 	// UsageScopeEngineCgroup is the engine process's cgroup (as the engine's
 	// cgroup metrics find it) and everything in it.
 	UsageScopeEngineCgroup = "engine_cgroup"
+	// UsageScopeMachine is the whole machine the engine runs on, from
+	// /proc/stat, which a container shares with its host: user (with nice),
+	// system (with interrupts), iowait, steal and idle, summed over its cores.
+	UsageScopeMachine = "machine"
 )
 
 type engineCPU struct {
 	process, children wcprof.Usage
 	cgroup            wcprof.Usage
 	cgroupOK          bool
+	machine           wcprof.Usage
+	machineOK         bool
 }
 
 func readEngineCPU() engineCPU {
@@ -57,11 +66,50 @@ func readEngineCPU() engineCPU {
 			c.cgroup, c.cgroupOK = wcprof.Usage{CPUUserUS: user, CPUSystemUS: sys}, true
 		}
 	}
+	if stat, err := os.ReadFile("/proc/stat"); err == nil {
+		c.machine, c.machineOK = parseMachineCPU(stat)
+	}
 	return c
 }
 
+// procStatTickUS is a /proc/stat tick in microseconds: the kernel reports
+// these times in USER_HZ, which is 100 on Linux.
+const procStatTickUS = 10_000
+
+// parseMachineCPU reads the whole machine's CPU times from /proc/stat's
+// first line ("cpu user nice system idle iowait irq softirq steal ...").
+func parseMachineCPU(stat []byte) (wcprof.Usage, bool) {
+	line, _, _ := bytes.Cut(stat, []byte("\n"))
+	fields := strings.Fields(string(line))
+	if len(fields) < 9 || fields[0] != "cpu" {
+		return wcprof.Usage{}, false
+	}
+	var ticks [8]int64
+	for i := range ticks {
+		n, err := strconv.ParseInt(fields[i+1], 10, 64)
+		if err != nil {
+			return wcprof.Usage{}, false
+		}
+		ticks[i] = n * procStatTickUS
+	}
+	user, nice, system, idle, iowait, irq, softirq, steal := ticks[0], ticks[1], ticks[2], ticks[3], ticks[4], ticks[5], ticks[6], ticks[7]
+	return wcprof.Usage{
+		CPUUserUS:   user + nice,
+		CPUSystemUS: system + irq + softirq,
+		CPUIowaitUS: iowait,
+		CPUStealUS:  steal,
+		CPUIdleUS:   idle,
+	}, true
+}
+
 func usageSince(start, end wcprof.Usage) wcprof.Usage {
-	return wcprof.Usage{CPUUserUS: end.CPUUserUS - start.CPUUserUS, CPUSystemUS: end.CPUSystemUS - start.CPUSystemUS}
+	return wcprof.Usage{
+		CPUUserUS:   end.CPUUserUS - start.CPUUserUS,
+		CPUSystemUS: end.CPUSystemUS - start.CPUSystemUS,
+		CPUIowaitUS: end.CPUIowaitUS - start.CPUIowaitUS,
+		CPUStealUS:  end.CPUStealUS - start.CPUStealUS,
+		CPUIdleUS:   end.CPUIdleUS - start.CPUIdleUS,
+	}
 }
 
 // phaseRun is one run of a phase.
@@ -122,6 +170,9 @@ func (p *phaseRun) end(srv *Server) {
 	wcprof.RecordUsage(p.ctx, id, UsageScopeEngineChildren, usageSince(p.start.children, end.children))
 	if p.start.cgroupOK && end.cgroupOK {
 		wcprof.RecordUsage(p.ctx, id, UsageScopeEngineCgroup, usageSince(p.start.cgroup, end.cgroup))
+	}
+	if p.start.machineOK && end.machineOK {
+		wcprof.RecordUsage(p.ctx, id, UsageScopeMachine, usageSince(p.start.machine, end.machine))
 	}
 	p.op.End(wcprof.OutcomeOK)
 }
