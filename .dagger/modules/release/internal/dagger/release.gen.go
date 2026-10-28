@@ -11,6 +11,9 @@ type Release = core.Release
 // ReleaseGetMaintainersOpts contains options for Release.GetMaintainers
 type ReleaseGetMaintainersOpts = core.ReleaseGetMaintainersOpts
 
+// ReleaseGoSDKPublishCheckOpts contains options for Release.GoSDKPublishCheck
+type ReleaseGoSDKPublishCheckOpts = core.ReleaseGoSDKPublishCheckOpts
+
 // ReleaseNotifyOpts contains options for Release.Notify
 type ReleaseNotifyOpts = core.ReleaseNotifyOpts
 
