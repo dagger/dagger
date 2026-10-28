@@ -10,6 +10,12 @@ type Usage struct {
 	CPUSystemUS int64
 	// MemPeakBytes is the scope's peak memory, 0 when it couldn't be read.
 	MemPeakBytes int64
+	// CPUIowaitUS, CPUStealUS and CPUIdleUS are a whole machine's CPU time
+	// waiting for I/O, taken by its hypervisor for other guests, and idle,
+	// summed over its cores. Only machine scopes have them.
+	CPUIowaitUS int64
+	CPUStealUS  int64
+	CPUIdleUS   int64
 }
 
 // Usage scopes of an exec.
