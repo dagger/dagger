@@ -61,21 +61,23 @@ func (m *partSizeTestManager) sizeReads() int {
 }
 
 // partSizeTestCache is statePartCache over mgr, with the remote cache attached
-// when remote is set.
-func partSizeTestCache(t *testing.T, mgr *partSizeTestManager, remote bool) (context.Context, *Cache, *Server) {
+// when remote is set, by the bridge it returns.
+func partSizeTestCache(t *testing.T, mgr *partSizeTestManager, remote bool) (context.Context, *Cache, *Server, *RemoteCacheBridge) {
 	t.Helper()
 	ctx := cacheTestContext(t.Context())
 	c, err := NewCache(ctx, filepath.Join(t.TempDir(), "cache.db"), mgr, nil)
 	assert.NilError(t, err)
 	t.Cleanup(func() { assert.NilError(t, c.CloseDiscardingPersistence()) })
+	var bridge *RemoteCacheBridge
 	if remote {
-		_, created, err := c.AttachRemoteCacheBridge()
+		var created bool
+		bridge, created, err = c.AttachRemoteCacheBridge()
 		assert.NilError(t, err)
 		assert.Assert(t, created)
 	}
 	srv := newDagqlServerForTest(t, &persistCodecRoot{})
 	srv.InstallObject(NewClass(srv, ClassOpts[*statePartValue]{}))
-	return srvToContext(ContextWithCache(ctx, c), srv), c, srv
+	return srvToContext(ContextWithCache(ctx, c), srv), c, srv, bridge
 }
 
 // An engine with the remote cache reports each complete part's raw size beside
@@ -99,7 +101,7 @@ func TestCompletePartSizes(t *testing.T) {
 				parent:              map[string]string{"top": "mid", "mid": "base"},
 				files:               map[string]int64{"files:/src/go.mod": 15},
 			}
-			ctx, c, srv := partSizeTestCache(t, mgr, tc.remote)
+			ctx, c, srv, _ := partSizeTestCache(t, mgr, tc.remote)
 			rec := tracetest.NewSpanRecorder()
 			tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(rec))
 			t.Cleanup(func() { assert.NilError(t, tp.Shutdown(context.Background())) })
@@ -166,4 +168,33 @@ func TestCompletePartSizes(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Once the remote cache detaches, a part's span carries no size, though one
+// was read while it was attached.
+func TestCompletePartSizesEndWithTheRemoteCache(t *testing.T) {
+	t.Parallel()
+	mgr := &partSizeTestManager{
+		fakeSnapshotManager: &fakeSnapshotManager{},
+		usage:               map[string]int64{"top": 300},
+	}
+	ctx, c, srv, bridge := partSizeTestCache(t, mgr, true)
+	value := persistedListTestResult(t, ctx, c, srv, "dir", &statePartValue{lazy: true, snapshotID: "top"})
+	assert.NilError(t, c.Evaluate(ctx, value))
+	state := func() CacheResultState {
+		t.Helper()
+		req := cacheTestArmedRequest(statePartFrame("dir"))
+		req.IsPersistable = true
+		hit, err := c.GetOrInitCall(ctx, "test-session", srv, req, func(context.Context) (AnyResult, error) {
+			t.Error("a hit runs no resolver")
+			return nil, nil
+		})
+		assert.NilError(t, err)
+		state, ok := req.CacheEvidence.ResultState(ctx, hit)
+		assert.Assert(t, ok)
+		return state
+	}
+	assert.DeepEqual(t, []int64{300}, state().PartSizes)
+	assert.Assert(t, c.DetachRemoteCacheBridge(bridge))
+	assert.Assert(t, state().PartSizes == nil, "no size once the remote cache has detached")
 }

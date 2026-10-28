@@ -107,6 +107,11 @@ func (c *Cache) completePartKeysAndSizes(ctx context.Context, row *sharedResult)
 // such as a merge's warming, never leaves them unread.
 func (c *Cache) completeParts(ctx context.Context, row *sharedResult, reader partSizeReader) ([]string, []int64) {
 	if cached := row.completeParts.Load(); cached != nil && cached.stamp.current(row) && (reader == nil || cached.sizes != nil) {
+		if reader == nil {
+			// Sizes read while the remote cache was attached are not
+			// reported once it has detached.
+			return cached.keys, nil
+		}
 		return cached.keys, cached.sizes
 	}
 	if reader == nil {
