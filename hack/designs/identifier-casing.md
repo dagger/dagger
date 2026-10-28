@@ -22,7 +22,6 @@ Tracking: [dagger/dagger#13668 (comment)](https://github.com/dagger/dagger/issue
 - [Known Limitations](#known-limitations)
 - [Test Vectors](#test-vectors)
 - [Open Questions](#open-questions)
-- [SDK Extraction](#sdk-extraction)
 - [Implementation Plan](#implementation-plan)
 
 ## Summary
@@ -40,8 +39,12 @@ the engine, so adding a term never renames anything in a module that hasn't
 opted into the new engine version.
 
 The same code path produces schema names for module types, fields, arguments
-and enum values, CLI flag names, and SDK codegen names. That replaces strcase
-in the engine and the separate implementations in each SDK.
+and enum values, CLI flag names, and the Go generator's identifiers. That
+replaces strcase in the engine for modules from the cut on.
+
+From `v1.0.0-beta.22` (`engine.IdentifierCasingVersion`) on, the core schema
+follows the same convention: its few names that didn't are renamed at the
+cut, with no aliases.
 
 ## Problem
 
@@ -316,12 +319,13 @@ in field and argument names (`avatarUrl`, `databaseId`):
 | CLI commands and flags | `KEBAB` | `--base-url` |
 
 Terms keep their entry's `capitalized` form in fields (`githubRepo`,
-`fromGitHubIpv6`, `myK8sCluster`). The core schema mixes both acronym styles
-in fields today (`traceURL` but `pushUrl`, `commitSHA` but `shortSha`); v1.0
-is the time to settle on one. The convention applies to module names from
-`v1.0.0-beta.22` (`engine.IdentifierCasingVersion`) on (see
-[The gate](#the-gate)); the core fields that write acronyms in capitals are
-exceptions until they're renamed (see [Core schema](#core-schema)).
+`fromGitHubIpv6`, `myK8sCluster`). The core schema mixed both acronym styles
+in fields (`traceURL` but `pushUrl`, `commitSHA` but `shortSha`) and in enum
+values (`PerSession` but `GZIP`); v1.0 is the time to fix that. From
+`v1.0.0-beta.22` (`engine.IdentifierCasingVersion`) on, the convention applies
+both to module names (see [The gate](#the-gate)) and to the core schema, whose
+names that didn't follow it are renamed at the cut (see
+[Core schema](#core-schema)).
 
 ## The Dictionary
 
@@ -505,15 +509,14 @@ Notes:
 
 - `formatIdentifiers` returns scalars on purpose. SDK clients load a list of
   objects one ID at a time, so a list of `Identifier`s would cost a round trip
-  per name. Codegen formats thousands of names.
+  per name, and codegen formats thousands of names.
 - `identifier` and `namingDictionary` follow the caller's engine version, like
   the rest of the schema. So does `formatIdentifiers`, unless given a
-  `version`: codegen passes the `__schemaVersion` of the schema it generates,
-  so a module's names are parsed with the dictionary of the module's engine
-  version, whatever version the codegen connection is served at.
-- `formatIdentifiers` isn't cached: it's pure and fast, and caching costs more
-  than formatting (see
-  [Formatting names in codegen](#formatting-names-in-codegen)).
+  `version`: a caller generating code for a schema passes its
+  `__schemaVersion`, so the names are parsed with the dictionary of that
+  schema's engine version, whatever version the connection is served at.
+- `formatIdentifiers` isn't cached: it's pure and fast, and caching a result
+  with a large list argument costs more than formatting it.
 - `Casing` and `AcronymStyle` can gain values later without breaking anyone.
 - Like every object in the schema, `IdentifierWord` and `NamingTerm` also
   implement `Node`.
@@ -570,9 +573,11 @@ the old strcase code byte for byte:
 - **SDK runtime arguments.** SDK interface arguments keep their names across
   the cut: `introspectionJson` is spelled alike by strcase and by the new
   field convention.
-- **Go module codegen** (`cmd/codegen`) can't import `core`, so it would have
-  to mirror `Namer`, gating like SDK codegen on the engine version the module
-  declares. It doesn't yet: see the Known gaps under [The gate](#the-gate).
+- **Go codegen** (`cmd/codegen`) can't import `core`, but imports
+  `engine/naming`: for a schema whose `__schemaVersion` is at or past the cut,
+  it formats Go identifiers with that version's dictionary (see
+  [SDK Integration](#sdk-integration)). It doesn't mirror `Namer` for a Go
+  module's own names: see the Known gaps under [The gate](#the-gate).
 
 ### CLI
 
@@ -597,116 +602,56 @@ commands get the legacy name as an alias. So `E2ETest` is `--e2e-test`, and
 
 ## SDK Integration
 
-Codegen asks the engine to format the schema's names, with
-`Query.formatIdentifiers` (see
-[Formatting names in codegen](#formatting-names-in-codegen)), so the formatting
-rules and the dictionary live only in the engine. Each SDK keeps its old
-converter as the fallback for modules that declare an engine version before
-the cut, so they generate byte-identical code.
+The principle is **"when in Rome"**: each SDK writes identifiers by its own
+language's convention, not one house style. Go writes initialisms in capitals
+(`CommitSHA`, `ParentSHAs`), and the snake-case SDKs need only the word
+boundaries (`prerequisite_shas`). SDKs only choose identifiers: selected
+fields, argument names, input object keys, enum values and GraphQL type names
+go over the wire as the schema has them.
 
-The principle is **"when in Rome"**: each SDK follows its own language's
-acronym convention, not one house style. Go writes initialisms in capitals
-(`ParentSHAs`), .NET, Java and PHP write acronyms like words (`WithMcpServer`,
-`asJson`, `withGpu`), and the snake-case SDKs need only the word boundaries
-(`prerequisite_shas`). What each SDK generates:
+The core renames (see [Core schema](#core-schema)) reach the SDKs as wire-name
+changes; the in-repo clients (Go, Python, TypeScript, PHP, Rust, Elixir) are
+regenerated from a schema past the cut. Only the Go generator changes how it
+forms identifiers; the others keep their own converters:
 
-| SDK | types | methods / fields | args | enum values |
-| --- | --- | --- | --- | --- |
-| GraphQL schema | `PASCAL`/`UPPERCASE` | `CAMEL`/`CAPITALIZED` | `CAMEL`/`CAPITALIZED` | `SCREAMING_SNAKE` |
-| Go | `PASCAL`/`UPPERCASE` | `PASCAL`/`UPPERCASE` | `CAMEL`/`UPPERCASE` | `PASCAL`/`UPPERCASE` |
-| TypeScript | schema name (`PASCAL`/`UPPERCASE`) | `CAMEL`/`UPPERCASE` | `CAMEL`/`UPPERCASE` | `PASCAL`/`CAPITALIZED` |
-| Python | schema name | `SNAKE` | `SNAKE` | `SCREAMING_SNAKE` (value: schema value) |
-| Elixir | `PASCAL`/`UPPERCASE` | `SNAKE` | `SNAKE` | schema-value atoms (`SNAKE` functions) |
-| Rust | `PASCAL`/`CAPITALIZED` | `SNAKE` | `SNAKE` | `PASCAL`/`CAPITALIZED` |
-| PHP | `PASCAL`/`CAPITALIZED` (`#[GraphQLType]`) | `CAMEL`/`CAPITALIZED` | `CAMEL`/`CAPITALIZED` | `SCREAMING_SNAKE` |
-| .NET | `PASCAL`/`CAPITALIZED` | `PASCAL`/`CAPITALIZED` | `CAMEL`/`CAPITALIZED` | `PASCAL`/`CAPITALIZED` |
-| Java | `PASCAL`/`CAPITALIZED` | `CAMEL`/`CAPITALIZED` | `CAMEL`/`CAPITALIZED` | `SCREAMING_SNAKE` |
+| SDK | identifiers from a schema past the cut | examples |
+| --- | --- | --- |
+| Go | types, methods and option structs by `engine/naming`, `PASCAL`/`UPPERCASE`, with the schema version's dictionary; parameters keep the schema name; enum constants as before | `CommitSHA`, `WithGPU`, `AsJSON`, `ShortSHA`, `FunctionCachePolicyNever` |
+| TypeScript | members are the schema's field and argument names; types and enum members by its own converter | `commitSha()`, `withGpu()`, `WorkspaceWithSdkOpts`, `FunctionCachePolicy.Never` |
+| PHP | methods named after the schema's fields | `commitSha()`, `withGpu()`, `asJson()` |
+| Python, Rust, Elixir | their own snake-case converters | `prerequisite_shas`, `experimental_with_all_gpus` |
 
-Only SDK identifiers change. Selected fields, argument names, input object
-keys, enum values and GraphQL type names go over the wire as the schema has
-them. Where an SDK serializes an input object field by its own name, a
-renamed field is mapped back to its wire name (`#[serde(rename)]` in Rust,
-`@JsonbProperty` in Java; Elixir keeps the legacy struct keys).
+**Go** (`goNamer`, `cmd/codegen/generator/go/templates/naming.go`) formats a
+name by `engine/naming` when the generated schema's `__schemaVersion` is at or
+past `engine.IdentifierCasingVersion` (a copy of the constant, kept in sync by
+a test, since codegen doesn't import `engine`). Earlier schemas keep the
+golint-style initialisms byte for byte, so code generated for pre-cut modules
+doesn't change. Since `commitSha` and `commitSHA` parse to the same words,
+the renamed core fields keep their Go identifiers (`CommitSHA`, `WithGPU`,
+`AsJSON`); a few that golint's list spelled otherwise change (`Sha` → `SHA`,
+`ShortSha` → `ShortSHA`, `ParentShas` → `ParentSHAs`, `Sdks` → `SDKs`,
+`SshfsVolume` → `SSHFSVolume`, `VcsGeneratedPaths` → `VCSGeneratedPaths`).
+Identifiers derived from dependency module names are reformatted the same way
+(`Github` → `GitHub`, `Cli` → `CLI`, `CreatePr` → `CreatePR`, `Ids` → `IDs`).
+There are no deprecated aliases for the old Go identifiers, core or
+dependency: a Go module that bumps its `engineVersion` past the cut updates
+its callers with the bump.
 
-Type names stay as the schema has them in SDKs whose runtime looks types up by
-name (TypeScript, Python). Go, Rust and Elixir already write them by their own
-conventions; PHP, Java and .NET name types and enum members by their own
-conventions too, and carry the GraphQL names the wire needs alongside (see
-below).
+**TypeScript**'s own convention is ambiguous (`XMLHttpRequest`, `innerHTML`).
+Its members follow the schema's field names, so they follow the renames
+(`commitSha()`, `withMcpServer()`). Enum members keep the
+`PASCAL`/`CAPITALIZED` form the generator always wrote, with the schema's
+values (`FunctionCachePolicy.Never` is `"NEVER"`).
 
-Python names enum members `SCREAMING_SNAKE`, as PEP 8 writes constants
-(`FunctionCachePolicy.PER_SESSION`, `ImageLayerCompression.GZIP`). A member's
-value is the schema value it stands for, which goes over the wire: such
-enums extend `ValueEnum`, which the client sends by value rather than by
-member name. The schema's other spellings of a value (the legacy
-`PerSession`, `Gzip`, `OCIMediaTypes`) stay as deprecated aliases, so old code
-keeps working and a value the API returns is still found by name. The module
-runtime also sends the module's own enum members by their schema names in
-calls through its interfaces (the engine names them `SCREAMING_SNAKE`).
+**Enum members** follow the schema in every SDK: past the cut, the members of
+the dropped spellings are gone (Go's `ImageLayerCompressionEstarGz`,
+TypeScript's `EStarGz`, Python's `Gzip`), and Python's
+`FunctionCachePolicy` members are `DEFAULT`, `PER_SESSION` and `NEVER`. The
+Python module runtime registers a function's cache policy with whichever
+member its generated client has.
 
-TypeScript's own convention is ambiguous (`XMLHttpRequest`, `innerHTML`).
-Members were to follow the schema's `UPPERCASE` (`filterURI`, `callID`), from
-before the schema settled on `CAPITALIZED` fields (see
-[Schema casing convention](#schema-casing-convention)); whether they follow it
-to `filterUri` is the TypeScript SDK's call. Enum
-members keep the `PASCAL`/`CAPITALIZED` form the generator always wrote
-(`Tcp`, `Oci`).
-
-.NET follows the Framework Design Guidelines: types, methods, input object
-properties and enum members are PascalCase and parameters camelCase, with
-acronyms written like words (`JsonValue`, `Llm`, `WithMcpServer`,
-`insecureSkipTlsVerify`, `Tcp`), all from the names file's `PASCAL:CAPITALIZED`
-and `CAMEL:CAPITALIZED`. The guidelines' two-letter exception (`IOStream`) is
-left out: the only two-letter acronym in the core schema besides `ID` (which the
-guidelines write `Id`) is `GZ`, in an enum value, so it changes no C# name.
-Generated code writes GraphQL type names as literals (node lookups, inline
-fragments), so renamed types are safe on the wire. Enum members carry the schema
-values they stand for in `[GraphQLValue("TCP")]`, which `GraphQLEnumConverter<T>`
-and `GraphQLEnum.ToValue` read for results, arguments and input fields
-(System.Text.Json 8 has no per-member names); a value and its alias share a
-member (`Gzip` for `Gzip` and `GZIP`). Renamed methods and properties keep their
-old names as `[Obsolete]` forwarders (default interface methods on interfaces),
-and renamed enum members as `[Obsolete]` aliases (`TCP = Tcp`). Renamed
-parameters can't be aliased, since C# can't overload on parameter names, and
-neither can renamed types: enums, input structs and return types can't be
-aliased across assemblies, and an obsolete subclass would only work where the
-old type is passed in, not where it's returned.
-
-Java follows Google Java Style: classes are PascalCase with acronyms written
-like words (`JsonValue`, `Llm`, `Json`, `Id`), members camelCase likewise
-(`asJson`, `withGpu`), and enum constants `SCREAMING_SNAKE` (`PER_SESSION`,
-`E_STAR_GZ`), from the names file's `PASCAL:CAPITALIZED`, `CAMEL:CAPITALIZED`
-and `SCREAMING_SNAKE:UPPERCASE` (or one aliased `formatIdentifiers` request when
-the codegen plugin asks the engine). A class named apart from its GraphQL type
-carries `@GraphQLType("JSONValue")`, which `Client.loadObjectFromID` and the
-module annotation processor read; everything else already sends the type name
-as a literal. An enum whose constants are named apart from its values implements
-`GraphQLEnum`: each constant carries its schema values (a value and its alias
-share one, `GZIP("Gzip", "GZIP")`), and `GraphQLEnums`, `JsonConverter`,
-`Arguments`, `QueryBuilder` and the enum's JSON-B (de)serializers convert by
-value. Renamed members keep their old spellings as deprecated forwarders and
-renamed enum constants as deprecated static aliases
-(`FunctionCachePolicy.PerSession`), but a class renamed only in case can't keep
-a deprecated alias next to it on case-insensitive file systems (`JSON.java` and
-`Json.java`), so class renames are hard breaks. The annotation processor finds
-the ID and JSON scalar classes under either spelling (`Id` or `ID`, `Json` or
-`JSON`), since it is compiled against SDKs generated from old and new schemas
-alike.
-
-PHP follows the Symfony and Laravel convention of writing acronyms like words
-in members (`filterUri`, `withGpu`) and PSR-1's in classes (`Llm`,
-`SdkConfig`, `HttpState`, `JsonValue`). PHP method names are case-insensitive,
-so member changes are cosmetic; parameter names matter for named arguments.
-Class names are case-insensitive too, so a class renamed in letter case only
-is still the same class under its old spelling; but PSR-4 autoloading looks
-for the old file name, which a case-sensitive filesystem doesn't find, and a
-`class_alias` can't help, since to PHP both spellings are the same name. The
-SDK registers `LegacyClassNames` after Composer's autoloader: it finds the
-generated file ignoring case, and reports the old spelling as deprecated. A
-class whose name differs from its GraphQL type carries
-`#[GraphQLType('LLM')]`, which the runtime reads when loading objects by ID and
-registering module types. Renamed enum cases keep their old names as
-deprecated constants.
+No SDK keeps deprecated aliases for renamed identifiers. The Java and .NET
+generators aren't changed.
 
 ### Module runtimes
 
@@ -716,112 +661,12 @@ dispatch path depends on names round-tripping.
 
 Calls a runtime builds itself, through a module's own interfaces, do depend on
 schema names: the runtime has to know what the engine named the interface type,
-its functions and their arguments. The Python and TypeScript runtimes no longer
-predict those names. Before invoking a function of a module that declares
-interfaces, they ask the engine with `Query.formatIdentifiers`, in batches, and
-use the results for selections, argument keys and `node(id:)` type names (the
-TypeScript runtime namespaces each interface the way the engine does,
-comparing words). The gate is the engine version the module declares: from
-`v1.0.0-beta.22` on, the engine names the module by the new rules (see
-[The gate](#the-gate)), and older modules keep the conversion they always
-used. The identifier API is on every v1 view, so its presence says nothing
-about which rules apply. Go module codegen mirrors `Namer` instead (see
-[Which namer applies](#which-namer-applies)).
-
-### Formatting names in codegen
-
-SDK codegen doesn't format names itself: it asks the engine. It collects the
-schema's names (every type, field, argument, input field and enum value name,
-except introspection names with a `__` prefix and names with no letters or
-digits) and calls `formatIdentifiers(names, casing, acronyms, version)` once
-for each casing and acronym style it uses, which gives it a map from each name
-to its SDK identifier. `version` is the generated schema's `__schemaVersion`,
-so the engine parses the names with the dictionary of the schema's engine
-version (a module's `engineVersion`), not the codegen client's. A run makes one
-to three such calls (Go asks for `PASCAL` and `CAMEL` with `UPPERCASE`;
-TypeScript also for `PASCAL` with `CAPITALIZED`), concurrently.
-
-That works because codegen nearly always has an engine connection, or reads
-its input from a step that has one:
-
-- Go and TypeScript codegen (`cmd/codegen`) run in an engine session.
-- The PHP and Java generators run the introspection query against the engine.
-- Python, Rust and Elixir read the JSON an online step writes
-  (`codegen introspect`).
-- Only .NET's Roslyn source generator runs without one, and its input also
-  comes from an online step.
-
-In Go, `cmd/codegen/introspection` has the helpers: `Schema.Names` collects the
-names, `FormatNames` makes the calls (in batches, if the list gets large), and
-`Schema.LoadFormattedNames` / `Schema.FormattedName` keep the maps on the
-schema for the generators. `cmd/codegen` connects to the engine whenever it
-generates for a module or client at the new rules (see the gate below).
-
-**Gate:** the engine version the target module declares, plus the engine's
-own `version`. A module that declares a version before `v1.0.0-beta.22`, or
-an engine older than the identifier API, gets no names formatted through the
-engine: codegen keeps its legacy converter, so older modules and clients
-regenerate byte-identical code. The gate is not the schema: the identifier API
-(`identifier`, `formatIdentifiers`, `namingDictionary`) is served on every v1
-view (`v1.0.0-0` on), including the views whose modules keep the strcase
-names, so a generator exec at any v1 view can call it. A name missing from a
-map (one that isn't among the schema's names) also gets the legacy converter.
-
-**Offline generators** get the names from the online step, as a sidecar file
-next to the introspection JSON, which stays unchanged:
-
-```shell
-codegen introspect -o schema.json \
-  --names-out names.json --names SNAKE:UPPERCASE,PASCAL:CAPITALIZED
-```
-
-```json
-{
-  "PASCAL:CAPITALIZED": {"httpClient": "HttpClient", "withGPU": "WithGpu"},
-  "SNAKE:UPPERCASE": {"httpClient": "http_client", "withGPU": "with_gpu"}
-}
-```
-
-Each key is a `CASING:ACRONYMS` pair of `Casing` and `AcronymStyle` values, and
-maps every schema name to its formatted form. A module before the cut gets
-`{}`. A generator uses its legacy converter for a
-format or name the file doesn't have, so the same gate applies.
-
-**Module runtimes** hand their codegen the same sidecar. The Python, PHP,
-Elixir and Java runtimes run codegen in an exec without an engine session, so
-the runtime formats the module schema's names itself and mounts the file for
-codegen (Python asks for `SNAKE:UPPERCASE`; PHP and Elixir for the formats
-their generators use; Java for `CAMEL:CAPITALIZED`, `PASCAL:CAPITALIZED` and
-`SCREAMING_SNAKE:UPPERCASE`, in `sdk/java/runtime/names.go`). The runtime
-modules' own sessions have `formatIdentifiers` whatever v1 version they
-declare; they call it with `version` set to the module schema's
-`__schemaVersion`, so the names are parsed with the dictionary of the module's
-version, not the runtime's.
-
-**Performance.** Formatting is cheap: parsing and formatting the core schema's
-961 names takes about 0.7ms. Through the API, it first cost about 780ms per
-call in the engine (measured with wcprof on a dev engine, one call with the
-961 names): about 1ms formatting, 210ms publishing the result to the cache,
-250ms giving each of the 961 returned strings a cache entry of its own, and
-the rest copying the call (with its 961-element argument) once per element and
-other per-element overhead. Two changes cut a call to about 11ms, most of it
-the fixed cost of a request (a call formatting one name takes about 8ms):
-
-- `formatIdentifiers` isn't cached. A hit wouldn't help much anyway: each
-  call of a codegen run asks for a different format.
-- dagql renders the leaf elements of a list of plain values straight from the
-  list, without a result per element (`valueEnumerable` in `dagql`). This
-  helps every field returning a list of scalars.
-
-Codegen also sends its one to three calls concurrently, so formatting costs a
-codegen run roughly one round trip.
-
-An earlier revision of this design had the engine write each name's words into
-the schema JSON (`__identifiers`) and every SDK format them, on the premise
-that codegen runs offline. That premise was mostly false, and it put a copy of
-the formatting rules into each SDK. The engine no longer writes the words, and
-every in-repo SDK has moved to `formatIdentifiers` (or the sidecar) in place of
-its word formatter.
+its functions and their arguments. The in-repo Python and TypeScript runtimes
+build those names themselves (Python with its own `to_camel_case`, TypeScript
+from the names the module declares), not through `formatIdentifiers`, so for a
+module past the cut a name the new rules spell differently can miss. Resolving
+them through the engine isn't part of this stack. The identifier API is on
+every v1 view, so its presence says nothing about which rules apply.
 
 ## Versioning and Compatibility
 
@@ -835,6 +680,9 @@ existing view mechanism (`AfterVersion` / `BeforeVersion` in `core/util.go`):
   behavior until they bump. A module entrypoint (manifest v2) is named by
   whatever engine version its `ModuleSource` ends up with, like any other
   module (see [Module entrypoints](#module-entrypoints)).
+- The core schema's renamed names exist by the caller's view: the old
+  spellings before the cut only, the new ones from the cut on only (see
+  [Core schema](#core-schema)).
 - A client's codegen uses the version the client connects with.
 - A dictionary addition lands with an engine version and applies only to
   modules and clients at or above it.
@@ -856,18 +704,15 @@ view (`ModuleSource.NamingView`, `engine.APIViewVersion` of its
 view, so modules released against those betas keep the strcase names they
 shipped with, byte for byte.
 A prerelease engine refuses a module declaring a view past its own (exactly
-`v1.0.0`, say), so no engine names a module by rules it doesn't have. SDK
-codegen and the Python and TypeScript runtimes gate on the same version: the
-one the module declares, checked against the engine's `version`. They don't
-gate on `Query.formatIdentifiers` being in the schema, which is served on every
-v1 view (from `v1.0.0-0`), so they can call it from generator execs at any v1
-view.
+`v1.0.0`, say), so no engine names a module by rules it doesn't have. The Go
+generator gates on the same cut, by the generated schema's `__schemaVersion`
+(see [SDK Integration](#sdk-integration)). Nothing gates on
+`Query.formatIdentifiers` being in the schema: it is served on every v1 view
+(from `v1.0.0-0`).
 
 There are no aliases for the old spellings: a module's schema has exactly the
 names of its own rules, and bumping `engineVersion` past the cut is an opt-in
-rename, like any other API change a bump brings. (An earlier revision gated
-at `v1.0.0-0`, renamed modules released against the betas, and kept their old
-spellings as hidden transition aliases; it was dropped for this cut.) The
+rename, like any other API change a bump brings. The
 typedef constructors that normalize names are view-scoped
 (`View(AllVersion)`), so their calls record the caller's view and modules on
 either side of the cut never share a cached, wrongly named typedef.
@@ -881,7 +726,7 @@ Known gaps:
   (`sdk/typescript/src/module/introspector/introspection_json.ts`) still
   predicts schema names with ports of strcase. It isn't wired in and runs
   without an engine connection; whoever wires it should resolve names through
-  the engine like the runtimes do (see [Module runtimes](#module-runtimes)).
+  the engine.
 - CLI naming follows the CLI's engine version, not each module's (see
   [CLI](#cli)). For a legacy module whose name has digits or terms (`k8s`),
   `dagger call` spells its collection selectors by the latest rules
@@ -963,153 +808,6 @@ Either option needs a signal in the manifest v2 contract (a naming version,
 or a marker that names are final), which #14038's authors own. Nothing needs
 pinning until the first dictionary addition.
 
-### Transition aliases
-
-> **Superseded for this cut.** The dagql alias machinery described here
-> (#14668) was dropped: module naming is gated purely on the module's declared
-> engine version (see [The gate](#the-gate)), so there are no module name
-> aliases, and core renames need their own plan. The section is kept for the
-> record of what was considered.
-
-A rename breaks every caller that still uses the old name: an external SDK
-module's Dang code (go-sdk calls sdk-helpers'
-`.generate(ws, lock: …, legacyJson: …)`), committed generated bindings, and
-hand-written queries. For a transition window the engine accepts the old
-spellings as hidden aliases (`dagql.Aliases`):
-
-- **Declaring.** A field (`Field.WithAliases`, `FieldSpec.Aliases`, or for
-  fields declared with struct tags, an object type implementing
-  `dagql.FieldAliased`), a field argument (`Arg(...).WithAliases`,
-  `InputSpec.Aliases`), an input object field (an input type implementing
-  `dagql.InputFieldAliased`), an object type (`ClassOpts.Aliases`), an
-  interface (`Interface.WithAliases`) or an enum value
-  (`EnumValues.WithAliases` for a core enum; any enum type implementing
-  `dagql.EnumValueAliased`, as `core.ModuleEnum` does) lists its aliases,
-  optionally limited to some views. `core.NameAliases` limits them to
-  the views with the new rules, where the old spelling is no longer the name;
-  `core.ModuleNameAliases` accepts them in every view, for module renames
-  (below). Every transition alias goes through one of them, so ending the
-  transition is deleting them and their callers.
-- **Hidden.** `Schema` and `SchemaForView` never have aliases, so neither do
-  introspection (`__schema`, `__type`), `__schemaJSONFile` or anything
-  generated from them. Visible aliases would collide in SDK generators
-  (`legacyJson` and `legacyJSON` are both `LegacyJSON` in a Go opts struct,
-  `shortSha` and `shortSHA` both `short_sha` in Python), and the external SDK
-  repos' forked generators can't be fixed in lockstep.
-- **Validated.** Queries are validated against `SchemaWithAliasesForView`
-  (gqlgen's handler via `NewDefaultHandler`, and `Server.Query`), which adds
-  each alias as a copy of its field, argument, input field, type or enum
-  value, marked `@deprecated`. A required argument or input field with
-  aliases is optional there, since a query may give it by either name; the
-  call still requires it.
-- **Canonical.** `parseASTSelections` rewrites an alias to its canonical name
-  before building the selector, so an aliased query makes the canonical
-  query's calls: same IDs, same cache entries. The response keeps the name the
-  query used. Giving one argument by both names is an error.
-- **Enum values.** An enum value alias is an input only, and reaches a field
-  as an inline literal, a variable, a list element, an input object field or
-  a plain string (a CLI flag, JSON), so it isn't rewritten in the query: the
-  enum's decoder resolves it to the canonical value
-  (`EnumValueAliases.Resolve`), whose literal makes the canonical call's ID
-  and cache key. Decoders have no view, so they accept an alias in every view;
-  validation still rejects one outside its views. Outputs always have the
-  canonical name. The CLI checks enum flags and collection keys against the
-  typedef's members before calling, so it also takes a member whose name
-  matches once case, `_` and `-` are ignored (if only one does), and sends
-  the canonical name.
-- **Renamed enum values.** A core enum value renamed in the new views
-  (`EnumValues.RenameView`) is a value of its own there, which decodes to the
-  value of its old name, registered for the older views only; the old name is
-  its hidden alias in the new views. Both spellings decode to the same value,
-  so the same IDs and cache keys, and the schema of each view only has its own
-  spelling (no `@enumValue` directive, unlike `AliasView`).
-- **Input object fields.** An input object field alias is an input only too,
-  and isn't rewritten in the query: the input object's decoder takes a field
-  given by an alias as the field itself, in every view (giving it by both
-  names is an error), so the decoded object's literal has the canonical name.
-- **Types.** A type alias works in fragment type conditions, which is how
-  generated clients load objects (`node(id:) { ... on OldName { ... } }` in
-  Go's `selectNode`, TypeScript's `Context.selectNode` and Python's
-  `Context.select_id`). `__typename` reports the canonical name: the server
-  can't know which spelling a client expects. Go bindings dispatch on it in
-  an interface's `Concrete()` (`interface.go.tmpl`,
-  `legacy_interface.go.tmpl`), which compares it to the implementation names
-  they were generated with, so old bindings fail with "unknown …
-  implementation" for a renamed implementation until regenerated. `Load`
-  only checks that `__typename` isn't empty; TypeScript and Python don't
-  dispatch on it.
-- **Signal.** Each use adds a `dagger.io/dag.alias` event to the current span,
-  naming the alias and its canonical name, and logs at debug level. Enum
-  value and input object field aliases (kinds `enumValue` and `inputField`,
-  parent the enum or input type) are noted for the arguments of a query,
-  variables included; a value decoded any other way (a direct `Select`, a
-  recipe) isn't.
-- **Collisions.** An alias that names a real type, field, argument, input
-  field or enum value of its scope, or that two names claim, is ignored with a
-  warning. For enum values both checks span every view, since the decoders
-  that resolve them have none, except that a value of other views may be an
-  alias of a value that decodes to the same thing: a renamed value's old
-  name. Aliases count toward the schema digest.
-
-The in-engine Dang runtime typechecks callers against its dependencies'
-schema JSON, so it gets a JSON with the field, argument, input field and enum
-value aliases, marked deprecated (`SchemaIntrospectionJSONFileForDang`, the
-internal `includeAliases` argument of `__schemaJSONFile`); Dang generates
-nothing from it that could collide, and a Dang caller passing an old enum
-value typechecks and is decoded to the canonical one. Other SDKs keep the
-alias-free JSON.
-Limits:
-
-- type aliases aren't in it: a copy of a type is a different type to Dang, so
-  a Dang annotation naming an old type doesn't typecheck;
-- a required argument with aliases is optional in it, so a Dang caller that
-  omits it fails when called rather than when typechecked.
-
-**Module renames.** Wherever the engine names a module's declaration by the
-new rules and the strcase rules would have named it differently, it installs
-the strcase name as an alias: object and interface types (the namespaced name
-`legacyNamespaceObject` gives, `Module.TypeNameAliases`), the constructor field
-(`Module.ConstructorNameAliases`), functions, fields and arguments
-(`NameAliases` on `Function`, `FieldTypeDef` and `FunctionArg`, from their
-original names), on objects, interfaces and workspace main proxies alike, and enum
-members (`ARM_64` for `ARM64`, `I_PV_6` for `IPV6`, `GIT_HUB` for `GITHUB`,
-`E_2_E_TEST` for `E2E_TEST`). An enum member's legacy name is worked out when
-it's created, by its module's naming rules, and kept on it
-(`EnumMemberTypeDef.LegacyName`): `ModuleEnum` decoders are built from the
-typedef alone, wherever the enum is used. The declaring module's own runtime
-decodes the members' original names, with no aliases. Unlike
-core renames, they're accepted in every view (`core.ModuleNameAliases`): a
-module's names follow its own engine version, not its caller's view, so a
-caller at an older view sees the new names too. Modules named by the strcase
-rules have none.
-
-Other gaps:
-
-- Enum types have no type aliases, which only matters for queries that
-  declare variables of a renamed enum type.
-- Recipes record canonical names, but loading one that was recorded with an
-  old name (a call ID saved before the rename) doesn't go through the
-  aliases: only queries and input decoders do.
-- Alias names can show up in validation's "Did you mean …" suggestions.
-- Aliases cover names on the wire, not identifiers SDK codegen derives from
-  them. In-repo Go codegen (`cmd/codegen`, which builds `dagger.json` Go
-  modules at every load and generates Go clients) keeps a dependency's old Go
-  identifiers as deprecated aliases: wrapper methods, type aliases
-  (`DaggerCli`), option struct aliases (`DaggerCliOpts`), deprecated option
-  struct fields (`VcsCommit` next to `VCSCommit`) and enum constants, also
-  re-exported from a module's `internal/dagger` package. It can't see the
-  engine's hidden aliases, so it recovers a module's old schema names by
-  applying the legacy strcase namer to the current ones, when the new rules
-  spell them as they are (`daggerCLI` → `daggerCli`, `DaggerCLIHTTPClient` →
-  `DaggerCliHttpclient` for module `dagger-cli`); core names are left alone,
-  but for the few renamed since (see [Core schema](#core-schema)), whose old
-  names every in-repo generator keeps in a small table of its own.
-  Where the heuristic misses, there's no alias. Go modules with a
-  `dagger-module.toml` build from committed bindings that the external go-sdk
-  generates with its own lint-based converter: their old names keep working on
-  the wire, but regenerating them gives `DaggerCLI` where callers say
-  `DaggerCli`, until the go-sdk port does the same.
-
 ### What changes for module authors (on bump)
 
 A module that declares an `engineVersion` of `v1.0.0-beta.22` or later
@@ -1128,6 +826,10 @@ contain runs of capitals or dictionary terms get their real casing back:
   `com_url` → `comUrl`).
 - Enum members with digits or dictionary terms: `ARM_64` → `ARM64`,
   `GIT_HUB` → `GITHUB`.
+- The module's client is served at the new view, so it sees the renamed core
+  API (`commitSha`, `asJson`, `FunctionCachePolicy` `NEVER`; see
+  [Core schema](#core-schema)), and a Go module's generated identifiers change
+  as described in [SDK Integration](#sdk-integration).
 
 Names that were already canonical don't change. The old schema names of the
 others are gone: there are no aliases, so callers built against them (other
@@ -1138,157 +840,105 @@ member spellings it printed before, on its side only.
 ### Core schema
 
 Core names are written by hand in Go and are *not* run through the
-normalizer. Measured against `docs/docs-graphql/schema.graphqls` with the
-initial dictionary, by the [schema casing
-convention](#schema-casing-convention):
+normalizer. Measured against `docs/docs-graphql/schema.graphqls` before the
+cut, with the initial dictionary, by the [schema casing
+convention](#schema-casing-convention): every type name and input field
+already followed it; 20 field and argument names wrote acronyms in capitals;
+and three enums had values that weren't `SCREAMING_SNAKE`. These are renamed
+at `engine.IdentifierCasingVersion`:
 
-- All type names are already canonical (`PASCAL`/`UPPERCASE`).
-- All but 20 field/argument names are already canonical
-  (`CAMEL`/`CAPITALIZED`, e.g. `filterUri`, `pushUrl`, `shortSha`). The
-  exceptions write acronyms in capitals: `asJSON`,
-  `clientSchemaIntrospectionJSON`, `commitSHA`, `expectedRemoteSHA`,
-  `experimentalWithAllGPUs`, `experimentalWithGPU`, `htmlRepoURL`, `htmlURL`,
-  `insecureSkipTLSVerify`, `introspectionSchemaJSON`, `prerequisiteSHAs`,
-  `previousSHA`, `traceURL`, `treeSHA`, `withGPU`, `withMCPServer`,
-  `withSDK`, `withVCSGeneratedPaths`, `withVCSIgnoredPaths`, `withoutSDK`.
-  Renaming them is a separate change, which drops the old names outright,
-  with no deprecated duplicates.
-- One enum still uses legacy PascalCase values with no `SCREAMING_SNAKE`
-  aliases: `FunctionCachePolicy` (`Default`, `PerSession`, `Never`).
-  `ImageLayerCompression` and `ImageMediaTypes` already have aliases.
+| type | before the cut | from the cut on |
+| --- | --- | --- |
+| `Cloud` | `traceURL` | `traceUrl` |
+| `Container` | `from`/`publish(insecureSkipTLSVerify:)` | `insecureSkipTlsVerify` |
+| `Container` | `withGPU`, `experimentalWithGPU`, `experimentalWithAllGPUs` | `withGpu`, `experimentalWithGpu`, `experimentalWithAllGpus` |
+| `File` | `asJSON` | `asJson` |
+| `GeneratedCode` | `withVCSGeneratedPaths`, `withVCSIgnoredPaths` | `withVcsGeneratedPaths`, `withVcsIgnoredPaths` |
+| `GitBundle` | `prerequisiteSHAs` | `prerequisiteShas` |
+| `GitCommit` | `treeSHA` | `treeSha` |
+| `GitPushResult` | `previousSHA` | `previousSha` |
+| `GitRef` | `commitSHA`, `push(expectedRemoteSHA:)` | `commitSha`, `expectedRemoteSha` |
+| `LLM` | `withMCPServer` | `withMcpServer` |
+| `Module` | `introspectionSchemaJSON` | `introspectionSchemaJson` |
+| `ModuleSource` | `withSDK`, `introspectionSchemaJSON`, `clientSchemaIntrospectionJSON`, `htmlURL`, `htmlRepoURL` | `withSdk`, `introspectionSchemaJson`, `clientSchemaIntrospectionJson`, `htmlUrl`, `htmlRepoUrl` |
+| `Workspace` | `withSDK`, `withoutSDK` | `withSdk`, `withoutSdk` |
+| `FunctionCachePolicy` | `Default`, `PerSession`, `Never` | `DEFAULT`, `PER_SESSION`, `NEVER` |
+| `ImageLayerCompression` | `Gzip`, `Zstd`, `EStarGZ`, `Uncompressed` (`GZIP`, ... as aliases) | `GZIP`, `ZSTD`, `ESTARGZ`, `UNCOMPRESSED` |
+| `ImageMediaTypes` | `OCIMediaTypes`, `DockerMediaTypes` (`OCI`, `DOCKER` as aliases) | `OCI`, `DOCKER` |
 
-> **Superseded.** An earlier revision of this design took fields'
-> acronyms in capitals as the convention, and planned the opposite renames
-> on the views with the new rules, keeping the old spellings as hidden
-> aliases: `GitCommit.shortSHA` and `parentSHAs`, `Artifacts.filterURI` and
-> `withoutURI`, `LLMContentBlock.callID`, ... The rest of this section, and
-> [What changes for SDK users](#what-changes-for-sdk-users), still describe
-> that plan.
+Names that already followed the convention (`shortSha`, `parentShas`,
+`filterUri`, `callId`, `pushUrl`, `asSdkName`) don't change. The legacy
+`load<Type>FromID` loaders, which only exist before v0.22.0, are left as they
+are. Doc strings aren't names and don't follow the convention: the `@cache`
+directive's `ttl` doc still says "Default policy".
 
-These are renamed on the views with the new rules, with their old spellings
-kept as hidden aliases there ([Transition aliases](#transition-aliases),
-`core.NameAliases`): `GitCommit.shortSHA` and `parentSHAs`,
-`Artifacts.filterURI` and `withoutURI`, `LLMContentBlock.callID`,
-`LLMContentBlockInput.callID`, `LLM.withToolResult(callID:)`,
-`GitRepository.withRemote(pushURL:)`, `Workspace.withSDK(asSDKName:)`, and
-`FunctionCachePolicy`'s `DEFAULT`, `PER_SESSION` and `NEVER`. All but the
-enum only exist on those views; older views keep `FunctionCachePolicy`'s
-PascalCase values exactly, and both spellings decode to the same value
-(`EnumValues.RenameView`). The SDKs' codegen can't see the hidden aliases,
-so each keeps a small table of these renames, to keep deprecating the
-identifiers it derived from the old names rather than inventing new ones
-from the new names (Python's `parent_sh_as`, Java's `shortSHA()`).
+**Fields and arguments** are plain view gates, with no aliases and no
+`@deprecated` duplicates: no view has both spellings. Each is defined once
+under its new name and installed twice (`core/schema/renamed_names.go`): under
+the new name in `core.CasedNamesView` (`AfterVersion(cut)`, which includes the
+internal view `""`) and under the old name in `core.LegacyNamesView`
+(`BeforeVersion(cut)`), each intersected with the views the name had before.
+A renamed field that had no view filter is view-scoped now, so its calls
+record the caller's view rather than `""`. `Container.from` and `publish`
+have no view filter, so dagql selects every call to them in view `""`; there
+the old `insecureSkipTLSVerify` also stays, as an internal argument, so a
+pre-cut caller's flag isn't dropped, and the resolver takes either spelling.
+Engine-internal selections (workspace reset, `Container.from`'s re-select, the
+CLI's own queries) use the new names; the persisted Container recipe decoder
+takes both GPU spellings, and the TUI's checkpoint decoder both
+`withMcpServer` spellings.
 
-`TestCoreSchemaCanonical` in `engine/naming` asserts that every core type name
-and every field/argument name is canonical; legacy enum values (the
-`ImageLayerCompression` and `ImageMediaTypes` values that have aliases) are
-only logged.
+**Enum values.** The `SCREAMING_SNAKE` spelling is the stored value: core code
+compares it, IDs record it, and values persisted with an old spelling (a
+typedef's cache policy, an image export's media types) are normalized when
+decoded. The old spellings are view-gated aliases
+(`dagql.EnumValues.AliasViewPrimary`): views before the cut still list them as
+the members, with the `SCREAMING_SNAKE` spellings as their aliases, so pre-cut
+schemas are unchanged byte for byte; views from the cut on have only the
+`SCREAMING_SNAKE` spellings. Every spelling decodes to the value in every
+view, so recipes recorded with an old spelling still load, though their IDs
+differ, so their cache keys miss once. Values going out are spelled for the
+receiver's view:
 
-### What changes for SDK users
+- argument defaults in the schema (`mediaTypes = OCI` from the cut on,
+  `OCIMediaTypes` before; `dagql.ViewLiteraler`);
+- enum leaves of query results, for the client's view;
+- core enum arguments passed into a module function, for the module's view
+  (`CoreModEnum.ConvertToSDKInput`), the view of its `engineVersion` by
+  `engine.APIViewVersion`: a module that declares none gets the engine's own
+  view, and one whose version isn't semver counts as v0.11.9.
 
-Measured on the core client each SDK regenerates in this change, against the
-code it generated before:
+**Guard tests.** `TestCoreSchemaGraphQLCasing` (`core/schema`) checks every
+type, field, argument, input field and enum value of the live schema's views
+from the cut on, and `TestCoreSchemaConventional` (`engine/naming`) does the
+same over `docs/docs-graphql/schema.graphqls`; both exception lists are
+empty. `TestCoreRenamedNamesViews` checks that views before the cut have only
+the old names and later views only the new ones, and
+`TestRenamedEnumPreCutSchema` that pre-cut enum schemas are unchanged.
 
-- **Go**: 7 methods (and their option structs) — `ParentShas` → `ParentSHAs`,
-  `Sdks` → `SDKs`, `Sha` → `SHA`, `ShortSha` → `ShortSHA`, `SshfsVolume` →
-  `SSHFSVolume`, `VcsGeneratedPaths` → `VCSGeneratedPaths`, `VcsIgnoredPaths`
-  → `VCSIgnoredPaths` — plus enum constants that strcase had capitalized:
-  `NetworkProtocolTcp` → `NetworkProtocolTCP` (and `Udp`),
-  `RegistryProtocolHttp` → `RegistryProtocolHTTP` (and `Https`),
-  `ImageMediaTypesOcimediaTypes` → `ImageMediaTypesOCIMediaTypes` (and `Oci`),
-  `ImageLayerCompressionEstarGz` → `ImageLayerCompressionEStarGZ`. The old
-  names stay as deprecated wrappers and aliases. Parameter renames (`pushUrl`
-  → `pushURL`) don't affect Go callers.
-- **TypeScript**: 5 methods — `Artifacts.filterUri` → `filterURI`,
-  `Artifacts.withoutUri` → `withoutURI`, `GitCommit.parentShas` →
-  `parentSHAs`, `GitCommit.shortSha` → `shortSHA`, `LLMContentBlock.callId` →
-  `callID` — plus 5 Opts types (`ArtifactUriOpts` → `ArtifactURIOpts`,
-  `ClientHttpOpts` → `ClientHTTPOpts`, `ClientSshfsVolumeOpts` →
-  `ClientSSHFSVolumeOpts`, `WorkspaceWithSdkOpts` → `WorkspaceWithSDKOpts`,
-  `WorkspaceWithoutSdkOpts` → `WorkspaceWithoutSDKOpts`) and 2 opts keys
-  (`pushUrl` → `pushURL`, `asSdkName` → `asSDKName`), all kept as deprecated
-  aliases. The positional parameter `LLM.withToolResult(callId)` becomes
-  `callID`. No type or enum member changes.
-- **Python**: 2 methods — `prerequisite_sh_as` → `prerequisite_shas`,
-  `experimental_with_all_gp_us` → `experimental_with_all_gpus` — kept as
-  deprecated aliases. Enum members are `SCREAMING_SNAKE`:
-  `FunctionCachePolicy.DEFAULT`, `NEVER` and `PER_SESSION`,
-  `ImageLayerCompression.ESTARGZ`, `GZIP`, `UNCOMPRESSED` and `ZSTD`,
-  `ImageMediaTypes.DOCKER` and `OCI`, which used to be aliases of the legacy
-  members, are now the canonical members, and the legacy names their
-  deprecated aliases. Values don't change for core enums, but for
-  `FunctionCachePolicy`'s, renamed in the schema (see below). A dependency
-  module's enum, whose members hold the module's own values (`ACTIVE` holds
-  `"ACTIVE value"`), keeps the members it always had, sent by name.
-- **Rust**: the same 2 methods as Python, kept as deprecated aliases. No type
-  changes (`JsonValue` stays).
-- **Elixir**: 1 function — `prerequisite_sh_as` → `prerequisite_shas` — kept
-  as a deprecated alias.
-- **PHP**: members are now `CAMEL`/`CAPITALIZED`. 19 methods change only in
-  case (`withGPU` → `withGpu`), which PHP method names ignore: `traceURL`,
-  `withGPU`, `experimentalWithGPU`, `experimentalWithAllGPUs`, `asJSON`,
-  `withVCSGeneratedPaths`, `withVCSIgnoredPaths`, `prerequisiteSHAs`,
-  `previousSHA`, `commitSHA`, `withMCPServer`, `introspectionSchemaJSON` (on
-  `Module` and `ModuleSource`), `withSDK` (on `ModuleSource` and `Workspace`),
-  `withoutSDK`, `clientSchemaIntrospectionJSON`, `htmlURL` and `htmlRepoURL`.
-  Legacy enum cases become `SCREAMING_SNAKE`
-  (`FunctionCachePolicy::PER_SESSION`, `ImageLayerCompression::E_STAR_GZ`,
-  `ImageMediaTypes::OCI_MEDIA_TYPES`, ...) with the old names as deprecated
-  constants. 3 parameters — `insecureSkipTLSVerify` → `insecureSkipTlsVerify`
-  on `from` and `publish`, `expectedRemoteSHA` → `expectedRemoteSha` on
-  `GitRef::push` — break named-argument callers. Classes with acronyms are
-  renamed in letter case (`LLM` → `Llm`, `LLMContent` → `LlmContent` and the
-  other `LLM*` types, `SDKConfig` → `SdkConfig`, `HTTPState` → `HttpState`,
-  `WorkspaceSDK` → `WorkspaceSdk`); their old spellings still load, as
-  deprecated.
-- **Java**: the same 19 case-only method renames as PHP (`asJSON` → `asJson`,
-  `withGPU` → `withGpu`, ...), plus optional-argument setters
-  (`withInsecureSkipTLSVerify` → `withInsecureSkipTlsVerify`), all kept as
-  deprecated forwarders. Parameter names don't affect Java callers. 17 classes
-  are renamed with no alias: `ID` → `Id`, `JSON` → `Json`, `JSONValue` →
-  `JsonValue`, the 11 `LLM*` types (`LLM` → `Llm`, `LLMContentBlock` →
-  `LlmContentBlock`, ...), `SDKConfig` → `SdkConfig`, `HTTPState` → `HttpState`
-  and `WorkspaceSDK` → `WorkspaceSdk`. Enum constants named like legacy values
-  become `SCREAMING_SNAKE` (`FunctionCachePolicy.PER_SESSION`,
-  `ImageLayerCompression.E_STAR_GZ`, `ImageMediaTypes.OCI_MEDIA_TYPES`, ...),
-  with the old names as deprecated static aliases; they still serialize to the
-  schema's values.
-- **.NET**: 3 methods — `WithVcsgeneratedPaths` → `WithVcsGeneratedPaths`
-  (and `WithVcsignoredPaths`), `WithMcpserver` → `WithMcpServer` — kept as
-  obsolete forwarders; 3 parameters — `insecureSkipTLSVerify` →
-  `insecureSkipTlsVerify` on `From` and `PublishAsync`, `expectedRemoteSHA` →
-  `expectedRemoteSha` on `GitRef.Push` — which break named-argument callers.
-  16 types are renamed with no alias: `JSON` → `Json`, `JSONValue` →
-  `JsonValue`, the 11 `LLM*` types, `SDKConfig` → `SdkConfig`, `HTTPState` →
-  `HttpState` and `WorkspaceSDK` → `WorkspaceSdk` (`ID` was already `Id`). Enum
-  members become PascalCase (`NetworkProtocol.Tcp`, `TypeDefKind.StringKind`,
-  `FunctionCachePolicy.PerSession`, ...), with the old names as `[Obsolete]`
-  aliases; they still serialize to the schema's values.
+### Accepted breaks
 
-The core names renamed in the schema ([Core schema](#core-schema)) change
-what goes over the wire (`shortSHA`, `callID`, `pushURL`, ...,
-`FunctionCachePolicy`'s `PER_SESSION`), not the identifiers above: those
-derived from the old names keep working, as they are where the new name
-formats the same (Go `FilterURI`, Python `short_sha`, Rust `call_id`, PHP and
-Java `shortSha`, .NET `FunctionCachePolicy.PerSession`), and as the
-deprecated aliases above otherwise (Go `ShortSha`, TypeScript `shortSha` and
-the `pushUrl` opts key, Python `FunctionCachePolicy.PerSession`, PHP and Java
-`FunctionCachePolicy` constants). An input object field can't be aliased in
-every language: TypeScript's `LLMContentBlockInput` keeps a deprecated
-`callId` key, sent as is, and PHP's keeps its `callId` property (a
-constructor parameter), sent as `callID`; the engine takes either.
-
-Renamed identifiers stay as deprecated aliases wherever the language allows
-one. The hard breaks are:
-
-- the PHP and .NET parameter renames above: neither language can alias a
-  parameter name;
-- the Java and .NET type renames: a Java class can't sit next to its
-  case-only alias on case-insensitive file systems, and .NET types can't be
-  aliased across assemblies;
-- Python enum members' `name`: an alias resolves to the new member, so code
-  that reads `.name` (or lists an enum's members) sees `PER_SESSION`, not
-  `PerSession`.
+- **Old generated clients under a newer session.** A host client generated
+  before the cut, run under a newer outer session (a newer CLI), gets the
+  newer view, so its calls to renamed fields, arguments and enum values fail.
+  Pre-cut modules keep their own view and keep working.
+- **Recordings from pre-cut engines.** A recipe that a pre-cut engine
+  recorded and that uses a renamed field can't be rebuilt by a post-cut
+  engine: agent checkpoints, `dagger restore` from a Cloud trace, stored
+  recipe IDs. dagql resolves each frame's field by name in its recorded view,
+  so the load fails, naming the field. This hits calls to fields that had no
+  view filter, which were recorded in view `""`, and every call by a v1
+  prerelease caller from an engine before prerelease-granular views (#14810),
+  which recorded them at view `v1.0.0`, now past the cut. Persisted cache
+  entries are reached by digest, so for the cache this is only a miss. There
+  are no load-time aliases.
+- **Dependency clients across the cut.** An SDK that generates a module's
+  dependency clients from
+  `withEngineVersion(consumer).clientSchemaIntrospectionJson` names them by
+  the consumer's version, so a dependency on the other side of the cut can be
+  named by other rules than its bindings assume. An open follow-up adds an
+  argument to `clientSchemaIntrospectionJson` to pick the version per
+  dependency.
 
 ## Guarantees
 
@@ -1406,21 +1056,15 @@ copy: they get formatted names from the engine.
    it out. .NET uses `CAPITALIZED`, and `Identifier.words` carries what's needed
    if the .NET SDK ever wants the exact form. A third `AcronymStyle` value can be
    added later without breaking anyone.
-2. **Renaming the non-canonical core names** before 1.0, with deprecated
-   aliases, or keeping them on an allowlist. Resolved: the fields that write
-   acronyms in capitals (`asJSON`, `withGPU`, ...; see
-   [Core schema](#core-schema)) are renamed in a separate change, which drops
-   the old names outright, with no deprecated duplicates. (An earlier
-   resolution renamed the opposite set and kept hidden aliases.)
-3. **Offline codegen.** Some SDK codegen paths were thought to run without an
-   engine session. Resolved: nearly all codegen has an engine connection, or
-   reads its input from a step that has one, so codegen asks the engine to
-   format names with `formatIdentifiers`, and SDKs need neither a parser nor a
-   formatter. The one generator that runs truly offline, .NET's source
-   generator, reads names the online `codegen introspect` step formatted (see
-   [Formatting names in codegen](#formatting-names-in-codegen)). An earlier
-   answer, writing each name's words into the schema JSON for SDKs to format,
-   is gone.
+2. **Renaming the non-conventional core names** before 1.0, with deprecated
+   aliases, or keeping them on an allowlist. Resolved: they're renamed at the
+   cut by plain view gates, with no aliases and no deprecated duplicates (see
+   [Core schema](#core-schema)).
+3. **Offline codegen.** Nearly all codegen has an engine connection, or reads
+   its input from a step that has one, so SDK codegen can ask the engine to
+   format names with `formatIdentifiers` rather than carry a parser. The
+   in-repo Go generator imports `engine/naming` instead; no other in-repo
+   generator formats names through the engine.
 4. **Splitting all-caps input** (`E2EAPI`) by full dictionary cover, as for
    caps pieces. Resolved: each chunk of all-caps input splits only if
    dictionary entries (and digit runs) cover it completely; lowercase input
@@ -1430,73 +1074,49 @@ copy: they get formatted names from the engine.
 5. **Java and PHP class names.** Strict "when in Rome" would write them
    `CAPITALIZED` (`JsonValue`, `Llm` in Java; `JsonValue` throughout in PHP).
    A case-only class rename can't keep a deprecated alias, so this would be a
-   breaking change, best left for a major version. Resolved for Java (and
-   .NET): taken before 1.0, as hard breaks (see
-   [What changes for SDK users](#what-changes-for-sdk-users)).
-6. **TypeScript's convention.** The ecosystem writes acronyms both ways. The
-   generator uses `UPPERCASE` members and `CAPITALIZED` enum members today;
-   confirm with the TypeScript maintainers, now that schema fields are
-   `CAPITALIZED` (see [Schema casing convention](#schema-casing-convention)).
-7. **Input object field names.** Rust and Elixir (and possibly Python) had
+   breaking change. Resolved for Java (and .NET): taken before 1.0, as hard
+   breaks. Not part of this stack, which changes no SDK's class names.
+6. **TypeScript's convention.** The ecosystem writes acronyms both ways.
+   Resolved: members follow the schema's field names (`commitSha()`), and enum
+   members keep the `PASCAL`/`CAPITALIZED` form the generator always wrote.
+7. **Input object field names.** Rust and Elixir (and possibly Python) have
    existing bugs where an input object field is sent by its SDK name rather
-   than its schema name. The new codegen maps renamed fields back to their
-   wire names without changing behavior; the underlying bugs are a separate
-   fix.
-8. **Dependency clients across the cut.** An SDK that generates a module's
-   dependency clients from
-   `withEngineVersion(consumer).clientSchemaIntrospectionJSON` formats them
-   by the consumer's version, so a dependency on the other side of the cut
-   can be named by other rules than its bindings assume. Resolved: accepted
-   for the beta, with no `clientVersion` argument to pick per dependency.
-
-## SDK Extraction
-
-The SDKs are moving out of this repository, to
-`github.com/dagger/{go,python,typescript,php,java,dang}-sdk`
-(`core/sdk/sdkmeta/sdks.json`). The in-repo `cmd/codegen` and `sdk/*` stay the
-reference implementation of this design, which the external repositories
-vendor or port from:
-
-- typescript-sdk vendors `sdk/typescript` at a tag (see its
-  `library/VENDOR.md`);
-- go-sdk has its own fork of the Go generator, `cmd/dagger-go-sdk-codegen`;
-- python-sdk has its own codegen, `sdk/codegen`.
-
-Porting engine-formatted names (`formatIdentifiers` or the names sidecar, with
-the legacy fallback) to each of them is a follow-up per repository. Until an
-SDK has it, it keeps its legacy converter, which the gate makes byte-identical
-for modules before the cut anyway. Those SDKs also generate the
-manifest v2 entrypoints, where pinned naming would land (see
-[Module entrypoints](#module-entrypoints)).
+   than its schema name. That's a separate fix (#14636); no core input field
+   is renamed.
+8. **Dependency clients across the cut** (see
+   [Accepted breaks](#accepted-breaks)). Open: a follow-up adds an argument to
+   `clientSchemaIntrospectionJson` to pick the version a dependency's client
+   is named by.
+9. **Deprecated aliases for Go identifiers** derived from dependency module
+   names, which the Go generator reformats past the cut (`Cli` → `CLI`).
+   Resolved: none; a Go module that bumps its `engineVersion` updates its
+   callers.
 
 ## Implementation Plan
 
-1. Write the `engine/naming` package: parser, formatter, dictionary, and the
+1. The `engine/naming` package: parser, formatter, dictionary, and the
    test-vector file as table tests, with property tests for the guarantees.
-2. Add the core API (`identifier`, `formatIdentifiers`, `namingDictionary`) and
-   regenerate the SDKs.
-3. Switch engine normalization (`core/gqlformat.go`, typedef constructors,
-   `namespaceObject`, CLI kebab names) to the package behind an engine-version
-   view. Keep strcase behavior for older modules.
-4. Keep `strcase.ConfigureAcronym` in `core/llm.go` / `core/json.go` and the
-   `withFinalTypeName` re-normalization workaround for the legacy path only;
-   delete them once modules below the gate are no longer supported.
-5. Add the core-schema canonical-name test with the allowlist.
-6. Move SDK codegen to names the engine formats (`formatIdentifiers`, or the
-   `codegen introspect --names-out` sidecar for offline generators), one SDK at
-   a time: Go and TypeScript, then Python, Rust and Elixir (the visible plural
-   bugs), PHP, Java and .NET, removing the word formatters they gained when
-   the engine wrote words into the schema JSON.
-7. Resolve the names module runtimes build themselves (Python and TypeScript
-   interface calls) through `formatIdentifiers`.
-8. Bump the Python, PHP, Elixir and Java runtimes' `engineVersion` to v1, and
-   format their codegen sidecars with `formatIdentifiers` and `version`.
-9. Name modules that declare `engine.IdentifierCasingVersion` or later by the
-   new rules, manifest v2 entrypoint modules included, with no aliases for the
-   old spellings; then let a generated entrypoint pin its naming version (see
-   [Module entrypoints](#module-entrypoints)).
+2. The core API (`identifier`, `formatIdentifiers`, `namingDictionary`).
+3. Prerelease-granular API views, so the cut can sit at `v1.0.0-beta.22`
+   (`engine.IdentifierCasingVersion`) (#14810).
+4. Module naming by the declared engine version: `core/gqlformat.go`, typedef
+   constructors, `namespaceObject`, CLI commands and flags; the identifier API
+   on every v1 view (#14891).
+5. The core renames at the cut, enum values spelled for the receiver's view,
+   Go codegen by `engine/naming`, and the in-repo clients regenerated
+   (#14895).
 
-Steps 1–8 are done for the in-repo SDKs, except step 4's deletion, which waits
-on the legacy path. Step 9's naming is done (the aliases of an earlier
-revision were dropped); pinning waits on a manifest v2 signal. Porting to the
-extracted SDKs is a follow-up (see [SDK Extraction](#sdk-extraction)).
+Steps 1 and 2 are merged; 3–5 are a stack of drafts. Not done:
+
+- deleting `strcase.ConfigureAcronym` in `core/llm.go` / `core/json.go` and
+  the `withFinalTypeName` workaround, which wait on dropping modules below
+  the cut;
+- pinning an entrypoint module's naming version, which waits on a manifest v2
+  signal (see [Module entrypoints](#module-entrypoints));
+- a version argument for `clientSchemaIntrospectionJson` (see
+  [Accepted breaks](#accepted-breaks));
+- the Go module self-binding names (see the Known gaps under
+  [The gate](#the-gate));
+- the extracted SDKs (`github.com/dagger/{go,python,typescript,php,java,dang}-sdk`,
+  `core/sdk/sdkmeta/sdks.json`), which keep their own converters, and also
+  generate the manifest v2 entrypoints where pinned naming would land.
