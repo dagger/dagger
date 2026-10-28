@@ -126,9 +126,9 @@ func TestCacheReadPathsShareEgraphLock(t *testing.T) {
 	assertCacheOwnershipExact(t, c)
 }
 
-// A part-host result with no part state, or with its gate already managed,
-// answers usesPartAcquisition under the read lock; only starting to manage a
-// gate needs the write lock.
+// usesPartAcquisition answers under the read lock whenever its answer needs no
+// write: no part state, an unmanaged gate with no part state, or a managed
+// gate. Only starting to manage a gate needs the write lock.
 func TestCachePartAcquisitionAnswersUnderReadLock(t *testing.T) {
 	ctx, c, srv := persistedListTestCache(t, "")
 	srv.InstallObject(NewClass(srv, ClassOpts[*inlineCaptureTestValue]{}))
@@ -148,8 +148,19 @@ func TestCachePartAcquisitionAnswersUnderReadLock(t *testing.T) {
 		return nil
 	})
 
+	// A gate that exists but is not managed, on a row with no part state,
+	// still answers false without the write lock.
 	c.egraphMu.Lock()
 	gate := row.partGate.loadOrCreate()
+	c.egraphMu.Unlock()
+	runWhileEgraphReadLocked(t, c, func() error {
+		if c.usesPartAcquisition(res, row) {
+			return fmt.Errorf("part acquisition for an unmanaged gate with no part state")
+		}
+		return nil
+	})
+
+	c.egraphMu.Lock()
 	gate.mu.Lock()
 	gate.managed = true
 	row.partGate.active.Store(true)
