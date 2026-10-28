@@ -171,6 +171,28 @@ func TestExportChainMarksALostBlobComputed(t *testing.T) {
 	require.Equal(t, []bool{true}, computedLayers(exportChain(t, imported)), "the lost blob is computed again")
 }
 
+// A forced compression converts a layer's stored blob to the requested one
+// the first time, which computes a blob. The next forced export finds that
+// variant stored and computes none.
+func TestExportChainMarksAForcedConversionComputed(t *testing.T) {
+	ctx := context.Background()
+	store := testutil.NewStore(t)
+	a, _ := store.Build(t, nil, "a.txt", "forced")
+	require.Equal(t, []bool{true}, computedLayers(exportChain(t, a)), "the uncompressed blob is computed")
+	forcedGzip := func() *bkcache.ExportChain {
+		chain, err := a.ExportChain(ctx, config.RefConfig{Compression: compression.New(compression.Gzip).SetForce(true)})
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, chain.Release(ctx)) })
+		return chain
+	}
+	first := forcedGzip()
+	require.Equal(t, ocispecs.MediaTypeImageLayerGzip, first.Layers[0].Descriptor.MediaType)
+	require.Equal(t, []bool{true}, computedLayers(first), "converting the blob to gzip computes one")
+	second := forcedGzip()
+	require.Equal(t, first.Layers[0].Descriptor, second.Layers[0].Descriptor)
+	require.Equal(t, []bool{false}, computedLayers(second), "the stored gzip variant is used as it is")
+}
+
 // A snapshot labelled as merged has its layer counted as merged when it is
 // diffed; a plain chain's never is. The labels are the merge-usage ones a merge,
 // a diff application or CommitWithUsage writes (merge.go withMergeUsage); a
