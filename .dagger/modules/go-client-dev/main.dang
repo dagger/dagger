@@ -19,6 +19,15 @@ let withBoundedGoBuilds(ctr: Container!): Container! {
     .withEnvVariable("GOFLAGS", "-p=" + goBuildJobs)
 }
 
+let withGoSdkCodegenCore(ctr: Container!): Container! {
+  ctr.withExec([
+    "dagger-go-sdk-codegen", "core",
+    "--output", "./core",
+    "--dag-output", "./dag",
+    "--introspection-json-path", "/schema.json",
+  ])
+}
+
 # Paths that a schema capture's engine commit may differ in from the
 # candidate: generated bindings, this module and Git metadata are not engine
 # inputs.
@@ -146,15 +155,10 @@ type GoClientDev {
   Regenerate the Go SDK API
   """
   pub generate: Changeset! @generate {
-    devContainer
+    let ctr = devContainer
       .withFile("/usr/local/bin/dagger-go-sdk-codegen", goSdkCodegen)
       .withMountedFile("/schema.json", introspectionJson)
-      .withExec([
-        "dagger-go-sdk-codegen", "core",
-        "--output", "./core",
-        "--dag-output", "./dag",
-        "--introspection-json-path", "/schema.json",
-      ])
+    withGoSdkCodegenCore(ctr)
       .withExec(["go", "mod", "tidy"])
       .directory("../..") # pop back to repo root
       .changes(workspaceDir)
@@ -262,23 +266,17 @@ type GoClientDev {
         generatorCommit,
       ))
       .withWorkdir("sdk/go")
-    let generateCore = [
-      "dagger-go-sdk-codegen", "core",
-      "--output", "./core",
-      "--dag-output", "./dag",
-      "--introspection-json-path", "/schema.json",
-    ]
     container
       .from(goSdkCodegenImage)
       .withMountedFile("/compare-codegen.sh", script)
       .withMountedDirectory("/capture", schemaCapture)
       .withMountedDirectory("/candidate", candidate.directory(sourcePath))
       .withMountedDirectory("/embedded", embedded)
-      .withMountedDirectory("/external", external.withExec(generateCore).directory("."))
+      .withMountedDirectory("/external", withGoSdkCodegenCore(external).directory("."))
       .withMountedDirectory(
         "/external-rerun",
         # a distinct exec, so the rerun does not hit the first run's cache
-        external.withEnvVariable("CODEGEN_RUN", "2").withExec(generateCore).directory("."),
+        withGoSdkCodegenCore(external.withEnvVariable("CODEGEN_RUN", "2")).directory("."),
       )
       .withEnvVariable("CANDIDATE_REF", sourceTag)
       .withEnvVariable("CANDIDATE_COMMIT", commit)
