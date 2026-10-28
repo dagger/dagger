@@ -1517,14 +1517,17 @@ func (c *Cache) applyMergedIdentitiesLocked(ctx context.Context, commit *valueMe
 		if row == nil || row.res == nil {
 			continue
 		}
-		// As a local cache does when a call returns an existing entry, the
-		// entry takes the earliest expiry of its calls: the row's, which
-		// the Cloud gave the call's, though the entry was here before. A
-		// row's expiry already past is an expired Cloud value's, which says
-		// nothing of a value the engine kept over it.
-		if row.value.ExpiresAtUnix > commit.now {
-			row.res.expiresAtUnix = mergeSharedResultExpiryUnix(row.res.expiresAtUnix, row.value.ExpiresAtUnix)
+		// The row's expiry is the earliest of its calls', the Cloud's
+		// value's own included. Once it has passed, the call has expired:
+		// as a local engine runs such a call again rather than hit, the
+		// engine isn't taught it, whatever value it holds.
+		if expires := row.value.ExpiresAtUnix; expires != 0 && expires <= commit.now {
+			continue
 		}
+		// As a local cache does when a call returns an existing entry, the
+		// entry takes the earliest expiry of its calls, though the entry
+		// was here before.
+		row.res.expiresAtUnix = mergeSharedResultExpiryUnix(row.res.expiresAtUnix, row.value.ExpiresAtUnix)
 		c.teachCallIdentityLocked(ctx, row.res, merged.id)
 	}
 	if joined != nil {

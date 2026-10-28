@@ -562,7 +562,8 @@ func TestCallRecordExpiresOnAnEntryTheEngineHad(t *testing.T) {
 
 // A bundle can carry, below a live root, a row whose Cloud value has expired,
 // with its calls. An engine that has its own unexpired value of that recipe
-// keeps it, learns the calls, and keeps its own expiry: the call hits there.
+// keeps it, with its own expiry, and isn't taught the calls, which have
+// expired: it runs the call again, as a local engine does after its TTL.
 func TestCallRecordOnAnExpiredRowLeavesTheEnginesValueAlone(t *testing.T) {
 	t.Parallel()
 	cloudCtx, cloud := storedPartTestCache(t, WithBlobStore())
@@ -605,11 +606,64 @@ func TestCallRecordOnAnExpiredRowLeavesTheEnginesValueAlone(t *testing.T) {
 	after := own.cacheSharedResult().expiresAtUnix
 	fresh.egraphMu.RUnlock()
 	require.Equal(t, before, after, "the engine's own value keeps its expiry")
-	hit, err := fresh.GetOrInitCall(freshCtx, "test-session", freshSrv, &CallRequest{ResultCall: frame.clone(), IsPersistable: true},
+	ran := false
+	_, err = fresh.GetOrInitCall(freshCtx, "test-session", freshSrv, &CallRequest{ResultCall: frame.clone(), IsPersistable: true},
 		func(context.Context) (AnyResult, error) {
-			t.Fatal("the call ran: the engine's value expired, or the call wasn't learned")
+			ran = true
+			return own, nil
+		})
+	require.NoError(t, err)
+	require.True(t, ran, "the expired call isn't taught")
+	ownHit, err := fresh.GetOrInitCall(freshCtx, "test-session", freshSrv, &CallRequest{ResultCall: callRecordTestFrame("inner"), IsPersistable: true},
+		func(context.Context) (AnyResult, error) {
+			t.Fatal("the engine's own value expired")
 			return nil, nil
 		})
 	require.NoError(t, err)
-	require.True(t, hit.HitCache())
+	require.True(t, ownHit.HitCache())
+}
+
+// An engine imported a value before a call gave it a TTL; once the TTL has
+// passed, a bundle that carries the value below a live root, with the call,
+// doesn't teach the engine the call over the value it kept: it runs the call.
+func TestCallRecordExpiredCallIsNotTaughtOnAValueTheEngineKept(t *testing.T) {
+	t.Parallel()
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	pctx, producer, producerSrv := transferTestCache(t)
+	frame := callRecordTestFrame("outer")
+	inner := persistedListTestResult(t, pctx, producer, producerSrv, "inner", &transferTestValue{Text: "inner"})
+	_, err := producer.GetOrInitCall(pctx, "test-session", producerSrv,
+		&CallRequest{ResultCall: frame, IsPersistable: true},
+		func(context.Context) (AnyResult, error) { return inner, nil })
+	require.NoError(t, err)
+	stored := storedPersistenceTestMerge(t, ctx, cloud, exportTestBundle(t, pctx, producer, inner))
+	require.Len(t, stored, 1)
+	test := &callRecordTest{ctx: pctx, producer: producer, frame: frame, inner: inner, cloud: cloud, number: stored[0]}
+	initial, err := cloud.StoredBundle(ctx, []uint64{test.number}, nil)
+	require.NoError(t, err)
+	fctx, fresh, srv := transferTestCache(t)
+	_, err = fresh.MergeValues(fctx, CloudCacheID, initial.Bundle)
+	require.NoError(t, err)
+	// A live parent keeps the inner row in its closure after the outer TTL.
+	parent := persistedListTestResult(t, test.ctx, test.producer, producerSrv, "parent", &transferTestValue{Text: "parent"})
+	transferTestDependency(test.producer, test.ctx, parent, test.inner)
+	numbers := storedPersistenceTestMerge(t, ctx, cloud, exportTestBundle(t, test.ctx, test.producer, parent))
+	require.Len(t, numbers, 1)
+	expires := time.Now().Add(2 * time.Second).Unix()
+	test.attach(t, ctx, test.span(t, true, expires))
+	time.Sleep(time.Until(time.Unix(expires+1, 0)))
+	built, err := cloud.StoredBundle(ctx, numbers, nil)
+	require.NoError(t, err)
+	require.Len(t, built.Bundle.Calls, 1)
+	_, err = fresh.MergeValues(fctx, CloudCacheID, built.Bundle)
+	require.NoError(t, err)
+	ran := false
+	_, err = fresh.GetOrInitCall(fctx, "test-session", srv,
+		&CallRequest{ResultCall: test.frame.clone(), IsPersistable: true},
+		func(context.Context) (AnyResult, error) {
+			ran = true
+			return NewResultForCall(&transferTestValue{Text: "reran"}, test.frame)
+		})
+	require.NoError(t, err)
+	require.True(t, ran, "a call whose TTL passed must not be taught onto the original never-expiring copy")
 }
