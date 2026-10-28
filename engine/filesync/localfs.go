@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/containerd/continuity/sysx"
@@ -110,6 +111,47 @@ func newLocalFS(sharedState *MirrorSharedState, subdir string, includes, exclude
 		excludes:           excludes,
 		copyPath:           copyPath,
 	}, nil
+}
+
+// newParentLocalFS is the mirror side of a parent directory sync: its walk
+// visits the given chain of directories, from the mirror's root down, and
+// nothing else. See FileSyncer.syncParentDirs.
+func newParentLocalFS(sharedState *MirrorSharedState, chain []string, copyPath string) *localFS {
+	return &localFS{
+		localFSSharedState: sharedState,
+		subdir:             "/",
+		filterFS:           mirrorChainFS{root: sharedState.rootPath, chain: chain},
+		copyPath:           copyPath,
+	}
+}
+
+// mirrorChainFS walks a chain of directories in the mirror, each one beneath
+// the one before, stopping at the first that the mirror doesn't have yet.
+type mirrorChainFS struct {
+	root  string
+	chain []string
+}
+
+func (m mirrorChainFS) Walk(_ context.Context, _ string, walkFn fs.WalkDirFunc) error {
+	for _, dir := range m.chain {
+		stat, err := fsutil.Stat(filepath.Join(m.root, dir))
+		if errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+			// The mirror has nothing at dir, or a file above it.
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		stat.Path = dir
+		if err := walkFn(dir, &StatInfo{stat}, nil); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (mirrorChainFS) Open(string) (io.ReadCloser, error) {
+	return nil, errors.New("the parent directory sync reads no files")
 }
 
 func localCopyOnlyPaths(only map[string]struct{}, basePath string) map[string]struct{} {

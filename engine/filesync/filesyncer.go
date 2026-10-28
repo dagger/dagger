@@ -2,8 +2,12 @@ package filesync
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	bkcache "github.com/dagger/dagger/engine/snapshots"
@@ -11,6 +15,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	fstypes "github.com/dagger/dagger/internal/fsutil/types"
 	"github.com/opencontainers/go-digest"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
 	"github.com/dagger/dagger/engine"
@@ -82,23 +87,15 @@ func (ls *FileSyncer) snapshot(
 		return nil, "", fmt.Errorf("create filesync network recorders: %w", err)
 	}
 
-	statCtx := engine.LocalImportOpts{
+	statMsg, err := statClientPath(ctx, callerConn, engine.LocalImportOpts{
 		Path:              clientPath,
 		StatPathOnly:      true,
 		StatReturnAbsPath: true,
 		StatResolvePath:   true,
-	}.AppendToOutgoingContext(ctx)
-	diffCopyClient, err := remotefilesync.NewFileSyncClient(callerConn).DiffCopy(statCtx)
+	})
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to create diff copy client: %w", err)
+		return nil, "", err
 	}
-
-	var statMsg fstypes.Stat
-	if err := diffCopyClient.RecvMsg(&statMsg); err != nil {
-		diffCopyClient.CloseSend()
-		return nil, "", fmt.Errorf("failed to receive stat message: %w", err)
-	}
-	diffCopyClient.CloseSend()
 
 	clientPath = filepath.Clean(statMsg.Path)
 	drive := pathutil.GetDrive(clientPath)
@@ -139,6 +136,13 @@ func (ls *FileSyncer) sync(
 	return local.Sync(ctx, remote, ls.cacheManager, false)
 }
 
+// syncParentDirs creates the client path's parent directories in the mirror,
+// and the client path itself, matching the client's, so that the client
+// path's own sync has somewhere to write. It reads the client's filesystem
+// only along that chain of directories, statting each one by its literal
+// path. A walk filtered by include patterns would treat a pattern character
+// in a parent's name, such as the ^ or [ ] of "a^b/[x]", as a pattern, and
+// walk far beyond the chain.
 func (ls *FileSyncer) syncParentDirs(
 	ctx context.Context,
 	sharedState *MirrorSharedState,
@@ -154,22 +158,70 @@ func (ls *FileSyncer) syncParentDirs(
 
 	ctx = bklog.WithLogger(ctx, bklog.G(ctx).WithField("parentSync", "y"))
 
-	include := strings.TrimPrefix(strings.TrimSuffix(clientPath, "/"), "/")
-	includes := []string{include}
-	excludes := []string{include + "/*"}
-	root := "/"
-	if drive != "" {
-		root = drive + "/"
+	var chain []string
+	for dir := strings.Trim(clientPath, "/"); dir != "" && dir != "."; dir = filepath.Dir(dir) {
+		chain = append(chain, dir)
+	}
+	slices.Reverse(chain)
+
+	stats := make(parentChainFS, len(chain))
+	eg, egCtx := errgroup.WithContext(ctx)
+	for i, dir := range chain {
+		eg.Go(func() error {
+			stat, err := statClientPath(egCtx, callerConn, engine.LocalImportOpts{
+				Path:         drive + "/" + dir,
+				StatPathOnly: true,
+			})
+			if err != nil {
+				return fmt.Errorf("stat %s: %w", dir, err)
+			}
+			stat.Path = dir
+			// as the client does for the stats a directory sync sends
+			stat.Uid = 0
+			stat.Gid = 0
+			stat.Xattrs = nil
+			stats[i] = stat
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return err
 	}
 
-	remote := newRemoteFS(callerConn, root, includes, excludes, nil, false)
-	local, err := newLocalFS(sharedState, "/", includes, excludes, nil, opts.RelativePath)
-	if err != nil {
-		return fmt.Errorf("failed to create local fs: %w", err)
-	}
-	_, _, err = local.Sync(ctx, remote, ls.cacheManager, true)
-	if err != nil {
+	local := newParentLocalFS(sharedState, chain, opts.RelativePath)
+	if _, _, err := local.Sync(ctx, stats, ls.cacheManager, true); err != nil {
 		return fmt.Errorf("failed to sync to local fs: %w", err)
 	}
 	return nil
+}
+
+// parentChainFS is the client's chain of directories down to a client path,
+// as syncParentDirs statted them, in walk order.
+type parentChainFS []*fstypes.Stat
+
+func (chain parentChainFS) Walk(_ context.Context, _ string, walkFn fs.WalkDirFunc) error {
+	for _, stat := range chain {
+		if err := walkFn(stat.Path, &StatInfo{stat}, nil); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (parentChainFS) ReadFile(context.Context, string) (io.ReadCloser, error) {
+	return nil, errors.New("the parent directory sync reads no files")
+}
+
+// statClientPath sends the client a stat request for opts.Path.
+func statClientPath(ctx context.Context, callerConn *grpc.ClientConn, opts engine.LocalImportOpts) (*fstypes.Stat, error) {
+	diffCopyClient, err := remotefilesync.NewFileSyncClient(callerConn).DiffCopy(opts.AppendToOutgoingContext(ctx))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create diff copy client: %w", err)
+	}
+	defer diffCopyClient.CloseSend()
+	var stat fstypes.Stat
+	if err := diffCopyClient.RecvMsg(&stat); err != nil {
+		return nil, fmt.Errorf("failed to receive stat message: %w", err)
+	}
+	return &stat, nil
 }
