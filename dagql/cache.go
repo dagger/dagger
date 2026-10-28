@@ -833,7 +833,7 @@ func (c *Cache) trackSessionResult(ctx context.Context, sessionID string, res An
 		return nil
 	}
 
-	c.egraphMu.RLock()
+	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
 	_, trackedCount, err := c.acquireSessionResultLocked(ctx, sessionID, shared)
 	c.egraphMu.RUnlock()
 	if err != nil {
@@ -1674,7 +1674,7 @@ func (c *Cache) upsertPersistedEdgeLocked(ctx context.Context, res *sharedResult
 // left the cache.
 func (c *Cache) resultState(ctx context.Context, res *sharedResult, pendingEdge *pendingRetention) (CacheResultState, bool) {
 	parts := c.completePartKeys(ctx, res)
-	c.egraphMu.RLock()
+	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
 	defer c.egraphMu.RUnlock()
 	if c.resultsByID[res.id] != res {
 		return CacheResultState{}, false
@@ -2244,6 +2244,9 @@ func wipeSQLiteFiles(dbPath string) error {
 	return nil
 }
 
+// egraphLockIdent names egraphMu in profiles' lock waits.
+const egraphLockIdent = "dagql.egraph"
+
 type Cache struct {
 	partFixture              atomic.Pointer[partFixtureState]
 	testTransferCopied       func(uint64)
@@ -2259,7 +2262,9 @@ type Cache struct {
 	// values, resources, and telemetry maps. Hot operation admission uses the
 	// per-session atomic lifecycle records below instead of this global mutex.
 	sessionMu sync.Mutex
-	// egraphMu protects all e-graph state and indexes.
+	// egraphMu protects all e-graph state and indexes. A call's own paths
+	// take it with wcprof.ReadLock and WriteLock, so a profile shows the time
+	// they wait for it (egraphLockIdent).
 	egraphMu sync.RWMutex
 
 	// engineInstanceID names the engine instance that owns the cache, for the
@@ -3660,7 +3665,7 @@ func (c *Cache) addExplicitDependency(ctx context.Context, parent AnyResult, dep
 	if depShared == nil || depShared.id == 0 {
 		return fmt.Errorf("add explicit dependency: dep %T is not an attached result in this cache", dep)
 	}
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	defer c.egraphMu.Unlock()
 
 	// Numeric result IDs are engine-lifetime unique, so registration under
@@ -6306,7 +6311,7 @@ func (c *Cache) lookupCacheForDigests(
 		return nil, false, nil
 	}
 
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	now := time.Now()
 	nowUnix := now.Unix()
 	match := c.lookupMatchForDigestsLocked(recipeDigest, extraDigests, nowUnix)
@@ -6582,7 +6587,7 @@ func (c *Cache) releaseOngoingCallHandoff(ctx context.Context, oc *ongoingCall) 
 		return nil
 	}
 
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	if oc.needsPersistedEdge {
 		c.upsertPersistedEdgeLocked(ctx, oc.res, oc.persistedEdgeExpiresAtUnix, false)
 		oc.pendingEdge.created = true
@@ -6671,7 +6676,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	oc.res = &sharedResult{}
 	if oc.val != nil {
 		if existingRes := oc.val.cacheSharedResult(); existingRes != nil && existingRes.id != 0 {
-			c.egraphMu.Lock()
+			wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 			oc.res = c.canonicalEquivalentSharedResultLocked(sessionID, existingRes, time.Now().Unix(), true)
 			// Take the publication handoff hold inside the same critical
 			// section as the canonical pick: the adopted result may be owned
@@ -6926,7 +6931,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	if c.testBeforePublicationIndex != nil {
 		c.testBeforePublicationIndex(oc)
 	}
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	// One current entry per recipe (cache_current_entry.go). A fresh value is
 	// indexed under the recipe of its stored frame, unless that recipe
 	// already has a current entry: then it adopts a live one (D1), waits for
@@ -6987,7 +6992,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 				}
 				select {
 				case <-waitCh:
-					c.egraphMu.Lock()
+					wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 					continue
 				case <-released:
 				case <-ctx.Done():
@@ -6998,7 +7003,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 				// attachment lasts, so the value registers beside the entry,
 				// not indexed, as for a session that does not cover the
 				// entry's requirements.
-				c.egraphMu.Lock()
+				wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 				unindexed = true
 				break
 			}
@@ -7198,7 +7203,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	// attachment-time claim.
 	failAttachment := func(err error, refusedByRelease bool) error {
 		cleanupCtx := context.WithoutCancel(ctx)
-		c.egraphMu.Lock()
+		wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 		if !resWasCacheBacked {
 			c.unindexRecipesLocked(oc.res)
 		}
