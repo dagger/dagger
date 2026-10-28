@@ -1420,8 +1420,20 @@ func (src *ModuleSource) SourceImplementationDigest(ctx context.Context) (digest
 	}
 
 	// Include user defaults in digest so changes to env files invalidate cache
-	if src.UserDefaults != nil {
-		vars, err := src.UserDefaults.Variables(ctx, false)
+	if src.UserDefaults != nil && len(src.UserDefaults.Environ) > 0 {
+		// Expand system variables from the main client, as UserDefault does
+		// when it applies them. A dependent module calling this one has none
+		// of them set, and calls to this module compute the digest in the
+		// caller's context.
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return "", fmt.Errorf("get current query: %w", err)
+		}
+		mainClient, err := query.NonModuleParentClientMetadata(ctx)
+		if err != nil {
+			return "", fmt.Errorf("access main client: %w", err)
+		}
+		vars, err := src.UserDefaults.Variables(engine.ContextWithClientMetadata(ctx, mainClient), false)
 		if err != nil {
 			// If user defaults fail to load, log the error and skip them from digest calculation
 			// FIXME: change the signature to bubble up the error?
