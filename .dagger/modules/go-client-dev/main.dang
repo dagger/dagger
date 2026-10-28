@@ -5,7 +5,7 @@ let goSdkRemote = "https://github.com/dagger/go-sdk"
 # Move this pin only to a reviewed github.com/dagger/go-sdk commit for which
 # compareCodegen reports no difference: its dagger-go-sdk-codegen generates
 # the core bindings that the Go SDK releases.
-let goSdkCodegenCommit = "d4c37977dcc89b4950b46189b04b837fcd324125"
+let goSdkCodegenCommit = "837cf067bade8d6897cfb928ac5555fc505c838e"
 
 let goSdkCodegenImage = "golang:1.26.1-alpine"
 
@@ -147,7 +147,14 @@ type GoClientDev {
   """
   pub generate: Changeset! @generate {
     devContainer
-      .withExec(["go", "generate", "-v", "."])
+      .withFile("/usr/local/bin/dagger-go-sdk-codegen", goSdkCodegen)
+      .withMountedFile("/schema.json", introspectionJson)
+      .withExec([
+        "dagger-go-sdk-codegen", "core",
+        "--output", "./core",
+        "--dag-output", "./dag",
+        "--introspection-json-path", "/schema.json",
+      ])
       .withExec(["go", "mod", "tidy"])
       .directory("../..") # pop back to repo root
       .changes(workspaceDir)
