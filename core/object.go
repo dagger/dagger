@@ -111,27 +111,31 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 	// needing to make calls to their own API).
 	switch x := value.(type) {
 	case dagql.ObjectResult[*ModuleObject]:
+		srv, err := CurrentDagqlServer(ctx)
+		if err != nil {
+			return nil, err
+		}
+		// Inline stored objects are reconstructed from SDK data. Attach
+		// their source before SDK conversion needs its ID and collection base.
+		if _, err := x.ID(); err != nil {
+			cache, err := dagql.EngineCache(ctx)
+			if err != nil {
+				return nil, err
+			}
+			metadata, err := engine.ClientMetadataFromContext(ctx)
+			if err != nil {
+				return nil, err
+			}
+			attached, err := cache.AttachResult(ctx, metadata.SessionID, srv, x)
+			if err != nil {
+				return nil, err
+			}
+			x = attached.(dagql.ObjectResult[*ModuleObject])
+		}
 		if scope := dagql.CurrentResultScope(ctx); scope != nil {
 			srv, err := CurrentDagqlServer(ctx)
 			if err != nil {
 				return nil, err
-			}
-			// Inline stored objects are reconstructed from SDK data. Attach
-			// their source before a view needs its ID and collection base.
-			if _, err := x.ID(); err != nil {
-				cache, err := dagql.EngineCache(ctx)
-				if err != nil {
-					return nil, err
-				}
-				metadata, err := engine.ClientMetadataFromContext(ctx)
-				if err != nil {
-					return nil, err
-				}
-				attached, err := cache.AttachResult(ctx, metadata.SessionID, srv, x)
-				if err != nil {
-					return nil, err
-				}
-				x = attached.(dagql.ObjectResult[*ModuleObject])
 			}
 			scoped, err := scope.Apply(ctx, srv, x)
 			if err != nil {

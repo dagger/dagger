@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/stretchr/testify/require"
 )
 
@@ -195,4 +196,30 @@ func TestCollectionDeclarations(t *testing.T) {
 	badDelta.Collection = &CollectionConfig{Enabled: true, Delta: "absent"}
 	_, err = badDelta.CollectionMembers()
 	require.ErrorContains(t, err, "delta field")
+}
+
+func TestUnfilteredInlineCollectionSDKInputHasBase(t *testing.T) {
+	original, _ := collectionTestObject(t, TypeDefKindString, []any{"a", "b"})
+	ctx := t.Context()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	root := &Query{}
+	server := &moduleObjectTestServer{mockServer: &mockServer{}, cache: cache, root: root}
+	root.Server = server
+	dag := newCoreDagqlServerForTest(t, root)
+	server.dag = dag
+	installModuleObjectTestModuleClass(dag)
+	installTypeDefTestClasses(dag)
+	ctx = engine.ContextWithClientMetadata(ContextWithQuery(dagql.ContextWithCache(ctx, cache), root), &engine.ClientMetadata{ClientID: "inline-client", SessionID: "inline-session"})
+	original.TypeDef = newTypeDefAttachedResult(t, ctx, cache, dag, "inline-collection-type", original.TypeDef).Self()
+	mod := newTypeDefAttachedResult(t, ctx, cache, dag, "inline-module", &Module{NameField: "test", Deps: NewSchemaBuilder(nil, nil)})
+	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*ModuleObject]{Typed: &ModuleObject{Module: mod, TypeDef: original.TypeDef}}))
+	typ := &ModuleObjectType{mod: mod, typeDef: original.TypeDef}
+	ctx = dagql.ContextWithCall(ctx, moduleObjectTestSyntheticCall("inline-collection", original))
+	decoded, err := typ.ConvertFromSDKResult(ctx, maps.Clone(original.Fields))
+	require.NoError(t, err)
+	require.Nil(t, dagql.CurrentResultScope(ctx))
+	converted, err := typ.ConvertToSDKInput(ctx, decoded)
+	require.NoError(t, err)
+	require.NotEmpty(t, converted.(map[string]any)[collectionBaseField])
 }
