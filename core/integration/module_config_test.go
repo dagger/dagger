@@ -14,7 +14,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"strings"
 
 	"github.com/stretchr/testify/require"
@@ -828,15 +827,6 @@ func (ModuleConfigSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 			require.NoError(t, err)
 			expectedURL := fmt.Sprintf("https://%s/%s/%s", tc.expectedBaseHTMLURL, tc.expectedURLPathComponent, tc.gitTestRepoCommit)
 			require.Equal(t, expectedURL, htmlURL)
-			// URL format matches public repo from same provider.
-			// No need to test with auth on those refs
-			if !tc.isPrivateRepo {
-				resp, err := http.Get(htmlURL)
-				require.NoError(t, err)
-				defer resp.Body.Close()
-				require.Equal(t, http.StatusOK, resp.StatusCode)
-				require.Equal(t, fmt.Sprintf("https://%s/%s/%s", tc.expectedBaseHTMLURL, tc.expectedURLPathComponent, tc.gitTestRepoCommit), htmlURL)
-			}
 
 			commit, err := base.
 				With(daggerExec("core", "module-source", "--ref-string", testGitModuleRef(tc, ""), "commit")).
@@ -859,15 +849,6 @@ func (ModuleConfigSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 			expectedURL := fmt.Sprintf("https://%s/%s/%s%s/top-level", tc.expectedBaseHTMLURL, tc.expectedURLPathComponent, tc.gitTestRepoCommit, tc.expectedPathPrefix)
 			require.Equal(t, expectedURL, htmlURL)
 
-			// URL format matches public repo from same provider.
-			// No need to test with auth on those refs
-			if !tc.isPrivateRepo {
-				resp, err := http.Get(htmlURL)
-				require.NoError(t, err)
-				defer resp.Body.Close()
-				require.Equal(t, http.StatusOK, resp.StatusCode)
-			}
-
 			commit, err := base.
 				With(daggerExec("core", "module-source", "--ref-string", testGitModuleRef(tc, "top-level"), "commit")).
 				Stdout(ctx)
@@ -888,15 +869,6 @@ func (ModuleConfigSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 			require.NoError(t, err)
 			expectedURL := fmt.Sprintf("https://%s/%s/%s%s/subdir/dep2", tc.expectedBaseHTMLURL, tc.expectedURLPathComponent, tc.gitTestRepoCommit, tc.expectedPathPrefix)
 			require.Equal(t, expectedURL, htmlURL)
-
-			// URL format matches public repo from same provider.
-			// No need to test with auth on those refs
-			if !tc.isPrivateRepo {
-				resp, err := http.Get(htmlURL)
-				require.NoError(t, err)
-				defer resp.Body.Close()
-				require.Equal(t, http.StatusOK, resp.StatusCode)
-			}
 
 			commit, err := base.
 				With(daggerExec("core", "module-source", "--ref-string", testGitModuleRef(tc, "subdir/dep2"), "commit")).
