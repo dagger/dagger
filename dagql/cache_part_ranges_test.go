@@ -239,6 +239,67 @@ func TestPartRangeReadsHeldChunkBound(t *testing.T) {
 	require.True(t, source.ranges.held.TryAcquire(6), "every chunk's slot is returned")
 }
 
+// A reader closed while a read is reading a fetched chunk through returns
+// each chunk's slot once: the engine's slots are whole again, and no more.
+func TestPartRangeReadsCloseDuringRead(t *testing.T) {
+	const size = 4 << 20
+	_, source, offer, data, stats := rangeTestReader(t, size, func(cfg *partRangeConfig) {
+		cfg.chunk = 1 << 20
+		cfg.minBlob = 1 << 20
+	})
+	reader, _ := openRangeTest(t, source, offer, nil, stats)
+	ranged, ok := reader.(*partRangeReader)
+	require.True(t, ok, "the blob is read in ranges")
+	entered, proceed := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	ranged.testBeforeReadThrough = func() {
+		once.Do(func() {
+			close(entered)
+			<-proceed
+		})
+	}
+	read := make(chan string, 1)
+	go func() {
+		got := make([]byte, 1<<20)
+		n, _ := reader.ReadAt(got, 0)
+		read <- string(got[:n])
+	}()
+	within(t, entered)
+	closed := make(chan error, 1)
+	go func() { closed <- reader.Close() }()
+	// Close returns, or waits for the read, before the read finishes its chunk.
+	select {
+	case <-closed:
+		closed <- nil
+	case <-time.After(200 * time.Millisecond):
+	}
+	close(proceed)
+	require.True(t, within(t, read) == data[:1<<20])
+	require.NoError(t, within(t, closed))
+	require.True(t, source.ranges.held.TryAcquire(maxPartHeldChunks), "every held chunk's slot is returned")
+	require.False(t, source.ranges.held.TryAcquire(1), "no slot is returned twice")
+}
+
+// A first read past the read offset, at a chunk no worker has claimed, reads
+// on one stream from there: waiting for its chunk could leave the engine's
+// held-chunk slots with the chunks before it, which no read reads through.
+func TestPartRangeReadsForwardRead(t *testing.T) {
+	const size = 40 << 20
+	_, source, offer, data, stats := rangeTestReader(t, size, func(cfg *partRangeConfig) {
+		cfg.chunk = 1 << 20
+		cfg.held = semaphore.NewWeighted(4)
+	})
+	reader, _ := openRangeTest(t, source, offer, nil, stats)
+	read := make(chan string, 1)
+	go func() {
+		got := make([]byte, 1<<20)
+		n, _ := reader.ReadAt(got, 8<<20)
+		read <- string(got[:n])
+	}()
+	require.True(t, within(t, read) == data[8<<20:9<<20], "the read past the offset returns its bytes")
+	require.NoError(t, reader.Close())
+}
+
 // The engine-wide budget bounds the extra streams: a reader that finds none
 // left reads its blob on one stream, and a closed reader's streams go back.
 func TestPartRangeReadsStreamBudget(t *testing.T) {
