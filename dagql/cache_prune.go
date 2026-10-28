@@ -692,12 +692,12 @@ func (snapshot *pruneSnapshot) useStoredBlobs(identities map[sharedResultID][]st
 // egraphMu.
 func (c *Cache) pruneIncomingLocked(res *sharedResult, state sharedResultPayloadState) (int64, bool) {
 	if !c.blobBacked {
-		return res.incomingOwnershipCount, true
+		return res.incomingOwnershipCount.Load(), true
 	}
 	if !state.hasValue && state.persistedEnvelope == nil {
 		return 0, false
 	}
-	return res.incomingOwnershipCount - res.engineHoldingsLocked(), true
+	return res.incomingOwnershipCount.Load() - res.engineHoldingsLocked(), true
 }
 
 // pruneDirectBytesLocked is what the memory stage frees with res: an

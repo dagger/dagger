@@ -490,7 +490,7 @@ func (c *Cache) traceSessionResultTracked(ctx context.Context, sessionID string,
 		if shared != nil {
 			args = append(args,
 				"shared_result_id", shared.id,
-				"incoming_ownership_count", shared.incomingOwnershipCount,
+				"incoming_ownership_count", shared.incomingOwnershipCount.Load(),
 				"record_type", shared.recordType,
 				"description", shared.description,
 				"dep_count", len(shared.deps),
@@ -524,7 +524,7 @@ func (c *Cache) traceSessionResultReleasing(ctx context.Context, sessionID strin
 		if shared != nil {
 			args = append(args,
 				"shared_result_id", shared.id,
-				"incoming_ownership_count", shared.incomingOwnershipCount,
+				"incoming_ownership_count", shared.incomingOwnershipCount.Load(),
 				"record_type", shared.recordType,
 				"description", shared.description,
 				"dep_count", len(shared.deps),
@@ -818,7 +818,7 @@ func (c *Cache) traceResultCallFrameUpdated(ctx context.Context, res *sharedResu
 			"shared_result_id", res.id,
 			"record_type", res.recordType,
 			"description", res.description,
-			"incoming_ownership_count", res.incomingOwnershipCount,
+			"incoming_ownership_count", res.incomingOwnershipCount.Load(),
 			"dep_count", len(res.deps),
 			"old_frame_present", oldFrame != nil,
 			"old_frame_field", oldField,
@@ -840,7 +840,7 @@ func (c *Cache) traceResultRemoved(ctx context.Context, res *sharedResult, oldFr
 			"shared_result_id", res.id,
 			"record_type", res.recordType,
 			"description", res.description,
-			"incoming_ownership_count", res.incomingOwnershipCount,
+			"incoming_ownership_count", res.incomingOwnershipCount.Load(),
 			"dep_count", depCount,
 			"had_result_call", oldFrame != nil,
 			"result_call_field", field,
@@ -860,7 +860,7 @@ func (c *Cache) traceAttachResultReusedCacheBacked(ctx context.Context, sessionI
 			"shared_result_id", shared.id,
 			"record_type", shared.recordType,
 			"description", shared.description,
-			"incoming_ownership_count", shared.incomingOwnershipCount,
+			"incoming_ownership_count", shared.incomingOwnershipCount.Load(),
 			"dep_count", len(shared.deps),
 			"has_result_call", frame != nil,
 			"result_call_field", field,
@@ -906,7 +906,7 @@ func (c *Cache) traceRecipeIDRebuildFailed(ctx context.Context, rootFrame *Resul
 				"cache_result_has_frame", frame != nil,
 				"cache_result_record_type", res.recordType,
 				"cache_result_description", res.description,
-				"cache_result_incoming_ownership_count", res.incomingOwnershipCount,
+				"cache_result_incoming_ownership_count", res.incomingOwnershipCount.Load(),
 				"cache_result_dep_count", len(res.deps),
 				"cache_result_call_field", field,
 				"cache_result_call_kind", kind,
@@ -957,7 +957,7 @@ func (c *Cache) traceResultCallRefFromResultFailed(ctx context.Context, res AnyR
 				"cache_result_has_frame", frame != nil,
 				"cache_result_record_type", cacheRes.recordType,
 				"cache_result_description", cacheRes.description,
-				"cache_result_incoming_ownership_count", cacheRes.incomingOwnershipCount,
+				"cache_result_incoming_ownership_count", cacheRes.incomingOwnershipCount.Load(),
 				"cache_result_dep_count", len(cacheRes.deps),
 				"cache_result_call_field", field,
 				"cache_result_call_kind", kind,
@@ -1053,7 +1053,7 @@ func (c *Cache) DebugEGraphSnapshot() *EGraphDebugSnapshot {
 			RecordType:                 res.recordType,
 			Description:                res.description,
 			TypeName:                   typeName,
-			IncomingOwnershipCount:     res.incomingOwnershipCount,
+			IncomingOwnershipCount:     res.incomingOwnershipCount.Load(),
 			HasValue:                   state.hasValue,
 			PayloadState:               payloadState,
 			HasPersistedEdge:           c.persistedEdgesByResult[res.id].resultID != 0,
@@ -1206,7 +1206,7 @@ func (c *Cache) debugWarmCompleteParts(ctx context.Context) {
 	c.egraphMu.RLock()
 	rows := make([]*sharedResult, 0, len(c.resultsByID))
 	for _, res := range c.resultsByID {
-		if res.incomingOwnershipCount > 0 && !res.noValueLocked() {
+		if res.incomingOwnershipCount.Load() > 0 && !res.noValueLocked() {
 			rows = append(rows, res)
 		}
 	}
@@ -1445,7 +1445,7 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 					RecordType:                 res.recordType,
 					Description:                res.description,
 					TypeName:                   typeName,
-					IncomingOwnershipCount:     res.incomingOwnershipCount,
+					IncomingOwnershipCount:     res.incomingOwnershipCount.Load(),
 					HasValue:                   state.hasValue,
 					PayloadState:               payloadState,
 					HasPersistedEdge:           c.persistedEdgesByResult[res.id].resultID != 0,

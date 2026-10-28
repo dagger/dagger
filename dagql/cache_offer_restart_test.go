@@ -65,8 +65,8 @@ func forwardedOfferOwner(c *Cache, id uint64) (*offerOwner, error) {
 		if row == nil {
 			return nil, fmt.Errorf("missing dependency %d", dep)
 		}
-		if row.incomingOwnershipCount <= 0 {
-			return nil, fmt.Errorf("dependency %d has nonpositive ownership %d", dep, row.incomingOwnershipCount)
+		if row.incomingOwnershipCount.Load() <= 0 {
+			return nil, fmt.Errorf("dependency %d has nonpositive ownership %d", dep, row.incomingOwnershipCount.Load())
 		}
 	}
 	if offer.owner.slots != 1 {

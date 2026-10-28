@@ -368,7 +368,7 @@ func TestCachePersistedEdgeInstallRejectsCollectedResult(t *testing.T) {
 	_, persisted := c.persistedEdgesByResult[shared.id]
 	c.egraphMu.RUnlock()
 	assert.Assert(t, !persisted)
-	assert.Equal(t, int64(0), shared.incomingOwnershipCount)
+	assert.Equal(t, int64(0), shared.incomingOwnershipCount.Load())
 }
 
 func TestCacheOperationLeaseFailureCancelsSharedContext(t *testing.T) {

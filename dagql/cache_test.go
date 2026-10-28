@@ -6193,7 +6193,7 @@ func TestCacheLatePersistableJoinCommitsBeforeHandoffRelease(t *testing.T) {
 			c.egraphMu.RLock()
 			edge, found := c.persistedEdgesByResult[shared.id]
 			live := c.resultsByID[shared.id] == shared
-			ownershipCount := shared.incomingOwnershipCount
+			ownershipCount := shared.incomingOwnershipCount.Load()
 			c.egraphMu.RUnlock()
 			assert.Assert(t, found)
 			assert.Equal(t, expectedExpiry, edge.expiresAtUnix)
@@ -7036,8 +7036,8 @@ func TestCachePruneDoesNotProtectTermProvenanceOnlyResultFromActiveResult(t *tes
 			SyntheticOp: "root",
 			Type:        NewResultCallType(Int(0).Type()),
 		},
-		incomingOwnershipCount: 1,
 	}
+	root.incomingOwnershipCount.Store(1)
 	provenanceOnly := &sharedResult{
 		id:       2,
 		self:     cacheTestSizedInt{Int: Int(2), sizeByIdentity: map[string]int64{"snapshot://prune-structural-provenance-only": 20}, usageIdentities: []string{"snapshot://prune-structural-provenance-only"}},
@@ -7047,8 +7047,8 @@ func TestCachePruneDoesNotProtectTermProvenanceOnlyResultFromActiveResult(t *tes
 			SyntheticOp: "provenanceOnly",
 			Type:        NewResultCallType(Int(0).Type()),
 		},
-		incomingOwnershipCount: 1,
 	}
+	provenanceOnly.incomingOwnershipCount.Store(1)
 
 	c.egraphMu.Lock()
 	c.initEgraphLocked()
@@ -7153,7 +7153,7 @@ func TestCacheAttachDependencyResults(t *testing.T) {
 		_, parentDependsOnChild = cachedParent.deps[childShared.id]
 	}
 	if cachedChild != nil {
-		childIncomingOwnershipCount = cachedChild.incomingOwnershipCount
+		childIncomingOwnershipCount = cachedChild.incomingOwnershipCount.Load()
 	}
 	c.egraphMu.RUnlock()
 
@@ -7273,7 +7273,7 @@ func TestCacheAddExplicitDependency(t *testing.T) {
 		_, parentDependsOnChild = cachedParent.deps[childShared.id]
 	}
 	if cachedChild := c.resultsByID[childShared.id]; cachedChild != nil {
-		childIncomingOwnershipCount = cachedChild.incomingOwnershipCount
+		childIncomingOwnershipCount = cachedChild.incomingOwnershipCount.Load()
 	}
 	c.egraphMu.RUnlock()
 
@@ -9007,7 +9007,7 @@ func TestCachePublicationRollsBackWhenStructuralDepMissing(t *testing.T) {
 			c.egraphMu.RLock()
 			_, stillRegistered := c.resultsByID[deadShared.id]
 			resultsBefore = len(c.resultsByID)
-			liveOwnBefore = liveShared.incomingOwnershipCount
+			liveOwnBefore = liveShared.incomingOwnershipCount.Load()
 			c.egraphMu.RUnlock()
 			assert.Assert(t, !stillRegistered, "the doomed ref's target must be collected before indexing")
 		})
@@ -9031,7 +9031,7 @@ func TestCachePublicationRollsBackWhenStructuralDepMissing(t *testing.T) {
 	// edge alone.
 	c.egraphMu.RLock()
 	resultsAfter := len(c.resultsByID)
-	liveOwnAfter := liveShared.incomingOwnershipCount
+	liveOwnAfter := liveShared.incomingOwnershipCount.Load()
 	c.egraphMu.RUnlock()
 	assert.Equal(t, resultsBefore, resultsAfter,
 		"the failed publication must not leave a registered record behind")

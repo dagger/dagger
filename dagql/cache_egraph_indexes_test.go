@@ -596,7 +596,7 @@ func TestCacheReleaseCascadePreservesCallbacksAndCleansDerivedIndexes(t *testing
 	assert.NilError(t, c.AddExplicitDependency(ctxParent, parent, child, "derived-index-cascade"))
 
 	c.egraphMu.Lock()
-	childOwners := child.cacheSharedResult().incomingOwnershipCount
+	childOwners := child.cacheSharedResult().incomingOwnershipCount.Load()
 	indexErr := cacheDerivedIndexesErrorLocked(c)
 	c.egraphMu.Unlock()
 	assert.Equal(t, int64(2), childOwners)
@@ -712,7 +712,7 @@ func TestCacheBroadImportedPostingRemoval(t *testing.T) {
 		_, persisted := f.cache.persistedEdgesByResult[resultID]
 		state := fixtureState{present: res != nil, persisted: persisted}
 		if res != nil {
-			state.owners, state.deps = res.incomingOwnershipCount, len(res.deps)
+			state.owners, state.deps = res.incomingOwnershipCount.Load(), len(res.deps)
 		}
 		fixtures[resultID] = state
 	}

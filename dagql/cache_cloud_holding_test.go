@@ -90,11 +90,11 @@ func TestCacheFailedReplacementWithACloudHoldingIsCollected(t *testing.T) {
 	require.NoError(t, err)
 	c.egraphMu.Lock()
 	testOfferPartLocked(t, ctx, c, old.cacheSharedResult(), ownerDep.cacheSharedResult())
-	owners := old.cacheSharedResult().incomingOwnershipCount
+	owners := old.cacheSharedResult().incomingOwnershipCount.Load()
 	c.egraphMu.Unlock()
 	require.NoError(t, c.ReleaseSession(ctx, "a"))
 	c.egraphMu.RLock()
-	require.EqualValues(t, 1, c.resultsByID[oldID].incomingOwnershipCount, "only the retention edge owns the entry: the Cloud holding owns nothing")
+	require.EqualValues(t, 1, c.resultsByID[oldID].incomingOwnershipCount.Load(), "only the retention edge owns the entry: the Cloud holding owns nothing")
 	require.Len(t, c.resultsByID[oldID].testPartOffers(), 1)
 	c.egraphMu.RUnlock()
 	require.Positive(t, owners)
@@ -131,7 +131,7 @@ func TestCloudHoldingOwnsNothing(t *testing.T) {
 	require.Equal(t, OfferAccepted, out[0].Outcome)
 	c.egraphMu.RLock()
 	key, cloud := receiver.cacheSharedResult().cloudHoldingLocked()
-	owners := receiver.cacheSharedResult().incomingOwnershipCount
+	owners := receiver.cacheSharedResult().incomingOwnershipCount.Load()
 	indexed := len(c.holderEntries) + len(c.remoteCaches)
 	c.egraphMu.RUnlock()
 	require.Equal(t, HolderKey{Cache: cloudCacheID, Number: 11}, key)
@@ -476,7 +476,7 @@ func TestOfferAlreadyCompleteOnAReferencedRowRecordsItsCounterpart(t *testing.T)
 	c.egraphMu.Lock()
 	// An earlier message named the receiver's own counterpart.
 	listRow.noteCloudCopyLocked(30, true, listExpires)
-	leafOwners, listOwners := leafRow.incomingOwnershipCount, listRow.incomingOwnershipCount
+	leafOwners, listOwners := leafRow.incomingOwnershipCount.Load(), listRow.incomingOwnershipCount.Load()
 	c.egraphMu.Unlock()
 
 	offer := testLiveOffer()
@@ -491,7 +491,7 @@ func TestOfferAlreadyCompleteOnAReferencedRowRecordsItsCounterpart(t *testing.T)
 	listKey, listCloud := listRow.cloudHoldingLocked()
 	offers := len(leafRow.testPartOffers()) + len(listRow.testPartOffers())
 	owners := len(c.offerOwners)
-	gotLeafOwners, gotListOwners := leafRow.incomingOwnershipCount, listRow.incomingOwnershipCount
+	gotLeafOwners, gotListOwners := leafRow.incomingOwnershipCount.Load(), listRow.incomingOwnershipCount.Load()
 	c.egraphMu.RUnlock()
 	require.NotNil(t, leafCloud, "the referenced row records the counterpart")
 	require.Equal(t, HolderKey{Cache: cloudCacheID, Number: 42}, leafKey)

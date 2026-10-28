@@ -783,8 +783,12 @@ func (c *Cache) reopenWiped(ctx context.Context, dbPath, closeMsg, wipeMsg strin
 }
 
 // acquireSessionResultLocked records a session edge and its ownership unit in
-// one critical section. The caller must hold egraphMu; this function nests
-// sessionMu inside it.
+// one critical section. The caller must hold egraphMu, for reading or
+// writing; this function nests sessionMu inside it. The edge is recorded
+// under sessionMu and the ownership unit is an atomic increment, so
+// concurrent claims under the read lock do not race, and no collection or
+// release can run between the result's selection and its claim: those take
+// the write lock.
 func (c *Cache) acquireSessionResultLocked(ctx context.Context, sessionID string, shared *sharedResult) (bool, int, error) {
 	if c == nil || sessionID == "" || shared == nil || shared.id == 0 {
 		return false, 0, nil
@@ -824,9 +828,9 @@ func (c *Cache) trackSessionResult(ctx context.Context, sessionID string, res An
 		return nil
 	}
 
-	c.egraphMu.Lock()
+	c.egraphMu.RLock()
 	_, trackedCount, err := c.acquireSessionResultLocked(ctx, sessionID, shared)
-	c.egraphMu.Unlock()
+	c.egraphMu.RUnlock()
 	if err != nil {
 		return err
 	}
@@ -1778,8 +1782,8 @@ func (c *Cache) incrementIncomingOwnershipLocked(ctx context.Context, res *share
 	if c == nil || res == nil {
 		return
 	}
-	res.incomingOwnershipCount++
-	c.traceRefAcquired(ctx, res, res.incomingOwnershipCount)
+	count := res.incomingOwnershipCount.Add(1)
+	c.traceRefAcquired(ctx, res, count)
 }
 
 func (c *Cache) enqueueCollectibleResultLocked(queue []*sharedResult, res *sharedResult) []*sharedResult {
@@ -1789,7 +1793,7 @@ func (c *Cache) enqueueCollectibleResultLocked(queue []*sharedResult, res *share
 	if _, found := c.resultsByID[res.id]; !found {
 		return queue
 	}
-	if res.incomingOwnershipCount != 0 {
+	if res.incomingOwnershipCount.Load() != 0 {
 		return queue
 	}
 	return append(queue, res)
@@ -1799,10 +1803,10 @@ func (c *Cache) decrementIncomingOwnershipLocked(ctx context.Context, res *share
 	if c == nil || res == nil {
 		return queue, nil
 	}
-	res.incomingOwnershipCount--
-	c.traceRefReleased(ctx, res, res.incomingOwnershipCount)
-	if res.incomingOwnershipCount < 0 {
-		c.traceRefUnderflow(ctx, res, res.incomingOwnershipCount)
+	count := res.incomingOwnershipCount.Add(-1)
+	c.traceRefReleased(ctx, res, count)
+	if count < 0 {
+		c.traceRefUnderflow(ctx, res, count)
 		return queue, fmt.Errorf("incoming ownership underflow for result %d", res.id)
 	}
 	return c.enqueueCollectibleResultLocked(queue, res), nil
@@ -1825,7 +1829,7 @@ func (c *Cache) collectUnownedResultsLocked(ctx context.Context, queue []*shared
 		if _, found := c.resultsByID[res.id]; !found {
 			continue
 		}
-		if res.incomingOwnershipCount != 0 {
+		if res.incomingOwnershipCount.Load() != 0 {
 			continue
 		}
 
@@ -2765,8 +2769,11 @@ type sharedResult struct {
 	recordType               string
 
 	// incomingOwnershipCount is the authoritative liveness count derived from
-	// session edges, persisted edges, and result dependency edges.
-	incomingOwnershipCount int64
+	// session edges, persisted edges, and result dependency edges. It is atomic
+	// because a session claim increments it under the egraphMu read lock;
+	// every decrement, and every check that drives collection, holds the
+	// write lock, so no claim can run concurrently with them.
+	incomingOwnershipCount atomic.Int64
 
 	attachDepsMu     sync.Mutex
 	attachDepsWaitCh chan struct{}
@@ -3358,18 +3365,15 @@ func (c *Cache) normalizePendingResultCallRefs(ctx context.Context, frame *Resul
 // dependency attachment finished cleanly: publication adoption skips the
 // attach barrier and commits persistence at the handoff without re-checking
 // attachment, so adoption must never swap to a result whose attachment could
-// still fail.
+// still fail. It only reads the e-graph: the caller holds egraphMu for
+// reading or writing.
 func (c *Cache) canonicalEquivalentSharedResultLocked(sessionID string, res *sharedResult, nowUnix int64, requireCleanAttachment bool) *sharedResult {
 	if res == nil || res.id == 0 {
 		return nil
 	}
 
 	candidates := newSharedResultSet()
-	for outputEqID := range c.outputEqClassesForResultLocked(res.id) {
-		outputEqID = c.findEqClassLocked(outputEqID)
-		if outputEqID == 0 {
-			continue
-		}
+	for outputEqID := range c.outputEqClassRootsLocked(res.id) {
 		c.appendOutputEqClassResultsLocked(candidates, outputEqID, nowUnix)
 	}
 	if requireCleanAttachment {
