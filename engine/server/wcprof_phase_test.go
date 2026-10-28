@@ -57,6 +57,28 @@ func TestPhaseRecordsEngineCPU(t *testing.T) {
 	require.True(t, ok, "no engine process reading: %+v", usage)
 	require.GreaterOrEqual(t, proc.CPUUserUS+proc.CPUSystemUS, int64(25_000), "50ms of busy work: %+v", proc)
 	require.Contains(t, usage, UsageScopeEngineChildren)
+	machine, ok := usage[UsageScopeMachine]
+	require.True(t, ok, "no machine reading: %+v", usage)
+	total := machine.CPUUserUS + machine.CPUSystemUS + machine.CPUIowaitUS + machine.CPUStealUS + machine.CPUIdleUS
+	require.GreaterOrEqual(t, total, int64(25_000), "50ms of the machine's time: %+v", machine)
+}
+
+// The machine's CPU times come from /proc/stat's first line, in its 10 ms
+// ticks, with nice counted as user and interrupts as system.
+func TestParseMachineCPU(t *testing.T) {
+	u, ok := parseMachineCPU([]byte("cpu  100 2 30 4000 5 6 7 8 0 0\ncpu0 50 1 15 2000 2 3 3 4 0 0\n"))
+	require.True(t, ok)
+	require.Equal(t, wcprof.Usage{
+		CPUUserUS:   1_020_000,
+		CPUSystemUS: 430_000,
+		CPUIdleUS:   40_000_000,
+		CPUIowaitUS: 50_000,
+		CPUStealUS:  80_000,
+	}, u)
+	for _, bad := range []string{"", "cpu0 1 2 3 4 5 6 7 8\n", "cpu 1 2 3\n", "cpu 1 x 3 4 5 6 7 8\n"} {
+		_, ok := parseMachineCPU([]byte(bad))
+		require.False(t, ok, "%q", bad)
+	}
 }
 
 // An armed profile covers the phase's next run and is delivered at its end.

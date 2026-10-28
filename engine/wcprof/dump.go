@@ -101,6 +101,9 @@ type DumpEvent struct {
 	CPUUserUS    int64 `json:"cu,omitempty"`
 	CPUSystemUS  int64 `json:"cs,omitempty"`
 	MemPeakBytes int64 `json:"mp,omitempty"`
+	CPUIowaitUS  int64 `json:"ciw,omitempty"`
+	CPUStealUS   int64 `json:"cst,omitempty"`
+	CPUIdleUS    int64 `json:"cid,omitempty"`
 }
 
 // DumpTypeUsage is the DumpEvent.Type of a resource reading (RecordUsage).
@@ -116,6 +119,9 @@ func usageDumpEvent(u usageRecord) DumpEvent {
 		CPUUserUS:    u.usage.CPUUserUS,
 		CPUSystemUS:  u.usage.CPUSystemUS,
 		MemPeakBytes: u.usage.MemPeakBytes,
+		CPUIowaitUS:  u.usage.CPUIowaitUS,
+		CPUStealUS:   u.usage.CPUStealUS,
+		CPUIdleUS:    u.usage.CPUIdleUS,
 	}
 }
 
