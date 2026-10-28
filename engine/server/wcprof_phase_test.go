@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime"
 	"runtime/pprof"
 	"testing"
@@ -130,6 +131,70 @@ func TestPhaseSamplesMachineCPU(t *testing.T) {
 		require.LessOrEqual(t, s.StartNS, op.EndNS, "a reading after the phase ended")
 		prev = s.StartNS
 	}
+
+}
+
+// A profiled phase reads the engine's cgroup: the bytes it read and wrote
+// while the phase ran, and its memory with each machine reading.
+func TestPhaseRecordsEngineCgroup(t *testing.T) {
+	dir := t.TempDir()
+	// Each file is replaced whole, as the phase's sampler may be reading it.
+	write := func(name, body string) {
+		t.Helper()
+		tmp := filepath.Join(t.TempDir(), name)
+		require.NoError(t, os.WriteFile(tmp, []byte(body), 0o644))
+		require.NoError(t, os.Rename(tmp, filepath.Join(dir, name)))
+	}
+	write("cpu.stat", "usage_usec 3000\nuser_usec 2000\nsystem_usec 1000\n")
+	write("io.stat", "259:0 rbytes=100 wbytes=200 rios=1 wios=1\n")
+	write("memory.stat", "anon 1000\nfile 2000\nanon_thp 0\n")
+	orig := engineCgroupDir
+	engineCgroupDir = func() (string, error) { return dir, nil }
+	t.Cleanup(func() { engineCgroupDir = orig })
+
+	wcprof.EnsureRecorder()
+	ctx := wcprof.ContextWithProfiling(context.Background())
+	srv := &Server{}
+	p := srv.beginSessionPhase(ctx, "phase-cgroup-session")
+	require.NotNil(t, p)
+	readings := func() (cgroup *wcprof.DumpEvent, mem []wcprof.DumpEvent) {
+		var buf bytes.Buffer
+		require.NoError(t, wcprof.Active().WriteDump(&buf, false))
+		header, events, err := wcprof.ReadDump(&buf)
+		require.NoError(t, err)
+		for _, ev := range events {
+			if ev.Type != wcprof.DumpTypeUsage || ev.OpID != p.op.ID() {
+				continue
+			}
+			switch header.Strings[ev.ClassID] {
+			case UsageScopeEngineCgroup:
+				cgroup = &ev
+			case UsageScopeEngineCgroupSample:
+				mem = append(mem, ev)
+			}
+		}
+		return cgroup, mem
+	}
+	for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(machineSampleInterval) {
+		if _, mem := readings(); len(mem) > 0 {
+			break
+		}
+		require.True(t, time.Now().Before(deadline), "the running phase sampled no memory")
+	}
+	write("cpu.stat", "usage_usec 9000\nuser_usec 6000\nsystem_usec 3000\n")
+	write("io.stat", "259:0 rbytes=1100 wbytes=4200 rios=2 wios=3\n259:1 rbytes=50 wbytes=0 rios=1 wios=0\n")
+	write("memory.stat", "anon 5000\nfile 7000\nanon_thp 4000\nfile_thp 1000\n")
+	p.end(srv)
+
+	cgroup, mem := readings()
+	require.NotNil(t, cgroup, "no engine cgroup reading")
+	require.Equal(t, int64(4000), cgroup.CPUUserUS)
+	require.Equal(t, int64(2000), cgroup.CPUSystemUS)
+	require.Equal(t, int64(1050), cgroup.IOReadBytes, "read over both devices, since the phase began")
+	require.Equal(t, int64(4000), cgroup.IOWriteBytes, "written since the phase began")
+	first, last := mem[0], mem[len(mem)-1]
+	require.Equal(t, [3]int64{1000, 2000, 0}, [3]int64{first.MemAnonBytes, first.MemFileBytes, first.MemHugeBytes})
+	require.Equal(t, [3]int64{5000, 7000, 5000}, [3]int64{last.MemAnonBytes, last.MemFileBytes, last.MemHugeBytes}, "the last sample, at the phase's end")
 }
 
 // The machine's CPU times come from /proc/stat's first line, in its 10 ms

@@ -109,6 +109,11 @@ type DumpEvent struct {
 	GoAllocBytes int64 `json:"ga,omitempty"`
 	GoGCCycles   int64 `json:"gcn,omitempty"`
 	GoGCCPUUS    int64 `json:"gcc,omitempty"`
+	IOReadBytes  int64 `json:"iorb,omitempty"`
+	IOWriteBytes int64 `json:"iowb,omitempty"`
+	MemAnonBytes int64 `json:"manon,omitempty"`
+	MemFileBytes int64 `json:"mfile,omitempty"`
+	MemHugeBytes int64 `json:"mhuge,omitempty"`
 }
 
 // DumpTypeUsage is the DumpEvent.Type of a resource reading (RecordUsage).
@@ -132,6 +137,11 @@ func usageDumpEvent(u usageRecord) DumpEvent {
 		GoAllocBytes: u.usage.GoAllocBytes,
 		GoGCCycles:   u.usage.GoGCCycles,
 		GoGCCPUUS:    u.usage.GoGCCPUUS,
+		IOReadBytes:  u.usage.IOReadBytes,
+		IOWriteBytes: u.usage.IOWriteBytes,
+		MemAnonBytes: u.usage.MemAnonBytes,
+		MemFileBytes: u.usage.MemFileBytes,
+		MemHugeBytes: u.usage.MemHugeBytes,
 	}
 }
 
