@@ -36,7 +36,7 @@ func TestDeclaredClientVersion(t *testing.T) {
 		{name: "legacy module", version: engine.Version, moduleVersion: "v0.21.6", want: "v0.21.6"},
 		{name: "cap at engine not module", version: "v99.0.0", declared: true, moduleVersion: "v0.21.6", want: engine.APIViewVersion(engine.Version)},
 		// v1.0.0 prereleases before the cut share one view
-		{name: "beta view", version: "v1.0.0-beta.18", declared: true, moduleVersion: engine.Version, want: "v1.0.0-beta.21"},
+		{name: "beta view", version: "v1.0.0-beta.18", declared: true, moduleVersion: engine.Version, want: engine.APIViewVersion("v1.0.0-beta.18")},
 		// a declared version past the engine's view is capped at it, like a
 		// module's engineVersion (ModuleAPIViewVersion)
 		{name: "declared release past prerelease engine", version: "v1.0.0", declared: true, moduleVersion: engine.Version, want: engine.APIViewVersion(engine.Version)},
