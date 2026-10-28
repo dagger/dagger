@@ -28,6 +28,8 @@ var ErrNoBlobs = errors.Errorf("no blobs for snapshot")
 type ensureExportBlobResult struct {
 	desc     ocispecs.Descriptor
 	hasLayer bool
+	// computed is set when the export computed the layer's blob.
+	computed bool
 }
 
 // snapshotBlobGCLabel is the label on a layer snapshot that names the blob
@@ -114,9 +116,9 @@ func (cm *snapshotManager) ensureExportBlob(
 	ref *immutableRef,
 	refCfg compression.Config,
 	stats *ExportStats,
-) (_ ocispecs.Descriptor, _ bool, rerr error) {
+) (_ ocispecs.Descriptor, _, _ bool, rerr error) {
 	if ref == nil {
-		return ocispecs.Descriptor{}, false, errors.New("ensure export blob: nil ref")
+		return ocispecs.Descriptor{}, false, false, errors.New("ensure export blob: nil ref")
 	}
 
 	// A caller owns its own pins while waiting and doing I/O. Serializing by
@@ -127,7 +129,7 @@ func (cm *snapshotManager) ensureExportBlob(
 	stats.LockWait += waited.Sub(waitStart)
 	wcprof.RecordWaitAt(ctx, "snapshots.exportLayer", wcprof.WaitReasonLock, waitStart, waited)
 	if err != nil {
-		return ocispecs.Descriptor{}, false, err
+		return ocispecs.Descriptor{}, false, false, err
 	}
 	defer unlock()
 	result, err := func() (_ ensureExportBlobResult, err error) {
@@ -157,8 +159,9 @@ func (cm *snapshotManager) ensureExportBlob(
 				if err != nil {
 					return ensureExportBlobResult{}, err
 				}
+				converted := false
 				if refCfg.Force {
-					desc, err = getBlobWithCompressionWithRetry(ctx, ref, refCfg)
+					desc, converted, err = getBlobWithCompressionWithRetry(ctx, ref, refCfg)
 					if err != nil {
 						return ensureExportBlobResult{}, err
 					}
@@ -176,7 +179,7 @@ func (cm *snapshotManager) ensureExportBlob(
 					return ensureExportBlobResult{}, err
 				}
 				stats.LayersReused++
-				return ensureExportBlobResult{desc: desc, hasLayer: true}, nil
+				return ensureExportBlobResult{desc: desc, hasLayer: true, computed: converted}, nil
 			}
 		}
 
@@ -371,36 +374,38 @@ func (cm *snapshotManager) ensureExportBlob(
 		return ensureExportBlobResult{
 			desc:     desc,
 			hasLayer: true,
+			computed: true,
 		}, nil
 	}()
 	if err != nil {
-		return ocispecs.Descriptor{}, false, err
+		return ocispecs.Descriptor{}, false, false, err
 	}
-	return result.desc, result.hasLayer, nil
+	return result.desc, result.hasLayer, result.computed, nil
 }
 
 func isTypeWindows(sr *immutableRef) bool {
 	return sr.GetLayerType() == "windows"
 }
 
-// ensureCompression ensures the specified ref has the blob of the specified compression Type.
+// ensureCompression ensures the specified ref has the blob of the specified compression Type,
+// and reports whether it converted the stored blob to get it.
 // The caller holds exportLayerLocker and a private resource lease. Both the
 // source blob and the result remain pinned through later provider consumption.
-func ensureCompression(ctx context.Context, ref *immutableRef, comp compression.Config) error {
+func ensureCompression(ctx context.Context, ref *immutableRef, comp compression.Config) (converted bool, _ error) {
 	desc, err := ref.ociDesc(ctx, true)
 	if err != nil {
-		return err
+		return false, err
 	}
 	layerConvertFunc, err := converter.New(ctx, ref.cm.ContentStore, desc, comp)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if layerConvertFunc == nil {
-		return ref.linkBlob(ctx, desc)
+		return false, ref.linkBlob(ctx, desc)
 	}
 	newDesc, err := layerConvertFunc(ctx, ref.cm.ContentStore, desc)
 	if err != nil {
-		return errors.Wrapf(err, "failed to convert")
+		return false, errors.Wrapf(err, "failed to convert")
 	}
-	return ref.linkBlob(ctx, *newDesc)
+	return true, ref.linkBlob(ctx, *newDesc)
 }

@@ -66,7 +66,7 @@ func (sr *immutableRef) ExportChain(ctx context.Context, refCfg config.RefConfig
 		layer := opened.(*immutableRef)
 
 		before := chain.Stats
-		desc, hasLayer, err := sr.cm.ensureExportBlob(ctx, parentSnapshotID, layer, refCfg.Compression, &chain.Stats)
+		desc, hasLayer, computed, err := sr.cm.ensureExportBlob(ctx, parentSnapshotID, layer, refCfg.Compression, &chain.Stats)
 		if merged[snapshotID] && chain.Stats.LayersDiffed > before.LayersDiffed {
 			chain.Stats.LayersMerged += chain.Stats.LayersDiffed - before.LayersDiffed
 			chain.Stats.MergedRawBytes += chain.Stats.RawBytes - before.RawBytes
@@ -100,6 +100,7 @@ func (sr *immutableRef) ExportChain(ctx context.Context, refCfg config.RefConfig
 				Descriptor:  desc,
 				Description: description,
 				CreatedAt:   &createdAt,
+				Computed:    computed,
 			})
 		}
 		chain.Prefixes[snapshotID] = len(chain.Layers)
@@ -122,22 +123,27 @@ func exportDescriptor(desc ocispecs.Descriptor, preferNonDist bool) ocispecs.Des
 	return desc
 }
 
-func getBlobWithCompressionWithRetry(ctx context.Context, ref *immutableRef, comp compression.Config) (ocispecs.Descriptor, error) {
+// getBlobWithCompressionWithRetry returns ref's blob in comp's compression, and
+// reports whether it converted the stored blob to get it: a variant that is
+// already present is returned as it is.
+func getBlobWithCompressionWithRetry(ctx context.Context, ref *immutableRef, comp compression.Config) (_ ocispecs.Descriptor, converted bool, _ error) {
 	if blobDesc, err := ref.getBlobWithCompression(ctx, comp.Type); err == nil {
 		present, err := ref.cm.pinContent(ctx, blobDesc)
 		if err != nil {
-			return ocispecs.Descriptor{}, err
+			return ocispecs.Descriptor{}, false, err
 		}
 		if present {
-			return blobDesc, nil
+			return blobDesc, false, nil
 		}
 	} else if !cerrdefs.IsNotFound(err) {
-		return ocispecs.Descriptor{}, err
+		return ocispecs.Descriptor{}, false, err
 	}
-	if err := ensureCompression(ctx, ref, comp); err != nil {
-		return ocispecs.Descriptor{}, errors.Wrapf(err, "failed to ensure compression type %q", comp.Type)
+	converted, err := ensureCompression(ctx, ref, comp)
+	if err != nil {
+		return ocispecs.Descriptor{}, false, errors.Wrapf(err, "failed to ensure compression type %q", comp.Type)
 	}
-	return ref.getBlobWithCompression(ctx, comp.Type)
+	desc, err := ref.getBlobWithCompression(ctx, comp.Type)
+	return desc, converted, err
 }
 
 func (cm *snapshotManager) registerExportLayer(parentSnapshotID, snapshotID string, desc ocispecs.Descriptor) error {
