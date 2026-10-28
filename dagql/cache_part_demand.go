@@ -580,12 +580,14 @@ func (c *Cache) runLazyOperationDecision(ctx context.Context, res AnyResult, add
 // value), its step and part, and why check's scan found no source. The scan's
 // candidates are the entry and the equivalent entries it looked at; an
 // address one of them held, which the scan passed over, had expired or was
-// tried in this demand and failed. The reason is the first that holds of:
+// tried in this demand and failed. An entry still being written is passed
+// over whatever it holds, so its address isn't counted. The reason is the
+// first that holds of:
 //   - download_failed: every held address was tried in this demand and
 //     failed;
 //   - offer_unavailable: an address was held, but had expired;
 //   - holder_busy: an equivalent entry was still being written, so the scan
-//     could not read it, or held the part complete but in use;
+//     could not read it or its address, or held the part complete but in use;
 //   - no_offer: no candidate held the part or an address for it.
 //
 // origin is merged for a value a merge installed since the engine started,
@@ -596,7 +598,7 @@ func (c *Cache) logPartWithoutSource(ctx context.Context, row *sharedResult, add
 		if candidate.row != row && (candidate.unready || (candidate.probe != nil && candidate.probe.LocalComplete && candidate.probe.Busy)) {
 			busy = true
 		}
-		if candidate.offer == nil {
+		if candidate.offer == nil || candidate.unready {
 			continue
 		}
 		offers++
