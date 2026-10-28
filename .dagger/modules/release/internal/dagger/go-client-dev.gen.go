@@ -8,11 +8,17 @@ import (
 
 type GoClientDev = core.GoClientDev
 
+// GoClientDevCompareCodegenOpts contains options for GoClientDev.CompareCodegen
+type GoClientDevCompareCodegenOpts = core.GoClientDevCompareCodegenOpts
+
 // GoClientDevReleaseOpts contains options for GoClientDev.Release
 type GoClientDevReleaseOpts = core.GoClientDevReleaseOpts
 
 // GoClientDevReleaseDryRunOpts contains options for GoClientDev.ReleaseDryRun
 type GoClientDevReleaseDryRunOpts = core.GoClientDevReleaseDryRunOpts
+
+// GoClientDevSchemaCaptureOpts contains options for GoClientDev.SchemaCapture
+type GoClientDevSchemaCaptureOpts = core.GoClientDevSchemaCaptureOpts
 
 // GoClientDevOpts contains options for Query.GoClientDev
 type GoClientDevOpts = core.GoClientDevOpts
