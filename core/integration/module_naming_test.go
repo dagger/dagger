@@ -311,6 +311,31 @@ func (ModuleNamingSuite) TestSameTypeDefsAcrossVersions(ctx context.Context, t *
 	}
 }
 
+// TestPastEngineVersion checks that a module declaring a version past the
+// engine's (bare v1.0.0, or a later prerelease, on a prerelease engine) loads,
+// and is named by the rules of the engine's view, the one it's served
+// (engine.ModuleAPIViewVersion): on an engine at or past the cut, the new
+// rules.
+func (ModuleNamingSuite) TestPastEngineVersion(ctx context.Context, t *testctx.T) {
+	typeName := "PastHTTPClient"
+	if !engine.APIVersionAtLeast("v1.0.0", namingCut) {
+		typeName = "PastHttpClient"
+	}
+	for _, version := range []string{"v1.0.0", "v1.0.0-rc.1"} {
+		t.Run(version, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			ws := goGitBase(t, c).
+				WithNewFile("dagger.toml", "[modules.past]\nsource = \"./past\"\n").
+				WithNewFile("past/dagger-module.toml", "name = \"past\"\nengineVersion = \""+version+"\"\nsource = \".\"\n\n[runtime]\nsource = \"dang\"\n").
+				WithNewFile("past/main.dang", namingDangSource("Past", ""))
+
+			out, err := ws.With(daggerQuery(`{past { client(baseUrl: "u") { __typename baseUrl } }}`)).Stdout(ctx)
+			require.NoError(t, err)
+			require.JSONEq(t, `{"past": {"client": {"__typename": "`+typeName+`", "baseUrl": "u"}}}`, out)
+		})
+	}
+}
+
 // TestMainTypeSpelling checks modules whose main type is spelled otherwise
 // than their name around digits and acronyms. K8STools in module k8s-tools
 // normalizes alike (K8s is a dictionary term); Sha256Sum in module sha256sum
