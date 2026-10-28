@@ -32,9 +32,14 @@ func TestDeclaredClientVersion(t *testing.T) {
 		{name: "nested CLI explicit engine cap", version: "v2.0.0", headerVersion: "v2.0.0", moduleVersion: "v0.21.6", want: engine.APIViewVersion(engine.Version)},
 		{name: "nested CLI explicit dev engine cap", version: "v2.0.0-dev-123", headerVersion: "v2.0.0-dev-123", moduleVersion: "v0.21.6", want: engine.APIViewVersion(engine.Version)},
 		{name: "undeclared module client", version: "v0.21.6", moduleVersion: engine.Version, want: engine.APIViewVersion(engine.Version)},
+		{name: "undeclared module client past engine", version: "v0.21.6", moduleVersion: "v1.0.0", want: engine.ModuleAPIViewVersion("v1.0.0")},
 		{name: "legacy module", version: engine.Version, moduleVersion: "v0.21.6", want: "v0.21.6"},
 		{name: "cap at engine not module", version: "v99.0.0", declared: true, moduleVersion: "v0.21.6", want: engine.APIViewVersion(engine.Version)},
-		{name: "beta view", version: "v1.0.0-beta.18", declared: true, moduleVersion: engine.Version, want: "v1.0.0"},
+		// v1.0.0 prereleases before the cut share one view
+		{name: "beta view", version: "v1.0.0-beta.18", declared: true, moduleVersion: engine.Version, want: "v1.0.0-beta.21"},
+		// a declared version past the engine's view is capped at it, like a
+		// module's engineVersion (ModuleAPIViewVersion)
+		{name: "declared release past prerelease engine", version: "v1.0.0", declared: true, moduleVersion: engine.Version, want: engine.APIViewVersion(engine.Version)},
 		{name: "unprefixed version", version: "0.21.6", declared: true, moduleVersion: engine.Version, want: "v0.21.6"},
 		{name: "declared container client", version: "v0.21.6", declared: true, want: "v0.21.6"},
 		{name: "declared container remains uncapped", version: "v99.0.0", declared: true, want: "v99.0.0"},
@@ -85,7 +90,9 @@ func TestDeclaredClientVersion(t *testing.T) {
 			require.NoError(t, err)
 			if tc.moduleVersion != "" {
 				root := core.NewRoot(srv)
-				view := call.View(engine.APIViewVersion(tc.moduleVersion))
+				// a loaded module's deps carry its capped view
+				// (defaultSchemaBuilderForEngineVersion)
+				view := call.View(engine.ModuleAPIViewVersion(tc.moduleVersion))
 				dag, err := base.Fork(ctx, root, view)
 				require.NoError(t, err)
 				source, err := dagql.NewObjectResultForCall(&core.ModuleSource{EngineVersion: tc.moduleVersion}, dag, &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: "versionSource", Type: dagql.NewResultCallType((&core.ModuleSource{}).Type())})
@@ -112,7 +119,7 @@ func TestDeclaredClientVersion(t *testing.T) {
 				originalCore, ok := client.mod.Self().Deps.Lookup(core.ModuleName)
 				require.True(t, ok)
 				originalView, _ := originalCore.View()
-				require.Equal(t, call.View(engine.APIViewVersion(tc.moduleVersion)), originalView)
+				require.Equal(t, call.View(engine.ModuleAPIViewVersion(tc.moduleVersion)), originalView)
 			}
 			ctx = core.ContextWithQuery(ctx, client.dagqlRoot)
 			served, err := client.servedMods.Schema(ctx)

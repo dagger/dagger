@@ -22,9 +22,9 @@ import (
 
 // TestReevaluateDirectiveGatedByView checks that @reevaluate, its declaration
 // and its uses, appears only in the API views of engine versions from
-// v1.0.0-beta.17. Module schemas use engine.APIViewVersion, which gives every
-// v1.0.0 prerelease before engine.PrereleaseViewsVersion one view past that
-// gate: modules pinned to v0.x keep a schema without @reevaluate, and v1
+// v1.0.0-beta.17. Module schemas use engine.ModuleAPIViewVersion, which gives
+// every v1.0.0 prerelease before engine.PrereleaseViewsVersion one view past
+// that gate: modules pinned to v0.x keep a schema without @reevaluate, and v1
 // modules see it.
 func TestReevaluateDirectiveGatedByView(t *testing.T) {
 	ctx := context.Background()
@@ -59,7 +59,7 @@ func TestReevaluateDirectiveGatedByView(t *testing.T) {
 		{engineVersion: "v1.0.0-beta.16", declared: true},
 		{engineVersion: "v1.0.0-beta.17", declared: true},
 	} {
-		view := call.View(engine.APIViewVersion(tc.engineVersion))
+		view := call.View(engine.ModuleAPIViewVersion(tc.engineVersion))
 		dag, err := coreSchemaBase.Fork(ctx, root, view)
 		require.NoError(t, err)
 		schema := dag.SchemaForView(view)
