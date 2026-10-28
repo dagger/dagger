@@ -242,7 +242,7 @@ settings.version = "1.97"
 		require.Contains(t, string(out), "rust/version-check")
 		require.Contains(t, string(out), "msrv/version-check")
 
-		out, err = hostDaggerExecRaw(ctx, t, workdir, "call", "--help")
+		out, err = hostDaggerOutput(ctx, t, workdir, "call", "--help")
 		require.NoError(t, err)
 		require.Regexp(t, `(?m)^\s+rust\s`, string(out))
 		require.Regexp(t, `(?m)^\s+msrv\s`, string(out))

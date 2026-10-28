@@ -135,7 +135,7 @@ region = "us-west-2"
 secretKey = "op://vault/aws"
 `, workspaceSettingsAWSModule("modules/aws", "aws"))
 
-		out, err := hostDaggerExec(ctx, t, workdir, "module", "settings", "aws")
+		out, err := hostDaggerOutput(ctx, t, workdir, "module", "settings", "aws")
 		require.NoError(t, err)
 
 		output := string(out)

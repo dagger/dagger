@@ -216,7 +216,7 @@ func (ChecksSuite) TestChecksGenerateAsCheck(ctx context.Context, t *testctx.T) 
 	t.Run("list includes generator checks inline", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.
 			With(daggerExec("check", "-l")).
-			CombinedOutput(ctx)
+			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "passing-check")
 		require.Contains(t, out, "empty-generate")
@@ -243,7 +243,7 @@ func (ChecksSuite) TestChecksGenerateAsCheck(ctx context.Context, t *testctx.T) 
 	t.Run("list with generated=true includes all checks", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.
 			With(daggerExec("check", "-l", "--generated=true")).
-			CombinedOutput(ctx)
+			Stdout(ctx)
 		require.NoError(t, err)
 		// Generated and regular checks are both included.
 		require.Regexp(t, `empty-generate/stale\s+staleness check:`, out)
@@ -303,7 +303,7 @@ func (ChecksSuite) TestChecksGenerateAsCheck(ctx context.Context, t *testctx.T) 
 		// longer check name; matching the generator selects its staleness check.
 		out, err := modGen.
 			With(daggerExec("check", "-l", "empty-*")).
-			CombinedOutput(ctx)
+			Stdout(ctx)
 		require.NoError(t, err)
 		require.Regexp(t, `empty-generate/stale\s+staleness check:`, out)
 		require.NotContains(t, out, "passing-check")
