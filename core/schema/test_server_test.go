@@ -151,6 +151,10 @@ func (s *currentTypeDefsTestServer) Agents(context.Context) (*core.AgentRuntimes
 	return nil, nil
 }
 
+func (s *currentTypeDefsTestServer) MCPSessions(context.Context) (*core.MCPSessions, error) {
+	return nil, nil
+}
+
 func (s *currentTypeDefsTestServer) OCIStore() content.Store { return nil }
 
 func (s *currentTypeDefsTestServer) BuiltinOCIStore() content.Store { return nil }

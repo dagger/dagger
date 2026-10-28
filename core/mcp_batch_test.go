@@ -493,12 +493,10 @@ func TestPlanBatchTimeoutPlansAsTheWrappedTool(t *testing.T) {
 }
 
 // mcpServerBatchFS registers fs's tools as the tools of a fake MCP server:
-// registered with a session, but with no service container to sync a
-// workspace into.
+// registered, but with no service container to sync a workspace into.
 func mcpServerBatchFS(t *testing.T, m *MCP, server string, fs *batchFS) []LLMTool {
 	t.Helper()
 	m.mcpServers[server] = &MCPServerConfig{Name: server}
-	m.mcpSessions[server] = nil
 	var tools []LLMTool
 	for _, tool := range fs.tools() {
 		tool.Name = server + "_" + tool.Name

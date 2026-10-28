@@ -141,10 +141,9 @@ type MCP struct {
 	// drives the tools; without one, tools requiring an Agent are hidden.
 	// Like standalone, it survives Clone.
 	ownerAgent string
-	// Configured MCP servers.
+	// Configured MCP servers. Their live sessions belong to the Dagger
+	// session, not to this value (see MCPSessions).
 	mcpServers map[string]*MCPServerConfig
-	// Persistent MCP sessions.
-	mcpSessions map[string]*mcp.ClientSession
 	// Synchronize any concurrent tool call results.
 	mu *sync.Mutex
 }
@@ -171,9 +170,8 @@ func (srv *MCPServerConfig) Dial(ctx context.Context) (_ *mcp.ClientSession, rer
 
 func newMCP() *MCP {
 	return &MCP{
-		mcpServers:  make(map[string]*MCPServerConfig),
-		mcpSessions: map[string]*mcp.ClientSession{},
-		mu:          &sync.Mutex{},
+		mcpServers: make(map[string]*MCPServerConfig),
+		mu:         &sync.Mutex{},
 	}
 }
 
@@ -190,7 +188,6 @@ func (m *MCP) Clone() *MCP {
 	cp.boundTools = slices.Clone(cp.boundTools)
 	cp.skillDirs = slices.Clone(cp.skillDirs)
 	cp.mcpServers = maps.Clone(cp.mcpServers)
-	cp.mcpSessions = maps.Clone(cp.mcpSessions)
 	cp.returned = false
 	// Per-step scratch state: the dispatching conversation and any continuation
 	// a tool returned belong to the step that set them, not to the clone.
@@ -365,36 +362,25 @@ func (m *MCP) Tools(ctx context.Context) ([]LLMTool, error) {
 	return allTools.Order, nil
 }
 
-func (m *MCP) syncMCPSessions(ctx context.Context) error {
-	stop := maps.Clone(m.mcpSessions)
-	for _, mcpSrv := range m.mcpServers {
-		delete(stop, mcpSrv.Name)
-		if _, ok := m.mcpSessions[mcpSrv.Name]; ok {
-			continue
-		}
-		sess, err := mcpSrv.Dial(ctx)
-		if err != nil {
-			return fmt.Errorf("dial mcp %q: %w", mcpSrv.Name, err)
-		}
-		m.mcpSessions[mcpSrv.Name] = sess
-	}
-	for name, srv := range stop {
-		if err := srv.Close(); err != nil {
-			return err
-		}
-		delete(m.mcpSessions, name)
-	}
-	return nil
-}
-
 func (m *MCP) loadMCPTools(ctx context.Context, allTools *LLMToolSet) error {
-	if err := m.syncMCPSessions(ctx); err != nil {
+	if len(m.mcpServers) == 0 {
+		return nil
+	}
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	sessions, err := query.MCPSessions(ctx)
+	if err != nil {
 		return err
 	}
 	// Serve servers in a fixed order: the tool list is part of every
 	// request's cached prefix, and a map walk would reshuffle it per call.
-	for _, serverName := range slices.Sorted(maps.Keys(m.mcpSessions)) {
-		sess := m.mcpSessions[serverName]
+	for _, serverName := range slices.Sorted(maps.Keys(m.mcpServers)) {
+		sess, err := sessions.Session(ctx, m.mcpServers[serverName])
+		if err != nil {
+			return fmt.Errorf("dial mcp %q: %w", serverName, err)
+		}
 		for tool, err := range sess.Tools(ctx, nil) {
 			if err != nil {
 				return err
@@ -2307,14 +2293,11 @@ func (m *MCP) timeoutTarget(call *LLMToolCall, tools []LLMTool) *LLMTool {
 
 // mcpServerSyncsWorkspace reports whether calls to the named MCP server run
 // with the bound workspace synced into the server's working directory: the
-// server is registered with a live session, its container has a working
-// directory to mirror the workspace into, and there is a workspace to mirror.
+// server is registered, its container has a working directory to mirror the
+// workspace into, and there is a workspace to mirror.
 func (m *MCP) mcpServerSyncsWorkspace(serverName string) bool {
 	mcpSrv, ok := m.mcpServers[serverName]
 	if !ok {
-		return false
-	}
-	if _, ok := m.mcpSessions[serverName]; !ok {
 		return false
 	}
 	if mcpSrv.Service.Self() == nil {

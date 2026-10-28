@@ -233,9 +233,10 @@ type daggerSession struct {
 	// once per loss.
 	callPayloadRepaired map[string]map[string]struct{}
 
-	services *core.Services
-	agents   *core.AgentRuntimes
-	resolver *serverresolver.Resolver
+	services    *core.Services
+	agents      *core.AgentRuntimes
+	mcpSessions *core.MCPSessions
+	resolver    *serverresolver.Resolver
 
 	analytics analytics.Tracker
 
@@ -1078,6 +1079,7 @@ func (srv *Server) initializeDaggerSession(
 	sess.shutdownCh = make(chan struct{})
 	sess.services = core.NewServices()
 	sess.agents = core.NewAgentRuntimes()
+	sess.mcpSessions = core.NewMCPSessions()
 	sess.authProvider = auth.NewRegistryAuthProvider()
 	sess.resolver = serverresolver.New(serverresolver.Opts{
 		Hosts: srv.registryHosts,
@@ -4465,6 +4467,15 @@ func (srv *Server) Agents(ctx context.Context) (*core.AgentRuntimes, error) {
 		return nil, err
 	}
 	return client.daggerSession.agents, nil
+}
+
+// The live MCP sessions for the current client's session
+func (srv *Server) MCPSessions(ctx context.Context) (*core.MCPSessions, error) {
+	client, err := srv.executableClientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.daggerSession.mcpSessions, nil
 }
 
 // The default platform for the engine as a whole

@@ -203,6 +203,8 @@ func (ms *mockServer) Services(context.Context) (*Services, error) { return nil,
 
 func (ms *mockServer) Agents(context.Context) (*AgentRuntimes, error) { return nil, nil }
 
+func (ms *mockServer) MCPSessions(context.Context) (*MCPSessions, error) { return nil, nil }
+
 func (ms *mockServer) Platform() Platform                  { return Platform{} }
 func (ms *mockServer) OCIStore() content.Store             { return nil }
 func (ms *mockServer) BuiltinOCIStore() content.Store      { return nil }
