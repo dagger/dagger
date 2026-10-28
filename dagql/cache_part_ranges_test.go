@@ -184,6 +184,7 @@ func TestPartRangeReadsCloseCancels(t *testing.T) {
 	require.Error(t, <-read)
 	require.Zero(t, transport.open.Load(), "every response is closed")
 	require.True(t, source.ranges.extra.TryAcquire(maxPartExtraStreams), "every extra stream is returned")
+	require.True(t, source.ranges.held.TryAcquire(maxPartHeldChunks), "every held chunk's slot is returned")
 }
 
 // While one chunk's response is held, the other streams keep fetching the
@@ -210,6 +211,32 @@ func TestPartRangeReadsPastAHeldChunk(t *testing.T) {
 	require.NoError(t, reader.Close())
 	require.Equal(t, 40, transport.total(), "one request per chunk")
 	require.Zero(t, transport.open.Load(), "every response is closed")
+}
+
+// The engine-wide bound on chunks held caps a reader's window: with the
+// bound taken, its streams wait, and every chunk's slot goes back once the
+// blob is read.
+func TestPartRangeReadsHeldChunkBound(t *testing.T) {
+	const size = 16 << 20
+	transport, source, offer, data, stats := rangeTestReader(t, size, func(cfg *partRangeConfig) {
+		cfg.chunk = 1 << 20
+		cfg.window = 12
+		cfg.held = semaphore.NewWeighted(6)
+	})
+	hold := make(chan struct{})
+	transport.holdRange("bytes=0-1048575", hold)
+	reader, _ := openRangeTest(t, source, offer, nil, stats)
+	read := make(chan string, 1)
+	go func() {
+		got, _ := readRangeTest(t, reader, size)
+		read <- got
+	}()
+	require.Eventually(t, func() bool { return transport.total() == 6 }, 10*time.Second, 10*time.Millisecond, "the bound's chunks are fetched")
+	require.Never(t, func() bool { return transport.total() > 6 }, 200*time.Millisecond, 10*time.Millisecond, "no chunk past the bound is fetched")
+	close(hold)
+	require.True(t, within(t, read) == data, "the blob's bytes arrive whole and in order")
+	require.NoError(t, reader.Close())
+	require.True(t, source.ranges.held.TryAcquire(6), "every chunk's slot is returned")
 }
 
 // The engine-wide budget bounds the extra streams: a reader that finds none
