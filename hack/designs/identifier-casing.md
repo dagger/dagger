@@ -814,24 +814,20 @@ never at load. Two options:
   dictionary; the next `dagger generate` re-pins, the way an `engineVersion`
   bump does today.
 
-We recommend (B), as a key in the `[entrypoint]` table. It reuses the
-mechanism end to end: `ModuleSource.NamingView` returns the declared
-version's view, and the session already serves the module's client at it. The
-rules stay in the engine, the generator only writes a version string, and the
-derived names come along for free. A manifest key also works for a shared
-remote entrypoint, which a field generated into `types.dang` doesn't: a remote
-entrypoint has no generate step and describes its types at load, so it can
-only pin through the module's own manifest, and follows the engine's version
-until the module declares one.
-
-Either option needs a signal in the manifest v2 contract (a naming version,
-or a marker that names are final), which #14038's authors own. Nothing needs
-pinning until the first dictionary addition.
+The recommendation was (B), as a key in the `[entrypoint]` table: it reuses
+the mechanism end to end (`ModuleSource.NamingView` returns the declared
+version's view, and the session already serves the module's client at it),
+the rules stay in the engine, the generator only writes a version string, and
+the derived names come along for free. A manifest key would also let a module
+pin a shared remote entrypoint, which has no generate step of its own.
 
 Outcome: (B), declared in the entrypoint's `dang.toml` rather than in the
-`[entrypoint]` table. The Dagger version Dang already reads there is the
-module's engine version, so it pins the API view and naming together. A shared
-remote entrypoint pins through the `dang.toml` of the directory it names. An
+`[entrypoint]` table, so the manifest v2 contract needs no new key. The
+Dagger version Dang already reads there is the module's engine version, so it
+pins the API view and naming together. A shared remote entrypoint pins
+through the `dang.toml` of the directory it names, so its author, not the
+module that uses it, picks the version: a module following a moving ref
+follows that ref's version too, and has no key of its own to pin it with. An
 entrypoint that declares no version gets `v1.0.0-beta.20`, not the engine's
 own version, so it no longer follows the engine.
 
