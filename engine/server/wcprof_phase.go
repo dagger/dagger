@@ -39,7 +39,9 @@ const (
 	// CPU and page faults.
 	UsageScopeEngineChildren = "engine_children"
 	// UsageScopeEngineCgroup is the engine process's cgroup (as the engine's
-	// cgroup metrics find it) and everything in it.
+	// cgroup metrics find it) and everything in it: its CPU, and the bytes it
+	// read from and wrote to block devices (left out when io.stat can't be
+	// read).
 	UsageScopeEngineCgroup = "engine_cgroup"
 	// UsageScopeMachine is the whole machine the engine runs on, from
 	// /proc/stat, which a container shares with its host: user (with nice),
@@ -51,23 +53,35 @@ const (
 	// start), and its time is the stretch's end. The last stretch ends with
 	// the phase.
 	UsageScopeMachineSample = "machine_sample"
+	// UsageScopeEngineCgroupSample is the engine's cgroup's memory at one
+	// moment of the phase, read every machineSampleInterval while it runs:
+	// anonymous memory, file pages, and the part of both in transparent huge
+	// pages.
+	UsageScopeEngineCgroupSample = "engine_cgroup_sample"
 )
 
 // machineSampleInterval is how often a profiled phase reads the machine's
-// CPU: fine enough to place a slow stretch of about a second, for one small
-// file read.
+// CPU and the engine's memory: fine enough to place a slow stretch of about
+// a second, for two small file reads.
 const machineSampleInterval = 100 * time.Millisecond
 
-type engineCPU struct {
+// engineCgroupDir finds the engine's cgroup; tests replace it.
+var engineCgroupDir = cgroupmetrics.EngineCgroupDir
+
+// engineReading is the engine's counters at one moment.
+type engineReading struct {
 	process, children wcprof.Usage
-	cgroup            wcprof.Usage
-	cgroupOK          bool
-	machine           wcprof.Usage
-	machineOK         bool
+	// cgroup is the engine's cgroup's CPU, and its I/O when ioOK.
+	cgroup    wcprof.Usage
+	cgroupOK  bool
+	ioOK      bool
+	cgroupDir string
+	machine   wcprof.Usage
+	machineOK bool
 }
 
-func readEngineCPU() engineCPU {
-	var c engineCPU
+func readEngine() engineReading {
+	var c engineReading
 	us := func(tv unix.Timeval) int64 { return tv.Sec*1_000_000 + tv.Usec }
 	var ru unix.Rusage
 	if unix.Getrusage(unix.RUSAGE_SELF, &ru) == nil {
@@ -77,9 +91,13 @@ func readEngineCPU() engineCPU {
 	if unix.Getrusage(unix.RUSAGE_CHILDREN, &ru) == nil {
 		c.children = wcprof.Usage{CPUUserUS: us(ru.Utime), CPUSystemUS: us(ru.Stime), MinorFaults: ru.Minflt, MajorFaults: ru.Majflt}
 	}
-	if dir, err := cgroupmetrics.EngineCgroupDir(); err == nil {
+	if dir, err := engineCgroupDir(); err == nil {
+		c.cgroupDir = dir
 		if user, sys, _, err := resources.ReadUsage(dir); err == nil {
 			c.cgroup, c.cgroupOK = wcprof.Usage{CPUUserUS: user, CPUSystemUS: sys}, true
+		}
+		if read, written, err := resources.ReadIO(dir); err == nil {
+			c.cgroup.IOReadBytes, c.cgroup.IOWriteBytes, c.ioOK = read, written, true
 		}
 	}
 	if stat, err := os.ReadFile("/proc/stat"); err == nil {
@@ -145,26 +163,34 @@ func parseMachineCPU(stat []byte) (wcprof.Usage, bool) {
 	}, true
 }
 
-// sampleMachine records the machine's CPU on the op opID every
-// machineSampleInterval, from the reading start, until the returned func is
-// called; that records the last stretch and returns once it's recorded.
-func sampleMachine(ctx context.Context, opID uint64, start wcprof.Usage) func() {
+// samplePhase records, on the op opID every machineSampleInterval, the
+// machine's CPU since the previous reading (from start's, when it has one) and
+// the memory of the engine's cgroup (when start found it), until the returned
+// func is called; that records a last sample and returns once it's recorded.
+func samplePhase(ctx context.Context, opID uint64, start engineReading) func() {
 	stop := make(chan struct{})
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		prev := start
+		prev := start.machine
 		sample := func() {
-			stat, err := os.ReadFile("/proc/stat")
-			if err != nil {
-				return
+			if start.machineOK {
+				if stat, err := os.ReadFile("/proc/stat"); err == nil {
+					if cur, ok := parseMachineCPU(stat); ok {
+						wcprof.RecordUsage(ctx, opID, UsageScopeMachineSample, usageSince(prev, cur))
+						prev = cur
+					}
+				}
 			}
-			cur, ok := parseMachineCPU(stat)
-			if !ok {
-				return
+			if start.cgroupDir != "" {
+				if m, err := resources.ReadMemory(start.cgroupDir); err == nil {
+					wcprof.RecordUsage(ctx, opID, UsageScopeEngineCgroupSample, wcprof.Usage{
+						MemAnonBytes: m.AnonBytes,
+						MemFileBytes: m.FileBytes,
+						MemHugeBytes: m.HugeBytes,
+					})
+				}
 			}
-			wcprof.RecordUsage(ctx, opID, UsageScopeMachineSample, usageSince(prev, cur))
-			prev = cur
 		}
 		ticker := time.NewTicker(machineSampleInterval)
 		defer ticker.Stop()
@@ -196,6 +222,8 @@ func usageSince(start, end wcprof.Usage) wcprof.Usage {
 		GoAllocBytes: end.GoAllocBytes - start.GoAllocBytes,
 		GoGCCycles:   end.GoGCCycles - start.GoGCCycles,
 		GoGCCPUUS:    end.GoGCCPUUS - start.GoGCCPUUS,
+		IOReadBytes:  end.IOReadBytes - start.IOReadBytes,
+		IOWriteBytes: end.IOWriteBytes - start.IOWriteBytes,
 	}
 }
 
@@ -203,10 +231,10 @@ func usageSince(start, end wcprof.Usage) wcprof.Usage {
 type phaseRun struct {
 	ctx   context.Context
 	op    *wcprof.Op
-	start engineCPU
+	start engineReading
 	prof  *armedProfile
-	// stopSampling stops sampling the machine and waits for its last
-	// reading.
+	// stopSampling stops sampling the machine and the engine's memory, and
+	// waits for its last sample.
 	stopSampling func()
 	// unwatch stops the session watch's timer for this run, if it had one.
 	unwatch func()
@@ -219,10 +247,10 @@ type phaseRun struct {
 func (srv *Server) beginSessionPhase(ctx context.Context, sessionID string) *phaseRun {
 	var p *phaseRun
 	if wcprof.Enabled(ctx) {
-		p = &phaseRun{ctx: ctx, start: readEngineCPU()}
+		p = &phaseRun{ctx: ctx, start: readEngine()}
 		p.ctx, p.op = wcprof.BeginOp(ctx, wcprof.OpKindSessionPhase, PhaseSession, wcprof.OpOpts{Ident: sessionID})
-		if p.start.machineOK {
-			p.stopSampling = sampleMachine(p.ctx, p.op.ID(), p.start.machine)
+		if p.start.machineOK || p.start.cgroupDir != "" {
+			p.stopSampling = samplePhase(p.ctx, p.op.ID(), p.start)
 		}
 	}
 	if a := srv.startArmedProfile(PhaseSession); a != nil {
@@ -260,12 +288,16 @@ func (p *phaseRun) end(srv *Server) {
 	if p.stopSampling != nil {
 		p.stopSampling()
 	}
-	end := readEngineCPU()
+	end := readEngine()
 	id := p.op.ID()
 	wcprof.RecordUsage(p.ctx, id, UsageScopeEngineProcess, usageSince(p.start.process, end.process))
 	wcprof.RecordUsage(p.ctx, id, UsageScopeEngineChildren, usageSince(p.start.children, end.children))
 	if p.start.cgroupOK && end.cgroupOK {
-		wcprof.RecordUsage(p.ctx, id, UsageScopeEngineCgroup, usageSince(p.start.cgroup, end.cgroup))
+		cgroup := usageSince(p.start.cgroup, end.cgroup)
+		if !p.start.ioOK || !end.ioOK {
+			cgroup.IOReadBytes, cgroup.IOWriteBytes = 0, 0
+		}
+		wcprof.RecordUsage(p.ctx, id, UsageScopeEngineCgroup, cgroup)
 	}
 	if p.start.machineOK && end.machineOK {
 		wcprof.RecordUsage(p.ctx, id, UsageScopeMachine, usageSince(p.start.machine, end.machine))

@@ -26,6 +26,16 @@ type Usage struct {
 	GoAllocBytes int64
 	GoGCCycles   int64
 	GoGCCPUUS    int64
+	// IOReadBytes and IOWriteBytes are the bytes a cgroup scope read from
+	// and wrote to block devices.
+	IOReadBytes  int64
+	IOWriteBytes int64
+	// MemAnonBytes, MemFileBytes and MemHugeBytes are a cgroup's memory at
+	// the reading's time: anonymous memory, file pages, and the part of both
+	// in transparent huge pages. Only sample scopes have them.
+	MemAnonBytes int64
+	MemFileBytes int64
+	MemHugeBytes int64
 }
 
 // Usage scopes of an exec.
