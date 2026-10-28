@@ -25,8 +25,17 @@ const (
 	partParallelMinBlob = 32 << 20
 	partChunkSize       = 8 << 20
 	// maxPartExtraStreams bounds the requests beyond each blob's first,
-	// across the engine. Each holds at most one chunk in memory.
+	// across the engine.
 	maxPartExtraStreams = 16
+	// partWindowChunks is how many chunks past the read offset a blob's
+	// streams fetch into memory: a slow response at the read offset doesn't
+	// stop the other streams until the window is full. At the streams' rate,
+	// 24 chunks hide most of one request the store answers about 2 s late.
+	partWindowChunks = 24
+	// maxPartHeldChunks bounds the chunks held in memory across the engine,
+	// fetched or being fetched and not yet read: 256 MiB. A stream that finds
+	// none left waits for one.
+	maxPartHeldChunks = 32
 	// partChunkRetries is how many times a chunk is requested again after a
 	// network error.
 	partChunkRetries = 2
@@ -42,8 +51,12 @@ type partRangeConfig struct {
 	minBlob int64
 	chunk   int64
 	retries int
-	// extra holds the streams beyond each blob's first, engine-wide.
+	// window is how many chunks past the read offset a reader holds.
+	window int
+	// extra holds the streams beyond each blob's first, and held the chunks
+	// in memory, engine-wide.
 	extra *semaphore.Weighted
+	held  *semaphore.Weighted
 }
 
 func defaultPartRangeConfig() partRangeConfig {
@@ -52,7 +65,9 @@ func defaultPartRangeConfig() partRangeConfig {
 		minBlob: partParallelMinBlob,
 		chunk:   partChunkSize,
 		retries: partChunkRetries,
+		window:  partWindowChunks,
 		extra:   semaphore.NewWeighted(maxPartExtraStreams),
+		held:    semaphore.NewWeighted(maxPartHeldChunks),
 	}
 }
 
@@ -104,7 +119,7 @@ func (p *partContentProvider) rangeReader(ctx context.Context, desc ocispecs.Des
 		return nil
 	}
 	cfg := p.source.ranges
-	if cfg.streams <= 1 || cfg.extra == nil || desc.Size < cfg.minBlob || cfg.chunk <= 0 {
+	if cfg.streams <= 1 || cfg.extra == nil || cfg.held == nil || desc.Size < cfg.minBlob || cfg.chunk <= 0 {
 		return nil
 	}
 	extra := 0
@@ -127,10 +142,16 @@ func (p *partContentProvider) rangeReader(ctx context.Context, desc ocispecs.Des
 		chunk:    cfg.chunk,
 		chunks:   (desc.Size + cfg.chunk - 1) / cfg.chunk,
 		workers:  1 + extra,
+		window:   cfg.window,
+		slots:    cfg.held,
 		retries:  cfg.retries,
 		url:      url,
 		renewed:  renewed,
 		held:     map[int64]*partRangeChunk{},
+	}
+	// The window holds at least a chunk per stream.
+	if r.window < r.workers {
+		r.window = r.workers
 	}
 	r.release = sync.OnceFunc(func() { cfg.extra.Release(int64(extra)) })
 	r.cond = sync.NewCond(&r.mu)
@@ -150,9 +171,10 @@ var errRangeIgnored = errors.New("the blob store answered a range with the whole
 
 // partRangeReader reads one large blob through several ranged requests at
 // once. Its reader still sees the blob in order: workers fetch the chunks
-// just ahead of the read offset into memory, at most one per worker, and a
-// read waits for the chunk it needs. The writer, the digest check and the
-// content commit see one ordered stream, as with partHTTPReader.
+// ahead of the read offset into memory, up to its window, each taking one of
+// the engine's held-chunk slots until it is read, and a read waits for the
+// chunk it needs. The writer, the digest check and the content commit see
+// one ordered stream, as with partHTTPReader.
 //
 // A read outside the window of fetched chunks, or a store that answers a
 // range with the whole object, moves the rest of the blob onto one stream.
@@ -169,6 +191,9 @@ type partRangeReader struct {
 	chunk   int64
 	chunks  int64
 	workers int
+	window  int
+	// slots holds one per chunk claimed and not yet read, engine-wide.
+	slots   *semaphore.Weighted
 	retries int
 	wg      sync.WaitGroup
 
@@ -184,9 +209,11 @@ type partRangeReader struct {
 	renewed bool
 	started bool
 	// next is the next chunk to fetch, low the first chunk still held, and
-	// held the chunks claimed and not yet read through.
+	// held the chunks claimed and not yet read through. taken counts the
+	// slots its claimed chunks hold.
 	next, low int64
 	held      map[int64]*partRangeChunk
+	taken     int64
 	// alive counts the running workers. Once none runs, a chunk no worker
 	// claimed fails rather than waiting.
 	alive int
@@ -210,6 +237,7 @@ func (r *partRangeReader) Close() error {
 	r.release()
 	r.mu.Lock()
 	single := r.single
+	r.releaseSlotsLocked(r.taken)
 	r.mu.Unlock()
 	if single != nil {
 		return single.Close()
@@ -272,7 +300,7 @@ func (r *partRangeReader) ReadAt(p []byte, off int64) (int, error) {
 func (r *partRangeReader) chunkFor(idx int64) *partRangeChunk {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.single != nil || idx < r.low || idx >= r.low+int64(r.workers) {
+	if r.single != nil || idx < r.low || idx >= r.low+int64(r.window) {
 		return nil
 	}
 	if !r.started {
@@ -319,13 +347,24 @@ func (r *partRangeReader) chunkLocked(idx int64) *partRangeChunk {
 }
 
 // readThrough drops chunk idx, which the reader has read to its end, making
-// room for a worker to fetch another.
+// room for a worker to fetch another: the window moves past it, and the slots
+// of the claimed chunks up to it go back.
 func (r *partRangeReader) readThrough(idx int64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.held, idx)
+	r.releaseSlotsLocked(min(r.next, idx+1) - r.low)
 	r.low = idx + 1
 	r.cond.Broadcast()
+}
+
+// releaseSlotsLocked returns n of the slots the reader's claimed chunks hold.
+func (r *partRangeReader) releaseSlotsLocked(n int64) {
+	if n <= 0 {
+		return
+	}
+	r.taken -= n
+	r.slots.Release(n)
 }
 
 // toSingle stops the workers and returns the reader for the rest of the
@@ -343,6 +382,8 @@ func (r *partRangeReader) toSingle() *partHTTPReader {
 	r.release()
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	// The single stream reads none of the held chunks.
+	r.releaseSlotsLocked(r.taken)
 	ctx, cancel := context.WithCancelCause(r.ctx)
 	r.single = &partHTTPReader{provider: r.provider, desc: r.desc, parent: r.parent, ctx: ctx, cancel: cancel, url: r.url, renewed: r.renewed}
 	return r.single
@@ -360,17 +401,32 @@ func (r *partRangeReader) work() {
 		}
 		r.mu.Unlock()
 	}()
+	claimable := func() bool {
+		return r.workCtx.Err() == nil && r.next < r.chunks && r.next < r.low+int64(r.window)
+	}
 	for {
 		r.mu.Lock()
-		for r.workCtx.Err() == nil && r.next < r.chunks && r.next >= r.low+int64(r.workers) {
+		for r.workCtx.Err() == nil && r.next < r.chunks && !claimable() {
 			r.cond.Wait()
 		}
-		if r.workCtx.Err() != nil || r.next >= r.chunks {
+		if !claimable() {
 			r.mu.Unlock()
 			return
 		}
+		r.mu.Unlock()
+		if err := r.slots.Acquire(r.workCtx, 1); err != nil {
+			return
+		}
+		r.mu.Lock()
+		if !claimable() {
+			// Another worker claimed the window's last chunk meanwhile.
+			r.mu.Unlock()
+			r.slots.Release(1)
+			continue
+		}
 		idx := r.next
 		r.next++
+		r.taken++
 		c := r.chunkLocked(idx)
 		r.mu.Unlock()
 		data, err := r.fetch(idx)
