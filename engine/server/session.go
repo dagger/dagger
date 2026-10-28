@@ -1634,7 +1634,9 @@ func (srv *Server) initializeClientRuntime(
 		// declares, capped at the engine's own
 		// (engine.ModuleAPIViewVersion), whose naming rules the typedefs
 		// its runtime declares are named by (see
-		// core.ModuleSource.NamingView).
+		// core.ModuleSource.NamingView). A declared client keeps its own
+		// core view; serveQuery still names its typedefs by the module's
+		// (core.ContextWithNamingView).
 		if !client.clientMetadata.ClientVersionDeclared {
 			coreView = client.mod.Self().Source.Value.Self().NamingView()
 			client.dag.View = coreView
@@ -2853,6 +2855,11 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 	// make query available via context to all APIs
 	ctx = core.ContextWithQuery(ctx, client.dagqlRoot)
 
+	// A module client's typedef constructors name the module's declarations
+	// by the module's rules, even when the client declared a core view of
+	// its own (see initializeClientRuntime).
+	ctx = client.withModuleNaming(ctx)
+
 	var profServeOp *wcprof.Op
 	if profiling {
 		if profiledSession {
@@ -2931,6 +2938,20 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 
 	gqlSrv.ServeHTTP(w, r)
 	return nil
+}
+
+// withModuleNaming returns ctx for serving a query of client. A module
+// client that declared its version is served the core view of that version,
+// but the typedef constructors still name its module's declarations by the
+// module's rules: they select at the module's NamingView
+// (core.ContextWithNamingView). Other clients' core view already is it, or
+// they have no module.
+func (client *clientRuntime) withModuleNaming(ctx context.Context) context.Context {
+	mod := client.mod.Self()
+	if mod == nil || client.clientMetadata == nil || !client.clientMetadata.ClientVersionDeclared {
+		return ctx
+	}
+	return core.ContextWithNamingView(ctx, mod.Source.Value.Self().NamingView())
 }
 
 func (client *clientRuntime) claimSingleQueryRequest() error {
