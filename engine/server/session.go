@@ -3678,7 +3678,9 @@ func (srv *Server) CurrentServedDeps(ctx context.Context) (*core.SchemaBuilder, 
 }
 
 // Return the modules the current client served beside its workspace's own,
-// with -m or through the API, sorted by name
+// with -m or through the API, sorted by name. A module served only for its
+// types, such as a dependency of a main module, isn't listed by artifact
+// discovery and isn't returned.
 func (srv *Server) CurrentClientModules(ctx context.Context) ([]core.WorkspaceClientModule, error) {
 	client, err := srv.workspaceRuntimeFromContext(ctx)
 	if err != nil {
@@ -3691,10 +3693,6 @@ func (srv *Server) CurrentClientModules(ctx context.Context) ([]core.WorkspaceCl
 	if served == nil {
 		return nil, nil
 	}
-	mainNames := map[string]bool{}
-	for _, mod := range served.MainMods() {
-		mainNames[mod.Name()] = true
-	}
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, err
@@ -3703,6 +3701,10 @@ func (srv *Server) CurrentClientModules(ctx context.Context) ([]core.WorkspaceCl
 	for _, name := range names {
 		mod, ok := served.Lookup(name)
 		if !ok || mod.ModuleResult().Self() == nil {
+			continue
+		}
+		opts, _ := served.InstallOpts(name)
+		if opts.SkipConstructor {
 			continue
 		}
 		// The served module's own key is per client; its implementation's is
@@ -3715,7 +3717,7 @@ func (srv *Server) CurrentClientModules(ctx context.Context) ([]core.WorkspaceCl
 		if err != nil {
 			return nil, fmt.Errorf("client module %s: %w", name, err)
 		}
-		mods = append(mods, core.WorkspaceClientModule{Name: name, Digest: dgst, Main: mainNames[name]})
+		mods = append(mods, core.WorkspaceClientModule{Name: name, Digest: dgst, Main: opts.Main})
 	}
 	return mods, nil
 }
