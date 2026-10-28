@@ -707,7 +707,8 @@ shipped with, byte for byte.
 A prerelease engine serves a module declaring a view past its own (a later
 beta, or exactly `v1.0.0`) at its own view, and names it by that view's
 rules, so no engine names a module by rules it doesn't have. The Go
-generator gates on the same cut, by the generated schema's `__schemaVersion`
+generator gates on the same cut, by the generated schema's `__schemaVersion`,
+which for a module is that capped view
 (see [SDK Integration](#sdk-integration)). Nothing gates on
 `Query.formatIdentifiers` being in the schema: it is served on every v1 view
 (from `v1.0.0-0`).
@@ -987,8 +988,9 @@ schema has no other case.
 ## Test Vectors
 
 These start the shared test-case file, `engine/naming/testdata/vectors.json`,
-which the `engine/naming` tests check the package against. SDKs don't need a
-copy: they get formatted names from the engine.
+which the `engine/naming` tests check the package against. The in-repo Go
+generator imports `engine/naming`, and the other SDKs keep their own
+converters, so none of them carries a copy.
 `^` marks `ACRONYM`, `*` marks `TERM`, `+` a suffix.
 
 | input | words | `PASCAL` | `CAMEL` | `SNAKE` | `PASCAL` / `CAPITALIZED` |
