@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"runtime/metrics"
 	"runtime/pprof"
 	"strconv"
 	"strings"
@@ -26,14 +27,16 @@ import (
 // removal.
 const PhaseSession = "session"
 
-// Usage scopes of a phase: the CPU the engine used while it ran. They are
-// activity during the phase, not CPU the phase owned: phases that overlap
-// (two sessions) see each other's work.
+// Usage scopes of a phase: the resources the engine used while it ran. They
+// are activity during the phase, not resources the phase owned: phases that
+// overlap (two sessions) see each other's work.
 const (
-	// UsageScopeEngineProcess is the engine process itself.
+	// UsageScopeEngineProcess is the engine process itself: its CPU, page
+	// faults, and Go runtime counters.
 	UsageScopeEngineProcess = "engine_process"
 	// UsageScopeEngineChildren is the engine's child processes (runc, and
-	// the processes it runs), counted only once the engine reaped them.
+	// the processes it runs), counted only once the engine reaped them: their
+	// CPU and page faults.
 	UsageScopeEngineChildren = "engine_children"
 	// UsageScopeEngineCgroup is the engine process's cgroup (as the engine's
 	// cgroup metrics find it) and everything in it.
@@ -68,10 +71,11 @@ func readEngineCPU() engineCPU {
 	us := func(tv unix.Timeval) int64 { return tv.Sec*1_000_000 + tv.Usec }
 	var ru unix.Rusage
 	if unix.Getrusage(unix.RUSAGE_SELF, &ru) == nil {
-		c.process = wcprof.Usage{CPUUserUS: us(ru.Utime), CPUSystemUS: us(ru.Stime)}
+		c.process = wcprof.Usage{CPUUserUS: us(ru.Utime), CPUSystemUS: us(ru.Stime), MinorFaults: ru.Minflt, MajorFaults: ru.Majflt}
 	}
+	readGoRuntime(&c.process)
 	if unix.Getrusage(unix.RUSAGE_CHILDREN, &ru) == nil {
-		c.children = wcprof.Usage{CPUUserUS: us(ru.Utime), CPUSystemUS: us(ru.Stime)}
+		c.children = wcprof.Usage{CPUUserUS: us(ru.Utime), CPUSystemUS: us(ru.Stime), MinorFaults: ru.Minflt, MajorFaults: ru.Majflt}
 	}
 	if dir, err := cgroupmetrics.EngineCgroupDir(); err == nil {
 		if user, sys, _, err := resources.ReadUsage(dir); err == nil {
@@ -82,6 +86,33 @@ func readEngineCPU() engineCPU {
 		c.machine, c.machineOK = parseMachineCPU(stat)
 	}
 	return c
+}
+
+// goRuntimeMetrics are the Go runtime's counters readGoRuntime reads, in
+// the order it reads them.
+var goRuntimeMetrics = []string{
+	"/gc/heap/allocs:bytes",
+	"/gc/cycles/total:gc-cycles",
+	"/cpu/classes/gc/total:cpu-seconds",
+}
+
+// readGoRuntime adds this process's Go runtime counters to u. A counter the
+// runtime doesn't support stays 0.
+func readGoRuntime(u *wcprof.Usage) {
+	samples := make([]metrics.Sample, len(goRuntimeMetrics))
+	for i, name := range goRuntimeMetrics {
+		samples[i].Name = name
+	}
+	metrics.Read(samples)
+	if v := samples[0].Value; v.Kind() == metrics.KindUint64 {
+		u.GoAllocBytes = int64(v.Uint64())
+	}
+	if v := samples[1].Value; v.Kind() == metrics.KindUint64 {
+		u.GoGCCycles = int64(v.Uint64())
+	}
+	if v := samples[2].Value; v.Kind() == metrics.KindFloat64 {
+		u.GoGCCPUUS = int64(v.Float64() * 1e6)
+	}
 }
 
 // procStatTickUS is a /proc/stat tick in microseconds: the kernel reports
@@ -155,11 +186,16 @@ func sampleMachine(ctx context.Context, opID uint64, start wcprof.Usage) func() 
 
 func usageSince(start, end wcprof.Usage) wcprof.Usage {
 	return wcprof.Usage{
-		CPUUserUS:   end.CPUUserUS - start.CPUUserUS,
-		CPUSystemUS: end.CPUSystemUS - start.CPUSystemUS,
-		CPUIowaitUS: end.CPUIowaitUS - start.CPUIowaitUS,
-		CPUStealUS:  end.CPUStealUS - start.CPUStealUS,
-		CPUIdleUS:   end.CPUIdleUS - start.CPUIdleUS,
+		CPUUserUS:    end.CPUUserUS - start.CPUUserUS,
+		CPUSystemUS:  end.CPUSystemUS - start.CPUSystemUS,
+		CPUIowaitUS:  end.CPUIowaitUS - start.CPUIowaitUS,
+		CPUStealUS:   end.CPUStealUS - start.CPUStealUS,
+		CPUIdleUS:    end.CPUIdleUS - start.CPUIdleUS,
+		MinorFaults:  end.MinorFaults - start.MinorFaults,
+		MajorFaults:  end.MajorFaults - start.MajorFaults,
+		GoAllocBytes: end.GoAllocBytes - start.GoAllocBytes,
+		GoGCCycles:   end.GoGCCycles - start.GoGCCycles,
+		GoGCCPUUS:    end.GoGCCPUUS - start.GoGCCPUUS,
 	}
 }
 

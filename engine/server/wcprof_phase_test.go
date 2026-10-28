@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"runtime"
 	"runtime/pprof"
 	"testing"
 	"time"
@@ -26,7 +28,18 @@ func burnCPU(d time.Duration) {
 	}
 }
 
-// A profiled phase is an op carrying the engine's CPU activity during it.
+// touchFreshMemory allocates n bytes and writes one byte per page, so the
+// process takes page faults for them.
+func touchFreshMemory(n int) []byte {
+	b := make([]byte, n)
+	for i := 0; i < n; i += os.Getpagesize() {
+		b[i] = 1
+	}
+	return b
+}
+
+// A profiled phase is an op carrying the engine's CPU activity during it,
+// with the engine process's page faults and Go runtime counters.
 func TestPhaseRecordsEngineCPU(t *testing.T) {
 	wcprof.EnsureRecorder()
 	ctx := wcprof.ContextWithProfiling(context.Background())
@@ -34,7 +47,11 @@ func TestPhaseRecordsEngineCPU(t *testing.T) {
 	p := srv.beginSessionPhase(ctx, "phase-test-session")
 	require.NotNil(t, p)
 	burnCPU(50 * time.Millisecond)
+	const allocated = 64 << 20
+	mem := touchFreshMemory(allocated)
+	runtime.GC()
 	p.end(srv)
+	runtime.KeepAlive(mem)
 
 	var buf bytes.Buffer
 	require.NoError(t, wcprof.Active().WriteDump(&buf, false))
@@ -56,6 +73,10 @@ func TestPhaseRecordsEngineCPU(t *testing.T) {
 	proc, ok := usage[UsageScopeEngineProcess]
 	require.True(t, ok, "no engine process reading: %+v", usage)
 	require.GreaterOrEqual(t, proc.CPUUserUS+proc.CPUSystemUS, int64(25_000), "50ms of busy work: %+v", proc)
+	require.Positive(t, proc.MinorFaults, "64 MiB of fresh memory touched: %+v", proc)
+	require.GreaterOrEqual(t, proc.GoAllocBytes, int64(allocated), "64 MiB allocated: %+v", proc)
+	require.GreaterOrEqual(t, proc.GoGCCycles, int64(1), "a forced GC: %+v", proc)
+	require.Positive(t, proc.GoGCCPUUS, "a forced GC: %+v", proc)
 	require.Contains(t, usage, UsageScopeEngineChildren)
 	machine, ok := usage[UsageScopeMachine]
 	require.True(t, ok, "no machine reading: %+v", usage)
