@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 
 	"github.com/dagger/dagger/engine/wcprof"
 )
@@ -29,14 +30,17 @@ func burnCPU(d time.Duration) {
 	}
 }
 
-// touchFreshMemory allocates n bytes and writes one byte per page, so the
-// process takes page faults for them.
-func touchFreshMemory(n int) []byte {
-	b := make([]byte, n)
+// touchFreshMemory maps n bytes of new anonymous memory, without huge pages,
+// and writes one byte per page, so the process takes a page fault for each
+// page.
+func touchFreshMemory(t *testing.T, n int) {
+	b, err := unix.Mmap(-1, 0, n, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_ANON|unix.MAP_PRIVATE)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, unix.Munmap(b)) }()
+	require.NoError(t, unix.Madvise(b, unix.MADV_NOHUGEPAGE))
 	for i := 0; i < n; i += os.Getpagesize() {
 		b[i] = 1
 	}
-	return b
 }
 
 // A profiled phase is an op carrying the engine's CPU activity during it,
@@ -48,8 +52,9 @@ func TestPhaseRecordsEngineCPU(t *testing.T) {
 	p := srv.beginSessionPhase(ctx, "phase-test-session")
 	require.NotNil(t, p)
 	burnCPU(50 * time.Millisecond)
+	touchFreshMemory(t, 16<<20)
 	const allocated = 64 << 20
-	mem := touchFreshMemory(allocated)
+	mem := make([]byte, allocated)
 	runtime.GC()
 	p.end(srv)
 	runtime.KeepAlive(mem)
@@ -74,7 +79,7 @@ func TestPhaseRecordsEngineCPU(t *testing.T) {
 	proc, ok := usage[UsageScopeEngineProcess]
 	require.True(t, ok, "no engine process reading: %+v", usage)
 	require.GreaterOrEqual(t, proc.CPUUserUS+proc.CPUSystemUS, int64(25_000), "50ms of busy work: %+v", proc)
-	require.Positive(t, proc.MinorFaults, "64 MiB of fresh memory touched: %+v", proc)
+	require.GreaterOrEqual(t, proc.MinorFaults, int64(16<<20/os.Getpagesize()), "16 MiB of fresh memory touched: %+v", proc)
 	require.GreaterOrEqual(t, proc.GoAllocBytes, int64(allocated), "64 MiB allocated: %+v", proc)
 	require.GreaterOrEqual(t, proc.GoGCCycles, int64(1), "a forced GC: %+v", proc)
 	require.Positive(t, proc.GoGCCPUUS, "a forced GC: %+v", proc)

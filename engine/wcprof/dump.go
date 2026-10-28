@@ -263,7 +263,7 @@ func (r *Recorder) WriteDump(w io.Writer, flush bool) error {
 		Strings:        r.strings.snapshot(),
 		OpenOps:        open,
 		Producers:      producers,
-		Machine:        machineFacts(),
+		Machine:        readMachine(),
 	}
 
 	bw := bufio.NewWriterSize(w, 1<<20)
