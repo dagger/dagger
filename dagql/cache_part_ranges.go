@@ -219,6 +219,9 @@ type partRangeReader struct {
 	alive int
 	// single, once set, reads the rest of the blob.
 	single *partHTTPReader
+	// testBeforeReadThrough, when set, runs as a read has read a chunk to
+	// its end, before the chunk is dropped.
+	testBeforeReadThrough func()
 }
 
 type partRangeChunk struct {
@@ -276,6 +279,9 @@ func (r *partRangeReader) ReadAt(p []byte, off int64) (int, error) {
 				m := copy(p[n:], c.data[pos-idx*r.chunk:])
 				n += m
 				if pos+int64(m) == min((idx+1)*r.chunk, size) {
+					if r.testBeforeReadThrough != nil {
+						r.testBeforeReadThrough()
+					}
 					r.readThrough(idx)
 				}
 				continue
