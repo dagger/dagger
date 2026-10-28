@@ -5,7 +5,7 @@ let goSdkRemote = "https://github.com/dagger/go-sdk"
 # Move this pin only to a reviewed github.com/dagger/go-sdk commit for which
 # compareCodegen reports no difference: its dagger-go-sdk-codegen generates
 # the core bindings that the Go SDK releases.
-let goSdkCodegenCommit = "d4c37977dcc89b4950b46189b04b837fcd324125"
+let goSdkCodegenCommit = "837cf067bade8d6897cfb928ac5555fc505c838e"
 
 let goSdkCodegenImage = "golang:1.26.1-alpine"
 
@@ -160,11 +160,11 @@ type GoClientDev {
   Regenerate the Go SDK API
   """
   pub generate: Changeset! @generate {
-    # As the Go SDK's code generation runs: codegen, on the API schema the
-    # introspect tool computes from the engine's source without an engine,
-    # loading what sdk/go imports through the export driver from dagger/go's
-    # archives, so no go command compiles anything. Generating writes only Go
-    # files, never go.mod.
+    # As the Go SDK's code generation runs: dagger-go-sdk-codegen, on the API
+    # schema the introspect tool computes from the engine's source without an
+    # engine, loading what sdk/go imports through the export driver from
+    # dagger/go's archives, so no go command compiles anything. Generating
+    # writes only Go files, never go.mod.
     let engine = engineDev(ws: self.ws)
     let src = engine.source
     let sdk = src.directory(sourcePath).asWorkspace
@@ -172,10 +172,10 @@ type GoClientDev {
     let archives = golang
       .module(ws: sdk, path: ".", findUp: false)
       .archives(ws: sdk, dependencies: true, packages: ["."], noTests: true)
-    # A Go image: codegen lists sdk/go's module with the go command.
+    # A Go image: dagger-go-sdk-codegen finds sdk/go's module with the go command.
     container
       .from(golang.image(version: "1.27"))
-      .withFile("/usr/local/bin/codegen", codegen.binary)
+      .withFile("/usr/local/bin/dagger-go-sdk-codegen", goSdkCodegen)
       .withFile("/usr/local/bin/export-driver", engine.exportDriver)
       .withMountedFile("/schema.json", engine.introspectionJson)
       .withMountedDirectory("/gobuild-archives", archives)
@@ -184,8 +184,15 @@ type GoClientDev {
       .withEnvVariable("GOLANGCI_EXPORT_WORKDIR", "/tmp/export-driver")
       .withEnvVariable("GOLANGCI_EXPORT_COMPILE", "never")
       .withDirectory("/src", src)
-      .withWorkdir("/src")
-      .withExec(["codegen", "generate-library", "--lang", "go", "--introspection-json-path", "/schema.json", "--output", "./" + sourcePath])
+      .withWorkdir("/src/" + sourcePath)
+      # dagger-go-sdk-codegen asks the engine's naming API how to spell each
+      # identifier for the schema's version.
+      .withExec([
+        "dagger-go-sdk-codegen", "core",
+        "--output", "./core",
+        "--dag-output", "./dag",
+        "--introspection-json-path", "/schema.json",
+      ], experimentalPrivilegedNesting: true)
       .directory("/src")
       .changes(src)
   }
