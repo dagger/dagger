@@ -207,7 +207,12 @@ type persistedEdge struct {
 // index named it, so a restart restores one current entry per recipe. Older
 // stores cannot tell a recipe's current entry from others of its recipe and
 // are wiped on import.
-const cachePersistenceSchemaVersion = "22"
+//
+// 23: results record whether their call declined persistence
+// (DeclinePersistence). An older engine reading a newer store drops the mark
+// when it saves, and a declined value would then gain a retention edge from
+// its next persistable hit, so stores of another version are wiped on import.
+const cachePersistenceSchemaVersion = "23"
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 var ErrCacheSessionReleased = errors.New("cache session released")
