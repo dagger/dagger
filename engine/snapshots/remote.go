@@ -149,5 +149,6 @@ func (cm *snapshotManager) registerExportLayer(parentSnapshotID, snapshotID stri
 	defer cm.mu.Unlock()
 	cm.importedLayerByBlob[ImportedLayerBlobKey{ParentSnapshotID: parentSnapshotID, BlobDigest: desc.Digest}] = snapshotID
 	cm.importedLayerByDiff[ImportedLayerDiffKey{ParentSnapshotID: parentSnapshotID, DiffID: diffID}] = snapshotID
+	cm.layerImportedLocked()
 	return nil
 }
