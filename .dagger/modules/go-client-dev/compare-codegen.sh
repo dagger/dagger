@@ -41,9 +41,6 @@ echo "schema sha256       $(cat /capture/schema.sha256)"
 echo "schema version      $(grep -o '"__schemaVersion": *"[^"]*"' /capture/schema.json | cut -d'"' -f4)"
 echo "generator repo      $GENERATOR_REPO"
 echo "generator commit    $GENERATOR_COMMIT"
-if [ "$GENERATOR_COMMIT" != "$PINNED_GENERATOR_COMMIT" ]; then
-	echo "note       generator commit is not the pinned $PINNED_GENERATOR_COMMIT"
-fi
 echo
 
 check "schema sha256" "$(sha256sum /capture/schema.json | cut -d' ' -f1)" "$(cat /capture/schema.sha256)"

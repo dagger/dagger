@@ -32,14 +32,6 @@ type GoClientDevCompareCodegenOpts struct {
 	// Git repository of the release candidate
 	//
 	SourceRepo *GitRepository // go-client-dev (../../../../../../:0:0)
-	//
-	// Git repository to build dagger-go-sdk-codegen from, instead of github.com/dagger/go-sdk
-	//
-	GoSDKRepo *GitRepository // go-client-dev (../../../../../../:0:0)
-	//
-	// Commit to build dagger-go-sdk-codegen from, instead of the pinned one
-	//
-	GoSDKCommit string // go-client-dev (../../../../../../:0:0)
 
 	Script *File // go-client-dev (../../../../../../:0:0)
 }
@@ -57,14 +49,6 @@ func (r *GoClientDev) CompareCodegen(ctx context.Context, sourceTag string, expe
 		// `sourceRepo` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SourceRepo) {
 			q = q.Arg("sourceRepo", opts[i].SourceRepo)
-		}
-		// `goSdkRepo` optional argument
-		if !querybuilder.IsZeroValue(opts[i].GoSDKRepo) {
-			q = q.Arg("goSdkRepo", opts[i].GoSDKRepo)
-		}
-		// `goSdkCommit` optional argument
-		if !querybuilder.IsZeroValue(opts[i].GoSDKCommit) {
-			q = q.Arg("goSdkCommit", opts[i].GoSDKCommit)
 		}
 		// `script` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Script) {
