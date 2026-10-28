@@ -1287,6 +1287,10 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	if version, ok := state.origEnvMap["_EXPERIMENTAL_DAGGER_VERSION"]; ok {
 		state.nestedClientMetadata.ClientVersion = version
 	}
+	if version := state.origEnvMap["DAGGER_CLIENT_VERSION"]; version != "" {
+		state.nestedClientMetadata.ClientVersion = version
+		state.nestedClientMetadata.ClientVersionDeclared = true
+	}
 
 	// /.init starts the session helper alongside the command rather than
 	// before it, so the client's queries wait for its attachables. Without
@@ -1472,6 +1476,7 @@ func (manager *nestedClientTransportManager) transportForRequest(req *http.Reque
 	// distinction is syntactic: a malformed or explicitly empty identity never
 	// falls through to the proxy identity.
 	clientID := manager.baseMetadata.ClientID
+	var declaredVersion string
 	if req.Header.Get(engine.ClientMetadataMetaKey) != "" {
 		requestMetadata, err := engine.ClientMetadataFromHTTPHeaders(req.Header)
 		if err != nil {
@@ -1481,6 +1486,7 @@ func (manager *nestedClientTransportManager) transportForRequest(req *http.Reque
 			return nil, nil, http.StatusBadRequest, errors.New("nested client metadata is missing client ID")
 		}
 		clientID = requestMetadata.ClientID
+		declaredVersion = requestMetadata.ClientVersion
 	}
 
 	manager.mu.Lock()
@@ -1493,11 +1499,12 @@ func (manager *nestedClientTransportManager) transportForRequest(req *http.Reque
 		return client.await(req.Context())
 	}
 
-	// The request chooses only its fresh logical client ID. Session identity,
-	// authentication, ancestry, and inherited capabilities are all sealed by
-	// the exec-created proxy metadata.
 	metadata := *manager.baseMetadata
 	metadata.ClientID = clientID
+	if declaredVersion != "" {
+		metadata.ClientVersion = declaredVersion
+		metadata.ClientVersionDeclared = true
+	}
 	client := &nestedClientTransport{
 		metadata: &metadata,
 		ready:    make(chan struct{}),

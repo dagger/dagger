@@ -7,8 +7,13 @@ output.
 ## Mental Model
 
 Dagger serves a schema view for each module based on that module's configured
-`engineVersion`. A module pinned to an older engine version should see the API
-surface that existed for that version, even when running on a newer engine.
+`engineVersion`, unless its client declares a version. An entrypoint can set
+`DAGGER_CLIENT_VERSION` on the exec that starts its module process. A nested
+client that sends the client metadata header declares its own version. Inside a
+module, the engine caps a declared core view at the running engine's view. The
+engine keeps the module context. A module client without a declaration keeps
+the module's view. Outside a module, the engine uses the announced view without
+a cap. Dependency modules keep their configured versions.
 
 Views are base-version granular. `engine.APIViewVersion` drops the prerelease
 and build suffixes, so every prerelease of a version shares that version's view:

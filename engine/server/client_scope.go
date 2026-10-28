@@ -339,6 +339,7 @@ func cloneClientMetadata(metadata *engine.ClientMetadata) (*engine.ClientMetadat
 	}
 	cloned.UseRecipeIDsByDefault = metadata.UseRecipeIDsByDefault
 	cloned.SDKEntrypoint = metadata.SDKEntrypoint
+	cloned.ClientVersionDeclared = metadata.ClientVersionDeclared
 	return &cloned, nil
 }
 

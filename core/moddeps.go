@@ -102,6 +102,16 @@ func (b *SchemaBuilder) WithRoot(root *Query) *SchemaBuilder {
 	return cp
 }
 
+func (b *SchemaBuilder) WithCoreMod(mod Mod) *SchemaBuilder {
+	cp := b.Clone()
+	for i, entry := range cp.entries {
+		if entry.mod.Name() == ModuleName {
+			cp.entries[i].mod = mod
+		}
+	}
+	return cp
+}
+
 func (b *SchemaBuilder) Prepend(mods ...Mod) *SchemaBuilder {
 	extra := make([]modDepEntry, len(mods))
 	for i, m := range mods {
