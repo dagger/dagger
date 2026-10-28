@@ -22,6 +22,7 @@ import (
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/sync/semaphore"
 )
 
 // renewalRetryStatuses are responses meaning the address itself is unusable.
@@ -203,6 +204,12 @@ type partContentProvider struct {
 	demand     *PartDemandState
 	// stats, when set, counts the install's requests.
 	stats *partInstallStats
+	// requests, when set, bounds the requests in flight across the blobs
+	// read through the provider: a prefetch job's streams.
+	requests *semaphore.Weighted
+	// claimed, when set, is told when a blob read through the provider starts
+	// its last request: nothing more of it is to be requested.
+	claimed func(digest.Digest)
 
 	mu        sync.Mutex
 	addresses map[digest.Digest]BlobAddress
@@ -387,7 +394,10 @@ type partHTTPStream struct {
 	// idle is time spent blocked without byte progress, including the
 	// connection and headers.
 	idle time.Duration
-	once sync.Once
+	// release, when set, returns the request's place among the provider's
+	// requests in flight.
+	release func()
+	once    sync.Once
 }
 
 // close gives the body one closer: this path if it stops the cancellation
@@ -403,6 +413,9 @@ func (s *partHTTPStream) close() {
 			}
 		}
 		s.cancel(nil)
+		if s.release != nil {
+			s.release()
+		}
 	})
 }
 
@@ -525,8 +538,17 @@ func (r *partHTTPReader) open(off int64) error {
 	}
 }
 
+// request asks for the blob from off to its end, the blob's last request.
 func (r *partHTTPReader) request(off int64) (*partHTTPStream, *http.Response, error) {
+	r.provider.claimedBlob(r.desc.Digest)
 	return r.provider.get(r.ctx, r.url, off, r.desc.Size-1)
+}
+
+// claimedBlob tells claimed, if set, that d's last request starts.
+func (p *partContentProvider) claimedBlob(d digest.Digest) {
+	if p.claimed != nil {
+		p.claimed(d)
+	}
 }
 
 // accept validates the response for off: a 206 must cover exactly the
