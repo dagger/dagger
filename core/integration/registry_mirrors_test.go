@@ -37,16 +37,9 @@ func (EngineSuite) TestRegistryMirrorsCustomCA(ctx context.Context, t *testctx.T
 			WithMountedFile("/usr/local/share/ca-certificates/testreg.crt", registryCert)
 	},
 		engineWithConfig(ctx, t, func(ctx context.Context, t *testctx.T, cfg config.Config) config.Config {
-			return config.Config{
-				Registries: map[string]config.RegistryConfig{
-					"docker.io": {
-						Mirrors: []string{"testreg:5000"},
-					},
-					"testreg:5000": {
-						RootCAs: []string{"/usr/local/share/ca-certificates/testreg.crt"},
-					},
-				},
-			}
+			return withTestregMirror(cfg, config.RegistryConfig{
+				RootCAs: []string{"/usr/local/share/ca-certificates/testreg.crt"},
+			})
 		})).
 		WithServiceBinding("testreg", registry)
 
@@ -64,20 +57,29 @@ func (EngineSuite) TestRegistryMirrorsHTTP(ctx context.Context, t *testctx.T) {
 		AsService()
 
 	engine := devEngineContainer(c, engineWithConfig(ctx, t, func(ctx context.Context, t *testctx.T, cfg config.Config) config.Config {
-		return config.Config{
-			Registries: map[string]config.RegistryConfig{
-				"docker.io": {
-					Mirrors: []string{"testreg:5000"},
-				},
-				"testreg:5000": {
-					PlainHTTP: ptr(true),
-				},
-			},
-		}
+		return withTestregMirror(cfg, config.RegistryConfig{
+			PlainHTTP: ptr(true),
+		})
 	})).
 		WithServiceBinding("testreg", registry)
 
 	testImagePull(ctx, t, c, engine, cacheVolume)
+}
+
+// withTestregMirror makes testreg:5000, configured as testreg, the first
+// docker.io mirror. The test registry is empty, so the pull goes on to the
+// next host; the dev engine's own docker.io mirrors stay behind it, so that
+// host is a mirror and not Docker Hub, whose anonymous token requests
+// sometimes fail with 429 or 500.
+func withTestregMirror(cfg config.Config, testreg config.RegistryConfig) config.Config {
+	if cfg.Registries == nil {
+		cfg.Registries = map[string]config.RegistryConfig{}
+	}
+	dockerIO := cfg.Registries["docker.io"]
+	dockerIO.Mirrors = append([]string{"testreg:5000"}, dockerIO.Mirrors...)
+	cfg.Registries["docker.io"] = dockerIO
+	cfg.Registries["testreg:5000"] = testreg
+	return cfg
 }
 
 func testImagePull(ctx context.Context, t *testctx.T, c *dagger.Client, devEngine *core.Container, cacheVolume *core.CacheVolume) {
