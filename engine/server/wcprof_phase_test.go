@@ -47,7 +47,11 @@ func touchFreshMemory(t *testing.T, n int) {
 	b, err := unix.Mmap(-1, 0, n, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_ANON|unix.MAP_PRIVATE)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, unix.Munmap(b)) }()
-	require.NoError(t, unix.Madvise(b, unix.MADV_NOHUGEPAGE))
+	// A kernel without transparent huge pages refuses the advice, and can't
+	// back the mapping with huge pages anyway.
+	if err := unix.Madvise(b, unix.MADV_NOHUGEPAGE); !errors.Is(err, unix.EINVAL) {
+		require.NoError(t, err)
+	}
 	for i := 0; i < n; i += os.Getpagesize() {
 		b[i] = 1
 	}
