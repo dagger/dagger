@@ -273,6 +273,46 @@ func TestOverlayAncestorMinLayerCachesCumulativeBounds(t *testing.T) {
 	require.Equal(t, 1, minLayer)
 }
 
+// TestCopierSharesLowerLayerAnswersAcrossSources checks that sources of one
+// copy share what they learned about their lowerdirs, and that an upperdir's
+// answers are never kept.
+func TestCopierSharesLowerLayerAnswersAcrossSources(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	shared := filepath.Join(root, "shared")
+	firstTop := filepath.Join(root, "first")
+	secondTop := filepath.Join(root, "second")
+	upper := filepath.Join(root, "upper")
+	for _, dir := range []string{shared, firstTop, secondTop, upper} {
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, "a"), 0o755))
+	}
+
+	copier := &Copier{sourceCaches: map[sourceCacheKey]*sourceCache{}, lowerHides: map[string]bool{}}
+	first, err := copier.sourceForCopy(Mount{Root: "/first", Mount: &mount.Mount{
+		Type:    "overlay",
+		Options: []string{"lowerdir=" + firstTop + ":" + shared},
+	}})
+	require.NoError(t, err)
+	_, err = first.overlayAncestorMinLayer("a/file.txt")
+	require.NoError(t, err)
+	learned := len(copier.lowerHides)
+	require.Contains(t, copier.lowerHides, filepath.Join(shared, "a"))
+
+	// A second source on the same lowerdir asks only about its own layers.
+	second, err := copier.sourceForCopy(Mount{Root: "/second", Mount: &mount.Mount{
+		Type:    "overlay",
+		Options: []string{"lowerdir=" + secondTop + ":" + shared, "upperdir=" + upper},
+	}})
+	require.NoError(t, err)
+	_, err = second.overlayAncestorMinLayer("a/file.txt")
+	require.NoError(t, err)
+	require.Len(t, copier.lowerHides, learned+2)
+	require.Contains(t, copier.lowerHides, filepath.Join(secondTop, "a"))
+	require.NotContains(t, copier.lowerHides, upper)
+	require.NotContains(t, copier.lowerHides, filepath.Join(upper, "a"))
+}
+
 // TestCopyFileOverlaySourcesShareLowerLayers copies a file from several
 // overlay sources, in one copy, that share lowerdirs but stack them
 // differently: each source must see the file from its own top visible layer.
