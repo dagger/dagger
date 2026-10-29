@@ -44,7 +44,7 @@ func (*Probe) Run() error { panic("check evaluated") }
 `
 	base := goGitBase(t, c).
 		WithNewFile("/work/dagger.toml", "[modules.tools]\nsource = \"./tools\"\n").
-		WithNewFile("/work/tools/dagger.json", `{"name":"tools","engineVersion":"v1.0.0","sdk":{"source":"go"},"source":"."}`).
+		WithNewFile("/work/tools/dagger.json", `{"name":"tools","engineVersion":"v1.0.0-beta.20","sdk":{"source":"go"},"source":"."}`).
 		WithNewFile("/work/tools/main.go", source).
 		WithWorkdir("/work")
 

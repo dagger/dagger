@@ -13,7 +13,7 @@ func (ArtifactsSuite) TestCommandModuleLoadScope(ctx context.Context, t *testctx
 	c := connect(ctx, t)
 	base := workspaceFixture(t, c, "generators-broken")
 	listing := base.WithNewFile("/work/.dagger/modules/good/dagger-module.toml", `name = "good"
-engineVersion = "v1.0.0"
+engineVersion = "v1.0.0-beta.20"
 [runtime]
 source = "dang"
 `).WithNewFile("/work/.dagger/modules/good/main.dang", `type Good {

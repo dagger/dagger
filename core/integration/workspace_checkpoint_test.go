@@ -407,7 +407,7 @@ func (WorkspaceSuite) TestWorkspaceSnapshotLoadsFrozenModules(ctx context.Contex
 	c := connect(ctx, t)
 	root := core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"modules/probe\"\n").
-		WithNewFile("modules/probe/dagger.json", `{"name":"probe","engineVersion":"v1.0.0","sdk":"go"}`).
+		WithNewFile("modules/probe/dagger.json", `{"name":"probe","engineVersion":"v1.0.0-beta.20","sdk":"go"}`).
 		WithNewFile("modules/probe/main.go", `package main
 type Probe struct{}
 // +check
@@ -597,7 +597,7 @@ func (WorkspaceSuite) TestWorkspaceSnapshotRejectsNestedClientCapture(ctx contex
 	c := connect(ctx, t)
 	base := checkpointCheckoutBase(ctx, t, c).
 		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"modules/probe\"\n").
-		WithNewFile("modules/probe/dagger.json", `{"name":"probe","engineVersion":"v1.0.0","sdk":"go"}`).
+		WithNewFile("modules/probe/dagger.json", `{"name":"probe","engineVersion":"v1.0.0-beta.20","sdk":"go"}`).
 		WithNewFile("modules/probe/main.go", `package main
 import (
  "context"

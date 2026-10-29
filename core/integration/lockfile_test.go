@@ -443,7 +443,7 @@ func (LockfileSuite) TestRemoteWorkspaceModuleUsesLockedGitRef(ctx context.Conte
 	}
 	moduleRepo := core.NewQuery(c).Container().From(alpineImage).WithExec([]string{"apk", "add", "git"}).With(gitUserConfig).
 		WithWorkdir("/src").
-		WithNewFile("dagger-module.toml", "name = \"greeter\"\nengineVersion = \"v1.0.0\"\n[runtime]\nsource = \"dang\"\n").
+		WithNewFile("dagger-module.toml", "name = \"greeter\"\nengineVersion = \"v1.0.0-beta.20\"\n[runtime]\nsource = \"dang\"\n").
 		WithNewFile("main.dang", moduleSource("pinned")).
 		WithExec([]string{"git", "init", "-b", "main"}).
 		WithExec([]string{"git", "add", "."}).WithExec([]string{"git", "commit", "-m", "pinned"}).

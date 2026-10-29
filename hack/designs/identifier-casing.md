@@ -812,12 +812,13 @@ Module normalization is gated on the API view, at `IdentifierNamingVersion`
 (`v1.0.0-0`, `core/gqlformat.go`): `NamerForView` gives the strcase rules to
 views before it and engine/naming to the rest, and a module is named by the
 rules of its view (`ModuleSource.NamingView`, `engine.APIViewVersion` of its
-`engineVersion`). Views are base-version granular, so every v1.0.0 prerelease
-(`v1.0.0-beta.1` onwards, and the `v1.0.0-0` the repo's own modules declare)
-shares the `v1.0.0` view and gets the new rules. The same view gates
-`Query.formatIdentifiers`, which SDK codegen, Go module codegen and the Python
-and TypeScript runtimes check, so a module's codegen and runtime always agree
-with the engine on its names.
+`engineVersion`). Every v1.0.0 prerelease's view is past that gate (those
+before `engine.PrereleaseViewsVersion` share one pre-cut view, later ones keep
+their own), so every v1.0.0 prerelease (`v1.0.0-beta.1` onwards, and the
+`v1.0.0-0` the repo's own modules declare) gets the new rules. The same view
+gates `Query.formatIdentifiers`, which SDK codegen, Go module codegen and the
+Python and TypeScript runtimes check, so a module's codegen and runtime always
+agree with the engine on its names.
 
 That renames modules released against those betas: a Go module's
 `legacyJSON` argument, which strcase made `legacyJson`, is now `legacyJSON`,

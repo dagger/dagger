@@ -848,7 +848,7 @@ func (WorkspaceIncludeSuite) TestAConsumerSkipsTheChecksOfAnInheritedModule(ctx 
 	withModule := func(consumer string) *core.Container {
 		return workspaceIncludeConsumer(t, c, consumer).
 			WithNewFile("/work/common/dagger.toml", "[modules.example]\nsource = \"../shared/example\"\n").
-			WithNewFile("/work/shared/example/dagger-module.toml", "name = \"example\"\nengineVersion = \"v1.0.0\"\n\n[runtime]\nsource = \"dang\"\n").
+			WithNewFile("/work/shared/example/dagger-module.toml", "name = \"example\"\nengineVersion = \"v1.0.0-beta.20\"\n\n[runtime]\nsource = \"dang\"\n").
 			WithNewFile("/work/shared/example/main.dang", "type Example { pub verify: Void @check { null } }")
 	}
 

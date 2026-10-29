@@ -1289,7 +1289,7 @@ func (LLMSuite) TestChangesetToolAppliesAtCwd(ctx context.Context, t *testctx.T)
 				// Workspace.changes measures from the cwd for a module
 				// past changesetCwdCutover (v1.0.0-beta.10), which
 				// generatorWorkspace's v1.0.0-0 is not.
-				WithNewFile("modules/codegen/dagger.json", `{"name":"codegen","engineVersion":"v1.0.0","sdk":"dang"}`).
+				WithNewFile("modules/codegen/dagger.json", `{"name":"codegen","engineVersion":"v1.0.0-beta.20","sdk":"dang"}`).
 				WithNewFile("notes.txt", "root old\n").
 				WithNewFile("sub/notes.txt", "sub old\n")
 			ws := source.AsWorkspace(core.DirectoryAsWorkspaceOpts{Cwd: "sub"})
