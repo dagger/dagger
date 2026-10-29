@@ -965,12 +965,14 @@ func TestCloudMetricQueueShutdownIsBounded(t *testing.T) {
 	const bound = 300 * time.Millisecond
 	q := newCloudMetricQueue(metrics, cloudFlushBound{sessionID: "session", timeout: bound})
 	require.NoError(t, q.Export(t.Context(), gaugeMetrics(1)))
-	require.NoError(t, q.Export(t.Context(), gaugeMetrics(2)))
 	select {
 	case <-receiver.entered:
 	case <-time.After(5 * time.Second):
 		t.Fatal("the first export never reached Cloud")
 	}
+	// Queue this after the first export starts so it is a separate request,
+	// even when compatible queued collections are batched.
+	require.NoError(t, q.Export(t.Context(), gaugeMetrics(2)))
 	// Shut down a little after the first export started, so that it reaches
 	// its own bound, and the second export starts, before the drain
 	// deadline.

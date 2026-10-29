@@ -515,6 +515,12 @@ func (sess *daggerSession) startCloudShutdownBudget() func() {
 // oldest is dropped beyond it.
 const cloudMetricQueueSize = 256
 
+// Bound one upload without changing the queue's collection capacity. Small
+// collections from many native clients otherwise need a network round trip
+// each, even though their resource and schema are identical.
+const cloudMetricBatchCollections = 64
+const cloudMetricBatchBytes = 1 << 20
+
 // cloudMetricQueue exports the session's Cloud metrics on a goroutine of its
 // own. A client's metric reader flushes and shuts down wherever the client's
 // last lease is released, the /shutdown request's own cleanup included, so
@@ -706,8 +712,31 @@ func (q *cloudMetricQueue) run() {
 		}
 		next := q.queue[0]
 		q.queue = q.queue[1:]
+		collections := 0
 		if next.metrics != nil {
 			q.queuedMetrics--
+			collections = 1
+			size := proto.Size(next.metrics)
+			for collections < cloudMetricBatchCollections && len(q.queue) > 0 {
+				pending := q.queue[0]
+				// An ordered flush barrier must stay after the preceding export.
+				// Different resources/schema URLs need their own ResourceMetrics.
+				if pending.metrics == nil || pending.metrics.SchemaUrl != next.metrics.SchemaUrl || !proto.Equal(pending.metrics.Resource, next.metrics.Resource) {
+					break
+				}
+				pendingSize := proto.Size(pending.metrics)
+				if size+pendingSize > cloudMetricBatchBytes {
+					break
+				}
+				// Append complete scopes: do not combine aggregations, points,
+				// timestamps, attributes or temporality. The queued protos are
+				// deep copies owned exclusively by this worker.
+				next.metrics.ScopeMetrics = append(next.metrics.ScopeMetrics, pending.metrics.ScopeMetrics...)
+				q.queue = q.queue[1:]
+				q.queuedMetrics--
+				collections++
+				size += pendingSize
+			}
 		}
 		q.mu.Unlock()
 		if next.barrier != nil {
@@ -716,6 +745,11 @@ func (q *cloudMetricQueue) run() {
 		}
 		metrics, err := telemetry.ResourceMetricsFromPB(next.metrics)
 		if err == nil {
+			// OTLP carries each scope's schema URL beside its instrumentation
+			// scope. Preserve it when rebuilding the SDK collection.
+			for index := range metrics.ScopeMetrics {
+				metrics.ScopeMetrics[index].Scope.SchemaURL = next.metrics.ScopeMetrics[index].SchemaUrl
+			}
 			ctx, cancel := context.WithTimeout(q.ctx, q.bound.timeout)
 			err = q.next.Export(ctx, metrics)
 			cancel()
@@ -725,7 +759,7 @@ func (q *cloudMetricQueue) run() {
 		}
 		if err != nil {
 			q.mu.Lock()
-			q.dropped++
+			q.dropped += collections
 			q.mu.Unlock()
 		}
 	}
