@@ -3,7 +3,6 @@ package daggercmd
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -20,19 +19,17 @@ import (
 	"github.com/dagger/dagger/core/artifact"
 
 	"github.com/charmbracelet/huh"
-	"github.com/opencontainers/go-digest"
 	"github.com/sourcegraph/conc/pool"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/util/hashutil"
+	"github.com/dagger/dagger/internal/callresult"
 	"github.com/dagger/dagger/util/patchpreview"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/dagger/querybuilder"
@@ -89,6 +86,8 @@ type collectionCallRoute struct {
 type plannedFunctionCall struct {
 	fn  *modFunction
 	cmd *cobra.Command
+	// receiver is the type fn is called on.
+	receiver string
 }
 
 // FuncCommand is a config object used to create a dynamic set of commands
@@ -148,6 +147,9 @@ type FuncCommand struct {
 	collectionDimensionsRead bool
 	collectionDimensionsErr  error
 
+	// sessionBeforeFunction is --session as parsed before the function name.
+	sessionBeforeFunction string
+
 	// withFn is the `with` function on Query root, if present.
 	// Used to forward constructor args from the root command.
 	withFn *modFunction
@@ -155,6 +157,12 @@ type FuncCommand struct {
 	// artifactRoot is set when selectors before the first function name a
 	// collection item to start the pipeline from, instead of the module root.
 	artifactRoot *artifactRootSelection
+
+	// receiver is the type the next function in the chain is called on.
+	receiver string
+	// hostDependent records that the chain or its arguments use the host, so
+	// a detached call keeps its process.
+	hostDependent bool
 }
 
 func (fc *FuncCommand) Command() *cobra.Command {
@@ -214,6 +222,10 @@ func (fc *FuncCommand) Command() *cobra.Command {
 			},
 			// Between PreRunE and RunE, flags are validated.
 			RunE: func(c *cobra.Command, a []string) error {
+				if detachFlag {
+					return runDetached(c.OutOrStdout())
+				}
+				fc.sessionBeforeFunction = sessionFlag
 				if isPrintTraceLinkEnabled(c.Annotations) {
 					c.SetContext(idtui.WithPrintTraceLink(c.Context(), true))
 				}
@@ -234,6 +246,7 @@ func (fc *FuncCommand) Command() *cobra.Command {
 				// set in initModuleParams: shell shares that helper and needs
 				// the full view).
 				params.WorkspaceModuleScope = functionName(execArgs)
+				params = backgroundClientParams(params)
 
 				return withEngine(c.Context(), params, func(ctx context.Context, engineClient *client.Client) (rerr error) {
 					fc.c = engineClient
@@ -293,6 +306,16 @@ func (fc *FuncCommand) Command() *cobra.Command {
 		setFlagCapabilities(fc.cmd.PersistentFlags().Lookup("output"), mayProduceOutput)
 
 		fc.cmd.PersistentFlags().BoolVarP(&jsonOutput, "json", "j", false, "Present result as JSON")
+
+		// Not persistent, so that a function's own detach argument keeps
+		// its name.
+		fc.cmd.Flags().BoolVar(&detachFlag, "detach", false, "Run the call in a detached session: in the engine alone when it needs nothing from this machine, else in a background process (experimental)")
+		fc.cmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
+			if err.Error() == "unknown flag: --detach" {
+				return fmt.Errorf("--detach must come before the function name")
+			}
+			return err
+		})
 	}
 	return fc.cmd
 }
@@ -393,6 +416,12 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 	cmd, flags, err := fc.loadCommand(c, a)
 	if err != nil {
 		return err
+	}
+
+	// Flags after the function name are parsed only now, once the client
+	// is connected, so a --session there came too late.
+	if sessionFlag != fc.sessionBeforeFunction {
+		return fmt.Errorf("--session must come before the function name")
 	}
 
 	if fc.needsHelp {
@@ -577,6 +606,7 @@ func (fc *FuncCommand) cobraBuilder(ctx context.Context, fn *modFunction) func(*
 		// For Query constructors (both no-op and `with`), only add the
 		// `with(args...)` selection if constructor flags were actually set.
 		// This avoids an empty `with()` selection when no args are provided.
+		defer func() { fc.receiver = fn.ReturnType.Name() }()
 		if isQueryConstructor {
 			return fc.selectWith(c)
 		}
@@ -945,14 +975,18 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, fn *modFunction) *cobra.C
 // selector flags can lower back to get/subset calls in the right order.
 func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command) error {
 	if fn.collectionRoute != nil || len(fc.pendingCalls) > 0 {
-		fc.pendingCalls = append(fc.pendingCalls, plannedFunctionCall{fn: fn, cmd: cmd})
+		fc.pendingCalls = append(fc.pendingCalls, plannedFunctionCall{fn: fn, cmd: cmd, receiver: fc.receiver})
 		return nil
 	}
-	return fc.selectFuncNow(fn, cmd)
+	return fc.selectFuncNow(fc.receiver, fn, cmd)
 }
 
-func (fc *FuncCommand) selectFuncNow(fn *modFunction, cmd *cobra.Command) error {
+// selectFuncNow selects fn, called on the receiver type.
+func (fc *FuncCommand) selectFuncNow(receiver string, fn *modFunction, cmd *cobra.Command) error {
 	fc.q = fc.q.Select(fn.Name)
+	if slices.Contains(hostCoreFields[receiver], fn.Name) {
+		fc.hostDependent = true
+	}
 
 	missingFlags := []string{}
 	workspaceArgs := []string{}
@@ -983,6 +1017,9 @@ func (fc *FuncCommand) selectFuncNow(fn *modFunction, cmd *cobra.Command) error 
 			continue
 		}
 
+		if hostDependentValue(flag.Value) {
+			fc.hostDependent = true
+		}
 		p.Go(func() (flagResult, error) {
 			v, err := a.GetFlagValue(fc.ctx, flag, fc.c.Dagger(), fc.mod)
 			if err != nil {
@@ -1029,7 +1066,7 @@ func (fc *FuncCommand) selectPendingFunctions(selectorCmd *cobra.Command) error 
 				return err
 			}
 		}
-		if err := fc.selectFuncNow(call.fn, call.cmd); err != nil {
+		if err := fc.selectFuncNow(call.receiver, call.fn, call.cmd); err != nil {
 			return err
 		}
 	}
@@ -1171,13 +1208,22 @@ func (fc *FuncCommand) RunE(ctx context.Context, fn *modFunction) func(*cobra.Co
 		// just want to return the object's name, without making an API request.
 		if q == nil {
 			if fn.ReturnType.Name() == "Query" {
-				return printEncodedID(o, "")
+				return callresult.EncodedID(o, "")
 			}
 			return handleResponse(ctx, fc.c.Dagger(), fn.ReturnType, nil, o, e, autoApply)
 		}
 
+		// A detached call with no host dependency runs on its own in the
+		// engine, and this process exits.
+		if inBackground && !fc.hostDependent && runsWithoutHost(fn.ReturnType) {
+			return runInEngine(ctx, fc.c.Dagger(), q, fn.ReturnType)
+		}
+
 		var response any
 
+		// A detached call has started once its function and arguments are
+		// resolved.
+		reportBackgroundStarted(nil)
 		if err := makeRequest(ctx, q, &response); err != nil {
 			return err
 		}
@@ -1302,7 +1348,7 @@ func handleResponse(ctx context.Context, dag *dagger.Client, returnType *modType
 
 	// Command chain ended in an object, so add the _type field.
 	if returnType.AsFunctionProvider() != nil {
-		return printID(o, response, returnType)
+		return callresult.ID(o, response)
 	}
 
 	buf := new(bytes.Buffer)
@@ -1332,7 +1378,7 @@ func handleResponse(ctx context.Context, dag *dagger.Client, returnType *modType
 }
 
 // checkResponseError handles a single check or a list of checks. List results
-// retain the id alias around each sync result, just as printID expects.
+// retain the id alias around each sync result, just as callresult.ID expects.
 func checkResponseError(response any) error {
 	switch v := response.(type) {
 	case []any:
@@ -1652,82 +1698,16 @@ func startInteractivePromptModeWithResume(ctx context.Context, dag *dagger.Clien
 	return err
 }
 
-func printID(w io.Writer, response any, typeDef *modTypeDef) error {
-	switch {
-	case typeDef.AsList != nil:
-		for _, v := range response.([]any) {
-			fmt.Fprint(w, "- ")
-			if err := printID(w, v, typeDef.AsList.ElementTypeDef); err != nil {
-				return err
-			}
-		}
-		return nil
-	case typeDef.AsObject != nil:
-		switch v := response.(type) {
-		case nil:
-			// A nullable object field that resolved to null. "null" is both valid
-			// JSON and unambiguous in plain output.
-			_, err := fmt.Fprintln(w, "null")
-			return err
-		case string:
-			return printEncodedID(w, v)
-		case map[string]any:
-			id, ok := v["id"]
-			if !ok {
-				return fmt.Errorf("printID: no ID found in object: %+v", v)
-			}
-			return printID(w, id, typeDef)
-		default:
-			return fmt.Errorf("printID: unexpected type for object: %T", v)
-		}
-	default:
-		return fmt.Errorf("printID: unexpected type: %s", typeDef.String())
-	}
-}
-
-func printEncodedID(w io.Writer, encodedID string) error {
-	if encodedID == "" {
-		// special case: return value was the root object (Query itself)
-		fmt.Fprintln(w, "Query")
-		return nil
-	}
-	var id call.ID
-	if err := id.Decode(encodedID); err != nil {
-		return fmt.Errorf("failed to decode ID: %w", err)
-	}
-	dig, err := idDigest(encodedID)
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintf(w, "%s@%s\n", id.Type().ToAST().Name(), dig)
-	return err
-}
-
-func idDigest(encodedID string) (digest.Digest, error) {
-	var id call.ID
-	if err := id.Decode(encodedID); err != nil {
-		return "", fmt.Errorf("failed to decode ID: %w", err)
-	}
-	if id.IsHandle() {
-		return hashutil.HashStrings(encodedID), nil
-	}
-	return id.Digest(), nil
-}
-
 func printResponse(w io.Writer, response any, typeDef *modTypeDef) error {
 	if jsonOutput {
-		// disable HTML escaping to improve readability
-		encoder := json.NewEncoder(w)
-		encoder.SetEscapeHTML(false)
-		encoder.SetIndent("", "    ")
-		return encoder.Encode(response)
+		return callresult.JSON(w, response)
 	}
 
 	if typeDef != nil && typeDef.AsFunctionProvider() != nil {
-		return printID(w, response, typeDef)
+		return callresult.ID(w, response)
 	}
 
-	return printPlainResult(w, response)
+	return callresult.Plain(w, response)
 }
 
 // writeOutputFile writes the buffer to a file, creating the parent directories
@@ -1737,31 +1717,4 @@ func writeOutputFile(path string, buf *bytes.Buffer) error {
 		return err
 	}
 	return os.WriteFile(path, buf.Bytes(), 0o644)
-}
-
-func printPlainResult(w io.Writer, r any) error {
-	switch t := r.(type) {
-	case []any:
-		for _, v := range t {
-			if err := printPlainResult(w, v); err != nil {
-				return err
-			}
-			fmt.Fprintln(w)
-		}
-		return nil
-	case map[string]any:
-		// NB: we're only interested in values because this is where we unwrap
-		// things like {"container":{"from":{"withExec":{"stdout":"foo"}}}}.
-		for _, v := range t {
-			if err := printPlainResult(w, v); err != nil {
-				return err
-			}
-		}
-		return nil
-	case string:
-		fmt.Fprint(w, t)
-	default:
-		fmt.Fprintf(w, "%+v", t)
-	}
-	return nil
 }

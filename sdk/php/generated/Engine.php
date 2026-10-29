@@ -41,6 +41,25 @@ class Engine extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Sessions on this engine (experimental).
+     */
+    public function sessions(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sessions');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'sessions');
+    }
+
+    /**
+     * The session with the given ID on this engine (experimental).
+     */
+    public function session(string $id): EngineSession
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('session');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\EngineSession($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The local engine cache state tracked by dagql
      */
     public function localCache(): EngineCache

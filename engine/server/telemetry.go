@@ -1387,7 +1387,12 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 
 	streamCtx, stopStream := context.WithCancel(r.Context())
 	defer stopStream()
-	streamEnd := record.telemetryStreamEnd(streamCtx)
+	// A client's stream ends when the client shuts down; a session stream,
+	// when the session does.
+	var streamEnd <-chan struct{} = record.daggerSession.shutdownCh
+	if r.Header.Get(engine.SessionTelemetryHeader) != "true" {
+		streamEnd = record.telemetryStreamEnd(streamCtx)
+	}
 	terminating := false
 	batchLimit := otlpBatchSize
 	// failStream ends the stream for good: the client must not reconnect at

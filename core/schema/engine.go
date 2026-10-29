@@ -25,6 +25,46 @@ func (s *engineSchema) Install(srv *dagql.Server) {
 			Doc("The list of connected client IDs"),
 	}.Install(srv)
 
+	srv.InstallObject(dagql.NewClass[*core.EngineSession](srv).View(AfterVersion("v1.0.0-0")))
+	srv.InstallObject(dagql.NewClass[*core.EngineSessionClient](srv).View(AfterVersion("v1.0.0-0")))
+	dagql.Fields[*core.Engine]{
+		dagql.Func("sessions", s.sessions).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Sessions start and end at any time").
+			Doc("Sessions on this engine (experimental)."),
+		dagql.Func("session", s.session).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Sessions start and end at any time").
+			Doc("The session with the given ID on this engine (experimental).").
+			Args(
+				dagql.Arg("id").Doc("The session's ID."),
+			),
+	}.Install(srv)
+
+	dagql.Fields[*core.EngineSession]{
+		dagql.Func("clients", s.sessionClients).
+			DoNotCache("Live session state").
+			Doc("The clients that connected directly to the session."),
+		dagql.Func("client", s.sessionClient).
+			DoNotCache("Live session state").
+			Doc("The client of the session with the given ID.").
+			Args(
+				dagql.Arg("id").Doc("The client's ID."),
+			),
+		dagql.Func("stop", s.sessionStop).
+			DoNotCache("Mutates engine state").
+			Doc("End the session and everything running in it. Returns once teardown is scheduled."),
+	}.Install(srv)
+
+	dagql.Fields[*core.EngineSessionClient]{
+		dagql.Func("forwards", s.sessionClientForwards).
+			DoNotCache("Live session state").
+			Doc("Host ports this client forwards into the session, with the service each reaches."),
+		dagql.Func("close", s.sessionClientClose).
+			DoNotCache("Mutates engine state").
+			Doc("Disconnect this client from the session."),
+	}.Install(srv)
+
 	dagql.Fields[*core.Engine]{
 		dagql.Func("localCache", s.localCache).
 			Doc("The local engine cache state tracked by dagql"),
@@ -101,6 +141,70 @@ func (s *engineSchema) clients(ctx context.Context, parent *core.Engine, args st
 		return nil, err
 	}
 	return query.Clients(), nil
+}
+
+func (s *engineSchema) sessions(ctx context.Context, parent *core.Engine, args struct{}) (dagql.Array[*core.EngineSession], error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return query.EngineSessions(ctx)
+}
+
+func (s *engineSchema) session(ctx context.Context, parent *core.Engine, args struct {
+	ID string
+}) (*core.EngineSession, error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sessions, err := query.EngineSessions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, sess := range sessions {
+		if sess.SessionID == args.ID {
+			return sess, nil
+		}
+	}
+	return nil, fmt.Errorf("session %q not found", args.ID)
+}
+
+func (s *engineSchema) sessionClients(ctx context.Context, parent *core.EngineSession, args struct{}) (dagql.Array[*core.EngineSessionClient], error) {
+	return parent.ClientList, nil
+}
+
+func (s *engineSchema) sessionClient(ctx context.Context, parent *core.EngineSession, args struct {
+	ID string
+}) (*core.EngineSessionClient, error) {
+	for _, client := range parent.ClientList {
+		if client.ClientID == args.ID {
+			return client, nil
+		}
+	}
+	return nil, fmt.Errorf("client %q not found", args.ID)
+}
+
+func (s *engineSchema) sessionStop(ctx context.Context, parent *core.EngineSession, args struct{}) (dagql.Nullable[core.Void], error) {
+	void := dagql.Null[core.Void]()
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return void, err
+	}
+	return void, query.StopEngineSession(ctx, parent.SessionID)
+}
+
+func (s *engineSchema) sessionClientForwards(ctx context.Context, parent *core.EngineSessionClient, args struct{}) (dagql.Array[core.Port], error) {
+	return parent.ForwardList, nil
+}
+
+func (s *engineSchema) sessionClientClose(ctx context.Context, parent *core.EngineSessionClient, args struct{}) (dagql.Nullable[core.Void], error) {
+	void := dagql.Null[core.Void]()
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return void, err
+	}
+	return void, query.CloseEngineSessionClient(ctx, parent.SessionID, parent.ClientID)
 }
 
 func (s *engineSchema) cacheEntrySet(ctx context.Context, parent dagql.ObjectResult[*core.EngineCache], args struct {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 
 	"dagger.io/dagger/core"
 
@@ -20,11 +21,17 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-var startListMode bool
+var (
+	startListMode bool
+	// noForwardFlag is start's --no-forward.
+	noForwardFlag bool
+)
 
 func init() {
 	registerCommandArtifactFlags(startCmd)
 	startCmd.Flags().BoolVarP(&startListMode, "list", "l", false, "List available services")
+	startCmd.Flags().BoolVar(&detachFlag, "detach", false, "Run the services and forward their ports in the background, in a detached session (experimental)")
+	startCmd.Flags().BoolVar(&noForwardFlag, "no-forward", false, "With --detach, only start the services, leaving no local process; forward them later with 'dagger --session ID start --detach' (experimental)")
 }
 
 var startCmd = &cobra.Command{
@@ -38,6 +45,12 @@ var startCmd = &cobra.Command{
 		hiddenAliasesAnnotation: "up",
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if noForwardFlag && !detachFlag && !inBackground {
+			return fmt.Errorf("--no-forward requires --detach")
+		}
+		if detachFlag && !startListMode {
+			return runDetached(cmd.OutOrStdout())
+		}
 		if !startListMode {
 			previous := opts.RootFilter
 			opts.RootFilter = (*dagui.DB).ServiceDisplaySpans
@@ -47,6 +60,7 @@ var startCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		params = backgroundClientParams(params)
 		return withEngine(
 			cmd.Context(),
 			params,
@@ -87,6 +101,9 @@ func runServices(ctx context.Context, dag *dagger.Client, services *core.Artifac
 	}
 	if len(results) == 0 {
 		return fmt.Errorf("no services found")
+	}
+	if noForwardFlag {
+		return startServices(ctx, dag, results)
 	}
 	cfg, err := artifactWorkspaceConfig(ctx, core.NewQuery(dag).CurrentWorkspace())
 	if err != nil {
@@ -146,12 +163,27 @@ func runServices(ctx context.Context, dag *dagger.Client, services *core.Artifac
 			ports[port] = result.Artifact.URI
 		}
 	}
+	// A detached start has started once every port forward listens.
+	var readyMu sync.Mutex
+	var readyURLs []string
+	var listening sync.WaitGroup
+	listening.Add(len(results))
+	go func() {
+		listening.Wait()
+		reportBackgroundStarted(readyURLs)
+	}()
 	jobs, runCtx := errgroup.WithContext(ctx)
 	for i, result := range results {
 		jobs.Go(func() (err error) {
 			serviceCtx, span := Tracer().Start(runCtx, result.Artifact.URI, trace.WithAttributes(attribute.String(telemetryattrs.ServiceNameAttr, result.Artifact.URI), attribute.Bool(telemetry.UIRollUpLogsAttr, true)))
 			defer telemetry.EndWithCause(span, &err)
 			service := core.Ref[*core.Service](core.NewQuery(dag), result.Value.ID)
+			// Start the service on its own, so that it belongs to the session
+			// rather than to this client's port forward, and keeps running
+			// when this client leaves.
+			if _, err := service.Start(serviceCtx); err != nil {
+				return err
+			}
 			tunnel, err := core.NewQuery(dag).Host().Tunnel(service, core.HostTunnelOpts{Ports: mappings[i], Native: len(mappings[i]) == 0}).Start(serviceCtx)
 			if err != nil {
 				return err
@@ -173,6 +205,10 @@ func runServices(ctx context.Context, dag *dagger.Client, services *core.Artifac
 				urls = append(urls, fmt.Sprintf("%s://localhost:%d", scheme, number))
 			}
 			span.SetAttributes(attribute.StringSlice(telemetryattrs.ServiceURLsAttr, urls))
+			readyMu.Lock()
+			readyURLs = append(readyURLs, urls...)
+			readyMu.Unlock()
+			listening.Done()
 			_, ready := Tracer().Start(serviceCtx, "ready "+strings.Join(urls, " "), trace.WithAttributes(attribute.StringSlice(telemetryattrs.ServiceURLsAttr, urls)))
 			defer ready.End()
 			<-serviceCtx.Done()
@@ -184,4 +220,24 @@ func runServices(ctx context.Context, dag *dagger.Client, services *core.Artifac
 		return nil
 	}
 	return err
+}
+
+// startServices starts the services in the session and leaves them running,
+// with no forwarding.
+func startServices(ctx context.Context, dag *dagger.Client, results []artifactValueResult) error {
+	jobs, ctx := errgroup.WithContext(ctx)
+	for _, result := range results {
+		if result.Value == nil || result.Value.Type != "Service" {
+			return fmt.Errorf("%s did not return a Service", result.Artifact.URI)
+		}
+		jobs.Go(func() error {
+			_, err := core.Ref[*core.Service](core.NewQuery(dag), result.Value.ID).Start(ctx)
+			return err
+		})
+	}
+	if err := jobs.Wait(); err != nil {
+		return err
+	}
+	reportStartedWithoutProcess()
+	return nil
 }

@@ -36,6 +36,8 @@ import (
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"github.com/vito/go-sse/sse"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
@@ -48,6 +50,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -183,6 +186,25 @@ type Params struct {
 
 	// Profile enables engine wall-clock profiling (wcprof) for this session.
 	Profile bool
+
+	// DetachedSession makes a session this client creates outlive it; see
+	// engine.ClientMetadata.DetachedSession.
+	DetachedSession bool
+
+	// JoinExistingSession makes Connect fail, instead of creating a session,
+	// when no session with SessionID exists.
+	JoinExistingSession bool
+
+	// SessionTelemetry subscribes EngineTrace, EngineLogs and EngineMetrics
+	// to the session's telemetry, from its start until the session ends,
+	// instead of this client's own; see engine.SessionTelemetryHeader.
+	SessionTelemetry bool
+
+	// Background and Command describe this client process in session
+	// listings; see engine.ClientMetadata. A background client has no
+	// terminal, so it does not serve one.
+	Background bool
+	Command    string
 }
 
 type Client struct {
@@ -217,6 +239,8 @@ type Client struct {
 	bkName     string
 	numCPU     int
 	sessionSrv *SessionAttachablesServer
+	// attachablesDone is closed when the attachables connection ends.
+	attachablesDone chan struct{}
 
 	// A client for the dagger API that is directly hooked up to this engine client.
 	// Currently used for the dagger CLI so it can avoid making a subprocess of itself...
@@ -656,13 +680,16 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 		authprovider.NewDockerAuthProvider(config.LoadDefaultConfigFile(os.Stderr), nil),
 		// host=>container networking
 		h2c.NewTunnelListenerAttachable(ctx),
-		// terminal
-		terminal.NewTerminalAttachable(ctx, c.Params.WithTerminal),
 		// Git attachable
 		git.NewGitAttachable(ctx, git.GitAttachableOpts{
 			PromptHandler:        c.Params.PromptHandler,
 			SSHAskpassExecutable: c.Params.SSHAskpassExecutable,
 		}),
+	}
+
+	if !c.Params.Background {
+		// terminal
+		attachables = append(attachables, terminal.NewTerminalAttachable(ctx, c.Params.WithTerminal))
 	}
 
 	if c.Params.Stdin != nil && c.Params.Stdout != nil {
@@ -769,7 +796,9 @@ func (c *Client) startE2ESession(ctx context.Context, callerSessionConn *grpc.Cl
 // cancelled command still needs them to persist workspace locks and finish
 // other cleanup; Close stops them after the engine acknowledges shutdown.
 func (c *Client) runSessionAttachables() {
+	c.attachablesDone = make(chan struct{})
 	c.eg.Go(func() error {
+		defer close(c.attachablesDone)
 		ctx, cancel, err := c.withClientCloseCancel(c.internalCtx)
 		if err != nil {
 			return err
@@ -778,7 +807,13 @@ func (c *Client) runSessionAttachables() {
 		c.sessionSrv.Run(ctx)
 		if ctx.Err() == nil && !c.closing.Load() {
 			// Neither Close nor a failed init stopped the attachables: the
-			// engine closed the connection, and with it retired the session.
+			// engine closed the connection. When it said why, the session
+			// or this client was ended on request. Otherwise the engine
+			// retired the session.
+			if reason := c.sessionSrv.health.closeReason(); reason != "" {
+				slog.Debug("engine closed the session attachables", "reason", reason)
+				return nil
+			}
 			err := c.sessionLostError(time.Now())
 			c.sessionLost.Store(&err)
 			slog.Error("engine closed the session", "error", err)
@@ -805,6 +840,38 @@ func (c *Client) SessionLost() error {
 		return *err
 	}
 	return nil
+}
+
+// AttachablesDone is closed when this client's attachables connection ends:
+// when the client closes, or when the engine closes the client or ends its
+// session.
+func (c *Client) AttachablesDone() <-chan struct{} {
+	return c.attachablesDone
+}
+
+// EngineTelemetryExporters return exporters that push this process's own
+// spans and logs to the engine, into this client's session telemetry.
+func (c *Client) EngineTelemetryExporters(ctx context.Context) (sdktrace.SpanExporter, sdklog.Exporter, error) {
+	httpClient := &http.Client{Transport: roundTripperFunc(c.newTelemetryHTTPClient().Do)}
+	spans, err := otlptracehttp.New(ctx,
+		otlptracehttp.WithEndpointURL("http://dagger/v1/traces"),
+		otlptracehttp.WithHTTPClient(httpClient))
+	if err != nil {
+		return nil, nil, fmt.Errorf("create span exporter: %w", err)
+	}
+	logs, err := otlploghttp.New(ctx,
+		otlploghttp.WithEndpointURL("http://dagger/v1/logs"),
+		otlploghttp.WithHTTPClient(httpClient))
+	if err != nil {
+		return nil, nil, fmt.Errorf("create log exporter: %w", err)
+	}
+	return spans, logs, nil
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }
 
 func ConnectSessionAttachables(
@@ -900,12 +967,16 @@ type SessionAttachablesServer struct {
 // between those checks. When the engine retires a session for failed health
 // checks, a long gap shows the checks stopped reaching this client, and a
 // short one that they kept arriving; it does not say which side stalled.
+//
+// It also records the reason the engine gives, on a final check, before it
+// closes the connection on request (see engine.SessionCloseReasonMetaKey).
 type healthCheckObserver struct {
 	*health.Server
 
 	mu      sync.Mutex
 	last    time.Time
 	longest time.Duration
+	reason  string
 }
 
 func newHealthCheckObserver(start time.Time) *healthCheckObserver {
@@ -914,7 +985,22 @@ func newHealthCheckObserver(start time.Time) *healthCheckObserver {
 
 func (h *healthCheckObserver) Check(ctx context.Context, req *grpc_health_v1.HealthCheckRequest) (*grpc_health_v1.HealthCheckResponse, error) {
 	h.observe(time.Now())
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if reason := md.Get(engine.SessionCloseReasonMetaKey); len(reason) > 0 {
+			h.mu.Lock()
+			h.reason = reason[0]
+			h.mu.Unlock()
+		}
+	}
 	return h.Server.Check(ctx, req)
+}
+
+// closeReason returns the reason the engine gave for closing the connection,
+// or "" if it gave none.
+func (h *healthCheckObserver) closeReason() string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.reason
 }
 
 func (h *healthCheckObserver) observe(now time.Time) {
@@ -969,7 +1055,10 @@ func (c *Client) Close() (rerr error) {
 		rerr = errors.Join(rerr, lostErr)
 	} else if shutdownErr := c.shutdownServer(); shutdownErr != nil {
 		rerr = errors.Join(rerr, fmt.Errorf("shutdown: %w", shutdownErr))
-	} else if c.telemetry != nil {
+	} else if c.telemetry != nil && !c.SessionTelemetry {
+		// A session telemetry stream ends only when the session does, so a
+		// client that leaves a live session closes it below instead.
+		//
 		// A successful /shutdown has flushed the session's telemetry and
 		// marked this client's streams as terminating; the server ends them
 		// once it has sent everything. Drain them now, before internalCancel
@@ -1056,9 +1145,11 @@ func (c *Client) Close() (rerr error) {
 type otlpConsumer struct {
 	httpClient *httpClient
 	path       string
-	traceID    trace.TraceID
-	clientID   string
-	eg         *errgroup.Group
+	// session subscribes to the whole session's telemetry.
+	session  bool
+	traceID  trace.TraceID
+	clientID string
+	eg       *errgroup.Group
 
 	// reconnectDelay overrides telemetryReconnectDelay; zero uses the default.
 	reconnectDelay time.Duration
@@ -1200,6 +1291,9 @@ func (c *otlpConsumer) connectOnce(ctx context.Context, cursor int64) (*http.Res
 		Header: make(http.Header),
 	}).WithContext(ctx)
 	req.Header.Set("Accept", enginetel.LiveContentType+", "+enginetel.LegacyLiveContentType)
+	if c.session {
+		req.Header.Set(engine.SessionTelemetryHeader, "true")
+	}
 	if cursor > 0 {
 		value := strconv.FormatInt(cursor, 10)
 		req.Header.Set(enginetel.LiveCursorHeader, value)
@@ -1379,6 +1473,7 @@ func (c *Client) engineMetrics(confirmed bool) []sdkmetric.Exporter {
 func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error {
 	exp := &otlpConsumer{
 		path:       "/v1/traces",
+		session:    c.SessionTelemetry,
 		traceID:    trace.SpanContextFromContext(ctx).TraceID(),
 		clientID:   c.ID,
 		httpClient: httpClient,
@@ -1412,6 +1507,7 @@ func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error
 func (c *Client) exportLogs(ctx context.Context, httpClient *httpClient) error {
 	exp := &otlpConsumer{
 		path:       "/v1/logs",
+		session:    c.SessionTelemetry,
 		traceID:    trace.SpanContextFromContext(ctx).TraceID(),
 		clientID:   c.ID,
 		httpClient: httpClient,
@@ -1434,6 +1530,7 @@ func (c *Client) exportLogs(ctx context.Context, httpClient *httpClient) error {
 func (c *Client) exportMetrics(ctx context.Context, httpClient *httpClient) error {
 	exp := &otlpConsumer{
 		path:       "/v1/metrics",
+		session:    c.SessionTelemetry,
 		traceID:    trace.SpanContextFromContext(ctx).TraceID(),
 		clientID:   c.ID,
 		httpClient: httpClient,
@@ -1451,6 +1548,15 @@ func (c *Client) exportMetrics(ctx context.Context, httpClient *httpClient) erro
 		}
 		return nil
 	})
+}
+
+// WaitTelemetry waits until the client's telemetry streams have ended. With
+// SessionTelemetry, they end when the session does.
+func (c *Client) WaitTelemetry() error {
+	if c.telemetry == nil {
+		return nil
+	}
+	return c.telemetry.Wait()
 }
 
 func (c *Client) init(ctx context.Context) error {
@@ -2004,6 +2110,11 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		EnableCloudScaleOut:            c.EnableCloudScaleOut,
 		CloudScaleOutEngineID:          remoteEngineID,
 		Profile:                        c.Profile,
+		DetachedSession:                c.DetachedSession,
+		JoinExistingSession:            c.JoinExistingSession,
+		Background:                     c.Background,
+		PID:                            os.Getpid(),
+		Command:                        c.Command,
 	}
 	if c.primarySpan.IsValid() {
 		md.PrimaryTraceID = c.primarySpan.TraceID().String()
@@ -2093,6 +2204,9 @@ func (c *httpClient) Do(req *http.Request) (*http.Response, error) {
 	telemetry.Propagator.Inject(req.Context(), propagation.HeaderCarrier(req.Header))
 	if engine.TelemetrySuppressedFromContext(req.Context()) {
 		req.Header.Set(engine.SuppressTelemetryHeader, "true")
+	}
+	if format := engine.DetachedQueryFromContext(req.Context()); format != "" {
+		req.Header.Set(engine.DetachQueryHeader, format)
 	}
 	req.SetBasicAuth(c.secretToken, "")
 

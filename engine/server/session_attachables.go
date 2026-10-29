@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"net"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -15,7 +17,9 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/metadata"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
@@ -31,6 +35,10 @@ type sessionAttachableManager struct {
 	// that know their attachables come from an exec's helper treat a missing
 	// entry as the exec having ended (see Wait).
 	expected map[string]*expectedAttachables
+	// registered holds every client ID that has registered attachables. A
+	// registered client without an active caller has left, so lookups for it
+	// fail at once instead of waiting.
+	registered map[string]struct{}
 }
 
 type expectedAttachables struct {
@@ -43,15 +51,18 @@ var errExecEnded = errors.New("the exec ended before its Dagger session helper c
 
 type sessionAttachableCaller struct {
 	ctx       context.Context
+	cancel    context.CancelCauseFunc
 	conn      *grpc.ClientConn
 	supported map[string]struct{}
+	services  map[string]struct{}
 }
 
 func newSessionAttachableManager() *sessionAttachableManager {
 	return &sessionAttachableManager{
-		callers:  map[string]*sessionAttachableCaller{},
-		waiters:  map[string][]chan struct{}{},
-		expected: map[string]*expectedAttachables{},
+		callers:    map[string]*sessionAttachableCaller{},
+		waiters:    map[string][]chan struct{}{},
+		expected:   map[string]*expectedAttachables{},
+		registered: map[string]struct{}{},
 	}
 }
 
@@ -66,11 +77,18 @@ func (m *sessionAttachableManager) Register(ctx context.Context, clientID string
 
 	caller := &sessionAttachableCaller{
 		ctx:       ctx,
+		cancel:    cancel,
 		conn:      cc,
 		supported: map[string]struct{}{},
+		services:  map[string]struct{}{},
 	}
 	for _, methodURL := range methodURLs {
-		caller.supported[strings.ToLower(methodURL)] = struct{}{}
+		methodURL = strings.ToLower(methodURL)
+		caller.supported[methodURL] = struct{}{}
+		// method URLs are "/<service>/<method>"
+		if service, _, ok := strings.Cut(strings.TrimPrefix(methodURL, "/"), "/"); ok {
+			caller.services[service] = struct{}{}
+		}
 	}
 
 	m.mu.Lock()
@@ -79,6 +97,7 @@ func (m *sessionAttachableManager) Register(ctx context.Context, clientID string
 		return fmt.Errorf("session attachables for client %q already exist", clientID)
 	}
 	m.callers[clientID] = caller
+	m.registered[clientID] = struct{}{}
 	m.wakeWaitersLocked(clientID)
 	m.mu.Unlock()
 
@@ -96,15 +115,48 @@ func (m *sessionAttachableManager) Register(ctx context.Context, clientID string
 	return nil
 }
 
+// Close ends the attachables connection of clientID, if one is open, once it
+// has told the client why.
+func (m *sessionAttachableManager) Close(ctx context.Context, clientID string, cause error) {
+	m.mu.Lock()
+	caller := m.callers[clientID]
+	m.mu.Unlock()
+	if caller != nil {
+		caller.tellClosing(ctx, cause.Error())
+		caller.cancel(cause)
+	}
+}
+
+// TellClosing tells every client with open attachables why the engine is
+// about to close them.
+func (m *sessionAttachableManager) TellClosing(ctx context.Context, reason string) {
+	m.mu.Lock()
+	callers := slices.Collect(maps.Values(m.callers))
+	m.mu.Unlock()
+	var wg sync.WaitGroup
+	for _, caller := range callers {
+		wg.Go(func() { caller.tellClosing(ctx, reason) })
+	}
+	wg.Wait()
+}
+
 func (m *sessionAttachableManager) Lookup(clientID string) (engineutil.SessionCaller, bool) {
+	caller := m.lookup(clientID)
+	if caller == nil {
+		return nil, false
+	}
+	return caller, true
+}
+
+func (m *sessionAttachableManager) lookup(clientID string) *sessionAttachableCaller {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	caller, ok := m.callers[clientID]
 	if !ok || !caller.active() {
-		return nil, false
+		return nil
 	}
-	return caller, true
+	return caller
 }
 
 // Expect marks clientID's attachables as coming from a nested exec's session
@@ -169,6 +221,10 @@ func (m *sessionAttachableManager) Wait(ctx context.Context, clientID string, fr
 			m.mu.Unlock()
 			return nil, fmt.Errorf("no session attachables for client %q: %w", clientID, errExecEnded)
 		}
+		if _, ok := m.registered[clientID]; ok {
+			m.mu.Unlock()
+			return nil, fmt.Errorf("client %q has left the session: its session attachables connection ended", clientID)
+		}
 
 		waiter := make(chan struct{})
 		m.waiters[clientID] = append(m.waiters[clientID], waiter)
@@ -226,8 +282,35 @@ func (caller *sessionAttachableCaller) Supports(method string) bool {
 	return ok
 }
 
+// Provides reports whether the caller serves the given gRPC service.
+func (caller *sessionAttachableCaller) Provides(service string) bool {
+	_, ok := caller.services[strings.ToLower(service)]
+	return ok
+}
+
 func (caller *sessionAttachableCaller) Conn() *grpc.ClientConn {
 	return caller.conn
+}
+
+// closeNotifyTimeout bounds how long the engine waits for a client to hear
+// why its attachables are closing. A client that does not answer in time is
+// closed all the same, and reports its session as lost.
+const closeNotifyTimeout = 5 * time.Second
+
+// tellClosing tells the client why the engine is about to close its
+// attachables connection, so it does not report its session as lost. The
+// reason rides on a health check, which the engine already sends on this
+// connection.
+func (caller *sessionAttachableCaller) tellClosing(ctx context.Context, reason string) {
+	if !caller.active() {
+		return
+	}
+	ctx = metadata.AppendToOutgoingContext(ctx, engine.SessionCloseReasonMetaKey, reason)
+	ctx, cancel := context.WithTimeout(ctx, closeNotifyTimeout)
+	defer cancel()
+	if _, err := grpc_health_v1.NewHealthClient(caller.conn).Check(ctx, &grpc_health_v1.HealthCheckRequest{}); err != nil {
+		slog.DebugContext(ctx, "failed to tell client why its attachables close", "error", err)
+	}
 }
 
 func attachableClientConn(ctx context.Context, conn net.Conn) (context.Context, *grpc.ClientConn, error) {
