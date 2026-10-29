@@ -1399,6 +1399,7 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	errs = errors.Join(errs, telemetryErr)
 	archiveErrs = errors.Join(archiveErrs, telemetryErr)
 	errs = errors.Join(errs, srv.finalizeSessionArchive(telemetryCtx, sess, archiveErrs))
+	srv.retireSessionTelemetryStores(sess)
 	step.end()
 
 	// ensure this chan is closed even if the client never explicitly called the /shutdown endpoint
@@ -1409,6 +1410,33 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	teardown.end()
 	sess.phase.end(srv)
 	return errs
+}
+
+// retireSessionTelemetryStores deletes the session's telemetry stores once its
+// final telemetry is written: nothing can read them after the session ends but
+// an archive, which keeps its store, and a Cloud forwarder or a draining
+// subscription, which the store waits for (see clientdb.DBs.Retire).
+func (srv *Server) retireSessionTelemetryStores(sess *daggerSession) {
+	if srv.clientDBs == nil {
+		return
+	}
+	var keep map[string]bool
+	if srv.archives != nil {
+		keep = srv.archives.KeepSet()
+	}
+	sess.clientMu.RLock()
+	clientIDs := make([]string, 0, len(sess.clientRecords))
+	for clientID, record := range sess.clientRecords {
+		if !record.telemetryUnread && !keep[clientID] {
+			clientIDs = append(clientIDs, clientID)
+		}
+	}
+	sess.clientMu.RUnlock()
+	for _, clientID := range clientIDs {
+		if err := srv.clientDBs.Retire(clientID); err != nil {
+			slog.Warn("retire client telemetry store", "session", sess.sessionID, "client", clientID, "err", err)
+		}
+	}
 }
 
 // deleteSession drops a session from the registry only when the map entry is
