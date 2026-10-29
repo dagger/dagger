@@ -4757,10 +4757,19 @@ func (ContainerSuite) TestInsecureRootCapabilites(ctx context.Context, t *testct
 func (ContainerSuite) TestExecOOMKilled(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
+	ctr := sdkcore.NewQuery(c).Container().From(alpineImage)
+	out, err := ctr.
+		WithExec([]string{"sh", "-c", "test -f /sys/fs/cgroup/cgroup.controllers || echo no-cgroup-v2"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	if strings.TrimSpace(out) == "no-cgroup-v2" {
+		t.Skip("the engine's execs aren't on cgroup v2")
+	}
+
 	// Give a process a memory limit it exceeds, in a cgroup of its own below
 	// the exec's. A cgroup with children can't hold processes, so the exec's
 	// processes move to a sibling first.
-	_, err := sdkcore.NewQuery(c).Container().From(alpineImage).
+	_, err = ctr.
 		WithExec([]string{"sh", "-c", `
 cd /sys/fs/cgroup
 mkdir procs oom
