@@ -33,6 +33,9 @@ type DumpHeader struct {
 	Producers []DumpProducer `json:"producers,omitempty"`
 	// Machine describes the machine the engine ran on.
 	Machine *DumpMachine `json:"machine,omitempty"`
+	// EBPF lists the eBPF programs recordings have asked for since the
+	// engine started, and why each that couldn't be attached wasn't.
+	EBPF []DumpEBPFProgram `json:"ebpf,omitempty"`
 }
 
 // DumpProducer is one producer's completeness accounting.
@@ -129,6 +132,10 @@ type DumpEvent struct {
 	ScanHeapBytes    int64 `json:"sheap,omitempty"`
 	ScanStackBytes   int64 `json:"sstack,omitempty"`
 	ScanGlobalsBytes int64 `json:"sglob,omitempty"`
+
+	RunqWaitUS int64 `json:"rqw,omitempty"`
+	RunqWaits  int64 `json:"rqn,omitempty"`
+	OnCPUUS    int64 `json:"oncpu,omitempty"`
 }
 
 // DumpTypeUsage is the DumpEvent.Type of a resource reading (RecordUsage).
@@ -170,6 +177,10 @@ func usageDumpEvent(u usageRecord) DumpEvent {
 		ScanHeapBytes:    u.usage.ScanHeapBytes,
 		ScanStackBytes:   u.usage.ScanStackBytes,
 		ScanGlobalsBytes: u.usage.ScanGlobalsBytes,
+
+		RunqWaitUS: u.usage.RunqWaitUS,
+		RunqWaits:  u.usage.RunqWaits,
+		OnCPUUS:    u.usage.OnCPUUS,
 	}
 }
 
@@ -290,6 +301,7 @@ func (r *Recorder) WriteDump(w io.Writer, flush bool) error {
 		OpenOps:        open,
 		Producers:      producers,
 		Machine:        readMachine(),
+		EBPF:           dumpEBPFPrograms(),
 	}
 
 	bw := bufio.NewWriterSize(w, 1<<20)
