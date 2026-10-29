@@ -39,6 +39,9 @@ type source struct {
 	// onReadDir, if set, is called with each directory the copy reads. Tests
 	// use it to check which directories a filtered copy walks.
 	onReadDir func(rel string)
+	// onLayerProbe, if set, is called with each layer path the copy asks the
+	// filesystem about. Tests use it to check which answers are reused.
+	onLayerProbe func(path string)
 }
 
 type sourceEntry struct {
@@ -340,6 +343,9 @@ func (s *source) layerEntryState(i int, rel string) (hidesLower bool, _ error) {
 		if hides, ok := s.lowerHides[path]; ok {
 			return hides, nil
 		}
+	}
+	if s.onLayerProbe != nil {
+		s.onLayerProbe(path)
 	}
 	_, hidesLower, err := overlayEntryState(path)
 	if err != nil {
