@@ -22,6 +22,7 @@ func shutdownTestClient(dial func(ctx context.Context) (net.Conn, error)) *Clien
 		internalCtx: context.Background(),
 		httpClient: &httpClient{
 			inner: &http.Client{
+				//nolint:staticcheck // SA1019: x/net's HTTP/2 client and server are deprecated in favor of net/http's; moving off them is its own change
 				Transport: &http2.Transport{
 					AllowHTTP: true,
 					DialTLSContext: func(ctx context.Context, _, _ string, _ *tls.Config) (net.Conn, error) {
@@ -59,6 +60,7 @@ func TestShutdownErrorSaysWhenTheEngineDidNotAnswer(t *testing.T) {
 			clientConn.Close()
 			engineConn.Close()
 		})
+		//nolint:staticcheck // SA1019: x/net's HTTP/2 client and server are deprecated in favor of net/http's; moving off them is its own change
 		go (&http2.Server{}).ServeConn(engineConn, &http2.ServeConnOpts{
 			Handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 				<-engineDone
