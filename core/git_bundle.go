@@ -49,10 +49,10 @@ const (
 
 // GitBundle is a standard Git bundle and its lazily parsed header.
 type GitBundle struct {
-	File             dagql.ObjectResult[*File]
-	Version          int             `field:"true" doc:"Bundle format version (2 or 3)."`
-	ObjectFormat     string          `field:"true" name:"objectFormat" doc:"Object format capability: sha1 or sha256."`
-	Refs             []*GitBundleRef `field:"true" doc:"Refs advertised by the bundle and the object IDs they resolve to."`
+	File         dagql.ObjectResult[*File]
+	Version      int             `field:"true" doc:"Bundle format version (2 or 3)."`
+	ObjectFormat string          `field:"true" name:"objectFormat" doc:"Object format capability: sha1 or sha256."`
+	Refs         []*GitBundleRef `field:"true" doc:"Refs advertised by the bundle and the object IDs they resolve to."`
 	// PrerequisiteSHAs is installed by hand (core/schema/git.go), as
 	// prerequisiteShas or, in views before engine.IdentifierCasingVersion,
 	// prerequisiteSHAs.
