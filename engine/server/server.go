@@ -906,6 +906,20 @@ func (srv *Server) initBoltDBs() (err error) {
 			srv.snapshotterMDStore = nil
 		}
 	}()
+	// The snapshotter's store opens its database on first use. Open it here,
+	// so a database that can't be opened (one its last engine never closed)
+	// resets local cache state, as the containerd one does. Its directory is
+	// otherwise made by the snapshotter, later.
+	if err := os.MkdirAll(filepath.Dir(srv.snapshotterDBPath), 0o700); err != nil {
+		return fmt.Errorf("failed to create metadata store directory for snapshotter: %w", err)
+	}
+	_, snapshotterTx, err := srv.snapshotterMDStore.TransactionContext(context.Background(), false)
+	if err != nil {
+		return fmt.Errorf("failed to open metadata store for snapshotter: %w", err)
+	}
+	if err := snapshotterTx.Rollback(); err != nil {
+		return fmt.Errorf("failed to open metadata store for snapshotter: %w", err)
+	}
 
 	srv.containerdMetaBoltDB, err = bolt.Open(srv.containerdMetaDBPath, 0644, &bolt.Options{
 		NoSync:         true,
