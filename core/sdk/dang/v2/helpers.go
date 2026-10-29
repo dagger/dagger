@@ -454,16 +454,22 @@ func readDangSourceFiles(dir string) ([]dangSourceFile, bool) {
 // declares at the top level of its source. The result is shared between
 // callers and must not be modified.
 //
-// The memo key is the content of the files that were read, and a module's
-// source is an immutable mount, so what is parsed is that content: a file
-// that fails to parse fails for its content and can be remembered. A
-// directory or file that cannot be read is not: the names found are
-// returned, and the next call tries again.
+// The memo key is the Dang version the source is parsed as and the content
+// of the files that were read, and a module's source is an immutable mount,
+// so what is parsed is that content: a file that fails to parse fails for
+// its content and version and can be remembered. A directory, file or
+// dang.toml that cannot be read is not: the names found are returned, and
+// the next call tries again.
 func moduleDeclaredTypeNames(ctx context.Context, modSrcDir, moduleName string) []string {
 	files, complete := readDangSourceFiles(modSrcDir)
+	version, err := dang.VersionForDir(ctx, modSrcDir)
+	if err != nil {
+		slog.Debug("ensureModuleSelfTypes: determine Dang version", "dir", modSrcDir, "error", err)
+		complete = false
+	}
 	var key string
 	if complete {
-		key = declaredTypeNamesKey(moduleName, files)
+		key = declaredTypeNamesKey(moduleName, version, files)
 		if names, ok := declaredTypeNames.Get(key); ok {
 			return names
 		}
@@ -475,9 +481,10 @@ func moduleDeclaredTypeNames(ctx context.Context, modSrcDir, moduleName string) 
 	return names
 }
 
-// declaredTypeNamesKey identifies a module's declared type names by its name
-// and the names and content of its .dang files.
-func declaredTypeNamesKey(moduleName string, files []dangSourceFile) string {
+// declaredTypeNamesKey identifies a module's declared type names by its name,
+// the Dang version its source is parsed as, and the names and content of its
+// .dang files.
+func declaredTypeNamesKey(moduleName string, version dang.Version, files []dangSourceFile) string {
 	h := xxh3.New()
 	writeField := func(b []byte) {
 		var size [8]byte
@@ -486,6 +493,7 @@ func declaredTypeNamesKey(moduleName string, files []dangSourceFile) string {
 		h.Write(b)
 	}
 	writeField([]byte(moduleName))
+	writeField([]byte(version.String()))
 	for _, file := range files {
 		writeField([]byte(file.name))
 		writeField(file.content)

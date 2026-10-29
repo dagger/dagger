@@ -238,6 +238,17 @@ func TestModuleDeclaredTypeNamesMemoized(t *testing.T) {
 	require.Equal(t, before+4, *parses)
 	require.Equal(t, []string{"MyMod", "Late", "Later"}, moduleDeclaredTypeNames(t.Context(), missing, "my-mod"))
 	require.Equal(t, before+4, *parses)
+
+	// Nor is a dang.toml that cannot be read, and repairing it alone finds
+	// the names of the source it now lets parse.
+	configured := t.TempDir()
+	writeDangFilesIn(t, configured, map[string]string{
+		"main.dang": "type Thing {\n  name: String! { \"thing\" }\n}\n",
+		"dang.toml": "dang = \n",
+	})
+	require.Equal(t, []string{"MyMod"}, moduleDeclaredTypeNames(t.Context(), configured, "my-mod"))
+	writeDangFilesIn(t, configured, map[string]string{"dang.toml": "dang = \"2.1\"\n"})
+	require.Equal(t, []string{"MyMod", "Thing"}, moduleDeclaredTypeNames(t.Context(), configured, "my-mod"))
 }
 
 // Object directives are put back on the environment by parsing every source
