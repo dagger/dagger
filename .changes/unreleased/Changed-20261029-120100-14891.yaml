@@ -1,0 +1,18 @@
+kind: Changed
+body: |
+  Modules declaring `engineVersion` v1.0.0-beta.22 or later get GraphQL-style
+  names for their types, fields, arguments and enum values: acronyms are
+  uppercase in type names and capitalized in fields and arguments
+  (`MyModHTTPClient`, not `MyModHttpclient`; `withGpu`), and names with digits
+  or known terms keep their words (`e2eTest`, `ARM64`, CLI flag `--e2e-test`).
+  References to core types such as `JSONValue` and `LLMMessage` resolve to the
+  core type. Modules declaring an older version keep their old names until
+  they bump.
+
+  The experimental `Query.identifier`, `Query.formatIdentifiers` and
+  `Query.namingDictionary` APIs expose the engine's identifier parsing and
+  formatting to SDKs.
+time: 2026-10-29T12:01:00Z
+custom:
+  Author: vito
+  PR: "14891"

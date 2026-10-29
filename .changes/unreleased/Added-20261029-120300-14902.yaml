@@ -1,0 +1,14 @@
+kind: Added
+body: |
+  Entrypoint modules (manifest v2) declare their engine version in the
+  `dang.toml` governing the entrypoint, with `[imports.Dagger] dagger = "vX.Y.Z"`.
+  It selects the module's API view and naming rules, as `engineVersion` does
+  for other modules.
+
+  Without a declared version, an entrypoint module gets the v1.0.0-beta.20 API
+  and naming rules, from before the v1.0.0-beta.22 renames, instead of
+  following the running engine.
+time: 2026-10-29T12:03:00Z
+custom:
+  Author: vito
+  PR: "14902"
