@@ -1181,7 +1181,13 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	}
 	engineVersion = engine.NormalizeVersion(engineVersion)
 	src.EngineVersion = engineVersion
+	src.ConfigEngineVersion = ""
+	src.DangVersionDeclared = false
+	if modCfg.Entrypoint == nil {
+		src.ConfigEngineVersion = engineVersion
+	}
 	setDefaultFunctionCaching(src, modCfg.DisableDefaultFunctionCaching)
+	src.ConfigDisableDefaultFunctionCaching = src.DisableDefaultFunctionCaching
 
 	if modCfg.SDK != nil {
 		src.SDK = &core.SDKConfig{
@@ -1282,11 +1288,11 @@ func isDangSDKModule(src *core.ModuleSource) bool {
 // entrypoint's (see entrypoint.FindConfigFile and
 // dangv2.ResolveEntrypointVersions); for any other, the nearest one walking up
 // from its source directory to its module directory (see
-// dangModuleConfigFile and dangv2.ResolveModuleVersions). The dang.toml wins
-// over the manifest's engineVersion. It runs once the module context is
-// loaded and before anything reads the versions: an entrypoint's sources
-// member is evaluated at the engine version. modCfg is the module's config as
-// parsed.
+// entrypoint.FindConfigFileInContext and dangv2.ResolveModuleVersions). The
+// dang.toml wins over the manifest's engineVersion, which stays in
+// ConfigEngineVersion. It runs once the module context is loaded and before
+// anything reads the versions: an entrypoint's sources member is evaluated at
+// the engine version. modCfg is the module's config as parsed.
 func (s *moduleSourceSchema) resolveDangVersions(
 	ctx context.Context,
 	src *core.ModuleSource,
@@ -1314,6 +1320,7 @@ func (s *moduleSourceSchema) resolveDangVersions(
 		}
 		src.EngineVersion = versions.Engine
 		src.DangVersion = versions.DangString()
+		src.DangVersionDeclared = versions.DangDeclared
 		setDefaultFunctionCaching(src, nil)
 		return nil
 	}
@@ -1346,6 +1353,7 @@ func (s *moduleSourceSchema) resolveDangVersions(
 		setDefaultFunctionCaching(src, modCfg.DisableDefaultFunctionCaching)
 	}
 	src.DangVersion = versions.DangString()
+	src.DangVersionDeclared = versions.DangDeclared
 	return nil
 }
 
@@ -1955,6 +1963,16 @@ func (s *moduleSourceSchema) moduleSourceWithEngineVersion(
 	}
 	engineVersion = engine.NormalizeVersion(engineVersion)
 	src.EngineVersion = engineVersion
+	if src.Entrypoint == nil {
+		// What a config write keeps. A Dang SDK module's dang.toml still wins
+		// over it the next time the module loads.
+		src.ConfigEngineVersion = engineVersion
+		if isDangSDKModule(src) && !src.DangVersionDeclared {
+			// The default Dang version follows the engine version, as it does
+			// when the module loads.
+			src.DangVersion = dangv2.DefaultModuleVersions(engineVersion).DangString()
+		}
+	}
 
 	return src, nil
 }
@@ -2933,7 +2951,7 @@ func (s *moduleSourceSchema) buildModuleConfig(
 		ModuleConfigUserFields: src.ModuleConfigUserFields,
 		ModuleConfig: modules.ModuleConfig{
 			Name:          src.ModuleOriginalName,
-			EngineVersion: src.EngineVersion,
+			EngineVersion: cmp.Or(src.ConfigEngineVersion, src.EngineVersion),
 			Include:       src.IncludePaths,
 			Codegen:       src.CodegenConfig,
 			Clients:       src.ConfigClients,
@@ -2942,6 +2960,14 @@ func (s *moduleSourceSchema) buildModuleConfig(
 
 	if src.DisableDefaultFunctionCaching {
 		modCfg.DisableDefaultFunctionCaching = ptr(true)
+	}
+	if src.ConfigEngineVersion != "" && src.ConfigEngineVersion != src.EngineVersion {
+		// A Dang SDK module's dang.toml decided the engine version, and with
+		// it the caching default; keep the manifest's own.
+		modCfg.DisableDefaultFunctionCaching = nil
+		if src.ConfigDisableDefaultFunctionCaching {
+			modCfg.DisableDefaultFunctionCaching = ptr(true)
+		}
 	}
 
 	if src.SDK != nil {
