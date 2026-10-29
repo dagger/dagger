@@ -264,6 +264,7 @@ func (exp sessionSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace
 	routed := make([]sdktrace.ReadOnlySpan, 0, len(spans))
 	routes := make([][]string, 0, len(spans))
 	payloadsByTarget := map[string][]string{}
+	spansPerTarget := map[string]int{}
 	for _, span := range spans {
 		origin := spanOriginClientID(span)
 		if origin == "" {
@@ -284,13 +285,21 @@ func (exp sessionSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace
 		}
 		routed = append(routed, withoutSpanOrigin(span))
 		routes = append(routes, route)
+		for _, target := range route {
+			spansPerTarget[target]++
+		}
 	}
 	// Each target gets its own slice: appending assigns row IDs in place.
 	// The rows' encoded fields are shared, and never modified once written.
 	// Every target on a route gets an entry, even with no rows, so the
 	// payloads taken for it are settled.
+	// Each slice is sized once, for all its target's spans: rows are large,
+	// and regrowing copies them.
 	enc := newSpanRowEncoder()
-	byTarget := map[string][]clientdb.Span{}
+	byTarget := make(map[string][]clientdb.Span, len(spansPerTarget))
+	for target, n := range spansPerTarget {
+		byTarget[target] = make([]clientdb.Span, 0, n)
+	}
 	errByTarget := map[string]error{}
 	for i, span := range routed {
 		encoded := enc.encode(span)
