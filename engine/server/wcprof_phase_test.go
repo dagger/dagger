@@ -432,8 +432,14 @@ func TestPhaseSamplesEngineProcessCPU(t *testing.T) {
 	srv := &Server{}
 	p := srv.beginSessionPhase(ctx, "phase-process-session")
 	require.NotNil(t, p)
-	for range 3 {
-		burnCPU(100 * time.Millisecond)
+	// Burn a measured 300 ms of CPU, however long that takes under load.
+	before, ok := readProcessCPU()
+	require.True(t, ok)
+	var burned int64
+	for burned < 300_000 {
+		burnCPU(50 * time.Millisecond)
+		now, _ := readProcessCPU()
+		burned = now.CPUUserUS + now.CPUSystemUS - before.CPUUserUS - before.CPUSystemUS
 	}
 	p.end(srv)
 
@@ -457,8 +463,9 @@ func TestPhaseSamplesEngineProcessCPU(t *testing.T) {
 		}
 	}
 	require.GreaterOrEqual(t, n, 2, "samples while it ran, and the last at its end")
-	require.GreaterOrEqual(t, sampled, int64(200_000), "300 ms of busy work: %d us sampled", sampled)
-	// The samples cover the phase from its first reading to its last, as
-	// the whole-phase reading does, read a moment later.
-	require.InDelta(t, total.CPUUserUS+total.CPUSystemUS, sampled, 50_000)
+	// The samples cover the phase from its first reading to the last
+	// sample, so they hold the CPU burned in between, and no more than the
+	// whole-phase reading, taken after the last sample.
+	require.GreaterOrEqual(t, sampled, burned, "%d us burned, %d us sampled", burned, sampled)
+	require.LessOrEqual(t, sampled, total.CPUUserUS+total.CPUSystemUS, "samples beyond the phase's total")
 }
