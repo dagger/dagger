@@ -6724,6 +6724,65 @@ func TestCachePruneMinFreeSpaceUsesCurrentFreeSpace(t *testing.T) {
 	assert.Equal(t, int64(0), target)
 }
 
+func TestCachePruneMinFreeSpaceKeepsReservedSpace(t *testing.T) {
+	t.Parallel()
+
+	ctx := cacheTestContext(t.Context())
+	c, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+
+	keys := []*ResultCall{
+		cacheTestIntCall("prune-reserved-1"),
+		cacheTestIntCall("prune-reserved-2"),
+		cacheTestIntCall("prune-reserved-3"),
+	}
+	results := make([]AnyResult, 0, len(keys))
+	for i, key := range keys {
+		keyCopy := key
+		valueCopy := i + 1
+		identityCopy := fmt.Sprintf("snapshot://prune-reserved-%d", i+1)
+		res, getErr := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
+			ResultCall:    keyCopy,
+			IsPersistable: true,
+		}, func(context.Context) (AnyResult, error) {
+			return cacheTestSizedIntResult(keyCopy, valueCopy, 100, identityCopy, nil), nil
+		})
+		assert.NilError(t, getErr)
+		results = append(results, res)
+	}
+
+	cacheTestReleaseSession(t, c, ctx)
+
+	now := time.Now()
+	c.egraphMu.Lock()
+	for i, res := range results {
+		shared := res.cacheSharedResult()
+		ts := now.Add(time.Duration(-3+i) * time.Hour).UnixNano()
+		shared.lastUsedAtUnixNano = ts
+		shared.createdAtUnixNano = ts
+	}
+	c.egraphMu.Unlock()
+
+	// The disk is short of far more free space than the cache holds, but the
+	// reserved space is kept: only the oldest result goes.
+	policies := []CachePrunePolicy{{
+		All:              true,
+		ReservedSpace:    200,
+		MinFreeSpace:     1000,
+		CurrentFreeSpace: 0,
+	}}
+	report, err := c.Prune(ctx, policies)
+	assert.NilError(t, err)
+	assert.Equal(t, 1, len(report.Entries))
+	assert.Equal(t, int64(100), report.ReclaimedBytes)
+	assert.Equal(t, cacheTestSharedResultEntryID(results[0]), report.Entries[0].ID)
+
+	// At the reserved space, a disk still short of free space prunes nothing.
+	report, err = c.Prune(ctx, policies)
+	assert.NilError(t, err)
+	assert.Equal(t, 0, len(report.Entries))
+}
+
 func TestCachePruneSessionOwnedEntriesAreNeverPruned(t *testing.T) {
 	t.Parallel()
 
