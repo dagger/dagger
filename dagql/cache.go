@@ -2967,6 +2967,18 @@ func (res *sharedResult) profileSkip() bool {
 	return frameProfileSkip(res.loadResultCall())
 }
 
+// loadSelf is loadPayloadState's self alone, for the accessors that read
+// nothing else: it doesn't copy the snapshot links.
+func (res *sharedResult) loadSelf() Typed {
+	if res == nil {
+		return nil
+	}
+	res.payloadMu.RLock()
+	self := res.self
+	res.payloadMu.RUnlock()
+	return self
+}
+
 func (res *sharedResult) loadPayloadState() sharedResultPayloadState {
 	if res == nil {
 		return sharedResultPayloadState{}
@@ -3781,19 +3793,19 @@ type Result[T Typed] struct {
 var _ AnyResult = Result[Typed]{}
 
 func (r Result[T]) Type() *ast.Type {
-	state := r.shared.loadPayloadState()
-	if r.shared == nil || state.self == nil {
+	self := r.shared.loadSelf()
+	if r.shared == nil || self == nil {
 		var zero T
 		return zero.Type()
 	}
 	if r.nullableWrapped {
 		var innerType *ast.Type
 		if r.derefView {
-			if inner, ok := derefTyped(state.self); ok && inner != nil {
+			if inner, ok := derefTyped(self); ok && inner != nil {
 				innerType = inner.Type()
 			}
 		} else {
-			innerType = state.self.Type()
+			innerType = self.Type()
 		}
 		if innerType != nil {
 			cp := *innerType
@@ -3802,13 +3814,13 @@ func (r Result[T]) Type() *ast.Type {
 		}
 	}
 	if r.derefView {
-		if inner, ok := derefTyped(state.self); ok && inner != nil && inner.Type() != nil {
+		if inner, ok := derefTyped(self); ok && inner != nil && inner.Type() != nil {
 			cp := *inner.Type()
 			cp.NonNull = true
 			return &cp
 		}
 	}
-	return state.self.Type()
+	return self.Type()
 }
 
 // ID returns the runtime handle ID of the instance.
@@ -3885,19 +3897,19 @@ func (r Result[T]) SetField(field reflect.Value) error {
 
 // Unwrap returns the inner value of the instance.
 func (r Result[T]) Unwrap() Typed {
-	state := r.shared.loadPayloadState()
+	self := r.shared.loadSelf()
 	if r.shared == nil {
 		var zero T
 		return zero
 	}
-	if state.self == nil {
+	if self == nil {
 		var zero T
 		return zero
 	}
 	if r.nullableWrapped {
-		wrapped := state.self
+		wrapped := self
 		if r.derefView {
-			if inner, ok := derefTyped(state.self); ok && inner != nil {
+			if inner, ok := derefTyped(self); ok && inner != nil {
 				wrapped = inner
 			}
 		}
@@ -3908,15 +3920,15 @@ func (r Result[T]) Unwrap() Typed {
 		}
 	}
 	if r.derefView {
-		if inner, ok := derefTyped(state.self); ok && inner != nil {
+		if inner, ok := derefTyped(self); ok && inner != nil {
 			return inner
 		}
 	}
-	return state.self
+	return self
 }
 
 func (r Result[T]) DerefValue() (AnyResult, bool) {
-	state := r.shared.loadPayloadState()
+	self := r.shared.loadSelf()
 	if r.derefView {
 		return r, true
 	}
@@ -3924,12 +3936,12 @@ func (r Result[T]) DerefValue() (AnyResult, bool) {
 		r.nullableWrapped = false
 		return r, true
 	}
-	if r.shared == nil || state.self == nil {
+	if r.shared == nil || self == nil {
 		return r, true
 	}
-	inner, valid := derefTyped(state.self)
+	inner, valid := derefTyped(self)
 	if !valid {
-		if _, ok := any(state.self).(Derefable); ok {
+		if _, ok := any(self).(Derefable); ok {
 			return nil, false
 		}
 		return r, true
@@ -4342,16 +4354,16 @@ func (r ObjectResult[T]) MarshalJSON() ([]byte, error) {
 }
 
 func (r ObjectResult[T]) DerefValue() (AnyResult, bool) {
-	state := r.shared.loadPayloadState()
+	self := r.shared.loadSelf()
 	if r.derefView {
 		return r, true
 	}
-	if r.shared == nil || state.self == nil {
+	if r.shared == nil || self == nil {
 		return r, true
 	}
-	inner, valid := derefTyped(state.self)
+	inner, valid := derefTyped(self)
 	if !valid {
-		if _, ok := any(state.self).(Derefable); ok {
+		if _, ok := any(self).(Derefable); ok {
 			return nil, false
 		}
 		return r, true
