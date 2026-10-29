@@ -514,7 +514,9 @@ type uploadSummary struct {
 // upload PUTs the blobs the service asked for, and answers the upload. At
 // most UploadConcurrency PUTs run at a time across all the exports. Each
 // blob's line logs how long it queued for a slot, from the request's arrival,
-// and how long its PUT took.
+// and how long its PUT took. An upload cut off by ctx answers too, once its
+// PUTs in flight end: the blobs that arrived are done, and the others failed.
+// It then returns ctx's cause.
 func (s *session) upload(ctx context.Context, env protocol.Envelope, blobs BlobSource) (uploadSummary, error) {
 	received := time.Now()
 	var req protocol.Upload
@@ -527,8 +529,19 @@ func (s *session) upload(ctx context.Context, env protocol.Envelope, blobs BlobS
 		summary = uploadSummary{blobs: len(req.URLs)}
 		wg      sync.WaitGroup
 	)
+	// cut fails a blob the upload, cut off, never PUT.
+	cut := func(dgst digest.Digest) {
+		mu.Lock()
+		defer mu.Unlock()
+		summary.failed++
+		reply.Failed = append(reply.Failed, protocol.UploadFailure{Digest: dgst, Message: context.Cause(ctx).Error()})
+	}
 	prof := wcprof.Enabled(ctx)
 	for dgst, address := range req.URLs {
+		if ctx.Err() != nil {
+			cut(dgst)
+			continue
+		}
 		var slotStart time.Time
 		if prof {
 			slotStart = time.Now()
@@ -539,8 +552,8 @@ func (s *session) upload(ctx context.Context, env protocol.Envelope, blobs BlobS
 			if prof {
 				wcprof.RecordWaitAt(ctx, "remotecache.uploadSlots", wcprof.WaitReasonLock, slotStart, time.Now())
 			}
-			wg.Wait()
-			return summary, context.Cause(ctx)
+			cut(dgst)
+			continue
 		}
 		if prof {
 			wcprof.RecordWaitAt(ctx, "remotecache.uploadSlots", wcprof.WaitReasonLock, slotStart, time.Now())
@@ -571,10 +584,10 @@ func (s *session) upload(ctx context.Context, env protocol.Envelope, blobs BlobS
 		}()
 	}
 	wg.Wait()
-	if err := context.Cause(ctx); err != nil {
+	if err := s.reply(env, protocol.TypeUploaded, reply); err != nil {
 		return summary, err
 	}
-	return summary, s.reply(env, protocol.TypeUploaded, reply)
+	return summary, context.Cause(ctx)
 }
 
 // uploadBlob PUTs one blob, and returns its size once it is read.
