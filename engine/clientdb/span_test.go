@@ -4,12 +4,17 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/base64"
+	"math"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	otlpresourcev1 "go.opentelemetry.io/proto/otlp/resource/v1"
@@ -195,4 +200,82 @@ func TestAppendTraceRequestPB(t *testing.T) {
 	got, err = AppendTraceRequestPB(nil, nil)
 	require.NoError(t, err)
 	require.Empty(t, got)
+}
+
+func sdkAttrs() []attribute.KeyValue {
+	return []attribute.KeyValue{
+		attribute.String("s", "naïve ☃ \x00"),
+		attribute.String("empty", ""),
+		attribute.String("", "no key"),
+		attribute.Bool("t", true),
+		attribute.Bool("f", false),
+		attribute.Int64("i", -1<<62),
+		attribute.Int64("zero", 0),
+		attribute.Float64("d", 0.1),
+		attribute.Float64("nan", math.NaN()),
+		attribute.BoolSlice("bs", []bool{true, false}),
+		attribute.Int64Slice("is", []int64{0, 1, -1, 1 << 40}),
+		attribute.Float64Slice("ds", []float64{0, -2.5}),
+		attribute.StringSlice("ss", []string{"", "a", strings.Repeat("b", 300)}),
+		attribute.StringSlice("none", nil),
+		{Key: "invalid"},
+	}
+}
+
+// TestMarshalKeyValueList checks that attributes are stored byte for byte as
+// MarshalProtoList stores otel-go's messages for them.
+func TestMarshalKeyValueList(t *testing.T) {
+	attrs := sdkAttrs()
+	want, err := MarshalProtoList(telemetry.KeyValues(attrs))
+	require.NoError(t, err)
+	got, err := MarshalKeyValueList(attrs, "")
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+
+	want, err = MarshalProtoList(telemetry.KeyValues(append(slices.Clone(attrs[:3]), attrs[4:]...)))
+	require.NoError(t, err)
+	got, err = MarshalKeyValueList(attrs, "t")
+	require.NoError(t, err)
+	require.Equal(t, want, got, "the skipped key is left out")
+
+	got, err = MarshalKeyValueList(nil, "")
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.Empty(t, got)
+
+	for _, bad := range []attribute.KeyValue{
+		attribute.String("k", "\xff"),
+		attribute.String("\xff", "v"),
+		attribute.StringSlice("k", []string{"ok", "\xff"}),
+	} {
+		_, protoErr := MarshalProtoList(telemetry.KeyValues([]attribute.KeyValue{bad}))
+		require.Error(t, protoErr)
+		_, err := MarshalKeyValueList([]attribute.KeyValue{bad}, "")
+		require.Error(t, err, "%v", bad)
+	}
+}
+
+// TestMarshalEventList checks that events are stored byte for byte as
+// MarshalProtoList stores otel-go's messages for them.
+func TestMarshalEventList(t *testing.T) {
+	events := []sdktrace.Event{
+		{Name: "full", Time: time.Unix(1_700_000_000, 123), Attributes: sdkAttrs(), DroppedAttributeCount: 3},
+		{Name: "bare", Time: time.Unix(0, 5)},
+		{},
+	}
+	want, err := MarshalProtoList(telemetry.SpanEventsToPB(events))
+	require.NoError(t, err)
+	got, err := MarshalEventList(events)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+
+	got, err = MarshalEventList(nil)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.Empty(t, got)
+
+	_, err = MarshalEventList([]sdktrace.Event{{Name: "\xff"}})
+	require.Error(t, err)
+	_, err = MarshalEventList([]sdktrace.Event{{Name: "ok", Attributes: []attribute.KeyValue{attribute.String("k", "\xff")}}})
+	require.Error(t, err)
 }

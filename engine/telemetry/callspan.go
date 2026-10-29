@@ -72,8 +72,14 @@ func IsCallSpan(span sdktrace.ReadOnlySpan) bool {
 // dagger.io/dag.digest, the key the producer claims the payload under. ok is
 // false for spans that carry no frame.
 func CallSpanDigest(span sdktrace.ReadOnlySpan) (digest string, ok bool) {
+	return CallAttrsDigest(span.Attributes())
+}
+
+// CallAttrsDigest is CallSpanDigest of a span's attributes, for a caller
+// that has already read them.
+func CallAttrsDigest(attrs []attribute.KeyValue) (digest string, ok bool) {
 	hasCall := false
-	for _, attr := range span.Attributes() {
+	for _, attr := range attrs {
 		switch string(attr.Key) {
 		case telemetry.DagCallAttr:
 			hasCall = attr.Value.Type() == attribute.STRING && attr.Value.AsString() != ""

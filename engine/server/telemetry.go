@@ -143,22 +143,18 @@ func (telemetryOriginLogProcessor) Enabled(context.Context, sdklog.EnabledParame
 }
 
 func spanOriginClientID(span sdktrace.ReadOnlySpan) string {
-	for _, attr := range span.Attributes() {
+	return originClientID(span.Attributes())
+}
+
+// originClientID is the telemetry origin client ID among a span's
+// attributes.
+func originClientID(attrs []attribute.KeyValue) string {
+	for _, attr := range attrs {
 		if string(attr.Key) == telemetryattrs.TelemetryOriginClientIDAttr && attr.Value.Type() == attribute.STRING {
 			return attr.Value.AsString()
 		}
 	}
 	return ""
-}
-
-func withoutSpanOrigin(span sdktrace.ReadOnlySpan) sdktrace.ReadOnlySpan {
-	attrs := make([]attribute.KeyValue, 0, len(span.Attributes()))
-	for _, attr := range span.Attributes() {
-		if string(attr.Key) != telemetryattrs.TelemetryOriginClientIDAttr {
-			attrs = append(attrs, attr)
-		}
-	}
-	return originReadOnlySpan{ReadOnlySpan: span, attrs: attrs}
 }
 
 func logOriginClientID(rec sdklog.Record) string {
@@ -261,12 +257,18 @@ func (exp sessionSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace
 		}
 		recordReportedSpans(rctx, spans)
 	}
-	routed := make([]sdktrace.ReadOnlySpan, 0, len(spans))
+	// A span's attributes are read once: each read copies them.
+	type routedSpan struct {
+		span  sdktrace.ReadOnlySpan
+		attrs []attribute.KeyValue
+	}
+	routed := make([]routedSpan, 0, len(spans))
 	routes := make([][]string, 0, len(spans))
 	payloadsByTarget := map[string][]string{}
 	spansPerTarget := map[string]int{}
 	for _, span := range spans {
-		origin := spanOriginClientID(span)
+		attrs := span.Attributes()
+		origin := originClientID(attrs)
 		if origin == "" {
 			slog.Warn("dropping span without telemetry origin client ID", "span", span.SpanContext().SpanID(), "name", span.Name())
 			continue
@@ -276,14 +278,14 @@ func (exp sessionSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace
 			slog.Warn("dropping unroutable span", "origin", origin, "span", span.SpanContext().SpanID(), "name", span.Name(), "err", err)
 			continue
 		}
-		if digest, ok := enginetel.CallSpanDigest(span); ok && digest != "" {
+		if digest, ok := enginetel.CallAttrsDigest(attrs); ok && digest != "" {
 			// Taking is also the in-batch dedupe: a second snapshot of the
 			// same call finds its targets already owned by the first.
 			for _, target := range exp.sess.takeCallPayloadForWrite(digest, route) {
 				payloadsByTarget[target] = append(payloadsByTarget[target], digest)
 			}
 		}
-		routed = append(routed, withoutSpanOrigin(span))
+		routed = append(routed, routedSpan{span: span, attrs: attrs})
 		routes = append(routes, route)
 		for _, target := range route {
 			spansPerTarget[target]++
@@ -301,8 +303,8 @@ func (exp sessionSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace
 		byTarget[target] = make([]clientdb.Span, 0, n)
 	}
 	errByTarget := map[string]error{}
-	for i, span := range routed {
-		encoded := enc.encode(span)
+	for i, r := range routed {
+		encoded := enc.encode(r.span, r.attrs)
 		for _, target := range routes[i] {
 			targetRows := byTarget[target]
 			switch {
@@ -919,18 +921,20 @@ func newSpanRowEncoder() *spanRowEncoder {
 // would take the whole engine down. The payload is normalized first
 // (enginetel.NormalizeTraceRequest); this is the backstop for whatever that
 // does not anticipate, failing just the exports that carry the span.
-func (enc *spanRowEncoder) encode(span sdktrace.ReadOnlySpan) (encoded encodedSpanRow) {
+func (enc *spanRowEncoder) encode(span sdktrace.ReadOnlySpan, attrs []attribute.KeyValue) (encoded encodedSpanRow) {
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Error("panic exporting span", "panic", r, "stack", string(debug.Stack()))
 			encoded = encodedSpanRow{err: fmt.Errorf("panic exporting span: %v", r)}
 		}
 	}()
-	row, ok := enc.row(span)
+	row, ok := enc.row(span, attrs)
 	return encodedSpanRow{row: row, ok: ok}
 }
 
-func (enc *spanRowEncoder) row(span sdktrace.ReadOnlySpan) (clientdb.Span, bool) {
+// row encodes span as a DB row, with attrs, its attributes, written without
+// its origin: the store's rows are already routed by it.
+func (enc *spanRowEncoder) row(span sdktrace.ReadOnlySpan, attrs []attribute.KeyValue) (clientdb.Span, bool) {
 	traceID := span.SpanContext().TraceID().String()
 	spanID := span.SpanContext().SpanID().String()
 	traceState := span.SpanContext().TraceState().String()
@@ -947,13 +951,13 @@ func (enc *spanRowEncoder) row(span sdktrace.ReadOnlySpan) (clientdb.Span, bool)
 		endTime.Int64 = 0
 		endTime.Valid = false
 	}
-	attributes, err := clientdb.MarshalProtoList(telemetry.KeyValues(span.Attributes()))
+	attributes, err := clientdb.MarshalKeyValueList(attrs, telemetryattrs.TelemetryOriginClientIDAttr)
 	if err != nil {
 		slog.Warn("failed to marshal attributes", "error", err)
 		return clientdb.Span{}, false
 	}
 	droppedAttributesCount := int64(span.DroppedAttributes())
-	events, err := clientdb.MarshalProtoList(telemetry.SpanEventsToPB(span.Events()))
+	events, err := clientdb.MarshalEventList(span.Events())
 	if err != nil {
 		slog.Warn("failed to marshal events", "error", err)
 		return clientdb.Span{}, false

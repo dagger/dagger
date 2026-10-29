@@ -1,9 +1,12 @@
 package clientdb
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"time"
+	"unicode/utf8"
 
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
@@ -131,6 +134,197 @@ func MarshalProtoList[T proto.Message](protos []T) ([]byte, error) {
 		}
 	}
 	return buf, nil
+}
+
+// MarshalKeyValueList encodes attrs as MarshalProtoList encodes
+// telemetry.KeyValues(attrs), byte for byte, straight from the SDK values,
+// leaving out the attributes whose key is skip when it isn't empty. Like
+// proto.Marshal, it fails on a string that isn't valid UTF-8.
+func MarshalKeyValueList(attrs []attribute.KeyValue, skip attribute.Key) ([]byte, error) {
+	b := make([]byte, 0, 64*len(attrs))
+	for _, kv := range attrs {
+		if skip != "" && kv.Key == skip {
+			continue
+		}
+		var err error
+		if b, err = appendKeyValue(b, kv); err != nil {
+			return nil, err
+		}
+	}
+	return b, nil
+}
+
+// MarshalEventList encodes events as MarshalProtoList encodes
+// telemetry.SpanEventsToPB(events), byte for byte, straight from the SDK
+// values. Like proto.Marshal, it fails on a string that isn't valid UTF-8.
+func MarshalEventList(events []sdktrace.Event) ([]byte, error) {
+	b := make([]byte, 0, 64*len(events))
+	var ev []byte
+	for _, e := range events {
+		if !utf8.ValidString(e.Name) {
+			return nil, errInvalidUTF8
+		}
+		// Span_Event's fields, in field order.
+		ev = ev[:0]
+		if t := uint64(e.Time.UnixNano()); t != 0 {
+			ev = protowire.AppendTag(ev, 1, protowire.Fixed64Type)
+			ev = protowire.AppendFixed64(ev, t)
+		}
+		if e.Name != "" {
+			ev = protowire.AppendTag(ev, 2, protowire.BytesType)
+			ev = protowire.AppendString(ev, e.Name)
+		}
+		for _, kv := range e.Attributes {
+			ev = protowire.AppendTag(ev, 3, protowire.BytesType)
+			var err error
+			if ev, err = appendKeyValue(ev, kv); err != nil {
+				return nil, err
+			}
+		}
+		if n := uint32(e.DroppedAttributeCount); n != 0 {
+			ev = protowire.AppendTag(ev, 4, protowire.VarintType)
+			ev = protowire.AppendVarint(ev, uint64(n))
+		}
+		b = protowire.AppendBytes(b, ev)
+	}
+	return b, nil
+}
+
+var errInvalidUTF8 = errors.New("failed to proto marshal: string field contains invalid UTF-8")
+
+// appendKeyValue appends kv's length and encoding as the OTLP KeyValue
+// otel-go makes of it: AnyValue's oneof carries the value, even a zero one,
+// slices as an ArrayValue, and any other type as the string "INVALID".
+func appendKeyValue(b []byte, kv attribute.KeyValue) ([]byte, error) {
+	if !utf8.ValidString(string(kv.Key)) {
+		return nil, errInvalidUTF8
+	}
+	v := kv.Value
+	var (
+		bools  []bool
+		ints   []int64
+		floats []float64
+		strs   []string
+		str    string
+	)
+	// The AnyValue's size, and its ArrayValue's for slices.
+	var size, arr int
+	isSlice := false
+	switch v.Type() {
+	case attribute.BOOL:
+		size = 2
+	case attribute.INT64:
+		size = 1 + protowire.SizeVarint(uint64(v.AsInt64()))
+	case attribute.FLOAT64:
+		size = 1 + 8
+	case attribute.STRING:
+		str = v.AsString()
+		if !utf8.ValidString(str) {
+			return nil, errInvalidUTF8
+		}
+		size = 1 + protowire.SizeBytes(len(str))
+	case attribute.BOOLSLICE:
+		isSlice = true
+		bools = v.AsBoolSlice()
+		arr = len(bools) * (1 + protowire.SizeBytes(2))
+	case attribute.INT64SLICE:
+		isSlice = true
+		ints = v.AsInt64Slice()
+		for _, i := range ints {
+			arr += 1 + protowire.SizeBytes(1+protowire.SizeVarint(uint64(i)))
+		}
+	case attribute.FLOAT64SLICE:
+		isSlice = true
+		floats = v.AsFloat64Slice()
+		arr = len(floats) * (1 + protowire.SizeBytes(1+8))
+	case attribute.STRINGSLICE:
+		isSlice = true
+		strs = v.AsStringSlice()
+		for _, s := range strs {
+			if !utf8.ValidString(s) {
+				return nil, errInvalidUTF8
+			}
+			arr += 1 + protowire.SizeBytes(1+protowire.SizeBytes(len(s)))
+		}
+	default:
+		str = "INVALID"
+		size = 1 + protowire.SizeBytes(len(str))
+	}
+	if isSlice {
+		size = 1 + protowire.SizeBytes(arr)
+	}
+
+	n := 1 + protowire.SizeBytes(size)
+	if kv.Key != "" {
+		n += 1 + protowire.SizeBytes(len(kv.Key))
+	}
+	b = protowire.AppendVarint(b, uint64(n))
+	if kv.Key != "" {
+		b = protowire.AppendTag(b, 1, protowire.BytesType)
+		b = protowire.AppendString(b, string(kv.Key))
+	}
+	b = protowire.AppendTag(b, 2, protowire.BytesType)
+	b = protowire.AppendVarint(b, uint64(size))
+	if isSlice {
+		b = protowire.AppendTag(b, 5, protowire.BytesType)
+		b = protowire.AppendVarint(b, uint64(arr))
+	}
+	switch v.Type() {
+	case attribute.BOOL:
+		b = appendBoolValue(b, v.AsBool())
+	case attribute.INT64:
+		b = appendIntValue(b, v.AsInt64())
+	case attribute.FLOAT64:
+		b = appendDoubleValue(b, v.AsFloat64())
+	case attribute.BOOLSLICE:
+		for _, x := range bools {
+			b = protowire.AppendTag(b, 1, protowire.BytesType)
+			b = protowire.AppendVarint(b, 2)
+			b = appendBoolValue(b, x)
+		}
+	case attribute.INT64SLICE:
+		for _, x := range ints {
+			b = protowire.AppendTag(b, 1, protowire.BytesType)
+			b = protowire.AppendVarint(b, uint64(1+protowire.SizeVarint(uint64(x))))
+			b = appendIntValue(b, x)
+		}
+	case attribute.FLOAT64SLICE:
+		for _, x := range floats {
+			b = protowire.AppendTag(b, 1, protowire.BytesType)
+			b = protowire.AppendVarint(b, 1+8)
+			b = appendDoubleValue(b, x)
+		}
+	case attribute.STRINGSLICE:
+		for _, x := range strs {
+			b = protowire.AppendTag(b, 1, protowire.BytesType)
+			b = protowire.AppendVarint(b, uint64(1+protowire.SizeBytes(len(x))))
+			b = appendStringValue(b, x)
+		}
+	default:
+		b = appendStringValue(b, str)
+	}
+	return b, nil
+}
+
+// AnyValue's oneof fields.
+func appendStringValue(b []byte, s string) []byte {
+	b = protowire.AppendTag(b, 1, protowire.BytesType)
+	return protowire.AppendString(b, s)
+}
+
+func appendBoolValue(b []byte, v bool) []byte {
+	b = protowire.AppendTag(b, 2, protowire.VarintType)
+	return protowire.AppendVarint(b, protowire.EncodeBool(v))
+}
+
+func appendIntValue(b []byte, v int64) []byte {
+	b = protowire.AppendTag(b, 3, protowire.VarintType)
+	return protowire.AppendVarint(b, uint64(v))
+}
+
+func appendDoubleValue(b []byte, v float64) []byte {
+	b = protowire.AppendTag(b, 4, protowire.Fixed64Type)
+	return protowire.AppendFixed64(b, math.Float64bits(v))
 }
 
 // Attributes returns the attributes of the span
