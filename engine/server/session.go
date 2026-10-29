@@ -521,17 +521,26 @@ func (client *clientRuntime) String() string {
 	return fmt.Sprintf("<Client %s: %s>", client.clientID, client.state)
 }
 
-func (client *clientRuntime) closeCloudArtifactClients() error {
+func (client *clientRuntime) closeCloudArtifactClients(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, sessionTelemetryFlushTimeout)
+	defer cancel()
+	if budget := client.daggerSession.cloudBound.budget; budget != nil {
+		if deadline, ok := budget.current(); ok {
+			var cancelBudget context.CancelFunc
+			ctx, cancelBudget = context.WithDeadline(ctx, deadline)
+			defer cancelBudget()
+		}
+	}
 	client.cloudArtifactMu.Lock()
 	client.cloudArtifactClosed = true
 	clients := client.cloudArtifactClients
 	client.cloudArtifactClients = nil
 	client.cloudArtifactMu.Unlock()
-	var errs error
+	var group errgroup.Group
 	for _, remote := range clients {
-		errs = errors.Join(errs, remote.Close())
+		group.Go(func() error { return remote.CloseWithContext(ctx) })
 	}
-	return errs
+	return group.Wait()
 }
 
 // releaseHeavyState drops every execution-only edge after the runtime has been
@@ -540,7 +549,7 @@ func (client *clientRuntime) closeCloudArtifactClients() error {
 // the fields here ensures those harmless handles cannot retain a DagQL/schema
 // graph. Zero typed leases proves no legitimate execution can race these writes.
 func (client *clientRuntime) releaseHeavyState() {
-	if err := client.closeCloudArtifactClients(); err != nil {
+	if err := client.closeCloudArtifactClients(context.Background()); err != nil {
 		slog.Error("close cloud artifact clients", "error", err)
 	}
 	client.stateMu.Lock()
@@ -3102,15 +3111,18 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		return err
 	}
 
-	if err := drainPhase("close cloud artifact clients", client.closeCloudArtifactClients); err != nil {
+	if isMainClient {
+		defer sess.startCloudShutdownBudget()()
+	}
+	if err := drainPhase("close cloud artifact clients", func() error {
+		return client.closeCloudArtifactClients(context.WithoutCancel(ctx))
+	}); err != nil {
 		shutdownErr = errors.Join(shutdownErr, err)
 	}
 
 	if isMainClient {
 		slog.Info("main client is shutting down")
-		// Every wait on Cloud from here until the request returns shares one
-		// deadline, well within the client's own shutdown limit.
-		defer sess.startCloudShutdownBudget()()
+		// Remote clients and telemetry share the shutdown budget started above.
 		err := drainPhase("flush workspace locks", func() error {
 			return srv.flushWorkspaceLocks(context.WithoutCancel(ctx), client)
 		})
