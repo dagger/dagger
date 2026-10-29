@@ -3656,20 +3656,37 @@ func (c *Cache) AddExplicitDependency(ctx context.Context, parent AnyResult, dep
 }
 
 func (c *Cache) addExplicitDependency(ctx context.Context, parent AnyResult, dep AnyResult, reason string) error {
+	return c.addExplicitDependencies(ctx, parent, []AnyResult{dep}, reason)
+}
+
+// addExplicitDependencies records a retention edge from parent to each dep in
+// one egraphMu critical section, recomputing the required sets once for all
+// of them rather than once per edge.
+func (c *Cache) addExplicitDependencies(ctx context.Context, parent AnyResult, deps []AnyResult, reason string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if parent == nil || dep == nil {
+	if parent == nil {
+		return nil
+	}
+	depShareds := make([]*sharedResult, 0, len(deps))
+	for _, dep := range deps {
+		if dep == nil {
+			continue
+		}
+		depShared := dep.cacheSharedResult()
+		if depShared == nil || depShared.id == 0 {
+			return fmt.Errorf("add explicit dependency: dep %T is not an attached result in this cache", dep)
+		}
+		depShareds = append(depShareds, depShared)
+	}
+	if len(depShareds) == 0 {
 		return nil
 	}
 
 	parentShared := parent.cacheSharedResult()
 	if parentShared == nil || parentShared.id == 0 {
 		return fmt.Errorf("add explicit dependency: parent %T is not an attached result in this cache", parent)
-	}
-	depShared := dep.cacheSharedResult()
-	if depShared == nil || depShared.id == 0 {
-		return fmt.Errorf("add explicit dependency: dep %T is not an attached result in this cache", dep)
 	}
 	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	defer c.egraphMu.Unlock()
@@ -3679,10 +3696,12 @@ func (c *Cache) addExplicitDependency(ctx context.Context, parent AnyResult, dep
 	if _, found := c.resultsByID[parentShared.id]; !found {
 		return fmt.Errorf("add explicit dependency: parent result %d was already collected", parentShared.id)
 	}
-	if _, found := c.resultsByID[depShared.id]; !found {
-		return fmt.Errorf("add explicit dependency: dep result %d was already collected", depShared.id)
+	for _, depShared := range depShareds {
+		if _, found := c.resultsByID[depShared.id]; !found {
+			return fmt.Errorf("add explicit dependency: dep result %d was already collected", depShared.id)
+		}
 	}
-	return c.addExplicitDependencyLocked(ctx, parentShared, depShared, reason)
+	return c.addExplicitDependenciesLocked(ctx, parentShared, depShareds, reason)
 }
 
 func (c *Cache) addExplicitDependencyLocked(
@@ -3691,35 +3710,53 @@ func (c *Cache) addExplicitDependencyLocked(
 	depRes *sharedResult,
 	reason string,
 ) error {
-	if parentRes == nil || depRes == nil {
+	return c.addExplicitDependenciesLocked(ctx, parentRes, []*sharedResult{depRes}, reason)
+}
+
+func (c *Cache) addExplicitDependenciesLocked(
+	ctx context.Context,
+	parentRes *sharedResult,
+	deps []*sharedResult,
+	reason string,
+) error {
+	if parentRes == nil {
 		return nil
 	}
-	if parentRes.id == depRes.id {
-		return nil
+	added := false
+	for _, depRes := range deps {
+		if depRes == nil || depRes.id == parentRes.id {
+			continue
+		}
+		if parentRes.deps == nil {
+			parentRes.deps = make(map[sharedResultID]struct{})
+		}
+		if _, ok := parentRes.deps[depRes.id]; ok {
+			continue
+		}
+
+		parentRes.deps[depRes.id] = struct{}{}
+		parentRes.dependencyOwnershipRevision++
+		c.rememberDependencyEdgeLocked(parentRes, depRes)
+		c.incrementIncomingOwnershipLocked(ctx, depRes)
+		c.traceExplicitDepAdded(ctx, parentRes.id, depRes.id, reason)
+		added = true
 	}
-	if parentRes.deps == nil {
-		parentRes.deps = make(map[sharedResultID]struct{})
-	}
-	if _, ok := parentRes.deps[depRes.id]; ok {
+	if !added {
 		return nil
 	}
 
-	parentRes.deps[depRes.id] = struct{}{}
-	parentRes.dependencyOwnershipRevision++
-	c.rememberDependencyEdgeLocked(parentRes, depRes)
-	c.incrementIncomingOwnershipLocked(ctx, depRes)
-	c.traceExplicitDepAdded(ctx, parentRes.id, depRes.id, reason)
-
-	// The new dep can extend the parent's stored required set, and every
+	// The new deps can extend the parent's stored required set, and every
 	// result already depending on the parent derives its own stored set from
 	// it, so a change must cascade upward through depParents until the sets
 	// stop changing. At publication time the parent is fresh and has no
 	// depParents; the cascade matters for a retention edge added to an
 	// already-published result. The cascade runs inside the same egraphMu
 	// critical section as the edge insertion and terminates because a
-	// re-enqueue requires a strict change and the sets are bounded. Each
-	// change bumps that result's requirement generation, which is what
-	// serve-time re-validation compares against its selection-time capture.
+	// re-enqueue requires a strict change and the sets are bounded. Running
+	// it once after all the edges keeps a result with many deps linear in
+	// them. Each change bumps that result's requirement generation, which is
+	// what serve-time re-validation compares against its selection-time
+	// capture.
 	queue := []*sharedResult{parentRes}
 	for len(queue) > 0 {
 		res := queue[0]
@@ -7373,6 +7410,8 @@ func (c *Cache) attachDependencyResults(ctx context.Context, sessionID string, r
 	}
 
 	seen := make(map[sharedResultID]bool, len(deps))
+	edges := make([]AnyResult, 0, len(deps))
+	var owned []AnyResult
 	for _, dep := range deps {
 		if dep.Result == nil {
 			continue
@@ -7386,24 +7425,28 @@ func (c *Cache) attachDependencyResults(ctx context.Context, sessionID string, r
 		}
 		if alreadyOwned, ok := seen[attachedDepRes.id]; ok {
 			// Already linked. If the previous edge was non-owned and this one is
-			// owned, propagate the install span now; otherwise nothing to do.
+			// owned, propagate the install span too; otherwise nothing to do.
 			if !alreadyOwned && dep.Owned {
-				c.captureSessionResultInstallSpan(ctx, sessionID, dep.Result)
+				owned = append(owned, dep.Result)
 				seen[attachedDepRes.id] = true
 			}
 			continue
 		}
 		seen[attachedDepRes.id] = dep.Owned
-		if err := c.addExplicitDependency(ctx, attachedSelf, dep.Result, "attached_dependency_result"); err != nil {
-			return err
-		}
-		// Owned deps inherit the parent's install span — failures in their
-		// lazy work will mark the parent's API span caused-failed via the
-		// resume span's cause links. Liveness-only deps (e.g. lazy parents
-		// in receiver chains) keep their original install spans only.
+		edges = append(edges, dep.Result)
 		if dep.Owned {
-			c.captureSessionResultInstallSpan(ctx, sessionID, dep.Result)
+			owned = append(owned, dep.Result)
 		}
+	}
+	if err := c.addExplicitDependencies(ctx, attachedSelf, edges, "attached_dependency_result"); err != nil {
+		return err
+	}
+	// Owned deps inherit the parent's install span — failures in their
+	// lazy work will mark the parent's API span caused-failed via the
+	// resume span's cause links. Liveness-only deps (e.g. lazy parents
+	// in receiver chains) keep their original install spans only.
+	for _, dep := range owned {
+		c.captureSessionResultInstallSpan(ctx, sessionID, dep)
 	}
 
 	return nil

@@ -7963,6 +7963,69 @@ func TestCacheAddExplicitDependencyAcceptsSessionResourceDepsAndRecomputesAncest
 	cacheTestReleaseSession(t, c, ctx)
 }
 
+func TestCacheAttachedDependencyResultsRequireEveryDepsSessionResources(t *testing.T) {
+	t.Parallel()
+
+	baseCtx := cacheTestContext(t.Context())
+	c, err := NewCache(baseCtx, "", nil, nil)
+	assert.NilError(t, err)
+	ctx := ContextWithCache(baseCtx, c)
+	srv := cacheTestServer(t)
+	first := cacheTestVolatileSessionResourceHandle("ATTACH_FIRST")
+	last := cacheTestVolatileSessionResourceHandle("ATTACH_LAST")
+
+	Fields[cacheTestQuery]{
+		NodeFunc("plain", func(ctx context.Context, _ ObjectResult[cacheTestQuery], _ struct{}) (Result[*cacheTestObject], error) {
+			return NewResultForCurrentCall(ctx, &cacheTestObject{Value: 1})
+		}),
+		NodeFunc("manyDeps", func(ctx context.Context, self ObjectResult[cacheTestQuery], _ struct{}) (Result[*cacheTestObject], error) {
+			firstLeaf, err := cacheTestSessionResourceLeaf(ctx, first)
+			if err != nil {
+				return Result[*cacheTestObject]{}, err
+			}
+			var plain Result[*cacheTestObject]
+			if err := srv.Select(ctx, self, &plain, Selector{Field: "plain"}); err != nil {
+				return Result[*cacheTestObject]{}, err
+			}
+			lastLeaf, err := cacheTestSessionResourceLeaf(ctx, last)
+			if err != nil {
+				return Result[*cacheTestObject]{}, err
+			}
+			return NewResultForCurrentCall(ctx, &cacheTestObject{
+				Value:             2,
+				dependencyResults: []AnyResult{firstLeaf, plain, lastLeaf},
+			})
+		}),
+	}.Install(srv)
+	assert.NilError(t, c.BindSessionResource(ctx, "test-session", "dagql-test-client", first, "bound"))
+	assert.NilError(t, c.BindSessionResource(ctx, "test-session", "dagql-test-client", last, "bound"))
+
+	var res Result[*cacheTestObject]
+	assert.NilError(t, srv.Select(ctx, srv.Root(), &res, Selector{Field: "manyDeps"}))
+	shared := res.cacheSharedResult()
+	assert.Assert(t, shared != nil && shared.id != 0)
+	c.egraphMu.RLock()
+	requiresFirst := cacheTestSessionResourceSetContains(shared.requiredSessionResources, first)
+	requiresLast := cacheTestSessionResourceSetContains(shared.requiredSessionResources, last)
+	c.egraphMu.RUnlock()
+	assert.Assert(t, requiresFirst, "the first attached dep's session resource is missing")
+	assert.Assert(t, requiresLast, "the last attached dep's session resource is missing")
+	assertCacheRequiredSessionResourcesExact(t, c)
+
+	// A session that bound only one of the two is refused the result.
+	otherCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "attach-many-other-client",
+		SessionID: "attach-many-other",
+	})
+	otherCtx = ContextWithCache(otherCtx, c)
+	assert.NilError(t, c.BindSessionResource(otherCtx, "attach-many-other", "attach-many-other-client", first, "bound"))
+	_, err = c.LoadResultByResultID(otherCtx, "attach-many-other", srv, uint64(shared.id))
+	assert.ErrorContains(t, err, "has not bound the session resources this result requires")
+
+	assert.NilError(t, c.ReleaseSession(otherCtx, "attach-many-other"))
+	cacheTestReleaseSession(t, c, ctx)
+}
+
 // cacheTestBlockingAttachObj holds its dependency attachment open until the
 // test releases it, so a second session can select the published result while
 // its required set is still growing.
