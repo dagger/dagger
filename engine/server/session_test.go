@@ -223,6 +223,84 @@ func TestNestedTransportRegistrationBindsExactExecAttachables(t *testing.T) {
 	require.ErrorContains(t, err, "different secret token")
 }
 
+func TestTelemetryStoresOnlyForClientsThatCanSubscribe(t *testing.T) {
+	t.Parallel()
+
+	srv, sess, parent, ctx, requestScope := newNestedTransportTestFixture(t)
+	defer requestScope.Lease().Release()
+
+	// An exec's own identity, as its session helper and its SDK's calls
+	// register it.
+	execMetadata := nestedTransportTestMetadata("exec")
+	execTransport, err := srv.RegisterNestedClientTransportForExec(ctx, execMetadata, parent.clientID, execMetadata.ClientID, false)
+	require.NoError(t, err)
+	defer execTransport.Close()
+
+	// A CLI in that exec, under an identity of its own.
+	cliMetadata := nestedTransportTestMetadata("exec-cli")
+	cliMetadata.ClientSecretToken = execMetadata.ClientSecretToken
+	cliTransport, err := srv.RegisterNestedClientTransportForExec(ctx, cliMetadata, parent.clientID, execMetadata.ClientID, false)
+	require.NoError(t, err)
+	defer cliTransport.Close()
+
+	// An in-engine SDK client.
+	sdkTransport, err := srv.RegisterNestedClientTransport(ctx, nestedTransportTestMetadata("sdk"), parent.clientID)
+	require.NoError(t, err)
+	defer sdkTransport.Close()
+
+	// A CLI run under `dagger api with-session`.
+	child, err := srv.childClient(ctx, parent, "with-session-cli", http.Header{})
+	require.NoError(t, err)
+	defer child.transport.Close()
+
+	sess.clientMu.RLock()
+	unread := map[string]bool{}
+	for id, record := range sess.clientRecords {
+		unread[id] = record.telemetryUnread
+	}
+	execRuntime := sess.clientRuntimes["exec"]
+	sess.clientMu.RUnlock()
+	require.Equal(t, map[string]bool{
+		"parent":           false,
+		"exec":             true,
+		"exec-cli":         false,
+		"sdk":              true,
+		"with-session-cli": false,
+	}, unread)
+
+	for origin, want := range map[string][]string{
+		"parent":           {"parent"},
+		"exec":             {"parent"},
+		"sdk":              {"parent"},
+		"exec-cli":         {"exec-cli", "parent"},
+		"with-session-cli": {"with-session-cli", "parent"},
+	} {
+		route, err := sess.telemetryRouteOriginClientID(origin)
+		require.NoError(t, err)
+		require.Equal(t, want, route, "route for %s", origin)
+	}
+
+	delivery, err := sess.telemetryDeliveryClientIDs(execRuntime.clientRecord)
+	require.NoError(t, err)
+	require.Equal(t, []string{"parent"}, delivery)
+	sess.clientMu.RLock()
+	cliRecord := sess.clientRecords["exec-cli"]
+	sess.clientMu.RUnlock()
+	delivery, err = sess.telemetryDeliveryClientIDs(cliRecord)
+	require.NoError(t, err)
+	require.Equal(t, []string{"parent", "exec-cli"}, delivery)
+
+	require.NoError(t, execRuntime.retainTelemetryDB(ctx))
+	require.Nil(t, execRuntime.telemetryDB, "a client nothing reads gets no store")
+	require.NoError(t, execRuntime.closeTelemetryDB())
+
+	ps := &PubSub{}
+	err = ps.streamHandler(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/v1/traces", nil), execRuntime.clientRecord, nil)
+	var refused httpError
+	require.ErrorAs(t, err, &refused)
+	require.Equal(t, http.StatusForbidden, refused.code, "a refused subscription must not be retried")
+}
+
 func TestNestedTransportRegistrationWaitsForExpectedAttachables(t *testing.T) {
 	t.Parallel()
 

@@ -104,6 +104,10 @@ func (srv *Server) registerNestedClientTransport(
 	if metadata.ClientID == parentClientID {
 		return nil, fmt.Errorf("client ancestry cycle: client %q cannot be its own parent", metadata.ClientID)
 	}
+	// A child client, or an exec's client registered under an identity other
+	// than the exec's own, is a CLI that may subscribe to its telemetry.
+	// Everything else registered here never does.
+	telemetryUnread := !hostFromParent && (attachablesClientID == "" || attachablesClientID == metadata.ClientID)
 
 	srv.daggerSessionsMu.RLock()
 	sess := srv.daggerSessions[metadata.SessionID]
@@ -196,6 +200,7 @@ func (srv *Server) registerNestedClientTransport(
 		hostServiceProxyClientID:  hostServiceProxyClientID,
 		inertAttachables:          inertAttachables,
 		accepting:                 true,
+		telemetryUnread:           telemetryUnread,
 	}
 	client := &clientRuntime{
 		clientRecord:           record,
