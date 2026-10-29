@@ -200,6 +200,16 @@ func TestAppendTraceRequestPB(t *testing.T) {
 	got, err = AppendTraceRequestPB(nil, nil)
 	require.NoError(t, err)
 	require.Empty(t, got)
+
+	for _, bad := range []Span{
+		{TraceID: rows[1].TraceID, SpanID: rows[1].SpanID, Name: "\xff", Resource: resA},
+		{TraceID: rows[1].TraceID, SpanID: rows[1].SpanID, Name: "ok", StatusCode: int64(codes.Error), StatusMessage: "\xff", Resource: resA},
+	} {
+		_, protoErr := proto.Marshal(&coltracepb.ExportTraceServiceRequest{ResourceSpans: SpansToPB([]Span{bad})})
+		require.Error(t, protoErr)
+		_, err := AppendTraceRequestPB(nil, append(slices.Clone(rows), bad))
+		require.Error(t, err, "%+v", bad)
+	}
 }
 
 func sdkAttrs() []attribute.KeyValue {
