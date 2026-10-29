@@ -24,6 +24,7 @@ import (
 	"github.com/containerd/containerd/v2/core/remotes/docker"
 	ctdsnapshot "github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/containerd/containerd/v2/core/snapshots/storage"
+	"github.com/containerd/containerd/v2/pkg/sys"
 	localcontentstore "github.com/containerd/containerd/v2/plugins/content/local"
 	"github.com/containerd/containerd/v2/plugins/diff/walking"
 	"github.com/containerd/go-runc"
@@ -169,6 +170,7 @@ type Server struct {
 	registryHosts           docker.RegistryHosts
 	cleanMntNS              *os.File
 	recursiveReadOnlyMounts bool
+	execOOMScoreAdj         int
 
 	//
 	// telemetry config+state
@@ -249,8 +251,13 @@ type NewServerOpts struct {
 const (
 	secretSaltEnvName = "DAGGER_SECRET_SALT"
 	secretSaltSize    = 32
+
+	// engineOOMScoreAdj is the lowest OOM score that leaves the engine
+	// killable; -1000 would exempt it.
+	engineOOMScoreAdj = -999
 )
 
+//nolint:gocyclo // engine setup is an intentionally linear sequence of steps.
 func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	if err := validateRemoteCacheIntegration(opts.RemoteCacheIntegration); err != nil {
 		return nil, err
@@ -431,6 +438,20 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	}
 	attachWorkloadNetworkAccounting(srv.cgroupParent)
 
+	// When memory runs out, the kernel must kill an exec before the engine,
+	// whose death ends every session on it. The engine lowers its own score,
+	// and execs drop any protection it was started with.
+	startOOMScoreAdj, err := sys.GetOOMScoreAdj(os.Getpid())
+	if err != nil {
+		return nil, fmt.Errorf("failed to read engine OOM score: %w", err)
+	}
+	srv.execOOMScoreAdj = max(startOOMScoreAdj, 0)
+	if startOOMScoreAdj > engineOOMScoreAdj {
+		if err := sys.SetOOMScore(os.Getpid(), engineOOMScoreAdj); err != nil {
+			slog.Warn("failed to lower engine OOM score", "error", err)
+		}
+	}
+
 	baseLabels := map[string]string{
 		wlabel.Executor:       "oci",
 		wlabel.Snapshotter:    srv.snapshotterName,
@@ -502,6 +523,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		ApparmorProfile:     srv.apparmorProfile,
 		SELinux:             srv.selinux,
 		Entitlements:        srv.entitlements,
+		OOMScoreAdj:         srv.execOOMScoreAdj,
 
 		HostMntNS:  hostMntNS,
 		CleanMntNS: srv.cleanMntNS,

@@ -563,6 +563,8 @@ func (c *Client) generateBaseSpec(ctx context.Context, state *execState) error {
 	state.cleanups.Add("base OCI spec cleanup", cleanups.Infallible(ociSpecCleanup))
 
 	state.spec = baseSpec
+	oomScoreAdj := c.OOMScoreAdj
+	state.spec.Process.OOMScoreAdj = &oomScoreAdj
 	// Systemd uses a scope identifier, not a filesystem path. Preserve it.
 	if filepath.IsAbs(state.resourceCgroupPath) && !strings.Contains(state.resourceCgroupPath, ":") {
 		state.spec.Linux.CgroupsPath = filepath.Join(state.resourceCgroupPath, "container")
