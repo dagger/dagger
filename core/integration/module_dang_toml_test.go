@@ -327,4 +327,20 @@ func (DangSuite) TestDangTomlDangVersion(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "hello, world", strings.TrimSpace(out))
 	})
+
+	// Names later versions took: `rescue` was an ordinary identifier before
+	// Dang 2.1 reserved it, and a module's own `loop` shadows the builtin.
+	t.Run("Dang 1.0 names later versions took", func(ctx context.Context, t *testctx.T) {
+		out, err := dangTomlModule(t, c, "v0.20.6", `let loop = 2
+
+type Tiny {
+  pub rescue: Int! = 1
+  pub total(rescue: Int! = 3): Int! { rescue + loop }
+}
+`, nil).
+			With(daggerCallAt("tiny", "total")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "5", strings.TrimSpace(out))
+	})
 }

@@ -322,6 +322,28 @@ func TestDangSourceDir(t *testing.T) {
 	require.Equal(t, outside, dir)
 }
 
+// Dang 1.0 source may use names later versions took: `rescue` was an
+// ordinary identifier before Dang 2.1 reserved it, and a module's own `loop`
+// shadows the builtin of that name.
+func TestDang1NamesLaterVersionsTook(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(dir, ".git"), 0o755))
+	writeDangFilesIn(t, dir, map[string]string{"main.dang": `let loop = 2
+assert { loop == 2 }
+
+f(rescue: Int!): Int! { rescue + loop }
+assert { f(3) == 5 }
+
+type Box {
+  pub rescue: Int! = 1
+}
+let box = Box
+assert { box.rescue == 1 }
+`})
+	_, err := dang.RunDir(dang.ContextWithVersion(t.Context(), dang.Version1_0), dir, false)
+	require.NoError(t, err)
+}
+
 // legacySelectionSource is Dang 1.0 source: `.{a, b}` is object selection,
 // which no later version parses.
 const legacySelectionSource = "directive @marked on OBJECT\n\n" +
