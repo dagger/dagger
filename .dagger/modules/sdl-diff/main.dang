@@ -54,7 +54,7 @@ type SdlDiff {
   }
 
   let buildBase(ws: Workspace!): Container! {
-    container.from("golang:1.26")
+    container.from("golang:1.27")
       .withMountedCache("/go/pkg/mod", cacheVolume("go-mod"))
       .withMountedCache("/root/.cache/go-build", cacheVolume("go-build"))
       .withWorkdir("/src")
