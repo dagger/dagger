@@ -591,8 +591,13 @@ func AppendTraceRequestPB(b []byte, rows []Span) ([]byte, error) {
 }
 
 // appendSpanPB appends the encoding of the OTLP span spanPB makes of span, in
-// field order, as proto.Marshal does.
+// field order, as proto.Marshal does. Like proto.Marshal, it fails on a name
+// or status message that isn't valid UTF-8; the stored attributes and events
+// were checked when they were encoded.
 func (span *Span) appendSpanPB(b []byte) ([]byte, error) {
+	if !utf8.ValidString(span.Name) || !utf8.ValidString(span.StatusMessage) {
+		return nil, errInvalidUTF8
+	}
 	ros := &readOnlySpan{DB: span}
 	sc := ros.SpanContext()
 	tid, sid := sc.TraceID(), sc.SpanID()
