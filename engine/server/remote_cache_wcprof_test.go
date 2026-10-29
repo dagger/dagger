@@ -63,7 +63,9 @@ func profiledUnder(t *testing.T, root uint64) []profiledEvent {
 // entries, then the capture, whose children are the graph lock's wait, the
 // walk under it, the records' copy, and the chains' opening, one op per
 // exported part with its layers' diffs under it. The capture links each
-// output's part to its result with the part's size, its chain's.
+// output's part to its result with the part's size, its chain's. After the
+// consumer, the export's releases follow: the chains', the capture's
+// records', and the entries' holds.
 func TestRemoteCacheAdapterExportProfiled(t *testing.T) {
 	e := newAdapterTestEngine(t)
 	ready := e.file(t, "ready")
@@ -104,6 +106,15 @@ func TestRemoteCacheAdapterExportProfiled(t *testing.T) {
 	require.Equal(t, "ok", capture.Outcome)
 	require.LessOrEqual(t, byClass["remotecache.export.hold"][0].EndNS, capture.StartNS)
 	require.Equal(t, root.ID(), consumeOp, "the bundle's consumer runs under the export, not the capture")
+	last := capture.EndNS
+	for _, class := range []string{"remotecache.export.release.chains", "remotecache.export.release.capture", "remotecache.export.release.holds"} {
+		require.Len(t, byClass[class], 1, class)
+		release := byClass[class][0]
+		require.Equal(t, root.ID(), release.ParentID, class)
+		require.Equal(t, "ok", release.Outcome, class)
+		require.LessOrEqual(t, last, release.StartNS, class)
+		last = release.EndNS
+	}
 
 	for _, class := range []string{"remotecache.export.walk", "remotecache.export.copy", "remotecache.export.chains"} {
 		require.Len(t, byClass[class], 1, class)
