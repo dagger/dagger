@@ -774,18 +774,18 @@ export type ContainerAsTarballOpts = {
   forcedCompression?: ImageLayerCompression
 
   /**
-   * Clamp the image's timestamps to this time, so that rebuilding unchanged content produces the same image.
-   *
-   * Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
-   */
-  sourceDateEpoch?: number
-
-  /**
    * Use the specified media types for the image's layers.
    *
    * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
    */
   mediaTypes?: ImageMediaTypes
+
+  /**
+   * Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
+   *
+   * Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
+   */
+  sourceDateEpoch?: number
 }
 
 export type ContainerDirectoryOpts = {
@@ -828,13 +828,6 @@ export type ContainerExportOpts = {
   forcedCompression?: ImageLayerCompression
 
   /**
-   * Clamp the image's timestamps to this time, so that rebuilding unchanged content produces the same image.
-   *
-   * Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
-   */
-  sourceDateEpoch?: number
-
-  /**
    * Use the specified media types for the exported image's layers.
    *
    * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
@@ -845,6 +838,13 @@ export type ContainerExportOpts = {
    * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   expand?: boolean
+
+  /**
+   * Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
+   *
+   * Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
+   */
+  sourceDateEpoch?: number
 }
 
 export type ContainerExportImageOpts = {
@@ -863,18 +863,18 @@ export type ContainerExportImageOpts = {
   forcedCompression?: ImageLayerCompression
 
   /**
-   * Clamp the image's timestamps to this time, so that rebuilding unchanged content produces the same image.
-   *
-   * Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
-   */
-  sourceDateEpoch?: number
-
-  /**
    * Use the specified media types for the exported image's layers.
    *
    * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
    */
   mediaTypes?: ImageMediaTypes
+
+  /**
+   * Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
+   *
+   * Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
+   */
+  sourceDateEpoch?: number
 }
 
 export type ContainerFileOpts = {
@@ -966,13 +966,6 @@ export type ContainerPublishOpts = {
   forcedCompression?: ImageLayerCompression
 
   /**
-   * Clamp the image's timestamps to this time, so that rebuilding unchanged content produces the same image.
-   *
-   * Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
-   */
-  sourceDateEpoch?: number
-
-  /**
    * Use the specified media types for the published image's layers.
    *
    * Defaults to "OCI", which is compatible with most recent registries, but "Docker" may be needed for older registries without OCI support.
@@ -997,6 +990,13 @@ export type ContainerPublishOpts = {
    * Allow HTTPS registry communication without verifying the server certificate.
    */
   insecureSkipTLSVerify?: boolean
+
+  /**
+   * Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
+   *
+   * Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
+   */
+  sourceDateEpoch?: number
 }
 
 export type ContainerShellOpts = {
@@ -7109,12 +7109,12 @@ export class Container extends BaseClient {
    * @param opts.forcedCompression Force each layer of the image to use the specified compression algorithm.
    *
    * If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
-   * @param opts.sourceDateEpoch Clamp the image's timestamps to this time, so that rebuilding unchanged content produces the same image.
-   *
-   * Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
    * @param opts.mediaTypes Use the specified media types for the image's layers.
    *
    * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
+   * @param opts.sourceDateEpoch Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
+   *
+   * Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
    */
   asTarball = (opts?: ContainerAsTarballOpts): File => {
     const metadata = {
@@ -7312,13 +7312,13 @@ export class Container extends BaseClient {
    * @param opts.forcedCompression Force each layer of the exported image to use the specified compression algorithm.
    *
    * If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
-   * @param opts.sourceDateEpoch Clamp the image's timestamps to this time, so that rebuilding unchanged content produces the same image.
-   *
-   * Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
    * @param opts.mediaTypes Use the specified media types for the exported image's layers.
    *
    * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
    * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   * @param opts.sourceDateEpoch Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
+   *
+   * Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
    */
   export = async (
     path: string,
@@ -7356,12 +7356,12 @@ export class Container extends BaseClient {
    * @param opts.forcedCompression Force each layer of the exported image to use the specified compression algorithm.
    *
    * If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
-   * @param opts.sourceDateEpoch Clamp the image's timestamps to this time, so that rebuilding unchanged content produces the same image.
-   *
-   * Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
    * @param opts.mediaTypes Use the specified media types for the exported image's layers.
    *
    * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
+   * @param opts.sourceDateEpoch Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
+   *
+   * Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
    */
   exportImage = async (
     name: string,
@@ -7581,9 +7581,6 @@ export class Container extends BaseClient {
    * @param opts.forcedCompression Force each layer of the published image to use the specified compression algorithm.
    *
    * If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
-   * @param opts.sourceDateEpoch Clamp the image's timestamps to this time, so that rebuilding unchanged content produces the same image.
-   *
-   * Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
    * @param opts.mediaTypes Use the specified media types for the published image's layers.
    *
    * Defaults to "OCI", which is compatible with most recent registries, but "Docker" may be needed for older registries without OCI support.
@@ -7594,6 +7591,9 @@ export class Container extends BaseClient {
    *
    * Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
    * @param opts.insecureSkipTLSVerify Allow HTTPS registry communication without verifying the server certificate.
+   * @param opts.sourceDateEpoch Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
+   *
+   * Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
    */
   publish = async (
     address: string,

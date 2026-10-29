@@ -3374,7 +3374,7 @@ pub struct ContainerPublishOpts {
     /// The service will be started only for this push.
     #[builder(setter(into, strip_option), default)]
     pub registry_service: Option<Id>,
-    /// Clamp the image's timestamps to this time, so that rebuilding unchanged content produces the same image.
+    /// Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
     /// Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
     #[builder(setter(into, strip_option), default)]
     pub source_date_epoch: Option<isize>,
@@ -3396,7 +3396,7 @@ pub struct ContainerExportOpts {
     /// Used for multi-platform image.
     #[builder(setter(into, strip_option), default)]
     pub platform_variants: Option<Vec<Id>>,
-    /// Clamp the image's timestamps to this time, so that rebuilding unchanged content produces the same image.
+    /// Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
     /// Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
     #[builder(setter(into, strip_option), default)]
     pub source_date_epoch: Option<isize>,
@@ -3415,7 +3415,7 @@ pub struct ContainerExportImageOpts {
     /// Used for multi-platform image.
     #[builder(setter(into, strip_option), default)]
     pub platform_variants: Option<Vec<Id>>,
-    /// Clamp the image's timestamps to this time, so that rebuilding unchanged content produces the same image.
+    /// Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
     /// Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
     #[builder(setter(into, strip_option), default)]
     pub source_date_epoch: Option<isize>,
@@ -3434,7 +3434,7 @@ pub struct ContainerAsTarballOpts {
     /// Used for multi-platform images.
     #[builder(setter(into, strip_option), default)]
     pub platform_variants: Option<Vec<Id>>,
-    /// Clamp the image's timestamps to this time, so that rebuilding unchanged content produces the same image.
+    /// Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
     /// Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
     #[builder(setter(into, strip_option), default)]
     pub source_date_epoch: Option<isize>,
@@ -5541,9 +5541,6 @@ impl Container {
         if let Some(forced_compression) = opts.forced_compression {
             query = query.arg("forcedCompression", forced_compression);
         }
-        if let Some(source_date_epoch) = opts.source_date_epoch {
-            query = query.arg("sourceDateEpoch", source_date_epoch);
-        }
         if let Some(media_types) = opts.media_types {
             query = query.arg("mediaTypes", media_types);
         }
@@ -5555,6 +5552,9 @@ impl Container {
         }
         if let Some(insecure_skip_tls_verify) = opts.insecure_skip_tls_verify {
             query = query.arg("insecureSkipTLSVerify", insecure_skip_tls_verify);
+        }
+        if let Some(source_date_epoch) = opts.source_date_epoch {
+            query = query.arg("sourceDateEpoch", source_date_epoch);
         }
         query.execute(self.graphql_client.clone()).await
     }
@@ -5599,14 +5599,14 @@ impl Container {
         if let Some(forced_compression) = opts.forced_compression {
             query = query.arg("forcedCompression", forced_compression);
         }
-        if let Some(source_date_epoch) = opts.source_date_epoch {
-            query = query.arg("sourceDateEpoch", source_date_epoch);
-        }
         if let Some(media_types) = opts.media_types {
             query = query.arg("mediaTypes", media_types);
         }
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
+        }
+        if let Some(source_date_epoch) = opts.source_date_epoch {
+            query = query.arg("sourceDateEpoch", source_date_epoch);
         }
         query.execute(self.graphql_client.clone()).await
     }
@@ -5640,11 +5640,11 @@ impl Container {
         if let Some(forced_compression) = opts.forced_compression {
             query = query.arg("forcedCompression", forced_compression);
         }
-        if let Some(source_date_epoch) = opts.source_date_epoch {
-            query = query.arg("sourceDateEpoch", source_date_epoch);
-        }
         if let Some(media_types) = opts.media_types {
             query = query.arg("mediaTypes", media_types);
+        }
+        if let Some(source_date_epoch) = opts.source_date_epoch {
+            query = query.arg("sourceDateEpoch", source_date_epoch);
         }
         query.execute(self.graphql_client.clone()).await
     }
@@ -5674,11 +5674,11 @@ impl Container {
         if let Some(forced_compression) = opts.forced_compression {
             query = query.arg("forcedCompression", forced_compression);
         }
-        if let Some(source_date_epoch) = opts.source_date_epoch {
-            query = query.arg("sourceDateEpoch", source_date_epoch);
-        }
         if let Some(media_types) = opts.media_types {
             query = query.arg("mediaTypes", media_types);
+        }
+        if let Some(source_date_epoch) = opts.source_date_epoch {
+            query = query.arg("sourceDateEpoch", source_date_epoch);
         }
         File {
             proc: self.proc.clone(),

@@ -770,13 +770,6 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					compression algorithms for different layers). If this is unset and a
 					layer has no compressed blob in the engine's cache, then it will be
 					compressed using Gzip.`),
-				dagql.Arg("sourceDateEpoch").Doc(
-					`Clamp the image's timestamps to this time, so that rebuilding unchanged content produces the same image.`,
-					`Formatted in seconds following Unix epoch (e.g., 1672531199). File
-					timestamps in every layer and the image's creation times that are later
-					than this are set to it, as with BuildKit's rewrite-timestamp and
-					SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each
-					export.`),
 				dagql.Arg("mediaTypes").Doc(
 					`Use the specified media types for the published image's layers.`,
 					`Defaults to "OCI", which is compatible with most recent
@@ -791,6 +784,14 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.`).
 					View(AfterVersion("v1.0.0-0")),
 				dagql.Arg("insecureSkipTLSVerify").Doc(`Allow HTTPS registry communication without verifying the server certificate.`).
+					View(AfterVersion("v1.0.0-0")),
+				dagql.Arg("sourceDateEpoch").Doc(
+					`Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.`,
+					`Formatted in seconds following Unix epoch (e.g., 1672531199). File
+					timestamps in every layer and the image's creation times that are later
+					than this are set to it, as with BuildKit's rewrite-timestamp and
+					SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each
+					export.`).
 					View(AfterVersion("v1.0.0-0")),
 			),
 
@@ -817,13 +818,6 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					compression algorithms for different layers). If this is unset and a
 					layer has no compressed blob in the engine's cache, then it will be
 					compressed using Gzip.`),
-				dagql.Arg("sourceDateEpoch").Doc(
-					`Clamp the image's timestamps to this time, so that rebuilding unchanged content produces the same image.`,
-					`Formatted in seconds following Unix epoch (e.g., 1672531199). File
-					timestamps in every layer and the image's creation times that are later
-					than this are set to it, as with BuildKit's rewrite-timestamp and
-					SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each
-					export.`),
 				dagql.Arg("mediaTypes").Doc(
 					`Use the specified media types for the exported image's layers.`,
 					`Defaults to OCI, which is largely compatible with most recent
@@ -832,6 +826,14 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("expand").Doc(
 					`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 						`environment variables defined in the container (e.g. "/$VAR/foo").`),
+				dagql.Arg("sourceDateEpoch").Doc(
+					`Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.`,
+					`Formatted in seconds following Unix epoch (e.g., 1672531199). File
+					timestamps in every layer and the image's creation times that are later
+					than this are set to it, as with BuildKit's rewrite-timestamp and
+					SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each
+					export.`).
+					View(AfterVersion("v1.0.0-0")),
 			),
 		dagql.NodeFunc("export", s.exportLegacy).
 			WithInput(dagql.PerCallInput).
@@ -853,18 +855,19 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					compression algorithms for different layers). If this is unset and a
 					layer has no compressed blob in the engine's cache, then it will be
 					compressed using Gzip.`),
-				dagql.Arg("sourceDateEpoch").Doc(
-					`Clamp the image's timestamps to this time, so that rebuilding unchanged content produces the same image.`,
-					`Formatted in seconds following Unix epoch (e.g., 1672531199). File
-					timestamps in every layer and the image's creation times that are later
-					than this are set to it, as with BuildKit's rewrite-timestamp and
-					SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each
-					export.`),
 				dagql.Arg("mediaTypes").Doc(
 					`Use the specified media types for the exported image's layers.`,
 					`Defaults to OCI, which is largely compatible with most recent
 					container runtimes, but Docker may be needed for older runtimes without
 					OCI support.`),
+				dagql.Arg("sourceDateEpoch").Doc(
+					`Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.`,
+					`Formatted in seconds following Unix epoch (e.g., 1672531199). File
+					timestamps in every layer and the image's creation times that are later
+					than this are set to it, as with BuildKit's rewrite-timestamp and
+					SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each
+					export.`).
+					View(AfterVersion("v1.0.0-0")),
 			),
 
 		dagql.NodeFunc("asTarball", s.asTarball).
@@ -881,17 +884,18 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					compression algorithms for different layers). If this is unset and a
 					layer has no compressed blob in the engine's cache, then it will be
 					compressed using Gzip.`),
-				dagql.Arg("sourceDateEpoch").Doc(
-					`Clamp the image's timestamps to this time, so that rebuilding unchanged content produces the same image.`,
-					`Formatted in seconds following Unix epoch (e.g., 1672531199). File
-					timestamps in every layer and the image's creation times that are later
-					than this are set to it, as with BuildKit's rewrite-timestamp and
-					SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each
-					export.`),
 				dagql.Arg("mediaTypes").Doc(`Use the specified media types for the image's layers.`,
 					`Defaults to OCI, which is largely compatible with most recent
 					container runtimes, but Docker may be needed for older runtimes without
 					OCI support.`),
+				dagql.Arg("sourceDateEpoch").Doc(
+					`Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.`,
+					`Formatted in seconds following Unix epoch (e.g., 1672531199). File
+					timestamps in every layer and the image's creation times that are later
+					than this are set to it, as with BuildKit's rewrite-timestamp and
+					SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each
+					export.`).
+					View(AfterVersion("v1.0.0-0")),
 			),
 
 		dagql.NodeFunc("import", s.import_).
@@ -2850,11 +2854,11 @@ type containerPublishArgs struct {
 	Address               dagql.String
 	PlatformVariants      []core.ContainerID `default:"[]"`
 	ForcedCompression     dagql.Optional[core.ImageLayerCompression]
-	SourceDateEpoch       dagql.Optional[dagql.Int]
 	MediaTypes            core.ImageMediaTypes `default:"OCI"`
 	RegistryService       dagql.Optional[core.ServiceID]
 	Protocol              dagql.Optional[core.RegistryProtocol]
 	InsecureSkipTLSVerify bool `name:"insecureSkipTLSVerify" default:"false"`
+	SourceDateEpoch       dagql.Optional[dagql.Int]
 }
 
 func evaluateContainerImageParts(
@@ -4518,9 +4522,9 @@ type containerExportArgs struct {
 	Path              string
 	PlatformVariants  []core.ContainerID `default:"[]"`
 	ForcedCompression dagql.Optional[core.ImageLayerCompression]
-	SourceDateEpoch   dagql.Optional[dagql.Int]
 	MediaTypes        core.ImageMediaTypes `default:"OCI"`
 	Expand            bool                 `default:"false"`
+	SourceDateEpoch   dagql.Optional[dagql.Int]
 }
 
 func (s *containerSchema) export(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerExportArgs) (dagql.String, error) {
@@ -4603,8 +4607,8 @@ func sourceDateEpochArg(arg dagql.Optional[dagql.Int]) *time.Time {
 type containerAsTarballArgs struct {
 	PlatformVariants  []core.ContainerID `default:"[]"`
 	ForcedCompression dagql.Optional[core.ImageLayerCompression]
-	SourceDateEpoch   dagql.Optional[dagql.Int]
 	MediaTypes        core.ImageMediaTypes `default:"OCI"`
+	SourceDateEpoch   dagql.Optional[dagql.Int]
 }
 
 func (s *containerSchema) asTarball(
@@ -4653,8 +4657,8 @@ type containerExportImageArgs struct {
 
 	PlatformVariants  []core.ContainerID `default:"[]"`
 	ForcedCompression dagql.Optional[core.ImageLayerCompression]
-	SourceDateEpoch   dagql.Optional[dagql.Int]
 	MediaTypes        core.ImageMediaTypes `default:"OCI"`
+	SourceDateEpoch   dagql.Optional[dagql.Int]
 }
 
 func (s *containerSchema) exportImage(

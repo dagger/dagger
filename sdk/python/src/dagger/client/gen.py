@@ -3481,8 +3481,8 @@ class Container(Type):
         *,
         platform_variants: "list[Container] | None" = None,
         forced_compression: ImageLayerCompression | None = None,
-        source_date_epoch: int | None = None,
         media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+        source_date_epoch: int | None = None,
     ) -> "File":
         """Package the container state as an OCI image, and return it as a tar
         archive
@@ -3500,19 +3500,19 @@ class Container(Type):
             compression algorithms for different layers). If this is unset and
             a layer has no compressed blob in the engine's cache, then it will
             be compressed using Gzip.
-        source_date_epoch:
-            Clamp the image's timestamps to this time, so that rebuilding
-            unchanged content produces the same image.
-            Formatted in seconds following Unix epoch (e.g., 1672531199). File
-            timestamps in every layer and the image's creation times that are
-            later than this are set to it, as with BuildKit's rewrite-
-            timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this
-            costs time on each export.
         media_types:
             Use the specified media types for the image's layers.
             Defaults to OCI, which is largely compatible with most recent
             container runtimes, but Docker may be needed for older runtimes
             without OCI support.
+        source_date_epoch:
+            Clamp the image's timestamps to this time, so that rebuilding
+            unchanged files produces identical layers.
+            Formatted in seconds following Unix epoch (e.g., 1672531199). File
+            timestamps in every layer and the image's creation times that are
+            later than this are set to it, as with BuildKit's rewrite-
+            timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this
+            costs time on each export.
         """
         _args = [
             Arg(
@@ -3521,8 +3521,8 @@ class Container(Type):
                 [],
             ),
             Arg("forcedCompression", forced_compression, None),
-            Arg("sourceDateEpoch", source_date_epoch, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+            Arg("sourceDateEpoch", source_date_epoch, None),
         ]
         _ctx = self._select("asTarball", _args)
         return File(_ctx)
@@ -3779,9 +3779,9 @@ class Container(Type):
         *,
         platform_variants: "list[Container] | None" = None,
         forced_compression: ImageLayerCompression | None = None,
-        source_date_epoch: int | None = None,
         media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
         expand: bool | None = False,
+        source_date_epoch: int | None = None,
     ) -> str:
         """Writes the container as an OCI tarball to the destination file path on
         the host.
@@ -3804,14 +3804,6 @@ class Container(Type):
             compression algorithms for different layers). If this is unset and
             a layer has no compressed blob in the engine's cache, then it will
             be compressed using Gzip.
-        source_date_epoch:
-            Clamp the image's timestamps to this time, so that rebuilding
-            unchanged content produces the same image.
-            Formatted in seconds following Unix epoch (e.g., 1672531199). File
-            timestamps in every layer and the image's creation times that are
-            later than this are set to it, as with BuildKit's rewrite-
-            timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this
-            costs time on each export.
         media_types:
             Use the specified media types for the exported image's layers.
             Defaults to OCI, which is largely compatible with most recent
@@ -3821,6 +3813,14 @@ class Container(Type):
             Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
             "/$VAR/foo").
+        source_date_epoch:
+            Clamp the image's timestamps to this time, so that rebuilding
+            unchanged files produces identical layers.
+            Formatted in seconds following Unix epoch (e.g., 1672531199). File
+            timestamps in every layer and the image's creation times that are
+            later than this are set to it, as with BuildKit's rewrite-
+            timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this
+            costs time on each export.
 
         Returns
         -------
@@ -3844,9 +3844,9 @@ class Container(Type):
                 [],
             ),
             Arg("forcedCompression", forced_compression, None),
-            Arg("sourceDateEpoch", source_date_epoch, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
             Arg("expand", expand, False),
+            Arg("sourceDateEpoch", source_date_epoch, None),
         ]
         _ctx = self._select("export", _args)
         return await _ctx.execute(str)
@@ -3857,8 +3857,8 @@ class Container(Type):
         *,
         platform_variants: "list[Container] | None" = None,
         forced_compression: ImageLayerCompression | None = None,
-        source_date_epoch: int | None = None,
         media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+        source_date_epoch: int | None = None,
     ) -> Void:
         """Exports the container as an image to the host's container image store.
 
@@ -3877,19 +3877,19 @@ class Container(Type):
             compression algorithms for different layers). If this is unset and
             a layer has no compressed blob in the engine's cache, then it will
             be compressed using Gzip.
-        source_date_epoch:
-            Clamp the image's timestamps to this time, so that rebuilding
-            unchanged content produces the same image.
-            Formatted in seconds following Unix epoch (e.g., 1672531199). File
-            timestamps in every layer and the image's creation times that are
-            later than this are set to it, as with BuildKit's rewrite-
-            timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this
-            costs time on each export.
         media_types:
             Use the specified media types for the exported image's layers.
             Defaults to OCI, which is largely compatible with most recent
             container runtimes, but Docker may be needed for older runtimes
             without OCI support.
+        source_date_epoch:
+            Clamp the image's timestamps to this time, so that rebuilding
+            unchanged files produces identical layers.
+            Formatted in seconds following Unix epoch (e.g., 1672531199). File
+            timestamps in every layer and the image's creation times that are
+            later than this are set to it, as with BuildKit's rewrite-
+            timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this
+            costs time on each export.
 
         Returns
         -------
@@ -3912,8 +3912,8 @@ class Container(Type):
                 [],
             ),
             Arg("forcedCompression", forced_compression, None),
-            Arg("sourceDateEpoch", source_date_epoch, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+            Arg("sourceDateEpoch", source_date_epoch, None),
         ]
         _ctx = self._select("exportImage", _args)
         await _ctx.execute()
@@ -4219,11 +4219,11 @@ class Container(Type):
         *,
         platform_variants: "list[Container] | None" = None,
         forced_compression: ImageLayerCompression | None = None,
-        source_date_epoch: int | None = None,
         media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
         registry_service: "Service | None" = None,
         protocol: RegistryProtocol | None = None,
         insecure_skip_tls_verify: bool | None = False,
+        source_date_epoch: int | None = None,
     ) -> str:
         """Package the container state as an OCI image, and publish it to a
         registry
@@ -4248,14 +4248,6 @@ class Container(Type):
             compression algorithms for different layers). If this is unset and
             a layer has no compressed blob in the engine's cache, then it will
             be compressed using Gzip.
-        source_date_epoch:
-            Clamp the image's timestamps to this time, so that rebuilding
-            unchanged content produces the same image.
-            Formatted in seconds following Unix epoch (e.g., 1672531199). File
-            timestamps in every layer and the image's creation times that are
-            later than this are set to it, as with BuildKit's rewrite-
-            timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this
-            costs time on each export.
         media_types:
             Use the specified media types for the published image's layers.
             Defaults to "OCI", which is compatible with most recent
@@ -4270,6 +4262,14 @@ class Container(Type):
         insecure_skip_tls_verify:
             Allow HTTPS registry communication without verifying the server
             certificate.
+        source_date_epoch:
+            Clamp the image's timestamps to this time, so that rebuilding
+            unchanged files produces identical layers.
+            Formatted in seconds following Unix epoch (e.g., 1672531199). File
+            timestamps in every layer and the image's creation times that are
+            later than this are set to it, as with BuildKit's rewrite-
+            timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this
+            costs time on each export.
 
         Returns
         -------
@@ -4293,11 +4293,11 @@ class Container(Type):
                 [],
             ),
             Arg("forcedCompression", forced_compression, None),
-            Arg("sourceDateEpoch", source_date_epoch, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
             Arg("registryService", registry_service, None),
             Arg("protocol", protocol, None),
             Arg("insecureSkipTLSVerify", insecure_skip_tls_verify, False),
+            Arg("sourceDateEpoch", source_date_epoch, None),
         ]
         _ctx = self._select("publish", _args)
         return await _ctx.execute(str)

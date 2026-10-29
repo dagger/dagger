@@ -3814,16 +3814,16 @@ type ContainerAsTarballOpts struct {
 	//
 	// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
 	ForcedCompression ImageLayerCompression
-	// Clamp the image's timestamps to this time, so that rebuilding unchanged content produces the same image.
-	//
-	// Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
-	SourceDateEpoch int
 	// Use the specified media types for the image's layers.
 	//
 	// Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
 	//
 	// Default: OCIMediaTypes
 	MediaTypes ImageMediaTypes
+	// Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
+	//
+	// Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
+	SourceDateEpoch int
 }
 
 // Package the container state as an OCI image, and return it as a tar archive
@@ -3838,13 +3838,13 @@ func (r *Container) AsTarball(opts ...ContainerAsTarballOpts) *File {
 		if !querybuilder.IsZeroValue(opts[i].ForcedCompression) {
 			q = q.Arg("forcedCompression", opts[i].ForcedCompression)
 		}
-		// `sourceDateEpoch` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SourceDateEpoch) {
-			q = q.Arg("sourceDateEpoch", opts[i].SourceDateEpoch)
-		}
 		// `mediaTypes` optional argument
 		if !querybuilder.IsZeroValue(opts[i].MediaTypes) {
 			q = q.Arg("mediaTypes", opts[i].MediaTypes)
+		}
+		// `sourceDateEpoch` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SourceDateEpoch) {
+			q = q.Arg("sourceDateEpoch", opts[i].SourceDateEpoch)
 		}
 	}
 
@@ -4070,10 +4070,6 @@ type ContainerExportOpts struct {
 	//
 	// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
 	ForcedCompression ImageLayerCompression
-	// Clamp the image's timestamps to this time, so that rebuilding unchanged content produces the same image.
-	//
-	// Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
-	SourceDateEpoch int
 	// Use the specified media types for the exported image's layers.
 	//
 	// Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
@@ -4082,6 +4078,10 @@ type ContainerExportOpts struct {
 	MediaTypes ImageMediaTypes
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
+	// Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
+	//
+	// Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
+	SourceDateEpoch int
 }
 
 // Writes the container as an OCI tarball to the destination file path on the host.
@@ -4101,10 +4101,6 @@ func (r *Container) Export(ctx context.Context, path string, opts ...ContainerEx
 		if !querybuilder.IsZeroValue(opts[i].ForcedCompression) {
 			q = q.Arg("forcedCompression", opts[i].ForcedCompression)
 		}
-		// `sourceDateEpoch` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SourceDateEpoch) {
-			q = q.Arg("sourceDateEpoch", opts[i].SourceDateEpoch)
-		}
 		// `mediaTypes` optional argument
 		if !querybuilder.IsZeroValue(opts[i].MediaTypes) {
 			q = q.Arg("mediaTypes", opts[i].MediaTypes)
@@ -4112,6 +4108,10 @@ func (r *Container) Export(ctx context.Context, path string, opts ...ContainerEx
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
 			q = q.Arg("expand", opts[i].Expand)
+		}
+		// `sourceDateEpoch` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SourceDateEpoch) {
+			q = q.Arg("sourceDateEpoch", opts[i].SourceDateEpoch)
 		}
 	}
 	q = q.Arg("path", path)
@@ -4132,16 +4132,16 @@ type ContainerExportImageOpts struct {
 	//
 	// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
 	ForcedCompression ImageLayerCompression
-	// Clamp the image's timestamps to this time, so that rebuilding unchanged content produces the same image.
-	//
-	// Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
-	SourceDateEpoch int
 	// Use the specified media types for the exported image's layers.
 	//
 	// Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
 	//
 	// Default: OCIMediaTypes
 	MediaTypes ImageMediaTypes
+	// Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
+	//
+	// Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
+	SourceDateEpoch int
 }
 
 // Exports the container as an image to the host's container image store.
@@ -4159,13 +4159,13 @@ func (r *Container) ExportImage(ctx context.Context, name string, opts ...Contai
 		if !querybuilder.IsZeroValue(opts[i].ForcedCompression) {
 			q = q.Arg("forcedCompression", opts[i].ForcedCompression)
 		}
-		// `sourceDateEpoch` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SourceDateEpoch) {
-			q = q.Arg("sourceDateEpoch", opts[i].SourceDateEpoch)
-		}
 		// `mediaTypes` optional argument
 		if !querybuilder.IsZeroValue(opts[i].MediaTypes) {
 			q = q.Arg("mediaTypes", opts[i].MediaTypes)
+		}
+		// `sourceDateEpoch` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SourceDateEpoch) {
+			q = q.Arg("sourceDateEpoch", opts[i].SourceDateEpoch)
 		}
 	}
 	q = q.Arg("name", name)
@@ -4512,10 +4512,6 @@ type ContainerPublishOpts struct {
 	//
 	// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
 	ForcedCompression ImageLayerCompression
-	// Clamp the image's timestamps to this time, so that rebuilding unchanged content produces the same image.
-	//
-	// Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
-	SourceDateEpoch int
 	// Use the specified media types for the published image's layers.
 	//
 	// Defaults to "OCI", which is compatible with most recent registries, but "Docker" may be needed for older registries without OCI support.
@@ -4532,6 +4528,10 @@ type ContainerPublishOpts struct {
 	Protocol RegistryProtocol
 	// Allow HTTPS registry communication without verifying the server certificate.
 	InsecureSkipTLSVerify bool
+	// Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
+	//
+	// Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
+	SourceDateEpoch int
 }
 
 // Package the container state as an OCI image, and publish it to a registry
@@ -4551,10 +4551,6 @@ func (r *Container) Publish(ctx context.Context, address string, opts ...Contain
 		if !querybuilder.IsZeroValue(opts[i].ForcedCompression) {
 			q = q.Arg("forcedCompression", opts[i].ForcedCompression)
 		}
-		// `sourceDateEpoch` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SourceDateEpoch) {
-			q = q.Arg("sourceDateEpoch", opts[i].SourceDateEpoch)
-		}
 		// `mediaTypes` optional argument
 		if !querybuilder.IsZeroValue(opts[i].MediaTypes) {
 			q = q.Arg("mediaTypes", opts[i].MediaTypes)
@@ -4570,6 +4566,10 @@ func (r *Container) Publish(ctx context.Context, address string, opts ...Contain
 		// `insecureSkipTLSVerify` optional argument
 		if !querybuilder.IsZeroValue(opts[i].InsecureSkipTLSVerify) {
 			q = q.Arg("insecureSkipTLSVerify", opts[i].InsecureSkipTLSVerify)
+		}
+		// `sourceDateEpoch` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SourceDateEpoch) {
+			q = q.Arg("sourceDateEpoch", opts[i].SourceDateEpoch)
 		}
 	}
 	q = q.Arg("address", address)
