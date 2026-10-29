@@ -13,7 +13,7 @@ type fakeProgram struct {
 	loadErr  error
 	loads    int
 	closes   int
-	watched  []uint64
+	watched  []ExecInfo
 	finished []uint64
 }
 
@@ -25,8 +25,8 @@ func (f *fakeProgram) Load() (Loaded, error) {
 	return f, nil
 }
 
-func (f *fakeProgram) WatchExec(cgroupID uint64) (ExecWatch, error) {
-	f.watched = append(f.watched, cgroupID)
+func (f *fakeProgram) WatchExec(e ExecInfo) (ExecWatch, error) {
+	f.watched = append(f.watched, e)
 	return f, nil
 }
 
@@ -84,21 +84,23 @@ func TestAcquireAttachesWhileAsked(t *testing.T) {
 }
 
 // An exec measured by a program keeps it attached until the exec finishes,
-// and gets what it measured on its op; an exec started with nothing attached
-// isn't measured.
+// and gets what it measured on its op; an exec started while no recording
+// asks for the program isn't measured.
 func TestExecKeepsProgramAttached(t *testing.T) {
 	fakes := registerFakes(t, "a", "b")
-	require.Nil(t, watchExec(7))
+	exec := ExecInfo{CgroupID: 7, Init: true}
+	require.Nil(t, watchExec(exec))
 
 	release, err := Acquire([]string{"a"})
 	require.NoError(t, err)
-	e := watchExec(7)
+	e := watchExec(exec)
 	require.NotNil(t, e)
 	release()
 	require.Zero(t, fakes["a"].closes, "an exec is still measured")
+	require.Nil(t, watchExec(ExecInfo{CgroupID: 8}), "no recording asks for the program")
 
 	e.Finish(context.Background(), 42)
-	require.Equal(t, []uint64{7}, fakes["a"].watched)
+	require.Equal(t, []ExecInfo{exec}, fakes["a"].watched)
 	require.Equal(t, []uint64{42}, fakes["a"].finished)
 	require.Equal(t, 1, fakes["a"].closes)
 	require.Empty(t, fakes["b"].watched, "a program nobody asked for measures nothing")
@@ -113,8 +115,8 @@ func TestAcquireWithoutKernelSupport(t *testing.T) {
 	f.loadErr = errors.New("kernel BTF not available")
 	release, err := Acquire([]string{"a"})
 	require.NoError(t, err)
-	require.False(t, attached())
-	require.Nil(t, watchExec(7))
+	require.False(t, asked())
+	require.Nil(t, watchExec(ExecInfo{CgroupID: 7}))
 	release()
 	require.Zero(t, f.closes)
 }
