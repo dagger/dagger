@@ -142,6 +142,10 @@ type Params struct {
 	ExtraModules []engine.ExtraModule
 	Function     string
 	ExecCmd      []string
+	// GitRemote and WorkspacePath tell Dagger Cloud the repository and the
+	// workspace in it that the client runs in, when it requests an engine.
+	GitRemote     string
+	WorkspacePath string
 
 	EagerRuntime bool
 
@@ -537,6 +541,8 @@ func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
 		Module:           params.Module,
 		Function:         params.Function,
 		ExecCmd:          params.ExecCmd,
+		GitRemote:        params.GitRemote,
+		WorkspacePath:    params.WorkspacePath,
 		ClientID:         c.ID,
 		CloudAuth:        params.CloudAuth,
 	})

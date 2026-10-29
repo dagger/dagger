@@ -65,6 +65,9 @@ func runChecksCommand(cmd *cobra.Command, args []string) error {
 	params := client.Params{
 		EnableCloudScaleOut:  checksScaleOut,
 		SkipWorkspaceModules: true,
+		// Send the whole command line, so that Dagger Cloud can identify
+		// the run and size its engine.
+		ExecCmd: os.Args[1:],
 	}
 	params, err := artifactClientParams(params, args)
 	if err != nil {

@@ -42,6 +42,8 @@ type DriverOpts struct {
 	Module           string
 	Function         string
 	ExecCmd          []string
+	GitRemote        string
+	WorkspacePath    string
 	ClientID         string
 	CloudAuth        *auth.Cloud
 }

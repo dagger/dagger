@@ -133,6 +133,8 @@ type EngineRequest struct {
 	Module               string   `json:"module,omitempty"`
 	Function             string   ` json:"function,omitempty"`
 	ExecCmd              []string `json:"exec_cmd,omitempty"`
+	GitRemote            string   `json:"git_remote,omitempty"`
+	WorkspacePath        string   `json:"workspace_path,omitempty"`
 	ClientID             string   `json:"client_id,omitempty"`
 	MinimumEngineVersion string   `json:"minimum_engine_version,omitempty"`
 	TraceID              string   `json:"trace_id,omitempty"`
