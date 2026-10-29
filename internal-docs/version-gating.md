@@ -23,6 +23,11 @@ lands on the shared pre-cut view below (see
 `future/module-manifest-v2/spec.md`, "Versions"). It then gets its view like
 any module.
 
+A Dang SDK module (`sdk = "dang"`) reads the same key from the `dang.toml`
+nearest to its source directory, up to its module directory, and it wins over
+the `engineVersion` of its `dagger.json` (the engine warns when they differ).
+Without one, the `engineVersion` stays.
+
 `engine.APIViewVersion` maps a declared version to its view:
 
 - Releases keep their own view (`v0.21.6`, `v1.0.0`). Build metadata is

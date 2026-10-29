@@ -29,15 +29,11 @@ const EntrypointSourcesMember = "sources"
 // sources member. A comment, a string, a private member or a member of another
 // type does not count. A file that does not parse declares nothing, so its
 // error surfaces when the entrypoint runs. dangVersion is the Dang version the
-// files are written in (ModuleSource.EntrypointDangVersion).
+// files are written in (ModuleSource.DangVersion).
 func DeclaresEntrypointSources(dir string, dangVersion string) (bool, error) {
-	version := dang.DefaultVersion
-	if dangVersion != "" {
-		parsed, err := dang.ParseVersion(dangVersion)
-		if err != nil {
-			return false, fmt.Errorf("module entrypoint Dang version: %w", err)
-		}
-		version = parsed
+	version, err := parseEntrypointDangVersion(dangVersion)
+	if err != nil {
+		return false, err
 	}
 	files, err := entrypointFiles(dir)
 	if err != nil {
@@ -157,8 +153,8 @@ func EntrypointSources(
 			AutoImport: true,
 		})
 		return nil, entryDir.Self().Mount(ctx, entryDir, func(dir string) error {
-			ensureModuleSelfTypes(intro.Schema, src, dir)
-			env, err := runEntrypointDir(ctx, dir, src.EntrypointDangVersion, true)
+			ensureModuleSelfTypes(intro.Schema, src, dir, entrypointDangVersion(src.DangVersion))
+			env, err := runEntrypointDir(ctx, dir, src.DangVersion, true)
 			if err != nil {
 				if isDangSourceError(err) {
 					return &dangSourceError{err: err}

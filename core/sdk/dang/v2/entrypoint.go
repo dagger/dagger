@@ -50,7 +50,7 @@ func EntrypointModuleTypes(
 	}
 	nestedClientMetadata.SDKEntrypoint = true
 
-	contract := entrypointContract{dangVersion: src.Self().EntrypointDangVersion}
+	contract := entrypointContract{dangVersion: src.Self().DangVersion}
 	var typeDefs dagql.ObjectResultArray[*core.TypeDef]
 	_, err = evalDangSource(
 		ctx,
@@ -158,7 +158,7 @@ func (r *entrypointRuntime) Call(
 	}
 	nestedClientMetadata.SDKEntrypoint = true
 
-	contract := entrypointContract{dangVersion: r.modSource.Self().EntrypointDangVersion}
+	contract := entrypointContract{dangVersion: r.modSource.Self().DangVersion}
 	var resultJSON []byte
 	_, err = evalDangSource(
 		ctx,
@@ -257,7 +257,7 @@ const sourcesEntrypointInterface = `interface ModuleEntrypoint {
 // reads the entrypoint, which evalDangSource mounts.
 type entrypointContract struct {
 	// dangVersion is the Dang version the entrypoint is written in
-	// (ModuleSource.EntrypointDangVersion).
+	// (ModuleSource.DangVersion).
 	dangVersion string
 	sources     bool
 }

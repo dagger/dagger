@@ -277,7 +277,8 @@ func (ModuleSuite) TestDangModuleEntrypointDangVersion(ctx context.Context, t *t
 		}).
 			With(daggerCallAt("tiny", "hello")).
 			Sync(ctx)
-		requireErrOut(t, err, "this project needs Dang 99.0")
+		requireErrOut(t, err, "module requires Dang 99.0, but this Dagger engine supports Dang")
+		requireErrOut(t, err, "upgrade Dagger")
 	})
 }
 
