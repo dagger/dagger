@@ -7,18 +7,15 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel/codes"
 
-	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/engine/wcprof"
 )
 
-// A profiled step is an op in the native profile and an internal OTel span,
-// nested the same way in both, with a failed step failed in both.
-func TestStepNativeAndOTel(t *testing.T) {
+// A profiled step is an op in the native profile, nested under the op it
+// began under, with a failed step failed.
+func TestStepNative(t *testing.T) {
 	wcprof.EnsureRecorder()
-	sr, ctx, root := newRecordingRoot("step-test-root")
-	ctx = wcprof.ContextWithProfiling(ctx)
+	ctx := wcprof.ContextWithProfiling(context.Background())
 	ctx, outerOp := wcprof.BeginOp(ctx, wcprof.OpKindInternal, "steptest.call", wcprof.OpOpts{Ident: "step-test"})
 
 	stepCtx, outer := BeginStep(ctx, "steptest.outer")
@@ -32,27 +29,7 @@ func TestStepNativeAndOTel(t *testing.T) {
 	}
 	outer.End(nil)
 	outerOp.End(wcprof.OutcomeOK)
-	root.End()
 
-	// OTel: internal, passthrough spans of the internal op kind, the items
-	// under the outer step under the root.
-	ended := sr.Ended()
-	outerSpan := spanByName(t, ended, "steptest.outer")
-	require.Equal(t, root.SpanContext().SpanID(), outerSpan.Parent().SpanID())
-	kind, _ := attrString(outerSpan, telemetryattrs.WcprofOpKindAttr)
-	require.Equal(t, wcprof.OpKindInternal.String(), kind)
-	internal, _ := attrBool(outerSpan, "dagger.io/ui.internal")
-	require.True(t, internal, "step span isn't internal")
-	var itemStatus []codes.Code
-	for _, s := range ended {
-		if s.Name() == "steptest.item" {
-			require.Equal(t, outerSpan.SpanContext().SpanID(), s.Parent().SpanID())
-			itemStatus = append(itemStatus, s.Status().Code)
-		}
-	}
-	require.ElementsMatch(t, []codes.Code{codes.Unset, codes.Error}, itemStatus)
-
-	// Native: the same nesting, under the op the steps began under.
 	var buf bytes.Buffer
 	require.NoError(t, wcprof.Active().WriteDump(&buf, false))
 	header, events, err := wcprof.ReadDump(&buf)
@@ -74,7 +51,29 @@ func TestStepNativeAndOTel(t *testing.T) {
 	require.ElementsMatch(t, []string{wcprof.OutcomeOK.String(), wcprof.OutcomeError.String()}, itemOutcomes)
 }
 
-// Without telemetry recording, a profiled step is still a native op.
+// A step emits no OTel span, even when the engine records profiling spans,
+// so work started under it, such as a lazy input's exec, nests directly
+// under the span the step began under and the UI shows it.
+func TestStepKeepsWorkVisible(t *testing.T) {
+	wcprof.EnsureRecorder()
+	sr, ctx, root := newRecordingRoot("step-visible-root")
+	ctx = wcprof.ContextWithProfiling(ctx)
+	require.True(t, OTelProfActive(ctx), "the test needs profiling spans on")
+
+	stepCtx, s := BeginStep(ctx, "steptest.visible")
+	_, work := Tracer(stepCtx).Start(stepCtx, "steptest.work")
+	work.End()
+	s.End(nil)
+	root.End()
+
+	for _, span := range sr.Ended() {
+		require.NotEqual(t, "steptest.visible", span.Name(), "a step emitted an OTel span")
+	}
+	require.Equal(t, root.SpanContext().SpanID(), spanByName(t, sr.Ended(), "steptest.work").Parent().SpanID(),
+		"work under a step isn't directly under the span the step began under")
+}
+
+// A profiled step is a native op without telemetry recording too.
 func TestStepNativeOnly(t *testing.T) {
 	wcprof.EnsureRecorder()
 	ctx := wcprof.ContextWithProfiling(context.Background())
