@@ -20,6 +20,9 @@ type source struct {
 	realRoot     string
 	layers       []string
 	overlay      bool
+	// lowers is how many of layers, from the bottom, are lowerdirs; an
+	// upperdir, if there is one, is the last layer.
+	lowers       int
 	baseRel      string
 	baseView     string
 	baseReal     string
@@ -27,6 +30,10 @@ type source struct {
 	baseMinLayer int
 	baseCached   bool
 	cache        *sourceCache
+	// lowerHides, if set, is whether each path asked about in a lowerdir
+	// hides lower layers, shared by every source of a copy. See
+	// layerEntryState.
+	lowerHides   map[string]bool
 
 	// onReadDir, if set, is called with each directory the copy reads. Tests
 	// use it to check which directories a filtered copy walks.
@@ -58,11 +65,12 @@ func newSource(m Mount) (*source, error) {
 	case m.Mount.Type == "bind" || m.Mount.Type == "rbind":
 		s.realRoot = m.Mount.Source
 	case isOverlayMount(m.Mount):
-		layers, err := overlayLayers(m.Mount)
+		layers, lowers, err := overlayLayers(m.Mount)
 		if err != nil {
 			return nil, err
 		}
 		s.layers = layers
+		s.lowers = lowers
 		s.overlay = true
 	default:
 		return nil, fmt.Errorf("unsupported source mount type %q", m.Mount.Type)
@@ -302,11 +310,8 @@ func (s *source) overlayAncestorMinLayer(rel string) (int, error) {
 		}
 
 		for i := len(s.layers) - 1; i >= minLayer; i-- {
-			_, hidesLower, err := overlayEntryState(filepath.Join(s.layers[i], ancestor))
+			hidesLower, err := s.layerEntryState(i, ancestor)
 			if err != nil {
-				if os.IsNotExist(err) || isNotDir(err) {
-					continue
-				}
 				return 0, err
 			}
 			if hidesLower {
@@ -319,6 +324,32 @@ func (s *source) overlayAncestorMinLayer(rel string) (int, error) {
 		}
 	}
 	return minLayer, nil
+}
+
+// layerEntryState reports whether rel in layer i hides lower layers' entries
+// below it; a path the layer doesn't have hides nothing. A lowerdir can't
+// change while an overlay uses it, and the sources of one copy share most of
+// their lowerdirs (a container's files sit on the same image layers), so
+// lowerdirs' answers are kept for the whole copy rather than asked of the
+// filesystem again for each source.
+func (s *source) layerEntryState(i int, rel string) (hidesLower bool, _ error) {
+	path := filepath.Join(s.layers[i], rel)
+	keep := s.lowerHides != nil && i < s.lowers
+	if keep {
+		if hides, ok := s.lowerHides[path]; ok {
+			return hides, nil
+		}
+	}
+	_, hidesLower, err := overlayEntryState(path)
+	if err != nil {
+		if !os.IsNotExist(err) && !isNotDir(err) {
+			return false, err
+		}
+	}
+	if keep {
+		s.lowerHides[path] = hidesLower
+	}
+	return hidesLower, nil
 }
 
 func rootPath(root, p string, followFinalSymlink bool) (string, error) {
