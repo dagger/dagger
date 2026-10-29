@@ -6375,6 +6375,14 @@ type Query implements Node {
     Service to use as the SSHFS network endpoint while verifying the original host key.
     """
     experimentalServiceHost: ID @expectedType(name: "Service")
+
+    """
+    Resolve symlinks on the remote host, so they appear as the files and
+    directories they point to. Without it, absolute symlinks and symlinks
+    containing ".." can't be read. With it, creating a symlink in the volume
+    fails.
+    """
+    followSymlinks: Boolean = false
   ): Volume!
 
   """Creates a new secret."""

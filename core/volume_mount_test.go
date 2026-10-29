@@ -210,6 +210,21 @@ func TestSSHFSCommandArgsWithoutAllowOther(t *testing.T) {
 	require.NotContains(t, args, "allow_other")
 }
 
+func TestSSHFSCommandArgsFollowSymlinks(t *testing.T) {
+	t.Parallel()
+
+	args := sshfsCommandArgs("git@example.com:/srv/repo", "/tmp/mnt", sshfsCommandConfig{
+		PrivateKeyPath: "/tmp/key",
+	})
+	require.NotContains(t, args, "follow_symlinks")
+
+	args = sshfsCommandArgs("git@example.com:/srv/repo", "/tmp/mnt", sshfsCommandConfig{
+		PrivateKeyPath: "/tmp/key",
+		FollowSymlinks: true,
+	})
+	require.Equal(t, []string{"-o", "follow_symlinks"}, args[len(args)-2:])
+}
+
 func TestFuseConfAllowsOther(t *testing.T) {
 	t.Parallel()
 

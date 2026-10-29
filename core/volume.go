@@ -55,8 +55,9 @@ type SSHFSVolumeConfig struct {
 	InsecureSkipHostKeyCheck bool
 	// HostKeyAlias keeps host-key verification anchored to the user-facing
 	// endpoint when the connection host is later rewritten through a service.
-	HostKeyAlias string
-	ServiceHost  dagql.ObjectResult[*Service]
+	HostKeyAlias   string
+	ServiceHost    dagql.ObjectResult[*Service]
+	FollowSymlinks bool
 }
 
 func (*Volume) Type() *ast.Type {
@@ -199,6 +200,7 @@ type persistedSSHFSVolumePayload struct {
 	InsecureSkipHostKeyCheck bool   `json:"insecureSkipHostKeyCheck,omitempty"`
 	HostKeyAlias             string `json:"hostKeyAlias,omitempty"`
 	ServiceHostResultID      uint64 `json:"serviceHostResultID,omitempty"`
+	FollowSymlinks           bool   `json:"followSymlinks,omitempty"`
 }
 
 func (vol *Volume) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
@@ -234,6 +236,7 @@ func (vol *Volume) EncodePersistedObject(ctx context.Context, enc *dagql.Persist
 			PrivateKeyResultID:       privateKeyID,
 			InsecureSkipHostKeyCheck: vol.SSHFS.InsecureSkipHostKeyCheck,
 			HostKeyAlias:             vol.SSHFS.HostKeyAlias,
+			FollowSymlinks:           vol.SSHFS.FollowSymlinks,
 		}
 		if vol.SSHFS.KnownHosts.Self() != nil {
 			knownHostsID, err := encodePersistedObjectRef(enc, vol.SSHFS.KnownHosts, "volume known hosts")
@@ -304,6 +307,7 @@ func (*Volume) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDeco
 			InsecureSkipHostKeyCheck: persisted.SSHFS.InsecureSkipHostKeyCheck,
 			HostKeyAlias:             persisted.SSHFS.HostKeyAlias,
 			ServiceHost:              serviceHost,
+			FollowSymlinks:           persisted.SSHFS.FollowSymlinks,
 		}
 	default:
 		return nil, fmt.Errorf("decode persisted volume: unsupported backend %q", persisted.Backend)

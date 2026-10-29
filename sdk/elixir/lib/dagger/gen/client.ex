@@ -784,7 +784,8 @@ defmodule Dagger.Client do
           {:known_hosts, Dagger.Secret.t() | nil},
           {:cache_key, String.t() | nil},
           {:insecure_skip_host_key_check, boolean() | nil},
-          {:experimental_service_host, Dagger.Service.t() | nil}
+          {:experimental_service_host, Dagger.Service.t() | nil},
+          {:follow_symlinks, boolean() | nil}
         ]) :: Dagger.Volume.t()
   def sshfs_volume(%__MODULE__{} = client, endpoint, private_key, optional_args \\ []) do
     query_builder =
@@ -808,6 +809,7 @@ defmodule Dagger.Client do
           else: nil
         )
       )
+      |> QB.maybe_put_arg("followSymlinks", optional_args[:follow_symlinks])
 
     %Dagger.Volume{
       query_builder: query_builder,

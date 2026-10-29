@@ -44,6 +44,7 @@ func TestVolumePersistedObjectRoundTrip(t *testing.T) {
 			InsecureSkipHostKeyCheck: false,
 			HostKeyAlias:             "[example.com]:2222",
 			ServiceHost:              serviceHost,
+			FollowSymlinks:           true,
 		},
 	}
 
@@ -64,6 +65,7 @@ func TestVolumePersistedObjectRoundTrip(t *testing.T) {
 	require.Equal(t, vol.SSHFS.Endpoint, decoded.SSHFS.Endpoint)
 	require.Equal(t, vol.SSHFS.HostKeyAlias, decoded.SSHFS.HostKeyAlias)
 	require.False(t, decoded.SSHFS.InsecureSkipHostKeyCheck)
+	require.True(t, decoded.SSHFS.FollowSymlinks)
 	require.Equal(t, "private-key", decoded.SSHFS.PrivateKey.Self().NameVal)
 	require.Equal(t, "known-hosts", decoded.SSHFS.KnownHosts.Self().NameVal)
 	require.Equal(t, "ssh.example.test", decoded.SSHFS.ServiceHost.Self().CustomHostname)

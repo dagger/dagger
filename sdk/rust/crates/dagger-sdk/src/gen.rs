@@ -15866,6 +15866,9 @@ pub struct QuerySshfsVolumeOpts<'a> {
     /// Service to use as the SSHFS network endpoint while verifying the original host key.
     #[builder(setter(into, strip_option), default)]
     pub experimental_service_host: Option<Id>,
+    /// Resolve symlinks on the remote host, so they appear as the files and directories they point to. Without it, absolute symlinks and symlinks containing ".." can't be read. With it, creating a symlink in the volume fails.
+    #[builder(setter(into, strip_option), default)]
+    pub follow_symlinks: Option<bool>,
     /// Disable SSH host key verification. This is insecure and must be explicitly opted into.
     #[builder(setter(into, strip_option), default)]
     pub insecure_skip_host_key_check: Option<bool>,
@@ -16356,6 +16359,9 @@ impl Query {
         }
         if let Some(experimental_service_host) = opts.experimental_service_host {
             query = query.arg("experimentalServiceHost", experimental_service_host);
+        }
+        if let Some(follow_symlinks) = opts.follow_symlinks {
+            query = query.arg("followSymlinks", follow_symlinks);
         }
         Volume {
             proc: self.proc.clone(),

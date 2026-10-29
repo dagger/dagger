@@ -287,6 +287,7 @@ func mountSSHFSVolume(ctx context.Context, readonly bool, cfg *SSHFSVolumeConfig
 		InsecureSkipHostKeyCheck: cfg.InsecureSkipHostKeyCheck,
 		AllowOther:               sshfsAllowOther(),
 		Readonly:                 readonly,
+		FollowSymlinks:           cfg.FollowSymlinks,
 	})
 	var stderr bytes.Buffer
 	cmd := osexec.CommandContext(ctx, "sshfs", args...)
@@ -332,6 +333,7 @@ type sshfsCommandConfig struct {
 	InsecureSkipHostKeyCheck bool
 	AllowOther               bool
 	Readonly                 bool
+	FollowSymlinks           bool
 }
 
 func sshfsAllowOther() bool {
@@ -384,6 +386,9 @@ func sshfsCommandArgs(source, mountDir string, cfg sshfsCommandConfig) []string 
 	}
 	if cfg.Readonly {
 		args = append(args, "-o", "ro")
+	}
+	if cfg.FollowSymlinks {
+		args = append(args, "-o", "follow_symlinks")
 	}
 	return args
 }

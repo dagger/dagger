@@ -16722,6 +16722,7 @@ class Query(Root):
         cache_key: str | None = None,
         insecure_skip_host_key_check: bool | None = False,
         experimental_service_host: "Service | None" = None,
+        follow_symlinks: bool | None = False,
     ) -> "Volume":
         """Constructs an SSHFS volume.
 
@@ -16745,6 +16746,11 @@ class Query(Root):
         experimental_service_host:
             Service to use as the SSHFS network endpoint while verifying the
             original host key.
+        follow_symlinks:
+            Resolve symlinks on the remote host, so they appear as the files
+            and directories they point to. Without it, absolute symlinks and
+            symlinks containing ".." can't be read. With it, creating a
+            symlink in the volume fails.
         """
         _args = [
             Arg("endpoint", endpoint),
@@ -16753,6 +16759,7 @@ class Query(Root):
             Arg("cacheKey", cache_key, None),
             Arg("insecureSkipHostKeyCheck", insecure_skip_host_key_check, False),
             Arg("experimentalServiceHost", experimental_service_host, None),
+            Arg("followSymlinks", follow_symlinks, False),
         ]
         _ctx = self._select("sshfsVolume", _args)
         return Volume(_ctx)

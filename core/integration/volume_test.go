@@ -485,6 +485,46 @@ func (VolumeSuite) TestSSHFSVolumeMount(ctx context.Context, t *testctx.T) {
 	require.Equal(t, fixture.contents, out)
 }
 
+func (VolumeSuite) TestSSHFSVolumeFollowsSymlinks(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	fixture := newSSHFSVolumeFixture(ctx, t, c, "hello from sshfs\n")
+	ctr := core.NewQuery(c).Container().
+		From(alpineImage).
+		WithMountedVolume("/mnt", fixture.FollowSymlinksVolume(c), core.ContainerWithMountedVolumeOpts{ReadOnly: true})
+
+	// The server resolves each link as its own users see it, including
+	// absolute links and links that leave the mounted directory.
+	for path, contents := range map[string]string{
+		"/mnt/relative-link.txt": fixture.contents,
+		"/mnt/absolute-link.txt": fixture.contents,
+		"/mnt/dotdot-link.txt":   fixture.contents,
+		"/mnt/outside-link.txt":  "outside the export\n",
+		"/mnt/dir-link/file.txt": "inside a directory\n",
+	} {
+		out, err := ctr.WithExec([]string{"cat", path}).Stdout(ctx)
+		require.NoError(t, err, path)
+		require.Equal(t, contents, out, path)
+	}
+}
+
+func (VolumeSuite) TestSSHFSVolumeKeepsSymlinksByDefault(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	fixture := newSSHFSVolumeFixture(ctx, t, c, "hello from sshfs\n")
+
+	// Without followSymlinks, links stay links, and new ones can be created.
+	out, err := core.NewQuery(c).Container().
+		From(alpineImage).
+		WithMountedVolume("/mnt", fixture.Volume(c)).
+		WithExec([]string{"sh", "-ec", `
+readlink /mnt/relative-link.txt
+ln -s hello.txt /mnt/new-link.txt
+readlink /mnt/new-link.txt
+`}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hello.txt\nhello.txt\n", out)
+}
+
 func (VolumeSuite) TestSSHFSVolumeRejectsWrongKnownHosts(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	fixture := newSSHFSVolumeFixture(ctx, t, c, "hello from sshfs\n")
@@ -607,6 +647,14 @@ func (f sshfsVolumeFixture) Volume(c *dagger.Client) *core.Volume {
 	return f.VolumeWithKnownHosts(c, f.knownHosts)
 }
 
+func (f sshfsVolumeFixture) FollowSymlinksVolume(c *dagger.Client) *core.Volume {
+	return core.NewQuery(c).SshfsVolume(f.endpoint, f.privateKey, core.SshfsVolumeOpts{
+		KnownHosts:              f.knownHosts,
+		ExperimentalServiceHost: f.service,
+		FollowSymlinks:          true,
+	})
+}
+
 func (f sshfsVolumeFixture) VolumeWithKnownHosts(c *dagger.Client, knownHosts *core.Secret) *core.Volume {
 	return core.NewQuery(c).SshfsVolume(f.endpoint, f.privateKey, core.SshfsVolumeOpts{
 		KnownHosts:              knownHosts,
@@ -654,6 +702,14 @@ if [ ! -e /data/hello.txt ]; then
 	cp /seed/hello.txt /data/hello.txt
 fi
 chmod 644 /data/hello.txt
+mkdir -p /data/dir /outside
+printf 'inside a directory\n' > /data/dir/file.txt
+printf 'outside the export\n' > /outside/file.txt
+ln -sfn hello.txt /data/relative-link.txt
+ln -sfn /data/hello.txt /data/absolute-link.txt
+ln -sfn ../data/hello.txt /data/dotdot-link.txt
+ln -sfn /outside/file.txt /data/outside-link.txt
+ln -sfn /data/dir /data/dir-link
 
 cat > /etc/ssh/sshd_config <<'EOF'
 Port 2222
