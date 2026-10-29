@@ -1,0 +1,7 @@
+kind: Changed
+body: |
+  Function calls into a Dang module are faster: the engine keeps a module's parsed source and reuses it for later calls instead of parsing it again on every call, and Dang's parser itself is faster.
+time: 2026-10-29T22:15:00Z
+custom:
+  Author: tiborvass
+  PR: ""
