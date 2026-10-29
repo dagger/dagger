@@ -84,7 +84,7 @@ func (GitCredentialSuite) TestGitCredentialErrors(ctx context.Context, t *testct
 	t.Run("github private module", func(ctx context.Context, t *testctx.T) {
 		workDir := t.TempDir()
 
-		pat := "Z2l0aHViX3BhdF8xMUFIUlpENFEwMnVKQm5ESVBNZ0h5X2lHYUVPZTZaR2xOTjB4Y2o2WEdRWjNSalhwdHQ0c2lSMmw0aUJTellKUmFKUFdERlNUVU1hRXlDYXNQCg=="
+		pat := "Z2l0aHViX3BhdF8xMUFIUlpENFEwMEtMbWswNkJCV2RIX2MyM1psUWU2MzVTVFJ6YkhGdUg4QXNoR2hXN3hCZnFYSDA0YmllejhRZXdFNlpCVFRSUnBlRjdQRDI5Cg=="
 		token, err := decodeAndTrimPAT(pat)
 		require.NoError(t, err)
 
@@ -133,7 +133,7 @@ func (GitCredentialSuite) TestGitCredentialErrors(ctx context.Context, t *testct
 		workDir := t.TempDir()
 
 		// Setup Git credentials for GitHub
-		pat := "Z2l0aHViX3BhdF8xMUFIUlpENFEwMnVKQm5ESVBNZ0h5X2lHYUVPZTZaR2xOTjB4Y2o2WEdRWjNSalhwdHQ0c2lSMmw0aUJTellKUmFKUFdERlNUVU1hRXlDYXNQCg=="
+		pat := "Z2l0aHViX3BhdF8xMUFIUlpENFEwMEtMbWswNkJCV2RIX2MyM1psUWU2MzVTVFJ6YkhGdUg4QXNoR2hXN3hCZnFYSDA0YmllejhRZXdFNlpCVFRSUnBlRjdQRDI5Cg=="
 		token, err := decodeAndTrimPAT(pat)
 		require.NoError(t, err)
 

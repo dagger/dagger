@@ -1185,7 +1185,7 @@ func (LockfileSuite) TestUpdateRefreshesPrivateGitLatestEntry(ctx context.Contex
 	lockPath, originalLock := writeGitLatestLockForRemote(t, workdir, privateRepoURL, stalePin)
 
 	// same committed read-only PAT as TestGitCredentialErrors
-	encodedPAT := "Z2l0aHViX3BhdF8xMUFIUlpENFEwMnVKQm5ESVBNZ0h5X2lHYUVPZTZaR2xOTjB4Y2o2WEdRWjNSalhwdHQ0c2lSMmw0aUJTellKUmFKUFdERlNUVU1hRXlDYXNQCg=="
+	encodedPAT := "Z2l0aHViX3BhdF8xMUFIUlpENFEwMEtMbWswNkJCV2RIX2MyM1psUWU2MzVTVFJ6YkhGdUg4QXNoR2hXN3hCZnFYSDA0YmllejhRZXdFNlpCVFRSUnBlRjdQRDI5Cg=="
 	decodedPAT, err := base64.StdEncoding.DecodeString(encodedPAT)
 	require.NoError(t, err)
 	token := strings.TrimSpace(string(decodedPAT))

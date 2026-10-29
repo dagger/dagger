@@ -1421,7 +1421,7 @@ func (GitSuite) TestAuthProviders(ctx context.Context, t *testctx.T) {
 	// Test authentication for major Git providers using read-only PATs
 	t.Run("GitHub auth", func(ctx context.Context, t *testctx.T) {
 		// Base64-encoded read-only PAT for test repo
-		pat := "Z2l0aHViX3BhdF8xMUFIUlpENFEwMnVKQm5ESVBNZ0h5X2lHYUVPZTZaR2xOTjB4Y2o2WEdRWjNSalhwdHQ0c2lSMmw0aUJTellKUmFKUFdERlNUVU1hRXlDYXNQCg=="
+		pat := "Z2l0aHViX3BhdF8xMUFIUlpENFEwMEtMbWswNkJCV2RIX2MyM1psUWU2MzVTVFJ6YkhGdUg4QXNoR2hXN3hCZnFYSDA0YmllejhRZXdFNlpCVFRSUnBlRjdQRDI5Cg=="
 		token, err := decodeAndTrimPAT(pat)
 		require.NoError(t, err)
 
@@ -2809,7 +2809,7 @@ func (GitSuite) TestGitSchemeless(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("private https", func(ctx context.Context, t *testctx.T) {
-		pat := "Z2l0aHViX3BhdF8xMUFIUlpENFEwMnVKQm5ESVBNZ0h5X2lHYUVPZTZaR2xOTjB4Y2o2WEdRWjNSalhwdHQ0c2lSMmw0aUJTellKUmFKUFdERlNUVU1hRXlDYXNQCg=="
+		pat := "Z2l0aHViX3BhdF8xMUFIUlpENFEwMEtMbWswNkJCV2RIX2MyM1psUWU2MzVTVFJ6YkhGdUg4QXNoR2hXN3hCZnFYSDA0YmllejhRZXdFNlpCVFRSUnBlRjdQRDI5Cg=="
 		token, err := decodeAndTrimPAT(pat)
 		require.NoError(t, err)
 
