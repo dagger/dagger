@@ -175,7 +175,7 @@ func (node *ModTreeNode) dagqlValue(ctx context.Context, dest any, leafArgs []da
 			return err
 		}
 		fn, _ := parentObjType.FunctionByName(node.Name)
-		args, err := boundWorkspaceArgs(ctx, srv, fn)
+		args, err := node.boundArtifactArgs(ctx, srv, fn, leafArgs)
 		if err != nil {
 			return fmt.Errorf("%q: get value: %w", node.PathString(), err)
 		}
@@ -474,7 +474,7 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 	}
 	for _, fnResult := range obj.Functions {
 		fn := fnResult.Self()
-		if functionRequiresCallerArgs(fn) {
+		if (&ModTreeNode{Parent: node}).functionRequiresCallerArgs(fn) {
 			continue
 		}
 		add(fn.Name, fn.Description, fn.ReturnType, fn)

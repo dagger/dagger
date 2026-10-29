@@ -213,6 +213,12 @@ Keep multiple paths with shared filters in one selection. Reject separately filt
 
 ## Shared execution
 
+A check may declare a required argument with the type of an enclosing collection.
+Artifact execution supplies the nearest ancestor collection of that type under
+the active view. Explicit arguments take precedence. Ordinary functions still
+require callers to supply their arguments. Store child selections as typed data
+when a local helper must read them without reconstructing collections.
+
 Expose one check per test. A normal module helper builds a command from the filtered parent collections and returns structured results:
 
 ```text
