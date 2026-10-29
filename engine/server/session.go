@@ -2776,6 +2776,22 @@ func recoverQueryPanic(ctx context.Context, result *error) {
 	}
 }
 
+// beginServeQueryOp begins a profiled request's session.serveQuery op. A
+// request the engine stamped on arrival is served from then: its routing here
+// is the op's first part, session.route.
+func beginServeQueryOp(ctx context.Context, clientID string) (context.Context, *wcprof.Op) {
+	arrival := wcprof.RequestArrival(ctx)
+	routedNS := wcprof.NowNS()
+	ctx, op := wcprof.BeginOp(ctx, wcprof.OpKindSessionPhase, "session.serveQuery", wcprof.OpOpts{
+		ClientID: clientID,
+		Start:    arrival,
+	})
+	if !arrival.IsZero() {
+		wcprof.RecordOp(ctx, wcprof.OpKindSessionPhase, "session.route", wcprof.OpOpts{ClientID: clientID}, wcprof.TimeNS(arrival), routedNS, wcprof.OutcomeOK)
+	}
+	return ctx, op
+}
+
 func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *clientRuntime) (rerr error) {
 	sess := client.daggerSession
 
@@ -2892,17 +2908,7 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 		if profiledSession {
 			ctx = wcprof.ContextWithProfiling(ctx)
 		}
-		// a request the engine stamped on arrival is served from then: its
-		// routing here is the op's first part
-		arrival := wcprof.RequestArrival(ctx)
-		routedNS := wcprof.NowNS()
-		ctx, profServeOp = wcprof.BeginOp(ctx, wcprof.OpKindSessionPhase, "session.serveQuery", wcprof.OpOpts{
-			ClientID: client.clientID,
-			Start:    arrival,
-		})
-		if !arrival.IsZero() {
-			wcprof.RecordOp(ctx, wcprof.OpKindSessionPhase, "session.route", wcprof.OpOpts{ClientID: client.clientID}, wcprof.TimeNS(arrival), routedNS, wcprof.OutcomeOK)
-		}
+		ctx, profServeOp = beginServeQueryOp(ctx, client.clientID)
 		if callerSpan.IsValid() {
 			// Resolves, in the dump, to the caller's op when the caller
 			// reported itself (see engine/wcprof/contract).
