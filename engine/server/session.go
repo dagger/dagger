@@ -88,6 +88,11 @@ type daggerSession struct {
 	// off.
 	wcprofEnabled bool
 
+	// phase is the session's run of PhaseSession (wcprof_phase.go), from its
+	// initialization to the end of its removal: an op over it when it is
+	// profiled, and an armed CPU profile's marks. Written under lifecycleMu.
+	phase *phaseRun
+
 	// state is read lock-free by observer paths and written only under
 	// lifecycleMu. The zero value is sessionStateUninitialized.
 	state atomicSessionState
@@ -1213,10 +1218,17 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	ctx, cancel := context.WithTimeout(teardownCtx, 60*time.Second)
 	defer cancel()
 
+	// A profiled session records its removal and the removal's main steps as
+	// ops under the session's own op. They are native only, like that op: the
+	// session's telemetry is itself shut down here.
+	teardown := sess.phase.beginTeardown()
+
+	step := teardown.beginStep("session.stopServices")
 	if err := sess.services.StopSessionServices(ctx, sess.sessionID); err != nil {
 		slog.Warn("error stopping services", "error", err)
 		errs = errors.Join(errs, fmt.Errorf("stop client services: %w", err))
 	}
+	step.end()
 
 	slog.Debug("stopped services")
 
@@ -1245,12 +1257,14 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	// before shutting telemetry down below: it makes the per-trace span count EXACT
 	// (no query is still creating spans) and means a late query's telemetry is
 	// recorded before its provider closes rather than lost.
+	step = teardown.beginStep("session.drainQueries")
 	sess.dagqlMu.Lock()
 	sess.dagqlClosing = true
 	for sess.dagqlInFlight > 0 {
 		sess.dagqlCond.Wait()
 	}
 	sess.dagqlMu.Unlock()
+	step.end()
 
 	// cleanup analytics and telemetry
 	errs = errors.Join(errs, sess.analytics.Close())
@@ -1263,6 +1277,7 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	// WaitSessionRelease turns that handoff into the completion barrier required
 	// before the final telemetry flush: cleanup hooks may themselves emit spans,
 	// logs, or metrics.
+	step = teardown.beginStep("session.releaseCache")
 	beforeDagqlEntries := srv.engineCache.Size()
 	beforeDagqlStats := srv.engineCache.EntryStats()
 	cacheReleaseErr := srv.engineCache.ReleaseSession(ctx, sess.sessionID)
@@ -1281,6 +1296,7 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 		slog.Error("error waiting for client scopes to drain", "error", err)
 		errs = errors.Join(errs, fmt.Errorf("wait for client scopes: %w", err))
 	}
+	step.end()
 	sess.schemaBuilderMemo.Store(nil)
 	afterDagqlEntries := srv.engineCache.Size()
 	afterDagqlStats := srv.engineCache.EntryStats()
@@ -1306,18 +1322,22 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	// delivery barrier for the session-owned providers.
 	telemetryCtx, cancelTelemetry := context.WithTimeout(teardownCtx, 60*time.Second)
 	defer cancelTelemetry()
+	step = teardown.beginStep("session.shutdownTelemetry")
 	srv.stampSessionComplete(telemetryCtx, sess)
 	srv.wcprofSpanCount.Reap(sess.wcprofTraceID)
 	telemetryErr := sess.shutdownTelemetry(telemetryCtx)
 	errs = errors.Join(errs, telemetryErr)
 	archiveErrs = errors.Join(archiveErrs, telemetryErr)
 	errs = errors.Join(errs, srv.finalizeSessionArchive(telemetryCtx, sess, archiveErrs))
+	step.end()
 
 	// ensure this chan is closed even if the client never explicitly called the /shutdown endpoint
 	sess.closeShutdownOnce.Do(func() {
 		close(sess.shutdownCh)
 	})
 
+	teardown.end()
+	sess.phase.end(srv)
 	return errs
 }
 
@@ -2180,6 +2200,13 @@ func (srv *Server) getOrInitClient(
 	// never see initialized session resources without the root identity.
 	if sess.state.Load() == sessionStateUninitialized {
 		sess.state.Store(sessionStateInitialized)
+		// From here, removal ends the session's phase.
+		phaseCtx := context.Background()
+		if sess.wcprofEnabled {
+			wcprof.EnsureRecorder()
+			phaseCtx = wcprof.ContextWithProfiling(phaseCtx)
+		}
+		sess.phase = srv.beginSessionPhase(phaseCtx, sess.sessionID)
 	}
 	if opts.requestLeaseOut != nil {
 		*opts.requestLeaseOut = requestLease
@@ -2737,6 +2764,9 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 	// telemetry volume would otherwise grow quadratically): mark the context
 	// so core.AroundFunc emits nothing for the whole selection.
 	ctx, telemetrySuppressed := withRequestTelemetrySuppression(ctx, r)
+	// The caller's span (e.g. a client-reported task making this request),
+	// before this request's own span below replaces it in ctx.
+	callerSpan := trace.SpanContextFromContext(ctx)
 
 	// turn panics into graphql errors — must be set up before any code that
 	// could panic (including ensureExtraModulesLoaded and schema loading).
@@ -2827,6 +2857,11 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 		ctx, profServeOp = wcprof.BeginOp(ctx, wcprof.OpKindSessionPhase, "session.serveQuery", wcprof.OpOpts{
 			ClientID: client.clientID,
 		})
+		if callerSpan.IsValid() {
+			// Resolves, in the dump, to the caller's op when the caller
+			// reported itself (see engine/wcprof/contract).
+			wcprof.LinkOTelParent(ctx, profServeOp.ID(), callerSpan.TraceID().String(), callerSpan.SpanID().String())
+		}
 		defer func() {
 			profServeOp.EndErr(rerr)
 		}()

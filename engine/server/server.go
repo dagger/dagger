@@ -185,6 +185,11 @@ type Server struct {
 	// same trace.
 	wcprofSpanCount *wcprofSpanCounter
 
+	// armed is the CPU profile armed for a phase's next run, if any
+	// (wcprof_phase.go).
+	armedMu sync.Mutex
+	armed   *armedProfile
+
 	coreSchemaBase   *schema.CoreSchemaBase
 	coreSchemaBaseMu sync.Mutex
 
