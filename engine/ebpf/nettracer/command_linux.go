@@ -17,6 +17,8 @@ import (
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
+
+	"github.com/dagger/dagger/engine/ebpf/internal/ebpfutil"
 )
 
 // commandAccounting owns sibling subtrees for engine subprocesses. Exec mount
@@ -278,7 +280,7 @@ func prepareCommand(cmd *exec.Cmd, parent string, withoutNetwork bool) (_ *Comma
 		}
 	}()
 	if t != nil {
-		c.id, err = cgroupID(path)
+		c.id, err = ebpfutil.CgroupID(path)
 		if err != nil {
 			return nil, err
 		}
