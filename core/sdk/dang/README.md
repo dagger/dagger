@@ -1,15 +1,34 @@
 # Dang SDK version support
 
 The engine embeds one copy of the Dang runtime per supported Dang major
-version and routes each module to the version matching its `engineVersion`,
-so existing modules keep the language semantics they were written against.
+version and routes each module to the version matching the Dang language
+version its source is written in, so existing modules keep the language
+semantics they were written against.
+
+## Versions
+
+A Dang module has two versions, both on its `ModuleSource`, read by the engine
+from the `dang.toml` governing its source (the nearest one walking up from the
+source directory to the module directory, never above it; see
+`v2/version.go`):
+
+- `EngineVersion`: `[imports.Dagger] dagger = "vX.Y.Z"`, which wins over the
+  `engineVersion` of `dagger.json` (the engine warns when they differ; a
+  config write keeps the manifest's own, `ConfigEngineVersion`). Without one,
+  the `engineVersion`.
+- `DangVersion`: `dang = "X.Y"`. Without one, Dang 1.0 for an engine version
+  before `engine.MinimumDangV2ModuleVersion` (v0.21.5), and Dang's own default
+  otherwise.
+
+Dang's own discovery walks further up, to a `.git`; when it would reach a
+`dang.toml` above the module directory, the source runs from an isolated copy
+(`dangSourceDir`), so the engine's versions decide.
 
 ## Layout
 
 - `../dang_sdk.go` (package `sdk`) — the dispatcher. `dangSDK` owns all
   version-agnostic `core.SDK` behavior and picks a `dangImpl` per call via
-  `dangImplFor`, comparing the module's `engineVersion` against the
-  `MinimumDangV*ModuleVersion` constants in `engine/version.go`.
+  `dangImplFor`, by the module's `DangVersion` (Dang 1.0 routes to v1).
 - `shared/` (package `dangshared`) — version-agnostic plumbing (nested-client
   proxy server, client metadata, error conversion). Must never import
   `github.com/vito/dang` of any major.
@@ -17,8 +36,8 @@ so existing modules keep the language semantics they were written against.
   `github.com/vito/dang/v2`. All feature work happens here. New Dagger
   features always require a new `engineVersion`, which always routes to the
   newest major — so frozen majors never need feature work.
-- `v1/` (package `dangv1`) — **frozen** snapshot for modules with
-  `engineVersion < v0.21.5` (Dang v1: `.{ }` is selection). Byte-identical to
+- `v1/` (package `dangv1`) — **frozen** snapshot for Dang 1.0 modules (by
+  default, those with `engineVersion < v0.21.5`; Dang v1: `.{ }` is selection). Byte-identical to
   the living package at snapshot time, modulo package clause, doc comments,
   and dang import paths.
 
