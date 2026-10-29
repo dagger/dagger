@@ -312,9 +312,12 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble, Node,
      *
      * This is the schema consumed by client codegen: unlike introspectionSchemaJson (the module-facing schema), it hides no core types and installs this module (reached via dag.<moduleName>) so a generated client can bind it. The module's dependencies are excluded: a client is generated for a single module plus core, not its dependency graph.
      */
-    public function clientSchemaIntrospectionJson(): File
+    public function clientSchemaIntrospectionJson(?string $clientVersion = ''): File
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('clientSchemaIntrospectionJson');
+        if (null !== $clientVersion) {
+        $innerQueryBuilder->setArgument('clientVersion', $clientVersion);
+        }
         return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
