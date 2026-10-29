@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 
 	"github.com/dagger/dagger/engine/slog"
@@ -172,15 +173,23 @@ func convertHistoryToOpenAI(history []*LLMMessage) ([]openai.ChatCompletionMessa
 				if args == "" {
 					args = "{}"
 				}
-				calls = append(calls, openai.ChatCompletionMessageToolCallUnionParam{
-					OfFunction: &openai.ChatCompletionMessageFunctionToolCallParam{
-						ID: block.CallID,
-						Function: openai.ChatCompletionMessageFunctionToolCallFunctionParam{
-							Name:      block.ToolName,
-							Arguments: args,
-						},
+				call := &openai.ChatCompletionMessageFunctionToolCallParam{
+					ID: block.CallID,
+					Function: openai.ChatCompletionMessageFunctionToolCallFunctionParam{
+						Name:      block.ToolName,
+						Arguments: args,
 					},
-				})
+				}
+				if block.Signature != "" {
+					// Gemini rejects a history whose function calls lack the
+					// thought signatures it sent with them.
+					call.SetExtraFields(map[string]any{
+						"extra_content": map[string]any{
+							"google": map[string]any{"thought_signature": block.Signature},
+						},
+					})
+				}
+				calls = append(calls, openai.ChatCompletionMessageToolCallUnionParam{OfFunction: call})
 			}
 			if len(calls) > 0 {
 				assistantMsg.OfAssistant.ToolCalls = calls
@@ -371,11 +380,12 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 	}
 
 	var chatCompletion *openai.ChatCompletion
+	var signatures map[int64]string
 
 	if len(tools) > 0 && c.disableStreaming {
-		chatCompletion, err = c.queryWithoutStreaming(ctx, params, outputTokens, inputTokens, inputTokensCacheReads, attrs, dp)
+		chatCompletion, signatures, err = c.queryWithoutStreaming(ctx, params, outputTokens, inputTokens, inputTokensCacheReads, attrs, dp)
 	} else {
-		chatCompletion, err = c.queryWithStreaming(ctx, params, outputTokens, inputTokens, inputTokensCacheReads, attrs, dp)
+		chatCompletion, signatures, err = c.queryWithStreaming(ctx, params, outputTokens, inputTokens, inputTokensCacheReads, attrs, dp)
 	}
 	// Close the streamed text response phase (if any) before the tool-call
 	// phases, so spans close in the order the model produced them.
@@ -421,6 +431,7 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 			CallID:    call.ID,
 			ToolName:  call.Function.Name,
 			Arguments: JSON(args),
+			Signature: signatures[int64(i)],
 		})
 		dp.EmitToolCall(int64(i+1), call.ID, call.Function.Name, args)
 	}
@@ -496,7 +507,7 @@ func (c *OpenAIClient) queryWithStreaming(
 	inputTokensCacheReads metric.Int64Gauge,
 	attrs []attribute.KeyValue,
 	dp *displayPhases,
-) (*openai.ChatCompletion, error) {
+) (*openai.ChatCompletion, map[int64]string, error) {
 	params.StreamOptions = openai.ChatCompletionStreamOptionsParam{
 		IncludeUsage: openai.Opt(true),
 	}
@@ -504,18 +515,32 @@ func (c *OpenAIClient) queryWithStreaming(
 	stream := c.chat.NewStreaming(ctx, params)
 	if stream.Err() != nil {
 		// errored establishing connection; bail so stream.Close doesn't panic
-		return nil, stream.Err()
+		return nil, nil, stream.Err()
 	}
 	defer stream.Close()
 
 	if stream.Err() != nil {
-		return nil, stream.Err()
+		return nil, nil, stream.Err()
 	}
 
 	acc := new(openai.ChatCompletionAccumulator)
+	// The accumulator keeps only the tool call fields it knows, so thought
+	// signatures are collected from the deltas, by tool call index.
+	signatures := map[int64]string{}
 	for stream.Next() {
 		res := stream.Current()
 		acc.AddChunk(res)
+
+		for _, choice := range res.Choices {
+			if choice.Index != 0 {
+				continue
+			}
+			for _, call := range choice.Delta.ToolCalls {
+				if sig := openAIThoughtSignature(call.RawJSON()); sig != "" {
+					signatures[call.Index] = sig
+				}
+			}
+		}
 
 		// Keep track of token usage. The stream accumulator holds cumulative
 		// usage, and the UI's gauge aggregation keeps the last value per stream.
@@ -531,10 +556,10 @@ func (c *OpenAIClient) queryWithStreaming(
 	}
 
 	if stream.Err() != nil {
-		return nil, stream.Err()
+		return nil, nil, stream.Err()
 	}
 
-	return &acc.ChatCompletion, nil
+	return &acc.ChatCompletion, signatures, nil
 }
 
 func (c *OpenAIClient) queryWithoutStreaming(
@@ -545,10 +570,10 @@ func (c *OpenAIClient) queryWithoutStreaming(
 	inputTokensCacheReads metric.Int64Gauge,
 	attrs []attribute.KeyValue,
 	dp *displayPhases,
-) (*openai.ChatCompletion, error) {
+) (*openai.ChatCompletion, map[int64]string, error) {
 	compl, err := c.chat.New(ctx, params)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	recordOpenAICompletionUsage(ctx, compl.Usage, outputTokens, inputTokens, inputTokensCacheReads, attrs)
@@ -559,5 +584,31 @@ func (c *OpenAIClient) queryWithoutStreaming(
 		}
 	}
 
-	return compl, nil
+	signatures := map[int64]string{}
+	if len(compl.Choices) > 0 {
+		for i, call := range compl.Choices[0].Message.ToolCalls {
+			if sig := openAIThoughtSignature(call.RawJSON()); sig != "" {
+				signatures[int64(i)] = sig
+			}
+		}
+	}
+
+	return compl, signatures, nil
+}
+
+// openAIThoughtSignature returns the thought signature Gemini attaches to a
+// tool call through its OpenAI-compatible API, or "" if the call has none.
+// Gemini requires it back on the call in later requests.
+func openAIThoughtSignature(rawToolCall string) string {
+	var call struct {
+		ExtraContent struct {
+			Google struct {
+				ThoughtSignature string `json:"thought_signature"`
+			} `json:"google"`
+		} `json:"extra_content"`
+	}
+	if err := json.Unmarshal([]byte(rawToolCall), &call); err != nil {
+		return ""
+	}
+	return call.ExtraContent.Google.ThoughtSignature
 }
