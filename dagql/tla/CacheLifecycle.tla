@@ -4852,7 +4852,8 @@ NativeRunStaysNative ==
 \* Reachability probes for part sources (each expected violated):
 \*   - an armed Cloud row completes natively, never managed;
 \*   - an armed row that received a late offer goes managed and installs it;
-\*   - a shell's part is acquired;
+\*   - a row that decoded as a shell acquires a part (an action property:
+\*     acquisition itself leaves a value a shell);
 \*   - a restored row armed while holding an offer goes managed (the decode
 \*     arms a row with an offer, and the next demand still takes acquisition).
 ProbeArmedCloudNative ==
@@ -4868,7 +4869,11 @@ ProbeLateOfferInstalled ==
            /\ p \notin res[r].acquired
            /\ p \in res'[r].acquired)]_vars
 ProbeShellAcquired ==
-    ~\E r \in ResultIds : res[r].registered /\ res[r].shell /\ res[r].acquired # {}
+    [][\A r \in 1..Len(res) :
+         ~(/\ res[r].registered
+           /\ res[r].shell
+           /\ res[r].acquired = {}
+           /\ res'[r].acquired # {})]_vars
 ProbeArmedWithOfferManaged ==
     ~\E r \in ResultIds :
         /\ res[r].registered /\ ~res[r].cloudRow /\ res[r].managed
