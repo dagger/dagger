@@ -17,9 +17,16 @@ type Usage struct {
 	CPUStealUS  int64
 	CPUIdleUS   int64
 	// MinorFaults and MajorFaults are the scope's page faults: those served
-	// without I/O, and those that needed it. Only process scopes have them.
+	// without I/O, and those that needed it. HugeFaults are those that
+	// allocated a transparent huge page. Process and exec scopes have them.
 	MinorFaults int64
 	MajorFaults int64
+	HugeFaults  int64
+	// CPUStallUS and MemStallUS are the time any of the scope's tasks
+	// stalled waiting for a CPU and for memory (its cgroup's cpu.pressure and
+	// memory.pressure "some" totals). Only exec scopes have them.
+	CPUStallUS int64
+	MemStallUS int64
 	// GoAllocBytes, GoGCCycles and GoGCCPUUS are a Go process's cumulative
 	// heap allocations, its completed GC cycles, and the CPU time its runtime
 	// estimates the GC used. Only the engine process scope has them.
