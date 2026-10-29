@@ -174,7 +174,7 @@ func New() (*Tracer, error) {
 }
 
 func (t *Tracer) configureEngineBoundary(cgroupPath string) error {
-	cgroupID, err := cgroupID(cgroupPath)
+	cgroupID, err := ebpfutil.CgroupID(cgroupPath)
 	if err != nil {
 		return err
 	}
@@ -297,22 +297,6 @@ func currentCgroupPath() (string, error) {
 		return filepath.Join("/sys/fs/cgroup", path), nil
 	}
 	return "", errors.New("unified cgroup entry not found")
-}
-
-func cgroupID(path string) (uint64, error) {
-	handle, _, err := unix.NameToHandleAt(unix.AT_FDCWD, path, 0)
-	if err != nil {
-		return 0, fmt.Errorf("getting cgroup ID for %s: %w", path, err)
-	}
-	data := handle.Bytes()
-	if len(data) < 8 {
-		return 0, fmt.Errorf(
-			"getting cgroup ID for %s: handle is %d bytes",
-			path,
-			len(data),
-		)
-	}
-	return binary.NativeEndian.Uint64(data[:8]), nil
 }
 
 // EngineAccountingAvailable reports whether the engine cgroup programs are
