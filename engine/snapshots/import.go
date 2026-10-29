@@ -304,6 +304,13 @@ func (cm *snapshotManager) awaitLayer(ctx context.Context, chain *ExportChain, i
 	if cm.chainLocalPrefix(chain) > i {
 		return nil
 	}
+	// The wait for the blob, when profiled, is an io wait named for the
+	// layer: one per layer an import awaits.
+	var wait *wcprof.Wait
+	if wcprof.Enabled(ctx) {
+		wait = wcprof.BeginWaitIdent(ctx, "snapshots.awaitLayer:"+chain.Layers[i].Descriptor.Digest.String(), wcprof.WaitReasonIO)
+	}
+	defer wait.End()
 	awaitCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	awaited := make(chan error, 1)
