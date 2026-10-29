@@ -792,7 +792,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					than this are set to it, as with BuildKit's rewrite-timestamp and
 					SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each
 					export.`).
-					View(AfterVersion("v1.0.0-0")),
+					View(AfterVersion("v1.0.0-beta.22")),
 			),
 
 		dagql.NodeFunc("platform", s.platform).
@@ -833,7 +833,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					than this are set to it, as with BuildKit's rewrite-timestamp and
 					SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each
 					export.`).
-					View(AfterVersion("v1.0.0-0")),
+					View(AfterVersion("v1.0.0-beta.22")),
 			),
 		dagql.NodeFunc("export", s.exportLegacy).
 			WithInput(dagql.PerCallInput).
@@ -867,7 +867,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					than this are set to it, as with BuildKit's rewrite-timestamp and
 					SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each
 					export.`).
-					View(AfterVersion("v1.0.0-0")),
+					View(AfterVersion("v1.0.0-beta.22")),
 			),
 
 		dagql.NodeFunc("asTarball", s.asTarball).
@@ -895,7 +895,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					than this are set to it, as with BuildKit's rewrite-timestamp and
 					SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each
 					export.`).
-					View(AfterVersion("v1.0.0-0")),
+					View(AfterVersion("v1.0.0-beta.22")),
 			),
 
 		dagql.NodeFunc("import", s.import_).
