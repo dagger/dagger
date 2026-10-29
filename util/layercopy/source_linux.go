@@ -20,9 +20,6 @@ type source struct {
 	realRoot     string
 	layers       []string
 	overlay      bool
-	// lowers is how many of layers, from the bottom, are lowerdirs; an
-	// upperdir, if there is one, is the last layer.
-	lowers       int
 	baseRel      string
 	baseView     string
 	baseReal     string
@@ -30,10 +27,14 @@ type source struct {
 	baseMinLayer int
 	baseCached   bool
 	cache        *sourceCache
+
+	// lowers is how many of layers, from the bottom, are lowerdirs; an
+	// upperdir, if there is one, is the last layer.
+	lowers int
 	// lowerHides, if set, is whether each path asked about in a lowerdir
 	// hides lower layers, shared by every source of a copy. See
 	// layerEntryState.
-	lowerHides   map[string]bool
+	lowerHides map[string]bool
 
 	// onReadDir, if set, is called with each directory the copy reads. Tests
 	// use it to check which directories a filtered copy walks.
