@@ -72,7 +72,7 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *c
 			items = append(items, projected...)
 		}
 	} else if all || filtered {
-		items, err = readListedArtifacts(ctx, dag, selection, absolute, true)
+		items, err = readListedArtifactsSnapshot(ctx, dag, selection, absolute, true)
 	} else {
 		items, err = readListedArtifactPaths(ctx, dag, selection, absolute, "")
 	}
