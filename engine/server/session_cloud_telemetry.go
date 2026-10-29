@@ -12,7 +12,6 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	otlpmetricsv1 "go.opentelemetry.io/proto/otlp/metrics/v1"
 	"golang.org/x/oauth2"
 	"golang.org/x/sync/singleflight"
 	"google.golang.org/protobuf/proto"
@@ -549,7 +548,8 @@ type cloudMetricQueue struct {
 }
 
 type cloudMetricQueueEntry struct {
-	metrics *otlpmetricsv1.ResourceMetrics
+	metrics *metricdata.ResourceMetrics
+	bytes   int
 	barrier chan struct{}
 }
 
@@ -575,19 +575,26 @@ func (q *cloudMetricQueue) Aggregation(kind sdkmetric.InstrumentKind) sdkmetric.
 	return q.next.Aggregation(kind)
 }
 
-// Export queues a deep copy of the collection: the reader reuses its buffers
-// once Export returns, and the conversion to protobuf keeps some of them
-// (histogram bounds and bucket counts) by reference.
+// Export queues an owned SDK snapshot. Protobuf conversion estimates the wire
+// size only; export never decodes it back or loses unsupported aggregation data.
 func (q *cloudMetricQueue) Export(_ context.Context, metrics *metricdata.ResourceMetrics) error {
 	if metrics == nil || len(metrics.ScopeMetrics) == 0 {
 		return nil
 	}
-	converted, err := telemetry.ResourceMetricsToPB(metrics)
+	copied, err := snapshotCloudMetrics(metrics)
 	if err != nil {
 		slog.Warn("session metrics not published to Cloud", "session", q.bound.sessionID, "error", err)
 		return nil
 	}
-	copied := proto.Clone(converted).(*otlpmetricsv1.ResourceMetrics)
+	converted, err := telemetry.ResourceMetricsToPB(copied)
+	if err != nil {
+		slog.Warn("session metrics not published to Cloud", "session", q.bound.sessionID, "error", err)
+		return nil
+	}
+	for i, scope := range copied.ScopeMetrics {
+		converted.ScopeMetrics[i].Scope.Attributes = telemetry.KeyValues(scope.Scope.Attributes.ToSlice())
+	}
+	size := proto.Size(converted)
 	q.mu.Lock()
 	if q.closed {
 		q.mu.Unlock()
@@ -606,7 +613,7 @@ func (q *cloudMetricQueue) Export(_ context.Context, metrics *metricdata.Resourc
 		}
 		q.dropped++
 	}
-	q.queue = append(q.queue, cloudMetricQueueEntry{metrics: copied})
+	q.queue = append(q.queue, cloudMetricQueueEntry{metrics: copied, bytes: size})
 	q.queuedMetrics++
 	q.mu.Unlock()
 	select {
@@ -716,21 +723,21 @@ func (q *cloudMetricQueue) run() {
 		if next.metrics != nil {
 			q.queuedMetrics--
 			collections = 1
-			size := proto.Size(next.metrics)
+			size := next.bytes
 			for collections < cloudMetricBatchCollections && len(q.queue) > 0 {
 				pending := q.queue[0]
 				// An ordered flush barrier must stay after the preceding export.
 				// Different resources/schema URLs need their own ResourceMetrics.
-				if pending.metrics == nil || pending.metrics.SchemaUrl != next.metrics.SchemaUrl || !proto.Equal(pending.metrics.Resource, next.metrics.Resource) {
+				if pending.metrics == nil || pending.metrics.Resource.SchemaURL() != next.metrics.Resource.SchemaURL() || !pending.metrics.Resource.Equal(next.metrics.Resource) {
 					break
 				}
-				pendingSize := proto.Size(pending.metrics)
+				pendingSize := pending.bytes
 				if size+pendingSize > cloudMetricBatchBytes {
 					break
 				}
 				// Append complete scopes: do not combine aggregations, points,
-				// timestamps, attributes or temporality. The queued protos are
-				// deep copies owned exclusively by this worker.
+				// timestamps, attributes or temporality. The queued snapshots
+				// are owned exclusively by this worker.
 				next.metrics.ScopeMetrics = append(next.metrics.ScopeMetrics, pending.metrics.ScopeMetrics...)
 				q.queue = q.queue[1:]
 				q.queuedMetrics--
@@ -743,19 +750,11 @@ func (q *cloudMetricQueue) run() {
 			close(next.barrier)
 			continue
 		}
-		metrics, err := telemetry.ResourceMetricsFromPB(next.metrics)
-		if err == nil {
-			// OTLP carries each scope's schema URL beside its instrumentation
-			// scope. Preserve it when rebuilding the SDK collection.
-			for index := range metrics.ScopeMetrics {
-				metrics.ScopeMetrics[index].Scope.SchemaURL = next.metrics.ScopeMetrics[index].SchemaUrl
-			}
-			ctx, cancel := context.WithTimeout(q.ctx, q.bound.timeout)
-			err = q.next.Export(ctx, metrics)
-			cancel()
-			if err != nil && q.ctx.Err() == nil {
-				slog.Warn("session telemetry not fully published to Cloud", "session", q.bound.sessionID, "op", "export metrics", "error", err)
-			}
+		ctx, cancel := context.WithTimeout(q.ctx, q.bound.timeout)
+		err := q.next.Export(ctx, next.metrics)
+		cancel()
+		if err != nil && q.ctx.Err() == nil {
+			slog.Warn("session telemetry not fully published to Cloud", "session", q.bound.sessionID, "op", "export metrics", "error", err)
 		}
 		if err != nil {
 			q.mu.Lock()

@@ -938,9 +938,9 @@ func TestCloudMetricQueueCopiesCollections(t *testing.T) {
 	counts[0], counts[1], bounds[0] = 99, 99, 99
 
 	require.Len(t, q.queue, 1)
-	point := q.queue[0].metrics.GetScopeMetrics()[0].GetMetrics()[0].GetHistogram().GetDataPoints()[0]
-	require.Equal(t, []uint64{1, 2}, point.GetBucketCounts())
-	require.Equal(t, []float64{10}, point.GetExplicitBounds())
+	point := q.queue[0].metrics.ScopeMetrics[0].Metrics[0].Data.(metricdata.Histogram[int64]).DataPoints[0]
+	require.Equal(t, []uint64{1, 2}, point.BucketCounts)
+	require.Equal(t, []float64{10}, point.Bounds)
 }
 
 func gaugeMetrics(value int64) *metricdata.ResourceMetrics {

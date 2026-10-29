@@ -84,6 +84,20 @@ func TestCloudMetricBatchPreservesEveryScopeAndPoint(t *testing.T) {
 			StartTime: time.Unix(1, int64(index)), Time: time.Unix(2, int64(index)), Value: int64(index),
 			Attributes: attribute.NewSet(attribute.String("client", "native")),
 		}}}
+		metrics.ScopeMetrics[0].Metrics = append(metrics.ScopeMetrics[0].Metrics,
+			metricdata.Metrics{Name: "calls", Unit: "1", Data: metricdata.Sum[int64]{
+				Temporality: metricdata.CumulativeTemporality, IsMonotonic: true,
+				DataPoints: []metricdata.DataPoint[int64]{{StartTime: time.Unix(1, 0), Time: time.Unix(2, 0), Value: int64(index)}},
+			}},
+			metricdata.Metrics{Name: "duration", Unit: "s", Data: metricdata.Histogram[float64]{
+				Temporality: metricdata.CumulativeTemporality,
+				DataPoints: []metricdata.HistogramDataPoint[float64]{{
+					StartTime: time.Unix(1, 0), Time: time.Unix(2, 0), Count: 6, Sum: 7.5,
+					Bounds: []float64{1, 2}, BucketCounts: []uint64{1, 2, 3},
+					Min: metricdata.NewExtrema(0.25), Max: metricdata.NewExtrema(3.5),
+				}},
+			}},
+		)
 		pb, err := telemetry.ResourceMetricsToPB(metrics)
 		require.NoError(t, err)
 		expected = append(expected, pb.ScopeMetrics...)
@@ -186,5 +200,30 @@ func TestCloudMetricBatchBoundsUploadBytes(t *testing.T) {
 	for _, record := range recorder.records {
 		require.LessOrEqual(t, proto.Size(record), cloudMetricBatchBytes)
 	}
+	require.Zero(t, q.dropped)
+}
+
+// An oversized original collection remains intact; the batching cap must
+// never split, truncate or silently discard its points.
+func TestCloudMetricBatchPreservesOversizedCollection(t *testing.T) {
+	recorder, entered, release := blockedMetricBatchRecorder(t)
+	q := newCloudMetricQueue(recorder, cloudFlushBound{sessionID: "batch", timeout: time.Second})
+	t.Cleanup(func() { require.NoError(t, q.Shutdown(t.Context())) })
+	require.NoError(t, q.Export(t.Context(), gaugeMetrics(-1)))
+	<-entered
+	payload := strings.Repeat("x", 2*cloudMetricBatchBytes)
+	large := gaugeMetrics(1)
+	gauge := large.ScopeMetrics[0].Metrics[0].Data.(metricdata.Gauge[int64])
+	gauge.DataPoints[0].Attributes = attribute.NewSet(attribute.String("payload", payload))
+	large.ScopeMetrics[0].Metrics[0].Data = gauge
+	require.NoError(t, q.Export(t.Context(), large))
+	require.NoError(t, q.Export(t.Context(), gaugeMetrics(2)))
+	close(release)
+	require.NoError(t, q.Shutdown(t.Context()))
+	require.Len(t, recorder.records, 3)
+	require.Greater(t, proto.Size(recorder.records[1]), cloudMetricBatchBytes)
+	actual := recorder.records[1].ScopeMetrics[0].Metrics[0].GetGauge().DataPoints[0].Attributes[0].Value.GetStringValue()
+	require.Equal(t, len(payload), len(actual))
+	require.True(t, payload == actual)
 	require.Zero(t, q.dropped)
 }
