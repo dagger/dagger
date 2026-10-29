@@ -42,10 +42,14 @@ as a **Dagger module SDK**.
 ```
 
 - `"sdk": "dang"` (plain string) also works.
-- `engineVersion` selects the Dang major: `< v0.21.5` routes to frozen Dang v1
-  (where `.{ }` was GraphQL selection); `>= v0.21.5` is Dang v2 (`.{ }` is
-  dot-block application, `.{{ }}` is selection). Don't bump an old module's
-  `engineVersion` without checking its selection syntax.
+- A `dang.toml` beside the module (between the source and module directories)
+  declares its versions, and wins over `dagger.json`: `[imports.Dagger] dagger
+  = "vX.Y.Z"` is the engine version (API, naming), `dang = "X.Y"` the Dang
+  language version.
+- Without `dang = ...`, `engineVersion` picks the Dang language: `< v0.21.5` is
+  Dang 1.0 (where `.{ }` is GraphQL selection); `>= v0.21.5` is Dang 2 (`.{ }`
+  is dot-block application, `.{{ }}` is selection). Don't bump an old module's
+  `engineVersion` without checking its selection syntax, or pin `dang = "1.0"`.
 - Dependencies: `"dependencies": [{"name": "gochild", "source": "gochild"}]` —
   deps may use any SDK (Go, Python, TypeScript, Dang) side by side.
 - `"disableDefaultFunctionCaching": true` turns off default function caching
