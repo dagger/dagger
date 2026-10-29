@@ -146,6 +146,25 @@ func TestOfferInstallProfiled(t *testing.T) {
 	require.True(t, ok, "the install's parent is recorded")
 	require.Equal(t, "lazy", lazy.OpKind)
 	require.True(t, strings.HasPrefix(lazy.ident, "lazy:"), "the task's lazy op names its task: %q", lazy.ident)
+
+	// After the body, the task's bookkeeping: each step with work is an
+	// internal op of the task's, in order.
+	var steps []string
+	last := install.EndNS
+	for _, class := range sortedByStart(events, lazy.OpID) {
+		if !strings.HasPrefix(class, "lazyBody.") {
+			continue
+		}
+		steps = append(steps, class)
+		step := profiledOps(events, class)
+		require.Len(t, step, 1, class)
+		require.Equal(t, lazy.OpID, step[0].ParentID, class)
+		require.Equal(t, "internal", step[0].OpKind, class)
+		require.Equal(t, "ok", step[0].Outcome, class)
+		require.LessOrEqual(t, last, step[0].StartNS, class)
+		last = step[0].EndNS
+	}
+	require.Subset(t, steps, []string{"lazyBody.ownerSync", "lazyBody.settle", "lazyBody.releaseOperationLease", "lazyBody.teachContentIdentity"})
 }
 
 // sortedByStart returns the classes of parent's child ops in start order.
