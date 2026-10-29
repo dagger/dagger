@@ -61,6 +61,13 @@ type Usage struct {
 	ScanHeapBytes    int64
 	ScanStackBytes   int64
 	ScanGlobalsBytes int64
+	// RunqWaitUS is the time the scope's threads spent runnable but waiting
+	// for a CPU, summed over its threads, and RunqWaits how many such waits
+	// ended; OnCPUUS is the time its threads ran. Only exec scheduling scopes
+	// have them.
+	RunqWaitUS int64
+	RunqWaits  int64
+	OnCPUUS    int64
 }
 
 // Usage scopes of an exec.
@@ -72,6 +79,11 @@ const (
 	// exec's resource cgroup, read with it, and only when a helper ran: the
 	// workload's usage is the exec cgroup's less this.
 	UsageScopeMountHelpers = "mount_helpers"
+	// UsageScopeExecSched is the exec's resource cgroup's threads as the
+	// exec_sched eBPF program saw them (engine/ebpf/execsched): the workload
+	// and its mount helpers, from the exec's start, when a recording asked for
+	// the program.
+	UsageScopeExecSched = "exec_sched"
 )
 
 type usageRecord struct {
