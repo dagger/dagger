@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/engine/ebpf/internal/ebpfutil"
+	"github.com/dagger/dagger/engine/ebpf/wcbpf"
 )
 
 func TestMain(m *testing.M) {
@@ -60,10 +61,49 @@ func currentCgroupPath() (string, error) {
 	return "", fmt.Errorf("no unified cgroup in %q", data)
 }
 
+// newExec makes a resource cgroup for an exec beside the test's own, measured
+// by l, and its container cgroup.
+func newExec(t *testing.T, l *loaded, name string, init bool) (resource string, id uint64, w wcbpf.ExecWatch) {
+	t.Helper()
+	self, err := currentCgroupPath()
+	require.NoError(t, err)
+	resource = filepath.Join(filepath.Dir(self), fmt.Sprintf("execsched-%s-%d", name, os.Getpid()))
+	require.NoError(t, os.Mkdir(resource, 0o755))
+	t.Cleanup(func() { require.NoError(t, os.Remove(resource)) })
+	id, err = ebpfutil.CgroupID(resource)
+	require.NoError(t, err)
+	w, err = l.WatchExec(wcbpf.ExecInfo{CgroupID: id, Init: init})
+	require.NoError(t, err)
+	mkdirCgroup(t, filepath.Join(resource, "container"))
+	return resource, id, w
+}
+
+func mkdirCgroup(t *testing.T, path string) {
+	t.Helper()
+	require.NoError(t, os.Mkdir(path, 0o755))
+	t.Cleanup(func() { require.NoError(t, os.Remove(path)) })
+}
+
+// startIn starts a command in the cgroup at path.
+func startIn(t *testing.T, path string, args ...string) (*exec.Cmd, *bytes.Buffer) {
+	t.Helper()
+	fd, err := os.Open(path)
+	require.NoError(t, err)
+	defer fd.Close()
+	cmd := exec.CommandContext(t.Context(), args[0], args[1:]...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{UseCgroupFD: true, CgroupFD: int(fd.Fd())}
+	var output bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &output, &output
+	require.NoError(t, cmd.Start())
+	return cmd, &output
+}
+
 // The program measures an exec laid out as the engine lays one out: its
 // container's processes in the "container" child of its resource cgroup.
 // The test's shell stands for the engine's init, and its first command for
-// the workload; two busy loops pinned to one CPU wait for it in turn.
+// the workload; two busy loops pinned to one CPU wait for it in turn. A mount
+// helper's leaf and a nested container's cgroup run work that counts toward
+// the exec, without taking a container role.
 func TestExecSched(t *testing.T) {
 	if os.Getenv("DAGGER_TEST_EBPF") != "1" {
 		t.Skip("set DAGGER_TEST_EBPF=1 on a privileged Linux runner")
@@ -73,31 +113,25 @@ func TestExecSched(t *testing.T) {
 	l := loadedProgram.(*loaded)
 	t.Cleanup(func() { require.NoError(t, l.Close()) })
 
-	self, err := currentCgroupPath()
-	require.NoError(t, err)
-	resource := filepath.Join(filepath.Dir(self), fmt.Sprintf("execsched-exec-%d", os.Getpid()))
-	require.NoError(t, os.Mkdir(resource, 0o755))
-	t.Cleanup(func() { require.NoError(t, os.Remove(resource)) })
-	id, err := ebpfutil.CgroupID(resource)
-	require.NoError(t, err)
-	w, err := l.WatchExec(id)
-	require.NoError(t, err)
-	_, err = l.WatchExec(id)
+	resource, id, w := newExec(t, l, "exec", true)
+	_, err = l.WatchExec(wcbpf.ExecInfo{CgroupID: id})
 	require.Error(t, err, "an exec is measured once")
+	helper := filepath.Join(resource, "sshfs")
+	mkdirCgroup(t, helper)
+	mkdirCgroup(t, filepath.Join(helper, "mount"))
+	nested := filepath.Join(resource, "container", "nested")
+	mkdirCgroup(t, nested)
+	mkdirCgroup(t, filepath.Join(nested, "ctr"))
 
-	container := filepath.Join(resource, "container")
-	require.NoError(t, os.Mkdir(container, 0o755))
-	t.Cleanup(func() { require.NoError(t, os.Remove(container)) })
-	fd, err := os.Open(container)
-	require.NoError(t, err)
-	defer fd.Close()
+	spin := `timeout 0.2 sh -c "while :; do :; done" || true`
+	helperCmd, helperOut := startIn(t, filepath.Join(helper, "mount"), "/bin/sh", "-c", spin)
+	nestedCmd, nestedOut := startIn(t, filepath.Join(nested, "ctr"), "/bin/sh", "-c", spin)
 	busy := `timeout 0.4 taskset -c 0 sh -c "while :; do :; done"`
-	cmd := exec.CommandContext(t.Context(), "/bin/sh", "-c", "sleep 0.1; "+busy+" & "+busy+" & wait")
-	cmd.SysProcAttr = &syscall.SysProcAttr{UseCgroupFD: true, CgroupFD: int(fd.Fd())}
-	var output bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &output, &output
 	start := time.Now()
-	require.NoError(t, cmd.Run(), output.String())
+	cmd, output := startIn(t, filepath.Join(resource, "container"), "/bin/sh", "-c", "sleep 0.1; "+busy+" & "+busy+" & wait")
+	require.NoError(t, cmd.Wait(), output.String())
+	require.NoError(t, helperCmd.Wait(), helperOut.String())
+	require.NoError(t, nestedCmd.Wait(), nestedOut.String())
 	t.Logf("ran in %s", time.Since(start))
 
 	var m execschedExecSched
@@ -118,13 +152,27 @@ func TestExecSched(t *testing.T) {
 	// Two loops on one CPU for 0.4 s each: each waits for about half.
 	require.Greater(t, time.Duration(m.RunqWaitNs), 200*time.Millisecond)
 	require.NotZero(t, m.RunqWaits)
-	// What the exec's threads ran is what its cgroup counted.
+	// What the exec's threads ran, the helper's and the nested container's
+	// included, is what its cgroup counted.
 	usage := cgroupCPU(t, resource)
+	require.Greater(t, time.Duration(usage), 700*time.Millisecond, "0.4 s on the CPU the two loops share, and two 0.2 s loops")
 	require.InDelta(t, float64(usage), float64(m.OncpuNs), float64(usage)/20+float64(5*time.Millisecond),
 		"on-CPU %s, cgroup CPU %s", time.Duration(m.OncpuNs), time.Duration(usage))
 
 	w.Finish(t.Context(), 0)
 	require.Error(t, l.objs.Execs.Lookup(id, &m), "a finished exec is forgotten")
+
+	// Without the init, the container's first process is the workload.
+	resource, id, w = newExec(t, l, "noinit", false)
+	cmd, output = startIn(t, filepath.Join(resource, "container"), "/bin/sh", "-c", "sleep 0.1")
+	require.NoError(t, cmd.Wait(), output.String())
+	require.NoError(t, l.objs.Execs.Lookup(id, &m))
+	t.Logf("measured without the init %+v", m)
+	require.Zero(t, m.InitExecNs)
+	require.Zero(t, m.InitExitNs)
+	require.LessOrEqual(t, m.ContainerStartNs, m.WorkloadExecNs)
+	require.Greater(t, time.Duration(m.WorkloadExitNs-m.WorkloadExecNs), 90*time.Millisecond)
+	w.Finish(t.Context(), 0)
 }
 
 // cgroupCPU is the CPU time a cgroup's tasks used, in nanoseconds.

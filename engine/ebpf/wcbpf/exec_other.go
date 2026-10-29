@@ -3,6 +3,6 @@
 package wcbpf
 
 // WatchExec measures nothing outside Linux.
-func WatchExec(string) *Exec {
+func WatchExec(string, bool) *Exec {
 	return nil
 }

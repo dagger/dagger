@@ -53,11 +53,15 @@ func load() (_ wcbpf.Loaded, rerr error) {
 	return l, nil
 }
 
-func (l *loaded) WatchExec(cgroupID uint64) (wcbpf.ExecWatch, error) {
-	if err := l.objs.Execs.Update(cgroupID, execschedExecSched{}, ebpf.UpdateNoExist); err != nil {
-		return nil, fmt.Errorf("measuring the exec with cgroup %d: %w", cgroupID, err)
+func (l *loaded) WatchExec(e wcbpf.ExecInfo) (wcbpf.ExecWatch, error) {
+	var m execschedExecSched
+	if e.Init {
+		m.HasInit = 1
 	}
-	return &watch{l: l, cgroupID: cgroupID}, nil
+	if err := l.objs.Execs.Update(e.CgroupID, m, ebpf.UpdateNoExist); err != nil {
+		return nil, fmt.Errorf("measuring the exec with cgroup %d: %w", e.CgroupID, err)
+	}
+	return &watch{l: l, cgroupID: e.CgroupID}, nil
 }
 
 func (l *loaded) Close() error {
@@ -92,11 +96,18 @@ func (w *watch) Finish(ctx context.Context, opID uint64) {
 // a reading.
 func record(ctx context.Context, opID uint64, m execschedExecSched) {
 	ctx = wcprof.ContextWithOpID(ctx, opID)
+	clock := wcbpf.KernelClock()
+	// Without the init, crun's child execs the workload; there are no init
+	// parts.
+	setupEnd := m.InitExecNs
+	if m.HasInit == 0 {
+		setupEnd = m.WorkloadExecNs
+	}
 	for _, part := range []struct {
 		class      string
 		start, end uint64
 	}{
-		{ClassContainerSetup, m.ContainerStartNs, m.InitExecNs},
+		{ClassContainerSetup, m.ContainerStartNs, setupEnd},
 		{ClassInitStart, m.InitExecNs, m.WorkloadExecNs},
 		{ClassWorkload, m.WorkloadExecNs, m.WorkloadExitNs},
 		{ClassInitExit, m.WorkloadExitNs, m.InitExitNs},
@@ -105,7 +116,7 @@ func record(ctx context.Context, opID uint64, m execschedExecSched) {
 			continue
 		}
 		wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, part.class, wcprof.OpOpts{},
-			wcbpf.RecorderNS(part.start), wcbpf.RecorderNS(part.end), wcprof.OutcomeOK)
+			clock(part.start), clock(part.end), wcprof.OutcomeOK)
 	}
 	wcprof.RecordUsage(ctx, opID, wcprof.UsageScopeExecSched, wcprof.Usage{
 		RunqWaitUS: int64(m.RunqWaitNs / 1000),

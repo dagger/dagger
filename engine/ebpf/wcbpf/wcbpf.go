@@ -29,11 +29,23 @@ type Program struct {
 
 // Loaded is a program attached to the kernel.
 type Loaded interface {
-	// WatchExec starts measuring the exec whose resource cgroup has the ID
-	// cgroupID, before any of its processes starts.
-	WatchExec(cgroupID uint64) (ExecWatch, error)
+	// WatchExec starts measuring an exec, before any of its processes
+	// starts.
+	WatchExec(e ExecInfo) (ExecWatch, error)
 	// Close detaches the program and releases what it holds.
 	Close() error
+}
+
+// ExecInfo describes an exec a program measures.
+type ExecInfo struct {
+	// CgroupID is the ID of the exec's resource cgroup, which holds every
+	// process of the exec: its container's, in the "container" child, and
+	// its mount helpers', in leaves under the "sshfs" child.
+	CgroupID uint64
+	// Init is whether the engine's init (/.init) is the container's first
+	// process and starts the workload; when it isn't, the first process is
+	// the workload.
+	Init bool
 }
 
 // ExecWatch is one exec measured by one program.
@@ -182,18 +194,19 @@ type execWatch struct {
 	w ExecWatch
 }
 
-// watchExec starts measuring the exec with the resource cgroup cgroupID by
-// every attached program. Nil when none is attached.
-func watchExec(cgroupID uint64) *Exec {
+// watchExec starts measuring an exec by every program a recording asks for.
+// Nil when none is attached. A program no recording asks for any more, kept
+// attached for the execs it still measures, takes no new one.
+func watchExec(info ExecInfo) *Exec {
 	registry.mu.Lock()
 	defer registry.mu.Unlock()
 	var e Exec
 	for _, n := range sortedNames() {
 		p := registry.programs[n]
-		if p.loaded == nil {
+		if p.loaded == nil || p.asks == 0 {
 			continue
 		}
-		w, err := p.loaded.WatchExec(cgroupID)
+		w, err := p.loaded.WatchExec(info)
 		if err != nil {
 			slog.Debug("wcbpf: exec not measured", "program", p.Name, "error", err)
 			continue
@@ -207,12 +220,12 @@ func watchExec(cgroupID uint64) *Exec {
 	return &e
 }
 
-// attached reports whether any program is attached.
-func attached() bool {
+// asked reports whether a recording asks for any attached program.
+func asked() bool {
 	registry.mu.Lock()
 	defer registry.mu.Unlock()
 	for _, p := range registry.programs {
-		if p.loaded != nil {
+		if p.loaded != nil && p.asks > 0 {
 			return true
 		}
 	}

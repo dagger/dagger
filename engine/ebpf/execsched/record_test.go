@@ -59,6 +59,7 @@ func TestRecord(t *testing.T) {
 	at := func(ago time.Duration) uint64 { return uint64(now - int64(ago)) }
 	nowNS := wcprof.NowNS()
 	ops, usage := recordedExec(t, execschedExecSched{
+		HasInit:          1,
 		ContainerStartNs: at(500 * time.Millisecond),
 		InitExecNs:       at(498 * time.Millisecond),
 		WorkloadExecNs:   at(495 * time.Millisecond),
@@ -77,8 +78,9 @@ func TestRecord(t *testing.T) {
 	require.Len(t, ops, len(want))
 	for class, d := range want {
 		ev := ops[class]
-		require.InDelta(t, int64(d), ev.EndNS-ev.StartNS, float64(10*time.Microsecond), class)
+		require.EqualValues(t, d, ev.EndNS-ev.StartNS, class)
 	}
+	require.Equal(t, ops[ClassInitStart].EndNS, ops[ClassWorkload].StartNS, "a shared boundary is one time")
 	if nowNS != 0 {
 		// The recorder existed before the reading: its end is 99 ms before
 		// then, give or take the time between the two clocks' reads.
@@ -94,10 +96,26 @@ func TestRecord(t *testing.T) {
 func TestRecordPartial(t *testing.T) {
 	now := uint64(monotonicNow(t))
 	ops, usage := recordedExec(t, execschedExecSched{
+		HasInit:          1,
 		ContainerStartNs: now - 2_000_000,
 		InitExecNs:       now - 1_000_000,
 	})
 	require.Len(t, ops, 1)
 	require.Contains(t, ops, ClassContainerSetup)
 	require.Contains(t, usage, wcprof.UsageScopeExecSched)
+}
+
+// Without the init, crun's child execs the workload: setup ends there, and
+// there are no init parts.
+func TestRecordWithoutInit(t *testing.T) {
+	now := uint64(monotonicNow(t))
+	ops, _ := recordedExec(t, execschedExecSched{
+		ContainerStartNs: now - 5_000_000,
+		WorkloadExecNs:   now - 4_000_000,
+		WorkloadExitNs:   now - 1_000_000,
+	})
+	require.Len(t, ops, 2)
+	require.EqualValues(t, time.Millisecond, ops[ClassContainerSetup].EndNS-ops[ClassContainerSetup].StartNS)
+	require.EqualValues(t, 3*time.Millisecond, ops[ClassWorkload].EndNS-ops[ClassWorkload].StartNS)
+	require.Equal(t, ops[ClassContainerSetup].EndNS, ops[ClassWorkload].StartNS, "a shared boundary is one time")
 }

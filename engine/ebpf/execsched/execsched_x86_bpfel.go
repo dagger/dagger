@@ -25,6 +25,8 @@ type execschedExecSched struct {
 	OncpuNs          uint64
 	InitTgid         uint32
 	WorkloadTgid     uint32
+	HasInit          uint32
+	Pad              uint32
 }
 
 type execschedExecSince struct {
@@ -87,9 +89,10 @@ type execschedProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type execschedMapSpecs struct {
-	Execs   *ebpf.MapSpec `ebpf:"execs"`
-	Running *ebpf.MapSpec `ebpf:"running"`
-	Waiting *ebpf.MapSpec `ebpf:"waiting"`
+	ExecLevel *ebpf.MapSpec `ebpf:"exec_level"`
+	Execs     *ebpf.MapSpec `ebpf:"execs"`
+	Running   *ebpf.MapSpec `ebpf:"running"`
+	Waiting   *ebpf.MapSpec `ebpf:"waiting"`
 }
 
 // execschedVariableSpecs contains global variables before they are loaded into the kernel.
@@ -118,13 +121,15 @@ func (o *execschedObjects) Close() error {
 //
 // It can be passed to loadExecschedObjects or ebpf.CollectionSpec.LoadAndAssign.
 type execschedMaps struct {
-	Execs   *ebpf.Map `ebpf:"execs"`
-	Running *ebpf.Map `ebpf:"running"`
-	Waiting *ebpf.Map `ebpf:"waiting"`
+	ExecLevel *ebpf.Map `ebpf:"exec_level"`
+	Execs     *ebpf.Map `ebpf:"execs"`
+	Running   *ebpf.Map `ebpf:"running"`
+	Waiting   *ebpf.Map `ebpf:"waiting"`
 }
 
 func (m *execschedMaps) Close() error {
 	return _ExecschedClose(
+		m.ExecLevel,
 		m.Execs,
 		m.Running,
 		m.Waiting,
