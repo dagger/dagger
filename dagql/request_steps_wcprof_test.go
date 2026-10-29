@@ -12,11 +12,15 @@ import (
 	"github.com/99designs/gqlgen/client"
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/stretchr/testify/require"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/internal/points"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/wcprof"
+	telemetry "github.com/dagger/otel-go"
 )
 
 // A profiled GraphQL request's steps are ops under the request's op, in the
@@ -115,6 +119,62 @@ func TestRequestStepsWcprof(t *testing.T) {
 	}
 	require.Equal(t, resolves+1, countSteps(t, "graphql.resolve"), "the WebSocket query wasn't profiled")
 	require.Equal(t, writes, countSteps(t, "graphql.write"), "the WebSocket query recorded a write step")
+}
+
+// Recording a profiled request's steps keeps what its calls emit visible: no
+// span the frontends hide (an internal one, whose whole subtree they hide)
+// sits between the request's span and the spans its calls start, as their
+// telemetry and their nested clients' do.
+func TestRequestStepsKeepCallSpansVisible(t *testing.T) {
+	wcprof.EnsureRecorder()
+	cache := newCache(t)
+	srv := newExternalDagqlServerForTest(t, Query{})
+	points.Install[Query](srv)
+	sr := tracetest.NewSpanRecorder()
+	tracer := sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.AlwaysSample()), sdktrace.WithSpanProcessor(sr)).Tracer("request-steps-test")
+	srv.Around(func(ctx context.Context, req *dagql.CallRequest) (context.Context, func(dagql.AnyResult, bool, *error)) {
+		ctx, span := tracer.Start(ctx, "call "+req.Field)
+		return ctx, func(dagql.AnyResult, bool, *error) { span.End() }
+	})
+	var requestSpan trace.SpanContext
+	gql := client.New(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := engine.ContextWithClientMetadata(r.Context(), testClientMetadata())
+		ctx = dagql.ContextWithCache(ctx, cache)
+		ctx, span := tracer.Start(ctx, "POST /query", telemetry.Passthrough())
+		defer span.End()
+		requestSpan = span.SpanContext()
+		ctx = wcprof.ContextWithProfiling(ctx)
+		ctx, op := wcprof.BeginOp(ctx, wcprof.OpKindSessionPhase, "steptest.query", wcprof.OpOpts{})
+		defer op.End(wcprof.OutcomeOK)
+		dagql.ServeHTTPWithWriteStep(dagql.NewDefaultHandler(oneResponse{srv}), w, r.WithContext(ctx))
+	}))
+	var res struct {
+		Point struct{ ShiftLeft struct{ X int } }
+	}
+	req(t, gql, `query { point(x: 6, y: 7) { shiftLeft { x } } }`, &res)
+
+	byID := map[trace.SpanID]sdktrace.ReadOnlySpan{}
+	for _, s := range sr.Ended() {
+		byID[s.SpanContext().SpanID()] = s
+	}
+	var calls int
+	for _, s := range sr.Ended() {
+		if !strings.HasPrefix(s.Name(), "call ") {
+			continue
+		}
+		calls++
+		for p := s.Parent().SpanID(); p != requestSpan.SpanID(); {
+			parent, ok := byID[p]
+			require.True(t, ok, "%s isn't under the request's span", s.Name())
+			for _, kv := range parent.Attributes() {
+				if string(kv.Key) == telemetry.UIInternalAttr && kv.Value.AsBool() {
+					t.Fatalf("%s is under internal span %s, so frontends hide it", s.Name(), parent.Name())
+				}
+			}
+			p = parent.Parent().SpanID()
+		}
+	}
+	require.NotZero(t, calls, "the request made no calls")
 }
 
 // oneResponse serves each operation's first response only. gqlgen's WebSocket

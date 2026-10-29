@@ -7,12 +7,8 @@ import (
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/handler"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
 
-	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/engine/wcprof"
-	telemetry "github.com/dagger/otel-go"
 )
 
 // Step is one step inside an engine operation, such as each phase of
@@ -38,24 +34,13 @@ func BeginStep(ctx context.Context, name string) (context.Context, Step) {
 }
 
 // RecordStep records a step that already ran from start to end, timed by
-// someone else (such as gqlgen's own timings of a request), the same way
-// BeginStep does. Nothing can run under it.
+// someone else (such as gqlgen's own timings of a request), in the native
+// profile only, as BeginStep does. Nothing can run under it.
 func RecordStep(ctx context.Context, name string, start, end time.Time) {
 	if !wcprof.Enabled(ctx) || start.IsZero() || end.IsZero() {
 		return
 	}
 	wcprof.RecordOp(ctx, wcprof.OpKindInternal, name, wcprof.OpOpts{}, wcprof.TimeNS(start), wcprof.TimeNS(end), wcprof.OutcomeOK)
-	if OTelProfActive(ctx) {
-		_, span := Tracer(ctx).Start(ctx, name,
-			telemetry.Passthrough(),
-			telemetry.Internal(),
-			trace.WithTimestamp(start),
-			trace.WithAttributes(
-				attribute.String(telemetryattrs.WcprofOpKindAttr, wcprof.OpKindInternal.String()),
-			),
-		)
-		span.End(trace.WithTimestamp(end))
-	}
 }
 
 // ServeHTTPWithWriteStep serves r with h, a handler built for r alone, and,
