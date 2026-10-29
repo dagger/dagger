@@ -23,11 +23,13 @@ const ConfigFilename = "dang.toml"
 // dang.toml at all.
 //
 // Entrypoints written before the version could be declared were served at
-// whatever engine ran them, v1.0.0-beta.16 to v1.0.0-beta.20: the v1 API,
-// Dang 2.1 and the naming rules from before the cut at v1.0.0-beta.21. This
-// is the last of those releases. It is pinned and must NOT follow
-// engine.Version: an entrypoint that declares nothing would otherwise change
-// meaning with every engine release.
+// whatever engine ran them, v1.0.0-beta.16 to v1.0.0-beta.21: the v1 API,
+// Dang 2.1 and the naming rules from before the cut at
+// engine.IdentifierCasingVersion (v1.0.0-beta.22). All of those releases
+// share one API view, the pre-cut view (see engine.APIViewVersion), and this
+// lands on it. It is pinned and must NOT follow engine.Version: an
+// entrypoint that declares nothing would otherwise change meaning with every
+// engine release.
 const DefaultEntrypointEngineVersion = "v1.0.0-beta.20"
 
 // Versions are the versions a Dang module is written against.
@@ -40,6 +42,8 @@ type Versions struct {
 	// DeclaredEngine is the Dagger version the dang.toml declares, if any.
 	// Engine is that version when set.
 	DeclaredEngine string
+	// DangDeclared reports whether the dang.toml declares Dang.
+	DangDeclared bool
 }
 
 // DangString is the Dang version as dang.toml writes it, e.g. "2.1".
@@ -67,8 +71,11 @@ func DefaultEntrypointVersions() Versions {
 // without the key; an entrypoint without a dang.toml gets the same, so that
 // it does not follow dang.CurrentVersion forward either.
 //
-// The engine version must be one this engine can serve: not older than
-// engine.MinimumModuleVersion, not newer than engine.Version.
+// A declared engine version must be one this engine can serve, checked as a
+// dagger.json engineVersion is: not older than engine.MinimumModuleVersion,
+// and no later base version than engine.Version's. A later prerelease of the
+// engine's base version, or the release itself, is accepted and served the
+// engine's own view (engine.ModuleAPIViewVersion caps it).
 func ResolveEntrypointVersions(ctx context.Context, configPath string, data []byte) (Versions, error) {
 	defaults := DefaultEntrypointVersions()
 	return resolveVersions(ctx, configPath, data, defaults.Engine, func(string) dang.Version {
@@ -202,6 +209,7 @@ func resolveVersions(
 		ctx = dang.ContextWithVersion(ctx, pin)
 	}
 	versions.Dang = dang.VersionForConfig(ctx, &cfg)
+	versions.DangDeclared = !cfg.Dang.IsZero()
 	return versions, nil
 }
 
