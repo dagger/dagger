@@ -187,6 +187,8 @@ type Params struct {
 
 	// Profile enables engine wall-clock profiling (wcprof) for this session.
 	Profile bool
+	// ProfileEBPF names the eBPF programs to profile the session with.
+	ProfileEBPF []string
 }
 
 type Client struct {
@@ -2042,6 +2044,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		EnableCloudScaleOut:            c.EnableCloudScaleOut,
 		CloudScaleOutEngineID:          remoteEngineID,
 		Profile:                        c.Profile,
+		ProfileEBPF:                    c.ProfileEBPF,
 	}
 	if c.primarySpan.IsValid() {
 		md.PrimaryTraceID = c.primarySpan.TraceID().String()

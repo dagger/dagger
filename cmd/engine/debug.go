@@ -29,6 +29,7 @@ import (
 	"golang.org/x/net/trace"
 	"golang.org/x/sys/unix"
 
+	"github.com/dagger/dagger/engine/ebpf/wcbpf"
 	"github.com/dagger/dagger/engine/server"
 	"github.com/dagger/dagger/engine/wcprof"
 )
@@ -128,6 +129,8 @@ func setupDebugHandlers(addr string, eng *server.Server) error {
 	// Engine-global profiling toggle: GET reports state, POST "on"/"off"
 	// (or any strconv.ParseBool value) flips it. Disabling keeps buffered
 	// events dumpable and does not stop sessions that opted in via --profile.
+	// A POST "on" with ?ebpf=<name>,<name> also asks for those eBPF programs
+	// (engine/ebpf/wcbpf) while recording is on; each POST replaces them.
 	m.Handle("/debug/wcprof/enabled", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		if req.Method == http.MethodPost {
 			body, err := io.ReadAll(io.LimitReader(req.Body, 64))
@@ -153,6 +156,14 @@ func setupDebugHandlers(addr string, eng *server.Server) error {
 					return
 				}
 			}
+			var programs []string
+			if v := req.URL.Query().Get("ebpf"); on && v != "" {
+				programs = strings.Split(v, ",")
+			}
+			if err := wcbpf.SetEngineWide(programs); err != nil {
+				http.Error(rw, err.Error(), http.StatusBadRequest)
+				return
+			}
 			if on {
 				wcprof.EnableGlobal()
 				logrus.Info("wcprof global recording enabled via debug endpoint")
@@ -162,9 +173,10 @@ func setupDebugHandlers(addr string, eng *server.Server) error {
 			}
 		}
 		rw.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(rw).Encode(map[string]bool{ //nolint:errcheck,errchkjson
+		json.NewEncoder(rw).Encode(map[string]any{ //nolint:errcheck,errchkjson
 			"global_enabled":  wcprof.GloballyEnabled(),
 			"recorder_active": wcprof.Active() != nil,
+			"ebpf":            wcbpf.EngineWide(),
 		})
 	}))
 	m.Handle("/debug/wcprof/dump", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {

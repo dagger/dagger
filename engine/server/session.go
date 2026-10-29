@@ -56,6 +56,7 @@ import (
 	"github.com/dagger/dagger/engine/archive"
 	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
+	"github.com/dagger/dagger/engine/ebpf/wcbpf"
 	"github.com/dagger/dagger/engine/engineutil"
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
 	"github.com/dagger/dagger/engine/slog"
@@ -87,6 +88,9 @@ type daggerSession struct {
 	// module/SDK clients) is recorded even when engine-global recording is
 	// off.
 	wcprofEnabled bool
+	// releaseEBPF releases the eBPF programs the session asked for with its
+	// profile (ClientMetadata.ProfileEBPF); nil when it asked for none.
+	releaseEBPF func()
 
 	// phase is the session's run of PhaseSession (wcprof_phase.go), from its
 	// initialization to the end of its removal: an op over it when it is
@@ -1103,6 +1107,14 @@ func (srv *Server) initializeDaggerSession(
 	// construction (before the session is published) and are immutable /
 	// clientMu-protected thereafter; they are deliberately not assigned here.
 	sess.wcprofEnabled = clientMetadata.Profile
+	if sess.wcprofEnabled && len(clientMetadata.ProfileEBPF) > 0 {
+		release, err := wcbpf.Acquire(clientMetadata.ProfileEBPF)
+		if err != nil {
+			return err
+		}
+		sess.releaseEBPF = release
+		failureCleanups.Add("release eBPF programs", cleanups.Infallible(release))
+	}
 	sess.attachables = newSessionAttachableManager()
 	sess.endpoints = map[string]http.Handler{}
 	sess.closingCtx, sess.cancelClosing = context.WithCancelCause(context.Background())
@@ -1371,6 +1383,9 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 
 	teardown.end()
 	sess.phase.end(srv)
+	if sess.releaseEBPF != nil {
+		sess.releaseEBPF()
+	}
 	return errs
 }
 
