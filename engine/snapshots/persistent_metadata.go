@@ -473,13 +473,12 @@ func (cm *snapshotManager) DeleteStaleDaggerOwnerLeases(ctx context.Context, kee
 	return rerr
 }
 
-
 // withLeaseNamespace attaches the lease manager's namespace to ctx once, for
 // a walk that makes a snapshotter or lease call per snapshot and blob: each
 // of those would attach it again.
 func (cm *snapshotManager) withLeaseNamespace(ctx context.Context) context.Context {
 	if lm, ok := cm.LeaseManager.(*LeaseManager); ok {
-		return withNamespace(ctx, lm.ns)
+		return WithNamespace(ctx, lm.ns)
 	}
 	return ctx
 }
