@@ -92,6 +92,9 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 			return parent.EvaluationItems(ctx)
 		}),
 		dagql.Func("items", s.items).Doc("List artifact descriptions with their collection view. Discover collection keys without evaluating leaf values."),
+		dagql.Func("__listing", s.listing).
+			Doc("Internal listing metadata, serialized without per-item GraphQL object materialization.").
+			Args(dagql.Arg("absolute").Doc("Prefix each address with the workspace's Git address and commit."), dagql.Arg("typeAssertion").Doc("Include the artifact type in each address scheme.")),
 		dagql.Func("one", s.one).Doc("Require exactly one artifact; fail if there are zero or multiple matches. Several matches are listed, one address per line."),
 		dagql.Func("uri", s.uri).Doc("The DAG address that selects this whole selection: filterUri(uri) selects the same set."),
 	}.Install(srv)
@@ -318,6 +321,43 @@ func (*artifactsSchema) items(ctx context.Context, parent *core.Artifacts, _ str
 	}
 	return items, nil
 }
+
+type artifactListingArgs struct {
+	Absolute      bool `default:"false"`
+	TypeAssertion bool `default:"false"`
+}
+
+// listing uses the same collection discovery as items. Its result contains
+// metadata only: no leaf values, client state, or executable object handles.
+func (*artifactsSchema) listing(ctx context.Context, parent *core.Artifacts, args artifactListingArgs) (core.JSON, error) {
+	expanded, err := expandArtifacts(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+	return marshalArtifactListing(ctx, expanded.Entries, args)
+}
+
+func marshalArtifactListing(ctx context.Context, items []*core.Artifact, args artifactListingArgs) (core.JSON, error) {
+	type row struct {
+		URI, Description string
+		ModuleName       string
+		Path             []string
+	}
+	rows := make([]row, len(items))
+	for i, item := range items {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		uri, err := item.URI(core.ArtifactURIOpts{Absolute: args.Absolute, TypeAssertion: args.TypeAssertion, DimensionKeys: true})
+		if err != nil {
+			return nil, err
+		}
+		rows[i] = row{URI: uri, Description: item.Description(), ModuleName: item.ModuleName, Path: item.Path}
+	}
+	data, err := json.Marshal(rows)
+	return core.JSON(data), err
+}
+
 func (*artifactsSchema) one(ctx context.Context, parent *core.Artifacts, _ struct{}) (*core.Artifact, error) {
 	expanded, err := expandArtifacts(ctx, parent)
 	if err != nil {
