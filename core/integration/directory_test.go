@@ -3173,3 +3173,145 @@ func (DirectorySuite) TestDirCaching(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, out, "")
 }
+
+func (DirectorySuite) TestDirectoryResolveBrokenSymlinks(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	dag := sdkcore.NewQuery(c)
+	source := dag.Directory().
+		WithNewFile("target/nested/keep.txt", "hello").
+		WithSymlink("nested/keep.txt", "target/file-link").
+		WithSymlink("../target", "src/relative").
+		WithSymlink("/target", "src/absolute").
+		WithSymlink("relative", "src/chain")
+
+	selectors := []struct {
+		name      string
+		selectDir func(*sdkcore.Directory, string, bool) *sdkcore.Directory
+	}{
+		{"directory", func(parent *sdkcore.Directory, path string, follow bool) *sdkcore.Directory {
+			return parent.Directory(path, sdkcore.DirectoryDirectoryOpts{ResolveBrokenSymlinks: follow})
+		}},
+		{"container", func(parent *sdkcore.Directory, path string, follow bool) *sdkcore.Directory {
+			return dag.Container().WithRootfs(parent).
+				Directory(path, sdkcore.ContainerDirectoryOpts{ResolveBrokenSymlinks: follow})
+		}},
+		{"container mount", func(parent *sdkcore.Directory, path string, follow bool) *sdkcore.Directory {
+			return dag.Container().WithMountedDirectory("/mount", parent).
+				Directory("/mount/"+path, sdkcore.ContainerDirectoryOpts{ResolveBrokenSymlinks: follow})
+		}},
+	}
+	for _, tc := range selectors {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			for _, follow := range []bool{false, true} {
+				out := tc.selectDir(source, "src", follow)
+				for _, name := range []string{"relative", "absolute", "chain"} {
+					stat, err := out.Stat(ctx, name, sdkcore.DirectoryStatOpts{DoNotFollowSymlinks: true})
+					require.NoError(t, err)
+					typ, err := stat.FileType(ctx)
+					require.NoError(t, err)
+					if !follow {
+						require.Equal(t, sdkcore.FileTypeSymlink, typ)
+						continue
+					}
+					require.Equal(t, sdkcore.FileTypeDirectory, typ)
+					stat, err = out.Stat(ctx, name+"/file-link", sdkcore.DirectoryStatOpts{DoNotFollowSymlinks: true})
+					require.NoError(t, err)
+					typ, err = stat.FileType(ctx)
+					require.NoError(t, err)
+					require.Equal(t, sdkcore.FileTypeRegular, typ)
+				}
+			}
+
+			t.Run("select the root", func(ctx context.Context, t *testctx.T) {
+				out := tc.selectDir(source, ".", true)
+				content, err := out.File("src/absolute/file-link").Contents(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "hello", content)
+			})
+
+			t.Run("select a symlink", func(ctx context.Context, t *testctx.T) {
+				parent := source.WithSymlink("target", "alias")
+				content, err := tc.selectDir(parent, "alias", true).File("file-link").Contents(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "hello", content)
+			})
+
+			t.Run("copy needs no parent", func(ctx context.Context, t *testctx.T) {
+				out := tc.selectDir(source, "src", true)
+				copies := []*sdkcore.Directory{
+					out,
+					dag.Directory().WithDirectory("out", out).Directory("out"),
+					dag.Container().WithDirectory("/out", out).Directory("/out"),
+				}
+				for _, copied := range copies {
+					for _, name := range []string{"relative", "absolute", "chain"} {
+						content, err := copied.File(name + "/file-link").Contents(ctx)
+						require.NoError(t, err)
+						require.Equal(t, "hello", content)
+					}
+				}
+				// A fresh snapshot must not retain the parent's sibling paths.
+				_, err := out.Directory("../target").Sync(ctx)
+				require.Error(t, err)
+				entries, err := out.Directory("..").Entries(ctx)
+				require.NoError(t, err)
+				require.Equal(t, []string{"absolute/", "chain/", "relative/"}, entries)
+			})
+
+			t.Run("parent selection is the boundary", func(ctx context.Context, t *testctx.T) {
+				parent := source.Directory("src")
+				_, err := tc.selectDir(parent, ".", true).Sync(ctx)
+				require.Error(t, err)
+			})
+
+			t.Run("content hash reuse keeps the result isolated", func(ctx context.Context, t *testctx.T) {
+				root := t.TempDir()
+				_, err := dag.Directory().WithNewFile("src/file", "hello").
+					WithNewFile("outside/secret", "outside").Export(ctx, root)
+				require.NoError(t, err)
+				parent := dag.Host().Directory(root)
+				// Prime a selection with identical contents but a larger snapshot.
+				_, err = parent.Directory("src").Sync(ctx)
+				require.NoError(t, err)
+				out := tc.selectDir(parent, "src", true)
+				entries, err := out.Directory("..").Entries(ctx)
+				require.NoError(t, err)
+				require.Equal(t, []string{"file"}, entries)
+			})
+
+			t.Run("absolute links use the parent root", func(ctx context.Context, t *testctx.T) {
+				parent := dag.Directory().WithNewFile("target/value", "outside").
+					WithNewFile("project/target/value", "inside").
+					WithSymlink("/target", "project/src/link").Directory("project")
+				content, err := tc.selectDir(parent, "src", true).File("link/value").Contents(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "inside", content)
+			})
+
+			for _, target := range []string{"missing", ".", "link", "/etc/hostname"} {
+				t.Run("invalid target "+target, func(ctx context.Context, t *testctx.T) {
+					parent := dag.Directory().WithSymlink(target, "src/link")
+					_, err := tc.selectDir(parent, "src", true).Sync(ctx)
+					require.Error(t, err)
+				})
+			}
+			for _, path := range []string{"missing", "file"} {
+				t.Run("invalid selection "+path, func(ctx context.Context, t *testctx.T) {
+					parent := dag.Directory().WithNewFile("file", "hello")
+					_, err := tc.selectDir(parent, path, true).Sync(ctx)
+					require.Error(t, err)
+				})
+			}
+		})
+	}
+
+	t.Run("later copies can filter the materialized targets", func(ctx context.Context, t *testctx.T) {
+		selected := source.Directory("src", sdkcore.DirectoryDirectoryOpts{ResolveBrokenSymlinks: true})
+		out := dag.Directory().WithDirectory("out", selected, sdkcore.DirectoryWithDirectoryOpts{
+			Include: []string{"relative/nested/*.txt"},
+		})
+		paths, err := out.Glob(ctx, "**/*.txt")
+		require.NoError(t, err)
+		require.Equal(t, []string{"out/relative/nested/keep.txt"}, paths)
+	})
+}

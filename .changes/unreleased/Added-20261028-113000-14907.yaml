@@ -1,0 +1,13 @@
+kind: Added
+body: |
+  Add the `resolveBrokenSymlinks` option to `Directory.directory` and
+  `Container.directory`.
+
+  Set this option to `true` to copy symlink targets during selection.
+  The result is self-contained. Targets must be within the current
+  parent directory, container filesystem, or directory mount. The
+  default is `false`.
+time: 2026-10-28T18:30:00Z
+custom:
+  Author: tiborvass
+  PR: "14907"

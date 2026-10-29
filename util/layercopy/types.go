@@ -58,6 +58,8 @@ type CopyOptions struct {
 	CopyDirContents   bool
 	ReplaceExisting   bool
 	DestPathHintIsDir bool
+	// FollowSymlinks recursively copies symlink targets within the source mount.
+	FollowSymlinks bool
 
 	// DisableHardlinks disables all hardlink creation, including hardlink
 	// preservation between entries created by this copy.

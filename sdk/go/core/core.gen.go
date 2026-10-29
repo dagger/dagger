@@ -3875,6 +3875,8 @@ func (r *Container) DefaultArgs(ctx context.Context) ([]string, error) {
 type ContainerDirectoryOpts struct {
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
+	// Recursively copy symlink targets into a self-contained directory. Targets must be within the source filesystem or directory mount. Dangling links and symlink cycles cause an error.
+	ResolveBrokenSymlinks bool
 }
 
 // Retrieve a directory from the container's root filesystem
@@ -3886,6 +3888,10 @@ func (r *Container) Directory(path string, opts ...ContainerDirectoryOpts) *Dire
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
 			q = q.Arg("expand", opts[i].Expand)
+		}
+		// `resolveBrokenSymlinks` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ResolveBrokenSymlinks) {
+			q = q.Arg("resolveBrokenSymlinks", opts[i].ResolveBrokenSymlinks)
 		}
 	}
 	q = q.Arg("path", path)
@@ -6740,9 +6746,21 @@ func (r *Directory) Digest(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// DirectoryDirectoryOpts contains options for Directory.Directory
+type DirectoryDirectoryOpts struct {
+	// Recursively copy symlink targets into a self-contained directory. Targets must be within this directory. Dangling links and symlink cycles cause an error.
+	ResolveBrokenSymlinks bool
+}
+
 // Retrieves a directory at the given path.
-func (r *Directory) Directory(path string) *Directory {
+func (r *Directory) Directory(path string, opts ...DirectoryDirectoryOpts) *Directory {
 	q := r.query.Select("directory")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `resolveBrokenSymlinks` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ResolveBrokenSymlinks) {
+			q = q.Arg("resolveBrokenSymlinks", opts[i].ResolveBrokenSymlinks)
+		}
+	}
 	q = q.Arg("path", path)
 
 	return &Directory{

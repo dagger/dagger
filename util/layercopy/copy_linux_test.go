@@ -4,6 +4,7 @@ package layercopy
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -386,7 +387,7 @@ func TestCopyEntryMissingSourceAfterFilter(t *testing.T) {
 			ViewPath: "/src/gone.txt",
 			RealPath: "/src/gone.txt",
 			StatErr:  missingErr,
-		}, "/dst/gone.txt", CopyOptions{}, matchState{}, nil, resolvedParent{})
+		}, "/dst/gone.txt", CopyOptions{}, matchState{}, nil, resolvedParent{}, nil)
 		require.NoError(t, err)
 	})
 
@@ -403,7 +404,7 @@ func TestCopyEntryMissingSourceAfterFilter(t *testing.T) {
 			ViewPath: "/src/gone.txt",
 			RealPath: "/src/gone.txt",
 			StatErr:  missingErr,
-		}, "/dst/gone.txt", CopyOptions{}, matchState{}, nil, resolvedParent{})
+		}, "/dst/gone.txt", CopyOptions{}, matchState{}, nil, resolvedParent{}, nil)
 		require.ErrorIs(t, err, os.ErrNotExist)
 	})
 }
@@ -845,4 +846,153 @@ func TestCopyDirectoryIncludePruningKeepsCopiedPaths(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCopyDirectoryFollowSymlinks(t *testing.T) {
+	t.Parallel()
+	for _, overlay := range []bool{false, true} {
+		name := "bind"
+		if overlay {
+			name = "overlay"
+		}
+		t.Run(name, func(t *testing.T) {
+			for _, follow := range []bool{false, true} {
+				t.Run(fmt.Sprintf("follow=%t", follow), func(t *testing.T) {
+					srcRoot, dstRoot := t.TempDir(), t.TempDir()
+					require.NoError(t, os.MkdirAll(filepath.Join(srcRoot, "src"), 0755))
+					require.NoError(t, os.MkdirAll(filepath.Join(srcRoot, "target", "nested"), 0755))
+					require.NoError(t, os.WriteFile(filepath.Join(srcRoot, "target", "nested", "file.txt"), []byte("hello"), 0640))
+					require.NoError(t, os.Symlink("nested/file.txt", filepath.Join(srcRoot, "target", "file-link")))
+					require.NoError(t, os.Symlink("../target", filepath.Join(srcRoot, "src", "relative")))
+					require.NoError(t, os.Symlink("/target", filepath.Join(srcRoot, "src", "absolute")))
+					require.NoError(t, os.Symlink("relative", filepath.Join(srcRoot, "src", "chain")))
+					src := Mount{Root: srcRoot}
+					if overlay {
+						// The view and its single lower layer have identical contents.
+						src.Mount = &mount.Mount{Type: "overlay", Options: []string{"lowerdir=" + srcRoot}}
+					}
+					copier, err := NewCopier(Mount{Root: dstRoot})
+					require.NoError(t, err)
+					defer copier.Close()
+					require.NoError(t, copier.Copy(context.Background(), src, "/src", "/out", CopyOptions{CopyDirContents: true, FollowSymlinks: follow}))
+					for _, name := range []string{"relative", "absolute", "chain"} {
+						info, err := os.Lstat(filepath.Join(dstRoot, "out", name))
+						require.NoError(t, err)
+						if !follow {
+							require.NotZero(t, info.Mode()&os.ModeSymlink)
+							continue
+						}
+						require.True(t, info.IsDir())
+						for _, file := range []string{"nested/file.txt", "file-link"} {
+							p := filepath.Join(dstRoot, "out", name, file)
+							info, err := os.Lstat(p)
+							require.NoError(t, err)
+							require.True(t, info.Mode().IsRegular())
+							require.Equal(t, os.FileMode(0640), info.Mode().Perm())
+							data, err := os.ReadFile(p)
+							require.NoError(t, err)
+							require.Equal(t, "hello", string(data))
+						}
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestCopyDirectoryFollowSymlinksFilter(t *testing.T) {
+	t.Parallel()
+	srcRoot, dstRoot := t.TempDir(), t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(srcRoot, "target", "nested"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(srcRoot, "target", "nested", "keep.txt"), []byte("keep"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(srcRoot, "target", "nested", "skip.txt"), []byte("skip"), 0644))
+	require.NoError(t, os.Symlink("target", filepath.Join(srcRoot, "link")))
+	require.NoError(t, os.Symlink("missing", filepath.Join(srcRoot, "dangling")))
+	copier, err := NewCopier(Mount{Root: dstRoot})
+	require.NoError(t, err)
+	defer copier.Close()
+	require.NoError(t, copier.Copy(context.Background(), Mount{Root: srcRoot}, "/", "/out", CopyOptions{
+		CopyDirContents: true, FollowSymlinks: true,
+		Filter: Filter{Include: []string{"link/nested/*.txt"}, Exclude: []string{"**/skip.txt"}},
+	}))
+	data, err := os.ReadFile(filepath.Join(dstRoot, "out/link/nested/keep.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "keep", string(data))
+	require.NoFileExists(t, filepath.Join(dstRoot, "out/link/nested/skip.txt"))
+	require.NoDirExists(t, filepath.Join(dstRoot, "out/target"))
+}
+
+func TestCopyDirectoryFollowSymlinksErrors(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ name, target, want string }{
+		{"dangling", "missing", "open confined source"},
+		{"directory cycle", ".", "symlink cycle"},
+		{"link cycle", "link", "too many"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srcRoot, dstRoot := t.TempDir(), t.TempDir()
+			require.NoError(t, os.Symlink(tc.target, filepath.Join(srcRoot, "link")))
+			copier, err := NewCopier(Mount{Root: dstRoot})
+			require.NoError(t, err)
+			defer copier.Close()
+			err = copier.Copy(context.Background(), Mount{Root: srcRoot}, "/", "/out", CopyOptions{CopyDirContents: true, FollowSymlinks: true})
+			require.ErrorContains(t, err, tc.want)
+		})
+	}
+}
+
+func TestCopyDirectoryFollowSymlinksConfinedToSource(t *testing.T) {
+	t.Parallel()
+	srcRoot, dstRoot := t.TempDir(), t.TempDir()
+	// This existing host path must be treated as source-relative, not followed.
+	external := filepath.Join(t.TempDir(), "external.txt")
+	require.NoError(t, os.WriteFile(external, []byte("outside"), 0644))
+	require.NoError(t, os.Symlink(external, filepath.Join(srcRoot, "link")))
+	copier, err := NewCopier(Mount{Root: dstRoot})
+	require.NoError(t, err)
+	defer copier.Close()
+	err = copier.Copy(context.Background(), Mount{Root: srcRoot}, "/", "/out", CopyOptions{CopyDirContents: true, FollowSymlinks: true})
+	require.ErrorIs(t, err, os.ErrNotExist)
+	require.NoFileExists(t, filepath.Join(dstRoot, "out/link"))
+}
+
+func TestCopyDirectoryFollowSymlinksMergedOverlayTarget(t *testing.T) {
+	t.Parallel()
+	lower, upper, view, dst := t.TempDir(), t.TempDir(), t.TempDir(), t.TempDir()
+	for _, root := range []string{lower, upper, view} {
+		require.NoError(t, os.Mkdir(filepath.Join(root, "target"), 0755))
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(lower, "target/old.txt"), []byte("old"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(lower, "target/shared.txt"), []byte("old"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(upper, "target/shared.txt"), []byte("new"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(view, "target/old.txt"), []byte("old"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(view, "target/shared.txt"), []byte("new"), 0644))
+	for _, root := range []string{upper, view} {
+		require.NoError(t, os.Mkdir(filepath.Join(root, "src"), 0755))
+		require.NoError(t, os.Symlink("/target", filepath.Join(root, "src/link")))
+	}
+	copier, err := NewCopier(Mount{Root: dst})
+	require.NoError(t, err)
+	defer copier.Close()
+	err = copier.Copy(context.Background(), Mount{Root: view, Mount: &mount.Mount{
+		Type: "overlay", Options: []string{"lowerdir=" + upper + ":" + lower},
+	}}, "/src", "/out", CopyOptions{CopyDirContents: true, FollowSymlinks: true})
+	require.NoError(t, err)
+	for file, want := range map[string]string{"old.txt": "old", "shared.txt": "new"} {
+		got, err := os.ReadFile(filepath.Join(dst, "out/link", file))
+		require.NoError(t, err)
+		require.Equal(t, want, string(got))
+	}
+}
+
+func TestCopyDirectoryFollowSymlinksExcludedCycle(t *testing.T) {
+	t.Parallel()
+	src, dst := t.TempDir(), t.TempDir()
+	require.NoError(t, os.Symlink(".", filepath.Join(src, "link")))
+	copier, err := NewCopier(Mount{Root: dst})
+	require.NoError(t, err)
+	defer copier.Close()
+	require.NoError(t, copier.Copy(context.Background(), Mount{Root: src}, "/", "/out", CopyOptions{
+		CopyDirContents: true, FollowSymlinks: true, Filter: Filter{Exclude: []string{"link"}},
+	}))
 }

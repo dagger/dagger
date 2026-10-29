@@ -128,6 +128,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("path").Doc(`The path of the directory to retrieve (e.g., "./src").`),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
+				dagql.Arg("resolveBrokenSymlinks").Doc(`Recursively copy symlink targets into a self-contained directory. Targets must be within the source filesystem or directory mount. Dangling links and symlink cycles cause an error.`).View(AfterVersion("v1.0.0-0")),
 			),
 
 		dagql.NodeFunc("file", s.file).
@@ -3593,11 +3594,11 @@ func (s *containerSchema) healthcheck(ctx context.Context, parent dagql.ObjectRe
 }
 
 type containerDirectoryArgs struct {
-	Path   string
-	Expand bool `default:"false"`
+	ResolveBrokenSymlinks bool `default:"false"`
+	Path                  string
+	Expand                bool `default:"false"`
 }
 
-//nolint:dupl // symmetric with (*containerSchema).file; sharing hides Directory vs File specifics
 func (s *containerSchema) directory(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerDirectoryArgs) (dagql.ObjectResult[*core.Directory], error) {
 	if err := evaluateContainerMetadata(ctx, parent); err != nil {
 		return dagql.ObjectResult[*core.Directory]{}, err
@@ -3617,14 +3618,19 @@ func (s *containerSchema) directory(ctx context.Context, parent dagql.ObjectResu
 		Platform: parent.Self().Platform,
 		Services: slices.Clone(parent.Self().Services),
 		Lazy: &core.ContainerDirectoryLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Path:      path,
+			ResolveBrokenSymlinks: args.ResolveBrokenSymlinks,
+			LazyState:             core.NewLazyState(),
+			Parent:                parent,
+			Path:                  path,
 		},
 		Dir:      new(core.LazyAccessor[string, *core.Directory]),
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
-	dir.SetPath(resolvedPath)
+	if args.ResolveBrokenSymlinks {
+		dir.SetPath("/")
+	} else {
+		dir.SetPath(resolvedPath)
+	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
 
@@ -3633,7 +3639,6 @@ type containerFileArgs struct {
 	Expand bool `default:"false"`
 }
 
-//nolint:dupl // symmetric with (*containerSchema).directory; sharing hides File vs Directory specifics
 func (s *containerSchema) file(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerFileArgs) (dagql.ObjectResult[*core.File], error) {
 	if err := evaluateContainerMetadata(ctx, parent); err != nil {
 		return dagql.ObjectResult[*core.File]{}, err

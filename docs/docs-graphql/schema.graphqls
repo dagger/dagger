@@ -1215,6 +1215,13 @@ type Container implements Exportable & Node & Syncer {
     environment variables defined in the container (e.g. "/$VAR/foo").
     """
     expand: Boolean = false
+
+    """
+    Recursively copy symlink targets into a self-contained directory. Targets
+    must be within the source filesystem or directory mount. Dangling links and
+    symlink cycles cause an error.
+    """
+    resolveBrokenSymlinks: Boolean = false
   ): Directory!
 
   """
@@ -2930,6 +2937,13 @@ type Directory implements Exportable & Node & Syncer {
     Location of the directory to retrieve. Example: "/src"
     """
     path: String!
+
+    """
+    Recursively copy symlink targets into a self-contained directory. Targets
+    must be within this directory. Dangling links and symlink cycles cause an
+    error.
+    """
+    resolveBrokenSymlinks: Boolean = false
   ): Directory!
 
   """Return a snapshot with a directory added"""

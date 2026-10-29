@@ -12,6 +12,7 @@ import (
 	"syscall"
 
 	"github.com/containerd/containerd/v2/core/snapshots"
+	"github.com/dagger/dagger/util/fsxutil"
 	"golang.org/x/sys/unix"
 )
 
@@ -36,9 +37,23 @@ func (c *Copier) Copy(ctx context.Context, src Mount, srcPath, destPath string, 
 	if err != nil {
 		return err
 	}
-	m, err := newMatcher(s.root, opts.Filter)
+	filter := opts.Filter
+	if opts.FollowSymlinks {
+		if err := s.confine(); err != nil {
+			return err
+		}
+		defer s.rootHandle.Close()
+		// Raw overlay layers and source hardlinks bypass the confined mount view.
+		opts.DisableSourceHardlinks = true
+		filter.Gitignore = false
+	}
+	m, err := newMatcher(s.root, filter)
 	if err != nil {
 		return err
+	}
+	if opts.FollowSymlinks && opts.Filter.Gitignore {
+		m.gitignore = fsxutil.NewGitIgnoreMatcher(rootedIgnoreFS{source: s})
+		m.gitignoreRoot = s.root
 	}
 	return c.copy(ctx, s, m, srcPath, destPath, opts)
 }
@@ -118,6 +133,16 @@ func (c *Copier) copy(ctx context.Context, src *source, matcher *matcher, srcPat
 		Info:     src.baseInfo,
 		minLayer: src.baseMinLayer,
 	}
+	var ancestors map[inode]bool
+	if opts.FollowSymlinks {
+		var err error
+		root, err = src.pinEntry(root)
+		if err != nil {
+			return err
+		}
+		defer root.file.Close()
+		ancestors = make(map[inode]bool)
+	}
 
 	destPath = cleanContainerPath(destPath)
 	destInfo, destExists, err := c.dest.statView(destPath)
@@ -137,8 +162,11 @@ func (c *Copier) copy(ctx context.Context, src *source, matcher *matcher, srcPat
 			return err
 		}
 		parent := resolvedParent{rel: rel, ok: true}
+		if ancestors != nil {
+			ancestors[statInode(root.Info.Sys().(*syscall.Stat_t))] = true
+		}
 		for _, ent := range entries {
-			if err := c.copyEntry(ctx, src, matcher, ent, filepath.Join(destPath, filepath.Base(ent.Rel)), opts, matchState{}, nil, parent); err != nil {
+			if err := c.copyEntry(ctx, src, matcher, ent, filepath.Join(destPath, filepath.Base(ent.Rel)), opts, matchState{}, nil, parent, ancestors); err != nil {
 				return err
 			}
 		}
@@ -157,7 +185,7 @@ func (c *Copier) copy(ctx context.Context, src *source, matcher *matcher, srcPat
 	} else if destExists && destInfo.IsDir() {
 		destPath = filepath.Join(destPath, filepath.Base(src.baseView))
 	}
-	return c.copyEntry(ctx, src, matcher, root, destPath, opts, matchState{}, nil, resolvedParent{})
+	return c.copyEntry(ctx, src, matcher, root, destPath, opts, matchState{}, nil, resolvedParent{}, ancestors)
 }
 
 func (c *Copier) copyFile(ctx context.Context, src *source, srcPath, destPath string, opts CopyOptions) error {
@@ -205,6 +233,7 @@ func (c *Copier) copyEntry(
 	parentState matchState,
 	pending []pendingDir,
 	parent resolvedParent,
+	ancestors map[inode]bool,
 ) error {
 	select {
 	case <-ctx.Done():
@@ -225,6 +254,21 @@ func (c *Copier) copyEntry(
 			return fmt.Errorf("failed to stat source path %s: %w", ent.ViewPath, ent.StatErr)
 		}
 		return fmt.Errorf("source path %q missing file info", ent.ViewPath)
+	}
+	if opts.FollowSymlinks {
+		pinned, skip, err := src.pinCopyEntry(ent, include, matcher, state)
+		if err != nil {
+			return err
+		}
+		if skip {
+			return nil
+		}
+		ent = pinned
+		defer ent.file.Close()
+		include, state, err = matcher.includePath(ent.Rel, ent.ViewPath, ent.Info, parentState)
+		if err != nil {
+			return err
+		}
 	}
 
 	if ent.Info.IsDir() {
@@ -254,6 +298,14 @@ func (c *Copier) copyEntry(
 			}
 			return nil
 		}
+		if ancestors != nil {
+			ino := statInode(ent.Info.Sys().(*syscall.Stat_t))
+			if ancestors[ino] {
+				return fmt.Errorf("symlink cycle at %q", ent.Rel)
+			}
+			ancestors[ino] = true
+			defer delete(ancestors, ino)
+		}
 
 		children, err := src.readDir(ent.Rel, ent.minLayer)
 		if err != nil {
@@ -261,7 +313,7 @@ func (c *Copier) copyEntry(
 		}
 		for _, child := range children {
 			childDest := filepath.Join(destPath, filepath.Base(child.Rel))
-			if err := c.copyEntry(ctx, src, matcher, child, childDest, opts, state, childPending, childParent); err != nil {
+			if err := c.copyEntry(ctx, src, matcher, child, childDest, opts, state, childPending, childParent, ancestors); err != nil {
 				return err
 			}
 		}

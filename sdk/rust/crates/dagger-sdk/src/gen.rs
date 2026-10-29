@@ -3014,6 +3014,9 @@ pub struct ContainerDirectoryOpts {
     /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
+    /// Recursively copy symlink targets into a self-contained directory. Targets must be within the source filesystem or directory mount. Dangling links and symlink cycles cause an error.
+    #[builder(setter(into, strip_option), default)]
+    pub resolve_broken_symlinks: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerFileOpts {
@@ -3751,6 +3754,9 @@ impl Container {
         query = query.arg("path", path.into());
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
+        }
+        if let Some(resolve_broken_symlinks) = opts.resolve_broken_symlinks {
+            query = query.arg("resolveBrokenSymlinks", resolve_broken_symlinks);
         }
         Directory {
             proc: self.proc.clone(),
@@ -6706,6 +6712,12 @@ pub struct DirectoryStatOpts {
     pub do_not_follow_symlinks: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct DirectoryDirectoryOpts {
+    /// Recursively copy symlink targets into a self-contained directory. Targets must be within this directory. Dangling links and symlink cycles cause an error.
+    #[builder(setter(into, strip_option), default)]
+    pub resolve_broken_symlinks: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryWithDirectoryOpts<'a> {
     /// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
     #[builder(setter(into, strip_option), default)]
@@ -7270,9 +7282,32 @@ impl Directory {
     /// # Arguments
     ///
     /// * `path` - Location of the directory to retrieve. Example: "/src"
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("directory");
         query = query.arg("path", path.into());
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves a directory at the given path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the directory to retrieve. Example: "/src"
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn directory_opts(
+        &self,
+        path: impl Into<String>,
+        opts: DirectoryDirectoryOpts,
+    ) -> Directory {
+        let mut query = self.selection.select("directory");
+        query = query.arg("path", path.into());
+        if let Some(resolve_broken_symlinks) = opts.resolve_broken_symlinks {
+            query = query.arg("resolveBrokenSymlinks", resolve_broken_symlinks);
+        }
         Directory {
             proc: self.proc.clone(),
             selection: query,

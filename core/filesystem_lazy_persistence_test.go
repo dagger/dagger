@@ -64,7 +64,7 @@ func TestFilesystemEvaluatedLazyOperationPersistence(t *testing.T) {
 				parentDir := parent.(dagql.ObjectResult[*Directory])
 				if kind == "Directory" {
 					var err error
-					value, err = source.Subdirectory(ctx, parentDir, "nested")
+					value, err = source.Subdirectory(ctx, parentDir, "nested", false)
 					require.NoError(t, err)
 					wantKind, wantPath, wantInputPath = persistedDirectoryLazyKindSubdirectory, "/selected/nested", "nested"
 				} else {
@@ -104,7 +104,7 @@ func TestFilesystemEvaluatedLazyOperationPersistence(t *testing.T) {
 			require.Equal(t, []dagql.PersistedSnapshotRefLink{{Role: "snapshot", RefKey: "operation-tree"}}, rec.SnapshotLinks)
 
 			if dir, ok := value.(*Directory); ok {
-				derived, err := dir.Subdirectory(ctx, child.(dagql.ObjectResult[*Directory]), "another")
+				derived, err := dir.Subdirectory(ctx, child.(dagql.ObjectResult[*Directory]), "another", false)
 				require.NoError(t, err)
 				require.False(t, derived.Lazy.IsEvaluated())
 				require.Empty(t, derived.lazyJSON)

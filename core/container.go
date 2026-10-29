@@ -345,6 +345,7 @@ type ContainerWithRootFSLazy struct {
 }
 
 type ContainerDirectoryLazy struct {
+	ResolveBrokenSymlinks bool
 	LazyState
 	Parent dagql.ObjectResult[*Container]
 	Path   string
@@ -793,8 +794,9 @@ type persistedContainerWithDirectoryLazy struct {
 }
 
 type persistedContainerDirectoryLazy struct {
-	ParentResultID uint64 `json:"parentResultID"`
-	Path           string `json:"path"`
+	ResolveBrokenSymlinks bool   `json:"resolveBrokenSymlinks,omitempty"`
+	ParentResultID        uint64 `json:"parentResultID"`
+	Path                  string `json:"path"`
 }
 
 type persistedContainerWithFileLazy struct {
@@ -3551,14 +3553,16 @@ func (lazy *ContainerDirectoryLazy) Evaluate(ctx context.Context, dir *Directory
 			if err := srv.Select(ctx, lazy.Parent, &rootfs, dagql.Selector{Field: "rootfs"}); err != nil {
 				return err
 			}
-			if subpath == "" || subpath == "." || subpath == "/" {
+			if !lazy.ResolveBrokenSymlinks && (subpath == "" || subpath == "." || subpath == "/") {
 				resolved = rootfs
 			} else {
+				args := []dagql.NamedInput{{Name: "path", Value: dagql.String(subpath)}}
+				if lazy.ResolveBrokenSymlinks {
+					args = append(args, dagql.NamedInput{Name: "resolveBrokenSymlinks", Value: dagql.Boolean(true)})
+				}
 				if err := srv.Select(ctx, rootfs, &resolved, dagql.Selector{
 					Field: "directory",
-					Args: []dagql.NamedInput{
-						{Name: "path", Value: dagql.String(subpath)},
-					},
+					Args:  args,
 				}); err != nil {
 					return err
 				}
@@ -3570,6 +3574,15 @@ func (lazy *ContainerDirectoryLazy) Evaluate(ctx context.Context, dir *Directory
 			mountedDir, ok := mnt.DirectorySource.Peek()
 			if !ok || mountedDir == nil {
 				return fmt.Errorf("container directory lazy: missing mounted directory source for %s", mnt.Target)
+			}
+			if lazy.ResolveBrokenSymlinks {
+				ref, sourcePath, err := materializedDirectorySnapshotAndPath(mountedDir)
+				if err != nil {
+					return err
+				}
+				dir.Platform = mountedDir.Platform
+				dir.Services = slices.Clone(mountedDir.Services)
+				return dir.materializeSubdirectory(ctx, ref, sourcePath, subpath)
 			}
 			if subpath == "" || subpath == "." {
 				detached, err := cloneDetachedDirectoryForContainerResult(ctx, mountedDir)
@@ -3672,8 +3685,9 @@ func (lazy *ContainerDirectoryLazy) EncodePersisted(ctx context.Context, enc *da
 		return nil, err
 	}
 	return json.Marshal(persistedContainerDirectoryLazy{
-		ParentResultID: parentID,
-		Path:           lazy.Path,
+		ResolveBrokenSymlinks: lazy.ResolveBrokenSymlinks,
+		ParentResultID:        parentID,
+		Path:                  lazy.Path,
 	})
 }
 

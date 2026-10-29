@@ -786,6 +786,11 @@ export type ContainerDirectoryOpts = {
    * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   expand?: boolean
+
+  /**
+   * Recursively copy symlink targets into a self-contained directory. Targets must be within the source filesystem or directory mount. Dangling links and symlink cycles cause an error.
+   */
+  resolveBrokenSymlinks?: boolean
 }
 
 export type ContainerExistsOpts = {
@@ -1708,6 +1713,13 @@ export type DirectoryAsWorkspaceOpts = {
    * Current working directory inside the workspace root. Defaults to the workspace root.
    */
   cwd?: string
+}
+
+export type DirectoryDirectoryOpts = {
+  /**
+   * Recursively copy symlink targets into a self-contained directory. Targets must be within this directory. Dangling links and symlink cycles cause an error.
+   */
+  resolveBrokenSymlinks?: boolean
 }
 
 export type DirectoryDockerBuildOpts = {
@@ -7127,6 +7139,7 @@ export class Container extends BaseClient {
    * Mounts are included.
    * @param path The path of the directory to retrieve (e.g., "./src").
    * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   * @param opts.resolveBrokenSymlinks Recursively copy symlink targets into a self-contained directory. Targets must be within the source filesystem or directory mount. Dangling links and symlink cycles cause an error.
    */
   directory = (path: string, opts?: ContainerDirectoryOpts): Directory => {
     const ctx = this._ctx.select("directory", { path, ...opts })
@@ -8905,9 +8918,10 @@ export class Directory extends BaseClient {
   /**
    * Retrieves a directory at the given path.
    * @param path Location of the directory to retrieve. Example: "/src"
+   * @param opts.resolveBrokenSymlinks Recursively copy symlink targets into a self-contained directory. Targets must be within this directory. Dangling links and symlink cycles cause an error.
    */
-  directory = (path: string): Directory => {
-    const ctx = this._ctx.select("directory", { path })
+  directory = (path: string, opts?: DirectoryDirectoryOpts): Directory => {
+    const ctx = this._ctx.select("directory", { path, ...opts })
     return new Directory(ctx)
   }
 
