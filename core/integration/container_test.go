@@ -4752,6 +4752,30 @@ func (ContainerSuite) TestInsecureRootCapabilites(ctx context.Context, t *testct
 	}
 }
 
+// An exec whose process the kernel's OOM killer killed fails with an error
+// that says so, not only with its exit code.
+func (ContainerSuite) TestExecOOMKilled(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// Give a process a memory limit it exceeds, in a cgroup of its own below
+	// the exec's. A cgroup with children can't hold processes, so the exec's
+	// processes move to a sibling first.
+	_, err := sdkcore.NewQuery(c).Container().From(alpineImage).
+		WithExec([]string{"sh", "-c", `
+cd /sys/fs/cgroup
+mkdir procs oom
+for pid in $(cat cgroup.procs); do echo $pid > procs/cgroup.procs 2>/dev/null || :; done
+set -e
+echo +memory > cgroup.subtree_control
+echo 16M > oom/memory.max
+sh -c 'echo $$ > /sys/fs/cgroup/oom/cgroup.procs && exec tail /dev/zero'
+`}, sdkcore.ContainerWithExecOpts{
+			InsecureRootCapabilities: true,
+		}).
+		Sync(ctx)
+	requireErrOut(t, err, "exit code: 137: out of memory")
+}
+
 func (ContainerSuite) TestInsecureRootCapabilitesWithService(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
