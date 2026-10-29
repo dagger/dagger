@@ -1210,12 +1210,17 @@ func (c *Client) setProxyEnvs(_ context.Context, state *execState) error {
 	}
 
 	const systemEnvPrefix = "_DAGGER_ENGINE_SYSTEMENV_"
-	for _, systemEnvName := range state.execMD.SystemEnvNames {
+	for _, entry := range state.execMD.SystemEnvNames {
+		systemEnvName, fallback, hasFallback := strings.Cut(entry, "=")
 		if _, ok := state.origEnvMap[systemEnvName]; ok {
 			// don't overwrite explicit user-provided values
 			continue
 		}
 		systemVal, ok := os.LookupEnv(systemEnvPrefix + systemEnvName)
+		if !ok && hasFallback {
+			// neither the container nor the engine sets it
+			systemVal, ok = fallback, true
+		}
 		if ok {
 			state.spec.Process.Env = append(state.spec.Process.Env, systemEnvName+"="+systemVal)
 		}

@@ -28,6 +28,16 @@ const (
 	// Otherwise, update it to the latest known commit during release.
 	// The SDK image build pre-caches this version (.dagger/modules/engine-dev/build/sdk.go).
 	goSDKLibVersion = "f70383e0aa389216628d304482664359300c9be1" // v1.0.0-beta.12
+
+	// goSDKDefaultGoProxy is the GOPROXY for module builds when neither the
+	// SDK container nor the engine (_DAGGER_ENGINE_SYSTEMENV_GOPROXY) sets one.
+	// proxy.golang.org sometimes resets a module zip download mid-stream
+	// ("stream error: ... INTERNAL_ERROR"). With Go's default
+	// ("https://proxy.golang.org,direct") only a 404 or 410 falls through to
+	// the next entry, so that fails the build. "|" falls through on any error:
+	// retry the proxy once, then fetch from the origin with git, which the SDK
+	// image installs. go.sum still verifies whatever is downloaded.
+	goSDKDefaultGoProxy = "https://proxy.golang.org|https://proxy.golang.org|direct"
 )
 
 /*
@@ -832,6 +842,10 @@ func (sdk *goSDK) base(ctx context.Context) (dagql.ObjectResult[*core.Container]
 				{
 					Name:  "name",
 					Value: dagql.String("GOPROXY"),
+				},
+				{
+					Name:  "default",
+					Value: dagql.Opt(dagql.String(goSDKDefaultGoProxy)),
 				},
 			},
 		},

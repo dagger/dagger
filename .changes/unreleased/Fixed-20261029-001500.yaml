@@ -1,0 +1,12 @@
+kind: Fixed
+body: |
+  Go SDK module builds now retry a failed proxy.golang.org download once, then
+  fetch the module from its source with git, when no `GOPROXY` is set. Before,
+  a download that proxy.golang.org reset mid-stream ("stream error ...
+  INTERNAL_ERROR") failed the build. A `GOPROXY` set on the engine through
+  `_DAGGER_ENGINE_SYSTEMENV_GOPROXY` still takes precedence. Go modules rebuild
+  once after upgrading.
+time: 2026-10-29T00:15:00Z
+custom:
+  Author: sipsma
+  PR: ""

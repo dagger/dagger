@@ -9,10 +9,13 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -668,4 +671,66 @@ func (GoSuite) TestContainerDefaultValue(ctx context.Context, t *testctx.T) {
 	out2, err := modGen.With(daggerCallAt(".", "test-with-default-container", "--ctr=alpine:3.18")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out2, "3.18")
+}
+
+// Go SDK module builds use a GOPROXY that retries proxy.golang.org and then
+// the origin, unless the engine (or the container itself) sets GOPROXY.
+func (GoSuite) TestGoProxyDefault(ctx context.Context, t *testctx.T) {
+	const fallback = "https://proxy.golang.org|https://proxy.golang.org|direct"
+
+	t.Run("module build without an engine setting", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		out, err := moduleFixture(t, c, "go/goproxy").With(daggerCall("value")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, fallback, strings.TrimSpace(out))
+	})
+
+	t.Run("module build with an engine setting", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		const engineSetting = "https://proxy.golang.org"
+		devEngine := devEngineContainerAsService(devEngineContainer(c, func(ctr *core.Container) *core.Container {
+			return ctr.WithEnvVariable("_DAGGER_ENGINE_SYSTEMENV_GOPROXY", engineSetting)
+		}))
+		endpoint, err := devEngine.Endpoint(ctx, core.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
+		require.NoError(t, err)
+		out, err := moduleFixture(t, c, "go/goproxy").
+			WithServiceBinding("dev-engine", devEngine).
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
+			WithExec([]string{"dagger", "call", "value"}, core.ContainerWithExecOpts{DisableDaggerInDagger: true}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, engineSetting, strings.TrimSpace(out))
+	})
+
+	// A container's own GOPROXY, even an empty one, wins over the fallback.
+	for _, tc := range []struct {
+		name string
+		with string
+		want string
+	}{
+		{name: "container without a setting", want: "fallback"},
+		{name: "container setting", with: `withEnvVariable(name: "GOPROXY", value: "mine") {`, want: "mine"},
+		{name: "empty container setting", with: `withEnvVariable(name: "GOPROXY", value: "") {`, want: ""},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			closing := ""
+			if tc.with != "" {
+				closing = "}"
+			}
+			query := fmt.Sprintf(`{ container { from(address: %q) { %s
+				__withSystemEnvVariable(name: "GOPROXY", default: "fallback") {
+					withExec(args: ["sh", "-c", "echo \"${GOPROXY-unset}\""]) { stdout }
+				} %s } } }`, alpineImage, tc.with, closing)
+			var result json.RawMessage
+			require.NoError(t, c.Do(ctx, &dagger.Request{Query: query}, &dagger.Response{Data: &result}))
+			path := "container.from."
+			if tc.with != "" {
+				path += "withEnvVariable."
+			}
+			stdout := gjson.GetBytes(result, path+"__withSystemEnvVariable.withExec.stdout")
+			require.True(t, stdout.Exists(), string(result))
+			require.Equal(t, tc.want, strings.TrimSpace(stdout.String()))
+		})
+	}
 }

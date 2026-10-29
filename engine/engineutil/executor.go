@@ -80,6 +80,8 @@ type ExecutionMetadata struct {
 	SecretEnvNames  []string
 	SecretFilePaths []string
 
+	// SystemEnvNames lists env vars inherited from the engine container (see
+	// SystemEnvEntry). An entry may carry a fallback value as "NAME=fallback".
 	SystemEnvNames []string
 
 	EnabledGPUs []string
@@ -160,6 +162,16 @@ type ExecutionMetadata struct {
 	// json:"-" is load-bearing for the same reason as ProfArgs above: this
 	// run-time-only value must never perturb an exec cache key.
 	ContentPreferredDigest func() digest.Digest `json:"-"`
+}
+
+// SystemEnvEntry returns a SystemEnvNames entry for the env var name. With a
+// fallback, the entry is "name=fallback": an env var name cannot contain "=",
+// so entries without a fallback keep their old form.
+func SystemEnvEntry(name string, fallback *string) string {
+	if fallback == nil {
+		return name
+	}
+	return name + "=" + *fallback
 }
 
 func (c *Client) Run(
