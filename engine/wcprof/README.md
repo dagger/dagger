@@ -147,8 +147,10 @@ past the threshold gets one capture: every goroutine's stack, a 15 s CPU
 profile, and every goroutine's stack again, with the sessions running at the
 time and how long each had run. One capture runs at a time; when Go's CPU
 profiler is already in use (an armed phase profile or a `/debug/pprof/profile`
-pull), the capture keeps the stacks and records why it has no profile. With
-the watch off, a session's start costs one atomic load.
+pull), the capture keeps the stacks and records why it has no profile. A
+session keeps the threshold it started under when the threshold changes;
+switching the watch off stops every capture that hasn't started. With the
+watch off, a session's start costs one atomic load.
 
 ## Analysis
 

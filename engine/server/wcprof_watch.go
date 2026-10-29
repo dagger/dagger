@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"runtime/pprof"
 	"sort"
-	"sync"
 	"time"
 
 	"github.com/dagger/dagger/engine/slog"
@@ -15,13 +14,14 @@ import (
 // runs past the watch's threshold, the engine takes every goroutine's stack, a
 // CPU profile over captureCPUDuration, and every goroutine's stack again. It
 // is switched on and off through the debug endpoint; while it's off, a
-// session's start costs one atomic load.
-type sessionWatch struct {
-	threshold time.Duration
+// session's start costs one atomic load. A session keeps the threshold it
+// started under; switching the watch off stops captures that haven't started.
 
-	mu sync.Mutex
-	// started is each watched session's start, while it runs.
-	started map[string]time.Time
+// watchTimer starts the timer of a watched session: f runs after d unless
+// the returned stop is called first. Tests replace it to fire timers
+// themselves.
+var watchTimer = func(d time.Duration, f func()) (stop func() bool) {
+	return time.AfterFunc(d, f).Stop
 }
 
 // captureCPUDuration is how long a capture profiles the engine's CPU.
@@ -57,23 +57,19 @@ type CaptureSession struct {
 }
 
 // Watch switches the session watch on with threshold, or off when threshold
-// is 0. Sessions already running aren't watched.
+// is 0. Sessions already running keep their threshold, or stay unwatched.
 func (srv *Server) Watch(threshold time.Duration) {
+	srv.watchThreshold.Store(int64(max(threshold, 0)))
 	if threshold <= 0 {
-		srv.watch.Store(nil)
 		slog.Info("wcprof: session watch off")
 		return
 	}
-	srv.watch.Store(&sessionWatch{threshold: threshold, started: map[string]time.Time{}})
 	slog.Info("wcprof: session watch on", "threshold", threshold)
 }
 
 // WatchThreshold is the session watch's threshold, 0 when it's off.
 func (srv *Server) WatchThreshold() time.Duration {
-	if w := srv.watch.Load(); w != nil {
-		return w.threshold
-	}
-	return 0
+	return time.Duration(srv.watchThreshold.Load())
 }
 
 // Captures returns the captures the engine kept, oldest first.
@@ -87,26 +83,33 @@ func (srv *Server) Captures() []Capture {
 // on, and returns what stops watching it at its end; nil when the watch is
 // off.
 func (srv *Server) watchSession(sessionID string) func() {
-	w := srv.watch.Load()
-	if w == nil {
+	threshold := srv.WatchThreshold()
+	if threshold == 0 {
 		return nil
 	}
-	w.mu.Lock()
-	w.started[sessionID] = time.Now()
-	w.mu.Unlock()
-	timer := time.AfterFunc(w.threshold, func() { srv.capture(w, sessionID) })
+	srv.watchMu.Lock()
+	if srv.watchStarted == nil {
+		srv.watchStarted = map[string]time.Time{}
+	}
+	srv.watchStarted[sessionID] = time.Now()
+	srv.watchMu.Unlock()
+	stop := watchTimer(threshold, func() { srv.capture(sessionID, threshold) })
 	return func() {
-		timer.Stop()
-		w.mu.Lock()
-		delete(w.started, sessionID)
-		w.mu.Unlock()
+		stop()
+		srv.watchMu.Lock()
+		delete(srv.watchStarted, sessionID)
+		srv.watchMu.Unlock()
 	}
 }
 
-// capture records what the engine is doing as session runs past the watch's
-// threshold. One capture runs at a time; a session that crosses the
-// threshold while another capture runs is logged and not captured.
-func (srv *Server) capture(w *sessionWatch, session string) {
+// capture records what the engine is doing as session runs past threshold,
+// unless the watch has been switched off since. One capture runs at a time;
+// a session that crosses its threshold while another capture runs is logged
+// and not captured.
+func (srv *Server) capture(session string, threshold time.Duration) {
+	if srv.WatchThreshold() == 0 {
+		return
+	}
 	if !srv.captureMu.TryLock() {
 		slog.Info("wcprof: session ran past the watch's threshold during another capture", "session", session)
 		return
@@ -114,13 +117,13 @@ func (srv *Server) capture(w *sessionWatch, session string) {
 	defer srv.captureMu.Unlock()
 	now := time.Now()
 	c := Capture{At: now, Session: session}
-	w.mu.Lock()
-	for id, start := range w.started {
+	srv.watchMu.Lock()
+	for id, start := range srv.watchStarted {
 		c.Sessions = append(c.Sessions, CaptureSession{ID: id, RunningMS: now.Sub(start).Milliseconds()})
 	}
-	w.mu.Unlock()
+	srv.watchMu.Unlock()
 	sort.Slice(c.Sessions, func(i, j int) bool { return c.Sessions[i].RunningMS > c.Sessions[j].RunningMS })
-	slog.Info("wcprof: session ran past the watch's threshold; capturing", "session", session, "threshold", w.threshold)
+	slog.Info("wcprof: session ran past the watch's threshold; capturing", "session", session, "threshold", threshold)
 
 	c.GoroutinesBefore = goroutineStacks()
 	var prof bytes.Buffer
