@@ -601,7 +601,7 @@ func TestUploadConcurrencyIsPerEngine(t *testing.T) {
 	}
 	var exportIDs []string
 	for root := uint64(1); root <= ExportsInFlight; root++ {
-		s.dispatch(request(t, root, protocol.TypeExport, protocol.Export{Roots: []uint64{root}}))
+		s.dispatch(request(t, root, protocol.TypeExport, outputsExport(root)))
 		exportIDs = append(exportIDs, decode[protocol.Exported](t, conn.next(t)).ExportID)
 	}
 	for i, exportID := range exportIDs {
@@ -987,7 +987,7 @@ func TestExportEndedLoggedSlotWait(t *testing.T) {
 		s, conn, logs := loggedSession(t, adapter)
 		dispatched := time.Now()
 		for i := range ExportsInFlight + 1 {
-			s.dispatch(request(t, uint64(i+1), protocol.TypeExport, protocol.Export{Roots: []uint64{uint64(i + 1)}}))
+			s.dispatch(request(t, uint64(i+1), protocol.TypeExport, outputsExport(uint64(i+1))))
 		}
 		for range ExportsInFlight {
 			<-entered
@@ -1068,7 +1068,7 @@ func TestExportsInFlight(t *testing.T) {
 	}
 	s, conn := testSession(t, adapter)
 	for i := range ExportsInFlight + 1 {
-		s.dispatch(request(t, uint64(i+1), protocol.TypeExport, protocol.Export{Roots: []uint64{uint64(i + 1)}}))
+		s.dispatch(request(t, uint64(i+1), protocol.TypeExport, outputsExport(uint64(i+1))))
 	}
 	for range ExportsInFlight {
 		<-entered
@@ -1081,6 +1081,63 @@ func TestExportsInFlight(t *testing.T) {
 	close(finish)
 	<-entered
 	for range ExportsInFlight + 1 {
+		require.Equal(t, protocol.TypeExported, conn.next(t).Type)
+	}
+}
+
+// outputsExport asks for root and one of its outputs.
+func outputsExport(root uint64) protocol.Export {
+	return protocol.Export{Roots: []uint64{root}, Outputs: []protocol.ExportOutput{{Number: root}}}
+}
+
+// An export that selects no outputs doesn't wait for the slots the exports
+// that select outputs hold; at most RecordsExportsInFlight such exports run
+// at once.
+func TestRecordsExportHasItsOwnSlots(t *testing.T) {
+	entered := make(chan uint64, 8)
+	finish := make(chan struct{})
+	release := sync.OnceFunc(func() { close(finish) })
+	adapter := newFakeAdapter()
+	adapter.export = func(ctx context.Context, req protocol.Export, consume func(context.Context, Export) error) error {
+		entered <- req.Roots[0]
+		if len(req.Outputs) > 0 || req.Roots[0] == 20 {
+			<-finish
+		}
+		return consume(ctx, Export{Skipped: []protocol.SkippedRoot{{Number: req.Roots[0], Reason: protocol.SkipGone}}})
+	}
+	s, conn := testSession(t, adapter)
+	// Release the held exports however the test ends, before the session's
+	// cleanup waits for them.
+	t.Cleanup(release)
+	for i := range ExportsInFlight {
+		s.dispatch(request(t, uint64(i+1), protocol.TypeExport, outputsExport(uint64(i+1))))
+	}
+	for range ExportsInFlight {
+		<-entered
+	}
+	// Every slot for exports that select outputs is held: one that selects
+	// none still runs.
+	s.dispatch(request(t, 10, protocol.TypeExport, protocol.Export{Roots: []uint64{10}}))
+	select {
+	case root := <-entered:
+		require.Equal(t, uint64(10), root)
+	case <-time.After(10 * time.Second):
+		t.Fatal("an export that selects no outputs waited for the other exports' slots")
+	}
+	require.Equal(t, uint64(10), decode[protocol.Exported](t, conn.next(t)).Skipped[0].Number)
+
+	// One that holds its slot makes the next that selects none wait.
+	s.dispatch(request(t, 20, protocol.TypeExport, protocol.Export{Roots: []uint64{20}}))
+	require.Equal(t, uint64(20), <-entered)
+	s.dispatch(request(t, 21, protocol.TypeExport, protocol.Export{Roots: []uint64{21}}))
+	select {
+	case root := <-entered:
+		t.Fatalf("export %d ran beyond RecordsExportsInFlight", root)
+	case <-time.After(50 * time.Millisecond):
+	}
+	release()
+	require.Equal(t, uint64(21), <-entered)
+	for range ExportsInFlight + 2 {
 		require.Equal(t, protocol.TypeExported, conn.next(t).Type)
 	}
 }
