@@ -64,6 +64,12 @@ func recordExecUsage(ctx context.Context, state *execState, scope string) {
 		return
 	}
 	u := wcprof.Usage{CPUUserUS: user, CPUSystemUS: sys, MemPeakBytes: peak}
+	if st, err := resources.ReadExecStats(dir); err == nil {
+		u.MinorFaults, u.MajorFaults, u.HugeFaults = st.MinorFaults, st.MajorFaults, st.HugeFaults
+		u.CPUStallUS, u.MemStallUS = st.CPUStallUS, st.MemStallUS
+	} else {
+		bklog.G(ctx).Debugf("exec %s: no %s faults and stalls: %v", state.id, scope, err)
+	}
 	wcprof.RecordUsage(wcprof.ContextWithOpID(ctx, state.profExecOpID), state.profExecOpID, scope, u)
 	state.profUsageMu.Lock()
 	defer state.profUsageMu.Unlock()
@@ -83,9 +89,19 @@ func setExecUsageAttrs(span trace.Span, state *execState) {
 			attribute.Int64(prefix+"cpu_user_us", u.CPUUserUS),
 			attribute.Int64(prefix+"cpu_system_us", u.CPUSystemUS),
 		)
-		// A peak that couldn't be read is left out, not reported as zero.
-		if u.MemPeakBytes > 0 {
-			span.SetAttributes(attribute.Int64(prefix+"mem_peak_bytes", u.MemPeakBytes))
+		// A peak that couldn't be read is left out, not reported as zero,
+		// and so are faults and stalls, which are zero then too.
+		for name, v := range map[string]int64{
+			"mem_peak_bytes": u.MemPeakBytes,
+			"faults_minor":   u.MinorFaults,
+			"faults_major":   u.MajorFaults,
+			"faults_huge":    u.HugeFaults,
+			"cpu_stall_us":   u.CPUStallUS,
+			"mem_stall_us":   u.MemStallUS,
+		} {
+			if v > 0 {
+				span.SetAttributes(attribute.Int64(prefix+name, v))
+			}
 		}
 	}
 }

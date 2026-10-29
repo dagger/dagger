@@ -108,6 +108,9 @@ type DumpEvent struct {
 	CPUIdleUS    int64 `json:"cid,omitempty"`
 	MinorFaults  int64 `json:"fmin,omitempty"`
 	MajorFaults  int64 `json:"fmaj,omitempty"`
+	HugeFaults   int64 `json:"fhuge,omitempty"`
+	CPUStallUS   int64 `json:"stcpu,omitempty"`
+	MemStallUS   int64 `json:"stmem,omitempty"`
 	GoAllocBytes int64 `json:"ga,omitempty"`
 	GoGCCycles   int64 `json:"gcn,omitempty"`
 	GoGCCPUUS    int64 `json:"gcc,omitempty"`
@@ -146,6 +149,9 @@ func usageDumpEvent(u usageRecord) DumpEvent {
 		CPUIdleUS:    u.usage.CPUIdleUS,
 		MinorFaults:  u.usage.MinorFaults,
 		MajorFaults:  u.usage.MajorFaults,
+		HugeFaults:   u.usage.HugeFaults,
+		CPUStallUS:   u.usage.CPUStallUS,
+		MemStallUS:   u.usage.MemStallUS,
 		GoAllocBytes: u.usage.GoAllocBytes,
 		GoGCCycles:   u.usage.GoGCCycles,
 		GoGCCPUUS:    u.usage.GoGCCPUUS,
