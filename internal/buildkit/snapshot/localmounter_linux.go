@@ -72,7 +72,13 @@ func (lm *localMounter) Mount() (string, error) {
 	}
 
 	if err := mount.All(lm.mounts, dest); err != nil {
-		os.RemoveAll(lm.tmpDir)
+		// A failed mount can be left partly in place, such as a bind whose
+		// read-only remount failed. Remove only what was created here, without
+		// recursing, so nothing is deleted through a live mount.
+		if isFile {
+			os.Remove(dest)
+		}
+		os.Remove(lm.tmpDir)
 		return "", errors.Wrapf(err, "failed to mount %s: %+v", dest, lm.mounts)
 	}
 	lm.target = dest

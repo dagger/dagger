@@ -49,3 +49,10 @@ func TestExecCleanupErrorsJoinedTree(t *testing.T) {
 	require.NotErrorIs(t, cleanup, exit)
 	require.Nil(t, ExecCleanupErrors(exit))
 }
+
+// A cleanup's profiling step drops a mount target from its name, so the
+// steps' names stay a bounded set.
+func TestCleanupStepName(t *testing.T) {
+	require.Equal(t, "exec.cleanup.unmount rootfs", cleanupStepName("unmount rootfs"))
+	require.Equal(t, "exec.cleanup.unmount from rootfs", cleanupStepName("unmount from rootfs /work/lib"))
+}

@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"path"
 	"slices"
+	"strconv"
 	"strings"
 
 	bkcache "github.com/dagger/dagger/engine/snapshots"
@@ -630,7 +631,90 @@ func (s *directorySchema) withDirectoryDockerfileCompat(ctx context.Context, par
 // withDirectoryDockerfileCompatContentHashed wraps withDirectoryDockerfileCompat
 // and gives the result a content-based cache identity so unrelated build-context
 // changes don't re-key downstream calls.
+//
+// Like BuildKit's COPY cache key, the identity of an unfiltered copy is its
+// parent's, its arguments and the content it copies from its source. Hashing
+// the copied result instead reads every file of the parent, which for a
+// Dockerfile stage is the whole image built so far, on every copy that runs.
+// A filtered copy (--exclude) still hashes its result: a source hash would
+// have to apply the copy's filters exactly as the copy does.
 func (s *directorySchema) withDirectoryDockerfileCompatContentHashed(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Directory],
+	args WithDirectoryDockerfileCompatArgs,
+) (dagql.ObjectResult[*core.Directory], error) {
+	if !args.CopyFilter.IsEmpty() {
+		return s.withDirectoryDockerfileCompatResultHashed(ctx, parent, args)
+	}
+
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, err
+	}
+	srcDir, err := args.Source.Load(ctx, srv)
+	if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, err
+	}
+	dagqlCache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, err
+	}
+	if err := dagqlCache.Evaluate(ctx, srcDir); err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, fmt.Errorf("failed to content hash dockerfile copy: evaluate source: %w", err)
+	}
+	srcSnapshot, err := srcDir.Self().Snapshot.GetOrEval(ctx, srcDir.Result)
+	if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, fmt.Errorf("failed to content hash dockerfile copy: source snapshot: %w", err)
+	}
+	srcRoot, err := srcDir.Self().Dir.GetOrEval(ctx, srcDir.Result)
+	if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, fmt.Errorf("failed to content hash dockerfile copy: source path: %w", err)
+	}
+	srcHash := "empty"
+	if srcSnapshot != nil {
+		dgst, err := core.GetContentHashFromCopySources(ctx, srcSnapshot, srcRoot, args.SrcPath)
+		if err != nil {
+			return dagql.ObjectResult[*core.Directory]{}, fmt.Errorf("failed to content hash dockerfile copy of %q: %w", args.SrcPath, err)
+		}
+		srcHash = string(dgst)
+	}
+	// A taught content digest is a global alias for the result's cache
+	// identity, so it covers every argument but the source, whose copied
+	// content srcHash stands for.
+	parentDgst, err := parent.ContentPreferredDigest(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, fmt.Errorf("failed to content hash dockerfile copy: parent digest: %w", err)
+	}
+	permissions := "unset"
+	if args.Permissions.Valid {
+		permissions = strconv.Itoa(int(args.Permissions.Value))
+	}
+
+	res, err := s.withDirectoryDockerfileCompat(ctx, parent, args)
+	if err != nil {
+		return res, err
+	}
+	return res.WithContentDigest(ctx, hashutil.HashStrings(
+		"__withDirectoryDockerfileCompat",
+		string(parentDgst),
+		args.Path,
+		args.Owner,
+		permissions,
+		args.SrcPath,
+		strconv.FormatBool(args.FollowSymlink),
+		strconv.FormatBool(args.DirCopyContents),
+		strconv.FormatBool(args.AttemptUnpackDockerCompatibility),
+		strconv.FormatBool(args.CreateDestPath),
+		strconv.FormatBool(args.AllowWildcard),
+		strconv.FormatBool(args.AllowEmptyWildcard),
+		strconv.FormatBool(args.AlwaysReplaceExistingDestPaths),
+		srcHash,
+	))
+}
+
+// withDirectoryDockerfileCompatResultHashed performs the copy and content
+// hashes its whole result.
+func (s *directorySchema) withDirectoryDockerfileCompatResultHashed(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Directory],
 	args WithDirectoryDockerfileCompatArgs,

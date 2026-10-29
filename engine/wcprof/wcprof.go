@@ -75,6 +75,19 @@ const (
 	OpKindIO
 	// OpKindInternal is engine-internal background work (gc, persistence).
 	OpKindInternal
+	// OpKindTask is one unit of a client's own work, reported by the client
+	// (e.g. one package of a Go build); see the reporting contract in
+	// engine/wcprof/contract.
+	OpKindTask
+	// OpKindTaskGroup is a reported parent whose child tasks run concurrently,
+	// ordered only by their dependency waits and resource acquisitions.
+	OpKindTaskGroup
+	// OpKindResource is a reported limited resource instance (capacity and
+	// admission policy), for the life of the instance.
+	OpKindResource
+	// OpKindAcquire is a reported acquisition of one unit of a resource, from
+	// the request to the release.
+	OpKindAcquire
 )
 
 var opKindNames = map[OpKind]string{
@@ -87,6 +100,10 @@ var opKindNames = map[OpKind]string{
 	OpKindSessionPhase: "session_phase",
 	OpKindIO:           "io",
 	OpKindInternal:     "internal",
+	OpKindTask:         "task",
+	OpKindTaskGroup:    "task_group",
+	OpKindResource:     "resource",
+	OpKindAcquire:      "acquire",
 }
 
 func (k OpKind) String() string {
@@ -187,6 +204,9 @@ const (
 	WaitReasonExec
 	// WaitReasonIO: blocked on external I/O.
 	WaitReasonIO
+	// WaitReasonDependency: a reported task waited for one of its
+	// dependencies' results (zero-length when it was already done).
+	WaitReasonDependency
 )
 
 var waitReasonNames = map[WaitReason]string{
@@ -197,6 +217,7 @@ var waitReasonNames = map[WaitReason]string{
 	WaitReasonLock:         "lock",
 	WaitReasonExec:         "exec",
 	WaitReasonIO:           "io",
+	WaitReasonDependency:   "dependency",
 }
 
 func (r WaitReason) String() string {
@@ -221,12 +242,20 @@ const (
 	// LinkKindReusedResult: op was satisfied by reusing the dagql result
 	// with ResultID (cache hit).
 	LinkKindReusedResult
+	// LinkKindReportedCause: the engine op (from) was caused by the reported
+	// op (target), e.g. a request a reported task made.
+	LinkKindReportedCause
+	// LinkKindUnresolvedSpan: a reported op (from) refers to a span (the
+	// ident, "<trace>/<span>") that wasn't recorded by the time of the dump.
+	LinkKindUnresolvedSpan
 )
 
 var linkKindNames = map[LinkKind]string{
-	LinkKindNestedClient: "nested_client",
-	LinkKindResult:       "result",
-	LinkKindReusedResult: "reused_result",
+	LinkKindNestedClient:   "nested_client",
+	LinkKindResult:         "result",
+	LinkKindReusedResult:   "reused_result",
+	LinkKindReportedCause:  "reported_cause",
+	LinkKindUnresolvedSpan: "unresolved_span",
 }
 
 func (k LinkKind) String() string {
@@ -278,6 +307,9 @@ const numShards = 16
 type shard struct {
 	mu     sync.Mutex
 	events []Event
+	// usage holds resource readings (RecordUsage), kept apart from events
+	// so the fixed-size Event carries no fields most events would leave empty.
+	usage []usageRecord
 	// openOps tracks begun-but-unfinished ops for dump-time visibility.
 	openOps map[uint64]openOp
 }
@@ -306,6 +338,9 @@ type Recorder struct {
 	strings stringTable
 
 	shards [numShards]shard
+
+	// reported holds client-reported work (see reported.go).
+	reported reported
 }
 
 // NewRecorder returns a recorder with the given event cap (<=0 means

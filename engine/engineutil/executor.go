@@ -80,6 +80,8 @@ type ExecutionMetadata struct {
 	SecretEnvNames  []string
 	SecretFilePaths []string
 
+	// SystemEnvNames lists env vars inherited from the engine container (see
+	// SystemEnvEntry). An entry may carry a fallback value as "NAME=fallback".
 	SystemEnvNames []string
 
 	EnabledGPUs []string
@@ -162,6 +164,16 @@ type ExecutionMetadata struct {
 	ContentPreferredDigest func() digest.Digest `json:"-"`
 }
 
+// SystemEnvEntry returns a SystemEnvNames entry for the env var name. With a
+// fallback, the entry is "name=fallback": an env var name cannot contain "=",
+// so entries without a fallback keep their old form.
+func SystemEnvEntry(name string, fallback *string) string {
+	if fallback == nil {
+		return name
+	}
+	return name + "=" + *fallback
+}
+
 func (c *Client) Run(
 	ctx context.Context,
 	id string,
@@ -213,6 +225,7 @@ func (c *Client) Run(
 		})
 		state.profExecOpID = execOp.ID()
 	}
+	state.profUsageWanted = wcprof.Enabled(ctx) || dagql.OTelProfActive(ctx)
 	// OTel analog of execOp: exec.run nests the container run under
 	// the withExec call_exec span (or the service exec span) via the propagated
 	// ctx, so the offline loader reconstructs the same exec shape from a Cloud
@@ -252,6 +265,7 @@ func (c *Client) Run(
 	)
 	execOp.EndErr(err)
 	if execRunSpan != nil {
+		setExecUsageAttrs(execRunSpan, state)
 		recordExecContentPreferredDigest(execRunSpan, execMD)
 		endOTelExecRun(execRunSpan, &err)
 	}
@@ -269,6 +283,16 @@ func recordExecContentPreferredDigest(span trace.Span, execMD *ExecutionMetadata
 	if dig := execMD.ContentPreferredDigest(); dig != "" {
 		span.SetAttributes(attribute.String(telemetryattrs.ExecutionContentPreferredDigestAttr, dig.String()))
 	}
+}
+
+// cleanupStepName is the profiling step of the exec cleanup named name:
+// "exec.cleanup." and the name, without a mount target it ends with, so
+// the steps' names stay a bounded set.
+func cleanupStepName(name string) string {
+	if i := strings.Index(name, " /"); i >= 0 {
+		name = name[:i]
+	}
+	return "exec.cleanup." + name
 }
 
 // namedSetupFunc pairs an executor setup phase with a stable name used for
@@ -292,7 +316,19 @@ func (c *Client) run(
 		c.runningMu.Unlock()
 
 		close(state.done)
-		if err := state.cleanups.Run(); err != nil {
+		runCleanups := state.cleanups.Run
+		if wcprof.Enabled(ctx) {
+			// A profiled exec records each cleanup as a step.
+			runCleanups = func() error {
+				return state.cleanups.RunEach(func(name string, cleanup cleanups.CleanupF) error {
+					_, step := dagql.BeginStep(ctx, cleanupStepName(name))
+					err := cleanup()
+					step.End(err)
+					return err
+				})
+			}
+		}
+		if err := runCleanups(); err != nil {
 			bklog.G(ctx).Errorf("executor run failed to cleanup: %v", err)
 			rerr = errors.Join(rerr, &ExecCleanupError{Err: err})
 		}

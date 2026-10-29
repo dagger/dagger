@@ -376,7 +376,7 @@ func (AgentsSuite) TestComposedToolsRecoverFromBrokenOverlayModule(ctx context.C
 	))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(moduleDir, "dagger.json"),
-		[]byte(`{"name":"editor","engineVersion":"v1.0.0","sdk":"dang"}`),
+		[]byte(`{"name":"editor","engineVersion":"v1.0.0-beta.20","sdk":"dang"}`),
 		0o644,
 	))
 	require.NoError(t, os.WriteFile(
@@ -491,7 +491,7 @@ func (AgentsSuite) TestExpertiseOriginalModuleOutlivesReadingSession(ctx context
 	moduleDir := filepath.Join(workdir, "modules", "probe")
 	require.NoError(t, os.MkdirAll(moduleDir, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(workdir, "dagger.toml"), []byte("[modules.probe]\nsource = \"./modules/probe\"\n"), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(moduleDir, "dagger.json"), []byte(`{"name":"probe","engineVersion":"v1.0.0","sdk":"dang"}`), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(moduleDir, "dagger.json"), []byte(`{"name":"probe","engineVersion":"v1.0.0-beta.20","sdk":"dang"}`), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(moduleDir, "main.dang"), []byte(`type Probe {
   agent(base: LLM!): LLM! @agent { base.withTools(currentNode) }
 

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"time"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
@@ -334,22 +335,21 @@ func withSocketNetworkRecording(ctx context.Context) (context.Context, error) {
 	return enginetelemetry.WithNetworkRecording(ctx)
 }
 
+const sshAgentIdentityTimeout = 5 * time.Second
+
 func (socket *Socket) AgentFingerprints(ctx context.Context) ([]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, sshAgentIdentityTimeout)
+	defer cancel()
+
 	sockPath, cleanup, err := socket.MountSSHAgent(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = cleanup() }()
 
-	conn, err := net.Dial("unix", sockPath)
+	keys, err := listSSHAgentIdentities(ctx, sockPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to mounted SSH socket: %w", err)
-	}
-	defer conn.Close()
-
-	keys, err := agent.NewClient(conn).List()
-	if err != nil {
-		return nil, fmt.Errorf("failed to list SSH agent identities: %w", err)
+		return nil, err
 	}
 
 	seen := map[string]struct{}{}
@@ -378,4 +378,26 @@ func (socket *Socket) AgentFingerprints(ctx context.Context) ([]string, error) {
 	}
 	slices.Sort(fingerprints)
 	return fingerprints, nil
+}
+
+// listSSHAgentIdentities closes the connection on cancellation because the SSH
+// agent protocol client does not accept a context. Closing it also releases the
+// client's reader goroutine and any pending identity request.
+func listSSHAgentIdentities(ctx context.Context, sockPath string) ([]*agent.Key, error) {
+	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", sockPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to mounted SSH socket: %w", err)
+	}
+	defer conn.Close()
+	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stop()
+
+	keys, err := agent.NewClient(conn).List()
+	if err != nil {
+		if ctx.Err() != nil {
+			err = ctx.Err()
+		}
+		return nil, fmt.Errorf("failed to list SSH agent identities: %w", err)
+	}
+	return keys, nil
 }

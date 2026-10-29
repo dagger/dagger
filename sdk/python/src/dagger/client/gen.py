@@ -3482,6 +3482,7 @@ class Container(Type):
         platform_variants: "list[Container] | None" = None,
         forced_compression: ImageLayerCompression | None = None,
         media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+        source_date_epoch: int | None = None,
     ) -> "File":
         """Package the container state as an OCI image, and return it as a tar
         archive
@@ -3504,6 +3505,14 @@ class Container(Type):
             Defaults to OCI, which is largely compatible with most recent
             container runtimes, but Docker may be needed for older runtimes
             without OCI support.
+        source_date_epoch:
+            Clamp the image's timestamps to this time, so that rebuilding
+            unchanged files produces identical layers.
+            Formatted in seconds following Unix epoch (e.g., 1672531199). File
+            timestamps in every layer and the image's creation times that are
+            later than this are set to it, as with BuildKit's rewrite-
+            timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this
+            costs time on each export.
         """
         _args = [
             Arg(
@@ -3513,6 +3522,7 @@ class Container(Type):
             ),
             Arg("forcedCompression", forced_compression, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+            Arg("sourceDateEpoch", source_date_epoch, None),
         ]
         _ctx = self._select("asTarball", _args)
         return File(_ctx)
@@ -3771,6 +3781,7 @@ class Container(Type):
         forced_compression: ImageLayerCompression | None = None,
         media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
         expand: bool | None = False,
+        source_date_epoch: int | None = None,
     ) -> str:
         """Writes the container as an OCI tarball to the destination file path on
         the host.
@@ -3802,6 +3813,14 @@ class Container(Type):
             Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
             "/$VAR/foo").
+        source_date_epoch:
+            Clamp the image's timestamps to this time, so that rebuilding
+            unchanged files produces identical layers.
+            Formatted in seconds following Unix epoch (e.g., 1672531199). File
+            timestamps in every layer and the image's creation times that are
+            later than this are set to it, as with BuildKit's rewrite-
+            timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this
+            costs time on each export.
 
         Returns
         -------
@@ -3827,6 +3846,7 @@ class Container(Type):
             Arg("forcedCompression", forced_compression, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
             Arg("expand", expand, False),
+            Arg("sourceDateEpoch", source_date_epoch, None),
         ]
         _ctx = self._select("export", _args)
         return await _ctx.execute(str)
@@ -3838,6 +3858,7 @@ class Container(Type):
         platform_variants: "list[Container] | None" = None,
         forced_compression: ImageLayerCompression | None = None,
         media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+        source_date_epoch: int | None = None,
     ) -> Void:
         """Exports the container as an image to the host's container image store.
 
@@ -3861,6 +3882,14 @@ class Container(Type):
             Defaults to OCI, which is largely compatible with most recent
             container runtimes, but Docker may be needed for older runtimes
             without OCI support.
+        source_date_epoch:
+            Clamp the image's timestamps to this time, so that rebuilding
+            unchanged files produces identical layers.
+            Formatted in seconds following Unix epoch (e.g., 1672531199). File
+            timestamps in every layer and the image's creation times that are
+            later than this are set to it, as with BuildKit's rewrite-
+            timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this
+            costs time on each export.
 
         Returns
         -------
@@ -3884,6 +3913,7 @@ class Container(Type):
             ),
             Arg("forcedCompression", forced_compression, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+            Arg("sourceDateEpoch", source_date_epoch, None),
         ]
         _ctx = self._select("exportImage", _args)
         await _ctx.execute()
@@ -4193,6 +4223,7 @@ class Container(Type):
         registry_service: "Service | None" = None,
         protocol: RegistryProtocol | None = None,
         insecure_skip_tls_verify: bool | None = False,
+        source_date_epoch: int | None = None,
     ) -> str:
         """Package the container state as an OCI image, and publish it to a
         registry
@@ -4231,6 +4262,14 @@ class Container(Type):
         insecure_skip_tls_verify:
             Allow HTTPS registry communication without verifying the server
             certificate.
+        source_date_epoch:
+            Clamp the image's timestamps to this time, so that rebuilding
+            unchanged files produces identical layers.
+            Formatted in seconds following Unix epoch (e.g., 1672531199). File
+            timestamps in every layer and the image's creation times that are
+            later than this are set to it, as with BuildKit's rewrite-
+            timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this
+            costs time on each export.
 
         Returns
         -------
@@ -4258,6 +4297,7 @@ class Container(Type):
             Arg("registryService", registry_service, None),
             Arg("protocol", protocol, None),
             Arg("insecureSkipTLSVerify", insecure_skip_tls_verify, False),
+            Arg("sourceDateEpoch", source_date_epoch, None),
         ]
         _ctx = self._select("publish", _args)
         return await _ctx.execute(str)
@@ -16722,6 +16762,7 @@ class Query(Root):
         cache_key: str | None = None,
         insecure_skip_host_key_check: bool | None = False,
         experimental_service_host: "Service | None" = None,
+        follow_symlinks: bool | None = False,
     ) -> "Volume":
         """Constructs an SSHFS volume.
 
@@ -16745,6 +16786,11 @@ class Query(Root):
         experimental_service_host:
             Service to use as the SSHFS network endpoint while verifying the
             original host key.
+        follow_symlinks:
+            Resolve symlinks on the remote host, so they appear as the files
+            and directories they point to. Without it, absolute symlinks and
+            symlinks containing ".." can't be read. With it, creating a
+            symlink in the volume fails.
         """
         _args = [
             Arg("endpoint", endpoint),
@@ -16753,6 +16799,7 @@ class Query(Root):
             Arg("cacheKey", cache_key, None),
             Arg("insecureSkipHostKeyCheck", insecure_skip_host_key_check, False),
             Arg("experimentalServiceHost", experimental_service_host, None),
+            Arg("followSymlinks", follow_symlinks, False),
         ]
         _ctx = self._select("sshfsVolume", _args)
         return Volume(_ctx)

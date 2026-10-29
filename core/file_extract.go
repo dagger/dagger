@@ -379,7 +379,10 @@ func writeZipFile(ctx context.Context, e *zipEntry, dst string) (rerr error) {
 	}()
 	buf := zipCopyBufPool.Get().(*[]byte)
 	defer zipCopyBufPool.Put(buf)
-	if _, err := io.CopyBuffer(w, ctxReader{ctx, r}, *buf); err != nil {
+	// Only the io.Writer of w: *os.File's ReadFrom would take the copy over
+	// and, with no fast path from a zip entry, allocate its own buffer for
+	// every file instead of using buf.
+	if _, err := io.CopyBuffer(struct{ io.Writer }{w}, ctxReader{ctx, r}, *buf); err != nil {
 		if ctx.Err() != nil {
 			return err
 		}

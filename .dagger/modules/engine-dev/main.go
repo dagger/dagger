@@ -32,9 +32,12 @@ func New(
 	return &EngineDev{
 		Ws: ws,
 		Source: ws.Directory("/", dagger.WorkspaceDirectoryOpts{
+			// No .git: tests run their clients inside this source, and a .git
+			// there would make every client a workspace client sharing one
+			// dagger.lock. CI's remote workspace has no .git either. Built
+			// binaries get their VCS info from ws instead; see vcsInfo.
 			Exclude: []string{
 				"*",
-				"!.git",
 				"!dagger.json",
 				"!**/dagger.json",
 				"!dagger.toml",

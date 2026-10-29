@@ -292,6 +292,28 @@ func Lock(ctx context.Context, mu *sync.Mutex, ident string) {
 	w.End()
 }
 
+// ReadLock acquires mu for reading, recording a blocked acquisition as Lock
+// does.
+func ReadLock(ctx context.Context, mu *sync.RWMutex, ident string) {
+	if mu.TryRLock() {
+		return
+	}
+	w := BeginWaitIdent(ctx, ident, WaitReasonLock)
+	mu.RLock()
+	w.End()
+}
+
+// WriteLock acquires mu for writing, recording a blocked acquisition as Lock
+// does.
+func WriteLock(ctx context.Context, mu *sync.RWMutex, ident string) {
+	if mu.TryLock() {
+		return
+	}
+	w := BeginWaitIdent(ctx, ident, WaitReasonLock)
+	mu.Lock()
+	w.End()
+}
+
 // SetTarget updates the awaited op (useful when the target becomes known
 // only after the wait began).
 func (w *Wait) SetTarget(targetOpID uint64) {

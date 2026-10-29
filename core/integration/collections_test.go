@@ -87,7 +87,7 @@ type Part struct { Name string }
 func collectionSource(c *dagger.Client) *core.Directory {
 	return core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", "[modules.collections]\nsource = \"./collections\"\nmain = true\n").
-		WithNewFile("collections/dagger.json", `{"name":"collections","engineVersion":"v1.0.0","sdk":{"source":"go"},"source":"."}`).
+		WithNewFile("collections/dagger.json", `{"name":"collections","engineVersion":"v1.0.0-beta.20","sdk":{"source":"go"},"source":"."}`).
 		WithNewFile("collections/main.go", collectionGoSource)
 }
 
@@ -255,7 +255,7 @@ func (suite *Suite) Run() error { return nil }
 func collectionSelectorSourceDir(c *dagger.Client) *core.Directory {
 	return core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", "[modules.selectors]\nsource = \"./selectors\"\nmain = true\n").
-		WithNewFile("selectors/dagger.json", `{"name":"selectors","engineVersion":"v1.0.0","sdk":{"source":"go"},"source":"."}`).
+		WithNewFile("selectors/dagger.json", `{"name":"selectors","engineVersion":"v1.0.0-beta.20","sdk":{"source":"go"},"source":"."}`).
 		WithNewFile("selectors/main.go", collectionSelectorSource)
 }
 
@@ -780,7 +780,7 @@ func (CollectionsSuite) TestArtifactUnion(ctx context.Context, t *testctx.T) {
 func (CollectionsSuite) TestMainCollection(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	out, err := goGitBase(t, c).
-		WithNewFile("dagger.json", `{"name":"test","engineVersion":"v1.0.0","sdk":{"source":"go"},"source":"."}`).
+		WithNewFile("dagger.json", `{"name":"test","engineVersion":"v1.0.0-beta.20","sdk":{"source":"go"},"source":"."}`).
 		WithNewFile("main.go", `package main
 // +collection
 type Test struct { Keys []string }
@@ -797,7 +797,7 @@ type Item struct { Name string }
 func (CollectionsSuite) TestEnumKeys(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	out, err := goGitBase(t, c).
-		WithNewFile("dagger.json", `{"name":"test","engineVersion":"v1.0.0","sdk":{"source":"go"},"source":"."}`).
+		WithNewFile("dagger.json", `{"name":"test","engineVersion":"v1.0.0-beta.20","sdk":{"source":"go"},"source":"."}`).
 		WithNewFile("main.go", `package main
 import (
   "context"
@@ -831,7 +831,7 @@ func (CollectionsSuite) TestSDKs(ctx context.Context, t *testctx.T) {
 			if sdk != "dang" {
 				ctr = ctr.With(withModuleFixture(t, c, ".", sdk+"/constructor-fields-only"))
 			}
-			ctr = ctr.WithNewFile("dagger.json", fmt.Sprintf(`{"name":"test","engineVersion":"v1.0.0","sdk":{"source":%q},"source":"."}`, sdk))
+			ctr = ctr.WithNewFile("dagger.json", fmt.Sprintf(`{"name":"test","engineVersion":"v1.0.0-beta.20","sdk":{"source":%q},"source":"."}`, sdk))
 			source := map[string]string{"python": collectionPythonSource, "typescript": collectionTypeScriptSource, "dang": collectionDangSource}[sdk]
 			ctr = ctr.WithNewFile(sdkSourceFile(sdk), source)
 			out, err := ctr.With(daggerQuery(`{ items {

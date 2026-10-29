@@ -120,6 +120,20 @@ func normalizeTelemetryNativePlatform(out, nativePlatform string) string {
 	).Replace(out)
 }
 
+// dropPortNotReadyWarnings removes the warnings a service logs when its first
+// health check dials before the service listens. Whether that happens depends
+// on how fast the service starts, so the goldens leave them out.
+func dropPortNotReadyWarnings(out string) string {
+	lines := strings.SplitAfter(out, "\n")
+	kept := lines[:0]
+	for _, line := range lines {
+		if !strings.Contains(line, " WRN port not ready ") {
+			kept = append(kept, line)
+		}
+	}
+	return strings.Join(kept, "")
+}
+
 const daggerBinEnv = "_EXPERIMENTAL_DAGGER_CLI_BIN"
 
 var daggerBin = os.Getenv(daggerBinEnv)
@@ -659,7 +673,7 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 	}
 
 	return normalizeTelemetryNativePlatform(
-		scrub.Stabilize(expected),
+		scrub.Stabilize(dropPortNotReadyWarnings(expected)),
 		os.Getenv("_DAGGER_TESTS_ENGINE_PLATFORM"),
 	), db, logs
 }

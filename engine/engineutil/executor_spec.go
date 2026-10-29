@@ -147,6 +147,12 @@ type execState struct {
 	// profExecOpID is the wcprof exec.run op of this run (0 when not
 	// profiling): the op nested clients of this exec are linked to.
 	profExecOpID uint64
+	// profUsageWanted is set when the exec is profiled (wcprof or OTel), so
+	// its cgroups' usage is read at cleanup (recordExecUsage); profUsage
+	// holds the readings for the exec.run span.
+	profUsageWanted bool
+	profUsageMu     sync.Mutex
+	profUsage       map[string]wcprof.Usage
 
 	// sessionHelperStatus carries /.init's report that a nested client's
 	// session helper failed, and failSessionHelper fails the waits for its
@@ -523,6 +529,11 @@ func (c *Client) generateBaseSpec(ctx context.Context, state *execState) error {
 		return nil
 	})
 	state.cleanups.Add("finish exec mount resource sample", func() error {
+		// After the final parent sample, with the helpers' cgroup not yet
+		// removed: the resource cgroup's total, the workload and its mount
+		// helpers, and the helpers' own share.
+		defer recordExecUsage(ctx, state, wcprof.UsageScopeMountHelpers)
+		defer recordExecUsage(ctx, state, wcprof.UsageScopeExecCgroup)
 		if state.stopResourceSampler != nil {
 			state.stopResourceSampler()
 			return nil
@@ -563,6 +574,8 @@ func (c *Client) generateBaseSpec(ctx context.Context, state *execState) error {
 	state.cleanups.Add("base OCI spec cleanup", cleanups.Infallible(ociSpecCleanup))
 
 	state.spec = baseSpec
+	oomScoreAdj := c.OOMScoreAdj
+	state.spec.Process.OOMScoreAdj = &oomScoreAdj
 	// Systemd uses a scope identifier, not a filesystem path. Preserve it.
 	if filepath.IsAbs(state.resourceCgroupPath) && !strings.Contains(state.resourceCgroupPath, ":") {
 		state.spec.Linux.CgroupsPath = filepath.Join(state.resourceCgroupPath, "container")
@@ -601,6 +614,17 @@ var systemRootfsUnmountOps = rootfsUnmountOps{
 	unmountSyscall:   unix.Unmount,
 }
 
+// removeMountTempDir removes a temporary directory that served as a mount
+// target. It deliberately does not recurse: the directory is only empty when
+// the earlier unmount cleanup succeeded, so a plain os.Remove is enough. If
+// the unmount failed (e.g. EBUSY because a process still uses the mount), a
+// recursive remove would walk into the still-live mount and delete its
+// contents; os.Remove fails with EBUSY on the live mount point instead and
+// leaves them untouched.
+func removeMountTempDir(path string) error {
+	return os.Remove(path)
+}
+
 // unmountFromRootfs undoes a mount the executor made into a container rootfs.
 // A recursive bind is first detached with MNT_DETACH, which takes its whole
 // subtree in one syscall, as moby's mount.RecursiveUnmount does.
@@ -625,7 +649,7 @@ func (c *Client) setupRootfs(ctx context.Context, state *execState) error {
 		return fmt.Errorf("create rootfs temp dir: %w", err)
 	}
 	state.cleanups.Add("remove rootfs temp dir", func() error {
-		return os.RemoveAll(state.rootfsPath)
+		return removeMountTempDir(state.rootfsPath)
 	})
 	state.spec.Root.Path = state.rootfsPath
 	if state.rootMount.Selector != "" {
@@ -704,7 +728,7 @@ func (c *Client) setupRootfs(ctx context.Context, state *execState) error {
 				return fmt.Errorf("create meta mount temp dir: %w", err)
 			}
 			state.cleanups.Add("remove meta mount temp dir", func() error {
-				return os.RemoveAll(mntPath)
+				return removeMountTempDir(mntPath)
 			})
 			mnts := []mount.Mount{{
 				Type:    metaMount.Type,
@@ -1187,12 +1211,17 @@ func (c *Client) setProxyEnvs(_ context.Context, state *execState) error {
 	}
 
 	const systemEnvPrefix = "_DAGGER_ENGINE_SYSTEMENV_"
-	for _, systemEnvName := range state.execMD.SystemEnvNames {
+	for _, entry := range state.execMD.SystemEnvNames {
+		systemEnvName, fallback, hasFallback := strings.Cut(entry, "=")
 		if _, ok := state.origEnvMap[systemEnvName]; ok {
 			// don't overwrite explicit user-provided values
 			continue
 		}
 		systemVal, ok := os.LookupEnv(systemEnvPrefix + systemEnvName)
+		if !ok && hasFallback {
+			// neither the container nor the engine sets it
+			systemVal, ok = fallback, true
+		}
 		if ok {
 			state.spec.Process.Env = append(state.spec.Process.Env, systemEnvName+"="+systemVal)
 		}
@@ -1768,7 +1797,6 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 		}
 		return c.Runc.Delete(context.WithoutCancel(ctx), state.id, &runc.DeleteOpts{})
 	})
-
 	// Wake the existing sampler when runc starts. The cgroup may not exist at
 	// that point; the final cleanup sample also covers short executions.
 	var readingsStarted chan struct{}

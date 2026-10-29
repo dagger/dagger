@@ -217,7 +217,7 @@ source = ".dagger/modules/test"
 main = true
 `)
 
-		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "call", "hello")
+		out, err := hostDaggerOutput(ctx, t, workdir, "--silent", "call", "hello")
 		require.NoError(t, err)
 		require.Equal(t, "hello", strings.TrimSpace(string(out)))
 	})
@@ -242,7 +242,7 @@ settings.version = "1.97"
 		require.Contains(t, string(out), "rust/version-check")
 		require.Contains(t, string(out), "msrv/version-check")
 
-		out, err = hostDaggerExecRaw(ctx, t, workdir, "call", "--help")
+		out, err = hostDaggerOutput(ctx, t, workdir, "call", "--help")
 		require.NoError(t, err)
 		require.Regexp(t, `(?m)^\s+rust\s`, string(out))
 		require.Regexp(t, `(?m)^\s+msrv\s`, string(out))
@@ -258,7 +258,7 @@ settings.version = "1.97"
   }
 }
 `)
-		out, err = hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+		out, err = hostDaggerOutput(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
 		require.NoError(t, err)
 		require.JSONEq(t, `{
 			"rust": {"reportVersion": "1.98"},

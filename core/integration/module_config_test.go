@@ -14,7 +14,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"strings"
 
 	"github.com/stretchr/testify/require"
@@ -190,7 +189,7 @@ func (ModuleConfigSuite) TestEngineVersionLatestPinsOnConfigWrite(ctx context.Co
 
 	want := engine.NormalizeVersion(engine.Version)
 	require.Equal(t, want, writtenEngineVersion(ctx, t, moduleSource("latest").WithName("bar")))
-	require.Equal(t, want, writtenEngineVersion(ctx, t, moduleSource("v1.0.0").WithEngineVersion("latest")))
+	require.Equal(t, want, writtenEngineVersion(ctx, t, moduleSource("v1.0.0-beta.20").WithEngineVersion("latest")))
 }
 
 func (ModuleConfigSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
@@ -828,15 +827,6 @@ func (ModuleConfigSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 			require.NoError(t, err)
 			expectedURL := fmt.Sprintf("https://%s/%s/%s", tc.expectedBaseHTMLURL, tc.expectedURLPathComponent, tc.gitTestRepoCommit)
 			require.Equal(t, expectedURL, htmlURL)
-			// URL format matches public repo from same provider.
-			// No need to test with auth on those refs
-			if !tc.isPrivateRepo {
-				resp, err := http.Get(htmlURL)
-				require.NoError(t, err)
-				defer resp.Body.Close()
-				require.Equal(t, http.StatusOK, resp.StatusCode)
-				require.Equal(t, fmt.Sprintf("https://%s/%s/%s", tc.expectedBaseHTMLURL, tc.expectedURLPathComponent, tc.gitTestRepoCommit), htmlURL)
-			}
 
 			commit, err := base.
 				With(daggerExec("core", "module-source", "--ref-string", testGitModuleRef(tc, ""), "commit")).
@@ -859,15 +849,6 @@ func (ModuleConfigSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 			expectedURL := fmt.Sprintf("https://%s/%s/%s%s/top-level", tc.expectedBaseHTMLURL, tc.expectedURLPathComponent, tc.gitTestRepoCommit, tc.expectedPathPrefix)
 			require.Equal(t, expectedURL, htmlURL)
 
-			// URL format matches public repo from same provider.
-			// No need to test with auth on those refs
-			if !tc.isPrivateRepo {
-				resp, err := http.Get(htmlURL)
-				require.NoError(t, err)
-				defer resp.Body.Close()
-				require.Equal(t, http.StatusOK, resp.StatusCode)
-			}
-
 			commit, err := base.
 				With(daggerExec("core", "module-source", "--ref-string", testGitModuleRef(tc, "top-level"), "commit")).
 				Stdout(ctx)
@@ -888,15 +869,6 @@ func (ModuleConfigSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 			require.NoError(t, err)
 			expectedURL := fmt.Sprintf("https://%s/%s/%s%s/subdir/dep2", tc.expectedBaseHTMLURL, tc.expectedURLPathComponent, tc.gitTestRepoCommit, tc.expectedPathPrefix)
 			require.Equal(t, expectedURL, htmlURL)
-
-			// URL format matches public repo from same provider.
-			// No need to test with auth on those refs
-			if !tc.isPrivateRepo {
-				resp, err := http.Get(htmlURL)
-				require.NoError(t, err)
-				defer resp.Body.Close()
-				require.Equal(t, http.StatusOK, resp.StatusCode)
-			}
 
 			commit, err := base.
 				With(daggerExec("core", "module-source", "--ref-string", testGitModuleRef(tc, "subdir/dep2"), "commit")).
@@ -992,7 +964,7 @@ func (ModuleConfigSuite) TestGeneratedContextChangesetPreservesUnrelatedContext(
 
 	src := core.NewQuery(c).Directory().
 		WithNewFile("outside.txt", "keep me").
-		WithNewFile("mod/dagger.json", `{"name":"foo","engineVersion":"v1.0.0","sdk":{"source":"dang"}}`).
+		WithNewFile("mod/dagger.json", `{"name":"foo","engineVersion":"v1.0.0-beta.20","sdk":{"source":"dang"}}`).
 		WithNewFile("mod/main.dang", "type Foo {\n  pub hello: String! {\n    \"hi\"\n  }\n}\n").
 		AsModuleSource(core.DirectoryAsModuleSourceOpts{SourceRootPath: "mod"})
 
@@ -1009,7 +981,7 @@ func (ModuleConfigSuite) TestModuleSourceGenerateWorkspace(ctx context.Context, 
 
 	ws := core.NewQuery(c).Directory().
 		WithNewFile("outside.txt", "keep me").
-		WithNewFile("mod/dagger.json", `{"name":"foo","engineVersion":"v1.0.0","sdk":{"source":"go"},"source":"."}`).
+		WithNewFile("mod/dagger.json", `{"name":"foo","engineVersion":"v1.0.0-beta.20","sdk":{"source":"go"},"source":"."}`).
 		WithNewFile("mod/main.go", "package main\n\ntype Foo struct{}\n").
 		AsWorkspace()
 

@@ -666,7 +666,7 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 		modDir := terminalFixtureMod(ctx, t, "terminal-directory")
 		cacheTerminalModule(ctx, t, modDir, "-m", ".", "api", "functions")
 
-		out, err := hostDaggerExecRaw(ctx, t, modDir, "sh", "-l", "-f=link")
+		out, err := hostDaggerOutput(ctx, t, modDir, "sh", "-l", "-f=link")
 		require.NoError(t, err)
 		require.Equal(t, "dag+directory://?directory=dir", string(bytes.TrimSpace(out)))
 
@@ -806,6 +806,51 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 
 		_, err = console.ExpectString("/bin/noexist: no such file or directory")
 		require.NoError(t, err)
+
+		err = cmd.Wait()
+		require.Error(t, err)
+	})
+
+	t.Run("on failure with nested client", func(ctx context.Context, t *testctx.T) {
+		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
+		console, err := newTUIConsole(t, 60*time.Second)
+		require.NoError(t, err)
+		defer console.Close()
+
+		tty := console.Tty()
+
+		// wide enough that the query response isn't wrapped
+		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 200})
+		require.NoError(t, err)
+
+		cmd := hostDaggerCommandRaw(ctx, t, t.TempDir(), "--shell-on-error", "-c",
+			`container | from `+alpineImage+` | with-exec --experimental-privileged-nesting false | stdout`)
+		cmd.Stdin = tty
+		cmd.Stdout = tty
+		cmd.Stderr = tty
+
+		err = cmd.Start()
+		require.NoError(t, err)
+
+		prompt := "/ # "
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
+		// query the nested session the failed exec had access to
+		_, err = console.SendLine(`wget -qO- --header "Authorization: Basic $(printf '%s:' "$DAGGER_SESSION_TOKEN" | base64)" --header 'Content-Type: application/json' --post-data '{"query":"{version}"}' "http://127.0.0.1:$DAGGER_SESSION_PORT/query"`)
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(`{"data":{"version":`)
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
+		_, err = console.SendLine("exit")
+		require.NoError(t, err)
+
+		go console.ExpectEOF()
 
 		err = cmd.Wait()
 		require.Error(t, err)

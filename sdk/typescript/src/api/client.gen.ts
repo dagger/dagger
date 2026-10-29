@@ -779,6 +779,13 @@ export type ContainerAsTarballOpts = {
    * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
    */
   mediaTypes?: ImageMediaTypes
+
+  /**
+   * Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
+   *
+   * Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
+   */
+  sourceDateEpoch?: number
 }
 
 export type ContainerDirectoryOpts = {
@@ -831,6 +838,13 @@ export type ContainerExportOpts = {
    * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   expand?: boolean
+
+  /**
+   * Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
+   *
+   * Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
+   */
+  sourceDateEpoch?: number
 }
 
 export type ContainerExportImageOpts = {
@@ -854,6 +868,13 @@ export type ContainerExportImageOpts = {
    * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
    */
   mediaTypes?: ImageMediaTypes
+
+  /**
+   * Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
+   *
+   * Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
+   */
+  sourceDateEpoch?: number
 }
 
 export type ContainerFileOpts = {
@@ -969,6 +990,13 @@ export type ContainerPublishOpts = {
    * Allow HTTPS registry communication without verifying the server certificate.
    */
   insecureSkipTLSVerify?: boolean
+
+  /**
+   * Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
+   *
+   * Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
+   */
+  sourceDateEpoch?: number
 }
 
 export type ContainerShellOpts = {
@@ -3734,6 +3762,11 @@ export type ClientSshfsVolumeOpts = {
    * Service to use as the SSHFS network endpoint while verifying the original host key.
    */
   experimentalServiceHost?: Service
+
+  /**
+   * Resolve symlinks on the remote host, so they appear as the files and directories they point to. Without it, absolute symlinks and symlinks containing ".." can't be read. With it, creating a symlink in the volume fails.
+   */
+  followSymlinks?: boolean
 }
 
 /**
@@ -7079,6 +7112,9 @@ export class Container extends BaseClient {
    * @param opts.mediaTypes Use the specified media types for the image's layers.
    *
    * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
+   * @param opts.sourceDateEpoch Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
+   *
+   * Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
    */
   asTarball = (opts?: ContainerAsTarballOpts): File => {
     const metadata = {
@@ -7280,6 +7316,9 @@ export class Container extends BaseClient {
    *
    * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
    * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   * @param opts.sourceDateEpoch Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
+   *
+   * Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
    */
   export = async (
     path: string,
@@ -7320,6 +7359,9 @@ export class Container extends BaseClient {
    * @param opts.mediaTypes Use the specified media types for the exported image's layers.
    *
    * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
+   * @param opts.sourceDateEpoch Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
+   *
+   * Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
    */
   exportImage = async (
     name: string,
@@ -7549,6 +7591,9 @@ export class Container extends BaseClient {
    *
    * Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
    * @param opts.insecureSkipTLSVerify Allow HTTPS registry communication without verifying the server certificate.
+   * @param opts.sourceDateEpoch Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
+   *
+   * Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
    */
   publish = async (
     address: string,
@@ -17209,6 +17254,7 @@ export class Client extends BaseClient {
    * @param opts.cacheKey Optional cache equivalence key. If set, volumes with the same cacheKey may be considered equivalent for cache lookups, still subject to their resource dependencies.
    * @param opts.insecureSkipHostKeyCheck Disable SSH host key verification. This is insecure and must be explicitly opted into.
    * @param opts.experimentalServiceHost Service to use as the SSHFS network endpoint while verifying the original host key.
+   * @param opts.followSymlinks Resolve symlinks on the remote host, so they appear as the files and directories they point to. Without it, absolute symlinks and symlinks containing ".." can't be read. With it, creating a symlink in the volume fails.
    */
   sshfsVolume = (
     endpoint: string,

@@ -544,7 +544,7 @@ func (WorkspaceSuite) TestWorkspaceEnvModuleInstall(ctx context.Context, t *test
 		require.NotContains(t, string(out), "dep")
 
 		// The env-scoped module actually loads and runs under its env.
-		out, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "--env=dev", "call", "dep", "hello")
+		out, err = hostDaggerOutput(ctx, t, workdir, "--silent", "--env=dev", "call", "dep", "hello")
 		require.NoError(t, err)
 		require.Equal(t, "hello", strings.TrimSpace(string(out)))
 	})

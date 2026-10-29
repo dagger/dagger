@@ -1,0 +1,7 @@
+kind: Added
+body: |
+  SSHFS volumes take a `followSymlinks` option (`followSymlinks=true` in an `sshfs://` address), so the SSH server resolves symlinks itself. Without it, sshfs can't read absolute symlinks or symlinks containing `..`. With it, links appear as the files and directories they point to, and creating a symlink in the volume fails.
+time: 2026-10-29T02:35:31Z
+custom:
+  Author: sipsma
+  PR: "14942"

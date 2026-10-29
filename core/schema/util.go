@@ -19,9 +19,9 @@ type SchemaResolvers interface {
 // Nesting is opt-out in the v1.0 API. Older views retain the
 // experimentalPrivilegedNesting opt-in argument and behavior.
 //
-// This shipped after v1.0.0-beta.14, but views cannot tell v1.0.0 prereleases
-// apart (see engine.APIViewVersion), so every v1.0.0 prerelease caller gets
-// it.
+// This shipped after v1.0.0-beta.14, but views of v1.0.0 prereleases before
+// engine.PrereleaseViewsVersion cannot tell them apart (see
+// engine.APIViewVersion), so every v1.0.0 prerelease caller gets it.
 const defaultNestingVersion = "v1.0.0-0"
 
 // Container.withGPU is available in the v1.0 API. Older views keep the

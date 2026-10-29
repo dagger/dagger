@@ -689,6 +689,10 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 			}
 		}
 
+		// Each candidate is a different transport, often on a different
+		// server: one that refuses the connection, or that speaks another
+		// protocol on the given port (an SSH port reached over HTTPS), says
+		// nothing about the next candidate, so try it.
 		var accessErrors []error
 		for _, selectArgs := range try {
 			var repo dagql.ObjectResult[*core.GitRepository]
@@ -697,21 +701,16 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 				Args:  selectArgs,
 				View:  curCall.View,
 			})
-			if err != nil {
-				if errors.Is(err, gitutil.ErrGitAuthFailed) {
-					accessErrors = append(accessErrors, err)
-					continue
-				}
+			if err == nil {
+				_, err = repo.Self().LoadRemote(ctx)
+			}
+			if err == nil {
+				return repo, nil
+			}
+			if ctx.Err() != nil {
 				return inst, err
 			}
-			if _, err := repo.Self().LoadRemote(ctx); err != nil {
-				if errors.Is(err, gitutil.ErrGitAuthFailed) {
-					accessErrors = append(accessErrors, err)
-					continue
-				}
-				return inst, err
-			}
-			return repo, nil
+			accessErrors = append(accessErrors, err)
 		}
 
 		return inst, fmt.Errorf("cannot access Git repository: %w", errors.Join(accessErrors...))

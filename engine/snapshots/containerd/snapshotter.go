@@ -10,6 +10,7 @@ import (
 	"github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/containerd/containerd/v2/pkg/namespaces"
 	bksnapshots "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/moby/sys/userns"
 	"github.com/pkg/errors"
 )
@@ -21,6 +22,13 @@ func NewSnapshotter(name string, sn snapshots.Snapshotter, ns string) bksnapshot
 type nsSnapshotter struct {
 	ns string
 	snapshots.Snapshotter
+}
+
+// beginSnapshotOp begins an op for one call to containerd's snapshotter on the
+// snapshot key, recorded only when ctx is profiled.
+func beginSnapshotOp(ctx context.Context, call, key string) *wcprof.Op {
+	_, op := wcprof.BeginOp(ctx, wcprof.OpKindInternal, "snapshot."+call, wcprof.OpOpts{Ident: key})
+	return op
 }
 
 func (s *nsSnapshotter) Stat(ctx context.Context, key string) (snapshots.Info, error) {
@@ -35,27 +43,42 @@ func (s *nsSnapshotter) Update(ctx context.Context, info snapshots.Info, fieldpa
 
 func (s *nsSnapshotter) Usage(ctx context.Context, key string) (snapshots.Usage, error) {
 	ctx = namespaces.WithNamespace(ctx, s.ns)
-	return s.Snapshotter.Usage(ctx, key)
+	op := beginSnapshotOp(ctx, "usage", key)
+	usage, err := s.Snapshotter.Usage(ctx, key)
+	op.EndErr(err)
+	return usage, err
 }
 
 func (s *nsSnapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, error) {
 	ctx = namespaces.WithNamespace(ctx, s.ns)
-	return s.Snapshotter.Mounts(ctx, key)
+	op := beginSnapshotOp(ctx, "mounts", key)
+	mounts, err := s.Snapshotter.Mounts(ctx, key)
+	op.EndErr(err)
+	return mounts, err
 }
 
 func (s *nsSnapshotter) Prepare(ctx context.Context, key, parent string, opts ...snapshots.Opt) ([]mount.Mount, error) {
 	ctx = namespaces.WithNamespace(ctx, s.ns)
-	return s.Snapshotter.Prepare(ctx, key, parent, opts...)
+	op := beginSnapshotOp(ctx, "prepare", key)
+	mounts, err := s.Snapshotter.Prepare(ctx, key, parent, opts...)
+	op.EndErr(err)
+	return mounts, err
 }
 
 func (s *nsSnapshotter) View(ctx context.Context, key, parent string, opts ...snapshots.Opt) ([]mount.Mount, error) {
 	ctx = namespaces.WithNamespace(ctx, s.ns)
-	return s.Snapshotter.View(ctx, key, parent, opts...)
+	op := beginSnapshotOp(ctx, "view", key)
+	mounts, err := s.Snapshotter.View(ctx, key, parent, opts...)
+	op.EndErr(err)
+	return mounts, err
 }
 
 func (s *nsSnapshotter) Commit(ctx context.Context, name, key string, opts ...snapshots.Opt) error {
 	ctx = namespaces.WithNamespace(ctx, s.ns)
-	return s.Snapshotter.Commit(ctx, name, key, opts...)
+	op := beginSnapshotOp(ctx, "commit", name)
+	err := s.Snapshotter.Commit(ctx, name, key, opts...)
+	op.EndErr(err)
+	return err
 }
 
 func (s *nsSnapshotter) Remove(ctx context.Context, key string) error {

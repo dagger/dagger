@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"github.com/dagger/dagger/engine/wcprof"
 )
 
 type sharedResultLookupMode uint8
@@ -74,7 +76,7 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 		return sharedResultLookup{}, fmt.Errorf("resolve result %d: canonical equivalent lookup requires session ID", resultID)
 	}
 	if sessionID == "" {
-		c.egraphMu.RLock()
+		wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
 		res := c.resultsByID[resultID]
 		var (
 			requiredGenAtCheck uint64
@@ -99,7 +101,7 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 	// The deferred unlock matters on panic: resolvePath recovers a panic
 	// raised in this section, and a lock left held would block every later
 	// cache operation in the engine.
-	c.egraphMu.RLock()
+	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
 	defer c.egraphMu.RUnlock()
 	res := c.resultsByID[resultID]
 	if res == nil {
@@ -172,7 +174,7 @@ func (c *Cache) loadSelectedResultByResultID(ctx context.Context, sessionID stri
 		if c.testBeforeServeRequirementRecheck != nil {
 			c.testBeforeServeRequirementRecheck(lookup.res)
 		}
-		if !c.sessionStillSatisfiesResourceRequirements(sessionID, lookup.res, lookup.requiredGenAtCheck) {
+		if !c.sessionStillSatisfiesResourceRequirements(ctx, sessionID, lookup.res, lookup.requiredGenAtCheck) {
 			// The required set grew after the requirement pre-check in
 			// sharedResultByResultID; refuse rather than serve. The session
 			// edge recorded there stays until session release.

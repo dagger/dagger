@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/util/hashutil"
 	set "github.com/hashicorp/go-set/v3"
 	"github.com/opencontainers/go-digest"
@@ -727,14 +728,14 @@ func (c *Cache) sessionSatisfiesResourceRequirementsLocked(sessionID string, res
 // generation is serving the exact set the selection check validated and
 // skips the locked re-check; on a mismatch the full locked subset check
 // decides.
-func (c *Cache) sessionStillSatisfiesResourceRequirements(sessionID string, res *sharedResult, requiredGenAtSelection uint64) bool {
+func (c *Cache) sessionStillSatisfiesResourceRequirements(ctx context.Context, sessionID string, res *sharedResult, requiredGenAtSelection uint64) bool {
 	if res == nil {
 		return true
 	}
 	if res.requiredSessionResourcesGen.Load() == requiredGenAtSelection {
 		return true
 	}
-	c.egraphMu.RLock()
+	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
 	defer c.egraphMu.RUnlock()
 	return c.sessionSatisfiesResourceRequirementsLocked(sessionID, res)
 }
@@ -1070,7 +1071,7 @@ func (c *Cache) lookupCacheForRequest(
 	// the e-graph, and the hit's session claim changes only state with its
 	// own synchronization, so they run under the read lock and concurrent
 	// lookups do not queue behind each other.
-	c.egraphMu.RLock()
+	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
 	retRes, hit, persistedEdgeExpiresAtUnix, needsWrite, err := c.lookupCacheForRequestLocked(ctx, sessionID, req, requestDigest, requestSelf, requestInputs, requestInputRefs, true)
 	if err != nil || (!hit && !needsWrite) {
 		c.egraphMu.RUnlock()
@@ -1087,7 +1088,7 @@ func (c *Cache) lookupCacheForRequest(
 	} else {
 		// The hit teaches the e-graph: look it up again under the write lock.
 		c.egraphMu.RUnlock()
-		c.egraphMu.Lock()
+		wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 		// One collector for this E interval: identity teaching can union
 		// classes or insert a new membership, and both are flushed before
 		// the unlock.
@@ -1126,7 +1127,7 @@ func (c *Cache) lookupCacheForRequest(
 	if c.testBeforeServeRequirementRecheck != nil {
 		c.testBeforeServeRequirementRecheck(hitShared)
 	}
-	if !c.sessionStillSatisfiesResourceRequirements(sessionID, hitShared, requiredGenAtSelection) {
+	if !c.sessionStillSatisfiesResourceRequirements(ctx, sessionID, hitShared, requiredGenAtSelection) {
 		// The required set grew after this hit was selected (an attached or
 		// late explicit dep carried requirements), so serving would hand
 		// the session a result it no longer satisfies. Fall through to the
@@ -1143,7 +1144,7 @@ func (c *Cache) lookupCacheForRequest(
 		// the expiry captured at hit selection even if the barrier wait took
 		// long enough to cross a wall-clock second. A value its call declined
 		// to persist stays unpersisted.
-		c.egraphMu.Lock()
+		wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 		if !hitShared.persistDeclined {
 			c.upsertPersistedEdgeLocked(ctx, hitShared, persistedEdgeExpiresAtUnix, false)
 		}
@@ -1203,7 +1204,7 @@ func (c *Cache) TeachCallEquivalentToResult(ctx context.Context, sessionID strin
 		requestInputs = append(requestInputs, dig)
 	}
 
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	notify, notifyOwner := c.beginShareNotificationsLocked()
 	defer func() {
 		c.flushShareNotificationsLocked(ctx, notify, notifyOwner)
@@ -1294,7 +1295,7 @@ func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 			requestInputs = append(requestInputs, dig)
 		}
 
-		c.egraphMu.Lock()
+		wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 		// A fresh collector for every acquisition of E: the changed-frame
 		// retry below unlocks and starts over, and a collector is never
 		// carried across an unlock.

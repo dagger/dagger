@@ -1,0 +1,10 @@
+kind: Fixed
+body: |
+  `tls://` connects to an engine started with `--tlscert` and `--tlskey`. The
+  engine served HTTP/1.1 on its TLS address, so the CLI failed with
+  `error reading server preface: http2: frame too large`. The engine now serves
+  HTTP/2 on TLS addresses to `tls://` clients of any release, and advertises
+  `h2` and `http/1.1` with ALPN.
+time: 2026-10-28T21:00:00Z
+custom:
+  Author: tstm

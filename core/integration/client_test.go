@@ -262,7 +262,7 @@ func (ClientSuite) TestSessionRetiredByEngineReportsCause(ctx context.Context, t
 		SessionToken string `json:"session_token"`
 	}
 	require.NoError(t, json.Unmarshal([]byte(line), &params))
-	query := func() (int, string) {
+	query := func() (int, string, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 			fmt.Sprintf("http://127.0.0.1:%d/query", params.Port),
 			strings.NewReader(`{"query":"{ version }"}`))
@@ -270,13 +270,18 @@ func (ClientSuite) TestSessionRetiredByEngineReportsCause(ctx context.Context, t
 		req.SetBasicAuth(params.SessionToken, "")
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := http.DefaultClient.Do(req)
-		require.NoError(t, err)
+		if err != nil {
+			return 0, "", err
+		}
 		defer resp.Body.Close()
 		body, err := io.ReadAll(resp.Body)
-		require.NoError(t, err)
-		return resp.StatusCode, string(body)
+		if err != nil {
+			return 0, "", err
+		}
+		return resp.StatusCode, string(body), nil
 	}
-	code, body := query()
+	code, body, err := query()
+	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, code, body)
 
 	// The engine checks the client every 5s and gives up after two failed
@@ -290,15 +295,22 @@ func (ClientSuite) TestSessionRetiredByEngineReportsCause(ctx context.Context, t
 	require.NoError(t, cmd.Process.Signal(syscall.SIGCONT))
 
 	// The resumed process notices the closed connection right away; poll
-	// briefly so a request racing that detection is not a failure.
+	// briefly so a request racing that detection, which can see its
+	// connection closed mid-response, is not a failure.
 	deadline := time.Now().Add(10 * time.Second)
 	for {
-		code, body = query()
-		if strings.Contains(body, "engine closed session") || time.Now().After(deadline) {
+		code, body, err = query()
+		if err == nil && strings.Contains(body, "engine closed session") || time.Now().After(deadline) {
 			break
+		}
+		if err != nil {
+			// Kept in the log: a response cut short by the session itself,
+			// rather than by the race, would show here.
+			t.Logf("request on the resuming session failed: %v", err)
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, code, body)
 	require.Contains(t, body, "engine closed session")
 	require.Contains(t, body, "fails its health checks")

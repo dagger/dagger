@@ -1,5 +1,5 @@
 name = "fields"
-engineVersion = "v1.0.0"
+engineVersion = "v1.0.0-beta.20"
 
 [runtime]
 source = "../../sdk/java"

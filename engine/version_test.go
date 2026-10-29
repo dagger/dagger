@@ -2,6 +2,8 @@ package engine
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -148,6 +150,225 @@ func TestBaseVersion(t *testing.T) {
 			require.Equal(t, tc.result, BaseVersion(tc.version))
 		})
 	}
+}
+
+// cutVersions returns the cut (PrereleaseViewsVersion), the release just
+// before it, whose view every earlier v1.0.0 prerelease shares
+// (basePrereleaseView), and a prerelease after it. Tests use them instead of
+// literals, so moving the cut to a later beta needs no test edits.
+func cutVersions(t *testing.T) (lastPreCut, cut, afterCut string) {
+	t.Helper()
+	return basePrereleaseView, PrereleaseViewsVersion, betaOffset(t, PrereleaseViewsVersion, 1)
+}
+
+// betaOffset returns the beta n releases after version, a vX.Y.Z-beta.N, or
+// before it for a negative n.
+func betaOffset(t *testing.T, version string, n int) string {
+	t.Helper()
+	num, ok := strings.CutPrefix(semver.Prerelease(version), "-beta.")
+	require.True(t, ok, "%s is not a beta", version)
+	i, err := strconv.Atoi(num)
+	require.NoError(t, err, "%s is not a beta", version)
+	return fmt.Sprintf("%s-beta.%d", BaseVersion(version), i+n)
+}
+
+func TestAPIViewVersion(t *testing.T) {
+	lastPreCut, cut, afterCut := cutVersions(t)
+	setVersion(t, cut)
+	for _, tc := range []struct {
+		version string
+		view    string
+	}{
+		// releases keep their view
+		{version: "v0.21.6", view: "v0.21.6"},
+		{version: "0.21.6", view: "v0.21.6"},
+		{version: "v1.0.0", view: "v1.0.0"},
+		{version: "v1.0.0+abcdef12.dirty", view: "v1.0.0"},
+		{version: "v1.2.3", view: "v1.2.3"},
+
+		// prereleases before PrereleaseViewsVersion are base-granular, except
+		// v1.0.0's, which share basePrereleaseView: v1.0.0 is the release's
+		{version: "v0.21.0-rc1", view: "v0.21.0"},
+		{version: "v1.0.0-0", view: lastPreCut},
+		{version: "v1.0.0-alpha.1", view: lastPreCut},
+		{version: "v1.0.0-beta.7", view: lastPreCut},
+		{version: "v1.0.0-beta.19", view: lastPreCut},
+		{version: "v1.0.0-beta.20", view: lastPreCut},
+		{version: lastPreCut, view: lastPreCut},
+		{version: lastPreCut + "+abcdef12", view: lastPreCut},
+
+		// from PrereleaseViewsVersion on, prereleases keep their own view
+		{version: cut, view: cut},
+		{version: cut + "+abcdef12.dirty", view: cut},
+		{version: afterCut, view: afterCut},
+		{version: "v1.0.0-rc.1", view: "v1.0.0-rc.1"},
+		{version: "v1.1.0-beta.1", view: "v1.1.0-beta.1"},
+
+		// dev builds share their release's view
+		{version: "v1.0.0-dev-123", view: "v1.0.0"},
+		{version: "v1.0.0-dev-123+abc", view: "v1.0.0"},
+		{version: "v0.0.0-010101000000-dev-deadbeefdead", view: "v0.0.0"},
+		{version: "v2.0.0-dev-123", view: "v2.0.0"},
+
+		// an empty version is the engine's own; a non-semver one is old
+		{version: "", view: cut},
+		{version: "foobar", view: presemverModuleVersion},
+	} {
+		t.Run(tc.version, func(t *testing.T) {
+			require.Equal(t, tc.view, APIViewVersion(tc.version))
+		})
+	}
+}
+
+func TestAPIVersionAtLeast(t *testing.T) {
+	lastPreCut, _, _ := cutVersions(t)
+	casing := IdentifierCasingVersion
+	// a dev build of v1.0.0 has the release's view, so no case is capped
+	// below its own view (see TestModuleAPIViewVersion)
+	setVersion(t, "v1.0.0-dev-123")
+	for _, tc := range []struct {
+		version string
+		post    bool
+	}{
+		{version: "v0.21.6"},
+		{version: "v1.0.0-0"},
+		{version: "v1.0.0-beta.19"},
+		{version: "v1.0.0-beta.20"},
+		{version: lastPreCut},
+		{version: casing, post: true},
+		{version: betaOffset(t, casing, 1), post: true},
+		{version: "v1.0.0-rc.1", post: true},
+		{version: "v1.0.0-dev-123", post: true},
+		{version: "v1.0.0", post: true},
+		{version: "v1.0.1", post: true},
+	} {
+		t.Run(tc.version, func(t *testing.T) {
+			require.Equal(t, tc.post, APIVersionAtLeast(tc.version, IdentifierCasingVersion))
+			// gates set while views dropped prereleases still apply to
+			// every v1.0.0 prerelease
+			v1 := semver.Compare(BaseVersion(tc.version), "v1.0.0") >= 0
+			require.Equal(t, v1, APIVersionAtLeast(tc.version, "v1.0.0-0"))
+			require.Equal(t, v1, APIVersionAtLeast(tc.version, "v1.0.0-beta.17"))
+		})
+	}
+}
+
+// A module whose view is past the engine's is served the engine's view
+// instead: a later prerelease of the engine's base version, or the release,
+// is capped, not refused. Earlier views are unchanged.
+func TestModuleAPIViewVersion(t *testing.T) {
+	lastPreCut, cut, afterCut := cutVersions(t)
+	for _, tc := range []struct {
+		engine  string
+		version string
+		view    string
+	}{
+		// past the engine's view: capped at it
+		{engine: cut, version: afterCut, view: cut},
+		{engine: cut, version: "v1.0.0-rc.1", view: cut},
+		{engine: cut, version: "v1.0.0", view: cut},
+		{engine: cut, version: "1.0.0", view: cut},
+		{engine: cut, version: "v1.0.0+abcdef12", view: cut},
+		{engine: cut, version: "v1.0.0-dev-123", view: cut},
+		{engine: cut + "+abcdef12", version: "v1.0.0", view: cut},
+
+		// at or before it: unchanged
+		{engine: cut, version: cut, view: cut},
+		{engine: cut, version: cut + "+abcdef12", view: cut},
+		{engine: cut, version: lastPreCut, view: lastPreCut},
+		{engine: cut, version: "v1.0.0-beta.19", view: lastPreCut},
+		{engine: cut, version: "v1.0.0-0", view: lastPreCut},
+		{engine: cut, version: "v0.21.6", view: "v0.21.6"},
+		{engine: cut, version: "", view: cut},
+		{engine: cut, version: "foobar", view: presemverModuleVersion},
+
+		// a later beta engine serves the cut's modules their own view
+		{engine: afterCut, version: cut, view: cut},
+		{engine: afterCut, version: "v1.0.0", view: afterCut},
+
+		// pre-cut engines share one view, so they serve each other's modules
+		// theirs, and the cut's modules that view
+		{engine: lastPreCut, version: "v1.0.0-beta.19", view: lastPreCut},
+		{engine: "v1.0.0-beta.19", version: lastPreCut, view: lastPreCut},
+		{engine: lastPreCut, version: cut, view: lastPreCut},
+		{engine: lastPreCut, version: "v1.0.0", view: lastPreCut},
+
+		// dev builds have their release's view, past every prerelease
+		{engine: "v1.0.0-dev-123", version: afterCut, view: afterCut},
+		{engine: "v1.0.0-dev-123", version: "v1.0.0", view: "v1.0.0"},
+		{engine: "v1.0.0-dev-123", version: "v1.0.0-dev-456", view: "v1.0.0"},
+		{engine: "v1.0.0-dev-123", version: "", view: "v1.0.0"},
+
+		// released engines
+		{engine: "v1.0.0", version: "v1.0.0", view: "v1.0.0"},
+		{engine: "v1.0.0", version: afterCut, view: afterCut},
+		{engine: "v1.0.1", version: "v1.0.0", view: "v1.0.0"},
+
+		// a later base version is refused (CheckMaxVersionCompatibility),
+		// but would be capped too
+		{engine: "v2.0.0", version: "v2.0.1", view: "v2.0.0"},
+		{engine: "v1.0.0-dev-123", version: "v1.0.1", view: "v1.0.0"},
+	} {
+		t.Run(tc.engine+"/"+tc.version, func(t *testing.T) {
+			setVersion(t, tc.engine)
+			require.Equal(t, tc.view, ModuleAPIViewVersion(tc.version))
+			require.Equal(t, semver.Compare(tc.view, IdentifierCasingVersion) >= 0,
+				APIVersionAtLeast(tc.version, IdentifierCasingVersion))
+		})
+	}
+	// clients are not capped
+	setVersion(t, cut)
+	require.Equal(t, "v1.0.0", APIViewVersion("v1.0.0"))
+}
+
+// An engine refuses a module only for a later base version. Every
+// prerelease, dev build and build of the engine's base version loads, capped
+// by ModuleAPIViewVersion.
+func TestMaxVersionCompatibility(t *testing.T) {
+	lastPreCut, cut, afterCut := cutVersions(t)
+	for _, tc := range []struct {
+		engine     string
+		version    string
+		compatible bool
+	}{
+		{engine: cut, version: cut, compatible: true},
+		{engine: cut, version: lastPreCut, compatible: true},
+		{engine: cut, version: "v0.21.6", compatible: true},
+		{engine: cut, version: afterCut, compatible: true},
+		{engine: cut, version: "v1.0.0-rc.1", compatible: true},
+		{engine: cut, version: "v1.0.0", compatible: true},
+		{engine: cut, version: "v1.0.0+abcdef12", compatible: true},
+		{engine: cut, version: "v1.0.0-dev-123", compatible: true},
+		{engine: lastPreCut, version: "v1.0.0", compatible: true},
+		{engine: "v1.0.0-dev-123", version: "v1.0.0", compatible: true},
+		{engine: "v1.0.0", version: "v1.0.0", compatible: true},
+		{engine: "v2.0.0", version: "v1.0.0", compatible: true},
+
+		{engine: cut, version: "v1.0.1"},
+		{engine: cut, version: "v1.1.0-beta.1"},
+		{engine: "v1.0.0-dev-123", version: "v1.0.1"},
+		{engine: "v2.0.0", version: "v2.0.1"},
+		{engine: "v2.0.0", version: "v100.0.0"},
+	} {
+		t.Run(tc.engine+"/"+tc.version, func(t *testing.T) {
+			require.Equal(t, tc.compatible, CheckMaxVersionCompatibility(tc.version, BaseVersion(tc.engine)))
+		})
+	}
+}
+
+// The view constants must agree: earlier v1.0.0 prereleases share one view
+// below PrereleaseViewsVersion, and no gate can split them. When the cut
+// slips a release, these hold only if PrereleaseViewsVersion and
+// basePrereleaseView move together.
+func TestPrereleaseViewConstants(t *testing.T) {
+	require.True(t, semver.IsValid(PrereleaseViewsVersion))
+	require.True(t, semver.IsValid(IdentifierCasingVersion))
+	require.Equal(t, "v1.0.0", BaseVersion(basePrereleaseView))
+	require.Negative(t, semver.Compare(basePrereleaseView, PrereleaseViewsVersion))
+	require.Equal(t, betaOffset(t, PrereleaseViewsVersion, -1), basePrereleaseView,
+		"basePrereleaseView must be the beta just before PrereleaseViewsVersion")
+	require.GreaterOrEqual(t, semver.Compare(IdentifierCasingVersion, PrereleaseViewsVersion), 0,
+		"IdentifierCasingVersion must not be older than PrereleaseViewsVersion")
 }
 
 func setVersion(t *testing.T, version string) {
