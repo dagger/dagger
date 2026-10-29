@@ -10,12 +10,14 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/engine"
@@ -384,6 +386,88 @@ type Main {
 				tc.constructor, tc.typeName, tc.typeName+"Client"), out)
 		})
 	}
+}
+
+// TestClientSchemaVersion checks the client schema an SDK generates a
+// dependency's client from: clientSchemaIntrospectionJSON(clientVersion:)
+// describes core as a client at clientVersion sees it, and the module named by
+// the version it declares, as the engine serves it to that client. Overriding
+// the module's own version with withEngineVersion instead renames it, so a
+// client generated that way doesn't match what the engine serves.
+func (ModuleNamingSuite) TestClientSchemaVersion(ctx context.Context, t *testctx.T) {
+	const preCut = "v1.0.0-beta.20"
+	c := connect(ctx, t)
+	module := func(name, version string) string {
+		return "name = \"" + name + "\"\nengineVersion = \"" + version + "\"\nsource = \".\"\n\n[runtime]\nsource = \"dang\"\n"
+	}
+	ws := goGitBase(t, c).
+		WithNewFile("dagger.toml", "[modules.before]\nsource = \"./before\"\n[modules.after]\nsource = \"./after\"\n").
+		WithNewFile("before/dagger-module.toml", module("before", preCut)).
+		WithNewFile("before/main.dang", namingDangSource("Before", "")).
+		WithNewFile("after/dagger-module.toml", module("after", namingCut)).
+		WithNewFile("after/main.dang", namingDangSource("After", ""))
+
+	// What the engine serves for each module, to this client.
+	out, err := ws.With(daggerQuery(`{
+  before { client(baseUrl: "u") { __typename } }
+  after { client(baseUrl: "u") { __typename } }
+}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"before": {"client": {"__typename": "BeforeHttpClient"}}, "after": {"client": {"__typename": "AfterHTTPClient"}}}`, out)
+
+	// schemaOf runs selection on the module source at ref, aliasing the
+	// client schema file it selects "schema", and parses the schema found
+	// at path in the result.
+	schemaOf := func(t *testctx.T, ref, selection, path string) introspection.Response {
+		t.Helper()
+		out, err := ws.With(daggerQuery(`{moduleSource(refString: %q) { %s }}`, ref, selection)).Stdout(ctx)
+		require.NoError(t, err)
+		contents := gjson.Get(out, "moduleSource."+path+"schema.contents")
+		require.True(t, contents.Exists(), out)
+		var schema introspection.Response
+		require.NoError(t, json.Unmarshal([]byte(contents.String()), &schema))
+		require.NotNil(t, schema.Schema)
+		return schema
+	}
+
+	for _, tc := range []struct {
+		name, module, clientVersion string
+		// the core view the schema describes, by its spelling of
+		// File.asJson
+		view, asJSON, otherAsJSON string
+		// the module's client type, as the engine serves it
+		typeName, otherTypeName string
+	}{
+		{"pre-cut dependency of a cut client", "./before", namingCut, namingCut, "asJson", "asJSON", "BeforeHttpClient", "BeforeHTTPClient"},
+		{"cut dependency of a pre-cut client", "./after", preCut, namingPreCut, "asJSON", "asJson", "AfterHTTPClient", "AfterHttpClient"},
+		{"default is the pre-cut module's own version", "./before", "", namingPreCut, "asJSON", "asJson", "BeforeHttpClient", "BeforeHTTPClient"},
+		{"default is the cut module's own version", "./after", "", namingCut, "asJson", "asJSON", "AfterHTTPClient", "AfterHttpClient"},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			field := "schema: clientSchemaIntrospectionJson"
+			if tc.clientVersion != "" {
+				field += fmt.Sprintf(`(clientVersion: %q)`, tc.clientVersion)
+			}
+			schema := schemaOf(t, tc.module, field+" { contents }", "")
+			require.Equal(t, tc.view, schema.SchemaVersion)
+			file := schema.Schema.Types.Get("File")
+			require.NotNil(t, file)
+			require.Contains(t, namingFieldNames(file), tc.asJSON, "core is described at the client's view")
+			require.NotContains(t, namingFieldNames(file), tc.otherAsJSON)
+			client := schema.Schema.Types.Get(tc.typeName)
+			require.NotNil(t, client, "the module keeps the names the engine serves it with")
+			require.Contains(t, namingFieldNames(client), "baseUrl")
+			require.Nil(t, schema.Schema.Types.Get(tc.otherTypeName))
+		})
+	}
+
+	// withEngineVersion makes the module declare another version, and so
+	// renames it: not what the engine serves.
+	schema := schemaOf(t, "./before",
+		fmt.Sprintf(`withEngineVersion(version: %q) { schema: clientSchemaIntrospectionJson { contents } }`, namingCut),
+		"withEngineVersion.")
+	require.Nil(t, schema.Schema.Types.Get("BeforeHttpClient"))
+	require.NotNil(t, schema.Schema.Types.Get("BeforeHTTPClient"))
 }
 
 // TestCLIFlags checks the CLI's spelling of an E2E-style argument. The CLI
