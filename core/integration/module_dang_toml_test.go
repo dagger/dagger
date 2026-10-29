@@ -127,6 +127,28 @@ func (DangSuite) TestDangTomlEngineVersion(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "v0.21.9", version)
 	})
 
+	// The engine version a dang.toml declares wins on load, but a config
+	// write keeps the manifest's own, and the caching default that follows
+	// from it.
+	t.Run("config write keeps engineVersion", func(ctx context.Context, t *testctx.T) {
+		for _, declared := range []string{"v1.0.0-beta.20", "v0.19.0"} {
+			contents, err := core.NewQuery(c).Directory().
+				WithNewFile("dagger.json", `{"name":"tiny","engineVersion":"v0.21.9","sdk":{"source":"dang"}}`).
+				WithNewFile("dang.toml", "dang = \"2.1\"\n\n[imports.Dagger]\ndagger = \""+declared+"\"\n").
+				WithNewFile("main.dang", source).
+				AsModuleSource().
+				WithName("renamed").
+				GeneratedContextChangeset().
+				Layer().
+				File("dagger.json").
+				Contents(ctx)
+			require.NoError(t, err)
+			require.Contains(t, contents, `"engineVersion": "v0.21.9"`)
+			require.NotContains(t, contents, declared)
+			require.NotContains(t, contents, "disableDefaultFunctionCaching")
+		}
+	})
+
 	t.Run("too new", func(ctx context.Context, t *testctx.T) {
 		_, err := dangTomlModule(t, c, "v0.21.9", source, map[string]string{
 			"dang.toml": "[imports.Dagger]\ndagger = \"v999.0.0\"\n",
@@ -277,5 +299,32 @@ func (DangSuite) TestDangTomlDangVersion(ctx context.Context, t *testctx.T) {
 			Sync(ctx)
 		requireErrOut(t, err, "module requires Dang 99.0, but this Dagger engine supports Dang")
 		requireErrOut(t, err, "upgrade Dagger")
+	})
+
+	// Dang reads a dang.toml above the module directory, which the engine
+	// does not: the module's own versions decide all the same.
+	t.Run("directory source ignores a dang version above the module", func(ctx context.Context, t *testctx.T) {
+		_, err := core.NewQuery(c).Directory().
+			WithNewFile("dang.toml", "dang = \"1.0\"\n").
+			WithNewFile("tiny/dagger.json", `{"name":"tiny","engineVersion":"v0.21.9","sdk":{"source":"dang"}}`).
+			WithNewFile("tiny/main.dang", current).
+			AsModuleSource(core.DirectoryAsModuleSourceOpts{SourceRootPath: "tiny"}).
+			AsModule().
+			Sync(ctx)
+		require.NoError(t, err)
+	})
+
+	// Fields without a type annotation are typed by inferring their values,
+	// which the SDK of the Dang v1 line does when loading a module's types.
+	t.Run("Dang 1.0 fields typed by their values", func(ctx context.Context, t *testctx.T) {
+		out, err := dangTomlModule(t, c, "v0.20.6", `type Tiny {
+  pub tags = ["a", "b"]
+  pub greeting = "hello, " + "world"
+}
+`, nil).
+			With(daggerCallAt("tiny", "greeting")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello, world", strings.TrimSpace(out))
 	})
 }
