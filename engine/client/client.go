@@ -807,12 +807,35 @@ func (c *Client) SessionLost() error {
 	return nil
 }
 
+// How long the engine has to answer the session attachables request. It's
+// generous, since the engine answers before any slow client setup; it bounds a
+// connection that was opened but never delivered to the engine, so the caller
+// fails instead of hanging forever.
+var sessionAttachablesHandshakeTimeout = time.Minute
+
 func ConnectSessionAttachables(
 	ctx context.Context,
 	conn net.Conn,
 	headers http.Header,
 	attachables ...SessionAttachable,
-) (*SessionAttachablesServer, error) {
+) (_ *SessionAttachablesServer, rerr error) {
+	// The handshake reads and writes conn directly, so neither ctx nor any
+	// transport timeout reaches it. Unblock it by closing conn if ctx ends or
+	// the engine doesn't answer in time. Closing, not a deadline: conns from
+	// command-backed drivers (docker, ssh, kube-pod) ignore deadlines.
+	handshakeCtx, cancel := context.WithTimeoutCause(ctx, sessionAttachablesHandshakeTimeout,
+		fmt.Errorf("engine did not answer within %s", sessionAttachablesHandshakeTimeout))
+	defer cancel()
+	stop := context.AfterFunc(handshakeCtx, func() {
+		conn.Close()
+	})
+	defer func() {
+		// if conn was closed, it's unusable even if the handshake finished
+		if !stop() {
+			rerr = context.Cause(handshakeCtx)
+		}
+	}()
+
 	sessionSrv := NewSessionAttachablesServer(ctx, conn, attachables...)
 	for _, methodURL := range sessionSrv.MethodURLs {
 		headers.Add(engine.SessionMethodNameMetaKey, methodURL)

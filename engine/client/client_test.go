@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -557,4 +558,153 @@ func (body *observedReadCloser) Read(p []byte) (int, error) {
 		close(body.readStarted)
 	})
 	return body.ReadCloser.Read(p)
+}
+
+// listen accepts connections and hands each to handle, like an engine or a
+// tunnel in front of one.
+func listen(t *testing.T, handle func(net.Conn)) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	var mu sync.Mutex
+	var conns []net.Conn
+	t.Cleanup(func() {
+		l.Close()
+		mu.Lock()
+		defer mu.Unlock()
+		for _, conn := range conns {
+			conn.Close()
+		}
+	})
+	go func() {
+		for {
+			conn, err := l.Accept()
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			conns = append(conns, conn)
+			mu.Unlock()
+			go handle(conn)
+		}
+	}()
+	return l.Addr().String()
+}
+
+func dial(t *testing.T, addr string) net.Conn {
+	t.Helper()
+	conn, err := net.Dial("tcp", addr)
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	return conn
+}
+
+// noDeadlineConn ignores deadlines, like the command-backed conns of the
+// docker, ssh and kube-pod drivers.
+type noDeadlineConn struct {
+	net.Conn
+}
+
+func (noDeadlineConn) SetDeadline(time.Time) error      { return nil }
+func (noDeadlineConn) SetReadDeadline(time.Time) error  { return nil }
+func (noDeadlineConn) SetWriteDeadline(time.Time) error { return nil }
+
+// stalledConns are conns to a server that accepts connections but never
+// delivers them to the engine.
+func stalledConns(t *testing.T) map[string]func(*testing.T) net.Conn {
+	addr := listen(t, func(net.Conn) {})
+	return map[string]func(*testing.T) net.Conn{
+		"tcp": func(t *testing.T) net.Conn {
+			return dial(t, addr)
+		},
+		"without deadlines": func(t *testing.T) net.Conn {
+			return noDeadlineConn{dial(t, addr)}
+		},
+	}
+}
+
+// connectSessionAttachables runs the handshake on conn and fails the test if
+// it doesn't return within a bound, instead of hanging the test.
+func connectSessionAttachables(ctx context.Context, t *testing.T, conn net.Conn) (*SessionAttachablesServer, error) {
+	t.Helper()
+	type result struct {
+		srv *SessionAttachablesServer
+		err error
+	}
+	resCh := make(chan result, 1)
+	go func() {
+		srv, err := ConnectSessionAttachables(ctx, conn, http.Header{})
+		resCh <- result{srv, err}
+	}()
+	select {
+	case res := <-resCh:
+		return res.srv, res.err
+	case <-time.After(10 * time.Second):
+		t.Fatal("ConnectSessionAttachables did not return")
+		return nil, nil
+	}
+}
+
+func withHandshakeTimeout(t *testing.T, timeout time.Duration) {
+	orig := sessionAttachablesHandshakeTimeout
+	sessionAttachablesHandshakeTimeout = timeout
+	t.Cleanup(func() { sessionAttachablesHandshakeTimeout = orig })
+}
+
+func TestConnectSessionAttachablesTimesOutWhenEngineNeverAnswers(t *testing.T) {
+	withHandshakeTimeout(t, 100*time.Millisecond)
+	for name, conn := range stalledConns(t) {
+		t.Run(name, func(t *testing.T) {
+			_, err := connectSessionAttachables(t.Context(), t, conn(t))
+			require.ErrorContains(t, err, "engine did not answer within 100ms")
+		})
+	}
+}
+
+func TestConnectSessionAttachablesStopsWhenContextIsCanceled(t *testing.T) {
+	for name, conn := range stalledConns(t) {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			time.AfterFunc(100*time.Millisecond, cancel)
+			_, err := connectSessionAttachables(ctx, t, conn(t))
+			require.ErrorIs(t, err, context.Canceled)
+		})
+	}
+}
+
+func TestConnectSessionAttachablesConnOutlivesHandshake(t *testing.T) {
+	withHandshakeTimeout(t, 100*time.Millisecond)
+	addr := listen(t, func(conn net.Conn) {
+		br := bufio.NewReader(conn)
+		req, err := http.ReadRequest(br)
+		if err != nil || req.URL.Path != engine.SessionAttachablesEndpoint {
+			conn.Close()
+			return
+		}
+		resp := &http.Response{
+			StatusCode: http.StatusSwitchingProtocols,
+			ProtoMajor: 1,
+			ProtoMinor: 1,
+			Header:     http.Header{},
+		}
+		if err := resp.Write(conn); err != nil {
+			return
+		}
+		if _, err := br.ReadByte(); err != nil {
+			return
+		}
+		// the session lives on long after the handshake
+		time.Sleep(300 * time.Millisecond)
+		conn.Write([]byte("x"))
+	})
+
+	ctx, cancel := context.WithCancel(t.Context())
+	srv, err := connectSessionAttachables(ctx, t, dial(t, addr))
+	require.NoError(t, err)
+	// neither the handshake's timeout nor its context may close the session's conn
+	cancel()
+	buf := make([]byte, 1)
+	_, err = io.ReadFull(srv.Conn, buf)
+	require.NoError(t, err)
+	require.Equal(t, "x", string(buf))
 }
