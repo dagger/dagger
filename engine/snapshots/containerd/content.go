@@ -30,17 +30,17 @@ func (c *Store) WithNamespace(ns string) *Store {
 }
 
 func (c *Store) Info(ctx context.Context, dgst digest.Digest) (content.Info, error) {
-	ctx = withNamespace(ctx, c.ns)
+	ctx = bksnapshots.WithNamespace(ctx, c.ns)
 	return c.Store.Info(ctx, dgst)
 }
 
 func (c *Store) Update(ctx context.Context, info content.Info, fieldpaths ...string) (content.Info, error) {
-	ctx = withNamespace(ctx, c.ns)
+	ctx = bksnapshots.WithNamespace(ctx, c.ns)
 	return c.Store.Update(ctx, info, fieldpaths...)
 }
 
 func (c *Store) Walk(ctx context.Context, fn content.WalkFunc, filters ...string) error {
-	ctx = withNamespace(ctx, c.ns)
+	ctx = bksnapshots.WithNamespace(ctx, c.ns)
 	return c.Store.Walk(ctx, fn, filters...)
 }
 
@@ -49,12 +49,12 @@ func (c *Store) Delete(ctx context.Context, dgst digest.Digest) error {
 }
 
 func (c *Store) Status(ctx context.Context, ref string) (content.Status, error) {
-	ctx = withNamespace(ctx, c.ns)
+	ctx = bksnapshots.WithNamespace(ctx, c.ns)
 	return c.Store.Status(ctx, ref)
 }
 
 func (c *Store) ListStatuses(ctx context.Context, filters ...string) ([]content.Status, error) {
-	ctx = withNamespace(ctx, c.ns)
+	ctx = bksnapshots.WithNamespace(ctx, c.ns)
 	return c.Store.ListStatuses(ctx, filters...)
 }
 
@@ -64,12 +64,12 @@ func (c *Store) Abort(ctx context.Context, ref string) error {
 	if err != nil {
 		return err
 	}
-	ctx = withNamespace(ctx, c.ns)
+	ctx = bksnapshots.WithNamespace(ctx, c.ns)
 	return c.Store.Abort(ctx, ref)
 }
 
 func (c *Store) ReaderAt(ctx context.Context, desc ocispecs.Descriptor) (content.ReaderAt, error) {
-	ctx = withNamespace(ctx, c.ns)
+	ctx = bksnapshots.WithNamespace(ctx, c.ns)
 	return c.Store.ReaderAt(ctx, desc)
 }
 
@@ -79,7 +79,7 @@ func (c *Store) Writer(ctx context.Context, opts ...content.WriterOpt) (content.
 	if err != nil {
 		return nil, err
 	}
-	ctx = withNamespace(ctx, c.ns)
+	ctx = bksnapshots.WithNamespace(ctx, c.ns)
 	w, err := c.Store.Writer(ctx, opts...)
 	if err != nil {
 		return nil, err
@@ -111,7 +111,7 @@ func (w *nsWriter) Commit(ctx context.Context, size int64, expected digest.Diges
 			return err
 		}
 	}
-	ctx = withNamespace(ctx, w.ns)
+	ctx = bksnapshots.WithNamespace(ctx, w.ns)
 	return w.Writer.Commit(ctx, size, expected, opts...)
 }
 

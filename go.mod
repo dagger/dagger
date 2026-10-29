@@ -56,6 +56,7 @@ require (
 	github.com/containerd/log v0.1.0
 	github.com/containerd/platforms v1.0.0-rc.2
 	github.com/containerd/stargz-snapshotter/estargz v0.18.2
+	github.com/containerd/ttrpc v1.2.7
 	github.com/containerd/typeurl/v2 v2.2.3
 	github.com/containernetworking/cni v1.3.0
 	github.com/containernetworking/plugins v1.9.0
@@ -257,7 +258,6 @@ require (
 	github.com/containerd/cgroups/v3 v3.1.2 // indirect
 	github.com/containerd/fifo v1.1.0 // indirect
 	github.com/containerd/plugin v1.0.0 // indirect
-	github.com/containerd/ttrpc v1.2.7 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.7 // indirect
 	github.com/cyphar/filepath-securejoin v0.6.1 // indirect
 	github.com/danielgatis/go-ansicode v1.0.14 // indirect
