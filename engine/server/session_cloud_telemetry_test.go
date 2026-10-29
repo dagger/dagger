@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
 	otellog "go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/metric"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -67,6 +68,8 @@ type cloudReceiver struct {
 	logBodies      []string
 	payloadDigests []string
 	metricNames    []string
+	// gaugePoints are the gauge points received, by metric name.
+	gaugePoints map[string][]*otlpmetricsv1.NumberDataPoint
 }
 
 func newCloudReceiver(t *testing.T, hold bool) *cloudReceiver {
@@ -160,6 +163,12 @@ func (r *cloudReceiver) serve(w http.ResponseWriter, req *http.Request) {
 			for _, sm := range rm.GetScopeMetrics() {
 				for _, m := range sm.GetMetrics() {
 					r.metricNames = append(r.metricNames, m.GetName())
+					for _, dp := range m.GetGauge().GetDataPoints() {
+						if r.gaugePoints == nil {
+							r.gaugePoints = map[string][]*otlpmetricsv1.NumberDataPoint{}
+						}
+						r.gaugePoints[m.GetName()] = append(r.gaugePoints[m.GetName()], dp)
+					}
 				}
 			}
 		}
@@ -271,6 +280,42 @@ func TestSessionPublishesTelemetryToCloud(t *testing.T) {
 	for _, got := range auths {
 		require.Equal(t, want, got)
 	}
+}
+
+// Cloud stores each gauge point it receives as a sample, so a reading reaches
+// Cloud once, at the collection after it was taken: a series measured once is
+// not exported again by later collections, and is not kept for them.
+func TestSessionPublishesEachGaugeReadingToCloudOnce(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	receiver := newCloudReceiver(t, false)
+	sess, root := newCloudTestSession(t, &Server{}, &engine.ClientMetadata{
+		CloudAuth:               basicCloudAuth("dag_test_token"),
+		CloudURL:                receiver.URL,
+		CloudTelemetryPublisher: engine.CloudTelemetryPublisherEngine,
+	})
+	require.NotNil(t, sess.cloudMetrics)
+
+	gauge, err := root.meterProvider.Meter("test").Int64Gauge("helper.reading")
+	require.NoError(t, err)
+	gauge.Record(ctx, 42, metric.WithAttributes(
+		attribute.String(telemetry.MetricsSpanIDAttr, "0000000000000001"),
+	))
+
+	// Several collections after the one reading, as a long-lived client's
+	// reader makes every few seconds.
+	for range 3 {
+		require.NoError(t, root.flushMetrics(ctx))
+	}
+	sess.flushSessionCloudTelemetry(ctx)
+	publishRestToCloud(ctx, t, sess)
+
+	receiver.mu.Lock()
+	defer receiver.mu.Unlock()
+	points := receiver.gaugePoints["helper.reading"]
+	require.Len(t, points, 1, "one reading is one sample")
+	require.Equal(t, int64(42), points[0].GetAsInt())
 }
 
 // A call span carries its call's frame and is the frame's only delivery: the

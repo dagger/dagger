@@ -1,0 +1,6 @@
+kind: Fixed
+body: The engine no longer runs out of memory in long sessions that publish telemetry to Dagger Cloud; each resource reading is now sent to Cloud once, instead of being kept and resent every 5 seconds until its client closed.
+time: 2026-10-28T23:40:00Z
+custom:
+  Author: vito
+  PR: "14930"
