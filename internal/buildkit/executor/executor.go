@@ -27,6 +27,11 @@ type Meta struct {
 	ValidExitCodes []int
 
 	RemoveMountStubsRecursive bool
+
+	// TransparentHugePages lets the process use transparent huge pages where
+	// the host provides them. Otherwise it is started with them switched off,
+	// except where its program asks for them.
+	TransparentHugePages bool
 }
 
 type MountableRef interface {

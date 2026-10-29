@@ -700,6 +700,10 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`Skip the automatic init process injected into containers by default.`,
 					`Only use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this.`,
 				),
+				dagql.Arg("transparentHugePages").Doc(
+					`Let the command, and the processes it starts, use the Linux kernel's transparent huge pages. Large-memory programs such as compilers can run faster with them, at some cost in memory.`,
+					`Commands don't use them unless they set this. It has an effect only on hosts whose transparent huge pages are set to "always" (/sys/kernel/mm/transparent_hugepage/enabled) and that run Linux 6.18 or later. On hosts set to "madvise", the usual default, it changes nothing. On hosts set to "always" with an older kernel, every command uses them, whether it sets this or not.`,
+				),
 			),
 
 		dagql.NodeFunc("stdout", s.stdout).
