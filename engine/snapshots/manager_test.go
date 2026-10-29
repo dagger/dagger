@@ -307,7 +307,7 @@ func (sn *applySnapshotDiffTestSnapshotter) Merge(ctx context.Context, key strin
 	return nil
 }
 
-func newApplySnapshotDiffTestManager(t *testing.T) *snapshotManager {
+func newApplySnapshotDiffTestManager(t testing.TB) *snapshotManager {
 	t.Helper()
 
 	sn := newApplySnapshotDiffTestSnapshotter()
