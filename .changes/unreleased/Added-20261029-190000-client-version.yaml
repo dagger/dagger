@@ -1,0 +1,13 @@
+kind: Added
+body: |
+  `ModuleSource.clientSchemaIntrospectionJson` takes a `clientVersion`, the
+  engine version of the client a module's client is generated for, such as
+  the module depending on it. Core is described as that client sees it, while
+  the module keeps the names of the engine version it declares, as the engine
+  serves it. SDKs generating a dependency's client should use it rather than
+  `withEngineVersion`, which renames the dependency by the consumer's naming
+  rules.
+time: 2026-10-29T19:00:00Z
+custom:
+  Author: vito
+  PR: "TBD"
