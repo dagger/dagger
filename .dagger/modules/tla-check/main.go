@@ -217,7 +217,7 @@ var expectedOutcome = map[string]string{
 	"part_sources_merge":                     "",
 	"part_sources_import":                    "",
 	"part_sources_late_offer_over_native":    "OnePartWriter",
-	"part_sources_not_sticky":                "OnePartWriter",
+	"part_sources_not_sticky":                "",
 	"part_sources_imported_predicate":        "ManagedOnlyWithSource",
 	"probe_part_sources_armed_native":        "ProbeArmedCloudNative",
 	"probe_part_sources_late_offer":          "ProbeLateOfferInstalled",
