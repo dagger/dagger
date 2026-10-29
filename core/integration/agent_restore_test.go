@@ -764,7 +764,12 @@ func (AgentRestoreSuite) TestArchiveUnsealedAfterEngineCrash(ctx context.Context
 	_, reply, err := original.sendAndWait(sourceCtx, t, "before crash")
 	require.NoError(t, err)
 	require.Equal(t, "remembered before crash", reply)
-	node := sourceSink.awaitRestorable(t, 1)["crash-worker"]
+	// The restorable checkpoint and the IDLE control record are exported
+	// separately. Wait for both before simulating the crash; otherwise the
+	// archive can correctly contain a checkpoint with no state record yet.
+	node := sourceSink.awaitRestorableCapture(sourceCtx, t, 1, map[string]string{
+		"crash-worker": "IDLE",
+	}).nodes["crash-worker"]
 	require.NotNil(t, node.Control)
 	traceID := node.Control.Trace
 	// No client close and no graceful engine stop: SIGKILL the engine while the
