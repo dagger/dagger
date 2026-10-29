@@ -460,9 +460,9 @@ func (DangSuite) TestInterfaces(_ context.Context, t *testctx.T) {
 	})
 }
 
-// TestVersionedSyntax covers the Dang major version routing: modules pinned
-// to an engineVersion before v0.21.5 are evaluated with Dang v1 (`.{ }` is
-// selection), and modules at v0.21.5+ with Dang v2 (`.{ }` is dot-block
+// TestVersionedSyntax covers the default Dang language version: modules pinned
+// to an engineVersion before v0.21.5 are parsed as Dang 1.0 (`.{ }` is
+// selection), and modules at v0.21.5+ as Dang 2 (`.{ }` is dot-block
 // application, `.{{ }}` is selection). See core/sdk/dang/README.md.
 func (DangSuite) TestVersionedSyntax(_ context.Context, t *testctx.T) {
 	t.Run("v1 selection for modules pinned before v0.21.5", func(ctx context.Context, t *testctx.T) {
