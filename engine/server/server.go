@@ -190,13 +190,16 @@ type Server struct {
 	armedMu sync.Mutex
 	armed   *armedProfile
 
-	// watch is the session watch, nil while it's off; captureMu lets one
-	// capture run at a time, and captures holds the last few
-	// (wcprof_watch.go).
-	watch      atomic.Pointer[sessionWatch]
-	captureMu  sync.Mutex
-	capturesMu sync.Mutex
-	captures   []Capture
+	// The session watch (wcprof_watch.go): its threshold in nanoseconds, 0
+	// while it's off; the start of each watched session while it runs;
+	// captureMu, which lets one capture run at a time; and the last few
+	// captures.
+	watchThreshold atomic.Int64
+	watchMu        sync.Mutex
+	watchStarted   map[string]time.Time
+	captureMu      sync.Mutex
+	capturesMu     sync.Mutex
+	captures       []Capture
 
 	coreSchemaBase   *schema.CoreSchemaBase
 	coreSchemaBaseMu sync.Mutex
