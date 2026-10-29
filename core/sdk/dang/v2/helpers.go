@@ -115,6 +115,14 @@ func evalDangSource(
 	if src := modSource.Self(); src != nil {
 		// Name the module's typedefs by the module's naming rules.
 		ctx = dangshared.WithModuleNaming(ctx, src)
+		// Parse the module's source as the Dang version it is written in,
+		// unless a dang.toml Dang finds declares one (the same one, as the
+		// engine reads it; see ModuleSource.DangVersion).
+		var err error
+		ctx, err = ContextWithDangVersion(ctx, src.DangVersion)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return dangshared.WithNestedClientServer(ctx, query, nestedClientMetadata, inertAttachables, fnCall, moduleContext, func(ctx context.Context, gqlClient graphql.Client) ([]byte, error) {
 		schema, err := loadDangSchema(ctx, schemaFile)
@@ -143,6 +151,12 @@ func evalDangSource(
 		var env dang.ValueScope
 		err = modCtx.Self().Mount(ctx, modCtx, func(path string) error {
 			modSrcDir := filepath.Join(path, modSource.Self().SourceSubpath)
+
+			// The version Dang parses the source as, for the parses below.
+			version, err := dang.VersionForDir(ctx, modSrcDir)
+			if err != nil {
+				version = dang.VersionFromContext(ctx)
+			}
 
 			// During the typedef/declaration phase (ModuleTypes) the schema
 			// handed to us is deps-only: it does not yet carry the module's own
@@ -173,7 +187,7 @@ func evalDangSource(
 				}
 				return fmt.Errorf("run dir: %w", err)
 			}
-			return retainDangObjectDirectives(ctx, env, modSrcDir, forTypeDefs)
+			return retainDangObjectDirectives(ctx, env, modSrcDir, version, forTypeDefs)
 		})
 		if err != nil {
 			if errors.As(err, new(*dangSourceError)) {
@@ -308,8 +322,9 @@ func reportDangSourceError(stderr io.Writer, err error) error {
 // Type. Keep these declarations alongside the field directives for registration.
 //
 // Only type registration reads them (createObjectTypeDef), so nothing is
-// parsed unless forTypeDefs says the environment is used for that.
-func retainDangObjectDirectives(ctx context.Context, env dang.ValueScope, dir string, forTypeDefs bool) error {
+// parsed unless forTypeDefs says the environment is used for that. version is
+// the Dang version the source is written in.
+func retainDangObjectDirectives(ctx context.Context, env dang.ValueScope, dir string, version dang.Version, forTypeDefs bool) error {
 	if !forTypeDefs {
 		return nil
 	}

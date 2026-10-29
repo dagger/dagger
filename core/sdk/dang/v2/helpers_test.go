@@ -276,11 +276,11 @@ func TestRetainDangObjectDirectivesOnlyForTypeDefs(t *testing.T) {
 	require.Empty(t, objectDirectives(env, "Thing"), "Dang itself does not retain object directives")
 
 	parses := countDangParses(t)
-	require.NoError(t, retainDangObjectDirectives(t.Context(), env, dir, false))
+	require.NoError(t, retainDangObjectDirectives(t.Context(), env, dir, dang.CurrentVersion, false))
 	require.Zero(t, *parses, "a function call does not parse the source again")
 	require.Empty(t, objectDirectives(env, "Thing"))
 
-	require.NoError(t, retainDangObjectDirectives(t.Context(), env, dir, true))
+	require.NoError(t, retainDangObjectDirectives(t.Context(), env, dir, dang.CurrentVersion, true))
 	require.Equal(t, 1, *parses)
 	directives := objectDirectives(env, "Thing")
 	require.Len(t, directives, 1)
@@ -370,4 +370,36 @@ func TestConvertObjectIDKeepsHandleID(t *testing.T) {
 	require.NoError(t, err)
 	_, err = json.Marshal(value)
 	require.ErrorContains(t, err, "unexpected API request")
+}
+
+// legacySelectionSource is Dang 1.0 source: `.{a, b}` is object selection,
+// which no later version parses.
+const legacySelectionSource = "directive @marked on OBJECT\n\n" +
+	"type Pair @marked {\n  pub a: Int! = 1\n  pub b: Int! = 2\n}\n\n" +
+	"type Picker {\n  pub picked: Int! {\n    let p = Pair.{a, b}\n    p.a\n  }\n}\n"
+
+// The engine's own parses of a module's source (declared type names, object
+// directives) parse it as the Dang version it is written in, as Dang does: a
+// Dang 1.0 module has types and directives too.
+func TestModuleSourceParsesAtDangVersion(t *testing.T) {
+	dir := t.TempDir()
+	writeDangFilesIn(t, dir, map[string]string{"main.dang": legacySelectionSource})
+
+	countDangParses(t) // a fresh memo
+	require.Equal(t, []string{"Legacy", "Pair", "Picker"}, moduleDeclaredTypeNames(dir, "legacy", dang.Version1_0))
+	require.Equal(t, []string{"Legacy"}, moduleDeclaredTypeNames(dir, "legacy", dang.CurrentVersion),
+		"the names are keyed by version: the source does not parse as the current version")
+
+	ctx := dang.ContextWithVersion(t.Context(), dang.Version1_0)
+	env, err := runDangDirForModuleTypes(ctx, dir)
+	require.NoError(t, err)
+	require.NoError(t, retainDangObjectDirectives(ctx, env, dir, dang.Version1_0, true))
+	value, found, err := env.Lookup(ctx, "Pair")
+	require.NoError(t, err)
+	require.True(t, found)
+	directives := value.(*dang.ConstructorFunction).ObjectType.GetDirectives("")
+	require.Len(t, directives, 1)
+	require.Equal(t, "marked", directives[0].Name)
+
+	require.Error(t, retainDangObjectDirectives(ctx, env, dir, dang.CurrentVersion, true))
 }

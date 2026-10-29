@@ -9,6 +9,7 @@ import (
 	dangv2 "github.com/dagger/dagger/core/sdk/dang/v2"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/vito/dang/v2/pkg/dang"
 )
 
 type dangSDK struct {
@@ -50,10 +51,17 @@ type dangImpl interface {
 	) (core.ModuleRuntime, error)
 }
 
-// dangImplFor picks the Dang major version matching the module's engine
-// version: modules pinned before a major's gate keep the semantics they were
-// written against. Newest-first ladder; adding a future major is one case.
+// dangImplFor picks the Dang major version matching the Dang language version
+// the module's source is written in (ModuleSource.DangVersion): its dang.toml's
+// `dang`, or else the default for its engine version, so modules pinned
+// before a major's gate keep the semantics they were written against.
 func dangImplFor(src *core.ModuleSource) dangImpl {
+	if src.DangVersion != "" {
+		if v, err := dang.ParseVersion(src.DangVersion); err == nil && v.Before(dang.Version2_0) {
+			return dangv1.Impl{}
+		}
+		return dangv2.Impl{}
+	}
 	if engine.CheckVersionCompatibility(
 		engine.BaseVersion(engine.NormalizeVersion(src.EngineVersion)),
 		engine.MinimumDangV2ModuleVersion,

@@ -191,11 +191,12 @@ func TestModuleImplementationScopedKeysGitModulesOnTheirCommit(t *testing.T) {
 	require.NotEqual(t, fromGit, fromLocal)
 }
 
-// The versions of an entrypoint module come from a dang.toml that need not be
-// in its context directory, and decide how its types are named and which API
-// they target, so they key its implementation digest, and through it the
-// persisted _moduleTypesDefinition. Other modules keep their digest.
-func TestSourceImplementationDigestKeysEntrypointVersions(t *testing.T) {
+// The versions of a Dang module come from a dang.toml that need not be in its
+// context directory, or from defaults that follow the engine, and decide how
+// its types are named, which API they target and how its source parses, so
+// they key its implementation digest, and through it the persisted
+// _moduleTypesDefinition. Modules of other SDKs keep their digest.
+func TestSourceImplementationDigestKeysDangVersions(t *testing.T) {
 	ctx := t.Context()
 
 	cache, err := dagql.NewCache(ctx, "", nil, nil)
@@ -226,12 +227,12 @@ func TestSourceImplementationDigestKeysEntrypointVersions(t *testing.T) {
 	sourceDigest := func(entrypoint bool, engineVersion, dangVersion string) digest.Digest {
 		t.Helper()
 		src := &core.ModuleSource{
-			Kind:                  core.ModuleSourceKindDir,
-			ModuleName:            "tiny",
-			ModuleOriginalName:    "tiny",
-			ContextDirectory:      dirRes,
-			EngineVersion:         engineVersion,
-			EntrypointDangVersion: dangVersion,
+			Kind:               core.ModuleSourceKindDir,
+			ModuleName:         "tiny",
+			ModuleOriginalName: "tiny",
+			ContextDirectory:   dirRes,
+			EngineVersion:      engineVersion,
+			DangVersion:        dangVersion,
 		}
 		if entrypoint {
 			src.Entrypoint = &modules.ModuleEntrypointConfig{Kind: modules.ModuleEntrypointKindDang, Source: "./entrypoint"}
@@ -246,6 +247,13 @@ func TestSourceImplementationDigestKeysEntrypointVersions(t *testing.T) {
 	require.NotEqual(t, base, sourceDigest(true, "v1.0.0-beta.21", "2.1"), "the engine version keys the digest")
 	require.NotEqual(t, base, sourceDigest(true, "v1.0.0-beta.20", "2.0"), "the Dang version keys the digest")
 
+	// So do a Dang SDK module's: its dang.toml wins over its manifest, and a
+	// module that declares no Dang version follows the engine's Dang.
+	legacy := sourceDigest(false, "v0.20.6", "1.0")
+	require.Equal(t, legacy, sourceDigest(false, "v0.20.6", "1.0"))
+	require.NotEqual(t, legacy, sourceDigest(false, "v0.21.9", "1.0"), "the engine version keys the digest")
+	require.NotEqual(t, legacy, sourceDigest(false, "v0.20.6", "2.1"), "the Dang version keys the digest")
+
 	require.Equal(t, sourceDigest(false, "v0.20.0", ""), sourceDigest(false, "v1.0.0", ""),
-		"a module that is not an entrypoint keeps its digest")
+		"a module of another SDK keeps its digest")
 }

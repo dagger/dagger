@@ -147,19 +147,34 @@ func FindConfigFile(
 	if err != nil || src.ContextDirectory.Self() == nil {
 		return "", nil, false, nil //nolint:nilerr // the types call reports a bad path
 	}
-	contextDir := src.ContextDirectory
-	if _, exists, err := core.CallDirExists(ctx, contextDir, subpath); err != nil || !exists {
+	return FindConfigFileInContext(ctx, src.ContextDirectory, subpath, src.SourceRootSubpath, name)
+}
+
+// FindConfigFileInContext finds the file called name nearest to the directory
+// from of contextDir, walking up from it to moduleDir and never above it, the
+// way Dang finds a dang.toml within a module. When from is not inside
+// moduleDir, only from's own file counts. It returns the file's path in
+// contextDir and its contents, or found false when there is none, or when
+// from does not exist.
+func FindConfigFileInContext(
+	ctx context.Context,
+	contextDir dagql.ObjectResult[*core.Directory],
+	from string,
+	moduleDir string,
+	name string,
+) (path string, contents []byte, found bool, rerr error) {
+	from = cleanSubpath(from)
+	moduleDir = cleanSubpath(moduleDir)
+	if _, exists, err := core.CallDirExists(ctx, contextDir, from); err != nil || !exists {
 		return "", nil, false, err
 	}
-	moduleDir := cleanSubpath(src.SourceRootSubpath)
-	for dir := filepath.Clean(subpath); ; dir = filepath.Dir(dir) {
+	within := moduleDir == "." || from == moduleDir || strings.HasPrefix(from, moduleDir+string(filepath.Separator))
+	for dir := from; ; dir = filepath.Dir(dir) {
 		path, contents, found, err := readIfExists(ctx, contextDir, filepath.Join(dir, name), "")
 		if err != nil || found {
 			return path, contents, found, err
 		}
-		// sourceSubpath keeps the entrypoint inside the module directory,
-		// so the walk reaches it; "." guards the loop all the same.
-		if dir == moduleDir || dir == "." {
+		if !within || dir == moduleDir || dir == "." {
 			return "", nil, false, nil
 		}
 	}
