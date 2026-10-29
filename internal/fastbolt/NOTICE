@@ -1,0 +1,6 @@
+Copyright 2013 Ben Johnson, and the bbolt authors
+Copyright 2026 the Dagger authors
+
+This package implements the API of go.etcd.io/bbolt, which is MIT licensed
+(see LICENSE). The errors package and errors_compat.go are copied from bbolt;
+the exported types and functions follow bbolt's. The implementation is new.
