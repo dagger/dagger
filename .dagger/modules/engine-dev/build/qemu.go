@@ -73,9 +73,13 @@ tar -xJf /qemu.tar.xz -C /src --strip-components=1 --exclude='*/roms'
 cd /src
 for p in /patches/*/*.patch; do patch -s -p1 < "$p"; done
 mkdir build && cd build
+# --without-default-features also turns off attr, without which emulated
+# programs get ENOSYS from every xattr syscall, such as setting file
+# capabilities.
 ../configure \
   --prefix=/usr \
   --without-default-features \
+  --enable-attr \
   --enable-linux-user \
   --disable-system \
   --static \

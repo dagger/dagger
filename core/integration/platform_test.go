@@ -80,6 +80,26 @@ func (PlatformSuite) TestEmulatedExecAndPush(ctx context.Context, t *testctx.T) 
 	}
 }
 
+// Emulated programs can set and read extended attributes, as package managers
+// do when they give installed binaries file capabilities.
+func (PlatformSuite) TestEmulatedExtendedAttributes(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	for platform := range platformToUname {
+		t.Run(string(platform), func(ctx context.Context, t *testctx.T) {
+			output, err := core.NewQuery(c).Container(core.ContainerOpts{Platform: platform}).
+				From(alpineImage).
+				WithExec([]string{"apk", "add", "attr"}).
+				WithExec([]string{"touch", "/file"}).
+				WithExec([]string{"setfattr", "-n", "user.dagger", "-v", "xattr-test", "/file"}).
+				WithExec([]string{"getfattr", "-d", "/file"}).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, output, `user.dagger="xattr-test"`)
+		})
+	}
+}
+
 func (PlatformSuite) TestFromSinglePlatformTagWithoutExplicitPlatform(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
