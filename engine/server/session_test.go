@@ -2158,13 +2158,13 @@ func TestTelemetryStreamFramesBatchesAndDrain(t *testing.T) {
 	req.Header.Set("Accept", enginetel.LiveContentType)
 	req.Header.Set(enginetel.LiveCursorHeader, "4")
 	resp := httptest.NewRecorder()
-	err := ps.streamHandler(resp, req, record, func(_ context.Context, _ *clientdb.DB, since int64, _ int) (int64, proto.Message, int, error) {
+	err := ps.streamHandler(resp, req, record, func(_ context.Context, _ *clientdb.DB, since int64, _ int) (int64, streamEncoder, int, error) {
 		switch since {
 		case 4, 5:
 			next := since + 1
-			return next, &collogspb.ExportLogsServiceRequest{
+			return next, encodeMessage(&collogspb.ExportLogsServiceRequest{
 				ResourceLogs: []*otlplogsv1.ResourceLogs{{SchemaUrl: fmt.Sprintf("batch-%d", next)}},
-			}, 1, nil
+			}), 1, nil
 		default:
 			return since, nil, 0, nil
 		}
@@ -2214,7 +2214,7 @@ func TestTelemetryStreamRejectsInvalidCursorAsBadRequest(t *testing.T) {
 		req.Header.Set(enginetel.LiveCursorHeader, cursor)
 		resp := httptest.NewRecorder()
 		fetched := false
-		err := ps.streamHandler(resp, req, record, func(context.Context, *clientdb.DB, int64, int) (int64, proto.Message, int, error) {
+		err := ps.streamHandler(resp, req, record, func(context.Context, *clientdb.DB, int64, int) (int64, streamEncoder, int, error) {
 			fetched = true
 			return 0, nil, 0, nil
 		})
@@ -2243,11 +2243,11 @@ func TestTelemetryStreamDefaultsToLegacySSE(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/v1/logs", nil)
 	req.Header.Set(enginetel.LegacyLiveCursorHeader, "4")
 	resp := httptest.NewRecorder()
-	err := ps.streamHandler(resp, req, record, func(_ context.Context, _ *clientdb.DB, since int64, _ int) (int64, proto.Message, int, error) {
+	err := ps.streamHandler(resp, req, record, func(_ context.Context, _ *clientdb.DB, since int64, _ int) (int64, streamEncoder, int, error) {
 		if since != 4 {
 			return since, nil, 0, nil
 		}
-		return 5, &collogspb.ExportLogsServiceRequest{
+		return 5, encodeMessage(&collogspb.ExportLogsServiceRequest{
 			ResourceLogs: []*otlplogsv1.ResourceLogs{{
 				ScopeLogs: []*otlplogsv1.ScopeLogs{{
 					LogRecords: []*otlplogsv1.LogRecord{{
@@ -2255,7 +2255,7 @@ func TestTelemetryStreamDefaultsToLegacySSE(t *testing.T) {
 					}},
 				}},
 			}},
-		}, 1, nil
+		}), 1, nil
 	})
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.Code)
@@ -2308,14 +2308,14 @@ func TestTelemetryStreamSplitsOversizedBatchesAndProgresses(t *testing.T) {
 		limit int
 	}
 	var calls []fetchCall
-	fetcher := func(_ context.Context, _ *clientdb.DB, since int64, limit int) (int64, proto.Message, int, error) {
+	fetcher := func(_ context.Context, _ *clientdb.DB, since int64, limit int) (int64, streamEncoder, int, error) {
 		calls = append(calls, fetchCall{since: since, limit: limit})
 		remaining := 4 - int(since)
 		if remaining == 0 {
 			return since, nil, 0, nil
 		}
 		rows := min(limit, remaining)
-		return since + int64(rows), batch(since, rows), rows, nil
+		return since + int64(rows), encodeMessage(batch(since, rows)), rows, nil
 	}
 
 	resp := httptest.NewRecorder()
@@ -2379,17 +2379,17 @@ func TestTelemetryStreamSkipsSingleOversizedRow(t *testing.T) {
 		resp,
 		req,
 		record,
-		func(_ context.Context, _ *clientdb.DB, since int64, _ int) (int64, proto.Message, int, error) {
+		func(_ context.Context, _ *clientdb.DB, since int64, _ int) (int64, streamEncoder, int, error) {
 			fetches = append(fetches, since)
 			switch since {
 			case 0:
 				// Row 1 can never fit in a frame; it stays in the DB, so the
 				// stream must get past it rather than end on it.
-				return 1, &collogspb.ExportLogsServiceRequest{
+				return 1, encodeMessage(&collogspb.ExportLogsServiceRequest{
 					ResourceLogs: []*otlplogsv1.ResourceLogs{{SchemaUrl: strings.Repeat("x", 100)}},
-				}, 1, nil
+				}), 1, nil
 			case 1:
-				return 2, small, 1, nil
+				return 2, encodeMessage(small), 1, nil
 			default:
 				return since, nil, 0, nil
 			}
@@ -2446,12 +2446,12 @@ func TestTelemetryStreamInterruptsOnFetchError(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/v1/logs", nil)
 	req.Header.Set("Accept", enginetel.LiveContentType)
 	req.Header.Set(enginetel.LiveCursorHeader, "3")
-	err := ps.streamHandler(resp, req, record, func(_ context.Context, _ *clientdb.DB, since int64, _ int) (int64, proto.Message, int, error) {
+	err := ps.streamHandler(resp, req, record, func(_ context.Context, _ *clientdb.DB, since int64, _ int) (int64, streamEncoder, int, error) {
 		fetches++
 		if since == 3 {
-			return 4, &collogspb.ExportLogsServiceRequest{
+			return 4, encodeMessage(&collogspb.ExportLogsServiceRequest{
 				ResourceLogs: []*otlplogsv1.ResourceLogs{{SchemaUrl: "batch-4"}},
-			}, 1, nil
+			}), 1, nil
 		}
 		return 0, nil, 0, errors.New("database is locked")
 	})
@@ -2948,8 +2948,8 @@ func TestMainClientTraceStreamDeliversSessionEnd(t *testing.T) {
 	// The stream reads the store as TracesSubscribeHandler's fetcher does, and
 	// reports each read that finds nothing once the client has shut down.
 	idleAfterShutdown := make(chan struct{}, 2)
-	fetch := func(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, proto.Message, int, error) {
-		next, req, rows, err := fetchSpanBatch(ctx, db, since, limit, nil)
+	fetch := func(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, streamEncoder, int, error) {
+		next, encode, rows, err := fetchTraceStreamBatch(ctx, db, since, limit)
 		select {
 		case <-client.shutdownCh:
 			if rows == 0 && err == nil {
@@ -2960,10 +2960,7 @@ func TestMainClientTraceStreamDeliversSessionEnd(t *testing.T) {
 			}
 		default:
 		}
-		if req == nil {
-			return next, nil, rows, err
-		}
-		return next, req, rows, err
+		return next, encode, rows, err
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()

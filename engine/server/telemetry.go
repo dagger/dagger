@@ -778,6 +778,18 @@ func logTelemetryWrite(clientID, what string, rows int, totalStart, appendStart 
 // the caller advances past all of them; keep, when set, selects the rows the
 // request carries. With no rows left it returns since, no request and 0.
 func fetchSpanBatch(ctx context.Context, db *clientdb.DB, since int64, limit int, keep func(*clientdb.Span) bool) (next int64, req *coltracepb.ExportTraceServiceRequest, rows int, err error) {
+	next, kept, rows, err := fetchSpanRows(ctx, db, since, limit, keep)
+	if err != nil || rows == 0 {
+		return next, nil, rows, err
+	}
+	return next, &coltracepb.ExportTraceServiceRequest{
+		ResourceSpans: clientdb.SpansToPB(kept),
+	}, rows, nil
+}
+
+// fetchSpanRows is fetchSpanBatch with the kept rows themselves in place of
+// their OTLP request.
+func fetchSpanRows(ctx context.Context, db *clientdb.DB, since int64, limit int, keep func(*clientdb.Span) bool) (next int64, kept []clientdb.Span, rows int, err error) {
 	spans, err := db.Read().SelectSpansSince(ctx, clientdb.SelectSpansSinceParams{
 		ID:    since,
 		Limit: int64(limit),
@@ -788,11 +800,7 @@ func fetchSpanBatch(ctx context.Context, db *clientdb.DB, since int64, limit int
 	if len(spans) == 0 {
 		return since, nil, 0, nil
 	}
-	next = spans[len(spans)-1].ID
-	kept := keptRows(spans, keep)
-	return next, &coltracepb.ExportTraceServiceRequest{
-		ResourceSpans: clientdb.SpansToPB(kept),
-	}, len(spans), nil
+	return spans[len(spans)-1].ID, keptRows(spans, keep), len(spans), nil
 }
 
 // keptRows returns the rows keep selects, or all of them when keep is nil.
@@ -829,27 +837,39 @@ func fetchLogBatch(ctx context.Context, db *clientdb.DB, since int64, limit int,
 }
 
 func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request, record *clientRecord) error {
-	return ps.streamHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, proto.Message, int, error) {
-		next, req, rows, err := fetchSpanBatch(ctx, db, since, limit, nil)
-		if req == nil {
-			return next, nil, rows, err
+	return ps.streamHandler(w, r, record, fetchTraceStreamBatch)
+}
+
+// fetchTraceStreamBatch is the trace stream's streamFetcher. Its binary
+// frames are written from the stored rows, without building the request's
+// messages first.
+func fetchTraceStreamBatch(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, streamEncoder, int, error) {
+	next, spans, rows, err := fetchSpanRows(ctx, db, since, limit, nil)
+	if err != nil || rows == 0 {
+		return next, nil, rows, err
+	}
+	return next, func(binary bool) ([]byte, error) {
+		if binary {
+			return clientdb.AppendTraceRequestPB(nil, spans)
 		}
-		return next, req, rows, err
-	})
+		return protojson.Marshal(&coltracepb.ExportTraceServiceRequest{
+			ResourceSpans: clientdb.SpansToPB(spans),
+		})
+	}, rows, nil
 }
 
 func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, record *clientRecord) error {
-	return ps.streamHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, proto.Message, int, error) {
+	return ps.streamHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, streamEncoder, int, error) {
 		next, req, rows, err := fetchLogBatch(ctx, db, since, limit, nil)
 		if req == nil {
 			return next, nil, rows, err
 		}
-		return next, req, rows, err
+		return next, encodeMessage(req), rows, err
 	})
 }
 
 func (ps *PubSub) MetricsSubscribeHandler(w http.ResponseWriter, r *http.Request, record *clientRecord) error {
-	return ps.streamHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, proto.Message, int, error) {
+	return ps.streamHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, streamEncoder, int, error) {
 		metrics, err := db.Read().SelectMetricsSince(ctx, clientdb.SelectMetricsSinceParams{
 			ID:    since,
 			Limit: int64(limit),
@@ -861,9 +881,9 @@ func (ps *PubSub) MetricsSubscribeHandler(w http.ResponseWriter, r *http.Request
 			return since, nil, 0, nil
 		}
 		since = metrics[len(metrics)-1].ID
-		return since, &colmetricspb.ExportMetricsServiceRequest{
+		return since, encodeMessage(&colmetricspb.ExportMetricsServiceRequest{
 			ResourceMetrics: clientdb.MetricsToPB(metrics),
-		}, len(metrics), nil
+		}), len(metrics), nil
 	})
 }
 
@@ -1286,7 +1306,21 @@ func (record *clientRecord) telemetryStreamEnd(ctx context.Context) <-chan struc
 	return end
 }
 
-type streamFetcher func(ctx context.Context, db *clientdb.DB, since int64, limit int) (next int64, message proto.Message, rows int, err error)
+type streamFetcher func(ctx context.Context, db *clientdb.DB, since int64, limit int) (next int64, encode streamEncoder, rows int, err error)
+
+// streamEncoder encodes a fetched batch as one OTLP request: binary protobuf,
+// or protojson for the legacy SSE stream.
+type streamEncoder func(binary bool) ([]byte, error)
+
+// encodeMessage is the streamEncoder of an OTLP request message.
+func encodeMessage(msg proto.Message) streamEncoder {
+	return func(binary bool) ([]byte, error) {
+		if binary {
+			return proto.Marshal(msg)
+		}
+		return protojson.Marshal(msg)
+	}
+}
 
 func (ps *PubSub) streamHandler(w http.ResponseWriter, r *http.Request, record *clientRecord, fetcher streamFetcher) error {
 	return ps.streamHandlerWithPayloadLimit(w, r, record, fetcher, enginetel.MaxLivePayloadSize)
@@ -1404,7 +1438,7 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 	}
 	for {
 		fetchStart := time.Now()
-		next, message, rows, err := fetcher(r.Context(), db, since, batchLimit)
+		next, encode, rows, err := fetcher(r.Context(), db, since, batchLimit)
 		if elapsed := time.Since(fetchStart); elapsed > slowTelemetryOp {
 			logger.Warn("slow OTLP stream fetch", "duration", elapsed, "rows", rows, "limit", batchLimit, "error", err)
 		}
@@ -1448,16 +1482,19 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 		if rows < 0 || rows > batchLimit {
 			return failStream(fmt.Errorf("fetch returned invalid row count %d for limit %d", rows, batchLimit))
 		}
-		if message == nil {
+		if encode == nil {
 			return failStream(fmt.Errorf("fetch returned %d rows without an OTLP batch", rows))
 		}
 		if next <= since {
 			return failStream(fmt.Errorf("fetch returned non-increasing cursor %d after %d", next, since))
 		}
 
+		payload, err := encode(binary)
+		if err != nil {
+			return failStream(fmt.Errorf("marshal OTLP batch: %w", err))
+		}
 		if binary {
-			payloadSize := proto.Size(message)
-			if payloadSize > maxPayloadSize {
+			if payloadSize := len(payload); payloadSize > maxPayloadSize {
 				if rows == 1 {
 					// The row stays in the DB, so ending the stream here would
 					// strand the client behind it on every reconnect. Skip it
@@ -1482,18 +1519,10 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 		}
 
 		if binary {
-			payload, err := proto.Marshal(message)
-			if err != nil {
-				return failStream(fmt.Errorf("marshal OTLP batch: %w", err))
-			}
 			if err := enginetel.WriteLiveFrame(w, next, payload); err != nil {
 				return fmt.Errorf("write OTLP frame: %w", err)
 			}
 		} else {
-			payload, err := protojson.Marshal(message)
-			if err != nil {
-				return failStream(fmt.Errorf("marshal OTLP batch: %w", err))
-			}
 			if err := (sse.Event{
 				Name: legacyTelemetryEventName(r.URL.Path),
 				ID:   strconv.FormatInt(next, 10),
