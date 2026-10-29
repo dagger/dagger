@@ -761,7 +761,7 @@ func (client *clientRuntime) retainTelemetryDB(ctx context.Context) error {
 	if client.telemetryDB != nil {
 		return nil
 	}
-	db, err := client.TelemetryDB(ctx)
+	db, err := client.telemetryStore(ctx)
 	if err != nil {
 		return err
 	}
@@ -780,9 +780,19 @@ func (client *clientRuntime) closeTelemetryDB() error {
 	return db.Close()
 }
 
+// TelemetryDB opens the client's telemetry store with its indexes built, for
+// readers that look spans and logs up by their relationships.
 // NOTE: be sure to defer closing the DB when done with it, otherwise it may leak
 func (record *clientRecord) TelemetryDB(ctx context.Context) (*clientdb.DB, error) {
 	return record.daggerSession.telemetryPubSub.srv.clientDBs.Open(ctx, record.clientID)
+}
+
+// telemetryStore opens the client's telemetry store without building its
+// indexes, for holding it open and for reading its rows in order. Indexes
+// are built when a reader that needs them opens it (see TelemetryDB), so a
+// session that never has one builds none. Close it when done with it.
+func (record *clientRecord) telemetryStore(ctx context.Context) (*clientdb.DB, error) {
+	return record.daggerSession.telemetryPubSub.srv.clientDBs.OpenForAppend(ctx, record.clientID)
 }
 
 // slowDrainOp flags a shutdown-drain operation that ate a meaningful chunk of
