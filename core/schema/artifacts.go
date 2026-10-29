@@ -352,9 +352,10 @@ func (*artifactsSchema) listing(ctx context.Context, parent *core.Artifacts, arg
 
 func marshalArtifactListing(ctx context.Context, items []*core.Artifact, args artifactListingArgs) (core.JSON, error) {
 	type row struct {
-		URI, Description string
-		ModuleName       string
-		Path             []string
+		URI         string   `json:"uri"`
+		Description string   `json:"description"`
+		ModuleName  string   `json:"moduleName"`
+		Path        []string `json:"path"`
 	}
 	rows := make([]row, len(items))
 	for i, item := range items {

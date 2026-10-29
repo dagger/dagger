@@ -565,7 +565,7 @@ func isMissingArtifactListingField(err error) bool {
 	return errors.As(err, &gqlErr) && isMissing(gqlErr)
 }
 
-func readListedArtifactsSnapshot(ctx context.Context, dag *dagger.Client, selection *core.Artifacts, absolute, typed bool) ([]listedArtifact, error) {
+func readListedArtifactsMetadata(ctx context.Context, dag *dagger.Client, selection *core.Artifacts, absolute, typed bool) ([]listedArtifact, error) {
 	id, err := selection.ID(ctx)
 	if err != nil {
 		return nil, err
