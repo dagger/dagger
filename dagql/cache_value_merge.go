@@ -48,9 +48,11 @@ import (
 // until it has the bytes (SetStoredPart). An expired root is answered expired,
 // and only what the live roots need is merged.
 //
-// A held row, on an engine only, names by recipe a value the engine holds:
-// it lands on the recipe's current entry, which keeps its value, and the rows
-// that depend on it relocate onto that entry. It holds when merge would keep
+// A held row names by recipe a value the recipient holds: the Cloud's, in a
+// bundle the Cloud sends an engine, or the engine's own, in a records-only
+// export an engine sends the Cloud. It lands on the recipe's current entry,
+// which keeps its value, and the rows that depend on it relocate onto that
+// entry. It holds when merge would keep
 // the entry's value for a record of the recipe with the row's expiry, judged
 // against the cache before the merge. If any held row doesn't hold, the merge
 // commits nothing and its reply names every stale held row. A bundle that
@@ -112,13 +114,6 @@ func (c *Cache) PrepareValueMerge(ctx context.Context, from CacheID, input Value
 		return nil, fmt.Errorf("merge values: the Cloud merges from engine caches")
 	case !c.blobBacked && from != cloudCacheID:
 		return nil, fmt.Errorf("merge values: an engine merges only from the Cloud, not %q", from)
-	}
-	if c.blobBacked {
-		for _, row := range input.Values {
-			if row.Held != "" {
-				return nil, fmt.Errorf("merge values: held row %d: only an engine merges held rows", row.Ordinal)
-			}
-		}
 	}
 	op, err := c.beginCacheOperation()
 	if err != nil {
@@ -1505,7 +1500,8 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 // and the sender's holding: on an engine its Cloud holding, on the Cloud the
 // sending engine's holding, adding to change. On the Cloud, the entries the
 // identity joins to another class are affected too. A held row teaches its
-// entry nothing but its Cloud holding. Requires egraphMu for writing.
+// entry nothing but, on an engine, its Cloud holding. Requires egraphMu for
+// writing.
 func (c *Cache) applyMergedIdentitiesLocked(ctx context.Context, commit *valueMergeCommit, change *RemoteChange) {
 	var cloudState *remoteCacheState
 	var joined func(*RemoteChange)
@@ -1516,8 +1512,12 @@ func (c *Cache) applyMergedIdentitiesLocked(ctx context.Context, commit *valueMe
 	for _, row := range commit.rows {
 		if commit.prep.held[row.ordinal] {
 			// A held row teaches its entry nothing: it is the entry's own
-			// value. Only an engine merges one.
-			row.res.noteCloudCopyLocked(row.value.SenderNumber, true, row.value.ExpiresAtUnix)
+			// value. On the Cloud, the sender's holding of it is the one its
+			// record made when it arrived in full, and a held row, with no
+			// dependencies, has nothing to add to it.
+			if !c.blobBacked {
+				row.res.noteCloudCopyLocked(row.value.SenderNumber, true, row.value.ExpiresAtUnix)
+			}
 			continue
 		}
 		frame := row.plan.row.loadResultCall()

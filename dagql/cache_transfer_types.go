@@ -77,8 +77,9 @@ type TransferredValue struct {
 	// closure below it. Its Record is empty but for ResultID, it has no
 	// DependencyIDs, and no output names it. SenderNumber,
 	// SenderReplacements and ExpiresAtUnix still describe the sending
-	// entry, and other rows reference the row by its ordinal. Only an
-	// engine merges held rows, from the Cloud (StoredBundle's HeldBy).
+	// entry, and other rows reference the row by its ordinal. The Cloud
+	// sends held rows to an engine (StoredBundle's HeldBy), and an engine
+	// sends them to the Cloud in a records-only export.
 	Held digest.Digest `json:"held,omitempty"`
 }
 type TransferredRoot struct {

@@ -284,7 +284,8 @@ func TestMergeHeldRootRenewsRetention(t *testing.T) {
 	require.True(t, reply.Roots[0].Retained)
 }
 
-// Only an engine merges held rows, and a held row carries no record.
+// A held row holds only where the recipient has its recipe's value: another
+// Cloud without it answers the bundle stale. A held row carries no record.
 func TestMergeHeldRowRefusals(t *testing.T) {
 	t.Parallel()
 	ctx, cloud, r, p := storedBundleTestCloud(t, "root")
@@ -293,8 +294,10 @@ func TestMergeHeldRowRefusals(t *testing.T) {
 	require.NoError(t, err)
 
 	cctx, other := storedPartTestCache(t, WithBlobStore())
-	_, err = other.MergeValues(cctx, "cache-a", got.Bundle)
-	require.ErrorContains(t, err, "held row")
+	reply, err := other.MergeValues(cctx, "cache-a", got.Bundle)
+	require.NoError(t, err)
+	require.False(t, reply.Committed)
+	require.NotEmpty(t, reply.Stale)
 
 	bad, err := cloneValueBundle(got.Bundle)
 	require.NoError(t, err)
