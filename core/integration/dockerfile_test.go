@@ -4,6 +4,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	sdkcore "dagger.io/dagger/core"
 	"github.com/dagger/dagger/core"
@@ -533,6 +535,16 @@ CMD ["sh", "-c", "cat /tmp/first && cat /tmp/second"]
 		out, err := dir.DockerBuild().WithExec(nil).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "cache-ok\ncache-ok", strings.TrimSpace(out))
+	})
+
+	t.Run("run-mount-cache-owner", func(ctx context.Context, t *testctx.T) {
+		dir := baseDir.WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
+RUN --mount=type=cache,id=%s,target=/cache,uid=1000,gid=1001,mode=0750 stat -c '%%u:%%g:%%a' /cache > /owner
+`, alpineImage, "owner-"+rand.Text()))
+
+		out, err := dir.DockerBuild().File("/owner").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "1000:1001:750", strings.TrimSpace(out))
 	})
 
 	t.Run("run-mount-tmpfs-basic", func(ctx context.Context, t *testctx.T) {
@@ -1328,42 +1340,115 @@ ADD --unpack=false archive.tar /out/
 
 // TestDockerBuildContextChangeLayerCache verifies that COPY/ADD steps (and
 // anything downstream of them) keep their layer cache when files in the build
-// context that the COPY does not select are modified.
+// context that the COPY does not select are modified, and lose it when what a
+// COPY selects, or anything under it, changes.
 func (DockerfileSuite) TestDockerBuildContextChangeLayerCache(ctx context.Context, t *testctx.T) {
 	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "app"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "app", "main.txt"), []byte("v1"), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "unrelated.txt"), []byte("one"), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte(`FROM `+alpineImage+`
+	writeFile := func(name, contents string) {
+		t.Helper()
+		require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(contents), 0o644))
+	}
+	writeFile("base.txt", "base v1")
+	writeFile("app/main.txt", "v1")
+	writeFile("app/a.txt", "same")
+	writeFile("app/b.txt", "same")
+	require.NoError(t, os.Symlink("a.txt", filepath.Join(dir, "app", "link")))
+	writeFile("unrelated.txt", "one")
+	writeFile("logs/keep.txt", "keep v1")
+	writeFile("logs/debug.log", "debug v1")
+	writeFile("conf/a.conf", "a v1")
+	writeFile("conf/notes.txt", "notes v1")
+	writeFile("Dockerfile", `# syntax=docker/dockerfile:1
+FROM `+alpineImage+`
+COPY base.txt /base.txt
 COPY app /app
 RUN head -c16 /dev/urandom | sha256sum > /copy-stamp
+COPY --exclude=*.log logs /logs
+RUN head -c16 /dev/urandom | sha256sum > /exclude-stamp
+COPY conf/*.conf /conf/
+RUN head -c16 /dev/urandom | sha256sum > /wildcard-stamp
 RUN --mount=type=bind,source=app/main.txt,target=/mnt/main.txt head -c16 /dev/urandom | sha256sum > /bind-stamp
-`), 0o644))
+`)
 
+	type buildStamps struct{ copy, exclude, wildcard, bind string }
 	// Use a fresh client per build: host.directory is cached per session, and
 	// the scenario being modeled is successive pipeline runs (one session
 	// each) against the same engine.
-	stamps := func() (string, string) {
+	stamps := func() buildStamps {
 		c := connect(ctx, t)
 		defer c.Close()
 		ctr := sdkcore.NewQuery(c).Host().Directory(dir).DockerBuild()
-		copyStamp, err := ctr.File("/copy-stamp").Contents(ctx)
-		require.NoError(t, err)
-		bindStamp, err := ctr.File("/bind-stamp").Contents(ctx)
-		require.NoError(t, err)
-		return copyStamp, bindStamp
+		read := func(path string) string {
+			contents, err := ctr.File(path).Contents(ctx)
+			require.NoError(t, err)
+			return contents
+		}
+		return buildStamps{
+			copy:     read("/copy-stamp"),
+			exclude:  read("/exclude-stamp"),
+			wildcard: read("/wildcard-stamp"),
+			bind:     read("/bind-stamp"),
+		}
 	}
 
-	copyStamp1, bindStamp1 := stamps()
+	first := stamps()
 
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "unrelated.txt"), []byte("two"), 0o644))
-	copyStamp2, bindStamp2 := stamps()
-	require.Equal(t, copyStamp1, copyStamp2, "unrelated context change invalidated COPY layer cache")
-	require.Equal(t, bindStamp1, bindStamp2, "unrelated context change invalidated bind-mount RUN layer cache")
+	writeFile("unrelated.txt", "two")
+	writeFile("logs/debug.log", "debug v2")
+	writeFile("conf/notes.txt", "notes v2")
+	require.Equal(t, first, stamps(), "changes no COPY selects invalidated the layer cache")
 
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "app", "main.txt"), []byte("v2"), 0o644))
-	copyStamp3, _ := stamps()
-	require.NotEqual(t, copyStamp1, copyStamp3, "COPY'd content change did not invalidate downstream RUN")
+	writeFile("conf/a.conf", "a v2")
+	wildcardChanged := stamps()
+	require.Equal(t, first.copy, wildcardChanged.copy)
+	require.Equal(t, first.exclude, wildcardChanged.exclude)
+	require.NotEqual(t, first.wildcard, wildcardChanged.wildcard, "change to a file a wildcard COPY matches did not invalidate downstream RUN")
+	require.NotEqual(t, first.bind, wildcardChanged.bind)
+
+	writeFile("logs/keep.txt", "keep v2")
+	excludeChanged := stamps()
+	require.Equal(t, first.copy, excludeChanged.copy)
+	require.NotEqual(t, wildcardChanged.exclude, excludeChanged.exclude, "change to a file a COPY --exclude keeps did not invalidate downstream RUN")
+
+	// The link's targets have the same content, so only the copied link
+	// itself changes.
+	require.NoError(t, os.Remove(filepath.Join(dir, "app", "link")))
+	require.NoError(t, os.Symlink("b.txt", filepath.Join(dir, "app", "link")))
+	linkChanged := stamps()
+	require.NotEqual(t, first.copy, linkChanged.copy, "COPY'd symlink change did not invalidate downstream RUN")
+
+	writeFile("app/main.txt", "v2")
+	appChanged := stamps()
+	require.NotEqual(t, linkChanged.copy, appChanged.copy, "COPY'd content change did not invalidate downstream RUN")
+
+	writeFile("base.txt", "base v2")
+	require.NotEqual(t, appChanged.copy, stamps().copy, "change under a COPY did not invalidate downstream RUN")
+}
+
+// TestDockerBuildCopyDoesNotReadImage verifies that a COPY doesn't read the
+// image it copies onto. Its cache identity used to be a content hash of its
+// whole result, which read every file of the image built so far on every COPY
+// that ran.
+func (DockerfileSuite) TestDockerBuildCopyDoesNotReadImage(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "app"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "app", "main.txt"), []byte("copied"), 0o644))
+	// A sparse file reads as a terabyte of zeros without taking disk space:
+	// hashing it takes far longer than the deadline below.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte(`FROM `+alpineImage+`
+RUN truncate -s 1099511627776 /huge
+COPY app /app
+RUN cat /app/main.txt > /out
+`), 0o644))
+
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+	defer cancel()
+	out, err := sdkcore.NewQuery(c).Host().Directory(dir).DockerBuild().File("/out").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "copied", out)
 }
 
 // TestDockerBuildEmptyWildcardCopy verifies that a COPY with a wildcard that
