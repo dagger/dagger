@@ -2,12 +2,15 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"testing"
+	"time"
 
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
@@ -15,6 +18,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
@@ -32,7 +36,7 @@ func TestSessionResourcesNameSessionAndCache(t *testing.T) {
 	srv := &Server{engineInstanceID: "instance-1", engineCache: cache}
 	attrs := srv.sessionResourceAttrs("session-1")
 	for _, cloudEngine := range []bool{false, true} {
-		res, err := sessionTracerResource(attrs, cloudEngine)
+		res, err := sessionTracerResource(telemetry.Resource, attrs, cloudEngine)
 		require.NoError(t, err)
 		requireResourceAttr(t, res.Set(), string(semconv.ServiceInstanceIDKey), "instance-1")
 		requireResourceAttr(t, res.Set(), telemetryattrs.EngineSessionAttr, "session-1")
@@ -50,10 +54,65 @@ func TestSessionResourcesNameSessionAndCache(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, memory.CloseDiscardingPersistence()) })
 	srv = &Server{engineInstanceID: "instance-1", engineCache: memory}
-	res, err = sessionTracerResource(srv.sessionResourceAttrs("session-1"), false)
+	res, err = sessionTracerResource(telemetry.Resource, srv.sessionResourceAttrs("session-1"), false)
 	require.NoError(t, err)
 	_, named := res.Set().Value(attribute.Key(telemetryattrs.EngineCacheAttr))
 	require.False(t, named)
+}
+
+// A session's spans name the engine that ran them, as its logs and the
+// engine's own spans do, rather than the SDK's unknown_service default.
+func TestSessionSpansNameEngine(t *testing.T) {
+	engineResource := resource.NewSchemaless(
+		semconv.ServiceName("dagger-engine"),
+		semconv.ServiceVersion("v1.2.3"),
+		semconv.ServiceInstanceID("instance-1"),
+	)
+	prev := telemetry.Resource
+	telemetry.Resource = engineResource
+	t.Cleanup(func() { telemetry.Resource = prev })
+
+	srv := &Server{
+		clientDBs:        clientdb.NewDBs(t.TempDir()),
+		wcprofSpanCount:  newWcprofSpanCounter(),
+		engineInstanceID: "instance-1",
+	}
+	srv.telemetryPubSub = NewPubSub(srv)
+	t.Cleanup(func() { require.NoError(t, srv.clientDBs.Close()) })
+
+	for _, cloudEngine := range []bool{false, true} {
+		md := &engine.ClientMetadata{SessionID: fmt.Sprintf("session-%t", cloudEngine), ClientID: fmt.Sprintf("client-%t", cloudEngine), CloudEngine: cloudEngine}
+		client := &clientRuntime{clientRecord: &clientRecord{clientID: md.ClientID, clientMetadata: md}}
+		sess := &daggerSession{
+			sessionID:          md.SessionID,
+			mainClientCallerID: client.clientID,
+			clientRuntimes:     map[string]*clientRuntime{client.clientID: client},
+			telemetryPubSub:    srv.telemetryPubSub,
+		}
+		installTestClientRecords(sess)
+		srv.initializeSessionTelemetry(sess, md)
+		_, span := sess.tracerProvider.Tracer("test").Start(engine.ContextWithClientMetadata(t.Context(), md), "check")
+		span.End()
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		require.NoError(t, sess.shutdownTelemetry(ctx))
+		cancel()
+
+		db, err := srv.clientDBs.Open(t.Context(), client.clientID)
+		require.NoError(t, err)
+		spans, err := db.Read().SelectSpansSince(t.Context(), clientdb.SelectSpansSinceParams{Limit: 100})
+		require.NoError(t, db.Close())
+		require.NoError(t, err)
+		require.NotEmpty(t, spans)
+		for _, row := range spans {
+			res := row.ReadOnly().Resource().Set()
+			requireResourceAttr(t, res, string(semconv.ServiceNameKey), "dagger-engine")
+			requireResourceAttr(t, res, string(semconv.ServiceVersionKey), "v1.2.3")
+			requireResourceAttr(t, res, string(semconv.ServiceInstanceIDKey), "instance-1")
+			requireResourceAttr(t, res, telemetryattrs.EngineSessionAttr, md.SessionID)
+			_, isCloud := res.Value(attribute.Key(telemetryattrs.CloudEngineAttr))
+			require.Equal(t, cloudEngine, isCloud)
+		}
+	}
 }
 
 func requireResourceAttr(t *testing.T, set *attribute.Set, key, want string) {

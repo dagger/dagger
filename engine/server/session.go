@@ -992,7 +992,7 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 	// session and the engine's cache, so a span's dagger.io/cache.result.id
 	// names one entry of one cache.
 	resourceAttrs := srv.sessionResourceAttrs(sess.sessionID)
-	tracerResource, err := sessionTracerResource(resourceAttrs, cloudEngine)
+	tracerResource, err := sessionTracerResource(telemetry.Resource, resourceAttrs, cloudEngine)
 	if err != nil {
 		slog.Warn("failed to create session telemetry resource", "error", err)
 	} else {

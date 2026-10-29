@@ -87,24 +87,13 @@ func (telemetryOriginSpanProcessor) OnEnd(sdktrace.ReadOnlySpan)      {}
 func (telemetryOriginSpanProcessor) Shutdown(context.Context) error   { return nil }
 func (telemetryOriginSpanProcessor) ForceFlush(context.Context) error { return nil }
 
-func cloudEngineTelemetryResource() (*sdkresource.Resource, error) {
-	return sdkresource.Merge(
-		sdkresource.Default(),
-		sdkresource.NewSchemaless(attribute.Bool(telemetryattrs.CloudEngineAttr, true)),
-	)
-}
-
-// sessionTracerResource is the resource of a session's spans: the SDK default
-// plus the session's own attributes (sessionResourceAttrs), and the Cloud
-// engine marker on Cloud engines.
-func sessionTracerResource(attrs []attribute.KeyValue, cloudEngine bool) (*sdkresource.Resource, error) {
-	base := sdkresource.Default()
+// sessionTracerResource is the resource of a session's spans: the engine's
+// own resource (base, as for the session's logs) plus the session's own
+// attributes (sessionResourceAttrs), and the Cloud engine marker on Cloud
+// engines.
+func sessionTracerResource(base *sdkresource.Resource, attrs []attribute.KeyValue, cloudEngine bool) (*sdkresource.Resource, error) {
 	if cloudEngine {
-		var err error
-		base, err = cloudEngineTelemetryResource()
-		if err != nil {
-			return nil, err
-		}
+		attrs = append(slices.Clip(attrs), attribute.Bool(telemetryattrs.CloudEngineAttr, true))
 	}
 	return withSessionResource(base, attrs)
 }
