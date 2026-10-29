@@ -318,7 +318,15 @@ func (cm *snapshotManager) buildExportLayers(ctx context.Context, planned []*lay
 			}
 			buildCtx, cancel := context.WithCancelCause(leases.WithLease(workCtx, owner.chain.pin.id))
 			defer cancel(nil)
-			stop := context.AfterFunc(egCtx, func() { cancel(context.Cause(egCtx)) })
+			// A failed build cancels this one. When ctx itself ends, that
+			// reaches buildCtx directly with ctx's error; canceling here
+			// as well could get there first and turn a deadline into a
+			// cancel.
+			stop := context.AfterFunc(egCtx, func() {
+				if ctx.Err() == nil {
+					cancel(context.Cause(egCtx))
+				}
+			})
 			defer stop()
 			return cm.buildExportLayer(buildCtx, build, refCfg)
 		})
