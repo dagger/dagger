@@ -4,6 +4,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
@@ -534,6 +535,16 @@ CMD ["sh", "-c", "cat /tmp/first && cat /tmp/second"]
 		out, err := dir.DockerBuild().WithExec(nil).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "cache-ok\ncache-ok", strings.TrimSpace(out))
+	})
+
+	t.Run("run-mount-cache-owner", func(ctx context.Context, t *testctx.T) {
+		dir := baseDir.WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
+RUN --mount=type=cache,id=%s,target=/cache,uid=1000,gid=1001,mode=0750 stat -c '%%u:%%g:%%a' /cache > /owner
+`, alpineImage, "owner-"+rand.Text()))
+
+		out, err := dir.DockerBuild().File("/owner").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "1000:1001:750", strings.TrimSpace(out))
 	})
 
 	t.Run("run-mount-tmpfs-basic", func(ctx context.Context, t *testctx.T) {

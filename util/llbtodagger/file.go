@@ -2,6 +2,7 @@ package llbtodagger
 
 import (
 	"fmt"
+	"path"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -254,14 +255,22 @@ func applyMkdir(opDgst digest.Digest, baseID *call.ID, baseContainerID *call.ID,
 	if mkdir == nil {
 		return nil, nil, unsupported(opDgst, "file.mkdir", "missing mkdir action")
 	}
-	if !mkdir.MakeParents {
-		return nil, nil, unsupported(opDgst, "file.mkdir", "mkdir without makeParents is unsupported")
-	}
 	if mkdir.Timestamp >= 0 {
 		return nil, nil, unsupported(opDgst, "file.mkdir", "mkdir timestamp override is unsupported")
 	}
 
 	mkdirPath := cleanPath(mkdir.Path)
+	// Dagger always makes parents, and sets the owner of a directory that
+	// already exists. A mkdir without makeParents differs when a parent is
+	// missing or the directory exists, neither of which can happen directly
+	// under / of an empty directory: that is the directory a Dockerfile cache
+	// mount with uid, gid or mode is seeded from. Mode 0 is left out, as
+	// withNewDirectory takes it as unset.
+	if !mkdir.MakeParents && (baseID.Digest() != scratchDirectoryID().Digest() ||
+		path.Dir(path.Clean(mkdirPath)) != "/" ||
+		mkdir.Mode == 0) {
+		return nil, nil, unsupported(opDgst, "file.mkdir", "mkdir without makeParents is unsupported")
+	}
 
 	owner, err := chownOwnerString(mkdir.Owner)
 	if err != nil {
