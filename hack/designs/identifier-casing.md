@@ -965,9 +965,10 @@ the old names and later views only the new ones, and
   dependency clients from
   `withEngineVersion(consumer).clientSchemaIntrospectionJson` names them by
   the consumer's version, so a dependency on the other side of the cut can be
-  named by other rules than its bindings assume. An open follow-up adds an
-  argument to `clientSchemaIntrospectionJson` to pick the version per
-  dependency.
+  named by other rules than its bindings assume.
+  `clientSchemaIntrospectionJson(clientVersion: consumer)` describes core at
+  the consumer's view and keeps the dependency's own names, as the engine
+  serves it; SDKs switch to it.
 
 ## Guarantees
 
@@ -1114,9 +1115,10 @@ converters, so none of them carries a copy.
    than its schema name. That's a separate fix (#14636); no core input field
    is renamed.
 8. **Dependency clients across the cut** (see
-   [Accepted breaks](#accepted-breaks)). Open: a follow-up adds an argument to
-   `clientSchemaIntrospectionJson` to pick the version a dependency's client
-   is named by.
+   [Accepted breaks](#accepted-breaks)). Resolved:
+   `clientSchemaIntrospectionJson(clientVersion:)` picks the core view of a
+   dependency's client, in every view; the dependency keeps the names of the
+   version it declares.
 9. **Deprecated aliases for Go identifiers** derived from dependency module
    names, which the Go generator reformats past the cut (`Cli` → `CLI`).
    Resolved: none; a Go module that bumps its `engineVersion` updates its
@@ -1138,8 +1140,10 @@ converters, so none of them carries a copy.
 6. Manifest v2 entrypoint versions from `dang.toml`, with versionless
    entrypoints pinned to the pre-cut view (see
    [Module entrypoints](#module-entrypoints)).
+7. `clientSchemaIntrospectionJson(clientVersion:)`, for dependency clients
+   across the cut (see [Accepted breaks](#accepted-breaks)).
 
-Steps 1 and 2 are merged; 3–6 are a stack of drafts. Not done:
+Steps 1 and 2 are merged; 3–7 are a stack of drafts. Not done:
 
 - deleting `strcase.ConfigureAcronym` in `core/llm.go` / `core/json.go` and
   the `withFinalTypeName` workaround, which wait on dropping modules below
@@ -1147,7 +1151,8 @@ Steps 1 and 2 are merged; 3–6 are a stack of drafts. Not done:
 - the SDK generators writing the `dang.toml` Dagger version into the
   entrypoints they generate, so a regenerated entrypoint moves past the cut
   (see [Module entrypoints](#module-entrypoints));
-- a version argument for `clientSchemaIntrospectionJson` (see
+- the Python, Java and Ruby SDKs generating dependency clients with
+  `clientVersion` instead of `withEngineVersion` (see
   [Accepted breaks](#accepted-breaks));
 - the Go module self-binding names (see the Known gaps under
   [The gate](#the-gate));
