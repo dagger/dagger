@@ -345,3 +345,6 @@ module = "typescript-sdk"
 
 [modules.reviewer]
 source = "github.com/vito/agents/reviewer"
+
+[modules.context]
+source = "github.com/vito/agents/context"
