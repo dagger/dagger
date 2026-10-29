@@ -95,7 +95,7 @@ func TestExportProfiled(t *testing.T) {
 		_, err := io.Copy(io.Discard, body)
 		return err
 	}
-	s.dispatch(request(t, 7, protocol.TypeExport, protocol.Export{Roots: []uint64{12}}))
+	s.dispatch(request(t, 7, protocol.TypeExport, protocol.Export{Roots: []uint64{12}, Outputs: []protocol.ExportOutput{{Number: 12}}}))
 	exportID := decode[protocol.Exported](t, conn.next(t)).ExportID
 	require.NotEmpty(t, exportID)
 	s.dispatch(request(t, 8, protocol.TypeUpload, protocol.Upload{ExportID: exportID, URLs: map[digest.Digest]string{d1: "put-1", d2: "put-2"}}))
