@@ -235,6 +235,9 @@ func (cr *cacheRecord) hasDirtyVolatile(ctx context.Context) (_ bool, rerr error
 // call when holding the manager lock
 func (cr *cacheRecord) remove(ctx context.Context) (rerr error) {
 	defer func() {
+		if !logrus.IsLevelEnabled(logrus.TraceLevel) {
+			return
+		}
 		l := bklog.G(ctx).WithFields(map[string]any{
 			"id":    cr.md.ID(),
 			"stack": bklog.TraceLevelOnlyStack(),
@@ -679,6 +682,9 @@ func (sr *immutableRef) updateLastUsedNow() bool {
 
 func (sr *immutableRef) release(ctx context.Context) (rerr error) {
 	defer func() {
+		if !logrus.IsLevelEnabled(logrus.TraceLevel) {
+			return
+		}
 		l := bklog.G(ctx).WithFields(sr.traceLogFields())
 		if rerr != nil {
 			l = l.WithError(rerr)
@@ -774,7 +780,9 @@ func (sr *mutableRef) commit(ctx context.Context, usage *snapshots.Usage) (_ *im
 		refMetadata:     refMetadata{snapshotID: committed.md.getSnapshotID(), md: committed.md},
 		triggerLastUsed: true,
 	}
-	bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
+	if logrus.IsLevelEnabled(logrus.TraceLevel) {
+		bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
+	}
 	return ref, nil
 }
 
@@ -856,6 +864,9 @@ func (sr *mutableRef) release(ctx context.Context) (rerr error) {
 		return errors.Wrapf(errInvalid, "invalid mutable ref %p", sr)
 	}
 	defer func() {
+		if !logrus.IsLevelEnabled(logrus.TraceLevel) {
+			return
+		}
 		l := bklog.G(ctx).WithFields(sr.traceLogFields())
 		if rerr != nil {
 			l = l.WithError(rerr)
