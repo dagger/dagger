@@ -6490,11 +6490,13 @@ EOF`})
 		_, err = alt.WithExec([]string{"nerdctl", "inspect", imageName}).Sync(ctx)
 		require.NoError(t, err)
 
-		out, err := alt.WithExec([]string{"nerdctl", "run", imageName, "ls", "/foo"}, sdkcore.ContainerWithExecOpts{
+		// Check the exit status, not the output: nerdctl run returns when the
+		// container exits without waiting for its stdout to be copied, so a
+		// short-lived container's output can be lost.
+		_, err = alt.WithExec([]string{"nerdctl", "run", imageName, "test", "-f", "/foo"}, sdkcore.ContainerWithExecOpts{
 			InsecureRootCapabilities: true,
-		}).Stdout(ctx)
+		}).Sync(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "/foo\n", out)
 	})
 }
 
