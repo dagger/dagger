@@ -191,14 +191,10 @@ source = ".dagger/modules/go-cli"
 [modules.sdl-diff]
 source = ".dagger/modules/sdl-diff"
 
-[modules.sdl-diff.settings]
-githubToken = "cmd://gh auth token"
-
 [modules.contributor]
 source = "github.com/vito/agents/contributor"
 
 [modules.contributor.settings]
-githubToken = "cmd://gh auth token"
 remote = "dagger/dagger"
 
 [modules.staff]
@@ -349,3 +345,6 @@ module = "typescript-sdk"
 
 [modules.reviewer]
 source = "github.com/vito/agents/reviewer"
+
+[modules.context]
+source = "github.com/vito/agents/context"
