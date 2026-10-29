@@ -519,8 +519,10 @@ const (
 
 	// WcprofUsageAttrPrefix prefixes an exec.run span's resource readings,
 	// one set per scope (see wcprof's UsageScope constants):
-	// <prefix><scope>.cpu_user_us, .cpu_system_us and .mem_peak_bytes, int64
-	// attributes, the same readings the recorder dumps as usage events.
+	// <prefix><scope>.cpu_user_us, .cpu_system_us, and when known
+	// .mem_peak_bytes, .faults_minor, .faults_major, .faults_huge,
+	// .cpu_stall_us and .mem_stall_us, int64 attributes, the same readings the
+	// recorder dumps as usage events.
 	WcprofUsageAttrPrefix = "wcprof.usage."
 
 	// LinkPurposeWait is a new value for telemetry.LinkPurposeAttr
