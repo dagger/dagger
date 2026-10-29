@@ -1,0 +1,26 @@
+kind: Breaking
+body: |
+  Core API names follow GraphQL casing for clients and modules on
+  v1.0.0-beta.22 or later: acronyms in fields and arguments are written like
+  words, and enum values are `SCREAMING_SNAKE_CASE`. There are no aliases for
+  the old names on those views.
+
+  The main renames: `File.asJSON` → `asJson`, `GitRef.commitSHA` → `commitSha`,
+  `Container.withGPU` → `withGpu`, `ModuleSource.htmlURL` → `htmlUrl`,
+  `Module.introspectionSchemaJSON` → `introspectionSchemaJson`,
+  `Workspace.withSDK` → `withSdk`, `LLM.withMCPServer` → `withMcpServer`,
+  `Cloud.traceURL` → `traceUrl`, `insecureSkipTLSVerify` →
+  `insecureSkipTlsVerify`, `expectedRemoteSHA` → `expectedRemoteSha`, and the
+  `FunctionCachePolicy` values `Default`, `PerSession` and `Never` →
+  `DEFAULT`, `PER_SESSION` and `NEVER`. The PascalCase `ImageLayerCompression`
+  and `ImageMediaTypes` members (`Gzip`, `EStarGZ`, `OCIMediaTypes`, ...) are
+  dropped in favor of `GZIP`, `ESTARGZ`, `OCI`, `DOCKER`, ...
+
+  Clients and modules declaring an older version keep the old names. Generated
+  Go code keeps most identifiers (`CommitSHA`, `WithGPU`), but a few change
+  when a module bumps (`Sha` → `SHA`, `Sdks` → `SDKs`). See "Update module
+  code" in the [migration guide](https://docs.dagger.io/migrate-to-v1).
+time: 2026-10-29T12:02:00Z
+custom:
+  Author: vito
+  PR: "14895"
