@@ -130,6 +130,26 @@ Dumps are NDJSON: a `DumpHeader` line (with the interned `strings` table that
 `class`/`ident`/`client` indexes point into), then one `DumpEvent` per line.
 Read them with `wcprof.ReadDump`.
 
+## Capturing a run that goes far too long
+
+A session watch captures what the engine was doing when a session runs far
+longer than it should, whether or not anything is profiled, so a timed run
+with recording off still leaves evidence of a stall:
+
+```bash
+curl -X POST -d 60s http://<engine-debug-addr>/debug/wcprof/watch   # on, with a threshold
+curl -X POST -d off http://<engine-debug-addr>/debug/wcprof/watch   # off
+curl http://<engine-debug-addr>/debug/wcprof/captures               # the last 4 captures, JSON
+```
+
+While it's on, every session that starts gets a timer. A session that runs
+past the threshold gets one capture: every goroutine's stack, a 15 s CPU
+profile, and every goroutine's stack again, with the sessions running at the
+time and how long each had run. One capture runs at a time; when Go's CPU
+profiler is already in use (an armed phase profile or a `/debug/pprof/profile`
+pull), the capture keeps the stacks and records why it has no profile. With
+the watch off, a session's start costs one atomic load.
+
 ## Analysis
 
 This package is only the recorder; analysis tooling lives outside this repo.
