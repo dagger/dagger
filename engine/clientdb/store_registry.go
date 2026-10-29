@@ -19,6 +19,8 @@ const CollectGarbageAfter = time.Hour
 
 var errDBsClosed = errors.New("telemetry store registry is closed")
 
+var errStoreRetired = errors.New("telemetry store was retired")
+
 // DBs owns the refcounted set of open per-client telemetry stores. Live client
 // runtimes and readers retain references; the final Close releases the streams.
 //
@@ -32,6 +34,7 @@ type DBs struct {
 
 	open        map[string]*DB
 	closedAt    map[string]*storePosition
+	retired     map[string]time.Time // since when, until GC forgets it (see Retire)
 	opening     int
 	closed      bool
 	mu          sync.RWMutex
@@ -65,6 +68,7 @@ func NewDBs(root string) *DBs {
 		Root:         root,
 		open:         make(map[string]*DB),
 		closedAt:     make(map[string]*storePosition),
+		retired:      make(map[string]time.Time),
 		perStoreLock: locker.New(),
 		tailBudget:   telemetryTailBudget,
 		openStore:    openStoreStreams,
@@ -106,6 +110,10 @@ func (r *DBs) OpenForAppend(ctx context.Context, clientID string) (*DB, error) {
 		store.refCount++
 		r.mu.Unlock()
 		return store, nil
+	}
+	if _, retired := r.retired[clientID]; retired {
+		r.mu.Unlock()
+		return nil, fmt.Errorf("open client %q: %w", clientID, errStoreRetired)
 	}
 	pos := r.closedAt[clientID]
 	delete(r.closedAt, clientID)
@@ -157,9 +165,33 @@ func (r *DBs) close(store *DB) error {
 		return err
 	}
 	r.mu.Lock()
-	r.closedAt[store.clientID] = store.position()
+	_, retired := r.retired[store.clientID]
+	if !retired {
+		r.closedAt[store.clientID] = store.position()
+	}
 	r.mu.Unlock()
+	if retired {
+		return r.removeStreams(store.clientID)
+	}
 	return nil
+}
+
+// Retire deletes a client's store once nothing can read it any more: now if
+// nothing holds it, or when its last reference closes. From then on the
+// store can't be reopened, so a late writer can't recreate it. A session
+// retires its clients' stores when it ends.
+func (r *DBs) Retire(clientID string) error {
+	r.perStoreLock.Lock(clientID)
+	defer r.perStoreLock.Unlock(clientID)
+	r.mu.Lock()
+	r.retired[clientID] = time.Now()
+	delete(r.closedAt, clientID)
+	used := r.open[clientID] != nil
+	r.mu.Unlock()
+	if used {
+		return nil
+	}
+	return r.removeStreams(clientID)
 }
 
 // Close prevents new stores from opening and waits for in-flight opens.
@@ -185,6 +217,26 @@ type storeGCGroup struct {
 // SQLite sidecar) is older than CollectGarbageAfter. Grouping files by client
 // keeps a recently active stream from being separated from an older sibling.
 func (r *DBs) GC(keep map[string]bool) error {
+	r.mu.Lock()
+	for clientID, at := range r.retired {
+		if time.Since(at) >= CollectGarbageAfter {
+			delete(r.retired, clientID)
+		}
+	}
+	r.mu.Unlock()
+	return r.collect(keep, CollectGarbageAfter)
+}
+
+// Sweep removes every client store not in keep, however recent. An engine
+// sweeps when it starts: its previous run's sessions and forwarders are gone,
+// so nothing but the archives in keep can read those stores.
+func (r *DBs) Sweep(keep map[string]bool) error {
+	return r.collect(keep, 0)
+}
+
+// collect removes the unreferenced client stores not in keep whose newest
+// stream is at least minAge old.
+func (r *DBs) collect(keep map[string]bool, minAge time.Duration) error {
 	entries, err := os.ReadDir(r.Root)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -217,7 +269,7 @@ func (r *DBs) GC(keep map[string]bool) error {
 	var removed []string
 	var result error
 	for _, group := range groups {
-		if keep[group.clientID] || time.Since(group.newest) < CollectGarbageAfter {
+		if keep[group.clientID] || time.Since(group.newest) < minAge {
 			continue
 		}
 
@@ -262,6 +314,13 @@ func (r *DBs) Remove(clientID string) (bool, error) {
 	if used {
 		return false, nil
 	}
+	err := r.removeStreams(clientID)
+	return err == nil, err
+}
+
+// removeStreams deletes a client's stream files. The caller holds the
+// client's per-store lock and has made sure nothing has the store open.
+func (r *DBs) removeStreams(clientID string) error {
 	var result error
 	for _, suffix := range storeStreamSuffixes {
 		err := os.Remove(filepath.Join(r.Root, clientID+suffix))
@@ -269,7 +328,7 @@ func (r *DBs) Remove(clientID string) (bool, error) {
 			result = errors.Join(result, err)
 		}
 	}
-	return result == nil, result
+	return result
 }
 
 // StoreSize is the on-disk size of a client's store streams, measured without

@@ -316,6 +316,76 @@ func TestStoreRegistryGC(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestStoreRegistryRetireRemovesUnusedStoreForGood(t *testing.T) {
+	root := t.TempDir()
+	registry := NewDBs(root)
+	store, err := registry.Open(t.Context(), "client")
+	require.NoError(t, err)
+	_, err = store.AppendMetrics([]Metric{{Data: []byte("written")}})
+	require.NoError(t, err)
+	require.NoError(t, store.Close())
+
+	require.NoError(t, registry.Retire("client"))
+	requireStoreFilesMissing(t, root, "client")
+	_, err = registry.OpenForAppend(t.Context(), "client")
+	require.ErrorIs(t, err, errStoreRetired, "a late writer must not recreate a retired store")
+	requireStoreFilesMissing(t, root, "client")
+
+	// GC forgets a retirement once it is as old as a store GC would collect.
+	registry.retired["client"] = time.Now().Add(-CollectGarbageAfter)
+	require.NoError(t, registry.GC(nil))
+	reopened, err := registry.OpenForAppend(t.Context(), "client")
+	require.NoError(t, err)
+	require.NoError(t, reopened.Close())
+	require.NoError(t, registry.Close())
+}
+
+func TestStoreRegistryRetireWaitsForLastReference(t *testing.T) {
+	root := t.TempDir()
+	registry := NewDBs(root)
+	reader, err := registry.Open(t.Context(), "client")
+	require.NoError(t, err)
+	_, err = reader.AppendMetrics([]Metric{{Data: []byte("forwarded")}})
+	require.NoError(t, err)
+
+	require.NoError(t, registry.Retire("client"))
+	requireStoreFilesExist(t, root, "client")
+	rows, err := reader.SelectMetricsSince(t.Context(), SelectMetricsSinceParams{ID: 0, Limit: 1})
+	require.NoError(t, err)
+	require.Len(t, rows, 1, "a reader holding a retired store still reads all of it")
+
+	// A reader that looked the client up before retirement still joins the
+	// open store.
+	late, err := registry.Open(t.Context(), "client")
+	require.NoError(t, err)
+	require.Same(t, reader, late)
+	require.NoError(t, late.Close())
+	requireStoreFilesExist(t, root, "client")
+
+	require.NoError(t, reader.Close())
+	requireStoreStreamsClosed(t, reader)
+	requireStoreFilesMissing(t, root, "client")
+	require.NotContains(t, registry.closedAt, "client")
+	_, err = registry.Open(t.Context(), "client")
+	require.ErrorIs(t, err, errStoreRetired)
+	require.NoError(t, registry.Close())
+}
+
+func TestStoreRegistrySweepRemovesAllButKept(t *testing.T) {
+	root := t.TempDir()
+	registry := NewDBs(root)
+	for _, clientID := range []string{"archived", "previous"} {
+		store, err := registry.Open(t.Context(), clientID)
+		require.NoError(t, err)
+		require.NoError(t, store.Close())
+	}
+
+	require.NoError(t, registry.Sweep(map[string]bool{"archived": true}))
+	requireStoreFilesExist(t, root, "archived")
+	requireStoreFilesMissing(t, root, "previous")
+	require.NoError(t, registry.Close())
+}
+
 func streamClosed[Row any](stream *logStream[Row]) bool {
 	stream.mu.Lock()
 	defer stream.mu.Unlock()

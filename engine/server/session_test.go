@@ -2958,18 +2958,26 @@ func TestSessionTeardownFlushesTraceTelemetryAfterMetricShutdown(t *testing.T) {
 	gauge.Record(cleanupCtx, 1)
 	sess.schemaBuilderMemo.Store(core.NewSchemaBuilderMemo())
 
+	// Hold the main store the way a Cloud forwarder does: the session's end
+	// retires it, and it is deleted once this last reader closes it.
+	db, err := srv.clientDBs.OpenForAppend(t.Context(), client.clientID)
+	require.NoError(t, err)
+
 	require.NoError(t, srv.removeDaggerSession(t.Context(), sess))
 	require.Nil(t, sess.schemaBuilderMemo.Load(), "the session's schema memo is dropped with it")
 	require.Nil(t, client.telemetryDB)
-	require.Equal(t, clientdb.OpenStats{}, srv.clientDBs.OpenStats())
+	require.Equal(t, clientdb.OpenStats{Stores: 1, Streams: 3, Refs: 1}, srv.clientDBs.OpenStats(),
+		"only the test's reader holds the store")
 	select {
 	case <-exported:
 	default:
 		t.Fatal("final session telemetry barrier did not flush metrics")
 	}
-	db, err := srv.clientDBs.Open(t.Context(), client.clientID)
-	require.NoError(t, err)
-	defer db.Close()
+	defer func() {
+		require.NoError(t, db.Close())
+		_, err := os.Stat(filepath.Join(srv.clientDBs.Root, client.clientID+".spans.log"))
+		require.ErrorIs(t, err, os.ErrNotExist, "a retired store goes with its last reader")
+	}()
 	spans, err := db.Read().SelectSpansSince(t.Context(), clientdb.SelectSpansSinceParams{Limit: 100})
 	require.NoError(t, err)
 	var liveSnapshots, completedSnapshots int
