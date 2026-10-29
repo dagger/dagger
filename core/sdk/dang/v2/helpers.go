@@ -89,6 +89,17 @@ func (r *runtime) eval(
 	})
 }
 
+// moduleDangVersion is the Dang version src's source is written in, as
+// ModuleSource.DangVersion holds it. A module source that has none (one given
+// the Dang SDK by withSDK, or persisted before the field existed) gets the
+// default for its engine version.
+func moduleDangVersion(src *core.ModuleSource) string {
+	if src.DangVersion != "" || src.Entrypoint != nil {
+		return src.DangVersion
+	}
+	return DefaultModuleVersions(src.EngineVersion).DangString()
+}
+
 // evalDangSource runs a module's Dang source and calls withEnv with the
 // resulting environment.
 //
@@ -115,7 +126,7 @@ func evalDangSource(
 		// unless a dang.toml Dang finds declares one (the same one, as the
 		// engine reads it; see ModuleSource.DangVersion).
 		var err error
-		ctx, err = ContextWithDangVersion(ctx, src.DangVersion)
+		ctx, err = ContextWithDangVersion(ctx, moduleDangVersion(src))
 		if err != nil {
 			return nil, err
 		}
@@ -153,7 +164,14 @@ func evalDangSource(
 		modCtx := modSource.Self().ContextDirectory
 		var env dang.ValueScope
 		err = modCtx.Self().Mount(ctx, modCtx, func(path string) error {
-			modSrcDir := filepath.Join(path, modSource.Self().SourceSubpath)
+			modSrcDir, cleanup, err := dangSourceDir(
+				filepath.Join(path, modSource.Self().SourceSubpath),
+				filepath.Join(path, modSource.Self().SourceRootSubpath),
+			)
+			if err != nil {
+				return err
+			}
+			defer cleanup()
 
 			// The version Dang parses the source as, for the parses below.
 			version, err := dang.VersionForDir(ctx, modSrcDir)
@@ -193,6 +211,48 @@ func evalDangSource(
 
 		return withEnv(ctx, env)
 	})
+}
+
+// dangSourceDir returns the directory to run a module's source in srcDir
+// from. Dang finds the dang.toml that decides the source's version by
+// walking up from it, to a .git or the filesystem root, while the engine
+// reads only one up to the module directory moduleDir (see
+// ModuleSource.DangVersion), whatever else the module context holds above it.
+// When Dang's walk would reach a dang.toml above moduleDir, the source runs
+// from a copy of its .dang files that no dang.toml governs, so the version
+// the engine resolved, set with ContextWithDangVersion, decides; otherwise
+// from srcDir itself. cleanup removes the copy.
+func dangSourceDir(srcDir, moduleDir string) (dir string, cleanup func(), rerr error) {
+	noop := func() {}
+	configPath, _, err := dang.FindProjectConfig(srcDir)
+	if err == nil {
+		if configPath == "" {
+			return srcDir, noop, nil
+		}
+		configDir := filepath.Dir(configPath)
+		if configDir == filepath.Clean(srcDir) {
+			// The source directory's own, which the engine reads too.
+			return srcDir, noop, nil
+		}
+		if rel, err := filepath.Rel(moduleDir, configDir); err == nil && filepath.IsLocal(rel) {
+			return srcDir, noop, nil
+		}
+	}
+	// A dang.toml above the module directory, or one that does not even
+	// parse there: Dang must not see it.
+	files, _ := readDangSourceFiles(srcDir)
+	tmp, err := os.MkdirTemp("", "dagger-dang-module-")
+	if err != nil {
+		return "", noop, fmt.Errorf("isolate module source: %w", err)
+	}
+	cleanup = func() { os.RemoveAll(tmp) }
+	for _, file := range files {
+		if err := os.WriteFile(filepath.Join(tmp, file.name), file.content, 0o600); err != nil {
+			cleanup()
+			return "", noop, fmt.Errorf("isolate module source: %w", err)
+		}
+	}
+	return tmp, cleanup, nil
 }
 
 // loadDangSchema reuses decoding of an immutable schema File through the engine
