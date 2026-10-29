@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/mount"
@@ -354,6 +355,7 @@ func (container *Container) AsTarball(
 	ctx context.Context,
 	platformVariants []*Container,
 	forcedCompression ImageLayerCompression,
+	sourceDateEpoch *time.Time,
 	mediaTypes ImageMediaTypes,
 	filePath string,
 ) (f *File, rerr error) {
@@ -395,7 +397,7 @@ func (container *Container) AsTarball(
 			return err
 		}
 		defer file.Close()
-		return bk.WriteContainerImageTarball(ctx, file, inputByPlatform, useOCIMediaTypes(mediaTypes), string(forcedCompression))
+		return bk.WriteContainerImageTarball(ctx, file, inputByPlatform, useOCIMediaTypes(mediaTypes), string(forcedCompression), sourceDateEpoch)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("container image to tarball file conversion failed: %w", err)
@@ -509,6 +511,7 @@ type FileContainerImageLazy struct {
 	Parent            dagql.ObjectResult[*Container]
 	PlatformVariants  []dagql.ObjectResult[*Container]
 	ForcedCompression ImageLayerCompression
+	SourceDateEpoch   *time.Time
 	MediaTypes        ImageMediaTypes
 	Manifest          bool
 }
@@ -517,6 +520,7 @@ type persistedFileContainerImageLazy struct {
 	ParentResultID           uint64                `json:"parentResultID"`
 	PlatformVariantResultIDs []uint64              `json:"platformVariantResultIDs,omitempty"`
 	ForcedCompression        ImageLayerCompression `json:"forcedCompression,omitempty"`
+	SourceDateEpoch          *time.Time            `json:"sourceDateEpoch,omitempty"`
 	MediaTypes               ImageMediaTypes       `json:"mediaTypes,omitempty"`
 	Manifest                 bool                  `json:"manifest,omitempty"`
 }
@@ -552,7 +556,7 @@ func (lazy *FileContainerImageLazy) Evaluate(ctx context.Context, file *File) er
 		for _, variant := range lazy.PlatformVariants {
 			variants = append(variants, variant.Self())
 		}
-		return lazy.Parent.Self().AsTarball(ctx, variants, lazy.ForcedCompression, lazy.MediaTypes, "container.tar")
+		return lazy.Parent.Self().AsTarball(ctx, variants, lazy.ForcedCompression, lazy.SourceDateEpoch, lazy.MediaTypes, "container.tar")
 	})
 }
 
@@ -591,6 +595,7 @@ func (lazy *FileContainerImageLazy) EncodePersisted(ctx context.Context, enc *da
 		ParentResultID:           parentID,
 		PlatformVariantResultIDs: variantIDs,
 		ForcedCompression:        lazy.ForcedCompression,
+		SourceDateEpoch:          lazy.SourceDateEpoch,
 		MediaTypes:               lazy.MediaTypes,
 		Manifest:                 lazy.Manifest,
 	})
@@ -618,6 +623,7 @@ func decodeFileContainerImageLazy(ctx context.Context, dec *dagql.PersistDecodeC
 		Parent:            parent,
 		PlatformVariants:  variants,
 		ForcedCompression: persisted.ForcedCompression,
+		SourceDateEpoch:   persisted.SourceDateEpoch,
 		MediaTypes:        persisted.MediaTypes,
 		Manifest:          persisted.Manifest,
 	}, nil

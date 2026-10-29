@@ -77,6 +77,7 @@ mod tests {
             platform_variants: None,
             protocol: Some(RegistryProtocol::Http),
             registry_service: None,
+            source_date_epoch: None,
         };
 
         assert_eq!(from_opts.protocol, Some(RegistryProtocol::Https));

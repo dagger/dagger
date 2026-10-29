@@ -25,6 +25,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -38,6 +39,7 @@ import (
 	resolverconfig "github.com/dagger/dagger/internal/buildkit/util/resolver/config"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -5151,6 +5153,117 @@ func (ContainerSuite) TestForceCompression(ctx context.Context, t *testctx.T) {
 			require.NoError(t, json.Unmarshal(manifestBytes, &manifest))
 			for _, layer := range manifest.Layers {
 				require.EqualValues(t, tc.expectedOCIMediaType, layer.MediaType)
+			}
+		})
+	}
+}
+
+func (ContainerSuite) TestSourceDateEpoch(ctx context.Context, t *testctx.T) {
+	// Each build's RUN creates /app/lib/a.txt with the same contents, but
+	// gives it a different mtime and creates /app and /app/lib at the build's
+	// wall-clock time, so the final layer differs between builds.
+	const epoch = 1700000000
+	dockerfile := `FROM ` + alpineImage + `
+ARG NONCE
+RUN mkdir -p /app/lib && echo hello > /app/lib/a.txt && touch -d "@$NONCE" /app/lib/a.txt
+`
+	build := func(c *dagger.Client, nonce string) *sdkcore.Container {
+		return sdkcore.NewQuery(c).Directory().
+			WithNewFile("Dockerfile", dockerfile).
+			DockerBuild(sdkcore.DirectoryDockerBuildOpts{
+				BuildArgs: []sdkcore.BuildArg{{Name: "NONCE", Value: nonce}},
+			})
+	}
+	tarballImage := func(t *testctx.T, tarPath string) ([]digest.Digest, ocispecs.Image) {
+		var index ocispecs.Index
+		require.NoError(t, json.Unmarshal(readTarFile(t, tarPath, "index.json"), &index))
+		var manifest ocispecs.Manifest
+		require.NoError(t, json.Unmarshal(readTarFile(t, tarPath, "blobs/sha256/"+index.Manifests[0].Digest.Encoded()), &manifest))
+		var config ocispecs.Image
+		require.NoError(t, json.Unmarshal(readTarFile(t, tarPath, "blobs/sha256/"+manifest.Config.Digest.Encoded()), &config))
+		layers := make([]digest.Digest, 0, len(manifest.Layers))
+		for _, layer := range manifest.Layers {
+			layers = append(layers, layer.Digest)
+		}
+		return layers, config
+	}
+
+	for _, tc := range []struct {
+		name string
+		// image exports ctr and returns its layer digests and image config
+		image func(ctx context.Context, t *testctx.T, ctr *sdkcore.Container, sourceDateEpoch int) ([]digest.Digest, ocispecs.Image)
+	}{
+		{
+			name: "asTarball",
+			image: func(ctx context.Context, t *testctx.T, ctr *sdkcore.Container, sourceDateEpoch int) ([]digest.Digest, ocispecs.Image) {
+				tarPath := filepath.Join(t.TempDir(), "image.tar")
+				_, err := ctr.AsTarball(sdkcore.ContainerAsTarballOpts{SourceDateEpoch: sourceDateEpoch}).Export(ctx, tarPath)
+				require.NoError(t, err)
+				return tarballImage(t, tarPath)
+			},
+		},
+		{
+			name: "export",
+			image: func(ctx context.Context, t *testctx.T, ctr *sdkcore.Container, sourceDateEpoch int) ([]digest.Digest, ocispecs.Image) {
+				tarPath := filepath.Join(t.TempDir(), "image.tar")
+				_, err := ctr.Export(ctx, tarPath, sdkcore.ContainerExportOpts{SourceDateEpoch: sourceDateEpoch})
+				require.NoError(t, err)
+				return tarballImage(t, tarPath)
+			},
+		},
+		{
+			name: "publish",
+			image: func(ctx context.Context, t *testctx.T, ctr *sdkcore.Container, sourceDateEpoch int) ([]digest.Digest, ocispecs.Image) {
+				ref, err := ctr.Publish(ctx, registryRef("container-source-date-epoch"), sdkcore.ContainerPublishOpts{SourceDateEpoch: sourceDateEpoch})
+				require.NoError(t, err)
+				parsedRef, err := name.ParseReference(ref, name.Insecure)
+				require.NoError(t, err)
+				imgDesc, err := remote.Get(parsedRef, remote.WithTransport(http.DefaultTransport))
+				require.NoError(t, err)
+				img, err := imgDesc.Image()
+				require.NoError(t, err)
+				manifest, err := img.Manifest()
+				require.NoError(t, err)
+				rawConfig, err := img.RawConfigFile()
+				require.NoError(t, err)
+				var config ocispecs.Image
+				require.NoError(t, json.Unmarshal(rawConfig, &config))
+				layers := make([]digest.Digest, 0, len(manifest.Layers))
+				for _, layer := range manifest.Layers {
+					layers = append(layers, digest.Digest(layer.Digest.String()))
+				}
+				return layers, config
+			},
+		},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			// NONCE is the mtime RUN gives a.txt, later than epoch.
+			now := time.Now().Unix()
+			first := build(c, strconv.FormatInt(now+1, 10))
+			second := build(c, strconv.FormatInt(now+2, 10))
+
+			// Without sourceDateEpoch, the final layer differs between builds.
+			firstLayers, _ := tc.image(ctx, t, first, 0)
+			secondLayers, _ := tc.image(ctx, t, second, 0)
+			require.NotEmpty(t, firstLayers)
+			require.Len(t, secondLayers, len(firstLayers))
+			require.NotEqual(t, firstLayers[len(firstLayers)-1], secondLayers[len(secondLayers)-1])
+
+			// With it, both builds produce the same layers, and the image's
+			// creation times are clamped to the epoch. (The configs still differ:
+			// they record the NONCE build arg.)
+			firstLayers, firstConfig := tc.image(ctx, t, first, epoch)
+			secondLayers, secondConfig := tc.image(ctx, t, second, epoch)
+			require.Equal(t, firstLayers, secondLayers)
+			for _, config := range []ocispecs.Image{firstConfig, secondConfig} {
+				require.NotNil(t, config.Created)
+				require.Equal(t, int64(epoch), config.Created.Unix())
+				require.NotEmpty(t, config.History)
+				for _, h := range config.History {
+					require.NotNil(t, h.Created)
+					require.Equal(t, int64(epoch), h.Created.Unix())
+				}
 			}
 		})
 	}

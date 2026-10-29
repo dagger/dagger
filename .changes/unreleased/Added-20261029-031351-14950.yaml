@@ -1,0 +1,7 @@
+kind: Added
+body: |
+  New `sourceDateEpoch` argument on `Container.publish`, `export`, `exportImage` and `asTarball` clamps every timestamp in the image's layers, and its creation times, to the given Unix time, so rebuilding unchanged files produces identical layers.
+time: 2026-10-29T03:13:51Z
+custom:
+  Author: sipsma
+  PR: "14950"

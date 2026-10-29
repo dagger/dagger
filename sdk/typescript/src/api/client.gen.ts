@@ -779,6 +779,13 @@ export type ContainerAsTarballOpts = {
    * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
    */
   mediaTypes?: ImageMediaTypes
+
+  /**
+   * Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
+   *
+   * Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
+   */
+  sourceDateEpoch?: number
 }
 
 export type ContainerDirectoryOpts = {
@@ -831,6 +838,13 @@ export type ContainerExportOpts = {
    * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   expand?: boolean
+
+  /**
+   * Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
+   *
+   * Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
+   */
+  sourceDateEpoch?: number
 }
 
 export type ContainerExportImageOpts = {
@@ -854,6 +868,13 @@ export type ContainerExportImageOpts = {
    * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
    */
   mediaTypes?: ImageMediaTypes
+
+  /**
+   * Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
+   *
+   * Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
+   */
+  sourceDateEpoch?: number
 }
 
 export type ContainerFileOpts = {
@@ -969,6 +990,13 @@ export type ContainerPublishOpts = {
    * Allow HTTPS registry communication without verifying the server certificate.
    */
   insecureSkipTLSVerify?: boolean
+
+  /**
+   * Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
+   *
+   * Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
+   */
+  sourceDateEpoch?: number
 }
 
 export type ContainerShellOpts = {
@@ -7084,6 +7112,9 @@ export class Container extends BaseClient {
    * @param opts.mediaTypes Use the specified media types for the image's layers.
    *
    * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
+   * @param opts.sourceDateEpoch Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
+   *
+   * Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
    */
   asTarball = (opts?: ContainerAsTarballOpts): File => {
     const metadata = {
@@ -7285,6 +7316,9 @@ export class Container extends BaseClient {
    *
    * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
    * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   * @param opts.sourceDateEpoch Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
+   *
+   * Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
    */
   export = async (
     path: string,
@@ -7325,6 +7359,9 @@ export class Container extends BaseClient {
    * @param opts.mediaTypes Use the specified media types for the exported image's layers.
    *
    * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
+   * @param opts.sourceDateEpoch Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
+   *
+   * Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
    */
   exportImage = async (
     name: string,
@@ -7554,6 +7591,9 @@ export class Container extends BaseClient {
    *
    * Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
    * @param opts.insecureSkipTLSVerify Allow HTTPS registry communication without verifying the server certificate.
+   * @param opts.sourceDateEpoch Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
+   *
+   * Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
    */
   publish = async (
     address: string,

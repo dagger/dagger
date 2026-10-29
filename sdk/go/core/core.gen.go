@@ -3820,6 +3820,10 @@ type ContainerAsTarballOpts struct {
 	//
 	// Default: OCIMediaTypes
 	MediaTypes ImageMediaTypes
+	// Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
+	//
+	// Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
+	SourceDateEpoch int
 }
 
 // Package the container state as an OCI image, and return it as a tar archive
@@ -3837,6 +3841,10 @@ func (r *Container) AsTarball(opts ...ContainerAsTarballOpts) *File {
 		// `mediaTypes` optional argument
 		if !querybuilder.IsZeroValue(opts[i].MediaTypes) {
 			q = q.Arg("mediaTypes", opts[i].MediaTypes)
+		}
+		// `sourceDateEpoch` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SourceDateEpoch) {
+			q = q.Arg("sourceDateEpoch", opts[i].SourceDateEpoch)
 		}
 	}
 
@@ -4070,6 +4078,10 @@ type ContainerExportOpts struct {
 	MediaTypes ImageMediaTypes
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
+	// Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
+	//
+	// Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
+	SourceDateEpoch int
 }
 
 // Writes the container as an OCI tarball to the destination file path on the host.
@@ -4097,6 +4109,10 @@ func (r *Container) Export(ctx context.Context, path string, opts ...ContainerEx
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
 			q = q.Arg("expand", opts[i].Expand)
 		}
+		// `sourceDateEpoch` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SourceDateEpoch) {
+			q = q.Arg("sourceDateEpoch", opts[i].SourceDateEpoch)
+		}
 	}
 	q = q.Arg("path", path)
 
@@ -4122,6 +4138,10 @@ type ContainerExportImageOpts struct {
 	//
 	// Default: OCIMediaTypes
 	MediaTypes ImageMediaTypes
+	// Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
+	//
+	// Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
+	SourceDateEpoch int
 }
 
 // Exports the container as an image to the host's container image store.
@@ -4142,6 +4162,10 @@ func (r *Container) ExportImage(ctx context.Context, name string, opts ...Contai
 		// `mediaTypes` optional argument
 		if !querybuilder.IsZeroValue(opts[i].MediaTypes) {
 			q = q.Arg("mediaTypes", opts[i].MediaTypes)
+		}
+		// `sourceDateEpoch` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SourceDateEpoch) {
+			q = q.Arg("sourceDateEpoch", opts[i].SourceDateEpoch)
 		}
 	}
 	q = q.Arg("name", name)
@@ -4504,6 +4528,10 @@ type ContainerPublishOpts struct {
 	Protocol RegistryProtocol
 	// Allow HTTPS registry communication without verifying the server certificate.
 	InsecureSkipTLSVerify bool
+	// Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
+	//
+	// Formatted in seconds following Unix epoch (e.g., 1672531199). File timestamps in every layer and the image's creation times that are later than this are set to it, as with BuildKit's rewrite-timestamp and SOURCE_DATE_EPOCH. Every layer is rewritten, so this costs time on each export.
+	SourceDateEpoch int
 }
 
 // Package the container state as an OCI image, and publish it to a registry
@@ -4538,6 +4566,10 @@ func (r *Container) Publish(ctx context.Context, address string, opts ...Contain
 		// `insecureSkipTLSVerify` optional argument
 		if !querybuilder.IsZeroValue(opts[i].InsecureSkipTLSVerify) {
 			q = q.Arg("insecureSkipTLSVerify", opts[i].InsecureSkipTLSVerify)
+		}
+		// `sourceDateEpoch` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SourceDateEpoch) {
+			q = q.Arg("sourceDateEpoch", opts[i].SourceDateEpoch)
 		}
 	}
 	q = q.Arg("address", address)

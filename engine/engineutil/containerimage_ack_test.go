@@ -118,7 +118,7 @@ func TestExportContainerImageLoaderAcknowledgment(t *testing.T) {
 			if tc.empty {
 				input = nil
 			}
-			result, err := client.ExportContainerImage(ctx, "fixture:ack", input, "uncompressed", false, "", true)
+			result, err := client.ExportContainerImage(ctx, "fixture:ack", input, "uncompressed", nil, false, "", true)
 			if tc.reject {
 				require.Error(t, err, "export must return the loader's final acknowledgment error")
 				require.Equal(t, codes.FailedPrecondition, status.Code(err))
