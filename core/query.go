@@ -182,6 +182,9 @@ type Server interface {
 	// The agent runtimes for the current client's session
 	Agents(context.Context) (*AgentRuntimes, error)
 
+	// The live MCP sessions for the current client's session
+	MCPSessions(context.Context) (*MCPSessions, error)
+
 	// The default platform for the engine as a whole
 	Platform() Platform
 
