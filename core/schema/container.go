@@ -195,7 +195,10 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 		// settings from the engine container. It may be made public in the future with more
 		// refined design.
 		dagql.NodeFunc("__withSystemEnvVariable", s.withSystemEnvVariable).
-			Doc(`(Internal-only) Inherit this environment variable from the engine container if set there with a special prefix.`),
+			Doc(`(Internal-only) Inherit this environment variable from the engine container if set there with a special prefix.`).
+			Args(
+				dagql.Arg("default").Doc(`Value to use when neither this container nor the engine container sets the variable.`),
+			),
 
 		// NOTE: this is internal-only (hidden from codegen via the __ prefix). It exists so
 		// llbtodagger can faithfully apply Docker image config metadata fields that do not yet
@@ -2376,7 +2379,8 @@ func (s *containerSchema) withEnvFileVariables(ctx context.Context, parent dagql
 }
 
 type containerWithSystemEnvArgs struct {
-	Name string
+	Name    string
+	Default dagql.Optional[dagql.String]
 }
 
 type containerWithVolatileVariableArgs struct {
@@ -2389,12 +2393,21 @@ func (s *containerSchema) withSystemEnvVariable(ctx context.Context, parent dagq
 	if err != nil {
 		return nil, err
 	}
-	ctr.SystemEnvNames = append(ctr.SystemEnvNames, args.Name)
+	if args.Name == "" || strings.Contains(args.Name, "=") {
+		return nil, fmt.Errorf("invalid system env variable name %q", args.Name)
+	}
+	var fallback *string
+	if args.Default.Valid {
+		value := args.Default.Value.String()
+		fallback = &value
+	}
+	entry := engineutil.SystemEnvEntry(args.Name, fallback)
+	ctr.SystemEnvNames = append(ctr.SystemEnvNames, entry)
 	if parentPendingLazy {
 		ctr.Lazy = &core.ContainerWithSystemEnvVariableLazy{
 			LazyState: core.NewLazyState(),
 			Parent:    parent,
-			Name:      args.Name,
+			Name:      entry,
 		}
 	}
 	return ctr, nil
