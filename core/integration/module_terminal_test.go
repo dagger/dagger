@@ -666,7 +666,7 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 		modDir := terminalFixtureMod(ctx, t, "terminal-directory")
 		cacheTerminalModule(ctx, t, modDir, "-m", ".", "api", "functions")
 
-		out, err := hostDaggerExecRaw(ctx, t, modDir, "sh", "-l", "-f=link")
+		out, err := hostDaggerOutput(ctx, t, modDir, "sh", "-l", "-f=link")
 		require.NoError(t, err)
 		require.Equal(t, "dag+directory://?directory=dir", string(bytes.TrimSpace(out)))
 
