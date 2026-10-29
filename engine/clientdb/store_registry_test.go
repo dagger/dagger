@@ -2,6 +2,7 @@ package clientdb
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"sync"
@@ -368,6 +369,42 @@ func TestStoreRegistryRetireWaitsForLastReference(t *testing.T) {
 	require.NotContains(t, registry.closedAt, "client")
 	_, err = registry.Open(t.Context(), "client")
 	require.ErrorIs(t, err, errStoreRetired)
+	require.NoError(t, registry.Close())
+}
+
+func TestStoreRegistryRetiredStoreIsDeletedWhenFinalSpillFails(t *testing.T) {
+	root := t.TempDir()
+	registry := NewDBs(root)
+	store, err := registry.Open(t.Context(), "client")
+	require.NoError(t, err)
+	_, err = store.AppendMetrics([]Metric{{Data: []byte("buffered")}})
+	require.NoError(t, err)
+	diskFull := errors.New("no space left on device")
+	store.metrics.spill.testWriteHook = func([]byte) (int, error) { return 0, diskFull }
+
+	require.NoError(t, registry.Retire("client"))
+	requireStoreFilesExist(t, root, "client")
+	require.ErrorIs(t, store.Close(), diskFull)
+	requireStoreFilesMissing(t, root, "client")
+	require.NoError(t, registry.Close())
+}
+
+func TestStoreRegistryRetirementOutlivesGCWhileHeld(t *testing.T) {
+	root := t.TempDir()
+	registry := NewDBs(root)
+	store, err := registry.Open(t.Context(), "client")
+	require.NoError(t, err)
+	require.NoError(t, registry.Retire("client"))
+
+	// A reader holds the store past the age at which GC forgets retirements.
+	registry.retired["client"] = time.Now().Add(-CollectGarbageAfter)
+	require.NoError(t, registry.GC(nil))
+	require.Contains(t, registry.retired, "client")
+	requireStoreFilesExist(t, root, "client")
+
+	require.NoError(t, store.Close())
+	requireStoreFilesMissing(t, root, "client")
+	require.NotContains(t, registry.closedAt, "client")
 	require.NoError(t, registry.Close())
 }
 
