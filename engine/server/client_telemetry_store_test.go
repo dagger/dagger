@@ -200,6 +200,7 @@ func TestRetainedStoreIndexesOnlyForIndexedReader(t *testing.T) {
 	streamed, err := client.telemetryDB.Read().SelectSpansSince(t.Context(), clientdb.SelectSpansSinceParams{Limit: 10})
 	require.NoError(t, err)
 	require.Len(t, streamed, 2)
+	require.Empty(t, client.telemetryDB.SpanIDs(), "holding and streaming the store builds no index")
 
 	reader, err := client.clientRecord.TelemetryDB(t.Context())
 	require.NoError(t, err)
