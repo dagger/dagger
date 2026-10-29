@@ -375,6 +375,40 @@ func (WorkspaceCompatSuite) TestDependencies(ctx context.Context, t *testctx.T) 
 	require.Equal(t, "hello, world!!!!", output, "User defaults should apply to nested dependencies")
 }
 
+// A dependency's .env default that expands a system variable must be part of
+// the cache key of the calls its dependent makes, even though those calls come
+// from the dependent's runtime, where the variable isn't set.
+func (WorkspaceCompatSuite) TestDependencySystemVariableCaching(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ctr := nestedDaggerContainer(t, c, "", "").
+		WithNewFile("dagger.json", `{"name":"app","engineVersion":"v1.0.0-0","sdk":"dang","dependencies":[{"name":"dep","source":"dep"}]}`).
+		WithNewFile("main.dang", `
+type App {
+  pub value: String! { dep.value }
+}
+`).
+		WithNewFile("dep/dagger.json", `{"name":"dep","engineVersion":"v1.0.0-0","sdk":"dang"}`).
+		WithNewFile("dep/main.dang", `
+type Dep {
+  pub value: String!
+
+  new(value: String!) {
+    self.value = value
+    self
+  }
+}
+`).
+		WithNewFile(".env", `DEP_VALUE=${META:-}`)
+	for _, meta := range []string{"one", "two"} {
+		out, err := ctr.
+			WithEnvVariable("META", meta).
+			WithExec(daggerCallCmd(".", "value")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, meta, out)
+	}
+}
+
 func (WorkspaceCompatSuite) TestOptionalDirectoryWithIgnore(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	docs := core.NewQuery(c).Directory().

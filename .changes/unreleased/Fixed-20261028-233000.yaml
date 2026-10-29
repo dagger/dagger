@@ -1,0 +1,11 @@
+kind: Fixed
+body: |
+  A module's call to a dependency no longer returns a stale cached result when
+  an environment variable used by the dependency's `.env` defaults changes.
+  The dependency's cache identity now expands those variables from the user's
+  environment, as the default value itself does, instead of from the calling
+  module, where they are not set.
+time: 2026-10-28T23:30:00Z
+custom:
+  Author: sipsma
+  PR: ""
