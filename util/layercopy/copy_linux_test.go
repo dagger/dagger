@@ -13,6 +13,7 @@ import (
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/continuity/sysx"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 )
 
 func TestCopyFileHardlinksFromSource(t *testing.T) {
@@ -270,6 +271,65 @@ func TestOverlayAncestorMinLayerCachesCumulativeBounds(t *testing.T) {
 	minLayer, err = src.overlayAncestorMinLayer("a/b/other.txt")
 	require.NoError(t, err)
 	require.Equal(t, 1, minLayer)
+}
+
+// TestCopyFileOverlaySourcesShareLowerLayers copies a file from several
+// overlay sources, in one copy, that share lowerdirs but stack them
+// differently: each source must see the file from its own top visible layer.
+func TestCopyFileOverlaySourcesShareLowerLayers(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	base := filepath.Join(root, "base")
+	opaque := filepath.Join(root, "opaque")
+	plain := filepath.Join(root, "plain")
+	dstRoot := filepath.Join(root, "dst")
+	for _, dir := range []string{filepath.Join(base, "a"), filepath.Join(opaque, "a"), filepath.Join(plain, "a"), dstRoot} {
+		require.NoError(t, os.MkdirAll(dir, 0o755))
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(base, "a", "file.txt"), []byte("base"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(opaque, "a", "file.txt"), []byte("opaque"), 0o644))
+	require.NoError(t, unix.Lsetxattr(filepath.Join(opaque, "a"), "user.overlay.opaque", []byte{'y'}, 0))
+
+	copier, err := NewCopier(Mount{Root: dstRoot})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, copier.Close())
+	})
+
+	// Each source's view holds the file it shows, as its mounted overlay would.
+	for _, c := range []struct {
+		dest   string
+		lowers []string
+		from   string
+	}{
+		{"one.txt", []string{opaque, base}, opaque},
+		{"two.txt", []string{plain, base}, base},
+		{"three.txt", []string{plain, opaque, base}, opaque},
+	} {
+		want := filepath.Base(c.from)
+		viewRoot := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(viewRoot, "a"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(viewRoot, "a", "file.txt"), []byte(want), 0o644))
+		err := copier.CopyFile(context.Background(), Mount{
+			Root: viewRoot,
+			Mount: &mount.Mount{
+				Type:    "overlay",
+				Options: []string{"lowerdir=" + strings.Join(c.lowers, ":")},
+			},
+		}, "/a/file.txt", "/"+c.dest, CopyOptions{})
+		require.NoError(t, err, c.dest)
+
+		got, err := os.ReadFile(filepath.Join(dstRoot, c.dest))
+		require.NoError(t, err)
+		require.Equal(t, want, string(got), c.dest)
+		// The copy links the visible layer's file.
+		fromInfo, err := os.Stat(filepath.Join(c.from, "a", "file.txt"))
+		require.NoError(t, err)
+		gotInfo, err := os.Stat(filepath.Join(dstRoot, c.dest))
+		require.NoError(t, err)
+		require.True(t, os.SameFile(fromInfo, gotInfo), c.dest)
+	}
 }
 
 func TestCopyFileDestPathHintIsDir(t *testing.T) {
