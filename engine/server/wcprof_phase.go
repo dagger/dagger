@@ -69,8 +69,8 @@ const (
 	// UsageScopeEngineProcessSample is the engine process's CPU over one
 	// stretch of the phase, read every machineSampleInterval while it runs:
 	// user and system time since the previous reading (or the phase's
-	// start), so a window of the phase sums the readings whose stretch ends
-	// inside it.
+	// start). A window of the phase is the sum of the readings whose stretch
+	// ends inside it, accurate to within one stretch at each end.
 	UsageScopeEngineProcessSample = "engine_process_sample"
 )
 
