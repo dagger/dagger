@@ -187,6 +187,7 @@ func (cm *snapshotManager) PersistentMetadataRows() PersistentMetadataRows {
 }
 
 func (cm *snapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID string) error {
+	ctx = cm.withLeaseNamespace(ctx)
 	if leaseID == "" {
 		return stderrors.New("attach lease: empty lease ID")
 	}
@@ -362,6 +363,7 @@ func (cm *snapshotManager) createOwnerLease(ctx context.Context, leaseID string)
 }
 
 func (cm *snapshotManager) attachOwnerContent(ctx context.Context, leaseID, snapshotID string, dgst digest.Digest) error {
+	ctx = cm.withLeaseNamespace(ctx)
 	err := cm.LeaseManager.AddResource(ctx, leases.Lease{ID: leaseID}, leases.Resource{
 		ID:   dgst.String(),
 		Type: "content",
@@ -469,4 +471,15 @@ func (cm *snapshotManager) DeleteStaleDaggerOwnerLeases(ctx context.Context, kee
 		rerr = stderrors.Join(rerr, cm.RemoveLease(ctx, lease.ID))
 	}
 	return rerr
+}
+
+
+// withLeaseNamespace attaches the lease manager's namespace to ctx once, for
+// a walk that makes a snapshotter or lease call per snapshot and blob: each
+// of those would attach it again.
+func (cm *snapshotManager) withLeaseNamespace(ctx context.Context) context.Context {
+	if lm, ok := cm.LeaseManager.(*LeaseManager); ok {
+		return withNamespace(ctx, lm.ns)
+	}
+	return ctx
 }
