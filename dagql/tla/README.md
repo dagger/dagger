@@ -609,14 +609,22 @@ no new action for it. Here is how each part maps onto what is modelled:
   through `applyPreparedResultIdentityLocked`, inside the merge's
   write-locked section. It adds no entry, owner, dependency or retention
   edge, and no recipe-index key. So `Current` and `MergeTarget` are
-  unchanged by it, and a publication of the taught call adopts only that
-  call's own entries. Equivalence is the static `ClassOf`, so a
+  unchanged by it, and a fresh-value publication of the taught call adopts
+  only that call's own entries. (A publication of an existing returned
+  result may instead adopt across equivalent entries, through `PubAdopt`
+  and `CanonicalPick`.) Equivalence is the static `ClassOf`, so a
   configuration that puts the taught call in the entry's class lets its
-  lookups select the entry at any time. That covers every point a merge
-  could teach it, and lookups may still miss. `recipe_merge_taught` checks
-  this against the split shared-lock lookups (`SharedSections = "split"`):
-  publication, release, expiry, a failed attachment and merges, all with
-  every `recipe_merge` invariant.
+  lookups select the entry at any time, or miss. That checks the lifecycle
+  of the cross-call lookup candidate teaching produces, against ownership,
+  attachment, release and replacement. It does not check that teaching is
+  correct or when it may happen: no action teaches, and the probe below
+  shows a cross-call hit, not a teach. `recipe_merge_taught` runs it with
+  the lookup hit split into selection and claim (`SharedSections =
+  "split"`). Both steps sit in one read section, so a merge waits until it
+  closes, as in Go, while release marking interleaves. It covers
+  publication, release, expiry, a failed attachment and merges, with every
+  `recipe_merge` invariant. Two overlapping lookup readers are the
+  `shared_claims` configurations' scope.
 - **A taught hit.** It is an ordinary class hit, under the same
   eligibility filter: registered, attachment not failed, unexpired, session
   requirements met. It decodes or arms the selected entry's own recipe, not
@@ -624,11 +632,19 @@ no new action for it. Here is how each part maps onto what is modelled:
 - **Expiry folding.** An entry takes the earliest expiry of its own call and
   the calls taught onto it (`mergeSharedResultExpiryUnix`). That only moves
   its expiry earlier, and `Expire` may already fire on any entry at any
-  moment. The guards on the clock, which keep or teach no call whose expiry
-  has passed and fold a span's expiry only while it is to come, compare
-  times. The model has no clock, and incoming records are never expired
-  (see the scope limits above), so these guards sit outside it. The Go
-  tests in `dagql/cache_call_records_test.go` cover them, including
+  moment. That covers the lifecycle effects of a shorter expiry, but not
+  which call report may shorten it. The admission guards keep or teach no
+  call whose expiry has passed, and fold a span's expiry only while it is
+  to come. They are a deliberate scope limit, not something TLA+ would need
+  a clock for. Two pieces of state are abstracted out: whether an incoming
+  call or row has expired, kept apart from the local entry's expiry, and
+  which identities have actually been taught. With them, removing the
+  guard at `dagql/cache_value_merge.go` would teach an expired incoming
+  call onto a live value and let the next lookup hit. The present model
+  can't detect that mutation: incoming records are never expired (see the
+  scope limits above), and static equivalence already allows the
+  cross-call hit. The Go tests in `dagql/cache_call_records_test.go` cover
+  the guards, including
   `TestCallRecordOnAnExpiredRowLeavesTheEnginesValueAlone`,
   `TestCallRecordExpiredCallIsNotTaughtOnAValueTheEngineKept` and
   `TestCallRecordPastExpiriesLeaveAReplacementAlone`.
