@@ -40,10 +40,12 @@ type session struct {
 	// lastID numbers the engine's messages; the first is 1, so a reply's
 	// re of 0 never names one.
 	lastID atomic.Uint64
-	// exportSlots bounds the exports in flight, and uploadSlots the PUTs
-	// of all of them together.
-	exportSlots chan struct{}
-	uploadSlots chan struct{}
+	// exportSlots bounds the exports in flight that select outputs,
+	// recordsSlots those that select none, and uploadSlots the PUTs of all
+	// of them together.
+	exportSlots  chan struct{}
+	recordsSlots chan struct{}
+	uploadSlots  chan struct{}
 	// lookupSlots bounds the lookups unanswered.
 	lookupSlots chan struct{}
 	// opened is the last idle period the service was told of, in the hello
@@ -62,16 +64,17 @@ type session struct {
 func newSession(ctx context.Context, conn wsConn, adapter Adapter, cfg *settings) *session {
 	ctx, cancel := context.WithCancelCause(ctx)
 	return &session{
-		ctx:         ctx,
-		cancel:      cancel,
-		conn:        conn,
-		adapter:     adapter,
-		cfg:         cfg,
-		exportSlots: make(chan struct{}, ExportsInFlight),
-		uploadSlots: make(chan struct{}, UploadConcurrency),
-		lookupSlots: make(chan struct{}, LookupsInFlight),
-		pending:     map[uint64]chan protocol.Envelope{},
-		exports:     map[string]chan protocol.Envelope{},
+		ctx:          ctx,
+		cancel:       cancel,
+		conn:         conn,
+		adapter:      adapter,
+		cfg:          cfg,
+		exportSlots:  make(chan struct{}, ExportsInFlight),
+		recordsSlots: make(chan struct{}, RecordsExportsInFlight),
+		uploadSlots:  make(chan struct{}, UploadConcurrency),
+		lookupSlots:  make(chan struct{}, LookupsInFlight),
+		pending:      map[uint64]chan protocol.Envelope{},
+		exports:      map[string]chan protocol.Envelope{},
 	}
 }
 
@@ -337,20 +340,26 @@ func (s *session) handleExport(env protocol.Envelope) {
 	// release.
 	arrived := time.Now()
 	profCtx, profOp := wcprof.BeginOp(s.ctx, wcprof.OpKindRemoteCache, "remotecache.export", wcprof.OpOpts{Start: arrived})
+	// An export that selects no outputs copies records only: it has slots of
+	// its own, so that it never waits behind the others' layer builds.
+	slots, slotsName := s.exportSlots, "remotecache.exportSlots"
+	if len(req.Outputs) == 0 {
+		slots, slotsName = s.recordsSlots, "remotecache.recordsSlots"
+	}
 	select {
-	case s.exportSlots <- struct{}{}:
+	case slots <- struct{}{}:
 	case <-s.ctx.Done():
 		if profOp != nil {
 			now := time.Now()
-			wcprof.RecordWaitAt(profCtx, "remotecache.exportSlots", wcprof.WaitReasonLock, arrived, now)
+			wcprof.RecordWaitAt(profCtx, slotsName, wcprof.WaitReasonLock, arrived, now)
 			profOp.EndAt(wcprof.OutcomeCanceled, 0, now)
 		}
 		return
 	}
-	defer func() { <-s.exportSlots }()
+	defer func() { <-slots }()
 	slotted := time.Now()
 	if profOp != nil {
-		wcprof.RecordWaitAt(profCtx, "remotecache.exportSlots", wcprof.WaitReasonLock, arrived, slotted)
+		wcprof.RecordWaitAt(profCtx, slotsName, wcprof.WaitReasonLock, arrived, slotted)
 	}
 	ended := exportEnded{roots: len(req.Roots), slotWait: slotted.Sub(arrived)}
 	replied := false
