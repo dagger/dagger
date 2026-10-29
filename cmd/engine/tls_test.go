@@ -60,6 +60,7 @@ func TestTLSListenerServesHTTP2(t *testing.T) {
 		t.Helper()
 		client := &http.Client{
 			Timeout: 10 * time.Second,
+			//nolint:staticcheck // SA1019: x/net's HTTP/2 client and server are deprecated in favor of net/http's; moving off them is its own change
 			Transport: &http2.Transport{
 				AllowHTTP: true,
 				DialTLSContext: func(ctx context.Context, _, _ string, _ *tls.Config) (net.Conn, error) {
