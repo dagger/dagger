@@ -271,6 +271,57 @@ func TestRetainDangObjectDirectivesOnlyForTypeDefs(t *testing.T) {
 	require.Empty(t, objectDirectives(env, "Plain"))
 }
 
+// The engine reads a module's dang.toml only up to its module directory, but
+// Dang walks further up for the one that decides the source's version. A
+// module source that a dang.toml above its module directory would govern runs
+// from an isolated copy, so the engine's version decides.
+func TestDangSourceDir(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(root, ".git"), 0o755))
+	moduleDir := filepath.Join(root, "mod")
+	srcDir := filepath.Join(moduleDir, "src")
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
+	writeDangFilesIn(t, srcDir, map[string]string{"main.dang": "pub x: Int! = 1\n", "notes.txt": "not source"})
+
+	dir, cleanup, err := dangSourceDir(srcDir, moduleDir)
+	require.NoError(t, err)
+	cleanup()
+	require.Equal(t, srcDir, dir, "no dang.toml: the source runs in place")
+
+	require.NoError(t, os.WriteFile(filepath.Join(root, "dang.toml"), []byte("dang = \"1.0\"\n"), 0o644))
+	dir, cleanup, err = dangSourceDir(srcDir, moduleDir)
+	require.NoError(t, err)
+	require.NotEqual(t, srcDir, dir, "a dang.toml above the module directory: the source runs isolated")
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	require.Equal(t, "main.dang", entries[0].Name())
+	configPath, _, err := dang.FindProjectConfig(dir)
+	require.NoError(t, err)
+	require.NotEqual(t, filepath.Join(root, "dang.toml"), configPath)
+	cleanup()
+	_, err = os.Stat(dir)
+	require.True(t, os.IsNotExist(err), "cleanup removes the copy")
+
+	for _, governing := range []string{moduleDir, srcDir} {
+		require.NoError(t, os.WriteFile(filepath.Join(governing, "dang.toml"), []byte(""), 0o644))
+		dir, cleanup, err = dangSourceDir(srcDir, moduleDir)
+		require.NoError(t, err)
+		cleanup()
+		require.Equal(t, srcDir, dir, "a dang.toml the engine reads: the source runs in place")
+		require.NoError(t, os.Remove(filepath.Join(governing, "dang.toml")))
+	}
+
+	// A source directory outside the module directory has only its own.
+	outside := filepath.Join(root, "outside")
+	require.NoError(t, os.Mkdir(outside, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "dang.toml"), []byte(""), 0o644))
+	dir, cleanup, err = dangSourceDir(outside, moduleDir)
+	require.NoError(t, err)
+	cleanup()
+	require.Equal(t, outside, dir)
+}
+
 // legacySelectionSource is Dang 1.0 source: `.{a, b}` is object selection,
 // which no later version parses.
 const legacySelectionSource = "directive @marked on OBJECT\n\n" +
