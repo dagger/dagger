@@ -100,7 +100,7 @@ func resolveWorkspaceArtifact(ctx context.Context, ws dagql.ObjectResult[*core.W
 }
 
 func resolveWorkspaceArtifactIn(ctx context.Context, ws dagql.ObjectResult[*core.Workspace], parsed *dagaddress.Address, uri string, include []string) (*core.Artifact, error) {
-	artifacts, err := (&workspaceSchema{}).collectArtifacts(ctx, ws, include)
+	artifacts, err := workspaceArtifacts(ctx, ws, include)
 	if err != nil {
 		return nil, fmt.Errorf("resolve %q: %w", uri, err)
 	}
@@ -112,6 +112,30 @@ func resolveWorkspaceArtifactIn(ctx context.Context, ws dagql.ObjectResult[*core
 		return nil, fmt.Errorf("resolve %q: %w", uri, err)
 	}
 	return artifact, nil
+}
+
+// workspaceArtifacts selects Workspace.artifacts(include), so its discovery is
+// cached per workspace and client: a setting that every check resolves does
+// not rediscover the workspace's artifacts each time. Matching an address,
+// expanding collections and evaluating the result stay with the caller, and
+// uncached.
+func workspaceArtifacts(ctx context.Context, ws dagql.ObjectResult[*core.Workspace], include []string) (*core.Artifacts, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	srv = srv.Canonical()
+	// No View: artifacts postdates some client views, such as a module's
+	// that receives a bound Address, and this is engine-internal plumbing.
+	sel := dagql.Selector{Field: "artifacts"}
+	if include != nil {
+		sel.Args = []dagql.NamedInput{{Name: "include", Value: dagql.Opt(dagql.ArrayInput[dagql.String](dagql.NewStringArray(include...)))}}
+	}
+	var artifacts dagql.ObjectResult[*core.Artifacts]
+	if err := srv.Select(ctx, ws, &artifacts, sel); err != nil {
+		return nil, err
+	}
+	return artifacts.Self(), nil
 }
 
 // resolveLegacyModuleRef retains the current-client lookup and single-field
