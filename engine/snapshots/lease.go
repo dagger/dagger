@@ -354,32 +354,32 @@ func (l *LeaseManager) WithNamespace(ns string) *LeaseManager {
 }
 
 func (l *LeaseManager) Create(ctx context.Context, opts ...leases.Opt) (leases.Lease, error) {
-	ctx = namespaces.WithNamespace(ctx, l.ns)
+	ctx = withNamespace(ctx, l.ns)
 	return l.manager.Create(ctx, opts...)
 }
 
 func (l *LeaseManager) Delete(ctx context.Context, lease leases.Lease, opts ...leases.DeleteOpt) error {
-	ctx = namespaces.WithNamespace(ctx, l.ns)
+	ctx = withNamespace(ctx, l.ns)
 	return l.manager.Delete(ctx, lease, opts...)
 }
 
 func (l *LeaseManager) List(ctx context.Context, filters ...string) ([]leases.Lease, error) {
-	ctx = namespaces.WithNamespace(ctx, l.ns)
+	ctx = withNamespace(ctx, l.ns)
 	return l.manager.List(ctx, filters...)
 }
 
 func (l *LeaseManager) AddResource(ctx context.Context, lease leases.Lease, resource leases.Resource) error {
-	ctx = namespaces.WithNamespace(ctx, l.ns)
+	ctx = withNamespace(ctx, l.ns)
 	return l.manager.AddResource(ctx, lease, resource)
 }
 
 func (l *LeaseManager) DeleteResource(ctx context.Context, lease leases.Lease, resource leases.Resource) error {
-	ctx = namespaces.WithNamespace(ctx, l.ns)
+	ctx = withNamespace(ctx, l.ns)
 	return l.manager.DeleteResource(ctx, lease, resource)
 }
 
 func (l *LeaseManager) ListResources(ctx context.Context, lease leases.Lease) ([]leases.Resource, error) {
-	ctx = namespaces.WithNamespace(ctx, l.ns)
+	ctx = withNamespace(ctx, l.ns)
 	return l.manager.ListResources(ctx, lease)
 }
 
@@ -432,4 +432,15 @@ func (cm *snapshotManager) PinSnapshot(ctx context.Context, snapshotID string) (
 	}
 	ref.(*immutableRef).pin = pin
 	return ref, nil
+}
+
+// withNamespace is namespaces.WithNamespace, unless ctx already carries ns.
+// Attaching it copies the context's gRPC and ttrpc metadata, which every
+// call through these wrappers paid again even when its caller had attached
+// the same namespace already.
+func withNamespace(ctx context.Context, ns string) context.Context {
+	if cur, ok := namespaces.Namespace(ctx); ok && cur == ns {
+		return ctx
+	}
+	return namespaces.WithNamespace(ctx, ns)
 }
