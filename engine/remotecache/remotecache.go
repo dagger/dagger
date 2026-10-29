@@ -31,8 +31,9 @@ const (
 	// ExportsInFlight is how many exports the engine works on at once.
 	ExportsInFlight = 4
 	// UploadConcurrency is how many blobs the engine uploads at once, across
-	// all its exports.
-	UploadConcurrency = 8
+	// all its exports. Most blobs are small, so a PUT's time is mostly the
+	// store's per-request latency, not bytes.
+	UploadConcurrency = 16
 	// LookupsInFlight is how many lookups the engine has unanswered at once.
 	LookupsInFlight = 4
 	// lookupLinger is how long the engine waits, after a miss, for more
