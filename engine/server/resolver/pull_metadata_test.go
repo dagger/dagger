@@ -1,15 +1,18 @@
 package resolver
 
 import (
+	"bytes"
 	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/leases"
@@ -197,6 +200,10 @@ type testPullRegistry struct {
 	manifestHEADs       atomic.Int32
 	layerGETs           atomic.Int32
 	layerAcceptEncoding atomic.Pointer[string]
+	// resetNextLayerGET makes the next layer GET end in a TCP reset partway
+	// through its body; layerResets counts the resets sent.
+	resetNextLayerGET atomic.Bool
+	layerResets       atomic.Int32
 }
 
 func newTestPullRegistry(t *testing.T, image *testPullImage) *testPullRegistry {
@@ -223,6 +230,19 @@ func newTestPullRegistry(t *testing.T, image *testPullImage) *testPullRegistry {
 		case r.URL.Path == "/v2/test/image/blobs/"+image.layer.Digest.String():
 			if r.Method == http.MethodGet {
 				registry.layerGETs.Add(1)
+				if registry.resetNextLayerGET.CompareAndSwap(true, false) {
+					if resetTestRegistryResponse(w, image.layer, image.layerBytes) {
+						registry.layerResets.Add(1)
+					}
+					return
+				}
+				if r.Header.Get("Range") != "" {
+					// A resumed fetch gets the rest of the blob, as registries serve it.
+					w.Header().Set("Docker-Content-Digest", image.layer.Digest.String())
+					w.Header().Set("Content-Type", image.layer.MediaType)
+					http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(image.layerBytes))
+					return
+				}
 				encoding := r.Header.Get("Accept-Encoding")
 				registry.layerAcceptEncoding.Store(&encoding)
 				if encoding != "identity" {
@@ -241,6 +261,24 @@ func newTestPullRegistry(t *testing.T, image *testPullImage) *testPullRegistry {
 	t.Cleanup(server.Close)
 	registry.host = strings.TrimPrefix(server.URL, "http://")
 	return registry
+}
+
+// resetTestRegistryResponse sends the headers and half the body of payload,
+// then resets the TCP connection, as a registry dropping a connection
+// partway through a blob does. It reports whether the reset was sent.
+func resetTestRegistryResponse(w http.ResponseWriter, desc ocispecs.Descriptor, payload []byte) bool {
+	conn, buf, err := http.NewResponseController(w).Hijack()
+	if err != nil {
+		return false
+	}
+	defer conn.Close()
+	fmt.Fprintf(buf, "HTTP/1.1 200 OK\r\nDocker-Content-Digest: %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n", desc.Digest, desc.MediaType, len(payload))
+	_, _ = buf.Write(payload[:len(payload)/2])
+	if err := buf.Flush(); err != nil {
+		return false
+	}
+	tcp, ok := conn.(*net.TCPConn)
+	return ok && tcp.SetLinger(0) == nil
 }
 
 func newTestResolver(t *testing.T, host string, store content.Store) *Resolver {
@@ -267,6 +305,25 @@ func newTestResolverWithLeases(t *testing.T, host string, store content.Store, l
 	})
 	t.Cleanup(func() { require.NoError(t, rslvr.Close()) })
 	return rslvr
+}
+
+// A registry that resets the connection partway through a layer, as
+// mcr.microsoft.com sometimes does, does not fail the pull: the layer is
+// fetched again.
+func TestPullRetriesLayerAfterConnectionReset(t *testing.T) {
+	ctx := t.Context()
+	s := seedPinnedMetadata(t, false)
+	s.registry.resetNextLayerGET.Store(true)
+
+	pulled, err := s.resolver.Pull(ctx, s.ref, s.opts)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, pulled.Release(context.WithoutCancel(ctx))) })
+	require.Equal(t, int32(1), s.registry.layerResets.Load(), "the first layer GET was reset partway through")
+	require.Equal(t, int32(2), s.registry.layerGETs.Load(), "the layer was fetched again")
+	require.Len(t, pulled.Layers, 1)
+	actual, err := content.ReadBlob(ctx, s.store, s.image.layer)
+	require.NoError(t, err)
+	require.Equal(t, s.image.layerBytes, actual)
 }
 
 // A pinned image whose blobs are all local is pulled from the content store,
