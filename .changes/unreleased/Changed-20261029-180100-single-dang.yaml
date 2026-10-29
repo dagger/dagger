@@ -1,12 +1,8 @@
 kind: Changed
 body: |
   The engine now links a single Dang library: Dang SDK modules written in Dang
-  1.0 (by default, those with an `engineVersion` before v0.21.5) run in its
-  Dang 1.0 mode instead of on the Dang v1 line.
-
-  Known differences from the Dang v1 line, with a fix in progress in Dang:
-  `rescue` is a reserved word, and the builtin `loop` takes precedence over a
-  module's own `loop` binding.
+  1.0 (by default, those with an `engineVersion` before v0.21.5) run on Dang
+  v2.3.0 in its Dang 1.0 mode instead of on the Dang v1 line.
 time: 2026-10-29T18:01:00Z
 custom:
   Author: vito

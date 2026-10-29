@@ -5,11 +5,9 @@ evaluates every Dang module with it. A module's source is parsed as the Dang
 language version it is written in: Dang keeps every language version since 1.0
 in one interpreter, gating only the syntax that changed (see `dang.Version` in
 `pkg/dang/version.go` upstream), so existing modules keep the semantics they
-were written against.
-
-Known gaps of Dang 1.0 mode against the Dang v1 line it replaced (vito/dang
-v1.0.1), pending a fix upstream: `rescue` is reserved in every version, and
-the builtin `loop` takes precedence over a module's own `loop` binding.
+were written against. Dang 1.0 modules, once evaluated with the Dang v1 line
+(vito/dang v1.0.1), run in Dang 1.0 mode (vito/dang v2.3.0 or later: earlier
+releases reserved `rescue` and let the builtin `loop` win over a module's own).
 
 ## Versions
 
