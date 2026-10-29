@@ -1,0 +1,5 @@
+kind: Changed
+body: Reuse completed native Dang compilation within a session while evaluating each function call with fresh runtime state.
+time: 2026-10-29T06:35:00Z
+custom:
+  Author: grouville
