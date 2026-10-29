@@ -375,3 +375,5 @@ tool github.com/matryer/moq
 // containerd and the engine run their metadata on an in-memory store with
 // bbolt's API, saved when the engine stops and loaded when it starts.
 replace go.etcd.io/bbolt => ./internal/fastbolt
+
+replace github.com/vito/dang/v2 => github.com/grouville/dang/v2 v2.1.5-0.20261029061443-57577ceef616
