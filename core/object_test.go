@@ -361,6 +361,17 @@ func TestModuleObjectConvertToSDKInputUsesCurrentFieldID(t *testing.T) {
 	assert.Equal(t, expectedEnc, fields["ref"])
 }
 
+func TestModuleObjectConvertFromSDKResultOwnsFields(t *testing.T) {
+	obj := NewObjectTypeDef("StoredSelection", "", nil)
+	ctx := dagql.ContextWithCall(t.Context(), moduleObjectTestSyntheticCall("storedSelection", &ModuleObject{TypeDef: obj}))
+	fields := map[string]any{"name": "original"}
+	typ := &ModuleObjectType{typeDef: obj}
+	result, err := typ.ConvertFromSDKResult(ctx, fields)
+	assert.NilError(t, err)
+	result.Unwrap().(*ModuleObject).Fields["name"] = "attached"
+	assert.Equal(t, "original", fields["name"], "attaching a converted object must not mutate stored SDK data")
+}
+
 func TestModuleObjectConvertToSDKInputRewritesStoredResults(t *testing.T) {
 	t.Parallel()
 
@@ -1280,4 +1291,82 @@ func TestModuleObjectAttachDependencyResultsPreservesInlineMap(t *testing.T) {
 	after, err := json.Marshal(obj.Fields)
 	assert.NilError(t, err)
 	assert.Equal(t, string(after), string(before))
+}
+
+// Attachment may relocate references without changing the caller's SDK map.
+func TestModuleObjectAttachmentRetainsRewrittenInlineFields(t *testing.T) {
+	ctx := t.Context()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	root := &Query{}
+	server := &moduleObjectTestServer{mockServer: &mockServer{}, cache: cache, root: root}
+	root.Server = server
+	dag := newCoreDagqlServerForTest(t, root)
+	server.dag = dag
+	ctx = dagql.ContextWithCache(ctx, cache)
+	ctx = ContextWithQuery(ctx, root)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{ClientID: "inline-client", SessionID: "inline-session"})
+	installModuleObjectTestModuleClass(dag)
+	installTypeDefTestClasses(dag)
+	typ := &ModuleObjectType{typeDef: NewObjectTypeDef("Child", "", nil)}
+	ctx = dagql.ContextWithCall(ctx, moduleObjectTestSyntheticCall("inline", &ModuleObject{TypeDef: typ.typeDef}))
+	original := map[string]any{"handle": "old-engine-id"}
+	relocated, err := dagql.NewResultForCall(dagql.String("relocated"), moduleObjectTestSyntheticCall("relocated", dagql.String("")))
+	assert.NilError(t, err)
+	updated, deps, err := attachTypedModuleObjectValue(ctx, typ, original, func(value dagql.AnyResult) (dagql.AnyResult, error) {
+		obj, ok := dagql.UnwrapAs[*ModuleObject](value)
+		assert.Assert(t, ok)
+		obj.Fields["handle"] = relocated
+		return value, nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, len(deps), 1)
+	fields, ok := updated.(map[string]any)
+	assert.Assert(t, ok, "inline objects must remain maps")
+	handle, ok := fields["handle"].(dagql.AnyResult)
+	assert.Assert(t, ok, "nested handles must retain the attached result")
+	assert.Equal(t, handle.Unwrap().(dagql.String), dagql.String("relocated"))
+	assert.Equal(t, original["handle"], any("old-engine-id"), "attachment must not change the caller's map")
+}
+
+func TestModuleObjectAttachmentRetainsInlineCollectionBase(t *testing.T) {
+	ctx := t.Context()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	root := &Query{}
+	server := &moduleObjectTestServer{mockServer: &mockServer{}, cache: cache, root: root}
+	root.Server = server
+	dag := newCoreDagqlServerForTest(t, root)
+	server.dag = dag
+	ctx = dagql.ContextWithCache(ctx, cache)
+	ctx = ContextWithQuery(ctx, root)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{ClientID: "inline-base-client", SessionID: "inline-base-session"})
+	installModuleObjectTestModuleClass(dag)
+	installTypeDefTestClasses(dag)
+
+	original, _ := collectionTestObject(t, TypeDefKindString, []any{"a", "b", "c"})
+	typ := &ModuleObjectType{typeDef: original.TypeDef}
+	ctx = dagql.ContextWithCall(ctx, moduleObjectTestSyntheticCall("inline-subset", original))
+	input := map[string]any{"Keys": []any{"b"}, collectionBaseField: original.CollectionBase}
+	updated, deps, err := attachTypedModuleObjectValue(ctx, typ, input, func(value dagql.AnyResult) (dagql.AnyResult, error) {
+		return value, nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, len(deps), 1)
+	fields, ok := updated.(map[string]any)
+	assert.Assert(t, ok)
+	base, ok := fields[collectionBaseField].(dagql.AnyResult)
+	assert.Assert(t, ok, "inline collections must retain their attached base")
+	assert.Assert(t, base.Unwrap() == original, "the base must remain unfiltered")
+
+	decoded, err := typ.ConvertFromSDKResult(ctx, fields)
+	assert.NilError(t, err)
+	obj, ok := dagql.UnwrapAs[*ModuleObject](decoded)
+	assert.Assert(t, ok)
+	assert.Assert(t, obj.CollectionBase.Unwrap() == original)
+	delta, err := obj.collectionDelta(ctx)
+	assert.NilError(t, err)
+	assert.DeepEqual(t, delta.RemovedKeys, []string{"a", "c"})
+	assert.DeepEqual(t, input["Keys"], []any{"b"})
+	assert.Assert(t, original.Fields[collectionBaseField] == nil, "attachment must not alter the source fields")
 }

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
-	"slices"
 	"strings"
 	"testing"
 
@@ -1367,7 +1366,7 @@ up.skip = ["skipped-service", "skipped-unmarked-service"]
 	}
 }
 
-func (ArtifactsSuite) TestParentFiltersAndUnion(ctx context.Context, t *testctx.T) {
+func (ArtifactsSuite) TestParentFilters(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	source := artifactSource(c)
 	provider, err := source.File("provider/main.dang").Contents(ctx)
@@ -1421,41 +1420,14 @@ func (ArtifactsSuite) TestParentFiltersAndUnion(ctx context.Context, t *testctx.
 			for _, uri := range uris(ctx, t, excluded) {
 				require.NotContains(t, tc.want, uri)
 			}
-			require.Equal(t, allURIs, uris(ctx, t, included.WithArtifacts(excluded)))
+			require.ElementsMatch(t, allURIs, append(uris(ctx, t, included), uris(ctx, t, excluded)...))
 			for _, names := range [][]string{{}, {"Unknown"}} {
 				require.Empty(t, uris(ctx, t, tc.filter(names, false)))
 				require.Equal(t, allURIs, uris(ctx, t, tc.filter(names, true)))
 			}
 		})
 	}
-	t.Run("union preserves addresses and clears branch filters", func(ctx context.Context, t *testctx.T) {
-		containers := all.FilterTypes([]string{"Container"})
-		directories := all.FilterTypes([]string{"Directory"})
-		joined := containers.WithArtifacts(directories).WithArtifacts(containers)
-		want := append(uris(ctx, t, containers), uris(ctx, t, directories)...)
-		slices.Sort(want)
-		require.Equal(t, want, uris(ctx, t, joined))
-		uri, err := joined.URI(ctx)
-		require.NoError(t, err)
-		require.Equal(t, want, uris(ctx, t, all.FilterURI(uri)))
-		require.Equal(t, uris(ctx, t, directories), uris(ctx, t, joined.FilterTypes([]string{"Directory"})))
-		require.Equal(t, allURIs, uris(ctx, t, all))
-	})
-	t.Run("union preserves workspace identity", func(ctx context.Context, t *testctx.T) {
-		first := all.FilterPath([]string{"base"})
-		second := source.WithNewFile("marker.txt", "other").AsWorkspace().Artifacts().FilterPath([]string{"base"})
-		joined := first.WithArtifacts(second).WithArtifacts(first)
-		items, err := joined.Items(ctx)
-		require.NoError(t, err)
-		require.Len(t, items, 2)
-		for i, want := range []string{"configured:original", "configured:other"} {
-			out, err := artifactValue[*core.Container](ctx, t, c, &items[i]).File("/marker").Contents(ctx)
-			require.NoError(t, err)
-			require.Equal(t, want, out)
-		}
-		_, err = joined.URI(ctx)
-		require.ErrorContains(t, err, "multiple workspaces")
-	})
+
 }
 
 func artifactValue[T core.Loadable[T]](ctx context.Context, t *testctx.T, c *dagger.Client, artifact *core.Artifact) T {
@@ -1545,22 +1517,28 @@ func (*Probe) Every() error { return fmt.Errorf("every %s", rand.Text()) }
 
 	out, err = base.With(daggerQuery(`{
  currentWorkspace { artifacts(include: ["every"]) {
-  a: values { error { message } }
-  b: values { error { message } }
+  a: asChecks { sync { error { message } again: sync { error { message } } } }
+  b: asChecks { sync { error { message } } }
  } }
 }`)).Stdout(ctx)
 	require.NoError(t, err)
 	var repeated struct {
 		CurrentWorkspace struct {
 			Artifacts struct {
-				A, B []struct{ Error struct{ Message string } }
+				A, B []struct {
+					Sync struct {
+						Error struct{ Message string }
+						Again struct{ Error struct{ Message string } }
+					}
+				}
 			}
 		}
 	}
 	require.NoError(t, json.Unmarshal([]byte(out), &repeated))
 	require.Len(t, repeated.CurrentWorkspace.Artifacts.A, 1)
 	require.Len(t, repeated.CurrentWorkspace.Artifacts.B, 1)
-	require.NotEqual(t, repeated.CurrentWorkspace.Artifacts.A[0].Error.Message, repeated.CurrentWorkspace.Artifacts.B[0].Error.Message)
+	require.NotEqual(t, repeated.CurrentWorkspace.Artifacts.A[0].Sync.Error.Message, repeated.CurrentWorkspace.Artifacts.B[0].Sync.Error.Message)
+	require.Equal(t, repeated.CurrentWorkspace.Artifacts.A[0].Sync.Error.Message, repeated.CurrentWorkspace.Artifacts.A[0].Sync.Again.Error.Message)
 }
 
 // Materialization errors belong to each result, before consumers read its value.

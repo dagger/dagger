@@ -182,7 +182,6 @@
                 "reference/api/artifact-dimension",
                 "reference/api/artifact-dimension-key",
                 "reference/api/artifact-path",
-                "reference/api/artifact-result",
                 "reference/api/artifacts",
                 "reference/api/check",
                 "reference/api/client-filesync-mirror",

@@ -34,15 +34,12 @@ type Item struct { Name string }
 		fields[field.Name] = field
 	}
 	require.Len(t, fields, 6)
-	for _, name := range []string{"keys", "list", "get", "subset", "batch", "id"} {
+	for _, name := range []string{"keys", "list", "get", "subset", "selected", "id"} {
 		require.Contains(t, fields, name)
 	}
 	require.Equal(t, "key", fields["get"].Args[0].Name)
 	require.Equal(t, "TestItem", fields["get"].TypeRef.OfType.Name)
 	require.Equal(t, fields["keys"].TypeRef, fields["subset"].Args[0].TypeRef)
-	require.Equal(t, "TestItems_Batch", fields["batch"].TypeRef.OfType.Name)
-	batch := response.Schema.Types.Get("TestItems_Batch")
-	require.NotNil(t, batch)
-	require.Len(t, batch.Fields, 2)
-	require.Equal(t, "selected", batch.Fields[0].Name)
+	require.NotContains(t, fields, "batch")
+	require.Nil(t, response.Schema.Types.Get("TestItems_Batch"))
 }

@@ -35,6 +35,10 @@ func (*currentTypeDefsTestServer) CurrentClientModules(context.Context) ([]core.
 	return nil, nil
 }
 
+func (*currentTypeDefsTestServer) SharedCloudArtifactClient(context.Context, string) (*engineclient.Client, error) {
+	panic("unexpected SharedCloudArtifactClient")
+}
+
 func (*currentTypeDefsTestServer) AuthorizeGitPush(context.Context, string, string, bool, bool) (*core.GitPushAuthorization, error) {
 	panic("unexpected AuthorizeGitPush")
 }

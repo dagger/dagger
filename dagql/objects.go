@@ -547,11 +547,31 @@ func (spec *FieldSpec) resolveModule(ctx context.Context, srv *Server) (*ResultC
 
 // Select calls the field on the instance specified by the selector
 func (r ObjectResult[T]) Select(ctx context.Context, s *Server, sel Selector) (AnyResult, error) {
+	ctx = resultScopeFromReceiver(ctx, r)
+	scoped, err := scopeObject(ctx, s, r)
+	if err != nil {
+		return nil, err
+	}
+	r = scoped.(ObjectResult[T])
 	r, preselectResult, err := r.preselect(ctx, s, sel)
 	if err != nil {
 		return nil, err
 	}
-	return r.call(ctx, s, preselectResult.request, preselectResult.inputArgs)
+	result, err := r.call(ctx, s, preselectResult.request, preselectResult.inputArgs)
+	if err != nil {
+		return nil, err
+	}
+	if object, ok := result.(AnyObjectResult); ok {
+		return scopeObject(ctx, s, object)
+	}
+	if _, scoped := UnwrapAs[HasResultScope](result); scoped && CurrentResultScope(ctx) != nil {
+		object, err := s.toSelectable(ctx, result)
+		if err != nil {
+			return nil, err
+		}
+		return scopeObject(ctx, s, object)
+	}
+	return result, nil
 }
 
 type preselectResult struct {
@@ -573,6 +593,48 @@ func (r ObjectResult[T]) sortCallArgsToSchema(fieldSpec *FieldSpec, view call.Vi
 	})
 }
 
+func prepareSelectorInputs(ctx context.Context, srv *Server, spec *FieldSpec, view call.View, selectorArgs []NamedInput) (map[string]Input, []*ResultCallArg, error) {
+	inputArgs := make(map[string]Input, len(selectorArgs))
+	frameArgs := make([]*ResultCallArg, 0, len(selectorArgs))
+	for _, argSpec := range spec.Args.Inputs(view) {
+		// just be n^2 since the overhead of a map is likely more expensive
+		// for the expected low value of n
+		var namedInput NamedInput
+		for _, selArg := range selectorArgs {
+			if selArg.Name == argSpec.Name {
+				namedInput = selArg
+				break
+			}
+		}
+
+		switch {
+		case namedInput.Value != nil:
+			if scope := CurrentResultScope(ctx); scope != nil {
+				updated, _, err := scopeSelectorInput(ctx, srv, scope, argSpec, namedInput.Value)
+				if err != nil {
+					return nil, nil, err
+				}
+				namedInput.Value = updated
+			}
+			inputArgs[argSpec.Name] = namedInput.Value
+			frameArg, err := resultCallArgFromInput(ctx, argSpec.Name, namedInput.Value, argSpec.Sensitive)
+			if err != nil {
+				return nil, nil, err
+			}
+			frameArgs = append(frameArgs, frameArg)
+
+		case argSpec.Default != nil:
+			inputArgs[argSpec.Name] = argSpec.Default
+
+		case argSpec.Type.Type().NonNull:
+			// error out if the arg is missing but required
+			return nil, nil, fmt.Errorf("missing required argument: %q", argSpec.Name)
+		}
+	}
+
+	return inputArgs, frameArgs, nil
+}
+
 func (r ObjectResult[T]) preselect(ctx context.Context, srv *Server, sel Selector) (ObjectResult[T], *preselectResult, error) {
 	view := sel.View
 	field, ok := r.class.Field(sel.Field, view)
@@ -584,35 +646,9 @@ func (r ObjectResult[T]) preselect(ctx context.Context, srv *Server, sel Selecto
 		// selector (since they're global from all perspectives)
 		view = ""
 	}
-	inputArgs := make(map[string]Input, len(sel.Args))
-	frameArgs := make([]*ResultCallArg, 0, len(sel.Args))
-	for _, argSpec := range field.Spec.Args.Inputs(view) {
-		// just be n^2 since the overhead of a map is likely more expensive
-		// for the expected low value of n
-		var namedInput NamedInput
-		for _, selArg := range sel.Args {
-			if selArg.Name == argSpec.Name {
-				namedInput = selArg
-				break
-			}
-		}
-
-		switch {
-		case namedInput.Value != nil:
-			inputArgs[argSpec.Name] = namedInput.Value
-			frameArg, err := resultCallArgFromInput(ctx, argSpec.Name, namedInput.Value, argSpec.Sensitive)
-			if err != nil {
-				return r, nil, err
-			}
-			frameArgs = append(frameArgs, frameArg)
-
-		case argSpec.Default != nil:
-			inputArgs[argSpec.Name] = argSpec.Default
-
-		case argSpec.Type.Type().NonNull:
-			// error out if the arg is missing but required
-			return r, nil, fmt.Errorf("missing required argument: %q", argSpec.Name)
-		}
+	inputArgs, frameArgs, err := prepareSelectorInputs(ctx, srv, field.Spec, view, sel.Args)
+	if err != nil {
+		return r, nil, err
 	}
 
 	astType := field.Spec.Type.Type()
@@ -682,6 +718,30 @@ func (r ObjectResult[T]) preselect(ctx context.Context, srv *Server, sel Selecto
 		if err != nil {
 			return r, nil, err
 		}
+	}
+
+	if scope := CurrentResultScope(ctx); scope != nil {
+		for _, argSpec := range field.Spec.Args.Inputs(view) {
+			input, ok := inputArgs[argSpec.Name]
+			if !ok {
+				continue
+			}
+			updated, changed, err := scopeSelectorInput(ctx, srv, scope, argSpec, input)
+			if err != nil {
+				return r, nil, err
+			}
+			if !changed {
+				continue
+			}
+			inputArgs[argSpec.Name] = updated
+			if err := req.SetArgInput(ctx, argSpec.Name, updated, argSpec.Sensitive); err != nil {
+				return r, nil, err
+			}
+		}
+		r.sortCallArgsToSchema(field.Spec, view, req.Args)
+	}
+
+	if field.Spec.GetDynamicInput != nil || CurrentResultScope(ctx) != nil {
 		implicitInputs, err = field.Spec.resolveImplicitInputCallArgs(ctx, inputArgs)
 		if err != nil {
 			typ := r.Type()

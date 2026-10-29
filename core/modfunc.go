@@ -1059,12 +1059,9 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		}
 	}()
 
-	parentFields := opts.ParentFields
-	if receiver, ok := dagql.UnwrapAs[*ModuleObject](opts.ParentTyped); ok {
-		parentFields, err = receiver.collectionSDKFields(ctx)
-		if err != nil {
-			return nil, err
-		}
+	parentFields, err := moduleFunctionReceiverFields(ctx, opts)
+	if err != nil {
+		return nil, fmt.Errorf("convert receiver: %w", err)
 	}
 	parentJSON, err := json.Marshal(parentFields)
 	if err != nil {
@@ -1076,6 +1073,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		Parent:    parentJSON,
 		InputArgs: callInputs,
 	})
+	fnCall.ResultScope = dagql.CurrentResultScope(ctx)
 	fnCall.composingAgentHandle = composingAgentHandle(ctx)
 	if fn.objDef != nil {
 		fnCall.ParentName = fn.objDef.OriginalName
@@ -1166,6 +1164,25 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	}
 
 	return returnValue, nil
+}
+
+// Serialize receivers through the same scoped conversion as object arguments.
+// Serializing Fields directly would leave nested inline collections unfiltered.
+func moduleFunctionReceiverFields(ctx context.Context, opts *CallOpts) (map[string]any, error) {
+	receiver, ok := dagql.UnwrapAs[*ModuleObject](opts.ParentTyped)
+	if !ok {
+		return opts.ParentFields, nil
+	}
+	typ := &ModuleObjectType{mod: receiver.Module, typeDef: receiver.TypeDef}
+	value, err := typ.ConvertToSDKInput(ctx, opts.ParentTyped)
+	if err != nil {
+		return nil, err
+	}
+	fields, ok := value.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("expected receiver object fields, got %T", value)
+	}
+	return fields, nil
 }
 
 // hasWorkspaceArgs returns true if any of the function's arguments are of type Workspace.
