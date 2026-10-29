@@ -29,8 +29,14 @@ import (
 
 // The engine side's limits.
 const (
-	// ExportsInFlight is how many exports the engine works on at once.
+	// ExportsInFlight is how many exports that select outputs the engine
+	// works on at once.
 	ExportsInFlight = 4
+	// RecordsExportsInFlight is how many exports that select no outputs the
+	// engine works on at once, beside ExportsInFlight. Such an export opens
+	// no chain and diffs no layer, so it never waits behind the others'
+	// layer builds.
+	RecordsExportsInFlight = 1
 	// UploadConcurrency is how many blobs the engine uploads at once, across
 	// all its exports. Most blobs are small, so a PUT's time is mostly the
 	// store's per-request latency, not bytes. 16 is measured: on test-base,
