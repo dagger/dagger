@@ -123,7 +123,8 @@ func TestExecSched(t *testing.T) {
 	mkdirCgroup(t, nested)
 	mkdirCgroup(t, filepath.Join(nested, "ctr"))
 
-	spin := `timeout 0.2 sh -c "while :; do :; done" || true`
+	// A fixed amount of work, whatever the CPU it gets.
+	spin := `i=0; while [ $i -lt 300000 ]; do i=$((i+1)); done`
 	helperCmd, helperOut := startIn(t, filepath.Join(helper, "mount"), "/bin/sh", "-c", spin)
 	nestedCmd, nestedOut := startIn(t, filepath.Join(nested, "ctr"), "/bin/sh", "-c", spin)
 	busy := `timeout 0.4 taskset -c 0 sh -c "while :; do :; done"`
@@ -152,11 +153,14 @@ func TestExecSched(t *testing.T) {
 	// Two loops on one CPU for 0.4 s each: each waits for about half.
 	require.Greater(t, time.Duration(m.RunqWaitNs), 200*time.Millisecond)
 	require.NotZero(t, m.RunqWaits)
-	// What the exec's threads ran, the helper's and the nested container's
-	// included, is what its cgroup counted.
+	// What the exec's threads ran is what its cgroup counted. The helper's
+	// and the nested container's work each exceed the margin, so the two
+	// differ if either is missed.
 	usage := cgroupCPU(t, resource)
-	require.Greater(t, time.Duration(usage), 700*time.Millisecond, "0.4 s on the CPU the two loops share, and two 0.2 s loops")
-	require.InDelta(t, float64(usage), float64(m.OncpuNs), float64(usage)/20+float64(5*time.Millisecond),
+	margin := float64(usage)/20 + float64(5*time.Millisecond)
+	require.Greater(t, float64(cgroupCPU(t, filepath.Join(helper, "mount"))), margin)
+	require.Greater(t, float64(cgroupCPU(t, filepath.Join(nested, "ctr"))), margin)
+	require.InDelta(t, float64(usage), float64(m.OncpuNs), margin,
 		"on-CPU %s, cgroup CPU %s", time.Duration(m.OncpuNs), time.Duration(usage))
 
 	w.Finish(t.Context(), 0)
