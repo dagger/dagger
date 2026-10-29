@@ -426,6 +426,13 @@ func (cm *snapshotManager) addSnapshotOwner(snapshotID, leaseID string, attached
 		cm.snapshotOwnerLeases[snapshotID] = make(map[string]struct{})
 	}
 	cm.snapshotOwnerLeases[snapshotID][leaseID] = struct{}{}
+	if cm.leaseOwnedSnapshots == nil {
+		cm.leaseOwnedSnapshots = make(map[string]map[string]struct{})
+	}
+	if cm.leaseOwnedSnapshots[leaseID] == nil {
+		cm.leaseOwnedSnapshots[leaseID] = make(map[string]struct{})
+	}
+	cm.leaseOwnedSnapshots[leaseID][snapshotID] = struct{}{}
 	return nil
 }
 
@@ -443,12 +450,14 @@ func (cm *snapshotManager) RemoveLease(ctx context.Context, leaseID string) erro
 	}
 
 	cm.mu.Lock()
-	for snapshotID, leaseIDs := range cm.snapshotOwnerLeases {
+	for snapshotID := range cm.leaseOwnedSnapshots[leaseID] {
+		leaseIDs := cm.snapshotOwnerLeases[snapshotID]
 		delete(leaseIDs, leaseID)
 		if len(leaseIDs) == 0 {
 			delete(cm.snapshotOwnerLeases, snapshotID)
 		}
 	}
+	delete(cm.leaseOwnedSnapshots, leaseID)
 	cm.mu.Unlock()
 
 	return nil
