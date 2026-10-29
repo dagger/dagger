@@ -8,6 +8,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/stretchr/testify/require"
+	"github.com/vektah/gqlparser/v2/gqlerror"
 )
 
 func TestArtifactListingMatchesObjectMetadataWithoutEvaluatingLeaves(t *testing.T) {
@@ -70,4 +71,34 @@ func TestArtifactListingEmptyAbsoluteAndCancellation(t *testing.T) {
 	cancel()
 	_, err = marshalArtifactListing(ctx, items, artifactListingArgs{})
 	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestArtifactListingResolverCannotMasqueradeAsMissingField(t *testing.T) {
+	ctx, srv, _, _ := resolverOutputFixture(t)
+	srv.InstallObject(dagql.NewClass[*core.Artifacts](srv))
+	calls := 0
+	dagql.Fields[*core.Artifacts]{
+		dagql.Func("__listing", func(context.Context, *core.Artifacts, struct{}) (core.JSON, error) {
+			calls++
+			// A nested SDK request can return a validation error after discovery
+			// has already executed. The outer response must retain its path so
+			// the CLI's missing-field fallback does not execute discovery again.
+			return nil, &gqlerror.Error{
+				Message:    `Cannot query field "__listing" on type "Artifacts".`,
+				Extensions: map[string]any{"code": "GRAPHQL_VALIDATION_FAILED"},
+			}
+		}),
+	}.Install(srv)
+	dagql.Fields[*core.Query]{
+		dagql.Func("selection", func(context.Context, *core.Query, struct{}) (*core.Artifacts, error) {
+			return &core.Artifacts{}, nil
+		}),
+	}.Install(srv)
+	_, err := srv.Query(ctx, `{ selection { listing: __listing } }`, nil)
+	require.Error(t, err)
+	var list gqlerror.List
+	require.ErrorAs(t, err, &list)
+	require.Len(t, list, 1)
+	require.NotEmpty(t, list[0].Path, "a resolver error must not look like pre-execution validation")
+	require.Equal(t, 1, calls)
 }
