@@ -29,6 +29,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/ebpf/nettracer"
+	"github.com/dagger/dagger/engine/ebpf/wcbpf"
 	"github.com/dagger/dagger/engine/engineutil/resources"
 	"github.com/dagger/dagger/engine/slog"
 	overlay "github.com/dagger/dagger/engine/snapshots/fsdiff"
@@ -1789,6 +1790,19 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 			// Keep these counters through mount teardown and the final
 			// parent sample. The exec cleanup removes the parent cgroup.
 			state.closeWorkloadNetwork = workload.Close
+		}
+	}
+
+	// The eBPF programs a recording asked for (engine/ebpf/wcbpf) measure a
+	// profiled exec from before its runtime starts, and record what they
+	// measured once its container is deleted.
+	if state.profExecOpID != 0 {
+		if dir := execUsageCgroup(cgroupPath, wcprof.UsageScopeExecCgroup); dir != "" {
+			if bpfExec := wcbpf.WatchExec(dir); bpfExec != nil {
+				state.cleanups.Add("finish exec eBPF readings", cleanups.Infallible(func() {
+					bpfExec.Finish(ctx, state.profExecOpID)
+				}))
+			}
 		}
 	}
 
