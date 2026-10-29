@@ -325,9 +325,9 @@ func SourceMap(filename string, line int, column int) *core.SourceMap {
 
 // Constructs an SSHFS volume.
 //
-// Deprecated: use dagger.io/dagger/core.SshfsVolume instead.
-func SshfsVolume(endpoint string, privateKey *core.Secret, opts ...core.SshfsVolumeOpts) *core.Volume {
-	return core.SshfsVolume(endpoint, privateKey, opts...)
+// Deprecated: use dagger.io/dagger/core.SSHFSVolume instead.
+func SSHFSVolume(endpoint string, privateKey *core.Secret, opts ...core.SSHFSVolumeOpts) *core.Volume {
+	return core.SSHFSVolume(endpoint, privateKey, opts...)
 }
 
 // Create a new TypeDef.
