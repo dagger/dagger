@@ -98,6 +98,9 @@ type ContainerExecOpts struct {
 	// Skip the init process injected into containers by default so that the
 	// user's process is PID 1
 	NoInit bool `default:"false"`
+
+	// Let the command use transparent huge pages where the host provides them
+	TransparentHugePages bool `default:"false"`
 }
 
 type ContainerExecState struct {
@@ -452,6 +455,7 @@ func (container *Container) metaSpec(ctx context.Context, opts ContainerExecOpts
 		Cwd:                       cmp.Or(cfg.WorkingDir, "/"),
 		User:                      cfg.User,
 		RemoveMountStubsRecursive: true,
+		TransparentHugePages:      opts.TransparentHugePages,
 	}
 	if opts.InsecureRootCapabilities {
 		metaSpec.SecurityMode = pb.SecurityMode_INSECURE
