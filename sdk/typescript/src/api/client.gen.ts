@@ -3734,6 +3734,11 @@ export type ClientSshfsVolumeOpts = {
    * Service to use as the SSHFS network endpoint while verifying the original host key.
    */
   experimentalServiceHost?: Service
+
+  /**
+   * Resolve symlinks on the remote host, so they appear as the files and directories they point to. Without it, absolute symlinks and symlinks containing ".." can't be read. With it, creating a symlink in the volume fails.
+   */
+  followSymlinks?: boolean
 }
 
 /**
@@ -17209,6 +17214,7 @@ export class Client extends BaseClient {
    * @param opts.cacheKey Optional cache equivalence key. If set, volumes with the same cacheKey may be considered equivalent for cache lookups, still subject to their resource dependencies.
    * @param opts.insecureSkipHostKeyCheck Disable SSH host key verification. This is insecure and must be explicitly opted into.
    * @param opts.experimentalServiceHost Service to use as the SSHFS network endpoint while verifying the original host key.
+   * @param opts.followSymlinks Resolve symlinks on the remote host, so they appear as the files and directories they point to. Without it, absolute symlinks and symlinks containing ".." can't be read. With it, creating a symlink in the volume fails.
    */
   sshfsVolume = (
     endpoint: string,

@@ -1244,6 +1244,12 @@ func (s *addressSchema) volume(
 			Value: dagql.Boolean(true),
 		})
 	}
+	if parsed.FollowSymlinks {
+		argsList = append(argsList, dagql.NamedInput{
+			Name:  "followSymlinks",
+			Value: dagql.Boolean(true),
+		})
+	}
 
 	err = srv.Select(ctx, srv.Root(), &inst, dagql.Selector{
 		Field: "sshfsVolume",
@@ -1332,6 +1338,7 @@ type sshfsVolumeAddress struct {
 	KnownHostsAddr           string
 	CacheKey                 string
 	InsecureSkipHostKeyCheck bool
+	FollowSymlinks           bool
 }
 
 func parseSSHFSVolumeAddress(addr string) (sshfsVolumeAddress, error) {
@@ -1367,6 +1374,14 @@ func parseSSHFSVolumeAddress(addr string) (sshfsVolumeAddress, error) {
 		}
 	}
 	queryVals.Del("insecureSkipHostKeyCheck")
+
+	if raw := queryVals.Get("followSymlinks"); raw != "" {
+		parsed.FollowSymlinks, err = strconv.ParseBool(raw)
+		if err != nil {
+			return parsed, fmt.Errorf("parse followSymlinks: %w", err)
+		}
+	}
+	queryVals.Del("followSymlinks")
 
 	if len(queryVals) > 0 {
 		return parsed, fmt.Errorf("unsupported volume address query parameter %q", firstQueryKey(queryVals))

@@ -18766,6 +18766,8 @@ type SshfsVolumeOpts struct {
 	InsecureSkipHostKeyCheck bool
 	// Service to use as the SSHFS network endpoint while verifying the original host key.
 	ExperimentalServiceHost *Service
+	// Resolve symlinks on the remote host, so they appear as the files and directories they point to. Without it, absolute symlinks and symlinks containing ".." can't be read. With it, creating a symlink in the volume fails.
+	FollowSymlinks bool
 }
 
 // Constructs an SSHFS volume.
@@ -18788,6 +18790,10 @@ func (r *Query) SshfsVolume(endpoint string, privateKey *Secret, opts ...SshfsVo
 		// `experimentalServiceHost` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ExperimentalServiceHost) {
 			q = q.Arg("experimentalServiceHost", opts[i].ExperimentalServiceHost)
+		}
+		// `followSymlinks` optional argument
+		if !querybuilder.IsZeroValue(opts[i].FollowSymlinks) {
+			q = q.Arg("followSymlinks", opts[i].FollowSymlinks)
 		}
 	}
 	q = q.Arg("endpoint", endpoint)

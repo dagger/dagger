@@ -33,6 +33,7 @@ func (s *volumeSchema) Install(srv *dagql.Server) {
 				dagql.Arg("cacheKey").Doc("Optional cache equivalence key. If set, volumes with the same cacheKey may be considered equivalent for cache lookups, still subject to their resource dependencies."),
 				dagql.Arg("insecureSkipHostKeyCheck").Doc("Disable SSH host key verification. This is insecure and must be explicitly opted into."),
 				dagql.Arg("experimentalServiceHost").Doc("Service to use as the SSHFS network endpoint while verifying the original host key."),
+				dagql.Arg("followSymlinks").Doc("Resolve symlinks on the remote host, so they appear as the files and directories they point to. Without it, absolute symlinks and symlinks containing \"..\" can't be read. With it, creating a symlink in the volume fails."),
 			),
 	}.Install(srv)
 
@@ -82,6 +83,7 @@ type sshfsVolumeArgs struct {
 	CacheKey                 dagql.Optional[dagql.String]
 	InsecureSkipHostKeyCheck bool `default:"false"`
 	ExperimentalServiceHost  dagql.Optional[core.ServiceID]
+	FollowSymlinks           bool `default:"false"`
 }
 
 func (s *volumeSchema) sshfsVolume(ctx context.Context, parent dagql.ObjectResult[*core.Query], args sshfsVolumeArgs) (dagql.ObjectResult[*core.Volume], error) {
@@ -128,6 +130,7 @@ func (s *volumeSchema) sshfsVolume(ctx context.Context, parent dagql.ObjectResul
 			InsecureSkipHostKeyCheck: args.InsecureSkipHostKeyCheck,
 			HostKeyAlias:             hostKeyAlias,
 			ServiceHost:              serviceHost,
+			FollowSymlinks:           args.FollowSymlinks,
 		},
 	}
 	inst, err := dagql.NewObjectResultForCurrentCall(ctx, srv, vol)

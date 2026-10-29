@@ -212,6 +212,7 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
         ?string $cacheKey = null,
         ?bool $insecureSkipHostKeyCheck = false,
         ?Service $experimentalServiceHost = null,
+        ?bool $followSymlinks = false,
     ): Volume {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('sshfsVolume');
         $innerQueryBuilder->setArgument('endpoint', $endpoint);
@@ -227,6 +228,9 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
         }
         if (null !== $experimentalServiceHost) {
         $innerQueryBuilder->setArgument('experimentalServiceHost', $experimentalServiceHost);
+        }
+        if (null !== $followSymlinks) {
+        $innerQueryBuilder->setArgument('followSymlinks', $followSymlinks);
         }
         return new \Dagger\Volume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
