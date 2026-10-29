@@ -61,6 +61,14 @@ func (srv *Server) initArchives() error {
 	if err != nil {
 		slog.Error("telemetry archives disabled", "err", err)
 		srv.archives = nil
+		// Without the archive index there's no telling which stores
+		// archives keep, so leave them all to the regular GC.
+		return nil
+	}
+	// The previous engine's sessions and forwarders are gone, so only its
+	// archives can still read its stores.
+	if err := srv.clientDBs.Sweep(srv.archives.KeepSet()); err != nil {
+		slog.Warn("remove previous engine's telemetry stores", "err", err)
 	}
 	return nil
 }
