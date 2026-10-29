@@ -65,7 +65,12 @@ func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, co
 	start := time.Now()
 	var local exportCapture
 	holds := entryHolds{cache: a.cache, held: map[uint64]dagql.AnyResult{}}
-	defer func() { rerr = errors.Join(rerr, holds.release(ctx)) }()
+	defer func() {
+		releaseStart := time.Now()
+		err := holds.release(ctx)
+		wcprof.RecordOpAt(ctx, wcprof.OpKindRemoteCache, "remotecache.export.release.holds", wcprof.OpOpts{}, releaseStart, time.Now(), profExportOutcome(err))
+		rerr = errors.Join(rerr, err)
+	}()
 	var roots []heldRoot
 	var skipped []protocol.SkippedRoot
 	for _, number := range req.Roots {
@@ -103,16 +108,30 @@ func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, co
 			selection.Roots = append(selection.Roots, root.result)
 		}
 		// The capture's profile op ends when the bundle is handed on: the
-		// consumer's upload is the export's, not the capture's.
+		// consumer's upload is the export's, not the capture's. So are the
+		// releases after it, each an op of the export's: the chains', once
+		// the consumer is done with them, then the capture's records', as
+		// WithExportedValues returns.
 		captureCtx, captureOp := wcprof.BeginOp(ctx, wcprof.OpKindRemoteCache, "remotecache.export.capture", wcprof.OpOpts{})
+		var chainsReleased time.Time
 		err := a.cache.WithExportedValues(captureCtx, selection, exportRefConfig, func(captureCtx context.Context, values *dagql.ExportedValues) error {
 			captured = true
 			logExport(req, skipped, values, time.Since(start), local)
 			captureOp.End(wcprof.OutcomeOK)
-			return consume(wcprof.ContextWithOpID(captureCtx, wcprof.CurrentOpID(ctx)), remotecache.Export{Bundle: &values.Bundle, Skipped: skipped, Blobs: newChainBlobs(values.Chains)})
+			err := consume(wcprof.ContextWithOpID(captureCtx, wcprof.CurrentOpID(ctx)), remotecache.Export{Bundle: &values.Bundle, Skipped: skipped, Blobs: newChainBlobs(values.Chains)})
+			releaseStart := time.Now()
+			// The chains release once: WithExportedValues returns this
+			// release's error from its own.
+			chainsErr := values.Chains.Release(captureCtx)
+			chainsReleased = time.Now()
+			wcprof.RecordOpAt(ctx, wcprof.OpKindRemoteCache, "remotecache.export.release.chains", wcprof.OpOpts{}, releaseStart, chainsReleased, profExportOutcome(chainsErr))
+			return err
 		})
 		if !captured {
 			captureOp.End(profExportOutcome(err))
+		} else {
+			// Its outcome is the capture's, the consumer's error included.
+			wcprof.RecordOpAt(ctx, wcprof.OpKindRemoteCache, "remotecache.export.release.capture", wcprof.OpOpts{}, chainsReleased, time.Now(), profExportOutcome(err))
 		}
 		return err
 	}
