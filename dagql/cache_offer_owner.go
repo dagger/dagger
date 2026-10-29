@@ -416,33 +416,42 @@ func (c *Cache) debugOfferOwnersLocked() []CacheDebugOfferOwner {
 
 // validateStoredOwnershipLocked scopes offer references to their own owners.
 // The ordinary envelope walker receives a copy without those separate edges.
+// Rows are checked on all cores: a check reads only its own row, and nothing
+// writes rows while the caller holds egraphMu.
 func (c *Cache) validateStoredOwnershipLocked() error {
+	results := make([]*sharedResult, 0, len(c.resultsByID))
 	for _, res := range c.resultsByID {
-		if res.persistedEnvelope == nil {
-			continue
+		if res.persistedEnvelope != nil {
+			results = append(results, res)
 		}
-		env := *res.persistedEnvelope
-		for _, offer := range env.PendingOffers {
-			if err := validateOfferReferences(offer); err != nil {
-				return fmt.Errorf("result %d: %w", res.id, err)
-			}
-		}
-		env.PendingOffers = nil
-		_, err := VisitEncodedReferences(PersistedRecord{ResultID: uint64(res.id), Envelope: env, Call: res.loadResultCall(), SnapshotLinks: res.loadSnapshotOwnerLinks()}, func(ref *PersistedRef) error {
-			if ref.RecipeID != nil {
-				return nil
-			}
-			switch ref.Kind {
-			case PersistedRefChild, PersistedRefCall:
-				if _, ok := res.deps[sharedResultID(ref.ResultID)]; !ok {
-					return fmt.Errorf("reference %s to %d is not a direct dependency", ref.Path, ref.ResultID)
-				}
-			}
-			return nil
-		})
-		if err != nil {
+	}
+	return forEachIndexParallel(len(results), func(i int) error {
+		return validateStoredOwnership(results[i])
+	})
+}
+
+func validateStoredOwnership(res *sharedResult) error {
+	env := *res.persistedEnvelope
+	for _, offer := range env.PendingOffers {
+		if err := validateOfferReferences(offer); err != nil {
 			return fmt.Errorf("result %d: %w", res.id, err)
 		}
+	}
+	env.PendingOffers = nil
+	_, err := VisitEncodedReferences(PersistedRecord{ResultID: uint64(res.id), Envelope: env, Call: res.loadResultCall(), SnapshotLinks: res.loadSnapshotOwnerLinks()}, func(ref *PersistedRef) error {
+		if ref.RecipeID != nil {
+			return nil
+		}
+		switch ref.Kind {
+		case PersistedRefChild, PersistedRefCall:
+			if _, ok := res.deps[sharedResultID(ref.ResultID)]; !ok {
+				return fmt.Errorf("reference %s to %d is not a direct dependency", ref.Path, ref.ResultID)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("result %d: %w", res.id, err)
 	}
 	return nil
 }

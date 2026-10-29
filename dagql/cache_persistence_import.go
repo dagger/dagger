@@ -7,9 +7,11 @@ import (
 	"slices"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/dagql/persistdb"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/opencontainers/go-digest"
+	"golang.org/x/sync/errgroup"
 )
 
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
@@ -20,57 +22,39 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 	importRunID := c.nextImportRunID()
 	var finalOffers []restoredFinalOffer
 
-	resultRows, err := c.pdb.ListMirrorResults(ctx)
-	if err != nil {
-		return fmt.Errorf("list mirror results: %w", err)
-	}
-	eqClassRows, err := c.pdb.ListMirrorEqClasses(ctx)
-	if err != nil {
-		return fmt.Errorf("list mirror eq_classes: %w", err)
-	}
-	eqClassDigestRows, err := c.pdb.ListMirrorEqClassDigests(ctx)
-	if err != nil {
-		return fmt.Errorf("list mirror eq_class_digests: %w", err)
-	}
-	termRows, err := c.pdb.ListMirrorTerms(ctx)
-	if err != nil {
-		return fmt.Errorf("list mirror terms: %w", err)
-	}
-	termInputRows, err := c.pdb.ListMirrorTermInputs(ctx)
-	if err != nil {
-		return fmt.Errorf("list mirror term_inputs: %w", err)
-	}
-	resultOutputEqClassRows, err := c.pdb.ListMirrorResultOutputEqClasses(ctx)
-	if err != nil {
-		return fmt.Errorf("list mirror result_output_eq_classes: %w", err)
-	}
-	persistedEdgeRows, err := c.pdb.ListMirrorPersistedEdges(ctx)
-	if err != nil {
-		return fmt.Errorf("list mirror persisted_edges: %w", err)
-	}
-	resultDepRows, err := c.pdb.ListMirrorResultDeps(ctx)
-	if err != nil {
-		return fmt.Errorf("list mirror result_deps: %w", err)
-	}
-	resultSnapshotRows, err := c.pdb.ListMirrorResultSnapshotLinks(ctx)
-	if err != nil {
-		return fmt.Errorf("list mirror result_snapshot_links: %w", err)
-	}
-	snapshotContentRows, err := c.pdb.ListMirrorSnapshotContentLinks(ctx)
-	if err != nil {
-		return fmt.Errorf("list mirror snapshot_content_links: %w", err)
-	}
-	snapshotContentHashRows, err := c.pdb.ListMirrorSnapshotContentHashes(ctx)
-	if err != nil {
-		return fmt.Errorf("list mirror snapshot_content_hashes: %w", err)
-	}
-	importedLayerBlobRows, err := c.pdb.ListMirrorImportedLayerBlobIndex(ctx)
-	if err != nil {
-		return fmt.Errorf("list mirror imported_layer_blob_index: %w", err)
-	}
-	importedLayerDiffRows, err := c.pdb.ListMirrorImportedLayerDiffIndex(ctx)
-	if err != nil {
-		return fmt.Errorf("list mirror imported_layer_diff_index: %w", err)
+	var (
+		resultRows              []persistdb.MirrorResult
+		eqClassRows             []persistdb.MirrorEqClass
+		eqClassDigestRows       []persistdb.MirrorEqClassDigest
+		termRows                []persistdb.MirrorTerm
+		termInputRows           []persistdb.MirrorTermInput
+		resultOutputEqClassRows []persistdb.MirrorResultOutputEqClass
+		persistedEdgeRows       []persistdb.MirrorPersistedEdge
+		resultDepRows           []persistdb.MirrorResultDep
+		resultSnapshotRows      []persistdb.MirrorResultSnapshotLink
+		snapshotContentRows     []persistdb.MirrorSnapshotContentLink
+		snapshotContentHashRows []persistdb.MirrorSnapshotContentHash
+		importedLayerBlobRows   []persistdb.MirrorImportedLayerBlobIndex
+		importedLayerDiffRows   []persistdb.MirrorImportedLayerDiffIndex
+	)
+	// The tables are independent reads of a store nothing else writes yet, so
+	// they are listed concurrently, each on its own connection.
+	lists, listCtx := errgroup.WithContext(ctx)
+	listMirrorRows(lists, listCtx, "results", &resultRows, c.pdb.ListMirrorResults)
+	listMirrorRows(lists, listCtx, "eq_classes", &eqClassRows, c.pdb.ListMirrorEqClasses)
+	listMirrorRows(lists, listCtx, "eq_class_digests", &eqClassDigestRows, c.pdb.ListMirrorEqClassDigests)
+	listMirrorRows(lists, listCtx, "terms", &termRows, c.pdb.ListMirrorTerms)
+	listMirrorRows(lists, listCtx, "term_inputs", &termInputRows, c.pdb.ListMirrorTermInputs)
+	listMirrorRows(lists, listCtx, "result_output_eq_classes", &resultOutputEqClassRows, c.pdb.ListMirrorResultOutputEqClasses)
+	listMirrorRows(lists, listCtx, "persisted_edges", &persistedEdgeRows, c.pdb.ListMirrorPersistedEdges)
+	listMirrorRows(lists, listCtx, "result_deps", &resultDepRows, c.pdb.ListMirrorResultDeps)
+	listMirrorRows(lists, listCtx, "result_snapshot_links", &resultSnapshotRows, c.pdb.ListMirrorResultSnapshotLinks)
+	listMirrorRows(lists, listCtx, "snapshot_content_links", &snapshotContentRows, c.pdb.ListMirrorSnapshotContentLinks)
+	listMirrorRows(lists, listCtx, "snapshot_content_hashes", &snapshotContentHashRows, c.pdb.ListMirrorSnapshotContentHashes)
+	listMirrorRows(lists, listCtx, "imported_layer_blob_index", &importedLayerBlobRows, c.pdb.ListMirrorImportedLayerBlobIndex)
+	listMirrorRows(lists, listCtx, "imported_layer_diff_index", &importedLayerDiffRows, c.pdb.ListMirrorImportedLayerDiffIndex)
+	if err := lists.Wait(); err != nil {
+		return err
 	}
 
 	if len(resultRows) == 0 && len(eqClassRows) == 0 && len(termRows) == 0 {
@@ -78,6 +62,8 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 	}
 
 	var eagerDecodeResultIDs []sharedResultID
+
+	decodedResultRows := decodeImportedResultRows(resultRows)
 
 	c.egraphMu.Lock()
 	importErr := func() error {
@@ -135,7 +121,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 		}
 
 		var maxResultID sharedResultID
-		for _, row := range resultRows {
+		for i, row := range resultRows {
 			resultID := sharedResultID(row.ID)
 			if resultID == 0 {
 				return fmt.Errorf("import result: zero ID")
@@ -144,13 +130,13 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				maxResultID = resultID
 			}
 
-			var env PersistedResultEnvelope
-			if len(row.SelfPayload) > 0 {
-				if err := json.Unmarshal(row.SelfPayload, &env); err != nil {
-					return fmt.Errorf("import result %d self payload: %w", resultID, err)
-				}
-			} else {
+			decoded := decodedResultRows[i]
+			env := decoded.env
+			if env == nil {
 				return fmt.Errorf("import result %d: empty self payload", resultID)
+			}
+			if decoded.envErr != nil {
+				return fmt.Errorf("import result %d self payload: %w", resultID, decoded.envErr)
 			}
 			if env.Kind == "" {
 				return fmt.Errorf("import result %d: empty self payload kind", resultID)
@@ -159,12 +145,12 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				return fmt.Errorf("import result %d: unsupported self payload version %d", resultID, env.Version)
 			}
 
-			if row.CallFrameJSON == "" {
+			frame := decoded.frame
+			if frame == nil {
 				return fmt.Errorf("import result %d: empty call_frame_json", resultID)
 			}
-			frame := &ResultCall{}
-			if err := json.Unmarshal([]byte(row.CallFrameJSON), frame); err != nil {
-				return fmt.Errorf("import result %d call_frame_json: %w", resultID, err)
+			if decoded.frameErr != nil {
+				return fmt.Errorf("import result %d call_frame_json: %w", resultID, decoded.frameErr)
 			}
 
 			// The decline mark goes back onto the entry, not into the
@@ -183,8 +169,8 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				lastUsedAtUnixNano:    row.LastUsedAtUnixNano,
 				description:           row.Description,
 				recordType:            row.RecordType,
-				persistedEnvelope:     &env,
-				payloadBytes:          persistedEnvelopePayloadBytes(&env),
+				persistedEnvelope:     env,
+				payloadBytes:          persistedEnvelopePayloadBytes(env),
 			}
 			res.storeResultCall(frame)
 			c.traceResultCallFrameUpdated(ctx, res, "import_persisted_result", nil, frame)
@@ -198,7 +184,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				// A blob-backed cache never decodes a value: it keeps every
 				// record as it was saved, which placement copies into
 				// bundles, and takes back its stored parts.
-				if err := restoreStoredPartsLocked(res, &env, row.CallFrameJSON, row.SelfPayload); err != nil {
+				if err := restoreStoredPartsLocked(res, env, row.CallFrameJSON, row.SelfPayload); err != nil {
 					return fmt.Errorf("import result %d stored parts: %w", resultID, err)
 				}
 			} else if env.Kind == persistedResultKindNull {
@@ -598,6 +584,12 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			}
 		}
 		c.egraphMu.RUnlock()
+		type ownerLeaseAttach struct {
+			resultID sharedResultID
+			key      snapshotOwnerKey
+			refKey   string
+		}
+		var attaches []ownerLeaseAttach
 		for _, res := range results {
 			links, err := desiredSnapshotLinksForResult(ctx, res, false)
 			if err != nil {
@@ -613,14 +605,22 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 					continue
 				}
 				seen[key] = struct{}{}
-				if err := c.snapshotManager.AttachLease(
-					ctx,
-					resultSnapshotLeaseIDForKey(res.id, key),
-					link.RefKey,
-				); err != nil {
-					return fmt.Errorf("attach imported result %d owner lease %q: %w", res.id, key.Role, err)
-				}
+				attaches = append(attaches, ownerLeaseAttach{resultID: res.id, key: key, refKey: link.RefKey})
 			}
+		}
+		// Each owner lease is its own, so leases attach on all cores.
+		if err := forEachIndexParallel(len(attaches), func(i int) error {
+			attach := attaches[i]
+			if err := c.snapshotManager.AttachLease(
+				ctx,
+				resultSnapshotLeaseIDForKey(attach.resultID, attach.key),
+				attach.refKey,
+			); err != nil {
+				return fmt.Errorf("attach imported result %d owner lease %q: %w", attach.resultID, attach.key.Role, err)
+			}
+			return nil
+		}); err != nil {
+			return err
 		}
 		if err := c.snapshotManager.DeleteStaleDaggerOwnerLeases(ctx, desiredLeaseIDs); err != nil {
 			return fmt.Errorf("%w: %w", errOwnerLeaseReconciliation, err)
@@ -628,6 +628,48 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 	}
 
 	return c.settleRestoredOffers(ctx, finalOffers)
+}
+
+// listMirrorRows lists one table of the persistence store into dst.
+func listMirrorRows[T any](lists *errgroup.Group, ctx context.Context, table string, dst *[]T, list func(context.Context) ([]T, error)) {
+	lists.Go(func() error {
+		rows, err := list(ctx)
+		if err != nil {
+			return fmt.Errorf("list mirror %s: %w", table, err)
+		}
+		*dst = rows
+		return nil
+	})
+}
+
+// importedResultRow is a results row's self payload and call frame, decoded
+// ahead of the import loop. A nil env or frame means the row stored none.
+type importedResultRow struct {
+	env      *PersistedResultEnvelope
+	envErr   error
+	frame    *ResultCall
+	frameErr error
+}
+
+// decodeImportedResultRows decodes every results row on all cores. Decoding
+// reads only the row. The import loop checks the rows in order, so the error
+// it reports is the one of the first invalid row.
+func decodeImportedResultRows(rows []persistdb.MirrorResult) []importedResultRow {
+	decoded := make([]importedResultRow, len(rows))
+	_ = forEachIndexParallel(len(rows), func(i int) error {
+		row := &rows[i]
+		out := &decoded[i]
+		if len(row.SelfPayload) > 0 {
+			out.env = new(PersistedResultEnvelope)
+			out.envErr = json.Unmarshal(row.SelfPayload, out.env)
+		}
+		if row.CallFrameJSON != "" {
+			out.frame = &ResultCall{}
+			out.frameErr = json.Unmarshal([]byte(row.CallFrameJSON), out.frame)
+		}
+		return nil
+	})
+	return decoded
 }
 
 func normalizeImportedDigest(raw string) digest.Digest {
