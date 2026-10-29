@@ -12,6 +12,38 @@ import (
 	"github.com/dagger/dagger/engine"
 )
 
+// SDKs generate a dependency's client from clientSchemaIntrospectionJSON at
+// their own client's version. The argument is optional, so existing callers
+// keep the module's own version, and in every view, since the SDK modules
+// calling it declare pre-cut versions.
+func TestClientSchemaIntrospectionJSONClientVersion(t *testing.T) {
+	ctx := t.Context()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, cache.Close(context.Background())) })
+	ctx = dagql.ContextWithCache(ctx, cache)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{ClientID: "client-version", SessionID: "client-version"})
+	srv := &currentTypeDefsTestServer{platform: core.Platform{OS: "linux", Architecture: "amd64"}}
+	base, err := NewCoreSchemaBase(ctx, srv)
+	require.NoError(t, err)
+	for _, tc := range []struct{ version, field string }{
+		{"v1.0.0-beta.20", "clientSchemaIntrospectionJSON"},
+		{"v1.0.0-beta.21", "clientSchemaIntrospectionJSON"},
+		{engine.IdentifierCasingVersion, "clientSchemaIntrospectionJson"},
+	} {
+		view := call.View(engine.APIViewVersion(tc.version))
+		dag, err := base.Fork(ctx, core.NewRoot(srv), view)
+		require.NoError(t, err)
+		field := dag.SchemaForView(view).Types["ModuleSource"].Fields.ForName(tc.field)
+		require.NotNil(t, field, tc.version)
+		arg := field.Arguments.ForName("clientVersion")
+		require.NotNil(t, arg, tc.version)
+		require.False(t, arg.Type.NonNull, tc.version)
+		require.NotNil(t, arg.DefaultValue, tc.version)
+		require.Equal(t, `""`, arg.DefaultValue.String(), tc.version)
+	}
+}
+
 // namingConstructors are the typedef constructors that normalize a name
 // they're given (core.IsNamingField), with the type they're installed on.
 var namingConstructors = []struct{ typeName, field string }{
