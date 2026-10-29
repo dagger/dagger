@@ -185,6 +185,48 @@ func setupDebugHandlers(addr string, eng *server.Server) error {
 	// "session" so far: the next session's life, from its initialization to
 	// the end of its removal). The request waits for the run to end; it
 	// disarms if the client leaves before the run starts.
+	// Session watch: GET reports its threshold ("off" when it's off); POST a
+	// duration such as "60s" switches it on, so a session running past it gets
+	// a capture of what the engine was doing, and POST "off" switches it off.
+	// /debug/wcprof/captures returns the captures kept, oldest first.
+	m.Handle("/debug/wcprof/watch", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		if eng == nil {
+			http.Error(rw, "engine server not available", http.StatusServiceUnavailable)
+			return
+		}
+		if req.Method == http.MethodPost {
+			body, err := io.ReadAll(io.LimitReader(req.Body, 64))
+			if err != nil {
+				http.Error(rw, err.Error(), http.StatusBadRequest)
+				return
+			}
+			val := strings.TrimSpace(string(body))
+			if strings.EqualFold(val, "off") {
+				eng.Watch(0)
+			} else {
+				threshold, err := time.ParseDuration(val)
+				if err != nil || threshold <= 0 {
+					http.Error(rw, fmt.Sprintf("POST body must be a positive duration or off, got %q", val), http.StatusBadRequest)
+					return
+				}
+				eng.Watch(threshold)
+			}
+		}
+		threshold := "off"
+		if t := eng.WatchThreshold(); t > 0 {
+			threshold = t.String()
+		}
+		rw.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(rw).Encode(map[string]string{"threshold": threshold}) //nolint:errcheck,errchkjson
+	}))
+	m.Handle("/debug/wcprof/captures", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		if eng == nil {
+			http.Error(rw, "engine server not available", http.StatusServiceUnavailable)
+			return
+		}
+		rw.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(rw).Encode(eng.Captures()) //nolint:errcheck,errchkjson
+	}))
 	m.Handle("/debug/wcprof/profile", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		if eng == nil {
 			http.Error(rw, "engine server not available", http.StatusServiceUnavailable)

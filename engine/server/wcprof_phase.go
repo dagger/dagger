@@ -70,11 +70,14 @@ type phaseRun struct {
 	op    *wcprof.Op
 	start engineCPU
 	prof  *armedProfile
+	// unwatch stops the session watch's timer for this run, if it had one.
+	unwatch func()
 }
 
 // beginSessionPhase starts a session's run of PhaseSession: when ctx is
 // profiled, an op over it with the engine's CPU counters read at its start;
-// and the CPU profile armed for the phase, if any. Nil when there is neither.
+// the CPU profile armed for the phase, if any; and the session watch's timer,
+// when the watch is on. Nil when there is none of them.
 func (srv *Server) beginSessionPhase(ctx context.Context, sessionID string) *phaseRun {
 	var p *phaseRun
 	if wcprof.Enabled(ctx) {
@@ -87,14 +90,24 @@ func (srv *Server) beginSessionPhase(ctx context.Context, sessionID string) *pha
 		}
 		p.prof = a
 	}
+	if unwatch := srv.watchSession(sessionID); unwatch != nil {
+		if p == nil {
+			p = &phaseRun{}
+		}
+		p.unwatch = unwatch
+	}
 	return p
 }
 
-// end ends the run: the op gets the CPU the engine used meanwhile, and an
-// armed profile started on this run stops and is delivered.
+// end ends the run: the session watch's timer stops, the op gets the CPU the
+// engine used meanwhile, and an armed profile started on this run stops and
+// is delivered.
 func (p *phaseRun) end(srv *Server) {
 	if p == nil {
 		return
+	}
+	if p.unwatch != nil {
+		p.unwatch()
 	}
 	if p.prof != nil {
 		pprof.StopCPUProfile()
