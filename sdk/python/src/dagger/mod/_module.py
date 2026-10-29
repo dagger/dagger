@@ -685,6 +685,12 @@ class Module:
         field.metadata = {**field.metadata, FIELD_DEF_KEY: meta}
         return field
 
+    @overload
+    def check(self, func: Func[P, R]) -> Func[P, R]: ...
+
+    @overload
+    def check(self) -> Callable[[Func[P, R]], Func[P, R]]: ...
+
     def check(
         self,
         func: Func[P, R] | None = None,
@@ -803,15 +809,18 @@ class Module:
         *,
         name: APIName | None = None,
         doc: str | None = None,
+        cache: str | None = None,
         deprecated: str | None = None,
     ) -> Func[P, R]: ...
 
     @overload
     def function(
         self,
+        func: None = None,
         *,
         name: APIName | None = None,
         doc: str | None = None,
+        cache: str | None = None,
         deprecated: str | None = None,
     ) -> Callable[[Func[P, R]], Func[P, R]]: ...
 
