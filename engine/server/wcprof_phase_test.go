@@ -441,6 +441,23 @@ func TestPhaseSamplesEngineProcessCPU(t *testing.T) {
 		now, _ := readProcessCPU()
 		burned = now.CPUUserUS + now.CPUSystemUS - before.CPUUserUS - before.CPUSystemUS
 	}
+	// A sample taken while it ran, besides the last at its end.
+	for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(machineSampleInterval) {
+		var buf bytes.Buffer
+		require.NoError(t, wcprof.Active().WriteDump(&buf, false))
+		header, events, err := wcprof.ReadDump(&buf)
+		require.NoError(t, err)
+		sampledYet := false
+		for _, ev := range events {
+			if ev.Type == wcprof.DumpTypeUsage && ev.OpID == p.op.ID() && header.Strings[ev.ClassID] == UsageScopeEngineProcessSample {
+				sampledYet = true
+			}
+		}
+		if sampledYet {
+			break
+		}
+		require.True(t, time.Now().Before(deadline), "the running phase took no samples")
+	}
 	p.end(srv)
 
 	var buf bytes.Buffer
