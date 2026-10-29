@@ -388,6 +388,88 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		require.Equal(t, beforeToken, afterToken, "unchanged content should reuse the action across restart")
 	})
 
+	t.Run("dockerBuild with cache mounts survives restart", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "persist-docker-build-state-" + rand.Text()
+		dir := t.TempDir()
+		writeFile := func(name, contents string) {
+			t.Helper()
+			require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0o755))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(contents), 0o644))
+		}
+		// Each RUN records a random token in the image and appends it to its
+		// cache mount, so the image shows whether the RUN executed again and
+		// the mount shows whether its contents outlived the restart. One cache
+		// mount is seeded from an empty stage owned by a non-root user, the
+		// other is owned through uid=; these are the two shapes in #14749.
+		writeFile("Dockerfile", fmt.Sprintf(`FROM scratch AS cache-seed
+USER 65532:65532
+WORKDIR /seed
+
+FROM %s
+COPY deps.txt /app/deps.txt
+RUN --mount=type=cache,id=seeded,target=/cache/seeded,from=cache-seed,source=/seed \
+    sh -ec 'cat /proc/sys/kernel/random/uuid > /app/seeded; cat /app/seeded >> /cache/seeded/log; cp /cache/seeded/log /app/seeded-log'
+RUN --mount=type=cache,id=uid,target=/cache/uid,uid=65532 \
+    sh -ec 'cat /proc/sys/kernel/random/uuid > /app/uid; cat /app/uid >> /cache/uid/log; cp /cache/uid/log /app/uid-log'
+COPY src /app/src
+`, alpineImage))
+		writeFile("deps.txt", "deps v1\n")
+		writeFile("src/main.txt", "source v1\n")
+		clientOpts := []dagger.ClientOpt{dagger.WithWorkdir(dir)}
+
+		type buildOutput struct{ seeded, seededLog, uid, uidLog, src string }
+		build := func(ctx context.Context, t *testctx.T, client *dagger.Client) buildOutput {
+			t.Helper()
+			ctr := core.NewQuery(client).Host().Directory(".").DockerBuild()
+			read := func(path string) string {
+				out, err := ctr.File(path).Contents(ctx)
+				require.NoError(t, err)
+				return strings.TrimSpace(out)
+			}
+			return buildOutput{
+				seeded:    read("/app/seeded"),
+				seededLog: read("/app/seeded-log"),
+				uid:       read("/app/uid"),
+				uidLog:    read("/app/uid-log"),
+				src:       read("/app/src/main.txt"),
+			}
+		}
+
+		upA, tunnelA, a := startEngineWithClientOpts(c, ctx, t, stateKey, clientOpts, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upA, tunnelA, a) })
+		first := build(ctx, t, a)
+		require.Equal(t, "source v1", first.src)
+		stopEngine(ctx, t, upA, tunnelA, a)
+		upA, tunnelA, a = nil, nil, nil
+
+		// A change to the build context that the RUNs don't read, as a new
+		// commit brings.
+		writeFile("src/main.txt", "source v2\n")
+
+		upB, tunnelB, b := startEngineWithClientOpts(c, ctx, t, stateKey, clientOpts, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upB, tunnelB, b) })
+		second := build(ctx, t, b)
+		require.Equal(t, "source v2", second.src)
+		require.Equal(t, first.seeded, second.seeded, "RUN with a seeded cache mount should be reused after restart")
+		require.Equal(t, first.uid, second.uid, "RUN with a uid-owned cache mount should be reused after restart")
+
+		stopEngine(ctx, t, upB, tunnelB, b)
+		upB, tunnelB, b = nil, nil, nil
+
+		// A dependency change reruns both RUNs; their cache mounts should
+		// still hold what the first engine wrote.
+		writeFile("deps.txt", "deps v2\n")
+
+		upC, tunnelC, cc := startEngineWithClientOpts(c, ctx, t, stateKey, clientOpts, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upC, tunnelC, cc) })
+		third := build(ctx, t, cc)
+		require.NotEqual(t, first.seeded, third.seeded)
+		require.NotEqual(t, first.uid, third.uid)
+		require.Equal(t, first.seeded+"\n"+third.seeded, third.seededLog, "seeded cache mount contents should survive restart")
+		require.Equal(t, first.uid+"\n"+third.uid, third.uidLog, "uid-owned cache mount contents should survive restart")
+	})
+
 	t.Run("directory and file restore without opening", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		stateKey := "directory-file-" + rand.Text()
