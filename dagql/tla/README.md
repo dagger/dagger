@@ -849,7 +849,7 @@ stopped, which varies with worker order:
 | `part_sources_imported_predicate` | the old predicate: imported means managed | violates `ManagedOnlyWithSource` | 1,258 | 5 |
 | `probe_part_sources_armed_native` | an armed merged row completes natively | witness | 1,224 | 14 |
 | `probe_part_sources_late_offer` | an armed row installs a late offer | witness | 10,682 | 8 |
-| `probe_part_sources_shell` | a shell's part is acquired | witness | 579 | 11 |
+| `probe_part_sources_shell` | a row that decoded as a shell acquires a part | witness | 573 | 11 |
 | `probe_part_sources_armed_managed` | a restored row armed with an offer goes managed | witness | 7,061 | 7 |
 
 Either running check alone keeps one writer per part. With the check in
