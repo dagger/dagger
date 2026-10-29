@@ -908,21 +908,26 @@ func (ArtifactsSuite) TestCLIAddressSelections(ctx context.Context, t *testctx.T
 	c := connect(ctx, t)
 	base := nativeWorkspaceBase(t, c).WithDirectory("/work/selected", artifactSource(c))
 	for _, tc := range []struct {
-		args []string
-		want string
+		args      []string
+		want      string
+		wantError bool
 	}{
-		{[]string{"list", "-a", "dag+container://docs", "dag+directory://consumer"}, ""},
-		{[]string{"list", "-a", "dag+directory://docs", "dag+container://consumer"}, "dag+container://?container=consumer/base\ndag+directory://?directory=docs/source\n"},
-		{[]string{"list", "-a", "dag://docs?missing=value", "consumer/base"}, "dag+container://?container=consumer/base\n"},
-		{[]string{"list", "-a", "docs", "docs/source"}, "dag+directory://?directory=docs/source\ndag+provider-docs://?provider-docs=docs\ndag+provider-docs://?provider-docs=docs/again\n"},
-		{[]string{"list", "-a", "dag+directory://docs", "dag+container://consumer", "--type", "Directory"}, "dag+directory://?directory=docs/source\n"},
+		{[]string{"list", "-a", "dag+container://docs", "dag+directory://consumer"}, "", true},
+		{[]string{"list", "-a", "dag+directory://docs", "dag+container://consumer"}, "", true},
+		{[]string{"list", "-a", "dag://docs?missing=value", "consumer/base"}, "", true},
+		{[]string{"list", "-a", "docs", "docs/source"}, "dag+directory://?directory=docs/source\ndag+provider-docs://?provider-docs=docs\ndag+provider-docs://?provider-docs=docs/again\n", false},
+		{[]string{"list", "-a", "dag+directory://docs", "dag+container://consumer", "--type", "Directory"}, "", true},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(ctx context.Context, t *testctx.T) {
 			args := append([]string{"-W", "/work/selected"}, tc.args...)
 			args = append(args, "-f=link")
 			out, err := base.With(workspaceSelectionDaggerExec(args...)).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, tc.want, out)
+			if tc.wantError {
+				requireErrOut(t, err, "addresses with different filters require a union of workspace views")
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tc.want, out)
+			}
 		})
 	}
 }

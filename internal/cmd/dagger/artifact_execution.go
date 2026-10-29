@@ -307,9 +307,18 @@ func commandArtifacts(ctx context.Context, dag *dagger.Client, ws *core.Workspac
 		}
 	}
 	if slices.ContainsFunc(shared.Query, func(p dagaddress.Pair) bool { return p.HasKey && strings.HasPrefix(p.Dimension, "type:") }) {
-		targets, err := commandArtifactTargets(ctx, dag, cmd, selection)
-		if err != nil {
-			return nil, err
+		var targets *core.Artifacts
+		if cmd.Name() == "list" || cmd.Annotations[artifactListType] != "" || cmd.Annotations[artifactListCollection] != "" {
+			defs, err := artifactDimensions(ctx, dag, selection)
+			if err != nil {
+				return nil, err
+			}
+			targets = listArtifactTargets(selection, cmd, defs)
+		} else {
+			targets, err = commandArtifactTargets(ctx, dag, cmd, selection)
+			if err != nil {
+				return nil, err
+			}
 		}
 		paths, err := readArtifactListPaths(ctx, dag, targets)
 		if err != nil {

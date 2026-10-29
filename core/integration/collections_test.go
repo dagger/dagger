@@ -192,9 +192,9 @@ func (CollectionsSuite) TestCallCollectionSelectors(ctx context.Context, t *test
 	require.NoError(t, err)
 	require.Equal(t, "item:a", out)
 
-	// Repeated selectors address the subset when the function belongs to the
-	// collection itself.
-	out, err = base.With(daggerCallAt("./collections", "items", "selected", "--collections-items-item=a", "--collections-items-item=c")).Stdout(ctx)
+	// Collection methods are called directly. Use the explicit subset API
+	// when selecting several items for a collection method.
+	out, err = base.With(daggerCallAt("./collections", "items", "subset", "--keys=a,c", "selected")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "a\nc\n", out)
 
@@ -315,7 +315,6 @@ func (CollectionsSuite) TestCLI(ctx context.Context, t *testctx.T) {
 		want string
 	}{
 		{[]string{"list", "-a", "-f", "link", "items/file", "--collections-items-item=a"}, "dag+file://?file=file&collections-items-item=a\n"},
-		{[]string{"list", "-a", "-f", "link", "items/file?collections-items-item=a", "other/file?collections-other-item=c"}, "dag+file://?file=file&collections-items-item=a\ndag+file://?file=file&collections-other-item=c\n"},
 		{[]string{"list", "-a", "-f", "link", "items/file?collections-items-item=a", "--collections-items-item=c"}, "dag+file://?file=file&collections-items-item=a\ndag+file://?file=file&collections-items-item=c\n"},
 		{[]string{"list", "collections-items", "items", "-a", "-f", "link"}, "dag+collections-item://?artifact-collections-item=items&collections-items-item=a\ndag+collections-item://?artifact-collections-item=items&collections-items-item=b\ndag+collections-item://?artifact-collections-item=items&collections-items-item=c\n"},
 	} {
@@ -323,7 +322,9 @@ func (CollectionsSuite) TestCLI(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, tc.want, out)
 	}
-	_, err := base.With(daggerExec("list", "-a", "--item=a")).Stdout(ctx)
+	_, err := base.With(daggerExec("list", "-a", "items/file?collections-items-item=a", "other/file?collections-other-item=c")).Stdout(ctx)
+	requireErrOut(t, err, "addresses with different filters require a union of workspace views")
+	_, err = base.With(daggerExec("list", "-a", "--item=a")).Stdout(ctx)
 	requireErrOut(t, err, "unknown flag: --item")
 }
 
@@ -388,10 +389,9 @@ func (item *Item) Verify() error {
 		args []string
 		want string
 	}{
-		{"query", []string{"dag://items/verify?collections-items-item=a&collections-items-item=b"}, "--collections --collections-items-item=a --check=verify\n--collections --collections-items-item=b --check=verify\n"},
-		{"dimension flag", []string{"items/verify", "--collections-items-item=a", "--collections-items-item=b"}, "--collections --collections-items-item=a --check=verify\n--collections --collections-items-item=b --check=verify\n"},
-		{"query and flag", []string{"items/verify?collections-items-item=a", "--collections-items-item=b"}, "--collections --collections-items-item=a --check=verify\n--collections --collections-items-item=b --check=verify\n"},
-		{"separate addresses", []string{"items/verify?collections-items-item=a", "other/verify?collections-other-item=b"}, "--collections --collections-items-item=a --check=verify\n--collections --collections-other-item=b --check=verify\n"},
+		{"query", []string{"dag://items/verify?collections-items-item=a&collections-items-item=b"}, "--collections --collections-items-item=a\n--collections --collections-items-item=b\n"},
+		{"dimension flag", []string{"items/verify", "--collections-items-item=a", "--collections-items-item=b"}, "--collections --collections-items-item=a\n--collections --collections-items-item=b\n"},
+		{"query and flag", []string{"items/verify?collections-items-item=a", "--collections-items-item=b"}, "--collections --collections-items-item=a\n--collections --collections-items-item=b\n"},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			out, err := base.With(daggerExec(append([]string{"check", "-l", "--all", "-f=cli"}, tc.args...)...)).Stdout(ctx)
@@ -402,6 +402,15 @@ func (item *Item) Verify() error {
 			require.NotContains(t, out, "unselected item c ran")
 		})
 	}
+	t.Run("separate filters require a union", func(ctx context.Context, t *testctx.T) {
+		for _, prefix := range [][]string{{"check", "-l"}, {"check"}} {
+			args := append([]string{}, prefix...)
+			args = append(args, "items/verify?collections-items-item=a", "other/verify?collections-other-item=b")
+			_, err := base.With(daggerExec(args...)).Stdout(ctx)
+			requireErrOut(t, err, "addresses with different filters require a union of workspace views")
+		}
+	})
+
 	for _, tc := range []struct {
 		args []string
 		want string
@@ -444,16 +453,16 @@ func (item *Item) Verify() error {
 	t.Run("grouped", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerExec("check", "-l", "-f=cli", "items/verify")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "--collections --collections-items --check=verify\n", out)
+		require.Equal(t, "--collections --collections-items\n", out)
 		combined, err := base.With(daggerExec("check", "-l", "-f=cli", "items/verify")).CombinedOutput(ctx)
 		require.NoError(t, err)
 		require.Equal(t, 1, strings.Count(combined, "# Use --all to expand collections and list each item."))
 		out, err = base.With(daggerExec("check", "-l", "-f=cli", "items/verify?collections-items-item=a&collections-items-item=b&collections-items-item=c")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "--collections --collections-items-item=b --collections-items-item=a --collections-items-item=c --check=verify\n", out)
+		require.Equal(t, "--collections --collections-items-item=b --collections-items-item=a --collections-items-item=c\n", out)
 		out, err = base.With(daggerExec("check", "-l", "-f=cli", "items/verify?collections-items-item=a&collections-items-item=b")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "--collections --collections-items-item=b --collections-items-item=a --check=verify\n", out)
+		require.Equal(t, "--collections --collections-items-item=b --collections-items-item=a\n", out)
 		// Replay each printed row. Item c fails if grouping loses the filter.
 		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 			if strings.HasPrefix(line, "#") {
@@ -556,15 +565,19 @@ func (*Part) Verify() error { return nil }
 		require.Equal(t, "--collections --collections-items-item=a --check=items/verify\n", out)
 	})
 	t.Run("keep correlated keys separate", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerExec("check", "-l", "-f=cli", "items/parts/verify?collections-items-item=a&collections-items-part=x", "items/parts/verify?collections-items-item=b&collections-items-part=")).Stdout(ctx)
-		require.NoError(t, err)
-		require.NotContains(t, out, "# Use --all")
-		require.Len(t, strings.Split(strings.TrimSpace(out), "\n"), 2)
-		// Parsing these lines in a shell must preserve the empty key as well.
-		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-			replay, err := base.WithExec([]string{"sh", "-c", "dagger check -l -a -f=cli " + line}).Stdout(ctx)
+		addresses := []string{"items/parts/verify?collections-items-item=a&collections-items-part=x", "items/parts/verify?collections-items-item=b&collections-items-part="}
+		_, err := base.With(daggerExec(append([]string{"check", "-l", "-f=cli"}, addresses...)...)).Stdout(ctx)
+		requireErrOut(t, err, "addresses with different filters require a union of workspace views")
+		// Each selection remains valid on its own. Parsing the printed row in
+		// a shell must preserve the empty key as well.
+		for _, address := range addresses {
+			out, err := base.With(daggerExec("check", "-l", "-f=cli", address)).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, line+"\n", replay)
+			require.NotContains(t, out, "# Use --all")
+			require.Len(t, strings.Split(strings.TrimSpace(out), "\n"), 1)
+			replay, err := base.WithExec([]string{"sh", "-c", "dagger check -l -a -f=cli " + out}).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, out, replay)
 		}
 	})
 }
@@ -729,7 +742,7 @@ func (CollectionsSuite) TestDimensionItems(ctx context.Context, t *testctx.T) {
       keys: dimensionKeys(dimension: "collections-items-part")
     }
     lazy: filterUri(uri: "items/broken?collections-items-item=b") { dimensionItems(dimension: "collections-items-item") { uri value { __typename } } }
-    batch: filterUri(uri: "items/delta-check?collections-items-item=b") { dimensionItems(dimension: "collections-items-item") { uri value { __typename } } }
+    collectionMethod: filterUri(uri: "items/delta-check?collections-items-item=b") { dimensionItems(dimension: "collections-items-item") { uri value { __typename } } }
     fields: filterTypes(types: ["CollectionsItem"]) {
       dimensionItems(dimension: "collections-other") { uri }
     }
@@ -751,7 +764,7 @@ func (CollectionsSuite) TestDimensionItems(ctx context.Context, t *testctx.T) {
     "keys":["x"]
   },
   "lazy":{"dimensionItems":[{"uri":"dag://?artifact-collections-item=items&collections-items-item=b","value":{"__typename":"CollectionsItem"}}]},
-  "batch":{"dimensionItems":[{"uri":"dag://?artifact-collections-item=items&collections-items-item=b","value":{"__typename":"CollectionsItem"}}]},
+  "collectionMethod":{"dimensionItems":[]},
   "fields":{"dimensionItems":[{"uri":"dag://?artifact-collections-item=other&collections-other-item=b"},{"uri":"dag://?artifact-collections-item=other&collections-other-item=a"},{"uri":"dag://?artifact-collections-item=other&collections-other-item=c"}]},
   "direct":{"filterTypes":{"items":[{"description":"Look up one item."}]}},
   "unknown":[]
