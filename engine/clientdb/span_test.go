@@ -2,13 +2,17 @@ package clientdb
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/base64"
 	"strings"
 	"testing"
 
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/codes"
+	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
+	otlpresourcev1 "go.opentelemetry.io/proto/otlp/resource/v1"
 	otlptracev1 "go.opentelemetry.io/proto/otlp/trace/v1"
 	"google.golang.org/protobuf/proto"
 )
@@ -125,4 +129,70 @@ func BenchmarkMarshalProtoList(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
+}
+
+// TestAppendTraceRequestPB checks that the trace stream's encoding written
+// from stored rows is byte for byte what proto.Marshal makes of the request
+// SpansToPB builds from the same rows.
+func TestAppendTraceRequestPB(t *testing.T) {
+	list := func(msgs ...proto.Message) []byte {
+		t.Helper()
+		b, err := MarshalProtoList(msgs)
+		require.NoError(t, err)
+		return b
+	}
+	enc := func(m proto.Message) []byte {
+		t.Helper()
+		b, err := proto.Marshal(m)
+		require.NoError(t, err)
+		return b
+	}
+	attrs := make([]proto.Message, 0, len(sampleSpanAttrs()))
+	for _, kv := range sampleSpanAttrs() {
+		attrs = append(attrs, kv)
+	}
+	resA := enc(&otlpresourcev1.Resource{Attributes: []*otlpcommonv1.KeyValue{strAttr("service.name", "dagger-engine"), strAttr("a", "1")}})
+	resB := enc(&otlpresourcev1.Resource{Attributes: []*otlpcommonv1.KeyValue{strAttr("service.name", "dagger-cli")}})
+	scopeX := enc(&otlpcommonv1.InstrumentationScope{Name: "dagger.io/engine", Version: "v1"})
+	events := list(&otlptracev1.Span_Event{
+		Name:                   "evt",
+		TimeUnixNano:           1_700_000_000_000_000_123,
+		Attributes:             []*otlpcommonv1.KeyValue{strAttr("k", "v")},
+		DroppedAttributesCount: 2,
+	}, &otlptracev1.Span_Event{Name: "bare"})
+	links := list(&otlptracev1.Span_Link{
+		TraceId:    bytes.Repeat([]byte{0xab}, 16),
+		SpanId:     bytes.Repeat([]byte{0xcd}, 8),
+		TraceState: "x=y",
+		Attributes: []*otlpcommonv1.KeyValue{strAttr(telemetry.LinkPurposeAttr, telemetry.LinkPurposeCause)},
+		Flags:      0x301,
+	})
+	rows := []Span{
+		{
+			TraceID: "0102030405060708090a0b0c0d0e0f10", SpanID: "1112131415161718", TraceState: "a=b",
+			ParentSpanID: sql.NullString{String: "2122232425262728", Valid: true},
+			Flags:        1, Name: "full", Kind: "server",
+			StartTime: 1_700_000_000_000_000_000, EndTime: sql.NullInt64{Int64: 1_700_000_001_000_000_000, Valid: true},
+			Attributes: list(attrs...), DroppedAttributesCount: 3,
+			Events: events, DroppedEventsCount: 4,
+			Links: links, DroppedLinksCount: 5,
+			Resource: resA, InstrumentationScope: scopeX,
+			StatusCode: int64(codes.Error), StatusMessage: "boom",
+		},
+		// Unfinished, with no parent, kind, attributes or scope.
+		{TraceID: "0102030405060708090a0b0c0d0e0f10", SpanID: "3132333435363738", Name: "open", StartTime: 1, Resource: resA},
+		// Attributes whose elements can't be split, under another resource.
+		{TraceID: "0102030405060708090a0b0c0d0e0f10", SpanID: "4142434445464748", Name: "bad", Kind: "client", Attributes: []byte{0xff}, Resource: resB, InstrumentationScope: scopeX, StatusCode: int64(codes.Ok)},
+		// The first resource and scope again, after the others.
+		{TraceID: "0102030405060708090a0b0c0d0e0f10", SpanID: "5152535455565758", Name: "again", Kind: "internal", Attributes: list(strAttr("k", "v")), Resource: resA, InstrumentationScope: scopeX},
+	}
+	want, err := proto.Marshal(&coltracepb.ExportTraceServiceRequest{ResourceSpans: SpansToPB(rows)})
+	require.NoError(t, err)
+	got, err := AppendTraceRequestPB(nil, rows)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+
+	got, err = AppendTraceRequestPB(nil, nil)
+	require.NoError(t, err)
+	require.Empty(t, got)
 }
