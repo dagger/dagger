@@ -264,6 +264,30 @@ func (HostSuite) TestDirectoryExcludeInclude(ctx context.Context, t *testctx.T) 
 	})
 }
 
+// A host directory read with more include patterns than an HTTP/2 server
+// accepts as header values by default (500 since Go 1.27), and long enough
+// to span several frames, reads every file it names.
+func (HostSuite) TestDirectoryManyPatterns(ctx context.Context, t *testctx.T) {
+	dir := t.TempDir()
+	const n = 600
+	include := make([]string, 0, n)
+	for i := range n {
+		name := fmt.Sprintf("%s-%03d.txt", strings.Repeat("x", 64), i)
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte("1"), 0o600))
+		include = append(include, name)
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "other.txt"), []byte("2"), 0o600))
+
+	c := connect(ctx, t)
+
+	entries, err := core.NewQuery(c).Host().Directory(dir, core.HostDirectoryOpts{
+		Include: include,
+	}).Entries(ctx)
+	require.NoError(t, err)
+	require.Len(t, entries, n)
+	require.NotContains(t, entries, "other.txt")
+}
+
 func (HostSuite) TestDirectoryGitIgnore(ctx context.Context, t *testctx.T) {
 	dir := t.TempDir()
 	gitignore := strings.Join([]string{
