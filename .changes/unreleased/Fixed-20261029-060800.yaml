@@ -1,0 +1,10 @@
+kind: Fixed
+body: |
+  When mounting a snapshot to a temporary directory fails part-way, for
+  example when a read-only bind mount can't be made read-only, the engine no
+  longer recursively deletes that directory, which could delete the
+  snapshot's contents through the bind mount left in place.
+time: 2026-10-29T06:08:00Z
+custom:
+  Author: sipsma
+  PR: "14952"
