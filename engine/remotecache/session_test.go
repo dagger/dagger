@@ -375,6 +375,109 @@ func TestExportUpload(t *testing.T) {
 	<-released
 }
 
+// An upload cut off, as when the engine gives up its remote-cache work,
+// still answers with what arrived: the blob uploaded is done, and the one
+// cut off in its PUT fails with the cut's cause.
+func TestCutUploadAnswersWithWhatArrived(t *testing.T) {
+	d1, d2 := digest.FromString("one"), digest.FromString("two")
+	errCut := errors.New("the engine gave up")
+	cut := make(chan struct{})
+	adapter := newFakeAdapter()
+	adapter.export = func(ctx context.Context, req protocol.Export, consume func(context.Context, Export) error) error {
+		ctx, cancel := context.WithCancelCause(ctx)
+		go func() {
+			<-cut
+			cancel(errCut)
+		}()
+		return consume(ctx, Export{Bundle: testBundle(), Blobs: blobs{d1: "first", d2: "second"}})
+	}
+	s, conn := testSession(t, adapter)
+	put, putting := make(chan struct{}), make(chan struct{})
+	s.cfg.put = func(ctx context.Context, address string, body io.Reader, size int64) error {
+		if address == "put-1" {
+			close(put)
+			return nil
+		}
+		close(putting)
+		<-ctx.Done()
+		return context.Cause(ctx)
+	}
+	s.dispatch(request(t, 7, protocol.TypeExport, protocol.Export{Roots: []uint64{12}}))
+	exported := decode[protocol.Exported](t, conn.next(t))
+
+	s.dispatch(request(t, 8, protocol.TypeUpload, protocol.Upload{ExportID: exported.ExportID, URLs: map[digest.Digest]string{d1: "put-1", d2: "put-2"}}))
+	<-put
+	<-putting
+	close(cut)
+	reply := conn.next(t)
+	require.Equal(t, protocol.TypeUploaded, reply.Type)
+	require.Equal(t, uint64(8), reply.Re)
+	uploaded := decode[protocol.Uploaded](t, reply)
+	require.Equal(t, []digest.Digest{d1}, uploaded.Done)
+	require.Len(t, uploaded.Failed, 1)
+	require.Equal(t, d2, uploaded.Failed[0].Digest)
+}
+
+// An upload cut off while a blob waits for a slot answers too: a blob
+// never PUT fails with the cut's cause, and one cut off in its PUT with its
+// PUT's error.
+func TestCutUploadAnswersForBlobsWaitingForASlot(t *testing.T) {
+	d1, d2 := digest.FromString("one"), digest.FromString("two")
+	errCut := errors.New("the engine gave up")
+	errPut := errors.New("the PUT was cut off")
+	cut := make(chan struct{})
+	adapter := newFakeAdapter()
+	adapter.export = func(ctx context.Context, req protocol.Export, consume func(context.Context, Export) error) error {
+		ctx, cancel := context.WithCancelCause(ctx)
+		go func() {
+			<-cut
+			cancel(errCut)
+		}()
+		return consume(ctx, Export{Bundle: testBundle(), Blobs: blobs{d1: "first", d2: "second"}})
+	}
+	s, conn := testSession(t, adapter)
+	putting := make(chan string, 2)
+	s.cfg.put = func(ctx context.Context, address string, body io.Reader, size int64) error {
+		putting <- address
+		<-ctx.Done()
+		return errPut
+	}
+	// Every slot but one is taken, as by other exports' PUTs: the first
+	// blob PUTs, and the second waits.
+	for range UploadConcurrency - 1 {
+		s.uploadSlots <- struct{}{}
+	}
+	s.dispatch(request(t, 7, protocol.TypeExport, protocol.Export{Roots: []uint64{12}}))
+	exported := decode[protocol.Exported](t, conn.next(t))
+
+	s.dispatch(request(t, 8, protocol.TypeUpload, protocol.Upload{ExportID: exported.ExportID, URLs: map[digest.Digest]string{d1: "put-1", d2: "put-2"}}))
+	put := <-putting
+	close(cut)
+	reply := conn.next(t)
+	require.Equal(t, protocol.TypeUploaded, reply.Type)
+	require.Equal(t, uint64(8), reply.Re)
+	uploaded := decode[protocol.Uploaded](t, reply)
+	require.Empty(t, uploaded.Done)
+	require.Len(t, uploaded.Failed, 2)
+	put1, waited := d1, d2
+	if put == "put-2" {
+		put1, waited = d2, d1
+	}
+	failed := map[digest.Digest]string{}
+	for _, f := range uploaded.Failed {
+		failed[f.Digest] = f.Message
+	}
+	require.Contains(t, failed[put1], errPut.Error())
+	select {
+	case <-putting:
+		// The first PUT's slot freed as the cut came, and the waiting
+		// blob took it: its PUT, cut off too, failed.
+		require.Contains(t, failed[waited], errPut.Error())
+	default:
+		require.Equal(t, errCut.Error(), failed[waited])
+	}
+}
+
 // At most UploadConcurrency PUTs run at once across all the exports, not
 // per export, so exports do not starve the engine's own pulls; the queued
 // ones proceed as slots open.
