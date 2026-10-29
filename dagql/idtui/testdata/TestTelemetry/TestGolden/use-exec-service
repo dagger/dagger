@@ -20,7 +20,6 @@ $ viztest: Viztest! X.Xs CACHED
 ├╴✔ .asService(args: ["httpd", "-v", "-h", "/srv", "-f"]): Service! X.Xs
 │ ┃ [::ffff:10.XX.XX.XX]:XXXXX: response:200
 │ ╰╴✔ 80/tcp X.Xs
-│   ┃ XX:XX:XX WRN port not ready host=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local error="dial tcp 10.XX.XX.XX:80: connect: connection refused" elapsed=X.Xs
 │   ┃ XX:XX:XX INF port is healthy host=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local endpoint=10.XX.XX.XX:80
 │
 ├╴$ Container.from(address: "alpine"): Container! X.Xs CACHED
