@@ -8010,6 +8010,8 @@ func TestCacheAttachedDependencyResultsRequireEveryDepsSessionResources(t *testi
 	c.egraphMu.RUnlock()
 	assert.Assert(t, requiresFirst, "the first attached dep's session resource is missing")
 	assert.Assert(t, requiresLast, "the last attached dep's session resource is missing")
+	// The required set is computed once over all the deps, not once per dep.
+	assert.Equal(t, uint64(1), shared.requiredSessionResourcesGen.Load())
 	assertCacheRequiredSessionResourcesExact(t, c)
 
 	// A session that bound only one of the two is refused the result.
