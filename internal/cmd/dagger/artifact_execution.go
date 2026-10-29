@@ -82,10 +82,11 @@ func evaluateArtifacts(ctx context.Context, dag *dagger.Client, artifacts *core.
 		isCheck := slices.ContainsFunc(item.DimensionKeys, func(key struct{ Dimension string }) bool { return key.Dimension == "type:Check" })
 		remote := isCheck && checksScaleOut && item.LoadError == "" && item.Workspace != nil
 		var attrs []attribute.KeyValue
-		if slices.Contains(item.Directives, "generate") {
+		isGenerator := slices.Contains(item.Directives, "generate")
+		if isGenerator {
 			attrs = append(attrs, attribute.String(telemetry.GeneratorNameAttr, item.URI))
 		}
-		jobs = jobs.WithTracing(!isCheck).WithJob(item.URI, func(ctx context.Context) error {
+		jobs = jobs.WithTracing(!isCheck).WithRollupLogs(!isGenerator).WithJob(item.URI, func(ctx context.Context) error {
 			err := ctx.Err()
 			if err == nil && limit != nil && !remote {
 				err = limit.Acquire(ctx, 1)
@@ -112,6 +113,11 @@ func evaluateArtifacts(ctx context.Context, dag *dagger.Client, artifacts *core.
 							results[i].Error.Values = append(results[i].Error.Values, struct{ Name, Value string }{name, string(encoded)})
 						}
 					}
+				}
+				if isGenerator {
+					// Exec errors retain their output even on cache hits. Report it
+					// on this execution's span instead of relying on old exec logs.
+					reportArtifactFailureOutput(ctx, results[i].Error)
 				}
 			}
 			return err
@@ -452,4 +458,26 @@ func artifactListReplayArgs(cmd *cobra.Command) []string {
 		args = append(args, "--skip="+pattern)
 	}
 	return args
+}
+
+func reportArtifactFailureOutput(ctx context.Context, failure *artifactExecutionError) {
+	if failure == nil {
+		return
+	}
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	defer stdio.Close()
+	for _, value := range failure.Values {
+		var output string
+		if value.Name != "stdout" && value.Name != "stderr" {
+			continue
+		}
+		if err := json.Unmarshal([]byte(value.Value), &output); err != nil || output == "" {
+			continue
+		}
+		if value.Name == "stdout" {
+			fmt.Fprint(stdio.Stdout, output)
+		} else {
+			fmt.Fprint(stdio.Stderr, output)
+		}
+	}
 }
