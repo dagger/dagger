@@ -91,6 +91,10 @@ func importPhases(t *testing.T, root uint64) (map[importPhase]profiledEvent, []i
 			require.Equal(t, root, ev.ParentID, "%s is a child of the import's op", ev.class)
 			require.Equal(t, "ok", ev.Outcome, ev.class)
 		case "wait":
+			if ev.ident == "snapshots.snapshotManager.mu" {
+				// The manager's lock, when another holder blocks it.
+				continue
+			}
 			require.Equal(t, "lock", ev.Reason)
 			require.Equal(t, "snapshots.importLayer", ev.ident)
 			require.LessOrEqual(t, ev.StartNS, ev.EndNS)
@@ -344,6 +348,41 @@ func (b builtinLookups) Info(_ context.Context, dgst digest.Digest) (content.Inf
 
 func (b builtinLookups) ReaderAt(context.Context, ocispecs.Descriptor) (content.ReaderAt, error) {
 	return nil, cerrdefs.ErrNotFound
+}
+
+// A profiled chain import that waits for its layers' blobs to come in
+// records each wait as an io wait of its op, named for the layer.
+func TestImportChainAwaitProfiled(t *testing.T) {
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	a, _ := producer.Build(t, nil, "a.txt", "awaited prefix")
+	ab, _ := producer.Build(t, a, "b.txt", "awaited suffix")
+	chain := exportChain(t, ab)
+	require.Len(t, chain.Layers, 2)
+	await := func(ctx context.Context, desc ocispecs.Descriptor) error {
+		data, err := content.ReadBlob(ctx, chain.Provider, desc)
+		if err != nil {
+			return err
+		}
+		return content.WriteBlob(ctx, consumer.Content, "awaited-"+desc.Digest.Encoded(), bytes.NewReader(data), desc)
+	}
+
+	ctx, root := profiledOp(context.Background(), "test.import")
+	ref, err := consumer.Manager.ImportChain(ctx, &bkcache.ExportChain{Layers: chain.Layers, Await: await})
+	require.NoError(t, err)
+	require.NoError(t, ref.Release(context.Background()))
+	root.End(wcprof.OutcomeOK)
+
+	var awaited []string
+	for _, ev := range profiledUnder(t, root.ID()) {
+		if ev.Type != "wait" || !strings.HasPrefix(ev.ident, "snapshots.awaitLayer:") {
+			continue
+		}
+		require.Equal(t, "io", ev.Reason)
+		require.Equal(t, root.ID(), ev.ParentID, "the wait is the import's")
+		require.LessOrEqual(t, ev.StartNS, ev.EndNS)
+		awaited = append(awaited, strings.TrimPrefix(ev.ident, "snapshots.awaitLayer:"))
+	}
+	require.ElementsMatch(t, []string{chain.Layers[0].Descriptor.Digest.String(), chain.Layers[1].Descriptor.Digest.String()}, awaited, "one wait per layer awaited")
 }
 
 // Each metadata write transaction the manager makes is profiled as one

@@ -92,11 +92,23 @@ Current hook points:
   per layer, an `io` op `snapshot.import.fetch[<source>]` (`download`,
   `builtin` or `present`) and `snapshot.import.apply`, with the layer's
   digest as ident and its size in bytes, and a lock wait on
-  `snapshots.importLayer`. Each metadata write transaction the snapshot
+  `snapshots.importLayer`. A layer whose blob the import awaits from another
+  source (a chain's `Await`) is an `io` wait on `snapshots.awaitLayer:<digest>`
+  for as long as it waits. Each metadata write transaction the snapshot
   manager makes, as when it attaches a lease to a snapshot and its parents,
   is an `internal` op `snapshot.metadata.write`, like a containerd
   snapshotter call's, from asking for the database's single writer to the
   commit's end.
+- `engine/snapshots` owner leases: `AttachLease` and `RemoveLease` record a
+  lock wait on `snapshots.snapshotManager.mu` when another holder blocks the
+  manager's lock (`wcprof.Lock`).
+- `dagql/cache.go runLazyEvalBody`: the bookkeeping after a lazy body, each
+  step that has work an `internal` op of the lazy op's: `lazyBody.cleanup`,
+  `lazyBody.ownerSync` (the owner lease sync), `lazyBody.releaseProtections`,
+  `lazyBody.afterOwnerSync`, `lazyBody.settle` (the parts installed),
+  `lazyBody.releaseOperationLease` and `lazyBody.teachContentIdentity`, and a
+  `lazy` wait on `dagql.lazyBody.ownerSyncReady` when the owner sync isn't
+  ready yet.
 - Remote-cache installs (`dagql/cache_part_content.go`): one `remote_cache`
   op `remotecache.install` per attempt to install an offered part, with the
   part key as ident, the receiving result, and the bytes downloaded; a `part`

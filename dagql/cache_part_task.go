@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 
 	"github.com/opencontainers/go-digest"
+
+	"github.com/dagger/dagger/engine/wcprof"
 )
 
 // LazyTaskSpec supplies a coordination body, independent of the value's native
@@ -120,13 +122,20 @@ type lazyTaskContinuation struct {
 	synced, cleaned, settled bool
 }
 
+// finish is the bookkeeping after the task's body. When profiled, each of its
+// steps that has work is a step of its own (lazyBody.*), and a wait for the
+// owner sync to be ready is a lazy wait: one op or wait per step a body runs,
+// none per part.
 func (t *lazyTaskContinuation) finish(ctx context.Context, c *Cache, row *sharedResult) error {
-	if installed := t.token.installed.Load(); installed != nil {
+	if installed := t.token.installed.Load(); installed != nil && len(installed.beforeSync) > 0 {
+		stepCtx, step := BeginStep(ctx, "lazyBody.cleanup")
 		for _, cleanup := range installed.beforeSync {
-			if err := cleanup.release(ctx); err != nil {
+			if err := cleanup.release(stepCtx); err != nil {
+				step.End(err)
 				return err
 			}
 		}
+		step.End(nil)
 	}
 	if t.spec.OwnerSyncReady != nil {
 		select {
@@ -134,44 +143,75 @@ func (t *lazyTaskContinuation) finish(ctx context.Context, c *Cache, row *shared
 		case <-t.token.ownerSync:
 		case <-ctx.Done():
 			return context.Cause(ctx)
+		default:
+			wait := wcprof.BeginWaitIdent(ctx, "dagql.lazyBody.ownerSyncReady", wcprof.WaitReasonLazy)
+			select {
+			case <-t.spec.OwnerSyncReady:
+			case <-t.token.ownerSync:
+			case <-ctx.Done():
+				wait.End()
+				return context.Cause(ctx)
+			}
+			wait.End()
 		}
 	}
 	if !t.synced {
 		c.recordPartFixture(row, PersistedPartAddress{}, "owner-sync")
-		if err := c.syncTaskPartLeases(ctx, row, t.token); err != nil {
+		stepCtx, step := BeginStep(ctx, "lazyBody.ownerSync")
+		err := c.syncTaskPartLeases(stepCtx, row, t.token)
+		step.End(err)
+		if err != nil {
 			return err
 		}
 		t.synced = true
 	}
 	if !t.cleaned {
-		if installed := t.token.installed.Load(); installed != nil {
+		if installed := t.token.installed.Load(); installed != nil && len(installed.protections) > 0 {
+			stepCtx, step := BeginStep(ctx, "lazyBody.releaseProtections")
 			for _, protection := range installed.protections {
-				if err := protection.release(ctx); err != nil {
+				if err := protection.release(stepCtx); err != nil {
+					step.End(err)
 					return err
 				}
 			}
+			step.End(nil)
 		}
 		if t.spec.AfterOwnerSync != nil {
-			if err := t.spec.AfterOwnerSync(ctx); err != nil {
+			stepCtx, step := BeginStep(ctx, "lazyBody.afterOwnerSync")
+			err := t.spec.AfterOwnerSync(stepCtx)
+			step.End(err)
+			if err != nil {
 				return err
 			}
 		}
 		t.cleaned = true
 	}
 	if !t.settled {
-		if installed := t.token.installed.Load(); installed != nil {
-			for _, output := range installed.outputs {
-				if err := c.settlePart(ctx, row, output.address, t.token, output.installation); err != nil {
-					return err
-				}
-			}
-		}
-		if t.spec.Settled != nil {
-			if err := t.spec.Settled(ctx); err != nil {
+		installed := t.token.installed.Load()
+		if (installed != nil && len(installed.outputs) > 0) || t.spec.Settled != nil {
+			stepCtx, step := BeginStep(ctx, "lazyBody.settle")
+			err := t.settle(stepCtx, c, row, installed)
+			step.End(err)
+			if err != nil {
 				return err
 			}
 		}
 		t.settled = true
+	}
+	return nil
+}
+
+// settle settles the parts the task installed, then runs its Settled.
+func (t *lazyTaskContinuation) settle(ctx context.Context, c *Cache, row *sharedResult, installed *InstalledOutputs) error {
+	if installed != nil {
+		for _, output := range installed.outputs {
+			if err := c.settlePart(ctx, row, output.address, t.token, output.installation); err != nil {
+				return err
+			}
+		}
+	}
+	if t.spec.Settled != nil {
+		return t.spec.Settled(ctx)
 	}
 	return nil
 }

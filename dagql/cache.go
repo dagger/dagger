@@ -5560,16 +5560,23 @@ func (c *Cache) runLazyEvalBody(callbackCtx context.Context, shared *sharedResul
 			// A native group body run through its row's PartHost records
 			// the parts it filled on token; any other body fills the
 			// whole value, which is synced whole.
-			err = c.syncTaskPartLeases(callbackCtx, shared, token)
+			stepCtx, step := BeginStep(callbackCtx, "lazyBody.ownerSync")
+			err = c.syncTaskPartLeases(stepCtx, shared, token)
+			step.End(err)
 		}
 	}
-	if releaseErr := release(context.WithoutCancel(callbackCtx)); releaseErr != nil && err == nil {
+	releaseCtx, releaseStep := BeginStep(context.WithoutCancel(callbackCtx), "lazyBody.releaseOperationLease")
+	releaseErr := release(releaseCtx)
+	releaseStep.End(releaseErr)
+	if releaseErr != nil && err == nil {
 		err = releaseErr
 	}
 	if err == nil && continuation != nil {
 		// Content equivalence requires successful operation-lease cleanup too.
 		// Bookkeeping retries retain the original installation's identity.
-		err = c.teachTaskContentIdentity(callbackCtx, continuation.token)
+		stepCtx, step := BeginStep(callbackCtx, "lazyBody.teachContentIdentity")
+		err = c.teachTaskContentIdentity(stepCtx, continuation.token)
+		step.End(err)
 		if err == nil {
 			continuation.token.settled.Store(true)
 		}
