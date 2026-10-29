@@ -33,6 +33,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/contentutil"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	"github.com/dagger/dagger/internal/buildkit/util/imageutil"
+	"github.com/dagger/dagger/internal/buildkit/util/resolver/retryhandler"
 	"github.com/dagger/dagger/internal/buildkit/util/tracing"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/distribution/reference"
@@ -416,9 +417,14 @@ func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *Pull
 		return nil, err
 	}
 	childrenHandler := images.ChildrenHandler(r.contentStore)
+	// A registry can drop a connection partway through a blob, and containerd
+	// only reconnects on an unexpected EOF, so retry the blob's fetch.
+	fetchHandler := retryhandler.New(remotes.FetchHandler(progressIngester{Ingester: r.contentStore}, fetcher), func(msg []byte) {
+		bklog.G(ctx).Warnf("pulling %s: %s", resolvedRef, bytes.TrimSpace(msg))
+	})
 	handler := images.Handlers(
 		recordNonLayers,
-		remotes.FetchHandler(progressIngester{Ingester: r.contentStore}, fetcher),
+		fetchHandler,
 		childrenHandler,
 		dslHandler,
 	)
