@@ -273,9 +273,9 @@ func TestOverlayAncestorMinLayerCachesCumulativeBounds(t *testing.T) {
 	require.Equal(t, 1, minLayer)
 }
 
-// TestCopierSharesLowerLayerAnswersAcrossSources checks that sources of one
-// copy share what they learned about their lowerdirs, and that an upperdir's
-// answers are never kept.
+// TestCopierSharesLowerLayerAnswersAcrossSources checks that a second source
+// of one copy doesn't ask the filesystem again about a lowerdir the first
+// already asked about, and that the copy never keeps an upperdir's answers.
 func TestCopierSharesLowerLayerAnswersAcrossSources(t *testing.T) {
 	t.Parallel()
 
@@ -305,10 +305,15 @@ func TestCopierSharesLowerLayerAnswersAcrossSources(t *testing.T) {
 		Options: []string{"lowerdir=" + secondTop + ":" + shared, "upperdir=" + upper},
 	}})
 	require.NoError(t, err)
+	var probed []string
+	second.onLayerProbe = func(path string) { probed = append(probed, path) }
 	_, err = second.overlayAncestorMinLayer("a/file.txt")
 	require.NoError(t, err)
+	require.ElementsMatch(t, []string{
+		upper, filepath.Join(upper, "a"),
+		secondTop, filepath.Join(secondTop, "a"),
+	}, probed)
 	require.Len(t, copier.lowerHides, learned+2)
-	require.Contains(t, copier.lowerHides, filepath.Join(secondTop, "a"))
 	require.NotContains(t, copier.lowerHides, upper)
 	require.NotContains(t, copier.lowerHides, filepath.Join(upper, "a"))
 }
