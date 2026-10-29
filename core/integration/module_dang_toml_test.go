@@ -315,7 +315,7 @@ func (DangSuite) TestDangTomlDangVersion(ctx context.Context, t *testctx.T) {
 	})
 
 	// Fields without a type annotation are typed by inferring their values,
-	// which the SDK of the Dang v1 line does when loading a module's types.
+	// which the SDK of the Dang v1 line did when loading a module's types.
 	t.Run("Dang 1.0 fields typed by their values", func(ctx context.Context, t *testctx.T) {
 		out, err := dangTomlModule(t, c, "v0.20.6", `type Tiny {
   pub tags = ["a", "b"]
