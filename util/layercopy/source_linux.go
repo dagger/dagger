@@ -11,7 +11,6 @@ import (
 	"syscall"
 
 	continuityfs "github.com/containerd/continuity/fs"
-	"github.com/containerd/continuity/sysx"
 	"golang.org/x/sys/unix"
 )
 
@@ -398,15 +397,18 @@ func overlayEntryState(path string) (isDir, hidesLower bool, err error) {
 	if !info.IsDir() {
 		return false, true, nil
 	}
+	// The opaque value is the one byte "y", so one byte is all that's read: a
+	// longer value doesn't fit (ERANGE), and isn't the marker either.
+	var val [1]byte
 	for _, key := range []string{"trusted.overlay.opaque", "user.overlay.opaque"} {
-		val, err := sysx.LGetxattr(path, key)
-		if err == unix.ENODATA || err == unix.ENOTSUP {
+		n, err := unix.Lgetxattr(path, key, val[:])
+		if err == unix.ENODATA || err == unix.ENOTSUP || err == unix.ERANGE {
 			continue
 		}
 		if err != nil {
 			return false, false, err
 		}
-		if len(val) == 1 && val[0] == 'y' {
+		if n == 1 && val[0] == 'y' {
 			return true, true, nil
 		}
 	}
