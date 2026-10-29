@@ -66,11 +66,18 @@ const (
 	// of the last GC, the heap goal, the scannable heap and globals, and the
 	// stack the last GC scanned (see wcprof.Usage).
 	UsageScopeGoRuntimeSample = "go_runtime_sample"
+	// UsageScopeEngineProcessSample is the engine process's CPU over one
+	// stretch of the phase, read every machineSampleInterval while it runs:
+	// user and system time since the previous reading (or the phase's
+	// start), so a window of the phase sums the readings whose stretch ends
+	// inside it.
+	UsageScopeEngineProcessSample = "engine_process_sample"
 )
 
 // machineSampleInterval is how often a profiled phase reads the machine's
-// CPU, the engine's memory and its Go GC: fine enough to place a slow
-// stretch of about a second, for two small file reads and a runtime read.
+// CPU, the engine's CPU, memory and Go GC: fine enough to place a slow
+// stretch of about a second, for two small file reads and two process
+// reads.
 const machineSampleInterval = 100 * time.Millisecond
 
 // engineCgroupDir finds the engine's cgroup; tests replace it.
@@ -115,6 +122,16 @@ func readEngine() engineReading {
 		c.machine, c.machineOK = parseMachineCPU(stat)
 	}
 	return c
+}
+
+// readProcessCPU reads this process's user and system CPU time.
+func readProcessCPU() (wcprof.Usage, bool) {
+	var ru unix.Rusage
+	if unix.Getrusage(unix.RUSAGE_SELF, &ru) != nil {
+		return wcprof.Usage{}, false
+	}
+	us := func(tv unix.Timeval) int64 { return tv.Sec*1_000_000 + tv.Usec }
+	return wcprof.Usage{CPUUserUS: us(ru.Utime), CPUSystemUS: us(ru.Stime)}, true
 }
 
 // goRuntimeMetrics are the Go runtime's counters readGoRuntime reads, in
@@ -231,8 +248,15 @@ func samplePhase(ctx context.Context, opID uint64, start engineReading) func() {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		prev, prevGC := start.machine, start.goGC
+		prev, prevGC, prevProcess := start.machine, start.goGC, start.process
 		sample := func() {
+			if cur, ok := readProcessCPU(); ok {
+				wcprof.RecordUsage(ctx, opID, UsageScopeEngineProcessSample, wcprof.Usage{
+					CPUUserUS:   cur.CPUUserUS - prevProcess.CPUUserUS,
+					CPUSystemUS: cur.CPUSystemUS - prevProcess.CPUSystemUS,
+				})
+				prevProcess = cur
+			}
 			gc := readGoGC()
 			stretch := gc
 			stretch.GCAssistUS -= prevGC.GCAssistUS

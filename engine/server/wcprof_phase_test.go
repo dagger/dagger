@@ -423,3 +423,42 @@ func TestPhaseSamplesGoRuntime(t *testing.T) {
 	last := samples[len(samples)-1]
 	require.GreaterOrEqual(t, last.HeapLiveBytes, int64(40<<20), "40 MiB kept live: %+v", last)
 }
+
+// A profiled phase samples the engine process's CPU while it runs: stretches
+// that together cover the CPU it used, so a window of the phase can sum them.
+func TestPhaseSamplesEngineProcessCPU(t *testing.T) {
+	wcprof.EnsureRecorder()
+	ctx := wcprof.ContextWithProfiling(context.Background())
+	srv := &Server{}
+	p := srv.beginSessionPhase(ctx, "phase-process-session")
+	require.NotNil(t, p)
+	for range 3 {
+		burnCPU(100 * time.Millisecond)
+	}
+	p.end(srv)
+
+	var buf bytes.Buffer
+	require.NoError(t, wcprof.Active().WriteDump(&buf, false))
+	header, events, err := wcprof.ReadDump(&buf)
+	require.NoError(t, err)
+	var sampled int64
+	var n int
+	var total wcprof.DumpEvent
+	for _, ev := range events {
+		if ev.Type != wcprof.DumpTypeUsage || ev.OpID != p.op.ID() {
+			continue
+		}
+		switch header.Strings[ev.ClassID] {
+		case UsageScopeEngineProcessSample:
+			sampled += ev.CPUUserUS + ev.CPUSystemUS
+			n++
+		case UsageScopeEngineProcess:
+			total = ev
+		}
+	}
+	require.GreaterOrEqual(t, n, 2, "samples while it ran, and the last at its end")
+	require.GreaterOrEqual(t, sampled, int64(200_000), "300 ms of busy work: %d us sampled", sampled)
+	// The samples cover the phase from its first reading to its last, as
+	// the whole-phase reading does, read a moment later.
+	require.InDelta(t, total.CPUUserUS+total.CPUSystemUS, sampled, 50_000)
+}
