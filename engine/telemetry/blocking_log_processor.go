@@ -43,6 +43,10 @@ type BlockingLogProcessor struct {
 	done      chan struct{}
 	runCtx    context.Context
 	cancelRun context.CancelFunc
+
+	shutdownOnce sync.Once
+	shutdownDone chan struct{}
+	shutdownErr  error // published by closing shutdownDone
 }
 
 // NewBlockingLogProcessor exports to exporter in batches of at most batchSize
@@ -51,17 +55,18 @@ type BlockingLogProcessor struct {
 func NewBlockingLogProcessor(exporter sdklog.Exporter, queueSize, batchSize int, interval time.Duration) *BlockingLogProcessor {
 	runCtx, cancel := context.WithCancel(context.Background())
 	p := &BlockingLogProcessor{
-		exporter:  exporter,
-		limit:     max(queueSize, 1),
-		batchSize: max(batchSize, 1),
-		interval:  interval,
-		space:     make(chan struct{}),
-		wake:      make(chan struct{}, 1),
-		flush:     make(chan chan struct{}),
-		stop:      make(chan struct{}),
-		done:      make(chan struct{}),
-		runCtx:    runCtx,
-		cancelRun: cancel,
+		exporter:     exporter,
+		limit:        max(queueSize, 1),
+		batchSize:    max(batchSize, 1),
+		interval:     interval,
+		space:        make(chan struct{}),
+		wake:         make(chan struct{}, 1),
+		flush:        make(chan chan struct{}),
+		stop:         make(chan struct{}),
+		done:         make(chan struct{}),
+		runCtx:       runCtx,
+		cancelRun:    cancel,
+		shutdownDone: make(chan struct{}),
 	}
 	go p.run()
 	return p
@@ -125,33 +130,52 @@ func (p *BlockingLogProcessor) ForceFlush(ctx context.Context) error {
 	}
 }
 
-// Shutdown stops accepting records, exports the queued ones within ctx, and
-// shuts the exporter down. Records still queued when ctx ends are lost.
+// Shutdown stops accepting records and drains the queue within ctx. It returns
+// when ctx ends even if the exporter ignores cancellation. Exporter shutdown
+// runs once, after the export worker exits, so it cannot race an active Export.
+// Records still queued when ctx ends may be lost; an uncooperative exporter
+// can keep the background cleanup goroutine alive until process exit.
 func (p *BlockingLogProcessor) Shutdown(ctx context.Context) error {
-	p.mu.Lock()
-	if !p.stopped {
+	p.shutdownOnce.Do(func() {
+		p.mu.Lock()
 		p.stopped = true
 		close(p.stop)
 		close(p.space) // release blocked producers
 		p.space = make(chan struct{})
-	}
-	p.mu.Unlock()
-	var err error
+		p.mu.Unlock()
+		go func() {
+			select {
+			case <-p.done:
+			case <-ctx.Done():
+				p.cancelRun()
+				<-p.done
+			}
+			exportErr := context.Cause(p.runCtx)
+			p.cancelRun()
+			p.shutdownErr = errors.Join(context.Cause(ctx), exportErr, p.exporter.Shutdown(ctx))
+			close(p.shutdownDone)
+		}()
+	})
 	select {
-	case <-p.done:
+	case <-p.shutdownDone:
+		return p.shutdownErr
 	case <-ctx.Done():
 		p.cancelRun()
-		<-p.done
-		err = context.Cause(ctx)
+		return context.Cause(ctx)
 	}
-	p.cancelRun()
-	return errors.Join(err, p.exporter.Shutdown(ctx))
 }
 
 func (p *BlockingLogProcessor) run() {
-	defer close(p.done)
+	defer func() {
+		p.mu.Lock()
+		p.queue = nil
+		p.mu.Unlock()
+		close(p.done)
+	}()
 	for {
 		select {
+		case <-p.runCtx.Done():
+			return
 		case <-p.wake:
 			p.coalesce()
 			p.exportQueued()
@@ -195,6 +219,9 @@ func (p *BlockingLogProcessor) coalesce() {
 // exportQueued exports every queued record, in order, a batch at a time.
 func (p *BlockingLogProcessor) exportQueued() {
 	for {
+		if p.runCtx.Err() != nil {
+			return
+		}
 		p.mu.Lock()
 		n := min(len(p.queue), p.batchSize)
 		if n == 0 {
@@ -219,9 +246,12 @@ func (p *BlockingLogProcessor) exportWithRetry(batch []sdklog.Record) bool {
 		warned   time.Time
 	)
 	for {
+		if p.runCtx.Err() != nil {
+			return false
+		}
 		err := p.exporter.Export(p.runCtx, batch)
 		if err == nil {
-			return true
+			return p.runCtx.Err() == nil
 		}
 		if p.runCtx.Err() != nil {
 			return false

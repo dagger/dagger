@@ -97,10 +97,13 @@ func (fe *frontendDots) Run(ctx context.Context, opts dagui.FrontendOpts, f func
 	if cleanup != nil {
 		runErr = errors.Join(runErr, cleanup())
 	}
-
-	reportErr := normalizeFrontendExit(runErr, fe.db)
+	if failure := outputDrainFailure(runErr); failure != nil {
+		return failure
+	}
 
 	fe.mu.Lock()
+	defer fe.mu.Unlock()
+	reportErr := normalizeFrontendExit(runErr, fe.db)
 	if !opts.Silent {
 		fmt.Fprintln(fe.out)
 		fmt.Fprintln(fe.out)
@@ -121,7 +124,6 @@ func (fe *frontendDots) Run(ctx context.Context, opts dagui.FrontendOpts, f func
 			runErr = errors.Join(runErr, writeErr)
 		}
 	}
-	fe.mu.Unlock()
 
 	fe.db.WriteDot(opts.DotOutputFilePath, opts.DotFocusField, opts.DotShowInternal)
 	return normalizeFrontendExit(runErr, fe.db)
@@ -334,6 +336,9 @@ type dotsLogsExporter struct {
 func (e *dotsLogsExporter) Export(ctx context.Context, records []sdklog.Record) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	return e.streamingLogExporter.Export(ctx, records)
 }
 

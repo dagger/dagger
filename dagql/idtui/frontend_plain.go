@@ -218,6 +218,9 @@ func (fe *frontendPlain) Run(ctx context.Context, opts dagui.FrontendOpts, run f
 	if cleanup != nil {
 		runErr = errors.Join(runErr, cleanup())
 	}
+	if failure := outputDrainFailure(runErr); failure != nil {
+		return failure
+	}
 
 	if _, ok := renderQuietError(fe.output.Writer(), runErr); ok {
 		fe.db.WriteDot(opts.DotOutputFilePath, opts.DotFocusField, opts.DotShowInternal)
@@ -335,6 +338,9 @@ type plainLogExporter struct {
 func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) error {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 
 	logs = fe.db.IngestLogs(logs)
 	for _, record := range logs {
