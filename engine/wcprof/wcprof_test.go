@@ -242,6 +242,55 @@ func TestLockRecordsContendedWait(t *testing.T) {
 	}
 }
 
+// ReadLock and WriteLock record a blocked acquisition of an RWMutex as Lock
+// does, and nothing for one that doesn't block.
+func TestRWLockRecordsContendedWait(t *testing.T) {
+	for name, lock := range map[string]func(context.Context, *sync.RWMutex, string){
+		"read":  ReadLock,
+		"write": WriteLock,
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := withTestRecorder(t, 0)
+			ctx, op := BeginOp(context.Background(), OpKindCall, "Query.node", OpOpts{})
+			var mu sync.RWMutex
+
+			lock(ctx, &mu, "test.mu")
+			if name == "read" {
+				mu.RUnlock()
+			} else {
+				mu.Unlock()
+			}
+			if evs := drainEvents(r); len(evs) != 0 {
+				t.Fatalf("uncontended lock recorded %d events", len(evs))
+			}
+
+			mu.Lock()
+			locked := make(chan struct{})
+			go func() {
+				lock(ctx, &mu, "test.mu")
+				close(locked)
+			}()
+			for !waitingOn(r) {
+				runtime.Gosched()
+			}
+			mu.Unlock()
+			<-locked
+
+			evs := drainEvents(r)
+			if len(evs) != 1 {
+				t.Fatalf("expected 1 wait event, got %d: %+v", len(evs), evs)
+			}
+			w := evs[0]
+			if w.Type != EventTypeWait || w.Reason != WaitReasonLock || w.ParentID != op.ID() {
+				t.Fatalf("unexpected wait event: %+v", w)
+			}
+			if got := r.strings.snapshot()[w.IdentID]; got != "test.mu" {
+				t.Fatalf("wait ident: got %q", got)
+			}
+		})
+	}
+}
+
 // blockedInLock reports whether a goroutine is blocked acquiring a mutex in
 // Lock.
 func blockedInLock() bool {

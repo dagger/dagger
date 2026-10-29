@@ -515,9 +515,9 @@ func TestSessionResultInstallSpanContextsSorted(t *testing.T) {
 		SpanID:  trace.SpanID{1},
 	})
 
-	c.recordSessionResultInstallSpanLocked("test-session", 1, spanCtxB, false)
-	c.recordSessionResultInstallSpanLocked("test-session", 1, spanCtxA, false)
-	c.recordSessionResultInstallSpanLocked("test-session", 1, spanCtxB, false)
+	c.recordSessionResultInstallSpanLocked(t.Context(), "test-session", 1, spanCtxB, false)
+	c.recordSessionResultInstallSpanLocked(t.Context(), "test-session", 1, spanCtxA, false)
+	c.recordSessionResultInstallSpanLocked(t.Context(), "test-session", 1, spanCtxB, false)
 
 	got := c.sessionResultInstallSpanContexts("test-session", 1)
 	assert.DeepEqual(t, got, []trace.SpanContext{spanCtxA, spanCtxB})
@@ -565,11 +565,11 @@ func TestInstallSpanLookupWalksClosureOwnersUpward(t *testing.T) {
 	})
 
 	// The module API call returned moduleReturn: closure-owning install.
-	c.recordSessionResultInstallSpanLocked("test-session", moduleReturn.id, moduleSpanCtx, true)
+	c.recordSessionResultInstallSpanLocked(t.Context(), "test-session", moduleReturn.id, moduleSpanCtx, true)
 	// chained was returned by a plain API call: direct install only.
-	c.recordSessionResultInstallSpanLocked("test-session", chained.id, chainedSpanCtx, false)
+	c.recordSessionResultInstallSpanLocked(t.Context(), "test-session", chained.id, chainedSpanCtx, false)
 	// leaf was returned by a plain API call too.
-	c.recordSessionResultInstallSpanLocked("test-session", leaf.id, leafSpanCtx, false)
+	c.recordSessionResultInstallSpanLocked(t.Context(), "test-session", leaf.id, leafSpanCtx, false)
 
 	// leaf sees its own install plus the module span via closure ownership,
 	// but not the chained result's plain install.
