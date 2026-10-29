@@ -149,7 +149,7 @@ dagger = "latest"
 		{
 			name:   "dang version too new",
 			config: ptr(`dang = "99.0"`),
-			err:    "this project needs Dang 99.0",
+			err:    "dang.toml: module requires Dang 99.0, but this Dagger engine supports Dang 2.1 at most; upgrade Dagger",
 		},
 		{
 			name:   "malformed toml",
@@ -218,6 +218,137 @@ func TestResolveEntrypointVersionsLikeEngineVersion(t *testing.T) {
 				"a declared version past the engine's is served the engine's view")
 		})
 	}
+}
+
+// A Dang SDK module's dang.toml wins over its manifest's engineVersion; what
+// it leaves undeclared follows the manifest, as the Dang CLI reads it.
+func TestResolveModuleVersions(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name     string
+		manifest string  // the manifest's engineVersion
+		config   *string // nil: no dang.toml
+		engine   string
+		declared string
+		dang     string
+		err      string
+	}{
+		{
+			name:     "no dang.toml, before Dang 2",
+			manifest: "v0.20.6",
+			engine:   "v0.20.6",
+			dang:     "1.0",
+		},
+		{
+			name:     "no dang.toml, at Dang 2",
+			manifest: engine.MinimumDangV2ModuleVersion,
+			engine:   engine.MinimumDangV2ModuleVersion,
+			dang:     dang.CurrentVersion.String(),
+		},
+		{
+			name:     "no dang.toml, later",
+			manifest: "v1.0.0-beta.20",
+			engine:   "v1.0.0-beta.20",
+			dang:     dang.CurrentVersion.String(),
+		},
+		{
+			name:     "dang.toml without keys, before Dang 2",
+			manifest: "v0.20.6",
+			config:   ptr(""),
+			engine:   "v0.20.6",
+			dang:     "1.0",
+		},
+		{
+			name:     "dang.toml without keys, later",
+			manifest: "v0.21.9",
+			config:   ptr(""),
+			engine:   "v0.21.9",
+			dang:     dang.DefaultVersion.String(),
+		},
+		{
+			name:     "dang version wins over the default",
+			manifest: "v0.20.6",
+			config:   ptr(`dang = "2.0"`),
+			engine:   "v0.20.6",
+			dang:     "2.0",
+		},
+		{
+			name:     "dagger version wins over the manifest",
+			manifest: "v0.20.6",
+			config:   ptr("[imports.Dagger]\ndagger = \"v0.21.9\"\n"),
+			engine:   "v0.21.9",
+			declared: "v0.21.9",
+			dang:     dang.DefaultVersion.String(),
+		},
+		{
+			name:     "an older dagger version picks the old default Dang",
+			manifest: "v0.21.9",
+			config:   ptr("[imports.Dagger]\ndagger = \"v0.20.6\"\n"),
+			engine:   "v0.20.6",
+			declared: "v0.20.6",
+			dang:     "1.0",
+		},
+		{
+			name:     "dagger = true follows the manifest",
+			manifest: "v0.20.6",
+			config:   ptr("[imports.Dagger]\ndagger = true\n"),
+			engine:   "v0.20.6",
+			dang:     "1.0",
+		},
+		{
+			name:     "both declared",
+			manifest: "v0.20.6",
+			config:   ptr("dang = \"2.1\"\n\n[imports.Dagger]\ndagger = \"v1.0.0-beta.20\"\n"),
+			engine:   "v1.0.0-beta.20",
+			declared: "v1.0.0-beta.20",
+			dang:     "2.1",
+		},
+		{
+			name:     "declared dagger version too new",
+			manifest: "v0.20.6",
+			config:   ptr("[imports.Dagger]\ndagger = \"v999.0.0\"\n"),
+			err:      "dang.toml: module requires dagger v999.0.0, but you have " + engine.Version,
+		},
+		{
+			name:     "dang version too new",
+			manifest: "v0.20.6",
+			config:   ptr(`dang = "v99.1.2"`),
+			err:      "dang.toml: module requires Dang 99.1, but this Dagger engine supports Dang " + dang.CurrentVersion.String() + " at most; upgrade Dagger",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var data []byte
+			if tc.config != nil {
+				data = []byte(*tc.config)
+			}
+			versions, err := ResolveModuleVersions(context.Background(), "dang.toml", data, tc.manifest)
+			if tc.err != "" {
+				require.EqualError(t, err, tc.err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.engine, versions.Engine)
+			require.Equal(t, tc.declared, versions.DeclaredEngine)
+			require.Equal(t, tc.dang, versions.DangString())
+		})
+	}
+}
+
+func TestDefaultModuleVersions(t *testing.T) {
+	t.Parallel()
+
+	// Modules written before Dang 2 ran on the Dang v1 line.
+	require.Equal(t, dang.Version1_0, DefaultModuleDangVersion("v0.20.6"))
+	require.Equal(t, dang.Version1_0, DefaultModuleDangVersion("v0.21.4"))
+	require.Equal(t, dang.Version1_0, DefaultModuleDangVersion(engine.MinimumModuleVersion))
+	// Later ones leave the version to Dang.
+	require.True(t, DefaultModuleDangVersion(engine.MinimumDangV2ModuleVersion).IsZero())
+	require.True(t, DefaultModuleDangVersion("v1.0.0-beta.20").IsZero())
+
+	require.Equal(t, "1.0", DefaultModuleVersions("v0.20.6").DangString())
+	require.Equal(t, dang.CurrentVersion, DefaultModuleVersions("v0.21.9").Dang)
 }
 
 // legacyCommaSource separates top-level forms with a comma, which Dang 2.0

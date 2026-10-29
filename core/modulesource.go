@@ -187,11 +187,13 @@ type ModuleSource struct {
 	ModuleConfigUserFields        modules.ModuleConfigUserFields
 	DisableDefaultFunctionCaching bool
 
-	// EntrypointDangVersion is the Dang language version a manifest v2
-	// module's Dang entrypoint is written in, e.g. "2.1", as the dang.toml
-	// governing the entrypoint declares it (or Dang's default). Empty for
-	// any other module. See core/sdk/dang/v2.ResolveEntrypointVersions.
-	EntrypointDangVersion string
+	// DangVersion is the Dang language version a Dang module's source is
+	// written in, e.g. "1.0" or "2.1": as the dang.toml governing its source
+	// (or its entrypoint, for a manifest v2 module) declares it, or else the
+	// default for its engine version. Empty for a module of any other SDK.
+	// See core/sdk/dang/v2.ResolveModuleVersions and
+	// ResolveEntrypointVersions.
+	DangVersion string
 
 	// The SDK configuration of the module as read from the module config or set by withSDK
 	SDK *SDKConfig `field:"true" name:"sdk" doc:"The SDK configuration of the module."`
@@ -486,7 +488,7 @@ type persistedModuleSourcePayload struct {
 	ModuleName                      string                                `json:"moduleName,omitempty"`
 	ModuleOriginalName              string                                `json:"moduleOriginalName,omitempty"`
 	EngineVersion                   string                                `json:"engineVersion,omitempty"`
-	EntrypointDangVersion           string                                `json:"entrypointDangVersion,omitempty"`
+	DangVersion                     string                                `json:"dangVersion,omitempty"`
 	CodegenConfig                   *modules.ModuleCodegenConfig          `json:"codegenConfig,omitempty"`
 	ModuleConfigUserFields          modules.ModuleConfigUserFields        `json:"moduleConfigUserFields,omitempty"`
 	DisableDefaultFunctionCaching   bool                                  `json:"disableDefaultFunctionCaching,omitempty"`
@@ -811,7 +813,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, enc *dagql.P
 		ModuleName:                    src.ModuleName,
 		ModuleOriginalName:            src.ModuleOriginalName,
 		EngineVersion:                 src.EngineVersion,
-		EntrypointDangVersion:         src.EntrypointDangVersion,
+		DangVersion:                   src.DangVersion,
 		CodegenConfig:                 src.CodegenConfig,
 		ModuleConfigUserFields:        src.ModuleConfigUserFields,
 		DisableDefaultFunctionCaching: src.DisableDefaultFunctionCaching,
@@ -976,7 +978,7 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dec *dagql.Persi
 		ModuleName:                    persisted.ModuleName,
 		ModuleOriginalName:            persisted.ModuleOriginalName,
 		EngineVersion:                 persisted.EngineVersion,
-		EntrypointDangVersion:         persisted.EntrypointDangVersion,
+		DangVersion:                   persisted.DangVersion,
 		CodegenConfig:                 persisted.CodegenConfig,
 		ModuleConfigUserFields:        persisted.ModuleConfigUserFields,
 		DisableDefaultFunctionCaching: persisted.DisableDefaultFunctionCaching,
@@ -1465,15 +1467,17 @@ func (src *ModuleSource) SourceImplementationDigest(ctx context.Context) (digest
 		inputs = append(inputs, src.SDK.Source)
 	}
 
-	// A manifest v2 entrypoint's versions come from its dang.toml, which
-	// need not be in the context directory (a module reference or an address
-	// names a directory outside it), and they decide how its types are named
-	// and which API they are written against. Results built under one version
-	// must not answer for another, so key on them directly.
-	if src.Entrypoint != nil {
+	// A Dang module's versions decide how its types are named, which API they
+	// are written against and which syntax its source is parsed as. They come
+	// from a dang.toml that need not be in the context directory (a manifest
+	// v2 entrypoint's module reference or address names a directory outside
+	// it), or from defaults that depend on the engine (a module that declares
+	// no Dang version is parsed as this engine's Dang). Results built under
+	// one version must not answer for another, so key on them directly.
+	if src.DangVersion != "" {
 		inputs = append(inputs,
-			"entrypointEngineVersion:"+src.EngineVersion,
-			"entrypointDangVersion:"+src.EntrypointDangVersion,
+			"dangEngineVersion:"+src.EngineVersion,
+			"dangVersion:"+src.DangVersion,
 		)
 	}
 
