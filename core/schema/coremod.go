@@ -789,12 +789,21 @@ func (obj *CoreModScalar) ConvertToSDKInput(ctx context.Context, value dagql.Typ
 	if !ok {
 		return nil, fmt.Errorf("CoreModScalar.ConvertToSDKInput: found no scalar type")
 	}
-	val, ok := value.(dagql.Scalar[dagql.String])
+	input, ok := dagql.UnwrapAs[dagql.Input](value)
 	if !ok {
-		// we assume all core scalars are strings
-		return nil, fmt.Errorf("CoreModScalar.ConvertToSDKInput: core scalar should be string")
+		return nil, fmt.Errorf("CoreModScalar.ConvertToSDKInput: expected scalar input, got %T", value)
 	}
-	return s.DecodeInput(string(val.Value))
+	// SDK arguments use generic scalar wrappers, while decoded object fields
+	// use native core scalars such as Platform. Validate both through the
+	// registered decoder and return the scalar's wire value.
+	decoded, err := s.DecodeInput(input.ToLiteral().ToInput())
+	if err != nil {
+		return nil, fmt.Errorf("CoreModScalar.ConvertToSDKInput: invalid %s: %w", obj.name, err)
+	}
+	if decoded == nil {
+		return nil, nil
+	}
+	return decoded.ToLiteral().ToInput(), nil
 }
 
 func (obj *CoreModScalar) CollectContent(ctx context.Context, value dagql.AnyResult, content *core.CollectedContent) error {
