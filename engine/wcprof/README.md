@@ -93,6 +93,37 @@ Two scopes:
 The recorder keeps up to ~4M events (about 300 MB); events past that are
 dropped and counted in the dump header's `dropped_events`.
 
+### eBPF programs
+
+A recording can also ask for eBPF programs compiled into the engine
+(`engine/ebpf/wcbpf`), by name. Each is loaded into the kernel and attached
+only while some recording asks for it, and nothing is loaded otherwise. It
+measures each profiled exec that starts while it's attached, and records what
+it measured on the exec's `exec.run` op as the exec ends. An exec that started
+before the program was attached isn't measured by it.
+
+- Per-session: `dagger --profile --profile-ebpf exec_sched ...` (hidden
+  flags); the programs stay attached until the session ends.
+- Engine-global: the engine's `--wcprof-ebpf exec_sched` with `--wcprof`, or
+  `curl -X POST -d on 'http://<engine-debug-addr>/debug/wcprof/enabled?ebpf=exec_sched'`.
+  Each POST replaces the set; `off` releases it. A GET reports it as `ebpf`.
+
+An unknown name is an error. A program that can't be loaded (a kernel without
+BTF, say) is skipped, and the dump header's `ebpf` list names every program
+asked for, with the error for any that couldn't be attached.
+
+The programs:
+
+- `exec_sched` (`engine/ebpf/execsched`): the parts of each exec's container
+  life as the kernel saw them, as `exec_phase` ops under its `exec.run` op:
+  `exec_sched.containerSetup` (crun's child in the container's cgroup, up to
+  its exec of `/.init`), `exec_sched.initStart` (up to the workload's exec),
+  `exec_sched.workload` (up to the workload process's exit) and
+  `exec_sched.initExit` (up to `/.init`'s exit). And an `exec_sched` reading:
+  the time the exec's threads, workload and mount helpers, waited runnable
+  for a CPU (`rqw`, µs), how many such waits ended (`rqn`), and the time they
+  ran (`oncpu`, µs).
+
 - Dump: `GET http://<engine-debug-addr>/debug/wcprof/dump` streams a JSON
   header line (string tables, open ops) followed by one JSON event per line,
   and flushes the buffer (pass `?flush=0` to keep it).
