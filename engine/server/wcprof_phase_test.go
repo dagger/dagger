@@ -20,9 +20,15 @@ func armedOf(srv *Server) *armedProfile {
 	return srv.armed
 }
 
-// burnCPU keeps this process busy for d.
+// burnCPU keeps this process busy until it has used d of CPU time, as the
+// phase reads it. Wall time alone isn't enough: on a loaded machine the
+// process gets only part of each millisecond.
 func burnCPU(d time.Duration) {
-	for end := time.Now().Add(d); time.Now().Before(end); {
+	used := func() int64 {
+		u := readEngineCPU().process
+		return u.CPUUserUS + u.CPUSystemUS
+	}
+	for end := used() + d.Microseconds(); used() < end; {
 	}
 }
 
