@@ -28,6 +28,7 @@ func NewCopier(dest Mount) (*Copier, error) {
 	return &Copier{
 		dest:         d,
 		sourceCaches: map[sourceCacheKey]*sourceCache{},
+		lowerHides:   map[string]bool{},
 	}, nil
 }
 
@@ -67,6 +68,7 @@ func (c *Copier) sourceForCopy(m Mount) (*source, error) {
 		c.sourceCaches[key] = cache
 	}
 	s.cache = cache
+	s.lowerHides = c.lowerHides
 	return s, nil
 }
 
