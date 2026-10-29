@@ -8,6 +8,9 @@ char LICENSE[] SEC("license") = "GPL";
  * whose wait finds the waiting map full isn't counted. */
 #define MAX_EXECS 4096
 #define MAX_WAITING 65536
+/* Deepest cgroup level searched for an exec's resource cgroup. Levels count
+ * from the host's cgroup root, not from a cgroup namespace's. */
+#define MAX_LEVEL 64
 #define TASK_RUNNING 0
 
 /* The kernel structures this program reads, as CO-RE views: libbpf matches
@@ -17,13 +20,12 @@ struct kernfs_node___execsched {
     u64 id;
 } __attribute__((preserve_access_index));
 
-struct cgroup_subsys_state___execsched {
-    struct cgroup_subsys_state___execsched *parent;
-} __attribute__((preserve_access_index));
-
+/* ancestors[i] is the cgroup's ancestor at level i, and ancestors[level] the
+ * cgroup itself. */
 struct cgroup___execsched {
-    struct cgroup_subsys_state___execsched self;
+    int level;
     struct kernfs_node___execsched *kn;
+    struct cgroup___execsched *ancestors[];
 } __attribute__((preserve_access_index));
 
 struct css_set___execsched {
@@ -42,11 +44,13 @@ struct linux_binprm___execsched {
 } __attribute__((preserve_access_index));
 
 /* What the program measured of one exec, keyed by the ID of its resource
- * cgroup. Times are bpf_ktime_get_ns's, 0 until seen. The workload runs in
- * the resource cgroup's "container" child: its first process is crun's
- * child, which execs the engine's init (/.init); the init then starts its
- * session helper (/.init-session) and the workload. The exec's mount
- * helpers run in leaves under its "sshfs" child. */
+ * cgroup. Times are bpf_ktime_get_ns's, 0 until seen. The container's
+ * processes start in the resource cgroup's "container" child: the first is
+ * crun's child, which execs the engine's init (/.init); the init then starts
+ * its session helper (/.init-session) and the workload. Without the init,
+ * crun's child execs the workload. Processes the workload starts may run in
+ * cgroups below "container" (a nested container runtime's), and the exec's
+ * mount helpers run in leaves under the resource cgroup's "sshfs" child. */
 struct exec_sched {
     /* When crun's child was created in the container cgroup. */
     u64 container_start_ns;
@@ -59,13 +63,17 @@ struct exec_sched {
      * threads). */
     u64 workload_exit_ns;
     u64 init_exit_ns;
-    /* The time the exec's threads, workload and mount helpers alike, waited
-     * runnable for a CPU, how many waits ended, and the time they ran. */
+    /* The time all the exec's threads, in every cgroup under its resource
+     * cgroup, waited runnable for a CPU, how many waits ended, and the time
+     * they ran. */
     u64 runq_wait_ns;
     u64 runq_waits;
     u64 oncpu_ns;
     u32 init_tgid;
     u32 workload_tgid;
+    /* Set by the engine: whether the init runs. */
+    u32 has_init;
+    u32 pad;
 };
 
 struct {
@@ -97,34 +105,64 @@ struct {
     __type(value, struct exec_since);
 } running SEC(".maps");
 
-static __always_inline struct cgroup___execsched *
-cgroup_parent(struct cgroup___execsched *cg)
+/* The level of the measured execs' resource cgroups, plus one; 0 until it's
+ * known. They're all children of one cgroup, so the first task found in any
+ * of them tells it. */
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, u32);
+    __type(value, u32);
+} exec_level SEC(".maps");
+
+/* The ID of a cgroup's ancestor at a level no deeper than its own. */
+static __always_inline u64 ancestor_id(struct cgroup___execsched *cg, u32 level)
 {
-    struct cgroup_subsys_state___execsched *css = BPF_CORE_READ(cg, self.parent);
-    if (!css)
-        return NULL;
-    return (void *)css - bpf_core_field_offset(struct cgroup___execsched, self);
+    struct cgroup___execsched *a = NULL;
+    bpf_probe_read_kernel(&a, sizeof(a),
+                          (void *)cg + bpf_core_field_offset(struct cgroup___execsched, ancestors) +
+                              level * sizeof(a));
+    if (!a)
+        return 0;
+    return BPF_CORE_READ(a, kn, id);
 }
 
-/* The measured exec a task belongs to: its cgroup or one of the two above it
- * (the exec's resource cgroup holds the container cgroup and the sshfs
- * cgroup, which holds a leaf per mount helper). depth is how far up the exec
- * was found: 1 for the container cgroup. NULL for a task outside every
- * measured exec. */
+/* The measured exec a task belongs to, by the ancestor of its cgroup at the
+ * execs' level, and depth, how far below the exec's resource cgroup the
+ * task's cgroup is: 1 for the container cgroup. NULL for a task outside
+ * every measured exec. */
 static __always_inline struct exec_sched *
 exec_of(struct task_struct___execsched *task, u64 *exec_id, int *depth)
 {
     struct cgroup___execsched *cg = BPF_CORE_READ(task, cgroups, dfl_cgrp);
-#pragma unroll
-    for (int i = 0; i < 3 && cg; i++) {
-        u64 id = BPF_CORE_READ(cg, kn, id);
+    if (!cg)
+        return NULL;
+    int level = BPF_CORE_READ(cg, level);
+    u32 zero = 0;
+    u32 *known = bpf_map_lookup_elem(&exec_level, &zero);
+    if (!known)
+        return NULL;
+    if (*known) {
+        u32 l = *known - 1;
+        if (level < (int)l)
+            return NULL;
+        u64 id = ancestor_id(cg, l);
         struct exec_sched *e = bpf_map_lookup_elem(&execs, &id);
         if (e) {
             *exec_id = id;
-            *depth = i;
+            *depth = level - l;
+        }
+        return e;
+    }
+    for (u32 l = 0; l < MAX_LEVEL && (int)l <= level; l++) {
+        u64 id = ancestor_id(cg, l);
+        struct exec_sched *e = bpf_map_lookup_elem(&execs, &id);
+        if (e) {
+            *known = l + 1;
+            *exec_id = id;
+            *depth = level - l;
             return e;
         }
-        cg = cgroup_parent(cg);
     }
     return NULL;
 }
@@ -234,6 +272,13 @@ int BPF_PROG(on_exec, struct task_struct___execsched *p, pid_t old_pid,
         return 0;
     u32 tgid = BPF_CORE_READ(p, tgid);
     u64 now = bpf_ktime_get_ns();
+    if (!e->has_init) {
+        if (!e->workload_exec_ns) {
+            e->workload_exec_ns = now;
+            e->workload_tgid = tgid;
+        }
+        return 0;
+    }
     if (!e->init_exec_ns) {
         e->init_exec_ns = now;
         e->init_tgid = tgid;

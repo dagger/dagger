@@ -154,6 +154,10 @@ type execState struct {
 	profUsageWanted bool
 	profUsageMu     sync.Mutex
 	profUsage       map[string]wcprof.Usage
+	// profEBPF is the exec as the eBPF programs a recording asked for
+	// measure it (engine/ebpf/wcbpf), from before its first mount helper to
+	// its cgroups' final reading; nil when none measures it.
+	profEBPF *wcbpf.Exec
 
 	// sessionHelperStatus carries /.init's report that a nested client's
 	// session helper failed, and failSessionHelper fails the waits for its
@@ -532,9 +536,11 @@ func (c *Client) generateBaseSpec(ctx context.Context, state *execState) error {
 	state.cleanups.Add("finish exec mount resource sample", func() error {
 		// After the final parent sample, with the helpers' cgroup not yet
 		// removed: the resource cgroup's total, the workload and its mount
-		// helpers, and the helpers' own share.
+		// helpers, and the helpers' own share; and what the eBPF programs
+		// measured of them.
 		defer recordExecUsage(ctx, state, wcprof.UsageScopeMountHelpers)
 		defer recordExecUsage(ctx, state, wcprof.UsageScopeExecCgroup)
+		defer state.profEBPF.Finish(ctx, state.profExecOpID)
 		if state.stopResourceSampler != nil {
 			state.stopResourceSampler()
 			return nil
@@ -561,6 +567,12 @@ func (c *Client) generateBaseSpec(ctx context.Context, state *execState) error {
 		"",
 		func(ctx context.Context, spec *specs.Spec) context.Context {
 			state.resourceCgroupPath = spec.Linux.CgroupsPath
+			if state.profExecOpID != 0 {
+				if dir := execUsageCgroup(state.resourceCgroupPath, wcprof.UsageScopeExecCgroup); dir != "" {
+					injectedInit := state.execMD == nil || !state.execMD.NoInit
+					state.profEBPF = wcbpf.WatchExec(dir, injectedInit)
+				}
+			}
 			state.mountResources = enginetel.NewExecMountResources(spec.Linux.CgroupsPath)
 			if state.mountResources != nil {
 				return enginetel.WithExecMountResources(ctx, state.mountResources)
@@ -1786,19 +1798,6 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 			// Keep these counters through mount teardown and the final
 			// parent sample. The exec cleanup removes the parent cgroup.
 			state.closeWorkloadNetwork = workload.Close
-		}
-	}
-
-	// The eBPF programs a recording asked for (engine/ebpf/wcbpf) measure a
-	// profiled exec from before its runtime starts, and record what they
-	// measured once its container is deleted.
-	if state.profExecOpID != 0 {
-		if dir := execUsageCgroup(cgroupPath, wcprof.UsageScopeExecCgroup); dir != "" {
-			if bpfExec := wcbpf.WatchExec(dir); bpfExec != nil {
-				state.cleanups.Add("finish exec eBPF readings", cleanups.Infallible(func() {
-					bpfExec.Finish(ctx, state.profExecOpID)
-				}))
-			}
 		}
 	}
 
