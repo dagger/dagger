@@ -20,6 +20,7 @@ import (
 	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
 
 var (
@@ -335,7 +336,9 @@ func (cm *snapshotManager) get(ctx context.Context, id string, opts ...RefOption
 		refMetadata:     refMetadata{snapshotID: rec.md.getSnapshotID(), md: rec.md},
 		triggerLastUsed: triggerUpdate,
 	}
-	bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
+	if logrus.IsLevelEnabled(logrus.TraceLevel) {
+		bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
+	}
 	return ref, nil
 }
 
@@ -473,7 +476,9 @@ func (cm *snapshotManager) New(ctx context.Context, s ImmutableRef, opts ...RefO
 		triggerLastUsed: true,
 		onScratch:       isScratchSnapshotID(parentSnapshotID),
 	}
-	bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
+	if logrus.IsLevelEnabled(logrus.TraceLevel) {
+		bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
+	}
 	return ref, nil
 }
 
@@ -499,7 +504,9 @@ func (cm *snapshotManager) GetMutable(ctx context.Context, id string, opts ...Re
 		refMetadata:     refMetadata{snapshotID: rec.md.getSnapshotID(), md: rec.md},
 		triggerLastUsed: true,
 	}
-	bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
+	if logrus.IsLevelEnabled(logrus.TraceLevel) {
+		bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
+	}
 	return ref, nil
 }
 
@@ -526,7 +533,9 @@ func (cm *snapshotManager) GetMutableBySnapshotID(ctx context.Context, snapshotI
 		refMetadata:     refMetadata{snapshotID: rec.md.getSnapshotID(), md: rec.md},
 		triggerLastUsed: true,
 	}
-	bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
+	if logrus.IsLevelEnabled(logrus.TraceLevel) {
+		bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
+	}
 	return ref, nil
 }
 
@@ -627,7 +636,9 @@ func (cm *snapshotManager) ApplySnapshotDiff(ctx context.Context, lower, upper I
 		refMetadata:     refMetadata{snapshotID: rec.md.getSnapshotID(), md: rec.md},
 		triggerLastUsed: true,
 	}
-	bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
+	if logrus.IsLevelEnabled(logrus.TraceLevel) {
+		bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
+	}
 	return ref, nil
 }
 
@@ -691,7 +702,9 @@ func (cm *snapshotManager) Merge(ctx context.Context, parents []ImmutableRef, op
 		refMetadata:     refMetadata{snapshotID: rec.md.getSnapshotID(), md: rec.md},
 		triggerLastUsed: true,
 	}
-	bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
+	if logrus.IsLevelEnabled(logrus.TraceLevel) {
+		bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
+	}
 	return ref, nil
 }
 
