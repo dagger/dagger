@@ -220,6 +220,8 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 
 	params.AllowedLLMModules = allowedLLMModules
 
+	params.GitRemote, params.WorkspacePath = cloudWorkspace(ctx, params.Workspace)
+
 	params.Profile = profileFlag
 
 	params.CloudURLCallback = func(ctx context.Context, url string, msg string, logged bool) {
