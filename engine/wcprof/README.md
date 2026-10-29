@@ -122,10 +122,14 @@ Current hook points:
   layers' `snapshot.export.diff` ops and `snapshots.exportLayer` lock
   waits), `remotecache.export.probe` per root probed after a failed
   capture, and `remotecache.upload`, with a `remotecache.upload.blob` per
-  PUT after a wait on `remotecache.uploadSlots`. The capture links each
-  output's part to its result with the part's size (its chain's). Merges are
-  a `remotecache.merge` op, and each offered part a `remotecache.offer` op
-  on the row its address resolved to, with an `offer.<outcome>` fact.
+  PUT after a wait on `remotecache.uploadSlots`, then the export's
+  releases: `remotecache.export.release.chains`,
+  `remotecache.export.release.capture` (the capture's records) and
+  `remotecache.export.release.holds` (the entries held for it). The
+  capture links each output's part to its result with the part's size (its
+  chain's). Merges are a `remotecache.merge` op, and each offered part a
+  `remotecache.offer` op on the row its address resolved to, with an
+  `offer.<outcome>` fact.
   Exports, merges and offers run on the service's connection, not a
   client's, so they are recorded when the engine records everything, not
   under `--profile`. Image exports get the `snapshot.export.diff` ops too.
