@@ -55,21 +55,25 @@ func evaluateArtifacts(ctx context.Context, dag *dagger.Client, artifacts *core.
 	if maxConcurrency < 0 {
 		return nil, fmt.Errorf("maxConcurrency must not be negative: %d", maxConcurrency)
 	}
-	id, err := artifacts.ID(ctx)
+	preparationCtx := artifactPreparationContext(ctx)
+	id, err := artifacts.ID(preparationCtx)
 	if err != nil {
+		finishArtifactPreparation(ctx, err)
 		return nil, err
 	}
 	var response struct {
 		Selection struct{ Items []artifactExecutionItem }
 	}
-	err = dag.Do(ctx, &dagger.Request{
+	err = dag.Do(preparationCtx, &dagger.Request{
 		Query: `query($id: ID!) { selection: node(id: $id) { ... on Artifacts {
 		 items { id uri(dimensionKeys: true) path directives loadError workspace { id } dimensionKeys { dimension } }
 		} } }`, Variables: map[string]any{"id": id},
 	}, &dagger.Response{Data: &response})
 	if err != nil {
+		finishArtifactPreparation(ctx, err)
 		return nil, err
 	}
+	finishArtifactPreparation(ctx, nil)
 	results := make([]artifactValueResult, len(response.Selection.Items))
 	jobs := parallel.New().WithFailFast(failFast).WithRollupLogs(true).WithRollupSpans(true)
 	var limit *semaphore.Weighted

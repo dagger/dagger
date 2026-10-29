@@ -76,7 +76,7 @@ func runTerminalCommand(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	return withEngine(
+	return withArtifactEngine(
 		cmd.Context(),
 		params,
 		func(ctx context.Context, engineClient *client.Client) error {
@@ -93,6 +93,8 @@ func runTerminalCommand(cmd *cobra.Command, args []string) error {
 			if err != nil {
 				return err
 			}
+			finishArtifactPreparation(ctx, nil)
+			ctx = artifactExecutionContext(ctx)
 			ctr, err := shellArtifactContainer(ctx, dag, target)
 			if err != nil {
 				return err

@@ -73,7 +73,7 @@ func runChecksCommand(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	return withEngine(
+	return withArtifactEngine(
 		cmd.Context(),
 		params,
 		func(ctx context.Context, engineClient *client.Client) error {
@@ -96,6 +96,7 @@ func runChecksCommand(cmd *cobra.Command, args []string) error {
 }
 
 func runChecks(ctx context.Context, dag *dagger.Client, checks *core.Artifacts, _ *cobra.Command, include []string) error {
+	ctx = artifactExecutionContext(ctx)
 	ctx, zoomSpan := Tracer().Start(ctx, "checks", telemetry.Passthrough())
 	defer zoomSpan.End()
 	Frontend.SetPrimary(dagui.SpanID{SpanID: zoomSpan.SpanContext().SpanID()})

@@ -294,7 +294,7 @@ func runArtifacts(cmd *cobra.Command, addresses []string) error {
 		return err
 	}
 	flags := artifactKeyFlags(cmd)
-	return withEngine(cmd.Context(), params, func(ctx context.Context, ec *client.Client) error {
+	return withArtifactEngine(cmd.Context(), params, func(ctx context.Context, ec *client.Client) error {
 		workspaceID, err := core.NewQuery(ec.Dagger()).CurrentWorkspace().ID(ctx)
 		if err != nil {
 			return err

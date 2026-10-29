@@ -24,6 +24,12 @@ func validateArtifactListFormat(format string) error {
 	}
 }
 
+// uniqueArtifactList gives table output and trace links the same row order.
+func uniqueArtifactList(items []listedArtifact) []listedArtifact {
+	slices.SortFunc(items, func(a, b listedArtifact) int { return strings.Compare(a.URI, b.URI) })
+	return slices.CompactFunc(items, func(a, b listedArtifact) bool { return a.URI == b.URI })
+}
+
 // All formats use the same rows. Names maps exact dimension identifiers to
 // unambiguous CLI flag names; it does not change item identity.
 func writeArtifactList(cmd *cobra.Command, items []listedArtifact, names map[string]string) error {
@@ -31,8 +37,7 @@ func writeArtifactList(cmd *cobra.Command, items []listedArtifact, names map[str
 	if err := validateArtifactListFormat(format); err != nil {
 		return err
 	}
-	slices.SortFunc(items, func(a, b listedArtifact) int { return strings.Compare(a.URI, b.URI) })
-	items = slices.CompactFunc(items, func(a, b listedArtifact) bool { return a.URI == b.URI })
+	items = uniqueArtifactList(items)
 	if len(items) == 0 {
 		return nil
 	}
