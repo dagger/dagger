@@ -42,9 +42,11 @@ var (
 	// we will enable default function caching behavior.
 	MinimumDefaultFunctionCachingModuleVersion = "v0.19.4"
 
-	// MinimumDangV2ModuleVersion is the minimum module engine version that gets
-	// Dang v2 semantics (`.{ }` is dot-block application, `.{{ }}` is
-	// selection); older modules keep Dang v1 semantics (`.{ }` is selection).
+	// MinimumDangV2ModuleVersion is the minimum module engine version whose
+	// Dang source defaults to Dang 2 (`.{ }` is dot-block application, `.{{ }}`
+	// is selection) when no dang.toml declares a `dang` version; older modules
+	// default to Dang 1.0 (`.{ }` is selection), the language of the Dang v1
+	// line they were written for.
 	MinimumDangV2ModuleVersion = "v0.21.5"
 )
 

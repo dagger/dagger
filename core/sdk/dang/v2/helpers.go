@@ -100,6 +100,13 @@ func moduleDangVersion(src *core.ModuleSource) string {
 	return DefaultModuleVersions(src.EngineVersion).DangString()
 }
 
+// isDang1Module reports whether src's source is written in Dang 1.0, the
+// language of the Dang v1 line, before Dang 2.
+func isDang1Module(src *core.ModuleSource) bool {
+	v, err := dang.ParseVersion(moduleDangVersion(src))
+	return err == nil && v.Before(dang.Version2_0)
+}
+
 // evalDangSource runs a module's Dang source and calls withEnv with the
 // resulting environment.
 //
