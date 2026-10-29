@@ -835,22 +835,22 @@ The configurations use one part in one group:
 
 Run with the pinned TLC 1.7.4 through `tla-check one`, one JVM per
 configuration (16 workers, 8 GB), three at a time, on an arm64 spot machine
-(m8gd.4xlarge, 16 CPUs). A mutation's or probe's count is where TLC
+(c8gd.4xlarge, 16 CPUs). A mutation's or probe's count is where TLC
 stopped, which varies with worker order:
 
 | Configuration | Question | Expected | Distinct states | Depth |
 | --- | --- | --- | ---: | ---: |
-| `part_sources_import` | restored rows, late offers, native and managed | clean | 28,516,968 | 42 |
-| `part_sources_merge` | merged rows, armed or shells, late offers | clean | 88,994 | 38 |
-| `part_sources_tryacquire_guard_only_off` | no TryAcquire Running check | clean | 28,516,968 | 42 |
-| `part_sources_late_offer_over_native` | no running check and no TryAcquire Running check | violates `OnePartWriter` | 33,428 | 10 |
-| `part_sources_running_guard_off` | a row goes managed while a native body runs | violates `NativeRunStaysNative` | 21,832 | 9 |
-| `part_sources_not_sticky` | managed resets after an install | violates `OnePartWriter` | 3,876 | 16 |
-| `part_sources_imported_predicate` | the old predicate: imported means managed | violates `ManagedOnlyWithSource` | 1,171 | 5 |
-| `probe_part_sources_armed_native` | an armed merged row completes natively | witness | 885 | 12 |
-| `probe_part_sources_late_offer` | an armed row installs a late offer | witness | 10,679 | 8 |
-| `probe_part_sources_shell` | a shell's part is acquired | witness | 1,028 | 12 |
-| `probe_part_sources_armed_managed` | a restored row armed with an offer goes managed | witness | 7,321 | 7 |
+| `part_sources_import` | restored rows, late offers, native and managed | clean | 27,504,854 | 42 |
+| `part_sources_merge` | merged rows, armed or shells, late offers | clean | 87,446 | 38 |
+| `part_sources_tryacquire_guard_only_off` | no TryAcquire Running check | clean | 27,504,854 | 42 |
+| `part_sources_not_sticky` | managed resets when no native attempt is in flight | clean | 91,506 | 38 |
+| `part_sources_late_offer_over_native` | no running check and no TryAcquire Running check | violates `OnePartWriter` | 37,956 | 10 |
+| `part_sources_running_guard_off` | a row goes managed while a native body runs | violates `NativeRunStaysNative` | 20,320 | 9 |
+| `part_sources_imported_predicate` | the old predicate: imported means managed | violates `ManagedOnlyWithSource` | 1,258 | 5 |
+| `probe_part_sources_armed_native` | an armed merged row completes natively | witness | 1,224 | 14 |
+| `probe_part_sources_late_offer` | an armed row installs a late offer | witness | 10,682 | 8 |
+| `probe_part_sources_shell` | a shell's part is acquired | witness | 579 | 11 |
+| `probe_part_sources_armed_managed` | a restored row armed with an offer goes managed | witness | 7,061 | 7 |
 
 Either running check alone keeps one writer per part. With the check in
 `usesPartAcquisition` on, a row never goes managed while a native attempt
@@ -859,6 +859,16 @@ reaches exactly `part_sources_import`'s states. With that check off alone, one w
 still holds through TryAcquire, but the row goes managed in mid-run, so its
 later demands take acquisition instead of native evaluation
 (`part_sources_running_guard_off`). With both off, acquisition takes a part a native
-body is computing (`part_sources_late_offer_over_native`). `part_sources_not_sticky`'s witness
-is a merged row that armed with no offer, got a late one, went managed and
-acquired its part, then forgot managed and ran its recipe over it.
+body is computing (`part_sources_late_offer_over_native`).
+
+`part_sources_not_sticky` passes: acquisition is one atomic step here and leaves the
+value a shell, which routes every later demand to acquisition, so a gate
+that forgets it is managed lets no native body write an acquired part. The
+window sticky managed covers is inside one acquisition, between TryAcquire
+and the install, which the model doesn't split.
+
+`part_sources_imported_predicate`'s shortest witness is a decoded restored row that
+never armed. A scratch invariant (`tla-check one`), violated when an
+imported row is armed and managed with no offer and no shell, shows the
+armed case too: it is violated under that mutation (depth 6) and holds in
+`part_sources_import` and `part_sources_merge`.
