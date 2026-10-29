@@ -58,7 +58,10 @@ func (r *runtime) eval(
 	// environment; a function call never reads object directives.
 	forTypeDefs := fnCall.ParentName == ""
 	return evalDangSource(ctx, query, r.modSource, schemaFile, nestedClientMetadata, inertAttachables, fnCall, moduleContext, forTypeDefs, func(ctx context.Context, modSrcDir string) (dang.ValueScope, error) {
-		return dang.RunDir(ctx, modSrcDir, false)
+		if forTypeDefs {
+			return dang.RunDir(ctx, modSrcDir, false)
+		}
+		return runPreparedDangDir(ctx, modSrcDir, r.modSource, schemaFile, moduleContext)
 	}, func(ctx context.Context, env dang.ValueScope) ([]byte, error) {
 		if fnCall.ParentName == "" {
 			srv, err := core.CurrentDagqlServer(ctx)
