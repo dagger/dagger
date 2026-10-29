@@ -2,12 +2,19 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
+	"path"
 	"strings"
 
+	"github.com/containerd/containerd/v2/core/mount"
+	containerdfs "github.com/containerd/continuity/fs"
 	bkcontenthash "github.com/dagger/dagger/engine/contenthash"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
+	"github.com/dagger/dagger/util/hashutil"
+	"github.com/dagger/dagger/util/layercopy"
 	"github.com/opencontainers/go-digest"
 	"resenje.org/singleflight"
 
@@ -53,6 +60,63 @@ func GetContentHashFromFile(
 	}
 
 	return dgst, nil
+}
+
+// GetContentHashFromCopySources returns the content hash of what an unfiltered
+// Dockerfile COPY of srcPath out of srcDir in snapshot copies: each path that
+// srcPath resolves to, resolving wildcards as the copy does, hashed whole
+// together with that path. A path that doesn't exist is hashed as missing,
+// for the copy to report when it runs.
+func GetContentHashFromCopySources(
+	ctx context.Context,
+	snapshot bkcache.ImmutableRef,
+	srcDir string,
+	srcPath string,
+) (digest.Digest, error) {
+	if snapshot == nil {
+		return "", fmt.Errorf("failed to get copy source snapshot: nil")
+	}
+	paths := []string{srcDir}
+	missing := map[string]bool{}
+	err := MountRef(ctx, snapshot, func(root string, _ *mount.Mount) error {
+		if srcPath != "" {
+			srcPathWithDir := srcPath
+			if srcDir != "" && srcDir != "/" {
+				srcPathWithDir = srcDir + "/" + srcPathWithDir
+			}
+			var err error
+			paths, err = layercopy.ResolveWildcards(root, srcPathWithDir, true)
+			if err != nil {
+				return err
+			}
+		}
+		for _, p := range paths {
+			resolved, err := containerdfs.RootPath(root, p)
+			if err != nil {
+				return err
+			}
+			if _, err := os.Stat(resolved); errors.Is(err, os.ErrNotExist) {
+				missing[p] = true
+			}
+		}
+		return nil
+	}, mountRefAsReadOnly)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve copy source paths: %w", err)
+	}
+	parts := make([]string, 0, 2*len(paths))
+	for _, p := range paths {
+		if missing[p] {
+			parts = append(parts, p, "missing")
+			continue
+		}
+		dgst, err := getContentHashFromRef(ctx, snapshot, path.Join("/", p))
+		if err != nil {
+			return "", fmt.Errorf("failed to get content hash of %q: %w", p, err)
+		}
+		parts = append(parts, p, string(dgst))
+	}
+	return hashutil.HashStrings(parts...), nil
 }
 
 func getContentHashFromRef(ctx context.Context, ref bkcache.ImmutableRef, subdir string) (digest.Digest, error) {
