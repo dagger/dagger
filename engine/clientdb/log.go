@@ -14,6 +14,9 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// LogsToPB converts log rows to OTLP, grouped by resource and
+// instrumentation scope. Each distinct resource and scope is decoded once per
+// call, as in SpansToPB.
 func LogsToPB(dbLog []Log) []*otlplogsv1.ResourceLogs {
 	if len(dbLog) == 0 {
 		return nil
@@ -27,24 +30,51 @@ func LogsToPB(dbLog []Log) []*otlplogsv1.ResourceLogs {
 	}
 	ssm := make(map[key]*otlplogsv1.ScopeLogs)
 
+	type resourceKey struct {
+		resource, schemaURL string
+	}
+	type decodedResource struct {
+		res *sdkresource.Resource
+		pb  *otlpresourcev1.Resource
+		err error
+	}
+	resourceCache := map[resourceKey]decodedResource{}
+	type decodedScope struct {
+		scope instrumentation.Scope
+		pb    *otlpcommonv1.InstrumentationScope
+		err   error
+	}
+	scopeCache := map[string]decodedScope{}
+
 	var resources int
 	for _, sd := range dbLog {
-		var res *sdkresource.Resource
-		var resPb otlpresourcev1.Resource
-		if err := proto.Unmarshal(sd.Resource, &resPb); err != nil {
-			slog.Error("failed to unmarshal log resource", "error", err, "log", sd)
-			continue
-		} else {
-			res = telemetry.ResourceFromPB(sd.ResourceSchemaURL, &resPb)
+		rk := resourceKey{string(sd.Resource), sd.ResourceSchemaURL}
+		decodedRes, ok := resourceCache[rk]
+		if !ok {
+			decodedRes.pb = &otlpresourcev1.Resource{}
+			if decodedRes.err = proto.Unmarshal(sd.Resource, decodedRes.pb); decodedRes.err == nil {
+				decodedRes.res = telemetry.ResourceFromPB(sd.ResourceSchemaURL, decodedRes.pb)
+			}
+			resourceCache[rk] = decodedRes
 		}
-		var scope instrumentation.Scope
-		var scopePb otlpcommonv1.InstrumentationScope
-		if err := proto.Unmarshal(sd.InstrumentationScope, &scopePb); err != nil {
-			slog.Error("failed to unmarshal instrumentation scope", "error", err, "log", sd)
+		if decodedRes.err != nil {
+			slog.Error("failed to unmarshal log resource", "error", decodedRes.err, "log", sd)
 			continue
-		} else {
-			scope = telemetry.InstrumentationScopeFromPB(&scopePb)
 		}
+		res := decodedRes.res
+		decodedSc, ok := scopeCache[string(sd.InstrumentationScope)]
+		if !ok {
+			decodedSc.pb = &otlpcommonv1.InstrumentationScope{}
+			if decodedSc.err = proto.Unmarshal(sd.InstrumentationScope, decodedSc.pb); decodedSc.err == nil {
+				decodedSc.scope = telemetry.InstrumentationScopeFromPB(decodedSc.pb)
+			}
+			scopeCache[string(sd.InstrumentationScope)] = decodedSc
+		}
+		if decodedSc.err != nil {
+			slog.Error("failed to unmarshal instrumentation scope", "error", decodedSc.err, "log", sd)
+			continue
+		}
+		scope := decodedSc.scope
 		rKey := res.Equivalent()
 		k := key{
 			r:  rKey,
@@ -54,7 +84,7 @@ func LogsToPB(dbLog []Log) []*otlplogsv1.ResourceLogs {
 		if !iOk {
 			// Either the resource or instrumentation scope were unknown.
 			scopeLog = &otlplogsv1.ScopeLogs{
-				Scope:      &scopePb,
+				Scope:      proto.CloneOf(decodedSc.pb),
 				LogRecords: []*otlplogsv1.LogRecord{},
 				SchemaUrl:  scope.SchemaURL,
 			}
@@ -99,7 +129,7 @@ func LogsToPB(dbLog []Log) []*otlplogsv1.ResourceLogs {
 			resources++
 			// The resource was unknown.
 			rs = &otlplogsv1.ResourceLogs{
-				Resource:  &resPb,
+				Resource:  decodedRes.pb,
 				ScopeLogs: []*otlplogsv1.ScopeLogs{scopeLog},
 				SchemaUrl: res.SchemaURL(),
 			}
