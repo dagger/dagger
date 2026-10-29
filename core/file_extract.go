@@ -2,6 +2,7 @@ package core
 
 import (
 	"archive/tar"
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/v2/core/mount"
+	"github.com/klauspost/compress/flate"
 	"github.com/klauspost/compress/zip"
 	"github.com/moby/go-archive"
 	"github.com/moby/go-archive/chrootarchive"
@@ -246,6 +248,7 @@ func extractZip(ctx context.Context, r io.ReaderAt, size int64, dest string, str
 	if err != nil {
 		return err
 	}
+	zr.RegisterDecompressor(zip.Deflate, newZipFlateReader)
 	// A later entry of the same path replaces an earlier one.
 	byPath := map[string]*zipEntry{}
 	var order []string
@@ -361,6 +364,56 @@ var zipCopyBufPool = sync.Pool{New: func() any {
 	buf := make([]byte, 128<<10)
 	return &buf
 }}
+
+// flate wraps a reader that isn't an io.ByteReader, such as a zip entry's
+// section of the archive, in a new 4 KiB bufio.Reader; extractZip's entries
+// read through these pooled ones instead.
+var zipBufReaderPool = sync.Pool{New: func() any { return bufio.NewReader(nil) }}
+
+var zipFlateReaderPool sync.Pool
+
+// newZipFlateReader is extractZip's deflate decompressor: the zip package's
+// own pooled one, with the bufio.Reader it reads through pooled too.
+func newZipFlateReader(r io.Reader) io.ReadCloser {
+	br := zipBufReaderPool.Get().(*bufio.Reader)
+	br.Reset(r)
+	fr, ok := zipFlateReaderPool.Get().(io.ReadCloser)
+	if ok {
+		fr.(flate.Resetter).Reset(br, nil)
+	} else {
+		fr = flate.NewReader(br)
+	}
+	return &pooledZipFlateReader{fr: fr, br: br}
+}
+
+type pooledZipFlateReader struct {
+	mu sync.Mutex // guards Close and Read
+	fr io.ReadCloser
+	br *bufio.Reader
+}
+
+func (r *pooledZipFlateReader) Read(p []byte) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.fr == nil {
+		return 0, errors.New("read after close")
+	}
+	return r.fr.Read(p)
+}
+
+func (r *pooledZipFlateReader) Close() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.fr == nil {
+		return nil
+	}
+	err := r.fr.Close()
+	zipFlateReaderPool.Put(r.fr)
+	r.br.Reset(nil)
+	zipBufReaderPool.Put(r.br)
+	r.fr, r.br = nil, nil
+	return err
+}
 
 func writeZipFile(ctx context.Context, e *zipEntry, dst string) (rerr error) {
 	r, err := e.file.Open()
