@@ -160,19 +160,21 @@ func (r *DBs) close(store *DB) error {
 		return nil
 	}
 	delete(r.open, store.clientID)
+	// Whether to delete the store is settled with its last reference, so GC
+	// forgetting the retirement meanwhile can't keep it.
+	_, retired := r.retired[store.clientID]
 	r.mu.Unlock()
-	if err := store.closeStreams(); err != nil {
+	err := store.closeStreams()
+	if retired {
+		// Deleted even when the final spill failed, as it does on a full disk.
+		return errors.Join(err, r.removeStreams(store.clientID))
+	}
+	if err != nil {
 		return err
 	}
 	r.mu.Lock()
-	_, retired := r.retired[store.clientID]
-	if !retired {
-		r.closedAt[store.clientID] = store.position()
-	}
+	r.closedAt[store.clientID] = store.position()
 	r.mu.Unlock()
-	if retired {
-		return r.removeStreams(store.clientID)
-	}
 	return nil
 }
 
@@ -219,7 +221,8 @@ type storeGCGroup struct {
 func (r *DBs) GC(keep map[string]bool) error {
 	r.mu.Lock()
 	for clientID, at := range r.retired {
-		if time.Since(at) >= CollectGarbageAfter {
+		// A store still held is deleted when its last reference closes.
+		if r.open[clientID] == nil && time.Since(at) >= CollectGarbageAfter {
 			delete(r.retired, clientID)
 		}
 	}
