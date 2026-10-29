@@ -25,6 +25,7 @@ import (
 	"github.com/dagger/dagger/util/lockfile"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/ssh"
 	"golang.org/x/mod/semver"
 )
 
@@ -1206,6 +1207,85 @@ func (LockfileSuite) TestUpdateRefreshesPrivateGitLatestEntry(ctx context.Contex
 	require.NoError(t, err)
 	require.NotEqual(t, originalLock, string(lockBytes))
 	require.NotContains(t, string(lockBytes), stalePin)
+}
+
+// dagger lock update must refresh an entry for a repository served over SSH on
+// a non-default port. The lock records the repository scheme-less, as
+// host:port/path, so the update path has to pick the transport again: HTTPS
+// to that port reaches an SSH server and fails, and SSH must still be tried.
+func (LockfileSuite) TestUpdateRefreshesSSHCustomPortGitEntry(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	sockPath, cleanup := setupPrivateRepoSSHAgent(t)
+	t.Cleanup(cleanup)
+	decodedKey, err := base64.StdEncoding.DecodeString(base64EncodedPrivateKey)
+	require.NoError(t, err)
+	signer, err := ssh.ParsePrivateKey(decodedKey)
+	require.NoError(t, err)
+
+	const sshPort = 2222
+	sshSvc, err := core.NewQuery(c).Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git", "openssh"}).
+		WithExec([]string{"ssh-keygen", "-t", "ed25519", "-f", "/etc/ssh/host_key", "-N", ""}).
+		// A locked account ("!") cannot log in over SSH, even with a key.
+		WithExec([]string{"sh", "-c", "adduser -D git && sed -i 's/^git:!/git:*/' /etc/shadow"}).
+		WithNewFile("/home/git/.ssh/authorized_keys", string(ssh.MarshalAuthorizedKey(signer.PublicKey()))).
+		With(gitUserConfig).
+		WithExec([]string{"sh", "-c", `set -e
+git init -b main /dagger/module
+cd /dagger/module
+echo test > README.md
+git add README.md
+git commit -m init
+chown -R git:git /home/git /dagger
+chmod 700 /home/git/.ssh
+chmod 600 /home/git/.ssh/authorized_keys`}).
+		WithExposedPort(sshPort).
+		WithDefaultArgs([]string{"/usr/sbin/sshd", "-D", "-e", "-h", "/etc/ssh/host_key", "-p", fmt.Sprint(sshPort)}).
+		AsService().
+		Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = sshSvc.Stop(ctx) })
+
+	// The host CLI's engine reaches the service by address, not by its
+	// session-scoped name.
+	shortHost, err := sshSvc.Hostname(ctx)
+	require.NoError(t, err)
+	getentOut, err := core.NewQuery(c).Container().From(alpineImage).
+		WithExec([]string{"getent", "hosts", shortHost}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	fields := strings.Fields(getentOut)
+	require.NotEmpty(t, fields, "unexpected getent output: %q", getentOut)
+	sshURL := fmt.Sprintf("ssh://git@%s:%d/dagger/module", fields[0], sshPort)
+
+	mainCommit, err := core.NewQuery(c).Git(sshURL, core.GitOpts{
+		SSHAuthSocket: core.NewQuery(c).Host().UnixSocket(sockPath),
+	}).Branch("main").CommitSHA(ctx)
+	require.NoError(t, err)
+
+	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
+	lock := workspace.NewLock()
+	require.NoError(t, lock.SetLookup("", "git-sha", []any{sshURL, "refs/heads/main"}, strings.Repeat("0", 40)))
+	lockBytes, err := lock.Marshal()
+	require.NoError(t, err)
+	identity := fmt.Sprintf("%s:%d/dagger/module", fields[0], sshPort)
+	require.Contains(t, string(lockBytes), identity)
+	require.NotContains(t, string(lockBytes), sshURL)
+	lockPath := filepath.Join(workdir, workspace.LockFileName)
+	require.NoError(t, os.WriteFile(lockPath, lockBytes, 0o600))
+
+	cmd := hostDaggerCommandRaw(ctx, t, workdir, "lock", "update")
+	cmd.Env = append(cmd.Env, "SSH_AUTH_SOCK="+sockPath)
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(out))
+
+	lockBytes, err = os.ReadFile(lockPath)
+	require.NoError(t, err)
+	assertGitLockEntryResult(t, lockBytes, []any{identity, "refs/heads/main"}, mainCommit)
 }
 
 func (LockfileSuite) TestUpdateRefreshesExistingGitLatestEntry(ctx context.Context, t *testctx.T) {

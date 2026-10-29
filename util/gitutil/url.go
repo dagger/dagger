@@ -224,7 +224,7 @@ func ParseURL(remote string) (*GitURL, error) {
 
 // cloneURLFallbackProtocols is the priority order for resolving a clone ref
 // that omits its scheme (e.g. "github.com/foo/bar"). Callers iterate the
-// candidates and try the next one when authentication fails.
+// candidates and try the next one when a candidate cannot be accessed.
 var cloneURLFallbackProtocols = []string{HTTPSProtocol, SSHProtocol}
 
 // ParseCloneURL parses a clone reference into one or more candidate GitURLs,
@@ -233,7 +233,7 @@ var cloneURLFallbackProtocols = []string{HTTPSProtocol, SSHProtocol}
 // Module sources may omit the scheme (e.g. "github.com/foo/bar") since the
 // transport is decided at clone time, not parse time. For those, ParseCloneURL
 // returns multiple candidates with common protocols prepended; callers iterate
-// and try the next one on authentication failure. For fully-qualified URLs,
+// and try the next one when a candidate cannot be accessed. For fully-qualified URLs,
 // it returns a single-element slice.
 func ParseCloneURL(remote string) ([]*GitURL, error) {
 	u, err := ParseURL(remote)
