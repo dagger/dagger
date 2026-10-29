@@ -4777,6 +4777,17 @@ func (ContainerSuite) TestTransparentHugePages(ctx context.Context, t *testctx.T
 		// Older kernels lack the mode, and the engine leaves execs alone.
 		require.Equal(t, "0", mode("default"))
 	}
+
+	// The setting isn't part of the exec's cache key: the same command with
+	// and without it runs once.
+	ctr := sdkcore.NewQuery(c).Container().From(alpineImage).
+		WithEnvVariable("RUN", rand.Text())
+	cmd := []string{"cat", "/proc/sys/kernel/random/uuid"}
+	first, err := ctr.WithExec(cmd, sdkcore.ContainerWithExecOpts{TransparentHugePages: true}).Stdout(ctx)
+	require.NoError(t, err)
+	second, err := ctr.WithExec(cmd).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, first, second)
 }
 
 // kernelAtLeast reports whether a kernel release such as "7.0.0-1014-aws" is
