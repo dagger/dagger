@@ -341,6 +341,27 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Release).GetMaintainers(&parent, ctx, githubOrgName, githubToken)
+		case "GoSdkPublishCheck":
+			var parent Release
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var source *dagger.GitRepository
+			if inputArgs["source"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["source"]), &source)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg source", err))
+				}
+			}
+			var callback *dagger.File
+			if inputArgs["callback"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["callback"]), &callback)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg callback", err))
+				}
+			}
+			return nil, (*Release).GoSdkPublishCheck(&parent, ctx, source, callback)
 		case "HelmTargetVersion":
 			var parent Release
 			err = json.Unmarshal(parentJSON, &parent)
@@ -724,6 +745,14 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							WithArg("githubOrgName", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("changie.go", 27, 2)}).
 							WithArg("githubToken", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("changie.go", 28, 2)})).
 					WithFunction(
+						dag.Function("GoSdkPublishCheck",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithDescription("Exercise the Go SDK publish of the committed history against a local git\ndestination.").
+							WithSourceMap(dag.SourceMap("go_sdk_publish_check.go", 14, 1)).
+							WithCheck().
+							WithArg("source", dag.TypeDef().WithObject("GitRepository").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Repository whose HEAD is the candidate to publish. The check publishes a\ndisposable copy of its history, so commit IDs match the candidate's.", SourceMap: dag.SourceMap("go_sdk_publish_check.go", 20, 2), DefaultPath: "/"}).
+							WithArg("callback", dag.TypeDef().WithObject("File").WithOptional(true), dagger.FunctionWithArgOpts{Description: "git-filter-repo callback that the Go SDK publish applies", SourceMap: dag.SourceMap("go_sdk_publish_check.go", 24, 2), DefaultPath: "/.dagger/modules/go-client-dev/git-filter-callback.py"})).
+					WithFunction(
 						dag.Function("HelmTargetVersion",
 							dag.TypeDef().WithObject("Changeset")).
 							WithDescription("Regenerate Helm chart files that reference the target Dagger Engine version.").
@@ -739,12 +768,12 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("Notify",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
-							WithSourceMap(dag.SourceMap("main.go", 508, 1)).
-							WithArg("repository", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "GitHub repository URL", SourceMap: dag.SourceMap("main.go", 511, 2)}).
-							WithArg("target", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "The target tag for the release\ne.g. sdk/typescript/v0.14.0", SourceMap: dag.SourceMap("main.go", 514, 2)}).
-							WithArg("name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Name of the component to release", SourceMap: dag.SourceMap("main.go", 516, 2)}).
-							WithArg("discordWebhook", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Discord webhook", SourceMap: dag.SourceMap("main.go", 519, 2)}).
-							WithArg("dryRun", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Whether to perform a dry run without creating the release", SourceMap: dag.SourceMap("main.go", 523, 2)})).
+							WithSourceMap(dag.SourceMap("main.go", 511, 1)).
+							WithArg("repository", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "GitHub repository URL", SourceMap: dag.SourceMap("main.go", 514, 2)}).
+							WithArg("target", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "The target tag for the release\ne.g. sdk/typescript/v0.14.0", SourceMap: dag.SourceMap("main.go", 517, 2)}).
+							WithArg("name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Name of the component to release", SourceMap: dag.SourceMap("main.go", 519, 2)}).
+							WithArg("discordWebhook", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Discord webhook", SourceMap: dag.SourceMap("main.go", 522, 2)}).
+							WithArg("dryRun", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Whether to perform a dry run without creating the release", SourceMap: dag.SourceMap("main.go", 526, 2)})).
 					WithFunction(
 						dag.Function("PhpSdkTargetVersion",
 							dag.TypeDef().WithObject("Changeset")).

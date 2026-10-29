@@ -22,6 +22,7 @@ func (r *Query) Release(ws *Workspace) *Release { // release (../../../../../../
 type Release struct { // release (../../../../../../:0:0)
 	query *querybuilder.Selection
 
+	goSdkPublishCheck        *Void
 	id                       *ID
 	notify                   *Void
 	publishWithMockEndpoints *Void
@@ -70,6 +71,36 @@ func (r *Release) GetMaintainers(ctx context.Context, githubOrgName string, opts
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// ReleaseGoSDKPublishCheckOpts contains options for Release.GoSDKPublishCheck
+type ReleaseGoSDKPublishCheckOpts struct {
+	// Repository whose HEAD is the candidate to publish. The check publishes a
+	// disposable copy of its history, so commit IDs match the candidate's.
+	Source *GitRepository
+	// git-filter-repo callback that the Go SDK publish applies
+	Callback *File
+}
+
+// Exercise the Go SDK publish of the committed history against a local git
+// destination.
+func (r *Release) GoSDKPublishCheck(ctx context.Context, opts ...ReleaseGoSDKPublishCheckOpts) error {
+	if r.goSdkPublishCheck != nil {
+		return nil
+	}
+	q := r.query.Select("goSdkPublishCheck")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `source` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Source) {
+			q = q.Arg("source", opts[i].Source)
+		}
+		// `callback` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Callback) {
+			q = q.Arg("callback", opts[i].Callback)
+		}
+	}
+
+	return q.Execute(ctx)
 }
 
 // Regenerate Helm chart files that reference the target Dagger Engine version.
