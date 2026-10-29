@@ -55,7 +55,7 @@ require (
 	github.com/containerd/go-runc v1.1.0
 	github.com/containerd/log v0.1.0
 	github.com/containerd/platforms v1.0.0-rc.2
-	github.com/containerd/stargz-snapshotter/estargz v0.18.2
+	github.com/containerd/stargz-snapshotter/estargz v0.19.0
 	github.com/containerd/typeurl/v2 v2.2.3
 	github.com/containernetworking/cni v1.3.0
 	github.com/containernetworking/plugins v1.9.0
@@ -106,7 +106,7 @@ require (
 	github.com/jinzhu/inflection v1.0.0
 	github.com/joho/godotenv v1.5.1
 	github.com/juju/ansiterm v1.0.0
-	github.com/klauspost/compress v1.19.1
+	github.com/klauspost/compress v1.20.1
 	github.com/koron-go/prefixw v1.0.2
 	github.com/lmittmann/tint v1.1.3
 	github.com/mackerelio/go-osstat v0.2.7
@@ -345,7 +345,7 @@ require (
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/tree-sitter/go-tree-sitter v0.25.0 // indirect
-	github.com/vbatts/tar-split v0.12.2 // indirect
+	github.com/vbatts/tar-split v0.12.3 // indirect
 	github.com/vishvananda/netns v0.0.5 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
