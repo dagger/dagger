@@ -93,10 +93,10 @@ func (r *DBs) Open(ctx context.Context, clientID string) (*DB, error) {
 }
 
 // OpenForAppend returns a reference to the client's store for appending
-// telemetry. Unlike Open it doesn't build the store's indexes, so reopening a
-// closed store this way reads none of its rows; the selectors that answer
-// from the indexes must not be used through it. Close the reference when done
-// with it.
+// telemetry, or for reading its rows in order. Unlike Open it doesn't build
+// the store's indexes, so reopening a closed store this way reads none of its
+// rows; the selectors that answer from the indexes must not be used through
+// it. Close the reference when done with it.
 func (r *DBs) OpenForAppend(ctx context.Context, clientID string) (*DB, error) {
 	r.perStoreLock.Lock(clientID)
 	defer r.perStoreLock.Unlock(clientID)

@@ -497,7 +497,7 @@ func (srv *Server) archiveManifest(ctx context.Context, sess *daggerSession, tra
 // unsealedArchiveCut is the current end of an unsealed archive's store. Its
 // session is gone, so the cut is stable across every stream.
 func (srv *Server) unsealedArchiveCut(ctx context.Context, m archive.Manifest) (archive.HighWater, error) {
-	db, err := srv.clientDBs.Open(ctx, m.MainClientID)
+	db, err := srv.clientDBs.OpenForAppend(ctx, m.MainClientID)
 	if err != nil {
 		return archive.HighWater{}, err
 	}
@@ -552,7 +552,8 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 	if cursor > high {
 		return httpErr(errors.New("cursor exceeds archive cut"), http.StatusBadRequest)
 	}
-	db, err := srv.clientDBs.Open(r.Context(), m.MainClientID)
+	// Replay reads rows in order, so it needs no indexes.
+	db, err := srv.clientDBs.OpenForAppend(r.Context(), m.MainClientID)
 	if err != nil {
 		return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureIO, Err: err})
 	}

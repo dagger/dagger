@@ -1401,7 +1401,7 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 		// never written to a store of its own.
 		return httpErr(fmt.Errorf("client %q has no telemetry store to subscribe to", record.clientID), http.StatusForbidden)
 	}
-	db, err := record.TelemetryDB(r.Context())
+	db, err := record.telemetryStore(r.Context())
 	if err != nil {
 		return fmt.Errorf("open client db: %w", err)
 	}
