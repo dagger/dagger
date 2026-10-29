@@ -43,6 +43,8 @@ type Versions struct {
 	// DeclaredEngine is the Dagger version the dang.toml declares, if any.
 	// Engine is that version when set.
 	DeclaredEngine string
+	// DangDeclared reports whether the dang.toml declares Dang.
+	DangDeclared bool
 }
 
 // DangString is the Dang version as dang.toml writes it, e.g. "2.1".
@@ -70,8 +72,11 @@ func DefaultEntrypointVersions() Versions {
 // without the key; an entrypoint without a dang.toml gets the same, so that
 // it does not follow dang.CurrentVersion forward either.
 //
-// The engine version must be one this engine can serve: not older than
-// engine.MinimumModuleVersion, not newer than engine.Version.
+// A declared engine version must be one this engine can serve, checked as a
+// dagger.json engineVersion is: not older than engine.MinimumModuleVersion,
+// and no later base version than engine.Version's. A later prerelease of the
+// engine's base version, or the release itself, is accepted and served the
+// engine's own view (engine.ModuleAPIViewVersion caps it).
 func ResolveEntrypointVersions(ctx context.Context, configPath string, data []byte) (Versions, error) {
 	defaults := DefaultEntrypointVersions()
 	return resolveVersions(ctx, configPath, data, defaults.Engine, func(string) dang.Version {
@@ -205,6 +210,7 @@ func resolveVersions(
 		ctx = dang.ContextWithVersion(ctx, pin)
 	}
 	versions.Dang = dang.VersionForConfig(ctx, &cfg)
+	versions.DangDeclared = !cfg.Dang.IsZero()
 	return versions, nil
 }
 
