@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"slices"
 	"time"
 	"unicode/utf8"
 
@@ -486,17 +487,21 @@ func SpansToPB(rows []Span) []*otlptracev1.ResourceSpans {
 // its messages. A row's stored attribute and event lists are already their
 // elements' encodings, each with its length in front, so each element is
 // written after its field's tag. Resources, scopes and links are encoded as
-// SpansToPB makes them, each distinct resource and scope once per call.
+// SpansToPB makes them, each distinct resource and scope once per call. Every
+// span's size is worked out first, so the request is written once, into room
+// made for all of it.
 func AppendTraceRequestPB(b []byte, rows []Span) ([]byte, error) {
 	type scopeGroup struct {
 		scope     []byte // the InstrumentationScope's encoding, nil for none
 		schemaURL string
-		spans     []byte // each span as ScopeSpans' field 2: tag, length and encoding
+		rows      []int // indexes into rows and spans
+		size      int   // the ScopeSpans' encoded size
 	}
 	type resourceGroup struct {
 		resource []byte // the Resource's encoding
 		scopes   []*scopeGroup
 		byScope  map[instrumentation.Scope]*scopeGroup
+		size     int // the ResourceSpans' encoded size
 	}
 	type decodedResource struct {
 		key attribute.Distinct
@@ -506,7 +511,7 @@ func AppendTraceRequestPB(b []byte, rows []Span) ([]byte, error) {
 	scopes := map[string]instrumentation.Scope{}
 	var groups []*resourceGroup
 	byResource := map[attribute.Distinct]*resourceGroup{}
-	var span []byte
+	spans := make([]plannedSpan, len(rows))
 	for i := range rows {
 		row := &rows[i]
 		res, ok := resources[string(row.Resource)]
@@ -544,43 +549,46 @@ func AppendTraceRequestPB(b []byte, rows []Span) ([]byte, error) {
 			rg.byScope[scope] = sg
 			rg.scopes = append(rg.scopes, sg)
 		}
-		var err error
-		span, err = row.appendSpanPB(span[:0])
-		if err != nil {
+		if err := spans[i].plan(row); err != nil {
 			return nil, err
 		}
-		sg.spans = protowire.AppendTag(sg.spans, 2, protowire.BytesType)
-		sg.spans = protowire.AppendBytes(sg.spans, span)
+		sg.rows = append(sg.rows, i)
+		sg.size += protowire.SizeTag(2) + protowire.SizeBytes(spans[i].size)
 	}
 
-	scopeLen := func(sg *scopeGroup) int {
-		n := len(sg.spans)
-		if sg.scope != nil {
-			n += protowire.SizeTag(1) + protowire.SizeBytes(len(sg.scope))
-		}
-		if sg.schemaURL != "" {
-			n += protowire.SizeTag(3) + protowire.SizeBytes(len(sg.schemaURL))
-		}
-		return n
-	}
+	total := 0
 	for _, rg := range groups {
-		n := protowire.SizeTag(1) + protowire.SizeBytes(len(rg.resource))
+		rg.size = protowire.SizeTag(1) + protowire.SizeBytes(len(rg.resource))
 		for _, sg := range rg.scopes {
-			n += protowire.SizeTag(2) + protowire.SizeBytes(scopeLen(sg))
+			if sg.scope != nil {
+				sg.size += protowire.SizeTag(1) + protowire.SizeBytes(len(sg.scope))
+			}
+			if sg.schemaURL != "" {
+				sg.size += protowire.SizeTag(3) + protowire.SizeBytes(len(sg.schemaURL))
+			}
+			rg.size += protowire.SizeTag(2) + protowire.SizeBytes(sg.size)
 		}
+		total += protowire.SizeTag(1) + protowire.SizeBytes(rg.size)
+	}
+	b = slices.Grow(b, total)
+	for _, rg := range groups {
 		// ExportTraceServiceRequest's field 1: one ResourceSpans.
 		b = protowire.AppendTag(b, 1, protowire.BytesType)
-		b = protowire.AppendVarint(b, uint64(n))
+		b = protowire.AppendVarint(b, uint64(rg.size))
 		b = protowire.AppendTag(b, 1, protowire.BytesType)
 		b = protowire.AppendBytes(b, rg.resource)
 		for _, sg := range rg.scopes {
 			b = protowire.AppendTag(b, 2, protowire.BytesType)
-			b = protowire.AppendVarint(b, uint64(scopeLen(sg)))
+			b = protowire.AppendVarint(b, uint64(sg.size))
 			if sg.scope != nil {
 				b = protowire.AppendTag(b, 1, protowire.BytesType)
 				b = protowire.AppendBytes(b, sg.scope)
 			}
-			b = append(b, sg.spans...)
+			for _, i := range sg.rows {
+				b = protowire.AppendTag(b, 2, protowire.BytesType)
+				b = protowire.AppendVarint(b, uint64(spans[i].size))
+				b = spans[i].append(b, &rows[i])
+			}
 			if sg.schemaURL != "" {
 				b = protowire.AppendTag(b, 3, protowire.BytesType)
 				b = protowire.AppendString(b, sg.schemaURL)
@@ -590,61 +598,140 @@ func AppendTraceRequestPB(b []byte, rows []Span) ([]byte, error) {
 	return b, nil
 }
 
-// appendSpanPB appends the encoding of the OTLP span spanPB makes of span, in
-// field order, as proto.Marshal does. Like proto.Marshal, it fails on a name
-// or status message that isn't valid UTF-8; the stored attributes and events
+// plannedSpan is the OTLP span spanPB makes of a row, worked out ahead of
+// its encoding: the values parsed from the row, the links' encodings, and
+// the span's encoded size.
+type plannedSpan struct {
+	tid        trace.TraceID
+	sid, psid  trace.SpanID
+	traceState string
+	kind       otlptracev1.Span_SpanKind
+	start, end uint64
+	status     *otlptracev1.Status
+	links      [][]byte
+	size       int
+}
+
+// plan works out span's OTLP span. Like proto.Marshal, it fails on a name or
+// status message that isn't valid UTF-8; the stored attributes and events
 // were checked when they were encoded.
-func (span *Span) appendSpanPB(b []byte) ([]byte, error) {
+func (pb *plannedSpan) plan(span *Span) error {
 	if !utf8.ValidString(span.Name) || !utf8.ValidString(span.StatusMessage) {
-		return nil, errInvalidUTF8
+		return errInvalidUTF8
 	}
 	ros := &readOnlySpan{DB: span}
 	sc := ros.SpanContext()
-	tid, sid := sc.TraceID(), sc.SpanID()
-	b = protowire.AppendTag(b, 1, protowire.BytesType)
-	b = protowire.AppendBytes(b, tid[:])
-	b = protowire.AppendTag(b, 2, protowire.BytesType)
-	b = protowire.AppendBytes(b, sid[:])
-	if ts := sc.TraceState().String(); ts != "" {
-		b = protowire.AppendTag(b, 3, protowire.BytesType)
-		b = protowire.AppendString(b, ts)
+	*pb = plannedSpan{
+		tid:        sc.TraceID(),
+		sid:        sc.SpanID(),
+		psid:       ros.Parent().SpanID(),
+		traceState: sc.TraceState().String(),
+		kind:       spanKindPB(span.Kind),
+		start:      uint64(ros.StartTime().UnixNano()),
+		end:        uint64(ros.EndTime().UnixNano()),
+		status:     statusPB(codes.Code(span.StatusCode), span.StatusMessage),
 	}
-	if psid := ros.Parent().SpanID(); psid.IsValid() {
+	if len(span.Links) > 0 {
+		for _, link := range telemetry.SpanLinksToPB(ros.Links()) {
+			enc, err := proto.Marshal(link)
+			if err != nil {
+				return fmt.Errorf("failed to proto marshal link: %w", err)
+			}
+			pb.links = append(pb.links, enc)
+		}
+	}
+
+	n := protowire.SizeTag(1) + protowire.SizeBytes(len(pb.tid)) +
+		protowire.SizeTag(2) + protowire.SizeBytes(len(pb.sid))
+	if pb.traceState != "" {
+		n += protowire.SizeTag(3) + protowire.SizeBytes(len(pb.traceState))
+	}
+	if pb.psid.IsValid() {
+		n += protowire.SizeTag(4) + protowire.SizeBytes(len(pb.psid))
+	}
+	if span.Name != "" {
+		n += protowire.SizeTag(5) + protowire.SizeBytes(len(span.Name))
+	}
+	if pb.kind != 0 {
+		n += protowire.SizeTag(6) + protowire.SizeVarint(uint64(pb.kind))
+	}
+	if pb.start != 0 {
+		n += protowire.SizeTag(7) + protowire.SizeFixed64()
+	}
+	if pb.end != 0 {
+		n += protowire.SizeTag(8) + protowire.SizeFixed64()
+	}
+	n += storedListSize(9, span.Attributes)
+	n += uint32FieldSize(10, uint32(span.DroppedAttributesCount))
+	n += storedListSize(11, span.Events)
+	n += uint32FieldSize(12, uint32(span.DroppedEventsCount))
+	for _, link := range pb.links {
+		n += protowire.SizeTag(13) + protowire.SizeBytes(len(link))
+	}
+	n += uint32FieldSize(14, uint32(span.DroppedLinksCount))
+	n += protowire.SizeTag(15) + protowire.SizeBytes(statusSize(pb.status))
+	n += protowire.SizeTag(16) + protowire.SizeFixed32()
+	pb.size = n
+	return nil
+}
+
+// append appends span's OTLP span as planned, in field order, as
+// proto.Marshal does.
+func (pb *plannedSpan) append(b []byte, span *Span) []byte {
+	b = protowire.AppendTag(b, 1, protowire.BytesType)
+	b = protowire.AppendBytes(b, pb.tid[:])
+	b = protowire.AppendTag(b, 2, protowire.BytesType)
+	b = protowire.AppendBytes(b, pb.sid[:])
+	if pb.traceState != "" {
+		b = protowire.AppendTag(b, 3, protowire.BytesType)
+		b = protowire.AppendString(b, pb.traceState)
+	}
+	if pb.psid.IsValid() {
 		b = protowire.AppendTag(b, 4, protowire.BytesType)
-		b = protowire.AppendBytes(b, psid[:])
+		b = protowire.AppendBytes(b, pb.psid[:])
 	}
 	if span.Name != "" {
 		b = protowire.AppendTag(b, 5, protowire.BytesType)
 		b = protowire.AppendString(b, span.Name)
 	}
-	if kind := spanKindPB(span.Kind); kind != 0 {
+	if pb.kind != 0 {
 		b = protowire.AppendTag(b, 6, protowire.VarintType)
-		b = protowire.AppendVarint(b, uint64(kind))
+		b = protowire.AppendVarint(b, uint64(pb.kind))
 	}
-	if start := uint64(ros.StartTime().UnixNano()); start != 0 {
+	if pb.start != 0 {
 		b = protowire.AppendTag(b, 7, protowire.Fixed64Type)
-		b = protowire.AppendFixed64(b, start)
+		b = protowire.AppendFixed64(b, pb.start)
 	}
-	if end := uint64(ros.EndTime().UnixNano()); end != 0 {
+	if pb.end != 0 {
 		b = protowire.AppendTag(b, 8, protowire.Fixed64Type)
-		b = protowire.AppendFixed64(b, end)
+		b = protowire.AppendFixed64(b, pb.end)
 	}
 	b = appendStoredList(b, 9, span.Attributes, "attributes")
 	b = appendUint32Field(b, 10, uint32(span.DroppedAttributesCount))
 	b = appendStoredList(b, 11, span.Events, "events")
 	b = appendUint32Field(b, 12, uint32(span.DroppedEventsCount))
-	if len(span.Links) > 0 {
-		for _, link := range telemetry.SpanLinksToPB(ros.Links()) {
-			enc, err := proto.Marshal(link)
-			if err != nil {
-				return nil, fmt.Errorf("failed to proto marshal link: %w", err)
-			}
-			b = protowire.AppendTag(b, 13, protowire.BytesType)
-			b = protowire.AppendBytes(b, enc)
-		}
+	for _, link := range pb.links {
+		b = protowire.AppendTag(b, 13, protowire.BytesType)
+		b = protowire.AppendBytes(b, link)
 	}
 	b = appendUint32Field(b, 14, uint32(span.DroppedLinksCount))
-	status := statusPB(codes.Code(span.StatusCode), span.StatusMessage)
+	b = protowire.AppendTag(b, 15, protowire.BytesType)
+	b = protowire.AppendVarint(b, uint64(statusSize(pb.status)))
+	if pb.status.Message != "" {
+		b = protowire.AppendTag(b, 2, protowire.BytesType)
+		b = protowire.AppendString(b, pb.status.Message)
+	}
+	if pb.status.Code != 0 {
+		b = protowire.AppendTag(b, 3, protowire.VarintType)
+		b = protowire.AppendVarint(b, uint64(pb.status.Code))
+	}
+	// A stored parent is never remote.
+	b = protowire.AppendTag(b, 16, protowire.Fixed32Type)
+	b = protowire.AppendFixed32(b, uint32(otlptracev1.SpanFlags_SPAN_FLAGS_CONTEXT_HAS_IS_REMOTE_MASK))
+	return b
+}
+
+func statusSize(status *otlptracev1.Status) int {
 	n := 0
 	if status.Message != "" {
 		n += protowire.SizeTag(2) + protowire.SizeBytes(len(status.Message))
@@ -652,20 +739,28 @@ func (span *Span) appendSpanPB(b []byte) ([]byte, error) {
 	if status.Code != 0 {
 		n += protowire.SizeTag(3) + protowire.SizeVarint(uint64(status.Code))
 	}
-	b = protowire.AppendTag(b, 15, protowire.BytesType)
-	b = protowire.AppendVarint(b, uint64(n))
-	if status.Message != "" {
-		b = protowire.AppendTag(b, 2, protowire.BytesType)
-		b = protowire.AppendString(b, status.Message)
+	return n
+}
+
+// storedListSize is the size of appendStoredList's encoding of list.
+func storedListSize(num protowire.Number, list []byte) int {
+	n := 0
+	for len(list) > 0 {
+		_, m := protowire.ConsumeBytes(list)
+		if m < 0 {
+			return 0
+		}
+		n += protowire.SizeTag(num) + m
+		list = list[m:]
 	}
-	if status.Code != 0 {
-		b = protowire.AppendTag(b, 3, protowire.VarintType)
-		b = protowire.AppendVarint(b, uint64(status.Code))
+	return n
+}
+
+func uint32FieldSize(num protowire.Number, v uint32) int {
+	if v == 0 {
+		return 0
 	}
-	// A stored parent is never remote.
-	b = protowire.AppendTag(b, 16, protowire.Fixed32Type)
-	b = protowire.AppendFixed32(b, uint32(otlptracev1.SpanFlags_SPAN_FLAGS_CONTEXT_HAS_IS_REMOTE_MASK))
-	return b, nil
+	return protowire.SizeTag(num) + protowire.SizeVarint(uint64(v))
 }
 
 // appendStoredList appends a list MarshalProtoList encoded as field num's
