@@ -36,6 +36,12 @@ type AgentNode struct {
 	// may legitimately share one.
 	Name string
 
+	// ParentID is the handle of the agent this one belongs under — a
+	// worker's chief, a reviewer's worker — or empty for a top-level agent.
+	// It is always the ID of another node in the same Agents() result, and
+	// following it never loops. See DB.agentParent for where it comes from.
+	ParentID string
+
 	// CallDigest is the digest of the call that produced the agent value,
 	// for reconstructing a sendable handle. Empty when the engine could not
 	// derive it, in which case the agent is observable but not addressable.
@@ -240,7 +246,95 @@ func (db *DB) buildAgents(live TraceID) []*AgentNode {
 		}
 		return a[0].Before(b[0])
 	})
+	db.linkAgentParents(order, byID)
 	return order
+}
+
+// linkAgentParents sets each node's ParentID, then breaks any loop the
+// sources managed to describe, so every chain of parents ends at a root.
+func (db *DB) linkAgentParents(order []*AgentNode, byID map[string]*AgentNode) {
+	// The gaps are re-derived from scratch: a chain that has since reached
+	// its root no longer waits on anything.
+	clear(db.agentAncestryGaps)
+	for _, node := range order {
+		node.ParentID = db.agentParent(node, byID)
+	}
+	// Cut each loop at its earliest member in roster order: walking up from
+	// a node and arriving back at it means the node closes a loop, and making
+	// it a root opens the loop for every later member too. A walk is bounded
+	// by the roster's size, which also stops it on a loop it is not part of.
+	for _, node := range order {
+		parent := node.ParentID
+		for range order {
+			if parent == "" {
+				break
+			}
+			if parent == node.ID {
+				node.ParentID = ""
+				break
+			}
+			parent = byID[parent].ParentID
+		}
+	}
+}
+
+// agentParent is the handle of the agent node belongs under, by the first
+// source that names a known agent:
+//
+//  1. The control record's Parent: the engine records the spawning agent's
+//     handle there, so it holds even when the spawn's spans are nested
+//     somewhere else entirely, or were never exported.
+//  2. Span ancestry: the nearest ancestor of the node's loop span that is
+//     another agent's loop span. This covers agents whose control record
+//     names no parent — those that predate the field, and agents spawned by
+//     a nested client (an integration test's `go test` run inside a worker)
+//     whose engine never knew the worker spawned them — as well as agents
+//     with no control record at all. Newest loop span first, so a relaunch
+//     that moved is placed where it lives now.
+//
+// Neither naming anyone makes node a root. A parent outside the roster
+// counts as nobody: a node can only be placed under a node.
+//
+// An ancestry walk that ends at a span the DB has not received yet may be
+// cut short — its ancestors are on their way — so the span is noted as a gap,
+// and receiving it invalidates the roster (see noteAgentAncestry).
+func (db *DB) agentParent(node *AgentNode, byID map[string]*AgentNode) string {
+	known := func(id string) bool {
+		_, ok := byID[id]
+		return ok && id != node.ID
+	}
+	if node.Control != nil && known(node.Control.Parent) {
+		return node.Control.Parent
+	}
+	for i := len(node.Spans) - 1; i >= 0; i-- {
+		span := node.Spans[i]
+		for parent := span.ParentSpan; parent != nil; parent = parent.ParentSpan {
+			if parent.Agent && known(parent.AgentID) {
+				return parent.AgentID
+			}
+			if parent.ParentSpan == nil && !parent.Received {
+				if db.agentAncestryGaps == nil {
+					db.agentAncestryGaps = map[SpanID]struct{}{}
+				}
+				db.agentAncestryGaps[parent.ID] = struct{}{}
+			}
+		}
+	}
+	return ""
+}
+
+// noteAgentAncestry invalidates the roster when a span arrives that some
+// agent's ancestry walk stopped at for want of it: its own parent may be the
+// agent that walk was looking for. Span arrivals are far too frequent to
+// invalidate on all of them, and ancestry is otherwise fixed once received.
+func (db *DB) noteAgentAncestry(span *Span) {
+	if _, ok := db.agentAncestryGaps[span.ID]; !ok || !span.Received {
+		return
+	}
+	delete(db.agentAncestryGaps, span.ID)
+	if span.ParentID.IsValid() {
+		db.agentsGen++
+	}
 }
 
 // AgentRestore is one entry of a restore plan: what a resuming client needs
