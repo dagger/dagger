@@ -401,10 +401,6 @@ func (q *Query) ModDepsForCall(ctx context.Context, rootCall *dagql.ResultCall) 
 	if clientMetadata.SessionID == "" {
 		return nil, fmt.Errorf("empty session ID")
 	}
-	installed, err := q.installedSchemaModuleCandidates(ctx, cache)
-	if err != nil {
-		return nil, err
-	}
 	// The Module results the call graph references are memoized per frame by
 	// the cache (ModuleResultIDs), so a handle load doesn't walk the receiver's
 	// whole call graph again. Loading them for this session's schema still
@@ -412,6 +408,15 @@ func (q *Query) ModDepsForCall(ctx context.Context, rootCall *dagql.ResultCall) 
 	moduleIDs, err := cache.ModuleResultIDs(ctx, rootCall)
 	if err != nil {
 		return nil, err
+	}
+	// Most calls, such as a module's own calls to the core API, reference no
+	// module, and then the session's installed modules aren't needed.
+	var installed []dagql.SchemaModuleCandidate
+	if len(moduleIDs) > 0 {
+		installed, err = q.installedSchemaModuleCandidates(ctx, cache)
+		if err != nil {
+			return nil, err
+		}
 	}
 	for _, id := range moduleIDs {
 		res, err := cache.LoadResultByResultIDForSchema(ctx, clientMetadata.SessionID, dag, id, installed)
