@@ -444,6 +444,12 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		dagql.Func("name", s.currentModuleName).
 			Doc(`The name of the module being executed in`),
 
+		dagql.Func("naming", s.currentModuleNaming).
+			View(AfterVersion(identifierVersion)).
+			Experimental(identifierExperimental).
+			Doc(`The names the engine gives this module's own declarations: the same as its source's ModuleSource.naming, for module runtimes, which have no ModuleSource.`,
+				`It answers for the module under its own name (ModuleSource.moduleName), by the naming rules of the version the module is named by. A workspace or toolchain that loads the module under another name namespaces its types under that name instead, which this doesn't reflect.`),
+
 		dagql.NodeFunc("source", s.currentModuleSource).
 			Doc(`The directory containing the module's source code loaded into the engine (plus any generated code that may have been created).`),
 
@@ -2956,6 +2962,19 @@ func (s *moduleSchema) currentModuleName(
 	args struct{},
 ) (string, error) {
 	return curMod.Module.Self().NameField, nil
+}
+
+// currentModuleNaming is ModuleSource.naming of the current module's source.
+func (s *moduleSchema) currentModuleNaming(
+	ctx context.Context,
+	curMod *core.CurrentModule,
+	args struct{},
+) (*core.ModuleNaming, error) {
+	src := curMod.Module.Self().Source.Value.Self()
+	if src == nil {
+		return nil, errors.New("invalid unset current module source")
+	}
+	return src.Naming(), nil
 }
 
 func (s *moduleSchema) currentModuleGeneratedContextDirectory(

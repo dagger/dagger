@@ -70,6 +70,14 @@ type ` + mainType + ` {
       naming.
       typeNames(names: ["HttpClient", "MyMod"])
   }
+
+  pub currentTypeNames: [String!]! {
+    currentModule.naming.typeNames(names: ["HttpClient", "JsonReader", "CpuArch", "` + mainType + `"])
+  }
+
+  pub currentFieldNames: [String!]! {
+    currentModule.naming.fieldNames(names: ["baseURL", "loadThingFromID", "readURL", "e2eTest"])
+  }
 }
 `
 }
@@ -117,7 +125,7 @@ func (ModuleNamingSuite) TestModuleSourceNamingMatchesSchema(ctx context.Context
 	)
 	httpClientFields := []string{"baseURL", "loadThingFromID"}
 	httpClientFunctions := []string{"readURL", "getURL"}
-	mainFunctions := []string{"client", "loadThingFromID", "arch", "namingProbe"}
+	mainFunctions := []string{"client", "loadThingFromID", "arch", "namingProbe", "currentTypeNames", "currentFieldNames"}
 	args := []string{"baseURL", "path", "loadThingFromID", "cpuArch"}
 	// Dang only lets enum members be written in GraphQL's convention, which
 	// both rules keep; the unit tests cover the others.
@@ -140,6 +148,7 @@ func (ModuleNamingSuite) TestModuleSourceNamingMatchesSchema(ctx context.Context
   functions: fieldNames(names: %s)
   enumMemberNames(names: %s)
   mainObject(candidates: %s)
+  currentFields: fieldNames(names: ["baseURL", "loadThingFromID", "readURL", "e2eTest"])
 } }}`, "./"+tc.module, gqlStrings(types), gqlStrings(httpClientFields), gqlStrings(args),
 				gqlStrings(functions), gqlStrings(members), gqlStrings([]string{httpClient, tc.mainType}))).Stdout(ctx)
 			require.NoError(t, err)
@@ -234,6 +243,14 @@ func (ModuleNamingSuite) TestModuleSourceNamingMatchesSchema(ctx context.Context
 			out, err = ws.With(daggerQueryAt(tc.module, `{ __typename probe: namingProbe }`)).Stdout(ctx)
 			require.NoError(t, err)
 			require.JSONEq(t, `{"__typename": "Query", "probe": ["MyModHTTPClient", "MyMod"]}`, out)
+
+			// The module's runtime has no ModuleSource: CurrentModule.naming
+			// answers the same as its source's.
+			out, err = ws.With(daggerQueryAt(tc.module, `{ %s %s }`, functionName["currentTypeNames"], functionName["currentFieldNames"])).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, names(typeName, types...), gjsonStrings(gjson.Get(out, functionName["currentTypeNames"])), out)
+			require.Equal(t, gjsonStrings(naming.Get("currentFields")), gjsonStrings(gjson.Get(out, functionName["currentFieldNames"])), out)
+
 			constructor := namingConstructorName(tc.module)
 			out, err = ws.With(daggerQuery(`{ %s { __typename } }`, constructor)).Stdout(ctx)
 			require.NoError(t, err)

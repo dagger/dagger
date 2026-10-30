@@ -36,27 +36,39 @@ func TestModuleSourceNamingViews(t *testing.T) {
 				ModuleSource struct {
 					Fields []struct{ Name string }
 				}
+				CurrentModule struct {
+					Fields []struct{ Name string }
+				}
 				ModuleNaming *struct {
 					Fields []struct{ Name string }
 				}
 			}
-			query := `{ moduleSource: __type(name: "ModuleSource") { fields { name } } }`
+			query := `{
+				moduleSource: __type(name: "ModuleSource") { fields { name } }
+				currentModule: __type(name: "CurrentModule") { fields { name } }
+			}`
 			if tc.want {
 				query = `{
 					moduleSource: __type(name: "ModuleSource") { fields { name } }
+					currentModule: __type(name: "CurrentModule") { fields { name } }
 					moduleNaming: __type(name: "ModuleNaming") { fields { name } }
 				}`
 			}
 			require.NoError(t, gql.Post(query, &res))
-			var fields []string
+			var fields, currentFields []string
 			for _, f := range res.ModuleSource.Fields {
 				fields = append(fields, f.Name)
 			}
+			for _, f := range res.CurrentModule.Fields {
+				currentFields = append(currentFields, f.Name)
+			}
 			if !tc.want {
 				require.NotContains(t, fields, "naming")
+				require.NotContains(t, currentFields, "naming")
 				return
 			}
 			require.Contains(t, fields, "naming")
+			require.Contains(t, currentFields, "naming")
 			require.NotNil(t, res.ModuleNaming)
 			var namingFields []string
 			for _, f := range res.ModuleNaming.Fields {
@@ -157,6 +169,56 @@ func TestModuleSourceNamingResolves(t *testing.T) {
 				} else {
 					require.NoError(t, err)
 				}
+			})
+		}
+	}
+}
+
+// CurrentModule.naming, for module runtimes, answers what ModuleSource.naming
+// answers for the module's source: its view and its own (manifest) name, even
+// when the module is loaded under another.
+func TestCurrentModuleNaming(t *testing.T) {
+	for _, view := range []call.View{
+		call.View(engine.APIViewVersion("v1.0.0-beta.20")),
+		call.View(engine.IdentifierCasingVersion),
+	} {
+		for _, engineVersion := range []string{"v1.0.0-beta.20", engine.IdentifierCasingVersion} {
+			t.Run(string(view)+"/"+engineVersion, func(t *testing.T) {
+				ctx, dag := newNestingTestServer(t, view)
+				synthetic := func(op string, typ dagql.Typed) *dagql.ResultCall {
+					return &dagql.ResultCall{
+						Kind:        dagql.ResultCallKindSynthetic,
+						SyntheticOp: op + "-" + engineVersion,
+						Type:        dagql.NewResultCallType(typ.Type()),
+					}
+				}
+				src, err := dagql.NewObjectResultForCall(&core.ModuleSource{
+					ModuleName:         "my-mod",
+					ModuleOriginalName: "my-mod",
+					EngineVersion:      engineVersion,
+				}, dag, synthetic("naming-source", &core.ModuleSource{}))
+				require.NoError(t, err)
+				// Loaded under another name, as a workspace may.
+				mod, err := dagql.NewObjectResultForCall(&core.Module{
+					NameField:    "renamed",
+					OriginalName: "my-mod",
+					Source:       dagql.NonNull(src),
+				}, dag, synthetic("naming-module", &core.Module{}))
+				require.NoError(t, err)
+				cur, err := dagql.NewObjectResultForCall(&core.CurrentModule{Module: mod}, dag, synthetic("naming-current-module", &core.CurrentModule{}))
+				require.NoError(t, err)
+
+				var fromSource, fromCurrent dagql.ObjectResult[*core.ModuleNaming]
+				require.NoError(t, dag.Select(ctx, src, &fromSource, dagql.Selector{Field: "naming"}))
+				require.NoError(t, dag.Select(ctx, cur, &fromCurrent, dagql.Selector{Field: "naming"}))
+				require.Equal(t, fromSource.Self(), fromCurrent.Self())
+
+				names := dagql.ArrayInput[dagql.String]{"HttpClient", "MyMod"}
+				var a, b dagql.Array[dagql.String]
+				require.NoError(t, dag.Select(ctx, fromSource, &a, dagql.Selector{Field: "typeNames", Args: []dagql.NamedInput{{Name: "names", Value: names}}}))
+				require.NoError(t, dag.Select(ctx, fromCurrent, &b, dagql.Selector{Field: "typeNames", Args: []dagql.NamedInput{{Name: "names", Value: names}}}))
+				require.Equal(t, a, b)
+				require.Equal(t, dagql.String("MyMod"), b[1], "the manifest name, not the name it's loaded under")
 			})
 		}
 	}
