@@ -138,7 +138,9 @@ func BenchmarkMarshalProtoList(b *testing.B) {
 
 // TestAppendTraceRequestPB checks that the trace stream's encoding written
 // from stored rows is byte for byte what proto.Marshal makes of the request
-// SpansToPB builds from the same rows.
+// SpansToPB builds from the same rows, with each span's links as stored:
+// SpansToPB's round trip through SDK links drops their trace state, flags
+// and dropped attribute count, which a client decoding SDK links never sees.
 func TestAppendTraceRequestPB(t *testing.T) {
 	list := func(msgs ...proto.Message) []byte {
 		t.Helper()
@@ -165,13 +167,19 @@ func TestAppendTraceRequestPB(t *testing.T) {
 		Attributes:             []*otlpcommonv1.KeyValue{strAttr("k", "v")},
 		DroppedAttributesCount: 2,
 	}, &otlptracev1.Span_Event{Name: "bare"})
-	links := list(&otlptracev1.Span_Link{
-		TraceId:    bytes.Repeat([]byte{0xab}, 16),
-		SpanId:     bytes.Repeat([]byte{0xcd}, 8),
-		TraceState: "x=y",
-		Attributes: []*otlpcommonv1.KeyValue{strAttr(telemetry.LinkPurposeAttr, telemetry.LinkPurposeCause)},
-		Flags:      0x301,
-	})
+	storedLinks := []*otlptracev1.Span_Link{{
+		TraceId:                bytes.Repeat([]byte{0xab}, 16),
+		SpanId:                 bytes.Repeat([]byte{0xcd}, 8),
+		TraceState:             "x=y",
+		Attributes:             []*otlpcommonv1.KeyValue{strAttr(telemetry.LinkPurposeAttr, telemetry.LinkPurposeCause)},
+		DroppedAttributesCount: 2,
+		Flags:                  0x301,
+	}, {
+		TraceId: bytes.Repeat([]byte{0x12}, 16),
+		SpanId:  bytes.Repeat([]byte{0x34}, 8),
+		Flags:   0x100,
+	}}
+	links := list(storedLinks[0], storedLinks[1])
 	rows := []Span{
 		{
 			TraceID: "0102030405060708090a0b0c0d0e0f10", SpanID: "1112131415161718", TraceState: "a=b",
@@ -191,11 +199,29 @@ func TestAppendTraceRequestPB(t *testing.T) {
 		// The first resource and scope again, after the others.
 		{TraceID: "0102030405060708090a0b0c0d0e0f10", SpanID: "5152535455565758", Name: "again", Kind: "internal", Attributes: list(strAttr("k", "v")), Resource: resA, InstrumentationScope: scopeX},
 	}
-	want, err := proto.Marshal(&coltracepb.ExportTraceServiceRequest{ResourceSpans: SpansToPB(rows)})
+	wantSpans := SpansToPB(rows)
+	full := wantSpans[0].ScopeSpans[0].Spans[0]
+	require.Equal(t, "full", full.Name)
+	require.Len(t, full.Links, len(storedLinks), "SpansToPB keeps every link")
+	full.Links = storedLinks
+	want, err := proto.Marshal(&coltracepb.ExportTraceServiceRequest{ResourceSpans: wantSpans})
 	require.NoError(t, err)
 	got, err := AppendTraceRequestPB(nil, rows)
 	require.NoError(t, err)
 	require.Equal(t, want, got)
+
+	// A client reads the links it decodes through SDK links the same way
+	// from either encoding.
+	var gotReq coltracepb.ExportTraceServiceRequest
+	require.NoError(t, proto.Unmarshal(got, &gotReq))
+	gotLinks := telemetry.SpansFromPB(gotReq.GetResourceSpans())[0].Links()
+	require.Equal(t, (&readOnlySpan{DB: &rows[0]}).Links(), gotLinks)
+
+	// Into a buffer that already holds bytes, it appends.
+	prefix := []byte("prefix")
+	got, err = AppendTraceRequestPB(slices.Clone(prefix), rows)
+	require.NoError(t, err)
+	require.Equal(t, append(slices.Clone(prefix), want...), got)
 
 	got, err = AppendTraceRequestPB(nil, nil)
 	require.NoError(t, err)
