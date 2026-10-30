@@ -43,14 +43,14 @@ func (cm *snapshotManager) ImportChain(ctx context.Context, chain *ExportChain) 
 			_ = pin.release(ctx)
 		}
 	}()
-	first, top := cm.chainLocalTop(chain)
+	first, top, topParent := cm.chainLocalTop(chain)
 	// The layers the engine already has are taken as one: their top
 	// snapshot, attached to the import's lease with all its parents, which
 	// is what reusing each in turn ends with. A top snapshot gone since
 	// leaves the layers to import in order, which reuses what remains.
 	start := 0
 	if first > 0 {
-		ref, err := cm.reuseLocalChain(ctx, top)
+		ref, err := cm.reuseLocalChain(ctx, chain, first, top, topParent)
 		if err != nil {
 			return nil, err
 		}
@@ -345,16 +345,16 @@ func (cm *snapshotManager) layerImportedLocked() {
 // need no bytes. An index entry whose snapshot has gone since only means its
 // layer downloads when it imports.
 func (cm *snapshotManager) chainLocalPrefix(chain *ExportChain) int {
-	n, _ := cm.chainLocalTop(chain)
+	n, _, _ := cm.chainLocalTop(chain)
 	return n
 }
 
 // chainLocalTop is chainLocalPrefix with the snapshot of the last of those
-// layers, or "" when there are none.
-func (cm *snapshotManager) chainLocalTop(chain *ExportChain) (int, string) {
+// layers and that snapshot's parent, or "" when there are none.
+func (cm *snapshotManager) chainLocalTop(chain *ExportChain) (int, string, string) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
-	parent := ""
+	parent, grandparent := "", ""
 	for i, layer := range chain.Layers {
 		snapshotID := cm.importedLayerByBlob[ImportedLayerBlobKey{ParentSnapshotID: parent, BlobDigest: layer.Descriptor.Digest}]
 		if snapshotID == "" {
@@ -363,17 +363,29 @@ func (cm *snapshotManager) chainLocalTop(chain *ExportChain) (int, string) {
 			}
 		}
 		if snapshotID == "" {
-			return i, parent
+			return i, parent, grandparent
 		}
-		parent = snapshotID
+		parent, grandparent = snapshotID, parent
 	}
-	return len(chain.Layers), parent
+	return len(chain.Layers), parent, grandparent
 }
 
-// reuseLocalChain returns the snapshot of a chain's local layers, attached
-// to ctx's lease with all its parents and their blobs, or nil when it is
-// gone. It applies nothing, so it needs no import lock.
-func (cm *snapshotManager) reuseLocalChain(ctx context.Context, snapshotID string) (ImmutableRef, error) {
+// reuseLocalChain returns snapshotID, the snapshot of chain's first local
+// layers on parentID, attached to ctx's lease with all its parents and
+// their blobs, or nil when it is gone. It applies nothing, so it holds no
+// import lock. It first waits for the top layer's: the import that applied
+// that layer holds it until the chain's Applied has been told, as the
+// imports of the layers under it did before it could apply onto them.
+func (cm *snapshotManager) reuseLocalChain(ctx context.Context, chain *ExportChain, local int, snapshotID, parentID string) (ImmutableRef, error) {
+	diffID, err := diffIDFromDescriptor(chain.Layers[local-1].Descriptor)
+	if err != nil {
+		return nil, err
+	}
+	unlock, err := cm.acquireImportLock(ctx, importedLayerDiffLockKey(parentID, diffID), importClock{timing: chain.Timing, prof: wcprof.Enabled(ctx)})
+	if err != nil {
+		return nil, err
+	}
+	unlock()
 	leaseID, _ := leases.FromContext(ctx)
 	if err := cm.AttachLease(ctx, leaseID, snapshotID); err != nil {
 		if IsNotFound(err) {
