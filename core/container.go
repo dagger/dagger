@@ -3533,6 +3533,10 @@ func (lazy *ContainerDirectoryLazy) Evaluate(ctx context.Context, dir *Directory
 			return fmt.Errorf("container directory lazy: nil parent container")
 		}
 
+		if lazy.ResolveBrokenSymlinks {
+			return lazy.materializeSelection(ctx, dir)
+		}
+
 		srv, err := CurrentDagqlServer(ctx)
 		if err != nil {
 			return err
@@ -3553,13 +3557,10 @@ func (lazy *ContainerDirectoryLazy) Evaluate(ctx context.Context, dir *Directory
 			if err := srv.Select(ctx, lazy.Parent, &rootfs, dagql.Selector{Field: "rootfs"}); err != nil {
 				return err
 			}
-			if !lazy.ResolveBrokenSymlinks && (subpath == "" || subpath == "." || subpath == "/") {
+			if subpath == "" || subpath == "." || subpath == "/" {
 				resolved = rootfs
 			} else {
 				args := []dagql.NamedInput{{Name: "path", Value: dagql.String(subpath)}}
-				if lazy.ResolveBrokenSymlinks {
-					args = append(args, dagql.NamedInput{Name: "resolveBrokenSymlinks", Value: dagql.Boolean(true)})
-				}
 				if err := srv.Select(ctx, rootfs, &resolved, dagql.Selector{
 					Field: "directory",
 					Args:  args,
@@ -3574,15 +3575,6 @@ func (lazy *ContainerDirectoryLazy) Evaluate(ctx context.Context, dir *Directory
 			mountedDir, ok := mnt.DirectorySource.Peek()
 			if !ok || mountedDir == nil {
 				return fmt.Errorf("container directory lazy: missing mounted directory source for %s", mnt.Target)
-			}
-			if lazy.ResolveBrokenSymlinks {
-				ref, sourcePath, err := materializedDirectorySnapshotAndPath(mountedDir)
-				if err != nil {
-					return err
-				}
-				dir.Platform = mountedDir.Platform
-				dir.Services = slices.Clone(mountedDir.Services)
-				return dir.materializeSubdirectory(ctx, ref, sourcePath, subpath)
 			}
 			if subpath == "" || subpath == "." {
 				detached, err := cloneDetachedDirectoryForContainerResult(ctx, mountedDir)
