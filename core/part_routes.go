@@ -68,6 +68,7 @@ type partRouter struct {
 	payload *partPayload
 
 	routing *containerRouting
+	recipe  *containerRecipeDecode
 	groups  map[dagql.PartKey]containerPartGroups
 	// writeSetErr is the first error mapping any part to its groups, in part
 	// order: the error a write-set enumeration returns.
@@ -78,6 +79,11 @@ type partRouter struct {
 type containerRouting struct {
 	ctr   *Container
 	parts []dagql.PartKey
+	err   error
+}
+
+type containerRecipeDecode struct {
+	route containerRecipeRoute
 	err   error
 }
 
@@ -146,7 +152,7 @@ func (router *partRouter) route(demand dagql.PartKey, withWriteSet bool) (dagql.
 		add("snapshot")
 	case "Container":
 		p := &router.payload.container
-		if len(p.LazyJSON) == 0 {
+		if len(p.LazyJSON) == 0 && router.payload.containerRoute == nil {
 			delegation, err := containerPartDelegation(v, *p, demand)
 			route.Delegation = delegation
 			return route, err
@@ -218,6 +224,20 @@ func (router *partRouter) containerRouting() *containerRouting {
 	return router.routing
 }
 
+// containerRecipeRoute returns what routing reads from the Container's
+// recipe: the live recipe's, or its recorded JSON decoded once.
+func (router *partRouter) containerRecipeRoute() (containerRecipeRoute, error) {
+	if route := router.payload.containerRoute; route != nil {
+		return *route, nil
+	}
+	if router.recipe == nil {
+		decoded := &containerRecipeDecode{}
+		decoded.route, decoded.err = decodeContainerRecipeRoute(router.v.Call.Field, router.payload.container.LazyJSON)
+		router.recipe = decoded
+	}
+	return router.recipe.route, router.recipe.err
+}
+
 // partGroups returns the groups part maps to under the Container's recorded
 // operation. The returned groups are shared and must not be modified.
 func (router *partRouter) partGroups(part dagql.PartKey) containerPartGroups {
@@ -228,7 +248,11 @@ func (router *partRouter) partGroups(part dagql.PartKey) containerPartGroups {
 		router.groups = make(map[dagql.PartKey]containerPartGroups)
 	}
 	var mapped containerPartGroups
-	mapped.groups, mapped.err = rawContainerGroups(router.v.Call.Field, router.payload.container.LazyJSON, router.containerRouting().ctr, []dagql.PartKey{part})
+	if route, err := router.containerRecipeRoute(); err != nil {
+		mapped.err = err
+	} else {
+		mapped.groups, mapped.err = containerRecipeGroups(router.v.Call.Field, route, router.containerRouting().ctr, []dagql.PartKey{part})
+	}
 	router.groups[part] = mapped
 	return mapped
 }
@@ -274,42 +298,68 @@ func containerRoutingMetadata(p persistedContainerMetadataValue) (*Container, er
 	return ctr, nil
 }
 
-func rawContainerGroups(field string, raw json.RawMessage, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
-	// These existing mapping helpers are pure and require no lazy latch or inputs.
+// containerRecipeRoute is what routing reads from a Container's recipe, for
+// the field that recorded it.
+type containerRecipeRoute struct {
+	// volatileCacheHit is a withExec recipe that replays a volatile exec's
+	// cache hit.
+	volatileCacheHit bool
+	// target is a mount's target.
+	target string
+	// path is the path a recipe writes.
+	path string
+}
+
+// decodeContainerRecipeRoute decodes what routing reads from a recipe's JSON.
+func decodeContainerRecipeRoute(field string, raw json.RawMessage) (containerRecipeRoute, error) {
+	var route containerRecipeRoute
 	switch field {
 	case "withExec":
 		var p persistedContainerExecLazy
 		if err := json.Unmarshal(raw, &p); err != nil {
-			return nil, err
+			return route, err
 		}
-		if p.VolatileCacheHitParentResultID != 0 {
+		route.volatileCacheHit = p.VolatileCacheHitParentResultID != 0
+	case "withMountedDirectory", "withMountedFile", "__withMountedPathDockerfileCompat":
+		var p struct {
+			Target string `json:"target"`
+		}
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return route, err
+		}
+		route.target = p.Target
+	case "withDirectory", "withFile", "withNewFile", "withoutDirectory", "withoutFile", "withoutFiles":
+		var p struct {
+			Path string `json:"path"`
+		}
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return route, err
+		}
+		route.path = p.Path
+	case "withSymlink":
+		var p persistedContainerWithSymlinkLazy
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return route, err
+		}
+		route.path = p.LinkPath
+	}
+	return route, nil
+}
+
+func containerRecipeGroups(field string, route containerRecipeRoute, ctr *Container, parts []dagql.PartKey) ([]dagql.LazyGroupKey, error) {
+	// These existing mapping helpers are pure and require no lazy latch or inputs.
+	switch field {
+	case "withExec":
+		if route.volatileCacheHit {
 			return templateAContainerGroups(ctr, parts)
 		}
 		return (&ContainerExecLazy{}).ContainerLazyGroups(context.Background(), ctr, parts)
 	case "from", "withRootfs":
 		return (&ContainerFromImageRefLazy{}).ContainerLazyGroups(context.Background(), ctr, parts)
 	case "withMountedDirectory", "withMountedFile", "__withMountedPathDockerfileCompat":
-		var p struct {
-			Target string `json:"target"`
-		}
-		if err := json.Unmarshal(raw, &p); err != nil {
-			return nil, err
-		}
-		return containerMountWriterGroups(ctr, p.Target, parts)
-	case "withDirectory", "withFile", "withNewFile", "withoutDirectory", "withoutFile", "withoutFiles":
-		var p struct {
-			Path string `json:"path"`
-		}
-		if err := json.Unmarshal(raw, &p); err != nil {
-			return nil, err
-		}
-		return containerPathWriterGroups(ctr, []string{p.Path}, parts)
-	case "withSymlink":
-		var p persistedContainerWithSymlinkLazy
-		if err := json.Unmarshal(raw, &p); err != nil {
-			return nil, err
-		}
-		return containerPathWriterGroups(ctr, []string{p.LinkPath}, parts)
+		return containerMountWriterGroups(ctr, route.target, parts)
+	case "withDirectory", "withFile", "withNewFile", "withoutDirectory", "withoutFile", "withoutFiles", "withSymlink":
+		return containerPathWriterGroups(ctr, []string{route.path}, parts)
 	default:
 		return templateAContainerGroups(ctr, parts)
 	}

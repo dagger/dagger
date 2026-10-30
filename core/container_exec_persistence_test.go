@@ -85,3 +85,43 @@ func TestContainerExecPersistsInputMetadata(t *testing.T) {
 		})
 	}
 }
+
+// An exec's recipe gives routing what decoding its encoding gives, and fails
+// where encoding it fails.
+func TestContainerExecRecipeRoutesAsEncoded(t *testing.T) {
+	env := newPersistedFamiliesTestEnv(t, "exec-route")
+	ctx, cache, srv := env.open(t)
+	platform := Platform{OS: "linux", Architecture: "amd64"}
+	parent := env.attach(t, ctx, cache, srv, "exec-route-parent", NewContainer(platform)).(dagql.ObjectResult[*Container])
+	child := NewContainer(platform)
+	require.NoError(t, child.WithExec(ctx, parent, ContainerExecOpts{Args: []string{"true"}}, nil, dagql.ObjectResult[*Module]{}, nil))
+	enc := dagql.NewPersistEncodeContext(cache, 0, nil)
+	exec := child.Lazy.(*ContainerExecLazy)
+	for name, recipe := range map[string]interface {
+		Lazy[*Container]
+		routedContainerRecipe
+	}{
+		"exec":                        exec,
+		"volatile exec cache hit":     &ContainerVolatileExecCacheHitLazy{Parent: parent, VolatileEnv: []string{"V"}},
+		"exec without a parent":       &ContainerExecLazy{State: &ContainerExecState{}},
+		"exec with a function call":   &ContainerExecLazy{State: &ContainerExecState{Parent: parent, FunctionCall: &FunctionCall{}}},
+		"nil exec":                    (*ContainerExecLazy)(nil),
+		"nil volatile exec cache hit": (*ContainerVolatileExecCacheHitLazy)(nil),
+	} {
+		t.Run(name, func(t *testing.T) {
+			route, routeErr := recipe.persistedRoute(enc)
+			raw, err := recipe.EncodePersisted(ctx, enc)
+			if err != nil {
+				require.Error(t, routeErr)
+				return
+			}
+			require.NoError(t, routeErr)
+			decoded, err := decodeContainerRecipeRoute("withExec", raw)
+			require.NoError(t, err)
+			require.Equal(t, decoded, route)
+		})
+	}
+	route, err := (&ContainerVolatileExecCacheHitLazy{Parent: parent}).persistedRoute(enc)
+	require.NoError(t, err)
+	require.True(t, route.volatileCacheHit)
+}
