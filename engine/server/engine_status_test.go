@@ -270,7 +270,7 @@ func TestPausedAdapterRefusesExports(t *testing.T) {
 	var a RemoteCacheAdapter
 	a.paused.pause()
 	var got remotecache.Export
-	require.NoError(t, a.Export(context.Background(), protocol.Export{Roots: []uint64{12, 13}}, func(_ context.Context, exp remotecache.Export) error {
+	require.NoError(t, a.Export(context.Background(), protocol.Export{Roots: []uint64{12, 13}}, nil, func(_ context.Context, exp remotecache.Export) error {
 		got = exp
 		return nil
 	}))

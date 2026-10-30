@@ -74,7 +74,7 @@ func TestRemoteCacheAdapterExportReportsBusyRows(t *testing.T) {
 	second, _ := e.publishFile(t, "on-busy-second", busy)
 	var report busyReport
 	e.adapter.testBusyReport = func(r busyReport) { report = r }
-	require.NoError(t, e.adapter.Export(e.ctx, protocol.Export{Roots: []uint64{entryNumber(t, first), entryNumber(t, second)}}, func(context.Context, remotecache.Export) error { return nil }))
+	require.NoError(t, e.adapter.Export(e.ctx, protocol.Export{Roots: []uint64{entryNumber(t, first), entryNumber(t, second)}}, nil, func(context.Context, remotecache.Export) error { return nil }))
 	require.Equal(t, 1, report.rows)
 	require.Equal(t, []string{fmt.Sprintf("%d:%s:0s:2", entryNumber(t, busy), dagql.BusyRunning)}, report.named)
 }
