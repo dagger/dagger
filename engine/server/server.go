@@ -718,6 +718,8 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 	if err := srv.mkdirBaseDirs(); err != nil {
 		return localCacheStateResetNone, err
 	}
+	dagqlCacheDBPath := filepath.Join(srv.rootDir, "dagql-cache.db")
+	readFilesAhead(srv.snapshotterDBPath, srv.containerdMetaDBPath, dagqlCacheDBPath)
 
 	if err := srv.initBoltDBs(); err != nil {
 		return localCacheStateResetBoltDBInitFailed, fmt.Errorf("failed to initialize boltdbs: %w", err)
@@ -769,7 +771,6 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 	srv.workerGCPolicies = cloneDagqlCachePrunePolicies(workerGCPolicies)
 	srv.workerDefaultGCPolicy = getDefaultDagqlGCPolicy(cfg, ociCfg.GCConfig, srv.rootDir)
 
-	dagqlCacheDBPath := filepath.Join(srv.rootDir, "dagql-cache.db")
 	srv.snapshotGarbage = newSnapshotGarbage(srv.containerdMetaDB)
 	snapshotGC := srv.snapshotGarbage.Collect
 	cacheOpts := []dagql.CacheOption{dagql.WithEngineInstanceID(srv.engineInstanceID)}

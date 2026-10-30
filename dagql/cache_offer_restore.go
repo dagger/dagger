@@ -13,19 +13,32 @@ type restoredFinalOffer struct {
 
 // Boot validates local output shapes before opening storage. Completed local
 // outputs may have an obsolete offer, whose hold ends only after link restore.
+// Rows map their outputs on all cores: mapping decodes one row's payload and
+// reads only that row.
 func (c *Cache) restoredFinalOffersLocked() ([]restoredFinalOffer, error) {
-	var final []restoredFinalOffer
+	rows := make([]*sharedResult, 0, len(c.resultsByID))
 	for _, row := range c.resultsByID {
-		if row.persistedEnvelope == nil {
-			continue
+		if row.persistedEnvelope != nil {
+			rows = append(rows, row)
 		}
+	}
+	outputs := make([][]CapturedCodecOutput, len(rows))
+	if err := forEachIndexParallel(len(rows), func(i int) error {
+		row := rows[i]
 		rec := PersistedRecord{ResultID: uint64(row.id), Envelope: *row.persistedEnvelope, Call: row.loadResultCall(), SnapshotLinks: row.loadSnapshotOwnerLinks()}
-		outputs, err := mapTransferredOutputs(rec)
+		var err error
+		outputs[i], err = mapTransferredOutputs(rec)
 		if err != nil {
-			return nil, fmt.Errorf("restore outputs of result %d: %w", row.id, err)
+			return fmt.Errorf("restore outputs of result %d: %w", row.id, err)
 		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	var final []restoredFinalOffer
+	for i, row := range rows {
 		parts := map[string]CapturedCodecOutput{}
-		for _, part := range outputs {
+		for _, part := range outputs[i] {
 			key, _ := partAddressKey(part.Address)
 			parts[key] = part
 		}
