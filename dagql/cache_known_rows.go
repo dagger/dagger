@@ -57,6 +57,19 @@ func (k *KnownRows) NotMerged(rows ExportedRows) {
 	}
 }
 
+// knowsLocked reports whether the recipient merged res as it stands: an
+// export it merged carried res in full, and res's revisions haven't moved
+// since. A nil KnownRows knows nothing. Requires egraphMu.
+func (k *KnownRows) knowsLocked(res *sharedResult) bool {
+	if k == nil {
+		return false
+	}
+	k.mu.Lock()
+	rev, ok := k.rows[uint64(res.id)]
+	k.mu.Unlock()
+	return ok && rev == RowRevision{Replacements: res.replacements, Transfer: res.transferRevision, Dependencies: res.dependencyOwnershipRevision}
+}
+
 // Len is the number of known rows.
 func (k *KnownRows) Len() int {
 	k.mu.Lock()
