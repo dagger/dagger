@@ -563,6 +563,68 @@ func TestImportChainLocalPrefixWalkedOnce(t *testing.T) {
 	}
 }
 
+// reuserKey marks the context of the import a test watches.
+type reuserKey struct{}
+
+// An import that takes a chain's local layers as one snapshot waits for
+// the import that applied its top layer to finish telling the chain's
+// Applied of it, as reusing that layer under its import lock did: Applied
+// runs before any other import can reuse the snapshot.
+func TestImportChainLocalPrefixAfterApplied(t *testing.T) {
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	a, _ := producer.Build(t, nil, "a.txt", "lower")
+	ab, _ := producer.Build(t, a, "b.txt", "upper")
+	chain := exportChain(t, ab)
+	provider := &testutil.Provider{InfoReaderProvider: chain.Provider}
+	upper := chain.Layers[1].Descriptor.Digest
+	entered, release := make(chan struct{}), make(chan struct{})
+	var applied, reuserStatted atomic.Bool
+	reuserSawApplied := make(chan bool, 1)
+	consumer.BeforeStat = func(ctx context.Context, _ string) {
+		if ctx.Value(reuserKey{}) != nil && reuserStatted.CompareAndSwap(false, true) {
+			reuserSawApplied <- applied.Load()
+		}
+	}
+	applier := supplied(chain, provider)
+	applier.Applied = func(_ context.Context, desc ocispecs.Descriptor, _ string) {
+		if desc.Digest != upper {
+			return
+		}
+		close(entered)
+		<-release
+		applied.Store(true)
+	}
+	applierDone := make(chan error, 1)
+	go func() {
+		ref, err := consumer.Manager.ImportChain(context.Background(), applier)
+		if err == nil {
+			err = ref.Release(context.Background())
+		}
+		applierDone <- err
+	}()
+	<-entered
+	reuserDone := make(chan error, 1)
+	go func() {
+		ref, err := consumer.Manager.ImportChain(context.WithValue(context.Background(), reuserKey{}, true), supplied(chain, provider))
+		if err == nil {
+			err = ref.Release(context.Background())
+		}
+		reuserDone <- err
+	}()
+	// The reuser's first snapshot Stat is its attach. Once it waits, as it
+	// should, it makes none until Applied returns.
+	select {
+	case <-time.After(200 * time.Millisecond):
+	case saw := <-reuserSawApplied:
+		reuserSawApplied <- saw
+	}
+	close(release)
+	require.NoError(t, <-applierDone)
+	require.NoError(t, <-reuserDone)
+	require.True(t, <-reuserSawApplied, "the reuser attached the top layer before its Applied returned")
+	require.EqualValues(t, 2, consumer.Applies.Load())
+}
+
 // Engines import many small parts on chains of 80 layers or more whose
 // layers they already have. Reusing such a chain should cost about one walk
 // of its layers.
