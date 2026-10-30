@@ -214,9 +214,17 @@ func (c *Copier) copyEntry(
 	default:
 	}
 
-	include, state, err := matcher.includePath(ent.Rel, ent.ViewPath, ent.Info, parentState)
+	include, state, err := matcher.includePath(ent.Rel, ent.ViewPath, ent.filterIsDir(), parentState)
 	if err != nil {
 		return err
+	}
+	if ent.unstated {
+		if !include {
+			return nil
+		}
+		if err := ent.stat(); err != nil {
+			return err
+		}
 	}
 
 	if ent.Info == nil {
