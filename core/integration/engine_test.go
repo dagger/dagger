@@ -262,34 +262,69 @@ func (EngineSuite) TestSetsNameFromEnv(ctx context.Context, t *testctx.T) {
 // An engine run as a Dagger service starts under Dagger's /.init, so its
 // entrypoint isn't PID 1. The entrypoint must still move every process out
 // of the root cgroup, or it can't enable controllers for the execs' cgroups.
+//
+// A process can also join the root cgroup while the entrypoint starts, as a
+// client connecting through "docker exec" does. The entrypoint must retry
+// then: without the controllers, every exec runs without them, and crun
+// spends about a second retrying to enable them at each container start.
 func (EngineSuite) TestExecCgroupControllers(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	devEngineSvc := devEngineContainerAsService(devEngineContainer(c))
-	clientCtr := engineClientContainer(ctx, t, c, devEngineSvc).
-		WithExec([]string{"dagger", "query"}, core.ContainerWithExecOpts{
-			Stdin:                 `{container{from(address:"` + alpineImage + `"){withExec(args:["sh","-c","cat /sys/fs/cgroup/cgroup.controllers 2>/dev/null || echo no-cgroup-v2"]){stdout}}}}`,
-			DisableDaggerInDagger: true,
-		})
-	stdout, err := clientCtr.Stdout(ctx)
-	require.NoError(t, err)
-	var res struct {
-		Container struct {
-			From struct {
-				WithExec struct {
-					Stdout string
+	for _, tc := range []struct {
+		name   string
+		rejoin bool
+	}{
+		{"entrypoint not PID 1", false},
+		{"process joins the root cgroup at start", true},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.W[*testing.T]) {
+			devEngineSvc := devEngineContainerAsService(devEngineContainer(c, func(ctr *core.Container) *core.Container {
+				if !tc.rejoin {
+					return ctr
+				}
+				path, err := ctr.EnvVariable(ctx, "PATH")
+				require.NoError(t, err)
+				// The entrypoint reads the root cgroup's processes with cat.
+				// Right after its first read, a process starts in the root
+				// cgroup, as a "docker exec" can, so it isn't among those the
+				// entrypoint moves out before it enables the controllers. Like
+				// a connected client's, it stays: once the root cgroup is
+				// empty, crun could enable the controllers itself.
+				return ctr.
+					WithNewFile("/cgroup-race/cat", `#!/bin/sh
+busybox cat "$@" || exit
+if [ "$1" = /sys/fs/cgroup/cgroup.procs ] && mkdir /cgroup-race/joined 2>/dev/null; then
+	sleep 86400 < /dev/null > /dev/null 2>&1 &
+fi
+`, core.ContainerWithNewFileOpts{Permissions: 0o755}).
+					WithEnvVariable("PATH", "/cgroup-race:"+path)
+			}))
+			clientCtr := engineClientContainer(ctx, t, c, devEngineSvc).
+				WithExec([]string{"dagger", "query"}, core.ContainerWithExecOpts{
+					Stdin:                 `{container{from(address:"` + alpineImage + `"){withExec(args:["sh","-c","cat /sys/fs/cgroup/cgroup.controllers 2>/dev/null || echo no-cgroup-v2"]){stdout}}}}`,
+					DisableDaggerInDagger: true,
+				})
+			stdout, err := clientCtr.Stdout(ctx)
+			require.NoError(t, err)
+			var res struct {
+				Container struct {
+					From struct {
+						WithExec struct {
+							Stdout string
+						}
+					}
 				}
 			}
-		}
-	}
-	require.NoError(t, json.Unmarshal([]byte(stdout), &res))
-	if strings.TrimSpace(res.Container.From.WithExec.Stdout) == "no-cgroup-v2" {
-		// The entrypoint only sets up controllers on cgroup v2.
-		t.Skip("the engine's execs aren't on cgroup v2")
-	}
-	controllers := strings.Fields(res.Container.From.WithExec.Stdout)
-	for _, want := range []string{"cpu", "memory", "pids"} {
-		require.Contains(t, controllers, want, "the exec's cgroup has no %s controller", want)
+			require.NoError(t, json.Unmarshal([]byte(stdout), &res))
+			if strings.TrimSpace(res.Container.From.WithExec.Stdout) == "no-cgroup-v2" {
+				// The entrypoint only sets up controllers on cgroup v2.
+				t.Skip("the engine's execs aren't on cgroup v2")
+			}
+			controllers := strings.Fields(res.Container.From.WithExec.Stdout)
+			for _, want := range []string{"cpu", "memory", "pids"} {
+				require.Contains(t, controllers, want, "the exec's cgroup has no %s controller", want)
+			}
+		})
 	}
 }
 
