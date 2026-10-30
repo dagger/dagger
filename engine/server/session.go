@@ -2989,8 +2989,9 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 		return gqlErr(fmt.Errorf("failed to get schema: %w", err), http.StatusBadRequest)
 	}
 
-	gqlSrv := dagql.NewDefaultHandler(schema)
-	// NB: break glass when needed:
+	gqlSrv := schema.Handler()
+	// NB: break glass when needed, in dagql.NewDefaultHandler, since the handler is shared by
+	// every request to this schema:
 	// gqlSrv.AroundResponses(func(ctx context.Context, next graphql.ResponseHandler) *graphql.Response {
 	// 	res := next(ctx)
 	// 	pl, err := json.Marshal(res)
