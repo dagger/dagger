@@ -284,6 +284,10 @@ func TestLogStreamSpillInPlaceKeepsRows(t *testing.T) {
 	require.True(t, found)
 	// Appended while the spill writes, growing the tail past its array.
 	appendRows(30)
+	// Read from the array the spill then compacts.
+	heldAfter, err := stream.Since(t.Context(), 0, 100)
+	require.NoError(t, err)
+	require.Equal(t, want, heldAfter)
 
 	close(releaseSpill)
 	require.Eventually(t, func() bool {
@@ -293,6 +297,7 @@ func TestLogStreamSpillInPlaceKeepsRows(t *testing.T) {
 	}, 5*time.Second, time.Millisecond)
 
 	require.Equal(t, want[:20], held, "rows a reader held are unchanged")
+	require.Equal(t, want, heldAfter, "rows read from the compacted array are unchanged")
 	require.Equal(t, want[2], heldRow)
 	readAll := func() []Metric {
 		var all []Metric
