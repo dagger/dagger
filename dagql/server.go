@@ -24,11 +24,9 @@ import (
 	"github.com/vektah/gqlparser/v2/validator"
 	validatorcore "github.com/vektah/gqlparser/v2/validator/core"
 	"github.com/vektah/gqlparser/v2/validator/rules"
-	"github.com/zeebo/xxh3"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/util/hashutil"
 	"github.com/dagger/dagger/util/sortutil"
 )
 
@@ -1038,9 +1036,7 @@ func (s *Server) buildSchemaAST(view call.View) (*ast.Schema, digest.Digest) {
 			}
 		}
 	}
-	h := xxh3.New()
-	json.NewEncoder(h).Encode(schema)
-	return schema, digest.NewDigest(hashutil.XXH3, h)
+	return schema, schemaDigest(schema)
 }
 
 // withoutDirectives returns dirs without the directives named in hidden.
