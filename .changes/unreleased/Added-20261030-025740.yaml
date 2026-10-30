@@ -1,6 +1,6 @@
 kind: Added
 body: |
-  `withExec(transparentHugePages: true)` lets a command use the Linux kernel's transparent huge pages, which can make large-memory programs such as compilers faster. Every other command now starts with them off, except where its own program asks for them, so a host set to "always" no longer gives them to every container. This needs Linux 6.18 or later; on hosts with the usual "madvise" setting, nothing changes. The setting isn't part of the exec's cache key.
+  `withExec(transparentHugePages: true)` lets a command use the Linux kernel's transparent huge pages, which can make large-memory programs such as compilers faster. Every other command now starts with them off, except where its own program asks for them, so a host set to "always" no longer gives them to every container. This needs Linux 6.18 or later. With the usual default settings ("madvise", and no page size under /sys/kernel/mm/transparent_hugepage/hugepages-* set to "always"), nothing changes. The setting isn't part of the exec's cache key.
 time: 2026-10-30T02:57:40Z
 custom:
   Author: sipsma
