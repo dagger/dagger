@@ -3,6 +3,8 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
@@ -286,4 +288,33 @@ type Case {
 }`)).Stdout(ctx)
 	require.NoError(t, err, out)
 	require.JSONEq(t, `{"currentWorkspace":{"artifacts":{"filterTypes":{"filterDimensionKeys":{"items":[{"value":{"name":"b","selected":["b"],"removed":["a","c"]}}]}}}},"cases":{"keys":["a","b","c"]}}`, out)
+}
+
+func (ArtifactsSuite) TestCollectionArgumentCheckUnderInstalledName(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	source := `type View {
+  packages: Pkgs! { Pkgs(names: ["a", "b"]) }
+}
+type Pkgs @collection {
+  pub names: [String!]! @keys
+  lookup(name: String!): Pkg! @get { Pkg(name: name) }
+}
+type Pkg {
+  pub name: String!
+  test(selection: Pkgs!): Void @check {
+    if (selection.names.join(",") != "a,b") { raise "wrong selection: " + selection.names.join(",") }
+    null
+  }
+}`
+	for _, name := range []string{"view", "renamed"} {
+		t.Run(name, func(ctx context.Context, t *testctx.T) {
+			base := artifactViewWorkspace(t, c, source).
+				WithNewFile("dagger.toml", fmt.Sprintf("[modules.%s]\nsource = \"./view\"\n", name))
+			out, err := base.With(daggerExec("check", "-l", "--all", "-f=link")).Stdout(ctx)
+			require.NoError(t, err, out)
+			require.Equal(t, 2, strings.Count(out, "check=test"), out)
+			out, err = base.With(daggerExec("check")).CombinedOutput(ctx)
+			require.NoError(t, err, out)
+		})
+	}
 }
