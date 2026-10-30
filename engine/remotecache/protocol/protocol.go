@@ -184,7 +184,12 @@ type SettleSession struct {
 type Settled struct{}
 
 // Export asks the engine for the values of some of its entries, by number,
-// and the selected parts' bytes.
+// and the selected parts' bytes. An export that selects no outputs copies
+// records only: its bundle sends each row the service merged over this
+// connection, and that hasn't changed since, as a held row (Upload.Merged).
+// The Cloud's merge refuses the whole bundle as stale if any held row's
+// recipe has no live entry there, and commits nothing; the service then
+// sends Upload without Merged, and asks for the roots again.
 type Export struct {
 	Roots   []uint64       `json:"roots"`
 	Outputs []ExportOutput `json:"outputs,omitempty"`
@@ -232,10 +237,19 @@ type SkippedRoot struct {
 // Upload gives the engine one presigned PUT per blob the service needs from
 // an export, and one per pack of small blobs it needs stored together. An
 // upload with neither needs nothing, and the engine releases the chains.
+//
+// Merged says the service merged the export's bundle into the Cloud. The
+// engine then knows the rows the bundle carried in full, for this
+// connection's later exports. An Upload without Merged, for a merge that
+// failed, was refused as stale or was skipped, makes the rows the bundle held
+// unknown again, so that the next export of the same roots carries them in
+// full. It holds nothing that export carried or held; it can hold rows below
+// them that earlier merges proved.
 type Upload struct {
 	ExportID string                   `json:"exportID"`
 	URLs     map[digest.Digest]string `json:"urls"`
 	Packs    []UploadPack             `json:"packs,omitempty"`
+	Merged   bool                     `json:"merged,omitempty"`
 }
 
 // UploadPack is one pack to upload: its ID, its presigned PUT, and its

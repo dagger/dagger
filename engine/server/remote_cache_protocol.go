@@ -62,7 +62,7 @@ func (a *RemoteCacheAdapter) CacheIdentity() (string, uint64) {
 // row's error as the message; the others go in the bundle. A capture that
 // fails otherwise fails the request. consume is called once, with the bundle
 // while its chains stay open, or with no bundle when no root survived.
-func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, consume func(context.Context, remotecache.Export) error) (rerr error) {
+func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, known *dagql.KnownRows, consume func(context.Context, remotecache.Export) error) (rerr error) {
 	if a.stopped.Load() || !a.exports.tryBegin() {
 		return ErrRemoteCacheAdapterClosed
 	}

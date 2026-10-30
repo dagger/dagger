@@ -99,7 +99,7 @@ func TestRemoteCacheAdapterLifetime(t *testing.T) {
 		require.ErrorIs(t, err, ErrRemoteCacheAdapterClosed)
 		_, err = adapter.Merge(t.Context(), 1, protocol.Merge{})
 		require.ErrorIs(t, err, ErrRemoteCacheAdapterClosed)
-		err = adapter.Export(t.Context(), protocol.Export{Roots: []uint64{1}}, func(context.Context, remotecache.Export) error {
+		err = adapter.Export(t.Context(), protocol.Export{Roots: []uint64{1}}, nil, func(context.Context, remotecache.Export) error {
 			t.Fatal("a stopped adapter exports nothing")
 			return nil
 		})
@@ -268,7 +268,7 @@ func slowExport(t *testing.T, srv *Server, release <-chan struct{}) <-chan error
 	t.Helper()
 	started, exported := make(chan struct{}), make(chan error, 1)
 	require.NoError(t, srv.startRemoteCacheIntegration(&RemoteCacheIntegrationConfig{Run: func(ctx context.Context, a *RemoteCacheAdapter) error {
-		exported <- a.Export(ctx, protocol.Export{Roots: []uint64{goneNumber}}, func(ctx context.Context, _ remotecache.Export) error {
+		exported <- a.Export(ctx, protocol.Export{Roots: []uint64{goneNumber}}, nil, func(ctx context.Context, _ remotecache.Export) error {
 			close(started)
 			select {
 			case <-release:
