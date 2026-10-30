@@ -589,15 +589,33 @@ func (GitSuite) TestDiscardGitDir(ctx context.Context, t *testctx.T) {
 	})
 }
 
-func (GitSuite) TestRemoteGitTreeNormalizesTimestamps(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+// Every checked-out file gets the same fixed time, 1980-01-02T00:00:00Z: ZIP
+// cannot store anything earlier in every time zone, and tools such as Python's
+// zipfile refuse to archive files with such times.
+func (GitSuite) TestGitTreeNormalizesTimestamps(ctx context.Context, t *testctx.T) {
+	const checkoutTime = 315619200
 
-	file := core.NewQuery(c).Git("https://github.com/dagger/dagger").
-		Commit("7bed576fbc61fff0015f5bf9c85f17c43102a4a3").
-		Tree(core.GitCommitTreeOpts{DiscardGitDir: true}).
-		File("README.md")
+	t.Run("remote", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		commit := core.NewQuery(c).Git("https://github.com/dagger/dagger").
+			Commit("7bed576fbc61fff0015f5bf9c85f17c43102a4a3")
+		for _, discard := range []bool{true, false} {
+			file := commit.Tree(core.GitCommitTreeOpts{DiscardGitDir: discard}).File("README.md")
+			require.Equal(t, checkoutTime, getFileTimestamp(ctx, t, c, file), "discardGitDir=%v", discard)
+		}
+	})
 
-	require.Equal(t, 1, getFileTimestamp(ctx, t, c, file))
+	t.Run("local", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		repo := core.NewQuery(c).Container().From(alpineImage).
+			WithExec([]string{"apk", "add", "git"}).With(gitUserConfig).
+			WithWorkdir("/repo").WithExec([]string{"git", "init"}).
+			WithNewFile("file", "content").WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "init"}).
+			Directory(".").AsGit()
+		file := repo.Head().Tree().File("file")
+		require.Equal(t, checkoutTime, getFileTimestamp(ctx, t, c, file))
+	})
 }
 
 func (GitSuite) TestKeepGitDir(ctx context.Context, t *testctx.T) {

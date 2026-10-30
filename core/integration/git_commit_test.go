@@ -370,9 +370,10 @@ func gitFullCheckoutOracle(ref *core.GitRef) *core.Directory {
 }
 
 // Manifests intentionally exclude times. Source-only Git checkouts normalize
-// every path to 1s. Container mounting/copying replaces the root's mtime even
-// for the legacy oracle, so inspect its descendants here; backend tests check
-// the snapshot root directly, before this consumer wrapper changes it.
+// every path to 1980-01-02T00:00:00Z. Container mounting/copying replaces the
+// root's mtime even for the legacy oracle, so inspect its descendants here;
+// backend tests check the snapshot root directly, before this consumer wrapper
+// changes it.
 func requireGitCheckoutTimes(ctx context.Context, t *testctx.T, inspector *core.Container, dir *core.Directory) {
 	t.Helper()
 	out, err := inspector.WithDirectory("/inspect", dir).
@@ -381,7 +382,7 @@ import os, stat
 bad = []
 def visit(path):
     s = os.lstat(path)
-    if path != '/inspect' and s.st_mtime_ns != 1000000000:
+    if path != '/inspect' and s.st_mtime_ns != 315619200000000000:
         bad.append((path, s.st_mtime_ns))
     if stat.S_ISDIR(s.st_mode):
         for name in sorted(os.listdir(path)):
