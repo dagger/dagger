@@ -58,8 +58,15 @@ type Hirer {
 
   """
   Send a message to a hired worker and block for the reply of the turn that
-  consumes it — the staff module's ask: resume-first, then send, then
+  consumes it — the staff module's ask shape: send, then resume, then
   response, all inside THIS call's own function-call client.
+
+  Send-first matters; the resume-first order this once copied from staff is
+  racy: resume wakes or relaunches the loop at once, and a loop woken with an
+  empty mailbox steps any suspended turn's pending input before the message
+  exists, so it would only steer in a step later. Sent first, the message is
+  queued (paused/failed) or starts a stopped worker, and the loop drains the
+  mailbox before stepping; resume then just wakes it.
   """
   ask(
     name: String!,
@@ -68,12 +75,14 @@ type Hirer {
     # @cache(Never): sends and blocks on live runtime state; a replayed
     # answer would masquerade as a fresh round-trip.
     let worker = member(name)
+    # send returns an ID!, so Dang runs the enqueue here, before the resume.
+    let sent = worker.send(message)
     worker.resume
-    worker.send(message).response
+    sent.response
   }
 
   """
-  The ask, addressed by handle instead of name: resume + send + response on a
+  The ask, addressed by handle instead of name: send + resume + response on a
   caller-provided Agent. This is how a client that rebuilt a handle from
   the trace hands it INTO a module tool — the path that must work wherever
   node(id:) on the same handle works.
@@ -82,9 +91,10 @@ type Hirer {
     agent: Agent!,
     message: String!,
   ): String! @cache(policy: FunctionCachePolicy.Never) {
-    # @cache(Never): same as ask.
+    # @cache(Never): same as ask. Send-first for the same reason too.
+    let sent = agent.send(message)
     agent.resume
-    agent.send(message).response
+    sent.response
   }
 
   # Address a worker by name, with a helpful miss (mirrors staff.member).
