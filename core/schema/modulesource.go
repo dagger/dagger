@@ -19,6 +19,7 @@ import (
 	"github.com/dagger/dagger/core/sdk"
 	dangv2 "github.com/dagger/dagger/core/sdk/dang/v2"
 	"github.com/dagger/dagger/core/sdk/entrypoint"
+	"github.com/dagger/dagger/core/sdk/sdkmeta"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -1120,11 +1121,12 @@ func (s *moduleSourceSchema) workspaceModuleSource(
 	return dagql.NewObjectResultForCurrentCall(ctx, dag, src)
 }
 
-// set values in the given src using values read from the module config file provided as bytes
-func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.ModuleSource) error {
+// set values in the given src using values read from the module config file
+// provided as bytes, and return the parsed config
+func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.ModuleSource) (*modules.ModuleConfigWithUserFields, error) {
 	// sanity checks
 	if src.SourceRootSubpath == "" {
-		return fmt.Errorf("source root path must be set")
+		return nil, fmt.Errorf("source root path must be set")
 	}
 	if src.ConfigFilename == "" {
 		src.ConfigFilename = modules.Filename
@@ -1132,18 +1134,18 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 
 	modCfg, err := modules.ParseModuleConfigForFilename(configBytes, src.ConfigFilename)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if modCfg.Blueprint != nil {
 		if modCfg.SDK != nil {
-			return fmt.Errorf("blueprint and sdk can't both be set")
+			return nil, fmt.Errorf("blueprint and sdk can't both be set")
 		}
 		if len(modCfg.Dependencies) != 0 {
-			return fmt.Errorf("blueprint and dependencies can't both be set")
+			return nil, fmt.Errorf("blueprint and dependencies can't both be set")
 		}
 		if modCfg.Source != "" {
-			return fmt.Errorf("blueprint and source can't both be set")
+			return nil, fmt.Errorf("blueprint and source can't both be set")
 		}
 	}
 
@@ -1159,15 +1161,15 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	src.ConfigClients = modCfg.Clients
 
 	engineVersion := modCfg.EngineVersion
-	src.EntrypointDangVersion = ""
+	src.DangVersion = ""
 	if modCfg.Entrypoint != nil {
 		// A manifest v2 module declares its versions in the dang.toml
-		// governing its entrypoint, which resolveEntrypointVersions reads once
-		// the module context is loaded. Until then it has the versions of an
+		// governing its entrypoint, which resolveDangVersions reads once the
+		// module context is loaded. Until then it has the versions of an
 		// entrypoint that declares none.
 		defaults := dangv2.DefaultEntrypointVersions()
 		engineVersion = defaults.Engine
-		src.EntrypointDangVersion = defaults.DangString()
+		src.DangVersion = defaults.DangString()
 	}
 	switch engineVersion {
 	case "":
@@ -1179,7 +1181,13 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	}
 	engineVersion = engine.NormalizeVersion(engineVersion)
 	src.EngineVersion = engineVersion
+	src.ConfigEngineVersion = ""
+	src.DangVersionDeclared = false
+	if modCfg.Entrypoint == nil {
+		src.ConfigEngineVersion = engineVersion
+	}
 	setDefaultFunctionCaching(src, modCfg.DisableDefaultFunctionCaching)
+	src.ConfigDisableDefaultFunctionCaching = src.DisableDefaultFunctionCaching
 
 	if modCfg.SDK != nil {
 		src.SDK = &core.SDKConfig{
@@ -1193,6 +1201,13 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 		// manifest contains only the entrypoint configuration.
 		src.SDK = &core.SDKConfig{Source: string(modCfg.Entrypoint.Kind)}
 	}
+	if modCfg.Entrypoint == nil && isDangSDKModule(src) {
+		// A Dang SDK module may declare its versions in the dang.toml
+		// governing its source, which resolveDangVersions reads once the
+		// module context is loaded. Until then it has the versions of a
+		// module that declares none.
+		src.DangVersion = dangv2.DefaultModuleVersions(src.EngineVersion).DangString()
+	}
 
 	var sdkSource string
 	if modCfg.SDK != nil {
@@ -1201,7 +1216,7 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	switch {
 	case sdkSource == "" && modCfg.Source != "":
 		// invalid, can't have source when no sdk
-		return fmt.Errorf("source path %q specified without sdk", modCfg.Source)
+		return nil, fmt.Errorf("source path %q specified without sdk", modCfg.Source)
 	case sdkSource == "":
 		// skip setting source subpath when no sdk
 	case sdkSource != "" && modCfg.Source == "":
@@ -1210,11 +1225,11 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	case sdkSource != "" && modCfg.Source != "":
 		// sdk was set and source was too, get the full rel path under the context
 		if filepath.IsAbs(modCfg.Source) {
-			return fmt.Errorf("source path %q is absolute", modCfg.Source)
+			return nil, fmt.Errorf("source path %q is absolute", modCfg.Source)
 		}
 		sourceSubpath := filepath.Join(src.SourceRootSubpath, modCfg.Source)
 		if !filepath.IsLocal(sourceSubpath) {
-			return fmt.Errorf("source path %q escapes context from source root %q", modCfg.Source, src.SourceRootSubpath)
+			return nil, fmt.Errorf("source path %q escapes context from source root %q", modCfg.Source, src.SourceRootSubpath)
 		}
 		src.SourceSubpath = sourceSubpath
 	}
@@ -1223,11 +1238,11 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	// to being relative to the context dir
 	rebasedIncludes, err := rebasePatterns(modCfg.Include, src.SourceRootSubpath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	src.RebasedIncludePaths = append(src.RebasedIncludePaths, rebasedIncludes...)
 
-	return nil
+	return modCfg, nil
 }
 
 func moduleSourceConfigFilename(src *core.ModuleSource) string {
@@ -1257,34 +1272,104 @@ func setDefaultFunctionCaching(src *core.ModuleSource, explicit *bool) {
 	}
 }
 
-// resolveEntrypointVersions sets the engine and Dang versions of a manifest
-// v2 module from the dang.toml governing its entrypoint (see
-// entrypoint.FindConfigFile and dangv2.ResolveEntrypointVersions). It runs
-// once the module context is loaded and before anything reads the versions:
-// the entrypoint's sources member is evaluated at the engine version.
-func (s *moduleSourceSchema) resolveEntrypointVersions(ctx context.Context, src *core.ModuleSource) error {
-	if src.Entrypoint == nil {
+// isDangSDKModule reports whether src runs on the Dang SDK built into the
+// engine: `sdk = "dang"` (or `[runtime] source = "dang"`), or a manifest v2
+// Dang entrypoint.
+func isDangSDKModule(src *core.ModuleSource) bool {
+	if src.SDK == nil {
+		return false
+	}
+	name, _, _ := strings.Cut(src.SDK.Source, "@")
+	return name == sdkmeta.Dang
+}
+
+// resolveDangVersions sets the engine and Dang versions of a Dang SDK module
+// from the dang.toml governing its source: for a manifest v2 module, its
+// entrypoint's (see entrypoint.FindConfigFile and
+// dangv2.ResolveEntrypointVersions); for any other, the nearest one walking up
+// from its source directory to its module directory (see
+// entrypoint.FindConfigFileInContext and dangv2.ResolveModuleVersions). The
+// dang.toml wins over the manifest's engineVersion, which stays in
+// ConfigEngineVersion. It runs once the module context is loaded and before
+// anything reads the versions: an entrypoint's sources member is evaluated at
+// the engine version. modCfg is the module's config as parsed.
+func (s *moduleSourceSchema) resolveDangVersions(
+	ctx context.Context,
+	src *core.ModuleSource,
+	modCfg *modules.ModuleConfigWithUserFields,
+) error {
+	if !isDangSDKModule(src) {
 		return nil
 	}
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return err
 	}
-	configPath, contents, found, err := entrypoint.FindConfigFile(ctx, dag, src, dangv2.EntrypointConfigFilename)
+
+	if src.Entrypoint != nil {
+		configPath, contents, found, err := entrypoint.FindConfigFile(ctx, dag, src, dangv2.ConfigFilename)
+		if err != nil {
+			return fmt.Errorf("module %q entrypoint: find %s: %w", src.ModuleName, dangv2.ConfigFilename, err)
+		}
+		if !found {
+			contents = nil
+		}
+		versions, err := dangv2.ResolveEntrypointVersions(ctx, configPath, contents)
+		if err != nil {
+			return fmt.Errorf("module %q entrypoint: %w", src.ModuleName, err)
+		}
+		src.EngineVersion = versions.Engine
+		src.DangVersion = versions.DangString()
+		src.DangVersionDeclared = versions.DangDeclared
+		setDefaultFunctionCaching(src, nil)
+		return nil
+	}
+
+	if src.SourceSubpath == "" || src.ContextDirectory.Self() == nil {
+		return nil
+	}
+	configPath, contents, found, err := entrypoint.FindConfigFileInContext(ctx, src.ContextDirectory, src.SourceSubpath, src.SourceRootSubpath, dangv2.ConfigFilename)
 	if err != nil {
-		return fmt.Errorf("module %q entrypoint: find %s: %w", src.ModuleName, dangv2.EntrypointConfigFilename, err)
+		return fmt.Errorf("module %q: find %s: %w", src.ModuleName, dangv2.ConfigFilename, err)
 	}
 	if !found {
 		contents = nil
 	}
-	versions, err := dangv2.ResolveEntrypointVersions(ctx, configPath, contents)
-	if err != nil {
-		return fmt.Errorf("module %q entrypoint: %w", src.ModuleName, err)
+	if found {
+		// Report the path relative to the module, as the user wrote it.
+		if rel, err := filepath.Rel(cmp.Or(src.SourceRootSubpath, "."), configPath); err == nil {
+			configPath = rel
+		}
 	}
-	src.EngineVersion = versions.Engine
-	src.EntrypointDangVersion = versions.DangString()
-	setDefaultFunctionCaching(src, nil)
+	versions, err := dangv2.ResolveModuleVersions(ctx, configPath, contents, src.EngineVersion)
+	if err != nil {
+		return fmt.Errorf("module %q: %w", src.ModuleName, err)
+	}
+	if versions.DeclaredEngine != "" && modCfg.EngineVersion != "" && versions.DeclaredEngine != src.EngineVersion {
+		warnDangEngineVersionMismatch(ctx, src, configPath, modCfg.EngineVersion, versions.DeclaredEngine)
+	}
+	if versions.Engine != src.EngineVersion {
+		src.EngineVersion = versions.Engine
+		setDefaultFunctionCaching(src, modCfg.DisableDefaultFunctionCaching)
+	}
+	src.DangVersion = versions.DangString()
+	src.DangVersionDeclared = versions.DangDeclared
 	return nil
+}
+
+// warnDangEngineVersionMismatch tells the user that the Dagger version a Dang
+// module's dang.toml declares wins over the engineVersion of its manifest,
+// which disagrees: in the engine log, and on a span of its own, which the
+// user's progress output shows.
+func warnDangEngineVersionMismatch(ctx context.Context, src *core.ModuleSource, configPath, manifestVersion, declared string) {
+	msg := fmt.Sprintf("module %q: %s declares dagger %s, but %s declares engineVersion %s; using %s from %s",
+		src.ModuleName, configPath, declared, moduleSourceConfigFilename(src), manifestVersion, declared, configPath)
+	slog.Warn(msg)
+	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("warning: %s overrides engineVersion", configPath))
+	defer span.End()
+	stdio := telemetry.SpanStdio(ctx, core.InstrumentationLibrary)
+	defer stdio.Close()
+	fmt.Fprintf(stdio.Stderr, "WARNING: %s\n", msg)
 }
 
 // loadConfiguredModuleSource performs the source-independent half of module
@@ -1310,7 +1395,8 @@ func (s *moduleSourceSchema) loadConfiguredModuleSource(ctx context.Context, src
 	if err != nil {
 		return fmt.Errorf("read module config: %w", err)
 	}
-	if err := s.initFromModConfig(configContents, src); err != nil {
+	modCfg, err := s.initFromModConfig(configContents, src)
+	if err != nil {
 		return err
 	}
 
@@ -1346,7 +1432,7 @@ func (s *moduleSourceSchema) loadConfiguredModuleSource(ctx context.Context, src
 	if err := eg.Wait(); err != nil {
 		return err
 	}
-	if err := s.resolveEntrypointVersions(ctx, src); err != nil {
+	if err := s.resolveDangVersions(ctx, src, modCfg); err != nil {
 		return err
 	}
 	if err := s.loadEntrypointSources(ctx, src); err != nil {
@@ -1384,7 +1470,7 @@ func (s *moduleSourceSchema) loadEntrypointSources(ctx context.Context, src *cor
 	}
 	declared := false
 	err = entryDir.Self().Mount(ctx, entryDir, func(dir string) error {
-		declared, err = dangv2.DeclaresEntrypointSources(dir, src.EntrypointDangVersion)
+		declared, err = dangv2.DeclaresEntrypointSources(dir, src.DangVersion)
 		return err
 	})
 	if err != nil {
@@ -1511,7 +1597,31 @@ func moduleSourceContextIncludes(src *core.ModuleSource) []string {
 		sourcePath = "*"
 	}
 	fullIncludePaths = append(fullIncludePaths, sourcePath)
+	if src.Entrypoint == nil && isDangSDKModule(src) {
+		// The dang.toml governing a Dang module's source may sit between its
+		// source directory and its module directory (see
+		// resolveDangVersions).
+		fullIncludePaths = append(fullIncludePaths, dangConfigIncludes(src)...)
+	}
 	return append(fullIncludePaths, src.RebasedIncludePaths...)
+}
+
+// dangConfigIncludes are the dang.toml paths of the directories above a Dang
+// module's source directory, up to its module directory, which the context
+// holds no other way.
+func dangConfigIncludes(src *core.ModuleSource) []string {
+	from := filepath.Clean(cmp.Or(src.SourceSubpath, "."))
+	root := filepath.Clean(cmp.Or(src.SourceRootSubpath, "."))
+	if from == root || (root != "." && !strings.HasPrefix(from, root+string(filepath.Separator))) {
+		return nil
+	}
+	var includes []string
+	for dir := filepath.Dir(from); ; dir = filepath.Dir(dir) {
+		includes = append(includes, filepath.Join(dir, dangv2.ConfigFilename))
+		if dir == root || dir == "." {
+			return includes
+		}
+	}
 }
 
 func (s *moduleSourceSchema) moduleSourceSubpath(
@@ -1853,6 +1963,16 @@ func (s *moduleSourceSchema) moduleSourceWithEngineVersion(
 	}
 	engineVersion = engine.NormalizeVersion(engineVersion)
 	src.EngineVersion = engineVersion
+	if src.Entrypoint == nil {
+		// What a config write keeps. A Dang SDK module's dang.toml still wins
+		// over it the next time the module loads.
+		src.ConfigEngineVersion = engineVersion
+		if isDangSDKModule(src) && !src.DangVersionDeclared {
+			// The default Dang version follows the engine version, as it does
+			// when the module loads.
+			src.DangVersion = dangv2.DefaultModuleVersions(engineVersion).DangString()
+		}
+	}
 
 	return src, nil
 }
@@ -2831,7 +2951,7 @@ func (s *moduleSourceSchema) buildModuleConfig(
 		ModuleConfigUserFields: src.ModuleConfigUserFields,
 		ModuleConfig: modules.ModuleConfig{
 			Name:          src.ModuleOriginalName,
-			EngineVersion: src.EngineVersion,
+			EngineVersion: cmp.Or(src.ConfigEngineVersion, src.EngineVersion),
 			Include:       src.IncludePaths,
 			Codegen:       src.CodegenConfig,
 			Clients:       src.ConfigClients,
@@ -2840,6 +2960,14 @@ func (s *moduleSourceSchema) buildModuleConfig(
 
 	if src.DisableDefaultFunctionCaching {
 		modCfg.DisableDefaultFunctionCaching = ptr(true)
+	}
+	if src.ConfigEngineVersion != "" && src.ConfigEngineVersion != src.EngineVersion {
+		// A Dang SDK module's dang.toml decided the engine version, and with
+		// it the caching default; keep the manifest's own.
+		modCfg.DisableDefaultFunctionCaching = nil
+		if src.ConfigDisableDefaultFunctionCaching {
+			modCfg.DisableDefaultFunctionCaching = ptr(true)
+		}
 	}
 
 	if src.SDK != nil {

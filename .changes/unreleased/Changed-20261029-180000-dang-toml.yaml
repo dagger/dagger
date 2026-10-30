@@ -1,0 +1,16 @@
+kind: Changed
+body: |
+  Dang SDK modules read the versions they are written against from the
+  `dang.toml` governing their source, as entrypoint modules do:
+  `[imports.Dagger] dagger = "vX.Y.Z"` is the module's engine version (API
+  view, naming rules, default function caching) and wins over `engineVersion`
+  in `dagger.json`, with a warning when the two disagree. `dang = "X.Y"` is the
+  Dang language version the source is parsed as.
+
+  Without a `dang` key, modules with an `engineVersion` before v0.21.5 are
+  parsed as Dang 1.0 (`.{ }` is selection), and later ones as before. A `dang`
+  version newer than the engine supports now says to upgrade Dagger.
+time: 2026-10-29T18:00:00Z
+custom:
+  Author: vito
+  PR: "14958"

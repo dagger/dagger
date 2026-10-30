@@ -187,11 +187,25 @@ type ModuleSource struct {
 	ModuleConfigUserFields        modules.ModuleConfigUserFields
 	DisableDefaultFunctionCaching bool
 
-	// EntrypointDangVersion is the Dang language version a manifest v2
-	// module's Dang entrypoint is written in, e.g. "2.1", as the dang.toml
-	// governing the entrypoint declares it (or Dang's default). Empty for
-	// any other module. See core/sdk/dang/v2.ResolveEntrypointVersions.
-	EntrypointDangVersion string
+	// DangVersion is the Dang language version a Dang module's source is
+	// written in, e.g. "1.0" or "2.1": as the dang.toml governing its source
+	// (or its entrypoint, for a manifest v2 module) declares it, or else the
+	// default for its engine version. Empty for a module of any other SDK.
+	// See core/sdk/dang/v2.ResolveModuleVersions and
+	// ResolveEntrypointVersions.
+	DangVersion string
+	// DangVersionDeclared reports whether a dang.toml declares DangVersion,
+	// rather than it being the default for the module's engine version.
+	DangVersionDeclared bool
+	// ConfigEngineVersion is the engineVersion the module's manifest declares,
+	// normalized, which is what a config write keeps. It differs from
+	// EngineVersion when a Dang SDK module's dang.toml declares another one,
+	// which wins. Empty for a manifest v2 module.
+	ConfigEngineVersion string
+	// ConfigDisableDefaultFunctionCaching is DisableDefaultFunctionCaching as
+	// the manifest decides it, at ConfigEngineVersion, which is what a config
+	// write keeps when a dang.toml's engine version decides it instead.
+	ConfigDisableDefaultFunctionCaching bool
 
 	// The SDK configuration of the module as read from the module config or set by withSDK
 	SDK *SDKConfig `field:"true" name:"sdk" doc:"The SDK configuration of the module."`
@@ -480,38 +494,41 @@ type persistedModuleSourceSDKCapabilities struct {
 }
 
 type persistedModuleSourcePayload struct {
-	ConfigExists                    bool                                  `json:"configExists,omitempty"`
-	ConfigFilename                  string                                `json:"configFilename,omitempty"`
-	Entrypoint                      *modules.ModuleEntrypointConfig       `json:"entrypoint,omitempty"`
-	ModuleName                      string                                `json:"moduleName,omitempty"`
-	ModuleOriginalName              string                                `json:"moduleOriginalName,omitempty"`
-	EngineVersion                   string                                `json:"engineVersion,omitempty"`
-	EntrypointDangVersion           string                                `json:"entrypointDangVersion,omitempty"`
-	CodegenConfig                   *modules.ModuleCodegenConfig          `json:"codegenConfig,omitempty"`
-	ModuleConfigUserFields          modules.ModuleConfigUserFields        `json:"moduleConfigUserFields,omitempty"`
-	DisableDefaultFunctionCaching   bool                                  `json:"disableDefaultFunctionCaching,omitempty"`
-	SDK                             *SDKConfig                            `json:"sdk,omitempty"`
-	IncludePaths                    []string                              `json:"includePaths,omitempty"`
-	RebasedIncludePaths             []string                              `json:"rebasedIncludePaths,omitempty"`
-	ConfigDependencies              []*modules.ModuleConfigDependency     `json:"configDependencies,omitempty"`
-	DependencyResultIDs             []uint64                              `json:"dependencyResultIDs,omitempty"`
-	ConfigBlueprint                 *modules.ModuleConfigDependency       `json:"configBlueprint,omitempty"`
-	BlueprintResultID               uint64                                `json:"blueprintResultID,omitempty"`
-	ConfigToolchains                []*modules.ModuleConfigDependency     `json:"configToolchains,omitempty"`
-	ToolchainResultIDs              []uint64                              `json:"toolchainResultIDs,omitempty"`
-	UserDefaults                    *EnvFile                              `json:"userDefaults,omitempty"`
-	ConfigClients                   []*modules.ModuleConfigClient         `json:"configClients,omitempty"`
-	SourceRootSubpath               string                                `json:"sourceRootSubpath,omitempty"`
-	SourceSubpath                   string                                `json:"sourceSubpath,omitempty"`
-	OriginalSubpath                 string                                `json:"originalSubpath,omitempty"`
-	ContextDirectoryResultID        uint64                                `json:"contextDirectoryResultID,omitempty"`
-	WorkspaceResultID               uint64                                `json:"workspaceResultID,omitempty"`
-	Kind                            ModuleSourceKind                      `json:"kind"`
-	Local                           *LocalModuleSource                    `json:"local,omitempty"`
-	Git                             *persistedGitModuleSourcePayload      `json:"git,omitempty"`
-	DirSrc                          *persistedDirModuleSourcePayload      `json:"dirSrc,omitempty"`
-	GitUnfilteredContextDirResultID uint64                                `json:"gitUnfilteredContextDirResultID,omitempty"`
-	SDKCapabilities                 *persistedModuleSourceSDKCapabilities `json:"sdkCapabilities,omitempty"`
+	ConfigExists                        bool                                  `json:"configExists,omitempty"`
+	ConfigFilename                      string                                `json:"configFilename,omitempty"`
+	Entrypoint                          *modules.ModuleEntrypointConfig       `json:"entrypoint,omitempty"`
+	ModuleName                          string                                `json:"moduleName,omitempty"`
+	ModuleOriginalName                  string                                `json:"moduleOriginalName,omitempty"`
+	EngineVersion                       string                                `json:"engineVersion,omitempty"`
+	DangVersion                         string                                `json:"dangVersion,omitempty"`
+	DangVersionDeclared                 bool                                  `json:"dangVersionDeclared,omitempty"`
+	ConfigEngineVersion                 string                                `json:"configEngineVersion,omitempty"`
+	ConfigDisableDefaultFunctionCaching bool                                  `json:"configDisableDefaultFunctionCaching,omitempty"`
+	CodegenConfig                       *modules.ModuleCodegenConfig          `json:"codegenConfig,omitempty"`
+	ModuleConfigUserFields              modules.ModuleConfigUserFields        `json:"moduleConfigUserFields,omitempty"`
+	DisableDefaultFunctionCaching       bool                                  `json:"disableDefaultFunctionCaching,omitempty"`
+	SDK                                 *SDKConfig                            `json:"sdk,omitempty"`
+	IncludePaths                        []string                              `json:"includePaths,omitempty"`
+	RebasedIncludePaths                 []string                              `json:"rebasedIncludePaths,omitempty"`
+	ConfigDependencies                  []*modules.ModuleConfigDependency     `json:"configDependencies,omitempty"`
+	DependencyResultIDs                 []uint64                              `json:"dependencyResultIDs,omitempty"`
+	ConfigBlueprint                     *modules.ModuleConfigDependency       `json:"configBlueprint,omitempty"`
+	BlueprintResultID                   uint64                                `json:"blueprintResultID,omitempty"`
+	ConfigToolchains                    []*modules.ModuleConfigDependency     `json:"configToolchains,omitempty"`
+	ToolchainResultIDs                  []uint64                              `json:"toolchainResultIDs,omitempty"`
+	UserDefaults                        *EnvFile                              `json:"userDefaults,omitempty"`
+	ConfigClients                       []*modules.ModuleConfigClient         `json:"configClients,omitempty"`
+	SourceRootSubpath                   string                                `json:"sourceRootSubpath,omitempty"`
+	SourceSubpath                       string                                `json:"sourceSubpath,omitempty"`
+	OriginalSubpath                     string                                `json:"originalSubpath,omitempty"`
+	ContextDirectoryResultID            uint64                                `json:"contextDirectoryResultID,omitempty"`
+	WorkspaceResultID                   uint64                                `json:"workspaceResultID,omitempty"`
+	Kind                                ModuleSourceKind                      `json:"kind"`
+	Local                               *LocalModuleSource                    `json:"local,omitempty"`
+	Git                                 *persistedGitModuleSourcePayload      `json:"git,omitempty"`
+	DirSrc                              *persistedDirModuleSourcePayload      `json:"dirSrc,omitempty"`
+	GitUnfilteredContextDirResultID     uint64                                `json:"gitUnfilteredContextDirResultID,omitempty"`
+	SDKCapabilities                     *persistedModuleSourceSDKCapabilities `json:"sdkCapabilities,omitempty"`
 }
 
 type persistedModuleSourceLazySDK struct {
@@ -805,29 +822,32 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, enc *dagql.P
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted module source: nil module source")
 	}
 	payload := persistedModuleSourcePayload{
-		ConfigExists:                  src.ConfigExists,
-		ConfigFilename:                src.ConfigFilename,
-		Entrypoint:                    src.Entrypoint,
-		ModuleName:                    src.ModuleName,
-		ModuleOriginalName:            src.ModuleOriginalName,
-		EngineVersion:                 src.EngineVersion,
-		EntrypointDangVersion:         src.EntrypointDangVersion,
-		CodegenConfig:                 src.CodegenConfig,
-		ModuleConfigUserFields:        src.ModuleConfigUserFields,
-		DisableDefaultFunctionCaching: src.DisableDefaultFunctionCaching,
-		SDK:                           src.SDK,
-		IncludePaths:                  slices.Clone(src.IncludePaths),
-		RebasedIncludePaths:           slices.Clone(src.RebasedIncludePaths),
-		ConfigDependencies:            slices.Clone(src.ConfigDependencies),
-		ConfigBlueprint:               src.ConfigBlueprint,
-		ConfigToolchains:              slices.Clone(src.ConfigToolchains),
-		UserDefaults:                  src.UserDefaults,
-		ConfigClients:                 slices.Clone(src.ConfigClients),
-		SourceRootSubpath:             src.SourceRootSubpath,
-		SourceSubpath:                 src.SourceSubpath,
-		OriginalSubpath:               src.OriginalSubpath,
-		Kind:                          src.Kind,
-		Local:                         src.Local,
+		ConfigExists:                        src.ConfigExists,
+		ConfigFilename:                      src.ConfigFilename,
+		Entrypoint:                          src.Entrypoint,
+		ModuleName:                          src.ModuleName,
+		ModuleOriginalName:                  src.ModuleOriginalName,
+		EngineVersion:                       src.EngineVersion,
+		DangVersion:                         src.DangVersion,
+		DangVersionDeclared:                 src.DangVersionDeclared,
+		ConfigEngineVersion:                 src.ConfigEngineVersion,
+		ConfigDisableDefaultFunctionCaching: src.ConfigDisableDefaultFunctionCaching,
+		CodegenConfig:                       src.CodegenConfig,
+		ModuleConfigUserFields:              src.ModuleConfigUserFields,
+		DisableDefaultFunctionCaching:       src.DisableDefaultFunctionCaching,
+		SDK:                                 src.SDK,
+		IncludePaths:                        slices.Clone(src.IncludePaths),
+		RebasedIncludePaths:                 slices.Clone(src.RebasedIncludePaths),
+		ConfigDependencies:                  slices.Clone(src.ConfigDependencies),
+		ConfigBlueprint:                     src.ConfigBlueprint,
+		ConfigToolchains:                    slices.Clone(src.ConfigToolchains),
+		UserDefaults:                        src.UserDefaults,
+		ConfigClients:                       slices.Clone(src.ConfigClients),
+		SourceRootSubpath:                   src.SourceRootSubpath,
+		SourceSubpath:                       src.SourceSubpath,
+		OriginalSubpath:                     src.OriginalSubpath,
+		Kind:                                src.Kind,
+		Local:                               src.Local,
 	}
 	if src.SDK != nil {
 		if src.SDKImpl == nil {
@@ -970,34 +990,37 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dec *dagql.Persi
 		toolchains = append(toolchains, toolchainRes)
 	}
 	src := &ModuleSource{
-		ConfigExists:                  persisted.ConfigExists,
-		ConfigFilename:                persisted.ConfigFilename,
-		Entrypoint:                    persisted.Entrypoint,
-		ModuleName:                    persisted.ModuleName,
-		ModuleOriginalName:            persisted.ModuleOriginalName,
-		EngineVersion:                 persisted.EngineVersion,
-		EntrypointDangVersion:         persisted.EntrypointDangVersion,
-		CodegenConfig:                 persisted.CodegenConfig,
-		ModuleConfigUserFields:        persisted.ModuleConfigUserFields,
-		DisableDefaultFunctionCaching: persisted.DisableDefaultFunctionCaching,
-		SDK:                           persisted.SDK,
-		IncludePaths:                  slices.Clone(persisted.IncludePaths),
-		RebasedIncludePaths:           slices.Clone(persisted.RebasedIncludePaths),
-		ConfigDependencies:            slices.Clone(persisted.ConfigDependencies),
-		Dependencies:                  dependencies,
-		ConfigBlueprint:               persisted.ConfigBlueprint,
-		Blueprint:                     blueprint,
-		ConfigToolchains:              slices.Clone(persisted.ConfigToolchains),
-		Toolchains:                    toolchains,
-		UserDefaults:                  persisted.UserDefaults,
-		ConfigClients:                 slices.Clone(persisted.ConfigClients),
-		SourceRootSubpath:             persisted.SourceRootSubpath,
-		SourceSubpath:                 persisted.SourceSubpath,
-		OriginalSubpath:               persisted.OriginalSubpath,
-		ContextDirectory:              contextDirectory,
-		Workspace:                     workspace,
-		Kind:                          persisted.Kind,
-		Local:                         persisted.Local,
+		ConfigExists:                        persisted.ConfigExists,
+		ConfigFilename:                      persisted.ConfigFilename,
+		Entrypoint:                          persisted.Entrypoint,
+		ModuleName:                          persisted.ModuleName,
+		ModuleOriginalName:                  persisted.ModuleOriginalName,
+		EngineVersion:                       persisted.EngineVersion,
+		DangVersion:                         persisted.DangVersion,
+		DangVersionDeclared:                 persisted.DangVersionDeclared,
+		ConfigEngineVersion:                 persisted.ConfigEngineVersion,
+		ConfigDisableDefaultFunctionCaching: persisted.ConfigDisableDefaultFunctionCaching,
+		CodegenConfig:                       persisted.CodegenConfig,
+		ModuleConfigUserFields:              persisted.ModuleConfigUserFields,
+		DisableDefaultFunctionCaching:       persisted.DisableDefaultFunctionCaching,
+		SDK:                                 persisted.SDK,
+		IncludePaths:                        slices.Clone(persisted.IncludePaths),
+		RebasedIncludePaths:                 slices.Clone(persisted.RebasedIncludePaths),
+		ConfigDependencies:                  slices.Clone(persisted.ConfigDependencies),
+		Dependencies:                        dependencies,
+		ConfigBlueprint:                     persisted.ConfigBlueprint,
+		Blueprint:                           blueprint,
+		ConfigToolchains:                    slices.Clone(persisted.ConfigToolchains),
+		Toolchains:                          toolchains,
+		UserDefaults:                        persisted.UserDefaults,
+		ConfigClients:                       slices.Clone(persisted.ConfigClients),
+		SourceRootSubpath:                   persisted.SourceRootSubpath,
+		SourceSubpath:                       persisted.SourceSubpath,
+		OriginalSubpath:                     persisted.OriginalSubpath,
+		ContextDirectory:                    contextDirectory,
+		Workspace:                           workspace,
+		Kind:                                persisted.Kind,
+		Local:                               persisted.Local,
 	}
 	if persisted.Git != nil {
 		src.Git = &GitModuleSource{
@@ -1465,15 +1488,17 @@ func (src *ModuleSource) SourceImplementationDigest(ctx context.Context) (digest
 		inputs = append(inputs, src.SDK.Source)
 	}
 
-	// A manifest v2 entrypoint's versions come from its dang.toml, which
-	// need not be in the context directory (a module reference or an address
-	// names a directory outside it), and they decide how its types are named
-	// and which API they are written against. Results built under one version
-	// must not answer for another, so key on them directly.
-	if src.Entrypoint != nil {
+	// A Dang module's versions decide how its types are named, which API they
+	// are written against and which syntax its source is parsed as. They come
+	// from a dang.toml that need not be in the context directory (a manifest
+	// v2 entrypoint's module reference or address names a directory outside
+	// it), or from defaults that depend on the engine (a module that declares
+	// no Dang version is parsed as this engine's Dang). Results built under
+	// one version must not answer for another, so key on them directly.
+	if src.DangVersion != "" {
 		inputs = append(inputs,
-			"entrypointEngineVersion:"+src.EngineVersion,
-			"entrypointDangVersion:"+src.EntrypointDangVersion,
+			"dangEngineVersion:"+src.EngineVersion,
+			"dangVersion:"+src.DangVersion,
 		)
 	}
 

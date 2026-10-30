@@ -145,9 +145,9 @@ func countDangParses(t *testing.T) *int {
 	t.Helper()
 	var parses int
 	origParse, origNames := parseDangSource, declaredTypeNames
-	parseDangSource = func(filename string, src []byte) (any, error) {
+	parseDangSource = func(filename string, src []byte, version dang.Version) (any, error) {
 		parses++
-		return origParse(filename, src)
+		return origParse(filename, src, version)
 	}
 	fresh, err := lru.New[string, []string](8)
 	require.NoError(t, err)
@@ -177,10 +177,10 @@ func TestModuleDeclaredTypeNamesMemoized(t *testing.T) {
 	})
 
 	want := []string{"MyMod", "Thing", "Other"}
-	require.Equal(t, want, moduleDeclaredTypeNames(dir, "my-mod"))
+	require.Equal(t, want, moduleDeclaredTypeNames(dir, "my-mod", dang.CurrentVersion))
 	require.Equal(t, 2, *parses, "one parse per .dang file")
 	for range 3 {
-		require.Equal(t, want, moduleDeclaredTypeNames(dir, "my-mod"))
+		require.Equal(t, want, moduleDeclaredTypeNames(dir, "my-mod", dang.CurrentVersion))
 	}
 	require.Equal(t, 2, *parses, "unchanged source is not parsed again")
 
@@ -190,52 +190,52 @@ func TestModuleDeclaredTypeNamesMemoized(t *testing.T) {
 		"main.dang":  "type Thing {\n  name: String! { \"thing\" }\n}\n",
 		"other.dang": "type Other {\n  n: Int! { 1 }\n}\n",
 	})
-	require.Equal(t, want, moduleDeclaredTypeNames(copyDir, "my-mod"))
+	require.Equal(t, want, moduleDeclaredTypeNames(copyDir, "my-mod", dang.CurrentVersion))
 	require.Equal(t, 2, *parses)
 
 	// The module name seeds the main object's name.
-	require.Equal(t, []string{"Renamed", "Thing", "Other"}, moduleDeclaredTypeNames(dir, "renamed"))
+	require.Equal(t, []string{"Renamed", "Thing", "Other"}, moduleDeclaredTypeNames(dir, "renamed", dang.CurrentVersion))
 	require.Equal(t, 4, *parses)
 
 	// Changed content, a renamed file and a new file are each new source.
 	writeDangFilesIn(t, dir, map[string]string{"other.dang": "type Another {\n  n: Int! { 1 }\n}\n"})
-	require.Equal(t, []string{"MyMod", "Thing", "Another"}, moduleDeclaredTypeNames(dir, "my-mod"))
+	require.Equal(t, []string{"MyMod", "Thing", "Another"}, moduleDeclaredTypeNames(dir, "my-mod", dang.CurrentVersion))
 	require.Equal(t, 6, *parses)
 	require.NoError(t, os.Rename(filepath.Join(dir, "other.dang"), filepath.Join(dir, "zz.dang")))
-	require.Equal(t, []string{"MyMod", "Thing", "Another"}, moduleDeclaredTypeNames(dir, "my-mod"))
+	require.Equal(t, []string{"MyMod", "Thing", "Another"}, moduleDeclaredTypeNames(dir, "my-mod", dang.CurrentVersion))
 	require.Equal(t, 8, *parses)
 	writeDangFilesIn(t, dir, map[string]string{"extra.dang": "type Extra {\n  n: Int! { 1 }\n}\n"})
-	require.Equal(t, []string{"MyMod", "Extra", "Thing", "Another"}, moduleDeclaredTypeNames(dir, "my-mod"))
+	require.Equal(t, []string{"MyMod", "Extra", "Thing", "Another"}, moduleDeclaredTypeNames(dir, "my-mod", dang.CurrentVersion))
 	require.Equal(t, 11, *parses)
 
 	// A file that does not parse is skipped, as before, and that is stable
 	// for its content too.
 	writeDangFilesIn(t, dir, map[string]string{"extra.dang": "type {{{"})
-	require.Equal(t, []string{"MyMod", "Thing", "Another"}, moduleDeclaredTypeNames(dir, "my-mod"))
+	require.Equal(t, []string{"MyMod", "Thing", "Another"}, moduleDeclaredTypeNames(dir, "my-mod", dang.CurrentVersion))
 	require.Equal(t, 14, *parses)
-	require.Equal(t, []string{"MyMod", "Thing", "Another"}, moduleDeclaredTypeNames(dir, "my-mod"))
+	require.Equal(t, []string{"MyMod", "Thing", "Another"}, moduleDeclaredTypeNames(dir, "my-mod", dang.CurrentVersion))
 	require.Equal(t, 14, *parses)
 
 	// An unreadable directory still yields the main object's name, and is
 	// not remembered.
 	missing := filepath.Join(dir, "missing")
-	require.Equal(t, []string{"MyMod"}, moduleDeclaredTypeNames(missing, "my-mod"))
+	require.Equal(t, []string{"MyMod"}, moduleDeclaredTypeNames(missing, "my-mod", dang.CurrentVersion))
 	require.NoError(t, os.Mkdir(missing, 0o755))
 	writeDangFilesIn(t, missing, map[string]string{"main.dang": "type Late {\n  n: Int! { 1 }\n}\n"})
-	require.Equal(t, []string{"MyMod", "Late"}, moduleDeclaredTypeNames(missing, "my-mod"))
+	require.Equal(t, []string{"MyMod", "Late"}, moduleDeclaredTypeNames(missing, "my-mod", dang.CurrentVersion))
 
 	// Nor is a file that cannot be read: the names of the others are returned,
 	// and the file's own once it can be read.
 	target := filepath.Join(t.TempDir(), "later.dang")
 	require.NoError(t, os.Symlink(target, filepath.Join(missing, "zlater.dang")))
 	before := *parses
-	require.Equal(t, []string{"MyMod", "Late"}, moduleDeclaredTypeNames(missing, "my-mod"))
-	require.Equal(t, []string{"MyMod", "Late"}, moduleDeclaredTypeNames(missing, "my-mod"))
+	require.Equal(t, []string{"MyMod", "Late"}, moduleDeclaredTypeNames(missing, "my-mod", dang.CurrentVersion))
+	require.Equal(t, []string{"MyMod", "Late"}, moduleDeclaredTypeNames(missing, "my-mod", dang.CurrentVersion))
 	require.Equal(t, before+2, *parses, "an incomplete read is parsed again each time")
 	require.NoError(t, os.WriteFile(target, []byte("type Later {\n  n: Int! { 1 }\n}\n"), 0o644))
-	require.Equal(t, []string{"MyMod", "Late", "Later"}, moduleDeclaredTypeNames(missing, "my-mod"))
+	require.Equal(t, []string{"MyMod", "Late", "Later"}, moduleDeclaredTypeNames(missing, "my-mod", dang.CurrentVersion))
 	require.Equal(t, before+4, *parses)
-	require.Equal(t, []string{"MyMod", "Late", "Later"}, moduleDeclaredTypeNames(missing, "my-mod"))
+	require.Equal(t, []string{"MyMod", "Late", "Later"}, moduleDeclaredTypeNames(missing, "my-mod", dang.CurrentVersion))
 	require.Equal(t, before+4, *parses)
 }
 
@@ -259,14 +259,119 @@ func TestRetainDangObjectDirectivesOnlyForTypeDefs(t *testing.T) {
 	require.Empty(t, objectDirectives(env, "Thing"), "Dang itself does not retain object directives")
 
 	parses := countDangParses(t)
-	require.NoError(t, retainDangObjectDirectives(t.Context(), env, dir, false))
+	require.NoError(t, retainDangObjectDirectives(t.Context(), env, dir, dang.CurrentVersion, false))
 	require.Zero(t, *parses, "a function call does not parse the source again")
 	require.Empty(t, objectDirectives(env, "Thing"))
 
-	require.NoError(t, retainDangObjectDirectives(t.Context(), env, dir, true))
+	require.NoError(t, retainDangObjectDirectives(t.Context(), env, dir, dang.CurrentVersion, true))
 	require.Equal(t, 1, *parses)
 	directives := objectDirectives(env, "Thing")
 	require.Len(t, directives, 1)
 	require.Equal(t, "marked", directives[0].Name)
 	require.Empty(t, objectDirectives(env, "Plain"))
+}
+
+// The engine reads a module's dang.toml only up to its module directory, but
+// Dang walks further up for the one that decides the source's version. A
+// module source that a dang.toml above its module directory would govern runs
+// from an isolated copy, so the engine's version decides.
+func TestDangSourceDir(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(root, ".git"), 0o755))
+	moduleDir := filepath.Join(root, "mod")
+	srcDir := filepath.Join(moduleDir, "src")
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
+	writeDangFilesIn(t, srcDir, map[string]string{"main.dang": "pub x: Int! = 1\n", "notes.txt": "not source"})
+
+	dir, cleanup, err := dangSourceDir(srcDir, moduleDir)
+	require.NoError(t, err)
+	cleanup()
+	require.Equal(t, srcDir, dir, "no dang.toml: the source runs in place")
+
+	require.NoError(t, os.WriteFile(filepath.Join(root, "dang.toml"), []byte("dang = \"1.0\"\n"), 0o644))
+	dir, cleanup, err = dangSourceDir(srcDir, moduleDir)
+	require.NoError(t, err)
+	require.NotEqual(t, srcDir, dir, "a dang.toml above the module directory: the source runs isolated")
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	require.Equal(t, "main.dang", entries[0].Name())
+	configPath, _, err := dang.FindProjectConfig(dir)
+	require.NoError(t, err)
+	require.NotEqual(t, filepath.Join(root, "dang.toml"), configPath)
+	cleanup()
+	_, err = os.Stat(dir)
+	require.True(t, os.IsNotExist(err), "cleanup removes the copy")
+
+	for _, governing := range []string{moduleDir, srcDir} {
+		require.NoError(t, os.WriteFile(filepath.Join(governing, "dang.toml"), []byte(""), 0o644))
+		dir, cleanup, err = dangSourceDir(srcDir, moduleDir)
+		require.NoError(t, err)
+		cleanup()
+		require.Equal(t, srcDir, dir, "a dang.toml the engine reads: the source runs in place")
+		require.NoError(t, os.Remove(filepath.Join(governing, "dang.toml")))
+	}
+
+	// A source directory outside the module directory has only its own.
+	outside := filepath.Join(root, "outside")
+	require.NoError(t, os.Mkdir(outside, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "dang.toml"), []byte(""), 0o644))
+	dir, cleanup, err = dangSourceDir(outside, moduleDir)
+	require.NoError(t, err)
+	cleanup()
+	require.Equal(t, outside, dir)
+}
+
+// Dang 1.0 source may use names later versions took: `rescue` was an
+// ordinary identifier before Dang 2.1 reserved it, and a module's own `loop`
+// shadows the builtin of that name.
+func TestDang1NamesLaterVersionsTook(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(dir, ".git"), 0o755))
+	writeDangFilesIn(t, dir, map[string]string{"main.dang": `let loop = 2
+assert { loop == 2 }
+
+f(rescue: Int!): Int! { rescue + loop }
+assert { f(3) == 5 }
+
+type Box {
+  pub rescue: Int! = 1
+}
+let box = Box
+assert { box.rescue == 1 }
+`})
+	_, err := dang.RunDir(dang.ContextWithVersion(t.Context(), dang.Version1_0), dir, false)
+	require.NoError(t, err)
+}
+
+// legacySelectionSource is Dang 1.0 source: `.{a, b}` is object selection,
+// which no later version parses.
+const legacySelectionSource = "directive @marked on OBJECT\n\n" +
+	"type Pair @marked {\n  pub a: Int! = 1\n  pub b: Int! = 2\n}\n\n" +
+	"type Picker {\n  pub picked: Int! {\n    let p = Pair.{a, b}\n    p.a\n  }\n}\n"
+
+// The engine's own parses of a module's source (declared type names, object
+// directives) parse it as the Dang version it is written in, as Dang does: a
+// Dang 1.0 module has types and directives too.
+func TestModuleSourceParsesAtDangVersion(t *testing.T) {
+	dir := t.TempDir()
+	writeDangFilesIn(t, dir, map[string]string{"main.dang": legacySelectionSource})
+
+	countDangParses(t) // a fresh memo
+	require.Equal(t, []string{"Legacy", "Pair", "Picker"}, moduleDeclaredTypeNames(dir, "legacy", dang.Version1_0))
+	require.Equal(t, []string{"Legacy"}, moduleDeclaredTypeNames(dir, "legacy", dang.CurrentVersion),
+		"the names are keyed by version: the source does not parse as the current version")
+
+	ctx := dang.ContextWithVersion(t.Context(), dang.Version1_0)
+	env, err := runDangDirForModuleTypes(ctx, dir)
+	require.NoError(t, err)
+	require.NoError(t, retainDangObjectDirectives(ctx, env, dir, dang.Version1_0, true))
+	value, found, err := env.Lookup(ctx, "Pair")
+	require.NoError(t, err)
+	require.True(t, found)
+	directives := value.(*dang.ConstructorFunction).ObjectType.GetDirectives("")
+	require.Len(t, directives, 1)
+	require.Equal(t, "marked", directives[0].Name)
+
+	require.Error(t, retainDangObjectDirectives(ctx, env, dir, dang.CurrentVersion, true))
 }
