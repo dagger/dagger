@@ -560,7 +560,59 @@ func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.Object
 		dir.SetPath(parentDir)
 	}
 
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+	res, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+	if err != nil {
+		return res, err
+	}
+	return withDirectoryContentDigest(ctx, res, parent, srcDir, args, perms)
+}
+
+// withDirectoryContentDigest keys a copy of one content-keyed directory into
+// another by both directories' content and the copy's arguments, as a
+// Dockerfile COPY is keyed (withDirectoryDockerfileCompatContentHashed). So a
+// directory put together from content-keyed parts stays content-keyed, and
+// what is read from it afterwards, such as a subdirectory, is keyed by what it
+// holds rather than by every part it was made from. The digest comes from the
+// inputs' digests, so the copy stays lazy. Either side without a content
+// digest leaves the copy keyed by its recipe.
+func withDirectoryContentDigest(
+	ctx context.Context,
+	res dagql.ObjectResult[*core.Directory],
+	parent dagql.ObjectResult[*core.Directory],
+	src dagql.ObjectResult[*core.Directory],
+	args WithDirectoryArgs,
+	perms *int,
+) (dagql.ObjectResult[*core.Directory], error) {
+	parentCall, err := parent.ResultCall()
+	if err != nil {
+		return res, err
+	}
+	srcCall, err := src.ResultCall()
+	if err != nil {
+		return res, err
+	}
+	parentDgst, srcDgst := parentCall.ContentDigest(), srcCall.ContentDigest()
+	if parentDgst == "" || srcDgst == "" {
+		return res, nil
+	}
+	permissions := "unset"
+	if perms != nil {
+		permissions = strconv.Itoa(*perms)
+	}
+	in := []string{
+		"__withDirectory",
+		string(parentDgst),
+		args.Path,
+		args.Owner,
+		permissions,
+		strconv.FormatBool(args.Gitignore),
+		strconv.Itoa(len(args.Include)),
+	}
+	in = append(in, args.Include...)
+	in = append(in, strconv.Itoa(len(args.Exclude)))
+	in = append(in, args.Exclude...)
+	in = append(in, string(srcDgst))
+	return res.WithContentDigest(ctx, hashutil.HashStrings(in...))
 }
 
 type WithDirectoryDockerfileCompatArgs struct {
