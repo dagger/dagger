@@ -81,6 +81,9 @@ func newSnapshotter(
 			opts = append(opts, overlay.WithMountOptions([]string{"volatile"}))
 		}
 		sn, snErr = overlay.NewSnapshotter(rootDir, opts...)
+		if snErr == nil {
+			sn = &overlayUsageSnapshotter{Snapshotter: sn, ms: mdStore, root: rootDir}
+		}
 	default:
 		return nil, "", fmt.Errorf("unknown snapshotter %q", name)
 	}
