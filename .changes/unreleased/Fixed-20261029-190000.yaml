@@ -1,0 +1,12 @@
+kind: Fixed
+body: |
+  Containers that run under emulation, such as linux/arm64 containers on an
+  x86 engine, can set and read extended attributes again. Since v1.0.0-beta.16
+  every extended-attribute call failed with "Function not implemented", so
+  setting file capabilities with `setcap` failed, Python's `shutil.copy2`
+  failed, and some package managers installed binaries without their file
+  capabilities.
+time: 2026-10-29T19:00:00Z
+custom:
+  Author: sipsma
+  PR: "14962"
