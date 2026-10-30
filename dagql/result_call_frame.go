@@ -234,6 +234,11 @@ type ResultCall struct {
 	// frame generation it was computed in (see resultCallFrameGeneration).
 	moduleResultIDs atomic.Pointer[moduleResultIDsMemo]
 
+	// contentPreferredTelemetryDigest memoizes ContentPreferredDigestForTelemetry
+	// for this frame, valid only for the frame generation it was computed in
+	// (see resultCallFrameGeneration).
+	contentPreferredTelemetryDigest atomic.Pointer[contentPreferredDigestMemo]
+
 	// contentPreferredDigest is memoized once the frame has reached its
 	// finalized semantic shape. Do not mutate the frame after calling
 	// ContentPreferredDigest.

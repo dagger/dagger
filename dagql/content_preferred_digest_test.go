@@ -297,6 +297,47 @@ func TestContentPreferredDigestSnapshotAndConcurrentTeaching(t *testing.T) {
 	}
 }
 
+// A frame's memo stands in for its inputs without pinning them. When an input
+// learns content while a walk runs, a path through a memo and a path straight
+// to the input see different frames of it; the digest must still be one
+// state's.
+func TestContentPreferredDigestMemoAcrossReplacement(t *testing.T) {
+	ctx := cacheTestContext(t.Context())
+	c, err := NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = ContextWithCache(ctx, c)
+	defer cacheTestReleaseSession(t, c, ctx)
+	input := cacheTestIntCall("input")
+	res, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: input}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(input, 1), nil
+	})
+	require.NoError(t, err)
+	inputRef := func() *ResultCallRef {
+		return &ResultCallRef{ResultID: uint64(res.cacheSharedResult().id), shared: res.cacheSharedResult()}
+	}
+	memoized := cacheTestIntCall("memoized")
+	memoized.Receiver = inputRef()
+	_, err = memoized.contentPreferredDigestForTelemetry(c)
+	require.NoError(t, err)
+
+	root := cacheTestIntCall("root")
+	root.Receiver = &ResultCallRef{Call: memoized}
+	root.Args = []*ResultCallArg{{Name: "source", Value: &ResultCallLiteral{Kind: ResultCallLiteralKindResultRef, ResultRef: inputRef()}}}
+
+	walk := newContentPreferredDigestTraversal(c)
+	require.NoError(t, c.TeachContentDigest(ctx, res, digest.FromString("learned")))
+	got, err := walk.consistentDigest(root)
+	require.NoError(t, err)
+
+	want, err := (&contentPreferredDigestTraversal{cache: c, noMemos: true}).digest(root)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+	// Without the check, the memo's old input and the argument's new one mix.
+	mixed, err := (&contentPreferredDigestTraversal{cache: c, gen: walk.gen}).digest(root)
+	require.NoError(t, err)
+	require.NotEqual(t, want, mixed)
+}
+
 func TestContentPreferredDigestDoesNotCanonicalizeEquivalence(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	c, err := NewCache(ctx, "", nil, nil)
