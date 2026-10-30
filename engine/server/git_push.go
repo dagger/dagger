@@ -108,7 +108,8 @@ func (srv *Server) AuthorizeGitPush(ctx context.Context, remote, ref string, for
 	}
 	if parsed.User != nil {
 		_, password := parsed.User.Password()
-		if password || parsed.Scheme == gitutil.HTTPProtocol || parsed.Scheme == gitutil.HTTPSProtocol {
+		if password || parsed.Scheme == gitutil.HTTPProtocol || parsed.Scheme == gitutil.HTTPSProtocol ||
+			parsed.Scheme == gitutil.EntireProtocol {
 			return nil, fmt.Errorf("push destination must not contain embedded credentials")
 		}
 	}

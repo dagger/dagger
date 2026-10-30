@@ -34,7 +34,8 @@ func translateError(err error, stderr string) error {
 		strings.Contains(stderr, "authentication required") ||
 		strings.Contains(stderr, "permission denied (publickey") ||
 		strings.Contains(stderr, "fatal: could not read username") ||
-		strings.Contains(stderr, "fatal: could not read password") {
+		strings.Contains(stderr, "fatal: could not read password") ||
+		isEntireAuthFailure(stderr) {
 		return ErrGitAuthFailed
 	}
 	if strings.Contains(stderr, "could not resolve host") || strings.Contains(stderr, "could not resolve hostname") {
@@ -64,4 +65,15 @@ func translateError(err error, stderr string) error {
 	}
 
 	return err
+}
+
+// isEntireAuthFailure matches git-remote-entire's messages for a missing,
+// rejected or foreign credential, or a repository the credential cannot read.
+// stderr is lowercased.
+func isEntireAuthFailure(stderr string) bool {
+	return strings.Contains(stderr, "rejected entire_token") ||
+		strings.Contains(stderr, "rejected your login") ||
+		strings.Contains(stderr, "no auth context for") ||
+		strings.Contains(stderr, "is not a trusted login server for cluster") ||
+		strings.Contains(stderr, "you do not have access to")
 }

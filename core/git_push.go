@@ -83,7 +83,8 @@ func (ref *GitRef) Push(ctx context.Context, destination *RemoteGitRepository, o
 	// embedded credentials in a permission prompt or in Git's output.
 	if destination.URL.User != nil {
 		_, hasPassword := destination.URL.User.Password()
-		if hasPassword || destination.URL.Scheme == gitutil.HTTPProtocol || destination.URL.Scheme == gitutil.HTTPSProtocol {
+		if hasPassword || destination.URL.Scheme == gitutil.HTTPProtocol || destination.URL.Scheme == gitutil.HTTPSProtocol ||
+			destination.URL.Scheme == gitutil.EntireProtocol {
 			return nil, fmt.Errorf("push destination must not contain embedded credentials; use a secret instead")
 		}
 	}
@@ -183,14 +184,18 @@ func (ref *GitRef) Push(ctx context.Context, destination *RemoteGitRepository, o
 	// Fetch may be public while receive-pack requires authentication. Approval
 	// permits operation-local owner credentials, not a transferable capability.
 	if destination.AuthToken.Self() == nil && destination.AuthHeader.Self() == nil &&
-		(destination.URL.Scheme == gitutil.HTTPProtocol || destination.URL.Scheme == gitutil.HTTPSProtocol) {
+		(destination.URL.Scheme == gitutil.HTTPProtocol || destination.URL.Scheme == gitutil.HTTPSProtocol ||
+			destination.URL.Scheme == gitutil.EntireProtocol) {
 		bk, err := query.Engine(authCtx)
 		if err != nil {
 			return nil, err
 		}
 		credential, err := bk.GetCredential(authCtx, destination.URL.Scheme, destination.URL.Host, destination.URL.Path)
 		if err == nil {
-			pushGit = pushGit.New(gitutil.WithHTTPTokenAuth(destination.URL, credential.Password, credential.Username))
+			pushGit = pushGit.New(
+				gitutil.WithHTTPTokenAuth(destination.URL, credential.Password, credential.Username),
+				gitutil.WithEntireTokenAuth(destination.URL, credential.Password),
+			)
 		} // Missing credentials are permitted for anonymous writable remotes.
 	}
 	return runGitPush(ctx, pushGit.New(gitutil.WithGitDir(tmp)), destination.URL.Remote(), name, ref.Ref.SHA, opts.ExpectedRemoteSHA)

@@ -440,12 +440,26 @@ func (repo *RemoteGitRepository) setupWithSSHAuthSock(ctx context.Context, sshAu
 		})
 	}
 
+	if repo.URL != nil && repo.URL.Scheme == gitutil.EntireProtocol {
+		if repo.AuthHeader.Self() != nil {
+			return nil, nil, fmt.Errorf("entire:// remotes take a token, not an HTTP authorization header")
+		}
+		configDir, cacheHome, err := entireHelperDirs(ctx, query)
+		if err != nil {
+			return nil, nil, err
+		}
+		opts = append(opts, gitutil.WithEntireHelperDirs(repo.URL, configDir, cacheHome))
+	}
+
 	if repo.AuthToken.Self() != nil {
 		password, err := repo.AuthToken.Self().Plaintext(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
-		opts = append(opts, gitutil.WithHTTPTokenAuth(repo.URL, string(password), repo.AuthUsername))
+		opts = append(opts,
+			gitutil.WithHTTPTokenAuth(repo.URL, string(password), repo.AuthUsername),
+			gitutil.WithEntireTokenAuth(repo.URL, string(password)),
+		)
 	} else if repo.AuthHeader.Self() != nil {
 		byteAuthHeader, err := repo.AuthHeader.Self().Plaintext(ctx)
 		if err != nil {
@@ -459,6 +473,71 @@ func (repo *RemoteGitRepository) setupWithSSHAuthSock(ctx context.Context, sshAu
 	}))
 
 	return gitutil.NewGitCLI(opts...), cleanups.Run, nil
+}
+
+// GitRemoteEntireDir holds git-remote-entire's state under the engine root.
+// Nothing in it outlives the engine process: the engine removes it on start.
+const GitRemoteEntireDir = "git-remote-entire"
+
+// entireNodesCacheLimit bounds git-remote-entire's per-repository replica
+// cache. The helper never drops expired entries and rewrites the whole file on
+// every operation, so a bigger file costs every Entire git operation.
+const entireNodesCacheLimit = 5 << 20
+
+// entireHelperDirs returns the engine-wide directories git-remote-entire runs
+// with: an empty config directory, so it never finds a saved login, and the
+// cache home for its discovery cache, which holds no credentials and is shared
+// by every session.
+func entireHelperDirs(ctx context.Context, query *Query) (configDir, cacheHome string, _ error) {
+	root := query.EngineVolumeState().RootDir
+	if root == "" {
+		return "", "", fmt.Errorf("engine root is not configured")
+	}
+	base := filepath.Join(root, GitRemoteEntireDir)
+	configDir = filepath.Join(base, "config")
+	cacheHome = filepath.Join(base, "cache")
+	for _, dir := range []string{configDir, cacheHome} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return "", "", fmt.Errorf("create git-remote-entire directory: %w", err)
+		}
+	}
+	if err := trimEntireNodesCache(cacheHome, entireNodesCacheLimit); err != nil {
+		// Trimming only bounds a cache; the helper works with or without it.
+		slog.SpanLogger(ctx, InstrumentationLibrary).Warn("failed to trim git-remote-entire cache", "error", err)
+	}
+	return configDir, cacheHome, nil
+}
+
+// trimEntireNodesCache removes git-remote-entire's replica cache once it
+// exceeds limit bytes. The helper rebuilds entries from the cluster's
+// redirects as repositories are used again. The removal takes the lock the
+// helper holds for its read-modify-write, and skips the trim when a helper is
+// mid-update rather than waiting for it.
+func trimEntireNodesCache(cacheHome string, limit int64) error {
+	cache := filepath.Join(cacheHome, "entire", "nodes.json")
+	info, err := os.Stat(cache)
+	if errors.Is(err, os.ErrNotExist) || (err == nil && info.Size() <= limit) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	lock, err := os.OpenFile(cache+".lock", os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return err
+	}
+	// Closing the lock file releases the lock.
+	defer lock.Close()
+	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		if errors.Is(err, unix.EWOULDBLOCK) {
+			return nil
+		}
+		return fmt.Errorf("lock %s: %w", cache, err)
+	}
+	if err := os.Remove(cache); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, includeTags bool, refs []GitRefBackend, fn func(context.Context, *gitutil.GitCLI) error) (retErr error) {

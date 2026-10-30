@@ -2118,6 +2118,9 @@ func (src GitModuleSource) Link(filepath string, line int, column int) (string, 
 			result += fmt.Sprintf("#L%d", line)
 		}
 		return result, nil
+	case "entire.io":
+		// Entire has no stable per-file web URL yet: link the repository.
+		return src.HTMLRepoURL, nil
 	case "dev.azure.com":
 		result := src.HTMLRepoURL + path.Join("/commit", src.Commit)
 		if filepath != "." {

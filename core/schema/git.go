@@ -744,6 +744,10 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 		})
 	}
 
+	if remote.Scheme == gitutil.EntireProtocol && (args.HTTPAuthHeader.Valid || args.HTTPAuthUsername != "") {
+		return inst, fmt.Errorf("entire:// remotes authenticate with httpAuthToken alone; httpAuthHeader and httpAuthUsername are not supported")
+	}
+
 	switch remote.Scheme {
 	case gitutil.SSHProtocol:
 		if remote.User == nil {
@@ -924,9 +928,9 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 			})
 			return inst, err
 		}
-	case gitutil.HTTPProtocol, gitutil.HTTPSProtocol:
+	case gitutil.HTTPProtocol, gitutil.HTTPSProtocol, gitutil.EntireProtocol:
 		if !args.HTTPAuthToken.Valid && !args.HTTPAuthHeader.Valid {
-			// For HTTP refs, try to load client credentials from the git helper.
+			// For HTTP and Entire refs, try to load client credentials from the git helper.
 			parentClientMetadata, err := parent.Self().NonModuleParentClientMetadata(ctx)
 			if err != nil {
 				return inst, err
@@ -981,7 +985,12 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 				}
 			}
 
-			metadata, err := cachedPublicRemote(netconfhttp.WithDNSConfig(ctx, dnsConfig), remote, len(gitServices) > 0)
+			// git-remote-entire cannot read anonymously, so Entire remotes skip
+			// the public probe and always ask for credentials.
+			var metadata *gitutil.Remote
+			if remote.Scheme != gitutil.EntireProtocol {
+				metadata, err = cachedPublicRemote(netconfhttp.WithDNSConfig(ctx, dnsConfig), remote, len(gitServices) > 0)
+			}
 			if err != nil {
 				// A workspace pin may let child fields resolve without contacting
 				// this repository. Don't fail the parent visibility probe when a
@@ -1057,7 +1066,9 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 					},
 				}
 				// Omit blank username; adding it would change the selector hash and kill cache hits.
-				if credentials.Username != "" {
+				// Entire tokens have no username: credential helpers must print
+				// one for git, but it is never sent.
+				if credentials.Username != "" && remote.Scheme != gitutil.EntireProtocol {
 					selectArgs = append(selectArgs, dagql.NamedInput{
 						Name:  "httpAuthUsername",
 						Value: dagql.NewString(credentials.Username),

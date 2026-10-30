@@ -73,8 +73,10 @@ func (s GitAttachable) getCredentialFromHelper(ctx context.Context, req *GitCred
 
 	// Prepare input
 	input := fmt.Sprintf("protocol=%s\nhost=%s\n", req.Protocol, req.Host)
-	if req.Path != "" {
-		input += fmt.Sprintf("path=%s\n", req.Path)
+	// Git's credential path has no leading slash; with one, helpers scoped to
+	// a repository URL (credential.useHttpPath) never match.
+	if path := strings.TrimPrefix(req.Path, "/"); path != "" {
+		input += fmt.Sprintf("path=%s\n", path)
 	}
 	input += "\n"
 	cmd.Stdin = strings.NewReader(input)
