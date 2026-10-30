@@ -17,8 +17,8 @@ require (
 	github.com/dagger/otel-go v1.43.1-0.20261021170752-132b1dd82eb2
 	github.com/opencontainers/image-spec v1.1.1
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f
-	golang.org/x/mod v0.38.0
-	golang.org/x/sync v0.22.0
+	golang.org/x/mod v0.41.0
+	golang.org/x/sync v0.23.0
 )
 
 require (
@@ -58,9 +58,9 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.43.0 // indirect
 	go.opentelemetry.io/otel/trace v1.46.0
 	go.opentelemetry.io/proto/otlp v1.10.0 // indirect
-	golang.org/x/net v0.57.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/text v0.40.0 // indirect
+	golang.org/x/net v0.59.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260414002931-afd174a4e478 // indirect
 	google.golang.org/grpc v1.82.1 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
