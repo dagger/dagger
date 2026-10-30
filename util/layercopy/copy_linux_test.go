@@ -377,6 +377,62 @@ func TestCopyFileOverlaySourcesShareLowerLayers(t *testing.T) {
 	}
 }
 
+// A file copied from an overlay is the one the view shows: the topmost layer
+// holding it, above a layer that hides a stale copy below it. Its ancestors'
+// layers aren't read; only a directory's walk needs them.
+func TestCopyFileFromOverlayLinksTheVisibleLayer(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	lowerRoot := filepath.Join(root, "lower")
+	middleRoot := filepath.Join(root, "middle")
+	upperRoot := filepath.Join(root, "upper")
+	viewRoot := filepath.Join(root, "view")
+	dstRoot := filepath.Join(root, "dst")
+
+	for _, dir := range []string{
+		filepath.Join(lowerRoot, "d", "e"),
+		filepath.Join(middleRoot, "d"),
+		filepath.Join(upperRoot, "d", "e"),
+		filepath.Join(viewRoot, "d", "e"),
+		dstRoot,
+	} {
+		require.NoError(t, os.MkdirAll(dir, 0o755))
+	}
+	// middle's d/e is a file, so lower's d/e/f.txt is hidden.
+	require.NoError(t, os.WriteFile(filepath.Join(lowerRoot, "d", "e", "f.txt"), []byte("lower"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(middleRoot, "d", "e"), []byte("cover"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(upperRoot, "d", "e", "f.txt"), []byte("upper"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(viewRoot, "d", "e", "f.txt"), []byte("upper"), 0o644))
+	// middle's d/g.txt shows through upper's d, which doesn't hold it.
+	require.NoError(t, os.WriteFile(filepath.Join(lowerRoot, "d", "g.txt"), []byte("lower"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(middleRoot, "d", "g.txt"), []byte("middle"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(viewRoot, "d", "g.txt"), []byte("middle"), 0o644))
+
+	copier, err := NewCopier(Mount{Root: dstRoot})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, copier.Close())
+	})
+	src := Mount{Root: viewRoot, Mount: &mount.Mount{
+		Type:    "overlay",
+		Options: []string{"lowerdir=" + strings.Join([]string{upperRoot, middleRoot, lowerRoot}, ":")},
+	}}
+	for _, test := range []struct{ path, layer string }{
+		{"d/e/f.txt", upperRoot},
+		{"d/g.txt", middleRoot},
+	} {
+		dst := strings.ReplaceAll(test.path, "/", "-")
+		require.NoError(t, copier.CopyFile(context.Background(), src, "/"+test.path, "/"+dst, CopyOptions{}))
+		want, err := os.Stat(filepath.Join(test.layer, test.path))
+		require.NoError(t, err)
+		got, err := os.Stat(filepath.Join(dstRoot, dst))
+		require.NoError(t, err)
+		require.Equal(t, statInode(want.Sys().(*syscall.Stat_t)), statInode(got.Sys().(*syscall.Stat_t)), test.path)
+	}
+	require.Empty(t, copier.sourceCaches[sourceCacheKey{root: src.Root, mount: src.Mount}].ancestorMinLayers)
+}
+
 func TestCopyFileDestPathHintIsDir(t *testing.T) {
 	t.Parallel()
 
