@@ -50,6 +50,12 @@ func TestContainerExecPersistsInputMetadata(t *testing.T) {
 			enc := dagql.NewPersistEncodeContext(cache, childID, frame)
 			encoded, err := child.EncodePersistedObject(ctx, enc)
 			require.NoError(t, err)
+			require.True(t, requireDescribedAsEncoded(t, ctx, enc, child))
+			// An exec with an active function call isn't persisted, so its
+			// parts aren't described either.
+			recipe.State.FunctionCall = &FunctionCall{}
+			require.False(t, requireDescribedAsEncoded(t, ctx, enc, child))
+			recipe.State.FunctionCall = nil
 			var payload persistedContainerPayload
 			require.NoError(t, json.Unmarshal(encoded.JSON, &payload))
 			var saved persistedContainerExecLazy

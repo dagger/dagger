@@ -239,6 +239,42 @@ func (file *File) EncodePersistedObject(ctx context.Context, enc *dagql.PersistE
 	if file.transferPending != nil {
 		return encodePersistedObjectPayload(file.transferPending)
 	}
+	payload, links, err := file.persistedPayloadLocked(ctx, enc)
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, err
+	}
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted file payload: %w", err)
+	}
+	return dagql.PersistedObjectEncoding{JSON: payloadJSON, SnapshotLinks: links}, nil
+}
+
+// DescribePersistedParts describes the file's part from the payload
+// EncodePersistedObject builds. A pending transfer, which is encoded as it
+// was received, isn't described here.
+func (file *File) DescribePersistedParts(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedPartsDescription, bool, error) {
+	if file == nil {
+		return dagql.PersistedPartsDescription{}, false, nil
+	}
+	unlock, err := file.lockForPersistence()
+	if err != nil {
+		return dagql.PersistedPartsDescription{}, false, err
+	}
+	defer unlock()
+	if file.transferPending != nil {
+		return dagql.PersistedPartsDescription{}, false, nil
+	}
+	payload, links, err := file.persistedPayloadLocked(ctx, enc)
+	if err != nil {
+		return dagql.PersistedPartsDescription{}, false, err
+	}
+	return foreignFamilyCodec("File").describeLivePayload(enc, &partPayload{file: payload}, links)
+}
+
+// persistedPayloadLocked builds the file's native payload and the snapshot
+// links its encoding carries. It requires the file's persistence lock.
+func (file *File) persistedPayloadLocked(ctx context.Context, enc *dagql.PersistEncodeContext) (persistedFilePayload, []dagql.PersistedSnapshotRefLink, error) {
 	valueKnown := false
 	filePath := ""
 	if file.File != nil {
@@ -249,7 +285,7 @@ func (file *File) EncodePersistedObject(ctx context.Context, enc *dagql.PersistE
 	}
 	services, err := encodePersistedServiceBindings(enc, "file", file.Services)
 	if err != nil {
-		return dagql.PersistedObjectEncoding{}, err
+		return persistedFilePayload{}, nil, err
 	}
 	payload := persistedFilePayload{
 		ValueKnown: valueKnown,
@@ -270,36 +306,23 @@ func (file *File) EncodePersistedObject(ctx context.Context, enc *dagql.PersistE
 		if recipe != nil {
 			payload.LazyKind, payload.LazyJSON, err = encodePersistedFileLazy(ctx, enc, recipe)
 			if err != nil {
-				return dagql.PersistedObjectEncoding{}, err
+				return persistedFilePayload{}, nil, err
 			}
 		}
-		payloadJSON, err := json.Marshal(payload)
-		if err != nil {
-			return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted file payload: %w", err)
-		}
-		return dagql.PersistedObjectEncoding{
-			JSON: payloadJSON,
-			SnapshotLinks: []dagql.PersistedSnapshotRefLink{{
-				RefKey: identity,
-				Role:   "snapshot",
-			}},
-		}, nil
+		return payload, []dagql.PersistedSnapshotRefLink{{
+			RefKey: identity,
+			Role:   "snapshot",
+		}}, nil
 	}
 	if file.Lazy != nil {
 		payload.Form = persistedFileFormLazy
-		lazyKind, lazyJSON, err := encodePersistedFileLazy(ctx, enc, file.Lazy)
+		payload.LazyKind, payload.LazyJSON, err = encodePersistedFileLazy(ctx, enc, file.Lazy)
 		if err != nil {
-			return dagql.PersistedObjectEncoding{}, err
+			return persistedFilePayload{}, nil, err
 		}
-		payload.LazyKind = lazyKind
-		payload.LazyJSON = lazyJSON
-		payloadJSON, err := json.Marshal(payload)
-		if err != nil {
-			return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted file payload: %w", err)
-		}
-		return encodePersistedObjectRawJSON(payloadJSON), nil
+		return payload, nil, nil
 	}
-	return dagql.PersistedObjectEncoding{}, fmt.Errorf("%w: encode persisted file: missing snapshot and lazy op", dagql.ErrPersistStateNotReady)
+	return persistedFilePayload{}, nil, fmt.Errorf("%w: encode persisted file: missing snapshot and lazy op", dagql.ErrPersistStateNotReady)
 }
 
 //nolint:dupl // symmetric with decodePersistedDirectoryWithSnapshotRole in directory.go; sharing hides type specifics
