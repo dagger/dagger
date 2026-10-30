@@ -546,8 +546,8 @@ func TestExtractZipFilter(t *testing.T) {
 			want:    []string{"a.go -rw-r--r--"},
 		},
 		{
-			// A directory entry left out is still made, with the default
-			// mode, for the entries in it that are kept.
+			// A directory entry left out is still made, with its mode,
+			// for the entries in it that are kept.
 			name:    "excluded directory entry",
 			exclude: []string{"top/sub", "!top/sub/b.go"},
 			want: []string{
@@ -557,7 +557,7 @@ func TestExtractZipFilter(t *testing.T) {
 				"top/docs drwxr-xr-x",
 				"top/docs/README -rw-r--r--",
 				"top/go.mod -rw-r--r--",
-				"top/sub drwxr-xr-x",
+				"top/sub drwx------",
 				"top/sub/b.go -rw-r--r--",
 				"top/testdata drwxr-xr-x",
 				"top/testdata/x -rw-r--r--",
@@ -570,6 +570,42 @@ func TestExtractZipFilter(t *testing.T) {
 			dest, parent, err := extractFilteredTestArchive(t, archive, tc.strip, filter)
 			require.NoError(t, err)
 			requireOnlyDest(t, parent)
+			require.Equal(t, tc.want, listTree(t, dest))
+		})
+	}
+}
+
+// Each path is matched with its directory's results, as Directory.filter
+// matches it: a negated directory pattern doesn't undo a match of the
+// files in it.
+func TestExtractFilterMatchesWithParents(t *testing.T) {
+	archive := writeTestZip(t,
+		testZipEntry{name: "a.go", body: "a"},
+		testZipEntry{name: "a_test.go", body: "a"},
+		testZipEntry{name: "sub/x.go", body: "x"},
+		testZipEntry{name: "sub/x_test.go", body: "x"},
+	)
+	for _, tc := range []struct {
+		name             string
+		include, exclude []string
+		want             []string
+	}{
+		{
+			name:    "exclude",
+			exclude: []string{"**/*_test.go", "!sub"},
+			want:    []string{"a.go -rw-r--r--", "sub drwxr-xr-x", "sub/x.go -rw-r--r--"},
+		},
+		{
+			name:    "include",
+			include: []string{"**/*.go", "!sub"},
+			want:    []string{"a.go -rw-r--r--", "a_test.go -rw-r--r--", "sub drwxr-xr-x", "sub/x.go -rw-r--r--", "sub/x_test.go -rw-r--r--"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			filter, err := newExtractFilter(tc.include, tc.exclude)
+			require.NoError(t, err)
+			dest, _, err := extractFilteredTestArchive(t, archive, 0, filter)
+			require.NoError(t, err)
 			require.Equal(t, tc.want, listTree(t, dest))
 		})
 	}
@@ -593,6 +629,19 @@ func TestStripTarComponentsFilter(t *testing.T) {
 		"top/a.go = a",
 		"top/hard => top/a.go",
 	}, entries)
+
+	// A directory left out is written before the first entry in it that
+	// isn't, and not at all when there is none.
+	filter, err = newExtractFilter(nil, []string{"top", "!top/a.go"})
+	require.NoError(t, err)
+	entries, err = stripTestTar(t, archive, 0, filter)
+	require.NoError(t, err)
+	require.Equal(t, []string{"top/", "top/a.go = a"}, entries)
+	filter, err = newExtractFilter(nil, []string{"top/testdata"})
+	require.NoError(t, err)
+	entries, err = stripTestTar(t, archive, 0, filter)
+	require.NoError(t, err)
+	require.Equal(t, []string{"top/", "top/a.go = a", "top/a_test.go = test", "top/hard => top/a.go"}, entries)
 
 	filter, err = newExtractFilter([]string{"a.go"}, nil)
 	require.NoError(t, err)
