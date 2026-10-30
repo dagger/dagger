@@ -1,0 +1,7 @@
+kind: Changed
+body: |
+  Dang modules move to a newer Dang. The `dang.toml` that governs a module's source, including one in a parent directory up to the repository root, now sets the Dang version the source is parsed and run as; a malformed `dang.toml`, which was ignored before, now fails the module's load. A module's own top-level declarations shadow builtins of the same name, and JSON, YAML and TOML can decode into `Map` types. Loading a Dang module on a fresh engine also parses its source once instead of three times.
+time: 2026-10-30T21:00:00Z
+custom:
+  Author: sipsma
+  PR: ""
