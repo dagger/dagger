@@ -48,6 +48,9 @@ type session struct {
 	uploadSlots  chan struct{}
 	// lookupSlots bounds the lookups unanswered.
 	lookupSlots chan struct{}
+	// known are the rows the service merged over this connection, which
+	// records-only exports send as held rows.
+	known *dagql.KnownRows
 	// opened is the last idle period the service was told of, in the hello
 	// or an open. Only hello and then settles use it.
 	opened uint64
@@ -73,6 +76,7 @@ func newSession(ctx context.Context, conn wsConn, adapter Adapter, cfg *settings
 		recordsSlots: make(chan struct{}, RecordsExportsInFlight),
 		uploadSlots:  make(chan struct{}, UploadConcurrency),
 		lookupSlots:  make(chan struct{}, LookupsInFlight),
+		known:        dagql.NewKnownRows(),
 		pending:      map[uint64]chan protocol.Envelope{},
 		exports:      map[string]chan protocol.Envelope{},
 	}
@@ -363,7 +367,7 @@ func (s *session) handleExport(env protocol.Envelope) {
 	}
 	ended := exportEnded{roots: len(req.Roots), slotWait: slotted.Sub(arrived)}
 	replied := false
-	err := s.adapter.Export(profCtx, req, nil, func(ctx context.Context, exp Export) error {
+	err := s.adapter.Export(profCtx, req, s.known, func(ctx context.Context, exp Export) error {
 		replied = true
 		if exp.Bundle == nil {
 			ended.noBundle = true
@@ -395,8 +399,19 @@ func (s *session) handleExport(env protocol.Envelope) {
 			if profOp != nil {
 				wcprof.RecordWaitAt(ctx, "remotecache:service-upload", wcprof.WaitReasonIO, repliedAt, uploadAt)
 			}
+			var req protocol.Upload
+			if err := up.Decode(&req); err != nil {
+				return s.replyError(up, err)
+			}
+			// The service merged the bundle before it asked for the
+			// blobs, or it didn't merge it at all.
+			if req.Merged {
+				s.known.Merged(exp.Rows)
+			} else {
+				s.known.NotMerged(exp.Rows)
+			}
 			uploadCtx, uploadOp := wcprof.BeginOp(ctx, wcprof.OpKindRemoteCache, "remotecache.upload", wcprof.OpOpts{WorkType: wcprof.WorkTypeExternal})
-			summary, err := s.upload(uploadCtx, up, exp.Blobs)
+			summary, err := s.upload(uploadCtx, up, req, exp.Blobs)
 			uploadOp.SetBytes(summary.bytes)
 			uploadOp.EndErr(err)
 			ended.upload, ended.summary = time.Since(uploadAt), summary
@@ -531,12 +546,8 @@ type uploadSummary struct {
 // and how long its PUT took. An upload cut off by ctx answers too, once its
 // PUTs in flight end: the blobs that arrived are done, and the others failed.
 // It then returns ctx's cause.
-func (s *session) upload(ctx context.Context, env protocol.Envelope, blobs BlobSource) (uploadSummary, error) {
+func (s *session) upload(ctx context.Context, env protocol.Envelope, req protocol.Upload, blobs BlobSource) (uploadSummary, error) {
 	received := time.Now()
-	var req protocol.Upload
-	if err := env.Decode(&req); err != nil {
-		return uploadSummary{}, s.replyError(env, err)
-	}
 	var (
 		mu      sync.Mutex
 		reply   = protocol.Uploaded{Done: []digest.Digest{}}
