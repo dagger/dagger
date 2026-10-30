@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -49,7 +50,7 @@ func setupPrivateRepoSSHAgent(t *testctx.T) (string, func()) {
 	keyGitHub, err := ssh.ParseRawPrivateKey(decodedPrivateKeyGitHub)
 	require.NoError(t, err, "Failed to parse private key")
 
-	sshAgent := agent.NewKeyring()
+	sshAgent := agent.NewKeyring().(agent.ExtendedAgent)
 	err = sshAgent.Add(agent.AddedKey{
 		PrivateKey: key,
 	})
@@ -59,6 +60,8 @@ func setupPrivateRepoSSHAgent(t *testctx.T) (string, func()) {
 		PrivateKey: keyGitHub,
 	})
 	require.NoError(t, err)
+	logAgentKey(t, "private repos", key)
+	logAgentKey(t, "GitHub", keyGitHub)
 
 	tmp, err := os.MkdirTemp("", "ssh-agent")
 	require.NoError(t, err)
@@ -92,7 +95,7 @@ func setupPrivateRepoSSHAgent(t *testctx.T) (string, func()) {
 					defer wg.Done()
 					defer conn.Close()
 					// ServeAgent only returns once the connection fails.
-					err := agent.ServeAgent(sshAgent, conn)
+					err := agent.ServeAgent(loggingAgent{sshAgent, t}, conn)
 					if !errors.Is(err, io.EOF) {
 						t.Logf("SSH agent error: %v", err)
 					}
@@ -110,4 +113,45 @@ func setupPrivateRepoSSHAgent(t *testctx.T) (string, func()) {
 	}
 
 	return sshAgentPath, cleanup
+}
+
+func logAgentKey(t *testctx.T, name string, key any) {
+	t.Helper()
+	signer, err := ssh.NewSignerFromKey(key)
+	require.NoError(t, err)
+	t.Logf("SSH agent: %s key %s", name, ssh.FingerprintSHA256(signer.PublicKey()))
+}
+
+// loggingAgent logs the requests that matter to a failed SSH fetch, with the
+// time, to line them up with the engine's log of the fetch. They show how far
+// an authentication got, not why it stopped: ssh lists the keys, then asks for
+// a signature only once the server accepts an offered key. A listing with no
+// signature is a server that refused every key, or a forwarding break after
+// the listing; a signature can still be lost on its way back to ssh. The
+// engine also lists the keys itself, to derive the socket's handle.
+type loggingAgent struct {
+	agent.ExtendedAgent
+	t *testctx.T
+}
+
+func (a loggingAgent) List() ([]*agent.Key, error) {
+	keys, err := a.ExtendedAgent.List()
+	a.t.Logf("SSH agent: %s listed %d keys (err: %v)", agentLogTime(), len(keys), err)
+	return keys, err
+}
+
+func (a loggingAgent) Sign(key ssh.PublicKey, data []byte) (*ssh.Signature, error) {
+	sig, err := a.ExtendedAgent.Sign(key, data)
+	a.t.Logf("SSH agent: %s signed with %s (err: %v)", agentLogTime(), ssh.FingerprintSHA256(key), err)
+	return sig, err
+}
+
+func (a loggingAgent) SignWithFlags(key ssh.PublicKey, data []byte, flags agent.SignatureFlags) (*ssh.Signature, error) {
+	sig, err := a.ExtendedAgent.SignWithFlags(key, data, flags)
+	a.t.Logf("SSH agent: %s signed with %s (err: %v)", agentLogTime(), ssh.FingerprintSHA256(key), err)
+	return sig, err
+}
+
+func agentLogTime() string {
+	return time.Now().UTC().Format("15:04:05.000")
 }
