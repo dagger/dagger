@@ -705,6 +705,15 @@ func (r ObjectResult[T]) preselect(ctx context.Context, srv *Server, sel Selecto
 	} else {
 		req.ConcurrencyKey = clientMD.SessionID
 	}
+	// The hook can replace arguments in place, so record the scoped
+	// selector arguments before it runs.
+	var scoped map[string]*ResultCallArg
+	if CurrentResultScope(ctx) != nil {
+		scoped = make(map[string]*ResultCallArg, len(frameArgs))
+		for _, arg := range frameArgs {
+			scoped[arg.Name] = arg
+		}
+	}
 	if field.Spec.GetDynamicInput != nil {
 		if err := field.Spec.GetDynamicInput(ctx, r, inputArgs, view, req); err != nil {
 			typ := r.Type()
@@ -724,10 +733,6 @@ func (r ObjectResult[T]) preselect(ctx context.Context, srv *Server, sel Selecto
 		// Selector inputs were scoped above. Scope only arguments that the
 		// dynamic input hook set or replaced, and defaults: scoping loads every
 		// object argument again.
-		scoped := make(map[string]*ResultCallArg, len(frameArgs))
-		for _, arg := range frameArgs {
-			scoped[arg.Name] = arg
-		}
 		for _, argSpec := range field.Spec.Args.Inputs(view) {
 			input, ok := inputArgs[argSpec.Name]
 			if !ok {
