@@ -283,7 +283,7 @@ func TestDebugCacheSnapshotReportsCompleteParts(t *testing.T) {
 	go func() { evaluated <- c.Evaluate(ctx, lazy) }()
 	deadline := time.Now().Add(10 * time.Second)
 	for {
-		if _, _, err := c.captureRowRecord(ctx, lazy.cacheSharedResult()); err != nil {
+		if _, err := c.captureRowRecord(ctx, lazy.cacheSharedResult()); err != nil {
 			break
 		}
 		if time.Now().After(deadline) {
