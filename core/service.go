@@ -69,6 +69,17 @@ type Service struct {
 
 	// The sockets on the host to reverse tunnel
 	HostSockets []*Socket
+
+	// Pinned records the intent "keep this service running": it is set on the
+	// value Service.start returns (via the hidden Service.__pinned field), so
+	// the intent travels with the service's ID into recipes and new sessions.
+	// A pinned service that is bound while not running is started once and
+	// kept running for the rest of the session, as if Service.start had been
+	// called, instead of being detached after the binding's grace period.
+	//
+	// It does not affect the service's identity: the pinned value carries its
+	// unpinned receiver's content digest, so both address the same instance.
+	Pinned bool
 }
 
 func (*Service) Type() *ast.Type {
@@ -100,6 +111,7 @@ type persistedServicePayload struct {
 	TunnelUpstreamResultID        uint64                        `json:"tunnelUpstreamResultID,omitempty"`
 	TunnelPorts                   []PortForward                 `json:"tunnelPorts,omitempty"`
 	HostSockets                   []persistedServiceHostSocket  `json:"hostSockets,omitempty"`
+	Pinned                        bool                          `json:"pinned,omitempty"`
 }
 
 type persistedServiceHostSocket struct {
@@ -132,6 +144,7 @@ func (svc *Service) EncodePersistedObject(ctx context.Context, enc *dagql.Persis
 		ExecMeta:                      svc.ExecMeta,
 		TunnelPorts:                   slices.Clone(svc.TunnelPorts),
 		HostSockets:                   make([]persistedServiceHostSocket, 0, len(svc.HostSockets)),
+		Pinned:                        svc.Pinned,
 	}
 	var err error
 	if svc.Container.Self() != nil {
@@ -212,6 +225,7 @@ func (*Service) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDec
 		TunnelUpstream:                tunnelUpstream,
 		TunnelPorts:                   slices.Clone(persisted.TunnelPorts),
 		HostSockets:                   hostSockets,
+		Pinned:                        persisted.Pinned,
 	}, nil
 }
 
@@ -315,6 +329,17 @@ func (svc *Service) Sync(ctx context.Context) error {
 func (svc *Service) WithHostname(hostname string) *Service {
 	svc = svc.Clone()
 	svc.CustomHostname = hostname
+	// A different hostname is a different service instance, which nothing has
+	// started yet, so the pin does not carry over.
+	svc.Pinned = false
+	return svc
+}
+
+// WithPinned returns a copy of the service marked as pinned. See
+// Service.Pinned.
+func (svc *Service) WithPinned() *Service {
+	svc = svc.Clone()
+	svc.Pinned = true
 	return svc
 }
 
