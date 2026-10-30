@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	stdslog "log/slog"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -43,12 +45,18 @@ func (f *fakeRestorePlan) EncodedIDForCallDigest(digest string) (string, error) 
 }
 
 // fakeRestoreTarget records the verbs the plan was executed with, in order.
+// Loads run concurrently, so they are recorded apart from calls.
 type fakeRestoreTarget struct {
-	calls    []string
-	focused  string
-	adopted  map[string]string // runtime handle -> encoded agent handle
-	failOn   string            // runtime handle whose Rehydrate fails
-	rehydrat map[string]string // runtime handle -> snapshot it was re-hydrated from
+	calls      []string
+	focused    string
+	adopted    map[string]string // runtime handle -> encoded agent handle
+	failOn     string            // runtime handle whose Rehydrate fails
+	failLoadOn string            // runtime handle whose Load fails
+	rehydrat   map[string]string // runtime handle -> conversation it was re-hydrated from
+
+	mu     sync.Mutex
+	loads  map[string]string // runtime handle -> snapshot it was loaded from
+	onLoad func(ctx context.Context, entry dagui.AgentRestore) error
 }
 
 var _ restoreTarget = (*fakeRestoreTarget)(nil)
@@ -57,15 +65,31 @@ func newFakeRestoreTarget() *fakeRestoreTarget {
 	return &fakeRestoreTarget{
 		adopted:  map[string]string{},
 		rehydrat: map[string]string{},
+		loads:    map[string]string{},
 	}
 }
 
-func (f *fakeRestoreTarget) Rehydrate(_ context.Context, entry dagui.AgentRestore, snapshotID string) (string, error) {
+func (f *fakeRestoreTarget) Load(ctx context.Context, entry dagui.AgentRestore, snapshotID string) (string, error) {
+	if f.onLoad != nil {
+		if err := f.onLoad(ctx, entry); err != nil {
+			return "", err
+		}
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.loads[entry.ID] = snapshotID
+	if entry.ID == f.failLoadOn {
+		return "", errors.New("conversation does not load")
+	}
+	return "loaded:" + snapshotID, nil
+}
+
+func (f *fakeRestoreTarget) Rehydrate(_ context.Context, entry dagui.AgentRestore, llmID string) (string, error) {
 	f.calls = append(f.calls, "rehydrate:"+entry.ID)
 	if entry.ID == f.failOn {
 		return "", errors.New("already has a runtime entry in this session")
 	}
-	f.rehydrat[entry.ID] = snapshotID
+	f.rehydrat[entry.ID] = llmID
 	return "handle:" + entry.ID, nil
 }
 
@@ -137,13 +161,19 @@ func TestRestorePlanRehydratesEverythingBeforeAnythingIsAddressed(t *testing.T) 
 		"focus:agent-chief",
 	}, dst.calls)
 
-	// Each instance is re-hydrated from ITS OWN anchor, rebuilt through the
-	// frontend's payloads — mixing two up would restore an agent under
-	// somebody else's conversation, silently.
+	// Each instance is loaded from ITS OWN anchor, rebuilt through the
+	// frontend's payloads, and re-hydrated from what that load returned —
+	// mixing two up would restore an agent under somebody else's
+	// conversation, silently.
 	require.Equal(t, map[string]string{
 		"agent-chief": "llm:chief",
 		"agent-scout": "llm:scout",
 		"agent-tests": "llm:tests",
+	}, dst.loads)
+	require.Equal(t, map[string]string{
+		"agent-chief": "loaded:llm:chief",
+		"agent-scout": "loaded:llm:scout",
+		"agent-tests": "loaded:llm:tests",
 	}, dst.rehydrat)
 
 	// And each conversation is adopted by the handle rehydrate returned, not
@@ -325,6 +355,89 @@ func TestRestoreSkipsARefusedRehydration(t *testing.T) {
 	require.Contains(t, warnings.String(), "already has a runtime entry")
 }
 
+// TestRestoreLoadsConversationsConcurrently: loading a snapshot replays its
+// recipe, which dominates a restore, so every conversation is loaded at once
+// rather than one after another. Only spawn is parent-first: the chief's
+// conversation finishing last must not reorder re-hydration, and nothing is
+// re-hydrated before every load is done.
+func TestRestoreLoadsConversationsConcurrently(t *testing.T) {
+	src, dst := chiefAndWorkers(), newFakeRestoreTarget()
+	// Archive order need not be parent-first.
+	src.plan[0], src.plan[2] = src.plan[2], src.plan[0]
+
+	var started atomic.Int32
+	allStarted := make(chan struct{})
+	workersLoaded := make(chan struct{}, 2)
+	dst.onLoad = func(ctx context.Context, entry dagui.AgentRestore) error {
+		if started.Add(1) == int32(len(src.plan)) {
+			close(allStarted)
+		}
+		select {
+		case <-allStarted:
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(10 * time.Second):
+			return errors.New("loads ran one at a time")
+		}
+		if entry.ID != "agent-chief" {
+			workersLoaded <- struct{}{}
+			return nil
+		}
+		for range 2 {
+			select {
+			case <-workersLoaded:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		if len(dst.calls) != 0 {
+			return fmt.Errorf("runtimes created while loading: %v", dst.calls)
+		}
+		return nil
+	}
+
+	require.NoError(t, executeRestorePlan(t.Context(), src, dst, restoreRequest()))
+	require.Len(t, dst.loads, 3)
+	require.Equal(t, []string{
+		"rehydrate:agent-chief", "rehydrate:agent-tests", "rehydrate:agent-scout",
+		"adopt:agent-chief", "adopt:agent-tests", "adopt:agent-scout",
+		"focus:agent-chief",
+	}, dst.calls)
+}
+
+// TestRestoreSkipsAConversationThatDoesNotLoad: best-effort extends to an
+// agent whose conversation the engine cannot load.
+func TestRestoreSkipsAConversationThatDoesNotLoad(t *testing.T) {
+	warnings := captureRestoreWarnings(t)
+	src, dst := chiefAndWorkers(), newFakeRestoreTarget()
+	dst.failLoadOn = "agent-scout"
+	require.NoError(t, executeRestorePlan(t.Context(), src, dst, restoreRequest()))
+	require.Equal(t, []string{
+		"rehydrate:agent-chief", "rehydrate:agent-tests",
+		"adopt:agent-chief", "adopt:agent-tests", "focus:agent-chief",
+	}, dst.calls)
+	require.Contains(t, warnings.String(), "scout (agent-scout)")
+	require.Contains(t, warnings.String(), "conversation does not load")
+}
+
+// TestRestoreCancelledWhileLoading: cancelling a restore while conversations
+// load abandons it before any runtime is created.
+func TestRestoreCancelledWhileLoading(t *testing.T) {
+	src, dst := chiefAndWorkers(), newFakeRestoreTarget()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	dst.onLoad = func(ctx context.Context, entry dagui.AgentRestore) error {
+		if entry.ID == "agent-scout" {
+			cancel()
+		}
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	err := executeRestorePlan(ctx, src, dst, restoreRequest())
+	require.ErrorIs(t, err, context.Canceled)
+	require.Empty(t, dst.calls)
+}
+
 // TestRestoreFailsWhenNothingCanBeRestored: best-effort degrades a restore,
 // it does not turn one into an empty session that looks like it worked.
 func TestRestoreFailsWhenNothingCanBeRestored(t *testing.T) {
@@ -422,6 +535,12 @@ func TestRestoreDetachesAgentsWhoseParentWasNotRestored(t *testing.T) {
 			dst.failOn = "agent-chief"
 		}, []string{
 			"rehydrate:agent-chief", "rehydrate:agent-scout", "rehydrate:agent-tests",
+			"adopt:agent-scout", "adopt:agent-tests", "focus:agent-tests",
+		}},
+		{"parent conversation does not load", func(_ *fakeRestorePlan, dst *fakeRestoreTarget) {
+			dst.failLoadOn = "agent-chief"
+		}, []string{
+			"rehydrate:agent-scout", "rehydrate:agent-tests",
 			"adopt:agent-scout", "adopt:agent-tests", "focus:agent-tests",
 		}},
 	} {
