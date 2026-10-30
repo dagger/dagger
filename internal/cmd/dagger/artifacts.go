@@ -18,7 +18,6 @@ import (
 	"github.com/jinzhu/inflection"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"github.com/vektah/gqlparser/v2/gqlerror"
 )
 
 const artifactSelectorKeyFlag = "dagger.io/artifact-selector-key"
@@ -522,23 +521,18 @@ func readListedArtifacts(ctx context.Context, dag *dagger.Client, selection *cor
 	return response.Node.Items, nil
 }
 
+// isMissingArtifactListingField reports whether an older engine rejected the
+// query because it lacks __listing. The client returns validation failures as
+// an HTTP error, before discovery runs. A resolver error must not trigger
+// another query, even if its message quotes the validator.
 func isMissingArtifactListingField(err error) bool {
 	const missing = `Cannot query field "__listing" on type "Artifacts".`
-	isMissing := func(err *gqlerror.Error) bool {
-		return err != nil && len(err.Path) == 0 && err.Extensions["code"] == "GRAPHQL_VALIDATION_FAILED" && strings.HasPrefix(err.Message, missing)
-	}
-	// Validation happens before discovery. A resolver error must not trigger
-	// another query, even if its message quotes the validator.
 	var httpErr *graphql.HTTPError
-	if errors.As(err, &httpErr) {
-		return len(httpErr.Response.Errors) == 1 && isMissing(httpErr.Response.Errors[0])
+	if !errors.As(err, &httpErr) || len(httpErr.Response.Errors) != 1 {
+		return false
 	}
-	var list gqlerror.List
-	if errors.As(err, &list) {
-		return len(list) == 1 && isMissing(list[0])
-	}
-	var gqlErr *gqlerror.Error
-	return errors.As(err, &gqlErr) && isMissing(gqlErr)
+	gqlErr := httpErr.Response.Errors[0]
+	return gqlErr != nil && len(gqlErr.Path) == 0 && gqlErr.Extensions["code"] == "GRAPHQL_VALIDATION_FAILED" && strings.HasPrefix(gqlErr.Message, missing)
 }
 
 func readListedArtifactsMetadata(ctx context.Context, dag *dagger.Client, selection *core.Artifacts, absolute, typed bool) ([]listedArtifact, error) {

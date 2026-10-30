@@ -18,22 +18,21 @@ func TestMissingArtifactListingFieldOnlyMatchesValidation(t *testing.T) {
 	}
 	resolver := validation(missing)
 	resolver.Path = ast.Path{ast.PathName("node"), ast.PathName("listing")}
+	response := func(errs ...*gqlerror.Error) error {
+		return fmt.Errorf("request: %w", &graphql.HTTPError{StatusCode: 422, Response: graphql.Response{Errors: errs}})
+	}
 	for _, tc := range []struct {
 		name string
 		err  error
 		want bool
 	}{
-		{"validation", validation(missing), true},
-		{"wrapped validation", fmt.Errorf("request: %w", validation(missing)), true},
-		{"suggestion", validation(missing + ` Did you mean "items"?`), true},
-		{"list", gqlerror.List{validation(missing)}, true},
-		{"http", &graphql.HTTPError{StatusCode: 400, Response: graphql.Response{Errors: gqlerror.List{validation(missing)}}}, true},
+		{"validation", response(validation(missing)), true},
+		{"suggestion", response(validation(missing + ` Did you mean "items"?`)), true},
+		{"unclassified", response(&gqlerror.Error{Message: missing}), false},
+		{"resolver already ran", response(resolver), false},
+		{"mixed errors", response(validation(missing), resolver), false},
+		{"other field", response(validation(`Cannot query field "other" on type "Artifacts".`)), false},
 		{"unstructured", errors.New(missing), false},
-		{"unclassified", &gqlerror.Error{Message: missing}, false},
-		{"resolver already ran", resolver, false},
-		{"http resolver", &graphql.HTTPError{StatusCode: 400, Response: graphql.Response{Errors: gqlerror.List{resolver}}}, false},
-		{"mixed errors", gqlerror.List{validation(missing), resolver}, false},
-		{"other field", validation(`Cannot query field "other" on type "Artifacts".`), false},
 		{"network", errors.New("connection closed"), false},
 		{"nil", nil, false},
 	} {
