@@ -75,7 +75,11 @@ func evaluateArtifacts(ctx context.Context, dag *dagger.Client, artifacts *core.
 	}
 	finishArtifactPreparation(ctx, nil)
 	results := make([]artifactValueResult, len(response.Selection.Items))
-	jobs := parallel.New().WithFailFast(failFast).WithRollupLogs(true).WithRollupSpans(true)
+	// Each With method copies the job list. Configure each job from empty
+	// defaults and collect it once, so building the list stays linear.
+	defaults := parallel.New().WithRollupSpans(true)
+	jobs := parallel.New().WithFailFast(failFast)
+	jobs.Jobs = make([]parallel.Job, 0, len(response.Selection.Items))
 	var limit *semaphore.Weighted
 	if maxConcurrency > 0 {
 		limit = semaphore.NewWeighted(int64(maxConcurrency))
@@ -90,7 +94,7 @@ func evaluateArtifacts(ctx context.Context, dag *dagger.Client, artifacts *core.
 		if isGenerator {
 			attrs = append(attrs, attribute.String(telemetry.GeneratorNameAttr, item.URI))
 		}
-		jobs = jobs.WithTracing(!isCheck).WithRollupLogs(!isGenerator).WithJob(item.URI, func(ctx context.Context) error {
+		job := defaults.WithTracing(!isCheck).WithRollupLogs(!isGenerator).WithJob(item.URI, func(ctx context.Context) error {
 			err := ctx.Err()
 			if err == nil && limit != nil && !remote {
 				err = limit.Acquire(ctx, 1)
@@ -126,6 +130,7 @@ func evaluateArtifacts(ctx context.Context, dag *dagger.Client, artifacts *core.
 			}
 			return err
 		}, attrs...)
+		jobs.Jobs = append(jobs.Jobs, job.Jobs...)
 	}
 	if err := jobs.Run(ctx); err != nil {
 		for i := range results {
