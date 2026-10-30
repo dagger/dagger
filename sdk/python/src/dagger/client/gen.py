@@ -4763,6 +4763,7 @@ class Container(Type):
         insecure_root_capabilities: bool | None = False,
         expand: bool | None = False,
         no_init: bool | None = False,
+        transparent_huge_pages: bool | None = False,
     ) -> Self:
         """Execute a command in the container, and return a new snapshot of the
         container state after execution.
@@ -4823,6 +4824,22 @@ class Container(Type):
             Only use this if you specifically need the command to be pid 1 in
             the container. Otherwise it may result in unexpected behavior. If
             you're not sure, you don't need this.
+        transparent_huge_pages:
+            Let the command, and the processes it starts, use the Linux
+            kernel's transparent huge pages. Large-memory programs such as
+            compilers can run faster with them, at some cost in memory.
+            Without this, a command gets huge pages only for memory its own
+            program asks huge pages for, as on a host set to "madvise". That
+            only matters on hosts with Linux 6.18 or later whose transparent
+            huge pages are set to "always"
+            (/sys/kernel/mm/transparent_hugepage/enabled, or a size under
+            /sys/kernel/mm/transparent_hugepage/hugepages-*). With the usual
+            default settings, this changes nothing. On older kernels, commands
+            get what the host's settings give them, whether they set this or
+            not.
+            It isn't part of the exec's cache key: an exec that differs from a
+            cached one only in this setting reuses the cached result,
+            whichever setting produced it.
         """
         _args = [
             Arg("args", args),
@@ -4840,6 +4857,7 @@ class Container(Type):
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
             Arg("expand", expand, False),
             Arg("noInit", no_init, False),
+            Arg("transparentHugePages", transparent_huge_pages, False),
         ]
         _ctx = self._select("withExec", _args)
         return Container(_ctx)

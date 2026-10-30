@@ -2028,14 +2028,16 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 				}
 			}
 
-			_, err = c.Runc.Run(ctx, state.id, bundle, &runc.CreateOpts{
-				Started:       started,
-				IO:            io,
-				ConsoleSocket: consoleSocket,
-				PidFile:       pidFile,
-				ExtraFiles:    initFDs.files,
+			return startWithTHP(state.procInfo.Meta.TransparentHugePages, started, func(started chan<- int) error {
+				_, err := c.Runc.Run(ctx, state.id, bundle, &runc.CreateOpts{
+					Started:       started,
+					IO:            io,
+					ConsoleSocket: consoleSocket,
+					PidFile:       pidFile,
+					ExtraFiles:    initFDs.files,
+				})
+				return err
 			})
-			return err
 		})
 		return eg.Wait()
 	}

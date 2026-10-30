@@ -515,11 +515,13 @@ func (c *Client) exec(ctx context.Context, id string, specsProcess *specs.Proces
 	defer killer.Cleanup()
 
 	return c.callWithIO(ctx, &process, started, killer, func(ctx context.Context, started chan<- int, io runc.IO, consoleSocket runc.ConsoleSocket, pidfile string) error {
-		return c.Runc.Exec(ctx, id, *specsProcess, &runc.ExecOpts{
-			Started:       started,
-			IO:            io,
-			ConsoleSocket: consoleSocket,
-			PidFile:       pidfile,
+		return startWithTHP(process.Meta.TransparentHugePages, started, func(started chan<- int) error {
+			return c.Runc.Exec(ctx, id, *specsProcess, &runc.ExecOpts{
+				Started:       started,
+				IO:            io,
+				ConsoleSocket: consoleSocket,
+				PidFile:       pidfile,
+			})
 		})
 	})
 }
