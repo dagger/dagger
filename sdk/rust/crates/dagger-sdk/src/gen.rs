@@ -6503,6 +6503,16 @@ impl CurrentModule {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The names the engine gives this module's own declarations: the same as its source's ModuleSource.naming, for module runtimes, which have no ModuleSource.
+    /// It answers for the module under its own name (ModuleSource.moduleName), by the naming rules of the version the module is named by. A workspace or toolchain that loads the module under another name namespaces its types under that name instead, which this doesn't reflect.
+    pub fn naming(&self) -> ModuleNaming {
+        let query = self.selection.select("naming");
+        ModuleNaming {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// The directory containing the module's source code loaded into the engine (plus any generated code that may have been created).
     pub fn source(&self) -> Directory {
         let query = self.selection.select("source");

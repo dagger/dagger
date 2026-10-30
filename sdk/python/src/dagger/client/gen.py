@@ -6083,6 +6083,24 @@ class CurrentModule(Type):
         _ctx = self._select("name", _args)
         return await _ctx.execute(str)
 
+    def naming(self) -> "ModuleNaming":
+        """The names the engine gives this module's own declarations: the same as
+        its source's ModuleSource.naming, for module runtimes, which have no
+        ModuleSource.
+
+        It answers for the module under its own name
+        (ModuleSource.moduleName), by the naming rules of the version the
+        module is named by. A workspace or toolchain that loads the module
+        under another name namespaces its types under that name instead, which
+        this doesn't reflect.
+
+        .. caution::
+            Experimental: Identifier casing APIs are likely to change.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("naming", _args)
+        return ModuleNaming(_ctx)
+
     def source(self) -> "Directory":
         """The directory containing the module's source code loaded into the
         engine (plus any generated code that may have been created).

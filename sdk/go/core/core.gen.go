@@ -6379,6 +6379,20 @@ func (r *CurrentModule) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// The names the engine gives this module's own declarations: the same as its source's ModuleSource.naming, for module runtimes, which have no ModuleSource.
+//
+// It answers for the module under its own name (ModuleSource.moduleName), by the naming rules of the version the module is named by. A workspace or toolchain that loads the module under another name namespaces its types under that name instead, which this doesn't reflect.
+//
+// Experimental: Identifier casing APIs are likely to change.
+func (r *CurrentModule) Naming() *ModuleNaming {
+	q := r.query.Select("naming")
+
+	return &ModuleNaming{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
 // The directory containing the module's source code loaded into the engine (plus any generated code that may have been created).
 func (r *CurrentModule) Source() *Directory {
 	q := r.query.Select("source")
