@@ -37,15 +37,12 @@ func (s checksSchema) cachePolicy(ctx context.Context, check dagql.ObjectResult[
 	if check.Self().Completed {
 		return nil
 	}
-	var input dagql.ImplicitInput
-	switch {
-	case check.Self().CachePolicy == core.FunctionCachePolicyNever || check.Self().RemoteArtifact.Self() != nil || check.Self().Generator.Self() != nil:
-		input = dagql.PerCallInput
-	case check.Self().CachePolicy == core.FunctionCachePolicyPerSession:
-		input = dagql.PerSessionInput
-	default:
+	// The check object carries its function's cache policy. Remote checks
+	// and generator stale checks report fresh state on every run.
+	if check.Self().RemoteArtifact.Self() == nil && check.Self().Generator.Self() == nil {
 		return nil
 	}
+	input := dagql.PerCallInput
 	value, err := input.Resolver(ctx, nil)
 	if err != nil {
 		return err
