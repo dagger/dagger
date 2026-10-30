@@ -1035,8 +1035,9 @@ Semantics ratified during implementation:
   exists, `reseed` when it does not — opposite guards, both load-bearing,
   so they stay two verbs rather than an upsert. With no successors minted,
   the roster strip shows STOPPED agents again (a stopped entry now means a
-  real dismissal, rendered dim and readable until an explicit `send` or
-  `resume` relaunches it).
+  real dismissal, readable until an explicit `send` or `resume` relaunches
+  it; the focus-relative strip folds those near focus into a counted
+  "+N done" chip, and [/] still walks onto every one of them).
   `TestReseed` (core/integration) pins the semantics: continuation proven
   by the replay provider, queued mail draining onto the new conversation,
   FAILED composing with resume, and refusals for no-runtime, mid-turn,
