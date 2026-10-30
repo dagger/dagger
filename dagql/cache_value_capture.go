@@ -13,6 +13,7 @@ import (
 	"github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/engine/wcprof"
+	"github.com/opencontainers/go-digest"
 )
 
 type capturedTransferRow struct {
@@ -36,6 +37,11 @@ type capturedTransferRow struct {
 	// transfer is the record as the bundle carries it, before its
 	// references are relocated to ordinals.
 	transfer PersistedRecord
+	// held makes the row a held row, of recipe: the selection's recipient
+	// knows it, so the capture copies no record for it and walks nothing
+	// below it.
+	held   bool
+	recipe digest.Digest
 }
 
 // HeldCapturedClosure protects every exact source row and offer while storage
@@ -138,11 +144,17 @@ func (capture *HeldCapturedClosure) block(id sharedResultID, kind BusyKind, err 
 // row the walk can't capture, or refuses, blocks the roots that reach it,
 // not the walk: the walk goes on with the other roots, and the rows it holds
 // for the blocked ones are released with the rest. Only a selection that
-// isn't one (no roots, a nil, detached or repeated root) fails it.
+// isn't one (no roots, a nil, detached or repeated root) fails it. A
+// selection of no outputs holds each row its Known knows, unless carried
+// names it, as a held row.
 //
 //nolint:gocyclo // one classification per held result kind; splitting hides the order of the checks
-func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelection) (*HeldCapturedClosure, error) {
+func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelection, carried map[sharedResultID]bool) (*HeldCapturedClosure, error) {
 	capture := &HeldCapturedClosure{cache: c, rows: map[sharedResultID]*capturedTransferRow{}, owners: map[offerOwnerID]*offerOwner{}, blocked: map[sharedResultID]blockedRow{}, unheld: map[sharedResultID][]sharedResultID{}}
+	known := selection.Known
+	if len(selection.Outputs) > 0 {
+		known = nil
+	}
 	lockStart := time.Now()
 	c.egraphMu.Lock()
 	walkStart := time.Now()
@@ -195,6 +207,15 @@ func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelectio
 		frame := res.loadResultCall()
 		if frame == nil || frame.Type == nil || frame.Type.NamedType == "Query" {
 			return blocked(res.id, blockedRow{row: res.id, err: fmt.Errorf("transfer capture: row %d has no transferable frame", res.id)})
+		}
+		if !carried[res.id] && known.knowsLocked(res) {
+			c.incrementIncomingOwnershipLocked(ctx, res)
+			row := &capturedTransferRow{shared: res, held: true, imported: res.imported, frame: frame, expiry: res.expiresAtUnix, replacements: res.replacements, transferRev: res.transferRevision, dependencyRev: res.dependencyOwnershipRevision, requiredRev: res.requiredSessionResourcesGen.Load()}
+			capture.rows[res.id] = row
+			seen[res.id] = 2
+			row.ordinal = TransferOrdinal(len(capture.order) + 1)
+			capture.order = append(capture.order, row)
+			return nil
 		}
 		seen[res.id] = 1
 		offers, err := res.pendingOffersLocked()
@@ -382,6 +403,12 @@ func (capture *HeldCapturedClosure) copy(ctx context.Context, retireStale bool) 
 	}
 	copied := make([]bool, len(capture.order))
 	for i, row := range capture.order {
+		if row.held {
+			// No record to copy; checkCopied still checks that it hasn't
+			// changed since the walk.
+			copied[i] = true
+			continue
+		}
 		rec, err := capture.cache.captureHeldPersistedRecord(ctx, row.shared, row.imported, row.offers, &row.version)
 		if err != nil {
 			if ctx.Err() != nil {
@@ -411,7 +438,7 @@ func (capture *HeldCapturedClosure) copy(ctx context.Context, retireStale bool) 
 	}
 	// Release each row's copy guards before comparing the next row.
 	for i, row := range capture.order {
-		if !copied[i] {
+		if !copied[i] || row.held {
 			continue
 		}
 		if err := row.version.check(row.shared); err != nil {
@@ -926,6 +953,80 @@ func (capture *HeldCapturedClosure) settleOutputs(selection ValueSelection, held
 	return nil
 }
 
+// captureCopied holds the selected closure, with the rows carried names in
+// full, and copies its records, adding the copy's time to phases. An offer it
+// finds on an output the value already completed is obsolete: it retires the
+// offer, as boot does, and captures once more; offers still obsolete then
+// block their rows. A capture that fails is released.
+func (c *Cache) captureCopied(ctx context.Context, selection ValueSelection, carried map[sharedResultID]bool, phases *ExportPhases) (*HeldCapturedClosure, error) {
+	capture, err := c.holdTransferClosure(ctx, selection, carried)
+	if err != nil {
+		return nil, err
+	}
+	copyStart := time.Now()
+	stale, err := capture.copy(ctx, true)
+	copied := time.Now()
+	phases.Copy += copied.Sub(copyStart)
+	profCopy(ctx, copyStart, copied, err)
+	if err == nil && len(stale) > 0 {
+		// Retire the obsolete offers outside the capture's holds, then
+		// capture once more.
+		if err := errors.Join(capture.Release(ctx), c.retireStaleOffers(ctx, stale)); err != nil {
+			return nil, err
+		}
+		capture, err = c.holdTransferClosure(ctx, selection, carried)
+		if err != nil {
+			return nil, err
+		}
+		phases.RetriedStale = 1
+		copyStart = time.Now()
+		_, err = capture.copy(ctx, false)
+		copied = time.Now()
+		phases.Copy += copied.Sub(copyStart)
+		profCopy(ctx, copyStart, copied, err)
+	}
+	phases.WalkWait, phases.Walk = capture.walkWait, capture.walk
+	if err != nil {
+		return nil, errors.Join(err, capture.Release(ctx))
+	}
+	return capture, nil
+}
+
+// deriveHeldRecipes derives the recipe of each of the capture's held rows,
+// and returns those whose recipe a row it carries in full shares. Deriving
+// can read the cache, so it runs outside egraphMu; a frame's recipe is
+// derived once.
+func (capture *HeldCapturedClosure) deriveHeldRecipes() ([]sharedResultID, error) {
+	held := map[digest.Digest][]sharedResultID{}
+	for _, row := range capture.order {
+		if !row.held {
+			continue
+		}
+		recipe, err := row.frame.deriveRecipeDigest(capture.cache)
+		if err != nil {
+			return nil, fmt.Errorf("held row %d recipe: %w", row.shared.id, err)
+		}
+		row.recipe = recipe
+		held[recipe] = append(held[recipe], row.shared.id)
+	}
+	if len(held) == 0 {
+		return nil, nil
+	}
+	var shared []sharedResultID
+	for _, row := range capture.order {
+		if row.held {
+			continue
+		}
+		recipe, err := row.frame.deriveRecipeDigest(capture.cache)
+		if err != nil {
+			return nil, fmt.Errorf("row %d recipe: %w", row.shared.id, err)
+		}
+		shared = append(shared, held[recipe]...)
+		delete(held, recipe)
+	}
+	return shared, nil
+}
+
 // WithExportedValues captures the selected closure and lends it to consume.
 // It is a capture and never waits. It leaves out each root whose closure
 // reaches a row it can't capture now, one with a task in flight (an
@@ -935,7 +1036,8 @@ func (capture *HeldCapturedClosure) settleOutputs(selection ValueSelection, held
 // With every root left out, it consumes nothing and returns a
 // RootsLeftOutError. An offer it finds on an output the value already
 // completed is obsolete: it retires the offer, as boot does, and captures
-// once more.
+// once more. A selection of no outputs sends each row its Known knows as a
+// held row, unless a row the bundle carries in full has its recipe.
 //
 //nolint:gocyclo // one step per export phase over the held closure; splitting hides the order of the steps
 func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection, cfg config.RefConfig, consume func(context.Context, *ExportedValues) error) (rerr error) {
@@ -947,37 +1049,39 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 	if consume == nil {
 		return fmt.Errorf("nil transfer consumer")
 	}
-	capture, err := c.holdTransferClosure(ctx, selection)
+	var phases ExportPhases
+	capture, err := c.captureCopied(ctx, selection, nil, &phases)
 	if err != nil {
 		return err
 	}
-	var phases ExportPhases
-	copyStart := time.Now()
-	stale, err := capture.copy(ctx, true)
-	copied := time.Now()
-	phases.Copy = copied.Sub(copyStart)
-	profCopy(ctx, copyStart, copied, err)
-	if err == nil && len(stale) > 0 {
-		// Retire the obsolete offers outside the capture's holds, then
-		// capture once more. Offers still obsolete then block their rows.
-		if err := errors.Join(capture.Release(ctx), c.retireStaleOffers(ctx, stale)); err != nil {
-			return err
-		}
-		capture, err = c.holdTransferClosure(ctx, selection)
+	defer func() { rerr = errors.Join(rerr, capture.Release(ctx)) }()
+	// A held row whose recipe a row carried in full shares is carried in
+	// full too, in a capture once more: a merge refuses a held row beside a
+	// record of its recipe. Each pass carries more rows in full, so this
+	// ends. It runs before the capture leaves roots out, so a row may go in
+	// full beside a row that's then left out, which is only a full record
+	// more.
+	var carried map[sharedResultID]bool
+	for {
+		shared, err := capture.deriveHeldRecipes()
 		if err != nil {
 			return err
 		}
-		phases.RetriedStale = 1
-		copyStart = time.Now()
-		_, err = capture.copy(ctx, false)
-		copied = time.Now()
-		phases.Copy += copied.Sub(copyStart)
-		profCopy(ctx, copyStart, copied, err)
-	}
-	phases.WalkWait, phases.Walk = capture.walkWait, capture.walk
-	defer func() { rerr = errors.Join(rerr, capture.Release(ctx)) }()
-	if err != nil {
-		return err
+		if len(shared) == 0 {
+			break
+		}
+		if carried == nil {
+			carried = map[sharedResultID]bool{}
+		}
+		for _, id := range shared {
+			carried[id] = true
+		}
+		if err := capture.Release(ctx); err != nil {
+			return err
+		}
+		if capture, err = c.captureCopied(ctx, selection, carried, &phases); err != nil {
+			return err
+		}
 	}
 	// Each copied record is checked as the bundle will carry it: its
 	// references, its normalization and its payload. One that fails refuses
@@ -985,7 +1089,7 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 	bundleStart := time.Now()
 	_, bundleOp := wcprof.BeginOp(ctx, wcprof.OpKindRemoteCache, "remotecache.export.bundle", wcprof.OpOpts{})
 	for _, row := range capture.order {
-		if _, blocked := capture.blocked[row.shared.id]; blocked {
+		if _, blocked := capture.blocked[row.shared.id]; blocked || row.held {
 			continue
 		}
 		local := row.record
@@ -1030,6 +1134,10 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 	}
 	bundle := ValueBundle{Version: valueBundleVersion, Roots: capture.roots}
 	for _, row := range capture.order {
+		if row.held {
+			bundle.Values = append(bundle.Values, TransferredValue{Ordinal: row.ordinal, SenderNumber: uint64(row.shared.id), SenderReplacements: row.replacements, Record: PersistedRecord{ResultID: uint64(row.ordinal)}, ExpiresAtUnix: row.expiry, Held: row.recipe})
+			continue
+		}
 		rec, err := VisitEncodedReferences(row.transfer, relocate)
 		if err != nil {
 			bundleOp.EndErr(err)
@@ -1198,6 +1306,10 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 	rows := ExportedRows{Full: make(map[uint64]RowRevision, len(capture.order))}
 	for i, row := range capture.order {
 		sources[i] = ImportedValue{Ordinal: row.ordinal, ResultID: uint64(row.shared.id)}
+		if row.held {
+			rows.Held = append(rows.Held, uint64(row.shared.id))
+			continue
+		}
 		rows.Full[uint64(row.shared.id)] = RowRevision{Replacements: row.replacements, Transfer: row.transferRev, Dependencies: row.dependencyRev}
 	}
 	profExportedParts(ctx, bundle, sources)
