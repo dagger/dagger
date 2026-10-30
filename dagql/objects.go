@@ -721,9 +721,19 @@ func (r ObjectResult[T]) preselect(ctx context.Context, srv *Server, sel Selecto
 	}
 
 	if scope := CurrentResultScope(ctx); scope != nil {
+		// Selector inputs were scoped above. Scope only arguments that the
+		// dynamic input hook set or replaced, and defaults: scoping loads every
+		// object argument again.
+		scoped := make(map[string]*ResultCallArg, len(frameArgs))
+		for _, arg := range frameArgs {
+			scoped[arg.Name] = arg
+		}
 		for _, argSpec := range field.Spec.Args.Inputs(view) {
 			input, ok := inputArgs[argSpec.Name]
 			if !ok {
+				continue
+			}
+			if arg := scoped[argSpec.Name]; arg != nil && slices.Contains(req.Args, arg) {
 				continue
 			}
 			updated, changed, err := scopeSelectorInput(ctx, srv, scope, argSpec, input)
