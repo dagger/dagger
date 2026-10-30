@@ -504,6 +504,88 @@ func TestImportChainSnapshotAndBlobPins(t *testing.T) {
 	})
 }
 
+// deepChain builds a chain of layers on producer, one file each, and exports
+// it.
+func deepChain(tb testing.TB, producer *testutil.Store, layers int) *bkcache.ExportChain {
+	tb.Helper()
+	var top bkcache.ImmutableRef
+	for i := range layers {
+		top, _ = producer.Build(tb, top, fmt.Sprintf("layer-%d.txt", i), fmt.Sprintf("layer %d", i))
+	}
+	chain, err := top.ExportChain(context.Background(), transferConfig)
+	require.NoError(tb, err)
+	tb.Cleanup(func() { require.NoError(tb, chain.Release(context.Background())) })
+	require.Len(tb, chain.Layers, layers)
+	return chain
+}
+
+// An import of a deep chain whose leading layers the engine already has
+// takes them as one snapshot, with one walk of its parents, rather than a
+// walk per layer. Engines import many small parts on chains of 80 layers or
+// more, all sharing most of their layers. Its lease owns every layer and
+// blob, as when the chain was first imported.
+func TestImportChainLocalPrefixWalkedOnce(t *testing.T) {
+	const layers = 40
+	for _, tc := range []struct {
+		name string
+		// local is how many of the chain's leading layers the consumer
+		// imported first.
+		local int
+	}{
+		{name: "whole chain local", local: layers},
+		{name: "all but the top local", local: layers - 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+			chain := deepChain(t, producer, layers)
+			provider := &testutil.Provider{InfoReaderProvider: chain.Provider}
+			first := importChain(t, consumer, &bkcache.ExportChain{Layers: chain.Layers[:tc.local], Provider: provider})
+			reads, applies := provider.Reads.Load(), consumer.Applies.Load()
+			var stats atomic.Int64
+			consumer.BeforeStat = func(context.Context, string) { stats.Add(1) }
+			second := importChain(t, consumer, supplied(chain, provider))
+			consumer.BeforeStat = nil
+			require.EqualValues(t, layers-tc.local, provider.Reads.Load()-reads)
+			require.EqualValues(t, layers-tc.local, consumer.Applies.Load()-applies)
+			// A walk of the chain is a Stat per layer. Taking the local
+			// layers walks it twice, attaching the lease and then loading the
+			// ref, and importing a layer onto them about four times more. A
+			// walk per local layer is about layers*layers/2 Stat calls.
+			require.LessOrEqual(t, stats.Load(), int64(8*layers), "Stat calls importing a chain of %d layers with %d local", layers, tc.local)
+			require.NoError(t, first.Release(ctx))
+			consumer.GC(t)
+			assertChainResources(t, consumer, second.SnapshotID(), chain)
+			testutil.CheckFile(t, second, "layer-0.txt", "layer 0")
+			testutil.CheckFile(t, second, fmt.Sprintf("layer-%d.txt", layers-1), fmt.Sprintf("layer %d", layers-1))
+			t.Logf("%d layers, %d local: Stat calls=%d", layers, tc.local, stats.Load())
+		})
+	}
+}
+
+// Engines import many small parts on chains of 80 layers or more whose
+// layers they already have. Reusing such a chain should cost about one walk
+// of its layers.
+func BenchmarkImportChainLocalPrefix(b *testing.B) {
+	const layers = 80
+	ctx := context.Background()
+	producer, consumer := testutil.NewStore(b), testutil.NewStore(b)
+	chain := deepChain(b, producer, layers)
+	first, err := consumer.Manager.ImportChain(ctx, chain)
+	require.NoError(b, err)
+	b.Cleanup(func() { require.NoError(b, first.Release(context.Background())) })
+	b.ResetTimer()
+	for range b.N {
+		ref, err := consumer.Manager.ImportChain(ctx, chain)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if err := ref.Release(ctx); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func TestExportChainExistingBlobPins(t *testing.T) {
 	ctx := context.Background()
 	store := testutil.NewStore(t)
