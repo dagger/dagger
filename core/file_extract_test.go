@@ -98,11 +98,18 @@ func writeTestTarGz(t *testing.T, entries ...testTarEntry) string {
 // engine's umask, 0, so modes are exactly what extraction chose.
 func extractTestArchive(t *testing.T, archive string, strip int) (dest string, parent string, err error) {
 	t.Helper()
+	return extractFilteredTestArchive(t, archive, strip, nil)
+}
+
+// extractFilteredTestArchive is extractTestArchive, extracting only the
+// entries filter keeps.
+func extractFilteredTestArchive(t *testing.T, archive string, strip int, filter *extractFilter) (dest string, parent string, err error) {
+	t.Helper()
 	defer syscall.Umask(syscall.Umask(0))
 	parent = t.TempDir()
 	dest = filepath.Join(parent, "dest")
 	require.NoError(t, os.Mkdir(dest, 0o755))
-	err = extractArchive(context.Background(), archive, dest, strip)
+	err = extractArchive(context.Background(), archive, dest, strip, filter)
 	return dest, parent, err
 }
 
@@ -257,7 +264,7 @@ func TestExtractZipCanceled(t *testing.T) {
 	defer cancel()
 	// The central directory is read first; cancel a little into the entry.
 	r := &cancelingReaderAt{r: bytes.NewReader(buf.Bytes()), limit: 64 << 10, cancel: cancel}
-	err = extractZip(ctx, r, int64(buf.Len()), dest, 0)
+	err = extractZip(ctx, r, int64(buf.Len()), dest, 0, nil)
 	require.ErrorIs(t, err, context.Canceled)
 	info, err := os.Stat(filepath.Join(dest, "zeros"))
 	require.NoError(t, err)
@@ -271,7 +278,7 @@ func TestExtractTarCanceled(t *testing.T) {
 	require.NoError(t, os.Mkdir(dest, 0o755))
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	err := extractArchive(ctx, archive, dest, 0)
+	err := extractArchive(ctx, archive, dest, 0, nil)
 	require.ErrorIs(t, err, context.Canceled)
 	entries, err := os.ReadDir(dest)
 	require.NoError(t, err)
@@ -316,7 +323,7 @@ func TestExtractToSnapshotReleasesOnError(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, sm.Close()) })
 	recorder := &releaseRecorder{Accessor: sm}
 	archive := writeTestZip(t, testZipEntry{name: "../evil", body: "evil"})
-	_, err = extractToSnapshot(context.Background(), recorder, archive, "test.zip", 0)
+	_, err = extractToSnapshot(context.Background(), recorder, archive, "test.zip", 0, nil)
 	require.ErrorContains(t, err, "leaves the extraction directory")
 	require.True(t, recorder.released)
 }
@@ -400,17 +407,17 @@ func TestExtractEmpty(t *testing.T) {
 	require.NoError(t, tar.NewWriter(&tarBuf).Close())
 	tarPath := filepath.Join(t.TempDir(), "empty.tar")
 	require.NoError(t, os.WriteFile(tarPath, tarBuf.Bytes(), 0o644))
-	entries, err := stripTestTar(t, tarPath, 0)
+	entries, err := stripTestTar(t, tarPath, 0, nil)
 	require.NoError(t, err)
 	require.Empty(t, entries)
 }
 
 // stripTestTar runs the tar at archive, uncompressed or gzipped, through
-// stripTarComponents and lists the entries it writes as "name", "name =
+// stripTarComponents, with filter, and lists the entries it writes as "name", "name =
 // body", "name => hard link target" or "name -> symlink target". The
 // unpacking itself needs a mount namespace, so the integration tests
 // cover it.
-func stripTestTar(t *testing.T, archive string, strip int) ([]string, error) {
+func stripTestTar(t *testing.T, archive string, strip int, filter *extractFilter) ([]string, error) {
 	t.Helper()
 	f, err := os.Open(archive)
 	require.NoError(t, err)
@@ -422,7 +429,7 @@ func stripTestTar(t *testing.T, archive string, strip int) ([]string, error) {
 		r = gr
 	}
 	var out bytes.Buffer
-	if err := stripTarComponents(r, &out, strip); err != nil {
+	if err := stripTarComponents(r, &out, strip, filter); err != nil {
 		return nil, err
 	}
 	var entries []string
@@ -459,7 +466,7 @@ func TestStripTarComponents(t *testing.T) {
 		testTarEntry{name: "loose", body: "dropped"},
 	)
 	t.Run("whole", func(t *testing.T) {
-		entries, err := stripTestTar(t, archive, 0)
+		entries, err := stripTestTar(t, archive, 0, nil)
 		require.NoError(t, err)
 		require.Equal(t, []string{
 			"top/",
@@ -472,7 +479,7 @@ func TestStripTarComponents(t *testing.T) {
 		}, entries)
 	})
 	t.Run("strip", func(t *testing.T) {
-		entries, err := stripTestTar(t, archive, 1)
+		entries, err := stripTestTar(t, archive, 1, nil)
 		require.NoError(t, err)
 		require.Equal(t, []string{
 			"a = a",
@@ -482,6 +489,122 @@ func TestStripTarComponents(t *testing.T) {
 			"top/dot = dot",
 		}, entries, "the hard link's target is stripped too, and \".\" counts as an element")
 	})
+}
+
+func TestExtractZipFilter(t *testing.T) {
+	archive := writeTestZip(t,
+		testZipEntry{name: "top/go.mod", body: "module m"},
+		testZipEntry{name: "top/a.go", body: "a"},
+		testZipEntry{name: "top/a_test.go", body: "test"},
+		testZipEntry{name: "top/testdata/x", body: "x"},
+		testZipEntry{name: "top/sub/", mode: fs.ModeDir | 0o700},
+		testZipEntry{name: "top/sub/testdata/y", body: "y"},
+		testZipEntry{name: "top/sub/b.go", body: "b"},
+		testZipEntry{name: "top/sub/link", body: "b.go", symlink: true},
+		testZipEntry{name: "top/docs/README", body: "readme"},
+	)
+	for _, tc := range []struct {
+		name             string
+		strip            int
+		include, exclude []string
+		want             []string
+	}{
+		{
+			name:    "exclude",
+			exclude: []string{"**/testdata", "**/*_test.go"},
+			want: []string{
+				"top drwxr-xr-x",
+				"top/a.go -rw-r--r--",
+				"top/docs drwxr-xr-x",
+				"top/docs/README -rw-r--r--",
+				"top/go.mod -rw-r--r--",
+				"top/sub drwx------",
+				"top/sub/b.go -rw-r--r--",
+				"top/sub/link Lrwxrwxrwx -> b.go",
+			},
+		},
+		{
+			// A directory an include pattern matches is extracted whole,
+			// but for what the exclude patterns match.
+			name:    "include",
+			include: []string{"top/sub", "top/go.mod"},
+			exclude: []string{"**/testdata"},
+			want: []string{
+				"top drwxr-xr-x",
+				"top/go.mod -rw-r--r--",
+				"top/sub drwx------",
+				"top/sub/b.go -rw-r--r--",
+				"top/sub/link Lrwxrwxrwx -> b.go",
+			},
+		},
+		{
+			// Patterns match the paths after stripping.
+			name:    "stripped",
+			strip:   1,
+			include: []string{"*.go"},
+			exclude: []string{"*_test.go"},
+			want:    []string{"a.go -rw-r--r--"},
+		},
+		{
+			// A directory entry left out is still made, with the default
+			// mode, for the entries in it that are kept.
+			name:    "excluded directory entry",
+			exclude: []string{"top/sub", "!top/sub/b.go"},
+			want: []string{
+				"top drwxr-xr-x",
+				"top/a.go -rw-r--r--",
+				"top/a_test.go -rw-r--r--",
+				"top/docs drwxr-xr-x",
+				"top/docs/README -rw-r--r--",
+				"top/go.mod -rw-r--r--",
+				"top/sub drwxr-xr-x",
+				"top/sub/b.go -rw-r--r--",
+				"top/testdata drwxr-xr-x",
+				"top/testdata/x -rw-r--r--",
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			filter, err := newExtractFilter(tc.include, tc.exclude)
+			require.NoError(t, err)
+			dest, parent, err := extractFilteredTestArchive(t, archive, tc.strip, filter)
+			require.NoError(t, err)
+			requireOnlyDest(t, parent)
+			require.Equal(t, tc.want, listTree(t, dest))
+		})
+	}
+}
+
+func TestStripTarComponentsFilter(t *testing.T) {
+	archive := writeTestTarGz(t,
+		testTarEntry{name: "top/", typeflag: tar.TypeDir},
+		testTarEntry{name: "top/a.go", body: "a"},
+		testTarEntry{name: "top/a_test.go", body: "test"},
+		testTarEntry{name: "top/testdata/", typeflag: tar.TypeDir},
+		testTarEntry{name: "top/testdata/x", body: "x"},
+		testTarEntry{name: "top/hard", typeflag: tar.TypeLink, linkname: "top/a.go"},
+	)
+	filter, err := newExtractFilter(nil, []string{"**/testdata", "**/*_test.go"})
+	require.NoError(t, err)
+	entries, err := stripTestTar(t, archive, 0, filter)
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"top/",
+		"top/a.go = a",
+		"top/hard => top/a.go",
+	}, entries)
+
+	filter, err = newExtractFilter([]string{"a.go"}, nil)
+	require.NoError(t, err)
+	entries, err = stripTestTar(t, archive, 1, filter)
+	require.NoError(t, err)
+	require.Equal(t, []string{"a.go = a"}, entries, "patterns match the paths after stripping")
+}
+
+func TestExtractFilterRejectsBadPattern(t *testing.T) {
+	require.Error(t, ValidateExtractPatterns([]string{"["}, nil))
+	require.Error(t, ValidateExtractPatterns(nil, []string{"a/["}))
+	require.NoError(t, ValidateExtractPatterns([]string{"src/"}, []string{"**/testdata"}))
 }
 
 func TestExtractTarRejectsTraversal(t *testing.T) {

@@ -8752,6 +8752,8 @@ class File(Type):
         self,
         *,
         strip_components: int | None = 0,
+        include: list[str] | None = None,
+        exclude: list[str] | None = None,
     ) -> Directory:
         """Extracts this archive file into a directory.
 
@@ -8766,9 +8768,20 @@ class File(Type):
             Remove this many leading elements from each entry's path, as tar
             --strip-components does.
             Entries with no more elements than this are skipped.
+        include:
+            If set, only entries matching one of these glob patterns, or in a
+            directory that does, are extracted (e.g., ["src/", "*.go"]).
+            Patterns match entry paths after stripComponents is applied.
+        exclude:
+            If set, entries matching one of these glob patterns, or in a
+            directory that does, are not extracted (e.g., ["**/testdata",
+            "**/*_test.go"]).
+            Patterns match entry paths after stripComponents is applied.
         """
         _args = [
             Arg("stripComponents", strip_components, 0),
+            Arg("include", [] if include is None else include, []),
+            Arg("exclude", [] if exclude is None else exclude, []),
         ]
         _ctx = self._select("extract", _args)
         return Directory(_ctx)

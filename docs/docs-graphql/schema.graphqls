@@ -3769,6 +3769,22 @@ type File implements Exportable & Node & Syncer {
     Entries with no more elements than this are skipped.
     """
     stripComponents: Int = 0
+
+    """
+    If set, only entries matching one of these glob patterns, or in a directory
+    that does, are extracted (e.g., ["src/", "*.go"]).
+
+    Patterns match entry paths after stripComponents is applied.
+    """
+    include: [String!] = []
+
+    """
+    If set, entries matching one of these glob patterns, or in a directory that
+    does, are not extracted (e.g., ["**/testdata", "**/*_test.go"]).
+
+    Patterns match entry paths after stripComponents is applied.
+    """
+    exclude: [String!] = []
   ): Directory!
 
   """Parse as an env file"""
