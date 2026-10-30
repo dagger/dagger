@@ -100,7 +100,8 @@ func (srv *Server) startCloudForwarder(sessionID, mainClientID string, spans sdk
 	if srv.clientDBs == nil {
 		return nil, errors.New("no telemetry stores")
 	}
-	db, err := srv.clientDBs.Open(context.Background(), mainClientID)
+	// The forwarder reads rows in order, so it needs no indexes.
+	db, err := srv.clientDBs.OpenForAppend(context.Background(), mainClientID)
 	if err != nil {
 		return nil, err
 	}

@@ -2,13 +2,22 @@ package clientdb
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/base64"
+	"math"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
+	otlpresourcev1 "go.opentelemetry.io/proto/otlp/resource/v1"
 	otlptracev1 "go.opentelemetry.io/proto/otlp/trace/v1"
 	"google.golang.org/protobuf/proto"
 )
@@ -125,4 +134,193 @@ func BenchmarkMarshalProtoList(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
+}
+
+// TestAppendTraceRequestPB checks that the trace stream's encoding written
+// from stored rows is byte for byte what proto.Marshal makes of the request
+// SpansToPB builds from the same rows, with each span's links as stored:
+// SpansToPB's round trip through SDK links drops their trace state, flags
+// and dropped attribute count, which a client decoding SDK links never sees.
+func TestAppendTraceRequestPB(t *testing.T) {
+	list := func(msgs ...proto.Message) []byte {
+		t.Helper()
+		b, err := MarshalProtoList(msgs)
+		require.NoError(t, err)
+		return b
+	}
+	enc := func(m proto.Message) []byte {
+		t.Helper()
+		b, err := proto.Marshal(m)
+		require.NoError(t, err)
+		return b
+	}
+	attrs := make([]proto.Message, 0, len(sampleSpanAttrs()))
+	for _, kv := range sampleSpanAttrs() {
+		attrs = append(attrs, kv)
+	}
+	resA := enc(&otlpresourcev1.Resource{Attributes: []*otlpcommonv1.KeyValue{strAttr("service.name", "dagger-engine"), strAttr("a", "1")}})
+	resB := enc(&otlpresourcev1.Resource{Attributes: []*otlpcommonv1.KeyValue{strAttr("service.name", "dagger-cli")}})
+	scopeX := enc(&otlpcommonv1.InstrumentationScope{Name: "dagger.io/engine", Version: "v1"})
+	events := list(&otlptracev1.Span_Event{
+		Name:                   "evt",
+		TimeUnixNano:           1_700_000_000_000_000_123,
+		Attributes:             []*otlpcommonv1.KeyValue{strAttr("k", "v")},
+		DroppedAttributesCount: 2,
+	}, &otlptracev1.Span_Event{Name: "bare"})
+	storedLinks := []*otlptracev1.Span_Link{{
+		TraceId:                bytes.Repeat([]byte{0xab}, 16),
+		SpanId:                 bytes.Repeat([]byte{0xcd}, 8),
+		TraceState:             "x=y",
+		Attributes:             []*otlpcommonv1.KeyValue{strAttr(telemetry.LinkPurposeAttr, telemetry.LinkPurposeCause)},
+		DroppedAttributesCount: 2,
+		Flags:                  0x301,
+	}, {
+		TraceId: bytes.Repeat([]byte{0x12}, 16),
+		SpanId:  bytes.Repeat([]byte{0x34}, 8),
+		Flags:   0x100,
+	}}
+	links := list(storedLinks[0], storedLinks[1])
+	rows := []Span{
+		{
+			TraceID: "0102030405060708090a0b0c0d0e0f10", SpanID: "1112131415161718", TraceState: "a=b",
+			ParentSpanID: sql.NullString{String: "2122232425262728", Valid: true},
+			Flags:        1, Name: "full", Kind: "server",
+			StartTime: 1_700_000_000_000_000_000, EndTime: sql.NullInt64{Int64: 1_700_000_001_000_000_000, Valid: true},
+			Attributes: list(attrs...), DroppedAttributesCount: 3,
+			Events: events, DroppedEventsCount: 4,
+			Links: links, DroppedLinksCount: 5,
+			Resource: resA, InstrumentationScope: scopeX,
+			StatusCode: int64(codes.Error), StatusMessage: "boom",
+		},
+		// Unfinished, with no parent, kind, attributes or scope.
+		{TraceID: "0102030405060708090a0b0c0d0e0f10", SpanID: "3132333435363738", Name: "open", StartTime: 1, Resource: resA},
+		// Attributes whose elements can't be split, under another resource.
+		{TraceID: "0102030405060708090a0b0c0d0e0f10", SpanID: "4142434445464748", Name: "bad", Kind: "client", Attributes: []byte{0xff}, Resource: resB, InstrumentationScope: scopeX, StatusCode: int64(codes.Ok)},
+		// The first resource and scope again, after the others.
+		{TraceID: "0102030405060708090a0b0c0d0e0f10", SpanID: "5152535455565758", Name: "again", Kind: "internal", Attributes: list(strAttr("k", "v")), Resource: resA, InstrumentationScope: scopeX},
+	}
+	wantSpans := SpansToPB(rows)
+	full := wantSpans[0].ScopeSpans[0].Spans[0]
+	require.Equal(t, "full", full.Name)
+	require.Len(t, full.Links, len(storedLinks), "SpansToPB keeps every link")
+	full.Links = storedLinks
+	want, err := proto.Marshal(&coltracepb.ExportTraceServiceRequest{ResourceSpans: wantSpans})
+	require.NoError(t, err)
+	got, err := AppendTraceRequestPB(nil, rows)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+
+	// A client reads the links it decodes through SDK links the same way
+	// from either encoding.
+	var gotReq coltracepb.ExportTraceServiceRequest
+	require.NoError(t, proto.Unmarshal(got, &gotReq))
+	gotLinks := telemetry.SpansFromPB(gotReq.GetResourceSpans())[0].Links()
+	require.Equal(t, (&readOnlySpan{DB: &rows[0]}).Links(), gotLinks)
+
+	// Into a buffer that already holds bytes, it appends.
+	prefix := []byte("prefix")
+	got, err = AppendTraceRequestPB(slices.Clone(prefix), rows)
+	require.NoError(t, err)
+	require.Equal(t, append(slices.Clone(prefix), want...), got)
+
+	got, err = AppendTraceRequestPB(nil, nil)
+	require.NoError(t, err)
+	require.Empty(t, got)
+
+	for _, bad := range []Span{
+		{TraceID: rows[1].TraceID, SpanID: rows[1].SpanID, Name: "\xff", Resource: resA},
+		{TraceID: rows[1].TraceID, SpanID: rows[1].SpanID, Name: "ok", StatusCode: int64(codes.Error), StatusMessage: "\xff", Resource: resA},
+	} {
+		_, protoErr := proto.Marshal(&coltracepb.ExportTraceServiceRequest{ResourceSpans: SpansToPB([]Span{bad})})
+		require.Error(t, protoErr)
+		_, err := AppendTraceRequestPB(nil, append(slices.Clone(rows), bad))
+		require.Error(t, err, "%+v", bad)
+	}
+}
+
+func sdkAttrs() []attribute.KeyValue {
+	return []attribute.KeyValue{
+		attribute.String("s", "naïve ☃ \x00"),
+		attribute.String("empty", ""),
+		attribute.String("", "no key"),
+		attribute.Bool("t", true),
+		attribute.Bool("f", false),
+		attribute.Int64("i", -1<<62),
+		attribute.Int64("zero", 0),
+		attribute.Float64("d", 0.1),
+		attribute.Float64("nan", math.NaN()),
+		attribute.BoolSlice("bs", []bool{true, false}),
+		attribute.Int64Slice("is", []int64{0, 1, -1, 1 << 40}),
+		attribute.Float64Slice("ds", []float64{0, -2.5}),
+		attribute.StringSlice("ss", []string{"", "a", strings.Repeat("b", 300)}),
+		attribute.StringSlice("none", nil),
+		{Key: "invalid"},
+	}
+}
+
+// TestMarshalKeyValueList checks that attributes are stored byte for byte as
+// MarshalProtoList stores otel-go's messages for them.
+func TestMarshalKeyValueList(t *testing.T) {
+	attrs := sdkAttrs()
+	want, err := MarshalProtoList(telemetry.KeyValues(attrs))
+	require.NoError(t, err)
+	want0 := want
+	got, err := MarshalKeyValueList(attrs, "")
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+
+	want, err = MarshalProtoList(telemetry.KeyValues(append(slices.Clone(attrs[:3]), attrs[4:]...)))
+	require.NoError(t, err)
+	got, err = MarshalKeyValueList(attrs, "t")
+	require.NoError(t, err)
+	require.Equal(t, want, got, "the skipped key is left out")
+
+	// Each list is its own copy: a later call's pooled buffer never
+	// overwrites a list already returned.
+	kept, err := MarshalKeyValueList(attrs, "")
+	require.NoError(t, err)
+	_, err = MarshalKeyValueList([]attribute.KeyValue{attribute.String("other", strings.Repeat("x", 4096))}, "")
+	require.NoError(t, err)
+	require.Equal(t, want0, kept)
+
+	got, err = MarshalKeyValueList(nil, "")
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.Empty(t, got)
+
+	for _, bad := range []attribute.KeyValue{
+		attribute.String("k", "\xff"),
+		attribute.String("\xff", "v"),
+		attribute.StringSlice("k", []string{"ok", "\xff"}),
+	} {
+		_, protoErr := MarshalProtoList(telemetry.KeyValues([]attribute.KeyValue{bad}))
+		require.Error(t, protoErr)
+		_, err := MarshalKeyValueList([]attribute.KeyValue{bad}, "")
+		require.Error(t, err, "%v", bad)
+	}
+}
+
+// TestMarshalEventList checks that events are stored byte for byte as
+// MarshalProtoList stores otel-go's messages for them.
+func TestMarshalEventList(t *testing.T) {
+	events := []sdktrace.Event{
+		{Name: "full", Time: time.Unix(1_700_000_000, 123), Attributes: sdkAttrs(), DroppedAttributeCount: 3},
+		{Name: "bare", Time: time.Unix(0, 5)},
+		{},
+	}
+	want, err := MarshalProtoList(telemetry.SpanEventsToPB(events))
+	require.NoError(t, err)
+	got, err := MarshalEventList(events)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+
+	got, err = MarshalEventList(nil)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.Empty(t, got)
+
+	_, err = MarshalEventList([]sdktrace.Event{{Name: "\xff"}})
+	require.Error(t, err)
+	_, err = MarshalEventList([]sdktrace.Event{{Name: "ok", Attributes: []attribute.KeyValue{attribute.String("k", "\xff")}}})
+	require.Error(t, err)
 }

@@ -1,13 +1,18 @@
 package clientdb
 
 import (
+	"bytes"
+	"encoding/hex"
 	"fmt"
 	"math/rand"
 	"runtime"
 	"slices"
 	"testing"
 
+	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
+	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
+	otlptracev1 "go.opentelemetry.io/proto/otlp/trace/v1"
 )
 
 // Lazy evaluations make spans that each cause-link the same set of install
@@ -221,4 +226,66 @@ func refLogScope(l *spanLookup, r *refCauseIndex, root string) map[string]struct
 		}
 	}
 	return scope
+}
+
+// TestCausalLinkTargetsReadInPlace checks that reading the stored links in
+// place finds the same cause-link targets as decoding them, and that the
+// purposes it can't read the same way fall back to decoding.
+func TestCausalLinkTargetsReadInPlace(t *testing.T) {
+	sid := func(b byte) []byte { return bytes.Repeat([]byte{b}, 8) }
+	purpose := func(v *otlpcommonv1.AnyValue) []*otlpcommonv1.KeyValue {
+		return []*otlpcommonv1.KeyValue{{Key: "other", Value: &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_StringValue{StringValue: "x"}}}, {Key: telemetry.LinkPurposeAttr, Value: v}}
+	}
+	str := func(s string) *otlpcommonv1.AnyValue {
+		return &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_StringValue{StringValue: s}}
+	}
+	link := func(span []byte, attrs []*otlpcommonv1.KeyValue) *otlptracev1.Span_Link {
+		return &otlptracev1.Span_Link{TraceId: bytes.Repeat([]byte{9}, 16), SpanId: span, TraceState: "a=b", Attributes: attrs, Flags: 0x100}
+	}
+	self := hex.EncodeToString(sid(1))
+	read := []*otlptracev1.Span_Link{
+		link(sid(2), purpose(str(telemetry.LinkPurposeCause))),
+		link(sid(3), nil),
+		link(sid(4), purpose(str(telemetry.LinkPurposeErrorOrigin))),
+		link(sid(5), purpose(nil)),
+		link(sid(6), purpose(&otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_IntValue{IntValue: 7}})),
+		link(sid(7), purpose(&otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_BoolValue{}})),
+		link(sid(8), purpose(&otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_BytesValue{BytesValue: []byte(telemetry.LinkPurposeCause)}})),
+		link(sid(9), purpose(&otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_BytesValue{BytesValue: []byte("other")}})),
+		link(sid(2), nil),                // a repeat
+		link(sid(1), nil),                // the span itself
+		link(make([]byte, 8), nil),       // no span ID
+		link([]byte{0xa, 0xb}, nil),      // a short one
+		link(append(sid(0xc), 0xd), nil), // a long one
+		link(sid(0xe), append(purpose(str("")), &otlpcommonv1.KeyValue{Key: telemetry.LinkPurposeAttr, Value: str("other")})),
+	}
+	fallback := []*otlpcommonv1.AnyValue{
+		{Value: &otlpcommonv1.AnyValue_ArrayValue{ArrayValue: &otlpcommonv1.ArrayValue{}}},
+		{Value: &otlpcommonv1.AnyValue_KvlistValue{KvlistValue: &otlpcommonv1.KeyValueList{}}},
+		{},
+	}
+
+	row := Span{SpanID: self}
+	var err error
+	row.Links, err = MarshalProtoList(read)
+	require.NoError(t, err)
+	got, ok := readCausalLinkTargets(self, row.Links)
+	require.True(t, ok)
+	want := decodeCausalLinkTargets(row)
+	require.NotEmpty(t, want)
+	require.Equal(t, want, got)
+	require.Equal(t, want, causalLinkTargets(row))
+
+	for _, v := range fallback {
+		row.Links, err = MarshalProtoList(append(slices.Clone(read), link(sid(0xf), purpose(v))))
+		require.NoError(t, err)
+		_, ok := readCausalLinkTargets(self, row.Links)
+		require.False(t, ok, "%v", v)
+		require.Equal(t, decodeCausalLinkTargets(row), causalLinkTargets(row))
+	}
+
+	row.Links = []byte{0xff}
+	_, ok = readCausalLinkTargets(self, row.Links)
+	require.False(t, ok)
+	require.Nil(t, causalLinkTargets(row))
 }

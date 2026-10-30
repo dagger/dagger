@@ -143,22 +143,18 @@ func (telemetryOriginLogProcessor) Enabled(context.Context, sdklog.EnabledParame
 }
 
 func spanOriginClientID(span sdktrace.ReadOnlySpan) string {
-	for _, attr := range span.Attributes() {
+	return originClientID(span.Attributes())
+}
+
+// originClientID is the telemetry origin client ID among a span's
+// attributes.
+func originClientID(attrs []attribute.KeyValue) string {
+	for _, attr := range attrs {
 		if string(attr.Key) == telemetryattrs.TelemetryOriginClientIDAttr && attr.Value.Type() == attribute.STRING {
 			return attr.Value.AsString()
 		}
 	}
 	return ""
-}
-
-func withoutSpanOrigin(span sdktrace.ReadOnlySpan) sdktrace.ReadOnlySpan {
-	attrs := make([]attribute.KeyValue, 0, len(span.Attributes()))
-	for _, attr := range span.Attributes() {
-		if string(attr.Key) != telemetryattrs.TelemetryOriginClientIDAttr {
-			attrs = append(attrs, attr)
-		}
-	}
-	return originReadOnlySpan{ReadOnlySpan: span, attrs: attrs}
 }
 
 func logOriginClientID(rec sdklog.Record) string {
@@ -261,11 +257,18 @@ func (exp sessionSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace
 		}
 		recordReportedSpans(rctx, spans)
 	}
-	routed := make([]sdktrace.ReadOnlySpan, 0, len(spans))
+	// A span's attributes are read once: each read copies them.
+	type routedSpan struct {
+		span  sdktrace.ReadOnlySpan
+		attrs []attribute.KeyValue
+	}
+	routed := make([]routedSpan, 0, len(spans))
 	routes := make([][]string, 0, len(spans))
 	payloadsByTarget := map[string][]string{}
+	spansPerTarget := map[string]int{}
 	for _, span := range spans {
-		origin := spanOriginClientID(span)
+		attrs := span.Attributes()
+		origin := originClientID(attrs)
 		if origin == "" {
 			slog.Warn("dropping span without telemetry origin client ID", "span", span.SpanContext().SpanID(), "name", span.Name())
 			continue
@@ -275,25 +278,33 @@ func (exp sessionSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace
 			slog.Warn("dropping unroutable span", "origin", origin, "span", span.SpanContext().SpanID(), "name", span.Name(), "err", err)
 			continue
 		}
-		if digest, ok := enginetel.CallSpanDigest(span); ok && digest != "" {
+		if digest, ok := enginetel.CallAttrsDigest(attrs); ok && digest != "" {
 			// Taking is also the in-batch dedupe: a second snapshot of the
 			// same call finds its targets already owned by the first.
 			for _, target := range exp.sess.takeCallPayloadForWrite(digest, route) {
 				payloadsByTarget[target] = append(payloadsByTarget[target], digest)
 			}
 		}
-		routed = append(routed, withoutSpanOrigin(span))
+		routed = append(routed, routedSpan{span: span, attrs: attrs})
 		routes = append(routes, route)
+		for _, target := range route {
+			spansPerTarget[target]++
+		}
 	}
 	// Each target gets its own slice: appending assigns row IDs in place.
 	// The rows' encoded fields are shared, and never modified once written.
 	// Every target on a route gets an entry, even with no rows, so the
 	// payloads taken for it are settled.
+	// Each slice is sized once, for all its target's spans: rows are large,
+	// and regrowing copies them.
 	enc := newSpanRowEncoder()
-	byTarget := map[string][]clientdb.Span{}
+	byTarget := make(map[string][]clientdb.Span, len(spansPerTarget))
+	for target, n := range spansPerTarget {
+		byTarget[target] = make([]clientdb.Span, 0, n)
+	}
 	errByTarget := map[string]error{}
-	for i, span := range routed {
-		encoded := enc.encode(span)
+	for i, r := range routed {
+		encoded := enc.encode(r.span, r.attrs)
 		for _, target := range routes[i] {
 			targetRows := byTarget[target]
 			switch {
@@ -335,12 +346,14 @@ type sessionLogExporter struct {
 	ps   *PubSub
 }
 
-// routedLogRecord is one record with its delivery route resolved and its
-// origin stamp stripped, ready to fan out.
-type routedLogRecord struct {
-	rec    sdklog.Record
-	route  []string
-	digest string // non-empty for call payload records
+// routedLogRow is one record's row, encoded without its origin stamp, with
+// the record's delivery route resolved, ready to fan out.
+type routedLogRow struct {
+	row     clientdb.Log
+	err     error // the row's encoding failed: its targets' writes fail
+	route   []string
+	digest  string // non-empty for call payload records
+	control bool
 }
 
 // Export fans records out to the per-client DBs on each record's route.
@@ -362,15 +375,17 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 	// malformed control record: failing its batch would drop other agents'
 	// revisions with it. Only store writes, which can succeed on retry, fail
 	// the batch.
-	routed := make([]routedLogRecord, 0, len(records))
-	for _, rec := range records {
-		digest, payload, err := classifyCallPayloadRecord(rec)
+	enc := newLogRowEncoder()
+	routed := make([]routedLogRow, 0, len(records))
+	for i := range records {
+		rec := &records[i]
+		digest, payload, err := classifyCallPayloadRecord(*rec)
 		if err != nil {
 			slog.Warn("dropping malformed call payload record", "err", err)
 			continue
 		}
-		control := agentcontrol.IsRecord(rec)
-		origin := logOriginClientID(rec)
+		control := agentcontrol.IsRecord(*rec)
+		origin := logOriginClientID(*rec)
 		if origin == "" {
 			slog.Warn("dropping log record without telemetry origin client ID", "payload", payload, "control", control, "digest", digest)
 			continue
@@ -381,7 +396,7 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 			continue
 		}
 		if control {
-			a, edge, err := agentcontrol.Decode(rec)
+			a, edge, err := agentcontrol.Decode(*rec)
 			if err != nil {
 				slog.Warn("dropping malformed control record", "origin", origin, "err", err)
 				continue
@@ -416,31 +431,66 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 		if !payload {
 			digest = ""
 		}
-		routed = append(routed, routedLogRecord{rec: withoutLogOrigin(rec), route: route, digest: digest})
+		// The row is written to every target on the route: encode it once,
+		// without the origin, which the stores are already routed by.
+		clean := withoutLogOrigin(*rec)
+		row, err := enc.row(&clean)
+		if err != nil {
+			err = fmt.Errorf("prepare log record %v: %w", clean, err)
+		}
+		routed = append(routed, routedLogRow{row: row, err: err, route: route, digest: digest, control: control})
 	}
 
-	byTarget := map[string][]sdklog.Record{}
-	payloadsByTarget := map[string][]string{}
-	for _, r := range routed {
-		route := r.route
-		if r.digest != "" {
+	for i := range routed {
+		if r := &routed[i]; r.digest != "" {
 			// Taking is also the in-batch dedupe: a second copy of the same
 			// digest finds its targets already owned by the first.
-			route = exp.sess.takeCallPayloadForWrite(r.digest, route)
+			r.route = exp.sess.takeCallPayloadForWrite(r.digest, r.route)
 		}
-		for _, target := range route {
-			byTarget[target] = append(byTarget[target], r.rec)
+	}
+	// Each target gets its own slice, sized once: appending assigns row IDs
+	// in place. The rows' encoded fields are shared, and never modified once
+	// written.
+	rowsPerTarget := map[string]int{}
+	for _, r := range routed {
+		for _, target := range r.route {
+			rowsPerTarget[target]++
+		}
+	}
+	byTarget := make(map[string][]clientdb.Log, len(rowsPerTarget))
+	for target, n := range rowsPerTarget {
+		byTarget[target] = make([]clientdb.Log, 0, n)
+	}
+	payloadsByTarget := map[string][]string{}
+	controlTargets := map[string]bool{}
+	errByTarget := map[string]error{}
+	for _, r := range routed {
+		for _, target := range r.route {
+			switch {
+			case r.err != nil:
+				if errByTarget[target] == nil {
+					errByTarget[target] = r.err
+				}
+			default:
+				byTarget[target] = append(byTarget[target], r.row)
+			}
 			if r.digest != "" {
 				payloadsByTarget[target] = append(payloadsByTarget[target], r.digest)
+			}
+			if r.control {
+				controlTargets[target] = true
 			}
 		}
 	}
 
 	final := enginetel.IsFinalExportAttempt(ctx)
 	var eg errgroup.Group
-	for target, targetRecords := range byTarget {
+	for target, targetRows := range byTarget {
 		eg.Go(func() error {
-			err := exp.ps.Logs(target).Export(ctx, targetRecords)
+			err := errByTarget[target]
+			if err == nil {
+				err = exp.ps.appendLogs(ctx, target, targetRows, controlTargets[target])
+			}
 			for _, digest := range payloadsByTarget[target] {
 				exp.sess.settleCallPayload(digest, []string{target}, err == nil, final)
 			}
@@ -769,6 +819,18 @@ func logTelemetryWrite(clientID, what string, rows int, totalStart, appendStart 
 // the caller advances past all of them; keep, when set, selects the rows the
 // request carries. With no rows left it returns since, no request and 0.
 func fetchSpanBatch(ctx context.Context, db *clientdb.DB, since int64, limit int, keep func(*clientdb.Span) bool) (next int64, req *coltracepb.ExportTraceServiceRequest, rows int, err error) {
+	next, kept, rows, err := fetchSpanRows(ctx, db, since, limit, keep)
+	if err != nil || rows == 0 {
+		return next, nil, rows, err
+	}
+	return next, &coltracepb.ExportTraceServiceRequest{
+		ResourceSpans: clientdb.SpansToPB(kept),
+	}, rows, nil
+}
+
+// fetchSpanRows is fetchSpanBatch with the kept rows themselves in place of
+// their OTLP request.
+func fetchSpanRows(ctx context.Context, db *clientdb.DB, since int64, limit int, keep func(*clientdb.Span) bool) (next int64, kept []clientdb.Span, rows int, err error) {
 	spans, err := db.Read().SelectSpansSince(ctx, clientdb.SelectSpansSinceParams{
 		ID:    since,
 		Limit: int64(limit),
@@ -779,11 +841,7 @@ func fetchSpanBatch(ctx context.Context, db *clientdb.DB, since int64, limit int
 	if len(spans) == 0 {
 		return since, nil, 0, nil
 	}
-	next = spans[len(spans)-1].ID
-	kept := keptRows(spans, keep)
-	return next, &coltracepb.ExportTraceServiceRequest{
-		ResourceSpans: clientdb.SpansToPB(kept),
-	}, len(spans), nil
+	return spans[len(spans)-1].ID, keptRows(spans, keep), len(spans), nil
 }
 
 // keptRows returns the rows keep selects, or all of them when keep is nil.
@@ -820,27 +878,39 @@ func fetchLogBatch(ctx context.Context, db *clientdb.DB, since int64, limit int,
 }
 
 func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request, record *clientRecord) error {
-	return ps.streamHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, proto.Message, int, error) {
-		next, req, rows, err := fetchSpanBatch(ctx, db, since, limit, nil)
-		if req == nil {
-			return next, nil, rows, err
+	return ps.streamHandler(w, r, record, fetchTraceStreamBatch)
+}
+
+// fetchTraceStreamBatch is the trace stream's streamFetcher. Its binary
+// frames are written from the stored rows, without building the request's
+// messages first.
+func fetchTraceStreamBatch(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, streamEncoder, int, error) {
+	next, spans, rows, err := fetchSpanRows(ctx, db, since, limit, nil)
+	if err != nil || rows == 0 {
+		return next, nil, rows, err
+	}
+	return next, func(buf []byte, binary bool) ([]byte, error) {
+		if binary {
+			return clientdb.AppendTraceRequestPB(buf, spans)
 		}
-		return next, req, rows, err
-	})
+		return protojson.MarshalOptions{}.MarshalAppend(buf, &coltracepb.ExportTraceServiceRequest{
+			ResourceSpans: clientdb.SpansToPB(spans),
+		})
+	}, rows, nil
 }
 
 func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, record *clientRecord) error {
-	return ps.streamHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, proto.Message, int, error) {
+	return ps.streamHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, streamEncoder, int, error) {
 		next, req, rows, err := fetchLogBatch(ctx, db, since, limit, nil)
 		if req == nil {
 			return next, nil, rows, err
 		}
-		return next, req, rows, err
+		return next, encodeMessage(req), rows, err
 	})
 }
 
 func (ps *PubSub) MetricsSubscribeHandler(w http.ResponseWriter, r *http.Request, record *clientRecord) error {
-	return ps.streamHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, proto.Message, int, error) {
+	return ps.streamHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, streamEncoder, int, error) {
 		metrics, err := db.Read().SelectMetricsSince(ctx, clientdb.SelectMetricsSinceParams{
 			ID:    since,
 			Limit: int64(limit),
@@ -852,9 +922,9 @@ func (ps *PubSub) MetricsSubscribeHandler(w http.ResponseWriter, r *http.Request
 			return since, nil, 0, nil
 		}
 		since = metrics[len(metrics)-1].ID
-		return since, &colmetricspb.ExportMetricsServiceRequest{
+		return since, encodeMessage(&colmetricspb.ExportMetricsServiceRequest{
 			ResourceMetrics: clientdb.MetricsToPB(metrics),
-		}, len(metrics), nil
+		}), len(metrics), nil
 	})
 }
 
@@ -868,9 +938,11 @@ type encodedSpanRow struct {
 }
 
 // spanRowEncoder encodes spans as client DB rows. A session's spans mostly
-// share one resource and a few instrumentation scopes, so it encodes each
-// distinct one once and shares its bytes between the rows that carry it.
+// share one trace, one resource and a few instrumentation scopes, so it
+// encodes each distinct one once and shares it between the rows that carry
+// it.
 type spanRowEncoder struct {
+	traceIDs map[trace.TraceID]string
 	// A resource's encoding is its attributes alone.
 	resources map[attribute.Distinct][]byte
 	scopes    map[instrumentation.Scope][]byte
@@ -878,6 +950,7 @@ type spanRowEncoder struct {
 
 func newSpanRowEncoder() *spanRowEncoder {
 	return &spanRowEncoder{
+		traceIDs:  map[trace.TraceID]string{},
 		resources: map[attribute.Distinct][]byte{},
 		scopes:    map[instrumentation.Scope][]byte{},
 	}
@@ -890,19 +963,26 @@ func newSpanRowEncoder() *spanRowEncoder {
 // would take the whole engine down. The payload is normalized first
 // (enginetel.NormalizeTraceRequest); this is the backstop for whatever that
 // does not anticipate, failing just the exports that carry the span.
-func (enc *spanRowEncoder) encode(span sdktrace.ReadOnlySpan) (encoded encodedSpanRow) {
+func (enc *spanRowEncoder) encode(span sdktrace.ReadOnlySpan, attrs []attribute.KeyValue) (encoded encodedSpanRow) {
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Error("panic exporting span", "panic", r, "stack", string(debug.Stack()))
 			encoded = encodedSpanRow{err: fmt.Errorf("panic exporting span: %v", r)}
 		}
 	}()
-	row, ok := enc.row(span)
+	row, ok := enc.row(span, attrs)
 	return encodedSpanRow{row: row, ok: ok}
 }
 
-func (enc *spanRowEncoder) row(span sdktrace.ReadOnlySpan) (clientdb.Span, bool) {
-	traceID := span.SpanContext().TraceID().String()
+// row encodes span as a DB row, with attrs, its attributes, written without
+// its origin: the store's rows are already routed by it.
+func (enc *spanRowEncoder) row(span sdktrace.ReadOnlySpan, attrs []attribute.KeyValue) (clientdb.Span, bool) {
+	tid := span.SpanContext().TraceID()
+	traceID, ok := enc.traceIDs[tid]
+	if !ok {
+		traceID = tid.String()
+		enc.traceIDs[tid] = traceID
+	}
 	spanID := span.SpanContext().SpanID().String()
 	traceState := span.SpanContext().TraceState().String()
 	parentSpanID := span.Parent().SpanID().String()
@@ -918,13 +998,13 @@ func (enc *spanRowEncoder) row(span sdktrace.ReadOnlySpan) (clientdb.Span, bool)
 		endTime.Int64 = 0
 		endTime.Valid = false
 	}
-	attributes, err := clientdb.MarshalProtoList(telemetry.KeyValues(span.Attributes()))
+	attributes, err := clientdb.MarshalKeyValueList(attrs, telemetryattrs.TelemetryOriginClientIDAttr)
 	if err != nil {
 		slog.Warn("failed to marshal attributes", "error", err)
 		return clientdb.Span{}, false
 	}
 	droppedAttributesCount := int64(span.DroppedAttributes())
-	events, err := clientdb.MarshalProtoList(telemetry.SpanEventsToPB(span.Events()))
+	events, err := clientdb.MarshalEventList(span.Events())
 	if err != nil {
 		slog.Warn("failed to marshal events", "error", err)
 		return clientdb.Span{}, false
@@ -1021,27 +1101,33 @@ type clientLogs struct {
 var _ sdklog.Exporter = clientLogs{}
 
 func (ps clientLogs) Export(ctx context.Context, logs []sdklog.Record) error {
-	slog.ExtraDebug("pubsub exporting logs", "client", ps.clientID, "count", len(logs))
-	start := time.Now()
-
-	var inserts []clientdb.Log
-	for _, rec := range logs {
-		insert, err := logRecordRow(&rec)
+	enc := newLogRowEncoder()
+	inserts := make([]clientdb.Log, 0, len(logs))
+	for i := range logs {
+		insert, err := enc.row(&logs[i])
 		if err != nil {
-			return fmt.Errorf("prepare log record %v: %w", rec, err)
+			return fmt.Errorf("prepare log record %v: %w", logs[i], err)
 		}
 		inserts = append(inserts, insert)
 	}
+	return ps.appendLogs(ctx, ps.clientID, inserts, hasControlRecord(logs))
+}
 
-	db, err := ps.srv.clientDBs.OpenForAppend(ctx, ps.clientID)
+// appendLogs writes log rows to a client's DB. control reports that they
+// include agent control rows, which are put on file right away.
+func (ps *PubSub) appendLogs(ctx context.Context, clientID string, rows []clientdb.Log, control bool) error {
+	slog.ExtraDebug("pubsub exporting logs", "client", clientID, "count", len(rows))
+	start := time.Now()
+
+	db, err := ps.srv.clientDBs.OpenForAppend(ctx, clientID)
 	if err != nil {
 		return fmt.Errorf("get telemetry db: %w", err)
 	}
 	defer db.Close()
 
 	appendStart := time.Now()
-	stats, appendErr := db.AppendLogs(inserts)
-	if appendErr == nil && hasControlRecord(logs) {
+	stats, appendErr := db.AppendLogs(rows)
+	if appendErr == nil && control {
 		// Agent control rows must reach the file before the engine can be
 		// killed, or an unsealed archive has no roster to restore from. A
 		// write is enough for that; fsync is left to the session-end seal.
@@ -1055,7 +1141,7 @@ func (ps clientLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 		// (a snapshot's committed leaf, typically) rides its call span alone.
 		appendErr = errors.Join(db.FlushSpans(ctx), db.FlushLogs(ctx))
 	}
-	logTelemetryWrite(ps.clientID, "logs", len(inserts), start, appendStart, stats, appendErr)
+	logTelemetryWrite(clientID, "logs", len(rows), start, appendStart, stats, appendErr)
 	return appendErr
 }
 
@@ -1072,6 +1158,27 @@ func (ps clientLogs) ForceFlush(ctx context.Context) error { return nil }
 func (ps clientLogs) Shutdown(context.Context) error       { return nil }
 
 func logRecordRow(rec *sdklog.Record) (clientdb.Log, error) {
+	return newLogRowEncoder().row(rec)
+}
+
+// logRowEncoder encodes log records as client DB rows. A batch's records
+// mostly share one resource and a few instrumentation scopes, so it encodes
+// each distinct one once and shares it between the rows that carry it.
+type logRowEncoder struct {
+	// A resource's encoding is its attributes alone.
+	resources map[attribute.Distinct][]byte
+	scopes    map[instrumentation.Scope][]byte
+}
+
+func newLogRowEncoder() *logRowEncoder {
+	return &logRowEncoder{
+		resources: map[attribute.Distinct][]byte{},
+		scopes:    map[instrumentation.Scope][]byte{},
+	}
+}
+
+// row encodes rec as a DB row.
+func (enc *logRowEncoder) row(rec *sdklog.Record) (clientdb.Log, error) {
 	traceID := rec.TraceID().String()
 	spanID := rec.SpanID().String()
 	timestamp := rec.Timestamp().UnixNano()
@@ -1086,7 +1193,7 @@ func logRecordRow(rec *sdklog.Record) (clientdb.Log, error) {
 		}
 	}
 
-	attrs := []*otlpcommonv1.KeyValue{}
+	attrs := make([]*otlpcommonv1.KeyValue, 0, rec.AttributesLen())
 	rec.WalkAttributes(func(kv log.KeyValue) bool {
 		attrs = append(attrs, &otlpcommonv1.KeyValue{
 			Key:   strings.ToValidUTF8(kv.Key, string(utf8.RuneError)),
@@ -1099,15 +1206,24 @@ func logRecordRow(rec *sdklog.Record) (clientdb.Log, error) {
 		return clientdb.Log{}, fmt.Errorf("marshal log record attributes: %w", err)
 	}
 
-	scope, err := proto.Marshal(telemetry.InstrumentationScopeToPB(rec.InstrumentationScope()))
-	if err != nil {
-		return clientdb.Log{}, fmt.Errorf("marshal log record instrumentation scope: %w", err)
+	scopeKey := rec.InstrumentationScope()
+	scope, ok := enc.scopes[scopeKey]
+	if !ok {
+		scope, err = proto.Marshal(telemetry.InstrumentationScopeToPB(scopeKey))
+		if err != nil {
+			return clientdb.Log{}, fmt.Errorf("marshal log record instrumentation scope: %w", err)
+		}
+		enc.scopes[scopeKey] = scope
 	}
 
 	res := rec.Resource()
-	resource, err := proto.Marshal(telemetry.ResourcePtrToPB(res))
-	if err != nil {
-		return clientdb.Log{}, fmt.Errorf("marshal log record resource: %w", err)
+	resource, ok := enc.resources[res.Equivalent()]
+	if !ok {
+		resource, err = proto.Marshal(telemetry.ResourcePtrToPB(res))
+		if err != nil {
+			return clientdb.Log{}, fmt.Errorf("marshal log record resource: %w", err)
+		}
+		enc.resources[res.Equivalent()] = resource
 	}
 
 	return clientdb.Log{
@@ -1277,7 +1393,21 @@ func (record *clientRecord) telemetryStreamEnd(ctx context.Context) <-chan struc
 	return end
 }
 
-type streamFetcher func(ctx context.Context, db *clientdb.DB, since int64, limit int) (next int64, message proto.Message, rows int, err error)
+type streamFetcher func(ctx context.Context, db *clientdb.DB, since int64, limit int) (next int64, encode streamEncoder, rows int, err error)
+
+// streamEncoder appends a fetched batch to buf as one OTLP request: binary
+// protobuf, or protojson for the legacy SSE stream.
+type streamEncoder func(buf []byte, binary bool) ([]byte, error)
+
+// encodeMessage is the streamEncoder of an OTLP request message.
+func encodeMessage(msg proto.Message) streamEncoder {
+	return func(buf []byte, binary bool) ([]byte, error) {
+		if binary {
+			return proto.MarshalOptions{}.MarshalAppend(buf, msg)
+		}
+		return protojson.MarshalOptions{}.MarshalAppend(buf, msg)
+	}
+}
 
 func (ps *PubSub) streamHandler(w http.ResponseWriter, r *http.Request, record *clientRecord, fetcher streamFetcher) error {
 	return ps.streamHandlerWithPayloadLimit(w, r, record, fetcher, enginetel.MaxLivePayloadSize)
@@ -1341,7 +1471,12 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 		}
 	}
 
-	db, err := record.TelemetryDB(r.Context())
+	if record.telemetryUnread {
+		// Refused for good, so the client does not retry: its telemetry was
+		// never written to a store of its own.
+		return httpErr(fmt.Errorf("client %q has no telemetry store to subscribe to", record.clientID), http.StatusForbidden)
+	}
+	db, err := record.telemetryStore(r.Context())
 	if err != nil {
 		return fmt.Errorf("open client db: %w", err)
 	}
@@ -1379,6 +1514,9 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 	streamEnd := record.telemetryStreamEnd(streamCtx)
 	terminating := false
 	batchLimit := otlpBatchSize
+	// Each batch is encoded into the buffer the last written one used: a
+	// frame's bytes are written out before the next batch is fetched.
+	var payloadBuf []byte
 	// failStream ends the stream for good: the client must not reconnect at
 	// this cursor. Reserved for protocol violations the next attempt would
 	// only repeat (an inconsistent fetcher, an unmarshalable batch).
@@ -1395,7 +1533,7 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 	}
 	for {
 		fetchStart := time.Now()
-		next, message, rows, err := fetcher(r.Context(), db, since, batchLimit)
+		next, encode, rows, err := fetcher(r.Context(), db, since, batchLimit)
 		if elapsed := time.Since(fetchStart); elapsed > slowTelemetryOp {
 			logger.Warn("slow OTLP stream fetch", "duration", elapsed, "rows", rows, "limit", batchLimit, "error", err)
 		}
@@ -1439,16 +1577,19 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 		if rows < 0 || rows > batchLimit {
 			return failStream(fmt.Errorf("fetch returned invalid row count %d for limit %d", rows, batchLimit))
 		}
-		if message == nil {
+		if encode == nil {
 			return failStream(fmt.Errorf("fetch returned %d rows without an OTLP batch", rows))
 		}
 		if next <= since {
 			return failStream(fmt.Errorf("fetch returned non-increasing cursor %d after %d", next, since))
 		}
 
+		payload, err := encode(payloadBuf[:0], binary)
+		if err != nil {
+			return failStream(fmt.Errorf("marshal OTLP batch: %w", err))
+		}
 		if binary {
-			payloadSize := proto.Size(message)
-			if payloadSize > maxPayloadSize {
+			if payloadSize := len(payload); payloadSize > maxPayloadSize {
 				if rows == 1 {
 					// The row stays in the DB, so ending the stream here would
 					// strand the client behind it on every reconnect. Skip it
@@ -1473,18 +1614,10 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 		}
 
 		if binary {
-			payload, err := proto.Marshal(message)
-			if err != nil {
-				return failStream(fmt.Errorf("marshal OTLP batch: %w", err))
-			}
 			if err := enginetel.WriteLiveFrame(w, next, payload); err != nil {
 				return fmt.Errorf("write OTLP frame: %w", err)
 			}
 		} else {
-			payload, err := protojson.Marshal(message)
-			if err != nil {
-				return failStream(fmt.Errorf("marshal OTLP batch: %w", err))
-			}
 			if err := (sse.Event{
 				Name: legacyTelemetryEventName(r.URL.Path),
 				ID:   strconv.FormatInt(next, 10),
@@ -1493,6 +1626,7 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 				return fmt.Errorf("write SSE event: %w", err)
 			}
 		}
+		payloadBuf = payload
 		since = next
 		batchLimit = otlpBatchSize
 		flush()

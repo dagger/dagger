@@ -237,7 +237,7 @@ func TestRestoredSnapshotReportingAndBookkeepingRetry(t *testing.T) {
 			res := attachStoredSnapshotTestValue(t, ctx, cache, srv, "report", "saved", storedSnapshotTestValue(kind, "saved", "/", true), false)
 			producer.End()
 			status := &telemetryTestSpan{}
-			recordStatus(ctx, res, status, true, nil)
+			status.SetAttributes(appendStatusAttrs(ctx, nil, res, true, nil)...)
 			require.True(t, containerPersistenceSpanAttrs(status.attrs)[telemetry.CachedAttr].AsBool())
 			failure := errors.New("operation cleanup failed")
 			var releases atomic.Int32

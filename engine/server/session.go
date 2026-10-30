@@ -358,6 +358,15 @@ type clientRecord struct {
 	// Synthetic clients may route host services through this stable ancestor ID.
 	hostServiceProxyClientID string
 
+	// telemetryUnread says nothing reads this client's telemetry store, so
+	// telemetry is not written to it and it has none. Sealed at transport
+	// registration. It is set for an exec's own identity, shared by its SDK
+	// calls and its session helper, and for in-engine SDK clients: none of
+	// them subscribe. Root clients, and nested clients registered under an
+	// identity of their own (a CLI, which subscribes to its own stream), keep
+	// their store.
+	telemetryUnread bool
+
 	// SDK clients execute inside the engine and have no host-side attachables.
 	// Reject their attachable lookups instead of waiting or proxying to an ancestor.
 	inertAttachables bool
@@ -660,13 +669,14 @@ func (sess *daggerSession) ancestorRuntimes(record *clientRecord) ([]*clientRunt
 	return ancestors, nil
 }
 
-// telemetryRouteClientIDs returns the exact nested-to-ancestor fan-out order:
-// the origin first, followed by ancestors from the root to the direct parent.
+// telemetryRouteClientIDs returns the clients whose stores receive record's
+// telemetry, in nested-to-ancestor fan-out order: the origin first, followed
+// by ancestors from the root to the direct parent, leaving out clients whose
+// store nothing reads (see clientRecord.telemetryUnread).
 func (sess *daggerSession) telemetryRouteClientIDs(record *clientRecord) ([]string, error) {
 	sess.clientMu.RLock()
 	defer sess.clientMu.RUnlock()
 
-	route := append([]string{record.clientID}, record.parentClientIDs...)
 	for i, parentID := range record.parentClientIDs {
 		parent, ok := sess.clientRecords[parentID]
 		if !ok {
@@ -676,11 +686,12 @@ func (sess *daggerSession) telemetryRouteClientIDs(record *clientRecord) ([]stri
 			return nil, fmt.Errorf("telemetry ancestor client %q has mismatched ancestry for client %q", parentID, record.clientID)
 		}
 	}
-	return route, nil
+	return sess.telemetryReadersLocked(record, record.parentClientIDs), nil
 }
 
 // telemetryRouteOriginClientID resolves an immutable origin ID through the
-// session's validated client record graph. Exporters call this at batch delivery
+// session's validated client record graph to the clients whose stores receive
+// its telemetry (see telemetryRouteClientIDs). Exporters call this at batch delivery
 // time, so routing does not retain or require a client runtime.
 func (sess *daggerSession) telemetryRouteOriginClientID(originClientID string) ([]string, error) {
 	sess.clientMu.RLock()
@@ -707,7 +718,23 @@ func (sess *daggerSession) telemetryRouteOriginClientID(originClientID string) (
 		}
 		route = append(route, parentID)
 	}
-	return route, nil
+	return sess.telemetryReadersLocked(record, record.parentClientIDs), nil
+}
+
+// telemetryReadersLocked returns origin and its validated ancestors, in that
+// order, leaving out clients whose store nothing reads (see
+// clientRecord.telemetryUnread). Requires clientMu.
+func (sess *daggerSession) telemetryReadersLocked(origin *clientRecord, ancestorIDs []string) []string {
+	readers := make([]string, 0, len(ancestorIDs)+1)
+	if !origin.telemetryUnread {
+		readers = append(readers, origin.clientID)
+	}
+	for _, ancestorID := range ancestorIDs {
+		if !sess.clientRecords[ancestorID].telemetryUnread {
+			readers = append(readers, ancestorID)
+		}
+	}
+	return readers
 }
 
 // telemetryDeliveryClientIDs preserves the delivery-domain key order used by
@@ -717,17 +744,24 @@ func (sess *daggerSession) telemetryDeliveryClientIDs(record *clientRecord) ([]s
 	if err != nil {
 		return nil, err
 	}
+	if record.telemetryUnread {
+		return route, nil
+	}
 	return append(slices.Clone(route[1:]), route[0]), nil
 }
 
 // retainTelemetryDB is called during initialization with a request lease held.
+// A client whose store nothing reads has none to retain.
 func (client *clientRuntime) retainTelemetryDB(ctx context.Context) error {
+	if client.telemetryUnread {
+		return nil
+	}
 	client.telemetryDBMu.Lock()
 	defer client.telemetryDBMu.Unlock()
 	if client.telemetryDB != nil {
 		return nil
 	}
-	db, err := client.TelemetryDB(ctx)
+	db, err := client.telemetryStore(ctx)
 	if err != nil {
 		return err
 	}
@@ -740,12 +774,25 @@ func (client *clientRuntime) closeTelemetryDB() error {
 	db := client.telemetryDB
 	client.telemetryDB = nil
 	client.telemetryDBMu.Unlock()
+	if db == nil {
+		return nil
+	}
 	return db.Close()
 }
 
+// TelemetryDB opens the client's telemetry store with its indexes built, for
+// readers that look spans and logs up by their relationships.
 // NOTE: be sure to defer closing the DB when done with it, otherwise it may leak
 func (record *clientRecord) TelemetryDB(ctx context.Context) (*clientdb.DB, error) {
 	return record.daggerSession.telemetryPubSub.srv.clientDBs.Open(ctx, record.clientID)
+}
+
+// telemetryStore opens the client's telemetry store without building its
+// indexes, for holding it open and for reading its rows in order. Indexes
+// are built when a reader that needs them opens it (see TelemetryDB), so a
+// session that never has one builds none. Close it when done with it.
+func (record *clientRecord) telemetryStore(ctx context.Context) (*clientdb.DB, error) {
+	return record.daggerSession.telemetryPubSub.srv.clientDBs.OpenForAppend(ctx, record.clientID)
 }
 
 // slowDrainOp flags a shutdown-drain operation that ate a meaningful chunk of
@@ -1362,6 +1409,7 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	errs = errors.Join(errs, telemetryErr)
 	archiveErrs = errors.Join(archiveErrs, telemetryErr)
 	errs = errors.Join(errs, srv.finalizeSessionArchive(telemetryCtx, sess, archiveErrs))
+	srv.retireSessionTelemetryStores(sess)
 	step.end()
 
 	// ensure this chan is closed even if the client never explicitly called the /shutdown endpoint
@@ -1372,6 +1420,33 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	teardown.end()
 	sess.phase.end(srv)
 	return errs
+}
+
+// retireSessionTelemetryStores deletes the session's telemetry stores once its
+// final telemetry is written: nothing can read them after the session ends but
+// an archive, which keeps its store, and a Cloud forwarder or a draining
+// subscription, which the store waits for (see clientdb.DBs.Retire).
+func (srv *Server) retireSessionTelemetryStores(sess *daggerSession) {
+	if srv.clientDBs == nil {
+		return
+	}
+	var keep map[string]bool
+	if srv.archives != nil {
+		keep = srv.archives.KeepSet()
+	}
+	sess.clientMu.RLock()
+	clientIDs := make([]string, 0, len(sess.clientRecords))
+	for clientID, record := range sess.clientRecords {
+		if !record.telemetryUnread && !keep[clientID] {
+			clientIDs = append(clientIDs, clientID)
+		}
+	}
+	sess.clientMu.RUnlock()
+	for _, clientID := range clientIDs {
+		if err := srv.clientDBs.Retire(clientID); err != nil {
+			slog.Warn("retire client telemetry store", "session", sess.sessionID, "client", clientID, "err", err)
+		}
+	}
 }
 
 // deleteSession drops a session from the registry only when the map entry is
