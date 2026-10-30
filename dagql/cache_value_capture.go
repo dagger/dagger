@@ -703,6 +703,9 @@ type ExportedValues struct {
 	// LeftOut are the selection's roots the bundle leaves out, in the
 	// selection's order.
 	LeftOut []LeftOutRoot
+	// Rows are the rows the bundle carries, for KnownRows once the recipient
+	// says whether it merged them.
+	Rows ExportedRows
 }
 
 // LeftOutRoot is a selected root a capture left out because its closure
@@ -1192,9 +1195,11 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 		return err
 	}
 	sources := make([]ImportedValue, len(capture.order))
+	rows := ExportedRows{Full: make(map[uint64]RowRevision, len(capture.order))}
 	for i, row := range capture.order {
 		sources[i] = ImportedValue{Ordinal: row.ordinal, ResultID: uint64(row.shared.id)}
+		rows.Full[uint64(row.shared.id)] = RowRevision{Replacements: row.replacements, Transfer: row.transferRev, Dependencies: row.dependencyRev}
 	}
 	profExportedParts(ctx, bundle, sources)
-	return consume(ctx, &ExportedValues{Bundle: bundle, Chains: chains, ChainTime: chainTime, Phases: phases, Sources: sources, LeftOut: leftOut})
+	return consume(ctx, &ExportedValues{Bundle: bundle, Chains: chains, ChainTime: chainTime, Phases: phases, Sources: sources, LeftOut: leftOut, Rows: rows})
 }
