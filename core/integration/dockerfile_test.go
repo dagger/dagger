@@ -440,6 +440,36 @@ CMD ["cat", "/tmp/out.go"]
 		require.Equal(t, "package alt\n", out)
 	})
 
+	t.Run("build-args-not-in-image-env", func(ctx context.Context, t *testctx.T) {
+		// A build arg is visible to RUN, but only ENV persists into the
+		// image's environment.
+		ctr := sdkcore.NewQuery(c).Directory().
+			WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
+ARG FOO
+ARG KEPT
+ENV KEPT=$KEPT
+RUN echo "$FOO" > /foo
+`, alpineImage)).
+			DockerBuild(sdkcore.DirectoryDockerBuildOpts{
+				BuildArgs: []sdkcore.BuildArg{
+					{Name: "FOO", Value: "from-arg"},
+					{Name: "KEPT", Value: "from-env"},
+				},
+			})
+
+		out, err := ctr.File("/foo").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "from-arg\n", out)
+
+		env, err := ctr.EnvVariable(ctx, "FOO")
+		require.NoError(t, err)
+		require.Empty(t, env)
+
+		env, err = ctr.EnvVariable(ctx, "KEPT")
+		require.NoError(t, err)
+		require.Equal(t, "from-env", env)
+	})
+
 	t.Run("copy-through-symlink-context", func(ctx context.Context, t *testctx.T) {
 		if runtime.GOOS == "windows" {
 			t.Skip("symlink context behavior is unstable on windows hosts")
