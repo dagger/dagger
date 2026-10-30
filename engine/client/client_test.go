@@ -24,6 +24,7 @@ import (
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	commonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	logsv1 "go.opentelemetry.io/proto/otlp/logs/v1"
+	"golang.org/x/net/http2"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -718,33 +719,16 @@ func acceptSessionAttachables(conn net.Conn) bool {
 	return err == nil
 }
 
-// An engine under load can take a while after the handshake to start the
-// gRPC client that calls the attachables. The session waits for it.
-func TestSessionAttachablesWaitForASlowEngine(t *testing.T) {
-	t.Parallel()
+// serveSessionAttachablesTo connects session attachables to an engine
+// stand-in and serves them. Once the handshake is done, engine runs on the
+// stand-in's end of the connection; its result is returned.
+func serveSessionAttachablesTo(t *testing.T, engine func(net.Conn) error) error {
+	t.Helper()
 	checked := make(chan error, 1)
 	addr := listen(t, func(conn net.Conn) {
-		if !acceptSessionAttachables(conn) {
-			return
+		if acceptSessionAttachables(conn) {
+			checked <- engine(conn)
 		}
-		// Longer than the 10s that x/net's HTTP/2 server allows for a
-		// client's preface.
-		time.Sleep(11 * time.Second)
-		cc, err := grpc.NewClient("passthrough:engine",
-			grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
-				return conn, nil
-			}),
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-		)
-		if err != nil {
-			checked <- err
-			return
-		}
-		defer cc.Close()
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		_, err = grpc_health_v1.NewHealthClient(cc).Check(ctx, &grpc_health_v1.HealthCheckRequest{})
-		checked <- err
 	})
 
 	srv, err := connectSessionAttachables(t.Context(), t, dial(t, addr))
@@ -752,8 +736,74 @@ func TestSessionAttachablesWaitForASlowEngine(t *testing.T) {
 	go srv.Run(t.Context())
 	select {
 	case err := <-checked:
-		require.NoError(t, err)
+		return err
 	case <-time.After(30 * time.Second):
 		t.Fatal("the engine's health check did not return")
+		return nil
 	}
+}
+
+// checkSessionAttachablesHealth calls the health check of the session
+// attachables on the other end of conn, as the engine does.
+func checkSessionAttachablesHealth(conn net.Conn) error {
+	cc, err := grpc.NewClient("passthrough:engine",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return conn, nil
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		return err
+	}
+	defer cc.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err = grpc_health_v1.NewHealthClient(cc).Check(ctx, &grpc_health_v1.HealthCheckRequest{})
+	return err
+}
+
+// An engine under load can take a while after the handshake to start the
+// gRPC client that calls the attachables. The session waits for it.
+func TestSessionAttachablesWaitForASlowEngine(t *testing.T) {
+	t.Parallel()
+	err := serveSessionAttachablesTo(t, func(conn net.Conn) error {
+		// Longer than the 10s that x/net's HTTP/2 server allows for a
+		// client's preface.
+		time.Sleep(11 * time.Second)
+		return checkSessionAttachablesHealth(conn)
+	})
+	require.NoError(t, err)
+}
+
+// slowSettingsConn writes the HTTP/2 client preface at once, and holds back
+// what follows it, the client's first SETTINGS frame, for delay.
+type slowSettingsConn struct {
+	net.Conn
+	mu      sync.Mutex
+	written int
+	delay   time.Duration
+}
+
+func (c *slowSettingsConn) Write(p []byte) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.written >= len(http2.ClientPreface) {
+		time.Sleep(c.delay)
+		c.delay = 0
+	}
+	n, err := c.Conn.Write(p)
+	c.written += n
+	return n, err
+}
+
+// The engine can also be slow between its preface and its first SETTINGS
+// frame. The session waits for that too.
+func TestSessionAttachablesWaitForSlowEngineSettings(t *testing.T) {
+	t.Parallel()
+	err := serveSessionAttachablesTo(t, func(conn net.Conn) error {
+		// Longer than the 2s that x/net's HTTP/2 server allows for a
+		// client's first SETTINGS frame.
+		return checkSessionAttachablesHealth(&slowSettingsConn{Conn: conn, delay: 3 * time.Second})
+	})
+	require.NoError(t, err)
 }
