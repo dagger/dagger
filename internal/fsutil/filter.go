@@ -10,7 +10,7 @@ import (
 	"syscall"
 
 	"github.com/dagger/dagger/internal/fsutil/types"
-	"github.com/moby/patternmatcher"
+	"github.com/dagger/dagger/util/patternmatcher"
 	"github.com/pkg/errors"
 )
 
