@@ -23,6 +23,7 @@ import (
 	bkcontenthash "github.com/dagger/dagger/engine/contenthash"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
+	"github.com/dagger/dagger/util/fsxutil"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 
@@ -1506,7 +1507,7 @@ func (file *File) Mount(ctx context.Context, self dagql.ObjectResult[*File], f f
 		return err
 	}
 	err = MountRef(ctx, snapshot, func(root string, _ *mount.Mount) error {
-		src, err := containerdfs.RootPath(root, filePath)
+		src, err := fsxutil.RootPath(root, filePath)
 		if err != nil {
 			return err
 		}

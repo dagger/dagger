@@ -14,7 +14,7 @@ import (
 
 	"github.com/containerd/containerd/v2/core/containers"
 	containerdoci "github.com/containerd/containerd/v2/pkg/oci"
-	"github.com/containerd/continuity/fs"
+	"github.com/dagger/dagger/util/fsxutil"
 	"github.com/moby/sys/user"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
@@ -196,7 +196,7 @@ func ParseUIDGID(str string) (uid uint32, gid uint32, err error) {
 }
 
 func openUserFile(root, p string) (*os.File, error) {
-	p, err := fs.RootPath(root, p)
+	p, err := fsxutil.RootPath(root, p)
 	if err != nil {
 		return nil, err
 	}
