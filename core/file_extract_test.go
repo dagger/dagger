@@ -524,6 +524,22 @@ func TestExtractZipFilter(t *testing.T) {
 			},
 		},
 		{
+			// Under a directory, "**" matches no directories as well as
+			// some.
+			name:    "anchored",
+			exclude: []string{"top/**/testdata", "top/**/*_test.go"},
+			want: []string{
+				"top drwxr-xr-x",
+				"top/a.go -rw-r--r--",
+				"top/docs drwxr-xr-x",
+				"top/docs/README -rw-r--r--",
+				"top/go.mod -rw-r--r--",
+				"top/sub drwx------",
+				"top/sub/b.go -rw-r--r--",
+				"top/sub/link Lrwxrwxrwx -> b.go",
+			},
+		},
+		{
 			// A directory an include pattern matches is extracted whole,
 			// but for what the exclude patterns match.
 			name:    "include",
@@ -642,6 +658,19 @@ func TestStripTarComponentsFilter(t *testing.T) {
 	entries, err = stripTestTar(t, archive, 0, filter)
 	require.NoError(t, err)
 	require.Equal(t, []string{"top/", "top/a.go = a", "top/a_test.go = test", "top/hard => top/a.go"}, entries)
+
+	// A directory left out after an entry in it that isn't is written
+	// where it is.
+	late := writeTestTarGz(t,
+		testTarEntry{name: "sub/file", body: "f"},
+		testTarEntry{name: "sub/", typeflag: tar.TypeDir},
+		testTarEntry{name: "other/", typeflag: tar.TypeDir},
+	)
+	filter, err = newExtractFilter([]string{"sub/file"}, nil)
+	require.NoError(t, err)
+	entries, err = stripTestTar(t, late, 0, filter)
+	require.NoError(t, err)
+	require.Equal(t, []string{"sub/file = f", "sub/"}, entries)
 
 	filter, err = newExtractFilter([]string{"a.go"}, nil)
 	require.NoError(t, err)
