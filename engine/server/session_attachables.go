@@ -296,13 +296,14 @@ func monitorAttachableHealth(ctx context.Context, cc *grpc.ClientConn, cancelCon
 				default:
 				}
 				if failedBefore {
-					slog.DebugContext(ctx, "healthcheck failed fatally")
+					slog.DebugContext(ctx, "healthcheck failed fatally", "err", err)
 					return
 				}
 
 				failedBefore = true
 				consecutiveSuccessful = 0
 				slog.DebugContext(ctx, "healthcheck failed",
+					"err", err,
 					"timeout", timeout,
 					"actualDuration", lastHealthcheckDuration,
 				)
