@@ -440,12 +440,26 @@ func (repo *RemoteGitRepository) setupWithSSHAuthSock(ctx context.Context, sshAu
 		})
 	}
 
+	if repo.URL != nil && repo.URL.Scheme == gitutil.EntireProtocol {
+		if repo.AuthHeader.Self() != nil {
+			return nil, nil, fmt.Errorf("entire:// remotes take a token, not an HTTP authorization header")
+		}
+		configDir, cacheHome, err := entireHelperDirs(query)
+		if err != nil {
+			return nil, nil, err
+		}
+		opts = append(opts, gitutil.WithEntireHelperDirs(repo.URL, configDir, cacheHome))
+	}
+
 	if repo.AuthToken.Self() != nil {
 		password, err := repo.AuthToken.Self().Plaintext(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
-		opts = append(opts, gitutil.WithHTTPTokenAuth(repo.URL, string(password), repo.AuthUsername))
+		opts = append(opts,
+			gitutil.WithHTTPTokenAuth(repo.URL, string(password), repo.AuthUsername),
+			gitutil.WithEntireTokenAuth(repo.URL, string(password)),
+		)
 	} else if repo.AuthHeader.Self() != nil {
 		byteAuthHeader, err := repo.AuthHeader.Self().Plaintext(ctx)
 		if err != nil {
@@ -459,6 +473,26 @@ func (repo *RemoteGitRepository) setupWithSSHAuthSock(ctx context.Context, sshAu
 	}))
 
 	return gitutil.NewGitCLI(opts...), cleanups.Run, nil
+}
+
+// entireHelperDirs returns the engine-wide directories git-remote-entire runs
+// with: an empty config directory, so it never finds a saved login, and the
+// cache home for its discovery cache, which holds no credentials and is shared
+// by every session.
+func entireHelperDirs(query *Query) (configDir, cacheHome string, _ error) {
+	root := query.EngineVolumeState().RootDir
+	if root == "" {
+		return "", "", fmt.Errorf("engine root is not configured")
+	}
+	base := filepath.Join(root, "git-remote-entire")
+	configDir = filepath.Join(base, "config")
+	cacheHome = filepath.Join(base, "cache")
+	for _, dir := range []string{configDir, cacheHome} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return "", "", fmt.Errorf("create git-remote-entire directory: %w", err)
+		}
+	}
+	return configDir, cacheHome, nil
 }
 
 func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, includeTags bool, refs []GitRefBackend, fn func(context.Context, *gitutil.GitCLI) error) (retErr error) {

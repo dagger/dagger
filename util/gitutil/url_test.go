@@ -30,6 +30,8 @@ func TestGitURLHTMLURL(t *testing.T) {
 		{"https://user:password@git.example:8443/team/repo.git#main:module", "https://git.example:8443/team/repo"},
 		{"http://git.example:8080/team/repo", "http://git.example:8080/team/repo"},
 		{"ssh://git@[::1]:2222/team/repo.git", "https://[::1]/team/repo"},
+		{"entire://aws-us-east-2.entire.io/et/acme/api#main:module", "https://entire.io/et/acme/api"},
+		{"entire://aws-us-east-2.entire.io/gh/acme/api.git", "https://entire.io/gh/acme/api"},
 	} {
 		t.Run(tc.remote, func(t *testing.T) {
 			u, err := ParseURL(tc.remote)

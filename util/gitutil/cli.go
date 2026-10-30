@@ -252,6 +252,9 @@ func (cli *GitCLI) RunWithStdin(ctx context.Context, stdin io.Reader, args ...st
 
 	// Block sneaky repositories from using repos from the filesystem as submodules.
 	cmd.Args = append(cmd.Args, "-c", "protocol.file.allow=user")
+	// entire:// remotes are reachable when named directly, never as submodules:
+	// their helper would present this command's Entire token to them.
+	cmd.Args = append(cmd.Args, "-c", "protocol."+EntireProtocol+".allow=user")
 	if cli.workTree != "" {
 		cmd.Args = append(cmd.Args, "--work-tree", cli.workTree)
 	}

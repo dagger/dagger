@@ -9,6 +9,8 @@ const (
 	DaggerInitSessionPath = distconsts.DaggerInitSessionPath
 	DaggerCLIPath         = distconsts.DaggerCLIPath
 	TiniPath              = distconsts.TiniPath
+	// Git runs git-remote-<scheme> from PATH for entire:// remotes.
+	GitRemoteEntirePath = "/usr/local/bin/git-remote-entire"
 )
 
 const (
@@ -36,4 +38,14 @@ const (
 	QemuPatchSeries = "11.0"
 
 	XxImage = "tonistiigi/xx:1.2.1"
+
+	// The Entire CLI release that provides git-remote-entire, with the
+	// checksums its checksums.txt lists for each supported architecture.
+	// Update by hand.
+	EntireCLIVersion = "0.12.2"
 )
+
+var EntireCLIChecksums = map[string]string{
+	"amd64": "sha256:bfc5c8d5b599f328775b89b735db020c963e307b6a324fc30ce371fe8fa789e8",
+	"arm64": "sha256:f08a1b8c6352d3f78076268dc67b0b273d7f62dbab94b15aec028e7b4257ad0c",
+}
