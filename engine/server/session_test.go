@@ -38,6 +38,7 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	sdkresource "go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
@@ -4169,6 +4170,78 @@ func TestWithoutLogOriginPreservesCallPayloadRecord(t *testing.T) {
 	require.NotContains(t, attrs, telemetryattrs.TelemetryOriginClientIDAttr)
 	require.Equal(t, telemetryattrs.CallPayloadContentType, attrs[telemetry.ContentTypeAttr].AsString())
 	require.Equal(t, "value", attrs["test.keep"].AsString())
+}
+
+// A record that replaced an attribute is stored with the replacement
+// normalized, as the SDK normalizes attributes it sets. The SDK keeps a
+// replacement as given, so the exporter must take the origin out through
+// SetAttributes rather than write the record's attributes as they are.
+func TestSessionLogExporterNormalizesReplacedAttribute(t *testing.T) {
+	dbs := clientdb.NewDBs(t.TempDir())
+	srv := &Server{clientDBs: dbs}
+	srv.telemetryPubSub = NewPubSub(srv)
+	sess := &daggerSession{clientRecords: map[string]*clientRecord{}}
+	sess.clientRecords["client"] = &clientRecord{daggerSession: sess, clientID: "client"}
+	exporter := sessionLogExporter{sess: sess, ps: srv.telemetryPubSub}
+
+	require.NoError(t, exporter.Export(t.Context(), []sdklog.Record{scopedLogRecord(t,
+		"test.core",
+		otellog.StringValue("body"),
+		otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, "client"),
+		otellog.String("test.keep", "initial"),
+		otellog.Map("test.keep",
+			otellog.String("k", "first"),
+			otellog.String("k", "last")),
+	)}))
+
+	db, err := dbs.Open(t.Context(), "client")
+	require.NoError(t, err)
+	defer db.Close()
+	rows, err := db.Read().SelectLogsSince(t.Context(), clientdb.SelectLogsSinceParams{Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	var kvs []*otlpcommonv1.KeyValue
+	require.NoError(t, clientdb.UnmarshalProtoList(rows[0].Attributes, &otlpcommonv1.KeyValue{}, &kvs))
+	require.Len(t, kvs, 1)
+	require.Equal(t, "test.keep", kvs[0].GetKey())
+	entries := kvs[0].GetValue().GetKvlistValue().GetValues()
+	require.Len(t, entries, 1)
+	require.Equal(t, "k", entries[0].GetKey())
+	require.Equal(t, "last", entries[0].GetValue().GetStringValue())
+}
+
+// One encoder encodes a batch's rows: each row is the row of its record
+// alone, byte for byte, whichever scopes and resources the encoder has
+// already encoded.
+func TestLogRowEncoderSharesScopesAndResources(t *testing.T) {
+	payload, _ := serverCallPayload(t, "lookup", "value")
+	payloadRecord := scopedLogRecord(t,
+		"test.core",
+		otellog.BytesValue(payload),
+		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
+		otellog.String("test.keep", "value"),
+	)
+	otherScope := scopedLogRecord(t, "test.other", otellog.StringValue("output"))
+	capture := new(callPayloadRecordCapture)
+	provider := sdklog.NewLoggerProvider(
+		sdklog.WithResource(sdkresource.NewSchemaless(attribute.String("test.resource", "other"))),
+		sdklog.WithProcessor(sdklog.NewSimpleProcessor(capture)),
+	)
+	record := otellog.Record{}
+	record.SetBody(otellog.StringValue("other resource"))
+	provider.Logger("test.core").Emit(t.Context(), record)
+	require.NoError(t, provider.Shutdown(t.Context()))
+	require.Len(t, capture.records, 1)
+	otherResource := capture.records[0]
+
+	enc := newLogRowEncoder()
+	for _, rec := range []sdklog.Record{payloadRecord, otherScope, otherResource, payloadRecord} {
+		row, err := enc.row(&rec)
+		require.NoError(t, err)
+		want, err := logRecordRow(&rec)
+		require.NoError(t, err)
+		require.Equal(t, want, row)
+	}
 }
 
 func TestSessionLogExporterRoutesCallPayloadOnlyToMissingTargets(t *testing.T) {

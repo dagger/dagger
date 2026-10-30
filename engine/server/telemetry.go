@@ -335,12 +335,14 @@ type sessionLogExporter struct {
 	ps   *PubSub
 }
 
-// routedLogRecord is one record with its delivery route resolved and its
-// origin stamp stripped, ready to fan out.
-type routedLogRecord struct {
-	rec    sdklog.Record
-	route  []string
-	digest string // non-empty for call payload records
+// routedLogRow is one record's row, encoded without its origin stamp, with
+// the record's delivery route resolved, ready to fan out.
+type routedLogRow struct {
+	row     clientdb.Log
+	err     error // the row's encoding failed: its targets' writes fail
+	route   []string
+	digest  string // non-empty for call payload records
+	control bool
 }
 
 // Export fans records out to the per-client DBs on each record's route.
@@ -362,15 +364,17 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 	// malformed control record: failing its batch would drop other agents'
 	// revisions with it. Only store writes, which can succeed on retry, fail
 	// the batch.
-	routed := make([]routedLogRecord, 0, len(records))
-	for _, rec := range records {
-		digest, payload, err := classifyCallPayloadRecord(rec)
+	enc := newLogRowEncoder()
+	routed := make([]routedLogRow, 0, len(records))
+	for i := range records {
+		rec := &records[i]
+		digest, payload, err := classifyCallPayloadRecord(*rec)
 		if err != nil {
 			slog.Warn("dropping malformed call payload record", "err", err)
 			continue
 		}
-		control := agentcontrol.IsRecord(rec)
-		origin := logOriginClientID(rec)
+		control := agentcontrol.IsRecord(*rec)
+		origin := logOriginClientID(*rec)
 		if origin == "" {
 			slog.Warn("dropping log record without telemetry origin client ID", "payload", payload, "control", control, "digest", digest)
 			continue
@@ -381,7 +385,7 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 			continue
 		}
 		if control {
-			a, edge, err := agentcontrol.Decode(rec)
+			a, edge, err := agentcontrol.Decode(*rec)
 			if err != nil {
 				slog.Warn("dropping malformed control record", "origin", origin, "err", err)
 				continue
@@ -416,31 +420,66 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 		if !payload {
 			digest = ""
 		}
-		routed = append(routed, routedLogRecord{rec: withoutLogOrigin(rec), route: route, digest: digest})
+		// The row is written to every target on the route: encode it once,
+		// without the origin, which the stores are already routed by.
+		clean := withoutLogOrigin(*rec)
+		row, err := enc.row(&clean)
+		if err != nil {
+			err = fmt.Errorf("prepare log record %v: %w", clean, err)
+		}
+		routed = append(routed, routedLogRow{row: row, err: err, route: route, digest: digest, control: control})
 	}
 
-	byTarget := map[string][]sdklog.Record{}
-	payloadsByTarget := map[string][]string{}
-	for _, r := range routed {
-		route := r.route
-		if r.digest != "" {
+	for i := range routed {
+		if r := &routed[i]; r.digest != "" {
 			// Taking is also the in-batch dedupe: a second copy of the same
 			// digest finds its targets already owned by the first.
-			route = exp.sess.takeCallPayloadForWrite(r.digest, route)
+			r.route = exp.sess.takeCallPayloadForWrite(r.digest, r.route)
 		}
-		for _, target := range route {
-			byTarget[target] = append(byTarget[target], r.rec)
+	}
+	// Each target gets its own slice, sized once: appending assigns row IDs
+	// in place. The rows' encoded fields are shared, and never modified once
+	// written.
+	rowsPerTarget := map[string]int{}
+	for _, r := range routed {
+		for _, target := range r.route {
+			rowsPerTarget[target]++
+		}
+	}
+	byTarget := make(map[string][]clientdb.Log, len(rowsPerTarget))
+	for target, n := range rowsPerTarget {
+		byTarget[target] = make([]clientdb.Log, 0, n)
+	}
+	payloadsByTarget := map[string][]string{}
+	controlTargets := map[string]bool{}
+	errByTarget := map[string]error{}
+	for _, r := range routed {
+		for _, target := range r.route {
+			switch {
+			case r.err != nil:
+				if errByTarget[target] == nil {
+					errByTarget[target] = r.err
+				}
+			default:
+				byTarget[target] = append(byTarget[target], r.row)
+			}
 			if r.digest != "" {
 				payloadsByTarget[target] = append(payloadsByTarget[target], r.digest)
+			}
+			if r.control {
+				controlTargets[target] = true
 			}
 		}
 	}
 
 	final := enginetel.IsFinalExportAttempt(ctx)
 	var eg errgroup.Group
-	for target, targetRecords := range byTarget {
+	for target, targetRows := range byTarget {
 		eg.Go(func() error {
-			err := exp.ps.Logs(target).Export(ctx, targetRecords)
+			err := errByTarget[target]
+			if err == nil {
+				err = exp.ps.appendLogs(ctx, target, targetRows, controlTargets[target])
+			}
 			for _, digest := range payloadsByTarget[target] {
 				exp.sess.settleCallPayload(digest, []string{target}, err == nil, final)
 			}
@@ -1021,27 +1060,33 @@ type clientLogs struct {
 var _ sdklog.Exporter = clientLogs{}
 
 func (ps clientLogs) Export(ctx context.Context, logs []sdklog.Record) error {
-	slog.ExtraDebug("pubsub exporting logs", "client", ps.clientID, "count", len(logs))
-	start := time.Now()
-
-	var inserts []clientdb.Log
-	for _, rec := range logs {
-		insert, err := logRecordRow(&rec)
+	enc := newLogRowEncoder()
+	inserts := make([]clientdb.Log, 0, len(logs))
+	for i := range logs {
+		insert, err := enc.row(&logs[i])
 		if err != nil {
-			return fmt.Errorf("prepare log record %v: %w", rec, err)
+			return fmt.Errorf("prepare log record %v: %w", logs[i], err)
 		}
 		inserts = append(inserts, insert)
 	}
+	return ps.appendLogs(ctx, ps.clientID, inserts, hasControlRecord(logs))
+}
 
-	db, err := ps.srv.clientDBs.OpenForAppend(ctx, ps.clientID)
+// appendLogs writes log rows to a client's DB. control reports that they
+// include agent control rows, which are put on file right away.
+func (ps *PubSub) appendLogs(ctx context.Context, clientID string, rows []clientdb.Log, control bool) error {
+	slog.ExtraDebug("pubsub exporting logs", "client", clientID, "count", len(rows))
+	start := time.Now()
+
+	db, err := ps.srv.clientDBs.OpenForAppend(ctx, clientID)
 	if err != nil {
 		return fmt.Errorf("get telemetry db: %w", err)
 	}
 	defer db.Close()
 
 	appendStart := time.Now()
-	stats, appendErr := db.AppendLogs(inserts)
-	if appendErr == nil && hasControlRecord(logs) {
+	stats, appendErr := db.AppendLogs(rows)
+	if appendErr == nil && control {
 		// Agent control rows must reach the file before the engine can be
 		// killed, or an unsealed archive has no roster to restore from. A
 		// write is enough for that; fsync is left to the session-end seal.
@@ -1055,7 +1100,7 @@ func (ps clientLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 		// (a snapshot's committed leaf, typically) rides its call span alone.
 		appendErr = errors.Join(db.FlushSpans(ctx), db.FlushLogs(ctx))
 	}
-	logTelemetryWrite(ps.clientID, "logs", len(inserts), start, appendStart, stats, appendErr)
+	logTelemetryWrite(clientID, "logs", len(rows), start, appendStart, stats, appendErr)
 	return appendErr
 }
 
@@ -1072,6 +1117,27 @@ func (ps clientLogs) ForceFlush(ctx context.Context) error { return nil }
 func (ps clientLogs) Shutdown(context.Context) error       { return nil }
 
 func logRecordRow(rec *sdklog.Record) (clientdb.Log, error) {
+	return newLogRowEncoder().row(rec)
+}
+
+// logRowEncoder encodes log records as client DB rows. A batch's records
+// mostly share one resource and a few instrumentation scopes, so it encodes
+// each distinct one once and shares it between the rows that carry it.
+type logRowEncoder struct {
+	// A resource's encoding is its attributes alone.
+	resources map[attribute.Distinct][]byte
+	scopes    map[instrumentation.Scope][]byte
+}
+
+func newLogRowEncoder() *logRowEncoder {
+	return &logRowEncoder{
+		resources: map[attribute.Distinct][]byte{},
+		scopes:    map[instrumentation.Scope][]byte{},
+	}
+}
+
+// row encodes rec as a DB row.
+func (enc *logRowEncoder) row(rec *sdklog.Record) (clientdb.Log, error) {
 	traceID := rec.TraceID().String()
 	spanID := rec.SpanID().String()
 	timestamp := rec.Timestamp().UnixNano()
@@ -1086,7 +1152,7 @@ func logRecordRow(rec *sdklog.Record) (clientdb.Log, error) {
 		}
 	}
 
-	attrs := []*otlpcommonv1.KeyValue{}
+	attrs := make([]*otlpcommonv1.KeyValue, 0, rec.AttributesLen())
 	rec.WalkAttributes(func(kv log.KeyValue) bool {
 		attrs = append(attrs, &otlpcommonv1.KeyValue{
 			Key:   strings.ToValidUTF8(kv.Key, string(utf8.RuneError)),
@@ -1099,15 +1165,24 @@ func logRecordRow(rec *sdklog.Record) (clientdb.Log, error) {
 		return clientdb.Log{}, fmt.Errorf("marshal log record attributes: %w", err)
 	}
 
-	scope, err := proto.Marshal(telemetry.InstrumentationScopeToPB(rec.InstrumentationScope()))
-	if err != nil {
-		return clientdb.Log{}, fmt.Errorf("marshal log record instrumentation scope: %w", err)
+	scopeKey := rec.InstrumentationScope()
+	scope, ok := enc.scopes[scopeKey]
+	if !ok {
+		scope, err = proto.Marshal(telemetry.InstrumentationScopeToPB(scopeKey))
+		if err != nil {
+			return clientdb.Log{}, fmt.Errorf("marshal log record instrumentation scope: %w", err)
+		}
+		enc.scopes[scopeKey] = scope
 	}
 
 	res := rec.Resource()
-	resource, err := proto.Marshal(telemetry.ResourcePtrToPB(res))
-	if err != nil {
-		return clientdb.Log{}, fmt.Errorf("marshal log record resource: %w", err)
+	resource, ok := enc.resources[res.Equivalent()]
+	if !ok {
+		resource, err = proto.Marshal(telemetry.ResourcePtrToPB(res))
+		if err != nil {
+			return clientdb.Log{}, fmt.Errorf("marshal log record resource: %w", err)
+		}
+		enc.resources[res.Equivalent()] = resource
 	}
 
 	return clientdb.Log{
