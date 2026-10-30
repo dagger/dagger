@@ -42,6 +42,10 @@ func (*ModuleNaming) TypeDescription() string {
 // Naming returns how the engine names src's own declarations: by the rules of
 // its NamingView, under its name and original name. It reads nothing else of
 // the source, so it answers before the module's entrypoint is generated.
+//
+// It's the naming of the module under its own name: a workspace or toolchain
+// that loads it under another (asModule's legacyNameOverride) namespaces its
+// types under that name instead, which the source doesn't know.
 func (src *ModuleSource) Naming() *ModuleNaming {
 	return &ModuleNaming{
 		View:               src.NamingView(),
