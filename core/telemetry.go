@@ -195,10 +195,17 @@ func AroundFunc(
 		)
 
 		defer telemetry.EndWithCause(span, err)
-		recordStatus(ctx, res, span, cached, req.ResultCall)
-		dagql.RecordContentPreferredDigest(ctx, span, req.ResultCall, res)
-		recordPending(res, span)
-		recordCacheEvidence(ctx, span, req.CacheEvidence, res)
+		// The end attributes go on the span in one call: each SetAttributes
+		// that outgrows the span's attribute slice copies the whole slice.
+		// 16 holds a typical call's status and cache evidence.
+		attrs := make([]attribute.KeyValue, 0, 16)
+		attrs = appendStatusAttrs(ctx, attrs, res, cached, req.ResultCall)
+		if span.IsRecording() {
+			attrs = dagql.AppendContentPreferredDigestAttr(ctx, attrs, req.ResultCall, res)
+		}
+		attrs = appendPendingAttrs(attrs, res)
+		attrs = appendCacheEvidenceAttrs(ctx, attrs, req.CacheEvidence, res)
+		span.SetAttributes(attrs...)
 		logResult(ctx, res, req.ResultCall)
 	}
 }
@@ -280,20 +287,20 @@ func initCacheEvidence(span trace.Span, req *dagql.CallRequest) {
 	req.CacheEvidence = dagql.NewCacheDecision()
 }
 
-// recordCacheEvidence maps a populated cache-evidence carrier onto the call's
-// span as the dagger.io/cache.* contract (engine/telemetryattrs). Best-effort
-// like recordStatus: it stamps only facts that were recorded and never fails
-// the call. An empty Outcome means the invocation never reached a cache
-// decision (validation/derivation error) — nothing is stamped then, so the
-// contract marker never rides a fact-free span.
-func recordCacheEvidence(ctx context.Context, span trace.Span, ev *dagql.CacheDecision, res dagql.AnyResult) {
+// appendCacheEvidenceAttrs maps a populated cache-evidence carrier onto the
+// call's span attributes as the dagger.io/cache.* contract
+// (engine/telemetryattrs). Best-effort like appendStatusAttrs: it stamps only
+// facts that were recorded and never fails the call. An empty Outcome means the
+// invocation never reached a cache decision (validation/derivation error) —
+// nothing is stamped then, so the contract marker never rides a fact-free span.
+func appendCacheEvidenceAttrs(ctx context.Context, attrs []attribute.KeyValue, ev *dagql.CacheDecision, res dagql.AnyResult) []attribute.KeyValue {
 	if ev == nil || ev.Outcome == "" {
-		return
+		return attrs
 	}
-	attrs := []attribute.KeyValue{
+	attrs = append(attrs,
 		attribute.String(telemetryattrs.CacheContractAttr, telemetryattrs.CacheContractV1),
 		attribute.String(telemetryattrs.CacheOutcomeAttr, string(ev.Outcome)),
-	}
+	)
 	if ev.Outcome == dagql.CacheOutcomeHit && ev.HitRoute != "" {
 		attrs = append(attrs, attribute.String(telemetryattrs.CacheHitRouteAttr, string(ev.HitRoute)))
 	}
@@ -365,7 +372,7 @@ func recordCacheEvidence(ctx context.Context, span trace.Span, ev *dagql.CacheDe
 	if state, ok := ev.ResultState(context.WithoutCancel(ctx), res); ok {
 		attrs = append(attrs, cacheStateAttrs(state)...)
 	}
-	span.SetAttributes(attrs...)
+	return attrs
 }
 
 // cacheStateAttrs maps an entry's cache state onto the dagger.io/cache.*
@@ -503,15 +510,16 @@ func normalizeRef(ref string) string {
 	return ref
 }
 
-// recordStatus records the status of a call on a span.
-func recordStatus(ctx context.Context, res dagql.AnyResult, span trace.Span, cached bool, frame *dagql.ResultCall) {
+// appendStatusAttrs appends the attributes that record the status of a call
+// on its span.
+func appendStatusAttrs(ctx context.Context, attrs []attribute.KeyValue, res dagql.AnyResult, cached bool, frame *dagql.ResultCall) []attribute.KeyValue {
 	if cached && !dagql.HasPendingLazyComputation(res) {
-		span.SetAttributes(attribute.Bool(telemetry.CachedAttr, true))
+		attrs = append(attrs, attribute.Bool(telemetry.CachedAttr, true))
 	}
 
 	if ctx.Err() != nil {
 		// If the request was canceled, reflect it on the span.
-		span.SetAttributes(attribute.Bool(telemetry.CanceledAttr, true))
+		attrs = append(attrs, attribute.Bool(telemetry.CanceledAttr, true))
 	}
 
 	// Record an object result as an output of this call.
@@ -533,16 +541,18 @@ func recordStatus(ctx context.Context, res dagql.AnyResult, span trace.Span, cac
 		isLoader := field == "node"
 		if !isLoader {
 			if objDig, err := obj.RecipeDigest(ctx); err == nil && objDig != "" {
-				span.SetAttributes(attribute.String(telemetry.DagOutputAttr, objDig.String()))
+				attrs = append(attrs, attribute.String(telemetry.DagOutputAttr, objDig.String()))
 			}
 		}
 	}
+	return attrs
 }
 
-func recordPending(res dagql.AnyResult, span trace.Span) {
+func appendPendingAttrs(attrs []attribute.KeyValue, res dagql.AnyResult) []attribute.KeyValue {
 	if dagql.HasPendingLazyComputation(res) {
-		span.SetAttributes(attribute.Bool(telemetry.PendingAttr, true))
+		attrs = append(attrs, attribute.Bool(telemetry.PendingAttr, true))
 	}
+	return attrs
 }
 
 // logResult prints the result of a call to the span's stdout.

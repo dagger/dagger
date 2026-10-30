@@ -2,7 +2,7 @@ package core
 
 // Cache-evidence stamping tests for the seam core owns: carrier allocation
 // gating (initCacheEvidence), the carrier→attribute mapping
-// (recordCacheEvidence), and the AroundFunc lifecycle end-to-end against an
+// (appendCacheEvidenceAttrs), and the AroundFunc lifecycle end-to-end against an
 // in-memory SDK tracer — mirroring otelprof_services_test.go's discipline.
 // Carrier POPULATION is dagql's seam and is tested there; these tests never
 // re-test it.
@@ -148,14 +148,14 @@ func TestRecordCacheEvidenceMappingHit(t *testing.T) {
 	res, err := dagql.NewResultForCall(dagql.NewInt(1), resFrame)
 	assert.NilError(t, err)
 
-	recordCacheEvidence(context.Background(), span, &dagql.CacheDecision{
+	span.SetAttributes(appendCacheEvidenceAttrs(context.Background(), nil, &dagql.CacheDecision{
 		Outcome:               dagql.CacheOutcomeHit,
 		HitRoute:              dagql.CacheHitRouteStructural,
 		MissUnknownInputIndex: -1,
 		SelfDigest:            selfDig,
 		StructuralInputs:      []digest.Digest{inputA, inputB},
 		PairingDigest:         pairDig,
-	}, res)
+	}, res)...)
 
 	ended := evidenceTestEndedAttrs(t, sr, span)
 	got := evidenceTestCacheAttrs(t, ended)
@@ -179,7 +179,7 @@ func TestRecordCacheEvidenceMappingExecutedMissFacts(t *testing.T) {
 	sr, span := evidenceTestRecordingSpan(t)
 
 	selfDig := digest.FromString("evidence-miss-self")
-	recordCacheEvidence(context.Background(), span, &dagql.CacheDecision{
+	span.SetAttributes(appendCacheEvidenceAttrs(context.Background(), nil, &dagql.CacheDecision{
 		Outcome:                    dagql.CacheOutcomeExecuted,
 		MissIncompatibleCandidates: true,
 		MissSawExpired:             true,
@@ -187,7 +187,7 @@ func TestRecordCacheEvidenceMappingExecutedMissFacts(t *testing.T) {
 		SelfDigest:                 selfDig,
 		StructuralInputs:           nil,
 		PairingDigest:              selfDig,
-	}, nil)
+	}, nil)...)
 
 	ended := evidenceTestEndedAttrs(t, sr, span)
 	got := evidenceTestCacheAttrs(t, ended)
@@ -210,7 +210,7 @@ func TestRecordCacheEvidenceMappingJoinedStampsNoMissFacts(t *testing.T) {
 	sr, span := evidenceTestRecordingSpan(t)
 
 	selfDig := digest.FromString("evidence-joined-self")
-	recordCacheEvidence(context.Background(), span, &dagql.CacheDecision{
+	span.SetAttributes(appendCacheEvidenceAttrs(context.Background(), nil, &dagql.CacheDecision{
 		Outcome: dagql.CacheOutcomeJoined,
 		// Populated by the joiner's pre-join lookup probe; must not stamp.
 		MissIncompatibleCandidates: true,
@@ -218,7 +218,7 @@ func TestRecordCacheEvidenceMappingJoinedStampsNoMissFacts(t *testing.T) {
 		MissUnknownInputIndex:      0,
 		SelfDigest:                 selfDig,
 		PairingDigest:              selfDig,
-	}, nil)
+	}, nil)...)
 
 	ended := evidenceTestEndedAttrs(t, sr, span)
 	got := evidenceTestCacheAttrs(t, ended)
@@ -240,7 +240,7 @@ func TestRecordCacheEvidenceMappingRemoteHit(t *testing.T) {
 	sr, span := evidenceTestRecordingSpan(t)
 
 	selfDig := digest.FromString("evidence-remote-self")
-	recordCacheEvidence(context.Background(), span, &dagql.CacheDecision{
+	span.SetAttributes(appendCacheEvidenceAttrs(context.Background(), nil, &dagql.CacheDecision{
 		Outcome:               dagql.CacheOutcomeHit,
 		HitRoute:              dagql.CacheHitRouteRecipe,
 		HitRemote:             true,
@@ -249,7 +249,7 @@ func TestRecordCacheEvidenceMappingRemoteHit(t *testing.T) {
 		MissUnknownInputIndex: -1,
 		SelfDigest:            selfDig,
 		PairingDigest:         selfDig,
-	}, nil)
+	}, nil)...)
 
 	got := evidenceTestCacheAttrs(t, evidenceTestEndedAttrs(t, sr, span))
 	assert.DeepEqual(t, got, map[string]string{
@@ -302,7 +302,7 @@ func TestRecordCacheEvidenceMappingServeTimeMiss(t *testing.T) {
 			ev.MissUnknownInputIndex = -1
 			ev.SelfDigest = selfDig
 			ev.PairingDigest = selfDig
-			recordCacheEvidence(context.Background(), span, &ev, nil)
+			span.SetAttributes(appendCacheEvidenceAttrs(context.Background(), nil, &ev, nil)...)
 
 			want := map[string]string{
 				telemetryattrs.CacheContractAttr:      telemetryattrs.CacheContractV1,
@@ -324,10 +324,10 @@ func TestRecordCacheEvidenceMappingUncached(t *testing.T) {
 	t.Parallel()
 	sr, span := evidenceTestRecordingSpan(t)
 
-	recordCacheEvidence(context.Background(), span, &dagql.CacheDecision{
+	span.SetAttributes(appendCacheEvidenceAttrs(context.Background(), nil, &dagql.CacheDecision{
 		Outcome:               dagql.CacheOutcomeUncached,
 		MissUnknownInputIndex: -1,
-	}, nil)
+	}, nil)...)
 
 	ended := evidenceTestEndedAttrs(t, sr, span)
 	got := evidenceTestCacheAttrs(t, ended)
@@ -347,8 +347,8 @@ func TestRecordCacheEvidenceMappingUndecidedStampsNothing(t *testing.T) {
 	// Never-populated carrier (invocation errored before any decision) and nil
 	// carrier both stamp nothing — the contract marker never rides a fact-free
 	// span.
-	recordCacheEvidence(context.Background(), span, dagql.NewCacheDecision(), nil)
-	recordCacheEvidence(context.Background(), span, nil, nil)
+	span.SetAttributes(appendCacheEvidenceAttrs(context.Background(), nil, dagql.NewCacheDecision(), nil)...)
+	span.SetAttributes(appendCacheEvidenceAttrs(context.Background(), nil, nil, nil)...)
 
 	got := evidenceTestCacheAttrs(t, evidenceTestEndedAttrs(t, sr, span))
 	assert.Equal(t, 0, len(got))
@@ -456,7 +456,7 @@ func TestRecordCacheEvidenceResultID(t *testing.T) {
 	assert.Assert(t, ok)
 
 	sr, span := evidenceTestRecordingSpan(t)
-	recordCacheEvidence(context.Background(), span, &dagql.CacheDecision{Outcome: dagql.CacheOutcomeExecuted, MissUnknownInputIndex: -1}, res)
+	span.SetAttributes(appendCacheEvidenceAttrs(context.Background(), nil, &dagql.CacheDecision{Outcome: dagql.CacheOutcomeExecuted, MissUnknownInputIndex: -1}, res)...)
 	got := evidenceTestCacheAttrs(t, evidenceTestEndedAttrs(t, sr, span))
 	assert.Equal(t, got[telemetryattrs.CacheResultIDAttr], strconv.FormatUint(number, 10))
 }
@@ -481,7 +481,7 @@ func TestRecordCacheEvidenceCacheState(t *testing.T) {
 	assert.Assert(t, state.Retained && state.RetentionExpiresAtUnix != 0 && state.ExpiresAtUnix != 0)
 
 	sr, span := evidenceTestRecordingSpan(t)
-	recordCacheEvidence(ctx, span, req.CacheEvidence, res)
+	span.SetAttributes(appendCacheEvidenceAttrs(ctx, nil, req.CacheEvidence, res)...)
 	kvs := evidenceTestEndedAttrs(t, sr, span)
 	got := evidenceTestCacheAttrs(t, kvs)
 	assert.Equal(t, "true", got[telemetryattrs.CacheRetainedAttr])
@@ -524,7 +524,7 @@ func evidenceTestChain(t testing.TB, n int, content digest.Digest) dagql.AnyResu
 }
 
 // ResultFrameFacts reads the same facts as cloning the frame with ResultCall,
-// which recordCacheEvidence used to do for every recorded span.
+// which appendCacheEvidenceAttrs used to do for every recorded span.
 func TestResultFrameFacts(t *testing.T) {
 	t.Parallel()
 	contentDig := digest.FromString("frame-facts-content")
@@ -551,6 +551,6 @@ func BenchmarkRecordCacheEvidence(b *testing.B) {
 	span := tracenoop.Span{}
 	b.ReportAllocs()
 	for b.Loop() {
-		recordCacheEvidence(ctx, span, ev, res)
+		span.SetAttributes(appendCacheEvidenceAttrs(ctx, nil, ev, res)...)
 	}
 }
