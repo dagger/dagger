@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -65,6 +66,9 @@ type fakeSnapshotManager struct {
 	snapshotParentCalls []string
 	snapshotMetadata    map[string]bkcache.SnapshotRecordMetadata
 	snapshotSizeCalls   []string
+	// leaseMu guards attachCalls, removeCalls and attachBlockDone: the cache
+	// attaches owner leases concurrently.
+	leaseMu             sync.Mutex
 	attachCalls         []struct{ LeaseID, SnapshotID string }
 	removeCalls         []string
 	deleteStaleKeep     map[string]struct{}
@@ -153,15 +157,22 @@ func (*fakeSnapshotManager) IdentityMapping() *idtools.IdentityMapping {
 }
 
 func (m *fakeSnapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID string) error {
-	if m.attachStarted != nil && !m.attachBlockDone {
+	m.leaseMu.Lock()
+	block := m.attachStarted != nil && !m.attachBlockDone
+	if block {
 		m.attachBlockDone = true
 		close(m.attachStarted)
+	}
+	m.leaseMu.Unlock()
+	if block {
 		select {
 		case <-m.allowAttach:
 		case <-ctx.Done():
 			return context.Cause(ctx)
 		}
 	}
+	m.leaseMu.Lock()
+	defer m.leaseMu.Unlock()
 	m.attachCalls = append(m.attachCalls, struct{ LeaseID, SnapshotID string }{
 		LeaseID:    leaseID,
 		SnapshotID: snapshotID,
@@ -206,6 +217,8 @@ func TestCacheSnapshotOwnerLeaseSyncDefersSessionCleanup(t *testing.T) {
 
 func (m *fakeSnapshotManager) RemoveLease(ctx context.Context, leaseID string) error {
 	_ = ctx
+	m.leaseMu.Lock()
+	defer m.leaseMu.Unlock()
 	m.removeCalls = append(m.removeCalls, leaseID)
 	return nil
 }

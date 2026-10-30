@@ -37,9 +37,12 @@ type cacheVolumeTestSnapshotManager struct {
 	lockMutableSnapshotID bool
 	mutableSnapshotOpen   map[string]bool
 	loadedRows            bkcache.PersistentMetadataRows
-	attachCalls           []struct{ leaseID, snapshotID string }
-	removeCalls           []string
-	deleteStaleKeep       map[string]struct{}
+	// leaseMu guards attachCalls and removeCalls: the cache attaches owner
+	// leases concurrently.
+	leaseMu         sync.Mutex
+	attachCalls     []struct{ leaseID, snapshotID string }
+	removeCalls     []string
+	deleteStaleKeep map[string]struct{}
 
 	getBySnapshotIDCalls        []string
 	getMutableBySnapshotIDCalls []string
@@ -159,6 +162,8 @@ func (*cacheVolumeTestSnapshotManager) Diff(context.Context, bkcache.ImmutableRe
 
 func (m *cacheVolumeTestSnapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID string) error {
 	_ = ctx
+	m.leaseMu.Lock()
+	defer m.leaseMu.Unlock()
 	m.attachCalls = append(m.attachCalls, struct{ leaseID, snapshotID string }{
 		leaseID:    leaseID,
 		snapshotID: snapshotID,
@@ -168,6 +173,8 @@ func (m *cacheVolumeTestSnapshotManager) AttachLease(ctx context.Context, leaseI
 
 func (m *cacheVolumeTestSnapshotManager) RemoveLease(ctx context.Context, leaseID string) error {
 	_ = ctx
+	m.leaseMu.Lock()
+	defer m.leaseMu.Unlock()
 	m.removeCalls = append(m.removeCalls, leaseID)
 	return nil
 }
