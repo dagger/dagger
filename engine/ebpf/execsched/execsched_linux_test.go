@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -15,12 +16,17 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 
 	"github.com/dagger/dagger/engine/ebpf/internal/ebpfutil"
 	"github.com/dagger/dagger/engine/ebpf/wcbpf"
 )
 
 func TestMain(m *testing.M) {
+	if mode := os.Getenv(helperEnv); mode != "" {
+		runHelper(mode)
+		os.Exit(0)
+	}
 	if os.Getenv("DAGGER_TEST_EBPF") == "1" {
 		if err := leaveRootCgroup(); err != nil {
 			fmt.Fprintln(os.Stderr, "moving the test out of the root cgroup:", err)
@@ -28,6 +34,40 @@ func TestMain(m *testing.M) {
 		}
 	}
 	os.Exit(m.Run())
+}
+
+// helperEnv makes the test binary a workload for TestExecSched's execs, by
+// mode: "sleep" sleeps 100 ms; "contend" spins on CPU 0 for 400 ms; "work"
+// does a fixed amount of work, whatever CPU it gets.
+const helperEnv = "EXECSCHED_HELPER"
+
+func runHelper(mode string) {
+	switch mode {
+	case "sleep":
+		time.Sleep(100 * time.Millisecond)
+	case "contend":
+		runtime.LockOSThread()
+		var cpus unix.CPUSet
+		cpus.Set(0)
+		if err := unix.SchedSetaffinity(0, &cpus); err != nil {
+			fmt.Fprintln(os.Stderr, "pinning to CPU 0:", err)
+			os.Exit(1)
+		}
+		spins := 0
+		for end := time.Now().Add(400 * time.Millisecond); time.Now().Before(end); {
+			spins++
+		}
+		fmt.Println(spins)
+	case "work":
+		x := uint64(1)
+		for i := range 200_000_000 {
+			x = x*6364136223846793005 + uint64(i)
+		}
+		fmt.Println(x)
+	default:
+		fmt.Fprintln(os.Stderr, "unknown helper mode", mode)
+		os.Exit(1)
+	}
 }
 
 // leaveRootCgroup moves this process out of the root of its cgroup namespace,
@@ -69,7 +109,7 @@ func newExec(t *testing.T, l *loaded, name string, init bool) (resource string, 
 	require.NoError(t, err)
 	resource = filepath.Join(filepath.Dir(self), fmt.Sprintf("execsched-%s-%d", name, os.Getpid()))
 	require.NoError(t, os.Mkdir(resource, 0o755))
-	t.Cleanup(func() { require.NoError(t, os.Remove(resource)) })
+	t.Cleanup(func() { removeCgroup(t, resource) })
 	id, err = ebpfutil.CgroupID(resource)
 	require.NoError(t, err)
 	w, err = l.WatchExec(wcbpf.ExecInfo{CgroupID: id, Init: init})
@@ -81,16 +121,29 @@ func newExec(t *testing.T, l *loaded, name string, init bool) (resource string, 
 func mkdirCgroup(t *testing.T, path string) {
 	t.Helper()
 	require.NoError(t, os.Mkdir(path, 0o755))
-	t.Cleanup(func() { require.NoError(t, os.Remove(path)) })
+	t.Cleanup(func() { removeCgroup(t, path) })
 }
 
-// startIn starts a command in the cgroup at path.
-func startIn(t *testing.T, path string, args ...string) (*exec.Cmd, *bytes.Buffer) {
+// removeCgroup removes a cgroup once the tasks that left it are gone: a
+// reaped task can keep its cgroup busy for a moment.
+func removeCgroup(t *testing.T, path string) {
+	t.Helper()
+	var err error
+	require.Eventually(t, func() bool {
+		err = os.Remove(path)
+		return err == nil
+	}, 5*time.Second, 10*time.Millisecond, "removing %s: %v", path, err)
+}
+
+// startIn starts a command in the cgroup at path, with env added to the
+// test's environment.
+func startIn(t *testing.T, path string, env []string, args ...string) (*exec.Cmd, *bytes.Buffer) {
 	t.Helper()
 	fd, err := os.Open(path)
 	require.NoError(t, err)
 	defer fd.Close()
 	cmd := exec.CommandContext(t.Context(), args[0], args[1:]...)
+	cmd.Env = append(os.Environ(), env...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{UseCgroupFD: true, CgroupFD: int(fd.Fd())}
 	var output bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &output, &output
@@ -101,9 +154,10 @@ func startIn(t *testing.T, path string, args ...string) (*exec.Cmd, *bytes.Buffe
 // The program measures an exec laid out as the engine lays one out: its
 // container's processes in the "container" child of its resource cgroup.
 // The test's shell stands for the engine's init, and its first command for
-// the workload; two busy loops pinned to one CPU wait for it in turn. A mount
+// the workload; two loops pinned to one CPU wait for it in turn. A mount
 // helper's leaf and a nested container's cgroup run work that counts toward
-// the exec, without taking a container role.
+// the exec, without taking a container role. The workloads are the test
+// binary itself (runHelper), so the test needs only a shell.
 func TestExecSched(t *testing.T) {
 	if os.Getenv("DAGGER_TEST_EBPF") != "1" {
 		t.Skip("set DAGGER_TEST_EBPF=1 on a privileged Linux runner")
@@ -123,13 +177,14 @@ func TestExecSched(t *testing.T) {
 	mkdirCgroup(t, nested)
 	mkdirCgroup(t, filepath.Join(nested, "ctr"))
 
-	// A fixed amount of work, whatever the CPU it gets.
-	spin := `i=0; while [ $i -lt 300000 ]; do i=$((i+1)); done`
-	helperCmd, helperOut := startIn(t, filepath.Join(helper, "mount"), "/bin/sh", "-c", spin)
-	nestedCmd, nestedOut := startIn(t, filepath.Join(nested, "ctr"), "/bin/sh", "-c", spin)
-	busy := `timeout 0.4 taskset -c 0 sh -c "while :; do :; done"`
+	self, err := os.Executable()
+	require.NoError(t, err)
+	work := []string{helperEnv + "=work"}
+	helperCmd, helperOut := startIn(t, filepath.Join(helper, "mount"), work, self)
+	nestedCmd, nestedOut := startIn(t, filepath.Join(nested, "ctr"), work, self)
 	start := time.Now()
-	cmd, output := startIn(t, filepath.Join(resource, "container"), "/bin/sh", "-c", "sleep 0.1; "+busy+" & "+busy+" & wait")
+	cmd, output := startIn(t, filepath.Join(resource, "container"), nil, "/bin/sh", "-c",
+		helperEnv+`=sleep "$0"; `+helperEnv+`=contend "$0" & `+helperEnv+`=contend "$0" & wait`, self)
 	require.NoError(t, cmd.Wait(), output.String())
 	require.NoError(t, helperCmd.Wait(), helperOut.String())
 	require.NoError(t, nestedCmd.Wait(), nestedOut.String())
@@ -147,10 +202,10 @@ func TestExecSched(t *testing.T) {
 	require.NotZero(t, m.InitTgid)
 	require.NotEqual(t, m.InitTgid, m.WorkloadTgid)
 	sleep := time.Duration(m.WorkloadExitNs - m.WorkloadExecNs)
-	require.Greater(t, sleep, 90*time.Millisecond, "the workload, sleep 0.1")
+	require.Greater(t, sleep, 90*time.Millisecond, "the workload, a 100 ms sleep")
 	require.Less(t, sleep, time.Second)
 
-	// Two loops on one CPU for 0.4 s each: each waits for about half.
+	// Two loops on one CPU for 400 ms each: each waits for about half.
 	require.Greater(t, time.Duration(m.RunqWaitNs), 200*time.Millisecond)
 	require.NotZero(t, m.RunqWaits)
 	// What the exec's threads ran is what its cgroup counted. The helper's
@@ -168,7 +223,7 @@ func TestExecSched(t *testing.T) {
 
 	// Without the init, the container's first process is the workload.
 	resource, id, w = newExec(t, l, "noinit", false)
-	cmd, output = startIn(t, filepath.Join(resource, "container"), "/bin/sh", "-c", "sleep 0.1")
+	cmd, output = startIn(t, filepath.Join(resource, "container"), []string{helperEnv + "=sleep"}, self)
 	require.NoError(t, cmd.Wait(), output.String())
 	require.NoError(t, l.objs.Execs.Lookup(id, &m))
 	t.Logf("measured without the init %+v", m)
