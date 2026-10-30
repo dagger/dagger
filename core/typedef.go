@@ -74,22 +74,10 @@ func NewFunction(name string, returnType dagql.ObjectResult[*TypeDef]) *Function
 // NewFunction creates a function, normalizing its name with n.
 func (n Namer) NewFunction(name string, returnType dagql.ObjectResult[*TypeDef]) *Function {
 	return &Function{
-		Name:         n.functionName(name),
+		Name:         n.FieldName(name),
 		ReturnType:   returnType,
 		OriginalName: name,
 	}
-}
-
-// functionName is the schema name of a function: FieldName, but a
-// loadFooFromID function keeps its spelling of ID, like the core loaders
-// (load<Type>FromID), where strcase and the new rules' acronyms-as-words
-// field convention would write "Id".
-func (n Namer) functionName(name string) string {
-	gqlName := n.FieldName(name)
-	if strings.HasPrefix(name, "load") && strings.HasSuffix(name, "FromID") && strings.HasSuffix(gqlName, "FromId") {
-		gqlName = strings.TrimSuffix(gqlName, "FromId") + "FromID"
-	}
-	return gqlName
 }
 
 func (*Function) Type() *ast.Type {
