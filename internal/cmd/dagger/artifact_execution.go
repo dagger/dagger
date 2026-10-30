@@ -66,7 +66,7 @@ func evaluateArtifacts(ctx context.Context, dag *dagger.Client, artifacts *core.
 	}
 	err = dag.Do(preparationCtx, &dagger.Request{
 		Query: `query($id: ID!) { selection: node(id: $id) { ... on Artifacts {
-		 items { id uri(dimensionKeys: true) path directives loadError workspace { id } dimensionKeys { dimension } }
+		 items: __evaluationItems { id uri(dimensionKeys: true) path directives loadError workspace { id } dimensionKeys { dimension } }
 		} } }`, Variables: map[string]any{"id": id},
 	}, &dagger.Response{Data: &response})
 	if err != nil {

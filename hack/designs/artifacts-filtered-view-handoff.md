@@ -243,6 +243,13 @@ Each generator must return its own intended output. Do not return a full shared 
 5. Send the full view and individual target to cloud execution. Related checks need a shared execution scope. Current remote checks use separate sessions.
 6. Remove native batch replacement and batch schema. Migrate module functions and markers. Update affected SDKs, generated clients, and documentation.
 
+For modules with `engineVersion` before `v1.0.0-beta.22`, check execution
+still replaces matching item checks with one collection check. The engine
+passes the selected keys to that check, including exclusions. Listing keeps
+the individual artifacts. This compatibility path does not restore the
+removed batch namespace. Modules at or after the version boundary use
+per-item checks. Remove the compatibility path after old modules migrate.
+
 CLI and module callers must use the same view. Equivalent views must still allow common helper calls to share work.
 
 | Area | Files |
@@ -278,4 +285,4 @@ Read [engine-debugging](../../skills/engine-debugging/SKILL.md) before running t
 - **Later objects:** Define how a new collection ID maps to the filtered dimension.
 - **Removal filters:** Does `withoutUri` change collection state or only selection membership?
 - **Conversion failures:** `asChecks()` can fail before returning its list. Choose how the CLI retains other results and supports `--fail-fast`, which cancels remaining work after a failure. The query alone does not preserve the current behavior.
-- **API names and release:** Resolve author method conflicts. Agree on cloud delivery and compatibility for removed fields. Read [version gating](../../internal-docs/version-gating.md). All v1.0.0 prereleases share one schema view; a later beta gate cannot separate them.
+- **API names and release:** Resolve author method conflicts. Agree on cloud delivery and compatibility for removed fields. Read [version gating](../../internal-docs/version-gating.md). Prereleases before beta.22 share one schema view. From beta.22, version gates can distinguish each prerelease.

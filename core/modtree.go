@@ -33,6 +33,7 @@ type ModTreeNode struct {
 	WorkspaceMain       bool
 	CollectionDimension *ArtifactDimension
 	CollectionKey       *string
+	LegacyBatchKeys     []string
 }
 
 func (node *ModTreeNode) Path() ModTreePath {
@@ -172,6 +173,11 @@ func (node *ModTreeNode) dagqlValue(ctx context.Context, dest any, leafArgs []da
 	if parentObjType := node.Parent.ObjectType(); parentObjType != nil {
 		var parentObjValue dagql.AnyObjectResult
 		if err := node.Parent.DagqlValue(ctx, &parentObjValue); err != nil {
+			return err
+		}
+		var err error
+		parentObjValue, err = node.legacyBatchReceiver(ctx, parentObjValue)
+		if err != nil {
 			return err
 		}
 		fn, _ := parentObjType.FunctionByName(node.Name)
@@ -529,6 +535,7 @@ type persistedModTree struct {
 type persistedModTreeNode struct {
 	CollectionDimension    *ArtifactDimension `json:"collectionDimension,omitempty"`
 	CollectionKey          *string            `json:"collectionKey,omitempty"`
+	LegacyBatchKeys        []string           `json:"legacyBatchKeys,omitempty"`
 	RootValueResultID      uint64             `json:"rootValueResultID,omitempty"`
 	ID                     int                `json:"id"`
 	ParentID               int                `json:"parentID,omitempty"`
@@ -578,6 +585,7 @@ func (enc *persistedModTreeEncoder) Add(node *ModTreeNode) (int, error) {
 	persisted := persistedModTreeNode{
 		CollectionDimension: node.CollectionDimension,
 		CollectionKey:       node.CollectionKey,
+		LegacyBatchKeys:     slices.Clone(node.LegacyBatchKeys),
 		ID:                  id,
 		ParentID:            parentID,
 		Name:                node.Name,
@@ -630,6 +638,7 @@ func decodePersistedModTree(ctx context.Context, dec *dagql.PersistDecodeContext
 		node := &ModTreeNode{
 			CollectionDimension: persisted.CollectionDimension,
 			CollectionKey:       persisted.CollectionKey,
+			LegacyBatchKeys:     slices.Clone(persisted.LegacyBatchKeys),
 			Name:                persisted.Name,
 			Description:         persisted.Description,
 			Directives:          persisted.Directives,

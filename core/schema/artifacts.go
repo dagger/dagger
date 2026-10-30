@@ -88,6 +88,9 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		dagql.Func("dimensions", s.dimensions).Doc("List dimension identifiers represented in this selection, sorted with no duplicates."),
 		dagql.Func("dimensionKeys", s.dimensionKeys).Doc("List keys represented in this selection for the given dimension, sorted with no duplicates."),
 		dagql.Func("dimensionItems", s.dimensionItems).Doc("List collection items represented in this selection for the given dimension. Preserve parent keys and remove duplicate item addresses. Does not evaluate item values."),
+		dagql.Func("__evaluationItems", func(ctx context.Context, parent *core.Artifacts, _ struct{}) ([]*core.Artifact, error) {
+			return parent.EvaluationItems(ctx)
+		}),
 		dagql.Func("items", s.items).Doc("List artifact descriptions with their collection view. Discover collection keys without evaluating leaf values."),
 		dagql.Func("one", s.one).Doc("Require exactly one artifact; fail if there are zero or multiple matches. Several matches are listed, one address per line."),
 		dagql.Func("uri", s.uri).Doc("The DAG address that selects this whole selection: filterUri(uri) selects the same set."),
@@ -964,12 +967,16 @@ func artifactValuesAs[T dagql.Typed](ctx context.Context, parent dagql.ObjectRes
 	if err != nil {
 		return nil, err
 	}
-	var items dagql.ObjectResultArray[*core.Artifact]
-	if err := srv.Select(ctx, parent, &items, dagql.Selector{Field: "items"}); err != nil {
-		return nil, err
-	}
 	var value T
 	typeName := value.Type().NamedType
+	field := "items"
+	if typeName == "Check" {
+		field = "__evaluationItems"
+	}
+	var items dagql.ObjectResultArray[*core.Artifact]
+	if err := srv.Select(ctx, parent, &items, dagql.Selector{Field: field}); err != nil {
+		return nil, err
+	}
 	if skipsLoadFailures(typeName) {
 		items = slices.DeleteFunc(slices.Clone(items), func(item dagql.ObjectResult[*core.Artifact]) bool {
 			return item.Self().LoadFailure != nil
