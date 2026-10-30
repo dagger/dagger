@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Khan/genqlient/graphql"
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/stretchr/testify/require"
@@ -99,15 +100,17 @@ func TestDangSchemaCacheIsolationAndRetry(t *testing.T) {
 	second, err := cachedDangSchema(ctx, "file-one", read)
 	require.NoError(t, err)
 	require.EqualValues(t, 1, reads.Load())
-	require.NotSame(t, first, second)
-	require.Same(t, first.Types[0], second.Types[0], "immutable decoded metadata is reused")
-	first.Types = append(first.Types, &introspection.Type{Name: "FirstModule"})
-	second.Types = append(second.Types, &introspection.Type{Name: "SecondModule"})
+	require.Same(t, first, second, "calls share the decoded schema")
+	dir := t.TempDir()
+	firstModule := ensureModuleSelfTypes(t.Context(), first, &core.ModuleSource{ModuleName: "FirstModule", ModuleOriginalName: "FirstModule"}, dir)
+	secondModule := ensureModuleSelfTypes(t.Context(), second, &core.ModuleSource{ModuleName: "SecondModule", ModuleOriginalName: "SecondModule"}, dir)
 	again, err := cachedDangSchema(ctx, "file-one", read)
 	require.NoError(t, err)
-	require.Len(t, again.Types, 1, "module-local types must not enter the template")
-	require.Equal(t, "FirstModule", first.Types[1].Name)
-	require.Equal(t, "SecondModule", second.Types[1].Name)
+	require.Len(t, again.Types, 1, "module-local types must not enter the shared schema")
+	require.Equal(t, []string{"Query", "FirstModule"}, typeNames(firstModule))
+	require.Equal(t, []string{"Query", "SecondModule"}, typeNames(secondModule))
+	require.Same(t, firstModule, ensureModuleSelfTypes(t.Context(), firstModule, &core.ModuleSource{ModuleName: "FirstModule", ModuleOriginalName: "FirstModule"}, dir),
+		"a schema that already has the module's types is used as is")
 
 	other, err := cachedDangSchema(ctx, "file-two", read)
 	require.NoError(t, err)
@@ -126,6 +129,14 @@ func TestDangSchemaCacheIsolationAndRetry(t *testing.T) {
 	require.NoError(t, cache.WaitSessionRelease(ctx, "schema-test"))
 	require.Zero(t, cache.EntryStats().CompletedArbitrary, "decoded schemas must leave with their last session")
 	require.Zero(t, cache.EntryStats().OngoingArbitrary)
+}
+
+func typeNames(schema *introspection.Schema) []string {
+	var names []string
+	for _, t := range schema.Types {
+		names = append(names, t.Name)
+	}
+	return names
 }
 
 // Cache work can still be running when a test ends, and the test's cleanup

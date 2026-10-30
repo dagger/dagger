@@ -155,9 +155,8 @@ func evalDangSource(
 			} else if self := moduleContext.Self(); self != nil {
 				selfSource = &core.ModuleSource{ModuleName: self.Name(), ModuleOriginalName: self.OriginalName}
 			}
-			ensureModuleSelfTypes(ctx, schema, selfSource, modSrcDir)
 			ctx = dang.ContextWithImportConfigs(ctx, dang.ImportConfig{
-				Name: "Dagger", Client: gqlClient, Schema: schema, AutoImport: true,
+				Name: "Dagger", Client: gqlClient, Schema: ensureModuleSelfTypes(ctx, schema, selfSource, modSrcDir), AutoImport: true,
 			})
 
 			env, err = runSource(ctx, modSrcDir)
@@ -223,14 +222,9 @@ func cachedDangSchema(ctx context.Context, key string, read func(context.Context
 	if !ok {
 		return nil, fmt.Errorf("invalid Dang schema cache result %T", result.Value())
 	}
-	if schema == nil {
-		return nil, nil
-	}
-	// ensureModuleSelfTypes appends placeholders for the current module. Keep
-	// its wrapper and type-list storage separate from the cached schema.
-	local := *schema
-	local.Types = slices.Clone(schema.Types)
-	return &local, nil
+	// Every call of the session shares this schema, which lets a prepared
+	// program recognize it by pointer. Callers must not modify it.
+	return schema, nil
 }
 
 // dangSourceError is the span error for a module whose Dang source failed to
@@ -360,22 +354,32 @@ func retainDangObjectDirectives(ctx context.Context, env dang.ValueScope, dir st
 // namespaces consistently); they are never emitted as TypeDefs, so a minimal
 // shape suffices. Once the served runtime schema already carries the types
 // (Module.IncludeSelfInDeps), this is a no-op.
-func ensureModuleSelfTypes(ctx context.Context, schema *introspection.Schema, src *core.ModuleSource, modSrcDir string) {
+//
+// The given schema is never modified, since it may be shared with other calls
+// (cachedDangSchema). When types are missing, they are added to a copy, which
+// is returned; otherwise the schema itself is returned.
+func ensureModuleSelfTypes(ctx context.Context, schema *introspection.Schema, src *core.ModuleSource, modSrcDir string) *introspection.Schema {
 	if schema == nil || src == nil {
-		return
+		return schema
 	}
 	moduleName := src.ModuleName
 	if moduleName == "" {
 		moduleName = src.ModuleOriginalName
 	}
 	if moduleName == "" {
-		return
+		return schema
 	}
 
+	shared := schema
 	for _, localName := range moduleDeclaredTypeNames(ctx, modSrcDir, moduleName) {
 		schemaName := core.NamespaceObject(localName, moduleName, src.ModuleOriginalName)
 		if schema.Types.Get(schemaName) != nil {
 			continue
+		}
+		if schema == shared {
+			local := *shared
+			local.Types = slices.Clone(shared.Types)
+			schema = &local
 		}
 		schema.Types = append(schema.Types, &introspection.Type{
 			Kind: introspection.TypeKindObject,
@@ -394,6 +398,7 @@ func ensureModuleSelfTypes(ctx context.Context, schema *introspection.Schema, sr
 			},
 		})
 	}
+	return schema
 }
 
 // moduleDeclaredTypeNames parses the module's .dang source files and returns the

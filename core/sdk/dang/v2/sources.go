@@ -134,14 +134,13 @@ func EntrypointSources(
 	module := dangModule{name: src.ModuleName, originalName: src.ModuleOriginalName}
 
 	_, err = dangshared.WithNestedClientServer(ctx, query, nestedClientMetadata, true, nil, dagql.ObjectResult[*core.Module]{}, func(ctx context.Context, client graphql.Client) ([]byte, error) {
-		ctx = dang.ContextWithImportConfigs(ctx, dang.ImportConfig{
-			Name:       "Dagger",
-			Client:     client,
-			Schema:     intro.Schema,
-			AutoImport: true,
-		})
 		return nil, entryDir.Self().Mount(ctx, entryDir, func(dir string) error {
-			ensureModuleSelfTypes(ctx, intro.Schema, src, dir)
+			ctx := dang.ContextWithImportConfigs(ctx, dang.ImportConfig{
+				Name:       "Dagger",
+				Client:     client,
+				Schema:     ensureModuleSelfTypes(ctx, intro.Schema, src, dir),
+				AutoImport: true,
+			})
 			env, err := runEntrypointDir(ctx, dir, true)
 			if err != nil {
 				if isDangSourceError(err) {
