@@ -2413,10 +2413,7 @@ func (dir *Directory) materializeSubdirectory(ctx context.Context, source bkcach
 			if !info.IsDir() {
 				return notADirectoryError{fmt.Errorf("path %s is a file, not a directory", subdir)}
 			}
-			return copier.Copy(ctx, layercopy.Mount{Root: parentRoot}, subdir, "/", layercopy.CopyOptions{
-				CopyDirContents: true,
-				FollowSymlinks:  true,
-			})
+			return copier.CopySelection(ctx, parentRoot, subdir)
 		}, mountRefAsReadOnly); err != nil {
 			return err
 		}
