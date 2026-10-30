@@ -850,11 +850,11 @@ func fetchTraceStreamBatch(ctx context.Context, db *clientdb.DB, since int64, li
 	if err != nil || rows == 0 {
 		return next, nil, rows, err
 	}
-	return next, func(binary bool) ([]byte, error) {
+	return next, func(buf []byte, binary bool) ([]byte, error) {
 		if binary {
-			return clientdb.AppendTraceRequestPB(nil, spans)
+			return clientdb.AppendTraceRequestPB(buf, spans)
 		}
-		return protojson.Marshal(&coltracepb.ExportTraceServiceRequest{
+		return protojson.MarshalOptions{}.MarshalAppend(buf, &coltracepb.ExportTraceServiceRequest{
 			ResourceSpans: clientdb.SpansToPB(spans),
 		})
 	}, rows, nil
@@ -1312,17 +1312,17 @@ func (record *clientRecord) telemetryStreamEnd(ctx context.Context) <-chan struc
 
 type streamFetcher func(ctx context.Context, db *clientdb.DB, since int64, limit int) (next int64, encode streamEncoder, rows int, err error)
 
-// streamEncoder encodes a fetched batch as one OTLP request: binary protobuf,
-// or protojson for the legacy SSE stream.
-type streamEncoder func(binary bool) ([]byte, error)
+// streamEncoder appends a fetched batch to buf as one OTLP request: binary
+// protobuf, or protojson for the legacy SSE stream.
+type streamEncoder func(buf []byte, binary bool) ([]byte, error)
 
 // encodeMessage is the streamEncoder of an OTLP request message.
 func encodeMessage(msg proto.Message) streamEncoder {
-	return func(binary bool) ([]byte, error) {
+	return func(buf []byte, binary bool) ([]byte, error) {
 		if binary {
-			return proto.Marshal(msg)
+			return proto.MarshalOptions{}.MarshalAppend(buf, msg)
 		}
-		return protojson.Marshal(msg)
+		return protojson.MarshalOptions{}.MarshalAppend(buf, msg)
 	}
 }
 
@@ -1426,6 +1426,9 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 	streamEnd := record.telemetryStreamEnd(streamCtx)
 	terminating := false
 	batchLimit := otlpBatchSize
+	// Each batch is encoded into the buffer the last written one used: a
+	// frame's bytes are written out before the next batch is fetched.
+	var payloadBuf []byte
 	// failStream ends the stream for good: the client must not reconnect at
 	// this cursor. Reserved for protocol violations the next attempt would
 	// only repeat (an inconsistent fetcher, an unmarshalable batch).
@@ -1493,7 +1496,7 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 			return failStream(fmt.Errorf("fetch returned non-increasing cursor %d after %d", next, since))
 		}
 
-		payload, err := encode(binary)
+		payload, err := encode(payloadBuf[:0], binary)
 		if err != nil {
 			return failStream(fmt.Errorf("marshal OTLP batch: %w", err))
 		}
@@ -1535,6 +1538,7 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 				return fmt.Errorf("write SSE event: %w", err)
 			}
 		}
+		payloadBuf = payload
 		since = next
 		batchLimit = otlpBatchSize
 		flush()
