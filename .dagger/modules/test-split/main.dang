@@ -12,7 +12,7 @@ type TestSplit {
   """
   diagnostics: Boolean! = false
 
-  let dumpAfter: [String!]! = if (self.diagnostics) { ["15m", "25m"] } else { [] }
+  let dumpAfter: [String!]! = if (diagnostics) { ["15m", "25m"] } else { [] }
 
   """
   Workspace
