@@ -623,9 +623,10 @@ roster strip hiding STOPPED entries — was reverted: it papered over the
 successor tombstones, and with replacements no longer minting them, a
 STOPPED entry means something real (a dismissed worker, a deliberate stop)
 that must not silently vanish from the strip. (The strip later became
-focus-relative: STOPPED agents near focus fold into a counted "+N done" chip,
-and every agent, on the strip or not, stays reachable by the [/] cycle and
-shown once focused — folded, never gone.) `TestReseed`
+focus-relative: STOPPED agents near focus fold into a counted "+N done" chip
+once focus next moves — never while the user is looking at their tab — and
+every agent, on the strip or not, stays reachable by the [/] cycle and
+shown once focused — folded, never gone; see async-agents.md §5.1.) `TestReseed`
 (core/integration/agent_runtime_test.go) pins the verb's semantics,
 `TestReseedKeepsTheInstance` (internal/cmd/dagger/session_agent_test.go)
 the CLI's reseed-or-drop policy, and `TestRosterKeepsStoppedAgentsReachable`
