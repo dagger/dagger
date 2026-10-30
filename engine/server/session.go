@@ -2520,18 +2520,21 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		ctx = dagql.WithRepeatedTelemetry(ctx)
 	}
 
-	ctx = bklog.WithLogger(ctx, bklog.G(ctx).
-		WithField("trace", trace.SpanContextFromContext(ctx).TraceID().String()).
-		WithField("span", trace.SpanContextFromContext(ctx).SpanID().String()).
-		WithField("client_id", clientMetadata.ClientID).
-		WithField("client_hostname", clientMetadata.ClientHostname).
-		WithField("session_id", clientMetadata.SessionID))
+	spanCtx := trace.SpanContextFromContext(ctx)
+	traceID, spanID := spanCtx.TraceID().String(), spanCtx.SpanID().String()
+	ctx = bklog.WithLogger(ctx, bklog.G(ctx).WithFields(logrus.Fields{
+		"trace":           traceID,
+		"span":            spanID,
+		"client_id":       clientMetadata.ClientID,
+		"client_hostname": clientMetadata.ClientHostname,
+		"session_id":      clientMetadata.SessionID,
+	}))
 	ctx = slog.WithLogger(ctx, slog.FromContext(ctx).With(
 		"client_id", clientMetadata.ClientID,
 		"client_hostname", clientMetadata.ClientHostname,
 		"session_id", clientMetadata.SessionID,
-		"trace", trace.SpanContextFromContext(ctx).TraceID().String(),
-		"span", trace.SpanContextFromContext(ctx).SpanID().String(),
+		"trace", traceID,
+		"span", spanID,
 	))
 	ctx = dagql.ContextWithCache(ctx, srv.engineCache)
 
@@ -2544,8 +2547,8 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 			"method":        r.Method,
 			"upgradeHeader": r.Header.Get("Upgrade"),
 			"contentType":   r.Header.Get("Content-Type"),
-			"trace":         trace.SpanContextFromContext(ctx).TraceID().String(),
-			"span":          trace.SpanContextFromContext(ctx).SpanID().String(),
+			"trace":         traceID,
+			"span":          spanID,
 		}).Debug("handling http request")
 	}
 
