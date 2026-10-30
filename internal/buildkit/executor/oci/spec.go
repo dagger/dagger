@@ -13,12 +13,12 @@ import (
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/containerd/v2/pkg/namespaces"
 	"github.com/containerd/containerd/v2/pkg/oci"
-	"github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/util/network"
 	rootlessmountopts "github.com/dagger/dagger/internal/buildkit/util/rootless/mountopts"
 	traceexec "github.com/dagger/dagger/internal/buildkit/util/tracing/exec"
+	"github.com/dagger/dagger/util/fsxutil"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/mitchellh/hashstructure/v2"
 	"github.com/moby/sys/userns"
@@ -268,7 +268,7 @@ func sharedReadonlyMount(ctx context.Context, m executor.Mount) (_ specs.Mount, 
 	if err != nil {
 		return specs.Mount{}, nil, true, errors.Wrapf(err, "failed to mount %s", m.Dest)
 	}
-	src, err := fs.RootPath(root, m.Selector)
+	src, err := fsxutil.RootPath(root, m.Selector)
 	if err == nil {
 		_, err = os.Stat(src)
 	}

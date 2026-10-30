@@ -13,8 +13,8 @@ import (
 	"strings"
 
 	"github.com/containerd/containerd/v2/core/mount"
-	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/util/fsxutil"
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
 	"github.com/moby/sys/user"
 	"golang.org/x/mod/semver"
@@ -336,7 +336,7 @@ var (
 // path separator reference a location outside of the root path.
 func RootPathWithoutFinalSymlink(root, containerPath string) (string, error) {
 	linkDir, linkBasename := filepath.Split(containerPath)
-	resolvedLinkDir, err := containerdfs.RootPath(root, linkDir)
+	resolvedLinkDir, err := fsxutil.RootPath(root, linkDir)
 	if err != nil {
 		return "", err
 	}

@@ -24,7 +24,6 @@ import (
 
 	"github.com/containerd/containerd/v2/core/mount"
 	ctdoci "github.com/containerd/containerd/v2/pkg/oci"
-	"github.com/containerd/continuity/fs"
 	runc "github.com/containerd/go-runc"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/client/pathutil"
@@ -39,6 +38,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	bknetwork "github.com/dagger/dagger/internal/buildkit/util/network"
 	"github.com/dagger/dagger/util/cleanups"
+	"github.com/dagger/dagger/util/fsxutil"
 	"github.com/google/uuid"
 	"github.com/moby/sys/user"
 	"github.com/opencontainers/runtime-spec/specs-go"
@@ -653,7 +653,7 @@ func (c *Client) setupRootfs(ctx context.Context, state *execState) error {
 	})
 	state.spec.Root.Path = state.rootfsPath
 	if state.rootMount.Selector != "" {
-		state.spec.Root.Path, err = fs.RootPath(state.rootfsPath, state.rootMount.Selector)
+		state.spec.Root.Path, err = fsxutil.RootPath(state.rootfsPath, state.rootMount.Selector)
 		if err != nil {
 			return fmt.Errorf("root mount %s points to invalid root path: %w", state.rootMount.Selector, err)
 		}
@@ -754,7 +754,7 @@ func (c *Client) setupRootfs(ctx context.Context, state *execState) error {
 
 	for _, mnt := range state.nonRootMounts {
 		mnt, recursiveReadOnly := consumeRecursiveReadOnlyOption(mnt)
-		dstPath, err := fs.RootPath(state.spec.Root.Path, mnt.Target)
+		dstPath, err := fsxutil.RootPath(state.spec.Root.Path, mnt.Target)
 		if err != nil {
 			return fmt.Errorf("mount %s points to invalid target: %w", mnt.Target, err)
 		}
@@ -1126,7 +1126,7 @@ func (c *Client) setupSecretScrubbing(ctx context.Context, state *execState) err
 			filePath = filepath.Join(ctrCwd, filePath)
 		}
 		var err error
-		filePath, err = fs.RootPath(state.rootfsPath, filePath)
+		filePath, err = fsxutil.RootPath(state.rootfsPath, filePath)
 		if err != nil {
 			return fmt.Errorf("secret file path %s points to invalid target: %w", filePath, err)
 		}
@@ -1257,7 +1257,7 @@ func (c *Client) enableGPU(_ context.Context, state *execState) error {
 }
 
 func (c *Client) createCWD(_ context.Context, state *execState) error {
-	newp, err := fs.RootPath(state.rootfsPath, state.procInfo.Meta.Cwd)
+	newp, err := fsxutil.RootPath(state.rootfsPath, state.procInfo.Meta.Cwd)
 	if err != nil {
 		return fmt.Errorf("working dir %s points to invalid target: %w", newp, err)
 	}

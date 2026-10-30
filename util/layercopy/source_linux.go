@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	continuityfs "github.com/containerd/continuity/fs"
+	"github.com/dagger/dagger/util/fsxutil"
 	"golang.org/x/sys/unix"
 )
 
@@ -335,7 +336,7 @@ func rootPath(root, p string, followFinalSymlink bool) (string, error) {
 	if p == "/" {
 		return root, nil
 	}
-	if resolved, ok := rootPathWithoutSymlinks(root, p, followFinalSymlink); ok {
+	if resolved, ok := fsxutil.RootPathWithoutSymlinks(root, p, followFinalSymlink); ok {
 		return resolved, nil
 	}
 	if followFinalSymlink {
@@ -347,37 +348,6 @@ func rootPath(root, p string, followFinalSymlink bool) (string, error) {
 		return "", err
 	}
 	return filepath.Join(resolvedDir, base), nil
-}
-
-// rootPathWithoutSymlinks settles, with one openat2, the common case of a path
-// that holds no symlinks, where continuity's walk takes an lstat, and several
-// allocations, per component. Such a path resolves to itself under root. A
-// final symlink counts only when followFinalSymlink is set. ok is false when
-// the lookup can't settle it: a symlink anywhere in the path, root's own
-// components included, or any error but a missing component. Every component
-// before a missing one is a directory, and the walk takes the missing ones as
-// they are.
-func rootPathWithoutSymlinks(root, p string, followFinalSymlink bool) (string, bool) {
-	full := root + p
-	if filepath.Clean(full) != full {
-		full = filepath.Join(root, p)
-	}
-	how := unix.OpenHow{
-		Flags:   unix.O_PATH | unix.O_CLOEXEC,
-		Resolve: unix.RESOLVE_NO_SYMLINKS,
-	}
-	if !followFinalSymlink {
-		how.Flags |= unix.O_NOFOLLOW
-	}
-	fd, err := unix.Openat2(unix.AT_FDCWD, full, &how)
-	switch err {
-	case nil:
-		unix.Close(fd)
-		return full, true
-	case unix.ENOENT:
-		return full, true
-	}
-	return "", false
 }
 
 func isWhiteout(info os.FileInfo) bool {
