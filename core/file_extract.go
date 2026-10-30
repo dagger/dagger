@@ -245,14 +245,23 @@ func archiveEntryPath(name string, strip int) (string, error) {
 }
 
 // extractFilter selects the entries of an archive that are extracted, by
-// their paths after stripping, as Directory.filter selects paths: an entry
-// is extracted if an include pattern, when there are any, matches it or a
-// directory it is in, and no exclude pattern does. A nil filter extracts
-// every entry. Entries left out are never decompressed, where the format
-// allows: a zip's are skipped, a tar's are read past.
+// their paths after stripping, as Directory.filter selects paths: each path
+// is matched with its parent directory's results, as if the archive's
+// directories were walked from the top. A nil filter extracts every entry.
+// Entries left out are never decompressed, where the format allows: a zip's
+// are skipped, a tar's are read past. As with Directory.filter, a directory
+// left out that holds entries that aren't is made anyway, with the
+// archive's metadata for it.
 type extractFilter struct {
 	include *patternmatcher.PatternMatcher
 	exclude *patternmatcher.PatternMatcher
+	// dirs holds the match results of each directory matched so far.
+	dirs map[string]extractMatch
+}
+
+// extractMatch is a path's match results, for its children's matching.
+type extractMatch struct {
+	include, exclude patternmatcher.MatchInfo
 }
 
 // newExtractFilter is the filter of include and exclude, or nil if both are
@@ -261,7 +270,7 @@ func newExtractFilter(include, exclude []string) (*extractFilter, error) {
 	if len(include) == 0 && len(exclude) == 0 {
 		return nil, nil
 	}
-	f := &extractFilter{}
+	f := &extractFilter{dirs: map[string]extractMatch{}}
 	if len(include) > 0 {
 		pm, err := patternmatcher.New(include)
 		if err != nil {
@@ -292,19 +301,42 @@ func (f *extractFilter) keep(rel string) (bool, error) {
 	if f == nil {
 		return true, nil
 	}
-	if f.include != nil {
-		ok, err := f.include.MatchesOrParentMatches(rel)
-		if err != nil || !ok {
-			return false, err
+	keep, _, err := f.match(rel)
+	return keep, err
+}
+
+// match is keep's answer for rel, and rel's match results.
+func (f *extractFilter) match(rel string) (bool, extractMatch, error) {
+	var parent extractMatch
+	if dir := path.Dir(rel); dir != "." {
+		var ok bool
+		if parent, ok = f.dirs[dir]; !ok {
+			var err error
+			if _, parent, err = f.match(dir); err != nil {
+				return false, parent, err
+			}
+			f.dirs[dir] = parent
 		}
+	}
+	keep := true
+	var m extractMatch
+	if f.include != nil {
+		matched, info, err := f.include.MatchesUsingParentResults(rel, parent.include)
+		if err != nil {
+			return false, m, err
+		}
+		m.include = info
+		keep = matched
 	}
 	if f.exclude != nil {
-		excluded, err := f.exclude.MatchesOrParentMatches(rel)
-		if err != nil || excluded {
-			return false, err
+		matched, info, err := f.exclude.MatchesUsingParentResults(rel, parent.exclude)
+		if err != nil {
+			return false, m, err
 		}
+		m.exclude = info
+		keep = keep && !matched
 	}
-	return true, nil
+	return keep, m, nil
 }
 
 // extractZipWorkers bounds the entries of one zip written at once.
@@ -337,6 +369,10 @@ func extractZip(ctx context.Context, r io.ReaderAt, size int64, dest string, str
 	// A later entry of the same path replaces an earlier one.
 	byPath := map[string]*zipEntry{}
 	var order []string
+	// Directories filter leaves out, for their metadata if entries in
+	// them are kept.
+	leftOut := map[string]*zipEntry{}
+	var leftOutOrder []string
 	for _, f := range zr.File {
 		rel, err := archiveEntryPath(f.Name, strip)
 		if err != nil {
@@ -345,12 +381,20 @@ func extractZip(ctx context.Context, r io.ReaderAt, size int64, dest string, str
 		if rel == "" {
 			continue
 		}
-		if ok, err := filter.keep(rel); err != nil {
+		keep, err := filter.keep(rel)
+		if err != nil {
 			return err
-		} else if !ok {
-			continue
 		}
 		mode := f.Mode()
+		if !keep {
+			if mode.IsDir() {
+				if _, ok := leftOut[rel]; !ok {
+					leftOutOrder = append(leftOutOrder, rel)
+				}
+				leftOut[rel] = &zipEntry{file: f, path: rel, mode: mode}
+			}
+			continue
+		}
 		if _, ok := byPath[rel]; !ok {
 			order = append(order, rel)
 		}
@@ -374,6 +418,11 @@ func extractZip(ctx context.Context, r io.ReaderAt, size int64, dest string, str
 		}
 		for p := path.Dir(rel); p != "."; p = path.Dir(p) {
 			mkdirs[p] = true
+		}
+	}
+	for _, rel := range leftOutOrder {
+		if mkdirs[rel] {
+			dirs = append(dirs, leftOut[rel])
 		}
 	}
 
@@ -583,11 +632,31 @@ func extractTar(r io.Reader, dest string, strip int, filter *extractFilter) erro
 // stripTarComponents copies the tar r to w with the first strip elements
 // of each entry's path, and of each hard link's target, removed, dropping
 // entries left with none, as tar --strip-components does, and entries
-// filter leaves out. As with tar --exclude, a hard link to an entry left out
-// fails to extract.
+// filter leaves out. A directory left out is written anyway, just before the
+// first entry in it that isn't. As with tar --exclude, a hard link to an
+// entry left out fails to extract.
 func stripTarComponents(r io.Reader, w io.Writer, strip int, filter *extractFilter) error {
 	tr := tar.NewReader(r)
 	tw := tar.NewWriter(w)
+	// Directories filter left out, not yet written, by path.
+	leftOut := map[string]*tar.Header{}
+	// writeLeftOut writes the directories left out that name is in, top
+	// first.
+	writeLeftOut := func(name string) error {
+		var parents []*tar.Header
+		for p := path.Dir(name); p != "."; p = path.Dir(p) {
+			if hdr, ok := leftOut[p]; ok {
+				parents = append(parents, hdr)
+				delete(leftOut, p)
+			}
+		}
+		for i := len(parents) - 1; i >= 0; i-- {
+			if err := tw.WriteHeader(parents[i]); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	for first := true; ; first = false {
 		hdr, err := tr.Next()
 		if errors.Is(err, io.EOF) {
@@ -606,9 +675,15 @@ func stripTarComponents(r io.Reader, w io.Writer, strip int, filter *extractFilt
 		if name == "" {
 			continue
 		}
-		if ok, err := filter.keep(name); err != nil {
+		keep, err := filter.keep(name)
+		if err != nil {
 			return err
-		} else if !ok {
+		}
+		if !keep {
+			if hdr.Typeflag == tar.TypeDir {
+				hdr.Name = name + "/"
+				leftOut[name] = hdr
+			}
 			continue
 		}
 		if hdr.Typeflag == tar.TypeLink {
@@ -625,6 +700,9 @@ func stripTarComponents(r io.Reader, w io.Writer, strip int, filter *extractFilt
 			name += "/"
 		}
 		hdr.Name = name
+		if err := writeLeftOut(strings.TrimSuffix(name, "/")); err != nil {
+			return err
+		}
 		if err := tw.WriteHeader(hdr); err != nil {
 			return err
 		}
