@@ -924,3 +924,77 @@ func navKeyHelp(binds []key.Binding) string {
 	}
 	return strings.Join(help, " | ")
 }
+
+// hierarchyDB is a chief with two workers, the first running a reviewer --
+// three levels, linked the way the engine records them: by the control
+// record's parent, while every loop span sits at the trace root.
+func hierarchyDB(t *testing.T) *dagui.DB {
+	t.Helper()
+	db := dagui.NewDB()
+	calls, snapshots := rosterTraceFor("chief", "w1", "w2", "r1")
+	for digest, call := range calls {
+		db.Calls[digest] = call
+	}
+	db.ImportSnapshots(snapshots)
+	for child, parent := range map[string]string{"w1": "chief", "w2": "chief", "r1": "w1"} {
+		publishAgentControl(t, db, "agent-"+child, func(a *agentcontrol.Agent) {
+			a.Parent = "agent-" + parent
+		})
+	}
+	return db
+}
+
+func rosterTabLabels(fe *frontendPretty) []string {
+	var names []string
+	for _, entry := range fe.agentRosterEntries() {
+		names = append(names, entry.Name)
+	}
+	return names
+}
+
+// TestRosterJumpsAddressTabsOnly: the strip shows the neighborhood of focus,
+// and the digits number what it shows -- so a reviewer two levels down gets a
+// number once its worker is focused, and the last-focused toggle can still
+// reach it after it has left the strip again.
+func TestRosterJumpsAddressTabsOnly(t *testing.T) {
+	runFocusTest(t, func(t *testing.T) {
+		handler := &focusShellHandler{target: "agent-chief"}
+		fe := focusTestFrontend(t, hierarchyDB(t), handler)
+		require.Equal(t, []string{"chief", "w1", "w2"}, rosterTabLabels(fe),
+			"the chief's view: itself and its workers, not the reviewer")
+
+		require.True(t, pressEditlineKey(t, fe, uv.Key{Code: '2', Mod: uv.ModCtrl}))
+		awaitFocus(t, fe, handler, "agent-w1")
+		require.Equal(t, []string{"chief", "w1", "r1"}, rosterTabLabels(fe),
+			"a worker's view: its chain and its reviewer; its sibling leaves the strip")
+
+		require.True(t, pressEditlineKey(t, fe, uv.Key{Code: '3', Mod: uv.ModCtrl}))
+		awaitFocus(t, fe, handler, "agent-w1", "agent-r1")
+
+		require.True(t, pressEditlineKey(t, fe, uv.Key{Code: '1', Mod: uv.ModCtrl}))
+		awaitFocus(t, fe, handler, "agent-w1", "agent-r1", "agent-chief")
+		require.NotContains(t, rosterTabLabels(fe), "r1")
+
+		// Off the strip, but not out of reach.
+		require.True(t, pressEditlineKey(t, fe, uv.Key{Code: 'l', Mod: uv.ModAlt}))
+		awaitFocus(t, fe, handler, "agent-w1", "agent-r1", "agent-chief", "agent-r1")
+		require.Equal(t, "r1", focusedRosterName(t, fe))
+	})
+}
+
+// TestNavCycleWalksTheWholeTree: [/] walks every agent depth-first by
+// lineage, including the ones the strip leaves out -- that is what keeps a
+// focus-relative strip from making anyone unreachable.
+func TestNavCycleWalksTheWholeTree(t *testing.T) {
+	handler := &focusShellHandler{target: "agent-chief"}
+	fe := focusTestFrontend(t, hierarchyDB(t), handler)
+	fe.enterNavMode()
+	require.NotContains(t, rosterTabLabels(fe), "r1", "sanity: the reviewer starts off the strip")
+
+	for _, want := range []string{"w1", "r1", "w2", "chief"} {
+		pressNavKey(t, fe, ']')
+		require.Equal(t, want, focusedRosterName(t, fe))
+	}
+	pressNavKey(t, fe, '[')
+	require.Equal(t, "w2", focusedRosterName(t, fe))
+}

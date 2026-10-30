@@ -142,15 +142,14 @@ func TestInterjectHintClearsOnFocusSwitch(t *testing.T) {
 	require.Empty(t, fe.queuedMsgLabel.Message())
 }
 
-// TestRosterShowsStoppedAgents: a stopped agent stays on the roster.
-// Dismissing or stopping an agent must not make it silently vanish from the
-// strip -- an entry disappearing underneath the user is jarring, and the
-// stopped agent can still be read (it merely errors on send). The
-// duplicate-tombstone spam that once motivated hiding them is fixed at the
-// source: the CLI reseeds the one instance in place instead of stopping it
-// and spawning a successor on every wholesale LLM replacement (see
-// Agent.reseed).
-func TestRosterShowsStoppedAgents(t *testing.T) {
+// TestRosterKeepsStoppedAgentsReachable: a stopped agent never silently
+// vanishes. STOPPED means something real -- a dismissed worker, whose
+// snapshot can still be read (it merely errors on send) -- so the strip folds
+// it into a "+N done" chip rather than spending a tab on it, but it stays
+// counted there, the cycle still walks onto it, and focusing it brings its
+// tab back. (Hiding stopped agents outright was tried, and reverted: see
+// hack/designs/resume-from-trace.md §6.)
+func TestRosterKeepsStoppedAgentsReachable(t *testing.T) {
 	handler := &focusShellHandler{target: "agent-chief"}
 	db := rosterDB(t)
 	fe := focusTestFrontend(t, db, handler)
@@ -162,14 +161,27 @@ func TestRosterShowsStoppedAgents(t *testing.T) {
 	})
 	fe.updateAgentRoster()
 
-	// Both entries remain: the stopped scout is still listed.
-	entries := fe.agentRosterEntries()
-	require.Len(t, entries, 2)
-	require.Equal(t, "chief", entries[0].Name)
-	require.Equal(t, "scout", entries[1].Name)
-	require.Equal(t, "STOPPED", entries[1].State)
-
-	// And the strip still shows it.
+	// Folded, not gone: the chip counts it, and the roster still holds it.
+	view := fe.agentRosterView()
+	require.Len(t, view.Tabs, 1)
+	require.Equal(t, "chief", view.Tabs[0].Name)
+	require.Equal(t, 1, view.Done)
+	order := fe.agentRosterOrder()
+	require.Len(t, order, 2)
+	require.Equal(t, "scout", order[1].Name)
+	require.Equal(t, "STOPPED", order[1].State)
 	frame := strings.Join(fe.tui.Step(), "\n")
+	require.Contains(t, frame, "+1 done")
+	require.True(t, fe.agentRoster.Switchable(), "a folded agent is still somewhere to switch to")
+
+	// The cycle walks onto it, and focus gives it its tab back.
+	fe.enterNavMode()
+	pressNavKey(t, fe, ']')
+	require.Equal(t, "scout", focusedRosterName(t, fe))
+	view = fe.agentRosterView()
+	require.Len(t, view.Tabs, 2)
+	require.Zero(t, view.Done)
+	fe.updateAgentRoster()
+	frame = strings.Join(fe.tui.Step(), "\n")
 	require.Contains(t, frame, "scout")
 }

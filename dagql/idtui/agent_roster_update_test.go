@@ -26,7 +26,7 @@ import (
 // renderedRosterEntry is the entry the strip last rendered for an agent.
 func renderedRosterEntry(t *testing.T, fe *frontendPretty, id string) AgentRosterEntry {
 	t.Helper()
-	for _, entry := range fe.agentRosterState {
+	for _, entry := range fe.agentRosterState.Tabs {
 		if entry.ID == id {
 			return entry
 		}
@@ -43,7 +43,7 @@ func TestRosterUpdateFollowsEveryInput(t *testing.T) {
 	fe := focusTestFrontend(t, db, handler)
 	fe.updateAgentRoster()
 
-	require.Len(t, fe.agentRosterState, 2)
+	require.Len(t, fe.agentRosterState.Tabs, 2)
 	require.True(t, renderedRosterEntry(t, fe, "agent-chief").Focused)
 	require.False(t, renderedRosterEntry(t, fe, "agent-scout").Focused)
 
@@ -143,8 +143,8 @@ func TestRosterUpdateUnchangedDoesNotAllocate(t *testing.T) {
 	fe := stepTestFrontend(t, largeRosterDB(t, agents), handler)
 	fe.updateAgentRoster()
 	fe.notifyAgentSteps()
-	require.Len(t, fe.agentRosterState, agents)
-	require.True(t, fe.agentRosterState[0].Focused)
+	require.Len(t, fe.agentRosterState.Tabs, agents)
+	require.True(t, fe.agentRosterState.Tabs[0].Focused)
 	require.Len(t, handler.stepped(), agents, "sanity: every agent's first step is notified")
 
 	allocs := testing.AllocsPerRun(100, func() {

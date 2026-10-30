@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/cellbuf"
+	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/muesli/termenv"
 	"github.com/vito/tuist"
 )
@@ -26,6 +27,26 @@ type AgentRosterEntry struct {
 	// advertised a call digest for it, or the handle failed to rebuild from
 	// the trace. Such an entry can be watched, not spoken to, and says so.
 	ReadOnly bool
+	// Waiting and Failed count the agents beneath this one, with no tab of
+	// their own, that are WAITING_INPUT or FAILED: the strip only shows part
+	// of a deep roster, and what needs the user must not be in the part it
+	// leaves out, so it surfaces on the nearest tab above.
+	Waiting, Failed int
+}
+
+// AgentRosterView is what the strip shows of the roster: the tabs, in tree
+// order, and how much of the rest it folded away.
+type AgentRosterView struct {
+	// Tabs are the entries with a tab of their own. Jump numbers address
+	// them, in this order.
+	Tabs []AgentRosterEntry
+	// Done counts the STOPPED agents that would have had a tab, folded into
+	// one trailing chip instead: finished work stays on the record without
+	// costing a tab apiece.
+	Done int
+	// Total counts every agent on the roster, tabs or not -- all of them
+	// reachable by [/].
+	Total int
 }
 
 // AgentRoster renders a compact list of the session's live agents as tabs — a
@@ -33,7 +54,7 @@ type AgentRosterEntry struct {
 // either side — on one line, the focused tab filled like the prompt card and
 // edged by its border, the card's bottom edge opening above it:
 //
-//	1 agent ▶  2 scout ○  3 docs ▶  4 tests needs you
+//	1 agent ▶  2 scout ○ +1 needs you  3 docs ▶  +4 done
 //
 // The roster is embedded at the left of the prompt's status line. It is always
 // visible once an agent has been published: besides being a switcher, it is the
@@ -45,10 +66,10 @@ type AgentRoster struct {
 	tuist.Compo
 
 	profile termenv.Profile
-	// entries is consulted on every render, so the strip tracks live state
+	// view is consulted on every render, so the strip tracks live state
 	// without the frontend having to push updates into it (same pattern as
 	// StatusLine.liveStats).
-	entries func() []AgentRosterEntry
+	view func() AgentRosterView
 	// tabColors, when set, returns the focused entry's tab colors: the prompt
 	// card's shade as its fill and the card's border as its side edges, so
 	// the tab reads as part of the prompt it addresses -- the card's bottom
@@ -64,10 +85,10 @@ const (
 	rosterTabRightEdge = "▕"
 )
 
-// NewAgentRoster creates a roster strip sourcing its entries from the given
+// NewAgentRoster creates a roster strip sourcing what it shows from the given
 // callback.
-func NewAgentRoster(profile termenv.Profile, entries func() []AgentRosterEntry) *AgentRoster {
-	return &AgentRoster{profile: profile, entries: entries}
+func NewAgentRoster(profile termenv.Profile, view func() AgentRosterView) *AgentRoster {
+	return &AgentRoster{profile: profile, view: view}
 }
 
 // SetTabColorSource sets where the focused tab's colors come from (see
@@ -78,24 +99,33 @@ func (r *AgentRoster) SetTabColorSource(colors func() (fill, border color.Color)
 	r.Update()
 }
 
-// Entries returns the roster's current entries, or nil when there is no
+// View returns what the roster currently shows, or nothing when there is no
 // source.
-func (r *AgentRoster) Entries() []AgentRosterEntry {
-	if r.entries == nil {
-		return nil
+func (r *AgentRoster) View() AgentRosterView {
+	if r.view == nil {
+		return AgentRosterView{}
 	}
-	return r.entries()
+	return r.view()
+}
+
+// Entries returns the roster's current tabs -- the entries jump numbers
+// address.
+func (r *AgentRoster) Entries() []AgentRosterEntry {
+	return r.View().Tabs
 }
 
 // Visible reports whether the roster renders anything.
 func (r *AgentRoster) Visible() bool {
-	return len(r.Entries()) > 0
+	view := r.View()
+	return len(view.Tabs) > 0 || view.Done > 0
 }
 
 // Switchable reports whether roster focus shortcuts should be advertised and
-// claimed. A single entry is useful as a state display, but not as a switcher.
+// claimed. A single agent is useful as a state display, but not as a
+// switcher. Agents without a tab count: [/] reaches them.
 func (r *AgentRoster) Switchable() bool {
-	return len(r.Entries()) > 1
+	view := r.View()
+	return max(len(view.Tabs), view.Total) > 1
 }
 
 // Height is the roster's standalone line count.
@@ -134,8 +164,9 @@ func (r *AgentRoster) layout(width int) (line string, tabStart, tabEnd int) {
 	}
 
 	out := NewOutput(new(strings.Builder), termenv.WithProfile(r.profile))
-	entries := r.Entries()
-	parts := make([]string, 0, len(entries))
+	view := r.View()
+	entries := view.Tabs
+	parts := make([]string, 0, len(entries)+1)
 	col := 0
 	for i, entry := range entries {
 		label, labelColor := agentStateDisplay(entry.State)
@@ -176,6 +207,14 @@ func (r *AgentRoster) layout(width int) (line string, tabStart, tabEnd int) {
 		if label != "" {
 			content += " " + out.String(label).Foreground(labelColor).String()
 		}
+		// Attention from beneath: the label's own words and colors, counted,
+		// so it reads as "this many more like that, under here".
+		if entry.Waiting > 0 {
+			content += " " + out.String("+"+strconv.Itoa(entry.Waiting)+" needs you").Foreground(termenv.ANSIYellow).String()
+		}
+		if entry.Failed > 0 {
+			content += " " + out.String("+"+strconv.Itoa(entry.Failed)+" "+IconFailure).Foreground(termenv.ANSIRed).String()
+		}
 		var part string
 		if entry.Focused {
 			// The strip leads the line, so a tab at column 0 sits flush with
@@ -189,6 +228,13 @@ func (r *AgentRoster) layout(width int) (line string, tabStart, tabEnd int) {
 			tabStart, tabEnd = col, col+partWidth
 		}
 		col += partWidth
+		parts = append(parts, part)
+	}
+	if view.Done > 0 {
+		// Quiet, like an unfocused STOPPED tab: no number, since a jump
+		// key would name a whole group. [/] walks onto its members.
+		part := " " + out.String("+"+strconv.Itoa(view.Done)+" done").Foreground(termenv.ANSIBrightBlack).String() + " "
+		col += ansi.StringWidth(part)
 		parts = append(parts, part)
 	}
 
@@ -243,6 +289,157 @@ func (r *AgentRoster) focusTab(content string, leftEdge bool) string {
 		left = side(rosterTabLeftEdge)
 	}
 	return ansi.ResetStyle + left + fill(content) + side(rosterTabRightEdge)
+}
+
+// agentRosterModel is the roster as the frontend navigates it: every agent,
+// and what the strip shows of them.
+type agentRosterModel struct {
+	// order is every agent, depth-first by lineage: each agent followed by
+	// its descendants, siblings in the order they appeared. [/] walks it, so
+	// nothing the strip leaves out is out of reach.
+	order []AgentRosterEntry
+	view  AgentRosterView
+}
+
+// buildAgentRosterModel arranges the session's agents (db.Agents(), whose
+// ParentID links always end at a root) for the strip, relative to the focused
+// agent. entry projects one agent to its entry, Focused aside.
+//
+// A deep session -- a chief, its workers, their reviewers, the agents an
+// integration test spawned inside one of them -- cannot be one line of tabs,
+// so the strip shows the neighborhood of focus:
+//
+//   - every root agent;
+//   - the focused agent, its chain of ancestors, and its direct children:
+//     where it sits, and who it is directing.
+//
+// With nothing focused, every root's direct children stand in for the
+// focused agent's: the session's own agent is a root, so this is the same
+// view focusing it would give -- the top two levels, a chief and its
+// workers -- rather than a strip that changes shape on the first focus.
+//
+// Within that, STOPPED agents fold into the trailing "+N done" chip: STOPPED
+// is terminal, so their tabs would only grow. The focused agent and its
+// ancestors never fold, since they are the context the rest is read in.
+// Nothing becomes unreachable: [/] walks order, which holds everybody, and
+// whatever [/] lands on is focused and therefore shown.
+//
+// What needs the user must not hide in the part left out: an agent with no
+// tab that is WAITING_INPUT or FAILED counts on its nearest ancestor that the
+// neighborhood includes, which keeps (or regains) its tab to say so.
+func buildAgentRosterModel(agents []*dagui.AgentNode, focused string, entry func(*dagui.AgentNode) AgentRosterEntry) agentRosterModel {
+	n := len(agents)
+	if n == 0 {
+		return agentRosterModel{}
+	}
+	index := make(map[string]int, n)
+	for i, agent := range agents {
+		index[agent.ID] = i
+	}
+	parent := make([]int, n)
+	children := make([][]int, n)
+	var roots []int
+	for i, agent := range agents {
+		p, ok := index[agent.ParentID]
+		if agent.ParentID == "" || !ok || p == i {
+			parent[i] = -1
+			roots = append(roots, i)
+			continue
+		}
+		parent[i] = p
+		children[p] = append(children[p], i)
+	}
+
+	// Depth-first, guarded against revisits so a malformed tree still
+	// terminates; anything a guard skipped is appended as a root.
+	order := make([]int, 0, n)
+	visited := make([]bool, n)
+	var walk func(int)
+	walk = func(i int) {
+		if visited[i] {
+			return
+		}
+		visited[i] = true
+		order = append(order, i)
+		for _, child := range children[i] {
+			walk(child)
+		}
+	}
+	for _, root := range roots {
+		walk(root)
+	}
+	for i := range agents {
+		walk(i)
+	}
+
+	focus := -1
+	if i, ok := index[focused]; ok && focused != "" {
+		focus = i
+	}
+
+	// The neighborhood of focus, and the ancestors that never fold.
+	near := make([]bool, n)
+	chain := make([]bool, n)
+	for _, root := range roots {
+		near[root] = true
+	}
+	if focus >= 0 {
+		for i := focus; i >= 0 && !chain[i]; i = parent[i] {
+			near[i], chain[i] = true, true
+		}
+		for _, child := range children[focus] {
+			near[child] = true
+		}
+	} else {
+		for _, root := range roots {
+			for _, child := range children[root] {
+				near[child] = true
+			}
+		}
+	}
+
+	tab := make([]bool, n)
+	for i, agent := range agents {
+		tab[i] = near[i] && (agent.State != "STOPPED" || chain[i])
+	}
+
+	// Attention bubbles to the nearest ancestor in the neighborhood -- every
+	// root is in it, so there always is one -- which gets a tab to show it.
+	waiting := make([]int, n)
+	failed := make([]int, n)
+	for i, agent := range agents {
+		if tab[i] || (agent.State != "WAITING_INPUT" && agent.State != "FAILED") {
+			continue
+		}
+		at := i
+		for !near[at] && parent[at] >= 0 {
+			at = parent[at]
+		}
+		tab[at] = true
+		if agent.State == "WAITING_INPUT" {
+			waiting[at]++
+		} else {
+			failed[at]++
+		}
+	}
+
+	model := agentRosterModel{
+		order: make([]AgentRosterEntry, 0, n),
+		view:  AgentRosterView{Total: n},
+	}
+	for _, i := range order {
+		e := entry(agents[i])
+		e.Focused = i == focus
+		e.Waiting, e.Failed = waiting[i], failed[i]
+		model.order = append(model.order, e)
+		switch {
+		case tab[i]:
+			model.view.Tabs = append(model.view.Tabs, e)
+		case near[i]:
+			model.view.Done++
+		}
+	}
+	return model
 }
 
 // agentStateDisplay maps a lifecycle state to its compact symbol and color.

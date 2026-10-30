@@ -1,6 +1,7 @@
 package idtui
 
 import (
+	"fmt"
 	"image/color"
 	"io"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/charmbracelet/x/cellbuf"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/muesli/termenv"
+	"github.com/stretchr/testify/require"
 	"github.com/vito/tuist"
 )
 
@@ -20,9 +22,7 @@ func renderRoster(t *testing.T, width int, entries []AgentRosterEntry) string {
 
 func renderRosterWithProfile(t *testing.T, width int, entries []AgentRosterEntry, profile termenv.Profile) string {
 	t.Helper()
-	roster := NewAgentRoster(profile, func() []AgentRosterEntry {
-		return entries
-	})
+	roster := NewAgentRoster(profile, rosterTabs(entries))
 	term := tuist.NewHeadlessTerminal(width, 1)
 	tui := tuist.New(term)
 	tui.AddChild(roster)
@@ -30,16 +30,23 @@ func renderRosterWithProfile(t *testing.T, width int, entries []AgentRosterEntry
 	return strings.Join(tui.Frame(), "\n")
 }
 
+// rosterTabs is a roster source showing exactly the given tabs.
+func rosterTabs(entries []AgentRosterEntry) func() AgentRosterView {
+	return func() AgentRosterView {
+		return AgentRosterView{Tabs: entries, Total: len(entries)}
+	}
+}
+
 // TestAgentRosterAlwaysShowsPublishedAgents locks in the roster's dual role as
 // switcher and state indicator. A single entry renders, but is not switchable.
 func TestAgentRosterAlwaysShowsPublishedAgents(t *testing.T) {
-	empty := NewAgentRoster(termenv.Ascii, func() []AgentRosterEntry { return nil })
+	empty := NewAgentRoster(termenv.Ascii, rosterTabs(nil))
 	if empty.Visible() || empty.Switchable() || empty.Height() != 0 {
 		t.Fatal("an empty roster should remain hidden")
 	}
 
 	entries := []AgentRosterEntry{{Name: "interactive", State: "RUNNING"}}
-	roster := NewAgentRoster(termenv.Ascii, func() []AgentRosterEntry { return entries })
+	roster := NewAgentRoster(termenv.Ascii, rosterTabs(entries))
 	if !roster.Visible() {
 		t.Fatal("a single published agent should be visible")
 	}
@@ -149,7 +156,7 @@ func TestAgentRosterFocusTabSpansEntry(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			roster := NewAgentRoster(termenv.TrueColor, func() []AgentRosterEntry { return entries })
+			roster := NewAgentRoster(termenv.TrueColor, rosterTabs(entries))
 			if tc.colors != nil {
 				roster.SetTabColorSource(tc.colors)
 			}
@@ -194,7 +201,7 @@ func TestAgentRosterLeadingTabHasNoLeftEdge(t *testing.T) {
 		{Name: "scout", State: "RUNNING"},
 	}
 	shades := blendPromptBackground(color.Black, termenv.TrueColor)
-	roster := NewAgentRoster(termenv.TrueColor, func() []AgentRosterEntry { return entries })
+	roster := NewAgentRoster(termenv.TrueColor, rosterTabs(entries))
 	roster.SetTabColorSource(func() (color.Color, color.Color) { return shades.cell, shades.border })
 
 	line := roster.Line(100)
@@ -221,7 +228,7 @@ func TestAgentRosterFocusedTabClipsToTruncation(t *testing.T) {
 		{Name: "scout", State: "RUNNING", Focused: true},
 		{Name: "docs", State: "IDLE"},
 	}
-	roster := NewAgentRoster(termenv.Ascii, func() []AgentRosterEntry { return entries })
+	roster := NewAgentRoster(termenv.Ascii, rosterTabs(entries))
 	// " 1 chief ○ " is 11 cells; the focused tab starts there.
 	if start, end, ok := roster.FocusedTab(15); !ok || start != 11 || end != 14 {
 		t.Fatalf("truncated FocusedTab = %d..%d (ok=%v), want 11..14", start, end, ok)
@@ -286,6 +293,188 @@ func TestAgentRosterTruncatesToWidth(t *testing.T) {
 	if !strings.Contains(line, "…") {
 		t.Fatalf("expected an ellipsis marking the truncation, got:\n%q", line)
 	}
+}
+
+// rosterNode is an agent as db.Agents() reports it, lineage included.
+func rosterNode(id, parent, state string) *dagui.AgentNode {
+	return &dagui.AgentNode{ID: id, Name: id, ParentID: parent, State: state, CallDigest: "sha256:" + id}
+}
+
+// rosterTabNames summarizes tabs: the name, * when focused, then any
+// attention badge as +N? (waiting) and +N! (failed).
+func rosterTabNames(tabs []AgentRosterEntry) []string {
+	names := make([]string, len(tabs))
+	for i, tab := range tabs {
+		name := tab.Name
+		if tab.Focused {
+			name += "*"
+		}
+		if tab.Waiting > 0 {
+			name += fmt.Sprintf(" +%d?", tab.Waiting)
+		}
+		if tab.Failed > 0 {
+			name += fmt.Sprintf(" +%d!", tab.Failed)
+		}
+		names[i] = name
+	}
+	return names
+}
+
+func buildTestRoster(agents []*dagui.AgentNode, focused string) agentRosterModel {
+	return buildAgentRosterModel(agents, focused, func(a *dagui.AgentNode) AgentRosterEntry {
+		return AgentRosterEntry{ID: a.ID, Name: a.Name, State: a.State}
+	})
+}
+
+// deepRoster is the shape of a real session (trace 56523ce2…), shrunk: a
+// chief whose workers run reviewers, one worker done, a test agent failing
+// under another, and stray roots left behind by an integration test's nested
+// client -- in the order they appeared, which is not tree order.
+func deepRoster() []*dagui.AgentNode {
+	return []*dagui.AgentNode{
+		rosterNode("agent", "", "IDLE"),
+		rosterNode("w1", "agent", "IDLE"),
+		rosterNode("w2", "agent", "RUNNING"),
+		rosterNode("r1", "w1", "STOPPED"),
+		rosterNode("inert", "", "STOPPED"),
+		rosterNode("r2", "w1", "RUNNING"),
+		rosterNode("w3", "agent", "STOPPED"),
+		rosterNode("t1", "w2", "FAILED"),
+		rosterNode("r3", "w1", "WAITING_INPUT"),
+		rosterNode("probe", "", "IDLE"),
+	}
+}
+
+// TestAgentRosterModelOrdersByLineage: [/] walks every agent depth-first by
+// lineage, so a worker's reviewers follow it rather than wherever they
+// happened to appear, and nobody is left out.
+func TestAgentRosterModelOrdersByLineage(t *testing.T) {
+	model := buildTestRoster(deepRoster(), "agent")
+	var names []string
+	for _, entry := range model.order {
+		names = append(names, entry.Name)
+	}
+	require.Equal(t, []string{"agent", "w1", "r1", "r2", "r3", "w2", "t1", "w3", "inert", "probe"}, names)
+	require.Equal(t, 10, model.view.Total)
+}
+
+// TestAgentRosterModelShowsTheNeighborhoodOfFocus: the strip shows the
+// roots, the focused agent's ancestors, and its direct children -- not every
+// agent in the session -- with what it leaves out that needs the user
+// surfacing on the nearest tab above, and STOPPED agents folded.
+func TestAgentRosterModelShowsTheNeighborhoodOfFocus(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		focused string
+		tabs    []string
+		done    int
+	}{
+		{
+			// The chief and its workers. r3 waits on the user and t1
+			// failed: neither has a tab, so their workers say so. w3 and
+			// the stray inert root are done.
+			name:    "focus on the chief",
+			focused: "agent",
+			tabs:    []string{"agent*", "w1 +1?", "w2 +1!", "probe"},
+			done:    2,
+		},
+		{
+			// Same view, so the strip does not change shape on first focus.
+			name: "nothing focused",
+			tabs: []string{"agent", "w1 +1?", "w2 +1!", "probe"},
+			done: 2,
+		},
+		{
+			// Down a level: the chain to the reviewer, and the reviewer's
+			// siblings now hidden; r3 still bubbles to w1, and t1 -- under
+			// a worker no longer shown -- all the way to the chief.
+			name:    "focus on a reviewer",
+			focused: "r2",
+			tabs:    []string{"agent +1!", "w1 +1?", "r2*", "probe"},
+			done:    1,
+		},
+		{
+			// A worker: its reviewers, one of them done; the one waiting has
+			// its own tab now, so it badges nobody.
+			name:    "focus on a worker",
+			focused: "w1",
+			tabs:    []string{"agent +1!", "w1*", "r2", "r3", "probe"},
+			done:    2,
+		},
+		{
+			// Never fold the focused agent, however finished.
+			name:    "focus on a stopped agent",
+			focused: "r1",
+			tabs:    []string{"agent +1!", "w1 +1?", "r1*", "probe"},
+			done:    1,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			model := buildTestRoster(deepRoster(), tc.focused)
+			require.Equal(t, tc.tabs, rosterTabNames(model.view.Tabs))
+			require.Equal(t, tc.done, model.view.Done)
+		})
+	}
+}
+
+// TestAgentRosterModelKeepsFocusContext: the focused agent's ancestors are
+// the context it is read in, so they keep their tabs even when STOPPED --
+// a live reviewer under a dismissed worker still shows the worker.
+func TestAgentRosterModelKeepsFocusContext(t *testing.T) {
+	agents := []*dagui.AgentNode{
+		rosterNode("agent", "", "IDLE"),
+		rosterNode("w", "agent", "STOPPED"),
+		rosterNode("r", "w", "RUNNING"),
+	}
+	model := buildTestRoster(agents, "r")
+	require.Equal(t, []string{"agent", "w", "r*"}, rosterTabNames(model.view.Tabs))
+	require.Zero(t, model.view.Done)
+
+	// Focus elsewhere and the dismissed worker folds again.
+	model = buildTestRoster(agents, "agent")
+	require.Equal(t, []string{"agent*"}, rosterTabNames(model.view.Tabs))
+	require.Equal(t, 1, model.view.Done)
+}
+
+// TestAgentRosterModelUnfoldsToCarryAttention: a folded agent is quiet, so
+// it cannot be where attention from beneath lands unseen -- it gets its tab
+// back to carry the badge.
+func TestAgentRosterModelUnfoldsToCarryAttention(t *testing.T) {
+	agents := []*dagui.AgentNode{
+		rosterNode("agent", "", "IDLE"),
+		rosterNode("w", "agent", "IDLE"),
+		rosterNode("old", "", "STOPPED"),
+		rosterNode("asking", "old", "IDLE"),
+		rosterNode("deep", "asking", "WAITING_INPUT"),
+	}
+	model := buildTestRoster(agents, "w")
+	require.Equal(t, []string{"agent", "w*", "old +1?"}, rosterTabNames(model.view.Tabs))
+	require.Zero(t, model.view.Done)
+}
+
+// TestAgentRosterRendersFoldsAndBadges: the badges read in the state
+// labels' own words, and the folded agents as one quiet, unnumbered chip.
+func TestAgentRosterRendersFoldsAndBadges(t *testing.T) {
+	roster := NewAgentRoster(termenv.Ascii, func() AgentRosterView {
+		return AgentRosterView{
+			Tabs: []AgentRosterEntry{
+				{Name: "chief", State: "IDLE", Waiting: 2, Failed: 1},
+				{Name: "scout", State: "RUNNING"},
+			},
+			Done:  7,
+			Total: 12,
+		}
+	})
+	require.Equal(t, "1 chief ○ +2 needs you +1 ✘  2 scout ▶  +7 done", strings.TrimSpace(roster.Line(0)))
+	require.True(t, roster.Switchable())
+
+	// Everything folded still renders, and still switches.
+	folded := NewAgentRoster(termenv.Ascii, func() AgentRosterView {
+		return AgentRosterView{Done: 3, Total: 3}
+	})
+	require.True(t, folded.Visible())
+	require.True(t, folded.Switchable())
+	require.Equal(t, "+3 done", strings.TrimSpace(folded.Line(0)))
 }
 
 // TestAgentRosterEntriesFromDB closes the seam between the trace DB and the
