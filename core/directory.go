@@ -27,6 +27,7 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
+	"github.com/dagger/dagger/util/fsxutil"
 	"github.com/dagger/dagger/util/layercopy"
 	"github.com/dagger/dagger/util/patternmatcher"
 	"github.com/dustin/go-humanize"
@@ -3817,11 +3818,11 @@ func (dir *Directory) Stat(ctx context.Context, self dagql.ObjectResult[*Directo
 	}
 
 	osStatFunc := os.Stat
-	rootPathFunc := containerdfs.RootPath
+	rootPathFunc := fsxutil.RootPath
 	if doNotFollowSymlinks {
 		// symlink testing requires the Lstat call, which does NOT follow symlinks
 		osStatFunc = os.Lstat
-		// similarly, containerdfs.RootPath can't be used, since it follows symlinks
+		// similarly, fsxutil.RootPath can't be used, since it follows symlinks
 		rootPathFunc = RootPathWithoutFinalSymlink
 	}
 

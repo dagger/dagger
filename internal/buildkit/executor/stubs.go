@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/system"
+	"github.com/dagger/dagger/util/fsxutil"
 )
 
 func MountStubsCleaner(ctx context.Context, dir string, mounts []Mount, recursive bool) func() {
@@ -26,7 +26,7 @@ func MountStubsCleaner(ctx context.Context, dir string, mounts []Mount, recursiv
 		if p == "/" {
 			continue
 		}
-		realPath, err := fs.RootPath(dir, p)
+		realPath, err := fsxutil.RootPath(dir, p)
 		if err != nil {
 			continue
 		}
