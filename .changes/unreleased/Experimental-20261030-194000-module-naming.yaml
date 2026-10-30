@@ -1,0 +1,14 @@
+kind: Experimental
+body: |
+  `ModuleSource.naming` gives the names the engine gives a module's own
+  declarations, by the naming rules of the version the module is named by,
+  legacy strcase included: namespaced type names (`typeNames`), function, field
+  and argument names (`fieldNames`), enum member names (`enumMemberNames`), and
+  which object is the main object (`mainObject`). It reads only the module
+  source's name and engine version, so SDK codegen can use it before the module
+  is loaded instead of reimplementing the engine's naming rules. Names the rules
+  can't parse are errors. It's served on every v1 API view.
+time: 2026-10-30T19:40:00Z
+custom:
+  Author: vito
+  PR: "TBD"
