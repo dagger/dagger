@@ -968,9 +968,17 @@ func (srv *SessionAttachablesServer) Run(ctx context.Context) {
 	doneCh := make(chan struct{})
 	go func() {
 		defer close(doneCh)
+		// The engine speaks first, and under load it can take a while to.
+		// Read its preface here: ServeConn closes the connection if the
+		// preface takes more than 10s, which would end the session.
+		preface := make([]byte, len(http2.ClientPreface))
+		if _, err := io.ReadFull(srv.Conn, preface); err != nil || string(preface) != http2.ClientPreface {
+			return
+		}
 		(&http2.Server{}).ServeConn(srv.Conn, &http2.ServeConnOpts{
-			Context: ctx,
-			Handler: srv.Server,
+			Context:          ctx,
+			Handler:          srv.Server,
+			SawClientPreface: true,
 		})
 	}()
 
