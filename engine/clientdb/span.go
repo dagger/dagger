@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"math"
 	"slices"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -141,8 +142,13 @@ func MarshalProtoList[T proto.Message](protos []T) ([]byte, error) {
 // telemetry.KeyValues(attrs), byte for byte, straight from the SDK values,
 // leaving out the attributes whose key is skip when it isn't empty. Like
 // proto.Marshal, it fails on a string that isn't valid UTF-8.
+// The list is written into a pooled buffer and returned as a copy of
+// exactly its size: lists are kept as long as their rows, and grew past any
+// size guessed up front.
 func MarshalKeyValueList(attrs []attribute.KeyValue, skip attribute.Key) ([]byte, error) {
-	b := make([]byte, 0, 64*len(attrs))
+	scratch := keyValueListPool.Get().(*[]byte)
+	defer keyValueListPool.Put(scratch)
+	b := (*scratch)[:0]
 	for _, kv := range attrs {
 		if skip != "" && kv.Key == skip {
 			continue
@@ -152,8 +158,11 @@ func MarshalKeyValueList(attrs []attribute.KeyValue, skip attribute.Key) ([]byte
 			return nil, err
 		}
 	}
-	return b, nil
+	*scratch = b
+	return append(make([]byte, 0, len(b)), b...), nil
 }
+
+var keyValueListPool = sync.Pool{New: func() any { return new([]byte) }}
 
 // MarshalEventList encodes events as MarshalProtoList encodes
 // telemetry.SpanEventsToPB(events), byte for byte, straight from the SDK
