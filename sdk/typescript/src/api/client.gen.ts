@@ -2132,6 +2132,20 @@ export type FileExtractOpts = {
    * Entries with no more elements than this are skipped.
    */
   stripComponents?: number
+
+  /**
+   * If set, only entries matching one of these glob patterns, or in a directory that does, are extracted (e.g., ["src/", "*.go"]).
+   *
+   * Patterns match entry paths after stripComponents is applied.
+   */
+  include?: string[]
+
+  /**
+   * If set, entries matching one of these glob patterns, or in a directory that does, are not extracted (e.g., ["**\/testdata", "**\/*_test.go"]).
+   *
+   * Patterns match entry paths after stripComponents is applied.
+   */
+  exclude?: string[]
 }
 
 export type FileSearchOpts = {
@@ -10716,6 +10730,12 @@ export class File extends BaseClient {
    * @param opts.stripComponents Remove this many leading elements from each entry's path, as tar --strip-components does.
    *
    * Entries with no more elements than this are skipped.
+   * @param opts.include If set, only entries matching one of these glob patterns, or in a directory that does, are extracted (e.g., ["src/", "*.go"]).
+   *
+   * Patterns match entry paths after stripComponents is applied.
+   * @param opts.exclude If set, entries matching one of these glob patterns, or in a directory that does, are not extracted (e.g., ["**\/testdata", "**\/*_test.go"]).
+   *
+   * Patterns match entry paths after stripComponents is applied.
    */
   extract = (opts?: FileExtractOpts): Directory => {
     const ctx = this._ctx.select("extract", { ...opts })

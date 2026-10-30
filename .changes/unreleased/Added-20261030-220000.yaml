@@ -1,0 +1,7 @@
+kind: Added
+body: |
+  `File.extract` takes `include` and `exclude` patterns, matched as `Directory.filter` matches them, to extract only some of an archive's entries. A zip's entries left out are never decompressed.
+time: 2026-10-30T22:00:00Z
+custom:
+  Author: sipsma
+  PR: ""
