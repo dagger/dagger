@@ -254,6 +254,9 @@ type DB struct {
 	agentSpans      agentSpanIndex
 	agentControl    agentcontrol.Index
 	agentControlErr error
+	// agentAncestryGaps are the not-yet-received spans the last roster
+	// build's ancestry walks ended at (see DB.agentParent).
+	agentAncestryGaps map[SpanID]struct{}
 
 	// kindSpans indexes the spans the whole-trace surfacing scans look for
 	// (see isIndexedKind), so they don't read every span on every rebuild.
@@ -1384,6 +1387,7 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 
 	// Last, so the indexes only ever hold spans the DB itself holds.
 	db.indexAgentSpan(span)
+	db.noteAgentAncestry(span)
 	db.indexKindSpan(span)
 	db.noteRunning(span)
 }
