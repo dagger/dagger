@@ -741,6 +741,7 @@ func (r *Agent) Notify(ctx context.Context, subscriber *Agent, opts ...AgentNoti
 	}
 	return &Agent{
 		query: selectNode(q.Root(), id, "Agent"),
+		id:    &id,
 	}, nil
 }
 
@@ -791,6 +792,7 @@ func (r *Agent) Pause(ctx context.Context, opts ...AgentPauseOpts) (*Agent, erro
 	}
 	return &Agent{
 		query: selectNode(q.Root(), id, "Agent"),
+		id:    &id,
 	}, nil
 }
 
@@ -814,6 +816,7 @@ func (r *Agent) Reseed(ctx context.Context, conversation *LLM) (*Agent, error) {
 	}
 	return &Agent{
 		query: selectNode(q.Root(), id, "Agent"),
+		id:    &id,
 	}, nil
 }
 
@@ -833,6 +836,7 @@ func (r *Agent) Resume(ctx context.Context) (*Agent, error) {
 	}
 	return &Agent{
 		query: selectNode(q.Root(), id, "Agent"),
+		id:    &id,
 	}, nil
 }
 
@@ -889,6 +893,7 @@ func (r *Agent) Send(ctx context.Context, message string, opts ...AgentSendOpts)
 	}
 	return &AgentMessage{
 		query: selectNode(q.Root(), id, "AgentMessage"),
+		id:    &id,
 	}, nil
 }
 
@@ -949,6 +954,7 @@ func (r *Agent) Stop(ctx context.Context, opts ...AgentStopOpts) (*Agent, error)
 	}
 	return &Agent{
 		query: selectNode(q.Root(), id, "Agent"),
+		id:    &id,
 	}, nil
 }
 
@@ -966,6 +972,7 @@ func (r *Agent) Wait(ctx context.Context) (*Agent, error) {
 	}
 	return &Agent{
 		query: selectNode(q.Root(), id, "Agent"),
+		id:    &id,
 	}, nil
 }
 
@@ -2898,6 +2905,7 @@ func (r *Changeset) Sync(ctx context.Context) (*Changeset, error) {
 	}
 	return &Changeset{
 		query: selectNode(q.Root(), id, "Changeset"),
+		id:    &id,
 	}, nil
 }
 
@@ -4682,6 +4690,7 @@ func (r *Container) Sync(ctx context.Context) (*Container, error) {
 	}
 	return &Container{
 		query: selectNode(q.Root(), id, "Container"),
+		id:    &id,
 	}, nil
 }
 
@@ -5481,6 +5490,32 @@ func (r *Container) WithMountedFile(path string, source *File, opts ...Container
 	}
 	q = q.Arg("path", path)
 	q = q.Arg("source", source)
+
+	return &Container{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// ContainerWithMountedFilesOpts contains options for Container.WithMountedFiles
+type ContainerWithMountedFilesOpts struct {
+	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/lib").
+	Expand bool
+}
+
+// Retrieves this container plus the given files mounted read-only in a directory at the given path.
+//
+// Each file appears under the base name of its path. The directory holds nothing else, and nothing can be written to it.
+func (r *Container) WithMountedFiles(path string, sources []*File, opts ...ContainerWithMountedFilesOpts) *Container {
+	q := r.query.Select("withMountedFiles")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `expand` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Expand) {
+			q = q.Arg("expand", opts[i].Expand)
+		}
+	}
+	q = q.Arg("path", path)
+	q = q.Arg("sources", sources)
 
 	return &Container{
 		query:     q,
@@ -7201,6 +7236,7 @@ func (r *Directory) Sync(ctx context.Context) (*Directory, error) {
 	}
 	return &Directory{
 		query: selectNode(q.Root(), id, "Directory"),
+		id:    &id,
 	}, nil
 }
 
@@ -9006,6 +9042,34 @@ func (r *File) Export(ctx context.Context, path string, opts ...FileExportOpts) 
 	return response, q.Execute(ctx)
 }
 
+// FileExtractOpts contains options for File.Extract
+type FileExtractOpts struct {
+	// Remove this many leading elements from each entry's path, as tar --strip-components does.
+	//
+	// Entries with no more elements than this are skipped.
+	StripComponents int
+}
+
+// Extracts this archive file into a directory.
+//
+// The format is detected from the file's contents: zip, or tar, either uncompressed or compressed with gzip, bzip2, xz or zstd.
+//
+// An entry whose path would leave the directory is an error.
+func (r *File) Extract(opts ...FileExtractOpts) *Directory {
+	q := r.query.Select("extract")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `stripComponents` optional argument
+		if !querybuilder.IsZeroValue(opts[i].StripComponents) {
+			q = q.Arg("stripComponents", opts[i].StripComponents)
+		}
+	}
+
+	return &Directory{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
 // A unique identifier for this File.
 func (r *File) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
@@ -9216,6 +9280,7 @@ func (r *File) Sync(ctx context.Context) (*File, error) {
 	}
 	return &File{
 		query: selectNode(q.Root(), id, "File"),
+		id:    &id,
 	}, nil
 }
 
@@ -13891,6 +13956,7 @@ func (r *LLM) Spawn(ctx context.Context, opts ...LLMSpawnOpts) (*Agent, error) {
 	}
 	return &Agent{
 		query: selectNode(q.Root(), id, "Agent"),
+		id:    &id,
 	}, nil
 }
 
@@ -13926,6 +13992,7 @@ func (r *LLM) Sync(ctx context.Context) (*LLM, error) {
 	}
 	return &LLM{
 		query: selectNode(q.Root(), id, "LLM"),
+		id:    &id,
 	}, nil
 }
 
@@ -15883,6 +15950,7 @@ func (r *Module) Sync(ctx context.Context) (*Module, error) {
 	}
 	return &Module{
 		query: selectNode(q.Root(), id, "Module"),
+		id:    &id,
 	}, nil
 }
 
@@ -16592,6 +16660,7 @@ func (r *ModuleSource) Sync(ctx context.Context) (*ModuleSource, error) {
 	}
 	return &ModuleSource{
 		query: selectNode(q.Root(), id, "ModuleSource"),
+		id:    &id,
 	}, nil
 }
 
@@ -19282,6 +19351,7 @@ func (r *Service) Start(ctx context.Context) (*Service, error) {
 	}
 	return &Service{
 		query: selectNode(q.Root(), id, "Service"),
+		id:    &id,
 	}, nil
 }
 
@@ -19307,6 +19377,7 @@ func (r *Service) Stop(ctx context.Context, opts ...ServiceStopOpts) (*Service, 
 	}
 	return &Service{
 		query: selectNode(q.Root(), id, "Service"),
+		id:    &id,
 	}, nil
 }
 
@@ -19320,6 +19391,7 @@ func (r *Service) Sync(ctx context.Context) (*Service, error) {
 	}
 	return &Service{
 		query: selectNode(q.Root(), id, "Service"),
+		id:    &id,
 	}, nil
 }
 
@@ -19868,6 +19940,7 @@ func (r *Terminal) Sync(ctx context.Context) (*Terminal, error) {
 	}
 	return &Terminal{
 		query: selectNode(q.Root(), id, "Terminal"),
+		id:    &id,
 	}, nil
 }
 
@@ -23622,6 +23695,7 @@ func (r *SyncerClient) Sync(ctx context.Context) (Syncer, error) {
 	}
 	return &SyncerClient{
 		query: selectNode(q.Root(), id, "Syncer"),
+		id:    &id,
 	}, nil
 }
 
@@ -25694,32 +25768,53 @@ func WrapClient(c graphql.Client) graphql.Client {
 	return errorWrappedClient{c}
 }
 
-// dag is this package's own connection, used only by the generated
-// UnmarshalJSON methods above to build a query root when deserializing an
-// object from its ID. It lives here, self-contained, rather than reusing
-// the connect-layer package's dag (internal/dagger.dag), because this
-// package can't import that one without creating a cycle. It talks to the
-// same underlying engine session either way, since both read it from the
-// same environment variables.
-var dag *Query
+// The decoder and connect layer share a lazy transport. Importing bindings,
+// constructing handles, and decoding IDs must not require a Dagger session.
+var dag = NewQuery(ModuleGraphQLClient())
 
-func init() {
-	dag = NewQuery(getClientParams())
+var defaultModuleClient moduleClient
+
+// ModuleGraphQLClient returns the module session's shared transport. Session
+// configuration is read on the first request, not during package initialization.
+func ModuleGraphQLClient() graphql.Client {
+	return &defaultModuleClient
 }
 
-func getClientParams() graphql.Client {
+type moduleClient struct {
+	mu     sync.Mutex
+	client graphql.Client
+}
+
+func (c *moduleClient) MakeRequest(ctx context.Context, req *graphql.Request, resp *graphql.Response) error {
+	c.mu.Lock()
+	client := c.client
+	if client == nil {
+		var err error
+		client, err = getClientParams()
+		if err != nil {
+			c.mu.Unlock()
+			// Do not cache missing configuration: a session may be attached later.
+			return err
+		}
+		c.client = client
+	}
+	c.mu.Unlock()
+	return client.MakeRequest(ctx, req, resp)
+}
+
+func getClientParams() (graphql.Client, error) {
 	portStr, ok := os.LookupEnv("DAGGER_SESSION_PORT")
 	if !ok {
-		panic("DAGGER_SESSION_PORT is not set")
+		return nil, fmt.Errorf("DAGGER_SESSION_PORT is not set; run this call in a Dagger session")
 	}
 	port, err := strconv.Atoi(portStr)
 	if err != nil {
-		panic(fmt.Errorf("DAGGER_SESSION_PORT %q is invalid: %w", portStr, err))
+		return nil, fmt.Errorf("DAGGER_SESSION_PORT %q is invalid: %w", portStr, err)
 	}
 
 	sessionToken := os.Getenv("DAGGER_SESSION_TOKEN")
 	if sessionToken == "" {
-		panic("DAGGER_SESSION_TOKEN is not set")
+		return nil, fmt.Errorf("DAGGER_SESSION_TOKEN is not set; run this call in a Dagger session")
 	}
 
 	host := fmt.Sprintf("127.0.0.1:%d", port)
@@ -25742,7 +25837,7 @@ func getClientParams() graphql.Client {
 			return dialTransport.RoundTrip(r)
 		}),
 	}
-	return graphql.NewClient(fmt.Sprintf("http://%s/query", host), httpClient)
+	return graphql.NewClient(fmt.Sprintf("http://%s/query", host), httpClient), nil
 }
 
 func fallbackSpanContext(ctx context.Context) context.Context {

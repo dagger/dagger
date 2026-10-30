@@ -4,15 +4,8 @@ package dagger
 
 import (
 	"context"
-	"fmt"
-	"net"
-	"net/http"
-	"os"
-	"strconv"
 
 	"github.com/Khan/genqlient/graphql"
-	telemetry "github.com/dagger/otel-go"
-	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/querybuilder"
@@ -121,7 +114,7 @@ type ArtifactDimensionKey = core.ArtifactDimensionKey
 // A schema path and its dimensions. The path can exist even when its collections have no runtime items.
 type ArtifactPath = core.ArtifactPath
 
-// An immutable selection of workspace artifacts. Listed types, dimensions, and keys use OR; chained filters use AND. Empty alternatives match nothing; unknown names match nothing but module load failures. Filters never change addresses or dimension identifiers. Module keys match a module's configured or kebab-case name. A module that failed to load has no schema, so its load failure stands in for whatever it would hold: a filter keeps it when the module could hold something the filter selects, and an exclusion drops it only by its own address, such as <module>/** or ?module=<module>.
+// A selection of workspace artifacts and their immutable collection view. Collection key filters replace collection references with subsets. Static filters change only membership. Listed types, dimensions, and keys use OR; chained filters use AND. Empty alternatives match nothing; unknown names match nothing but module load failures. Filters never change addresses or dimension identifiers. Module keys match a module's configured or kebab-case name. A module that failed to load has no schema, so its load failure stands in for whatever it would hold: a filter keeps it when the module could hold something the filter selects, and an exclusion drops it only by its own address, such as <module>/** or ?module=<module>.
 type Artifacts = core.Artifacts
 
 type WithArtifactsFunc = core.WithArtifactsFunc
@@ -264,6 +257,9 @@ type ContainerWithMountedDirectoryOpts = core.ContainerWithMountedDirectoryOpts
 
 // ContainerWithMountedFileOpts contains options for Container.WithMountedFile
 type ContainerWithMountedFileOpts = core.ContainerWithMountedFileOpts
+
+// ContainerWithMountedFilesOpts contains options for Container.WithMountedFiles
+type ContainerWithMountedFilesOpts = core.ContainerWithMountedFilesOpts
 
 // ContainerWithMountedSecretOpts contains options for Container.WithMountedSecret
 type ContainerWithMountedSecretOpts = core.ContainerWithMountedSecretOpts
@@ -430,6 +426,9 @@ type FileDigestOpts = core.FileDigestOpts
 
 // FileExportOpts contains options for File.Export
 type FileExportOpts = core.FileExportOpts
+
+// FileExtractOpts contains options for File.Extract
+type FileExtractOpts = core.FileExtractOpts
 
 // FileSearchOpts contains options for File.Search
 type FileSearchOpts = core.FileSearchOpts
@@ -1479,7 +1478,7 @@ type Client struct {
 var dag *Client
 
 func init() {
-	gqlClient := getClientParams()
+	gqlClient := core.ModuleGraphQLClient()
 	dag = &Client{
 		Query:  core.NewQuery(gqlClient),
 		client: core.WrapClient(gqlClient),
@@ -1498,56 +1497,4 @@ func (c *Client) GraphQLClient() graphql.Client {
 // QueryBuilder returns the underlying query builder.
 func (c *Client) QueryBuilder() *querybuilder.Selection {
 	return c.Query.QueryBuilder()
-}
-
-func getClientParams() graphql.Client {
-	portStr, ok := os.LookupEnv("DAGGER_SESSION_PORT")
-	if !ok {
-		panic("DAGGER_SESSION_PORT is not set")
-	}
-	port, err := strconv.Atoi(portStr)
-	if err != nil {
-		panic(fmt.Errorf("DAGGER_SESSION_PORT %q is invalid: %w", portStr, err))
-	}
-
-	sessionToken := os.Getenv("DAGGER_SESSION_TOKEN")
-	if sessionToken == "" {
-		panic("DAGGER_SESSION_TOKEN is not set")
-	}
-
-	host := fmt.Sprintf("127.0.0.1:%d", port)
-
-	dialTransport := &http.Transport{
-		DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-			return net.Dial("tcp", host)
-		},
-	}
-	httpClient := &http.Client{
-		Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
-			r.SetBasicAuth(sessionToken, "")
-
-			// detect $TRACEPARENT set by 'dagger run'
-			r = r.WithContext(fallbackSpanContext(r.Context()))
-
-			// propagate span context via headers (i.e. for Dagger-in-Dagger)
-			telemetry.Propagator.Inject(r.Context(), propagation.HeaderCarrier(r.Header))
-
-			return dialTransport.RoundTrip(r)
-		}),
-	}
-	return graphql.NewClient(fmt.Sprintf("http://%s/query", host), httpClient)
-}
-
-func fallbackSpanContext(ctx context.Context) context.Context {
-	if trace.SpanContextFromContext(ctx).IsValid() {
-		return ctx
-	}
-	return telemetry.Propagator.Extract(ctx, telemetry.NewEnvCarrier(true))
-}
-
-// TODO: pollutes namespace, move to non internal package in dagger.io/dagger
-type roundTripperFunc func(*http.Request) (*http.Response, error)
-
-func (fn roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
-	return fn(req)
 }
