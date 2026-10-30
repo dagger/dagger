@@ -349,6 +349,8 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 		casedField(withVCSIgnoredPathsField),
 		legacyField(withVCSIgnoredPathsField, "withVCSIgnoredPaths"),
 	}.Install(dag)
+
+	s.installModuleNaming(dag)
 }
 
 type moduleSourceArgs struct {
