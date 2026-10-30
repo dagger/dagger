@@ -61,7 +61,9 @@ func (a *RemoteCacheAdapter) CacheIdentity() (string, uint64) {
 // reaches a record the capture refuses is skipped as refused, each with that
 // row's error as the message; the others go in the bundle. A capture that
 // fails otherwise fails the request. consume is called once, with the bundle
-// while its chains stay open, or with no bundle when no root survived.
+// while its chains stay open, or with no bundle when no root survived. An
+// export that selects no outputs sends the rows known knows as held rows, and
+// the export names the rows its bundle carried.
 func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, known *dagql.KnownRows, consume func(context.Context, remotecache.Export) error) (rerr error) {
 	if a.stopped.Load() || !a.exports.tryBegin() {
 		return ErrRemoteCacheAdapterClosed
@@ -120,7 +122,7 @@ func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, kn
 		logExport(req, skipped, nil, time.Since(start), local, busyReport{})
 		return consume(ctx, remotecache.Export{Skipped: skipped})
 	}
-	selection := dagql.ValueSelection{Outputs: outputs, LeaveOutOutputsOutsideClosure: true}
+	selection := dagql.ValueSelection{Outputs: outputs, LeaveOutOutputsOutsideClosure: true, Known: known}
 	for _, root := range roots {
 		selection.Roots = append(selection.Roots, root.result)
 	}
@@ -153,7 +155,7 @@ func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, kn
 		}
 		logExport(req, skipped, values, time.Since(start), local, a.reportBusy(values.LeftOut, carried))
 		captureOp.End(wcprof.OutcomeOK)
-		err := consume(wcprof.ContextWithOpID(captureCtx, wcprof.CurrentOpID(ctx)), remotecache.Export{Bundle: &values.Bundle, Skipped: skipped, Blobs: newChainBlobs(values.Chains)})
+		err := consume(wcprof.ContextWithOpID(captureCtx, wcprof.CurrentOpID(ctx)), remotecache.Export{Bundle: &values.Bundle, Skipped: skipped, Blobs: newChainBlobs(values.Chains), Rows: values.Rows})
 		releaseStart := time.Now()
 		// The chains release once: WithExportedValues returns this
 		// release's error from its own.
