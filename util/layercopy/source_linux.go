@@ -94,9 +94,15 @@ func (s *source) selectBase(srcPath string, followFinalSymlink bool) error {
 	if err != nil {
 		return err
 	}
-	baseMinLayer, err := s.overlayAncestorMinLayer(baseRel)
-	if err != nil {
-		return err
+	// Only a directory's walk needs the layers its ancestors hide. The view
+	// shows a non-directory, so the topmost layer holding it is the one the
+	// view shows: no ancestor hides it.
+	baseMinLayer := 0
+	if info.IsDir() {
+		baseMinLayer, err = s.overlayAncestorMinLayer(baseRel)
+		if err != nil {
+			return err
+		}
 	}
 
 	s.baseView = baseView
