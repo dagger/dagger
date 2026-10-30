@@ -1,73 +1,66 @@
 ---
 name: dagger
-description: Use Dagger to run project checks, generate files, and manage workspace modules. Use when a task involves dagger.toml, Dagger commands, or checks and generators provided by installed Dagger modules.
+description: Set up and use Dagger workspace checks, generators, and modules. Use for Dagger CLI tasks, dagger.toml changes, and validation through installed Dagger modules.
 ---
 
-# Work with a Dagger workspace
+# Work with Dagger
 
-Read `dagger.toml` and the project instructions first. The workspace config
-selects modules and their settings. `dagger.lock` records resolved dependencies.
-Keep both files when a module change updates them.
+Use command-specific `--help` and printed next steps from the installed CLI.
+Commands and flags can depend on installed modules. Read existing
+`dagger.toml` and keep related `dagger.lock` changes. Work from the intended
+project, or select it with `dagger -W PATH`.
 
-## Find the available operations
+## Set up only what is missing
 
-Run commands from the intended workspace. Use `dagger -W PATH` to select a
-different workspace. Start with:
+Reuse an existing workspace and its modules. For a new workspace, run
+`dagger init` and follow its setup guidance. A config file alone does not mean
+checks are installed. Non-interactive `dagger module recommend` without `-y`
+prints install commands but installs nothing. Select modules for the project's
+tools. Use `dagger module search QUERY` if recommendations miss a tool.
 
-```sh
-dagger module list
-dagger check -l
-dagger generate -l
-```
+A known module can be installed directly with `dagger module install SOURCE`;
+this also creates missing workspace configuration. Prefer existing modules
+for standard tools. Use `dagger module settings` to discover settings.
 
-Use `--help` on a command to find its current flags. Installed modules add
-flags and operations, so do not assume that a module or check is available.
-Add `--all` to a check or generator list to expand each collection into its
-items. A summary row with `*` does not prove that the module found any items.
+If the CLI directs you to migrate, use that migration command and its help.
+Do not replace legacy configuration with an empty file. Installing checks
+does not require creating a module or adding an SDK.
 
-## Check a change
+## Discover, then run
 
-Use the installed checks that cover the changed code. Run `dagger check` for
-all workspace checks. For a smaller selection, list the available commands:
+Use `dagger generate -l` and `dagger check -l` to discover available work.
+During setup, apply needed generated files before checking the project.
+For later edits, select work relevant to the change.
 
-```sh
-dagger check -l --all --format=cli
-```
+A `*` in a list is a collection summary. Add `--all` to see actual items;
+a summary can represent an empty collection. Setup is complete only when
+at least one relevant check runs and all workspace checks pass.
 
-Add `dagger check` before the flags in a listed row to run that selection.
-Quote patterns so the shell does not expand them. A failed check returns a
-nonzero exit code. Read its output and correct the cause before running it
-again. State which checks ran and which could not run.
+Run `dagger check` for all workspace checks. To find a focused selection, use
+`dagger check -l --all --format=cli`, then add `dagger check` before a listed
+row's flags. Use returned links and help rather than inventing filter names.
 
-## Generate files
+## Apply fixes deliberately
 
-A generator returns a changeset: the proposed file changes. For a preview:
+A changeset contains proposed file changes. Choose `dagger generate -y` to
+apply changes required by the task, or `dagger generate --no-apply` for a
+preview. A preview run is not required before an authorized change.
 
-```sh
-dagger generate --no-apply
-```
+A successful preview does not mean generated files are current. Use
+`dagger check --generated=true` to test that without applying changes.
+Regenerate stale files rather than editing generated output by hand.
 
-When the task requires those file changes, run `dagger generate -y` to apply
-them. Inspect the resulting diff and run the relevant checks. Use the list
-and `--help` to select a specific generator when appropriate.
+Not every fix is a generator. Formatters can return changesets through
+`dagger api call`. Use `--help` along the function path to find arguments.
+Use `-y` to apply changes required by the task. Inspect the diff and rerun
+the check.
 
-`dagger check` also checks for stale generated files by default. Do not edit
-generated files by hand to make that check pass. Run the source generator.
+## Cloud Checks when requested
 
-## Change workspace modules
+Use `dagger cloud checks on` and follow its prerequisite and retry commands.
+Browser steps can require user action; do not loop on unmet prerequisites.
+Check that the Git remote identifies the intended repository. After pushing
+configuration and generated files, verify the run with
+`dagger workspace activity`. Cloud setup is not required for local checks.
 
-Use `dagger module search QUERY` to find modules and
-`dagger module install SOURCE` to install a selected module. Use
-`dagger module settings` to inspect settings. Reuse existing modules before
-adding a new one. Keep module changes within the requested task.
-
-Workspace configuration is in `dagger.toml`. A module's `dagger.json` is a
-separate file. If a command requires legacy workspace migration, use
-`dagger workspace migrate`; do not replace the old config with an empty file.
-
-For module functions beyond checks and generators, inspect
-`dagger api --help` and `dagger api call --help`. Follow the project's SDK
-and module conventions when changing module code.
-
-For further command details, see https://docs.dagger.io/using/checking/ and
-https://docs.dagger.io/using/generating/.
+For setup context, read https://docs.dagger.io/getting-started/.
