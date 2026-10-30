@@ -92,7 +92,10 @@ func (mn *ModuleNaming) TypeNames(names []string) ([]string, error) {
 }
 
 // FieldNames are the schema names of functions, fields and arguments the
-// module declares (Namer.FieldName, Namer.ArgName).
+// module declares (Namer.FieldName, Namer.ArgName). Installing an interface
+// normalizes its functions' and arguments' names again (core/interface.go),
+// which only the legacy rules aren't idempotent under: a legacy module's
+// interface members are FieldNames of FieldNames.
 func (mn *ModuleNaming) FieldNames(names []string) ([]string, error) {
 	return mn.names(names, Namer.FieldName)
 }

@@ -42,8 +42,9 @@ func (s *moduleSourceSchema) installModuleNaming(dag *dagql.Server) {
 			),
 		dagql.Func("fieldNames", s.moduleNamingFieldNames).
 			DoNotCache(moduleNamingDoNotCache).
-			Doc(`The schema names of functions, object fields and function arguments this module declares, including interface functions, in input order.`,
+			Doc(`The schema names of functions, object fields and function arguments this module declares, in input order.`,
 				`With the engine's identifier naming rules, acronyms are written like words: getURL is getUrl, baseURL is baseUrl, HTTPClient is httpClient. With the legacy strcase rules, HTTPClient is httpclient and e2eTest is e2ETest.`,
+				`Interface functions and their arguments are named the same way, except in modules named by the legacy strcase rules: there the engine normalizes them a second time, and strcase isn't idempotent (e2eTest is e2ETest once, e2Etest twice). To name those, pass this field's answers through it again.`,
 				`Errors on a name the module's naming rules can't parse (non-ASCII, no letters or digits, or over 256 bytes). The legacy rules name anything.`).
 			Args(
 				dagql.Arg("names").Doc(`The function, field and argument names as the module's source declares them.`),
