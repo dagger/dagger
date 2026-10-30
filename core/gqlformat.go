@@ -246,6 +246,21 @@ func (n Namer) ArgName(name string) string {
 	return n.FieldName(name)
 }
 
+// Validate reports whether n can name name: the engine/naming rules reject
+// a name that isn't ASCII, has no letters or digits, or is too long, with an
+// error naming it. The legacy strcase rules name anything.
+//
+// Normalizing such a name doesn't fail: it's kept as it is, and schema
+// validation reports it. Validate is for callers that want to fail on it
+// first, such as ModuleSource.naming.
+func (n Namer) Validate(name string) error {
+	if n.Legacy() {
+		return nil
+	}
+	_, err := n.dict.Parse(name)
+	return err
+}
+
 // EnumMemberName is the schema name of an enum member: SCREAMING_SNAKE, with
 // names already written in GraphQL's member convention (HTTP2, P_256) kept
 // as they are.
@@ -403,6 +418,35 @@ func (n Namer) SameDeclaredName(a, b string) bool {
 		return true
 	}
 	return !n.Legacy() && flatName(a) != "" && flatName(a) == flatName(b)
+}
+
+// DeclaredNameIndex finds which of declared, the names of a module's
+// declarations as the SDK spelled them, the module means by name, in any
+// casing: the first whose name normalizes to the same schema name, or else
+// the only one that's the same once flattened (see SameDeclaredName).
+// Several flat matches are ambiguous, and match nothing. It returns -1 when
+// nothing matches.
+//
+// A module finds its main object this way, by its own name
+// (Module.ObjectByOriginalName), and so does ModuleSource.naming's
+// mainObject.
+func (n Namer) DeclaredNameIndex(name string, declared []string) int {
+	want := n.ObjectName(name)
+	flat := -1
+	flats := 0
+	for i, decl := range declared {
+		if n.ObjectName(decl) == want {
+			return i
+		}
+		if n.SameDeclaredName(decl, name) {
+			flat = i
+			flats++
+		}
+	}
+	if flats == 1 {
+		return flat
+	}
+	return -1
 }
 
 // hasWordPrefix reports whether words starts with prefix, comparing words by
