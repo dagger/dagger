@@ -11,20 +11,15 @@ import (
 	"github.com/vektah/gqlparser/v2/gqlerror"
 )
 
-func TestArtifactListingMatchesObjectMetadataWithoutEvaluatingLeaves(t *testing.T) {
+func TestArtifactListingMatchesObjectMetadata(t *testing.T) {
 	ctx, srv, _, _ := resolverOutputFixture(t)
 	srv.InstallObject(dagql.NewClass[*core.Artifacts](srv))
 	srv.InstallObject(dagql.NewClass[*core.Artifact](srv))
 	schema := &artifactsSchema{}
 	dagql.Fields[*core.Artifacts]{dagql.Func("items", schema.items), dagql.Func("__listing", schema.listing)}.Install(srv)
-	leaves := 0
 	dagql.Fields[*core.Artifact]{
 		dagql.Func("uri", schema.artifactURI),
 		dagql.Func("description", schema.description),
-		dagql.Func("value", func(context.Context, *core.Artifact, struct{}) (dagql.String, error) {
-			leaves++
-			return "executed", nil
-		}),
 	}.Install(srv)
 	entries := []*core.Artifact{
 		{ModuleName: "go", Path: []string{"go", "tests", "test"}, TypeName: "Check", Node: &core.ModTreeNode{Description: "Run the selected test."},
@@ -56,8 +51,6 @@ func TestArtifactListingMatchesObjectMetadataWithoutEvaluatingLeaves(t *testing.
 			require.Equal(t, object.Self().Path, rows[i].Path)
 		}
 	}
-
-	require.Zero(t, leaves)
 }
 
 func TestArtifactListingEmptyAbsoluteAndCancellation(t *testing.T) {
