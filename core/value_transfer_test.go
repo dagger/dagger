@@ -135,6 +135,7 @@ func TestValueTransferParts(t *testing.T) {
 	encoded, err := file.EncodePersistedObject(t.Context(), nil)
 	require.NoError(t, err)
 	require.JSONEq(t, string(normalized.JSON), string(encoded.JSON))
+	require.False(t, requireDescribedAsEncoded(t, t.Context(), nil, file), "a pending transfer is described from its encoding")
 }
 
 func TestLazyOperationTransferState(t *testing.T) {

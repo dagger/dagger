@@ -30,6 +30,9 @@ type PersistEncodeContext struct {
 	call      *ResultCall
 	path      PersistedRefPath
 	quiescent bool
+	// parts, when set, collects the complete parts of the row's objects
+	// instead of encoding them.
+	parts *partDescription
 }
 
 type quiescentPersistKey struct{}
@@ -109,6 +112,16 @@ func (enc *PersistEncodeContext) SnapshotRole(role, refKey string) (PersistedSna
 	return PersistedSnapshotRefLink{RefKey: refKey, Role: role}, nil
 }
 
+// PayloadVisit is the visit a record's payload walk makes of the object this
+// context encodes, with links as its encoding's snapshot links and no payload.
+func (enc *PersistEncodeContext) PayloadVisit(links []PersistedSnapshotRefLink) PersistedPayloadVisit {
+	v := PersistedPayloadVisit{Version: persistedResultEnvelopeVersion, Call: enc.Call(), SnapshotLinks: links}
+	if enc != nil {
+		v.Path = enc.path
+	}
+	return v
+}
+
 // item returns the context for an inline list item of this row.
 func (enc *PersistEncodeContext) item(itemCall *ResultCall, index int) *PersistEncodeContext {
 	return &PersistEncodeContext{
@@ -116,6 +129,7 @@ func (enc *PersistEncodeContext) item(itemCall *ResultCall, index int) *PersistE
 		call:      itemCall,
 		path:      enc.path.Field("items").Index(index),
 		quiescent: enc.Quiescent(),
+		parts:     enc.parts,
 	}
 }
 

@@ -56,13 +56,48 @@ func (container *Container) EncodePersistedObject(ctx context.Context, enc *dagq
 		return dagql.PersistedObjectEncoding{}, err
 	}
 	defer unlock()
-	metadata, err := container.encodeContainerMetadata(enc)
+	payload, links, err := container.persistedPayloadLocked(ctx, enc, lazy, recipeJSON)
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted container: %w", err)
+	}
+	return dagql.PersistedObjectEncoding{JSON: encoded, SnapshotLinks: links}, nil
+}
+
+// DescribePersistedParts describes the container's parts from the payload
+// EncodePersistedObject builds, under the same locks. An acquired output,
+// which is encoded as it was received, isn't described here.
+func (container *Container) DescribePersistedParts(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedPartsDescription, bool, error) {
+	if container == nil || container.acquiredOutput.Load() != nil {
+		return dagql.PersistedPartsDescription{}, false, nil
+	}
+	lazy, recipeJSON := container.lazyForPersistence()
+	unlock, err := container.lockLazyForPersistence(lazy, enc.Quiescent())
+	if err != nil {
+		return dagql.PersistedPartsDescription{}, false, err
+	}
+	defer unlock()
+	payload, links, err := container.persistedPayloadLocked(ctx, enc, lazy, recipeJSON)
+	if err != nil {
+		return dagql.PersistedPartsDescription{}, false, err
+	}
+	return foreignFamilyCodec("Container").describeLivePayload(enc, &partPayload{container: payload}, links)
+}
+
+// persistedPayloadLocked builds the container's native payload, for its
+// operation lazy and recorded recipe JSON, and the snapshot links its encoding
+// carries. It requires the locks lockLazyForPersistence takes.
+func (container *Container) persistedPayloadLocked(ctx context.Context, enc *dagql.PersistEncodeContext, lazy Lazy[*Container], recipeJSON json.RawMessage) (persistedContainerPayload, []dagql.PersistedSnapshotRefLink, error) {
+	metadata, err := container.encodeContainerMetadata(enc)
+	if err != nil {
+		return persistedContainerPayload{}, nil, err
+	}
 	pending, parts, links, err := container.encodeContainerPartsLocked(ctx, enc, lazy)
 	if err != nil {
-		return dagql.PersistedObjectEncoding{}, err
+		return persistedContainerPayload{}, nil, err
 	}
 	payload := persistedContainerPayload{
 		Metadata: persistedContainerMetadata{Consumed: container.containerPartComputedLocked(ctx, lazy, ContainerPartMetadata), Value: metadata},
@@ -73,24 +108,20 @@ func (container *Container) EncodePersistedObject(ctx context.Context, enc *dagq
 		recipe = restore.recipe
 	}
 	if pending && recipe == nil {
-		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode pending container: missing recipe")
+		return persistedContainerPayload{}, nil, fmt.Errorf("encode pending container: missing recipe")
 	}
 	if recipe != nil {
 		payload.LazyJSON, err = recipe.EncodePersisted(ctx, enc)
 		if err != nil {
-			return dagql.PersistedObjectEncoding{}, err
+			return persistedContainerPayload{}, nil, err
 		}
 	} else {
 		payload.LazyJSON = recipeJSON
 	}
 	if pending && len(payload.LazyJSON) == 0 {
-		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode pending container: empty recipe")
+		return persistedContainerPayload{}, nil, fmt.Errorf("encode pending container: empty recipe")
 	}
-	encoded, err := json.Marshal(payload)
-	if err != nil {
-		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted container: %w", err)
-	}
-	return dagql.PersistedObjectEncoding{JSON: encoded, SnapshotLinks: links}, nil
+	return payload, links, nil
 }
 
 // lockForPersistence excludes direct object-side evaluation, which need not

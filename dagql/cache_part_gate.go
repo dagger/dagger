@@ -71,33 +71,19 @@ func (stamp *completePartsStamp) current(row *sharedResult) bool {
 // completePartKeys returns the address keys of the row's complete parts,
 // sorted: the parts dagql's part probe reports locally complete in the row's
 // current record, as part acquisition reads them, whether the row was
-// computed, imported or restored. The record is captured once per revision of
-// the row's value. When it cannot be captured now, because an evaluation or
-// its bookkeeping is in flight, the parts the row's gate has settled, a
-// subset, are returned instead. It never waits on another row.
+// computed, imported or restored. The record is described once per revision
+// of the row's value, without encoding the objects that describe their own
+// parts. When it cannot be captured now, because an evaluation or its
+// bookkeeping is in flight, the parts the row's gate has settled, a subset,
+// are returned instead. It never waits on another row.
 func (c *Cache) completePartKeys(ctx context.Context, row *sharedResult) []string {
 	if cached := row.completeParts.Load(); cached != nil && cached.stamp.current(row) {
 		return cached.keys
 	}
-	record, version, err := c.captureRowRecord(ctx, row)
+	keys, version, err := c.describeRowParts(ctx, row)
 	if err != nil {
 		return row.settledPartKeys()
 	}
-	probes, err := describePartRecord(record)
-	if err != nil {
-		return row.settledPartKeys()
-	}
-	var keys []string
-	for _, probe := range probes {
-		if !probe.LocalComplete {
-			continue
-		}
-		if key, err := partAddressKey(probe.Descriptor.Address); err == nil {
-			keys = append(keys, key)
-		}
-	}
-	slices.Sort(keys)
-	keys = slices.Compact(keys)
 	row.completeParts.Store(&rowCompleteParts{stamp: newCompletePartsStamp(version), keys: keys})
 	return keys
 }

@@ -315,6 +315,7 @@ func testNativeDelegationRestart(t *testing.T, store *testutil.Store, snapshotID
 		value := NewContainer(base.Platform)
 		value.acquiredOutput.Store(&containerAcquiredOutput{Payload: payload, Revision: 1})
 		child = attachDelegationChild(t, ctx, cache, srv, "native", "withWorkdir", child, value)
+		require.False(t, requireDescribedAsEncoded(t, ctx, dagql.NewPersistEncodeContext(cache, 0, nil), value), "an acquired output is described from its encoding")
 	}
 	id, err := cache.PersistedResultID(child)
 	require.NoError(t, err)
