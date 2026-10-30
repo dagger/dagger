@@ -264,6 +264,7 @@ func TestMarshalKeyValueList(t *testing.T) {
 	attrs := sdkAttrs()
 	want, err := MarshalProtoList(telemetry.KeyValues(attrs))
 	require.NoError(t, err)
+	want0 := want
 	got, err := MarshalKeyValueList(attrs, "")
 	require.NoError(t, err)
 	require.Equal(t, want, got)
@@ -273,6 +274,14 @@ func TestMarshalKeyValueList(t *testing.T) {
 	got, err = MarshalKeyValueList(attrs, "t")
 	require.NoError(t, err)
 	require.Equal(t, want, got, "the skipped key is left out")
+
+	// Each list is its own copy: a later call's pooled buffer never
+	// overwrites a list already returned.
+	kept, err := MarshalKeyValueList(attrs, "")
+	require.NoError(t, err)
+	_, err = MarshalKeyValueList([]attribute.KeyValue{attribute.String("other", strings.Repeat("x", 4096))}, "")
+	require.NoError(t, err)
+	require.Equal(t, want0, kept)
 
 	got, err = MarshalKeyValueList(nil, "")
 	require.NoError(t, err)
