@@ -118,6 +118,56 @@ func (WorkspaceSuite) TestWorkspaceInit(ctx context.Context, t *testctx.T) {
 	}
 }
 
+func (WorkspaceSuite) TestWorkspaceInitSkills(ctx context.Context, t *testctx.T) {
+	for _, selected := range []bool{false, true} {
+		name := "from subdirectory"
+		if selected {
+			name = "explicit workspace"
+		}
+		t.Run(name, func(ctx context.Context, t *testctx.T) {
+			root := t.TempDir()
+			initGitRepo(ctx, t, root)
+			child := filepath.Join(root, "child")
+			require.NoError(t, os.Mkdir(child, 0o755))
+			// The selected config can be below the workspace root. Skills still
+			// belong to the root, not to the config directory or process cwd.
+			writeWorkspaceConfigFile(t, child, "# keep\n")
+			skillDir := filepath.Join(root, ".agents", "skills")
+			require.NoError(t, os.MkdirAll(skillDir, 0o755))
+			cwd := child
+			args := []string{"--silent", "init", "--auto-apply"}
+			if selected {
+				cwd = t.TempDir()
+				args = append([]string{"-W", child}, args...)
+			}
+			out, err := hostDaggerExec(ctx, t, cwd, args...)
+			require.NoError(t, err)
+			filename := filepath.Join(skillDir, "dagger", "SKILL.md")
+			require.FileExists(t, filename)
+			require.Contains(t, string(out), "Installed Dagger skill at "+filename)
+			require.NoDirExists(t, filepath.Join(child, ".agents"))
+			require.NoError(t, os.WriteFile(filename, []byte("# custom skill\n"), 0o644))
+			out, err = hostDaggerExec(ctx, t, cwd, args...)
+			require.NoError(t, err)
+			require.NotContains(t, string(out), "Installed Dagger skill")
+			data, err := os.ReadFile(filename)
+			require.NoError(t, err)
+			require.Equal(t, "# custom skill\n", string(data))
+		})
+	}
+
+	t.Run("failed initialization leaves skills unchanged", func(ctx context.Context, t *testctx.T) {
+		root := t.TempDir()
+		initGitRepo(ctx, t, root)
+		require.NoError(t, os.WriteFile(filepath.Join(root, "dagger.json"), []byte(`{}`), 0o644))
+		skills := filepath.Join(root, ".agents", "skills")
+		require.NoError(t, os.MkdirAll(skills, 0o755))
+		_, err := hostDaggerExec(ctx, t, root, "--silent", "init", "--auto-apply")
+		require.ErrorContains(t, err, "run dagger workspace migrate instead")
+		require.NoDirExists(t, filepath.Join(skills, "dagger"))
+	})
+}
+
 func (WorkspaceSuite) TestWorkspaceWithInitialized(ctx context.Context, t *testctx.T) {
 	t.Run("removed selected config is initialized again", func(ctx context.Context, t *testctx.T) {
 		root := t.TempDir()

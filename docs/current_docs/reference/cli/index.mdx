@@ -1215,6 +1215,10 @@ Use an existing dagger.toml when present. If a legacy dagger.json has
 workspace settings, stop and direct the user to dagger workspace migrate.
 Otherwise, create an empty dagger.toml. Existing module files remain unchanged.
 
+Install a Dagger skill in existing .agents/skills, .claude/skills,
+.cursor/skills, .gemini/skills, .github/skills, and .opencode/skills directories
+at the workspace root. Skip symbolic links and existing dagger skill entries.
+
 Run this command in a local Git repository.
 Run this command again to inspect the current initialization state.
 
