@@ -1187,6 +1187,14 @@ type Container implements Exportable & Node & Syncer {
     environment variables defined in the container (e.g. "/$VAR/foo").
     """
     expand: Boolean = false
+
+    """
+    Repair symlinks that directory selection would break. Resolve targets across
+    the root filesystem and directory or file mounts. Preserve working relative
+    links and links that already have no target. Cache, volume, tmpfs, secret,
+    and socket mounts are not supported.
+    """
+    resolveBrokenSymlinks: Boolean = false
   ): Directory!
 
   """
@@ -2946,6 +2954,13 @@ type Directory implements Exportable & Node & Syncer {
     Location of the directory to retrieve. Example: "/src"
     """
     path: String!
+
+    """
+    Repair symlinks that directory selection would break. Copy targets from this
+    directory into the result. Preserve working relative links and links that
+    already have no target.
+    """
+    resolveBrokenSymlinks: Boolean = false
   ): Directory!
 
   """Return a snapshot with a directory added"""

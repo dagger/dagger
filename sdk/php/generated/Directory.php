@@ -237,10 +237,13 @@ class Directory extends Client\AbstractObject implements Client\IdAble, Exportab
     /**
      * Retrieves a directory at the given path.
      */
-    public function directory(string $path): Directory
+    public function directory(string $path, ?bool $resolveBrokenSymlinks = false): Directory
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('directory');
         $innerQueryBuilder->setArgument('path', $path);
+        if (null !== $resolveBrokenSymlinks) {
+        $innerQueryBuilder->setArgument('resolveBrokenSymlinks', $resolveBrokenSymlinks);
+        }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
