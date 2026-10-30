@@ -3,35 +3,25 @@
 package main
 
 import (
+	core "dagger.io/dagger/core"
+
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
-	"os"
-	"sort"
 
-	telemetry "github.com/dagger/otel-go"
-	"github.com/vektah/gqlparser/v2/gqlerror"
+	"github.com/dagger/querybuilder"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/sdk/resource"
-	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	"go.opentelemetry.io/otel/trace"
 
 	"dagger/rust-client-dev/internal/dagger"
-
-	"github.com/dagger/querybuilder"
 )
-
-var dag = dagger.Connect()
 
 func Tracer() trace.Tracer {
 	return otel.Tracer("dagger.io/sdk.go")
 }
 
-// used for local MarshalJSON implementations
 var marshalCtx = context.Background()
 
-// called by main()
 func setMarshalContext(ctx context.Context) {
 	marshalCtx = ctx
 	dagger.SetMarshalContext(ctx)
@@ -44,13 +34,8 @@ type DaggerObject interface {
 
 type ExecError = dagger.ExecError
 
-// ptr returns a pointer to the given value.
-func ptr[T any](v T) *T {
-	return &v
-}
+func ptr[T any](v T) *T { return &v }
 
-// convertSlice converts a slice of one type to a slice of another type using a
-// converter function
 func convertSlice[I any, O any](in []I, f func(I) O) []O {
 	out := make([]O, len(in))
 	for i, v := range in {
@@ -95,124 +80,21 @@ func (r *RustClientDev) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-func main() {
-	ctx := context.Background()
-
-	// Direct slog to the new stderr. This is only for dev time debugging, and
-	// runtime errors/warnings.
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelWarn,
-	})))
-
-	if err := dispatch(ctx); err != nil {
-		os.Exit(2)
-	}
-}
-
-func convertError(rerr error) *dagger.Error {
-	if gqlErr := findSingleGQLError(rerr); gqlErr != nil {
-		dagErr := dag.Error(gqlErr.Message)
-		if gqlErr.Extensions != nil {
-			keys := make([]string, 0, len(gqlErr.Extensions))
-			for k := range gqlErr.Extensions {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-			for _, k := range keys {
-				val, err := json.Marshal(gqlErr.Extensions[k])
-				if err != nil {
-					fmt.Println("failed to marshal error value:", err)
-				}
-				dagErr = dagErr.WithValue(k, dagger.JSON(val))
-			}
-		}
-		return dagErr
-	}
-	return dag.Error(rerr.Error())
-}
-
-func findSingleGQLError(rerr error) *gqlerror.Error {
-	switch x := rerr.(type) {
-	case *gqlerror.Error:
-		return x
-	case interface{ Unwrap() []error }:
-		return nil
-	case interface{ Unwrap() error }:
-		return findSingleGQLError(x.Unwrap())
-	default:
-		return nil
-	}
-}
-func dispatch(ctx context.Context) (rerr error) {
-	ctx = telemetry.InitEmbedded(ctx, resource.NewWithAttributes(
-		semconv.SchemaURL,
-		semconv.ServiceNameKey.String("dagger-go-sdk"),
-		// TODO version?
-	))
-	defer telemetry.Close()
-
-	// A lot of the "work" actually happens when we're marshalling the return
-	// value, which entails getting object IDs, which happens in MarshalJSON,
-	// which has no ctx argument, so we use this lovely global variable.
+func DaggerDispatch(ctx context.Context, parentJSON []byte, parentName string, fnName string, inputArgs map[string][]byte) (_ any, err error) {
 	setMarshalContext(ctx)
-
-	fnCall := dag.CurrentFunctionCall()
-	defer func() {
-		if rerr != nil {
-			if err := fnCall.ReturnError(ctx, convertError(rerr)); err != nil {
-				fmt.Println("failed to return error:", err, "\noriginal error:", rerr)
-			}
-		}
-	}()
-
-	parentName, err := fnCall.ParentName(ctx)
-	if err != nil {
-		return fmt.Errorf("get parent name: %w", err)
-	}
-	fnName, err := fnCall.Name(ctx)
-	if err != nil {
-		return fmt.Errorf("get fn name: %w", err)
-	}
-	parentJson, err := fnCall.Parent(ctx)
-	if err != nil {
-		return fmt.Errorf("get fn parent: %w", err)
-	}
-	fnArgs, err := fnCall.InputArgs(ctx)
-	if err != nil {
-		return fmt.Errorf("get fn args: %w", err)
-	}
-
-	inputArgs := map[string][]byte{}
-	for _, fnArg := range fnArgs {
-		argName, err := fnArg.Name(ctx)
-		if err != nil {
-			return fmt.Errorf("get fn arg name: %w", err)
-		}
-		argValue, err := fnArg.Value(ctx)
-		if err != nil {
-			return fmt.Errorf("get fn arg value: %w", err)
-		}
-		inputArgs[argName] = []byte(argValue)
-	}
-
-	result, err := invoke(ctx, []byte(parentJson), parentName, fnName, inputArgs)
-	if err != nil {
-		return err
-	}
-	resultBytes, err := json.Marshal(result)
-	if err != nil {
-		return fmt.Errorf("marshal: %w", err)
-	}
-
-	if err := fnCall.ReturnValue(ctx, dagger.JSON(resultBytes)); err != nil {
-		return fmt.Errorf("store return value: %w", err)
-	}
-	return nil
-}
-func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName string, inputArgs map[string][]byte) (_ any, err error) {
 	_ = inputArgs
+	if parentName == "" {
+		switch fnName {
+		case "RustClientDev", "rustClientDev":
+			parentName = "RustClientDev"
+			fnName = ""
+		}
+	}
 	switch parentName {
 	case "RustClientDev":
+		if fnName == "New" {
+			fnName = ""
+		}
 		switch fnName {
 		case "APIClient":
 			var parent RustClientDev
@@ -269,7 +151,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg sourceTag", err))
 				}
 			}
-			var cargoRegistryToken *dagger.Secret
+			var cargoRegistryToken *core.Secret
 			if inputArgs["cargoRegistryToken"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["cargoRegistryToken"]), &cargoRegistryToken)
 				if err != nil {
@@ -325,7 +207,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var workspace *dagger.Workspace
+			var workspace *core.Workspace
 			if inputArgs["workspace"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["workspace"]), &workspace)
 				if err != nil {
@@ -339,7 +221,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg sourcePath", err))
 				}
 			}
-			var clientDockerConfig *dagger.Secret
+			var clientDockerConfig *core.Secret
 			if inputArgs["clientDockerConfig"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["clientDockerConfig"]), &clientDockerConfig)
 				if err != nil {
@@ -350,77 +232,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
-	case "":
-		return dag.Module().
-			WithDescription("Toolchain to develop the Dagger Rust SDK (experimental)\n").
-			WithObject(
-				dag.TypeDef().WithObject("RustClientDev", dagger.TypeDefWithObjectOpts{Description: "Develop the Dagger Rust SDK (experimental)", SourceMap: dag.SourceMap("main.go", 29, 6)}).
-					WithFunction(
-						dag.Function("APIClient",
-							dag.TypeDef().WithObject("Changeset")).
-							WithDescription("Regenerate the Rust SDK API client.").
-							WithSourceMap(dag.SourceMap("main.go", 155, 1)).
-							WithGenerator()).
-					WithFunction(
-						dag.Function("CargoCheck",
-							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
-							WithDescription("Run cargo check on the Rust SDK").
-							WithSourceMap(dag.SourceMap("main.go", 134, 1)).
-							WithCheck()).
-					WithFunction(
-						dag.Function("CargoFmt",
-							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
-							WithDescription("Run cargo fmt on the Rust SDK").
-							WithSourceMap(dag.SourceMap("main.go", 124, 1)).
-							WithCheck()).
-					WithFunction(
-						dag.Function("Changes",
-							dag.TypeDef().WithObject("Changeset")).
-							WithSourceMap(dag.SourceMap("main.go", 159, 1))).
-					WithFunction(
-						dag.Function("DevContainer",
-							dag.TypeDef().WithObject("Container")).
-							WithDescription("Return the Rust SDK workspace mounted in a dev container,\nand working directory set to the SDK source.").
-							WithSourceMap(dag.SourceMap("main.go", 74, 1)).
-							WithArg("runInstall", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind), dagger.FunctionWithArgOpts{Description: "Install workspace dependencies and any tools required\nto develop the Rust SDK.", SourceMap: dag.SourceMap("main.go", 78, 2), DefaultValue: dagger.JSON("\"false\"")})).
-					WithFunction(
-						dag.Function("Release",
-							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
-							WithDescription("Release the Rust SDK").
-							WithSourceMap(dag.SourceMap("main.go", 251, 1)).
-							WithArg("sourceTag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Source git tag to release", SourceMap: dag.SourceMap("main.go", 255, 2)}).
-							WithArg("cargoRegistryToken", dag.TypeDef().WithObject("Secret"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 257, 2)}).
-							WithArg("cargoRegistryIndex", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Cargo registry index URL to publish to instead of crates.io.", SourceMap: dag.SourceMap("main.go", 261, 2)})).
-					WithFunction(
-						dag.Function("ReleaseDryRun",
-							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
-							WithDescription("Test the publishing process").
-							WithSourceMap(dag.SourceMap("main.go", 183, 1)).
-							WithCheck().
-							WithArg("sourceTag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Source git tag to fake-release", SourceMap: dag.SourceMap("main.go", 188, 2), DefaultValue: dagger.JSON("\"HEAD\"")})).
-					WithFunction(
-						dag.Function("Source",
-							dag.TypeDef().WithObject("Directory")).
-							WithDescription("Source returns the source directory for the Rust SDK.").
-							WithSourceMap(dag.SourceMap("main.go", 118, 1))).
-					WithFunction(
-						dag.Function("Test",
-							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
-							WithDescription("Test the Rust SDK").
-							WithSourceMap(dag.SourceMap("main.go", 144, 1)).
-							WithCheck()).
-					WithFunction(
-						dag.Function("WithGeneratedClient",
-							dag.TypeDef().WithObject("RustClientDev")).
-							WithSourceMap(dag.SourceMap("main.go", 163, 1))).
-					WithField("BaseContainer", dag.TypeDef().WithObject("Container"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 33, 2)}).
-					WithConstructor(
-						dag.Function("New",
-							dag.TypeDef().WithObject("RustClientDev")).
-							WithSourceMap(dag.SourceMap("main.go", 37, 1)).
-							WithArg("workspace", dag.TypeDef().WithObject("Workspace"), dagger.FunctionWithArgOpts{Description: "A directory with all the files needed to develop the SDK", SourceMap: dag.SourceMap("main.go", 39, 2)}).
-							WithArg("sourcePath", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "The path of the SDK source in the workspace", SourceMap: dag.SourceMap("main.go", 42, 2), DefaultValue: dagger.JSON("\"sdk/rust\"")}).
-							WithArg("clientDockerConfig", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{Description: "A docker config file with credentials to install on clients.", SourceMap: dag.SourceMap("main.go", 45, 2)}))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}
