@@ -185,3 +185,25 @@ func TestRosterKeepsStoppedAgentsReachable(t *testing.T) {
 	frame = strings.Join(fe.tui.Step(), "\n")
 	require.Contains(t, frame, "scout")
 }
+
+// TestRosterKeepsUnaddressableStoppedAgentsNumbered: the cycle steps over an
+// agent whose handle failed to rebuild, so folding it too would leave no key
+// that reaches it. It keeps its numbered tab, and the number retries.
+func TestRosterKeepsUnaddressableStoppedAgentsNumbered(t *testing.T) {
+	handler := &focusShellHandler{target: "agent-chief"}
+	db := rosterDB(t)
+	fe := focusTestFrontend(t, db, handler)
+	publishAgentControl(t, db, "agent-scout", func(a *agentcontrol.Agent) {
+		a.State, a.StopReason = "STOPPED", "EXPLICIT"
+	})
+	fe.markAgentUnaddressable("agent-scout")
+
+	view := fe.agentRosterView()
+	require.Len(t, view.Tabs, 2)
+	require.Equal(t, "scout", view.Tabs[1].Name)
+	require.True(t, view.Tabs[1].ReadOnly)
+	require.Zero(t, view.Done)
+
+	require.True(t, pressEditlineKey(t, fe, uv.Key{Code: '2', Mod: uv.ModCtrl}))
+	require.Equal(t, "scout", focusedRosterName(t, fe), "the payload is there, so the retry lands")
+}

@@ -322,7 +322,10 @@ type agentRosterModel struct {
 // is terminal, so their tabs would only grow. The focused agent and its
 // ancestors never fold, since they are the context the rest is read in.
 // Nothing becomes unreachable: [/] walks order, which holds everybody, and
-// whatever [/] lands on is focused and therefore shown.
+// whatever [/] lands on is focused and therefore shown. The cycle steps over
+// read-only agents, though, so those are shown by other means: a read-only
+// agent's children join the neighborhood with it, and one whose rebuild
+// failed keeps its tab even when STOPPED, so a jump key can retry it.
 //
 // What needs the user must not hide in the part left out: an agent with no
 // tab that is WAITING_INPUT or FAILED counts on its nearest ancestor that the
@@ -376,31 +379,56 @@ func buildAgentRosterModel(agents []*dagui.AgentNode, focused string, entry func
 	if i, ok := index[focused]; ok && focused != "" {
 		focus = i
 	}
+	entries := make([]AgentRosterEntry, n)
+	for i, agent := range agents {
+		entries[i] = entry(agent)
+	}
 
-	// The neighborhood of focus, and the ancestors that never fold.
+	// The neighborhood of focus, and the ancestors that never fold. A
+	// read-only agent cannot be focused -- nothing walks onto it -- so its
+	// own children could never come into view by focusing it: they join the
+	// neighborhood whenever it does.
 	near := make([]bool, n)
 	chain := make([]bool, n)
+	var include func(int)
+	include = func(i int) {
+		if near[i] {
+			return
+		}
+		near[i] = true
+		if entries[i].ReadOnly {
+			for _, child := range children[i] {
+				include(child)
+			}
+		}
+	}
 	for _, root := range roots {
-		near[root] = true
+		include(root)
 	}
 	if focus >= 0 {
 		for i := focus; i >= 0 && !chain[i]; i = parent[i] {
-			near[i], chain[i] = true, true
+			include(i)
+			chain[i] = true
 		}
 		for _, child := range children[focus] {
-			near[child] = true
+			include(child)
 		}
 	} else {
 		for _, root := range roots {
 			for _, child := range children[root] {
-				near[child] = true
+				include(child)
 			}
 		}
 	}
 
+	// STOPPED agents fold, unless they are the context of focus -- or the
+	// cycle steps over them: a read-only agent whose handle failed to rebuild
+	// can only be retried by naming it, which takes a tab. (One with no call
+	// digest at all can never be addressed, so its tab would name nothing.)
 	tab := make([]bool, n)
 	for i, agent := range agents {
-		tab[i] = near[i] && (agent.State != "STOPPED" || chain[i])
+		retry := entries[i].ReadOnly && agent.CallDigest != ""
+		tab[i] = near[i] && (agent.State != "STOPPED" || chain[i] || retry)
 	}
 
 	// Attention bubbles to the nearest ancestor in the neighborhood -- every
@@ -428,7 +456,7 @@ func buildAgentRosterModel(agents []*dagui.AgentNode, focused string, entry func
 		view:  AgentRosterView{Total: n},
 	}
 	for _, i := range order {
-		e := entry(agents[i])
+		e := entries[i]
 		e.Focused = i == focus
 		e.Waiting, e.Failed = waiting[i], failed[i]
 		model.order = append(model.order, e)
