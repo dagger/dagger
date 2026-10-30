@@ -425,7 +425,7 @@ func TestRecordStatusDoesNotMarkPendingLazyResultCached(t *testing.T) {
 	require.True(t, dagql.HasPendingLazyEvaluation(res))
 
 	span := &telemetryTestSpan{}
-	recordStatus(ctx, res, span, true, reqCall)
+	span.SetAttributes(appendStatusAttrs(ctx, nil, res, true, reqCall)...)
 
 	for _, attr := range span.attrs {
 		require.NotEqual(t, telemetry.CachedAttr, string(attr.Key))
