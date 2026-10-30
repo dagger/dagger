@@ -104,10 +104,7 @@ func (srv *Server) registerNestedClientTransport(
 	if metadata.ClientID == parentClientID {
 		return nil, fmt.Errorf("client ancestry cycle: client %q cannot be its own parent", metadata.ClientID)
 	}
-	// A child client, or an exec's client registered under an identity other
-	// than the exec's own, is a CLI that may subscribe to its telemetry.
-	// Everything else registered here never does.
-	telemetryUnread := !hostFromParent && (attachablesClientID == "" || attachablesClientID == metadata.ClientID)
+	telemetryUnread := nestedTelemetryUnread(metadata.ClientID, attachablesClientID, hostFromParent)
 
 	srv.daggerSessionsMu.RLock()
 	sess := srv.daggerSessions[metadata.SessionID]
@@ -236,6 +233,15 @@ func (srv *Server) registerNestedClientTransport(
 	sess.clientMu.Unlock()
 	sess.scopeMu.Unlock()
 	return transport, nil
+}
+
+// nestedTelemetryUnread reports whether nothing will read a nested client's
+// telemetry store (see clientRecord.telemetryUnread). A child client, or an
+// exec's client registered under an identity other than the exec's own, is a
+// CLI that may subscribe to its telemetry. Everything else registered as a
+// nested client never does.
+func nestedTelemetryUnread(clientID, attachablesClientID string, hostFromParent bool) bool {
+	return !hostFromParent && (attachablesClientID == "" || attachablesClientID == clientID)
 }
 
 // childClient is a nested client that a client serves to its own child
