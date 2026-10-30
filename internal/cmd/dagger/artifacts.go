@@ -2,6 +2,8 @@ package daggercmd
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -9,12 +11,14 @@ import (
 	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
+	"github.com/Khan/genqlient/graphql"
 	"github.com/dagger/dagger/core/artifact"
 	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/jinzhu/inflection"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"github.com/vektah/gqlparser/v2/gqlerror"
 )
 
 const artifactSelectorKeyFlag = "dagger.io/artifact-selector-key"
@@ -540,6 +544,60 @@ func readListedArtifacts(ctx context.Context, dag *dagger.Client, selection *cor
 		}
 	}
 	return response.Node.Items, nil
+}
+
+func isMissingArtifactListingField(err error) bool {
+	const missing = `Cannot query field "__listing" on type "Artifacts".`
+	isMissing := func(err *gqlerror.Error) bool {
+		return err != nil && len(err.Path) == 0 && err.Extensions["code"] == "GRAPHQL_VALIDATION_FAILED" && strings.HasPrefix(err.Message, missing)
+	}
+	// Validation happens before discovery. A resolver error must not trigger
+	// another query, even if its message quotes the validator.
+	var httpErr *graphql.HTTPError
+	if errors.As(err, &httpErr) {
+		return len(httpErr.Response.Errors) == 1 && isMissing(httpErr.Response.Errors[0])
+	}
+	var list gqlerror.List
+	if errors.As(err, &list) {
+		return len(list) == 1 && isMissing(list[0])
+	}
+	var gqlErr *gqlerror.Error
+	return errors.As(err, &gqlErr) && isMissing(gqlErr)
+}
+
+func readListedArtifactsMetadata(ctx context.Context, dag *dagger.Client, selection *core.Artifacts, absolute, typed bool) ([]listedArtifact, error) {
+	id, err := selection.ID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var response struct {
+		Node struct {
+			Listing     string
+			Definitions artifact.Dimensions
+		}
+	}
+	err = dag.Do(ctx, &dagger.Request{Query: `query($id: ID!, $absolute: Boolean!, $typeAssertion: Boolean!) {
+	 node(id: $id) { ... on Artifacts {
+	   definitions: dimensionDefinitions { kind identifier name qualifiedName itemType }
+	   listing: __listing(absolute: $absolute, typeAssertion: $typeAssertion)
+	 } }
+ }`, Variables: map[string]any{"id": id, "absolute": absolute, "typeAssertion": typed}}, &dagger.Response{Data: &response})
+	if err != nil {
+		if isMissingArtifactListingField(err) {
+			return readListedArtifacts(ctx, dag, selection, absolute, typed)
+		}
+		return nil, err
+	}
+	var items []listedArtifact
+	if err := json.Unmarshal([]byte(response.Node.Listing), &items); err != nil {
+		return nil, fmt.Errorf("decode artifact listing metadata: %w", err)
+	}
+	for i := range items {
+		if err := items[i].keysFromAddress(response.Node.Definitions); err != nil {
+			return nil, err
+		}
+	}
+	return items, nil
 }
 
 func readListedDimensionItems(ctx context.Context, dag *dagger.Client, selection *core.Artifacts, dimension string, absolute, expand bool) ([]listedArtifact, error) {
