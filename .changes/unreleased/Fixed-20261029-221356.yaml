@@ -1,0 +1,11 @@
+kind: Fixed
+body: |
+  An engine started by the CLI through Docker no longer sometimes runs every
+  container about a second slower for its whole life. A client connecting
+  while the engine started could keep the engine from enabling cgroup
+  controllers for its containers; the engine now retries until it can, and
+  fails to start with diagnostics if it never can.
+time: 2026-10-29T22:13:56Z
+custom:
+  Author: sipsma
+  PR: 14975
