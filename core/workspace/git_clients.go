@@ -1,7 +1,6 @@
 package workspace
 
 import (
-	"context"
 	"path"
 	"strconv"
 	"strings"
@@ -14,8 +13,9 @@ type TreeFileReader func(rel string) (data []byte, found bool, err error)
 // DeclaredGitClients reads the git clients the governing config declares for
 // the module at moduleDir, a path relative to the root of its tree. The
 // config is the nearest dagger.toml between moduleDir and the root; with
-// none, nothing is declared.
-func DeclaredGitClients(ctx context.Context, moduleDir string, read TreeFileReader) ([]string, error) {
+// none, nothing is declared. The config belongs to the module's own tree, not
+// the caller's workspace, so its diagnostics are not reported.
+func DeclaredGitClients(moduleDir string, read TreeFileReader) ([]string, error) {
 	moduleDir = path.Clean(moduleDir)
 	for dir := moduleDir; ; dir = path.Dir(dir) {
 		data, found, err := read(path.Join(dir, ConfigFileName))
@@ -30,9 +30,12 @@ func DeclaredGitClients(ctx context.Context, moduleDir string, read TreeFileRead
 			case dir != ".":
 				scope = strings.TrimPrefix(moduleDir, dir+"/")
 			}
-			cfg, err := ParseConfigAt(ctx, data, ".")
+			cfg, err := ParseConfig(data)
 			if err != nil {
 				return nil, nil //nolint:nilerr // deliberate: a config that does not parse declares nothing
+			}
+			if _, err := ReconcileSDKScopes(cfg, "."); err != nil {
+				return nil, nil //nolint:nilerr // deliberate: conflicting scopes declare nothing
 			}
 			return ModuleScopeGitClients(cfg, ".")[scope], nil
 		}
