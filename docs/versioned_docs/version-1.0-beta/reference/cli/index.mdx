@@ -521,7 +521,13 @@ Re-run checks on Dagger Cloud, against the commit CI already ran on.
 By default this targets the commit at the current HEAD (matched by SHA, falling
 back to the branch or PR it belongs to) and re-runs the checks that failed. Pass
 --check to pick specific checks by name, --all to re-run everything, or
---commit/--pr to target a different commit.
+--commit/--pr to target a different commit. --commit also accepts the merge
+commit CI tested for a pull request.
+
+The repository is the remote workspace selected with -W, or else whichever of
+the local checkout's git remotes Cloud has checks for, whatever the remote is
+named. Checks are searched in the Cloud orgs you are a member of; pass --org to
+search another org.
 
 Only outermost checks can be re-run; sub-checks run as part of their parent
 check, so name the parent (e.g. "ci:bootstrap", not "ci:bootstrap:lint").
