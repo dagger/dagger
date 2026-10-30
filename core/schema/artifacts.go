@@ -20,9 +20,9 @@ type artifactsSchema struct{}
 func (s *artifactsSchema) Install(srv *dagql.Server) {
 	srv.InstallObject(dagql.NewClass[*core.ArtifactPath](srv).View(AfterVersion("v1.0.0-0")))
 	dagql.Fields[*core.ArtifactPath]{}.Install(srv)
-	srv.InstallObject(dagql.NewClass[*core.ArtifactDimension](srv).View(AfterVersion("v1.0.0-0")))
+	dimensionClass := srv.InstallObject(dagql.NewClass[*core.ArtifactDimension](srv).View(AfterVersion("v1.0.0-0"))).(dagql.Class[*core.ArtifactDimension])
 	artifactDimensionKinds.Install(srv, AfterVersion("v1.0.0-0"))
-	dagql.Fields[*core.ArtifactDimension]{
+	dimensionFields := dagql.Fields[*core.ArtifactDimension]{
 		dagql.Func("kind", func(_ context.Context, d *core.ArtifactDimension, _ struct{}) (artifactDimensionKind, error) {
 			if d.Kind == "MODULE" {
 				return moduleDimension, nil
@@ -38,7 +38,24 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 			}
 			return dagql.NonNull(dagql.String(d.CollectionType)), nil
 		}).Doc("The collection type, or null for a static dimension."),
-	}.Install(srv)
+	}
+	// These custom accessors only read metadata, just like the reflected
+	// dimension fields. Keep their spans as internal trace detail too.
+	for _, field := range dimensionFields {
+		field.Spec.Trivial = true
+	}
+	dimensionFields.Install(srv)
+	// Cloud can show internal spans at its default verbosity. Use its existing
+	// passthrough marker for these pure metadata getters, including reflected
+	// fields, so they do not occupy rows even without receiver call payloads.
+	for _, spec := range dimensionClass.FieldSpecs("") {
+		if !spec.Trivial {
+			continue
+		}
+		field, _ := dimensionClass.Field(spec.Name, "")
+		field.Spec = &spec
+		dimensionClass.Install(field.PassthroughTelemetry())
+	}
 	srv.InstallObject(dagql.NewClass[*core.ArtifactDimensionKey](srv).View(AfterVersion("v1.0.0-0")))
 	artifactClass := dagql.NewClass[*core.Artifact](srv).View(AfterVersion("v1.0.0-0"))
 	srv.InstallObject(artifactClass)
