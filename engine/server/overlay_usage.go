@@ -86,6 +86,9 @@ func (o *overlayUsageSnapshotter) Cleanup(ctx context.Context) error {
 // one link are tracked to count them once: an inode with a single link, or a
 // directory, can't be met twice in one tree.
 func diskUsage(ctx context.Context, root string) (ctdsnapshot.Usage, error) {
+	if err := ctx.Err(); err != nil {
+		return ctdsnapshot.Usage{}, err
+	}
 	w := &usageWalker{ctx: ctx}
 	if err := unix.Lstat(root, &w.st); err != nil {
 		return ctdsnapshot.Usage{}, &os.PathError{Op: "lstat", Path: root, Err: err}
