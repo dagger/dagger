@@ -195,17 +195,7 @@ func AroundFunc(
 		)
 
 		defer telemetry.EndWithCause(span, err)
-		// The end attributes go on the span in one call: each SetAttributes
-		// that outgrows the span's attribute slice copies the whole slice.
-		// 16 holds a typical call's status and cache evidence.
-		attrs := make([]attribute.KeyValue, 0, 16)
-		attrs = appendStatusAttrs(ctx, attrs, res, cached, req.ResultCall)
-		if span.IsRecording() {
-			attrs = dagql.AppendContentPreferredDigestAttr(ctx, attrs, req.ResultCall, res)
-		}
-		attrs = appendPendingAttrs(attrs, res)
-		attrs = appendCacheEvidenceAttrs(ctx, attrs, req.CacheEvidence, res)
-		span.SetAttributes(attrs...)
+		span.SetAttributes(callEndAttrs(ctx, span, req, res, cached)...)
 		logResult(ctx, res, req.ResultCall)
 	}
 }
@@ -508,6 +498,20 @@ func normalizeRef(ref string) string {
 		ref = strings.TrimSuffix(ref, "/.")
 	}
 	return ref
+}
+
+// callEndAttrs collects the attributes a call's span gets as it ends, so they
+// go on the span in one call: each SetAttributes that outgrows the span's
+// attribute slice copies the whole slice. 16 holds a typical call's status
+// and cache evidence.
+func callEndAttrs(ctx context.Context, span trace.Span, req *dagql.CallRequest, res dagql.AnyResult, cached bool) []attribute.KeyValue {
+	attrs := make([]attribute.KeyValue, 0, 16)
+	attrs = appendStatusAttrs(ctx, attrs, res, cached, req.ResultCall)
+	if span.IsRecording() {
+		attrs = dagql.AppendContentPreferredDigestAttr(ctx, attrs, req.ResultCall, res)
+	}
+	attrs = appendPendingAttrs(attrs, res)
+	return appendCacheEvidenceAttrs(ctx, attrs, req.CacheEvidence, res)
 }
 
 // appendStatusAttrs appends the attributes that record the status of a call
