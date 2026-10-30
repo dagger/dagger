@@ -71,8 +71,8 @@ func (ArtifactsSuite) TestLegacyCollectionGeneratorBatching(ctx context.Context,
 	c := connect(ctx, t)
 	for _, tc := range []struct {
 		name, version, args string
-		files                []string
-		staleChecks          int
+		files               []string
+		staleChecks         int
 	}{
 		{"old full selection", "v1.0.0-beta.21", "", []string{"batch-a-b-c.txt"}, 1},
 		{"old one item", "v1.0.0-beta.21", "--view-pkg=b", []string{"batch-b.txt"}, 1},
