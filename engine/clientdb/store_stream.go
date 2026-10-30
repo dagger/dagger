@@ -383,7 +383,10 @@ func (s *logStream[Row]) spillOnce(force bool) (bool, error) {
 			n++
 		}
 	}
-	rows := append([]Row(nil), s.tail[:n]...)
+	// The spiller is the only writer of the tail's first n slots: Append
+	// writes past the end, and readers copy rows out under the mutex. So the
+	// rows are spilled in place, without a copy.
+	rows := s.tail[:n:n]
 	var spilledBytes int64
 	for _, size := range s.tailSizes[:n] {
 		spilledBytes += size
@@ -396,12 +399,12 @@ func (s *logStream[Row]) spillOnce(force bool) (bool, error) {
 	}
 
 	s.mu.Lock()
-	var zero Row
-	for i := range n {
-		s.tail[i] = zero
-	}
-	s.tail = s.tail[n:]
-	s.tailSizes = s.tailSizes[n:]
+	// Move the rows left to the front, so Append keeps filling the same
+	// arrays instead of growing new ones past a front it can't reuse.
+	kept := copy(s.tail, s.tail[n:])
+	clear(s.tail[kept:])
+	s.tail = s.tail[:kept]
+	s.tailSizes = s.tailSizes[:copy(s.tailSizes, s.tailSizes[n:])]
 	s.tailBytes -= spilledBytes
 	if len(s.tail) > 0 {
 		s.tailBase = s.codec.getID(s.tail[0])
