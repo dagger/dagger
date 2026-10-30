@@ -73,6 +73,28 @@ func TestOverlaySnapshotterUsage(t *testing.T) {
 	require.Less(t, commit*4, theirs, "Commit allocated %d bytes, fs.DiskUsage %d", commit, theirs)
 }
 
+// As with containerd's own overlay, sizing or committing a snapshot under a
+// canceled context fails, even when the snapshot is empty.
+func TestOverlaySnapshotterUsageCanceled(t *testing.T) {
+	root := t.TempDir()
+	ms, err := storage.NewMetaStore(filepath.Join(root, "metadata.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ms.Close() })
+	sn, _, err := newSnapshotter(filepath.Join(root, "snapshotter"), bkconfig.OCIConfig{Snapshotter: "overlayfs"}, ms)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sn.Close() })
+	_, err = sn.Prepare(context.Background(), "empty", "")
+	require.NoError(t, err)
+
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = sn.Usage(canceled, "empty")
+	require.ErrorIs(t, err, context.Canceled)
+	require.ErrorIs(t, sn.Commit(canceled, "committed", "empty"), context.Canceled)
+	_, err = sn.Stat(context.Background(), "committed")
+	require.Error(t, err, "nothing was committed")
+}
+
 // writeUsageTree fills dir with what an upper directory can hold: nested and
 // empty directories, a directory larger than one read of its entries, a file
 // linked twice in the tree and one linked from outside it, a sparse file,
