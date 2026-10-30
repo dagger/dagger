@@ -16,4 +16,8 @@ defmodule Dagger.LLMMessageOriginInput do
         }
 
   defstruct [:agent_name, :kind, :ref, :reply_to]
+
+  @doc false
+  def __field_names__(),
+    do: %{agent_name: "agentName", kind: "kind", ref: "ref", reply_to: "replyTo"}
 end

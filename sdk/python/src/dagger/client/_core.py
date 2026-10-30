@@ -4,6 +4,7 @@ import enum
 import functools
 import logging
 import typing
+from collections.abc import Callable
 from dataclasses import MISSING
 from typing import (
     Any,
@@ -18,6 +19,7 @@ import gql
 import graphql
 import httpx
 from beartype.door import TypeHint
+from cattrs.gen import make_dict_unstructure_fn, override
 from cattrs.preconf.json import make_converter as make_json_converter
 from gql.dsl import (
     DSLField,
@@ -44,7 +46,7 @@ from dagger import (
 )
 from dagger._exceptions import _query_error_from_transport
 from dagger.client._session import BaseConnection, SharedConnection
-from dagger.client.base import Scalar, Type
+from dagger.client.base import Input, Scalar, Type
 
 from ._guards import IDType, is_id_type
 
@@ -373,6 +375,27 @@ def make_converter(ctx: Context):
         _needs_hook,
         _struct,
     )
+
+    # Input objects are dataclasses with snake_case attributes; send them
+    # by their GraphQL field names instead (e.g. `call_id` as `callId`).
+    def _is_input(cls: Any) -> bool:
+        try:
+            return issubclass(cls, Input)
+        except TypeError:  # not a class, e.g. a generic alias
+            return False
+
+    def _unstructure_input_fn(cls: type[Input]) -> Callable[[Input], dict[str, Any]]:
+        return make_dict_unstructure_fn(
+            cls,
+            conv,
+            _cattrs_omit_if_default=conv.omit_if_default,
+            **{
+                name: override(rename=graphql_name)
+                for name, graphql_name in cls._graphql_field_names().items()
+            },
+        )
+
+    conv.register_unstructure_hook_factory(_is_input, _unstructure_input_fn)
 
     configure_converter_enum(conv)
 
