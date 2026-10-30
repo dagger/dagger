@@ -1548,7 +1548,7 @@ func workspaceAutocheckStateFromSource(cmd *cobra.Command, client *cloudapi.Clie
 // Cloud (DAGGER_CLOUD_URL points somewhere other than api.dagger.cloud), and
 // the production app otherwise.
 func gitHubAppInstallURL() string {
-	app := "dagger-cloud"
+	app := "dagger-for-github"
 	if url := os.Getenv("DAGGER_CLOUD_URL"); url != "" && !strings.Contains(url, "://api.dagger.cloud") {
 		app = "dagger-cloud-dev"
 	}
