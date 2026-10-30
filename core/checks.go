@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -104,9 +105,14 @@ func (c *Check) Run(ctx context.Context) (*Check, error) {
 // ReportResult emits the retained outcome on this execution request's span.
 // The cached __run call can have a different trace context. Keep its bounded
 // patch text, rather than the changeset or workspace, for this report.
-func (c *Check) ReportResult(ctx context.Context) {
+func (c *Check) ReportResult(ctx context.Context, cached bool) {
 	if c.StaleGenerator != "" {
 		trace.SpanFromContext(ctx).SetAttributes(attribute.String(telemetryattrs.CheckGeneratorAttr, c.StaleGenerator))
+	}
+	if cached && c.Error.Valid && ctx.Err() == nil {
+		// A fresh run's exec output rolls up into this span. A cached failure
+		// has no exec spans here; replay the output its error retained.
+		reportErrorOutput(ctx, c.Error.Value.Self())
 	}
 	preview := c.StalePatch
 	if preview == "" || ctx.Err() != nil {
@@ -124,4 +130,26 @@ func (c *Check) ReportResult(ctx context.Context) {
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, attrs...)
 	defer stdio.Close()
 	fmt.Fprint(stdio.Stdout, preview)
+}
+
+func reportErrorOutput(ctx context.Context, failure *Error) {
+	var stdout, stderr string
+	for _, value := range failure.Values {
+		var output string
+		if (value.Name != "stdout" && value.Name != "stderr") || json.Unmarshal(value.Value, &output) != nil {
+			continue
+		}
+		if value.Name == "stdout" {
+			stdout = output
+		} else {
+			stderr = output
+		}
+	}
+	if stdout == "" && stderr == "" {
+		return
+	}
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	defer stdio.Close()
+	fmt.Fprint(stdio.Stdout, stdout)
+	fmt.Fprint(stdio.Stderr, stderr)
 }

@@ -88,7 +88,7 @@ func (s checksSchema) sync(ctx context.Context, check dagql.ObjectResult[*core.C
 	if failure = srv.Select(ctx, target, &result, dagql.Selector{Field: "__run"}); failure != nil {
 		return result, failure
 	}
-	result.Self().ReportResult(ctx)
+	result.Self().ReportResult(ctx, result.HitCache())
 	if result.Self().Error.Valid {
 		failure = result.Self().Error.Value.Self()
 	}
