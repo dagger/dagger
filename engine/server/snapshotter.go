@@ -87,6 +87,9 @@ func newSnapshotter(
 			opts = append(opts, overlay.WithMountOptions([]string{"volatile"}))
 		}
 		sn, snErr = overlay.NewSnapshotter(rootDir, opts...)
+		if snErr == nil {
+			sn = &overlayUsageSnapshotter{Snapshotter: sn, ms: mdStore, root: rootDir}
+		}
 	case "fuse-overlayfs":
 		// no Opt (AsynchronousRemove is untested for fuse-overlayfs)
 		sn, snErr = fuseoverlayfs.NewSnapshotter(rootDir)
