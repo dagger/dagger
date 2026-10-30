@@ -366,45 +366,15 @@ func extractZip(ctx context.Context, r io.ReaderAt, size int64, dest string, str
 		return err
 	}
 	zr.RegisterDecompressor(zip.Deflate, newZipFlateReader)
-	// A later entry of the same path replaces an earlier one.
-	byPath := map[string]*zipEntry{}
-	var order []string
-	// Directories filter leaves out, for their metadata if entries in
-	// them are kept.
-	leftOut := map[string]*zipEntry{}
-	var leftOutOrder []string
-	for _, f := range zr.File {
-		rel, err := archiveEntryPath(f.Name, strip)
-		if err != nil {
-			return err
-		}
-		if rel == "" {
-			continue
-		}
-		keep, err := filter.keep(rel)
-		if err != nil {
-			return err
-		}
-		mode := f.Mode()
-		if !keep {
-			if mode.IsDir() {
-				if _, ok := leftOut[rel]; !ok {
-					leftOutOrder = append(leftOutOrder, rel)
-				}
-				leftOut[rel] = &zipEntry{file: f, path: rel, mode: mode}
-			}
-			continue
-		}
-		if _, ok := byPath[rel]; !ok {
-			order = append(order, rel)
-		}
-		byPath[rel] = &zipEntry{file: f, path: rel, mode: mode}
+	kept, leftOut, err := selectZipEntries(zr.File, strip, filter)
+	if err != nil {
+		return err
 	}
 
 	var dirs, files, symlinks []*zipEntry
 	mkdirs := map[string]bool{}
-	for _, rel := range order {
-		e := byPath[rel]
+	for _, e := range kept {
+		rel := e.path
 		switch {
 		case e.mode.IsDir():
 			dirs = append(dirs, e)
@@ -420,9 +390,9 @@ func extractZip(ctx context.Context, r io.ReaderAt, size int64, dest string, str
 			mkdirs[p] = true
 		}
 	}
-	for _, rel := range leftOutOrder {
-		if mkdirs[rel] {
-			dirs = append(dirs, leftOut[rel])
+	for _, e := range leftOut {
+		if mkdirs[e.path] {
+			dirs = append(dirs, e)
 		}
 	}
 
@@ -484,6 +454,49 @@ func extractZip(ctx context.Context, r io.ReaderAt, size int64, dest string, str
 		}
 	}
 	return nil
+}
+
+// selectZipEntries is the entries of files, a zip's, that filter keeps, and
+// the directories it leaves out, each in the order of its path's first
+// entry; a later entry of the same path replaces an earlier one. Paths are
+// stripped of their first strip elements, and entries left with none are
+// dropped.
+func selectZipEntries(files []*zip.File, strip int, filter *extractFilter) (kept, leftOut []*zipEntry, _ error) {
+	keptAt := map[string]int{}
+	leftOutAt := map[string]int{}
+	for _, f := range files {
+		rel, err := archiveEntryPath(f.Name, strip)
+		if err != nil {
+			return nil, nil, err
+		}
+		if rel == "" {
+			continue
+		}
+		keep, err := filter.keep(rel)
+		if err != nil {
+			return nil, nil, err
+		}
+		e := &zipEntry{file: f, path: rel, mode: f.Mode()}
+		switch {
+		case keep:
+			kept = putZipEntry(kept, keptAt, e)
+		case e.mode.IsDir():
+			// For its metadata, if entries in it are kept.
+			leftOut = putZipEntry(leftOut, leftOutAt, e)
+		}
+	}
+	return kept, leftOut, nil
+}
+
+// putZipEntry adds e to entries, or replaces the entry of the same path,
+// whose index at holds.
+func putZipEntry(entries []*zipEntry, at map[string]int, e *zipEntry) []*zipEntry {
+	if i, ok := at[e.path]; ok {
+		entries[i] = e
+		return entries
+	}
+	at[e.path] = len(entries)
+	return append(entries, e)
 }
 
 // zipEntryPerm is the permission bits f records, or def if it records
