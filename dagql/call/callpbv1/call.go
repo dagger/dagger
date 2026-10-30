@@ -3,6 +3,7 @@ package callpbv1
 import (
 	"encoding/base64"
 	"fmt"
+	"sync"
 
 	"github.com/vektah/gqlparser/v2/ast"
 	"google.golang.org/protobuf/proto"
@@ -15,13 +16,22 @@ import (
 // (core/dag_call_telemetry.go).
 
 func (call *Call) Encode() (string, error) {
+	// The protobuf and then its base64 go into one pooled buffer, so the
+	// string returned is the only allocation.
+	buf := encodeBufPool.Get().(*[]byte)
+	defer encodeBufPool.Put(buf)
 	// Deterministic is strictly needed so the CallsByDigest map is sorted in the serialized proto
-	proto, err := proto.MarshalOptions{Deterministic: true}.Marshal(call)
+	b, err := proto.MarshalOptions{Deterministic: true}.MarshalAppend((*buf)[:0], call)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal ID proto: %w", err)
 	}
-	return base64.StdEncoding.EncodeToString(proto), nil
+	n := len(b)
+	b = base64.StdEncoding.AppendEncode(b, b[:n])
+	*buf = b
+	return string(b[n:]), nil
 }
+
+var encodeBufPool = sync.Pool{New: func() any { return new([]byte) }}
 
 func (call *Call) Decode(str string) error {
 	bytes, err := base64.StdEncoding.DecodeString(str)
