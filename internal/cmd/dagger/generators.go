@@ -59,10 +59,23 @@ var generateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return withArtifactEngine(
+		connect := withArtifactEngine
+		if !generateListMode {
+			// Generation reveals skipped modules from discovery in its own
+			// view. An encapsulated preparation span would hide them.
+			connect = withEngine
+		}
+		return connect(
 			cmd.Context(),
 			params,
-			func(ctx context.Context, engineClient *client.Client) error {
+			func(ctx context.Context, engineClient *client.Client) (rerr error) {
+				if !generateListMode {
+					var span trace.Span
+					ctx, span = Tracer().Start(ctx, "generators", telemetry.Passthrough())
+					defer telemetry.EndWithCause(span, &rerr)
+					Frontend.SetPrimary(dagui.SpanID{SpanID: span.SpanContext().SpanID()})
+					slog.SetDefault(slog.SpanLogger(ctx, InstrumentationLibrary))
+				}
 				dag := engineClient.Dagger()
 				ws := core.NewQuery(dag).CurrentWorkspace()
 				all, err := commandArtifactsWithFlags(ctx, dag, ws, cmd, args, generateRequireLoad)
@@ -110,11 +123,6 @@ For an up-to-date check that fails on pending changes, use dagger check --genera
 }
 
 func runGenerators(ctx context.Context, dag *dagger.Client, generators *core.Artifacts, failures []artifactLoadFailure, cmd *cobra.Command, disposition changesetDisposition) (rerr error) {
-	ctx = artifactExecutionContext(ctx)
-	ctx, span := Tracer().Start(ctx, "generators", telemetry.Passthrough())
-	defer telemetry.EndWithCause(span, &rerr)
-	Frontend.SetPrimary(dagui.SpanID{SpanID: span.SpanContext().SpanID()})
-	slog.SetDefault(slog.SpanLogger(ctx, InstrumentationLibrary))
 	previewOut := cmd.ErrOrStderr()
 	if disposition == changesetDispositionNoApply {
 		// The primary span focuses rendering on generators. Attach the
