@@ -2952,6 +2952,19 @@ func (res *sharedResult) storeResultCall(frame *ResultCall) {
 	res.resultCallMu.Unlock()
 }
 
+// dropResultCall clears the frame of a result being removed from the cache.
+// Unlike storeResultCall, it starts no new frame generation: a removed
+// result's ID is never registered again, so no lookup can reach another frame
+// under it, and the answers memoized while it was registered still hold.
+func (res *sharedResult) dropResultCall() {
+	if res == nil {
+		return
+	}
+	res.resultCallMu.Lock()
+	res.resultCall = nil
+	res.resultCallMu.Unlock()
+}
+
 // frameProfileSkip reports the frame's wcprof profile-skip decision (nil-safe).
 // The bit is set once by core.AroundFunc and travels with the frame, so reading
 // it is the lock-free truth wherever a frame is in hand.
