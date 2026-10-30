@@ -899,9 +899,11 @@ type encodedSpanRow struct {
 }
 
 // spanRowEncoder encodes spans as client DB rows. A session's spans mostly
-// share one resource and a few instrumentation scopes, so it encodes each
-// distinct one once and shares its bytes between the rows that carry it.
+// share one trace, one resource and a few instrumentation scopes, so it
+// encodes each distinct one once and shares it between the rows that carry
+// it.
 type spanRowEncoder struct {
+	traceIDs map[trace.TraceID]string
 	// A resource's encoding is its attributes alone.
 	resources map[attribute.Distinct][]byte
 	scopes    map[instrumentation.Scope][]byte
@@ -909,6 +911,7 @@ type spanRowEncoder struct {
 
 func newSpanRowEncoder() *spanRowEncoder {
 	return &spanRowEncoder{
+		traceIDs:  map[trace.TraceID]string{},
 		resources: map[attribute.Distinct][]byte{},
 		scopes:    map[instrumentation.Scope][]byte{},
 	}
@@ -935,7 +938,12 @@ func (enc *spanRowEncoder) encode(span sdktrace.ReadOnlySpan, attrs []attribute.
 // row encodes span as a DB row, with attrs, its attributes, written without
 // its origin: the store's rows are already routed by it.
 func (enc *spanRowEncoder) row(span sdktrace.ReadOnlySpan, attrs []attribute.KeyValue) (clientdb.Span, bool) {
-	traceID := span.SpanContext().TraceID().String()
+	tid := span.SpanContext().TraceID()
+	traceID, ok := enc.traceIDs[tid]
+	if !ok {
+		traceID = tid.String()
+		enc.traceIDs[tid] = traceID
+	}
 	spanID := span.SpanContext().SpanID().String()
 	traceState := span.SpanContext().TraceState().String()
 	parentSpanID := span.Parent().SpanID().String()
