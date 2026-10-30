@@ -2537,15 +2537,18 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 	ctx = dagql.ContextWithCache(ctx, srv.engineCache)
 
 	// Debug https://github.com/dagger/dagger/issues/7592 by logging method and some headers, which
-	// are checked by gqlgen's handler
-	bklog.G(ctx).WithFields(logrus.Fields{
-		"path":          r.URL.Path,
-		"method":        r.Method,
-		"upgradeHeader": r.Header.Get("Upgrade"),
-		"contentType":   r.Header.Get("Content-Type"),
-		"trace":         trace.SpanContextFromContext(ctx).TraceID().String(),
-		"span":          trace.SpanContextFromContext(ctx).SpanID().String(),
-	}).Debug("handling http request")
+	// are checked by gqlgen's handler. The fields are built only when debug logging is on: this runs
+	// for every request.
+	if logger := bklog.G(ctx); logger.Logger.IsLevelEnabled(logrus.DebugLevel) {
+		logger.WithFields(logrus.Fields{
+			"path":          r.URL.Path,
+			"method":        r.Method,
+			"upgradeHeader": r.Header.Get("Upgrade"),
+			"contentType":   r.Header.Get("Content-Type"),
+			"trace":         trace.SpanContextFromContext(ctx).TraceID().String(),
+			"span":          trace.SpanContextFromContext(ctx).SpanID().String(),
+		}).Debug("handling http request")
+	}
 
 	if r.URL.Path == "/v1/telemetry/archives" || strings.HasPrefix(r.URL.Path, "/v1/telemetry/archives/") {
 		record, err := srv.archiveRequestRecord(clientMetadata.ClientID, clientMetadata.SessionID, clientMetadata.ClientSecretToken)
@@ -2557,7 +2560,7 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 
 	childMetadata := r.Header.Values(engine.ChildClientMetadataMetaKey)
 
-	mux := http.NewServeMux()
+	var mux *http.ServeMux
 	switch path := r.URL.Path; {
 	case len(childMetadata) == 0 && (path == "/v1/traces" || path == "/v1/logs" || path == "/v1/metrics"):
 		// Telemetry subscriptions require only the stable client record.
@@ -2565,6 +2568,7 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		if err != nil {
 			return fmt.Errorf("get client record: %w", err)
 		}
+		mux = http.NewServeMux()
 		mux.HandleFunc("GET /v1/traces", httpHandlerFunc(srv.telemetryPubSub.TracesSubscribeHandler, record))
 		mux.HandleFunc("GET /v1/logs", httpHandlerFunc(srv.telemetryPubSub.LogsSubscribeHandler, record))
 		mux.HandleFunc("GET /v1/metrics", httpHandlerFunc(srv.telemetryPubSub.MetricsSubscribeHandler, record))
@@ -2626,6 +2630,28 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		ctx = analytics.WithContext(ctx, sess.analytics)
 		r = r.WithContext(ctx)
 
+		// The session's built-in endpoints are exact paths, so while no endpoint was mixed in through
+		// MuxEndpoint they're served without building a mux for every request; any other request
+		// goes through the mux as before, which also keeps a mixed-in pattern's precedence.
+		sess.endpointMu.RLock()
+		mixedIn := len(sess.endpoints) > 0
+		sess.endpointMu.RUnlock()
+		switch path := r.URL.Path; {
+		case mixedIn:
+		case path == engine.QueryEndpoint:
+			httpHandlerFunc(srv.serveQuery, client).ServeHTTP(w, r)
+			return nil
+		case path == engine.SessionAttachablesEndpoint:
+			httpHandlerFunc(srv.serveSessionAttachables, client.clientRecord).ServeHTTP(w, r)
+			return nil
+		case path == engine.InitEndpoint:
+			httpHandlerFunc(srv.serveInit, client).ServeHTTP(w, r)
+			return nil
+		case path == engine.ShutdownEndpoint:
+			httpHandlerFunc(srv.serveShutdown, client).ServeHTTP(w, r)
+			return nil
+		}
+		mux = http.NewServeMux()
 		mux.Handle(engine.SessionAttachablesEndpoint, httpHandlerFunc(srv.serveSessionAttachables, client.clientRecord))
 		mux.Handle(engine.QueryEndpoint, httpHandlerFunc(srv.serveQuery, client))
 		mux.Handle(engine.InitEndpoint, httpHandlerFunc(srv.serveInit, client))
