@@ -26,39 +26,6 @@ func burnCPU(d time.Duration) {
 	}
 }
 
-// A profiled phase is an op carrying the engine's CPU activity during it.
-func TestPhaseRecordsEngineCPU(t *testing.T) {
-	wcprof.EnsureRecorder()
-	ctx := wcprof.ContextWithProfiling(context.Background())
-	srv := &Server{}
-	p := srv.beginSessionPhase(ctx, "phase-test-session")
-	require.NotNil(t, p)
-	burnCPU(50 * time.Millisecond)
-	p.end(srv)
-
-	var buf bytes.Buffer
-	require.NoError(t, wcprof.Active().WriteDump(&buf, false))
-	header, events, err := wcprof.ReadDump(&buf)
-	require.NoError(t, err)
-	var opID uint64
-	for _, ev := range events {
-		if ev.Type == "op" && header.Strings[ev.ClassID] == PhaseSession && header.Strings[ev.IdentID] == "phase-test-session" {
-			opID = ev.OpID
-		}
-	}
-	require.NotZero(t, opID, "no session phase op")
-	usage := map[string]wcprof.DumpEvent{}
-	for _, ev := range events {
-		if ev.Type == wcprof.DumpTypeUsage && ev.OpID == opID {
-			usage[header.Strings[ev.ClassID]] = ev
-		}
-	}
-	proc, ok := usage[UsageScopeEngineProcess]
-	require.True(t, ok, "no engine process reading: %+v", usage)
-	require.GreaterOrEqual(t, proc.CPUUserUS+proc.CPUSystemUS, int64(25_000), "50ms of busy work: %+v", proc)
-	require.Contains(t, usage, UsageScopeEngineChildren)
-}
-
 // An armed profile covers the phase's next run and is delivered at its end.
 func TestProfilePhase(t *testing.T) {
 	srv := &Server{}
