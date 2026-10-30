@@ -150,7 +150,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Doc(`Retrieves a directory at the given path.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the directory to retrieve. Example: "/src"`),
-				dagql.Arg("resolveBrokenSymlinks").Doc(`Recursively copy symlink targets into a self-contained directory. Targets must be within this directory. Dangling links and symlink cycles cause an error.`).View(AfterVersion("v1.0.0-0")),
+				dagql.Arg("resolveBrokenSymlinks").Doc(`Repair symlinks that directory selection would break. Copy targets from this directory into the result. Preserve working relative links and links that already have no target.`).View(AfterVersion("v1.0.0-0")),
 			),
 		dagql.NodeFunc("withDirectory", s.withDirectory).
 			IsPersistable().

@@ -788,7 +788,7 @@ export type ContainerDirectoryOpts = {
   expand?: boolean
 
   /**
-   * Recursively copy symlink targets into a self-contained directory. Targets must be within the source filesystem or directory mount. Dangling links and symlink cycles cause an error.
+   * Repair symlinks that directory selection would break. Resolve targets across the root filesystem and directory or file mounts. Preserve working relative links and links that already have no target. Cache, volume, tmpfs, secret, and socket mounts are not supported.
    */
   resolveBrokenSymlinks?: boolean
 }
@@ -1717,7 +1717,7 @@ export type DirectoryAsWorkspaceOpts = {
 
 export type DirectoryDirectoryOpts = {
   /**
-   * Recursively copy symlink targets into a self-contained directory. Targets must be within this directory. Dangling links and symlink cycles cause an error.
+   * Repair symlinks that directory selection would break. Copy targets from this directory into the result. Preserve working relative links and links that already have no target.
    */
   resolveBrokenSymlinks?: boolean
 }
@@ -7139,7 +7139,7 @@ export class Container extends BaseClient {
    * Mounts are included.
    * @param path The path of the directory to retrieve (e.g., "./src").
    * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   * @param opts.resolveBrokenSymlinks Recursively copy symlink targets into a self-contained directory. Targets must be within the source filesystem or directory mount. Dangling links and symlink cycles cause an error.
+   * @param opts.resolveBrokenSymlinks Repair symlinks that directory selection would break. Resolve targets across the root filesystem and directory or file mounts. Preserve working relative links and links that already have no target. Cache, volume, tmpfs, secret, and socket mounts are not supported.
    */
   directory = (path: string, opts?: ContainerDirectoryOpts): Directory => {
     const ctx = this._ctx.select("directory", { path, ...opts })
@@ -8918,7 +8918,7 @@ export class Directory extends BaseClient {
   /**
    * Retrieves a directory at the given path.
    * @param path Location of the directory to retrieve. Example: "/src"
-   * @param opts.resolveBrokenSymlinks Recursively copy symlink targets into a self-contained directory. Targets must be within this directory. Dangling links and symlink cycles cause an error.
+   * @param opts.resolveBrokenSymlinks Repair symlinks that directory selection would break. Copy targets from this directory into the result. Preserve working relative links and links that already have no target.
    */
   directory = (path: string, opts?: DirectoryDirectoryOpts): Directory => {
     const ctx = this._ctx.select("directory", { path, ...opts })

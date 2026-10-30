@@ -3582,9 +3582,11 @@ class Container(Type):
             current environment variables defined in the container (e.g.
             "/$VAR/foo").
         resolve_broken_symlinks:
-            Recursively copy symlink targets into a self-contained directory.
-            Targets must be within the source filesystem or directory mount.
-            Dangling links and symlink cycles cause an error.
+            Repair symlinks that directory selection would break. Resolve
+            targets across the root filesystem and directory or file mounts.
+            Preserve working relative links and links that already have no
+            target. Cache, volume, tmpfs, secret, and socket mounts are not
+            supported.
         """
         _args = [
             Arg("path", path),
@@ -6428,9 +6430,9 @@ class Directory(Type):
         path:
             Location of the directory to retrieve. Example: "/src"
         resolve_broken_symlinks:
-            Recursively copy symlink targets into a self-contained directory.
-            Targets must be within this directory. Dangling links and symlink
-            cycles cause an error.
+            Repair symlinks that directory selection would break. Copy targets
+            from this directory into the result. Preserve working relative
+            links and links that already have no target.
         """
         _args = [
             Arg("path", path),

@@ -3875,7 +3875,7 @@ func (r *Container) DefaultArgs(ctx context.Context) ([]string, error) {
 type ContainerDirectoryOpts struct {
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
-	// Recursively copy symlink targets into a self-contained directory. Targets must be within the source filesystem or directory mount. Dangling links and symlink cycles cause an error.
+	// Repair symlinks that directory selection would break. Resolve targets across the root filesystem and directory or file mounts. Preserve working relative links and links that already have no target. Cache, volume, tmpfs, secret, and socket mounts are not supported.
 	ResolveBrokenSymlinks bool
 }
 
@@ -6748,7 +6748,7 @@ func (r *Directory) Digest(ctx context.Context) (string, error) {
 
 // DirectoryDirectoryOpts contains options for Directory.Directory
 type DirectoryDirectoryOpts struct {
-	// Recursively copy symlink targets into a self-contained directory. Targets must be within this directory. Dangling links and symlink cycles cause an error.
+	// Repair symlinks that directory selection would break. Copy targets from this directory into the result. Preserve working relative links and links that already have no target.
 	ResolveBrokenSymlinks bool
 }
 

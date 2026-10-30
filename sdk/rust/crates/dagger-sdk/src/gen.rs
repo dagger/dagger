@@ -3014,7 +3014,7 @@ pub struct ContainerDirectoryOpts {
     /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
-    /// Recursively copy symlink targets into a self-contained directory. Targets must be within the source filesystem or directory mount. Dangling links and symlink cycles cause an error.
+    /// Repair symlinks that directory selection would break. Resolve targets across the root filesystem and directory or file mounts. Preserve working relative links and links that already have no target. Cache, volume, tmpfs, secret, and socket mounts are not supported.
     #[builder(setter(into, strip_option), default)]
     pub resolve_broken_symlinks: Option<bool>,
 }
@@ -6713,7 +6713,7 @@ pub struct DirectoryStatOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryDirectoryOpts {
-    /// Recursively copy symlink targets into a self-contained directory. Targets must be within this directory. Dangling links and symlink cycles cause an error.
+    /// Repair symlinks that directory selection would break. Copy targets from this directory into the result. Preserve working relative links and links that already have no target.
     #[builder(setter(into, strip_option), default)]
     pub resolve_broken_symlinks: Option<bool>,
 }
