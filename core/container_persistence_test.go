@@ -538,10 +538,10 @@ func TestContainerRestoreReportingAndBookkeepingRetry(t *testing.T) {
 			require.True(t, dagql.HasPendingLazyEvaluation(res))
 			require.Equal(t, pendingSibling, dagql.HasPendingLazyComputation(res))
 			pending := &telemetryTestSpan{}
-			recordPending(res, pending)
+			pending.SetAttributes(appendPendingAttrs(nil, res)...)
 			require.Equal(t, pendingSibling, containerPersistenceSpanAttrs(pending.attrs)[telemetry.PendingAttr].AsBool())
 			status := &telemetryTestSpan{}
-			recordStatus(ctx, res, status, true, nil)
+			status.SetAttributes(appendStatusAttrs(ctx, nil, res, true, nil)...)
 			require.Equal(t, !pendingSibling, containerPersistenceSpanAttrs(status.attrs)[telemetry.CachedAttr].AsBool())
 
 			cleanupErr := errors.New("operation lease release failed")

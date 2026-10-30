@@ -5234,14 +5234,13 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 				// Lazy evaluation may have learned content since the API span
 				// ended. Read the latest frame outside the cache locks.
 				frame := shared.loadResultCall()
+				var attrs []attribute.KeyValue
 				var cacheState lazySpanCacheState
 				if lazySpan.IsRecording() {
-					if frame != nil {
-						RecordContentPreferredDigest(lazyCallbackCtx, lazySpan, frame, res)
-					}
+					attrs = AppendContentPreferredDigestAttr(lazyCallbackCtx, attrs, frame, res)
 					cacheState = c.lazySpanCacheState(context.WithoutCancel(lazyCallbackCtx), shared, frame)
 				}
-				endOTelLazyOp(lazySpan, lazyIsResume, shared.id, partial, abandoned, storedPart, cacheState, &err)
+				endOTelLazyOp(lazySpan, attrs, lazyIsResume, shared.id, partial, abandoned, storedPart, cacheState, &err)
 			}
 			if c.testAfterLazyEvalFinish != nil {
 				c.testAfterLazyEvalFinish(attempt)
@@ -6098,7 +6097,7 @@ func (c *Cache) getOrInitCallInner(
 		if ev != nil {
 			// The lookup fact only: a hit on a still-pending lazy shell stays
 			// outcome=hit while dag.pending/dag.cached keep the evaluation
-			// facts (recordStatus is unchanged).
+			// facts (appendStatusAttrs is unchanged).
 			ev.Outcome = CacheOutcomeHit
 		}
 		c.captureSessionLazySpanContext(ctx, sessionID, hitRes)
