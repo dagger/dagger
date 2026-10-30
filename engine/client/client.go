@@ -2,6 +2,7 @@ package client
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/tls"
@@ -968,9 +969,19 @@ func (srv *SessionAttachablesServer) Run(ctx context.Context) {
 	doneCh := make(chan struct{})
 	go func() {
 		defer close(doneCh)
-		(&http2.Server{}).ServeConn(srv.Conn, &http2.ServeConnOpts{
-			Context: ctx,
-			Handler: srv.Server,
+		// The engine speaks first, and under load it can take a while to.
+		// Wait for its greeting here: ServeConn closes the connection if the
+		// preface takes more than 10s, or the first frame after it more than
+		// 2s, which would end the session.
+		frame, err := readEngineGreeting(srv.Conn)
+		if err != nil {
+			return
+		}
+		conn := &replayConn{Conn: srv.Conn, r: io.MultiReader(bytes.NewReader(frame), srv.Conn)}
+		(&http2.Server{}).ServeConn(conn, &http2.ServeConnOpts{
+			Context:          ctx,
+			Handler:          srv.Server,
+			SawClientPreface: true,
 		})
 	}()
 
@@ -978,6 +989,47 @@ func (srv *SessionAttachablesServer) Run(ctx context.Context) {
 	case <-ctx.Done():
 	case <-doneCh:
 	}
+}
+
+// http2InitialMaxFrameSize is the largest frame an HTTP/2 peer may send
+// before it knows the other side's settings (RFC 9113, section 4.2).
+const http2InitialMaxFrameSize = 16384
+
+// readEngineGreeting reads what the engine sends first on a session
+// attachables connection, waiting as long as that takes: the HTTP/2 client
+// preface, then its first frame, which HTTP/2 requires to be SETTINGS. It
+// returns the frame's bytes, for the HTTP/2 server to read again.
+func readEngineGreeting(conn net.Conn) ([]byte, error) {
+	preface := make([]byte, len(http2.ClientPreface))
+	if _, err := io.ReadFull(conn, preface); err != nil {
+		return nil, err
+	}
+	if string(preface) != http2.ClientPreface {
+		return nil, errors.New("invalid HTTP/2 client preface")
+	}
+	var frame bytes.Buffer
+	hdr, err := http2.ReadFrameHeader(io.TeeReader(conn, &frame))
+	if err != nil {
+		return nil, err
+	}
+	if hdr.Length > http2InitialMaxFrameSize {
+		return nil, fmt.Errorf("first HTTP/2 frame is %d bytes, more than %d", hdr.Length, http2InitialMaxFrameSize)
+	}
+	if _, err := io.CopyN(&frame, conn, int64(hdr.Length)); err != nil {
+		return nil, err
+	}
+	return frame.Bytes(), nil
+}
+
+// replayConn is a connection whose reads come from r, which starts with
+// bytes already read from it.
+type replayConn struct {
+	net.Conn
+	r io.Reader
+}
+
+func (c *replayConn) Read(p []byte) (int, error) {
+	return c.r.Read(p)
 }
 
 func (c *Client) daggerConnect(ctx context.Context) error {
