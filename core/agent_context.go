@@ -63,6 +63,16 @@ func composingAgentHandle(ctx context.Context) string {
 // agent, or record its waits as that agent's. And like composingAgentHandle
 // it is execution context, never a recorded call input: a cache hit on the
 // exec executes nothing and so spawns nothing.
+//
+// It is also captured when the process STARTS, not when it is described:
+// withExec is lazy, so its clients inherit the agent of whichever context
+// first forces the exec, not the one that built the container, and a
+// concurrent forcer that joins that run inherits nothing of its own. A
+// service (asService, withServiceBinding, up) runs nested clients the same
+// way: the agent of the context that starts it, while installers that join
+// the shared running service inherit nothing. This is the cache-hit rule
+// again: the one execution that happens is attributed to the context that
+// made it happen.
 func inheritedAgentHandle(ctx context.Context) string {
 	if query, err := CurrentQuery(ctx); err == nil {
 		if fnCall, err := query.CurrentFunctionCall(ctx); err == nil && fnCall != nil && fnCall.inheritedAgentHandle != "" {
