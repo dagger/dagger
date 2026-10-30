@@ -6,11 +6,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// composePaths mirrors the docker compose module: an item operation keyed by
-// project and service, and a batch operation keyed by project only.
 var composePaths = Paths{
 	{Type: "type:Service", Key: "docker/compose/projects/services/up", Module: "docker", Dimensions: []string{"/docker/compose/projects", "/docker/compose/projects/services"}},
-	{Type: "type:Service", Key: "docker/compose/projects/services/batch/up", Module: "docker", Dimensions: []string{"/docker/compose/projects"}},
 	{Type: "type:Check", Key: "docker/compose/projects/lint", Module: "docker", Dimensions: []string{"/docker/compose/projects"}},
 }
 
@@ -20,21 +17,13 @@ func TestTypeKeyProjection(t *testing.T) {
 	require.Equal(t, []string{"docker/compose/projects/services/up"}, item)
 	require.Equal(t, "up", ShortTypeKey(item, "docker/compose/projects/services/up"))
 
-	batch := composePaths.CandidatePaths("type:Service", []string{project}, nil)
-	require.Equal(t, "batch/up", ShortTypeKey(composePaths.Candidates("type:Service", []string{project}, nil), "docker/compose/projects/services/batch/up"))
-
-	// The item's short key, given without its service key, names the item
-	// and batch operations: one operation at two granularities.
-	_, err := ResolveTypeKey(batch, "service", "up")
-	require.ErrorContains(t, err, "service=up is ambiguous: it matches docker/compose/projects/services/batch/up, docker/compose/projects/services/up")
+	paths := composePaths.CandidatePaths("type:Service", []string{project}, nil)
 	for key, want := range map[string][]string{
-		"batch/up":                             {"docker/compose/projects/services/batch/up"},
 		"services/up":                          {"docker/compose/projects/services/up"},
 		"/docker/compose/projects/services/up": {"docker/compose/projects/services/up"},
 		"down":                                 nil,
 	} {
-		got, err := ResolveTypeKey(batch, "service", key)
-		require.NoError(t, err, key)
+		got := ResolveTypeKey(paths, key)
 		require.Equal(t, want, got, key)
 	}
 }
@@ -48,11 +37,9 @@ func TestTypeKeySets(t *testing.T) {
 		{Type: "type:Check", Key: "docs/stale"},
 		{Type: "type:Check", Key: "clients/stale"},
 	}
-	got, err := ResolveTypeKey(paths, "check", "verify")
-	require.NoError(t, err)
+	got := ResolveTypeKey(paths, "verify")
 	require.Equal(t, []string{"items/parts/verify", "items/verify", "other/verify"}, got)
-	got, err = ResolveTypeKey(paths, "check", "stale")
-	require.NoError(t, err)
+	got = ResolveTypeKey(paths, "stale")
 	require.Equal(t, []string{"clients/stale", "docs/stale"}, got)
 }
 

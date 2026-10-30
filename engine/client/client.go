@@ -989,14 +989,28 @@ func (c *Client) daggerConnect(ctx context.Context) error {
 	return err
 }
 
-func (c *Client) Close() (rerr error) {
+func (c *Client) Close() error {
+	return c.CloseWithContext(context.WithoutCancel(c.internalCtx))
+}
+
+// CloseWithContext uses one caller-controlled deadline for graceful shutdown
+// and telemetry draining. Transport cleanup still runs when the deadline expires.
+func (c *Client) CloseWithContext(ctx context.Context) (rerr error) {
+	ctx, cancel := context.WithTimeout(ctx, clientShutdownTimeout())
+	defer cancel()
+	stop := context.AfterFunc(ctx, func() {
+		if c.internalCancel != nil {
+			c.internalCancel(context.Cause(ctx))
+		}
+	})
+	defer stop()
 	c.closing.Store(true)
 	// shutdown happens outside of c.closeMu, since it requires a connection
 	if lostErr := c.SessionLost(); lostErr != nil {
 		// The engine already retired the session, so it would reject the
 		// shutdown request. Report why the session ended instead.
 		rerr = errors.Join(rerr, lostErr)
-	} else if shutdownErr := c.shutdownServer(); shutdownErr != nil {
+	} else if shutdownErr := c.shutdownServer(ctx); shutdownErr != nil {
 		rerr = errors.Join(rerr, fmt.Errorf("shutdown: %w", shutdownErr))
 	} else if c.telemetry != nil {
 		// A successful /shutdown has flushed the session's telemetry and
@@ -1008,7 +1022,6 @@ func (c *Client) Close() (rerr error) {
 		// Telemetry transport failures are logged rather than returned: the
 		// run's own work has already completed, and callers join Close errors
 		// into the run's exit status.
-		ctx, cancel := context.WithTimeout(context.WithoutCancel(c.internalCtx), clientShutdownTimeout())
 		drained := make(chan error, 1)
 		go func() { drained <- c.telemetry.Wait() }()
 		select {
@@ -1019,7 +1032,6 @@ func (c *Client) Close() (rerr error) {
 		case <-ctx.Done():
 			slog.Warn("telemetry drain timed out after shutdown", "timeout", clientShutdownTimeout())
 		}
-		cancel()
 	}
 
 	c.closeMu.Lock()
@@ -1518,12 +1530,9 @@ func clientShutdownTimeout() time.Duration {
 	return timeout
 }
 
-func (c *Client) shutdownServer() error {
-	// don't immediately cancel shutdown if we're shutting down because we were
-	// canceled
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(c.internalCtx), clientShutdownTimeout())
+func (c *Client) shutdownServer(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, clientShutdownTimeout())
 	defer cancel()
-
 	req, err := http.NewRequestWithContext(ctx, "POST", "http://dagger"+engine.ShutdownEndpoint, nil)
 	if err != nil {
 		return fmt.Errorf("new request: %w", err)

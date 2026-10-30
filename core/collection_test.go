@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/stretchr/testify/require"
 )
 
@@ -195,4 +196,219 @@ func TestCollectionDeclarations(t *testing.T) {
 	badDelta.Collection = &CollectionConfig{Enabled: true, Delta: "absent"}
 	_, err = badDelta.CollectionMembers()
 	require.ErrorContains(t, err, "delta field")
+}
+
+func TestUnfilteredInlineCollectionSDKInputHasBase(t *testing.T) {
+	original, _ := collectionTestObject(t, TypeDefKindString, []any{"a", "b"})
+	ctx := t.Context()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	root := &Query{}
+	server := &moduleObjectTestServer{mockServer: &mockServer{}, cache: cache, root: root}
+	root.Server = server
+	dag := newCoreDagqlServerForTest(t, root)
+	server.dag = dag
+	installModuleObjectTestModuleClass(dag)
+	installTypeDefTestClasses(dag)
+	ctx = engine.ContextWithClientMetadata(ContextWithQuery(dagql.ContextWithCache(ctx, cache), root), &engine.ClientMetadata{ClientID: "inline-client", SessionID: "inline-session"})
+	original.TypeDef = newTypeDefAttachedResult(t, ctx, cache, dag, "inline-collection-type", original.TypeDef).Self()
+	mod := newTypeDefAttachedResult(t, ctx, cache, dag, "inline-module", &Module{NameField: "test", Deps: NewSchemaBuilder(nil, nil)})
+	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*ModuleObject]{Typed: &ModuleObject{Module: mod, TypeDef: original.TypeDef}}))
+	typ := &ModuleObjectType{mod: mod, typeDef: original.TypeDef}
+	ctx = dagql.ContextWithCall(ctx, moduleObjectTestSyntheticCall("inline-collection", original))
+	decoded, err := typ.ConvertFromSDKResult(ctx, maps.Clone(original.Fields))
+	require.NoError(t, err)
+	require.Nil(t, dagql.CurrentResultScope(ctx))
+	converted, err := typ.ConvertToSDKInput(ctx, decoded)
+	require.NoError(t, err)
+	require.NotEmpty(t, converted.(map[string]any)[collectionBaseField])
+}
+
+// Keep the real attachment/cache path while leaving the selected keys unchanged.
+type privateCollectionIdentityScope struct{ results []dagql.AnyObjectResult }
+
+func (scope *privateCollectionIdentityScope) Apply(_ context.Context, _ *dagql.Server, value dagql.AnyObjectResult) (dagql.AnyObjectResult, error) {
+	scope.results = append(scope.results, value)
+	return value, nil
+}
+
+func TestPrivateCollectionSDKInputKeepsDistinctStoredPaths(t *testing.T) {
+	ctx := t.Context()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	root := &Query{}
+	server := &moduleObjectTestServer{mockServer: &mockServer{}, cache: cache, root: root}
+	root.Server = server
+	srv := newCoreDagqlServerForTest(t, root)
+	server.dag = srv
+	installModuleObjectTestModuleClass(srv)
+	installTypeDefTestClasses(srv)
+	ctx = engine.ContextWithClientMetadata(ContextWithQuery(dagql.ContextWithCache(ctx, cache), root), &engine.ClientMetadata{ClientID: "private-path-client", SessionID: "private-path-session"})
+	original, _ := collectionTestObject(t, TypeDefKindString, []any{"a", "b", "c"})
+	original.TypeDef = newTypeDefAttachedResult(t, ctx, cache, srv, "private-path-type", original.TypeDef).Self()
+	source := newTypeDefAttachedResult(t, ctx, cache, srv, "private-path-source", &ModuleSource{Kind: ModuleSourceKindLocal, Local: &LocalModuleSource{ContextDirectoryPath: "/test"}})
+	mod := newTypeDefAttachedResult(t, ctx, cache, srv, "private-path-module", &Module{NameField: "test", Source: dagql.NonNull(source), Deps: NewSchemaBuilder(nil, nil)})
+	original.Module = mod
+	class := dagql.NewClass(srv, dagql.ClassOpts[*ModuleObject]{Typed: &ModuleObject{Module: mod, TypeDef: original.TypeDef}})
+	stateField, err := original.privateCollectionStateField(srv)
+	require.NoError(t, err)
+	// This fixture installs the resolver directly, without a module runtime.
+	stateField.Spec.Module, stateField.Spec.ModuleProvider = nil, nil
+	class.Install(stateField)
+	srv.InstallObject(class)
+	typ := &ModuleObjectType{mod: mod, typeDef: original.TypeDef}
+	ctx = dagql.ContextWithCall(ctx, moduleObjectTestSyntheticCall("private-path-base", original))
+	base, err := typ.ConvertFromSDKResult(ctx, maps.Clone(original.Fields))
+	require.NoError(t, err)
+	base, err = cache.AttachResult(ctx, "private-path-session", srv, base)
+	require.NoError(t, err)
+	inline := func(key string) map[string]any {
+		return map[string]any{"Keys": []any{key}, collectionBaseField: base}
+	}
+	input := map[string]any{
+		"first":  inline("a"),
+		"second": inline("b"),
+		"nested": []any{inline("c"), []any{inline("b"), inline("a")}},
+	}
+	parent := &ModuleObjectType{typeDef: NewObjectTypeDef("Holder", "", nil)}
+	frame := moduleObjectTestSyntheticCall("private-path-holder", &ModuleObject{TypeDef: parent.typeDef})
+	scope := &privateCollectionIdentityScope{}
+	ctx = dagql.WithResultScope(dagql.ContextWithCall(ctx, frame), scope)
+	var previous map[string]uint64
+	for range 2 {
+		scope.results = nil
+		got, err := moduleObjectFieldsToSDKInput(ctx, parent, frame, input)
+		require.NoError(t, err)
+		check := func(value any, key string) {
+			fields := value.(map[string]any)
+			require.Equal(t, []any{key}, fields["Keys"])
+			require.NotEmpty(t, fields[collectionBaseField])
+		}
+		check(got["first"], "a")
+		check(got["second"], "b")
+		nested := got["nested"].([]any)
+		check(nested[0], "c")
+		inner := nested[1].([]any)
+		check(inner[0], "b")
+		check(inner[1], "a")
+		// Scope callbacks also see schema objects and can visit a collection
+		// more than once. Inspect the reconstructed states, not callback order.
+		unscoped := dagql.WithResultScope(ctx, nil)
+		baseRecipe, err := base.RecipeID(unscoped)
+		require.NoError(t, err)
+		current := map[string]uint64{}
+		for _, result := range scope.results {
+			obj, ok := dagql.UnwrapAs[*ModuleObject](result)
+			if !ok || obj.TypeDef.Name != original.TypeDef.Name {
+				continue
+			}
+			recipe, err := result.RecipeID(unscoped)
+			require.NoError(t, err)
+			if recipe.Field() != privateCollectionStateFieldName {
+				continue
+			}
+			require.Equal(t, baseRecipe.Digest(), recipe.Receiver().Digest())
+			keys, err := obj.collectionKeys(unscoped)
+			require.NoError(t, err)
+			require.Len(t, keys, 1)
+			key := keys[0].text
+			require.Contains(t, []string{"a", "b", "c"}, key)
+			id, err := result.ID()
+			require.NoError(t, err)
+			if existing, ok := current[key]; ok {
+				require.Equal(t, existing, id.EngineResultID(), "identical stored states must reuse the same result")
+			}
+			current[key] = id.EngineResultID()
+			loaded, err := srv.Load(unscoped, recipe)
+			require.NoError(t, err)
+			restored, ok := dagql.UnwrapAs[*ModuleObject](loaded)
+			require.True(t, ok)
+			require.Equal(t, []any{key}, restored.Fields["Keys"])
+		}
+		require.Len(t, current, 3, "all three stored states must reach the scope")
+		require.NotEqual(t, current["a"], current["b"])
+		require.NotEqual(t, current["a"], current["c"])
+		require.NotEqual(t, current["b"], current["c"])
+		if previous != nil {
+			require.Equal(t, previous, current, "a second conversion must reuse each stored state")
+		}
+		previous = current
+	}
+	require.Equal(t, []any{"a", "b", "c"}, original.Fields["Keys"])
+}
+
+type receiverCollectionScope struct{}
+
+func (receiverCollectionScope) Apply(ctx context.Context, srv *dagql.Server, value dagql.AnyObjectResult) (dagql.AnyObjectResult, error) {
+	obj, ok := dagql.UnwrapAs[*ModuleObject](value)
+	if !ok || obj.TypeDef.Collection == nil || !obj.TypeDef.Collection.Enabled {
+		return value, nil
+	}
+	key, err := collectionKeyFromInput(dagql.String("b"))
+	if err != nil {
+		return nil, err
+	}
+	subset, err := obj.collectionSubset(ctx, []collectionKey{key})
+	if err != nil {
+		return nil, err
+	}
+	frame, err := value.ResultCall()
+	if err != nil {
+		return nil, err
+	}
+	return dagql.NewObjectResultForCall(subset, srv, frame)
+}
+
+func TestModuleFunctionReceiverFiltersStoredCollections(t *testing.T) {
+	ctx := t.Context()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	root := &Query{}
+	server := &moduleObjectTestServer{mockServer: &mockServer{}, cache: cache, root: root}
+	root.Server = server
+	srv := newCoreDagqlServerForTest(t, root)
+	server.dag = srv
+	installModuleObjectTestModuleClass(srv)
+	installTypeDefTestClasses(srv)
+	ctx = engine.ContextWithClientMetadata(ContextWithQuery(dagql.ContextWithCache(ctx, cache), root), &engine.ClientMetadata{ClientID: "receiver-client", SessionID: "receiver-session"})
+	original, _ := collectionTestObject(t, TypeDefKindString, []any{"a", "b", "c"})
+	original.TypeDef = newTypeDefAttachedResult(t, ctx, cache, srv, "receiver-collection-type", original.TypeDef).Self()
+	source := newTypeDefAttachedResult(t, ctx, cache, srv, "receiver-source", &ModuleSource{Kind: ModuleSourceKindLocal, Local: &LocalModuleSource{ContextDirectoryPath: "/test"}})
+	mod := newTypeDefAttachedResult(t, ctx, cache, srv, "receiver-module", &Module{NameField: "test", Source: dagql.NonNull(source), Deps: NewSchemaBuilder(nil, nil)})
+	original.Module = mod
+	class := dagql.NewClass(srv, dagql.ClassOpts[*ModuleObject]{Typed: &ModuleObject{Module: mod, TypeDef: original.TypeDef}})
+	stateField, err := original.privateCollectionStateField(srv)
+	require.NoError(t, err)
+	// This fixture installs the resolver directly, without a module runtime.
+	stateField.Spec.Module, stateField.Spec.ModuleProvider = nil, nil
+	class.Install(stateField)
+	srv.InstallObject(class)
+	typ := &ModuleObjectType{mod: mod, typeDef: original.TypeDef}
+	ctx = dagql.ContextWithCall(ctx, moduleObjectTestSyntheticCall("receiver-base", original))
+	base, err := typ.ConvertFromSDKResult(ctx, maps.Clone(original.Fields))
+	require.NoError(t, err)
+	base, err = cache.AttachResult(ctx, "receiver-session", srv, base)
+	require.NoError(t, err)
+	baseID, err := base.ID()
+	require.NoError(t, err)
+	baseEncoded, err := baseID.Encode()
+	require.NoError(t, err)
+
+	holderType := newTypeDefAttachedResult(t, ctx, cache, srv, "receiver-holder-type", NewObjectTypeDef("Holder", "", nil)).Self()
+	holder := &ModuleObject{Module: mod, TypeDef: holderType, Fields: map[string]any{
+		"private": map[string]any{"Keys": []any{"a", "b", "c"}, collectionBaseField: base},
+	}}
+	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*ModuleObject]{Typed: holder}))
+	receiver, err := dagql.NewObjectResultForCall(holder, srv, moduleObjectTestSyntheticCall("receiver-holder", holder))
+	require.NoError(t, err)
+	attached, err := cache.AttachResult(ctx, "receiver-session", srv, receiver)
+	require.NoError(t, err)
+	ctx = dagql.WithResultScope(ctx, receiverCollectionScope{})
+	fields, err := moduleFunctionReceiverFields(ctx, &CallOpts{ParentTyped: attached, ParentFields: holder.Fields})
+	require.NoError(t, err)
+	private := fields["private"].(map[string]any)
+	require.Equal(t, []any{"b"}, private["Keys"])
+	require.Equal(t, baseEncoded, private[collectionBaseField], "the original base must not be filtered")
+	require.Equal(t, []any{"a", "b", "c"}, holder.Fields["private"].(map[string]any)["Keys"])
+	require.Equal(t, []any{"a", "b", "c"}, original.Fields["Keys"])
 }

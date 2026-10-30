@@ -190,7 +190,8 @@ type daggerSession struct {
 	cloudFlushers []func(context.Context)
 	// cloudRefresh admits OAuth token refreshes until the main client's
 	// shutdown starts.
-	cloudRefresh *cloudRefreshGate
+	cloudRefresh      *cloudRefreshGate
+	cloudPrepareToken func(context.Context) error
 	// cloudTokenExpiry is when the session's Cloud token expires, in Unix
 	// nanoseconds, or zero when it does not. Token refreshes update it.
 	cloudTokenExpiry atomic.Int64
@@ -412,6 +413,11 @@ type clientRuntime struct {
 	// metadata of that ongoing function call
 	fnCall *core.FunctionCall
 
+	cloudArtifactMu      sync.Mutex
+	cloudArtifactClients map[string]*engineclient.Client
+	cloudArtifactClosed  bool
+	cloudArtifactConnect singleflight.Group[string, *engineclient.Client]
+
 	// Trace and log providers are session-owned. These lightweight bound
 	// exporters are retained only for integrations that deliver telemetry for a
 	// known client without an emission context (for example cloud scale-out).
@@ -515,12 +521,37 @@ func (client *clientRuntime) String() string {
 	return fmt.Sprintf("<Client %s: %s>", client.clientID, client.state)
 }
 
+func (client *clientRuntime) closeCloudArtifactClients(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, sessionTelemetryFlushTimeout)
+	defer cancel()
+	if budget := client.daggerSession.cloudBound.budget; budget != nil {
+		if deadline, ok := budget.current(); ok {
+			var cancelBudget context.CancelFunc
+			ctx, cancelBudget = context.WithDeadline(ctx, deadline)
+			defer cancelBudget()
+		}
+	}
+	client.cloudArtifactMu.Lock()
+	client.cloudArtifactClosed = true
+	clients := client.cloudArtifactClients
+	client.cloudArtifactClients = nil
+	client.cloudArtifactMu.Unlock()
+	var group errgroup.Group
+	for _, remote := range clients {
+		group.Go(func() error { return remote.CloseWithContext(ctx) })
+	}
+	return group.Wait()
+}
+
 // releaseHeavyState drops every execution-only edge after the runtime has been
 // atomically unpublished. Released lease handles may remain in stale contexts,
 // and their callbacks intentionally still point at this small shell, so clearing
 // the fields here ensures those harmless handles cannot retain a DagQL/schema
 // graph. Zero typed leases proves no legitimate execution can race these writes.
 func (client *clientRuntime) releaseHeavyState() {
+	if err := client.closeCloudArtifactClients(context.Background()); err != nil {
+		slog.Error("close cloud artifact clients", "error", err)
+	}
 	client.stateMu.Lock()
 	client.state = clientStateReclaimed
 	client.dag = nil
@@ -2731,6 +2762,20 @@ func withRequestTelemetrySuppression(ctx context.Context, r *http.Request) (cont
 	return dagql.WithSkip(ctx), true
 }
 
+func recoverQueryPanic(ctx context.Context, result *error) {
+	if v := recover(); v != nil {
+		bklog.G(ctx).Errorf("panic serving schema: %v %s", v, string(debug.Stack()))
+		switch v := v.(type) {
+		case error:
+			*result = gqlErr(v, http.StatusInternalServerError)
+		case string:
+			*result = gqlErr(errors.New(v), http.StatusInternalServerError)
+		default:
+			*result = gqlErr(errors.New("internal server error"), http.StatusInternalServerError)
+		}
+	}
+}
+
 func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *clientRuntime) (rerr error) {
 	sess := client.daggerSession
 
@@ -2772,19 +2817,7 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 
 	// turn panics into graphql errors — must be set up before any code that
 	// could panic (including ensureExtraModulesLoaded and schema loading).
-	defer func() {
-		if v := recover(); v != nil {
-			bklog.G(ctx).Errorf("panic serving schema: %v %s", v, string(debug.Stack()))
-			switch v := v.(type) {
-			case error:
-				rerr = gqlErr(v, http.StatusInternalServerError)
-			case string:
-				rerr = gqlErr(errors.New(v), http.StatusInternalServerError)
-			default:
-				rerr = gqlErr(errors.New("internal server error"), http.StatusInternalServerError)
-			}
-		}
-	}()
+	defer recoverQueryPanic(ctx, &rerr)
 
 	// only record telemetry if the request is traced, otherwise
 	// we end up with orphaned spans in their own separate traces from tests etc.
@@ -2850,6 +2883,9 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 
 	// make query available via context to all APIs
 	ctx = core.ContextWithQuery(ctx, client.dagqlRoot)
+	if client.fnCall != nil && client.fnCall.ResultScope != nil {
+		ctx = dagql.WithResultScope(ctx, client.fnCall.ResultScope)
+	}
 
 	var profServeOp *wcprof.Op
 	if profiling {
@@ -3076,10 +3112,17 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 	}
 
 	if isMainClient {
-		slog.Info("main client is shutting down")
-		// Every wait on Cloud from here until the request returns shares one
-		// deadline, well within the client's own shutdown limit.
 		defer sess.startCloudShutdownBudget()()
+	}
+	if err := drainPhase("close cloud artifact clients", func() error {
+		return client.closeCloudArtifactClients(context.WithoutCancel(ctx))
+	}); err != nil {
+		shutdownErr = errors.Join(shutdownErr, err)
+	}
+
+	if isMainClient {
+		slog.Info("main client is shutting down")
+		// Remote clients and telemetry share the shutdown budget started above.
 		err := drainPhase("flush workspace locks", func() error {
 			return srv.flushWorkspaceLocks(context.WithoutCancel(ctx), client)
 		})
@@ -4529,7 +4572,61 @@ func (srv *Server) ClientTelemetry(ctx context.Context, sessID, clientID string)
 	return record.TelemetryDB(ctx)
 }
 
-// Return a client connected to a cloud engine. If bool return is false, the local engine should be used. Session attachables for the returned client will be proxied back to the calling client.
+// Related artifacts share a cloud session and its module call cache.
+func (srv *Server) SharedCloudArtifactClient(ctx context.Context, scope string) (*engineclient.Client, error) {
+	parent, err := srv.nonModuleParentClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	client, _, err := parent.cloudArtifactConnect.Do(ctx, scope, func(ctx context.Context) (*engineclient.Client, error) {
+		parent.cloudArtifactMu.Lock()
+		cached, closed := parent.cloudArtifactClients[scope], parent.cloudArtifactClosed
+		parent.cloudArtifactMu.Unlock()
+		if closed {
+			return nil, fmt.Errorf("cloud artifact clients are closed")
+		}
+		if cached != nil {
+			return cached, nil
+		}
+		// Setup can outlive its first caller. Retain the parent until it ends.
+		clientScope, err := parent.daggerSession.acquireRootClientScope(parent, engine.ClientLeaseSharedWork, "cloud-artifacts/"+scope)
+		if err != nil {
+			return nil, err
+		}
+		defer clientScope.Lease().Release()
+		ctx, err = engine.ContextWithClientScope(ctx, clientScope)
+		if err != nil {
+			return nil, err
+		}
+		client, remote, err := srv.CloudEngineClient(ctx, "", "checks", nil)
+		if err != nil {
+			return nil, err
+		}
+		if !remote {
+			return nil, fmt.Errorf("cloud execution is unavailable")
+		}
+		parent.cloudArtifactMu.Lock()
+		cached, closed = parent.cloudArtifactClients[scope], parent.cloudArtifactClosed
+		if !closed && cached == nil {
+			if parent.cloudArtifactClients == nil {
+				parent.cloudArtifactClients = make(map[string]*engineclient.Client)
+			}
+			parent.cloudArtifactClients[scope] = client
+		}
+		parent.cloudArtifactMu.Unlock()
+		if closed || cached != nil {
+			closeErr := client.Close()
+			if closed {
+				return nil, errors.Join(fmt.Errorf("cloud artifact clients are closed"), closeErr)
+			}
+			return cached, closeErr
+		}
+		return client, nil
+	})
+	return client, err
+}
+
+// Return a cloud client whose session attachables proxy to the calling client.
 func (srv *Server) CloudEngineClient(
 	ctx context.Context,
 	module string,

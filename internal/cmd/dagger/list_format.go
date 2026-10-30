@@ -8,6 +8,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/dagger/dagger/core/artifact"
 	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/spf13/cobra"
@@ -23,6 +24,12 @@ func validateArtifactListFormat(format string) error {
 	}
 }
 
+// uniqueArtifactList gives table output and trace links the same row order.
+func uniqueArtifactList(items []listedArtifact) []listedArtifact {
+	slices.SortFunc(items, func(a, b listedArtifact) int { return strings.Compare(a.URI, b.URI) })
+	return slices.CompactFunc(items, func(a, b listedArtifact) bool { return a.URI == b.URI })
+}
+
 // All formats use the same rows. Names maps exact dimension identifiers to
 // unambiguous CLI flag names; it does not change item identity.
 func writeArtifactList(cmd *cobra.Command, items []listedArtifact, names map[string]string) error {
@@ -30,8 +37,7 @@ func writeArtifactList(cmd *cobra.Command, items []listedArtifact, names map[str
 	if err := validateArtifactListFormat(format); err != nil {
 		return err
 	}
-	slices.SortFunc(items, func(a, b listedArtifact) int { return strings.Compare(a.URI, b.URI) })
-	items = slices.CompactFunc(items, func(a, b listedArtifact) bool { return a.URI == b.URI })
+	items = uniqueArtifactList(items)
 	if len(items) == 0 {
 		return nil
 	}
@@ -45,6 +51,10 @@ func writeArtifactList(cmd *cobra.Command, items []listedArtifact, names map[str
 	}
 	if format == "cli" {
 		return writeArtifactCLI(cmd.OutOrStdout(), items, names, artifactListReplayArgs(cmd))
+	}
+	showCollapsed, err := artifactListShowsCollapsedDimensions(cmd, items, names)
+	if err != nil {
+		return err
 	}
 	// Mixed types use separate tables, not sparse columns for every type.
 	groups := map[string][]listedArtifact{}
@@ -67,14 +77,110 @@ func writeArtifactList(cmd *cobra.Command, items []listedArtifact, names map[str
 				return err
 			}
 		}
-		if err := writeArtifactTable(cmd.OutOrStdout(), groups[typ], names); err != nil {
+		if err := writeArtifactTable(cmd.OutOrStdout(), groups[typ], names, showCollapsed); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func writeArtifactTable(out io.Writer, items []listedArtifact, names map[string]string) error {
+// A broad listing hides presence-only columns. Explicit module or collection
+// selectors retain them, so users can see the dimensions available to narrow.
+func artifactListShowsCollapsedDimensions(cmd *cobra.Command, items []listedArtifact, names map[string]string) (bool, error) {
+	all, _ := cmd.Flags().GetBool("all")
+	if all || cmd.Annotations[artifactListCollection] != "" {
+		return true, nil
+	}
+	modules := map[string]bool{}
+	collections := map[string]bool{}
+	var paths []string
+	for _, item := range items {
+		paths = append(paths, item.fullPath())
+		for _, key := range item.DimensionKeys {
+			if key.Dimension == artifact.ModuleDimension {
+				modules[key.Key], modules[cliName(key.Key)] = true, true
+			}
+		}
+		for _, id := range item.Presence {
+			collections[id] = true
+			if name := names[id]; name != "" {
+				collections[name] = true
+			}
+			if name := item.PresenceNames[id]; name != "" {
+				collections[name] = true
+			}
+		}
+	}
+	selectedPath := func(path string) bool {
+		if path == "" {
+			return false
+		}
+		module, _, _ := strings.Cut(path, "/")
+		if modules[module] {
+			return true
+		}
+		// Workspace main-module paths omit the module name. Type selectors
+		// can also be suffixes, so use the resolved rows to recognize them.
+		return len(artifact.MatchTypeKey(paths, path)) > 0
+	}
+	for _, pair := range artifactKeyFlags(cmd) {
+		if pair.Dimension == artifact.ModuleDimension || !artifact.IsStaticDimension(pair.Dimension) || selectedPath(pair.Key) {
+			return true, nil
+		}
+	}
+	addresses, err := parseArtifactAddresses(cmd.Flags().Args())
+	if err != nil {
+		return false, err
+	}
+	for _, addr := range addresses {
+		if match, err := artifactListMatchesIncludePath(addr.Path, paths); err != nil || match {
+			return match, err
+		}
+		if selectedPath(addr.Path) {
+			return true, nil
+		}
+		for _, pair := range addr.Query {
+			if pair.Dimension == artifact.ModuleDimension || collections[pair.Dimension] {
+				return true, nil
+			}
+		}
+		types := slices.Clone(addr.Types)
+		for _, typ := range commandArtifactTypes(cmd) {
+			types = append(types, cliName(typ))
+		}
+		if key, ok := addr.TypeKey(types...); ok && selectedPath(key.Key) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// Workspace include paths select subtrees and accept globs. Unlike type keys,
+// they are not limited to exact paths or suffixes.
+func artifactListMatchesIncludePath(include string, paths []string) (bool, error) {
+	if include == "" || include == "*" || include == "**" {
+		return false, nil
+	}
+	segments := strings.Split(include, "/")
+	for i, segment := range segments {
+		segments[i] = cliName(segment)
+	}
+	include = strings.Join(segments, "/")
+	for _, path := range paths {
+		for _, pattern := range []string{include, include + "/**"} {
+			match, err := doublestar.PathMatch(pattern, path)
+			if err != nil {
+				return false, err
+			}
+			if match {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+func writeArtifactTable(out io.Writer, items []listedArtifact, names map[string]string, showCollapsed bool) error {
 	var dimensions []string
 	described, absolute := false, false
 	for _, item := range items {
@@ -87,6 +193,9 @@ func writeArtifactTable(out io.Writer, items []listedArtifact, names map[string]
 			}
 		}
 		for _, id := range item.Presence {
+			if !showCollapsed && !artifact.IsStaticDimension(id) {
+				continue
+			}
 			if !slices.Contains(dimensions, id) {
 				dimensions = append(dimensions, id)
 			}

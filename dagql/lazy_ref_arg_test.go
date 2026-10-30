@@ -326,9 +326,32 @@ func recipeTestModule(x int, name string) *call.Module {
 // been recorded only as a lazy-ref argument (LLM.withTools(object:)). A
 // LazyRef ID argument must be carried by reference when its receiver's ID
 // is loaded from the recipe, so loading never re-runs the call that produced it.
+type lazyRefIdentityScope struct{}
+
+func (lazyRefIdentityScope) Apply(_ context.Context, _ *dagql.Server, value dagql.AnyObjectResult) (dagql.AnyObjectResult, error) {
+	return value, nil
+}
+
+func (lazyRefIdentityScope) ApplyToID(_ context.Context, _ *dagql.Server, id *call.ID) (*call.ID, error) {
+	return id, nil
+}
+
 func TestLazyRefArgNotEvaluatedOnLoad(t *testing.T) {
+	for _, scoped := range []bool{false, true} {
+		name := "unscoped"
+		if scoped {
+			name = "scoped"
+		}
+		t.Run(name, func(t *testing.T) { testLazyRefArgNotEvaluatedOnLoad(t, scoped) })
+	}
+}
+
+func testLazyRefArgNotEvaluatedOnLoad(t *testing.T, scoped bool) {
 	cache := newCache(t)
 	ctx := dagql.ContextWithCache(testContext(), cache)
+	if scoped {
+		ctx = dagql.WithResultScope(ctx, lazyRefIdentityScope{})
+	}
 	srv := newExternalDagqlServerForTest(t, Query{})
 	points.Install[Query](srv)
 
@@ -388,6 +411,9 @@ func TestLazyRefArgNotEvaluatedOnLoad(t *testing.T) {
 	// session in a new engine where the recorded snitch result is not cached.
 	freshCache := newCache(t)
 	freshCtx := dagql.ContextWithCache(testContext(), freshCache)
+	if scoped {
+		freshCtx = dagql.WithResultScope(freshCtx, lazyRefIdentityScope{})
+	}
 	freshSrv := newExternalDagqlServerForTest(t, Query{})
 	points.Install[Query](freshSrv)
 	freshSnitchCalls := 0

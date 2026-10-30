@@ -18,6 +18,9 @@ func TestArtifactPathsUseModuleSelectors(t *testing.T) {
 		keys      []dagaddress.Pair
 		want      []string
 	}{
+		{name: "short type key", addresses: []string{"dag://?type:Check=stale"}},
+		{name: "typed link", addresses: []string{"dag+check://?check=run&tools-linux-module=api"}},
+		{name: "exact type key", addresses: []string{"dag://?type:Check=/go/test"}},
 		{name: "query", addresses: []string{"dag://?module=go&module=python"}, want: []string{"go", "python"}},
 		{name: "flags", addresses: []string{"dag://"}, keys: []dagaddress.Pair{{Dimension: "module", Key: "go", HasKey: true}}, want: []string{"go"}},
 		{name: "combined alternatives", addresses: []string{"dag://?module=go"}, keys: []dagaddress.Pair{{Dimension: "module", Key: "python", HasKey: true}}, want: []string{"go", "python"}},

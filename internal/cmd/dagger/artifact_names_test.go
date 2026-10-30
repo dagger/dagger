@@ -19,15 +19,15 @@ func TestArtifactTypeNames(t *testing.T) {
 	}
 	index, err := newArtifactNameIndex(paths)
 	require.NoError(t, err)
-	require.Equal(t, []string{"go/modules/generate/stale", "sdk/generate/stale"}, index.matches("type:Check", "stale", nil))
-	require.Empty(t, index.matches("type:Check", "missing", nil))
+	require.Equal(t, []string{"go/modules/generate/stale", "sdk/generate/stale"}, index.matchesChecks("stale", nil))
+	require.Empty(t, index.matchesChecks("missing", nil))
 	for _, filter := range []dagaddress.Pair{{Dimension: "go/modules"}, {Dimension: "go/modules", Key: ".", HasKey: true}} {
 		filters := []dagaddress.Pair{filter, {Dimension: "type:Check", Key: "stale", HasKey: true}, {Dimension: "type:Check", Key: "test", HasKey: true}}
-		require.Equal(t, []string{"go/modules/generate/stale"}, index.matches("type:Check", "stale", filters))
-		require.Equal(t, []string{"go/modules/test"}, index.matches("type:Check", "test", filters))
+		require.Equal(t, []string{"go/modules/generate/stale"}, index.matchesChecks("stale", filters))
+		require.Equal(t, []string{"go/modules/test"}, index.matchesChecks("test", filters))
 		require.Equal(t, "stale", index.short("type:Check", "go/modules/generate/stale", filters))
 		slices.Reverse(filters)
-		require.Equal(t, []string{"go/modules/generate/stale"}, index.matches("type:Check", "stale", filters))
+		require.Equal(t, []string{"go/modules/generate/stale"}, index.matchesChecks("stale", filters))
 	}
 	require.Equal(t, "backend/container", index.short("type:Container", "backend/container", nil))
 	paths = append(paths, artifactListPath{URI: "dag+check://?check=other/go/modules/test", Dimensions: []string{"go/modules", "type:Check"}})
@@ -35,7 +35,7 @@ func TestArtifactTypeNames(t *testing.T) {
 	require.NoError(t, err)
 	// Even an empty sibling with the same dimensions prevents a short name.
 	require.Equal(t, "/go/modules/test", index.short("type:Check", "go/modules/test", []dagaddress.Pair{{Dimension: "go/modules"}}))
-	require.Equal(t, []string{"go/modules/test"}, index.matches("type:Check", "/go/modules/test", nil))
+	require.Equal(t, []string{"go/modules/test"}, index.matchesChecks("/go/modules/test", nil))
 }
 
 func TestArtifactModuleNames(t *testing.T) {
@@ -47,34 +47,11 @@ func TestArtifactModuleNames(t *testing.T) {
 	require.NoError(t, err)
 	for _, path := range paths {
 		filters := []dagaddress.Pair{{Dimension: "module", Key: path.ModuleName, HasKey: true}}
-		keys := index.matches("type:Check", "test", filters)
+		keys := index.matchesChecks("test", filters)
 		require.Len(t, keys, 1)
 		require.Equal(t, "test", index.short("type:Check", keys[0], filters))
 	}
-	require.Equal(t, []string{"playwright/test", "test"}, index.matches("type:Check", "test", nil))
-}
-
-// A row's short type key holds with the row's keys. Given without the
-// service key, the item's key also names the batch path.
-func TestArtifactTypeNamesNeedTheirRow(t *testing.T) {
-	project, service := "/docker/compose/projects", "/docker/compose/projects/services"
-	paths := []artifactListPath{
-		{URI: "dag+service://?service=docker/compose/projects/services/up", ModuleName: "docker", Dimensions: []string{"module", project, service, "type:Service"}},
-		{URI: "dag+service://?service=docker/compose/projects/services/batch/up", ModuleName: "docker", Dimensions: []string{"module", project, "type:Service"}},
-	}
-	index, err := newArtifactNameIndex(paths)
-	require.NoError(t, err)
-	row := []dagaddress.Pair{{Dimension: project, Key: "e2e", HasKey: true}, {Dimension: service, Key: "web", HasKey: true}}
-	require.Equal(t, "up", index.short("type:Service", "docker/compose/projects/services/up", row))
-	require.Equal(t, "batch/up", index.short("type:Service", "docker/compose/projects/services/batch/up", row[:1]))
-	require.Equal(t, []string{"docker/compose/projects/services/up"}, index.matches("type:Service", "up", row))
-	require.Equal(t, []string{"docker/compose/projects/services/batch/up", "docker/compose/projects/services/up"}, index.matches("type:Service", "up", row[:1]))
-	// That names one operation at two granularities, which is ambiguous.
-	_, err = artifact.ResolveTypeKey(index.candidatePaths("type:Service", row[:1]), "service", "up")
-	require.ErrorContains(t, err, "service=up is ambiguous")
-	got, err := artifact.ResolveTypeKey(index.candidatePaths("type:Service", row[:1]), "service", "batch/up")
-	require.NoError(t, err)
-	require.Equal(t, []string{"docker/compose/projects/services/batch/up"}, got)
+	require.Equal(t, []string{"playwright/test", "test"}, index.matchesChecks("test", nil))
 }
 
 func TestArtifactGeneratorCheckNames(t *testing.T) {
@@ -104,12 +81,16 @@ func TestArtifactGeneratorCheckNames(t *testing.T) {
 					key := prefix + "/" + generator + "/stale"
 					short := generator + "/stale"
 					require.Equal(t, short, index.short("type:Check", key, filters))
-					require.Equal(t, []string{key}, index.matches("type:Check", short, filters))
+					require.Equal(t, []string{key}, index.matchesChecks(short, filters))
 				}
-				require.Equal(t, []string{prefix + "/clients/stale", prefix + "/docs/stale"}, index.matches("type:Check", "stale", filters))
+				require.Equal(t, []string{prefix + "/clients/stale", prefix + "/docs/stale"}, index.matchesChecks("stale", filters))
 				slices.Reverse(paths)
 				slices.Reverse(filters)
 			}
 		})
 	}
+}
+
+func (index artifactNameIndex) matchesChecks(name string, filters []dagaddress.Pair) []string {
+	return artifact.MatchTypeKey(index.candidates("type:Check", filters), name)
 }

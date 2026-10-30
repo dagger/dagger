@@ -121,7 +121,7 @@ export function serializeIntrospection(
 
   for (const object of Object.values(module.objects)) {
     if (object.isCollection) {
-      types.push(...introspectCollection(object, moduleName, localTypeNames))
+      types.push(introspectCollection(object, moduleName, localTypeNames))
     } else {
       types.push(introspectObject(object, moduleName, localTypeNames))
     }
@@ -208,7 +208,7 @@ function introspectCollection(
   object: DaggerObjectBase,
   moduleName: string,
   local: Set<string>,
-): IntrospectionType[] {
+): IntrospectionType {
   const properties = Object.values(object.properties)
   const methods = Object.values(object.methods)
   const keys =
@@ -265,31 +265,12 @@ function introspectCollection(
       nodeIDField(name),
     ],
   }
-  const batchMethods = methods.filter((method) => method !== get)
-  if (batchMethods.length === 0) {
-    return [collection]
-  }
-  const batchName = name + "_Batch"
-  collection.fields!.push({
-    name: "batch",
-    description: "",
-    args: [],
-    type: objectRef(batchName),
-  })
-  return [
-    collection,
-    {
-      kind: TypeKind.Object,
-      name: batchName,
-      interfaces: [],
-      fields: [
-        ...batchMethods.map((method) =>
-          introspectMethod(method, moduleName, local),
-        ),
-        nodeIDField(batchName),
-      ],
-    },
-  ]
+  collection.fields!.push(
+    ...methods
+      .filter((method) => method !== get)
+      .map((method) => introspectMethod(method, moduleName, local)),
+  )
+  return collection
 }
 
 function introspectInterface(

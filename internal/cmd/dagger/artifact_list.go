@@ -46,9 +46,13 @@ func listedArtifactKeys(items []listedArtifact) []dagaddress.Pair {
 	return keys
 }
 
-func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *core.Artifacts, cmd *cobra.Command) error {
-	ctx, span := Tracer().Start(ctx, "list artifacts", telemetry.Encapsulate())
-	defer span.End()
+func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *core.Artifacts, cmd *cobra.Command) (rerr error) {
+	// Some callers (e.g. agent listings) do not use withArtifactEngine.
+	if _, ok := ctx.Value(artifactPreparationKey{}).(*artifactPreparation); !ok {
+		ctx, _ = startArtifactPreparation(ctx)
+	}
+	ctx = artifactPreparationContext(ctx)
+	defer func() { finishArtifactPreparation(ctx, rerr) }()
 	absolute, _ := cmd.Flags().GetBool("absolute")
 	all, _ := cmd.Flags().GetBool("all")
 	filtered, err := artifactListHasKeyFilters(cmd)
@@ -130,13 +134,26 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *c
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	collapsed := len(output) < len(items) || slices.ContainsFunc(output, func(item listedArtifact) bool { return len(item.Presence) > 0 })
+	return reportArtifactList(ctx, cmd, output, names, collapsed)
+}
+
+// Report only prepared rows. Listing spans do not perform engine queries or
+// carry check execution attributes.
+func reportArtifactList(ctx context.Context, cmd *cobra.Command, output []listedArtifact, names map[string]string, collapsed bool) (rerr error) {
+	finishArtifactPreparation(ctx, nil)
+	ctx, listing := Tracer().Start(artifactExecutionContext(ctx), "list artifacts", telemetry.Reveal())
+	defer func() { telemetry.EndWithCause(listing, &rerr) }()
+	output = uniqueArtifactList(output)
 	if err := writeArtifactList(cmd, output, names); err != nil {
 		return err
 	}
-	if len(output) < len(items) || slices.ContainsFunc(output, func(item listedArtifact) bool { return len(item.Presence) > 0 }) {
-		_, err = fmt.Fprintln(cmd.ErrOrStderr(), "# Use --all to expand collections and list each item.")
+	traceArtifactList(ctx, output)
+	if collapsed {
+		_, err := fmt.Fprintln(cmd.ErrOrStderr(), "# Use --all to expand collections and list each item.")
+		return err
 	}
-	return err
+	return nil
 }
 
 func readListedArtifactPaths(ctx context.Context, dag *dagger.Client, selection *core.Artifacts, absolute bool, dimension string) ([]listedArtifact, error) {

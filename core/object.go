@@ -15,6 +15,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -74,7 +75,7 @@ func (t *ModuleObjectType) ConvertFromSDKResult(ctx context.Context, value any) 
 		obj := &ModuleObject{
 			Module:  t.mod,
 			TypeDef: t.typeDef,
-			Fields:  value,
+			Fields:  maps.Clone(value),
 		}
 		if err := obj.restoreCollectionBase(ctx); err != nil {
 			return nil, err
@@ -110,6 +111,38 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 	// needing to make calls to their own API).
 	switch x := value.(type) {
 	case dagql.ObjectResult[*ModuleObject]:
+		srv, err := CurrentDagqlServer(ctx)
+		if err != nil {
+			return nil, err
+		}
+		// Inline stored objects are reconstructed from SDK data. Attach
+		// their source before SDK conversion needs its ID and collection base.
+		if _, err := x.ID(); err != nil {
+			cache, err := dagql.EngineCache(ctx)
+			if err != nil {
+				return nil, err
+			}
+			metadata, err := engine.ClientMetadataFromContext(ctx)
+			if err != nil {
+				return nil, err
+			}
+			attached, err := cache.AttachResult(ctx, metadata.SessionID, srv, x)
+			if err != nil {
+				return nil, err
+			}
+			x = attached.(dagql.ObjectResult[*ModuleObject])
+		}
+		if scope := dagql.CurrentResultScope(ctx); scope != nil {
+			srv, err := CurrentDagqlServer(ctx)
+			if err != nil {
+				return nil, err
+			}
+			scoped, err := scope.Apply(ctx, srv, x)
+			if err != nil {
+				return nil, err
+			}
+			x = scoped.(dagql.ObjectResult[*ModuleObject])
+		}
 		parentCall, err := x.ResultCall()
 		if err != nil {
 			return nil, fmt.Errorf("module object SDK input call frame: %w", err)
@@ -149,6 +182,13 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 }
 
 func (t *ModuleObjectType) objectToSDKInput(ctx context.Context, parentCall *dagql.ResultCall, obj *ModuleObject) (map[string]any, error) {
+	if obj.ArtifactView != nil {
+		var err error
+		parentCall, err = artifactViewSourceCall(ctx, parentCall)
+		if err != nil {
+			return nil, err
+		}
+	}
 	fields, err := obj.collectionSDKFields(ctx)
 	if err != nil {
 		return nil, err
@@ -165,7 +205,11 @@ func moduleObjectFieldsToSDKInput(ctx context.Context, t *ModuleObjectType, pare
 		value := fields[name]
 		fieldTypeDef, ok := t.typeDef.FieldByOriginalName(name)
 		if !ok {
-			updated, err := unknownModuleObjectValueToSDKInput(value)
+			fieldCtx := ctx
+			if name == collectionBaseField {
+				fieldCtx = dagql.WithResultScope(ctx, nil)
+			}
+			updated, err := unknownModuleObjectValueToSDKInput(fieldCtx, value)
 			if err != nil {
 				return nil, fmt.Errorf("convert private field %q: %w", name, err)
 			}
@@ -203,6 +247,18 @@ func moduleObjectValueToSDKInput(ctx context.Context, modType ModType, value any
 		case nil:
 			return nil, nil
 		case dagql.AnyResult:
+			if scope := dagql.CurrentResultScope(ctx); scope != nil {
+				if object, ok := value.(dagql.AnyObjectResult); ok {
+					srv, err := CurrentDagqlServer(ctx)
+					if err != nil {
+						return nil, err
+					}
+					value, err = scope.Apply(ctx, srv, object)
+					if err != nil {
+						return nil, err
+					}
+				}
+			}
 			id, err := value.ID()
 			if err != nil {
 				return nil, err
@@ -251,23 +307,7 @@ func moduleObjectValueToSDKInput(ctx context.Context, modType ModType, value any
 	case *PrimitiveType:
 		return value, nil
 	case *ListType:
-		if value == nil {
-			return nil, nil
-		}
-		switch value := value.(type) {
-		case []any:
-			items := make([]any, 0, len(value))
-			for i, item := range value {
-				updated, err := moduleObjectValueToSDKInput(ctx, modType.Underlying, item)
-				if err != nil {
-					return nil, fmt.Errorf("item %d: %w", i, err)
-				}
-				items = append(items, updated)
-			}
-			return items, nil
-		default:
-			return value, nil
-		}
+		return moduleObjectListToSDKInput(ctx, modType, value)
 	case *NullableType:
 		if value == nil {
 			return nil, nil
@@ -285,11 +325,50 @@ func moduleObjectValueToSDKInput(ctx context.Context, modType ModType, value any
 	}
 }
 
-func unknownModuleObjectValueToSDKInput(value any) (any, error) {
+func moduleObjectListToSDKInput(ctx context.Context, modType *ListType, value any) (any, error) {
+	if value == nil {
+		return nil, nil
+	}
+	switch value := value.(type) {
+	case []any:
+		items := make([]any, 0, len(value))
+		for i, item := range value {
+			itemCtx := ctx
+			if current := dagql.CurrentCall(ctx); current != nil {
+				itemCall := cloneResultCall(current)
+				itemCall.Nth = int64(i + 1)
+				if itemCall.Type != nil {
+					itemCall.Type = itemCall.Type.Elem
+				}
+				itemCtx = dagql.ContextWithCall(ctx, itemCall)
+			}
+			updated, err := moduleObjectValueToSDKInput(itemCtx, modType.Underlying, item)
+			if err != nil {
+				return nil, fmt.Errorf("item %d: %w", i, err)
+			}
+			items = append(items, updated)
+		}
+		return items, nil
+	default:
+		return value, nil
+	}
+}
+
+func unknownModuleObjectValueToSDKInput(ctx context.Context, value any) (any, error) {
 	switch value := value.(type) {
 	case nil:
 		return nil, nil
 	case dagql.AnyResult:
+		if object, ok := value.(dagql.AnyObjectResult); ok && dagql.CurrentResultScope(ctx) != nil {
+			srv, err := CurrentDagqlServer(ctx)
+			if err != nil {
+				return nil, err
+			}
+			value, err = dagql.CurrentResultScope(ctx).Apply(ctx, srv, object)
+			if err != nil {
+				return nil, err
+			}
+		}
 		id, err := value.ID()
 		if err != nil {
 			return nil, err
@@ -300,7 +379,7 @@ func unknownModuleObjectValueToSDKInput(value any) (any, error) {
 			}
 			return id.Encode()
 		}
-		return unknownModuleObjectValueToSDKInput(value.Unwrap())
+		return unknownModuleObjectValueToSDKInput(ctx, value.Unwrap())
 	case dagql.IDable:
 		id, err := value.ID()
 		if err != nil {
@@ -329,7 +408,7 @@ func unknownModuleObjectValueToSDKInput(value any) (any, error) {
 	case []any:
 		items := make([]any, 0, len(value))
 		for i, item := range value {
-			updated, err := unknownModuleObjectValueToSDKInput(item)
+			updated, err := unknownModuleObjectValueToSDKInput(ctx, item)
 			if err != nil {
 				return nil, fmt.Errorf("item %d: %w", i, err)
 			}
@@ -337,9 +416,12 @@ func unknownModuleObjectValueToSDKInput(value any) (any, error) {
 		}
 		return items, nil
 	case map[string]any:
+		if dagql.CurrentResultScope(ctx) != nil && value[collectionBaseField] != nil {
+			return privateCollectionSDKInput(ctx, value)
+		}
 		fields := make(map[string]any, len(value))
 		for _, name := range slices.Sorted(maps.Keys(value)) {
-			updated, err := unknownModuleObjectValueToSDKInput(value[name])
+			updated, err := unknownModuleObjectValueToSDKInput(ctx, value[name])
 			if err != nil {
 				return nil, fmt.Errorf("field %q: %w", name, err)
 			}
@@ -349,6 +431,60 @@ func unknownModuleObjectValueToSDKInput(value any) (any, error) {
 	default:
 		return value, nil
 	}
+}
+
+// Private fields lack schema type hints. The opaque base identifies transported
+// inline collections without guessing from their author-defined field names.
+func privateCollectionSDKInput(ctx context.Context, fields map[string]any) (any, error) {
+	var base dagql.AnyResult
+	switch value := fields[collectionBaseField].(type) {
+	case dagql.AnyResult:
+		base = value
+	case string:
+		var id call.ID
+		if err := id.Decode(value); err != nil {
+			return nil, err
+		}
+		srv, err := CurrentDagqlServer(ctx)
+		if err != nil {
+			return nil, err
+		}
+		base, err = srv.Load(dagql.WithResultScope(ctx, nil), &id)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("invalid private collection base %T", value)
+	}
+	obj, ok := dagql.UnwrapAs[*ModuleObject](base)
+	if !ok || obj.TypeDef.Collection == nil || !obj.TypeDef.Collection.Enabled {
+		return nil, fmt.Errorf("private collection base is not a collection")
+	}
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// StateValue carries references as graph edges, rather than embedding
+	// session-local handles in JSON. The base remains the unfiltered receiver.
+	state := maps.Clone(fields)
+	delete(state, collectionBaseField)
+	input, err := stateValueInput(state)
+	if err != nil {
+		return nil, err
+	}
+	baseObject, err := srv.ToSelectable(dagql.WithResultScope(ctx, nil), base)
+	if err != nil {
+		return nil, err
+	}
+	var value dagql.ObjectResult[*ModuleObject]
+	if err := srv.Select(dagql.WithResultScope(ctx, nil), baseObject, &value, dagql.Selector{
+		Field: privateCollectionStateFieldName,
+		Args:  []dagql.NamedInput{{Name: "state", Value: input}},
+	}); err != nil {
+		return nil, err
+	}
+	typ := &ModuleObjectType{mod: obj.Module, typeDef: obj.TypeDef}
+	return typ.ConvertToSDKInput(ctx, value)
 }
 
 func (t *ModuleObjectType) CollectContent(ctx context.Context, value dagql.AnyResult, content *CollectedContent) error {
@@ -488,7 +624,7 @@ type ModuleObject struct {
 	TypeDef *ObjectTypeDef
 	Fields  map[string]any
 
-	CollectionBatch bool
+	ArtifactView *ArtifactView
 	// Set once when the value is attached. Ordinary copies retain this reference.
 	CollectionBase dagql.AnyResult
 }
@@ -517,6 +653,7 @@ type persistedModuleObjectValue struct {
 type persistedModuleObjectPayload struct {
 	Fields         map[string]persistedModuleObjectValue `json:"fields,omitempty"`
 	CollectionBase uint64                                `json:"collectionBase,omitempty"`
+	ArtifactView   *persistedArtifactView                `json:"artifactView,omitempty"`
 }
 
 func (obj *ModuleObject) AttachDependencyResults(
@@ -527,7 +664,13 @@ func (obj *ModuleObject) AttachDependencyResults(
 	if obj == nil {
 		return nil, nil
 	}
-	owned, err := obj.attachCollectionBase(self, attach)
+	view, owned, err := obj.ArtifactView.attach(attach)
+	if err != nil {
+		return nil, err
+	}
+	obj.ArtifactView = view
+	base, err := obj.attachCollectionBase(self, attach)
+	owned = append(owned, base...)
 	if err != nil {
 		return nil, err
 	}
@@ -673,9 +816,22 @@ func attachTypedModuleObjectValue(
 		if err != nil {
 			return nil, nil, err
 		}
-		// Handles must retain the attached reference so persistence can relocate
-		// them. Inline object maps keep their SDK representation while the
-		// attached result still supplies the dependency edge.
+		// Keep rewritten child references in inline maps too. Conversion owns
+		// a copy of the SDK map, so the original still contains pre-attachment
+		// IDs which cannot be restored in another engine.
+		if _, inline := val.(map[string]any); inline {
+			if obj, ok := dagql.UnwrapAs[*ModuleObject](attached); ok {
+				fields := maps.Clone(obj.Fields)
+				// Decoding moves the collection base out of Fields. Keep its
+				// attached reference in the inline representation so decoding
+				// it again preserves the original keys and collection identity.
+				if obj.CollectionBase != nil {
+					fields[collectionBaseField] = obj.CollectionBase
+				}
+				return fields, []dagql.AnyResult{attached}, nil
+			}
+		}
+		// Handles retain the attached result so persistence can relocate them.
 		switch val.(type) {
 		case dagql.AnyResult, dagql.IDable, string:
 			return attached, []dagql.AnyResult{attached}, nil
@@ -816,6 +972,11 @@ func (obj *ModuleObject) EncodePersistedObject(ctx context.Context, enc *dagql.P
 	payload := persistedModuleObjectPayload{
 		Fields: make(map[string]persistedModuleObjectValue, len(obj.Fields)),
 	}
+	var err error
+	payload.ArtifactView, err = obj.ArtifactView.encode(enc)
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, err
+	}
 	// A base that points to self is restored before the cache publishes it. Encoding
 	// it as a child reference would require recursively decoding the same value.
 	if obj.CollectionBase != nil && obj.CollectionBase.Unwrap() != obj {
@@ -862,10 +1023,14 @@ func (obj *ModuleObject) DecodePersistedObject(ctx context.Context, dec *dagql.P
 		fields[name] = decoded
 	}
 	decoded := &ModuleObject{
-		Module:          obj.Module,
-		TypeDef:         obj.TypeDef,
-		Fields:          fields,
-		CollectionBatch: obj.CollectionBatch,
+		Module:  obj.Module,
+		TypeDef: obj.TypeDef,
+		Fields:  fields,
+	}
+	var err error
+	decoded.ArtifactView, err = payload.ArtifactView.decode(ctx, dec)
+	if err != nil {
+		return nil, err
 	}
 	if payload.CollectionBase != 0 {
 		var err error
@@ -1122,9 +1287,6 @@ func persistedModuleObjectFieldName(field reflect.StructField) (string, bool) {
 
 func (obj *ModuleObject) Type() *ast.Type {
 	name := obj.TypeDef.Name
-	if obj.CollectionBatch {
-		name += "_Batch"
-	}
 	return &ast.Type{
 		NamedType: name,
 		NonNull:   true,
@@ -1143,7 +1305,7 @@ func (obj *ModuleObject) TypeDefinition(view call.View) *ast.Definition {
 	if obj.TypeDef.SourceMap.Valid {
 		def.Directives = append(def.Directives, obj.TypeDef.SourceMap.Value.Self().TypeDirective())
 	}
-	if obj.TypeDef.Collection != nil && obj.TypeDef.Collection.Enabled && !obj.CollectionBatch {
+	if obj.TypeDef.Collection != nil && obj.TypeDef.Collection.Enabled {
 		def.Directives = append(def.Directives, &ast.Directive{Name: "collection"})
 	}
 	return def
@@ -1204,6 +1366,18 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server, opts ..
 		return fmt.Errorf("install state setter: %w", err)
 	}
 	fields = append(fields, setter)
+	viewField, err := obj.artifactViewField(dag)
+	if err != nil {
+		return err
+	}
+	fields = append(fields, viewField)
+	if obj.TypeDef.Collection != nil && obj.TypeDef.Collection.Enabled {
+		stateField, err := obj.privateCollectionStateField(dag)
+		if err != nil {
+			return err
+		}
+		fields = append(fields, stateField)
+	}
 
 	class.Install(fields...)
 	dag.InstallObject(class, installDirectives...)
@@ -1218,9 +1392,6 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server, opts ..
 }
 
 func (obj *ModuleObject) isMainObject() bool {
-	if obj.CollectionBatch {
-		return false
-	}
 	if src := obj.Module.Self().GetSource(); src != nil && src.Entrypoint != nil {
 		return obj.TypeDef.Constructor.Valid
 	}
@@ -1316,7 +1487,8 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 					Value: v,
 				})
 			}
-			return fn.Call(ctx, &CallOpts{
+			// Constructors build the source graph. Selection applies the view to the result.
+			return fn.Call(dagql.WithResultScope(ctx, nil), &CallOpts{
 				Inputs:       callInput,
 				ParentTyped:  nil,
 				ParentFields: nil,
@@ -1558,6 +1730,8 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) ([]da
 		projectionSpec.ViewFilter = AfterVersion("v1.0.0-0")
 		projectionSpec.IsPersistable = false
 		projectionSpec.TTL = 0
+		projectionSpec.ImplicitInputs = nil
+		projectionSpec.Reevaluate = false
 		fields = append(fields, dagql.Field[*ModuleObject]{
 			Spec: &projectionSpec,
 			Func: func(ctx context.Context, receiver dagql.ObjectResult[*ModuleObject], args map[string]dagql.Input, _ call.View) (dagql.AnyResult, error) {
@@ -1571,8 +1745,8 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) ([]da
 				// wrap it.
 				return dagql.NewObjectResultForCurrentCall(ctx, installed.orCurrent(ctx), &Check{
 					Assertion: dagql.NonNull(dagql.String(fun.Description)),
-					Receiver:  receiver, Function: fun.Name, Inputs: inputs, Workspace: workspace, CacheTTL: field.Spec.TTL,
-					Address: CheckNameFromContext(ctx),
+					Receiver:  receiver, Function: fun.Name, Inputs: inputs, Workspace: workspace,
+					CachePolicy: fun.derivedCachePolicy(obj.Module.Self()), CacheTTL: field.Spec.TTL,
 				})
 			},
 		})

@@ -42,6 +42,10 @@ var (
 	// we will enable default function caching behavior.
 	MinimumDefaultFunctionCachingModuleVersion = "v0.19.4"
 
+	// CollectionItemChecksVersion is the first module version where collection
+	// checks no longer replace matching item checks during execution.
+	CollectionItemChecksVersion = "v1.0.0-beta.22"
+
 	// MinimumDangV2ModuleVersion is the minimum module engine version that gets
 	// Dang v2 semantics (`.{ }` is dot-block application, `.{{ }}` is
 	// selection); older modules keep Dang v1 semantics (`.{ }` is selection).

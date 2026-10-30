@@ -73,15 +73,6 @@ func (r *ArtifactPath) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func (r *ArtifactResult) UnmarshalJSON(data []byte) error {
-	var id string
-	if err := json.Unmarshal(data, &id); err != nil {
-		return err
-	}
-	*r = ArtifactResult{query: selectNode(initRoot().QueryBuilder(), id, "ArtifactResult")}
-	return nil
-}
-
 func (r *Artifacts) UnmarshalJSON(data []byte) error {
 	var id string
 	if err := json.Unmarshal(data, &id); err != nil {

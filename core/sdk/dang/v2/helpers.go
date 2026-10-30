@@ -107,18 +107,12 @@ func evalDangSource(
 	runSource dangSourceRunner,
 	withEnv func(context.Context, dang.ValueScope) ([]byte, error),
 ) ([]byte, error) {
+	ctx = withDangSyntaxCache(ctx)
 	return dangshared.WithNestedClientServer(ctx, query, nestedClientMetadata, inertAttachables, fnCall, moduleContext, func(ctx context.Context, gqlClient graphql.Client) ([]byte, error) {
 		schema, err := loadDangSchema(ctx, schemaFile)
 		if err != nil {
 			return nil, err
 		}
-
-		ctx = dang.ContextWithImportConfigs(ctx, dang.ImportConfig{
-			Name:       "Dagger",
-			Client:     gqlClient,
-			Schema:     schema,
-			AutoImport: true,
-		})
 
 		// Route the program's stdout/stderr to the USER-FACING span, not
 		// whatever span happens to be current. A module function call runs
@@ -152,7 +146,16 @@ func evalDangSource(
 			// for its declared types. At runtime the served schema already
 			// includes the module's own types (Module.IncludeSelfInDeps), so
 			// this is a no-op then.
-			ensureModuleSelfTypes(schema, modSource.Self(), modSrcDir)
+			selfSource := modSource.Self()
+			if forTypeDefs {
+				selfSource = &core.ModuleSource{ModuleName: selfSource.ModuleOriginalName, ModuleOriginalName: selfSource.ModuleOriginalName}
+			} else if self := moduleContext.Self(); self != nil {
+				selfSource = &core.ModuleSource{ModuleName: self.Name(), ModuleOriginalName: self.OriginalName}
+			}
+			ensureModuleSelfTypes(schema, selfSource, modSrcDir)
+			ctx = dang.ContextWithImportConfigs(ctx, dang.ImportConfig{
+				Name: "Dagger", Client: gqlClient, Schema: schema, AutoImport: true,
+			})
 
 			env, err = runSource(ctx, modSrcDir)
 			if err != nil {

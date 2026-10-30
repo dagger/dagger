@@ -121,8 +121,6 @@ type ArtifactDimensionKey = core.ArtifactDimensionKey
 // A schema path and its dimensions. The path can exist even when its collections have no runtime items.
 type ArtifactPath = core.ArtifactPath
 
-type ArtifactResult = core.ArtifactResult
-
 // An immutable selection of workspace artifacts. Listed types, dimensions, and keys use OR; chained filters use AND. Empty alternatives match nothing; unknown names match nothing but module load failures. Filters never change addresses or dimension identifiers. Module keys match a module's configured or kebab-case name. A module that failed to load has no schema, so its load failure stands in for whatever it would hold: a filter keeps it when the module could hold something the filter selects, and an exclusion drops it only by its own address, such as <module>/** or ?module=<module>.
 type Artifacts = core.Artifacts
 
@@ -142,9 +140,6 @@ type ArtifactsFilterTypesOpts = core.ArtifactsFilterTypesOpts
 
 // ArtifactsPathDefinitionsOpts contains options for Artifacts.PathDefinitions
 type ArtifactsPathDefinitionsOpts = core.ArtifactsPathDefinitionsOpts
-
-// ArtifactsValuesOpts contains options for Artifacts.Values
-type ArtifactsValuesOpts = core.ArtifactsValuesOpts
 
 // A directory whose contents persist across runs.
 type CacheVolume = core.CacheVolume
