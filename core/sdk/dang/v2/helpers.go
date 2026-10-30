@@ -152,7 +152,7 @@ func evalDangSource(
 			} else if self := moduleContext.Self(); self != nil {
 				selfSource = &core.ModuleSource{ModuleName: self.Name(), ModuleOriginalName: self.OriginalName}
 			}
-			ensureModuleSelfTypes(schema, selfSource, modSrcDir)
+			ensureModuleSelfTypes(ctx, schema, selfSource, modSrcDir)
 			ctx = dang.ContextWithImportConfigs(ctx, dang.ImportConfig{
 				Name: "Dagger", Client: gqlClient, Schema: schema, AutoImport: true,
 			})
@@ -317,18 +317,9 @@ func retainDangObjectDirectives(ctx context.Context, env dang.ValueScope, dir st
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".dang" {
 			continue
 		}
-		path := filepath.Join(dir, entry.Name())
-		src, err := os.ReadFile(path)
+		file, err := parseDangSource(ctx, filepath.Join(dir, entry.Name()))
 		if err != nil {
 			return err
-		}
-		root, err := parseDangSource(path, src)
-		if err != nil {
-			return err
-		}
-		file, ok := root.(*dang.FileBlock)
-		if !ok {
-			continue
 		}
 		for _, form := range file.Forms {
 			decl, ok := form.(*dang.ObjectDecl)
@@ -366,7 +357,7 @@ func retainDangObjectDirectives(ctx context.Context, env dang.ValueScope, dir st
 // namespaces consistently); they are never emitted as TypeDefs, so a minimal
 // shape suffices. Once the served runtime schema already carries the types
 // (Module.IncludeSelfInDeps), this is a no-op.
-func ensureModuleSelfTypes(schema *introspection.Schema, src *core.ModuleSource, modSrcDir string) {
+func ensureModuleSelfTypes(ctx context.Context, schema *introspection.Schema, src *core.ModuleSource, modSrcDir string) {
 	if schema == nil || src == nil {
 		return
 	}
@@ -378,7 +369,7 @@ func ensureModuleSelfTypes(schema *introspection.Schema, src *core.ModuleSource,
 		return
 	}
 
-	for _, localName := range moduleDeclaredTypeNames(modSrcDir, moduleName) {
+	for _, localName := range moduleDeclaredTypeNames(ctx, modSrcDir, moduleName) {
 		schemaName := core.NamespaceObject(localName, moduleName, src.ModuleOriginalName)
 		if schema.Types.Get(schemaName) != nil {
 			continue
@@ -419,9 +410,12 @@ func ensureModuleSelfTypes(schema *introspection.Schema, src *core.ModuleSource,
 // module's type names.
 var declaredTypeNames, _ = lru.New[string, []string](256) // error is impossible on positive size
 
-// parseDangSource is dang.Parse, replaceable so tests can count parses.
-var parseDangSource = func(filename string, src []byte) (any, error) {
-	return dang.Parse(filename, src)
+// parseDangSource parses a module's source file for the engine's own reads
+// of its syntax, through the engine's Dang syntax cache, which RunDir and
+// DeclareDir use too: a module's source is parsed once for all of them. It
+// is replaceable so tests can count parses.
+var parseDangSource = func(ctx context.Context, filename string) (*dang.FileBlock, error) {
+	return dang.ParseSourceFile(withDangSyntaxCache(ctx), filename)
 }
 
 // dangSourceFile is one .dang file of a module's source directory.
@@ -460,29 +454,37 @@ func readDangSourceFiles(dir string) ([]dangSourceFile, bool) {
 // declares at the top level of its source. The result is shared between
 // callers and must not be modified.
 //
-// Each file is read once and the bytes that were read are both the memo key
-// and what is parsed, so a file that fails to parse fails for its content and
-// can be remembered. A directory or file that cannot be read is not: the
-// names found are returned, and the next call tries again.
-func moduleDeclaredTypeNames(modSrcDir, moduleName string) []string {
+// The memo key is the Dang version the source is parsed as and the content
+// of the files that were read, and a module's source is an immutable mount,
+// so what is parsed is that content: a file that fails to parse fails for
+// its content and version and can be remembered. A directory, file or
+// dang.toml that cannot be read is not: the names found are returned, and
+// the next call tries again.
+func moduleDeclaredTypeNames(ctx context.Context, modSrcDir, moduleName string) []string {
 	files, complete := readDangSourceFiles(modSrcDir)
+	version, err := dang.VersionForDir(ctx, modSrcDir)
+	if err != nil {
+		slog.Debug("ensureModuleSelfTypes: determine Dang version", "dir", modSrcDir, "error", err)
+		complete = false
+	}
 	var key string
 	if complete {
-		key = declaredTypeNamesKey(moduleName, files)
+		key = declaredTypeNamesKey(moduleName, version, files)
 		if names, ok := declaredTypeNames.Get(key); ok {
 			return names
 		}
 	}
-	names := parseDeclaredTypeNames(modSrcDir, moduleName, files)
+	names := parseDeclaredTypeNames(ctx, modSrcDir, moduleName, files)
 	if complete {
 		declaredTypeNames.Add(key, names)
 	}
 	return names
 }
 
-// declaredTypeNamesKey identifies a module's declared type names by its name
-// and the names and content of its .dang files.
-func declaredTypeNamesKey(moduleName string, files []dangSourceFile) string {
+// declaredTypeNamesKey identifies a module's declared type names by its name,
+// the Dang version its source is parsed as, and the names and content of its
+// .dang files.
+func declaredTypeNamesKey(moduleName string, version dang.Version, files []dangSourceFile) string {
 	h := xxh3.New()
 	writeField := func(b []byte) {
 		var size [8]byte
@@ -491,6 +493,7 @@ func declaredTypeNamesKey(moduleName string, files []dangSourceFile) string {
 		h.Write(b)
 	}
 	writeField([]byte(moduleName))
+	writeField([]byte(version.String()))
 	for _, file := range files {
 		writeField([]byte(file.name))
 		writeField(file.content)
@@ -501,7 +504,7 @@ func declaredTypeNamesKey(moduleName string, files []dangSourceFile) string {
 
 // parseDeclaredTypeNames parses the module's source files for its declared
 // type names.
-func parseDeclaredTypeNames(modSrcDir, moduleName string, files []dangSourceFile) []string {
+func parseDeclaredTypeNames(ctx context.Context, modSrcDir, moduleName string, files []dangSourceFile) []string {
 	seen := map[string]struct{}{}
 	var names []string
 	add := func(name string) {
@@ -522,13 +525,9 @@ func parseDeclaredTypeNames(modSrcDir, moduleName string, files []dangSourceFile
 	add(strcase.ToCamel(moduleName))
 
 	for _, src := range files {
-		root, err := parseDangSource(filepath.Join(modSrcDir, src.name), src.content)
+		file, err := parseDangSource(ctx, filepath.Join(modSrcDir, src.name))
 		if err != nil {
 			slog.Debug("ensureModuleSelfTypes: parse module file", "file", src.name, "error", err)
-			continue
-		}
-		file, ok := root.(*dang.FileBlock)
-		if !ok {
 			continue
 		}
 		// Only top-level type declarations become module types in the schema;
