@@ -567,6 +567,39 @@ func TestCopyEntryMissingSourceAfterFilter(t *testing.T) {
 		}, "/dst/gone.txt", CopyOptions{}, matchState{}, nil, resolvedParent{})
 		require.ErrorIs(t, err, os.ErrNotExist)
 	})
+
+	// A plain directory's listing leaves a non-directory's stat until the
+	// filter keeps it: a path gone, or one that can't be stat'ed, fails the
+	// copy only if the filter keeps it.
+	dir := t.TempDir()
+	tooLong := filepath.Join(dir, strings.Repeat("x", 300))
+	for _, tc := range []struct {
+		name    string
+		path    string
+		wantErr error
+	}{
+		{"missing", filepath.Join(dir, "gone.txt"), os.ErrNotExist},
+		{"unstatable", tooLong, syscall.ENAMETOOLONG},
+	} {
+		ent := sourceEntry{
+			Rel:      filepath.Base(tc.path),
+			ViewPath: tc.path,
+			RealPath: tc.path,
+			unstated: true,
+		}
+		t.Run(tc.name+" unstated excluded", func(t *testing.T) {
+			matcher, err := newMatcher(dir, Filter{Only: map[string]struct{}{"keep.txt": {}}})
+			require.NoError(t, err)
+			err = (&Copier{}).copyEntry(context.Background(), &source{}, matcher, ent, "/dst/x", CopyOptions{}, matchState{}, nil, resolvedParent{})
+			require.NoError(t, err)
+		})
+		t.Run(tc.name+" unstated included", func(t *testing.T) {
+			matcher, err := newMatcher(dir, Filter{Only: map[string]struct{}{ent.Rel: {}}})
+			require.NoError(t, err)
+			err = (&Copier{}).copyEntry(context.Background(), &source{}, matcher, ent, "/dst/x", CopyOptions{}, matchState{}, nil, resolvedParent{})
+			require.ErrorIs(t, err, tc.wantErr)
+		})
+	}
 }
 
 func TestCopyDirectoryFollowsOverlayDestSymlinkDir(t *testing.T) {
