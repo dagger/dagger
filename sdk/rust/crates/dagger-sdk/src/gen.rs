@@ -3160,6 +3160,11 @@ pub struct ContainerWithExecOpts<'a> {
     /// Content to write to the command's standard input. Example: "Hello world")
     #[builder(setter(into, strip_option), default)]
     pub stdin: Option<&'a str>,
+    /// Let the command, and the processes it starts, use the Linux kernel's transparent huge pages. Large-memory programs such as compilers can run faster with them, at some cost in memory.
+    /// Without this, a command gets huge pages only for memory its own program asks huge pages for, as on a host set to "madvise". That only matters on hosts with Linux 6.18 or later whose transparent huge pages are set to "always" (/sys/kernel/mm/transparent_hugepage/enabled, or a size under /sys/kernel/mm/transparent_hugepage/hugepages-*). With the usual default settings, this changes nothing. On older kernels, commands get what the host's settings give them, whether they set this or not.
+    /// It isn't part of the exec's cache key: an exec that differs from a cached one only in this setting reuses the cached result, whichever setting produced it.
+    #[builder(setter(into, strip_option), default)]
+    pub transparent_huge_pages: Option<bool>,
     /// Apply the OCI entrypoint, if present, by prepending it to the args. Ignored by default.
     #[builder(setter(into, strip_option), default)]
     pub use_entrypoint: Option<bool>,
@@ -5219,6 +5224,9 @@ impl Container {
         }
         if let Some(no_init) = opts.no_init {
             query = query.arg("noInit", no_init);
+        }
+        if let Some(transparent_huge_pages) = opts.transparent_huge_pages {
+            query = query.arg("transparentHugePages", transparent_huge_pages);
         }
         Container {
             proc: self.proc.clone(),

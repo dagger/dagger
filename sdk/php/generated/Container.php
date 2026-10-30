@@ -902,6 +902,7 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         ?bool $insecureRootCapabilities = false,
         ?bool $expand = false,
         ?bool $noInit = false,
+        ?bool $transparentHugePages = false,
     ): Container {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withExec');
         $innerQueryBuilder->setArgument('args', $args);
@@ -940,6 +941,9 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         }
         if (null !== $noInit) {
         $innerQueryBuilder->setArgument('noInit', $noInit);
+        }
+        if (null !== $transparentHugePages) {
+        $innerQueryBuilder->setArgument('transparentHugePages', $transparentHugePages);
         }
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

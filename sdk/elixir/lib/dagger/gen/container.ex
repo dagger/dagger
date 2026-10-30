@@ -989,7 +989,8 @@ defmodule Dagger.Container do
           {:dagger_in_dagger_new_session, boolean() | nil},
           {:insecure_root_capabilities, boolean() | nil},
           {:expand, boolean() | nil},
-          {:no_init, boolean() | nil}
+          {:no_init, boolean() | nil},
+          {:transparent_huge_pages, boolean() | nil}
         ]) :: Dagger.Container.t()
   def with_exec(%__MODULE__{} = container, args, optional_args \\ []) do
     query_builder =
@@ -1014,6 +1015,7 @@ defmodule Dagger.Container do
       |> QB.maybe_put_arg("insecureRootCapabilities", optional_args[:insecure_root_capabilities])
       |> QB.maybe_put_arg("expand", optional_args[:expand])
       |> QB.maybe_put_arg("noInit", optional_args[:no_init])
+      |> QB.maybe_put_arg("transparentHugePages", optional_args[:transparent_huge_pages])
 
     %Dagger.Container{
       query_builder: query_builder,
