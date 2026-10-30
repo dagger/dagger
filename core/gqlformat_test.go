@@ -534,11 +534,15 @@ func TestNamerCLINamePatterns(t *testing.T) {
 	}
 }
 
+// A function is named like a field, by either rules: a loadFooFromID
+// function gets no exception, unlike the core loaders (load<Type>FromID),
+// which aren't module functions.
 func TestLoadFromIDFunctionName(t *testing.T) {
 	t.Parallel()
 
 	for _, namer := range []Namer{LegacyNamer, LatestNamer} {
-		require.Equal(t, "loadFooFromID", namer.NewFunction("loadFooFromID", dagql.ObjectResult[*TypeDef]{}).Name)
+		require.Equal(t, "loadFooFromId", namer.NewFunction("loadFooFromID", dagql.ObjectResult[*TypeDef]{}).Name)
+		require.Equal(t, namer.FieldName("loadFooFromID"), namer.NewFunction("loadFooFromID", dagql.ObjectResult[*TypeDef]{}).Name)
 	}
 }
 

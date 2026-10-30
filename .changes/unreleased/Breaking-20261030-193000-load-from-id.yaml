@@ -1,0 +1,10 @@
+kind: Breaking
+body: |
+  A module function literally named `load<X>FromID` is now named
+  `load<X>FromId`, like a field or argument of the same name, whatever engine
+  version the module declares: functions no longer keep `FromID`'s spelling.
+  The core `load<Type>FromID` loaders are unchanged.
+time: 2026-10-30T19:30:00Z
+custom:
+  Author: vito
+  PR: "TBD"
