@@ -25,6 +25,9 @@ import (
 	commonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	logsv1 "go.opentelemetry.io/proto/otlp/logs/v1"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -675,22 +678,7 @@ func TestConnectSessionAttachablesStopsWhenContextIsCanceled(t *testing.T) {
 func TestConnectSessionAttachablesConnOutlivesHandshake(t *testing.T) {
 	withHandshakeTimeout(t, 100*time.Millisecond)
 	addr := listen(t, func(conn net.Conn) {
-		br := bufio.NewReader(conn)
-		req, err := http.ReadRequest(br)
-		if err != nil || req.URL.Path != engine.SessionAttachablesEndpoint {
-			conn.Close()
-			return
-		}
-		resp := &http.Response{
-			StatusCode: http.StatusSwitchingProtocols,
-			ProtoMajor: 1,
-			ProtoMinor: 1,
-			Header:     http.Header{},
-		}
-		if err := resp.Write(conn); err != nil {
-			return
-		}
-		if _, err := br.ReadByte(); err != nil {
+		if !acceptSessionAttachables(conn) {
 			return
 		}
 		// the session lives on long after the handshake
@@ -707,4 +695,65 @@ func TestConnectSessionAttachablesConnOutlivesHandshake(t *testing.T) {
 	_, err = io.ReadFull(srv.Conn, buf)
 	require.NoError(t, err)
 	require.Equal(t, "x", string(buf))
+}
+
+// acceptSessionAttachables answers a session attachables handshake on conn as
+// the engine does, and reports whether the client completed it.
+func acceptSessionAttachables(conn net.Conn) bool {
+	req, err := http.ReadRequest(bufio.NewReader(conn))
+	if err != nil || req.URL.Path != engine.SessionAttachablesEndpoint {
+		conn.Close()
+		return false
+	}
+	resp := &http.Response{
+		StatusCode: http.StatusSwitchingProtocols,
+		ProtoMajor: 1,
+		ProtoMinor: 1,
+		Header:     http.Header{},
+	}
+	if err := resp.Write(conn); err != nil {
+		return false
+	}
+	_, err = io.ReadFull(conn, make([]byte, 1))
+	return err == nil
+}
+
+// An engine under load can take a while after the handshake to start the
+// gRPC client that calls the attachables. The session waits for it.
+func TestSessionAttachablesWaitForASlowEngine(t *testing.T) {
+	t.Parallel()
+	checked := make(chan error, 1)
+	addr := listen(t, func(conn net.Conn) {
+		if !acceptSessionAttachables(conn) {
+			return
+		}
+		// Longer than the 10s that x/net's HTTP/2 server allows for a
+		// client's preface.
+		time.Sleep(11 * time.Second)
+		cc, err := grpc.NewClient("passthrough:engine",
+			grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+				return conn, nil
+			}),
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+		)
+		if err != nil {
+			checked <- err
+			return
+		}
+		defer cc.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_, err = grpc_health_v1.NewHealthClient(cc).Check(ctx, &grpc_health_v1.HealthCheckRequest{})
+		checked <- err
+	})
+
+	srv, err := connectSessionAttachables(t.Context(), t, dial(t, addr))
+	require.NoError(t, err)
+	go srv.Run(t.Context())
+	select {
+	case err := <-checked:
+		require.NoError(t, err)
+	case <-time.After(30 * time.Second):
+		t.Fatal("the engine's health check did not return")
+	}
 }
