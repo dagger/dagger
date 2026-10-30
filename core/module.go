@@ -606,27 +606,19 @@ func functionArgResultByName(namer Namer, fn *Function, name string) (dagql.Obje
 }
 
 // objectTypeDefResultByOriginalName finds the object the SDK registered as
-// name, in any casing: the one whose name normalizes to the same schema name,
-// or else the only one that's the same once flattened (see
-// Namer.SameDeclaredName). Several flat matches are ambiguous, and match
-// nothing.
+// name, in any casing (see Namer.DeclaredNameIndex).
 func (mod *Module) objectTypeDefResultByOriginalName(name string) (dagql.ObjectResult[*TypeDef], bool) {
-	namer := mod.Namer()
-	var flat []dagql.ObjectResult[*TypeDef]
+	var objects []dagql.ObjectResult[*TypeDef]
+	var declared []string
 	for _, objDef := range mod.ObjectDefs {
 		typeDef := objDef.Self()
 		if typeDef.AsObject.Valid {
-			obj := typeDef.AsObject.Value.Self()
-			if namer.ObjectName(obj.OriginalName) == namer.ObjectName(name) {
-				return objDef, true
-			}
-			if namer.SameDeclaredName(obj.OriginalName, name) {
-				flat = append(flat, objDef)
-			}
+			objects = append(objects, objDef)
+			declared = append(declared, typeDef.AsObject.Value.Self().OriginalName)
 		}
 	}
-	if len(flat) == 1 {
-		return flat[0], true
+	if i := mod.Namer().DeclaredNameIndex(name, declared); i >= 0 {
+		return objects[i], true
 	}
 	return dagql.ObjectResult[*TypeDef]{}, false
 }
