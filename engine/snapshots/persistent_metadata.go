@@ -353,19 +353,13 @@ func (cm *snapshotManager) updateMetadata(ctx context.Context, fn func(context.C
 }
 
 // profiledUpdate runs fn in one metadata write transaction, recorded, when
-// the profile records, as one snapshots.metadata.write op: the time from
-// asking for the database's single writer to the commit's end.
+// ctx is profiled, as one snapshot.metadata.write op, as a containerd
+// snapshotter call is: the time from asking for the database's single
+// writer to the commit's end.
 func (cm *snapshotManager) profiledUpdate(ctx context.Context, fn func(*bolt.Tx) error) error {
-	if !wcprof.Enabled(ctx) {
-		return cm.metadataDB.Update(fn)
-	}
-	start := time.Now()
+	_, op := wcprof.BeginOp(ctx, wcprof.OpKindInternal, "snapshot.metadata.write", wcprof.OpOpts{})
 	err := cm.metadataDB.Update(fn)
-	outcome := wcprof.OutcomeOK
-	if err != nil {
-		outcome = wcprof.OutcomeError
-	}
-	wcprof.RecordOpAt(ctx, wcprof.OpKindIO, "snapshots.metadata.write", wcprof.OpOpts{}, start, time.Now(), outcome)
+	op.EndErr(err)
 	return err
 }
 
