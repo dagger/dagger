@@ -120,7 +120,7 @@ func init() {
 // their own parts: the complete parts of the row's captured record, or the
 // parts its gate settled when the record couldn't be captured or described.
 func recordPartKeys(ctx context.Context, c *Cache, row *sharedResult) []string {
-	record, _, err := c.captureRowRecord(ctx, row)
+	record, err := c.captureRowRecord(ctx, row)
 	if err != nil {
 		return row.settledPartKeys()
 	}
