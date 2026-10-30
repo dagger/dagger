@@ -78,8 +78,8 @@ func (lazy *ContainerDirectoryLazy) materializeSelection(ctx context.Context, di
 		return err
 	}
 	defer view.Release(context.WithoutCancel(ctx))
-	err = MountRef(ctx, view, func(root string, m *mount.Mount) error {
-		return copySelectionMounts(ctx, root, m, rootPath, mounts)
+	err = MountRef(ctx, view, func(root string, _ *mount.Mount) error {
+		return copySelectionMounts(ctx, root, rootPath, mounts)
 	})
 	if err != nil {
 		return err
@@ -92,7 +92,7 @@ func (lazy *ContainerDirectoryLazy) materializeSelection(ctx context.Context, di
 	return dir.materializeSubdirectory(ctx, composed, rootPath, selected)
 }
 
-func copySelectionMounts(ctx context.Context, root string, m *mount.Mount, rootPath string, mounts ContainerMounts) error {
+func copySelectionMounts(ctx context.Context, root, rootPath string, mounts ContainerMounts) error {
 	parentPath, err := containerdfs.RootPath(root, rootPath)
 	if err != nil {
 		return err
@@ -144,9 +144,11 @@ func copySelectionMounts(ctx context.Context, root string, m *mount.Mount, rootP
 		if err := handle.RemoveAll(rel); err != nil {
 			return err
 		}
-		// A fresh copier discards destination path and hardlink caches invalidated
-		// by removing the mount target. Source symlinks remain unchanged here.
-		copier, err := layercopy.NewCopier(layercopy.Mount{Root: root, Mount: m})
+		// Keep writes in the mounted view, like RemoveAll and Chtimes. Mixing
+		// these operations with raw upper-layer writes leaves whiteouts in
+		// the way and bypasses overlayfs inode and copy-up state.
+		// A fresh copier also discards caches for the removed mount target.
+		copier, err := layercopy.NewCopier(layercopy.Mount{Root: root})
 		if err != nil {
 			return err
 		}
