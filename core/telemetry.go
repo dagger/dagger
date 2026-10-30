@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"path"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -39,7 +38,7 @@ func AroundFunc(
 		return ctx, dagql.NoopDone
 	}
 	// Static, debug-independent profiling-skip classification, SEPARATE from the
-	// introspectionInfo UI decision below. Stamp it onto the call frame BEFORE the
+	// callChainInfo UI decision below. Stamp it onto the call frame BEFORE the
 	// IsSkipped early return so inherited-skip descendants (under a typedef-loading
 	// hideCtx) are still classified by their OWN recipe: a reflection-receiver call
 	// is skipped, while real shared work (clone / dep-load, whose receiver is NOT a
@@ -51,11 +50,11 @@ func AroundFunc(
 	if dagql.IsSkipped(ctx) {
 		return ctx, dagql.NoopDone
 	}
-	introspection, receiver := introspectionInfo(ctx, req.ResultCall)
+	introspection, receiver, returnsError := callChainInfo(ctx, req.ResultCall)
 	if introspection {
 		return dagql.WithSkip(ctx), dagql.NoopDone
 	}
-	if isMeta(ctx, req.ResultCall) {
+	if isMeta(req.ResultCall, returnsError) {
 		// introspection+meta are very uninteresting spans
 		// dagops are all self calls, no need to emit additional spans here
 		return ctx, dagql.NoopDone
@@ -610,13 +609,13 @@ func fieldSpecForCall(ctx context.Context, frame *dagql.ResultCall) (dagql.Field
 // These queries tend to be very large and are not interesting for users to
 // see.
 func isIntrospection(ctx context.Context, frame *dagql.ResultCall) bool {
-	introspection, _ := introspectionInfo(ctx, frame)
+	introspection, _, _ := callChainInfo(ctx, frame)
 	return introspection
 }
 
 // introspectionRootFields are the Query-level root fields that begin an
 // introspection / schema-reflection query. Extracted to a shared constant so the
-// UI suppression decision (introspectionInfo) and the profiling decision
+// UI suppression decision (callChainInfo) and the profiling decision
 // (profileSkip) can never diverge on the root set.
 var introspectionRootFields = map[string]struct{}{
 	"__schema":            {},
@@ -694,10 +693,10 @@ var reflectionTypeNames = map[string]struct{}{
 // results carry it without a per-site provenance audit.
 //
 // It is deliberately:
-//   - DEBUG-INDEPENDENT (unlike introspectionInfo's debug-dependent receiver-type
+//   - DEBUG-INDEPENDENT (unlike callChainInfo's debug-dependent receiver-type
 //     cases), so the volume amplifier never returns in the very mode used to
 //     capture a trace for debugging; and
-//   - SEPARATE from introspectionInfo (the UI/normal-telemetry decision), which is
+//   - SEPARATE from callChainInfo (the UI/normal-telemetry decision), which is
 //     left untouched. The OTel profiler may therefore skip MORE than the UI
 //     suppresses: a directly-called reflection accessor (outside a typedef-loading
 //     hideCtx) keeps its normal dag.call UI span — which the OTel loader classifies
@@ -722,31 +721,51 @@ func profileSkip(receiverTypeName, field string) bool {
 	return false
 }
 
-func introspectionInfo(ctx context.Context, frame *dagql.ResultCall) (bool, *dagql.ResultCall) {
+// callChainInfo walks frame's receiver chain toward its root once.
+// introspection reports a call inside an introspection query, and receiver is
+// frame's immediate receiver. returnsError reports that frame or a receiver
+// on its chain returns Error, up to the first frame with no type; it is only
+// complete when introspection is false, since the walk stops there.
+func callChainInfo(ctx context.Context, frame *dagql.ResultCall) (introspection bool, immediateReceiver *dagql.ResultCall, returnsError bool) {
 	if frame == nil {
-		return false, nil
+		return false, nil, false
 	}
+	// Each receiver is resolved through the engine cache, and these are the
+	// same for the whole chain.
+	cache, cacheErr := dagql.EngineCache(ctx)
+	debug := slog.IsDebug(ctx)
 
+	typed := true
 	cur := frame
-	var immediateReceiver *dagql.ResultCall
 	for cur != nil {
+		if typed {
+			switch {
+			case cur.Type == nil:
+				typed = false
+			case cur.Type.NamedType == "Error":
+				returnsError = true
+			}
+		}
 		if cur.Receiver == nil {
 			if _, ok := introspectionRootFields[cur.Field]; ok {
-				return true, immediateReceiver
+				return true, immediateReceiver, returnsError
 			}
-			return false, immediateReceiver
+			return false, immediateReceiver, returnsError
+		}
+		if cacheErr != nil {
+			return false, immediateReceiver, returnsError
 		}
 
-		receiver, err := cur.ReceiverCall(ctx)
+		receiver, err := cur.ReceiverCallIn(cache)
 		if err != nil || receiver == nil {
-			return false, immediateReceiver
+			return false, immediateReceiver, returnsError
 		}
 		if cur == frame {
 			immediateReceiver = receiver
 		}
 
 		// disable these unless debug is set in OTEL baggage
-		if !slog.IsDebug(ctx) && receiver.Type != nil {
+		if !debug && receiver.Type != nil {
 			switch receiver.Type.NamedType {
 			case "Function":
 				switch cur.Field {
@@ -754,10 +773,10 @@ func introspectionInfo(ctx context.Context, frame *dagql.ResultCall) (bool, *dag
 					"withArg",
 					"withSourceMap",
 					"withDescription":
-					return true, immediateReceiver
+					return true, immediateReceiver, returnsError
 				}
 				if strings.HasPrefix(cur.Field, "__") {
-					return true, immediateReceiver
+					return true, immediateReceiver, returnsError
 				}
 			case "TypeDef":
 				switch cur.Field {
@@ -773,10 +792,10 @@ func introspectionInfo(ctx context.Context, frame *dagql.ResultCall) (bool, *dag
 					"withEnum",
 					"withEnumValue",
 					"withEnumMember":
-					return true, immediateReceiver
+					return true, immediateReceiver, returnsError
 				}
 				if strings.HasPrefix(cur.Field, "__") {
-					return true, immediateReceiver
+					return true, immediateReceiver, returnsError
 				}
 			case "FunctionArg",
 				"ObjectTypeDef",
@@ -787,7 +806,7 @@ func introspectionInfo(ctx context.Context, frame *dagql.ResultCall) (bool, *dag
 				"EnumTypeDef",
 				"EnumMemberTypeDef":
 				if strings.HasPrefix(cur.Field, "__") {
-					return true, immediateReceiver
+					return true, immediateReceiver, returnsError
 				}
 			}
 		}
@@ -795,16 +814,17 @@ func introspectionInfo(ctx context.Context, frame *dagql.ResultCall) (bool, *dag
 		cur = receiver
 	}
 
-	return false, immediateReceiver
+	return false, immediateReceiver, returnsError
 }
 
 // isMeta returns true if any type in the ID is "too meta" to show to the user,
-// for example span and error APIs.
-func isMeta(ctx context.Context, frame *dagql.ResultCall) bool {
+// for example span and error APIs. returnsError is callChainInfo's: whether
+// the call or any of its receivers returns Error.
+func isMeta(frame *dagql.ResultCall, returnsError bool) bool {
 	if frame == nil {
 		return false
 	}
-	if anyReturns(ctx, frame, "Error") {
+	if returnsError {
 		return true
 	}
 	switch frame.Field {
@@ -824,21 +844,4 @@ func isMeta(ctx context.Context, frame *dagql.ResultCall) bool {
 	default:
 		return false
 	}
-}
-
-// anyReturns returns true if the call or any of its ancestors return any of
-// the given types.
-func anyReturns(ctx context.Context, frame *dagql.ResultCall, types ...string) bool {
-	if frame == nil || frame.Type == nil {
-		return false
-	}
-	ret := frame.Type.NamedType
-	if slices.Contains(types, ret) {
-		return true
-	}
-	receiver, err := frame.ReceiverCall(ctx)
-	if err != nil || receiver == nil {
-		return false
-	}
-	return anyReturns(ctx, receiver, types...)
 }

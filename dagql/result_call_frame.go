@@ -841,6 +841,12 @@ func (frame *ResultCall) ReceiverCall(ctx context.Context) (*ResultCall, error) 
 	return frame.receiverCall(c)
 }
 
+// ReceiverCallIn is ReceiverCall with the engine cache already in hand, for
+// walks that resolve a whole chain of receivers.
+func (frame *ResultCall) ReceiverCallIn(c *Cache) (*ResultCall, error) {
+	return frame.receiverCall(c)
+}
+
 func (frame *ResultCall) receiverCall(c *Cache) (*ResultCall, error) {
 	if frame == nil || frame.Receiver == nil {
 		return nil, nil

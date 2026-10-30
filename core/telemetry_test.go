@@ -368,6 +368,57 @@ func TestIsIntrospectionPreservesClassification(t *testing.T) {
 	}
 }
 
+// A call is meta when it or a receiver on its chain returns Error, up to the
+// first frame with no type.
+func TestCallChainInfoReturnsError(t *testing.T) {
+	cache, err := dagql.NewCache(t.Context(), "", nil, nil)
+	require.NoError(t, err)
+	ctx := dagql.ContextWithCache(t.Context(), cache)
+
+	errorCall := func(field string, receiver *dagql.ResultCall) *dagql.ResultCall {
+		frame := testResultCall(field, dagql.String(""), receiver)
+		frame.Type = dagql.NewResultCallType(&ast.Type{NamedType: "Error", NonNull: true})
+		return frame
+	}
+	untyped := testResultCall("untyped", dagql.String(""), errorCall("error", nil))
+	untyped.Type = nil
+
+	tests := []struct {
+		name  string
+		frame *dagql.ResultCall
+		want  bool
+	}{
+		{
+			name:  "plain chain",
+			frame: testResultCall("name", dagql.String(""), testResultCall("plain", dagql.String(""), nil)),
+			want:  false,
+		},
+		{
+			name:  "returns Error",
+			frame: errorCall("error", testResultCall("plain", dagql.String(""), nil)),
+			want:  true,
+		},
+		{
+			name:  "receiver returns Error",
+			frame: testResultCall("message", dagql.String(""), testResultCall("plain", dagql.String(""), errorCall("error", nil))),
+			want:  true,
+		},
+		{
+			name:  "Error beyond an untyped frame",
+			frame: testResultCall("message", dagql.String(""), untyped),
+			want:  false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			introspection, _, returnsError := callChainInfo(ctx, tc.frame)
+			require.False(t, introspection)
+			require.Equal(t, tc.want, returnsError)
+			require.Equal(t, tc.want, isMeta(tc.frame, returnsError))
+		})
+	}
+}
+
 type telemetryTestNoopResolver struct{}
 
 func (telemetryTestNoopResolver) ObjectType(string) (dagql.ObjectType, bool) { return nil, false }
