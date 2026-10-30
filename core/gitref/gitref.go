@@ -44,8 +44,6 @@ const (
 	SchemeGit
 	SchemeSSH
 	SchemeSCPLike
-	// SchemeEntire addresses repositories hosted on Entire:
-	// entire://<cluster-host>/<forge>/<owner>/<repo>.
 	SchemeEntire
 )
 
@@ -222,32 +220,9 @@ func Parse(ctx context.Context, refString string) (_ Parsed, rerr error) {
 		gitParsed.Selector = GitRefSelector
 	}
 
-	// Go-like module refs use import-path discovery to split the repository from
-	// its module subpath. The explicit #ref:subpath form already provides that
-	// boundary, so it can accept any Git URL without go-import metadata.
-	var repoRoot *vcs.RepoRoot
-	if scheme == SchemeEntire {
-		repoRoot, err = entireRepoRoot(gitParsed.ModPath, endpoint, hasFragment)
-		if err != nil {
-			return Parsed{}, err
-		}
-	} else if hasFragment {
-		repoRoot = explicitGitRepoRoot(gitParsed.ModPath, scheme, endpoint)
-		if knownRoot, staticErr := vcs.RepoRootForImportPathStatic(gitParsed.ModPath, ""); staticErr == nil {
-			if knownRoot.Root != gitParsed.ModPath {
-				return Parsed{}, fmt.Errorf(
-					"git URL selector requires a repository URL before #: got %q, repository root is %q",
-					gitParsed.ModPath,
-					knownRoot.Root,
-				)
-			}
-			repoRoot = knownRoot
-		}
-	} else {
-		repoRoot, err = vcs.RepoRootForImportPath(gitParsed.ModPath, false)
-		if err != nil {
-			return Parsed{}, EndpointError{fmt.Errorf("failed to get repo root for import path: %w", err)}
-		}
+	repoRoot, err := resolveRepoRoot(gitParsed.ModPath, scheme, endpoint, hasFragment)
+	if err != nil {
+		return Parsed{}, err
 	}
 	if repoRoot == nil || repoRoot.VCS == nil {
 		return Parsed{}, fmt.Errorf("invalid repo root for import path: %s", gitParsed.ModPath)
@@ -306,6 +281,37 @@ func Parse(ctx context.Context, refString string) (_ Parsed, rerr error) {
 	gitParsed.CloneRef = gitParsed.Scheme.Prefix() + cloneUser + repoRootWithPort
 
 	return gitParsed, nil
+}
+
+// resolveRepoRoot splits modPath into its repository and module subpath.
+//
+// Go-like module refs use import-path discovery to split the repository from
+// its module subpath. The explicit #ref:subpath form already provides that
+// boundary, so it can accept any Git URL without go-import metadata. Entire
+// refs have a fixed repository layout instead.
+func resolveRepoRoot(modPath string, scheme SchemeType, endpoint *transport.Endpoint, hasFragment bool) (*vcs.RepoRoot, error) {
+	switch {
+	case scheme == SchemeEntire:
+		return entireRepoRoot(modPath, endpoint, hasFragment)
+	case hasFragment:
+		if knownRoot, staticErr := vcs.RepoRootForImportPathStatic(modPath, ""); staticErr == nil {
+			if knownRoot.Root != modPath {
+				return nil, fmt.Errorf(
+					"git URL selector requires a repository URL before #: got %q, repository root is %q",
+					modPath,
+					knownRoot.Root,
+				)
+			}
+			return knownRoot, nil
+		}
+		return explicitGitRepoRoot(modPath, scheme, endpoint), nil
+	default:
+		repoRoot, err := vcs.RepoRootForImportPath(modPath, false)
+		if err != nil {
+			return nil, EndpointError{fmt.Errorf("failed to get repo root for import path: %w", err)}
+		}
+		return repoRoot, nil
+	}
 }
 
 func isSCPLike(ref string) bool {

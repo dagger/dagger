@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -153,13 +154,10 @@ func (GitEntireSuite) TestEntireRemote(ctx context.Context, t *testctx.T) {
 	require.NoError(t, os.WriteFile(emptyConfig, nil, 0o600))
 	runHostQuery := func(gitConfig string) ([]byte, error) {
 		cmd := hostDaggerCommandRaw(ctx, t, workDir, "query", "--no-load-module", "--doc", "query.graphql")
-		env := make([]string, 0, len(cmd.Env))
-		for _, e := range cmd.Env {
-			if !strings.Contains(strings.ToLower(strings.SplitN(e, "=", 2)[0]), "git") {
-				env = append(env, e)
-			}
-		}
-		cmd.Env = append(env,
+		cmd.Env = slices.DeleteFunc(cmd.Env, func(e string) bool {
+			return strings.Contains(strings.ToLower(strings.SplitN(e, "=", 2)[0]), "git")
+		})
+		cmd.Env = append(cmd.Env,
 			"_EXPERIMENTAL_DAGGER_RUNNER_HOST="+endpoint,
 			"GIT_CONFIG_GLOBAL="+gitConfig,
 			"GIT_CONFIG_SYSTEM=/dev/null",
