@@ -2550,10 +2550,11 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 	))
 	ctx = dagql.ContextWithCache(ctx, srv.engineCache)
 
-	// Debug https://github.com/dagger/dagger/issues/7592 by logging method and some headers, which
-	// are checked by gqlgen's handler. The fields are built only when debug logging is on: this runs
-	// for every request.
-	if logger := bklog.G(ctx); logger.Logger.IsLevelEnabled(logrus.DebugLevel) {
+	// Log the method and some headers, which gqlgen's handler checks, to debug transport errors
+	// such as https://github.com/dagger/dagger/issues/7592. This runs for every request, and the
+	// engine logs at debug level by default, so it's logged, and its fields built, only at trace
+	// level.
+	if logger := bklog.G(ctx); logger.Logger.IsLevelEnabled(logrus.TraceLevel) {
 		logger.WithFields(logrus.Fields{
 			"path":          r.URL.Path,
 			"method":        r.Method,
@@ -2561,7 +2562,7 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 			"contentType":   r.Header.Get("Content-Type"),
 			"trace":         traceID,
 			"span":          spanID,
-		}).Debug("handling http request")
+		}).Trace("handling http request")
 	}
 
 	if r.URL.Path == "/v1/telemetry/archives" || strings.HasPrefix(r.URL.Path, "/v1/telemetry/archives/") {
