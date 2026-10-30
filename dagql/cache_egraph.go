@@ -1982,7 +1982,7 @@ func (c *Cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 	c.removeResultOutputEqClassesLocked(res.id)
 	oldFrame := res.loadResultCall()
 	depCount := len(res.deps)
-	res.storeResultCall(nil)
+	res.dropResultCall()
 	c.deleteResultLocked(res)
 	c.traceResultRemoved(ctx, res, oldFrame, depCount)
 
