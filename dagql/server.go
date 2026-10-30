@@ -9,11 +9,15 @@ import (
 	"runtime/debug"
 	"slices"
 	"sync"
+	"time"
 	"weak"
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/errcode"
 	"github.com/99designs/gqlgen/graphql/handler"
+	"github.com/99designs/gqlgen/graphql/handler/extension"
+	"github.com/99designs/gqlgen/graphql/handler/lru"
+	"github.com/99designs/gqlgen/graphql/handler/transport"
 	"github.com/dagger/dagger/engine"
 	"github.com/iancoleman/strcase"
 	"github.com/opencontainers/go-digest"
@@ -50,6 +54,11 @@ type Server struct {
 
 	schemaASTCache *SchemaASTCache
 	schemaLock     *sync.Mutex
+
+	// handler serves this server's schema over HTTP. It's built on the first
+	// request and shared by every request after it.
+	handler     *handler.Server
+	handlerOnce *sync.Once
 
 	installLock  *sync.RWMutex
 	installHooks []InstallHook
@@ -231,6 +240,7 @@ func newBlankServer() *Server {
 		installLock:    &sync.RWMutex{},
 		schemaASTCache: &SchemaASTCache{},
 		schemaLock:     &sync.Mutex{},
+		handlerOnce:    &sync.Once{},
 	}
 	srv.self = weak.Make(srv)
 	return srv
@@ -324,9 +334,32 @@ func (s *Server) invalidateSchemaCache() {
 	s.schemaLock.Unlock()
 }
 
+// Handler returns the handler that serves this server's schema over HTTP,
+// built on first use: building one for every request would set up gqlgen's
+// transports, extensions and caches again each time.
+func (s *Server) Handler() *handler.Server {
+	s.handlerOnce.Do(func() {
+		s.handler = NewDefaultHandler(s)
+	})
+	return s.handler
+}
+
+// NewDefaultHandler returns a handler that serves es over HTTP. It's
+// gqlgen's default server without its cache of parsed queries: query texts
+// rarely repeat, since clients write their arguments, IDs included, into them.
 func NewDefaultHandler(es graphql.ExecutableSchema) *handler.Server {
-	// TODO: avoid this deprecated method, and customize the options
-	srv := handler.NewDefaultServer(es)
+	srv := handler.New(es)
+	srv.AddTransport(transport.Websocket{
+		KeepAlivePingInterval: 10 * time.Second,
+	})
+	srv.AddTransport(transport.Options{})
+	srv.AddTransport(transport.GET{})
+	srv.AddTransport(transport.POST{})
+	srv.AddTransport(transport.MultipartForm{})
+	srv.Use(extension.Introspection{})
+	srv.Use(extension.AutomaticPersistedQuery{
+		Cache: lru.New[string](100),
+	})
 
 	srv.SetValidationRulesFn(func() *rules.Rules {
 		validationRules := rules.NewDefaultRules()
