@@ -645,19 +645,23 @@ func extractTar(r io.Reader, dest string, strip int, filter *extractFilter) erro
 // stripTarComponents copies the tar r to w with the first strip elements
 // of each entry's path, and of each hard link's target, removed, dropping
 // entries left with none, as tar --strip-components does, and entries
-// filter leaves out. A directory left out is written anyway, just before the
-// first entry in it that isn't. As with tar --exclude, a hard link to an
-// entry left out fails to extract.
+// filter leaves out. A directory left out is written anyway if an entry in
+// it isn't left out: just before the first such entry, or where it is if
+// one came before it. As with tar --exclude, a hard link to an entry left
+// out fails to extract.
 func stripTarComponents(r io.Reader, w io.Writer, strip int, filter *extractFilter) error {
 	tr := tar.NewReader(r)
 	tw := tar.NewWriter(w)
 	// Directories filter left out, not yet written, by path.
 	leftOut := map[string]*tar.Header{}
+	// The directories entries written so far are in.
+	holding := map[string]bool{}
 	// writeLeftOut writes the directories left out that name is in, top
 	// first.
 	writeLeftOut := func(name string) error {
 		var parents []*tar.Header
 		for p := path.Dir(name); p != "."; p = path.Dir(p) {
+			holding[p] = true
 			if hdr, ok := leftOut[p]; ok {
 				parents = append(parents, hdr)
 				delete(leftOut, p)
@@ -693,9 +697,17 @@ func stripTarComponents(r io.Reader, w io.Writer, strip int, filter *extractFilt
 			return err
 		}
 		if !keep {
-			if hdr.Typeflag == tar.TypeDir {
-				hdr.Name = name + "/"
+			if hdr.Typeflag != tar.TypeDir {
+				continue
+			}
+			hdr.Name = name + "/"
+			if !holding[name] {
 				leftOut[name] = hdr
+				continue
+			}
+			// The archive's metadata for a directory already made.
+			if err := tw.WriteHeader(hdr); err != nil {
+				return err
 			}
 			continue
 		}
