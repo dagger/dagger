@@ -15614,6 +15614,109 @@ export class ModuleConfigClient extends BaseClient {
 }
 
 /**
+ * The names the engine gives a module's own declarations, by the naming rules of the version the module is named by.
+ *
+ * Every list-taking field answers in input order.
+ */
+export class ModuleNaming extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _mainObject?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID, _mainObject?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._mainObject = _mainObject
+  }
+
+  /**
+   * A unique identifier for this ModuleNaming.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The schema names of enum members this module declares, in input order: SCREAMING_SNAKE_CASE.
+   *
+   * A name already written in GraphQL's enum member convention (HTTP2, P_256) is kept as it is. With the engine's identifier naming rules, Arm64 is ARM64 and GitHub is GITHUB; with the legacy strcase rules, Arm64 is ARM_64.
+   *
+   * Errors on a name the module's naming rules can't parse (non-ASCII, no letters or digits, or over 256 bytes). The legacy rules name anything.
+   * @param names The enum member names as the module's source declares them.
+   */
+  enumMemberNames = async (names: string[]): Promise<string[]> => {
+    const ctx = this._ctx.select("enumMemberNames", { names })
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The schema names of functions, object fields and function arguments this module declares, including interface functions, in input order.
+   *
+   * With the engine's identifier naming rules, acronyms are written like words: getURL is getUrl, baseURL is baseUrl, HTTPClient is httpClient. With the legacy strcase rules, HTTPClient is httpclient and e2eTest is e2ETest.
+   *
+   * Errors on a name the module's naming rules can't parse (non-ASCII, no letters or digits, or over 256 bytes). The legacy rules name anything.
+   * @param names The function, field and argument names as the module's source declares them.
+   */
+  fieldNames = async (names: string[]): Promise<string[]> => {
+    const ctx = this._ctx.select("fieldNames", { names })
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Which of the candidates, the names of objects this module declares, the engine takes as the module's main object; null if none.
+   *
+   * The engine finds the main object by the module's name, in any casing: the first candidate, in input order, whose name normalizes to the same type name as the module's (K8STools for module k8s-tools, with the engine's identifier naming rules). Failing that, with the engine's identifier naming rules only, the only candidate spelled the same once lowercased without word boundaries (Sha256Sum for module sha256sum); several such candidates are ambiguous, and give null.
+   *
+   * Errors on a name the module's naming rules can't parse (non-ASCII, no letters or digits, or over 256 bytes). The legacy rules name anything.
+   * @param candidates The object names as the module's source declares them.
+   */
+  mainObject = async (candidates: string[]): Promise<string> => {
+    if (this._mainObject) {
+      return this._mainObject
+    }
+
+    const ctx = this._ctx.select("mainObject", { candidates })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The schema names of objects, interfaces and enums this module declares, as the engine installs them: namespaced under the module's name, in input order.
+   *
+   * A name is prefixed with the module's name unless it already starts with the module's name on a word boundary. With the engine's identifier naming rules: HttpClient in module my-mod is MyModHTTPClient; Postman in module post is PostPostman, while PostMan stays PostMan; K8STools in module k8s-tools is K8sTools, the module's own name. With the legacy strcase rules, HttpClient in module my-mod is MyModHttpClient.
+   *
+   * Errors on a name the module's naming rules can't parse (non-ASCII, no letters or digits, or over 256 bytes). The legacy rules name anything.
+   * @param names The type names as the module's source declares them.
+   */
+  typeNames = async (names: string[]): Promise<string[]> => {
+    const ctx = this._ctx.select("typeNames", { names })
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
  * The source needed to load and run a module, along with any metadata about the source such as versions/urls/etc.
  */
 export class ModuleSource extends BaseClient {
@@ -16008,6 +16111,19 @@ export class ModuleSource extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * The names the engine gives this module's own declarations, by the naming rules of the version the module is named by: its engine version, capped at the engine's own.
+   *
+   * Modules declaring a version before the identifier casing cut get the legacy strcase names; later ones get the engine's identifier naming rules.
+   *
+   * For SDK codegen, which must reproduce these names before the module is loaded: this reads only the source's name, original name and engine version, so it answers before the module's entrypoint is generated.
+   * @experimental
+   */
+  naming = (): ModuleNaming => {
+    const ctx = this._ctx.select("naming")
+    return new ModuleNaming(ctx)
   }
 
   /**

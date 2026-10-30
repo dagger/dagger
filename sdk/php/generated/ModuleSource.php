@@ -537,4 +537,17 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble, Node,
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('kind');
         return \Dagger\ModuleSourceKind::from((string)$this->queryLeaf($leafQueryBuilder, 'kind'));
     }
+
+    /**
+     * The names the engine gives this module's own declarations, by the naming rules of the version the module is named by: its engine version, capped at the engine's own.
+     *
+     * Modules declaring a version before the identifier casing cut get the legacy strcase names; later ones get the engine's identifier naming rules.
+     *
+     * For SDK codegen, which must reproduce these names before the module is loaded: this reads only the source's name, original name and engine version, so it answers before the module's entrypoint is generated.
+     */
+    public function naming(): ModuleNaming
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('naming');
+        return new \Dagger\ModuleNaming($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
 }
