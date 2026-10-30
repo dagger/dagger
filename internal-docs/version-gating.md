@@ -57,7 +57,10 @@ module declaring `v2.0.1`. Use `ModuleAPIViewVersion`, not `APIViewVersion`,
 wherever a module's `engineVersion` becomes a view. A module client that
 declares its version (`DAGGER_CLIENT_VERSION` or the client metadata header,
 see above) is capped the same way: a module process announcing `v1.0.0` to a
-v1.0.0-beta.22 engine gets the `v1.0.0-beta.22` core view.
+v1.0.0-beta.22 engine gets the `v1.0.0-beta.22` core view. Declared client
+versions move only the core API: the typedefs a module registers are always
+named by the module's version (`ModuleSource.NamingView`, stamped on the
+typedef constructors by `core.ContextWithNamingView`).
 
 In-repo fixtures may declare bare `v1.0.0`, and get the engine's view, past
 every gate the engine has. Prefer an explicit prerelease when a fixture tests

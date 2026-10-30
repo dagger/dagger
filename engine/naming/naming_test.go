@@ -59,6 +59,13 @@ var testVectors = []struct {
 	{"apiS3Bucket", "^API · s3 · bucket", "APIS3Bucket", "apiS3Bucket", "api_s3_bucket", "ApiS3Bucket"},
 	{"HTTP2s", "^HTTP+2s", "HTTP2s", "http2s", "http2s", "Http2s"},
 	{"SHA256s", "^SHA+256s", "SHA256s", "sha256s", "sha256s", "Sha256s"},
+	{"K8STools", "*K8s · tools", "K8sTools", "k8sTools", "k8s_tools", "K8sTools"},
+	{"K8sTools", "*K8s · tools", "K8sTools", "k8sTools", "k8s_tools", "K8sTools"},
+	{"k8s-tools", "*K8s · tools", "K8sTools", "k8sTools", "k8s_tools", "K8sTools"},
+	{"K8S_TOOLS", "*K8s · tools", "K8sTools", "k8sTools", "k8s_tools", "K8sTools"},
+	{"MyK8SCluster", "my · *K8s · cluster", "MyK8sCluster", "myK8sCluster", "my_k8s_cluster", "MyK8sCluster"},
+	{"K3SServer", "*K3s · server", "K3sServer", "k3sServer", "k3s_server", "K3sServer"},
+	{"k3s_server", "*K3s · server", "K3sServer", "k3sServer", "k3s_server", "K3sServer"},
 }
 
 // unknownAcronyms are test vector inputs with acronyms the dictionary doesn't
@@ -360,14 +367,18 @@ func checkRoundTrip(t *testing.T, name string) {
 
 // Guarantee 2: formatting a formatted name again changes nothing. With
 // guarantee 3 (canonical names come back unchanged) this is the same check:
-// a formatted name is canonical for its casing.
+// a formatted name is canonical for its casing. It holds in either acronym
+// style: module field names are CAMEL/CAPITALIZED, and the engine normalizes
+// them again when it looks them up.
 func checkIdempotent(t *testing.T, name string) {
 	t.Helper()
 	id := mustParse(t, name)
 	for _, c := range []Casing{Pascal, Camel, Snake, ScreamingSnake} {
-		once := id.Format(c, Uppercase)
-		if twice := mustParse(t, once).Format(c, Uppercase); twice != once {
-			t.Errorf("%q in %s: %q formats again as %q", name, c, once, twice)
+		for _, s := range AcronymStyles {
+			once := id.Format(c, s)
+			if twice := mustParse(t, once).Format(c, s); twice != once {
+				t.Errorf("%q in %s/%s: %q formats again as %q", name, c, s, once, twice)
+			}
 		}
 	}
 }

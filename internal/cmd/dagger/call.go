@@ -162,13 +162,11 @@ func runFunctionList(cmd *cobra.Command, args []string) error {
 }
 
 func findSiblingMain(mod *moduleDef, name string) *modFunction {
-	for _, fn := range mod.siblingModuleMains() {
-		if fn.Name == name || fn.CmdName() == name {
-			mod.LoadFunctionTypeDefs(fn)
-			return fn
-		}
+	fn := findFunctionByCmdName(mod.siblingModuleMains(), name)
+	if fn != nil {
+		mod.LoadFunctionTypeDefs(fn)
 	}
-	return nil
+	return fn
 }
 
 func functionListRun(o functionProvider, writer io.Writer, errWriter io.Writer, filterCore, hideLoadFromID bool, siblingFns []*modFunction) error {
