@@ -1773,6 +1773,54 @@ func (AgentRuntimeSuite) TestParentLineageAndRestore(ctx context.Context, t *tes
 	require.Nil(t, restored.Get("parent.parent").Value())
 }
 
+// An agent's tool that runs a nested client — here the dagger CLI in a
+// withExec with privileged nesting, standing in for a test binary or a CLI
+// connecting back to the engine — has no function call record of its own,
+// yet the agents that client spawns belong to the agent whose tool ran it.
+func (AgentRuntimeSuite) TestNestedExecClientSpawnLineage(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	nestedQuery := fmt.Sprintf(`{ llm(model: %q) { spawn(name: "nested") } }`, emptyReplayModel)
+	source := fmt.Sprintf(`
+type Lineage {
+  agent(base: LLM!): LLM! @agent {
+    base.withTools(currentNode)
+  }
+
+  @cache(policy: FunctionCachePolicy.Never)
+  nest(ws: Workspace!): String! {
+    container.from(%q)
+      .withMountedFile(%q, ws.file("/bin/dagger"))
+      .withEnvVariable("CACHEBUST", UUID.v7)
+      .withExec(["dagger", "query"], stdin: %q, experimentalPrivilegedNesting: true)
+      .stdout
+  }
+}
+`, alpineImage, testCLIBinPath, nestedQuery)
+	ws := core.NewQuery(c).Directory().
+		WithNewFile("dagger.toml", "[modules.lineage]\nsource = \"lineage\"\n").
+		WithNewFile("lineage/dagger.json", `{"name":"lineage","engineVersion":"v1.0.0-0","sdk":"dang"}`).
+		WithNewFile("lineage/main.dang", source).
+		WithFile("bin/dagger", daggerCliFile(t, c)).
+		AsWorkspace()
+	model := cannedRecordingModel(ctx, t, c, recomposeRecordingTurn(core.NewQuery(c).LLM(), "nest", "nest"))
+	entries, err := uriExpertiseIDs(ctx, c, ws, "lineage/agent")
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	worker := spawnWithExpertise(ctx, t, c, core.NewQuery(c).LLM(core.LLMOpts{Model: model}).WithWorkspace(ws), "worker", entries)
+	workerHandle := worker.mustRun(ctx, t, "handle").Get("handle").String()
+
+	_, _, err = worker.sendAndWait(ctx, t, "nest")
+	require.NoError(t, err)
+	transcript := worker.mustRun(ctx, t, "snapshot { transcript }").Get("snapshot.transcript").String()
+	matches := regexp.MustCompile(`spawn\\?"\s*:\s*\\?"([A-Za-z0-9+/=_-]+)`).FindStringSubmatch(transcript)
+	require.Len(t, matches, 2, transcript)
+	nested := ownedAgent(ctx, t, c, matches[1])
+	lineage := nested.mustRun(ctx, t, "name parent { name handle }")
+	require.Equal(t, "nested", lineage.Get("name").String())
+	require.Equal(t, "worker", lineage.Get("parent.name").String(), transcript)
+	require.Equal(t, workerHandle, lineage.Get("parent.handle").String())
+}
+
 func (LLMSuite) TestSpawnExpertiseFailureCanRetry(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	const source = `
