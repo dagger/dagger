@@ -484,10 +484,14 @@ func SpansToPB(rows []Span) []*otlptracev1.ResourceSpans {
 // AppendTraceRequestPB appends the binary encoding of the OTLP trace export
 // request carrying rows: byte for byte what proto.Marshal makes of
 // ExportTraceServiceRequest{ResourceSpans: SpansToPB(rows)}, without building
-// its messages. A row's stored attribute and event lists are already their
+// its messages, except that each span's links are written as they were
+// stored. A row's stored attribute, event and link lists are already their
 // elements' encodings, each with its length in front, so each element is
-// written after its field's tag. Resources, scopes and links are encoded as
-// SpansToPB makes them, each distinct resource and scope once per call. Every
+// written after its field's tag. SpansToPB's links go through SDK links,
+// which drop a link's trace state, flags and dropped attribute count; the
+// links a client decodes through SDK links are the same either way.
+// Resources and scopes are encoded as SpansToPB makes them, each distinct
+// one once per call. Every
 // span's size is worked out first, so the request is written once, into room
 // made for all of it.
 func AppendTraceRequestPB(b []byte, rows []Span) ([]byte, error) {
@@ -599,8 +603,7 @@ func AppendTraceRequestPB(b []byte, rows []Span) ([]byte, error) {
 }
 
 // plannedSpan is the OTLP span spanPB makes of a row, worked out ahead of
-// its encoding: the values parsed from the row, the links' encodings, and
-// the span's encoded size.
+// its encoding: the values parsed from the row and the span's encoded size.
 type plannedSpan struct {
 	tid        trace.TraceID
 	sid, psid  trace.SpanID
@@ -608,13 +611,12 @@ type plannedSpan struct {
 	kind       otlptracev1.Span_SpanKind
 	start, end uint64
 	status     *otlptracev1.Status
-	links      [][]byte
 	size       int
 }
 
 // plan works out span's OTLP span. Like proto.Marshal, it fails on a name or
-// status message that isn't valid UTF-8; the stored attributes and events
-// were checked when they were encoded.
+// status message that isn't valid UTF-8; the stored attributes, events and
+// links were checked when they were encoded.
 func (pb *plannedSpan) plan(span *Span) error {
 	if !utf8.ValidString(span.Name) || !utf8.ValidString(span.StatusMessage) {
 		return errInvalidUTF8
@@ -631,16 +633,6 @@ func (pb *plannedSpan) plan(span *Span) error {
 		end:        uint64(ros.EndTime().UnixNano()),
 		status:     statusPB(codes.Code(span.StatusCode), span.StatusMessage),
 	}
-	if len(span.Links) > 0 {
-		for _, link := range telemetry.SpanLinksToPB(ros.Links()) {
-			enc, err := proto.Marshal(link)
-			if err != nil {
-				return fmt.Errorf("failed to proto marshal link: %w", err)
-			}
-			pb.links = append(pb.links, enc)
-		}
-	}
-
 	n := protowire.SizeTag(1) + protowire.SizeBytes(len(pb.tid)) +
 		protowire.SizeTag(2) + protowire.SizeBytes(len(pb.sid))
 	if pb.traceState != "" {
@@ -665,9 +657,7 @@ func (pb *plannedSpan) plan(span *Span) error {
 	n += uint32FieldSize(10, uint32(span.DroppedAttributesCount))
 	n += storedListSize(11, span.Events)
 	n += uint32FieldSize(12, uint32(span.DroppedEventsCount))
-	for _, link := range pb.links {
-		n += protowire.SizeTag(13) + protowire.SizeBytes(len(link))
-	}
+	n += storedListSize(13, span.Links)
 	n += uint32FieldSize(14, uint32(span.DroppedLinksCount))
 	n += protowire.SizeTag(15) + protowire.SizeBytes(statusSize(pb.status))
 	n += protowire.SizeTag(16) + protowire.SizeFixed32()
@@ -710,10 +700,7 @@ func (pb *plannedSpan) append(b []byte, span *Span) []byte {
 	b = appendUint32Field(b, 10, uint32(span.DroppedAttributesCount))
 	b = appendStoredList(b, 11, span.Events, "events")
 	b = appendUint32Field(b, 12, uint32(span.DroppedEventsCount))
-	for _, link := range pb.links {
-		b = protowire.AppendTag(b, 13, protowire.BytesType)
-		b = protowire.AppendBytes(b, link)
-	}
+	b = appendStoredList(b, 13, span.Links, "links")
 	b = appendUint32Field(b, 14, uint32(span.DroppedLinksCount))
 	b = protowire.AppendTag(b, 15, protowire.BytesType)
 	b = protowire.AppendVarint(b, uint64(statusSize(pb.status)))
