@@ -363,7 +363,7 @@ func (s *session) handleExport(env protocol.Envelope) {
 	}
 	ended := exportEnded{roots: len(req.Roots), slotWait: slotted.Sub(arrived)}
 	replied := false
-	err := s.adapter.Export(profCtx, req, func(ctx context.Context, exp Export) error {
+	err := s.adapter.Export(profCtx, req, nil, func(ctx context.Context, exp Export) error {
 		replied = true
 		if exp.Bundle == nil {
 			ended.noBundle = true

@@ -398,7 +398,7 @@ func TestRemoteCacheAdapterExport(t *testing.T) {
 		Outputs: []protocol.ExportOutput{{Number: entryNumber(t, ready), Address: snapshotPart}, {Number: goneNumber, Address: snapshotPart}},
 	}
 	calls := 0
-	err := e.adapter.Export(e.ctx, req, func(ctx context.Context, exp remotecache.Export) error {
+	err := e.adapter.Export(e.ctx, req, nil, func(ctx context.Context, exp remotecache.Export) error {
 		calls++
 		require.Equal(t, []protocol.SkippedRoot{{Number: goneNumber, Reason: protocol.SkipGone}}, exp.Skipped)
 		require.NotNil(t, exp.Bundle)
@@ -424,6 +424,46 @@ func TestRemoteCacheAdapterExport(t *testing.T) {
 	require.Equal(t, 1, calls)
 }
 
+// A records-only export sends as held rows the rows its known set knows, and
+// hands on the rows it carried; an export that selects outputs holds none.
+func TestRemoteCacheAdapterExportHoldsKnownRows(t *testing.T) {
+	e := newAdapterTestEngine(t)
+	core := e.file(t, "core")
+	first, _ := e.publishFile(t, "first", core)
+	second, _ := e.publishFile(t, "second", core)
+	export := func(req protocol.Export, known *dagql.KnownRows) remotecache.Export {
+		t.Helper()
+		var got remotecache.Export
+		require.NoError(t, e.adapter.Export(e.ctx, req, known, func(_ context.Context, exp remotecache.Export) error {
+			got = exp
+			return nil
+		}))
+		require.NotNil(t, got.Bundle)
+		return got
+	}
+	known := dagql.NewKnownRows()
+	exp := export(protocol.Export{Roots: []uint64{entryNumber(t, first)}}, known)
+	require.Contains(t, exp.Rows.Full, entryNumber(t, core))
+	require.Empty(t, exp.Rows.Held)
+	known.Merged(exp.Rows)
+
+	exp = export(protocol.Export{Roots: []uint64{entryNumber(t, second)}}, known)
+	require.Equal(t, []uint64{entryNumber(t, core)}, exp.Rows.Held)
+	var held []uint64
+	for _, value := range exp.Bundle.Values {
+		if value.Held != "" {
+			held = append(held, value.SenderNumber)
+		}
+	}
+	require.Equal(t, []uint64{entryNumber(t, core)}, held)
+
+	exp = export(protocol.Export{Roots: []uint64{entryNumber(t, second)}, Outputs: []protocol.ExportOutput{{Number: entryNumber(t, second), Address: snapshotPart}}}, known)
+	require.Empty(t, exp.Rows.Held, "an export that selects outputs holds nothing")
+	for _, value := range exp.Bundle.Values {
+		require.Empty(t, value.Held)
+	}
+}
+
 // A root whose body is running is skipped as busy, and the others go in the
 // bundle with only the outputs their closures hold.
 func TestRemoteCacheAdapterExportSkipsBusyRoots(t *testing.T) {
@@ -436,7 +476,7 @@ func TestRemoteCacheAdapterExportSkipsBusyRoots(t *testing.T) {
 		Outputs: []protocol.ExportOutput{{Number: entryNumber(t, busy), Address: snapshotPart}, {Number: entryNumber(t, ready), Address: snapshotPart}},
 	}
 	calls := 0
-	err := e.adapter.Export(e.ctx, req, func(_ context.Context, exp remotecache.Export) error {
+	err := e.adapter.Export(e.ctx, req, nil, func(_ context.Context, exp remotecache.Export) error {
 		calls++
 		require.Len(t, exp.Skipped, 1)
 		requireBusySkip(t, entryNumber(t, busy), exp.Skipped[0])
@@ -469,7 +509,7 @@ func TestRemoteCacheAdapterExportCapturesOnce(t *testing.T) {
 		ctx, root := wcprof.BeginOp(wcprof.ContextWithProfiling(e.ctx), wcprof.OpKindRemoteCache, "test.export", wcprof.OpOpts{})
 		calls := 0
 		var got remotecache.Export
-		require.NoError(t, e.adapter.Export(ctx, req, func(_ context.Context, exp remotecache.Export) error {
+		require.NoError(t, e.adapter.Export(ctx, req, nil, func(_ context.Context, exp remotecache.Export) error {
 			calls++
 			got = exp
 			return nil
@@ -541,7 +581,7 @@ func TestRemoteCacheAdapterExportSkipsRefusedRoots(t *testing.T) {
 		Outputs: []protocol.ExportOutput{{Number: entryNumber(t, first), Address: snapshotPart}, {Number: entryNumber(t, second), Address: snapshotPart}},
 	}
 	calls := 0
-	err := e.adapter.Export(e.ctx, req, func(_ context.Context, exp remotecache.Export) error {
+	err := e.adapter.Export(e.ctx, req, nil, func(_ context.Context, exp remotecache.Export) error {
 		calls++
 		requireRefused(t, entryNumber(t, refused), exp.Skipped)
 		require.NotNil(t, exp.Bundle)
@@ -553,7 +593,7 @@ func TestRemoteCacheAdapterExportSkipsRefusedRoots(t *testing.T) {
 	require.Equal(t, 1, calls)
 
 	calls = 0
-	err = e.adapter.Export(e.ctx, protocol.Export{Roots: []uint64{entryNumber(t, refused)}}, func(_ context.Context, exp remotecache.Export) error {
+	err = e.adapter.Export(e.ctx, protocol.Export{Roots: []uint64{entryNumber(t, refused)}}, nil, func(_ context.Context, exp remotecache.Export) error {
 		calls++
 		require.Nil(t, exp.Bundle)
 		requireRefused(t, entryNumber(t, refused), exp.Skipped)
@@ -564,7 +604,7 @@ func TestRemoteCacheAdapterExportSkipsRefusedRoots(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(e.ctx)
 	cancel()
-	err = e.adapter.Export(ctx, protocol.Export{Roots: []uint64{entryNumber(t, refused)}}, func(context.Context, remotecache.Export) error {
+	err = e.adapter.Export(ctx, protocol.Export{Roots: []uint64{entryNumber(t, refused)}}, nil, func(context.Context, remotecache.Export) error {
 		t.Error("a cancelled request is answered")
 		return nil
 	})
@@ -753,7 +793,7 @@ func TestRemoteCacheAdapterExportWithNoSurvivingRoot(t *testing.T) {
 	e := newAdapterTestEngine(t)
 	busy := e.busyFile(t, "busy")
 	calls := 0
-	err := e.adapter.Export(e.ctx, protocol.Export{Roots: []uint64{entryNumber(t, busy), goneNumber}}, func(_ context.Context, exp remotecache.Export) error {
+	err := e.adapter.Export(e.ctx, protocol.Export{Roots: []uint64{entryNumber(t, busy), goneNumber}}, nil, func(_ context.Context, exp remotecache.Export) error {
 		calls++
 		require.Nil(t, exp.Bundle)
 		require.Len(t, exp.Skipped, 2)

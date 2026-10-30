@@ -92,8 +92,10 @@ type Adapter interface {
 	CacheIdentity() (cacheID string, generation uint64)
 	// Export captures the requested roots and calls consume exactly once,
 	// while the captured chains stay open. The export's Bundle is nil when no
-	// root survived. The chains are released when consume returns.
-	Export(ctx context.Context, req protocol.Export, consume func(context.Context, Export) error) error
+	// root survived. The chains are released when consume returns. known are
+	// the rows the service merged over this connection: an export that
+	// selects no outputs sends those as held rows.
+	Export(ctx context.Context, req protocol.Export, known *dagql.KnownRows, consume func(context.Context, Export) error) error
 	// Merge merges a bundle of the service's values into the cache. id is
 	// the service's request ID, for logs.
 	Merge(ctx context.Context, id uint64, req protocol.Merge) (protocol.Merged, error)
@@ -147,6 +149,9 @@ type Export struct {
 	Skipped []protocol.SkippedRoot
 	// Blobs reads the bundle's layer blobs for upload.
 	Blobs BlobSource
+	// Rows are the rows the bundle carries in full and as held rows, for
+	// known once the service says whether it merged them.
+	Rows dagql.ExportedRows
 }
 
 // BlobSource reads a layer blob of an export's chains.

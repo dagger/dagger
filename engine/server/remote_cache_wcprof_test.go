@@ -77,7 +77,7 @@ func TestRemoteCacheAdapterExportProfiled(t *testing.T) {
 	ctx, root := wcprof.BeginOp(wcprof.ContextWithProfiling(e.ctx), wcprof.OpKindRemoteCache, "test.export", wcprof.OpOpts{})
 	var size int64
 	var consumeOp uint64
-	require.NoError(t, e.adapter.Export(ctx, req, func(ctx context.Context, exp remotecache.Export) error {
+	require.NoError(t, e.adapter.Export(ctx, req, nil, func(ctx context.Context, exp remotecache.Export) error {
 		require.Len(t, exp.Bundle.Outputs, 1)
 		for _, layer := range exp.Bundle.Outputs[0].Chain.Layers {
 			size += layer.Descriptor.Size

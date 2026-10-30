@@ -29,7 +29,7 @@ func TestRemoteCacheAdapterExportCompressesWithZstd(t *testing.T) {
 	number := entryNumber(t, ready)
 	consumer := testutil.NewStore(t)
 	req := protocol.Export{Roots: []uint64{number}, Outputs: []protocol.ExportOutput{{Number: number, Address: snapshotPart}}}
-	err := e.adapter.Export(e.ctx, req, func(ctx context.Context, exp remotecache.Export) error {
+	err := e.adapter.Export(e.ctx, req, nil, func(ctx context.Context, exp remotecache.Export) error {
 		require.NotNil(t, exp.Bundle)
 		require.Len(t, exp.Bundle.Outputs, 1)
 		chain := exp.Bundle.Outputs[0].Chain

@@ -85,6 +85,7 @@ func TestMessagesRoundTrip(t *testing.T) {
 		{TypeExported, Exported{Skipped: []SkippedRoot{{Number: 14, Reason: SkipRefused, Message: "row 3: refused"}}}, func() any { return &Exported{} }},
 		{TypeUpload, Upload{ExportID: "x-1", URLs: map[digest.Digest]string{layer.Descriptor.Digest: "https://blobs/put"}}, func() any { return &Upload{} }},
 		{TypeUpload, Upload{ExportID: "x-1", URLs: map[digest.Digest]string{}, Packs: []UploadPack{{Pack: digest.FromString("pack"), URL: "https://blobs/put-pack", Members: []pack.Member{{Digest: layer.Descriptor.Digest, Size: 42}}}}}, func() any { return &Upload{} }},
+		{TypeUpload, Upload{ExportID: "x-2", URLs: map[digest.Digest]string{}, Merged: true}, func() any { return &Upload{} }},
 		{TypeUploaded, Uploaded{Done: []digest.Digest{layer.Descriptor.Digest}, Failed: []UploadFailure{{Digest: digest.FromString("other"), Message: "503"}}}, func() any { return &Uploaded{} }},
 		{TypeMerge, Merge{Bundle: bundle}, func() any { return &Merge{} }},
 		{TypeMerge, Merge{Bundle: bundle, Lookup: 31}, func() any { return &Merge{} }},
