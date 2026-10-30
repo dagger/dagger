@@ -137,7 +137,7 @@ defmodule Dagger.Agent do
   end
 
   @doc """
-  The agent that spawned this agent, or null for a root agent.
+  The agent this agent was spawned under (by it, during its composition, or by code it ran), or null for a root agent.
 
   > #### Experimental {: .warning}
   >

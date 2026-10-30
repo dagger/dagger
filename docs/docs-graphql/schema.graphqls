@@ -189,7 +189,9 @@ type Agent implements Node {
   """A unique identifier for this Agent."""
   id: ID!
 
-  """The agent that spawned this agent, or null for a root agent."""
+  """
+  The agent this agent was spawned under (by it, during its composition, or by code it ran), or null for a root agent.
+  """
   parent: Agent @experimental(reason: "Agent APIs are likely to change.")
 
   """Display label for the agent; carries no identity."""
