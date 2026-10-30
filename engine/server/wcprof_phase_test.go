@@ -140,7 +140,6 @@ func TestPhaseSamplesMachineCPU(t *testing.T) {
 		require.LessOrEqual(t, s.StartNS, op.EndNS, "a reading after the phase ended")
 		prev = s.StartNS
 	}
-
 }
 
 // A profiled phase reads the engine's cgroup: the bytes it read and wrote
