@@ -276,6 +276,10 @@ func getClientParams() (graphql.Client, error) {
 		DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
 			return net.Dial("tcp", host)
 		},
+		// Every request goes to this one host. Keep as many idle connections
+		// for it as Go's default transport keeps in all, not its default of
+		// 2 per host, so concurrent requests reuse them instead of dialing.
+		MaxIdleConnsPerHost: 100,
 	}
 	httpClient := &http.Client{
 		Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
