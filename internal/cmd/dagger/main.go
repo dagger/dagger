@@ -81,6 +81,7 @@ var (
 	// Any value selects Dagger Cloud.
 	_, cloudEngineEnvSet = os.LookupEnv(cloudEngineEnv)
 	profileFlag          bool
+	profileEBPFFlag      []string
 
 	dotOutputFilePath string
 	dotFocusField     string
@@ -498,6 +499,8 @@ func installMayCallEngineFlags(flags *pflag.FlagSet) {
 	_ = engineFlags.MarkDeprecated("interactive-command", "use --shell-command-on-error instead")
 	engineFlags.BoolVar(&profileFlag, "profile", false, "Enable experimental engine wall-clock profiling for this session")
 	engineFlags.Lookup("profile").Hidden = true
+	engineFlags.StringSliceVar(&profileEBPFFlag, "profile-ebpf", nil, "With --profile, eBPF programs to profile this session with, such as exec_sched")
+	engineFlags.Lookup("profile-ebpf").Hidden = true
 	setFlagSetCapabilities(engineFlags, mayCallEngine)
 	flags.AddFlagSet(engineFlags)
 }

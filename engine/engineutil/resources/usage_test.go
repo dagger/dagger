@@ -32,3 +32,62 @@ func TestReadUsage(t *testing.T) {
 		t.Errorf("missing cgroup: %v, want not exist", err)
 	}
 }
+
+func TestReadIO(t *testing.T) {
+	dir := t.TempDir()
+	stat := "259:0 rbytes=4096 wbytes=1024 rios=1 wios=1 dbytes=0 dios=0\n" +
+		"259:1 rbytes=8192 wbytes=0 rios=2 wios=0 dbytes=0 dios=0\n"
+	if err := os.WriteFile(filepath.Join(dir, ioStatFile), []byte(stat), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	read, written, err := ReadIO(dir)
+	if err != nil || read != 12288 || written != 1024 {
+		t.Fatalf("summed over devices: %d %d %v", read, written, err)
+	}
+	if _, _, err = ReadIO(filepath.Join(dir, "gone")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("missing cgroup: %v, want not exist", err)
+	}
+}
+
+func TestReadMemory(t *testing.T) {
+	dir := t.TempDir()
+	stat := "anon 1048576\nfile 4194304\nkernel 65536\nshmem 0\n" +
+		"anon_thp 524288\nfile_thp 2097152\nshmem_thp 0\ninactive_file 1024\n"
+	if err := os.WriteFile(filepath.Join(dir, memoryStatFile), []byte(stat), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, err := ReadMemory(dir)
+	if err != nil || m != (Memory{AnonBytes: 1048576, FileBytes: 4194304, HugeBytes: 2621440}) {
+		t.Fatalf("memory: %+v %v", m, err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, memoryStatFile), []byte("kernel 65536\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = ReadMemory(dir); err == nil {
+		t.Error("memory.stat without anon: no error")
+	}
+}
+
+func TestReadExecStats(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(memoryStatFile, "anon 4096\npgfault 900\npgmajfault 20\nthp_fault_alloc 3\nthp_collapse_alloc 1\n")
+	st, err := ReadExecStats(dir)
+	if err != nil || st != (ExecStats{MinorFaults: 880, MajorFaults: 20, HugeFaults: 3}) {
+		t.Fatalf("without pressure files: %+v %v", st, err)
+	}
+	write(cpuPressureFile, "some avg10=1.50 avg60=0.00 avg300=0.00 total=7000\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=1000\n")
+	write(memoryPressureFile, "some avg10=0.00 avg60=0.00 avg300=0.00 total=500\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=100\n")
+	st, err = ReadExecStats(dir)
+	if err != nil || st.CPUStallUS != 7000 || st.MemStallUS != 500 {
+		t.Fatalf("with pressure files: %+v %v", st, err)
+	}
+	if _, err := ReadExecStats(filepath.Join(dir, "gone")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("missing cgroup: %v, want not exist", err)
+	}
+}

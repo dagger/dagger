@@ -44,9 +44,11 @@ import (
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 
+	"github.com/dagger/dagger/engine/ebpf/execsched"
 	"github.com/dagger/dagger/engine/ebpf/filetracer"
 	"github.com/dagger/dagger/engine/ebpf/nettracer"
 	"github.com/dagger/dagger/engine/ebpf/ovltracer"
+	"github.com/dagger/dagger/engine/ebpf/wcbpf"
 	"github.com/dagger/dagger/engine/engineutil/cacerts"
 	"github.com/dagger/dagger/engine/server"
 	"github.com/dagger/dagger/engine/slog"
@@ -85,6 +87,12 @@ func init() {
 	if reexec.Init() {
 		os.Exit(0)
 	}
+}
+
+// The eBPF programs that feed wcprof's profiles, attached while a recording
+// asks for them by name (engine/ebpf/wcbpf).
+func init() {
+	wcbpf.Register(execsched.Program)
 }
 
 func enabledEbpfPrograms(loadDefaults bool) []ebpfProgram {
@@ -167,6 +175,11 @@ func addFlags(app *cli.App) {
 		cli.BoolFlag{
 			Name:   "wcprof",
 			Usage:  "enable experimental wall-clock profiling for all work on the engine (toggleable at runtime via the /debug/wcprof/enabled debug endpoint)",
+			Hidden: true,
+		},
+		cli.StringSliceFlag{
+			Name:   "wcprof-ebpf",
+			Usage:  "with --wcprof, eBPF programs to profile all work on the engine with, such as exec_sched",
 			Hidden: true,
 		},
 		cli.BoolFlag{
@@ -373,6 +386,14 @@ func main() { //nolint:gocyclo
 
 		if c.GlobalBool("wcprof") {
 			wcprof.EnableGlobal()
+		}
+		if programs := c.GlobalStringSlice("wcprof-ebpf"); len(programs) > 0 {
+			if !c.GlobalBool("wcprof") {
+				return errors.New("--wcprof-ebpf needs --wcprof")
+			}
+			if err := wcbpf.SetEngineWide(programs); err != nil {
+				return err
+			}
 		}
 		// TODO: On Windows this always returns -1. The actual "are you admin" check is very Windows-specific.
 		// See https://github.com/golang/go/issues/28804#issuecomment-505326268 for the "short" version.

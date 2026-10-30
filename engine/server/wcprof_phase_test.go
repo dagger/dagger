@@ -5,11 +5,16 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
+	"runtime"
 	"runtime/pprof"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 
 	"github.com/dagger/dagger/engine/wcprof"
 )
@@ -20,13 +25,40 @@ func armedOf(srv *Server) *armedProfile {
 	return srv.armed
 }
 
-// burnCPU keeps this process busy for d.
+// burnCPU keeps this process busy until it has used d of CPU time, read
+// from getrusage as the phase reads the process's CPU. Wall time alone isn't
+// enough: on a loaded machine the process gets only part of each millisecond.
 func burnCPU(d time.Duration) {
-	for end := time.Now().Add(d); time.Now().Before(end); {
+	used := func() int64 {
+		var ru syscall.Rusage
+		if err := syscall.Getrusage(syscall.RUSAGE_SELF, &ru); err != nil {
+			panic(err)
+		}
+		return (ru.Utime.Nano() + ru.Stime.Nano()) / 1000
+	}
+	for end := used() + d.Microseconds(); used() < end; {
 	}
 }
 
-// A profiled phase is an op carrying the engine's CPU activity during it.
+// touchFreshMemory maps n bytes of new anonymous memory, without huge pages,
+// and writes one byte per page, so the process takes a page fault for each
+// page.
+func touchFreshMemory(t *testing.T, n int) {
+	b, err := unix.Mmap(-1, 0, n, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_ANON|unix.MAP_PRIVATE)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, unix.Munmap(b)) }()
+	// A kernel without transparent huge pages refuses the advice, and can't
+	// back the mapping with huge pages anyway.
+	if err := unix.Madvise(b, unix.MADV_NOHUGEPAGE); !errors.Is(err, unix.EINVAL) {
+		require.NoError(t, err)
+	}
+	for i := 0; i < n; i += os.Getpagesize() {
+		b[i] = 1
+	}
+}
+
+// A profiled phase is an op carrying the engine's CPU activity during it,
+// with the engine process's page faults and Go runtime counters.
 func TestPhaseRecordsEngineCPU(t *testing.T) {
 	wcprof.EnsureRecorder()
 	ctx := wcprof.ContextWithProfiling(context.Background())
@@ -34,7 +66,12 @@ func TestPhaseRecordsEngineCPU(t *testing.T) {
 	p := srv.beginSessionPhase(ctx, "phase-test-session")
 	require.NotNil(t, p)
 	burnCPU(50 * time.Millisecond)
+	touchFreshMemory(t, 16<<20)
+	const allocated = 64 << 20
+	mem := make([]byte, allocated)
+	runtime.GC()
 	p.end(srv)
+	runtime.KeepAlive(mem)
 
 	var buf bytes.Buffer
 	require.NoError(t, wcprof.Active().WriteDump(&buf, false))
@@ -56,7 +93,144 @@ func TestPhaseRecordsEngineCPU(t *testing.T) {
 	proc, ok := usage[UsageScopeEngineProcess]
 	require.True(t, ok, "no engine process reading: %+v", usage)
 	require.GreaterOrEqual(t, proc.CPUUserUS+proc.CPUSystemUS, int64(25_000), "50ms of busy work: %+v", proc)
+	require.GreaterOrEqual(t, proc.MinorFaults, int64(16<<20/os.Getpagesize()), "16 MiB of fresh memory touched: %+v", proc)
+	require.GreaterOrEqual(t, proc.GoAllocBytes, int64(allocated), "64 MiB allocated: %+v", proc)
+	require.GreaterOrEqual(t, proc.GoGCCycles, int64(1), "a forced GC: %+v", proc)
+	require.Positive(t, proc.GoGCCPUUS, "a forced GC: %+v", proc)
 	require.Contains(t, usage, UsageScopeEngineChildren)
+	machine, ok := usage[UsageScopeMachine]
+	require.True(t, ok, "no machine reading: %+v", usage)
+	total := machine.CPUUserUS + machine.CPUSystemUS + machine.CPUIowaitUS + machine.CPUStealUS + machine.CPUIdleUS
+	require.GreaterOrEqual(t, total, int64(25_000), "50ms of the machine's time: %+v", machine)
+}
+
+// A profiled phase samples the machine's CPU while it runs: readings in time
+// order, each covering the stretch since the previous one, the last ending with
+// the phase, and none after it.
+func TestPhaseSamplesMachineCPU(t *testing.T) {
+	wcprof.EnsureRecorder()
+	ctx := wcprof.ContextWithProfiling(context.Background())
+	srv := &Server{}
+	p := srv.beginSessionPhase(ctx, "phase-sample-session")
+	require.NotNil(t, p)
+	samples := func() (wcprof.DumpEvent, []wcprof.DumpEvent) {
+		var buf bytes.Buffer
+		require.NoError(t, wcprof.Active().WriteDump(&buf, false))
+		header, events, err := wcprof.ReadDump(&buf)
+		require.NoError(t, err)
+		var op wcprof.DumpEvent
+		var got []wcprof.DumpEvent
+		for _, ev := range events {
+			switch {
+			case ev.Type == "op" && ev.OpID == p.op.ID():
+				op = ev
+			case ev.Type == wcprof.DumpTypeUsage && ev.OpID == p.op.ID() && header.Strings[ev.ClassID] == UsageScopeMachineSample:
+				got = append(got, ev)
+			}
+		}
+		return op, got
+	}
+	for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(machineSampleInterval) {
+		if _, got := samples(); len(got) >= 2 {
+			break
+		}
+		require.True(t, time.Now().Before(deadline), "the running phase took no readings")
+	}
+	p.end(srv)
+	op, got := samples()
+	time.Sleep(2 * machineSampleInterval)
+	_, after := samples()
+	require.Len(t, after, len(got), "readings after the phase ended")
+
+	require.NotZero(t, op.OpID, "no session phase op")
+	require.GreaterOrEqual(t, len(got), 3, "readings while it ran, and the last at its end")
+	prev := op.StartNS
+	for _, s := range got {
+		require.GreaterOrEqual(t, s.StartNS, prev, "readings out of order")
+		require.LessOrEqual(t, s.StartNS, op.EndNS, "a reading after the phase ended")
+		prev = s.StartNS
+	}
+}
+
+// A profiled phase reads the engine's cgroup: the bytes it read and wrote
+// while the phase ran, and its memory with each machine reading.
+func TestPhaseRecordsEngineCgroup(t *testing.T) {
+	dir := t.TempDir()
+	// Each file is replaced whole, as the phase's sampler may be reading it.
+	write := func(name, body string) {
+		t.Helper()
+		tmp := filepath.Join(t.TempDir(), name)
+		require.NoError(t, os.WriteFile(tmp, []byte(body), 0o644))
+		require.NoError(t, os.Rename(tmp, filepath.Join(dir, name)))
+	}
+	write("cpu.stat", "usage_usec 3000\nuser_usec 2000\nsystem_usec 1000\n")
+	write("io.stat", "259:0 rbytes=100 wbytes=200 rios=1 wios=1\n")
+	write("memory.stat", "anon 1000\nfile 2000\nanon_thp 0\n")
+	orig := engineCgroupDir
+	engineCgroupDir = func() (string, error) { return dir, nil }
+	t.Cleanup(func() { engineCgroupDir = orig })
+
+	wcprof.EnsureRecorder()
+	ctx := wcprof.ContextWithProfiling(context.Background())
+	srv := &Server{}
+	p := srv.beginSessionPhase(ctx, "phase-cgroup-session")
+	require.NotNil(t, p)
+	readings := func() (cgroup *wcprof.DumpEvent, mem []wcprof.DumpEvent) {
+		var buf bytes.Buffer
+		require.NoError(t, wcprof.Active().WriteDump(&buf, false))
+		header, events, err := wcprof.ReadDump(&buf)
+		require.NoError(t, err)
+		for _, ev := range events {
+			if ev.Type != wcprof.DumpTypeUsage || ev.OpID != p.op.ID() {
+				continue
+			}
+			switch header.Strings[ev.ClassID] {
+			case UsageScopeEngineCgroup:
+				cgroup = &ev
+			case UsageScopeEngineCgroupSample:
+				mem = append(mem, ev)
+			}
+		}
+		return cgroup, mem
+	}
+	for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(machineSampleInterval) {
+		if _, mem := readings(); len(mem) > 0 {
+			break
+		}
+		require.True(t, time.Now().Before(deadline), "the running phase sampled no memory")
+	}
+	write("cpu.stat", "usage_usec 9000\nuser_usec 6000\nsystem_usec 3000\n")
+	write("io.stat", "259:0 rbytes=1100 wbytes=4200 rios=2 wios=3\n259:1 rbytes=50 wbytes=0 rios=1 wios=0\n")
+	write("memory.stat", "anon 5000\nfile 7000\nanon_thp 4000\nfile_thp 1000\n")
+	p.end(srv)
+
+	cgroup, mem := readings()
+	require.NotNil(t, cgroup, "no engine cgroup reading")
+	require.Equal(t, int64(4000), cgroup.CPUUserUS)
+	require.Equal(t, int64(2000), cgroup.CPUSystemUS)
+	require.Equal(t, int64(1050), cgroup.IOReadBytes, "read over both devices, since the phase began")
+	require.Equal(t, int64(4000), cgroup.IOWriteBytes, "written since the phase began")
+	first, last := mem[0], mem[len(mem)-1]
+	require.Equal(t, [3]int64{1000, 2000, 0}, [3]int64{first.MemAnonBytes, first.MemFileBytes, first.MemHugeBytes})
+	require.Equal(t, [3]int64{5000, 7000, 5000}, [3]int64{last.MemAnonBytes, last.MemFileBytes, last.MemHugeBytes}, "the last sample, at the phase's end")
+}
+
+// The machine's CPU times come from /proc/stat's first line, in its 10 ms
+// ticks, with nice counted as user and interrupts as system.
+func TestParseMachineCPU(t *testing.T) {
+	u, ok := parseMachineCPU([]byte("cpu  100 2 30 4000 5 6 7 8 0 0\ncpu0 50 1 15 2000 2 3 3 4 0 0\n"))
+	require.True(t, ok)
+	require.Equal(t, wcprof.Usage{
+		CPUUserUS:   1_020_000,
+		CPUSystemUS: 430_000,
+		CPUIdleUS:   40_000_000,
+		CPUIowaitUS: 50_000,
+		CPUStealUS:  80_000,
+	}, u)
+	for _, bad := range []string{"", "cpu0 1 2 3 4 5 6 7 8\n", "cpu 1 2 3\n", "cpu 1 x 3 4 5 6 7 8\n"} {
+		_, ok := parseMachineCPU([]byte(bad))
+		require.False(t, ok, "%q", bad)
+	}
 }
 
 // An armed profile covers the phase's next run and is delivered at its end.
@@ -218,4 +392,106 @@ func TestPhaseSteps(t *testing.T) {
 	var none *phaseRun
 	none.beginTeardown().beginStep("x").end()
 	(&phaseRun{}).beginTeardown().end()
+}
+
+// A profiled phase samples the engine's Go GC while it runs: the CPU its GC
+// used in each stretch, and its heap and scan sizes.
+func TestPhaseSamplesGoRuntime(t *testing.T) {
+	wcprof.EnsureRecorder()
+	ctx := wcprof.ContextWithProfiling(context.Background())
+	srv := &Server{}
+	p := srv.beginSessionPhase(ctx, "phase-gc-session")
+	require.NotNil(t, p)
+	var keep [][]byte
+	for range 5 {
+		keep = append(keep, make([]byte, 8<<20))
+		runtime.GC()
+		time.Sleep(machineSampleInterval)
+	}
+	p.end(srv)
+	runtime.KeepAlive(keep)
+
+	var buf bytes.Buffer
+	require.NoError(t, wcprof.Active().WriteDump(&buf, false))
+	header, events, err := wcprof.ReadDump(&buf)
+	require.NoError(t, err)
+	var samples []wcprof.DumpEvent
+	for _, ev := range events {
+		if ev.Type == wcprof.DumpTypeUsage && ev.OpID == p.op.ID() && header.Strings[ev.ClassID] == UsageScopeGoRuntimeSample {
+			samples = append(samples, ev)
+		}
+	}
+	require.GreaterOrEqual(t, len(samples), 2, "samples while it ran, and the last at its end")
+	var gcCPU int64
+	for _, s := range samples {
+		gcCPU += s.GCAssistUS + s.GCDedicatedUS + s.GCIdleUS + s.GCPauseUS
+		require.Positive(t, s.HeapGoalBytes, "%+v", s)
+		require.Positive(t, s.ScanStackBytes, "%+v", s)
+	}
+	require.Positive(t, gcCPU, "five forced GCs used no GC CPU: %+v", samples)
+	last := samples[len(samples)-1]
+	require.GreaterOrEqual(t, last.HeapLiveBytes, int64(40<<20), "40 MiB kept live: %+v", last)
+}
+
+// A profiled phase samples the engine process's CPU while it runs: stretches
+// that together cover the CPU it used, so a window of the phase can sum them.
+func TestPhaseSamplesEngineProcessCPU(t *testing.T) {
+	wcprof.EnsureRecorder()
+	ctx := wcprof.ContextWithProfiling(context.Background())
+	srv := &Server{}
+	p := srv.beginSessionPhase(ctx, "phase-process-session")
+	require.NotNil(t, p)
+	// Burn a measured 300 ms of CPU, however long that takes under load.
+	before, ok := readProcessCPU()
+	require.True(t, ok)
+	var burned int64
+	for burned < 300_000 {
+		burnCPU(50 * time.Millisecond)
+		now, _ := readProcessCPU()
+		burned = now.CPUUserUS + now.CPUSystemUS - before.CPUUserUS - before.CPUSystemUS
+	}
+	// A sample taken while it ran, besides the last at its end.
+	for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(machineSampleInterval) {
+		var buf bytes.Buffer
+		require.NoError(t, wcprof.Active().WriteDump(&buf, false))
+		header, events, err := wcprof.ReadDump(&buf)
+		require.NoError(t, err)
+		sampledYet := false
+		for _, ev := range events {
+			if ev.Type == wcprof.DumpTypeUsage && ev.OpID == p.op.ID() && header.Strings[ev.ClassID] == UsageScopeEngineProcessSample {
+				sampledYet = true
+			}
+		}
+		if sampledYet {
+			break
+		}
+		require.True(t, time.Now().Before(deadline), "the running phase took no samples")
+	}
+	p.end(srv)
+
+	var buf bytes.Buffer
+	require.NoError(t, wcprof.Active().WriteDump(&buf, false))
+	header, events, err := wcprof.ReadDump(&buf)
+	require.NoError(t, err)
+	var sampled int64
+	var n int
+	var total wcprof.DumpEvent
+	for _, ev := range events {
+		if ev.Type != wcprof.DumpTypeUsage || ev.OpID != p.op.ID() {
+			continue
+		}
+		switch header.Strings[ev.ClassID] {
+		case UsageScopeEngineProcessSample:
+			sampled += ev.CPUUserUS + ev.CPUSystemUS
+			n++
+		case UsageScopeEngineProcess:
+			total = ev
+		}
+	}
+	require.GreaterOrEqual(t, n, 2, "samples while it ran, and the last at its end")
+	// The samples cover the phase from its first reading to the last
+	// sample, so they hold the CPU burned in between, and no more than the
+	// whole-phase reading, taken after the last sample.
+	require.GreaterOrEqual(t, sampled, burned, "%d us burned, %d us sampled", burned, sampled)
+	require.LessOrEqual(t, sampled, total.CPUUserUS+total.CPUSystemUS, "samples beyond the phase's total")
 }

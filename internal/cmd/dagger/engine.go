@@ -223,6 +223,10 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 	params.GitRemote, params.WorkspacePath = cloudWorkspace(ctx, params.Workspace)
 
 	params.Profile = profileFlag
+	if len(profileEBPFFlag) > 0 && !profileFlag {
+		return params, errors.New("--profile-ebpf needs --profile")
+	}
+	params.ProfileEBPF = profileEBPFFlag
 
 	params.CloudURLCallback = func(ctx context.Context, url string, msg string, logged bool) {
 		Frontend.SetCloudURL(ctx, url, msg, logged)
