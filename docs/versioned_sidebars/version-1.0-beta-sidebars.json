@@ -235,6 +235,7 @@
                 "reference/api/llm-token-usage",
                 "reference/api/module",
                 "reference/api/module-config-client",
+                "reference/api/module-naming",
                 "reference/api/module-source",
                 "reference/api/naming-term",
                 "reference/api/node",

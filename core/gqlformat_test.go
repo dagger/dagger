@@ -183,6 +183,11 @@ func TestModuleMainObjectSpelling(t *testing.T) {
 			main, ok := mod.MainObject()
 			require.True(t, ok)
 			require.Equal(t, tc.mainType, main.OriginalName)
+			// ModuleSource.naming finds the same one from the names alone.
+			name, ok, err := moduleNamingFor(cutVersion, tc.module, tc.module).MainObject([]string{"Helper", tc.mainType})
+			require.NoError(t, err)
+			require.True(t, ok)
+			require.Equal(t, tc.mainType, name)
 
 			legacy := &Module{NameField: tc.module, OriginalName: tc.module, ObjectDefs: objects("Helper", tc.mainType),
 				SourceOverrides: &SourceOverrides{EngineVersion: "v0.21.9"}}
@@ -190,6 +195,9 @@ func TestModuleMainObjectSpelling(t *testing.T) {
 			// The legacy rules find it exactly when strcase normalizes both
 			// alike, as they always did.
 			require.Equal(t, strcase.ToCamel(tc.mainType) == strcase.ToCamel(tc.module), ok)
+			_, namingOK, err := moduleNamingFor("v0.21.9", tc.module, tc.module).MainObject([]string{"Helper", tc.mainType})
+			require.NoError(t, err)
+			require.Equal(t, ok, namingOK)
 		})
 	}
 
@@ -534,11 +542,15 @@ func TestNamerCLINamePatterns(t *testing.T) {
 	}
 }
 
+// A function is named like a field, by either rules: a loadFooFromID
+// function gets no exception, unlike the core loaders (load<Type>FromID),
+// which aren't module functions.
 func TestLoadFromIDFunctionName(t *testing.T) {
 	t.Parallel()
 
 	for _, namer := range []Namer{LegacyNamer, LatestNamer} {
-		require.Equal(t, "loadFooFromID", namer.NewFunction("loadFooFromID", dagql.ObjectResult[*TypeDef]{}).Name)
+		require.Equal(t, "loadFooFromId", namer.NewFunction("loadFooFromID", dagql.ObjectResult[*TypeDef]{}).Name)
+		require.Equal(t, namer.FieldName("loadFooFromID"), namer.NewFunction("loadFooFromID", dagql.ObjectResult[*TypeDef]{}).Name)
 	}
 }
 

@@ -16641,6 +16641,147 @@ func (r *ModuleConfigClient) AsNode() Node {
 	}
 }
 
+// The names the engine gives a module's own declarations, by the naming rules of the version the module is named by.
+//
+// Every list-taking field answers in input order.
+type ModuleNaming struct {
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	id         *ID
+	mainObject *string
+}
+
+func (r *ModuleNaming) WithGraphQLQuery(q *querybuilder.Selection) *ModuleNaming {
+	return &ModuleNaming{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// The schema names of enum members this module declares, in input order: SCREAMING_SNAKE_CASE.
+//
+// A name already written in GraphQL's enum member convention (HTTP2, P_256) is kept as it is. With the engine's identifier naming rules, Arm64 is ARM64 and GitHub is GITHUB; with the legacy strcase rules, Arm64 is ARM_64.
+//
+// Errors on a name the module's naming rules can't parse (non-ASCII, no letters or digits, or over 256 bytes). The legacy rules name anything.
+func (r *ModuleNaming) EnumMemberNames(ctx context.Context, names []string) ([]string, error) {
+	q := r.query.Select("enumMemberNames")
+	q = q.Arg("names", names)
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The schema names of functions, object fields and function arguments this module declares, including interface functions, in input order.
+//
+// With the engine's identifier naming rules, acronyms are written like words: getURL is getUrl, baseURL is baseUrl, HTTPClient is httpClient. With the legacy strcase rules, HTTPClient is httpclient and e2eTest is e2ETest.
+//
+// Errors on a name the module's naming rules can't parse (non-ASCII, no letters or digits, or over 256 bytes). The legacy rules name anything.
+func (r *ModuleNaming) FieldNames(ctx context.Context, names []string) ([]string, error) {
+	q := r.query.Select("fieldNames")
+	q = q.Arg("names", names)
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this ModuleNaming.
+func (r *ModuleNaming) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *ModuleNaming) XXX_GraphQLType() string {
+	return "ModuleNaming"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ModuleNaming) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *ModuleNaming) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *ModuleNaming) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Which of the candidates, the names of objects this module declares, the engine takes as the module's main object; null if none.
+//
+// The engine finds the main object by the module's name, in any casing: the first candidate, in input order, whose name normalizes to the same type name as the module's (K8STools for module k8s-tools, with the engine's identifier naming rules). Failing that, with the engine's identifier naming rules only, the only candidate spelled the same once lowercased without word boundaries (Sha256Sum for module sha256sum); several such candidates are ambiguous, and give null.
+//
+// Errors on a name the module's naming rules can't parse (non-ASCII, no letters or digits, or over 256 bytes). The legacy rules name anything.
+func (r *ModuleNaming) MainObject(ctx context.Context, candidates []string) (string, error) {
+	if r.mainObject != nil {
+		return *r.mainObject, nil
+	}
+	q := r.query.Select("mainObject")
+	q = q.Arg("candidates", candidates)
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The schema names of objects, interfaces and enums this module declares, as the engine installs them: namespaced under the module's name, in input order.
+//
+// A name is prefixed with the module's name unless it already starts with the module's name on a word boundary. With the engine's identifier naming rules: HttpClient in module my-mod is MyModHTTPClient; Postman in module post is PostPostman, while PostMan stays PostMan; K8STools in module k8s-tools is K8sTools, the module's own name. With the legacy strcase rules, HttpClient in module my-mod is MyModHttpClient.
+//
+// Errors on a name the module's naming rules can't parse (non-ASCII, no letters or digits, or over 256 bytes). The legacy rules name anything.
+func (r *ModuleNaming) TypeNames(ctx context.Context, names []string) ([]string, error) {
+	q := r.query.Select("typeNames")
+	q = q.Arg("names", names)
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this ModuleNaming as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *ModuleNaming) AsNode() Node {
+	return &NodeClient{
+		query:     r.query,
+		refetchID: r.refetchID,
+	}
+}
+
 // The source needed to load and run a module, along with any metadata about the source such as versions/urls/etc.
 type ModuleSource struct {
 	query *querybuilder.Selection
@@ -17073,6 +17214,24 @@ func (r *ModuleSource) ModuleOriginalName(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// The names the engine gives this module's own declarations, by the naming rules of the version the module is named by: its engine version, capped at the engine's own.
+//
+// Modules declaring a version before the identifier casing cut get the legacy strcase names; later ones get the engine's identifier naming rules.
+//
+// For SDK codegen, which must reproduce these names before the module is loaded: this reads only the source's name, original name and engine version, so it answers before the module's entrypoint is generated.
+//
+// It answers for the module under its own name (moduleName). A workspace or toolchain that loads the module under another name namespaces its types under that name instead, which this doesn't reflect.
+//
+// Experimental: Identifier casing APIs are likely to change.
+func (r *ModuleSource) Naming() *ModuleNaming {
+	q := r.query.Select("naming")
+
+	return &ModuleNaming{
+		query:     q,
+		refetchID: r.refetchID,
+	}
 }
 
 // The original subpath used when instantiating this module source, relative to the context directory.

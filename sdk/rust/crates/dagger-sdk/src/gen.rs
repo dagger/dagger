@@ -14909,6 +14909,124 @@ impl Node for ModuleConfigClient {
     }
 }
 #[derive(Clone)]
+pub struct ModuleNaming {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for ModuleNaming {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for ModuleNaming {
+    fn graphql_type() -> &'static str {
+        "ModuleNaming"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl ModuleNaming {
+    /// A unique identifier for this ModuleNaming.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The schema names of objects, interfaces and enums this module declares, as the engine installs them: namespaced under the module's name, in input order.
+    /// A name is prefixed with the module's name unless it already starts with the module's name on a word boundary. With the engine's identifier naming rules: HttpClient in module my-mod is MyModHTTPClient; Postman in module post is PostPostman, while PostMan stays PostMan; K8STools in module k8s-tools is K8sTools, the module's own name. With the legacy strcase rules, HttpClient in module my-mod is MyModHttpClient.
+    /// Errors on a name the module's naming rules can't parse (non-ASCII, no letters or digits, or over 256 bytes). The legacy rules name anything.
+    ///
+    /// # Arguments
+    ///
+    /// * `names` - The type names as the module's source declares them.
+    pub async fn type_names(
+        &self,
+        names: Vec<impl Into<String>>,
+    ) -> Result<Vec<String>, DaggerError> {
+        let mut query = self.selection.select("typeNames");
+        query = query.arg(
+            "names",
+            names.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The schema names of functions, object fields and function arguments this module declares, including interface functions, in input order.
+    /// With the engine's identifier naming rules, acronyms are written like words: getURL is getUrl, baseURL is baseUrl, HTTPClient is httpClient. With the legacy strcase rules, HTTPClient is httpclient and e2eTest is e2ETest.
+    /// Errors on a name the module's naming rules can't parse (non-ASCII, no letters or digits, or over 256 bytes). The legacy rules name anything.
+    ///
+    /// # Arguments
+    ///
+    /// * `names` - The function, field and argument names as the module's source declares them.
+    pub async fn field_names(
+        &self,
+        names: Vec<impl Into<String>>,
+    ) -> Result<Vec<String>, DaggerError> {
+        let mut query = self.selection.select("fieldNames");
+        query = query.arg(
+            "names",
+            names.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The schema names of enum members this module declares, in input order: SCREAMING_SNAKE_CASE.
+    /// A name already written in GraphQL's enum member convention (HTTP2, P_256) is kept as it is. With the engine's identifier naming rules, Arm64 is ARM64 and GitHub is GITHUB; with the legacy strcase rules, Arm64 is ARM_64.
+    /// Errors on a name the module's naming rules can't parse (non-ASCII, no letters or digits, or over 256 bytes). The legacy rules name anything.
+    ///
+    /// # Arguments
+    ///
+    /// * `names` - The enum member names as the module's source declares them.
+    pub async fn enum_member_names(
+        &self,
+        names: Vec<impl Into<String>>,
+    ) -> Result<Vec<String>, DaggerError> {
+        let mut query = self.selection.select("enumMemberNames");
+        query = query.arg(
+            "names",
+            names.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Which of the candidates, the names of objects this module declares, the engine takes as the module's main object; null if none.
+    /// The engine finds the main object by the module's name, in any casing: the first candidate, in input order, whose name normalizes to the same type name as the module's (K8STools for module k8s-tools, with the engine's identifier naming rules). Failing that, with the engine's identifier naming rules only, the only candidate spelled the same once lowercased without word boundaries (Sha256Sum for module sha256sum); several such candidates are ambiguous, and give null.
+    /// Errors on a name the module's naming rules can't parse (non-ASCII, no letters or digits, or over 256 bytes). The legacy rules name anything.
+    ///
+    /// # Arguments
+    ///
+    /// * `candidates` - The object names as the module's source declares them.
+    pub async fn main_object(
+        &self,
+        candidates: Vec<impl Into<String>>,
+    ) -> Result<String, DaggerError> {
+        let mut query = self.selection.select("mainObject");
+        query = query.arg(
+            "candidates",
+            candidates
+                .into_iter()
+                .map(|i| i.into())
+                .collect::<Vec<String>>(),
+        );
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for ModuleNaming {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
 pub struct ModuleSource {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -15574,6 +15692,18 @@ impl ModuleSource {
     pub async fn kind(&self) -> Result<ModuleSourceKind, DaggerError> {
         let query = self.selection.select("kind");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// The names the engine gives this module's own declarations, by the naming rules of the version the module is named by: its engine version, capped at the engine's own.
+    /// Modules declaring a version before the identifier casing cut get the legacy strcase names; later ones get the engine's identifier naming rules.
+    /// For SDK codegen, which must reproduce these names before the module is loaded: this reads only the source's name, original name and engine version, so it answers before the module's entrypoint is generated.
+    /// It answers for the module under its own name (moduleName). A workspace or toolchain that loads the module under another name namespaces its types under that name instead, which this doesn't reflect.
+    pub fn naming(&self) -> ModuleNaming {
+        let query = self.selection.select("naming");
+        ModuleNaming {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
 }
 impl Node for ModuleSource {
