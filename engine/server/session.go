@@ -1977,20 +1977,32 @@ func (srv *Server) getOrInitClient(
 
 	// get or initialize the session as a whole
 
-	srv.daggerSessionsMu.Lock()
+	// Every request of a session looks it up here, so an existing session is
+	// found under the read lock, and only a new one takes the write lock.
+	srv.daggerSessionsMu.RLock()
 	if srv.isShuttingDown() {
-		srv.daggerSessionsMu.Unlock()
+		srv.daggerSessionsMu.RUnlock()
 		return nil, nil, errServerShuttingDown
 	}
-	// A newly constructed session is still unreachable when lifecycleMu is
-	// acquired, so this is the one unpublished-object exception to the rule that
-	// lifecycleMu and daggerSessionsMu are not nested.
-	sess, createdSession, err := srv.getOrCreateSessionLocked(sessionID, clientID)
-	if err != nil {
+	sess := srv.daggerSessions[sessionID]
+	srv.daggerSessionsMu.RUnlock()
+	createdSession := false
+	if sess == nil {
+		srv.daggerSessionsMu.Lock()
+		if srv.isShuttingDown() {
+			srv.daggerSessionsMu.Unlock()
+			return nil, nil, errServerShuttingDown
+		}
+		// A newly constructed session is still unreachable when lifecycleMu is
+		// acquired, so this is the one unpublished-object exception to the rule that
+		// lifecycleMu and daggerSessionsMu are not nested.
+		sess, createdSession, err = srv.getOrCreateSessionLocked(sessionID, clientID)
+		if err != nil {
+			srv.daggerSessionsMu.Unlock()
+			return nil, nil, err
+		}
 		srv.daggerSessionsMu.Unlock()
-		return nil, nil, err
 	}
-	srv.daggerSessionsMu.Unlock()
 
 	if !createdSession {
 		// Fast, lock-free check: if the session is already a removed tombstone,
