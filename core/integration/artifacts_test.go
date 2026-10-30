@@ -132,6 +132,31 @@ func (ArtifactsSuite) TestMetadataAndFilters(ctx context.Context, t *testctx.T) 
 	require.ErrorContains(t, err, "dag+container:// matches 3 artifacts:\ndag://?container=base\ndag://?container=broken\ndag://?container=consumer/base")
 }
 
+// A Workspace the caller passes in value's arguments must take precedence over
+// the artifact's own, even for a required Workspace argument that would
+// otherwise be bound to it.
+func (ArtifactsSuite) TestValueExplicitWorkspace(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	source := artifactSource(c)
+	wsID, err := source.AsWorkspace().ID(ctx)
+	require.NoError(t, err)
+	explicitID, err := source.WithNewFile("marker.txt", "explicit").AsWorkspace().ID(ctx)
+	require.NoError(t, err)
+	args, err := json.Marshal(map[string]any{"ws": explicitID})
+	require.NoError(t, err)
+	got, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!, $args: JSON!) {
+  node(id: $ws) { ... on Workspace { artifacts { filterPath(path: ["marker"]) { one {
+    bound: value { ... on File { contents } }
+    explicit: value(arguments: $args) { ... on File { contents } }
+  } } } } }
+}`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID, "args": string(args)}})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"node":{"artifacts":{"filterPath":{"one":{
+  "bound":{"contents":"configured:original"},
+  "explicit":{"contents":"configured:explicit"}
+}}}}}`, string(*got))
+}
+
 func (ArtifactsSuite) TestURI(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	wsID, err := artifactSource(c).AsWorkspace().ID(ctx)
