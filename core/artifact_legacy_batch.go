@@ -7,6 +7,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 // TODO: Remove legacy collection check batching after modules have migrated to
@@ -31,9 +32,10 @@ func legacyCollectionChecks(node *ModTreeNode) bool {
 }
 
 // EvaluationItems keeps listing independent of execution planning. Older
-// modules declare a check on both a collection and its items. Execute the
-// collection check once with the selected keys, including exclusions, rather
-// than executing both declarations. New modules keep per-item execution.
+// modules declare a check or generator on both a collection and its items.
+// Execute the collection operation once with the selected keys, including
+// exclusions, rather than executing both declarations. A generator's stale
+// check follows its generator. New modules keep per-item execution.
 func (a *Artifacts) EvaluationItems(ctx context.Context) ([]*Artifact, error) {
 	expanded, err := a.Expand(ctx)
 	if err != nil {
@@ -43,16 +45,21 @@ func (a *Artifacts) EvaluationItems(ctx context.Context) ([]*Artifact, error) {
 }
 
 func (a *Artifacts) legacyBatchChecks(ctx context.Context) ([]*Artifact, error) {
-	groups := map[string]*Artifact{}
+	type batchGroup struct {
+		artifact *Artifact
+		receiver *ModTreeNode
+	}
+	groups := map[string]batchGroup{}
 	var result []*Artifact
 	for _, entry := range a.Entries {
-		planned, dimension, key, err := legacyBatchCheck(ctx, entry)
+		planned, receiver, dimension, key, err := legacyBatchCheck(ctx, entry)
 		if err != nil {
 			return nil, err
 		}
 		if planned == nil {
-			// A collection check that matches its item check is represented by
-			// those selected items. No selected items means no batch to run.
+			// A collection operation that matches its item operation is
+			// represented by those selected items. No selected items means no
+			// batch to run.
 			continue
 		}
 		if dimension == "" {
@@ -78,67 +85,111 @@ func (a *Artifacts) legacyBatchChecks(ctx context.Context) ([]*Artifact, error) 
 			}
 			identity += fmt.Sprintf(":context=%d", id.EngineResultID())
 		}
-		group := groups[identity]
-		if group == nil {
-			group = planned
+		group, ok := groups[identity]
+		if !ok {
+			group = batchGroup{artifact: planned, receiver: receiver}
 			groups[identity] = group
-			result = append(result, group)
+			result = append(result, planned)
 		}
-		if !slices.Contains(group.Node.LegacyBatchKeys, key) {
-			group.Node.LegacyBatchKeys = append(group.Node.LegacyBatchKeys, key)
-			group.DimensionKeys = append(group.DimensionKeys, &ArtifactDimensionKey{Dimension: dimension, Key: key})
+		if !slices.Contains(group.receiver.LegacyBatchKeys, key) {
+			group.receiver.LegacyBatchKeys = append(group.receiver.LegacyBatchKeys, key)
+			group.artifact.DimensionKeys = append(group.artifact.DimensionKeys, &ArtifactDimensionKey{Dimension: dimension, Key: key})
 		}
 	}
 	for _, group := range groups {
-		group.TypeKeyName = a.typeKeyName(group)
+		group.artifact.TypeKeyName = a.typeKeyName(group.artifact)
 	}
 	return result, nil
 }
 
-func legacyBatchCheck(ctx context.Context, entry *Artifact) (*Artifact, string, string, error) {
+// legacyBatchTarget returns the operation an entry runs and its directive. A
+// generator's stale check runs its generator, so it batches with it.
+func legacyBatchTarget(entry *Artifact) (*ModTreeNode, string) {
 	node := entry.Node
-	if entry.TypeName != "Check" || node == nil || node.Parent == nil ||
-		!slices.Contains(node.Directives, "check") || !legacyCollectionChecks(node) {
-		return entry, "", "", nil
+	if node == nil || node.Parent == nil {
+		return nil, ""
 	}
-	item := node.Parent
-	if item.CollectionDimension == nil {
-		if legacyCollectionHasItemCheck(item, node.Name) {
-			return nil, "", "", nil
+	switch entry.TypeName {
+	case "Check":
+		// A generator's stale check is either the Generator's own stale field
+		// (itself a check) or the generator's node at the stale path.
+		if node.Name == "stale" && node.Parent.Parent != nil && slices.Contains(node.Parent.Directives, "generate") {
+			return node.Parent, "generate"
 		}
-		return entry, "", "", nil
+		if slices.Contains(node.Directives, "generate") {
+			return node, "generate"
+		}
+		if slices.Contains(node.Directives, "check") {
+			return node, "check"
+		}
+	case "Generator":
+		if slices.Contains(node.Directives, "generate") {
+			return node, "generate"
+		}
+	}
+	return nil, ""
+}
+
+func legacyBatchCheck(ctx context.Context, entry *Artifact) (*Artifact, *ModTreeNode, string, string, error) {
+	target, directive := legacyBatchTarget(entry)
+	if target == nil || !legacyCollectionChecks(target) {
+		return entry, nil, "", "", nil
+	}
+	item := target.Parent
+	if item.CollectionDimension == nil {
+		if legacyCollectionHasItemOperation(item, target.Name, directive) {
+			return nil, nil, "", "", nil
+		}
+		return entry, nil, "", "", nil
 	}
 	collection := item.Parent
 	if collection == nil || collection.ObjectType() == nil {
-		return entry, "", "", nil
+		return entry, nil, "", "", nil
 	}
-	fn, ok := collection.ObjectType().FunctionByName(node.Name)
-	if !ok || !fn.IsCheck {
-		return entry, "", "", nil
+	fn, ok := collection.ObjectType().FunctionByName(target.Name)
+	if !ok || !functionHasDirective(fn, directive) {
+		return entry, nil, "", "", nil
 	}
-	replacement, err := collection.Child(ctx, node.Name)
+	replacement, err := collection.Child(ctx, target.Name)
 	if err != nil {
-		return nil, "", "", err
+		return nil, nil, "", "", err
 	}
-	if replacement == nil || !slices.Contains(replacement.Directives, "check") ||
-		replacement.Type.Self().ToType().Name() != node.Type.Self().ToType().Name() {
-		return entry, "", "", nil
+	if replacement == nil || !slices.Contains(replacement.Directives, directive) {
+		return entry, nil, "", "", nil
+	}
+	replacement = projectArtifactNode(replacement)
+	if replacement.Type.Self().ToType().Name() != target.Type.Self().ToType().Name() {
+		return entry, nil, "", "", nil
 	}
 	if item.CollectionKey == nil {
-		return nil, "", "", fmt.Errorf("legacy check batch %q has no selected key", item.CollectionDimension.Identifier)
+		return nil, nil, "", "", fmt.Errorf("legacy batch %q has no selected key", item.CollectionDimension.Identifier)
 	}
 	planned := *entry
 	// Retain the artifact's full path and selected view. Only its receiver
 	// changes from one item to the enclosing collection.
-	planned.Node = replacement
+	if target == entry.Node {
+		planned.Node = replacement
+	} else {
+		stale := *entry.Node
+		stale.Parent = replacement
+		planned.Node = &stale
+	}
 	result := planned.Clone()
 	result.DimensionKeys = slices.DeleteFunc(slices.Clone(entry.DimensionKeys), func(key *ArtifactDimensionKey) bool {
 		return key.Dimension == item.CollectionDimension.Identifier
 	})
-	return result, item.CollectionDimension.Identifier, *item.CollectionKey, nil
+	receiver := result.Node
+	if target != entry.Node {
+		receiver = receiver.Parent
+	}
+	return result, receiver, item.CollectionDimension.Identifier, *item.CollectionKey, nil
 }
 
-func legacyCollectionHasItemCheck(collection *ModTreeNode, name string) bool {
+func functionHasDirective(fn *Function, directive string) bool {
+	return slices.ContainsFunc(fn.Directives(), func(d *ast.Directive) bool { return d.Name == directive })
+}
+
+func legacyCollectionHasItemOperation(collection *ModTreeNode, name, directive string) bool {
 	obj := collection.ObjectType()
 	if obj == nil || obj.Collection == nil || !obj.Collection.Enabled {
 		return false
@@ -160,7 +211,7 @@ func legacyCollectionHasItemCheck(collection *ModTreeNode, name string) bool {
 	}
 	fn, ok := item.Self().AsObject.Value.Self().FunctionByName(name)
 	probe := &ModTreeNode{Parent: &ModTreeNode{Parent: collection, Type: item}}
-	return ok && fn.IsCheck && !probe.functionRequiresCallerArgs(fn)
+	return ok && functionHasDirective(fn, directive) && !probe.functionRequiresCallerArgs(fn)
 }
 
 func (node *ModTreeNode) legacyBatchReceiver(ctx context.Context, receiver dagql.AnyObjectResult) (dagql.AnyObjectResult, error) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/testctx"
@@ -61,6 +62,62 @@ type Case {
 			if tc.filter == "" {
 				out, err = base.With(daggerExec("check", "--check=test")).CombinedOutput(ctx)
 				require.NoError(t, err, out)
+			}
+		})
+	}
+}
+
+func (ArtifactsSuite) TestLegacyCollectionGeneratorBatching(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	for _, tc := range []struct {
+		name, version, args string
+		files                []string
+		staleChecks          int
+	}{
+		{"old full selection", "v1.0.0-beta.21", "", []string{"batch-a-b-c.txt"}, 1},
+		{"old one item", "v1.0.0-beta.21", "--view-pkg=b", []string{"batch-b.txt"}, 1},
+		{"new full selection", engine.CollectionItemChecksVersion, "", []string{"batch-a-b-c.txt", "item-a.txt", "item-b.txt", "item-c.txt"}, 4},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			source := `type View {
+  packages: Pkgs! { Pkgs(names: ["a", "b", "c"]) }
+}
+type Pkgs @collection {
+  pub names: [String!]! @keys
+  lookup(name: String!): Pkg! @get { Pkg(name: name) }
+  generate: Changeset! @generate {
+    directory.withNewFile("batch-" + names.join("-") + ".txt", "x").changes(directory)
+  }
+}
+type Pkg {
+  pub name: String!
+  generate: Changeset! @generate {
+    directory.withNewFile("item-" + name + ".txt", "x").changes(directory)
+  }
+}`
+			base := artifactViewWorkspace(t, c, source).
+				WithNewFile("view/dagger-module.toml", fmt.Sprintf("name = \"view\"\nengineVersion = %q\n[runtime]\nsource = \"dang\"\n", tc.version))
+			args := []string{"generate", "-y"}
+			if tc.args != "" {
+				args = append(args, tc.args)
+			}
+			generated := base.With(daggerExec(args...))
+			out, err := generated.CombinedOutput(ctx)
+			require.NoError(t, err, out)
+			entries, err := generated.Directory(".").Entries(ctx)
+			require.NoError(t, err)
+			var files []string
+			for _, entry := range entries {
+				if strings.HasPrefix(entry, "batch-") || strings.HasPrefix(entry, "item-") {
+					files = append(files, entry)
+				}
+			}
+			require.ElementsMatch(t, tc.files, files, out)
+			if tc.args == "" {
+				// Stale checks run their generator, so they follow the same plan.
+				out, err = base.With(daggerQuery(`{ currentWorkspace { artifacts { filterTypes(types: ["Check"]) { asChecks { sync { pass } } } } } }`)).Stdout(ctx)
+				require.NoError(t, err, out)
+				require.Equal(t, tc.staleChecks, len(regexp.MustCompile(`"pass"\s*:`).FindAllString(out, -1)), out)
 			}
 		})
 	}

@@ -970,7 +970,7 @@ func artifactValuesAs[T dagql.Typed](ctx context.Context, parent dagql.ObjectRes
 	var value T
 	typeName := value.Type().NamedType
 	field := "items"
-	if typeName == "Check" {
+	if typeName == "Check" || typeName == "Generator" {
 		field = "__evaluationItems"
 	}
 	var items dagql.ObjectResultArray[*core.Artifact]
