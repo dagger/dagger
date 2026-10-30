@@ -17,13 +17,11 @@ func (c *Cache) CapturePersistedRecord(ctx context.Context, result AnyResult) (P
 	if result == nil || result.cacheSharedResult() == nil {
 		return PersistedRecord{}, fmt.Errorf("capture persisted record: detached result")
 	}
-	record, _, err := c.captureRowRecord(ctx, result.cacheSharedResult())
-	return record, err
+	return c.captureRowRecord(ctx, result.cacheSharedResult())
 }
 
-// captureRowRecord is CapturePersistedRecord for a row, also returning the
-// revision the record describes.
-func (c *Cache) captureRowRecord(ctx context.Context, shared *sharedResult) (PersistedRecord, *capturedRowRevision, error) {
+// captureRowRecord is CapturePersistedRecord for a row.
+func (c *Cache) captureRowRecord(ctx context.Context, shared *sharedResult) (PersistedRecord, error) {
 	var record PersistedRecord
 	version, err := c.holdRowForCapture(ctx, shared, func(imported bool, offers []PersistedPartOffer, version *capturedRowRevision) error {
 		var err error
@@ -31,9 +29,9 @@ func (c *Cache) captureRowRecord(ctx context.Context, shared *sharedResult) (Per
 		return err
 	})
 	if version == nil {
-		return PersistedRecord{}, nil, err
+		return PersistedRecord{}, err
 	}
-	return record, version, err
+	return record, err
 }
 
 // describeRowParts returns the address keys of the row's locally complete
