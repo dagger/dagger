@@ -20,10 +20,32 @@ import (
 
 type Release struct {
 	Workspace *dagger.Workspace // +private
+
+	// The remote cache settings for the publish check's nested engine
+	RemoteCacheURL *dagger.Secret // +private
+	CloudURL       *dagger.Secret // +private
+	CloudToken     *dagger.Secret // +private
 }
 
-func New(ws *dagger.Workspace) *Release {
-	return &Release{Workspace: ws}
+func New(
+	ws *dagger.Workspace,
+	// The remote cache service's URL, for the publish check's nested engine to
+	// join its remote cache
+	// +optional
+	remoteCacheURL *dagger.Secret,
+	// The Dagger Cloud URL the nested engine exports its cache events to
+	// +optional
+	cloudURL *dagger.Secret,
+	// An engine token for the remote cache and Dagger Cloud
+	// +optional
+	cloudToken *dagger.Secret,
+) *Release {
+	return &Release{
+		Workspace:      ws,
+		RemoteCacheURL: remoteCacheURL,
+		CloudURL:       cloudURL,
+		CloudToken:     cloudToken,
+	}
 }
 
 type ReleaseReport struct {

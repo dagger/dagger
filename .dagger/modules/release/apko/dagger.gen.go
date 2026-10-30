@@ -713,17 +713,17 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("Publish",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Publish a built image from a YAML configuration file.").
-							WithSourceMap(dag.SourceMap("main.go", 262, 1)).
-							WithArg("config", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{Description: "Configuration file.", SourceMap: dag.SourceMap("main.go", 266, 2)}).
-							WithArg("tag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Image tag.", SourceMap: dag.SourceMap("main.go", 269, 2)}).
-							WithArg("annotations", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "OCI annotations to add. Separate with colon (key:value).", SourceMap: dag.SourceMap("main.go", 274, 2)}).
-							WithArg("arch", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Architectures to build for (e.g., x86_64,ppc64le,arm64) -- default is all, unless specified in config. Can also use 'host' to indicate arch of host this is running on.", SourceMap: dag.SourceMap("main.go", 279, 2)}).
-							WithArg("buildDate", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Date used for the timestamps of the files inside the image in RFC3339 format.", SourceMap: dag.SourceMap("main.go", 284, 2)}).
-							WithArg("keyringAppend", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Path to extra keys to include in the keyring.", SourceMap: dag.SourceMap("main.go", 289, 2)}).
-							WithArg("offline", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Do not use network to fetch packages (cache must be pre-populated).", SourceMap: dag.SourceMap("main.go", 294, 2)}).
-							WithArg("packageAppend", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Extra packages to include.", SourceMap: dag.SourceMap("main.go", 299, 2)}).
-							WithArg("repositoryAppend", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Path to extra repositories to include.", SourceMap: dag.SourceMap("main.go", 304, 2)}).
-							WithArg("vcs", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Detect and embed VCS URLs.", SourceMap: dag.SourceMap("main.go", 312, 2), DefaultValue: dagger.JSON("true")})).
+							WithSourceMap(dag.SourceMap("main.go", 268, 1)).
+							WithArg("config", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{Description: "Configuration file.", SourceMap: dag.SourceMap("main.go", 272, 2)}).
+							WithArg("tag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Image tag.", SourceMap: dag.SourceMap("main.go", 275, 2)}).
+							WithArg("annotations", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "OCI annotations to add. Separate with colon (key:value).", SourceMap: dag.SourceMap("main.go", 280, 2)}).
+							WithArg("arch", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Architectures to build for (e.g., x86_64,ppc64le,arm64) -- default is all, unless specified in config. Can also use 'host' to indicate arch of host this is running on.", SourceMap: dag.SourceMap("main.go", 285, 2)}).
+							WithArg("buildDate", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Date used for the timestamps of the files inside the image in RFC3339 format.", SourceMap: dag.SourceMap("main.go", 290, 2)}).
+							WithArg("keyringAppend", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Path to extra keys to include in the keyring.", SourceMap: dag.SourceMap("main.go", 295, 2)}).
+							WithArg("offline", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Do not use network to fetch packages (cache must be pre-populated).", SourceMap: dag.SourceMap("main.go", 300, 2)}).
+							WithArg("packageAppend", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Extra packages to include.", SourceMap: dag.SourceMap("main.go", 305, 2)}).
+							WithArg("repositoryAppend", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Path to extra repositories to include.", SourceMap: dag.SourceMap("main.go", 310, 2)}).
+							WithArg("vcs", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Detect and embed VCS URLs.", SourceMap: dag.SourceMap("main.go", 318, 2), DefaultValue: dagger.JSON("true")})).
 					WithFunction(
 						dag.Function("WithCache",
 							dag.TypeDef().WithObject("Apko")).
@@ -806,14 +806,14 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					WithField("Archs", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("config.go", 36, 2)}).
 					WithField("Packages", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("config.go", 37, 2)})).
 			WithObject(
-				dag.TypeDef().WithObject("BuildResult", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 251, 6)}).
+				dag.TypeDef().WithObject("BuildResult", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 257, 6)}).
 					WithFunction(
 						dag.Function("AsContainer",
 							dag.TypeDef().WithObject("Container")).
 							WithDescription("Import the image into a container.").
-							WithSourceMap(dag.SourceMap("main.go", 257, 1))).
-					WithField("File", dag.TypeDef().WithObject("File"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 252, 2)}).
-					WithField("Tag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 253, 2)})), nil
+							WithSourceMap(dag.SourceMap("main.go", 263, 1))).
+					WithField("File", dag.TypeDef().WithObject("File"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 258, 2)}).
+					WithField("Tag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 259, 2)})), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

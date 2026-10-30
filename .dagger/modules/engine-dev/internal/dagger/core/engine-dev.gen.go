@@ -57,6 +57,12 @@ type EngineDevContainerOpts struct {
 	GpuSupport bool
 
 	Version string
+	// The remote cache service's URL, for the engine to join its remote cache
+	RemoteCacheURL *Secret
+	// The Dagger Cloud URL the engine exports its cache events to
+	CloudURL *Secret
+	// An engine token for the remote cache and Dagger Cloud
+	CloudToken *Secret
 }
 
 // Build the engine container
@@ -74,6 +80,18 @@ func (r *EngineDev) Container(opts ...EngineDevContainerOpts) *Container {
 		// `version` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Version) {
 			q = q.Arg("version", opts[i].Version)
+		}
+		// `remoteCacheUrl` optional argument
+		if !querybuilder.IsZeroValue(opts[i].RemoteCacheURL) {
+			q = q.Arg("remoteCacheUrl", opts[i].RemoteCacheURL)
+		}
+		// `cloudUrl` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CloudURL) {
+			q = q.Arg("cloudUrl", opts[i].CloudURL)
+		}
+		// `cloudToken` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CloudToken) {
+			q = q.Arg("cloudToken", opts[i].CloudToken)
 		}
 	}
 
@@ -325,6 +343,12 @@ type EngineDevServiceOpts struct {
 	SharedCache bool
 
 	Metrics bool
+	// The remote cache service's URL, for the engine to join its remote cache
+	RemoteCacheURL *Secret
+	// The Dagger Cloud URL the engine exports its cache events to
+	CloudURL *Secret
+	// An engine token for the remote cache and Dagger Cloud
+	CloudToken *Secret
 }
 
 // Create a test engine service
@@ -342,6 +366,18 @@ func (r *EngineDev) Service(name string, opts ...EngineDevServiceOpts) *Service 
 		// `metrics` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Metrics) {
 			q = q.Arg("metrics", opts[i].Metrics)
+		}
+		// `remoteCacheUrl` optional argument
+		if !querybuilder.IsZeroValue(opts[i].RemoteCacheURL) {
+			q = q.Arg("remoteCacheUrl", opts[i].RemoteCacheURL)
+		}
+		// `cloudUrl` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CloudURL) {
+			q = q.Arg("cloudUrl", opts[i].CloudURL)
+		}
+		// `cloudToken` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CloudToken) {
+			q = q.Arg("cloudToken", opts[i].CloudToken)
 		}
 	}
 	q = q.Arg("name", name)
@@ -393,6 +429,12 @@ type EngineDevTestOpts struct {
 	Ebpf bool
 	// Elapsed times after the test runner starts at which to dump engine goroutines
 	DumpAfter []string
+	// The remote cache service's URL, for the test engine to join its remote cache
+	RemoteCacheURL *Secret
+	// The Dagger Cloud URL the test engine exports its cache events to
+	CloudURL *Secret
+	// An engine token for the remote cache and Dagger Cloud
+	CloudToken *Secret
 }
 
 // Run core engine tests
@@ -457,6 +499,18 @@ func (r *EngineDev) Test(ctx context.Context, opts ...EngineDevTestOpts) error {
 		// `dumpAfter` optional argument
 		if !querybuilder.IsZeroValue(opts[i].DumpAfter) {
 			q = q.Arg("dumpAfter", opts[i].DumpAfter)
+		}
+		// `remoteCacheUrl` optional argument
+		if !querybuilder.IsZeroValue(opts[i].RemoteCacheURL) {
+			q = q.Arg("remoteCacheUrl", opts[i].RemoteCacheURL)
+		}
+		// `cloudUrl` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CloudURL) {
+			q = q.Arg("cloudUrl", opts[i].CloudURL)
+		}
+		// `cloudToken` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CloudToken) {
+			q = q.Arg("cloudToken", opts[i].CloudToken)
 		}
 	}
 

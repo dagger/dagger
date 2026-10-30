@@ -55,6 +55,11 @@ type publishCheckEnv struct {
 
 	platform        dagger.Platform
 	platformArchive string
+
+	// The nested release engine's remote cache settings, if any
+	remoteCacheURL *dagger.Secret
+	cloudURL       *dagger.Secret
+	cloudToken     *dagger.Secret
 }
 
 // Exercise the release publish path against local mock endpoints.
@@ -73,6 +78,9 @@ func (r *Release) PublishWithMockEndpoints(
 	if err != nil {
 		return err
 	}
+	env.remoteCacheURL = r.RemoteCacheURL
+	env.cloudURL = r.CloudURL
+	env.cloudToken = r.CloudToken
 
 	engine, err := env.releaseEngine(ctx)
 	if err != nil {
@@ -333,36 +341,7 @@ func newPublishCheckEnv(ctx context.Context, source *dagger.Directory, ws *dagge
 		platformArchive: platformArchive,
 	}
 
-	gitSetup := dag.Container().
-		From("alpine:latest").
-		WithExec([]string{"apk", "add", "git"}).
-		WithDirectory("/root/repo", source).
-		WithNewFile("/root/create-release-repo.sh", `#!/bin/sh
-set -e -u -x
-
-git config --global user.email "test@dagger.io"
-git config --global user.name "Test User"
-git config --global init.defaultBranch main
-
-cd /root/repo
-rm -rf .git
-git init
-git checkout -B main
-find . -mindepth 2 -name .git -print -exec rm -rf {} +
-git add -A
-git commit -m "initial release source"
-
-mkdir -p /root/srv
-git clone --no-local --bare . /root/srv/repo
-for repo in repo go-sdk.git php-sdk.git; do
-	if [ "$repo" != "repo" ]; then
-		git init --bare "/root/srv/$repo"
-	fi
-	git -C "/root/srv/$repo" config http.receivepack true
-	git -C "/root/srv/$repo" update-server-info
-done
-`).
-		WithExec([]string{"sh", "/root/create-release-repo.sh"})
+	gitSetup := releaseGitSetup(source, "")
 
 	env.gitWorktree = gitSetup.Directory("/root/repo")
 	gitDir := gitSetup.Directory("/root/srv")
@@ -467,7 +446,11 @@ func (env *publishCheckEnv) releaseEngine(ctx context.Context) (*dagger.Service,
 
 	// This replaces engine-dev's default engine.json, so keep its docker.io
 	// mirror: without it the release engine pulls straight from Docker Hub.
-	engineCtr := dev.Container().
+	engineCtr := dev.Container(dagger.EngineDevContainerOpts{
+		RemoteCacheURL: env.remoteCacheURL,
+		CloudURL:       env.cloudURL,
+		CloudToken:     env.cloudToken,
+	}).
 		WithNewFile("/etc/dagger/engine.json", `{
   "registries": {
     "docker.io": {
@@ -2287,6 +2270,91 @@ func requireNotContains(haystack, needle, msg string) error {
 	}
 	return nil
 }
+
+// Verify that the publish check's release git repo gets the same commit
+// every time it is created from the same source. The nested builds stamp
+// that commit, so a commit that changed with the clock would change their
+// cache keys on every run.
+// +check
+func (r *Release) PublishCheckRepoIsDeterministic(
+	ctx context.Context,
+	// Source tree to commit.
+	// +defaultPath="/"
+	source *dagger.Directory,
+) error {
+	source = source.WithoutDirectory(".git")
+	first, err := releaseRepoCommit(ctx, source)
+	if err != nil {
+		return err
+	}
+	// Commit dates have a resolution of one second.
+	time.Sleep(1100 * time.Millisecond)
+	second, err := releaseRepoCommit(ctx, source)
+	if err != nil {
+		return err
+	}
+	if first != second {
+		return fmt.Errorf("creating the release repo twice from the same source gave commits %s and %s", first, second)
+	}
+	return nil
+}
+
+// releaseRepoCommit creates the release git repo from source, bypassing the
+// cache, and returns its commit.
+func releaseRepoCommit(ctx context.Context, source *dagger.Directory) (string, error) {
+	commit, err := releaseGitSetup(source, randomID()).
+		WithExec([]string{"git", "-C", "/root/repo", "rev-parse", "HEAD"}).
+		Stdout(ctx)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(commit), nil
+}
+
+// releaseGitSetup commits source to a new git repo, and serves it with empty
+// go-sdk and php-sdk repos from /root/srv. A non-empty cacheBuster makes the
+// setup run again instead of hitting the cache.
+func releaseGitSetup(source *dagger.Directory, cacheBuster string) *dagger.Container {
+	ctr := dag.Container().
+		From("alpine:latest").
+		WithExec([]string{"apk", "add", "git"}).
+		WithDirectory("/root/repo", source).
+		WithNewFile("/root/create-release-repo.sh", createReleaseRepoScript)
+	if cacheBuster != "" {
+		ctr = ctr.WithEnvVariable("RELEASE_REPO_CACHE_BUSTER", cacheBuster)
+	}
+	return ctr.WithExec([]string{"sh", "/root/create-release-repo.sh"})
+}
+
+const createReleaseRepoScript = `#!/bin/sh
+set -e -u -x
+
+git config --global user.email "test@dagger.io"
+git config --global user.name "Test User"
+git config --global init.defaultBranch main
+
+# Nested builds stamp the commit, so it must depend only on the tree.
+export GIT_AUTHOR_DATE="2000-01-01T00:00:00Z"
+export GIT_COMMITTER_DATE="2000-01-01T00:00:00Z"
+
+cd /root/repo
+rm -rf .git
+git init
+git checkout -B main
+find . -mindepth 2 -name .git -print -exec rm -rf {} +
+git add -A
+git commit -m "initial release source"
+
+mkdir -p /root/srv
+git clone --no-local --bare . /root/srv/repo
+for repo in repo go-sdk.git php-sdk.git; do
+	if [ "$repo" != "repo" ]; then
+		git init --bare "/root/srv/$repo"
+	fi
+	git -C "/root/srv/$repo" config http.receivepack true
+	git -C "/root/srv/$repo" update-server-info
+done
+`
 
 func randomID() string {
 	return strings.ToLower(rand.Text())

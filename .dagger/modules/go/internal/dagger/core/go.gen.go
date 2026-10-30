@@ -648,6 +648,11 @@ type GoOpts struct {
 	VcsCommit string
 	// Resolved VCS dirty state to stamp, paired with vcsCommit.
 	VcsDirty bool
+	// Stamp no VCS info into built binaries, whatever ws or vcsCommit say:
+	// for sources other than dagger's own, such as a third-party tree, where
+	// the stamp sets nothing and would change the build on every commit. A
+	// caller inside a module still passes ws, which the engine requires.
+	NoVcs bool
 }
 
 func (r *Query) Go(opts ...GoOpts) *Go { // go (../../../../../../:0:0)
@@ -716,6 +721,10 @@ func (r *Query) Go(opts ...GoOpts) *Go { // go (../../../../../../:0:0)
 		// `vcsDirty` optional argument
 		if !querybuilder.IsZeroValue(opts[i].VcsDirty) {
 			q = q.Arg("vcsDirty", opts[i].VcsDirty)
+		}
+		// `noVcs` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoVcs) {
+			q = q.Arg("noVcs", opts[i].NoVcs)
 		}
 	}
 

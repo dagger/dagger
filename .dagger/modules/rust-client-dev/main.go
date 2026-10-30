@@ -48,11 +48,7 @@ func New(
 		Exclude: []string{"*", "!sdk/rust/crates", "!sdk/rust/Cargo.lock", "!sdk/rust/Cargo.toml"},
 	})
 
-	baseContainer := dag.Container().
-		From(rustSdkImage+"@"+rustSdkImageDigest).
-		WithEnvVariable("CARGO_HOME", "/root/.cargo").
-		WithMountedCache("/root/.cargo", dag.CacheVolume("rust-cargo-"+rustSdkImage)).
-		WithWorkdir("/src").
+	baseContainer := rustContainer().
 		// FIXME: not all functions need a full engine build. Do this lazily as needed
 		With(func(c *dagger.Container) *dagger.Container {
 			return dag.DaggerEngine(workspace, dagger.DaggerEngineOpts{
@@ -266,8 +262,9 @@ func (t *RustClientDev) Release(
 		return fmt.Errorf("invalid version %q", version)
 	}
 
-	ctr := t.releaseContainer(versionFlag)
-	args := []string{"cargo", "publish", "-p", rustSdkCrate, "-v", "--all-features"}
+	ctr := t.releaseContainer(versionFlag).
+		WithMountedFile(verifiedCratePath, t.verifiedCrate(versionFlag))
+	args := []string{"sh", "-ec", publishVerifiedCrateScript, "sh", versionFlag}
 	if cargoRegistryIndex != "" {
 		// Cargo alternate registries are configured through
 		// CARGO_REGISTRIES_<NAME>_* environment variables.
@@ -286,10 +283,62 @@ func (t *RustClientDev) Release(
 	return err
 }
 
+const (
+	verifiedCratePath = "/verified.crate"
+
+	// Package and verify the crate the way cargo publish does, keeping only
+	// the .crate: the verify build in target/ would make the cached result
+	// far larger than the crate.
+	verifyCrateScript = `cargo package -p ` + rustSdkCrate + ` -v --all-features
+mkdir -p /crate
+cp "target/package/` + rustSdkCrate + `-$1.crate" /crate/
+rm -rf target
+`
+
+	// Upload the crate verified by verifyCrateScript. cargo publish always
+	// packages the crate again, so package it first and refuse to upload if
+	// the result differs from the verified crate.
+	publishVerifiedCrateScript = `version=$1
+shift
+cargo package -p ` + rustSdkCrate + ` --all-features --no-verify
+verified=$(sha256sum ` + verifiedCratePath + ` | cut -d' ' -f1)
+packaged=$(sha256sum "target/package/` + rustSdkCrate + `-$version.crate" | cut -d' ' -f1)
+if [ "$packaged" != "$verified" ]; then
+	echo "packaged crate differs from the verified crate: $packaged != $verified" >&2
+	exit 1
+fi
+echo "uploading ` + rustSdkCrate + `-$version.crate, sha256 $verified"
+exec cargo publish -p ` + rustSdkCrate + ` -v --all-features --no-verify "$@"
+`
+)
+
+// verifiedCrate packages and verifies the Rust SDK crate. It needs no
+// registry or token, so unlike the upload it can be cached.
+func (t *RustClientDev) verifiedCrate(versionFlag string) *dagger.File {
+	return t.releaseContainer(versionFlag).
+		WithExec([]string{"sh", "-ec", verifyCrateScript, "sh", versionFlag}).
+		File("/crate/" + rustSdkCrate + "-" + versionFlag + ".crate")
+}
+
+// releaseContainer has no Dagger engine: no release step calls Dagger, and
+// the engine service's random state volume would keep every step in it from
+// ever being cached.
 func (t *RustClientDev) releaseContainer(
 	versionFlag string,
 ) *dagger.Container {
-	return t.DevContainer(false).
-		WithExec([]string{"cargo", "install", "cargo-edit@" + cargoEditVersion, "--locked"}).
+	return rustContainer().
+		// Install outside CARGO_HOME: it is a cache volume, which a cached
+		// install would not bring back.
+		WithExec([]string{"cargo", "install", "--locked", "--root", "/usr/local", "cargo-edit@" + cargoEditVersion}).
+		WithMountedDirectory(".", t.Workspace).
+		WithWorkdir(t.SourcePath).
 		WithExec([]string{"cargo", "set-version", "-p", rustSdkCrate, versionFlag})
+}
+
+func rustContainer() *dagger.Container {
+	return dag.Container().
+		From(rustSdkImage+"@"+rustSdkImageDigest).
+		WithEnvVariable("CARGO_HOME", "/root/.cargo").
+		WithMountedCache("/root/.cargo", dag.CacheVolume("rust-cargo-"+rustSdkImage)).
+		WithWorkdir("/src")
 }

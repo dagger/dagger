@@ -9,9 +9,34 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-func (r *Query) Release(ws *Workspace) *Release { // release (../../../../../../:0:0)
+// ReleaseOpts contains options for Query.Release
+type ReleaseOpts struct {
+	// The remote cache service's URL, for the publish check's nested engine to
+	// join its remote cache
+	RemoteCacheURL *Secret
+	// The Dagger Cloud URL the nested engine exports its cache events to
+	CloudURL *Secret
+	// An engine token for the remote cache and Dagger Cloud
+	CloudToken *Secret
+}
+
+func (r *Query) Release(ws *Workspace, opts ...ReleaseOpts) *Release { // release (../../../../../../:0:0)
 	assertNotNil("ws", ws)
 	q := r.query.Select("release")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `remoteCacheUrl` optional argument
+		if !querybuilder.IsZeroValue(opts[i].RemoteCacheURL) {
+			q = q.Arg("remoteCacheUrl", opts[i].RemoteCacheURL)
+		}
+		// `cloudUrl` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CloudURL) {
+			q = q.Arg("cloudUrl", opts[i].CloudURL)
+		}
+		// `cloudToken` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CloudToken) {
+			q = q.Arg("cloudToken", opts[i].CloudToken)
+		}
+	}
 	q = q.Arg("ws", ws)
 
 	return &Release{
@@ -22,9 +47,10 @@ func (r *Query) Release(ws *Workspace) *Release { // release (../../../../../../
 type Release struct { // release (../../../../../../:0:0)
 	query *querybuilder.Selection
 
-	id                       *ID
-	notify                   *Void
-	publishWithMockEndpoints *Void
+	id                              *ID
+	notify                          *Void
+	publishCheckRepoIsDeterministic *Void
+	publishWithMockEndpoints        *Void
 }
 
 func (r *Release) WithGraphQLQuery(q *querybuilder.Selection) *Release {
@@ -371,6 +397,31 @@ func (r *Release) Publish(tag string, commit string, opts ...ReleasePublishOpts)
 	return &ReleaseReport{
 		query: q,
 	}
+}
+
+// ReleasePublishCheckRepoIsDeterministicOpts contains options for Release.PublishCheckRepoIsDeterministic
+type ReleasePublishCheckRepoIsDeterministicOpts struct {
+	// Source tree to commit.
+	Source *Directory
+}
+
+// Verify that the publish check's release git repo gets the same commit
+// every time it is created from the same source. The nested builds stamp
+// that commit, so a commit that changed with the clock would change their
+// cache keys on every run.
+func (r *Release) PublishCheckRepoIsDeterministic(ctx context.Context, opts ...ReleasePublishCheckRepoIsDeterministicOpts) error {
+	if r.publishCheckRepoIsDeterministic != nil {
+		return nil
+	}
+	q := r.query.Select("publishCheckRepoIsDeterministic")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `source` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Source) {
+			q = q.Arg("source", opts[i].Source)
+		}
+	}
+
+	return q.Execute(ctx)
 }
 
 // ReleasePublishWithMockEndpointsOpts contains options for Release.PublishWithMockEndpoints

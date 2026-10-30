@@ -276,6 +276,9 @@ func (build *Builder) runtimeBin() *dagger.File {
 		}).
 		WithFile("/crun.tar.gz", src).
 		WithFile("/json-c.tar.gz", jsonc).
+		// The binary is stripped into a separate mount, which holds only it,
+		// rather than read out of the build container with everything else.
+		WithMountedDirectory("/out", dag.Directory()).
 		WithExec([]string{"sh", "-ec", `
 sysroot=$(xx-info sysroot)
 mkdir -p /json-c/build /src
@@ -288,10 +291,10 @@ tar xzf /crun.tar.gz --strip-components=1 -C /src
 cd /src
 ./configure --host="$(xx-clang --print-target-triple)" CC=xx-clang --disable-systemd --disable-criu LIBS=-largp
 make -j"$(nproc)" LDFLAGS=-all-static
-llvm-strip crun
-xx-verify --static crun
+llvm-strip -o /out/crun crun
+xx-verify --static /out/crun
 `}).
-		File("/src/crun")
+		File("/out/crun")
 }
 
 func (build *Builder) sshfsBin() *dagger.File {
@@ -320,7 +323,23 @@ func (build *Builder) sshfsBin() *dagger.File {
 		WithWorkdir("/src").
 		WithExec([]string{"meson", "setup", "build", "--buildtype=release"}).
 		WithExec([]string{"meson", "compile", "-C", "build"}).
-		File("/src/build/sshfs")
+		// meson builds the binary in its build tree, inside the source mount;
+		// copy it into a separate mount, which holds only it.
+		WithMountedDirectory("/out", dag.Directory()).
+		WithExec([]string{"cp", "-p", "build/sshfs", "/out/sshfs"}).
+		File("/out/sshfs")
+}
+
+// freshDir returns dir on its own in a new directory. A directory read out of
+// a build container keeps its backing snapshot: the container's rootfs, or the
+// mounted directory it was read from, with everything else in it, such as the
+// toolchain or the build tree. An engine reusing the directory from a remote
+// cache pulls whatever of that it is missing. A copy in a new directory holds
+// only the directory, and is built from the same inputs, so it is reused
+// across commits as before. Where the tool can write its output into a
+// separate mount instead, that mount holds only the output without a copy.
+func freshDir(dir *dagger.Directory) *dagger.Directory {
+	return dag.Directory().WithDirectory(".", dir)
 }
 
 func (build *Builder) cniPlugins() (bins []*dagger.File) {
@@ -332,9 +351,10 @@ func (build *Builder) cniPlugins() (bins []*dagger.File) {
 		"./plugins/meta/firewall",
 		"./plugins/ipam/host-local",
 	} {
-		// CNI plugins are third-party; VCS stamping is irrelevant here, so we
-		// don't thread any VCS info into their build.
-		bin := dag.Go(dagger.GoOpts{Source: src, Ws: build.ws}).Binary(pluginPath, dagger.GoBinaryOpts{
+		// CNI plugins are third-party, so they carry no dagger VCS stamp, and
+		// their builds stay the same from one dagger commit to the next. The
+		// workspace is still passed: a module must pass one explicitly.
+		bin := dag.Go(dagger.GoOpts{Source: src, Ws: build.ws, NoVcs: true}).Binary(pluginPath, dagger.GoBinaryOpts{
 			NoSymbols: true,
 			NoDwarf:   true,
 			Platform:  build.platform,
