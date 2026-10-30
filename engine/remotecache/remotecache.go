@@ -32,7 +32,10 @@ const (
 	ExportsInFlight = 4
 	// UploadConcurrency is how many blobs the engine uploads at once, across
 	// all its exports. Most blobs are small, so a PUT's time is mostly the
-	// store's per-request latency, not bytes.
+	// store's per-request latency, not bytes. 16 is measured: on test-base,
+	// fresh engines' runs were faster with 16 than with 8 in all four blocks,
+	// by 41 to 198 s over 8 runs, with no measured cost to the seeding
+	// engine's check time, memory peak or exit time.
 	UploadConcurrency = 16
 	// LookupsInFlight is how many lookups the engine has unanswered at once.
 	LookupsInFlight = 4
