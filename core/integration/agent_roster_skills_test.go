@@ -64,7 +64,7 @@ func spawnAgentWithSkills(ctx context.Context, t *testctx.T, c *dagger.Client, n
 	out := gjson.Get(string(raw), "llm.withSkills.spawn")
 	require.True(t, out.Exists() && out.String() != "",
 		"spawned agent ID missing in response: %s", raw)
-	return &agentHandle{c: c, agentID: out.String()}
+	return ownedAgent(ctx, t, c, out.String())
 }
 
 // TestRosterAddressingWithSkills is TestRosterAddressing with a skills

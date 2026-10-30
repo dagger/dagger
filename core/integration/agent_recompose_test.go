@@ -111,7 +111,7 @@ func spawnComposed(ctx context.Context, t *testctx.T, c *dagger.Client, base *co
 	}, &dagger.Response{Data: &result}); err != nil {
 		return nil, nil, err
 	}
-	agent := &agentHandle{c: c, agentID: result.Node.Spawn}
+	agent := ownedAgent(ctx, t, c, result.Node.Spawn)
 	out, err := agent.run(ctx, t, "snapshot { id }")
 	if err != nil {
 		return nil, nil, err
@@ -275,7 +275,7 @@ func spawnURI(ctx context.Context, t *testctx.T, c *dagger.Client, ws *core.Work
 func restoreComposer(ctx context.Context, t *testctx.T, target *dagger.Client, agent *agentHandle, recipe core.ID) (*agentHandle, *core.LLM) {
 	t.Helper()
 	info := agent.mustRun(ctx, t, "handle name")
-	restored, err := rehydrateAgent(ctx, target, string(recipe), info.Get("handle").String(), info.Get("name").String(), "IDLE", "")
+	restored, err := rehydrateAgent(ctx, t, target, string(recipe), info.Get("handle").String(), info.Get("name").String(), "IDLE", "")
 	require.NoError(t, err)
 	seed := restored.mustRun(ctx, t, "snapshot { id }").Get("snapshot.id").String()
 	return restored, core.Ref[*core.LLM](core.NewQuery(target), core.ID(seed))
@@ -1485,11 +1485,11 @@ func (LLMSuite) TestRecomposeWorkerIdentity(ctx context.Context, t *testctx.T) {
 		target := connect(ctx, t)
 		restoredChiefSeed, err := core.Ref[*core.LLM](core.NewQuery(target), chiefRecipe).ID(ctx)
 		require.NoError(t, err)
-		_, err = rehydrateAgent(ctx, target, string(restoredChiefSeed), root.Get("handle").String(), "chief", "IDLE", "")
+		_, err = rehydrateAgent(ctx, t, target, string(restoredChiefSeed), root.Get("handle").String(), "chief", "IDLE", "")
 		require.NoError(t, err)
 		restoredWorkerSeed, err := core.Ref[*core.LLM](core.NewQuery(target), workerRecipe).ID(ctx)
 		require.NoError(t, err, "load the snapshot before spawning its owning worker")
-		restoredWorker, err := rehydrateAgentWithParent(ctx, target, string(restoredWorkerSeed), matches[1], "helper", "IDLE", "", root.Get("handle").String())
+		restoredWorker, err := rehydrateAgentWithParent(ctx, t, target, string(restoredWorkerSeed), matches[1], "helper", "IDLE", "", root.Get("handle").String())
 		require.NoError(t, err)
 		_, _, err = restoredWorker.sendAndWait(ctx, t, "restored worker")
 		require.NoError(t, err)
@@ -1535,7 +1535,7 @@ func spawnWithExpertise(ctx context.Context, t *testctx.T, c *dagger.Client, llm
 		Query:     `query($id: ID!, $name: String!, $entries: [ID!]!) { node(id: $id) { ... on LLM { spawn(name: $name, expertise: $entries) } } }`,
 		Variables: map[string]any{"id": id, "name": name, "entries": entries},
 	}, &dagger.Response{Data: &result}))
-	return &agentHandle{c: c, agentID: result.Node.Spawn}
+	return ownedAgent(ctx, t, c, result.Node.Spawn)
 }
 
 func (LLMSuite) TestComposeTransformURIIdentity(ctx context.Context, t *testctx.T) {
@@ -1762,9 +1762,9 @@ func (AgentRuntimeSuite) TestParentLineageAndRestore(ctx context.Context, t *tes
 	childRecipe, err := sink.captureLLMRecipe(ctx, t, c, childSnapshot)
 	require.NoError(t, err)
 	target := connect(ctx, t)
-	restoredRoot, err := rehydrateAgent(ctx, target, string(rootRecipe), rootHandle, "root", "IDLE", "")
+	restoredRoot, err := rehydrateAgent(ctx, t, target, string(rootRecipe), rootHandle, "root", "IDLE", "")
 	require.NoError(t, err)
-	restoredChild, err := rehydrateAgentWithParent(ctx, target, string(childRecipe), childInfo.Get("handle").String(), "child", "IDLE", "", rootHandle)
+	restoredChild, err := rehydrateAgentWithParent(ctx, t, target, string(childRecipe), childInfo.Get("handle").String(), "child", "IDLE", "", rootHandle)
 	require.NoError(t, err)
 	require.Nil(t, restoredRoot.mustRun(ctx, t, "parent { handle }").Get("parent").Value())
 	restored := restoredChild.mustRun(ctx, t, "parent { name handle parent { handle } }")
