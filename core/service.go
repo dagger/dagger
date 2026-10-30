@@ -845,6 +845,10 @@ func (svc *Service) startContainer(
 			SessionID:         clientMetadata.SessionID,
 			AllowedLLMModules: slices.Clone(clientMetadata.AllowedLLMModules),
 		}
+		// As for a withExec (see inheritedAgentHandle): the agent the
+		// service's clients spawn under is the one whose context started
+		// it; installers that join a running service inherit nothing.
+		nestedClientMetadata.LineageAgent = lineageAgentHandle(ctx)
 	}
 
 	exited := make(chan struct{})

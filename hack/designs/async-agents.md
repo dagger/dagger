@@ -585,6 +585,19 @@ and confirmed afterwards rather than waiting on the round-trip that retargets
 the handler. All of them bind only while the strip is on screen: an unmodified
 key may not be swallowed to address something invisible.
 
+**The strip is focus-relative.** A session with workers running reviewers
+of their own outgrows one line of tabs, so the strip shows the neighborhood
+of focus: every root agent, the focused agent's ancestors, and its direct
+children, nested by each agent's parent (its control record's, else the
+nearest agent loop span above its own). STOPPED agents there fold into a
+counted `+N done` chip once focus moves — not the moment they stop, so tabs
+do not renumber under a jump key the user is about to press — and an
+off-strip agent that is waiting on the user or failed badges the nearest tab
+above it. The digits number the visible tabs only, so they still never
+address something invisible. The `[`/`]` cycle walks the whole lineage tree,
+depth-first, off-strip agents included, and whatever it lands on is focused
+and so shown: the strip narrows what is on screen, never what is reachable.
+
 **Focus is moved only by a keypress, never by an event.** An agent that
 needs the user *advertises* attention on its roster entry; the user decides
 when to go. Attention taken rather than advertised would drop a message into
@@ -1035,8 +1048,9 @@ Semantics ratified during implementation:
   exists, `reseed` when it does not — opposite guards, both load-bearing,
   so they stay two verbs rather than an upsert. With no successors minted,
   the roster strip shows STOPPED agents again (a stopped entry now means a
-  real dismissal, rendered dim and readable until an explicit `send` or
-  `resume` relaunches it).
+  real dismissal, readable until an explicit `send` or `resume` relaunches
+  it; the focus-relative strip folds those near focus into a counted
+  "+N done" chip, and [/] still walks onto every one of them).
   `TestReseed` (core/integration) pins the semantics: continuation proven
   by the replay provider, queued mail draining onto the new conversation,
   FAILED composing with resume, and refusals for no-runtime, mid-turn,

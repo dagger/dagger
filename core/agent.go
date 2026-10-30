@@ -626,8 +626,10 @@ func (ars *AgentRuntimes) Require(ctx context.Context, agent dagql.ObjectResult[
 //
 // parentHandle is the recorded parent a restore supplies; empty derives the
 // parent from the agent being initially composed, or otherwise the calling
-// agent. A supplied parent must already have an entry in this session and may
-// be neither the agent itself nor one of its descendants (see checkParentLocked).
+// agent, or otherwise the agent a nested exec client inherited (see
+// inheritedAgentHandle). A supplied parent must already have an entry in this
+// session and may be neither the agent itself nor one of its descendants (see
+// checkParentLocked).
 func (ars *AgentRuntimes) Create(ctx context.Context, agent dagql.ObjectResult[*Agent], state AgentState, loopErr string, restored bool, parentHandle string) (*AgentRuntime, error) {
 	return ars.create(ctx, agent, state, loopErr, restored, parentHandle, false)
 }
@@ -690,6 +692,14 @@ func (ars *AgentRuntimes) create(ctx context.Context, agent dagql.ObjectResult[*
 		rt.parentHandle = composing
 	} else if caller, ok := CallerAgent(ctx); ok && caller.Self().Handle != key {
 		rt.parentHandle = caller.Self().Handle
+	} else if inherited := inheritedAgentHandle(ctx); inherited != "" && inherited != key && ars.recordsInNamespace(inherited, rt.controlNamespace) {
+		// A spawn from a nested exec client run on an agent's behalf, e.g. a
+		// test binary connecting back to the engine. The client is arbitrary
+		// code that may start its own trace, or outlive the registry entry
+		// it inherited; control records only validate a parent recorded in
+		// the same namespace, so lineage is dropped rather than poisoning
+		// them.
+		rt.parentHandle = inherited
 	}
 	if parentHandle != "" {
 		rt.parentHandle = parentHandle
@@ -748,6 +758,15 @@ func (ars *AgentRuntimes) checkParentLocked(key, name, parent string) error {
 		cur = rt.parentHandle
 	}
 	return nil
+}
+
+// recordsInNamespace reports whether handle has a runtime entry whose control
+// records share ns, so it can be named as a parent in that namespace.
+func (ars *AgentRuntimes) recordsInNamespace(handle string, ns agentcontrol.Namespace) bool {
+	ars.mu.Lock()
+	defer ars.mu.Unlock()
+	rt, ok := ars.entries[handle]
+	return ok && rt.controlNamespace == ns
 }
 
 // Reseed replaces an existing entry's committed conversation with the given
