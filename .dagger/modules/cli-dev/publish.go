@@ -55,6 +55,10 @@ func (cli *CliDev) Publish(
 		if err := cli.publishRootGitHubRelease(ctx, dist, tag, notes, githubOrgName, githubToken, githubHost, githubCaCert); err != nil {
 			return nil, err
 		}
+	}
+	// Package managers follow prereleases too: the 1.0 betas are the release
+	// users are pointed at.
+	if mode == cliReleaseModeStable || mode == cliReleaseModePrerelease {
 		if err := cli.publishPackageManagers(ctx, dist, tag, githubOrgName, githubToken, githubHost, githubCaCert, artefactsFQDN); err != nil {
 			return nil, err
 		}
