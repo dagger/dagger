@@ -1747,7 +1747,7 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 		})
 	}
 
-	if err := json.NewEncoder(f).Encode(initFDs.withEnv(state.spec)); err != nil {
+	if err := writeSpec(f, initFDs.withEnv(state.spec)); err != nil {
 		return fmt.Errorf("failed to encode spec: %w", err)
 	}
 	f.Close()
