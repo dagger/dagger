@@ -5,6 +5,9 @@ import (
 	"fmt"
 
 	"github.com/dagger/dagger/dagql"
+	telemetry "github.com/dagger/otel-go"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // runFunction runs the author function only when a check result is
@@ -111,6 +114,13 @@ func (c *Check) runRemote(ctx context.Context) error {
 		}
 	}
 	if err := queryArtifactCloud(ctx, c.RemoteArtifact, c.RemoteArguments, `... on Check { sync { pass error { message values { name value } } } }`, &outcome); err != nil {
+		// The remote engine reports the check's span. When the request
+		// fails, it may never run, so report the failed check here.
+		_, span := Tracer(ctx).Start(ctx, c.Address, trace.WithAttributes(
+			attribute.String(telemetry.CheckNameAttr, c.Address),
+			attribute.Bool(telemetry.CheckPassedAttr, false),
+		))
+		telemetry.EndWithCause(span, &err)
 		return err
 	}
 	if outcome.Sync.Error != nil {
