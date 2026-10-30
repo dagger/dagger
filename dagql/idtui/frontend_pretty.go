@@ -4857,7 +4857,16 @@ func (fe *frontendPretty) rosterModel() *agentRosterModel {
 	if fe.agentRosterMemo != nil && inputs.same(fe.agentRosterMemoInputs) {
 		return fe.agentRosterMemo
 	}
-	model := buildAgentRosterModel(inputs.agents, inputs.focused, func(agent *dagui.AgentNode) AgentRosterEntry {
+	// Tabs stay put while focus does: whatever had one under this focus
+	// keeps it if it stops, and folds when focus next moves.
+	var keep map[string]bool
+	if prev := fe.agentRosterMemo; prev != nil && fe.agentRosterMemoInputs.focused == inputs.focused {
+		keep = make(map[string]bool, len(prev.view.Tabs))
+		for _, tab := range prev.view.Tabs {
+			keep[tab.ID] = true
+		}
+	}
+	model := buildAgentRosterModel(inputs.agents, inputs.focused, keep, func(agent *dagui.AgentNode) AgentRosterEntry {
 		name := agent.Name
 		if name == "" {
 			name = "agent"
@@ -5030,7 +5039,10 @@ func (fe *frontendPretty) navFocusAgent(n int) bool {
 // an agent the user never asked for -- once per press, all the way along. An
 // entry is only PROVEN unaddressable by a rebuild that failed, so the cycle
 // can still walk onto one the first time and report it; from then on the
-// strip has it marked and the cycle passes it by.
+// strip has it marked and the cycle passes it by -- until the payloads it
+// was missing arrive and its handle rebuilds, when the cycle takes it again.
+// That matters for a STOPPED agent the strip has folded: with no tab there is
+// no number to retry it by, so the cycle is the way back to it.
 func (fe *frontendPretty) cycleAgent(delta int) bool {
 	// The whole roster in tree order, not just the strip's tabs: the strip
 	// shows only the neighborhood of focus, and the cycle is how the rest is
@@ -5058,7 +5070,7 @@ func (fe *frontendPretty) cycleAgent(delta int) bool {
 	}
 	for i := 1; i <= n; i++ {
 		entry := entries[((start+i*delta)%n+n)%n]
-		if entry.Focused || entry.ReadOnly || entry.ID == "" {
+		if entry.Focused || entry.ID == "" || (entry.ReadOnly && !fe.agentRebuilds(entry.ID)) {
 			continue
 		}
 		// Nothing left for focusAgent to refuse but a handler that cannot
@@ -5256,6 +5268,21 @@ func (fe *frontendPretty) settleFocus(requested string) {
 	}
 	// The agent left the roster while the request was out.
 	fe.pendingFocusAgent = ""
+}
+
+// agentRebuilds reports whether an agent marked unaddressable by a failed
+// rebuild would rebuild now: its handle's payloads may have arrived since.
+// An agent with no call digest never does.
+func (fe *frontendPretty) agentRebuilds(agentID string) bool {
+	if !fe.unaddressableAgents[agentID] {
+		return false
+	}
+	digest := fe.agentCallDigest(agentID)
+	if digest == "" {
+		return false
+	}
+	_, err := encodedIDForCallDigest(fe.db, digest)
+	return err == nil
 }
 
 // agentCallDigest is the digest the engine advertised for an agent's value.

@@ -321,7 +321,7 @@ func rosterTabNames(tabs []AgentRosterEntry) []string {
 }
 
 func buildTestRoster(agents []*dagui.AgentNode, focused string) agentRosterModel {
-	return buildAgentRosterModel(agents, focused, func(a *dagui.AgentNode) AgentRosterEntry {
+	return buildAgentRosterModel(agents, focused, nil, func(a *dagui.AgentNode) AgentRosterEntry {
 		return AgentRosterEntry{ID: a.ID, Name: a.Name, State: a.State}
 	})
 }
@@ -454,9 +454,9 @@ func TestAgentRosterModelUnfoldsToCarryAttention(t *testing.T) {
 
 // TestAgentRosterModelShowsWhatTheCycleSkips: [/] steps over read-only
 // agents, so "focus it to see it" does not reach them. A watch-only agent's
-// children come into view with it -- a nested client's chief and its worker
-// -- and a STOPPED agent whose handle failed to rebuild keeps a numbered tab,
-// since naming it by number is how the rebuild is retried.
+// children come into view with it -- a nested client's chief and its worker.
+// A STOPPED watch-only agent folds like any other: being read-only is not a
+// reason to spend a tab on it.
 func TestAgentRosterModelShowsWhatTheCycleSkips(t *testing.T) {
 	agents := []*dagui.AgentNode{
 		rosterNode("agent", "", "IDLE"),
@@ -464,30 +464,46 @@ func TestAgentRosterModelShowsWhatTheCycleSkips(t *testing.T) {
 		rosterNode("nchief", "w", "RUNNING"),
 		rosterNode("nworker", "nchief", "RUNNING"),
 		rosterNode("gone", "nchief", "STOPPED"),
-		rosterNode("retry", "agent", "STOPPED"),
+		rosterNode("unaddressable", "agent", "STOPPED"),
 	}
-	// Never addressable: no call digest to rebuild a handle from.
-	agents[4].CallDigest = ""
-	readOnly := map[string]bool{"nchief": true, "nworker": true, "gone": true, "retry": true}
+	readOnly := map[string]bool{"nchief": true, "nworker": true, "gone": true, "unaddressable": true}
 	build := func(focused string) agentRosterModel {
-		return buildAgentRosterModel(agents, focused, func(a *dagui.AgentNode) AgentRosterEntry {
+		return buildAgentRosterModel(agents, focused, nil, func(a *dagui.AgentNode) AgentRosterEntry {
 			return AgentRosterEntry{ID: a.ID, Name: a.Name, State: a.State, ReadOnly: readOnly[a.ID]}
 		})
 	}
 
 	model := build("agent")
-	require.Equal(t, []string{"agent*", "w", "retry"}, rosterTabNames(model.view.Tabs))
-	require.Zero(t, model.view.Done)
+	require.Equal(t, []string{"agent*", "w"}, rosterTabNames(model.view.Tabs))
+	require.Equal(t, 1, model.view.Done)
 
 	model = build("w")
 	require.Equal(t, []string{"agent", "w*", "nchief", "nworker"}, rosterTabNames(model.view.Tabs))
 	require.Equal(t, 1, model.view.Done, "the stopped watch-only agent folds, but is counted")
+}
 
-	// Without a call digest, there is nothing to retry: it folds.
-	agents[5].CallDigest = ""
-	model = build("agent")
-	require.Equal(t, []string{"agent*", "w"}, rosterTabNames(model.view.Tabs))
+// TestAgentRosterModelKeepsTabsWhileFocusStays: an agent that stops under
+// the user's eyes keeps its tab -- and the tabs after it their numbers --
+// for as long as focus stays put. keep is the frontend's record of which
+// tabs were shown under the current focus; a new focus starts without one.
+func TestAgentRosterModelKeepsTabsWhileFocusStays(t *testing.T) {
+	agents := []*dagui.AgentNode{
+		rosterNode("agent", "", "IDLE"),
+		rosterNode("w1", "agent", "STOPPED"),
+		rosterNode("w2", "agent", "RUNNING"),
+		rosterNode("w3", "agent", "STOPPED"),
+	}
+	keep := map[string]bool{"agent": true, "w1": true, "w2": true}
+	model := buildAgentRosterModel(agents, "agent", keep, func(a *dagui.AgentNode) AgentRosterEntry {
+		return AgentRosterEntry{ID: a.ID, Name: a.Name, State: a.State}
+	})
+	require.Equal(t, []string{"agent*", "w1", "w2"}, rosterTabNames(model.view.Tabs),
+		"w1 stopped while shown, so it stays; w3 was never shown, so it folds")
 	require.Equal(t, 1, model.view.Done)
+
+	model = buildTestRoster(agents, "agent")
+	require.Equal(t, []string{"agent*", "w2"}, rosterTabNames(model.view.Tabs))
+	require.Equal(t, 2, model.view.Done)
 }
 
 // TestAgentRosterRendersFoldsAndBadges: the badges read in the state

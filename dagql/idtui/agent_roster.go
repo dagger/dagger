@@ -321,16 +321,21 @@ type agentRosterModel struct {
 // Within that, STOPPED agents fold into the trailing "+N done" chip: STOPPED
 // is terminal, so their tabs would only grow. The focused agent and its
 // ancestors never fold, since they are the context the rest is read in.
+// Nor does an agent that stops while the user is looking: keep holds the
+// agents that had a tab under the current focus, and they keep it until
+// focus next moves, so a tab never vanishes -- renumbering the ones after it
+// -- between a glance at the strip and the jump key it prompted.
+//
 // Nothing becomes unreachable: [/] walks order, which holds everybody, and
 // whatever [/] lands on is focused and therefore shown. The cycle steps over
-// read-only agents, though, so those are shown by other means: a read-only
-// agent's children join the neighborhood with it, and one whose rebuild
-// failed keeps its tab even when STOPPED, so a jump key can retry it.
+// read-only agents, though (until their handle rebuilds; see cycleAgent), so
+// a read-only agent's children join the neighborhood with it: they could
+// never come into view by focusing it.
 //
 // What needs the user must not hide in the part left out: an agent with no
 // tab that is WAITING_INPUT or FAILED counts on its nearest ancestor that the
 // neighborhood includes, which keeps (or regains) its tab to say so.
-func buildAgentRosterModel(agents []*dagui.AgentNode, focused string, entry func(*dagui.AgentNode) AgentRosterEntry) agentRosterModel {
+func buildAgentRosterModel(agents []*dagui.AgentNode, focused string, keep map[string]bool, entry func(*dagui.AgentNode) AgentRosterEntry) agentRosterModel {
 	n := len(agents)
 	if n == 0 {
 		return agentRosterModel{}
@@ -421,14 +426,11 @@ func buildAgentRosterModel(agents []*dagui.AgentNode, focused string, entry func
 		}
 	}
 
-	// STOPPED agents fold, unless they are the context of focus -- or the
-	// cycle steps over them: a read-only agent whose handle failed to rebuild
-	// can only be retried by naming it, which takes a tab. (One with no call
-	// digest at all can never be addressed, so its tab would name nothing.)
+	// STOPPED agents fold, unless they are the context of focus, or stopped
+	// while holding a tab under it.
 	tab := make([]bool, n)
 	for i, agent := range agents {
-		retry := entries[i].ReadOnly && agent.CallDigest != ""
-		tab[i] = near[i] && (agent.State != "STOPPED" || chain[i] || retry)
+		tab[i] = near[i] && (agent.State != "STOPPED" || chain[i] || keep[agent.ID])
 	}
 
 	// Attention bubbles to the nearest ancestor in the neighborhood -- every
