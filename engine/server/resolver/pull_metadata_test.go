@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -209,7 +210,14 @@ type testPullRegistry struct {
 func newTestPullRegistry(t *testing.T, image *testPullImage) *testPullRegistry {
 	t.Helper()
 	registry := &testPullRegistry{}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(registry.handler(image))
+	t.Cleanup(server.Close)
+	registry.host = strings.TrimPrefix(server.URL, "http://")
+	return registry
+}
+
+func (registry *testPullRegistry) handler(image *testPullImage) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/v2/":
 			w.WriteHeader(http.StatusOK)
@@ -257,10 +265,7 @@ func newTestPullRegistry(t *testing.T, image *testPullImage) *testPullRegistry {
 		default:
 			http.NotFound(w, r)
 		}
-	}))
-	t.Cleanup(server.Close)
-	registry.host = strings.TrimPrefix(server.URL, "http://")
-	return registry
+	})
 }
 
 // resetTestRegistryResponse sends the headers and half the body of payload,
@@ -324,6 +329,83 @@ func TestPullRetriesLayerAfterConnectionReset(t *testing.T) {
 	actual, err := content.ReadBlob(ctx, s.store, s.image.layer)
 	require.NoError(t, err)
 	require.Equal(t, s.image.layerBytes, actual)
+}
+
+// A registry whose TLS handshake times out on the manifest request, as
+// mcr.microsoft.com's sometimes does, does not fail resolving the image: the
+// request is sent again.
+func TestResolveRetriesManifestAfterTLSHandshakeTimeout(t *testing.T) {
+	ctx := t.Context()
+	platform := ocispecs.Platform{OS: "linux", Architecture: "amd64"}
+	image := newTestPullImage(t, false, platform)
+	registry := &testPullRegistry{}
+	server := httptest.NewUnstartedServer(registry.handler(image))
+	listener := &stallFirstHandshakeListener{Listener: server.Listener}
+	server.Listener = listener
+	server.StartTLS()
+	t.Cleanup(server.Close)
+	registry.host = strings.TrimPrefix(server.URL, "https://")
+
+	client := server.Client()
+	client.Transport.(*http.Transport).TLSHandshakeTimeout = 100 * time.Millisecond
+	store, err := localcontentstore.NewLabeledStore(t.TempDir(), newTestContentLabelStore())
+	require.NoError(t, err)
+	rslvr := New(Opts{
+		Hosts: func(domain string) ([]docker.RegistryHost, error) {
+			return []docker.RegistryHost{{
+				Client:       client,
+				Scheme:       "https",
+				Host:         domain,
+				Path:         "/v2",
+				Capabilities: docker.HostCapabilityPull | docker.HostCapabilityResolve,
+			}}, nil
+		},
+		ContentStore: store,
+		LeaseManager: newTestLeaseManager(),
+	})
+	t.Cleanup(func() { require.NoError(t, rslvr.Close()) })
+
+	_, dgst, configBytes, err := rslvr.ResolveImageConfig(ctx, registry.host+"/test/image:latest", ResolveImageConfigOpts{Platform: &platform})
+	require.NoError(t, err)
+	require.True(t, listener.stalled.Load(), "the first TLS handshake stalled")
+	require.Equal(t, int32(1), registry.manifestHEADs.Load(), "only the retried manifest request got through")
+	require.Equal(t, image.root.Digest, dgst)
+	require.JSONEq(t, string(image.configBytes), string(configBytes))
+}
+
+// A missing image is not a network error, so resolving it fails at once.
+func TestResolveDoesNotRetryMissingManifest(t *testing.T) {
+	ctx := t.Context()
+	platform := ocispecs.Platform{OS: "linux", Architecture: "amd64"}
+	registry := newTestPullRegistry(t, newTestPullImage(t, false, platform))
+	store, err := localcontentstore.NewLabeledStore(t.TempDir(), newTestContentLabelStore())
+	require.NoError(t, err)
+	rslvr := newTestResolver(t, registry.host, store)
+
+	_, _, err = rslvr.ResolveImageDigest(ctx, registry.host+"/test/image:missing", ResolveImageDigestOpts{})
+	require.True(t, cerrdefs.IsNotFound(err), "got %v", err)
+	require.Equal(t, int32(1), registry.manifestHEADs.Load())
+}
+
+// stallFirstHandshakeListener never answers the first connection's TLS
+// handshake, so the client's handshake times out.
+type stallFirstHandshakeListener struct {
+	net.Listener
+	stalled atomic.Bool
+}
+
+func (l *stallFirstHandshakeListener) Accept() (net.Conn, error) {
+	for {
+		conn, err := l.Listener.Accept()
+		if err != nil || !l.stalled.CompareAndSwap(false, true) {
+			return conn, err
+		}
+		// Read until the client gives up and closes the connection.
+		go func() {
+			defer conn.Close()
+			_, _ = io.Copy(io.Discard, conn)
+		}()
+	}
 }
 
 // A pinned image whose blobs are all local is pulled from the content store,
