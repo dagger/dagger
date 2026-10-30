@@ -7,7 +7,7 @@ query ModuleConfig($source: ID!) {
       sourceRootSubpath
       commit
       version
-      htmlRepoURL
+      htmlRepoUrl
       module: asModule {
         name
         description

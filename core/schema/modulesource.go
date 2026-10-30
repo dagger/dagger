@@ -98,6 +98,34 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 			),
 	}.Install(dag)
 
+	// These ModuleSource and GeneratedCode fields are spelled
+	// withSDK, introspectionSchemaJSON, clientSchemaIntrospectionJSON, htmlURL,
+	// htmlRepoURL, withVCSGeneratedPaths and withVCSIgnoredPaths in views
+	// before engine.IdentifierCasingVersion.
+	withSDKField := dagql.Func("withSdk", s.moduleSourceWithSDK).
+		Doc(`Update the module source with a new SDK.`).
+		Args(
+			dagql.Arg("source").Doc(`The SDK source to set.`),
+		)
+	introspectionSchemaJSONField := dagql.NodeFunc("introspectionSchemaJson", s.moduleSourceIntrospectionSchemaJSON).
+		Doc(`The introspection schema JSON file for this module source.`,
+			`This file represents the schema visible to the module's source code, including all core types and those from the dependencies.`,
+			`Note: this is in the context of a module, so some core types may be hidden.`)
+	clientSchemaIntrospectionJSONField := func(introspectionSchemaJSON string) dagql.Field[*core.ModuleSource] {
+		return dagql.NodeFunc("clientSchemaIntrospectionJson", s.moduleSourceClientSchemaIntrospectionJSON).
+			View(AfterVersion("v1.0.0-0")).
+			Doc(`The client-facing introspection schema JSON file for this module source.`,
+				`This is the schema consumed by client codegen: unlike `+introspectionSchemaJSON+` (the module-facing schema), it hides no core types and installs this module (reached via dag.<moduleName>) so a generated client can bind it. The module's dependencies are excluded: a client is generated for a single module plus core, not its dependency graph.`)
+	}
+	htmlURLField := dagql.Func("htmlUrl", s.moduleSourceHTMLURL).
+		Doc(`The URL to the source's git repo in a web browser. Only valid for git sources.`)
+	htmlRepoURLField := dagql.Func("htmlRepoUrl", s.moduleSourceHTMLRepoURL).
+		Doc(`The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket).`)
+	withVCSGeneratedPathsField := dagql.Func("withVcsGeneratedPaths", s.generatedCodeWithVCSGeneratedPaths).
+		Doc(`Set the list of paths to mark generated in version control.`)
+	withVCSIgnoredPathsField := dagql.Func("withVcsIgnoredPaths", s.generatedCodeWithVCSIgnoredPaths).
+		Doc(`Set the list of paths to ignore in version control.`)
+
 	dagql.Fields[*core.ModuleSource]{
 		// sync is used by external dependencies like daggerverse
 		Syncer[*core.ModuleSource]().
@@ -138,11 +166,8 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 				dagql.Arg("patterns").Doc(`The new additional include patterns.`),
 			),
 
-		dagql.Func("withSDK", s.moduleSourceWithSDK).
-			Doc(`Update the module source with a new SDK.`).
-			Args(
-				dagql.Arg("source").Doc(`The SDK source to set.`),
-			),
+		casedField(withSDKField),
+		legacyField(withSDKField, "withSDK"),
 
 		dagql.Func("withEngineVersion", s.moduleSourceWithEngineVersion).
 			Doc(`Upgrade the engine version of the module to the given value.`).
@@ -252,14 +277,10 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 		moduleDefinitionField(s.moduleSourceModuleDefinition),
 		moduleTypesDefinitionField(s.moduleSourceModuleTypesDefinition),
 		moduleNamespacedDefinitionField(s.moduleSourceNamespacedDefinition),
-		dagql.NodeFunc("introspectionSchemaJSON", s.moduleSourceIntrospectionSchemaJSON).
-			Doc(`The introspection schema JSON file for this module source.`,
-				`This file represents the schema visible to the module's source code, including all core types and those from the dependencies.`,
-				`Note: this is in the context of a module, so some core types may be hidden.`),
-		dagql.NodeFunc("clientSchemaIntrospectionJSON", s.moduleSourceClientSchemaIntrospectionJSON).
-			View(AfterVersion("v1.0.0-0")).
-			Doc(`The client-facing introspection schema JSON file for this module source.`,
-				`This is the schema consumed by client codegen: unlike introspectionSchemaJSON (the module-facing schema), it hides no core types and installs this module (reached via dag.<moduleName>) so a generated client can bind it. The module's dependencies are excluded: a client is generated for a single module plus core, not its dependency graph.`),
+		casedField(introspectionSchemaJSONField),
+		legacyField(introspectionSchemaJSONField, "introspectionSchemaJSON"),
+		casedField(clientSchemaIntrospectionJSONField("introspectionSchemaJson")),
+		legacyField(clientSchemaIntrospectionJSONField("introspectionSchemaJSON"), "clientSchemaIntrospectionJSON"),
 
 		dagql.NodeFunc("directory", s.moduleSourceDirectory).
 			Doc(`The directory containing the module configuration and source code (source code may be in a subdir).`).
@@ -270,11 +291,11 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 		dagql.Func("cloneRef", s.moduleSourceCloneRef).
 			Doc(`The ref to clone the root of the git repo from. Only valid for git sources.`),
 
-		dagql.Func("htmlURL", s.moduleSourceHTMLURL).
-			Doc(`The URL to the source's git repo in a web browser. Only valid for git sources.`),
+		casedField(htmlURLField),
+		legacyField(htmlURLField, "htmlURL"),
 
-		dagql.Func("htmlRepoURL", s.moduleSourceHTMLRepoURL).
-			Doc(`The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket).`),
+		casedField(htmlRepoURLField),
+		legacyField(htmlRepoURLField, "htmlRepoURL"),
 
 		dagql.Func("version", s.moduleSourceVersion).
 			Doc(`The specified version of the git repo this source points to.`),
@@ -314,10 +335,10 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 	dagql.Fields[*modules.ModuleConfigClient]{}.Install(dag)
 
 	dagql.Fields[*core.GeneratedCode]{
-		dagql.Func("withVCSGeneratedPaths", s.generatedCodeWithVCSGeneratedPaths).
-			Doc(`Set the list of paths to mark generated in version control.`),
-		dagql.Func("withVCSIgnoredPaths", s.generatedCodeWithVCSIgnoredPaths).
-			Doc(`Set the list of paths to ignore in version control.`),
+		casedField(withVCSGeneratedPathsField),
+		legacyField(withVCSGeneratedPathsField, "withVCSGeneratedPaths"),
+		casedField(withVCSIgnoredPathsField),
+		legacyField(withVCSIgnoredPathsField, "withVCSIgnoredPaths"),
 	}.Install(dag)
 }
 

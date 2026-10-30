@@ -9,6 +9,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 )
 
@@ -87,8 +88,11 @@ func TestContainerMutationsSaveRecipeOverEvaluatedParent(t *testing.T) {
 		{Field: "withEnvFileVariables", Args: []dagql.NamedInput{rebuildTestArg("source", envFileID)}},
 		{Field: "withVolatileVariable", Args: []dagql.NamedInput{rebuildTestArg("name", str("V")), rebuildTestArg("value", str("v"))}},
 		{Field: "withoutVolatileVariable", Args: []dagql.NamedInput{rebuildTestArg("name", str("V"))}},
-		{Field: "withGPU", Args: []dagql.NamedInput{rebuildTestArg("devices", dagql.ArrayInput[dagql.String](dagql.NewStringArray("0")))}},
-		{Field: "experimentalWithAllGPUs"},
+		{Field: "withGpu", Args: []dagql.NamedInput{rebuildTestArg("devices", dagql.ArrayInput[dagql.String](dagql.NewStringArray("0")))}},
+		{Field: "experimentalWithAllGpus"},
+		// The GPU fields' names before engine.IdentifierCasingVersion.
+		{Field: "withGPU", View: call.View(preCutView)},
+		{Field: "experimentalWithAllGPUs", View: call.View(preCutView)},
 		{Field: "withDockerHealthcheck", Args: []dagql.NamedInput{rebuildTestArg("args", dagql.ArrayInput[dagql.String](dagql.NewStringArray("true")))}},
 		{Field: "withoutDockerHealthcheck"},
 		{Field: "__withImageConfigMetadata", Args: []dagql.NamedInput{rebuildTestArg("stopSignal", str("SIGTERM"))}},

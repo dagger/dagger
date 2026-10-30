@@ -113,6 +113,7 @@ func (i *consoleTraceInspector) transcript(w http.ResponseWriter, r *http.Reques
 var consoleCheckpointConfig = map[string]bool{
 	"withoutDefaultSystemPrompt": true,
 	"withMCPServer":              true,
+	"withMcpServer":              true, // from the identifier casing cut on
 	"withSkills":                 true,
 	"withTools":                  true,
 	"withWorkspace":              true,

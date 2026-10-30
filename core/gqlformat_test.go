@@ -402,7 +402,13 @@ func TestModuleNamingCappedAtEngine(t *testing.T) {
 		require.Equal(t, call.View(tc.view), src.NamingView(), msg)
 		require.Equal(t, tc.legacy, src.Namer().Legacy(), msg)
 		require.Equal(t, tc.legacy, NamerForEngineVersion(tc.version).Legacy(), msg)
-		require.Equal(t, tc.legacy, (&Module{SourceOverrides: &SourceOverrides{EngineVersion: tc.version}}).Namer().Legacy(), msg)
+		overridden := &Module{SourceOverrides: &SourceOverrides{EngineVersion: tc.version}}
+		require.Equal(t, tc.legacy, overridden.Namer().Legacy(), msg)
+		// Core enum values passed into the module are spelled for the same
+		// view.
+		sdkView, ok := SDKViewFromContext(overridden.contextWithSDKView(t.Context()))
+		require.True(t, ok, msg)
+		require.Equal(t, call.View(tc.view), sdkView, msg)
 		wantType := "MyModHTTPClient"
 		if tc.legacy {
 			wantType = "MyModHttpClient"

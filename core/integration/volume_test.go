@@ -619,7 +619,7 @@ func (VolumeSuite) TestModuleCannotConstructSSHFSVolume(ctx context.Context, t *
 	_, err := moduleFixture(t, c, "go/sshfs-volume-constructor-denied").
 		With(daggerCallAt(".", "fn")).
 		Sync(ctx)
-	requireErrOut(t, err, "SshfsVolume")
+	requireErrOut(t, err, "SSHFSVolume")
 	requireErrOut(t, err, "undefined")
 }
 
@@ -648,7 +648,7 @@ func (f sshfsVolumeFixture) Volume(c *dagger.Client) *core.Volume {
 }
 
 func (f sshfsVolumeFixture) FollowSymlinksVolume(c *dagger.Client) *core.Volume {
-	return core.NewQuery(c).SshfsVolume(f.endpoint, f.privateKey, core.SshfsVolumeOpts{
+	return core.NewQuery(c).SSHFSVolume(f.endpoint, f.privateKey, core.SSHFSVolumeOpts{
 		KnownHosts:              f.knownHosts,
 		ExperimentalServiceHost: f.service,
 		FollowSymlinks:          true,
@@ -656,7 +656,7 @@ func (f sshfsVolumeFixture) FollowSymlinksVolume(c *dagger.Client) *core.Volume 
 }
 
 func (f sshfsVolumeFixture) VolumeWithKnownHosts(c *dagger.Client, knownHosts *core.Secret) *core.Volume {
-	return core.NewQuery(c).SshfsVolume(f.endpoint, f.privateKey, core.SshfsVolumeOpts{
+	return core.NewQuery(c).SSHFSVolume(f.endpoint, f.privateKey, core.SSHFSVolumeOpts{
 		KnownHosts:              knownHosts,
 		ExperimentalServiceHost: f.service,
 	})

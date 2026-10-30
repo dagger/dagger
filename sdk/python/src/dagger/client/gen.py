@@ -207,11 +207,11 @@ class FileType(Enum):
 class FunctionCachePolicy(Enum):
     """The behavior configured for function result caching."""
 
-    Default = "Default"
+    DEFAULT = "DEFAULT"
 
-    Never = "Never"
+    NEVER = "NEVER"
 
-    PerSession = "PerSession"
+    PER_SESSION = "PER_SESSION"
 
 
 class GitPushDisposition(Enum):
@@ -246,27 +246,21 @@ class IdentifierWordKind(Enum):
 class ImageLayerCompression(Enum):
     """Compression algorithm to use for image layers."""
 
-    EStarGZ = "EStarGZ"
-    ESTARGZ = "EStarGZ"
+    ESTARGZ = "ESTARGZ"
 
-    Gzip = "Gzip"
-    GZIP = "Gzip"
+    GZIP = "GZIP"
 
-    Uncompressed = "Uncompressed"
-    UNCOMPRESSED = "Uncompressed"
+    UNCOMPRESSED = "UNCOMPRESSED"
 
-    Zstd = "Zstd"
-    ZSTD = "Zstd"
+    ZSTD = "ZSTD"
 
 
 class ImageMediaTypes(Enum):
     """Mediatypes to use in published or exported image metadata."""
 
-    DockerMediaTypes = "DockerMediaTypes"
-    DOCKER = "DockerMediaTypes"
+    DOCKER = "DOCKER"
 
-    OCIMediaTypes = "OCIMediaTypes"
-    OCI = "OCIMediaTypes"
+    OCI = "OCI"
 
 
 class LLMContentBlockKind(Enum):
@@ -3154,7 +3148,7 @@ class Cloud(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("traceURL", _args)
+        _ctx = self._select("traceUrl", _args)
         return await _ctx.execute(str)
 
 
@@ -3481,7 +3475,7 @@ class Container(Type):
         *,
         platform_variants: "list[Container] | None" = None,
         forced_compression: ImageLayerCompression | None = None,
-        media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+        media_types: ImageMediaTypes | None = ImageMediaTypes.OCI,
         source_date_epoch: int | None = None,
     ) -> "File":
         """Package the container state as an OCI image, and return it as a tar
@@ -3521,7 +3515,7 @@ class Container(Type):
                 [],
             ),
             Arg("forcedCompression", forced_compression, None),
-            Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+            Arg("mediaTypes", media_types, ImageMediaTypes.OCI),
             Arg("sourceDateEpoch", source_date_epoch, None),
         ]
         _ctx = self._select("asTarball", _args)
@@ -3729,22 +3723,22 @@ class Container(Type):
         _ctx = self._select("exitCode", _args)
         return await _ctx.execute(int)
 
-    def experimental_with_all_gp_us(self) -> Self:
+    def experimental_with_all_gpus(self) -> Self:
         """Configures all available GPUs on the host to be accessible to this
         container.
 
         This currently works for Nvidia devices only.
 
         .. deprecated::
-            Use "withGPU" instead.
+            Use "withGpu" instead.
         """
         warnings.warn(
-            'Method "experimental_with_all_gp_us" is deprecated: Use "withGPU" instead.',
+            'Method "experimental_with_all_gpus" is deprecated: Use "withGpu" instead.',
             DeprecationWarning,
             stacklevel=4,
         )
         _args: list[Arg] = []
-        _ctx = self._select("experimentalWithAllGPUs", _args)
+        _ctx = self._select("experimentalWithAllGpus", _args)
         return Container(_ctx)
 
     def experimental_with_gpu(self, devices: list[str]) -> Self:
@@ -3754,7 +3748,7 @@ class Container(Type):
         This currently works for Nvidia devices only.
 
         .. deprecated::
-            Use "withGPU" instead, which exposes all GPUs available on the
+            Use "withGpu" instead, which exposes all GPUs available on the
             host.
 
         Parameters
@@ -3763,14 +3757,14 @@ class Container(Type):
             List of devices to be accessible to this container.
         """
         warnings.warn(
-            'Method "experimental_with_gpu" is deprecated: Use "withGPU" instead, which exposes all GPUs available on the host.',
+            'Method "experimental_with_gpu" is deprecated: Use "withGpu" instead, which exposes all GPUs available on the host.',
             DeprecationWarning,
             stacklevel=4,
         )
         _args = [
             Arg("devices", devices),
         ]
-        _ctx = self._select("experimentalWithGPU", _args)
+        _ctx = self._select("experimentalWithGpu", _args)
         return Container(_ctx)
 
     async def export(
@@ -3779,7 +3773,7 @@ class Container(Type):
         *,
         platform_variants: "list[Container] | None" = None,
         forced_compression: ImageLayerCompression | None = None,
-        media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+        media_types: ImageMediaTypes | None = ImageMediaTypes.OCI,
         expand: bool | None = False,
         source_date_epoch: int | None = None,
     ) -> str:
@@ -3844,7 +3838,7 @@ class Container(Type):
                 [],
             ),
             Arg("forcedCompression", forced_compression, None),
-            Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+            Arg("mediaTypes", media_types, ImageMediaTypes.OCI),
             Arg("expand", expand, False),
             Arg("sourceDateEpoch", source_date_epoch, None),
         ]
@@ -3857,7 +3851,7 @@ class Container(Type):
         *,
         platform_variants: "list[Container] | None" = None,
         forced_compression: ImageLayerCompression | None = None,
-        media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+        media_types: ImageMediaTypes | None = ImageMediaTypes.OCI,
         source_date_epoch: int | None = None,
     ) -> Void:
         """Exports the container as an image to the host's container image store.
@@ -3912,7 +3906,7 @@ class Container(Type):
                 [],
             ),
             Arg("forcedCompression", forced_compression, None),
-            Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+            Arg("mediaTypes", media_types, ImageMediaTypes.OCI),
             Arg("sourceDateEpoch", source_date_epoch, None),
         ]
         _ctx = self._select("exportImage", _args)
@@ -3995,7 +3989,7 @@ class Container(Type):
             Arg("version", version, ""),
             Arg("registryService", registry_service, None),
             Arg("protocol", protocol, None),
-            Arg("insecureSkipTLSVerify", insecure_skip_tls_verify, False),
+            Arg("insecureSkipTlsVerify", insecure_skip_tls_verify, False),
             Arg("noLock", no_lock, False),
         ]
         _ctx = self._select("from", _args)
@@ -4114,7 +4108,7 @@ class Container(Type):
         id: str,
         *,
         forced_compression: ImageLayerCompression | None = None,
-        media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+        media_types: ImageMediaTypes | None = ImageMediaTypes.OCI,
     ) -> "File":
         """Returns the image layer or configuration blob with the given digest as
         a File.
@@ -4138,7 +4132,7 @@ class Container(Type):
         _args = [
             Arg("id", id),
             Arg("forcedCompression", forced_compression, None),
-            Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+            Arg("mediaTypes", media_types, ImageMediaTypes.OCI),
         ]
         _ctx = self._select("layer", _args)
         return File(_ctx)
@@ -4147,7 +4141,7 @@ class Container(Type):
         self,
         *,
         forced_compression: ImageLayerCompression | None = None,
-        media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+        media_types: ImageMediaTypes | None = ImageMediaTypes.OCI,
     ) -> "File":
         """Computes and returns the manifest for this container as a File.
 
@@ -4166,7 +4160,7 @@ class Container(Type):
         """
         _args = [
             Arg("forcedCompression", forced_compression, None),
-            Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+            Arg("mediaTypes", media_types, ImageMediaTypes.OCI),
         ]
         _ctx = self._select("manifest", _args)
         return File(_ctx)
@@ -4219,7 +4213,7 @@ class Container(Type):
         *,
         platform_variants: "list[Container] | None" = None,
         forced_compression: ImageLayerCompression | None = None,
-        media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+        media_types: ImageMediaTypes | None = ImageMediaTypes.OCI,
         registry_service: "Service | None" = None,
         protocol: RegistryProtocol | None = None,
         insecure_skip_tls_verify: bool | None = False,
@@ -4293,10 +4287,10 @@ class Container(Type):
                 [],
             ),
             Arg("forcedCompression", forced_compression, None),
-            Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+            Arg("mediaTypes", media_types, ImageMediaTypes.OCI),
             Arg("registryService", registry_service, None),
             Arg("protocol", protocol, None),
-            Arg("insecureSkipTLSVerify", insecure_skip_tls_verify, False),
+            Arg("insecureSkipTlsVerify", insecure_skip_tls_verify, False),
             Arg("sourceDateEpoch", source_date_epoch, None),
         ]
         _ctx = self._select("publish", _args)
@@ -5060,7 +5054,7 @@ class Container(Type):
         to run with GPU support enabled.
         """
         _args: list[Arg] = []
-        _ctx = self._select("withGPU", _args)
+        _ctx = self._select("withGpu", _args)
         return Container(_ctx)
 
     def with_label(self, name: str, value: str) -> Self:
@@ -8704,7 +8698,7 @@ class File(Type):
     def as_json(self) -> "JSONValue":
         """Parse the file contents as JSON."""
         _args: list[Arg] = []
-        _ctx = self._select("asJSON", _args)
+        _ctx = self._select("asJson", _args)
         return JSONValue(_ctx)
 
     def chown(self, owner: str) -> Self:
@@ -9892,7 +9886,7 @@ class GeneratedCode(Type):
         _args = [
             Arg("paths", paths),
         ]
-        _ctx = self._select("withVCSGeneratedPaths", _args)
+        _ctx = self._select("withVcsGeneratedPaths", _args)
         return GeneratedCode(_ctx)
 
     def with_vcs_ignored_paths(self, paths: list[str]) -> Self:
@@ -9900,7 +9894,7 @@ class GeneratedCode(Type):
         _args = [
             Arg("paths", paths),
         ]
-        _ctx = self._select("withVCSIgnoredPaths", _args)
+        _ctx = self._select("withVcsIgnoredPaths", _args)
         return GeneratedCode(_ctx)
 
     def with_(
@@ -10033,7 +10027,7 @@ class GitBundle(Type):
         _ctx = self._select("objectFormat", _args)
         return await _ctx.execute(str)
 
-    async def prerequisite_sh_as(self) -> list[str]:
+    async def prerequisite_shas(self) -> list[str]:
         """Commits that must already exist wherever this bundle is applied.
 
         Returns
@@ -10051,7 +10045,7 @@ class GitBundle(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("prerequisiteSHAs", _args)
+        _ctx = self._select("prerequisiteShas", _args)
         return await _ctx.execute(list[str])
 
     async def refs(self) -> list["GitBundleRef"]:
@@ -10562,7 +10556,7 @@ class GitCommit(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("treeSHA", _args)
+        _ctx = self._select("treeSha", _args)
         return await _ctx.execute(str)
 
 
@@ -10636,7 +10630,7 @@ class GitPushResult(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("previousSHA", _args)
+        _ctx = self._select("previousSha", _args)
         return await _ctx.execute(str)
 
     async def ref(self) -> str:
@@ -10715,7 +10709,7 @@ class GitRef(Type):
         """The resolved commit id at this ref.
 
         .. deprecated::
-            Use "commitSHA" instead.
+            Use "commitSha" instead.
 
         Returns
         -------
@@ -10732,7 +10726,7 @@ class GitRef(Type):
             If the API returns an error.
         """
         warnings.warn(
-            'Method "commit" is deprecated: Use "commitSHA" instead.',
+            'Method "commit" is deprecated: Use "commitSha" instead.',
             DeprecationWarning,
             stacklevel=4,
         )
@@ -10758,7 +10752,7 @@ class GitRef(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("commitSHA", _args)
+        _ctx = self._select("commitSha", _args)
         return await _ctx.execute(str)
 
     def common_ancestor(self, other: Self) -> Self:
@@ -10927,7 +10921,7 @@ class GitRef(Type):
             Arg("to", to, None),
             Arg("remote", remote, ""),
             Arg("branch", branch, ""),
-            Arg("expectedRemoteSHA", expected_remote_sha, ""),
+            Arg("expectedRemoteSha", expected_remote_sha, ""),
         ]
         _ctx = self._select("push", _args)
         return GitPushResult(_ctx)
@@ -13195,7 +13189,7 @@ class LLM(Type):
             Arg("name", name),
             Arg("service", service),
         ]
-        _ctx = self._select("withMCPServer", _args)
+        _ctx = self._select("withMcpServer", _args)
         return LLM(_ctx)
 
     def with_model(
@@ -14445,7 +14439,7 @@ class Module(Type):
         hidden.
         """
         _args: list[Arg] = []
-        _ctx = self._select("introspectionSchemaJSON", _args)
+        _ctx = self._select("introspectionSchemaJson", _args)
         return File(_ctx)
 
     async def name(self) -> str:
@@ -14738,14 +14732,14 @@ class ModuleSource(Type):
         source.
 
         This is the schema consumed by client codegen: unlike
-        introspectionSchemaJSON (the module-facing schema), it hides no core
+        introspectionSchemaJson (the module-facing schema), it hides no core
         types and installs this module (reached via dag.<moduleName>) so a
         generated client can bind it. The module's dependencies are excluded:
         a client is generated for a single module plus core, not its
         dependency graph.
         """
         _args: list[Arg] = []
-        _ctx = self._select("clientSchemaIntrospectionJSON", _args)
+        _ctx = self._select("clientSchemaIntrospectionJson", _args)
         return File(_ctx)
 
     async def clone_ref(self) -> str:
@@ -14943,7 +14937,7 @@ class ModuleSource(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("htmlRepoURL", _args)
+        _ctx = self._select("htmlRepoUrl", _args)
         return await _ctx.execute(str)
 
     async def html_url(self) -> str:
@@ -14965,7 +14959,7 @@ class ModuleSource(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("htmlURL", _args)
+        _ctx = self._select("htmlUrl", _args)
         return await _ctx.execute(str)
 
     async def id(self) -> str:
@@ -15006,7 +15000,7 @@ class ModuleSource(Type):
         hidden.
         """
         _args: list[Arg] = []
-        _ctx = self._select("introspectionSchemaJSON", _args)
+        _ctx = self._select("introspectionSchemaJson", _args)
         return File(_ctx)
 
     async def kind(self) -> ModuleSourceKind:
@@ -15409,7 +15403,7 @@ class ModuleSource(Type):
         _args = [
             Arg("source", source),
         ]
-        _ctx = self._select("withSDK", _args)
+        _ctx = self._select("withSdk", _args)
         return ModuleSource(_ctx)
 
     def with_source_subpath(self, path: str) -> Self:
@@ -19894,7 +19888,7 @@ class Workspace(Type):
             Arg("here", here, False),
             Arg("asSdkName", as_sdk_name, ""),
         ]
-        _ctx = self._select("withSDK", _args)
+        _ctx = self._select("withSdk", _args)
         return Workspace(_ctx)
 
     def with_updated_clients(
@@ -20227,7 +20221,7 @@ class Workspace(Type):
             Arg("name", name),
             Arg("here", here, False),
         ]
-        _ctx = self._select("withoutSDK", _args)
+        _ctx = self._select("withoutSdk", _args)
         return Workspace(_ctx)
 
     def with_(self, cb: Callable[["Workspace"], "Workspace"]) -> "Workspace":

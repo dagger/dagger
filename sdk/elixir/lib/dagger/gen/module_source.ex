@@ -60,12 +60,12 @@ defmodule Dagger.ModuleSource do
   @doc """
   The client-facing introspection schema JSON file for this module source.
 
-  This is the schema consumed by client codegen: unlike introspectionSchemaJSON (the module-facing schema), it hides no core types and installs this module (reached via dag.<moduleName>) so a generated client can bind it. The module's dependencies are excluded: a client is generated for a single module plus core, not its dependency graph.
+  This is the schema consumed by client codegen: unlike introspectionSchemaJson (the module-facing schema), it hides no core types and installs this module (reached via dag.<moduleName>) so a generated client can bind it. The module's dependencies are excluded: a client is generated for a single module plus core, not its dependency graph.
   """
   @spec client_schema_introspection_json(t()) :: Dagger.File.t()
   def client_schema_introspection_json(%__MODULE__{} = module_source) do
     query_builder =
-      module_source.query_builder |> QB.select("clientSchemaIntrospectionJSON")
+      module_source.query_builder |> QB.select("clientSchemaIntrospectionJson")
 
     %Dagger.File{
       query_builder: query_builder,
@@ -254,7 +254,7 @@ defmodule Dagger.ModuleSource do
   @spec html_repo_url(t()) :: {:ok, String.t()} | {:error, term()}
   def html_repo_url(%__MODULE__{} = module_source) do
     query_builder =
-      module_source.query_builder |> QB.select("htmlRepoURL")
+      module_source.query_builder |> QB.select("htmlRepoUrl")
 
     Client.execute(module_source.client, query_builder)
   end
@@ -265,7 +265,7 @@ defmodule Dagger.ModuleSource do
   @spec html_url(t()) :: {:ok, String.t()} | {:error, term()}
   def html_url(%__MODULE__{} = module_source) do
     query_builder =
-      module_source.query_builder |> QB.select("htmlURL")
+      module_source.query_builder |> QB.select("htmlUrl")
 
     Client.execute(module_source.client, query_builder)
   end
@@ -291,7 +291,7 @@ defmodule Dagger.ModuleSource do
   @spec introspection_schema_json(t()) :: Dagger.File.t()
   def introspection_schema_json(%__MODULE__{} = module_source) do
     query_builder =
-      module_source.query_builder |> QB.select("introspectionSchemaJSON")
+      module_source.query_builder |> QB.select("introspectionSchemaJson")
 
     %Dagger.File{
       query_builder: query_builder,
@@ -636,7 +636,7 @@ defmodule Dagger.ModuleSource do
   @spec with_sdk(t(), String.t()) :: Dagger.ModuleSource.t()
   def with_sdk(%__MODULE__{} = module_source, source) do
     query_builder =
-      module_source.query_builder |> QB.select("withSDK") |> QB.put_arg("source", source)
+      module_source.query_builder |> QB.select("withSdk") |> QB.put_arg("source", source)
 
     %Dagger.ModuleSource{
       query_builder: query_builder,
