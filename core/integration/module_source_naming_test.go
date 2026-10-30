@@ -259,6 +259,53 @@ func (ModuleNamingSuite) TestModuleSourceNamingMatchesSchema(ctx context.Context
 	}
 }
 
+// TestCurrentModuleNamingAliases checks CurrentModule.naming inside one module
+// loaded twice in a session, as two dependencies under different names: each
+// load gets the names of its own (aliased) source. The two loads share an
+// implementation-scoped CurrentModule, whose source carries only one of the
+// names.
+func (ModuleNamingSuite) TestCurrentModuleNamingAliases(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	module := func(name, deps string) string {
+		return "name = \"" + name + "\"\nengineVersion = \"" + namingCut + "\"\nsource = \".\"\n\n[runtime]\nsource = \"dang\"\n" + deps
+	}
+	dep := func(name string) string {
+		return "\n[[dependencies]]\nname = \"" + name + "\"\nsource = \"../shared\"\n"
+	}
+	ws := goGitBase(t, c).
+		WithNewFile("dagger.toml", "[modules.pa]\nsource = \"./pa\"\n[modules.pb]\nsource = \"./pb\"\n").
+		WithNewFile("shared/dagger-module.toml", module("shared", "")).
+		WithNewFile("shared/main.dang", `type Thing {
+  pub name: String! {
+    "thing"
+  }
+}
+
+type Shared {
+  pub names(tag: String!): [String!]! {
+    currentModule.naming.typeNames(names: ["Thing"])
+  }
+}
+`).
+		WithNewFile("pa/dagger-module.toml", module("pa", dep("alias-one"))).
+		WithNewFile("pa/main.dang", `type Pa {
+  pub names: [String!]! {
+    aliasOne.names(tag: "a")
+  }
+}
+`).
+		WithNewFile("pb/dagger-module.toml", module("pb", dep("alias-two"))).
+		WithNewFile("pb/main.dang", `type Pb {
+  pub names: [String!]! {
+    aliasTwo.names(tag: "b")
+  }
+}
+`)
+	out, err := ws.With(daggerQuery(`{ pa { names } pb { names } }`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"pa": {"names": ["AliasOneThing"]}, "pb": {"names": ["AliasTwoThing"]}}`, out)
+}
+
 // namingConstructorName is the Query field of a module named
 // api-<suffix>: camelCase, the same by either rules.
 func namingConstructorName(module string) string {

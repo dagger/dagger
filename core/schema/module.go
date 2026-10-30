@@ -444,7 +444,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		dagql.Func("name", s.currentModuleName).
 			Doc(`The name of the module being executed in`),
 
-		dagql.Func("naming", s.currentModuleNaming).
+		dagql.FuncWithDynamicInputs("naming", s.currentModuleNaming, s.currentModuleNamingCacheKey).
 			View(AfterVersion(identifierVersion)).
 			Experimental(identifierExperimental).
 			Doc(`The names the engine gives this module's own declarations: the same as its source's ModuleSource.naming, for module runtimes, which have no ModuleSource.`,
@@ -2964,12 +2964,60 @@ func (s *moduleSchema) currentModuleName(
 	return curMod.Module.Self().NameField, nil
 }
 
+// currentModuleNamingArgs are the naming identity of the module CurrentModule
+// stands for, filled in by currentModuleNamingCacheKey. CurrentModule itself
+// is implementation-scoped: two loads of one module under different names
+// (dependency aliases) share it, so its own source may carry the other's name.
+type currentModuleNamingArgs struct {
+	ModuleSource dagql.Optional[core.ModuleSourceID] `internal:"true"`
+}
+
+// currentModuleNamingCacheKey records the source of the module the caller
+// actually runs as, so CurrentModule.naming answers, and is cached, for that
+// load rather than whichever load the implementation-scoped CurrentModule
+// came from.
+func (s *moduleSchema) currentModuleNamingCacheKey(
+	ctx context.Context,
+	_ dagql.ObjectResult[*core.CurrentModule],
+	args currentModuleNamingArgs,
+	req *dagql.CallRequest,
+) error {
+	if args.ModuleSource.Valid {
+		return nil
+	}
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil
+	}
+	mod, err := query.CurrentModule(ctx)
+	if err != nil || mod.Self() == nil || !mod.Self().Source.Valid {
+		// Fall back to CurrentModule's own source.
+		return nil
+	}
+	srcID, err := mod.Self().Source.Value.ID()
+	if err != nil {
+		return fmt.Errorf("current module source ID: %w", err)
+	}
+	return req.SetArgInput(ctx, "moduleSource", dagql.NewID[*core.ModuleSource](srcID), false)
+}
+
 // currentModuleNaming is ModuleSource.naming of the current module's source.
 func (s *moduleSchema) currentModuleNaming(
 	ctx context.Context,
 	curMod *core.CurrentModule,
-	args struct{},
+	args currentModuleNamingArgs,
 ) (*core.ModuleNaming, error) {
+	if args.ModuleSource.Valid {
+		dag, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get dag server: %w", err)
+		}
+		src, err := args.ModuleSource.Value.Load(ctx, dag)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load current module source: %w", err)
+		}
+		return src.Self().Naming(), nil
+	}
 	src := curMod.Module.Self().Source.Value.Self()
 	if src == nil {
 		return nil, errors.New("invalid unset current module source")
