@@ -11,7 +11,10 @@ import (
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
 )
 
-func applyDockerImageConfig(id *call.ID, img *dockerspec.DockerOCIImage) (*call.ID, error) {
+// applyDockerImageConfig applies img's config to the container id. Env vars in
+// execEnvNames that img's config doesn't set are removed: execs see build args
+// as env vars, but the image keeps only its config's env.
+func applyDockerImageConfig(id *call.ID, img *dockerspec.DockerOCIImage, execEnvNames map[string]struct{}) (*call.ID, error) {
 	if img == nil {
 		return id, nil
 	}
@@ -31,6 +34,18 @@ func applyDockerImageConfig(id *call.ID, img *dockerspec.DockerOCIImage) (*call.
 	}
 	if cfg.WorkingDir != "" {
 		ctrID = appendCall(ctrID, containerType(), "withWorkdir", argString("path", cfg.WorkingDir))
+	}
+
+	configEnvNames := make(map[string]struct{}, len(cfg.Env))
+	for _, envKV := range cfg.Env {
+		name, _, _ := strings.Cut(envKV, "=")
+		configEnvNames[name] = struct{}{}
+	}
+	for _, name := range sortedMapKeys(execEnvNames) {
+		if _, ok := configEnvNames[name]; ok {
+			continue
+		}
+		ctrID = appendCall(ctrID, containerType(), "withoutEnvVariable", argString("name", name))
 	}
 
 	for _, envKV := range cfg.Env {

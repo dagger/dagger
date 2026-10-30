@@ -52,7 +52,7 @@ func DefinitionToIDWithOptions(def *pb.Definition, img *dockerspec.DockerOCIImag
 
 func definitionToID(def *pb.Definition, img *dockerspec.DockerOCIImage, opts DefinitionToIDOptions) (*call.ID, error) {
 	if def == nil || len(def.Def) == 0 {
-		return applyDockerImageConfig(scratchContainerID(), img)
+		return applyDockerImageConfig(scratchContainerID(), img, nil)
 	}
 
 	dag, err := engineutil.DefToDAG(def)
@@ -60,13 +60,13 @@ func definitionToID(def *pb.Definition, img *dockerspec.DockerOCIImage, opts Def
 		return nil, fmt.Errorf("llbtodagger: parse definition: %w", err)
 	}
 	if dag == nil {
-		return applyDockerImageConfig(scratchContainerID(), img)
+		return applyDockerImageConfig(scratchContainerID(), img, nil)
 	}
 
 	for dag != nil && dag.Op != nil && dag.Op.Op == nil {
 		switch len(dag.Inputs) {
 		case 0:
-			return applyDockerImageConfig(scratchContainerID(), img)
+			return applyDockerImageConfig(scratchContainerID(), img, nil)
 		case 1:
 			dag = dag.Inputs[0]
 		default:
@@ -89,7 +89,7 @@ func definitionToID(def *pb.Definition, img *dockerspec.DockerOCIImage, opts Def
 	if err != nil {
 		return nil, err
 	}
-	return applyDockerImageConfig(ctrID, img)
+	return applyDockerImageConfig(ctrID, img, conv.execEnvNames)
 }
 
 type converter struct {
@@ -99,6 +99,10 @@ type converter struct {
 	secretIDsByLLBID     map[string]*call.ID
 	sshSocketIDsByLLBID  map[string]*call.ID
 	noInit               bool
+
+	// execEnvNames are the env vars set on containers for execs. They include
+	// build args, which must not persist into the image config.
+	execEnvNames map[string]struct{}
 }
 
 func (c *converter) convertOp(dag *engineutil.OpDAG) (*call.ID, error) {
