@@ -93,11 +93,12 @@ func (node *AgentNode) Live() bool {
 // Boundary/Encapsulate containment: an agent spawned deep inside a module
 // call — a staff worker, born under its chief's tool-call span — is exactly
 // the agent the roster exists to surface, so hiding contained ones would
-// defeat the purpose. Nesting is left to the caller, which can derive it
-// from the spans' ancestry when it wants a chief/worker tree.
+// defeat the purpose. Nesting is carried instead as each node's ParentID
+// (see DB.agentParent), for callers that want a chief/worker tree.
 //
 // The result is cached until something it is built from changes — a loop
-// span's identity or start time, a control record, or the live trace — so the
+// span's identity or start time, a control record, the live trace, or the
+// arrival of a span an agent's ancestry was waiting on — so the
 // many reads a frontend makes per span batch and per frame are free while a
 // large trace streams in; callers must treat the returned nodes as read-only.
 func (db *DB) Agents() []*AgentNode {
