@@ -1,0 +1,10 @@
+kind: Fixed
+body: |
+  Files checked out from Git get the time 1980-01-02T00:00:00Z instead of
+  1970-01-01T00:00:01Z, so they can be zipped. Since v0.21.0 their 1970 time
+  made tools that zip them fail with "ZIP does not support timestamps before
+  1980", such as Python wheel builds with flit_core, Python's `zipfile` and
+  `shutil.make_archive`. Every checkout still gets the same fixed time.
+time: 2026-10-30T18:00:00Z
+custom:
+  Author: sipsma

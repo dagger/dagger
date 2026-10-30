@@ -1759,13 +1759,27 @@ func finishGitCheckout(
 	return normalizeGitCheckoutTimes(ctx, checkoutDir, "")
 }
 
+// gitCheckoutTime is the timestamp of every path a checkout writes, so that a
+// checkout is the same however and whenever it is made. It is not the Unix
+// epoch: some build tools treat missing outputs as epoch and skip initial
+// copies when sources are also epoch. It is the first day ZIP can store in
+// every time zone (ZIP dates start at 1980-01-01 local time): tools that zip
+// checked-out files, such as Python's zipfile, refuse anything earlier.
+var gitCheckoutTime = time.Date(1980, time.January, 2, 0, 0, 0, 0, time.UTC)
+
+// gitCheckoutTimes is gitCheckoutTime as the access and modification times
+// UtimesNanoAt takes.
+func gitCheckoutTimes() []unix.Timespec {
+	ts := unix.Timespec{Sec: gitCheckoutTime.Unix()}
+	return []unix.Timespec{ts, ts}
+}
+
 // normalizeGitCheckoutTimes sets every timestamp below checkoutDir, except
-// below skip, to a deterministic non-zero time. Some build tools treat missing
-// outputs as epoch and skip initial copies when sources are also epoch.
+// below skip, to gitCheckoutTime.
 func normalizeGitCheckoutTimes(ctx context.Context, checkoutDir, skip string) (rerr error) {
 	_, span := Tracer(ctx).Start(ctx, "normalize checkout timestamps", telemetry.Internal())
 	defer telemetry.EndWithCause(span, &rerr)
-	normalizedTime := []unix.Timespec{{Sec: 1}, {Sec: 1}}
+	normalizedTime := gitCheckoutTimes()
 	var paths int
 	defer func() { span.SetAttributes(attribute.Int("dagger.git.checkout.normalized_paths", paths)) }()
 	// Identify the skipped directory by inode, not by spelling: a path

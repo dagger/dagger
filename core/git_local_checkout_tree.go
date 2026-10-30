@@ -295,7 +295,7 @@ func finishRetainedCheckoutTree(dest string, want snapshotRootInfo) error {
 			return err
 		}
 	}
-	return unix.UtimesNanoAt(unix.AT_FDCWD, dest, []unix.Timespec{{Sec: 1}, {Sec: 1}}, unix.AT_SYMLINK_NOFOLLOW)
+	return unix.UtimesNanoAt(unix.AT_FDCWD, dest, gitCheckoutTimes(), unix.AT_SYMLINK_NOFOLLOW)
 }
 
 // snapshotRootInfo is the metadata of a snapshot's root directory.

@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/util/gitutil"
@@ -218,7 +217,7 @@ func writeGitRemoteSelection(ctx context.Context, git *gitutil.GitCLI, remotes [
 	if err != nil {
 		return err
 	}
-	return os.Chtimes(filepath.Join(gitDir, "config"), time.Unix(1, 0), time.Unix(1, 0))
+	return os.Chtimes(filepath.Join(gitDir, "config"), gitCheckoutTime, gitCheckoutTime)
 }
 
 // SelectDefaultGitRemote applies the issue's selection order. A local upstream
