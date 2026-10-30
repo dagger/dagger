@@ -93,7 +93,7 @@ func AroundFunc(
 		}
 	}
 
-	slog.InfoContext(ctx, "start call",
+	slog.ExtraDebugContext(ctx, "start call",
 		"field", spanName,
 		"digest", callDigest.String(),
 	)
@@ -187,7 +187,7 @@ func AroundFunc(
 		rootClaimed, rootRepair, callOnSpan && span.IsRecording())
 
 	return ctx, func(res dagql.AnyResult, cached bool, err *error) {
-		slog.InfoContext(ctx, "end call",
+		slog.ExtraDebugContext(ctx, "end call",
 			"field", spanName,
 			"cached", cached,
 			"digest", callDigest.String(),
