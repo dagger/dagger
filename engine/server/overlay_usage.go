@@ -146,9 +146,6 @@ func (w *usageWalker) dir(fd int, path string) (rerr error) {
 	defer func() {
 		rerr = errors.Join(rerr, unix.Close(fd))
 	}()
-	if err := w.ctx.Err(); err != nil {
-		return err
-	}
 	start := len(w.names)
 	defer func() { w.names = w.names[:start] }()
 	for {
@@ -168,6 +165,11 @@ func (w *usageWalker) dir(fd int, path string) (rerr error) {
 	// this directory's names stay valid in the old array.
 	names := w.names[start:]
 	for _, name := range names {
+		select {
+		case <-w.ctx.Done():
+			return w.ctx.Err()
+		default:
+		}
 		if err := unix.Fstatat(fd, name, &w.st, unix.AT_SYMLINK_NOFOLLOW); err != nil {
 			return &os.PathError{Op: "lstat", Path: filepath.Join(path, name), Err: err}
 		}

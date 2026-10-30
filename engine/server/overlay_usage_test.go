@@ -50,8 +50,9 @@ func TestOverlaySnapshotterUsage(t *testing.T) {
 	require.Equal(t, want.Size, committed.Size)
 	require.Equal(t, want.Inodes, committed.Inodes)
 
-	// The point of the engine's walk: it allocates a fraction of what
-	// fs.DiskUsage does for the same tree.
+	// The point of the engine's walk: through the snapshotter the engine
+	// builds, sizing an active snapshot and committing one allocate a
+	// fraction of what continuity's walk of the same tree does.
 	allocated := func(f func()) uint64 {
 		var before, after runtime.MemStats
 		runtime.ReadMemStats(&before)
@@ -59,11 +60,17 @@ func TestOverlaySnapshotterUsage(t *testing.T) {
 		runtime.ReadMemStats(&after)
 		return after.TotalAlloc - before.TotalAlloc
 	}
-	theirs := allocated(func() { _, err = fs.DiskUsage(ctx, upper) })
+	mounts, err = sn.Prepare(ctx, "active2", "")
 	require.NoError(t, err)
-	ours := allocated(func() { _, err = diskUsage(ctx, upper) })
+	writeUsageTree(t, mounts[0].Source, filepath.Join(root, "outside2"))
+	theirs := allocated(func() { _, err = fs.DiskUsage(ctx, mounts[0].Source) })
 	require.NoError(t, err)
-	require.Less(t, ours*4, theirs, "diskUsage allocated %d bytes, fs.DiskUsage %d", ours, theirs)
+	usage := allocated(func() { _, err = sn.Usage(ctx, "active2") })
+	require.NoError(t, err)
+	require.Less(t, usage*4, theirs, "Usage allocated %d bytes, fs.DiskUsage %d", usage, theirs)
+	commit := allocated(func() { err = sn.Commit(ctx, "committed2", "active2") })
+	require.NoError(t, err)
+	require.Less(t, commit*4, theirs, "Commit allocated %d bytes, fs.DiskUsage %d", commit, theirs)
 }
 
 // writeUsageTree fills dir with what an upper directory can hold: nested and
