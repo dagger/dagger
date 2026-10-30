@@ -109,3 +109,29 @@ func TestGetUserCachedAllocations(t *testing.T) {
 	})
 	require.Less(t, cached, parse/2, "cached lookup %v allocations, parse alone %v", cached, parse)
 }
+
+// Files longer than GetUser reads into memory give what the parser gives
+// streaming them: a user at the end of a long passwd is found, and a line
+// too long for the parser fails a named user and leaves the default root.
+func TestGetUserLongFiles(t *testing.T) {
+	root := t.TempDir()
+	var passwd strings.Builder
+	for passwd.Len() <= 2*userFileMax {
+		passwd.WriteString("filler:x:5:5::/:/sbin/nologin\n")
+	}
+	passwd.WriteString("builder:x:1000:1000::/home/builder:/bin/sh\n")
+	writeUserFiles(t, root, passwd.String(), testGroup)
+	for range 2 {
+		uid, gid, sgids, err := GetUser(root, "builder")
+		require.NoError(t, err)
+		require.Equal(t, []uint32{1000, 1000}, []uint32{uid, gid})
+		require.Equal(t, []uint32{10}, sgids)
+	}
+
+	writeUserFiles(t, root, strings.Repeat("a", 2*userFileMax), testGroup)
+	_, _, _, err := GetUser(root, "builder")
+	require.Error(t, err)
+	uid, gid, _, err := GetUser(root, "")
+	require.NoError(t, err)
+	require.Equal(t, []uint32{0, 0}, []uint32{uid, gid})
+}
