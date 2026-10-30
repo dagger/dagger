@@ -92,7 +92,10 @@ Current hook points:
   per layer, an `io` op `snapshot.import.fetch[<source>]` (`download`,
   `builtin` or `present`) and `snapshot.import.apply`, with the layer's
   digest as ident and its size in bytes, and a lock wait on
-  `snapshots.importLayer`.
+  `snapshots.importLayer`. Each metadata write transaction the snapshot
+  manager makes, as when it attaches a lease to a snapshot and its parents,
+  is an `io` op `snapshots.metadata.write`, from asking for the database's
+  single writer to the commit's end.
 - Remote-cache installs (`dagql/cache_part_content.go`): one `remote_cache`
   op `remotecache.install` per attempt to install an offered part, with the
   part key as ident, the receiving result, and the bytes downloaded; a `part`

@@ -345,3 +345,26 @@ func (b builtinLookups) Info(_ context.Context, dgst digest.Digest) (content.Inf
 func (b builtinLookups) ReaderAt(context.Context, ocispecs.Descriptor) (content.ReaderAt, error) {
 	return nil, cerrdefs.ErrNotFound
 }
+
+// Each metadata write transaction the manager makes is profiled as one
+// snapshots.metadata.write op: attaching a lease to a chain of snapshots
+// writes them all in one.
+func TestMetadataWriteProfiled(t *testing.T) {
+	store := testutil.NewStore(t)
+	a, _ := store.Build(t, nil, "a.txt", "lower")
+	ab, _ := store.Build(t, a, "b.txt", "upper")
+	ctx, root := profiledOp(context.Background(), "test.attach")
+	require.NoError(t, store.Manager.AttachLease(ctx, "profiled-owner", ab.SnapshotID()))
+	root.End(wcprof.OutcomeOK)
+	t.Cleanup(func() { require.NoError(t, store.Manager.RemoveLease(context.Background(), "profiled-owner")) })
+	var writes []profiledEvent
+	for _, ev := range profiledUnder(t, root.ID()) {
+		if ev.Type == "op" && ev.class == "snapshots.metadata.write" {
+			writes = append(writes, ev)
+		}
+	}
+	require.Len(t, writes, 1, "one transaction for the snapshot and its parent")
+	require.Equal(t, root.ID(), writes[0].ParentID)
+	require.Equal(t, "ok", writes[0].Outcome)
+	require.Equal(t, "io", writes[0].OpKind)
+}
