@@ -1170,6 +1170,82 @@ type sessionResultInstallSpan struct {
 	ownsClosure bool
 }
 
+// spanKey identifies a span: its trace and span IDs.
+type spanKey struct {
+	traceID trace.TraceID
+	spanID  trace.SpanID
+}
+
+func spanKeyOf(spanCtx trace.SpanContext) spanKey {
+	return spanKey{traceID: spanCtx.TraceID(), spanID: spanCtx.SpanID()}
+}
+
+// sessionResultInstalls is a result's install sites in a session, one per
+// span. Most results have one, so the first is kept inline. The next few go
+// in a slice, searched in order; a result installed by more spans than that,
+// such as a shared base every call returns, keeps them in a map.
+type sessionResultInstalls struct {
+	first sessionResultInstallSpan
+	few   []sessionResultInstallSpan
+	many  map[spanKey]sessionResultInstallSpan
+}
+
+// maxFewInstallSpans is how many further install spans a result keeps in a
+// slice before it moves them to a map.
+const maxFewInstallSpans = 8
+
+func (installs *sessionResultInstalls) record(spanCtx trace.SpanContext, ownsClosure bool) {
+	key := spanKeyOf(spanCtx)
+	merge := func(install *sessionResultInstallSpan) {
+		install.spanCtx = spanCtx
+		install.ownsClosure = install.ownsClosure || ownsClosure
+	}
+	if !installs.first.spanCtx.IsValid() || spanKeyOf(installs.first.spanCtx) == key {
+		merge(&installs.first)
+		return
+	}
+	if installs.many != nil {
+		install := installs.many[key]
+		merge(&install)
+		installs.many[key] = install
+		return
+	}
+	for i := range installs.few {
+		if spanKeyOf(installs.few[i].spanCtx) == key {
+			merge(&installs.few[i])
+			return
+		}
+	}
+	var install sessionResultInstallSpan
+	merge(&install)
+	if len(installs.few) < maxFewInstallSpans {
+		installs.few = append(installs.few, install)
+		return
+	}
+	installs.many = make(map[spanKey]sessionResultInstallSpan, len(installs.few)+1)
+	for _, few := range installs.few {
+		installs.many[spanKeyOf(few.spanCtx)] = few
+	}
+	installs.many[key] = install
+	installs.few = nil
+}
+
+func (installs *sessionResultInstalls) all(yield func(sessionResultInstallSpan) bool) {
+	if !installs.first.spanCtx.IsValid() || !yield(installs.first) {
+		return
+	}
+	for _, install := range installs.few {
+		if !yield(install) {
+			return
+		}
+	}
+	for _, install := range installs.many {
+		if !yield(install) {
+			return
+		}
+	}
+}
+
 func (c *Cache) recordSessionResultInstallSpanLocked(ctx context.Context, sessionID string, resultID sharedResultID, spanCtx trace.SpanContext, ownsClosure bool) {
 	wcprof.Lock(ctx, &c.sessionMu, sessionsLockIdent)
 	defer c.sessionMu.Unlock()
@@ -1179,23 +1255,19 @@ func (c *Cache) recordSessionResultInstallSpanLocked(ctx context.Context, sessio
 		return
 	}
 	if c.sessionResultInstallSpans == nil {
-		c.sessionResultInstallSpans = make(map[string]map[sharedResultID]map[string]sessionResultInstallSpan)
+		c.sessionResultInstallSpans = make(map[string]map[sharedResultID]*sessionResultInstalls)
 	}
 	bySession := c.sessionResultInstallSpans[sessionID]
 	if bySession == nil {
-		bySession = make(map[sharedResultID]map[string]sessionResultInstallSpan)
+		bySession = make(map[sharedResultID]*sessionResultInstalls)
 		c.sessionResultInstallSpans[sessionID] = bySession
 	}
-	byResult := bySession[resultID]
-	if byResult == nil {
-		byResult = make(map[string]sessionResultInstallSpan)
-		bySession[resultID] = byResult
+	installs := bySession[resultID]
+	if installs == nil {
+		installs = &sessionResultInstalls{}
+		bySession[resultID] = installs
 	}
-	key := spanContextKey(spanCtx)
-	install := byResult[key]
-	install.spanCtx = spanCtx
-	install.ownsClosure = install.ownsClosure || ownsClosure
-	byResult[key] = install
+	installs.record(spanCtx, ownsClosure)
 }
 
 // installAncestorIDsLocked returns the IDs of results that transitively
@@ -1266,16 +1338,21 @@ func (c *Cache) sessionResultInstallSpanContexts(sessionID string, resultID shar
 	if byResult == nil {
 		return nil
 	}
-	seen := make(map[string]struct{})
+	seen := make(map[spanKey]struct{})
 	var out []trace.SpanContext
 	appendInstalls := func(id sharedResultID, closureOwnersOnly bool) {
-		for key, install := range byResult[id] {
+		installs := byResult[id]
+		if installs == nil {
+			return
+		}
+		for install := range installs.all {
 			if closureOwnersOnly && !install.ownsClosure {
 				continue
 			}
 			if !install.spanCtx.IsValid() {
 				continue
 			}
+			key := spanKeyOf(install.spanCtx)
 			if _, dup := seen[key]; dup {
 				continue
 			}
@@ -1296,12 +1373,12 @@ func (c *Cache) sessionResultInstallSpanContexts(sessionID string, resultID shar
 
 func lazyResumeLinks(originalSpanCtx trace.SpanContext, installSpanContexts []trace.SpanContext) []trace.Link {
 	links := []trace.Link{{SpanContext: originalSpanCtx}}
-	seen := map[string]struct{}{spanContextKey(originalSpanCtx): {}}
+	seen := map[spanKey]struct{}{spanKeyOf(originalSpanCtx): {}}
 	for _, installCtx := range installSpanContexts {
 		if !installCtx.IsValid() {
 			continue
 		}
-		key := spanContextKey(installCtx)
+		key := spanKeyOf(installCtx)
 		if _, dup := seen[key]; dup {
 			continue
 		}
@@ -2461,7 +2538,7 @@ type Cache struct {
 	// module API call returns are recorded once on the returned result with
 	// ownsClosure set, and lookups resolve closure ownership on demand by
 	// walking dep edges upward via depParents.
-	sessionResultInstallSpans    map[string]map[sharedResultID]map[string]sessionResultInstallSpan
+	sessionResultInstallSpans    map[string]map[sharedResultID]*sessionResultInstalls
 	sessionResourcesBySession    map[string]map[SessionResourceHandle]*sessionResourceBindings
 	sessionHandlesBySession      map[string]*set.TreeSet[SessionResourceHandle]
 	sessionVolatileVarsBySession map[string]map[string]string
@@ -2626,10 +2703,6 @@ func compareSpanContexts(a, b trace.SpanContext) int {
 	aSpanID := a.SpanID()
 	bSpanID := b.SpanID()
 	return bytes.Compare(aSpanID[:], bSpanID[:])
-}
-
-func spanContextKey(ctx trace.SpanContext) string {
-	return ctx.TraceID().String() + "/" + ctx.SpanID().String()
 }
 
 // CacheUsageSizeProvider resolves concrete snapshot sizes for cache usage accounting.

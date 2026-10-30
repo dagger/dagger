@@ -523,6 +523,86 @@ func TestSessionResultInstallSpanContextsSorted(t *testing.T) {
 	assert.DeepEqual(t, got, []trace.SpanContext{spanCtxA, spanCtxB})
 }
 
+// A result installed by several spans keeps each one once, and a span that
+// later owns the result's closure is a closure owner, whichever of the
+// result's install spans it is.
+func TestSessionResultInstallSpansMergeClosureOwnership(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	c := &Cache{resultsByID: map[sharedResultID]*sharedResult{}}
+	owner := &sharedResult{id: 1}
+	dep := &sharedResult{id: 2}
+	c.resultsByID[owner.id] = owner
+	c.resultsByID[dep.id] = dep
+	c.egraphMu.Lock()
+	err := c.addExplicitDependencyLocked(ctx, owner, dep, "test")
+	c.egraphMu.Unlock()
+	assert.NilError(t, err)
+
+	spanCtxs := make([]trace.SpanContext, 3)
+	for i := range spanCtxs {
+		spanCtxs[i] = trace.NewSpanContext(trace.SpanContextConfig{
+			TraceID: trace.TraceID{byte(i + 1)},
+			SpanID:  trace.SpanID{byte(i + 1)},
+		})
+		c.recordSessionResultInstallSpanLocked(ctx, "test-session", owner.id, spanCtxs[i], false)
+	}
+	assert.DeepEqual(t, c.sessionResultInstallSpanContexts("test-session", dep.id), []trace.SpanContext(nil))
+
+	// The first span and a later one come to own the closure.
+	c.recordSessionResultInstallSpanLocked(ctx, "test-session", owner.id, spanCtxs[2], true)
+	c.recordSessionResultInstallSpanLocked(ctx, "test-session", owner.id, spanCtxs[0], true)
+	c.recordSessionResultInstallSpanLocked(ctx, "test-session", owner.id, spanCtxs[2], false)
+	c.recordSessionResultInstallSpanLocked(ctx, "test-session", owner.id, spanCtxs[0], false)
+
+	assert.DeepEqual(t, c.sessionResultInstallSpanContexts("test-session", owner.id), spanCtxs)
+	assert.DeepEqual(t, c.sessionResultInstallSpanContexts("test-session", dep.id),
+		[]trace.SpanContext{spanCtxs[0], spanCtxs[2]})
+}
+
+// A result installed by more spans than its slice keeps still reports each
+// span once, closure owners included, after its installs move to a map.
+func TestSessionResultInstallSpansBeyondTheSlice(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	c := &Cache{resultsByID: map[sharedResultID]*sharedResult{}}
+	owner := &sharedResult{id: 1}
+	dep := &sharedResult{id: 2}
+	c.resultsByID[owner.id] = owner
+	c.resultsByID[dep.id] = dep
+	c.egraphMu.Lock()
+	err := c.addExplicitDependencyLocked(ctx, owner, dep, "test")
+	c.egraphMu.Unlock()
+	assert.NilError(t, err)
+
+	n := maxFewInstallSpans + 3
+	spanCtxs := make([]trace.SpanContext, n)
+	for i := range spanCtxs {
+		spanCtxs[i] = trace.NewSpanContext(trace.SpanContextConfig{
+			TraceID: trace.TraceID{byte(i + 1)},
+			SpanID:  trace.SpanID{byte(i + 1)},
+		})
+	}
+	for _, i := range []int{0, 1, 2, 1} {
+		c.recordSessionResultInstallSpanLocked(ctx, "test-session", owner.id, spanCtxs[i], false)
+	}
+	// A span in the slice comes to own the closure, then the installs move.
+	c.recordSessionResultInstallSpanLocked(ctx, "test-session", owner.id, spanCtxs[2], true)
+	for i := 3; i < n; i++ {
+		c.recordSessionResultInstallSpanLocked(ctx, "test-session", owner.id, spanCtxs[i], false)
+	}
+	// Spans already in the map merge there, and a later write doesn't demote.
+	c.recordSessionResultInstallSpanLocked(ctx, "test-session", owner.id, spanCtxs[n-1], true)
+	c.recordSessionResultInstallSpanLocked(ctx, "test-session", owner.id, spanCtxs[n-1], false)
+	c.recordSessionResultInstallSpanLocked(ctx, "test-session", owner.id, spanCtxs[2], false)
+
+	assert.DeepEqual(t, c.sessionResultInstallSpanContexts("test-session", owner.id), spanCtxs)
+	assert.DeepEqual(t, c.sessionResultInstallSpanContexts("test-session", dep.id),
+		[]trace.SpanContext{spanCtxs[2], spanCtxs[n-1]})
+}
+
 // Install-span lookups walk dep edges upward: a result sees its own direct
 // install spans plus closure-owning (module API call return) install spans of
 // results that transitively depend on it. Non-owning installs on ancestors
