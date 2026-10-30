@@ -10,12 +10,11 @@ import (
 )
 
 type matcher struct {
-	only          map[string]struct{}
-	onlyParents   map[string]struct{}
-	include       *patternmatcher.PatternMatcher
-	exclude       *patternmatcher.PatternMatcher
-	gitignore     *fsxutil.GitignoreMatcher
-	gitignoreRoot string
+	only        map[string]struct{}
+	onlyParents map[string]struct{}
+	include     *patternmatcher.PatternMatcher
+	exclude     *patternmatcher.PatternMatcher
+	gitignore   *fsxutil.GitignoreMatcher
 
 	// onlyPrefixIncludes is true when every include pattern is a literal path,
 	// optionally followed by a trailing glob. Then a directory that matches no
@@ -30,7 +29,6 @@ type matchState struct {
 
 	// includeMatched is whether the include patterns alone matched the path.
 	includeMatched bool
-	excludeMatched bool
 }
 
 func newMatcher(_ string, filter Filter) (*matcher, error) {
@@ -147,7 +145,6 @@ func (m *matcher) includePath(rel string, abs string, isDir bool, parent matchSt
 	if m.exclude != nil {
 		excluded, excludeInfo, err := m.exclude.MatchesUsingParentResults(rel, parent.exclude)
 		state.exclude = excludeInfo
-		state.excludeMatched = excluded
 		if err != nil {
 			return false, state, err
 		}
@@ -156,13 +153,6 @@ func (m *matcher) includePath(rel string, abs string, isDir bool, parent matchSt
 		}
 	}
 	if m.gitignore != nil {
-		if m.gitignoreRoot != "" {
-			var err error
-			abs, err = filepath.Rel(m.gitignoreRoot, abs)
-			if err != nil {
-				return false, state, err
-			}
-		}
 		ignored, err := m.gitignore.Matches(abs, isDir)
 		if err != nil {
 			return false, state, err

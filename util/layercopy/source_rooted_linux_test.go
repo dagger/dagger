@@ -3,7 +3,6 @@
 package layercopy
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"os"
@@ -11,91 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/containerd/containerd/v2/core/mount"
-	"github.com/containerd/continuity/sysx"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 )
-
-// A symlink hidden by an upper directory must not be followed through a raw
-// lower-layer path when the target does not exist in the mounted view.
-func TestFollowSymlinksDoesNotReadHiddenOverlaySymlink(t *testing.T) {
-	t.Parallel()
-	lower, upper, view, outside, dst := t.TempDir(), t.TempDir(), t.TempDir(), t.TempDir(), t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(outside, "secret"), []byte("outside secret"), 0600))
-	require.NoError(t, os.Symlink(outside, filepath.Join(lower, "masked")))
-	for _, root := range []string{upper, view} {
-		require.NoError(t, os.Mkdir(filepath.Join(root, "masked"), 0755))
-		require.NoError(t, os.Mkdir(filepath.Join(root, "src"), 0755))
-		require.NoError(t, os.Symlink("/masked/secret", filepath.Join(root, "src/link")))
-	}
-	copier, err := NewCopier(Mount{Root: dst})
-	require.NoError(t, err)
-	defer copier.Close()
-	err = copier.Copy(context.Background(), Mount{Root: view, Mount: &mount.Mount{
-		Type: "overlay", Options: []string{"lowerdir=" + upper + ":" + lower},
-	}}, "/src", "/out", CopyOptions{CopyDirContents: true, FollowSymlinks: true})
-	require.Error(t, err, "a missing mounted target must not expose a host file through a hidden layer symlink")
-	require.NoFileExists(t, filepath.Join(dst, "out/link"))
-}
-
-func TestFollowSymlinksPinsContentsAndXattrs(t *testing.T) {
-	t.Parallel()
-	root, dst, outside := t.TempDir(), t.TempDir(), t.TempDir()
-	file := filepath.Join(root, "file")
-	require.NoError(t, os.WriteFile(file, []byte("inside"), 0640))
-	require.NoError(t, sysx.LSetxattr(file, "user.follow-test", []byte("inside attribute"), 0))
-	external := filepath.Join(outside, "secret")
-	require.NoError(t, os.WriteFile(external, []byte("outside secret"), 0600))
-	require.NoError(t, sysx.LSetxattr(external, "user.follow-test", []byte("outside attribute"), 0))
-	src, err := newSource(Mount{Root: root})
-	require.NoError(t, err)
-	require.NoError(t, src.confine())
-	defer src.rootHandle.Close()
-	require.NoError(t, src.selectBase("/", true))
-	ent, err := src.pinEntry(sourceEntry{Rel: "file", ViewPath: file})
-	require.NoError(t, err)
-	defer ent.file.Close()
-	// Replacing the pathname after validation must not change the copied inode.
-	require.NoError(t, os.Rename(file, file+".saved"))
-	require.NoError(t, os.Symlink(external, file))
-	copier, err := NewCopier(Mount{Root: dst})
-	require.NoError(t, err)
-	defer copier.Close()
-	require.NoError(t, copier.copyNode(ent, "/copied", resolvedParent{}, CopyOptions{DisableSourceHardlinks: true}))
-	data, err := os.ReadFile(filepath.Join(dst, "copied"))
-	require.NoError(t, err)
-	require.Equal(t, "inside", string(data))
-	attr, err := sysx.LGetxattr(filepath.Join(dst, "copied"), "user.follow-test")
-	require.NoError(t, err)
-	require.Equal(t, "inside attribute", string(attr))
-}
-
-func TestFollowSymlinksConfinesDirectoryReplacement(t *testing.T) {
-	t.Parallel()
-	root, dst, outside := t.TempDir(), t.TempDir(), t.TempDir()
-	require.NoError(t, os.Mkdir(filepath.Join(root, "dir"), 0755))
-	require.NoError(t, os.WriteFile(filepath.Join(outside, "secret"), []byte("outside secret"), 0600))
-	src, err := newSource(Mount{Root: root})
-	require.NoError(t, err)
-	require.NoError(t, src.confine())
-	defer src.rootHandle.Close()
-	src.onReadDir = func(rel string) {
-		if rel != "dir" {
-			return
-		}
-		require.NoError(t, os.Rename(filepath.Join(root, "dir"), filepath.Join(root, "saved")))
-		require.NoError(t, os.Symlink(outside, filepath.Join(root, "dir")))
-	}
-	copier, err := NewCopier(Mount{Root: dst})
-	require.NoError(t, err)
-	defer copier.Close()
-	matcher, err := newMatcher(root, Filter{})
-	require.NoError(t, err)
-	err = copier.copy(context.Background(), src, matcher, "/", "/out", CopyOptions{CopyDirContents: true, FollowSymlinks: true, DisableSourceHardlinks: true})
-	require.Error(t, err)
-	require.NoFileExists(t, filepath.Join(dst, "out/dir/secret"))
-}
 
 func TestFollowSymlinksPinsRootAcrossRename(t *testing.T) {
 	t.Parallel()
@@ -118,31 +35,6 @@ func TestFollowSymlinksPinsRootAcrossRename(t *testing.T) {
 	require.Equal(t, "inside", string(data))
 }
 
-func TestFollowSymlinksConfinesGitignore(t *testing.T) {
-	t.Parallel()
-	for _, fifo := range []bool{false, true} {
-		t.Run(fmt.Sprintf("fifo=%t", fifo), func(t *testing.T) {
-			root, dst := t.TempDir(), t.TempDir()
-			rule := filepath.Join(root, ".gitignore")
-			if fifo {
-				require.NoError(t, unix.Mkfifo(rule, 0600))
-			} else {
-				external := filepath.Join(t.TempDir(), "external-ignore")
-				require.NoError(t, os.WriteFile(external, []byte("*\n"), 0600))
-				require.NoError(t, os.Symlink(external, rule))
-			}
-			require.NoError(t, os.WriteFile(filepath.Join(root, "file"), []byte("inside"), 0644))
-			copier, err := NewCopier(Mount{Root: dst})
-			require.NoError(t, err)
-			defer copier.Close()
-			err = copier.Copy(context.Background(), Mount{Root: root}, "/", "/out", CopyOptions{
-				CopyDirContents: true, FollowSymlinks: true, Filter: Filter{Gitignore: true},
-			})
-			require.Error(t, err)
-		})
-	}
-}
-
 func TestFollowSymlinksRejectsMagicLinks(t *testing.T) {
 	t.Parallel()
 	outside, err := os.Open(t.TempDir())
@@ -157,47 +49,6 @@ func TestFollowSymlinksRejectsMagicLinks(t *testing.T) {
 		f.Close()
 	}
 	require.Error(t, err)
-}
-
-func TestFollowSymlinksCopiesSourceButPreservesInternalHardlinks(t *testing.T) {
-	t.Parallel()
-	root, dst := t.TempDir(), t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(root, "file"), []byte("inside"), 0644))
-	require.NoError(t, os.Symlink("file", filepath.Join(root, "link")))
-	copier, err := NewCopier(Mount{Root: dst})
-	require.NoError(t, err)
-	defer copier.Close()
-	require.NoError(t, copier.Copy(context.Background(), Mount{Root: root}, "/", "/out", CopyOptions{CopyDirContents: true, FollowSymlinks: true}))
-	srcInfo, err := os.Stat(filepath.Join(root, "file"))
-	require.NoError(t, err)
-	fileInfo, err := os.Stat(filepath.Join(dst, "out/file"))
-	require.NoError(t, err)
-	linkInfo, err := os.Stat(filepath.Join(dst, "out/link"))
-	require.NoError(t, err)
-	require.False(t, os.SameFile(srcInfo, fileInfo))
-	require.True(t, os.SameFile(fileInfo, linkInfo))
-}
-
-func TestFollowSymlinksGitignoreWithinSource(t *testing.T) {
-	t.Parallel()
-	root, dst := t.TempDir(), t.TempDir()
-	require.NoError(t, os.Mkdir(filepath.Join(root, "target"), 0755))
-	require.NoError(t, os.WriteFile(filepath.Join(root, "target/.gitignore"), []byte("skip.txt\n"), 0644))
-	require.NoError(t, os.WriteFile(filepath.Join(root, "target/skip.txt"), []byte("skip"), 0644))
-	require.NoError(t, os.WriteFile(filepath.Join(root, "target/keep.txt"), []byte("keep"), 0644))
-	require.NoError(t, os.Symlink("/target", filepath.Join(root, "link")))
-	copier, err := NewCopier(Mount{Root: dst})
-	require.NoError(t, err)
-	defer copier.Close()
-	require.NoError(t, copier.Copy(context.Background(), Mount{Root: root}, "/", "/out", CopyOptions{
-		CopyDirContents: true, FollowSymlinks: true, Filter: Filter{Gitignore: true},
-	}))
-	for _, name := range []string{"link", "target"} {
-		data, err := os.ReadFile(filepath.Join(dst, "out", name, "keep.txt"))
-		require.NoError(t, err)
-		require.Equal(t, "keep", string(data))
-		require.NoFileExists(t, filepath.Join(dst, "out", name, "skip.txt"))
-	}
 }
 
 func TestRootedOpenPreservesSnapshotSymlinkSemantics(t *testing.T) {

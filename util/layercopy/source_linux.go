@@ -16,7 +16,6 @@ import (
 )
 
 type source struct {
-	// rootHandle is set only for descriptor-confined recursive symlink copies.
 	rootHandle   *os.Root
 	root         string
 	realRoot     string
@@ -47,6 +46,8 @@ type source struct {
 }
 
 type sourceEntry struct {
+	// file pins the source inode; RealPath names its descriptor in procfs.
+	file     *os.File
 	Rel      string
 	ViewPath string
 	RealPath string
@@ -56,8 +57,6 @@ type sourceEntry struct {
 	// which waits until the filter keeps the entry (stat): a filter like
 	// "exclude **/*.go" leaves most of a source's files out.
 	unstated bool
-	// file pins the source inode; RealPath then names this descriptor in procfs.
-	file *os.File
 	// minLayer is the lowest overlay layer visible below this entry. An opaque
 	// directory or non-directory in a higher layer hides lower descendants.
 	minLayer int
@@ -93,9 +92,6 @@ func newSource(m Mount) (*source, error) {
 func (s *source) selectBase(srcPath string, followFinalSymlink bool) error {
 	if s.baseCached {
 		return nil
-	}
-	if s.rootHandle != nil {
-		return s.selectRootedBase(srcPath, followFinalSymlink)
 	}
 
 	baseView, err := rootPath(s.root, srcPath, followFinalSymlink)
@@ -150,9 +146,6 @@ func (s *source) readDir(rel string, minLayer int) ([]sourceEntry, error) {
 	rel = cleanRel(rel)
 	if s.onReadDir != nil {
 		s.onReadDir(rel)
-	}
-	if s.rootHandle != nil {
-		return s.readRootedDir(rel)
 	}
 	if !s.overlay {
 		return s.readBindDir(rel)
