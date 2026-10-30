@@ -205,28 +205,30 @@ func newExecState(
 type executorSetupFunc func(context.Context, *execState) error
 
 // startingContainerLog is the logger for an exec's "starting container" and
-// "container done" lines.
+// "container done" lines. Its fields are set at once, and args formatted
+// once for both lines, as the text formatter would.
 func startingContainerLog(ctx context.Context, state *execState) *logrus.Entry {
 	cacheMounts := 0
 	if state.execMD != nil {
 		cacheMounts = state.execMD.CacheMounts
 	}
-	lg := bklog.G(ctx).
-		WithField("id", state.id).
-		WithField("args", state.spec.Process.Args).
-		WithField("cache_mounts", cacheMounts)
+	fields := logrus.Fields{
+		"id":           state.id,
+		"args":         fmt.Sprint(state.spec.Process.Args),
+		"cache_mounts": cacheMounts,
+	}
 	if state.execMD != nil {
 		if state.execMD.CallDigest != "" {
-			lg = lg.WithField("call_id", state.execMD.CallDigest)
+			fields["call_id"] = state.execMD.CallDigest
 		}
 	}
 	if state.callerClientID != "" {
-		lg = lg.WithField("caller_client_id", state.callerClientID)
+		fields["caller_client_id"] = state.callerClientID
 	}
 	if state.nestedClientMetadata != nil && state.nestedClientMetadata.ClientID != "" {
-		lg = lg.WithField("nested_client_id", state.nestedClientMetadata.ClientID)
+		fields["nested_client_id"] = state.nestedClientMetadata.ClientID
 	}
-	return lg
+	return bklog.G(ctx).WithFields(fields)
 }
 
 //nolint:gocyclo
