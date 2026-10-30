@@ -544,6 +544,8 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble, Node,
      * Modules declaring a version before the identifier casing cut get the legacy strcase names; later ones get the engine's identifier naming rules.
      *
      * For SDK codegen, which must reproduce these names before the module is loaded: this reads only the source's name, original name and engine version, so it answers before the module's entrypoint is generated.
+     *
+     * It answers for the module under its own name (moduleName). A workspace or toolchain that loads the module under another name namespaces its types under that name instead, which this doesn't reflect.
      */
     public function naming(): ModuleNaming
     {
