@@ -50,6 +50,10 @@ type sourceEntry struct {
 	RealPath string
 	Info     os.FileInfo
 	StatErr  error
+	// unstated marks a bind source's non-directory read without its stat,
+	// which waits until the filter keeps the entry (stat): a filter like
+	// "exclude **/*.go" leaves most of a source's files out.
+	unstated bool
 	// minLayer is the lowest overlay layer visible below this entry. An opaque
 	// directory or non-directory in a higher layer hides lower descendants.
 	minLayer int
@@ -157,28 +161,45 @@ func (s *source) readBindDir(rel string) ([]sourceEntry, error) {
 	entries := make([]sourceEntry, 0, len(dirents))
 	for _, de := range dirents {
 		name := de.Name()
-		viewPath := filepath.Join(viewDir, name)
-		info, err := os.Lstat(viewPath)
-		if err != nil {
-			if !os.IsNotExist(err) {
-				return nil, err
-			}
-			entries = append(entries, sourceEntry{
-				Rel:      filepath.Join(rel, name),
-				ViewPath: viewPath,
-				RealPath: filepath.Join(realDir, name),
-				StatErr:  err,
-			})
-			continue
-		}
-		entries = append(entries, sourceEntry{
+		ent := sourceEntry{
 			Rel:      filepath.Join(rel, name),
-			ViewPath: viewPath,
+			ViewPath: filepath.Join(viewDir, name),
 			RealPath: filepath.Join(realDir, name),
-			Info:     info,
-		})
+		}
+		if !de.IsDir() {
+			ent.unstated = true
+		} else if err := ent.stat(); err != nil {
+			return nil, err
+		}
+		entries = append(entries, ent)
 	}
 	return entries, nil
+}
+
+// stat fills in the entry's file info, or its StatErr when the path is gone,
+// as readBindDir would have read it.
+func (ent *sourceEntry) stat() error {
+	ent.unstated = false
+	info, err := os.Lstat(ent.ViewPath)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return err
+		}
+		ent.StatErr = err
+		return nil
+	}
+	ent.Info = info
+	return nil
+}
+
+// filterIsDir is whether the filter matches the entry as a directory: as its
+// info says, or, without info, as its directory listing does; a path that
+// vanished before its stat counts as one.
+func (ent *sourceEntry) filterIsDir() bool {
+	if ent.unstated {
+		return false
+	}
+	return ent.Info == nil || ent.Info.IsDir()
 }
 
 func (s *source) readOverlayDir(rel string, minLayer int) ([]sourceEntry, error) {
