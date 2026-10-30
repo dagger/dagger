@@ -700,9 +700,9 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`Skip the automatic init process injected into containers by default.`,
 					`Only use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this.`,
 				),
-				dagql.Arg("transparentHugePages").Volatile().Doc(
+				dagql.Arg("transparentHugePages").Volatile().View(AfterVersion("v1.0.0-beta.22")).Doc(
 					`Let the command, and the processes it starts, use the Linux kernel's transparent huge pages. Large-memory programs such as compilers can run faster with them, at some cost in memory.`,
-					`Commands don't use them unless they set this. It has an effect only on hosts whose transparent huge pages are set to "always" (/sys/kernel/mm/transparent_hugepage/enabled) and that run Linux 6.18 or later. On hosts set to "madvise", the usual default, it changes nothing. On hosts set to "always" with an older kernel, every command uses them, whether it sets this or not.`,
+					`Without this, a command gets huge pages only for memory its own program asks huge pages for, as on a host set to "madvise". That only matters on hosts with Linux 6.18 or later whose transparent huge pages are set to "always" (/sys/kernel/mm/transparent_hugepage/enabled, or a size under /sys/kernel/mm/transparent_hugepage/hugepages-*). With the usual default settings, this changes nothing. On older kernels, commands get what the host's settings give them, whether they set this or not.`,
 					`It isn't part of the exec's cache key: an exec that differs from a cached one only in this setting reuses the cached result, whichever setting produced it.`,
 				),
 			),
