@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -130,6 +131,16 @@ func (srv *Server) AuthorizeGitPush(ctx context.Context, remote, ref string, for
 	// Tool execution in the owner's context is not a direct user API call.
 	if !delegated && !core.IsAgentToolCall(ctx) {
 		return authorized()
+	}
+
+	if !force {
+		md, err := owner.daggerSession.clientMetadataSnapshot(owner.clientRecord)
+		if err != nil {
+			return nil, err
+		}
+		if slices.Contains(md.AllowedGitPushRemotes, "all") || slices.Contains(md.AllowedGitPushRemotes, remote) {
+			return authorized()
+		}
 	}
 	key := gitPushApprovalKey{owner: owner.clientID, remote: remote, ref: ref, force: force}
 	allowed, err := client.daggerSession.gitPushApprovals.check(ctx, key, func(ctx context.Context) (bool, error) {
