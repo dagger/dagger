@@ -8,6 +8,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func TestComposingAgentContext(t *testing.T) {
@@ -144,4 +145,73 @@ func TestAgentToolCallContext(t *testing.T) {
 	require.True(t, called)
 	require.False(t, failed)
 	require.False(t, IsAgentToolCall(ctx), "tool scope must not leak back into caller")
+}
+
+// A nested exec client run on an agent's behalf (e.g. `go test` from an
+// agent's tool, connecting back to the engine) has no function call record.
+// The agent rides its engine-internal client metadata instead, so agents the
+// client spawns — directly or through module functions it calls — record that
+// agent as their parent, without the client speaking as that agent.
+func TestNestedExecClientLineage(t *testing.T) {
+	var newLease func(engine.ClientLeaseKind, string) *engine.ClientLifecycleLease
+	newLease = func(kind engine.ClientLeaseKind, owner string) *engine.ClientLifecycleLease {
+		return engine.NewClientLifecycleLease(kind, owner, nil, func(kind engine.ClientLeaseKind, owner string) (*engine.ClientLifecycleLease, error) {
+			return newLease(kind, owner), nil
+		})
+	}
+	clientCtx := func(md *engine.ClientMetadata, fnCall *FunctionCall) context.Context {
+		lease := newLease(engine.ClientLeaseRequest, md.ClientID)
+		t.Cleanup(lease.Release)
+		scope, err := engine.NewClientScope(md, lease)
+		require.NoError(t, err)
+		ctx, err := engine.ContextWithClientScope(t.Context(), scope)
+		require.NoError(t, err)
+		return ContextWithQuery(ctx, NewRoot(&mockServer{functionCall: fnCall}))
+	}
+	newAgent := func(handle string) dagql.ObjectResult[*Agent] {
+		agent, ok := AgentFromContext(testAgentContext(t, t.Context(), handle, handle))
+		require.True(t, ok)
+		return agent
+	}
+	registry := NewAgentRuntimes()
+	t.Cleanup(func() { require.NoError(t, registry.KillAll(context.Background(), nil)) })
+
+	// The worker's tool runs the exec: that is the agent its clients inherit.
+	toolCtx := testAgentContext(t, clientCtx(&engine.ClientMetadata{ClientID: "main", SessionID: "session"}, nil), "worker", "worker")
+	worker, _ := AgentFromContext(toolCtx)
+	_, err := registry.Create(toolCtx, worker, AgentStateIdle, "", false, "")
+	require.NoError(t, err)
+	require.Equal(t, "worker", lineageAgentHandle(toolCtx))
+	require.Equal(t, "family", lineageAgentHandle(WithComposingAgent(toolCtx, "family")), "composition still claims its spawns first")
+
+	spawnParent := func(ctx context.Context, handle string) string {
+		rt, err := registry.Create(ctx, newAgent(handle), AgentStateIdle, "", false, "")
+		require.NoError(t, err)
+		return rt.ParentHandle()
+	}
+
+	nested := clientCtx(&engine.ClientMetadata{ClientID: "nested", SessionID: "session", LineageAgent: "worker"}, nil)
+	_, isCaller := CallerAgent(nested)
+	require.False(t, isCaller, "a nested exec client does not speak as the agent it runs for")
+	require.Equal(t, "worker", inheritedAgentHandle(nested), "the lineage survives the client scope's metadata snapshot")
+	require.Equal(t, "worker", spawnParent(nested, "direct"))
+
+	// A module function the nested client calls carries the lineage on its
+	// call record into the function's own client.
+	fnCall := newFunctionCall(FunctionCall{inheritedAgentHandle: inheritedAgentHandle(nested)})
+	fnCtx := clientCtx(&engine.ClientMetadata{ClientID: "function", SessionID: "session"}, fnCall)
+	_, isCaller = CallerAgent(fnCtx)
+	require.False(t, isCaller)
+	require.Equal(t, "worker", spawnParent(fnCtx, "via-function"))
+
+	// The client may start its own trace, or name an agent this registry no
+	// longer holds: control records only validate a parent in the child's
+	// namespace, so the lineage is dropped rather than recorded dangling.
+	otherTrace := trace.ContextWithSpanContext(nested, trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: trace.TraceID{1},
+		SpanID:  trace.SpanID{1},
+	}))
+	require.Empty(t, spawnParent(otherTrace, "other-trace"))
+	gone := clientCtx(&engine.ClientMetadata{ClientID: "gone", SessionID: "session", LineageAgent: "gone"}, nil)
+	require.Empty(t, spawnParent(gone, "orphan"))
 }

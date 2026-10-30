@@ -2477,6 +2477,12 @@ type FunctionCall struct {
 	// Like callerAgent, it is set at dispatch and never part of a cache key.
 	composingAgentHandle string
 
+	// inheritedAgentHandle propagates a nested exec client's inherited agent
+	// (see core.inheritedAgentHandle) to the module functions it calls:
+	// lineage only, like composingAgentHandle, set at dispatch and never part
+	// of a cache key.
+	inheritedAgentHandle string
+
 	// processSpan is the span that the processes started for this call parent
 	// their telemetry to, carried engine-side only like callerAgent. A module
 	// entrypoint sets it to the function call span: its module process is

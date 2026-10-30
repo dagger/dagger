@@ -268,6 +268,14 @@ type ClientMetadata struct {
 	// the processes the entrypoint starts.
 	SDKEntrypoint bool `json:"-"`
 
+	// LineageAgent is the handle of the agent on whose behalf the exec that
+	// started this nested client ran. Agents the client spawns record it as
+	// their parent when nothing nearer claims them (see core's
+	// inheritedAgentHandle): lineage only, never message provenance.
+	// Engine-internal: never read from client headers, so a client cannot
+	// claim an agent it does not run for.
+	LineageAgent string `json:"-"`
+
 	// Profile enables engine wall-clock profiling (wcprof) for the duration
 	// of this client's work. Experimental; the recorded events are retrieved
 	// via the engine debug endpoints.
