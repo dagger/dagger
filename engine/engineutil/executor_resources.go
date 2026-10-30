@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/dagger/dagger/engine/engineutil/resources"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
@@ -12,8 +13,30 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/noop"
+	"go.opentelemetry.io/otel/sdk/instrumentation"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/exemplar"
 	"go.opentelemetry.io/otel/trace"
 )
+
+// ResourceMetricsView keeps exemplars off the exec resource gauges. Their
+// points already carry the exec's trace and span IDs as attributes, and the
+// SDK's default reservoir would allocate GOMAXPROCS slots for every exec's
+// series. Metric values are unchanged.
+func ResourceMetricsView() sdkmetric.View {
+	return sdkmetric.NewView(
+		sdkmetric.Instrument{Scope: instrumentation.Scope{Name: InstrumentationLibrary}},
+		sdkmetric.Stream{ExemplarReservoirProviderSelector: func(sdkmetric.Aggregation) exemplar.ReservoirProvider {
+			return func(attribute.Set) exemplar.Reservoir { return noExemplars{} }
+		}},
+	)
+}
+
+type noExemplars struct{}
+
+func (noExemplars) Offer(context.Context, time.Time, exemplar.Value, []attribute.KeyValue) {}
+
+func (noExemplars) Collect(dest *[]exemplar.Exemplar) { *dest = (*dest)[:0] }
 
 func execResourceTelemetry(ctx context.Context, state *execState) (context.Context, metric.Meter, attribute.Set) {
 	// Workload readings are keyed by the exec.run span. Without a recording

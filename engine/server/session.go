@@ -956,6 +956,7 @@ func (srv *Server) initializeClientMetrics(client *clientRuntime) {
 	}
 	meterOpts := []sdkmetric.Option{
 		sdkmetric.WithResource(telemetry.Resource),
+		sdkmetric.WithView(engineutil.ResourceMetricsView()),
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(
 			exporter,
 			sdkmetric.WithInterval(metricReaderInterval),
