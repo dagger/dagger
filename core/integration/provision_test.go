@@ -298,6 +298,29 @@ if [ "${1:-}" = "dockerd" ] && [ ! -e /proc/net/ip_tables_names ] && [ -e /sbin/
 	done
 fi
 
+# Their dind script also enables the cgroup v2 controllers with one write, and
+# exits 4 ("sed: write error") when it fails, as it does while any process is
+# still in the root cgroup. Newer dind retries; retry here too, so that dind's
+# write finds the controllers already enabled, which the kernel accepts.
+if [ "${1:-}" = "dockerd" ] && [ -f /sys/fs/cgroup/cgroup.controllers ]; then
+	mkdir -p /sys/fs/cgroup/init
+	tries=0
+	until {
+		xargs -rn1 < /sys/fs/cgroup/cgroup.procs > /sys/fs/cgroup/init/cgroup.procs || :
+		sed -e 's/ / +/g' -e 's/^/+/' < /sys/fs/cgroup/cgroup.controllers > /sys/fs/cgroup/cgroup.subtree_control
+	}; do
+		for pid in $(cat /sys/fs/cgroup/cgroup.procs); do
+			echo "still in the root cgroup: $pid $(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null)" >&2
+		done
+		tries=$((tries + 1))
+		if [ "$tries" -ge 50 ]; then
+			echo "could not enable the cgroup controllers" >&2
+			exit 1
+		fi
+		sleep 0.1
+	done
+fi
+
 exec /usr/local/bin/dockerd-entrypoint.sh "$@"
 `
 
