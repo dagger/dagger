@@ -193,7 +193,7 @@ func TestImportChainProfiled(t *testing.T) {
 				want = append(want, importPhase{"snapshot.import.fetch[" + source[dgst] + "]", dgst}, importPhase{"snapshot.import.apply", dgst})
 			}
 			require.ElementsMatch(t, want, ops, "the second import reuses both layers")
-			require.Equal(t, 4, lockWaits, "one lock wait per layer per import")
+			require.Equal(t, 2, lockWaits, "one lock wait per layer the first import applies; the second takes the chain whole")
 			for _, layer := range chain.Layers {
 				dgst := layer.Descriptor.Digest.String()
 				fetch := byPhase[importPhase{"snapshot.import.fetch[" + source[dgst] + "]", dgst}]
