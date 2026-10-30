@@ -43,7 +43,21 @@ func (cm *snapshotManager) ImportChain(ctx context.Context, chain *ExportChain) 
 			_ = pin.release(ctx)
 		}
 	}()
-	first := cm.chainLocalPrefix(chain)
+	first, top := cm.chainLocalTop(chain)
+	// The layers the engine already has are taken as one: their top
+	// snapshot, attached to the import's lease with all its parents, which
+	// is what reusing each in turn ends with. A top snapshot gone since
+	// leaves the layers to import in order, which reuses what remains.
+	start := 0
+	if first > 0 {
+		ref, err := cm.reuseLocalChain(ctx, top)
+		if err != nil {
+			return nil, err
+		}
+		if ref != nil {
+			current, start = ref, first
+		}
+	}
 	// importInOrder imports layer i onto current, as the next in order.
 	importInOrder := func(i int) error {
 		if i >= first {
@@ -69,7 +83,7 @@ func (cm *snapshotManager) ImportChain(ctx context.Context, chain *ExportChain) 
 	if cm.applyLayersApart {
 		apartFrom = first
 	}
-	for i := range apartFrom {
+	for i := start; i < apartFrom; i++ {
 		if i >= first {
 			if err := cm.awaitLayer(ctx, chain, i); err != nil {
 				return nil, err
@@ -331,6 +345,13 @@ func (cm *snapshotManager) layerImportedLocked() {
 // need no bytes. An index entry whose snapshot has gone since only means its
 // layer downloads when it imports.
 func (cm *snapshotManager) chainLocalPrefix(chain *ExportChain) int {
+	n, _ := cm.chainLocalTop(chain)
+	return n
+}
+
+// chainLocalTop is chainLocalPrefix with the snapshot of the last of those
+// layers, or "" when there are none.
+func (cm *snapshotManager) chainLocalTop(chain *ExportChain) (int, string) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 	parent := ""
@@ -342,11 +363,25 @@ func (cm *snapshotManager) chainLocalPrefix(chain *ExportChain) int {
 			}
 		}
 		if snapshotID == "" {
-			return i
+			return i, parent
 		}
 		parent = snapshotID
 	}
-	return len(chain.Layers)
+	return len(chain.Layers), parent
+}
+
+// reuseLocalChain returns the snapshot of a chain's local layers, attached
+// to ctx's lease with all its parents and their blobs, or nil when it is
+// gone. It applies nothing, so it needs no import lock.
+func (cm *snapshotManager) reuseLocalChain(ctx context.Context, snapshotID string) (ImmutableRef, error) {
+	leaseID, _ := leases.FromContext(ctx)
+	if err := cm.AttachLease(ctx, leaseID, snapshotID); err != nil {
+		if IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return cm.GetBySnapshotID(ctx, snapshotID, NoUpdateLastUsed)
 }
 
 // chainAhead is one chain import's downloads of the blobs of the layers after
