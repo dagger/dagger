@@ -639,6 +639,16 @@ func prepareSelectorInputs(ctx context.Context, srv *Server, spec *FieldSpec, vi
 	return inputArgs, frameArgs, nil
 }
 
+// putVolatileInputs copies the volatile arguments' values from prepared into
+// inputs, which were rebuilt from a call that doesn't hold them.
+func putVolatileInputs(spec *FieldSpec, view call.View, prepared, inputs map[string]Input) {
+	for _, argSpec := range spec.Args.Inputs(view) {
+		if input, ok := prepared[argSpec.Name]; ok && argSpec.Volatile {
+			inputs[argSpec.Name] = input
+		}
+	}
+}
+
 func (r ObjectResult[T]) preselect(ctx context.Context, srv *Server, sel Selector) (ObjectResult[T], *preselectResult, error) {
 	view := sel.View
 	field, ok := r.class.Field(sel.Field, view)
@@ -723,11 +733,7 @@ func (r ObjectResult[T]) preselect(ctx context.Context, srv *Server, sel Selecto
 		if err != nil {
 			return r, nil, err
 		}
-		for _, argSpec := range field.Spec.Args.Inputs(view) {
-			if input, ok := volatileInputs[argSpec.Name]; ok && argSpec.Volatile {
-				inputArgs[argSpec.Name] = input
-			}
-		}
+		putVolatileInputs(field.Spec, view, volatileInputs, inputArgs)
 	}
 
 	if scope := CurrentResultScope(ctx); scope != nil {
