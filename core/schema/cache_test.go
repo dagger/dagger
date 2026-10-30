@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -56,10 +57,26 @@ func TestNamespaceFromModule(t *testing.T) {
 		Kind:              core.ModuleSourceKindLocal,
 		SourceRootSubpath: ".dagger/modules/go",
 	}))
-	require.Equal(t, "mod(gogithub.com/dagger/dagger/.dagger/modules/go)", namespace("git", &core.ModuleSource{
-		Kind: core.ModuleSourceKindGit,
-		Git:  &core.GitModuleSource{Symbolic: "github.com/dagger/dagger/.dagger/modules/go"},
-	}))
+	for i, cloneRef := range []string{
+		"github.com/dagger/dagger",
+		"https://github.com/dagger/dagger",
+		"https://github.com/dagger/dagger.git",
+		"git@github.com:dagger/dagger.git",
+		"ssh://git@github.com/dagger/dagger",
+		"https://synthuser:synthsecret@github.com/dagger/dagger",
+	} {
+		require.Equal(t, "mod(gogithub.com/dagger/dagger/.dagger/modules/go)", namespace(fmt.Sprintf("git-%d", i), &core.ModuleSource{
+			Kind:              core.ModuleSourceKindGit,
+			SourceRootSubpath: ".dagger/modules/go",
+			Git:               &core.GitModuleSource{CloneRef: cloneRef},
+		}), cloneRef)
+		root := cloneRef
+		require.Equal(t, "mod(gogithub.com/dagger/dagger/.dagger/modules/go)", namespace(fmt.Sprintf("dir-from-git-%d", i), &core.ModuleSource{
+			Kind:              core.ModuleSourceKindDir,
+			SourceRootSubpath: ".dagger/modules/go",
+			DirSrc:            &core.DirModuleSource{OriginRoot: &root},
+		}), cloneRef)
+	}
 	require.Equal(t, "mod(gogithub.com/dagger/dagger/.dagger/modules/go)", namespace("dir-from-git", &core.ModuleSource{
 		Kind:              core.ModuleSourceKindDir,
 		SourceRootSubpath: ".dagger/modules/go",

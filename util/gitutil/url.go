@@ -134,11 +134,7 @@ func SameRepository(a, b *GitURL) bool {
 	if a.Scheme == b.Scheme && effectivePort(a.Scheme, aHost.Port()) != effectivePort(b.Scheme, bHost.Port()) {
 		return false
 	}
-	aPath, bPath := repositoryPath(a.Path), repositoryPath(b.Path)
-	if caseInsensitivePathHosts[strings.ToLower(aHost.Hostname())] {
-		return strings.EqualFold(aPath, bPath)
-	}
-	return aPath == bPath
+	return repositoryPathOn(aHost.Hostname(), a.Path) == repositoryPathOn(aHost.Hostname(), b.Path)
 }
 
 // caseInsensitivePathHosts are forges whose repository paths are
@@ -148,6 +144,55 @@ func SameRepository(a, b *GitURL) bool {
 var caseInsensitivePathHosts = map[string]bool{
 	"github.com": true,
 	"gitlab.com": true,
+}
+
+// RepositoryIdentity is the identity of the repository a clone ref names,
+// whichever way it is spelled: host and path, as SameRepository compares
+// them, without scheme, user or .git suffix. github.com/org/repo,
+// https://github.com/org/repo.git, git@github.com:org/repo and
+// ssh://git@github.com/org/repo are all github.com/org/repo. The identity
+// names cache namespaces, so it never carries credentials, and it is its own
+// identity. A ref that is no git URL keeps its spelling, without scheme and
+// userinfo.
+//
+// Without a scheme a port cannot be read against the transport's default, so
+// the ports git transports listen on by default are dropped whatever the
+// scheme, and any other port is kept. Unlike workspace.NormalizeGitRemote,
+// which keys user config, it parses a scheme-less ref the way cloning does
+// and folds path case where SameRepository does.
+func RepositoryIdentity(cloneRef string) string {
+	urls, err := ParseCloneURL(cloneRef)
+	if err != nil || len(urls) == 0 {
+		return withoutUserinfo(cloneRef)
+	}
+	u := urls[0]
+	host := &url.URL{Host: u.Host}
+	identity := strings.ToLower(host.Hostname())
+	// An IPv6 address keeps its brackets, so its last group is not taken
+	// for a port.
+	if strings.Contains(identity, ":") {
+		identity = "[" + identity + "]"
+	}
+	if port := host.Port(); port != "" && !defaultTransportPorts[port] {
+		identity += ":" + port
+	}
+	if path := repositoryPathOn(host.Hostname(), u.Path); path != "" {
+		identity += "/" + path
+	}
+	return identity
+}
+
+var defaultTransportPorts = map[string]bool{"22": true, "80": true, "443": true, "9418": true}
+
+func withoutUserinfo(ref string) string {
+	if _, rest, ok := strings.Cut(ref, "://"); ok {
+		ref = rest
+	}
+	authority, _, _ := strings.Cut(ref, "/")
+	if at := strings.LastIndex(authority, "@"); at >= 0 {
+		ref = ref[at+1:]
+	}
+	return ref
 }
 
 func effectivePort(scheme, port string) string {
@@ -167,8 +212,18 @@ func effectivePort(scheme, port string) string {
 	return ""
 }
 
-func repositoryPath(path string) string {
-	return strings.TrimSuffix(strings.Trim(path, "/"), ".git")
+// repositoryPathOn is the path of a repository on host, folded where the
+// host routes paths case-insensitively.
+func repositoryPathOn(host, path string) string {
+	path = strings.Trim(path, "/")
+	// Every suffix, so that the result is its own repository path.
+	for strings.HasSuffix(path, ".git") {
+		path = strings.TrimSuffix(path, ".git")
+	}
+	if caseInsensitivePathHosts[strings.ToLower(host)] {
+		return strings.ToLower(path)
+	}
+	return path
 }
 
 // GitURLFragment is the buildkit-specific metadata extracted from the fragment
