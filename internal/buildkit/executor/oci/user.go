@@ -40,8 +40,10 @@ func GetUser(root, username string) (uint32, uint32, []uint32, error) {
 	buf.Write(size[:])
 	buf.WriteString(username)
 	passwd := readUserFile(buf, root, "/etc/passwd")
+	defer passwd.close()
 	group := readUserFile(buf, root, "/etc/group")
-	cacheable := passwd.readErr == nil && group.readErr == nil
+	defer group.close()
+	cacheable := passwd.whole() && group.whole()
 	var key [sha256.Size]byte
 	if cacheable {
 		key = sha256.Sum256(buf.Bytes())
@@ -104,11 +106,17 @@ func (c *userResults) put(key [sha256.Size]byte, u cachedUser) {
 // userFileBufPool holds the buffers GetUser reads the user files into.
 var userFileBufPool = sync.Pool{New: func() any { return new(bytes.Buffer) }}
 
+// userFileMax is the most of a user file GetUser reads into its buffer. The
+// rest of a larger file is parsed from the file, as before, and its result
+// isn't cached.
+const userFileMax = 1 << 20
+
 // userFile is a passwd or group file as GetUser read it into its buffer.
 type userFile struct {
 	opened     bool
-	start, end int   // the contents read, in the buffer
-	readErr    error // why reading stopped early
+	start, end int      // the contents read, in the buffer
+	readErr    error    // why reading stopped early
+	rest       *os.File // a file longer than userFileMax, left open there
 }
 
 // readUserFile appends root's file p to buf, after a header saying whether
@@ -120,29 +128,47 @@ func readUserFile(buf *bytes.Buffer, root, p string) userFile {
 		buf.WriteByte(0)
 		return uf
 	}
-	defer f.Close()
 	uf.opened = true
 	buf.WriteByte(1)
 	lenAt := buf.Len()
 	var size [8]byte
 	buf.Write(size[:])
 	uf.start = buf.Len()
-	_, uf.readErr = buf.ReadFrom(f)
+	_, uf.readErr = buf.ReadFrom(io.LimitReader(f, userFileMax+1))
 	uf.end = buf.Len()
 	binary.LittleEndian.PutUint64(buf.Bytes()[lenAt:], uint64(uf.end-uf.start))
+	if uf.readErr == nil && uf.end-uf.start > userFileMax {
+		uf.rest = f
+	} else {
+		f.Close()
+	}
 	return uf
 }
 
+// whole reports whether buf holds all there is of the file.
+func (uf userFile) whole() bool {
+	return uf.readErr == nil && uf.rest == nil
+}
+
+func (uf userFile) close() {
+	if uf.rest != nil {
+		uf.rest.Close()
+	}
+}
+
 // reader gives user.GetExecUser what reading the file itself would: its
-// contents and then any read error, or, for a file that didn't open, the nil
-// *os.File GetUser always passed it.
+// contents, then the rest of a long file or any read error, or, for a file
+// that didn't open, the nil *os.File GetUser always passed it.
 func (uf userFile) reader(buf *bytes.Buffer) io.Reader {
 	if !uf.opened {
 		return (*os.File)(nil)
 	}
 	contents := bytes.NewReader(buf.Bytes()[uf.start:uf.end])
-	if uf.readErr != nil {
+	switch {
+	case uf.readErr != nil:
 		return io.MultiReader(contents, errReader{uf.readErr})
+	case uf.rest != nil:
+		return io.MultiReader(contents, uf.rest)
 	}
 	return contents
 }
