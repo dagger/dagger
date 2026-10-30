@@ -622,10 +622,13 @@ verbs rather than an upsert. And the TUI's stopped-agent filter — the
 roster strip hiding STOPPED entries — was reverted: it papered over the
 successor tombstones, and with replacements no longer minting them, a
 STOPPED entry means something real (a dismissed worker, a deliberate stop)
-that must not silently vanish from the strip. `TestReseed`
+that must not silently vanish from the strip. (The strip later became
+focus-relative: STOPPED agents near focus fold into a counted "+N done" chip,
+and every agent, on the strip or not, stays reachable by the [/] cycle and
+shown once focused — folded, never gone.) `TestReseed`
 (core/integration/agent_runtime_test.go) pins the verb's semantics,
 `TestReseedKeepsTheInstance` (internal/cmd/dagger/session_agent_test.go)
-the CLI's reseed-or-drop policy, and `TestRosterShowsStoppedAgents`
+the CLI's reseed-or-drop policy, and `TestRosterKeepsStoppedAgentsReachable`
 (dagql/idtui/agent_step_test.go) the roster.
 
 **The follow-up that removed the commonest split at the source** (kept as
@@ -708,7 +711,7 @@ swap races a step's commit).
   edge to fold, so the planned `agents_test.go` coverage has nothing to
   test. What replaced it: `TestReseed` (core/integration) for the verb,
   `TestReseedKeepsTheInstance` (internal/cmd/dagger) for the CLI's
-  reseed-or-drop policy, `TestRosterShowsStoppedAgents` (dagql/idtui) for
+  reseed-or-drop policy, `TestRosterKeepsStoppedAgentsReachable` (dagql/idtui) for
   the roster. The dismiss-and-rehire case §6 must not break needs no test
   here: two spawns are two runtime handles, which `TestSpawnInstances`
   already pins.
