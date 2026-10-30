@@ -179,7 +179,8 @@ func TestModuleResultIDsSurviveResultRemoval(t *testing.T) {
 		return cacheTestIntResult(cacheTestIntCall("unrelated"), 1), nil
 	})
 	require.NoError(t, err)
-	unrelatedID := unrelated.cacheSharedResult().id
+	unrelatedShared := unrelated.cacheSharedResult()
+	unrelatedID := unrelatedShared.id
 	require.NotZero(t, unrelatedID)
 
 	c.egraphMu.Lock()
@@ -194,6 +195,7 @@ func TestModuleResultIDsSurviveResultRemoval(t *testing.T) {
 	_, stillThere := c.resultsByID[unrelatedID]
 	c.egraphMu.RUnlock()
 	require.False(t, stillThere, "the session's release removes its result")
+	require.Nil(t, unrelatedShared.loadResultCall(), "removal clears the result's frame")
 
 	r := newModuleIDsRebuild(t.Context(), resultCallFrameGeneration.Load())
 	ids, _, err := c.moduleResultIDs(root, r)
