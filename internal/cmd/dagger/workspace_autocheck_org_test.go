@@ -44,7 +44,7 @@ func TestUserOrgMembershipError(t *testing.T) {
 }
 
 func TestGitHubAppInstallURL(t *testing.T) {
-	const prod = "https://github.com/apps/dagger-cloud/installations/select_target"
+	const prod = "https://github.com/apps/dagger-for-github/installations/select_target"
 	const dev = "https://github.com/apps/dagger-cloud-dev/installations/select_target"
 
 	t.Run("production when DAGGER_CLOUD_URL unset", func(t *testing.T) {
@@ -64,12 +64,35 @@ func TestGitHubAppInstallURL(t *testing.T) {
 }
 
 func TestGitHubAppNotInstalledError(t *testing.T) {
-	t.Setenv("DAGGER_CLOUD_URL", "")
-	err := gitHubAppNotInstalledError("github.com/dagger/hello-dagger")
-	require.Error(t, err)
-	require.Contains(t, err.Error(), `"dagger"`) // owner
-	require.Contains(t, err.Error(), "not installed")
-	require.Contains(t, err.Error(), "https://github.com/apps/dagger-cloud/installations/select_target")
+	for _, tc := range []struct {
+		name       string
+		cloudURL   string
+		installURL string
+	}{
+		{
+			name:       "production by default",
+			installURL: "https://github.com/apps/dagger-for-github/installations/select_target",
+		},
+		{
+			name:       "production for api.dagger.cloud",
+			cloudURL:   "https://api.dagger.cloud",
+			installURL: "https://github.com/apps/dagger-for-github/installations/select_target",
+		},
+		{
+			name:       "dev for a local/non-prod API",
+			cloudURL:   "http://localhost:8020",
+			installURL: "https://github.com/apps/dagger-cloud-dev/installations/select_target",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("DAGGER_CLOUD_URL", tc.cloudURL)
+			err := gitHubAppNotInstalledError("github.com/dagger/hello-dagger")
+			require.Error(t, err)
+			require.Contains(t, err.Error(), `"dagger"`) // owner
+			require.Contains(t, err.Error(), "not installed")
+			require.Contains(t, err.Error(), tc.installURL)
+		})
+	}
 }
 
 func TestIsCloudUnauthorized(t *testing.T) {
