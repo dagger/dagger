@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -172,7 +173,13 @@ func (tr *contentTestTransport) RoundTrip(req *http.Request) (*http.Response, er
 	var start, end int64
 	resp.StatusCode = http.StatusOK
 	if spec := req.Header.Get("Range"); spec != "" && !fault.ignoreRange {
-		if _, err := fmt.Sscanf(spec, "bytes=%d-%d", &start, &end); err != nil {
+		// An open range, bytes=N-, runs to the end of the object.
+		if open, ok := strings.CutSuffix(spec, "-"); ok {
+			if _, err := fmt.Sscanf(open, "bytes=%d", &start); err != nil {
+				return nil, err
+			}
+			end = int64(len(data)) - 1
+		} else if _, err := fmt.Sscanf(spec, "bytes=%d-%d", &start, &end); err != nil {
 			return nil, err
 		}
 		resp.StatusCode = http.StatusPartialContent
