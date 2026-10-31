@@ -345,20 +345,29 @@ func (s *session) handleExport(env protocol.Envelope) {
 	arrived := time.Now()
 	profCtx, profOp := wcprof.BeginOp(s.ctx, wcprof.OpKindRemoteCache, "remotecache.export", wcprof.OpOpts{Start: arrived})
 	// An export that selects no outputs copies records only: it has slots of
-	// its own, so that it never waits behind the others' layer builds.
+	// its own, so that it never waits behind the others' layer builds. With
+	// those taken, it takes whichever slot frees first, its own or another,
+	// as the service counts it.
 	slots, slotsName := s.exportSlots, "remotecache.exportSlots"
+	var others chan struct{}
 	if len(req.Outputs) == 0 {
-		slots, slotsName = s.recordsSlots, "remotecache.recordsSlots"
+		slots, others, slotsName = s.recordsSlots, s.exportSlots, "remotecache.recordsSlots"
 	}
 	select {
 	case slots <- struct{}{}:
-	case <-s.ctx.Done():
-		if profOp != nil {
-			now := time.Now()
-			wcprof.RecordWaitAt(profCtx, slotsName, wcprof.WaitReasonLock, arrived, now)
-			profOp.EndAt(wcprof.OutcomeCanceled, 0, now)
+	default:
+		select {
+		case slots <- struct{}{}:
+		case others <- struct{}{}:
+			slots = others
+		case <-s.ctx.Done():
+			if profOp != nil {
+				now := time.Now()
+				wcprof.RecordWaitAt(profCtx, slotsName, wcprof.WaitReasonLock, arrived, now)
+				profOp.EndAt(wcprof.OutcomeCanceled, 0, now)
+			}
+			return
 		}
-		return
 	}
 	defer func() { <-slots }()
 	slotted := time.Now()
