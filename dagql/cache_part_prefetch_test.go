@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	stdslog "log/slog"
+	"maps"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -852,4 +854,71 @@ func TestPartPrefetchAheadForgottenWithLastHolder(t *testing.T) {
 	f.prefetch.mu.Lock()
 	defer f.prefetch.mu.Unlock()
 	require.Empty(t, f.prefetch.aheadBytes, "no import ahead holds those layers")
+}
+
+// aheadTestCache is a cache whose prefetcher has no workers and n imports
+// ahead, each of its own offer, whose chains share the layer shared and each
+// hold a layer of their own, all unpacked; it returns the cache and the
+// imports, by offer.
+func aheadTestCache(n int, shared digest.Digest) (*Cache, map[*partOffer]*partPrefetchAhead) {
+	p := &partPrefetcher{holds: map[digest.Digest]*partPrefetchHold{}, fetching: map[digest.Digest]*partPrefetchDownload{}, jobs: map[partPrefetchJobKey]*partPrefetchJob{}, aheads: map[*partOffer]*partPrefetchAhead{}, aheadBytes: map[digest.Digest]int64{}, rows: map[*partOffer]sharedResultID{}, changed: make(chan struct{}), wake: make(chan struct{}, 1)}
+	c := &Cache{}
+	c.partPrefetcher.Store(p)
+	byOffer := map[*partOffer]*partPrefetchAhead{}
+	for i := range n {
+		own := digest.FromString(fmt.Sprint("own layer ", i))
+		offer := &partOffer{}
+		a := &partPrefetchAhead{cancel: func() {}, layers: []digest.Digest{shared, own}}
+		p.aheads[offer] = a
+		p.aheadBytes[shared] = 1
+		p.aheadBytes[own] = 1
+		byOffer[offer] = a
+	}
+	return c, byOffer
+}
+
+// An import ahead's layers stay counted as unpacked while any import ahead
+// holds them: dropping one forgets only the layers no other holds. A
+// replacement of an import's offer with the same meaning takes the import
+// over, and the import awaits its blobs under the replacement.
+func TestPartPrefetchAheadKeepsSharedLayers(t *testing.T) {
+	shared := digest.FromString("shared layer")
+	c, byOffer := aheadTestCache(2, shared)
+	p := c.partPrefetcher.Load()
+	offers := slices.Collect(maps.Keys(byOffer))
+	first, second := offers[0], offers[1]
+	firstOwn, secondOwn := byOffer[first].layers[1], byOffer[second].layers[1]
+
+	next := &partOffer{record: second.record}
+	c.partOfferReplaced(second, next)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	require.Same(t, byOffer[second], p.aheads[next], "the replacement took the import over")
+	desc := ocispecs.Descriptor{Digest: secondOwn}
+	require.False(t, p.aheadComingLocked(byOffer[second], desc), "no download of the blob is coming")
+	p.fetching[secondOwn] = &partPrefetchDownload{offers: map[*partOffer]struct{}{next: {}}}
+	require.True(t, p.aheadComingLocked(byOffer[second], desc), "the blob's download is coming for the replacement")
+
+	p.dropAheadLocked(first, byOffer[first])
+	require.Contains(t, p.aheadBytes, shared, "the other import holds the shared layer")
+	require.NotContains(t, p.aheadBytes, firstOwn, "no import holds the dropped one's own layer")
+	require.Contains(t, p.aheadBytes, secondOwn, "the other import holds its own layer")
+	p.dropAheadLocked(next, byOffer[second])
+	require.Empty(t, p.aheadBytes, "no import holds any layer")
+}
+
+// BenchmarkPartPrefetchAheadComing is one wake of an import ahead awaiting
+// a blob, among 10,000 imports ahead: the check each waiting import makes
+// under the prefetcher's lock whenever any blob lands.
+func BenchmarkPartPrefetchAheadComing(b *testing.B) {
+	c, byOffer := aheadTestCache(10000, digest.FromString("shared layer"))
+	p := c.partPrefetcher.Load()
+	var a *partPrefetchAhead
+	for _, a = range byOffer {
+		break
+	}
+	desc := ocispecs.Descriptor{Digest: digest.FromString("a blob no one fetches")}
+	for b.Loop() {
+		p.aheadComingLocked(a, desc)
+	}
 }
