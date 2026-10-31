@@ -299,7 +299,8 @@ func TestLookupShape(t *testing.T) {
 }
 
 // A merge lists a layer its outputs share, and the layer's address, once,
-// and its outputs get their chains back as the engine's merge resolves them;
+// and its outputs get their chains back, with the packs they name, as the
+// engine's merge resolves them;
 // an export still carries each output's chain whole.
 func TestMergeListsSharedLayersOnce(t *testing.T) {
 	layer := testLayer()
@@ -311,7 +312,7 @@ func TestMergeListsSharedLayersOnce(t *testing.T) {
 			Ordinal: dagql.TransferOrdinal(i + 1),
 			Address: testAddress(),
 			State:   "completed",
-			Chain:   &dagql.OfferedChain{Layers: []snapshots.ExportLayer{layer}, Addresses: addresses},
+			Chain:   &dagql.OfferedChain{Layers: []snapshots.ExportLayer{layer}, Addresses: addresses, Packs: map[digest.Digest]digest.Digest{layer.Descriptor.Digest: digest.FromString("pack")}},
 		})
 	}
 	count := func(body any) int {
