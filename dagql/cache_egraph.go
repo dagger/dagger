@@ -1334,7 +1334,9 @@ func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 	}
 }
 
-func (c *Cache) resultIDForCall(frame *ResultCall) (sharedResultID, error) {
+// resultIDForCall finds the attached result for frame. The lookup only reads
+// the e-graph, so it holds egraphMu for reading, as a cache-hit lookup does.
+func (c *Cache) resultIDForCall(ctx context.Context, frame *ResultCall) (sharedResultID, error) {
 	if frame == nil {
 		return 0, fmt.Errorf("resolve result ID for call: nil call")
 	}
@@ -1356,8 +1358,8 @@ func (c *Cache) resultIDForCall(frame *ResultCall) (sharedResultID, error) {
 		requestInputs = append(requestInputs, dig)
 	}
 
-	c.egraphMu.Lock()
-	defer c.egraphMu.Unlock()
+	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
+	defer c.egraphMu.RUnlock()
 	match := c.lookupMatchForCallLocked(frame, requestDigest, requestSelf, requestInputs, time.Now().Unix())
 	if match.candidates == nil || match.candidates.Empty() {
 		return 0, fmt.Errorf("resolve result ID for call: no attached result for %s", requestDigest)

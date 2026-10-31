@@ -7,7 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/opencontainers/go-digest"
 	"gotest.tools/v3/assert"
+
+	"github.com/dagger/dagger/dagql/call"
 )
 
 // runWhileEgraphReadLocked runs f while another goroutine holds egraphMu for
@@ -84,6 +87,19 @@ func TestCacheReadPathsShareEgraphLock(t *testing.T) {
 			}
 			if lookup.res.id != seededID {
 				return fmt.Errorf("expected result %d, got %d", seededID, lookup.res.id)
+			}
+			return nil
+		})
+	})
+
+	t.Run("result ID", func(t *testing.T) {
+		runWhileEgraphReadLocked(t, c, func() error {
+			id, err := c.resultIDForCall(ctx, cacheTestIntCall("shared-lock"))
+			if err != nil {
+				return err
+			}
+			if id != seededID {
+				return fmt.Errorf("expected result %d, got %d", seededID, id)
 			}
 			return nil
 		})
@@ -187,6 +203,103 @@ func TestCacheConcurrentSharedClaimsKeepOwnershipExact(t *testing.T) {
 	remaining := len(c.resultsByID)
 	c.egraphMu.RUnlock()
 	assert.Equal(t, remaining, 0)
+}
+
+// Concurrent result ID lookups under the read lock, each through the
+// structural route that reads eq-class roots, interleaved with publications
+// that create and merge eq-classes under the write lock, all resolve the
+// attached result. Run with -race, a lookup that wrote the e-graph or read it
+// without the lock fails the test.
+func TestCacheConcurrentResultIDsBesideEgraphMerges(t *testing.T) {
+	ctx := t.Context()
+	c, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	opOver := func(src digest.Digest) *ResultCall {
+		frame := cacheTestIntCall("result-id-merges-op")
+		frame.Args = []*ResultCallArg{{
+			Name: "src",
+			Value: &ResultCallLiteral{
+				Kind:                 ResultCallLiteralKindDigestedString,
+				DigestedStringValue:  "witnessed",
+				DigestedStringDigest: src,
+			},
+		}}
+		return frame
+	}
+	inputDigest := func(i int) digest.Digest {
+		return digest.FromString(fmt.Sprintf("result-id-merges-input-%d", i))
+	}
+	teach := func(sessionID, field string, a, b digest.Digest) error {
+		teacher := cacheTestIntCall(field,
+			call.ExtraDigest{Label: call.ExtraDigestLabelContent, Digest: a},
+			call.ExtraDigest{Label: call.ExtraDigestLabelContent, Digest: b},
+		)
+		_, err := c.GetOrInitCall(ctx, sessionID, noopTypeResolver{}, &CallRequest{ResultCall: teacher}, func(context.Context) (AnyResult, error) {
+			return cacheTestIntResult(teacher, 0), nil
+		})
+		return err
+	}
+
+	seedFrame := opOver(inputDigest(0))
+	seeded, err := c.GetOrInitCall(ctx, "seed", noopTypeResolver{}, &CallRequest{ResultCall: seedFrame}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(seedFrame, 1), nil
+	})
+	assert.NilError(t, err)
+	seededID := seeded.cacheSharedResult().id
+	assert.NilError(t, teach("seed", "result-id-merges-teacher-1", inputDigest(0), inputDigest(1)))
+
+	// Each writer chains new input digests onto the seeded input's class, so
+	// the classes' parents change while the readers walk them.
+	const writers, merges = 4, 16
+	const readers, lookups = 16, 64
+	var wg sync.WaitGroup
+	errs := make(chan error, writers+readers)
+	for w := range writers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			prev := inputDigest(0)
+			for m := range merges {
+				n := 2 + w*merges + m
+				if err := teach("writer", fmt.Sprintf("result-id-merges-teacher-%d", n), prev, inputDigest(n)); err != nil {
+					errs <- err
+					return
+				}
+				prev = inputDigest(n)
+			}
+		}()
+	}
+	for range readers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range lookups {
+				id, err := c.resultIDForCall(ctx, opOver(inputDigest(1)))
+				if err != nil {
+					errs <- err
+					return
+				}
+				if id != seededID {
+					errs <- fmt.Errorf("expected result %d, got %d", seededID, id)
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		assert.NilError(t, err)
+	}
+
+	// The merges joined every writer's inputs to the seeded input's class.
+	for w := range writers {
+		id, err := c.resultIDForCall(ctx, opOver(inputDigest(1+(w+1)*merges)))
+		assert.NilError(t, err)
+		assert.Equal(t, id, seededID)
+	}
+	assert.NilError(t, c.ReleaseSession(ctx, "writer"))
+	assert.NilError(t, c.ReleaseSession(ctx, "seed"))
 }
 
 // BenchmarkCacheParallelHits measures concurrent cache hits from many
