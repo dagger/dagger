@@ -1,10 +1,20 @@
 package snapshots
 
 import (
+	"context"
 	"time"
 
+	"github.com/containerd/containerd/v2/core/content"
 	digest "github.com/opencontainers/go-digest"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )
+
+// DownloadChainContent is m's download of desc's blob from provider, as a
+// chain's fetch runs it once it has found the blob missing.
+func DownloadChainContent(ctx context.Context, m SnapshotManager, desc ocispecs.Descriptor, provider content.Provider) error {
+	_, err := m.(*snapshotManager).downloadChainContent(ctx, desc, provider)
+	return err
+}
 
 // PackWaiters returns how many imports hold m's read of the pack id in
 // progress, or 0 when none runs.
