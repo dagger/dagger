@@ -171,8 +171,9 @@ func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelectio
 			return &rowBlockedError{capture.blocked[res.id]}
 		}
 		if res.attachmentState() != resultAttachmentClean {
-			// Its dependencies are installed before its attachment opens,
-			// and walked like any row's, but the row itself isn't held.
+			// The dependencies it has so far are walked like any row's,
+			// under the graph lock, but the row itself isn't held: its
+			// roots are left out whatever its attachment adds later.
 			seen[res.id] = 1
 			var children []sharedResultID
 			for child := range c.resultOwnershipChildrenLocked(res) {
