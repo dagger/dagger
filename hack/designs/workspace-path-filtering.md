@@ -1,4 +1,4 @@
-# Smart checks
+# Workspace path filtering
 
 ## Problem
 
@@ -98,8 +98,8 @@ for this first release.
 
 ## Relationship to caching
 
-Dagql asks whether it can reuse a computation. Smart checks asks which checks
-the user requested by path. A skipped check has no new outcome. It is not a
+Dagql asks whether it can reuse a computation. Workspace path filtering selects
+artifacts by their input paths. A skipped check has no new outcome. It is not a
 cache hit or proof that the check passed.
 
 The cache already tracks calls and input identities. Filtered workspace copies
