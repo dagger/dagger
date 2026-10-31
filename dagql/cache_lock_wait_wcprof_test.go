@@ -183,15 +183,26 @@ func TestLazyInstallSpansWaitForLocksWcprof(t *testing.T) {
 	const resultID = sharedResultID(7)
 	_, rootCtx, root := newLazyRecordingRoot("POST /query")
 	defer root.End()
-	c := &Cache{resultsByID: map[sharedResultID]*sharedResult{resultID: {id: resultID}}}
+	// A module call's return on the result, so the gathering walks above it
+	// under the graph lock.
+	const moduleReturnID = sharedResultID(8)
+	result := &sharedResult{id: resultID}
+	moduleReturn := &sharedResult{id: moduleReturnID}
+	c := &Cache{resultsByID: map[sharedResultID]*sharedResult{resultID: result, moduleReturnID: moduleReturn}}
+	c.egraphMu.Lock()
+	require.NoError(t, c.addExplicitDependencyLocked(t.Context(), moduleReturn, result, "test"))
+	c.egraphMu.Unlock()
 	_, producer := Tracer(rootCtx).Start(rootCtx, "Container.withExec")
 	producer.End()
+	_, moduleCall := Tracer(rootCtx).Start(rootCtx, "Go.binary")
+	moduleCall.End()
 	c.sessionMu.Lock()
 	c.sessionLazySpansBySession = map[string]map[sharedResultID]trace.SpanContext{
 		sessionID: {resultID: producer.SpanContext()},
 	}
 	c.sessionMu.Unlock()
 	c.recordSessionResultInstallSpanLocked(t.Context(), sessionID, resultID, producer.SpanContext(), false)
+	c.recordSessionResultInstallSpanLocked(t.Context(), sessionID, moduleReturnID, moduleCall.SpanContext(), true)
 
 	evalCtx := wcprof.ContextWithProfiling(engine.ContextWithClientMetadata(rootCtx, &engine.ClientMetadata{SessionID: sessionID, ClientID: "client-1"}))
 	evalCtx, lazyOp := wcprof.BeginOp(evalCtx, wcprof.OpKindLazy, "Container.withExec", wcprof.OpOpts{})
