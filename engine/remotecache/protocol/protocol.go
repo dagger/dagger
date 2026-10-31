@@ -184,12 +184,14 @@ type SettleSession struct {
 type Settled struct{}
 
 // Export asks the engine for the values of some of its entries, by number,
-// and the selected parts' bytes. An export that selects no outputs copies
-// records only: its bundle sends each row the service merged over this
-// connection, and that hasn't changed since, as a held row (Upload.Merged).
-// The Cloud's merge refuses the whole bundle as stale if any held row's
-// recipe has no live entry there, and commits nothing; the service then
-// sends Upload without Merged, and asks for the roots again.
+// and the selected parts' bytes. Its bundle sends each row the service merged
+// over this connection, and that hasn't changed since, as a held row
+// (Upload.Merged). In an export that selects parts, a held row keeps its
+// links to the rows below it, and a part can sit on it. The Cloud's merge
+// refuses the whole bundle as stale if any held row's recipe has no live
+// entry there, or that entry lacks a part the export puts on the held row,
+// and commits nothing; the service then sends Upload without Merged, and
+// asks for the roots again.
 type Export struct {
 	Roots   []uint64       `json:"roots"`
 	Outputs []ExportOutput `json:"outputs,omitempty"`

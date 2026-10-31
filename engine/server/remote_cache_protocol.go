@@ -61,9 +61,9 @@ func (a *RemoteCacheAdapter) CacheIdentity() (string, uint64) {
 // reaches a record the capture refuses is skipped as refused, each with that
 // row's error as the message; the others go in the bundle. A capture that
 // fails otherwise fails the request. consume is called once, with the bundle
-// while its chains stay open, or with no bundle when no root survived. An
-// export that selects no outputs sends the rows known knows as held rows, and
-// the export names the rows its bundle carried.
+// while its chains stay open, or with no bundle when no root survived. The
+// export sends the rows known knows as held rows, and names the rows its
+// bundle carried.
 func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, known *dagql.KnownRows, consume func(context.Context, remotecache.Export) error) (rerr error) {
 	if a.stopped.Load() || !a.exports.tryBegin() {
 		return ErrRemoteCacheAdapterClosed
