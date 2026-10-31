@@ -48,8 +48,17 @@ type Probe {
    ws.file("/config.txt").contents
  }
  pub perCall(ws: Workspace!): Void @check { probe.liveRead(ws: ws); null }
+ pub permissions(ws: Workspace!): Void @check {
+   let selected = if (ws.file("/config.txt").stat.permissions == 384) {
+     "/new.txt"
+   } else {
+     "/old.txt"
+   }
+   ws.file(selected).contents
+   null
+ }
 }`, rand.Text())).
-		WithNewFile("config.txt", "old.txt").
+		WithNewFile("config.txt", "old.txt", core.DirectoryWithNewFileOpts{Permissions: 0o644}).
 		WithNewFile("old.txt", "old input").
 		WithNewFile("new.txt", "new input").
 		WithNewFile("unrelated.txt", "before").
@@ -144,6 +153,28 @@ type Probe {
 	require.True(t, selected(t, changed, "first", "new.txt"))
 	require.False(t, selected(t, changed, "first", "old.txt"), "the new complete summary replaces the old branch")
 	require.False(t, selected(t, changed, "first", "unrelated.txt"))
+
+	t.Run("permission change", func(_ context.Context, t *testctx.T) {
+		warm(t, base, "permissions")
+		require.False(t, selected(t, base, "permissions", "new.txt"))
+		require.False(t, selected(t, base, "permissions", "unrelated.txt"))
+		modeSource := source.WithoutFile("config.txt").WithNewFile("config.txt", "old.txt", core.DirectoryWithNewFileOpts{Permissions: 0o600})
+		stat, err := modeSource.File("config.txt").Stat(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, stat)
+		permissions, err := stat.Permissions(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 0o600, permissions)
+		contents, err := modeSource.File("config.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "old.txt", contents)
+		modeChanged := workspaceID(t, modeSource)
+		require.True(t, selected(t, modeChanged, "permissions", "unrelated.txt"), "changed permissions invalidate a recorded input")
+		warm(t, modeChanged, "permissions")
+		require.True(t, selected(t, modeChanged, "permissions", "new.txt"))
+		require.False(t, selected(t, modeChanged, "permissions", "old.txt"))
+		require.False(t, selected(t, modeChanged, "permissions", "unrelated.txt"))
+	})
 
 	t.Run("filtered directory", func(_ context.Context, t *testctx.T) {
 		warm(t, base, "docs")
