@@ -137,10 +137,10 @@ func TestLazyEvaluationAnchorsReleasedWithSession(t *testing.T) {
 	var evalErr error
 	endOTelLazyOp(lazySpan, nil, isResume, resultID, false, false, "", lazySpanCacheState{}, &evalErr)
 	spanBySpanID(t, sr.Ended(), lazySpan.SpanContext().SpanID())
-	_, anchored := c.sessionLazyAnchorFor(sessionID, resultID, producer.SpanContext(), nil)
+	_, anchored := c.sessionLazyAnchorFor(t.Context(), sessionID, resultID, producer.SpanContext(), nil)
 	assert.Assert(t, anchored)
 
 	cacheTestReleaseSession(t, c, ctx)
-	_, anchored = c.sessionLazyAnchorFor(sessionID, resultID, producer.SpanContext(), nil)
+	_, anchored = c.sessionLazyAnchorFor(t.Context(), sessionID, resultID, producer.SpanContext(), nil)
 	assert.Assert(t, !anchored)
 }

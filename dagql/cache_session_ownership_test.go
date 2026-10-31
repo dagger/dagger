@@ -744,7 +744,7 @@ func TestCacheLazySpanPrefersCallSpan(t *testing.T) {
 			return cacheTestIntResult(call, 1), nil
 		})
 		assert.NilError(t, err)
-		sc, ok := c.sessionLazySpanContext(sessionID, res.cacheSharedResult().id)
+		sc, ok := c.sessionLazySpanContext(ctx, sessionID, res.cacheSharedResult().id)
 		assert.Assert(t, ok)
 		return sc.SpanID()
 	}
