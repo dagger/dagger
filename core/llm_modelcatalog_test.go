@@ -113,3 +113,11 @@ func TestClampMaxTokensToContext(t *testing.T) {
 	// Overfull window: floors at 1 rather than going non-positive.
 	assert.Equal(t, int64(1), clampMaxTokensToContext(64000, 10_000, longConvo, nil))
 }
+
+func TestDefaultModelsAreNotRetired(t *testing.T) {
+	// Claude Sonnet 4.5 is retired by Anthropic on 2026-11-30.
+	assert.EqualValues(t, "claude-sonnet-4-6", modelDefaultAnthropic)
+	assert.Equal(t, "anthropic/claude-sonnet-4.6", modelDefaultOpenRouter)
+	_, ok := lookupCatalogModel(Anthropic, string(modelDefaultAnthropic))
+	require.True(t, ok, "default Anthropic model %q is not in the catalog", modelDefaultAnthropic)
+}
