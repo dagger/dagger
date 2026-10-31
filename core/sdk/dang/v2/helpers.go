@@ -1581,6 +1581,9 @@ func (c dangConverter) convertObjectID(ctx context.Context, id string, modType *
 		Schema:     nodeFn.Schema,
 		TypeScope:  nodeFn.TypeScope,
 		QueryChain: querybuilder.Query().Select("node").Arg("id", id).InlineFragment(schemaName),
+		// The engine scopes the objects it passes in before encoding them, so
+		// selecting `id` here would only hand back this same ID.
+		KnownID: id,
 	}, nil
 }
 

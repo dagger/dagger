@@ -2,6 +2,7 @@ package dangv2
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -13,6 +14,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"github.com/vito/dang/v2/pkg/dang"
+	"github.com/vito/dang/v2/pkg/hm"
+	"github.com/vito/dang/v2/pkg/introspection"
 
 	dangshared "github.com/dagger/dagger/core/sdk/dang/shared"
 )
@@ -269,4 +272,26 @@ func TestRetainDangObjectDirectivesOnlyForTypeDefs(t *testing.T) {
 	require.Len(t, directives, 1)
 	require.Equal(t, "marked", directives[0].Name)
 	require.Empty(t, objectDirectives(env, "Plain"))
+}
+
+func TestConvertObjectIDKeepsID(t *testing.T) {
+	t.Parallel()
+
+	env := dang.NewValueScope(dang.NewType("Test", dang.ObjectKind))
+	env.Bind("node", dang.GraphQLFunction{
+		Name:   "node",
+		Field:  &introspection.Field{Name: "node"},
+		Client: failingClient{},
+		Schema: contractTestSchema(),
+	}, dang.PublicVisibility)
+
+	dirType := dang.NewType("Directory", dang.ObjectKind)
+	value, err := (dangConverter{env: env}).convert(t.Context(), "directory-id", hm.NonNullType{Type: dirType})
+	require.NoError(t, err)
+
+	// failingClient rejects every request, so this passes only if the ID is
+	// handed back without asking the API for it.
+	gotJSON, err := json.Marshal(value)
+	require.NoError(t, err)
+	require.JSONEq(t, `"directory-id"`, string(gotJSON))
 }
