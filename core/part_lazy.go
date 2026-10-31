@@ -79,8 +79,12 @@ func (family foreignFamilyCodec) PrepareLazyOperation(ctx context.Context, dec *
 		if err != nil {
 			return nil, err
 		}
-		// Decode scalar configuration and exact handles into a private shell. The
-		// recipe's own fresh latches compute metadata again inside Running.
+		// Decode scalar configuration and exact handles into a private shell.
+		// Metadata the record holds is done, as local restore seeds it; the
+		// recipe's own fresh latches compute only metadata it doesn't hold.
+		if op, ok := lazy.(LazyContainerParts); ok && p.Metadata.Consumed && route.Group.Group != dagql.LazyGroupWhole {
+			op.ContainerLazyState().seedConsumedGroups(ContainerLazyGroupMetadata)
+		}
 		p.OperationState = transferOperationState(false, true)
 		raw, err := json.Marshal(p)
 		if err != nil {

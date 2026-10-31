@@ -430,3 +430,79 @@ func TestPartFixtureReleaseObserverPrivateFS(t *testing.T) {
 	require.Zero(t, meta.releases)
 	require.Zero(t, mount.releases)
 }
+
+// A container restored with its metadata done, as a local restart leaves it,
+// keeps that metadata when another engine re-runs one of its groups privately:
+// the re-run never asks the parent for metadata the record already holds.
+func TestPartPrivateGroupKeepsRecordedMetadata(t *testing.T) {
+	aStore, bStore := testutil.NewStore(t), testutil.NewStore(t)
+	actx, a, asrv := transferCache(t, aStore, "", "a")
+	platform := Platform{OS: "linux", Architecture: "amd64"}
+	baseFS, _ := aStore.Build(t, nil, "base", "base bytes")
+	baseMeta, _ := aStore.Build(t, nil, "exitCode", "0")
+	base := NewContainer(platform)
+	base.FS.setValue(partTestDirectory(baseFS, "/"))
+	base.MetaSnapshot.setValue(baseMeta)
+	baseRes := attachTransferObject(t, actx, a, asrv, "a", "privateMetadataBase", base)
+	// The parent's metadata has not run on A, so its record leaves it pending.
+	parent := NewContainer(platform)
+	parent.Lazy = &ContainerWithEnvVariableLazy{LazyState: NewLazyState(), Parent: baseRes, Name: "FROM", Value: "parent"}
+	parentRes := attachDelegationChild(t, actx, a, asrv, "a", "withEnvVariable", baseRes, parent)
+	rootfsRef, _ := aStore.Build(t, nil, "rootfs", "rootfs bytes")
+	rootfs := attachTransferObject(t, actx, a, asrv, "a", "privateMetadataRootfs", partTestDirectory(rootfsRef, "/"))
+	childMeta, err := aStore.Manager.GetBySnapshotID(actx, baseMeta.SnapshotID())
+	require.NoError(t, err)
+	child := NewContainer(platform)
+	child.Config.Env = []string{"FROM=parent"}
+	child.MetaSnapshot.setValue(childMeta)
+	op := &ContainerWithRootFSLazy{LazyState: NewLazyState(), Parent: parentRes, Source: rootfs}
+	op.seedConsumedGroups(ContainerLazyGroupMetadata, containerDelegationGroup(ContainerPartExecMeta))
+	child.Lazy = op
+	childRes := attachDelegationChild(t, actx, a, asrv, "a", "withRootfs", parentRes, child)
+
+	bctx, b, bsrv := transferCache(t, bStore, "", "b")
+	b.EnableTransferFixtureParts()
+	// The child's execMeta has an address and its fs has none, so its fs is
+	// computed by a private run of its write group.
+	selection := dagql.ValueSelection{Roots: []dagql.AnyResult{childRes}, Outputs: []dagql.SelectedValueOutput{
+		{Result: childRes, Address: dagql.PersistedPartAddress{Part: ContainerPartExecMeta}},
+		{Result: rootfs, Address: dagql.PersistedPartAddress{Part: "snapshot"}},
+	}}
+	require.NoError(t, a.WithExportedValues(actx, selection, config.RefConfig{Compression: compression.New(compression.Uncompressed)}, func(_ context.Context, exported *dagql.ExportedValues) error {
+		providers := partSelectingContentSource{}
+		for _, entry := range exported.Chains.Entries {
+			providers[string(entry.Address.Part)] = entry.Provider
+		}
+		b.SetPartContentSource(providers)
+		reply, err := b.MergeValues(bctx, dagql.CloudCacheID, exported.Bundle)
+		require.NoError(t, err)
+		childID := reply.Imported()[0].ResultID
+		loaded, err := b.LoadResultByResultID(bctx, "", bsrv, childID)
+		require.NoError(t, err)
+		got := loaded.(dagql.ObjectResult[*Container])
+		require.NoError(t, b.EvaluateParts(bctx, got, ContainerPartFS))
+		report, err := b.TransferFixtureSnapshot(bctx, "b", nil)
+		require.NoError(t, err)
+		var private int
+		for _, event := range report.Parts {
+			if event.ResultID == childID && event.Kind == "lazy-enter" {
+				private++
+			}
+		}
+		require.Equal(t, 1, private, "the child's fs comes from a private run")
+		require.Equal(t, []string{"FROM=parent"}, got.Self().Config.Env)
+		dir, ok := got.Self().FS.Peek()
+		require.True(t, ok)
+		snapshot, ok := dir.Snapshot.Peek()
+		require.True(t, ok)
+		testutil.CheckFile(t, snapshot, "rootfs", "rootfs bytes")
+
+		frame, err := b.ResultCallByResultID(bctx, "", childID)
+		require.NoError(t, err)
+		loadedParent, err := b.LoadResultByResultID(bctx, "", bsrv, frame.Receiver.ResultID)
+		require.NoError(t, err)
+		gotParent := loadedParent.(dagql.ObjectResult[*Container]).Self()
+		require.False(t, gotParent.containerPartComputed(bctx, gotParent.lazyOpForRouting(), ContainerPartMetadata), "the private run did not ask the parent for metadata")
+		return nil
+	}))
+}
