@@ -1027,67 +1027,10 @@ func (capture *HeldCapturedClosure) deriveHeldRecipes() ([]sharedResultID, error
 	return shared, nil
 }
 
-// WithExportedValues captures the selected closure and lends it to consume.
-// It is a capture and never waits. It leaves out each root whose closure
-// reaches a row it can't capture now, one with a task in flight (an
-// evaluation, a part installation, a sharing slot), or a row whose record it
-// refuses, and lends consume the bundle of the others, naming the roots it
-// left out (ExportedValues.LeftOut): the caller asks for those again later.
-// With every root left out, it consumes nothing and returns a
-// RootsLeftOutError. An offer it finds on an output the value already
-// completed is obsolete: it retires the offer, as boot does, and captures
-// once more. A selection of no outputs sends each row its Known knows as a
-// held row, unless a row the bundle carries in full has its recipe.
-//
-//nolint:gocyclo // one step per export phase over the held closure; splitting hides the order of the steps
-func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection, cfg config.RefConfig, consume func(context.Context, *ExportedValues) error) (rerr error) {
-	op, err := c.beginCacheOperation()
-	if err != nil {
-		return err
-	}
-	defer op.finish(false)
-	if consume == nil {
-		return fmt.Errorf("nil transfer consumer")
-	}
-	var phases ExportPhases
-	capture, err := c.captureCopied(ctx, selection, nil, &phases)
-	if err != nil {
-		return err
-	}
-	defer func() { rerr = errors.Join(rerr, capture.Release(ctx)) }()
-	// A held row whose recipe a row carried in full shares is carried in
-	// full too, in a capture once more: a merge refuses a held row beside a
-	// record of its recipe. Each pass carries more rows in full, so this
-	// ends. It runs before the capture leaves roots out, so a row may go in
-	// full beside a row that's then left out, which is only a full record
-	// more.
-	var carried map[sharedResultID]bool
-	for {
-		shared, err := capture.deriveHeldRecipes()
-		if err != nil {
-			return err
-		}
-		if len(shared) == 0 {
-			break
-		}
-		if carried == nil {
-			carried = map[sharedResultID]bool{}
-		}
-		for _, id := range shared {
-			carried[id] = true
-		}
-		if err := capture.Release(ctx); err != nil {
-			return err
-		}
-		if capture, err = c.captureCopied(ctx, selection, carried, &phases); err != nil {
-			return err
-		}
-	}
-	// Each copied record is checked as the bundle will carry it: its
-	// references, its normalization and its payload. One that fails refuses
-	// the roots that reach its row.
-	bundleStart := time.Now()
-	_, bundleOp := wcprof.BeginOp(ctx, wcprof.OpKindRemoteCache, "remotecache.export.bundle", wcprof.OpOpts{})
+// checkRecords checks each copied record as the bundle will carry it: its
+// references, its normalization and its payload. One that fails refuses the
+// roots that reach its row.
+func (capture *HeldCapturedClosure) checkRecords() {
 	for _, row := range capture.order {
 		if _, blocked := capture.blocked[row.shared.id]; blocked || row.held {
 			continue
@@ -1113,11 +1056,77 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 		}
 		row.transfer = normalized
 	}
-	leftOut, err := capture.settle(selection)
-	if err == nil && len(capture.roots) == 0 {
-		err = &RootsLeftOutError{Roots: leftOut}
-	}
+}
+
+// WithExportedValues captures the selected closure and lends it to consume.
+// It is a capture and never waits. It leaves out each root whose closure
+// reaches a row it can't capture now, one with a task in flight (an
+// evaluation, a part installation, a sharing slot), or a row whose record it
+// refuses, and lends consume the bundle of the others, naming the roots it
+// left out (ExportedValues.LeftOut): the caller asks for those again later.
+// With every root left out, it consumes nothing and returns a
+// RootsLeftOutError. An offer it finds on an output the value already
+// completed is obsolete: it retires the offer, as boot does, and captures
+// once more. A selection of no outputs sends each row its Known knows as a
+// held row, unless a row the bundle carries in full has its recipe.
+//
+//nolint:gocyclo // one step per export phase over the held closure; splitting hides the order of the steps
+func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection, cfg config.RefConfig, consume func(context.Context, *ExportedValues) error) (rerr error) {
+	op, err := c.beginCacheOperation()
 	if err != nil {
+		return err
+	}
+	defer op.finish(false)
+	if consume == nil {
+		return fmt.Errorf("nil transfer consumer")
+	}
+	var phases ExportPhases
+	// A held row whose recipe a row the bundle carries in full shares is
+	// carried in full too, in a capture once more: a merge refuses a held
+	// row beside a record of its recipe. Only the kept roots' rows count,
+	// so it's decided once the capture has left out the roots it can't
+	// send. Each pass carries more rows in full, so this ends.
+	var (
+		capture   *HeldCapturedClosure
+		carried   map[sharedResultID]bool
+		leftOut   []LeftOutRoot
+		bundleOp  *wcprof.Op
+		bundleNS  time.Duration
+		passStart time.Time
+	)
+	for {
+		if capture, err = c.captureCopied(ctx, selection, carried, &phases); err != nil {
+			return err
+		}
+		passStart = time.Now()
+		_, bundleOp = wcprof.BeginOp(ctx, wcprof.OpKindRemoteCache, "remotecache.export.bundle", wcprof.OpOpts{})
+		capture.checkRecords()
+		leftOut, err = capture.settle(selection)
+		var shared []sharedResultID
+		if err == nil {
+			shared, err = capture.deriveHeldRecipes()
+		}
+		if err == nil && len(shared) == 0 {
+			break
+		}
+		bundleOp.EndErr(err)
+		bundleNS += time.Since(passStart)
+		if err != nil {
+			return errors.Join(err, capture.Release(ctx))
+		}
+		if carried == nil {
+			carried = map[sharedResultID]bool{}
+		}
+		for _, id := range shared {
+			carried[id] = true
+		}
+		if err := capture.Release(ctx); err != nil {
+			return err
+		}
+	}
+	defer func() { rerr = errors.Join(rerr, capture.Release(ctx)) }()
+	if len(capture.roots) == 0 {
+		err = &RootsLeftOutError{Roots: leftOut}
 		bundleOp.EndErr(err)
 		return err
 	}
@@ -1150,7 +1159,7 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 		bundle.Values = append(bundle.Values, value)
 	}
 	bundleOp.End(wcprof.OutcomeOK)
-	phases.Bundle = time.Since(bundleStart)
+	phases.Bundle = bundleNS + time.Since(passStart)
 	chainStart := time.Now()
 	chainsCtx, chainsOp := wcprof.BeginOp(ctx, wcprof.OpKindRemoteCache, "remotecache.export.chains", wcprof.OpOpts{})
 	chains, err := OpenSelectedChains(chainsCtx, capture, capture.outputs, cfg)
