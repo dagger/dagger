@@ -133,15 +133,23 @@ func (fe *frontendPretty) checkStatusLine(out TermOutput, r *renderer, node *dag
 // surfacedSpanStatus is the icon, color and status label for a surfaced check
 // or generator, read straight off its span in the same order the span's own
 // tree row checks (statusIcon): still running, then failed, then passed.
+// A span canceled or left running when the trace ended has no final state, so
+// it reports neither failure nor success.
 func surfacedSpanStatus(span *dagui.Span) (icon string, color termenv.Color, status string) {
 	switch {
 	case span.IsRunningOrEffectsRunning():
 		return DotHalf, termenv.ANSIYellow, "RUNNING"
 	case span.IsFailedOrCausedFailure():
 		return IconFailure, termenv.ANSIRed, "ERROR"
+	case spanUnreported(span):
+		return IconUnreported, termenv.ANSIBrightBlack, "NOT REPORTED"
 	default:
 		return IconSuccess, termenv.ANSIGreen, "OK"
 	}
+}
+
+func spanUnreported(span *dagui.Span) bool {
+	return span.LeftRunning || span.IsCanceled()
 }
 
 // surfacedSpanCounts tallies surfaced checks' or generators' spans for a
@@ -154,6 +162,8 @@ func surfacedSpanCounts(spans []*dagui.Span) dagui.TestCounts {
 			counts.Running++
 		case span.IsFailedOrCausedFailure():
 			counts.Failing++
+		case spanUnreported(span):
+			counts.Unreported++
 		default:
 			counts.Passing++
 		}
