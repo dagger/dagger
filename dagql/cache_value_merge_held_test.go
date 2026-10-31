@@ -285,7 +285,8 @@ func TestMergeHeldRootRenewsRetention(t *testing.T) {
 }
 
 // A held row holds only where the recipient has its recipe's value: another
-// Cloud without it answers the bundle stale. A held row carries no record.
+// Cloud without it answers the bundle stale. A held row carries no record,
+// though it can carry dependencies.
 func TestMergeHeldRowRefusals(t *testing.T) {
 	t.Parallel()
 	ctx, cloud, r, p := storedBundleTestCloud(t, "root")
@@ -303,7 +304,7 @@ func TestMergeHeldRowRefusals(t *testing.T) {
 	require.NoError(t, err)
 	for i := range bad.Values {
 		if bad.Values[i].Held != "" {
-			bad.Values[i].DependencyIDs = []uint64{uint64(heldTestRow(t, got.Bundle, r).Ordinal)}
+			bad.Values[i].Record.Envelope = heldTestRow(t, got.Bundle, r).Record.Envelope
 		}
 	}
 	bctx, b, _ := transferTestCache(t)

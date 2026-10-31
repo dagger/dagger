@@ -76,13 +76,15 @@ type TransferredValue struct {
 	DependencyIDs      []uint64        `json:"dependencyIDs,omitempty"`
 	ExpiresAtUnix      int64           `json:"expiresAtUnix,omitempty"`
 	// Held, when set, makes this a held row: the recipient's own value of
-	// this recipe stands for the row, which carries no record and no
-	// closure below it. Its Record is empty but for ResultID, it has no
-	// DependencyIDs, and no output names it. SenderNumber,
-	// SenderReplacements and ExpiresAtUnix still describe the sending
-	// entry, and other rows reference the row by its ordinal. The Cloud
-	// sends held rows to an engine (StoredBundle's HeldBy), and an engine
-	// sends them to the Cloud in a records-only export.
+	// this recipe stands for the row, which carries no record. Its Record is
+	// empty but for ResultID. SenderNumber, SenderReplacements and
+	// ExpiresAtUnix still describe the sending entry, and other rows
+	// reference the row by its ordinal. A held row stands for its closure,
+	// but its DependencyIDs can name rows below it that the bundle carries,
+	// which then go with it, and an output can sit on it; the recipient
+	// checks such an output against its own copy of the row. The Cloud sends
+	// held rows to an engine (StoredBundle's HeldBy), with no dependencies
+	// and no outputs, and an engine sends them to the Cloud in an export.
 	Held digest.Digest `json:"held,omitempty"`
 }
 type TransferredRoot struct {
@@ -141,7 +143,7 @@ type ImportedValue struct {
 	ResultID uint64
 }
 
-const valueBundleVersion = 6
+const valueBundleVersion = 7
 
 // PersistedTransferCodec operates only on encoded copies, without resolving
 // schemas, operations, result references or storage.

@@ -183,11 +183,14 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 	described := map[string]bool{}
 	for _, output := range bundle.Outputs {
 		id := uint64(output.Ordinal)
-		if row, ok := rows[id]; !ok {
+		row, ok := rows[id]
+		if !ok {
 			return nil, fmt.Errorf("output names missing ordinal %d", id)
-		} else if row.Held != "" {
-			return nil, fmt.Errorf("output names held row %d", id)
 		}
+		// An output on a held row is checked against the recipient's own
+		// copy of the row, which the bundle doesn't carry
+		// (checkOutputPart).
+		held := row.Held != ""
 		key, err := partAddressKey(output.Address)
 		if err != nil {
 			return nil, err
@@ -198,7 +201,7 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 		}
 		described[composite] = true
 		part, ok := addresses[id][key]
-		if !ok {
+		if !ok && !held {
 			return nil, fmt.Errorf("unknown output address %s", composite)
 		}
 		switch output.State {
@@ -209,8 +212,10 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 		if slots[composite] {
 			return nil, fmt.Errorf("duplicate offer description %s", composite)
 		}
-		if output.State != part.State && (part.State != "pending" || output.State != "completed") {
-			return nil, fmt.Errorf("output state differs from recorded part %s", composite)
+		if !held {
+			if err := checkOutputPart(output, part); err != nil {
+				return nil, fmt.Errorf("%s: %w", composite, err)
+			}
 		}
 		if output.Value != nil {
 			if err := validateSnapshotValue(*output.Value); err != nil {
@@ -234,11 +239,9 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 		if output.Value == nil || output.Owner == nil || output.State != "completed" {
 			return nil, fmt.Errorf("chain requires completed descriptor and owner")
 		}
-		offer := PersistedPartOffer{Address: output.Address, Value: *output.Value, Chain: *output.Chain, Owner: *output.Owner}
-		if err := validateTransferOffer(offer, part); err != nil {
-			return nil, err
-		}
-		if err := validateSlot(id, output.Address); err != nil {
+		if held {
+			slots[composite] = true
+		} else if err := validateSlot(id, output.Address); err != nil {
 			return nil, err
 		}
 		outputDeps[id] = append(outputDeps[id], output.Owner.DependencyIDs...)
@@ -291,15 +294,33 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 
 // validateHeldRow checks a held row: a recipe digest, in its algorithm:encoded
 // form (recipes are xxh3, which go-digest doesn't validate), and nothing a
-// record would carry but its ordinal.
+// record would carry but its ordinal. Its dependencies are checked as any
+// row's are.
 func validateHeldRow(row TransferredValue) error {
 	if algorithm, encoded, ok := strings.Cut(string(row.Held), ":"); !ok || algorithm == "" || encoded == "" {
 		return fmt.Errorf("held recipe %q is not a digest", row.Held)
 	}
-	if len(row.DependencyIDs) > 0 || row.Record.Call != nil || len(row.Record.SnapshotLinks) > 0 || !reflect.ValueOf(row.Record.Envelope).IsZero() {
+	if row.Record.Call != nil || len(row.Record.SnapshotLinks) > 0 || !reflect.ValueOf(row.Record.Envelope).IsZero() {
 		return fmt.Errorf("held row carries a record")
 	}
 	return nil
+}
+
+// checkOutputPart checks an output against the part its row's record has at
+// the output's address: the same state, or a completed output of a part the
+// record has pending; and an output with a chain, which becomes an offer,
+// only of a pending part, and as an offer the part takes.
+func checkOutputPart(output TransferredOutput, part CapturedCodecOutput) error {
+	if output.State != part.State && (part.State != "pending" || output.State != "completed") {
+		return fmt.Errorf("output state differs from recorded part")
+	}
+	if output.Chain == nil || output.Value == nil || output.Owner == nil {
+		return nil
+	}
+	if part.State != "pending" {
+		return fmt.Errorf("offer at final output")
+	}
+	return validateTransferOffer(PersistedPartOffer{Address: output.Address, Value: *output.Value, Chain: *output.Chain, Owner: *output.Owner}, part)
 }
 
 type transferIdentityPlan struct {

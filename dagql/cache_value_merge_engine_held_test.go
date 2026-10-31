@@ -3,7 +3,9 @@ package dagql
 import (
 	"context"
 	"testing"
+	"time"
 
+	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/stretchr/testify/require"
 )
 
@@ -151,4 +153,133 @@ func TestCloudRefusesAHeldRowItsSenderDoesntHold(t *testing.T) {
 	reply, err = cloud.MergeValues(cctx, "engine", held)
 	require.NoError(t, err)
 	require.True(t, reply.Committed, "once the sender's own copy arrived, its held row holds")
+}
+
+// heldPartTestBundles are an engine's bundles over root above out: out's own
+// record in full, and a content export of root with out's snapshot part
+// selected and out sent as a held row, so that the part sits on the held row.
+func heldPartTestBundles(t *testing.T, name string) (engine *Cache, outOnly, held ValueBundle, out, root AnyResult) {
+	t.Helper()
+	ctx, engine, srv := transferTestCache(t)
+	out = persistedListTestResult(t, ctx, engine, srv, name+"-out", &transferTestValue{Text: "pending"})
+	root = persistedListTestResult(t, ctx, engine, srv, name+"-root", String("root"))
+	transferTestDependency(engine, ctx, root, out)
+	outOnly = exportTestBundle(t, ctx, engine, out)
+	var content ValueBundle
+	selection := ValueSelection{Roots: []AnyResult{root}, Outputs: []SelectedValueOutput{{Result: out, Address: PersistedPartAddress{Part: "snapshot"}}}}
+	require.NoError(t, engine.WithExportedValues(ctx, selection, config.RefConfig{}, func(_ context.Context, values *ExportedValues) error {
+		content = values.Bundle
+		return nil
+	}))
+	require.Len(t, content.Outputs, 1)
+	held = engineHeldTestBundle(t, engine, content, out)
+	return engine, outOnly, held, out, root
+}
+
+// The Cloud checks a part an engine's bundle puts on a held row against its
+// own copy of the row: the current entry of the row's recipe, as the commit
+// finds it. The part goes only where that copy has the same part: at the
+// same address, and, for an upload, with a descriptor of the same kind. Where
+// the Cloud never had the row, no longer has its value, or has a copy without
+// that part, the held row is stale: nothing commits, and the engine's retry
+// carries the row in full.
+func TestCloudChecksAPartOnAHeldRowAgainstItsOwnCopy(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []string{"matches", "uploads", "never had", "no longer has", "differs", "uploads another kind"} {
+		t.Run(tc, func(t *testing.T) {
+			t.Parallel()
+			engine, outOnly, held, out, root := heldPartTestBundles(t, "part-"+tc)
+			cctx, cloud := storedPartTestCache(t, WithBlobStore())
+			if tc != "never had" {
+				reply, err := cloud.MergeValues(cctx, "engine", outOnly)
+				require.NoError(t, err)
+				require.True(t, reply.Committed)
+			}
+			switch tc {
+			case "no longer has":
+				entry, _ := cloudEntryOfRecipe(t, cloud, engine, out)
+				require.NotNil(t, entry)
+				cloud.egraphMu.Lock()
+				entry.expiresAtUnix = time.Now().Unix() - 60
+				cloud.egraphMu.Unlock()
+			case "differs":
+				held.Outputs[0].Address = PersistedPartAddress{Part: "other"}
+			case "uploads", "uploads another kind":
+				kind := "directory"
+				if tc == "uploads another kind" {
+					kind = "file"
+				}
+				output := &held.Outputs[0]
+				output.State = "completed"
+				output.Value = &SnapshotValue{Kind: kind, Path: "/"}
+				output.Chain = &OfferedChain{Layers: storedBenchPart(1).Chain.Layers}
+				output.Owner = &PersistedOfferOwner{}
+			}
+			reply, err := cloud.MergeValues(cctx, "engine", held)
+			require.NoError(t, err)
+			rootEntry, _ := cloudEntryOfRecipe(t, cloud, engine, root)
+			if tc == "matches" || tc == "uploads" {
+				require.True(t, reply.Committed)
+				require.Empty(t, reply.Stale)
+				require.NotNil(t, rootEntry)
+				return
+			}
+			require.False(t, reply.Committed)
+			require.Equal(t, []TransferOrdinal{ordinalOfNumber(t, held, uint64(out.cacheSharedResult().id))}, reply.Stale)
+			require.Nil(t, rootEntry, "nothing commits")
+		})
+	}
+}
+
+// An upload on a held row can name another held row as its owner's
+// dependency and as a service it binds. The merge lands both held rows on
+// entries, and storing the part on what the reply names
+// (SetStoredPart) then makes the part's entry depend on the named one, a
+// row it didn't depend on before.
+func TestCloudStoresAnUploadOnAHeldRowNamingAHeldRow(t *testing.T) {
+	t.Parallel()
+	ctx, engine, srv := transferTestCache(t)
+	svc := persistedListTestResult(t, ctx, engine, srv, "named-svc", String("svc"))
+	out := persistedListTestResult(t, ctx, engine, srv, "named-out", &transferTestValue{Text: "pending"})
+	root := persistedListTestResult(t, ctx, engine, srv, "named-root", String("root"))
+	transferTestDependency(engine, ctx, root, out)
+	transferTestDependency(engine, ctx, root, svc)
+	var content ValueBundle
+	selection := ValueSelection{Roots: []AnyResult{root}, Outputs: []SelectedValueOutput{{Result: out, Address: PersistedPartAddress{Part: "snapshot"}}}}
+	require.NoError(t, engine.WithExportedValues(ctx, selection, config.RefConfig{}, func(_ context.Context, values *ExportedValues) error {
+		content = values.Bundle
+		return nil
+	}))
+	held := engineHeldTestBundle(t, engine, content, out, svc)
+	svcOrdinal := uint64(ordinalOfNumber(t, held, uint64(svc.cacheSharedResult().id)))
+	outOrdinal := ordinalOfNumber(t, held, uint64(out.cacheSharedResult().id))
+	output := &held.Outputs[0]
+	output.State = "completed"
+	output.Value = &SnapshotValue{Kind: "directory", Path: "/", Services: []TransferredServiceBinding{{ServiceResultID: svcOrdinal, Hostname: "svc"}}}
+	output.Chain = &OfferedChain{Layers: storedBenchPart(1).Chain.Layers}
+	output.Owner = &PersistedOfferOwner{DependencyIDs: []uint64{svcOrdinal}}
+
+	cctx, cloud := storedPartTestCache(t, WithBlobStore())
+	reply, err := cloud.MergeValues(cctx, "engine", exportTestBundle(t, ctx, engine, root))
+	require.NoError(t, err)
+	require.True(t, reply.Committed)
+	outEntry, deps := cloudEntryOfRecipe(t, cloud, engine, out)
+	require.NotNil(t, outEntry)
+	require.Empty(t, deps)
+	reply, err = cloud.MergeValues(cctx, "engine", held)
+	require.NoError(t, err)
+	require.True(t, reply.Committed)
+	numbers := map[TransferOrdinal]uint64{}
+	for _, value := range reply.Values {
+		numbers[value.Ordinal] = value.Number
+	}
+	svcNumber, ok := numbers[TransferOrdinal(svcOrdinal)]
+	require.True(t, ok, "the named held row lands on an entry")
+	part := PersistedPartOffer{Address: output.Address, Value: *output.Value, Chain: *output.Chain, Owner: PersistedOfferOwner{DependencyIDs: []uint64{svcNumber}}}
+	part.Value.Services = []TransferredServiceBinding{{ServiceResultID: svcNumber, Hostname: "svc"}}
+	stored, err := cloud.SetStoredPart(cctx, numbers[outOrdinal], part, 0)
+	require.NoError(t, err)
+	require.True(t, stored)
+	_, deps = cloudEntryOfRecipe(t, cloud, engine, out)
+	require.Equal(t, []sharedResultID{sharedResultID(svcNumber)}, deps, "the stored part makes its entry depend on the entry it names")
 }
