@@ -16,8 +16,12 @@ import (
 // non-LLM trace, or one whose only messages are boundary-contained fixtures), so
 // the caller can fall back to the progress tree. It is the message analog of
 // checksReport.
+//
+// A report rendered with ReportRenderOpts.HideConversation (an LLM tool call's
+// own result) gets nil too: a sub-agent transcript beneath the tool call is
+// exactly the context the caller delegated in order not to read.
 func (fe *frontendPretty) conversationReport(ctx tuist.Context, r *renderer, zoomed bool) []string {
-	if zoomed {
+	if zoomed || fe.reportHideConversation {
 		return nil
 	}
 	convLines := fe.renderConversationSection(ctx, r)
