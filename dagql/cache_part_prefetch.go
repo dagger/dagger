@@ -161,6 +161,8 @@ type partPrefetcher struct {
 	// aheadBytes is the unpacked size of each layer an import ahead
 	// unpacked that no install has used yet.
 	aheadBytes map[digest.Digest]int64
+	// aheadLayers counts, for each layer, the chains in aheads that name it.
+	aheadLayers map[digest.Digest]int
 }
 
 // partPrefetchAhead is an offer's chain imported ahead of demand: ref holds
@@ -169,6 +171,9 @@ type partPrefetchAhead struct {
 	ref     snapshots.ImmutableRef
 	cancel  context.CancelFunc
 	expires time.Time
+	// offer is the offer it is under in aheads, which a replacement with
+	// the same meaning takes over.
+	offer *partOffer
 	// layers are its chain's blobs.
 	layers []digest.Digest
 	// gone is set once it is taken out of aheads: its import, if still
@@ -244,7 +249,7 @@ func (c *Cache) partPrefetch(ctx context.Context) *partPrefetcher {
 		cfg = *c.partPrefetchConfig
 	}
 	base, cancel := context.WithCancel(context.Background())
-	p := &partPrefetcher{cache: c, cfg: cfg, snapshot: snapshot, importer: importer, ctx: base, cancel: cancel, logger: slog.FromContext(ctx), wake: make(chan struct{}, 1), jobs: map[partPrefetchJobKey]*partPrefetchJob{}, holds: map[digest.Digest]*partPrefetchHold{}, fetching: map[digest.Digest]*partPrefetchDownload{}, changed: make(chan struct{}), consumed: map[digest.Digest]time.Time{}, aheads: map[*partOffer]*partPrefetchAhead{}, rows: map[*partOffer]sharedResultID{}, aheadBytes: map[digest.Digest]int64{}}
+	p := &partPrefetcher{cache: c, cfg: cfg, snapshot: snapshot, importer: importer, ctx: base, cancel: cancel, logger: slog.FromContext(ctx), wake: make(chan struct{}, 1), jobs: map[partPrefetchJobKey]*partPrefetchJob{}, holds: map[digest.Digest]*partPrefetchHold{}, fetching: map[digest.Digest]*partPrefetchDownload{}, changed: make(chan struct{}), consumed: map[digest.Digest]time.Time{}, aheads: map[*partOffer]*partPrefetchAhead{}, rows: map[*partOffer]sharedResultID{}, aheadBytes: map[digest.Digest]int64{}, aheadLayers: map[digest.Digest]int{}}
 	p.cond = sync.NewCond(&p.mu)
 	p.wg.Add(cfg.workers + cfg.smallWorkers + 1)
 	for range cfg.workers {
@@ -278,6 +283,7 @@ func (c *Cache) closePartPrefetch() {
 	p.held, p.pending = 0, 0
 	aheads := append(slices.Collect(maps.Values(p.aheads)), p.droppedAheads...)
 	p.aheads, p.droppedAheads = map[*partOffer]*partPrefetchAhead{}, nil
+	p.aheadLayers = map[digest.Digest]int{}
 	p.mu.Unlock()
 	for _, h := range holds {
 		_ = h.release(context.Background())
@@ -403,7 +409,7 @@ func (p *partPrefetcher) goneLocked(offer *partOffer, next *partOffer, keep ...d
 	p.changedLocked()
 	delete(p.rows, offer)
 	if a := p.aheads[offer]; a != nil {
-		p.dropAheadLocked(offer, a)
+		p.dropAheadLocked(a)
 		idle = true
 	}
 	if idle {
@@ -411,26 +417,35 @@ func (p *partPrefetcher) goneLocked(offer *partOffer, next *partOffer, keep ...d
 	}
 }
 
-// dropAheadLocked takes offer's import ahead out of aheads, for the janitor
-// to release.
-func (p *partPrefetcher) dropAheadLocked(offer *partOffer, a *partPrefetchAhead) {
-	delete(p.aheads, offer)
+// dropAheadLocked takes a out of aheads, for the janitor to release.
+func (p *partPrefetcher) dropAheadLocked(a *partPrefetchAhead) {
+	p.removeAheadLocked(a)
 	a.gone = true
 	a.cancel()
 	p.droppedAheads = append(p.droppedAheads, a)
-	p.forgetAheadLocked(a)
 }
 
-// forgetAheadLocked stops counting the layers of a's chain, a out of aheads,
-// that no other import ahead holds, whichever import unpacked them: an
-// install of them later unpacks them again.
-func (p *partPrefetcher) forgetAheadLocked(a *partPrefetchAhead) {
+// addAheadLocked puts a in aheads under offer.
+func (p *partPrefetcher) addAheadLocked(offer *partOffer, a *partPrefetchAhead) {
+	a.offer = offer
+	p.aheads[offer] = a
 	for _, d := range a.layers {
-		held := false
-		for _, other := range p.aheads {
-			held = held || slices.Contains(other.layers, d)
-		}
-		if !held {
+		p.aheadLayers[d]++
+	}
+}
+
+// removeAheadLocked takes a out of aheads, if it is there, and stops
+// counting the layers of its chain that no other import ahead holds,
+// whichever import unpacked them: an install of them later unpacks them
+// again.
+func (p *partPrefetcher) removeAheadLocked(a *partPrefetchAhead) {
+	if p.aheads[a.offer] != a {
+		return
+	}
+	delete(p.aheads, a.offer)
+	for _, d := range a.layers {
+		if p.aheadLayers[d]--; p.aheadLayers[d] == 0 {
+			delete(p.aheadLayers, d)
 			delete(p.aheadBytes, d)
 		}
 	}
@@ -509,6 +524,7 @@ func (c *Cache) partOfferReplaced(old, next *partOffer) {
 	}
 	if a := p.aheads[old]; a != nil && p.aheads[next] == nil {
 		delete(p.aheads, old)
+		a.offer = next
 		p.aheads[next] = a
 	}
 	for _, download := range p.fetching {
@@ -874,7 +890,7 @@ func (p *partPrefetcher) checkAheadLocked(offer *partOffer) {
 	for _, layer := range layers {
 		a.layers = append(a.layers, layer.Descriptor.Digest)
 	}
-	p.aheads[offer] = a
+	p.addAheadLocked(offer, a)
 	p.wg.Add(1)
 	go p.importAhead(ctx, offer, p.rows[offer], a)
 }
@@ -942,15 +958,8 @@ func (p *partPrefetcher) importAhead(ctx context.Context, offer *partOffer, row 
 	keep := ref != nil && !a.gone && !p.closed
 	if keep {
 		a.ref = ref
-	} else if !a.gone {
-		// Under whichever offer holds it now: a replacement with the same
-		// meaning takes it over while it imports.
-		for holder, current := range p.aheads {
-			if current == a {
-				delete(p.aheads, holder)
-			}
-		}
-		p.forgetAheadLocked(a)
+	} else {
+		p.removeAheadLocked(a)
 	}
 	if a.gone && outcome != "skipped_budget" {
 		outcome, err = "offer_gone", nil
@@ -979,16 +988,9 @@ func (p *partPrefetcher) importAhead(ctx context.Context, offer *partOffer, row 
 }
 
 // aheadComingLocked reports whether a download of desc's blob is coming for
-// a's import ahead: under whichever offer holds a now, as a replacement may
-// have taken it over. Requires p.mu.
+// a's import ahead, while it is in aheads. Requires p.mu.
 func (p *partPrefetcher) aheadComingLocked(a *partPrefetchAhead, desc ocispecs.Descriptor) bool {
-	coming := false
-	for offer, current := range p.aheads {
-		if current == a {
-			coming = p.comingLocked(offer, desc)
-		}
-	}
-	return coming
+	return p.aheads[a.offer] == a && p.comingLocked(a.offer, desc)
 }
 
 // errPartPrefetchNotComing stops an import ahead that needs a blob no
@@ -1069,9 +1071,9 @@ func (p *partPrefetcher) releaseIdle(now time.Time) {
 			delete(p.consumed, d)
 		}
 	}
-	for offer, a := range p.aheads {
+	for _, a := range p.aheads {
 		if !now.Before(a.expires) {
-			p.dropAheadLocked(offer, a)
+			p.dropAheadLocked(a)
 		}
 	}
 	aheads := p.droppedAheads

@@ -861,7 +861,7 @@ func TestPartPrefetchAheadForgottenWithLastHolder(t *testing.T) {
 // hold a layer of their own, all unpacked; it returns the cache and the
 // imports, by offer.
 func aheadTestCache(n int, shared digest.Digest) (*Cache, map[*partOffer]*partPrefetchAhead) {
-	p := &partPrefetcher{holds: map[digest.Digest]*partPrefetchHold{}, fetching: map[digest.Digest]*partPrefetchDownload{}, jobs: map[partPrefetchJobKey]*partPrefetchJob{}, aheads: map[*partOffer]*partPrefetchAhead{}, aheadBytes: map[digest.Digest]int64{}, rows: map[*partOffer]sharedResultID{}, changed: make(chan struct{}), wake: make(chan struct{}, 1)}
+	p := &partPrefetcher{holds: map[digest.Digest]*partPrefetchHold{}, fetching: map[digest.Digest]*partPrefetchDownload{}, jobs: map[partPrefetchJobKey]*partPrefetchJob{}, aheads: map[*partOffer]*partPrefetchAhead{}, aheadBytes: map[digest.Digest]int64{}, aheadLayers: map[digest.Digest]int{}, rows: map[*partOffer]sharedResultID{}, changed: make(chan struct{}), wake: make(chan struct{}, 1)}
 	c := &Cache{}
 	c.partPrefetcher.Store(p)
 	byOffer := map[*partOffer]*partPrefetchAhead{}
@@ -869,7 +869,7 @@ func aheadTestCache(n int, shared digest.Digest) (*Cache, map[*partOffer]*partPr
 		own := digest.FromString(fmt.Sprint("own layer ", i))
 		offer := &partOffer{}
 		a := &partPrefetchAhead{cancel: func() {}, layers: []digest.Digest{shared, own}}
-		p.aheads[offer] = a
+		p.addAheadLocked(offer, a)
 		p.aheadBytes[shared] = 1
 		p.aheadBytes[own] = 1
 		byOffer[offer] = a
@@ -899,11 +899,11 @@ func TestPartPrefetchAheadKeepsSharedLayers(t *testing.T) {
 	p.fetching[secondOwn] = &partPrefetchDownload{offers: map[*partOffer]struct{}{next: {}}}
 	require.True(t, p.aheadComingLocked(byOffer[second], desc), "the blob's download is coming for the replacement")
 
-	p.dropAheadLocked(first, byOffer[first])
+	p.dropAheadLocked(byOffer[first])
 	require.Contains(t, p.aheadBytes, shared, "the other import holds the shared layer")
 	require.NotContains(t, p.aheadBytes, firstOwn, "no import holds the dropped one's own layer")
 	require.Contains(t, p.aheadBytes, secondOwn, "the other import holds its own layer")
-	p.dropAheadLocked(next, byOffer[second])
+	p.dropAheadLocked(byOffer[second])
 	require.Empty(t, p.aheadBytes, "no import holds any layer")
 }
 
