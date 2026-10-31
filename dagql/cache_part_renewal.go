@@ -41,7 +41,9 @@ type RenewalRequest struct {
 	// Layers is an immutable copy with no result or owner runtime IDs.
 	Layers     []snapshots.ExportLayer
 	NeededBlob digest.Digest
-	Deadline   time.Time
+	// Packs maps the layers stored in packs to their packs' IDs.
+	Packs    map[digest.Digest]digest.Digest
+	Deadline time.Time
 	// Done closes on cancellation, timeout, accepted reply, detach or shutdown.
 	Done <-chan struct{}
 }
