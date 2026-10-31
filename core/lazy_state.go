@@ -65,34 +65,46 @@ type lazyGroupOnce struct {
 	// its work isn't profiled. A runner or reader blocked on mu waits for
 	// that body, so the wait is recorded as a join on it.
 	runner atomic.Uint64
+	// bodies counts the bodies that have run under mu, so a wait can tell
+	// whether another body ran before the wait ended.
+	bodies atomic.Uint64
 }
 
-// lockForBody takes mu to run the group's body under ctx's op, recording a
-// wait for another runner's body as a join on that body's op.
-func (group *lazyGroupOnce) lockForBody(ctx context.Context) {
-	group.waitLock(ctx)
+// beginBody marks the body about to run under mu, held, as ctx's op's.
+func (group *lazyGroupOnce) beginBody(ctx context.Context) {
+	group.bodies.Add(1)
 	group.runner.Store(wcprof.CurrentOpID(ctx))
 }
 
-// unlockBody releases mu after the body lockForBody let run.
+// unlockBody releases mu, after a body ran under it or none did.
 func (group *lazyGroupOnce) unlockBody() {
 	group.runner.Store(0)
 	group.mu.Unlock()
 }
 
 // waitLock takes mu. A wait for a running body is a join on its op; any
-// other wait, such as for a reader's brief hold, is a lock wait.
+// other wait, such as for a reader's brief hold, is a lock wait. So is a wait
+// that outlasted its body: when the body failed and another runner's body ran
+// before this wait ended, a join on the first would leave the second's work
+// out of the wait. A runner that finds the body done holds mu only briefly.
 func (group *lazyGroupOnce) waitLock(ctx context.Context) {
 	if group.mu.TryLock() {
 		return
 	}
-	if body := group.runner.Load(); body != 0 {
-		wait := wcprof.BeginWait(ctx, body, wcprof.WaitReasonLazy)
-		group.mu.Lock()
+	bodies := group.bodies.Load()
+	body := group.runner.Load()
+	if body == 0 {
+		wcprof.Lock(ctx, &group.mu, lazyGroupMuProfIdent)
+		return
+	}
+	start := time.Now()
+	wait := wcprof.BeginWait(ctx, body, wcprof.WaitReasonLazy)
+	group.mu.Lock()
+	if group.bodies.Load() == bodies {
 		wait.End()
 		return
 	}
-	wcprof.Lock(ctx, &group.mu, lazyGroupMuProfIdent)
+	wcprof.RecordWaitAt(ctx, lazyGroupMuProfIdent, wcprof.WaitReasonLock, start, time.Now())
 }
 
 // awaitUnlocked returns once the current holder of LazyMu, if any, has
@@ -215,8 +227,9 @@ func (lazy *LazyState) EvaluateGroup(ctx context.Context, typeName string, group
 	}
 	lazy.LazyMu.Unlock()
 
-	// Another runner of this group holds g.mu across its body.
-	g.lockForBody(ctx)
+	// Another runner of this group holds g.mu across its body. A wait for
+	// that body is recorded as a join on it.
+	g.waitLock(ctx)
 	defer g.unlockBody()
 	if g.done.Load() {
 		return nil
@@ -226,6 +239,7 @@ func (lazy *LazyState) EvaluateGroup(ctx context.Context, typeName string, group
 		g.done.Store(true)
 		return nil
 	}
+	g.beginBody(ctx)
 
 	start := time.Now()
 	slog.ExtraDebugContext(ctx, "start lazy group evaluation",
