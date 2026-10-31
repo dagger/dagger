@@ -270,3 +270,38 @@ func TestOfferInstallFailedProfiled(t *testing.T) {
 		require.Equal(t, "canceled", installs[0].Outcome)
 	})
 }
+
+// A part demand's acquire task records the steps of each pass as internal
+// ops of its own: probing the receiver, selecting a source, and any decision
+// or join, so that a profile can say where a long acquisition spends the
+// time between them.
+func TestDemandPartProfilesItsSteps(t *testing.T) {
+	ctx, c, srv, _ := shareTestCache(t)
+	_, receiver := shareTestPair(t, ctx, c, srv,
+		map[string]sharePartState{"fs": {Snapshot: "fs-snap"}},
+		map[string]sharePartState{"fs": {}},
+	)
+	ctx, root := profiledRoot(ctx, "test.demand")
+	require.NoError(t, c.demandPart(ctx, receiver, PersistedPartAddress{Part: "fs"}))
+	root.End(wcprof.OutcomeOK)
+
+	events, _ := profiledUnder(t, root.ID())
+	var acquire *profiledEvent
+	for i, ev := range events {
+		if ev.Type == "op" && ev.ident == "acquire:fs" {
+			acquire = &events[i]
+		}
+	}
+	require.NotNil(t, acquire, "the demand's acquire task is profiled")
+	steps := map[string]int{}
+	for _, ev := range events {
+		if ev.Type == "op" && ev.ParentID == acquire.OpID && strings.HasPrefix(ev.class, "part.demand.") {
+			steps[ev.class]++
+			require.Equal(t, "internal", ev.OpKind, ev.class)
+			require.GreaterOrEqual(t, ev.StartNS, acquire.StartNS, ev.class)
+			require.LessOrEqual(t, ev.EndNS, acquire.EndNS, ev.class)
+		}
+	}
+	require.Positive(t, steps["part.demand.probe"], "each pass probes the receiver")
+	require.Positive(t, steps["part.demand.select"], "and selects a source")
+}
