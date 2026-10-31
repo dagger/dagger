@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/containerd/containerd/v2/core/mount"
@@ -101,9 +102,9 @@ func GetContentHashFromFile(
 
 // GetContentHashFromCopySources returns the content hash of what an unfiltered
 // Dockerfile COPY of srcPath out of srcDir in snapshot copies: each path that
-// srcPath resolves to, resolving wildcards as the copy does, hashed whole
-// together with that path. A path that doesn't exist is hashed as missing,
-// for the copy to report when it runs.
+// srcPath resolves to within srcDir, resolving wildcards and a final symlink
+// as the copy does, hashed whole together with that path. A path that doesn't
+// exist is hashed as missing, for the copy to report when it runs.
 func GetContentHashFromCopySources(
 	ctx context.Context,
 	snapshot bkcache.ImmutableRef,
@@ -113,28 +114,30 @@ func GetContentHashFromCopySources(
 	if snapshot == nil {
 		return "", fmt.Errorf("failed to get copy source snapshot: nil")
 	}
-	paths := []string{srcDir}
-	missing := map[string]bool{}
+	var paths []string
+	resolved := map[string]string{}
 	err := MountRef(ctx, snapshot, func(root string, _ *mount.Mount) error {
-		if srcPath != "" {
-			srcPathWithDir := srcPath
-			if srcDir != "" && srcDir != "/" {
-				srcPathWithDir = srcDir + "/" + srcPathWithDir
-			}
-			var err error
-			paths, err = layercopy.ResolveWildcards(root, srcPathWithDir, true)
-			if err != nil {
-				return err
-			}
+		boundary, err := viewBase(root, srcDir)
+		if err != nil {
+			return err
+		}
+		paths, err = copySourcePaths(root, boundary, srcPath)
+		if err != nil {
+			return err
 		}
 		for _, p := range paths {
-			resolved, err := containerdfs.RootPath(root, p)
+			real, err := layercopy.BoundedRootPath(root, boundary, p, true)
 			if err != nil {
 				return err
 			}
-			if _, err := os.Stat(resolved); errors.Is(err, os.ErrNotExist) {
-				missing[p] = true
+			if _, err := os.Lstat(real); errors.Is(err, os.ErrNotExist) {
+				continue
 			}
+			rel, err := filepath.Rel(root, real)
+			if err != nil {
+				return err
+			}
+			resolved[p] = path.Join("/", filepath.ToSlash(rel))
 		}
 		return nil
 	}, mountRefAsReadOnly)
@@ -143,11 +146,12 @@ func GetContentHashFromCopySources(
 	}
 	parts := make([]string, 0, 2*len(paths))
 	for _, p := range paths {
-		if missing[p] {
+		real, ok := resolved[p]
+		if !ok {
 			parts = append(parts, p, "missing")
 			continue
 		}
-		dgst, err := getContentHashFromRef(ctx, snapshot, path.Join("/", p))
+		dgst, err := getContentHashFromRef(ctx, snapshot, real)
 		if err != nil {
 			return "", fmt.Errorf("failed to get content hash of %q: %w", p, err)
 		}

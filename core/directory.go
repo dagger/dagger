@@ -2816,6 +2816,25 @@ func viewBase(root, dirPath string) (string, error) {
 	return path.Join("/", filepath.ToSlash(rel)), nil
 }
 
+// copySourcePaths returns the paths that a copy of srcPath out of the
+// directory at boundary (see viewBase) in the filesystem mounted at root
+// copies: srcPath with its wildcards resolved within the directory, or the
+// whole directory if srcPath is empty.
+func copySourcePaths(root, boundary, srcPath string) ([]string, error) {
+	if srcPath == "" {
+		return []string{boundary}, nil
+	}
+	matches, err := layercopy.ResolveWildcards(path.Join(root, boundary), path.Join("/", srcPath), true)
+	if err != nil {
+		return nil, err
+	}
+	paths := make([]string, len(matches))
+	for i, m := range matches {
+		paths[i] = path.Join(boundary, path.Join("/", m))
+	}
+	return paths, nil
+}
+
 // viewDest returns the boundary of the directory at dirPath in the
 // filesystem mounted at root (see viewBase), and dest, a destination path in
 // that directory, as a path under it for the copier to resolve within it. A
@@ -2994,16 +3013,9 @@ func (dir *Directory) WithDirectoryDockerfileCompat(
 				}
 			}
 
-			pathsToCopy := []string{srcBoundary}
-			if srcPath != "" {
-				matches, err := layercopy.ResolveWildcards(path.Join(mntedSrcPath, srcBoundary), path.Join("/", srcPath), true)
-				if err != nil {
-					return err
-				}
-				pathsToCopy = make([]string, len(matches))
-				for i, m := range matches {
-					pathsToCopy[i] = path.Join(srcBoundary, path.Join("/", m))
-				}
+			pathsToCopy, err := copySourcePaths(mntedSrcPath, srcBoundary, srcPath)
+			if err != nil {
+				return err
 			}
 
 			for _, srcPath := range pathsToCopy {
