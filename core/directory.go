@@ -1619,6 +1619,16 @@ func (lazy *DirectoryChownLazy) EncodePersisted(ctx context.Context, enc *dagql.
 }
 
 func (dir *Directory) Digest(ctx context.Context, self dagql.ObjectResult[*Directory]) (string, error) {
+	return dir.digest(ctx, self, bkcontenthash.ChecksumOpts{})
+}
+
+// DigestExcluding is Digest without the entries matching excludes, which are
+// patterns relative to the directory.
+func (dir *Directory) DigestExcluding(ctx context.Context, self dagql.ObjectResult[*Directory], excludes []string) (string, error) {
+	return dir.digest(ctx, self, bkcontenthash.ChecksumOpts{ExcludePatterns: excludes})
+}
+
+func (dir *Directory) digest(ctx context.Context, self dagql.ObjectResult[*Directory], opts bkcontenthash.ChecksumOpts) (string, error) {
 	snapshot, err := dir.Snapshot.GetOrEval(ctx, self.Result)
 	if err != nil {
 		return "", fmt.Errorf("failed to evaluate directory: %w", err)
@@ -1635,7 +1645,7 @@ func (dir *Directory) Digest(ctx context.Context, self dagql.ObjectResult[*Direc
 		ctx,
 		snapshot,
 		dirPath,
-		bkcontenthash.ChecksumOpts{},
+		opts,
 	)
 	if err != nil {
 		return "", fmt.Errorf("failed to compute digest: %w", err)

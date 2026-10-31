@@ -1402,9 +1402,9 @@ func (src *ModuleSource) SourceImplementationDigest(ctx context.Context) (digest
 		return "", fmt.Errorf("failed to get dag server: %w", err)
 	}
 
-	var contextDigest string
-	if err := dag.Select(ctx, src.ContextDirectory, &contextDigest, dagql.Selector{Field: "digest"}); err != nil {
-		return "", fmt.Errorf("failed to get module source context directory digest: %w", err)
+	contextDigest, err := src.contextDigest(ctx, dag)
+	if err != nil {
+		return "", err
 	}
 
 	inputs := []string{
@@ -1493,6 +1493,45 @@ func (src *ModuleSource) SourceImplementationDigest(ctx context.Context) (digest
 	}
 
 	return hashutil.HashStrings(inputs...), nil
+}
+
+// contextDigest hashes the module's context directory by content, except for
+// the .git of a Git checkout. Its bytes depend on how the server packed the
+// objects it sent, so two engines can check out one commit at one ref into
+// different .git bytes. The cache keys the checkout itself by its Git
+// identity: repository, commit, ref and checkout options. A .git in the
+// context counts by that identity, so the module's identity changes exactly
+// when its checkout's does.
+func (src *ModuleSource) contextDigest(ctx context.Context, dag *dagql.Server) (string, error) {
+	var checkoutDigest digest.Digest
+	if src.Kind == ModuleSourceKindGit && src.Git != nil && src.Git.UnfilteredContextDir.Self() != nil {
+		checkoutCall, err := src.Git.UnfilteredContextDir.ResultCall()
+		if err != nil {
+			return "", fmt.Errorf("module source git checkout call: %w", err)
+		}
+		checkoutDigest = checkoutCall.ContentDigest()
+	}
+	var hasGitDir dagql.Boolean
+	if checkoutDigest != "" {
+		if err := dag.Select(ctx, src.ContextDirectory, &hasGitDir, dagql.Selector{
+			Field: "exists",
+			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String(".git")}},
+		}); err != nil {
+			return "", fmt.Errorf("module source context directory .git: %w", err)
+		}
+	}
+	if !hasGitDir {
+		var contextDigest string
+		if err := dag.Select(ctx, src.ContextDirectory, &contextDigest, dagql.Selector{Field: "digest"}); err != nil {
+			return "", fmt.Errorf("failed to get module source context directory digest: %w", err)
+		}
+		return contextDigest, nil
+	}
+	filesDigest, err := src.ContextDirectory.Self().DigestExcluding(ctx, src.ContextDirectory, []string{".git"})
+	if err != nil {
+		return "", fmt.Errorf("failed to get module source context directory digest: %w", err)
+	}
+	return hashutil.HashStrings("gitContext", filesDigest, checkoutDigest.String()).String(), nil
 }
 
 func ImplementationScopedModuleSource(
