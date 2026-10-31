@@ -37,7 +37,7 @@ func newListCommand() *cobra.Command {
 		Long:  "List artifacts by type or collection. Use -a to expand collections.",
 		Args:  cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) == 0 && !cmd.Flags().Changed("type") && len(artifactKeyFlags(cmd)) == 0 && !cmd.Flags().Changed("source-path") {
+			if len(args) == 0 && !cmd.Flags().Changed("type") && len(artifactKeyFlags(cmd)) == 0 && !cmd.Flags().Changed("path") {
 				return cmd.Help()
 			}
 			return runArtifacts(cmd, args)
@@ -53,7 +53,7 @@ func newListCommand() *cobra.Command {
 }
 
 func registerArtifactListFlags(cmd *cobra.Command) {
-	cmd.Flags().String("source-path", "", "Select artifacts affected by workspace-root `PATH` or its subtree")
+	cmd.Flags().String("path", "", "Select artifacts affected by workspace-root `PATH` or its subtree")
 	cmd.Flags().StringArray("module", nil, "Select artifacts from module `NAME`")
 	cmd.Flags().Lookup("module").Annotations = map[string][]string{artifactDimensionFlag: {artifact.ModuleDimension}}
 	cmd.Flags().BoolP("all", "a", false, "Expand collections and list each item")
