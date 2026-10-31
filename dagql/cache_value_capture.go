@@ -675,6 +675,15 @@ type LeftOutRoot struct {
 	Row   uint64
 	Kind  BusyKind
 	Err   error
+	// Busy are all the busy rows the root's closure reaches, by number,
+	// each with what keeps it busy: Row is one of them, when Kind is set.
+	Busy []BusyRow
+}
+
+// BusyRow is a row a capture found busy, and what keeps it busy.
+type BusyRow struct {
+	Row  uint64
+	Kind BusyKind
 }
 
 // BusyKind is what keeps a row from being captured now.
