@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strconv"
 
@@ -229,6 +230,20 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 			TermDigest:      calcEgraphTermDigest(term.selfDigest, inputEqIDs),
 			OutputEqClassID: int64(outputEqID),
 		})
+	}
+
+	for _, resultID := range resultIDs {
+		res := c.resultsByID[resultID]
+		if res == nil {
+			continue
+		}
+		for _, request := range slices.Sorted(maps.Keys(res.calls)) {
+			snapshot.resultCalls = append(snapshot.resultCalls, persistdb.MirrorResultCall{
+				ResultID:      int64(resultID),
+				RequestDigest: request.String(),
+				Call:          res.calls[request].encoded,
+			})
+		}
 	}
 
 	persistedResultIDs := make([]sharedResultID, 0, len(persistedRootIDs))
@@ -484,6 +499,12 @@ func (c *Cache) applyPersistStateSnapshot(ctx context.Context, snapshot persistS
 		if err := q.InsertMirrorResultOutputEqClass(ctx, row); err != nil {
 			_ = tx.Rollback()
 			return fmt.Errorf("insert result_output_eq_class (%d,%d): %w", row.ResultID, row.EqClassID, err)
+		}
+	}
+	for _, row := range snapshot.resultCalls {
+		if err := q.InsertMirrorResultCall(ctx, row); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("insert result_call (%d,%s): %w", row.ResultID, row.RequestDigest, err)
 		}
 	}
 	for _, row := range snapshot.persistedEdges {

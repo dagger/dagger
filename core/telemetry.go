@@ -51,7 +51,7 @@ func AroundFunc(
 	if dagql.IsSkipped(ctx) {
 		return ctx, dagql.NoopDone
 	}
-	introspection, receiver := introspectionInfo(ctx, req.ResultCall)
+	introspection, internalRoot, receiver := introspectionInfo(ctx, req.ResultCall)
 	if introspection {
 		return dagql.WithSkip(ctx), dagql.NoopDone
 	}
@@ -156,9 +156,7 @@ func AroundFunc(
 		attrs = append(attrs, attribute.StringSlice(telemetry.DagInputsAttr, inputs))
 	}
 
-	// Getter accessors are real calls, so retain their trace metadata, but mark
-	// them as internal machinery rather than presenting them as work.
-	if dagql.IsInternal(ctx) || dagql.CurrentFieldIsTrivial(ctx) {
+	if isUIInternal(ctx, internalRoot) {
 		attrs = append(attrs, attribute.Bool(telemetry.UIInternalAttr, true))
 	}
 	if req.PassthroughTelemetry {
@@ -201,6 +199,14 @@ func AroundFunc(
 		recordCacheEvidence(ctx, span, req.CacheEvidence, res)
 		logResult(ctx, res, req.ResultCall)
 	}
+}
+
+// isUIInternal reports whether a call's span is internal machinery rather
+// than work to present: an engine-internal select, a getter accessor (a real
+// call, so it keeps its trace metadata), or a module's call on its own behalf
+// (internalRootFields).
+func isUIInternal(ctx context.Context, internalRoot bool) bool {
+	return dagql.IsInternal(ctx) || dagql.CurrentFieldIsTrivial(ctx) || internalRoot
 }
 
 type moduleProcessRequestKey struct{}
@@ -323,7 +329,12 @@ func recordCacheEvidence(ctx context.Context, span trace.Span, ev *dagql.CacheDe
 		if ev.MissRequirementsGrew {
 			attrs = append(attrs, attribute.String(telemetryattrs.CacheMissRequirementsGrewAttr, "true"))
 		}
+		attrs = appendRemoteMissAttrs(attrs, ev)
+		if ev.MissRemoteLookup != "" {
+			attrs = append(attrs, attribute.String(telemetryattrs.CacheMissRemoteLookupAttr, ev.MissRemoteLookup))
+		}
 	}
+	attrs = appendAdoptionAttrs(attrs, ev)
 	if ev.LookupAtUnixNano != 0 {
 		attrs = append(attrs, attribute.String(telemetryattrs.CacheLookupAtAttr, strconv.FormatInt(ev.LookupAtUnixNano, 10)))
 	}
@@ -366,6 +377,47 @@ func recordCacheEvidence(ctx context.Context, span trace.Span, ev *dagql.CacheDe
 		attrs = append(attrs, cacheStateAttrs(state)...)
 	}
 	span.SetAttributes(attrs...)
+}
+
+// appendRemoteMissAttrs appends an executed call's miss facts about remote
+// values and new inputs: whether the candidate the miss lost to expiry, to the
+// session's resources or at serve time was a merged value, and which inputs
+// were new to the cache.
+func appendRemoteMissAttrs(attrs []attribute.KeyValue, ev *dagql.CacheDecision) []attribute.KeyValue {
+	if ev.MissSawExpired && ev.MissExpiredRemote {
+		attrs = append(attrs, attribute.String(telemetryattrs.CacheMissExpiredRemoteAttr, "true"))
+	}
+	if ev.MissIncompatibleCandidates && ev.MissIncompatibleRemote {
+		attrs = append(attrs, attribute.String(telemetryattrs.CacheMissIncompatibleRemoteAttr, "true"))
+	}
+	if (ev.MissProducerReleased || ev.MissRequirementsGrew) && ev.HitRemote {
+		attrs = append(attrs, attribute.String(telemetryattrs.CacheMissChosenRemoteAttr, "true"))
+	}
+	if len(ev.MissFreshInputs) > 0 {
+		fresh := make([]string, len(ev.MissFreshInputs))
+		for i, idx := range ev.MissFreshInputs {
+			fresh[i] = strconv.Itoa(idx)
+		}
+		attrs = append(attrs, attribute.StringSlice(telemetryattrs.CacheMissFreshInputsAttr, fresh))
+	}
+	return attrs
+}
+
+// appendAdoptionAttrs appends the facts of a publication that adopted its
+// recipe's live entry.
+func appendAdoptionAttrs(attrs []attribute.KeyValue, ev *dagql.CacheDecision) []attribute.KeyValue {
+	if (ev.Outcome == dagql.CacheOutcomeExecuted || ev.Outcome == dagql.CacheOutcomeJoined) && ev.Adopted {
+		// A publication fact, shared by the call that executed and the calls
+		// that joined it, so joined calls stamp it too.
+		attrs = append(attrs, attribute.String(telemetryattrs.CacheAdoptedAttr, "true"))
+		if ev.AdoptedRemote {
+			attrs = append(attrs, attribute.String(telemetryattrs.CacheAdoptedRemoteAttr, "true"))
+			if ev.AdoptedMergedAtUnixNano != 0 {
+				attrs = append(attrs, attribute.String(telemetryattrs.CacheAdoptedMergedAtAttr, strconv.FormatInt(ev.AdoptedMergedAtUnixNano, 10)))
+			}
+		}
+	}
+	return attrs
 }
 
 // cacheStateAttrs maps an entry's cache state onto the dagger.io/cache.*
@@ -596,7 +648,7 @@ func fieldSpecForCall(ctx context.Context, frame *dagql.ResultCall) (dagql.Field
 // These queries tend to be very large and are not interesting for users to
 // see.
 func isIntrospection(ctx context.Context, frame *dagql.ResultCall) bool {
-	introspection, _ := introspectionInfo(ctx, frame)
+	introspection, _, _ := introspectionInfo(ctx, frame)
 	return introspection
 }
 
@@ -609,7 +661,6 @@ var introspectionRootFields = map[string]struct{}{
 	"__schemaJSONFile":    {},
 	"__schemaVersion":     {},
 	"currentTypeDefs":     {},
-	"currentModule":       {},
 	"currentFunctionCall": {},
 	"function":            {},
 	"typeDef":             {},
@@ -628,6 +679,16 @@ var introspectionRootFields = map[string]struct{}{
 	"__inputTypeDef":      {},
 	"__scalarTypeDef":     {},
 	"__enumTypeDef":       {},
+}
+
+// internalRootFields are the Query-level root fields that begin a module's
+// calls on its own behalf, such as reading its own source through
+// currentModule. Unlike introspection, those calls do real work that later
+// calls build on, so the remote cache must learn them from telemetry: they are
+// emitted, marked internal, which keeps them out of the UI below verbosity 3.
+// Profiling still skips the root call itself (profileSkip).
+var internalRootFields = map[string]struct{}{
+	"currentModule": {},
 }
 
 // reflectionTypeNames are the GraphQL type-system reflection object types. EVERY
@@ -704,28 +765,32 @@ func profileSkip(receiverTypeName, field string) bool {
 		if _, ok := introspectionRootFields[field]; ok {
 			return true
 		}
+		if _, ok := internalRootFields[field]; ok {
+			return true
+		}
 	}
 	return false
 }
 
-func introspectionInfo(ctx context.Context, frame *dagql.ResultCall) (bool, *dagql.ResultCall) {
+// introspectionInfo reports whether frame is an introspection call, hidden from
+// telemetry with everything under it; whether its root is one of
+// internalRootFields, emitted but marked internal; and its immediate receiver.
+func introspectionInfo(ctx context.Context, frame *dagql.ResultCall) (introspection, internalRoot bool, immediateReceiver *dagql.ResultCall) {
 	if frame == nil {
-		return false, nil
+		return false, false, nil
 	}
 
 	cur := frame
-	var immediateReceiver *dagql.ResultCall
 	for cur != nil {
 		if cur.Receiver == nil {
-			if _, ok := introspectionRootFields[cur.Field]; ok {
-				return true, immediateReceiver
-			}
-			return false, immediateReceiver
+			_, introspection = introspectionRootFields[cur.Field]
+			_, internalRoot = internalRootFields[cur.Field]
+			return introspection, internalRoot, immediateReceiver
 		}
 
 		receiver, err := cur.ReceiverCall(ctx)
 		if err != nil || receiver == nil {
-			return false, immediateReceiver
+			return false, false, immediateReceiver
 		}
 		if cur == frame {
 			immediateReceiver = receiver
@@ -740,10 +805,10 @@ func introspectionInfo(ctx context.Context, frame *dagql.ResultCall) (bool, *dag
 					"withArg",
 					"withSourceMap",
 					"withDescription":
-					return true, immediateReceiver
+					return true, false, immediateReceiver
 				}
 				if strings.HasPrefix(cur.Field, "__") {
-					return true, immediateReceiver
+					return true, false, immediateReceiver
 				}
 			case "TypeDef":
 				switch cur.Field {
@@ -759,10 +824,10 @@ func introspectionInfo(ctx context.Context, frame *dagql.ResultCall) (bool, *dag
 					"withEnum",
 					"withEnumValue",
 					"withEnumMember":
-					return true, immediateReceiver
+					return true, false, immediateReceiver
 				}
 				if strings.HasPrefix(cur.Field, "__") {
-					return true, immediateReceiver
+					return true, false, immediateReceiver
 				}
 			case "FunctionArg",
 				"ObjectTypeDef",
@@ -773,7 +838,7 @@ func introspectionInfo(ctx context.Context, frame *dagql.ResultCall) (bool, *dag
 				"EnumTypeDef",
 				"EnumMemberTypeDef":
 				if strings.HasPrefix(cur.Field, "__") {
-					return true, immediateReceiver
+					return true, false, immediateReceiver
 				}
 			}
 		}
@@ -781,7 +846,7 @@ func introspectionInfo(ctx context.Context, frame *dagql.ResultCall) (bool, *dag
 		cur = receiver
 	}
 
-	return false, immediateReceiver
+	return false, false, immediateReceiver
 }
 
 // isMeta returns true if any type in the ID is "too meta" to show to the user,

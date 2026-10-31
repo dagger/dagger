@@ -146,6 +146,8 @@ var expectedOutcome = map[string]string{
 	"recipe_expiry_deps":    "",
 	"recipe_expiry_restart": "",
 	"recipe_merge":          "",
+	// call records: a merged entry hit by another call of its class
+	"recipe_merge_taught": "",
 
 	// green: the egraphMu read sections split where they nest sessionMu
 	// (SharedSections = "split"), so overlapping lookup hits, ID-load
