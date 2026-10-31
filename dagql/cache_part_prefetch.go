@@ -978,6 +978,19 @@ func (p *partPrefetcher) importAhead(ctx context.Context, offer *partOffer, row 
 	p.logger.Info("remote cache part applied ahead", args...)
 }
 
+// aheadComingLocked reports whether a download of desc's blob is coming for
+// a's import ahead: under whichever offer holds a now, as a replacement may
+// have taken it over. Requires p.mu.
+func (p *partPrefetcher) aheadComingLocked(a *partPrefetchAhead, desc ocispecs.Descriptor) bool {
+	coming := false
+	for offer, current := range p.aheads {
+		if current == a {
+			coming = p.comingLocked(offer, desc)
+		}
+	}
+	return coming
+}
+
 // errPartPrefetchNotComing stops an import ahead that needs a blob no
 // download is coming for.
 var errPartPrefetchNotComing = errors.New("no prefetch of the blob is coming")
@@ -993,14 +1006,7 @@ func (p *partPrefetcher) awaitBlob(ctx context.Context, a *partPrefetchAhead, de
 			p.mu.Unlock()
 			return nil
 		}
-		coming := false
-		// Under whichever offer holds it now, as a replacement may have
-		// taken it over.
-		for offer, current := range p.aheads {
-			if current == a {
-				coming = p.comingLocked(offer, desc)
-			}
-		}
+		coming := p.aheadComingLocked(a, desc)
 		changed := p.changed
 		p.mu.Unlock()
 		if !coming {
