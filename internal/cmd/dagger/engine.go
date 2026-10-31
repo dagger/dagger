@@ -219,6 +219,7 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 	}
 
 	params.AllowedLLMModules = allowedLLMModules
+	params.AllowedGitPushRemotes = allowedGitPushRemotes
 
 	params.GitRemote, params.WorkspacePath = cloudWorkspace(ctx, params.Workspace)
 
