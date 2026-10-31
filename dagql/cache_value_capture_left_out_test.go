@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/dagger/dagger/engine/snapshots/config"
@@ -285,4 +286,76 @@ func ordinalOfNumber(t *testing.T, bundle ValueBundle, number uint64) TransferOr
 	}
 	t.Fatalf("no row %d", number)
 	return 0
+}
+
+// A left-out root names every busy row its closure reaches, not only the one
+// it's left out for: a root over two running rows names both, and one over
+// one of them names it.
+func TestExportNamesEveryBusyRowARootReaches(t *testing.T) {
+	t.Parallel()
+	ctx, c, srv := transferTestCache(t)
+	first := persistedListTestResult(t, ctx, c, srv, "every-busy-first", String("first"))
+	second := persistedListTestResult(t, ctx, c, srv, "every-busy-second", String("second"))
+	both := persistedListTestResult(t, ctx, c, srv, "every-busy-both", String("both"))
+	one := persistedListTestResult(t, ctx, c, srv, "every-busy-one", String("one"))
+	transferTestDependency(c, ctx, both, first)
+	transferTestDependency(c, ctx, both, second)
+	transferTestDependency(c, ctx, one, second)
+	for _, r := range []AnyResult{first, second} {
+		res := r.cacheSharedResult()
+		res.lazyMu.Lock()
+		res.lazyWhole.attempt = &lazyEvalAttempt{done: make(chan struct{}), waiters: 1}
+		res.lazyMu.Unlock()
+		defer func() {
+			res.lazyMu.Lock()
+			res.lazyWhole.attempt = nil
+			res.lazyMu.Unlock()
+		}()
+	}
+	err := c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{both, one}}, config.RefConfig{}, func(context.Context, *ExportedValues) error {
+		t.Fatal("a capture with no root delivered")
+		return nil
+	})
+	var left *RootsLeftOutError
+	require.True(t, errors.As(err, &left), "the error names the left-out roots: %v", err)
+	require.Len(t, left.Roots, 2)
+	require.Equal(t, []BusyRow{{Row: rowNumber(first), Kind: BusyRunning}, {Row: rowNumber(second), Kind: BusyRunning}}, left.Roots[0].Busy)
+	require.Equal(t, []BusyRow{{Row: rowNumber(second), Kind: BusyRunning}}, left.Roots[1].Busy)
+}
+
+// An output selected on a ready row below a root that's left out is left
+// out with it, wherever the walk meets the busy row among the root's
+// dependencies, and the other roots go: the selection doesn't fail for an
+// output outside the closure.
+func TestExportLeavesOutOutputsBelowARootBlockedAtTheWalk(t *testing.T) {
+	t.Parallel()
+	ctx, c, srv := transferTestCache(t)
+	busy := persistedListTestResult(t, ctx, c, srv, "below-busy", String("busy"))
+	root := persistedListTestResult(t, ctx, c, srv, "below-root", String("root"))
+	ready := persistedListTestResult(t, ctx, c, srv, "below-ready-root", &transferTestValue{Text: "pending"})
+	transferTestDependency(c, ctx, root, busy)
+	selection := ValueSelection{Roots: []AnyResult{root, ready}, Outputs: []SelectedValueOutput{{Result: ready, Address: PersistedPartAddress{Part: "snapshot"}}}}
+	// Siblings of the busy row, each with a selected output: the walk meets
+	// the busy row before most of them.
+	for i := range 8 {
+		sibling := persistedListTestResult(t, ctx, c, srv, fmt.Sprintf("below-sibling-%d", i), &transferTestValue{Text: "pending"})
+		transferTestDependency(c, ctx, root, sibling)
+		selection.Outputs = append(selection.Outputs, SelectedValueOutput{Result: sibling, Address: PersistedPartAddress{Part: "snapshot"}})
+	}
+	res := busy.cacheSharedResult()
+	c.egraphMu.Lock()
+	res.attachDepsMu.Lock()
+	res.attachDepsWaitCh = make(chan struct{})
+	res.attachDepsMu.Unlock()
+	c.egraphMu.Unlock()
+	defer close(res.attachDepsWaitCh)
+	var values *ExportedValues
+	require.NoError(t, c.WithExportedValues(ctx, selection, config.RefConfig{}, func(_ context.Context, exported *ExportedValues) error {
+		values = exported
+		return nil
+	}))
+	require.Len(t, values.LeftOut, 1)
+	require.Equal(t, 0, values.LeftOut[0].Index)
+	require.Equal(t, map[uint64]bool{rowNumber(ready): true}, senderNumbers(values.Bundle))
+	require.Len(t, values.Bundle.Outputs, 1, "only the kept root's output")
 }
