@@ -35,6 +35,14 @@ const (
 	PackReads    = packReads
 )
 
+// SetBeforeJoinPackFetch runs hook as each download of a packed blob looks
+// for a read of its pack to join, until the returned restore.
+func SetBeforeJoinPackFetch(hook func()) (restore func()) {
+	old := beforeJoinPackFetch
+	beforeJoinPackFetch = hook
+	return func() { beforeJoinPackFetch = old }
+}
+
 // SetPackReadLimit bounds pack reads to limit until the returned restore.
 func SetPackReadLimit(limit time.Duration) (restore func()) {
 	old := packReadLimit

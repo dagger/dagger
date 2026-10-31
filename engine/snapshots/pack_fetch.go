@@ -93,6 +93,10 @@ type packContentError struct {
 func (e *packContentError) Error() string { return e.err.Error() }
 func (e *packContentError) Unwrap() error { return e.err }
 
+// beforeJoinPackFetch runs as a download of a packed blob looks for a read
+// of its pack to join; tests set it to hold the download there.
+var beforeJoinPackFetch = func() {}
+
 // downloadPackedContent puts desc's blob, a member of the pack id, in the
 // content store, linked to ctx's lease, by joining a read of the pack in
 // progress or by reading it from provider. Before it joins or starts a read,
@@ -159,6 +163,7 @@ func sameProvider(a, b PackProvider) bool {
 // read never joins another: it starts one with provider, which other imports
 // join when none of theirs runs.
 func (cm *snapshotManager) joinPackFetch(ctx context.Context, id digest.Digest, provider PackProvider, blob digest.Digest, own bool) (*packFetch, bool, error) {
+	beforeJoinPackFetch()
 	ps := &cm.packs
 	ps.mu.Lock()
 	if f := ps.inflight[id]; f != nil && !own {
