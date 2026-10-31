@@ -13,10 +13,10 @@ import (
 
 // A bundle whose outputs' chains share their base layers lists each layer,
 // and each blob's address, once when they're shared (ShareChainLayers), and
-// resolves as it was: every
-// chain with its own layers and its layers' addresses, a chain that carried
-// no address with none, and an address of a blob none of a chain's layers
-// is kept on that chain.
+// resolves as it was: every chain with its own layers and its layers'
+// addresses, and the packs it names, a chain that carried no address with
+// none, and an address of a blob none of a chain's layers is kept on that
+// chain.
 func TestValueBundleWireListsLayersOnce(t *testing.T) {
 	layer := func(name string) snapshots.ExportLayer {
 		return snapshots.ExportLayer{
@@ -43,6 +43,12 @@ func TestValueBundleWireListsLayersOnce(t *testing.T) {
 		chain := &OfferedChain{Layers: layers, RenewalKey: fmt.Sprintf("%d/fs", 100+i), Addresses: map[digest.Digest]BlobAddress{}}
 		for _, l := range layers {
 			chain.Addresses[l.Descriptor.Digest] = address(l)
+		}
+		if i%2 == 0 {
+			// Its own small layer is stored in a pack with other blobs: the
+			// pack is part of what the chain is.
+			own := layers[len(layers)-1].Descriptor.Digest
+			chain.Packs = map[digest.Digest]digest.Digest{own: digest.FromString(fmt.Sprint("pack-", i/10))}
 		}
 		bundle.Outputs = append(bundle.Outputs, TransferredOutput{
 			Ordinal: TransferOrdinal(i + 1),

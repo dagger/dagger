@@ -13,12 +13,13 @@ import (
 // ShareChainLayers returns the bundle with its outputs' chains' layers
 // listed once, in its Layers, and each blob's download address once, in its
 // Addresses: each output names its chain's layers by their place in Layers
-// (TransferredOutput.Layers), and its chain keeps only its renewal key and
-// any address the bundle's doesn't give. A closure's outputs build on the
-// same bases, and each chain lists every layer from its base up, so a merge
-// of a large closure otherwise lists each layer, with its address, about a
-// hundred times over. ResolveChainPrefixes gives each output its chain back.
-// The bundle passed in is left as it is.
+// (TransferredOutput.Layers), and its chain keeps all but its layers, such
+// as its renewal key and packs, and of its addresses only those the bundle's
+// don't give. A closure's outputs build on the same bases, and each chain
+// lists every layer from its base up, so a merge of a large closure
+// otherwise lists each layer, with its address, about a hundred times over.
+// ResolveChainPrefixes gives each output its chain back. The bundle passed in
+// is left as it is.
 func ShareChainLayers(bundle ValueBundle) (ValueBundle, error) {
 	if !slices.ContainsFunc(bundle.Outputs, func(out TransferredOutput) bool { return out.Chain != nil }) {
 		return bundle, nil
@@ -30,7 +31,10 @@ func ShareChainLayers(bundle ValueBundle) (ValueBundle, error) {
 		if out.Chain == nil {
 			continue
 		}
-		chain := &OfferedChain{RenewalKey: out.Chain.RenewalKey}
+		// The chain keeps all but its layers and their addresses, such as its
+		// renewal key and the packs its layers are stored in.
+		chain := *out.Chain
+		chain.Layers, chain.Addresses = nil, nil
 		refs := make([]int, 0, len(out.Chain.Layers))
 		own := map[digest.Digest]bool{}
 		for _, layer := range out.Chain.Layers {
@@ -63,7 +67,7 @@ func ShareChainLayers(bundle ValueBundle) (ValueBundle, error) {
 				chain.Addresses[blob] = address
 			}
 		}
-		out.Chain, out.Layers = chain, refs
+		out.Chain, out.Layers = &chain, refs
 	}
 	return bundle, nil
 }
