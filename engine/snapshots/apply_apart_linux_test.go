@@ -405,3 +405,19 @@ func wantWithout(tree map[string]string, dir string) map[string]string {
 	}
 	return out
 }
+
+// A chain imported from a pack on overlayfs, whose layers apply apart,
+// counts each layer that came with the pack, as an import in order does.
+func TestImportChainOverlayFromPackCountsPacked(t *testing.T) {
+	t.Parallel()
+	producer, consumer := testutil.NewStore(t), testutil.NewOverlayStore(t)
+	chain := layeredChain(t, producer, "packed", 3)
+	descs := make([]ocispecs.Descriptor, 0, len(chain.Layers))
+	for _, layer := range chain.Layers {
+		descs = append(descs, layer.Descriptor)
+	}
+	imported := supplied(chain, newPackProvider(t, chain.Provider, descs...))
+	imported.Timing = &bkcache.ImportTiming{}
+	importChain(t, consumer, imported)
+	require.Equal(t, len(chain.Layers), imported.Timing.Packed)
+}
