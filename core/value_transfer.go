@@ -39,7 +39,7 @@ func (family foreignFamilyCodec) NormalizeForeign(v dagql.PersistedPayloadVisit)
 			return dagql.ForeignPayload{}, err
 		}
 		if p.Form != transferPending {
-			p.OperationState = transferOperationState(p.Form == persistedFileFormSnapshot, p.LazyKind != "")
+			p.OperationState = transferOperationState(p.Form == persistedFileFormSnapshot || p.OperationState == "evaluated", p.LazyKind != "")
 			p.ValueKnown = p.ValueKnown || p.Form == persistedFileFormSnapshot
 			p.Form = transferPending
 		}
@@ -50,7 +50,7 @@ func (family foreignFamilyCodec) NormalizeForeign(v dagql.PersistedPayloadVisit)
 			return dagql.ForeignPayload{}, err
 		}
 		if p.Form != transferPending {
-			p.OperationState = transferOperationState(p.Form == persistedDirectoryFormSnapshot, p.LazyKind != "")
+			p.OperationState = transferOperationState(p.Form == persistedDirectoryFormSnapshot || p.OperationState == "evaluated", p.LazyKind != "")
 			p.ValueKnown = p.ValueKnown || p.Form == persistedDirectoryFormSnapshot
 			p.Form = transferPending
 		}
