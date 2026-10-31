@@ -47,6 +47,9 @@ func usageFixture(t *testing.T, helpersPeak string) string {
 	}
 	write("dagger/x/cpu.stat", "usage_usec 1600\nuser_usec 1250\nsystem_usec 350\n")
 	write("dagger/x/memory.peak", "8192\n")
+	write("dagger/x/memory.stat", "anon 4096\npgfault 900\npgmajfault 20\nthp_fault_alloc 3\n")
+	write("dagger/x/cpu.pressure", "some avg10=0.00 avg60=0.00 avg300=0.00 total=7000\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=1000\n")
+	write("dagger/x/memory.pressure", "some avg10=0.00 avg60=0.00 avg300=0.00 total=500\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=100\n")
 	write("dagger/x/sshfs/cpu.stat", "usage_usec 100\nuser_usec 50\nsystem_usec 50\n")
 	if helpersPeak != "" {
 		write("dagger/x/sshfs/memory.peak", helpersPeak)
@@ -77,7 +80,8 @@ func TestRecordExecUsage(t *testing.T) {
 		recordExecUsage(t.Context(), state, wcprof.UsageScopeMountHelpers)
 		return state.profUsage
 	}
-	wantExec := wcprof.Usage{CPUUserUS: 1250, CPUSystemUS: 350, MemPeakBytes: 8192}
+	wantExec := wcprof.Usage{CPUUserUS: 1250, CPUSystemUS: 350, MemPeakBytes: 8192,
+		MinorFaults: 880, MajorFaults: 20, HugeFaults: 3, CPUStallUS: 7000, MemStallUS: 500}
 	wantHelpers := wcprof.Usage{CPUUserUS: 50, CPUSystemUS: 50, MemPeakBytes: 4096}
 
 	// Not profiled: nothing is read, though the cgroups are readable.
@@ -115,7 +119,8 @@ func TestSetExecUsageAttrsOmitsUnknownPeak(t *testing.T) {
 	sr, _, span := newRecordingRoot("exec.run")
 	state := &execState{profUsage: map[string]wcprof.Usage{
 		wcprof.UsageScopeMountHelpers: {CPUUserUS: 50, CPUSystemUS: 50},
-		wcprof.UsageScopeExecCgroup:   {CPUUserUS: 1250, CPUSystemUS: 350, MemPeakBytes: 8192},
+		wcprof.UsageScopeExecCgroup: {CPUUserUS: 1250, CPUSystemUS: 350, MemPeakBytes: 8192,
+			MinorFaults: 880, MajorFaults: 20, HugeFaults: 3, CPUStallUS: 7000, MemStallUS: 500},
 	}}
 	setExecUsageAttrs(span, state)
 	span.End()
@@ -129,13 +134,20 @@ func TestSetExecUsageAttrsOmitsUnknownPeak(t *testing.T) {
 		"wcprof.usage.exec_cgroup.cpu_user_us":     1250,
 		"wcprof.usage.exec_cgroup.cpu_system_us":   350,
 		"wcprof.usage.exec_cgroup.mem_peak_bytes":  8192,
+		"wcprof.usage.exec_cgroup.faults_minor":    880,
+		"wcprof.usage.exec_cgroup.faults_major":    20,
+		"wcprof.usage.exec_cgroup.faults_huge":     3,
+		"wcprof.usage.exec_cgroup.cpu_stall_us":    7000,
+		"wcprof.usage.exec_cgroup.mem_stall_us":    500,
 	}
 	for k, v := range want {
 		if got[k] != v {
 			t.Errorf("%s = %d, want %d", k, got[k], v)
 		}
 	}
-	if _, ok := got["wcprof.usage.mount_helpers.mem_peak_bytes"]; ok {
-		t.Error("an unknown mount helpers' peak was reported")
+	for _, unknown := range []string{"mem_peak_bytes", "faults_minor", "cpu_stall_us"} {
+		if _, ok := got["wcprof.usage.mount_helpers."+unknown]; ok {
+			t.Errorf("an unknown mount helpers' %s was reported", unknown)
+		}
 	}
 }

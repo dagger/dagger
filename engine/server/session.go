@@ -56,6 +56,7 @@ import (
 	"github.com/dagger/dagger/engine/archive"
 	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
+	"github.com/dagger/dagger/engine/ebpf/wcbpf"
 	"github.com/dagger/dagger/engine/engineutil"
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
 	"github.com/dagger/dagger/engine/slog"
@@ -87,6 +88,9 @@ type daggerSession struct {
 	// module/SDK clients) is recorded even when engine-global recording is
 	// off.
 	wcprofEnabled bool
+	// releaseEBPF releases the eBPF programs the session asked for with its
+	// profile (ClientMetadata.ProfileEBPF); nil when it asked for none.
+	releaseEBPF func()
 
 	// phase is the session's run of PhaseSession (wcprof_phase.go), from its
 	// initialization to the end of its removal: an op over it when it is
@@ -1103,6 +1107,14 @@ func (srv *Server) initializeDaggerSession(
 	// construction (before the session is published) and are immutable /
 	// clientMu-protected thereafter; they are deliberately not assigned here.
 	sess.wcprofEnabled = clientMetadata.Profile
+	if sess.wcprofEnabled && len(clientMetadata.ProfileEBPF) > 0 {
+		release, err := wcbpf.Acquire(clientMetadata.ProfileEBPF)
+		if err != nil {
+			return err
+		}
+		sess.releaseEBPF = release
+		failureCleanups.Add("release eBPF programs", cleanups.Infallible(release))
+	}
 	sess.attachables = newSessionAttachableManager()
 	sess.endpoints = map[string]http.Handler{}
 	sess.closingCtx, sess.cancelClosing = context.WithCancelCause(context.Background())
@@ -1371,6 +1383,9 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 
 	teardown.end()
 	sess.phase.end(srv)
+	if sess.releaseEBPF != nil {
+		sess.releaseEBPF()
+	}
 	return errs
 }
 
@@ -2776,6 +2791,22 @@ func recoverQueryPanic(ctx context.Context, result *error) {
 	}
 }
 
+// beginServeQueryOp begins a profiled request's session.serveQuery op. A
+// request the engine stamped on arrival is served from then: its routing here
+// is the op's first part, session.route.
+func beginServeQueryOp(ctx context.Context, clientID string) (context.Context, *wcprof.Op) {
+	arrival := wcprof.RequestArrival(ctx)
+	routedNS := wcprof.NowNS()
+	ctx, op := wcprof.BeginOp(ctx, wcprof.OpKindSessionPhase, "session.serveQuery", wcprof.OpOpts{
+		ClientID: clientID,
+		Start:    arrival,
+	})
+	if !arrival.IsZero() {
+		wcprof.RecordOp(ctx, wcprof.OpKindSessionPhase, "session.route", wcprof.OpOpts{ClientID: clientID}, wcprof.TimeNS(arrival), routedNS, wcprof.OutcomeOK)
+	}
+	return ctx, op
+}
+
 func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *clientRuntime) (rerr error) {
 	sess := client.daggerSession
 
@@ -2892,9 +2923,7 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 		if profiledSession {
 			ctx = wcprof.ContextWithProfiling(ctx)
 		}
-		ctx, profServeOp = wcprof.BeginOp(ctx, wcprof.OpKindSessionPhase, "session.serveQuery", wcprof.OpOpts{
-			ClientID: client.clientID,
-		})
+		ctx, profServeOp = beginServeQueryOp(ctx, client.clientID)
 		if callerSpan.IsValid() {
 			// Resolves, in the dump, to the caller's op when the caller
 			// reported itself (see engine/wcprof/contract).
@@ -2948,7 +2977,17 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 		return gqlErr(fmt.Errorf("failed to get schema: %w", err), http.StatusBadRequest)
 	}
 
+	queryCtx := ctx
+	if profiling {
+		var queryOp *wcprof.Op
+		queryCtx, queryOp = wcprof.BeginOp(ctx, wcprof.OpKindSessionPhase, "session.query", wcprof.OpOpts{ClientID: client.clientID})
+		defer queryOp.End(wcprof.OutcomeOK)
+		r = r.WithContext(queryCtx)
+	}
+
+	_, handlerStep := dagql.BeginStep(queryCtx, "graphql.handler")
 	gqlSrv := dagql.NewDefaultHandler(schema)
+	handlerStep.End(nil)
 	// NB: break glass when needed:
 	// gqlSrv.AroundResponses(func(ctx context.Context, next graphql.ResponseHandler) *graphql.Response {
 	// 	res := next(ctx)
@@ -2957,13 +2996,7 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 	// 	return res
 	// })
 
-	if profiling {
-		queryCtx, queryOp := wcprof.BeginOp(ctx, wcprof.OpKindSessionPhase, "session.query", wcprof.OpOpts{ClientID: client.clientID})
-		defer queryOp.End(wcprof.OutcomeOK)
-		r = r.WithContext(queryCtx)
-	}
-
-	gqlSrv.ServeHTTP(w, r)
+	dagql.ServeHTTPWithWriteStep(gqlSrv, w, r)
 	return nil
 }
 

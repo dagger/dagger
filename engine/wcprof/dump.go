@@ -31,6 +31,11 @@ type DumpHeader struct {
 	// its Declared, or that never declared, makes the dump's reported work
 	// incomplete.
 	Producers []DumpProducer `json:"producers,omitempty"`
+	// Machine describes the machine the engine ran on.
+	Machine *DumpMachine `json:"machine,omitempty"`
+	// EBPF lists the eBPF programs recordings have asked for since the
+	// engine started, and why each that couldn't be attached wasn't.
+	EBPF []DumpEBPFProgram `json:"ebpf,omitempty"`
 }
 
 // DumpProducer is one producer's completeness accounting.
@@ -101,6 +106,36 @@ type DumpEvent struct {
 	CPUUserUS    int64 `json:"cu,omitempty"`
 	CPUSystemUS  int64 `json:"cs,omitempty"`
 	MemPeakBytes int64 `json:"mp,omitempty"`
+	CPUIowaitUS  int64 `json:"ciw,omitempty"`
+	CPUStealUS   int64 `json:"cst,omitempty"`
+	CPUIdleUS    int64 `json:"cid,omitempty"`
+	MinorFaults  int64 `json:"fmin,omitempty"`
+	MajorFaults  int64 `json:"fmaj,omitempty"`
+	HugeFaults   int64 `json:"fhuge,omitempty"`
+	CPUStallUS   int64 `json:"stcpu,omitempty"`
+	MemStallUS   int64 `json:"stmem,omitempty"`
+	GoAllocBytes int64 `json:"ga,omitempty"`
+	GoGCCycles   int64 `json:"gcn,omitempty"`
+	GoGCCPUUS    int64 `json:"gcc,omitempty"`
+	IOReadBytes  int64 `json:"iorb,omitempty"`
+	IOWriteBytes int64 `json:"iowb,omitempty"`
+	MemAnonBytes int64 `json:"manon,omitempty"`
+	MemFileBytes int64 `json:"mfile,omitempty"`
+	MemHugeBytes int64 `json:"mhuge,omitempty"`
+
+	GCAssistUS       int64 `json:"gca,omitempty"`
+	GCDedicatedUS    int64 `json:"gcd,omitempty"`
+	GCIdleUS         int64 `json:"gci,omitempty"`
+	GCPauseUS        int64 `json:"gcp,omitempty"`
+	HeapLiveBytes    int64 `json:"hlive,omitempty"`
+	HeapGoalBytes    int64 `json:"hgoal,omitempty"`
+	ScanHeapBytes    int64 `json:"sheap,omitempty"`
+	ScanStackBytes   int64 `json:"sstack,omitempty"`
+	ScanGlobalsBytes int64 `json:"sglob,omitempty"`
+
+	RunqWaitUS int64 `json:"rqw,omitempty"`
+	RunqWaits  int64 `json:"rqn,omitempty"`
+	OnCPUUS    int64 `json:"oncpu,omitempty"`
 }
 
 // DumpTypeUsage is the DumpEvent.Type of a resource reading (RecordUsage).
@@ -116,6 +151,36 @@ func usageDumpEvent(u usageRecord) DumpEvent {
 		CPUUserUS:    u.usage.CPUUserUS,
 		CPUSystemUS:  u.usage.CPUSystemUS,
 		MemPeakBytes: u.usage.MemPeakBytes,
+		CPUIowaitUS:  u.usage.CPUIowaitUS,
+		CPUStealUS:   u.usage.CPUStealUS,
+		CPUIdleUS:    u.usage.CPUIdleUS,
+		MinorFaults:  u.usage.MinorFaults,
+		MajorFaults:  u.usage.MajorFaults,
+		HugeFaults:   u.usage.HugeFaults,
+		CPUStallUS:   u.usage.CPUStallUS,
+		MemStallUS:   u.usage.MemStallUS,
+		GoAllocBytes: u.usage.GoAllocBytes,
+		GoGCCycles:   u.usage.GoGCCycles,
+		GoGCCPUUS:    u.usage.GoGCCPUUS,
+		IOReadBytes:  u.usage.IOReadBytes,
+		IOWriteBytes: u.usage.IOWriteBytes,
+		MemAnonBytes: u.usage.MemAnonBytes,
+		MemFileBytes: u.usage.MemFileBytes,
+		MemHugeBytes: u.usage.MemHugeBytes,
+
+		GCAssistUS:       u.usage.GCAssistUS,
+		GCDedicatedUS:    u.usage.GCDedicatedUS,
+		GCIdleUS:         u.usage.GCIdleUS,
+		GCPauseUS:        u.usage.GCPauseUS,
+		HeapLiveBytes:    u.usage.HeapLiveBytes,
+		HeapGoalBytes:    u.usage.HeapGoalBytes,
+		ScanHeapBytes:    u.usage.ScanHeapBytes,
+		ScanStackBytes:   u.usage.ScanStackBytes,
+		ScanGlobalsBytes: u.usage.ScanGlobalsBytes,
+
+		RunqWaitUS: u.usage.RunqWaitUS,
+		RunqWaits:  u.usage.RunqWaits,
+		OnCPUUS:    u.usage.OnCPUUS,
 	}
 }
 
@@ -235,6 +300,8 @@ func (r *Recorder) WriteDump(w io.Writer, flush bool) error {
 		Strings:        r.strings.snapshot(),
 		OpenOps:        open,
 		Producers:      producers,
+		Machine:        readMachine(),
+		EBPF:           dumpEBPFPrograms(),
 	}
 
 	bw := bufio.NewWriterSize(w, 1<<20)

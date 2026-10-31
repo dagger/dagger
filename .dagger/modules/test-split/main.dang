@@ -331,4 +331,12 @@ type TestSplit {
   pub testEbpf: Void @check {
     testSpecific(["^TestCommandAccounting$", "^TestWorkloadAccounting$"], pkg: "./engine/ebpf/nettracer", ebpf: true)
   }
+
+  """
+  Test the exec_sched eBPF program's measurement of an exec in a privileged
+  test container
+  """
+  pub testEbpfExecSched: Void @check {
+    testSpecific(["^TestExecSched$"], pkg: "./engine/ebpf/execsched", ebpf: true)
+  }
 }

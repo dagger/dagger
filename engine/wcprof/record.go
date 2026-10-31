@@ -35,6 +35,22 @@ func ContextWithProfiling(ctx context.Context) context.Context {
 	return context.WithValue(ctx, profCtxKey{}, true)
 }
 
+type requestArrivalKey struct{}
+
+// ContextWithRequestArrival marks a request's ctx with when the engine
+// received it, so the op for serving it can start there and show the routing
+// before it (RequestArrival).
+func ContextWithRequestArrival(ctx context.Context, t time.Time) context.Context {
+	return context.WithValue(ctx, requestArrivalKey{}, t)
+}
+
+// RequestArrival is when the engine received ctx's request
+// (ContextWithRequestArrival), or the zero time.
+func RequestArrival(ctx context.Context) time.Time {
+	t, _ := ctx.Value(requestArrivalKey{}).(time.Time)
+	return t
+}
+
 // Enabled reports whether work running under ctx should be recorded. Call
 // sites use it to skip computing op metadata (class/ident strings) when
 // profiling is off. When profiling has never been enabled this is a single
@@ -349,6 +365,16 @@ func NowNS() int64 {
 		return 0
 	}
 	return r.Now()
+}
+
+// TimeNS returns t as a recorder-relative timestamp, like NowNS, for an op
+// whose boundaries another library timed. 0 when profiling is disabled.
+func TimeNS(t time.Time) int64 {
+	r := Active()
+	if r == nil {
+		return 0
+	}
+	return int64(t.Sub(r.epoch))
 }
 
 // RecordOp records an already-completed op interval with explicit

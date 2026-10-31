@@ -69,7 +69,9 @@ func (r *execMountResources) Prepare(cmd *exec.Cmd) (_ func() error, rerr error)
 		if err := enableControllers(filepath.Dir(parent)); err != nil {
 			return nil, err
 		}
-		if err := os.Mkdir(parent, 0o755); err != nil {
+		// The eBPF programs measuring a profiled exec (engine/ebpf/wcbpf)
+		// create its cgroup before its first helper starts.
+		if err := os.Mkdir(parent, 0o755); err != nil && !os.IsExist(err) {
 			return nil, err
 		}
 		if err := enableControllers(parent); err != nil {

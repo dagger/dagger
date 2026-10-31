@@ -29,6 +29,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/ebpf/nettracer"
+	"github.com/dagger/dagger/engine/ebpf/wcbpf"
 	"github.com/dagger/dagger/engine/engineutil/resources"
 	"github.com/dagger/dagger/engine/slog"
 	overlay "github.com/dagger/dagger/engine/snapshots/fsdiff"
@@ -153,6 +154,10 @@ type execState struct {
 	profUsageWanted bool
 	profUsageMu     sync.Mutex
 	profUsage       map[string]wcprof.Usage
+	// profEBPF is the exec as the eBPF programs a recording asked for
+	// measure it (engine/ebpf/wcbpf), from before its first mount helper to
+	// its cgroups' final reading; nil when none measures it.
+	profEBPF *wcbpf.Exec
 
 	// sessionHelperStatus carries /.init's report that a nested client's
 	// session helper failed, and failSessionHelper fails the waits for its
@@ -531,9 +536,11 @@ func (c *Client) generateBaseSpec(ctx context.Context, state *execState) error {
 	state.cleanups.Add("finish exec mount resource sample", func() error {
 		// After the final parent sample, with the helpers' cgroup not yet
 		// removed: the resource cgroup's total, the workload and its mount
-		// helpers, and the helpers' own share.
+		// helpers, and the helpers' own share; and what the eBPF programs
+		// measured of them.
 		defer recordExecUsage(ctx, state, wcprof.UsageScopeMountHelpers)
 		defer recordExecUsage(ctx, state, wcprof.UsageScopeExecCgroup)
+		defer state.profEBPF.Finish(ctx, state.profExecOpID)
 		if state.stopResourceSampler != nil {
 			state.stopResourceSampler()
 			return nil
@@ -560,6 +567,12 @@ func (c *Client) generateBaseSpec(ctx context.Context, state *execState) error {
 		"",
 		func(ctx context.Context, spec *specs.Spec) context.Context {
 			state.resourceCgroupPath = spec.Linux.CgroupsPath
+			if state.profExecOpID != 0 {
+				if dir := execUsageCgroup(state.resourceCgroupPath, wcprof.UsageScopeExecCgroup); dir != "" {
+					injectedInit := state.execMD == nil || !state.execMD.NoInit
+					state.profEBPF = wcbpf.WatchExec(dir, injectedInit)
+				}
+			}
 			state.mountResources = enginetel.NewExecMountResources(spec.Linux.CgroupsPath)
 			if state.mountResources != nil {
 				return enginetel.WithExecMountResources(ctx, state.mountResources)
@@ -1381,6 +1394,10 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		// connections, which would kill every module function call that runs
 		// longer than it.
 		Handler: http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
+			if wcprof.Active() != nil {
+				// whether the request's session records is only known later
+				req = req.WithContext(wcprof.ContextWithRequestArrival(req.Context(), time.Now()))
+			}
 			transport, metadata, status, err := transports.transportForRequest(req)
 			if err != nil {
 				http.Error(resp, err.Error(), status)
