@@ -274,7 +274,8 @@ func newTestPullImage(t *testing.T, indexed bool, platform ocispecs.Platform) *t
 }
 
 // testPullRegistry serves one image at test/image and counts the requests
-// the assertions care about.
+// the assertions care about. Like Distribution, it serves a manifest or
+// index only to a request that asks for its type: a wildcard isn't enough.
 type testPullRegistry struct {
 	host                string
 	manifestHEADs       atomic.Int32
@@ -303,9 +304,9 @@ func newTestPullRegistry(t *testing.T, image *testPullImage) *testPullRegistry {
 			}
 			switch strings.TrimPrefix(r.URL.Path, "/v2/test/image/manifests/") {
 			case "latest", image.root.Digest.String():
-				serveTestRegistryDescriptor(w, r, image.root, image.rootBytes)
+				serveTestRegistryManifest(w, r, image.root, image.rootBytes)
 			case image.manifest.Digest.String():
-				serveTestRegistryDescriptor(w, r, image.manifest, image.manifestBytes)
+				serveTestRegistryManifest(w, r, image.manifest, image.manifestBytes)
 			default:
 				http.NotFound(w, r)
 			}
@@ -332,6 +333,18 @@ func newTestPullRegistry(t *testing.T, image *testPullImage) *testPullRegistry {
 	t.Cleanup(server.Close)
 	registry.host = strings.TrimPrefix(server.URL, "http://")
 	return registry
+}
+
+func serveTestRegistryManifest(w http.ResponseWriter, r *http.Request, desc ocispecs.Descriptor, payload []byte) {
+	for _, accept := range r.Header.Values("Accept") {
+		for _, mediaType := range strings.Split(accept, ",") {
+			if strings.TrimSpace(mediaType) == desc.MediaType {
+				serveTestRegistryDescriptor(w, r, desc, payload)
+				return
+			}
+		}
+	}
+	http.Error(w, "manifest type not accepted: "+desc.MediaType, http.StatusNotFound)
 }
 
 func newTestResolver(t *testing.T, host string, store content.Store) *Resolver {

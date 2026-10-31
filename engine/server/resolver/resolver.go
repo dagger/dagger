@@ -512,10 +512,13 @@ func (r *Resolver) resolvePullRootDescriptor(ctx context.Context, ref string, op
 // remoteResolver asks the registry through a transport that records every
 // response body, resolution and content alike.
 func (r *Resolver) remoteResolver(network NetworkConfig, registryTransport RegistryTransport, recorder *enginetelemetry.NetworkAccumulator) remotes.Resolver {
-	hosts := r.registryHosts(network, registryTransport)
 	return docker.NewResolver(docker.ResolverOptions{
-		Hosts: registryHostsWithNetworkRecorder(hosts, recorder),
+		Hosts: r.remoteHosts(network, registryTransport, recorder),
 	})
+}
+
+func (r *Resolver) remoteHosts(network NetworkConfig, registryTransport RegistryTransport, recorder *enginetelemetry.NetworkAccumulator) docker.RegistryHosts {
+	return registryHostsWithNetworkRecorder(r.registryHosts(network, registryTransport), recorder)
 }
 
 // resolveRemoteRootDescriptor resolves ref's root descriptor on the registry and returns
@@ -527,12 +530,13 @@ func (r *Resolver) remoteResolver(network NetworkConfig, registryTransport Regis
 // fetched straight away, checked against the digest, and served from memory
 // when the fetcher is asked for it, saving a registry round trip.
 func (r *Resolver) resolveRemoteRootDescriptor(ctx context.Context, ref string, network NetworkConfig, registryTransport RegistryTransport, recorder *enginetelemetry.NetworkAccumulator) (string, ocispecs.Descriptor, remotes.Fetcher, error) {
-	resolver := r.remoteResolver(network, registryTransport, recorder)
+	hosts := r.remoteHosts(network, registryTransport, recorder)
 	if parsed, err := reference.ParseNormalizedNamed(ref); err == nil {
 		if canonical, ok := parsed.(reference.Canonical); ok {
-			return fetchPinnedRoot(ctx, resolver, ref, canonical.Digest())
+			return fetchPinnedRoot(ctx, hosts, ref, canonical.Digest())
 		}
 	}
+	resolver := docker.NewResolver(docker.ResolverOptions{Hosts: hosts})
 	resolvedRef, rootDesc, err := resolver.Resolve(ctx, ref)
 	if err != nil {
 		return "", ocispecs.Descriptor{}, nil, err
@@ -544,15 +548,15 @@ func (r *Resolver) resolveRemoteRootDescriptor(ctx context.Context, ref string, 
 	return resolvedRef, rootDesc, fetcher, nil
 }
 
-func fetchPinnedRoot(ctx context.Context, resolver remotes.Resolver, ref string, dgst digest.Digest) (string, ocispecs.Descriptor, remotes.Fetcher, error) {
+func fetchPinnedRoot(ctx context.Context, hosts docker.RegistryHosts, ref string, dgst digest.Digest) (string, ocispecs.Descriptor, remotes.Fetcher, error) {
+	resolver := docker.NewResolver(docker.ResolverOptions{Hosts: acceptEveryManifestType(hosts)})
 	fetcher, err := resolver.Fetcher(ctx, ref)
 	if err != nil {
 		return "", ocispecs.Descriptor{}, nil, err
 	}
-	// Any manifest media type sends the request to the manifests endpoint,
-	// and the fetcher accepts every type alongside it. The fetcher doesn't
-	// return the response's type, so it's read from the content, as for a
-	// root already in the content store.
+	// Any manifest media type sends the request to the manifests endpoint.
+	// The fetcher doesn't return the response's type, so it's read from the
+	// content, as for a root already in the content store.
 	rc, err := fetcher.Fetch(ctx, ocispecs.Descriptor{
 		MediaType: ocispecs.MediaTypeImageIndex,
 		Digest:    dgst,
@@ -578,6 +582,52 @@ func fetchPinnedRoot(ctx context.Context, resolver remotes.Resolver, ref string,
 	}
 	root := ocispecs.Descriptor{MediaType: mediaType, Digest: dgst, Size: int64(len(data))}
 	return ref, root, fetchedRootFetcher{Fetcher: fetcher, root: root, data: data}, nil
+}
+
+// manifestAccept asks for every manifest and index type the engine reads,
+// as containerd's resolver does when it resolves a ref.
+var manifestAccept = strings.Join([]string{
+	images.MediaTypeDockerSchema2Manifest,
+	images.MediaTypeDockerSchema2ManifestList,
+	ocispecs.MediaTypeImageManifest,
+	ocispecs.MediaTypeImageIndex,
+	"*/*",
+}, ", ")
+
+// acceptEveryManifestType makes manifest downloads ask for every manifest
+// type. A pinned root is downloaded before its type is known, but
+// containerd's fetcher asks only for the type it's given, and registries
+// such as Distribution refuse an OCI manifest or index whose own type isn't
+// asked for, wildcard or not.
+func acceptEveryManifestType(hosts docker.RegistryHosts) docker.RegistryHosts {
+	return func(domain string) ([]docker.RegistryHost, error) {
+		resolved, err := hosts(domain)
+		if err != nil {
+			return nil, err
+		}
+		for i := range resolved {
+			client := cloneHTTPClient(resolved[i].Client)
+			transport := client.Transport
+			if transport == nil {
+				transport = http.DefaultTransport
+			}
+			client.Transport = manifestAcceptTransport{RoundTripper: transport}
+			resolved[i].Client = client
+		}
+		return resolved, nil
+	}
+}
+
+type manifestAcceptTransport struct {
+	http.RoundTripper
+}
+
+func (t manifestAcceptTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.Method == http.MethodGet && strings.Contains(req.URL.Path, "/manifests/") {
+		req = req.Clone(req.Context())
+		req.Header.Set("Accept", manifestAccept)
+	}
+	return t.RoundTripper.RoundTrip(req)
 }
 
 // fetchedRootFetcher serves a root already read from the registry, and
