@@ -165,6 +165,14 @@ func profInstallStep(ctx context.Context, step string) (context.Context, func(er
 	return ctx, op.EndErr
 }
 
+// profDemandStep starts one step of a part demand's pass as an internal
+// profile op, part.demand.<step>, under the acquire task's op in ctx, and
+// returns the function that ends it.
+func profDemandStep(ctx context.Context, step string) (context.Context, func(error)) {
+	ctx, op := wcprof.BeginOp(ctx, wcprof.OpKindInternal, "part.demand."+step, wcprof.OpOpts{})
+	return ctx, op.EndErr
+}
+
 // profRenewal records a renewal of a part's content addresses, from start to
 // end: a round trip to the service, or a wait on another source's.
 func profRenewal(ctx context.Context, blob digest.Digest, start, end time.Time, err error) {
