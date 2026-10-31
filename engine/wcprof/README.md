@@ -123,7 +123,8 @@ Current hook points:
 - Remote-cache exports (`engine/remotecache/session.go`,
   `engine/server/remote_cache_protocol.go`, `dagql/cache_value_capture.go`):
   one root `remote_cache` op `remotecache.export` per export the service
-  asks for, named by its export ID, with the bytes uploaded and an
+  asks for, named by its export ID, with the bytes uploaded, an
+  `export.root` fact about each root the service asked for, and an
   `export.no_bundle` or `export.empty` fact when it sent nothing or the
   service asked for nothing. It waits on `remotecache.exportSlots` and on
   `remotecache:service-upload` (the service's upload request). Its children
