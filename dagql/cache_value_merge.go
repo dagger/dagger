@@ -379,6 +379,10 @@ func (c *Cache) prepareValueMerge(ctx context.Context, input ValueBundle, skipKe
 	if err != nil {
 		return nil, err
 	}
+	// A prefix output becomes the offer of the chain layers it names.
+	if err := ResolveChainPrefixes(&bundle); err != nil {
+		return nil, err
+	}
 	// The bundle is validated once, before its outputs become offers: each
 	// output with a chain is checked as the offer it becomes, against the
 	// same slots, and the ownership walk takes its owner's dependencies in

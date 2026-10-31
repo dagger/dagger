@@ -625,6 +625,9 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 		return false
 	}
 	selected := map[string]bool{}
+	// carriedBy names, for each of the chains, the bundle's output that
+	// carries it, if one does: a prefix of the chain names it.
+	carriedBy := make([]*ChainPrefix, len(chains.Entries))
 	for _, sel := range capture.outputs {
 		row, out, err := selectedCapturedOutput(capture, sel)
 		if err != nil {
@@ -636,10 +639,11 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 			continue
 		}
 		output := TransferredOutput{Ordinal: row.ordinal, Address: out.Address, State: out.State, Value: out.Value}
-		for _, entry := range chains.Entries {
+		for i, entry := range chains.Entries {
 			entryKey, _ := partAddressKey(entry.Address)
 			if entry.Ordinal == row.ordinal && entryKey == key {
 				output.Chain = &OfferedChain{Layers: entry.Layers}
+				carriedBy[i] = &ChainPrefix{Ordinal: row.ordinal, Address: out.Address}
 				break
 			}
 		}
@@ -665,9 +669,12 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 	// Every other complete part of the closure whose snapshot a selected
 	// chain walked is a prefix of that chain (design 6.1): an output too,
 	// whose layers the selected chain already carries, so it opens no
-	// snapshot and needs no upload of its own. A part whose route delegates
-	// to a parent part the bundle offers gets none: delegation serves it.
-	// Parents come before their children in the capture's order.
+	// snapshot and needs no upload of its own. It names the first such chain
+	// an output of the bundle carries, instead of carrying the layers again;
+	// when none does, it carries the first one's layers itself. A part whose
+	// route delegates to a parent part the bundle offers gets none:
+	// delegation serves it. Parents come before their children in the
+	// capture's order.
 	offered := map[string]bool{}
 	for _, output := range bundle.Outputs {
 		if output.Chain != nil {
@@ -684,19 +691,33 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 			if route, err := routePartRecord(row.record, out.Address); err == nil && prefixServedByDelegation(route, capture.rows, offered) {
 				continue
 			}
+			var layers []snapshots.ExportLayer
+			var prefix *ChainPrefix
 			for i, entry := range chains.Entries {
 				n := chains.chains[i].Prefixes[out.SnapshotID]
 				if n == 0 {
 					continue
 				}
-				output := TransferredOutput{Ordinal: row.ordinal, Address: out.Address, State: out.State, Value: out.Value, Chain: &OfferedChain{Layers: entry.Layers[:n]}}
-				if err := withOwner(row, &output); err != nil {
-					return err
+				if carriedBy[i] != nil {
+					prefix = &ChainPrefix{Ordinal: carriedBy[i].Ordinal, Address: carriedBy[i].Address, Layers: n}
+					break
 				}
-				bundle.Outputs = append(bundle.Outputs, output)
-				offered[fmt.Sprintf("%d:%s", row.ordinal, key)] = true
-				break
+				if layers == nil {
+					layers = entry.Layers[:n]
+				}
 			}
+			if prefix == nil && layers == nil {
+				continue
+			}
+			output := TransferredOutput{Ordinal: row.ordinal, Address: out.Address, State: out.State, Value: out.Value, Prefix: prefix}
+			if prefix == nil {
+				output.Chain = &OfferedChain{Layers: layers}
+			}
+			if err := withOwner(row, &output); err != nil {
+				return err
+			}
+			bundle.Outputs = append(bundle.Outputs, output)
+			offered[fmt.Sprintf("%d:%s", row.ordinal, key)] = true
 		}
 	}
 	if _, err := validateValueBundle(bundle); err != nil {
@@ -709,6 +730,6 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 	for i, row := range capture.order {
 		sources[i] = ImportedValue{Ordinal: row.ordinal, ResultID: uint64(row.shared.id)}
 	}
-	profExportedParts(ctx, bundle.Outputs, sources)
+	profExportedParts(ctx, bundle, sources)
 	return consume(ctx, &ExportedValues{Bundle: bundle, Chains: chains, ChainTime: chainTime, Phases: phases, Sources: sources})
 }

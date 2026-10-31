@@ -23,10 +23,61 @@ func validateValueBundleShape(bundle ValueBundle) ([]uint64, error) {
 	return checkValueBundle(bundle, true)
 }
 
+// ResolveChainPrefixes gives each of the bundle's outputs that names a chain
+// prefix its chain, in place: the first layers of the chain of the output it
+// names, which the two share. It refuses a prefix that names no output of the
+// bundle carrying a chain, takes more layers than that chain has or none, or
+// sits on an output that carries a chain too.
+func ResolveChainPrefixes(bundle *ValueBundle) error {
+	chains := map[string]*OfferedChain{}
+	for _, output := range bundle.Outputs {
+		if output.Chain == nil {
+			continue
+		}
+		key, err := partAddressKey(output.Address)
+		if err != nil {
+			return err
+		}
+		chains[fmt.Sprintf("%d:%s", output.Ordinal, key)] = output.Chain
+	}
+	for i := range bundle.Outputs {
+		output := &bundle.Outputs[i]
+		prefix := output.Prefix
+		if prefix == nil {
+			continue
+		}
+		if output.Chain != nil {
+			return fmt.Errorf("output %d has both a chain and a prefix", output.Ordinal)
+		}
+		key, err := partAddressKey(prefix.Address)
+		if err != nil {
+			return err
+		}
+		chain := chains[fmt.Sprintf("%d:%s", prefix.Ordinal, key)]
+		if chain == nil {
+			return fmt.Errorf("output %d's prefix names no output %d:%s with a chain", output.Ordinal, prefix.Ordinal, key)
+		}
+		if prefix.Layers < 1 || prefix.Layers > len(chain.Layers) {
+			return fmt.Errorf("output %d's prefix takes %d of a chain of %d layers", output.Ordinal, prefix.Layers, len(chain.Layers))
+		}
+		// The full slice expression caps the prefix's layers at its own, so
+		// an append to them can't write over the chain's.
+		output.Chain = &OfferedChain{Layers: chain.Layers[:prefix.Layers:prefix.Layers]}
+		output.Prefix = nil
+	}
+	return nil
+}
+
 //nolint:gocyclo // one check per bundle field and record kind; splitting hides the order of the checks
 func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 	if bundle.Version != valueBundleVersion {
 		return nil, fmt.Errorf("unsupported value bundle version %d", bundle.Version)
+	}
+	// A prefix output is checked as the chain it names: resolved on a copy of
+	// the outputs, leaving the caller's bundle as it was.
+	bundle.Outputs = slices.Clone(bundle.Outputs)
+	if err := ResolveChainPrefixes(&bundle); err != nil {
+		return nil, err
 	}
 	if len(bundle.Roots) == 0 {
 		return nil, fmt.Errorf("bundle has no roots")

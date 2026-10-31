@@ -86,7 +86,19 @@ type TransferredOutput struct {
 	State   string               `json:"state"`
 	Value   *SnapshotValue       `json:"value,omitempty"`
 	Chain   *OfferedChain        `json:"chain,omitempty"`
-	Owner   *PersistedOfferOwner `json:"owner,omitempty"`
+	// Prefix, instead of Chain, names the chain the part's layers are the
+	// first of: a part that a selected chain's snapshot walk passed carries
+	// no copy of the layers the chain carries.
+	Prefix *ChainPrefix         `json:"prefix,omitempty"`
+	Owner  *PersistedOfferOwner `json:"owner,omitempty"`
+}
+
+// ChainPrefix names the first Layers layers of the chain of the bundle's
+// output at Ordinal and Address, which carries the chain itself.
+type ChainPrefix struct {
+	Ordinal TransferOrdinal      `json:"ordinal"`
+	Address PersistedPartAddress `json:"address"`
+	Layers  int                  `json:"layers"`
 }
 type ValueBundle struct {
 	Version int                 `json:"version"`
@@ -113,7 +125,7 @@ type ImportedValue struct {
 	ResultID uint64
 }
 
-const valueBundleVersion = 4
+const valueBundleVersion = 5
 
 // PersistedTransferCodec operates only on encoded copies, without resolving
 // schemas, operations, result references or storage.
