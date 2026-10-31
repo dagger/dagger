@@ -356,7 +356,7 @@ func TestLazySpanFromCallPath(t *testing.T) {
 	res, err := srv.root.Select(ctx, srv, Selector{Field: "value"})
 	require.NoError(t, err)
 	id := res.cacheSharedResult().id
-	recorded, ok := c.sessionLazySpanContext(session, id)
+	recorded, ok := c.sessionLazySpanContext(ctx, session, id)
 	require.True(t, ok)
 	require.Equal(t, request.SpanContext().SpanID(), recorded.SpanID())
 
@@ -370,7 +370,7 @@ func TestLazySpanFromCallPath(t *testing.T) {
 		}
 	}
 	require.True(t, called.IsValid())
-	recorded, ok = c.sessionLazySpanContext(session, id)
+	recorded, ok = c.sessionLazySpanContext(ctx, session, id)
 	require.True(t, ok)
 	require.Equal(t, called, recorded.SpanID(), "the call's own span replaces the request's")
 }
