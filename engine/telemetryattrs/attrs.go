@@ -746,19 +746,6 @@ const (
 	CacheValueRemoteAttr   = "dagger.io/cache.value.remote"
 	CacheValueMergedAtAttr = "dagger.io/cache.value.merged_at_unix_ns"
 
-	// CacheRemoteLookupWaitedAttr (on a lazy-evaluation span, absent unless a
-	// wait ran) is how long an evaluation of the entry waited, before its
-	// attempt, for a merge a remote lookup's answer named as carrying the
-	// entry's value, in decimal-string nanoseconds; the entry's last wait.
-	// CacheRemoteLookupWaitOutcomeAttr is how that wait ended: "merged" (the
-	// merge committed on the engine), "stale" (it committed nothing, refused
-	// for held rows the engine no longer held), "failed" (it failed),
-	// "deadline", "disconnected" (the connection that would carry it ended),
-	// "detached" (the remote cache integration stopped) or "canceled" (the
-	// evaluation's caller gave up).
-	CacheRemoteLookupWaitedAttr      = "dagger.io/cache.remote_lookup.waited_ns"    //nolint:gosec // telemetry attribute names, not credentials
-	CacheRemoteLookupWaitOutcomeAttr = "dagger.io/cache.remote_lookup.wait_outcome" //nolint:gosec // telemetry attribute names, not credentials
-
 	// CacheSelfDigestAttr is the engine-derived structural self digest of the
 	// call: the operation, its literal arguments (sensitive values redacted),
 	// implicit inputs, list selection and schema view — with reference-valued

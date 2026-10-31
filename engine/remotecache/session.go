@@ -41,10 +41,8 @@ type session struct {
 	// of all of them together.
 	exportSlots chan struct{}
 	uploadSlots chan struct{}
-	// lookupSlots bounds the lookups unanswered, and merges follows the
-	// service's merges for the lookups that wait on them.
+	// lookupSlots bounds the lookups unanswered.
 	lookupSlots chan struct{}
-	merges      *mergeTracker
 
 	mu sync.Mutex
 	// pending are the engine's requests waiting for their replies, by ID.
@@ -66,7 +64,6 @@ func newSession(ctx context.Context, conn wsConn, adapter Adapter, cfg *settings
 		exportSlots: make(chan struct{}, ExportsInFlight),
 		uploadSlots: make(chan struct{}, UploadConcurrency),
 		lookupSlots: make(chan struct{}, LookupsInFlight),
-		merges:      newMergeTracker(),
 		pending:     map[uint64]chan protocol.Envelope{},
 		exports:     map[string]chan protocol.Envelope{},
 	}
@@ -89,11 +86,9 @@ func (s *session) serve() (bool, error) {
 
 // close ends the connection without waiting for the service and waits for
 // the session's goroutines, whose work is all bound to the session's context.
-// Evaluations waiting for the session's merges stop waiting at once.
 func (s *session) close() {
 	s.cancel(errConnectionClosed)
 	_ = s.conn.CloseNow()
-	s.merges.close()
 	s.wg.Wait()
 }
 
@@ -175,9 +170,6 @@ func (s *session) dispatchBody(env protocol.Envelope, body any) {
 	case protocol.TypeUpload:
 		s.handleUpload(env)
 	case protocol.TypeMerge:
-		// Recorded in arrival order, before any later answer that names it
-		// is read.
-		s.merges.start(env.ID)
 		merge, _ := body.(*protocol.Merge)
 		s.go_(func() { s.handleMerge(env, merge) })
 	case protocol.TypeOffer:
@@ -548,27 +540,16 @@ func profUploadBlob(ctx context.Context, dgst digest.Digest, size int64, start, 
 	wcprof.RecordOpAt(ctx, wcprof.OpKindRemoteCache, "remotecache.upload.blob", wcprof.OpOpts{Ident: dgst.String(), Bytes: size, WorkType: wcprof.WorkTypeExternal}, start, end, result)
 }
 
-// handleMerge merges a bundle and answers. The merge ends, for the lookups
-// waiting on it, before the reply is written: its offers are in the cache,
-// unless it committed nothing.
+// handleMerge merges a bundle and answers.
 func (s *session) handleMerge(env protocol.Envelope, req *protocol.Merge) {
 	if req == nil {
 		req = &protocol.Merge{}
 		if err := env.Decode(req); err != nil {
-			s.merges.end(env.ID, dagql.RemoteMergeFailed)
 			s.replyError(env, err)
 			return
 		}
 	}
 	merged, err := s.adapter.Merge(s.ctx, env.ID, *req)
-	switch {
-	case err != nil:
-		s.merges.end(env.ID, dagql.RemoteMergeFailed)
-	case len(merged.Stale) > 0:
-		s.merges.end(env.ID, dagql.RemoteMergeStale)
-	default:
-		s.merges.end(env.ID, dagql.RemoteMergeMerged)
-	}
 	if err != nil {
 		s.replyError(env, err)
 		return

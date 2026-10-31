@@ -44,7 +44,6 @@ func remoteCacheSettings(cfg config.Config) (remotecache.Config, bool) {
 		EngineVersion: engine.Version,
 		EngineName:    engineName,
 		Lookups:       true,
-		LookupWait:    remotecache.DefaultLookupWait,
 	}, true
 }
 
