@@ -597,7 +597,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`If the group is omitted, it defaults to the same as the user.`),
 			),
 
-		dagql.NodeFunc("withDirectory", s.withDirectory).
+		dagql.NodeFunc("withDirectory", s.withDirectoryContentHashed).
 			IsPersistable().
 			View(AllVersion).
 			Doc(`Return a new container snapshot, with a directory added to its filesystem`).
@@ -4032,6 +4032,65 @@ func (s *containerSchema) withDirectory(ctx context.Context, parent dagql.Object
 		return nil, err
 	}
 	return ctr, nil
+}
+
+// withDirectoryContentHashed gives a copy that includes part of a
+// content-identified source a content identity: the parent's, the destination
+// path, the owner, and the content that the copy brings (see
+// includedContent). Otherwise the copy's identity follows the whole source: a
+// change to a file that the copy leaves out re-keys every call downstream of
+// it, so an install step over a lockfile runs again on each commit. As for
+// Directory.withDirectory, a copy without include patterns keeps the source's
+// identity.
+func (s *containerSchema) withDirectoryContentHashed(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithDirectoryArgs) (inst dagql.ObjectResult[*core.Container], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get server: %w", err)
+	}
+	var included digest.Digest
+	if len(args.Include) > 0 {
+		src, err := cmp.Or(args.Source, args.Directory).Load(ctx, srv)
+		if err != nil {
+			return inst, err
+		}
+		ok, err := hasContentIdentity(src)
+		if err != nil {
+			return inst, err
+		}
+		if ok {
+			if included, err = includedContent(ctx, srv, src, args.CopyFilter); err != nil {
+				return inst, err
+			}
+		}
+	}
+
+	ctr, err := s.withDirectory(ctx, parent, args)
+	if err != nil {
+		return inst, err
+	}
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
+	if err != nil || included == "" {
+		return inst, err
+	}
+	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
+	if err != nil {
+		return inst, err
+	}
+	owner, err := inheritedOwner(parent, args.Owner, args.InheritOwner)
+	if err != nil {
+		return inst, err
+	}
+	parentDgst, err := parent.ContentPreferredDigest(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to content hash directory copy: parent digest: %w", err)
+	}
+	return inst.WithContentDigest(ctx, hashutil.HashStrings(
+		"Container.withDirectory",
+		string(parentDgst),
+		path,
+		owner,
+		string(included),
+	))
 }
 
 type containerWithFileArgs struct {

@@ -3380,3 +3380,73 @@ func (GitSuite) TestCaching(ctx context.Context, t *testctx.T) {
 		require.NotEqual(t, s1, s2)
 	})
 }
+
+// A call over part of a Git tree is cached by the content of that part, also
+// when the tree was never checked out before: two commits with the same
+// lockfile share an install step, whichever way the step narrows the tree to
+// the lockfile. A change to the lockfile still runs the step again.
+func (GitSuite) TestNarrowedTreeCaching(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// Each call serves a new repository, so its tree is fresh.
+	tree := func(lock, other string) *core.Directory {
+		svc, url := gitService(ctx, t, c, core.NewQuery(c).Directory().
+			WithNewFile("deps/lock", lock).
+			WithNewFile("other", other))
+		return core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: svc}).Head().Tree()
+	}
+	include := []string{"deps/lock"}
+
+	for _, tc := range []struct {
+		name  string
+		mount func(*core.Container, *core.Directory) *core.Container
+	}{
+		{"directory", func(ctr *core.Container, src *core.Directory) *core.Container {
+			return ctr.WithDirectory("/src", src.Directory("deps"))
+		}},
+		{"file", func(ctr *core.Container, src *core.Directory) *core.Container {
+			return ctr.WithFile("/src/lock", src.File("deps/lock"))
+		}},
+		{"filter", func(ctr *core.Container, src *core.Directory) *core.Container {
+			return ctr.WithDirectory("/src", src.Filter(core.DirectoryFilterOpts{Include: include}))
+		}},
+		{"directory withDirectory include", func(ctr *core.Container, src *core.Directory) *core.Container {
+			return ctr.WithDirectory("/src", core.NewQuery(c).Directory().
+				WithDirectory("/", src, core.DirectoryWithDirectoryOpts{Include: include}))
+		}},
+		{"directory withDirectory include to a subdirectory", func(ctr *core.Container, src *core.Directory) *core.Container {
+			return ctr.WithDirectory("/src", core.NewQuery(c).Directory().
+				WithDirectory("app", src, core.DirectoryWithDirectoryOpts{Include: include}))
+		}},
+		{"container withDirectory include", func(ctr *core.Container, src *core.Directory) *core.Container {
+			return ctr.WithDirectory("/src", src, core.ContainerWithDirectoryOpts{Include: include})
+		}},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			step := func(src *core.Directory) string {
+				out, err := tc.mount(core.NewQuery(c).Container().From(alpineImage), src).
+					WithExec([]string{"sh", "-c", "echo " + tc.name + "; head -c 102 /dev/urandom | base64 -w0"}).
+					Stdout(ctx)
+				require.NoError(t, err)
+				return out
+			}
+			lock := rand.Text()
+			first := step(tree(lock, rand.Text()))
+			require.Equal(t, first, step(tree(lock, rand.Text())), "the step must be cached when only other files change")
+			require.NotEqual(t, first, step(tree(rand.Text(), rand.Text())), "the step must run again when the lockfile changes")
+		})
+	}
+
+	// Narrowing a copy onto the output of an exec must not run the exec when
+	// the call is made.
+	t.Run("narrowing a copy onto an exec output leaves the exec lazy", func(ctx context.Context, t *testctx.T) {
+		out := core.NewQuery(c).Container().From(alpineImage).
+			WithExec([]string{"sh", "-c", "echo " + rand.Text() + "; exit 1"}).
+			Directory("/etc")
+		copied := out.WithDirectory("app", tree(rand.Text(), rand.Text()), core.DirectoryWithDirectoryOpts{Include: include})
+		_, err := copied.Directory("app").ID(ctx)
+		require.NoError(t, err)
+		_, err = copied.Filter(core.DirectoryFilterOpts{Include: []string{"app/**"}}).ID(ctx)
+		require.NoError(t, err)
+	})
+}
