@@ -1,6 +1,9 @@
 package server
 
 import (
+	"cmp"
+	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -44,7 +47,71 @@ type busyReport struct {
 // observe records an export's left-out roots and the rows its bundle
 // carries, at now, and reports them. A refused root's row isn't busy.
 func (b *busyRows) observe(now time.Time, left []dagql.LeftOutRoot, carried []uint64) busyReport {
-	return busyReport{}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.rows == nil {
+		b.rows = map[uint64]busyRow{}
+	}
+	type held struct {
+		row   uint64
+		kind  dagql.BusyKind
+		age   time.Duration
+		roots int
+	}
+	byRow := map[uint64]*held{}
+	var rows []*held
+	for _, root := range left {
+		if root.Kind == "" {
+			continue
+		}
+		h := byRow[root.Row]
+		if h == nil {
+			seen, ok := b.rows[root.Row]
+			switch {
+			case ok:
+				seen.kind = root.Kind
+				b.rows[root.Row] = seen
+			case len(b.rows) < maxBusyRows:
+				seen = busyRow{kind: root.Kind, since: now}
+				b.rows[root.Row] = seen
+			default:
+				seen = busyRow{kind: root.Kind, since: now}
+			}
+			h = &held{row: root.Row, kind: root.Kind, age: now.Sub(seen.since)}
+			byRow[root.Row] = h
+			rows = append(rows, h)
+		}
+		h.roots++
+	}
+	slices.SortFunc(rows, func(x, y *held) int {
+		return cmp.Or(cmp.Compare(y.roots, x.roots), cmp.Compare(x.row, y.row))
+	})
+	report := busyReport{rows: len(rows)}
+	for _, h := range rows[:min(len(rows), maxLoggedBusyRows)] {
+		report.named = append(report.named, fmt.Sprintf("%d:%s:%s:%d", h.row, h.kind, h.age.Round(time.Millisecond), h.roots))
+	}
+	type freed struct {
+		row     uint64
+		kind    dagql.BusyKind
+		busyFor time.Duration
+	}
+	var cleared []freed
+	for _, row := range carried {
+		seen, ok := b.rows[row]
+		if !ok {
+			continue
+		}
+		delete(b.rows, row)
+		cleared = append(cleared, freed{row: row, kind: seen.kind, busyFor: now.Sub(seen.since)})
+	}
+	slices.SortFunc(cleared, func(x, y freed) int {
+		return cmp.Or(cmp.Compare(y.busyFor, x.busyFor), cmp.Compare(x.row, y.row))
+	})
+	report.cleared = len(cleared)
+	for _, f := range cleared[:min(len(cleared), maxLoggedBusyRows)] {
+		report.freed = append(report.freed, fmt.Sprintf("%d:%s:%s", f.row, f.kind, f.busyFor.Round(time.Millisecond)))
+	}
+	return report
 }
 
 // attrs are the report's log attributes: the busy rows and those no longer
