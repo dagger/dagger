@@ -40,12 +40,11 @@ type session struct {
 	// lastID numbers the engine's messages; the first is 1, so a reply's
 	// re of 0 never names one.
 	lastID atomic.Uint64
-	// exportSlots bounds the exports in flight that select outputs,
-	// recordsSlots those that select none, and uploadSlots the PUTs of all
-	// of them together.
-	exportSlots  chan struct{}
-	recordsSlots chan struct{}
-	uploadSlots  chan struct{}
+	// exportSlots bounds all the exports in flight, outputSlots those that
+	// select outputs, and uploadSlots the PUTs of all of them together.
+	exportSlots chan struct{}
+	outputSlots chan struct{}
+	uploadSlots chan struct{}
 	// lookupSlots bounds the lookups unanswered.
 	lookupSlots chan struct{}
 	// known are the rows the service merged over this connection, which
@@ -67,18 +66,18 @@ type session struct {
 func newSession(ctx context.Context, conn wsConn, adapter Adapter, cfg *settings) *session {
 	ctx, cancel := context.WithCancelCause(ctx)
 	return &session{
-		ctx:          ctx,
-		cancel:       cancel,
-		conn:         conn,
-		adapter:      adapter,
-		cfg:          cfg,
-		exportSlots:  make(chan struct{}, ExportsInFlight),
-		recordsSlots: make(chan struct{}, RecordsExportsInFlight),
-		uploadSlots:  make(chan struct{}, UploadConcurrency),
-		lookupSlots:  make(chan struct{}, LookupsInFlight),
-		known:        dagql.NewKnownRows(),
-		pending:      map[uint64]chan protocol.Envelope{},
-		exports:      map[string]chan protocol.Envelope{},
+		ctx:         ctx,
+		cancel:      cancel,
+		conn:        conn,
+		adapter:     adapter,
+		cfg:         cfg,
+		exportSlots: make(chan struct{}, ExportsInFlight+RecordsExportsInFlight),
+		outputSlots: make(chan struct{}, ExportsInFlight),
+		uploadSlots: make(chan struct{}, UploadConcurrency),
+		lookupSlots: make(chan struct{}, LookupsInFlight),
+		known:       dagql.NewKnownRows(),
+		pending:     map[uint64]chan protocol.Envelope{},
+		exports:     map[string]chan protocol.Envelope{},
 	}
 }
 
@@ -344,23 +343,21 @@ func (s *session) handleExport(env protocol.Envelope) {
 	// release.
 	arrived := time.Now()
 	profCtx, profOp := wcprof.BeginOp(s.ctx, wcprof.OpKindRemoteCache, "remotecache.export", wcprof.OpOpts{Start: arrived})
-	// An export that selects no outputs copies records only: it has slots of
-	// its own, so that it never waits behind the others' layer builds. With
-	// those taken, it takes whichever slot frees first, its own or another,
-	// as the service counts it.
-	slots, slotsName := s.exportSlots, "remotecache.exportSlots"
-	var others chan struct{}
-	if len(req.Outputs) == 0 {
-		slots, others, slotsName = s.recordsSlots, s.exportSlots, "remotecache.recordsSlots"
+	// An export that selects outputs takes a slot for those, then an export
+	// slot. One that selects none copies records only and takes an export
+	// slot alone, so that it never waits behind the others' layer builds.
+	// These are the protocol's bounds on exports in flight.
+	slots, slotsName := []chan struct{}{s.exportSlots}, "remotecache.recordsSlots"
+	if len(req.Outputs) > 0 {
+		slots, slotsName = []chan struct{}{s.outputSlots, s.exportSlots}, "remotecache.exportSlots"
 	}
-	select {
-	case slots <- struct{}{}:
-	default:
+	for i, slot := range slots {
 		select {
-		case slots <- struct{}{}:
-		case others <- struct{}{}:
-			slots = others
+		case slot <- struct{}{}:
 		case <-s.ctx.Done():
+			for _, held := range slots[:i] {
+				<-held
+			}
 			if profOp != nil {
 				now := time.Now()
 				wcprof.RecordWaitAt(profCtx, slotsName, wcprof.WaitReasonLock, arrived, now)
@@ -369,7 +366,11 @@ func (s *session) handleExport(env protocol.Envelope) {
 			return
 		}
 	}
-	defer func() { <-slots }()
+	defer func() {
+		for _, slot := range slots {
+			<-slot
+		}
+	}()
 	slotted := time.Now()
 	if profOp != nil {
 		wcprof.RecordWaitAt(profCtx, slotsName, wcprof.WaitReasonLock, arrived, slotted)

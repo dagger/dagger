@@ -32,11 +32,11 @@ const (
 	// ExportsInFlight is how many exports that select outputs the engine
 	// works on at once.
 	ExportsInFlight = 4
-	// RecordsExportsInFlight is how many exports that select no outputs the
-	// engine works on at once, beside ExportsInFlight. Such an export opens
-	// no chain and diffs no layer, so it never waits behind the others'
-	// layer builds; with these slots taken, it may take one of
-	// ExportsInFlight.
+	// RecordsExportsInFlight is how many more exports the engine works on at
+	// once, beside ExportsInFlight, that select no outputs. Such an export
+	// opens no chain and diffs no layer, so it never waits behind the
+	// others' layer builds, and it may also take a slot of ExportsInFlight
+	// that none of those holds.
 	RecordsExportsInFlight = 1
 	// UploadConcurrency is how many blobs the engine uploads at once, across
 	// all its exports. Most blobs are small, so a PUT's time is mostly the
