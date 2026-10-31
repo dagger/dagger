@@ -1026,6 +1026,9 @@ const (
 	// EngineEventShare: a snapshot-sharing pass completed parts
 	// (EngineShareEvent).
 	EngineEventShare = "engine.share"
+	// EngineEventRead: work read a part of an entry for the first time
+	// (EngineReadEvent).
+	EngineEventRead = "engine.read"
 	// EngineEventStop: the engine closed its cache (EngineStopEvent).
 	EngineEventStop = "engine.stop"
 )
@@ -1076,6 +1079,24 @@ type EngineSharedPart struct {
 	// Replacements is the entry's replacement count (CacheReplacementsAttr),
 	// when not 0: the part and the dependencies are its current value's.
 	Replacements uint64 `json:"replacements,omitempty"`
+}
+
+// EngineReadEvent is the body of an engine.read event: the parts of entries
+// that work evaluated or installed for its use. An entry is named when work
+// reads a part of it for the first time, with every part read of it so far,
+// or once, with no part, when work read it whole: each report about an
+// entry is complete.
+type EngineReadEvent struct {
+	Reads []EngineRead `json:"reads"`
+}
+
+// EngineRead is one part of an entry that work read.
+type EngineRead struct {
+	// ResultID is the entry's result number.
+	ResultID uint64 `json:"resultId"`
+	// Part is the part read, as the part of an address in
+	// dagger.io/cache.parts names it; empty for the whole entry.
+	Part string `json:"part,omitempty"`
 }
 
 // EngineStopEvent is the body of an engine.stop event.
