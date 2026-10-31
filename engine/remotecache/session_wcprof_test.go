@@ -171,11 +171,34 @@ func TestExportProfiledFacts(t *testing.T) {
 	})
 }
 
+// An export's op names each root the service asked it for, as a fact about
+// that result, whether or not the export then gets to reply.
+func TestExportProfiledRoots(t *testing.T) {
+	adapter := newFakeAdapter()
+	adapter.export = func(ctx context.Context, _ protocol.Export, consume func(context.Context, Export) error) error {
+		return consume(ctx, Export{Bundle: testBundle(), Blobs: blobs{}})
+	}
+	s, conn := profiledSession(t, adapter)
+	s.dispatch(request(t, 7, protocol.TypeExport, protocol.Export{Roots: []uint64{12, 31}}))
+	exportID := decode[protocol.Exported](t, conn.next(t)).ExportID
+	s.dispatch(request(t, 8, protocol.TypeUpload, protocol.Upload{ExportID: exportID, URLs: map[digest.Digest]string{}}))
+	require.Equal(t, protocol.TypeUploaded, conn.next(t).Type)
+	export, events := profiledExport(t, exportID)
+	var roots []uint64
+	for _, ev := range events {
+		if ev.Type == "link" && ev.LinkKind == "fact" && ev.ParentID == export.OpID && ev.ident == "export.root" {
+			roots = append(roots, ev.ResultID)
+		}
+	}
+	require.ElementsMatch(t, []uint64{12, 31}, roots)
+}
+
+// requireFact requires fact to be the one fact on op besides its roots.
 func requireFact(t *testing.T, op profiledEvent, events []profiledEvent, fact string) {
 	t.Helper()
 	var facts []string
 	for _, ev := range events {
-		if ev.Type == "link" && ev.LinkKind == "fact" && ev.ParentID == op.OpID {
+		if ev.Type == "link" && ev.LinkKind == "fact" && ev.ParentID == op.OpID && ev.ident != "export.root" {
 			facts = append(facts, ev.ident)
 		}
 	}
