@@ -115,13 +115,13 @@ Current hook points:
   `export.no_bundle` or `export.empty` fact when it sent nothing or the
   service asked for nothing. It waits on `remotecache.exportSlots` and on
   `remotecache:service-upload` (the service's upload request). Its children
-  are `remotecache.export.hold`, `remotecache.export.capture` (per attempt;
-  a graph-lock wait on `dagql.egraph`, `.walk`, `.copy` and
+  are `remotecache.export.hold`, `remotecache.export.capture` (a
+  graph-lock wait on `dagql.egraph`, `.walk`, `.copy`, `.bundle` (checking
+  the copied records and building the bundle of the roots it keeps) and
   `.chains`, with one `remotecache.export.chain` per exported part: the
   part key, its result and the bytes of the blobs it computed, over its
   layers' `snapshot.export.diff` ops and `snapshots.exportLayer` lock
-  waits), `remotecache.export.probe` per root probed after a failed
-  capture, and `remotecache.upload`, with a `remotecache.upload.blob` per
+  waits), and `remotecache.upload`, with a `remotecache.upload.blob` per
   PUT after a wait on `remotecache.uploadSlots`, then the export's
   releases: `remotecache.export.release.chains`,
   `remotecache.export.release.capture` (the capture's records) and

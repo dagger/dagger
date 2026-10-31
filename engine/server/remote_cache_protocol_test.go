@@ -424,9 +424,8 @@ func TestRemoteCacheAdapterExport(t *testing.T) {
 	require.Equal(t, 1, calls)
 }
 
-// A root whose body is running fails the capture. Each root is then probed
-// alone: the busy one is skipped as busy, and the others go in one bundle
-// with only the outputs their closures hold.
+// A root whose body is running is skipped as busy, and the others go in the
+// bundle with only the outputs their closures hold.
 func TestRemoteCacheAdapterExportSkipsBusyRoots(t *testing.T) {
 	e := newAdapterTestEngine(t)
 	ready := e.file(t, "ready")
@@ -525,12 +524,11 @@ func requireRefused(t *testing.T, number uint64, skipped []protocol.SkippedRoot)
 	require.Contains(t, skipped[0].Message, "unsupported lazy type *server.unencodableFileLazy")
 }
 
-// A root the capture refuses with an error that isn't busy fails the capture
-// too. Each root is then probed alone: the refused one is skipped as refused,
-// with its error as the message, and the others go in one bundle with only the outputs their
-// closures hold. A request whose roots are all refused gets no bundle, only
-// skipped. The request's own cancellation is no refusal: it fails the
-// request.
+// A root the capture refuses with an error that isn't busy is skipped as
+// refused, with its error as the message, and the others go in the bundle
+// with only the outputs their closures hold. A request whose roots are all
+// refused gets no bundle, only skipped. The request's own cancellation is no
+// refusal: it fails the request.
 func TestRemoteCacheAdapterExportSkipsRefusedRoots(t *testing.T) {
 	e := newAdapterTestEngine(t)
 	first := e.file(t, "first")
@@ -619,10 +617,10 @@ func TestExportLogAttrs(t *testing.T) {
 // in order. With no bundle, those of the capture and the chains are 0, and
 // the adapter's own are still logged.
 func TestExportLogAttrsPhases(t *testing.T) {
-	local := exportCapture{hold: time.Millisecond, attempts: 2, probes: 3, probeTime: 4 * time.Millisecond, probeWalkWait: 5 * time.Microsecond}
+	local := exportCapture{hold: time.Millisecond}
 	values := &dagql.ExportedValues{
 		ChainTime: time.Second,
-		Phases:    dagql.ExportPhases{WalkWait: 6 * time.Microsecond, Walk: 7 * time.Microsecond, Copy: 8 * time.Microsecond, RetriedStale: 1},
+		Phases:    dagql.ExportPhases{WalkWait: 6 * time.Microsecond, Walk: 7 * time.Microsecond, Copy: 8 * time.Microsecond, Bundle: 12 * time.Microsecond, RetriedStale: 1},
 		Chains:    &dagql.SelectedChains{Stats: bkcache.ExportStats{Layers: 3, LayersReused: 1, LayersDiffed: 2, RawBytes: 900, BlobBytes: 300, DiffTime: 9 * time.Millisecond, LockWait: 10 * time.Microsecond, BuildWait: 11 * time.Microsecond, LayersMerged: 1, MergedRawBytes: 400, MergedBlobBytes: 100, MergedDiffTime: 3 * time.Millisecond}},
 	}
 	want := []any{
@@ -631,11 +629,8 @@ func TestExportLogAttrsPhases(t *testing.T) {
 		"walk_wait", 6 * time.Microsecond,
 		"walk", 7 * time.Microsecond,
 		"copy", 8 * time.Microsecond,
+		"bundle", 12 * time.Microsecond,
 		"retried_stale", 1,
-		"attempts", 2,
-		"probes", 3,
-		"probe_time", 4 * time.Millisecond,
-		"probe_walk_wait", 5 * time.Microsecond,
 		"layers", 3,
 		"layers_reused", 1,
 		"layers_diffed", 2,
@@ -660,11 +655,8 @@ func TestExportLogAttrsPhases(t *testing.T) {
 		"walk_wait", time.Duration(0),
 		"walk", time.Duration(0),
 		"copy", time.Duration(0),
+		"bundle", time.Duration(0),
 		"retried_stale", 0,
-		"attempts", 2,
-		"probes", 3,
-		"probe_time", 4 * time.Millisecond,
-		"probe_walk_wait", 5 * time.Microsecond,
 		"layers", 0,
 		"layers_reused", 0,
 		"layers_diffed", 0,
