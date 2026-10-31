@@ -285,6 +285,20 @@ type Merge struct {
 	Lookup uint64 `json:"lookup"`
 }
 
+// MarshalJSON encodes a merge with its bundle's layers and addresses listed
+// once (dagql.ShareChainLayers): a merge of a large closure would otherwise
+// list each shared base layer, with its address, once for every output on
+// it, which put merges over MaxMessageBytes. The engine's merge gives each
+// output its chain back (dagql.ResolveChainPrefixes).
+func (m Merge) MarshalJSON() ([]byte, error) {
+	bundle, err := dagql.ShareChainLayers(m.Bundle)
+	if err != nil {
+		return nil, err
+	}
+	type merge Merge
+	return json.Marshal(merge{Bundle: bundle, Lookup: m.Lookup})
+}
+
 // Merged answers Merge with what the merge's commit left, read under the lock
 // that decided it.
 type Merged struct {

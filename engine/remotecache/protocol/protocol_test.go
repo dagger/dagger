@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -295,4 +296,36 @@ func TestLookupShape(t *testing.T) {
 	raw, err = json.Marshal(Merged{})
 	require.NoError(t, err)
 	require.Contains(t, string(raw), `"stale":`)
+}
+
+// A merge lists a layer its outputs share, and the layer's address, once,
+// and its outputs get their chains back as the engine's merge resolves them;
+// an export still carries each output's chain whole.
+func TestMergeListsSharedLayersOnce(t *testing.T) {
+	layer := testLayer()
+	addresses := map[digest.Digest]dagql.BlobAddress{layer.Descriptor.Digest: {URL: "https://blobs.example/layer"}}
+	bundle := dagql.ValueBundle{Version: 6, Roots: []dagql.TransferredRoot{{Ordinal: 1}}}
+	for i := range 2 {
+		bundle.Values = append(bundle.Values, dagql.TransferredValue{Ordinal: dagql.TransferOrdinal(i + 1), SenderNumber: uint64(i + 1)})
+		bundle.Outputs = append(bundle.Outputs, dagql.TransferredOutput{
+			Ordinal: dagql.TransferOrdinal(i + 1),
+			Address: testAddress(),
+			State:   "completed",
+			Chain:   &dagql.OfferedChain{Layers: []snapshots.ExportLayer{layer}, Addresses: addresses},
+		})
+	}
+	count := func(body any) int {
+		env, err := NewEnvelope(1, 0, TypeMerge, body)
+		require.NoError(t, err)
+		return strings.Count(string(env.Body), "https://blobs.example/layer")
+	}
+	require.Equal(t, 1, count(Merge{Bundle: bundle}))
+	require.Equal(t, 2, count(Exported{Bundle: &bundle}))
+
+	env, err := NewEnvelope(1, 0, TypeMerge, Merge{Bundle: bundle, Lookup: 3})
+	require.NoError(t, err)
+	var got Merge
+	require.NoError(t, env.Decode(&got))
+	require.NoError(t, dagql.ResolveChainPrefixes(&got.Bundle), "the engine's merge resolves the layers")
+	require.Equal(t, Merge{Bundle: bundle, Lookup: 3}, got)
 }

@@ -27,8 +27,12 @@ func validateValueBundleShape(bundle ValueBundle) ([]uint64, error) {
 // prefix its chain, in place: the first layers of the chain of the output it
 // names, which the two share. It refuses a prefix that names no output of the
 // bundle carrying a chain, takes more layers than that chain has or none, or
-// sits on an output that carries a chain too.
+// sits on an output that carries a chain too. First, each output that names
+// its chain's layers in the bundle's list gets them (resolveSharedLayers).
 func ResolveChainPrefixes(bundle *ValueBundle) error {
+	if err := resolveSharedLayers(bundle); err != nil {
+		return err
+	}
 	chains := map[string]*OfferedChain{}
 	for _, output := range bundle.Outputs {
 		if output.Chain == nil {
