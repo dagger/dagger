@@ -37,7 +37,9 @@ func moduleIgnoreFiles(paths ...string) []string {
 }
 
 func rejectGitignoredModulePaths(ctx context.Context, rules dagql.ObjectResult[*core.Directory], paths ...string) error {
-	return rules.Self().Mount(ctx, rules, func(root string) error {
+	// The matcher opens rule files by path, so links in rules must resolve
+	// within it, as every Directory operation does.
+	return rules.Self().MountConfined(ctx, rules, func(root string) error {
 		fs, err := fsutil.NewFS(root)
 		if err != nil {
 			return err
