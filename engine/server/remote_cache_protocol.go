@@ -117,7 +117,7 @@ func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, co
 	wcprof.RecordOpAt(ctx, wcprof.OpKindRemoteCache, "remotecache.export.hold", wcprof.OpOpts{}, start, start.Add(local.hold), wcprof.OutcomeOK)
 
 	if len(roots) == 0 {
-		logExport(req, skipped, nil, time.Since(start), local)
+		logExport(req, skipped, nil, time.Since(start), local, busyReport{})
 		return consume(ctx, remotecache.Export{Skipped: skipped})
 	}
 	selection := dagql.ValueSelection{Outputs: outputs, LeaveOutOutputsOutsideClosure: true}
@@ -147,7 +147,11 @@ func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, co
 	err := a.cache.WithExportedValues(captureCtx, selection, exportRefConfig, func(captureCtx context.Context, values *dagql.ExportedValues) error {
 		captured = true
 		leftOut(values.LeftOut)
-		logExport(req, skipped, values, time.Since(start), local)
+		carried := make([]uint64, len(values.Bundle.Values))
+		for i, value := range values.Bundle.Values {
+			carried[i] = value.SenderNumber
+		}
+		logExport(req, skipped, values, time.Since(start), local, a.reportBusy(values.LeftOut, carried))
 		captureOp.End(wcprof.OutcomeOK)
 		err := consume(wcprof.ContextWithOpID(captureCtx, wcprof.CurrentOpID(ctx)), remotecache.Export{Bundle: &values.Bundle, Skipped: skipped, Blobs: newChainBlobs(values.Chains)})
 		releaseStart := time.Now()
@@ -169,7 +173,7 @@ func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, co
 		return err
 	}
 	leftOut(left.Roots)
-	logExport(req, skipped, nil, time.Since(start), local)
+	logExport(req, skipped, nil, time.Since(start), local, a.reportBusy(left.Roots, nil))
 	return consume(ctx, remotecache.Export{Skipped: skipped})
 }
 
@@ -234,8 +238,18 @@ type exportCapture struct {
 // the bundle's records and outputs, the time from the request to the bundle,
 // and the part of it spent opening the chains, which compresses layers. Then
 // where the capture's time went, and what the chains' layers took.
-func logExport(req protocol.Export, skipped []protocol.SkippedRoot, values *dagql.ExportedValues, capture time.Duration, local exportCapture) {
-	slog.Info("remote cache export", exportLogAttrs(req, skipped, values, capture, local)...)
+func logExport(req protocol.Export, skipped []protocol.SkippedRoot, values *dagql.ExportedValues, capture time.Duration, local exportCapture, busy busyReport) {
+	slog.Info("remote cache export", exportLogAttrs(req, skipped, values, capture, local, busy)...)
+}
+
+// reportBusy records an export's busy rows and the rows its bundle carries
+// (busyRows.observe), for its log line.
+func (a *RemoteCacheAdapter) reportBusy(left []dagql.LeftOutRoot, carried []uint64) busyReport {
+	report := a.busy.observe(time.Now(), left, carried)
+	if a.testBusyReport != nil {
+		a.testBusyReport(report)
+	}
+	return report
 }
 
 // maxLoggedSkippedRoots is how many skipped roots an export's log line names:
@@ -244,10 +258,11 @@ const maxLoggedSkippedRoots = 8
 
 // exportLogAttrs are an export's log attributes: its roots, its skipped roots
 // counted by reason and, when there are at most maxLoggedSkippedRoots of
-// them, named with their reasons, then what the bundle holds and how long
+// them, named with their reasons, its busy rows (busyReport), then what the
+// bundle holds and how long
 // the capture and the chains took, and then the capture's phases and the
 // chains' layers. With no bundle, those of the capture and the chains are 0.
-func exportLogAttrs(req protocol.Export, skipped []protocol.SkippedRoot, values *dagql.ExportedValues, capture time.Duration, local exportCapture) []any {
+func exportLogAttrs(req protocol.Export, skipped []protocol.SkippedRoot, values *dagql.ExportedValues, capture time.Duration, local exportCapture, busy busyReport) []any {
 	var records, outputs int
 	var chains time.Duration
 	var phases dagql.ExportPhases
@@ -277,6 +292,7 @@ func exportLogAttrs(req protocol.Export, skipped []protocol.SkippedRoot, values 
 		}
 		attrs = append(attrs, "skipped_roots", named)
 	}
+	attrs = append(attrs, busy.attrs()...)
 	return append(attrs,
 		"records", records,
 		"outputs", outputs,

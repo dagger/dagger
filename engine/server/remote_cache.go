@@ -70,6 +70,10 @@ type RemoteCacheAdapter struct {
 	// exports counts the exports in progress, which a graceful stop lets
 	// finish.
 	exports inProgress
+	// busy remembers the rows exports found busy, for their log lines.
+	busy busyRows
+	// testBusyReport, set by a test, sees each export's busy report.
+	testBusyReport func(busyReport)
 	// paused refuses the service's exports while the engine has given up its
 	// remote-cache work, and cancels the exports in progress when it does.
 	paused exportPause
