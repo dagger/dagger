@@ -133,6 +133,7 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"FormatParamName":         formatParamName,
 		"FormatEnum":              funcs.formatEnum,
 		"SortEnumFields":          funcs.sortEnumFields,
+		"SortTypesByName":         sortTypesByName,
 		"GroupEnumByValue":        funcs.groupEnumByValue,
 		"FieldOptionsStructName":  funcs.fieldOptionsStructName,
 		"FieldFunction":           funcs.fieldFunction,
@@ -305,6 +306,10 @@ func (funcs goTemplateFuncs) formatEnum(parent string, s string) string {
 	}
 	s = strcase.ToCamel(s)
 	return parent + s
+}
+
+func sortTypesByName(types []*introspection.Type) []*introspection.Type {
+	return slices.SortedFunc(slices.Values(types), func(a, b *introspection.Type) int { return cmp.Compare(a.Name, b.Name) })
 }
 
 func (funcs goTemplateFuncs) sortEnumFields(s []introspection.EnumValue) []introspection.EnumValue {
