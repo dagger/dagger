@@ -422,10 +422,17 @@ func (n Namer) SameDeclaredName(a, b string) bool {
 
 // DeclaredNameIndex finds which of declared, the names of a module's
 // declarations as the SDK spelled them, the module means by name, in any
-// casing: the first whose name normalizes to the same schema name, or else
-// the only one that's the same once flattened (see SameDeclaredName).
-// Several flat matches are ambiguous, and match nothing. It returns -1 when
-// nothing matches.
+// casing: the first whose name normalizes to the same schema name, or is that
+// schema name already, or else the only one that's the same once flattened
+// (see SameDeclaredName). Several flat matches are ambiguous, and match
+// nothing. It returns -1 when nothing matches.
+//
+// A declaration spelled as the schema name itself matters for the legacy
+// strcase rules, which aren't idempotent: module k8s-tools is K8STools, which
+// strcase normalizes again to K8Stools. An SDK that names its main object
+// after the module's schema name (as ModuleSource.naming's typeNames gives it)
+// must still be found. The new rules are idempotent, so it changes nothing for
+// them.
 //
 // A module finds its main object this way, by its own name
 // (Module.ObjectByOriginalName), and so does ModuleSource.naming's
@@ -435,7 +442,7 @@ func (n Namer) DeclaredNameIndex(name string, declared []string) int {
 	flat := -1
 	flats := 0
 	for i, decl := range declared {
-		if n.ObjectName(decl) == want {
+		if decl == want || n.ObjectName(decl) == want {
 			return i
 		}
 		if n.SameDeclaredName(decl, name) {
@@ -500,12 +507,20 @@ func anyNamerMatches(schemaName, name string, normalize func(Namer, string) stri
 }
 
 // legacyNamespaceObject is NamespaceObject by the legacy strcase rules,
-// unchanged from before engine/naming.
+// unchanged from before engine/naming but for a main object spelled as the
+// module's schema name, which strcase would otherwise rename.
 func legacyNamespaceObject(
 	objOriginalName string,
 	modFinalName string,
 	modOriginalName string,
 ) string {
+	// A type spelled as the module's schema name already is the main object
+	// (see Namer.DeclaredNameIndex), and takes the module's final name.
+	// strcase isn't idempotent, so normalizing it first could lose that:
+	// module k8s-tools is K8STools, which strcase spells K8Stools.
+	if objOriginalName == strcase.ToCamel(modOriginalName) {
+		return strcase.ToCamel(modFinalName)
+	}
 	objOriginalName = strcase.ToCamel(objOriginalName)
 	if rest := strings.TrimPrefix(objOriginalName, strcase.ToCamel(modOriginalName)); rest != objOriginalName {
 		if len(rest) == 0 {
