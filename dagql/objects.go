@@ -608,6 +608,10 @@ func prepareSelectorInputs(ctx context.Context, srv *Server, spec *FieldSpec, vi
 		}
 
 		switch {
+		case namedInput.Value != nil && argSpec.Volatile:
+			// Volatile arguments go to the resolver but not into the call.
+			inputArgs[argSpec.Name] = namedInput.Value
+
 		case namedInput.Value != nil:
 			if scope := CurrentResultScope(ctx); scope != nil {
 				updated, _, err := scopeSelectorInput(ctx, srv, scope, argSpec, namedInput.Value)
@@ -633,6 +637,16 @@ func prepareSelectorInputs(ctx context.Context, srv *Server, spec *FieldSpec, vi
 	}
 
 	return inputArgs, frameArgs, nil
+}
+
+// putVolatileInputs copies the volatile arguments' values from prepared into
+// inputs, which were rebuilt from a call that doesn't hold them.
+func putVolatileInputs(spec *FieldSpec, view call.View, prepared, inputs map[string]Input) {
+	for _, argSpec := range spec.Args.Inputs(view) {
+		if input, ok := prepared[argSpec.Name]; ok && argSpec.Volatile {
+			inputs[argSpec.Name] = input
+		}
+	}
 }
 
 func (r ObjectResult[T]) preselect(ctx context.Context, srv *Server, sel Selector) (ObjectResult[T], *preselectResult, error) {
@@ -714,10 +728,12 @@ func (r ObjectResult[T]) preselect(ctx context.Context, srv *Server, sel Selecto
 			return r, nil, fmt.Errorf("failed to compute cache key for %s.%s: %w", typ.Name(), sel.Field, err)
 		}
 		r.sortCallArgsToSchema(field.Spec, view, req.Args)
+		volatileInputs := inputArgs
 		inputArgs, err = field.Spec.Args.InputsFromResultCallArgs(ctx, req.Args, view)
 		if err != nil {
 			return r, nil, err
 		}
+		putVolatileInputs(field.Spec, view, volatileInputs, inputArgs)
 	}
 
 	if scope := CurrentResultScope(ctx); scope != nil {
@@ -1248,6 +1264,15 @@ type InputSpec struct {
 	// object only to expose its type's methods as tools, so restoring the
 	// conversation must not re-run the call that produced that object.
 	LazyRef bool
+
+	// Volatile marks an argument whose value goes to the resolver but never
+	// into the call: not its cache identity, its ID, or its telemetry. Calls
+	// that differ only in it are the same call, and share whichever result
+	// was made first. Use it only for an argument that cannot change the
+	// result, such as a performance hint. It needs a default: rebuilding a
+	// call fills its arguments from the call before the volatile values are
+	// put back.
+	Volatile bool
 }
 
 func (spec *InputSpec) merge(other *InputSpec) {
@@ -1281,6 +1306,9 @@ func (spec *InputSpec) merge(other *InputSpec) {
 	}
 	if other.LazyRef {
 		spec.LazyRef = other.LazyRef
+	}
+	if other.Volatile {
+		spec.Volatile = other.Volatile
 	}
 }
 
@@ -1316,6 +1344,13 @@ func (arg Argument) Internal() Argument {
 // InputSpec.LazyRef.
 func (arg Argument) LazyRef() Argument {
 	arg.Spec.LazyRef = true
+	return arg
+}
+
+// Volatile marks an argument whose value never enters the call. See
+// InputSpec.Volatile.
+func (arg Argument) Volatile() Argument {
+	arg.Spec.Volatile = true
 	return arg
 }
 

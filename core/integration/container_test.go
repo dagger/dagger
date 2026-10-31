@@ -4752,6 +4752,53 @@ func (ContainerSuite) TestInsecureRootCapabilites(ctx context.Context, t *testct
 	}
 }
 
+func (ContainerSuite) TestTransparentHugePages(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// The exec's mode, as PR_GET_THP_DISABLE reads it: 0 for huge pages
+	// allowed, 3 for off except where the program asks (Linux 6.18+). Python
+	// runs as a child of the shell, so this also checks the mode is inherited.
+	mode := func(label string, opts ...sdkcore.ContainerWithExecOpts) string {
+		out, err := sdkcore.NewQuery(c).Container().From(pythonImage).
+			WithExec([]string{"sh", "-c", "python3 -c 'import ctypes; print(ctypes.CDLL(None).prctl(42, 0, 0, 0, 0))' # " + label}, opts...).
+			Stdout(ctx)
+		require.NoError(t, err)
+		return strings.TrimSpace(out)
+	}
+	release, err := sdkcore.NewQuery(c).Container().From(alpineImage).
+		WithExec([]string{"uname", "-r"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+
+	require.Equal(t, "0", mode("opted in", sdkcore.ContainerWithExecOpts{TransparentHugePages: true}))
+	if kernelAtLeast(t, release, 6, 18) {
+		require.Equal(t, "3", mode("default"))
+	} else {
+		// Older kernels lack the mode, and the engine leaves execs alone.
+		require.Equal(t, "0", mode("default"))
+	}
+
+	// The setting isn't part of the exec's cache key: the same command with
+	// and without it runs once.
+	ctr := sdkcore.NewQuery(c).Container().From(alpineImage).
+		WithEnvVariable("RUN", rand.Text())
+	cmd := []string{"cat", "/proc/sys/kernel/random/uuid"}
+	first, err := ctr.WithExec(cmd, sdkcore.ContainerWithExecOpts{TransparentHugePages: true}).Stdout(ctx)
+	require.NoError(t, err)
+	second, err := ctr.WithExec(cmd).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, first, second)
+}
+
+// kernelAtLeast reports whether a kernel release such as "7.0.0-1014-aws" is
+// at least major.minor.
+func kernelAtLeast(t testing.TB, release string, major, minor int) bool {
+	var gotMajor, gotMinor int
+	_, err := fmt.Sscanf(strings.TrimSpace(release), "%d.%d", &gotMajor, &gotMinor)
+	require.NoError(t, err)
+	return gotMajor > major || gotMajor == major && gotMinor >= minor
+}
+
 func (ContainerSuite) TestInsecureRootCapabilitesWithService(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
