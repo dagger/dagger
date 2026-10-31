@@ -1,6 +1,7 @@
 package daggercmd
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"slices"
@@ -32,7 +33,7 @@ func uniqueArtifactList(items []listedArtifact) []listedArtifact {
 
 // All formats use the same rows. Names maps exact dimension identifiers to
 // unambiguous CLI flag names; it does not change item identity.
-func writeArtifactList(cmd *cobra.Command, items []listedArtifact, names map[string]string) error {
+func writeArtifactList(cmd *cobra.Command, items []listedArtifact, names map[string]string) (rerr error) {
 	format, _ := cmd.Flags().GetString("format")
 	if err := validateArtifactListFormat(format); err != nil {
 		return err
@@ -41,16 +42,26 @@ func writeArtifactList(cmd *cobra.Command, items []listedArtifact, names map[str
 	if len(items) == 0 {
 		return nil
 	}
+	// Every write to the command's stdout becomes a telemetry log record,
+	// which the frontend stores, parses and replays one at a time. A table
+	// writes each cell and each run of padding separately, so a long listing
+	// would be tens of thousands of records: buffer it into a few.
+	out := bufio.NewWriterSize(cmd.OutOrStdout(), 32<<10)
+	defer func() {
+		if err := out.Flush(); rerr == nil {
+			rerr = err
+		}
+	}()
 	if format == "link" {
 		for _, item := range items {
-			if _, err := fmt.Fprintln(cmd.OutOrStdout(), item.URI); err != nil {
+			if _, err := fmt.Fprintln(out, item.URI); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
 	if format == "cli" {
-		return writeArtifactCLI(cmd.OutOrStdout(), items, names, artifactListReplayArgs(cmd))
+		return writeArtifactCLI(out, items, names, artifactListReplayArgs(cmd))
 	}
 	showCollapsed, err := artifactListShowsCollapsedDimensions(cmd, items, names)
 	if err != nil {
@@ -73,11 +84,11 @@ func writeArtifactList(cmd *cobra.Command, items []listedArtifact, names map[str
 	}
 	for i, typ := range order {
 		if i > 0 {
-			if _, err := fmt.Fprintln(cmd.OutOrStdout()); err != nil {
+			if _, err := fmt.Fprintln(out); err != nil {
 				return err
 			}
 		}
-		if err := writeArtifactTable(cmd.OutOrStdout(), groups[typ], names, showCollapsed); err != nil {
+		if err := writeArtifactTable(out, groups[typ], names, showCollapsed); err != nil {
 			return err
 		}
 	}
