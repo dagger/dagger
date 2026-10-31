@@ -9,6 +9,10 @@ body: |
   its interfaces. Those interface members now take the objects' spelling
   (`e2ETest(e2EArg:)`). Names strcase normalizes the same way twice, and every
   module on v1.0.0-beta.22 or later, are unchanged.
+
+  Conversely, a legacy object whose names happened to be spelled the doubly
+  normalized way, such as a Go method `E2ETest` (served as `e2Etest`), no
+  longer implements a legacy interface declaring `e2eTest`.
 time: 2026-10-31T10:00:00Z
 custom:
   Author: vito
