@@ -1434,8 +1434,7 @@ const (
 	// gitCheckoutInheritedObjects: the object database was not written by
 	// this checkout (see cowGitCheckout). Its files keep their timestamps,
 	// since changing them would copy every inherited pack up into a new
-	// snapshot layer, and the worktree is written once, in parallel (see
-	// gitCheckoutOnce).
+	// snapshot layer.
 	gitCheckoutInheritedObjects
 	// gitCheckoutInheritedWorktree: the objects and the worktree are
 	// inherited, the worktree already holding exactly ref's tree with
@@ -1664,32 +1663,14 @@ func finishGitCheckout(
 	if err != nil {
 		return fmt.Errorf("could not find git dir: %w", err)
 	}
-	switch {
-	case reuse == gitCheckoutInheritedWorktree:
+	switch reuse {
+	case gitCheckoutInheritedWorktree:
 		if err := gitCheckoutRefs(ctx, checkoutGit, ref); err != nil {
 			return fmt.Errorf("failed to checkout remote %s: %w", cloneURL, err)
 		}
-	case reuse == gitCheckoutInheritedObjects:
+	default:
 		if err := gitCheckoutOnce(ctx, checkoutGit, ref); err != nil {
 			return fmt.Errorf("failed to checkout remote %s: %w", cloneURL, err)
-		}
-	case ref.Name == "":
-		_, err = checkoutGit.Run(ctx, "checkout", ref.SHA)
-		if err != nil {
-			return fmt.Errorf("failed to checkout remote %s: %w", cloneURL, err)
-		}
-	default:
-		_, err = checkoutGit.Run(ctx, "update-ref", ref.Name, ref.SHA)
-		if err != nil {
-			return fmt.Errorf("failed to checkout remote %s: %w", cloneURL, err)
-		}
-		_, err = checkoutGit.Run(ctx, "checkout", strings.TrimPrefix(ref.Name, "refs/heads/"))
-		if err != nil {
-			return fmt.Errorf("failed to checkout remote %s: %w", cloneURL, err)
-		}
-		_, err = checkoutGit.Run(ctx, "reset", "--hard", ref.SHA)
-		if err != nil {
-			return fmt.Errorf("failed to reset ref: %w", err)
 		}
 	}
 	for _, remote := range remotes {
@@ -1817,14 +1798,14 @@ func normalizeGitCheckoutTimes(ctx context.Context, checkoutDir, skip string) (r
 // checkouts each spawn their own workers.
 const gitCheckoutWorkers = 4
 
-// gitCheckoutOnce leaves the same HEAD, refs, index and worktree as the
-// checkout and reset --hard of finishGitCheckout, but writes the worktree
-// only once, with parallel workers. The reset only matters when the checkout
-// finds HEAD already on the branch (the unborn default branch), where it
-// switches nothing and leaves the worktree empty; otherwise it rewrites, or
-// re-reads, every file just checked out. checkout -f populates the worktree
-// in both cases. The reset's one other trace is ORIG_HEAD, its previous HEAD:
-// already ref.SHA.
+// gitCheckoutOnce leaves the same HEAD, refs, index and worktree as a
+// checkout of ref followed by reset --hard to its commit, but writes the
+// worktree only once, with parallel workers. The reset only matters when
+// the checkout finds HEAD already on the branch (the unborn default branch),
+// where it switches nothing and leaves the worktree empty; otherwise it
+// rewrites, or re-reads, every file just checked out. checkout -f populates
+// the worktree in both cases. The reset's one other trace is ORIG_HEAD, its
+// previous HEAD: already ref.SHA.
 func gitCheckoutOnce(ctx context.Context, checkoutGit *gitutil.GitCLI, ref *gitutil.Ref) error {
 	git := checkoutGit.New(gitutil.WithArgs("-c", fmt.Sprintf("checkout.workers=%d", gitCheckoutWorkers)))
 	if ref.Name == "" {
