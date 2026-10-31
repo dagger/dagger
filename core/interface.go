@@ -282,7 +282,6 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 	// Create a dagql.Interface instead of a Class — this is the first-class
 	// interface representation that produces ast.Interface definitions.
 	dagqlIface := dagql.NewInterface(ifaceName, formatGqlDescription(ifaceTypeDef.Description))
-	namer := iface.mod.Self().Namer()
 
 	// Add an "id" field so SDKs can generate proper ID handling methods
 	// (e.g. XXX_GraphQLType, MarshalJSON) for interface types.
@@ -303,7 +302,12 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 	// We keep the validation that return/arg types aren't from external deps.
 	for _, fnTypeDefRes := range iface.typeDef.Functions {
 		fnTypeDef := fnTypeDefRes.Self()
-		fnName := namer.FieldName(fnTypeDef.Name)
+		// The typedef's name is already normalized (Namer.NewFunction), as an
+		// object's is, and installed as it is. Normalizing it again would
+		// rename it under the legacy rules, which aren't idempotent (e2eTest
+		// is e2ETest once, e2Etest twice), so the interface's members wouldn't
+		// match the objects implementing it.
+		fnName := fnTypeDef.Name
 
 		// check whether this is a pre-existing object from a dependency module
 		returnModType, ok, err := iface.mod.Self().Deps.ModTypeFor(ctx, fnTypeDef.ReturnType.Self())
@@ -376,7 +380,8 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 			}
 
 			inputSpec := dagql.InputSpec{
-				Name:             namer.ArgName(argMetadata.Name),
+				// Already normalized (Namer.NewFunctionArg), like fnName.
+				Name:             argMetadata.Name,
 				Description:      formatGqlDescription(argMetadata.Description),
 				Type:             argMetadata.TypeDef.Self().ToInput(),
 				DeprecatedReason: argMetadata.Deprecated,
