@@ -1,12 +1,28 @@
 # Smart checks
 
-## Decision
+## Problem
 
-Put workspace path filtering on **Artifacts**. Start with checks. Give each check
-an input description that can be read before its body runs. Use core Workspace
-rules to describe paths. Use dagql to carry input metadata across calls and
-cached results. Keep one execution cache. Matching belongs in selection, so lists
-and execution use the same narrowed set.
+Dagger can select checks by artifact address and collection key. It cannot yet
+select them reliably by the workspace paths they depend on.
+
+Users need to ask which checks apply to a directory or a set of changed files.
+Without this feature, they must maintain custom selection rules or request
+unrelated checks. Even when the cache reuses execution, those requests can still
+cost preparation work and cloud launches.
+
+## Solution
+
+Add workspace path filters to **Artifacts**, starting with checks. Accept paths
+directly or use changed paths from a diff. Use the same selection for listing
+and execution.
+
+Let modules describe check inputs before loading their files. Match those
+descriptions against the requested paths before running checks or launching
+cloud work. Keep checks selected when their inputs are unknown.
+
+Use core Workspace rules to describe paths. Use dagql to carry input metadata
+across calls and cached results. Selected checks use the existing execution
+cache.
 
 ## What a path means
 
