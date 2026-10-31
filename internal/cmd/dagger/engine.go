@@ -518,7 +518,6 @@ func engineTelemetryConfigWithCloud(ctx context.Context, configuredCloudExporter
 	}
 	cloud := noCloudTelemetry
 	if !frontendTelemetryDisabled(ctx) {
-		cfg.LiveTraceExporters = append(cfg.LiveTraceExporters, Frontend.SpanExporter())
 		cfg.LiveMetricExporters = append(cfg.LiveMetricExporters, Frontend.MetricExporter())
 	}
 	if !skipSharedTelemetryExporters {
@@ -539,6 +538,14 @@ func engineTelemetryConfigWithCloud(ctx context.Context, configuredCloudExporter
 			cfg.LiveLogExporters = append(cfg.LiveLogExporters, logs)
 			cfg.LiveMetricExporters = append(cfg.LiveMetricExporters, metrics)
 		}
+	}
+	if !frontendTelemetryDisabled(ctx) {
+		// Not a LiveTraceExporter, which telemetry.Init wraps in the default
+		// 2048-slot BSP: that drops spans on a burst, such as the engine's spans
+		// for hundreds of checks ending at once, and a check whose final span is
+		// dropped is reported as never finishing. The frontend waits for queue
+		// space instead, like its logs below.
+		cfg.SpanProcessors = append(cfg.SpanProcessors, enginetel.NewBlockingLiveSpanProcessor(Frontend.SpanExporter()))
 	}
 	return cfg, cloud
 }
