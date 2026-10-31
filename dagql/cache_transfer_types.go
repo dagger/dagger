@@ -45,6 +45,11 @@ type OfferedChain struct {
 	Layers     []snapshots.ExportLayer       `json:"layers"`
 	Addresses  map[digest.Digest]BlobAddress `json:"addresses,omitempty"`
 	RenewalKey string                        `json:"renewalKey,omitempty"`
+	// Packs maps each layer stored in a pack, with other small blobs, to its
+	// pack's ID; the layer's address is then the pack's. Unlike an address,
+	// which renewal replaces, a pack is part of the offer's meaning: an offer
+	// that moves a layer into or out of a pack replaces the one before it.
+	Packs map[digest.Digest]digest.Digest `json:"packs,omitempty"`
 }
 type PersistedOfferOwner struct {
 	DependencyIDs []uint64 `json:"dependencyIDs,omitempty"`

@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/remotecache/pack"
 	"github.com/dagger/dagger/engine/snapshots"
 )
 
@@ -83,6 +84,7 @@ func TestMessagesRoundTrip(t *testing.T) {
 		{TypeExported, Exported{Skipped: []SkippedRoot{{Number: 12, Reason: SkipGone}}}, func() any { return &Exported{} }},
 		{TypeExported, Exported{Skipped: []SkippedRoot{{Number: 14, Reason: SkipRefused, Message: "row 3: refused"}}}, func() any { return &Exported{} }},
 		{TypeUpload, Upload{ExportID: "x-1", URLs: map[digest.Digest]string{layer.Descriptor.Digest: "https://blobs/put"}}, func() any { return &Upload{} }},
+		{TypeUpload, Upload{ExportID: "x-1", URLs: map[digest.Digest]string{}, Packs: []UploadPack{{Pack: digest.FromString("pack"), URL: "https://blobs/put-pack", Members: []pack.Member{{Digest: layer.Descriptor.Digest, Size: 42}}}}}, func() any { return &Upload{} }},
 		{TypeUploaded, Uploaded{Done: []digest.Digest{layer.Descriptor.Digest}, Failed: []UploadFailure{{Digest: digest.FromString("other"), Message: "503"}}}, func() any { return &Uploaded{} }},
 		{TypeMerge, Merge{Bundle: bundle}, func() any { return &Merge{} }},
 		{TypeMerge, Merge{Bundle: bundle, Lookup: 31}, func() any { return &Merge{} }},
@@ -99,6 +101,7 @@ func TestMessagesRoundTrip(t *testing.T) {
 			{Number: 41, Gone: true},
 		}}, func() any { return &Offered{} }},
 		{TypeRenew, Renew{RenewalKey: "12/fs", Layers: []snapshots.ExportLayer{layer}, NeededBlob: layer.Descriptor.Digest}, func() any { return &Renew{} }},
+		{TypeRenew, Renew{RenewalKey: "12/fs", Layers: []snapshots.ExportLayer{layer}, NeededBlob: layer.Descriptor.Digest, Packs: map[digest.Digest]digest.Digest{layer.Descriptor.Digest: digest.FromString("pack")}}, func() any { return &Renew{} }},
 		{TypeRenewed, Renewed{Addresses: map[digest.Digest]dagql.BlobAddress{layer.Descriptor.Digest: {URL: "https://blobs/get2", ExpiresAtUnix: 1790007200}}}, func() any { return &Renewed{} }},
 		{TypeRenewed, Renewed{Unavailable: true}, func() any { return &Renewed{} }},
 		{TypeLookup, Lookup{

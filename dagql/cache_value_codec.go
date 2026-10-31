@@ -403,6 +403,14 @@ func validateTransferOffer(offer PersistedPartOffer, part CapturedCodecOutput) e
 			return fmt.Errorf("address for unknown layer %s", dig)
 		}
 	}
+	for dig, pack := range offer.Chain.Packs {
+		if !blobs[dig] {
+			return fmt.Errorf("pack for unknown layer %s", dig)
+		}
+		if err := pack.Validate(); err != nil {
+			return fmt.Errorf("invalid pack of layer %s: %w", dig, err)
+		}
+	}
 	return nil
 }
 
