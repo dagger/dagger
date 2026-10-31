@@ -1,0 +1,15 @@
+kind: Breaking
+body: |
+  A module interface's function and argument names are no longer normalized a
+  second time when the interface is installed. Modules declaring an engine
+  version before v1.0.0-beta.22 (named by the legacy strcase rules, which
+  aren't idempotent) had interface members renamed: an `e2eTest(e2eArg:)`
+  function was served as `e2Etest(e2Earg:)` on the interface but as
+  `e2ETest(e2EArg:)` on objects, so the module's own objects didn't implement
+  its interfaces. Those interface members now take the objects' spelling
+  (`e2ETest(e2EArg:)`). Names strcase normalizes the same way twice, and every
+  module on v1.0.0-beta.22 or later, are unchanged.
+time: 2026-10-31T10:00:00Z
+custom:
+  Author: vito
+  PR: "14996"
