@@ -531,7 +531,8 @@ Notes:
 All engine-side case conversion goes through `engine/naming`, which the core
 API also wraps. In `core`, a `Namer` (`core/gqlformat.go`) holds either a
 naming dictionary or nothing; a nil dictionary is the legacy path, which keeps
-the old strcase code byte for byte:
+the old strcase code byte for byte (but for the two exceptions under
+[The gate](#the-gate)):
 
 | legacy (strcase) | `Namer` with a dictionary |
 | --- | --- |
@@ -712,7 +713,14 @@ prerelease from `v1.0.0-beta.22`
 (`engine.PrereleaseViewsVersion`) on, and every earlier v1.0.0 prerelease
 (`v1.0.0-0`, `v1.0.0-beta.1` to `v1.0.0-beta.21`) shares the `v1.0.0-beta.21`
 view, so modules released against those betas keep the strcase names they
-shipped with, byte for byte.
+shipped with, byte for byte, with two exceptions that fix names those modules
+couldn't use. A main object spelled as the module's schema name (`K8STools` for
+`k8s-tools`, which strcase would normalize again to `K8Stools`) is found and
+keeps that name. Interface members are normalized once, like objects', not
+twice, so a member `e2eTest` is served as `e2ETest` as on the objects that
+implement it, not `e2Etest`; a legacy object spelled the doubly normalized way
+(a Go method `E2ETest`) no longer implements such an interface. See the
+`Fixed` and `Breaking` changelog entries of #14996.
 A prerelease engine serves a module declaring a view past its own (a later
 beta, or exactly `v1.0.0`) at its own view, and names it by that view's
 rules, so no engine names a module by rules it doesn't have. The Go
