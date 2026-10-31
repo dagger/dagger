@@ -3,6 +3,7 @@ package dagql
 import (
 	"bytes"
 	"context"
+	"runtime/pprof"
 	"strings"
 	"testing"
 	"time"
@@ -313,14 +314,12 @@ func TestOfferInstallPrefetcherLockWaitProfiled(t *testing.T) {
 	ctx, root := profiledRoot(f.ctx, "test.demand")
 	f.ctx = ctx
 	f.prefetch.mu.Lock()
-	released := make(chan struct{})
-	go func() {
-		defer close(released)
-		time.Sleep(50 * time.Millisecond)
-		f.prefetch.mu.Unlock()
-	}()
-	require.NoError(t, f.run())
+	const hold = 30 * time.Millisecond
+	released := releaseAfterLockWait(t, t.Name(), hold, f.prefetch.mu.Unlock)
+	var err error
+	pprof.Do(ctx, pprof.Labels("lockwait", t.Name()), func(context.Context) { err = f.run() })
 	<-released
+	require.NoError(t, err)
 	require.True(t, f.installed())
 	root.End(wcprof.OutcomeOK)
 
@@ -333,5 +332,43 @@ func TestOfferInstallPrefetcherLockWaitProfiled(t *testing.T) {
 			waited += time.Duration(ev.EndNS - ev.StartNS)
 		}
 	}
-	require.GreaterOrEqual(t, waited, 20*time.Millisecond, "the install's wait for the prefetcher's lock is recorded")
+	require.GreaterOrEqual(t, waited, hold, "the install's wait for the prefetcher's lock is recorded")
+}
+
+// releaseAfterLockWait calls release once a goroutine labelled label by
+// pprof.Do is blocked on a mutex in wcprof.Lock, and hold has passed since,
+// so the recorded wait is at least hold however long the work took to reach
+// the lock. It gives up and fails t after 10 s. The returned channel closes
+// once release has run.
+func releaseAfterLockWait(t *testing.T, label string, hold time.Duration, release func()) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer release()
+		deadline := time.Now().Add(10 * time.Second)
+		for !lockWaiting(label) {
+			if time.Now().After(deadline) {
+				t.Errorf("no goroutine labelled %s blocked in wcprof.Lock", label)
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+		time.Sleep(hold)
+	}()
+	return done
+}
+
+// lockWaiting reports whether a goroutine labelled label is blocked on a
+// mutex in wcprof.Lock.
+func lockWaiting(label string) bool {
+	var buf bytes.Buffer
+	if err := pprof.Lookup("goroutine").WriteTo(&buf, 1); err != nil {
+		return false
+	}
+	for _, stack := range strings.Split(buf.String(), "\n\n") {
+		if strings.Contains(stack, `"lockwait":"`+label+`"`) && strings.Contains(stack, "engine/wcprof.Lock") && strings.Contains(stack, "Mutex).lockSlow") {
+			return true
+		}
+	}
+	return false
 }
