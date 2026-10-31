@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/bmatcuk/doublestar/v4"
+	"github.com/moby/patternmatcher"
 )
 
 const (
@@ -26,15 +26,16 @@ type Selector struct {
 
 // Path uses coordinates relative to the workspace boundary, never the host.
 func Path(value string) (string, error) {
-	if strings.Contains(value, "\\") {
-		return "", fmt.Errorf("workspace path must use forward slashes")
+	if strings.ContainsRune(value, '\x00') {
+		return "", fmt.Errorf("workspace path contains a null byte")
 	}
-	for _, part := range strings.Split(value, "/") {
-		if part == ".." {
-			return "", fmt.Errorf("workspace path must not contain parent traversal")
-		}
+	clean := path.Clean(strings.ReplaceAll(value, `\`, "/"))
+	// Relative parent traversal is valid when it stays inside the boundary.
+	// Unlike an input scalar, this helper already uses root coordinates.
+	if clean == ".." || strings.HasPrefix(clean, "../") {
+		return "", fmt.Errorf("workspace path %q escapes workspace root", value)
 	}
-	return path.Clean("/" + value), nil
+	return path.Clean("/" + clean), nil
 }
 
 func ValidateKinds(kinds []string) error {
@@ -83,19 +84,29 @@ func Normalize(selectors []Selector) []Selector {
 		return a.Path == b.Path && a.Kind == b.Kind && a.Conservative == b.Conservative && slices.Equal(a.Include, b.Include) && slices.Equal(a.Exclude, b.Exclude)
 	})
 }
+
+// Pattern order is significant: a later ! pattern can undo an earlier match.
 func normalizePatterns(patterns []string) []string {
 	out := slices.Clone(patterns)
 	if out == nil {
-		out = []string{}
+		return []string{}
 	}
-	slices.Sort(out)
 	return slices.Compact(out)
 }
 
-// AffectedByPath uses subtree overlap. A glob can prove that an individual
-// path matches; it cannot in general prove that all descendants are absent.
-// Keep ambiguous directory regions, so matching never drops a possible input.
+// AffectedByPath tests a subtree without consulting the current filesystem.
+// Literal prefixes can prove subtrees disjoint. Wildcard cases that cannot be
+// disproved stay selected, including paths that might name new directories.
 func AffectedByPath(selectors []Selector, value string, kinds []string) (bool, error) {
+	return affected(selectors, value, kinds, true)
+}
+
+// AffectedByFile tests one leaf, including an added or deleted file.
+func AffectedByFile(selectors []Selector, value string, kinds []string) (bool, error) {
+	return affected(selectors, value, kinds, false)
+}
+
+func affected(selectors []Selector, value string, kinds []string, subtree bool) (bool, error) {
 	if err := ValidateKinds(kinds); err != nil {
 		return false, err
 	}
@@ -111,79 +122,152 @@ func AffectedByPath(selectors []Selector, value string, kinds []string) (bool, e
 		if err != nil {
 			return false, err
 		}
-		for _, pattern := range slices.Concat(s.Include, s.Exclude) {
-			if !doublestar.ValidatePattern(pattern) {
-				return false, fmt.Errorf("invalid provenance pattern %q", pattern)
+		include, err := compilePatterns(s.Include)
+		if err != nil {
+			return false, err
+		}
+		exclude, err := compilePatterns(s.Exclude)
+		if err != nil {
+			return false, err
+		}
+		relative := "."
+		if under(target, root) {
+			relative = strings.TrimPrefix(strings.TrimPrefix(target, root), "/")
+			if relative == "" {
+				relative = "."
+			}
+		} else if !subtree || !under(root, target) {
+			continue
+		}
+		var included, excluded bool
+		if subtree {
+			included, err = mayIncludeSubtree(include, relative)
+			if err == nil {
+				excluded, err = excludesSubtree(exclude, relative)
+			}
+		} else {
+			included = include == nil
+			if include != nil {
+				included, err = include.MatchesOrParentMatches(relative)
+			}
+			if err == nil && exclude != nil {
+				excluded, err = exclude.MatchesOrParentMatches(relative)
 			}
 		}
-		if under(root, target) {
+		if err != nil {
+			return false, err
+		}
+		if included && !excluded {
 			return true, nil
 		}
-		if !under(target, root) {
-			continue
-		}
-		relative := strings.TrimPrefix(strings.TrimPrefix(target, root), "/")
-		excluded := false
-		for _, pattern := range s.Exclude {
-			// Only an explicit subtree exclusion proves descendants are absent.
-			base, subtree := strings.CutSuffix(pattern, "/**")
-			if subtree && (relative == base || strings.HasPrefix(relative, base+"/")) {
-				excluded = true
-				break
-			}
-		}
-		if excluded {
-			continue
-		}
-		return true, nil
 	}
 	return false, nil
 }
 
-// AffectedByFile is for leaf paths from a Changeset, including removed files.
-func AffectedByFile(selectors []Selector, value string, kinds []string) (bool, error) {
-	if err := ValidateKinds(kinds); err != nil {
-		return false, err
+func compilePatterns(patterns []string) (*patternmatcher.PatternMatcher, error) {
+	if len(patterns) == 0 {
+		return nil, nil
 	}
-	target, err := Path(value)
+	// CopyFilter uses the same matcher, including parent matches and ordered
+	// negation. Do not replace it with a different glob dialect.
+	return patternmatcher.New(patterns)
+}
+
+func mayIncludeSubtree(m *patternmatcher.PatternMatcher, relative string) (bool, error) {
+	if m == nil {
+		return true, nil
+	}
+	possible := false
+	for _, p := range m.Patterns() {
+		if p.Exclusion() {
+			covers, err := patternCoversSubtree(p, relative)
+			if err != nil {
+				return false, err
+			}
+			if covers {
+				possible = false
+			}
+		} else {
+			mayMatch, err := patternMayMatchSubtree(p, relative)
+			if err != nil {
+				return false, err
+			}
+			possible = possible || mayMatch
+		}
+	}
+	return possible, nil
+}
+
+func excludesSubtree(m *patternmatcher.PatternMatcher, relative string) (bool, error) {
+	if m == nil {
+		return false, nil
+	}
+	excluded := false
+	for _, p := range m.Patterns() {
+		if p.Exclusion() {
+			mayMatch, err := patternMayMatchSubtree(p, relative)
+			if err != nil {
+				return false, err
+			}
+			if mayMatch {
+				excluded = false
+			}
+		} else {
+			covers, err := patternCoversSubtree(p, relative)
+			if err != nil {
+				return false, err
+			}
+			excluded = excluded || covers
+		}
+	}
+	return excluded, nil
+}
+
+func singlePatternMatches(pattern, relative string) (bool, error) {
+	m, err := patternmatcher.New([]string{pattern})
 	if err != nil {
 		return false, err
 	}
-	for _, s := range selectors {
-		if len(kinds) > 0 && !slices.Contains(kinds, s.Kind) {
-			continue
-		}
-		root, err := Path(s.Path)
-		if err != nil {
-			return false, err
-		}
-		if !under(target, root) {
-			continue
-		}
-		relative := strings.TrimPrefix(strings.TrimPrefix(target, root), "/")
-		included := len(s.Include) == 0 || relative == ""
-		for _, pattern := range s.Include {
-			match, err := doublestar.Match(pattern, relative)
-			if err != nil {
-				return false, err
-			}
-			included = included || match
-		}
-		for _, pattern := range s.Exclude {
-			match, err := doublestar.Match(pattern, relative)
-			if err != nil {
-				return false, err
-			}
-			if match {
-				included = false
-			}
-		}
-		if included {
-			return true, nil
-		}
+	return m.MatchesOrParentMatches(relative)
+}
+
+func patternCoversSubtree(p *patternmatcher.Pattern, relative string) (bool, error) {
+	pattern := p.String()
+	match, err := singlePatternMatches(pattern, relative)
+	if err != nil || match {
+		return match, err
+	}
+	// A trailing /* or /** covers every child and its descendants. This also
+	// handles a glob in the parent, such as **/generated/**.
+	base, trimmed := strings.CutSuffix(pattern, "/**")
+	if !trimmed {
+		base, trimmed = strings.CutSuffix(pattern, "/*")
+	}
+	if trimmed {
+		return singlePatternMatches(base, relative)
 	}
 	return false, nil
 }
+
+func patternMayMatchSubtree(p *patternmatcher.Pattern, relative string) (bool, error) {
+	match, err := singlePatternMatches(p.String(), relative)
+	if err != nil || match {
+		return match, err
+	}
+	// Like CopyFilter's directory pruning, use the fixed path prefix to
+	// disprove overlap. Leave ambiguous wildcard intersections selected.
+	parts := strings.Split(p.String(), "/")
+	fixed := parts[:0]
+	for _, part := range parts {
+		if strings.ContainsAny(part, `*[]?^\`) {
+			break
+		}
+		fixed = append(fixed, part)
+	}
+	prefix := path.Clean(strings.Join(fixed, "/"))
+	return relative == "." || prefix == "." || under(relative, prefix) || under(prefix, relative), nil
+}
+
 func under(child, parent string) bool {
 	return parent == "/" || child == parent || strings.HasPrefix(child, parent+"/")
 }

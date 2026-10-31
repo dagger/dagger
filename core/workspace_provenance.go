@@ -15,7 +15,7 @@ import (
 
 // WorkspaceSelector describes a region that contributes to an artifact.
 type WorkspaceSelector struct {
-	Path         string   `field:"true" doc:"The path relative to the workspace boundary."`
+	Path         WorkspacePath `field:"true" doc:"The path relative to the workspace boundary."`
 	Include      []string `field:"true" doc:"Include patterns relative to path."`
 	Exclude      []string `field:"true" doc:"Exclude patterns relative to path."`
 	Conservative bool     `field:"true" doc:"Whether this region is an upper bound on possible inputs."`
@@ -56,14 +56,14 @@ func (*WorkspaceSelector) DecodePersistedObject(_ context.Context, _ *dagql.Pers
 func (p *WorkspaceProvenance) regions() []provenance.Selector {
 	out := make([]provenance.Selector, 0, len(p.Selectors))
 	for _, s := range p.Selectors {
-		out = append(out, provenance.Selector{Path: s.Path, Include: s.Include, Exclude: s.Exclude, Conservative: s.Conservative, Kind: s.Kind})
+		out = append(out, provenance.Selector{Path: string(s.Path), Include: s.Include, Exclude: s.Exclude, Conservative: s.Conservative, Kind: s.Kind})
 	}
 	return out
 }
 func newWorkspaceProvenance(regions []provenance.Selector) *WorkspaceProvenance {
 	p := &WorkspaceProvenance{Selectors: []*WorkspaceSelector{}}
 	for _, s := range provenance.Normalize(regions) {
-		p.Selectors = append(p.Selectors, &WorkspaceSelector{Path: s.Path, Include: s.Include, Exclude: s.Exclude, Conservative: s.Conservative, Kind: s.Kind})
+		p.Selectors = append(p.Selectors, &WorkspaceSelector{Path: WorkspacePath(s.Path), Include: s.Include, Exclude: s.Exclude, Conservative: s.Conservative, Kind: s.Kind})
 	}
 	return p
 }
