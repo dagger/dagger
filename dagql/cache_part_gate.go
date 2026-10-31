@@ -459,7 +459,7 @@ func (c *Cache) PrepareOriginal(ctx context.Context, receiver AnyResult, group L
 			return nil, GateReselect, err
 		}
 	}
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	defer c.egraphMu.Unlock()
 	row, err := c.validatePartTaskLocked(receiver, task)
 	if err != nil {
@@ -550,7 +550,7 @@ func (c *Cache) BeginOriginal(ctx context.Context, check *SourceCheck) (*Origina
 		return nil, GateReselect, fmt.Errorf("lazy: missing source check")
 	}
 	drain := check.drain
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	defer c.egraphMu.Unlock()
 	if c.resultsByID[drain.task.row.id] != drain.task.row {
 		return nil, GateReselect, fmt.Errorf("lazy: unregistered receiver")

@@ -743,7 +743,7 @@ func (c *Cache) newSessionlessPartSourceLease(ctx context.Context, receiver, don
 			return nil, err
 		}
 	}
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	defer c.egraphMu.Unlock()
 	return c.newSessionlessPartSourceLeaseLocked(ctx, receiver, donor, target, address, probe, lookup)
 }

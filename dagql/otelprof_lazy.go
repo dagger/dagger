@@ -229,7 +229,7 @@ func (c *Cache) lazySpanCacheState(ctx context.Context, row *sharedResult, frame
 	if frame != nil {
 		state.contentDigest = frame.ContentDigest()
 	}
-	c.egraphMu.RLock()
+	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
 	defer c.egraphMu.RUnlock()
 	state.deps = sortedResultIDs(row.deps)
 	state.replacements = row.replacements
