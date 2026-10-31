@@ -39,7 +39,10 @@ type File struct {
 	// transferShell is set when the file decoded from another engine's record
 	// without its recipe, and never changes after.
 	transferShell bool
-	Platform      Platform
+	// completedElsewhere is set when the file decoded from another engine's
+	// record of an operation that completed there, and never changes after.
+	completedElsewhere bool
+	Platform           Platform
 
 	// Services necessary to provision the file.
 	Services ServiceBindings
@@ -351,6 +354,7 @@ func decodePersistedFileWithSnapshotRole(ctx context.Context, dec *dagql.Persist
 		file.OutputRev++ // private decoded output, before publication
 		file.outputMu.Unlock()
 	}()
+	file.completedElsewhere = persisted.Form == transferPending && persisted.OperationState == "evaluated"
 	// A record from another engine that holds no download address decodes
 	// as local persistence decodes a pending file: its recipe armed.
 	if persisted.Form == transferPending && persisted.LazyKind != "" && dec.ArmRecipe() {
@@ -408,6 +412,10 @@ func (*File) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecode
 // record without its recipe, so that its content comes only through part
 // acquisition.
 func (file *File) PartTransferShell() bool { return file.transferShell }
+
+// OperationCompletedElsewhere reports whether the file decoded from another
+// engine's record of an operation that completed there.
+func (file *File) OperationCompletedElsewhere() bool { return file.completedElsewhere }
 
 type FileBlobLazy struct {
 	LazyState

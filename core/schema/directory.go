@@ -1013,8 +1013,12 @@ func (s *directorySchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 	}
 
 	// Do not evaluate a lazy parent: it can run container commands. Such a
-	// file has no content digest, so its cache key is its recipe.
-	if dagql.HasPendingLazyComputation(parent) {
+	// file has no content digest, so its cache key is its recipe. A parent
+	// merged from another engine's record of an operation that completed
+	// there is no lazy parent: it was evaluated where it ran, and its sync
+	// here leaves its content to its reader. The file is read from it,
+	// downloaded or computed, and keyed by its content, as it was there.
+	if dagql.HasPendingLazyComputation(parent) && !dagql.CompletedElsewhere(parent) {
 		return fileResult, nil
 	}
 

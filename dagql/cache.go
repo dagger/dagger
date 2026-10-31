@@ -4880,6 +4880,38 @@ func (c *Cache) Evaluate(ctx context.Context, results ...AnyResult) error {
 	return eg.Wait()
 }
 
+// OperationCompletedElsewhere is a value that can decode from another
+// engine's record, and knows whether that record is of an operation that
+// completed there.
+type OperationCompletedElsewhere interface{ OperationCompletedElsewhere() bool }
+
+// Sync makes sure res's operation completed, with any error it failed with.
+// A local hit's operation completed here, so its sync costs nothing. A
+// result merged from another engine's record of an operation that completed
+// there has nothing left to complete either: its sync returns at once, and
+// its content comes when something reads it, downloaded or computed as any
+// read of the result gets it. Any other result evaluates as Evaluate does.
+func (c *Cache) Sync(ctx context.Context, res AnyResult) error {
+	if CompletedElsewhere(res) {
+		return nil
+	}
+	return c.Evaluate(ctx, res)
+}
+
+// CompletedElsewhere reports whether res was merged from another engine's
+// record of an operation that completed there.
+func CompletedElsewhere(res AnyResult) bool {
+	if res == nil {
+		return false
+	}
+	row := res.cacheSharedResult()
+	if row == nil || !row.imported {
+		return false
+	}
+	done, ok := UnwrapAs[OperationCompletedElsewhere](res)
+	return ok && done.OperationCompletedElsewhere()
+}
+
 func (c *Cache) beginEvaluateOne(ctx context.Context, res AnyResult) (cacheOperation, *sharedResult, error) {
 	if c == nil {
 		return cacheOperation{}, nil, errors.New("evaluate: nil cache")
