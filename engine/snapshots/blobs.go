@@ -177,7 +177,7 @@ func (cm *snapshotManager) ensureExportBlob(
 				if err := cm.labelSnapshotBlob(ctx, ref.SnapshotID(), blobDigest); err != nil {
 					return ensureExportBlobResult{}, err
 				}
-				if err := cm.recordSnapshotContent(ref.SnapshotID(), desc); err != nil {
+				if err := cm.recordSnapshotContent(ctx, ref.SnapshotID(), desc); err != nil {
 					return ensureExportBlobResult{}, err
 				}
 				stats.LayersReused++
@@ -381,7 +381,7 @@ func (cm *snapshotManager) ensureExportBlob(
 			return ensureExportBlobResult{}, err
 		}
 		ref.mu.Unlock()
-		if err := cm.recordSnapshotContent(ref.SnapshotID(), desc); err != nil {
+		if err := cm.recordSnapshotContent(ctx, ref.SnapshotID(), desc); err != nil {
 			return ensureExportBlobResult{}, err
 		}
 		stats.LayersDiffed++
