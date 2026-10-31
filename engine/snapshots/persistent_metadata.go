@@ -187,6 +187,7 @@ func (cm *snapshotManager) PersistentMetadataRows() PersistentMetadataRows {
 }
 
 func (cm *snapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID string) error {
+	ctx = cm.withLeaseNamespace(ctx)
 	if leaseID == "" {
 		return stderrors.New("attach lease: empty lease ID")
 	}
@@ -362,6 +363,7 @@ func (cm *snapshotManager) createOwnerLease(ctx context.Context, leaseID string)
 }
 
 func (cm *snapshotManager) attachOwnerContent(ctx context.Context, leaseID, snapshotID string, dgst digest.Digest) error {
+	ctx = cm.withLeaseNamespace(ctx)
 	err := cm.LeaseManager.AddResource(ctx, leases.Lease{ID: leaseID}, leases.Resource{
 		ID:   dgst.String(),
 		Type: "content",
@@ -424,6 +426,13 @@ func (cm *snapshotManager) addSnapshotOwner(snapshotID, leaseID string, attached
 		cm.snapshotOwnerLeases[snapshotID] = make(map[string]struct{})
 	}
 	cm.snapshotOwnerLeases[snapshotID][leaseID] = struct{}{}
+	if cm.leaseOwnedSnapshots == nil {
+		cm.leaseOwnedSnapshots = make(map[string]map[string]struct{})
+	}
+	if cm.leaseOwnedSnapshots[leaseID] == nil {
+		cm.leaseOwnedSnapshots[leaseID] = make(map[string]struct{})
+	}
+	cm.leaseOwnedSnapshots[leaseID][snapshotID] = struct{}{}
 	return nil
 }
 
@@ -441,12 +450,14 @@ func (cm *snapshotManager) RemoveLease(ctx context.Context, leaseID string) erro
 	}
 
 	cm.mu.Lock()
-	for snapshotID, leaseIDs := range cm.snapshotOwnerLeases {
+	for snapshotID := range cm.leaseOwnedSnapshots[leaseID] {
+		leaseIDs := cm.snapshotOwnerLeases[snapshotID]
 		delete(leaseIDs, leaseID)
 		if len(leaseIDs) == 0 {
 			delete(cm.snapshotOwnerLeases, snapshotID)
 		}
 	}
+	delete(cm.leaseOwnedSnapshots, leaseID)
 	cm.mu.Unlock()
 
 	return nil
@@ -469,4 +480,14 @@ func (cm *snapshotManager) DeleteStaleDaggerOwnerLeases(ctx context.Context, kee
 		rerr = stderrors.Join(rerr, cm.RemoveLease(ctx, lease.ID))
 	}
 	return rerr
+}
+
+// withLeaseNamespace attaches the lease manager's namespace to ctx once, for
+// a walk that makes a snapshotter or lease call per snapshot and blob: each
+// of those would attach it again.
+func (cm *snapshotManager) withLeaseNamespace(ctx context.Context) context.Context {
+	if lm, ok := cm.LeaseManager.(*LeaseManager); ok {
+		return WithNamespace(ctx, lm.ns)
+	}
+	return ctx
 }

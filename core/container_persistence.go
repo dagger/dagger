@@ -56,13 +56,57 @@ func (container *Container) EncodePersistedObject(ctx context.Context, enc *dagq
 		return dagql.PersistedObjectEncoding{}, err
 	}
 	defer unlock()
-	metadata, err := container.encodeContainerMetadata(enc)
+	payload, _, links, err := container.persistedPayloadLocked(ctx, enc, lazy, recipeJSON, false)
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
 	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted container: %w", err)
+	}
+	return dagql.PersistedObjectEncoding{JSON: encoded, SnapshotLinks: links}, nil
+}
+
+// DescribePersistedParts describes the container's parts from the payload
+// EncodePersistedObject builds, under the same locks. An acquired output,
+// which is encoded as it was received, isn't described here.
+func (container *Container) DescribePersistedParts(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedPartsDescription, bool, error) {
+	if container == nil || container.acquiredOutput.Load() != nil {
+		return dagql.PersistedPartsDescription{}, false, nil
+	}
+	lazy, recipeJSON := container.lazyForPersistence()
+	unlock, err := container.lockLazyForPersistence(lazy, enc.Quiescent())
+	if err != nil {
+		return dagql.PersistedPartsDescription{}, false, err
+	}
+	defer unlock()
+	payload, route, links, err := container.persistedPayloadLocked(ctx, enc, lazy, recipeJSON, true)
+	if err != nil {
+		return dagql.PersistedPartsDescription{}, false, err
+	}
+	return foreignFamilyCodec("Container").describeLivePayload(enc, &partPayload{container: payload, containerRoute: route}, links)
+}
+
+// routedContainerRecipe is a Container recipe that gives routing what it
+// reads from the recipe's encoding, failing as EncodePersisted fails, without
+// encoding it.
+type routedContainerRecipe interface {
+	persistedRoute(*dagql.PersistEncodeContext) (containerRecipeRoute, error)
+}
+
+// persistedPayloadLocked builds the container's native payload, for its
+// operation lazy and recorded recipe JSON, and the snapshot links its encoding
+// carries. With routeOnly, a recipe that gives its route directly isn't
+// encoded: the payload carries no recipe and its route is returned instead. It
+// requires the locks lockLazyForPersistence takes.
+func (container *Container) persistedPayloadLocked(ctx context.Context, enc *dagql.PersistEncodeContext, lazy Lazy[*Container], recipeJSON json.RawMessage, routeOnly bool) (persistedContainerPayload, *containerRecipeRoute, []dagql.PersistedSnapshotRefLink, error) {
+	metadata, err := container.encodeContainerMetadata(enc)
+	if err != nil {
+		return persistedContainerPayload{}, nil, nil, err
+	}
 	pending, parts, links, err := container.encodeContainerPartsLocked(ctx, enc, lazy)
 	if err != nil {
-		return dagql.PersistedObjectEncoding{}, err
+		return persistedContainerPayload{}, nil, nil, err
 	}
 	payload := persistedContainerPayload{
 		Metadata: persistedContainerMetadata{Consumed: container.containerPartComputedLocked(ctx, lazy, ContainerPartMetadata), Value: metadata},
@@ -73,24 +117,27 @@ func (container *Container) EncodePersistedObject(ctx context.Context, enc *dagq
 		recipe = restore.recipe
 	}
 	if pending && recipe == nil {
-		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode pending container: missing recipe")
+		return persistedContainerPayload{}, nil, nil, fmt.Errorf("encode pending container: missing recipe")
+	}
+	if routed, ok := recipe.(routedContainerRecipe); ok && routeOnly {
+		route, err := routed.persistedRoute(enc)
+		if err != nil {
+			return persistedContainerPayload{}, nil, nil, err
+		}
+		return payload, &route, links, nil
 	}
 	if recipe != nil {
 		payload.LazyJSON, err = recipe.EncodePersisted(ctx, enc)
 		if err != nil {
-			return dagql.PersistedObjectEncoding{}, err
+			return persistedContainerPayload{}, nil, nil, err
 		}
 	} else {
 		payload.LazyJSON = recipeJSON
 	}
 	if pending && len(payload.LazyJSON) == 0 {
-		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode pending container: empty recipe")
+		return persistedContainerPayload{}, nil, nil, fmt.Errorf("encode pending container: empty recipe")
 	}
-	encoded, err := json.Marshal(payload)
-	if err != nil {
-		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted container: %w", err)
-	}
-	return dagql.PersistedObjectEncoding{JSON: encoded, SnapshotLinks: links}, nil
+	return payload, nil, links, nil
 }
 
 // lockForPersistence excludes direct object-side evaluation, which need not

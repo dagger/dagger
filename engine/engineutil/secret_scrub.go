@@ -139,9 +139,9 @@ type censor struct {
 	// trieRoot is the root of the trie
 	trieRoot *Trie
 	// trie is the current node we are at in the trie
-	trie *TrieIter
+	trie TrieIter
 	// match is the last trie node that we found a match from
-	match    *TrieIter
+	match    TrieIter
 	matchLen int
 
 	// srcBuf is the source buffer, which contains bytes read from the src that
@@ -186,16 +186,16 @@ func (c *censor) Transform(dst, src []byte, atEOF bool) (nDst, nSrc int, err err
 			ch := src[nSrc]
 			c.trie = c.trie.Step(ch)
 
-			if c.trie == nil {
+			if !c.trie.Valid() {
 				// we had found a match somewhere in this string previously, so
 				// flush the secret replacement and the rest of the source
 				// buffer
-				if c.match != nil {
+				if c.match.Valid() {
 					c.trie = c.trieRoot.Iter()
 					c.dstBuf = append(c.dstBuf, c.match.Value()...)
 					c.dstBuf = append(c.dstBuf, c.srcBuf[c.matchLen:]...)
 					c.srcBuf = c.srcBuf[:0]
-					c.match = nil
+					c.match = TrieIter{}
 					c.matchLen = 0
 
 					// process the current byte again. we do this because this
@@ -221,7 +221,7 @@ func (c *censor) Transform(dst, src []byte, atEOF bool) (nDst, nSrc int, err err
 				// put the current byte either into the destination buffer, or
 				// the source buffer, depending on whether it's a partial match
 				c.trie = c.trieRoot.Step(ch)
-				if c.trie == nil {
+				if !c.trie.Valid() {
 					c.trie = c.trieRoot.Iter()
 					c.dstBuf = append(c.dstBuf, ch)
 				} else if replace := c.trie.Value(); replace != nil {
@@ -244,10 +244,10 @@ func (c *censor) Transform(dst, src []byte, atEOF bool) (nDst, nSrc int, err err
 
 		// at this point, no more matches are possible, so flush
 		if atEOF {
-			if c.match != nil {
+			if c.match.Valid() {
 				c.dstBuf = append(c.dstBuf, c.match.Value()...)
 				c.dstBuf = append(c.dstBuf, c.srcBuf[c.matchLen:]...)
-				c.match = nil
+				c.match = TrieIter{}
 				c.matchLen = 0
 			} else {
 				c.dstBuf = append(c.dstBuf, c.srcBuf...)
@@ -281,15 +281,15 @@ type Trie struct {
 	direct []byte
 }
 
-func (t *Trie) Iter() *TrieIter {
-	return &TrieIter{Trie: t}
+func (t *Trie) Iter() TrieIter {
+	return TrieIter{Trie: t}
 }
 
 func (t *Trie) Insert(key []byte, value []byte) {
 	t.Iter().insert(key, value)
 }
 
-func (t *Trie) Step(ch byte) *TrieIter {
+func (t *Trie) Step(ch byte) TrieIter {
 	return t.Iter().Step(ch)
 }
 
@@ -314,6 +314,9 @@ func (t Trie) String() string {
 // This is used so that we can navigate through the compressed Trie structure
 // easily - not every node "exists", but the TrieIter handles this case. For
 // example, a node might have a direct of `foo`, so the node `fo` is virtual.
+//
+// It's a value, so that stepping through the trie, once for every byte the
+// censor reads, allocates nothing. The zero TrieIter is no node.
 type TrieIter struct {
 	*Trie
 
@@ -321,8 +324,13 @@ type TrieIter struct {
 	idx int
 }
 
-func (t *TrieIter) insert(key []byte, value []byte) {
-	if t == nil {
+// Valid reports whether t is a node, rather than a step that found none.
+func (t TrieIter) Valid() bool {
+	return t.Trie != nil
+}
+
+func (t TrieIter) insert(key []byte, value []byte) {
+	if !t.Valid() {
 		panic("cannot insert into nil tree")
 	}
 
@@ -337,7 +345,7 @@ func (t *TrieIter) insert(key []byte, value []byte) {
 	}
 
 	next := t.Step(key[0])
-	if next == nil {
+	if !next.Valid() {
 		t = t.materialize().Iter()
 		t.branch()
 		child := t.children[key[0]]
@@ -356,7 +364,7 @@ func (t *TrieIter) insert(key []byte, value []byte) {
 // This function can take any iterable part of the trie, and if the node is
 // virtual, then it will modify the trie to make it "real". This means that
 // this node can then store data, or can be given it's own children.
-func (t *TrieIter) materialize() *Trie {
+func (t TrieIter) materialize() *Trie {
 	if t.idx == len(t.direct) {
 		// already materialized
 		return t.Trie
@@ -393,31 +401,31 @@ func (t *Trie) branch() {
 }
 
 // Step selects a node that was previously inserted.
-func (t *TrieIter) Step(ch byte) *TrieIter {
-	if t == nil {
-		return nil
+func (t TrieIter) Step(ch byte) TrieIter {
+	if !t.Valid() {
+		return TrieIter{}
 	}
 	if t.idx < len(t.direct) {
 		if t.direct[t.idx] == ch {
-			return &TrieIter{
+			return TrieIter{
 				Trie: t.Trie,
 				idx:  t.idx + 1,
 			}
 		}
-		return nil
+		return TrieIter{}
 	}
 	if t.children != nil {
 		child := t.children[ch]
 		if child != nil {
-			return &TrieIter{Trie: child}
+			return TrieIter{Trie: child}
 		}
 	}
-	return nil
+	return TrieIter{}
 }
 
 // Value gets the value previously inserted at this node.
-func (t *TrieIter) Value() []byte {
-	if t == nil {
+func (t TrieIter) Value() []byte {
+	if !t.Valid() {
 		return nil
 	}
 	if t.idx == len(t.direct) {

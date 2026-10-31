@@ -33,6 +33,14 @@ func (c *Cache) usesPartAcquisition(res AnyResult, row *sharedResult) bool {
 	if _, ok := UnwrapAs[HasPartHost](res); !ok {
 		return false
 	}
+	// Only starting to manage a gate writes; every other answer is read under
+	// the read lock.
+	c.egraphMu.RLock()
+	settled, uses := c.partAcquisitionSettledLocked(row)
+	c.egraphMu.RUnlock()
+	if settled {
+		return uses
+	}
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
 	gate := row.partGate.gate.Load()
@@ -59,6 +67,34 @@ func (c *Cache) usesPartAcquisition(res AnyResult, row *sharedResult) bool {
 	row.partGate.active.Store(true)
 	gate.revision++
 	return true
+}
+
+// partAcquisitionSettledLocked answers usesPartAcquisition without writing
+// whenever its answer needs no write, in the same order as the write path:
+// true for a managed gate, false for a row with no part state, false while
+// a group of the gate is evaluating. settled is false only when the gate
+// would start being managed, which needs the write lock. The caller holds
+// egraphMu, for reading or writing.
+func (c *Cache) partAcquisitionSettledLocked(row *sharedResult) (settled, uses bool) {
+	noPartState := !row.imported && !row.partGate.restoredDelegation.Load() && !row.hasPartOffersLocked()
+	gate := row.partGate.gate.Load()
+	if gate == nil {
+		return noPartState, false
+	}
+	gate.mu.Lock()
+	defer gate.mu.Unlock()
+	if gate.managed {
+		return true, true
+	}
+	if noPartState {
+		return true, false
+	}
+	for _, group := range gate.groups {
+		if group.phase == LazyEvaluationRunning {
+			return true, false
+		}
+	}
+	return false, false
 }
 func (c *Cache) evaluateAcquiredParts(ctx context.Context, res AnyResult, row *sharedResult, parts []PartKey) (rerr error) {
 	return c.evaluateAcquiredScope(ctx, res, row, nil, parts)

@@ -50,6 +50,23 @@ type partProbeCapture struct {
 type PersistedPartDescriber interface {
 	DescribeParts(PersistedPayloadVisit) ([]PartProbe, error)
 }
+
+// PersistedPartsDescriber is implemented by persisted objects that describe
+// their parts from their live value, without encoding it. ok is false when the
+// value can't be described without its encoding; the encoding is then
+// described instead. An error is the error encoding or describing the
+// encoding would return.
+type PersistedPartsDescriber interface {
+	DescribePersistedParts(context.Context, *PersistEncodeContext) (desc PersistedPartsDescription, ok bool, err error)
+}
+
+// PersistedPartsDescription is what an object's encoding says of its parts:
+// the addresses of the parts its family's PersistedPartDescriber reports
+// locally complete, and the snapshot links the encoding carries.
+type PersistedPartsDescription struct {
+	Complete      []PersistedPartAddress
+	SnapshotLinks []PersistedSnapshotRefLink
+}
 type PartSourceLease struct {
 	cache            *Cache
 	source           *sharedResult

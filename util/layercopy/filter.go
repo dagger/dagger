@@ -1,7 +1,6 @@
 package layercopy
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -123,7 +122,7 @@ func patternWithoutTrailingGlob(p *patternmatcher.Pattern) string {
 	return strings.TrimSuffix(patStr, string(filepath.Separator)+"*")
 }
 
-func (m *matcher) includePath(rel string, abs string, info os.FileInfo, parent matchState) (bool, matchState, error) {
+func (m *matcher) includePath(rel string, abs string, isDir bool, parent matchState) (bool, matchState, error) {
 	if rel == "" {
 		return true, parent, nil
 	}
@@ -154,7 +153,6 @@ func (m *matcher) includePath(rel string, abs string, info os.FileInfo, parent m
 		}
 	}
 	if m.gitignore != nil {
-		isDir := info == nil || info.IsDir()
 		ignored, err := m.gitignore.Matches(abs, isDir)
 		if err != nil {
 			return false, state, err

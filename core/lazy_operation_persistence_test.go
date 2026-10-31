@@ -160,6 +160,7 @@ func TestLazyOperationCodecs(t *testing.T) {
 				require.NoError(t, err)
 				encoded, err := dir.EncodePersistedObject(f.ctx, dagql.NewPersistEncodeContext(f.cache, rowID, call))
 				require.NoError(t, err)
+				require.True(t, requireDescribedAsEncoded(t, f.ctx, dagql.NewPersistEncodeContext(f.cache, rowID, call), dir))
 				value, err := dir.DecodePersistedObject(f.ctx, dagql.NewPersistDecodeContext(f.srv, rowID, call), encoded.JSON)
 				require.NoError(t, err)
 				output := value.(*Directory)
@@ -231,6 +232,7 @@ func TestLazyOperationCodecs(t *testing.T) {
 				require.NoError(t, err)
 				encoded, err := file.EncodePersistedObject(f.ctx, dagql.NewPersistEncodeContext(f.cache, rowID, call))
 				require.NoError(t, err)
+				require.True(t, requireDescribedAsEncoded(t, f.ctx, dagql.NewPersistEncodeContext(f.cache, rowID, call), file))
 				restored, err := file.DecodePersistedObject(f.ctx, dagql.NewPersistDecodeContext(f.srv, rowID, call), encoded.JSON)
 				require.NoError(t, err)
 				if ready {
@@ -284,6 +286,7 @@ func TestLazyOperationCodecs(t *testing.T) {
 			rowID := persistedRowID(t, fixture.cache, result)
 			encoded, err := container.EncodePersistedObject(fixture.ctx, dagql.NewPersistEncodeContext(fixture.cache, rowID, call))
 			require.NoError(t, err)
+			require.True(t, requireDescribedAsEncoded(t, fixture.ctx, dagql.NewPersistEncodeContext(fixture.cache, rowID, call), container))
 			value, err := container.DecodePersistedObject(fixture.ctx, dagql.NewPersistDecodeContext(fixture.srv, rowID, call), encoded.JSON)
 			require.NoError(t, err)
 			restored := value.(*Container)

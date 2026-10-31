@@ -49,6 +49,12 @@ func TestGeneratedModuleSessionIsLazy(t *testing.T) {
 	testSource, err := os.ReadFile("testdata/module-session/session_test.go")
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(root, "session_test.go"), testSource, 0600))
+	// The function call's inputs and the connection pool, in a package and
+	// process of their own.
+	inputsSource, err := os.ReadFile("testdata/module-session/inputs/inputs_test.go")
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "inputs"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "inputs", "inputs_test.go"), inputsSource, 0600))
 	cmd := exec.CommandContext(t.Context(), "go", "test", "-mod=mod", "./...")
 	cmd.Dir = root
 	for _, entry := range os.Environ() {

@@ -98,20 +98,19 @@ func TestSnapshotOwnerWaitsForWholeContainer(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("gated diagnostic could not read the operation pointer")
 	}
+	// The real streamed diagnostic owns the graph read lock. A real graph
+	// writer queues behind it, as one always can on a busy engine, and a
+	// queued writer holds off new readers.
+	writerDone := make(chan error, 1)
+	go func() { writerDone <- cache.MakeResultUnpruneable(ctx, parent) }()
+	require.Eventually(t, goroutineWaiting("MakeResultUnpruneable(", "[sync.RWMutex.Lock"), 5*time.Second, time.Millisecond)
 	finishBody()
-	// The real streamed diagnostic owns the graph read lock. Observe the
-	// body's real dependency evaluation queued for the graph write lock.
-	require.Eventually(t, func() bool {
-		buf := make([]byte, 256<<10)
-		for _, stack := range strings.Split(string(buf[:runtime.Stack(buf, true)]), "\n\n") {
-			if strings.Contains(stack, "usesPartAcquisition(") && strings.Contains(stack, "sync.RWMutex") {
-				return true
-			}
-		}
-		return false
-	}, 5*time.Second, time.Millisecond)
+	// Observe the body's real dependency evaluation queued for the graph lock
+	// behind that writer.
+	require.Eventually(t, goroutineWaiting("usesPartAcquisition(", "[sync.RWMutex.RLock"), 5*time.Second, time.Millisecond)
 	finishDiagnostic()
 	require.NoError(t, <-diagnosticDone)
+	require.NoError(t, <-writerDone)
 	require.NoError(t, <-bodyDone)
 	require.NoError(t, (<-ownerDone).err)
 	require.True(t, json.Valid(snapshot.Bytes()))
@@ -120,6 +119,20 @@ func TestSnapshotOwnerWaitsForWholeContainer(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, dagql.OutputRevision(1), revision)
 	require.Equal(t, []dagql.PersistedSnapshotRefLink{{Role: "fs", RefKey: "owned"}}, links)
+}
+
+// goroutineWaiting reports whether some goroutine's stack contains frame
+// while it is in the given wait state, such as "[sync.RWMutex.Lock".
+func goroutineWaiting(frame, state string) func() bool {
+	return func() bool {
+		buf := make([]byte, 256<<10)
+		for _, stack := range strings.Split(string(buf[:runtime.Stack(buf, true)]), "\n\n") {
+			if strings.Contains(stack, frame) && strings.Contains(stack, state) {
+				return true
+			}
+		}
+		return false
+	}
 }
 
 func startSnapshotOwnerRead(value dagql.SnapshotOwnerReader) <-chan snapshotOwnerReadResult {

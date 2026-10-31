@@ -350,20 +350,25 @@ func (sess *daggerSession) mergeClientMetadataLocked(record *clientRecord, incom
 	if incoming == nil {
 		return errors.New("client metadata is nil")
 	}
-	candidate, err := cloneClientMetadata(incoming)
-	if err != nil {
-		return err
-	}
 	if record.clientMetadata == nil {
 		if record.metadataSealed {
 			return fmt.Errorf("client %q has sealed empty metadata", record.clientID)
+		}
+		candidate, err := cloneClientMetadata(incoming)
+		if err != nil {
+			return err
 		}
 		record.clientMetadata = candidate
 		return nil
 	}
 
+	// Every request of a known client merges its metadata, which almost always
+	// matches what is stored. So the incoming metadata is only compared, and is
+	// cloned only once a field must be completed from it: the record never
+	// shares a value with the caller.
 	stored := reflect.ValueOf(record.clientMetadata).Elem()
-	update := reflect.ValueOf(candidate).Elem()
+	update := reflect.ValueOf(incoming).Elem()
+	cloned := false
 	typeOfMetadata := stored.Type()
 	for i := 0; i < stored.NumField(); i++ {
 		incomingField := update.Field(i)
@@ -375,6 +380,15 @@ func (sess *daggerSession) mergeClientMetadataLocked(record *clientRecord, incom
 		if storedField.IsZero() {
 			if record.metadataSealed {
 				return fmt.Errorf("client %q metadata is sealed; field %s cannot be completed", record.clientID, fieldName)
+			}
+			if !cloned {
+				candidate, err := cloneClientMetadata(incoming)
+				if err != nil {
+					return err
+				}
+				update = reflect.ValueOf(candidate).Elem()
+				incomingField = update.Field(i)
+				cloned = true
 			}
 			storedField.Set(incomingField)
 			continue

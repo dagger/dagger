@@ -167,6 +167,43 @@ func TestModuleResultIDsAfterFrameReplacement(t *testing.T) {
 	requireModuleResultIDsMatchWalk(t, c, root)
 }
 
+// Removing a result from the cache starts no new frame generation, so the
+// memos of frames that don't reference it survive it. A session's release
+// removes many results, so otherwise no memo would survive from one build to
+// the next.
+func TestModuleResultIDsSurviveResultRemoval(t *testing.T) {
+	ctx := cacheTestContext(t.Context())
+	c, err := NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	unrelated, err := c.GetOrInitCall(ctx, cacheTestSessionID(t, ctx), noopTypeResolver{}, &CallRequest{ResultCall: cacheTestIntCall("unrelated")}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(cacheTestIntCall("unrelated"), 1), nil
+	})
+	require.NoError(t, err)
+	unrelatedShared := unrelated.cacheSharedResult()
+	unrelatedID := unrelatedShared.id
+	require.NotZero(t, unrelatedID)
+
+	c.egraphMu.Lock()
+	c.resultsByID[1001] = &sharedResult{id: 1001, resultCall: moduleFrame(1002)}
+	c.resultsByID[1002] = &sharedResult{id: 1002, resultCall: moduleFrame()}
+	c.egraphMu.Unlock()
+	root := &ResultCall{Receiver: &ResultCallRef{ResultID: 1001}}
+	requireModuleResultIDsMatchWalk(t, c, root)
+
+	cacheTestReleaseSession(t, c, ctx)
+	c.egraphMu.RLock()
+	_, stillThere := c.resultsByID[unrelatedID]
+	c.egraphMu.RUnlock()
+	require.False(t, stillThere, "the session's release removes its result")
+	require.Nil(t, unrelatedShared.loadResultCall(), "removal clears the result's frame")
+
+	r := newModuleIDsRebuild(t.Context(), resultCallFrameGeneration.Load())
+	ids, _, err := c.moduleResultIDs(root, r)
+	require.NoError(t, err)
+	require.Equal(t, []uint64{1001, 1002}, ids)
+	require.Zero(t, r.computed, "the memos computed before the removal are served")
+}
+
 func TestModuleResultIDsStoresNoMemoInCycle(t *testing.T) {
 	a, b := moduleFrame(2), moduleFrame(1, 3)
 	c := &Cache{resultsByID: map[sharedResultID]*sharedResult{

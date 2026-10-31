@@ -122,6 +122,10 @@ func defaultHTTPClient(p *ConnectParams) *http.Client {
 		DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
 			return net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", p.Port))
 		},
+		// Every request goes to this one host. Keep as many idle connections
+		// for it as Go's default transport keeps in all, not its default of
+		// 2 per host, so concurrent requests reuse them instead of dialing.
+		MaxIdleConnsPerHost: 100,
 	}
 	return &http.Client{
 		Transport: RoundTripperFunc(func(r *http.Request) (*http.Response, error) {

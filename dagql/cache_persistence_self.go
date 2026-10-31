@@ -140,6 +140,12 @@ type PersistedResultEncoding struct {
 }
 
 func (defaultPersistedSelfCodec) EncodeResult(ctx context.Context, cache PersistedObjectCache, res AnyResult) (PersistedResultEncoding, error) {
+	return encodePersistedResult(ctx, cache, res, nil)
+}
+
+// encodePersistedResult is EncodeResult. With parts, it describes the
+// result's parts into parts instead, and returns no encoding.
+func encodePersistedResult(ctx context.Context, cache PersistedObjectCache, res AnyResult, parts *partDescription) (PersistedResultEncoding, error) {
 	var (
 		resultID uint64
 		frame    *ResultCall
@@ -156,6 +162,7 @@ func (defaultPersistedSelfCodec) EncodeResult(ctx context.Context, cache Persist
 	}
 	enc := NewPersistEncodeContext(cache, resultID, frame)
 	enc.quiescent, _ = ctx.Value(quiescentPersistKey{}).(bool)
+	enc.parts = parts
 	return encodePersistedResultEnvelope(ctx, enc, res, true)
 }
 
@@ -259,6 +266,13 @@ func encodePersistedResultEnvelope(ctx context.Context, enc *PersistEncodeContex
 					return PersistedResultEncoding{}, err
 				}
 			}
+		}
+		if enc.parts != nil {
+			// A description builds no envelope.
+			if err := enc.parts.describe(ctx, enc, family, encoder); err != nil {
+				return PersistedResultEncoding{}, fmt.Errorf("encode persisted object payload: %w", err)
+			}
+			return PersistedResultEncoding{}, nil
 		}
 		objectEncoding, err := encoder.EncodePersistedObject(ctx, enc)
 		if err != nil {

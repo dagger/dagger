@@ -17,6 +17,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -586,8 +587,36 @@ func (s *forwardIO) Close() error {
 
 func (s *forwardIO) Set(cmd *exec.Cmd) {
 	cmd.Stdin = s.stdin
-	cmd.Stdout = s.stdout
-	cmd.Stderr = s.stderr
+	cmd.Stdout = withPooledCopy(s.stdout)
+	cmd.Stderr = withPooledCopy(s.stderr)
+}
+
+// os/exec copies a process's output into a writer that isn't an *os.File
+// with io.Copy, which allocates a 32 KiB buffer for each stream of every
+// container run. withPooledCopy gives such a writer a ReadFrom that copies
+// through a pooled buffer instead; nil and *os.File writers are left as
+// they are, for os/exec to handle itself.
+func withPooledCopy(w io.WriteCloser) io.Writer {
+	if w == nil {
+		return nil
+	}
+	if f, ok := w.(*os.File); ok {
+		return f
+	}
+	return pooledCopyWriter{w}
+}
+
+var outputCopyBufPool = sync.Pool{New: func() any {
+	buf := make([]byte, 32<<10)
+	return &buf
+}}
+
+type pooledCopyWriter struct{ io.Writer }
+
+func (w pooledCopyWriter) ReadFrom(r io.Reader) (int64, error) {
+	buf := outputCopyBufPool.Get().(*[]byte)
+	defer outputCopyBufPool.Put(buf)
+	return io.CopyBuffer(w.Writer, r, *buf)
 }
 
 func (s *forwardIO) Stdin() io.WriteCloser {

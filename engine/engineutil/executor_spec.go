@@ -24,7 +24,6 @@ import (
 
 	"github.com/containerd/containerd/v2/core/mount"
 	ctdoci "github.com/containerd/containerd/v2/pkg/oci"
-	"github.com/containerd/continuity/fs"
 	runc "github.com/containerd/go-runc"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/client/pathutil"
@@ -39,6 +38,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	bknetwork "github.com/dagger/dagger/internal/buildkit/util/network"
 	"github.com/dagger/dagger/util/cleanups"
+	"github.com/dagger/dagger/util/fsxutil"
 	"github.com/google/uuid"
 	"github.com/moby/sys/user"
 	"github.com/opencontainers/runtime-spec/specs-go"
@@ -205,28 +205,30 @@ func newExecState(
 type executorSetupFunc func(context.Context, *execState) error
 
 // startingContainerLog is the logger for an exec's "starting container" and
-// "container done" lines.
+// "container done" lines. Its fields are set at once, and args formatted
+// once for both lines, as the text formatter would.
 func startingContainerLog(ctx context.Context, state *execState) *logrus.Entry {
 	cacheMounts := 0
 	if state.execMD != nil {
 		cacheMounts = state.execMD.CacheMounts
 	}
-	lg := bklog.G(ctx).
-		WithField("id", state.id).
-		WithField("args", state.spec.Process.Args).
-		WithField("cache_mounts", cacheMounts)
+	fields := logrus.Fields{
+		"id":           state.id,
+		"args":         fmt.Sprint(state.spec.Process.Args),
+		"cache_mounts": cacheMounts,
+	}
 	if state.execMD != nil {
 		if state.execMD.CallDigest != "" {
-			lg = lg.WithField("call_id", state.execMD.CallDigest)
+			fields["call_id"] = state.execMD.CallDigest
 		}
 	}
 	if state.callerClientID != "" {
-		lg = lg.WithField("caller_client_id", state.callerClientID)
+		fields["caller_client_id"] = state.callerClientID
 	}
 	if state.nestedClientMetadata != nil && state.nestedClientMetadata.ClientID != "" {
-		lg = lg.WithField("nested_client_id", state.nestedClientMetadata.ClientID)
+		fields["nested_client_id"] = state.nestedClientMetadata.ClientID
 	}
-	return lg
+	return bklog.G(ctx).WithFields(fields)
 }
 
 //nolint:gocyclo
@@ -653,7 +655,7 @@ func (c *Client) setupRootfs(ctx context.Context, state *execState) error {
 	})
 	state.spec.Root.Path = state.rootfsPath
 	if state.rootMount.Selector != "" {
-		state.spec.Root.Path, err = fs.RootPath(state.rootfsPath, state.rootMount.Selector)
+		state.spec.Root.Path, err = fsxutil.RootPath(state.rootfsPath, state.rootMount.Selector)
 		if err != nil {
 			return fmt.Errorf("root mount %s points to invalid root path: %w", state.rootMount.Selector, err)
 		}
@@ -754,7 +756,7 @@ func (c *Client) setupRootfs(ctx context.Context, state *execState) error {
 
 	for _, mnt := range state.nonRootMounts {
 		mnt, recursiveReadOnly := consumeRecursiveReadOnlyOption(mnt)
-		dstPath, err := fs.RootPath(state.spec.Root.Path, mnt.Target)
+		dstPath, err := fsxutil.RootPath(state.spec.Root.Path, mnt.Target)
 		if err != nil {
 			return fmt.Errorf("mount %s points to invalid target: %w", mnt.Target, err)
 		}
@@ -1126,7 +1128,7 @@ func (c *Client) setupSecretScrubbing(ctx context.Context, state *execState) err
 			filePath = filepath.Join(ctrCwd, filePath)
 		}
 		var err error
-		filePath, err = fs.RootPath(state.rootfsPath, filePath)
+		filePath, err = fsxutil.RootPath(state.rootfsPath, filePath)
 		if err != nil {
 			return fmt.Errorf("secret file path %s points to invalid target: %w", filePath, err)
 		}
@@ -1257,7 +1259,7 @@ func (c *Client) enableGPU(_ context.Context, state *execState) error {
 }
 
 func (c *Client) createCWD(_ context.Context, state *execState) error {
-	newp, err := fs.RootPath(state.rootfsPath, state.procInfo.Meta.Cwd)
+	newp, err := fsxutil.RootPath(state.rootfsPath, state.procInfo.Meta.Cwd)
 	if err != nil {
 		return fmt.Errorf("working dir %s points to invalid target: %w", newp, err)
 	}
@@ -1747,7 +1749,7 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 		})
 	}
 
-	if err := json.NewEncoder(f).Encode(initFDs.withEnv(state.spec)); err != nil {
+	if err := writeSpec(f, initFDs.withEnv(state.spec)); err != nil {
 		return fmt.Errorf("failed to encode spec: %w", err)
 	}
 	f.Close()
