@@ -170,7 +170,7 @@ func TestExportNamesARunningRowsKind(t *testing.T) {
 			res.lazyMu.Unlock()
 			require.NoError(t, err)
 			require.Len(t, values.LeftOut, 1)
-			require.Equal(t, LeftOutRoot{Index: 0, Row: rowNumber(rows.shared), Kind: tc.kind, Err: values.LeftOut[0].Err}, values.LeftOut[0])
+			require.Equal(t, LeftOutRoot{Index: 0, Row: rowNumber(rows.shared), Kind: tc.kind, Err: values.LeftOut[0].Err, Busy: []BusyRow{{Row: rowNumber(rows.shared), Kind: tc.kind}}}, values.LeftOut[0])
 			require.Equal(t, map[uint64]bool{rowNumber(rows.ready): true, rowNumber(rows.base): true}, senderNumbers(values.Bundle))
 		})
 	}
@@ -358,4 +358,58 @@ func TestExportLeavesOutOutputsBelowARootBlockedAtTheWalk(t *testing.T) {
 	require.Equal(t, 0, values.LeftOut[0].Index)
 	require.Equal(t, map[uint64]bool{rowNumber(ready): true}, senderNumbers(values.Bundle))
 	require.Len(t, values.Bundle.Outputs, 1, "only the kept root's output")
+}
+
+// A root whose own row is still attaching at the walk is left out with every
+// row below it walked: an output selected on a ready dependency is left out
+// with it, and a running dependency is named among its busy rows, while the
+// other roots go.
+func TestExportWalksBelowAnAttachingRoot(t *testing.T) {
+	t.Parallel()
+	ctx, c, srv := transferTestCache(t)
+	attaching := persistedListTestResult(t, ctx, c, srv, "attaching-root", String("attaching"))
+	ready := persistedListTestResult(t, ctx, c, srv, "attaching-ready-dep", &transferTestValue{Text: "pending"})
+	running := persistedListTestResult(t, ctx, c, srv, "attaching-running-dep", String("running"))
+	other := persistedListTestResult(t, ctx, c, srv, "attaching-other-root", String("other"))
+	transferTestDependency(c, ctx, attaching, ready)
+	transferTestDependency(c, ctx, attaching, running)
+	owners := heldOwnershipCounts([]AnyResult{attaching, ready, running, other})
+	run := running.cacheSharedResult()
+	run.lazyMu.Lock()
+	run.lazyWhole.attempt = &lazyEvalAttempt{done: make(chan struct{}), waiters: 1}
+	run.lazyMu.Unlock()
+	defer func() {
+		run.lazyMu.Lock()
+		run.lazyWhole.attempt = nil
+		run.lazyMu.Unlock()
+	}()
+	res := attaching.cacheSharedResult()
+	c.egraphMu.Lock()
+	res.attachDepsMu.Lock()
+	res.attachDepsWaitCh = make(chan struct{})
+	res.attachDepsMu.Unlock()
+	c.egraphMu.Unlock()
+	selection := ValueSelection{Roots: []AnyResult{attaching, other}, Outputs: []SelectedValueOutput{{Result: ready, Address: PersistedPartAddress{Part: "snapshot"}}}}
+	var values *ExportedValues
+	err := c.WithExportedValues(ctx, selection, config.RefConfig{}, func(_ context.Context, exported *ExportedValues) error {
+		values = exported
+		return nil
+	})
+	close(res.attachDepsWaitCh)
+	require.NoError(t, err)
+	require.Len(t, values.LeftOut, 1)
+	left := values.LeftOut[0]
+	require.Equal(t, 0, left.Index)
+	require.Equal(t, rowNumber(attaching), left.Row, "the root is left out for its own row")
+	require.Equal(t, BusyAttaching, left.Kind)
+	want := []BusyRow{{Row: rowNumber(attaching), Kind: BusyAttaching}, {Row: rowNumber(running), Kind: BusyRunning}}
+	if want[1].Row < want[0].Row {
+		want[0], want[1] = want[1], want[0]
+	}
+	require.Equal(t, want, left.Busy)
+	require.Equal(t, map[uint64]bool{rowNumber(other): true}, senderNumbers(values.Bundle))
+	require.Empty(t, values.Bundle.Outputs, "the left-out root's dependency's output is left out with it")
+	for r, count := range owners {
+		require.Equal(t, count, r.incomingOwnershipCount.Load(), "the capture releases every row it held")
+	}
 }
