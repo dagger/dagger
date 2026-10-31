@@ -237,11 +237,7 @@ func moduleObjectFieldsToSDKInput(ctx context.Context, t *ModuleObjectType, pare
 }
 
 func moduleObjectValueToSDKInput(ctx context.Context, modType ModType, value any) (any, error) {
-	typeDef, err := modType.TypeDef(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("resolve mod type typedef: %w", err)
-	}
-	switch typeDef.Self().Kind {
+	switch modType.Kind() {
 	case TypeDefKindObject, TypeDefKindInterface:
 		switch value := value.(type) {
 		case nil:
@@ -562,6 +558,10 @@ func (t *ModuleObjectType) CollectContent(ctx context.Context, value dagql.AnyRe
 	return nil
 }
 
+func (t *ModuleObjectType) Kind() TypeDefKind {
+	return TypeDefKindObject
+}
+
 func (t *ModuleObjectType) TypeDef(ctx context.Context) (dagql.ObjectResult[*TypeDef], error) {
 	var sourceMap dagql.Optional[dagql.ID[*SourceMap]]
 	var err error
@@ -796,14 +796,7 @@ func attachTypedModuleObjectValue(
 		return updatedItems, owned, nil
 	}
 
-	typeDef, err := modType.TypeDef(ctx)
-	if err != nil {
-		return nil, nil, fmt.Errorf("resolve mod type typedef: %w", err)
-	}
-	if typeDef.Self() == nil {
-		return val, nil, nil
-	}
-	switch typeDef.Self().Kind {
+	switch modType.Kind() {
 	case TypeDefKindObject, TypeDefKindInterface:
 		typed, err := modType.ConvertFromSDKResult(ctx, val)
 		if err != nil {

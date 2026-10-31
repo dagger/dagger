@@ -817,6 +817,10 @@ func (obj *CoreModScalar) SourceMod() core.Mod {
 	return obj.coreMod
 }
 
+func (obj *CoreModScalar) Kind() core.TypeDefKind {
+	return core.TypeDefKindScalar
+}
+
 func (obj *CoreModScalar) TypeDef(ctx context.Context) (dagql.ObjectResult[*core.TypeDef], error) {
 	state, err := obj.coreMod.viewState(ctx)
 	if err != nil {
@@ -931,6 +935,10 @@ func (obj *CoreModObject) SourceMod() core.Mod {
 	return obj.coreMod
 }
 
+func (obj *CoreModObject) Kind() core.TypeDefKind {
+	return core.TypeDefKindObject
+}
+
 func (obj *CoreModObject) TypeDef(ctx context.Context) (dagql.ObjectResult[*core.TypeDef], error) {
 	// TODO: to support matching core types against interfaces, we will need to actually fill
 	// this out with the functions rather than just name
@@ -998,6 +1006,10 @@ func (enum *CoreModEnum) CollectContent(ctx context.Context, value dagql.AnyResu
 
 func (enum *CoreModEnum) SourceMod() core.Mod {
 	return enum.coreMod
+}
+
+func (enum *CoreModEnum) Kind() core.TypeDefKind {
+	return core.TypeDefKindEnum
 }
 
 func (enum *CoreModEnum) TypeDef(ctx context.Context) (dagql.ObjectResult[*core.TypeDef], error) {
