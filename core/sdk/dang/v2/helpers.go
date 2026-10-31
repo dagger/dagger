@@ -24,6 +24,7 @@ import (
 	"github.com/dagger/dagger/core"
 	dangshared "github.com/dagger/dagger/core/sdk/dang/shared"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/vito/dang/v2/pkg/dang"
@@ -1581,10 +1582,20 @@ func (c dangConverter) convertObjectID(ctx context.Context, id string, modType *
 		Schema:     nodeFn.Schema,
 		TypeScope:  nodeFn.TypeScope,
 		QueryChain: querybuilder.Query().Select("node").Arg("id", id).InlineFragment(schemaName),
-		// The engine scopes the objects it passes in before encoding them, so
-		// selecting `id` here would only hand back this same ID.
-		KnownID: id,
+		KnownID:    knownObjectID(id),
 	}, nil
+}
+
+// knownObjectID returns id if selecting `id` on node(id:) would hand back the
+// same ID, and "" otherwise. That holds for a handle: the engine scopes the
+// objects it passes in before encoding them. A recipe is evaluated by node(id:)
+// into a handle, which is what the module should pass on.
+func knownObjectID(id string) string {
+	var idp call.ID
+	if err := idp.Decode(id); err != nil || !idp.IsHandle() {
+		return ""
+	}
+	return id
 }
 
 // schemaTypeName maps a (possibly module-local) type name to the name it has in
