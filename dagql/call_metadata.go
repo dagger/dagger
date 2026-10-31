@@ -196,6 +196,7 @@ func (c *Cache) CallMetadataForResult(ctx context.Context, sessionID, namespace 
 			return nil, nil
 		}
 	}
+	var targetClasses map[eqClassID]struct{}
 	return c.callMetadataRecords(ctx, sessionID, namespace, func(_ CallMetadataRecord, frame *ResultCall) bool {
 		if frame.Receiver == nil {
 			return false
@@ -207,7 +208,9 @@ func (c *Cache) CallMetadataForResult(ctx context.Context, sessionID, namespace 
 		// These are output-equivalence classes, not retention edges. Sharing
 		// content can only widen this fallback; it never combines the records
 		// themselves or teaches an equivalence between metadata observations.
-		targetClasses := c.outputEqClassRootsLocked(resultID)
+		if targetClasses == nil {
+			targetClasses = c.outputEqClassRootsLocked(resultID)
+		}
 		for class := range c.outputEqClassRootsLocked(originID) {
 			if _, ok := targetClasses[class]; ok {
 				return true
@@ -235,6 +238,9 @@ func (c *Cache) callMetadataRecords(ctx context.Context, sessionID, namespace st
 	for _, row := range c.resultsByID {
 		frame := row.loadResultCall()
 		if frame == nil || frame.Kind != ResultCallKindSynthetic || frame.SyntheticOp != callMetadataOp {
+			continue
+		}
+		if value, ok := callMetadataFrameArg(frame, "namespace"); ok && value != namespace {
 			continue
 		}
 		if c.servableCandidateLocked(row.id, now, nil) == nil || row.attachmentState() != resultAttachmentClean || !c.sessionSatisfiesResourceRequirementsLocked(sessionID, row) {
@@ -271,4 +277,13 @@ func (c *Cache) callMetadataRecords(ctx context.Context, sessionID, namespace st
 	}
 	slices.SortFunc(records, func(a, b CallMetadataRecord) int { return cmp.Compare(a.Origin, b.Origin) })
 	return records, nil
+}
+
+func callMetadataFrameArg(frame *ResultCall, name string) (string, bool) {
+	for _, arg := range frame.Args {
+		if arg != nil && arg.Name == name && arg.Value != nil && arg.Value.Kind == ResultCallLiteralKindString {
+			return arg.Value.StringValue, true
+		}
+	}
+	return "", false
 }
