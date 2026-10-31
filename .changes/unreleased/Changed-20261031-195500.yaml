@@ -1,0 +1,6 @@
+kind: Changed
+body: |
+  The default Anthropic and OpenRouter models for `llm` are now Claude Sonnet 4.6, since Claude Sonnet 4.5 is retired on 2026-11-30.
+time: 2026-10-31T19:55:00Z
+custom:
+  Author: pcbeingused333
