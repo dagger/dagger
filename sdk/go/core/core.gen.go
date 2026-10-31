@@ -9376,6 +9376,14 @@ type FileExtractOpts struct {
 	//
 	// Entries with no more elements than this are skipped.
 	StripComponents int
+	// If set, only entries matching one of these glob patterns, or in a directory that does, are extracted (e.g., ["src/", "*.go"]).
+	//
+	// Patterns match entry paths after stripComponents is applied.
+	Include []string
+	// If set, entries matching one of these glob patterns, or in a directory that does, are not extracted (e.g., ["**/testdata", "**/*_test.go"]).
+	//
+	// Patterns match entry paths after stripComponents is applied.
+	Exclude []string
 }
 
 // Extracts this archive file into a directory.
@@ -9389,6 +9397,14 @@ func (r *File) Extract(opts ...FileExtractOpts) *Directory {
 		// `stripComponents` optional argument
 		if !querybuilder.IsZeroValue(opts[i].StripComponents) {
 			q = q.Arg("stripComponents", opts[i].StripComponents)
+		}
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
 		}
 	}
 

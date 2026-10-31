@@ -27,6 +27,7 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
+	"github.com/dagger/dagger/util/fsxutil"
 	"github.com/dagger/dagger/util/layercopy"
 	"github.com/dagger/dagger/util/patternmatcher"
 	"github.com/dustin/go-humanize"
@@ -256,6 +257,43 @@ func (dir *Directory) EncodePersistedObject(ctx context.Context, enc *dagql.Pers
 	if dir.transferPending != nil {
 		return encodePersistedObjectPayload(dir.transferPending)
 	}
+	payload, links, err := dir.persistedPayloadLocked(ctx, enc)
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, err
+	}
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted directory payload: %w", err)
+	}
+	return dagql.PersistedObjectEncoding{JSON: payloadJSON, SnapshotLinks: links}, nil
+}
+
+// DescribePersistedParts describes the directory's part from the payload
+// EncodePersistedObject builds. A pending transfer, which is encoded as it
+// was received, isn't described here.
+func (dir *Directory) DescribePersistedParts(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedPartsDescription, bool, error) {
+	if dir == nil {
+		return dagql.PersistedPartsDescription{}, false, nil
+	}
+	unlock, err := dir.lockForPersistence()
+	if err != nil {
+		return dagql.PersistedPartsDescription{}, false, err
+	}
+	defer unlock()
+	if dir.transferPending != nil {
+		return dagql.PersistedPartsDescription{}, false, nil
+	}
+	payload, links, err := dir.persistedPayloadLocked(ctx, enc)
+	if err != nil {
+		return dagql.PersistedPartsDescription{}, false, err
+	}
+	return foreignFamilyCodec("Directory").describeLivePayload(enc, &partPayload{directory: payload}, links)
+}
+
+// persistedPayloadLocked builds the directory's native payload and the
+// snapshot links its encoding carries. It requires the directory's
+// persistence lock.
+func (dir *Directory) persistedPayloadLocked(ctx context.Context, enc *dagql.PersistEncodeContext) (persistedDirectoryPayload, []dagql.PersistedSnapshotRefLink, error) {
 	valueKnown := false
 	dirPath := ""
 	if dir.Dir != nil {
@@ -266,7 +304,7 @@ func (dir *Directory) EncodePersistedObject(ctx context.Context, enc *dagql.Pers
 	}
 	services, err := encodePersistedServiceBindings(enc, "directory", dir.Services)
 	if err != nil {
-		return dagql.PersistedObjectEncoding{}, err
+		return persistedDirectoryPayload{}, nil, err
 	}
 	payload := persistedDirectoryPayload{
 		ValueKnown: valueKnown,
@@ -287,34 +325,21 @@ func (dir *Directory) EncodePersistedObject(ctx context.Context, enc *dagql.Pers
 		if recipe != nil {
 			payload.LazyKind, payload.LazyJSON, err = encodePersistedDirectoryLazy(ctx, enc, recipe)
 			if err != nil {
-				return dagql.PersistedObjectEncoding{}, err
+				return persistedDirectoryPayload{}, nil, err
 			}
 		}
-		payloadJSON, err := json.Marshal(payload)
-		if err != nil {
-			return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted directory payload: %w", err)
-		}
-		return dagql.PersistedObjectEncoding{
-			JSON: payloadJSON,
-			SnapshotLinks: []dagql.PersistedSnapshotRefLink{{
-				RefKey: identity,
-				Role:   "snapshot",
-			}},
-		}, nil
+		return payload, []dagql.PersistedSnapshotRefLink{{
+			RefKey: identity,
+			Role:   "snapshot",
+		}}, nil
 	}
 	if dir.Lazy != nil {
 		payload.Form = persistedDirectoryFormLazy
-		lazyKind, lazyJSON, err := encodePersistedDirectoryLazy(ctx, enc, dir.Lazy)
+		payload.LazyKind, payload.LazyJSON, err = encodePersistedDirectoryLazy(ctx, enc, dir.Lazy)
 		if err != nil {
-			return dagql.PersistedObjectEncoding{}, err
+			return persistedDirectoryPayload{}, nil, err
 		}
-		payload.LazyKind = lazyKind
-		payload.LazyJSON = lazyJSON
-		payloadJSON, err := json.Marshal(payload)
-		if err != nil {
-			return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted directory payload: %w", err)
-		}
-		return encodePersistedObjectRawJSON(payloadJSON), nil
+		return payload, nil, nil
 	}
 	slog.Error(
 		"encode persisted directory: neither snapshot nor lazy op is available",
@@ -322,7 +347,7 @@ func (dir *Directory) EncodePersistedObject(ctx context.Context, enc *dagql.Pers
 		"platform", dir.Platform,
 		"services", len(dir.Services),
 	)
-	return dagql.PersistedObjectEncoding{}, fmt.Errorf("%w: encode persisted directory: missing snapshot and lazy op", dagql.ErrPersistStateNotReady)
+	return persistedDirectoryPayload{}, nil, fmt.Errorf("%w: encode persisted directory: missing snapshot and lazy op", dagql.ErrPersistStateNotReady)
 }
 
 //nolint:dupl // symmetric with decodePersistedFileWithSnapshotRole in file.go; sharing hides type specifics
@@ -3793,11 +3818,11 @@ func (dir *Directory) Stat(ctx context.Context, self dagql.ObjectResult[*Directo
 	}
 
 	osStatFunc := os.Stat
-	rootPathFunc := containerdfs.RootPath
+	rootPathFunc := fsxutil.RootPath
 	if doNotFollowSymlinks {
 		// symlink testing requires the Lstat call, which does NOT follow symlinks
 		osStatFunc = os.Lstat
-		// similarly, containerdfs.RootPath can't be used, since it follows symlinks
+		// similarly, fsxutil.RootPath can't be used, since it follows symlinks
 		rootPathFunc = RootPathWithoutFinalSymlink
 	}
 

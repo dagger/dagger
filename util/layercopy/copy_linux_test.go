@@ -13,6 +13,7 @@ import (
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/continuity/sysx"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 )
 
 func TestCopyFileHardlinksFromSource(t *testing.T) {
@@ -272,6 +273,166 @@ func TestOverlayAncestorMinLayerCachesCumulativeBounds(t *testing.T) {
 	require.Equal(t, 1, minLayer)
 }
 
+// TestCopierSharesLowerLayerAnswersAcrossSources checks that a second source
+// of one copy doesn't ask the filesystem again about a lowerdir the first
+// already asked about, and that the copy never keeps an upperdir's answers.
+func TestCopierSharesLowerLayerAnswersAcrossSources(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	shared := filepath.Join(root, "shared")
+	firstTop := filepath.Join(root, "first")
+	secondTop := filepath.Join(root, "second")
+	upper := filepath.Join(root, "upper")
+	for _, dir := range []string{shared, firstTop, secondTop, upper} {
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, "a"), 0o755))
+	}
+
+	copier := &Copier{sourceCaches: map[sourceCacheKey]*sourceCache{}, lowerHides: map[string]bool{}}
+	first, err := copier.sourceForCopy(Mount{Root: "/first", Mount: &mount.Mount{
+		Type:    "overlay",
+		Options: []string{"lowerdir=" + firstTop + ":" + shared},
+	}})
+	require.NoError(t, err)
+	_, err = first.overlayAncestorMinLayer("a/file.txt")
+	require.NoError(t, err)
+	learned := len(copier.lowerHides)
+	require.Contains(t, copier.lowerHides, filepath.Join(shared, "a"))
+
+	// A second source on the same lowerdir asks only about its own layers.
+	second, err := copier.sourceForCopy(Mount{Root: "/second", Mount: &mount.Mount{
+		Type:    "overlay",
+		Options: []string{"lowerdir=" + secondTop + ":" + shared, "upperdir=" + upper},
+	}})
+	require.NoError(t, err)
+	var probed []string
+	second.onLayerProbe = func(path string) { probed = append(probed, path) }
+	_, err = second.overlayAncestorMinLayer("a/file.txt")
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{
+		upper, filepath.Join(upper, "a"),
+		secondTop, filepath.Join(secondTop, "a"),
+	}, probed)
+	require.Len(t, copier.lowerHides, learned+2)
+	require.NotContains(t, copier.lowerHides, upper)
+	require.NotContains(t, copier.lowerHides, filepath.Join(upper, "a"))
+}
+
+// TestCopyFileOverlaySourcesShareLowerLayers copies a file from several
+// overlay sources, in one copy, that share lowerdirs but stack them
+// differently: each source must see the file from its own top visible layer.
+func TestCopyFileOverlaySourcesShareLowerLayers(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	base := filepath.Join(root, "base")
+	opaque := filepath.Join(root, "opaque")
+	plain := filepath.Join(root, "plain")
+	dstRoot := filepath.Join(root, "dst")
+	for _, dir := range []string{filepath.Join(base, "a"), filepath.Join(opaque, "a"), filepath.Join(plain, "a"), dstRoot} {
+		require.NoError(t, os.MkdirAll(dir, 0o755))
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(base, "a", "file.txt"), []byte("base"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(opaque, "a", "file.txt"), []byte("opaque"), 0o644))
+	require.NoError(t, unix.Lsetxattr(filepath.Join(opaque, "a"), "user.overlay.opaque", []byte{'y'}, 0))
+
+	copier, err := NewCopier(Mount{Root: dstRoot})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, copier.Close())
+	})
+
+	// Each source's view holds the file it shows, as its mounted overlay would.
+	for _, c := range []struct {
+		dest   string
+		lowers []string
+		from   string
+	}{
+		{"one.txt", []string{opaque, base}, opaque},
+		{"two.txt", []string{plain, base}, base},
+		{"three.txt", []string{plain, opaque, base}, opaque},
+	} {
+		want := filepath.Base(c.from)
+		viewRoot := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(viewRoot, "a"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(viewRoot, "a", "file.txt"), []byte(want), 0o644))
+		err := copier.CopyFile(context.Background(), Mount{
+			Root: viewRoot,
+			Mount: &mount.Mount{
+				Type:    "overlay",
+				Options: []string{"lowerdir=" + strings.Join(c.lowers, ":")},
+			},
+		}, "/a/file.txt", "/"+c.dest, CopyOptions{})
+		require.NoError(t, err, c.dest)
+
+		got, err := os.ReadFile(filepath.Join(dstRoot, c.dest))
+		require.NoError(t, err)
+		require.Equal(t, want, string(got), c.dest)
+		// The copy links the visible layer's file.
+		fromInfo, err := os.Stat(filepath.Join(c.from, "a", "file.txt"))
+		require.NoError(t, err)
+		gotInfo, err := os.Stat(filepath.Join(dstRoot, c.dest))
+		require.NoError(t, err)
+		require.True(t, os.SameFile(fromInfo, gotInfo), c.dest)
+	}
+}
+
+// A file copied from an overlay is the one the view shows: the topmost layer
+// holding it, above a layer that hides a stale copy below it. Its ancestors'
+// layers aren't read; only a directory's walk needs them.
+func TestCopyFileFromOverlayLinksTheVisibleLayer(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	lowerRoot := filepath.Join(root, "lower")
+	middleRoot := filepath.Join(root, "middle")
+	upperRoot := filepath.Join(root, "upper")
+	viewRoot := filepath.Join(root, "view")
+	dstRoot := filepath.Join(root, "dst")
+
+	for _, dir := range []string{
+		filepath.Join(lowerRoot, "d", "e"),
+		filepath.Join(middleRoot, "d"),
+		filepath.Join(upperRoot, "d", "e"),
+		filepath.Join(viewRoot, "d", "e"),
+		dstRoot,
+	} {
+		require.NoError(t, os.MkdirAll(dir, 0o755))
+	}
+	// middle's d/e is a file, so lower's d/e/f.txt is hidden.
+	require.NoError(t, os.WriteFile(filepath.Join(lowerRoot, "d", "e", "f.txt"), []byte("lower"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(middleRoot, "d", "e"), []byte("cover"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(upperRoot, "d", "e", "f.txt"), []byte("upper"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(viewRoot, "d", "e", "f.txt"), []byte("upper"), 0o644))
+	// middle's d/g.txt shows through upper's d, which doesn't hold it.
+	require.NoError(t, os.WriteFile(filepath.Join(lowerRoot, "d", "g.txt"), []byte("lower"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(middleRoot, "d", "g.txt"), []byte("middle"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(viewRoot, "d", "g.txt"), []byte("middle"), 0o644))
+
+	copier, err := NewCopier(Mount{Root: dstRoot})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, copier.Close())
+	})
+	src := Mount{Root: viewRoot, Mount: &mount.Mount{
+		Type:    "overlay",
+		Options: []string{"lowerdir=" + strings.Join([]string{upperRoot, middleRoot, lowerRoot}, ":")},
+	}}
+	for _, test := range []struct{ path, layer string }{
+		{"d/e/f.txt", upperRoot},
+		{"d/g.txt", middleRoot},
+	} {
+		dst := strings.ReplaceAll(test.path, "/", "-")
+		require.NoError(t, copier.CopyFile(context.Background(), src, "/"+test.path, "/"+dst, CopyOptions{}))
+		want, err := os.Stat(filepath.Join(test.layer, test.path))
+		require.NoError(t, err)
+		got, err := os.Stat(filepath.Join(dstRoot, dst))
+		require.NoError(t, err)
+		require.Equal(t, statInode(want.Sys().(*syscall.Stat_t)), statInode(got.Sys().(*syscall.Stat_t)), test.path)
+	}
+	require.Empty(t, copier.sourceCaches[sourceCacheKey{root: src.Root, mount: src.Mount}].ancestorMinLayers)
+}
+
 func TestCopyFileDestPathHintIsDir(t *testing.T) {
 	t.Parallel()
 
@@ -406,6 +567,39 @@ func TestCopyEntryMissingSourceAfterFilter(t *testing.T) {
 		}, "/dst/gone.txt", CopyOptions{}, matchState{}, nil, resolvedParent{})
 		require.ErrorIs(t, err, os.ErrNotExist)
 	})
+
+	// A plain directory's listing leaves a non-directory's stat until the
+	// filter keeps it: a path gone, or one that can't be stat'ed, fails the
+	// copy only if the filter keeps it.
+	dir := t.TempDir()
+	tooLong := filepath.Join(dir, strings.Repeat("x", 300))
+	for _, tc := range []struct {
+		name    string
+		path    string
+		wantErr error
+	}{
+		{"missing", filepath.Join(dir, "gone.txt"), os.ErrNotExist},
+		{"unstatable", tooLong, syscall.ENAMETOOLONG},
+	} {
+		ent := sourceEntry{
+			Rel:      filepath.Base(tc.path),
+			ViewPath: tc.path,
+			RealPath: tc.path,
+			unstated: true,
+		}
+		t.Run(tc.name+" unstated excluded", func(t *testing.T) {
+			matcher, err := newMatcher(dir, Filter{Only: map[string]struct{}{"keep.txt": {}}})
+			require.NoError(t, err)
+			err = (&Copier{}).copyEntry(context.Background(), &source{}, matcher, ent, "/dst/x", CopyOptions{}, matchState{}, nil, resolvedParent{})
+			require.NoError(t, err)
+		})
+		t.Run(tc.name+" unstated included", func(t *testing.T) {
+			matcher, err := newMatcher(dir, Filter{Only: map[string]struct{}{ent.Rel: {}}})
+			require.NoError(t, err)
+			err = (&Copier{}).copyEntry(context.Background(), &source{}, matcher, ent, "/dst/x", CopyOptions{}, matchState{}, nil, resolvedParent{})
+			require.ErrorIs(t, err, tc.wantErr)
+		})
+	}
 }
 
 func TestCopyDirectoryFollowsOverlayDestSymlinkDir(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -479,9 +480,9 @@ type compileTestCase struct {
 }
 
 var compileTests = []compileTestCase{
-	{"*", regexpMatch, `^[^/]*$`, `^[^\\]*$`},
-	{"file*", regexpMatch, `^file[^/]*$`, `^file[^\\]*$`},
-	{"*file", regexpMatch, `^[^/]*file$`, `^[^\\]*file$`},
+	{"*", globSuffixMatch, "", ""},
+	{"file*", globSuffixMatch, "", ""},
+	{"*file", globSuffixMatch, "", ""},
 	{"a*/b", regexpMatch, `^a[^/]*/b$`, `^a[^\\]*\\b$`},
 	{"**", suffixMatch, "", ""},
 	{"**/**", regexpMatch, `^(.*/)?.*$`, `^(.*\\)?.*$`},
@@ -493,7 +494,18 @@ var compileTests = []compileTestCase{
 	{"**/file*txt", regexpMatch, `^(.*/)?file[^/]*txt$`, `^(.*\\)?file[^\\]*txt$`},
 	{"**/**/*.txt", regexpMatch, `^(.*/)?(.*/)?[^/]*\.txt$`, `^(.*\\)?(.*\\)?[^\\]*\.txt$`},
 	{"a[b-d]e", regexpMatch, `^a[b-d]e$`, `^a[b-d]e$`},
-	{".*", regexpMatch, `^\.[^/]*$`, `^\.[^\\]*$`},
+	{".*", globSuffixMatch, "", ""},
+	{"**/*.go", globSuffixMatch, "", ""},
+	{"dir/*.go", globSuffixMatch, "", ""},
+	{"dir/**/*.go", globSuffixMatch, "", ""},
+	{"dir**/*.go", globSuffixMatch, "", ""},
+	{"**/*", globSuffixMatch, "", ""},
+	{"a*b*c", regexpMatch, `^a[^/]*b[^/]*c$`, `^a[^\\]*b[^\\]*c$`},
+	{"dir/*/b", regexpMatch, `^dir/[^/]*/b$`, `^dir\\[^\\]*\\b$`},
+	{"**/*.[ch]", regexpMatch, `^(.*/)?[^/]*\.[ch]$`, `^(.*\\)?[^\\]*\.[ch]$`},
+	{"^*.go", regexpMatch, `^^[^/]*\.go$`, `^^[^\\]*\.go$`},
+	{"**/*.go^", regexpMatch, `^(.*/)?[^/]*\.go^$`, `^(.*\\)?[^\\]*\.go^$`},
+	{"*/**/*.go", regexpMatch, `^[^/]*/(.*/)?[^/]*\.go$`, `^[^\\]*\\(.*\\)?[^\\]*\.go$`},
 	{"abc.def", exactMatch, "", ""},
 	{"abc?def", regexpMatch, `^abc[^/]def$`, `^abc[^\\]def$`},
 	{"**/foo/bar", suffixMatch, "", ""},
@@ -541,6 +553,61 @@ func testCompile(sl string) func(*testing.T) {
 				} else if pm.patterns[0].regexp.String() != tt.compiledRegexp {
 					t.Errorf("pattern %q: regexp = %s, want %s", pattern, pm.patterns[0].regexp, tt.compiledRegexp)
 				}
+			}
+		}
+	}
+}
+
+// TestGlobSuffixMatchesRegexp checks that each pattern matched without a
+// regexp matches exactly the paths that the regexp compile gave it before
+// matched.
+func TestGlobSuffixMatchesRegexp(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the regexps are written with / separators")
+	}
+	patterns := []struct {
+		pattern string
+		regexp  string
+	}{
+		{"*", `^[^/]*$`},
+		{"*.go", `^[^/]*\.go$`},
+		{".*", `^\.[^/]*$`},
+		{"file*", `^file[^/]*$`},
+		{"a.b*c+d", `^a\.b[^/]*c\+d$`},
+		{"**/*", `^(.*/)?[^/]*$`},
+		{"**/*.go", `^(.*/)?[^/]*\.go$`},
+		{"**/*_test.go", `^(.*/)?[^/]*_test\.go$`},
+		{"dir/*", `^dir/[^/]*$`},
+		{"dir/*.go", `^dir/[^/]*\.go$`},
+		{"dir/**/*", `^dir/(.*/)?[^/]*$`},
+		{"dir/**/*.go", `^dir/(.*/)?[^/]*\.go$`},
+		{"dir**/*.go", `^dir(.*/)?[^/]*\.go$`},
+		{"a(b)/**/*x.$y", `^a\(b\)/(.*/)?[^/]*x\.\$y$`},
+	}
+	paths := []string{
+		"", "go", ".go", "a.go", "a.go/b", "a.gox", "a_test.go", "x/a_test.go",
+		"dir", "dir/", "dir/.go", "dir.go", "dirx/a.go", "dir/a.go",
+		"dir/a/b.go", "dir/a/b/c.go", "x/dir/a.go", "file", "filex", "x/file",
+		".hidden", "a/.hidden", "a.bXc+d", "a.bc+d", "a.b/c+d", "a(b)/x.$y",
+		"a(b)/q/x.$yz", "a(b)/x.$y/z", "a(b)/q/wx.$y", "a(b)/wx.$y",
+		"a\nb/c.go", "dir/a\nb/c.go", "dir/a\nb.go", "a\nb.go", "dir/\n/x.go",
+	}
+	for _, tt := range patterns {
+		p, err := NewPattern(tt.pattern)
+		if err != nil {
+			t.Fatalf("pattern %q: %v", tt.pattern, err)
+		}
+		if p.matchType != globSuffixMatch {
+			t.Fatalf("pattern %q: matchType = %v, want %v", tt.pattern, p.matchType, globSuffixMatch)
+		}
+		re := regexp.MustCompile(tt.regexp)
+		for _, path := range paths {
+			got, err := p.Match(path)
+			if err != nil {
+				t.Fatalf("pattern %q, path %q: %v", tt.pattern, path, err)
+			}
+			if want := re.MatchString(path); got != want {
+				t.Errorf("pattern %q, path %q: match = %v, regexp %s = %v", tt.pattern, path, got, tt.regexp, want)
 			}
 		}
 	}

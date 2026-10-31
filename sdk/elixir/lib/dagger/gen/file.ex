@@ -124,12 +124,18 @@ defmodule Dagger.File do
 
   An entry whose path would leave the directory is an error.
   """
-  @spec extract(t(), [{:strip_components, integer() | nil}]) :: Dagger.Directory.t()
+  @spec extract(t(), [
+          {:strip_components, integer() | nil},
+          {:include, [String.t()]},
+          {:exclude, [String.t()]}
+        ]) :: Dagger.Directory.t()
   def extract(%__MODULE__{} = file, optional_args \\ []) do
     query_builder =
       file.query_builder
       |> QB.select("extract")
       |> QB.maybe_put_arg("stripComponents", optional_args[:strip_components])
+      |> QB.maybe_put_arg("include", optional_args[:include])
+      |> QB.maybe_put_arg("exclude", optional_args[:exclude])
 
     %Dagger.Directory{
       query_builder: query_builder,

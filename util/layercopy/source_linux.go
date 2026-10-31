@@ -11,7 +11,7 @@ import (
 	"syscall"
 
 	continuityfs "github.com/containerd/continuity/fs"
-	"github.com/containerd/continuity/sysx"
+	"github.com/dagger/dagger/util/fsxutil"
 	"golang.org/x/sys/unix"
 )
 
@@ -28,9 +28,20 @@ type source struct {
 	baseCached   bool
 	cache        *sourceCache
 
+	// lowers is how many of layers, from the bottom, are lowerdirs; an
+	// upperdir, if there is one, is the last layer.
+	lowers int
+	// lowerHides, if set, is whether each path asked about in a lowerdir
+	// hides lower layers, shared by every source of a copy. See
+	// layerEntryState.
+	lowerHides map[string]bool
+
 	// onReadDir, if set, is called with each directory the copy reads. Tests
 	// use it to check which directories a filtered copy walks.
 	onReadDir func(rel string)
+	// onLayerProbe, if set, is called with each layer path the copy asks the
+	// filesystem about. Tests use it to check which answers are reused.
+	onLayerProbe func(path string)
 }
 
 type sourceEntry struct {
@@ -39,6 +50,10 @@ type sourceEntry struct {
 	RealPath string
 	Info     os.FileInfo
 	StatErr  error
+	// unstated marks a bind source's non-directory read without its stat,
+	// which waits until the filter keeps the entry (stat): a filter like
+	// "exclude **/*.go" leaves most of a source's files out.
+	unstated bool
 	// minLayer is the lowest overlay layer visible below this entry. An opaque
 	// directory or non-directory in a higher layer hides lower descendants.
 	minLayer int
@@ -58,11 +73,12 @@ func newSource(m Mount) (*source, error) {
 	case m.Mount.Type == "bind" || m.Mount.Type == "rbind":
 		s.realRoot = m.Mount.Source
 	case isOverlayMount(m.Mount):
-		layers, err := overlayLayers(m.Mount)
+		layers, lowers, err := overlayLayers(m.Mount)
 		if err != nil {
 			return nil, err
 		}
 		s.layers = layers
+		s.lowers = lowers
 		s.overlay = true
 	default:
 		return nil, fmt.Errorf("unsupported source mount type %q", m.Mount.Type)
@@ -95,9 +111,15 @@ func (s *source) selectBase(srcPath string, followFinalSymlink bool) error {
 	if err != nil {
 		return err
 	}
-	baseMinLayer, err := s.overlayAncestorMinLayer(baseRel)
-	if err != nil {
-		return err
+	// Only a directory's walk needs the layers its ancestors hide. The view
+	// shows a non-directory, so the topmost layer holding it is the one the
+	// view shows: no ancestor hides it.
+	baseMinLayer := 0
+	if info.IsDir() {
+		baseMinLayer, err = s.overlayAncestorMinLayer(baseRel)
+		if err != nil {
+			return err
+		}
 	}
 
 	s.baseView = baseView
@@ -139,28 +161,45 @@ func (s *source) readBindDir(rel string) ([]sourceEntry, error) {
 	entries := make([]sourceEntry, 0, len(dirents))
 	for _, de := range dirents {
 		name := de.Name()
-		viewPath := filepath.Join(viewDir, name)
-		info, err := os.Lstat(viewPath)
-		if err != nil {
-			if !os.IsNotExist(err) {
-				return nil, err
-			}
-			entries = append(entries, sourceEntry{
-				Rel:      filepath.Join(rel, name),
-				ViewPath: viewPath,
-				RealPath: filepath.Join(realDir, name),
-				StatErr:  err,
-			})
-			continue
-		}
-		entries = append(entries, sourceEntry{
+		ent := sourceEntry{
 			Rel:      filepath.Join(rel, name),
-			ViewPath: viewPath,
+			ViewPath: filepath.Join(viewDir, name),
 			RealPath: filepath.Join(realDir, name),
-			Info:     info,
-		})
+		}
+		if !de.IsDir() {
+			ent.unstated = true
+		} else if err := ent.stat(); err != nil {
+			return nil, err
+		}
+		entries = append(entries, ent)
 	}
 	return entries, nil
+}
+
+// stat fills in the entry's file info, or its StatErr when the path is gone,
+// as readBindDir would have read it.
+func (ent *sourceEntry) stat() error {
+	ent.unstated = false
+	info, err := os.Lstat(ent.ViewPath)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return err
+		}
+		ent.StatErr = err
+		return nil
+	}
+	ent.Info = info
+	return nil
+}
+
+// filterIsDir is whether the filter matches the entry as a directory: as its
+// info says, or, without info, as its directory listing does; a path that
+// vanished before its stat counts as one.
+func (ent *sourceEntry) filterIsDir() bool {
+	if ent.unstated {
+		return false
+	}
+	return ent.Info == nil || ent.Info.IsDir()
 }
 
 func (s *source) readOverlayDir(rel string, minLayer int) ([]sourceEntry, error) {
@@ -302,11 +341,8 @@ func (s *source) overlayAncestorMinLayer(rel string) (int, error) {
 		}
 
 		for i := len(s.layers) - 1; i >= minLayer; i-- {
-			_, hidesLower, err := overlayEntryState(filepath.Join(s.layers[i], ancestor))
+			hidesLower, err := s.layerEntryState(i, ancestor)
 			if err != nil {
-				if os.IsNotExist(err) || isNotDir(err) {
-					continue
-				}
 				return 0, err
 			}
 			if hidesLower {
@@ -321,10 +357,46 @@ func (s *source) overlayAncestorMinLayer(rel string) (int, error) {
 	return minLayer, nil
 }
 
+// layerEntryState reports whether rel in layer i hides lower layers' entries
+// below it; a path the layer doesn't have hides nothing. A lowerdir can't
+// change while an overlay uses it, and the sources of one copy share most of
+// their lowerdirs (a container's files sit on the same image layers), so
+// lowerdirs' answers are kept for the whole copy rather than asked of the
+// filesystem again for each source.
+func (s *source) layerEntryState(i int, rel string) (hidesLower bool, _ error) {
+	path := filepath.Join(s.layers[i], rel)
+	keep := s.lowerHides != nil && i < s.lowers
+	if keep {
+		if hides, ok := s.lowerHides[path]; ok {
+			return hides, nil
+		}
+	}
+	if s.onLayerProbe != nil {
+		s.onLayerProbe(path)
+	}
+	_, hidesLower, err := overlayEntryState(path)
+	if err != nil {
+		if !os.IsNotExist(err) && !isNotDir(err) {
+			return false, err
+		}
+	}
+	if keep {
+		s.lowerHides[path] = hidesLower
+	}
+	return hidesLower, nil
+}
+
 func rootPath(root, p string, followFinalSymlink bool) (string, error) {
-	p = filepath.Join("/", p)
+	// Joining cleans, and cleaning allocates; a clean absolute path is what
+	// the join would give.
+	if !filepath.IsAbs(p) || filepath.Clean(p) != p {
+		p = filepath.Join("/", p)
+	}
 	if p == "/" {
 		return root, nil
+	}
+	if resolved, ok := fsxutil.RootPathWithoutSymlinks(root, p, followFinalSymlink); ok {
+		return resolved, nil
 	}
 	if followFinalSymlink {
 		return continuityfs.RootPath(root, p)
@@ -360,15 +432,18 @@ func overlayEntryState(path string) (isDir, hidesLower bool, err error) {
 	if !info.IsDir() {
 		return false, true, nil
 	}
+	// The opaque value is the one byte "y", so one byte is all that's read: a
+	// longer value doesn't fit (ERANGE), and isn't the marker either.
+	var val [1]byte
 	for _, key := range []string{"trusted.overlay.opaque", "user.overlay.opaque"} {
-		val, err := sysx.LGetxattr(path, key)
-		if err == unix.ENODATA || err == unix.ENOTSUP {
+		n, err := unix.Lgetxattr(path, key, val[:])
+		if err == unix.ENODATA || err == unix.ENOTSUP || err == unix.ERANGE {
 			continue
 		}
 		if err != nil {
 			return false, false, err
 		}
-		if len(val) == 1 && val[0] == 'y' {
+		if n == 1 && val[0] == 'y' {
 			return true, true, nil
 		}
 	}

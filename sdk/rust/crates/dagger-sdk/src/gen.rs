@@ -8948,7 +8948,15 @@ pub struct FileExportOpts {
     pub allow_parent_dir_path: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct FileExtractOpts {
+pub struct FileExtractOpts<'a> {
+    /// If set, entries matching one of these glob patterns, or in a directory that does, are not extracted (e.g., ["**/testdata", "**/*_test.go"]).
+    /// Patterns match entry paths after stripComponents is applied.
+    #[builder(setter(into, strip_option), default)]
+    pub exclude: Option<Vec<&'a str>>,
+    /// If set, only entries matching one of these glob patterns, or in a directory that does, are extracted (e.g., ["src/", "*.go"]).
+    /// Patterns match entry paths after stripComponents is applied.
+    #[builder(setter(into, strip_option), default)]
+    pub include: Option<Vec<&'a str>>,
     /// Remove this many leading elements from each entry's path, as tar --strip-components does.
     /// Entries with no more elements than this are skipped.
     #[builder(setter(into, strip_option), default)]
@@ -9328,10 +9336,16 @@ impl File {
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn extract_opts(&self, opts: FileExtractOpts) -> Directory {
+    pub fn extract_opts<'a>(&self, opts: FileExtractOpts<'a>) -> Directory {
         let mut query = self.selection.select("extract");
         if let Some(strip_components) = opts.strip_components {
             query = query.arg("stripComponents", strip_components);
+        }
+        if let Some(include) = opts.include {
+            query = query.arg("include", include);
+        }
+        if let Some(exclude) = opts.exclude {
+            query = query.arg("exclude", exclude);
         }
         Directory {
             proc: self.proc.clone(),

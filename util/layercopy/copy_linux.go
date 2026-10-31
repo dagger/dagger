@@ -28,6 +28,7 @@ func NewCopier(dest Mount) (*Copier, error) {
 	return &Copier{
 		dest:         d,
 		sourceCaches: map[sourceCacheKey]*sourceCache{},
+		lowerHides:   map[string]bool{},
 	}, nil
 }
 
@@ -67,6 +68,7 @@ func (c *Copier) sourceForCopy(m Mount) (*source, error) {
 		c.sourceCaches[key] = cache
 	}
 	s.cache = cache
+	s.lowerHides = c.lowerHides
 	return s, nil
 }
 
@@ -212,9 +214,17 @@ func (c *Copier) copyEntry(
 	default:
 	}
 
-	include, state, err := matcher.includePath(ent.Rel, ent.ViewPath, ent.Info, parentState)
+	include, state, err := matcher.includePath(ent.Rel, ent.ViewPath, ent.filterIsDir(), parentState)
 	if err != nil {
 		return err
+	}
+	if ent.unstated {
+		if !include {
+			return nil
+		}
+		if err := ent.stat(); err != nil {
+			return err
+		}
 	}
 
 	if ent.Info == nil {

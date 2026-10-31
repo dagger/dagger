@@ -8,7 +8,6 @@ import (
 
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/containerd/v2/core/snapshots"
-	"github.com/containerd/containerd/v2/pkg/namespaces"
 	bksnapshots "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/moby/sys/userns"
@@ -32,17 +31,17 @@ func beginSnapshotOp(ctx context.Context, call, key string) *wcprof.Op {
 }
 
 func (s *nsSnapshotter) Stat(ctx context.Context, key string) (snapshots.Info, error) {
-	ctx = namespaces.WithNamespace(ctx, s.ns)
+	ctx = bksnapshots.WithNamespace(ctx, s.ns)
 	return s.Snapshotter.Stat(ctx, key)
 }
 
 func (s *nsSnapshotter) Update(ctx context.Context, info snapshots.Info, fieldpaths ...string) (snapshots.Info, error) {
-	ctx = namespaces.WithNamespace(ctx, s.ns)
+	ctx = bksnapshots.WithNamespace(ctx, s.ns)
 	return s.Snapshotter.Update(ctx, info, fieldpaths...)
 }
 
 func (s *nsSnapshotter) Usage(ctx context.Context, key string) (snapshots.Usage, error) {
-	ctx = namespaces.WithNamespace(ctx, s.ns)
+	ctx = bksnapshots.WithNamespace(ctx, s.ns)
 	op := beginSnapshotOp(ctx, "usage", key)
 	usage, err := s.Snapshotter.Usage(ctx, key)
 	op.EndErr(err)
@@ -50,7 +49,7 @@ func (s *nsSnapshotter) Usage(ctx context.Context, key string) (snapshots.Usage,
 }
 
 func (s *nsSnapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, error) {
-	ctx = namespaces.WithNamespace(ctx, s.ns)
+	ctx = bksnapshots.WithNamespace(ctx, s.ns)
 	op := beginSnapshotOp(ctx, "mounts", key)
 	mounts, err := s.Snapshotter.Mounts(ctx, key)
 	op.EndErr(err)
@@ -58,7 +57,7 @@ func (s *nsSnapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, 
 }
 
 func (s *nsSnapshotter) Prepare(ctx context.Context, key, parent string, opts ...snapshots.Opt) ([]mount.Mount, error) {
-	ctx = namespaces.WithNamespace(ctx, s.ns)
+	ctx = bksnapshots.WithNamespace(ctx, s.ns)
 	op := beginSnapshotOp(ctx, "prepare", key)
 	mounts, err := s.Snapshotter.Prepare(ctx, key, parent, opts...)
 	op.EndErr(err)
@@ -66,7 +65,7 @@ func (s *nsSnapshotter) Prepare(ctx context.Context, key, parent string, opts ..
 }
 
 func (s *nsSnapshotter) View(ctx context.Context, key, parent string, opts ...snapshots.Opt) ([]mount.Mount, error) {
-	ctx = namespaces.WithNamespace(ctx, s.ns)
+	ctx = bksnapshots.WithNamespace(ctx, s.ns)
 	op := beginSnapshotOp(ctx, "view", key)
 	mounts, err := s.Snapshotter.View(ctx, key, parent, opts...)
 	op.EndErr(err)
@@ -74,7 +73,7 @@ func (s *nsSnapshotter) View(ctx context.Context, key, parent string, opts ...sn
 }
 
 func (s *nsSnapshotter) Commit(ctx context.Context, name, key string, opts ...snapshots.Opt) error {
-	ctx = namespaces.WithNamespace(ctx, s.ns)
+	ctx = bksnapshots.WithNamespace(ctx, s.ns)
 	op := beginSnapshotOp(ctx, "commit", name)
 	err := s.Snapshotter.Commit(ctx, name, key, opts...)
 	op.EndErr(err)
@@ -86,7 +85,7 @@ func (s *nsSnapshotter) Remove(ctx context.Context, key string) error {
 }
 
 func (s *nsSnapshotter) Walk(ctx context.Context, fn snapshots.WalkFunc, filters ...string) error {
-	ctx = namespaces.WithNamespace(ctx, s.ns)
+	ctx = bksnapshots.WithNamespace(ctx, s.ns)
 	return s.Snapshotter.Walk(ctx, fn, filters...)
 }
 
