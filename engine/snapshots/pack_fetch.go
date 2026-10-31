@@ -95,12 +95,17 @@ func (e *packContentError) Unwrap() error { return e.err }
 
 // downloadPackedContent puts desc's blob, a member of the pack id, in the
 // content store, linked to ctx's lease, by joining a read of the pack in
-// progress or by reading it from provider. After each read it links the
-// blob and checks for it, whoever read it. Another import's failed read is
+// progress or by reading it from provider. Before it joins or starts a read,
+// and after each, it links the blob and checks for it, whoever read it. Another import's failed read is
 // not this one's: its next read is its own.
 func (cm *snapshotManager) downloadPackedContent(ctx context.Context, desc ocispecs.Descriptor, provider PackProvider, id digest.Digest) error {
 	own, misses := false, 0
 	for {
+		// A read of the pack another import started may have stored the
+		// blob since this download found it missing: it reads nothing then.
+		if present, err := cm.pinContent(ctx, desc); err != nil || present {
+			return err
+		}
 		f, started, err := cm.joinPackFetch(ctx, id, provider, desc.Digest, own)
 		if err != nil {
 			return err
