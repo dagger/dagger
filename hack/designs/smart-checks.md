@@ -68,35 +68,17 @@ for this first release.
 
 ## Guidelines for module developers
 
-Keep path descriptions cheap. Load source files only for selected checks.
-These guidelines use current Workspace APIs; the input contract above is a
-proposal, not a released API.
-
-1. **Keep constructors small.** Store settings and paths. Delay source reads
-   and sandbox setup until needed. Do not run checks while discovering them.
-2. **Describe paths without loading files.** If patterns are known, return
-   those patterns. Calling `workspace.directory` can copy and hash files; it is
-   not always just a lazy handle. If a manifest determines the paths, read that
-   manifest first and include it as a dependency.
-3. **Read a narrow set directly from Workspace.** Supply the root and filters
-   to `workspace.directory`. Reading `/` first and taking a subdirectory later
-   can retain broad inputs and cache keys. Keep shared configuration and source
-   dependencies in the selected set.
-4. **Separate discovery from source loading.** Find project paths from marker
-   files where possible. Expose project keys as a collection. Load each project's
-   source when that item is needed. A shared scan of all source files still
-   costs work, even when later checks are skipped.
-5. **Keep checks independent.** Avoid storing every project's source in one
-   shared receiver. Shared execution should use the selected collection keys,
-   rather than run checks for every discovered project.
-6. **Include every real input.** Include configuration, lockfiles, shared code,
-   embedded files, and test data when used. A smaller input set helps only if
-   it is complete.
-
-For markdownlint, keep one list: `**/*.md` and `**/.markdownlint*`. First compare
-changed paths with that list. If nothing matches, stop. Otherwise, use the same
-list to load files and build the sandbox. Do not load Markdown files just to
-decide whether to skip markdownlint.
+1. **Describe before reading.** Keep constructors and discovery cheap. Use one
+   path description for filtering and loading. Treat `workspace.directory` as
+   a read: it can copy and hash files. Read configuration first only when needed
+   to determine the paths.
+2. **Read only needed inputs.** Read each check's inputs directly from Workspace
+   with narrow filters. Include all dependencies, such as configuration,
+   lockfiles, shared code, and test data. Avoid giving every check all projects'
+   source files.
+3. **Run only selected checks.** Expose projects as collection items. Build
+   sandboxes and run tools after selection. Shared commands must use only the
+   selected collection keys.
 
 ## Relationship to caching
 
