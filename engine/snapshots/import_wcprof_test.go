@@ -407,3 +407,34 @@ func TestMetadataWriteProfiled(t *testing.T) {
 	require.Equal(t, "ok", writes[0].Outcome)
 	require.Equal(t, "internal", writes[0].OpKind)
 }
+
+// A chain import that waits for the snapshot manager's lock, held by
+// another, records the wait as a lock wait of its op, as the manager's
+// owner-lease calls already do.
+func TestImportChainManagerLockWaitProfiled(t *testing.T) {
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	a, _ := producer.Build(t, nil, "a.txt", "locked")
+	chain := exportChain(t, a)
+
+	ctx, root := profiledOp(context.Background(), "test.import")
+	unlock := bkcache.LockManager(consumer.Manager)
+	released := make(chan struct{})
+	go func() {
+		defer close(released)
+		time.Sleep(50 * time.Millisecond)
+		unlock()
+	}()
+	ref, err := consumer.Manager.ImportChain(ctx, &bkcache.ExportChain{Layers: chain.Layers, Provider: chain.Provider})
+	<-released
+	require.NoError(t, err)
+	require.NoError(t, ref.Release(context.Background()))
+	root.End(wcprof.OutcomeOK)
+
+	var waited time.Duration
+	for _, ev := range profiledUnder(t, root.ID()) {
+		if ev.Type == "wait" && ev.ident == "snapshots.snapshotManager.mu" && ev.ParentID == root.ID() {
+			waited += time.Duration(ev.EndNS - ev.StartNS)
+		}
+	}
+	require.GreaterOrEqual(t, waited, 20*time.Millisecond, "the import's wait for the manager's lock is recorded")
+}
