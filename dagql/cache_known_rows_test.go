@@ -205,3 +205,51 @@ func TestRecordsOnlyExportCarriesASharedRecipeInFull(t *testing.T) {
 	_, err := validateValueBundle(bundle)
 	require.NoError(t, err)
 }
+
+// A held row goes in full only for a recipe a row the bundle carries shares:
+// a row of its recipe that only a left-out root reaches doesn't count. Here
+// root a reaches the old entry, known and busy, which a held row needs no
+// copy of; root b reaches the new entry of its recipe and a busy row. b is
+// left out, and a goes with the old entry held, where carrying it in full
+// would have found it busy and left a out too.
+func TestRecordsOnlyExportHoldsARowWhoseRecipeOnlyALeftOutRootShares(t *testing.T) {
+	t.Parallel()
+	ctx, c, srv := transferTestCache(t)
+	old := persistedListTestResult(t, ctx, c, srv, "left-out-recipe", String("old"))
+	known := NewKnownRows()
+	_, rows, _ := recordsOnlyCapture(t, ctx, c, known, old)
+	known.Merged(rows)
+
+	a := persistedListTestResult(t, ctx, c, srv, "left-out-recipe-a", String("a"))
+	transferTestDependency(c, ctx, a, old)
+	currentEntryTestExpire(c, old)
+	fresh := persistedListTestResult(t, ctx, c, srv, "left-out-recipe", String("fresh"))
+	require.NotEqual(t, knownRowsTestNumber(old), knownRowsTestNumber(fresh))
+	blocker := persistedListTestResult(t, ctx, c, srv, "left-out-recipe-blocker", String("blocker"))
+	b := persistedListTestResult(t, ctx, c, srv, "left-out-recipe-b", String("b"))
+	transferTestDependency(c, ctx, b, fresh)
+	transferTestDependency(c, ctx, b, blocker)
+	for _, r := range []AnyResult{old, blocker} {
+		res := r.cacheSharedResult()
+		res.lazyMu.Lock()
+		res.lazyWhole.syncPending = true
+		res.lazyMu.Unlock()
+		defer func() {
+			res.lazyMu.Lock()
+			res.lazyWhole.syncPending = false
+			res.lazyMu.Unlock()
+		}()
+	}
+
+	var values *ExportedValues
+	require.NoError(t, c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{a, b}, Known: known}, config.RefConfig{}, func(_ context.Context, v *ExportedValues) error {
+		values = v
+		return nil
+	}))
+	require.Len(t, values.LeftOut, 1)
+	require.Equal(t, 1, values.LeftOut[0].Index, "only b is left out")
+	held, full := heldNumbers(values.Bundle)
+	require.Equal(t, map[uint64]bool{knownRowsTestNumber(old): true}, held, "the old entry goes held: no row the bundle carries shares its recipe")
+	require.Equal(t, map[uint64]bool{knownRowsTestNumber(a): true}, full)
+	require.Equal(t, []uint64{knownRowsTestNumber(old)}, values.Rows.Held)
+}
