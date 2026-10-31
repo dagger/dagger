@@ -80,7 +80,7 @@ type DaggerDev {
   goBase: Container! {
     wolfi.container(packages: [
       # FIXME: infer go version from our go.mod (ideally dagger.io/go has a utility for it)
-      "go-1.26",
+      "go-1.27",
       "ca-certificates",
       "git",
       "build-base",

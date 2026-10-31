@@ -710,7 +710,7 @@ type TuiQa {
       ])
       .file("/tmp/profile.pb.gz")
     container
-      .from("golang:1.26-alpine")
+      .from("golang:1.27-alpine")
       .withFile("/tmp/profile.pb.gz", profile)
       .withExec(["go", "tool", "pprof", "-top", "-nodecount=40", "/tmp/profile.pb.gz"])
       .stdout
