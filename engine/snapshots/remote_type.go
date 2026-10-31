@@ -116,6 +116,9 @@ type ImportTiming struct {
 	// download another import had in progress.
 	Ahead  int
 	Joined int
+	// Packed counts the layers whose blob the import got with its pack's:
+	// read, joined, or held from an earlier read.
+	Packed int
 }
 
 // add adds o to t.

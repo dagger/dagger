@@ -168,14 +168,39 @@ func (c *Cache) DropStoredParts(blob digest.Digest) ([]StoredPart, error) {
 	if !c.blobBacked {
 		return nil, errors.New("drop stored parts: the cache has no blob store")
 	}
+	return c.dropStoredParts(func(part PersistedPartOffer) bool {
+		return slices.ContainsFunc(part.Chain.Layers, func(layer snapshots.ExportLayer) bool {
+			return layer.Descriptor.Digest == blob
+		})
+	}), nil
+}
+
+// DropStoredPack removes every stored part whose layer chain names the pack,
+// on every entry, and returns them, sorted: what DropStoredParts does for a
+// blob, for a pack the blob store no longer has.
+func (c *Cache) DropStoredPack(pack digest.Digest) ([]StoredPart, error) {
+	if !c.blobBacked {
+		return nil, errors.New("drop stored pack: the cache has no blob store")
+	}
+	return c.dropStoredParts(func(part PersistedPartOffer) bool {
+		for _, named := range part.Chain.Packs {
+			if named == pack {
+				return true
+			}
+		}
+		return false
+	}), nil
+}
+
+// dropStoredParts removes every stored part that drop selects, on every
+// entry, and returns them, sorted.
+func (c *Cache) dropStoredParts(drop func(PersistedPartOffer) bool) []StoredPart {
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
 	var dropped []StoredPart
 	for id, res := range c.resultsByID {
 		for key, part := range res.storedParts {
-			if !slices.ContainsFunc(part.Chain.Layers, func(layer snapshots.ExportLayer) bool {
-				return layer.Descriptor.Digest == blob
-			}) {
+			if !drop(part) {
 				continue
 			}
 			delete(res.storedParts, key)
@@ -188,5 +213,5 @@ func (c *Cache) DropStoredParts(blob digest.Digest) ([]StoredPart, error) {
 	slices.SortFunc(dropped, func(a, b StoredPart) int {
 		return cmp.Or(cmp.Compare(a.Number, b.Number), comparePartAddresses(a.Address, b.Address))
 	})
-	return dropped, nil
+	return dropped
 }

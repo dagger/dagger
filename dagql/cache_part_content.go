@@ -152,7 +152,7 @@ func (s *PartContentSource) Provider(ctx context.Context, offer PersistedPartOff
 	if addresses == nil {
 		addresses = map[digest.Digest]BlobAddress{}
 	}
-	return &partContentProvider{
+	provider := &partContentProvider{
 		source:     s,
 		client:     &http.Client{Transport: s.roundTripper()},
 		layers:     offer.Chain.Layers,
@@ -160,7 +160,9 @@ func (s *PartContentSource) Provider(ctx context.Context, offer PersistedPartOff
 		demand:     demand,
 		addresses:  addresses,
 		renewed:    map[digest.Digest]bool{},
+		packs:      maps.Clone(offer.Chain.Packs),
 	}
+	return provider
 }
 
 type blobAddressUse uint8
@@ -210,6 +212,8 @@ type partContentProvider struct {
 	// claimed, when set, is told when a blob read through the provider starts
 	// its last request: nothing more of it is to be requested.
 	claimed func(digest.Digest)
+	// packs maps the layers stored in packs to their packs.
+	packs map[digest.Digest]digest.Digest
 
 	mu        sync.Mutex
 	addresses map[digest.Digest]BlobAddress
@@ -327,7 +331,7 @@ func (p *partContentProvider) renew(ctx context.Context, blob digest.Digest) (re
 		var chain digest.Digest
 		chain, err = renewalChainFingerprint(p.layers)
 		if err == nil {
-			addresses, err = bridge.request(ctx, RenewalRequest{Chain: chain, RenewalKey: p.renewalKey, Layers: p.layers, NeededBlob: blob, Deadline: episode.deadline})
+			addresses, err = bridge.request(ctx, RenewalRequest{Chain: chain, RenewalKey: p.renewalKey, Layers: p.layers, NeededBlob: blob, Packs: p.packs, Deadline: episode.deadline})
 		}
 		p.demand.settleRenewal(episode, addresses, err)
 	default:
@@ -646,6 +650,7 @@ func logOfferInstall(ctx context.Context, receiver AnyResult, source *PartSource
 		attribute.String(telemetryattrs.CacheOfferAheadAttr, strconv.Itoa(timing.Ahead)),
 		attribute.String(telemetryattrs.CacheOfferJoinedAttr, strconv.Itoa(timing.Joined)),
 		attribute.String(telemetryattrs.CacheOfferPrefetchedAttr, strconv.Itoa(timing.prefetched)),
+		attribute.String(telemetryattrs.CacheOfferPackedAttr, strconv.Itoa(timing.Packed)),
 	)
 }
 
@@ -789,6 +794,7 @@ func (t partInstallTiming) fields() []any {
 		"ahead", t.Ahead,
 		"joined", t.Joined,
 		"prefetched", t.prefetched,
+		"packed", t.Packed,
 	}
 }
 
