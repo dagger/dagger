@@ -400,19 +400,9 @@ func (capture *HeldCapturedClosure) copy(ctx context.Context, retireStale bool) 
 			continue
 		}
 		copied[i] = true
-		var rowStale []staleOffer
-		for _, offer := range row.offers {
-			key, err := partAddressKey(offer.Address)
-			if err != nil {
-				blockRow(row, err)
-				break
-			}
-			for _, out := range row.outputs {
-				outKey, _ := partAddressKey(out.Address)
-				if key == outKey && out.State != "pending" {
-					rowStale = append(rowStale, staleOffer{row: row.shared, address: clonePartAddress(offer.Address), transferRev: row.transferRev})
-				}
-			}
+		rowStale, err := row.staleOffers()
+		if err != nil {
+			blockRow(row, err)
 		}
 		stale = append(stale, rowStale...)
 		if !retireStale && len(rowStale) > 0 {
@@ -434,9 +424,45 @@ func (capture *HeldCapturedClosure) copy(ctx context.Context, retireStale bool) 
 		return stale, nil
 	}
 
+	capture.checkCopied(copied, blockRow)
+	// What keeps each busy row busy is read once no capture lock is held:
+	// it takes the row's lazy lock.
+	for _, row := range busy {
+		if b := capture.blocked[row.shared.id]; b.kind == "" && b.err != nil && errors.Is(b.err, ErrPersistStateNotReady) {
+			b.kind = row.shared.busyKind()
+			capture.blocked[row.shared.id] = b
+		}
+	}
+	return stale, context.Cause(ctx)
+}
+
+// staleOffers are the row's offers on outputs its copied record completed.
+func (row *capturedTransferRow) staleOffers() ([]staleOffer, error) {
+	var stale []staleOffer
+	for _, offer := range row.offers {
+		key, err := partAddressKey(offer.Address)
+		if err != nil {
+			return stale, err
+		}
+		for _, out := range row.outputs {
+			outKey, _ := partAddressKey(out.Address)
+			if key == outKey && out.State != "pending" {
+				stale = append(stale, staleOffer{row: row.shared, address: clonePartAddress(offer.Address), transferRev: row.transferRev})
+			}
+		}
+	}
+	return stale, nil
+}
+
+// checkCopied checks, under the graph lock, that each copied row still has
+// the ownership, frame and expiry the walk saw, and each kept root the
+// retention it had: blockRow blocks a row that changed, and a root whose
+// expiry changed is left out.
+func (capture *HeldCapturedClosure) checkCopied(copied []bool, blockRow func(*capturedTransferRow, error)) {
 	c := capture.cache
 	now := time.Now().Unix()
 	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
 	for i, row := range capture.order {
 		if !copied[i] {
 			continue
@@ -460,16 +486,6 @@ func (capture *HeldCapturedClosure) copy(ctx context.Context, retireStale bool) 
 			root.err = &blockedRow{row: row.shared.id, kind: BusyOther, err: fmt.Errorf("%w: root %d expiry changed", ErrPersistStateNotReady, row.shared.id)}
 		}
 	}
-	c.egraphMu.RUnlock()
-	// What keeps each busy row busy is read once no capture lock is held:
-	// it takes the row's lazy lock.
-	for _, row := range busy {
-		if b := capture.blocked[row.shared.id]; b.kind == "" && b.err != nil && errors.Is(b.err, ErrPersistStateNotReady) {
-			b.kind = row.shared.busyKind()
-			capture.blocked[row.shared.id] = b
-		}
-	}
-	return stale, context.Cause(ctx)
 }
 
 // busyKind is what keeps a row from being captured now, as its state says
@@ -814,35 +830,6 @@ func (capture *HeldCapturedClosure) settle(selection ValueSelection) ([]LeftOutR
 			mark(child)
 		}
 	}
-	// busyBelow are the busy rows a left-out root's closure reaches: the
-	// rows blocked by their own capture, with a busy kind.
-	busyBelow := func(root capturedRoot) []BusyRow {
-		var busy []BusyRow
-		visited := map[sharedResultID]bool{}
-		var visit func(sharedResultID)
-		visit = func(id sharedResultID) {
-			if visited[id] {
-				return
-			}
-			visited[id] = true
-			if b, ok := capture.blocked[id]; ok && b.row == id && b.kind != "" {
-				busy = append(busy, BusyRow{Row: uint64(id), Kind: b.kind})
-			}
-			children := capture.unheld[id]
-			if row := capture.rows[id]; row != nil {
-				children = row.children
-			}
-			for _, child := range children {
-				visit(child)
-			}
-		}
-		if root.err != nil && root.err.kind != "" {
-			busy = append(busy, BusyRow{Row: uint64(root.err.row), Kind: root.err.kind})
-		}
-		visit(root.row.id)
-		slices.SortFunc(busy, func(x, y BusyRow) int { return cmp.Compare(x.Row, y.Row) })
-		return slices.CompactFunc(busy, func(x, y BusyRow) bool { return x.Row == y.Row })
-	}
 	var kept []capturedRoot
 	for i, root := range capture.selected {
 		b := root.err
@@ -850,7 +837,7 @@ func (capture *HeldCapturedClosure) settle(selection ValueSelection) ([]LeftOutR
 			b = cause(root.row.id)
 		}
 		if b != nil {
-			leftOut = append(leftOut, LeftOutRoot{Index: i, Row: uint64(b.row), Kind: b.kind, Err: b.err, Busy: busyBelow(root)})
+			leftOut = append(leftOut, LeftOutRoot{Index: i, Row: uint64(b.row), Kind: b.kind, Err: b.err, Busy: capture.busyBelow(root)})
 			continue
 		}
 		mark(root.row.id)
@@ -876,12 +863,50 @@ func (capture *HeldCapturedClosure) settle(selection ValueSelection) ([]LeftOutR
 	for _, root := range kept {
 		capture.roots = append(capture.roots, TransferredRoot{Ordinal: rows[root.row.id].ordinal, ExpiresAtUnix: root.expiry})
 	}
+	return leftOut, capture.settleOutputs(selection, held)
+}
+
+// busyBelow are the busy rows a left-out root's closure reaches: the rows
+// blocked by their own capture, with a busy kind, by number.
+func (capture *HeldCapturedClosure) busyBelow(root capturedRoot) []BusyRow {
+	var busy []BusyRow
+	visited := map[sharedResultID]bool{}
+	var visit func(sharedResultID)
+	visit = func(id sharedResultID) {
+		if visited[id] {
+			return
+		}
+		visited[id] = true
+		if b, ok := capture.blocked[id]; ok && b.row == id && b.kind != "" {
+			busy = append(busy, BusyRow{Row: uint64(id), Kind: b.kind})
+		}
+		children := capture.unheld[id]
+		if row := capture.rows[id]; row != nil {
+			children = row.children
+		}
+		for _, child := range children {
+			visit(child)
+		}
+	}
+	if root.err != nil && root.err.kind != "" {
+		busy = append(busy, BusyRow{Row: uint64(root.err.row), Kind: root.err.kind})
+	}
+	visit(root.row.id)
+	slices.SortFunc(busy, func(x, y BusyRow) int { return cmp.Compare(x.Row, y.Row) })
+	return slices.CompactFunc(busy, func(x, y BusyRow) bool { return x.Row == y.Row })
+}
+
+// settleOutputs keeps the selected outputs on the kept roots' rows. One on a
+// row the walk held or blocked for left-out roots only is left out with
+// them; one outside the closure is left out on request, and refuses the
+// selection otherwise.
+func (capture *HeldCapturedClosure) settleOutputs(selection ValueSelection, held map[sharedResultID]*capturedTransferRow) error {
 	for _, output := range selection.Outputs {
 		if output.Result == nil || output.Result.cacheSharedResult() == nil {
-			return leftOut, fmt.Errorf("selected output lies outside captured closure")
+			return fmt.Errorf("selected output lies outside captured closure")
 		}
 		res := output.Result.cacheSharedResult()
-		if row := rows[res.id]; row != nil && row.shared == res {
+		if row := capture.rows[res.id]; row != nil && row.shared == res {
 			capture.outputs = append(capture.outputs, output)
 			continue
 		}
@@ -892,10 +917,10 @@ func (capture *HeldCapturedClosure) settle(selection ValueSelection) ([]LeftOutR
 			continue
 		}
 		if !selection.LeaveOutOutputsOutsideClosure {
-			return leftOut, fmt.Errorf("selected output lies outside captured closure")
+			return fmt.Errorf("selected output lies outside captured closure")
 		}
 	}
-	return leftOut, nil
+	return nil
 }
 
 // WithExportedValues captures the selected closure and lends it to consume.
