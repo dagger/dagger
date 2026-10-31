@@ -1,4 +1,4 @@
-# Workspace path filtering
+# Source path filtering
 
 ## Problem
 
@@ -12,7 +12,7 @@ cost preparation work and cloud launches.
 
 ## Solution
 
-Add workspace path filters to **Artifacts**, starting with checks. Accept paths
+Add source path filters to **Artifacts**, starting with checks. Accept paths
 directly or use changed paths from a diff. Use the same selection for listing
 and execution.
 
@@ -25,6 +25,8 @@ across calls and cached results. Selected checks use the existing execution
 cache.
 
 ## What a path means
+
+A **source path** is a path in the source repository that an artifact depends on.
 
 A check is affected when a requested workspace path overlaps any of its inputs.
 An input has a workspace identity, a path from its root, and include/exclude
@@ -98,7 +100,7 @@ for this first release.
 
 ## Relationship to caching
 
-Dagql asks whether it can reuse a computation. Workspace path filtering selects
+Dagql asks whether it can reuse a computation. Source path filtering selects
 artifacts by their input paths. A skipped check has no new outcome. It is not a
 cache hit or proof that the check passed.
 
