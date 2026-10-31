@@ -231,7 +231,7 @@ func (c *Cache) RunLazyTask(ctx context.Context, receiver AnyResult, key LazyGro
 	if key == LazyGroupWhole {
 		return fmt.Errorf("lazy task: synthetic task requires a named key")
 	}
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	if c.resultsByID[row.id] != row {
 		c.egraphMu.Unlock()
 		return fmt.Errorf("lazy task: unregistered receiver")
@@ -243,7 +243,7 @@ func (c *Cache) RunLazyTask(ctx context.Context, receiver AnyResult, key LazyGro
 		return err
 	}
 	if op.sessionID != "" {
-		c.egraphMu.RLock()
+		wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
 		allowed := c.sessionSatisfiesResourceRequirementsLocked(op.sessionID, row)
 		c.egraphMu.RUnlock()
 		if !allowed {

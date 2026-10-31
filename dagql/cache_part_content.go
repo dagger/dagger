@@ -1004,7 +1004,7 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 // including replacements made after this acquisition was admitted.
 func (c *Cache) settlePart(ctx context.Context, row *sharedResult, address PersistedPartAddress, ownerTask *PartTaskToken, generation uint64) error {
 	ctx = context.WithoutCancel(ctx)
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	gate := row.partGate.loadOrCreate()
 	gate.mu.Lock()
 	key, _ := partAddressKey(address)

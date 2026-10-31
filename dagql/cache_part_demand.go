@@ -122,7 +122,7 @@ func (c *Cache) evaluateAcquiredParts(ctx context.Context, res AnyResult, row *s
 	return c.evaluateAcquiredScope(ctx, res, row, nil, parts)
 }
 func (c *Cache) evaluateAcquiredScope(ctx context.Context, res AnyResult, row *sharedResult, path PersistedRefPath, parts []PartKey) (rerr error) {
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	if c.resultsByID[row.id] != row {
 		c.egraphMu.Unlock()
 		return fmt.Errorf("part demand: unregistered receiver")
@@ -261,7 +261,7 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 					if err != nil {
 						return err
 					}
-					c.egraphMu.RLock()
+					wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
 					allowed := c.sessionSatisfiesResourceRequirementsLocked(session, row)
 					c.egraphMu.RUnlock()
 					if !allowed {
@@ -627,7 +627,7 @@ func (c *Cache) logPartWithoutSource(ctx context.Context, row *sharedResult, add
 	case busy:
 		reason = "holder_busy"
 	}
-	c.egraphMu.RLock()
+	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
 	replacements, mergedAt := row.replacements, row.mergedAtUnixNano
 	c.egraphMu.RUnlock()
 	origin := "restored"
