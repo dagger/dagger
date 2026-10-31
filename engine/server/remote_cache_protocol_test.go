@@ -27,6 +27,7 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
 )
 
@@ -448,6 +449,70 @@ func TestRemoteCacheAdapterExportSkipsBusyRoots(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, 1, calls)
+}
+
+// An export captures its roots once, content or not. The roots whose
+// closure reaches a busy row, two here that share it, are skipped as busy
+// with that row's refusal; one whose record the capture refuses is skipped
+// as refused; and the others go in the bundle with only their outputs.
+// Nothing is probed.
+func TestRemoteCacheAdapterExportCapturesOnce(t *testing.T) {
+	e := newAdapterTestEngine(t)
+	busy := e.busyFile(t, "busy")
+	first, _ := e.publishFile(t, "on-busy-first", busy)
+	second, _ := e.publishFile(t, "on-busy-second", busy)
+	ready := e.file(t, "ready")
+	require.NoError(t, e.cache.Evaluate(e.ctx, ready))
+	refused := e.refusedFile(t, "refused")
+	wcprof.EnsureRecorder()
+	export := func(req protocol.Export) (remotecache.Export, map[string]int) {
+		t.Helper()
+		ctx, root := wcprof.BeginOp(wcprof.ContextWithProfiling(e.ctx), wcprof.OpKindRemoteCache, "test.export", wcprof.OpOpts{})
+		calls := 0
+		var got remotecache.Export
+		require.NoError(t, e.adapter.Export(ctx, req, func(_ context.Context, exp remotecache.Export) error {
+			calls++
+			got = exp
+			return nil
+		}))
+		root.End(wcprof.OutcomeOK)
+		require.Equal(t, 1, calls)
+		ops := map[string]int{}
+		for _, ev := range profiledUnder(t, root.ID()) {
+			if ev.Type == "op" {
+				ops[ev.class]++
+			}
+		}
+		return got, ops
+	}
+	busyMessage := fmt.Sprintf("%s: result %d whole evaluation", dagql.ErrPersistStateNotReady, entryNumber(t, busy))
+
+	exp, ops := export(protocol.Export{
+		Roots:   []uint64{entryNumber(t, first), goneNumber, entryNumber(t, refused), entryNumber(t, ready), entryNumber(t, second)},
+		Outputs: []protocol.ExportOutput{{Number: entryNumber(t, first), Address: snapshotPart}, {Number: entryNumber(t, ready), Address: snapshotPart}},
+	})
+	require.Equal(t, 1, ops["remotecache.export.capture"], "the roots are captured once")
+	require.Zero(t, ops["remotecache.export.probe"], "no root is probed")
+	require.Len(t, exp.Skipped, 4)
+	require.Equal(t, protocol.SkippedRoot{Number: goneNumber, Reason: protocol.SkipGone}, exp.Skipped[0])
+	require.Equal(t, protocol.SkippedRoot{Number: entryNumber(t, first), Reason: protocol.SkipBusy, Message: busyMessage}, exp.Skipped[1])
+	require.Equal(t, entryNumber(t, refused), exp.Skipped[2].Number)
+	require.Equal(t, protocol.SkipRefused, exp.Skipped[2].Reason)
+	require.Contains(t, exp.Skipped[2].Message, "unsupported lazy type *server.unencodableFileLazy")
+	require.Equal(t, protocol.SkippedRoot{Number: entryNumber(t, second), Reason: protocol.SkipBusy, Message: busyMessage}, exp.Skipped[3])
+	require.NotNil(t, exp.Bundle)
+	require.Equal(t, []uint64{entryNumber(t, ready)}, bundleRoots(exp.Bundle))
+	require.Len(t, exp.Bundle.Outputs, 1, "the left-out root's output is left out with it")
+	require.Equal(t, exp.Bundle.Roots[0].Ordinal, exp.Bundle.Outputs[0].Ordinal)
+
+	exp, ops = export(protocol.Export{Roots: []uint64{entryNumber(t, first), entryNumber(t, second)}})
+	require.Equal(t, 1, ops["remotecache.export.capture"], "the roots are captured once")
+	require.Zero(t, ops["remotecache.export.probe"], "no root is probed")
+	require.Nil(t, exp.Bundle)
+	require.Equal(t, []protocol.SkippedRoot{
+		{Number: entryNumber(t, first), Reason: protocol.SkipBusy, Message: busyMessage},
+		{Number: entryNumber(t, second), Reason: protocol.SkipBusy, Message: busyMessage},
+	}, exp.Skipped)
 }
 
 // requireRefused checks that skipped is the one root skipped as refused, with
