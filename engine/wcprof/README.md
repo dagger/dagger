@@ -101,7 +101,10 @@ Current hook points:
   commit's end.
 - `engine/snapshots` owner leases: `AttachLease` and `RemoveLease` record a
   lock wait on `snapshots.snapshotManager.mu` when another holder blocks the
-  manager's lock (`wcprof.Lock`).
+  manager's lock (`wcprof.Lock`), as do a chain import's index lookups, its layer reuse
+  and record, `GetBySnapshotID`, `New` and a mutable snapshot's `Commit`. An
+  install's prefetcher bookkeeping records a lock wait on
+  `dagql.partPrefetcher.mu`.
 - `dagql/cache.go runLazyEvalBody`: the bookkeeping after a lazy body, each
   step that has work an `internal` op of the lazy op's: `lazyBody.cleanup`,
   `lazyBody.ownerSync` (the owner lease sync), `lazyBody.releaseProtections`,
