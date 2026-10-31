@@ -344,7 +344,7 @@ func (c *Cache) partOfferAccepted(ctx context.Context, row *sharedResult, key st
 	// Logged outside the mutex, which retirement takes under egraphMu: a
 	// slow log writer must not stall the cache.
 	for _, job := range dropped {
-		p.log(job, "skipped_queue", 0, 0, 0, nil)
+		p.log(job, "skipped_queue", 0, 0, nil, 0, nil)
 	}
 }
 
@@ -638,10 +638,10 @@ func (p *partPrefetcher) run(ctx context.Context, job *partPrefetchJob) {
 	c.egraphMu.RUnlock()
 	switch {
 	case !current:
-		p.log(job, "offer_gone", 0, 0, time.Since(start), nil)
+		p.log(job, "offer_gone", 0, 0, nil, time.Since(start), nil)
 		return
 	case installed:
-		p.log(job, "installed", 0, 0, time.Since(start), nil)
+		p.log(job, "installed", 0, 0, nil, time.Since(start), nil)
 		return
 	}
 
@@ -657,7 +657,7 @@ func (p *partPrefetcher) run(ctx context.Context, job *partPrefetchJob) {
 	// registered under the mutex goneLocked takes, after this check.
 	if job.gone {
 		p.mu.Unlock()
-		p.log(job, "offer_gone", 0, 0, time.Since(start), nil)
+		p.log(job, "offer_gone", 0, 0, nil, time.Since(start), nil)
 		return
 	}
 	offer = job.offer
@@ -688,12 +688,12 @@ func (p *partPrefetcher) run(ctx context.Context, job *partPrefetchJob) {
 		p.checkAheadLocked(offer)
 		p.mu.Unlock()
 		if expired {
-			p.log(job, "skipped_expired", 0, 0, time.Since(start), nil)
+			p.log(job, "skipped_expired", 0, 0, nil, time.Since(start), nil)
 		}
 		return
 	case p.held+need > p.cfg.budget:
 		p.mu.Unlock()
-		p.log(job, "skipped_budget", 0, 0, time.Since(start), nil)
+		p.log(job, "skipped_budget", 0, 0, nil, time.Since(start), nil)
 		return
 	}
 	p.held += need
@@ -717,11 +717,11 @@ func (p *partPrefetcher) run(ctx context.Context, job *partPrefetchJob) {
 		}
 		p.changedLocked()
 		p.mu.Unlock()
-		p.log(job, "skipped_budget", 0, 0, time.Since(start), nil)
+		p.log(job, "skipped_budget", 0, 0, nil, time.Since(start), nil)
 		return
 	}
 
-	blobs, bytes, failure := p.fetch(ctx, job, wanted)
+	blobs, bytes, stats, failure := p.fetch(ctx, job, wanted)
 	outcome := "done"
 	if failure != nil {
 		outcome = "error"
@@ -731,7 +731,7 @@ func (p *partPrefetcher) run(ctx context.Context, job *partPrefetchJob) {
 		}
 		p.mu.Unlock()
 	}
-	p.log(job, outcome, blobs, bytes, time.Since(start), failure)
+	p.log(job, outcome, blobs, bytes, stats, time.Since(start), failure)
 }
 
 // fetch downloads job's wanted blobs, which run registered, and settles
@@ -740,9 +740,17 @@ func (p *partPrefetcher) run(ctx context.Context, job *partPrefetchJob) {
 // flight bounded by partStreams: a slow response at a blob's end leaves the
 // other streams to the next blob. The small lane downloads up to
 // smallStreams at once. After a failure, no blob starts, nor does one that
-// no offer wants any more.
-func (p *partPrefetcher) fetch(ctx context.Context, job *partPrefetchJob, wanted []ocispecs.Descriptor) (blobs int, bytes int64, failure error) {
+// no offer wants any more. stats counts the job's requests and their time to
+// first byte, as an install's do; nil for a provider that isn't HTTP's. A
+// canceled job can leave a download an install joined running on, so its
+// line can miss requests, those still awaiting headers when it was logged
+// among them: only a done job's counts are complete.
+func (p *partPrefetcher) fetch(ctx context.Context, job *partPrefetchJob, wanted []ocispecs.Descriptor) (blobs int, bytes int64, stats *partInstallStats, failure error) {
 	provider := p.cache.PartContentSource().Provider(ctx, job.record, nil)
+	if parts, ok := provider.(*partContentProvider); ok {
+		stats = &partInstallStats{}
+		parts.stats = stats
+	}
 	streams := 1
 	if job.lane == partPrefetchSmall && p.cfg.smallStreams > 1 {
 		streams = p.cfg.smallStreams
@@ -797,7 +805,7 @@ func (p *partPrefetcher) fetch(ctx context.Context, job *partPrefetchJob, wanted
 		})
 	}
 	wg.Wait()
-	return blobs, bytes, failure
+	return blobs, bytes, stats, failure
 }
 
 // wanted reports whether an offer still wants job's download of d.
@@ -1071,7 +1079,15 @@ func (p *partPrefetcher) releaseIdle(now time.Time) {
 	}
 }
 
-func (p *partPrefetcher) log(job *partPrefetchJob, outcome string, blobs int, bytes int64, duration time.Duration, err error) {
+func (p *partPrefetcher) log(job *partPrefetchJob, outcome string, blobs int, bytes int64, stats *partInstallStats, duration time.Duration, err error) {
+	// requests and ttfb are the job's content requests and their summed wait
+	// for response headers, as an install's line gives them: with bytes and
+	// the lane, the store's time to first byte by blob size.
+	var requests int64
+	var ttfb time.Duration
+	if stats != nil {
+		requests, ttfb = stats.requests.Load(), time.Duration(stats.ttfb.Load())
+	}
 	args := []any{
 		"entry", uint64(job.row),
 		"output", job.record.Address.OutputPath.String(),
@@ -1080,6 +1096,8 @@ func (p *partPrefetcher) log(job *partPrefetchJob, outcome string, blobs int, by
 		"outcome", outcome,
 		"blobs", blobs,
 		"bytes", bytes,
+		"requests", requests,
+		"ttfb", ttfb,
 		"duration", duration,
 		"lead", time.Since(job.accepted),
 	}

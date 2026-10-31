@@ -62,6 +62,8 @@ type contentTestTransport struct {
 	// rangeHolds delay each response to a request for that Range header
 	// until the channel is closed.
 	rangeHolds map[string]<-chan struct{}
+	// delay, when set, holds every response's headers that long.
+	delay time.Duration
 }
 
 func newContentTestTransport() *contentTestTransport {
@@ -119,6 +121,13 @@ func (tr *contentTestTransport) RoundTrip(req *http.Request) (*http.Response, er
 	tr.mu.Unlock()
 	if served <= fault.truncateFirst {
 		fault.truncate = true
+	}
+	if tr.delay > 0 {
+		select {
+		case <-time.After(tr.delay):
+		case <-req.Context().Done():
+			return nil, req.Context().Err()
+		}
 	}
 	for _, hold := range []<-chan struct{}{fault.hold, rangeHold} {
 		if hold == nil {
