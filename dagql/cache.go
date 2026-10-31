@@ -5391,7 +5391,9 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			if start := lazyOp.StartTime(); !start.IsZero() {
 				startOpts = append(startOpts, trace.WithTimestamp(start))
 			}
+			_, beginStep := BeginStep(evalCtx, "lazy.beginSpan")
 			lazyCallbackCtx, lazySpan, lazyIsResume = c.beginOTelLazyOp(evalCtx, shared.id, group, resultCall, storedPart, startOpts...)
+			beginStep.End(nil)
 			attempt.spanCtx = lazySpan.SpanContext()
 			RecordOpSpan(lazyOp, lazySpan)
 		}
@@ -5399,11 +5401,15 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 		shared.lazyMu.Unlock()
 
 		if spec != nil {
-			c.egraphMu.Lock()
+			_, ownStep := BeginStep(evalCtx, "lazy.ownership")
+			wcprof.WriteLock(evalCtx, &c.egraphMu, egraphLockIdent)
 			c.incrementIncomingOwnershipLocked(ctx, shared)
 			c.egraphMu.Unlock()
+			ownStep.End(nil)
 		}
+		_, spawnStep := BeginStep(evalCtx, "lazy.spawn")
 		go func() {
+			spawnStep.End(nil)
 			// Finish the cache operation (including any deferred ReleaseSession
 			// cleanup) before releasing the runtime that owns this work.
 			defer clientScopeLease.Release()
@@ -5426,10 +5432,13 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			defer c.endPartTaskBody(token, false)
 			callbackCtx, bodyDone, err := c.runLazyEvalBody(lazyCallbackCtx, shared, lazyEval, token, continuation)
 			if err == nil && spec == nil {
+				_, completeStep := BeginStep(evalCtx, "lazy.completeNative")
 				err = c.completeNativePartTask(callbackCtx, installationToken)
+				completeStep.End(err)
 			}
 
-			shared.lazyMu.Lock()
+			_, retireStep := BeginStep(evalCtx, "lazy.retire")
+			wcprof.Lock(evalCtx, &shared.lazyMu, "dagql.sharedResult.lazyMu")
 			attempt.err = err
 			abandoned = err != nil && lazyEvalErrorCausedByContext(attemptCtx, err)
 			attempt.retry = abandoned
@@ -5473,6 +5482,7 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 				partial = lazyPartsEvaluationPartialLocked(shared, res)
 			}
 			shared.lazyMu.Unlock()
+			retireStep.End(nil)
 			logProducerRemovedOutcome(attemptCtx, "lazy evaluation", fmt.Sprintf("%d/%s", shared.id, group), err)
 
 			// End lazySpan after retiring the attempt but before closing done. The
@@ -5486,10 +5496,18 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 				var attrs []attribute.KeyValue
 				var cacheState lazySpanCacheState
 				if lazySpan.IsRecording() {
-					attrs = AppendContentPreferredDigestAttr(lazyCallbackCtx, attrs, frame, res)
-					cacheState = c.lazySpanCacheState(context.WithoutCancel(lazyCallbackCtx), shared, frame)
+					if frame != nil {
+						_, digestStep := BeginStep(evalCtx, "lazy.contentDigest")
+						attrs = AppendContentPreferredDigestAttr(lazyCallbackCtx, attrs, frame, res)
+						digestStep.End(nil)
+					}
+					stateCtx, stateStep := BeginStep(lazyCallbackCtx, "lazy.cacheState")
+					cacheState = c.lazySpanCacheState(context.WithoutCancel(stateCtx), shared, frame)
+					stateStep.End(nil)
 				}
+				_, endStep := BeginStep(evalCtx, "lazy.endSpan")
 				endOTelLazyOp(lazySpan, attrs, lazyIsResume, shared.id, partial, abandoned, storedPart, cacheState, &err)
+				endStep.End(nil)
 			}
 			if c.testAfterLazyEvalFinish != nil {
 				c.testAfterLazyEvalFinish(attempt)
@@ -5537,7 +5555,9 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 // error in the attempt is cache-side bookkeeping, which stays retryable), and
 // the first error.
 func (c *Cache) runLazyEvalBody(callbackCtx context.Context, shared *sharedResult, lazyEval func(context.Context) error, token *PartTaskToken, continuation *lazyTaskContinuation) (context.Context, bool, error) {
+	_, leaseStep := BeginStep(callbackCtx, "lazy.operationLease")
 	leaseCtx, release, leaseErr := withOperationLease(withoutOperationLease(callbackCtx))
+	leaseStep.End(leaseErr)
 	if leaseErr != nil {
 		return callbackCtx, false, fmt.Errorf("acquire operation lease: %w", leaseErr)
 	}

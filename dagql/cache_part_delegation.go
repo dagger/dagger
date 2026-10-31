@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+
+	"github.com/dagger/dagger/engine/wcprof"
 )
 
 // The active path is per demand, independent of exhaustion and task lifetime.
@@ -123,7 +125,7 @@ func (c *Cache) selectDemandPartSource(ctx context.Context, receiver AnyResult, 
 	if mapping == nil || mapping.ParentResultID != route.Delegation.ParentResultID || !containsPart([]PersistedPartAddress{mapping.Address}, route.Delegation.Address) {
 		return nil, nil, partRefused("delegation: mapping changed")
 	}
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	parent := c.resultsByID[sharedResultID(mapping.ParentResultID)]
 	_, direct := row.deps[sharedResultID(mapping.ParentResultID)]
 	if c.resultsByID[row.id] != row || parent == nil || parent == row || !direct {
@@ -163,7 +165,7 @@ func (c *Cache) selectDemandPartSource(ctx context.Context, receiver AnyResult, 
 	if probe != nil {
 		hold.descriptor = probe.Descriptor
 	}
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	valid := proof.currentLocked(c, hold, row) && c.partFactsLocked(parent) == facts
 	if valid && ready {
 		hold.descriptor.DependencyIDs = append(hold.descriptor.DependencyIDs, c.partResourceLeavesLocked(parent)...)
@@ -213,7 +215,7 @@ func (c *Cache) demandDelegatedParent(ctx context.Context, pending *PartSourceLe
 	if err != nil {
 		return err
 	}
-	c.egraphMu.RLock()
+	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
 	allowed := proof.currentLocked(c, pending, proof.child)
 	c.egraphMu.RUnlock()
 	if !allowed {
