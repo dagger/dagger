@@ -206,7 +206,7 @@ func restoreAgent(ctx context.Context, t *testctx.T, c *dagger.Client, db *dagui
 	snapshotID, err := callID.Encode()
 	require.NoError(t, err)
 
-	h, err := rehydrateAgentWithParent(ctx, c, snapshotID, entry.ID, entry.Name, entry.State, entry.Error, entry.ParentAgentID)
+	h, err := rehydrateAgentWithParent(ctx, t, c, snapshotID, entry.ID, entry.Name, entry.State, entry.Error, entry.ParentAgentID)
 	require.NoError(t, err, "re-hydrating agent %q", entry.Name)
 	return h
 }

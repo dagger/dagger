@@ -678,7 +678,7 @@ impl Agent {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The agent that spawned this agent, or null for a root agent.
+    /// The agent this agent was spawned under (by it, during its composition, or by code it ran), or null for a root agent.
     pub async fn parent(&self) -> Result<Option<Agent>, DaggerError> {
         let query = self.selection.select("parent");
         let query = query.select("id");

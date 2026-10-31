@@ -38,7 +38,7 @@ func (s agentSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("parent", s.parent).
 			DoNotCache("Projects lineage from the current session's runtime registry.").
 			Experimental("Agent APIs are likely to change.").
-			Doc("The agent that spawned this agent, or null for a root agent."),
+			Doc("The agent this agent was spawned under (by it, during its composition, or by code it ran), or null for a root agent."),
 		dagql.Func("name", s.name).
 			Experimental("Agent APIs are likely to change.").
 			Doc(`Display label for the agent; carries no identity.`),

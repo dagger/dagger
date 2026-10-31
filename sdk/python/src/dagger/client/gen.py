@@ -1145,7 +1145,8 @@ class Agent(Type):
         return await self._ctx.execute_sync(self, "notify", _args)
 
     async def parent(self) -> "Agent | None":
-        """The agent that spawned this agent, or null for a root agent.
+        """The agent this agent was spawned under (by it, during its composition,
+        or by code it ran), or null for a root agent.
 
         .. caution::
             Experimental: Agent APIs are likely to change.

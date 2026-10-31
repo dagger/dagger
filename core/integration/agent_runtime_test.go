@@ -175,6 +175,34 @@ func spawnAgent(ctx context.Context, t *testctx.T, c *dagger.Client, opts spawnO
 	t.Helper()
 	id, err := trySpawnAgent(ctx, c, opts)
 	require.NoError(t, err)
+	return ownedAgent(ctx, t, c, id)
+}
+
+// ownedAgent wraps an agent the test created — by spawn or by restore — and
+// kills it when the test ends. Agents are session-scoped: closing the client
+// that spawned them does not stop them, only session teardown does. When the
+// tests run nested in a long-lived session (a go test exec connecting back
+// to the engine it runs on), every agent left running would otherwise keep
+// its loop and the test client's runtime alive until that outer session
+// ends. The cleanup is registered after connect's, so it runs while the
+// client is still open. Stopping is idempotent on tombstones, so tests that
+// stop their agents themselves are unaffected; a failed stop (the test
+// closed the client itself, or its session already ended) is only logged.
+func ownedAgent(ctx context.Context, t testing.TB, c *dagger.Client, id string) *agentHandle {
+	if id == "" {
+		return &agentHandle{c: c}
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		res := map[string]any{}
+		if err := c.Do(ctx, &dagger.Request{
+			Query:     `query($id: ID!) { node(id: $id) { ... on Agent { stop(kill: true) } } }`,
+			Variables: map[string]any{"id": id},
+		}, &dagger.Response{Data: &res}); err != nil {
+			t.Logf("stop agent at test cleanup: %v", err)
+		}
+	})
 	return &agentHandle{c: c, agentID: id}
 }
 
@@ -378,13 +406,14 @@ func llmWithPrompt(ctx context.Context, t *testctx.T, c *dagger.Client, model, p
 
 // rehydrateAgent runs the restore chain of design §3.2 —
 // node(id: <snapshot>) { ... on LLM { spawn(handle:, name:, state:, error:) } }
-// — and returns a handle on the restored instance. Error-returning, because
-// half the point of a restore is which calls it refuses.
-func rehydrateAgent(ctx context.Context, c *dagger.Client, llmID, handle, name, state, errText string) (*agentHandle, error) {
-	return rehydrateAgentWithParent(ctx, c, llmID, handle, name, state, errText, "")
+// — and returns a handle on the restored instance, killed at test cleanup like
+// a spawned one (see ownedAgent). Error-returning, because half the point of a
+// restore is which calls it refuses.
+func rehydrateAgent(ctx context.Context, t testing.TB, c *dagger.Client, llmID, handle, name, state, errText string) (*agentHandle, error) {
+	return rehydrateAgentWithParent(ctx, t, c, llmID, handle, name, state, errText, "")
 }
 
-func rehydrateAgentWithParent(ctx context.Context, c *dagger.Client, llmID, handle, name, state, errText, parent string) (*agentHandle, error) {
+func rehydrateAgentWithParent(ctx context.Context, t testing.TB, c *dagger.Client, llmID, handle, name, state, errText, parent string) (*agentHandle, error) {
 	res := map[string]any{}
 	if err := c.Do(ctx,
 		&dagger.Request{
@@ -414,7 +443,7 @@ func rehydrateAgentWithParent(ctx context.Context, c *dagger.Client, llmID, hand
 	if !out.Exists() || out.String() == "" {
 		return nil, fmt.Errorf("restored agent ID missing in response: %s", raw)
 	}
-	return &agentHandle{c: c, agentID: out.String()}, nil
+	return ownedAgent(ctx, t, c, out.String()), nil
 }
 
 // reseedAgent runs the continuity verb — node(id:) { ... on Agent {
@@ -527,12 +556,18 @@ func (AgentRuntimeSuite) TestLifecycle(ctx context.Context, t *testctx.T) {
 	named, err := sdkcore.NewQuery(c).LLM(sdkcore.LLMOpts{Model: emptyReplayModel}).
 		Spawn(ctx, sdkcore.LLMSpawnOpts{Name: "bob"})
 	require.NoError(t, err)
+	namedID, err := named.ID(ctx)
+	require.NoError(t, err)
+	ownedAgent(ctx, t, c, string(namedID))
 	name, err := named.Name(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "bob", name)
 
 	derivedAgent, err := sdkcore.NewQuery(c).LLM(sdkcore.LLMOpts{Model: emptyReplayModel}).Spawn(ctx)
 	require.NoError(t, err)
+	derivedID, err := derivedAgent.ID(ctx)
+	require.NoError(t, err)
+	ownedAgent(ctx, t, c, string(derivedID))
 	derived, err := derivedAgent.Name(ctx)
 	require.NoError(t, err)
 	require.True(t, strings.HasPrefix(derived, "agent-"), "derived name %q", derived)
@@ -597,7 +632,7 @@ func (AgentRuntimeSuite) TestResumeStepsPendingSeed(ctx context.Context, t *test
 	require.NoError(t, err)
 	id, err := agent.ID(ctx)
 	require.NoError(t, err)
-	h := &agentHandle{c: c, agentID: string(id)}
+	h := ownedAgent(ctx, t, c, string(id))
 	require.Equal(t, "IDLE", h.state(ctx, t), "spawn alone never starts the loop")
 
 	h.mustRun(ctx, t, "resume")
@@ -743,6 +778,26 @@ func (AgentRuntimeSuite) TestSpawnInstances(ctx context.Context, t *testctx.T) {
 	require.Contains(t, secondTranscript, slowToolPrompt)
 }
 
+// TestOwnedAgentStopsAtCleanup pins the test hygiene every spawn helper relies
+// on (ownedAgent): an agent a test created is killed when that test ends, while
+// its client is still open, instead of idling until session teardown. Nested
+// in a long-lived session, that teardown may be hours away.
+func (AgentRuntimeSuite) TestOwnedAgentStopsAtCleanup(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	id, err := trySpawnAgent(ctx, c, spawnOpts{model: emptyReplayModel, name: "owned"})
+	require.NoError(t, err)
+	var h *agentHandle
+	// A plain, non-parallel subtest: its cleanups have run when Run returns.
+	t.Unwrap().Run("owner", func(st *testing.T) {
+		h = ownedAgent(ctx, st, c, id)
+		// A live loop, idling in receive: what a leaked agent holds.
+		state, err := h.verb(ctx, t, "resume")
+		require.NoError(st, err)
+		require.Equal(st, "IDLE", state)
+	})
+	require.Equal(t, "STOPPED", h.state(ctx, t), "the owning test's cleanup must stop the agent")
+}
+
 // TestSpawnAfterStop covers both ways forward from a stopped instance: a new
 // spawn still mints an independent successor, while sending through the held
 // predecessor handle relaunches that same instance from its preserved history.
@@ -873,7 +928,7 @@ func (AgentRuntimeSuite) TestSeed(ctx context.Context, t *testctx.T) {
 	// A restored instance's seed is the conversation the restore adopted:
 	// its earlier history belongs to the session that published it.
 	restored := "restored history " + rand.Text()
-	r, err := rehydrateAgent(ctx, c, llmWithPrompt(ctx, t, c, emptyReplayModel, restored), rand.Text(), "restored", "IDLE", "")
+	r, err := rehydrateAgent(ctx, t, c, llmWithPrompt(ctx, t, c, emptyReplayModel, restored), rand.Text(), "restored", "IDLE", "")
 	require.NoError(t, err)
 	require.Contains(t, r.mustRun(ctx, t, `seed { transcript }`).Get("seed.transcript").String(), restored)
 }
@@ -1225,6 +1280,9 @@ func (AgentRuntimeSuite) TestSendContent(ctx context.Context, t *testctx.T) {
 				model := agentContentRecordingModel(ctx, t, c, expected)
 				agent, err := sdkcore.NewQuery(c).LLM(sdkcore.LLMOpts{Model: model}).Spawn(ctx)
 				require.NoError(t, err)
+				agentID, err := agent.ID(ctx)
+				require.NoError(t, err)
+				ownedAgent(ctx, t, c, string(agentID))
 				if paused {
 					_, err = agent.Pause(ctx)
 					require.NoError(t, err)
@@ -2631,7 +2689,7 @@ func (AgentRuntimeSuite) TestRehydrateAdoptsConversation(ctx context.Context, t 
 	snapshot := llmWithPrompt(ctx, t, c, emptyReplayModel, restored)
 	handle := rand.Text()
 
-	h, err := rehydrateAgent(ctx, c, snapshot, handle, "restored", "IDLE", "")
+	h, err := rehydrateAgent(ctx, t, c, snapshot, handle, "restored", "IDLE", "")
 	require.NoError(t, err)
 
 	// The entry exists, holds the adopted conversation, and its loop was
@@ -2647,7 +2705,7 @@ func (AgentRuntimeSuite) TestRehydrateAdoptsConversation(ctx context.Context, t 
 	// time a second restore arrives the instance may already have stepped,
 	// and the late call would discard whatever it built. This is also the
 	// guard that makes an out-of-order restore loud (§5.3's ordering).
-	_, err = rehydrateAgent(ctx, c, snapshot, handle, "restored", "IDLE", "")
+	_, err = rehydrateAgent(ctx, t, c, snapshot, handle, "restored", "IDLE", "")
 	require.ErrorContains(t, err, "already has a runtime entry")
 
 	// Prompting continues that conversation. The empty recording fails the
@@ -2679,7 +2737,7 @@ func (AgentRuntimeSuite) TestRehydrateStates(ctx context.Context, t *testctx.T) 
 	}
 
 	t.Run("paused queues mail behind the pause", func(ctx context.Context, t *testctx.T) {
-		h, err := rehydrateAgent(ctx, c, newSnapshot(t), rand.Text(), "parked", "PAUSED", "")
+		h, err := rehydrateAgent(ctx, t, c, newSnapshot(t), rand.Text(), "parked", "PAUSED", "")
 		require.NoError(t, err)
 		require.Equal(t, "PAUSED", h.state(ctx, t))
 
@@ -2690,7 +2748,7 @@ func (AgentRuntimeSuite) TestRehydrateStates(ctx context.Context, t *testctx.T) 
 
 	t.Run("failed preserves the error a resume retries past", func(ctx context.Context, t *testctx.T) {
 		loopErr := "provider refused the request " + rand.Text()
-		h, err := rehydrateAgent(ctx, c, newSnapshot(t), rand.Text(), "broken", "FAILED", loopErr)
+		h, err := rehydrateAgent(ctx, t, c, newSnapshot(t), rand.Text(), "broken", "FAILED", loopErr)
 		require.NoError(t, err)
 		require.Equal(t, "FAILED", h.state(ctx, t))
 
@@ -2704,7 +2762,7 @@ func (AgentRuntimeSuite) TestRehydrateStates(ctx context.Context, t *testctx.T) 
 
 	t.Run("stopped preserves a restartable snapshot", func(ctx context.Context, t *testctx.T) {
 		snapshot := newSnapshot(t)
-		h, err := rehydrateAgent(ctx, c, snapshot, rand.Text(), "dismissed", "STOPPED", "")
+		h, err := rehydrateAgent(ctx, t, c, snapshot, rand.Text(), "dismissed", "STOPPED", "")
 		require.NoError(t, err)
 		require.Equal(t, "STOPPED", h.state(ctx, t))
 
@@ -2725,12 +2783,12 @@ func (AgentRuntimeSuite) TestRehydrateStates(ctx context.Context, t *testctx.T) 
 		// and a roster redisplaying it as running would be lying. The client
 		// maps it to IDLE with the interrupted turn's input still pending;
 		// the engine refuses to be told otherwise.
-		_, err := rehydrateAgent(ctx, c, newSnapshot(t), rand.Text(), "zombie", "RUNNING", "")
+		_, err := rehydrateAgent(ctx, t, c, newSnapshot(t), rand.Text(), "zombie", "RUNNING", "")
 		require.ErrorContains(t, err, "cannot be spawned as RUNNING")
 	})
 
 	t.Run("an error without FAILED is refused", func(ctx context.Context, t *testctx.T) {
-		_, err := rehydrateAgent(ctx, c, newSnapshot(t), rand.Text(), "confused", "IDLE", "boom")
+		_, err := rehydrateAgent(ctx, t, c, newSnapshot(t), rand.Text(), "confused", "IDLE", "boom")
 		require.ErrorContains(t, err, "only be spawned with state FAILED")
 	})
 }
@@ -2805,7 +2863,7 @@ func (AgentRuntimeSuite) TestRuntimeVerbsRequireRuntime(ctx context.Context, t *
 
 			// The failed verb did not leave a ghost entry behind: the explicit
 			// restore constructor can still adopt this handle.
-			_, err = rehydrateAgent(ctx, c, string(snapshot), handle, "ghost-"+name, "IDLE", "")
+			_, err = rehydrateAgent(ctx, t, c, string(snapshot), handle, "ghost-"+name, "IDLE", "")
 			require.NoError(t, err)
 		})
 	}
@@ -2833,7 +2891,7 @@ func (AgentRuntimeSuite) TestRehydratePublishesIdentity(ctx context.Context, t *
 	snapshot := llmWithPrompt(ctx, t, c, emptyReplayModel, restored)
 	handle := rand.Text()
 
-	_, err := rehydrateAgent(ctx, c, snapshot, handle, "restored", "IDLE", "")
+	_, err := rehydrateAgent(ctx, t, c, snapshot, handle, "restored", "IDLE", "")
 	require.NoError(t, err)
 
 	// The restored agent is on the roster without ever having been started:

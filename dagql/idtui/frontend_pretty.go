@@ -194,13 +194,18 @@ type frontendPretty struct {
 	focusInFlight bool
 	// agentRosterState is what the strip last rendered, so the trace can push
 	// updates into it without re-rendering every frame.
-	agentRosterState []AgentRosterEntry
+	agentRosterState AgentRosterView
 	// agentRosterInputs is what agentRosterState was built from. The roster
 	// is pushed on every span and log batch, and rebuilding it per batch
 	// just to find it unchanged was most of the UI loop's time (and nearly
 	// all of its garbage) once a session held many agents; while these
 	// match, the entries cannot have changed and the rebuild is skipped.
 	agentRosterInputs agentRosterInputs
+	// agentRosterMemo is the roster model as of agentRosterMemoInputs: the
+	// strip reads it several times per render, and every roster key reads it
+	// too, so it is only rebuilt when an input changes.
+	agentRosterMemo       *agentRosterModel
+	agentRosterMemoInputs agentRosterInputs
 	// lastRosterFocus is the focused agent as of the last roster update, so a
 	// change of FOCUS can invalidate the view without the state flags -- which
 	// also feed the roster above, and change far more often -- doing so too.
@@ -1584,7 +1589,7 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 	// output → error → queued → prompt → statusLine (with agent roster) → keymap
 	fe.promptErrLabel = NewErrorLabel()
 	fe.queuedMsgLabel = NewQueuedMessageLabel(fe.profile)
-	fe.agentRoster = NewAgentRoster(fe.profile, fe.agentRosterEntries)
+	fe.agentRoster = NewAgentRoster(fe.profile, fe.agentRosterView)
 	// The focused agent's tab takes the prompt card's shade and border, so it
 	// reads as part of the prompt addressing that agent -- only while the card
 	// itself is shaded (prompt mode), not beneath a bare shell input.
@@ -4820,36 +4825,78 @@ func (fe *frontendPretty) reportServices() []*dagui.ServiceNode {
 	return fe.db.SurfacedServicesForSpan(fe.surfaceRoot())
 }
 
-// agentRosterEntries sources the roster strip from the session's published
-// agents. Unlike the surfaced views above it is NOT relative to the zoom
-// root: the roster answers "who is in this session", a question the current
-// zoom has no bearing on — and an agent spawned deep inside a module call is
-// exactly the one worth surfacing.
+// agentRosterEntries is the roster strip's tabs: the agents it shows, in the
+// order jump numbers address them. See buildAgentRosterModel for which those
+// are.
 func (fe *frontendPretty) agentRosterEntries() []AgentRosterEntry {
-	if fe.db == nil {
-		return nil
+	return fe.agentRosterView().Tabs
+}
+
+// agentRosterView is what the roster strip shows.
+func (fe *frontendPretty) agentRosterView() AgentRosterView {
+	return fe.rosterModel().view
+}
+
+// agentRosterOrder is every agent on the roster, tabs or not, in tree order:
+// what [/] walks, and where an agent named by ID is looked up.
+func (fe *frontendPretty) agentRosterOrder() []AgentRosterEntry {
+	return fe.rosterModel().order
+}
+
+// rosterModel sources the roster from the session's published agents. Unlike
+// the surfaced views above it is NOT relative to the zoom root: the roster
+// answers "who is in this session", a question the current zoom has no
+// bearing on — and an agent spawned deep inside a module call is exactly the
+// one worth surfacing. It is relative to FOCUS instead (see
+// buildAgentRosterModel).
+//
+// The strip reads it several times per render, so it is memoized on
+// everything it is built from.
+func (fe *frontendPretty) rosterModel() *agentRosterModel {
+	inputs := fe.currentAgentRosterInputs()
+	if fe.agentRosterMemo != nil && inputs.same(fe.agentRosterMemoInputs) {
+		return fe.agentRosterMemo
 	}
-	focused := fe.focusedAgentID()
-	agents := fe.db.Agents()
-	entries := make([]AgentRosterEntry, 0, len(agents))
-	for _, agent := range agents {
+	// Tabs stay put while focus does: whatever had one under this focus
+	// keeps it if it stops, and folds when focus next moves.
+	var keep map[string]bool
+	if prev := fe.agentRosterMemo; prev != nil && fe.agentRosterMemoInputs.focused == inputs.focused {
+		keep = make(map[string]bool, len(prev.view.Tabs))
+		for _, tab := range prev.view.Tabs {
+			keep[tab.ID] = true
+		}
+	}
+	model := buildAgentRosterModel(inputs.agents, inputs.focused, keep, func(agent *dagui.AgentNode) AgentRosterEntry {
 		name := agent.Name
 		if name == "" {
 			name = "agent"
 		}
-		entries = append(entries, AgentRosterEntry{
-			ID:      agent.ID,
-			Name:    name,
-			State:   agent.State,
-			Focused: agent.ID != "" && agent.ID == focused,
+		return AgentRosterEntry{
+			ID:    agent.ID,
+			Name:  name,
+			State: agent.State,
 			// An agent whose loop span carries no call digest was never
 			// addressable, and one whose handle failed to rebuild has been
 			// proven not to be. Either way the entry is watch-only, and says
 			// so rather than pretending it can be spoken to.
 			ReadOnly: agent.CallDigest == "" || fe.unaddressableAgents[agent.ID],
-		})
+		}
+	})
+	fe.agentRosterMemo, fe.agentRosterMemoInputs = &model, inputs
+	return fe.agentRosterMemo
+}
+
+// currentAgentRosterInputs is what the roster would be built from now.
+func (fe *frontendPretty) currentAgentRosterInputs() agentRosterInputs {
+	inputs := agentRosterInputs{
+		init:          true,
+		focused:       fe.focusedAgentID(),
+		unaddressable: fe.unaddressableGen,
 	}
-	return entries
+	if fe.db != nil {
+		inputs.agents = fe.db.Agents()
+	}
+	return inputs
 }
 
 // targetAgentID is the runtime handle of the agent the prompt addresses, as
@@ -4899,12 +4946,13 @@ func (fe *frontendPretty) focusAgentIndex(n int) bool {
 // last-window, because the two-agent ping-pong is the common case and a
 // next/prev cycle is the wrong verb for it. (Nav mode does bind a cycle as
 // well; see cycleAgent for why that does not make this key redundant.)
+// The previous agent need not have a tab: focusing it gives it one.
 // Returns focusAgent's (claimed, moved) pair.
 func (fe *frontendPretty) focusLastAgent() (claimed, moved bool) {
 	if fe.lastFocusedAgent == "" {
 		return false, false
 	}
-	for _, entry := range fe.agentRosterEntries() {
+	for _, entry := range fe.agentRosterOrder() {
 		if entry.ID == fe.lastFocusedAgent {
 			return fe.focusAgent(entry)
 		}
@@ -4912,8 +4960,9 @@ func (fe *frontendPretty) focusLastAgent() (claimed, moved bool) {
 	return false, false
 }
 
-// navRosterEntries returns entries only when the roster can switch focus.
-// The single-agent roster stays visible as state but must not claim nav keys.
+// navRosterEntries returns the strip's tabs only when the roster can switch
+// focus. The single-agent roster stays visible as state but must not claim
+// nav keys.
 func (fe *frontendPretty) navRosterEntries() []AgentRosterEntry {
 	if fe.agentRoster == nil || !fe.agentRoster.Switchable() {
 		return nil
@@ -4921,13 +4970,22 @@ func (fe *frontendPretty) navRosterEntries() []AgentRosterEntry {
 	return fe.agentRoster.Entries()
 }
 
-// addressableAgentCount is how many roster entries focus can actually move
-// between. An entry the client holds no handle for can be watched but not
-// spoken to, so it is not a cycle target; the count is what tells the help
-// line whether [/] has anywhere to go.
+// navRosterOrder is navRosterEntries for the cycle: every agent, tabs or
+// not, in tree order.
+func (fe *frontendPretty) navRosterOrder() []AgentRosterEntry {
+	if fe.agentRoster == nil || !fe.agentRoster.Switchable() {
+		return nil
+	}
+	return fe.agentRosterOrder()
+}
+
+// addressableAgentCount is how many agents focus can actually move between.
+// An entry the client holds no handle for can be watched but not spoken to,
+// so it is not a cycle target; the count is what tells the help line whether
+// [/] has anywhere to go.
 func (fe *frontendPretty) addressableAgentCount() int {
 	var n int
-	for _, entry := range fe.navRosterEntries() {
+	for _, entry := range fe.navRosterOrder() {
 		if entry.ID != "" && !entry.ReadOnly {
 			n++
 		}
@@ -4981,9 +5039,15 @@ func (fe *frontendPretty) navFocusAgent(n int) bool {
 // an agent the user never asked for -- once per press, all the way along. An
 // entry is only PROVEN unaddressable by a rebuild that failed, so the cycle
 // can still walk onto one the first time and report it; from then on the
-// strip has it marked and the cycle passes it by.
+// strip has it marked and the cycle passes it by -- until the payloads it
+// was missing arrive and its handle rebuilds, when the cycle takes it again.
+// That matters for a STOPPED agent the strip has folded: with no tab there is
+// no number to retry it by, so the cycle is the way back to it.
 func (fe *frontendPretty) cycleAgent(delta int) bool {
-	entries := fe.navRosterEntries()
+	// The whole roster in tree order, not just the strip's tabs: the strip
+	// shows only the neighborhood of focus, and the cycle is how the rest is
+	// reached -- landing on an agent focuses it, which gives it a tab.
+	entries := fe.navRosterOrder()
 	n := len(entries)
 	if n == 0 {
 		return false
@@ -5006,7 +5070,7 @@ func (fe *frontendPretty) cycleAgent(delta int) bool {
 	}
 	for i := 1; i <= n; i++ {
 		entry := entries[((start+i*delta)%n+n)%n]
-		if entry.Focused || entry.ReadOnly || entry.ID == "" {
+		if entry.Focused || entry.ID == "" || (entry.ReadOnly && !fe.agentRebuilds(entry.ID)) {
 			continue
 		}
 		// Nothing left for focusAgent to refuse but a handler that cannot
@@ -5185,7 +5249,7 @@ func (fe *frontendPretty) settleFocus(requested string) {
 		fe.pendingFocusAgent = ""
 		return
 	}
-	for _, entry := range fe.agentRosterEntries() {
+	for _, entry := range fe.agentRosterOrder() {
 		if entry.ID != fe.pendingFocusAgent {
 			continue
 		}
@@ -5204,6 +5268,21 @@ func (fe *frontendPretty) settleFocus(requested string) {
 	}
 	// The agent left the roster while the request was out.
 	fe.pendingFocusAgent = ""
+}
+
+// agentRebuilds reports whether an agent marked unaddressable by a failed
+// rebuild would rebuild now: its handle's payloads may have arrived since.
+// An agent with no call digest never does.
+func (fe *frontendPretty) agentRebuilds(agentID string) bool {
+	if !fe.unaddressableAgents[agentID] {
+		return false
+	}
+	digest := fe.agentCallDigest(agentID)
+	if digest == "" {
+		return false
+	}
+	_, err := encodedIDForCallDigest(fe.db, digest)
+	return err == nil
 }
 
 // agentCallDigest is the digest the engine advertised for an agent's value.
@@ -5336,25 +5415,20 @@ func (fe *frontendPretty) updateAgentRoster() {
 		}
 	}
 	// This runs on every span and log batch, almost always with nothing new
-	// for the strip: skip the rebuild unless something agentRosterEntries
+	// for the strip: skip the rebuild unless something the roster model
 	// reads has changed.
-	inputs := agentRosterInputs{
-		init:          true,
-		focused:       focused,
-		unaddressable: fe.unaddressableGen,
-	}
-	if fe.db != nil {
-		inputs.agents = fe.db.Agents()
-	}
+	inputs := fe.currentAgentRosterInputs()
 	if inputs.same(fe.agentRosterInputs) {
 		return
 	}
 	fe.agentRosterInputs = inputs
-	entries := fe.agentRosterEntries()
-	if slices.Equal(entries, fe.agentRosterState) {
+	view := fe.agentRosterView()
+	if view.Done == fe.agentRosterState.Done &&
+		view.Total == fe.agentRosterState.Total &&
+		slices.Equal(view.Tabs, fe.agentRosterState.Tabs) {
 		return
 	}
-	fe.agentRosterState = entries
+	fe.agentRosterState = view
 	if fe.statusLine != nil {
 		fe.statusLine.Update()
 	}
@@ -5363,7 +5437,7 @@ func (fe *frontendPretty) updateAgentRoster() {
 	}
 }
 
-// agentRosterInputs is everything agentRosterEntries reads: the published
+// agentRosterInputs is everything the roster model reads: the published
 // agents, the focused agent, and the read-only marks.
 type agentRosterInputs struct {
 	init bool
