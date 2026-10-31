@@ -120,6 +120,42 @@ func TestPackedDownloadAfterSiblingReadReadsNothing(t *testing.T) {
 	require.Zero(t, later.opens.Load(), "the sibling's read stored the blob")
 }
 
+// A download of a packed blob whose sibling's read of the pack ends after
+// the download found the blob missing, but before it looks for a read to
+// join, reads nothing: the sibling's read stored the blob.
+func TestPackedDownloadOverlappingSiblingReadReadsNothing(t *testing.T) {
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	a, _ := producer.Build(t, nil, "a.txt", "first")
+	b, _ := producer.Build(t, nil, "b.txt", "second")
+	chainA, chainB := exportChain(t, a), exportChain(t, b)
+	sibling := newPackProvider(t, chainA.Provider, chainA.Layers[0].Descriptor, chainB.Layers[0].Descriptor)
+	sibling.gate = make(chan struct{})
+	later := newPackProvider(t, chainA.Provider, chainA.Layers[0].Descriptor, chainB.Layers[0].Descriptor)
+
+	// The sibling's import holds its read open; the download finds its blob
+	// missing, and is held as it looks for a read to join until the
+	// sibling's read has ended.
+	imported := make(chan struct{})
+	go func() {
+		defer close(imported)
+		importChain(t, consumer, supplied(chainA, sibling))
+	}()
+	require.Eventually(t, func() bool { return sibling.opens.Load() == 1 }, 10*time.Second, time.Millisecond)
+	held := make(chan struct{})
+	restore := bkcache.SetBeforeJoinPackFetch(func() {
+		select {
+		case <-held:
+		default:
+			close(held)
+			close(sibling.gate)
+			<-imported
+		}
+	})
+	t.Cleanup(restore)
+	require.NoError(t, bkcache.DownloadChainContent(t.Context(), consumer.Manager, chainB.Layers[0].Descriptor, later))
+	require.Zero(t, later.opens.Load(), "the sibling's read stored the blob")
+}
+
 // Two imports that need members of the same pack at once read it once.
 func TestImportChainsJoinPack(t *testing.T) {
 	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
