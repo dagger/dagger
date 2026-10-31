@@ -900,7 +900,7 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 		logOfferInstallFailed(ctx, receiver, source, rerr, outcome, level, downloaded.read.Load(), now.Sub(start), timing, !committing.IsZero())
 		profEndInstall(ctx, profOp, commitOp, receiver, outcome, downloaded.read.Load(), now)
 	}()
-	timing.prefetched = c.partPrefetchHeld(copied[0].Chain.Layers)
+	timing.prefetched = c.partPrefetchHeld(ctx, copied[0].Chain.Layers)
 	importStart := time.Now()
 	imported, err := c.snapshotManager.ImportChain(ctx, &snapshots.ExportChain{Layers: copied[0].Chain.Layers, Provider: downloaded, Timing: &timing.ImportTiming})
 	timing.imported = time.Since(importStart)
@@ -919,7 +919,7 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 	cleanup := &partCleanup{fn: imported.Release}
 	defer func() { rerr = errors.Join(rerr, cleanup.release(ctx)) }()
 	// The import holds the chain's content now: prefetch holds of it can go.
-	c.partPrefetchConsumed(copied[0].Chain.Layers)
+	c.partPrefetchConsumed(ctx, copied[0].Chain.Layers)
 	committing = time.Now()
 	// The commit's steps and lock waits nest under its own profile op.
 	commitCtx, commitOp := profBeginInstallCommit(ctx, committing)
