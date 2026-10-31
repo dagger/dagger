@@ -61,6 +61,38 @@ type LazyState struct {
 type lazyGroupOnce struct {
 	mu   sync.Mutex
 	done atomic.Bool
+	// runner is the profiled op whose body holds mu, 0 when no body does or
+	// its work isn't profiled. A runner or reader blocked on mu waits for
+	// that body, so the wait is recorded as a join on it.
+	runner atomic.Uint64
+}
+
+// lockForBody takes mu to run the group's body under ctx's op, recording a
+// wait for another runner's body as a join on that body's op.
+func (group *lazyGroupOnce) lockForBody(ctx context.Context) {
+	group.waitLock(ctx)
+	group.runner.Store(wcprof.CurrentOpID(ctx))
+}
+
+// unlockBody releases mu after the body lockForBody let run.
+func (group *lazyGroupOnce) unlockBody() {
+	group.runner.Store(0)
+	group.mu.Unlock()
+}
+
+// waitLock takes mu. A wait for a running body is a join on its op; any
+// other wait, such as for a reader's brief hold, is a lock wait.
+func (group *lazyGroupOnce) waitLock(ctx context.Context) {
+	if group.mu.TryLock() {
+		return
+	}
+	if body := group.runner.Load(); body != 0 {
+		wait := wcprof.BeginWait(ctx, body, wcprof.WaitReasonLazy)
+		group.mu.Lock()
+		wait.End()
+		return
+	}
+	wcprof.Lock(ctx, &group.mu, lazyGroupMuProfIdent)
 }
 
 // awaitUnlocked returns once the current holder of LazyMu, if any, has
@@ -75,7 +107,7 @@ func (lazy *LazyState) awaitUnlocked(ctx context.Context) {
 // awaitUnlocked returns once the group's running body, if any, has released
 // the group; see LazyState.awaitUnlocked.
 func (group *lazyGroupOnce) awaitUnlocked(ctx context.Context) {
-	wcprof.Lock(ctx, &group.mu, lazyGroupMuProfIdent)
+	group.waitLock(ctx)
 	group.mu.Unlock()
 }
 
@@ -184,8 +216,8 @@ func (lazy *LazyState) EvaluateGroup(ctx context.Context, typeName string, group
 	lazy.LazyMu.Unlock()
 
 	// Another runner of this group holds g.mu across its body.
-	wcprof.Lock(ctx, &g.mu, lazyGroupMuProfIdent)
-	defer g.mu.Unlock()
+	g.lockForBody(ctx)
+	defer g.unlockBody()
 	if g.done.Load() {
 		return nil
 	}
