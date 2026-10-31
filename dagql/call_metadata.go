@@ -15,9 +15,12 @@ import (
 // CallObserver observes a planned field call, after dynamic inputs have been
 // resolved. Its completion callback runs on hits, misses and errors, including
 // fields that suppress telemetry. It must not infer execution from a cache hit.
+// The completion bool reports whether this invocation's initializer started.
+// Returning an existing result does not make it false, and joining another
+// invocation's initializer does not make it true.
 // Engine-side invocation state must be forwarded explicitly to nested clients;
 // a context value alone cannot cross their transport boundary.
-type CallObserver func(context.Context, *CallRequest) (context.Context, func(AnyResult, error))
+type CallObserver func(context.Context, *CallRequest) (context.Context, func(AnyResult, bool, error))
 
 // ObserveCalls installs an observer independently of telemetry. Like Around,
 // install this before serving requests. Fork inherits the observer.

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/dagger/dagger/dagql/call"
@@ -150,17 +151,18 @@ func TestCallObserverSeesHitsErrorsAndHiddenTelemetry(t *testing.T) {
 	ctx, _, srv := persistedListTestCache(t, "")
 	type observerKey struct{}
 	type observation struct {
-		field string
-		hit   bool
-		err   error
+		field    string
+		hit      bool
+		executed bool
+		err      error
 	}
 	var mu sync.Mutex
 	var seen []observation
-	srv.ObserveCalls(func(ctx context.Context, req *CallRequest) (context.Context, func(AnyResult, error)) {
-		return context.WithValue(ctx, observerKey{}, req.Field), func(result AnyResult, err error) {
+	srv.ObserveCalls(func(ctx context.Context, req *CallRequest) (context.Context, func(AnyResult, bool, error)) {
+		return context.WithValue(ctx, observerKey{}, req.Field), func(result AnyResult, executed bool, err error) {
 			mu.Lock()
 			defer mu.Unlock()
-			seen = append(seen, observation{field: req.Field, hit: result != nil && result.HitCache(), err: err})
+			seen = append(seen, observation{field: req.Field, hit: result != nil && result.HitCache(), executed: executed, err: err})
 		}
 	})
 	value := Func("value", func(ctx context.Context, _ *persistCodecRoot, _ struct{}) (Int, error) {
@@ -169,15 +171,27 @@ func TestCallObserverSeesHitsErrorsAndHiddenTelemetry(t *testing.T) {
 	})
 	value.Spec.NoTelemetry = true
 	sentinel := errors.New("missing source")
+	var cached AnyResult
 	Fields[*persistCodecRoot]{
 		value,
 		Func("missing", func(context.Context, *persistCodecRoot, struct{}) (Int, error) { return 0, sentinel }),
+		{
+			Spec: &FieldSpec{Name: "adopted", Type: NewInt(0)},
+			Func: func(context.Context, ObjectResult[*persistCodecRoot], map[string]Input, call.View) (AnyResult, error) {
+				return cached, nil
+			},
+		},
 	}.Install(srv)
 	for range 2 {
-		var result Int
-		require.NoError(t, srv.Select(ctx, srv.Root(), &result, Selector{Field: "value"}))
-		require.Equal(t, NewInt(42), result)
+		var err error
+		cached, err = srv.Root().Select(ctx, srv, Selector{Field: "value"})
+		require.NoError(t, err)
+		require.Equal(t, NewInt(42), cached.Unwrap())
 	}
+	require.True(t, cached.HitCache())
+	adopted, err := srv.Root().Select(ctx, srv, Selector{Field: "adopted"})
+	require.NoError(t, err)
+	require.Same(t, cached.cacheSharedResult(), adopted.cacheSharedResult())
 	var result Int
 	require.ErrorIs(t, srv.Select(ctx, srv.Root(), &result, Selector{Field: "missing"}), sentinel)
 	fork, err := srv.Fork(ctx, &persistCodecRoot{})
@@ -185,10 +199,55 @@ func TestCallObserverSeesHitsErrorsAndHiddenTelemetry(t *testing.T) {
 	require.NoError(t, fork.Select(ctx, fork.Root(), &result, Selector{Field: "value"}))
 	mu.Lock()
 	defer mu.Unlock()
-	require.Len(t, seen, 4)
+	require.Len(t, seen, 5)
 	require.False(t, seen[0].hit)
+	require.True(t, seen[0].executed)
 	require.True(t, seen[1].hit)
-	require.Equal(t, "missing", seen[2].field)
-	require.ErrorIs(t, seen[2].err, sentinel)
-	require.True(t, seen[3].hit, "forks inherit the observer")
+	require.False(t, seen[1].executed)
+	require.Equal(t, "adopted", seen[2].field)
+	require.True(t, seen[2].executed, "a fresh resolver can return an already cached result")
+	require.Equal(t, "missing", seen[3].field)
+	require.True(t, seen[3].executed)
+	require.ErrorIs(t, seen[3].err, sentinel)
+	require.True(t, seen[4].hit, "forks inherit the observer")
+	require.False(t, seen[4].executed)
+}
+
+func TestCallObserverDistinguishesJoinedCall(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, _, srv := persistedListTestCache(t, "")
+		started, release := make(chan struct{}), make(chan struct{})
+		Fields[*persistCodecRoot]{Func("shared", func(context.Context, *persistCodecRoot, struct{}) (Int, error) {
+			close(started)
+			<-release
+			return NewInt(42), nil
+		})}.Install(srv)
+		var mu sync.Mutex
+		var executions []bool
+		var hits []bool
+		srv.ObserveCalls(func(ctx context.Context, _ *CallRequest) (context.Context, func(AnyResult, bool, error)) {
+			return ctx, func(result AnyResult, executed bool, _ error) {
+				mu.Lock()
+				defer mu.Unlock()
+				executions = append(executions, executed)
+				hits = append(hits, result != nil && result.HitCache())
+			}
+		})
+		results := make(chan error, 2)
+		selectShared := func() {
+			var result Int
+			results <- srv.Select(ctx, srv.Root(), &result, Selector{Field: "shared"})
+		}
+		go selectShared()
+		<-started
+		go selectShared()
+		synctest.Wait()
+		close(release)
+		require.NoError(t, <-results)
+		require.NoError(t, <-results)
+		mu.Lock()
+		defer mu.Unlock()
+		require.ElementsMatch(t, []bool{true, false}, executions)
+		require.Equal(t, []bool{false, false}, hits, "a joined call need not report a cache hit")
+	})
 }
