@@ -36,7 +36,8 @@ func directorySyncTestSync(t *testing.T, e *transferTestEngine, ctx context.Cont
 // come, computes the directory and is keyed by its content as on the engine
 // that ran it, so calls over the file match that engine's. That is dagger/go's
 // package walk on a fresh engine: it syncs each package's output directory,
-// then takes the package's archive from it.
+// then takes the package's archive from it. A record of the directory sent on
+// from there still says its operation completed.
 func TestDirectorySyncOfACompletedRecordComputesNothing(t *testing.T) {
 	t.Parallel()
 	salt := transferTestSalt(t)
@@ -59,6 +60,22 @@ func TestDirectorySyncOfACompletedRecordComputesNothing(t *testing.T) {
 	require.True(t, dirB.HitCache(), "the other engine hits the merged directory")
 	directorySyncTestSync(t, b, b1, dirB)
 	require.True(t, dagql.HasPendingLazyComputation(dirB), "the sync computed the directory")
+
+	// The second engine's own record of the directory, which it never
+	// computed, still says the operation completed: a third engine's sync of
+	// it computes nothing either.
+	c := newTransferTestEngine(t, salt)
+	c1 := dagql.ContextWithServer(c.session(t, "c1"), c.dag)
+	_, err = c.cache.MergeValues(c1, dagql.CloudCacheID, b.export(t, b1, dirB))
+	require.NoError(t, err)
+	dirC := directoryExistsTestDir(t, c, c1, contents)
+	require.True(t, dirC.HitCache(), "the third engine hits the second engine's record")
+	directorySyncTestSync(t, c, c1, dirC)
+	require.True(t, dagql.HasPendingLazyComputation(dirC), "the third engine's sync computed the directory")
+	fileC := directorySyncTestFile(t, c, c1, dirC, "dagger.toml")
+	idC, err := fileC.RecipeID(c1)
+	require.NoError(t, err)
+	require.Equal(t, idA.ContentDigest(), idC.ContentDigest(), "the third engine's file is keyed by its content, as on the engine that ran the directory")
 
 	fileB := directorySyncTestFile(t, b, b1, dirB, "dagger.toml")
 	require.False(t, fileB.HitCache(), "the file's record didn't come")
