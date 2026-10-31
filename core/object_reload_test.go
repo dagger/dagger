@@ -4,12 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"testing"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 func TestModuleObjectStateImplementationIdentity(t *testing.T) {
@@ -224,14 +228,105 @@ func TestModuleObjectStateVersionFieldIsOrdinary(t *testing.T) {
 	def := stateTestObjectDef(t, dag, "Obj", map[string]*TypeDef{"stateVersion": {Kind: TypeDefKindString}})
 	old := &ModuleObject{TypeDef: def, Fields: map[string]any{"stateVersion": "saved", "count": json.Number("5")}}
 	target := &ModuleObject{TypeDef: def, Fields: map[string]any{"stateVersion": "new", "count": json.Number("0"), "added": "default"}}
-	fields, err := rebindModuleObjectFields(t.Context(), target, old)
+	state := toolState{fields: map[string]struct{}{"stateVersion": {}, "count": {}}}
+	fields, err := rebindModuleObjectFields(t.Context(), target, old, state)
 	require.NoError(t, err)
 	require.Equal(t, "saved", fields["stateVersion"], "a field named stateVersion has no special semantics")
 	require.Equal(t, json.Number("5"), fields["count"])
 	require.Equal(t, "default", fields["added"])
 	target.Fields["count"] = "zero"
-	_, err = rebindModuleObjectFields(t.Context(), target, old)
+	_, err = rebindModuleObjectFields(t.Context(), target, old, state)
 	require.ErrorContains(t, err, `Obj: field "count"`)
+}
+
+func TestModuleObjectStateRebindRefreshesConstruction(t *testing.T) {
+	dag := newTypeDefTestDag(t)
+	def := stateTestObjectDef(t, dag, "Obj", map[string]*TypeDef{"count": {Kind: TypeDefKindInteger}})
+	old := &ModuleObject{TypeDef: def, Fields: map[string]any{
+		"count":  json.Number("5"),
+		"token":  "secret-from-a-gone-client",
+		"remote": "old/remote",
+	}}
+	target := &ModuleObject{TypeDef: def, Fields: map[string]any{
+		"count":  json.Number("0"),
+		"token":  "secret-from-this-client",
+		"remote": "new/remote",
+	}}
+
+	t.Run("only recorded state carries over", func(t *testing.T) {
+		state := toolState{fields: map[string]struct{}{"count": {}}}
+		fields, err := rebindModuleObjectFields(t.Context(), target, old, state)
+		require.NoError(t, err)
+		require.Equal(t, json.Number("5"), fields["count"])
+		require.Equal(t, "secret-from-this-client", fields["token"], "constructed values are re-resolved")
+		require.Equal(t, "new/remote", fields["remote"], "edited settings take effect")
+	})
+
+	t.Run("an unknown history carries everything", func(t *testing.T) {
+		fields, err := rebindModuleObjectFields(t.Context(), target, old, toolState{all: true})
+		require.NoError(t, err)
+		require.Equal(t, old.Fields, fields)
+	})
+}
+
+func TestModuleObjectToolStateFields(t *testing.T) {
+	objType := &ast.Type{NamedType: "Obj", NonNull: true}
+	otherType := &ast.Type{NamedType: "Other", NonNull: true}
+	setField := func(id *call.ID, name string) *call.ID {
+		return id.Append(objType, withModuleObjectFieldName, call.WithArgs(
+			call.NewArgument("name", call.NewLiteralString(name), false),
+			call.NewArgument("value", call.NewLiteralString("{}"), false),
+		))
+	}
+	rebind := func(initial, previous *call.ID) *call.ID {
+		return initial.Append(objType, rebindModuleObjectStateField, call.WithArgs(
+			call.NewArgument("previous", call.NewLiteralID(previous), false),
+		))
+	}
+	collect := func(id *call.ID) toolState {
+		state := toolState{fields: map[string]struct{}{}}
+		collectToolState(id, &state)
+		return state
+	}
+	names := func(state toolState) []string {
+		return slices.Sorted(maps.Keys(state.fields))
+	}
+	constructed := call.New().Append(objType, "obj", call.WithArgs(
+		call.NewArgument("setting", call.NewLiteralString("configured"), false),
+	))
+
+	t.Run("a construction records nothing", func(t *testing.T) {
+		state := collect(constructed)
+		require.False(t, state.all)
+		require.Empty(t, state.fields)
+	})
+
+	t.Run("an object returned by another type is a construction", func(t *testing.T) {
+		state := collect(call.New().Append(otherType, "other").Append(objType, "obj"))
+		require.False(t, state.all)
+		require.Empty(t, state.fields)
+	})
+
+	t.Run("field-wise frames name the state", func(t *testing.T) {
+		state := collect(setField(setField(constructed, "count"), "notes"))
+		require.False(t, state.all)
+		require.Equal(t, []string{"count", "notes"}, names(state))
+	})
+
+	t.Run("reloads keep earlier revisions' state", func(t *testing.T) {
+		older := setField(constructed, "count")
+		reloaded := rebind(constructed, older)
+		require.Equal(t, []string{"count"}, names(collect(reloaded)))
+		require.Equal(t, []string{"count", "notes"}, names(collect(setField(reloaded, "notes"))))
+		require.Equal(t, []string{"count"}, names(collect(rebind(constructed, reloaded))))
+	})
+
+	t.Run("a same-type call recorded as itself keeps everything", func(t *testing.T) {
+		legacy := constructed.Append(objType, "advance")
+		require.True(t, collect(legacy).all)
+		require.True(t, collect(setField(legacy, "count")).all)
+		require.True(t, collect(rebind(constructed, legacy)).all)
+	})
 }
 
 func TestModuleObjectStateRebindIdentity(t *testing.T) {
@@ -269,13 +364,29 @@ func TestModuleObjectStateRebindIdentity(t *testing.T) {
 			})
 		return newTypeDefAttachedResult(t, ctx, cache, dag, "receiver-"+revision, obj)
 	}
-	previous := makeObject("old", map[string]any{"hidden": "saved", "null": nil})
+	previousObj := makeObject("old", map[string]any{"hidden": "constructed", "null": "constructed", "config": "old setting"})
+	// Record state the way a same-type tool return does: field-wise frames.
+	// config is never set by a tool, so it stays construction.
+	setField := func(obj dagql.AnyObjectResult, name string, value any) dagql.AnyObjectResult {
+		input, err := stateValueInput(value)
+		require.NoError(t, err)
+		var res dagql.AnyObjectResult
+		require.NoError(t, dag.Select(ctx, obj, &res, dagql.Selector{
+			Field: withModuleObjectFieldName,
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.String(name)},
+				{Name: "value", Value: input},
+			},
+		}))
+		return res
+	}
+	previous := setField(setField(previousObj, "hidden", "saved"), "null", nil)
 	// Each revision has its own class, even when both expose the same names.
 	dag = newCoreDagqlServerForTest(t, root)
 	server.dag = dag
 	installModuleObjectTestModuleClass(dag)
 	installTypeDefTestClasses(dag)
-	initial := makeObject("new", map[string]any{"hidden": "default", "null": "default", "added": "new default"})
+	initial := makeObject("new", map[string]any{"hidden": "default", "null": "default", "added": "new default", "config": "new setting"})
 	result, err := RebindModuleObjectState(ctx, dag, initial, previous)
 	require.NoError(t, err)
 	rebound, ok := dagql.UnwrapAs[*ModuleObject](result)
@@ -283,6 +394,7 @@ func TestModuleObjectStateRebindIdentity(t *testing.T) {
 	require.Equal(t, "saved", rebound.Fields["hidden"])
 	require.Nil(t, rebound.Fields["null"])
 	require.Equal(t, "new default", rebound.Fields["added"])
+	require.Equal(t, "new setting", rebound.Fields["config"], "construction is re-resolved, not carried")
 	require.Same(t, initial.Self().TypeDef, rebound.TypeDef)
 	var revision dagql.String
 	require.NoError(t, dag.Select(ctx, result, &revision, dagql.Selector{Field: "revision"}))
@@ -328,6 +440,22 @@ func TestModuleObjectStateRebindIdentity(t *testing.T) {
 	unchangedID, err := unchanged.ID()
 	require.NoError(t, err)
 	require.Equal(t, newID.EngineResultID(), unchangedID.EngineResultID())
+
+	// Without a code change, a changed construction (a new setting, or a
+	// secret resolved for a new client) still replaces the old one, while
+	// the recorded state carries over.
+	reconfigured := newTypeDefAttachedResult(t, ctx, cache, dag, "receiver-new-reconfigured", &ModuleObject{
+		Module:  initial.Self().Module,
+		TypeDef: initial.Self().TypeDef,
+		Fields:  map[string]any{"hidden": "default", "null": "default", "added": "new default", "config": "newer setting"},
+	})
+	refreshed, err := RebindModuleObjectState(ctx, dag, reconfigured, result)
+	require.NoError(t, err)
+	refreshedObj, ok := dagql.UnwrapAs[*ModuleObject](refreshed)
+	require.True(t, ok)
+	require.Equal(t, "newer setting", refreshedObj.Fields["config"])
+	require.Equal(t, "saved", refreshedObj.Fields["hidden"])
+	require.Nil(t, refreshedObj.Fields["null"])
 
 	_, _, err = moduleObjectsForRebind(nil, previous)
 	require.ErrorContains(t, err, "requires both target and previous receivers")
