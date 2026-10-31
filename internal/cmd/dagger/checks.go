@@ -98,7 +98,7 @@ func checksClientParams(args []string) (client.Params, error) {
 	}, args)
 }
 
-func runChecks(ctx context.Context, dag *dagger.Client, checks *core.Artifacts, _ *cobra.Command, include []string) error {
+func runChecks(ctx context.Context, dag *dagger.Client, checks *core.Artifacts, cmd *cobra.Command, include []string) error {
 	ctx = artifactExecutionContext(ctx)
 	ctx, zoomSpan := Tracer().Start(ctx, "checks", telemetry.Passthrough())
 	defer zoomSpan.End()
@@ -111,8 +111,10 @@ func runChecks(ctx context.Context, dag *dagger.Client, checks *core.Artifacts, 
 	if err != nil {
 		return err
 	}
-	if err := validateCheckSelection(include, len(results)); err != nil {
-		return err
+	if !cmd.Flags().Changed("source-path") {
+		if err := validateCheckSelection(include, len(results)); err != nil {
+			return err
+		}
 	}
 	if err := artifactResultErrors(results); err != nil {
 		return idtui.ExitError{OriginalCode: 1, Original: err}
