@@ -194,10 +194,10 @@ func (r *CliDev) Publish(tag string, commit string, githubOrgName string, opts .
 
 // CliDevPublishMetadataOpts contains options for CliDev.PublishMetadata
 type CliDevPublishMetadataOpts struct {
-	AwsEndpointURL string // cli-dev (../../../../../../.dagger/modules/cli-dev/publish.go:111:2)
+	AwsEndpointURL string // cli-dev (../../../../../../.dagger/modules/cli-dev/publish.go:115:2)
 }
 
-func (r *CliDev) PublishMetadata(ctx context.Context, awsAccessKeyId *Secret, awsSecretAccessKey *Secret, awsRegion string, awsBucket string, awsCloudfrontDistribution string, opts ...CliDevPublishMetadataOpts) error { // cli-dev (../../../../../../.dagger/modules/cli-dev/publish.go:103:1)
+func (r *CliDev) PublishMetadata(ctx context.Context, awsAccessKeyId *Secret, awsSecretAccessKey *Secret, awsRegion string, awsBucket string, awsCloudfrontDistribution string, opts ...CliDevPublishMetadataOpts) error { // cli-dev (../../../../../../.dagger/modules/cli-dev/publish.go:107:1)
 	assertNotNil("awsAccessKeyId", awsAccessKeyId)
 	assertNotNil("awsSecretAccessKey", awsSecretAccessKey)
 	if r.publishMetadata != nil {
@@ -220,7 +220,7 @@ func (r *CliDev) PublishMetadata(ctx context.Context, awsAccessKeyId *Secret, aw
 }
 
 // Verify that the CLI builds without actually publishing anything
-func (r *CliDev) ReleaseDryRun(ctx context.Context) error { // cli-dev (../../../../../../.dagger/modules/cli-dev/publish.go:174:1)
+func (r *CliDev) ReleaseDryRun(ctx context.Context) error { // cli-dev (../../../../../../.dagger/modules/cli-dev/publish.go:178:1)
 	if r.releaseDryRun != nil {
 		return nil
 	}
