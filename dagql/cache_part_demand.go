@@ -233,12 +233,17 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 				state := gate.outputs[key]
 				gate.mu.Unlock()
 				if state.phase == PartOutputInstalled {
-					if err := c.joinPartInstallation(ctx, res, state.task); err != nil {
+					joinCtx, endJoin := profDemandStep(ctx, "join")
+					err := c.joinPartInstallation(joinCtx, res, state.task)
+					endJoin(err)
+					if err != nil {
 						return err
 					}
 					continue
 				}
-				record, _, probe, err := c.probePart(ctx, row, address)
+				probeCtx, endProbe := profDemandStep(ctx, "probe")
+				record, _, probe, err := c.probePart(probeCtx, row, address)
+				endProbe(err)
 				if errors.Is(err, ErrPersistStateNotReady) {
 					return partRefusedBy("demand: receiver probe not ready", err)
 				}
@@ -246,7 +251,10 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 					return err
 				}
 				if probe != nil && probe.LocalComplete && !probe.Busy {
-					if err := c.openAcquiredPart(ctx, res, address); err != nil {
+					openCtx, endOpen := profDemandStep(ctx, "open")
+					err := c.openAcquiredPart(openCtx, res, address)
+					endOpen(err)
+					if err != nil {
 						return err
 					}
 					session, err := partSession(ctx)
@@ -271,7 +279,9 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 					}
 					continue
 				}
-				source, pendingParent, err := c.selectDemandPartSource(ctx, res, address, route)
+				selectCtx, endSelect := profDemandStep(ctx, "select")
+				source, pendingParent, err := c.selectDemandPartSource(selectCtx, res, address, route)
+				endSelect(err)
 				if partCanReselect(err) {
 					if stuck := retry(err); stuck != nil {
 						return stuck
@@ -344,7 +354,9 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 				if !route.HasLazyOperation {
 					return errors.Join(fmt.Errorf("%w: %s", ErrUnavailablePart, key), demand.causes())
 				}
-				err = c.runLazyOperationDecision(ctx, res, address, route, demand)
+				decideCtx, endDecide := profDemandStep(ctx, "decide")
+				err = c.runLazyOperationDecision(decideCtx, res, address, route, demand)
+				endDecide(err)
 				if partCanReselect(err) {
 					if stuck := retry(err); stuck != nil {
 						return stuck
@@ -413,7 +425,7 @@ func (c *Cache) CheckPartSources(ctx context.Context, res AnyResult, address Per
 		check.demandRevision = demand.revision
 		demand.mu.Unlock()
 	}
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	defer c.egraphMu.Unlock()
 	if drain == nil || drain.task.row != res.cacheSharedResult() {
 		return PartSourceScan{}, fmt.Errorf("source scan: wrong drain")

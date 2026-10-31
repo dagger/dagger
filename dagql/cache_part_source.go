@@ -496,7 +496,7 @@ func (c *Cache) scanPartSources(ctx context.Context, receiver AnyResult, address
 		return nil, nil, err
 	}
 	key, _ := partAddressKey(address)
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	candidates := c.collectPartCandidatesLocked(row, lookup, session)
 	held := 0
 	defer func() {
@@ -583,7 +583,7 @@ func (c *Cache) scanPartSources(ctx context.Context, receiver AnyResult, address
 			}
 		}
 	}
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	for i := range candidates {
 		candidate := &candidates[i]
 		if candidate.facts != c.partFactsLocked(candidate.row) || !c.sessionSatisfiesResourceRequirementsLocked(session, candidate.row) {
