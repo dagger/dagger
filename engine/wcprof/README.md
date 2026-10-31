@@ -114,7 +114,10 @@ Current hook points:
   part key as ident, the receiving result, and the bytes downloaded; a `part`
   link with the part's size (its whole chain's); the layers' import ops,
   `remotecache.renew` (fresh content addresses) and
-  `remotecache.install.commit` as children. Outcomes are `ok`, `refused`,
+  `remotecache.install.commit` as children. The commit's steps are
+  `internal` ops under it: `remotecache.install.prepare` (with `.probe`,
+  `.pin` and `.store` under it) and `remotecache.install.publish`, and its
+  graph lock acquisitions are `dagql.egraph` lock waits. Outcomes are `ok`, `refused`,
   `superseded`, `canceled` or `error` (with an `install.content` fact when
   the source's bytes were bad). A part that no source could supply and that
   is computed locally gets a `part.no_source` fact. Lazy ops name their task
