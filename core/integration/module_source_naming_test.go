@@ -306,6 +306,76 @@ type Shared {
 	require.JSONEq(t, `{"pa": {"names": ["AliasOneThing"]}, "pb": {"names": ["AliasTwoThing"]}}`, out)
 }
 
+// TestMainTypeSchemaName checks modules whose main type is spelled as the
+// first answer of ModuleSource.naming's typeNames for the module's own name,
+// as SDKs and templates name it, on either side of the cut. strcase isn't
+// idempotent on these names (k8s-tools is K8STools, which it spells K8Stools),
+// so the legacy main object lookup must take the schema name as it is. The
+// module loads, is constructed as that type, and mainObject agrees.
+func (ModuleNamingSuite) TestMainTypeSchemaName(ctx context.Context, t *testctx.T) {
+	for _, tc := range []struct {
+		version string
+		want    map[string]string
+	}{
+		{"v1.0.0-beta.20", map[string]string{"k8s-tools": "K8STools", "e2e-test": "E2ETest", "http-server": "HttpServer"}},
+		{namingCut, map[string]string{"k8s-tools": "K8sTools", "http-server": "HTTPServer"}},
+	} {
+		t.Run(tc.version, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			names := []string{"k8s-tools", "e2e-test", "http-server"}
+			var toml strings.Builder
+			for _, name := range names {
+				fmt.Fprintf(&toml, "[modules.%s]\nsource = \"./%s\"\n", name, name)
+			}
+			// No workspace modules yet: nothing loads them while there's no
+			// code to load.
+			ws := goGitBase(t, c)
+			for _, name := range names {
+				ws = ws.WithNewFile(name+"/dagger-module.toml", "name = \""+name+"\"\nengineVersion = \""+tc.version+"\"\nsource = \".\"\n\n[runtime]\nsource = \"dang\"\n")
+			}
+
+			// The names, asked before there's any code to load.
+			schemaNames := map[string]string{}
+			constructors := map[string]string{}
+			for _, name := range names {
+				out, err := ws.With(daggerQuery(`{moduleSource(refString: %q) { naming { typeNames(names: [%q]) fieldNames(names: [%q]) } }}`, "./"+name, name, name)).Stdout(ctx)
+				require.NoError(t, err)
+				schemaNames[name] = gjson.Get(out, "moduleSource.naming.typeNames.0").String()
+				constructors[name] = gjson.Get(out, "moduleSource.naming.fieldNames.0").String()
+				require.NotEmpty(t, schemaNames[name], out)
+				if want, ok := tc.want[name]; ok {
+					require.Equal(t, want, schemaNames[name])
+				}
+				ws = ws.WithNewFile(name+"/main.dang", `type `+schemaNames[name]+` {
+  pub greet: String! {
+    "hello"
+  }
+}
+`)
+			}
+			ws = ws.WithNewFile("dagger.toml", toml.String())
+
+			var query strings.Builder
+			query.WriteString("{")
+			for _, name := range names {
+				out, err := ws.With(daggerQuery(`{moduleSource(refString: %q) { naming { mainObject(candidates: [%q]) } }}`, "./"+name, schemaNames[name])).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, schemaNames[name], gjson.Get(out, "moduleSource.naming.mainObject").String(), name)
+				fmt.Fprintf(&query, " %s { __typename greet }", constructors[name])
+			}
+			query.WriteString(" }")
+
+			// Each loads, constructed as its schema name.
+			out, err := ws.With(daggerQuery("%s", query.String())).Stdout(ctx)
+			require.NoError(t, err)
+			for _, name := range names {
+				require.Equal(t, schemaNames[name], gjson.Get(out, constructors[name]+".__typename").String(), out)
+				require.Equal(t, "hello", gjson.Get(out, constructors[name]+".greet").String(), out)
+			}
+		})
+	}
+}
+
 // namingConstructorName is the Query field of a module named
 // api-<suffix>: camelCase, the same by either rules.
 func namingConstructorName(module string) string {

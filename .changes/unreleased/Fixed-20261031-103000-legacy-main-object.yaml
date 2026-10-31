@@ -1,0 +1,12 @@
+kind: Fixed
+body: |
+  Modules declaring an engine version before v1.0.0-beta.22 find a main object
+  spelled as the module's own type name, such as `K8STools` for module
+  `k8s-tools` or `E2ETest` for `e2e-test`, as the Python SDK and
+  `dagger init` name it, and serve it under that name. The legacy strcase rules
+  normalized those names a second time and didn't recognize them. Every
+  spelling recognized before still is.
+time: 2026-10-31T10:30:00Z
+custom:
+  Author: vito
+  PR: "14996"

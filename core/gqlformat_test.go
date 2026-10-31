@@ -192,9 +192,10 @@ func TestModuleMainObjectSpelling(t *testing.T) {
 			legacy := &Module{NameField: tc.module, OriginalName: tc.module, ObjectDefs: objects("Helper", tc.mainType),
 				SourceOverrides: &SourceOverrides{EngineVersion: "v0.21.9"}}
 			_, ok = legacy.MainObject()
-			// The legacy rules find it exactly when strcase normalizes both
-			// alike, as they always did.
-			require.Equal(t, strcase.ToCamel(tc.mainType) == strcase.ToCamel(tc.module), ok)
+			// The legacy rules find it when strcase normalizes both alike,
+			// as they always did, or when it's spelled as the module's
+			// schema name already.
+			require.Equal(t, strcase.ToCamel(tc.mainType) == strcase.ToCamel(tc.module) || tc.mainType == strcase.ToCamel(tc.module), ok)
 			_, namingOK, err := moduleNamingFor("v0.21.9", tc.module, tc.module).MainObject([]string{"Helper", tc.mainType})
 			require.NoError(t, err)
 			require.Equal(t, ok, namingOK)
@@ -223,6 +224,66 @@ func TestModuleMainObjectSpelling(t *testing.T) {
 		_, ok := mod.MainObject()
 		require.False(t, ok)
 	})
+
+	// A module's main object may be spelled as its schema name, the first
+	// answer of ModuleSource.naming's typeNames for the module's own name (as
+	// SDKs and templates name it): the module finds it, and takes it as the
+	// type of its constructor, on either side of the cut. Everything the
+	// legacy rules found before is still found. strcase isn't idempotent on
+	// these names (k8s-tools is K8STools, which it spells K8Stools).
+	for _, tc := range []struct {
+		module string
+		// legacyFound are spellings strcase normalizes like the module's
+		// name, which the legacy rules always found.
+		legacyFound []string
+	}{
+		{"k8s-tools", []string{"K8sTools", "k8s_tools", "k8sTools"}},
+		{"e2e-test", []string{"E2eTest", "e2e_test", "e2eTest"}},
+		{"http-server", []string{"HttpServer", "http_server", "httpServer"}},
+	} {
+		t.Run("schema name "+tc.module, func(t *testing.T) {
+			for _, version := range []string{"v0.21.9", legacyNamingVersion, cutVersion} {
+				mn := moduleNamingFor(version, tc.module, tc.module)
+				names, err := mn.TypeNames([]string{tc.module})
+				require.NoError(t, err)
+				schemaName := names[0]
+				require.Equal(t, mn.Namer().ObjectName(tc.module), schemaName, version)
+
+				candidates := append([]string{"Helper"}, schemaName)
+				got, ok, err := mn.MainObject(candidates)
+				require.NoError(t, err)
+				require.True(t, ok, "%s: %s", version, schemaName)
+				require.Equal(t, schemaName, got, version)
+
+				mod := &Module{NameField: tc.module, OriginalName: tc.module, ObjectDefs: objects(candidates...),
+					SourceOverrides: &SourceOverrides{EngineVersion: version}}
+				main, ok := mod.MainObject()
+				require.True(t, ok, "%s: %s", version, schemaName)
+				require.Equal(t, schemaName, main.OriginalName, version)
+				// Namespaced, it keeps the module's name.
+				require.Equal(t, schemaName, mod.Namer().NamespaceObject(schemaName, tc.module, tc.module), version)
+				names, err = mn.TypeNames([]string{schemaName})
+				require.NoError(t, err)
+				require.Equal(t, []string{schemaName}, names, version)
+
+				if !mn.Namer().Legacy() {
+					continue
+				}
+				for _, spelling := range tc.legacyFound {
+					require.Equal(t, strcase.ToCamel(tc.module), strcase.ToCamel(spelling), "%s is a spelling strcase normalizes like %s", spelling, tc.module)
+					got, ok, err := mn.MainObject([]string{"Helper", spelling})
+					require.NoError(t, err)
+					require.True(t, ok, "%s: %s", version, spelling)
+					require.Equal(t, spelling, got)
+					mod := &Module{NameField: tc.module, OriginalName: tc.module, ObjectDefs: objects("Helper", spelling),
+						SourceOverrides: &SourceOverrides{EngineVersion: version}}
+					main, ok := mod.MainObject()
+					require.True(t, ok, "%s: %s", version, spelling)
+					require.Equal(t, spelling, main.OriginalName)
+				}
+			}
+		})
+	}
 }
 
 // The identifier casing cut, the view every v1.0.0 prerelease before it

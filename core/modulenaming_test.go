@@ -55,7 +55,10 @@ func TestModuleNamingTypeNames(t *testing.T) {
 			// Words cut differently around digits and terms still match.
 			module: "k8s-tools", original: "k8s-tools",
 			names:  []string{"K8STools", "K8SToolsClient"},
-			legacy: []string{"K8SToolsK8Stools", "K8SToolsK8StoolsClient"},
+			// strcase spells k8s-tools K8STools, and K8STools K8Stools: a
+			// main object spelled as the module's schema name keeps it, but
+			// a prefixed one isn't recognized as prefixed, as it never was.
+			legacy: []string{"K8STools", "K8SToolsK8StoolsClient"},
 			latest: []string{"K8sTools", "K8sToolsClient"},
 		},
 		{
@@ -141,9 +144,9 @@ func TestModuleNamingMainObject(t *testing.T) {
 		{name: "first exact in input order", module: "my-mod", original: "my-mod", candidates: []string{"my_mod", "MyMod"}, latest: "my_mod", legacy: "my_mod"},
 		{name: "exact wins over an earlier flat match", module: "postman", original: "postman", candidates: []string{"PostMan", "Postman"}, latest: "Postman", legacy: "Postman"},
 		{name: "flat", module: "sha256sum", original: "sha256sum", candidates: []string{"Helper", "Sha256Sum"}, latest: "Sha256Sum", legacy: "Sha256Sum"},
-		// strcase spells K8STools K8Stools, and k8s-tools K8STools: the
-		// legacy rules never found it.
-		{name: "term", module: "k8s-tools", original: "k8s-tools", candidates: []string{"K8SToolsClient", "K8STools"}, latest: "K8STools"},
+		// strcase spells K8STools K8Stools, but k8s-tools K8STools: the
+		// legacy rules find it spelled as the module's schema name.
+		{name: "term", module: "k8s-tools", original: "k8s-tools", candidates: []string{"K8SToolsClient", "K8STools"}, latest: "K8STools", legacy: "K8STools"},
 		// Neither is an exact match by the new rules, and both are flat
 		// ones; strcase normalizes both like e2eapi, so the first wins.
 		{name: "ambiguous flat", module: "e2eapi", original: "e2eapi", candidates: []string{"E2Eapi", "E2EApi"}, legacy: "E2Eapi"},
