@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -193,10 +194,16 @@ func profEndChain(op *wcprof.Op, chain *snapshots.ExportChain, resultID uint64, 
 // profExportedParts links each part a bundle offers to its result, with its
 // size: its chain's, which is what a pull of it costs a cache that has none
 // of it. sources maps the bundle's ordinals to results.
-func profExportedParts(ctx context.Context, outputs []TransferredOutput, sources []ImportedValue) {
+func profExportedParts(ctx context.Context, bundle ValueBundle, sources []ImportedValue) {
 	if !wcprof.Enabled(ctx) {
 		return
 	}
+	// A prefix output's part is the layers of the chain it names.
+	bundle.Outputs = slices.Clone(bundle.Outputs)
+	if err := ResolveChainPrefixes(&bundle); err != nil {
+		return
+	}
+	outputs := bundle.Outputs
 	results := make(map[TransferOrdinal]uint64, len(sources))
 	for _, source := range sources {
 		results[source.Ordinal] = source.ResultID
