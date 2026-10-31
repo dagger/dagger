@@ -49,12 +49,13 @@ import (
 // and only what the live roots need is merged.
 //
 // A held row names by recipe a value the recipient holds: the Cloud's, in a
-// bundle the Cloud sends an engine, or the engine's own, in a records-only
-// export an engine sends the Cloud. It lands on the recipe's current entry,
-// which keeps its value, and the rows that depend on it relocate onto that
-// entry. It holds when merge would keep
-// the entry's value for a record of the recipe with the row's expiry, judged
-// against the cache before the merge. If any held row doesn't hold, the merge
+// bundle the Cloud sends an engine, or the engine's own, in an export an
+// engine sends the Cloud. It lands on the recipe's current entry, which keeps
+// its value, and the rows that depend on it relocate onto that entry. It
+// holds when merge would keep the entry's value for a record of the recipe
+// with the row's expiry, judged against the cache before the merge, and, on
+// the Cloud, the Cloud holds the sending engine's holding of the row. If any
+// held row doesn't hold, the merge
 // commits nothing and its reply names every stale held row. A bundle that
 // carries a held row and a record of the same recipe is malformed.
 //
@@ -944,8 +945,8 @@ func (c *Cache) planValueMergeLocked(ctx context.Context, from CacheID, prep *va
 
 	// A held row holds when merge would keep its recipe's current entry's
 	// value for a record with the row's expiry, as the cache stands before
-	// the merge.
-	if stale := c.staleHeldRowsLocked(prep, now); len(stale) > 0 {
+	// the merge, and, on the Cloud, the sender's holding of it is known.
+	if stale := c.staleHeldRowsLocked(prep, from, now); len(stale) > 0 {
 		return nil, &mergeStaleError{ordinals: stale}
 	}
 
@@ -1047,15 +1048,24 @@ func (prep *valueMergePrep) liveClosure(now int64) (map[uint64]bool, []MergedRoo
 }
 
 // staleHeldRowsLocked returns, sorted, the held rows that don't hold as the
-// cache stands (heldRowStaleLocked), with expiries judged at now. Requires
-// egraphMu.
-func (c *Cache) staleHeldRowsLocked(prep *valueMergePrep, now int64) []TransferOrdinal {
+// cache stands (heldRowStaleLocked), with expiries judged at now. On the
+// Cloud, an engine's held row also needs the Cloud to hold that engine's
+// holding of the row: a held row teaches no holding, so the rows that depend
+// on it would name one the Cloud doesn't hold. The engine's retry carries
+// the row in full, which does. Requires egraphMu.
+func (c *Cache) staleHeldRowsLocked(prep *valueMergePrep, from CacheID, now int64) []TransferOrdinal {
 	var stale []TransferOrdinal
 	for _, id := range prep.order {
 		if !prep.held[id] {
 			continue
 		}
-		if c.heldRowStaleLocked(c.currentEntryForRecipeLocked(prep.plans[id].recipe), prep.index[id].ExpiresAtUnix, now) {
+		row := prep.index[id]
+		unheld := false
+		if c.blobBacked {
+			_, h := c.holdingLocked(HolderKey{Cache: from, Number: row.SenderNumber})
+			unheld = h == nil
+		}
+		if unheld || c.heldRowStaleLocked(c.currentEntryForRecipeLocked(prep.plans[id].recipe), row.ExpiresAtUnix, now) {
 			stale = append(stale, TransferOrdinal(id))
 		}
 	}
