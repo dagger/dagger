@@ -28,7 +28,6 @@ const (
 	MaxMembers     = 4096
 	MaxHeaderBytes = 512 << 10
 	MaxBytes       = 64 << 20
-
 )
 
 // Member is one blob of a pack, in pack order.
