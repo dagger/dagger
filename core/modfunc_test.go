@@ -240,3 +240,56 @@ func TestModuleFunctionLoadRuntimeSpan(t *testing.T) {
 		})
 	}
 }
+
+type unkeyedReceiverScope struct{}
+
+func (unkeyedReceiverScope) Apply(_ context.Context, _ *dagql.Server, value dagql.AnyObjectResult) (dagql.AnyObjectResult, error) {
+	return value, nil
+}
+
+func TestModuleFunctionReceiverConvertedOncePerSession(t *testing.T) {
+	ctx := t.Context()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	root := &Query{}
+	server := &moduleObjectTestServer{mockServer: &mockServer{}, cache: cache, root: root}
+	root.Server = server
+	srv := newCoreDagqlServerForTest(t, root)
+	server.dag = srv
+	installModuleObjectTestModuleClass(srv)
+	installTypeDefTestClasses(srv)
+	sessionCtx := func(session string) context.Context {
+		return engine.ContextWithClientMetadata(ContextWithQuery(dagql.ContextWithCache(ctx, cache), root), &engine.ClientMetadata{ClientID: session + "-client", SessionID: session})
+	}
+	ctx = sessionCtx("receiver-session")
+
+	holderType := newTypeDefAttachedResult(t, ctx, cache, srv, "receiver-holder-type", NewObjectTypeDef("Holder", "", nil)).Self()
+	holder := &ModuleObject{TypeDef: holderType, Fields: map[string]any{"state": "before"}}
+	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*ModuleObject]{Typed: holder}))
+	receiver, err := dagql.NewObjectResultForCall(holder, srv, moduleObjectTestSyntheticCall("receiver-holder", holder))
+	require.NoError(t, err)
+	attached, err := cache.AttachResult(ctx, "receiver-session", srv, receiver)
+	require.NoError(t, err)
+	attachedObj, ok := dagql.UnwrapAs[*ModuleObject](attached)
+	require.True(t, ok)
+	opts := &CallOpts{ParentTyped: attached, ParentFields: attachedObj.Fields}
+
+	first, err := moduleFunctionReceiverJSON(ctx, opts)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"state":"before"}`, string(first))
+
+	// Stored fields never change in place; changing them here shows whether
+	// a call converts the receiver again.
+	attachedObj.Fields["state"] = "after"
+	again, err := moduleFunctionReceiverJSON(ctx, opts)
+	require.NoError(t, err)
+	require.Equal(t, string(first), string(again), "a second call in the session must reuse the converted receiver")
+
+	other, err := moduleFunctionReceiverJSON(sessionCtx("other-session"), opts)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"state":"after"}`, string(other), "another session must convert the receiver itself")
+
+	unkeyed, err := moduleFunctionReceiverJSON(dagql.WithResultScope(ctx, unkeyedReceiverScope{}), opts)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"state":"after"}`, string(unkeyed), "a scope without an identity must not reuse a conversion")
+}

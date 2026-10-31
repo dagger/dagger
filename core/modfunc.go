@@ -1059,13 +1059,9 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		}
 	}()
 
-	parentFields, err := moduleFunctionReceiverFields(ctx, opts)
+	parentJSON, err := moduleFunctionReceiverJSON(ctx, opts)
 	if err != nil {
-		return nil, fmt.Errorf("convert receiver: %w", err)
-	}
-	parentJSON, err := json.Marshal(parentFields)
-	if err != nil {
-		return nil, fmt.Errorf("marshal parent value: %w", err)
+		return nil, err
 	}
 
 	fnCall := newFunctionCall(FunctionCall{
@@ -1164,6 +1160,62 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	}
 
 	return returnValue, nil
+}
+
+// A receiver's SDK form depends on the receiver result and the active result
+// scope, not on the function called. Each call on a collection item receives
+// the whole collection, so convert an attached receiver once per session and
+// scope; concurrent calls wait for the first conversion.
+func moduleFunctionReceiverJSON(ctx context.Context, opts *CallOpts) ([]byte, error) {
+	convert := func(ctx context.Context) ([]byte, error) {
+		parentFields, err := moduleFunctionReceiverFields(ctx, opts)
+		if err != nil {
+			return nil, fmt.Errorf("convert receiver: %w", err)
+		}
+		parentJSON, err := json.Marshal(parentFields)
+		if err != nil {
+			return nil, fmt.Errorf("marshal parent value: %w", err)
+		}
+		return parentJSON, nil
+	}
+	if _, ok := dagql.UnwrapAs[*ModuleObject](opts.ParentTyped); !ok {
+		return convert(ctx)
+	}
+	// Scopes other than artifact views have no identity to key the result by.
+	var scopeKey string
+	switch scope := dagql.CurrentResultScope(ctx).(type) {
+	case nil:
+	case *ArtifactView:
+		scopeKey = scope.key
+	default:
+		return convert(ctx)
+	}
+	id, err := opts.ParentTyped.ID()
+	if err != nil || id == nil || id.EngineResultID() == 0 {
+		return convert(ctx)
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return nil, err
+	}
+	metadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// The conversion attaches the receiver's inline objects to this session,
+	// so its handles are valid only here.
+	key := fmt.Sprintf("module-receiver-sdk-input:%q:%d:%q", metadata.SessionID, id.EngineResultID(), scopeKey)
+	res, err := cache.GetOrInitArbitrary(ctx, metadata.SessionID, key, func(ctx context.Context) (any, error) {
+		return convert(ctx)
+	})
+	if err != nil {
+		return nil, err
+	}
+	parentJSON, ok := res.Value().([]byte)
+	if !ok {
+		return nil, fmt.Errorf("invalid converted receiver %T", res.Value())
+	}
+	return parentJSON, nil
 }
 
 // Serialize receivers through the same scoped conversion as object arguments.
