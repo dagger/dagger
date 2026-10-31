@@ -57,6 +57,9 @@ type HeldCapturedClosure struct {
 	// dropped are the rows held for left-out roots only, released with the
 	// others.
 	dropped []*capturedTransferRow
+	// unheld are the dependencies of the rows the walk found attaching,
+	// which it walks but doesn't hold.
+	unheld map[sharedResultID][]sharedResultID
 	// outputs are the selection's outputs the closure holds.
 	outputs []SelectedValueOutput
 	// walkWait is the wait for egraphMu before the walk, and walk the walk
@@ -139,7 +142,7 @@ func (capture *HeldCapturedClosure) block(id sharedResultID, kind BusyKind, err 
 //
 //nolint:gocyclo // one classification per held result kind; splitting hides the order of the checks
 func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelection) (*HeldCapturedClosure, error) {
-	capture := &HeldCapturedClosure{cache: c, rows: map[sharedResultID]*capturedTransferRow{}, owners: map[offerOwnerID]*offerOwner{}, blocked: map[sharedResultID]blockedRow{}}
+	capture := &HeldCapturedClosure{cache: c, rows: map[sharedResultID]*capturedTransferRow{}, owners: map[offerOwnerID]*offerOwner{}, blocked: map[sharedResultID]blockedRow{}, unheld: map[sharedResultID][]sharedResultID{}}
 	lockStart := time.Now()
 	c.egraphMu.Lock()
 	walkStart := time.Now()
@@ -168,6 +171,24 @@ func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelectio
 			return &rowBlockedError{capture.blocked[res.id]}
 		}
 		if res.attachmentState() != resultAttachmentClean {
+			// Its dependencies are installed before its attachment opens,
+			// and walked like any row's, but the row itself isn't held.
+			seen[res.id] = 1
+			var children []sharedResultID
+			for child := range c.resultOwnershipChildrenLocked(res) {
+				if child.owner == nil {
+					children = append(children, child.resultID)
+					_ = walk(child.resultID, child.result)
+					continue
+				}
+				for dep := range offerOwnershipChildrenLocked(child.owner) {
+					if dep != nil {
+						children = append(children, dep.id)
+						_ = walk(dep.id, dep)
+					}
+				}
+			}
+			capture.unheld[res.id] = children
 			return blocked(res.id, blockedRow{row: res.id, kind: BusyAttaching, err: fmt.Errorf("%w: result %d attachment", ErrPersistStateNotReady, res.id)})
 		}
 		frame := res.loadResultCall()
@@ -806,10 +827,12 @@ func (capture *HeldCapturedClosure) settle(selection ValueSelection) ([]LeftOutR
 			if b, ok := capture.blocked[id]; ok && b.row == id && b.kind != "" {
 				busy = append(busy, BusyRow{Row: uint64(id), Kind: b.kind})
 			}
+			children := capture.unheld[id]
 			if row := capture.rows[id]; row != nil {
-				for _, child := range row.children {
-					visit(child)
-				}
+				children = row.children
+			}
+			for _, child := range children {
+				visit(child)
 			}
 		}
 		if root.err != nil && root.err.kind != "" {
