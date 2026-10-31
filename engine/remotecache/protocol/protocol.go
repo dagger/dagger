@@ -351,9 +351,6 @@ const (
 // sends what it found as ordinary merges that name the lookup.
 type Lookup struct {
 	Misses []LookupMiss `json:"misses"`
-	// WaitMillis is how long the engine's evaluation of a missed call waits
-	// for a merge the answer names, for the service's metrics.
-	WaitMillis int64 `json:"waitMillis"`
 }
 
 // LookupMiss is one call the engine's cache missed: its recipe digest, and

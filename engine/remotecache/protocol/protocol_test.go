@@ -96,8 +96,7 @@ func TestMessagesRoundTrip(t *testing.T) {
 		{TypeRenewed, Renewed{Addresses: map[digest.Digest]dagql.BlobAddress{layer.Descriptor.Digest: {URL: "https://blobs/get2", ExpiresAtUnix: 1790007200}}}, func() any { return &Renewed{} }},
 		{TypeRenewed, Renewed{Unavailable: true}, func() any { return &Renewed{} }},
 		{TypeLookup, Lookup{
-			Misses:     []LookupMiss{{Recipe: digest.FromString("recipe"), Extra: []digest.Digest{digest.FromString("extra")}, Field: "withExec"}, {Recipe: digest.FromString("other")}},
-			WaitMillis: 10000,
+			Misses: []LookupMiss{{Recipe: digest.FromString("recipe"), Extra: []digest.Digest{digest.FromString("extra")}, Field: "withExec"}, {Recipe: digest.FromString("other")}},
 		}, func() any { return &Lookup{} }},
 		{TypeLookedUp, LookedUp{Misses: []LookedUpMiss{
 			{Status: LookupMerging, Merge: 40, Parts: LookupPartsComplete},
@@ -245,9 +244,9 @@ func TestOfferOutcomeOf(t *testing.T) {
 // always carries its lookup, 0 for a merge of the service's own placement,
 // and a merge's reply always carries its stale rows.
 func TestLookupShape(t *testing.T) {
-	raw, err := json.Marshal(Lookup{Misses: []LookupMiss{{Recipe: "xxh3:1", Extra: []digest.Digest{"xxh3:2"}, Field: "withExec"}}, WaitMillis: 10000})
+	raw, err := json.Marshal(Lookup{Misses: []LookupMiss{{Recipe: "xxh3:1", Extra: []digest.Digest{"xxh3:2"}, Field: "withExec"}}})
 	require.NoError(t, err)
-	require.JSONEq(t, `{"misses": [{"recipe": "xxh3:1", "extra": ["xxh3:2"], "field": "withExec"}], "waitMillis": 10000}`, string(raw))
+	require.JSONEq(t, `{"misses": [{"recipe": "xxh3:1", "extra": ["xxh3:2"], "field": "withExec"}]}`, string(raw))
 
 	raw, err = json.Marshal(LookedUp{Misses: []LookedUpMiss{{Status: LookupMerging, Merge: 40, Parts: LookupPartsNone}, {Status: LookupUnknown}}})
 	require.NoError(t, err)
