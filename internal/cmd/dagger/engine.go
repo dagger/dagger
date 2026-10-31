@@ -108,7 +108,19 @@ func withEngine(
 	params client.Params,
 	fn runClientCallback,
 ) error {
-	return withEngineAction(ctx, "", params, fn)
+	return withEngineAction(ctx, "", withCommandLine(params), fn)
+}
+
+// withCommandLine sets the command line that the CLI sends to Dagger Cloud
+// when a command does not set one. Dagger Cloud identifies a CLI run and
+// sizes its engine from its command line; a session without one goes to the
+// fallback route of the org. Metadata discovery (withEngineMetadata) does not
+// send it: its short sessions would join the profile of the command.
+func withCommandLine(params client.Params) client.Params {
+	if len(params.ExecCmd) == 0 {
+		params.ExecCmd = os.Args[1:]
+	}
+	return params
 }
 
 // Metadata discovery can run before Cobra has parsed the full command. Give it
@@ -380,6 +392,7 @@ func withLazySessions(
 	if sessionWorkspace != "" && params.Workspace == nil {
 		params.Workspace = &sessionWorkspace
 	}
+	params = withCommandLine(params)
 	return Frontend.Run(ctx, opts, func(ctx context.Context) (_ cleanups.CleanupF, rerr error) {
 		var cleanup cleanups.Cleanups
 		if before != nil {
