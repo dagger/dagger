@@ -90,8 +90,8 @@ func profiledLinks(events []profiledEvent, kind string, from uint64) []profiledE
 // A part installed from an offer is one remote_cache op under the task that
 // installed it, naming the receiving result and the part, with the bytes
 // downloaded. It links the part's size, the whole chain's, for pricing a
-// pull; its children are the layers' fetches and applies, then the commit.
-// The task's lazy op names the task.
+// pull; its children are the layers' fetches and applies, then the commit,
+// whose own steps nest under it. The task's lazy op names the task.
 func TestOfferInstallProfiled(t *testing.T) {
 	chain := newChainFixture(t, "install-prof")
 	f := newExhaustionFixture(t, chain)
@@ -141,6 +141,24 @@ func TestOfferInstallProfiled(t *testing.T) {
 	}
 	require.Equal(t, []string{"snapshot.import.fetch[download]", "snapshot.import.apply", "remotecache.install.commit"}, sortedByStart(events, install.OpID))
 	require.Len(t, children, 3)
+
+	// The commit's own steps nest under it: preparing the part, with the
+	// receiver's probe and the source snapshot's pin, then publishing it.
+	commits := profiledOps(events, "remotecache.install.commit")
+	require.Len(t, commits, 1)
+	commit := commits[0]
+	require.Equal(t, install.OpID, commit.ParentID)
+	require.Equal(t, []string{"remotecache.install.prepare", "remotecache.install.publish"}, sortedByStart(events, commit.OpID))
+	prepares := profiledOps(events, "remotecache.install.prepare")
+	require.Len(t, prepares, 1)
+	require.Equal(t, []string{"remotecache.install.probe", "remotecache.install.pin"}, sortedByStart(events, prepares[0].OpID))
+	for _, ev := range events {
+		if ev.Type == "op" && strings.HasPrefix(ev.class, "remotecache.install.") && ev.class != "remotecache.install.commit" {
+			require.Equal(t, "internal", ev.OpKind, ev.class)
+			require.GreaterOrEqual(t, ev.StartNS, commit.StartNS, ev.class)
+			require.LessOrEqual(t, ev.EndNS, commit.EndNS, ev.class)
+		}
+	}
 
 	lazy, ok := ops[install.ParentID]
 	require.True(t, ok, "the install's parent is recorded")
