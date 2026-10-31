@@ -1,0 +1,10 @@
+kind: Fixed
+body: |
+  Pulling a container image retries a layer download again when the registry
+  drops the connection partway through, as it did before v0.21.0. Resolving an
+  image now also retries after a network error, such as a TLS handshake
+  timeout, instead of failing at once.
+time: 2026-10-30T01:45:00Z
+custom:
+  Author: sipsma
+  PR: "14978"

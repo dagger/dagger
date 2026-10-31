@@ -1,6 +1,7 @@
 package resolver
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -32,6 +33,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/contentutil"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	"github.com/dagger/dagger/internal/buildkit/util/imageutil"
+	"github.com/dagger/dagger/internal/buildkit/util/resolver/retryhandler"
 	"github.com/dagger/dagger/internal/buildkit/util/tracing"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/distribution/reference"
@@ -429,9 +431,14 @@ func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *Pull
 		return nil, err
 	}
 	childrenHandler := images.ChildrenHandler(r.contentStore)
+	// A registry can drop a connection partway through a blob, and containerd
+	// only reconnects on an unexpected EOF, so retry the blob's fetch.
+	fetchHandler := retryhandler.New(remotes.FetchHandler(progressIngester{Ingester: r.contentStore}, fetcher), func(msg []byte) {
+		bklog.G(ctx).Warnf("pulling %s: %s", resolvedRef, bytes.TrimSpace(msg))
+	})
 	handler := images.Handlers(
 		recordNonLayers,
-		remotes.FetchHandler(progressIngester{Ingester: r.contentStore}, fetcher),
+		fetchHandler,
 		childrenHandler,
 		dslHandler,
 	)
@@ -526,8 +533,19 @@ func (r *Resolver) resolveRemoteRootDescriptor(ctx context.Context, ref string, 
 	resolver := docker.NewResolver(docker.ResolverOptions{
 		Hosts: resolveHosts,
 	})
-	resolvedRef, rootDesc, err := resolver.Resolve(ctx, ref)
-	if err != nil {
+	// containerd retries a manifest request after some error statuses, but
+	// not after a network error such as a TLS handshake timeout, so retry
+	// the resolve the way a blob fetch is retried.
+	var resolvedRef string
+	var rootDesc ocispecs.Descriptor
+	resolve := retryhandler.New(func(ctx context.Context, _ ocispecs.Descriptor) ([]ocispecs.Descriptor, error) {
+		var err error
+		resolvedRef, rootDesc, err = resolver.Resolve(ctx, ref)
+		return nil, err
+	}, func(msg []byte) {
+		bklog.G(ctx).Warnf("resolving %s: %s", ref, bytes.TrimSpace(msg))
+	})
+	if _, err := resolve(ctx, ocispecs.Descriptor{}); err != nil {
 		return "", ocispecs.Descriptor{}, nil, err
 	}
 	// The same transport records both resolution and descriptor response bodies.
