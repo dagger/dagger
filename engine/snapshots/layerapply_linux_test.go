@@ -439,25 +439,36 @@ func TestLayerApplyFailures(t *testing.T) {
 	})
 }
 
+// applyBlob stores data gzipped as a layer blob and applies it through
+// NewLayerApplier into a new directory.
+func applyBlob(t *testing.T, data []byte, opts ...diff.ApplyOpt) (string, ocispecs.Descriptor, error) {
+	t.Helper()
+	store, err := local.NewStore(t.TempDir())
+	require.NoError(t, err)
+	var gz bytes.Buffer
+	zw := gzip.NewWriter(&gz)
+	_, err = zw.Write(data)
+	require.NoError(t, err)
+	require.NoError(t, zw.Close())
+	return applyStored(t, store, gz.Bytes(), opts...)
+}
+
+func applyStored(t *testing.T, store content.Store, blob []byte, opts ...diff.ApplyOpt) (string, ocispecs.Descriptor, error) {
+	t.Helper()
+	ctx := context.Background()
+	desc := ocispecs.Descriptor{MediaType: ocispecs.MediaTypeImageLayerGzip, Digest: digest.FromBytes(blob), Size: int64(len(blob))}
+	require.NoError(t, content.WriteBlob(ctx, store, desc.Digest.String(), bytes.NewReader(blob), desc))
+	root := t.TempDir()
+	applied, err := NewLayerApplier(store).Apply(ctx, desc, []mount.Mount{{Type: "bind", Source: root, Options: []string{"rbind", "rw"}}}, opts...)
+	return root, applied, err
+}
+
 // The applier reads the blob from the content store, decompresses it, and
 // returns the uncompressed digest, as containerd's applier does.
 func TestLayerApplierApply(t *testing.T) {
-	ctx := context.Background()
-	store, err := local.NewStore(t.TempDir())
-	require.NoError(t, err)
 	layer := tarOf(t, manyFiles()...)
-	var gz bytes.Buffer
-	zw := gzip.NewWriter(&gz)
-	_, err = zw.Write(layer)
-	require.NoError(t, err)
-	require.NoError(t, zw.Close())
-	desc := ocispecs.Descriptor{MediaType: ocispecs.MediaTypeImageLayerGzip, Digest: digest.FromBytes(gz.Bytes()), Size: int64(gz.Len())}
-	require.NoError(t, content.WriteBlob(ctx, store, "layer", bytes.NewReader(gz.Bytes()), desc))
-
-	root := t.TempDir()
 	var progress []int64
-	applied, err := NewLayerApplier(store).Apply(ctx, desc, []mount.Mount{{Type: "bind", Source: root, Options: []string{"rbind", "rw"}}},
-		diff.WithProgress(func(_ ocispecs.Descriptor, n int64) { progress = append(progress, n) }))
+	root, applied, err := applyBlob(t, layer, diff.WithProgress(func(_ ocispecs.Descriptor, n int64) { progress = append(progress, n) }))
 	require.NoError(t, err)
 	require.Equal(t, digest.FromBytes(layer), applied.Digest)
 	require.Equal(t, int64(len(layer)), applied.Size)
@@ -466,6 +477,35 @@ func TestLayerApplierApply(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(root, "tree/over-limit"))
 	require.NoError(t, err)
 	require.Len(t, data, layerApplyBufferedMax+1)
+
+	t.Run("trailing data", func(t *testing.T) {
+		// The digest covers the whole stream, as the image's diffID does.
+		stream := append(append([]byte{}, layer...), bytes.Repeat([]byte("trailing"), layerReadAheadChunk/4)...)
+		_, applied, err := applyBlob(t, stream)
+		require.NoError(t, err)
+		require.Equal(t, digest.FromBytes(stream), applied.Digest)
+		require.Equal(t, int64(len(stream)), applied.Size)
+	})
+
+	t.Run("a stream that fails", func(t *testing.T) {
+		store, err := local.NewStore(t.TempDir())
+		require.NoError(t, err)
+		var gz bytes.Buffer
+		zw := gzip.NewWriter(&gz)
+		_, err = zw.Write(layer)
+		require.NoError(t, err)
+		require.NoError(t, zw.Close())
+		// Cut in the last chunk the read-ahead reads, past every entry
+		// but the end of the archive.
+		_, _, err = applyStored(t, store, gz.Bytes()[:gz.Len()-8])
+		require.Error(t, err)
+	})
+
+	t.Run("an extraction that fails early", func(t *testing.T) {
+		// The read-ahead is still reading when the extraction fails.
+		_, _, err := applyBlob(t, tarOf(t, append([]tarEntry{tarHardlink("link", "missing")}, manyFiles()...)...))
+		require.Error(t, err)
+	})
 }
 
 func TestLayerApplyTarget(t *testing.T) {

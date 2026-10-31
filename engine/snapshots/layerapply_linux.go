@@ -923,8 +923,7 @@ func copyBuffered(ctx context.Context, dst io.Writer, src io.Reader) (written in
 	for {
 		select {
 		case <-ctx.Done():
-			err = ctx.Err()
-			return
+			return written, ctx.Err()
 		default:
 		}
 
