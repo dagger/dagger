@@ -4,12 +4,14 @@ import "sync"
 
 // KnownRows are the entries of an engine cache whose records one recipient,
 // the Cloud over one service connection, has merged: an export carried them
-// in full, and the recipient said it merged that export. A records-only
-// export sends a known row that hasn't changed since as a held row, with no
-// record and nothing below it, so that a record the closures of many exports
-// share travels once. Whether a held row holds is the recipient's merge's to
-// decide: it commits nothing unless every held row's recipe has a live value
-// there. KnownRows only chooses what to leave out.
+// in full, and the recipient said it merged that export. An export sends a
+// known row that hasn't changed since as a held row, with no record, so that
+// a record the closures of many exports share travels once: with nothing
+// below it in a records-only export, and with its links to the rows below it
+// and its parts in an export that selects parts. Whether a held row holds is
+// the recipient's merge's to decide: it commits nothing unless every held
+// row's recipe has a live value there, with every part the export puts on
+// the row. KnownRows only chooses what to leave out.
 type KnownRows struct {
 	mu   sync.Mutex
 	rows map[uint64]RowRevision
@@ -68,6 +70,19 @@ func (k *KnownRows) knowsLocked(res *sharedResult) bool {
 	rev, ok := k.rows[uint64(res.id)]
 	k.mu.Unlock()
 	return ok && rev == RowRevision{Replacements: res.replacements, Transfer: res.transferRevision, Dependencies: res.dependencyOwnershipRevision}
+}
+
+// knows reports whether the recipient merged entry number at rev: an export
+// it merged carried the entry in full with those revisions. A nil KnownRows
+// knows nothing.
+func (k *KnownRows) knows(number uint64, rev RowRevision) bool {
+	if k == nil {
+		return false
+	}
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	known, ok := k.rows[number]
+	return ok && known == rev
 }
 
 // Len is the number of known rows.

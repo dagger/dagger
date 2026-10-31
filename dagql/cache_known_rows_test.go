@@ -152,32 +152,6 @@ func TestExportWithoutKnownHoldsNothing(t *testing.T) {
 	require.Empty(t, held, "a selection without Known holds nothing")
 }
 
-// An export that selects outputs carries every record in full, known or not:
-// only a records-only export holds rows.
-func TestExportSelectingOutputsHoldsNothing(t *testing.T) {
-	t.Parallel()
-	ctx, c, srv := transferTestCache(t)
-	cl := newKnownRowsTestClosure(t, ctx, c, srv)
-	known := NewKnownRows()
-	_, rows, _ := recordsOnlyCapture(t, ctx, c, known, cl.first)
-	known.Merged(rows)
-
-	selection := ValueSelection{
-		Roots:                         []AnyResult{cl.second},
-		Outputs:                       []SelectedValueOutput{{Result: cl.first, Address: PersistedPartAddress{Part: "snapshot"}}},
-		LeaveOutOutputsOutsideClosure: true,
-		Known:                         known,
-	}
-	var bundle ValueBundle
-	require.NoError(t, c.WithExportedValues(ctx, selection, config.RefConfig{}, func(_ context.Context, values *ExportedValues) error {
-		bundle = values.Bundle
-		return nil
-	}))
-	held, full := heldNumbers(bundle)
-	require.Empty(t, held)
-	require.Len(t, full, 3)
-}
-
 // A known row whose recipe another row of the closure shares goes in full: a
 // merge refuses a bundle with a held row beside a record of its recipe.
 func TestRecordsOnlyExportCarriesASharedRecipeInFull(t *testing.T) {
