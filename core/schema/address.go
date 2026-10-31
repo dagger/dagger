@@ -325,7 +325,7 @@ func (s *addressSchema) Install(srv *dagql.Server) {
 		dagql.Func("value", s.value).
 			Doc(`The address value`),
 		dagql.NodeFunc("container", s.container).
-			WithInput(dagql.PerCallInput).
+			WithInput(dagql.PerSessionInput).
 			Doc(`Load a container from the address.`).
 			Args(noLockArg("image tag")),
 		dagql.NodeFunc("directory", s.directory).
