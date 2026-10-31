@@ -951,10 +951,6 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 		}
 		bundle.Values = append(bundle.Values, value)
 	}
-	if _, err := validateValueBundle(bundle); err != nil {
-		bundleOp.EndErr(err)
-		return err
-	}
 	bundleOp.End(wcprof.OutcomeOK)
 	phases.Bundle = time.Since(bundleStart)
 	chainStart := time.Now()
@@ -1104,9 +1100,6 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 			bundle.Outputs = append(bundle.Outputs, output)
 			offered[fmt.Sprintf("%d:%s", row.ordinal, key)] = true
 		}
-	}
-	if _, err := validateValueBundle(bundle); err != nil {
-		return err
 	}
 	if err := context.Cause(ctx); err != nil {
 		return err
