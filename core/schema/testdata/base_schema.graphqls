@@ -4840,3 +4840,10 @@ type Workspace implements Node {
 """A unique identifier for an object."""
 scalar WorkspaceID
 
+"""
+A path within a workspace. A leading slash starts at the workspace boundary.
+Other input paths start at the operation's working directory. Output source
+paths start at the workspace boundary.
+"""
+scalar WorkspacePath
+

@@ -45,7 +45,7 @@ func installWorkspaceProvenance(srv *dagql.Server) {
 	dagql.Fields[*core.Artifact]{
 		dagql.Func("provenance", func(ctx context.Context, a *core.Artifact, _ struct{}) (*core.WorkspaceProvenance, error) {
 			return a.Provenance(ctx)
-		}).Doc("Inspect possible workspace inputs without evaluating the artifact leaf. This prototype retains conservative root regions for inputs it cannot prove.").DoNotCache("Inspect current receiver construction"),
+		}).Doc("Inspect source paths without running the artifact body. Unknown inputs retain a conservative root region.").WithInput(dagql.PerCallInput),
 		dagql.Func("affectedByPath", func(ctx context.Context, a *core.Artifact, args provenancePathArgs) (bool, error) {
 			if _, err := provenance.Path(string(args.Path)); err != nil {
 				return false, err
@@ -58,7 +58,7 @@ func installWorkspaceProvenance(srv *dagql.Server) {
 				return false, err
 			}
 			return p.AffectedByPath(string(args.Path), args.Kinds)
-		}).Doc("Whether this artifact may depend on a workspace-root path.").DoNotCache("Inspect current receiver construction"),
+		}).Doc("Whether this artifact may depend on a workspace-root path.").WithInput(dagql.PerCallInput),
 		dagql.Func("affectedByDiff", func(ctx context.Context, a *core.Artifact, args provenanceDiffArgs) (bool, error) {
 			if err := provenance.ValidateKinds(args.Kinds); err != nil {
 				return false, err
@@ -68,7 +68,7 @@ func installWorkspaceProvenance(srv *dagql.Server) {
 				return false, err
 			}
 			return args.matches(ctx, p)
-		}).Doc("Whether this artifact may depend on changed workspace paths.").DoNotCache("Inspect current receiver construction"),
+		}).Doc("Whether this artifact may depend on changed workspace paths.").WithInput(dagql.PerCallInput),
 	}.Install(srv)
 	dagql.Fields[*core.Artifacts]{
 		dagql.Func("filterAffectedByPath", func(ctx context.Context, a *core.Artifacts, args provenancePathArgs) (*core.Artifacts, error) {
@@ -78,8 +78,10 @@ func installWorkspaceProvenance(srv *dagql.Server) {
 			if err := provenance.ValidateKinds(args.Kinds); err != nil {
 				return nil, err
 			}
-			return filterAffected(ctx, a, func(p *core.WorkspaceProvenance) (bool, error) { return p.AffectedByPath(string(args.Path), args.Kinds) })
-		}).Doc("Keep artifacts that may depend on this workspace-root path. Enumerates collections but does not run artifact leaves.").DoNotCache("Inspect current receiver construction"),
+			return filterAffected(ctx, a, func(p *core.WorkspaceProvenance) (bool, error) {
+				return p.AffectedByPath(string(args.Path), args.Kinds)
+			})
+		}).Doc("Keep artifacts that may depend on this workspace-root path. Enumerates collections but does not run artifact leaves.").WithInput(dagql.PerCallInput),
 		dagql.Func("filterAffectedByDiff", func(ctx context.Context, a *core.Artifacts, args provenanceDiffArgs) (*core.Artifacts, error) {
 			if err := provenance.ValidateKinds(args.Kinds); err != nil {
 				return nil, err
@@ -87,7 +89,7 @@ func installWorkspaceProvenance(srv *dagql.Server) {
 			return filterAffected(ctx, a, func(p *core.WorkspaceProvenance) (bool, error) {
 				return args.matches(ctx, p)
 			})
-		}).Doc("Keep artifacts that may depend on changed workspace paths. Unknown inputs stay selected.").DoNotCache("Inspect current receiver construction"),
+		}).Doc("Keep artifacts that may depend on changed workspace paths. Unknown inputs stay selected.").WithInput(dagql.PerCallInput),
 	}.Install(srv)
 }
 
