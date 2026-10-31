@@ -82,7 +82,7 @@ later reads. Supplying dummy results would change the code's behavior.
    cause new reads on the next execution.
 4. **Filter through Artifacts.** Keep unknown inputs selected. Keep collection
    views, legacy batching, module load errors, and cloud dispatch in the existing
-   selection system. `--source-path PATH` uses one workspace snapshot for
+   selection system. `--path PATH` uses one workspace snapshot for
    filtering and execution. Paths start at the workspace root.
 
 First-run skipping is not supported. A cache hit without a recorded summary
