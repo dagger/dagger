@@ -246,6 +246,8 @@ func (cm *snapshotManager) leavePackFetch(f *packFetch) {
 // under f's lease.
 func (cm *snapshotManager) runPackFetch(ctx context.Context, f *packFetch, slots chan struct{}) {
 	start := time.Now()
+	// queued is how long the read waited for a slot.
+	var queued time.Duration
 	read := &countingReader{}
 	members, stored, written, present := 0, 0, 0, 0
 	err := func() error {
@@ -253,8 +255,10 @@ func (cm *snapshotManager) runPackFetch(ctx context.Context, f *packFetch, slots
 		defer cancel()
 		select {
 		case slots <- struct{}{}:
+			queued = time.Since(start)
 			defer func() { <-slots }()
 		case <-ctx.Done():
+			queued = time.Since(start)
 			// The read's own deadline is the source's: too slow to answer.
 			return &packContentError{stage: "provider", err: context.Cause(ctx)}
 		}
@@ -306,7 +310,7 @@ func (cm *snapshotManager) runPackFetch(ctx context.Context, f *packFetch, slots
 	case err != nil:
 		outcome = "error"
 	}
-	args := []any{"pack", f.id.String(), "members", members, "written", written, "present", present, "bytes", read.n, "duration", time.Since(start), "outcome", outcome}
+	args := []any{"pack", f.id.String(), "members", members, "written", written, "present", present, "bytes", read.n, "duration", time.Since(start), "queued", queued, "outcome", outcome}
 	level := slog.LevelInfo
 	if outcome == "error" {
 		level = slog.LevelWarn
