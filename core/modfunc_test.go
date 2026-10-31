@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/dagger/dagger/dagql"
@@ -292,4 +293,49 @@ func TestModuleFunctionReceiverConvertedOncePerSession(t *testing.T) {
 	unkeyed, err := moduleFunctionReceiverJSON(dagql.WithResultScope(ctx, unkeyedReceiverScope{}), opts)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"state":"after"}`, string(unkeyed), "a scope without an identity must not reuse a conversion")
+}
+
+func TestModuleFunctionReceiverConvertedPerArtifactView(t *testing.T) {
+	ctx := t.Context()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	root := &Query{}
+	server := &moduleObjectTestServer{mockServer: &mockServer{}, cache: cache, root: root}
+	root.Server = server
+	srv := newCoreDagqlServerForTest(t, root)
+	server.dag = srv
+	installModuleObjectTestModuleClass(srv)
+	installTypeDefTestClasses(srv)
+	ctx = engine.ContextWithClientMetadata(ContextWithQuery(dagql.ContextWithCache(ctx, cache), root), &engine.ClientMetadata{ClientID: "view-receiver-client", SessionID: "view-receiver-session"})
+	obj, _ := collectionTestObject(t, TypeDefKindString, []any{"a", "b", "c"})
+	obj.TypeDef = newTypeDefAttachedResult(t, ctx, cache, srv, "view-receiver-type", obj.TypeDef).Self()
+	source := newTypeDefAttachedResult(t, ctx, cache, srv, "view-receiver-source", &ModuleSource{Kind: ModuleSourceKindLocal, Local: &LocalModuleSource{ContextDirectoryPath: "/test"}})
+	obj.Module = newTypeDefAttachedResult(t, ctx, cache, srv, "view-receiver-module", &Module{NameField: "test", Source: dagql.NonNull(source), Deps: NewSchemaBuilder(nil, nil)})
+	class := dagql.NewClass(srv, dagql.ClassOpts[*ModuleObject]{Typed: obj})
+	viewField, err := obj.artifactViewField(srv)
+	require.NoError(t, err)
+	viewField.Spec.Module, viewField.Spec.ModuleProvider = nil, nil
+	class.Install(viewField)
+	srv.InstallObject(class)
+
+	typ := &ModuleObjectType{mod: obj.Module, typeDef: obj.TypeDef}
+	receiver, err := typ.ConvertFromSDKResult(dagql.ContextWithCall(ctx, moduleObjectTestSyntheticCall("view-receiver", obj)), map[string]any{"Keys": []any{"a", "b", "c"}})
+	require.NoError(t, err)
+	receiver, err = cache.AttachResult(ctx, "view-receiver-session", srv, receiver)
+	require.NoError(t, err)
+	opts := &CallOpts{ParentTyped: receiver}
+
+	for _, key := range []string{"b", "c", "b"} {
+		view := &ArtifactView{state: artifactViewState{Rules: []artifactViewRule{{Dimension: "/cases", Type: obj.TypeDef.Name, Keys: []string{key}, UniqueType: true}}}}
+		require.NoError(t, view.setKey())
+		viewCtx := dagql.WithResultScope(ctx, view)
+		direct, err := moduleFunctionReceiverFields(viewCtx, opts)
+		require.NoError(t, err)
+		want, err := json.Marshal(direct)
+		require.NoError(t, err)
+		got, err := moduleFunctionReceiverJSON(viewCtx, opts)
+		require.NoError(t, err)
+		require.Equal(t, string(want), string(got), "each view must receive its own filtered receiver")
+		require.Equal(t, []any{key}, direct["Keys"])
+	}
 }
