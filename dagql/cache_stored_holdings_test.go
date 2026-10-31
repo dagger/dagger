@@ -160,13 +160,20 @@ func TestStoredQueries(t *testing.T) {
 	t.Parallel()
 	ctx, cloud, r, service := storedPartServiceTestCloud(t)
 	p := storedPartTestDeps(cloud, r)[0]
+	packed := func(part PersistedPartOffer, packs map[string]string) PersistedPartOffer {
+		part.Chain.Packs = map[digest.Digest]digest.Digest{}
+		for layer, pack := range packs {
+			part.Chain.Packs[testDigest(layer)] = testDigest(pack)
+		}
+		return part
+	}
 	for _, stored := range []struct {
 		number uint64
 		part   PersistedPartOffer
 	}{
-		{r, storedPruneTestPart("snapshot", map[string]int64{"shared": 100, "r-top": 10})},
+		{r, packed(storedPruneTestPart("snapshot", map[string]int64{"shared": 100, "r-top": 10}), map[string]string{"r-top": "pack-r"})},
 		{p, storedPruneTestPart("snapshot", map[string]int64{"shared": 100})},
-		{service, storedPruneTestPart("snapshot", map[string]int64{"outside-pool": 1000})},
+		{service, packed(storedPruneTestPart("snapshot", map[string]int64{"outside-pool": 1000}), map[string]string{"outside-pool": "pack-outside"})},
 	} {
 		ok, err := cloud.SetStoredPart(ctx, stored.number, stored.part, 0)
 		require.NoError(t, err)
@@ -183,6 +190,9 @@ func TestStoredQueries(t *testing.T) {
 	live, err := cloud.LiveBlobs()
 	require.NoError(t, err)
 	require.ElementsMatch(t, []digest.Digest{testDigest("shared"), testDigest("r-top"), testDigest("outside-pool")}, live, "a value outside the pool keeps its blobs live")
+	packs, err := cloud.LivePacks()
+	require.NoError(t, err)
+	require.ElementsMatch(t, []digest.Digest{testDigest("pack-r"), testDigest("pack-outside")}, packs, "a value outside the pool keeps its packs live")
 
 	usage, err := cloud.BlobCacheUsage()
 	require.NoError(t, err)
@@ -208,6 +218,8 @@ func TestStoredQueries(t *testing.T) {
 	_, err = c.StoredState()
 	require.ErrorContains(t, err, "no blob store")
 	_, err = c.LiveBlobs()
+	require.ErrorContains(t, err, "no blob store")
+	_, err = c.LivePacks()
 	require.ErrorContains(t, err, "no blob store")
 	_, err = c.BlobCacheUsage()
 	require.ErrorContains(t, err, "no blob store")

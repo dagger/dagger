@@ -316,6 +316,7 @@ func clonePartOffer(offer PersistedPartOffer) (PersistedPartOffer, error) {
 		}
 	}
 	offer.Chain.Addresses = maps.Clone(offer.Chain.Addresses)
+	offer.Chain.Packs = maps.Clone(offer.Chain.Packs)
 	offer.Owner.DependencyIDs = slices.Clone(offer.Owner.DependencyIDs)
 	return offer, nil
 }

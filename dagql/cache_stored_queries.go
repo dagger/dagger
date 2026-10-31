@@ -215,6 +215,26 @@ func (c *Cache) LiveBlobs() ([]digest.Digest, error) {
 	return slices.Sorted(maps.Keys(live)), nil
 }
 
+// LivePacks returns every pack a stored part's chain names, in the pool or
+// not, sorted: the packs a sweep of the blob store keeps. Only a blob-backed
+// cache answers.
+func (c *Cache) LivePacks() ([]digest.Digest, error) {
+	if !c.blobBacked {
+		return nil, fmt.Errorf("live packs: the cache has no blob store")
+	}
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	live := map[digest.Digest]struct{}{}
+	for _, res := range c.resultsByID {
+		for _, part := range res.storedParts {
+			for _, pack := range part.Chain.Packs {
+				live[pack] = struct{}{}
+			}
+		}
+	}
+	return slices.Sorted(maps.Keys(live)), nil
+}
+
 // BlobCacheUsage is what a blob-backed cache holds, as its limits count it.
 type BlobCacheUsage struct {
 	// PoolValues and PoolBytes are the pool as the memory stage measures
