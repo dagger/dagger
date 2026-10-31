@@ -66,7 +66,10 @@ func TestOfferInstallFromPack(t *testing.T) {
 }
 
 // A pack whose bytes don't match its ID fails the install as a content
-// failure, which exhausts the source, so the part is computed instead.
+// failure, which exhausts the source, so the part is computed instead. The
+// pack is read whole, once per layer at most: a layer whose fetch starts
+// after its sibling's read of the pack failed reads the pack itself, so
+// under load the chain's two layers can make two requests.
 func TestOfferInstallFromCorruptPack(t *testing.T) {
 	chain := newChainFixture(t, "corrupt-pack")
 	f := newExhaustionFixture(t, chain)
@@ -81,7 +84,11 @@ func TestOfferInstallFromCorruptPack(t *testing.T) {
 	f.transport.mu.Lock()
 	ranges := slices.Clone(f.transport.ranges)
 	f.transport.mu.Unlock()
-	require.Equal(t, []string{"bytes=0-"}, ranges, "one request for the whole pack")
+	require.NotEmpty(t, ranges, "the pack was read")
+	require.LessOrEqual(t, len(ranges), len(chain.blobs), "once per layer at most")
+	for _, r := range ranges {
+		require.Equal(t, "bytes=0-", r, "each request reads the whole pack")
+	}
 	require.EqualValues(t, 1, f.demand.revision, "the pack's failure exhausted the source")
 	failed := f.logs.lines(t, "remote cache part install failed")
 	require.Len(t, failed, 1)
