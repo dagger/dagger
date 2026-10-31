@@ -45,7 +45,8 @@ type busyReport struct {
 }
 
 // observe records an export's left-out roots and the rows its bundle
-// carries, at now, and reports them. A refused root's row isn't busy.
+// carries, at now, and reports them. Each busy row a left-out root reaches
+// counts that root; a refused root's row isn't busy.
 func (b *busyRows) observe(now time.Time, left []dagql.LeftOutRoot, carried []uint64) busyReport {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -61,27 +62,30 @@ func (b *busyRows) observe(now time.Time, left []dagql.LeftOutRoot, carried []ui
 	byRow := map[uint64]*held{}
 	var rows []*held
 	for _, root := range left {
-		if root.Kind == "" {
-			continue
+		busy := root.Busy
+		if len(busy) == 0 && root.Kind != "" {
+			busy = []dagql.BusyRow{{Row: root.Row, Kind: root.Kind}}
 		}
-		h := byRow[root.Row]
-		if h == nil {
-			seen, ok := b.rows[root.Row]
-			switch {
-			case ok:
-				seen.kind = root.Kind
-				b.rows[root.Row] = seen
-			case len(b.rows) < maxBusyRows:
-				seen = busyRow{kind: root.Kind, since: now}
-				b.rows[root.Row] = seen
-			default:
-				seen = busyRow{kind: root.Kind, since: now}
+		for _, row := range busy {
+			h := byRow[row.Row]
+			if h == nil {
+				seen, ok := b.rows[row.Row]
+				switch {
+				case ok:
+					seen.kind = row.Kind
+					b.rows[row.Row] = seen
+				case len(b.rows) < maxBusyRows:
+					seen = busyRow{kind: row.Kind, since: now}
+					b.rows[row.Row] = seen
+				default:
+					seen = busyRow{kind: row.Kind, since: now}
+				}
+				h = &held{row: row.Row, kind: row.Kind, age: now.Sub(seen.since)}
+				byRow[row.Row] = h
+				rows = append(rows, h)
 			}
-			h = &held{row: root.Row, kind: root.Kind, age: now.Sub(seen.since)}
-			byRow[root.Row] = h
-			rows = append(rows, h)
+			h.roots++
 		}
-		h.roots++
 	}
 	slices.SortFunc(rows, func(x, y *held) int {
 		return cmp.Or(cmp.Compare(y.roots, x.roots), cmp.Compare(x.row, y.row))

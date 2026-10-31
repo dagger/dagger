@@ -1,6 +1,7 @@
 package dagql
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -189,22 +190,26 @@ func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelectio
 			row.deps = append(row.deps, uint64(id))
 		}
 		slices.Sort(row.deps)
-		below := func(id sharedResultID, child *sharedResult) error {
-			if err := walk(id, child); err != nil {
-				var stop *rowBlockedError
-				if errors.As(err, &stop) {
-					return blocked(res.id, stop.blockedRow)
-				}
-				return err
+		// Every child is walked, even past a blocked one, so that the
+		// capture knows every row below the root: each busy row it reaches,
+		// and each row whose selected output goes or is left out with it.
+		// The row is blocked by the lowest-numbered blocked row below it.
+		var cause *blockedRow
+		below := func(id sharedResultID, child *sharedResult) {
+			if child != nil {
+				id = child.id
 			}
-			row.children = append(row.children, child.id)
-			return nil
+			row.children = append(row.children, id)
+			if err := walk(id, child); err != nil {
+				stop := err.(*rowBlockedError)
+				if cause == nil || stop.row < cause.row {
+					cause = &stop.blockedRow
+				}
+			}
 		}
 		for child := range c.resultOwnershipChildrenLocked(res) {
 			if child.owner == nil {
-				if err := below(child.resultID, child.result); err != nil {
-					return err
-				}
+				below(child.resultID, child.result)
 				continue
 			}
 			if _, held := capture.owners[child.owner.id]; !held {
@@ -212,14 +217,11 @@ func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelectio
 				capture.owners[child.owner.id] = child.owner
 			}
 			for dep := range offerOwnershipChildrenLocked(child.owner) {
-				var depID sharedResultID
-				if dep != nil {
-					depID = dep.id
-				}
-				if err := below(depID, dep); err != nil {
-					return err
-				}
+				below(0, dep)
 			}
+		}
+		if cause != nil {
+			return blocked(res.id, *cause)
 		}
 		seen[res.id] = 2
 		row.ordinal = TransferOrdinal(len(capture.order) + 1)
@@ -790,6 +792,33 @@ func (capture *HeldCapturedClosure) settle(selection ValueSelection) ([]LeftOutR
 			mark(child)
 		}
 	}
+	// busyBelow are the busy rows a left-out root's closure reaches: the
+	// rows blocked by their own capture, with a busy kind.
+	busyBelow := func(root capturedRoot) []BusyRow {
+		var busy []BusyRow
+		visited := map[sharedResultID]bool{}
+		var visit func(sharedResultID)
+		visit = func(id sharedResultID) {
+			if visited[id] {
+				return
+			}
+			visited[id] = true
+			if b, ok := capture.blocked[id]; ok && b.row == id && b.kind != "" {
+				busy = append(busy, BusyRow{Row: uint64(id), Kind: b.kind})
+			}
+			if row := capture.rows[id]; row != nil {
+				for _, child := range row.children {
+					visit(child)
+				}
+			}
+		}
+		if root.err != nil && root.err.kind != "" {
+			busy = append(busy, BusyRow{Row: uint64(root.err.row), Kind: root.err.kind})
+		}
+		visit(root.row.id)
+		slices.SortFunc(busy, func(x, y BusyRow) int { return cmp.Compare(x.Row, y.Row) })
+		return slices.CompactFunc(busy, func(x, y BusyRow) bool { return x.Row == y.Row })
+	}
 	var kept []capturedRoot
 	for i, root := range capture.selected {
 		b := root.err
@@ -797,7 +826,7 @@ func (capture *HeldCapturedClosure) settle(selection ValueSelection) ([]LeftOutR
 			b = cause(root.row.id)
 		}
 		if b != nil {
-			leftOut = append(leftOut, LeftOutRoot{Index: i, Row: uint64(b.row), Kind: b.kind, Err: b.err})
+			leftOut = append(leftOut, LeftOutRoot{Index: i, Row: uint64(b.row), Kind: b.kind, Err: b.err, Busy: busyBelow(root)})
 			continue
 		}
 		mark(root.row.id)
