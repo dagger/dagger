@@ -17,8 +17,8 @@ type ValueSelection struct {
 	// LeaveOutOutputsOutsideClosure leaves out a selected output whose entry
 	// the captured closure doesn't hold, instead of refusing the selection.
 	LeaveOutOutputsOutsideClosure bool
-	// Known, for a selection of no outputs, are the rows the recipient has
-	// merged: the bundle sends each one that hasn't changed as a held row.
+	// Known are the rows the recipient has merged: the bundle sends each one
+	// that hasn't changed as a held row.
 	Known *KnownRows
 }
 type SelectedValueOutput struct {

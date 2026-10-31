@@ -38,8 +38,7 @@ type capturedTransferRow struct {
 	// references are relocated to ordinals.
 	transfer PersistedRecord
 	// held makes the row a held row, of recipe: the selection's recipient
-	// knows it, so the capture copies no record for it and walks nothing
-	// below it.
+	// knows it, so the bundle carries no record for it and nothing below it.
 	held   bool
 	recipe digest.Digest
 }
@@ -146,7 +145,9 @@ func (capture *HeldCapturedClosure) block(id sharedResultID, kind BusyKind, err 
 // for the blocked ones are released with the rest. Only a selection that
 // isn't one (no roots, a nil, detached or repeated root) fails it. A
 // selection of no outputs holds each row its Known knows, unless carried
-// names it, as a held row.
+// names it, as a held row, with nothing below it. A selection of outputs
+// walks and copies every row, since its parts and their owners are read
+// from the records below the rows it holds (holdKnownRows).
 //
 //nolint:gocyclo // one classification per held result kind; splitting hides the order of the checks
 func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelection, carried map[sharedResultID]bool) (*HeldCapturedClosure, error) {
@@ -1027,6 +1028,40 @@ func (capture *HeldCapturedClosure) deriveHeldRecipes() ([]sharedResultID, error
 	return shared, nil
 }
 
+// holdKnownRows makes each copied row of an export that selects outputs a
+// held row when the selection's Known knows it, as copied, and carried
+// doesn't name it. A held row carries no record in the bundle, but keeps its
+// links to the rows below it, which go with it, and its parts: a selected
+// part, a chain prefix and an owner sit on it or name it as they would on the
+// row in full, and the Cloud checks its parts against its own copy of the
+// row. It carries none of its offers, so it keeps only the children it
+// depends on: a row only its offers' owners reach leaves the bundle when it
+// settles. A blocked row isn't held: it stays blocked.
+func (capture *HeldCapturedClosure) holdKnownRows(selection ValueSelection, carried map[sharedResultID]bool) {
+	known := selection.Known
+	if known == nil || len(selection.Outputs) == 0 {
+		return
+	}
+	for _, row := range capture.order {
+		id := row.shared.id
+		if row.held || carried[id] {
+			continue
+		}
+		if _, blocked := capture.blocked[id]; blocked {
+			continue
+		}
+		if !known.knows(uint64(id), RowRevision{Replacements: row.replacements, Transfer: row.transferRev, Dependencies: row.dependencyRev}) {
+			continue
+		}
+		row.held = true
+		deps := make(map[sharedResultID]bool, len(row.deps))
+		for _, dep := range row.deps {
+			deps[sharedResultID(dep)] = true
+		}
+		row.children = slices.DeleteFunc(row.children, func(child sharedResultID) bool { return !deps[child] })
+	}
+}
+
 // checkRecords checks each copied record as the bundle will carry it: its
 // references, its normalization and its payload. One that fails refuses the
 // roots that reach its row.
@@ -1067,8 +1102,10 @@ func (capture *HeldCapturedClosure) checkRecords() {
 // With every root left out, it consumes nothing and returns a
 // RootsLeftOutError. An offer it finds on an output the value already
 // completed is obsolete: it retires the offer, as boot does, and captures
-// once more. A selection of no outputs sends each row its Known knows as a
-// held row, unless a row the bundle carries in full has its recipe.
+// once more. It sends each row its Known knows as a held row, unless a row
+// the bundle carries in full has its recipe; in a selection of outputs, a
+// held row keeps its links to the rows below it and its parts
+// (holdKnownRows).
 //
 //nolint:gocyclo // one step per export phase over the held closure; splitting hides the order of the steps
 func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection, cfg config.RefConfig, consume func(context.Context, *ExportedValues) error) (rerr error) {
@@ -1100,6 +1137,7 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 		}
 		passStart = time.Now()
 		_, bundleOp = wcprof.BeginOp(ctx, wcprof.OpKindRemoteCache, "remotecache.export.bundle", wcprof.OpOpts{})
+		capture.holdKnownRows(selection, carried)
 		capture.checkRecords()
 		leftOut, err = capture.settle(selection)
 		var shared []sharedResultID
@@ -1144,7 +1182,14 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 	bundle := ValueBundle{Version: valueBundleVersion, Roots: capture.roots}
 	for _, row := range capture.order {
 		if row.held {
-			bundle.Values = append(bundle.Values, TransferredValue{Ordinal: row.ordinal, SenderNumber: uint64(row.shared.id), SenderReplacements: row.replacements, Record: PersistedRecord{ResultID: uint64(row.ordinal)}, ExpiresAtUnix: row.expiry, Held: row.recipe})
+			value := TransferredValue{Ordinal: row.ordinal, SenderNumber: uint64(row.shared.id), SenderReplacements: row.replacements, Record: PersistedRecord{ResultID: uint64(row.ordinal)}, ExpiresAtUnix: row.expiry, Held: row.recipe}
+			// A row held at the walk has no dependencies here: it stands for
+			// its closure. One held after its copy keeps its links to the
+			// rows below it.
+			for _, id := range row.deps {
+				value.DependencyIDs = append(value.DependencyIDs, uint64(capture.rows[sharedResultID(id)].ordinal))
+			}
+			bundle.Values = append(bundle.Values, value)
 			continue
 		}
 		rec, err := VisitEncodedReferences(row.transfer, relocate)

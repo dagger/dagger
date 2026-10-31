@@ -424,8 +424,9 @@ func TestRemoteCacheAdapterExport(t *testing.T) {
 	require.Equal(t, 1, calls)
 }
 
-// A records-only export sends as held rows the rows its known set knows, and
-// hands on the rows it carried; an export that selects outputs holds none.
+// An export sends as held rows the rows its known set knows, and hands on
+// the rows it carried; one that selects outputs holds those its parts don't
+// need, and sends the same parts as without them.
 func TestRemoteCacheAdapterExportHoldsKnownRows(t *testing.T) {
 	e := newAdapterTestEngine(t)
 	core := e.file(t, "core")
@@ -457,11 +458,13 @@ func TestRemoteCacheAdapterExportHoldsKnownRows(t *testing.T) {
 	}
 	require.Equal(t, []uint64{entryNumber(t, core)}, held)
 
-	exp = export(protocol.Export{Roots: []uint64{entryNumber(t, second)}, Outputs: []protocol.ExportOutput{{Number: entryNumber(t, second), Address: snapshotPart}}}, known)
-	require.Empty(t, exp.Rows.Held, "an export that selects outputs holds nothing")
-	for _, value := range exp.Bundle.Values {
-		require.Empty(t, value.Held)
-	}
+	content := protocol.Export{Roots: []uint64{entryNumber(t, second)}, Outputs: []protocol.ExportOutput{{Number: entryNumber(t, second), Address: snapshotPart}}}
+	whole := export(content, nil)
+	require.Empty(t, whole.Rows.Held)
+	exp = export(content, known)
+	require.Equal(t, []uint64{entryNumber(t, core)}, exp.Rows.Held, "the part doesn't need the shared row")
+	require.Equal(t, len(whole.Bundle.Outputs), len(exp.Bundle.Outputs), "the same parts go")
+	require.NotEmpty(t, exp.Bundle.Outputs)
 }
 
 // A root whose body is running is skipped as busy, and the others go in the
