@@ -74,7 +74,7 @@ func Syncer[T dagql.Typed]() dagql.Field[T] {
 			if err != nil {
 				return res, err
 			}
-			if err := cache.Evaluate(ctx, self); err != nil {
+			if err := cache.Sync(ctx, self); err != nil {
 				return res, err
 			}
 		} else {
