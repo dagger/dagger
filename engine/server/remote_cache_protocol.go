@@ -55,15 +55,13 @@ func (a *RemoteCacheAdapter) CacheIdentity() (string, uint64) {
 }
 
 // Export holds the requested entries by number and captures the held roots
-// with the selected outputs, leaving out those outside the captured closure.
-// A missing root is skipped as gone. When the capture fails, other than by
-// the request's own cancellation or the cache closing, each root is probed
-// alone: one whose probe is busy is skipped as busy, one whose probe fails
-// otherwise is skipped as refused, each with its error as the message, and
-// the others are captured together; if that capture is busy, they are all
-// busy with its error, and if it fails otherwise, so does the request. consume is called once,
-// with the bundle while its chains stay open, or with no bundle when no root
-// survived.
+// once, with the selected outputs, leaving out those outside the captured
+// closure. A missing root is skipped as gone. A root whose closure reaches a
+// row the capture can't capture now is skipped as busy, and one whose closure
+// reaches a record the capture refuses is skipped as refused, each with that
+// row's error as the message; the others go in the bundle. A capture that
+// fails otherwise fails the request. consume is called once, with the bundle
+// while its chains stay open, or with no bundle when no root survived.
 func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, consume func(context.Context, remotecache.Export) error) (rerr error) {
 	if a.stopped.Load() || !a.exports.tryBegin() {
 		return ErrRemoteCacheAdapterClosed
@@ -118,93 +116,61 @@ func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, co
 	local.hold = time.Since(start)
 	wcprof.RecordOpAt(ctx, wcprof.OpKindRemoteCache, "remotecache.export.hold", wcprof.OpOpts{}, start, start.Add(local.hold), wcprof.OutcomeOK)
 
+	if len(roots) == 0 {
+		logExport(req, skipped, nil, time.Since(start), local)
+		return consume(ctx, remotecache.Export{Skipped: skipped})
+	}
+	selection := dagql.ValueSelection{Outputs: outputs, LeaveOutOutputsOutsideClosure: true}
+	for _, root := range roots {
+		selection.Roots = append(selection.Roots, root.result)
+	}
+	// leftOut skips the roots the capture left out, in the request's order.
+	leftOut := func(left []dagql.LeftOutRoot) {
+		for _, root := range left {
+			reason := protocol.SkipRefused
+			if errors.Is(root.Err, dagql.ErrPersistStateNotReady) {
+				reason = protocol.SkipBusy
+			} else {
+				slog.Warn("remote cache export refused a root", "number", roots[root.Index].number, "row", root.Row, "error", root.Err)
+			}
+			skipped = append(skipped, protocol.SkippedRoot{Number: roots[root.Index].number, Reason: reason, Message: skippedMessage(root.Err)})
+		}
+	}
+	// The capture's profile op ends when the bundle is handed on: the
+	// consumer's upload is the export's, not the capture's. So are the
+	// releases after it, each an op of the export's: the chains', once the
+	// consumer is done with them, then the capture's records', as
+	// WithExportedValues returns.
+	captureCtx, captureOp := wcprof.BeginOp(ctx, wcprof.OpKindRemoteCache, "remotecache.export.capture", wcprof.OpOpts{})
 	captured := false
-	export := func(roots []heldRoot) error {
-		local.attempts++
-		selection := dagql.ValueSelection{Outputs: outputs, LeaveOutOutputsOutsideClosure: true}
-		for _, root := range roots {
-			selection.Roots = append(selection.Roots, root.result)
-		}
-		// The capture's profile op ends when the bundle is handed on: the
-		// consumer's upload is the export's, not the capture's. So are the
-		// releases after it, each an op of the export's: the chains', once
-		// the consumer is done with them, then the capture's records', as
-		// WithExportedValues returns.
-		captureCtx, captureOp := wcprof.BeginOp(ctx, wcprof.OpKindRemoteCache, "remotecache.export.capture", wcprof.OpOpts{})
-		var chainsReleased time.Time
-		err := a.cache.WithExportedValues(captureCtx, selection, exportRefConfig, func(captureCtx context.Context, values *dagql.ExportedValues) error {
-			captured = true
-			logExport(req, skipped, values, time.Since(start), local)
-			captureOp.End(wcprof.OutcomeOK)
-			err := consume(wcprof.ContextWithOpID(captureCtx, wcprof.CurrentOpID(ctx)), remotecache.Export{Bundle: &values.Bundle, Skipped: skipped, Blobs: newChainBlobs(values.Chains)})
-			releaseStart := time.Now()
-			// The chains release once: WithExportedValues returns this
-			// release's error from its own.
-			chainsErr := values.Chains.Release(captureCtx)
-			chainsReleased = time.Now()
-			wcprof.RecordOpAt(ctx, wcprof.OpKindRemoteCache, "remotecache.export.release.chains", wcprof.OpOpts{}, releaseStart, chainsReleased, profExportOutcome(chainsErr))
-			return err
-		})
-		if !captured {
-			captureOp.End(profExportOutcome(err))
-		} else {
-			// Its outcome is the capture's, the consumer's error included.
-			wcprof.RecordOpAt(ctx, wcprof.OpKindRemoteCache, "remotecache.export.release.capture", wcprof.OpOpts{}, chainsReleased, time.Now(), profExportOutcome(err))
-		}
+	var chainsReleased time.Time
+	err := a.cache.WithExportedValues(captureCtx, selection, exportRefConfig, func(captureCtx context.Context, values *dagql.ExportedValues) error {
+		captured = true
+		leftOut(values.LeftOut)
+		logExport(req, skipped, values, time.Since(start), local)
+		captureOp.End(wcprof.OutcomeOK)
+		err := consume(wcprof.ContextWithOpID(captureCtx, wcprof.CurrentOpID(ctx)), remotecache.Export{Bundle: &values.Bundle, Skipped: skipped, Blobs: newChainBlobs(values.Chains)})
+		releaseStart := time.Now()
+		// The chains release once: WithExportedValues returns this
+		// release's error from its own.
+		chainsErr := values.Chains.Release(captureCtx)
+		chainsReleased = time.Now()
+		wcprof.RecordOpAt(ctx, wcprof.OpKindRemoteCache, "remotecache.export.release.chains", wcprof.OpOpts{}, releaseStart, chainsReleased, profExportOutcome(chainsErr))
+		return err
+	})
+	if captured {
+		// Its outcome is the capture's, the consumer's error included.
+		wcprof.RecordOpAt(ctx, wcprof.OpKindRemoteCache, "remotecache.export.release.capture", wcprof.OpOpts{}, chainsReleased, time.Now(), profExportOutcome(err))
 		return err
 	}
-	if len(roots) > 0 {
-		err := export(roots)
-		if captured || !rootCaptureError(ctx, err) {
-			return err
-		}
-		// A probe copies records and opens no chain.
-		var ready []heldRoot
-		for _, root := range roots {
-			probeStart := time.Now()
-			probeCtx, probeOp := wcprof.BeginOp(ctx, wcprof.OpKindRemoteCache, "remotecache.export.probe", wcprof.OpOpts{})
-			err := a.cache.WithExportedValues(probeCtx, dagql.ValueSelection{Roots: []dagql.AnyResult{root.result}}, exportRefConfig, func(_ context.Context, values *dagql.ExportedValues) error {
-				local.probeWalkWait += values.Phases.WalkWait
-				return nil
-			})
-			probeOp.EndWithResult(profExportOutcome(err), root.number)
-			local.probes++
-			local.probeTime += time.Since(probeStart)
-			switch {
-			case err == nil:
-				ready = append(ready, root)
-			case errors.Is(err, dagql.ErrPersistStateNotReady):
-				skipped = append(skipped, protocol.SkippedRoot{Number: root.number, Reason: protocol.SkipBusy, Message: skippedMessage(err)})
-			case !rootCaptureError(ctx, err):
-				return err
-			default:
-				slog.Warn("remote cache export refused a root", "number", root.number, "error", err)
-				skipped = append(skipped, protocol.SkippedRoot{Number: root.number, Reason: protocol.SkipRefused, Message: skippedMessage(err)})
-			}
-		}
-		if len(ready) > 0 {
-			err := export(ready)
-			if captured || !errors.Is(err, dagql.ErrPersistStateNotReady) {
-				return err
-			}
-			// A task started between the probes and the export.
-			for _, root := range ready {
-				skipped = append(skipped, protocol.SkippedRoot{Number: root.number, Reason: protocol.SkipBusy, Message: skippedMessage(err)})
-			}
-		}
+	captureOp.End(profExportOutcome(err))
+	var left *dagql.RootsLeftOutError
+	if !errors.As(err, &left) {
+		return err
 	}
+	leftOut(left.Roots)
 	logExport(req, skipped, nil, time.Since(start), local)
 	return consume(ctx, remotecache.Export{Skipped: skipped})
-}
-
-// rootCaptureError reports whether a failed capture may have failed for one
-// of its roots, and not for the request's own cancellation or the cache
-// closing, which fail the whole request.
-func rootCaptureError(ctx context.Context, err error) bool {
-	return err != nil && ctx.Err() == nil &&
-		!errors.Is(err, dagql.ErrCacheClosed) &&
-		!errors.Is(err, context.Canceled) &&
-		!errors.Is(err, context.DeadlineExceeded)
 }
 
 // maxSkippedMessageBytes bounds the message a busy or refused root's skip
@@ -259,15 +225,9 @@ func (h *entryHolds) release(ctx context.Context) error {
 }
 
 // exportCapture is where an export's time went outside the capture it logs:
-// holding the entries, and the per-root probes after a failed attempt.
+// holding the entries.
 type exportCapture struct {
 	hold time.Duration
-	// attempts counts the captures of the roots together: a second follows
-	// the probes.
-	attempts      int
-	probes        int
-	probeTime     time.Duration
-	probeWalkWait time.Duration
 }
 
 // logExport records one export's capture: the roots asked for and skipped,
@@ -326,11 +286,8 @@ func exportLogAttrs(req protocol.Export, skipped []protocol.SkippedRoot, values 
 		"walk_wait", phases.WalkWait,
 		"walk", phases.Walk,
 		"copy", phases.Copy,
+		"bundle", phases.Bundle,
 		"retried_stale", phases.RetriedStale,
-		"attempts", local.attempts,
-		"probes", local.probes,
-		"probe_time", local.probeTime,
-		"probe_walk_wait", local.probeWalkWait,
 		"layers", stats.Layers,
 		"layers_reused", stats.LayersReused,
 		"layers_diffed", stats.LayersDiffed,
@@ -618,8 +575,8 @@ func profOffer(ctx context.Context, number uint64, disposition dagql.OfferDispos
 	wcprof.Fact(ctx, id, "offer."+string(outcome), 0)
 }
 
-// profExportOutcome is a capture's or probe's profile outcome: a busy root
-// gives way, and isn't a failure.
+// profExportOutcome is a capture's profile outcome: a capture that every
+// root's busy row stopped gives way, and isn't a failure.
 func profExportOutcome(err error) wcprof.Outcome {
 	switch {
 	case err == nil:
