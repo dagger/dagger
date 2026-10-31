@@ -173,6 +173,19 @@ func (srv *Server) emitShareEvent(parts []dagql.SnapshotSharedPart) {
 	srv.engineEvents.Emit(telemetryattrs.EngineEventShare, srv.engineCache.Identity(), time.Now(), event)
 }
 
+// emitReadEvent reports the parts of entries work read. The cache calls it
+// with each batch of reads not reported before.
+func (srv *Server) emitReadEvent(reads []dagql.PartRead) {
+	if srv.engineEvents == nil || srv.engineCache == nil || len(reads) == 0 {
+		return
+	}
+	event := telemetryattrs.EngineReadEvent{Reads: make([]telemetryattrs.EngineRead, len(reads))}
+	for i, read := range reads {
+		event.Reads[i] = telemetryattrs.EngineRead{ResultID: read.ResultID, Part: string(read.Part)}
+	}
+	srv.engineEvents.Emit(telemetryattrs.EngineEventRead, srv.engineCache.Identity(), time.Now(), event)
+}
+
 // stopEngineEvents runs after the cache closed: it reports engine.stop with
 // what the close saved, drains the emitter and shuts the export down, all
 // within one budget, so an unreachable Cloud delays shutdown by at most that
