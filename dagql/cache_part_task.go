@@ -226,6 +226,14 @@ func isPartTaskKey(key LazyGroupKey) bool {
 	return strings.HasPrefix(string(key), "obtain:") || strings.HasPrefix(string(key), "acquire:") || strings.HasPrefix(string(key), "lazy:")
 }
 
+// isPartDeliveryTaskKey reports whether a part task only delivers a part:
+// acquiring it opens a local copy or obtains one, and obtaining installs it
+// from a source. Neither computes the value; an acquire that must compute
+// starts a lazy evaluation task, which is a group of its own.
+func isPartDeliveryTaskKey(key LazyGroupKey) bool {
+	return strings.HasPrefix(string(key), "obtain:") || strings.HasPrefix(string(key), "acquire:")
+}
+
 func (t *PartTaskToken) openOwnerSync() {
 	t.ownerSyncOnce.Do(func() {
 		if t.ownerSync != nil {
