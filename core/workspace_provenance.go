@@ -3,23 +3,23 @@ package core
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"path"
 	"slices"
 	"strings"
 
 	"github.com/dagger/dagger/core/provenance"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
 // WorkspaceSelector describes a region that contributes to an artifact.
 type WorkspaceSelector struct {
 	Path         WorkspacePath `field:"true" doc:"The path relative to the workspace boundary."`
-	Include      []string `field:"true" doc:"Include patterns relative to path."`
-	Exclude      []string `field:"true" doc:"Exclude patterns relative to path."`
-	Conservative bool     `field:"true" doc:"Whether this region is an upper bound on possible inputs."`
-	Kind         string   `field:"true" doc:"WORKSPACE_READ or MODULE_SOURCE."`
+	Include      []string      `field:"true" doc:"Include patterns relative to path."`
+	Exclude      []string      `field:"true" doc:"Exclude patterns relative to path."`
+	Conservative bool          `field:"true" doc:"Whether this region is an upper bound on possible inputs."`
+	Kind         string        `field:"true" doc:"WORKSPACE_READ or MODULE_SOURCE."`
 }
 
 func (*WorkspaceSelector) Type() *ast.Type {
@@ -74,6 +74,11 @@ func (p *WorkspaceProvenance) AffectedByDiff(ctx context.Context, changes *Chang
 	if err := provenance.ValidateKinds(kinds); err != nil {
 		return false, err
 	}
+	for _, selector := range p.Selectors {
+		if selector.Conservative && (len(kinds) == 0 || slices.Contains(kinds, selector.Kind)) {
+			return true, nil
+		}
+	}
 	paths, err := changes.ComputePaths(ctx)
 	if err != nil {
 		return false, err
@@ -87,7 +92,12 @@ func (p *WorkspaceProvenance) AffectedByDiff(ctx context.Context, changes *Chang
 		}
 	}
 	for _, path := range slices.Concat(paths.Added, paths.AllRemoved) {
-		match, err := p.AffectedByPath(path, kinds)
+		var match bool
+		if strings.HasSuffix(path, "/") {
+			match, err = p.AffectedByPath(path, kinds)
+		} else {
+			match, err = provenance.AffectedByFile(p.regions(), path, kinds)
+		}
 		if err != nil || match {
 			return match, err
 		}
@@ -99,121 +109,134 @@ func conservativeProvenance(kind string) provenance.Selector {
 	return provenance.Selector{Path: "/", Conservative: true, Kind: kind}
 }
 
-// Provenance inspects the receiver, never the artifact leaf. Current module
-// compiler inputs are not completely mapped to workspace paths, so module
-// source invalidation remains conservative in this prototype.
+// Provenance plans a check without running its body. A saved read set is used
+// only after validation against the current immutable workspace.
 func (a *Artifact) Provenance(ctx context.Context) (*WorkspaceProvenance, error) {
-	regions := []provenance.Selector{conservativeProvenance(provenance.ModuleSource)}
+	selectors := a.moduleSourceSelectors()
 	unknown := func() (*WorkspaceProvenance, error) {
-		return newWorkspaceProvenance(append(regions, conservativeProvenance(provenance.WorkspaceRead))), nil
+		return newWorkspaceProvenance(append(selectors, conservativeProvenance(provenance.WorkspaceRead))), nil
 	}
-	if a.LoadFailure != nil || a.Node == nil || a.Node.Parent == nil || a.Workspace.Self() == nil {
+	if a.LoadFailure != nil || a.Node == nil || a.Workspace.Self() == nil || a.TypeName != "Check" {
 		return unknown()
 	}
-	// Late Workspace inputs cannot be discovered from receiver construction.
-	if obj := a.Node.Parent.ObjectType(); obj != nil {
-		if fn, ok := obj.FunctionByName(a.Node.Name); ok {
-			for _, arg := range fn.Args {
-				if arg.Self().IsWorkspace() {
-					return unknown()
-				}
-			}
-		}
-	}
-	receiver := a.Clone()
-	receiver.Node = receiver.Node.Parent
 	ctx, err := a.WorkspaceContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var value dagql.AnyObjectResult
-	if err := receiver.Evaluate(ctx, &value); err != nil {
-		return nil, fmt.Errorf("artifact provenance receiver: %w", err)
+	if err := a.Evaluate(ctx, &value); err != nil {
+		return unknown()
 	}
-	id, err := value.RecipeID(ctx)
+	ctx = suppressWorkspaceReads(ctx)
+	check, ok := dagql.UnwrapAs[*Check](value)
+	if !ok || check.Receiver.Self() == nil || check.CachePolicy != FunctionCachePolicyDefault {
+		return unknown()
+	}
+	srv, err := dagqlServerForModule(ctx, check.Receiver.Self().Module)
 	if err != nil {
 		return nil, err
 	}
-	regions = append(regions, provenanceFromRecipe(id)...)
-	// Module code can obtain currentWorkspace without a Workspace argument.
-	// Its recipe cannot prove the absence of those reads.
-	regions = append(regions, conservativeProvenance(provenance.WorkspaceRead))
-	return newWorkspaceProvenance(regions), nil
+	args := make([]dagql.NamedInput, 0, len(check.Inputs))
+	for _, input := range check.Inputs {
+		if v, ok := input.Value.(dagql.Input); ok {
+			args = append(args, dagql.NamedInput{Name: input.Name, Value: v})
+		}
+	}
+	req, err := check.Receiver.Plan(ctx, srv, dagql.Selector{Field: checkRunFieldName(check.Function), Args: args})
+	if err != nil {
+		return unknown()
+	}
+	key, err := workspaceCallKey(ctx, req)
+	if err != nil || key == "" {
+		return unknown()
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return nil, err
+	}
+	md, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// A stripped Workspace argument must be the workspace being filtered. Other
+	// workspaces need separate baselines; keep those checks selected for now.
+	currentScope, err := workspaceScopeForValue(ctx, a.Workspace)
+	if err != nil || currentScope == nil {
+		return unknown()
+	}
+	refs, err := workspaceRefs(ctx, req.ResultCall)
+	if err != nil {
+		return unknown()
+	}
+	for _, ref := range refs {
+		value, err := workspaceValueForRef(ctx, srv, cache, ref)
+		if err != nil {
+			return unknown()
+		}
+		scope, err := workspaceScopeForValue(ctx, value)
+		if err != nil || scope == nil || scope.Identity != currentScope.Identity {
+			return unknown()
+		}
+	}
+	candidates, err := cache.CallMetadataCandidates(ctx, md.SessionID, workspaceReadsNamespace, key)
+	if err != nil {
+		return unknown()
+	}
+	for _, candidate := range candidates {
+		var summary workspaceReadSummary
+		if json.Unmarshal(candidate.Payload, &summary) != nil {
+			continue
+		}
+		summary.Selectors = append(slices.Clone(summary.Selectors), selectors...)
+		if validateWorkspaceReads(ctx, srv, a.Workspace, summary) {
+			return newWorkspaceProvenance(summary.Selectors), nil
+		}
+	}
+	return unknown()
 }
 
-// Recipes are traversed for inspection only. Unrepresented runtime reads are
-// covered separately by the caller's conservative selector.
-func provenanceFromRecipe(root *call.ID) []provenance.Selector {
-	var regions []provenance.Selector
-	seen := map[*call.ID]bool{}
-	var visit func(*call.ID)
-	var literal func(call.Literal)
-	literal = func(lit call.Literal) {
-		switch v := lit.(type) {
-		case *call.LiteralID:
-			visit(v.Value())
-		case *call.LiteralList:
-			for _, item := range v.Values() {
-				literal(item)
+func (a *Artifact) moduleSourceSelectors() []provenance.Selector {
+	if a.Workspace.Self() == nil {
+		return []provenance.Selector{conservativeProvenance(provenance.ModuleSource)}
+	}
+	var mod *Module
+	if a.Node != nil {
+		mod = a.Node.Module.Self()
+	}
+	return moduleSourceSelectors(a.Workspace.Self(), mod)
+}
+
+func moduleSourceSelectors(ws *Workspace, mod *Module) []provenance.Selector {
+	var selectors []provenance.Selector
+	for _, file := range []string{ws.ConfigFile, ws.LockFile} {
+		if file != "" {
+			selectors = append(selectors, provenance.Selector{Path: path.Clean("/" + file), Kind: provenance.ModuleSource})
+		}
+	}
+	seen := map[*ModuleSource]bool{}
+	var source func(*ModuleSource)
+	source = func(src *ModuleSource) {
+		if src == nil || seen[src] {
+			return
+		}
+		seen[src] = true
+		if src.contextIsWorkspace(ws) {
+			selectors = append(selectors, provenance.Selector{Path: path.Clean("/" + src.SourceRootSubpath), Kind: provenance.ModuleSource})
+			if len(src.RebasedIncludePaths) > 0 {
+				selectors = append(selectors, provenance.Selector{Path: "/", Include: slices.Clone(src.RebasedIncludePaths), Kind: provenance.ModuleSource})
 			}
-		case *call.LiteralObject:
-			for _, arg := range v.Args() {
-				literal(arg.Value())
+		}
+		for _, dep := range src.Dependencies {
+			source(dep.Self())
+		}
+		if src.SDKImpl != nil {
+			if sdkModule, ok := src.SDKImpl.AsModule(); ok && sdkModule.Self() != nil {
+				source(sdkModule.Self().GetSource())
 			}
 		}
 	}
-	visit = func(id *call.ID) {
-		if id == nil || seen[id] {
-			return
-		}
-		seen[id] = true
-		if id.IsHandle() {
-			regions = append(regions, conservativeProvenance(provenance.WorkspaceRead))
-			return
-		}
-		receiver := id.Receiver()
-		if receiver != nil && receiver.Type().NamedType() == "Workspace" && (id.Field() == "directory" || id.Field() == "file") {
-			s := conservativeProvenance(provenance.WorkspaceRead)
-			for _, arg := range id.Args() {
-				if arg.Name() == "path" {
-					if text, ok := arg.Value().ToInput().(string); ok && strings.HasPrefix(text, "/") {
-						if p, err := provenance.Path(text); err == nil {
-							s.Path = p
-							s.Conservative = false
-						}
-					}
-				}
-			}
-			if !s.Conservative {
-				for _, arg := range id.Args() {
-					if arg.Name() != "include" && arg.Name() != "exclude" {
-						continue
-					}
-					if list, ok := arg.Value().(*call.LiteralList); ok {
-						for _, item := range list.Values() {
-							if text, ok := item.ToInput().(string); ok {
-								if arg.Name() == "include" {
-									s.Include = append(s.Include, text)
-								} else {
-									s.Exclude = append(s.Exclude, text)
-								}
-							}
-						}
-					}
-				}
-			}
-			regions = append(regions, s)
-			return
-		}
-		if id.Type().NamedType() == "Workspace" {
-			regions = append(regions, conservativeProvenance(provenance.WorkspaceRead))
-			return
-		}
-		visit(receiver)
-		for _, arg := range slices.Concat(id.Args(), id.ImplicitInputs()) {
-			literal(arg.Value())
-		}
+	if mod != nil {
+		source(mod.GetSource())
 	}
-	visit(root)
-	return provenance.Normalize(regions)
+	return selectors
 }
