@@ -871,7 +871,7 @@ func (sr *mutableRef) CommitWithUsage(ctx context.Context, usage snapshots.Usage
 }
 
 func (sr *mutableRef) Release(ctx context.Context) error {
-	sr.cm.mu.Lock()
+	wcprof.Lock(ctx, &sr.cm.mu, managerMuProfIdent)
 	defer sr.cm.mu.Unlock()
 
 	sr.mu.Lock()
