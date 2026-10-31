@@ -251,9 +251,16 @@ func (cm *snapshotManager) importLayer(
 			unpack.Update(read)
 		}))
 	}
-	if _, err := cm.Applier.Apply(ctx, desc, mounts, applyOpts...); err != nil {
+	applied, err := cm.Applier.Apply(ctx, desc, mounts, applyOpts...)
+	if err != nil {
 		_ = unmount()
 		return nil, chainError(ctx, chainMode, desc, "apply", err)
+	}
+	// The snapshot is found again by diffID, so its content must be the
+	// diffID's, as containerd's unpacker also requires.
+	if applied.Digest != diffID {
+		_ = unmount()
+		return nil, chainError(ctx, chainMode, desc, "apply", errors.Errorf("wrong diff id %s calculated on extraction, expected %s", applied.Digest, diffID))
 	}
 	if unpack != nil {
 		// a successful apply consumed the whole blob even if the
