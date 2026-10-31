@@ -2,6 +2,7 @@ package idtui
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"strings"
 	"testing"
@@ -9,6 +10,7 @@ import (
 
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/dagger/dagger/dagql/dagui"
 )
@@ -68,5 +70,44 @@ func TestChecksReportUnreportedCheck(t *testing.T) {
 	}
 	if strings.Contains(got, "passed") || strings.Contains(got, " OK") {
 		t.Fatalf("an unreported check must not show as passed:\n%s", got)
+	}
+}
+
+// A check's final state can arrive after the trace's end marked it canceled.
+// Its real outcome then replaces the assumed cancellation.
+func TestChecksReportLateFinalState(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	rootID := prettyTestSpanID(1)
+	start := time.Unix(100, 0)
+	db.ImportSnapshots([]dagui.SpanSnapshot{{
+		ID:        rootID,
+		TraceID:   prettyTestTraceID(),
+		Name:      "check",
+		StartTime: start,
+		EndTime:   start.Add(20 * time.Second),
+		Final:     true,
+	}})
+	running := checkSpanStub(2, "dag://?check=late", start.Add(time.Second), time.Time{}, codes.Unset)
+	running.Parent = running.SpanContext.WithSpanID(rootID.SpanID)
+	if err := db.ExportSpans(context.Background(), tracetest.SpanStubs{running}.Snapshots()); err != nil {
+		t.Fatal(err)
+	}
+	final := checkSpanStub(2, "dag://?check=late", start.Add(time.Second), start.Add(21*time.Second), codes.Ok)
+	final.Parent = running.Parent
+	if err := db.ExportSpans(context.Background(), tracetest.SpanStubs{final}.Snapshots()); err != nil {
+		t.Fatal(err)
+	}
+	db.SetPrimarySpan(rootID)
+	fe := NewWithDB(io.Discard, db)
+	fe.recalculateViewLocked()
+
+	var buf bytes.Buffer
+	if err := fe.FinalRender(&buf); err != nil {
+		t.Fatalf("FinalRender: %v", err)
+	}
+	got := buf.String()
+	if !strings.Contains(got, "1 passed") || strings.Contains(got, "not reported") {
+		t.Fatalf("a check whose final state arrived late must show its outcome:\n%s", got)
 	}
 }
