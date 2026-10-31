@@ -104,6 +104,22 @@ func TestImportChainFromPack(t *testing.T) {
 	testutil.CheckFile(t, ref, "b.txt", "upper")
 }
 
+// A download of a packed blob that a sibling's read already stored, as one
+// that found the blob missing just before that read ended, reads nothing:
+// the pack isn't read again.
+func TestPackedDownloadAfterSiblingReadReadsNothing(t *testing.T) {
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	a, _ := producer.Build(t, nil, "a.txt", "first")
+	b, _ := producer.Build(t, nil, "b.txt", "second")
+	chainA, chainB := exportChain(t, a), exportChain(t, b)
+	provider := newPackProvider(t, chainA.Provider, chainA.Layers[0].Descriptor, chainB.Layers[0].Descriptor)
+	importChain(t, consumer, supplied(chainA, provider))
+
+	later := newPackProvider(t, chainA.Provider, chainA.Layers[0].Descriptor, chainB.Layers[0].Descriptor)
+	require.NoError(t, bkcache.DownloadChainContent(t.Context(), consumer.Manager, chainB.Layers[0].Descriptor, later))
+	require.Zero(t, later.opens.Load(), "the sibling's read stored the blob")
+}
+
 // Two imports that need members of the same pack at once read it once.
 func TestImportChainsJoinPack(t *testing.T) {
 	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
