@@ -1,12 +1,19 @@
 package dangv2
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 
+	"github.com/Khan/genqlient/graphql"
 	"github.com/stretchr/testify/require"
+	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vito/dang/v2/pkg/dang"
 	"github.com/vito/dang/v2/pkg/hm"
+	"github.com/vito/dang/v2/pkg/introspection"
+
+	"github.com/dagger/dagger/dagql/call"
 )
 
 // A collection whose items each hold the same module, as dagger/go's package
@@ -96,6 +103,104 @@ func TestConvertRebuildsSharedObjectOnce(t *testing.T) {
 	got, err := json.Marshal(coll)
 	require.NoError(t, err)
 	require.JSONEq(t, receivedCollectionJSON, string(got))
+}
+
+// Two received copies of an object holding the same handle are one object, so
+// they compare equal, as the object the sender sent twice did. Before copies
+// were merged, each copy got its own handle value, and Dang compares handles
+// by identity, so they compared unequal.
+func TestConvertSharedObjectsWithHandlesCompareEqual(t *testing.T) {
+	t.Parallel()
+
+	env := dang.NewValueScope(dang.NewType("Test", dang.ObjectKind))
+	env.Bind("node", dang.GraphQLFunction{
+		Name:   "node",
+		Field:  &introspection.Field{Name: "node"},
+		Client: failingClient{},
+		Schema: contractTestSchema(),
+	}, dang.PublicVisibility)
+	dirType := dang.NewType("Directory", dang.ObjectKind)
+	childType := dang.NewType("Child", dang.ObjectKind)
+	childType.Add("dir", hm.NewScheme(nil, hm.NonNullType{Type: dirType}))
+
+	handle, err := call.NewEngineResultID(7, call.NewType(&ast.Type{NamedType: "Directory", NonNull: true})).Encode()
+	require.NoError(t, err)
+	data, err := json.Marshal([]any{map[string]any{"dir": handle}, map[string]any{"dir": handle}})
+	require.NoError(t, err)
+	val, err := decodeReceivedJSON(data)
+	require.NoError(t, err)
+	conv := dangConverter{env: env, objects: map[receivedObjectKey]dang.Value{}}
+	list, err := conv.convert(t.Context(), val, hm.NonNullType{Type: dang.ListType{Type: hm.NonNullType{Type: childType}}})
+	require.NoError(t, err)
+
+	children := list.(dang.ListValue).Elements
+	equal := func(a, b dang.Value) bool {
+		eq, err := (&dang.Equality{Left: &dang.ValueNode{Val: a}, Right: &dang.ValueNode{Val: b}}).Eval(t.Context(), env)
+		require.NoError(t, err)
+		return eq.(dang.BoolValue).Val
+	}
+	dir := func(child dang.Value) dang.Value {
+		v, found, err := child.(*dang.Object).Lookup(t.Context(), "dir")
+		require.NoError(t, err)
+		require.True(t, found)
+		return v
+	}
+	require.True(t, equal(children[0], children[1]))
+	require.True(t, equal(dir(children[0]), dir(children[1])))
+}
+
+// Calls that receive the same JSON share its decoded value, but each builds its
+// own Dang values against its own engine client: a call's client closes when
+// the call ends, so a value built for one call must never reach another.
+func TestConvertSharedDecodedValuePerCall(t *testing.T) {
+	t.Parallel()
+
+	dirType := dang.NewType("Directory", dang.ObjectKind)
+	childType := dang.NewType("Child", dang.ObjectKind)
+	childType.Add("dir", hm.NewScheme(nil, hm.NonNullType{Type: dirType}))
+	listType := hm.NonNullType{Type: dang.ListType{Type: hm.NonNullType{Type: childType}}}
+
+	handle, err := call.NewEngineResultID(7, call.NewType(&ast.Type{NamedType: "Directory", NonNull: true})).Encode()
+	require.NoError(t, err)
+	data, err := json.Marshal([]any{map[string]any{"dir": handle}, map[string]any{"dir": handle}})
+	require.NoError(t, err)
+	shared, err := decodeReceivedJSON(data)
+	require.NoError(t, err)
+
+	convert := func(client graphql.Client) []dang.Value {
+		env := dang.NewValueScope(dang.NewType("Test", dang.ObjectKind))
+		env.Bind("node", dang.GraphQLFunction{
+			Name:   "node",
+			Field:  &introspection.Field{Name: "node"},
+			Client: client,
+			Schema: contractTestSchema(),
+		}, dang.PublicVisibility)
+		conv := dangConverter{env: env, objects: map[receivedObjectKey]dang.Value{}}
+		list, err := conv.convert(t.Context(), shared, listType)
+		require.NoError(t, err)
+		return list.(dang.ListValue).Elements
+	}
+	clientA, clientB := &namedClient{"a"}, &namedClient{"b"}
+	childrenA, childrenB := convert(clientA), convert(clientB)
+
+	for _, got := range []struct {
+		children []dang.Value
+		client   graphql.Client
+	}{{childrenA, clientA}, {childrenB, clientB}} {
+		for _, child := range got.children {
+			dir, found, err := child.(*dang.Object).Lookup(t.Context(), "dir")
+			require.NoError(t, err)
+			require.True(t, found)
+			require.Same(t, got.client, dir.(dang.GraphQLValue).Client)
+		}
+	}
+	require.NotSame(t, childrenA[0], childrenB[0])
+}
+
+type namedClient struct{ name string }
+
+func (c *namedClient) MakeRequest(context.Context, *graphql.Request, *graphql.Response) error {
+	return fmt.Errorf("client %s: unexpected API request", c.name)
 }
 
 func receivedJSON(t *testing.T, data []byte) any {

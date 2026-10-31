@@ -21,15 +21,16 @@ import (
 // every item of a collection, such as the module each item belongs to, is
 // sent once per item but rebuilt once.
 //
-// A decoded value is shared by every call that receives the same JSON in a
-// session, and must not be modified.
+// A decoded value is shared by every call that receives the same JSON, and
+// must not be modified.
 type receivedObject struct {
 	fields map[string]any
 }
 
 // decodeReceived decodes a function call's parent or argument JSON. Every
 // call on one collection item receives the whole collection, so the decoded
-// value is kept for the session, keyed by the JSON's content.
+// value is kept, keyed by the JSON's content, while a session that received it
+// is open. It is plain data, so sessions that receive the same JSON share it.
 func decodeReceived(ctx context.Context, data []byte) (any, error) {
 	cache, cacheErr := dagql.EngineCache(ctx)
 	metadata, metadataErr := engine.ClientMetadataFromContext(ctx)
