@@ -984,9 +984,9 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 				}
 			}
 			gate.mu.Unlock()
-			permit, outcome, err = c.TryAcquireForDecision(ctx, receiver, source.target, drain, task)
+			permit, outcome, err = c.TryAcquireForDecision(commitCtx, receiver, source.target, drain, task)
 		} else {
-			permit, outcome, err = c.TryAcquire(ctx, receiver, source.target, task)
+			permit, outcome, err = c.TryAcquire(commitCtx, receiver, source.target, task)
 		}
 		if err != nil {
 			return err

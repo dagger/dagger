@@ -392,7 +392,7 @@ func (c *Cache) TryAcquire(ctx context.Context, receiver AnyResult, address Pers
 	if err != nil {
 		return nil, GateReselect, err
 	}
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	defer c.egraphMu.Unlock()
 	row, err := c.validatePartTaskLocked(receiver, task)
 	if err != nil {
@@ -521,7 +521,7 @@ func (c *Cache) TryAcquireForDecision(ctx context.Context, receiver AnyResult, a
 	if _, err := partAddressKey(address); err != nil {
 		return nil, GateReselect, err
 	}
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	defer c.egraphMu.Unlock()
 	row, err := c.validatePartTaskLocked(receiver, task)
 	if err != nil {

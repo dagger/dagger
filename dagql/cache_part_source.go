@@ -12,6 +12,7 @@ import (
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -161,7 +162,7 @@ func (s *PartSourceLease) Release(ctx context.Context) error {
 	s.once.Do(func() {
 		ctx = context.WithoutCancel(ctx)
 		c := s.cache
-		c.egraphMu.Lock()
+		wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 		var queue collectionQueue
 		if s.source != nil {
 			queue, s.releaseErr = c.decrementIncomingOwnershipLocked(ctx, s.source, queue)
