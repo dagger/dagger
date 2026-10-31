@@ -305,3 +305,33 @@ func TestDemandPartProfilesItsSteps(t *testing.T) {
 	require.Positive(t, steps["part.demand.probe"], "each pass probes the receiver")
 	require.Positive(t, steps["part.demand.select"], "and selects a source")
 }
+
+// An install that waits for the prefetcher's lock, held by another, records
+// the wait as a lock wait of its op.
+func TestOfferInstallPrefetcherLockWaitProfiled(t *testing.T) {
+	f := newPrefetchFixture(t, true, nil)
+	ctx, root := profiledRoot(f.ctx, "test.demand")
+	f.ctx = ctx
+	f.prefetch.mu.Lock()
+	released := make(chan struct{})
+	go func() {
+		defer close(released)
+		time.Sleep(50 * time.Millisecond)
+		f.prefetch.mu.Unlock()
+	}()
+	require.NoError(t, f.run())
+	<-released
+	require.True(t, f.installed())
+	root.End(wcprof.OutcomeOK)
+
+	events, _ := profiledUnder(t, root.ID())
+	installs := profiledOps(events, "remotecache.install")
+	require.Len(t, installs, 1)
+	var waited time.Duration
+	for _, ev := range events {
+		if ev.Type == "wait" && ev.ident == "dagql.partPrefetcher.mu" && ev.ParentID == installs[0].OpID {
+			waited += time.Duration(ev.EndNS - ev.StartNS)
+		}
+	}
+	require.GreaterOrEqual(t, waited, 20*time.Millisecond, "the install's wait for the prefetcher's lock is recorded")
+}

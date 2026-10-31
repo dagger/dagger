@@ -35,6 +35,14 @@ const (
 	PackReads    = packReads
 )
 
+// LockManager takes m's own lock, as another holder of it would, and
+// returns the function that releases it.
+func LockManager(m SnapshotManager) (unlock func()) {
+	cm := m.(*snapshotManager)
+	cm.mu.Lock()
+	return cm.mu.Unlock
+}
+
 // SetBeforeJoinPackFetch runs hook as each download of a packed blob looks
 // for a read of its pack to join, until the returned restore.
 func SetBeforeJoinPackFetch(hook func()) (restore func()) {
