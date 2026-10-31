@@ -13,10 +13,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/opencontainers/go-digest"
 )
@@ -31,15 +29,7 @@ const (
 	MaxHeaderBytes = 512 << 10
 	MaxBytes       = 64 << 20
 
-	// EnabledEnv turns packs off for an engine when set to 0: it neither
-	// announces them to the service nor reads a chain's packs.
-	EnabledEnv = "_EXPERIMENTAL_DAGGER_REMOTE_CACHE_PACKS"
 )
-
-// Enabled reports whether the engine uses packs, read once.
-var Enabled = sync.OnceValue(func() bool {
-	return os.Getenv(EnabledEnv) != "0"
-})
 
 // Member is one blob of a pack, in pack order.
 type Member struct {

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"sync"
 	"time"
@@ -122,6 +123,7 @@ func (b *RemoteCacheBridge) enqueue(ctx context.Context, request RenewalRequest)
 		return nil, err
 	}
 	request.Layers = layers
+	request.Packs = maps.Clone(request.Packs)
 	exchange := &renewalExchange{requester: ctx, done: make(chan struct{})}
 	b.mu.Lock()
 	defer b.mu.Unlock()

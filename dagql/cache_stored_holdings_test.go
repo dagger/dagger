@@ -153,6 +153,57 @@ func TestDropStoredParts(t *testing.T) {
 	require.Empty(t, none)
 }
 
+// DropStoredPack removes every stored part whose chain names the pack, through
+// any of its layers, and nothing else.
+func TestDropStoredPack(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, p := storedBundleTestCloud(t, "root")
+	q := storedPruneTestRoot(t, ctx, cloud, "other-root")
+	packed := func(part PersistedPartOffer, layer, pack string) PersistedPartOffer {
+		part.Chain.Packs = map[digest.Digest]digest.Digest{testDigest(layer): testDigest(pack)}
+		return part
+	}
+	for _, stored := range []struct {
+		number uint64
+		part   PersistedPartOffer
+	}{
+		{r, packed(storedPruneTestPart("snapshot", map[string]int64{"base": 10, "r-top": 5}), "r-top", "gone-pack")},
+		{r, packed(storedPruneTestPart("mount:/kept", map[string]int64{"kept-layer": 7}), "kept-layer", "kept-pack")},
+		// Another member of the same pack names it too.
+		{q, packed(storedPruneTestPart("snapshot", map[string]int64{"q-top": 4}), "q-top", "gone-pack")},
+		{p, storedPruneTestPart("snapshot", map[string]int64{"gone-pack": 3})},
+	} {
+		ok, err := cloud.SetStoredPart(ctx, stored.number, stored.part, 0)
+		require.NoError(t, err)
+		require.True(t, ok)
+	}
+
+	// A layer two parts store in different packs maps to the lowest pack.
+	ok, err := cloud.SetStoredPart(ctx, r, packed(storedPruneTestPart("mount:/twice", map[string]int64{"kept-layer": 7}), "kept-layer", "other-pack"), 0)
+	require.NoError(t, err)
+	require.True(t, ok)
+	members, err := cloud.LivePackMembers()
+	require.NoError(t, err)
+	require.Equal(t, min(testDigest("kept-pack"), testDigest("other-pack")), members[testDigest("kept-layer")])
+
+	dropped, err := cloud.DropStoredPack(testDigest("gone-pack"))
+	require.NoError(t, err)
+	require.Equal(t, []StoredPart{
+		{Number: r, Address: PersistedPartAddress{Part: "snapshot"}},
+		{Number: q, Address: PersistedPartAddress{Part: "snapshot"}},
+	}, dropped)
+	state, err := cloud.StoredState()
+	require.NoError(t, err)
+	require.Equal(t, map[uint64][]PersistedPartAddress{
+		r: {{Part: "mount:/kept"}, {Part: "mount:/twice"}},
+		p: {{Part: "snapshot"}},
+	}, state.Parts, "a blob whose digest is the pack's is not the pack")
+
+	_, c := storedPartTestCache(t)
+	_, err = c.DropStoredPack(testDigest("x"))
+	require.ErrorContains(t, err, "no blob store")
+}
+
 // The queries the service builds its maps, its sweep and its memory estimate
 // on: the stored roots and parts; every blob a stored part names, in the pool
 // or not; and the counts the limits weigh.
@@ -193,6 +244,9 @@ func TestStoredQueries(t *testing.T) {
 	packs, err := cloud.LivePacks()
 	require.NoError(t, err)
 	require.ElementsMatch(t, []digest.Digest{testDigest("pack-r"), testDigest("pack-outside")}, packs, "a value outside the pool keeps its packs live")
+	members, err := cloud.LivePackMembers()
+	require.NoError(t, err)
+	require.Equal(t, map[digest.Digest]digest.Digest{testDigest("r-top"): testDigest("pack-r"), testDigest("outside-pool"): testDigest("pack-outside")}, members)
 
 	usage, err := cloud.BlobCacheUsage()
 	require.NoError(t, err)
@@ -220,6 +274,8 @@ func TestStoredQueries(t *testing.T) {
 	_, err = c.LiveBlobs()
 	require.ErrorContains(t, err, "no blob store")
 	_, err = c.LivePacks()
+	require.ErrorContains(t, err, "no blob store")
+	_, err = c.LivePackMembers()
 	require.ErrorContains(t, err, "no blob store")
 	_, err = c.BlobCacheUsage()
 	require.ErrorContains(t, err, "no blob store")

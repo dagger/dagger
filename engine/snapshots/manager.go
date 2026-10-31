@@ -178,6 +178,8 @@ type snapshotManager struct {
 	// rebases on commit. A layer's whiteouts are written as overlay
 	// whiteouts, whose device nodes can't be made in a user namespace.
 	applyLayersApart bool
+	// packs runs reads of packs, one per pack, and holds their members.
+	packs packFetches
 	// backgroundReleases releases read-only mounts off their callers' paths.
 	backgroundReleases *backgroundReleases
 	// sharedMounts keeps one read-only mount per snapshot for its readers.

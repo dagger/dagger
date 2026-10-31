@@ -235,6 +235,29 @@ func (c *Cache) LivePacks() ([]digest.Digest, error) {
 	return slices.Sorted(maps.Keys(live)), nil
 }
 
+// LivePackMembers maps every layer a stored part's chain stores in a pack,
+// in the pool or not, to that pack: the members the service knows to be
+// present through their packs. A layer that stored parts name in more than
+// one pack maps to the lowest pack ID. Only a blob-backed cache answers.
+func (c *Cache) LivePackMembers() (map[digest.Digest]digest.Digest, error) {
+	if !c.blobBacked {
+		return nil, fmt.Errorf("live pack members: the cache has no blob store")
+	}
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	members := map[digest.Digest]digest.Digest{}
+	for _, res := range c.resultsByID {
+		for _, part := range res.storedParts {
+			for layer, pack := range part.Chain.Packs {
+				if current, ok := members[layer]; !ok || pack < current {
+					members[layer] = pack
+				}
+			}
+		}
+	}
+	return members, nil
+}
+
 // BlobCacheUsage is what a blob-backed cache holds, as its limits count it.
 type BlobCacheUsage struct {
 	// PoolValues and PoolBytes are the pool as the memory stage measures

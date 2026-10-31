@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
+	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/dagger/dagger/engine/remotecache/pack"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
@@ -30,6 +33,8 @@ type packProvider struct {
 	gate chan struct{}
 	// fail, when set, fails every OpenPack.
 	fail error
+	// opened, when set, sees each OpenPack's context.
+	opened func(context.Context)
 }
 
 // newPackProvider packs the given layers' blobs, read from inner, in order.
@@ -69,6 +74,9 @@ func (p *packProvider) PackOf(blob digest.Digest) (digest.Digest, bool) {
 
 func (p *packProvider) OpenPack(ctx context.Context, blob digest.Digest) (io.ReadCloser, error) {
 	p.opens.Add(1)
+	if p.opened != nil {
+		p.opened(ctx)
+	}
 	if p.gate != nil {
 		select {
 		case <-p.gate:
@@ -124,7 +132,7 @@ func TestImportChainsJoinPack(t *testing.T) {
 		ref, err := consumer.Manager.ImportChain(context.Background(), supplied(chainB, providerB))
 		second <- result{ref, err}
 	}()
-	time.Sleep(100 * time.Millisecond)
+	require.Eventually(t, func() bool { return bkcache.PackWaiters(consumer.Manager, providerA.id) == 2 }, 10*time.Second, 10*time.Millisecond, "the second import joined the read")
 	close(gate)
 	r1, r2 := <-first, <-second
 	require.NoError(t, r1.err)
@@ -218,8 +226,7 @@ func TestImportChainsJoinPackRetriesOwnProvider(t *testing.T) {
 		ref, err = consumer.Manager.ImportChain(context.Background(), supplied(chainB, providerB))
 		second <- err
 	}()
-	// The second import has joined the first one's read by now.
-	time.Sleep(100 * time.Millisecond)
+	require.Eventually(t, func() bool { return bkcache.PackWaiters(consumer.Manager, providerA.id) == 2 }, 10*time.Second, 10*time.Millisecond, "the second import joined the first one's read")
 	close(gate)
 	var contentErr *bkcache.ChainContentError
 	require.ErrorAs(t, <-first, &contentErr, "the first import's own provider failed")
@@ -227,4 +234,123 @@ func TestImportChainsJoinPackRetriesOwnProvider(t *testing.T) {
 	defer ref.Release(context.Background())
 	require.EqualValues(t, 1, providerB.opens.Load(), "the second import read the pack with its own provider")
 	testutil.CheckFile(t, ref, "b.txt", "second")
+}
+
+// A read ends before its lease can expire: its deadline, which the provider
+// sees, is before the expiry containerd keeps on the lease the members are
+// written under.
+func TestPackReadEndsBeforeItsLease(t *testing.T) {
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	a, _ := producer.Build(t, nil, "a.txt", "first")
+	chain := exportChain(t, a)
+	provider := newPackProvider(t, chain.Provider, chain.Layers[0].Descriptor)
+	// Observed on the read's goroutine, checked on the test's.
+	type observed struct {
+		deadline, expires time.Time
+		hasDeadline       bool
+		err               error
+	}
+	seen := make(chan observed, 1)
+	provider.opened = func(ctx context.Context) {
+		var o observed
+		o.deadline, o.hasDeadline = ctx.Deadline()
+		id, _ := leases.FromContext(ctx)
+		found, err := consumer.Leases.List(ctx, "id=="+id)
+		switch {
+		case err != nil:
+			o.err = err
+		case len(found) != 1:
+			o.err = fmt.Errorf("found %d leases %q", len(found), id)
+		default:
+			o.expires, o.err = time.Parse(time.RFC3339, found[0].Labels["containerd.io/gc.expire"])
+		}
+		seen <- o
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	ref, err := consumer.Manager.ImportChain(ctx, supplied(chain, provider))
+	require.NoError(t, err)
+	defer ref.Release(context.Background())
+	o := <-seen
+	require.NoError(t, o.err)
+	require.True(t, o.hasDeadline, "a read has a deadline")
+	require.True(t, o.deadline.Before(o.expires), "the read's deadline %s is before its lease's expiry %s", o.deadline, o.expires)
+	require.Greater(t, o.expires.Sub(o.deadline), bkcache.PackLeaseTTL/4, "the waiting imports have time to link their members")
+}
+
+// A read still waiting for a slot at its deadline fails as content too, so
+// the import falls back instead of failing the engine's way.
+func TestPackReadCutOffWaitingForASlot(t *testing.T) {
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	var busyImports sync.WaitGroup
+	defer busyImports.Wait()
+	gate := make(chan struct{})
+	defer close(gate)
+	// Fill every read slot with a pack that answers only once the test ends.
+	for i := range bkcache.PackReads {
+		ref, _ := producer.Build(t, nil, fmt.Sprintf("busy-%d.txt", i), fmt.Sprintf("busy %d", i))
+		chain := exportChain(t, ref)
+		busy := newPackProvider(t, chain.Provider, chain.Layers[0].Descriptor)
+		busy.gate = gate
+		busyImports.Go(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if ref, err := consumer.Manager.ImportChain(ctx, supplied(chain, busy)); err == nil {
+				_ = ref.Release(context.Background())
+			}
+		})
+		require.Eventually(t, func() bool { return busy.opens.Load() == 1 }, 10*time.Second, 10*time.Millisecond)
+	}
+	restore := bkcache.SetPackReadLimit(100 * time.Millisecond)
+	defer restore()
+	a, _ := producer.Build(t, nil, "a.txt", "first")
+	chain := exportChain(t, a)
+	provider := newPackProvider(t, chain.Provider, chain.Layers[0].Descriptor)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	_, err := consumer.Manager.ImportChain(ctx, supplied(chain, provider))
+	var contentErr *bkcache.ChainContentError
+	require.ErrorAs(t, err, &contentErr)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.Zero(t, provider.opens.Load(), "the read never got a slot")
+}
+
+// A read that outlives its bound is cut off, and the import that needed it
+// fails as content instead of waiting on.
+func TestPackReadCutOffAtItsLimit(t *testing.T) {
+	t.Cleanup(bkcache.SetPackReadLimit(100 * time.Millisecond))
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	a, _ := producer.Build(t, nil, "a.txt", "first")
+	chain := exportChain(t, a)
+	provider := newPackProvider(t, chain.Provider, chain.Layers[0].Descriptor)
+	// The pack never answers.
+	provider.gate = make(chan struct{})
+	start := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	_, err := consumer.Manager.ImportChain(ctx, supplied(chain, provider))
+	var contentErr *bkcache.ChainContentError
+	require.ErrorAs(t, err, &contentErr)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.Less(t, time.Since(start), 10*time.Second, "the read was cut off at its limit")
+	require.EqualValues(t, 1, provider.opens.Load())
+}
+
+// valuePackProvider is a provider that isn't a pointer.
+type valuePackProvider struct{ *packProvider }
+
+// An import whose own read fails stops there, even when its provider isn't
+// one it can tell apart from another's.
+func TestImportChainFromPackOwnFailureWithValueProvider(t *testing.T) {
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	a, _ := producer.Build(t, nil, "a.txt", "first")
+	chain := exportChain(t, a)
+	provider := newPackProvider(t, chain.Provider, chain.Layers[0].Descriptor)
+	provider.fail = errors.New("expired address")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	_, err := consumer.Manager.ImportChain(ctx, supplied(chain, valuePackProvider{provider}))
+	var contentErr *bkcache.ChainContentError
+	require.ErrorAs(t, err, &contentErr)
+	require.EqualValues(t, 1, provider.opens.Load(), "the import's own read failed, and it stopped")
 }
