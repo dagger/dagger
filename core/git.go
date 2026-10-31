@@ -1647,8 +1647,6 @@ func gitFollowedTags(ctx context.Context, dest *gitutil.GitCLI, candidates []git
 // cloneURL is only used in error messages. After fetchGitCheckout (or
 // copyGitCheckout) the checkout owns its objects, so this may run after a
 // borrowed mirror has been released.
-//
-//nolint:gocyclo // one sequence of checkout steps, each skipped per inheritance mode; splitting hides their order
 func finishGitCheckout(
 	ctx context.Context,
 	checkoutGit *gitutil.GitCLI,
