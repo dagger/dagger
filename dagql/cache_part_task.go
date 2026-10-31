@@ -9,9 +9,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/opencontainers/go-digest"
-
 	"github.com/dagger/dagger/engine/wcprof"
+	"github.com/opencontainers/go-digest"
 )
 
 // LazyTaskSpec supplies a coordination body, independent of the value's native
@@ -255,7 +254,7 @@ func (c *Cache) RunLazyTask(ctx context.Context, receiver AnyResult, key LazyGro
 }
 
 func (c *Cache) releasePartRow(ctx context.Context, row *sharedResult) error {
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	queue, err := c.decrementIncomingOwnershipLocked(ctx, row, nil)
 	callbacks, collectErr := c.collectUnownedResultsLocked(ctx, queue)
 	c.egraphMu.Unlock()
