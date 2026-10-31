@@ -525,6 +525,11 @@ func (x *layerExtraction) create(path string, hdr *tar.Header, reader io.Reader)
 			if err := mkdir(path, hdrInfo.Mode()); err != nil {
 				return err
 			}
+		} else if err := x.finish(); err != nil {
+			// Files under it may still be queued, and a file takes some of
+			// its directory's metadata when it is created, such as a
+			// default ACL: they are created first, as in tar order.
+			return err
 		}
 
 	//nolint:staticcheck // TypeRegA is deprecated but we may still receive an external tar with TypeRegA
@@ -584,6 +589,10 @@ func (x *layerExtraction) create(path string, hdr *tar.Header, reader io.Reader)
 	return nil
 }
 
+// beforeLayerFileWrite runs on a worker before it writes each file, and an
+// error from it is the write's. Tests slow or fail the workers with it.
+var beforeLayerFileWrite = func(string) error { return nil }
+
 // layerFile is a regular file for a worker to write.
 type layerFile struct {
 	path string
@@ -592,8 +601,9 @@ type layerFile struct {
 }
 
 // layerFileWriters writes regular files handed to it, on
-// layerApplyWorkers goroutines. After the first failure the rest are
-// skipped, and the failure is returned by failed, finish and stop.
+// layerApplyWorkers goroutines. After the first failure, or once the context
+// is done, the rest are skipped, and the failure is returned by failed,
+// finish and stop.
 type layerFileWriters struct {
 	ctx     context.Context
 	files   chan layerFile
@@ -610,7 +620,14 @@ func startLayerFileWriters(ctx context.Context) *layerFileWriters {
 		w.workers.Go(func() {
 			for f := range w.files {
 				if w.failed() == nil {
-					if err := writeQueuedLayerFile(ctx, f); err != nil {
+					err := ctx.Err()
+					if err == nil {
+						err = beforeLayerFileWrite(f.path)
+					}
+					if err == nil {
+						err = writeQueuedLayerFile(ctx, f)
+					}
+					if err != nil {
 						w.fail(err)
 					}
 				}

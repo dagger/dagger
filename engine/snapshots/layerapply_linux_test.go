@@ -5,12 +5,15 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -100,6 +103,8 @@ func applyBoth(t *testing.T, layer []byte, overlay bool, setup func(root, lower 
 		_, err := archive.Apply(ctx, root, bytes.NewReader(layer), opts...)
 		return err
 	})
+	// Slow workers: a step that doesn't wait for them changes the outcome.
+	slowWorkers(t)
 	got, gotErr := extract(t.TempDir(), func(root string, parents []string) error {
 		return applyLayerTar(ctx, layerTarget{root: root, parents: parents, overlay: overlay}, bytes.NewReader(layer))
 	})
@@ -110,6 +115,20 @@ func applyBoth(t *testing.T, layer []byte, overlay bool, setup func(root, lower 
 	require.NoError(t, gotErr)
 	require.Equal(t, describeTree(t, want), describeTree(t, got))
 	return got, nil
+}
+
+// slowWorkers makes each worker wait before writing a file, until the test
+// ends.
+func slowWorkers(t *testing.T) {
+	setBeforeLayerFileWrite(t, func(string) error {
+		time.Sleep(time.Millisecond)
+		return nil
+	})
+}
+
+func setBeforeLayerFileWrite(t *testing.T, f func(string) error) {
+	beforeLayerFileWrite = f
+	t.Cleanup(func() { beforeLayerFileWrite = func(string) error { return nil } })
 }
 
 // describeTree lists every entry under root with what extraction sets on it,
@@ -230,6 +249,8 @@ func TestLayerApplyMatchesContainerd(t *testing.T) {
 			tarSymlink("escape", "../../../.."),
 			tarFile("escape/through-escape", "z", 0644),
 			tarFile("../dotdot", "w", 0644),
+			tarFile("/absolute-name", "v", 0644),
+			tarFile("real/../../up-and-back", "u", 0644),
 		}},
 		{name: "a symlink replaces a directory", entries: []tarEntry{
 			tarFile("swap/file", "before", 0644),
@@ -341,6 +362,12 @@ func TestLayerApplyFailures(t *testing.T) {
 		{name: "a hard link to a missing file", layer: func(t *testing.T) []byte {
 			return tarOf(t, tarHardlink("link", "missing"))
 		}},
+		{name: "a hard link outside the root", layer: func(t *testing.T) []byte {
+			return tarOf(t, tarHardlink("link", "../../../etc/passwd"))
+		}},
+		{name: "a hard link to a later entry", layer: func(t *testing.T) []byte {
+			return tarOf(t, tarHardlink("early", "later"), tarFile("later", "later", 0644))
+		}},
 		{name: "a whiteout outside its directory", layer: func(t *testing.T) []byte {
 			return tarOf(t, tarFile("dir/.wh...", "", 0644))
 		}},
@@ -361,6 +388,48 @@ func TestLayerApplyFailures(t *testing.T) {
 			})
 		}
 	}
+
+	t.Run("a worker fails", func(t *testing.T) {
+		failed := errors.New("worker failed")
+		var after atomic.Int64
+		var returned atomic.Bool
+		setBeforeLayerFileWrite(t, func(path string) error {
+			if returned.Load() {
+				after.Add(1)
+			}
+			if strings.HasSuffix(path, "tree/d1/f5") {
+				return failed
+			}
+			time.Sleep(time.Millisecond)
+			return nil
+		})
+		err := applyLayerTar(context.Background(), layerTarget{root: t.TempDir()}, bytes.NewReader(tarOf(t, manyFiles()...)))
+		returned.Store(true)
+		require.ErrorIs(t, err, failed)
+		time.Sleep(50 * time.Millisecond)
+		require.Zero(t, after.Load(), "a worker wrote after the extraction returned")
+	})
+
+	t.Run("canceled while files are queued", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		var after atomic.Int64
+		var returned atomic.Bool
+		setBeforeLayerFileWrite(t, func(path string) error {
+			if returned.Load() {
+				after.Add(1)
+			}
+			cancel()
+			time.Sleep(time.Millisecond)
+			return nil
+		})
+		root := t.TempDir()
+		err := applyLayerTar(ctx, layerTarget{root: root}, bytes.NewReader(tarOf(t, manyFiles()...)))
+		returned.Store(true)
+		require.ErrorIs(t, err, context.Canceled)
+		time.Sleep(50 * time.Millisecond)
+		require.Zero(t, after.Load(), "a worker wrote after the extraction returned")
+	})
 
 	t.Run("canceled", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -416,5 +485,59 @@ func TestLayerApplyTarget(t *testing.T) {
 	} {
 		_, ok := layerApplyTarget(mounts)
 		require.False(t, ok, "%v", mounts)
+	}
+}
+
+// A path's resolution is remembered only until a symlink appears along it:
+// here the symlink replacing a directory points outside the root, which
+// containerd keeps under the root.
+func TestLayerApplySymlinkReplacingADirectory(t *testing.T) {
+	outside := t.TempDir()
+	for _, overlay := range []bool{false, true} {
+		t.Run(fmt.Sprintf("overlay=%v", overlay), func(t *testing.T) {
+			root, err := applyBoth(t, tarOf(t,
+				tarFile("swap/sub/file", "before", 0644),
+				tarSymlink("swap", outside),
+				tarFile("swap/sub/file", "through the symlink", 0644),
+				tarFile("swap/other", "through the symlink", 0644),
+			), overlay, nil)
+			require.NoError(t, err)
+			entries, err := os.ReadDir(outside)
+			require.NoError(t, err)
+			require.Empty(t, entries)
+			data, err := os.ReadFile(filepath.Join(root, outside, "sub/file"))
+			require.NoError(t, err)
+			require.Equal(t, "through the symlink", string(data))
+		})
+	}
+}
+
+// A file takes its directory's default ACL when it is created, so a
+// directory header after a file under it must not reach the file first.
+func TestLayerApplyDirectoryAfterItsFiles(t *testing.T) {
+	// A default ACL: owner rwx, user 1234 r, group r-x, mask r-x, other r-x.
+	acl := []byte{2, 0, 0, 0}
+	for _, e := range []struct {
+		tag, perm uint16
+		id        uint32
+	}{{0x01, 7, 0xffffffff}, {0x02, 4, 1234}, {0x04, 5, 0xffffffff}, {0x10, 5, 0xffffffff}, {0x20, 5, 0xffffffff}} {
+		acl = binary.LittleEndian.AppendUint16(acl, e.tag)
+		acl = binary.LittleEndian.AppendUint16(acl, e.perm)
+		acl = binary.LittleEndian.AppendUint32(acl, e.id)
+	}
+	dir := tarDir("d", 0755)
+	dir.hdr.PAXRecords = map[string]string{"SCHILY.xattr.system.posix_acl_default": string(acl)}
+	// The header comes while d/f is still queued: the queue holds a few
+	// files, and the workers are slowed.
+	entries := []tarEntry{tarFile("d/f", "file", 0640), dir, tarFile("d/later", "later", 0640)}
+	entries = append(entries, manyFiles()...)
+	for _, overlay := range []bool{false, true} {
+		t.Run(fmt.Sprintf("overlay=%v", overlay), func(t *testing.T) {
+			root, err := applyBoth(t, tarOf(t, entries...), overlay, nil)
+			require.NoError(t, err)
+			if _, err := sysx.LGetxattr(filepath.Join(root, "d/later"), "system.posix_acl_access"); err != nil {
+				t.Skipf("no ACLs on this file system, so nothing to tell apart: %v", err)
+			}
+		})
 	}
 }
