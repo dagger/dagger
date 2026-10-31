@@ -141,8 +141,9 @@ func TestResolvePinnedImageRejectsOtherContent(t *testing.T) {
 	registry, rslvr := newTestPullResolver(t, image)
 	ref := registry.host + "/test/image:latest@" + image.root.Digest.String()
 
-	_, _, _, err := rslvr.ResolveImageConfig(t.Context(), ref, ResolveImageConfigOpts{Platform: &platform})
+	_, _, configBytes, err := rslvr.ResolveImageConfig(t.Context(), ref, ResolveImageConfigOpts{Platform: &platform})
 	require.ErrorContains(t, err, "has digest")
+	require.Nil(t, configBytes)
 }
 
 func newTestPullResolver(t *testing.T, image *testPullImage) (*testPullRegistry, *Resolver) {
