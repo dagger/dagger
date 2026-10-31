@@ -165,6 +165,23 @@ func (DirectorySuite) TestSubdirectoryViewResolution(ctx context.Context, t *tes
 		}
 	})
 
+	t.Run("module ignore rules through a link", func(ctx context.Context, t *testctx.T) {
+		// The module's source is missing, so loading it checks whether an
+		// ignore rule excludes it. Only one root has a rule for it, outside
+		// app/, behind app/link; within app/ there is none in either. That
+		// root goes first, so its load isn't answered by the other's.
+		for _, outside := range []map[string]string{{"rules/.gitignore": "missing\n"}, nil} {
+			dir := t.TempDir()
+			writeTree(t, dir,
+				map[string]string{"app/dagger.json": `{"name":"probe","sdk":"dang","source":"link/missing"}`},
+				map[string]string{"app/link": "../rules"})
+			writeTree(t, dir, outside, nil)
+			subpath, err := host(dir).Directory("app").AsModuleSource().SourceSubpath(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "link/missing", subpath)
+		}
+	})
+
 	t.Run("destination through a link", func(ctx context.Context, t *testctx.T) {
 		dir := t.TempDir()
 		require.NoError(t, os.MkdirAll(filepath.Join(dir, "outside"), 0o755))
