@@ -2291,6 +2291,9 @@ type Cache struct {
 	holderEntries   map[HolderKey]sharedResultID
 	entriesByRecipe map[digest.Digest]sharedResultID
 	remoteCaches    map[CacheID]*remoteCacheState
+	// callMetadata indexes ordinary observation rows; it owns no result holds.
+	// Guarded by egraphMu and removed with each row's value.
+	callMetadata callMetadataIndex
 	// joinedEntries, while an operation on holdings runs, collects the
 	// entries that class unions join to another class, by number
 	// (trackJoinsLocked). It is nil at every other time, so no class ID it
@@ -5509,6 +5512,7 @@ func (c *Cache) putResultLocked(res *sharedResult) {
 	}
 	c.resultPayloadBytes += res.payloadBytes
 	c.resultsByID[res.id] = res
+	c.indexCallMetadataLocked(res)
 }
 
 // deleteResultLocked unregisters res. Requires egraphMu for writing.
@@ -5517,6 +5521,7 @@ func (c *Cache) deleteResultLocked(res *sharedResult) {
 		return
 	}
 	c.forgetListItemLocked(res)
+	c.unindexCallMetadataLocked(res.id)
 	c.resultPayloadBytes -= res.payloadBytes
 	delete(c.resultsByID, res.id)
 }

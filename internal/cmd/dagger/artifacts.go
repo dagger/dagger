@@ -37,7 +37,7 @@ func newListCommand() *cobra.Command {
 		Long:  "List artifacts by type or collection. Use -a to expand collections.",
 		Args:  cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) == 0 && !cmd.Flags().Changed("type") && len(artifactKeyFlags(cmd)) == 0 {
+			if len(args) == 0 && !cmd.Flags().Changed("type") && len(artifactKeyFlags(cmd)) == 0 && !cmd.Flags().Changed("path") {
 				return cmd.Help()
 			}
 			return runArtifacts(cmd, args)
@@ -53,6 +53,7 @@ func newListCommand() *cobra.Command {
 }
 
 func registerArtifactListFlags(cmd *cobra.Command) {
+	cmd.Flags().String("path", "", "Select artifacts affected by workspace-root `PATH` or its subtree")
 	cmd.Flags().StringArray("module", nil, "Select artifacts from module `NAME`")
 	cmd.Flags().Lookup("module").Annotations = map[string][]string{artifactDimensionFlag: {artifact.ModuleDimension}}
 	cmd.Flags().BoolP("all", "a", false, "Expand collections and list each item")
@@ -285,33 +286,18 @@ func completeArtifactTypes(cmd *cobra.Command, args []string, _ string) ([]strin
 }
 
 func runArtifacts(cmd *cobra.Command, addresses []string) error {
-	parsed, err := parseArtifactAddresses(addresses)
-	if err != nil {
-		return err
-	}
 	params, err := artifactClientParams(client.Params{SkipWorkspaceModules: true}, addresses)
 	if err != nil {
 		return err
 	}
 	flags := artifactKeyFlags(cmd)
 	return withArtifactEngine(cmd.Context(), params, func(ctx context.Context, ec *client.Client) error {
-		workspaceID, err := core.NewQuery(ec.Dagger()).CurrentWorkspace().ID(ctx)
-		if err != nil {
-			return err
-		}
-		ws := core.Ref[*core.Workspace](core.NewQuery(ec.Dagger()), workspaceID)
-		// Flags bind in the combined path scope; address queries bind in their own scope.
-		defs, err := artifactDimensions(ctx, ec.Dagger(), ws.Artifacts(core.WorkspaceArtifactsOpts{Include: artifactPaths(parsed, flags...)}))
-		if err != nil {
-			return err
-		}
-		if err := validateArtifactDimensionFlags(cmd, defs); err != nil {
-			return err
-		}
-		if err := bindArtifactDimensions(flags, defs); err != nil {
-			return err
-		}
+		ws := core.NewQuery(ec.Dagger()).CurrentWorkspace()
 		selected, err := commandArtifacts(ctx, ec.Dagger(), ws, cmd, addresses, false, flags...)
+		if err != nil {
+			return err
+		}
+		defs, err := artifactDimensions(ctx, ec.Dagger(), selected)
 		if err != nil {
 			return err
 		}

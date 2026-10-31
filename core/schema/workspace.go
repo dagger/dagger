@@ -1459,6 +1459,13 @@ func (s *workspaceSchema) directoryAt(
 	if err != nil {
 		return inst, err
 	}
+	if args.Gitignore || (len(args.Include) == 0 && len(args.Exclude) == 0) {
+		// An unfiltered Directory is a view of the source tree. Its callers can
+		// navigate to parent directories. Ignore rules can also read other paths.
+		core.RecordWorkspaceRead(ctx, "/", core.CopyFilter{})
+	} else {
+		core.RecordWorkspaceRead(ctx, resolvedPath, args.CopyFilter)
+	}
 	return s.resolveReadRootfs(ctx, ws, resolvedPath, args.CopyFilter, args.Gitignore)
 }
 
@@ -1485,6 +1492,7 @@ func (s *workspaceSchema) fileAt(
 	if err != nil {
 		return inst, err
 	}
+	core.RecordWorkspaceRead(ctx, resolvedPath, core.CopyFilter{})
 	parentDir := filepath.Dir(resolvedPath)
 	basename := filepath.Base(resolvedPath)
 

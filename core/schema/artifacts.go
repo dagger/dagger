@@ -122,6 +122,7 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		ViewFilter:  AfterVersion("v1.0.0-0"),
 		DoNotCache:  "Evaluate the field with its own cache policy.",
 	}, s.value)
+	installWorkspaceProvenance(srv)
 }
 
 func (*artifactsSchema) modules(_ context.Context, parent *core.Artifacts, _ struct{}) (dagql.ObjectResultArray[*core.Module], error) {
