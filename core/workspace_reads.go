@@ -433,26 +433,7 @@ func validateWorkspaceReads(ctx context.Context, srv *dagql.Server, current dagq
 	if !ok {
 		return false
 	}
-	changes, err := NewChangeset(ctx, before, after)
-	if err != nil {
-		return false
-	}
-	paths, err := changes.ComputePaths(ctx)
-	if err != nil {
-		return false
-	}
-	for _, file := range slices.Concat(paths.Modified, paths.Added, paths.AllRemoved) {
-		var match bool
-		if strings.HasSuffix(file, "/") {
-			match, err = provenance.AffectedByPath(summary.Selectors, file, nil)
-		} else {
-			match, err = provenance.AffectedByFile(summary.Selectors, file, nil)
-		}
-		if err != nil || match {
-			return false
-		}
-	}
-	return true
+	return workspaceReadRegionsEqual(ctx, srv, before, after, summary.Selectors)
 }
 
 // A selector cannot describe reads through a symlink without the symlink's
