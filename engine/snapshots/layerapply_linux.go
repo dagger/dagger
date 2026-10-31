@@ -124,8 +124,8 @@ func (a *layerApplier) Apply(ctx context.Context, desc ocispecs.Descriptor, moun
 	}
 	defer processor.Close()
 
-	digester := digest.Canonical.Digester()
-	rc := &applyCounter{r: io.TeeReader(processor, digester.Hash())}
+	rc := startLayerReadAhead(processor)
+	defer rc.stop()
 	if err := applyLayerTar(ctx, target, rc); err != nil {
 		return ocispecs.Descriptor{}, err
 	}
@@ -148,8 +148,115 @@ func (a *layerApplier) Apply(ctx context.Context, desc ocispecs.Descriptor, moun
 	return ocispecs.Descriptor{
 		MediaType: ocispecs.MediaTypeImageLayer,
 		Size:      rc.n,
-		Digest:    digester.Digest(),
+		Digest:    rc.digester.Digest(),
 	}, nil
+}
+
+// layerReadAheadChunk and layerReadAheadChunks size the buffer between a
+// layer's decompression and its extraction.
+const (
+	layerReadAheadChunk  = 1 << 20
+	layerReadAheadChunks = 16
+)
+
+// layerReadAhead reads a layer's uncompressed stream on its own goroutine,
+// hashing and counting it there, up to layerReadAheadChunks chunks ahead of
+// the extraction reading it. Without it, decompression, which runs in its
+// own process (igzip or unpigz) behind a pipe, waits whenever the extraction
+// does, and the two take turns instead of running together.
+type layerReadAhead struct {
+	chunks chan layerReadAheadResult
+	free   chan []byte
+	done   chan struct{}
+	exited chan struct{}
+
+	cur  []byte
+	buf  []byte
+	err  error
+	once sync.Once
+
+	// Set by the reading goroutine; read once it has exited.
+	digester digest.Digester
+	n        int64
+}
+
+type layerReadAheadResult struct {
+	buf []byte
+	n   int
+	err error
+}
+
+func startLayerReadAhead(src io.Reader) *layerReadAhead {
+	ra := &layerReadAhead{
+		chunks:   make(chan layerReadAheadResult, layerReadAheadChunks),
+		free:     make(chan []byte, layerReadAheadChunks+1),
+		done:     make(chan struct{}),
+		exited:   make(chan struct{}),
+		digester: digest.Canonical.Digester(),
+	}
+	go ra.fill(src)
+	return ra
+}
+
+func (ra *layerReadAhead) fill(src io.Reader) {
+	defer close(ra.exited)
+	hash := ra.digester.Hash()
+	for {
+		select {
+		case <-ra.done:
+			return
+		default:
+		}
+		var buf []byte
+		select {
+		case buf = <-ra.free:
+		default:
+			buf = make([]byte, layerReadAheadChunk)
+		}
+		n, err := 0, error(nil)
+		for n < len(buf) && err == nil {
+			var m int
+			m, err = src.Read(buf[n:])
+			n += m
+		}
+		hash.Write(buf[:n])
+		ra.n += int64(n)
+		select {
+		case ra.chunks <- layerReadAheadResult{buf: buf, n: n, err: err}:
+		case <-ra.done:
+			return
+		}
+		if err != nil {
+			return
+		}
+	}
+}
+
+func (ra *layerReadAhead) Read(p []byte) (int, error) {
+	for len(ra.cur) == 0 {
+		if ra.err != nil {
+			return 0, ra.err
+		}
+		if ra.buf != nil {
+			select {
+			case ra.free <- ra.buf:
+			default:
+			}
+			ra.buf = nil
+		}
+		next := <-ra.chunks
+		ra.buf, ra.cur, ra.err = next.buf, next.buf[:next.n], next.err
+	}
+	n := copy(p, ra.cur)
+	ra.cur = ra.cur[n:]
+	return n, nil
+}
+
+// stop ends the reading goroutine and waits for it, so nothing reads the
+// stream once Apply has returned and closed it.
+func (ra *layerReadAhead) stop() {
+	ra.once.Do(func() { close(ra.done) })
+	<-ra.exited
 }
 
 // applyCounter counts the bytes read through it and, like containerd's
