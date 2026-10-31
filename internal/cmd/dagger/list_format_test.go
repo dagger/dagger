@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
@@ -105,6 +106,25 @@ func TestArtifactListFormats(t *testing.T) {
 				require.Contains(t, line, fmt.Sprintf("case%04d", i), format)
 			}
 			require.LessOrEqual(t, len(writes), len(text)/(32<<10)+1, format)
+		}
+	})
+	t.Run("a long listing is cut only between lines", func(t *testing.T) {
+		// A log record's body must be valid UTF-8, so no write may end inside
+		// a character: here the 32 KiB mark falls inside the "é".
+		item := listedArtifact{URI: "dag+check://test", Description: strings.Repeat("a", 32741) + "é", DimensionKeys: []struct{ Dimension, Key string }{{"type:Check", "test"}}}
+		next := item
+		next.URI = "dag+check://test2"
+		next.DimensionKeys = []struct{ Dimension, Key string }{{"type:Check", "test2"}}
+		cmd := &cobra.Command{Use: "check"}
+		cmd.Flags().String("format", "table", "")
+		var writes recordedWrites
+		cmd.SetOut(&writes)
+		require.NoError(t, writeArtifactList(cmd, []listedArtifact{item, next}, map[string]string{"type:Check": "check"}))
+		require.Equal(t, render("table", []listedArtifact{item, next}), strings.Join(writes, ""))
+		require.Greater(t, len(writes), 1)
+		for _, write := range writes {
+			require.True(t, utf8.ValidString(write))
+			require.True(t, strings.HasSuffix(write, "\n"))
 		}
 	})
 }

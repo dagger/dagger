@@ -1,7 +1,7 @@
 package daggercmd
 
 import (
-	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 	"slices"
@@ -46,7 +46,7 @@ func writeArtifactList(cmd *cobra.Command, items []listedArtifact, names map[str
 	// which the frontend stores, parses and replays one at a time. A table
 	// writes each cell and each run of padding separately, so a long listing
 	// would be tens of thousands of records: buffer it into a few.
-	out := bufio.NewWriterSize(cmd.OutOrStdout(), 32<<10)
+	out := &lineChunks{w: cmd.OutOrStdout(), size: 32 << 10}
 	defer func() {
 		if err := out.Flush(); rerr == nil {
 			rerr = err
@@ -93,6 +93,38 @@ func writeArtifactList(cmd *cobra.Command, items []listedArtifact, names map[str
 		}
 	}
 	return nil
+}
+
+// lineChunks passes writes on in pieces of whole lines, each of at least size
+// bytes but the last. Cutting only after a newline keeps each piece valid
+// UTF-8 on its own, as a log record's body must be.
+type lineChunks struct {
+	w    io.Writer
+	size int
+	buf  []byte
+}
+
+func (c *lineChunks) Write(p []byte) (int, error) {
+	c.buf = append(c.buf, p...)
+	if len(c.buf) < c.size {
+		return len(p), nil
+	}
+	end := bytes.LastIndexByte(c.buf, '\n') + 1
+	if end == 0 {
+		return len(p), nil
+	}
+	_, err := c.w.Write(c.buf[:end])
+	c.buf = append(c.buf[:0], c.buf[end:]...)
+	return len(p), err
+}
+
+func (c *lineChunks) Flush() error {
+	if len(c.buf) == 0 {
+		return nil
+	}
+	_, err := c.w.Write(c.buf)
+	c.buf = c.buf[:0]
+	return err
 }
 
 // A broad listing hides presence-only columns. Explicit module or collection
