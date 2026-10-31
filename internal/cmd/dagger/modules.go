@@ -18,6 +18,20 @@ type registryModule struct {
 func loadModuleRegistry() []registryModule {
 	return []registryModule{
 		{
+			Name:        "docker",
+			Description: "Build and lint Dockerfiles and run Docker Compose services",
+			Repo:        "dagger.io/docker",
+			Recommend: SimpleRecommend(
+				"**/[Dd]ockerfile", "**/[Dd]ockerfile.*", "**/*.[Dd]ockerfile",
+				"**/*.dockerignore",
+				"**/compose.yaml", "**/compose.yml",
+				"**/compose.*.yaml", "**/compose.*.yml",
+				"**/docker-compose.yaml", "**/docker-compose.yml",
+				"**/docker-compose.*.yaml", "**/docker-compose.*.yml",
+				"**/.hadolint.yaml", "**/.hadolint.yml",
+			),
+		},
+		{
 			Name:        "go",
 			Description: "Test and generate code for Go projects with the Go toolchain",
 			Repo:        "dagger.io/go",
