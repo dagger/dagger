@@ -12,6 +12,7 @@ import (
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/sync/semaphore"
@@ -599,15 +600,18 @@ func (c *Cache) partOfferReplaced(old, next *partOffer) {
 	}
 }
 
+// partPrefetcherLockIdent names the prefetcher's lock in profiles.
+const partPrefetcherLockIdent = "dagql.partPrefetcher.mu"
+
 // partPrefetchConsumed notes that an install pinned layers' blobs: their
 // holds are released, whichever offers they were for, since the installed
 // snapshot owns the content now.
-func (c *Cache) partPrefetchConsumed(layers []snapshots.ExportLayer) {
+func (c *Cache) partPrefetchConsumed(ctx context.Context, layers []snapshots.ExportLayer) {
 	p := c.partPrefetcher.Load()
 	if p == nil {
 		return
 	}
-	p.mu.Lock()
+	wcprof.Lock(ctx, &p.mu, partPrefetcherLockIdent)
 	now := time.Now()
 	idle := false
 	var used int64
@@ -641,12 +645,12 @@ func (c *Cache) partPrefetchConsumed(layers []snapshots.ExportLayer) {
 
 // partPrefetchHeld counts the layers whose blob prefetching holds or is
 // fetching.
-func (c *Cache) partPrefetchHeld(layers []snapshots.ExportLayer) int {
+func (c *Cache) partPrefetchHeld(ctx context.Context, layers []snapshots.ExportLayer) int {
 	p := c.partPrefetcher.Load()
 	if p == nil {
 		return 0
 	}
-	p.mu.Lock()
+	wcprof.Lock(ctx, &p.mu, partPrefetcherLockIdent)
 	defer p.mu.Unlock()
 	n := 0
 	for _, layer := range layers {

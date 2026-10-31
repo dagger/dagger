@@ -245,7 +245,7 @@ func (cm *snapshotManager) acquireImportLock(ctx context.Context, key string, cl
 // layer on the same parent, by its blob or its diff, or nil when it has none.
 // Requires the layer's import lock.
 func (cm *snapshotManager) reuseImportedLayer(ctx context.Context, blobKey ImportedLayerBlobKey, diffKey ImportedLayerDiffKey, opts ImportImageOpts) (ImmutableRef, error) {
-	cm.mu.Lock()
+	wcprof.Lock(ctx, &cm.mu, managerMuProfIdent)
 	byBlob := cm.importedLayerByBlob[blobKey]
 	byDiff := cm.importedLayerByDiff[diffKey]
 	cm.mu.Unlock()
@@ -270,7 +270,7 @@ func (cm *snapshotManager) reuseImportedLayer(ctx context.Context, blobKey Impor
 		if !IsNotFound(err) {
 			return nil, err
 		}
-		cm.mu.Lock()
+		wcprof.Lock(ctx, &cm.mu, managerMuProfIdent)
 		if cm.importedLayerByBlob[blobKey] == snapshotID {
 			delete(cm.importedLayerByBlob, blobKey)
 		}
@@ -480,7 +480,7 @@ func (cm *snapshotManager) recordImportedLayer(ctx context.Context, ref Immutabl
 		_ = ref.Release(context.WithoutCancel(ctx))
 		return nil, err
 	}
-	cm.mu.Lock()
+	wcprof.Lock(ctx, &cm.mu, managerMuProfIdent)
 	cm.importedLayerByBlob[blobKey] = ref.SnapshotID()
 	cm.importedLayerByDiff[diffKey] = ref.SnapshotID()
 	cm.layerImportedLocked()

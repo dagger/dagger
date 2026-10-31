@@ -43,7 +43,7 @@ func (cm *snapshotManager) ImportChain(ctx context.Context, chain *ExportChain) 
 			_ = pin.release(ctx)
 		}
 	}()
-	first, top, topParent := cm.chainLocalTop(chain)
+	first, top, topParent := cm.chainLocalTop(ctx, chain)
 	// The layers the engine already has are taken as one: their top
 	// snapshot, attached to the import's lease with all its parents, which
 	// is what reusing each in turn ends with. A top snapshot gone since
@@ -222,7 +222,7 @@ func (cm *snapshotManager) applyChainLayer(ctx context.Context, chain *ExportCha
 	if applied.err != nil {
 		return applied
 	}
-	if cm.chainLocalPrefix(chain) > i {
+	if cm.chainLocalPrefix(ctx, chain) > i {
 		return applied
 	}
 	if applied.err = cm.fetchLayerContent(ctx, desc, chain.Provider, true, &chainLayer{owner: chain, ahead: held}, clock); applied.err != nil {
@@ -300,8 +300,8 @@ func (cm *snapshotManager) awaitLayer(ctx context.Context, chain *ExportChain, i
 	if chain.Await == nil {
 		return nil
 	}
-	imported := cm.layerImportedSignal()
-	if cm.chainLocalPrefix(chain) > i {
+	imported := cm.layerImportedSignal(ctx)
+	if cm.chainLocalPrefix(ctx, chain) > i {
 		return nil
 	}
 	// The wait for the blob, when profiled, is an io wait named for the
@@ -323,8 +323,8 @@ func (cm *snapshotManager) awaitLayer(ctx context.Context, chain *ExportChain, i
 			return err
 		case <-imported:
 		}
-		imported = cm.layerImportedSignal()
-		if cm.chainLocalPrefix(chain) > i {
+		imported = cm.layerImportedSignal(ctx)
+		if cm.chainLocalPrefix(ctx, chain) > i {
 			cancel()
 			<-awaited
 			return nil
@@ -334,8 +334,8 @@ func (cm *snapshotManager) awaitLayer(ctx context.Context, chain *ExportChain, i
 
 // layerImportedSignal is closed once a layer is next added to the import
 // indexes.
-func (cm *snapshotManager) layerImportedSignal() <-chan struct{} {
-	cm.mu.Lock()
+func (cm *snapshotManager) layerImportedSignal(ctx context.Context) <-chan struct{} {
+	wcprof.Lock(ctx, &cm.mu, managerMuProfIdent)
 	defer cm.mu.Unlock()
 	return cm.layerImported
 }
@@ -351,15 +351,15 @@ func (cm *snapshotManager) layerImportedLocked() {
 // imported already, on the same parents, by the import indexes alone. Those
 // need no bytes. An index entry whose snapshot has gone since only means its
 // layer downloads when it imports.
-func (cm *snapshotManager) chainLocalPrefix(chain *ExportChain) int {
-	n, _, _ := cm.chainLocalTop(chain)
+func (cm *snapshotManager) chainLocalPrefix(ctx context.Context, chain *ExportChain) int {
+	n, _, _ := cm.chainLocalTop(ctx, chain)
 	return n
 }
 
 // chainLocalTop is chainLocalPrefix with the snapshot of the last of those
 // layers and that snapshot's parent, or "" when there are none.
-func (cm *snapshotManager) chainLocalTop(chain *ExportChain) (int, string, string) {
-	cm.mu.Lock()
+func (cm *snapshotManager) chainLocalTop(ctx context.Context, chain *ExportChain) (int, string, string) {
+	wcprof.Lock(ctx, &cm.mu, managerMuProfIdent)
 	defer cm.mu.Unlock()
 	parent, grandparent := "", ""
 	for i, layer := range chain.Layers {

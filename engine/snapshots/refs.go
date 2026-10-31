@@ -20,6 +20,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/snapshots/config"
 	overlay "github.com/dagger/dagger/engine/snapshots/fsdiff"
+	"github.com/dagger/dagger/engine/wcprof"
 	rootlessmountopts "github.com/dagger/dagger/engine/snapshots/rootlessmountopts"
 	"github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
@@ -827,7 +828,7 @@ func (sr *mutableRef) Commit(ctx context.Context) (ImmutableRef, error) {
 		return nil, errors.Wrap(err, "ensure lease for snapshot commit")
 	}
 
-	sr.cm.mu.Lock()
+	wcprof.Lock(ctx, &sr.cm.mu, managerMuProfIdent)
 	defer sr.cm.mu.Unlock()
 
 	sr.mu.Lock()
