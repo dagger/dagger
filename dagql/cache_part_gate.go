@@ -571,7 +571,7 @@ func (c *Cache) BeginOriginal(ctx context.Context, check *SourceCheck) (*Origina
 
 // EndBody runs only after the body and its preparations have stopped. A source
 // installed by a decision reopens sibling admission even during bookkeeping.
-func (c *Cache) endPartTaskBody(task *PartTaskToken, success bool) {
+func (c *Cache) endPartTaskBody(ctx context.Context, task *PartTaskToken, success bool) {
 	if !task.active.Swap(false) {
 		return
 	}
@@ -579,7 +579,7 @@ func (c *Cache) endPartTaskBody(task *PartTaskToken, success bool) {
 	if gate == nil {
 		return
 	}
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	gate.mu.Lock()
 	for _, group := range gate.groups {
 		if group.task != task {

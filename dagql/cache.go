@@ -5391,9 +5391,7 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			if start := lazyOp.StartTime(); !start.IsZero() {
 				startOpts = append(startOpts, trace.WithTimestamp(start))
 			}
-			_, beginStep := BeginStep(evalCtx, "lazy.beginSpan")
 			lazyCallbackCtx, lazySpan, lazyIsResume = c.beginOTelLazyOp(evalCtx, shared.id, group, resultCall, storedPart, startOpts...)
-			beginStep.End(nil)
 			attempt.spanCtx = lazySpan.SpanContext()
 			RecordOpSpan(lazyOp, lazySpan)
 		}
@@ -5401,8 +5399,8 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 		shared.lazyMu.Unlock()
 
 		if spec != nil {
-			_, ownStep := BeginStep(evalCtx, "lazy.ownership")
-			wcprof.WriteLock(evalCtx, &c.egraphMu, egraphLockIdent)
+			ownCtx, ownStep := BeginStep(evalCtx, "lazy.ownership")
+			wcprof.WriteLock(ownCtx, &c.egraphMu, egraphLockIdent)
 			c.incrementIncomingOwnershipLocked(ctx, shared)
 			c.egraphMu.Unlock()
 			ownStep.End(nil)
@@ -5429,16 +5427,16 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			// goroutine and ended on another is safe.
 			partial := false
 			abandoned := false
-			defer c.endPartTaskBody(token, false)
+			defer c.endPartTaskBody(context.WithoutCancel(attemptCtx), token, false)
 			callbackCtx, bodyDone, err := c.runLazyEvalBody(lazyCallbackCtx, shared, lazyEval, token, continuation)
 			if err == nil && spec == nil {
-				_, completeStep := BeginStep(evalCtx, "lazy.completeNative")
-				err = c.completeNativePartTask(callbackCtx, installationToken)
+				completeCtx, completeStep := BeginStep(callbackCtx, "lazy.completeNative")
+				err = c.completeNativePartTask(completeCtx, installationToken)
 				completeStep.End(err)
 			}
 
-			_, retireStep := BeginStep(evalCtx, "lazy.retire")
-			wcprof.Lock(evalCtx, &shared.lazyMu, "dagql.sharedResult.lazyMu")
+			retireCtx, retireStep := BeginStep(evalCtx, "lazy.retire")
+			wcprof.Lock(retireCtx, &shared.lazyMu, "dagql.sharedResult.lazyMu")
 			attempt.err = err
 			abandoned = err != nil && lazyEvalErrorCausedByContext(attemptCtx, err)
 			attempt.retry = abandoned
@@ -5497,8 +5495,8 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 				var cacheState lazySpanCacheState
 				if lazySpan.IsRecording() {
 					if frame != nil {
-						_, digestStep := BeginStep(evalCtx, "lazy.contentDigest")
-						attrs = AppendContentPreferredDigestAttr(lazyCallbackCtx, attrs, frame, res)
+						digestCtx, digestStep := BeginStep(lazyCallbackCtx, "lazy.contentDigest")
+						attrs = AppendContentPreferredDigestAttr(digestCtx, attrs, frame, res)
 						digestStep.End(nil)
 					}
 					stateCtx, stateStep := BeginStep(lazyCallbackCtx, "lazy.cacheState")
@@ -5568,7 +5566,9 @@ func (c *Cache) runLazyEvalBody(callbackCtx context.Context, shared *sharedResul
 	if lazyEval != nil {
 		err = lazyEval(callbackCtx)
 	}
-	c.endPartTaskBody(token, err == nil)
+	endCtx, endStep := BeginStep(callbackCtx, "lazy.endBody")
+	c.endPartTaskBody(endCtx, token, err == nil)
+	endStep.End(nil)
 	if continuation != nil && continuation.token.installed.Load() != nil {
 		bodyDone = true
 	}
