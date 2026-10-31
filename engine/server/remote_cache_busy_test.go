@@ -78,3 +78,16 @@ func TestRemoteCacheAdapterExportReportsBusyRows(t *testing.T) {
 	require.Equal(t, 1, report.rows)
 	require.Equal(t, []string{fmt.Sprintf("%d:%s:0s:2", entryNumber(t, busy), dagql.BusyRunning)}, report.named)
 }
+
+// A root over several busy rows counts against each of them: the report
+// counts every row a left-out root reaches, not only the one it was left out
+// for.
+func TestBusyRowsCountEveryRowARootReaches(t *testing.T) {
+	var busy busyRows
+	notReady := fmt.Errorf("%w: test", dagql.ErrPersistStateNotReady)
+	report := busy.observe(time.Unix(1000, 0), []dagql.LeftOutRoot{
+		{Index: 0, Row: 5, Kind: dagql.BusyRunning, Err: notReady, Busy: []dagql.BusyRow{{Row: 5, Kind: dagql.BusyRunning}, {Row: 6, Kind: dagql.BusyBookkeeping}}},
+		{Index: 1, Row: 6, Kind: dagql.BusyBookkeeping, Err: notReady, Busy: []dagql.BusyRow{{Row: 6, Kind: dagql.BusyBookkeeping}}},
+	}, nil)
+	require.Equal(t, busyReport{rows: 2, named: []string{"6:bookkeeping:0s:2", "5:running:0s:1"}}, report)
+}
