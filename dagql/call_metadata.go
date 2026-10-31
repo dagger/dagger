@@ -59,8 +59,8 @@ type CallMetadataRecord struct {
 
 // StoreCallMetadata stores an opaque completed-call observation as an ordinary
 // cache scalar. It uses the origin's persistence and TTL policy, retains its
-// result, and participates in normal cache pruning. It adds
-// no output equivalence and does not keep a separate metadata index.
+// result and structural inputs, and participates in normal cache pruning. Its
+// row indexes add no output equivalence and own no cache holds.
 //
 // The caller is responsible for recording complete coverage, including errors
 // and nested cache hits. DoNotCache observations are not retained. Other
@@ -134,6 +134,20 @@ func (c *Cache) StoreCallMetadata(ctx context.Context, sessionID string, resolve
 			callMetadataStringArg("observation", digest.FromBytes(encoded).String()),
 		},
 	}
+	// An adopted output may not retain this request's inputs. Keep their
+	// individual references; wrapping the origin would resolve to its output.
+	_, refs, err := origin.selfDigestAndInputRefs(c)
+	if err != nil {
+		return fmt.Errorf("store call metadata: origin inputs: %w", err)
+	}
+	for i, ref := range refs {
+		if ref.Result != nil {
+			frame.ImplicitInputs = append(frame.ImplicitInputs, &ResultCallArg{
+				Name:  fmt.Sprintf("input%d", i),
+				Value: &ResultCallLiteral{Kind: ResultCallLiteralKindResultRef, ResultRef: ref.Result},
+			})
+		}
+	}
 	_, err = c.GetOrInitCall(ctx, sessionID, resolver, &CallRequest{
 		ResultCall: frame, TTL: origin.TTL, IsPersistable: persistable,
 		ConcurrencyKey: sessionID,
@@ -158,8 +172,8 @@ func (c *Cache) CallMetadata(ctx context.Context, sessionID, namespace string, o
 	if err != nil {
 		return nil, false, err
 	}
-	records, err := c.callMetadataRecords(ctx, sessionID, namespace, func(record CallMetadataRecord, _ *ResultCall) bool {
-		return record.Origin == originDigest
+	records, err := c.callMetadataRecords(ctx, sessionID, namespace, func() map[sharedResultID]struct{} {
+		return c.callMetadata.byOrigin[callMetadataLookupKey{namespace, originDigest.String()}]
 	})
 	if err != nil || len(records) != 1 {
 		return nil, false, err
@@ -169,11 +183,11 @@ func (c *Cache) CallMetadata(ctx context.Context, sessionID, namespace string, o
 
 // CallMetadataCandidates finds observations by an application-defined key.
 // They still require application-level validation of all inputs and policies.
-// This scans ordinary cache rows; it does not execute calls, force lazy parts,
+// This uses ordinary cache row indexes; it does not execute calls, force lazy parts,
 // or decode objects. Expired, unavailable and conflicting origins are omitted.
 func (c *Cache) CallMetadataCandidates(ctx context.Context, sessionID, namespace, candidateKey string) ([]CallMetadataRecord, error) {
-	return c.callMetadataRecords(ctx, sessionID, namespace, func(record CallMetadataRecord, _ *ResultCall) bool {
-		return record.CandidateKey == candidateKey
+	return c.callMetadataRecords(ctx, sessionID, namespace, func() map[sharedResultID]struct{} {
+		return c.callMetadata.byCandidate[callMetadataLookupKey{namespace, candidateKey}]
 	})
 }
 
@@ -199,31 +213,28 @@ func (c *Cache) CallMetadataForResult(ctx context.Context, sessionID, namespace 
 			return nil, nil
 		}
 	}
-	var targetClasses map[eqClassID]struct{}
-	return c.callMetadataRecords(ctx, sessionID, namespace, func(_ CallMetadataRecord, frame *ResultCall) bool {
-		if frame.Receiver == nil {
-			return false
-		}
-		originID := sharedResultID(frame.Receiver.ResultID)
-		if originID == resultID {
-			return true
-		}
-		// These are output-equivalence classes, not retention edges. Sharing
-		// content can only widen this fallback; it never combines the records
-		// themselves or teaches an equivalence between metadata observations.
-		if targetClasses == nil {
-			targetClasses = c.outputEqClassRootsLocked(resultID)
-		}
-		for class := range c.outputEqClassRootsLocked(originID) {
-			if _, ok := targetClasses[class]; ok {
-				return true
+	return c.callMetadataRecords(ctx, sessionID, namespace, func() map[sharedResultID]struct{} {
+		selected := map[sharedResultID]struct{}{}
+		addOutput := func(id sharedResultID) {
+			for rowID := range c.callMetadata.byResult[id] {
+				selected[rowID] = struct{}{}
 			}
 		}
-		return false
+		addOutput(resultID)
+		// Output equality only widens this fallback. Metadata observations
+		// themselves remain distinct and never acquire output equivalence.
+		for class := range c.outputEqClassRootsLocked(resultID) {
+			for id := range c.outputEqClassResults[class] {
+				addOutput(id)
+			}
+		}
+		return selected
 	})
 }
 
-func (c *Cache) callMetadataRecords(ctx context.Context, sessionID, namespace string, matches func(CallMetadataRecord, *ResultCall) bool) ([]CallMetadataRecord, error) {
+// selectRows runs under egraphMu. Conflict checks include every observation of
+// each selected origin, including observations with a different candidate key.
+func (c *Cache) callMetadataRecords(ctx context.Context, sessionID, namespace string, selectRows func() map[sharedResultID]struct{}) ([]CallMetadataRecord, error) {
 	op, err := c.beginSessionOperation(sessionID)
 	if err != nil {
 		return nil, err
@@ -238,43 +249,29 @@ func (c *Cache) callMetadataRecords(ctx context.Context, sessionID, namespace st
 	conflicts := map[digest.Digest]bool{}
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
-	for _, row := range c.resultsByID {
-		frame := row.loadResultCall()
-		if frame == nil || frame.Kind != ResultCallKindSynthetic || frame.SyntheticOp != callMetadataOp {
+	selected := selectRows()
+	for id := range c.callMetadataOriginsLocked(selected, namespace) {
+		entry := c.callMetadata.records[id]
+		row := c.resultsByID[id]
+		if row == nil || c.servableCandidateLocked(id, now, nil) == nil || row.attachmentState() != resultAttachmentClean || !c.sessionSatisfiesResourceRequirementsLocked(sessionID, row) {
 			continue
 		}
-		if value, ok := callMetadataFrameArg(frame, "namespace"); ok && value != namespace {
-			continue
-		}
-		if c.servableCandidateLocked(row.id, now, nil) == nil || row.attachmentState() != resultAttachmentClean || !c.sessionSatisfiesResourceRequirementsLocked(sessionID, row) {
-			continue
-		}
-		state := row.loadPayloadState()
-		var raw string
-		if value, ok := state.self.(String); ok {
-			raw = value.String()
-		} else if env := state.persistedEnvelope; env != nil && env.Kind == persistedResultKindScalar && env.TypeName == "String" {
-			if err := json.Unmarshal(env.ScalarJSON, &raw); err != nil {
-				continue
-			}
-		} else {
-			continue
-		}
-		var record CallMetadataRecord
-		if json.Unmarshal([]byte(raw), &record) != nil || record.Namespace != namespace || record.Origin == "" || !json.Valid(record.Payload) || (record.ExpiresAtUnix != 0 && record.ExpiresAtUnix <= now) {
+		record := entry.record
+		if record.ExpiresAtUnix != 0 && record.ExpiresAtUnix <= now {
 			continue
 		}
 		if previous, ok := byOrigin[record.Origin]; ok && (!bytes.Equal(previous.Payload, record.Payload) || previous.CandidateKey != record.CandidateKey) {
 			conflicts[record.Origin] = true
 		}
 		byOrigin[record.Origin] = record
-		if matches(record, frame) {
+		if _, ok := selected[id]; ok {
 			matched[record.Origin] = true
 		}
 	}
 	var records []CallMetadataRecord
 	for origin, record := range byOrigin {
 		if !conflicts[origin] && matched[origin] {
+			record.Payload = bytes.Clone(record.Payload)
 			records = append(records, record)
 		}
 	}

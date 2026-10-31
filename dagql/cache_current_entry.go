@@ -172,6 +172,7 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 	cur.cacheUsageSizeByIdentity = nil
 	cur.cacheUsageRecordTypeByID = nil
 	cur.payloadMu.Unlock()
+	c.indexCallMetadataLocked(cur)
 
 	if edge, retained := c.persistedEdgesByResult[cur.id]; retained && !edge.unpruneable {
 		edge.expiresAtUnix = retentionExpiresAtUnix
