@@ -3,15 +3,16 @@ package dagql
 import "sync"
 
 // KnownRows are the entries of an engine cache whose records one recipient,
-// the Cloud over one service connection, has merged: an export carried them
-// in full, and the recipient said it merged that export. An export sends a
-// known row that hasn't changed since as a held row, with no record, so that
-// a record the closures of many exports share travels once: with nothing
-// below it in a records-only export, and with its links to the rows below it
-// and its parts in an export that selects parts. Whether a held row holds is
-// the recipient's merge's to decide: it commits nothing unless every held
-// row's recipe has a live value there, with every part the export puts on
-// the row. KnownRows only chooses what to leave out.
+// the Cloud over one service connection, holds: an export carried them in
+// full and the recipient said it merged that export, or a merge of the
+// recipient's own records landed on them. An export sends a known row that
+// hasn't changed since as a held row, with no record, so that a record the
+// closures of many exports share travels once: with nothing below it in a
+// records-only export, and with its links to the rows below it and its parts
+// in an export that selects parts. Whether a held row holds is the
+// recipient's merge's to decide: it commits nothing unless every held row's
+// recipe has a live value there, with every part the export puts on the
+// row. KnownRows only chooses what to leave out.
 type KnownRows struct {
 	mu   sync.Mutex
 	rows map[uint64]RowRevision

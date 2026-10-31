@@ -278,7 +278,10 @@ type UploadFailure struct {
 // Merge gives the engine a bundle of the Cloud's values. Its SenderNumbers
 // are the Cloud's numbers, and its outputs carry GET addresses. A held row
 // names, by recipe, a value the engine is expected to hold; the engine
-// resolves it as it would keep a record of that recipe.
+// resolves it as it would keep a record of that recipe. The rows a committed
+// merge lands on are the Cloud's records, so the engine's later exports over
+// the connection send them as held rows, as they do the rows of an export
+// the service merged (Upload.Merged).
 type Merge struct {
 	Bundle dagql.ValueBundle `json:"bundle"`
 	// Lookup is the ID of the engine's Lookup this merge answers, or 0 for

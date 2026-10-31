@@ -254,6 +254,9 @@ type MergedValue struct {
 	Ordinal      TransferOrdinal
 	Number       uint64
 	Replacements uint64
+	// Revision is the target's revisions as the commit left them, for
+	// KnownRows on an engine.
+	Revision RowRevision
 	// ExpiresAtUnix is the target's own expiry (0: none).
 	ExpiresAtUnix int64
 	// Deps are the target's actual direct dependencies by number: a kept
@@ -1970,7 +1973,7 @@ func (c *Cache) mergeReplyLocked(commit *valueMergeCommit) MergeReply {
 			// that nothing owns: there is no target to report.
 			continue
 		}
-		value := MergedValue{Ordinal: row.value.Ordinal, Number: uint64(res.id), Replacements: res.replacements, ExpiresAtUnix: res.expiresAtUnix}
+		value := MergedValue{Ordinal: row.value.Ordinal, Number: uint64(res.id), Replacements: res.replacements, Revision: RowRevision{Replacements: res.replacements, Transfer: res.transferRevision, Dependencies: res.dependencyOwnershipRevision}, ExpiresAtUnix: res.expiresAtUnix}
 		for dep := range res.deps {
 			value.Deps = append(value.Deps, uint64(dep))
 		}

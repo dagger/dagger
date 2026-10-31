@@ -405,7 +405,7 @@ type readerAtCloser struct {
 // release after the commit failed: the cache changed, and the service must
 // learn how. The release's error is logged instead. A merge refused for stale
 // held rows committed nothing, and is answered with them.
-func (a *RemoteCacheAdapter) Merge(ctx context.Context, id uint64, req protocol.Merge) (protocol.Merged, error) {
+func (a *RemoteCacheAdapter) Merge(ctx context.Context, id uint64, req protocol.Merge, known *dagql.KnownRows) (protocol.Merged, error) {
 	if a.stopped.Load() {
 		return protocol.Merged{}, ErrRemoteCacheAdapterClosed
 	}
@@ -454,6 +454,13 @@ func (a *RemoteCacheAdapter) Merge(ctx context.Context, id uint64, req protocol.
 	}
 	if err != nil {
 		slog.Warn("remote cache merge committed, then a release failed", "error", err)
+	}
+	if known != nil {
+		rows := dagql.ExportedRows{Full: make(map[uint64]dagql.RowRevision, len(reply.Values))}
+		for _, value := range reply.Values {
+			rows.Full[value.Number] = value.Revision
+		}
+		known.Merged(rows)
 	}
 	return mergedReply(reply), nil
 }

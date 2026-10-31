@@ -60,3 +60,25 @@ func TestExportKnownRows(t *testing.T) {
 	require.NotSame(t, known, fresh)
 	require.Zero(t, fresh.Len(), "a new connection knows nothing")
 }
+
+// The session hands every merge from the service the connection's known set,
+// the one its exports get, so that the rows a merge lands on become known:
+// the service holds the records it sent.
+func TestMergeKnownRows(t *testing.T) {
+	adapter := newFakeAdapter()
+	adapter.merge = func(context.Context, protocol.Merge) (protocol.Merged, error) {
+		return protocol.Merged{}, nil
+	}
+	adapter.export = func(ctx context.Context, req protocol.Export, consume func(context.Context, Export) error) error {
+		return consume(ctx, Export{Bundle: testBundle()})
+	}
+	s, conn := testSession(t, adapter)
+	s.dispatch(request(t, 1, protocol.TypeMerge, protocol.Merge{Bundle: *testBundle()}))
+	require.Equal(t, protocol.TypeMerged, conn.next(t).Type)
+	merged := adapter.mergeKnown.Load()
+	require.NotNil(t, merged, "a merge gets the connection's known set")
+
+	s.dispatch(request(t, 2, protocol.TypeExport, protocol.Export{Roots: []uint64{1}}))
+	require.Equal(t, protocol.TypeExported, conn.next(t).Type)
+	require.Same(t, adapter.known.Load(), merged, "the same set an export gets")
+}

@@ -98,8 +98,10 @@ type Adapter interface {
 	// those as held rows.
 	Export(ctx context.Context, req protocol.Export, known *dagql.KnownRows, consume func(context.Context, Export) error) error
 	// Merge merges a bundle of the service's values into the cache. id is
-	// the service's request ID, for logs.
-	Merge(ctx context.Context, id uint64, req protocol.Merge) (protocol.Merged, error)
+	// the service's request ID, for logs. known are the rows the service
+	// merged over this connection: the rows a committed merge lands on join
+	// them, since the service holds the records it sent.
+	Merge(ctx context.Context, id uint64, req protocol.Merge, known *dagql.KnownRows) (protocol.Merged, error)
 	// OfferParts places offered parts on the cache's entries by number.
 	OfferParts(ctx context.Context, req protocol.Offer) (protocol.Offered, error)
 	// TakeRenewalRequest waits for the next read that needs fresh download

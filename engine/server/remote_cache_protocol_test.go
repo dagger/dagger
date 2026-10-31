@@ -55,7 +55,7 @@ func TestRemoteCacheAdapterMergesABundle(t *testing.T) {
 
 	target := newGCTestCache(t)
 	adapter := newTestRemoteCacheAdapter(t, target)
-	merged, err := adapter.Merge(t.Context(), 1, protocol.Merge{Bundle: bundle})
+	merged, err := adapter.Merge(t.Context(), 1, protocol.Merge{Bundle: bundle}, nil)
 	require.NoError(t, err)
 	require.Equal(t, target.Identity().Generation, merged.Generation)
 	require.NotZero(t, merged.EngineTime)
@@ -73,6 +73,41 @@ func TestRemoteCacheAdapterMergesABundle(t *testing.T) {
 	cacheID, generation := adapter.CacheIdentity()
 	require.Equal(t, target.Identity().ID, cacheID)
 	require.Equal(t, target.Identity().Generation, generation)
+}
+
+// The rows a committed merge from the service lands on become known to the
+// connection, at their revisions as merged: the service holds the records it
+// sent, so a later export sends them as held rows. A merge given no known set
+// marks nothing.
+func TestRemoteCacheAdapterKnowsTheRowsAMergeLands(t *testing.T) {
+	source := newGCTestCache(t)
+	ctx, res := addGCTestPersistableResult(t, source, "source", "merged", dagql.NewInt(7))
+	var bundle dagql.ValueBundle
+	require.NoError(t, source.WithExportedValues(ctx, dagql.ValueSelection{Roots: []dagql.AnyResult{res}}, config.RefConfig{}, func(_ context.Context, exp *dagql.ExportedValues) error {
+		bundle = exp.Bundle
+		return nil
+	}))
+
+	target := newGCTestCache(t)
+	adapter := newTestRemoteCacheAdapter(t, target)
+	known := dagql.NewKnownRows()
+	merged, err := adapter.Merge(t.Context(), 1, protocol.Merge{Bundle: bundle}, known)
+	require.NoError(t, err)
+	require.Len(t, merged.Values, 1)
+	number := merged.Values[0].Number
+	require.Equal(t, 1, known.Len(), "the row the merge landed on is known")
+
+	var exp remotecache.Export
+	require.NoError(t, adapter.Export(t.Context(), protocol.Export{Roots: []uint64{number}}, known, func(_ context.Context, e remotecache.Export) error {
+		exp = e
+		return nil
+	}))
+	require.NotNil(t, exp.Bundle)
+	require.Equal(t, []uint64{number}, exp.Rows.Held, "an export sends it as a held row")
+
+	other := newTestRemoteCacheAdapter(t, newGCTestCache(t))
+	_, err = other.Merge(t.Context(), 1, protocol.Merge{Bundle: bundle}, nil)
+	require.NoError(t, err)
 }
 
 // The merge line carries the reply's generation and the engine's clock at the
@@ -93,7 +128,7 @@ func TestRemoteCacheAdapterMergeLogsItsClock(t *testing.T) {
 	previous := slog.Default()
 	slog.SetDefault(slog.New(slog.NewJSONHandler(logs, nil)))
 	t.Cleanup(func() { slog.SetDefault(previous) })
-	merged, err := adapter.Merge(t.Context(), 1, protocol.Merge{Bundle: bundle})
+	merged, err := adapter.Merge(t.Context(), 1, protocol.Merge{Bundle: bundle}, nil)
 	require.NoError(t, err)
 
 	var lines []map[string]any
@@ -130,7 +165,7 @@ func TestRemoteCacheAdapterAnswersACommittedMergeDespiteAReleaseError(t *testing
 			},
 		}, errors.New("release failed")
 	}
-	merged, err := adapter.Merge(t.Context(), 1, protocol.Merge{})
+	merged, err := adapter.Merge(t.Context(), 1, protocol.Merge{}, nil)
 	require.NoError(t, err, "a committed merge is answered merged")
 	require.Equal(t, protocol.Merged{
 		Generation: 4,
@@ -148,7 +183,7 @@ func TestRemoteCacheAdapterAnswersAStaleMerge(t *testing.T) {
 	adapter.mergeValues = func(context.Context, dagql.CacheID, dagql.ValueBundle) (dagql.MergeReply, error) {
 		return dagql.MergeReply{Generation: 4, EngineTimeUnixNano: 42, Stale: []dagql.TransferOrdinal{2, 5}}, nil
 	}
-	merged, err := adapter.Merge(t.Context(), 1, protocol.Merge{})
+	merged, err := adapter.Merge(t.Context(), 1, protocol.Merge{}, nil)
 	require.NoError(t, err, "a stale merge is answered merged")
 	require.Equal(t, protocol.Merged{
 		Generation: 4,
@@ -165,7 +200,7 @@ func TestRemoteCacheAdapterMergeRefused(t *testing.T) {
 	adapter.mergeValues = func(context.Context, dagql.CacheID, dagql.ValueBundle) (dagql.MergeReply, error) {
 		return dagql.MergeReply{}, errors.New("the bundle would close a cycle")
 	}
-	_, err := adapter.Merge(t.Context(), 1, protocol.Merge{})
+	_, err := adapter.Merge(t.Context(), 1, protocol.Merge{}, nil)
 	require.ErrorContains(t, err, "cycle")
 }
 
@@ -185,7 +220,7 @@ func TestRemoteCacheAdapterLookupMergesGoFirst(t *testing.T) {
 	merge := func(ctx context.Context, id, lookup uint64, version int) <-chan error {
 		done := make(chan error, 1)
 		go func() {
-			_, err := adapter.Merge(ctx, id, protocol.Merge{Bundle: dagql.ValueBundle{Version: version}, Lookup: lookup})
+			_, err := adapter.Merge(ctx, id, protocol.Merge{Bundle: dagql.ValueBundle{Version: version}, Lookup: lookup}, nil)
 			done <- err
 		}()
 		return done
@@ -930,7 +965,7 @@ func TestRemoteCacheAdapterMergeReturnsWhenCancelled(t *testing.T) {
 	mergeCtx, cancel := context.WithCancel(t.Context())
 	merged := make(chan error, 1)
 	go func() {
-		_, err := adapter.Merge(mergeCtx, 1, protocol.Merge{Bundle: bundle})
+		_, err := adapter.Merge(mergeCtx, 1, protocol.Merge{Bundle: bundle}, nil)
 		merged <- err
 	}()
 	select {
