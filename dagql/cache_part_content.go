@@ -18,6 +18,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/telemetryattrs"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"go.opentelemetry.io/otel/attribute"
@@ -884,6 +885,7 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 	// failed with its outcome.
 	var installed, contentFailed bool
 	var committing time.Time
+	var commitOp *wcprof.Op
 	defer func() {
 		if installed {
 			return
@@ -896,7 +898,7 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 		// One classification for the line and the profile.
 		outcome, level := partInstallFailure(ctx, rerr, contentFailed)
 		logOfferInstallFailed(ctx, receiver, source, rerr, outcome, level, downloaded.read.Load(), now.Sub(start), timing, !committing.IsZero())
-		profEndInstall(ctx, profOp, receiver, outcome, downloaded.read.Load(), committing, now)
+		profEndInstall(ctx, profOp, commitOp, receiver, outcome, downloaded.read.Load(), now)
 	}()
 	timing.prefetched = c.partPrefetchHeld(copied[0].Chain.Layers)
 	importStart := time.Now()
@@ -919,6 +921,8 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 	// The import holds the chain's content now: prefetch holds of it can go.
 	c.partPrefetchConsumed(copied[0].Chain.Layers)
 	committing = time.Now()
+	// The commit's steps and lock waits nest under its own profile op.
+	commitCtx, commitOp := profBeginInstallCommit(ctx, committing)
 	source.descriptor.SnapshotID = imported.SnapshotID()
 	// Keep admitted authority across a stale receiver preparation. Its donor
 	// can disappear during download; re-preparation must not require re-admission.
@@ -928,7 +932,7 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 			return err
 		}
 		watch.again(ctx, receiver.cacheSharedResult(), source.target)
-		c.egraphMu.Lock()
+		wcprof.WriteLock(commitCtx, &c.egraphMu, egraphLockIdent)
 		if !c.offerAllowedLocked(source.sessionID, source.offerOwner) {
 			c.egraphMu.Unlock()
 			return partRefused("chain: offer owner not allowed")
@@ -936,12 +940,16 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 		c.retainOfferOwnerLocked(source.offerOwner)
 		selected := &PartSourceLease{cache: c, sourceID: source.sourceID, offerOwner: source.offerOwner, descriptor: source.Descriptor(), target: clonePartAddress(source.target), offer: source.offer, readiness: PartDownloadable, route: source.route, offerRev: source.offerRev, sessionID: source.sessionID, record: source.record}
 		c.egraphMu.Unlock()
-		prepared, err := c.PrepareReadyPart(ctx, receiver, selected, permit)
+		prepareCtx, endPrepare := profInstallStep(commitCtx, "prepare")
+		prepared, err := c.PrepareReadyPart(prepareCtx, receiver, selected, permit)
+		endPrepare(err)
 		if err == nil {
 			// Commit transfers this retryable cleanup to the installed row and
 			// its continuation, without retaining another graph hold.
 			prepared.beforeSyncCleanup = cleanup
-			receipt, outcome, commitErr := c.CommitReadyPart(ctx, prepared)
+			publishCtx, endPublish := profInstallStep(commitCtx, "publish")
+			receipt, outcome, commitErr := c.CommitReadyPart(publishCtx, prepared)
+			endPublish(commitErr)
 			err = commitErr
 			if outcome == PartInstalled {
 				now := time.Now()
@@ -949,7 +957,7 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 				timing.commit = now.Sub(committing)
 				installed = true
 				logOfferInstall(ctx, receiver, source, downloaded.read.Load(), now.Sub(start), timing)
-				profEndInstall(ctx, profOp, receiver, partInstalledOutcome, downloaded.read.Load(), committing, now)
+				profEndInstall(ctx, profOp, commitOp, receiver, partInstalledOutcome, downloaded.read.Load(), now)
 				return errors.Join(err, c.finishReadyPartInline(outerCtx, receipt))
 			}
 			if outcome == PartInstallRefused && err == nil {

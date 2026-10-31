@@ -126,8 +126,9 @@ func profBeginInstall(ctx context.Context, receiver AnyResult, target PersistedP
 // profEndInstall ends an install's profile op at now, where the install's
 // line times it to, with its outcome (one of partInstallFailure's, or
 // partInstalledOutcome) and the bytes it downloaded, after recording its
-// commit, from committing, when it got that far. ctx is the op's.
-func profEndInstall(ctx context.Context, op *wcprof.Op, receiver AnyResult, outcome string, downloaded int64, committing, now time.Time) {
+// commit, commitOp, when it got that far (profBeginInstallCommit). ctx is the
+// install op's.
+func profEndInstall(ctx context.Context, op, commitOp *wcprof.Op, receiver AnyResult, outcome string, downloaded int64, now time.Time) {
 	if op == nil {
 		return
 	}
@@ -144,11 +145,24 @@ func profEndInstall(ctx context.Context, op *wcprof.Op, receiver AnyResult, outc
 	case "content":
 		wcprof.Fact(ctx, op.ID(), "install.content", 0)
 	}
-	if !committing.IsZero() {
-		wcprof.RecordOpAt(ctx, wcprof.OpKindRemoteCache, "remotecache.install.commit", wcprof.OpOpts{}, committing, now, result)
-	}
+	commitOp.EndAt(result, 0, now)
 	op.SetBytes(downloaded)
 	op.EndAt(result, profResultID(receiver), now)
+}
+
+// profBeginInstallCommit starts the profile op of an install's commit, from
+// committing, under the install's op in ctx: the steps and lock waits of the
+// commit nest under it (profInstallStep). profEndInstall ends it.
+func profBeginInstallCommit(ctx context.Context, committing time.Time) (context.Context, *wcprof.Op) {
+	return wcprof.BeginOp(ctx, wcprof.OpKindRemoteCache, "remotecache.install.commit", wcprof.OpOpts{Start: committing})
+}
+
+// profInstallStep starts one step of an install's commit as an internal
+// profile op, remotecache.install.<step>, under the op in ctx, and returns
+// the function that ends it.
+func profInstallStep(ctx context.Context, step string) (context.Context, func(error)) {
+	ctx, op := wcprof.BeginOp(ctx, wcprof.OpKindInternal, "remotecache.install."+step, wcprof.OpOpts{})
+	return ctx, op.EndErr
 }
 
 // profRenewal records a renewal of a part's content addresses, from start to
