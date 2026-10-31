@@ -120,8 +120,10 @@ type fakeAdapter struct {
 	offer    func(context.Context, protocol.Offer) (protocol.Offered, error)
 	renewals chan *dagql.RenewalRequest
 	replies  chan dagql.RenewalReply
-	// known is the known set the last export was given.
-	known atomic.Pointer[dagql.KnownRows]
+	// known is the known set the last export was given, and mergeKnown the
+	// one the last merge was.
+	known      atomic.Pointer[dagql.KnownRows]
+	mergeKnown atomic.Pointer[dagql.KnownRows]
 	// misses are what TakeLookupMisses returns, and lookups receive true on
 	// StartLookups and false on StopLookups.
 	misses    chan []dagql.RemoteMiss
@@ -196,7 +198,8 @@ func (a *fakeAdapter) Export(ctx context.Context, req protocol.Export, known *da
 	return a.export(ctx, req, consume)
 }
 
-func (a *fakeAdapter) Merge(ctx context.Context, id uint64, req protocol.Merge) (protocol.Merged, error) {
+func (a *fakeAdapter) Merge(ctx context.Context, id uint64, req protocol.Merge, known *dagql.KnownRows) (protocol.Merged, error) {
+	a.mergeKnown.Store(known)
 	a.mergeIDs <- id
 	return a.merge(ctx, req)
 }

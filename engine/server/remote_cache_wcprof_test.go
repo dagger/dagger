@@ -170,7 +170,7 @@ func TestRemoteCacheAdapterMergeProfiled(t *testing.T) {
 
 	wcprof.EnsureRecorder()
 	ctx, root := wcprof.BeginOp(wcprof.ContextWithProfiling(t.Context()), wcprof.OpKindRemoteCache, "test.merge", wcprof.OpOpts{})
-	_, err := adapter.Merge(ctx, 1, protocol.Merge{Bundle: bundle})
+	_, err := adapter.Merge(ctx, 1, protocol.Merge{Bundle: bundle}, nil)
 	require.NoError(t, err)
 	root.End(wcprof.OutcomeOK)
 

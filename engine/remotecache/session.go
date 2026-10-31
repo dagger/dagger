@@ -47,8 +47,8 @@ type session struct {
 	uploadSlots chan struct{}
 	// lookupSlots bounds the lookups unanswered.
 	lookupSlots chan struct{}
-	// known are the rows the service merged over this connection, which
-	// records-only exports send as held rows.
+	// known are the rows the service merged over this connection, from
+	// exports and from its own merges, which exports send as held rows.
 	known *dagql.KnownRows
 	// opened is the last idle period the service was told of, in the hello
 	// or an open. Only hello and then settles use it.
@@ -831,7 +831,7 @@ func (s *session) handleMerge(env protocol.Envelope, req *protocol.Merge) {
 			return
 		}
 	}
-	merged, err := s.adapter.Merge(s.ctx, env.ID, *req)
+	merged, err := s.adapter.Merge(s.ctx, env.ID, *req, s.known)
 	if err != nil {
 		s.replyError(env, err)
 		return
