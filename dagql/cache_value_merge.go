@@ -54,10 +54,11 @@ import (
 // its value, and the rows that depend on it relocate onto that entry. It
 // holds when merge would keep the entry's value for a record of the recipe
 // with the row's expiry, judged against the cache before the merge, and, on
-// the Cloud, the Cloud holds the sending engine's holding of the row. If any
-// held row doesn't hold, the merge
-// commits nothing and its reply names every stale held row. A bundle that
-// carries a held row and a record of the same recipe is malformed.
+// the Cloud, the Cloud holds the sending engine's holding of the row, and the
+// entry has every part the bundle puts on the row (staleHeldPartsLocked).
+// If any held row doesn't hold, the merge commits nothing and its reply names
+// every stale held row. A bundle that carries a held row and a record of the
+// same recipe is malformed.
 //
 // The reply reports every target as the commit left it, read under the same
 // lock, with the cache's generation and clock. Merge runs in no session and
@@ -323,6 +324,10 @@ type valueMergePrep struct {
 	// preparation stops once they are known.
 	held  map[uint64]bool
 	stale []TransferOrdinal
+	// heldParts are, on the Cloud, the outputs an engine's bundle puts on
+	// its held rows, by ordinal, which the commit checks against the
+	// Cloud's own copies of the rows (staleHeldPartsLocked).
+	heldParts map[uint64][]TransferredOutput
 	// calls are the bundle's calls, each with its identity derived from
 	// its encoding, for the rows of the entries they returned.
 	calls []mergedCall
@@ -387,6 +392,12 @@ func (c *Cache) prepareValueMerge(ctx context.Context, input ValueBundle, skipKe
 	if err != nil {
 		return nil, err
 	}
+	// The Cloud drops the parts below, but checks those on held rows against
+	// its own copies of the rows when it commits (staleHeldPartsLocked).
+	var heldParts map[uint64][]TransferredOutput
+	if c.blobBacked {
+		heldParts = heldRowOutputs(bundle)
+	}
 	c.embedMergedParts(&bundle)
 	var recordBytes map[uint64]int64
 	if c.blobBacked {
@@ -397,7 +408,7 @@ func (c *Cache) prepareValueMerge(ctx context.Context, input ValueBundle, skipKe
 		}
 		recordBytes = map[uint64]int64{}
 	}
-	prep := &valueMergePrep{bundle: bundle, order: order, index: map[uint64]*TransferredValue{}, plans: map[uint64]transferIdentityPlan{}, records: map[uint64]PersistedRecord{}, refs: map[uint64][]uint64{}, recordBytes: recordBytes, completeParts: map[uint64][]string{}, held: map[uint64]bool{}}
+	prep := &valueMergePrep{bundle: bundle, order: order, index: map[uint64]*TransferredValue{}, plans: map[uint64]transferIdentityPlan{}, records: map[uint64]PersistedRecord{}, refs: map[uint64][]uint64{}, recordBytes: recordBytes, completeParts: map[uint64][]string{}, held: map[uint64]bool{}, heldParts: heldParts}
 	for i := range prep.bundle.Values {
 		row := &prep.bundle.Values[i]
 		prep.index[uint64(row.Ordinal)] = row
@@ -949,6 +960,9 @@ func (c *Cache) planValueMergeLocked(ctx context.Context, from CacheID, prep *va
 	if stale := c.staleHeldRowsLocked(prep, from, now); len(stale) > 0 {
 		return nil, &mergeStaleError{ordinals: stale}
 	}
+	if stale := c.staleHeldPartsLocked(prep); len(stale) > 0 {
+		return nil, &mergeStaleError{ordinals: stale}
+	}
 
 	// An expired root is skipped, with whatever only it needs.
 	var merged map[uint64]bool
@@ -1071,6 +1085,77 @@ func (c *Cache) staleHeldRowsLocked(prep *valueMergePrep, from CacheID, now int6
 	}
 	slices.Sort(stale)
 	return stale
+}
+
+// heldRowOutputs returns the bundle's outputs on its held rows, by ordinal.
+func heldRowOutputs(bundle ValueBundle) map[uint64][]TransferredOutput {
+	held := map[uint64]bool{}
+	for _, row := range bundle.Values {
+		if row.Held != "" {
+			held[uint64(row.Ordinal)] = true
+		}
+	}
+	var outputs map[uint64][]TransferredOutput
+	for _, output := range bundle.Outputs {
+		if id := uint64(output.Ordinal); held[id] {
+			if outputs == nil {
+				outputs = map[uint64][]TransferredOutput{}
+			}
+			outputs[id] = append(outputs[id], output)
+		}
+	}
+	return outputs
+}
+
+// staleHeldPartsLocked returns, sorted, the held rows whose parts the Cloud's
+// own copy of the row doesn't have: the current entry of the row's recipe,
+// which the row lands on, must have each part at its address, as
+// checkOutputPart checks a part against a record the bundle carries. A held
+// row whose recipe has no current entry is stale already
+// (staleHeldRowsLocked). Requires egraphMu.
+func (c *Cache) staleHeldPartsLocked(prep *valueMergePrep) []TransferOrdinal {
+	var stale []TransferOrdinal
+	for id, outputs := range prep.heldParts {
+		cur := c.currentEntryForRecipeLocked(prep.plans[id].recipe)
+		if cur == nil || !c.entryHasPartsLocked(cur, outputs) {
+			stale = append(stale, TransferOrdinal(id))
+		}
+	}
+	slices.Sort(stale)
+	return stale
+}
+
+// entryHasPartsLocked reports whether res's stored record has each of
+// outputs' parts, as checkOutputPart checks them. Requires egraphMu.
+func (c *Cache) entryHasPartsLocked(res *sharedResult, outputs []TransferredOutput) bool {
+	if res.noValueLocked() {
+		return false
+	}
+	rec, err := c.storedTransferRecordLocked(res)
+	if err != nil {
+		return false
+	}
+	mapped, err := mapTransferredOutputs(rec)
+	if err != nil {
+		return false
+	}
+	parts := make(map[string]CapturedCodecOutput, len(mapped))
+	for _, part := range mapped {
+		if key, err := partAddressKey(part.Address); err == nil {
+			parts[key] = part
+		}
+	}
+	for _, output := range outputs {
+		key, err := partAddressKey(output.Address)
+		if err != nil {
+			return false
+		}
+		part, ok := parts[key]
+		if !ok || checkOutputPart(output, part) != nil {
+			return false
+		}
+	}
+	return true
 }
 
 // installsLight reports whether the commit installs a light record.
