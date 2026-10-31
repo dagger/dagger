@@ -1145,6 +1145,46 @@ func TestRecordsExportHasItsOwnSlots(t *testing.T) {
 	}
 }
 
+// With its own slots taken, an export that selects no outputs takes a free
+// slot of the exports that select outputs, within the protocol's bounds:
+// the engine runs at once as many exports as those bounds allow.
+func TestRecordsExportTakesAFreeSlot(t *testing.T) {
+	const slots = RecordsExportsInFlight + ExportsInFlight
+	entered := make(chan uint64, slots+1)
+	finish := make(chan struct{})
+	release := sync.OnceFunc(func() { close(finish) })
+	adapter := newFakeAdapter()
+	adapter.export = func(ctx context.Context, req protocol.Export, consume func(context.Context, Export) error) error {
+		entered <- req.Roots[0]
+		<-finish
+		return consume(ctx, Export{Skipped: []protocol.SkippedRoot{{Number: req.Roots[0], Reason: protocol.SkipGone}}})
+	}
+	s, conn := testSession(t, adapter)
+	t.Cleanup(release)
+	for i := range slots {
+		s.dispatch(request(t, uint64(i+1), protocol.TypeExport, protocol.Export{Roots: []uint64{uint64(i + 1)}}))
+	}
+	for range slots {
+		select {
+		case <-entered:
+		case <-time.After(10 * time.Second):
+			t.Fatal("an export that selects no outputs waited with a slot free")
+		}
+	}
+	// Every slot is held: the next export waits, whatever it selects.
+	s.dispatch(request(t, slots+1, protocol.TypeExport, outputsExport(slots+1)))
+	select {
+	case root := <-entered:
+		t.Fatalf("export %d ran beyond the engine's slots", root)
+	case <-time.After(50 * time.Millisecond):
+	}
+	release()
+	require.Equal(t, uint64(slots+1), <-entered)
+	for range slots + 1 {
+		require.Equal(t, protocol.TypeExported, conn.next(t).Type)
+	}
+}
+
 // A merge is answered merged, or with an error reply when it fails.
 func TestMerge(t *testing.T) {
 	adapter := newFakeAdapter()
