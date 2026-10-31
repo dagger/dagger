@@ -587,27 +587,33 @@ func TestSkippedMessageIsBounded(t *testing.T) {
 }
 
 // An export's log line counts its skipped roots by reason, and names them
-// with their reasons while there are at most maxLoggedSkippedRoots.
+// with their reasons while there are at most maxLoggedSkippedRoots, then its
+// busy rows and the rows no longer busy.
 func TestExportLogAttrs(t *testing.T) {
 	skipped := []protocol.SkippedRoot{
 		{Number: 2, Reason: protocol.SkipGone},
 		{Number: 3, Reason: protocol.SkipBusy},
 		{Number: 4, Reason: protocol.SkipRefused, Message: "refused"},
 	}
-	attrs := logAttrs(exportLogAttrs(protocol.Export{Roots: []uint64{1, 2, 3, 4}}, skipped, nil, time.Second, exportCapture{}))
+	busy := busyReport{rows: 1, named: []string{"3:running:2s:1"}, cleared: 1, freed: []string{"8:bookkeeping:9s"}}
+	attrs := logAttrs(exportLogAttrs(protocol.Export{Roots: []uint64{1, 2, 3, 4}}, skipped, nil, time.Second, exportCapture{}, busy))
 	require.Equal(t, 4, attrs["roots"])
 	require.Equal(t, 3, attrs["skipped"])
 	require.Equal(t, 1, attrs["skipped_gone"])
 	require.Equal(t, 1, attrs["skipped_busy"])
 	require.Equal(t, 1, attrs["skipped_refused"])
 	require.Equal(t, []string{"2:gone", "3:busy", "4:refused"}, attrs["skipped_roots"])
+	require.Equal(t, 1, attrs["busy_rows"])
+	require.Equal(t, []string{"3:running:2s:1"}, attrs["busy_named"])
+	require.Equal(t, 1, attrs["busy_cleared"])
+	require.Equal(t, []string{"8:bookkeeping:9s"}, attrs["busy_cleared_named"])
 	require.Equal(t, time.Second, attrs["capture"])
 
 	many := make([]protocol.SkippedRoot, maxLoggedSkippedRoots+1)
 	for i := range many {
 		many[i] = protocol.SkippedRoot{Number: uint64(i + 1), Reason: protocol.SkipBusy}
 	}
-	attrs = logAttrs(exportLogAttrs(protocol.Export{}, many, nil, 0, exportCapture{}))
+	attrs = logAttrs(exportLogAttrs(protocol.Export{}, many, nil, 0, exportCapture{}, busyReport{}))
 	require.Equal(t, maxLoggedSkippedRoots+1, attrs["skipped_busy"])
 	require.Zero(t, attrs["skipped_refused"])
 	require.NotContains(t, attrs, "skipped_roots", "past the limit, skipped roots are only counted")
@@ -644,11 +650,11 @@ func TestExportLogAttrsPhases(t *testing.T) {
 		"merged_blob_bytes", int64(100),
 		"merged_diff_time", 3 * time.Millisecond,
 	}
-	attrs := exportLogAttrs(protocol.Export{Roots: []uint64{1}}, nil, values, 2*time.Second, local)
+	attrs := exportLogAttrs(protocol.Export{Roots: []uint64{1}}, nil, values, 2*time.Second, local, busyReport{})
 	require.Equal(t, want, attrs[len(attrs)-len(want):], "appended after chains, in order")
 	require.Equal(t, 2*time.Second, logAttrs(attrs)["capture"])
 
-	attrs = exportLogAttrs(protocol.Export{Roots: []uint64{1}}, nil, nil, time.Second, local)
+	attrs = exportLogAttrs(protocol.Export{Roots: []uint64{1}}, nil, nil, time.Second, local, busyReport{})
 	require.Equal(t, []any{
 		"chains", time.Duration(0),
 		"hold", time.Millisecond,
