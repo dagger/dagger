@@ -105,3 +105,65 @@ func TestLazyGroupBodyWaitsRecordedAsLockWaits(t *testing.T) {
 		require.GreaterOrEqual(t, waits[lazyGroupMuProfIdent], 1, "waits: %v", waits)
 	}
 }
+
+// When the running body is profiled, a runner or reader blocked behind it is
+// recorded as joining that body's op, so a profile charges the wait to the
+// body's work rather than to the waiter's own time.
+func TestLazyGroupBodyWaitsJoinTheRunningBody(t *testing.T) {
+	op := &ContainerFromImageRefLazy{LazyState: NewLazyState()}
+	ctr := NewContainer(Platform{})
+	ctr.Lazy = op
+
+	bodyCtx, bodyOp := profiledOp(t, "test.body")
+	entered, allow := make(chan struct{}), make(chan struct{})
+	release := sync.OnceFunc(func() { close(allow) })
+	defer release()
+	bodyDone := make(chan error, 1)
+	go func() {
+		bodyDone <- op.EvaluateGroup(bodyCtx, "fs", ContainerLazyGroupWrite, func(context.Context) error {
+			close(entered)
+			<-allow
+			ctr.FS.setValue(containerPersistenceTestDirectory("owned", "/"))
+			return nil
+		})
+	}()
+	<-entered
+
+	runnerCtx, runnerOp := profiledOp(t, "test.runner")
+	runnerDone := make(chan error, 1)
+	go func() {
+		runnerDone <- op.EvaluateGroup(runnerCtx, "fs", ContainerLazyGroupWrite, func(context.Context) error { return nil })
+	}()
+	awaitBlockedIn(t, "EvaluateGroup(")
+
+	readerCtx, readerOp := profiledOp(t, "test.reader")
+	readerDone := make(chan error, 1)
+	go func() {
+		_, _, err := ctr.ReadSnapshotOwner(readerCtx)
+		readerDone <- err
+	}()
+	awaitBlockedIn(t, "lockSnapshotOwnerRead(")
+
+	release()
+	require.NoError(t, <-bodyDone)
+	require.NoError(t, <-runnerDone)
+	require.NoError(t, <-readerDone)
+	bodyOp.End(wcprof.OutcomeOK)
+	runnerOp.End(wcprof.OutcomeOK)
+	readerOp.End(wcprof.OutcomeOK)
+
+	var buf bytes.Buffer
+	require.NoError(t, wcprof.Active().WriteDump(&buf, false))
+	_, events, err := wcprof.ReadDump(&buf)
+	require.NoError(t, err)
+	for _, waiter := range []*wcprof.Op{runnerOp, readerOp} {
+		var joins int
+		for _, ev := range events {
+			if ev.Type == "wait" && ev.ParentID == waiter.ID() && ev.TargetID == bodyOp.ID() {
+				require.Equal(t, wcprof.WaitReasonLazy.String(), ev.Reason)
+				joins++
+			}
+		}
+		require.Equal(t, 1, joins, "op %d's waits on the running body", waiter.ID())
+	}
+}
