@@ -31,6 +31,8 @@ func TestModuleTreeReaderWithoutTree(t *testing.T) {
 
 // gitClientsTestTrees serves module trees from memory through the Directory
 // and File fields a declaration read selects, counting the files it reads.
+// Only exists and contents skip the cache, so every read reaches them: a
+// File result must be cached.
 type gitClientsTestTrees struct {
 	mu    sync.Mutex
 	trees map[*Directory]map[string]string
@@ -59,7 +61,7 @@ func installGitClientsTestTrees(srv *dagql.Server) *gitClientsTestTrees {
 			file := &File{}
 			trees.files[file] = trees.trees[self][args.Path]
 			return file, nil
-		}).DoNotCache("counts every read"),
+		}),
 	}.Install(srv)
 	dagql.Fields[*File]{
 		dagql.Func("contents", func(_ context.Context, self *File, _ struct{}) (dagql.String, error) {
@@ -91,6 +93,10 @@ module = "go"
 [sdks.go.scopes."modules/caller"]
 is-module = true
 clients = [%q]
+
+[sdks.go.scopes."modules/other"]
+is-module = true
+clients = ["github.com/acme/private/other-scope"]
 `, client)
 }
 
@@ -124,8 +130,11 @@ func TestModuleDeclaredGitClientsReadOncePerTree(t *testing.T) {
 		require.NoError(t, err)
 		return attached.(dagql.ObjectResult[*Directory])
 	}
+	dirModuleAt := func(tree dagql.ObjectResult[*Directory], moduleDir string) *ModuleSource {
+		return &ModuleSource{Kind: ModuleSourceKindDir, SourceRootSubpath: moduleDir, DirSrc: &DirModuleSource{OriginalContextDir: tree}}
+	}
 	dirModule := func(tree dagql.ObjectResult[*Directory]) *ModuleSource {
-		return &ModuleSource{Kind: ModuleSourceKindDir, SourceRootSubpath: "modules/caller", DirSrc: &DirModuleSource{OriginalContextDir: tree}}
+		return dirModuleAt(tree, "modules/caller")
 	}
 	gitModule := func(tree dagql.ObjectResult[*Directory]) *ModuleSource {
 		return &ModuleSource{Kind: ModuleSourceKindGit, SourceRootSubpath: "modules/caller", Git: &GitModuleSource{UnfilteredContextDir: tree}}
@@ -147,19 +156,24 @@ func TestModuleDeclaredGitClientsReadOncePerTree(t *testing.T) {
 	require.Equal(t, []string{"github.com/acme/private/hello"}, declared(gitModule(original)))
 	require.Equal(t, 1, trees.reads)
 
+	// Another module in the same tree has its own.
+	require.Equal(t, []string{"github.com/acme/private/other-scope"}, declared(dirModuleAt(original, "modules/other")))
+	require.Equal(t, []string{"github.com/acme/private/other-scope"}, declared(dirModuleAt(original, "modules/other")))
+	require.Equal(t, 2, trees.reads)
+
 	// An edited dagger.toml is a new tree, read for its own declarations.
 	edited := tree("edited", map[string]string{"dagger.toml": gitClientsTestConfig("github.com/acme/private/other")})
 	for range 5 {
 		require.Equal(t, []string{"github.com/acme/private/other"}, declared(dirModule(edited)))
 	}
-	require.Equal(t, 2, trees.reads)
+	require.Equal(t, 3, trees.reads)
 	require.Equal(t, []string{"github.com/acme/private/hello"}, declared(dirModule(original)))
-	require.Equal(t, 2, trees.reads)
+	require.Equal(t, 3, trees.reads)
 
 	// Another session reads again.
 	server.memo = NewSchemaBuilderMemo()
 	require.Equal(t, []string{"github.com/acme/private/hello"}, declared(dirModule(original)))
-	require.Equal(t, 3, trees.reads)
+	require.Equal(t, 4, trees.reads)
 }
 
 func TestDeclaredGitClientsRetriesFailedRead(t *testing.T) {
