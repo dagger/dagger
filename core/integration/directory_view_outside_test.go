@@ -143,6 +143,28 @@ func (DirectorySuite) TestSubdirectoryViewResolution(ctx context.Context, t *tes
 		require.Error(t, err, "COPY of a link out of the context must not copy the outside file, got %q", contents)
 	})
 
+	t.Run("dockerfile copy key", func(ctx context.Context, t *testctx.T) {
+		// Both roots have the same other.txt outside app/ and differ only in
+		// app/other.txt, which is what a COPY resolving within app/ reads, so
+		// each build must copy its own app/other.txt.
+		nonce := rand.Text()
+		for _, src := range []string{"link", "../other.txt"} {
+			for _, inside := range []string{"a", "b"} {
+				dir := t.TempDir()
+				writeTree(t, dir,
+					map[string]string{
+						"other.txt":      "outside " + nonce,
+						"app/other.txt":  inside + " " + nonce,
+						"app/Dockerfile": "FROM scratch\nCOPY " + src + " /out\n",
+					},
+					map[string]string{"app/link": "../other.txt"})
+				contents, err := host(dir).Directory("app").DockerBuild().File("/out").Contents(ctx)
+				require.NoError(t, err, src)
+				require.Equal(t, inside+" "+nonce, contents, src)
+			}
+		}
+	})
+
 	t.Run("destination through a link", func(ctx context.Context, t *testctx.T) {
 		dir := t.TempDir()
 		require.NoError(t, os.MkdirAll(filepath.Join(dir, "outside"), 0o755))
