@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/remotecache/pack"
 	"github.com/dagger/dagger/engine/remotecache/protocol"
 )
 
@@ -482,6 +483,72 @@ func TestCutUploadAnswersForBlobsWaitingForASlot(t *testing.T) {
 	default:
 		require.Equal(t, errCut.Error(), failed[waited])
 	}
+}
+
+// A pack is uploaded as one PUT of its header and its members, and answered
+// done or failed whole: a pack whose members don't make its ID, or one of
+// whose members the chains lack or hold at another size, fails without
+// being stored.
+func TestExportUploadPack(t *testing.T) {
+	d1, d2, d3 := digest.FromString("first"), digest.FromString("second"), digest.FromString("third")
+	data := blobs{d1: "first", d2: "second", d3: "third"}
+	adapter := newFakeAdapter()
+	adapter.export = func(ctx context.Context, req protocol.Export, consume func(context.Context, Export) error) error {
+		return consume(ctx, Export{Bundle: testBundle(), Blobs: data})
+	}
+	s, conn := testSession(t, adapter)
+	var puts, attempts sync.Map
+	s.cfg.put = func(_ context.Context, address string, body io.Reader, size int64) error {
+		attempts.Store(address, true)
+		got, err := io.ReadAll(body)
+		if err != nil {
+			return err
+		}
+		require.Equal(t, int64(len(got)), size)
+		puts.Store(address, string(got))
+		return nil
+	}
+	packOf := func(members ...pack.Member) protocol.UploadPack {
+		id, err := pack.ID(members)
+		require.NoError(t, err)
+		return protocol.UploadPack{Pack: id, Members: members}
+	}
+	good := packOf(pack.Member{Digest: d1, Size: 5}, pack.Member{Digest: d2, Size: 6})
+	good.URL = "put-pack"
+	wrongID := packOf(pack.Member{Digest: d1, Size: 5}, pack.Member{Digest: d3, Size: 5})
+	wrongID.Pack, wrongID.URL = digest.FromString("not this pack"), "put-wrong-id"
+	missing := packOf(pack.Member{Digest: d3, Size: 5}, pack.Member{Digest: digest.FromString("gone"), Size: 4})
+	missing.URL = "put-missing"
+	resized := packOf(pack.Member{Digest: d2, Size: 7}, pack.Member{Digest: d3, Size: 5})
+	resized.URL = "put-resized"
+
+	s.dispatch(request(t, 7, protocol.TypeExport, protocol.Export{Roots: []uint64{12}}))
+	exported := decode[protocol.Exported](t, conn.next(t))
+	s.dispatch(request(t, 8, protocol.TypeUpload, protocol.Upload{
+		ExportID: exported.ExportID,
+		URLs:     map[digest.Digest]string{d3: "put-3"},
+		Packs:    []protocol.UploadPack{good, wrongID, missing, resized},
+	}))
+	uploaded := decode[protocol.Uploaded](t, conn.next(t))
+	require.ElementsMatch(t, []digest.Digest{d3, good.Pack}, uploaded.Done)
+	var failed []digest.Digest
+	for _, f := range uploaded.Failed {
+		failed = append(failed, f.Digest)
+	}
+	require.ElementsMatch(t, []digest.Digest{wrongID.Pack, missing.Pack, resized.Pack}, failed)
+
+	header, err := pack.Header(good.Members)
+	require.NoError(t, err)
+	got, ok := puts.Load("put-pack")
+	require.True(t, ok)
+	require.Equal(t, string(header)+"first"+"second", got)
+	for _, address := range []string{"put-wrong-id", "put-missing", "put-resized"} {
+		_, ok = attempts.Load(address)
+		require.False(t, ok, "%s: a pack that can't be uploaded whole is never PUT", address)
+	}
+	got, ok = puts.Load("put-3")
+	require.True(t, ok)
+	require.Equal(t, "third", got)
 }
 
 // At most UploadConcurrency PUTs run at once across all the exports, not
@@ -1077,6 +1144,7 @@ func renewalRequest(deadline time.Duration) *dagql.RenewalRequest {
 		Chain:      digest.FromString("chain"),
 		RenewalKey: "12/fs",
 		NeededBlob: digest.FromString("blob"),
+		Packs:      map[digest.Digest]digest.Digest{digest.FromString("blob"): digest.FromString("pack")},
 		Deadline:   time.Now().Add(deadline),
 		Done:       make(chan struct{}),
 	}
@@ -1137,7 +1205,7 @@ func TestRenewal(t *testing.T) {
 			adapter.renewals <- req
 			renew := conn.next(t)
 			require.Equal(t, protocol.TypeRenew, renew.Type)
-			require.Equal(t, protocol.Renew{RenewalKey: "12/fs", NeededBlob: req.NeededBlob}, decode[protocol.Renew](t, renew))
+			require.Equal(t, protocol.Renew{RenewalKey: "12/fs", NeededBlob: req.NeededBlob, Packs: req.Packs}, decode[protocol.Renew](t, renew))
 			if env := tc.answer(t, renew); env != nil {
 				s.dispatch(*env)
 			}
