@@ -67,48 +67,50 @@ Two current details prevent shortcuts:
 Stopping at the first read gives an incomplete set: its result can determine
 later reads. Supplying dummy results would change the code's behavior.
 
-## Implementation plan
+## Implementation
 
-1. **Record source operations automatically.** At Workspace reads, record the
-   resolved selectors. Cover discovery, scalar reads, and failed lookups as well
-   as File and Directory values. Recording metadata must not force extra reads.
-2. **Carry that record through calls.** Combine ordinary input provenance and
-   nested workspace access into each completed call's summary. The engine-side
-   FunctionCall already reaches nested clients. Add recording there; include
-   cached nested calls, whose bodies do not run again. Preserve summaries through
-   persistence and content reuse. Equal bytes must not erase different origins.
-3. **Expose known and unknown provenance through Artifacts.** Filter complete
-   known inputs. Keep unknown future access selected. Preserve collection views,
-   legacy batching, module load errors, and the existing cloud execution path.
-   Discovery remains dynamic and still costs work.
-4. **Prove reuse of recorded dependencies in dagql.** For checks that read files
-   only in their bodies, investigate a prior call summary as the way to filter
-   before execution. Find a candidate with matching code and other inputs, then
-   validate its workspace dependencies against the current state. Start with
-   stable Workspace snapshots. Validation and execution must use the same state,
-   including ambient workspace access. Without that validation, run the check.
-   Respect the existing cache policy.
+1. **Record normal calls.** At Workspace reads, record resolved paths and
+   patterns. Carry the record through arguments, receivers, nested calls, and
+   cache hits. Include module source. Keep discarded scalar reads and failed
+   requests.
+2. **Store completed summaries in dagql.** Use ordinary cache entries with the
+   call's lifetime and access rules. Keep source origins separate when outputs
+   have equal content. Missing coverage stays unknown.
+3. **Validate before filtering.** Match code and other inputs. Then compare the
+   recorded regions with the current snapshot. Use the same content hashes and
+   metadata rules as File and Directory caching. A configuration change can
+   cause new reads on the next execution.
+4. **Filter through Artifacts.** Keep unknown inputs selected. Keep collection
+   views, legacy batching, module load errors, and cloud dispatch in the existing
+   selection system. `--source-path PATH` uses one workspace snapshot for
+   filtering and execution. Paths start at the workspace root.
 
-First prove recording through a constructor, discarded configuration value,
-nested call, and cache hit. Then use markdownlint: record one run and test whether
-a Go-only change can avoid its body and cloud launch. A separate test must branch
-on configuration: changing it must run the check and learn the new input path.
-First-run skipping is not the acceptance case.
+First-run skipping is not supported. A cache hit without a recorded summary
+stays unknown. Filtering can construct receivers and discover collection keys;
+it does not run the check body.
+
+The prototype narrows File reads and filtered Directory copies from stable
+workspaces. Unfiltered Directory values retain the full source tree, so they
+retain a root dependency. Git ignore reads also retain a root dependency.
+Symlink paths, live workspace access, and changing non-file inputs stay unknown.
+Other Workspace operations currently stay unknown.
 
 ## Relationship to caching
 
 Keep one execution cache. Dagql tracks call inputs and caches the hidden check
-function. But its retained dependency graph does not record every nested
+function. Its retained dependency graph does not record every nested
 workspace read or scalar origin.
+
+Object IDs remain opaque references, as in current content caching.
 
 Read summaries belong with those calls. An old path list is not enough to skip:
 a changed manifest can cause new reads. Validate configuration and discovery
 inputs too, including queries for files that were absent. Do not add a separate
 lockfile of check names and old path lists.
 
-A requested path does not prove an old summary is current. A diff can validate
-it only if it covers the change from the recorded state. Other arguments, code,
-workspace metadata, and cache policy also matter.
+A requested path or diff does not prove an old summary is current. Validate
+its recorded inputs too. Other arguments, code, workspace metadata, and cache
+policy also matter.
 
 For late-reading checks, this cache dependency work may be necessary for useful
 early filtering. It is not just an optional performance improvement. A filter
@@ -116,9 +118,9 @@ still reports selection, not a new passing outcome for a skipped check.
 
 ## Guidelines for module developers
 
-1. **Read narrowly.** Read directly from Workspace at the required path, with
-   filters. Include configuration, shared code, and test data. Capturing `/` and
-   taking a subdirectory later can retain broad dependencies.
+1. **Read narrowly.** Use Workspace.file for one file. Use Workspace.directory
+   with filters for a set of files. An unfiltered Directory retains the full
+   source tree. Include configuration, shared code, and test data.
 2. **Keep work lazy.** Do only the work needed to construct values and discover
    keys. Run tools in check bodies. Do not move reads earlier just to help the
    filter; the engine must account for dynamic access.
@@ -127,7 +129,8 @@ still reports selection, not a new passing outcome for a skipped check.
 
 ## Expected gains
 
-No workloads were timed. These are the limits visible in current code:
+No official workloads were timed. Validation still copies and hashes selected
+inputs. These are the limits visible in current code:
 
 | Module | What is known before the body | Limit on early filtering |
 |---|---|---|
@@ -150,8 +153,7 @@ first useful result must come from automatic tracking and validation.
 
 Reviewed on 2026-10-30: dagger/dagger at `ddee9399a`, with main fetched through
 `f0a3d728c`.
-The intervening changes do not alter these core mechanisms. This proposal
-supersedes the prototype brief. The intent comes from [Modules v2](https://github.com/dagger/dagger/pull/12900).
+The intervening changes do not alter these core mechanisms. The intent comes from [Modules v2](https://github.com/dagger/dagger/pull/12900).
 
 - Engine: [Check construction](../../core/object.go),
   [body invocation](../../core/check_projection.go),
