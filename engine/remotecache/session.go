@@ -1,12 +1,14 @@
 package remotecache
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -15,6 +17,7 @@ import (
 	"github.com/opencontainers/go-digest"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/remotecache/pack"
 	"github.com/dagger/dagger/engine/remotecache/protocol"
 	"github.com/dagger/dagger/engine/wcprof"
 )
@@ -310,6 +313,7 @@ func (s *session) renew(req *dagql.RenewalRequest) {
 		RenewalKey: req.RenewalKey,
 		Layers:     req.Layers,
 		NeededBlob: req.NeededBlob,
+		Packs:      req.Packs,
 	})
 	if err == nil && env.Type == protocol.TypeRenewed {
 		var renewed protocol.Renewed
@@ -505,7 +509,8 @@ func (s *session) handleUpload(env protocol.Envelope) {
 }
 
 // uploadSummary counts an upload's blobs: those asked for, those that
-// failed, and the bytes of those uploaded.
+// failed, and the bytes of those uploaded. A pack's members count as blobs,
+// and its bytes are the pack's.
 type uploadSummary struct {
 	blobs, failed int
 	bytes         int64
@@ -529,19 +534,18 @@ func (s *session) upload(ctx context.Context, env protocol.Envelope, blobs BlobS
 		summary = uploadSummary{blobs: len(req.URLs)}
 		wg      sync.WaitGroup
 	)
-	// cut fails a blob the upload, cut off, never PUT.
-	cut := func(dgst digest.Digest) {
+	prof := wcprof.Enabled(ctx)
+	// cut fails a blob or a pack of members blobs the upload, cut off,
+	// never PUT.
+	cut := func(dgst digest.Digest, members int) {
 		mu.Lock()
 		defer mu.Unlock()
-		summary.failed++
+		summary.failed += members
 		reply.Failed = append(reply.Failed, protocol.UploadFailure{Digest: dgst, Message: context.Cause(ctx).Error()})
 	}
-	prof := wcprof.Enabled(ctx)
-	for dgst, address := range req.URLs {
-		if ctx.Err() != nil {
-			cut(dgst)
-			continue
-		}
+	// slot takes an upload slot, recording the wait, or reports false when
+	// the upload is cut off first.
+	slot := func() bool {
 		var slotStart time.Time
 		if prof {
 			slotStart = time.Now()
@@ -552,11 +556,20 @@ func (s *session) upload(ctx context.Context, env protocol.Envelope, blobs BlobS
 			if prof {
 				wcprof.RecordWaitAt(ctx, "remotecache.uploadSlots", wcprof.WaitReasonLock, slotStart, time.Now())
 			}
-			cut(dgst)
-			continue
+			return false
 		}
 		if prof {
 			wcprof.RecordWaitAt(ctx, "remotecache.uploadSlots", wcprof.WaitReasonLock, slotStart, time.Now())
+		}
+		return true
+	}
+	for _, up := range req.Packs {
+		summary.blobs += len(up.Members)
+	}
+	for dgst, address := range req.URLs {
+		if ctx.Err() != nil || !slot() {
+			cut(dgst, 1)
+			continue
 		}
 		queued := time.Since(received)
 		wg.Add(1)
@@ -583,6 +596,35 @@ func (s *session) upload(ctx context.Context, env protocol.Envelope, blobs BlobS
 			}
 		}()
 	}
+	for _, up := range req.Packs {
+		if ctx.Err() != nil || !slot() {
+			cut(up.Pack, len(up.Members))
+			continue
+		}
+		queued := time.Since(received)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() { <-s.uploadSlots }()
+			start := time.Now()
+			size, err := s.uploadPack(ctx, blobs, up)
+			end := time.Now()
+			level, outcome := uploadOutcome(ctx, err)
+			s.logPackUpload(ctx, req.ExportID, up, size, queued, end.Sub(start), err, level, outcome)
+			if prof {
+				profUploadPack(ctx, up, size, start, end, outcome)
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				summary.failed += len(up.Members)
+				reply.Failed = append(reply.Failed, protocol.UploadFailure{Digest: up.Pack, Message: err.Error()})
+			} else {
+				summary.bytes += size
+				reply.Done = append(reply.Done, up.Pack)
+			}
+		}()
+	}
 	wg.Wait()
 	// Whether the session had ended is read when the blobs are done, before
 	// the answer: an end that follows the answer doesn't undo the upload.
@@ -591,6 +633,106 @@ func (s *session) upload(ctx context.Context, env protocol.Envelope, blobs BlobS
 		return summary, err
 	}
 	return summary, cause
+}
+
+// uploadPack PUTs one pack: its header, then each member read from the
+// export's chains. It fails with no PUT when the members don't make the pack
+// the service named, or when the chains lack a member or hold it at another
+// size; and it fails when the PUT didn't take the whole pack.
+func (s *session) uploadPack(ctx context.Context, blobs BlobSource, up protocol.UploadPack) (int64, error) {
+	id, err := pack.ID(up.Members)
+	if err != nil {
+		return 0, err
+	}
+	if id != up.Pack {
+		return 0, fmt.Errorf("pack %s: its members make pack %s", up.Pack, id)
+	}
+	header, err := pack.Header(up.Members)
+	if err != nil {
+		return 0, err
+	}
+	size, err := pack.Size(up.Members)
+	if err != nil {
+		return 0, err
+	}
+	body := &packUploadBody{parts: []io.Reader{bytes.NewReader(header)}}
+	defer body.Close()
+	for _, m := range up.Members {
+		r, n, err := blobs.ReadBlob(ctx, m.Digest)
+		if err != nil {
+			return 0, fmt.Errorf("pack member %s: %w", m.Digest, err)
+		}
+		body.closers = append(body.closers, r)
+		if n != m.Size {
+			return 0, fmt.Errorf("pack member %s has %d bytes, the pack says %d", m.Digest, n, m.Size)
+		}
+		body.parts = append(body.parts, io.LimitReader(r, n))
+	}
+	body.reader = io.MultiReader(body.parts...)
+	if err := s.cfg.put(ctx, up.URL, body, size); err != nil {
+		return 0, err
+	}
+	read, err := body.result()
+	if err != nil {
+		return 0, fmt.Errorf("pack %s: %w", up.Pack, err)
+	}
+	if read != size {
+		return 0, fmt.Errorf("pack %s: the upload took %d of %d bytes", up.Pack, read, size)
+	}
+	return size, nil
+}
+
+// packUploadBody is a pack's PUT body: its header, then its members, opened
+// before the PUT. A transport may still read a body after the response came,
+// and close it from another goroutine, so a close never waits for a read: it
+// closes the members, which ends any read.
+type packUploadBody struct {
+	parts   []io.Reader
+	closers []io.Closer
+	reader  io.Reader
+
+	read      atomic.Int64
+	mu        sync.Mutex
+	err       error
+	closeOnce sync.Once
+}
+
+func (b *packUploadBody) Read(p []byte) (int, error) {
+	n, err := b.reader.Read(p)
+	b.read.Add(int64(n))
+	if err != nil && !errors.Is(err, io.EOF) {
+		b.mu.Lock()
+		if b.err == nil {
+			b.err = err
+		}
+		b.mu.Unlock()
+	}
+	return n, err
+}
+
+// result is how many bytes the PUT read, and the error reading them.
+func (b *packUploadBody) result() (int64, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.read.Load(), b.err
+}
+
+func (b *packUploadBody) Close() error {
+	b.closeOnce.Do(func() {
+		for _, c := range b.closers {
+			_ = c.Close()
+		}
+	})
+	return nil
+}
+
+// logPackUpload logs one pack's upload, as logUpload does a blob's.
+func (s *session) logPackUpload(ctx context.Context, exportID string, up protocol.UploadPack, size int64, queued, duration time.Duration, err error, level slog.Level, outcome string) {
+	args := []any{"export", exportID, "pack", up.Pack.String(), "members", len(up.Members), "bytes", size, "queued", queued, "duration", duration, "outcome", outcome}
+	if err != nil {
+		args = append(args, "error", err.Error())
+	}
+	s.cfg.Logger.Log(ctx, level, "remote cache pack uploaded", args...)
 }
 
 // uploadBlob PUTs one blob, and returns its size once it is read.
@@ -636,6 +778,18 @@ func profUploadBlob(ctx context.Context, dgst digest.Digest, size int64, start, 
 		result = wcprof.OutcomeError
 	}
 	wcprof.RecordOpAt(ctx, wcprof.OpKindRemoteCache, "remotecache.upload.blob", wcprof.OpOpts{Ident: dgst.String(), Bytes: size, WorkType: wcprof.WorkTypeExternal}, start, end, result)
+}
+
+// profUploadPack records one pack's PUT, as profUploadBlob does a blob's.
+func profUploadPack(ctx context.Context, up protocol.UploadPack, size int64, start, end time.Time, outcome string) {
+	result := wcprof.OutcomeOK
+	switch outcome {
+	case "canceled":
+		result = wcprof.OutcomeCanceled
+	case "error":
+		result = wcprof.OutcomeError
+	}
+	wcprof.RecordOpAt(ctx, wcprof.OpKindRemoteCache, "remotecache.upload.pack", wcprof.OpOpts{Ident: up.Pack.String(), Bytes: size, WorkType: wcprof.WorkTypeExternal}, start, end, result)
 }
 
 // handleMerge merges a bundle and answers.

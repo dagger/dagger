@@ -927,6 +927,10 @@ const (
 	// layers whose blob background prefetching held, or was downloading,
 	// when the import started.
 	CacheOfferPrefetchedAttr = "dagger.io/cache.offer.prefetched"
+	// CacheOfferPackedAttr is the decimal-string count of the part's layers
+	// whose blob came with its pack's: read, joined, or held from an earlier
+	// read.
+	CacheOfferPackedAttr = "dagger.io/cache.offer.packed"
 
 	// CacheSessionSpansAttr is the decimal-string count of the spans of one
 	// session that carry CacheResultIDAttr, stamped on the session's

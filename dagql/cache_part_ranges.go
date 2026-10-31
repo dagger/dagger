@@ -71,9 +71,10 @@ func defaultPartRangeConfig() partRangeConfig {
 	}
 }
 
-// get requests bytes start to end of the blob at url, once the provider's
-// bound on requests in flight has room. The stream's context is canceled by
-// its close, by ctx and by the idle bound; its close frees its place.
+// get requests bytes start to end of the blob at url, or from start to the
+// end of the object when end is negative, once the provider's bound on
+// requests in flight has room. The stream's context is canceled by its close,
+// by ctx and by the idle bound; its close frees its place.
 func (p *partContentProvider) get(ctx context.Context, url string, start, end int64) (*partHTTPStream, *http.Response, error) {
 	if p.requests != nil {
 		if err := p.requests.Acquire(ctx, 1); err != nil {
@@ -97,7 +98,11 @@ func (p *partContentProvider) get(ctx context.Context, url string, start, end in
 		stream.close()
 		return nil, nil, err
 	}
-	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", start, end))
+	if end < 0 {
+		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", start))
+	} else {
+		req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", start, end))
+	}
 	var resp *http.Response
 	_, err = stream.wait(func() (int, error) {
 		sent := time.Now()

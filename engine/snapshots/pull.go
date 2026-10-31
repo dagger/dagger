@@ -293,6 +293,11 @@ func (cm *snapshotManager) fetchLayerContent(ctx context.Context, desc ocispecs.
 		if joined {
 			clock.timing.Joined++
 		}
+		if packs, ok := provider.(PackProvider); ok && err == nil {
+			if _, packed := packs.PackOf(desc.Digest); packed {
+				clock.timing.Packed++
+			}
+		}
 	}
 	if clock.prof {
 		recordImportPhase(ctx, "snapshot.import.fetch["+source+"]", desc, source, fetchStart, fetched, err)
