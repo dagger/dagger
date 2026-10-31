@@ -92,6 +92,21 @@ func TestPartPrefetchThenInstall(t *testing.T) {
 	require.Equal(t, 2, f.transport.total(), "the install made no request")
 }
 
+// A job's line gives its content requests and their summed time to first
+// byte, as an install's line does: each of its two blobs' requests waits the
+// store's delay for its headers.
+func TestPartPrefetchRequestsAndTTFB(t *testing.T) {
+	f := newPrefetchFixture(t, true, nil)
+	f.transport.delay = 40 * time.Millisecond
+	line := f.runJob(t)
+	require.Equal(t, "done", line.fields["outcome"])
+	require.EqualValues(t, f.transport.total(), line.int(t, "requests"), "every request the job made")
+	require.EqualValues(t, 2, line.int(t, "requests"))
+	ttfb := line.duration(t, "ttfb")
+	require.GreaterOrEqual(t, ttfb, 80*time.Millisecond, "each request's wait for its headers, summed")
+	require.Less(t, ttfb, line.duration(t, "duration")+80*time.Millisecond)
+}
+
 // A job whose offer was retired before it ran downloads nothing.
 func TestPartPrefetchOfferGone(t *testing.T) {
 	f := newPrefetchFixture(t, true, nil)
