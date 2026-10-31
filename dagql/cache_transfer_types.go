@@ -67,6 +67,14 @@ type TransferredValue struct {
 	Record             PersistedRecord `json:"record"`
 	DependencyIDs      []uint64        `json:"dependencyIDs,omitempty"`
 	ExpiresAtUnix      int64           `json:"expiresAtUnix,omitempty"`
+	// Held, when set, makes this a held row: the recipient's own value of
+	// this recipe stands for the row, which carries no record and no
+	// closure below it. Its Record is empty but for ResultID, it has no
+	// DependencyIDs, and no output names it. SenderNumber,
+	// SenderReplacements and ExpiresAtUnix still describe the sending
+	// entry, and other rows reference the row by its ordinal. Only an
+	// engine merges held rows, from the Cloud (StoredBundle's HeldBy).
+	Held digest.Digest `json:"held,omitempty"`
 }
 type TransferredRoot struct {
 	Ordinal       TransferOrdinal `json:"ordinal"`
@@ -85,13 +93,27 @@ type ValueBundle struct {
 	Roots   []TransferredRoot   `json:"roots"`
 	Values  []TransferredValue  `json:"values"`
 	Outputs []TransferredOutput `json:"outputs,omitempty"`
+	// Calls are calls that returned one of the bundle's entries other than
+	// their own, which a cache that runs them indexes on the entry they
+	// returned. Only the Cloud sends them, from the call spans it read.
+	Calls []TransferredCall `json:"calls,omitempty"`
+}
+
+// TransferredCall is a call that returned an existing entry: the call as its
+// span encodes it (ResultCall.callPB, the dagger.io/dag.call attribute), and
+// the row of the entry it returned. A merge derives the call's identity from
+// the encoding and teaches it onto that entry, as the entry's cache did when
+// the call completed. It owns nothing.
+type TransferredCall struct {
+	Call  string          `json:"call"`
+	Value TransferOrdinal `json:"value"`
 }
 type ImportedValue struct {
 	Ordinal  TransferOrdinal
 	ResultID uint64
 }
 
-const valueBundleVersion = 3
+const valueBundleVersion = 4
 
 // PersistedTransferCodec operates only on encoded copies, without resolving
 // schemas, operations, result references or storage.

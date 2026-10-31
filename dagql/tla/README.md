@@ -593,3 +593,76 @@ Scope limits:
   without holdings; the engine's Go tests cover entries with them.
 
 The TLC runs' outputs are not committed.
+
+## Call records
+
+A call that returns an entry of another recipe, such as a module function
+returning a container its body built, makes no entry of its own. The cache
+teaches the entry the call's identity. With call records, the Cloud keeps
+each such call on its stored entry (`keepCallLocked`), saves it in
+`result_calls`, and sends it in bundles with the entry. A merging engine then
+teaches the call onto the entry (`teachCallIdentityLocked`,
+`dagql/cache_call_records.go` and `cache_value_merge.go`). The model needs
+no new action for it. Here is how each part maps onto what is modelled:
+
+- **Teaching.** It merges the call into the entry's equivalence class
+  through `applyPreparedResultIdentityLocked`, inside the merge's
+  write-locked section. It adds no entry, owner, dependency or retention
+  edge, and no recipe-index key. So `Current` and `MergeTarget` are
+  unchanged by it, and a fresh-value publication of the taught call adopts
+  only that call's own entries. (A publication of an existing returned
+  result may instead adopt across equivalent entries, through `PubAdopt`
+  and `CanonicalPick`.) Equivalence is the static `ClassOf`, so a
+  configuration that puts the taught call in the entry's class lets its
+  lookups select the entry at any time, or miss. That checks the lifecycle
+  of the cross-call lookup candidate teaching produces, against ownership,
+  attachment, release and replacement. It does not check that teaching is
+  correct or when it may happen: no action teaches, and the probe below
+  shows a cross-call hit, not a teach. `recipe_merge_taught` runs it with
+  the lookup hit split into selection and claim (`SharedSections =
+  "split"`). Both steps sit in one read section, so a merge waits until it
+  closes, as in Go, while release marking interleaves. It covers
+  publication, release, expiry, a failed attachment and merges, with every
+  `recipe_merge` invariant. Two overlapping lookup readers are the
+  `shared_claims` configurations' scope.
+- **A taught hit.** It is an ordinary class hit, under the same
+  eligibility filter: registered, attachment not failed, unexpired, session
+  requirements met. It decodes or arms the selected entry's own recipe, not
+  the taught call's.
+- **Expiry folding.** An entry takes the earliest expiry of its own call and
+  the calls taught onto it (`mergeSharedResultExpiryUnix`). That only moves
+  its expiry earlier, and `Expire` may already fire on any entry at any
+  moment. That covers the lifecycle effects of a shorter expiry, but not
+  which call report may shorten it. The admission guards keep or teach no
+  call whose expiry has passed, and fold a span's expiry only while it is
+  to come. They are a deliberate scope limit, not something TLA+ would need
+  a clock for. Two pieces of state are abstracted out: whether an incoming
+  call or row has expired, kept apart from the local entry's expiry, and
+  which identities have actually been taught. With them, removing the
+  guard at `dagql/cache_value_merge.go` would teach an expired incoming
+  call onto a live value and let the next lookup hit. The present model
+  can't detect that mutation: incoming records are never expired (see the
+  scope limits above), and static equivalence already allows the
+  cross-call hit. The Go tests in `dagql/cache_call_records_test.go` cover
+  the guards, including
+  `TestCallRecordOnAnExpiredRowLeavesTheEnginesValueAlone`,
+  `TestCallRecordExpiredCallIsNotTaughtOnAValueTheEngineKept` and
+  `TestCallRecordPastExpiriesLeaveAReplacementAlone`.
+- **Kept calls and `result_calls`.** Kept calls are data on a Cloud entry.
+  They own nothing, are saved only for entries the snapshot keeps, and are
+  deleted with their entry (a foreign key with `ON DELETE CASCADE`). They
+  change no ownership, retention or restart state the model tracks.
+- **Call inputs.** An input entry a bundle adds for a call travels as a
+  root. Each root targets its own current entry independently, as two
+  `MergeLive` steps do.
+- **Out of scope.** Deriving a call's identity from its span encoding, and
+  the bundle's new version, are encoding questions, outside the model.
+
+| Configuration | Question | Distinct states | Depth | Wall seconds |
+| --- | --- | ---: | ---: | ---: |
+| `recipe_merge_taught` | another call's hits on merged entries, racing shared-lock lookups | 3,211,758 | 48 | 82 |
+
+The reachability probe
+`ProbeTaughtHit == ~\E i \in DOMAIN invocations : invocations[i].path = "hit" /\ invocations[i].phase = "readBarrier" /\ res[invocations[i].resId].call # invocations[i].call /\ res[invocations[i].resId].imported`
+is violated at 391 distinct states. A lookup of one call claims a merged
+entry of the other, so the configuration reaches the case it is for.

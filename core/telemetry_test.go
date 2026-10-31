@@ -24,6 +24,8 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
 	"google.golang.org/grpc"
@@ -319,6 +321,61 @@ func TestAroundFuncSkipsIntrospectionDescendantsViaContext(t *testing.T) {
 	}
 	childCtx, _ := AroundFunc(rootCtx, childReq)
 	require.True(t, dagql.IsSkipped(childCtx))
+}
+
+// A module reading its own source through currentModule does real work that
+// later calls build on, so the remote cache must learn it from telemetry. Its
+// calls are emitted, marked internal so the UI keeps them out of sight.
+func TestAroundFuncEmitsCurrentModuleCallsAsInternal(t *testing.T) {
+	sr := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
+	defer tp.Shutdown(t.Context())
+	ctx, root := tp.Tracer("current-module-test").Start(t.Context(), "root")
+	defer root.End()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, cache)
+
+	curMod := testResultCall("currentModule", &CurrentModule{}, nil)
+	source := testResultCall("source", &Directory{}, curMod)
+	dir := testResultCall("directory", &Directory{}, source)
+	plain := testResultCall("directory", &Directory{}, nil)
+
+	internal := map[string]bool{}
+	for _, req := range []*dagql.CallRequest{
+		{ResultCall: curMod, ReceiverTypeName: "Query"},
+		{ResultCall: source, ReceiverTypeName: "CurrentModule"},
+		{ResultCall: dir, ReceiverTypeName: "Directory"},
+		{ResultCall: plain, ReceiverTypeName: "Query"},
+	} {
+		callCtx, done := AroundFunc(ctx, req)
+		require.False(t, dagql.IsSkipped(callCtx), "%s must not hide its descendants", req.Field)
+		var callErr error
+		done(nil, false, &callErr)
+
+		ended := sr.Ended()
+		require.NotEmpty(t, ended)
+		span := ended[len(ended)-1]
+		digest, err := req.ResultCall.RecipeDigest(ctx)
+		require.NoError(t, err)
+		attrs := map[string]attribute.Value{}
+		for _, kv := range span.Attributes() {
+			attrs[string(kv.Key)] = kv.Value
+		}
+		require.Equal(t, digest.String(), attrs[telemetry.DagDigestAttr].AsString(), "%s must have its own span", req.Field)
+		internal[span.Name()] = attrs[telemetry.UIInternalAttr].AsBool()
+	}
+	require.Equal(t, map[string]bool{
+		"Query.currentModule":  true,
+		"CurrentModule.source": true,
+		"Directory.directory":  true,
+		"Query.directory":      false,
+	}, internal)
+
+	// Profiling is unchanged: the root stays skipped, the calls under it don't.
+	require.True(t, curMod.ProfileSkip)
+	require.False(t, source.ProfileSkip)
+	require.False(t, dir.ProfileSkip)
 }
 
 func TestIsIntrospectionPreservesClassification(t *testing.T) {
