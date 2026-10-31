@@ -129,7 +129,7 @@ func (cm *snapshotManager) ImportImage(
 		if err := cm.linkContentToContextLease(ctx, desc); err != nil {
 			return nil, err
 		}
-		if err := cm.recordSnapshotContent(current.SnapshotID(), desc); err != nil {
+		if err := cm.recordSnapshotContent(ctx, current.SnapshotID(), desc); err != nil {
 			return nil, err
 		}
 	}
@@ -470,7 +470,7 @@ func (cm *snapshotManager) recordImportedLayer(ctx context.Context, ref Immutabl
 		_ = ref.Release(context.WithoutCancel(ctx))
 		return nil, err
 	}
-	if err := cm.recordSnapshotContent(ref.SnapshotID(), desc); err != nil {
+	if err := cm.recordSnapshotContent(ctx, ref.SnapshotID(), desc); err != nil {
 		_ = ref.Release(context.WithoutCancel(ctx))
 		return nil, err
 	}
@@ -514,11 +514,11 @@ func (cm *snapshotManager) linkContentToContextLease(ctx context.Context, desc o
 // it to every lease that owns the snapshot, unless it already is attached to
 // every one (snapshotContentOwned): a layer walked again writes nothing for
 // its owners.
-func (cm *snapshotManager) recordSnapshotContent(snapshotID string, desc ocispecs.Descriptor) error {
+func (cm *snapshotManager) recordSnapshotContent(ctx context.Context, snapshotID string, desc ocispecs.Descriptor) error {
 	if snapshotID == "" || desc.Digest == "" {
 		return nil
 	}
-	cm.mu.Lock()
+	wcprof.Lock(ctx, &cm.mu, managerMuProfIdent)
 	if cm.snapshotContentDigests[snapshotID] == nil {
 		cm.snapshotContentDigests[snapshotID] = make(map[digest.Digest]struct{})
 	}
@@ -544,7 +544,7 @@ func (cm *snapshotManager) recordSnapshotContent(snapshotID string, desc ocispec
 	}
 	// Every owner read above has the blob, and an owner added since had it
 	// attached before it became one.
-	cm.mu.Lock()
+	wcprof.Lock(ctx, &cm.mu, managerMuProfIdent)
 	if cm.snapshotContentOwned[snapshotID] == nil {
 		cm.snapshotContentOwned[snapshotID] = make(map[digest.Digest]struct{})
 	}

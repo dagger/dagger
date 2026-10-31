@@ -457,7 +457,7 @@ func (sr *immutableRef) linkBlob(ctx context.Context, desc ocispecs.Descriptor) 
 		return err
 	}
 	sr.mu.Unlock()
-	if err := sr.cm.recordSnapshotContent(sr.SnapshotID(), desc); err != nil {
+	if err := sr.cm.recordSnapshotContent(ctx, sr.SnapshotID(), desc); err != nil {
 		return err
 	}
 	if desc.Digest == blobDigest {
@@ -668,7 +668,7 @@ func (sr *immutableRef) Mount(ctx context.Context, readonly bool) (_ MountableRe
 }
 
 func (sr *immutableRef) Release(ctx context.Context) error {
-	sr.cm.mu.Lock()
+	wcprof.Lock(ctx, &sr.cm.mu, managerMuProfIdent)
 	sr.mu.Lock()
 	err := sr.release(ctx)
 	pin := sr.pin
@@ -846,7 +846,7 @@ func (sr *mutableRef) commitOnto(ctx context.Context, parent ImmutableRef) (*imm
 		return nil, errors.Wrap(err, "ensure lease for snapshot commit")
 	}
 
-	sr.cm.mu.Lock()
+	wcprof.Lock(ctx, &sr.cm.mu, managerMuProfIdent)
 	defer sr.cm.mu.Unlock()
 
 	sr.mu.Lock()
