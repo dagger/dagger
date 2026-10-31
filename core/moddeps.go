@@ -165,6 +165,7 @@ type SchemaBuilderMemo struct {
 	canonicalArgTypes map[string]*canonicalArgType
 	modTypes          map[modTypeMemoKey]*modTypeMemoEntry
 	schemaASTs        map[string]*dagql.SchemaASTCache
+	gitClients        map[declaredGitClientsKey]*declaredGitClientsEntry
 }
 
 func NewSchemaBuilderMemo() *SchemaBuilderMemo {
