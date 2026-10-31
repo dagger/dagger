@@ -119,3 +119,36 @@ func TestCloudRefusesAnEnginesStaleHeldRow(t *testing.T) {
 	defer cloud.egraphMu.RUnlock()
 	require.Empty(t, cloud.resultsByID, "nothing commits")
 }
+
+// A held row stands for the sender's own holding of the row, which the
+// Cloud learned when the row arrived in full or when the Cloud's merge into
+// the sender landed it. A held row from an engine the Cloud holds no holding
+// of the row for is stale like one whose value is gone: nothing commits, and
+// the sender's retry carries the row in full, which gives the Cloud the
+// holding.
+func TestCloudRefusesAHeldRowItsSenderDoesntHold(t *testing.T) {
+	t.Parallel()
+	ctx, engine, srv := transferTestCache(t)
+	child := persistedListTestResult(t, ctx, engine, srv, "unheld-child", String("child"))
+	root := persistedListTestResult(t, ctx, engine, srv, "unheld-root", String("root"))
+	transferTestDependency(engine, ctx, root, child)
+	childOnly := exportTestBundle(t, ctx, engine, child)
+	held := engineHeldTestBundle(t, engine, exportTestBundle(t, ctx, engine, root), child)
+
+	cctx, cloud := storedPartTestCache(t, WithBlobStore())
+	reply, err := cloud.MergeValues(cctx, "other-engine", childOnly)
+	require.NoError(t, err)
+	require.True(t, reply.Committed, "another engine's copy gives the recipe a live value")
+
+	reply, err = cloud.MergeValues(cctx, "engine", held)
+	require.NoError(t, err)
+	require.False(t, reply.Committed, "the sender holds no holding of the held row")
+	require.Len(t, reply.Stale, 1)
+
+	reply, err = cloud.MergeValues(cctx, "engine", childOnly)
+	require.NoError(t, err)
+	require.True(t, reply.Committed)
+	reply, err = cloud.MergeValues(cctx, "engine", held)
+	require.NoError(t, err)
+	require.True(t, reply.Committed, "once the sender's own copy arrived, its held row holds")
+}
