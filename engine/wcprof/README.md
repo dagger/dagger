@@ -173,7 +173,7 @@ Two scopes:
   recorded ops finish; `on` re-enables on the same recorder (dumps from
   before and after merge cleanly since the epoch is unchanged).
 
-The recorder keeps up to ~4M events (about 300 MB); events past that are
+The recorder keeps up to ~12.6M events (about 1 GB); events past that are
 dropped and counted in the dump header's `dropped_events`.
 
 ### eBPF programs

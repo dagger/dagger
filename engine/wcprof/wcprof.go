@@ -329,7 +329,11 @@ type Event struct {
 	EndNS   int64
 }
 
-const defaultMaxEvents = 4 << 20 // ~4M events ≈ 335MB
+// defaultMaxEvents caps the events a recorder keeps in memory, at 80 bytes
+// each; an engine that never records keeps none. It is sized from the
+// largest recording measured, test-base's in-place fresh engine at about 4.7
+// million events, with room for the ops later changes add.
+const defaultMaxEvents = 12 << 20 // ~12.6M events ≈ 1GB
 
 const numShards = 16
 
