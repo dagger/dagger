@@ -350,6 +350,22 @@ func (c *Cache) preparePartDependenciesLocked(receiver *sharedResult, deps []*sh
 			return nil, err
 		}
 	}
+	// The dependencies' session resources reach the receiver and every
+	// result above it that lacks them. A result's required set includes its
+	// dependencies' (recomputeRequiredSessionResourcesLocked), so the results
+	// above one that already requires them do too: the walk stops there, as
+	// the cascade of a new dependency edge stops where sets stop changing.
+	// Dependencies that require none change nothing above.
+	var added *set.TreeSet[SessionResourceHandle]
+	for _, dep := range deps {
+		if dep.requiredSessionResources == nil || dep.requiredSessionResources.Empty() {
+			continue
+		}
+		if added == nil {
+			added = set.NewTreeSet(compareSessionResourceHandles)
+		}
+		added = added.Union(dep.requiredSessionResources).(*set.TreeSet[SessionResourceHandle])
+	}
 	requirements := map[*sharedResult]*set.TreeSet[SessionResourceHandle]{}
 	queue := []*sharedResult{receiver}
 	seen = map[sharedResultID]bool{}
@@ -365,14 +381,12 @@ func (c *Cache) preparePartDependenciesLocked(receiver *sharedResult, deps []*sh
 				return nil, fmt.Errorf("part graph: missing ancestor dependency %d", id)
 			}
 		}
-		req := set.NewTreeSet(compareSessionResourceHandles)
+		if added == nil || (row.requiredSessionResources != nil && row.requiredSessionResources.Subset(added)) {
+			continue
+		}
+		req := added.Copy()
 		if row.requiredSessionResources != nil {
 			req = req.Union(row.requiredSessionResources).(*set.TreeSet[SessionResourceHandle])
-		}
-		for _, dep := range deps {
-			if dep.requiredSessionResources != nil {
-				req = req.Union(dep.requiredSessionResources).(*set.TreeSet[SessionResourceHandle])
-			}
 		}
 		requirements[row] = req
 		if row.depParents != nil {
