@@ -342,6 +342,11 @@ func (dir *Directory) persistedPayloadLocked(ctx context.Context, enc *dagql.Per
 	}
 	if dir.Lazy != nil {
 		payload.Form = persistedDirectoryFormLazy
+		if dir.completedElsewhere {
+			// Its operation completed on the engine it came from, though not
+			// here: a record of it says so, as the one it came in did.
+			payload.OperationState = "evaluated"
+		}
 		payload.LazyKind, payload.LazyJSON, err = encodePersistedDirectoryLazy(ctx, enc, dir.Lazy)
 		if err != nil {
 			return persistedDirectoryPayload{}, nil, err
@@ -379,7 +384,7 @@ func decodePersistedDirectoryWithSnapshotRole(ctx context.Context, dec *dagql.Pe
 		dir.OutputRev++ // private decoded output, before publication
 		dir.outputMu.Unlock()
 	}()
-	dir.completedElsewhere = persisted.Form == transferPending && persisted.OperationState == "evaluated"
+	dir.completedElsewhere = persisted.OperationState == "evaluated"
 	// A record from another engine that holds no download address decodes
 	// as local persistence decodes a pending directory: its recipe armed.
 	if persisted.Form == transferPending && persisted.LazyKind != "" && dec.ArmRecipe() {
