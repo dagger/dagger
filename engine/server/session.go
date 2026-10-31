@@ -862,7 +862,9 @@ func (sess *daggerSession) shutdownTelemetry(ctx context.Context) error {
 		sess.cloudForwarder.finish()
 	}
 	if sess.cloudMetrics != nil {
-		metricDur += timedProviderOp(ctx, &errs, sess.cloudMetrics.Shutdown)
+		// Likewise the session's last metrics: the queue publishes them in
+		// the background, never holding the teardown.
+		sess.cloudMetrics.finish()
 	}
 	for _, client := range clients {
 		errs = errors.Join(errs, client.closeTelemetryDB())
