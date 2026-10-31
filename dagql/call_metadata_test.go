@@ -121,6 +121,88 @@ func TestCallMetadataMissingConflictingAndUncached(t *testing.T) {
 	require.Empty(t, records)
 }
 
+func TestCallMetadataConflictAcrossCandidateKeys(t *testing.T) {
+	ctx, cache, srv := persistedListTestCache(t, "")
+	origin, _ := metadataTestOrigin(t, ctx, cache, srv, "cross-key-conflict", "")
+	for _, key := range []string{"a", "b"} {
+		require.NoError(t, cache.StoreCallMetadata(ctx, "test-session", srv, origin, "test", key, json.RawMessage(`{"path":"/a"}`)))
+	}
+	for _, key := range []string{"a", "b"} {
+		records, err := cache.CallMetadataCandidates(ctx, "test-session", "test", key)
+		require.NoError(t, err)
+		require.Empty(t, records, "a different candidate key must not hide a conflicting origin")
+	}
+}
+
+func TestCallMetadataRetainsAdoptedCallInputsAndPrunesIndexes(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cache.db")
+	ctx, cache, srv := persistedListTestCache(t, path)
+	_, output := metadataTestOrigin(t, ctx, cache, srv, "adopted-output", "")
+	baselineFrame := cacheTestIntCall("unpersisted-baseline")
+	baseline, err := cache.GetOrInitCall(ctx, "test-session", srv, &CallRequest{ResultCall: baselineFrame}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(baselineFrame, 9), nil
+	})
+	require.NoError(t, err)
+	baselineID := baseline.cacheSharedResult().id
+	origin := &CallRequest{ResultCall: cacheTestIntCall("adopted-with-input"), IsPersistable: true}
+	origin.Args = []*ResultCallArg{{Name: "baseline", Value: &ResultCallLiteral{
+		Kind: ResultCallLiteralKindResultRef, ResultRef: &ResultCallRef{ResultID: uint64(baselineID)},
+	}}}
+	adopted, err := cache.GetOrInitCall(ctx, "test-session", srv, origin, func(context.Context) (AnyResult, error) { return output, nil })
+	require.NoError(t, err)
+	require.Same(t, output.cacheSharedResult(), adopted.cacheSharedResult())
+	require.NoError(t, cache.StoreCallMetadata(ctx, "test-session", srv, origin, "test", "key", json.RawMessage(`{"complete":true}`), adopted))
+	require.NoError(t, cache.ReleaseSession(ctx, "test-session"))
+	require.NotNil(t, cache.resultsByID[baselineID], "metadata retains discarded inputs even when its output was adopted")
+	require.NoError(t, cache.Close(ctx))
+	ctx, cache, _ = persistedListTestCache(t, path)
+	require.NotNil(t, cache.resultsByID[baselineID], "the retained baseline survives persistence")
+	records, err := cache.CallMetadataCandidates(ctx, "test-session", "test", "key")
+	require.NoError(t, err)
+	require.Len(t, records, 1, "restore installs metadata indexes before values are decoded")
+	require.NoError(t, cache.ReleaseSession(ctx, "test-session"))
+	report, err := cache.PruneMetadataEstimate(ctx, 2, 1)
+	require.NoError(t, err)
+	require.True(t, report.Triggered)
+	cache.egraphMu.RLock()
+	defer cache.egraphMu.RUnlock()
+	require.Empty(t, cache.callMetadata.records)
+	require.Empty(t, cache.callMetadata.byOrigin)
+	require.Empty(t, cache.callMetadata.byCandidate)
+	require.Empty(t, cache.callMetadata.byResult)
+}
+
+func TestCallMetadataIndexesImportedRows(t *testing.T) {
+	ctx, source, srv := transferTestCache(t)
+	origin, _ := metadataTestOrigin(t, ctx, source, srv, "imported-observation", "")
+	require.NoError(t, source.StoreCallMetadata(ctx, "test-session", srv, origin, "test", "key", json.RawMessage(`{"path":"/a"}`)))
+	var metadataID sharedResultID
+	source.egraphMu.RLock()
+	for id := range source.callMetadata.records {
+		metadataID = id
+	}
+	source.egraphMu.RUnlock()
+	metadata, err := source.LoadResultByResultID(ctx, "test-session", srv, uint64(metadataID))
+	require.NoError(t, err)
+	bundle := exportTestBundle(t, ctx, source, metadata)
+	targetCtx, target, targetSrv := transferTestCache(t)
+	for _, name := range []string{"padding-a", "padding-b", "padding-c"} {
+		_, _ = metadataTestOrigin(t, targetCtx, target, targetSrv, name, "")
+	}
+	reply, err := target.MergeValues(targetCtx, cloudCacheID, bundle)
+	require.NoError(t, err)
+	records, err := target.CallMetadataCandidates(targetCtx, "test-session", "test", "key")
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+	require.JSONEq(t, `{"path":"/a"}`, string(records[0].Payload))
+	frame, err := target.ResultCallForRef(&ResultCallRef{ResultID: reply.Imported()[0].ResultID})
+	require.NoError(t, err)
+	records, err = target.CallMetadataForResult(targetCtx, "test-session", "test", frame.Receiver)
+	require.NoError(t, err)
+	require.Len(t, records, 1, "result lookup uses the relocated output ID")
+
+}
+
 func TestCallMetadataCannotRenewOriginExpiry(t *testing.T) {
 	ctx, cache, srv := persistedListTestCache(t, "")
 	origin, source := metadataTestOrigin(t, ctx, cache, srv, "expiry", "")

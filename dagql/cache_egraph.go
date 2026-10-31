@@ -1810,6 +1810,7 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 	c.putResultLocked(res)
 	if res.loadResultCall() == nil && requestFrame != nil {
 		res.storeResultCall(requestFrame.clone())
+		c.indexCallMetadataLocked(res)
 		c.traceResultCallFrameUpdated(ctx, res, "index_wait_result_request_frame", nil, res.loadResultCall())
 	}
 	c.traceResultCreated(ctx, res)
@@ -2059,6 +2060,7 @@ func (c *Cache) maybeResetEgraphLocked() {
 	c.broadlyIndexedResults = nil
 	c.restoredDigestGroups = nil
 	c.resultsByID = nil
+	c.callMetadata = callMetadataIndex{}
 	c.resultPayloadBytes = 0
 	c.holderEntries = nil
 	c.entriesByRecipe = nil
