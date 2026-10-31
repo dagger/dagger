@@ -763,7 +763,7 @@ func (c *Cache) embedMergedParts(bundle *ValueBundle) {
 // untouched, without encoding its payloads: each record field by field, and
 // the outputs, which carry no payload, by a JSON round trip.
 func cloneValueBundle(in ValueBundle) (ValueBundle, error) {
-	out := ValueBundle{Version: in.Version, Roots: slices.Clone(in.Roots), Calls: slices.Clone(in.Calls)}
+	out := ValueBundle{Version: in.Version, Roots: slices.Clone(in.Roots), Calls: slices.Clone(in.Calls), Layers: slices.Clone(in.Layers), Addresses: maps.Clone(in.Addresses)}
 	if in.Values != nil {
 		out.Values = make([]TransferredValue, len(in.Values))
 	}

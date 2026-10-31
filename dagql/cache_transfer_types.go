@@ -100,6 +100,9 @@ type TransferredOutput struct {
 	// no copy of the layers the chain carries.
 	Prefix *ChainPrefix         `json:"prefix,omitempty"`
 	Owner  *PersistedOfferOwner `json:"owner,omitempty"`
+	// Layers, with Chain, names the chain's layers by their place in the
+	// bundle's Layers, which the chain doesn't carry (ShareChainLayers).
+	Layers []int `json:"layers,omitempty"`
 }
 
 // ChainPrefix names the first Layers layers of the chain of the bundle's
@@ -118,6 +121,10 @@ type ValueBundle struct {
 	// their own, which a cache that runs them indexes on the entry they
 	// returned. Only the Cloud sends them, from the call spans it read.
 	Calls []TransferredCall `json:"calls,omitempty"`
+	// Layers and Addresses are the layers its outputs name by place, and
+	// their blobs' download addresses, each listed once (ShareChainLayers).
+	Layers    []snapshots.ExportLayer       `json:"layers,omitempty"`
+	Addresses map[digest.Digest]BlobAddress `json:"addresses,omitempty"`
 }
 
 // TransferredCall is a call that returned an existing entry: the call as its
@@ -134,7 +141,7 @@ type ImportedValue struct {
 	ResultID uint64
 }
 
-const valueBundleVersion = 5
+const valueBundleVersion = 6
 
 // PersistedTransferCodec operates only on encoded copies, without resolving
 // schemas, operations, result references or storage.
