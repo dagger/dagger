@@ -113,20 +113,12 @@ type fakeAdapter struct {
 	offer    func(context.Context, protocol.Offer) (protocol.Offered, error)
 	renewals chan *dagql.RenewalRequest
 	replies  chan dagql.RenewalReply
-	// misses are what TakeLookupMisses returns, lookups receive true on
-	// StartLookups and false on StopLookups, and expected the ExpectMerge
-	// calls.
+	// misses are what TakeLookupMisses returns, and lookups receive true on
+	// StartLookups and false on StopLookups.
 	misses    chan []dagql.RemoteMiss
 	lookups   chan bool
-	expected  chan expectedMerge
 	takeLimit atomic.Int64
 	mergeIDs  chan uint64
-}
-
-type expectedMerge struct {
-	recipe   digest.Digest
-	wait     *dagql.RemoteMergeWait
-	deadline time.Time
 }
 
 func newFakeAdapter() *fakeAdapter {
@@ -135,7 +127,6 @@ func newFakeAdapter() *fakeAdapter {
 		replies:  make(chan dagql.RenewalReply, 8),
 		misses:   make(chan []dagql.RemoteMiss, 8),
 		lookups:  make(chan bool, 8),
-		expected: make(chan expectedMerge, 8),
 		mergeIDs: make(chan uint64, 64),
 	}
 }
@@ -180,10 +171,6 @@ func (a *fakeAdapter) TakeLookupMisses(ctx context.Context, limit int, _ time.Du
 	case <-ctx.Done():
 		return nil, 0, context.Cause(ctx)
 	}
-}
-
-func (a *fakeAdapter) ExpectMerge(recipe digest.Digest, wait *dagql.RemoteMergeWait, deadline time.Time) {
-	a.expected <- expectedMerge{recipe: recipe, wait: wait, deadline: deadline}
 }
 
 type blobs map[digest.Digest]string
@@ -1150,15 +1137,15 @@ func TestHTTPPutHidesTheAddress(t *testing.T) {
 
 // lookupSession is a session that serves lookups, with its lookup loop
 // started.
-func lookupSession(t *testing.T, adapter *fakeAdapter, wait time.Duration) (*session, *recordingConn) {
+func lookupSession(t *testing.T, adapter *fakeAdapter) (*session, *recordingConn) {
 	t.Helper()
 	conn := newRecordingConn()
-	return lookupSessionOn(t, adapter, conn, wait), conn
+	return lookupSessionOn(t, adapter, conn), conn
 }
 
-func lookupSessionOn(t *testing.T, adapter *fakeAdapter, conn wsConn, wait time.Duration) *session {
+func lookupSessionOn(t *testing.T, adapter *fakeAdapter, conn wsConn) *session {
 	t.Helper()
-	cfg := newSettings(Config{Lookups: true, LookupWait: wait})
+	cfg := newSettings(Config{Lookups: true})
 	s := newSession(t.Context(), conn, adapter, cfg)
 	t.Cleanup(s.close)
 	s.go_(s.lookups)
@@ -1174,15 +1161,6 @@ func within[T any](t *testing.T, ch <-chan T) T {
 	case <-time.After(10 * time.Second):
 		t.Fatal("timed out waiting")
 		panic("unreachable")
-	}
-}
-
-func closed(ch <-chan struct{}) bool {
-	select {
-	case <-ch:
-		return true
-	default:
-		return false
 	}
 }
 
@@ -1207,15 +1185,13 @@ func answerLookup(t *testing.T, s *session, conn *recordingConn, answer protocol
 }
 
 // The engine sends its cache's misses as a lookup, by recipe, extra digests
-// and field, with its wait bound. Each miss the answer says a merge carries
-// with some of its parts' bytes is expected: its evaluation waits for that
-// merge, until the bound. No other miss is.
+// and field, at most LookupMisses at once, and stops lookups when its
+// session ends.
 func TestLookup(t *testing.T) {
 	adapter := newFakeAdapter()
-	s, conn := lookupSession(t, adapter, 10*time.Second)
+	s, conn := lookupSession(t, adapter)
 	misses := lookupMisses(6)
 	adapter.misses <- misses
-	answered := time.Now()
 	sent := answerLookup(t, s, conn, protocol.LookedUp{Misses: []protocol.LookedUpMiss{
 		{Status: protocol.LookupMerging, Merge: 40, Parts: protocol.LookupPartsComplete},
 		{Status: protocol.LookupInFlight, Merge: 38, Parts: protocol.LookupPartsPartial},
@@ -1225,125 +1201,12 @@ func TestLookup(t *testing.T) {
 		{Status: protocol.LookupUnknown},
 	}})
 	require.Equal(t, int64(protocol.LookupMisses), adapter.takeLimit.Load())
-	require.Equal(t, int64(10000), sent.WaitMillis)
 	require.Len(t, sent.Misses, 6)
 	require.Equal(t, protocol.LookupMiss{Recipe: misses[0].Recipe, Extra: misses[0].Extra, Field: "withExec"}, sent.Misses[0])
 	require.Equal(t, misses[5].Recipe, sent.Misses[5].Recipe)
 
-	first, second := within(t, adapter.expected), within(t, adapter.expected)
-	require.Equal(t, misses[0].Recipe, first.recipe)
-	require.Equal(t, misses[1].Recipe, second.recipe)
-	require.WithinDuration(t, answered.Add(10*time.Second), first.deadline, 5*time.Second)
-	require.False(t, closed(first.wait.Done()))
-	require.False(t, closed(second.wait.Done()))
-	select {
-	case got := <-adapter.expected:
-		t.Fatalf("unexpected expectation for %s", got.recipe)
-	case <-time.After(50 * time.Millisecond):
-	}
-
-	// The merge named merging arrives after the answer; its end releases
-	// the wait.
-	adapter.merge = func(context.Context, protocol.Merge) (protocol.Merged, error) {
-		return protocol.Merged{Generation: 3}, nil
-	}
-	s.dispatch(request(t, 40, protocol.TypeMerge, protocol.Merge{Bundle: *testBundle(), Lookup: 1}))
-	require.Equal(t, protocol.TypeMerged, conn.next(t).Type)
-	within(t, first.wait.Done())
-	require.Equal(t, dagql.RemoteMergeMerged, first.wait.Outcome())
-	require.False(t, closed(second.wait.Done()), "only the named merge releases its wait")
-}
-
-// A merge the answer names is tracked by its exact ID: one that ended before
-// the answer needs no wait, one still running releases the wait when it
-// ends, whatever IDs came between.
-func TestLookupTracksMergesByID(t *testing.T) {
-	adapter := newFakeAdapter()
-	s, conn := lookupSession(t, adapter, 10*time.Second)
-	release := make(chan struct{})
-	adapter.merge = func(_ context.Context, req protocol.Merge) (protocol.Merged, error) {
-		if len(req.Bundle.Roots) == 0 {
-			<-release
-		}
-		return protocol.Merged{Generation: 3}, nil
-	}
-	s.dispatch(request(t, 52, protocol.TypeMerge, protocol.Merge{Bundle: *testBundle()}))
-	require.Equal(t, protocol.TypeMerged, conn.next(t).Type)
-	s.dispatch(request(t, 50, protocol.TypeMerge, protocol.Merge{}))
-	within(t, adapter.mergeIDs)
-	within(t, adapter.mergeIDs)
-
-	adapter.misses <- lookupMisses(3)
-	answerLookup(t, s, conn, protocol.LookedUp{Misses: []protocol.LookedUpMiss{
-		{Status: protocol.LookupInFlight, Merge: 52, Parts: protocol.LookupPartsComplete},
-		{Status: protocol.LookupInFlight, Merge: 50, Parts: protocol.LookupPartsComplete},
-		{Status: protocol.LookupMerging, Merge: 51, Parts: protocol.LookupPartsComplete},
-	}})
-	ended, running, coming := within(t, adapter.expected), within(t, adapter.expected), within(t, adapter.expected)
-	require.True(t, closed(ended.wait.Done()), "a merge that ended needs no wait")
-	require.Equal(t, dagql.RemoteMergeMerged, ended.wait.Outcome())
-	require.False(t, closed(running.wait.Done()))
-	require.False(t, closed(coming.wait.Done()), "a merge not received yet, with a lower ID than one received, is waited for")
-	close(release)
-	require.Equal(t, protocol.TypeMerged, conn.next(t).Type)
-	within(t, running.wait.Done())
-	require.False(t, closed(coming.wait.Done()))
-}
-
-// A merge named and never received stops being waited for at the bound, and
-// so does every wait when the session ends.
-func TestLookupWaitsEnd(t *testing.T) {
-	adapter := newFakeAdapter()
-	s, conn := lookupSession(t, adapter, 200*time.Millisecond)
-	adapter.misses <- lookupMisses(1)
-	answerLookup(t, s, conn, protocol.LookedUp{Misses: []protocol.LookedUpMiss{{Status: protocol.LookupMerging, Merge: 70, Parts: protocol.LookupPartsComplete}}})
-	deadlined := within(t, adapter.expected)
-	within(t, deadlined.wait.Done())
-	require.Equal(t, dagql.RemoteMergeDeadline, deadlined.wait.Outcome(), "a merge never received ends the wait at its bound")
-
-	adapter = newFakeAdapter()
-	s, conn = lookupSession(t, adapter, time.Minute)
-	adapter.misses <- lookupMisses(1)
-	answerLookup(t, s, conn, protocol.LookedUp{Misses: []protocol.LookedUpMiss{{Status: protocol.LookupMerging, Merge: 71, Parts: protocol.LookupPartsComplete}}})
-	pending := within(t, adapter.expected)
-	require.False(t, closed(pending.wait.Done()))
 	s.close()
-	within(t, pending.wait.Done())
-	require.Equal(t, dagql.RemoteMergeDisconnected, pending.wait.Outcome())
 	require.False(t, within(t, adapter.lookups), "the session stops lookups when it ends")
-}
-
-// With no wait, the engine still sends lookups, and expects nothing.
-func TestLookupWithoutWait(t *testing.T) {
-	adapter := newFakeAdapter()
-	s, conn := lookupSession(t, adapter, 0)
-	adapter.misses <- lookupMisses(1)
-	sent := answerLookup(t, s, conn, protocol.LookedUp{Misses: []protocol.LookedUpMiss{{Status: protocol.LookupMerging, Merge: 40, Parts: protocol.LookupPartsComplete}}})
-	require.Zero(t, sent.WaitMillis)
-	select {
-	case got := <-adapter.expected:
-		t.Fatalf("unexpected expectation for %s", got.recipe)
-	case <-time.After(50 * time.Millisecond):
-	}
-}
-
-// With the default wait, a lookup whose answer names a merge carrying the
-// value with its parts' bytes asks the service not to wait and expects
-// nothing: no evaluation waits for it.
-func TestDefaultLookupWaitWaitsForNothing(t *testing.T) {
-	require.Zero(t, DefaultLookupWait)
-	merging := protocol.LookedUpMiss{Status: protocol.LookupMerging, Merge: 41, Parts: protocol.LookupPartsComplete}
-	adapter := newFakeAdapter()
-	s, conn := lookupSession(t, adapter, DefaultLookupWait)
-	require.False(t, s.waitsFor(merging))
-	adapter.misses <- lookupMisses(1)
-	sent := answerLookup(t, s, conn, protocol.LookedUp{Misses: []protocol.LookedUpMiss{merging}})
-	require.Zero(t, sent.WaitMillis)
-	select {
-	case got := <-adapter.expected:
-		t.Fatalf("unexpected expectation for %s", got.recipe)
-	case <-time.After(50 * time.Millisecond):
-	}
 }
 
 // liveConn is a recordingConn that writes no message whose context has
@@ -1364,7 +1227,7 @@ func (c liveConn) Write(ctx context.Context, data []byte) error {
 func TestLookupAnsweredWithAnError(t *testing.T) {
 	adapter := newFakeAdapter()
 	conn := liveConn{newRecordingConn()}
-	s := lookupSessionOn(t, adapter, conn, 10*time.Second)
+	s := lookupSessionOn(t, adapter, conn)
 	adapter.misses <- lookupMisses(1)
 	env := conn.next(t)
 	require.Equal(t, protocol.TypeLookup, env.Type)
@@ -1384,99 +1247,6 @@ func TestLookupAnsweredWithAnError(t *testing.T) {
 	case <-off.lookups:
 		t.Fatal("an engine with lookups off started them")
 	default:
-	}
-}
-
-// A merge ends, for the lookups waiting on it, once the cache has merged it,
-// not once its reply is written: another message holding the writer doesn't
-// hold the wait.
-func TestLookupMergeEndsBeforeItsReply(t *testing.T) {
-	adapter := newFakeAdapter()
-	adapter.merge = func(context.Context, protocol.Merge) (protocol.Merged, error) {
-		return protocol.Merged{Generation: 3}, nil
-	}
-	conn := &queuedWriterConn{recordingConn: newRecordingConn(), writeSlot: make(chan struct{}, 1)}
-	s := lookupSessionOn(t, adapter, conn, time.Minute)
-	adapter.misses <- lookupMisses(1)
-	answerLookup(t, s, conn.recordingConn, protocol.LookedUp{Misses: []protocol.LookedUpMiss{{Status: protocol.LookupMerging, Merge: 80, Parts: protocol.LookupPartsComplete}}})
-	expected := within(t, adapter.expected)
-	conn.writeSlot <- struct{}{}
-	s.dispatch(request(t, 80, protocol.TypeMerge, protocol.Merge{Bundle: *testBundle(), Lookup: 1}))
-	within(t, expected.wait.Done())
-	<-conn.writeSlot
-	require.Equal(t, protocol.TypeMerged, conn.next(t).Type)
-}
-
-// A session's end releases every wait at once, while its handlers still
-// drain.
-func TestLookupSessionEndReleasesWaitsFirst(t *testing.T) {
-	adapter := newFakeAdapter()
-	entered, release := make(chan struct{}), make(chan struct{})
-	adapter.merge = func(context.Context, protocol.Merge) (protocol.Merged, error) {
-		close(entered)
-		<-release
-		return protocol.Merged{}, errors.New("released")
-	}
-	s, conn := lookupSession(t, adapter, time.Minute)
-	s.dispatch(request(t, 90, protocol.TypeMerge, protocol.Merge{}))
-	within(t, entered)
-	adapter.misses <- lookupMisses(1)
-	answerLookup(t, s, conn, protocol.LookedUp{Misses: []protocol.LookedUpMiss{{Status: protocol.LookupMerging, Merge: 91, Parts: protocol.LookupPartsComplete}}})
-	pending := within(t, adapter.expected)
-	closedSession := make(chan struct{})
-	go func() {
-		s.close()
-		close(closedSession)
-	}()
-	within(t, pending.wait.Done())
-	select {
-	case <-closedSession:
-		t.Fatal("the session closed before its merge handler returned")
-	default:
-	}
-	close(release)
-	within(t, closedSession)
-}
-
-// A wait ends with how its merge ended: merged when it committed, stale when
-// the engine refused its held rows and committed nothing, failed when it
-// failed. A merge that ended before the answer named it keeps its outcome.
-func TestLookupMergeOutcomes(t *testing.T) {
-	adapter := newFakeAdapter()
-	adapter.merge = func(_ context.Context, req protocol.Merge) (protocol.Merged, error) {
-		switch req.Bundle.Version {
-		case 1:
-			return protocol.Merged{Generation: 3, Stale: []dagql.TransferOrdinal{2}, Values: []protocol.MergedValue{}, Retained: []protocol.RetainedRoot{}}, nil
-		case 2:
-			return protocol.Merged{}, errors.New("refused")
-		}
-		return protocol.Merged{Generation: 3}, nil
-	}
-	s, conn := lookupSession(t, adapter, time.Minute)
-	s.dispatch(request(t, 110, protocol.TypeMerge, protocol.Merge{Bundle: dagql.ValueBundle{Version: 1}, Lookup: 1}))
-	require.Equal(t, protocol.TypeMerged, conn.next(t).Type)
-	adapter.misses <- lookupMisses(4)
-	answerLookup(t, s, conn, protocol.LookedUp{Misses: []protocol.LookedUpMiss{
-		{Status: protocol.LookupMerging, Merge: 100, Parts: protocol.LookupPartsComplete},
-		{Status: protocol.LookupMerging, Merge: 101, Parts: protocol.LookupPartsComplete},
-		{Status: protocol.LookupMerging, Merge: 102, Parts: protocol.LookupPartsComplete},
-		{Status: protocol.LookupInFlight, Merge: 110, Parts: protocol.LookupPartsComplete},
-	}})
-	committed, stale, failed, endedStale := within(t, adapter.expected), within(t, adapter.expected), within(t, adapter.expected), within(t, adapter.expected)
-	s.dispatch(request(t, 100, protocol.TypeMerge, protocol.Merge{Bundle: *testBundle(), Lookup: 1}))
-	s.dispatch(request(t, 101, protocol.TypeMerge, protocol.Merge{Bundle: dagql.ValueBundle{Version: 1}, Lookup: 1}))
-	s.dispatch(request(t, 102, protocol.TypeMerge, protocol.Merge{Bundle: dagql.ValueBundle{Version: 2}, Lookup: 1}))
-	for _, tc := range []struct {
-		got  expectedMerge
-		want string
-	}{
-		{committed, dagql.RemoteMergeMerged},
-		{stale, dagql.RemoteMergeStale},
-		{failed, dagql.RemoteMergeFailed},
-		{endedStale, dagql.RemoteMergeStale},
-	} {
-		within(t, tc.got.wait.Done())
-		require.Equal(t, tc.want, tc.got.wait.Outcome(), "merge for %s", tc.got.recipe)
 	}
 }
 

@@ -9,8 +9,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/opencontainers/go-digest"
-
 	"github.com/dagger/dagger/dagql"
 )
 
@@ -90,13 +88,6 @@ func (a *RemoteCacheAdapter) TakeLookupMisses(ctx context.Context, limit int, li
 		err = fmt.Errorf("%w: %w", ErrRemoteCacheAdapterClosed, err)
 	}
 	return misses, dropped, err
-}
-
-func (a *RemoteCacheAdapter) ExpectMerge(recipe digest.Digest, wait *dagql.RemoteMergeWait, deadline time.Time) {
-	if a.stopped.Load() {
-		return
-	}
-	a.bridge.ExpectRemoteMerge(recipe, wait, deadline)
 }
 
 // priorityMerges counts the merges in progress that go first. The others
