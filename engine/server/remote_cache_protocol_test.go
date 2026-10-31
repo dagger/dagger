@@ -697,12 +697,15 @@ func TestExportLogAttrs(t *testing.T) {
 	require.NotContains(t, attrs, "skipped_roots", "past the limit, skipped roots are only counted")
 }
 
-// The export line's capture phases and chain layers follow the chains' time,
+// The export line counts the records its bundle carries and those it sent
+// as held rows. Its capture phases and chain layers follow the chains' time,
 // in order. With no bundle, those of the capture and the chains are 0, and
 // the adapter's own are still logged.
 func TestExportLogAttrsPhases(t *testing.T) {
 	local := exportCapture{hold: time.Millisecond}
 	values := &dagql.ExportedValues{
+		Bundle:    dagql.ValueBundle{Values: make([]dagql.TransferredValue, 3)},
+		Rows:      dagql.ExportedRows{Held: []uint64{4, 5}},
 		ChainTime: time.Second,
 		Phases:    dagql.ExportPhases{WalkWait: 6 * time.Microsecond, Walk: 7 * time.Microsecond, Copy: 8 * time.Microsecond, Bundle: 12 * time.Microsecond, RetriedStale: 1},
 		Chains:    &dagql.SelectedChains{Stats: bkcache.ExportStats{Layers: 3, LayersReused: 1, LayersDiffed: 2, RawBytes: 900, BlobBytes: 300, DiffTime: 9 * time.Millisecond, LockWait: 10 * time.Microsecond, BuildWait: 11 * time.Microsecond, LayersMerged: 1, MergedRawBytes: 400, MergedBlobBytes: 100, MergedDiffTime: 3 * time.Millisecond}},
@@ -731,6 +734,8 @@ func TestExportLogAttrsPhases(t *testing.T) {
 	attrs := exportLogAttrs(protocol.Export{Roots: []uint64{1}}, nil, values, 2*time.Second, local, busyReport{})
 	require.Equal(t, want, attrs[len(attrs)-len(want):], "appended after chains, in order")
 	require.Equal(t, 2*time.Second, logAttrs(attrs)["capture"])
+	require.Equal(t, 3, logAttrs(attrs)["records"])
+	require.Equal(t, 2, logAttrs(attrs)["held"], "the records it sent as held rows")
 
 	attrs = exportLogAttrs(protocol.Export{Roots: []uint64{1}}, nil, nil, time.Second, local, busyReport{})
 	require.Equal(t, []any{
