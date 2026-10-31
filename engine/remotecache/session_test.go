@@ -1094,8 +1094,8 @@ func outputsExport(root uint64) protocol.Export {
 }
 
 // An export that selects no outputs doesn't wait for the slots the exports
-// that select outputs hold; at most RecordsExportsInFlight such exports run
-// at once.
+// that select outputs hold; while they hold them all, at most
+// RecordsExportsInFlight such exports run at once.
 func TestRecordsExportHasItsOwnSlots(t *testing.T) {
 	entered := make(chan uint64, 8)
 	finish := make(chan struct{})
@@ -1183,6 +1183,63 @@ func TestRecordsExportTakesAFreeSlot(t *testing.T) {
 	for range slots + 1 {
 		require.Equal(t, protocol.TypeExported, conn.next(t).Type)
 	}
+}
+
+// The engine runs at once every export the protocol's bounds allow, whatever
+// order they end in: at most ExportsInFlight that select outputs, and
+// RecordsExportsInFlight more that select none.
+func TestExportSlotsKeepTheProtocolBounds(t *testing.T) {
+	entered := make(chan uint64, 8)
+	var mu sync.Mutex
+	finish := map[uint64]chan struct{}{}
+	held := func(root uint64) chan struct{} {
+		mu.Lock()
+		defer mu.Unlock()
+		if finish[root] == nil {
+			finish[root] = make(chan struct{})
+		}
+		return finish[root]
+	}
+	adapter := newFakeAdapter()
+	adapter.export = func(ctx context.Context, req protocol.Export, consume func(context.Context, Export) error) error {
+		entered <- req.Roots[0]
+		<-held(req.Roots[0])
+		return consume(ctx, Export{Skipped: []protocol.SkippedRoot{{Number: req.Roots[0], Reason: protocol.SkipGone}}})
+	}
+	s, conn := testSession(t, adapter)
+	t.Cleanup(func() {
+		for root := uint64(1); root <= 6; root++ {
+			select {
+			case <-held(root):
+			default:
+				close(held(root))
+			}
+		}
+	})
+	enter := func(root uint64) {
+		t.Helper()
+		select {
+		case got := <-entered:
+			require.Equal(t, root, got)
+		case <-time.After(10 * time.Second):
+			t.Fatalf("export %d waited for a free slot", root)
+		}
+	}
+	// Records only, on one of the ExportsInFlight slots; three that select
+	// outputs; records only, on the slot for records.
+	s.dispatch(request(t, 1, protocol.TypeExport, protocol.Export{Roots: []uint64{1}}))
+	enter(1)
+	for root := uint64(2); root <= 4; root++ {
+		s.dispatch(request(t, root, protocol.TypeExport, outputsExport(root)))
+		enter(root)
+	}
+	s.dispatch(request(t, 5, protocol.TypeExport, protocol.Export{Roots: []uint64{5}}))
+	enter(5)
+	// The first ends: the service sends another that selects outputs.
+	close(held(1))
+	require.Equal(t, uint64(1), decode[protocol.Exported](t, conn.next(t)).Skipped[0].Number)
+	s.dispatch(request(t, 6, protocol.TypeExport, outputsExport(6)))
+	enter(6)
 }
 
 // A merge is answered merged, or with an error reply when it fails.
