@@ -504,7 +504,7 @@ func (c *Client) Exec(ctx context.Context, id string, process executor.ProcessIn
 	}
 
 	err = c.exec(ctx, id, spec.Process, process, nil)
-	return exitError(ctx, "", err, process.Meta.ValidExitCodes)
+	return exitError(ctx, "", "", err, process.Meta.ValidExitCodes)
 }
 
 func (c *Client) exec(ctx context.Context, id string, specsProcess *specs.Process, process executor.ProcessInfo, started func()) error {
@@ -531,7 +531,9 @@ func (c *Client) validateEntitlements(meta executor.Meta) error {
 	})
 }
 
-func exitError(ctx context.Context, exitCodePath string, err error, validExitCodes []int) error {
+// exitError reports how a process ended. cgroupPath, when set, is the
+// cgroup of the process's execution, where an OOM kill is detected.
+func exitError(ctx context.Context, exitCodePath, cgroupPath string, err error, validExitCodes []int) error {
 	exitErr := &gatewayapi.ExitError{ExitCode: uint32(gatewayapi.UnknownExitStatus), Err: err}
 
 	if err == nil {
@@ -541,6 +543,7 @@ func exitError(ctx context.Context, exitCodePath string, err error, validExitCod
 		if errors.As(err, &runcExitError) {
 			exitErr = &gatewayapi.ExitError{ExitCode: uint32(runcExitError.Status)}
 		}
+		detectOOM(ctx, cgroupPath, exitErr)
 	}
 
 	if exitCodePath != "" {
@@ -572,6 +575,28 @@ func exitError(ctx context.Context, exitCodePath string, err error, validExitCod
 		return exitErr
 	default:
 		return exitErr
+	}
+}
+
+// detectOOM says in exitErr when the kernel's OOM killer killed a process of
+// the execution whose cgroup is cgroupPath. memory.events counts the kills in
+// the cgroup and all its descendants, including the container's cgroup the
+// runtime has already removed.
+func detectOOM(ctx context.Context, cgroupPath string, exitErr *gatewayapi.ExitError) {
+	// Systemd cgroup paths aren't filesystem paths.
+	if !filepath.IsAbs(cgroupPath) || strings.Contains(cgroupPath, ":") {
+		return
+	}
+	events, err := os.ReadFile(filepath.Join(cgroupMountpoint, cgroupPath, "memory.events"))
+	if err != nil {
+		bklog.G(ctx).WithError(err).Debug("failed to read execution memory events")
+		return
+	}
+	for line := range strings.Lines(string(events)) {
+		if count, ok := strings.CutPrefix(strings.TrimSpace(line), "oom_kill "); ok && count != "0" {
+			exitErr.Err = fmt.Errorf("exit code: %d: out of memory: the kernel's OOM killer killed a process", exitErr.ExitCode)
+			return
+		}
 	}
 }
 

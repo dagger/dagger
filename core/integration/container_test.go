@@ -4752,6 +4752,39 @@ func (ContainerSuite) TestInsecureRootCapabilites(ctx context.Context, t *testct
 	}
 }
 
+// An exec whose process the kernel's OOM killer killed fails with an error
+// that says so, not only with its exit code.
+func (ContainerSuite) TestExecOOMKilled(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := sdkcore.NewQuery(c).Container().From(alpineImage)
+	out, err := ctr.
+		WithExec([]string{"sh", "-c", "test -f /sys/fs/cgroup/cgroup.controllers || echo no-cgroup-v2"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	if strings.TrimSpace(out) == "no-cgroup-v2" {
+		t.Skip("the engine's execs aren't on cgroup v2")
+	}
+
+	// Give a process a memory limit it exceeds, in a cgroup of its own below
+	// the exec's. A cgroup with children can't hold processes, so the exec's
+	// processes move to a sibling first.
+	_, err = ctr.
+		WithExec([]string{"sh", "-c", `
+cd /sys/fs/cgroup
+mkdir procs oom
+for pid in $(cat cgroup.procs); do echo $pid > procs/cgroup.procs 2>/dev/null || :; done
+set -e
+echo +memory > cgroup.subtree_control
+echo 16M > oom/memory.max
+sh -c 'echo $$ > /sys/fs/cgroup/oom/cgroup.procs && exec tail /dev/zero'
+`}, sdkcore.ContainerWithExecOpts{
+			InsecureRootCapabilities: true,
+		}).
+		Sync(ctx)
+	requireErrOut(t, err, "exit code: 137: out of memory")
+}
+
 func (ContainerSuite) TestInsecureRootCapabilitesWithService(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

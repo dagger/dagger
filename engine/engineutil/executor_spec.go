@@ -2093,7 +2093,7 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 		releasedWall = workloadReleasedAt(pidFile, profStartedWallTime)
 	}
 	emitOTelExecSplit(ctx, state.id, profStartWall, profStartedWallTime, releasedWall, endWall, runErr, profArgv, phaseOps)
-	return exitError(ctx, state.exitCodePath, runErr, state.procInfo.Meta.ValidExitCodes)
+	return exitError(ctx, state.exitCodePath, state.resourceCgroupPath, runErr, state.procInfo.Meta.ValidExitCodes)
 }
 
 // runtimeBoundMount reports whether the container runtime, not the engine,
