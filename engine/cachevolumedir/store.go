@@ -628,7 +628,8 @@ func (p Policy) targetBytes(usedBytes int64) int64 {
 		target = max(target, usedBytes-max(p.MaxUsedSpace, p.ReservedSpace))
 	}
 	if p.MinFreeSpace > 0 && p.CurrentFreeSpace < p.MinFreeSpace {
-		target = max(target, min(p.MinFreeSpace-p.CurrentFreeSpace, usedBytes-p.ReservedSpace))
+		// The free-space minimum outranks the reserve.
+		target = max(target, p.MinFreeSpace-p.CurrentFreeSpace)
 	}
 	return max(target, 0)
 }
