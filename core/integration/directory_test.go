@@ -11,6 +11,7 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -586,6 +587,35 @@ func (DirectorySuite) TestDirectoryFilterIncludeExclude(ctx context.Context, t *
 		require.NoError(t, err)
 		require.Equal(t, []string{".gitignore", "a.txt", "c.txt.rar"}, entries)
 	})
+}
+
+// A directory put together from content-keyed directories is keyed by its
+// content: a command over one of its subdirectories stays cached when a file
+// elsewhere in it changes.
+func (DirectorySuite) TestWithDirectoryContentKeyed(ctx context.Context, t *testctx.T) {
+	base := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(base, "pkg"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(base, "pkg", "a.txt"), []byte(rand.Text()), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(base, "other.txt"), []byte("1"), 0o644))
+	extra := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(extra, "extra.txt"), []byte(rand.Text()), 0o644))
+
+	// Each run is a new client, so it reads the host directories again.
+	run := func() string {
+		c := connect(ctx, t)
+		q := sdkcore.NewQuery(c)
+		merged := q.Host().Directory(base).WithDirectory(".", q.Host().Directory(extra))
+		out, err := q.Container().From(alpineImage).
+			WithMountedDirectory("/pkg", merged.Directory("pkg")).
+			WithExec([]string{"cat", "/proc/sys/kernel/random/uuid"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		return out
+	}
+
+	first := run()
+	require.NoError(t, os.WriteFile(filepath.Join(base, "other.txt"), []byte("2"), 0o644))
+	require.Equal(t, first, run())
 }
 
 func (DirectorySuite) TestWithDirectoryIncludeExclude(ctx context.Context, t *testctx.T) {
