@@ -169,14 +169,15 @@ func (p *ParsedGitRefString) GitRef(
 	dag *dagql.Server,
 	pinCommitRef string, // "" if none
 ) (inst dagql.ObjectResult[*GitRef], rerr error) {
-	pinIsSHA := gitutil.IsCommitSHA(pinCommitRef)
-	// A pin that is the ref's own commit pins nothing more. Leave it out, so
-	// the ref resolves through the same calls, and so to the same checkout,
-	// as the ref without it: a Git module at a commit pins its dependencies
-	// beside it in the repository to that commit.
-	if pinIsSHA && p.HasVersion && p.ModVersion == pinCommitRef {
-		pinCommitRef, pinIsSHA = "", false
+	// A ref named by a full commit SHA is pinned to that commit, as a Git
+	// module at a commit pins its dependencies beside it in the repository.
+	// Both then resolve through the same calls, and so to the same checkout,
+	// and the pinned resolution checks the session's access to the
+	// repository, which a SHA alone doesn't.
+	if pinCommitRef == "" && p.HasVersion && gitutil.IsCommitSHA(p.ModVersion) {
+		pinCommitRef = p.ModVersion
 	}
+	pinIsSHA := gitutil.IsCommitSHA(pinCommitRef)
 
 	withCommitArg := func(selector dagql.Selector) dagql.Selector {
 		if pinIsSHA {
