@@ -34,20 +34,21 @@ through every result. A later subdirectory lookup cannot undo that history.
 ## How to ship
 
 Use an explicit **input contract** for checks whose reads happen late.
-The module supplies an input function that describes everything the check body
-may read from the workspace. Reuse the same input-building function in the body
-and in preparation. The declaration must include configuration and discovery
-inputs that affect execution. It is trusted module code: an incomplete
+The module supplies an input function that describes the paths the check body
+may read. Describe paths before loading their files. Use the same description
+for filtering and for the eventual workspace read. Include configuration and
+discovery inputs that affect execution. It is trusted module code: an incomplete
 declaration can omit a needed check. Unknown coverage keeps the check selected.
 
 Markdownlint already has `inputs(ws)` selecting Markdown and configuration
-files. Registering it as the complete input function would let a Go-only change
-omit markdownlint. This contract lets the input function replace a whole-Workspace
-dependency with its declared input set. Syntax is not settled here.
+files. Expose its patterns without calling `workspace.directory` first. A Go-only
+change could then omit markdownlint without loading Markdown files. This contract
+replaces a whole-Workspace dependency with the declared input set. Syntax is not
+settled here.
 
 The engine should:
 
-1. Discover current checks and collection keys. Prepare inputs using the same
+1. Discover current checks and collection keys. Describe inputs using the same
    arguments, workspace state, and collection view as execution. Include local
    module/SDK source inputs and workspace configuration used to build the check.
 2. Apply path matching through `Artifacts`. Preserve unknown checks and module
@@ -64,6 +65,38 @@ Preparation belongs beside the existing deferred Check projection. Artifacts
 keeps listing and execution consistent. Dagql carries generic metadata.
 Automatic read capture could replace some declarations later; it is not needed
 for this first release.
+
+## Guidelines for module developers
+
+Keep path descriptions cheap. Load source files only for selected checks.
+These guidelines use current Workspace APIs; the input contract above is a
+proposal, not a released API.
+
+1. **Keep constructors small.** Store settings and paths. Delay source reads
+   and sandbox setup until needed. Do not run checks while discovering them.
+2. **Describe paths without loading files.** If patterns are known, return
+   those patterns. Calling `workspace.directory` can copy and hash files; it is
+   not always just a lazy handle. If a manifest determines the paths, read that
+   manifest first and include it as a dependency.
+3. **Read a narrow set directly from Workspace.** Supply the root and filters
+   to `workspace.directory`. Reading `/` first and taking a subdirectory later
+   can retain broad inputs and cache keys. Keep shared configuration and source
+   dependencies in the selected set.
+4. **Separate discovery from source loading.** Find project paths from marker
+   files where possible. Expose project keys as a collection. Load each project's
+   source when that item is needed. A shared scan of all source files still
+   costs work, even when later checks are skipped.
+5. **Keep checks independent.** Avoid storing every project's source in one
+   shared receiver. Shared execution should use the selected collection keys,
+   rather than run checks for every discovered project.
+6. **Include every real input.** Include configuration, lockfiles, shared code,
+   embedded files, and test data when used. A smaller input set helps only if
+   it is complete.
+
+For markdownlint, keep one list: `**/*.md` and `**/.markdownlint*`. First compare
+changed paths with that list. If nothing matches, stop. Otherwise, use the same
+list to load files and build the sandbox. Do not load Markdown files just to
+decide whether to skip markdownlint.
 
 ## Relationship to caching
 
