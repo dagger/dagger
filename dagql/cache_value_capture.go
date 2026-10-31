@@ -509,6 +509,67 @@ type ExportedValues struct {
 	Phases ExportPhases
 	// Sources maps bundle ordinals to held source rows; it is not transported.
 	Sources []ImportedValue
+	// LeftOut are the selection's roots the bundle leaves out, in the
+	// selection's order.
+	LeftOut []LeftOutRoot
+}
+
+// LeftOutRoot is a selected root a capture left out because its closure
+// reaches a row it couldn't capture: Index is the root's position in the
+// selection's Roots, Row that row's number, and Err its error. A row that
+// can't be captured now reports ErrPersistStateNotReady, and Kind says what
+// keeps it busy; any other error refuses the root, with no Kind.
+type LeftOutRoot struct {
+	Index int
+	Row   uint64
+	Kind  BusyKind
+	Err   error
+}
+
+// BusyKind is what keeps a row from being captured now.
+type BusyKind string
+
+const (
+	// BusyRunning: an evaluation of the row is running, with a caller
+	// waiting for it.
+	BusyRunning BusyKind = "running"
+	// BusyAbandoned: an evaluation of the row is still running with no
+	// caller waiting for it: canceled, and not yet returned.
+	BusyAbandoned BusyKind = "abandoned"
+	// BusyBookkeeping: the row's evaluation succeeded, but its cache-side
+	// bookkeeping didn't; only a later evaluation retries it.
+	BusyBookkeeping BusyKind = "bookkeeping"
+	// BusyAttaching: the row's dependencies are still being attached.
+	BusyAttaching BusyKind = "attaching"
+	// BusyStaleOffer: the row still carries an offer for a part it
+	// completed, after the capture retired such offers once.
+	BusyStaleOffer BusyKind = "staleOffer"
+	// BusyOther: anything else, such as a guard its value holds or a change
+	// to the row during the capture.
+	BusyOther BusyKind = "other"
+)
+
+// RootsLeftOutError is a capture's error when it left out every root of
+// its selection: none was consumed.
+type RootsLeftOutError struct {
+	Roots []LeftOutRoot
+}
+
+func (err *RootsLeftOutError) Error() string {
+	if len(err.Roots) == 1 {
+		return err.Roots[0].Err.Error()
+	}
+	return fmt.Sprintf("all %d roots left out: %v", len(err.Roots), err.Roots[0].Err)
+}
+
+// Unwrap is every left-out root's error, so that errors.Is finds
+// ErrPersistStateNotReady when any root was busy.
+func (err *RootsLeftOutError) Unwrap() []error {
+	errs := make([]error, len(err.Roots))
+	for i, root := range err.Roots {
+		errs[i] = root.Err
+	}
+	return errs
 }
 
 // ExportPhases are where a capture that succeeded spent its time.
