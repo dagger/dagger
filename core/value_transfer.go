@@ -39,7 +39,7 @@ func (family foreignFamilyCodec) NormalizeForeign(v dagql.PersistedPayloadVisit)
 			return dagql.ForeignPayload{}, err
 		}
 		if p.Form != transferPending {
-			p.OperationState = transferOperationState(p.Form == persistedFileFormSnapshot || p.OperationState == "evaluated", p.LazyKind != "")
+			p.OperationState = foreignOperationState(p.Form == persistedFileFormSnapshot, p.OperationState, p.LazyKind)
 			p.ValueKnown = p.ValueKnown || p.Form == persistedFileFormSnapshot
 			p.Form = transferPending
 		}
@@ -50,7 +50,7 @@ func (family foreignFamilyCodec) NormalizeForeign(v dagql.PersistedPayloadVisit)
 			return dagql.ForeignPayload{}, err
 		}
 		if p.Form != transferPending {
-			p.OperationState = transferOperationState(p.Form == persistedDirectoryFormSnapshot || p.OperationState == "evaluated", p.LazyKind != "")
+			p.OperationState = foreignOperationState(p.Form == persistedDirectoryFormSnapshot, p.OperationState, p.LazyKind)
 			p.ValueKnown = p.ValueKnown || p.Form == persistedDirectoryFormSnapshot
 			p.Form = transferPending
 		}
@@ -128,6 +128,14 @@ func (family foreignFamilyCodec) NormalizeForeign(v dagql.PersistedPayloadVisit)
 		return dagql.ForeignPayload{}, err
 	}
 	return dagql.ForeignPayload{JSON: raw}, nil
+}
+
+// foreignOperationState is the operation state of a directory or file
+// record from another engine: evaluated when it came with its snapshot, or
+// when the engine that sent it said so, having merged it from the engine
+// that completed it.
+func foreignOperationState(snapshot bool, sent, lazyKind string) string {
+	return transferOperationState(snapshot || sent == "evaluated", lazyKind != "")
 }
 func transferOperationState(completed, hasLazyOperation bool) string {
 	if !hasLazyOperation {
