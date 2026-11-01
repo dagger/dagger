@@ -133,10 +133,18 @@ func restoreTraceSources(ctx context.Context, fe archiveFrontend, target restore
 	fallback := canFallbackToCloud(ctx, err)
 	// The local failure is part of the story when Cloud fails too.
 	localErr := fmt.Errorf("local engine archive: %w", err)
+	// Without a verified bootstrap, finding the agents means reading the
+	// whole trace: most recipe frames ride on their call spans' attributes.
+	warnNoBackfill := func(source string) {
+		if req.noBackfill {
+			slog.Warn("--no-backfill only applies to a sealed engine archive; loading the whole trace from "+source, "trace", req.traceID)
+		}
+	}
 	var unsealedErr error
 	if state, ok := unsealedArchiveState(err); ok && ctx.Err() == nil {
 		slog.Warn("engine archive was not sealed; restoring the latest recorded state best-effort, so the most recent steps may be missing",
 			"trace", req.traceID, "state", state)
+		warnNoBackfill("the unsealed archive")
 		cleanup, restored, uerr := restoreUnsealedArchive(ctx, req.source, fe, target, req)
 		if uerr != nil {
 			uerr = fmt.Errorf("restore unsealed engine archive %s: %w", req.traceID, uerr)
@@ -172,6 +180,7 @@ func restoreTraceSources(ctx context.Context, fe archiveFrontend, target restore
 	}
 	// Unlike a local verified bootstrap, Cloud currently supplies a whole-trace
 	// download, not an independent final roster witness or fixed archive cut.
+	warnNoBackfill("Dagger Cloud")
 	plan, edges, err := observedTracePlan(ctx, fe, req, source)
 	if err != nil {
 		return nil, fail(fmt.Errorf("restore Cloud trace %s (no agents restored): %w", req.traceID, err))

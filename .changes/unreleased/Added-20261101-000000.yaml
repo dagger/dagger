@@ -1,0 +1,13 @@
+kind: Added
+body: |
+  `dagger agent -r <trace-id> --no-backfill` resumes a session without
+  importing its whole telemetry history: only its agents' conversations load,
+  and a span's children and logs load when it is expanded or shown, so a tool
+  call's output appears as it is expanded. Use it for a session too large to
+  reload, e.g. one that ran out of memory. Cost totals restart at zero, and
+  rewound turns are not collapsed. It applies to sealed engine archives; an
+  unsealed archive or a Dagger Cloud trace is still loaded whole.
+time: 2026-11-01T00:00:00Z
+custom:
+  Author: vito
+  PR: ""
