@@ -131,3 +131,33 @@ func TestHolderReadAcrossAChangeIsUnknown(t *testing.T) {
 		t.Fatalf("holder %d since %d: want 7, taken by now", h, since)
 	}
 }
+
+// countingCtx counts the lookups of its values.
+type countingCtx struct {
+	context.Context
+	lookups int
+}
+
+func (c *countingCtx) Value(key any) any {
+	c.lookups++
+	return c.Context.Value(key)
+}
+
+// With no recorder, WriteLock on an RWMutex doesn't look into its context:
+// it holds the lock then, on every engine that isn't recording.
+func TestWriteLockWithoutRecorderLooksNothingUp(t *testing.T) {
+	prev, prevOn := global.Load(), globalOn.Load()
+	global.Store(nil)
+	globalOn.Store(false)
+	t.Cleanup(func() {
+		global.Store(prev)
+		globalOn.Store(prevOn)
+	})
+	ctx := &countingCtx{Context: context.Background()}
+	var mu RWMutex
+	WriteLock(ctx, &mu, "test.mu")
+	mu.Unlock()
+	if ctx.lookups != 0 {
+		t.Fatalf("WriteLock looked into its context %d times with no recorder", ctx.lookups)
+	}
+}
