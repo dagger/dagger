@@ -1,11 +1,14 @@
 package clientdb
 
 import (
+	"context"
 	"database/sql"
 	"encoding/base64"
 	"errors"
+	"slices"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/agentcontrol"
@@ -205,20 +208,8 @@ func TestAppendLogsDurablyShowsRowsOnlyOnceWritten(t *testing.T) {
 	_, err = store.AppendLogs([]Log{{Body: []byte("before")}})
 	require.NoError(t, err)
 
-	// Hold the log file's writes until released.
-	spill := store.logs.spill
-	writing := make(chan struct{}, 1)
-	write := make(chan struct{})
-	allowWrite := sync.OnceFunc(func() { close(write) })
+	writing, allowWrite := holdLogWrites(t, store)
 	defer allowWrite() // before closing the streams, which waits for the write
-	spill.testWriteHook = func(buf []byte) (int, error) {
-		select {
-		case writing <- struct{}{}:
-		default:
-		}
-		<-write
-		return spill.file.Write(buf)
-	}
 	appended := make(chan error, 1)
 	go func() {
 		_, err := store.AppendLogsDurably(ctx, []Log{{Body: []byte("control")}})
@@ -235,7 +226,74 @@ func TestAppendLogsDurablyShowsRowsOnlyOnceWritten(t *testing.T) {
 	allowWrite()
 	require.NoError(t, <-appended)
 	require.Equal(t, []string{"before", "control", "after"}, logBodies(t, store))
-	require.GreaterOrEqual(t, spill.lastID, int64(2), "the durable rows are on file")
+	require.GreaterOrEqual(t, store.logs.spill.lastID, int64(2), "the durable rows are on file")
+}
+
+// A caller that stops waiting doesn't stop the write: the rows stay hidden
+// until they are on file, and are shown then.
+func TestAppendLogsDurablyShowsRowsOnlyOnceWrittenAfterCancel(t *testing.T) {
+	store, err := openStore(t.Context(), t.TempDir(), "client", telemetryTailBudget)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, store.closeStreams()) }()
+
+	writing, allowWrite := holdLogWrites(t, store)
+	defer allowWrite()
+	ctx, cancel := context.WithCancel(t.Context())
+	appended := make(chan error, 1)
+	go func() {
+		_, err := store.AppendLogsDurably(ctx, []Log{{Body: []byte("control")}})
+		appended <- err
+	}()
+	<-writing
+	cancel()
+	require.ErrorIs(t, <-appended, context.Canceled)
+	require.Empty(t, logBodies(t, store), "rows the write hasn't finished stay hidden")
+
+	allowWrite()
+	require.Eventually(t, func() bool {
+		return slices.Equal([]string{"control"}, logBodies(t, store))
+	}, 10*time.Second, time.Millisecond)
+	require.EqualValues(t, 1, store.logs.spill.lastID)
+}
+
+// Indexing reads every appended row, so a store first indexed while a durable
+// write is in progress indexes it at once rather than waiting for the write.
+func TestAppendLogsDurablyLetsIndexingFinish(t *testing.T) {
+	store, err := openStoreStreams(t.Context(), t.TempDir(), "client", telemetryTailBudget, nil)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, store.closeStreams()) }()
+
+	writing, allowWrite := holdLogWrites(t, store)
+	defer allowWrite()
+	go func() {
+		_, _ = store.AppendLogsDurably(t.Context(), []Log{{Body: []byte("control")}})
+	}()
+	<-writing
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	require.NoError(t, store.ensureIndexed(ctx))
+	store.logs.indexMu.Lock()
+	defer store.logs.indexMu.Unlock()
+	require.EqualValues(t, 1, store.logs.indexedTo)
+}
+
+// holdLogWrites makes the store's log file writes wait until allowWrite is
+// called. writing receives once a write is waiting.
+func holdLogWrites(t *testing.T, store *DB) (writing <-chan struct{}, allowWrite func()) {
+	t.Helper()
+	spill := store.logs.spill
+	waiting := make(chan struct{}, 1)
+	write := make(chan struct{})
+	spill.testWriteHook = func(buf []byte) (int, error) {
+		select {
+		case waiting <- struct{}{}:
+		default:
+		}
+		<-write
+		return spill.file.Write(buf)
+	}
+	return waiting, sync.OnceFunc(func() { close(write) })
 }
 
 func logBodies(t *testing.T, store *DB) []string {

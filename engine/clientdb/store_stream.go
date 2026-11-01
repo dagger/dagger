@@ -133,7 +133,7 @@ func (s *logStream[Row]) append(rows []Row) (AppendStats, error) {
 // appendHeld appends rows like append, but readers don't see them, or any row
 // appended after them, until release is called; appends meanwhile go on as
 // usual. release is non-nil whenever the rows were appended, even with an
-// error, and must then be called once.
+// error. Indexing sees held rows: indexes serve the engine, not readers.
 func (s *logStream[Row]) appendHeld(rows []Row) (_ AppendStats, release func(), _ error) {
 	return s.appendRows(rows, true)
 }
@@ -246,6 +246,12 @@ func (s *logStream[Row]) appendStatsLocked(capWaitDuration time.Duration) Append
 }
 
 func (s *logStream[Row]) Since(ctx context.Context, id int64, limit int) ([]Row, error) {
+	return s.since(ctx, id, limit, true)
+}
+
+// since reads up to limit rows after id. visibleOnly stops at the rows readers
+// may see (see visibleLocked); without it, every appended row is read.
+func (s *logStream[Row]) since(ctx context.Context, id int64, limit int, visibleOnly bool) ([]Row, error) {
 	if limit <= 0 {
 		return nil, nil
 	}
@@ -259,7 +265,10 @@ func (s *logStream[Row]) Since(ctx context.Context, id int64, limit int) ([]Row,
 	}
 
 	s.mu.Lock()
-	visible := s.visibleLocked()
+	visible := s.nextID - 1
+	if visibleOnly {
+		visible = s.visibleLocked()
+	}
 	if id >= visible {
 		s.mu.Unlock()
 		return nil, nil
@@ -535,7 +544,7 @@ func (s *logStream[Row]) ensureIndexed(ctx context.Context) error {
 		if indexed {
 			return nil
 		}
-		rows, err := s.Since(ctx, s.indexedTo, indexBatchRows)
+		rows, err := s.since(ctx, s.indexedTo, indexBatchRows, false)
 		if err != nil {
 			return err
 		}
