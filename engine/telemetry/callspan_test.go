@@ -143,8 +143,9 @@ func TestCacheSpansSurviveOrdinaryQueueOverflow(t *testing.T) {
 	t.Parallel()
 	calls := &spanCapture{}
 	others := &spanCapture{gate: make(chan struct{})}
+	protected := NewProtectedSpanProcessor(calls)
 	tp := sdktrace.NewTracerProvider(
-		sdktrace.WithSpanProcessor(NewProtectedSpanProcessor(calls)),
+		sdktrace.WithSpanProcessor(protected),
 		sdktrace.WithSpanProcessor(WithoutProtectedSpans(NewLargeQueueLiveSpanProcessor(others))),
 	)
 	tracer := tp.Tracer("test")
@@ -162,6 +163,9 @@ func TestCacheSpansSurviveOrdinaryQueueOverflow(t *testing.T) {
 		attribute.String(otelgo.DagDigestAttr, "xxh3:blob"),
 		attribute.StringSlice(otelgo.DagInputsAttr, []string{"xxh3:contents"}),
 	))
+	// Export the start snapshots before the ends exist: a batch holding both
+	// would coalesce them into the end alone.
+	require.NoError(t, protected.ForceFlush(t.Context()))
 	flood()
 	lazy.SetAttributes(attribute.String(telemetryattrs.CacheResultIDAttr, "7"))
 	lazy.End()
