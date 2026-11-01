@@ -99,3 +99,62 @@ func TestTraceSessionLazyFetch(t *testing.T) {
 	}
 	t.Logf("fetched logs: %d requests, %d records, %d bytes", logs.Requests, logs.Records, logs.Bytes)
 }
+
+// TestTraceSessionExpandsRowsOpenByDefault: a row the view opens by itself --
+// a canceled span (what a crashed session left running), or any when
+// completed spans expand -- was never toggled open, so nothing fetched its
+// children as it rendered (which would walk the whole trace a span at a
+// time). Expanding it fetches them, as opening a collapsed row does.
+func TestTraceSessionExpandsRowsOpenByDefault(t *testing.T) {
+	start := time.Unix(100, 0)
+	rootID := prettyTestSpanID(1)
+	childID := prettyTestSpanID(2)
+	traceID := prettyTestTraceID()
+	source := func(canceled bool) *staticSource {
+		return &staticSource{
+			id: traceID.String(),
+			priority: []dagui.SpanSnapshot{{
+				ID:         rootID,
+				TraceID:    traceID,
+				Name:       "left running",
+				StartTime:  start,
+				EndTime:    start.Add(2 * time.Second),
+				Canceled:   canceled,
+				ChildCount: 1,
+			}},
+			childOf: map[string][]dagui.SpanSnapshot{
+				rootID.String(): {{
+					ID:        childID,
+					TraceID:   traceID,
+					Name:      "lazy child",
+					StartTime: start.Add(time.Second),
+					EndTime:   start.Add(2 * time.Second),
+					ParentID:  rootID,
+				}},
+			},
+		}
+	}
+	for _, tc := range []struct {
+		name      string
+		canceled  bool
+		configure func(*dagui.FrontendOpts)
+	}{
+		{name: "collapsed"},
+		{name: "canceled", canceled: true},
+		{name: "expand completed", configure: func(o *dagui.FrontendOpts) { o.ExpandCompleted = true }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sess := newTraceSession(t, source(tc.canceled), tc.configure)
+			if sess.listened[rootID.String()] {
+				t.Fatal("children fetched before the row was expanded")
+			}
+			out := sess.Press("right")
+			if !sess.listened[rootID.String()] {
+				t.Fatal("expanding the row did not fetch its children")
+			}
+			if !strings.Contains(out, "lazy child") {
+				t.Fatalf("expanded view missing the child:\n%s", out)
+			}
+		})
+	}
+}
