@@ -10,4 +10,8 @@ service Pipe {
 
 message Data {
   bytes data = 1;
+  // eof marks the end of the sender's input. The client sends it once its
+  // stdin is closed, so the engine's reader observes io.EOF while the stream
+  // stays open for the engine's remaining output.
+  bool eof = 2;
 }
