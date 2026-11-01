@@ -403,6 +403,33 @@ export class Test {
 	}
 }
 
+func (TypeSuite) TestReturnNestedList(ctx context.Context, t *testctx.T) {
+	const ints = `"ints":[[1,2,3],[2,4,6],[3,6,9]],"strs":[["a","b"],["c","d"]]`
+	for _, fixture := range []string{"go/type-return-nested-list", "dang/type-return-nested-list"} {
+		t.Run(fixture, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			mod := moduleEntrypointFixture(t, c, "test", fixture)
+
+			out, err := mod.With(daggerQuery(`{ints strs bools moods echo(v: [[7, 8], [9]])}`)).Stdout(ctx)
+			require.NoError(t, err)
+			require.JSONEq(t, `{`+ints+`,"bools":[[true,false],[false,true]],"moods":[["HAPPY","SAD"],["SAD","SAD"]],"echo":[[7,8],[9]]}`, out)
+
+			out, err = mod.With(daggerQuery(`{pairs {left right}}`)).Stdout(ctx)
+			require.NoError(t, err)
+			require.JSONEq(t, `{"pairs":[[{"left":"a","right":"b"}],[{"left":"c","right":"d"},{"left":"e","right":"f"}]]}`, out)
+		})
+	}
+	t.Run("dang/type-return-nested-list-entrypoint", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := moduleEntrypointFixture(t, c, "test", "dang/type-return-nested-list-entrypoint").
+			With(daggerQuery(`{ints strs}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{`+ints+`}`, out)
+	})
+}
+
 func (TypeSuite) TestReturnCompositeCore(ctx context.Context, t *testctx.T) {
 	type testCase struct {
 		sdk     string

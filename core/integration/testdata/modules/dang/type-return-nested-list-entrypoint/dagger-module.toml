@@ -1,0 +1,5 @@
+name = "test"
+
+[entrypoint]
+kind = "dang"
+source = "./entrypoint"

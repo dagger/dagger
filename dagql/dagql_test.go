@@ -154,6 +154,64 @@ func TestLeafListElements(t *testing.T) {
 	assert.Equal(t, 1, cache.Size())
 }
 
+func TestNestedResultList(t *testing.T) {
+	cache := newCache(t)
+	srv := newExternalDagqlServerForTest(t, Query{})
+	points.Install[Query](srv)
+	grid := func(name string, elem dagql.Typed, item func(n int, call *dagql.ResultCall) (dagql.AnyResult, error)) dagql.Field[Query] {
+		rowType := dagql.DynamicResultArrayOutput{Elem: elem}
+		return dagql.Field[Query]{
+			Spec: &dagql.FieldSpec{Name: name, Type: dagql.DynamicResultArrayOutput{Elem: rowType}},
+			Func: func(ctx context.Context, _ dagql.ObjectResult[Query], _ map[string]dagql.Input, _ call.View) (dagql.AnyResult, error) {
+				cur := dagql.CurrentCall(ctx)
+				frame := func(receiver *dagql.ResultCallRef, typ *ast.Type, nth int) *dagql.ResultCall {
+					return &dagql.ResultCall{Kind: cur.Kind, Field: cur.Field, Receiver: receiver, Type: dagql.NewResultCallType(typ), Nth: int64(nth)}
+				}
+				out := dagql.DynamicResultArrayOutput{Elem: rowType}
+				n := 0
+				for i, size := range []int{2, 1} {
+					rowCall := frame(cur.Receiver, rowType.Type(), i+1)
+					row := dagql.DynamicResultArrayOutput{Elem: elem}
+					for j := range size {
+						n++
+						val, err := item(n, frame(&dagql.ResultCallRef{Call: rowCall}, elem.Type(), j+1))
+						if err != nil {
+							return nil, err
+						}
+						row.Values = append(row.Values, val)
+					}
+					rowRes, err := dagql.NewResultForCall(row, rowCall)
+					if err != nil {
+						return nil, err
+					}
+					out.Values = append(out.Values, rowRes)
+				}
+				return dagql.NewResultForCall(out, cur)
+			},
+		}
+	}
+	dagql.Fields[Query]{
+		grid("ints", dagql.Int(0), func(n int, call *dagql.ResultCall) (dagql.AnyResult, error) {
+			return dagql.NewResultForCall(dagql.Int(n), call)
+		}),
+		grid("points", &points.Point{}, func(n int, call *dagql.ResultCall) (dagql.AnyResult, error) {
+			return dagql.NewObjectResultForCall(&points.Point{X: n, Y: -n}, srv, call)
+		}),
+	}.Install(srv)
+	gql := newTestClientWithCache(srv, cache)
+
+	t.Run("leaves", func(t *testing.T) {
+		var res struct{ Ints [][]int }
+		req(t, gql, `query { ints }`, &res)
+		assert.DeepEqual(t, [][]int{{1, 2}, {3}}, res.Ints)
+	})
+	t.Run("subselections", func(t *testing.T) {
+		var res struct{ Points [][]struct{ X, Y int } }
+		req(t, gql, `query { points { x y } }`, &res)
+		assert.DeepEqual(t, [][]struct{ X, Y int }{{{1, -1}, {2, -2}}, {{3, -3}}}, res.Points)
+	})
+}
+
 func TestBasic(t *testing.T) {
 	cache := newCache(t)
 	srv := newExternalDagqlServerForTest(t, Query{})

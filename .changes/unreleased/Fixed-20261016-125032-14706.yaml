@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  A module function that returns a nested list, such as `[[Int!]!]!`, answered with result IDs instead of values, and every row repeated the first row's IDs. Selecting fields of a nested list of objects failed with `instantiate 1th array element`.
+time: 2026-10-16T12:50:32Z
+custom:
+  Author: eunomie
+  PR: 14706
