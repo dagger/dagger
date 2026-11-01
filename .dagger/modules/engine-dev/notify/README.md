@@ -33,11 +33,7 @@ Flags:
       --title string         Set a title to the message
 ```
 
-Message looks like that from a channel:
-![slack 0](../.github/assets/slack_0.png)
-
-Then the message in the thread looks like:
-![slack 1](../.github/assets/slack_1.png)
+Message looks like that from a channel, and replies appear in the thread.
 
 ### CLI
 
