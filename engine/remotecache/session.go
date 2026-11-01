@@ -584,10 +584,13 @@ func (s *session) upload(ctx context.Context, env protocol.Envelope, blobs BlobS
 		}()
 	}
 	wg.Wait()
+	// Whether the session had ended is read when the blobs are done, before
+	// the answer: an end that follows the answer doesn't undo the upload.
+	cause := context.Cause(ctx)
 	if err := s.reply(env, protocol.TypeUploaded, reply); err != nil {
 		return summary, err
 	}
-	return summary, context.Cause(ctx)
+	return summary, cause
 }
 
 // uploadBlob PUTs one blob, and returns its size once it is read.
