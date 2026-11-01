@@ -32,14 +32,18 @@ func WithPartReadReport(report func([]PartRead)) CacheOption {
 
 // partReadLog is what WithPartReadReport keeps: the parts of each live entry
 // read so far, and the entries with reads not reported yet, in the order
-// they were first read. A nil log records nothing.
+// they were first read. A nil log records nothing. reporting is held through
+// each flush, so reports go in the order they were taken, and a flush, as
+// the cache's close makes, returns only once an earlier one, such as the
+// timer's, has reported.
 type partReadLog struct {
-	report  func([]PartRead)
-	mu      sync.Mutex
-	seen    map[sharedResultID]*partReadsSeen
-	pending map[sharedResultID]struct{}
-	order   []sharedResultID
-	timer   *time.Timer
+	report    func([]PartRead)
+	reporting sync.Mutex
+	mu        sync.Mutex
+	seen      map[sharedResultID]*partReadsSeen
+	pending   map[sharedResultID]struct{}
+	order     []sharedResultID
+	timer     *time.Timer
 }
 
 type partReadsSeen struct {
@@ -104,6 +108,8 @@ func (l *partReadLog) flush() {
 	if l == nil {
 		return
 	}
+	l.reporting.Lock()
+	defer l.reporting.Unlock()
 	l.mu.Lock()
 	var reads []PartRead
 	for _, id := range l.order {
