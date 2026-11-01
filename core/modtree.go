@@ -11,7 +11,6 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 
-	"github.com/dagger/dagger/util/parallel"
 	"github.com/iancoleman/strcase"
 )
 
@@ -284,14 +283,6 @@ func boundWorkspaceArgs(ctx context.Context, srv *dagql.Server, fn *Function) ([
 	}}, nil
 }
 
-func debugTrace(ctx context.Context, msg string, args ...any) {
-	_ = parallel.
-		New().
-		WithContextualTracer(true).
-		WithJob(fmt.Sprintf(msg, args...), nil).
-		Run(ctx)
-}
-
 // Walk the tree and return all matching nodes, with include and exclude filters applied.
 func (node *ModTreeNode) RollupNodes(ctx context.Context, matches func(*ModTreeNode) (bool, bool), include []string, exclude []string) ([]*ModTreeNode, error) {
 	var res []*ModTreeNode
@@ -304,7 +295,6 @@ func (node *ModTreeNode) RollupNodes(ctx context.Context, matches func(*ModTreeN
 				if match, err := n.Match(ctx, include); err != nil {
 					return false, err
 				} else if !match {
-					debugTrace(ctx, "%q: does not match %v. Skipping", n.PathString(), include)
 					return false, nil
 				}
 			}
@@ -353,10 +343,7 @@ func (p ModTreePath) APICase() []string {
 	return apiCase
 }
 
-func (p ModTreePath) Contains(ctx context.Context, target ModTreePath) (result bool) {
-	defer func() {
-		debugTrace(ctx, "%v.Contains(%v) -> %v", p, target, result)
-	}()
+func (p ModTreePath) Contains(ctx context.Context, target ModTreePath) bool {
 	if len(target) < len(p) {
 		// if the target is shorter, it can't be a sub-path
 		return false
@@ -365,16 +352,12 @@ func (p ModTreePath) Contains(ctx context.Context, target ModTreePath) (result b
 	return p.Equals(ctx, targetParent)
 }
 
-func (p ModTreePath) Equals(ctx context.Context, other ModTreePath) (result bool) {
-	defer func() {
-		debugTrace(ctx, "%v.Equals(%v) -> %v", p, other, result)
-	}()
+func (p ModTreePath) Equals(ctx context.Context, other ModTreePath) bool {
 	if len(p) != len(other) {
 		return false
 	}
 	for i := range p {
 		if gqlFieldName(p[i]) != gqlFieldName(other[i]) {
-			debugTrace(ctx, "%v.Equals(%v): %q != %q -> NOT EQUAL", p, other, gqlFieldName(p[i]), gqlFieldName(other[i]))
 			return false
 		}
 	}
@@ -385,14 +368,7 @@ func (p ModTreePath) Glob(ctx context.Context, pattern string) (bool, error) {
 	// Normalize both pattern and path to CLI case (kebab-case) for consistent matching
 	slashPattern := strings.Join(NewModTreePath(pattern).CliCase(), "/")
 	slashPath := strings.Join(p.CliCase(), "/")
-	if match, err := doublestar.PathMatch(slashPattern, slashPath); err != nil {
-		return false, err
-	} else if match {
-		debugTrace(ctx, "%q.Glob(%q) -> MATCH", slashPath, slashPattern)
-		return true, nil
-	}
-	debugTrace(ctx, "%q.Glob(%q) -> no match", slashPath, slashPattern)
-	return false, nil
+	return doublestar.PathMatch(slashPattern, slashPath)
 }
 
 func (node *ModTreeNode) Match(ctx context.Context, patterns []string) (bool, error) {

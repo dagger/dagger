@@ -7,6 +7,8 @@ import (
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 type ModTreePathTestSuite struct {
@@ -15,6 +17,33 @@ type ModTreePathTestSuite struct {
 
 func TestModTreePath(t *testing.T) {
 	testctx.New(t).RunTests(ModTreePathTestSuite{})
+}
+
+// Matching a workspace's module tree against include and exclude patterns runs
+// a glob and an equality test per node and pattern, tens of thousands per
+// session. The tests are not work worth tracing: they open no spans.
+func TestModTreeMatchingOpensNoSpans(t *testing.T) {
+	t.Parallel()
+	rec := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(rec))
+	ctx, span := tp.Tracer("test").Start(t.Context(), "check")
+
+	root := &ModTreeNode{}
+	mod := &ModTreeNode{Parent: root, Name: "goTests"}
+	leaf := &ModTreeNode{Parent: mod, Name: "unitTests"}
+	for _, node := range []*ModTreeNode{mod, leaf} {
+		_, err := node.Match(ctx, []string{"go-tests:unit-tests", "lint", "**:lint"})
+		require.NoError(t, err)
+	}
+	_, err := leaf.Path().Glob(ctx, "other:*")
+	require.NoError(t, err)
+	NewModTreePath("goTests:integration").Contains(ctx, leaf.Path())
+	leaf.Path().Equals(ctx, NewModTreePath("go-tests:lint"))
+	span.End()
+
+	ended := rec.Ended()
+	require.Len(t, ended, 1, "only the caller's own span")
+	require.Equal(t, "check", ended[0].Name())
 }
 
 func TestModTreeCommandNamePreservesQualifiedPath(t *testing.T) {
