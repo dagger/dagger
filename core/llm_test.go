@@ -871,3 +871,10 @@ func TestCodexConvertToolResults(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveModelAliasDefaultAnthropic(t *testing.T) {
+	for _, alias := range []string{"anthropic", "claude"} {
+		require.Equal(t, "claude-sonnet-4-6", resolveModelAlias(alias))
+	}
+	require.Equal(t, "anthropic/claude-sonnet-4.6", modelDefaultOpenRouter)
+}
