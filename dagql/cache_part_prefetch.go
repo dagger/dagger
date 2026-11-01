@@ -717,6 +717,12 @@ func (p *partPrefetcher) workAhead() {
 		}
 		best := -1
 		for i, job := range p.ahead {
+			// An offer whose chain is already imported, or importing, ahead
+			// needs no import of its own: its install reuses those layers.
+			// It is dropped, not counted against aheadMax.
+			if !job.gone && p.chainAheadLocked(job.offer) {
+				job.gone = true
+			}
 			if !job.gone && (best < 0 || job.size > p.ahead[best].size) {
 				best = i
 			}
@@ -788,6 +794,28 @@ func (c *Cache) partInstallEnded() {
 		p.cond.Broadcast()
 		p.mu.Unlock()
 	}
+}
+
+// chainAheadLocked reports whether another offer's chain, with the same
+// layers as offer's, is imported or importing ahead. Requires p.mu.
+func (p *partPrefetcher) chainAheadLocked(offer *partOffer) bool {
+	layers := offer.record.Chain.Layers
+	for other, a := range p.aheads {
+		if other == offer || a.gone || len(a.layers) != len(layers) {
+			continue
+		}
+		same := true
+		for i, layer := range layers {
+			if a.layers[i] != layer.Descriptor.Digest {
+				same = false
+				break
+			}
+		}
+		if same {
+			return true
+		}
+	}
+	return false
 }
 
 // aheadFullLocked reports whether the ahead worker has taken its aheadMax
@@ -1278,10 +1306,14 @@ func (p *partPrefetcher) awaitBlob(ctx context.Context, a *partPrefetchAhead, de
 			return nil
 		}
 		coming := p.aheadComingLocked(a, desc)
+		var why string
+		if !coming {
+			why = p.notComingLocked(a.offer, desc)
+		}
 		changed := p.changed
 		p.mu.Unlock()
 		if !coming {
-			return fmt.Errorf("%w: %s", errPartPrefetchNotComing, desc.Digest)
+			return fmt.Errorf("%w: %s (%s)", errPartPrefetchNotComing, desc.Digest, why)
 		}
 		select {
 		case <-changed:
@@ -1289,6 +1321,24 @@ func (p *partPrefetcher) awaitBlob(ctx context.Context, a *partPrefetchAhead, de
 			return context.Cause(ctx)
 		}
 	}
+}
+
+// notComingLocked says why no download of desc's blob is coming for offer,
+// for the import ahead's line: whether a download of it runs and for whom,
+// the state of offer's job in its lane, and whether an install consumed the
+// blob. Requires p.mu.
+func (p *partPrefetcher) notComingLocked(offer *partOffer, desc ocispecs.Descriptor) string {
+	download := "no download"
+	if d := p.fetching[desc.Digest]; d != nil {
+		_, ours := d.offers[offer]
+		download = fmt.Sprintf("a download for %d offers, this one's: %t", len(d.offers), ours)
+	}
+	job := "no job"
+	if j := p.jobs[partPrefetchJobKey{offer: offer, lane: p.cfg.lane(desc.Size)}]; j != nil {
+		job = fmt.Sprintf("job gone %t, registered %t, ahead %t", j.gone, j.digests != nil, j.ahead)
+	}
+	_, consumed := p.consumed[desc.Digest]
+	return fmt.Sprintf("%s; %s; consumed by an install %t", download, job, consumed)
 }
 
 // comingLocked reports whether a download of desc's blob is coming for
