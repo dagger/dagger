@@ -1,12 +1,15 @@
 package dagql
 
 import (
+	"bytes"
 	"maps"
 	"runtime"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/engine/wcprof"
@@ -96,4 +99,73 @@ func TestMakeResultUnpruneableNamesItsHolder(t *testing.T) {
 	defer op.End(wcprof.OutcomeOK)
 	require.NoError(t, c.MakeResultUnpruneable(opCtx, root))
 	requireTakesNamed(t, takers(), op.ID(), "MakeResultUnpruneable")
+}
+
+// TestOfferNamesItsHolder: an offer takes the graph lock as the op it runs
+// under, the remote-cache adapter's op for the offered item, in OfferParts
+// and in each part's offer.
+func TestOfferNamesItsHolder(t *testing.T) {
+	ctx, c, srv := transferTestCache(t)
+	r := persistedListTestResult(t, ctx, c, srv, "receiver", &transferTestValue{Text: "pending"})
+	takers := lockTakers(t, c)
+	opCtx, op := wcprof.BeginOp(wcprof.ContextWithProfiling(ctx), wcprof.OpKindRemoteCache, "test.offer.item", wcprof.OpOpts{})
+	defer op.End(wcprof.OutcomeOK)
+	out, err := c.testOfferParts(opCtx, r, []PersistedPartOffer{testLiveOffer()})
+	require.NoError(t, err)
+	require.Equal(t, OfferAccepted, out[0].Outcome)
+	requireTakesNamed(t, takers(), op.ID(), "OfferParts", "offerPart")
+}
+
+// TestSnapshotSharingNamesItsHolder: on an engine that records, the sharing
+// worker takes the graph lock as a snapshot.share op of its own, in taking
+// its job, selecting the job's slots and releasing its members, so a wait
+// behind a share pass names it rather than an unknown holder. The worker
+// runs on the cache's background context, which only engine-wide recording
+// reaches, so the test records engine-wide and doesn't run in parallel.
+func TestSnapshotSharingNamesItsHolder(t *testing.T) {
+	rec := wcprof.NewRecorder(1 << 16)
+	t.Cleanup(wcprof.SetActiveForTest(rec, true))
+	ctx, c, srv, _ := shareTestCache(t)
+	barrier := newSharePassBarrier(c)
+	takers := lockTakers(t, c)
+	donor := persistedListTestResult(t, ctx, c, srv, "donor", &transferTestValue{Text: "snapshot", links: []PersistedSnapshotRefLink{{Role: "snapshot", RefKey: "donor-snapshot"}}})
+	receiver := persistedListTestResult(t, ctx, c, srv, "receiver", &transferTestValue{Text: "pending"})
+	shareTestEncodedReceiver(t, ctx, c, receiver)
+	partTestEquivalent(t, c, receiver, donor)
+	content := digest.FromString("share-holder")
+	require.NoError(t, c.TeachContentDigest(ctx, donor, content))
+	require.NoError(t, c.TeachContentDigest(ctx, receiver, content))
+	require.Equal(t, 1, barrier.awaitPass(t), "one planned slot")
+
+	// The job's op is in the dump once the worker has released the job.
+	classOf := func(id uint64) string {
+		var buf bytes.Buffer
+		require.NoError(t, rec.WriteDump(&buf, false))
+		header, events, err := wcprof.ReadDump(&buf)
+		require.NoError(t, err)
+		for _, ev := range events {
+			if ev.Type == "op" && ev.OpID == id {
+				return header.Strings[ev.ClassID]
+			}
+		}
+		return ""
+	}
+	names := []string{"runSnapshotShareWorker", "selectShareSlots", "releaseSnapshotShareMembers"}
+	require.Eventually(t, func() bool {
+		got := takers()
+		for _, want := range names {
+			if len(got[want]) == 0 {
+				return false
+			}
+		}
+		return true
+	}, 10*time.Second, 10*time.Millisecond, "the worker takes, selects and releases")
+	got := takers()
+	for _, name := range names {
+		for _, h := range got[name] {
+			require.NotEqual(t, wcprof.HolderUnknown, h, "%s took the graph lock as an unknown holder", name)
+			require.NotZero(t, h, name)
+			require.Eventually(t, func() bool { return classOf(h) == "snapshot.share" }, 10*time.Second, 10*time.Millisecond, "%s's holder %d is a snapshot.share op", name, h)
+		}
+	}
 }
