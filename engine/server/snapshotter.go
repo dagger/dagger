@@ -166,6 +166,11 @@ func (s *namespaceHeaderSnapshotter) Cleanup(ctx context.Context) error {
 // engine waited for every pending write there, its own or not. The volatile
 // probe mounts the same overlay, with "volatile", whose unmount doesn't sync.
 func overlaySupported(rootDir string) error {
+	// The volatile probe runs once per process, so it doesn't create rootDir
+	// again after a cache reset moved the worker state aside.
+	if err := os.MkdirAll(rootDir, 0700); err != nil {
+		return err
+	}
 	if !overlayVolatileSupported(rootDir) {
 		return overlayutils.Supported(rootDir)
 	}
