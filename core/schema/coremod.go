@@ -408,6 +408,7 @@ func (m *CoreMod) TypeDefs(ctx context.Context, dag *dagql.Server) (dagql.Object
 func buildCoreTypeDefFunctions(
 	ctx context.Context,
 	dag *dagql.Server,
+	refs *coreTypeDefRefs,
 	introspectionType *introspection.Type,
 ) ([]dagql.ID[*core.Function], bool, error) {
 	fnIDs := make([]dagql.ID[*core.Function], 0, len(introspectionType.Fields))
@@ -419,7 +420,7 @@ func buildCoreTypeDefFunctions(
 			continue
 		}
 
-		rtType, ok, err := introspectionRefToTypeDef(ctx, dag, introspectionField.TypeRef, false)
+		rtType, ok, err := refs.typeDef(ctx, introspectionField.TypeRef, "")
 		if err != nil {
 			return nil, false, fmt.Errorf("failed to convert return type: %w", err)
 		}
@@ -458,7 +459,7 @@ func buildCoreTypeDefFunctions(
 		}
 
 		for _, introspectionArg := range introspectionField.Args {
-			argType, ok, err := resolveArgTypeDef(ctx, dag, introspectionArg)
+			argType, ok, err := refs.typeDef(ctx, introspectionArg.TypeRef, introspectionArg.Directives.ExpectedType())
 			if err != nil {
 				return nil, false, fmt.Errorf("failed to convert argument type for %s.%s(%s): %w", introspectionType.Name, introspectionField.Name, introspectionArg.Name, err)
 			}
@@ -518,6 +519,7 @@ func buildCoreTypeDefFunctions(
 func buildCoreObjectLikeTypeDef[T dagql.Typed](
 	ctx context.Context,
 	dag *dagql.Server,
+	refs *coreTypeDefRefs,
 	introspectionType *introspection.Type,
 	baseSelector string,
 	wrapSelector string,
@@ -544,7 +546,7 @@ func buildCoreObjectLikeTypeDef[T dagql.Typed](
 		return zero, false, err
 	}
 
-	fnIDs, isIdable, err := buildCoreTypeDefFunctions(ctx, dag, introspectionType)
+	fnIDs, isIdable, err := buildCoreTypeDefFunctions(ctx, dag, refs, introspectionType)
 	if err != nil {
 		return zero, false, err
 	}
@@ -601,11 +603,12 @@ func buildCoreTypeDefs(ctx context.Context, dag *dagql.Server) (dagql.ObjectResu
 
 	// Each type's definition is independent of the others, so build them all
 	// at once: this runs for a fresh engine's first client, and for each new view.
+	refs := newCoreTypeDefRefs(dag)
 	built := make([]dagql.ObjectResult[*core.TypeDef], len(schema.Types))
 	var eg errgroup.Group
 	for i, introspectionType := range schema.Types {
 		eg.Go(func() error {
-			typeDef, ok, err := buildCoreTypeDef(ctx, dag, introspectionType)
+			typeDef, ok, err := buildCoreTypeDef(ctx, dag, refs, introspectionType)
 			if err != nil {
 				return err
 			}
@@ -628,13 +631,14 @@ func buildCoreTypeDefs(ctx context.Context, dag *dagql.Server) (dagql.ObjectResu
 }
 
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
-func buildCoreTypeDef(ctx context.Context, dag *dagql.Server, introspectionType *introspection.Type) (dagql.ObjectResult[*core.TypeDef], bool, error) {
+func buildCoreTypeDef(ctx context.Context, dag *dagql.Server, refs *coreTypeDefRefs, introspectionType *introspection.Type) (dagql.ObjectResult[*core.TypeDef], bool, error) {
 	var zero dagql.ObjectResult[*core.TypeDef]
 	switch introspectionType.Kind {
 	case introspection.TypeKindObject:
 		typeDef, ok, err := buildCoreObjectLikeTypeDef[*core.ObjectTypeDef](
 			ctx,
 			dag,
+			refs,
 			introspectionType,
 			"__objectTypeDef",
 			"__withObjectTypeDef",
@@ -649,6 +653,7 @@ func buildCoreTypeDef(ctx context.Context, dag *dagql.Server, introspectionType 
 		typeDef, ok, err := buildCoreObjectLikeTypeDef[*core.InterfaceTypeDef](
 			ctx,
 			dag,
+			refs,
 			introspectionType,
 			"__interfaceTypeDef",
 			"__withInterfaceTypeDef",
@@ -669,7 +674,7 @@ func buildCoreTypeDef(ctx context.Context, dag *dagql.Server, introspectionType 
 		}
 
 		for _, introspectionField := range introspectionType.InputFields {
-			fieldType, ok, err := introspectionRefToTypeDef(ctx, dag, introspectionField.TypeRef, false)
+			fieldType, ok, err := refs.typeDef(ctx, introspectionField.TypeRef, "")
 			if err != nil {
 				return zero, false, fmt.Errorf("failed to convert return type: %w", err)
 			}
@@ -1107,6 +1112,67 @@ func maybeOptional(ctx context.Context, dag *dagql.Server, inst dagql.ObjectResu
 		return inst, fmt.Errorf("make typedef optional: %w", err)
 	}
 	return inst, nil
+}
+
+// coreTypeDefRefs reuses resolved type references within a build of the core
+// type definitions: the core schema's fields and arguments name a few hundred
+// types thousands of times.
+type coreTypeDefRefs struct {
+	dag  *dagql.Server
+	mu   sync.Mutex
+	defs map[string]coreTypeDefRef
+}
+
+type coreTypeDefRef struct {
+	typeDef dagql.ObjectResult[*core.TypeDef]
+	ok      bool
+}
+
+func newCoreTypeDefRefs(dag *dagql.Server) *coreTypeDefRefs {
+	return &coreTypeDefRefs{
+		dag:  dag,
+		defs: map[string]coreTypeDefRef{},
+	}
+}
+
+// typeDef resolves a field's type, or an argument's along with the type its
+// @expectedType directive names, as resolveArgTypeDef does.
+func (refs *coreTypeDefRefs) typeDef(ctx context.Context, typeRef *introspection.TypeRef, expectedType string) (dagql.ObjectResult[*core.TypeDef], bool, error) {
+	key := typeRefKey(typeRef) + "@" + expectedType
+	refs.mu.Lock()
+	ref, found := refs.defs[key]
+	refs.mu.Unlock()
+	if found {
+		return ref.typeDef, ref.ok, nil
+	}
+	typeDef, ok, err := introspectionRefToTypeDef(ctx, refs.dag, typeRef, false)
+	if err != nil {
+		return typeDef, ok, err
+	}
+	if ok && expectedType != "" {
+		resolved, changed, err := resolveIDScalar(ctx, refs.dag, typeDef, expectedType)
+		if err != nil {
+			return resolved, changed, err
+		}
+		if changed {
+			typeDef = resolved
+		}
+	}
+	refs.mu.Lock()
+	refs.defs[key] = coreTypeDefRef{typeDef: typeDef, ok: ok}
+	refs.mu.Unlock()
+	return typeDef, ok, nil
+}
+
+func typeRefKey(typeRef *introspection.TypeRef) string {
+	switch typeRef.Kind {
+	case introspection.TypeKindNonNull:
+		return typeRefKey(typeRef.OfType) + "!"
+	case introspection.TypeKindList:
+		return "[" + typeRefKey(typeRef.OfType) + "]"
+	default:
+		return string(typeRef.Kind) + ":" + typeRef.Name
+	}
 }
 
 // resolveArgTypeDef converts an introspection arg's TypeRef into a TypeDef,
