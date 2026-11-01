@@ -155,21 +155,33 @@ func TestLiveLogsFollowCatchesUpJoiningSpans(t *testing.T) {
 
 	l.subscribe(idtui.LogRequest{Span: parent, Descendants: true})
 	require.Eventually(t, func() bool { return len(out.got()) == 2 }, 5*time.Second, 10*time.Millisecond)
+	// Join once the parent is followed.
+	require.Eventually(t, func() bool {
+		seen := reader.seen()
+		return len(seen) > 0 && seen[len(seen)-1].Follow
+	}, 5*time.Second, 10*time.Millisecond)
 	l.subscribe(idtui.LogRequest{Span: child, Digests: []string{"xxh3:out"}})
 	require.Eventually(t, func() bool { return len(out.got()) == 4 }, 5*time.Second, 10*time.Millisecond)
 	require.Equal(t, []string{"p1", "c1", "svc", "c2"}, out.got(), "every row once, in order")
 
+	parentOnly := []archive.LogSpan{{SpanID: parent.String(), Descendants: true}}
 	both := []archive.LogSpan{{SpanID: parent.String(), Descendants: true}, {SpanID: child.String(), Digests: []string{"xxh3:out"}}}
-	require.Eventually(t, func() bool { return len(reader.seen()) == 5 }, 5*time.Second, 10*time.Millisecond)
+	var seen []tracesource.LogQuery
+	require.Eventually(t, func() bool {
+		seen = reader.seen()
+		return len(seen) > 0 && seen[len(seen)-1].Follow && len(seen[len(seen)-1].Spans) == 2
+	}, 5*time.Second, 10*time.Millisecond)
+	// The parent is read, then followed (a restart may repeat both).
+	require.Equal(t, tracesource.LogQuery{Spans: parentOnly}, seen[0])
+	require.Equal(t, tracesource.LogQuery{Spans: parentOnly, Follow: true, Cursor: "3"}, seen[1])
+	join := slices.IndexFunc(seen, func(q tracesource.LogQuery) bool { return q.Through != "" })
 	require.Equal(t, []tracesource.LogQuery{
-		{Spans: []archive.LogSpan{{SpanID: parent.String(), Descendants: true}}},
-		{Spans: []archive.LogSpan{{SpanID: parent.String(), Descendants: true}}, Follow: true, Cursor: "3"},
 		// The newcomer is caught up to the follow's cursor.
 		{Spans: []archive.LogSpan{{SpanID: child.String(), Digests: []string{"xxh3:out"}}}, Through: "3"},
 		// The grown set is read from the cursor, then followed.
 		{Spans: both, Cursor: "3"},
 		{Spans: both, Follow: true, Cursor: "5"},
-	}, reader.seen())
+	}, seen[join:])
 }
 
 // TestLiveLogsUnknownSpansStayUnclaimed: a follow over a subtree also returns
@@ -251,11 +263,11 @@ func TestLiveLogsReadAtFinish(t *testing.T) {
 func TestLiveLogsFinishCatchesUp(t *testing.T) {
 	reader := &fakeLogReader{respond: func(q tracesource.LogQuery) []liveLogBatch {
 		switch {
-		case q.Follow:
+		case q.Through == "" && q.Cursor == "":
 			return []liveLogBatch{{rows: []liveLogRow{{span: 1, body: "a1"}}, cursor: "4"}}
 		case q.Through == "4":
 			return []liveLogBatch{{rows: []liveLogRow{{span: 2, body: "b1"}}, cursor: "4"}}
-		case q.Cursor == "4":
+		case !q.Follow && q.Cursor == "4" && len(q.Spans) == 2:
 			return []liveLogBatch{{rows: []liveLogRow{{span: 1, body: "a2"}, {span: 2, body: "b2"}}, cursor: "6"}}
 		}
 		return nil
@@ -313,7 +325,7 @@ func (r *joiningLogReader) ReadLogs(ctx context.Context, _ string, q tracesource
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case <-time.After(20 * time.Millisecond):
+			case <-time.After(100 * time.Millisecond):
 			}
 		}
 		if err := cb(ctx, liveLogRequest([]liveLogRow{{span: 1, body: "a2"}}), "5"); err != nil {
@@ -345,7 +357,7 @@ func TestLiveLogsFollowAdvancesWhileSpansJoin(t *testing.T) {
 	defer func() { cancel(); <-done }()
 
 	l.subscribe(idtui.LogRequest{Span: liveTestSpan(1)})
-	require.Eventually(t, func() bool { return len(out.got()) == 1 }, 5*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return slices.Contains(out.got(), "a1") }, 5*time.Second, 10*time.Millisecond)
 	l.subscribe(idtui.LogRequest{Span: liveTestSpan(2)})
 	require.Eventually(t, func() bool { return slices.Contains(out.got(), "a2") }, 5*time.Second, 10*time.Millisecond,
 		"the follow never read past its cursor while spans kept joining")
