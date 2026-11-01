@@ -77,9 +77,10 @@ type TestView struct {
 	// dagui.FrontendOpts.AgentStyle (see idtui.agentStyle).
 	AgentStyle bool
 
-	// TraceID, when set (by 'dagger trace'), lets a failing entry's capped log
-	// tail point at 'dagger cloud traces view <trace> --log' for the full output.
-	TraceID string
+	// TraceCommand, when set (by 'dagger trace'), is the command prefix that
+	// addresses the trace, e.g. 'dagger trace <trace>': a failing entry's
+	// capped log tail points at '<TraceCommand> --log ...' for the full output.
+	TraceCommand string
 
 	sidebar *testSidebarView
 
@@ -963,7 +964,7 @@ func (tv *TestView) renderTestSummaryLogs(out TermOutput, entry testSummaryEntry
 		rawLines := strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
 		// Anchor on the failure rather than an arbitrary tail, and point at the
 		// full logs -- the same treatment the zoomed (--test) view uses.
-		return errorWindowLines(out, rawLines, indent, tv.TraceID, cloudLogsHintTarget(entry.span))
+		return errorWindowLines(out, rawLines, indent, tv.TraceCommand, traceLogsHintTarget(entry.span))
 	}
 
 	// Live (interactive) summary: a small tail with a "more lines" footer.
@@ -1577,7 +1578,7 @@ func (fe *frontendPretty) newTestView(root dagui.SpanID, scopeName string) *Test
 		RequestLogs:  fe.requestLogsOnRender,
 		ScopeName:    scopeName,
 		SpanChildren: fe.testSpanChildrenView,
-		TraceID:      fe.traceID,
+		TraceCommand: fe.traceViewCommand(),
 	}
 	if root.IsValid() {
 		tv.View = func() *dagui.TestView {
@@ -1841,7 +1842,7 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 			Logs:            s.fe.logs.Logs,
 			SummaryIndent:   2,
 			SummaryLogLines: -1,
-			TraceID:         s.fe.traceID,
+			TraceCommand:    s.fe.traceViewCommand(),
 		}
 		width := ctx.Width
 		if width <= 0 {
@@ -2260,10 +2261,11 @@ func errorTailStart(lines []string, context int) int {
 	return max(anchor-context, 0)
 }
 
-// cloudLogsTarget returns the 'dagger cloud traces view' selector that
-// addresses span by name when possible (--test/--check), else by --span. Empty
-// for a nil span. The drill-in suggestions and the "full:" log hint both use it.
-func cloudLogsTarget(span *dagui.Span) string {
+// traceSpanTarget returns the trace view selector ('dagger trace' and 'dagger
+// cloud traces view' take the same flags) that addresses span by name when
+// possible (--test/--check), else by --span. Empty for a nil span. The
+// drill-in suggestions and the "full:" log hint both use it.
+func traceSpanTarget(span *dagui.Span) string {
 	switch {
 	case span == nil:
 		return ""
@@ -2276,12 +2278,12 @@ func cloudLogsTarget(span *dagui.Span) string {
 	}
 }
 
-// cloudLogsHintTarget is cloudLogsTarget plus --descendants when the span
+// traceLogsHintTarget is traceSpanTarget plus --descendants when the span
 // rolls up its subtree's logs, so the "full:" hint fetches at least the scope
 // the window above it rendered ('--log --span' is otherwise just that span).
 // Only for the log hint: without --log, the view resolves roll-up on its own.
-func cloudLogsHintTarget(span *dagui.Span) string {
-	target := cloudLogsTarget(span)
+func traceLogsHintTarget(span *dagui.Span) string {
+	target := traceSpanTarget(span)
 	if span != nil && span.RollUpLogs && span.TestCaseName == "" && span.CheckName == "" {
 		target += " --descendants"
 	}
@@ -2290,10 +2292,11 @@ func cloudLogsHintTarget(span *dagui.Span) string {
 
 // errorWindowLines renders a failed span's rolled-up logs for a final report:
 // the error-anchored window (errorTailStart) prefixed with a marker for any
-// trimmed lines, then a '--log' hint for the full output when a
-// trace ID and selector target are known. Lines are prefixed with indent and
-// left unclipped -- the hint is a copy-paste command.
-func errorWindowLines(out TermOutput, rawLines []string, indent, traceID, target string) []string {
+// trimmed lines, then a '--log' hint for the full output when the trace's
+// command prefix (e.g. 'dagger trace <trace>') and a selector target are
+// known. Lines are prefixed with indent and left unclipped -- the hint is a
+// copy-paste command.
+func errorWindowLines(out TermOutput, rawLines []string, indent, traceCommand, target string) []string {
 	start := errorTailStart(rawLines, 5)
 	lines := make([]string, 0, len(rawLines)-start+2)
 	if start > 0 {
@@ -2303,8 +2306,8 @@ func errorWindowLines(out TermOutput, rawLines []string, indent, traceID, target
 	for _, line := range rawLines[start:] {
 		lines = append(lines, indent+line)
 	}
-	if traceID != "" && target != "" {
-		hint := out.String(fmt.Sprintf("full: dagger cloud traces view %s --log %s", traceID, target)).Foreground(termenv.ANSIBrightBlack).Faint().String()
+	if traceCommand != "" && target != "" {
+		hint := out.String(fmt.Sprintf("full: %s --log %s", traceCommand, target)).Foreground(termenv.ANSIBrightBlack).Faint().String()
 		lines = append(lines, indent+hint)
 	}
 	return lines

@@ -22,6 +22,18 @@ func openTraceSource(ctx context.Context, engine bool, local, remote tracesource
 	return tracesource.Select(ctx, local, remote)
 }
 
+// traceViewCommand is the command a report's follow-up hints suggest for a
+// trace opened from source: 'dagger trace' when the engine's retained store
+// served it -- the 'dagger cloud' commands read Cloud only, so they could not
+// find it -- else 'dagger cloud traces view', including when 'dagger trace'
+// fell back to Cloud.
+func traceViewCommand(source tracesource.Source) string {
+	if _, fromEngine := source.(*tracesource.Store); fromEngine {
+		return "dagger trace"
+	}
+	return "dagger cloud traces view"
+}
+
 // openEngineTrace opens a trace in the engine's retained telemetry store over
 // read-only client plumbing, never workspace modules or archived recipes. Its
 // cleanup remains alive for lazy interactive expansion.
