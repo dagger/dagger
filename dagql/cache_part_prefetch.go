@@ -49,8 +49,11 @@ func (l partPrefetchLane) String() string {
 // aheadOffer is the chain size from which an offer's jobs wait in the ahead
 // queue instead of their lanes' queues: nothing is dropped from it to make
 // room, and one worker runs its largest offer first and waits for that
-// offer's import ahead before taking the next. Zero queues every offer in
-// its lanes.
+// offer's import ahead before taking the next, starting each only while no
+// install runs. Only that offer is imported ahead. aheadMax is how many
+// offers the worker takes; after it, large offers go to their lanes, to be
+// downloaded only. Zero aheadOffer queues every offer in its lanes, each
+// imported ahead once a blob of it is held.
 type partPrefetchConfig struct {
 	largeBlob    int64
 	workers      int
@@ -60,6 +63,7 @@ type partPrefetchConfig struct {
 	ttl          time.Duration
 	queue        int
 	aheadOffer   int64
+	aheadMax     int
 }
 
 func defaultPartPrefetchConfig() partPrefetchConfig {
@@ -71,7 +75,8 @@ func defaultPartPrefetchConfig() partPrefetchConfig {
 		budget:       4 << 30,
 		ttl:          30 * time.Minute,
 		queue:        256,
-		aheadOffer:   64 << 20,
+		aheadOffer:   256 << 20,
+		aheadMax:     4,
 	}
 }
 
@@ -149,6 +154,9 @@ type partPrefetcher struct {
 	// which a replacement with the same meaning passes on.
 	ahead        []*partPrefetchJob
 	aheadCurrent *partOffer
+	// aheadTaken counts the offers the ahead worker has taken, against
+	// aheadMax.
+	aheadTaken int
 	// jobs are the queued and running jobs, by offer and lane.
 	jobs  map[partPrefetchJobKey]*partPrefetchJob
 	holds map[digest.Digest]*partPrefetchHold
@@ -340,7 +348,7 @@ func (c *Cache) partOfferAccepted(ctx context.Context, row *sharedResult, key st
 		wanted[p.cfg.lane(layer.Descriptor.Size)] = true
 		size += layer.Descriptor.Size
 	}
-	ahead := p.cfg.aheadOffer > 0 && size >= p.cfg.aheadOffer
+	ahead := p.cfg.aheadOffer > 0 && size >= p.cfg.aheadOffer && !p.aheadFull()
 	var jobs []*partPrefetchJob
 	now := time.Now()
 	for lane := range partPrefetchLanes {
@@ -372,14 +380,8 @@ func (c *Cache) partOfferAccepted(ctx context.Context, row *sharedResult, key st
 			p.changedLocked()
 			continue
 		}
-		if queue := p.queues[job.lane]; len(queue) >= p.cfg.queue {
-			dropped = append(dropped, queue[0])
-			p.queues[job.lane] = queue[1:]
-			delete(p.jobs, queue[0].jobKey())
-			p.changedLocked()
-		}
-		p.queues[job.lane] = append(p.queues[job.lane], job)
 		p.jobs[job.jobKey()] = job
+		dropped = append(dropped, p.queueLaneLocked(job)...)
 	}
 	p.cond.Broadcast()
 	p.mu.Unlock()
@@ -388,6 +390,22 @@ func (c *Cache) partOfferAccepted(ctx context.Context, row *sharedResult, key st
 	for _, job := range dropped {
 		p.log(job, "skipped_queue", 0, 0, nil, 0, nil)
 	}
+}
+
+// queueLaneLocked queues job in its lane, dropping the lane's oldest job
+// when the lane is full, and returns what it dropped, for the caller to log
+// outside the mutex. Requires p.mu.
+func (p *partPrefetcher) queueLaneLocked(job *partPrefetchJob) []*partPrefetchJob {
+	var dropped []*partPrefetchJob
+	if queue := p.queues[job.lane]; len(queue) >= p.cfg.queue {
+		dropped = append(dropped, queue[0])
+		p.queues[job.lane] = queue[1:]
+		delete(p.jobs, queue[0].jobKey())
+		p.changedLocked()
+	}
+	p.queues[job.lane] = append(p.queues[job.lane], job)
+	p.cond.Broadcast()
+	return dropped
 }
 
 // partOfferGone notes that the cache retired offer: the blobs held or
@@ -675,7 +693,9 @@ func (p *partPrefetcher) workAhead() {
 	defer p.wg.Done()
 	for {
 		p.mu.Lock()
-		for !p.closed && len(p.ahead) == 0 {
+		// An offer starts only while no install runs: an import ahead
+		// competes with the engine's own work for the disk.
+		for !p.closed && (len(p.ahead) == 0 || p.cache.partInstalls.Load() > 0) {
 			p.cond.Wait()
 		}
 		if p.closed {
@@ -703,6 +723,7 @@ func (p *partPrefetcher) workAhead() {
 		p.ahead = rest
 		if len(jobs) > 0 {
 			p.aheadCurrent = jobs[0].offer
+			p.aheadTaken++
 		}
 		p.mu.Unlock()
 		if len(jobs) == 0 {
@@ -710,7 +731,43 @@ func (p *partPrefetcher) workAhead() {
 		}
 		p.runAhead(jobs)
 		p.awaitAheadImport()
+		p.mu.Lock()
+		if p.aheadFullLocked() {
+			// The rest wait in their lanes, to be downloaded only.
+			for _, job := range p.ahead {
+				job.ahead = false
+				p.queueLaneLocked(job)
+			}
+			p.ahead = nil
+		}
+		p.mu.Unlock()
 	}
+}
+
+// partInstallStarted and partInstallEnded count an install of an offered
+// part; the last install to end wakes the prefetcher's ahead worker.
+func (c *Cache) partInstallStarted() { c.partInstalls.Add(1) }
+
+func (c *Cache) partInstallEnded() {
+	if c.partInstalls.Add(-1) > 0 {
+		return
+	}
+	if p := c.partPrefetcher.Load(); p != nil {
+		p.mu.Lock()
+		p.cond.Broadcast()
+		p.mu.Unlock()
+	}
+}
+
+// aheadFull reports whether the ahead worker has taken its aheadMax offers.
+func (p *partPrefetcher) aheadFull() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.aheadFullLocked()
+}
+
+func (p *partPrefetcher) aheadFullLocked() bool {
+	return p.cfg.aheadMax > 0 && p.aheadTaken >= p.cfg.aheadMax
 }
 
 // runAhead runs ahead jobs, one after another, as work runs a lane's.
@@ -1041,19 +1098,17 @@ func (p *partPrefetcher) settle(job *partPrefetchJob, desc ocispecs.Descriptor, 
 
 // checkAheadLocked starts importing offer's chain ahead of demand once one
 // of its blobs is held for it, unless it is imported or importing already, or
-// its chain is smaller than aheadOffer. Requires p.mu.
+// the ahead queue is on and offer isn't its worker's. Requires p.mu.
 func (p *partPrefetcher) checkAheadLocked(offer *partOffer) {
 	if p.importer == nil || p.closed || p.aheads[offer] != nil {
 		return
 	}
-	layers := offer.record.Chain.Layers
-	var size int64
-	for _, layer := range layers {
-		size += layer.Descriptor.Size
-	}
-	if size < p.cfg.aheadOffer {
+	// With the ahead queue on, only its worker's offer is imported ahead:
+	// the lanes download and hold.
+	if p.cfg.aheadOffer > 0 && offer != p.aheadCurrent {
 		return
 	}
+	layers := offer.record.Chain.Layers
 	expires := time.Time{}
 	for _, layer := range layers {
 		h := p.holds[layer.Descriptor.Digest]

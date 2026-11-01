@@ -841,6 +841,8 @@ func (d *PartDemandState) causes() error {
 }
 func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source *PartSourceLease, permit *PartPermit, demand *PartDemandState) (rerr error) {
 	defer func() { rerr = errors.Join(rerr, source.Release(ctx)); permit.Release() }()
+	c.partInstallStarted()
+	defer c.partInstallEnded()
 	start := time.Now()
 	// The content-source boundary: refuse before the offer clone and before
 	// the fixture's provider-read counter, so the sentinel precedes any
