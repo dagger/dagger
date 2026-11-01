@@ -174,6 +174,9 @@ type daggerSession struct {
 	// spanQueue counts the spans of the bounded live span lane, to report
 	// those it dropped when the session's telemetry shuts down.
 	spanQueue      enginetel.SpanQueueCounts
+	// protectedSpans is the session's lossless lane for call and cache
+	// spans; its unbounded queue's peak is reported at shutdown.
+	protectedSpans *enginetel.ProtectedSpanProcessor
 	loggerProvider *sdklog.LoggerProvider
 	spanExporter   sdktrace.SpanExporter
 	logExporter    sdklog.Exporter
@@ -909,6 +912,12 @@ func (sess *daggerSession) shutdownTelemetry(ctx context.Context) error {
 		// The bounded lane drops spans rather than stall the session; report
 		// how many.
 		sess.spanQueue.LogShutdown(slog.With("sessionID", sess.sessionID), shutdownErr)
+		// The protected lane never drops and its queue is unbounded; report
+		// the most it held.
+		if sess.protectedSpans != nil {
+			queued, peak := sess.protectedSpans.QueueStats()
+			slog.Info("session telemetry protected spans", "sessionID", sess.sessionID, "queued", queued, "peak", peak)
+		}
 	}
 	if sess.workloadTracerProvider != nil {
 		traceDur += timedProviderOp(ctx, &errs, sess.workloadTracerProvider.Shutdown)
@@ -1099,6 +1108,7 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 	// retrying lane of their own, like call payload logs; the bounded live
 	// processor carries every other span and may drop them on overflow.
 	protectedSpans := enginetel.NewProtectedSpanProcessor(spanExporter)
+	sess.protectedSpans = protectedSpans
 	tracerOpts = append(tracerOpts,
 		sdktrace.WithSpanProcessor(protectedSpans),
 		sdktrace.WithSpanProcessor(enginetel.WithoutProtectedSpans(enginetel.NewCountedLargeQueueLiveSpanProcessor(spanExporter, &sess.spanQueue))),
