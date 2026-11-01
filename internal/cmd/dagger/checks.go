@@ -62,14 +62,7 @@ func runChecksCommand(cmd *cobra.Command, args []string) error {
 	if err := validateParallel(checksParallel); err != nil {
 		return err
 	}
-	params := client.Params{
-		EnableCloudScaleOut:  checksScaleOut,
-		SkipWorkspaceModules: true,
-		// Send the whole command line, so that Dagger Cloud can identify
-		// the run and size its engine.
-		ExecCmd: os.Args[1:],
-	}
-	params, err := artifactClientParams(params, args)
+	params, err := checksClientParams(args)
 	if err != nil {
 		return err
 	}
@@ -93,6 +86,16 @@ func runChecksCommand(cmd *cobra.Command, args []string) error {
 			return runChecks(ctx, dag, checks, cmd, args)
 		},
 	)
+}
+
+func checksClientParams(args []string) (client.Params, error) {
+	return artifactClientParams(client.Params{
+		EnableCloudScaleOut:  checksScaleOut,
+		SkipWorkspaceModules: true,
+		// Send the whole command line, so that Dagger Cloud can identify
+		// the run and size its engine.
+		ExecCmd: os.Args[1:],
+	}, args)
 }
 
 func runChecks(ctx context.Context, dag *dagger.Client, checks *core.Artifacts, _ *cobra.Command, include []string) error {

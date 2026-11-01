@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"slices"
 	"time"
 
@@ -141,22 +142,12 @@ func withEngineAction(
 	params client.Params,
 	fn runClientCallback,
 ) (rerr error) {
-	if err := applyWorkspaceClientParams(&params); err != nil {
+	if open := takeOpenSession(ctx); open != nil {
+		return open.run(ctx, action, params, fn)
+	}
+	params, err := engineClientParams(params)
+	if err != nil {
 		return err
-	}
-	coreModuleSelected := isCoreModuleSelected()
-	if coreModuleSelected {
-		params.LoadWorkspaceModules = false
-	}
-	if !moduleNoURL {
-		if modRef, _ := getExplicitModuleSourceRef(); modRef != "" {
-			if !isCoreModuleRef(modRef) {
-				params.Module = modRef
-			}
-		}
-	}
-	if sessionWorkspace != "" && params.Workspace == nil {
-		params.Workspace = &sessionWorkspace
 	}
 	return Frontend.Run(ctx, opts, func(ctx context.Context) (_ cleanups.CleanupF, rerr error) {
 		var cleanup cleanups.Cleanups
@@ -196,6 +187,84 @@ func withEngineAction(
 
 		return cleanup.Run, fn(ctx, sess)
 	})
+}
+
+// engineClientParams adds the session settings the global flags select.
+func engineClientParams(params client.Params) (client.Params, error) {
+	if err := applyWorkspaceClientParams(&params); err != nil {
+		return params, err
+	}
+	if isCoreModuleSelected() {
+		params.LoadWorkspaceModules = false
+	}
+	if !moduleNoURL {
+		if modRef, _ := getExplicitModuleSourceRef(); modRef != "" {
+			if !isCoreModuleRef(modRef) {
+				params.Module = modRef
+			}
+		}
+	}
+	if sessionWorkspace != "" && params.Workspace == nil {
+		params.Workspace = &sessionWorkspace
+	}
+	return params, nil
+}
+
+type openSessionKey struct{}
+
+// openSession is a session the CLI connected before Cobra ran the command,
+// kept for the command's own engine call (see artifactDiscovery). The frontend
+// and telemetry of that session are already running.
+type openSession struct {
+	// params are the ones the session connected with, as the command passes
+	// them to withEngine.
+	params client.Params
+	client *client.Client
+	taken  bool
+}
+
+func withOpenSession(ctx context.Context, params client.Params, c *client.Client) context.Context {
+	return context.WithValue(ctx, openSessionKey{}, &openSession{params: params, client: c})
+}
+
+// takeOpenSession returns the open session the first time it is asked for.
+// Any later engine call connects as usual.
+func takeOpenSession(ctx context.Context) *openSession {
+	open, _ := ctx.Value(openSessionKey{}).(*openSession)
+	if open == nil || open.taken {
+		return nil
+	}
+	open.taken = true
+	return open
+}
+
+// run runs fn in the open session when the command connects with the params
+// it was opened with. Otherwise it connects a new session under the running
+// frontend, as the command asked.
+func (open *openSession) run(ctx context.Context, action string, params client.Params, fn runClientCallback) (rerr error) {
+	if action != "" {
+		var span trace.Span
+		ctx, span = Tracer().Start(ctx, action, telemetry.Encapsulate())
+		defer telemetry.EndWithCause(span, &rerr)
+	}
+	if reflect.DeepEqual(params, open.params) {
+		return fn(ctx, open.client)
+	}
+	params, err := engineClientParams(params)
+	if err != nil {
+		return err
+	}
+	params, err = finalizeEngineParams(ctx, params)
+	if err != nil {
+		return err
+	}
+	sess, err := client.Connect(ctx, params)
+	if err != nil {
+		return err
+	}
+	defer func() { rerr = errors.Join(rerr, sess.Close()) }()
+	Frontend.SetClient(sess.Dagger())
+	return fn(ctx, sess)
 }
 
 // finalizeEngineParams fills in the run-scoped client params that depend on the
