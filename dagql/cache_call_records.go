@@ -91,24 +91,31 @@ func (c *Cache) keepCallLocked(entry *sharedResult, desc RemoteHolding, kept *ke
 	return changed && !entry.noValueLocked() && entry.persistedEnvelope != nil
 }
 
-// storedBundleCallsLocked adds to the build, for each of its entries, one of
-// the calls kept on it for each term they derive on the Cloud: one the
-// recipient can place. The recipient can place an input of a call when it
-// holds the input's entry, or the bundle carries it: the entry's record names
-// the input's recipe, and the recipient derives its equivalence to its own
-// inputs as it does for any record. So the first choice is a call whose every
-// input the recipient holds or the bundle carries; the next is a call whose
-// inputs the Cloud stores, whose entries the bundle then carries too. A term
-// with neither is counted, and sends nothing. Requires egraphMu.
-func (c *Cache) storedBundleCallsLocked(build *storedBundleBuild) error {
+// storedBundleCallsLocked adds to the build, for each of its entries from
+// start, those a root's closure added and the inputs added for their calls,
+// one of the calls kept on it for each term they derive on the Cloud: one
+// the recipient can place. The recipient can place an input of a call when
+// it holds the input's entry, or the bundle carries it in the closure of a
+// root so far: the entry's record names the input's recipe, and the
+// recipient derives its equivalence to its own inputs as it does for any
+// record. So the first choice is a call whose every input the recipient
+// holds or those closures carry; the next is a call whose inputs the Cloud
+// stores, whose entries the bundle then carries too, with the root whose
+// entry's call needs them. An input another call added doesn't place a
+// call, nor does a later root's closure: the calls chosen are those
+// StoredSizes prices, root by root. A term with neither is counted, and
+// sends nothing. Requires egraphMu.
+func (c *Cache) storedBundleCallsLocked(build *storedBundleBuild, start int) error {
 	// Entries the bundle adds for a call's inputs are visited too.
-	for i := 0; i < len(build.order); i++ {
+	for i := start; i < len(build.order); i++ {
 		res := build.order[i]
 		if len(res.calls) == 0 {
 			continue
 		}
 		for _, group := range c.keptCallTermsLocked(res) {
-			chosen, add := c.placeableCallLocked(build, group)
+			chosen, add := c.placeableCallLocked(group, func(entry *sharedResult) bool {
+				return build.ordinary[entry.id] || build.heldBy.heldLocked(entry)
+			})
 			if chosen == nil {
 				build.unsendableCalls++
 				continue
@@ -158,12 +165,12 @@ func (c *Cache) keptCallTermsLocked(res *sharedResult) [][]*keptCall {
 }
 
 // placeableCallLocked chooses, of calls that derive one term, the first whose
-// every input the recipient holds or the build carries; else the first whose
-// every input the Cloud stores, with the input entries the build must add. A
-// digest-witnessed string's digest needs neither: the recipient's own call
-// reproduces it.
+// every input the recipient holds or the bundle carries (has); else the first
+// whose every input the Cloud stores, with the input entries the bundle must
+// add. A digest-witnessed string's digest needs neither: the recipient's own
+// call reproduces it.
 // It returns nil when there is neither. Requires egraphMu.
-func (c *Cache) placeableCallLocked(build *storedBundleBuild, group []*keptCall) (*keptCall, []*sharedResult) {
+func (c *Cache) placeableCallLocked(group []*keptCall, has func(*sharedResult) bool) (*keptCall, []*sharedResult) {
 	var fallback *keptCall
 	var fallbackAdd []*sharedResult
 	for _, kept := range group {
@@ -178,7 +185,7 @@ func (c *Cache) placeableCallLocked(build *storedBundleBuild, group []*keptCall)
 			switch {
 			case entry == nil:
 				placed, stored = false, false
-			case build.ordinals[entry.id] != 0 || build.heldBy.heldLocked(entry):
+			case has(entry):
 			case entry.noValueLocked() || entry.persistedEnvelope == nil:
 				placed, stored = false, false
 			default:

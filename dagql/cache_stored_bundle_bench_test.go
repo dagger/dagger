@@ -231,7 +231,7 @@ func storedBenchClosure(b *testing.B, c *Cache, batch []uint64) ([]*sharedResult
 	b.Helper()
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
-	build := &storedBundleBuild{now: time.Now().Unix(), ordinals: map[sharedResultID]TransferOrdinal{}}
+	build := &storedBundleBuild{now: time.Now().Unix(), ordinals: map[sharedResultID]TransferOrdinal{}, owners: map[sharedResultID]int{}, ordinary: map[sharedResultID]bool{}}
 	visiting := map[sharedResultID]bool{}
 	for _, number := range batch {
 		require.NoError(b, c.storedBundleVisitLocked(build, c.resultsByID[sharedResultID(number)], visiting))
