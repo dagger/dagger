@@ -186,9 +186,9 @@ func TestRemoteCacheAdapterMergeProfiled(t *testing.T) {
 	require.Equal(t, root.ID(), merges[0].ParentID)
 }
 
-// A profiled offer is one op per offered part, naming the part and the row
-// its address resolved to, with an offer.<outcome> fact; a gone entry has
-// none.
+// A profiled offer is one op per offered item, about its entry, under which
+// is one op per offered part, naming the part and the row its address
+// resolved to, with an offer.<outcome> fact; a gone entry has no part op.
 func TestRemoteCacheAdapterOfferProfiled(t *testing.T) {
 	e := newAdapterTestEngine(t)
 	complete := e.file(t, "complete")
@@ -224,12 +224,23 @@ func TestRemoteCacheAdapterOfferProfiled(t *testing.T) {
 			facts[ev.ParentID] = ev.ident
 		}
 	}
+	items := map[uint64]uint64{}
+	for _, ev := range events {
+		if ev.Type == "op" && ev.class == "remotecache.offer.item" {
+			require.Equal(t, root.ID(), ev.ParentID)
+			require.Equal(t, "ok", ev.Outcome)
+			items[ev.ResultID] = ev.OpID
+		}
+	}
+	require.Len(t, items, 3)
+	require.Contains(t, items, uint64(goneNumber))
 	got := map[uint64]string{}
 	for _, ev := range events {
 		if ev.Type != "op" || ev.class != "remotecache.offer" {
 			continue
 		}
 		require.Equal(t, string(key), ev.ident)
+		require.Equal(t, items[ev.ResultID], ev.ParentID, "a part's offer is under its item's")
 		got[ev.ResultID] = facts[ev.OpID]
 	}
 	require.Equal(t, map[uint64]string{
