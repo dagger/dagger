@@ -28,10 +28,10 @@ import (
 func resolveModuleRef(ctx context.Context, address *core.Address, typeName string, dest any) (bool, error) {
 	addr := address.Value
 	ws := address.BoundWorkspace
+	if isExternalAddress(address) {
+		return false, nil
+	}
 	if !dagaddress.IsAddress(addr) {
-		if strings.Contains(addr, "://") || ws.Self() != nil || address.ExternalOnly {
-			return false, nil
-		}
 		return resolveLegacyModuleRef(ctx, addr, dest)
 	}
 	if ws.Self() == nil {
@@ -72,6 +72,16 @@ func resolveModuleRef(ctx context.Context, address *core.Address, typeName strin
 		return true, fmt.Errorf("resolve %q: %w", addr, err)
 	}
 	return true, nil
+}
+
+// isExternalAddress reports whether the address keeps its external meaning,
+// such as an image reference, without any lookup of a module reference: it
+// has no dag:// scheme, and it is bound to a workspace, external-only, or has
+// another scheme.
+func isExternalAddress(address *core.Address) bool {
+	addr := address.Value
+	return !dagaddress.IsAddress(addr) &&
+		(strings.Contains(addr, "://") || address.BoundWorkspace.Self() != nil || address.ExternalOnly)
 }
 
 // hasModuleRefScope reports whether a decoder that skips legacy module
@@ -340,8 +350,8 @@ func (s *addressSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Address]{
 		dagql.Func("value", s.value).
 			Doc(`The address value`),
-		dagql.NodeFunc("container", s.container).
-			WithInput(dagql.PerCallInput).
+		dagql.NodeFuncWithDynamicInputs("container", s.container, s.containerDynamicInputs).
+			Reevaluate().
 			Doc(`Load a container from the address.`).
 			Args(noLockArg("image tag")),
 		dagql.NodeFunc("directory", s.directory).
@@ -756,6 +766,34 @@ func withRefName(q []dagql.Selector, name string) []dagql.Selector {
 func getLocalPath(path string) string {
 	// file://PATH -> PATH
 	return strings.TrimPrefix(path, "file://")
+}
+
+// containerDynamicInputs keys Address.container like the lookup it makes. An
+// external address loads its image through Container.from, so it shares that
+// call's scope: a tag resolves once per session and workspace lock, and every
+// evaluation of a module setting set to it gets the same container. A DAG
+// address or a legacy module reference runs a function that may give a new
+// result each time, so it stays per call, as does an address Container.from
+// can't parse, whose error the lookup reports.
+func (s *addressSchema) containerDynamicInputs(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Address],
+	_ AddressLookupArgs,
+	req *dagql.CallRequest,
+) error {
+	if isExternalAddress(parent.Self()) {
+		scope, err := fromSessionScopeInput.Resolver(ctx, map[string]dagql.Input{
+			"address": dagql.NewString(parent.Self().Value),
+		})
+		if err == nil {
+			return req.SetImplicitInput(ctx, fromSessionScopeInput.Name, scope)
+		}
+	}
+	perCall, err := dagql.PerCallInput.Resolver(ctx, nil)
+	if err != nil {
+		return err
+	}
+	return req.SetImplicitInput(ctx, dagql.PerCallInput.Name, perCall)
 }
 
 func (s *addressSchema) container(

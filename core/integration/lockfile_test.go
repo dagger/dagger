@@ -12,6 +12,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -636,6 +637,63 @@ wget -qO /response.json --header "Authorization: Basic $auth" --header 'Content-
   "http://127.0.0.1:$DAGGER_SESSION_PORT/query"
 sed -n 's/.*"contents":"\([0-9.]*\).*/"\1"/p' /response.json > /result.json
 test -s /result.json || { cat /response.json >&2; exit 1; }`)
+
+// TestImageSettingResolvesPerSessionAndLock covers a module setting set to an
+// image address. Every evaluation of the module in one session gets the same
+// container, and a client still gets the image its own lockfile pins.
+func (LockfileSuite) TestImageSettingResolvesPerSessionAndLock(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	withImaged := func(ctr *core.Container) *core.Container {
+		return ctr.
+			WithNewFile("dagger.toml", `[modules.imaged]
+source = "./imaged"
+settings.base = "alpine:latest"
+`).
+			WithNewFile("imaged/dagger-module.toml", `name = "imaged"
+engineVersion = "v1.0.0-beta.20"
+[runtime]
+source = "dang"
+`).
+			WithNewFile("imaged/main.dang", `type Imaged {
+  pub base: Container!
+  pub release: String! { base.file("/etc/alpine-release").contents }
+}`)
+	}
+
+	t.Run("one container per session", func(ctx context.Context, t *testctx.T) {
+		out, err := workspaceBase(t, c).With(withImaged).
+			With(daggerQuery(`{ first: imaged { base { id } } second: imaged { base { id } } }`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		var res struct {
+			First, Second struct{ Base struct{ ID string } }
+		}
+		require.NoError(t, json.Unmarshal([]byte(out), &res))
+		require.NotEmpty(t, res.First.Base.ID)
+		require.Equal(t, res.First.Base.ID, res.Second.Base.ID)
+	})
+
+	t.Run("each client's own pin", func(ctx context.Context, t *testctx.T) {
+		digestOf := func(address string) string {
+			imageRef, err := core.NewQuery(c).Container().From(address).ImageRef(ctx)
+			require.NoError(t, err)
+			_, digest, found := strings.Cut(imageRef, "@")
+			require.True(t, found, "expected canonical image ref with digest: %q", imageRef)
+			return digest
+		}
+		for _, tc := range []struct{ release, digest string }{
+			{"3.20", digestOf("alpine:3.20")},
+			{"3.19", digestOf("alpine:3.19")},
+		} {
+			out, err := workspaceBase(t, c).With(withImaged).
+				WithNewFile(workspace.LockFileName, mustMarshalOCISHALock(t, tc.digest)).
+				With(daggerQuery(`{ imaged { release } }`)).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, out, tc.release)
+		}
+	})
+}
 
 func requireRemoteLockUnchanged(ctx context.Context, t *testctx.T, c *dagger.Client, remote remoteLockWorkspace, want string) {
 	t.Helper()
