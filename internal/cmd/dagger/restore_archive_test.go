@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -19,17 +20,20 @@ import (
 	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/archive"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	logspb "go.opentelemetry.io/proto/otlp/logs/v1"
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
+	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 )
 
 type restoreTestFrontend struct {
@@ -529,13 +533,15 @@ type lazyRestoreFrontend struct {
 	idtui.TraceFrontend
 	traceID  dagui.TraceID
 	provider func(dagui.SpanID, bool)
+	spans    func(dagui.SpanID)
 	wait     func()
 }
 
 func (fe *lazyRestoreFrontend) SetTraceLogProvider(traceID dagui.TraceID, f func(dagui.SpanID, bool)) {
 	fe.traceID, fe.provider = traceID, f
 }
-func (fe *lazyRestoreFrontend) SetFetchWaiter(f func()) { fe.wait = f }
+func (fe *lazyRestoreFrontend) SetSpanProvider(f func(dagui.SpanID)) { fe.spans = f }
+func (fe *lazyRestoreFrontend) SetFetchWaiter(f func())              { fe.wait = f }
 
 // lazyRestoreArchive reports every history and selected read.
 type lazyRestoreArchive struct {
@@ -641,5 +647,212 @@ func TestArchiveRestoreCleanupCancelsLazyFetches(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("cleanup did not cancel queued lazy fetches")
+	}
+}
+
+// noBackfillArchive serves a conversation view (the imported root and a
+// message span that has an unloaded child) and that child on request,
+// recording every stream it is asked for.
+type noBackfillArchive struct {
+	*restoreTestArchive
+	root, message, child dagui.SpanID
+	traces, logs         chan archive.StreamOptions
+	// served is signaled once each span read has delivered its batch.
+	served  chan struct{}
+	metrics chan struct{}
+	// fail ends the initial view with this error, after delivering its
+	// spans still running.
+	fail error
+}
+
+func newNoBackfillArchive() *noBackfillArchive {
+	base, _, _, _ := canonicalArchive() //nolint:dogsled // Only the transport fixture is needed here.
+	base.header.HighWater = archive.HighWater{Spans: 10, Logs: 20, Metrics: 30}
+	return &noBackfillArchive{
+		restoreTestArchive: base,
+		root:               dagui.SpanID{SpanID: trace.SpanID{1}},
+		message:            dagui.SpanID{SpanID: trace.SpanID{2}},
+		child:              dagui.SpanID{SpanID: trace.SpanID{3}},
+		traces:             make(chan archive.StreamOptions, 8),
+		logs:               make(chan archive.StreamOptions, 8),
+		served:             make(chan struct{}, 8),
+		metrics:            make(chan struct{}, 8),
+	}
+}
+
+func (s *noBackfillArchive) span(id, parent dagui.SpanID, attrs ...*commonpb.KeyValue) *tracepb.Span {
+	traceID, err := trace.TraceIDFromHex(restoreRequest().traceID)
+	if err != nil {
+		panic(err)
+	}
+	span := &tracepb.Span{
+		TraceId: traceID[:], SpanId: id.SpanID[:], Name: "archived", Attributes: attrs,
+		StartTimeUnixNano: uint64(time.Unix(10, 0).UnixNano()), EndTimeUnixNano: uint64(time.Unix(11, 0).UnixNano()),
+	}
+	if s.fail != nil {
+		span.EndTimeUnixNano = 0
+	}
+	if parent.IsValid() {
+		span.ParentSpanId = parent.SpanID[:]
+	}
+	return span
+}
+
+func (s *noBackfillArchive) Traces(_ context.Context, _ string, opts archive.StreamOptions, consume func(int64, *coltracepb.ExportTraceServiceRequest) error) (int64, error) {
+	s.traces <- opts
+	partial := boolAttr(telemetryattrs.UIPartialAttr, true)
+	var spans []*tracepb.Span
+	if opts.Spans != nil && len(opts.Spans.Listen) > 0 {
+		spans = append(spans, s.span(s.child, s.message, partial))
+	} else {
+		spans = append(spans, s.span(s.root, dagui.SpanID{}, partial), s.span(s.message, s.root, partial, intAttr(telemetryattrs.UIChildCountAttr, 1)))
+	}
+	batch := &coltracepb.ExportTraceServiceRequest{ResourceSpans: []*tracepb.ResourceSpans{{
+		Resource: &resourcepb.Resource{}, ScopeSpans: []*tracepb.ScopeSpans{{Spans: spans}},
+	}}}
+	if err := consume(opts.HighWater, batch); err != nil {
+		return 0, err
+	}
+	s.served <- struct{}{}
+	if opts.Spans != nil && len(opts.Spans.Listen) > 0 {
+		return opts.HighWater, nil
+	}
+	return opts.HighWater, s.fail
+}
+
+func (s *noBackfillArchive) Logs(_ context.Context, _ string, opts archive.StreamOptions, _ func(int64, *collogspb.ExportLogsServiceRequest) error) (int64, error) {
+	s.logs <- opts
+	return opts.HighWater, nil
+}
+
+func (s *noBackfillArchive) Metrics(_ context.Context, _ string, opts archive.StreamOptions, _ func(int64, *colmetricspb.ExportMetricsServiceRequest) error) (int64, error) {
+	s.metrics <- struct{}{}
+	return opts.HighWater, nil
+}
+
+// noBackfillPrimaries records the global frontend's SetPrimary calls, which
+// the trace loader makes when it is allowed to zoom to the imported root.
+func noBackfillPrimaries(t *testing.T) func() []dagui.SpanID {
+	prev := Frontend
+	t.Cleanup(func() { Frontend = prev })
+	var mu sync.Mutex
+	var primaries []dagui.SpanID
+	Frontend = &idtui.FrontendMock{SetPrimaryFunc: func(id dagui.SpanID) {
+		mu.Lock()
+		defer mu.Unlock()
+		primaries = append(primaries, id)
+	}}
+	return func() []dagui.SpanID {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Clone(primaries)
+	}
+}
+
+// TestArchiveRestoreNoBackfill: --no-backfill restores the agents from the
+// verified bootstrap as usual, then loads only the archive's conversation
+// view instead of the whole history: no full span stream, no whole-trace
+// metadata stream, no metrics. Children load when expanded and own logs when
+// shown, and the live session's root stays primary.
+func TestArchiveRestoreNoBackfill(t *testing.T) {
+	primaries := noBackfillPrimaries(t)
+	source := newNoBackfillArchive()
+	fe := &lazyRestoreFrontend{restoreTestFrontend: newRestoreTestFrontend()}
+	target := newFakeRestoreTarget()
+	req := restoreRequest()
+	req.noBackfill = true
+	cleanup, err := restoreArchive(t.Context(), source, fe, target, req)
+	require.NoError(t, err)
+	defer cleanup()
+	require.Equal(t, "chief", target.focused, "the verified bootstrap still restores the agents")
+	require.Equal(t, req.traceID, fe.traceID.String(), "the log provider serves the restored trace only")
+
+	initial := receiveOpts(t, source.traces, "the conversation view")
+	require.Equal(t, &archive.SpanSelection{Conversation: true, DagUIView: true}, initial.Spans,
+		"only the conversations, not the whole tree")
+	require.EqualValues(t, 10, initial.HighWater)
+	<-source.served
+
+	// A shown span's logs load on demand -- only its own, even for a
+	// roll-up.
+	fe.provider(source.message, true)
+	fe.wait()
+	own := receiveOpts(t, source.logs, "a shown span's logs")
+	require.Equal(t, &archive.LogSelection{SpanID: source.message.String()}, own.Logs,
+		"a roll-up does not pull its subtree's output, and there is no whole-trace metadata stream")
+	require.EqualValues(t, 20, own.HighWater)
+	select {
+	case opts := <-source.logs:
+		t.Fatalf("follow-up log request: %+v", opts.Logs)
+	default:
+	}
+
+	// Expanding the message loads its children: one level. (An expand
+	// racing the initial load is replayed once it completes.)
+	fe.spans(source.message)
+	listen := receiveOpts(t, source.traces, "the expanded span's children")
+	require.Equal(t, &archive.SpanSelection{NoRoot: true, Listen: []string{source.message.String()}, DagUIView: true}, listen.Spans)
+	fe.wait()
+	require.NotNil(t, fe.db.Spans.Map[source.child])
+	fe.provider(source.child, false)
+	fe.wait()
+	require.Equal(t, source.child.String(), receiveOpts(t, source.logs, "an expanded span's logs").Logs.SpanID)
+
+	// A live span's children are never read from the archive.
+	fe.spans(dagui.SpanID{SpanID: trace.SpanID{9}})
+	fe.wait()
+	select {
+	case opts := <-source.traces:
+		t.Fatalf("live span listened in the archive: %+v", opts.Spans)
+	default:
+	}
+
+	require.Empty(t, primaries(), "the live session's root stays primary")
+	root := fe.db.Spans.Map[source.root]
+	require.NotNil(t, root)
+	require.True(t, root.Passthrough, "the imported root gets out of the way")
+	select {
+	case <-source.metrics:
+		t.Fatal("metrics were imported")
+	default:
+	}
+}
+
+// TestArchiveRestoreNoBackfillSealsAfterFailure: a conversation view that
+// fails part way, after retrying a transient error, still seals what it
+// delivered at the archive's cut, so nothing restored renders as running,
+// and what arrived stays expandable.
+func TestArchiveRestoreNoBackfillSealsAfterFailure(t *testing.T) {
+	noBackfillPrimaries(t)
+	source := newNoBackfillArchive()
+	source.fail = archive.ErrTransient
+	fe := &lazyRestoreFrontend{restoreTestFrontend: newRestoreTestFrontend()}
+	req := restoreRequest()
+	req.noBackfill = true
+	cleanup, err := restoreArchive(t.Context(), source, fe, newFakeRestoreTarget(), req)
+	require.NoError(t, err)
+	defer cleanup()
+
+	receiveOpts(t, source.traces, "the conversation view")
+	<-source.served
+	// Expanded while the view is still failing: the expand is parked until
+	// the view gives up.
+	fe.spans(source.message)
+	for i := range 2 {
+		opts := receiveOpts(t, source.traces, "a retried conversation view")
+		require.True(t, opts.Spans.Conversation, "retry %d", i)
+	}
+	listen := receiveOpts(t, source.traces, "an expand after the failure")
+	require.Equal(t, []string{source.message.String()}, listen.Spans.Listen, "what arrived stays expandable")
+	fe.wait()
+	select {
+	case opts := <-source.traces:
+		t.Fatalf("a transient failure is retried only twice: %+v", opts.Spans)
+	default:
+	}
+	for _, id := range []dagui.SpanID{source.root, source.message, source.child} {
+		span := fe.db.Spans.Map[id]
+		require.NotNil(t, span)
+		require.False(t, span.IsRunning(), "a delivered span is sealed")
 	}
 }
