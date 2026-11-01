@@ -383,7 +383,7 @@ func WriteLock(ctx context.Context, mu RWLocker, ident string) {
 func beginLockWait(ctx context.Context, mu RWLocker, ident string) *Wait {
 	w := BeginWaitIdent(ctx, ident, WaitReasonLock)
 	if m, ok := mu.(*RWMutex); ok && w != nil {
-		w.holderID, w.holderSinceNS = m.holder.Load(), m.since.Load()
+		w.holderID, w.holderSinceNS = m.holderAt()
 	}
 	return w
 }
