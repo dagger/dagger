@@ -1,9 +1,14 @@
 package clientdb
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
+	"math"
+	"slices"
+	"sync"
 	"time"
+	"unicode/utf8"
 
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
@@ -131,6 +136,205 @@ func MarshalProtoList[T proto.Message](protos []T) ([]byte, error) {
 		}
 	}
 	return buf, nil
+}
+
+// MarshalKeyValueList encodes attrs as MarshalProtoList encodes
+// telemetry.KeyValues(attrs), byte for byte, straight from the SDK values,
+// leaving out the attributes whose key is skip when it isn't empty. Like
+// proto.Marshal, it fails on a string that isn't valid UTF-8.
+// The list is written into a pooled buffer and returned as a copy of
+// exactly its size: lists are kept as long as their rows, and grew past any
+// size guessed up front.
+func MarshalKeyValueList(attrs []attribute.KeyValue, skip attribute.Key) ([]byte, error) {
+	scratch := keyValueListPool.Get().(*[]byte)
+	defer keyValueListPool.Put(scratch)
+	b := (*scratch)[:0]
+	for _, kv := range attrs {
+		if skip != "" && kv.Key == skip {
+			continue
+		}
+		var err error
+		if b, err = appendKeyValue(b, kv); err != nil {
+			return nil, err
+		}
+	}
+	*scratch = b
+	return append(make([]byte, 0, len(b)), b...), nil
+}
+
+var keyValueListPool = sync.Pool{New: func() any { return new([]byte) }}
+
+// MarshalEventList encodes events as MarshalProtoList encodes
+// telemetry.SpanEventsToPB(events), byte for byte, straight from the SDK
+// values. Like proto.Marshal, it fails on a string that isn't valid UTF-8.
+func MarshalEventList(events []sdktrace.Event) ([]byte, error) {
+	b := make([]byte, 0, 64*len(events))
+	var ev []byte
+	for _, e := range events {
+		if !utf8.ValidString(e.Name) {
+			return nil, errInvalidUTF8
+		}
+		// Span_Event's fields, in field order.
+		ev = ev[:0]
+		if t := uint64(e.Time.UnixNano()); t != 0 {
+			ev = protowire.AppendTag(ev, 1, protowire.Fixed64Type)
+			ev = protowire.AppendFixed64(ev, t)
+		}
+		if e.Name != "" {
+			ev = protowire.AppendTag(ev, 2, protowire.BytesType)
+			ev = protowire.AppendString(ev, e.Name)
+		}
+		for _, kv := range e.Attributes {
+			ev = protowire.AppendTag(ev, 3, protowire.BytesType)
+			var err error
+			if ev, err = appendKeyValue(ev, kv); err != nil {
+				return nil, err
+			}
+		}
+		if n := uint32(e.DroppedAttributeCount); n != 0 {
+			ev = protowire.AppendTag(ev, 4, protowire.VarintType)
+			ev = protowire.AppendVarint(ev, uint64(n))
+		}
+		b = protowire.AppendBytes(b, ev)
+	}
+	return b, nil
+}
+
+var errInvalidUTF8 = errors.New("failed to proto marshal: string field contains invalid UTF-8")
+
+// appendKeyValue appends kv's length and encoding as the OTLP KeyValue
+// otel-go makes of it: AnyValue's oneof carries the value, even a zero one,
+// slices as an ArrayValue, and any other type as the string "INVALID".
+func appendKeyValue(b []byte, kv attribute.KeyValue) ([]byte, error) {
+	if !utf8.ValidString(string(kv.Key)) {
+		return nil, errInvalidUTF8
+	}
+	v := kv.Value
+	var (
+		bools  []bool
+		ints   []int64
+		floats []float64
+		strs   []string
+		str    string
+	)
+	// The AnyValue's size, and its ArrayValue's for slices.
+	var size, arr int
+	isSlice := false
+	switch v.Type() {
+	case attribute.BOOL:
+		size = 2
+	case attribute.INT64:
+		size = 1 + protowire.SizeVarint(uint64(v.AsInt64()))
+	case attribute.FLOAT64:
+		size = 1 + 8
+	case attribute.STRING:
+		str = v.AsString()
+		if !utf8.ValidString(str) {
+			return nil, errInvalidUTF8
+		}
+		size = 1 + protowire.SizeBytes(len(str))
+	case attribute.BOOLSLICE:
+		isSlice = true
+		bools = v.AsBoolSlice()
+		arr = len(bools) * (1 + protowire.SizeBytes(2))
+	case attribute.INT64SLICE:
+		isSlice = true
+		ints = v.AsInt64Slice()
+		for _, i := range ints {
+			arr += 1 + protowire.SizeBytes(1+protowire.SizeVarint(uint64(i)))
+		}
+	case attribute.FLOAT64SLICE:
+		isSlice = true
+		floats = v.AsFloat64Slice()
+		arr = len(floats) * (1 + protowire.SizeBytes(1+8))
+	case attribute.STRINGSLICE:
+		isSlice = true
+		strs = v.AsStringSlice()
+		for _, s := range strs {
+			if !utf8.ValidString(s) {
+				return nil, errInvalidUTF8
+			}
+			arr += 1 + protowire.SizeBytes(1+protowire.SizeBytes(len(s)))
+		}
+	default:
+		str = "INVALID"
+		size = 1 + protowire.SizeBytes(len(str))
+	}
+	if isSlice {
+		size = 1 + protowire.SizeBytes(arr)
+	}
+
+	n := 1 + protowire.SizeBytes(size)
+	if kv.Key != "" {
+		n += 1 + protowire.SizeBytes(len(kv.Key))
+	}
+	b = protowire.AppendVarint(b, uint64(n))
+	if kv.Key != "" {
+		b = protowire.AppendTag(b, 1, protowire.BytesType)
+		b = protowire.AppendString(b, string(kv.Key))
+	}
+	b = protowire.AppendTag(b, 2, protowire.BytesType)
+	b = protowire.AppendVarint(b, uint64(size))
+	if isSlice {
+		b = protowire.AppendTag(b, 5, protowire.BytesType)
+		b = protowire.AppendVarint(b, uint64(arr))
+	}
+	switch v.Type() {
+	case attribute.BOOL:
+		b = appendBoolValue(b, v.AsBool())
+	case attribute.INT64:
+		b = appendIntValue(b, v.AsInt64())
+	case attribute.FLOAT64:
+		b = appendDoubleValue(b, v.AsFloat64())
+	case attribute.BOOLSLICE:
+		for _, x := range bools {
+			b = protowire.AppendTag(b, 1, protowire.BytesType)
+			b = protowire.AppendVarint(b, 2)
+			b = appendBoolValue(b, x)
+		}
+	case attribute.INT64SLICE:
+		for _, x := range ints {
+			b = protowire.AppendTag(b, 1, protowire.BytesType)
+			b = protowire.AppendVarint(b, uint64(1+protowire.SizeVarint(uint64(x))))
+			b = appendIntValue(b, x)
+		}
+	case attribute.FLOAT64SLICE:
+		for _, x := range floats {
+			b = protowire.AppendTag(b, 1, protowire.BytesType)
+			b = protowire.AppendVarint(b, 1+8)
+			b = appendDoubleValue(b, x)
+		}
+	case attribute.STRINGSLICE:
+		for _, x := range strs {
+			b = protowire.AppendTag(b, 1, protowire.BytesType)
+			b = protowire.AppendVarint(b, uint64(1+protowire.SizeBytes(len(x))))
+			b = appendStringValue(b, x)
+		}
+	default:
+		b = appendStringValue(b, str)
+	}
+	return b, nil
+}
+
+// AnyValue's oneof fields.
+func appendStringValue(b []byte, s string) []byte {
+	b = protowire.AppendTag(b, 1, protowire.BytesType)
+	return protowire.AppendString(b, s)
+}
+
+func appendBoolValue(b []byte, v bool) []byte {
+	b = protowire.AppendTag(b, 2, protowire.VarintType)
+	return protowire.AppendVarint(b, protowire.EncodeBool(v))
+}
+
+func appendIntValue(b []byte, v int64) []byte {
+	b = protowire.AppendTag(b, 3, protowire.VarintType)
+	return protowire.AppendVarint(b, uint64(v))
+}
+
+func appendDoubleValue(b []byte, v float64) []byte {
+	b = protowire.AppendTag(b, 4, protowire.Fixed64Type)
+	return protowire.AppendFixed64(b, math.Float64bits(v))
 }
 
 // Attributes returns the attributes of the span
@@ -284,6 +488,301 @@ func SpansToPB(rows []Span) []*otlptracev1.ResourceSpans {
 		}
 	}
 	return rss
+}
+
+// AppendTraceRequestPB appends the binary encoding of the OTLP trace export
+// request carrying rows: byte for byte what proto.Marshal makes of
+// ExportTraceServiceRequest{ResourceSpans: SpansToPB(rows)}, without building
+// its messages, except that each span's links are written as they were
+// stored. A row's stored attribute, event and link lists are already their
+// elements' encodings, each with its length in front, so each element is
+// written after its field's tag. SpansToPB's links go through SDK links,
+// which drop a link's trace state, flags and dropped attribute count; the
+// links a client decodes through SDK links are the same either way.
+// Resources and scopes are encoded as SpansToPB makes them, each distinct
+// one once per call. Every
+// span's size is worked out first, so the request is written once, into room
+// made for all of it.
+func AppendTraceRequestPB(b []byte, rows []Span) ([]byte, error) {
+	type scopeGroup struct {
+		scope     []byte // the InstrumentationScope's encoding, nil for none
+		schemaURL string
+		rows      []int // indexes into rows and spans
+		size      int   // the ScopeSpans' encoded size
+	}
+	type resourceGroup struct {
+		resource []byte // the Resource's encoding
+		scopes   []*scopeGroup
+		byScope  map[instrumentation.Scope]*scopeGroup
+		size     int // the ResourceSpans' encoded size
+	}
+	type decodedResource struct {
+		key attribute.Distinct
+		pb  []byte
+	}
+	resources := map[string]decodedResource{}
+	scopes := map[string]instrumentation.Scope{}
+	var groups []*resourceGroup
+	byResource := map[attribute.Distinct]*resourceGroup{}
+	spans := make([]plannedSpan, len(rows))
+	for i := range rows {
+		row := &rows[i]
+		res, ok := resources[string(row.Resource)]
+		if !ok {
+			r := (&readOnlySpan{DB: row}).Resource()
+			pb, err := proto.Marshal(telemetry.ResourcePtrToPB(r))
+			if err != nil {
+				return nil, fmt.Errorf("failed to proto marshal resource: %w", err)
+			}
+			res = decodedResource{key: r.Equivalent(), pb: pb}
+			resources[string(row.Resource)] = res
+		}
+		scope, ok := scopes[string(row.InstrumentationScope)]
+		if !ok {
+			scope = (&readOnlySpan{DB: row}).InstrumentationScope()
+			scopes[string(row.InstrumentationScope)] = scope
+		}
+
+		rg := byResource[res.key]
+		if rg == nil {
+			rg = &resourceGroup{resource: res.pb, byScope: map[instrumentation.Scope]*scopeGroup{}}
+			byResource[res.key] = rg
+			groups = append(groups, rg)
+		}
+		sg := rg.byScope[scope]
+		if sg == nil {
+			sg = &scopeGroup{schemaURL: scope.SchemaURL}
+			if pb := telemetry.InstrumentationScopeToPB(scope); pb != nil {
+				enc, err := proto.Marshal(pb)
+				if err != nil {
+					return nil, fmt.Errorf("failed to proto marshal instrumentation scope: %w", err)
+				}
+				sg.scope = enc
+			}
+			rg.byScope[scope] = sg
+			rg.scopes = append(rg.scopes, sg)
+		}
+		if err := spans[i].plan(row); err != nil {
+			return nil, err
+		}
+		sg.rows = append(sg.rows, i)
+		sg.size += protowire.SizeTag(2) + protowire.SizeBytes(spans[i].size)
+	}
+
+	total := 0
+	for _, rg := range groups {
+		rg.size = protowire.SizeTag(1) + protowire.SizeBytes(len(rg.resource))
+		for _, sg := range rg.scopes {
+			if sg.scope != nil {
+				sg.size += protowire.SizeTag(1) + protowire.SizeBytes(len(sg.scope))
+			}
+			if sg.schemaURL != "" {
+				sg.size += protowire.SizeTag(3) + protowire.SizeBytes(len(sg.schemaURL))
+			}
+			rg.size += protowire.SizeTag(2) + protowire.SizeBytes(sg.size)
+		}
+		total += protowire.SizeTag(1) + protowire.SizeBytes(rg.size)
+	}
+	b = slices.Grow(b, total)
+	for _, rg := range groups {
+		// ExportTraceServiceRequest's field 1: one ResourceSpans.
+		b = protowire.AppendTag(b, 1, protowire.BytesType)
+		b = protowire.AppendVarint(b, uint64(rg.size))
+		b = protowire.AppendTag(b, 1, protowire.BytesType)
+		b = protowire.AppendBytes(b, rg.resource)
+		for _, sg := range rg.scopes {
+			b = protowire.AppendTag(b, 2, protowire.BytesType)
+			b = protowire.AppendVarint(b, uint64(sg.size))
+			if sg.scope != nil {
+				b = protowire.AppendTag(b, 1, protowire.BytesType)
+				b = protowire.AppendBytes(b, sg.scope)
+			}
+			for _, i := range sg.rows {
+				b = protowire.AppendTag(b, 2, protowire.BytesType)
+				b = protowire.AppendVarint(b, uint64(spans[i].size))
+				b = spans[i].append(b, &rows[i])
+			}
+			if sg.schemaURL != "" {
+				b = protowire.AppendTag(b, 3, protowire.BytesType)
+				b = protowire.AppendString(b, sg.schemaURL)
+			}
+		}
+	}
+	return b, nil
+}
+
+// plannedSpan is the OTLP span spanPB makes of a row, worked out ahead of
+// its encoding: the values parsed from the row and the span's encoded size.
+type plannedSpan struct {
+	tid        trace.TraceID
+	sid, psid  trace.SpanID
+	traceState string
+	kind       otlptracev1.Span_SpanKind
+	start, end uint64
+	status     *otlptracev1.Status
+	size       int
+}
+
+// plan works out span's OTLP span. Like proto.Marshal, it fails on a name or
+// status message that isn't valid UTF-8; the stored attributes, events and
+// links were checked when they were encoded.
+func (pb *plannedSpan) plan(span *Span) error {
+	if !utf8.ValidString(span.Name) || !utf8.ValidString(span.StatusMessage) {
+		return errInvalidUTF8
+	}
+	ros := &readOnlySpan{DB: span}
+	sc := ros.SpanContext()
+	*pb = plannedSpan{
+		tid:        sc.TraceID(),
+		sid:        sc.SpanID(),
+		psid:       ros.Parent().SpanID(),
+		traceState: sc.TraceState().String(),
+		kind:       spanKindPB(span.Kind),
+		start:      uint64(ros.StartTime().UnixNano()),
+		end:        uint64(ros.EndTime().UnixNano()),
+		status:     statusPB(codes.Code(span.StatusCode), span.StatusMessage),
+	}
+	n := protowire.SizeTag(1) + protowire.SizeBytes(len(pb.tid)) +
+		protowire.SizeTag(2) + protowire.SizeBytes(len(pb.sid))
+	if pb.traceState != "" {
+		n += protowire.SizeTag(3) + protowire.SizeBytes(len(pb.traceState))
+	}
+	if pb.psid.IsValid() {
+		n += protowire.SizeTag(4) + protowire.SizeBytes(len(pb.psid))
+	}
+	if span.Name != "" {
+		n += protowire.SizeTag(5) + protowire.SizeBytes(len(span.Name))
+	}
+	if pb.kind != 0 {
+		n += protowire.SizeTag(6) + protowire.SizeVarint(uint64(pb.kind))
+	}
+	if pb.start != 0 {
+		n += protowire.SizeTag(7) + protowire.SizeFixed64()
+	}
+	if pb.end != 0 {
+		n += protowire.SizeTag(8) + protowire.SizeFixed64()
+	}
+	n += storedListSize(9, span.Attributes)
+	n += uint32FieldSize(10, uint32(span.DroppedAttributesCount))
+	n += storedListSize(11, span.Events)
+	n += uint32FieldSize(12, uint32(span.DroppedEventsCount))
+	n += storedListSize(13, span.Links)
+	n += uint32FieldSize(14, uint32(span.DroppedLinksCount))
+	n += protowire.SizeTag(15) + protowire.SizeBytes(statusSize(pb.status))
+	n += protowire.SizeTag(16) + protowire.SizeFixed32()
+	pb.size = n
+	return nil
+}
+
+// append appends span's OTLP span as planned, in field order, as
+// proto.Marshal does.
+func (pb *plannedSpan) append(b []byte, span *Span) []byte {
+	b = protowire.AppendTag(b, 1, protowire.BytesType)
+	b = protowire.AppendBytes(b, pb.tid[:])
+	b = protowire.AppendTag(b, 2, protowire.BytesType)
+	b = protowire.AppendBytes(b, pb.sid[:])
+	if pb.traceState != "" {
+		b = protowire.AppendTag(b, 3, protowire.BytesType)
+		b = protowire.AppendString(b, pb.traceState)
+	}
+	if pb.psid.IsValid() {
+		b = protowire.AppendTag(b, 4, protowire.BytesType)
+		b = protowire.AppendBytes(b, pb.psid[:])
+	}
+	if span.Name != "" {
+		b = protowire.AppendTag(b, 5, protowire.BytesType)
+		b = protowire.AppendString(b, span.Name)
+	}
+	if pb.kind != 0 {
+		b = protowire.AppendTag(b, 6, protowire.VarintType)
+		b = protowire.AppendVarint(b, uint64(pb.kind))
+	}
+	if pb.start != 0 {
+		b = protowire.AppendTag(b, 7, protowire.Fixed64Type)
+		b = protowire.AppendFixed64(b, pb.start)
+	}
+	if pb.end != 0 {
+		b = protowire.AppendTag(b, 8, protowire.Fixed64Type)
+		b = protowire.AppendFixed64(b, pb.end)
+	}
+	b = appendStoredList(b, 9, span.Attributes, "attributes")
+	b = appendUint32Field(b, 10, uint32(span.DroppedAttributesCount))
+	b = appendStoredList(b, 11, span.Events, "events")
+	b = appendUint32Field(b, 12, uint32(span.DroppedEventsCount))
+	b = appendStoredList(b, 13, span.Links, "links")
+	b = appendUint32Field(b, 14, uint32(span.DroppedLinksCount))
+	b = protowire.AppendTag(b, 15, protowire.BytesType)
+	b = protowire.AppendVarint(b, uint64(statusSize(pb.status)))
+	if pb.status.Message != "" {
+		b = protowire.AppendTag(b, 2, protowire.BytesType)
+		b = protowire.AppendString(b, pb.status.Message)
+	}
+	if pb.status.Code != 0 {
+		b = protowire.AppendTag(b, 3, protowire.VarintType)
+		b = protowire.AppendVarint(b, uint64(pb.status.Code))
+	}
+	// A stored parent is never remote.
+	b = protowire.AppendTag(b, 16, protowire.Fixed32Type)
+	b = protowire.AppendFixed32(b, uint32(otlptracev1.SpanFlags_SPAN_FLAGS_CONTEXT_HAS_IS_REMOTE_MASK))
+	return b
+}
+
+func statusSize(status *otlptracev1.Status) int {
+	n := 0
+	if status.Message != "" {
+		n += protowire.SizeTag(2) + protowire.SizeBytes(len(status.Message))
+	}
+	if status.Code != 0 {
+		n += protowire.SizeTag(3) + protowire.SizeVarint(uint64(status.Code))
+	}
+	return n
+}
+
+// storedListSize is the size of appendStoredList's encoding of list.
+func storedListSize(num protowire.Number, list []byte) int {
+	n := 0
+	for len(list) > 0 {
+		_, m := protowire.ConsumeBytes(list)
+		if m < 0 {
+			return 0
+		}
+		n += protowire.SizeTag(num) + m
+		list = list[m:]
+	}
+	return n
+}
+
+func uint32FieldSize(num protowire.Number, v uint32) int {
+	if v == 0 {
+		return 0
+	}
+	return protowire.SizeTag(num) + protowire.SizeVarint(uint64(v))
+}
+
+// appendStoredList appends a list MarshalProtoList encoded as field num's
+// repeated elements, each after its tag. Like spanPB, it leaves out the
+// whole list when the elements can't be split.
+func appendStoredList(b []byte, num protowire.Number, list []byte, what string) []byte {
+	start := len(b)
+	for len(list) > 0 {
+		_, n := protowire.ConsumeBytes(list)
+		if n < 0 {
+			slog.Warn("failed to unmarshal "+what, "error", fmt.Errorf("failed to decode list element: %w", protowire.ParseError(n)))
+			return b[:start]
+		}
+		b = protowire.AppendTag(b, num, protowire.BytesType)
+		b = append(b, list[:n]...)
+		list = list[n:]
+	}
+	return b
+}
+
+func appendUint32Field(b []byte, num protowire.Number, v uint32) []byte {
+	if v == 0 {
+		return b
+	}
+	b = protowire.AppendTag(b, num, protowire.VarintType)
+	return protowire.AppendVarint(b, uint64(v))
 }
 
 // spanPB is the OTLP span telemetry.SpansToPB makes of span.ReadOnly().

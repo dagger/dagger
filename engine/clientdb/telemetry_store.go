@@ -16,7 +16,9 @@ import (
 
 	telemetry "github.com/dagger/otel-go"
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
+	"go.opentelemetry.io/otel/trace"
 	otlptracev1 "go.opentelemetry.io/proto/otlp/trace/v1"
+	"google.golang.org/protobuf/encoding/protowire"
 )
 
 type spanLookupKey struct {
@@ -312,6 +314,165 @@ func causalLinkTargets(row Span) []string {
 	if len(row.Links) == 0 {
 		return nil
 	}
+	if targets, ok := readCausalLinkTargets(row.SpanID, row.Links); ok {
+		return targets
+	}
+	return decodeCausalLinkTargets(row)
+}
+
+// readCausalLinkTargets is decodeCausalLinkTargets read from the stored links
+// in place, without decoding them into messages and SDK values. The store's
+// link lists are MarshalProtoList's well-formed encodings, so reading only
+// the span ID and the purpose attribute gives the same result. ok is false
+// for a list it can't read that way: one whose elements don't split, or a
+// purpose that isn't a string, bytes, number or bool, which decoding
+// turns into strings of its own.
+func readCausalLinkTargets(self string, links []byte) (targets []string, ok bool) {
+	for len(links) > 0 {
+		link, n := protowire.ConsumeBytes(links)
+		if n < 0 {
+			return nil, false
+		}
+		links = links[n:]
+		sid, purpose, ok := readLink(link)
+		if !ok {
+			return nil, false
+		}
+		switch purpose {
+		case telemetry.LinkPurposeCause, "":
+		default:
+			continue
+		}
+		if !sid.IsValid() {
+			continue
+		}
+		target := sid.String()
+		if target == self {
+			// a self-link would add a pointless self-edge; skip it
+			continue
+		}
+		if !slices.Contains(targets, target) {
+			targets = append(targets, target)
+		}
+	}
+	return targets, true
+}
+
+// readLink reads a Span_Link encoding's span ID (field 2) and the string
+// value of its first purpose attribute (field 4), as SpanLinksFromPB and
+// attribute.Value.AsString give them.
+func readLink(link []byte) (sid trace.SpanID, purpose string, ok bool) {
+	seenPurpose := false
+	for len(link) > 0 {
+		num, typ, n := protowire.ConsumeTag(link)
+		if n < 0 {
+			return sid, "", false
+		}
+		link = link[n:]
+		if typ != protowire.BytesType || (num != 2 && num != 4) {
+			if n = protowire.ConsumeFieldValue(num, typ, link); n < 0 {
+				return sid, "", false
+			}
+			link = link[n:]
+			continue
+		}
+		v, n := protowire.ConsumeBytes(link)
+		if n < 0 {
+			return sid, "", false
+		}
+		link = link[n:]
+		if num == 2 {
+			sid = trace.SpanID{}
+			copy(sid[:], v)
+			continue
+		}
+		if seenPurpose {
+			continue
+		}
+		key, value, hasValue, ok := readKeyValue(v)
+		if !ok {
+			return sid, "", false
+		}
+		if string(key) != telemetry.LinkPurposeAttr {
+			continue
+		}
+		seenPurpose = true
+		if !hasValue {
+			continue
+		}
+		if purpose, ok = readStringish(value); !ok {
+			return sid, "", false
+		}
+	}
+	return sid, purpose, true
+}
+
+// readKeyValue reads a KeyValue encoding's key (field 1) and value (field 2).
+func readKeyValue(kv []byte) (key, value []byte, hasValue, ok bool) {
+	for len(kv) > 0 {
+		num, typ, n := protowire.ConsumeTag(kv)
+		if n < 0 {
+			return nil, nil, false, false
+		}
+		kv = kv[n:]
+		if typ != protowire.BytesType || (num != 1 && num != 2) {
+			if n = protowire.ConsumeFieldValue(num, typ, kv); n < 0 {
+				return nil, nil, false, false
+			}
+			kv = kv[n:]
+			continue
+		}
+		v, n := protowire.ConsumeBytes(kv)
+		if n < 0 {
+			return nil, nil, false, false
+		}
+		kv = kv[n:]
+		if num == 1 {
+			key = v
+		} else {
+			value, hasValue = v, true
+		}
+	}
+	return key, value, hasValue, true
+}
+
+// readStringish is AsString of the attribute an AnyValue encoding decodes to,
+// for the value types that decode to themselves: a string, or bytes, are that
+// string, and a number or bool is the empty string.
+func readStringish(value []byte) (string, bool) {
+	s, found := "", false
+	for len(value) > 0 {
+		num, typ, n := protowire.ConsumeTag(value)
+		if n < 0 {
+			return "", false
+		}
+		value = value[n:]
+		switch {
+		case (num == 1 || num == 7) && typ == protowire.BytesType:
+			v, m := protowire.ConsumeBytes(value)
+			if m < 0 {
+				return "", false
+			}
+			s, found, n = string(v), true, m
+		case (num == 2 || num == 3) && typ == protowire.VarintType, num == 4 && typ == protowire.Fixed64Type:
+			s, found = "", true
+			n = protowire.ConsumeFieldValue(num, typ, value)
+		default:
+			// An array, a key-value list or an unknown field: leave it to
+			// decoding.
+			return "", false
+		}
+		if n < 0 {
+			return "", false
+		}
+		value = value[n:]
+	}
+	return s, found
+}
+
+// decodeCausalLinkTargets is causalLinkTargets by decoding row's links into
+// SDK links.
+func decodeCausalLinkTargets(row Span) []string {
 	var linksPB []*otlptracev1.Span_Link
 	if err := UnmarshalProtoList(row.Links, &otlptracev1.Span_Link{}, &linksPB); err != nil {
 		slog.Warn("failed to unmarshal span links", "span", row.SpanID, "error", err)

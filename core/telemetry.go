@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"path"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -39,7 +38,7 @@ func AroundFunc(
 		return ctx, dagql.NoopDone
 	}
 	// Static, debug-independent profiling-skip classification, SEPARATE from the
-	// introspectionInfo UI decision below. Stamp it onto the call frame BEFORE the
+	// callChainInfo UI decision below. Stamp it onto the call frame BEFORE the
 	// IsSkipped early return so inherited-skip descendants (under a typedef-loading
 	// hideCtx) are still classified by their OWN recipe: a reflection-receiver call
 	// is skipped, while real shared work (clone / dep-load, whose receiver is NOT a
@@ -51,11 +50,11 @@ func AroundFunc(
 	if dagql.IsSkipped(ctx) {
 		return ctx, dagql.NoopDone
 	}
-	introspection, receiver := introspectionInfo(ctx, req.ResultCall)
+	introspection, receiver, returnsError := callChainInfo(ctx, req.ResultCall)
 	if introspection {
 		return dagql.WithSkip(ctx), dagql.NoopDone
 	}
-	if isMeta(ctx, req.ResultCall) {
+	if isMeta(req.ResultCall, returnsError) {
 		// introspection+meta are very uninteresting spans
 		// dagops are all self calls, no need to emit additional spans here
 		return ctx, dagql.NoopDone
@@ -195,10 +194,7 @@ func AroundFunc(
 		)
 
 		defer telemetry.EndWithCause(span, err)
-		recordStatus(ctx, res, span, cached, req.ResultCall)
-		dagql.RecordContentPreferredDigest(ctx, span, req.ResultCall, res)
-		recordPending(res, span)
-		recordCacheEvidence(ctx, span, req.CacheEvidence, res)
+		span.SetAttributes(callEndAttrs(ctx, span, req, res, cached)...)
 		logResult(ctx, res, req.ResultCall)
 	}
 }
@@ -280,20 +276,20 @@ func initCacheEvidence(span trace.Span, req *dagql.CallRequest) {
 	req.CacheEvidence = dagql.NewCacheDecision()
 }
 
-// recordCacheEvidence maps a populated cache-evidence carrier onto the call's
-// span as the dagger.io/cache.* contract (engine/telemetryattrs). Best-effort
-// like recordStatus: it stamps only facts that were recorded and never fails
-// the call. An empty Outcome means the invocation never reached a cache
-// decision (validation/derivation error) — nothing is stamped then, so the
-// contract marker never rides a fact-free span.
-func recordCacheEvidence(ctx context.Context, span trace.Span, ev *dagql.CacheDecision, res dagql.AnyResult) {
+// appendCacheEvidenceAttrs maps a populated cache-evidence carrier onto the
+// call's span attributes as the dagger.io/cache.* contract
+// (engine/telemetryattrs). Best-effort like appendStatusAttrs: it stamps only
+// facts that were recorded and never fails the call. An empty Outcome means the
+// invocation never reached a cache decision (validation/derivation error) —
+// nothing is stamped then, so the contract marker never rides a fact-free span.
+func appendCacheEvidenceAttrs(ctx context.Context, attrs []attribute.KeyValue, ev *dagql.CacheDecision, res dagql.AnyResult) []attribute.KeyValue {
 	if ev == nil || ev.Outcome == "" {
-		return
+		return attrs
 	}
-	attrs := []attribute.KeyValue{
+	attrs = append(attrs,
 		attribute.String(telemetryattrs.CacheContractAttr, telemetryattrs.CacheContractV1),
 		attribute.String(telemetryattrs.CacheOutcomeAttr, string(ev.Outcome)),
-	}
+	)
 	if ev.Outcome == dagql.CacheOutcomeHit && ev.HitRoute != "" {
 		attrs = append(attrs, attribute.String(telemetryattrs.CacheHitRouteAttr, string(ev.HitRoute)))
 	}
@@ -365,7 +361,7 @@ func recordCacheEvidence(ctx context.Context, span trace.Span, ev *dagql.CacheDe
 	if state, ok := ev.ResultState(context.WithoutCancel(ctx), res); ok {
 		attrs = append(attrs, cacheStateAttrs(state)...)
 	}
-	span.SetAttributes(attrs...)
+	return attrs
 }
 
 // cacheStateAttrs maps an entry's cache state onto the dagger.io/cache.*
@@ -503,15 +499,30 @@ func normalizeRef(ref string) string {
 	return ref
 }
 
-// recordStatus records the status of a call on a span.
-func recordStatus(ctx context.Context, res dagql.AnyResult, span trace.Span, cached bool, frame *dagql.ResultCall) {
+// callEndAttrs collects the attributes a call's span gets as it ends, so they
+// go on the span in one call: each SetAttributes that outgrows the span's
+// attribute slice copies the whole slice. 16 holds a typical call's status
+// and cache evidence.
+func callEndAttrs(ctx context.Context, span trace.Span, req *dagql.CallRequest, res dagql.AnyResult, cached bool) []attribute.KeyValue {
+	attrs := make([]attribute.KeyValue, 0, 16)
+	attrs = appendStatusAttrs(ctx, attrs, res, cached, req.ResultCall)
+	if span.IsRecording() {
+		attrs = dagql.AppendContentPreferredDigestAttr(ctx, attrs, req.ResultCall, res)
+	}
+	attrs = appendPendingAttrs(attrs, res)
+	return appendCacheEvidenceAttrs(ctx, attrs, req.CacheEvidence, res)
+}
+
+// appendStatusAttrs appends the attributes that record the status of a call
+// on its span.
+func appendStatusAttrs(ctx context.Context, attrs []attribute.KeyValue, res dagql.AnyResult, cached bool, frame *dagql.ResultCall) []attribute.KeyValue {
 	if cached && !dagql.HasPendingLazyComputation(res) {
-		span.SetAttributes(attribute.Bool(telemetry.CachedAttr, true))
+		attrs = append(attrs, attribute.Bool(telemetry.CachedAttr, true))
 	}
 
 	if ctx.Err() != nil {
 		// If the request was canceled, reflect it on the span.
-		span.SetAttributes(attribute.Bool(telemetry.CanceledAttr, true))
+		attrs = append(attrs, attribute.Bool(telemetry.CanceledAttr, true))
 	}
 
 	// Record an object result as an output of this call.
@@ -533,16 +544,18 @@ func recordStatus(ctx context.Context, res dagql.AnyResult, span trace.Span, cac
 		isLoader := field == "node"
 		if !isLoader {
 			if objDig, err := obj.RecipeDigest(ctx); err == nil && objDig != "" {
-				span.SetAttributes(attribute.String(telemetry.DagOutputAttr, objDig.String()))
+				attrs = append(attrs, attribute.String(telemetry.DagOutputAttr, objDig.String()))
 			}
 		}
 	}
+	return attrs
 }
 
-func recordPending(res dagql.AnyResult, span trace.Span) {
+func appendPendingAttrs(attrs []attribute.KeyValue, res dagql.AnyResult) []attribute.KeyValue {
 	if dagql.HasPendingLazyComputation(res) {
-		span.SetAttributes(attribute.Bool(telemetry.PendingAttr, true))
+		attrs = append(attrs, attribute.Bool(telemetry.PendingAttr, true))
 	}
+	return attrs
 }
 
 // logResult prints the result of a call to the span's stdout.
@@ -596,13 +609,13 @@ func fieldSpecForCall(ctx context.Context, frame *dagql.ResultCall) (dagql.Field
 // These queries tend to be very large and are not interesting for users to
 // see.
 func isIntrospection(ctx context.Context, frame *dagql.ResultCall) bool {
-	introspection, _ := introspectionInfo(ctx, frame)
+	introspection, _, _ := callChainInfo(ctx, frame)
 	return introspection
 }
 
 // introspectionRootFields are the Query-level root fields that begin an
 // introspection / schema-reflection query. Extracted to a shared constant so the
-// UI suppression decision (introspectionInfo) and the profiling decision
+// UI suppression decision (callChainInfo) and the profiling decision
 // (profileSkip) can never diverge on the root set.
 var introspectionRootFields = map[string]struct{}{
 	"__schema":            {},
@@ -680,10 +693,10 @@ var reflectionTypeNames = map[string]struct{}{
 // results carry it without a per-site provenance audit.
 //
 // It is deliberately:
-//   - DEBUG-INDEPENDENT (unlike introspectionInfo's debug-dependent receiver-type
+//   - DEBUG-INDEPENDENT (unlike callChainInfo's debug-dependent receiver-type
 //     cases), so the volume amplifier never returns in the very mode used to
 //     capture a trace for debugging; and
-//   - SEPARATE from introspectionInfo (the UI/normal-telemetry decision), which is
+//   - SEPARATE from callChainInfo (the UI/normal-telemetry decision), which is
 //     left untouched. The OTel profiler may therefore skip MORE than the UI
 //     suppresses: a directly-called reflection accessor (outside a typedef-loading
 //     hideCtx) keeps its normal dag.call UI span — which the OTel loader classifies
@@ -708,31 +721,51 @@ func profileSkip(receiverTypeName, field string) bool {
 	return false
 }
 
-func introspectionInfo(ctx context.Context, frame *dagql.ResultCall) (bool, *dagql.ResultCall) {
+// callChainInfo walks frame's receiver chain toward its root once.
+// introspection reports a call inside an introspection query, and receiver is
+// frame's immediate receiver. returnsError reports that frame or a receiver
+// on its chain returns Error, up to the first frame with no type; it is only
+// complete when introspection is false, since the walk stops there.
+func callChainInfo(ctx context.Context, frame *dagql.ResultCall) (introspection bool, immediateReceiver *dagql.ResultCall, returnsError bool) {
 	if frame == nil {
-		return false, nil
+		return false, nil, false
 	}
+	// Each receiver is resolved through the engine cache, and these are the
+	// same for the whole chain.
+	cache, cacheErr := dagql.EngineCache(ctx)
+	debug := slog.IsDebug(ctx)
 
+	typed := true
 	cur := frame
-	var immediateReceiver *dagql.ResultCall
 	for cur != nil {
+		if typed {
+			switch {
+			case cur.Type == nil:
+				typed = false
+			case cur.Type.NamedType == "Error":
+				returnsError = true
+			}
+		}
 		if cur.Receiver == nil {
 			if _, ok := introspectionRootFields[cur.Field]; ok {
-				return true, immediateReceiver
+				return true, immediateReceiver, returnsError
 			}
-			return false, immediateReceiver
+			return false, immediateReceiver, returnsError
+		}
+		if cacheErr != nil {
+			return false, immediateReceiver, returnsError
 		}
 
-		receiver, err := cur.ReceiverCall(ctx)
+		receiver, err := cur.ReceiverCallIn(cache)
 		if err != nil || receiver == nil {
-			return false, immediateReceiver
+			return false, immediateReceiver, returnsError
 		}
 		if cur == frame {
 			immediateReceiver = receiver
 		}
 
 		// disable these unless debug is set in OTEL baggage
-		if !slog.IsDebug(ctx) && receiver.Type != nil {
+		if !debug && receiver.Type != nil {
 			switch receiver.Type.NamedType {
 			case "Function":
 				switch cur.Field {
@@ -740,10 +773,10 @@ func introspectionInfo(ctx context.Context, frame *dagql.ResultCall) (bool, *dag
 					"withArg",
 					"withSourceMap",
 					"withDescription":
-					return true, immediateReceiver
+					return true, immediateReceiver, returnsError
 				}
 				if strings.HasPrefix(cur.Field, "__") {
-					return true, immediateReceiver
+					return true, immediateReceiver, returnsError
 				}
 			case "TypeDef":
 				switch cur.Field {
@@ -759,10 +792,10 @@ func introspectionInfo(ctx context.Context, frame *dagql.ResultCall) (bool, *dag
 					"withEnum",
 					"withEnumValue",
 					"withEnumMember":
-					return true, immediateReceiver
+					return true, immediateReceiver, returnsError
 				}
 				if strings.HasPrefix(cur.Field, "__") {
-					return true, immediateReceiver
+					return true, immediateReceiver, returnsError
 				}
 			case "FunctionArg",
 				"ObjectTypeDef",
@@ -773,7 +806,7 @@ func introspectionInfo(ctx context.Context, frame *dagql.ResultCall) (bool, *dag
 				"EnumTypeDef",
 				"EnumMemberTypeDef":
 				if strings.HasPrefix(cur.Field, "__") {
-					return true, immediateReceiver
+					return true, immediateReceiver, returnsError
 				}
 			}
 		}
@@ -781,16 +814,17 @@ func introspectionInfo(ctx context.Context, frame *dagql.ResultCall) (bool, *dag
 		cur = receiver
 	}
 
-	return false, immediateReceiver
+	return false, immediateReceiver, returnsError
 }
 
 // isMeta returns true if any type in the ID is "too meta" to show to the user,
-// for example span and error APIs.
-func isMeta(ctx context.Context, frame *dagql.ResultCall) bool {
+// for example span and error APIs. returnsError is callChainInfo's: whether
+// the call or any of its receivers returns Error.
+func isMeta(frame *dagql.ResultCall, returnsError bool) bool {
 	if frame == nil {
 		return false
 	}
-	if anyReturns(ctx, frame, "Error") {
+	if returnsError {
 		return true
 	}
 	switch frame.Field {
@@ -810,21 +844,4 @@ func isMeta(ctx context.Context, frame *dagql.ResultCall) bool {
 	default:
 		return false
 	}
-}
-
-// anyReturns returns true if the call or any of its ancestors return any of
-// the given types.
-func anyReturns(ctx context.Context, frame *dagql.ResultCall, types ...string) bool {
-	if frame == nil || frame.Type == nil {
-		return false
-	}
-	ret := frame.Type.NamedType
-	if slices.Contains(types, ret) {
-		return true
-	}
-	receiver, err := frame.ReceiverCall(ctx)
-	if err != nil || receiver == nil {
-		return false
-	}
-	return anyReturns(ctx, receiver, types...)
 }

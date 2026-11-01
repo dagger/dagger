@@ -246,3 +246,84 @@ func TestLogStreamIndexesRowsAppendedDuringReplay(t *testing.T) {
 	}
 	require.Equal(t, want, indexed)
 }
+
+// A spill writes the tail's rows where they lie, then moves the rows left to
+// the front of the same arrays. Rows a reader holds, rows appended while the
+// spill writes, and every read after it must all be unaffected.
+func TestLogStreamSpillInPlaceKeepsRows(t *testing.T) {
+	stream, err := openLogStream(t.Context(), filepath.Join(t.TempDir(), "metrics.log"), metricCodec, 512, nil, nil)
+	require.NoError(t, err)
+	spillStarted, releaseSpill := blockSpillWrites(stream)
+
+	var want []Metric
+	appendRows := func(n int) {
+		rows := make([]Metric, n)
+		for i := range rows {
+			rows[i].Data = bytes.Repeat([]byte{byte(len(want) + i)}, 32)
+		}
+		last, err := stream.Append(rows)
+		require.NoError(t, err)
+		for i := range rows {
+			rows[i].ID = last - int64(n-1-i)
+		}
+		want = append(want, rows...)
+	}
+
+	// Over budget: the spiller starts writing the oldest rows and blocks.
+	appendRows(20)
+	select {
+	case <-spillStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("spiller did not reach the write gate")
+	}
+	held, err := stream.Since(t.Context(), 0, 100)
+	require.NoError(t, err)
+	require.Equal(t, want, held)
+	heldRow, found, err := stream.readID(t.Context(), 3)
+	require.NoError(t, err)
+	require.True(t, found)
+	// Appended while the spill writes, growing the tail past its array.
+	appendRows(30)
+	// Read from the array the spill then compacts.
+	heldAfter, err := stream.Since(t.Context(), 0, 100)
+	require.NoError(t, err)
+	require.Equal(t, want, heldAfter)
+
+	close(releaseSpill)
+	require.Eventually(t, func() bool {
+		stream.mu.Lock()
+		defer stream.mu.Unlock()
+		return stream.tailBase > 1 && stream.tailBytes <= stream.budget
+	}, 5*time.Second, time.Millisecond)
+
+	require.Equal(t, want[:20], held, "rows a reader held are unchanged")
+	require.Equal(t, want, heldAfter, "rows read from the compacted array are unchanged")
+	require.Equal(t, want[2], heldRow)
+	readAll := func() []Metric {
+		var all []Metric
+		var cursor int64
+		for {
+			page, err := stream.Since(t.Context(), cursor, 17)
+			require.NoError(t, err)
+			if len(page) == 0 {
+				return all
+			}
+			all = append(all, page...)
+			cursor = page[len(page)-1].ID
+		}
+	}
+	require.Equal(t, want, readAll())
+	ids := []int64{1, 7, 19, 20, 21, 35, 50}
+	got, err := stream.readIDs(t.Context(), ids)
+	require.NoError(t, err)
+	require.Len(t, got, len(ids))
+	for i, id := range ids {
+		require.Equal(t, want[id-1], got[i], "row %d", id)
+	}
+
+	// Later spills keep filling the same arrays and lose no rows.
+	appendRows(40)
+	require.NoError(t, stream.flush(t.Context()))
+	require.Equal(t, want, readAll())
+	require.NoError(t, stream.close())
+}

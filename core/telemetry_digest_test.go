@@ -89,7 +89,7 @@ func TestRecordContentPreferredDigestFailureIsOptional(t *testing.T) {
 	// recipe guess should masquerade as a successfully derived identity.
 	frame := evidenceTestFrame("unavailable")
 	frame.Receiver = &dagql.ResultCallRef{ResultID: 99}
-	dagql.RecordContentPreferredDigest(context.Background(), span, frame, nil)
+	span.SetAttributes(dagql.AppendContentPreferredDigestAttr(context.Background(), nil, frame, nil)...)
 	attrs := evidenceTestEndedAttrs(t, sr, span)
 	for _, kv := range attrs {
 		require.NotEqual(t, telemetryattrs.DagContentPreferredDigestAttr, string(kv.Key))

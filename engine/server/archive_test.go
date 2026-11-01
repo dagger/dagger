@@ -684,6 +684,56 @@ func TestArchiveSealsDespiteUnrelatedTeardownError(t *testing.T) {
 	require.Equal(t, archive.StateClosed, m.State, "failure: %s", m.Failure)
 }
 
+// TestSessionEndRetiresStoresArchivesDontKeep: once a session's final
+// telemetry is written, nothing but an archive can read its stores, so the
+// rest are deleted and can't be recreated by a late writer.
+func TestSessionEndRetiresStoresArchivesDontKeep(t *testing.T) {
+	for _, archived := range []bool{false, true} {
+		t.Run(fmt.Sprintf("archived=%v", archived), func(t *testing.T) {
+			srv := newTeardownTestServer(t)
+			root := t.TempDir()
+			srv.clientDBs = clientdb.NewDBs(filepath.Join(root, "stores"))
+			manager, err := archive.NewManager(archive.Config{Root: filepath.Join(root, "archives"), RemoveStore: srv.clientDBs.Remove, StoreSize: srv.clientDBs.StoreSize})
+			require.NoError(t, err)
+			srv.archives = manager
+			srv.telemetryPubSub = NewPubSub(srv)
+
+			md := &engine.ClientMetadata{SessionID: "session", ClientID: "main"}
+			client := &clientRuntime{clientRecord: &clientRecord{clientID: "main", clientMetadata: md, shutdownCh: make(chan struct{})}}
+			sess := &daggerSession{
+				sessionID:          md.SessionID,
+				mainClientCallerID: md.ClientID,
+				clientRuntimes:     map[string]*clientRuntime{client.clientID: client},
+				services:           core.NewServices(),
+				analytics:          failingCloseTracker{},
+				shutdownCh:         make(chan struct{}),
+				telemetryPubSub:    srv.telemetryPubSub,
+			}
+			client.daggerSession = sess
+			installTestClientRecords(sess)
+			require.NoError(t, client.retainTelemetryDB(t.Context()))
+			sess.dagqlCond = sync.NewCond(&sess.dagqlMu)
+			sess.closingCtx, sess.cancelClosing = context.WithCancelCause(context.Background())
+			srv.initializeSessionTelemetry(sess, nil)
+			if archived {
+				require.NoError(t, sess.ensureArchive(archiveTestTrace))
+				sess.archiveExpected = agentcontrol.Expectation{Agents: map[agentcontrol.Key]int64{}, Subscriptions: map[agentcontrol.EdgeKey]int64{}}
+			}
+			require.NoError(t, client.closeTelemetryDB())
+
+			require.ErrorContains(t, srv.removeDaggerSession(t.Context(), sess), "analytics close failed")
+			_, err = os.Stat(filepath.Join(srv.clientDBs.Root, "main.spans.log"))
+			if archived {
+				require.NoError(t, err, "an archive keeps its session's store")
+				return
+			}
+			require.ErrorIs(t, err, os.ErrNotExist)
+			_, err = srv.clientDBs.OpenForAppend(t.Context(), "main")
+			require.Error(t, err, "a late writer must not recreate the store")
+		})
+	}
+}
+
 // TestArchiveCollectedIsCleanMiss: an archive GC has collected is a plain
 // not-found, so a restore may fall back to another source.
 func TestArchiveCollectedIsCleanMiss(t *testing.T) {

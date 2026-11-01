@@ -234,6 +234,11 @@ type ResultCall struct {
 	// frame generation it was computed in (see resultCallFrameGeneration).
 	moduleResultIDs atomic.Pointer[moduleResultIDsMemo]
 
+	// contentPreferredTelemetryDigest memoizes ContentPreferredDigestForTelemetry
+	// for this frame, valid only for the frame generation it was computed in
+	// (see resultCallFrameGeneration).
+	contentPreferredTelemetryDigest atomic.Pointer[contentPreferredDigestMemo]
+
 	// contentPreferredDigest is memoized once the frame has reached its
 	// finalized semantic shape. Do not mutate the frame after calling
 	// ContentPreferredDigest.
@@ -833,6 +838,12 @@ func (frame *ResultCall) ReceiverCall(ctx context.Context) (*ResultCall, error) 
 	if err != nil {
 		return nil, err
 	}
+	return frame.receiverCall(c)
+}
+
+// ReceiverCallIn is ReceiverCall with the engine cache already in hand, for
+// walks that resolve a whole chain of receivers.
+func (frame *ResultCall) ReceiverCallIn(c *Cache) (*ResultCall, error) {
 	return frame.receiverCall(c)
 }
 
