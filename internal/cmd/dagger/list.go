@@ -1,6 +1,7 @@
 package daggercmd
 
 import (
+	"bytes"
 	"context"
 
 	"dagger.io/dagger/core"
@@ -84,7 +85,7 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args, raw
 				if err != nil {
 					return nil, err
 				}
-				return &artifactDiscovery{cmd: cmd, action: action, params: params, discover: fn}, nil
+				return &artifactDiscovery{cmd: cmd, root: root, rawArgs: rawArgs, action: action, params: params, discover: fn}, nil
 			}
 		}
 		return nil, withEngineMetadata(ctx, action, params, fn)
@@ -153,25 +154,56 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args, raw
 // engine call takes the open session (see takeOpenSession), with the
 // workspace's modules already loaded.
 type artifactDiscovery struct {
-	cmd      *cobra.Command
+	cmd *cobra.Command
+	// root and rawArgs resolve the command again once discovery has
+	// registered its flags and commands.
+	root     *cobra.Command
+	rawArgs  []string
 	action   string
 	params   client.Params
 	discover runClientCallback
 }
 
 func (d *artifactDiscovery) execute(ctx context.Context, run func(context.Context) error) error {
-	// The frontend starts before Cobra runs PersistentPreRunE, which sets
-	// these for the command's own frontend.
+	// PersistentPreRunE runs these once the frontend is up. Signing in waits
+	// for the user, so do it before the frontend hides its instructions.
+	if err := checkCloudToken(ctx, rootCmd.OutOrStdout()); err != nil {
+		return err
+	}
+	// The frontend's options are set when it starts.
 	applyCommandProgressDefaults(d.cmd)
-	return withEngine(ctx, d.params, func(ctx context.Context, ec *client.Client) (rerr error) {
+
+	// What Cobra writes outside the command's engine call (usage, deprecation
+	// and update notices) goes to the terminal once the frontend is done, as
+	// it would without the open session.
+	var stdout, stderr bytes.Buffer
+	termOut, termErr := rootCmd.OutOrStdout(), rootCmd.ErrOrStderr()
+	defer func() {
+		termOut.Write(stdout.Bytes())
+		termErr.Write(stderr.Bytes())
+	}()
+	parsed := false
+	err := withEngine(ctx, d.params, func(ctx context.Context, ec *client.Client) (rerr error) {
 		discoverCtx, span := Tracer().Start(ctx, d.action, telemetry.Encapsulate())
 		err := d.discover(discoverCtx, ec)
 		telemetry.EndWithCause(span, &err)
 		if err != nil {
 			return err
 		}
-		return run(withOpenSession(ctx, d.params, ec))
+		if needsArtifactDiscovery(resolveCommand(d.root, d.rawArgs)) {
+			// Cobra will report the command line's error, after the frontend.
+			return nil
+		}
+		parsed = true
+		ctx = withOpenSession(ctx, d.params, ec, rootCmd.OutOrStdout(), rootCmd.ErrOrStderr())
+		rootCmd.SetOut(&stdout)
+		rootCmd.SetErr(&stderr)
+		return run(ctx)
 	})
+	if err != nil || parsed {
+		return err
+	}
+	return run(ctx)
 }
 
 // runsInDiscoverySession reports whether cmd can run in the session that

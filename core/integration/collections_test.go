@@ -402,6 +402,15 @@ func (item *Item) Verify() error {
 			require.NotContains(t, out, "unselected item c ran")
 		})
 	}
+	t.Run("filter discovery runs in the command's session", func(ctx context.Context, t *testctx.T) {
+		// The CLI learns the workspace's filter flags before it parses them,
+		// in the session that then runs the command.
+		progress, err := base.WithEnvVariable("DAGGER_PROGRESS", "report").
+			With(daggerExec("-v", "check", "-l", "items/verify", "--collections-items-item=a")).Stderr(ctx)
+		require.NoError(t, err)
+		require.Contains(t, progress, "Load check filters")
+		require.Equal(t, 1, strings.Count(progress, "✔ connect "), progress)
+	})
 	t.Run("separate filters require a union", func(ctx context.Context, t *testctx.T) {
 		for _, prefix := range [][]string{{"check", "-l"}, {"check"}} {
 			args := append([]string{}, prefix...)

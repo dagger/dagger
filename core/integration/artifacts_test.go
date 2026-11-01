@@ -769,6 +769,7 @@ func (ArtifactsSuite) TestHelpProgress(ctx context.Context, t *testctx.T) {
 		progress, err := result.Stderr(ctx)
 		require.NoError(t, err)
 		require.Contains(t, progress, "Load available types")
+		require.Equal(t, 1, strings.Count(progress, "✔ connect "), "one session discovers and lists")
 		require.NotContains(t, progress, "exporter is shutdown")
 	})
 }

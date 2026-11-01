@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"reflect"
 	"slices"
@@ -220,11 +221,14 @@ type openSession struct {
 	// them to withEngine.
 	params client.Params
 	client *client.Client
-	taken  bool
+	// stdout and stderr are the session's span stdio, where the command's
+	// output goes during its engine call, as initEngineTelemetry sets it.
+	stdout, stderr io.Writer
+	taken          bool
 }
 
-func withOpenSession(ctx context.Context, params client.Params, c *client.Client) context.Context {
-	return context.WithValue(ctx, openSessionKey{}, &openSession{params: params, client: c})
+func withOpenSession(ctx context.Context, params client.Params, c *client.Client, stdout, stderr io.Writer) context.Context {
+	return context.WithValue(ctx, openSessionKey{}, &openSession{params: params, client: c, stdout: stdout, stderr: stderr})
 }
 
 // takeOpenSession returns the open session the first time it is asked for.
@@ -242,6 +246,13 @@ func takeOpenSession(ctx context.Context) *openSession {
 // it was opened with. Otherwise it connects a new session under the running
 // frontend, as the command asked.
 func (open *openSession) run(ctx context.Context, action string, params client.Params, fn runClientCallback) (rerr error) {
+	oldOut, oldErr := rootCmd.OutOrStdout(), rootCmd.ErrOrStderr()
+	rootCmd.SetOut(open.stdout)
+	rootCmd.SetErr(open.stderr)
+	defer func() {
+		rootCmd.SetOut(oldOut)
+		rootCmd.SetErr(oldErr)
+	}()
 	if action != "" {
 		var span trace.Span
 		ctx, span = Tracer().Start(ctx, action, telemetry.Encapsulate())
