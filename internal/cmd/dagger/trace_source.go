@@ -11,6 +11,17 @@ import (
 	"github.com/dagger/dagger/internal/tracesource"
 )
 
+// openTraceSource opens a trace for display. The 'dagger cloud' commands read
+// Dagger Cloud only (remote), never an engine; 'dagger trace' (engine) tries
+// the engine's retained store first and falls back to Cloud under
+// tracesource.Select's policy.
+func openTraceSource(ctx context.Context, engine bool, local, remote tracesource.Open) (tracesource.Source, func() error, error) {
+	if !engine {
+		return remote(ctx)
+	}
+	return tracesource.Select(ctx, local, remote)
+}
+
 // openEngineTrace opens a trace in the engine's retained telemetry store over
 // read-only client plumbing, never workspace modules or archived recipes. Its
 // cleanup remains alive for lazy interactive expansion.

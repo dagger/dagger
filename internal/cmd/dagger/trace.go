@@ -30,21 +30,27 @@ import (
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 )
 
-// traceViewOptions are the flags of 'dagger cloud traces view' and of its
-// hidden aliases, 'dagger trace' and 'dagger cloud logs'.
+// traceViewOptions are the flags of 'dagger cloud traces view', of its hidden
+// alias 'dagger cloud logs', and of 'dagger trace'.
 type traceViewOptions struct {
 	sel     spanSelector
 	last    bool
 	log     bool
 	output  string
 	timeout time.Duration
+	// engine reads a trace the engine still retains before falling back to
+	// Dagger Cloud. Only 'dagger trace' sets it: the 'dagger cloud' commands
+	// read Cloud alone and never connect to an engine.
+	engine bool
 }
 
-var cloudTracesViewCmd = newTraceViewCmd("view [trace]", false)
+var cloudTracesViewCmd = newTraceViewCmd("view [trace]", false, false)
 
-// traceCmd is a hidden alias for 'dagger cloud traces view'.
+// traceCmd views a trace like 'dagger cloud traces view', but reads a trace
+// the engine still retains from its local archive before falling back to
+// Dagger Cloud.
 var traceCmd = func() *cobra.Command {
-	cmd := newTraceViewCmd("trace [trace]", false)
+	cmd := newTraceViewCmd("trace [trace]", false, true)
 	cmd.Hidden = true
 	cmd.Aliases = []string{"t", "analyze", "diagnose"}
 	return cmd
@@ -52,7 +58,7 @@ var traceCmd = func() *cobra.Command {
 
 // cloudLogsCmd is a hidden alias for 'dagger cloud traces view --log'.
 var cloudLogsCmd = func() *cobra.Command {
-	cmd := newTraceViewCmd("logs [trace]", true)
+	cmd := newTraceViewCmd("logs [trace]", true, false)
 	cmd.Hidden = true
 	return cmd
 }()
@@ -62,20 +68,29 @@ func init() {
 }
 
 // newTraceViewCmd makes a 'view' command. With log set, the command always
-// shows logs, for the 'dagger cloud logs' alias.
-func newTraceViewCmd(use string, log bool) *cobra.Command {
-	o := &traceViewOptions{log: log}
+// shows logs, for the 'dagger cloud logs' alias. With engine set, it reads the
+// engine's retained archive before Dagger Cloud, for 'dagger trace'.
+func newTraceViewCmd(use string, log, engine bool) *cobra.Command {
+	o := &traceViewOptions{log: log, engine: engine}
+	short := "View a Dagger Cloud trace"
+	what := `View a Dagger Cloud trace: the overall result, the commands that caused a
+failure, check results and failed tests, each with the end of its logs, and the
+full call tree with arguments and timing.`
+	if engine {
+		short = "View a trace from the engine or Dagger Cloud"
+		what = `View a trace: the overall result, the commands that caused a failure, check
+results and failed tests, each with the end of its logs, and the full call tree
+with arguments and timing. A trace the engine still retains is read from its
+local archive; otherwise it is fetched from Dagger Cloud.`
+	}
 	cmd := &cobra.Command{
 		Use:  use,
 		Args: cobra.MaximumNArgs(1),
 		Annotations: map[string]string{
 			showFinalProgressKey: "true",
 		},
-		Short: "View a Dagger Cloud trace",
-		Long: `View a Dagger Cloud trace: the overall result, the commands that caused a
-failure, check results and failed tests, each with the end of its logs, and the
-full call tree with arguments and timing. A trace the engine still retains is
-read from its local archive; otherwise it is fetched from Dagger Cloud.
+		Short: short,
+		Long: what + `
 
 The trace is a trace ID or a https://dagger.cloud/<org>/traces/<id> URL. Use
 --last for your most recent trace.
@@ -216,13 +231,14 @@ func traceWebOrg(orgName string) (string, error) {
 	return "", fmt.Errorf("no org specified; use --org or run 'dagger login <org>'")
 }
 
-// traceRun selects a source before importing any records -- the engine's
-// retained archive first, else Dagger Cloud's binary OTLP endpoints
-// (internal/cloud/otlp.go) -- then drives the same incremental loader for
-// either into the frontend's own exporters, and zooms the view to any
-// --span/--check/--test selection. With --log in a live frontend, it also
-// opens the selected span's full logs in the pager. The source and engine
-// connection live until the frontend exits, including interactive (-E) reads.
+// traceRun selects a source before importing any records -- Dagger Cloud's
+// binary OTLP endpoints (internal/cloud/otlp.go), or for 'dagger trace' the
+// engine's retained archive first, else Cloud -- then drives the same
+// incremental loader for either into the frontend's own exporters, and zooms
+// the view to any --span/--check/--test selection. With --log in a live
+// frontend, it also opens the selected span's full logs in the pager. The
+// source and any engine connection live until the frontend exits, including
+// interactive (-E) reads.
 //
 // Cloud's endpoints are addressed by trace ID and token alone, which is what
 // lets this command run without an org. Both sources take the same selection
@@ -271,7 +287,7 @@ func traceRun(cmd *cobra.Command, traceID string, sel spanSelector, o *traceView
 func traceRunSource(ctx context.Context, tf idtui.TraceFrontend, traceID string, sel spanSelector, o *traceViewOptions, statsClient *atomic.Pointer[cloud.OTLPClient]) (cleanups.CleanupF, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	var cloudAuth *auth.Cloud
-	source, closeSource, err := tracesource.Select(ctx,
+	source, closeSource, err := openTraceSource(ctx, o.engine,
 		func(ctx context.Context) (tracesource.Source, func() error, error) {
 			return openEngineTrace(ctx, traceID)
 		},
