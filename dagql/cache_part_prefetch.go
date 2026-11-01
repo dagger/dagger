@@ -1325,8 +1325,7 @@ func (p *partPrefetcher) awaitBlob(ctx context.Context, a *partPrefetchAhead, de
 
 // notComingLocked says why no download of desc's blob is coming for offer,
 // for the import ahead's line: whether a download of it runs and for whom,
-// the state of offer's job in its lane, and whether an install consumed the
-// blob. Requires p.mu.
+// and the state of offer's job in its lane. Requires p.mu.
 func (p *partPrefetcher) notComingLocked(offer *partOffer, desc ocispecs.Descriptor) string {
 	download := "no download"
 	if d := p.fetching[desc.Digest]; d != nil {
@@ -1337,8 +1336,7 @@ func (p *partPrefetcher) notComingLocked(offer *partOffer, desc ocispecs.Descrip
 	if j := p.jobs[partPrefetchJobKey{offer: offer, lane: p.cfg.lane(desc.Size)}]; j != nil {
 		job = fmt.Sprintf("job gone %t, registered %t, ahead %t", j.gone, j.digests != nil, j.ahead)
 	}
-	_, consumed := p.consumed[desc.Digest]
-	return fmt.Sprintf("%s; %s; consumed by an install %t", download, job, consumed)
+	return download + "; " + job
 }
 
 // comingLocked reports whether a download of desc's blob is coming for
