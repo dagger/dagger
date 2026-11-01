@@ -103,7 +103,7 @@ func TestReadersHaveNoAcquisitionTime(t *testing.T) {
 	waiterCtx, _ := BeginOp(context.Background(), OpKindLazy, "Container.withExec", OpOpts{})
 	var mu RWMutex
 	mu.RLock()
-	mu.RUnlock()
+	mu.RUnlock() //nolint:staticcheck // SA2001: an earlier reader that comes and goes, whose time a later reader mustn't inherit.
 	mu.RLock()
 	w := lockWait(t, r, waiterCtx, &mu, mu.RUnlock)
 	if w.ResultID != HolderReaders || w.Bytes != 0 {
