@@ -14,6 +14,7 @@ import (
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/codes"
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	"google.golang.org/protobuf/proto"
@@ -282,6 +283,62 @@ func TestSelectedPriorityConversation(t *testing.T) {
 	require.True(t, v.selected["7"], "a message's children are counted and shown")
 	require.False(t, v.selected["8"])
 	require.False(t, v.selected["9"], "only agent conversation spans are priority")
+}
+
+// TestSelectedConversationView: a conversation view keeps only agent loop and
+// message spans as priority, not the checks or failures beneath their tool
+// calls; those load as the tool calls are expanded, one level at a time.
+func TestSelectedConversationView(t *testing.T) {
+	db, err := openStore(t.Context(), t.TempDir(), "client", telemetryTailBudget)
+	require.NoError(t, err)
+	defer db.Close()
+	agentID := selectionAttr(string(semconv.GenAIAgentIDKey), "agent-1")
+	attrs := map[int][]*commonpb.KeyValue{
+		2: {agentID}, // loop
+		3: {selectionAttr(telemetry.LLMRoleAttr, "assistant"), agentID},
+		// The engine stamps the agent's identity on its tool calls too.
+		4: {selectionAttr(telemetry.LLMToolAttr, "tool"), selectionAttr(telemetry.LLMRoleAttr, "assistant"), agentID},
+		6: {selectionAttr(telemetry.CheckNameAttr, "check")},
+	}
+	// 1 root > 2 loop > 3 message > 4 tool call > 5 exec > 6 check > 7 > 8 failed
+	var rows []Span
+	for i := 1; i <= 8; i++ {
+		row := Span{TraceID: selectionTrace, SpanID: fmt.Sprint(i)}
+		if i > 1 {
+			row.ParentSpanID = sql.NullString{String: fmt.Sprint(i - 1), Valid: true}
+		}
+		if a, ok := attrs[i]; ok {
+			row.Attributes, err = MarshalProtoList(a)
+			require.NoError(t, err)
+		}
+		if i == 8 {
+			row.StatusCode = int64(codes.Error)
+		}
+		rows = append(rows, row)
+	}
+	_, err = db.AppendSpans(rows)
+	require.NoError(t, err)
+	cut, err := db.Checkpoint(t.Context())
+	require.NoError(t, err)
+	selected := func(sel *archive.SpanSelection) []string {
+		v, err := db.SpanViewAt(t.Context(), selectionTrace, cut, sel)
+		require.NoError(t, err)
+		var ids []string
+		for i := 1; i <= 8; i++ {
+			if v.selected[fmt.Sprint(i)] {
+				ids = append(ids, fmt.Sprint(i))
+			}
+		}
+		return ids
+	}
+	require.Equal(t, []string{"1", "2", "3", "4", "5", "6", "7", "8"}, selected(&archive.SpanSelection{DagUIView: true}),
+		"the priority view reaches the check and the failure")
+	require.Equal(t, []string{"1", "2", "3", "4"}, selected(&archive.SpanSelection{Conversation: true, DagUIView: true}),
+		"the conversation view stops at the message's children, its tool calls")
+	require.Equal(t, []string{"1", "2", "3", "4", "5"}, selected(&archive.SpanSelection{NoRoot: true, Listen: []string{"4"}, DagUIView: true}),
+		"a listen loads one level")
+	require.Equal(t, []string{"1", "2", "3", "4", "5"}, selected(&archive.SpanSelection{Conversation: true, Listen: []string{"4"}, DagUIView: true}),
+		"a conversation view's listens load one level too")
 }
 
 func TestSelectedMetadataTextAndVisibility(t *testing.T) {
