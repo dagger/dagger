@@ -104,6 +104,11 @@ const (
 	// frontends fold it into the live span instead of rendering it as text.
 	LogRoleAttr     = "dagger.io/log.role"
 	LogRoleSpanName = "span.name"
+	// LogRolePresence marks a body-less record standing in for a span's
+	// display text in a push that omits it (GET /v1/logs?display=presence):
+	// the span (or, with dagger.io/dag.digest, the digest's creator span)
+	// has logs, to be read on demand.
+	LogRolePresence = "log.presence"
 
 	// LogHumanOnlyAttr marks a log record written for people reading the
 	// trace, not for a model: frontends render it as usual, while the logs an
