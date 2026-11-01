@@ -351,3 +351,48 @@ func TestLiveLogsFollowAdvancesWhileSpansJoin(t *testing.T) {
 		"the follow never read past its cursor while spans kept joining")
 	require.Equal(t, []string{"a1", "a2"}, out.got())
 }
+
+// TestLiveLogsSkipEmptyBatches: a batch with no record of a requested span
+// (most of a catch-up's, which reads the store from its start) costs the
+// frontend nothing: it is neither asked to route it nor sent it.
+func TestLiveLogsSkipEmptyBatches(t *testing.T) {
+	reader := &fakeLogReader{respond: func(q tracesource.LogQuery) []liveLogBatch {
+		return []liveLogBatch{
+			{cursor: "1000"},
+			{rows: []liveLogRow{{span: 1, body: "a"}, {span: 7, body: "noise"}}, cursor: "2000"},
+			{rows: []liveLogRow{{span: 7, body: "noise"}}, cursor: "3000"},
+		}
+	}}
+	exports := 0
+	out := &bodyCollector{}
+	l := newLiveLogs(reader, "trace", exporterFunc(func(ctx context.Context, records []sdklog.Record) error {
+		exports++
+		return out.Export(ctx, records)
+	}), false)
+	asked := 0
+	l.coverage = func(targets []idtui.LogTarget) []idtui.LogCoverage {
+		asked++
+		coverage := make([]idtui.LogCoverage, len(targets))
+		for i, target := range targets {
+			coverage[i] = idtui.LogUncovered
+			if target.Span == liveTestSpan(1) {
+				coverage[i] = idtui.LogCovered
+			}
+		}
+		return coverage
+	}
+	l.subscribe(idtui.LogRequest{Span: liveTestSpan(1)})
+	require.NoError(t, l.finish(t.Context()))
+	require.Equal(t, []string{"a"}, out.got())
+	require.Equal(t, 2, asked, "the frontend was asked about a batch with no records")
+	require.Equal(t, 1, exports, "a batch with nothing to import was exported")
+	require.Equal(t, "3000", l.cursor, "the cursor did not advance past skipped batches")
+}
+
+type exporterFunc func(context.Context, []sdklog.Record) error
+
+func (f exporterFunc) Export(ctx context.Context, records []sdklog.Record) error {
+	return f(ctx, records)
+}
+func (exporterFunc) Shutdown(context.Context) error   { return nil }
+func (exporterFunc) ForceFlush(context.Context) error { return nil }
