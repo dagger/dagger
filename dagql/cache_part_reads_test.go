@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 
 	"gotest.tools/v3/assert"
 )
@@ -102,4 +103,46 @@ func TestCacheReportsPartsRead(t *testing.T) {
 	c.partReads.mu.Lock()
 	defer c.partReads.mu.Unlock()
 	assert.Equal(t, 0, len(c.partReads.seen), "released entries' reads are forgotten")
+}
+
+// A flush, as the cache's close makes, returns only once a report already
+// under way, such as the timer's, has been made: no read is reported after
+// the cache closed.
+func TestPartReadFlushWaitsForAReportUnderWay(t *testing.T) {
+	t.Parallel()
+	started, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	t.Cleanup(func() { once.Do(func() { close(release) }) })
+	var mu sync.Mutex
+	var reports [][]PartRead
+	log := &partReadLog{seen: map[sharedResultID]*partReadsSeen{}, pending: map[sharedResultID]struct{}{}}
+	log.report = func(reads []PartRead) {
+		mu.Lock()
+		reports = append(reports, reads)
+		first := len(reports) == 1
+		mu.Unlock()
+		if first {
+			close(started)
+			<-release
+		}
+	}
+	log.record(1, []PartKey{"fs"})
+	go log.flush()
+	<-started
+
+	closed := make(chan struct{})
+	go func() {
+		log.flush()
+		close(closed)
+	}()
+	select {
+	case <-closed:
+		t.Fatal("the close's flush returned while the timer's report was under way")
+	case <-time.After(200 * time.Millisecond):
+	}
+	once.Do(func() { close(release) })
+	<-closed
+	mu.Lock()
+	defer mu.Unlock()
+	assert.DeepEqual(t, reports, [][]PartRead{{{ResultID: 1, Part: "fs"}}})
 }
