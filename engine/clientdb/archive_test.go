@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"errors"
+	"sync"
 	"testing"
 
 	"github.com/dagger/dagger/dagql/call/callpbv1"
@@ -187,4 +188,63 @@ func TestArchiveCallPayloadFromSpan(t *testing.T) {
 	row, err = db.CallPayload(t.Context(), traceID, "xxh3:span", HighWater{Spans: 3, Logs: 1})
 	require.NoError(t, err)
 	require.EqualValues(t, 1, row.ID)
+}
+
+// Rows appended durably, such as agent control records, are on file before any
+// reader sees them, along with the span rows appended before them. Rows
+// appended while they are written don't wait for the write, and readers see
+// them only after.
+func TestAppendLogsDurablyShowsRowsOnlyOnceWritten(t *testing.T) {
+	ctx := t.Context()
+	store, err := openStore(ctx, t.TempDir(), "client", telemetryTailBudget)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, store.closeStreams()) }()
+
+	_, err = store.AppendSpans([]Span{{TraceID: "trace", SpanID: "call"}})
+	require.NoError(t, err)
+	_, err = store.AppendLogs([]Log{{Body: []byte("before")}})
+	require.NoError(t, err)
+
+	// Hold the log file's writes until released.
+	spill := store.logs.spill
+	writing := make(chan struct{}, 1)
+	write := make(chan struct{})
+	allowWrite := sync.OnceFunc(func() { close(write) })
+	defer allowWrite() // before closing the streams, which waits for the write
+	spill.testWriteHook = func(buf []byte) (int, error) {
+		select {
+		case writing <- struct{}{}:
+		default:
+		}
+		<-write
+		return spill.file.Write(buf)
+	}
+	appended := make(chan error, 1)
+	go func() {
+		_, err := store.AppendLogsDurably(ctx, []Log{{Body: []byte("control")}})
+		appended <- err
+	}()
+	<-writing
+
+	_, err = store.AppendLogs([]Log{{Body: []byte("after")}})
+	require.NoError(t, err, "an append doesn't wait for the durable write")
+	require.Equal(t, []string{"before"}, logBodies(t, store))
+	require.EqualValues(t, 1, store.HighWater().Logs)
+	require.EqualValues(t, 1, store.spans.spill.lastID, "span rows appended earlier are on file first")
+
+	allowWrite()
+	require.NoError(t, <-appended)
+	require.Equal(t, []string{"before", "control", "after"}, logBodies(t, store))
+	require.GreaterOrEqual(t, spill.lastID, int64(2), "the durable rows are on file")
+}
+
+func logBodies(t *testing.T, store *DB) []string {
+	t.Helper()
+	rows, err := store.SelectLogsSince(t.Context(), SelectLogsSinceParams{Limit: 100})
+	require.NoError(t, err)
+	var bodies []string
+	for _, row := range rows {
+		bodies = append(bodies, string(row.Body))
+	}
+	return bodies
 }
