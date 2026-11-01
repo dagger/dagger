@@ -78,6 +78,15 @@ func dialStdio(cmd *cobra.Command, args []string) error {
 	return err
 }
 
+// dialRetryInterval is how often dialer tries again while the engine starts.
+const dialRetryInterval = 10 * time.Millisecond
+
+// dialer connects to the engine's socket. A client that starts the engine
+// container dials as soon as the container runs, before the engine listens:
+// the socket is missing then, or left from an earlier run with nobody
+// listening. So it tries again until timeout, and the client is answered as
+// soon as the engine listens, rather than failing and retrying on its own
+// schedule, which waits a second or more between attempts.
 func dialer(address string, timeout time.Duration) (net.Conn, error) {
 	addrParts := strings.SplitN(address, "://", 2)
 	if len(addrParts) != 2 {
@@ -86,7 +95,20 @@ func dialer(address string, timeout time.Duration) (net.Conn, error) {
 	if addrParts[0] != "unix" {
 		return nil, errors.Errorf("invalid address %s (expected unix://, got %s://)", address, addrParts[0])
 	}
-	return net.DialTimeout(addrParts[0], addrParts[1], timeout)
+	deadline := time.Now().Add(timeout)
+	for {
+		conn, err := net.DialTimeout(addrParts[0], addrParts[1], timeout)
+		if err == nil || !notListening(err) || time.Now().Add(dialRetryInterval).After(deadline) {
+			return conn, err
+		}
+		time.Sleep(dialRetryInterval)
+	}
+}
+
+// notListening reports whether a dial failed because nothing listens on the
+// socket yet.
+func notListening(err error) bool {
+	return errors.Is(err, syscall.ENOENT) || errors.Is(err, syscall.ECONNREFUSED)
 }
 
 func copier(to halfWriteCloser, from halfReadCloser, debugDescription string) error {
