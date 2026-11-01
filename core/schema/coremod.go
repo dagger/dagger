@@ -27,8 +27,17 @@ type CoreSchemaBase struct {
 
 type coreSchemaViewState struct {
 	server *dagql.Server
+	view   call.View
 
-	typedefs         dagql.ObjectResultArray[*core.TypeDef]
+	// The view's type definitions are built on first use, not with the
+	// server: a client's schema needs only the server, and building them
+	// takes thousands of selects.
+	typeDefsMu sync.Mutex
+	typeDefs   *coreTypeDefs
+}
+
+type coreTypeDefs struct {
+	all              dagql.ObjectResultArray[*core.TypeDef]
 	objectDefsByName map[string]dagql.ObjectResult[*core.TypeDef]
 	scalarDefsByName map[string]dagql.ObjectResult[*core.TypeDef]
 	enumDefsByName   map[string]dagql.ObjectResult[*core.TypeDef]
@@ -82,7 +91,7 @@ func (base *CoreSchemaBase) Fork(ctx context.Context, root *core.Query, view cal
 // ForkForPersistedDecode returns a schema-only server for a background
 // persisted decode: the already-installed base forked onto the given root,
 // with the core view set and the ordinary core loaders installed. It
-// deliberately bypasses viewState, which builds cache-backed type
+// deliberately bypasses viewState, whose state builds cache-backed type
 // definitions; the native Service, Container and Module decoder classes this
 // needs are already installed on the base. It installs no user module and
 // builds no dynamic schema.
@@ -103,8 +112,8 @@ func (base *CoreSchemaBase) ForkForPersistedDecode(ctx context.Context, root *co
 }
 
 func (base *CoreSchemaBase) viewState(ctx context.Context, view call.View) (*coreSchemaViewState, error) {
-	// The schema-only fork used by a share's persisted decode bypasses this
-	// cache-backed type-definition build entirely.
+	// The schema-only fork used by a share's persisted decode bypasses this,
+	// and with it the cache-backed type definitions built from its state.
 	if err := engine.CheckSnapshotSharePreparation(ctx, "build core schema view"); err != nil {
 		return nil, err
 	}
@@ -120,9 +129,22 @@ func (base *CoreSchemaBase) viewState(ctx context.Context, view call.View) (*cor
 		return nil, fmt.Errorf("fork core schema base: %w", err)
 	}
 	srv.View = view
+	state := &coreSchemaViewState{
+		server: srv,
+		view:   view,
+	}
+	base.views[view] = state
+	return state, nil
+}
 
-	coreMod := base.CoreMod(view)
-	typedefs, err := coreMod.buildTypeDefs(ctx, srv)
+func (state *coreSchemaViewState) loadTypeDefs(ctx context.Context) (*coreTypeDefs, error) {
+	state.typeDefsMu.Lock()
+	defer state.typeDefsMu.Unlock()
+	if state.typeDefs != nil {
+		return state.typeDefs, nil
+	}
+
+	typedefs, err := buildCoreTypeDefs(ctx, state.server)
 	if err != nil {
 		return nil, err
 	}
@@ -138,9 +160,8 @@ func (base *CoreSchemaBase) viewState(ctx context.Context, view call.View) (*cor
 			return nil, fmt.Errorf("retain core typedef %q: %w", typedef.Self().Name, err)
 		}
 	}
-	state := &coreSchemaViewState{
-		server:           srv,
-		typedefs:         typedefs,
+	defs := &coreTypeDefs{
+		all:              typedefs,
 		objectDefsByName: make(map[string]dagql.ObjectResult[*core.TypeDef]),
 		scalarDefsByName: make(map[string]dagql.ObjectResult[*core.TypeDef]),
 		enumDefsByName:   make(map[string]dagql.ObjectResult[*core.TypeDef]),
@@ -151,15 +172,15 @@ func (base *CoreSchemaBase) viewState(ctx context.Context, view call.View) (*cor
 		}
 		switch typedef.Self().Kind {
 		case core.TypeDefKindObject:
-			state.objectDefsByName[typedef.Self().AsObject.Value.Self().Name] = typedef
+			defs.objectDefsByName[typedef.Self().AsObject.Value.Self().Name] = typedef
 		case core.TypeDefKindScalar:
-			state.scalarDefsByName[typedef.Self().AsScalar.Value.Self().Name] = typedef
+			defs.scalarDefsByName[typedef.Self().AsScalar.Value.Self().Name] = typedef
 		case core.TypeDefKindEnum:
-			state.enumDefsByName[typedef.Self().AsEnum.Value.Self().Name] = typedef
+			defs.enumDefsByName[typedef.Self().AsEnum.Value.Self().Name] = typedef
 		}
 	}
-	base.views[view] = state
-	return state, nil
+	state.typeDefs = defs
+	return defs, nil
 }
 
 func (m *CoreMod) Name() string {
@@ -288,7 +309,11 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 			return nil, false, nil
 		}
 
-		resolvedDef := state.scalarDefsByName[typeDef.AsScalar.Value.Self().Name]
+		defs, err := state.loadTypeDefs(ctx)
+		if err != nil {
+			return nil, false, err
+		}
+		resolvedDef := defs.scalarDefsByName[typeDef.AsScalar.Value.Self().Name]
 		if resolvedDef.Self() == nil {
 			return nil, false, fmt.Errorf("could not resolve scalar def %s", typeDef.AsScalar.Value.Self().Name)
 		}
@@ -301,7 +326,11 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 			return nil, false, nil
 		}
 
-		resolvedDef := state.objectDefsByName[typeDef.AsObject.Value.Self().Name]
+		defs, err := state.loadTypeDefs(ctx)
+		if err != nil {
+			return nil, false, err
+		}
+		resolvedDef := defs.objectDefsByName[typeDef.AsObject.Value.Self().Name]
 		if resolvedDef.Self() == nil {
 			return nil, false, fmt.Errorf("could not resolve object def %s", typeDef.AsObject.Value.Self().Name)
 		}
@@ -314,7 +343,11 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 			return nil, false, nil
 		}
 
-		resolvedDef := state.enumDefsByName[typeDef.AsEnum.Value.Self().Name]
+		defs, err := state.loadTypeDefs(ctx)
+		if err != nil {
+			return nil, false, err
+		}
+		resolvedDef := defs.enumDefsByName[typeDef.AsEnum.Value.Self().Name]
 		if resolvedDef.Self() == nil {
 			return nil, false, fmt.Errorf("could not resolve enum def %s", typeDef.AsEnum.Value.Self().Name)
 		}
@@ -365,7 +398,11 @@ func (m *CoreMod) TypeDefs(ctx context.Context, dag *dagql.Server) (dagql.Object
 	if err != nil {
 		return nil, err
 	}
-	return state.typedefs, nil
+	defs, err := state.loadTypeDefs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return defs.all, nil
 }
 
 func buildCoreTypeDefFunctions(
@@ -537,7 +574,7 @@ func buildCoreObjectLikeTypeDef[T dagql.Typed](
 	return typeDef, true, nil
 }
 
-func (m *CoreMod) buildTypeDefs(ctx context.Context, dag *dagql.Server) (dagql.ObjectResultArray[*core.TypeDef], error) {
+func buildCoreTypeDefs(ctx context.Context, dag *dagql.Server) (dagql.ObjectResultArray[*core.TypeDef], error) {
 	dagqlSchema := dagqlintrospection.WrapSchema(dag.Schema())
 	schema := &introspection.Schema{}
 	if queryName := dagqlSchema.QueryType().Name(); queryName != nil {
