@@ -532,6 +532,16 @@ func (a *RemoteCacheAdapter) OfferParts(ctx context.Context, req protocol.Offer)
 
 func (a *RemoteCacheAdapter) offerItem(ctx context.Context, item protocol.OfferItem) (_ protocol.OfferedItem, rerr error) {
 	start := time.Now()
+	// The item's profile op is what holds the cache's graph lock for it, so
+	// a wait behind the offer names it; each part's offer is an op under it.
+	ctx, op := wcprof.BeginOp(ctx, wcprof.OpKindRemoteCache, "remotecache.offer.item", wcprof.OpOpts{})
+	defer func() {
+		outcome := wcprof.OutcomeOK
+		if rerr != nil {
+			outcome = wcprof.OutcomeError
+		}
+		op.EndWithResult(outcome, item.Number)
+	}()
 	receiver, release, err := a.cache.HoldEntry(ctx, item.Number)
 	if errors.Is(err, dagql.ErrUnknownEntry) {
 		return protocol.OfferedItem{Number: item.Number, Gone: true}, nil

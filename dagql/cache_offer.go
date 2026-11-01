@@ -5,6 +5,8 @@ import (
 	"errors"
 	"reflect"
 	"slices"
+
+	"github.com/dagger/dagger/engine/wcprof"
 )
 
 type OfferOutcome uint8
@@ -85,7 +87,7 @@ func (c *Cache) OfferParts(ctx context.Context, receiver AnyResult, offers []Clo
 		return unavailableOffers(offers, err), err
 	}
 	root := receiver.cacheSharedResult()
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	if c.resultsByID[root.id] != root || root.attachmentState() != resultAttachmentClean {
 		c.egraphMu.Unlock()
 		err := errors.New("offer: receiver is unavailable")
@@ -172,7 +174,7 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 		if capture := captures[id]; capture != nil {
 			return capture.record, true
 		}
-		c.egraphMu.Lock()
+		wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 		row := c.resultsByID[sharedResultID(id)]
 		if row == nil || row.attachmentState() != resultAttachmentClean {
 			c.egraphMu.Unlock()
@@ -255,7 +257,7 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 	}
 	key, _ := partAddressKey(address)
 	// A preparation hold protects references across the two E sections.
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	var owner *offerOwner
 	old := row.partOfferLocked(key)
 	if old != nil && sameOfferMeaning(old.record, offer) {
@@ -276,7 +278,7 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 			return
 		}
 		cleanupCtx := context.WithoutCancel(ctx)
-		c.egraphMu.Lock()
+		wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 		queue, err := c.releaseOfferOwnerLocked(cleanupCtx, owner)
 		callbacks, collectErr := c.collectUnownedResultsLocked(cleanupCtx, queue)
 		c.egraphMu.Unlock()
@@ -295,7 +297,7 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 	if c.testOfferBeforeDecision != nil {
 		c.testOfferBeforeDecision(root)
 	}
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	gate := row.partGate.loadOrCreate()
 	gate.mu.Lock()
 	out.Outcome = offerGateOutcomeLocked(gate, address)
