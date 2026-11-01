@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
+	"github.com/containerd/containerd/v2/core/diff"
 	"github.com/containerd/containerd/v2/core/diff/apply"
 	ctdmetadata "github.com/containerd/containerd/v2/core/metadata"
 	"github.com/containerd/containerd/v2/core/remotes/docker"
@@ -788,6 +789,9 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 		ContentStore:  srv.contentStore,
 		LeaseManager:  srv.leaseManager,
 		Applier:       winlayers.NewFileSystemApplierWithWindows(srv.contentStore, bkcache.NewLayerApplier(srv.contentStore)),
+		ApplyFrom: func(provider content.Provider) diff.Applier {
+			return winlayers.NewFileSystemApplierWithWindows(provider, bkcache.NewLayerApplier(provider))
+		},
 		Differ:        winlayers.NewWalkingDiffWithWindows(srv.contentStore, walking.NewWalkingDiff(srv.contentStore)),
 		MountPoolRoot: srv.buildkitMountPoolDir,
 		// Chain imports take a builtin image's layers from the engine's own

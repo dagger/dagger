@@ -35,6 +35,11 @@ type SnapshotManagerOpt struct {
 	ContentStore  content.Store
 	LeaseManager  leases.Manager
 	Applier       diff.Applier
+	// ApplyFrom, when set, returns an applier like Applier that reads blobs
+	// from provider instead of the content store. A chain import uses it to
+	// apply a layer from its blob decompressed ahead; nil applies the stored
+	// blob with Applier.
+	ApplyFrom     func(provider content.Provider) diff.Applier
 	Differ        diff.Comparer
 	MountPoolRoot string
 	// BuiltinContent is the engine's builtin image store, consulted by
@@ -135,6 +140,7 @@ type snapshotManager struct {
 	ContentStore  content.Store
 	LeaseManager  leases.Manager
 	Applier       diff.Applier
+	applyFrom     func(content.Provider) diff.Applier
 	Differ        diff.Comparer
 	metadataStore *metadataStore
 	// builtinContent is SnapshotManagerOpt.BuiltinContent.
@@ -191,6 +197,7 @@ func NewSnapshotManager(opt SnapshotManagerOpt) (SnapshotManager, error) {
 		ContentStore:           opt.ContentStore,
 		LeaseManager:           opt.LeaseManager,
 		Applier:                opt.Applier,
+		applyFrom:              opt.ApplyFrom,
 		Differ:                 opt.Differ,
 		builtinContent:         opt.BuiltinContent,
 		metadataDB:             opt.MetadataDB,
