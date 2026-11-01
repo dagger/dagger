@@ -2573,6 +2573,11 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		mux.HandleFunc("GET /v1/metrics", httpHandlerFunc(srv.telemetryPubSub.MetricsSubscribeHandler, record))
 		mux.HandleFunc("POST /v1/logs/query", httpHandlerFunc(srv.telemetryPubSub.LogsQueryHandler, record))
 		mux.HandleFunc("POST /v1/logs/search", httpHandlerFunc(srv.telemetryPubSub.LogsSearchHandler, record))
+		// The client's own telemetry (engine.ClientTelemetryIngestHeader).
+		ps := srv.telemetryPubSub
+		mux.HandleFunc("POST /v1/traces", ps.clientIngestHandler(ps.ingestClientTraces, record))
+		mux.HandleFunc("POST /v1/logs", ps.clientIngestHandler(ps.ingestClientLogs, record))
+		mux.HandleFunc("POST /v1/metrics", ps.clientIngestHandler(ps.ingestClientMetrics, record))
 	default:
 		requestOpts := *opts
 		requestOpts.requestOwner = r.Method + " " + r.URL.Path

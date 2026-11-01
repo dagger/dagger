@@ -75,6 +75,14 @@ const (
 	// session. The engine's store-to-Cloud forwarder leaves it out. (bool)
 	TelemetryCloudPublishedAttr = "dagger.io/telemetry.cloud_published"
 
+	// TelemetryClientIngestedAttr is a resource attribute the engine stamps on
+	// the telemetry a client posts about itself over its session connection
+	// (engine.ClientTelemetryIngestHeader): the ID of that client. The
+	// client's own telemetry streams leave these records out, since the
+	// client emitted them; everything else that reads the store sees them
+	// like any other record. (string)
+	TelemetryClientIngestedAttr = "dagger.io/telemetry.client_ingested"
+
 	UIResumeOutputAttr = "dagger.io/ui.resume.output"
 
 	// Dagger Cloud's /v1/traces stream stamps these on every span it emits
