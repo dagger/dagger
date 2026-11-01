@@ -30,6 +30,11 @@ type StoredBundleResult struct {
 	// no call for: none had inputs it could place.
 	CallInputs      []uint64
 	UnsendableCalls int
+	// RootOwners has, for each of Bundle.Roots, the index among the roots it
+	// was asked for of the one it travels with: itself, or, for an entry a
+	// call's input needs, the first root whose call needs it. StoredSizes
+	// prices each root with what travels with it.
+	RootOwners []int
 }
 
 // HeldBy names the entries of a blob-backed cache whose values a recipient
@@ -143,17 +148,24 @@ func (c *Cache) storedBundle(roots []uint64, held *HeldBy) (StoredBundleResult, 
 	if len(rootEntries) == 0 {
 		return out, nil, nil
 	}
-	build := &storedBundleBuild{now: time.Now().Unix(), ordinals: map[sharedResultID]TransferOrdinal{}, heldBy: held, held: map[sharedResultID]bool{}}
+	build := &storedBundleBuild{now: time.Now().Unix(), ordinals: map[sharedResultID]TransferOrdinal{}, heldBy: held, held: map[sharedResultID]bool{},
+		owners: map[sharedResultID]int{}, ordinary: map[sharedResultID]bool{}, rootSeen: seenRoot}
 	build.bundle.Version = valueBundleVersion
 	visiting := map[sharedResultID]bool{}
-	for _, res := range rootEntries {
+	// Root by root, as StoredSizes prices them: its closure, then the calls
+	// kept on what it added, with their inputs' closures.
+	for i, res := range rootEntries {
+		build.current = i
+		start := len(build.order)
 		if err := c.storedBundleVisitLocked(build, res, visiting); err != nil {
 			return StoredBundleResult{}, nil, err
 		}
-	}
-	build.rootSeen = seenRoot
-	if err := c.storedBundleCallsLocked(build); err != nil {
-		return StoredBundleResult{}, nil, fmt.Errorf("stored bundle: %w", err)
+		for _, entry := range build.order[start:] {
+			build.ordinary[entry.id] = true
+		}
+		if err := c.storedBundleCallsLocked(build, start); err != nil {
+			return StoredBundleResult{}, nil, fmt.Errorf("stored bundle: %w", err)
+		}
 	}
 	rootEntries = append(rootEntries, build.callRoots...)
 	var frames map[TransferOrdinal]*ResultCall
@@ -189,6 +201,9 @@ func (c *Cache) storedBundle(roots []uint64, held *HeldBy) (StoredBundleResult, 
 	}
 	out.Bundle, out.Donors = build.bundle, build.donors
 	out.CallInputs, out.UnsendableCalls = build.callInputs, build.unsendableCalls
+	for _, res := range rootEntries {
+		out.RootOwners = append(out.RootOwners, build.owners[res.id])
+	}
 	if frames == nil {
 		if err := validateStoredBundle(build.bundle); err != nil {
 			return StoredBundleResult{}, nil, fmt.Errorf("stored bundle: %w", err)
@@ -217,6 +232,13 @@ type storedBundleBuild struct {
 	callRoots       []*sharedResult
 	callInputs      []uint64
 	unsendableCalls int
+	// owners has, for each entry the build added, the index of the root it
+	// was asked for that added it, or whose call's input it is (current, as
+	// it's added); ordinary are those the roots' closures added, not their
+	// calls' inputs.
+	owners   map[sharedResultID]int
+	current  int
+	ordinary map[sharedResultID]bool
 }
 
 // relocate rewrites a reference to an entry of the closure to its ordinal.
@@ -247,6 +269,7 @@ func (c *Cache) storedBundleVisitLocked(build *storedBundleBuild, res *sharedRes
 		build.held[res.id] = true
 		build.order = append(build.order, res)
 		build.ordinals[res.id] = TransferOrdinal(len(build.order))
+		build.owners[res.id] = build.current
 		return nil
 	}
 	if res.noValueLocked() || res.persistedEnvelope == nil {
@@ -265,6 +288,7 @@ func (c *Cache) storedBundleVisitLocked(build *storedBundleBuild, res *sharedRes
 	delete(visiting, res.id)
 	build.order = append(build.order, res)
 	build.ordinals[res.id] = TransferOrdinal(len(build.order))
+	build.owners[res.id] = build.current
 	return nil
 }
 

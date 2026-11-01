@@ -27,9 +27,12 @@ var heldRowSizeDigest = digest.Digest("xxh3:0000000000000000")
 // StoredSizes measures what StoredBundle(roots, held) carries without
 // building it: for each root, in order, what its closure adds beyond the
 // closures of the roots before it, an entry held holds counted as its held
-// row. A root the cache has no value for, or one an earlier root's closure
-// already holds, adds nothing; so does an entry of a closure with no stored
-// record, and nothing below it is walked.
+// row. A root's closure includes the entries StoredBundle adds for the inputs
+// of its entries' kept calls, priced so that the sizes of the first roots
+// are never less than what a bundle of them carries (walkStoredRoot). A root
+// the cache has no value for, or one an earlier root's closure already
+// holds, adds nothing; so does an entry of a closure with no stored record,
+// and nothing below it is walked.
 //
 // Each entry's value is encoded once, with its references at entry numbers,
 // and its size memoized with its normalized record (normalizeStoredTransfer)
@@ -69,12 +72,12 @@ func (c *Cache) storedSizes(ctx context.Context, roots []uint64, held *HeldBy, m
 		return nil, fmt.Errorf("stored sizes: the cache has no blob store")
 	}
 	sizes := make([]StoredSize, len(roots))
-	seen := map[sharedResultID]bool{}
+	seen, ordinary := map[sharedResultID]bool{}, map[sharedResultID]bool{}
 	for i, number := range roots {
 		if err := context.Cause(ctx); err != nil {
 			return nil, err
 		}
-		size, closure, misses := c.walkStoredRoot(sharedResultID(number), held, seen)
+		size, closure, own, misses := c.walkStoredRoot(sharedResultID(number), held, seen, ordinary)
 		if len(misses) > 0 && !measure {
 			sizes[i] = StoredSize{Unmeasured: true}
 			continue
@@ -91,6 +94,9 @@ func (c *Cache) storedSizes(ctx context.Context, roots []uint64, held *HeldBy, m
 		c.publishStoredSizes(measured)
 		for _, id := range closure {
 			seen[id] = true
+		}
+		for _, id := range closure[:own] {
+			ordinary[id] = true
 		}
 		sizes[i] = size
 	}
@@ -125,49 +131,99 @@ func (c *Cache) storedSizesRLock() func() {
 
 // walkStoredRoot walks what root's closure adds beyond seen, in one hold of
 // egraphMu.RLock: the entries it adds, the size of those already measured or
-// held, counting every value, and the values not yet measured.
-func (c *Cache) walkStoredRoot(root sharedResultID, held *HeldBy, seen map[sharedResultID]bool) (StoredSize, []sharedResultID, []storedSizeMiss) {
+// held, counting every value, and the values not yet measured; and how many
+// of the entries, first, are its ordinary closure. It walks as StoredBundle
+// builds (storedBundleVisitLocked, storedBundleCallsLocked): the closure,
+// dependencies first, then, entry by entry in that order, the calls kept on
+// each, adding the closure of each input a chosen call needs.
+//
+// The price is never less than what a bundle of the roots up to this one
+// adds for it. Which of a term's calls a bundle chooses depends on what the
+// whole bundle carries, which a later root's closure can change: so a call
+// counts as placed only when the ordinary closures of the roots so far
+// (ordinary), or the recipient (held), have its inputs, never for an input
+// another call adds. Otherwise its first stored alternative's inputs are
+// priced, which is the call a bundle that can't place it chooses too.
+func (c *Cache) walkStoredRoot(root sharedResultID, held *HeldBy, seen, ordinary map[sharedResultID]bool) (StoredSize, []sharedResultID, int, []storedSizeMiss) {
 	defer c.storedSizesRLock()()
-	var (
-		size    StoredSize
-		closure []sharedResultID
-		misses  []storedSizeMiss
-	)
 	res := c.resultsByID[root]
 	if res == nil || res.noValueLocked() {
-		return size, nil, nil
+		return StoredSize{}, nil, 0, nil
 	}
-	visited := map[sharedResultID]bool{}
-	stack := []*sharedResult{res}
-	for len(stack) > 0 {
-		res := stack[len(stack)-1]
-		stack = stack[:len(stack)-1]
-		if seen[res.id] || visited[res.id] {
+	walk := &storedSizeWalk{c: c, held: held, seen: seen, visited: map[sharedResultID]bool{}}
+	walk.visit(res)
+	own := len(walk.closure)
+	mine := make(map[sharedResultID]bool, own)
+	for _, id := range walk.closure {
+		mine[id] = true
+	}
+	for i := 0; i < len(walk.order); i++ {
+		entry := walk.order[i]
+		if len(entry.calls) == 0 {
 			continue
 		}
-		visited[res.id] = true
-		closure = append(closure, res.id)
-		if held.heldLocked(res) {
-			size.Records++
-			size.Bytes += heldRowSizeLocked(res)
-			continue
-		}
-		if res.noValueLocked() || res.persistedEnvelope == nil {
-			continue
-		}
-		size.Records++
-		if bytes, ok := storedValueMeasuredLocked(res); ok {
-			size.Bytes += bytes
-		} else {
-			misses = append(misses, storedSizeMissLocked(res))
-		}
-		for _, id := range storedClosureChildrenLocked(res) {
-			if child := c.resultsByID[id]; child != nil && !seen[id] && !visited[id] {
-				stack = append(stack, child)
+		for _, group := range c.keptCallTermsLocked(entry) {
+			_, add := c.placeableCallLocked(group, func(input *sharedResult) bool {
+				return ordinary[input.id] || mine[input.id] || held.heldLocked(input)
+			})
+			for _, input := range add {
+				walk.visit(input)
 			}
 		}
 	}
-	return size, closure, misses
+	return walk.size, walk.closure, own, walk.misses
+}
+
+// storedSizeWalk is walkStoredRoot's walk: the entries it reached
+// (visited), those it adds, in the order StoredBundle adds them (order), and
+// what they add up to.
+type storedSizeWalk struct {
+	c       *Cache
+	held    *HeldBy
+	seen    map[sharedResultID]bool
+	visited map[sharedResultID]bool
+	order   []*sharedResult
+	size    StoredSize
+	closure []sharedResultID
+	misses  []storedSizeMiss
+}
+
+// carries reports whether the bundle carries the entry: an earlier root's
+// closure or this walk has it.
+func (w *storedSizeWalk) carries(id sharedResultID) bool {
+	return w.seen[id] || w.visited[id]
+}
+
+// visit adds res's closure, dependencies first, as storedBundleVisitLocked
+// does: a held row alone, with nothing below it, and an entry with no
+// stored record not at all. Requires egraphMu.
+func (w *storedSizeWalk) visit(res *sharedResult) {
+	if w.carries(res.id) {
+		return
+	}
+	w.visited[res.id] = true
+	w.closure = append(w.closure, res.id)
+	if w.held.heldLocked(res) {
+		w.size.Records++
+		w.size.Bytes += heldRowSizeLocked(res)
+		w.order = append(w.order, res)
+		return
+	}
+	if res.noValueLocked() || res.persistedEnvelope == nil {
+		return
+	}
+	for _, id := range storedClosureChildrenLocked(res) {
+		if child := w.c.resultsByID[id]; child != nil {
+			w.visit(child)
+		}
+	}
+	w.size.Records++
+	if bytes, ok := storedValueMeasuredLocked(res); ok {
+		w.size.Bytes += bytes
+	} else {
+		w.misses = append(w.misses, storedSizeMissLocked(res))
+	}
+	w.order = append(w.order, res)
 }
 
 // storedValueMeasuredLocked returns res's measured size, if its record,
