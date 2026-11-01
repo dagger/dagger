@@ -2,9 +2,11 @@ package workspace
 
 import (
 	"context"
+	"crypto/sha256"
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // TreeFileReader reads a file at a path relative to the root of a module's
@@ -30,16 +32,30 @@ func DeclaredGitClients(ctx context.Context, moduleDir string, read TreeFileRead
 			case dir != ".":
 				scope = strings.TrimPrefix(moduleDir, dir+"/")
 			}
-			cfg, err := ParseConfigAt(ctx, data, ".")
-			if err != nil {
-				return nil, nil //nolint:nilerr // deliberate: a config that does not parse declares nothing
-			}
-			return ModuleScopeGitClients(cfg, ".")[scope], nil
+			return configScopeGitClients(ctx, data)[scope], nil
 		}
 		if dir == "." {
 			return nil, nil
 		}
 	}
+}
+
+// scopeGitClients holds each config's git clients by module scope, keyed by
+// the config's content, since every module function call reads them.
+var scopeGitClients sync.Map
+
+func configScopeGitClients(ctx context.Context, data []byte) map[string][]string {
+	key := sha256.Sum256(data)
+	if cached, ok := scopeGitClients.Load(key); ok {
+		return cached.(map[string][]string)
+	}
+	clients := map[string][]string{}
+	// A config that does not parse declares nothing.
+	if cfg, err := ParseConfigAt(ctx, data, "."); err == nil {
+		clients = ModuleScopeGitClients(cfg, ".")
+	}
+	scopeGitClients.Store(key, clients)
+	return clients
 }
 
 // GitClientKey names the repository path, and the directory in it, that a
