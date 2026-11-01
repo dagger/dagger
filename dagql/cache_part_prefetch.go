@@ -226,6 +226,9 @@ type partPrefetchJob struct {
 	// the ahead queue.
 	size  int64
 	ahead bool
+	// demand holds an ahead job's renewals, one for all of its offer's
+	// jobs the worker runs together.
+	demand *PartDemandState
 	// gone is set once the offer is retired; cancel stops a running job;
 	// digests are the blobs a running job downloads, set once it registers
 	// them.
@@ -829,8 +832,16 @@ func (p *partPrefetcher) aheadFullLocked() bool {
 	return p.cfg.aheadMax > 0 && p.aheadTaken >= p.cfg.aheadMax
 }
 
-// runAhead runs ahead jobs, one after another, as work runs a lane's.
+// runAhead runs ahead jobs, one after another, as work runs a lane's. The
+// jobs of one offer share one demand, so that the offer's expired addresses
+// renew once.
 func (p *partPrefetcher) runAhead(jobs []*partPrefetchJob) {
+	if len(jobs) > 0 {
+		demand := &PartDemandState{target: clonePartAddress(jobs[0].record.Address), started: time.Now()}
+		for _, job := range jobs {
+			job.demand = demand
+		}
+	}
 	for _, job := range jobs {
 		p.mu.Lock()
 		if job.gone {
@@ -1076,12 +1087,8 @@ func (p *partPrefetcher) run(ctx context.Context, job *partPrefetchJob) {
 // among them: only a done job's counts are complete.
 func (p *partPrefetcher) fetch(ctx context.Context, job *partPrefetchJob, wanted []ocispecs.Descriptor) (blobs int, bytes int64, stats *partInstallStats, failure error) {
 	// An ahead job's reads may renew an expired address, which takes a
-	// demand to hold the renewal: one of the job's own.
-	var demand *PartDemandState
-	if job.ahead {
-		demand = &PartDemandState{target: clonePartAddress(job.record.Address), started: time.Now()}
-	}
-	provider := p.cache.PartContentSource().Provider(ctx, job.record, demand)
+	// demand to hold the renewal: its offer's, set by runAhead.
+	provider := p.cache.PartContentSource().Provider(ctx, job.record, job.demand)
 	if parts, ok := provider.(*partContentProvider); ok {
 		stats = &partInstallStats{}
 		parts.stats = stats
