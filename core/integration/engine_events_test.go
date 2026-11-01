@@ -72,12 +72,13 @@ func engineEventRuns(ctx context.Context, t *testctx.T, cloud telemetrySplitClou
 	return runs
 }
 
-// kinds returns the kinds of a run's events, snapshot-sharing passes aside:
-// whether a pipeline shares snapshots is not what these tests cover.
+// kinds returns the kinds of a run's events, snapshot-sharing passes and
+// reads aside: how many of each a pipeline makes, and when they flush, is not
+// what these tests cover.
 func engineEventKinds(run []engineEventLine) []string {
 	var kinds []string
 	for _, event := range run {
-		if event.kind() != telemetryattrs.EngineEventShare {
+		if event.kind() != telemetryattrs.EngineEventShare && event.kind() != telemetryattrs.EngineEventRead {
 			kinds = append(kinds, event.kind())
 		}
 	}
@@ -353,6 +354,26 @@ func (ClientSuite) TestEngineEventsToCloud(ctx context.Context, t *testctx.T) {
 		}
 	}
 	require.Positive(t, compared, "the restored cache hits an entry the first session reported with parts")
+
+	// The first process reports the entries its pipeline's work read, among
+	// them entries its first session's spans name, between its start and its
+	// stop.
+	var readReported bool
+	for _, event := range first {
+		if event.kind() != telemetryattrs.EngineEventRead {
+			continue
+		}
+		require.Greater(t, event.TimeUnixNano, first[0].TimeUnixNano)
+		require.Less(t, event.TimeUnixNano, first[len(first)-1].TimeUnixNano)
+		reads := decodeEngineEventLine[telemetryattrs.EngineReadEvent](t, event).Reads
+		require.NotEmpty(t, reads)
+		for _, read := range reads {
+			require.NotZero(t, read.ResultID)
+			_, ok := reported[read.ResultID]
+			readReported = readReported || ok
+		}
+	}
+	require.True(t, readReported, "the first process reports a read of an entry its first session's spans name")
 
 	requireSessionCacheSpanCounts(t, spans)
 }
