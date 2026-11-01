@@ -776,7 +776,7 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 		Snapshotter:   workerSnapshotter,
 		ContentStore:  srv.contentStore,
 		LeaseManager:  srv.leaseManager,
-		Applier:       winlayers.NewFileSystemApplierWithWindows(srv.contentStore, apply.NewFileSystemApplier(srv.contentStore)),
+		Applier:       winlayers.NewFileSystemApplierWithWindows(srv.contentStore, bkcache.NewLayerApplier(srv.contentStore)),
 		Differ:        winlayers.NewWalkingDiffWithWindows(srv.contentStore, walking.NewWalkingDiff(srv.contentStore)),
 		MountPoolRoot: srv.buildkitMountPoolDir,
 		// Chain imports take a builtin image's layers from the engine's own
