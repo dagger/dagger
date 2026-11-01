@@ -1,0 +1,7 @@
+kind: Added
+body: |
+  `dagger --help` shows the Dagger logo, beside the help in a wide terminal and above it in a narrow one, and command names are bold in a terminal.
+time: 2026-10-21T16:45:18Z
+custom:
+  Author: eunomie
+  PR: ""

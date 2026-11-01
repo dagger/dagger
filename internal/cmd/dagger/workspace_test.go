@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -451,7 +452,7 @@ func renderHelp(t *testing.T, cmd *cobra.Command) string {
 
 	// Test help formatting without the workspace discovery hook.
 	rootCmd.HelpFunc()(cmd, nil)
-	return out.String()
+	return ansi.Strip(out.String())
 }
 
 func rootHelpCommandNames(help string) []string {
