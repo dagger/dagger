@@ -686,17 +686,21 @@ func (c *Cache) heldRowStaleLocked(cur *sharedResult, expiresAtUnix, now int64) 
 }
 
 // prepareRecordPayload validates the record of ordinal id with its payload,
-// and relocates it in full to its provisional numbers with relocate.
+// as validateTransferRecord does, and relocates it in full to its provisional
+// numbers with relocate. One visit of the record's references both checks
+// and relocates them, since visiting decodes its payload; its offers, whose
+// references validateTransferRecordContent checks, are relocated apart.
 func (prep *valueMergePrep) prepareRecordPayload(id uint64, relocate PersistedRefVisitor) error {
 	row := prep.index[id]
-	if err := validateTransferRecord(row.Record, row.DependencyIDs); err != nil {
+	direct, err := validateTransferRecordContent(row.Record, row.DependencyIDs)
+	if err != nil {
 		return fmt.Errorf("row %d: %w", id, err)
 	}
 	if _, err := mapTransferredOutputs(row.Record); err != nil {
 		return err
 	}
 	var refs []uint64
-	rec, err := VisitEncodedReferences(row.Record, func(ref *PersistedRef) error {
+	collect := func(ref *PersistedRef) error {
 		if err := relocate(ref); err != nil {
 			return err
 		}
@@ -704,9 +708,26 @@ func (prep *valueMergePrep) prepareRecordPayload(id uint64, relocate PersistedRe
 			refs = append(refs, ref.ResultID)
 		}
 		return nil
+	}
+	checkDirect := directTransferReferences(direct)
+	bare := row.Record
+	bare.Envelope.PendingOffers = nil
+	rec, err := VisitEncodedReferences(bare, func(ref *PersistedRef) error {
+		if err := checkDirect(ref); err != nil {
+			return fmt.Errorf("row %d: %w", id, err)
+		}
+		return collect(ref)
 	})
 	if err != nil {
 		return err
+	}
+	if rec.Envelope.PendingOffers, err = clonePartOffers(row.Record.Envelope.PendingOffers); err != nil {
+		return err
+	}
+	for i := range rec.Envelope.PendingOffers {
+		if err := visitPersistedPartOffer(&rec.Envelope.PendingOffers[i], nil, collect); err != nil {
+			return err
+		}
 	}
 	slices.Sort(refs)
 	prep.refs[id] = slices.Compact(refs)
