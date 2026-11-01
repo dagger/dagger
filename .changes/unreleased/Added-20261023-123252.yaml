@@ -1,0 +1,6 @@
+kind: Added
+body: Recommend the Docker module when a workspace contains Dockerfile, Compose, Docker ignore, or Hadolint files.
+time: 2026-10-23T12:32:52.513823-07:00
+custom:
+    Author: shykes
+    PR: "14847"
