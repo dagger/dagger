@@ -139,6 +139,17 @@ func TestStoreBootstrapUsesSelectedCut(t *testing.T) {
 	require.False(t, sink.imported)
 }
 
+// A plain session's archive has no agent roster to show, and its engine
+// refuses the agent bootstrap; displaying it must not ask.
+func TestStoreSkipsTelemetryOnlyBootstrap(t *testing.T) {
+	seal := time.Unix(123, 0).UTC()
+	r := &bootstrapReader{err: archive.ErrCleanMiss}
+	s := NewStore(r, archive.Manifest{TraceID: "trace", TelemetryOnly: true, SealAt: &seal})
+	sink := &bootstrapSink{}
+	require.NoError(t, s.FetchBootstrap(t.Context(), sink))
+	require.False(t, sink.imported)
+}
+
 func TestStoreWholeTraceAndFailure(t *testing.T) {
 	r := &archiveReader{}
 	s := NewStore(r, archive.Manifest{TraceID: "trace", HighWater: archive.HighWater{Spans: 10, Logs: 20, Metrics: 30}})
