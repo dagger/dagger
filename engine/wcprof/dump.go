@@ -142,10 +142,11 @@ type DumpEvent struct {
 	// HolderID the op that took it through WriteLock, HolderUnknown when
 	// it was taken directly, with no context to name the op, or
 	// HolderReaders when it was held for reading; and HolderSinceNS when
-	// the holder took it. Only locks of type RWMutex have a holder: a wait
-	// on another lock has none. A lock taken directly reads as
-	// HolderUnknown, never as an earlier holder's op; readers aren't named
-	// one by one.
+	// the holder took it, 0 for readers or when not known. Only locks of
+	// type RWMutex have a holder: a wait on another lock has none. A lock
+	// taken directly, or caught between a release and the next taker's
+	// mark, reads as HolderUnknown, never as an earlier holder's op;
+	// readers aren't named one by one.
 	HolderID      uint64 `json:"h,omitempty"`
 	HolderSinceNS int64  `json:"hs,omitempty"`
 }
