@@ -31,6 +31,9 @@ import (
 type recordingConn struct {
 	sent   chan protocol.Envelope
 	closed atomic.Bool
+	// afterWrite, when set before the session is driven, runs after each
+	// message is recorded, in the writer's goroutine.
+	afterWrite func(protocol.Envelope)
 }
 
 func newRecordingConn() *recordingConn {
@@ -48,6 +51,9 @@ func (c *recordingConn) Write(_ context.Context, data []byte) error {
 		return err
 	}
 	c.sent <- env
+	if c.afterWrite != nil {
+		c.afterWrite(env)
+	}
 	return nil
 }
 
@@ -853,6 +859,30 @@ func TestExportEndedLogged(t *testing.T) {
 		s.cancel(errors.New("session ended"))
 		line := logs.waitLines(t, "remote cache export ended", 1)[0]
 		require.Equal(t, "uploaded", line["outcome"], "an export that succeeded is not canceled by a later end")
+		require.NotContains(t, line, "error")
+	})
+	t.Run("uploaded, then the session ended at once", func(t *testing.T) {
+		// The session ends as the upload is answered, before the export
+		// has returned: it still uploaded.
+		adapter := newFakeAdapter()
+		adapter.export = func(ctx context.Context, _ protocol.Export, consume func(context.Context, Export) error) error {
+			err := consume(ctx, Export{Bundle: testBundle(), Blobs: blobs{d1: "first"}})
+			<-ctx.Done()
+			return err
+		}
+		s, conn, logs := loggedSession(t, adapter)
+		s.cfg.put = okPut
+		conn.afterWrite = func(env protocol.Envelope) {
+			if env.Type == protocol.TypeUploaded {
+				s.cancel(errors.New("session ended"))
+			}
+		}
+		s.dispatch(request(t, 7, protocol.TypeExport, protocol.Export{Roots: []uint64{12}}))
+		exportID := decode[protocol.Exported](t, conn.next(t)).ExportID
+		s.dispatch(request(t, 8, protocol.TypeUpload, protocol.Upload{ExportID: exportID, URLs: map[digest.Digest]string{d1: "put-1"}}))
+		require.Equal(t, protocol.TypeUploaded, conn.next(t).Type)
+		line := logs.waitLines(t, "remote cache export ended", 1)[0]
+		require.Equal(t, "uploaded", line["outcome"], "an export whose upload was answered is not canceled by an end that follows at once")
 		require.NotContains(t, line, "error")
 	})
 	t.Run("failed put", func(t *testing.T) {
