@@ -14,7 +14,6 @@ import (
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	otlpmetricsv1 "go.opentelemetry.io/proto/otlp/metrics/v1"
 	otlpresourcev1 "go.opentelemetry.io/proto/otlp/resource/v1"
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/dagger/dagger/engine/clientdb"
@@ -133,7 +132,9 @@ func withClientIngested(res *otlpresourcev1.Resource, clientID string) *otlpreso
 	return res
 }
 
-var clientIngestedAttrKey = []byte(`"` + telemetryattrs.TelemetryClientIngestedAttr + `"`)
+// The stored resource is a binary protobuf message, so an attribute's
+// presence implies its key bytes appear verbatim.
+var clientIngestedAttrKey = []byte(telemetryattrs.TelemetryClientIngestedAttr)
 
 // ingestedFrom reports whether a resource carries clientID as its
 // TelemetryClientIngestedAttr.
@@ -154,7 +155,7 @@ func ingestedResourceRow(resource []byte, clientID string) bool {
 		return false
 	}
 	var res otlpresourcev1.Resource
-	if err := protojson.Unmarshal(resource, &res); err != nil {
+	if err := proto.Unmarshal(resource, &res); err != nil {
 		return false
 	}
 	return ingestedFrom(&res, clientID)
@@ -167,7 +168,7 @@ func ingestedMetricRow(data []byte, clientID string) bool {
 		return false
 	}
 	var rm otlpmetricsv1.ResourceMetrics
-	if err := protojson.Unmarshal(data, &rm); err != nil {
+	if err := proto.Unmarshal(data, &rm); err != nil {
 		return false
 	}
 	return ingestedFrom(rm.GetResource(), clientID)
