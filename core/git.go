@@ -2342,6 +2342,9 @@ func (lazy *DirectoryGitTreeLazy) Evaluate(ctx context.Context, dir *Directory) 
 		if input == nil || input.Ref == nil || input.Ref.SHA == "" {
 			return nil, fmt.Errorf("DirectoryGitTreeLazy: missing Ref SHA")
 		}
+		if _, remote := input.Repo.Self().Backend.(*RemoteGitRepository); remote && lazy.DiscardGitDir && !lazy.KeepGitDir && !input.Repo.Self().DiscardGitDir {
+			return nil, remoteTreeWithoutGitDir(ctx, srv, dir, lazy.Ref, lazy.Depth)
+		}
 		return gitRefTreeInto(ctx, dir, input, srv, lazy.DiscardGitDir, lazy.KeepGitDir, lazy.Depth, lazy.IncludeTags)
 	})
 }
