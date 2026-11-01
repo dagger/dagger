@@ -103,7 +103,7 @@ func (capture *HeldCapturedClosure) Release(ctx context.Context) error {
 	capture.releaseOnce.Do(func() {
 		ctx = context.WithoutCancel(ctx)
 		c := capture.cache
-		c.egraphMu.Lock()
+		wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 		var queue collectionQueue
 		for _, owner := range capture.owners {
 			q, err := c.releaseOfferOwnerLocked(ctx, owner)
@@ -157,7 +157,7 @@ func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelectio
 		known = nil
 	}
 	lockStart := time.Now()
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	walkStart := time.Now()
 	capture.walkWait = walkStart.Sub(lockStart)
 	// seen is 1 while a row's walk is under way, 2 once it's done, and 3
@@ -363,7 +363,7 @@ func (err *staleOffersError) Unwrap() error { return ErrPersistStateNotReady }
 // next capture to judge.
 func (c *Cache) retireStaleOffers(ctx context.Context, stale []staleOffer) error {
 	ctx = context.WithoutCancel(ctx)
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	var queue collectionQueue
 	var rerr error
 	// Each row is judged once, before any of its offers is retired: a
