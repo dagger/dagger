@@ -706,7 +706,10 @@ http.server.HTTPServer(("", 8000), Late).serve_forever()
 `
 	delays := []string{"7", "10", "13"}
 
-	client := core.NewQuery(c).Container().From(alpineImage)
+	// A cached exec would report an earlier run's services.
+	client := core.NewQuery(c).Container().
+		From(alpineImage).
+		WithEnvVariable("BUST", rand.Text())
 	for _, delay := range delays {
 		srv := core.NewQuery(c).Container().
 			From("python").
