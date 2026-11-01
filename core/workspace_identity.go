@@ -96,6 +96,7 @@ func (ws *Workspace) ContentIdentity(ctx context.Context) (_ digest.Digest, ok b
 	}{
 		{"mountPoints", ws.mountPoints},
 		{"compatWorkspace", ws.compatWorkspace},
+		{"ignorePatterns", ws.ignorePatterns},
 		{"userConfigKey", ws.userConfigKey},
 		{"selectedEnv", ws.selectedEnv},
 		{"moduleClients", ws.moduleClients},

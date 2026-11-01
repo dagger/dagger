@@ -731,6 +731,9 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		return fmt.Errorf("building workspace: %w", err)
 	}
 	coreWS.SetCompatWorkspace(compatWorkspace)
+	if wsConfig != nil {
+		coreWS.SetIgnorePatterns(workspace.IgnorePatterns(ws.ConfigFile, wsConfig.Ignore))
+	}
 	coreWS.SetModuleClients(workspace.ModuleScopeLocalClients(wsConfig, filepath.Dir(ws.ConfigFile)))
 	if hasWorkspaceEnv {
 		coreWS.SetSelectedEnv(workspaceEnv)

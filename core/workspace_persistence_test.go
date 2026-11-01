@@ -83,3 +83,19 @@ func TestWorkspacePersistsClientModules(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, mods, decoded.(*Workspace).ClientModules())
 }
+
+func TestWorkspacePersistsIgnorePatterns(t *testing.T) {
+	ctx := t.Context()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, cache.Close(context.Background())) })
+	ctx = dagql.ContextWithCache(ctx, cache)
+	srv := newCoreDagqlServerForTest(t, &Query{})
+	ws := &Workspace{Address: "directory://repo", Cwd: ".", ConfigFile: "dagger.toml"}
+	ws.SetIgnorePatterns([]string{".delta", "pkg/vendor"})
+	encoded, err := ws.EncodePersistedObject(ctx, dagql.NewPersistEncodeContext(cache, 0, nil))
+	require.NoError(t, err)
+	decoded, err := (&Workspace{}).DecodePersistedObject(ctx, dagql.NewPersistDecodeContext(srv, 0, nil), encoded.JSON)
+	require.NoError(t, err)
+	require.Equal(t, []string{".delta", "pkg/vendor"}, decoded.(*Workspace).IgnorePatterns())
+}

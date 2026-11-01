@@ -145,7 +145,7 @@ func TestWorkspaceContentIdentityCoversEveryField(t *testing.T) {
 	t.Parallel()
 	covered := map[string]bool{
 		"source": true, "rootfs": true, "mounts": true, "mountPoints": true,
-		"compatWorkspace": true, "userConfigKey": true, "userConfigOverlay": true,
+		"compatWorkspace": true, "ignorePatterns": true, "userConfigKey": true, "userConfigOverlay": true,
 		"selectedEnv": true, "moduleClients": true, "clientModules": true,
 		"Address": true, "Cwd": true, "ConfigFile": true, "LockFile": true,
 	}
