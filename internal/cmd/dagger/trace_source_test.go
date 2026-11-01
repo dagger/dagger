@@ -11,6 +11,7 @@ import (
 	"github.com/dagger/dagger/engine/archive"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/internal/tracesource"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
 
@@ -82,6 +83,36 @@ func TestEngineTraceWithoutRuntimeFallsBackToCloud(t *testing.T) {
 		})
 		require.Error(t, err)
 	})
+}
+
+// TestCloudTraceCommandsReadCloudOnly: the 'dagger cloud' trace commands read
+// Dagger Cloud alone, never looking for an engine archive first; only 'dagger
+// trace' tries the engine before Cloud.
+func TestCloudTraceCommandsReadCloudOnly(t *testing.T) {
+	cloudErr := errors.New("cloud auth: not logged in")
+	_, _, err := openTraceSource(t.Context(), false, func(context.Context) (tracesource.Source, func() error, error) {
+		t.Fatal("a Cloud-only read must not open the engine")
+		return nil, nil, nil
+	}, func(context.Context) (tracesource.Source, func() error, error) {
+		return nil, nil, cloudErr
+	})
+	require.ErrorIs(t, err, cloudErr)
+	require.NotContains(t, err.Error(), "engine", "a Cloud-only failure names no engine")
+
+	localOpened := false
+	_, _, err = openTraceSource(t.Context(), true, func(context.Context) (tracesource.Source, func() error, error) {
+		localOpened = true
+		return nil, nil, archive.ErrCleanMiss
+	}, func(context.Context) (tracesource.Source, func() error, error) {
+		return nil, nil, nil
+	})
+	require.NoError(t, err)
+	require.True(t, localOpened, "'dagger trace' tries the engine first")
+
+	for _, cmd := range []*cobra.Command{cloudTracesViewCmd, cloudLogsCmd} {
+		require.NotContains(t, cmd.Long, "engine", cmd.CommandPath())
+	}
+	require.Contains(t, traceCmd.Long, "engine")
 }
 
 // TestEngineTraceParamsLeaveCloudURLAlone: the archive connection's Cloud URL

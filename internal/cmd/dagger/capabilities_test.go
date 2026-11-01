@@ -287,8 +287,6 @@ func TestMayCallEngineCommands(t *testing.T) {
 		"dagger script",
 		"dagger shell",
 		"dagger trace",
-		"dagger cloud traces view",
-		"dagger cloud logs",
 		"dagger uninstall",
 		"dagger start",
 		"dagger workspace",
@@ -317,11 +315,16 @@ func TestMayCallEngineCommands(t *testing.T) {
 		"root":               rootCmd,
 		"activity":           activityCmd,
 		"cloud checks rerun": cloudRerunCmd,
+		"cloud logs":         cloudLogsCmd,
+		"cloud traces view":  cloudTracesViewCmd,
 		"sdk":                sdkCmd,
 		"workspace remote":   workspaceRemoteCmd,
 	} {
 		require.False(t, commandHasCapability(cmd, mayCallEngine), name)
 	}
+	// Commands under 'dagger cloud' read Dagger Cloud only: none may call
+	// the engine (e.g. to look for a retained trace archive first).
+	require.Empty(t, commandsDeclaringCapability(cloudCmd, mayCallEngine))
 }
 
 func TestRootShellFallbackKeepsEngineFlags(t *testing.T) {
@@ -352,16 +355,15 @@ func TestMaySelectWorkspaceCommands(t *testing.T) {
 		"dagger workspace activity",
 		"dagger workspace remote",
 	)
-	// Historical display reads the engine's store without selecting a workspace.
-	traceDisplay := map[*cobra.Command]bool{traceCmd: true, cloudTracesViewCmd: true, cloudLogsCmd: true}
+	// 'dagger trace' reads the engine's store without selecting a workspace.
 	expected = slices.DeleteFunc(expected, func(name string) bool {
-		return name == "dagger trace" || name == "dagger cloud traces view" || name == "dagger cloud logs"
+		return name == "dagger trace"
 	})
 	require.ElementsMatch(t, expected, commandsDeclaringCapability(rootCmd, maySelectWorkspace))
 
 	var visit func(*cobra.Command)
 	visit = func(cmd *cobra.Command) {
-		if commandHasCapability(cmd, mayCallEngine) && !traceDisplay[cmd] {
+		if commandHasCapability(cmd, mayCallEngine) && cmd != traceCmd {
 			require.True(t, commandHasCapability(cmd, maySelectWorkspace), cmd.CommandPath())
 		}
 		for _, child := range cmd.Commands() {

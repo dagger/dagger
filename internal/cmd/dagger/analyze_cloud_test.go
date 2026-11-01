@@ -179,11 +179,12 @@ func TestSpanSelectorResolveSpanOverOTLP(t *testing.T) {
 // The command end to end against the fake: no org is resolved, the check's
 // subtree logs are requested, and only the traced program's text output is
 // written -- not the EOF marker, the span-name record, or the call payload.
-// The engine retains no archive of this trace, so Cloud serves it.
+// 'dagger cloud logs' reads Cloud only: the engine is never consulted.
 func TestCloudLogsWritesTextOutputOnly(t *testing.T) {
 	f, client := newFakeCloudLogs(t)
 
 	cli := &CloudCLI{otlpClient: client, openLocalTrace: func(context.Context, string) (tracesource.Source, func() error, error) {
+		t.Error("a 'dagger cloud' command must not look for an engine archive")
 		return nil, nil, archive.ErrCleanMiss
 	}}
 	cmd := &cobra.Command{}
@@ -235,7 +236,7 @@ func TestTraceLogsWholeTraceFromEngineStore(t *testing.T) {
 	cmd := &cobra.Command{}
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	o := &traceViewOptions{log: true, timeout: time.Minute}
+	o := &traceViewOptions{log: true, timeout: time.Minute, engine: true}
 	_, _, err := cli.writeTraceLogsFrom(t.Context(), cmd, "trace-id", o.sel, o)
 	require.NoError(t, err)
 	require.Equal(t, "hello world\n", out.String())
@@ -268,7 +269,7 @@ func TestTraceLogsDumpRunsNoFrontend(t *testing.T) {
 	var stderr bytes.Buffer
 	cmd.SetErr(&stderr)
 	out := filepath.Join(t.TempDir(), "out.txt")
-	o := &traceViewOptions{sel: spanSelector{check: "lint"}, log: true, output: out, timeout: time.Minute}
+	o := &traceViewOptions{sel: spanSelector{check: "lint"}, log: true, output: out, timeout: time.Minute, engine: true}
 	done := make(chan error, 1)
 	go func() { done <- cli.writeTraceLogs(cmd, "trace-id", o.sel, o) }()
 	select {
@@ -285,8 +286,8 @@ func TestTraceLogsDumpRunsNoFrontend(t *testing.T) {
 }
 
 // TestTraceLogsReadLocalArchiveWithoutCloud: like the tree view and the
-// pager, the non-pager --log path (redirected stdout, -o, 'dagger cloud
-// logs') reads a retained engine archive, with no Cloud credentials at all.
+// pager, 'dagger trace's non-pager --log path (redirected stdout, -o) reads a
+// retained engine archive, with no Cloud credentials at all.
 func TestTraceLogsReadLocalArchiveWithoutCloud(t *testing.T) {
 	// No credentials anywhere: consulting Cloud would fail the command.
 	t.Setenv("HOME", t.TempDir())
@@ -303,7 +304,7 @@ func TestTraceLogsReadLocalArchiveWithoutCloud(t *testing.T) {
 	cmd := &cobra.Command{}
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	o := &traceViewOptions{sel: spanSelector{check: "lint"}, log: true, timeout: time.Minute}
+	o := &traceViewOptions{sel: spanSelector{check: "lint"}, log: true, timeout: time.Minute, engine: true}
 	cleanup, _, err := cli.writeTraceLogsFrom(t.Context(), cmd, "trace-id", o.sel, o)
 	require.NoError(t, err)
 	require.Equal(t, "hello world\n", out.String())
