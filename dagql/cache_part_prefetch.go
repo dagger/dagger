@@ -145,8 +145,10 @@ type partPrefetcher struct {
 	closed bool
 	queues [partPrefetchLanes][]*partPrefetchJob
 	// ahead are the jobs of offers of at least aheadOffer, kept until the
-	// ahead worker runs them.
-	ahead []*partPrefetchJob
+	// ahead worker runs them; aheadCurrent is the offer the worker works on,
+	// which a replacement with the same meaning passes on.
+	ahead        []*partPrefetchJob
+	aheadCurrent *partOffer
 	// jobs are the queued and running jobs, by offer and lane.
 	jobs  map[partPrefetchJobKey]*partPrefetchJob
 	holds map[digest.Digest]*partPrefetchHold
@@ -559,6 +561,9 @@ func (c *Cache) partOfferReplaced(old, next *partOffer) {
 		a.offer = next
 		p.aheads[next] = a
 	}
+	if p.aheadCurrent == old {
+		p.aheadCurrent = next
+	}
 	for _, download := range p.fetching {
 		if _, ok := download.offers[old]; ok {
 			delete(download.offers, old)
@@ -694,6 +699,9 @@ func (p *partPrefetcher) workAhead() {
 			}
 		}
 		p.ahead = rest
+		if len(jobs) > 0 {
+			p.aheadCurrent = jobs[0].offer
+		}
 		p.mu.Unlock()
 		for _, job := range jobs {
 			p.mu.Lock()
@@ -717,14 +725,54 @@ func (p *partPrefetcher) workAhead() {
 		if len(jobs) == 0 {
 			continue
 		}
+		p.awaitAheadImport()
+	}
+}
+
+// awaitAheadImport waits until the ahead worker's offer has no import ahead
+// to come: its import has ended, or none started and none of its blobs is
+// still coming. A blob another job downloads for it starts its import only
+// once it is held.
+func (p *partPrefetcher) awaitAheadImport() {
+	defer func() {
 		p.mu.Lock()
-		a := p.aheads[jobs[0].offer]
+		p.aheadCurrent = nil
 		p.mu.Unlock()
-		if a != nil && a.done != nil {
-			select {
-			case <-a.done:
-			case <-p.ctx.Done():
+	}()
+	for {
+		p.mu.Lock()
+		offer := p.aheadCurrent
+		if offer == nil || p.closed {
+			p.mu.Unlock()
+			return
+		}
+		if a := p.aheads[offer]; a != nil {
+			done := a.done
+			p.mu.Unlock()
+			if done != nil {
+				select {
+				case <-done:
+				case <-p.ctx.Done():
+				}
 			}
+			return
+		}
+		coming := false
+		for _, layer := range offer.record.Chain.Layers {
+			if p.holds[layer.Descriptor.Digest] == nil && p.comingLocked(offer, layer.Descriptor) {
+				coming = true
+				break
+			}
+		}
+		changed := p.changed
+		p.mu.Unlock()
+		if !coming {
+			return
+		}
+		select {
+		case <-changed:
+		case <-p.ctx.Done():
+			return
 		}
 	}
 }
