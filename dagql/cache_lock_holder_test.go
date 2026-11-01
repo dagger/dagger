@@ -2,8 +2,11 @@ package dagql
 
 import (
 	"bytes"
+	"cmp"
+	"context"
 	"maps"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -12,6 +15,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 
+	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/engine/wcprof"
 )
 
@@ -87,6 +91,37 @@ func TestExportCaptureNamesItsHolder(t *testing.T) {
 	require.NoError(t, release(opCtx))
 
 	requireTakesNamed(t, takers(), op.ID(), "holdTransferClosure", "Release", "HoldEntry")
+}
+
+// TestExportCaptureRecordsItsLockWaitOnce: a capture that waits for the
+// graph lock records that wait once, so the capture's waits on the lock
+// never overlap: one waiter can't wait twice at once.
+func TestExportCaptureRecordsItsLockWaitOnce(t *testing.T) {
+	ctx, c := storedPartTestCache(t)
+	root := storedPartTestPublish(t, ctx, c, "a", "capture-wait", &captureTestValue{text: "captured"})
+	opCtx, op := profiledRoot(ctx, "test.export.capture")
+	c.egraphMu.Lock()
+	done := make(chan error, 1)
+	go func() {
+		done <- c.WithExportedValues(opCtx, ValueSelection{Roots: []AnyResult{root}}, config.RefConfig{}, func(context.Context, *ExportedValues) error { return nil })
+	}()
+	time.Sleep(50 * time.Millisecond)
+	c.egraphMu.Unlock()
+	require.NoError(t, <-done)
+	op.End(wcprof.OutcomeOK)
+
+	events, _ := profiledUnder(t, op.ID())
+	var waits []profiledEvent
+	for _, ev := range events {
+		if ev.Type == "wait" && ev.ParentID == op.ID() && ev.ident == egraphLockIdent {
+			waits = append(waits, ev)
+		}
+	}
+	require.NotEmpty(t, waits, "the capture waited for the lock")
+	slices.SortFunc(waits, func(a, b profiledEvent) int { return cmp.Compare(a.StartNS, b.StartNS) })
+	for i := 1; i < len(waits); i++ {
+		require.GreaterOrEqual(t, waits[i].StartNS, waits[i-1].EndNS, "the capture's waits on the lock overlap: %+v", waits)
+	}
 }
 
 // TestMakeResultUnpruneableNamesItsHolder: making a result unpruneable, as

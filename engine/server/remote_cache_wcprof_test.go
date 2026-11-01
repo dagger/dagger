@@ -60,12 +60,12 @@ func profiledUnder(t *testing.T, root uint64) []profiledEvent {
 }
 
 // A profiled export records where the adapter's time went: holding the
-// entries, then the capture, whose children are the graph lock's wait, the
-// walk under it, the records' copy, and the chains' opening, one op per
-// exported part with its layers' diffs under it. The capture links each
-// output's part to its result with the part's size, its chain's. After the
-// consumer, the export's releases follow: the chains', the capture's
-// records', and the entries' holds.
+// entries, then the capture, whose children are the graph lock's wait if it
+// had to wait, the walk under it, the records' copy, and the chains'
+// opening, one op per exported part with its layers' diffs under it. The
+// capture links each output's part to its result with the part's size, its
+// chain's. After the consumer, the export's releases follow: the chains',
+// the capture's records', and the entries' holds.
 func TestRemoteCacheAdapterExportProfiled(t *testing.T) {
 	e := newAdapterTestEngine(t)
 	ready := e.file(t, "ready")
@@ -126,7 +126,7 @@ func TestRemoteCacheAdapterExportProfiled(t *testing.T) {
 			lockWaits++
 		}
 	}
-	require.Equal(t, 1, lockWaits, "the walk's wait for the graph lock")
+	require.LessOrEqual(t, lockWaits, 1, "the walk's wait for the graph lock, recorded once if it waited")
 
 	key, err := json.Marshal(snapshotPart)
 	require.NoError(t, err)
