@@ -230,6 +230,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			),
 
 		dagql.Func("__function", s.internalFunction),
+		dagql.Func("__functionExact", s.internalFunctionExact),
 		dagql.Func("__functionArg", s.functionArg),
 		dagql.Func("__functionArgExact", s.internalFunctionArg),
 		dagql.Func("__fieldTypeDef", s.fieldTypeDef),
@@ -655,6 +656,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		dagql.Func("__withSourceModuleName", s.objectTypeDefWithSourceModuleName),
 		dagql.Func("__withField", s.objectTypeDefWithField),
 		dagql.Func("__withFunction", s.objectTypeDefWithFunction),
+		dagql.Func("__withFunctions", s.objectTypeDefWithFunctions),
 		dagql.Func("__withConstructor", s.objectTypeDefWithConstructor),
 	}.Install(dag)
 	dagql.Fields[*core.InterfaceTypeDef]{
@@ -665,6 +667,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		dagql.Func("__withSourceMap", s.interfaceTypeDefWithSourceMap),
 		dagql.Func("__withSourceModuleName", s.interfaceTypeDefWithSourceModuleName),
 		dagql.Func("__withFunction", s.interfaceTypeDefWithFunction),
+		dagql.Func("__withFunctions", s.interfaceTypeDefWithFunctions),
 	}.Install(dag)
 	dagql.Fields[*core.InputTypeDef]{
 		dagql.Func("fields", s.inputTypeDefFields).
@@ -1541,6 +1544,40 @@ func (s *moduleSchema) internalFunction(ctx context.Context, _ *core.Query, args
 	return fn, nil
 }
 
+// internalFunctionExact builds a function with its description, deprecation
+// and arguments in one call, for definitions built from an existing schema.
+func (s *moduleSchema) internalFunctionExact(ctx context.Context, _ *core.Query, args struct {
+	Name        string
+	ReturnType  core.TypeDefID
+	Description string `default:""`
+	Deprecated  *string
+	Args        []core.FunctionArgID `default:"[]"`
+}) (*core.Function, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	returnType, err := args.ReturnType.Load(ctx, dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode return type: %w", err)
+	}
+	fnArgs, err := collectIDObjectResults(ctx, dag, args.Args)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode function args: %w", err)
+	}
+	fn := &core.Function{
+		Name:         args.Name,
+		OriginalName: args.Name,
+		ReturnType:   returnType,
+		Deprecated:   args.Deprecated,
+	}
+	fn = fn.WithDescription(args.Description)
+	for _, arg := range fnArgs {
+		fn = fn.WithArg(arg)
+	}
+	return fn, nil
+}
+
 func (s *moduleSchema) sourceMap(ctx context.Context, _ *core.Query, args struct {
 	Module   dagql.Optional[dagql.String] `internal:"true"`
 	Filename string
@@ -1903,6 +1940,23 @@ func (s *moduleSchema) objectTypeDefWithFunction(ctx context.Context, obj *core.
 	return obj.WithFunction(fn), nil
 }
 
+func (s *moduleSchema) objectTypeDefWithFunctions(ctx context.Context, obj *core.ObjectTypeDef, args struct {
+	Functions []core.FunctionID
+}) (*core.ObjectTypeDef, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	fns, err := collectIDObjectResults(ctx, dag, args.Functions)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode functions: %w", err)
+	}
+	for _, fn := range fns {
+		obj = obj.WithFunction(fn)
+	}
+	return obj, nil
+}
+
 func (s *moduleSchema) objectTypeDefWithConstructor(ctx context.Context, obj *core.ObjectTypeDef, args struct {
 	Function core.FunctionID
 }) (*core.ObjectTypeDef, error) {
@@ -1929,6 +1983,23 @@ func (s *moduleSchema) interfaceTypeDefWithFunction(ctx context.Context, iface *
 		return nil, fmt.Errorf("failed to decode function: %w", err)
 	}
 	return iface.WithFunction(fn), nil
+}
+
+func (s *moduleSchema) interfaceTypeDefWithFunctions(ctx context.Context, iface *core.InterfaceTypeDef, args struct {
+	Functions []core.FunctionID
+}) (*core.InterfaceTypeDef, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	fns, err := collectIDObjectResults(ctx, dag, args.Functions)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode functions: %w", err)
+	}
+	for _, fn := range fns {
+		iface = iface.WithFunction(fn)
+	}
+	return iface, nil
 }
 
 func (s *moduleSchema) interfaceTypeDefWithName(ctx context.Context, iface *core.InterfaceTypeDef, args struct {

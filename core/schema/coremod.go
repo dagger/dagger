@@ -410,8 +410,8 @@ func buildCoreTypeDefFunctions(
 	dag *dagql.Server,
 	refs *coreTypeDefRefs,
 	introspectionType *introspection.Type,
-) ([]dagql.ID[*core.Function], bool, error) {
-	fnIDs := make([]dagql.ID[*core.Function], 0, len(introspectionType.Fields))
+) (dagql.ArrayInput[core.FunctionID], bool, error) {
+	fnIDs := make(dagql.ArrayInput[core.FunctionID], 0, len(introspectionType.Fields))
 	isIdable := false
 	objType, _ := dag.ObjectType(introspectionType.Name)
 	for _, introspectionField := range introspectionType.Fields {
@@ -431,33 +431,7 @@ func buildCoreTypeDefFunctions(
 		if err != nil {
 			return nil, false, err
 		}
-		var fn dagql.ObjectResult[*core.Function]
-		if err := dag.Select(ctx, dag.Root(), &fn, dagql.Selector{
-			Field: "__function",
-			Args: []dagql.NamedInput{
-				{Name: "name", Value: dagql.String(introspectionField.Name)},
-				{Name: "returnType", Value: rtTypeID},
-			},
-		}); err != nil {
-			return nil, false, err
-		}
-		if introspectionField.Description != "" {
-			if err := dag.Select(ctx, fn, &fn, dagql.Selector{
-				Field: "withDescription",
-				Args:  []dagql.NamedInput{{Name: "description", Value: dagql.String(introspectionField.Description)}},
-			}); err != nil {
-				return nil, false, err
-			}
-		}
-		if introspectionField.DeprecationReason != nil {
-			if err := dag.Select(ctx, fn, &fn, dagql.Selector{
-				Field: "withDeprecated",
-				Args:  []dagql.NamedInput{{Name: "reason", Value: core.OptString(introspectionField.DeprecationReason)}},
-			}); err != nil {
-				return nil, false, err
-			}
-		}
-
+		argIDs := make(dagql.ArrayInput[core.FunctionArgID], 0, len(introspectionField.Args))
 		for _, introspectionArg := range introspectionField.Args {
 			argType, ok, err := refs.typeDef(ctx, introspectionArg.TypeRef, introspectionArg.Directives.ExpectedType())
 			if err != nil {
@@ -499,14 +473,22 @@ func buildCoreTypeDefFunctions(
 			if err != nil {
 				return nil, false, err
 			}
-			if err := dag.Select(ctx, fn, &fn, dagql.Selector{
-				Field: "__withArg",
-				Args:  []dagql.NamedInput{{Name: "arg", Value: fnArgID}},
-			}); err != nil {
-				return nil, false, err
-			}
+			argIDs = append(argIDs, fnArgID)
 		}
 
+		var fn dagql.ObjectResult[*core.Function]
+		if err := dag.Select(ctx, dag.Root(), &fn, dagql.Selector{
+			Field: "__functionExact",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.String(introspectionField.Name)},
+				{Name: "returnType", Value: rtTypeID},
+				{Name: "description", Value: dagql.String(introspectionField.Description)},
+				{Name: "deprecated", Value: core.OptString(introspectionField.DeprecationReason)},
+				{Name: "args", Value: argIDs},
+			},
+		}); err != nil {
+			return nil, false, err
+		}
 		fnID, err := core.ResultIDInput(fn)
 		if err != nil {
 			return nil, false, err
@@ -550,10 +532,10 @@ func buildCoreObjectLikeTypeDef[T dagql.Typed](
 	if err != nil {
 		return zero, false, err
 	}
-	for _, fnID := range fnIDs {
+	if len(fnIDs) > 0 {
 		if err := dag.Select(ctx, obj, &obj, dagql.Selector{
-			Field: "__withFunction",
-			Args:  []dagql.NamedInput{{Name: "function", Value: fnID}},
+			Field: "__withFunctions",
+			Args:  []dagql.NamedInput{{Name: "functions", Value: fnIDs}},
 		}); err != nil {
 			return zero, false, err
 		}
