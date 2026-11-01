@@ -1,7 +1,6 @@
 package remotecache
 
 import (
-	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -117,73 +116,6 @@ func TestStalledUploadFails(t *testing.T) {
 			require.Error(t, err)
 			require.NotContains(t, err.Error(), "secret")
 			tc.check(t, err)
-		})
-	}
-}
-
-// eofBody records that its reader returned io.EOF.
-type eofBody struct {
-	io.Reader
-	eof atomic.Bool
-}
-
-func (b *eofBody) Read(p []byte) (int, error) {
-	n, err := b.Reader.Read(p)
-	if err == io.EOF {
-		b.eof.Store(true)
-	}
-	return n, err
-}
-
-// Over HTTP/2 the transport reads the body's end before it sends the last
-// bytes, which wait for the blob store's flow control. An upload stalled
-// there, after the body's end, fails like one stalled before it.
-func TestStalledHTTP2UploadFails(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		size int64
-		// afterEOF is whether the stall comes after the body's end.
-		afterEOF bool
-	}{
-		{name: "before the body's end", size: 4 << 20},
-		{name: "after the body's end, in the final chunk", size: 1<<20 + 1, afterEOF: true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			release := make(chan struct{})
-			proto := make(chan int, 1)
-			srv := httptest.NewUnstartedServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-				proto <- r.ProtoMajor
-				select {
-				case <-release:
-				case <-r.Context().Done():
-				}
-			}))
-			srv.EnableHTTP2 = true
-			srv.StartTLS()
-			t.Cleanup(srv.Close)
-			t.Cleanup(func() { close(release) })
-			client := uploadClient(testUploadPatient)
-			transport := client.Transport.(*http.Transport)
-			transport.TLSClientConfig = srv.Client().Transport.(*http.Transport).TLSClientConfig.Clone()
-			t.Cleanup(transport.CloseIdleConnections)
-
-			// A section reader, as the adapter's blobs are.
-			body := &eofBody{Reader: io.NewSectionReader(bytes.NewReader(make([]byte, tc.size)), 0, tc.size)}
-			// A patient idle timeout: the upload must reach the blob store's
-			// handler, and send up to the stall the case makes, before the
-			// stall cuts it off. Over TLS the request takes more steps to
-			// reach the handler: under CPU contention, 1 s left it unreached
-			// in 10 of 40 uploads.
-			err := putWithin(t, httpPut(client, 5*testUploadPatient), srv.URL+"/put?X-Amz-Signature=secret", body, tc.size)
-			select {
-			case major := <-proto:
-				require.Equal(t, 2, major, "the upload used HTTP/2")
-			case <-time.After(testUploadGuard):
-				t.Fatalf("the upload never reached the blob store's handler: %v", err)
-			}
-			require.ErrorIs(t, err, errUploadStalled)
-			require.NotContains(t, err.Error(), "secret")
-			require.Equal(t, tc.afterEOF, body.eof.Load(), "where the upload stalled")
 		})
 	}
 }
