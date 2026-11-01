@@ -15,6 +15,9 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/dagger/dagger/engine/telemetryattrs"
+	"github.com/dagger/dagger/engine/wcprof"
 )
 
 // spanCapture records exported span snapshots, failing the first failures
@@ -92,16 +95,16 @@ func TestIsCallSpan(t *testing.T) {
 }
 
 // The protected lane exports a call span's live start snapshot as well as its
-// end, while the ordinary live processor, wrapped in WithoutCallSpans, sees
+// end, while the ordinary live processor, wrapped in WithoutProtectedSpans, sees
 // only the other spans: nothing is exported twice.
-func TestCallSpanProcessorSplitsSpansWithLiveProcessor(t *testing.T) {
+func TestProtectedSpanProcessorSplitsSpansWithLiveProcessor(t *testing.T) {
 	t.Parallel()
 	calls := &spanCapture{}
 	others := &spanCapture{}
-	callProc := NewCallSpanProcessor(calls)
+	callProc := NewProtectedSpanProcessor(calls)
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithSpanProcessor(callProc),
-		sdktrace.WithSpanProcessor(WithoutCallSpans(NewLargeQueueLiveSpanProcessor(others))),
+		sdktrace.WithSpanProcessor(WithoutProtectedSpans(NewLargeQueueLiveSpanProcessor(others))),
 	)
 	_, callSpan := tp.Tracer("test").Start(t.Context(), "Container.withExec", trace.WithAttributes(
 		attribute.String(otelgo.DagDigestAttr, "xxh3:call"),
@@ -131,12 +134,71 @@ func TestCallSpanProcessorSplitsSpansWithLiveProcessor(t *testing.T) {
 	}
 }
 
+// A span that ends reporting cache state, as a lazy evaluation's span and a
+// call's span do, is how the remote cache learns the cache, and the session
+// declares how many it ended. So it takes the protected lane from its start,
+// however full the ordinary queue is, even when its call's frame was too large
+// to ride on the span.
+func TestCacheSpansSurviveOrdinaryQueueOverflow(t *testing.T) {
+	t.Parallel()
+	calls := &spanCapture{}
+	others := &spanCapture{gate: make(chan struct{})}
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithSpanProcessor(NewProtectedSpanProcessor(calls)),
+		sdktrace.WithSpanProcessor(WithoutProtectedSpans(NewLargeQueueLiveSpanProcessor(others))),
+	)
+	tracer := tp.Tracer("test")
+	flood := func() {
+		for range 2 * LargeSpanQueueSize {
+			_, span := tracer.Start(t.Context(), "Glob")
+			span.End()
+		}
+	}
+	flood()
+	_, lazy := tracer.Start(t.Context(), "resume withExec", trace.WithAttributes(
+		attribute.String(telemetryattrs.WcprofOpKindAttr, wcprof.OpKindLazy.String()),
+	))
+	_, call := tracer.Start(t.Context(), "Query.blob", trace.WithAttributes(
+		attribute.String(otelgo.DagDigestAttr, "xxh3:blob"),
+		attribute.StringSlice(otelgo.DagInputsAttr, []string{"xxh3:contents"}),
+	))
+	flood()
+	lazy.SetAttributes(attribute.String(telemetryattrs.CacheResultIDAttr, "7"))
+	lazy.End()
+	call.SetAttributes(attribute.String(telemetryattrs.CacheResultIDAttr, "8"))
+	call.End()
+	close(others.gate)
+	require.NoError(t, tp.Shutdown(t.Context()))
+
+	_, got := calls.snapshot()
+	live := map[string]int{}
+	ended := map[string]string{}
+	for _, span := range got {
+		if span.EndTime().Before(span.StartTime()) {
+			live[span.Name()]++
+			continue
+		}
+		for _, kv := range span.Attributes() {
+			if kv.Key == telemetryattrs.CacheResultIDAttr {
+				ended[span.Name()] = kv.Value.AsString()
+			}
+		}
+	}
+	require.Equal(t, map[string]string{"resume withExec": "7", "Query.blob": "8"}, ended)
+	require.Equal(t, map[string]int{"resume withExec": 1, "Query.blob": 1}, live,
+		"the start snapshots take the same lane, so none can land after the end")
+	_, ordinary := others.snapshot()
+	for _, span := range ordinary {
+		require.Equal(t, "Glob", span.Name(), "cache spans must not reach the ordinary processor")
+	}
+}
+
 // Unlike the bounded live processor, the protected lane retains every call
 // span while its exporter is stalled, and never blocks the emitter.
-func TestCallSpanProcessorLosslessWhileExporterBlocked(t *testing.T) {
+func TestProtectedSpanProcessorLosslessWhileExporterBlocked(t *testing.T) {
 	t.Parallel()
 	exp := &spanCapture{gate: make(chan struct{})}
-	proc := NewCallSpanProcessor(exp)
+	proc := NewProtectedSpanProcessor(exp)
 	emitted := 2 * LargeSpanQueueSize
 	for i := range emitted {
 		proc.OnEnd(callSpanStub(i).Snapshot())
@@ -154,11 +216,11 @@ func TestCallSpanProcessorLosslessWhileExporterBlocked(t *testing.T) {
 	}
 }
 
-func TestCallSpanProcessorRetriesFailedExport(t *testing.T) {
+func TestProtectedSpanProcessorRetriesFailedExport(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		exp := &spanCapture{failures: 2}
-		proc := NewCallSpanProcessor(exp)
+		proc := NewProtectedSpanProcessor(exp)
 		proc.OnEnd(callSpanStub(0).Snapshot())
 		time.Sleep(CallPayloadExportDelay)
 		synctest.Wait()
@@ -178,11 +240,11 @@ func TestCallSpanProcessorRetriesFailedExport(t *testing.T) {
 // A dropped batch fails the ForceFlush that saw it, once; later flushes stay
 // clean, but Shutdown reports every loss of the lane's lifetime, as well as a
 // span ended after it.
-func TestCallSpanProcessorDropIsOneShotForFlushTerminalForShutdown(t *testing.T) {
+func TestProtectedSpanProcessorDropIsOneShotForFlushTerminalForShutdown(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		exp := &spanCapture{failures: CallPayloadMaxExportAttempts}
-		proc := NewCallSpanProcessor(exp)
+		proc := NewProtectedSpanProcessor(exp)
 		proc.OnEnd(callSpanStub(0).Snapshot())
 		require.ErrorContains(t, proc.ForceFlush(t.Context()), "dropping 1 protected spans")
 

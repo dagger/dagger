@@ -110,7 +110,7 @@ func (processor *CallPayloadBatchProcessor) Enabled(context.Context, sdklog.Enab
 
 // protectedBatcher is the lossless, retrying worker behind every protected
 // telemetry lane: call payload and agent control log records
-// (CallPayloadBatchProcessor) and call spans (CallSpanProcessor). Ingress
+// (CallPayloadBatchProcessor) and call and cache spans (ProtectedSpanProcessor). Ingress
 // never blocks and never drops; one worker coalesces a burst for
 // CallPayloadExportDelay, exports it in bounded batches, and retries a failed
 // batch in order with exponential backoff until it lands or
