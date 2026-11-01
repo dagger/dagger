@@ -46,12 +46,11 @@ func (l partPrefetchLane) String() string {
 // blobs download at once, the bytes it holds unconsumed, how long it holds
 // them, and how many accepted offers wait in each lane.
 //
-// aheadOffer is the chain size from which a held offer's chain is unpacked
-// ahead of demand. A smaller offer's blobs are only downloaded and held, and
-// its install unpacks the layers it reads: unpacking every held chain ahead
-// writes gigabytes while the engine's own work needs the disk, which costs
-// that work more than the installs it saves. Zero unpacks every offer's
-// chain ahead.
+// aheadOffer is the chain size from which an offer's jobs wait in the ahead
+// queue instead of their lanes' queues: nothing is dropped from it to make
+// room, and one worker runs its largest offer first and waits for that
+// offer's import ahead before taking the next. Zero queues every offer in
+// its lanes.
 type partPrefetchConfig struct {
 	largeBlob    int64
 	workers      int
@@ -72,7 +71,7 @@ func defaultPartPrefetchConfig() partPrefetchConfig {
 		budget:       4 << 30,
 		ttl:          30 * time.Minute,
 		queue:        256,
-		aheadOffer:   256 << 20,
+		aheadOffer:   64 << 20,
 	}
 }
 
@@ -88,6 +87,9 @@ func (cfg partPrefetchConfig) lane(size int64) partPrefetchLane {
 // into the content store under a lease of its own.
 type contentPrefetcher interface {
 	PrefetchContent(ctx context.Context, desc ocispecs.Descriptor, provider content.Provider, ttl time.Duration) (func(context.Context) error, bool, error)
+	// HoldContent holds a blob already in the content store, as
+	// PrefetchContent holds one it downloads.
+	HoldContent(ctx context.Context, desc ocispecs.Descriptor, ttl time.Duration) (func(context.Context) error, bool, error)
 }
 
 // chainAheadImporter is the snapshot manager's chain import, with which
@@ -142,6 +144,9 @@ type partPrefetcher struct {
 	cond   *sync.Cond
 	closed bool
 	queues [partPrefetchLanes][]*partPrefetchJob
+	// ahead are the jobs of offers of at least aheadOffer, kept until the
+	// ahead worker runs them.
+	ahead []*partPrefetchJob
 	// jobs are the queued and running jobs, by offer and lane.
 	jobs  map[partPrefetchJobKey]*partPrefetchJob
 	holds map[digest.Digest]*partPrefetchHold
@@ -188,6 +193,8 @@ type partPrefetchAhead struct {
 	// gone is set once it is taken out of aheads: its import, if still
 	// running, then releases what it imported.
 	gone bool
+	// done is closed once its import has ended, kept or not.
+	done chan struct{}
 }
 
 // partPrefetchJobKey names a job: an offer has one in each lane its blobs
@@ -205,6 +212,10 @@ type partPrefetchJob struct {
 	lane     partPrefetchLane
 	record   PersistedPartOffer
 	accepted time.Time
+	// size is the offer's chain size, and ahead whether the job waits in
+	// the ahead queue.
+	size  int64
+	ahead bool
 	// gone is set once the offer is retired; cancel stops a running job;
 	// digests are the blobs a running job downloads, set once it registers
 	// them.
@@ -267,6 +278,10 @@ func (c *Cache) partPrefetch(ctx context.Context) *partPrefetcher {
 	for range cfg.smallWorkers {
 		go p.work(partPrefetchSmall)
 	}
+	if cfg.aheadOffer > 0 {
+		p.wg.Add(1)
+		go p.workAhead()
+	}
 	go p.expire()
 	c.partPrefetcher.Store(p)
 	return p
@@ -318,9 +333,12 @@ func (c *Cache) partOfferAccepted(ctx context.Context, row *sharedResult, key st
 		return
 	}
 	var wanted [partPrefetchLanes]bool
+	var size int64
 	for _, layer := range offer.record.Chain.Layers {
 		wanted[p.cfg.lane(layer.Descriptor.Size)] = true
+		size += layer.Descriptor.Size
 	}
+	ahead := p.cfg.aheadOffer > 0 && size >= p.cfg.aheadOffer
 	var jobs []*partPrefetchJob
 	now := time.Now()
 	for lane := range partPrefetchLanes {
@@ -332,7 +350,7 @@ func (c *Cache) partOfferAccepted(ctx context.Context, row *sharedResult, key st
 		if err != nil {
 			return
 		}
-		jobs = append(jobs, &partPrefetchJob{row: row.id, key: key, offer: offer, lane: lane, record: record, accepted: now})
+		jobs = append(jobs, &partPrefetchJob{row: row.id, key: key, offer: offer, lane: lane, record: record, accepted: now, size: size, ahead: ahead})
 	}
 	var dropped []*partPrefetchJob
 	p.mu.Lock()
@@ -343,6 +361,11 @@ func (c *Cache) partOfferAccepted(ctx context.Context, row *sharedResult, key st
 	p.rows[offer] = row.id
 	for _, job := range jobs {
 		if p.jobs[job.jobKey()] != nil {
+			continue
+		}
+		if job.ahead {
+			p.ahead = append(p.ahead, job)
+			p.jobs[job.jobKey()] = job
 			continue
 		}
 		if queue := p.queues[job.lane]; len(queue) >= p.cfg.queue {
@@ -637,6 +660,75 @@ func (p *partPrefetcher) work(lane partPrefetchLane) {
 	}
 }
 
+// workAhead runs the ahead queue's jobs until the prefetcher closes: each
+// time, every job of the offer with the largest chain, and then it waits for
+// that offer's import ahead to end, so that one such import at a time
+// competes with the engine's own work.
+func (p *partPrefetcher) workAhead() {
+	defer p.wg.Done()
+	for {
+		p.mu.Lock()
+		for !p.closed && len(p.ahead) == 0 {
+			p.cond.Wait()
+		}
+		if p.closed {
+			p.mu.Unlock()
+			return
+		}
+		best := -1
+		for i, job := range p.ahead {
+			if !job.gone && (best < 0 || job.size > p.ahead[best].size) {
+				best = i
+			}
+		}
+		var jobs []*partPrefetchJob
+		var rest []*partPrefetchJob
+		for _, job := range p.ahead {
+			switch {
+			case job.gone:
+				delete(p.jobs, job.jobKey())
+			case best >= 0 && job.offer == p.ahead[best].offer:
+				jobs = append(jobs, job)
+			default:
+				rest = append(rest, job)
+			}
+		}
+		p.ahead = rest
+		p.mu.Unlock()
+		for _, job := range jobs {
+			p.mu.Lock()
+			if job.gone {
+				delete(p.jobs, job.jobKey())
+				p.mu.Unlock()
+				continue
+			}
+			ctx, cancel := context.WithCancel(p.ctx)
+			job.cancel = cancel
+			p.mu.Unlock()
+			p.run(ctx, job)
+			cancel()
+			p.mu.Lock()
+			if key := job.jobKey(); p.jobs[key] == job {
+				delete(p.jobs, key)
+			}
+			p.changedLocked()
+			p.mu.Unlock()
+		}
+		if len(jobs) == 0 {
+			continue
+		}
+		p.mu.Lock()
+		a := p.aheads[jobs[0].offer]
+		p.mu.Unlock()
+		if a != nil && a.done != nil {
+			select {
+			case <-a.done:
+			case <-p.ctx.Done():
+			}
+		}
+	}
+}
+
 // run prefetches the blobs of one job's lane that no hold has yet.
 func (p *partPrefetcher) run(ctx context.Context, job *partPrefetchJob) {
 	start := time.Now()
@@ -810,10 +902,15 @@ func (p *partPrefetcher) fetch(ctx context.Context, job *partPrefetchJob, wanted
 			failed := failure != nil
 			mu.Unlock()
 			var release func(context.Context) error
-			fetched := false
+			fetched, held := false, false
 			var err error
 			if !failed && p.wanted(job, desc.Digest) {
 				release, fetched, err = p.snapshot.PrefetchContent(ctx, desc, provider, p.cfg.ttl)
+				// An ahead job's chain is applied from holds: a blob already
+				// stored is held too, so that its import ahead finds it.
+				if err == nil && !fetched && job.ahead {
+					release, held, err = p.snapshot.HoldContent(ctx, desc, p.cfg.ttl)
+				}
 			}
 			mu.Lock()
 			if err != nil && failure == nil {
@@ -824,7 +921,7 @@ func (p *partPrefetcher) fetch(ctx context.Context, job *partPrefetchJob, wanted
 				bytes += desc.Size
 			}
 			mu.Unlock()
-			if release = p.settle(job, desc, release, fetched); release != nil {
+			if release = p.settle(job, desc, release, fetched || held); release != nil {
 				_ = release(context.WithoutCancel(ctx))
 			}
 		})
@@ -902,7 +999,7 @@ func (p *partPrefetcher) checkAheadLocked(offer *partOffer) {
 		return
 	}
 	ctx, cancel := context.WithCancel(p.ctx)
-	a := &partPrefetchAhead{cancel: cancel, expires: expires}
+	a := &partPrefetchAhead{cancel: cancel, expires: expires, done: make(chan struct{})}
 	for _, layer := range layers {
 		a.layers = append(a.layers, layer.Descriptor.Digest)
 	}
@@ -919,6 +1016,9 @@ func (p *partPrefetcher) checkAheadLocked(offer *partOffer) {
 // jobs have yet to write.
 func (p *partPrefetcher) importAhead(ctx context.Context, offer *partOffer, row sharedResultID, a *partPrefetchAhead) {
 	defer p.wg.Done()
+	if a.done != nil {
+		defer close(a.done)
+	}
 	start := time.Now()
 	record := offer.record
 	var size int64
@@ -1117,6 +1217,8 @@ func (p *partPrefetcher) log(job *partPrefetchJob, outcome string, blobs int, by
 		"output", job.record.Address.OutputPath.String(),
 		"part", string(job.record.Address.Part),
 		"lane", job.lane.String(),
+		"ahead", job.ahead,
+		"chain_bytes", job.size,
 		"outcome", outcome,
 		"blobs", blobs,
 		"bytes", bytes,
