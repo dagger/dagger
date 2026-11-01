@@ -30,6 +30,47 @@ func (c *Cache) EquivalentEntries(dig string) []uint64 {
 	return numbers
 }
 
+// TermEntries returns the numbers of the entries a call's term matches, as
+// the structural lookup matches it: its self digest over its inputs'
+// classes. They are the entries of the matching terms' output classes,
+// sorted, read under one hold, as EquivalentEntries names a class's. It is
+// nil when an input has no class or no term matches.
+func (c *Cache) TermEntries(self digest.Digest, inputs []digest.Digest) []uint64 {
+	if self == "" {
+		return nil
+	}
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	ids, missing := c.termInputClassesLocked(inputs)
+	if missing >= 0 {
+		return nil
+	}
+	termSet := c.egraphTermsByTermDigest[calcEgraphTermDigest(self, ids)]
+	if termSet == nil {
+		return nil
+	}
+	seen := map[eqClassID]struct{}{}
+	var numbers []uint64
+	for termID := range termSet.Items() {
+		term := c.egraphTerms[termID]
+		if term == nil {
+			continue
+		}
+		root := c.eqClassRootLocked(term.outputEqID)
+		if _, ok := seen[root]; ok || root == 0 {
+			continue
+		}
+		seen[root] = struct{}{}
+		for id := range c.outputEqClassResults[root] {
+			if c.resultsByID[id] != nil {
+				numbers = append(numbers, uint64(id))
+			}
+		}
+	}
+	slices.Sort(numbers)
+	return slices.Compact(numbers)
+}
+
 // PartAvailabilityState is what a blob-backed cache has of an entry's part.
 type PartAvailabilityState uint8
 

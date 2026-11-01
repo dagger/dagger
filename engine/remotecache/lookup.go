@@ -44,7 +44,7 @@ func (s *session) lookup(ctx context.Context, misses []dagql.RemoteMiss, dropped
 		Misses: make([]protocol.LookupMiss, len(misses)),
 	}
 	for i, miss := range misses {
-		req.Misses[i] = protocol.LookupMiss{Recipe: miss.Recipe, Extra: miss.Extra, Field: miss.Field}
+		req.Misses[i] = protocol.LookupMiss{Recipe: miss.Recipe, Extra: miss.Extra, Field: miss.Field, Self: miss.Self, Inputs: miss.Inputs}
 	}
 	id := s.lastID.Add(1)
 	sent := time.Now()

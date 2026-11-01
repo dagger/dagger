@@ -41,11 +41,14 @@ const (
 )
 
 // RemoteMiss is a call the cache missed, as a remote lookup names it: its
-// recipe digest, then the extra digests the cache's own lookup tries.
+// recipe digest, then the extra digests the cache's own lookup tries, then
+// its term, the self digest and input digests its structural lookup tries.
 type RemoteMiss struct {
 	Recipe digest.Digest
 	Extra  []digest.Digest
 	Field  string
+	Self   digest.Digest
+	Inputs []digest.Digest
 }
 
 // remoteLookups is one bridge's lookup state. Its mutex is a leaf: it is
@@ -196,13 +199,14 @@ func (l *remoteLookups) close() {
 
 // noteRemoteMiss queues a call's lookup miss for the remote cache service,
 // when a connection serves lookups, and returns what it did (RemoteLookup*),
-// or "". It runs after the lookup, with no lock held.
-func (c *Cache) noteRemoteMiss(req *CallRequest, recipe digest.Digest) string {
+// or "". self and inputs are the term the lookup tried. It runs after the
+// lookup, with no lock held.
+func (c *Cache) noteRemoteMiss(req *CallRequest, recipe, self digest.Digest, inputs []digest.Digest) string {
 	b := c.partContentSource.attachedBridge()
 	if b == nil || !b.lookups.on.Load() || recipe == "" || req.ListItem {
 		return ""
 	}
-	miss := RemoteMiss{Recipe: recipe, Field: req.ResultCall.Field}
+	miss := RemoteMiss{Recipe: recipe, Field: req.ResultCall.Field, Self: self, Inputs: inputs}
 	for _, extra := range req.ResultCall.ExtraDigests {
 		if len(miss.Extra) == remoteLookupMaxExtras {
 			break

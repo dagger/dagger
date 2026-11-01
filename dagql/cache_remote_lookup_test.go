@@ -40,8 +40,9 @@ func queuedMisses(t *testing.T, bridge *RemoteCacheBridge) []RemoteMiss {
 }
 
 // A call the cache misses is queued for the service by its recipe, its extra
-// digests and its field, once per connection, and only while a connection
-// serves lookups. A hit, and a call that isn't cached, queue nothing.
+// digests, its term and its field, once per connection, and only while a
+// connection serves lookups. A hit, and a call that isn't cached, queue
+// nothing.
 func TestRemoteLookupQueuesMisses(t *testing.T) {
 	ctx, c, srv, sessionID, bridge := lookupTestCache(t)
 	extra := call.ExtraDigest{Digest: digest.FromString("content"), Label: "content"}
@@ -58,8 +59,19 @@ func TestRemoteLookupQueuesMisses(t *testing.T) {
 	require.Empty(t, queuedMisses(t, bridge), "nothing is queued while no connection serves lookups")
 
 	bridge.StartRemoteLookups()
-	run(frame, false)
-	require.Equal(t, []RemoteMiss{{Recipe: cacheTestCallDigest(frame), Extra: []digest.Digest{extra.Digest}, Field: "missed"}}, queuedMisses(t, bridge))
+	req := &CallRequest{ResultCall: frame.clone(), CacheEvidence: NewCacheDecision()}
+	_, err := c.GetOrInitCall(ctx, sessionID, srv, req, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(frame, 1), nil
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, req.CacheEvidence.SelfDigest)
+	require.Equal(t, []RemoteMiss{{
+		Recipe: cacheTestCallDigest(frame),
+		Extra:  []digest.Digest{extra.Digest},
+		Field:  "missed",
+		Self:   req.CacheEvidence.SelfDigest,
+		Inputs: req.CacheEvidence.StructuralInputs,
+	}}, queuedMisses(t, bridge), "the miss names its recipe, extras and the term its lookup tried")
 
 	run(frame, false)
 	require.Empty(t, queuedMisses(t, bridge), "a hit queues nothing")
