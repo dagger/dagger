@@ -983,9 +983,9 @@ func TestCloudMetricQueueCopiesCollections(t *testing.T) {
 	counts[0], counts[1], bounds[0] = 99, 99, 99
 
 	require.Len(t, q.queue, 1)
-	point := q.queue[0].metrics.GetScopeMetrics()[0].GetMetrics()[0].GetHistogram().GetDataPoints()[0]
-	require.Equal(t, []uint64{1, 2}, point.GetBucketCounts())
-	require.Equal(t, []float64{10}, point.GetExplicitBounds())
+	point := q.queue[0].metrics.ScopeMetrics[0].Metrics[0].Data.(metricdata.Histogram[int64]).DataPoints[0]
+	require.Equal(t, []uint64{1, 2}, point.BucketCounts)
+	require.Equal(t, []float64{10}, point.Bounds)
 }
 
 func gaugeMetrics(value int64) *metricdata.ResourceMetrics {
@@ -1010,12 +1010,14 @@ func TestCloudMetricQueueShutdownIsBounded(t *testing.T) {
 	const bound = 300 * time.Millisecond
 	q := newCloudMetricQueue(metrics, cloudFlushBound{sessionID: "session", timeout: bound})
 	require.NoError(t, q.Export(t.Context(), gaugeMetrics(1)))
-	require.NoError(t, q.Export(t.Context(), gaugeMetrics(2)))
 	select {
 	case <-receiver.entered:
 	case <-time.After(5 * time.Second):
 		t.Fatal("the first export never reached Cloud")
 	}
+	// Queue this after the first export starts so it is a separate request,
+	// even when compatible queued collections are batched.
+	require.NoError(t, q.Export(t.Context(), gaugeMetrics(2)))
 	// Shut down a little after the first export started, so that it reaches
 	// its own bound, and the second export starts, before the drain
 	// deadline.

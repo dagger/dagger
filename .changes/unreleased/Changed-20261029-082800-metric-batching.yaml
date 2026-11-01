@@ -1,0 +1,6 @@
+kind: Changed
+body: Batch compatible queued Cloud metric uploads to reduce telemetry cleanup overhead.
+time: 2026-10-29T08:28:00Z
+custom:
+  Author: grouville
+  PR: "14955"
