@@ -1,0 +1,9 @@
+kind: Fixed
+body: |
+  The default Anthropic model (and the OpenRouter default) no longer points at
+  `claude-sonnet-4-5`, which Anthropic retires on 2026-11-30, so `dagger` LLM
+  calls with only an Anthropic key keep working after that date.
+time: 2026-11-01T12:34:45Z
+custom:
+  Author: pcbeingused333
+  PR: 15022
