@@ -36,6 +36,8 @@ type Store struct {
 	Leases      leases.Manager
 	DB          *metadata.DB
 	Applies     atomic.Int64
+	// ContentRead counts the bytes read from the content store.
+	ContentRead atomic.Int64
 	Diffs       atomic.Int64
 	BeforeWrite func([]byte) error
 	BeforeApply func(context.Context, ocispecs.Descriptor) error
@@ -105,14 +107,17 @@ func (s *Store) openManager(t testing.TB) {
 	// observed wrapper the manager uses, so BeforeWrite sees a fallback
 	// diff's blob writes as it sees the manager's own.
 	observed := observedContent{Store: s.Content, owner: s}
-	var applier diff.Applier = inPlaceApplier{store: observed}
-	if s.snapshotter == "overlayfs" {
-		applier = apply.NewFileSystemApplier(observed)
+	applierFrom := func(provider content.Provider) diff.Applier {
+		if s.snapshotter == "overlayfs" {
+			return &observedApplier{Applier: apply.NewFileSystemApplier(provider), store: s}
+		}
+		return &observedApplier{Applier: inPlaceApplier{store: provider}, store: s}
 	}
 	s.Manager, err = bkcache.NewSnapshotManager(bkcache.SnapshotManagerOpt{
 		Snapshotter: &observedSnapshotter{Snapshotter: s.Snapshots, store: s}, ContentStore: observed,
 		LeaseManager:   &observedLeases{Manager: s.Leases, store: s},
-		Applier:        &observedApplier{Applier: applier, store: s},
+		Applier:        applierFrom(observed),
+		ApplyFrom:      applierFrom,
 		Differ:         &observedDiffer{Comparer: inPlaceDiffer{store: observed}, store: s},
 		MountPoolRoot:  filepath.Join(s.root, "mounts"),
 		BuiltinContent: s.Builtin,
@@ -323,6 +328,26 @@ func (l *observedLeases) Create(ctx context.Context, opts ...leases.Opt) (leases
 type observedContent struct {
 	content.Store
 	owner *Store
+}
+
+// ReaderAt counts the bytes read from the content store in ContentRead.
+func (s observedContent) ReaderAt(ctx context.Context, desc ocispecs.Descriptor) (content.ReaderAt, error) {
+	ra, err := s.Store.ReaderAt(ctx, desc)
+	if err != nil {
+		return nil, err
+	}
+	return observedReaderAt{ReaderAt: ra, owner: s.owner}, nil
+}
+
+type observedReaderAt struct {
+	content.ReaderAt
+	owner *Store
+}
+
+func (r observedReaderAt) ReadAt(p []byte, off int64) (int, error) {
+	n, err := r.ReaderAt.ReadAt(p, off)
+	r.owner.ContentRead.Add(int64(n))
+	return n, err
 }
 
 func (s observedContent) Writer(ctx context.Context, opts ...content.WriterOpt) (content.Writer, error) {
