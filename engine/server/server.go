@@ -785,10 +785,10 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 
 	workerGCPolicies := getDagqlGCPolicy(cfg, ociCfg.GCConfig, srv.rootDir)
 	srv.workerCache, err = bkcache.NewSnapshotManager(bkcache.SnapshotManagerOpt{
-		Snapshotter:   workerSnapshotter,
-		ContentStore:  srv.contentStore,
-		LeaseManager:  srv.leaseManager,
-		Applier:       winlayers.NewFileSystemApplierWithWindows(srv.contentStore, bkcache.NewLayerApplier(srv.contentStore)),
+		Snapshotter:  workerSnapshotter,
+		ContentStore: srv.contentStore,
+		LeaseManager: srv.leaseManager,
+		Applier:      winlayers.NewFileSystemApplierWithWindows(srv.contentStore, bkcache.NewLayerApplier(srv.contentStore)),
 		ApplyFrom: func(provider content.Provider) diff.Applier {
 			return winlayers.NewFileSystemApplierWithWindows(provider, bkcache.NewLayerApplier(provider))
 		},
