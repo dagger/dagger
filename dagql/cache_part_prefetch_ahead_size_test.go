@@ -40,19 +40,18 @@ func TestPartPrefetchSmallChainOnlyHeld(t *testing.T) {
 	require.Empty(t, f.logs.lines(t, "remote cache part ahead used"))
 }
 
-// An offer whose chain is exactly the size from which chains are unpacked
-// ahead is unpacked ahead once its blobs are held, and its install then
-// unpacks nothing.
+// An offer whose chain is at least the size from which chains are unpacked
+// ahead is taken by the ahead worker, which unpacks it once its blobs are
+// held, and its install then unpacks nothing.
 func TestPartPrefetchChainAtAheadSizeImportedAhead(t *testing.T) {
-	f := newPrefetchFixture(t, true, defaultPrefetchFixtureConfig)
-	var size int64
-	for _, layer := range f.offer.record.Chain.Layers {
-		size += layer.Descriptor.Size
-	}
-	f.prefetch.mu.Lock()
-	f.prefetch.cfg.aheadOffer = size
-	f.prefetch.mu.Unlock()
-	require.Equal(t, "done", f.runJob(t).fields["outcome"])
+	f := newPrefetchFixture(t, true, func(cfg *partPrefetchConfig) {
+		defaultPrefetchFixtureConfig(cfg)
+		// Every chain of the fixture is at least this.
+		cfg.aheadOffer = 1
+	})
+	require.Eventually(t, func() bool {
+		return len(f.logs.lines(t, "remote cache part applied ahead")) > 0
+	}, 10*time.Second, 10*time.Millisecond, "the worker unpacks the chain ahead")
 	ahead := f.aheadLine(t)
 	require.Equal(t, "done", ahead.fields["outcome"])
 	require.EqualValues(t, 2, ahead.int(t, "unpacked_layers"))

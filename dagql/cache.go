@@ -2593,6 +2593,9 @@ type Cache struct {
 	partPrefetchMu     sync.Mutex
 	partPrefetchConfig *partPrefetchConfig
 	partPrefetchRoom   func(need int64) bool
+	// partInstalls counts the installs of offered parts running, which
+	// the prefetcher's ahead worker waits for before taking an offer.
+	partInstalls atomic.Int64
 
 	// usageSnapshotChains carries the parent chains the last usage pass
 	// resolved into the next one; see snapshotChains.
