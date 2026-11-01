@@ -707,6 +707,11 @@ func syntheticWorkspaceFromDirectory(
 	}
 	ws.SetRootfs(root)
 	ws.SetSource(core.NewWorkspaceSourceDirectory(root))
+	ignore, err := loadWorkspaceIgnorePatterns(ctx, root, detected.ConfigFile)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	ws.SetIgnorePatterns(ignore)
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
 }
 
@@ -747,6 +752,11 @@ func syntheticWorkspaceFromGitRef(
 	}
 	ws.SetRootfs(rootResult)
 	ws.SetSource(core.NewWorkspaceSourceGitRef(ref.Result))
+	ignore, err := loadWorkspaceIgnorePatterns(ctx, rootResult, detected.ConfigFile)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	ws.SetIgnorePatterns(ignore)
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
 }
 
@@ -1459,7 +1469,8 @@ func (s *workspaceSchema) directoryAt(
 	if err != nil {
 		return inst, err
 	}
-	return s.resolveReadRootfs(ctx, ws, resolvedPath, args.CopyFilter, args.Gitignore)
+	filter := workspaceFilterWithIgnore(ws, resolvedPath, args.CopyFilter)
+	return s.resolveReadRootfs(ctx, ws, resolvedPath, filter, args.Gitignore)
 }
 
 type workspaceFileArgs struct {
@@ -1488,9 +1499,10 @@ func (s *workspaceSchema) fileAt(
 	parentDir := filepath.Dir(resolvedPath)
 	basename := filepath.Base(resolvedPath)
 
-	dir, err := s.resolveReadRootfs(ctx, ws, parentDir, core.CopyFilter{
+	filter := workspaceFilterWithIgnore(ws, parentDir, core.CopyFilter{
 		Include: []string{basename},
-	}, false)
+	})
+	dir, err := s.resolveReadRootfs(ctx, ws, parentDir, filter, false)
 	if err != nil {
 		return inst, fmt.Errorf("workspace file %q: %w", args.Path, err)
 	}

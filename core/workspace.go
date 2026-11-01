@@ -123,6 +123,10 @@ type Workspace struct {
 	// dagger.toml. Internal only.
 	compatWorkspace *workspacepkg.CompatWorkspace
 
+	// ignorePatterns are dagger.toml ignore values, resolved at load relative
+	// to the selected config directory. Applied to user-facing reads only.
+	ignorePatterns []string
+
 	// userConfigKey is the normalized Git remote key identifying this
 	// workspace in user-level config. Empty when the workspace has no usable
 	// remote. Internal only.
@@ -648,6 +652,24 @@ func (ws *Workspace) SetCompatWorkspace(compat *workspacepkg.CompatWorkspace) {
 	ws.compatWorkspace = compat
 }
 
+// IgnorePatterns returns dagger.toml ignore patterns resolved relative to the
+// selected config directory. Empty when none were loaded.
+func (ws *Workspace) IgnorePatterns() []string {
+	if ws == nil || len(ws.ignorePatterns) == 0 {
+		return nil
+	}
+	return slices.Clone(ws.ignorePatterns)
+}
+
+// SetIgnorePatterns stores dagger.toml ignore patterns on the workspace.
+func (ws *Workspace) SetIgnorePatterns(ignore []string) {
+	if len(ignore) == 0 {
+		ws.ignorePatterns = nil
+		return
+	}
+	ws.ignorePatterns = slices.Clone(ignore)
+}
+
 func (*Workspace) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "Workspace",
@@ -669,6 +691,7 @@ type persistedWorkspacePayload struct {
 	MountPoints     []string                      `json:"mountPoints,omitempty"`
 	Source          *persistedWorkspaceSource     `json:"source,omitempty"`
 	CompatWorkspace *workspacepkg.CompatWorkspace `json:"compatWorkspace,omitempty"`
+	IgnorePatterns  []string                      `json:"ignorePatterns,omitempty"`
 	Address         string                        `json:"address,omitempty"`
 	Cwd             string                        `json:"cwd,omitempty"`
 	ConfigFile      string                        `json:"configFile,omitempty"`
@@ -824,6 +847,7 @@ func (ws *Workspace) EncodePersistedObject(ctx context.Context, enc *dagql.Persi
 
 	payload := persistedWorkspacePayload{
 		CompatWorkspace: ws.compatWorkspace,
+		IgnorePatterns:  ws.ignorePatterns,
 		Address:         ws.Address,
 		Cwd:             ws.Cwd,
 		ConfigFile:      ws.ConfigFile,
@@ -914,6 +938,7 @@ func (*Workspace) DecodePersistedObject(ctx context.Context, dec *dagql.PersistD
 		mounts:          mounts,
 		mountPoints:     persisted.MountPoints,
 		compatWorkspace: persisted.CompatWorkspace,
+		ignorePatterns:  slices.Clone(persisted.IgnorePatterns),
 		Address:         persisted.Address,
 		Cwd:             cwd,
 		ConfigFile:      configFile,
@@ -1057,6 +1082,7 @@ func (ws *Workspace) Clone() *Workspace {
 	cp := *ws
 	cp.mountPoints = slices.Clone(ws.mountPoints)
 	cp.clientModules = slices.Clone(ws.clientModules)
+	cp.ignorePatterns = slices.Clone(ws.ignorePatterns)
 	return &cp
 }
 

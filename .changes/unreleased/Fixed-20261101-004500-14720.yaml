@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  dagger.toml `ignore` patterns are applied to `Workspace.findRoots` and user-facing `Workspace.directory` / `Workspace.file` reads, so a nested `go.mod` under an ignored directory such as `.delta` is no longer discovered.
+time: 2026-11-01T00:45:00Z
+custom:
+  Author: vshalpnjabi
+  PR: ""
