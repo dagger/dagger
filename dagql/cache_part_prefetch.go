@@ -749,8 +749,13 @@ func (p *partPrefetcher) workAhead() {
 			continue
 		}
 		p.runAhead(jobs)
-		p.awaitAheadImport()
+		imported := p.awaitAheadImport()
 		p.mu.Lock()
+		if !imported {
+			// An offer whose import ahead ended without importing gives its
+			// place back.
+			p.aheadTaken--
+		}
 		var dropped []*partPrefetchJob
 		if p.aheadFullLocked() {
 			// The rest wait in their lanes, to be downloaded only.
@@ -852,10 +857,15 @@ func (p *partPrefetcher) runAhead(jobs []*partPrefetchJob) {
 // still coming. A blob another job downloads for it starts its import only
 // once it is held. A job of the offer queued meanwhile, as a replacement
 // queues one for a blob its import waits for, runs here: no other worker
-// would run it.
-func (p *partPrefetcher) awaitAheadImport() {
+// would run it. It reports whether the offer's chain was imported ahead and
+// kept.
+func (p *partPrefetcher) awaitAheadImport() (imported bool) {
 	defer func() {
 		p.mu.Lock()
+		if offer := p.aheadCurrent; offer != nil {
+			a := p.aheads[offer]
+			imported = a != nil && a.ref != nil
+		}
 		p.aheadCurrent = nil
 		p.mu.Unlock()
 	}()
@@ -961,14 +971,27 @@ func (p *partPrefetcher) run(ctx context.Context, job *partPrefetchJob) {
 		return
 	}
 	offer = job.offer
+	// An ahead job renews a blob's expired address as it reads the blob,
+	// when the offer has a renewal key; it says which blobs it skips.
+	renews := job.ahead && job.record.Chain.RenewalKey != ""
+	var skipped []string
 	for _, layer := range job.record.Chain.Layers {
 		desc := layer.Descriptor
 		if p.cfg.lane(desc.Size) != job.lane {
 			continue
 		}
 		address, ok := job.record.Chain.Addresses[desc.Digest]
-		if blobAddressUsability(address, ok, now) != blobAddressUsable {
+		switch use := blobAddressUsability(address, ok, now); {
+		case use == blobAddressMissing && renews:
+		case use != blobAddressUsable:
 			expired = true
+			if job.ahead {
+				why := "its address is not HTTP(S)"
+				if use == blobAddressMissing {
+					why = "its address is expired or missing, and the offer has no renewal key"
+				}
+				skipped = append(skipped, fmt.Sprintf("blob %s: %s", desc.Digest, why))
+			}
 			continue
 		}
 		if h := p.holds[desc.Digest]; h != nil {
@@ -983,6 +1006,12 @@ func (p *partPrefetcher) run(ctx context.Context, job *partPrefetchJob) {
 		wanted = append(wanted, desc)
 		need += desc.Size
 	}
+	// Logged outside the mutex, once the job's outcome is known or not.
+	defer func() {
+		for _, why := range skipped {
+			p.log(job, "skipped_expired", 0, 0, nil, 0, errors.New(why))
+		}
+	}()
 	switch {
 	case len(wanted) == 0:
 		p.checkAheadLocked(offer)
@@ -1046,7 +1075,13 @@ func (p *partPrefetcher) run(ctx context.Context, job *partPrefetchJob) {
 // line can miss requests, those still awaiting headers when it was logged
 // among them: only a done job's counts are complete.
 func (p *partPrefetcher) fetch(ctx context.Context, job *partPrefetchJob, wanted []ocispecs.Descriptor) (blobs int, bytes int64, stats *partInstallStats, failure error) {
-	provider := p.cache.PartContentSource().Provider(ctx, job.record, nil)
+	// An ahead job's reads may renew an expired address, which takes a
+	// demand to hold the renewal: one of the job's own.
+	var demand *PartDemandState
+	if job.ahead {
+		demand = &PartDemandState{target: clonePartAddress(job.record.Address), started: time.Now()}
+	}
+	provider := p.cache.PartContentSource().Provider(ctx, job.record, demand)
 	if parts, ok := provider.(*partContentProvider); ok {
 		stats = &partInstallStats{}
 		parts.stats = stats
