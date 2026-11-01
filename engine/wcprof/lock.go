@@ -117,13 +117,18 @@ func (m *RWMutex) release() {
 }
 
 // markOp records the op of ctx as m's holder, or HolderUnknown when ctx
-// names none.
+// names none, while a recorder is active; it looks nothing up otherwise, as
+// its caller holds m.
 func (m *RWMutex) markOp(ctx context.Context) {
+	r := global.Load()
+	if r == nil {
+		return
+	}
 	op := CurrentOpID(ctx)
 	if op == 0 {
 		op = HolderUnknown
 	}
-	m.mark(op)
+	m.set(op, r.Now())
 }
 
 // holderAt reads m's holder and when it took m: HolderUnknown with no time
