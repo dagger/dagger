@@ -2657,6 +2657,9 @@ type Cache struct {
 	// testMergeWaitsOnAttachment observes a merge waiting on a target whose
 	// dependency attachment is still open.
 	testMergeWaitsOnAttachment func(*sharedResult)
+	// testMergeCommitLocked observes a merge's commit each time it has taken
+	// the graph lock.
+	testMergeCommitLocked func()
 	// testOfferBeforeDecision runs in offerPart between the capture of the
 	// offered row and the lock that decides the outcome.
 	testOfferBeforeDecision func(*sharedResult)
