@@ -217,3 +217,74 @@ func TestPartPrefetchAheadQueueAppliesStoredBlobs(t *testing.T) {
 	}, 10*time.Second, 10*time.Millisecond, "the stored chain is applied ahead")
 	require.Zero(t, f.transport.total(), "nothing is downloaded")
 }
+
+// newMixedChainFixture builds a real two-layer chain whose lower layer is
+// small and whose upper one holds size bytes.
+func newMixedChainFixture(t *testing.T, tag string, size int) chainFixture {
+	t.Helper()
+	ctx := context.Background()
+	store := testutil.NewStore(t)
+	lower, _ := store.Build(t, nil, "lower.txt", "small")
+	upper, _ := store.Build(t, lower, "upper.txt", strings.Repeat("u", size))
+	chain, err := upper.ExportChain(ctx, config.RefConfig{Compression: compression.New(compression.Uncompressed)})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, chain.Release(context.Background())) })
+	fixture := chainFixture{tag: tag, chain: chain}
+	require.Len(t, fixture.chain.Layers, 2)
+	for _, layer := range fixture.chain.Layers {
+		data, err := content.ReadBlob(ctx, fixture.chain.Provider, layer.Descriptor)
+		require.NoError(t, err)
+		fixture.blobs = append(fixture.blobs, data)
+	}
+	return fixture
+}
+
+// A replacement that queues a job of the offer the ahead worker is waiting
+// on doesn't stall it: the worker runs that job, the offer's import gets its
+// blob, and the queue moves on to the next offer.
+func TestPartPrefetchAheadQueueRunsAReplacementsJob(t *testing.T) {
+	const largeBlob = 32 << 10
+	mixed := newMixedChainFixture(t, "mixed", 64<<10)
+	next := newChainFixture(t, "next")
+	require.Less(t, len(mixed.blobs[0]), largeBlob)
+	require.GreaterOrEqual(t, len(mixed.blobs[1]), largeBlob)
+	f := newExhaustionFixture(t, mixed, next)
+	f.cache.partPrefetchConfig = &partPrefetchConfig{largeBlob: largeBlob, workers: 1, smallWorkers: 1, smallStreams: 8, budget: 1 << 30, ttl: time.Hour, queue: 8, aheadOffer: 1}
+	t.Cleanup(f.cache.closePartPrefetch)
+	hold := make(chan struct{})
+	f.transport.fault("https://fixed.invalid/mixed/1", contentTestFault{status: 500, stallAfter: -1})
+	f.transport.fault("https://fixed.invalid/mixed/0", contentTestFault{stallAfter: -1, hold: hold})
+	key, err := partAddressKey(f.address)
+	require.NoError(t, err)
+	f.acceptOffer(t, f.receiver, mixed)
+	require.Eventually(t, func() bool {
+		return f.transport.count("https://fixed.invalid/mixed/0") > 0 && f.transport.count("https://fixed.invalid/mixed/1") > 0
+	}, 10*time.Second, 10*time.Millisecond, "the large blob failed and the small one is downloading")
+	// A replacement with the same meaning, the large blob at a new address.
+	record := exhaustionOffer(mixed, "", true)
+	record.Chain.Addresses[mixed.digest(1)] = BlobAddress{URL: "https://renewed.invalid/mixed/1"}
+	row := f.receiver.cacheSharedResult()
+	f.cache.egraphMu.Lock()
+	owner, err := f.cache.newOfferOwnerLocked(f.ctx, record.Owner)
+	var callbacks []OnReleaseFunc
+	replacement := &partOffer{record: record, owner: owner}
+	if err == nil {
+		var queue []*sharedResult
+		queue, err = f.cache.testReplacePartOfferLocked(f.ctx, row, f.address, replacement)
+		if err == nil {
+			callbacks, err = f.cache.collectUnownedResultsLocked(f.ctx, queue)
+		}
+	}
+	f.cache.egraphMu.Unlock()
+	require.NoError(t, err)
+	require.NoError(t, runOnReleaseFuncs(f.ctx, callbacks))
+	f.cache.partOfferAccepted(f.ctx, row, key, replacement)
+	close(hold)
+	require.Eventually(t, func() bool {
+		return f.transport.count("https://renewed.invalid/mixed/1") > 0
+	}, 10*time.Second, 10*time.Millisecond, "the replacement's large blob is fetched")
+	f.acceptOffer(t, persistedListTestResult(t, f.ctx, f.cache, f.srv, "next-row", &transferTestValue{Text: "pending"}), next)
+	require.Eventually(t, func() bool {
+		return f.transport.count("https://fixed.invalid/next/0") > 0
+	}, 10*time.Second, 10*time.Millisecond, "the queue moves on to the next offer")
+}

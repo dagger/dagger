@@ -368,6 +368,8 @@ func (c *Cache) partOfferAccepted(ctx context.Context, row *sharedResult, key st
 		if job.ahead {
 			p.ahead = append(p.ahead, job)
 			p.jobs[job.jobKey()] = job
+			// The ahead worker may be waiting on this offer's import.
+			p.changedLocked()
 			continue
 		}
 		if queue := p.queues[job.lane]; len(queue) >= p.cfg.queue {
@@ -703,36 +705,43 @@ func (p *partPrefetcher) workAhead() {
 			p.aheadCurrent = jobs[0].offer
 		}
 		p.mu.Unlock()
-		for _, job := range jobs {
-			p.mu.Lock()
-			if job.gone {
-				delete(p.jobs, job.jobKey())
-				p.mu.Unlock()
-				continue
-			}
-			ctx, cancel := context.WithCancel(p.ctx)
-			job.cancel = cancel
-			p.mu.Unlock()
-			p.run(ctx, job)
-			cancel()
-			p.mu.Lock()
-			if key := job.jobKey(); p.jobs[key] == job {
-				delete(p.jobs, key)
-			}
-			p.changedLocked()
-			p.mu.Unlock()
-		}
 		if len(jobs) == 0 {
 			continue
 		}
+		p.runAhead(jobs)
 		p.awaitAheadImport()
+	}
+}
+
+// runAhead runs ahead jobs, one after another, as work runs a lane's.
+func (p *partPrefetcher) runAhead(jobs []*partPrefetchJob) {
+	for _, job := range jobs {
+		p.mu.Lock()
+		if job.gone {
+			delete(p.jobs, job.jobKey())
+			p.mu.Unlock()
+			continue
+		}
+		ctx, cancel := context.WithCancel(p.ctx)
+		job.cancel = cancel
+		p.mu.Unlock()
+		p.run(ctx, job)
+		cancel()
+		p.mu.Lock()
+		if key := job.jobKey(); p.jobs[key] == job {
+			delete(p.jobs, key)
+		}
+		p.changedLocked()
+		p.mu.Unlock()
 	}
 }
 
 // awaitAheadImport waits until the ahead worker's offer has no import ahead
 // to come: its import has ended, or none started and none of its blobs is
 // still coming. A blob another job downloads for it starts its import only
-// once it is held.
+// once it is held. A job of the offer queued meanwhile, as a replacement
+// queues one for a blob its import waits for, runs here: no other worker
+// would run it.
 func (p *partPrefetcher) awaitAheadImport() {
 	defer func() {
 		p.mu.Lock()
@@ -746,30 +755,45 @@ func (p *partPrefetcher) awaitAheadImport() {
 			p.mu.Unlock()
 			return
 		}
-		if a := p.aheads[offer]; a != nil {
-			done := a.done
+		var own, rest []*partPrefetchJob
+		for _, job := range p.ahead {
+			if job.offer == offer {
+				own = append(own, job)
+			} else {
+				rest = append(rest, job)
+			}
+		}
+		if len(own) > 0 {
+			p.ahead = rest
 			p.mu.Unlock()
-			if done != nil {
-				select {
-				case <-done:
-				case <-p.ctx.Done():
+			p.runAhead(own)
+			continue
+		}
+		var done chan struct{}
+		if a := p.aheads[offer]; a != nil {
+			done = a.done
+			if done == nil {
+				p.mu.Unlock()
+				return
+			}
+		} else {
+			coming := false
+			for _, layer := range offer.record.Chain.Layers {
+				if p.holds[layer.Descriptor.Digest] == nil && p.comingLocked(offer, layer.Descriptor) {
+					coming = true
+					break
 				}
 			}
-			return
-		}
-		coming := false
-		for _, layer := range offer.record.Chain.Layers {
-			if p.holds[layer.Descriptor.Digest] == nil && p.comingLocked(offer, layer.Descriptor) {
-				coming = true
-				break
+			if !coming {
+				p.mu.Unlock()
+				return
 			}
 		}
 		changed := p.changed
 		p.mu.Unlock()
-		if !coming {
-			return
-		}
 		select {
+		case <-done:
+			return
 		case <-changed:
 		case <-p.ctx.Done():
 			return
