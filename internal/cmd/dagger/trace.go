@@ -676,6 +676,22 @@ type traceLoader struct {
 	// later requests, or overlapping roll-ups, import nothing twice.
 	fullTree bool
 
+	// keepPrimary leaves the frontend's primary span alone instead of
+	// pointing it at the imported trace's root, for a restore whose live
+	// session root stays primary.
+	keepPrimary bool
+	// ownLogsOnly fetches only a roll-up span's own logs, not its
+	// subtree's: the subtree's output loads as its spans are expanded and
+	// shown, for a view that must not pull a whole trace's output just by
+	// rendering its roll-ups.
+	ownLogsOnly bool
+	// importedOnly makes listen fetch only the children of spans this
+	// loader imported (imported), for a frontend that also holds spans of
+	// another trace -- a resumed session's own live spans -- whose children
+	// the source does not have.
+	importedOnly bool
+	imported     map[dagui.SpanID]bool
+
 	// background backfills (lazy child loads) run on the command's ctx so
 	// they keep working while the TUI is interactive (-E).
 	sem chan struct{}
@@ -705,6 +721,7 @@ func newTraceLoaderFor(ctx context.Context, client tracesource.Source, traceID s
 		logReq:      map[string]uint64{},
 		logSem:      make(chan struct{}, 8),
 		logReleased: map[string]uint64{},
+		imported:    map[dagui.SpanID]bool{},
 		sem:         make(chan struct{}, 8),
 	}
 }
@@ -768,6 +785,23 @@ func (l *traceLoader) loadInitial(ctx context.Context) error {
 	return nil
 }
 
+// abandonInitial ends an initial load that failed for good: the view is taken
+// as partial, so a later expand still fetches, and the listens parked behind
+// the load are fired.
+func (l *traceLoader) abandonInitial() {
+	l.mu.Lock()
+	if l.initialLoaded {
+		l.mu.Unlock()
+		return
+	}
+	l.initialLoaded = true
+	l.partial = true
+	pending := l.pending
+	l.pending = nil
+	l.mu.Unlock()
+	l.listenAll(pending)
+}
+
 // listen fetches a span's children on demand, mirroring the web UI's "listen"
 // message. It's registered as the frontend's span provider and fired when a
 // span is expanded (or zoomed via --span). When the tree is partial it
@@ -790,6 +824,9 @@ func (l *traceLoader) listenAll(ids []dagui.SpanID) {
 	fetch := make([]string, 0, len(ids))
 	for _, id := range ids {
 		if !id.IsValid() || l.filter[id] {
+			continue
+		}
+		if l.importedOnly && !l.imported[id] {
 			continue
 		}
 		if !l.initialLoaded {
@@ -849,6 +886,9 @@ func (l *traceLoader) listenAll(ids []dagui.SpanID) {
 func (l *traceLoader) fetchLogs(fg *fetchGroup, id dagui.SpanID, descendants bool) {
 	if l.ctx.Err() != nil {
 		return
+	}
+	if l.ownLogsOnly {
+		descendants = false
 	}
 	spanHex := id.String()
 	l.mu.Lock()
@@ -1090,6 +1130,11 @@ func (l *traceLoader) ingest(ctx context.Context, req *coltracepb.ExportTraceSer
 	for _, rs := range req.GetResourceSpans() {
 		for _, ss := range rs.GetScopeSpans() {
 			for _, span := range ss.GetSpans() {
+				if l.importedOnly {
+					var id dagui.SpanID
+					copy(id.SpanID[:], span.GetSpanId())
+					l.imported[id] = true
+				}
 				partial, updated := traceViewAttrs(span)
 				if partial {
 					l.partial = true
@@ -1114,7 +1159,7 @@ func (l *traceLoader) ingest(ctx context.Context, req *coltracepb.ExportTraceSer
 	}
 	l.mu.Unlock()
 
-	if primary.IsValid() {
+	if primary.IsValid() && !l.keepPrimary {
 		Frontend.SetPrimary(primary)
 	}
 	return l.importer.ImportSpans(ctx, req)

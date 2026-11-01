@@ -136,6 +136,9 @@ func restoreArchive(ctx context.Context, source archiveRestoreSource, fe archive
 	if err := executeRestoreGraph(ctx, plan, target, req, subscriptions); err != nil {
 		return nil, err
 	}
+	if req.noBackfill {
+		return restoreConversationOnly(ctx, source, fe, req.traceID, cut), nil
+	}
 
 	warn := func(err error) {
 		restoreNotice(ctx, fmt.Sprintf("historical telemetry import incomplete: %v; restored agents remain usable", err))
@@ -160,13 +163,7 @@ func restoreArchive(ctx context.Context, source archiveRestoreSource, fe archive
 func restoreArchiveDisplay(ctx context.Context, source archiveRestoreSource, fe archiveFrontend, tf idtui.TraceFrontend, traceID dagui.TraceID, traceHex string, importer *enginetel.ArchiveTraceImporter, cut enginetel.ArchiveCut, warn func(error)) func() {
 	historyCtx, cancel := context.WithCancel(ctx)
 	var logFg fetchGroup
-	store := tracesource.NewStore(source, archive.Manifest{
-		TraceID: traceHex,
-		SealAt:  &cut.SealAt,
-		HighWater: archive.HighWater{
-			Spans: cut.HighWater.Spans, Logs: cut.HighWater.Logs, Metrics: cut.HighWater.Metrics,
-		},
-	})
+	store := archiveStore(source, traceHex, cut)
 	loader := newTraceLoaderFor(historyCtx, store, traceHex, fe)
 	loader.fullTree = true
 	tf.SetTraceLogProvider(traceID, func(id dagui.SpanID, descendants bool) {
@@ -181,6 +178,94 @@ func restoreArchiveDisplay(ctx context.Context, source archiveRestoreSource, fe 
 	return func() {
 		cancel()
 		stop()
+		_ = logFg.Wait()
+	}
+}
+
+// archiveStore is a display source pinned to a restore's verified cut.
+func archiveStore(source archiveRestoreSource, traceHex string, cut enginetel.ArchiveCut) *tracesource.Store {
+	return tracesource.NewStore(source, archive.Manifest{
+		TraceID: traceHex,
+		SealAt:  &cut.SealAt,
+		HighWater: archive.HighWater{
+			Spans: cut.HighWater.Spans, Logs: cut.HighWater.Logs, Metrics: cut.HighWater.Metrics,
+		},
+	})
+}
+
+// restoreConversationOnly is --no-backfill's history, for a session whose
+// telemetry outgrew the CLI (e.g. it ran out of memory). Instead of importing
+// every archived span, call payload and metadata record, and the metrics, it
+// loads the agents' loop and message spans with their direct children --
+// enough to render the conversations -- through the loader `dagger trace`
+// uses, and fetches a span's children when it is expanded and its own logs
+// when shown, one level at a time.
+//
+// What only the whole-trace streams carry is lost: metrics, so cost and token
+// totals restart at zero, and call payloads beyond the bootstrap's recipe
+// closure and the loaded spans' own, so e.g. rewound turns are not collapsed.
+// A tool call's rolled-up output shows only as its spans are expanded.
+//
+// A frontend that cannot load lazily gets no history at all. The returned
+// cleanup cancels and joins the fetches.
+func restoreConversationOnly(ctx context.Context, source archiveRestoreSource, fe archiveFrontend, traceHex string, cut enginetel.ArchiveCut) func() {
+	tf, lazy := fe.(idtui.TraceFrontend)
+	if !lazy {
+		return func() {}
+	}
+	parsed, err := trace.TraceIDFromHex(traceHex)
+	if err != nil {
+		return func() {}
+	}
+	traceID := dagui.TraceID{TraceID: parsed}
+	historyCtx, cancel := context.WithCancel(ctx)
+	store := archiveStore(source, traceHex, cut).ConversationOnly()
+	loader := newTraceLoaderFor(historyCtx, store, traceHex, fe)
+	// The live session's root stays primary, and the imported one gets out
+	// of its way (passthrough).
+	loader.importer.KeepRoots = false
+	loader.keepPrimary = true
+	// A tool call rolls up its subtree's output, which is most of a large
+	// session's logs: it loads as the tool call is expanded instead.
+	loader.ownLogsOnly = true
+	// The span provider is the frontend's, not this trace's: the live
+	// session's spans arrive on their own, and the archive has none of them.
+	loader.importedOnly = true
+	var logFg fetchGroup
+	tf.SetTraceLogProvider(traceID, func(id dagui.SpanID, descendants bool) {
+		loader.fetchLogs(&logFg, id, descendants)
+	})
+	setLogCache(tf, traceID, loader, store, traceHex)
+	tf.SetSpanProvider(loader.listen)
+	tf.SetFetchWaiter(func() {
+		_ = loader.wait()
+		_ = logFg.Wait()
+	})
+	stop := startHistoricalImport(historyCtx, func(ctx context.Context) error {
+		var err error
+		for attempt := 0; attempt < 3; attempt++ {
+			if err = loader.loadInitial(ctx); err == nil || ctx.Err() != nil || !errors.Is(err, archive.ErrTransient) {
+				break
+			}
+			select {
+			case <-ctx.Done():
+			case <-time.After(time.Duration(attempt+1) * 100 * time.Millisecond):
+			}
+		}
+		if err != nil && ctx.Err() == nil {
+			// Whatever arrived must not render as still running, and stays
+			// expandable.
+			err = errors.Join(err, loader.seal(ctx))
+			loader.abandonInitial()
+		}
+		return err
+	}, func(err error) {
+		restoreNotice(ctx, fmt.Sprintf("conversation history import incomplete: %v; restored agents remain usable", err))
+	})
+	return func() {
+		cancel()
+		stop()
+		_ = loader.wait()
 		_ = logFg.Wait()
 	}
 }

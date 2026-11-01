@@ -32,6 +32,7 @@ var agentListMode bool
 var agentResume agentResumeFlag
 var agentTrace string
 var agentFocus string
+var agentNoBackfill bool
 
 var agentCmd = &cobra.Command{
 	Use:   "agent [FILTERS] [OPTIONS]",
@@ -58,6 +59,9 @@ var agentCmd = &cobra.Command{
 		}
 		if err := validateArchiveFlags(traceID, agentFocus, listArchives, agentListMode, args); err != nil {
 			return err
+		}
+		if agentNoBackfill && traceID == "" && !listArchives {
+			return errors.New("--no-backfill requires -r/--resume")
 		}
 		// A bare -r offers a picker whenever the frontend can prompt, then
 		// resumes the chosen session; otherwise it prints the table.
@@ -117,9 +121,10 @@ var agentCmd = &cobra.Command{
 					return err
 				}
 				restore := traceRestore{
-					source:  source,
-					traceID: traceID,
-					agent:   agentFocus,
+					source:     source,
+					traceID:    traceID,
+					agent:      agentFocus,
+					noBackfill: agentNoBackfill,
 				}
 				return startInteractivePromptModeWithResume(ctx, dag, llmID, interactivePromptModeOpts{
 					restore:              restore,
@@ -247,6 +252,8 @@ func init() {
 	_ = agentCmd.Flags().MarkDeprecated("trace", "use -r/--resume <trace-id> instead")
 	agentCmd.Flags().StringVar(&agentFocus, "agent", "",
 		"With -r, focus this restored agent (runtime handle or name) instead of the top-level one")
+	agentCmd.Flags().BoolVar(&agentNoBackfill, "no-backfill", false,
+		"With -r, skip importing the session's full telemetry history, for a session too large to reload (e.g. one that ran out of memory): show only its conversations, and load a span's children and logs when it is expanded or shown, so tool output appears as it is expanded. Cost totals restart at zero and rewound turns are not collapsed. Applies to sealed engine archives only")
 }
 
 func validateArchiveFlags(traceID, focus string, listArchives, listAgents bool, args []string) error {
