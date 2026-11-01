@@ -88,9 +88,9 @@ func TestCacheReportsPartsRead(t *testing.T) {
 	mu.Lock()
 	assert.DeepEqual(t, [][]PartRead{
 		{
+			{ResultID: id(consumer), Part: partsTestPartFS},
 			{ResultID: id(part), Part: partsTestPartFS},
 			{ResultID: id(whole)},
-			{ResultID: id(consumer), Part: partsTestPartFS},
 		},
 		{
 			{ResultID: id(part), Part: partsTestPartFS},
@@ -145,4 +145,41 @@ func TestPartReadFlushWaitsForAReportUnderWay(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 	assert.DeepEqual(t, reports, [][]PartRead{{{ResultID: 1, Part: "fs"}}})
+}
+
+// A read is reported once work asks for the part, not once the part is made:
+// a consumer waiting on a dependency still running has read it, and a service
+// weighing the dependency as it completes knows so.
+func TestCacheReportsAPartReadWhileItsWorkRuns(t *testing.T) {
+	t.Parallel()
+	var mu sync.Mutex
+	var reported []PartRead
+	ctx := cacheTestContext(t.Context())
+	c, err := NewCache(ctx, "", nil, nil, WithPartReadReport(func(reads []PartRead) {
+		mu.Lock()
+		defer mu.Unlock()
+		reported = append(reported, reads...)
+	}))
+	assert.NilError(t, err)
+	ctx = ContextWithCache(ctx, c)
+	t.Cleanup(func() { assert.NilError(t, c.CloseDiscardingPersistence()) })
+
+	started, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	t.Cleanup(func() { once.Do(func() { close(release) }) })
+	running := newPartsReadTestValue(t, c, ctx, "running", func(context.Context) error {
+		close(started)
+		<-release
+		return nil
+	})
+	done := make(chan error, 1)
+	go func() { done <- c.EvaluateParts(ctx, running, partsTestPartFS) }()
+	<-started
+
+	c.partReads.flush()
+	mu.Lock()
+	assert.DeepEqual(t, []PartRead{{ResultID: uint64(running.cacheSharedResult().id), Part: partsTestPartFS}}, reported)
+	mu.Unlock()
+	once.Do(func() { close(release) })
+	assert.NilError(t, <-done)
 }

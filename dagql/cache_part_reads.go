@@ -17,8 +17,9 @@ type PartRead struct {
 }
 
 // WithPartReadReport makes the cache report the parts of entries that work
-// reads: those Evaluate and EvaluateParts evaluate for it, and those a
-// delegated part is installed from. When work reads a part of an entry for
+// reads: those it asks Evaluate and EvaluateParts for, from when it asks,
+// though they may still be being made, and those a delegated part is
+// installed from. When work reads a part of an entry for
 // the first time, the cache reports every part of the entry read so far, or
 // the whole entry once work read it whole, so that each report about an
 // entry is complete: a reader that missed earlier ones loses nothing. Reports
