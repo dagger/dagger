@@ -1,0 +1,11 @@
+kind: Fixed
+body: |
+  A started service is reported ready sooner after it starts listening on its
+  checked TCP ports. The engine's port check waited longer and longer between
+  tries, up to about 10s, so a service that took a few seconds to start was
+  often noticed one to several seconds after it was ready. It now tries about
+  every 100ms.
+time: 2026-11-01T12:00:00Z
+custom:
+  Author: sipsma
+  PR: ""
