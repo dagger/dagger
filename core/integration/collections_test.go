@@ -771,6 +771,57 @@ func (CollectionsSuite) TestDimensionItems(ctx context.Context, t *testctx.T) {
 }}}`, string(*got))
 }
 
+func (CollectionsSuite) TestNestedItemsFromListedReceiver(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	// Each call of groups returns a new nonce as its only key. A part's key is
+	// the nonce of the groups value its group came from, so it matches its
+	// group's key only when both come from the receiver that was listed.
+	ws, err := goGitBase(t, c).
+		WithNewFile("/work/dagger.toml", "[modules.probe]\nsource = \"./probe\"\nmain = true\n").
+		WithNewFile("/work/probe/dagger.json", `{"name":"probe","engineVersion":"v1.0.0-beta.20","sdk":{"source":"go"},"source":"."}`).
+		WithNewFile("/work/probe/main.go", `package main
+import "crypto/rand"
+type Probe struct{}
+// +cache="never"
+func (*Probe) Groups() *Groups { nonce := rand.Text(); return &Groups{Names: []string{nonce}, Nonce: nonce} }
+// +collection
+type Groups struct {
+  // +keys
+  Names []string
+  Nonce string
+}
+// +get
+func (groups *Groups) Group(name string) *Group { return &Group{Name: name, Nonce: groups.Nonce} }
+type Group struct { Name, Nonce string }
+func (group *Group) Parts() *Parts { return &Parts{Keys: []string{group.Nonce}} }
+// +collection
+type Parts struct { Keys []string }
+func (*Parts) Get(key string) *Part { return &Part{Name: key} }
+type Part struct { Name string }
+`).
+		WithWorkdir("/work").Directory("/work").AsWorkspace().ID(ctx)
+	require.NoError(t, err)
+	got, err := testutil.QueryWithClient[struct {
+		Node struct {
+			Artifacts struct {
+				DimensionItems []struct {
+					DimensionKeys []struct{ Dimension, Key string }
+				}
+			}
+		}
+	}](c, t, `query($ws: ID!) {
+  node(id: $ws) { ... on Workspace { artifacts { dimensionItems(dimension: "probe-groups-part") { dimensionKeys { dimension key } } } } }
+}`, &testutil.QueryOptions{Variables: map[string]any{"ws": ws}})
+	require.NoError(t, err)
+	require.Len(t, got.Node.Artifacts.DimensionItems, 1)
+	keys := map[string]string{}
+	for _, key := range got.Node.Artifacts.DimensionItems[0].DimensionKeys {
+		keys[key.Dimension] = key.Key
+	}
+	require.NotEmpty(t, keys["/probe/groups"])
+	require.Equal(t, keys["/probe/groups"], keys["/probe/groups/parts"])
+}
+
 func (CollectionsSuite) TestMainCollection(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	out, err := goGitBase(t, c).
