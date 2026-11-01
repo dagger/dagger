@@ -13,6 +13,7 @@ import (
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -432,4 +433,60 @@ func TestPartPrefetchAheadQueueSkipsAChainAlreadyAhead(t *testing.T) {
 	f.acceptOffer(t, persistedListTestResult(t, f.ctx, f.cache, f.srv, "b-row", &transferTestValue{Text: "pending"}), b)
 	f.cache.partInstallEnded()
 	require.Eventually(t, func() bool { return f.aheadOf(b) }, 10*time.Second, 10*time.Millisecond, "the other chain takes the worker's second place")
+}
+
+// An ahead offer whose import ends without importing anything, as when its
+// blobs fail to download, gives its place back: the next large offer is
+// still imported ahead under a cap of one.
+func TestPartPrefetchAheadQueueFailedImportGivesItsPlaceBack(t *testing.T) {
+	failed := newSizedChainFixture(t, "failed", 64<<10)
+	next := newSizedChainFixture(t, "next", 72<<10)
+	f := newExhaustionFixture(t, failed, next)
+	f.cache.partPrefetchConfig = &partPrefetchConfig{largeBlob: 1, workers: 1, smallWorkers: 1, smallStreams: 8, budget: 1 << 30, ttl: time.Hour, queue: 8, aheadOffer: 64 << 10, aheadMax: 1}
+	t.Cleanup(f.cache.closePartPrefetch)
+	for i := range failed.blobs {
+		f.transport.fault(fmt.Sprintf("https://fixed.invalid/failed/%d", i), contentTestFault{status: 500, stallAfter: -1})
+	}
+	f.acceptOffer(t, f.receiver, failed)
+	require.Eventually(t, func() bool {
+		lines := f.logs.lines(t, "remote cache part prefetched")
+		return len(lines) > 0 && lines[len(lines)-1].fields["outcome"] == "error"
+	}, 10*time.Second, 10*time.Millisecond, "the first offer's download fails")
+	require.Eventually(t, func() bool {
+		p := f.cache.partPrefetcher.Load()
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		return p.aheadCurrent == nil
+	}, 10*time.Second, 10*time.Millisecond, "the worker is done with the first offer")
+	f.acceptOffer(t, persistedListTestResult(t, f.ctx, f.cache, f.srv, "next-row", &transferTestValue{Text: "pending"}), next)
+	require.Eventually(t, func() bool { return f.aheadOf(next) }, 10*time.Second, 10*time.Millisecond, "the next large offer is imported ahead")
+}
+
+// An ahead offer whose blobs' addresses have expired is renewed, not
+// skipped: the job downloads from the renewed addresses and the chain is
+// imported ahead.
+func TestPartPrefetchAheadQueueRenewsExpiredAddresses(t *testing.T) {
+	big := newSizedChainFixture(t, "big", 64<<10)
+	f := newExhaustionFixture(t, big)
+	f.cache.partPrefetchConfig = &partPrefetchConfig{largeBlob: 1, workers: 1, smallWorkers: 1, smallStreams: 8, budget: 1 << 30, ttl: time.Hour, queue: 8, aheadOffer: 64 << 10, aheadMax: 4}
+	t.Cleanup(f.cache.closePartPrefetch)
+	bridge := attachTestBridge(t, f.cache.PartContentSource())
+	taken := renewalConsumer(t, bridge, func(request *RenewalRequest) RenewalReply {
+		addresses := map[digest.Digest]BlobAddress{}
+		for i := range big.blobs {
+			addresses[big.digest(i)] = BlobAddress{URL: fmt.Sprintf("https://renewed.invalid/big/%d", i)}
+		}
+		return RenewalReply{ID: request.ID, Chain: request.Chain, Addresses: addresses}
+	})
+	key, err := partAddressKey(f.address)
+	require.NoError(t, err)
+	f.attach(t, f.receiver, exhaustionOffer(big, "renewal-key", false))
+	f.cache.egraphMu.Lock()
+	offer := f.receiver.cacheSharedResult().partOfferLocked(key)
+	f.cache.egraphMu.Unlock()
+	require.NotNil(t, offer)
+	f.cache.partOfferAccepted(f.ctx, f.receiver.cacheSharedResult(), key, offer)
+	require.Eventually(t, func() bool { return f.aheadOf(big) }, 10*time.Second, 10*time.Millisecond, "the chain is imported ahead from renewed addresses")
+	require.NotEmpty(t, taken(), "the job renewed the addresses")
+	require.Positive(t, f.transport.count("https://renewed.invalid/big/0"))
 }
