@@ -10,6 +10,7 @@ import (
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/archive"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/internal/cloud"
 	"github.com/dagger/dagger/internal/tracesource"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
@@ -113,6 +114,23 @@ func TestCloudTraceCommandsReadCloudOnly(t *testing.T) {
 		require.NotContains(t, cmd.Long, "engine", cmd.CommandPath())
 	}
 	require.Contains(t, traceCmd.Long, "engine")
+}
+
+// TestTraceViewCommandFollowsSource: a report's follow-up hints name the
+// command that can read the trace again. A trace the engine's store served is
+// out of reach of the Cloud-only 'dagger cloud traces view', so its hints say
+// 'dagger trace'; a Cloud trace's say 'dagger cloud traces view', also when
+// 'dagger trace' fell back to Cloud.
+func TestTraceViewCommandFollowsSource(t *testing.T) {
+	store := tracesource.NewStore(&localLogsArchive{}, archive.Manifest{TraceID: "trace-id"})
+	require.Equal(t, "dagger trace", traceViewCommand(store))
+	require.Equal(t, "dagger cloud traces view", traceViewCommand(&cloud.OTLPClient{}))
+
+	// The hint's flags are 'dagger trace's too.
+	for _, name := range []string{"log", "span", "check", "test", "descendants"} {
+		require.NotNil(t, traceCmd.Flags().Lookup(name), "--%s", name)
+		require.NotNil(t, cloudTracesViewCmd.Flags().Lookup(name), "--%s", name)
+	}
 }
 
 // TestEngineTraceParamsLeaveCloudURLAlone: the archive connection's Cloud URL
