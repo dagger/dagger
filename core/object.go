@@ -818,10 +818,15 @@ func attachTypedModuleObjectValue(
 				// Decoding moves the collection base out of Fields. Keep its
 				// attached reference in the inline representation so decoding
 				// it again preserves the original keys and collection identity.
-				if obj.CollectionBase != nil {
+				// A base that is the object itself is set again on decoding.
+				if obj.CollectionBase != nil && obj.CollectionBase.Unwrap() != obj {
 					fields[collectionBaseField] = obj.CollectionBase
 				}
-				return fields, []dagql.AnyResult{attached}, nil
+				// The owner's state is these fields, not the object: the
+				// object is a field call on the owner, so it depends on the
+				// owner and owning it would make each depend on the other.
+				// The owner owns the results the fields refer to instead.
+				return fields, inlineModuleObjectResults(fields), nil
 			}
 		}
 		// Handles retain the attached result so persistence can relocate them.
@@ -833,6 +838,30 @@ func attachTypedModuleObjectValue(
 		}
 	default:
 		return val, nil, nil
+	}
+}
+
+// inlineModuleObjectResults returns the attached results an inline object's
+// fields hold, at any depth of nested inline objects and lists: each becomes
+// a reference in the persisted state of the object that inlines it.
+func inlineModuleObjectResults(val any) []dagql.AnyResult {
+	switch x := val.(type) {
+	case dagql.AnyResult:
+		return []dagql.AnyResult{x}
+	case []any:
+		var results []dagql.AnyResult
+		for _, item := range x {
+			results = append(results, inlineModuleObjectResults(item)...)
+		}
+		return results
+	case map[string]any:
+		var results []dagql.AnyResult
+		for _, name := range slices.Sorted(maps.Keys(x)) {
+			results = append(results, inlineModuleObjectResults(x[name])...)
+		}
+		return results
+	default:
+		return nil
 	}
 }
 
