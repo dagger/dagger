@@ -288,3 +288,70 @@ func TestPartPrefetchAheadQueueRunsAReplacementsJob(t *testing.T) {
 		return f.transport.count("https://fixed.invalid/next/0") > 0
 	}, 10*time.Second, 10*time.Millisecond, "the queue moves on to the next offer")
 }
+
+// aheadImports returns how many offers have an import ahead.
+func (f *exhaustionFixture) aheadImports() int {
+	p := f.cache.partPrefetcher.Load()
+	if p == nil {
+		return 0
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.aheads)
+}
+
+// With the ahead queue on, an offer below its size is downloaded in its
+// lane and held, and nothing imports it ahead.
+func TestPartPrefetchAheadQueueLanesImportNothing(t *testing.T) {
+	small := newChainFixture(t, "small")
+	f := newExhaustionFixture(t, small)
+	f.cache.partPrefetchConfig = &partPrefetchConfig{largeBlob: 1, workers: 1, smallWorkers: 1, smallStreams: 8, budget: 1 << 30, ttl: time.Hour, queue: 8, aheadOffer: 1 << 30, aheadMax: 4}
+	t.Cleanup(f.cache.closePartPrefetch)
+	f.acceptOffer(t, f.receiver, small)
+	require.Eventually(t, func() bool {
+		p := f.cache.partPrefetcher.Load()
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		return len(p.holds) == len(small.blobs)
+	}, 10*time.Second, 10*time.Millisecond, "the lane downloads and holds the blobs")
+	time.Sleep(200 * time.Millisecond)
+	require.Zero(t, f.aheadImports(), "no lane offer is imported ahead")
+}
+
+// The ahead worker takes at most aheadMax offers: a later large offer is
+// downloaded in its lanes, and not imported ahead.
+func TestPartPrefetchAheadQueueTakesAtMostItsCap(t *testing.T) {
+	first := newSizedChainFixture(t, "first", 64<<10)
+	// Another size, so that its blobs are its own.
+	second := newSizedChainFixture(t, "second", 72<<10)
+	f := newExhaustionFixture(t, first, second)
+	f.cache.partPrefetchConfig = &partPrefetchConfig{largeBlob: 1, workers: 1, smallWorkers: 1, smallStreams: 8, budget: 1 << 30, ttl: time.Hour, queue: 8, aheadOffer: 64 << 10, aheadMax: 1}
+	t.Cleanup(f.cache.closePartPrefetch)
+	f.acceptOffer(t, f.receiver, first)
+	require.Eventually(t, func() bool { return f.aheadImports() == 1 }, 10*time.Second, 10*time.Millisecond, "the first large offer is imported ahead")
+	f.acceptOffer(t, persistedListTestResult(t, f.ctx, f.cache, f.srv, "second-row", &transferTestValue{Text: "pending"}), second)
+	require.Eventually(t, func() bool {
+		for i := range second.blobs {
+			if f.transport.count(fmt.Sprintf("https://fixed.invalid/second/%d", i)) == 0 {
+				return false
+			}
+		}
+		return true
+	}, 10*time.Second, 10*time.Millisecond, "the second large offer is downloaded in its lanes")
+	time.Sleep(200 * time.Millisecond)
+	require.Equal(t, 1, f.aheadImports(), "the second large offer is not imported ahead")
+}
+
+// The ahead worker takes an offer only while no install runs.
+func TestPartPrefetchAheadQueueWaitsForInstalls(t *testing.T) {
+	big := newSizedChainFixture(t, "big", 64<<10)
+	f := newExhaustionFixture(t, big)
+	f.cache.partPrefetchConfig = &partPrefetchConfig{largeBlob: 1, workers: 1, smallWorkers: 1, smallStreams: 8, budget: 1 << 30, ttl: time.Hour, queue: 8, aheadOffer: 64 << 10, aheadMax: 4}
+	t.Cleanup(f.cache.closePartPrefetch)
+	f.cache.partInstallStarted()
+	f.acceptOffer(t, f.receiver, big)
+	time.Sleep(300 * time.Millisecond)
+	require.Zero(t, f.transport.total(), "nothing starts while an install runs")
+	f.cache.partInstallEnded()
+	require.Eventually(t, func() bool { return f.aheadImports() == 1 }, 10*time.Second, 10*time.Millisecond, "the offer is taken once the install ends")
+}
