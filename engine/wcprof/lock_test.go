@@ -78,3 +78,35 @@ func TestReadLockedHolderIsReaders(t *testing.T) {
 		t.Fatalf("wait %+v: want holder HolderReaders", w)
 	}
 }
+
+// A lock released by its holder and taken again before the new taker has
+// marked itself never names the released holder: the release itself makes
+// the holder unknown.
+func TestReleasedHolderIsNotNamed(t *testing.T) {
+	r := withTestRecorder(t, 0)
+	earlierCtx, _ := BeginOp(context.Background(), OpKindRemoteCache, "remotecache.merge.commit", OpOpts{})
+	waiterCtx, _ := BeginOp(context.Background(), OpKindLazy, "Container.withExec", OpOpts{})
+	var mu RWMutex
+	WriteLock(earlierCtx, &mu, "test.mu")
+	mu.Unlock()
+	// The next taker holds the mutex but hasn't marked itself yet.
+	mu.RWMutex.Lock()
+	if w := lockWait(t, r, waiterCtx, &mu, mu.RWMutex.Unlock); w.ResultID != HolderUnknown {
+		t.Fatalf("wait %+v: want holder HolderUnknown, not the released holder", w)
+	}
+}
+
+// Readers carry no acquisition time: one reader's time would count the idle
+// time before a later reader as held.
+func TestReadersHaveNoAcquisitionTime(t *testing.T) {
+	r := withTestRecorder(t, 0)
+	waiterCtx, _ := BeginOp(context.Background(), OpKindLazy, "Container.withExec", OpOpts{})
+	var mu RWMutex
+	mu.RLock()
+	mu.RUnlock()
+	mu.RLock()
+	w := lockWait(t, r, waiterCtx, &mu, mu.RUnlock)
+	if w.ResultID != HolderReaders || w.Bytes != 0 {
+		t.Fatalf("wait %+v: want holder HolderReaders with no acquisition time", w)
+	}
+}
