@@ -1073,6 +1073,20 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		Parent:    parentJSON,
 		InputArgs: callInputs,
 	})
+	fnCall.workspaceReads = currentWorkspaceReads(ctx)
+	if fnCall.workspaceReads != nil {
+		fnCall.workspaceReads.mu.Lock()
+		fnCall.workspaceReads.moduleRun = true
+		fnCall.workspaceReads.summary.Unknown = fnCall.workspaceReads.summary.Unknown || fn.explicitCacheTTLSeconds() > 0
+		fnCall.workspaceReads.mu.Unlock()
+		if ws, ok := WorkspaceFromContext(ctx); ok {
+			scope, err := workspaceScopeForValue(suppressWorkspaceReads(ctx), ws)
+			fnCall.workspaceReads.merge(workspaceReadSummary{
+				Scope: scope, Unknown: err != nil || scope == nil,
+				Selectors: moduleSourceSelectors(ws.Self(), mod),
+			}, false)
+		}
+	}
 	fnCall.ResultScope = dagql.CurrentResultScope(ctx)
 	fnCall.composingAgentHandle = composingAgentHandle(ctx)
 	if fn.objDef != nil {

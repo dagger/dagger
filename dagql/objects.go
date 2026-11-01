@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"weak"
 
 	"github.com/iancoleman/strcase"
@@ -574,6 +575,24 @@ func (r ObjectResult[T]) Select(ctx context.Context, s *Server, sel Selector) (A
 	return result, nil
 }
 
+// Plan prepares the same request as Select, including receiver scopes, schema
+// defaults, module provenance and dynamic inputs, without invoking the selected
+// field's body or looking up its result. Preparing inputs may itself perform
+// required work. This is not a reservation: a later Select plans again.
+func (r ObjectResult[T]) Plan(ctx context.Context, s *Server, sel Selector) (*CallRequest, error) {
+	ctx = srvToContext(ctx, s)
+	ctx = resultScopeFromReceiver(ctx, r)
+	scoped, err := scopeObject(ctx, s, r)
+	if err != nil {
+		return nil, err
+	}
+	_, planned, err := scoped.(ObjectResult[T]).preselect(ctx, s, sel)
+	if err != nil {
+		return nil, err
+	}
+	return planned.request, nil
+}
+
 type preselectResult struct {
 	inputArgs map[string]Input
 	request   *CallRequest
@@ -793,6 +812,14 @@ func (r ObjectResult[T]) call(
 	if field.Spec.Trivial {
 		ctx = ContextWithTrivialField(ctx)
 	}
+	var executed atomic.Bool
+	if s.callObserver != nil {
+		var done func(AnyResult, bool, error)
+		ctx, done = s.callObserver(ctx, req)
+		if done != nil {
+			defer func() { done(res, executed.Load(), err) }()
+		}
+	}
 	if s.telemetry != nil && !field.Spec.NoTelemetry {
 		recording := wcprof.Enabled(ctx)
 		var prevSpan trace.SpanContext
@@ -832,6 +859,7 @@ func (r ObjectResult[T]) call(
 	}
 
 	res, err = cache.GetOrInitCall(ctx, clientMetadata.SessionID, s, req, func(ctx context.Context) (AnyResult, error) {
+		executed.Store(true)
 		val, err := field.Func(ctx, r, inputArgs, view)
 		if err != nil {
 			return nil, err

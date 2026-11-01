@@ -1285,6 +1285,9 @@ func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow, comm
 		res.createdAtUnixNano = time.Now().UnixNano()
 	}
 	res.payloadMu.Unlock()
+	if c.resultsByID[res.id] == res {
+		c.indexCallMetadataLocked(res)
+	}
 	if c.blobBacked {
 		// On the Cloud, an export that stores a value uses it.
 		touchSharedResultLastUsed(res, time.Now().UnixNano())
