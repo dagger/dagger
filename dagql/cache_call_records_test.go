@@ -263,6 +263,8 @@ func receiverTestCall(client string) *ResultCall {
 // inner, and a Cloud that stored inner and A and kept the call.
 type receiverCallTest struct {
 	*callRecordTest
+	// srv is cache-a's server.
+	srv      *Server
 	receiver AnyResult
 	// receiverNumber is the Cloud's number for A.
 	receiverNumber uint64
@@ -272,7 +274,7 @@ func newReceiverCallTest(t *testing.T) *receiverCallTest {
 	t.Helper()
 	cloudCtx, cloud := storedPartTestCache(t, WithBlobStore())
 	ctx, producer, srv := transferTestCache(t)
-	test := &receiverCallTest{callRecordTest: &callRecordTest{ctx: ctx, producer: producer, frame: receiverTestCall("a"), cloud: cloud}}
+	test := &receiverCallTest{callRecordTest: &callRecordTest{ctx: ctx, producer: producer, frame: receiverTestCall("a"), cloud: cloud}, srv: srv}
 	test.inner = persistedListTestResult(t, ctx, producer, srv, "inner", &transferTestValue{Text: "inner"})
 	receiver, err := producer.GetOrInitCall(ctx, "test-session", srv, &CallRequest{ResultCall: receiverTestFrame("a"), IsPersistable: true},
 		func(context.Context) (AnyResult, error) {

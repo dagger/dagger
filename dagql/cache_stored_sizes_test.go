@@ -1,7 +1,10 @@
 package dagql
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -89,6 +92,276 @@ func TestStoredSizesPriceHeldEntriesAsHeldRows(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, full[0].Records, got[0].Records)
 	require.Less(t, got[0].Bytes, full[0].Bytes, "a held row costs less than P's record")
+}
+
+// A root whose kept call needs an input the bundle adds is priced with that
+// input, as StoredBundle carries it; a recipient that holds the input is sent
+// no copy of it, and the root isn't priced with it.
+func TestStoredSizesPriceCallInputs(t *testing.T) {
+	t.Parallel()
+	test := newReceiverCallTest(t)
+	for name, held := range map[string]*HeldBy{
+		"added": nil,
+		"held":  {Cache: "cache-b", Now: time.Now().Unix()},
+	} {
+		if held != nil {
+			heldTestHold(t, test.ctx, test.cloud, "cache-b", 7, test.receiverNumber, 0)
+		}
+		built, err := test.cloud.StoredBundle(test.ctx, []uint64{test.number}, held)
+		require.NoError(t, err)
+		if held == nil {
+			require.Equal(t, []uint64{test.receiverNumber}, built.CallInputs, name)
+			require.Equal(t, []int{0, 0}, built.RootOwners, "the input travels with the root whose call needs it")
+		} else {
+			require.Empty(t, built.CallInputs, name)
+		}
+		var want StoredSize
+		for _, value := range built.Bundle.Values {
+			data, err := json.Marshal(value)
+			require.NoError(t, err)
+			want.Records++
+			want.Bytes += int64(len(data))
+		}
+		got, err := test.cloud.StoredSizes(test.ctx, []uint64{test.number}, held)
+		require.NoError(t, err)
+		storedSizesTestClose(t, []StoredSize{want}, got)
+	}
+}
+
+// Pricing chooses the calls a bundle chooses, in the order the bundle adds
+// them. The Cloud stores inner, with two calls of one term kept on it, on
+// cache-a's receiver A and cache-b's equivalent receiver B; C, stored after
+// inner, with a call kept on it that needs one of the receivers; and R, over
+// inner and C. R's bundle takes inner's calls first, finds neither receiver
+// carried, and adds the receiver of the call that sorts first; then C's call
+// adds its own receiver, unless that was it. Whichever sorts first, one of
+// the two cases has the bundle carry both receivers. R's price is the whole
+// bundle.
+func TestStoredSizesChooseCallsInTheBundlesOrder(t *testing.T) {
+	t.Parallel()
+	for _, client := range []string{"a", "b"} {
+		t.Run("C on "+client, func(t *testing.T) {
+			t.Parallel()
+			test := newReceiverCallTest(t)
+			cloud := test.cloud
+			bctx, b, bsrv := transferTestCache(t)
+			call := func(frame *ResultCall, value func() (AnyResult, error)) AnyResult {
+				t.Helper()
+				res, err := b.GetOrInitCall(bctx, "test-session", bsrv, &CallRequest{ResultCall: frame, IsPersistable: true},
+					func(context.Context) (AnyResult, error) { return value() })
+				require.NoError(t, err)
+				return res
+			}
+			returns := func(res AnyResult) func() (AnyResult, error) {
+				return func() (AnyResult, error) { return res, nil }
+			}
+			receiver := func(client string) AnyResult {
+				return call(receiverTestFrame(client), func() (AnyResult, error) {
+					return NewResultForCall(&transferTestValue{Text: "receiver"}, receiverTestFrame(client))
+				})
+			}
+			inner := persistedListTestResult(t, bctx, b, bsrv, "inner", &transferTestValue{Text: "inner"})
+			receiverB := receiver("b")
+			call(receiverTestCall("b"), returns(inner))
+			receiver(client)
+			c := persistedListTestResult(t, bctx, b, bsrv, "c", &transferTestValue{Text: "c"})
+			callC := callRecordTestFrame("outerC")
+			callC.Receiver = &ResultCallRef{Call: receiverTestFrame(client)}
+			call(callC, returns(c))
+			r := persistedListTestResult(t, bctx, b, bsrv, "r", &transferTestValue{Text: "r"})
+			for _, dep := range []AnyResult{inner, c} {
+				require.NoError(t, b.AddExplicitDependency(bctx, r, dep, "test"))
+			}
+			_, err := cloud.MergeValues(test.ctx, "cache-b", exportTestBundle(t, bctx, b, r))
+			require.NoError(t, err)
+			_, err = cloud.MergeValues(test.ctx, "cache-b", exportTestBundle(t, bctx, b, receiverB))
+			require.NoError(t, err)
+			for _, kept := range []*callRecordTest{
+				{ctx: bctx, producer: b, frame: receiverTestCall("b"), inner: inner, cloud: cloud},
+				{ctx: bctx, producer: b, frame: callC, inner: c, cloud: cloud},
+			} {
+				_, err := cloud.AttachRemoteHolding(test.ctx, HolderKey{Cache: "cache-b", Number: uint64(kept.inner.cacheSharedResult().id)}, kept.span(t, true, 0))
+				require.NoError(t, err)
+			}
+			numbers := map[string]uint64{}
+			cloud.egraphMu.RLock()
+			for id, res := range cloud.resultsByID {
+				if frame := res.loadResultCall(); frame != nil && (frame.Field == "r" || frame.Field == "c") {
+					numbers[frame.Field] = uint64(id)
+				}
+			}
+			cloud.egraphMu.RUnlock()
+			require.Less(t, test.number, numbers["c"], "inner's calls come first in R's bundle")
+			require.Len(t, storedBundleTestEntry(cloud, test.number).calls, 2)
+
+			built, err := cloud.StoredBundle(test.ctx, []uint64{numbers["r"]}, nil)
+			require.NoError(t, err)
+			require.Len(t, built.Bundle.Calls, 2, "one call on inner, one on C")
+			require.NotEmpty(t, built.CallInputs)
+			var want StoredSize
+			for _, value := range built.Bundle.Values {
+				data, err := json.Marshal(value)
+				require.NoError(t, err)
+				want.Records++
+				want.Bytes += int64(len(data))
+			}
+			got, err := cloud.StoredSizes(test.ctx, []uint64{numbers["r"]}, nil)
+			require.NoError(t, err)
+			storedSizesTestClose(t, []StoredSize{want}, got)
+		})
+	}
+}
+
+// Prices are never less than what a bundle of the first roots carries, where
+// what the whole bundle carries changes which call it chooses. The Cloud
+// stores P, with calls of one term kept on it on equivalent receivers X and
+// Y, X's sorting first; and Q, over Y, with calls of another term kept on it
+// on Z and X, Z's sorting first, Z large. X, Y and Z are each another
+// engine's, so each is its own entry. Priced alone, P adds X. A bundle of P
+// and Q places P's call on Y, which Q carries, adds no X, and so adds Z for
+// Q's call.
+func TestStoredSizesNeverPriceLessThanTheBundle(t *testing.T) {
+	t.Parallel()
+	test := newReceiverCallTest(t)
+	cloud := test.cloud
+	type engine struct {
+		ctx context.Context
+		c   *Cache
+		srv *Server
+	}
+	a := engine{test.ctx, test.producer, test.srv}
+	b, c := engine{}, engine{}
+	b.ctx, b.c, b.srv = transferTestCache(t)
+	c.ctx, c.c, c.srv = transferTestCache(t)
+	call := func(e engine, frame *ResultCall, value func() (AnyResult, error)) AnyResult {
+		t.Helper()
+		res, err := e.c.GetOrInitCall(e.ctx, "test-session", e.srv, &CallRequest{ResultCall: frame, IsPersistable: true},
+			func(context.Context) (AnyResult, error) { return value() })
+		require.NoError(t, err)
+		return res
+	}
+	returns := func(res AnyResult) func() (AnyResult, error) {
+		return func() (AnyResult, error) { return res, nil }
+	}
+	receiver := func(e engine, client, text string) AnyResult {
+		return call(e, receiverTestFrame(client), func() (AnyResult, error) {
+			return NewResultForCall(&transferTestValue{Text: text}, receiverTestFrame(client))
+		})
+	}
+	merge := func(e engine, cache CacheID, roots ...AnyResult) {
+		t.Helper()
+		_, err := cloud.MergeValues(a.ctx, cache, exportTestBundle(t, e.ctx, e.c, roots...))
+		require.NoError(t, err)
+	}
+	keep := func(e engine, cache CacheID, frame *ResultCall, inner AnyResult) {
+		t.Helper()
+		kept := &callRecordTest{ctx: e.ctx, producer: e.c, frame: frame, inner: inner, cloud: cloud}
+		_, err := cloud.AttachRemoteHolding(a.ctx, HolderKey{Cache: cache, Number: uint64(inner.cacheSharedResult().id)}, kept.span(t, true, 0))
+		require.NoError(t, err)
+	}
+	callOn := func(field, client string) *ResultCall {
+		frame := callRecordTestFrame(field)
+		frame.Receiver = &ResultCallRef{Call: receiverTestFrame(client)}
+		return frame
+	}
+
+	// P is inner, with cache-a's call on its receiver A and cache-b's on
+	// its receiver B.
+	inner := persistedListTestResult(t, b.ctx, b.c, b.srv, "inner", &transferTestValue{Text: "inner"})
+	receivers := map[string]AnyResult{"a": test.receiver, "b": receiver(b, "b", "receiver")}
+	merge(b, "cache-b", receivers["b"])
+	call(b, receiverTestCall("b"), returns(inner))
+	keep(b, "cache-b", receiverTestCall("b"), inner)
+	alone, err := cloud.StoredBundle(a.ctx, []uint64{test.number}, nil)
+	require.NoError(t, err)
+	require.Len(t, alone.CallInputs, 1)
+	x, y := "a", "b"
+	if alone.CallInputs[0] != test.receiverNumber {
+		x, y = y, x
+	}
+	engines := map[string]engine{"a": a, "b": b}
+	ye := engines[y]
+
+	// Z, cache-c's receiver, whose call g sorts before g on X.
+	recipe := func(frame *ResultCall) digest.Digest {
+		t.Helper()
+		dig, err := frame.deriveRecipeDigest(ye.c)
+		require.NoError(t, err)
+		return dig
+	}
+	z := ""
+	for i := 0; z == ""; i++ {
+		if client := fmt.Sprint("z", i); recipe(callOn("g", client)) < recipe(callOn("g", x)) {
+			z = client
+		}
+	}
+	merge(c, "cache-c", receiver(c, z, strings.Repeat("z", 64<<10)))
+
+	// Q, over Y, on Y's engine, with its calls g on Z and on X.
+	q := persistedListTestResult(t, ye.ctx, ye.c, ye.srv, "q", &transferTestValue{Text: "q"})
+	require.NoError(t, ye.c.AddExplicitDependency(ye.ctx, q, receivers[y], "test"))
+	call(ye, callOn("g", z), returns(q))
+	call(ye, callOn("g", x), returns(q))
+	merge(ye, CacheID("cache-"+y), q)
+	keep(ye, "cache-q1", callOn("g", z), q)
+	keep(ye, "cache-q2", callOn("g", x), q)
+	var qNumber uint64
+	cloud.egraphMu.RLock()
+	for id, res := range cloud.resultsByID {
+		if frame := res.loadResultCall(); frame != nil && frame.Field == "q" {
+			qNumber = uint64(id)
+		}
+	}
+	cloud.egraphMu.RUnlock()
+	require.Len(t, storedBundleTestEntry(cloud, qNumber).calls, 2)
+
+	built, err := cloud.StoredBundle(a.ctx, []uint64{test.number, qNumber}, nil)
+	require.NoError(t, err)
+	var want StoredSize
+	for _, value := range built.Bundle.Values {
+		data, err := json.Marshal(value)
+		require.NoError(t, err)
+		want.Records++
+		want.Bytes += int64(len(data))
+	}
+	require.Greater(t, want.Bytes, int64(64<<10), "the bundle carries Z")
+	require.Len(t, built.CallInputs, 2, "X for P's call, Z for Q's")
+	require.Equal(t, []int{0, 1, 0, 1}, built.RootOwners, "X travels with P, Z with Q")
+	got, err := cloud.StoredSizes(a.ctx, []uint64{test.number, qNumber}, nil)
+	require.NoError(t, err)
+	var priced StoredSize
+	for _, size := range got {
+		priced.Records += size.Records
+		priced.Bytes += size.Bytes
+	}
+	require.GreaterOrEqual(t, priced.Records, want.Records)
+	require.GreaterOrEqual(t, priced.Bytes+int64(8*want.Records), want.Bytes, "a size differs from the bundle's encoding by the digits of references")
+}
+
+// A root that a call of an earlier root needs travels with that root, as
+// its price says: the Cloud stores inner, with a call kept on it on the
+// receiver A, and A; a bundle of inner and A chooses inner's call before
+// A's closure is carried, adds A for it, and counts A with inner. Each
+// root's price is what travels with it.
+func TestStoredBundleCarriesALaterRootWithTheCallThatNeedsIt(t *testing.T) {
+	t.Parallel()
+	test := newReceiverCallTest(t)
+	roots := []uint64{test.number, test.receiverNumber}
+	built, err := test.cloud.StoredBundle(test.ctx, roots, nil)
+	require.NoError(t, err)
+	require.Len(t, built.Bundle.Calls, 1)
+	require.Empty(t, built.CallInputs, "A is a root it was asked for")
+	require.Equal(t, []int{0, 0}, built.RootOwners, "A travels with inner, whose call needs it")
+	want := make([]StoredSize, len(roots))
+	for _, value := range built.Bundle.Values {
+		data, err := json.Marshal(value)
+		require.NoError(t, err)
+		want[0].Records++
+		want[0].Bytes += int64(len(data))
+	}
+	got, err := test.cloud.StoredSizes(test.ctx, roots, nil)
+	require.NoError(t, err)
+	storedSizesTestClose(t, want, got)
 }
 
 // A stored part that names another entry adds a dependency to its entry
