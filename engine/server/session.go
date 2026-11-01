@@ -1069,7 +1069,7 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 	sess.logExporter = logExporter
 
 	// Keep the raised link limit used by wcprof wait edges. One bounded trace
-	// queue plus a call-span-only protected queue, and an ordinary log queue
+	// queue plus a protected queue for call and cache spans, and an ordinary log queue
 	// plus payload-only and control-only protected queues, serve the entire
 	// session. Metric readers are owned by each client.
 	spanLimits := sdktrace.NewSpanLimits()
@@ -1094,13 +1094,14 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 		tracerOpts = append(tracerOpts, sdktrace.WithResource(tracerResource))
 	}
 	// A call span is the only carrier of its call's frame (see
-	// core/telemetry.go), so it takes a lossless, retrying lane of its own,
-	// like call payload logs; the bounded live processor carries every other
-	// span and may drop them on overflow.
-	callSpans := enginetel.NewCallSpanProcessor(spanExporter)
+	// core/telemetry.go), and a cache span is how the remote cache learns the
+	// cache and is counted for the session's end, so they take a lossless,
+	// retrying lane of their own, like call payload logs; the bounded live
+	// processor carries every other span and may drop them on overflow.
+	protectedSpans := enginetel.NewProtectedSpanProcessor(spanExporter)
 	tracerOpts = append(tracerOpts,
-		sdktrace.WithSpanProcessor(callSpans),
-		sdktrace.WithSpanProcessor(enginetel.WithoutCallSpans(enginetel.NewCountedLargeQueueLiveSpanProcessor(spanExporter, &sess.spanQueue))),
+		sdktrace.WithSpanProcessor(protectedSpans),
+		sdktrace.WithSpanProcessor(enginetel.WithoutProtectedSpans(enginetel.NewCountedLargeQueueLiveSpanProcessor(spanExporter, &sess.spanQueue))),
 	)
 	loggerResource, err := withSessionResource(telemetry.Resource, resourceAttrs)
 	if err != nil {
@@ -1120,7 +1121,7 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 		sdklog.WithProcessor(callPayloads),
 		sdklog.WithProcessor(enginetel.NewControlBatchProcessor(controlAfterCallsExporter{
 			next:  logExporter,
-			calls: []func(context.Context) error{callSpans.ForceFlush, callPayloads.ForceFlush},
+			calls: []func(context.Context) error{protectedSpans.ForceFlush, callPayloads.ForceFlush},
 		})),
 		sdklog.WithProcessor(enginetel.WithoutCallPayloads(enginetel.NewLogBatchProcessor(logExporter))),
 	}
