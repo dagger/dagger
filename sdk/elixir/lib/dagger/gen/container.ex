@@ -114,13 +114,17 @@ defmodule Dagger.Container do
 
   Mounts are included.
   """
-  @spec directory(t(), String.t(), [{:expand, boolean() | nil}]) :: Dagger.Directory.t()
+  @spec directory(t(), String.t(), [
+          {:expand, boolean() | nil},
+          {:resolve_broken_symlinks, boolean() | nil}
+        ]) :: Dagger.Directory.t()
   def directory(%__MODULE__{} = container, path, optional_args \\ []) do
     query_builder =
       container.query_builder
       |> QB.select("directory")
       |> QB.put_arg("path", path)
       |> QB.maybe_put_arg("expand", optional_args[:expand])
+      |> QB.maybe_put_arg("resolveBrokenSymlinks", optional_args[:resolve_broken_symlinks])
 
     %Dagger.Directory{
       query_builder: query_builder,

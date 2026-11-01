@@ -776,6 +776,11 @@ export type ContainerDirectoryOpts = {
    * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   expand?: boolean
+
+  /**
+   * Repair symlinks that directory selection would break. Resolve targets across the root filesystem and directory or file mounts. Preserve working relative links and links that already have no target. Cache, volume, tmpfs, secret, and socket mounts are not supported.
+   */
+  resolveBrokenSymlinks?: boolean
 }
 
 export type ContainerExistsOpts = {
@@ -1719,6 +1724,13 @@ export type DirectoryAsWorkspaceOpts = {
    * Current working directory inside the workspace root. Defaults to the workspace root.
    */
   cwd?: string
+}
+
+export type DirectoryDirectoryOpts = {
+  /**
+   * Repair symlinks that directory selection would break. Copy targets from this directory into the result. Preserve working relative links and links that already have no target.
+   */
+  resolveBrokenSymlinks?: boolean
 }
 
 export type DirectoryDockerBuildOpts = {
@@ -7040,6 +7052,7 @@ export class Container extends BaseClient {
    * Mounts are included.
    * @param path The path of the directory to retrieve (e.g., "./src").
    * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   * @param opts.resolveBrokenSymlinks Repair symlinks that directory selection would break. Resolve targets across the root filesystem and directory or file mounts. Preserve working relative links and links that already have no target. Cache, volume, tmpfs, secret, and socket mounts are not supported.
    */
   directory = (path: string, opts?: ContainerDirectoryOpts): Directory => {
     const ctx = this._ctx.select("directory", { path, ...opts })
@@ -8827,9 +8840,10 @@ export class Directory extends BaseClient {
   /**
    * Retrieves a directory at the given path.
    * @param path Location of the directory to retrieve. Example: "/src"
+   * @param opts.resolveBrokenSymlinks Repair symlinks that directory selection would break. Copy targets from this directory into the result. Preserve working relative links and links that already have no target.
    */
-  directory = (path: string): Directory => {
-    const ctx = this._ctx.select("directory", { path })
+  directory = (path: string, opts?: DirectoryDirectoryOpts): Directory => {
+    const ctx = this._ctx.select("directory", { path, ...opts })
     return new Directory(ctx)
   }
 

@@ -3493,6 +3493,7 @@ class Container(Type):
         path: str,
         *,
         expand: bool | None = False,
+        resolve_broken_symlinks: bool | None = False,
     ) -> "Directory":
         """Retrieve a directory from the container's root filesystem
 
@@ -3506,10 +3507,17 @@ class Container(Type):
             Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
             "/$VAR/foo").
+        resolve_broken_symlinks:
+            Repair symlinks that directory selection would break. Resolve
+            targets across the root filesystem and directory or file mounts.
+            Preserve working relative links and links that already have no
+            target. Cache, volume, tmpfs, secret, and socket mounts are not
+            supported.
         """
         _args = [
             Arg("path", path),
             Arg("expand", expand, False),
+            Arg("resolveBrokenSymlinks", resolve_broken_symlinks, False),
         ]
         _ctx = self._select("directory", _args)
         return Directory(_ctx)
@@ -6365,16 +6373,26 @@ class Directory(Type):
         _ctx = self._select("digest", _args)
         return await _ctx.execute(str)
 
-    def directory(self, path: str) -> Self:
+    def directory(
+        self,
+        path: str,
+        *,
+        resolve_broken_symlinks: bool | None = False,
+    ) -> Self:
         """Retrieves a directory at the given path.
 
         Parameters
         ----------
         path:
             Location of the directory to retrieve. Example: "/src"
+        resolve_broken_symlinks:
+            Repair symlinks that directory selection would break. Copy targets
+            from this directory into the result. Preserve working relative
+            links and links that already have no target.
         """
         _args = [
             Arg("path", path),
+            Arg("resolveBrokenSymlinks", resolve_broken_symlinks, False),
         ]
         _ctx = self._select("directory", _args)
         return Directory(_ctx)

@@ -89,12 +89,15 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
      *
      * Mounts are included.
      */
-    public function directory(string $path, ?bool $expand = false): Directory
+    public function directory(string $path, ?bool $expand = false, ?bool $resolveBrokenSymlinks = false): Directory
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('directory');
         $innerQueryBuilder->setArgument('path', $path);
         if (null !== $expand) {
         $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        if (null !== $resolveBrokenSymlinks) {
+        $innerQueryBuilder->setArgument('resolveBrokenSymlinks', $resolveBrokenSymlinks);
         }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

@@ -346,6 +346,7 @@ type ContainerWithRootFSLazy struct {
 }
 
 type ContainerDirectoryLazy struct {
+	ResolveBrokenSymlinks bool
 	LazyState
 	Parent dagql.ObjectResult[*Container]
 	Path   string
@@ -794,8 +795,9 @@ type persistedContainerWithDirectoryLazy struct {
 }
 
 type persistedContainerDirectoryLazy struct {
-	ParentResultID uint64 `json:"parentResultID"`
-	Path           string `json:"path"`
+	ResolveBrokenSymlinks bool   `json:"resolveBrokenSymlinks,omitempty"`
+	ParentResultID        uint64 `json:"parentResultID"`
+	Path                  string `json:"path"`
 }
 
 type persistedContainerWithFileLazy struct {
@@ -3532,6 +3534,10 @@ func (lazy *ContainerDirectoryLazy) Evaluate(ctx context.Context, dir *Directory
 			return fmt.Errorf("container directory lazy: nil parent container")
 		}
 
+		if lazy.ResolveBrokenSymlinks {
+			return lazy.materializeSelection(ctx, dir)
+		}
+
 		srv, err := CurrentDagqlServer(ctx)
 		if err != nil {
 			return err
@@ -3555,11 +3561,10 @@ func (lazy *ContainerDirectoryLazy) Evaluate(ctx context.Context, dir *Directory
 			if subpath == "" || subpath == "." || subpath == "/" {
 				resolved = rootfs
 			} else {
+				args := []dagql.NamedInput{{Name: "path", Value: dagql.String(subpath)}}
 				if err := srv.Select(ctx, rootfs, &resolved, dagql.Selector{
 					Field: "directory",
-					Args: []dagql.NamedInput{
-						{Name: "path", Value: dagql.String(subpath)},
-					},
+					Args:  args,
 				}); err != nil {
 					return err
 				}
@@ -3673,8 +3678,9 @@ func (lazy *ContainerDirectoryLazy) EncodePersisted(ctx context.Context, enc *da
 		return nil, err
 	}
 	return json.Marshal(persistedContainerDirectoryLazy{
-		ParentResultID: parentID,
-		Path:           lazy.Path,
+		ResolveBrokenSymlinks: lazy.ResolveBrokenSymlinks,
+		ParentResultID:        parentID,
+		Path:                  lazy.Path,
 	})
 }
 

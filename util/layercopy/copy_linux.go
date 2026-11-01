@@ -142,6 +142,10 @@ func (c *Copier) copy(ctx context.Context, src *source, matcher *matcher, srcPat
 				return err
 			}
 		}
+		if opts.PreserveRootMetadata {
+			return c.dest.applyMetadataPath(filepath.Join(c.dest.writeRoot, rel), &root, opts)
+		}
+
 		return nil
 	}
 
