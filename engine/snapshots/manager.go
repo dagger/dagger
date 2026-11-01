@@ -31,10 +31,10 @@ var (
 )
 
 type SnapshotManagerOpt struct {
-	Snapshotter   Snapshotter
-	ContentStore  content.Store
-	LeaseManager  leases.Manager
-	Applier       diff.Applier
+	Snapshotter  Snapshotter
+	ContentStore content.Store
+	LeaseManager leases.Manager
+	Applier      diff.Applier
 	// ApplyFrom, when set, returns an applier like Applier that reads blobs
 	// from provider instead of the content store. A chain import uses it to
 	// apply a layer from its blob decompressed ahead; nil applies the stored
