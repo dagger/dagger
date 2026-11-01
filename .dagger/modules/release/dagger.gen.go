@@ -341,6 +341,27 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Release).GetMaintainers(&parent, ctx, githubOrgName, githubToken)
+		case "GoSdkPublishCheck":
+			var parent Release
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var source *dagger.GitRepository
+			if inputArgs["source"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["source"]), &source)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg source", err))
+				}
+			}
+			var callback *dagger.File
+			if inputArgs["callback"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["callback"]), &callback)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg callback", err))
+				}
+			}
+			return nil, (*Release).GoSdkPublishCheck(&parent, ctx, source, callback)
 		case "HelmTargetVersion":
 			var parent Release
 			err = json.Unmarshal(parentJSON, &parent)
@@ -723,6 +744,14 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							WithSourceMap(dag.SourceMap("changie.go", 24, 1)).
 							WithArg("githubOrgName", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("changie.go", 27, 2)}).
 							WithArg("githubToken", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("changie.go", 28, 2)})).
+					WithFunction(
+						dag.Function("GoSdkPublishCheck",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithDescription("Exercise the Go SDK publish of the committed history against a local git\ndestination.").
+							WithSourceMap(dag.SourceMap("go_sdk_publish_check.go", 14, 1)).
+							WithCheck().
+							WithArg("source", dag.TypeDef().WithObject("GitRepository").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Repository whose HEAD is the candidate to publish. The check publishes a\ndisposable copy of its history, so commit IDs match the candidate's.", SourceMap: dag.SourceMap("go_sdk_publish_check.go", 20, 2), DefaultPath: "/"}).
+							WithArg("callback", dag.TypeDef().WithObject("File").WithOptional(true), dagger.FunctionWithArgOpts{Description: "git-filter-repo callback that the Go SDK publish applies", SourceMap: dag.SourceMap("go_sdk_publish_check.go", 24, 2), DefaultPath: "/.dagger/modules/go-client-dev/git-filter-callback.py"})).
 					WithFunction(
 						dag.Function("HelmTargetVersion",
 							dag.TypeDef().WithObject("Changeset")).

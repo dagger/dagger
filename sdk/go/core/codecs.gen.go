@@ -460,6 +460,24 @@ func (r *Host) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+func (r *Identifier) UnmarshalJSON(data []byte) error {
+	var id string
+	if err := json.Unmarshal(data, &id); err != nil {
+		return err
+	}
+	*r = Identifier{query: selectNode(initRoot().QueryBuilder(), id, "Identifier")}
+	return nil
+}
+
+func (r *IdentifierWord) UnmarshalJSON(data []byte) error {
+	var id string
+	if err := json.Unmarshal(data, &id); err != nil {
+		return err
+	}
+	*r = IdentifierWord{query: selectNode(initRoot().QueryBuilder(), id, "IdentifierWord")}
+	return nil
+}
+
 func (r *InputTypeDef) UnmarshalJSON(data []byte) error {
 	var id string
 	if err := json.Unmarshal(data, &id); err != nil {
@@ -592,6 +610,15 @@ func (r *ModuleSource) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*r = ModuleSource{query: selectNode(initRoot().QueryBuilder(), id, "ModuleSource")}
+	return nil
+}
+
+func (r *NamingTerm) UnmarshalJSON(data []byte) error {
+	var id string
+	if err := json.Unmarshal(data, &id); err != nil {
+		return err
+	}
+	*r = NamingTerm{query: selectNode(initRoot().QueryBuilder(), id, "NamingTerm")}
 	return nil
 }
 
