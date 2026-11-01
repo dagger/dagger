@@ -10,6 +10,7 @@ import (
 	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -408,8 +409,11 @@ func (item *Item) Verify() error {
 		progress, err := base.WithEnvVariable("DAGGER_PROGRESS", "report").
 			With(daggerExec("-v", "check", "-l", "items/verify", "--collections-items-item=a")).Stderr(ctx)
 		require.NoError(t, err)
-		require.Contains(t, progress, "Load check filters")
+		progress = ansi.Strip(progress)
 		require.Equal(t, 1, strings.Count(progress, "✔ connect "), progress)
+		// A separate discovery session shows its connect inside its own
+		// step; the command's session connects before discovering.
+		require.Less(t, strings.Index(progress, "✔ connect "), strings.Index(progress, "✔ Load check filters "), progress)
 	})
 	t.Run("separate filters require a union", func(ctx context.Context, t *testctx.T) {
 		for _, prefix := range [][]string{{"check", "-l"}, {"check"}} {

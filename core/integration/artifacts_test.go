@@ -11,6 +11,7 @@ import (
 	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
@@ -769,7 +770,10 @@ func (ArtifactsSuite) TestHelpProgress(ctx context.Context, t *testctx.T) {
 		progress, err := result.Stderr(ctx)
 		require.NoError(t, err)
 		require.Contains(t, progress, "Load available types")
-		require.Equal(t, 1, strings.Count(progress, "✔ connect "), "one session discovers and lists")
+		plain := ansi.Strip(progress)
+		require.Equal(t, 1, strings.Count(plain, "✔ connect "), plain)
+		// The listing's session connects, then discovers its types.
+		require.Less(t, strings.Index(plain, "✔ connect "), strings.Index(plain, "✔ Load available types "), plain)
 		require.NotContains(t, progress, "exporter is shutdown")
 	})
 }
