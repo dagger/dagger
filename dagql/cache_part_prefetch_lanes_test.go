@@ -387,3 +387,49 @@ func TestPartPrefetchAheadQueueCapHoldsForALateOffer(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 	require.Equal(t, 1, f.aheadImports(), "the late offer is not imported ahead")
 }
+
+// aheadOf reports whether a chain with chain's layers is imported or
+// importing ahead.
+func (f *exhaustionFixture) aheadOf(chain chainFixture) bool {
+	p := f.cache.partPrefetcher.Load()
+	if p == nil {
+		return false
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, a := range p.aheads {
+		if len(a.layers) != len(chain.chain.Layers) {
+			continue
+		}
+		same := true
+		for i, layer := range chain.chain.Layers {
+			if a.layers[i] != layer.Descriptor.Digest {
+				same = false
+			}
+		}
+		if same {
+			return true
+		}
+	}
+	return false
+}
+
+// An offer whose chain is already imported ahead under another offer is
+// skipped, not counted against aheadMax: the worker's next place goes to
+// another chain.
+func TestPartPrefetchAheadQueueSkipsAChainAlreadyAhead(t *testing.T) {
+	a := newSizedChainFixture(t, "a", 96<<10)
+	b := newSizedChainFixture(t, "b", 64<<10)
+	f := newExhaustionFixture(t, a, b)
+	f.cache.partPrefetchConfig = &partPrefetchConfig{largeBlob: 1, workers: 1, smallWorkers: 1, smallStreams: 8, budget: 1 << 30, ttl: time.Hour, queue: 8, aheadOffer: 64 << 10, aheadMax: 2}
+	t.Cleanup(f.cache.closePartPrefetch)
+	f.acceptOffer(t, f.receiver, a)
+	require.Eventually(t, func() bool { return f.aheadOf(a) }, 10*time.Second, 10*time.Millisecond, "the first chain is imported ahead")
+	// Both later offers wait for the worker together: the duplicate of the
+	// first chain, larger, and another chain.
+	f.cache.partInstallStarted()
+	f.acceptOffer(t, persistedListTestResult(t, f.ctx, f.cache, f.srv, "a-again", &transferTestValue{Text: "pending"}), a)
+	f.acceptOffer(t, persistedListTestResult(t, f.ctx, f.cache, f.srv, "b-row", &transferTestValue{Text: "pending"}), b)
+	f.cache.partInstallEnded()
+	require.Eventually(t, func() bool { return f.aheadOf(b) }, 10*time.Second, 10*time.Millisecond, "the other chain takes the worker's second place")
+}
