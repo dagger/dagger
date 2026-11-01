@@ -296,6 +296,10 @@ type Wait struct {
 	identID  uint32
 	reason   WaitReason
 	startNS  int64
+	// holderID and holderSinceNS are a lock's holder when the wait began,
+	// and when it took the lock (see RWMutex); 0 when not known.
+	holderID      uint64
+	holderSinceNS int64
 }
 
 // BeginWait starts recording that the current op (from ctx) is blocked on
@@ -340,25 +344,48 @@ func Lock(ctx context.Context, mu *sync.Mutex, ident string) {
 }
 
 // ReadLock acquires mu for reading, recording a blocked acquisition as Lock
-// does.
-func ReadLock(ctx context.Context, mu *sync.RWMutex, ident string) {
+// does. On an RWMutex the wait names the lock's holder.
+func ReadLock(ctx context.Context, mu RWLocker, ident string) {
 	if mu.TryRLock() {
 		return
 	}
-	w := BeginWaitIdent(ctx, ident, WaitReasonLock)
+	w := beginLockWait(ctx, mu, ident)
 	mu.RLock()
 	w.End()
 }
 
 // WriteLock acquires mu for writing, recording a blocked acquisition as Lock
-// does.
-func WriteLock(ctx context.Context, mu *sync.RWMutex, ident string) {
-	if mu.TryLock() {
+// does. On an RWMutex the wait names the lock's holder, and the op of ctx
+// is its holder from then.
+func WriteLock(ctx context.Context, mu RWLocker, ident string) {
+	m, tracked := mu.(*RWMutex)
+	if !tracked {
+		if mu.TryLock() {
+			return
+		}
+		w := BeginWaitIdent(ctx, ident, WaitReasonLock)
+		mu.Lock()
+		w.End()
 		return
 	}
-	w := BeginWaitIdent(ctx, ident, WaitReasonLock)
-	mu.Lock()
+	if m.RWMutex.TryLock() {
+		m.markOp(ctx)
+		return
+	}
+	w := beginLockWait(ctx, m, ident)
+	m.RWMutex.Lock()
+	m.markOp(ctx)
 	w.End()
+}
+
+// beginLockWait begins a lock wait on mu, with its holder when mu is an
+// RWMutex.
+func beginLockWait(ctx context.Context, mu RWLocker, ident string) *Wait {
+	w := BeginWaitIdent(ctx, ident, WaitReasonLock)
+	if m, ok := mu.(*RWMutex); ok && w != nil {
+		w.holderID, w.holderSinceNS = m.holder.Load(), m.since.Load()
+	}
+	return w
 }
 
 // SetTarget updates the awaited op (useful when the target becomes known
@@ -377,12 +404,16 @@ func (w *Wait) End() {
 	}
 	endNS := w.r.Now()
 	sh := w.r.shardFor(w.waiterID)
+	// A wait has no result or bytes: they carry its lock's holder and when
+	// the holder took it (see toDumpEvent).
 	w.r.append(sh, Event{
 		Type:     EventTypeWait,
 		Reason:   w.reason,
 		ParentID: w.waiterID,
 		TargetID: w.targetID,
 		IdentID:  w.identID,
+		ResultID: w.holderID,
+		Bytes:    w.holderSinceNS,
 		StartNS:  w.startNS,
 		EndNS:    endNS,
 	})
