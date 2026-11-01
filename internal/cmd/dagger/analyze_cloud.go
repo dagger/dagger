@@ -18,12 +18,12 @@ import (
 
 // writeTraceLogs writes the selected span's full logs, as raw text, to stdout
 // or to --output. It is 'view --log' when there is no pager. Like the tree
-// view and the pager, it reads the engine's retained archive first and Dagger
-// Cloud otherwise.
+// view and the pager, it reads Dagger Cloud, or for 'dagger trace' the
+// engine's retained archive first and Cloud otherwise.
 //
 // It is a scripted dump, so no frontend runs: a live TUI would only quit on a
 // telemetry EOF this engine-less path never sends, leaving an empty TUI open
-// after the logs are written. Nothing reaches a frontend anyway: the engine
+// after the logs are written. Nothing reaches a frontend anyway: an engine
 // connection carries no CLI telemetry here.
 func (cli *CloudCLI) writeTraceLogs(cmd *cobra.Command, traceID string, sel spanSelector, o *traceViewOptions) (rerr error) {
 	cleanup, n, err := cli.writeTraceLogsFrom(cmd.Context(), cmd, traceID, sel, o)
@@ -39,14 +39,15 @@ func (cli *CloudCLI) writeTraceLogs(cmd *cobra.Command, traceID string, sel span
 	return nil
 }
 
-// openTraceSource selects the trace's source: the local engine archive, else
-// Cloud. Cloud credentials are only resolved when Cloud is actually needed.
-func (cli *CloudCLI) openTraceSource(ctx context.Context, traceID string) (tracesource.Source, func() error, error) {
+// openTraceSource selects the trace's source: Cloud, or with engine set, the
+// local engine archive first, else Cloud. Cloud credentials are only resolved
+// when Cloud is actually needed.
+func (cli *CloudCLI) openTraceSource(ctx context.Context, traceID string, engine bool) (tracesource.Source, func() error, error) {
 	local := cli.openLocalTrace
 	if local == nil {
 		local = openEngineTrace
 	}
-	return tracesource.Select(ctx,
+	return openTraceSource(ctx, engine,
 		func(ctx context.Context) (tracesource.Source, func() error, error) {
 			return local(ctx, traceID)
 		},
@@ -64,7 +65,7 @@ func (cli *CloudCLI) openTraceSource(ctx context.Context, traceID string) (trace
 // writeTraceLogsFrom selects the source and writes the logs, returning how
 // many log messages it wrote. The returned cleanup closes the source.
 func (cli *CloudCLI) writeTraceLogsFrom(ctx context.Context, cmd *cobra.Command, traceID string, sel spanSelector, o *traceViewOptions) (func() error, int, error) {
-	source, closeSource, err := cli.openTraceSource(ctx, traceID)
+	source, closeSource, err := cli.openTraceSource(ctx, traceID, o.engine)
 	if err != nil {
 		return nil, 0, fmt.Errorf("open trace %s: %w", traceID, err)
 	}
