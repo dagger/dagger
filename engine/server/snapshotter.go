@@ -19,6 +19,7 @@ import (
 	"github.com/containerd/containerd/v2/plugins/snapshots/native"
 	"github.com/containerd/containerd/v2/plugins/snapshots/overlay"
 	"github.com/containerd/containerd/v2/plugins/snapshots/overlay/overlayutils"
+	"github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/engine/slog"
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
 	"github.com/sirupsen/logrus"
@@ -62,7 +63,7 @@ func newSnapshotter(
 	}
 
 	if name == "" {
-		if err := overlayutils.Supported(rootDir); err == nil {
+		if err := overlaySupported(rootDir); err == nil {
 			name = "overlayfs"
 		} else {
 			logrus.Debugf("auto snapshotter: overlayfs is not available for %s, falling back to native: %v", rootDir, err)
@@ -155,6 +156,25 @@ func (s *namespaceHeaderSnapshotter) Walk(ctx context.Context, fn ctdsnapshot.Wa
 func (s *namespaceHeaderSnapshotter) Cleanup(ctx context.Context) error {
 	if c, ok := s.Snapshotter.(ctdsnapshot.Cleaner); ok {
 		return c.Cleanup(withNamespaceHeaders(ctx))
+	}
+	return nil
+}
+
+// overlaySupported is overlayutils.Supported without its probe mount where the
+// kernel takes the "volatile" option. Unmounting that probe, an overlay with
+// an upper directory, syncs the whole filesystem under rootDir, so a starting
+// engine waited for every pending write there, its own or not. The volatile
+// probe mounts the same overlay, with "volatile", whose unmount doesn't sync.
+func overlaySupported(rootDir string) error {
+	if !overlayVolatileSupported(rootDir) {
+		return overlayutils.Supported(rootDir)
+	}
+	supportsDType, err := fs.SupportsDType(rootDir)
+	if err != nil {
+		return err
+	}
+	if !supportsDType {
+		return fmt.Errorf("%s does not support d_type. If the backing filesystem is xfs, please reformat with ftype=1 to enable d_type support", rootDir)
 	}
 	return nil
 }
