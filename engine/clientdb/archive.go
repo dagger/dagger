@@ -3,6 +3,7 @@ package clientdb
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -39,6 +40,23 @@ func (s *DB) FlushLogs(ctx context.Context) error { return s.logs.flush(ctx) }
 // FlushSpans is FlushLogs for the span tail: a spanned call's frame rides its
 // call span alone, so an unsealed restore needs those rows on file too.
 func (s *DB) FlushSpans(ctx context.Context) error { return s.spans.flush(ctx) }
+
+// AppendLogsDurably appends rows like AppendLogs, but readers see them only
+// once they, and every span and log row appended before them, are on file, as
+// FlushSpans and FlushLogs put them: a client never sees rows a killed engine
+// could lose. Appends meanwhile don't wait for the write, but readers see them
+// only after these rows. If the write fails the rows are shown anyway, since
+// holding them would hold back every later row too.
+func (s *DB) AppendLogsDurably(ctx context.Context, rows []Log) (AppendStats, error) {
+	stats, release, err := s.logs.appendHeld(rows)
+	if release != nil {
+		defer release()
+	}
+	if err != nil {
+		return stats, fmt.Errorf("append logs: %w", err)
+	}
+	return stats, errors.Join(s.FlushSpans(ctx), s.FlushLogs(ctx))
+}
 
 // HighWater reports the current end of each stream without a persistence
 // barrier. Use it only for a store no producer writes to anymore, such as an
