@@ -1278,16 +1278,15 @@ func TestModuleObjectAttachDependencyResultsPreservesInlineMap(t *testing.T) {
 		return sc.AttachResult(ctx, "test-session", dag, detached)
 	})
 	assert.NilError(t, err)
-	// The object owns its module and the child result created for the
-	// inline field.
-	assert.Equal(t, len(deps), 2)
+	// The object owns its module, and not the child result created for the
+	// inline field: that result is a field of the object, and the object's
+	// state is the inline map, which here holds no results.
+	assert.Equal(t, len(deps), 1)
 	_, isModule := deps[0].(dagql.ObjectResult[*Module])
-	assert.Assert(t, isModule, "first dependency is the object's module, got %T", deps[0])
-	_, isChild := deps[1].Unwrap().(*ModuleObject)
-	assert.Assert(t, isChild, "second dependency is the inline child, got %T", deps[1].Unwrap())
+	assert.Assert(t, isModule, "the only dependency is the object's module, got %T", deps[0])
 	assert.DeepEqual(t, obj.Fields["child"], inline)
 	// ParentFields is sent as raw JSON to the SDK function. It must remain
-	// an inline object, even though attachment created a dependency result.
+	// an inline object, even though attachment created a child result.
 	after, err := json.Marshal(obj.Fields)
 	assert.NilError(t, err)
 	assert.Equal(t, string(after), string(before))
@@ -1320,12 +1319,14 @@ func TestModuleObjectAttachmentRetainsRewrittenInlineFields(t *testing.T) {
 		return value, nil
 	})
 	assert.NilError(t, err)
-	assert.Equal(t, len(deps), 1)
 	fields, ok := updated.(map[string]any)
 	assert.Assert(t, ok, "inline objects must remain maps")
 	handle, ok := fields["handle"].(dagql.AnyResult)
 	assert.Assert(t, ok, "nested handles must retain the attached result")
 	assert.Equal(t, handle.Unwrap().(dagql.String), dagql.String("relocated"))
+	// The owner's state refers to the handle, so the owner depends on it.
+	assert.Equal(t, len(deps), 1)
+	assert.Assert(t, deps[0] == handle, "the dependency is the inline field's handle, got %T", deps[0].Unwrap())
 	assert.Equal(t, original["handle"], any("old-engine-id"), "attachment must not change the caller's map")
 }
 
@@ -1352,12 +1353,13 @@ func TestModuleObjectAttachmentRetainsInlineCollectionBase(t *testing.T) {
 		return value, nil
 	})
 	assert.NilError(t, err)
-	assert.Equal(t, len(deps), 1)
 	fields, ok := updated.(map[string]any)
 	assert.Assert(t, ok)
 	base, ok := fields[collectionBaseField].(dagql.AnyResult)
 	assert.Assert(t, ok, "inline collections must retain their attached base")
 	assert.Assert(t, base.Unwrap() == original, "the base must remain unfiltered")
+	assert.Equal(t, len(deps), 1)
+	assert.Assert(t, deps[0] == base, "the owner depends on the inline collection's base")
 
 	decoded, err := typ.ConvertFromSDKResult(ctx, fields)
 	assert.NilError(t, err)
@@ -1369,4 +1371,54 @@ func TestModuleObjectAttachmentRetainsInlineCollectionBase(t *testing.T) {
 	assert.DeepEqual(t, delta.RemovedKeys, []string{"a", "c"})
 	assert.DeepEqual(t, input["Keys"], []any{"b"})
 	assert.Assert(t, original.Fields[collectionBaseField] == nil, "attachment must not alter the source fields")
+}
+
+// An inline collection that is its own base keeps no base in its inline
+// fields: the owner would otherwise refer to the collection's own result,
+// which is a field of the owner. Decoding the fields sets the base again.
+func TestModuleObjectAttachmentOmitsInlineCollectionSelfBase(t *testing.T) {
+	ctx := t.Context()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	root := &Query{}
+	server := &moduleObjectTestServer{mockServer: &mockServer{}, cache: cache, root: root}
+	root.Server = server
+	dag := newCoreDagqlServerForTest(t, root)
+	server.dag = dag
+	ctx = dagql.ContextWithCache(ctx, cache)
+	ctx = ContextWithQuery(ctx, root)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{ClientID: "inline-self-base-client", SessionID: "inline-self-base-session"})
+	installModuleObjectTestModuleClass(dag)
+	installTypeDefTestClasses(dag)
+
+	original, _ := collectionTestObject(t, TypeDefKindString, []any{"a", "b"})
+	typ := &ModuleObjectType{typeDef: original.TypeDef}
+	ctx = dagql.ContextWithCall(ctx, moduleObjectTestSyntheticCall("inline-self-base", original))
+	input := map[string]any{"Keys": []any{"a", "b"}}
+	var attachedObj *ModuleObject
+	updated, deps, err := attachTypedModuleObjectValue(ctx, typ, input, func(value dagql.AnyResult) (dagql.AnyResult, error) {
+		// As the cache's attachment does, a new collection becomes its own base.
+		obj, ok := dagql.UnwrapAs[*ModuleObject](value)
+		assert.Assert(t, ok)
+		obj.InitializeResultReference(value)
+		attachedObj = obj
+		return value, nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, attachedObj.CollectionBase.Unwrap() == attachedObj, "the attached collection is its own base")
+	fields, ok := updated.(map[string]any)
+	assert.Assert(t, ok)
+	_, hasBase := fields[collectionBaseField]
+	assert.Assert(t, !hasBase, "a self base stays out of the inline fields")
+	assert.Equal(t, len(deps), 0)
+
+	decoded, err := typ.ConvertFromSDKResult(ctx, fields)
+	assert.NilError(t, err)
+	obj, ok := dagql.UnwrapAs[*ModuleObject](decoded)
+	assert.Assert(t, ok)
+	obj.InitializeResultReference(decoded)
+	assert.Assert(t, obj.CollectionBase.Unwrap() == obj, "decoding makes the collection its own base again")
+	delta, err := obj.collectionDelta(ctx)
+	assert.NilError(t, err)
+	assert.Equal(t, len(delta.AddedKeys)+len(delta.RemovedKeys), 0)
 }
