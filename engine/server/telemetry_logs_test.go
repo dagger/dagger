@@ -30,11 +30,7 @@ const (
 )
 
 func logQuerySpanRow(id, parent string) clientdb.Span {
-	s := clientdb.Span{
-		TraceID: archiveTestTrace, SpanID: id,
-		Resource: []byte("{}"), InstrumentationScope: []byte("{}"),
-		Attributes: []byte("[]"), Links: []byte("[]"), Events: []byte("[]"),
-	}
+	s := clientdb.Span{TraceID: archiveTestTrace, SpanID: id}
 	if parent != "" {
 		s.ParentSpanID.String, s.ParentSpanID.Valid = parent, true
 	}
