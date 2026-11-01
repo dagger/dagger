@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -48,6 +49,9 @@ type logStream[Row any] struct {
 	spill      *spillFile[Row]
 	cond       *sync.Cond
 	capWaiters int
+	// held are the first IDs of batches appended with appendHeld that readers
+	// can't see yet; rows from the earliest on stay hidden. See visibleLocked.
+	held []int64
 
 	// index feeds rows to the store's in-memory indexes. Rows are indexed
 	// only once a reader needs them: until ensureIndexed has caught up,
@@ -113,14 +117,28 @@ func openLogStream[Row any](
 }
 
 // Append assigns increasing IDs and publishes rows under the stream mutex.
-// Once it returns, every reader can observe every appended row. Blob slices in
-// rows are immutable after Append; tail reads intentionally share their bytes.
+// Once it returns, every reader can observe every appended row, unless a batch
+// appended before it is still held (see appendHeld). Blob slices in rows are
+// immutable after Append; tail reads intentionally share their bytes.
 func (s *logStream[Row]) Append(rows []Row) (int64, error) {
 	stats, err := s.append(rows)
 	return stats.LastID, err
 }
 
 func (s *logStream[Row]) append(rows []Row) (AppendStats, error) {
+	stats, _, err := s.appendRows(rows, false)
+	return stats, err
+}
+
+// appendHeld appends rows like append, but readers don't see them, or any row
+// appended after them, until release is called; appends meanwhile go on as
+// usual. release is non-nil whenever the rows were appended, even with an
+// error, and must then be called once.
+func (s *logStream[Row]) appendHeld(rows []Row) (_ AppendStats, release func(), _ error) {
+	return s.appendRows(rows, true)
+}
+
+func (s *logStream[Row]) appendRows(rows []Row, hold bool) (_ AppendStats, release func(), _ error) {
 	sizes := make([]int64, len(rows))
 	var totalSize int64
 	for i, row := range rows {
@@ -137,12 +155,12 @@ func (s *logStream[Row]) append(rows []Row) (AppendStats, error) {
 	if err := s.stateErrLocked(); err != nil {
 		stats := s.appendStatsLocked(capWaitDuration)
 		s.mu.Unlock()
-		return stats, err
+		return stats, nil, err
 	}
 	if len(rows) == 0 {
 		stats := s.appendStatsLocked(capWaitDuration)
 		s.mu.Unlock()
-		return stats, nil
+		return stats, nil, nil
 	}
 
 	oversized := totalSize > s.hardCap
@@ -156,13 +174,24 @@ func (s *logStream[Row]) append(rows []Row) (AppendStats, error) {
 		if err := s.stateErrLocked(); err != nil {
 			stats := s.appendStatsLocked(capWaitDuration)
 			s.mu.Unlock()
-			return stats, err
+			return stats, nil, err
 		}
 	}
 	if int64(len(rows)) > maxStreamID-s.nextID {
 		stats := s.appendStatsLocked(capWaitDuration)
 		s.mu.Unlock()
-		return stats, fmt.Errorf("telemetry row ID space exhausted")
+		return stats, nil, fmt.Errorf("telemetry row ID space exhausted")
+	}
+	if hold {
+		first := s.nextID
+		s.held = append(s.held, first)
+		release = func() {
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			if i := slices.Index(s.held, first); i >= 0 {
+				s.held = slices.Delete(s.held, i, i+1)
+			}
+		}
 	}
 	for i := range rows {
 		s.codec.setID(&rows[i], s.nextID)
@@ -193,7 +222,7 @@ func (s *logStream[Row]) append(rows []Row) (AppendStats, error) {
 				s.capWaiters--
 				stats := s.appendStatsLocked(capWaitDuration)
 				s.mu.Unlock()
-				return stats, err
+				return stats, release, err
 			}
 		}
 		s.capWaiters--
@@ -204,7 +233,7 @@ func (s *logStream[Row]) append(rows []Row) (AppendStats, error) {
 	if needSpill {
 		s.requestSpill()
 	}
-	return stats, nil
+	return stats, release, nil
 }
 
 func (s *logStream[Row]) appendStatsLocked(capWaitDuration time.Duration) AppendStats {
@@ -230,16 +259,22 @@ func (s *logStream[Row]) Since(ctx context.Context, id int64, limit int) ([]Row,
 	}
 
 	s.mu.Lock()
+	visible := s.visibleLocked()
+	if id >= visible {
+		s.mu.Unlock()
+		return nil, nil
+	}
 	if id >= s.tailBase-1 {
 		start := id - s.tailBase + 1
 		if start < 0 {
 			start = 0
 		}
-		if start >= int64(len(s.tail)) {
+		end := min(int64(len(s.tail)), visible-s.tailBase+1)
+		if start >= end {
 			s.mu.Unlock()
 			return nil, nil
 		}
-		count := min(limit, len(s.tail)-int(start))
+		count := min(limit, int(end-start))
 		rows := make([]Row, count)
 		copy(rows, s.tail[int(start):int(start)+count])
 		s.mu.Unlock()
@@ -248,7 +283,7 @@ func (s *logStream[Row]) Since(ctx context.Context, id int64, limit int) ([]Row,
 	tailBase := s.tailBase
 	s.mu.Unlock()
 
-	fileRows := tailBase - id - 1
+	fileRows := min(tailBase-1, visible) - id
 	if fileRows < int64(limit) {
 		limit = int(fileRows)
 	}
@@ -463,7 +498,16 @@ func (s *logStream[Row]) spillAll(ctx context.Context, sync bool) error {
 func (s *logStream[Row]) highWater() int64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.nextID - 1
+	return s.visibleLocked()
+}
+
+// visibleLocked is the last row ID readers may see: the last appended, or the
+// one before the earliest held batch.
+func (s *logStream[Row]) visibleLocked() int64 {
+	if len(s.held) == 0 {
+		return s.nextID - 1
+	}
+	return slices.Min(s.held) - 1
 }
 
 // ensureIndexed feeds every row the stream holds to its index, in ID order,

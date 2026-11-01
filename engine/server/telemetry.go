@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -1126,20 +1125,26 @@ func (ps *PubSub) appendLogs(ctx context.Context, clientID string, rows []client
 	defer db.Close()
 
 	appendStart := time.Now()
-	stats, appendErr := db.AppendLogs(rows)
-	if appendErr == nil && control {
+	var stats clientdb.AppendStats
+	var appendErr error
+	if control {
 		// Agent control rows must reach the file before the engine can be
-		// killed, or an unsealed archive has no roster to restore from. A
-		// write is enough for that; fsync is left to the session-end seal.
+		// killed, and before any live client sees them: a client that saw a
+		// state the engine then lost would restore an agent behind what it was
+		// shown, or none at all. A write is enough for that; fsync is left to
+		// the session-end seal.
 		//
 		// Only control rows (rare, agent sessions only) pay for this: every
 		// call emits payloads, and flushing for them would drain the
 		// in-memory tail on nearly every batch, pushing live readers onto
 		// file scans. Payloads and call spans spill with the ordinary tails,
-		// and any already appended ahead of a control row are written by its
-		// flush too — the span tail included, since a spanned call's frame
-		// (a snapshot's committed leaf, typically) rides its call span alone.
-		appendErr = errors.Join(db.FlushSpans(ctx), db.FlushLogs(ctx))
+		// and any already appended ahead of a control row are written before
+		// it is shown too — the span tail included, since a spanned call's
+		// frame (a snapshot's committed leaf, typically) rides its call span
+		// alone.
+		stats, appendErr = db.AppendLogsDurably(ctx, rows)
+	} else {
+		stats, appendErr = db.AppendLogs(rows)
 	}
 	logTelemetryWrite(clientID, "logs", len(rows), start, appendStart, stats, appendErr)
 	return appendErr
