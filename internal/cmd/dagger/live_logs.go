@@ -30,8 +30,9 @@ const liveLogsFinishTimeout = 10 * time.Second
 //
 //   - Following (the TUI), one follow query reads the whole set from a
 //     cursor. A span joining the set is caught up with a one-shot read up to
-//     that cursor, then the follow restarts over the grown set from it, so
-//     every row is read once.
+//     that cursor, then the grown set is read from it to the store's end,
+//     and followed from there, so every row is read once, and the cursor
+//     advances however often spans join.
 //   - Otherwise (the report), nothing is read until finish.
 //
 // finish, at exit, catches everything up to the store's end. Records are
@@ -161,6 +162,28 @@ func (l *liveLogs) run(ctx context.Context) {
 			case <-ctx.Done():
 			case <-l.wake:
 			}
+			continue
+		}
+		// Read the set up to the store's end before following it. A span
+		// joining ends the follow below, and a catch-up reads the store from
+		// its start: when spans join faster than that -- a long session,
+		// parallel tool calls -- the follow is ended again before it reads
+		// anything, and without this read its cursor would never move,
+		// leaving everything stored since unread for every span.
+		if err := l.reader.ReadLogs(ctx, l.traceID, tracesource.LogQuery{Spans: spans, Cursor: cursor}, l.importFollowed); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			slog.Warn("error reading live logs", "err", err)
+			l.pause(ctx)
+			continue
+		}
+		l.mu.Lock()
+		cursor = l.cursor
+		joining := len(l.pending) > 0
+		l.mu.Unlock()
+		if joining {
+			// Spans joined meanwhile: catch them up first.
 			continue
 		}
 		// A span joining the set ends this follow, to catch it up and
