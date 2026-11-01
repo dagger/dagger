@@ -353,13 +353,17 @@ type Lookup struct {
 	Misses []LookupMiss `json:"misses"`
 }
 
-// LookupMiss is one call the engine's cache missed: its recipe digest, and
-// its extra digests, which the engine's own lookup tries after the recipe.
-// Field names the call, for logs.
+// LookupMiss is one call the engine's cache missed: its recipe digest, its
+// extra digests, which the engine's own lookup tries after the recipe, and
+// its term, which that lookup tries last: the call's self digest over its
+// input digests, matched by the inputs' classes. Field names the call, for
+// logs.
 type LookupMiss struct {
 	Recipe digest.Digest   `json:"recipe"`
 	Extra  []digest.Digest `json:"extra,omitempty"`
 	Field  string          `json:"field,omitempty"`
+	Self   digest.Digest   `json:"self,omitempty"`
+	Inputs []digest.Digest `json:"inputs,omitempty"`
 }
 
 // LookedUp answers Lookup, one item per miss, in order. The service sends it
