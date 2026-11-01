@@ -316,16 +316,38 @@ func (cm *snapshotManager) applyLayer(ctx context.Context, mut MutableRef, desc 
 	if apart {
 		mounts = upperOverlay(mounts)
 	}
+	applyStart := clock.now()
+	// A chain layer applied apart is decompressed ahead of its apply, which
+	// then reads the layer's tar: the decompression and the file creation
+	// overlap.
+	applier, applyDesc := cm.Applier, desc
+	var ahead *decompressedAhead
+	if apart && cm.applyFrom != nil && canDecompressAhead(ctx, desc) {
+		ahead, err = cm.decompressAhead(ctx, desc)
+		if err != nil {
+			_ = unmount()
+			return chainError(ctx, chainMode, desc, "apply", err)
+		}
+		applier = cm.applyFrom(aheadProvider{digest: desc.Digest, ahead: ahead})
+		applyDesc = ocispecs.Descriptor{MediaType: ocispecs.MediaTypeImageLayer, Digest: desc.Digest, Size: desc.Size}
+	}
 	var applyOpts []diff.ApplyOpt
 	var unpack *ProgressTracker
 	if desc.Size > 0 {
 		unpack = NewProgressTracker(ctx, desc.Digest.String(), desc.Size, "bytes")
 		applyOpts = append(applyOpts, diff.WithProgress(func(_ ocispecs.Descriptor, read int64) {
+			// Decompressed ahead, the applier reads the tar: progress is
+			// the blob's bytes decompressed.
+			if ahead != nil {
+				read = min(ahead.read.Load(), desc.Size)
+			}
 			unpack.Update(read)
 		}))
 	}
-	applyStart := clock.now()
-	appliedDesc, err := cm.Applier.Apply(ctx, desc, mounts, applyOpts...)
+	appliedDesc, err := applier.Apply(ctx, applyDesc, mounts, applyOpts...)
+	if ahead != nil {
+		ahead.Close()
+	}
 	applied := clock.now()
 	if clock.timing != nil {
 		clock.timing.Apply += applied.Sub(applyStart)
