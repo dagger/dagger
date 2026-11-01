@@ -137,6 +137,17 @@ type DumpEvent struct {
 	RunqWaitUS int64 `json:"rqw,omitempty"`
 	RunqWaits  int64 `json:"rqn,omitempty"`
 	OnCPUUS    int64 `json:"oncpu,omitempty"`
+
+	// A wait on an RWMutex carries the lock's holder when the wait began:
+	// HolderID the op that took it through WriteLock, HolderUnknown when
+	// it was taken directly, with no context to name the op, or
+	// HolderReaders when it was held for reading; and HolderSinceNS when
+	// the holder took it. Only locks of type RWMutex have a holder: a wait
+	// on another lock has none. A lock taken directly reads as
+	// HolderUnknown, never as an earlier holder's op; readers aren't named
+	// one by one.
+	HolderID      uint64 `json:"h,omitempty"`
+	HolderSinceNS int64  `json:"hs,omitempty"`
 }
 
 // DumpTypeUsage is the DumpEvent.Type of a resource reading (RecordUsage).
@@ -228,6 +239,8 @@ func toDumpEvent(ev Event) DumpEvent {
 		out.Outcome = ev.Outcome.String()
 	case EventTypeWait:
 		out.Reason = ev.Reason.String()
+		out.HolderID, out.HolderSinceNS = ev.ResultID, ev.Bytes
+		out.ResultID, out.Bytes = 0, 0
 	case EventTypeLink:
 		out.LinkKind = ev.LinkKind.String()
 	case EventTypeSpan:

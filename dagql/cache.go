@@ -2382,7 +2382,7 @@ type Cache struct {
 	// egraphMu protects all e-graph state and indexes. A call's own paths
 	// take it with wcprof.ReadLock and WriteLock, so a profile shows the time
 	// they wait for it (egraphLockIdent).
-	egraphMu sync.RWMutex
+	egraphMu wcprof.RWMutex
 
 	// engineInstanceID names the engine instance that owns the cache, for the
 	// debug snapshot. bootRestoredResults counts the entries the boot restore
