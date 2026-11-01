@@ -138,6 +138,22 @@ func TestWorkspaceGitRefSelectorSemverSemantics(t *testing.T) {
 	}
 }
 
+// A workspace ref named by a full commit SHA pins its git calls to it, as a
+// module at a commit does; other names don't.
+func TestWorkspaceGitRefSelectorPinsCommit(t *testing.T) {
+	t.Parallel()
+	const sha = "0123456789abcdef0123456789abcdef01234567"
+	selector := workspaceGitRefSelector(WorkspaceRemoteRef{Version: sha, Selector: gitref.ModuleVersionSelector}, true)
+	require.Equal(t, "ref", selector.Field)
+	require.Len(t, selector.Args, 2)
+	require.Equal(t, "name", selector.Args[0].Name)
+	require.Equal(t, "commit", selector.Args[1].Name)
+
+	selector = workspaceGitRefSelector(WorkspaceRemoteRef{Version: "main", Selector: gitref.GitRefSelector}, true)
+	require.Equal(t, "ref", selector.Field)
+	require.Len(t, selector.Args, 1)
+}
+
 func TestNormalizeWorkspaceRemoteSubdir(t *testing.T) {
 	t.Parallel()
 

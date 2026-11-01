@@ -20,6 +20,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -3466,4 +3467,66 @@ find . -path ./.git -prune -o -type f -print | sort | xargs sha256sum`}).
 	entries, err := withoutGitDir.Entries(ctx)
 	require.NoError(t, err)
 	require.NotContains(t, entries, ".git")
+}
+
+// A workspace selected by a commit of a remote repository and the module in
+// it at the same commit share one checkout. Modules named by commit pin their
+// git calls to it; the workspace's are pinned the same way, so the two trees,
+// with and without .git, are one ref's: before, the workspace's unpinned
+// calls made another ref, and the commit was checked out twice.
+func (GitSuite) TestRemoteWorkspaceAndItsModuleShareCheckout(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	content := core.NewQuery(c).Directory().
+		WithNewFile("dagger.toml", "[modules.greeter]\nsource = '.dagger/modules/greeter'\nmain = true\n").
+		WithNewFile(".dagger/modules/greeter/dagger-module.toml", "name = \"greeter\"\n\n[runtime]\nsource = \"dang\"\n").
+		WithNewFile(".dagger/modules/greeter/main.dang", "type Greeter {\n  pub hello: String! {\n    \"hello\"\n  }\n}\n").
+		WithNewFile("nonce.txt", rand.Text())
+	served := makeGitDir(c, content, "main")
+
+	const gitHost = "gitworkspace.test"
+	repoURL := "http://" + gitHost + "/repo.git"
+	gitSrv, _ := gitSmartHTTPServiceDirAuth(ctx, t, c, "", served, "", nil)
+	devEngine := devEngineContainer(c, func(ctr *core.Container) *core.Container {
+		return ctr.WithServiceBinding(gitHost, gitSrv)
+	})
+	engineSvc, err := core.NewQuery(c).Host().Tunnel(devEngineContainerAsService(devEngine)).Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = engineSvc.Stop(ctx) })
+	endpoint, err := engineSvc.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
+	require.NoError(t, err)
+
+	plain, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
+	require.NoError(t, err)
+	t.Cleanup(func() { plain.Close() })
+	sha, err := core.NewQuery(plain).Git(repoURL).Branch("main").CommitSHA(ctx)
+	require.NoError(t, err)
+
+	// As native CI runs a check: the CLI, with the workspace selected by its
+	// commit.
+	cmd := hostDaggerCommand(ctx, t, t.TempDir(), "-W", repoURL+"@"+sha, "call", "hello")
+	cmd.Env = append(cmd.Env, "_EXPERIMENTAL_DAGGER_RUNNER_HOST="+endpoint)
+	out, err := cmd.Output()
+	require.NoError(t, err)
+	require.Equal(t, "hello", strings.TrimSpace(string(out)))
+
+	ents, err := core.NewQuery(plain).Engine().LocalCache().EntrySet().Entries(ctx)
+	require.NoError(t, err)
+	var checkouts []string
+	for _, ent := range ents {
+		recordTypes, err := ent.RecordTypes(ctx)
+		require.NoError(t, err)
+		if !slices.Contains(recordTypes, "source.git.checkout") {
+			continue
+		}
+		desc, err := ent.Description(ctx)
+		require.NoError(t, err)
+		// The repository's mirror, which every checkout fetches from, is a
+		// checkout entry of its own.
+		if desc == "_remoteGitMirror" {
+			continue
+		}
+		checkouts = append(checkouts, desc)
+	}
+	require.Len(t, checkouts, 1, "the workspace and its module share one checkout: %v", checkouts)
 }
