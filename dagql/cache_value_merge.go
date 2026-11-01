@@ -164,8 +164,11 @@ func (c *Cache) CommitValueMerge(ctx context.Context, p *PreparedValueMerge) (Me
 		c.testBeforeTransferCommit()
 	}
 	for {
-		c.egraphMu.Lock()
+		wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 		locked := time.Now()
+		if c.testMergeCommitLocked != nil {
+			c.testMergeCommitLocked()
+		}
 		if target, wait := c.mergeAttachmentWaitLocked(prep); wait != nil {
 			c.egraphMu.Unlock()
 			if c.testMergeWaitsOnAttachment != nil {
@@ -424,7 +427,7 @@ func (c *Cache) prepareValueMerge(ctx context.Context, input ValueBundle, skipKe
 		return prep, nil
 	}
 
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	if c.nextSharedResultID == 0 {
 		c.nextSharedResultID = 1
 	}
@@ -1967,7 +1970,7 @@ func (c *Cache) failMergedEntryLocked(ctx context.Context, res *sharedResult, qu
 func (c *Cache) finishMergedReplacement(ctx context.Context, r mergeReplacement) error {
 	err := c.finishValueReplacement(ctx, r.res, r.old.release)
 	if err != nil {
-		c.egraphMu.Lock()
+		wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 		queue := c.failMergedEntryLocked(ctx, r.res, nil)
 		releases, collectErr := c.collectUnownedResultsLocked(ctx, queue)
 		c.egraphMu.Unlock()
