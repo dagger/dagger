@@ -348,7 +348,7 @@ func (c *Cache) partOfferAccepted(ctx context.Context, row *sharedResult, key st
 		wanted[p.cfg.lane(layer.Descriptor.Size)] = true
 		size += layer.Descriptor.Size
 	}
-	ahead := p.cfg.aheadOffer > 0 && size >= p.cfg.aheadOffer && !p.aheadFull()
+	ahead := p.cfg.aheadOffer > 0 && size >= p.cfg.aheadOffer
 	var jobs []*partPrefetchJob
 	now := time.Now()
 	for lane := range partPrefetchLanes {
@@ -372,6 +372,10 @@ func (c *Cache) partOfferAccepted(ctx context.Context, row *sharedResult, key st
 	for _, job := range jobs {
 		if p.jobs[job.jobKey()] != nil {
 			continue
+		}
+		// The cap is read under the mutex the worker takes offers under.
+		if job.ahead && p.aheadFullLocked() {
+			job.ahead = false
 		}
 		if job.ahead {
 			p.ahead = append(p.ahead, job)
@@ -702,6 +706,15 @@ func (p *partPrefetcher) workAhead() {
 			p.mu.Unlock()
 			return
 		}
+		if p.aheadFullLocked() {
+			// What reached the queue meanwhile waits in its lanes.
+			dropped := p.handOffAheadLocked()
+			p.mu.Unlock()
+			for _, job := range dropped {
+				p.log(job, "skipped_queue", 0, 0, nil, 0, nil)
+			}
+			continue
+		}
 		best := -1
 		for i, job := range p.ahead {
 			if !job.gone && (best < 0 || job.size > p.ahead[best].size) {
@@ -732,16 +745,34 @@ func (p *partPrefetcher) workAhead() {
 		p.runAhead(jobs)
 		p.awaitAheadImport()
 		p.mu.Lock()
+		var dropped []*partPrefetchJob
 		if p.aheadFullLocked() {
 			// The rest wait in their lanes, to be downloaded only.
-			for _, job := range p.ahead {
-				job.ahead = false
-				p.queueLaneLocked(job)
-			}
-			p.ahead = nil
+			dropped = p.handOffAheadLocked()
 		}
 		p.mu.Unlock()
+		for _, job := range dropped {
+			p.log(job, "skipped_queue", 0, 0, nil, 0, nil)
+		}
 	}
+}
+
+// handOffAheadLocked moves the ahead queue's jobs to their lanes, to be
+// downloaded only, once the worker has taken its aheadMax offers, and
+// returns the jobs the lanes dropped for them, for the caller to log outside
+// the mutex. Requires p.mu.
+func (p *partPrefetcher) handOffAheadLocked() []*partPrefetchJob {
+	var dropped []*partPrefetchJob
+	for _, job := range p.ahead {
+		if job.gone {
+			delete(p.jobs, job.jobKey())
+			continue
+		}
+		job.ahead = false
+		dropped = append(dropped, p.queueLaneLocked(job)...)
+	}
+	p.ahead = nil
+	return dropped
 }
 
 // partInstallStarted and partInstallEnded count an install of an offered
@@ -759,13 +790,8 @@ func (c *Cache) partInstallEnded() {
 	}
 }
 
-// aheadFull reports whether the ahead worker has taken its aheadMax offers.
-func (p *partPrefetcher) aheadFull() bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.aheadFullLocked()
-}
-
+// aheadFullLocked reports whether the ahead worker has taken its aheadMax
+// offers. Requires p.mu.
 func (p *partPrefetcher) aheadFullLocked() bool {
 	return p.cfg.aheadMax > 0 && p.aheadTaken >= p.cfg.aheadMax
 }

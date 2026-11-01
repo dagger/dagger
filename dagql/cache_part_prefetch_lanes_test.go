@@ -355,3 +355,35 @@ func TestPartPrefetchAheadQueueWaitsForInstalls(t *testing.T) {
 	f.cache.partInstallEnded()
 	require.Eventually(t, func() bool { return f.aheadImports() == 1 }, 10*time.Second, 10*time.Millisecond, "the offer is taken once the install ends")
 }
+
+// A large offer that reaches the ahead queue after the worker took its last
+// offer, as an acceptance racing the worker can, isn't taken: it goes to its
+// lanes, to be downloaded only.
+func TestPartPrefetchAheadQueueCapHoldsForALateOffer(t *testing.T) {
+	first := newSizedChainFixture(t, "first", 64<<10)
+	late := newSizedChainFixture(t, "late", 72<<10)
+	f := newExhaustionFixture(t, first, late)
+	f.cache.partPrefetchConfig = &partPrefetchConfig{largeBlob: 1, workers: 1, smallWorkers: 1, smallStreams: 8, budget: 1 << 30, ttl: time.Hour, queue: 8, aheadOffer: 64 << 10, aheadMax: 1}
+	t.Cleanup(f.cache.closePartPrefetch)
+	f.acceptOffer(t, f.receiver, first)
+	require.Eventually(t, func() bool { return f.aheadImports() == 1 }, 10*time.Second, 10*time.Millisecond, "the first offer is imported ahead")
+	// An install holds the worker while the late offer is accepted as one
+	// that saw the cap not yet reached: into the ahead queue.
+	f.cache.partInstallStarted()
+	p := f.cache.partPrefetcher.Load()
+	p.mu.Lock()
+	taken := p.aheadTaken
+	p.aheadTaken = 0
+	p.mu.Unlock()
+	f.acceptOffer(t, persistedListTestResult(t, f.ctx, f.cache, f.srv, "late-row", &transferTestValue{Text: "pending"}), late)
+	p.mu.Lock()
+	p.aheadTaken = taken
+	require.Len(t, p.ahead, 1, "the late offer waits in the ahead queue")
+	p.mu.Unlock()
+	f.cache.partInstallEnded()
+	require.Eventually(t, func() bool {
+		return f.transport.count("https://fixed.invalid/late/0") > 0
+	}, 10*time.Second, 10*time.Millisecond, "the late offer is downloaded")
+	time.Sleep(200 * time.Millisecond)
+	require.Equal(t, 1, f.aheadImports(), "the late offer is not imported ahead")
+}
