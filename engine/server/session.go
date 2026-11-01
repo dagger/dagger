@@ -173,7 +173,7 @@ type daggerSession struct {
 	tracerProvider *sdktrace.TracerProvider
 	// spanQueue counts the spans of the bounded live span lane, to report
 	// those it dropped when the session's telemetry shuts down.
-	spanQueue      enginetel.SpanQueueCounts
+	spanQueue enginetel.SpanQueueCounts
 	// protectedSpans is the session's lossless lane for call and cache
 	// spans; its unbounded queue's peak is reported at shutdown.
 	protectedSpans *enginetel.ProtectedSpanProcessor
