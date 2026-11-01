@@ -182,7 +182,7 @@ func TestMayCallEngineFlags(t *testing.T) {
 	}
 
 	require.True(t, FlagAvailableForCommand(settingsCmd, flags.Lookup("shell-on-error")))
-	require.False(t, FlagAvailableForCommand(traceCmd, flags.Lookup("shell-on-error")))
+	require.True(t, FlagAvailableForCommand(traceCmd, flags.Lookup("shell-on-error")))
 	require.False(t, FlagAvailableForCommand(activityCmd, flags.Lookup("shell-on-error")))
 	require.False(t, FlagAvailableForCommand(sdkCmd, flags.Lookup("shell-on-error")))
 }
@@ -286,6 +286,7 @@ func TestMayCallEngineCommands(t *testing.T) {
 		"dagger setup",
 		"dagger script",
 		"dagger shell",
+		"dagger trace",
 		"dagger uninstall",
 		"dagger start",
 		"dagger workspace",
@@ -314,12 +315,16 @@ func TestMayCallEngineCommands(t *testing.T) {
 		"root":               rootCmd,
 		"activity":           activityCmd,
 		"cloud checks rerun": cloudRerunCmd,
+		"cloud logs":         cloudLogsCmd,
+		"cloud traces view":  cloudTracesViewCmd,
 		"sdk":                sdkCmd,
-		"trace":              traceCmd,
 		"workspace remote":   workspaceRemoteCmd,
 	} {
 		require.False(t, commandHasCapability(cmd, mayCallEngine), name)
 	}
+	// Commands under 'dagger cloud' read Dagger Cloud only: none may call
+	// the engine (e.g. to look for a retained trace archive first).
+	require.Empty(t, commandsDeclaringCapability(cloudCmd, mayCallEngine))
 }
 
 func TestRootShellFallbackKeepsEngineFlags(t *testing.T) {
@@ -350,11 +355,15 @@ func TestMaySelectWorkspaceCommands(t *testing.T) {
 		"dagger workspace activity",
 		"dagger workspace remote",
 	)
+	// 'dagger trace' reads the engine's store without selecting a workspace.
+	expected = slices.DeleteFunc(expected, func(name string) bool {
+		return name == "dagger trace"
+	})
 	require.ElementsMatch(t, expected, commandsDeclaringCapability(rootCmd, maySelectWorkspace))
 
 	var visit func(*cobra.Command)
 	visit = func(cmd *cobra.Command) {
-		if commandHasCapability(cmd, mayCallEngine) {
+		if commandHasCapability(cmd, mayCallEngine) && cmd != traceCmd {
 			require.True(t, commandHasCapability(cmd, maySelectWorkspace), cmd.CommandPath())
 		}
 		for _, child := range cmd.Commands() {

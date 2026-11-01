@@ -165,9 +165,12 @@ type ViewHandle interface {
 // affordance needs. Only the pretty frontend implements it; other frontends
 // receive the whole trace as a plain OTLP span/log stream instead.
 type TraceFrontend interface {
-	// SetTraceID lets the frontend point surfaced failure logs at
-	// 'dagger cloud traces view <trace> --log' for the full output.
-	SetTraceID(string)
+	// SetTraceID lets the frontend point surfaced failure logs and drill-in
+	// suggestions at '<command> <trace> --log ...' / '<command> <trace>
+	// --check ...'. command is the CLI command that can read the trace from
+	// where it was actually found: 'dagger trace' for the engine's retained
+	// store, 'dagger cloud traces view' for Dagger Cloud.
+	SetTraceID(traceID, command string)
 	// SetLogProvider/SetSpanProvider register the lazy fetchers fired when a
 	// span is expanded or a failure is surfaced.
 	SetLogProvider(func(id dagui.SpanID, descendants bool))

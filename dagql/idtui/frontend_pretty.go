@@ -305,9 +305,13 @@ type frontendPretty struct {
 	cloudURL string
 
 	// traceID is the trace being rendered, set by 'dagger trace' so surfaced
-	// failure logs can point at 'dagger cloud traces view <trace> --log' for the full,
+	// failure logs can point at '<traceCommand> <trace> --log' for the full,
 	// untruncated output. Empty for live runs (no follow-up command applies).
 	traceID string
+	// traceCommand is the command that reads traceID from the source it was
+	// opened from ('dagger trace' or 'dagger cloud traces view'); see
+	// traceViewCommand.
+	traceCommand string
 
 	// ciMeta is the trace's source commit / CI change, set by 'dagger trace' from
 	// the Cloud trace metadata so the report can suggest re-run commands scoped to
@@ -1700,13 +1704,33 @@ func (fe *frontendPretty) SetCloudURL(ctx context.Context, url string, msg strin
 	})
 }
 
-// SetTraceID records the trace being rendered so surfaced failure logs can point
-// at 'dagger cloud traces view <trace> --log' for the full output. Called by 'dagger
-// trace'; no-op for live runs.
-func (fe *frontendPretty) SetTraceID(traceID string) {
+// SetTraceID records the trace being rendered, and the command that can read it
+// again, so surfaced failure logs and drill-in suggestions can point at
+// '<command> <trace> --log' for the full output. Called by 'dagger trace' and
+// 'dagger cloud traces view'; never for live runs.
+func (fe *frontendPretty) SetTraceID(traceID, command string) {
 	fe.dispatch(func() {
 		fe.traceID = traceID
+		fe.traceCommand = command
 	})
+}
+
+// defaultTraceCommand reads a trace from Dagger Cloud, which is where a trace
+// is found when the caller did not say otherwise.
+const defaultTraceCommand = "dagger cloud traces view"
+
+// traceViewCommand is the copy-paste prefix of the follow-up commands that
+// address the rendered trace, e.g. 'dagger trace <trace>', or empty when no
+// trace was set (live runs).
+func (fe *frontendPretty) traceViewCommand() string {
+	if fe.traceID == "" {
+		return ""
+	}
+	command := fe.traceCommand
+	if command == "" {
+		command = defaultTraceCommand
+	}
+	return command + " " + fe.traceID
 }
 
 // ciContext is the trace's source git/CI context: the commit it ran on. It
@@ -4134,7 +4158,7 @@ func (fe *frontendPretty) renderZoomedFinalLogs(out TermOutput, indent string) [
 		return nil
 	}
 	rawLines := strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
-	return errorWindowLines(out, rawLines, indent, fe.traceID, cloudLogsHintTarget(span))
+	return errorWindowLines(out, rawLines, indent, fe.traceViewCommand(), traceLogsHintTarget(span))
 }
 
 // renderZoomedCheckTests renders the tests beneath a zoomed check as inline
@@ -4156,7 +4180,7 @@ func (fe *frontendPretty) renderZoomedCheckTests(ctx tuist.Context, span *dagui.
 		RequestLogs:     fe.requestLogsOnRender,
 		SummaryIndent:   2,
 		SummaryLogLines: -1,
-		TraceID:         fe.traceID,
+		TraceCommand:    fe.traceViewCommand(),
 	}
 	width := ctx.Width
 	if width <= 0 {
@@ -4218,7 +4242,9 @@ func reportSectionLines(out TermOutput, agent bool, title string, body []string)
 	return lines
 }
 
-// renderSuggestionsSection prints copy-paste 'dagger trace' commands that
+// renderSuggestionsSection prints copy-paste trace view commands (prefixed by
+// traceViewCommand: 'dagger trace' or 'dagger cloud traces view', whichever
+// reads the trace from where it was found) that
 // scope the report to a single failure, so the reader learns how to drill in
 // with --check/--test. At the root it points at failed checks (and any failed
 // tests not under a check); zoomed to a check it points at that check's failed
@@ -4235,7 +4261,7 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 		if span == nil {
 			return
 		}
-		sel := cloudLogsTarget(span)
+		sel := traceSpanTarget(span)
 		if sel == "" || seen[sel] {
 			return
 		}
@@ -4287,9 +4313,10 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 	}
 
 	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
+	traceCommand := fe.traceViewCommand()
 	body := make([]string, 0, len(targets))
 	for _, sel := range targets {
-		body = append(body, fmt.Sprintf("dagger cloud traces view %s %s", fe.traceID, sel))
+		body = append(body, traceCommand+" "+sel)
 	}
 	return reportSectionLines(out, fe.agentStyle(), "MORE DETAILS", body)
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/dagger/dagger/dagql/call/callpbv1"
@@ -16,6 +15,7 @@ import (
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/internal/cloud"
 	"github.com/dagger/dagger/internal/cloud/auth"
+	"github.com/dagger/dagger/internal/tracesource"
 	telemetry "github.com/dagger/otel-go"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
@@ -103,19 +103,12 @@ func (capture *cloudRestoreCapture) ImportLogs(ctx context.Context, req *collogs
 	return capture.TraceImporter.ImportLogs(ctx, req)
 }
 
+// canFallbackToCloud applies trace display's source policy
+// (tracesource.CanFallback) to a local archive failure from before any of its
+// bootstrap was applied.
 func canFallbackToCloud(ctx context.Context, err error) bool {
-	if ctx.Err() != nil {
-		return false
-	}
-	if archive.IsCleanMiss(err) {
-		return true
-	}
 	var unavailable *archiveUnavailableError
-	if !errors.As(err, &unavailable) || !errors.Is(err, archive.ErrTransient) {
-		return false
-	}
-	var requestErr *archive.RequestError
-	return !errors.As(err, &requestErr) || (requestErr.StatusCode != http.StatusUnauthorized && requestErr.StatusCode != http.StatusForbidden)
+	return errors.As(err, &unavailable) && tracesource.CanFallback(ctx, err)
 }
 
 // Prefer the persisted local cut. Missing or unavailable archive service may
@@ -125,12 +118,21 @@ func canFallbackToCloud(ctx context.Context, err error) bool {
 // A local archive that was never sealed (the engine stopped before finalizing
 // it, or finalization failed) is restored best-effort from what it recorded,
 // with a warning. If that cannot even produce a plan, Cloud is tried.
+//
+// Inside a Dagger session the CLI is a nested client, which the archive API
+// always refuses, so restoreFromTrace marks the engine unavailable
+// (req.engineUnavailable) and Cloud is read, as `dagger trace` does.
 func restoreTraceSources(ctx context.Context, fe archiveFrontend, target restoreTarget, req traceRestore) (func(), error) {
-	cleanup, err := restoreArchive(ctx, req.source, fe, target, req)
-	if err == nil {
+	var cleanup func()
+	var err error
+	if req.engineUnavailable != nil {
+		err = &archiveUnavailableError{req.engineUnavailable}
+	} else if cleanup, err = restoreArchive(ctx, req.source, fe, target, req); err == nil {
 		return cleanup, nil
 	}
 	fallback := canFallbackToCloud(ctx, err)
+	// The local failure is part of the story when Cloud fails too.
+	localErr := fmt.Errorf("local engine archive: %w", err)
 	var unsealedErr error
 	if state, ok := unsealedArchiveState(err); ok && ctx.Err() == nil {
 		slog.Warn("engine archive was not sealed; restoring the latest recorded state best-effort, so the most recent steps may be missing",
@@ -150,8 +152,13 @@ func restoreTraceSources(ctx context.Context, fe archiveFrontend, target restore
 	if !fallback {
 		return nil, err
 	}
-	// A failed unsealed local attempt is part of the story when Cloud fails too.
-	fail := func(cloudErr error) error { return errors.Join(unsealedErr, cloudErr) }
+	// A failed unsealed local attempt is the local failure when Cloud fails too.
+	fail := func(cloudErr error) error {
+		if unsealedErr != nil {
+			return errors.Join(unsealedErr, cloudErr)
+		}
+		return errors.Join(cloudErr, localErr)
+	}
 	source := req.cloudSource
 	if source == nil {
 		credentials, err := auth.GetCloudAuth(ctx)

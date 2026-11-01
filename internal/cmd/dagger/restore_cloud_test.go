@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -21,6 +22,7 @@ import (
 	"github.com/dagger/dagger/internal/cloud"
 	"github.com/dagger/dagger/internal/cloud/auth"
 	"github.com/dagger/dagger/internal/cloud/otlpstream"
+	"github.com/dagger/dagger/internal/tracesource"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -157,6 +159,35 @@ func TestCloudRestoreSourceDecisions(t *testing.T) {
 		cleanup, err := restoreTraceSources(t.Context(), newRestoreTestFrontend(), newFakeRestoreTarget(), req)
 		require.NoError(t, err)
 		cleanup()
+	})
+}
+
+// TestRestoreSharesTraceSourcePolicy: `dagger agent -r` selects its source
+// as `dagger trace` does. Inside a Dagger session the engine archive, which
+// only a main client may read, is skipped for Cloud, and a Cloud failure still
+// names why the engine was not used.
+func TestRestoreSharesTraceSourcePolicy(t *testing.T) {
+	t.Run("nested session", func(t *testing.T) {
+		chief, worker, edge, records := cloudControlFixture(t)
+		records = append(records, chief.Record(), worker.Record(), edge.Record())
+		req := restoreRequest()
+		req.source = &restoreTestArchive{bootstrapErr: errors.New("a nested client must not ask the engine")}
+		req.engineUnavailable = fmt.Errorf("%w: nested client", tracesource.ErrEngineUnavailable)
+		req.cloudSource = cloudRestoreFunc(func(ctx context.Context, _ string, sink cloud.TraceImportSink) error {
+			return sink.ImportLogs(ctx, controlLogs(records...))
+		})
+		cleanup, err := restoreTraceSources(t.Context(), cloudTestFrontend{newRestoreTestFrontend()}, newFakeRestoreTarget(), req)
+		require.NoError(t, err)
+		cleanup()
+	})
+	t.Run("cloud fails too", func(t *testing.T) {
+		req := restoreRequest()
+		req.source = &restoreTestArchive{bootstrapErr: archive.ErrCleanMiss}
+		cloudErr := errors.New("cloud unreachable")
+		req.cloudSource = cloudRestoreFunc(func(context.Context, string, cloud.TraceImportSink) error { return cloudErr })
+		_, err := restoreTraceSources(t.Context(), cloudTestFrontend{newRestoreTestFrontend()}, newFakeRestoreTarget(), req)
+		require.ErrorIs(t, err, cloudErr)
+		require.ErrorIs(t, err, archive.ErrCleanMiss, "the local failure is reported with the Cloud one")
 	})
 }
 

@@ -294,7 +294,11 @@ func init() {
 	} {
 		setCommandCapabilities(cmd, mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig, mayRenderPipeline)
 	}
-	for _, cmd := range []*cobra.Command{traceCmd, cloudTracesViewCmd, cloudLogsCmd} {
+	// 'dagger trace' reads the engine's retained telemetry store before
+	// falling back to Cloud, without selecting a workspace. The 'dagger
+	// cloud' trace commands read Cloud only and never call the engine.
+	setCommandCapabilities(traceCmd, mayCallEngine, mayRenderPipeline)
+	for _, cmd := range []*cobra.Command{cloudTracesViewCmd, cloudLogsCmd} {
 		setCommandCapabilities(cmd, mayRenderPipeline)
 	}
 
