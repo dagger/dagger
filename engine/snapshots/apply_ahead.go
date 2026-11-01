@@ -43,7 +43,7 @@ type decompressedAhead struct {
 	cur []byte
 	buf *[]byte
 	// err is the decompression's end: io.EOF, or its failure. It is set
-	// before chunks is closed.
+	// before chunks is closed, after the chunks read before it.
 	err error
 	// read counts the blob's compressed bytes decompressed so far.
 	read atomic.Int64
@@ -71,7 +71,7 @@ func (cm *snapshotManager) decompressAhead(ctx context.Context, desc ocispecs.De
 		defer close(d.chunks)
 		for {
 			bp := aheadChunkPool.Get().(*[]byte)
-			n, err := io.ReadFull(ds, *bp)
+			n, err := fillChunk(ds, *bp)
 			if n > 0 {
 				select {
 				case d.chunks <- (*bp)[:n]:
@@ -83,18 +83,28 @@ func (cm *snapshotManager) decompressAhead(ctx context.Context, desc ocispecs.De
 			} else {
 				aheadChunkPool.Put(bp)
 			}
-			switch {
-			case err == nil:
-			case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
-				d.err = io.EOF
-				return
-			default:
+			if err != nil {
 				d.err = err
 				return
 			}
 		}
 	}()
 	return d, nil
+}
+
+// fillChunk reads r into b until b is full or r ends: with io.EOF at the
+// stream's end, or with the decompressor's own error, a truncated stream's
+// included.
+func fillChunk(r io.Reader, b []byte) (int, error) {
+	n := 0
+	for n < len(b) {
+		m, err := r.Read(b[n:])
+		n += m
+		if err != nil {
+			return n, err
+		}
+	}
+	return n, nil
 }
 
 func (d *decompressedAhead) Read(p []byte) (int, error) {
