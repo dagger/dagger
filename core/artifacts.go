@@ -963,9 +963,9 @@ func BoundArtifacts(ctx context.Context, mod dagql.ObjectResult[*Module], root d
 
 // Evaluate selects the artifact's value in the caller's session. The cached
 // module tree carries the dagql server that discovered it, whose field specs
-// reference module provenance results owned by that session. A fresh server
-// binds the provenance to results this session owns, so evaluation does not
-// depend on the discovering session being alive.
+// reference module provenance results owned by that session. The caller's own
+// server for the module binds the provenance to results this session owns, so
+// evaluation does not depend on the discovering session being alive.
 func (a *Artifact) Evaluate(ctx context.Context, dest any, inputs ...dagql.NamedInput) error {
 	if a.Node == nil {
 		return fmt.Errorf("artifact %s has no module tree", strings.Join(a.Path, "/"))

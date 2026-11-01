@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 
 	doublestar "github.com/bmatcuk/doublestar/v4"
 	"github.com/dagger/dagger/dagql"
@@ -97,7 +98,10 @@ func NewModTree(ctx context.Context, mod dagql.ObjectResult[*Module]) (*ModTreeN
 // ServiceNameAttr identifies the service displayed by the frontend.
 const ServiceNameAttr = telemetryattrs.ServiceNameAttr
 
-// Initialize a standalone dagql server for querying the given module
+// Initialize a standalone dagql server for querying the given module. A
+// client builds one per module and reuses it: the server is an immutable type
+// registry, and what a call depends on, such as its view or workspace, is on
+// the call's context.
 func dagqlServerForModule(ctx context.Context, mod dagql.ObjectResult[*Module]) (*dagql.Server, error) {
 	main := mod.Self()
 	q, err := CurrentQuery(ctx)
@@ -109,21 +113,64 @@ func dagqlServerForModule(ctx context.Context, mod dagql.ObjectResult[*Module]) 
 	if err != nil {
 		return nil, fmt.Errorf("%q: load core schema: %w", main.Name(), err)
 	}
-	coreSchema, err := defaultDeps.Schema(ctx)
+	build := func() (*dagql.Server, error) {
+		coreSchema, err := defaultDeps.Schema(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("%q: serve core schema: %w", main.Name(), err)
+		}
+		srv, err := coreSchema.Fork(ctx, q)
+		if err != nil {
+			return nil, fmt.Errorf("%q: fork core schema: %w", main.Name(), err)
+		}
+		// Artifact discovery needs the unversioned API, including newer core fields.
+		srv.View = ""
+		InstallCoreSchemaLoaders(srv)
+		if err := NewUserMod(mod).Install(ctx, srv); err != nil {
+			return nil, fmt.Errorf("%q: serve module: %w", main.Name(), err)
+		}
+		return srv, nil
+	}
+	memo, err := q.SchemaBuilderMemo(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("%q: serve core schema: %w", main.Name(), err)
+		return nil, fmt.Errorf("%q: schema builder memo: %w", main.Name(), err)
 	}
-	srv, err := coreSchema.Fork(ctx, q)
-	if err != nil {
-		return nil, fmt.Errorf("%q: fork core schema: %w", main.Name(), err)
+	// The core schema and the module identify the server, as they would
+	// the schema of a builder for the same module set.
+	key, ok := defaultDeps.Append(NewUserMod(mod)).memoKey()
+	if memo == nil || !ok {
+		return build()
 	}
-	// Artifact discovery needs the unversioned API, including newer core fields.
-	srv.View = ""
-	InstallCoreSchemaLoaders(srv)
-	if err := NewUserMod(mod).Install(ctx, srv); err != nil {
-		return nil, fmt.Errorf("%q: serve module: %w", main.Name(), err)
+	return memo.moduleServer(key, build)
+}
+
+type moduleServerEntry struct {
+	mu  sync.Mutex
+	srv *dagql.Server
+}
+
+// moduleServer returns the module server built for key, building it at most
+// once while builds succeed. A failed build is retried by the next call.
+func (m *SchemaBuilderMemo) moduleServer(key string, build func() (*dagql.Server, error)) (*dagql.Server, error) {
+	m.mu.Lock()
+	if m.moduleServers == nil {
+		m.moduleServers = make(map[string]*moduleServerEntry)
 	}
-	return srv, nil
+	entry := m.moduleServers[key]
+	if entry == nil {
+		entry = &moduleServerEntry{}
+		m.moduleServers[key] = entry
+	}
+	m.mu.Unlock()
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+	if entry.srv != nil {
+		return entry.srv, nil
+	}
+	srv, err := build()
+	if err == nil {
+		entry.srv = srv
+	}
+	return srv, err
 }
 
 func (node *ModTreeNode) Clone() *ModTreeNode {
