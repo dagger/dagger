@@ -222,12 +222,9 @@ func (c *Cache) demandDelegatedParent(ctx context.Context, pending *PartSourceLe
 	// demandPart creates the parent's task and exhaustion state. The copied
 	// active path is retained, but no child permit or task generation is reused.
 	// In particular, do not race this wait against a faster child installation.
-	if err := c.demandPart(ctx, parent, proof.source); err != nil {
-		return err
-	}
-	// The child reads the parent's part it delegates to.
+	// The child reads the parent's part it delegates to, once it asks for it.
 	c.partReads.record(proof.parent.id, []PartKey{proof.source.Part})
-	return nil
+	return c.demandPart(ctx, parent, proof.source)
 }
 
 // Restore marks only validated pending mappings for foreground acquisition.

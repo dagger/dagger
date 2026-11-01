@@ -4950,6 +4950,9 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) (rerr error) {
 		}
 	}()
 
+	// Work read the entry once it asked for it, though the entry may still
+	// be running.
+	c.partReads.record(shared.id, nil)
 	watch := partReselectWatch{loop: "evaluateOne"}
 	for {
 		watch.again(ctx, shared, PersistedPartAddress{})
@@ -4960,7 +4963,6 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) (rerr error) {
 		}
 		if err == nil {
 			c.recordWorkloadUse(ctx, shared, nil)
-			c.partReads.record(shared.id, nil)
 		}
 		return err
 	}
@@ -4987,6 +4989,9 @@ func (c *Cache) EvaluateParts(ctx context.Context, res AnyResult, parts ...PartK
 		}
 	}()
 
+	// Work read the parts once it asked for them, though they may still be
+	// being made.
+	c.partReads.record(shared.id, parts)
 	watch := partReselectWatch{loop: "EvaluateParts"}
 	for {
 		watch.again(ctx, shared, PersistedPartAddress{})
@@ -4997,7 +5002,6 @@ func (c *Cache) EvaluateParts(ctx context.Context, res AnyResult, parts ...PartK
 		}
 		if err == nil {
 			c.recordWorkloadUse(ctx, shared, parts)
-			c.partReads.record(shared.id, parts)
 		}
 		return err
 	}
