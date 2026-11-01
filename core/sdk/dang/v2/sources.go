@@ -141,7 +141,7 @@ func EntrypointSources(
 			AutoImport: true,
 		})
 		return nil, entryDir.Self().Mount(ctx, entryDir, func(dir string) error {
-			ensureModuleSelfTypes(intro.Schema, src, dir)
+			ensureModuleSelfTypes(ctx, intro.Schema, src, dir)
 			env, err := runEntrypointDir(ctx, dir, true)
 			if err != nil {
 				if isDangSourceError(err) {
