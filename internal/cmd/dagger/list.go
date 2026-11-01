@@ -75,7 +75,9 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args, raw
 		if completing {
 			return nil, withEngineSilent(ctx, params, fn)
 		}
-		if !helpCommand && runsInDiscoverySession(cmd) {
+		// With --no-exit the frontend would wait after a discovery whose
+		// command line Cobra then rejects, before reporting it.
+		if !helpCommand && !noExit && runsInDiscoverySession(cmd) {
 			help, err := helpFlag(cmd, rawCommandArgs)
 			if err != nil {
 				return nil, err
