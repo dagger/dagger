@@ -6307,7 +6307,7 @@ func (c *Cache) getOrInitCallInner(
 		c.captureSessionResultInstallSpan(ctx, sessionID, hitRes)
 		return hitRes, nil
 	}
-	if lookup := c.noteRemoteMiss(req, callDigest); ev != nil {
+	if lookup := c.noteRemoteMiss(req, callDigest, requestSelf, requestInputs); ev != nil {
 		ev.MissRemoteLookup = lookup
 	}
 

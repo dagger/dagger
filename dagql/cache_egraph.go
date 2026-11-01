@@ -791,6 +791,26 @@ func (c *Cache) lookupMatchForDigestsLocked(recipeDigest digest.Digest, extraDig
 
 // lookupMatchForCallLocked only reads the e-graph: the caller holds egraphMu
 // for reading or writing.
+// termInputClassesLocked resolves a term's input digests to their classes'
+// roots, as the structural lookup matches them. missing is the index of the
+// first input no class has, with the classes before it resolved, or -1 when
+// every input resolves. Requires egraphMu.
+func (c *Cache) termInputClassesLocked(inputDigests []digest.Digest) (ids []eqClassID, missing int) {
+	ids = make([]eqClassID, len(inputDigests))
+	for i, inDig := range inputDigests {
+		classID, ok := c.egraphDigestToClass[inDig.String()]
+		if !ok {
+			return ids, i
+		}
+		root := c.eqClassRootLocked(classID)
+		if root == 0 {
+			return ids, i
+		}
+		ids[i] = root
+	}
+	return ids, -1
+}
+
 func (c *Cache) lookupMatchForCallLocked(
 	frame *ResultCall,
 	recipeDigest digest.Digest,
@@ -813,22 +833,8 @@ func (c *Cache) lookupMatchForCallLocked(
 
 	match.selfDigest = selfDigest
 	match.inputDigests = inputDigests
-	match.inputEqIDs = make([]eqClassID, len(inputDigests))
-	for i, inDig := range inputDigests {
-		classID, ok := c.egraphDigestToClass[inDig.String()]
-		if !ok {
-			match.primaryLookupPossible = false
-			match.missingInputIndex = i
-			break
-		}
-		root := c.eqClassRootLocked(classID)
-		if root == 0 {
-			match.primaryLookupPossible = false
-			match.missingInputIndex = i
-			break
-		}
-		match.inputEqIDs[i] = root
-	}
+	match.inputEqIDs, match.missingInputIndex = c.termInputClassesLocked(inputDigests)
+	match.primaryLookupPossible = match.missingInputIndex < 0
 	if match.primaryLookupPossible {
 		match.termDigest = calcEgraphTermDigest(selfDigest, match.inputEqIDs)
 		termSet := c.egraphTermsByTermDigest[match.termDigest]
