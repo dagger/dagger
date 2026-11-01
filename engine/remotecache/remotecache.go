@@ -7,6 +7,7 @@ package remotecache
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -278,10 +279,24 @@ func (b *backoff) next(jitter float64) time.Duration {
 }
 
 // uploadClient is the HTTP client for blob uploads: the default transport,
-// with a bound on the wait for the response once the request is sent.
+// with a bound on the wait for the response once the request is sent, over
+// HTTP/1.1 with a connection for each upload slot.
+//
+// Over HTTP/2 every upload would share one connection, and a blob store's
+// flow-control window caps a connection at a window per round trip. With a
+// blob store that allows 1 MiB in flight per HTTP/2 connection, about 20 ms
+// away, one HTTP/2 connection carried 40 MiB/s for 1 to 16 uploads alike,
+// where 16 HTTP/1.1 connections carried 0.7 to 1.7 GiB/s. A store may speak
+// HTTP/2 to a client that asks for no protocol, so the client asks for
+// HTTP/1.1.
 func uploadClient(responseTimeout time.Duration) *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.ResponseHeaderTimeout = responseTimeout
+	var protocols http.Protocols
+	protocols.SetHTTP1(true)
+	transport.Protocols = &protocols
+	transport.TLSClientConfig = &tls.Config{NextProtos: []string{"http/1.1"}}
+	transport.MaxIdleConnsPerHost = UploadConcurrency
 	return &http.Client{Transport: transport}
 }
 
@@ -298,9 +313,8 @@ func httpPut(client *http.Client, idle time.Duration) func(context.Context, stri
 		defer cancel(nil)
 		stalled := time.AfterFunc(idle, func() { cancel(errUploadStalled) })
 		defer stalled.Stop()
-		// The body's end isn't the request's: over HTTP/2 the transport reads
-		// the end before it sends the last bytes, which wait for the blob
-		// store's flow control.
+		// The body's end isn't the request's: the transport reads the end
+		// before it has sent the last bytes, which wait for the blob store.
 		ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
 			WroteRequest: func(httptrace.WroteRequestInfo) { stalled.Stop() },
 		})
