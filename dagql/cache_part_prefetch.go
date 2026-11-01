@@ -837,7 +837,12 @@ func (p *partPrefetcher) aheadFullLocked() bool {
 // renew once.
 func (p *partPrefetcher) runAhead(jobs []*partPrefetchJob) {
 	if len(jobs) > 0 {
-		demand := &PartDemandState{target: clonePartAddress(jobs[0].record.Address), started: time.Now()}
+		// A replacement may swap a queued job's record: read it under the
+		// mutex.
+		p.mu.Lock()
+		target := clonePartAddress(jobs[0].record.Address)
+		p.mu.Unlock()
+		demand := &PartDemandState{target: target, started: time.Now()}
 		for _, job := range jobs {
 			job.demand = demand
 		}
