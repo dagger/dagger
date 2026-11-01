@@ -674,6 +674,53 @@ func (ServiceSuite) TestPortsSkipHealthCheck(ctx context.Context, t *testctx.T) 
 	})
 }
 
+// TestPortHealthCheckIsPrompt checks that a service which takes a while to
+// listen is noticed soon after it does. The service times the health check's
+// dial on its own clock, from the moment it listens.
+func (ServiceSuite) TestPortHealthCheckIsPrompt(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	srvpy := `import http.server, socket, time
+
+time.sleep(10)
+
+s = socket.socket()
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+s.bind(("", 8000))
+s.listen()
+listened = time.monotonic()
+conn, _ = s.accept()
+late = time.monotonic() - listened
+conn.close()
+s.close()
+
+class Late(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(str(late).encode())
+
+http.server.HTTPServer(("", 8000), Late).serve_forever()
+`
+	srv := core.NewQuery(c).Container().
+		From("python").
+		WithNewFile("/srv.py", srvpy).
+		WithExposedPort(8000).
+		WithDefaultArgs([]string{"python", "/srv.py"}).
+		AsService()
+
+	out, err := core.NewQuery(c).Container().
+		From(alpineImage).
+		WithServiceBinding("www", srv).
+		WithExec([]string{"sh", "-c", "for i in $(seq 10); do wget -q -O- http://www:8000 && exit 0; sleep 0.2; done; exit 1"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+
+	late, err := strconv.ParseFloat(out, 64)
+	require.NoError(t, err)
+	require.Less(t, late, 1.0, "health check noticed the service %.2fs after it listened", late)
+}
+
 func (ServiceSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
