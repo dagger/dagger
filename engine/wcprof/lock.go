@@ -22,11 +22,14 @@ const (
 // was taken directly, or HolderReaders when it was held for reading.
 // Releasing it makes the holder unknown before the lock is free, so a
 // waiter that reads it before the next taker marks itself reads
-// HolderUnknown, never the holder that released it.
+// HolderUnknown, never the holder that released it; and a waiter whose
+// read overlaps a change of holder reads HolderUnknown too.
 type RWMutex struct {
 	sync.RWMutex
 	holder atomic.Uint64
 	since  atomic.Int64
+	// seq counts changes of holder: odd while one is written (holderAt).
+	seq atomic.Uint64
 }
 
 // Lock locks m for writing, its holder unknown.
@@ -70,23 +73,29 @@ func (m *RWMutex) TryRLock() bool {
 // wrong.
 func (m *RWMutex) RUnlock() {
 	if global.Load() != nil && m.holder.Load() == HolderReaders {
-		m.holder.Store(HolderUnknown)
+		m.set(HolderUnknown, 0)
 	}
 	m.RWMutex.RUnlock()
 }
 
-// mark records holder as m's holder from now, while a recorder is active:
-// HolderUnknown first, then the time, then the holder, so that a reader
-// that sees the same holder before and after reading the time has that
-// holder's time (holderAt).
+// mark records holder as m's holder from now, while a recorder is active.
 func (m *RWMutex) mark(holder uint64) {
 	r := global.Load()
 	if r == nil {
 		return
 	}
-	m.holder.Store(HolderUnknown)
-	m.since.Store(r.Now())
+	m.set(holder, r.Now())
+}
+
+// set changes m's holder and its time, seq odd while it does (holderAt).
+// Only one holder sets them at a time, but readers: they set only
+// HolderReaders or HolderUnknown with no time, so two at once can't mix
+// another holder's time in.
+func (m *RWMutex) set(holder uint64, since int64) {
+	m.seq.Add(1)
 	m.holder.Store(holder)
+	m.since.Store(since)
+	m.seq.Add(1)
 }
 
 // markReaders records m as held for reading, writing only when its holder
@@ -96,9 +105,7 @@ func (m *RWMutex) markReaders() {
 	if global.Load() == nil || m.holder.Load() == HolderReaders {
 		return
 	}
-	m.holder.Store(HolderUnknown)
-	m.since.Store(0)
-	m.holder.Store(HolderReaders)
+	m.set(HolderReaders, 0)
 }
 
 // release makes m's holder unknown, before m is unlocked.
@@ -106,8 +113,7 @@ func (m *RWMutex) release() {
 	if global.Load() == nil {
 		return
 	}
-	m.holder.Store(HolderUnknown)
-	m.since.Store(0)
+	m.set(HolderUnknown, 0)
 }
 
 // markOp records the op of ctx as m's holder, or HolderUnknown when ctx
@@ -121,15 +127,24 @@ func (m *RWMutex) markOp(ctx context.Context) {
 }
 
 // holderAt reads m's holder and when it took m: HolderUnknown with no time
-// when the holder changed while it read.
+// when the holder changed while it read, even to another and back.
 func (m *RWMutex) holderAt() (uint64, int64) {
-	h := m.holder.Load()
-	since := m.since.Load()
-	if m.holder.Load() != h {
+	return m.holderAtWith(nil)
+}
+
+// holderAtWith is holderAt, running between, when set, after it has read
+// the holder and its time; for tests.
+func (m *RWMutex) holderAtWith(between func()) (uint64, int64) {
+	seq := m.seq.Load()
+	if seq%2 == 1 {
 		return HolderUnknown, 0
 	}
-	if h == HolderReaders {
-		since = 0
+	h, since := m.holder.Load(), m.since.Load()
+	if between != nil {
+		between()
+	}
+	if m.seq.Load() != seq {
+		return HolderUnknown, 0
 	}
 	return h, since
 }
