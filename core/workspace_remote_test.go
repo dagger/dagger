@@ -148,10 +148,12 @@ func TestWorkspaceGitRefSelectorPinsCommit(t *testing.T) {
 	require.Len(t, selector.Args, 2)
 	require.Equal(t, "name", selector.Args[0].Name)
 	require.Equal(t, "commit", selector.Args[1].Name)
+	require.Equal(t, sha, workspaceGitPin(WorkspaceRemoteRef{Version: sha}))
 
 	selector = workspaceGitRefSelector(WorkspaceRemoteRef{Version: "main", Selector: gitref.GitRefSelector}, true)
 	require.Equal(t, "ref", selector.Field)
 	require.Len(t, selector.Args, 1)
+	require.Empty(t, workspaceGitPin(WorkspaceRemoteRef{Version: "main"}))
 }
 
 func TestNormalizeWorkspaceRemoteSubdir(t *testing.T) {

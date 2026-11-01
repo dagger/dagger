@@ -2596,8 +2596,14 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 	// later SHA-based selection (such as Workspace.snapshot) can reuse the
 	// first writer's mutable branch recipe. Keep named refs for trees with .git,
 	// where the ref name is part of the checkout metadata and content identity.
+	// A remote ref with no name was looked up by a full SHA, as a workspace or
+	// module at a commit pins it: its recipe holds no mutable ref, so its trees
+	// stay its own, and a workspace and its module at one commit share one
+	// checkout (RemoteGitRef's tree without .git is made from its tree with
+	// .git).
 	ref := parent.Self()
-	if (ref.Repo.Self().DiscardGitDir || args.DiscardGitDir) && ref.Ref.Name != ref.Ref.SHA {
+	_, remote := ref.Repo.Self().Backend.(*core.RemoteGitRepository)
+	if (ref.Repo.Self().DiscardGitDir || args.DiscardGitDir) && ref.Ref.Name != ref.Ref.SHA && (ref.Ref.Name != "" || !remote) {
 		return pinnedGitTree(ctx, srv, ref.Repo, ref.Ref.SHA, args)
 	}
 
