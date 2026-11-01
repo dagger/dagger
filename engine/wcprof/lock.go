@@ -30,6 +30,8 @@ type RWMutex struct {
 	since  atomic.Int64
 	// seq counts changes of holder: odd while one is written (holderAt).
 	seq atomic.Uint64
+	// observe, when set, sees each holder an acquisition marks (ObserveMarks).
+	observe atomic.Pointer[func(holder uint64)]
 }
 
 // Lock locks m for writing, its holder unknown.
@@ -85,6 +87,22 @@ func (m *RWMutex) mark(holder uint64) {
 		return
 	}
 	m.set(holder, r.Now())
+	m.observed(holder)
+}
+
+// ObserveMarks calls f, in the acquiring goroutine, with the holder each
+// exclusive acquisition of m marks while a recorder is active, until the
+// returned stop is called; for tests, which can tell from f's caller which
+// code took m and whether it named its op.
+func (m *RWMutex) ObserveMarks(f func(holder uint64)) (stop func()) {
+	m.observe.Store(&f)
+	return func() { m.observe.Store(nil) }
+}
+
+func (m *RWMutex) observed(holder uint64) {
+	if f := m.observe.Load(); f != nil {
+		(*f)(holder)
+	}
 }
 
 // set changes m's holder and its time, seq odd while it does (holderAt).
@@ -129,6 +147,7 @@ func (m *RWMutex) markOp(ctx context.Context) {
 		op = HolderUnknown
 	}
 	m.set(op, r.Now())
+	m.observed(op)
 }
 
 // Holder is m's holder and when it took m, as a wait on m begun now would
