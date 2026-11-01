@@ -12,6 +12,8 @@ import (
 	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/archive"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
+	"github.com/dagger/dagger/internal/tracesource"
+	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
@@ -135,11 +137,50 @@ func restoreArchive(ctx context.Context, source archiveRestoreSource, fe archive
 		return nil, err
 	}
 
-	return startHistoricalImport(ctx, func(ctx context.Context) error {
-		return importArchiveRemainder(ctx, source, req.traceID, importer, cut)
-	}, func(err error) {
+	warn := func(err error) {
 		restoreNotice(ctx, fmt.Sprintf("historical telemetry import incomplete: %v; restored agents remain usable", err))
-	}), nil
+	}
+	if tf, ok := fe.(idtui.TraceFrontend); ok {
+		if traceID, err := trace.TraceIDFromHex(req.traceID); err == nil {
+			return restoreArchiveDisplay(ctx, source, fe, tf, dagui.TraceID{TraceID: traceID}, req.traceID, importer, cut, warn), nil
+		}
+	}
+	return startHistoricalImport(ctx, func(ctx context.Context) error {
+		return importArchiveRemainder(ctx, source, req.traceID, importer, cut, false)
+	}, warn), nil
+}
+
+// restoreArchiveDisplay imports history for an interactive frontend, which
+// shows the history's display logs on demand, through the loader `dagger
+// trace` uses, pinned to the bootstrap's cut. The background import still
+// brings the whole span tree and the semantic records (names, progress, call
+// payloads), so rows render without their logs. The provider serves this
+// trace's spans only: the resumed session's own live spans stream their logs
+// in.
+func restoreArchiveDisplay(ctx context.Context, source archiveRestoreSource, fe archiveFrontend, tf idtui.TraceFrontend, traceID dagui.TraceID, traceHex string, importer *enginetel.ArchiveTraceImporter, cut enginetel.ArchiveCut, warn func(error)) func() {
+	historyCtx, cancel := context.WithCancel(ctx)
+	var logFg fetchGroup
+	loader := newTraceLoaderFor(historyCtx, tracesource.NewStore(source, archive.Manifest{
+		TraceID: traceHex,
+		SealAt:  &cut.SealAt,
+		HighWater: archive.HighWater{
+			Spans: cut.HighWater.Spans, Logs: cut.HighWater.Logs, Metrics: cut.HighWater.Metrics,
+		},
+	}), traceHex, fe)
+	loader.fullTree = true
+	tf.SetTraceLogProvider(traceID, func(id dagui.SpanID, descendants bool) {
+		loader.fetchLogs(&logFg, id, descendants)
+	})
+	tf.SetFetchWaiter(func() { _ = logFg.Wait() })
+	stop := startHistoricalImport(historyCtx, func(ctx context.Context) error {
+		return importArchiveRemainder(ctx, source, traceHex, importer, cut, true)
+	}, warn)
+	// Cancelling first stops queued and in-flight fetches before joining.
+	return func() {
+		cancel()
+		stop()
+		_ = logFg.Wait()
+	}
 }
 
 func archiveRestoreError(traceID string, err error) error {
@@ -167,7 +208,11 @@ func startHistoricalImport(ctx context.Context, run func(context.Context) error,
 // scrollback. Log history re-delivers the call payloads bootstrap already
 // applied; the frontend ignores digests it already has, and a sealed archive's
 // history never includes control records.
-func importArchiveRemainder(ctx context.Context, source archiveRestoreSource, traceID string, importer *enginetel.ArchiveTraceImporter, cut enginetel.ArchiveCut) error {
+//
+// With lazyLogs, the log stream carries only the semantic records, leaving
+// display logs to be fetched on demand, and the span stream adds the dagui
+// view's has-logs and child-count hints that lazy expansion needs.
+func importArchiveRemainder(ctx context.Context, source archiveRestoreSource, traceID string, importer *enginetel.ArchiveTraceImporter, cut enginetel.ArchiveCut, lazyLogs bool) error {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var resultErr error
@@ -177,8 +222,14 @@ func importArchiveRemainder(ctx context.Context, source archiveRestoreSource, tr
 			switch signal {
 			case enginetel.ArchiveSpans:
 				opts.HighWater = cut.HighWater.Spans
+				if lazyLogs {
+					opts.Spans = &archive.SpanSelection{Full: true, DagUIView: true}
+				}
 			case enginetel.ArchiveLogs:
 				opts.HighWater = cut.HighWater.Logs
+				if lazyLogs {
+					opts.Logs = &archive.LogSelection{Records: archive.LogRecordsMetadata}
+				}
 			case enginetel.ArchiveMetrics:
 				opts.HighWater = cut.HighWater.Metrics
 			}
