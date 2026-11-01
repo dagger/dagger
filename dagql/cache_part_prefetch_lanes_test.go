@@ -1,6 +1,7 @@
 package dagql
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"strings"
@@ -112,4 +113,107 @@ func TestPartPrefetchSmallBlobOwnLane(t *testing.T) {
 		}
 		return true
 	}, 10*time.Second, 10*time.Millisecond, "the small blobs are prefetched while the large download is held")
+}
+
+// acceptOffer attaches chain's offer to row and queues it for prefetch, as a
+// merge's offer is accepted.
+func (f *exhaustionFixture) acceptOffer(t *testing.T, row AnyResult, chain chainFixture) {
+	t.Helper()
+	key, err := partAddressKey(f.address)
+	require.NoError(t, err)
+	f.attach(t, row, exhaustionOffer(chain, "", true))
+	f.cache.egraphMu.Lock()
+	offer := row.cacheSharedResult().partOfferLocked(key)
+	f.cache.egraphMu.Unlock()
+	require.NotNil(t, offer)
+	f.cache.partOfferAccepted(f.ctx, row.cacheSharedResult(), key, offer)
+}
+
+// An offer whose chain is at least aheadOffer is never dropped to make room
+// for later offers: with its lane's queue full and its worker held, the
+// large offer's blobs are still prefetched once later offers have arrived.
+func TestPartPrefetchAheadQueueKeepsALargeOffer(t *testing.T) {
+	big := newSizedChainFixture(t, "big", 64<<10)
+	held := newChainFixture(t, "held")
+	later := []chainFixture{newChainFixture(t, "later0"), newChainFixture(t, "later1"), newChainFixture(t, "later2")}
+	f := newExhaustionFixture(t, append([]chainFixture{big, held}, later...)...)
+	f.cache.partPrefetchConfig = &partPrefetchConfig{largeBlob: 1, workers: 1, smallWorkers: 1, smallStreams: 8, budget: 1 << 30, ttl: time.Hour, queue: 1, aheadOffer: 64 << 10}
+	t.Cleanup(f.cache.closePartPrefetch)
+	hold := make(chan struct{})
+	defer close(hold)
+	for i := range held.blobs {
+		f.transport.fault(fmt.Sprintf("https://fixed.invalid/held/%d", i), contentTestFault{stallAfter: -1, hold: hold})
+	}
+	f.acceptOffer(t, f.receiver, held)
+	require.Eventually(t, func() bool {
+		return f.transport.count("https://fixed.invalid/held/0") > 0
+	}, 10*time.Second, 10*time.Millisecond, "the held download takes the lane's only worker")
+	f.acceptOffer(t, persistedListTestResult(t, f.ctx, f.cache, f.srv, "big-row", &transferTestValue{Text: "pending"}), big)
+	for i, chain := range later {
+		f.acceptOffer(t, persistedListTestResult(t, f.ctx, f.cache, f.srv, fmt.Sprintf("later-row-%d", i), &transferTestValue{Text: "pending"}), chain)
+	}
+	require.Eventually(t, func() bool {
+		for i := range big.blobs {
+			if f.transport.count(fmt.Sprintf("https://fixed.invalid/big/%d", i)) == 0 {
+				return false
+			}
+		}
+		return true
+	}, 10*time.Second, 10*time.Millisecond, "the large offer's blobs are prefetched")
+}
+
+// The ahead queue runs its largest offer first: with its worker held on one
+// offer, a larger offer queued after a smaller one is fetched before it.
+func TestPartPrefetchAheadQueueRunsTheLargestFirst(t *testing.T) {
+	first := newSizedChainFixture(t, "first", 48<<10)
+	mid := newSizedChainFixture(t, "mid", 64<<10)
+	big := newSizedChainFixture(t, "big", 128<<10)
+	f := newExhaustionFixture(t, first, mid, big)
+	f.cache.partPrefetchConfig = &partPrefetchConfig{largeBlob: 1, workers: 1, smallWorkers: 1, smallStreams: 8, budget: 1 << 30, ttl: time.Hour, queue: 8, aheadOffer: 64 << 10}
+	t.Cleanup(f.cache.closePartPrefetch)
+	hold := make(chan struct{})
+	for i := range first.blobs {
+		f.transport.fault(fmt.Sprintf("https://fixed.invalid/first/%d", i), contentTestFault{stallAfter: -1, hold: hold})
+	}
+	f.acceptOffer(t, f.receiver, first)
+	require.Eventually(t, func() bool {
+		return f.transport.count("https://fixed.invalid/first/0") > 0
+	}, 10*time.Second, 10*time.Millisecond, "the first offer takes the ahead worker")
+	f.acceptOffer(t, persistedListTestResult(t, f.ctx, f.cache, f.srv, "mid-row", &transferTestValue{Text: "pending"}), mid)
+	f.acceptOffer(t, persistedListTestResult(t, f.ctx, f.cache, f.srv, "big-row", &transferTestValue{Text: "pending"}), big)
+	require.Zero(t, f.transport.count("https://fixed.invalid/big/0"), "the ahead worker is held")
+	close(hold)
+	require.Eventually(t, func() bool {
+		return f.transport.count("https://fixed.invalid/mid/0") > 0 && f.transport.count("https://fixed.invalid/big/0") > 0
+	}, 10*time.Second, 10*time.Millisecond, "both later offers are fetched")
+	require.Less(t, f.transport.first("https://fixed.invalid/big/0"), f.transport.first("https://fixed.invalid/mid/0"), "the larger offer goes first")
+}
+
+// A large offer whose blobs are already in the content store is still
+// applied ahead: its blobs are held, though nothing is downloaded, and its
+// chain is imported.
+func TestPartPrefetchAheadQueueAppliesStoredBlobs(t *testing.T) {
+	big := newSizedChainFixture(t, "big", 64<<10)
+	f := newExhaustionFixture(t, big)
+	f.cache.partPrefetchConfig = &partPrefetchConfig{largeBlob: 1, workers: 1, smallWorkers: 1, smallStreams: 8, budget: 1 << 30, ttl: time.Hour, queue: 8, aheadOffer: 64 << 10}
+	t.Cleanup(f.cache.closePartPrefetch)
+	for i, layer := range big.chain.Layers {
+		require.NoError(t, content.WriteBlob(f.ctx, f.store.Content, fmt.Sprintf("stored-%d", i), bytes.NewReader(big.blobs[i]), layer.Descriptor))
+	}
+	f.acceptOffer(t, f.receiver, big)
+	require.Eventually(t, func() bool {
+		p := f.cache.partPrefetcher.Load()
+		if p == nil {
+			return false
+		}
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		for _, a := range p.aheads {
+			if a.ref != nil {
+				return true
+			}
+		}
+		return false
+	}, 10*time.Second, 10*time.Millisecond, "the stored chain is applied ahead")
+	require.Zero(t, f.transport.total(), "nothing is downloaded")
 }

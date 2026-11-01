@@ -32,3 +32,23 @@ func (cm *snapshotManager) PrefetchContent(ctx context.Context, desc ocispecs.De
 	}
 	return release, true, nil
 }
+
+// HoldContent holds desc's blob, already in the content store, as
+// PrefetchContent holds one it downloads: under a new lease, released by
+// release, by ttl, or by an engine start. A blob not in the store is not
+// held: held is false and release is nil.
+func (cm *snapshotManager) HoldContent(ctx context.Context, desc ocispecs.Descriptor, ttl time.Duration) (release func(context.Context) error, held bool, rerr error) {
+	l, err := cm.LeaseManager.Create(ctx, leases.WithRandomID(), leases.WithExpiration(ttl), leases.WithLabels(map[string]string{snapshotTransferLeaseLabel: "true"}))
+	if err != nil {
+		return nil, false, err
+	}
+	release = func(ctx context.Context) error {
+		return cm.LeaseManager.Delete(ctx, l)
+	}
+	present, err := cm.pinContent(leases.WithLease(ctx, l.ID), desc)
+	if err != nil || !present {
+		_ = release(context.WithoutCancel(ctx))
+		return nil, false, err
+	}
+	return release, true, nil
+}

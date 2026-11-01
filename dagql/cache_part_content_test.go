@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -50,7 +51,9 @@ type contentTestTransport struct {
 	faults   map[string]contentTestFault
 	requests map[string]int
 	ranges   []string
-	open     atomic.Int64
+	// urls are the requests' URLs, in the order they came.
+	urls []string
+	open atomic.Int64
 	// bodies and closes count response bodies and every raw Close call.
 	bodies atomic.Int64
 	closes atomic.Int64
@@ -99,6 +102,13 @@ func (tr *contentTestTransport) count(url string) int {
 	return tr.requests[url]
 }
 
+// first is the index of url's first request among all of them, or -1.
+func (tr *contentTestTransport) first(url string) int {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	return slices.Index(tr.urls, url)
+}
+
 func (tr *contentTestTransport) total() int {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
@@ -115,6 +125,7 @@ func (tr *contentTestTransport) RoundTrip(req *http.Request) (*http.Response, er
 	tr.requests[url]++
 	served := tr.requests[url]
 	tr.ranges = append(tr.ranges, req.Header.Get("Range"))
+	tr.urls = append(tr.urls, url)
 	data, ok := tr.objects[url]
 	fault, faulted := tr.faults[url]
 	rangeHold := tr.rangeHolds[req.Header.Get("Range")]
