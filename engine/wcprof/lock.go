@@ -131,6 +131,12 @@ func (m *RWMutex) markOp(ctx context.Context) {
 	m.set(op, r.Now())
 }
 
+// Holder is m's holder and when it took m, as a wait on m begun now would
+// record them; 0 while no recorder has been active.
+func (m *RWMutex) Holder() (uint64, int64) {
+	return m.holderAt()
+}
+
 // holderAt reads m's holder and when it took m: HolderUnknown with no time
 // when the holder changed while it read, even to another and back.
 func (m *RWMutex) holderAt() (uint64, int64) {
