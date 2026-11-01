@@ -209,6 +209,9 @@ func TestProtectedSpanProcessorLosslessWhileExporterBlocked(t *testing.T) {
 	require.NoError(t, proc.Shutdown(ctx))
 	_, got := exp.snapshot()
 	require.Len(t, got, emitted, "no call span may be dropped on overflow")
+	queued, peak := proc.QueueStats()
+	require.Equal(t, int64(emitted), queued)
+	require.Equal(t, emitted, peak, "the stalled exporter held every span at once")
 	exp.mu.Lock()
 	defer exp.mu.Unlock()
 	for _, n := range exp.batches {
