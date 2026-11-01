@@ -126,22 +126,22 @@ func liveTestSpan(b byte) dagui.SpanID {
 	return id
 }
 
-// TestLiveLogsFollowCatchesUpJoiningSpans: one follow reads the set; a span
-// joining it is caught up to the follow's cursor -- importing none of what
-// the follow already imported -- and the follow resumes over the grown set
-// from that cursor.
+// TestLiveLogsFollowCatchesUpJoiningSpans: the set is read to the store's
+// end, then followed; a span joining it is caught up to the follow's cursor
+// -- importing none of what the follow already imported -- and the grown set
+// is read and followed from that cursor.
 func TestLiveLogsFollowCatchesUpJoiningSpans(t *testing.T) {
 	parent, child := liveTestSpan(1), liveTestSpan(2)
 	reader := &fakeLogReader{respond: func(q tracesource.LogQuery) []liveLogBatch {
 		switch {
-		case q.Follow && q.Cursor == "":
-			// The parent rolls up its child: the follow reads both.
+		case !q.Follow && q.Through == "" && q.Cursor == "":
+			// The parent rolls up its child: the read takes both.
 			return []liveLogBatch{{rows: []liveLogRow{{span: 1, body: "p1"}, {span: 2, body: "c1"}}, cursor: "3"}}
 		case !q.Follow && q.Through == "3":
 			// The catch-up re-reads the child's rows the follow read, and
 			// a digest-routed row only the child selects.
 			return []liveLogBatch{{rows: []liveLogRow{{span: 2, body: "c1"}, {span: 9, body: "svc", digest: "xxh3:out"}}, cursor: "3"}}
-		case q.Follow && q.Cursor == "3" && len(q.Spans) == 2:
+		case !q.Follow && q.Cursor == "3" && len(q.Spans) == 2:
 			return []liveLogBatch{{rows: []liveLogRow{{span: 2, body: "c2"}}, cursor: "5"}}
 		}
 		return nil
@@ -159,17 +159,17 @@ func TestLiveLogsFollowCatchesUpJoiningSpans(t *testing.T) {
 	require.Eventually(t, func() bool { return len(out.got()) == 4 }, 5*time.Second, 10*time.Millisecond)
 	require.Equal(t, []string{"p1", "c1", "svc", "c2"}, out.got(), "every row once, in order")
 
-	queries := reader.seen()
-	require.Len(t, queries, 3)
-	require.Equal(t, tracesource.LogQuery{
-		Spans:   []archive.LogSpan{{SpanID: child.String(), Digests: []string{"xxh3:out"}}},
-		Through: "3",
-	}, queries[1], "the newcomer is caught up to the follow's cursor")
-	require.Equal(t, tracesource.LogQuery{
-		Spans:  []archive.LogSpan{{SpanID: parent.String(), Descendants: true}, {SpanID: child.String(), Digests: []string{"xxh3:out"}}},
-		Follow: true,
-		Cursor: "3",
-	}, queries[2], "the follow resumes over the grown set from its cursor")
+	both := []archive.LogSpan{{SpanID: parent.String(), Descendants: true}, {SpanID: child.String(), Digests: []string{"xxh3:out"}}}
+	require.Eventually(t, func() bool { return len(reader.seen()) == 5 }, 5*time.Second, 10*time.Millisecond)
+	require.Equal(t, []tracesource.LogQuery{
+		{Spans: []archive.LogSpan{{SpanID: parent.String(), Descendants: true}}},
+		{Spans: []archive.LogSpan{{SpanID: parent.String(), Descendants: true}}, Follow: true, Cursor: "3"},
+		// The newcomer is caught up to the follow's cursor.
+		{Spans: []archive.LogSpan{{SpanID: child.String(), Digests: []string{"xxh3:out"}}}, Through: "3"},
+		// The grown set is read from the cursor, then followed.
+		{Spans: both, Cursor: "3"},
+		{Spans: both, Follow: true, Cursor: "5"},
+	}, reader.seen())
 }
 
 // TestLiveLogsUnknownSpansStayUnclaimed: a follow over a subtree also returns
@@ -276,4 +276,78 @@ func TestLiveLogsFinishCatchesUp(t *testing.T) {
 	l.subscribe(idtui.LogRequest{Span: liveTestSpan(2)})
 	require.NoError(t, l.finish(t.Context()))
 	require.Equal(t, []string{"a1", "b1", "a2", "b2"}, out.got())
+}
+
+// joiningLogReader is a store whose catch-ups take long enough for another
+// span to join the set each time, as in a long session where a catch-up
+// reads the whole store and parallel tool calls keep adding rows to render.
+type joiningLogReader struct {
+	l *liveLogs
+
+	mu     sync.Mutex
+	joined uint16
+}
+
+func (r *joiningLogReader) ReadLogs(ctx context.Context, _ string, q tracesource.LogQuery, cb func(context.Context, *collogspb.ExportLogsServiceRequest, string) error) error {
+	switch {
+	case q.Through != "":
+		// A catch-up: another span joins while it reads.
+		r.mu.Lock()
+		r.joined++
+		var id dagui.SpanID
+		id.SpanID[0] = 0xff
+		id.SpanID[6] = byte(r.joined >> 8)
+		id.SpanID[7] = byte(r.joined)
+		r.mu.Unlock()
+		r.l.subscribe(idtui.LogRequest{Span: id})
+		return nil
+	case q.Cursor == "":
+		// The first read of the set.
+		if err := cb(ctx, liveLogRequest([]liveLogRow{{span: 1, body: "a1"}}), "3"); err != nil {
+			return err
+		}
+	case q.Cursor == "3":
+		// Past the cursor: a row the store got since. A follow sends it
+		// at its next poll.
+		if q.Follow {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(20 * time.Millisecond):
+			}
+		}
+		if err := cb(ctx, liveLogRequest([]liveLogRow{{span: 1, body: "a2"}}), "5"); err != nil {
+			return err
+		}
+	}
+	if q.Follow {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	return nil
+}
+
+// TestLiveLogsFollowAdvancesWhileSpansJoin: spans joining the set faster
+// than a catch-up reads must not starve the follow. Each joining span ends
+// the follow to catch it up; if another joins meanwhile, the follow that
+// resumes is ended again before it reads anything, so without reading the
+// set up to the store's end in between, its cursor never moves and nothing
+// stored since reaches any span: a long session's tool calls and replies
+// stop showing output.
+func TestLiveLogsFollowAdvancesWhileSpansJoin(t *testing.T) {
+	reader := &joiningLogReader{}
+	out := &bodyCollector{}
+	l := newLiveLogs(reader, "trace", out, true)
+	reader.l = l
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() { defer close(done); l.run(ctx) }()
+	defer func() { cancel(); <-done }()
+
+	l.subscribe(idtui.LogRequest{Span: liveTestSpan(1)})
+	require.Eventually(t, func() bool { return len(out.got()) == 1 }, 5*time.Second, 10*time.Millisecond)
+	l.subscribe(idtui.LogRequest{Span: liveTestSpan(2)})
+	require.Eventually(t, func() bool { return slices.Contains(out.got(), "a2") }, 5*time.Second, 10*time.Millisecond,
+		"the follow never read past its cursor while spans kept joining")
+	require.Equal(t, []string{"a1", "a2"}, out.got())
 }
