@@ -30,12 +30,12 @@ import (
 const Namespace = "snapshot-transfer-test"
 
 type Store struct {
-	Manager     bkcache.SnapshotManager
-	Content     *containerdsnapshot.Store
-	Snapshots   bkcache.Snapshotter
-	Leases      leases.Manager
-	DB          *metadata.DB
-	Applies     atomic.Int64
+	Manager   bkcache.SnapshotManager
+	Content   *containerdsnapshot.Store
+	Snapshots bkcache.Snapshotter
+	Leases    leases.Manager
+	DB        *metadata.DB
+	Applies   atomic.Int64
 	// ContentRead counts the bytes read from the content store.
 	ContentRead atomic.Int64
 	Diffs       atomic.Int64
