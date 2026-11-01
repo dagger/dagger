@@ -283,25 +283,32 @@ func (l *liveLogs) importFollowed(ctx context.Context, req *collogspb.ExportLogs
 // importLogs exports the records of req that read owns (see liveLogs), of
 // those the frontend routes to what it requested.
 func (l *liveLogs) importLogs(ctx context.Context, req *collogspb.ExportLogsServiceRequest, read uint64) error {
-	var coverage []idtui.LogCoverage
-	if l.coverage != nil {
-		var targets []idtui.LogTarget
-		for _, rl := range req.GetResourceLogs() {
-			for _, sl := range rl.GetScopeLogs() {
-				for _, rec := range sl.GetLogRecords() {
-					key := logOwnerOf(rec)
-					var target idtui.LogTarget
-					copy(target.Trace.TraceID[:], rec.GetTraceId())
-					target.Span.SpanID = key.span
-					target.Digest = key.digest
-					targets = append(targets, target)
-				}
+	var targets []idtui.LogTarget
+	for _, rl := range req.GetResourceLogs() {
+		for _, sl := range rl.GetScopeLogs() {
+			for _, rec := range sl.GetLogRecords() {
+				key := logOwnerOf(rec)
+				var target idtui.LogTarget
+				copy(target.Trace.TraceID[:], rec.GetTraceId())
+				target.Span.SpanID = key.span
+				target.Digest = key.digest
+				targets = append(targets, target)
 			}
 		}
+	}
+	if len(targets) == 0 {
+		// Most batches of a read scan only rows of other spans, e.g. a
+		// catch-up reading the store from its start: asking the frontend
+		// about them, and exporting nothing, would cost its event loop a
+		// round trip each.
+		return nil
+	}
+	var coverage []idtui.LogCoverage
+	if l.coverage != nil {
 		coverage = l.coverage(targets)
 	}
 	l.mu.Lock()
-	i := 0
+	i, kept := 0, 0
 	for _, rl := range req.GetResourceLogs() {
 		for _, sl := range rl.GetScopeLogs() {
 			sl.LogRecords = slices.DeleteFunc(sl.LogRecords, func(rec *otlplogsv1.LogRecord) bool {
@@ -328,9 +335,13 @@ func (l *liveLogs) importLogs(ctx context.Context, req *collogspb.ExportLogsServ
 				}
 				return owner != read && read != 0
 			})
+			kept += len(sl.LogRecords)
 		}
 	}
 	l.mu.Unlock()
+	if kept == 0 {
+		return nil
+	}
 	return telemetry.ReexportLogsFromPB(ctx, l.export, req)
 }
 
