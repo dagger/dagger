@@ -155,7 +155,7 @@ func storedBenchPart(seed uint64) PersistedPartOffer {
 // storedBenchCloud returns a blob-backed cache holding the pool, and the
 // batch's roots by number. The pool is exported from an engine's cache and
 // merged, as the service receives it.
-func storedBenchCloud(b *testing.B) (context.Context, *Cache, []uint64) {
+func storedBenchCloud(b testing.TB) (context.Context, *Cache, []uint64) {
 	b.Helper()
 	actx := cacheTestContext(context.Background())
 	a, err := NewCache(actx, filepath.Join(b.TempDir(), "a.db"), nil, nil)
