@@ -110,3 +110,24 @@ func TestReadersHaveNoAcquisitionTime(t *testing.T) {
 		t.Fatalf("wait %+v: want holder HolderReaders with no acquisition time", w)
 	}
 }
+
+// A holder read while the lock changes hands, even to another holder and
+// back to the first, reads as unknown: never the first holder with the
+// other's time.
+func TestHolderReadAcrossAChangeIsUnknown(t *testing.T) {
+	r := withTestRecorder(t, 0)
+	var mu RWMutex
+	mu.mark(7)
+	h, since := mu.holderAtWith(func() {
+		mu.release()
+		mu.mark(8)
+		mu.release()
+		mu.mark(7)
+	})
+	if h != HolderUnknown || since != 0 {
+		t.Fatalf("holder %d since %d: want HolderUnknown with no time", h, since)
+	}
+	if h, since := mu.holderAt(); h != 7 || since <= 0 || since > r.Now() {
+		t.Fatalf("holder %d since %d: want 7, taken by now", h, since)
+	}
+}
