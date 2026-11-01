@@ -456,8 +456,8 @@ func TestPartPrefetchAheadQueueFailedImportGivesItsPlaceBack(t *testing.T) {
 		p := f.cache.partPrefetcher.Load()
 		p.mu.Lock()
 		defer p.mu.Unlock()
-		return p.aheadCurrent == nil
-	}, 10*time.Second, 10*time.Millisecond, "the worker is done with the first offer")
+		return p.aheadCurrent == nil && p.aheadTaken == 0
+	}, 10*time.Second, 10*time.Millisecond, "the first offer's place is given back")
 	f.acceptOffer(t, persistedListTestResult(t, f.ctx, f.cache, f.srv, "next-row", &transferTestValue{Text: "pending"}), next)
 	require.Eventually(t, func() bool { return f.aheadOf(next) }, 10*time.Second, 10*time.Millisecond, "the next large offer is imported ahead")
 }
