@@ -261,6 +261,11 @@ func TestImportChainsJoinPackRetriesOwnProvider(t *testing.T) {
 	providerA.gate, providerA.fail = gate, errors.New("expired address")
 	providerB := newPackProvider(t, chainA.Provider, chainA.Layers[0].Descriptor, chainB.Layers[0].Descriptor)
 	providerB.InfoReaderProvider = chainB.Provider
+	// The second import's own read also stores the first import's blob,
+	// which the first import would then link instead of failing: it waits
+	// until the first import has returned.
+	gateB := make(chan struct{})
+	providerB.gate = gateB
 
 	first := make(chan error, 1)
 	go func() {
@@ -282,6 +287,7 @@ func TestImportChainsJoinPackRetriesOwnProvider(t *testing.T) {
 	close(gate)
 	var contentErr *bkcache.ChainContentError
 	require.ErrorAs(t, <-first, &contentErr, "the first import's own provider failed")
+	close(gateB)
 	require.NoError(t, <-second)
 	defer ref.Release(context.Background())
 	require.EqualValues(t, 1, providerB.opens.Load(), "the second import read the pack with its own provider")
