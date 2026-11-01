@@ -874,17 +874,22 @@ func (p *partPrefetcher) runAhead(jobs []*partPrefetchJob) {
 // once it is held. A job of the offer queued meanwhile, as a replacement
 // queues one for a blob its import waits for, runs here: no other worker
 // would run it. It reports whether the offer's chain was imported ahead and
-// kept.
-func (p *partPrefetcher) awaitAheadImport() (imported bool) {
-	defer func() {
-		p.mu.Lock()
-		if offer := p.aheadCurrent; offer != nil {
-			a := p.aheads[offer]
-			imported = a != nil && a.ref != nil
-		}
-		p.aheadCurrent = nil
-		p.mu.Unlock()
-	}()
+// kept, and lets go of the offer.
+func (p *partPrefetcher) awaitAheadImport() bool {
+	p.waitAheadImport()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	imported := false
+	if offer := p.aheadCurrent; offer != nil {
+		a := p.aheads[offer]
+		imported = a != nil && a.ref != nil
+	}
+	p.aheadCurrent = nil
+	return imported
+}
+
+// waitAheadImport is awaitAheadImport's wait.
+func (p *partPrefetcher) waitAheadImport() {
 	for {
 		p.mu.Lock()
 		offer := p.aheadCurrent
