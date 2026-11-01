@@ -332,10 +332,10 @@ func traceRunSource(ctx context.Context, tf idtui.TraceFrontend, traceID string,
 		}
 	}
 
-	// Let the frontend point surfaced failure logs at 'dagger cloud
-	// traces view <trace> --log' for the full, untruncated output.
+	// Let the frontend point surfaced failure logs and drill-in suggestions
+	// at the command that reads this trace from where it was found.
 	if tf != nil {
-		tf.SetTraceID(traceID)
+		tf.SetTraceID(traceID, traceViewCommand(source))
 	}
 
 	// Fetch the trace's source commit / CI change so the report can
