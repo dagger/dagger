@@ -28,7 +28,7 @@ func TestClientSchemaIntrospectionJSONClientVersion(t *testing.T) {
 	require.NoError(t, err)
 	for _, tc := range []struct{ version, field string }{
 		{"v1.0.0-beta.20", "clientSchemaIntrospectionJSON"},
-		{"v1.0.0-beta.21", "clientSchemaIntrospectionJSON"},
+		{"v1.0.0-beta.24", "clientSchemaIntrospectionJSON"},
 		{engine.IdentifierCasingVersion, "clientSchemaIntrospectionJson"},
 	} {
 		view := call.View(engine.APIViewVersion(tc.version))
