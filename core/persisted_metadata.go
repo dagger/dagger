@@ -365,6 +365,7 @@ var persistedMetadataFamilies = []dagql.PersistedObjectFamily{
 	{Name: "core.IdentifierWord", Typed: (*IdentifierWord)(nil), Visitor: dagql.PersistedNoReferences{}},
 	{Name: "core.NamingTerm", Typed: (*NamingTerm)(nil), Visitor: dagql.PersistedNoReferences{}},
 	{Name: "core.ModuleNaming", Typed: (*ModuleNaming)(nil), Visitor: dagql.PersistedNoReferences{}},
+	{Name: "core.Naming", Typed: (*Naming)(nil), Visitor: dagql.PersistedNoReferences{}},
 }
 
 func init() {
