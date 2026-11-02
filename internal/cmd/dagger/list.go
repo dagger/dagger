@@ -75,19 +75,14 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args, raw
 		if completing {
 			return nil, withEngineSilent(ctx, params, fn)
 		}
-		// With --no-exit the frontend would wait after a discovery whose
-		// command line Cobra then rejects, before reporting it.
-		if !helpCommand && !noExit && runsInDiscoverySession(cmd) {
-			help, err := helpFlag(cmd, rawCommandArgs)
+		if !helpCommand {
+			d, err := sessionDiscovery(cmd, rawCommandArgs, commandArgs)
 			if err != nil {
 				return nil, err
 			}
-			if !help {
-				params, err := artifactSessionParams(cmd, commandArgs)
-				if err != nil {
-					return nil, err
-				}
-				return &artifactDiscovery{cmd: cmd, root: root, rawArgs: rawArgs, action: action, params: params, discover: fn}, nil
+			if d != nil {
+				d.root, d.rawArgs, d.action, d.discover = root, rawArgs, action, fn
+				return d, nil
 			}
 		}
 		return nil, withEngineMetadata(ctx, action, params, fn)
@@ -215,6 +210,25 @@ func (d *artifactDiscovery) execute(ctx context.Context, run func(context.Contex
 // commands, and agent may prompt or pick an archive.
 func runsInDiscoverySession(cmd *cobra.Command) bool {
 	return cmd == checksCmd || cmd == generateCmd || cmd == listCmd || cmd.Parent() == listCmd
+}
+
+// sessionDiscovery returns a discovery for cmd's own session, with the params
+// cmd will connect with, or nil when cmd discovers in a session of its own.
+func sessionDiscovery(cmd *cobra.Command, rawCommandArgs, commandArgs []string) (*artifactDiscovery, error) {
+	// With --no-exit the frontend would wait after a discovery whose
+	// command line Cobra then rejects, before reporting it.
+	if noExit || !runsInDiscoverySession(cmd) {
+		return nil, nil
+	}
+	help, err := helpFlag(cmd, rawCommandArgs)
+	if err != nil || help {
+		return nil, err
+	}
+	params, err := artifactSessionParams(cmd, commandArgs)
+	if err != nil {
+		return nil, err
+	}
+	return &artifactDiscovery{cmd: cmd, params: params}, nil
 }
 
 // artifactSessionParams returns the params cmd's own engine call connects
