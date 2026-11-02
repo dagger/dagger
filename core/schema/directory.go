@@ -681,9 +681,12 @@ func isScratchDirectory(dir dagql.ObjectResult[*core.Directory]) (bool, error) {
 // includedContent returns the identity of what a copy of the
 // content-identified src with filter brings to its destination: the content
 // digest of src filtered by Directory.filter, which holds the same files as
-// the copy because the same matcher selects them, and the header of src's
-// root, which the copy gives to its destination directory. It is empty when
-// the filtered directory has no content digest.
+// the copy because the same matcher selects them, the header of src's root,
+// which the copy gives to its destination directory, and the filter itself:
+// patterns that select the same files can still copy differently, because an
+// included directory replaces a file at its destination and a parent created
+// only to hold an included file does not. It is empty when the filtered
+// directory has no content digest.
 func includedContent(ctx context.Context, srv *dagql.Server, src dagql.ObjectResult[*core.Directory], filter core.CopyFilter) (digest.Digest, error) {
 	var filtered dagql.ObjectResult[*core.Directory]
 	if err := srv.Select(ctx, src, &filtered, dagql.Selector{Field: "filter", Args: []dagql.NamedInput{
@@ -708,7 +711,16 @@ func includedContent(ctx context.Context, srv *dagql.Server, src dagql.ObjectRes
 	if err != nil {
 		return "", err
 	}
-	return hashutil.HashStrings(string(call.ContentDigest()), string(header)), nil
+	in := []string{
+		string(call.ContentDigest()),
+		string(header),
+		strconv.FormatBool(filter.Gitignore),
+		strconv.Itoa(len(filter.Include)),
+	}
+	in = append(in, filter.Include...)
+	in = append(in, strconv.Itoa(len(filter.Exclude)))
+	in = append(in, filter.Exclude...)
+	return hashutil.HashStrings(in...), nil
 }
 
 type WithDirectoryDockerfileCompatArgs struct {
@@ -2307,10 +2319,11 @@ func (s *directorySchema) chown(
 
 // hasContentIdentity reports whether dir is identified by its content, or
 // will be once its Git checkout succeeds (see core.DefersContentDigest), and
-// can be materialized without running container commands. A result narrowed
-// from such a directory can be content hashed too. A lazy directory with a
-// content digest, such as a copy onto the output of an exec, can still run
-// that exec when it is evaluated, so it is not narrowed eagerly.
+// can be materialized without running container commands. An include copy of
+// such a directory is keyed by the content that it copies, which it evaluates
+// at call time. A lazy directory with a content digest, such as a Dockerfile
+// copy onto the output of an exec, can still run that exec when it is
+// evaluated, so an include copy of it keeps its recipe.
 func hasContentIdentity(dir dagql.ObjectResult[*core.Directory]) (bool, error) {
 	if core.DefersContentDigest(dir.Self()) {
 		return true, nil
@@ -2358,6 +2371,7 @@ func contentHashAt(ctx context.Context, dir dagql.ObjectResult[*core.Directory],
 
 // maintainContentHashing wraps the given directory resolver function and makes the returned directory result content-hashed
 // if the parent directory was content-hashed. This allows us to re-use the content-hashing work on the parent for the returned result.
+// A remote Git tree counts as content-hashed: it gets its content digest only after its checkout (see core.DefersContentDigest).
 func maintainContentHashing[A any](
 	fn dagql.NodeFuncHandler[*core.Directory, A, dagql.ObjectResult[*core.Directory]],
 ) dagql.NodeFuncHandler[*core.Directory, A, dagql.ObjectResult[*core.Directory]] {
@@ -2367,9 +2381,12 @@ func maintainContentHashing[A any](
 			return res, err
 		}
 
-		ok, err := hasContentIdentity(parent)
-		if err != nil || !ok {
+		parentCall, err := parent.ResultCall()
+		if err != nil {
 			return res, err
+		}
+		if parentCall.ContentDigest() == "" && !core.DefersContentDigest(parent.Self()) {
+			return res, nil
 		}
 		dgst, err := contentHashAt(ctx, res, "")
 		if err != nil {

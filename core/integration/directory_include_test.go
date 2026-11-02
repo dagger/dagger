@@ -64,3 +64,36 @@ func (DirectorySuite) TestWithDirectoryIncludeOfHostDirectory(ctx context.Contex
 		})
 	}
 }
+
+// Include copies that select the same files with different patterns can still
+// copy differently: an explicitly included directory replaces a file at its
+// destination, a parent created only for an included file doesn't. Each
+// pattern's outcome must not depend on which copy ran first.
+func (DirectorySuite) TestWithDirectoryIncludePatternsKeyTheCopy(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	host := t.TempDir()
+	setup := func(name string) (dst, src string) {
+		dst = filepath.Join(host, name, "dst")
+		src = filepath.Join(host, name, "src")
+		require.NoError(t, os.MkdirAll(dst, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(dst, "dir"), []byte("old-"+name), 0o644))
+		require.NoError(t, os.MkdirAll(filepath.Join(src, "dir"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(src, "dir", "file"), []byte("new-"+name), 0o644))
+		return dst, src
+	}
+	copied := func(dst, src string, include ...string) bool {
+		_, err := sdkcore.NewQuery(c).Host().Directory(dst).
+			WithDirectory("/", sdkcore.NewQuery(c).Host().Directory(src), sdkcore.DirectoryWithDirectoryOpts{Include: include}).
+			File("dir/file").Contents(ctx)
+		return err == nil
+	}
+	// The contents differ per order, so the two orders share no cache.
+	dst, src := setup("explicit-first")
+	explicitFirst := copied(dst, src, "dir")
+	implicitSecond := copied(dst, src, "dir/file")
+	dst, src = setup("implicit-first")
+	implicitFirst := copied(dst, src, "dir/file")
+	explicitSecond := copied(dst, src, "dir")
+	require.Equal(t, explicitFirst, explicitSecond, `include ["dir"] must not depend on order`)
+	require.Equal(t, implicitFirst, implicitSecond, `include ["dir/file"] must not depend on order`)
+}
