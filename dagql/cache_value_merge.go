@@ -204,6 +204,9 @@ func (c *Cache) CommitValueMerge(ctx context.Context, p *PreparedValueMerge) (Me
 		reply, finish := c.commitValueMergeLocked(ctx, commit)
 		reply.Committed, reply.CommitHold = true, time.Since(locked)
 		c.egraphMu.Unlock()
+		// A recording engine records the commit's hold of the graph lock as
+		// an op of the merge's.
+		wcprof.RecordOpAt(ctx, wcprof.OpKindRemoteCache, "remotecache.merge.commit", wcprof.OpOpts{}, locked, locked.Add(reply.CommitHold), wcprof.OutcomeOK)
 		err = finish(ctx)
 		if c.testAfterTransferCommit != nil {
 			c.testAfterTransferCommit()
