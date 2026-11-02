@@ -1,0 +1,10 @@
+kind: Added
+body: |
+  `entire://` remotes no longer need a git credential helper. When none
+  provides a token, the client uses `ENTIRE_TOKEN` from its environment, then
+  the Entire CLI's login (`entire auth token`, which honors
+  `ENTIRE_CONTEXT`).
+time: 2026-11-02T14:23:11Z
+custom:
+  Author: marcosnils
+  PR: "15031"
