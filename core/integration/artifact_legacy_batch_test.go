@@ -72,7 +72,7 @@ func (ArtifactsSuite) TestLegacyCollectionGeneratorBatching(ctx context.Context,
 	for _, tc := range []struct {
 		name, version, args string
 		files               []string
-		staleChecks         int
+		operations          int
 	}{
 		{"old full selection", "v1.0.0-beta.21", "", []string{"batch-a-b-c.txt"}, 1},
 		{"old one item", "v1.0.0-beta.21", "--view-pkg=b", []string{"batch-b.txt"}, 1},
@@ -117,7 +117,11 @@ type Pkg {
 				// Stale checks run their generator, so they follow the same plan.
 				out, err = base.With(daggerQuery(`{ currentWorkspace { artifacts { filterTypes(types: ["Check"]) { asChecks { sync { pass } } } } } }`)).Stdout(ctx)
 				require.NoError(t, err, out)
-				require.Equal(t, tc.staleChecks, len(regexp.MustCompile(`"pass"\s*:`).FindAllString(out, -1)), out)
+				require.Equal(t, tc.operations, len(regexp.MustCompile(`"pass"\s*:`).FindAllString(out, -1)), out)
+				// Artifacts.asGenerators uses the CLI's execution plan.
+				out, err = base.With(daggerQuery(`{ currentWorkspace { artifacts { filterTypes(types: ["Generator"]) { asGenerators { changeset { addedPaths } } } } } }`)).Stdout(ctx)
+				require.NoError(t, err, out)
+				require.Equal(t, tc.operations, strings.Count(out, `"addedPaths"`), out)
 			}
 		})
 	}

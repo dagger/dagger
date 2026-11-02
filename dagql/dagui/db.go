@@ -1002,6 +1002,11 @@ func (db *DB) recordOTelSpan(span sdktrace.ReadOnlySpan) *Span {
 	spanData.StartTime = span.StartTime()
 	spanData.EndTime = span.EndTime()
 	spanData.Status = span.Status()
+	if !span.StartTime().After(span.EndTime()) {
+		// The span's final export supersedes the cancellation assumed when the
+		// trace ended without it. Its attributes restore an explicit one.
+		spanData.Canceled, spanData.LeftRunning = false, false
+	}
 	spanData.Links = make([]SpanLink, len(span.Links()))
 	for i, link := range span.Links() {
 		spanData.Links[i].SpanContext = SpanContext{

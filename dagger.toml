@@ -34,7 +34,7 @@ source = ".dagger/modules/go-client-dev"
 legacy-default-path = true
 
 [modules.golang]
-source = "dagger.io/go@3159d1fa20a86963dbf9b48f856daeec72be3893"
+source = "dagger.io/go@552271d51223e70821b554d8b88769afc50f98dd"
 legacy-default-path = true
 
 [modules.golang.settings]

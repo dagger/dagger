@@ -48,6 +48,7 @@ func (a *Artifacts) legacyBatchChecks(ctx context.Context) ([]*Artifact, error) 
 	type batchGroup struct {
 		artifact *Artifact
 		receiver *ModTreeNode
+		keys     map[string]struct{}
 	}
 	groups := map[string]batchGroup{}
 	var result []*Artifact
@@ -87,11 +88,12 @@ func (a *Artifacts) legacyBatchChecks(ctx context.Context) ([]*Artifact, error) 
 		}
 		group, ok := groups[identity]
 		if !ok {
-			group = batchGroup{artifact: planned, receiver: receiver}
+			group = batchGroup{artifact: planned, receiver: receiver, keys: map[string]struct{}{}}
 			groups[identity] = group
 			result = append(result, planned)
 		}
-		if !slices.Contains(group.receiver.LegacyBatchKeys, key) {
+		if _, seen := group.keys[key]; !seen {
+			group.keys[key] = struct{}{}
 			group.receiver.LegacyBatchKeys = append(group.receiver.LegacyBatchKeys, key)
 			group.artifact.DimensionKeys = append(group.artifact.DimensionKeys, &ArtifactDimensionKey{Dimension: dimension, Key: key})
 		}

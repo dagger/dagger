@@ -1,0 +1,7 @@
+kind: Changed
+body: |
+  A Dang module function rebuilds each distinct object it receives once per call, and shares it wherever it occurs, which cuts the engine's memory on large collections. Two received copies of an object with the same type and identical JSON, holding the same engine handle, now compare equal with `==`, and `uniq` and `contains` treat them as one. Statements in a type's body besides declarations, such as a `print`, run once per call for such copies instead of once per copy.
+time: 2026-11-02T19:47:49Z
+custom:
+  Author: sipsma
+  PR: "15035"

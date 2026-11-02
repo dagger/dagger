@@ -1,12 +1,14 @@
 package daggercmd
 
 import (
+	"bytes"
 	"context"
 
 	"dagger.io/dagger/core"
 
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/jinzhu/inflection"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -45,7 +47,11 @@ func artifactTypeCommands(types []string, collectionTypes map[string]bool) map[s
 	return commands
 }
 
-func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args, rawArgs []string) error {
+// prepareArtifactCommands registers the artifact commands and flags that the
+// workspace defines, before Cobra parses the command line. When the command
+// will run in the session that discovers them, it returns that discovery
+// instead of running it: see artifactDiscovery.
+func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args, rawArgs []string) (*artifactDiscovery, error) {
 	helpCommand := len(args) > 0 && args[0] == "help"
 	completing := false
 	discover := false
@@ -59,37 +65,40 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args, raw
 	}
 	cmd, commandArgs := resolveCommand(root, args)
 	if cmd != listCmd && cmd.Parent() != listCmd && !isArtifactCommand(cmd) {
-		return nil
+		return nil, nil
 	}
+	_, rawCommandArgs := resolveCommand(root, rawArgs)
 	if !discover {
-		_, rawCommandArgs := resolveCommand(root, rawArgs)
 		discover = needsArtifactDiscovery(cmd, rawCommandArgs)
 	}
-	withDiscovery := func(action string, params client.Params, fn runClientCallback) error {
+	withDiscovery := func(action string, params client.Params, fn runClientCallback) (*artifactDiscovery, error) {
 		if completing {
-			return withEngineSilent(ctx, params, fn)
+			return nil, withEngineSilent(ctx, params, fn)
 		}
-		return withEngineMetadata(ctx, action, params, fn)
+		if !helpCommand {
+			d, err := sessionDiscovery(cmd, rawCommandArgs, commandArgs)
+			if err != nil {
+				return nil, err
+			}
+			if d != nil {
+				d.root, d.rawArgs, d.action, d.discover = root, rawArgs, action, fn
+				return d, nil
+			}
+		}
+		return nil, withEngineMetadata(ctx, action, params, fn)
 	}
 	if cmd == listCmd {
 		// Root help discovers commands after the progress frontend is ready.
 		if !completing && len(commandArgs) == 0 && (!discover || helpCommand) {
-			return nil
+			return nil, nil
 		}
 		if !completing && len(commandArgs) == 0 {
-			_, rawCommandArgs := resolveCommand(root, rawArgs)
-			flags := copyCommandFlags(cmd, "list")
-			help := false
-			if err := flags.ParseAll(rawCommandArgs, func(flag *pflag.Flag, value string) error {
-				if flag.Name == "help" {
-					help = value == "true"
-				}
-				return nil
-			}); err != nil {
-				return err
+			help, err := helpFlag(cmd, rawCommandArgs)
+			if err != nil {
+				return nil, err
 			}
 			if help {
-				return nil
+				return nil, nil
 			}
 		}
 		requested := ""
@@ -98,21 +107,21 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args, raw
 		}
 		params, err := artifactClientParams(client.Params{SkipWorkspaceModules: true}, commandArgs)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		if err := withDiscovery("Load available types", params, func(ctx context.Context, ec *client.Client) error {
-			return loadListCommands(ctx, ec, requested)
-		}); err != nil {
-			return err
-		}
-		return listCmd.RegisterFlagCompletionFunc("type", completeArtifactTypes)
+		return withDiscovery("Load available types", params, func(ctx context.Context, ec *client.Client) error {
+			if err := loadListCommands(ctx, ec, requested); err != nil {
+				return err
+			}
+			return listCmd.RegisterFlagCompletionFunc("type", completeArtifactTypes)
+		})
 	}
 	if !discover {
-		return nil
+		return nil, nil
 	}
 	params, err := artifactClientParams(client.Params{SkipWorkspaceModules: true}, commandArgs)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	return withDiscovery("Load "+cmd.Name()+" filters", params, func(ctx context.Context, ec *client.Client) error {
 		id, err := core.NewQuery(ec.Dagger()).CurrentWorkspace().Artifacts().ID(ctx)
@@ -133,6 +142,116 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args, raw
 		}
 		return nil
 	})
+}
+
+// artifactDiscovery discovers a command's artifact commands and flags as the
+// first request of the session the command then runs in. Its execute opens
+// the command's frontend, telemetry and session before Cobra parses the
+// command line, discovers, then runs Cobra in that session: the command's
+// engine call takes the open session (see takeOpenSession), with the
+// workspace's modules already loaded.
+type artifactDiscovery struct {
+	cmd *cobra.Command
+	// root and rawArgs resolve the command again once discovery has
+	// registered its flags and commands.
+	root     *cobra.Command
+	rawArgs  []string
+	action   string
+	params   client.Params
+	discover runClientCallback
+}
+
+func (d *artifactDiscovery) execute(ctx context.Context, run func(context.Context) error) error {
+	// PersistentPreRunE runs these once the frontend is up. Signing in waits
+	// for the user, so do it before the frontend hides its instructions.
+	if err := checkCloudToken(ctx, rootCmd.OutOrStdout()); err != nil {
+		return err
+	}
+	// The frontend's options are set when it starts.
+	applyCommandProgressDefaults(d.cmd)
+
+	// What Cobra writes outside the command's engine call (usage, deprecation
+	// and update notices) goes to the terminal once the frontend is done, as
+	// it would without the open session.
+	var stdout, stderr bytes.Buffer
+	termOut, termErr := rootCmd.OutOrStdout(), rootCmd.ErrOrStderr()
+	defer func() {
+		termOut.Write(stdout.Bytes())
+		termErr.Write(stderr.Bytes())
+	}()
+	parsed := false
+	err := withEngine(ctx, d.params, func(ctx context.Context, ec *client.Client) (rerr error) {
+		discoverCtx, span := Tracer().Start(ctx, d.action, telemetry.Encapsulate())
+		err := d.discover(discoverCtx, ec)
+		telemetry.EndWithCause(span, &err)
+		if err != nil {
+			return err
+		}
+		if needsArtifactDiscovery(resolveCommand(d.root, d.rawArgs)) {
+			// Cobra will report the command line's error, after the frontend.
+			return nil
+		}
+		parsed = true
+		ctx = withOpenSession(ctx, d.params, ec, rootCmd.OutOrStdout(), rootCmd.ErrOrStderr())
+		rootCmd.SetOut(&stdout)
+		rootCmd.SetErr(&stderr)
+		return run(ctx)
+	})
+	if err != nil || parsed {
+		return err
+	}
+	return run(ctx)
+}
+
+// runsInDiscoverySession reports whether cmd can run in the session that
+// discovers its flags. That session's frontend is already running when Cobra
+// runs the command, so a command that changes frontend options or reads stdin
+// before it connects can't: start sets a root filter, shell reads piped
+// commands, and agent may prompt or pick an archive.
+func runsInDiscoverySession(cmd *cobra.Command) bool {
+	return cmd == checksCmd || cmd == generateCmd || cmd == listCmd || cmd.Parent() == listCmd
+}
+
+// sessionDiscovery returns a discovery for cmd's own session, with the params
+// cmd will connect with, or nil when cmd discovers in a session of its own.
+func sessionDiscovery(cmd *cobra.Command, rawCommandArgs, commandArgs []string) (*artifactDiscovery, error) {
+	// With --no-exit the frontend would wait after a discovery whose
+	// command line Cobra then rejects, before reporting it.
+	if noExit || !runsInDiscoverySession(cmd) {
+		return nil, nil
+	}
+	help, err := helpFlag(cmd, rawCommandArgs)
+	if err != nil || help {
+		return nil, err
+	}
+	params, err := artifactSessionParams(cmd, commandArgs)
+	if err != nil {
+		return nil, err
+	}
+	return &artifactDiscovery{cmd: cmd, params: params}, nil
+}
+
+// artifactSessionParams returns the params cmd's own engine call connects
+// with, before Cobra has parsed its flags.
+func artifactSessionParams(cmd *cobra.Command, args []string) (client.Params, error) {
+	if cmd == checksCmd {
+		return checksClientParams(args)
+	}
+	return artifactClientParams(client.Params{SkipWorkspaceModules: true}, args)
+}
+
+// helpFlag reports whether args ask for cmd's help.
+func helpFlag(cmd *cobra.Command, args []string) (bool, error) {
+	cmd.InitDefaultHelpFlag()
+	flags := copyCommandFlags(cmd, "help")
+	help := false
+	err := flags.ParseAll(args, func(flag *pflag.Flag, value string) error {
+		if flag.Name == "help" {
+			help = value == "true"
+		}
+		return nil
+	})
+	return help, err
 }
 
 func listHelp(cmd *cobra.Command, args []string) {

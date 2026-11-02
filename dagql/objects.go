@@ -593,6 +593,33 @@ func (r ObjectResult[T]) sortCallArgsToSchema(fieldSpec *FieldSpec, view call.Vi
 	})
 }
 
+// scopeDynamicInputs scopes the arguments the dynamic input hook set or
+// replaced, and defaults. The selector inputs still in scoped were scoped
+// already: scoping loads every object argument again.
+func scopeDynamicInputs(ctx context.Context, srv *Server, scope ResultScope, spec *FieldSpec, view call.View, inputArgs map[string]Input, req *CallRequest, scoped map[string]*ResultCallArg) error {
+	for _, argSpec := range spec.Args.Inputs(view) {
+		input, ok := inputArgs[argSpec.Name]
+		if !ok {
+			continue
+		}
+		if arg := scoped[argSpec.Name]; arg != nil && slices.Contains(req.Args, arg) {
+			continue
+		}
+		updated, changed, err := scopeSelectorInput(ctx, srv, scope, argSpec, input)
+		if err != nil {
+			return err
+		}
+		if !changed {
+			continue
+		}
+		inputArgs[argSpec.Name] = updated
+		if err := req.SetArgInput(ctx, argSpec.Name, updated, argSpec.Sensitive); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func prepareSelectorInputs(ctx context.Context, srv *Server, spec *FieldSpec, view call.View, selectorArgs []NamedInput) (map[string]Input, []*ResultCallArg, error) {
 	inputArgs := make(map[string]Input, len(selectorArgs))
 	frameArgs := make([]*ResultCallArg, 0, len(selectorArgs))
@@ -705,6 +732,15 @@ func (r ObjectResult[T]) preselect(ctx context.Context, srv *Server, sel Selecto
 	} else {
 		req.ConcurrencyKey = clientMD.SessionID
 	}
+	// The hook can replace arguments in place, so record the scoped
+	// selector arguments before it runs.
+	var scoped map[string]*ResultCallArg
+	if CurrentResultScope(ctx) != nil {
+		scoped = make(map[string]*ResultCallArg, len(frameArgs))
+		for _, arg := range frameArgs {
+			scoped[arg.Name] = arg
+		}
+	}
 	if field.Spec.GetDynamicInput != nil {
 		if err := field.Spec.GetDynamicInput(ctx, r, inputArgs, view, req); err != nil {
 			typ := r.Type()
@@ -721,22 +757,8 @@ func (r ObjectResult[T]) preselect(ctx context.Context, srv *Server, sel Selecto
 	}
 
 	if scope := CurrentResultScope(ctx); scope != nil {
-		for _, argSpec := range field.Spec.Args.Inputs(view) {
-			input, ok := inputArgs[argSpec.Name]
-			if !ok {
-				continue
-			}
-			updated, changed, err := scopeSelectorInput(ctx, srv, scope, argSpec, input)
-			if err != nil {
-				return r, nil, err
-			}
-			if !changed {
-				continue
-			}
-			inputArgs[argSpec.Name] = updated
-			if err := req.SetArgInput(ctx, argSpec.Name, updated, argSpec.Sensitive); err != nil {
-				return r, nil, err
-			}
+		if err := scopeDynamicInputs(ctx, srv, scope, field.Spec, view, inputArgs, req, scoped); err != nil {
+			return r, nil, err
 		}
 		r.sortCallArgsToSchema(field.Spec, view, req.Args)
 	}

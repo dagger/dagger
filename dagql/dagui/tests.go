@@ -124,10 +124,14 @@ type TestCounts struct {
 	Running int
 	Passing int
 	Skipped int
+
+	// Unreported counts checks and generators whose span ended without a
+	// final state. Tests never set it.
+	Unreported int
 }
 
 func (c TestCounts) Total() int {
-	return c.Failing + c.Running + c.Passing + c.Skipped
+	return c.Failing + c.Running + c.Passing + c.Skipped + c.Unreported
 }
 
 func (c TestCounts) add(other TestCounts) TestCounts {
@@ -136,6 +140,8 @@ func (c TestCounts) add(other TestCounts) TestCounts {
 		Running: c.Running + other.Running,
 		Passing: c.Passing + other.Passing,
 		Skipped: c.Skipped + other.Skipped,
+
+		Unreported: c.Unreported + other.Unreported,
 	}
 }
 

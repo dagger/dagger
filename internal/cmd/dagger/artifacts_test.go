@@ -127,7 +127,9 @@ func TestArtifactPreparationDoesNotConnect(t *testing.T) {
 			root.AddCommand(listCmd)
 			ctx, cancel := context.WithCancel(t.Context())
 			cancel() // Any engine call during preparation must fail.
-			require.NoError(t, prepareArtifactCommands(ctx, root, parseGlobalFlags(root, args), args))
+			discovery, err := prepareArtifactCommands(ctx, root, parseGlobalFlags(root, args), args)
+			require.NoError(t, err)
+			require.Nil(t, discovery)
 		})
 	}
 }
