@@ -99,6 +99,28 @@ func TestStoreListenIsChunked(t *testing.T) {
 	require.Equal(t, ids, got)
 }
 
+// TestStoreConversationOnly: a conversation-only store narrows the priority
+// roots to the agents' conversations; listens and full reads are unchanged.
+func TestStoreConversationOnly(t *testing.T) {
+	r := &archiveReader{}
+	seal := time.Unix(123, 0)
+	s := NewStore(r, archive.Manifest{TraceID: "trace", SealAt: &seal, HighWater: archive.HighWater{Spans: 10}}).ConversationOnly()
+	cb := func(context.Context, *coltracepb.ExportTraceServiceRequest) error { return nil }
+	listen := []string{fmt.Sprintf("%016x", 1)}
+	require.NoError(t, s.FetchSpans(t.Context(), "trace", cloud.SpanSelection{Incremental: true, DagUIView: true}, cb))
+	require.NoError(t, s.FetchSpans(t.Context(), "trace", cloud.SpanSelection{NoRoot: true, Listen: listen, Incremental: true, DagUIView: true}, cb))
+	require.NoError(t, s.FetchSpans(t.Context(), "trace", cloud.SpanSelection{DagUIView: true}, cb))
+	require.Equal(t, []*archive.SpanSelection{
+		{Conversation: true, DagUIView: true},
+		{NoRoot: true, Listen: listen, DagUIView: true},
+		{Full: true, DagUIView: true},
+	}, []*archive.SpanSelection{r.spans[0].Spans, r.spans[1].Spans, r.spans[2].Spans})
+	for _, opts := range r.spans {
+		_, err := opts.SelectionQuery("traces")
+		require.NoError(t, err, "every read is a valid archive request")
+	}
+}
+
 type bootstrapReader struct {
 	archiveReader
 	header archive.BootstrapHeader

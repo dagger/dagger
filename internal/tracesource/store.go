@@ -33,12 +33,24 @@ type Store struct {
 	// end of its store. It has no bootstrap or seal time; its log stream
 	// carries the agent control records instead.
 	unsealed bool
+	// conversation narrows the priority view (see ConversationOnly).
+	conversation bool
 }
 
 var _ Source = (*Store)(nil)
 
 func NewStore(reader StoreReader, manifest archive.Manifest) *Store {
 	return &Store{reader: reader, manifest: manifest}
+}
+
+// ConversationOnly narrows the priority view, for a trace too large to load
+// broadly: its priority spans are only the agents' conversations (loop and
+// message spans), not checks, tests or failures, which load as their
+// ancestors are expanded. An engine that predates the selection ignores it
+// and serves the broader view.
+func (a *Store) ConversationOnly() *Store {
+	a.conversation = true
+	return a
 }
 
 // OpenStore inspects metadata to pin the trace's cut. No bootstrap, recipe,
@@ -132,7 +144,10 @@ func (a *Store) FetchSpans(ctx context.Context, traceID string, sel cloud.SpanSe
 	for {
 		chunk := listen[:min(len(listen), archive.MaxListenSpans)]
 		listen = listen[len(chunk):]
-		opts.Spans = &archive.SpanSelection{Full: full, NoRoot: noRoot, Listen: chunk, DagUIView: sel.DagUIView}
+		opts.Spans = &archive.SpanSelection{
+			Full: full, NoRoot: noRoot, Listen: chunk, DagUIView: sel.DagUIView,
+			Conversation: a.conversation && !full && !noRoot,
+		}
 		if _, err := a.reader.Traces(ctx, traceID, opts, func(_ int64, req *coltracepb.ExportTraceServiceRequest) error { return cb(ctx, req) }); err != nil {
 			return err
 		}

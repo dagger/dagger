@@ -7886,7 +7886,13 @@ func (fe *frontendPretty) openOrGoIn() {
 		return
 	}
 	if row := fe.rows.BySpan[fe.FocusedSpan]; row != nil && row.Expanded {
-		// already expanded; go in
+		// Already expanded; go in. A row the view opened by itself -- a
+		// canceled span, or any at a verbosity that expands completed ones
+		// -- was never toggled open (setExpanded), so a lazy view has not
+		// fetched its children yet: expanding it asks for them, as opening
+		// it would have. Fetching every such row as it renders instead would
+		// walk the whole trace a span at a time.
+		fe.requestSpans(fe.FocusedSpan)
 		fe.goIn()
 		return
 	}
