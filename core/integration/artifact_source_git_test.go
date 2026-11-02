@@ -69,9 +69,10 @@ type Probe {
 	git("add", "src/staged.txt")
 	git("commit", "-m", "change staged input")
 
+	require.Empty(t, run(repo, "check", "-l", "--uncommitted"), "a clean checkout has no affected checks before any check has run")
 	all := []string{"dag+check://?check=staged", "dag+check://?check=other", "dag+check://?check=cross"}
 	require.ElementsMatch(t, all, list(repo, "--commit", "HEAD"), "cold checks remain selected")
-	run(repo, "check", "--generated=false", "--uncommitted")
+	run(repo, "check", "--generated=false", "--path", "/")
 	require.ElementsMatch(t, []string{"dag+check://?check=staged"}, list(repo, "--commit", "HEAD"))
 	require.Empty(t, list(repo, "--uncommitted"))
 

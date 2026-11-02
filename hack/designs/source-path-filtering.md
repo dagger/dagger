@@ -106,7 +106,8 @@ parent; root commits use an empty tree.
 Git flags, it selects a source file or subtree directly. Repeat paths to include
 any listed path. Relative paths start at the current directory; `/` starts at
 the workspace root. Run selected artifacts in the current workspace snapshot.
-An empty filtered selection succeeds.
+No changed paths means no selected artifacts, including checks with unknown
+inputs. An empty filtered selection succeeds.
 
 ## Relationship to caching
 

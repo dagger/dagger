@@ -126,7 +126,7 @@ type Probe {
 
 	base := workspaceID(t, source)
 	require.True(t, selected(t, base, "first", "unrelated.txt"), "an unrun body has unknown reads")
-	require.True(t, emptyDiffSelected(t, base), "an empty diff must retain unknown reads")
+	require.False(t, emptyDiffSelected(t, base), "an empty diff affects no checks, including unrun checks")
 	warm(t, base, "first")
 	require.False(t, selected(t, base, "first", "unrelated.txt"))
 	require.False(t, emptyDiffSelected(t, base), "an empty diff can omit a completed known check")

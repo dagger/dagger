@@ -80,9 +80,6 @@ func (p *WorkspaceProvenance) AffectedByDiff(ctx context.Context, changes *Chang
 	if err := provenance.ValidateKinds(kinds); err != nil {
 		return false, err
 	}
-	if p.unknownInputs(kinds) {
-		return true, nil
-	}
 	paths, err := changes.ComputePaths(ctx)
 	if err != nil {
 		return false, err
@@ -105,9 +102,7 @@ func (p *WorkspaceProvenance) AffectedByChangedPaths(changes *ChangesetPaths, sc
 		}
 		roots = append(roots, root)
 	}
-	if p.unknownInputs(kinds) {
-		return true, nil
-	}
+	unknown := p.unknownInputs(kinds)
 	regions := p.regions()
 	for _, changed := range slices.Concat(changes.Modified, changes.Added, changes.AllRemoved) {
 		file, err := provenance.Path(changed)
@@ -118,6 +113,9 @@ func (p *WorkspaceProvenance) AffectedByChangedPaths(changes *ChangesetPaths, sc
 			return root == "/" || file == root || strings.HasPrefix(file, root+"/")
 		}) {
 			continue
+		}
+		if unknown {
+			return true, nil
 		}
 		var match bool
 		if strings.HasSuffix(changed, "/") {

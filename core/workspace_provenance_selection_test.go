@@ -13,7 +13,17 @@ func TestSourceScopeAppliesToChangedPaths(t *testing.T) {
 		{Path: "/README.md", Kind: provenance.WorkspaceRead},
 	})
 	scopes := []WorkspacePath{"/src"}
-	match, err := inputs.AffectedByChangedPaths(&ChangesetPaths{Modified: []string{"README.md"}}, scopes, nil)
+	unknown := newWorkspaceProvenance([]provenance.Selector{conservativeProvenance(provenance.WorkspaceRead)})
+	for _, changed := range []*ChangesetPaths{{}, {Modified: []string{"README.md"}}} {
+		match, err := unknown.AffectedByChangedPaths(changed, scopes, nil)
+		require.NoError(t, err)
+		require.False(t, match, "unknown inputs need a changed path inside the requested scope")
+	}
+	match, err := unknown.AffectedByChangedPaths(&ChangesetPaths{Modified: []string{"src/main.go"}}, scopes, nil)
+	require.NoError(t, err)
+	require.True(t, match)
+
+	match, err = inputs.AffectedByChangedPaths(&ChangesetPaths{Modified: []string{"README.md"}}, scopes, nil)
 	require.NoError(t, err)
 	require.False(t, match, "an unchanged scoped input must not match a change outside the scope")
 

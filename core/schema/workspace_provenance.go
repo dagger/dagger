@@ -104,6 +104,9 @@ func installWorkspaceProvenance(srv *dagql.Server) {
 				changed.Modified = append(changed.Modified, paths.Modified...)
 				changed.AllRemoved = append(changed.AllRemoved, paths.AllRemoved...)
 			}
+			if len(changed.Added)+len(changed.Modified)+len(changed.AllRemoved) == 0 && (len(args.Changes) > 0 || len(args.Paths) == 0) {
+				return a.FilterTypes([]string{}, false), nil
+			}
 			return filterAffected(ctx, a, func(p *core.WorkspaceProvenance) (bool, error) {
 				if len(args.Changes) == 0 && len(args.Paths) > 0 {
 					for _, scope := range args.Paths {
