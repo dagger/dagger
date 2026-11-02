@@ -23,25 +23,25 @@ func TestResolveEntrypointVersions(t *testing.T) {
 	}{
 		{
 			name:   "no dang.toml",
-			engine: "v1.0.0-beta.20",
+			engine: DefaultEntrypointEngineVersion,
 			dang:   "2.1",
 		},
 		{
 			name:   "empty dang.toml",
 			config: ptr(""),
-			engine: "v1.0.0-beta.20",
+			engine: DefaultEntrypointEngineVersion,
 			dang:   "2.1",
 		},
 		{
 			name:   "dang version only",
 			config: ptr(`dang = "2.0"`),
-			engine: "v1.0.0-beta.20",
+			engine: DefaultEntrypointEngineVersion,
 			dang:   "2.0",
 		},
 		{
 			name:   "dang version with patch",
 			config: ptr(`dang = "v1.0.3"`),
-			engine: "v1.0.0-beta.20",
+			engine: DefaultEntrypointEngineVersion,
 			dang:   "1.0",
 		},
 		{
@@ -85,7 +85,7 @@ dagger = "v1.0.0-beta.20+abc"
 			config: ptr(`[imports.Dagger]
 dagger = true
 `),
-			engine: "v1.0.0-beta.20",
+			engine: DefaultEntrypointEngineVersion,
 			dang:   "2.1",
 		},
 		{
@@ -93,7 +93,7 @@ dagger = true
 			config: ptr(`[imports.Dagger]
 dagger = false
 `),
-			engine: "v1.0.0-beta.20",
+			engine: DefaultEntrypointEngineVersion,
 			dang:   "2.1",
 		},
 		{
@@ -181,16 +181,16 @@ func TestDefaultEntrypointVersions(t *testing.T) {
 	// The default is pinned: an entrypoint that declares nothing must not
 	// change meaning when the engine or Dang moves on.
 	defaults := DefaultEntrypointVersions()
-	require.Equal(t, "v1.0.0-beta.20", defaults.Engine)
+	require.Equal(t, "v1.0.0-beta.24", defaults.Engine)
 	require.Equal(t, dang.DefaultVersion, defaults.Dang)
 	require.Equal(t, "2.1", defaults.DangString())
 
-	// It is the shared pre-cut view, the one every v1.0.0 prerelease before
-	// engine.PrereleaseViewsVersion gets and which generated entrypoints that
-	// declare nothing were written against: before the core renames and the
-	// new naming rules.
-	require.Equal(t, engine.ModuleAPIViewVersion("v1.0.0-0"), engine.ModuleAPIViewVersion(defaults.Engine))
-	require.Equal(t, engine.ModuleAPIViewVersion("v1.0.0-beta.21"), engine.ModuleAPIViewVersion(defaults.Engine))
+	// It is the last release before the cut, which generated entrypoints that
+	// declare nothing were last run on: past the gates of the releases with
+	// views of their own (engine.PrereleaseViewsVersion on), before the core
+	// renames and the new naming rules.
+	require.Equal(t, defaults.Engine, engine.ModuleAPIViewVersion(defaults.Engine))
+	require.True(t, engine.APIVersionAtLeast(defaults.Engine, engine.PrereleaseViewsVersion))
 	require.False(t, engine.APIVersionAtLeast(defaults.Engine, engine.IdentifierCasingVersion))
 	require.True(t, engine.APIVersionAtLeast(engine.IdentifierCasingVersion, engine.IdentifierCasingVersion))
 }

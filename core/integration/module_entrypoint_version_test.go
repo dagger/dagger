@@ -77,8 +77,8 @@ func helloEntrypointSource(extra string) string {
 
 // A manifest v2 module declares its engine version in the dang.toml that
 // governs its entrypoint, as `[imports.Dagger] dagger = "..."`. Without one, it
-// is v1.0.0-beta.20, which lands on the view every v1.0.0 prerelease before the
-// naming cut shares, whatever engine loads it.
+// is v1.0.0-beta.24, the last release before the naming cut, whatever engine
+// loads it.
 func (ModuleSuite) TestDangModuleEntrypointEngineVersion(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	source := helloEntrypointSource("")
@@ -90,17 +90,17 @@ func (ModuleSuite) TestDangModuleEntrypointEngineVersion(ctx context.Context, t 
 	}{
 		{
 			name:    "no dang.toml",
-			version: "v1.0.0-beta.20",
+			version: "v1.0.0-beta.24",
 		},
 		{
 			name:    "dang.toml without a Dagger import",
 			files:   map[string]string{"entrypoint/dang.toml": "dang = \"2.1\"\n"},
-			version: "v1.0.0-beta.20",
+			version: "v1.0.0-beta.24",
 		},
 		{
 			name:    "dagger = true",
 			files:   map[string]string{"entrypoint/dang.toml": "[imports.Dagger]\ndagger = true\n"},
-			version: "v1.0.0-beta.20",
+			version: "v1.0.0-beta.24",
 		},
 		{
 			name:    "declared in the entrypoint directory",
@@ -122,7 +122,7 @@ func (ModuleSuite) TestDangModuleEntrypointEngineVersion(ctx context.Context, t 
 			// module another way could leave it out of the module context.
 			name:    "a dang.toml above the module directory does not count",
 			files:   map[string]string{"/dang.toml": "[imports.Dagger]\ndagger = \"v0.20.0\"\n"},
-			version: "v1.0.0-beta.20",
+			version: "v1.0.0-beta.24",
 		},
 		{
 			name: "the nearest dang.toml decides",
@@ -130,7 +130,7 @@ func (ModuleSuite) TestDangModuleEntrypointEngineVersion(ctx context.Context, t 
 				"dang.toml":            "[imports.Dagger]\ndagger = \"v0.20.0\"\n",
 				"entrypoint/dang.toml": "dang = \"2.1\"\n",
 			},
-			version: "v1.0.0-beta.20",
+			version: "v1.0.0-beta.24",
 		},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
@@ -148,7 +148,7 @@ func (ModuleSuite) TestDangModuleEntrypointEngineVersion(ctx context.Context, t 
 			AsModuleSource(core.DirectoryAsModuleSourceOpts{SourceRootPath: "tiny"}).
 			EngineVersion(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "v1.0.0-beta.20", version)
+		require.Equal(t, "v1.0.0-beta.24", version)
 	})
 
 	t.Run("module reference", func(ctx context.Context, t *testctx.T) {
@@ -291,7 +291,7 @@ func (ModuleSuite) TestDangModuleEntrypointVersionlessCachePolicies(ctx context.
 
 	version, err := mod.EngineVersion(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "v1.0.0-beta.20", version)
+	require.Equal(t, "v1.0.0-beta.24", version)
 
 	c = serveNonceModule(ctx, t, runID)
 	require.NotEqual(t, queryNonce(t, c, "never"), queryNonce(t, c, "never"))
@@ -334,10 +334,11 @@ func cutEntrypointSource(policy string) string {
 `
 }
 
-// An entrypoint that declares no version is served the shared pre-cut view
-// on an engine past the cut (engine.IdentifierCasingVersion): the core API
-// before the renames (FunctionCachePolicy.Never) and the legacy naming rules
-// (TinyHttpClient). One whose dang.toml declares the cut gets the renamed API
+// An entrypoint that declares no version is served the view of the last
+// release before the cut on an engine past the cut
+// (engine.IdentifierCasingVersion): the core API before the renames
+// (FunctionCachePolicy.Never) and the legacy naming rules (TinyHttpClient).
+// One whose dang.toml declares the cut gets the renamed API
 // (FunctionCachePolicy.NEVER) and the new rules (TinyHTTPClient). Neither
 // view has the other's spelling.
 func (ModuleSuite) TestDangModuleEntrypointNamingCut(ctx context.Context, t *testctx.T) {
