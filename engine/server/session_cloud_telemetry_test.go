@@ -480,7 +480,7 @@ func TestSessionCloudTelemetryFlushIsBounded(t *testing.T) {
 		t.Fatal("the forwarder gave up on the rest of the store while Cloud hangs")
 	default:
 	}
-	spanCursor, _ := sess.cloudForwarder.lanes[0].position()
+	spanCursor, _ := forwardTestLane(t, sess.cloudForwarder, "spans").position()
 	require.Zero(t, spanCursor, "nothing Cloud did not take is counted as published")
 }
 
