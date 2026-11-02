@@ -150,12 +150,14 @@ func evalDangSource(
 			// make every such name resolvable here by parsing the module source
 			// for its declared types. At runtime the served schema already
 			// includes the module's own types (Module.IncludeSelfInDeps), so
-			// this is a no-op then.
+			// this is a no-op then. The stand-in sources keep the engine
+			// version, which picks the naming rules the types are namespaced
+			// by.
 			selfSource := modSource.Self()
 			if forTypeDefs {
-				selfSource = &core.ModuleSource{ModuleName: selfSource.ModuleOriginalName, ModuleOriginalName: selfSource.ModuleOriginalName}
+				selfSource = &core.ModuleSource{ModuleName: selfSource.ModuleOriginalName, ModuleOriginalName: selfSource.ModuleOriginalName, EngineVersion: selfSource.EngineVersion}
 			} else if self := moduleContext.Self(); self != nil {
-				selfSource = &core.ModuleSource{ModuleName: self.Name(), ModuleOriginalName: self.OriginalName}
+				selfSource = &core.ModuleSource{ModuleName: self.Name(), ModuleOriginalName: self.OriginalName, EngineVersion: selfSource.EngineVersion}
 			}
 			ensureModuleSelfTypes(schema, selfSource, modSrcDir)
 			ctx = dang.ContextWithImportConfigs(ctx, dang.ImportConfig{
