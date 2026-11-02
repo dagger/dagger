@@ -17,6 +17,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
@@ -226,9 +227,16 @@ func writeForwardTestSpans(t *testing.T, srv *Server, from, n int) {
 	require.NoError(t, appendTestSpans(t.Context(), srv.telemetryPubSub, "main", spans))
 }
 
-// writeForwardTestSpan writes a snapshot of span id named name, with attrs:
-// a live one when live is set, else its end.
+// writeForwardTestSpan writes a snapshot of span id named name, with attrs,
+// of the forwarder's own session: a live one when live is set, else its end.
 func writeForwardTestSpan(t *testing.T, srv *Server, id int, name string, live bool, attrs ...attribute.KeyValue) {
+	t.Helper()
+	writeForwardTestSessionSpan(t, srv, "session", id, name, live, attrs...)
+}
+
+// writeForwardTestSessionSpan is writeForwardTestSpan for a span of session,
+// such as a nested engine's under test.
+func writeForwardTestSessionSpan(t *testing.T, srv *Server, session string, id int, name string, live bool, attrs ...attribute.KeyValue) {
 	t.Helper()
 	start := time.Now()
 	end := start.Add(time.Millisecond)
@@ -243,6 +251,7 @@ func writeForwardTestSpan(t *testing.T, srv *Server, id int, name string, live b
 		StartTime:  start,
 		EndTime:    end,
 		Attributes: attrs,
+		Resource:   resource.NewSchemaless(attribute.String(telemetryattrs.EngineSessionAttr, session)),
 	}.Snapshot()
 	require.NoError(t, appendTestSpans(t.Context(), srv.telemetryPubSub, "main", []sdktrace.ReadOnlySpan{span}))
 }
@@ -622,6 +631,49 @@ func TestCloudForwarderPublishesEachSpanOnce(t *testing.T) {
 	require.NoError(t, f.drain(ctx))
 	require.ElementsMatch(t, []string{"call", "uncached call", "lazy", "session end"}, cacheSpans.received())
 	require.ElementsMatch(t, append(forwardTestNames("span", 300), "exec", "payload scope"), spans.received())
+}
+
+// A nested engine's spans reach the session's store as the session's own do,
+// but its cache spans describe its own cache, not this engine's, and on
+// test-base they are most of the session's cache spans: they stay in bulk, so
+// the cache span lane keeps up with this engine's own.
+func TestCloudForwarderLeavesNestedCacheSpansInBulk(t *testing.T) {
+	t.Parallel()
+	srv := forwardTestStore(t)
+	spans, cacheSpans, logs := &forwardTestExporter{}, &forwardTestExporter{}, &forwardTestExporter{}
+	f := startForwardTestWithCache(t, srv, spans, cacheSpans, logs, fastCloudForwardTuning())
+	call := attribute.StringSlice(telemetry.DagInputsAttr, []string{"xxh3:input"})
+	writeForwardTestSpan(t, srv, 1, "own call", false, call, attribute.String(telemetryattrs.CacheResultIDAttr, "7"))
+	writeForwardTestSessionSpan(t, srv, "nested", 2, "nested call", false, call, attribute.String(telemetryattrs.CacheResultIDAttr, "7"))
+	writeForwardTestSessionSpan(t, srv, "nested", 3, "nested session end", false, attribute.Bool(telemetryattrs.WcprofSessionCompleteAttr, true))
+	writeForwardTestSpan(t, srv, 4, "session end", false, attribute.Bool(telemetryattrs.WcprofSessionCompleteAttr, true))
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	require.NoError(t, f.drain(ctx))
+	require.ElementsMatch(t, []string{"own call", "session end"}, cacheSpans.received())
+	require.ElementsMatch(t, []string{"nested call", "nested session end"}, spans.received())
+}
+
+// The cache span lane's rows are few and far apart in the store. Each of its
+// exports carries as many of them as a batch holds, not one export for each
+// batch of rows read.
+func TestCloudForwarderFillsCacheSpanExports(t *testing.T) {
+	t.Parallel()
+	srv := forwardTestStore(t)
+	call := attribute.StringSlice(telemetry.DagInputsAttr, []string{"xxh3:input"})
+	for i := range 10 {
+		writeForwardTestSpan(t, srv, i, fmt.Sprintf("call-%d", i), false, call)
+		writeForwardTestSpans(t, srv, i*500, 500)
+	}
+	spans, cacheSpans, logs := &forwardTestExporter{}, &forwardTestExporter{}, &forwardTestExporter{}
+	f := startForwardTestWithCache(t, srv, spans, cacheSpans, logs, fastCloudForwardTuning())
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	require.NoError(t, f.drain(ctx))
+	require.ElementsMatch(t, forwardTestNames("call", 10), cacheSpans.received())
+	cacheSpans.mu.Lock()
+	defer cacheSpans.mu.Unlock()
+	require.Equal(t, []int{10}, cacheSpans.sizes, "one export of all ten, read 5,010 rows apart in batches of 100")
 }
 
 // A published marker keeps a row out of Cloud; nothing else does.

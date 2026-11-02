@@ -17,6 +17,7 @@ import (
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	"google.golang.org/protobuf/proto"
 
@@ -34,11 +35,14 @@ import (
 // every row to Cloud once, in order, as the CLI's forwarding of the same stream
 // did before the engine published itself.
 //
-// The spans the remote cache reads, cache spans and the session's end
-// (cacheSpanRow), take a lane of their own, ahead of the session's bulk
-// telemetry: on a slow link that can fall minutes behind, as when nested
-// engines under test publish through the session, and the remote cache must
-// not learn the cache only as late as that. Every snapshot of a span takes the
+// The spans the remote cache reads of this engine, the session's own cache
+// spans and its end (cacheSpanRow), take a lane of their own, ahead of the
+// session's bulk telemetry: on a slow link that can fall minutes behind, as
+// when nested engines under test publish through the session, and the remote
+// cache must not learn this engine's cache only as late as that. The nested
+// engines' own cache spans stay in bulk: they would fill the lane as they
+// fill the backlog. The lane fills each export with its own rows, however
+// far apart they are in the store. Every snapshot of a span takes the
 // same one of the two span lanes, so a span's live snapshots never reach
 // Cloud after its end, and each lane exports through its own Cloud exporter,
 // so the bulk lane's exports never hold the cache lane's.
@@ -158,12 +162,14 @@ type cloudForwardLane struct {
 
 // cloudForwardBatch is one read of a lane: rows rows up to next, and, when
 // any of them is to be published, their OTLP request of size bytes and send,
-// which exports it.
+// which exports it. limited is how many of what the read's limit counts it
+// took: rows read, or for the cache span lane, rows kept.
 type cloudForwardBatch struct {
-	next int64
-	rows int
-	size int
-	send func(context.Context) error
+	next    int64
+	rows    int
+	limited int
+	size    int
+	send    func(context.Context) error
 }
 
 func (lane *cloudForwardLane) position() (int64, chan struct{}) {
@@ -203,36 +209,42 @@ func newCloudForwarder(sessionID, clientID string, db *clientdb.DB, spans, cache
 		done:       make(chan struct{}),
 	}
 	f.ctx, f.cancel = context.WithCancelCause(context.Background())
-	spanLane := func(signal string, spans sdktrace.SpanExporter, forward func(*clientdb.Span) bool) *cloudForwardLane {
-		return &cloudForwardLane{
-			signal: signal,
-			fetch: func(ctx context.Context, since int64, limit int) (cloudForwardBatch, error) {
-				next, req, rows, err := fetchSpanBatch(ctx, db, since, limit, forward)
-				batch := cloudForwardBatch{next: next, rows: rows}
-				if err == nil && len(req.GetResourceSpans()) > 0 {
-					batch.size = proto.Size(req)
-					batch.send = func(ctx context.Context) error {
-						return spans.ExportSpans(ctx, telemetry.SpansFromPB(req.GetResourceSpans()))
-					}
-				}
-				return batch, err
-			},
-			end: func(hw clientdb.HighWater) int64 { return hw.Spans },
+	spanBatch := func(spans sdktrace.SpanExporter, next int64, req *coltracepb.ExportTraceServiceRequest, rows, limited int, err error) (cloudForwardBatch, error) {
+		batch := cloudForwardBatch{next: next, rows: rows, limited: limited}
+		if err == nil && len(req.GetResourceSpans()) > 0 {
+			batch.size = proto.Size(req)
+			batch.send = func(ctx context.Context) error {
+				return spans.ExportSpans(ctx, telemetry.SpansFromPB(req.GetResourceSpans()))
+			}
 		}
+		return batch, err
 	}
-	f.cacheSpanLane = spanLane("cache spans", cacheSpans, func(row *clientdb.Span) bool {
-		return forwardSpanRow(row) && cacheSpanRow(row)
-	})
+	ownCacheSpan := ownCacheSpanRow(sessionID)
+	f.cacheSpanLane = &cloudForwardLane{
+		signal: "cache spans",
+		fetch: func(ctx context.Context, since int64, limit int) (cloudForwardBatch, error) {
+			keep := func(row *clientdb.Span) bool { return forwardSpanRow(row) && ownCacheSpan(row) }
+			next, req, rows, kept, err := fetchKeptSpanBatch(ctx, db, since, limit, tuning.batchRows, keep)
+			return spanBatch(cacheSpans, next, req, rows, kept, err)
+		},
+		end: func(hw clientdb.HighWater) int64 { return hw.Spans },
+	}
 	f.lanes = []*cloudForwardLane{
 		f.cacheSpanLane,
-		spanLane("spans", spans, func(row *clientdb.Span) bool {
-			return forwardSpanRow(row) && !cacheSpanRow(row)
-		}),
+		{
+			signal: "spans",
+			fetch: func(ctx context.Context, since int64, limit int) (cloudForwardBatch, error) {
+				keep := func(row *clientdb.Span) bool { return forwardSpanRow(row) && !ownCacheSpan(row) }
+				next, req, rows, err := fetchSpanBatch(ctx, db, since, limit, keep)
+				return spanBatch(spans, next, req, rows, rows, err)
+			},
+			end: func(hw clientdb.HighWater) int64 { return hw.Spans },
+		},
 		{
 			signal: "logs",
 			fetch: func(ctx context.Context, since int64, limit int) (cloudForwardBatch, error) {
 				next, req, rows, err := fetchLogBatch(ctx, db, since, limit, forwardLogRow)
-				batch := cloudForwardBatch{next: next, rows: rows}
+				batch := cloudForwardBatch{next: next, rows: rows, limited: rows}
 				if err == nil && len(req.GetResourceLogs()) > 0 {
 					batch.size = proto.Size(req)
 					batch.send = func(ctx context.Context) error {
@@ -301,6 +313,56 @@ func encodedAttr(key, value string) []byte {
 	return b
 }
 
+// ownCacheSpanRow returns whether a stored span is one the remote cache reads
+// (cacheSpanRow) of session sessionID itself, by the session its resource
+// names: not a nested engine's, whose spans reach the session's store too.
+// Every snapshot of a span carries its resource.
+func ownCacheSpanRow(sessionID string) func(*clientdb.Span) bool {
+	own := encodedAttr(telemetryattrs.EngineSessionAttr, sessionID)
+	return func(row *clientdb.Span) bool {
+		return cacheSpanRow(row) && bytes.Contains(row.Resource, own)
+	}
+}
+
+// fetchKeptSpanBatch is fetchSpanBatch for a lane that keeps few of the rows
+// it reads: it reads chunk rows at a time until it keeps limit, or reaches
+// the store's end, so one request carries up to limit kept rows however far
+// apart they are. kept counts them; next is the last kept row's when limit
+// stopped the read, so the rows after it are read again.
+func fetchKeptSpanBatch(ctx context.Context, db *clientdb.DB, since int64, limit, chunk int, keep func(*clientdb.Span) bool) (next int64, req *coltracepb.ExportTraceServiceRequest, rows, kept int, err error) {
+	next = since
+	var keptRows []clientdb.Span
+read:
+	for len(keptRows) < limit {
+		spans, err := db.Read().SelectSpansSince(ctx, clientdb.SelectSpansSinceParams{
+			ID:    next,
+			Limit: int64(chunk),
+		})
+		if err != nil {
+			return since, nil, 0, 0, fmt.Errorf("select spans: %w", err)
+		}
+		if len(spans) == 0 {
+			break
+		}
+		for i := range spans {
+			rows++
+			next = spans[i].ID
+			if keep(&spans[i]) {
+				keptRows = append(keptRows, spans[i])
+				if len(keptRows) == limit {
+					break read
+				}
+			}
+		}
+	}
+	if rows == 0 {
+		return since, nil, 0, 0, nil
+	}
+	return next, &coltracepb.ExportTraceServiceRequest{
+		ResourceSpans: clientdb.SpansToPB(keptRows),
+	}, rows, len(keptRows), nil
+}
+
 // cacheSpanRow reports whether a stored span is one the remote cache reads,
 // by its encoded attributes (cacheSpanMarks), without decoding them.
 func cacheSpanRow(row *clientdb.Span) bool {
@@ -360,9 +422,9 @@ func (f *cloudForwarder) run(lane *cloudForwardLane) {
 			f.wait(lane, f.tuning.poll)
 			continue
 		}
-		if batch.send != nil && batch.rows > 1 && batch.size > f.tuning.maxPayloadSize {
+		if batch.send != nil && batch.limited > 1 && batch.size > f.tuning.maxPayloadSize {
 			// Read a strictly smaller prefix from the same cursor.
-			limit = max(1, batch.rows/2)
+			limit = max(1, batch.limited/2)
 			continue
 		}
 		if batch.send != nil {
@@ -394,7 +456,7 @@ func (f *cloudForwarder) run(lane *cloudForwardLane) {
 				// A smaller batch gets past an export that times out for
 				// its size on a slow link; it is restored after the next
 				// success.
-				limit = max(1, batch.rows/2)
+				limit = max(1, batch.limited/2)
 				backoff = nextCloudForwardBackoff(backoff, f.tuning)
 				f.wait(lane, backoff)
 				continue
