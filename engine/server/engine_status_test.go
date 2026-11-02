@@ -142,7 +142,8 @@ func TestRemoteCacheSettles(t *testing.T) {
 	rt.ledger.sessionEnded("sess-b", "b", "claim-b", false)
 	sessions := []protocol.SettleSession{{ID: "sess-a", Marker: true}, {ID: "sess-b"}}
 	state, changed := rt.ledger.settleState()
-	require.Equal(t, remotecache.SettleState{Period: 1, Sessions: sessions}, state)
+	claims := []protocol.SessionClaim{{ID: "sess-a", Claim: "claim-a"}, {ID: "sess-b", Claim: "claim-b"}}
+	require.Equal(t, remotecache.SettleState{Period: 1, Sessions: sessions, Claims: claims}, state, "the ended sessions' claims until they're settled")
 	require.Equal(t, StatusRemoteCache{State: RemoteCacheBusy, IdlePeriod: 1}, rt.remoteCache(), "unacknowledged sessions")
 
 	rt.ledger.settledFor(1, sessions)
@@ -172,8 +173,8 @@ func TestRemoteCacheSettles(t *testing.T) {
 	require.Equal(t, []protocol.SettleSession{{ID: "sess-c", Marker: true}}, state.Sessions)
 }
 
-// With the remote cache, the settle state reports each live session that
-// started under a claim, and a session's start or end with a claim changes it.
+// With the remote cache, the settle state reports each session that started
+// under a claim, from its start until a Settled covers it.
 func TestRemoteCacheReportsSessionClaims(t *testing.T) {
 	t.Parallel()
 	rt := newRemoteSettleTest(time.Hour)
@@ -196,7 +197,14 @@ func TestRemoteCacheReportsSessionClaims(t *testing.T) {
 		t.Fatal("a session's end changes the settle state")
 	}
 	state, _ = rt.ledger.settleState()
-	require.Equal(t, []protocol.SessionClaim{{ID: "sess-a", Claim: "claim-a"}}, state.Claims, "an ended session isn't reported")
+	require.Equal(t, []protocol.SessionClaim{{ID: "sess-a", Claim: "claim-a"}, {ID: "sess-b", Claim: "claim-b"}}, state.Claims, "an ended session is reported until it's settled")
+
+	rt.ledger.sessionEnded("sess-a", "a", "claim-a", true)
+	rt.ledger.sessionEnded("sess-c", "c", "", true)
+	state, _ = rt.ledger.settleState()
+	rt.ledger.settledFor(1, state.Sessions)
+	state, _ = rt.ledger.settleState()
+	require.Empty(t, state.Claims, "a settled session isn't reported")
 }
 
 // Once the bound passes after the last session ended without the engine
