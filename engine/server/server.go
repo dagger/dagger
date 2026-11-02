@@ -1173,10 +1173,18 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	var eg errgroup.Group
 	eg.Go(func() error {
 		// The snapshotter closes the metadata store it uses: overlayfs the
-		// engine's (srv.snapshotterMDStore), native its own.
-		err := srv.snapshotter.Close()
-		if err != nil {
-			return fmt.Errorf("failed to close snapshotter: %w", err)
+		// engine's (srv.snapshotterMDStore), native its own. Without a
+		// snapshotter, the engine's store is closed directly.
+		if srv.snapshotter != nil {
+			if err := srv.snapshotter.Close(); err != nil {
+				return fmt.Errorf("failed to close snapshotter: %w", err)
+			}
+			return nil
+		}
+		if srv.snapshotterMDStore != nil {
+			if err := srv.snapshotterMDStore.Close(); err != nil {
+				return fmt.Errorf("failed to close snapshotter metadata store: %w", err)
+			}
 		}
 		return nil
 	})
