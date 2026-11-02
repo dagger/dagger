@@ -200,8 +200,8 @@ func (s *session) dispatchBody(env protocol.Envelope, body any) {
 }
 
 // settles tells the service of each new idle period at once (open), and of
-// each live session's claim, and, once no session is live, asks it to
-// settle, until the connection ends. A settle is abandoned when its period
+// each session's claim, before the session's settle, and, once no session
+// is live, asks it to settle, until the connection ends. A settle is abandoned when its period
 // ends or the engine gives up on it.
 func (s *session) settles() {
 	for s.ctx.Err() == nil {
@@ -243,17 +243,17 @@ func (s *session) settles() {
 	}
 }
 
-// unclaimed returns the live sessions' claims the service wasn't told of on
-// this connection, and forgets the ended sessions it was.
-func (s *session) unclaimed(live []protocol.SessionClaim) []protocol.SessionClaim {
+// unclaimed returns the sessions' claims the service wasn't told of on this
+// connection, and forgets those no longer reported.
+func (s *session) unclaimed(reported []protocol.SessionClaim) []protocol.SessionClaim {
 	var claims []protocol.SessionClaim
-	for _, c := range live {
+	for _, c := range reported {
 		if !s.claimed[c.ID] {
 			claims = append(claims, c)
 		}
 	}
 	for id := range s.claimed {
-		if !slices.ContainsFunc(live, func(c protocol.SessionClaim) bool { return c.ID == id }) {
+		if !slices.ContainsFunc(reported, func(c protocol.SessionClaim) bool { return c.ID == id }) {
 			delete(s.claimed, id)
 		}
 	}

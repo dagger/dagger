@@ -196,3 +196,28 @@ func TestClaimsTellTheServiceEachSessionsClaim(t *testing.T) {
 	claims = again.next(t)
 	require.Equal(t, protocol.Claims{Sessions: []protocol.SessionClaim{{ID: "sess-3", Claim: "claim-3"}}}, decode[protocol.Claims](t, claims))
 }
+
+// A session that ends while its claim waits, as behind an open, still has
+// its claim sent, before the settle that lists it.
+func TestClaimOfASessionEndedBeforeItWasSent(t *testing.T) {
+	t.Parallel()
+	adapter := newFakeAdapter()
+	adapter.setSettle(SettleState{Period: 1, Settled: true})
+	s, conn, _ := servedSession(t, adapter)
+	conn.none(t)
+
+	claim := protocol.SessionClaim{ID: "sess-1", Claim: "claim-1"}
+	adapter.setSettle(SettleState{Period: 2, Live: true, Claims: []protocol.SessionClaim{claim}})
+	open := conn.next(t)
+	require.Equal(t, protocol.TypeOpen, open.Type)
+	ended := []protocol.SettleSession{{ID: "sess-1", Marker: true}}
+	adapter.setSettle(SettleState{Period: 2, Sessions: ended, Claims: []protocol.SessionClaim{claim}})
+	s.dispatch(reply(open.ID, protocol.TypeOpened, protocol.Opened{}))
+
+	claims := conn.next(t)
+	require.Equal(t, protocol.TypeClaims, claims.Type)
+	require.Equal(t, protocol.Claims{Sessions: []protocol.SessionClaim{claim}}, decode[protocol.Claims](t, claims))
+	s.dispatch(reply(claims.ID, protocol.TypeClaimed, protocol.Claimed{}))
+	settle := conn.next(t)
+	require.Equal(t, protocol.Settle{Period: 2, Sessions: ended}, decode[protocol.Settle](t, settle))
+}
