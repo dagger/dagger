@@ -1153,9 +1153,10 @@ func (c *Cache) captureSessionResultInstallSpan(ctx context.Context, sessionID s
 	// calls whose own install spans aren't visible to the user, so failures
 	// anywhere in the construction chain attribute back to the module API
 	// span. Closure ownership is recorded once on the returned result and
-	// resolved on demand by walking dep edges upward from the result being
-	// evaluated (installAncestorIDsLocked), rather than eagerly fanning the
-	// span out across every result in the closure.
+	// indexed per session on first lookup by walking the owner's deps
+	// downward (sessionClosureOwners), so lookup cost is bounded by the
+	// session's own closures rather than by every result ever built on the
+	// value being evaluated.
 	call := CurrentCall(ctx)
 	ownsClosure := call != nil && call.Module != nil
 	c.recordSessionResultInstallSpanLocked(ctx, sessionID, shared.id, spanCtx, ownsClosure)
@@ -1196,36 +1197,64 @@ func (c *Cache) recordSessionResultInstallSpanLocked(ctx context.Context, sessio
 	install.spanCtx = spanCtx
 	install.ownsClosure = install.ownsClosure || ownsClosure
 	byResult[key] = install
+	if ownsClosure {
+		c.queueSessionClosureOwnerLocked(sessionID, resultID)
+	}
 }
 
-// installAncestorIDsLocked returns the IDs of results that transitively
-// depend on rootID, found by walking direct dep edges upward via depParents.
-// rootID itself is excluded. Caller must hold egraphMu at least for read.
-func (c *Cache) installAncestorIDsLocked(rootID sharedResultID) []sharedResultID {
-	if rootID == 0 {
-		return nil
+// sessionClosureOwners indexes, for one session, the closure-owning installs
+// (module API call returns) that cover each result. Owners are queued as
+// they are recorded and their dep closures are walked once, on the next
+// lookup.
+type sessionClosureOwners struct {
+	pending  []sharedResultID
+	queued   map[sharedResultID]struct{}
+	ownersOf map[sharedResultID][]sharedResultID
+}
+
+func (c *Cache) queueSessionClosureOwnerLocked(sessionID string, ownerID sharedResultID) {
+	if c.sessionClosureOwners == nil {
+		c.sessionClosureOwners = make(map[string]*sessionClosureOwners)
 	}
+	owners := c.sessionClosureOwners[sessionID]
+	if owners == nil {
+		owners = &sessionClosureOwners{
+			queued:   make(map[sharedResultID]struct{}),
+			ownersOf: make(map[sharedResultID][]sharedResultID),
+		}
+		c.sessionClosureOwners[sessionID] = owners
+	}
+	if _, ok := owners.queued[ownerID]; ok {
+		return
+	}
+	owners.queued[ownerID] = struct{}{}
+	owners.pending = append(owners.pending, ownerID)
+}
+
+// depClosureLocked returns the IDs of results rootID transitively depends
+// on, found by walking direct dep edges downward. rootID itself is excluded.
+// Caller must hold egraphMu at least for read.
+func (c *Cache) depClosureLocked(rootID sharedResultID) []sharedResultID {
 	root := c.resultsByID[rootID]
-	if root == nil || root.depParents == nil || root.depParents.Empty() {
+	if root == nil || len(root.deps) == 0 {
 		return nil
 	}
 	seen := map[sharedResultID]struct{}{rootID: {}}
 	queue := []sharedResultID{rootID}
 	var out []sharedResultID
 	for len(queue) > 0 {
-		id := queue[0]
+		res := c.resultsByID[queue[0]]
 		queue = queue[1:]
-		res := c.resultsByID[id]
-		if res == nil || res.depParents == nil {
+		if res == nil {
 			continue
 		}
-		for parentID := range res.depParents.Items() {
-			if _, ok := seen[parentID]; ok {
+		for depID := range res.deps {
+			if _, ok := seen[depID]; ok {
 				continue
 			}
-			seen[parentID] = struct{}{}
-			out = append(out, parentID)
-			queue = append(queue, parentID)
+			seen[depID] = struct{}{}
+			out = append(out, depID)
+			queue = append(queue, depID)
 		}
 	}
 	return out
@@ -1249,22 +1278,30 @@ func (c *Cache) ResultInstallSpans(sessionID string, res AnyResult) []trace.Span
 // sessionResultInstallSpanContexts returns the install span contexts for
 // resultID in the given session: the spans recorded directly for the result,
 // plus closure-owning install spans (module API call returns) recorded for
-// any result that transitively depends on it. The upward walk happens here,
-// on demand, instead of eagerly materializing the closure at install time.
+// any result that transitively depends on it, resolved through the
+// session's closure-owner index.
 func (c *Cache) sessionResultInstallSpanContexts(sessionID string, resultID sharedResultID) []trace.SpanContext {
 	if c == nil || sessionID == "" || resultID == 0 {
 		return nil
 	}
 
 	c.egraphMu.RLock()
-	ancestorIDs := c.installAncestorIDsLocked(resultID)
-	c.egraphMu.RUnlock()
-
+	defer c.egraphMu.RUnlock()
 	c.sessionMu.Lock()
 	defer c.sessionMu.Unlock()
 	byResult := c.sessionResultInstallSpans[sessionID]
 	if byResult == nil {
 		return nil
+	}
+	var ownerIDs []sharedResultID
+	if owners := c.sessionClosureOwners[sessionID]; owners != nil {
+		for _, ownerID := range owners.pending {
+			for _, depID := range c.depClosureLocked(ownerID) {
+				owners.ownersOf[depID] = append(owners.ownersOf[depID], ownerID)
+			}
+		}
+		owners.pending = nil
+		ownerIDs = owners.ownersOf[resultID]
 	}
 	seen := make(map[string]struct{})
 	var out []trace.SpanContext
@@ -1284,8 +1321,8 @@ func (c *Cache) sessionResultInstallSpanContexts(sessionID string, resultID shar
 		}
 	}
 	appendInstalls(resultID, false)
-	for _, ancestorID := range ancestorIDs {
-		appendInstalls(ancestorID, true)
+	for _, ownerID := range ownerIDs {
+		appendInstalls(ownerID, true)
 	}
 	if len(out) == 0 {
 		return nil
@@ -1578,6 +1615,7 @@ func (c *Cache) cleanupReleasedSession(plan *cacheSessionReleasePlan) error {
 	delete(c.sessionArbitraryCallKeysBySession, plan.sessionID)
 	delete(c.sessionLazySpansBySession, plan.sessionID)
 	delete(c.sessionResultInstallSpans, plan.sessionID)
+	delete(c.sessionClosureOwners, plan.sessionID)
 	delete(c.sessionResourcesBySession, plan.sessionID)
 	delete(c.sessionVolatileVarsBySession, plan.sessionID)
 	delete(c.sessionHandlesBySession, plan.sessionID)
@@ -2459,9 +2497,10 @@ type Cache struct {
 	// owners caused-failed. Direct installs are recorded per result (owned
 	// dependency edges copy the owning span onto the dep at attach time);
 	// module API call returns are recorded once on the returned result with
-	// ownsClosure set, and lookups resolve closure ownership on demand by
-	// walking dep edges upward via depParents.
+	// ownsClosure set, and lookups resolve closure ownership through
+	// sessionClosureOwners.
 	sessionResultInstallSpans    map[string]map[sharedResultID]map[string]sessionResultInstallSpan
+	sessionClosureOwners         map[string]*sessionClosureOwners
 	sessionResourcesBySession    map[string]map[SessionResourceHandle]*sessionResourceBindings
 	sessionHandlesBySession      map[string]*set.TreeSet[SessionResourceHandle]
 	sessionVolatileVarsBySession map[string]map[string]string
@@ -2740,9 +2779,8 @@ type sharedResult struct {
 	// explicit out-of-band deps and exact resultCall refs mirrored into deps
 	// during materialization.
 	deps map[sharedResultID]struct{}
-	// depParents is the reverse index for direct deps. It lets install-span
-	// lookups walk dep edges upward on demand to find closure-owning installs
-	// (module API call returns) for the result being evaluated.
+	// depParents is the reverse index for direct deps. It lets a change to a
+	// result's required session resources cascade upward to its dependents.
 	depParents *set.TreeSet[sharedResultID]
 	// sessionResourceHandle is set when this result is itself an attached
 	// session-resource handle leaf. requiredSessionResources is the flattened

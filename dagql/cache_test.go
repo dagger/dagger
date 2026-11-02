@@ -527,7 +527,7 @@ func TestSessionResultInstallSpanContextsSorted(t *testing.T) {
 // install spans plus closure-owning (module API call return) install spans of
 // results that transitively depend on it. Non-owning installs on ancestors
 // (plain chained API calls) must not propagate downward.
-func TestInstallSpanLookupWalksClosureOwnersUpward(t *testing.T) {
+func TestInstallSpanLookupIndexesClosureOwnersPerSession(t *testing.T) {
 	t.Parallel()
 
 	ctx := t.Context()
@@ -542,14 +542,14 @@ func TestInstallSpanLookupWalksClosureOwnersUpward(t *testing.T) {
 	c.egraphMu.Lock()
 	moduleErr := c.addExplicitDependencyLocked(ctx, moduleReturn, chained, "test")
 	chainErr := c.addExplicitDependencyLocked(ctx, chained, leaf, "test")
-	moduleReturnAncestors := c.installAncestorIDsLocked(moduleReturn.id)
-	leafAncestors := c.installAncestorIDsLocked(leaf.id)
+	moduleReturnClosure := c.depClosureLocked(moduleReturn.id)
+	leafClosure := c.depClosureLocked(leaf.id)
 	c.egraphMu.Unlock()
 	assert.NilError(t, moduleErr)
 	assert.NilError(t, chainErr)
 
-	assert.DeepEqual(t, moduleReturnAncestors, []sharedResultID(nil))
-	assert.DeepEqual(t, leafAncestors, []sharedResultID{chained.id, moduleReturn.id})
+	assert.DeepEqual(t, moduleReturnClosure, []sharedResultID{chained.id, leaf.id})
+	assert.DeepEqual(t, leafClosure, []sharedResultID(nil))
 
 	moduleSpanCtx := trace.NewSpanContext(trace.SpanContextConfig{
 		TraceID: trace.TraceID{1},
