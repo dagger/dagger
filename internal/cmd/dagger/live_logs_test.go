@@ -2,7 +2,9 @@ package daggercmd
 
 import (
 	"context"
+	"fmt"
 	"slices"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -22,7 +24,7 @@ import (
 )
 
 type liveLogRow struct {
-	span   byte
+	span   uint16
 	body   string
 	digest string
 }
@@ -79,7 +81,7 @@ func liveLogRequest(rows []liveLogRow) *collogspb.ExportLogsServiceRequest {
 	for _, r := range rows {
 		rec := &otlplogsv1.LogRecord{
 			TraceId: make([]byte, 16),
-			SpanId:  []byte{0, 0, 0, 0, 0, 0, 0, r.span},
+			SpanId:  []byte{0, 0, 0, 0, 0, 0, byte(r.span >> 8), byte(r.span)},
 			Body:    &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_StringValue{StringValue: r.body}},
 		}
 		rec.TraceId[15] = 1
@@ -120,9 +122,10 @@ func (c *bodyCollector) got() []string {
 func (c *bodyCollector) Shutdown(context.Context) error   { return nil }
 func (c *bodyCollector) ForceFlush(context.Context) error { return nil }
 
-func liveTestSpan(b byte) dagui.SpanID {
+func liveTestSpan(n uint16) dagui.SpanID {
 	var id dagui.SpanID
-	id.SpanID[7] = b
+	id.SpanID[6] = byte(n >> 8)
+	id.SpanID[7] = byte(n)
 	return id
 }
 
@@ -408,3 +411,527 @@ func (f exporterFunc) Export(ctx context.Context, records []sdklog.Record) error
 }
 func (exporterFunc) Shutdown(context.Context) error   { return nil }
 func (exporterFunc) ForceFlush(context.Context) error { return nil }
+
+// fakeLogStore is a live store: rows are appended, a query selects them by
+// span (with its descendants, by parents) or digest, a cursor is a row
+// number, and a follow polls for the rows stored since until it is
+// cancelled.
+type fakeLogStore struct {
+	parents map[uint16]uint16
+
+	mu      sync.Mutex
+	rows    []liveLogRow
+	queries []tracesource.LogQuery
+}
+
+func (s *fakeLogStore) add(rows ...liveLogRow) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.rows = append(s.rows, rows...)
+}
+
+func (s *fakeLogStore) seen() []tracesource.LogQuery {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.queries)
+}
+
+func (s *fakeLogStore) ReadLogs(ctx context.Context, _ string, q tracesource.LogQuery, cb func(context.Context, *collogspb.ExportLogsServiceRequest, string) error) error {
+	q.Spans = slices.Clone(q.Spans)
+	slices.SortFunc(q.Spans, func(a, b archive.LogSpan) int { return compareStrings(a.SpanID, b.SpanID) })
+	spans, descendants, digests := map[string]bool{}, map[string]bool{}, map[string]bool{}
+	for _, span := range q.Spans {
+		spans[span.SpanID] = true
+		descendants[span.SpanID] = span.Descendants
+		for _, d := range span.Digests {
+			digests[d] = true
+		}
+	}
+	selects := func(r liveLogRow) bool {
+		if spans[liveTestSpan(r.span).String()] || (r.digest != "" && digests[r.digest]) {
+			return true
+		}
+		for n, ok := s.parents[r.span]; ok; n, ok = s.parents[n] {
+			if descendants[liveTestSpan(n).String()] {
+				return true
+			}
+		}
+		return false
+	}
+	pos, _ := strconv.Atoi(q.Cursor)
+	s.mu.Lock()
+	s.queries = append(s.queries, q)
+	end := len(s.rows)
+	s.mu.Unlock()
+	if q.Through != "" {
+		through, _ := strconv.Atoi(q.Through)
+		end = min(end, through)
+	}
+	for {
+		if end > pos {
+			var batch []liveLogRow
+			s.mu.Lock()
+			for _, r := range s.rows[pos:end] {
+				if selects(r) {
+					batch = append(batch, r)
+				}
+			}
+			s.mu.Unlock()
+			if err := cb(ctx, liveLogRequest(batch), strconv.Itoa(end)); err != nil {
+				return err
+			}
+			pos = end
+		}
+		if !q.Follow {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Millisecond):
+		}
+		s.mu.Lock()
+		end = len(s.rows)
+		s.mu.Unlock()
+	}
+}
+
+// fakeActivity is a frontend's view of which spans are active: every span,
+// until it is marked idle.
+type fakeActivity struct {
+	mu      sync.Mutex
+	idle    map[dagui.SpanID]bool
+	through map[dagui.SpanID]time.Time
+}
+
+func (a *fakeActivity) activity(ids []dagui.SpanID) []idtui.LogActivity {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	activity := make([]idtui.LogActivity, len(ids))
+	for i, id := range ids {
+		activity[i] = idtui.LogActivity{Active: !a.idle[id], Through: a.through[id]}
+	}
+	return activity
+}
+
+func (a *fakeActivity) set(idle bool, spans ...uint16) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for _, n := range spans {
+		a.idle[liveTestSpan(n)] = idle
+	}
+}
+
+// ran records work a span's logs include that ended at through, e.g. an
+// effect too brief for a poll to see running.
+func (a *fakeActivity) ran(span uint16, through time.Time) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.through[liveTestSpan(span)] = through
+}
+
+type fakeClock struct {
+	mu sync.Mutex
+	t  time.Time
+}
+
+func (c *fakeClock) now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.t
+}
+
+func (c *fakeClock) advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.t = c.t.Add(d)
+}
+
+// startRetiringLogs follows store, retiring the spans activity reports idle
+// once clock passes the grace period.
+func startRetiringLogs(t *testing.T, store *fakeLogStore, opts ...func(*liveLogs)) (*liveLogs, *bodyCollector, *fakeActivity, *fakeClock) {
+	out := &bodyCollector{}
+	l := newLiveLogs(store, "trace", out, true)
+	activity := &fakeActivity{idle: map[dagui.SpanID]bool{}, through: map[dagui.SpanID]time.Time{}}
+	clock := &fakeClock{t: time.Unix(1000, 0)}
+	l.activity = activity.activity
+	l.now = clock.now
+	l.pollEvery = time.Millisecond
+	l.grace = 3 * time.Second
+	for _, opt := range opts {
+		opt(l)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() { defer close(done); l.run(ctx) }()
+	l.stop = func() { cancel(); <-done }
+	t.Cleanup(func() { cancel(); <-done })
+	return l, out, activity, clock
+}
+
+func liveTestSpanIDs(spans ...uint16) []string {
+	ids := make([]string, len(spans))
+	for i, n := range spans {
+		ids[i] = liveTestSpan(n).String()
+	}
+	slices.Sort(ids)
+	return ids
+}
+
+func querySpanIDs(q tracesource.LogQuery) []string {
+	ids := make([]string, len(q.Spans))
+	for i, span := range q.Spans {
+		ids[i] = span.SpanID
+	}
+	return ids
+}
+
+// waitFollowing waits until the store's last query follows exactly spans.
+func waitFollowing(t *testing.T, store *fakeLogStore, spans ...uint16) {
+	t.Helper()
+	want := liveTestSpanIDs(spans...)
+	require.Eventually(t, func() bool {
+		seen := store.seen()
+		if len(seen) == 0 {
+			return false
+		}
+		last := seen[len(seen)-1]
+		return last.Follow && slices.Equal(querySpanIDs(last), want)
+	}, 10*time.Second, time.Millisecond)
+}
+
+// waitIdle waits until the follow saw every span idle.
+func waitIdle(t *testing.T, l *liveLogs, spans ...uint16) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		l.mu.Lock()
+		defer l.mu.Unlock()
+		for _, n := range spans {
+			if _, ok := l.idleSince[liveTestSpan(n).String()]; !ok {
+				return false
+			}
+		}
+		return true
+	}, 10*time.Second, time.Millisecond)
+}
+
+// TestLiveLogsRetireFinishedSpans: a span the frontend reports idle stays
+// followed through the grace period, then leaves the follow once a read of
+// the set took everything stored up to then; its logs stay, and the
+// frontend asking again reads nothing. An active span is never retired.
+func TestLiveLogsRetireFinishedSpans(t *testing.T) {
+	store := &fakeLogStore{}
+	store.add(liveLogRow{span: 1, body: "a1"}, liveLogRow{span: 2, body: "b1"})
+	l, out, activity, clock := startRetiringLogs(t, store)
+	l.subscribe(idtui.LogRequest{Span: liveTestSpan(1)})
+	l.subscribe(idtui.LogRequest{Span: liveTestSpan(2)})
+	waitFollowing(t, store, 1, 2)
+	require.Eventually(t, func() bool { return len(out.got()) == 2 }, 5*time.Second, time.Millisecond)
+
+	// Span 1 ends; what is stored within the grace period is still read.
+	activity.set(true, 1)
+	waitIdle(t, l, 1)
+	store.add(liveLogRow{span: 1, body: "a2"})
+	clock.advance(time.Second)
+	require.Eventually(t, func() bool { return slices.Contains(out.got(), "a2") }, 5*time.Second, time.Millisecond)
+	waitFollowing(t, store, 1, 2)
+
+	// Past it, the restart reads the set to the store's end once more, with
+	// a row stored just before, then follows only span 2.
+	store.add(liveLogRow{span: 1, body: "a3"})
+	clock.advance(2 * time.Second)
+	waitFollowing(t, store, 2)
+	store.add(liveLogRow{span: 2, body: "b2"})
+	require.Eventually(t, func() bool { return slices.Contains(out.got(), "b2") }, 5*time.Second, time.Millisecond)
+	require.Equal(t, []string{"a1", "b1", "a2", "a3", "b2"}, out.got(), "every row once")
+	l.mu.Lock()
+	retired := l.retired[liveTestSpan(1).String()]
+	l.mu.Unlock()
+	require.Equal(t, archive.LogSpan{SpanID: liveTestSpan(1).String()}, retired.span)
+	require.Equal(t, "4", retired.cursor, "the cursor it was read up to")
+
+	// Asked again (a view remounting), the retired span is not caught up
+	// again; span 2, active however long it runs, stays followed.
+	n := len(store.seen())
+	l.subscribe(idtui.LogRequest{Span: liveTestSpan(1)})
+	clock.advance(time.Hour)
+	require.Never(t, func() bool { return len(store.seen()) != n }, 100*time.Millisecond, 5*time.Millisecond)
+	l.mu.Lock()
+	require.Empty(t, l.pending)
+	l.mu.Unlock()
+	waitFollowing(t, store, 2)
+}
+
+// TestLiveLogsReactivateRetiredSpan: a retired span that selects a digest
+// (e.g. an asService call) gets rows again once the service it created
+// starts: seen active, it is read from where it retired up to the follow's
+// cursor -- without the rows the follow read meanwhile -- and followed again.
+func TestLiveLogsReactivateRetiredSpan(t *testing.T) {
+	store := &fakeLogStore{}
+	store.add(liveLogRow{span: 5, body: "created"}, liveLogRow{span: 6, body: "c1"})
+	l, out, activity, clock := startRetiringLogs(t, store)
+	creator := idtui.LogRequest{Span: liveTestSpan(5), Digests: []string{"xxh3:svc"}}
+	l.subscribe(creator)
+	l.subscribe(idtui.LogRequest{Span: liveTestSpan(6)})
+	waitFollowing(t, store, 5, 6)
+	activity.set(true, 5)
+	waitIdle(t, l, 5)
+	clock.advance(3 * time.Second)
+	waitFollowing(t, store, 6)
+	l.mu.Lock()
+	retiredAt := l.retired[creator.Span.String()].cursor
+	l.mu.Unlock()
+	require.Equal(t, "2", retiredAt)
+
+	// The service starts while its creator is retired. Its stdio names the
+	// creator's digest; one row span 6 selects too, so the follow read it.
+	store.add(
+		liveLogRow{span: 9, body: "svc1", digest: "xxh3:svc"},
+		liveLogRow{span: 6, body: "both", digest: "xxh3:svc"},
+		liveLogRow{span: 6, body: "c2"},
+	)
+	require.Eventually(t, func() bool { return slices.Contains(out.got(), "c2") }, 5*time.Second, time.Millisecond)
+	activity.set(false, 5)
+	waitFollowing(t, store, 5, 6)
+	store.add(liveLogRow{span: 9, body: "svc2", digest: "xxh3:svc"})
+	require.Eventually(t, func() bool { return slices.Contains(out.got(), "svc2") }, 5*time.Second, time.Millisecond)
+	require.Equal(t, []string{"created", "c1", "both", "c2", "svc1", "svc2"}, out.got(), "every row once")
+
+	var gaps []tracesource.LogQuery
+	for _, q := range store.seen() {
+		if q.Through != "" && slices.Contains(querySpanIDs(q), creator.Span.String()) {
+			gaps = append(gaps, q)
+		}
+	}
+	require.Equal(t, []tracesource.LogQuery{{
+		Spans:   []archive.LogSpan{{SpanID: creator.Span.String(), Digests: creator.Digests}},
+		Cursor:  "2",
+		Through: "5",
+	}}, gaps, "the gap is read once")
+}
+
+// TestLiveLogsReactivateAfterBriefWork: work a retired span's logs include
+// that ran too briefly for any poll to see it running -- a quick lazy
+// evaluation -- still moves its activity forward, which reactivates it,
+// even at exit.
+func TestLiveLogsReactivateAfterBriefWork(t *testing.T) {
+	store := &fakeLogStore{}
+	store.add(liveLogRow{span: 5, body: "created"}, liveLogRow{span: 6, body: "c1"})
+	l, out, activity, clock := startRetiringLogs(t, store)
+	l.subscribe(idtui.LogRequest{Span: liveTestSpan(5), Digests: []string{"xxh3:out"}})
+	l.subscribe(idtui.LogRequest{Span: liveTestSpan(6)})
+	waitFollowing(t, store, 5, 6)
+	activity.set(true, 5)
+	waitIdle(t, l, 5)
+	clock.advance(3 * time.Second)
+	waitFollowing(t, store, 6)
+
+	// Retired spans are polled while following...
+	store.add(liveLogRow{span: 9, body: "eval1", digest: "xxh3:out"})
+	activity.ran(5, time.Unix(2000, 0))
+	waitFollowing(t, store, 5, 6)
+	require.Eventually(t, func() bool { return slices.Contains(out.got(), "eval1") }, 5*time.Second, time.Millisecond)
+	waitIdle(t, l, 5)
+	clock.advance(3 * time.Second)
+	waitFollowing(t, store, 6)
+
+	// ...and once more at exit.
+	l.stop()
+	store.add(liveLogRow{span: 10, body: "eval2", digest: "xxh3:out"})
+	activity.ran(5, time.Unix(3000, 0))
+	require.NoError(t, l.finish(t.Context()))
+	require.Equal(t, []string{"created", "c1", "eval1", "eval2"}, out.got())
+}
+
+// TestLiveLogsReactivateReadsOnlyNewRows: a reactivated span's gap read
+// skips what other spans' follow read meanwhile, whether they select it by
+// descendants, or were followed for part of the gap and retired since.
+func TestLiveLogsReactivateReadsOnlyNewRows(t *testing.T) {
+	// The roll-up 10 holds the asService call 5, and the service 9 it
+	// starts.
+	store := &fakeLogStore{parents: map[uint16]uint16{5: 10, 9: 10}}
+	store.add(liveLogRow{span: 5, body: "created"}, liveLogRow{span: 10, body: "r0"})
+	l, out, activity, clock := startRetiringLogs(t, store)
+	l.subscribe(idtui.LogRequest{Span: liveTestSpan(10), Descendants: true})
+	l.subscribe(idtui.LogRequest{Span: liveTestSpan(5), Digests: []string{"xxh3:svc"}})
+	l.subscribe(idtui.LogRequest{Span: liveTestSpan(6)})
+	waitFollowing(t, store, 5, 6, 10)
+	activity.set(true, 5)
+	waitIdle(t, l, 5)
+	clock.advance(3 * time.Second)
+	waitFollowing(t, store, 6, 10)
+
+	store.add(
+		liveLogRow{span: 9, body: "svc1", digest: "xxh3:svc"},
+		liveLogRow{span: 6, body: "both", digest: "xxh3:svc"},
+	)
+	require.Eventually(t, func() bool { return len(out.got()) == 4 }, 5*time.Second, time.Millisecond)
+	activity.set(true, 6)
+	waitIdle(t, l, 6)
+	clock.advance(3 * time.Second)
+	waitFollowing(t, store, 10)
+
+	activity.set(false, 5)
+	waitFollowing(t, store, 5, 10)
+	store.add(liveLogRow{span: 9, body: "svc2", digest: "xxh3:svc"})
+	require.Eventually(t, func() bool { return slices.Contains(out.got(), "svc2") }, 5*time.Second, time.Millisecond)
+	require.Equal(t, []string{"created", "r0", "svc1", "both", "svc2"}, out.got(), "every row once")
+}
+
+// TestLiveLogsReactivateRestartedService: a service writes its stdio under
+// the span that installed it, so a restart after that span retired stores
+// more rows of a pair the follow read before. They pass to the span's gap
+// read on retiring, which imports the restart's first lines, once.
+func TestLiveLogsReactivateRestartedService(t *testing.T) {
+	store := &fakeLogStore{}
+	store.add(liveLogRow{span: 5, body: "run1", digest: "xxh3:svc"}, liveLogRow{span: 6, body: "c1"})
+	l, out, activity, clock := startRetiringLogs(t, store)
+	l.subscribe(idtui.LogRequest{Span: liveTestSpan(5)})
+	l.subscribe(idtui.LogRequest{Span: liveTestSpan(6)})
+	waitFollowing(t, store, 5, 6)
+	require.Eventually(t, func() bool { return len(out.got()) == 2 }, 5*time.Second, time.Millisecond)
+	activity.set(true, 5)
+	waitIdle(t, l, 5)
+	clock.advance(3 * time.Second)
+	waitFollowing(t, store, 6)
+
+	store.add(liveLogRow{span: 5, body: "run2 banner", digest: "xxh3:svc"}, liveLogRow{span: 6, body: "c2"})
+	require.Eventually(t, func() bool { return slices.Contains(out.got(), "c2") }, 5*time.Second, time.Millisecond)
+	activity.set(false, 5)
+	waitFollowing(t, store, 5, 6)
+	store.add(liveLogRow{span: 5, body: "run2 later", digest: "xxh3:svc"})
+	require.Eventually(t, func() bool { return slices.Contains(out.got(), "run2 later") }, 5*time.Second, time.Millisecond)
+	require.Equal(t, []string{"run1", "c1", "c2", "run2 banner", "run2 later"}, out.got(), "every row once")
+}
+
+// TestLiveLogsReactivateCreatorAndInstaller: a service's stdio names the
+// span that installed it, which its exec span links, and the digest of the
+// call that created it. Both retired, a restart reactivates both, and its
+// first lines are read once.
+func TestLiveLogsReactivateCreatorAndInstaller(t *testing.T) {
+	store := &fakeLogStore{}
+	store.add(liveLogRow{span: 6, body: "run1", digest: "xxh3:svc"}, liveLogRow{span: 7, body: "c1"})
+	l, out, activity, clock := startRetiringLogs(t, store)
+	l.subscribe(idtui.LogRequest{Span: liveTestSpan(5), Digests: []string{"xxh3:svc"}})
+	l.subscribe(idtui.LogRequest{Span: liveTestSpan(6)})
+	l.subscribe(idtui.LogRequest{Span: liveTestSpan(7)})
+	waitFollowing(t, store, 5, 6, 7)
+	require.Eventually(t, func() bool { return len(out.got()) == 2 }, 5*time.Second, time.Millisecond)
+	activity.set(true, 5)
+	waitIdle(t, l, 5)
+	clock.advance(3 * time.Second)
+	waitFollowing(t, store, 6, 7)
+	activity.set(true, 6)
+	waitIdle(t, l, 6)
+	clock.advance(3 * time.Second)
+	waitFollowing(t, store, 7)
+
+	store.add(liveLogRow{span: 6, body: "run2 banner", digest: "xxh3:svc"}, liveLogRow{span: 7, body: "c2"})
+	require.Eventually(t, func() bool { return slices.Contains(out.got(), "c2") }, 5*time.Second, time.Millisecond)
+	activity.set(false, 5, 6)
+	waitFollowing(t, store, 5, 6, 7)
+	store.add(liveLogRow{span: 6, body: "run2 later", digest: "xxh3:svc"})
+	require.Eventually(t, func() bool { return slices.Contains(out.got(), "run2 later") }, 5*time.Second, time.Millisecond)
+	require.Equal(t, []string{"run1", "c1", "c2", "run2 banner", "run2 later"}, out.got(), "every row once")
+}
+
+// TestLiveLogsSetStaysWithinQueryLimit: spans requested all at once -- a
+// resumed session's whole conversation -- join the set only as far as one
+// query may select, and the rest as earlier ones retire.
+func TestLiveLogsSetStaysWithinQueryLimit(t *testing.T) {
+	const spans, limit = 25, 10
+	store := &fakeLogStore{}
+	var want []string
+	for n := range uint16(spans) {
+		body := fmt.Sprintf("row %d", n+1)
+		want = append(want, body)
+		store.add(liveLogRow{span: n + 1, body: body})
+	}
+	l, out, activity, clock := startRetiringLogs(t, store, func(l *liveLogs) { l.maxSpans = limit })
+	for n := range uint16(spans) {
+		activity.set(true, n+1)
+		l.subscribe(idtui.LogRequest{Span: liveTestSpan(n + 1)})
+	}
+	require.Eventually(t, func() bool {
+		clock.advance(time.Second)
+		return len(out.got()) == spans
+	}, 10*time.Second, time.Millisecond)
+	got := out.got()
+	slices.Sort(got)
+	slices.Sort(want)
+	require.Equal(t, want, got, "every row once")
+	for _, q := range store.seen() {
+		require.LessOrEqual(t, len(q.Spans), limit)
+	}
+}
+
+// TestLiveLogsReadAtFinishInChunks: without following, more requests than
+// one query may select are read at finish in several.
+func TestLiveLogsReadAtFinishInChunks(t *testing.T) {
+	const spans, limit = 25, 10
+	store := &fakeLogStore{}
+	var want []string
+	for n := range uint16(spans) {
+		body := fmt.Sprintf("row %d", n+1)
+		want = append(want, body)
+		store.add(liveLogRow{span: n + 1, body: body})
+	}
+	out := &bodyCollector{}
+	l := newLiveLogs(store, "trace", out, false)
+	l.maxSpans = limit
+	for n := range uint16(spans) {
+		l.subscribe(idtui.LogRequest{Span: liveTestSpan(n + 1)})
+	}
+	require.NoError(t, l.finish(t.Context()))
+	got := out.got()
+	slices.Sort(got)
+	slices.Sort(want)
+	require.Equal(t, want, got, "every row once")
+	var sizes []int
+	for _, q := range store.seen() {
+		sizes = append(sizes, len(q.Spans))
+	}
+	require.Equal(t, []int{10, 10, 5}, sizes)
+}
+
+// TestLiveLogsFollowOnlyActiveSpans: in a long session, thousands of spans
+// join and finish -- more than one query may select -- yet the follow only
+// ever selects the spans still active or within their grace period, and
+// every row is read once.
+func TestLiveLogsFollowOnlyActiveSpans(t *testing.T) {
+	const rounds, perRound = 20, 500
+	require.Greater(t, rounds*perRound, archive.MaxLogQuerySpans)
+	store := &fakeLogStore{}
+	l, out, activity, clock := startRetiringLogs(t, store)
+	var want []string
+	var prev []uint16
+	for r := range rounds {
+		var cur []uint16
+		for i := range perRound {
+			n := uint16(1 + r*perRound + i)
+			cur = append(cur, n)
+			body := fmt.Sprintf("row %d", n)
+			want = append(want, body)
+			store.add(liveLogRow{span: n, body: body})
+		}
+		for _, n := range cur {
+			l.subscribe(idtui.LogRequest{Span: liveTestSpan(n)})
+		}
+		// The previous round finishes as this one runs.
+		activity.set(true, prev...)
+		waitIdle(t, l, prev...)
+		clock.advance(l.grace)
+		waitFollowing(t, store, cur...)
+		prev = cur
+	}
+	require.Eventually(t, func() bool { return len(out.got()) == len(want) }, 10*time.Second, time.Millisecond)
+	got := out.got()
+	slices.Sort(got)
+	slices.Sort(want)
+	require.Equal(t, want, got, "every row once")
+	var most int
+	for _, q := range store.seen() {
+		most = max(most, len(q.Spans))
+	}
+	require.LessOrEqual(t, most, 2*perRound, "a query selected spans that finished long ago")
+}

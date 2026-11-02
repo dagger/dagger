@@ -11,6 +11,7 @@ import (
 
 	telemetry "github.com/dagger/otel-go"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	otlplogsv1 "go.opentelemetry.io/proto/otlp/logs/v1"
 
@@ -24,6 +25,15 @@ import (
 // holds up the command's exit.
 const liveLogsFinishTimeout = 10 * time.Second
 
+const (
+	// liveLogsPollInterval is how often a follow asks the frontend about
+	// its spans' activity (idtui.LiveLogsFrontend.LiveLogsActivity).
+	liveLogsPollInterval = time.Second
+	// liveLogsRetireGrace is how long a span stays followed once it went
+	// idle: its last rows may be stored a little after it ends.
+	liveLogsRetireGrace = 3 * time.Second
+)
+
 // liveLogs reads a live session's display text on demand, for the spans
 // its frontend renders (idtui.LiveLogsFrontend). Requested spans accumulate
 // into one set, read with one query at a time:
@@ -34,6 +44,18 @@ const liveLogsFinishTimeout = 10 * time.Second
 //     and followed from there, so every row is read once, and the cursor
 //     advances however often spans join.
 //   - Otherwise (the report), nothing is read until finish.
+//
+// Requests only accumulate -- an agent session's conversation is a
+// scrollback, whose every message keeps its logs -- but a span whose work
+// is over needs no following: once the frontend has reported it idle for
+// liveLogsRetireGrace, a follow restart reads it to the store's end one
+// last time and retires it from the set, keeping what was read. Otherwise
+// a long session's set outgrows what one query may select
+// (archive.MaxLogQuerySpans), and its logs stop; spans join a full set
+// only as others retire. A retired span can get rows again (an effect, a
+// service it installed restarting): it is watched, and once active again
+// -- or once work it includes ran since, however briefly -- read from
+// where it retired, like a catch-up, and followed again.
 //
 // finish, at exit, catches everything up to the store's end. Records are
 // imported under their own span IDs: the frontend routes them and copies
@@ -53,16 +75,35 @@ type liveLogs struct {
 	// (idtui.LiveLogsFrontend.LiveLogsCoverage): a read imports only what
 	// the frontend asked for, and claims only pairs it knows it did.
 	coverage func([]idtui.LogTarget) []idtui.LogCoverage
+	// activity, when set, tells which spans may still get rows
+	// (idtui.LiveLogsFrontend.LiveLogsActivity): a follow retires the
+	// others.
+	activity func([]dagui.SpanID) []idtui.LogActivity
+	// now, pollEvery and grace pace retirement: activity is asked about the
+	// set every pollEvery, and a span idle for grace is retired.
+	now              func() time.Time
+	pollEvery, grace time.Duration
+	// maxSpans bounds the set, as the engine bounds a query
+	// (archive.MaxLogQuerySpans): pending spans join only while it has room.
+	maxSpans int
 
 	mu sync.Mutex
 	// spans are followed (or, without following, read at finish);
 	// pending joined since and are not caught up yet.
 	spans, pending map[string]archive.LogSpan
+	// idleSince is when a followed span was first seen idle; through, the
+	// LogActivity.Through it was last seen with.
+	idleSince, through map[string]time.Time
+	// retired spans are no longer followed, each read up to its cursor;
+	// reactivated ones were retired, then seen active again, and are read
+	// from that cursor to the follow's before they are followed again.
+	retired, reactivated map[string]retiredLogSpan
 	// cursor is where the follow of spans stands; "" before it read
 	// anything, when a newcomer needs no catch-up.
 	cursor string
 	// owned maps a (span, digest) pair to the read that imported it first:
-	// 0 for a follow (or finish's read), a catch-up's number otherwise.
+	// 0 for a follow (or finish's read), a catch-up's number otherwise. A
+	// retiring span's pairs nothing followed selects pass to its gap read.
 	owned    map[logOwner]uint64
 	catchUps uint64
 	finished bool
@@ -76,17 +117,35 @@ type logOwner struct {
 	digest string
 }
 
+// retiredLogSpan is a span the follow no longer reads, the cursor it was
+// read up to, and the LogActivity.Through it retired with.
+type retiredLogSpan struct {
+	span    archive.LogSpan
+	cursor  string
+	through time.Time
+	// read numbers its gap read, should it reactivate (see liveLogs.owned).
+	read uint64
+}
+
 func newLiveLogs(reader tracesource.LogReader, traceID string, export sdklog.Exporter, follow bool) *liveLogs {
 	return &liveLogs{
-		reader:  reader,
-		traceID: traceID,
-		export:  export,
-		follow:  follow,
-		spans:   map[string]archive.LogSpan{},
-		pending: map[string]archive.LogSpan{},
-		owned:   map[logOwner]uint64{},
-		wake:    make(chan struct{}, 1),
-		stop:    func() {},
+		reader:      reader,
+		traceID:     traceID,
+		export:      export,
+		follow:      follow,
+		now:         time.Now,
+		pollEvery:   liveLogsPollInterval,
+		grace:       liveLogsRetireGrace,
+		maxSpans:    archive.MaxLogQuerySpans,
+		spans:       map[string]archive.LogSpan{},
+		pending:     map[string]archive.LogSpan{},
+		idleSince:   map[string]time.Time{},
+		through:     map[string]time.Time{},
+		retired:     map[string]retiredLogSpan{},
+		reactivated: map[string]retiredLogSpan{},
+		owned:       map[logOwner]uint64{},
+		wake:        make(chan struct{}, 1),
+		stop:        func() {},
 	}
 }
 
@@ -101,6 +160,7 @@ func startLiveLogs(ctx context.Context, fe idtui.Frontend, client tracesource.Li
 	_, follow := lf.LiveLogs()
 	l := newLiveLogs(tracesource.Live{Client: client}, traceID.String(), nil, follow)
 	l.coverage = lf.LiveLogsCoverage
+	l.activity = lf.LiveLogsActivity
 	l.export = lf.SetLiveLogs(traceID, l.subscribe)
 	if follow {
 		ctx, cancel := context.WithCancel(ctx)
@@ -129,7 +189,19 @@ func (l *liveLogs) subscribe(req idtui.LogRequest) {
 	if _, ok := l.pending[span.SpanID]; ok {
 		return
 	}
+	// A retired span keeps what it read: the frontend's request is not new.
+	if _, ok := l.retired[span.SpanID]; ok {
+		return
+	}
+	if _, ok := l.reactivated[span.SpanID]; ok {
+		return
+	}
 	l.pending[span.SpanID] = span
+	l.notify()
+}
+
+// notify wakes run, without blocking.
+func (l *liveLogs) notify() {
 	select {
 	case l.wake <- struct{}{}:
 	default:
@@ -138,12 +210,28 @@ func (l *liveLogs) subscribe(req idtui.LogRequest) {
 
 // run follows the set until ctx ends, or the session's telemetry drains.
 func (l *liveLogs) run(ctx context.Context) {
+	if l.activity != nil {
+		pollCtx, cancel := context.WithCancel(ctx)
+		var wg sync.WaitGroup
+		wg.Go(func() { l.poll(pollCtx) })
+		defer wg.Wait()
+		defer cancel()
+	}
 	for ctx.Err() == nil {
-		// Whatever woke us is taken by the catch-up below; a span joining
-		// after it wakes us again.
+		// Whatever woke us is taken by the reads below; a span joining
+		// after them wakes us again.
 		select {
 		case <-l.wake:
 		default:
+		}
+		// Reactivated spans have work running: they join first.
+		if err := l.reactivate(ctx); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			slog.Warn("error reading reactivated live logs", "err", err)
+			l.pause(ctx)
+			continue
 		}
 		if err := l.catchUp(ctx); err != nil {
 			if ctx.Err() != nil {
@@ -170,6 +258,7 @@ func (l *liveLogs) run(ctx context.Context) {
 		// parallel tool calls -- the follow is ended again before it reads
 		// anything, and without this read its cursor would never move,
 		// leaving everything stored since unread for every span.
+		readStart := l.now()
 		if err := l.reader.ReadLogs(ctx, l.traceID, tracesource.LogQuery{Spans: spans, Cursor: cursor}, l.importFollowed); err != nil {
 			if ctx.Err() != nil {
 				return
@@ -178,16 +267,21 @@ func (l *liveLogs) run(ctx context.Context) {
 			l.pause(ctx)
 			continue
 		}
+		// Every row stored before readStart is read now: the spans idle
+		// since long enough before it get no more.
+		l.retire(readStart)
 		l.mu.Lock()
+		spans = slices.Collect(maps.Values(l.spans))
 		cursor = l.cursor
-		joining := len(l.pending) > 0
+		joining := (len(l.pending) > 0 || len(l.reactivated) > 0) && len(l.spans) < l.maxSpans
 		l.mu.Unlock()
-		if joining {
-			// Spans joined meanwhile: catch them up first.
+		if joining || len(spans) == 0 {
+			// Spans joined meanwhile, and there is room for them: catch
+			// them up first. Or every span retired: wait for one to join.
 			continue
 		}
 		// A span joining the set ends this follow, to catch it up and
-		// follow the grown set.
+		// follow the grown set; so does one to retire, or to reactivate.
 		followCtx, cancel := context.WithCancel(ctx)
 		woken := make(chan struct{})
 		go func() {
@@ -226,13 +320,211 @@ func (l *liveLogs) pause(ctx context.Context) {
 	}
 }
 
+// poll asks the frontend which spans are active, every pollEvery, until ctx
+// ends.
+func (l *liveLogs) poll(ctx context.Context) {
+	ticker := time.NewTicker(l.pollEvery)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		l.pollActive()
+	}
+}
+
+// pollActive asks the frontend about the followed spans and the retired
+// ones. A followed span idle for grace wakes run to retire it; a retired one
+// active again, or whose work ran since it retired, wakes it to follow it
+// again.
+func (l *liveLogs) pollActive() {
+	l.mu.Lock()
+	ids := make([]string, 0, len(l.spans)+len(l.retired))
+	for id := range l.spans {
+		ids = append(ids, id)
+	}
+	for id := range l.retired {
+		ids = append(ids, id)
+	}
+	l.mu.Unlock()
+	if len(ids) == 0 {
+		return
+	}
+	spanIDs := make([]dagui.SpanID, len(ids))
+	for i, id := range ids {
+		// A span ID that does not parse is invalid, which the frontend
+		// does not know, so it stays active.
+		spanIDs[i].SpanID, _ = trace.SpanIDFromHex(id)
+	}
+	activity := l.activity(spanIDs)
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := l.now()
+	var wake bool
+	// Past what activity returns, the frontend quit: nothing tells.
+	for i, id := range ids[:min(len(ids), len(activity))] {
+		act := activity[i]
+		if _, ok := l.spans[id]; ok {
+			prev, seen := l.through[id]
+			l.through[id] = act.Through
+			if act.Active || (seen && act.Through.After(prev)) {
+				// Work its logs include runs, or ran since: its rows may
+				// still be stored.
+				delete(l.idleSince, id)
+				continue
+			}
+			since, ok := l.idleSince[id]
+			if !ok {
+				since = now
+				l.idleSince[id] = since
+			}
+			if !now.Before(since.Add(l.grace)) {
+				wake = true
+			}
+		} else if r, ok := l.retired[id]; ok && (act.Active || act.Through.After(r.through)) {
+			delete(l.retired, id)
+			r.through = act.Through
+			l.reactivated[id] = r
+			wake = true
+		}
+	}
+	if wake {
+		l.notify()
+	}
+}
+
+// retire takes out of the set the spans idle for grace by readStart, when a
+// read of the set from the cursor to the store's end started: every row
+// stored before then is read, and none comes after.
+//
+// The pairs a retiring span selects by its own ID or its digests, and no
+// followed span does, pass to its gap read: work it includes may store more
+// rows of them later -- a service it installed restarting writes its stdio
+// under the installing span's ID again -- which only that read imports.
+func (l *liveLogs) retire(readStart time.Time) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	retiring := map[[8]byte]uint64{}
+	retiringDigests := map[string]uint64{}
+	for id, since := range l.idleSince {
+		span, ok := l.spans[id]
+		if !ok {
+			delete(l.idleSince, id)
+			continue
+		}
+		if since.Add(l.grace).After(readStart) {
+			continue
+		}
+		l.catchUps++
+		r := retiredLogSpan{span: span, cursor: l.cursor, through: l.through[id], read: l.catchUps}
+		l.retired[id] = r
+		delete(l.idleSince, id)
+		delete(l.through, id)
+		delete(l.spans, id)
+		if sid, err := trace.SpanIDFromHex(id); err == nil {
+			retiring[sid] = r.read
+		}
+		for _, d := range span.Digests {
+			retiringDigests[d] = r.read
+		}
+	}
+	if len(retiring) == 0 {
+		return
+	}
+	followed := map[[8]byte]bool{}
+	followedDigests := map[string]bool{}
+	for id, span := range l.spans {
+		if sid, err := trace.SpanIDFromHex(id); err == nil {
+			followed[sid] = true
+		}
+		for _, d := range span.Digests {
+			followedDigests[d] = true
+		}
+	}
+	for key := range l.owned {
+		if followed[key.span] || (key.digest != "" && followedDigests[key.digest]) {
+			continue
+		}
+		// The installing span is the one a service's restart reactivates:
+		// its exec span links it.
+		if read, ok := retiring[key.span]; ok {
+			l.owned[key] = read
+		} else if read, ok := retiringDigests[key.digest]; ok && key.digest != "" {
+			l.owned[key] = read
+		}
+	}
+}
+
+// reactivate reads the reactivated spans, while the set has room for them,
+// from where they retired up to the follow's cursor, then moves them back
+// into the set. Like a catch-up, a gap read imports only the pairs it owns:
+// the ones its span passed to it on retiring, and the work started since
+// that no other read imported -- the follow read what the spans it
+// followed meanwhile select. A read that fails resumes from the last batch
+// it imported the next time.
+func (l *liveLogs) reactivate(ctx context.Context) error {
+	var errs error
+	for {
+		l.mu.Lock()
+		if len(l.spans) >= l.maxSpans {
+			l.mu.Unlock()
+			return errs
+		}
+		var id string
+		var r retiredLogSpan
+		for id, r = range l.reactivated {
+			break
+		}
+		if id == "" {
+			l.mu.Unlock()
+			return errs
+		}
+		delete(l.reactivated, id)
+		cursor := l.cursor
+		l.mu.Unlock()
+		var err error
+		if r.cursor != cursor {
+			err = l.reader.ReadLogs(ctx, l.traceID, tracesource.LogQuery{
+				Spans:   []archive.LogSpan{r.span},
+				Cursor:  r.cursor,
+				Through: cursor,
+			}, func(ctx context.Context, req *collogspb.ExportLogsServiceRequest, next string) error {
+				if err := l.importLogs(ctx, req, r.read); err != nil {
+					return err
+				}
+				r.cursor = next
+				return nil
+			})
+		}
+		l.mu.Lock()
+		if err != nil {
+			l.reactivated[id] = r
+		} else {
+			l.spans[id] = r.span
+			l.through[id] = r.through
+		}
+		l.mu.Unlock()
+		if err != nil {
+			return errors.Join(errs, err)
+		}
+	}
+}
+
 // catchUp reads the pending spans' rows up to the follow's cursor, then
-// moves them into the set. Without a cursor there is nothing to catch up:
-// the next read starts from the beginning.
+// moves them into the set, as many as it has room for. Without a cursor
+// there is nothing to catch up: the next read starts from the beginning.
 func (l *liveLogs) catchUp(ctx context.Context) error {
 	l.mu.Lock()
-	batch := l.pending
-	l.pending = map[string]archive.LogSpan{}
+	batch := map[string]archive.LogSpan{}
+	for id, span := range l.pending {
+		if len(l.spans)+len(batch) >= l.maxSpans {
+			break
+		}
+		batch[id] = span
+		delete(l.pending, id)
+	}
 	cursor := l.cursor
 	l.catchUps++
 	read := l.catchUps
@@ -357,10 +649,12 @@ func logOwnerOf(rec *otlplogsv1.LogRecord) logOwner {
 	return key
 }
 
-// finish stops following and reads everything requested up to the store's
-// end: rows the follow had not reached yet, and the spans the frontend
-// requested for its final render (idtui.LiveLogsFrontend.RequestFinalLogs).
-// Nothing is read after it.
+// finish stops following and reads everything followed up to the store's
+// end: rows the follow had not reached yet, the spans the frontend
+// requested for its final render (idtui.LiveLogsFrontend.RequestFinalLogs),
+// and retired spans seen active again. Retired spans were read to the end
+// of their work already. What the set has no room for is read on its own,
+// like catch-ups. Nothing is read after it.
 func (l *liveLogs) finish(ctx context.Context) error {
 	l.stop()
 	l.mu.Lock()
@@ -369,16 +663,42 @@ func (l *liveLogs) finish(ctx context.Context) error {
 		return nil
 	}
 	l.mu.Unlock()
-	err := l.catchUp(ctx)
+	if l.activity != nil {
+		// Work that ran since the last poll may have rows for retired
+		// spans.
+		l.pollActive()
+	}
+	err := l.reactivate(ctx)
+	err = errors.Join(err, l.catchUp(ctx))
 	l.mu.Lock()
 	l.finished = true
 	spans := slices.Collect(maps.Values(l.spans))
 	cursor := l.cursor
+	reactivated := slices.Collect(maps.Values(l.reactivated))
+	pending := slices.Collect(maps.Values(l.pending))
 	l.mu.Unlock()
-	if len(spans) == 0 {
-		return err
+	if len(spans) > 0 {
+		err = errors.Join(err, l.reader.ReadLogs(ctx, l.traceID, tracesource.LogQuery{Spans: spans, Cursor: cursor}, l.importFollowed))
 	}
-	return errors.Join(err, l.reader.ReadLogs(ctx, l.traceID, tracesource.LogQuery{Spans: spans, Cursor: cursor}, l.importFollowed))
+	for _, r := range reactivated {
+		err = errors.Join(err, l.reader.ReadLogs(ctx, l.traceID, tracesource.LogQuery{
+			Spans:  []archive.LogSpan{r.span},
+			Cursor: r.cursor,
+		}, func(ctx context.Context, req *collogspb.ExportLogsServiceRequest, _ string) error {
+			return l.importLogs(ctx, req, r.read)
+		}))
+	}
+	for chunk := range slices.Chunk(pending, l.maxSpans) {
+		l.mu.Lock()
+		l.catchUps++
+		read := l.catchUps
+		l.mu.Unlock()
+		err = errors.Join(err, l.reader.ReadLogs(ctx, l.traceID, tracesource.LogQuery{Spans: chunk},
+			func(ctx context.Context, req *collogspb.ExportLogsServiceRequest, _ string) error {
+				return l.importLogs(ctx, req, read)
+			}))
+	}
+	return err
 }
 
 // liveLogsWanted reports whether to ask the engine for log presence: the
