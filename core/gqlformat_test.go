@@ -217,26 +217,30 @@ func TestModuleMainObjectSpelling(t *testing.T) {
 	})
 }
 
-// The identifier casing cut, the view every v1.0.0 prerelease before it
-// shares, and the release after it. Tests derive them from the engine's
-// constants, so moving the cut needs no test edits.
+// The identifier casing cut, the release before it (pre-cut, with its own
+// view: views keep their prerelease from engine.PrereleaseViewsVersion on),
+// the view every v1.0.0 prerelease before prerelease views shares, and the
+// release after the cut. Tests derive them from the engine's constants, so
+// moving the cut needs no test edits.
 var (
 	cutVersion   = engine.IdentifierCasingVersion
+	lastPreCut   = betaOffset(engine.IdentifierCasingVersion, -1)
 	preCutView   = engine.APIViewVersion("v1.0.0-0")
-	afterCutBeta = betaAfter(engine.IdentifierCasingVersion)
+	afterCutBeta = betaOffset(engine.IdentifierCasingVersion, 1)
 )
 
-// betaAfter returns the beta after version, a vX.Y.Z-beta.N.
-func betaAfter(version string) string {
+// betaOffset returns the beta n releases after version, a vX.Y.Z-beta.N, or
+// before it for a negative n.
+func betaOffset(version string, n int) string {
 	base, num, ok := strings.Cut(version, "-beta.")
 	if !ok {
 		panic(version + " is not a beta")
 	}
-	n, err := strconv.Atoi(num)
+	i, err := strconv.Atoi(num)
 	if err != nil {
 		panic(version + " is not a beta")
 	}
-	return fmt.Sprintf("%s-beta.%d", base, n+1)
+	return fmt.Sprintf("%s-beta.%d", base, i+n)
 }
 
 func TestNamerForView(t *testing.T) {
@@ -253,6 +257,7 @@ func TestNamerForView(t *testing.T) {
 		{call.View(afterCutBeta), false},
 		{"v1.0.0-rc.1", false},
 		{call.View(preCutView), true},
+		{call.View(lastPreCut), true},
 		{"v1.0.0-beta.20", true},
 		{"v0.21.5", true},
 		{"v0.9.9", true},
@@ -267,15 +272,16 @@ func TestIdentifierNamingView(t *testing.T) {
 	t.Parallel()
 
 	require.Equal(t, engine.IdentifierCasingVersion, IdentifierNamingVersion)
-	for _, view := range []call.View{"", "v0.21.5", "v1.0.0-beta.20", call.View(preCutView), call.View(cutVersion), "v1.0.0", "v1.2.3"} {
+	for _, view := range []call.View{"", "v0.21.5", "v1.0.0-beta.20", call.View(preCutView), call.View(lastPreCut), call.View(cutVersion), "v1.0.0", "v1.2.3"} {
 		require.Equal(t, !NamerForView(view).Legacy(), IdentifierNamingView.Contains(view), "view %q", view)
 	}
 }
 
 // A module gets the new naming rules from IdentifierNamingVersion on. Every
-// earlier v1.0.0 prerelease, v1.0.0-0 included, shares the pre-cut view and
-// keeps the legacy rules; dev builds of v1.0.0 share the release's view and
-// get the new ones, as does v1.0.0 itself.
+// earlier v1.0.0 prerelease, v1.0.0-0 included, keeps the legacy rules,
+// whether it shares the view of the betas before prerelease views or has its
+// own; dev builds of v1.0.0 share the release's view and get the new ones, as
+// does v1.0.0 itself.
 func TestNamerForEngineVersion(t *testing.T) {
 	t.Parallel()
 
@@ -290,6 +296,7 @@ func TestNamerForEngineVersion(t *testing.T) {
 		{"v1.0.0-beta.19", true},
 		{"v1.0.0-beta.20", true},
 		{preCutView, true},
+		{lastPreCut, true},
 		{cutVersion, false},
 		{afterCutBeta, false},
 		{"v1.0.0-beta.17-dev-123", false},
@@ -393,6 +400,8 @@ func TestModuleNamingCappedAtEngine(t *testing.T) {
 		{engine: preCutView, version: "v1.0.0", view: preCutView, legacy: true},
 		{engine: preCutView, version: cutVersion, view: preCutView, legacy: true},
 		{engine: preCutView, version: afterCutBeta, view: preCutView, legacy: true},
+		{engine: lastPreCut, version: "v1.0.0", view: lastPreCut, legacy: true},
+		{engine: lastPreCut, version: cutVersion, view: lastPreCut, legacy: true},
 		{engine: afterCutBeta, version: "v1.0.0", view: afterCutBeta},
 		{engine: afterCutBeta, version: cutVersion, view: cutVersion},
 	} {

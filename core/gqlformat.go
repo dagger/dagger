@@ -34,11 +34,11 @@ func formatGqlDescription(desc string) string {
 // rules they were built against, byte for byte. See
 // hack/designs/identifier-casing.md, "The gate".
 //
-// It's engine.IdentifierCasingVersion, the first release whose view keeps
-// its prerelease, so no released engine names modules the new way under an
-// older version: a module that declares an earlier v1.0.0 prerelease
-// (including v1.0.0-0, which shares their pre-cut view) keeps the strcase
-// rules.
+// It's engine.IdentifierCasingVersion. Views keep their prerelease from
+// engine.PrereleaseViewsVersion on, so no released engine names modules the
+// new way under an older version: a module that declares an earlier v1.0.0
+// prerelease (a beta with its own view, or v1.0.0-0, which shares the view of
+// the betas before prerelease views) keeps the strcase rules.
 //
 // SDK generators decide which naming rules to apply by the engine version the
 // target module declares (and the engine's own version), not by the schema:

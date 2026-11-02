@@ -104,6 +104,7 @@ func TestTypeDefNamingCacheIdentity(t *testing.T) {
 		{cutVersion, "HTTPClient", "e2eTest"},
 		{preCutView, "Httpclient", "e2ETest"},
 		{cutVersion, "HTTPClient", "e2eTest"},
+		{lastPreCut, "Httpclient", "e2ETest"},
 		{"v1.0.0-0", "Httpclient", "e2ETest"},
 		{"v1.0.0-beta.19", "Httpclient", "e2ETest"},
 	} {
