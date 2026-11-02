@@ -1289,6 +1289,13 @@ func (record *clientRecord) telemetryStreamEnd(ctx context.Context) <-chan struc
 	return end
 }
 
+// streamFetcher reads the batch after the since cursor. next is the cursor
+// after it; next == since with rows == 0 means nothing more for now. rows is
+// the batch's size in the units of limit, at most limit: the rows a scanning
+// fetcher covered, or the rows an indexed read returned (whose cursor may
+// jump past rows it skipped, and may advance with no rows at all, e.g. to
+// the end of a one-shot read). A batch too large to send is refetched with a
+// limit of rows/2, so rows must shrink with limit.
 type streamFetcher func(ctx context.Context, db *clientdb.DB, since int64, limit int) (next int64, message proto.Message, rows int, err error)
 
 func (ps *PubSub) streamHandler(w http.ResponseWriter, r *http.Request, record *clientRecord, fetcher streamFetcher) error {
@@ -1448,7 +1455,7 @@ func (ps *PubSub) serveLiveStream(w http.ResponseWriter, r *http.Request, record
 			logger.Warn("interrupting OTLP stream", "cursor", since, "err", err)
 			return nil
 		}
-		if rows == 0 {
+		if rows == 0 && next <= since {
 			if terminating {
 				if binary {
 					if err := enginetel.WriteLiveTerminal(w, since); err != nil {

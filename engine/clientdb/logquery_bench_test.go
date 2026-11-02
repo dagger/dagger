@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -23,10 +22,10 @@ import (
 
 // Live log catch-ups: when a span starts showing logs in the live TUI, the
 // CLI reads its display text up to the follow's cursor with a one-shot
-// archive.LogQuery, which the engine answers by scanning the store's log
-// metadata from row 0 in otlpBatchSize windows (displayLogFetcher). These
-// benchmarks time that catch-up over synthetic long-session stores, against
-// a prototype read through the per-span row index.
+// archive.LogQuery, which the engine answers through the store's row indexes
+// (ReadDisplayLogs, from displayLogFetcher), or by scanning the store's log
+// metadata in otlpBatchSize windows, as a follow does (SelectDisplayLogs).
+// These benchmarks time both over synthetic long-session stores.
 //
 //	go test ./engine/clientdb -run '^$' -bench LiveLogCatchUp -benchmem
 //
@@ -47,8 +46,6 @@ type catchUpStore struct {
 	// the turn span above it, with a modest subtree; digest routes a
 	// service's rows from all over the session.
 	own, turn, digest string
-	// byDigest stands in for a per-digest row index (see indexCatchUp).
-	byDigest map[string][]int64
 }
 
 var (
@@ -216,13 +213,12 @@ func newCatchUpStore(b *testing.B, rows int) *catchUpStore {
 	}
 	require.NotEmpty(b, own, "no call span near the end has display rows")
 	return &catchUpStore{
-		db:       db,
-		through:  db.HighWater().Logs,
-		spans:    len(spans),
-		own:      own,
-		turn:     catchUpSpanID(turnBase(tt)),
-		digest:   "xxh3:svc7",
-		byDigest: digestRows(db),
+		db:      db,
+		through: db.HighWater().Logs,
+		spans:   len(spans),
+		own:     own,
+		turn:    catchUpSpanID(turnBase(tt)),
+		digest:  "xxh3:svc7",
 	}
 }
 
@@ -244,67 +240,31 @@ func scanCatchUp(ctx context.Context, db *DB, spans []archive.LogSpan, after, th
 	return ids, windows, nil
 }
 
-// indexCatchUp is a prototype of the same catch-up read through the per-span
-// row index: the scope's spans (resolved once, as LiveLogScope does), their
-// rows in (after, through] filtered by class, and one body read. Digest-routed
-// rows come from byDigest, standing in for a per-digest row index the store
-// does not have. It does not follow spans placed beneath the tree after it
-// was resolved, nor rows of spans the store has no snapshot of yet.
-func indexCatchUp(ctx context.Context, db *DB, byDigest map[string][]int64, spans []archive.LogSpan, after, through int64) ([]int64, error) {
-	ids := map[string]struct{}{}
-	var digests []string
-	for _, sel := range spans {
-		ids[sel.SpanID] = struct{}{}
-		digests = append(digests, sel.Digests...)
-		if sel.Descendants {
-			for id := range db.lookup.logScope(sel.SpanID) {
-				ids[id] = struct{}{}
-			}
+// indexCatchUp is the same catch-up as ReadDisplayLogs serves it (the
+// displayLogFetcher's one-shot path): its rows gathered from the row indexes
+// once, then paged catchUpWindow rows at a time, or scanned when they are a
+// large share of the range (see displayIndexMaxShare).
+func indexCatchUp(ctx context.Context, db *DB, traceID string, scope *LogQueryScope, after, through int64) ([]int64, int, error) {
+	var ids []int64
+	batches := 0
+	for after < through {
+		rows, next, _, err := db.ReadDisplayLogs(ctx, SelectLogsRangeParams{AfterID: after, ThroughID: through, Limit: catchUpWindow}, traceID, scope)
+		if err != nil {
+			return nil, batches, err
 		}
+		batches++
+		after = next
+		ids = append(ids, logIDs(rows)...)
 	}
-	idx := db.logIdx
-	var rowIDs []int64
-	add := func(rows []int64) {
-		start := sort.Search(len(rows), func(i int) bool { return rows[i] > after })
-		for _, row := range rows[start:] {
-			if row > through {
-				break
-			}
-			if idx.meta[row-1].flags.display() {
-				rowIDs = append(rowIDs, row)
-			}
-		}
-	}
-	idx.mu.RLock()
-	for id := range ids {
-		add(idx.rowsBySpan[id])
-	}
-	for _, d := range digests {
-		add(byDigest[d])
-	}
-	idx.mu.RUnlock()
-	slices.Sort(rowIDs)
-	rowIDs = slices.Compact(rowIDs)
-	rows, err := db.SelectLogRows(ctx, rowIDs)
-	if err != nil {
-		return nil, err
-	}
-	return logIDs(rows), nil
+	return ids, batches, nil
 }
 
-// digestRows builds the per-digest row index indexCatchUp assumes.
-func digestRows(db *DB) map[string][]int64 {
-	idx := db.logIdx
-	idx.mu.RLock()
-	defer idx.mu.RUnlock()
-	byDigest := map[string][]int64{}
-	for i, m := range idx.meta {
-		if m.digest != 0 {
-			d := idx.digests[m.digest]
-			byDigest[d] = append(byDigest[d], int64(i+1))
-		}
-	}
-	return byDigest
+// withIndexShare runs f with displayIndexMaxShare set to share.
+func withIndexShare(share int64, f func()) {
+	old := displayIndexMaxShare
+	displayIndexMaxShare = share
+	defer func() { displayIndexMaxShare = old }()
+	f()
 }
 
 func BenchmarkLiveLogCatchUp(b *testing.B) {
@@ -320,11 +280,18 @@ func BenchmarkLiveLogCatchUp(b *testing.B) {
 				{"own", []archive.LogSpan{{SpanID: store.own}}},
 				{"own+digest", []archive.LogSpan{{SpanID: store.own, Digests: []string{store.digest}}}},
 				{"tree", []archive.LogSpan{{SpanID: store.turn, Descendants: true}}},
+				// Scopes holding large shares of the store, where the read
+				// falls back to the scan: a service span (5% of rows), all
+				// four (20%), and the root roll-up (all of them).
+				{"service", []archive.LogSpan{{SpanID: catchUpSpanID(2)}}},
+				{"services", []archive.LogSpan{{SpanID: catchUpSpanID(2)}, {SpanID: catchUpSpanID(3)}, {SpanID: catchUpSpanID(4)}, {SpanID: catchUpSpanID(5)}}},
+				{"root", []archive.LogSpan{{SpanID: catchUpSpanID(1), Descendants: true}}},
 			}
 			for _, sc := range scopes {
 				b.Run(sc.name, func(b *testing.B) {
 					want, windows, err := scanCatchUp(b.Context(), db, sc.spans, 0, store.through)
 					require.NoError(b, err)
+					require.NotEmpty(b, want)
 					b.Logf("%s: %d display rows over %d windows", sc.name, len(want), windows)
 					b.Run("scan", func(b *testing.B) {
 						b.ReportAllocs()
@@ -337,33 +304,43 @@ func BenchmarkLiveLogCatchUp(b *testing.B) {
 						b.ReportMetric(float64(windows), "windows/op")
 						b.ReportMetric(float64(len(want)), "rows/op")
 					})
-					got, err := indexCatchUp(b.Context(), db, store.byDigest, sc.spans, 0, store.through)
-					require.NoError(b, err)
-					require.NotEmpty(b, want)
-					require.True(b, slices.Equal(want, got), "the index prototype reads the same rows")
-					b.Run("index", func(b *testing.B) {
-						b.ReportAllocs()
-						for b.Loop() {
-							ids, err := indexCatchUp(b.Context(), db, store.byDigest, sc.spans, 0, store.through)
-							if err != nil || len(ids) != len(want) {
-								b.Fatal(err, len(ids))
-							}
-						}
-						b.ReportMetric(float64(len(want)), "rows/op")
-					})
+					read := func(b *testing.B, name string, share int64) {
+						withIndexShare(share, func() {
+							got, _, err := indexCatchUp(b.Context(), db, "", db.LiveLogScope(sc.spans), 0, store.through)
+							require.NoError(b, err)
+							require.True(b, slices.Equal(want, got), "the index reads the same rows as the scan")
+							b.Run(name, func(b *testing.B) {
+								b.ReportAllocs()
+								var batches int
+								for b.Loop() {
+									var ids []int64
+									ids, batches, err = indexCatchUp(b.Context(), db, "", db.LiveLogScope(sc.spans), 0, store.through)
+									if err != nil || len(ids) != len(want) {
+										b.Fatal(err, len(ids))
+									}
+								}
+								b.ReportMetric(float64(batches), "batches/op")
+								b.ReportMetric(float64(len(want)), "rows/op")
+							})
+						})
+					}
+					// index never falls back to the scan; read is what the
+					// one-shot read does.
+					read(b, "index", 0)
+					read(b, "read", displayIndexMaxShare)
 				})
 			}
 			// The archive's fixed-cut scope, as serveArchiveSignal resolves
 			// it: a span view (its topology cached per cut, and built here
 			// before timing), then the same windowed scan, with no live
-			// placement.
+			// placement, or the same read by index.
+			tree := []archive.LogSpan{{SpanID: store.turn, Descendants: true}}
+			want, _, err := scanCatchUp(b.Context(), db, tree, 0, store.through)
+			require.NoError(b, err)
+			cut := db.HighWater()
+			_, err = db.SpanViewAt(b.Context(), selectionTrace, cut, nil)
+			require.NoError(b, err)
 			b.Run("archive-tree/scan", func(b *testing.B) {
-				tree := []archive.LogSpan{{SpanID: store.turn, Descendants: true}}
-				want, _, err := scanCatchUp(b.Context(), db, tree, 0, store.through)
-				require.NoError(b, err)
-				cut := db.HighWater()
-				_, err = db.SpanViewAt(b.Context(), selectionTrace, cut, nil)
-				require.NoError(b, err)
 				b.ReportAllocs()
 				for b.Loop() {
 					view, err := db.SpanViewAt(b.Context(), selectionTrace, cut, nil)
@@ -378,6 +355,19 @@ func BenchmarkLiveLogCatchUp(b *testing.B) {
 					}
 					if n != len(want) {
 						b.Fatalf("archive read %d rows, the live scan %d", n, len(want))
+					}
+				}
+				b.ReportMetric(float64(len(want)), "rows/op")
+			})
+			b.Run("archive-tree/read", func(b *testing.B) {
+				b.ReportAllocs()
+				for b.Loop() {
+					view, err := db.SpanViewAt(b.Context(), selectionTrace, cut, nil)
+					require.NoError(b, err)
+					ids, _, err := indexCatchUp(b.Context(), db, selectionTrace, view.LogQueryScope(tree), 0, store.through)
+					require.NoError(b, err)
+					if !slices.Equal(ids, want) {
+						b.Fatalf("archive read %d rows, the live scan %d", len(ids), len(want))
 					}
 				}
 				b.ReportMetric(float64(len(want)), "rows/op")

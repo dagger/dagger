@@ -784,7 +784,9 @@ type archiveSignalReader struct {
 }
 
 // batch reads up to limit signal rows after cursor, through high. next is the
-// last row it scanned, and rowCount how many rows that covers.
+// last row it covered, and rowCount the batch's size in the units of limit:
+// the rows it covered, or for a log query read through the row indexes, the
+// rows it returned.
 func (a archiveSignalReader) batch(ctx context.Context, signal string, cursor, high int64, limit int) (proto.Message, int64, int, error) {
 	switch signal {
 	case "traces":
@@ -809,12 +811,16 @@ func (a archiveSignalReader) batch(ctx context.Context, signal string, cursor, h
 	case "logs":
 		var rows []clientdb.Log
 		var scanned int64
+		var rowCount int
 		var err error
 		p := clientdb.SelectLogsRangeParams{AfterID: cursor, ThroughID: high, Limit: int64(limit)}
 		if a.displayScope != nil {
-			rows, scanned, err = a.db.SelectDisplayLogs(ctx, p, a.traceID, a.displayScope)
+			// A log query reads through the row indexes: rowCount counts
+			// the rows returned, and the cursor jumps to the next one.
+			rows, scanned, rowCount, err = a.db.ReadDisplayLogs(ctx, p, a.traceID, a.displayScope)
 		} else {
 			rows, scanned, err = a.db.SelectLogsRangeMatching(ctx, p, a.traceID, a.logScope, a.logSelection, a.includeControl)
+			rowCount = int(scanned - cursor)
 		}
 		if err != nil {
 			return nil, 0, 0, err
@@ -823,7 +829,7 @@ func (a archiveSignalReader) batch(ctx context.Context, signal string, cursor, h
 		if err != nil {
 			return nil, 0, 0, err
 		}
-		return &collogspb.ExportLogsServiceRequest{ResourceLogs: clientdb.LogsToPB(filtered)}, scanned, int(scanned - cursor), nil
+		return &collogspb.ExportLogsServiceRequest{ResourceLogs: clientdb.LogsToPB(filtered)}, scanned, rowCount, nil
 	case "metrics":
 		rows, err := a.db.SelectMetricsRange(ctx, clientdb.SelectMetricsRangeParams{AfterID: cursor, ThroughID: high, Limit: int64(limit)})
 		if err != nil {
