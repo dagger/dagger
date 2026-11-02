@@ -672,7 +672,13 @@ func (srv *Server) initLocalCacheState(ctx context.Context, cfg config.Config, o
 		}
 		if resetReason == localCacheStateResetNone {
 			if err != nil {
-				return err
+				// A reset can't fix this failure. Close what it opened, as
+				// the reset path does. A failure before the dagql cache
+				// opens leaves the metadata stores unchanged, so they're
+				// saved clean and the next start keeps the local cache.
+				// After it opens, its store stays marked dirty, so the next
+				// start resets as before.
+				return errors.Join(err, srv.closeLocalCacheStateForReset())
 			}
 			return srv.updateRemoteCacheFixturePersistence(func(report *core.RemoteCacheFixturePersistence) {
 				report.PersistenceResetReason = bootReset.PersistenceResetReason
@@ -731,6 +737,17 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 	srv.snapshotter, srv.snapshotterName, err = newSnapshotter(srv.snapshotterRootDir, ociCfg, srv.snapshotterMDStore)
 	if err != nil {
 		return localCacheStateResetNone, fmt.Errorf("failed to create snapshotter: %w", err)
+	}
+	// initBoltDBs opened the snapshotter's store to check it. Only the
+	// built-in overlayfs snapshotter uses that handle: native opens its own
+	// store on the same file, which this one would leave marked in use, and a
+	// proxied snapshotter, whatever its name, keeps its metadata elsewhere.
+	if srv.snapshotterName != "overlayfs" || ociCfg.ProxySnapshotterPath != "" {
+		closeErr := srv.snapshotterMDStore.Close()
+		srv.snapshotterMDStore = nil
+		if closeErr != nil {
+			return localCacheStateResetNone, fmt.Errorf("failed to close metadata store for snapshotter: %w", closeErr)
+		}
 	}
 
 	srv.localContentStore, err = localcontentstore.NewStore(srv.contentStoreRootDir)
@@ -906,6 +923,20 @@ func (srv *Server) initBoltDBs() (err error) {
 			srv.snapshotterMDStore = nil
 		}
 	}()
+	// The snapshotter's store opens its database on first use. Open it here,
+	// so a database that can't be opened (one its last engine never closed)
+	// resets local cache state, as the containerd one does. Its directory is
+	// otherwise made by the snapshotter, later.
+	if err := os.MkdirAll(filepath.Dir(srv.snapshotterDBPath), 0o700); err != nil {
+		return fmt.Errorf("failed to create metadata store directory for snapshotter: %w", err)
+	}
+	_, snapshotterTx, err := srv.snapshotterMDStore.TransactionContext(context.Background(), false)
+	if err != nil {
+		return fmt.Errorf("failed to open metadata store for snapshotter: %w", err)
+	}
+	if err := snapshotterTx.Rollback(); err != nil {
+		return fmt.Errorf("failed to open metadata store for snapshotter: %w", err)
+	}
 
 	srv.containerdMetaBoltDB, err = bolt.Open(srv.containerdMetaDBPath, 0644, &bolt.Options{
 		NoSync:         true,
@@ -1141,9 +1172,19 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 
 	var eg errgroup.Group
 	eg.Go(func() error {
-		err := srv.snapshotterMDStore.Close()
-		if err != nil {
-			return fmt.Errorf("failed to close snapshotter metadata store: %w", err)
+		// The snapshotter closes the metadata store it uses: overlayfs the
+		// engine's (srv.snapshotterMDStore), native its own. Without a
+		// snapshotter, the engine's store is closed directly.
+		if srv.snapshotter != nil {
+			if err := srv.snapshotter.Close(); err != nil {
+				return fmt.Errorf("failed to close snapshotter: %w", err)
+			}
+			return nil
+		}
+		if srv.snapshotterMDStore != nil {
+			if err := srv.snapshotterMDStore.Close(); err != nil {
+				return fmt.Errorf("failed to close snapshotter metadata store: %w", err)
+			}
 		}
 		return nil
 	})

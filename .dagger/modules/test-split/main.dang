@@ -224,6 +224,55 @@ type TestSplit {
   }
 
   """
+  internal/fastbolt, the engine's in-memory replacement for bbolt: its own
+  tests with the race detector, a save to a full filesystem, a differential
+  test against the real bbolt, and containerd's metadata and snapshot storage
+  tests run on it
+  """
+  pub testFastbolt: Void @check {
+    go(ws: self.ws, source: engineDev(ws: self.ws).source, race: true, cgo: true).env
+      .withDirectory("hack/fastbolt-difftest", self.ws.directory("hack/fastbolt-difftest"))
+      .withMountedTemp("/small", size: 1048576)
+      .withEnvVariable("FASTBOLT_SMALL_FS", "/small")
+      .withExec(["sh", "-ec", """
+        root=$PWD
+        moddir() { GOFLAGS=-mod=mod go mod download -json "$1" | grep '"Dir":' | cut -d'"' -f4; }
+
+        cd "$root/internal/fastbolt"
+        go vet ./...
+        go test -race -count=1 ./...
+
+        # The real bbolt, renamed to realbolt so both can be imported at once.
+        real="$root/hack/fastbolt-difftest/realbolt"
+        rm -rf "$real"
+        cp -R "$(moddir go.etcd.io/bbolt@v1.4.3)" "$real"
+        chmod -R u+w "$real"
+        rm -rf "$real/cmd" "$real/tests"
+        find "$real" -name '*_test.go' -delete
+        sed -i '1s#.*#module realbolt#' "$real/go.mod"
+        find "$real" -name '*.go' -exec sed -i 's#"go.etcd.io/bbolt/#"realbolt/#g; s#"go.etcd.io/bbolt"#"realbolt"#g' {} +
+        cd "$root/hack/fastbolt-difftest"
+        go mod tidy
+        go test -count=1 -run TestDifferential ./...
+        go test -race -count=1 -run TestConcurrent ./...
+
+        # containerd's own metadata and snapshot storage tests, on the store,
+        # at the containerd version the engine uses.
+        cd "$root"
+        ctd=/tmp/containerd
+        cp -R "$(moddir "github.com/containerd/containerd/v2@$(go list -m -f '{{.Version}}' github.com/containerd/containerd/v2)")" "$ctd"
+        chmod -R u+w "$ctd"
+        cd "$ctd"
+        go mod edit -replace "go.etcd.io/bbolt=$root/internal/fastbolt"
+        go mod tidy
+        go test -count=1 ./core/metadata/... ./core/snapshots/storage/...
+        go test -race -count=1 -cpu=1,4,16 ./core/metadata/...
+      """])
+      .sync
+    null
+  }
+
+  """
   Test Provision
   """
   pub testProvision: Void @check {

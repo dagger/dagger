@@ -50,7 +50,6 @@ require (
 	github.com/containerd/continuity v0.4.5
 	github.com/containerd/errdefs v1.0.0
 	github.com/containerd/errdefs/pkg v0.3.0
-	github.com/containerd/fuse-overlayfs-snapshotter/v2 v2.1.2
 	github.com/containerd/go-cni v1.1.13
 	github.com/containerd/go-runc v1.1.0
 	github.com/containerd/log v0.1.0
@@ -128,7 +127,6 @@ require (
 	github.com/morikuni/aec v1.1.0
 	github.com/muesli/termenv v0.16.0
 	github.com/openai/openai-go/v3 v3.61.0
-	github.com/opencontainers/cgroups v0.0.6
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/opencontainers/runtime-spec v1.3.0
@@ -374,6 +372,6 @@ replace (
 
 tool github.com/matryer/moq
 
-// containerd v2.2.x requires bbolt v1.4.3, which is semver-higher than
-// the main-branch pseudo-version containing the freelist merge fix.
-replace go.etcd.io/bbolt => go.etcd.io/bbolt v1.4.0-beta.0.0.20260422092123-cd4bafc17e45
+// containerd and the engine run their metadata on an in-memory store with
+// bbolt's API, saved when the engine stops and loaded when it starts.
+replace go.etcd.io/bbolt => ./internal/fastbolt
