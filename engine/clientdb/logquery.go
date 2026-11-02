@@ -2,6 +2,9 @@ package clientdb
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/dagger/dagger/engine/archive"
@@ -40,6 +43,10 @@ type LogQueryScope struct {
 	spanAt    []uint64
 	digestsBy []scopeMatch
 	placement placementMemo
+
+	// oneShot holds the rows of the scope's current one-shot read (see
+	// ReadDisplayLogs).
+	oneShot *displayCandidates
 }
 
 // scopeMatch is a LogQueryScope's decision about one span or digest.
@@ -199,6 +206,150 @@ func (s *DB) SelectDisplayLogs(ctx context.Context, p SelectLogsRangeParams, tra
 	})
 }
 
+// displayIndexMaxShare bounds how much of a one-shot read's range
+// ReadDisplayLogs gathers from the row indexes: when the candidate rows are
+// more than 1/displayIndexMaxShare of the range (a roll-up of the root, a
+// digest that streamed all session), scanning the range costs less than
+// gathering, filtering and sorting them. 0 never scans. A variable for
+// tests.
+var displayIndexMaxShare int64 = 4
+
+// displayCandidates are the display rows of one one-shot read of a scope:
+// in (after, through], of one trace, ascending; or scan, when the read
+// scans instead.
+type displayCandidates struct {
+	after, through int64
+	traceID        string
+	scan           bool
+	rows           []int64
+}
+
+// ReadDisplayLogs is SelectDisplayLogs for a one-shot read of (p.AfterID,
+// p.ThroughID], one call per batch with p.ThroughID fixed: it reads the
+// same rows. Its first call gathers the rows from the row indexes (the
+// scope's spans and every span now beneath its tree, spans with no snapshot
+// yet when it has a tree, and its digests), and later calls page through
+// them, so a read costs what it returns rather than the size of the store,
+// and a batch holds at most p.Limit rows instead of covering p.Limit rows.
+// next is the last row the batch covers, matched or not: the end of the
+// read once no row is left. n is the batch's size in the units of p.Limit:
+// the rows returned, or the rows scanned when the read fell back to a scan
+// (see displayIndexMaxShare).
+func (s *DB) ReadDisplayLogs(ctx context.Context, p SelectLogsRangeParams, traceID string, scope *LogQueryScope) (rows []Log, next int64, n int, err error) {
+	if err := ctx.Err(); err != nil {
+		return nil, p.AfterID, 0, err
+	}
+	if p.AfterID < 0 || p.ThroughID < p.AfterID || p.Limit <= 0 {
+		return nil, p.AfterID, 0, fmt.Errorf("invalid log range")
+	}
+	c := scope.oneShot
+	if c == nil || c.through != p.ThroughID || c.traceID != traceID || p.AfterID < c.after {
+		c, err = s.gatherDisplayCandidates(p.AfterID, p.ThroughID, traceID, scope)
+		if err != nil {
+			return nil, p.AfterID, 0, err
+		}
+		scope.oneShot = c
+	}
+	if c.scan {
+		rows, next, err := s.SelectDisplayLogs(ctx, p, traceID, scope)
+		return rows, next, int(next - p.AfterID), err
+	}
+	start, _ := slices.BinarySearch(c.rows, p.AfterID+1)
+	next = p.ThroughID
+	var ids []int64
+	var bytes int64
+	idx := s.logIdx
+	idx.mu.RLock()
+	for _, id := range c.rows[start:] {
+		size := idx.meta[id-1].size
+		// Bound retained bodies by bytes as well as rows, as scanLogs does.
+		if int64(len(ids)) == p.Limit || (len(ids) > 0 && size > selectedLogBatchBytes-bytes) {
+			next = id - 1
+			break
+		}
+		bytes += size
+		ids = append(ids, id)
+	}
+	idx.mu.RUnlock()
+	rows, err = s.SelectLogRows(ctx, ids)
+	if err != nil {
+		return nil, p.AfterID, 0, err
+	}
+	return rows, next, len(ids), nil
+}
+
+// gatherDisplayCandidates collects the display rows of scope in (after,
+// through] from the row indexes, or settles on a scan.
+func (s *DB) gatherDisplayCandidates(after, through int64, traceID string, q *LogQueryScope) (*displayCandidates, error) {
+	c := &displayCandidates{after: after, through: through, traceID: traceID}
+	if q.everything {
+		c.scan = true
+		return c, nil
+	}
+	var unplaced []string
+	if q.live != nil && len(q.tree) > 0 {
+		// Place every span beneath the tree now, as a scan would place each
+		// as it reads its rows, and keep the spans whose place is unknown.
+		unplaced = q.live.closeBeneath(q.tree, s.logIdx.unplacedSpanIDs())
+	}
+	idx := s.logIdx
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	if through > int64(len(idx.meta)) {
+		return nil, errors.New("log stream truncated before cut")
+	}
+	var lists [][]int64
+	for id := range q.own {
+		if !q.tree[id] {
+			lists = idx.spanRowsLocked(id, lists)
+		}
+	}
+	for id := range q.tree {
+		lists = idx.spanRowsLocked(id, lists)
+	}
+	for _, id := range unplaced {
+		lists = idx.spanRowsLocked(id, lists)
+	}
+	for d := range q.digests {
+		if digest, ok := idx.digestIndex[d]; ok && digest != 0 {
+			lists = append(lists, idx.displayByDigest[digest])
+		}
+	}
+	// Narrow each list to the range, and count.
+	var total int64
+	for i, rows := range lists {
+		lo, _ := slices.BinarySearch(rows, after+1)
+		hi, _ := slices.BinarySearch(rows, through+1)
+		lists[i] = rows[lo:hi]
+		total += int64(hi - lo)
+	}
+	if displayIndexMaxShare > 0 && total*displayIndexMaxShare > through-after {
+		c.scan = true
+		return c, nil
+	}
+	trace, traceKnown := uint32(0), traceID == ""
+	if traceID != "" {
+		trace, traceKnown = idx.traceIndex[traceID]
+	}
+	if !traceKnown {
+		return c, nil
+	}
+	c.rows = make([]int64, 0, total)
+	for _, rows := range lists {
+		for _, id := range rows {
+			m := idx.meta[id-1]
+			if m.flags.display() && (traceID == "" || m.trace == trace) {
+				c.rows = append(c.rows, id)
+			}
+		}
+	}
+	if len(lists) > 1 {
+		slices.Sort(c.rows)
+		c.rows = slices.Compact(c.rows)
+	}
+	return c, nil
+}
+
 // LogPresence announces that a span has display text without carrying it:
 // the first display row of each (trace, span, digest) in a push stream.
 type LogPresence struct {
@@ -290,7 +441,7 @@ func (s *DB) SearchLogs(ctx context.Context, search archive.LogSearch, throughID
 	result := archive.LogSearchResult{Matches: []archive.LogMatch{}, Next: search.After}
 	var scanned int64
 	for result.Next < throughID {
-		rows, next, err := s.SelectDisplayLogs(ctx, SelectLogsRangeParams{AfterID: result.Next, ThroughID: throughID, Limit: 4096}, traceID, scope)
+		rows, next, _, err := s.ReadDisplayLogs(ctx, SelectLogsRangeParams{AfterID: result.Next, ThroughID: throughID, Limit: 4096}, traceID, scope)
 		if err != nil {
 			return result, err
 		}
