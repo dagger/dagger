@@ -88,8 +88,11 @@ type sessionLedger struct {
 	live     map[clientClaim]int
 	sessions int
 	ended    map[clientClaim]time.Time
-	// claims are the live sessions that started under a claim, by session
-	// ID, which the remote cache's settle state reports (settleState).
+	// claims are the sessions that started under a claim, by session ID,
+	// which the remote cache's settle state reports (settleState): live
+	// ones, and, with the remote cache, ended ones until a Settled covers
+	// them, so that a session that ends before its claim is sent is still
+	// sent before its settle.
 	claims map[string]string
 	// remote is the remote cache's settle state, while an integration is
 	// attached (attachRemote).
@@ -180,7 +183,9 @@ func (l *sessionLedger) sessionEnded(sessionID, clientID, claimID string, marker
 		return
 	}
 	l.sessions--
-	delete(l.claims, sessionID)
+	if l.remote == nil {
+		delete(l.claims, sessionID)
+	}
 	if r := l.remote; r != nil {
 		r.unacked = append(r.unacked, protocol.SettleSession{ID: sessionID, Marker: marker})
 		if l.sessions == 0 {
@@ -254,6 +259,9 @@ func (l *sessionLedger) settledFor(period uint64, sessions []protocol.SettleSess
 	r.unacked = slices.DeleteFunc(r.unacked, func(s protocol.SettleSession) bool {
 		return slices.ContainsFunc(sessions, func(listed protocol.SettleSession) bool { return listed.ID == s.ID })
 	})
+	for _, s := range sessions {
+		delete(l.claims, s.ID)
+	}
 	r.settled = true
 	l.notifyLocked()
 }
