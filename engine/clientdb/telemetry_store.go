@@ -13,6 +13,7 @@ import (
 	"slices"
 	"sort"
 	"sync"
+	"sync/atomic"
 
 	telemetry "github.com/dagger/otel-go"
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
@@ -26,6 +27,10 @@ type spanLookupKey struct {
 
 type spanLookup struct {
 	mu sync.RWMutex
+	// gen counts the batches of span rows added. Readers that memoize an
+	// answer that more spans or links could change (see place) revalidate it
+	// when gen moves. Written under mu; read without it.
+	gen atomic.Uint64
 
 	// The composite key preserves SelectSpan's trace_id + span_id predicate.
 	firstRow map[spanLookupKey]int64
@@ -43,6 +48,16 @@ type spanLookup struct {
 	// chain from every scope member up to the trace root, so no member's
 	// parent pointer dangles at a placeholder.
 	parent map[string]string
+	// parentOf inverts parent exactly: unlike children, which follows each
+	// span's first snapshot, it lists a span under whichever parent parent
+	// holds for it, so that walking it down finds exactly the spans place
+	// finds walking up (see closeBeneath).
+	parentOf map[string][]string
+	// arrivals lists, in order, the spans whose snapshot could place them
+	// somewhere new: a span's first snapshot, and one that gives it a parent
+	// or more cause links. A reader that placed spans as of some length of it
+	// need only place the arrivals since (see placeArrivals).
+	arrivals []string
 	// checkSpans/testSpans remember the spans whose attributes mark them as
 	// named checks or tests (telemetry.CheckNameAttr, semconv test.case.name
 	// / test.suite.name). Detected with a raw byte scan of the encoded
@@ -102,6 +117,7 @@ func newSpanLookup() *spanLookup {
 		firstRow:       make(map[spanLookupKey]int64),
 		lastRow:        make(map[string]int64),
 		parent:         make(map[string]string),
+		parentOf:       make(map[string][]string),
 		checkSpans:     make(map[string]struct{}),
 		testSpans:      make(map[string]struct{}),
 		children:       make(map[string][]string),
@@ -121,17 +137,22 @@ func (l *spanLookup) addAll(rows []Span) {
 	for i, row := range rows {
 		l.addLocked(row, targets[i])
 	}
+	l.gen.Add(1)
 	l.mu.Unlock()
 }
+
+// generation is the current gen.
+func (l *spanLookup) generation() uint64 { return l.gen.Load() }
 
 func (l *spanLookup) addLocked(row Span, causalTargets []string) {
 	// Link edges are indexed before (and regardless of) the duplicate-snapshot
 	// suppression below: a later snapshot of an already-seen span may carry
 	// links its first row lacked.
-	l.addCauseLinksLocked(row.SpanID, causalTargets)
+	linked := l.addCauseLinksLocked(row.SpanID, causalTargets)
 	// Likewise per-row, not per-span: the newest snapshot is the span's
 	// current state, and check/test markers may only appear on a snapshot
 	// taken after the attribute was set.
+	_, seen := l.lastRow[row.SpanID]
 	l.lastRow[row.SpanID] = row.ID
 	if _, marked := l.checkSpans[row.SpanID]; !marked && bytes.Contains(row.Attributes, checkNameAttrMarker) {
 		l.checkSpans[row.SpanID] = struct{}{}
@@ -145,7 +166,11 @@ func (l *spanLookup) addLocked(row Span, causalTargets []string) {
 		_, parentKnown = l.parent[row.SpanID]
 		if !parentKnown {
 			l.parent[row.SpanID] = row.ParentSpanID.String
+			l.parentOf[row.ParentSpanID.String] = append(l.parentOf[row.ParentSpanID.String], row.SpanID)
 		}
+	}
+	if !seen || linked || (row.ParentSpanID.Valid && !parentKnown) {
+		l.arrivals = append(l.arrivals, row.SpanID)
 	}
 	key := spanLookupKey{traceID: row.TraceID, spanID: row.SpanID}
 	if _, exists := l.firstRow[key]; exists {
@@ -163,11 +188,12 @@ func (l *spanLookup) addLocked(row Span, causalTargets []string) {
 	}
 }
 
-// addCauseLinksLocked adds targets to the set of spans spanID cause-links.
+// addCauseLinksLocked adds targets to the set of spans spanID cause-links,
+// reporting whether the set grew.
 // A span keeps one set: links that grow it move the span to the larger set.
-func (l *spanLookup) addCauseLinksLocked(spanID string, targets []string) {
+func (l *spanLookup) addCauseLinksLocked(spanID string, targets []string) bool {
 	if len(targets) == 0 {
-		return
+		return false
 	}
 	span := l.causalIDLocked(spanID)
 	old, linked := l.spanLinkSet[span]
@@ -188,7 +214,7 @@ func (l *spanLookup) addCauseLinksLocked(spanID string, targets []string) {
 		next = slices.Insert(next, i, id)
 	}
 	if linked && len(next) == len(current) {
-		return
+		return false
 	}
 	if linked {
 		members := l.linkSets[old].members
@@ -201,6 +227,7 @@ func (l *spanLookup) addCauseLinksLocked(spanID string, targets []string) {
 	set := l.linkSetLocked(next)
 	l.linkSets[set].members = append(l.linkSets[set].members, span)
 	l.spanLinkSet[span] = set
+	return true
 }
 
 func (l *spanLookup) causalIDLocked(spanID string) uint32 {
@@ -513,30 +540,142 @@ func (l *spanLookup) hasSpan(spanID string) bool {
 	return found
 }
 
-// beneath reports whether spanID is in scope or reachable from it upward,
-// over the reverse of logScope's downward edges: the parent edge and the
-// span's own cause links. Cycle-safe.
-func (l *spanLookup) beneath(spanID string, scope map[string]bool) bool {
+// placementMemo remembers, for one reader, the spans place found not beneath
+// its scope, as of one generation of the index: more spans or links may
+// place them later, but until the index changes they need no second walk.
+type placementMemo struct {
+	gen uint64
+	out map[string]struct{}
+	// Buffers reused across walks: seen holds the walk that last visited
+	// each span, so it needs no clearing.
+	walk    uint64
+	seen    map[string]uint64
+	visited []string
+	queue   []string
+}
+
+// place reports whether spanID has a snapshot in the index and, if it does,
+// whether it is in scope or reachable from it upward, over the reverse of
+// logScope's downward edges: the parent edge and the span's own cause links.
+// gen is the generation the answer holds for. A span found not beneath is
+// remembered in memo, with every span its walk visited (their ancestry is
+// part of its own), so that later walks through them stop there. Cycle-safe.
+func (l *spanLookup) place(spanID string, scope map[string]bool, memo *placementMemo) (known, beneath bool, gen uint64) {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
-	seen := map[string]bool{}
-	queue := []string{spanID}
-	for len(queue) > 0 {
-		id := queue[0]
-		queue = queue[1:]
+	gen = l.gen.Load()
+	if _, known = l.lastRow[spanID]; !known {
+		return false, false, gen
+	}
+	return true, l.beneathLocked(spanID, scope, memo), gen
+}
+
+// beneathLocked is place's walk, for a span with a snapshot.
+func (l *spanLookup) beneathLocked(spanID string, scope map[string]bool, memo *placementMemo) bool {
+	if gen := l.gen.Load(); memo.out == nil || memo.gen != gen {
+		memo.out, memo.gen = map[string]struct{}{}, gen
+	}
+	if memo.seen == nil {
+		memo.seen = map[string]uint64{}
+	}
+	memo.walk++
+	visited := memo.visited[:0]
+	queue := append(memo.queue[:0], spanID)
+	defer func() { memo.visited, memo.queue = visited[:0], queue[:0] }()
+	for i := 0; i < len(queue); i++ {
+		id := queue[i]
 		if scope[id] {
 			return true
 		}
-		if seen[id] {
+		if memo.seen[id] == memo.walk {
 			continue
 		}
-		seen[id] = true
+		memo.seen[id] = memo.walk
+		visited = append(visited, id)
+		if _, out := memo.out[id]; out {
+			continue
+		}
 		if parent, ok := l.parent[id]; ok {
 			queue = append(queue, parent)
 		}
-		queue = append(queue, l.causalParentsLocked(id)...)
+		if span, ok := l.causalIDs[id]; ok {
+			if set, ok := l.spanLinkSet[span]; ok {
+				for _, target := range l.linkSets[set].targets {
+					queue = append(queue, l.causalName[target])
+				}
+			}
+		}
+	}
+	for _, id := range visited {
+		memo.out[id] = struct{}{}
 	}
 	return false
+}
+
+// closeBeneath adds to tree every span place would find beneath it: the
+// spans reachable from it downward over the exact inverses of place's
+// edges (parentOf, and the spans cause-linking each one). Every such span
+// has a snapshot, so a scope may place them for good. It returns how many
+// arrivals that covers (for placeArrivals), and the spans of unplaced that
+// still have no snapshot, as of the same state of the index.
+func (l *spanLookup) closeBeneath(tree map[string]bool, unplaced []string) (arrivals int, still []string) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	seeds := make([]string, 0, len(tree))
+	for id := range tree {
+		seeds = append(seeds, id)
+	}
+	l.closeFromLocked(tree, seeds)
+	return len(l.arrivals), l.stillUnplacedLocked(unplaced)
+}
+
+// placeArrivals brings a tree closed by closeBeneath, as of arrivals, up to
+// date: a span can only join it once it or a span above it arrives, so it
+// places the arrivals since, then closes the tree beneath them. It returns
+// the spans it added, the arrivals now covered, and the spans of unplaced
+// that still have no snapshot.
+func (l *spanLookup) placeArrivals(tree map[string]bool, arrivals int, memo *placementMemo, unplaced []string) (added []string, covered int, still []string) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	var seeds []string
+	for _, id := range l.arrivals[arrivals:] {
+		if !tree[id] && l.beneathLocked(id, tree, memo) {
+			tree[id] = true
+			seeds = append(seeds, id)
+		}
+	}
+	added = append(seeds, l.closeFromLocked(tree, seeds)...)
+	return added, len(l.arrivals), l.stillUnplacedLocked(unplaced)
+}
+
+// closeFromLocked adds to tree the spans beneath seeds (see closeBeneath),
+// returning them.
+func (l *spanLookup) closeFromLocked(tree map[string]bool, seeds []string) []string {
+	queue := slices.Clone(seeds)
+	add := func(kid string) bool {
+		if !tree[kid] {
+			tree[kid] = true
+			queue = append(queue, kid)
+		}
+		return true
+	}
+	for i := 0; i < len(queue); i++ {
+		for _, kid := range l.parentOf[queue[i]] {
+			add(kid)
+		}
+		l.causalChildrenLocked(queue[i], add)
+	}
+	return queue[len(seeds):]
+}
+
+func (l *spanLookup) stillUnplacedLocked(unplaced []string) []string {
+	var still []string
+	for _, id := range unplaced {
+		if _, known := l.lastRow[id]; !known {
+			still = append(still, id)
+		}
+	}
+	return still
 }
 
 // allSpanIDs snapshots every span ID the index has seen a snapshot of.
@@ -607,6 +746,19 @@ type logLookup struct {
 	digests     []string
 	digestIndex map[string]uint32
 
+	// For one-shot display reads by index (see ReadDisplayLogs), beside
+	// rowsBySpan: displayByDigest holds the display rows (logFlags.display)
+	// of each digest, which few rows carry; unspanned holds the rows with no
+	// span ID, which rowsBySpan leaves out.
+	displayByDigest map[uint32][]int64
+	unspanned       []int64
+	// unplaced holds the spans (interned) that have rows but no snapshot in
+	// spanKnown's span index, whose place a live log scope leaves to its
+	// reader. A span joins when its first row arrives before its snapshot
+	// and leaves when the snapshot arrives (spansStored).
+	unplaced  map[uint32]struct{}
+	spanKnown func(spanID string) bool
+
 	// memoMu guards attrMemo, which caches attribute classes by their bytes.
 	memoMu   sync.Mutex
 	attrMemo map[string]logAttrClassResult
@@ -614,13 +766,15 @@ type logLookup struct {
 
 func newLogLookup() *logLookup {
 	return &logLookup{
-		rowsBySpan:  make(map[string][]int64),
-		metaErrs:    make(map[int64]error),
-		traceIndex:  make(map[string]uint32),
-		spanIndex:   make(map[string]uint32),
-		digests:     []string{""},
-		digestIndex: map[string]uint32{"": 0},
-		attrMemo:    make(map[string]logAttrClassResult),
+		rowsBySpan:      make(map[string][]int64),
+		metaErrs:        make(map[int64]error),
+		traceIndex:      make(map[string]uint32),
+		spanIndex:       make(map[string]uint32),
+		digests:         []string{""},
+		digestIndex:     map[string]uint32{"": 0},
+		displayByDigest: make(map[uint32][]int64),
+		unplaced:        make(map[uint32]struct{}),
+		attrMemo:        make(map[string]logAttrClassResult),
 	}
 }
 
@@ -631,22 +785,73 @@ func (l *logLookup) addAll(rows []Log) {
 		if errs != nil && errs[i] != nil {
 			l.metaErrs[int64(len(l.meta))] = errs[i]
 		}
-		l.meta = append(l.meta, logMeta{
+		spans := len(l.spanIDs)
+		m := logMeta{
 			timestamp: row.Timestamp,
 			size:      logCodec.size(row),
 			trace:     internLocked(l.traceIndex, &l.traceIDs, row.TraceID.String),
 			span:      internLocked(l.spanIndex, &l.spanIDs, row.SpanID.String),
 			digest:    internLocked(l.digestIndex, &l.digests, digests[i]),
 			flags:     flags[i],
-		})
+		}
+		l.meta = append(l.meta, m)
+		if len(l.spanIDs) > spans && l.spanKnown != nil && !l.spanKnown(row.SpanID.String) {
+			l.unplaced[m.span] = struct{}{}
+		}
+		if m.digest != 0 && m.flags.display() {
+			l.displayByDigest[m.digest] = append(l.displayByDigest[m.digest], row.ID)
+		}
 	}
 	for _, row := range rows {
 		if !row.SpanID.Valid {
+			l.unspanned = append(l.unspanned, row.ID)
 			continue
 		}
 		l.rowsBySpan[row.SpanID.String] = append(l.rowsBySpan[row.SpanID.String], row.ID)
 	}
 	l.mu.Unlock()
+}
+
+// spansStored takes the spans of rows, now in the span index, out of
+// unplaced. It runs after the span index added them, so that a log row
+// interning one of them since sees it as known.
+func (l *logLookup) spansStored(rows []Span) {
+	l.mu.RLock()
+	empty := len(l.unplaced) == 0
+	l.mu.RUnlock()
+	if empty {
+		return
+	}
+	l.mu.Lock()
+	for _, row := range rows {
+		if span, ok := l.spanIndex[row.SpanID]; ok {
+			delete(l.unplaced, span)
+		}
+	}
+	l.mu.Unlock()
+}
+
+// spanRowsLocked returns the rows of span id: rowsBySpan's, and for "" the
+// rows with no span ID too, which a scan attributes to "" as well.
+func (l *logLookup) spanRowsLocked(id string, lists [][]int64) [][]int64 {
+	if rows := l.rowsBySpan[id]; len(rows) > 0 {
+		lists = append(lists, rows)
+	}
+	if id == "" && len(l.unspanned) > 0 {
+		lists = append(lists, l.unspanned)
+	}
+	return lists
+}
+
+// unplacedSpanIDs snapshots the IDs of the spans in unplaced.
+func (l *logLookup) unplacedSpanIDs() []string {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	ids := make([]string, 0, len(l.unplaced))
+	for span := range l.unplaced {
+		ids = append(ids, l.spanIDs[span])
+	}
+	return ids
 }
 
 // rowIDsForSpans returns the row IDs of every log row attributed to a span in
@@ -725,6 +930,7 @@ func openStoreStreams(ctx context.Context, root, clientID string, tailBudget int
 		spanTopos:  newSpanTopologyCache(),
 		clientID:   clientID,
 	}
+	store.logIdx.spanKnown = store.lookup.hasSpan
 	defer func() {
 		if rerr != nil {
 			rerr = errors.Join(rerr, store.closeStreams())
@@ -741,6 +947,7 @@ func openStoreStreams(ctx context.Context, root, clientID string, tailBudget int
 		func(rows []Span) {
 			store.lookup.addAll(rows)
 			store.callIdx.addSpans(rows)
+			store.logIdx.spansStored(rows)
 		},
 	)
 	if err != nil {

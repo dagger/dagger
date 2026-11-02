@@ -717,7 +717,7 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 		if err := r.Context().Err(); err != nil {
 			return err
 		}
-		message, next, rowCount, err := reader.batch(r.Context(), signal, cursor, high, batchLimit)
+		message, next, row, rowCount, err := reader.batch(r.Context(), signal, cursor, high, batchLimit)
 		if err != nil {
 			return err
 		}
@@ -729,7 +729,7 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 			}
 			// A single row cannot be split. Failing here would make the whole
 			// history unreadable on every attempt, so shrink it instead.
-			message, err = shrinkOversizedArchiveRow(r.Context(), m.TraceID, signal, next, message, maxPayloadSize)
+			message, err = shrinkOversizedArchiveRow(r.Context(), m.TraceID, signal, row, message, maxPayloadSize)
 			if err != nil {
 				return err
 			}
@@ -784,57 +784,68 @@ type archiveSignalReader struct {
 }
 
 // batch reads up to limit signal rows after cursor, through high. next is the
-// last row it scanned, and rowCount how many rows that covers.
-func (a archiveSignalReader) batch(ctx context.Context, signal string, cursor, high int64, limit int) (proto.Message, int64, int, error) {
+// last row it covered, row the last row it read (what a single oversized row
+// is reported as), and rowCount the batch's size in the units of limit: the
+// rows it covered, or for a log query read through the row indexes, the rows
+// it returned.
+func (a archiveSignalReader) batch(ctx context.Context, signal string, cursor, high int64, limit int) (_ proto.Message, next, row int64, rowCount int, _ error) {
 	switch signal {
 	case "traces":
 		rows, err := a.db.SelectSpansRange(ctx, clientdb.SelectSpansRangeParams{AfterID: cursor, ThroughID: high, Limit: int64(limit)})
 		if err != nil {
-			return nil, 0, 0, err
+			return nil, 0, 0, 0, err
 		}
 		if len(rows) == 0 {
-			return nil, 0, 0, errors.New("archive span stream truncated before cut")
+			return nil, 0, 0, 0, errors.New("archive span stream truncated before cut")
 		}
 		var spans []clientdb.Span
-		for _, row := range rows {
-			if row.TraceID == a.traceID && (a.spanView == nil || a.spanView.Includes(row)) {
-				spans = append(spans, row)
+		for _, span := range rows {
+			if span.TraceID == a.traceID && (a.spanView == nil || a.spanView.Includes(span)) {
+				spans = append(spans, span)
 			}
 		}
 		resourceSpans := clientdb.SpansToPB(spans)
 		if a.spanSelection != nil && a.spanSelection.DagUIView {
 			annotateArchiveSpans(resourceSpans, a.spanView)
 		}
-		return &coltracepb.ExportTraceServiceRequest{ResourceSpans: resourceSpans}, rows[len(rows)-1].ID, len(rows), nil
+		last := rows[len(rows)-1].ID
+		return &coltracepb.ExportTraceServiceRequest{ResourceSpans: resourceSpans}, last, last, len(rows), nil
 	case "logs":
 		var rows []clientdb.Log
-		var scanned int64
 		var err error
 		p := clientdb.SelectLogsRangeParams{AfterID: cursor, ThroughID: high, Limit: int64(limit)}
 		if a.displayScope != nil {
-			rows, scanned, err = a.db.SelectDisplayLogs(ctx, p, a.traceID, a.displayScope)
+			// A log query reads through the row indexes: rowCount counts
+			// the rows returned, and the cursor jumps to the next one.
+			rows, next, rowCount, err = a.db.ReadDisplayLogs(ctx, p, a.traceID, a.displayScope)
 		} else {
-			rows, scanned, err = a.db.SelectLogsRangeMatching(ctx, p, a.traceID, a.logScope, a.logSelection, a.includeControl)
+			rows, next, err = a.db.SelectLogsRangeMatching(ctx, p, a.traceID, a.logScope, a.logSelection, a.includeControl)
+			rowCount = int(next - cursor)
 		}
 		if err != nil {
-			return nil, 0, 0, err
+			return nil, 0, 0, 0, err
+		}
+		row = next
+		if len(rows) > 0 {
+			row = rows[len(rows)-1].ID
 		}
 		filtered, err := archiveHistoryLogs(rows, a.traceID, a.includeControl)
 		if err != nil {
-			return nil, 0, 0, err
+			return nil, 0, 0, 0, err
 		}
-		return &collogspb.ExportLogsServiceRequest{ResourceLogs: clientdb.LogsToPB(filtered)}, scanned, int(scanned - cursor), nil
+		return &collogspb.ExportLogsServiceRequest{ResourceLogs: clientdb.LogsToPB(filtered)}, next, row, rowCount, nil
 	case "metrics":
 		rows, err := a.db.SelectMetricsRange(ctx, clientdb.SelectMetricsRangeParams{AfterID: cursor, ThroughID: high, Limit: int64(limit)})
 		if err != nil {
-			return nil, 0, 0, err
+			return nil, 0, 0, 0, err
 		}
 		if len(rows) == 0 {
-			return nil, 0, 0, errors.New("archive metric stream truncated before cut")
+			return nil, 0, 0, 0, errors.New("archive metric stream truncated before cut")
 		}
-		return &colmetricspb.ExportMetricsServiceRequest{ResourceMetrics: clientdb.MetricsToPB(rows)}, rows[len(rows)-1].ID, len(rows), nil
+		last := rows[len(rows)-1].ID
+		return &colmetricspb.ExportMetricsServiceRequest{ResourceMetrics: clientdb.MetricsToPB(rows)}, last, last, len(rows), nil
 	default:
-		return nil, 0, 0, fmt.Errorf("unknown archive signal %q", signal)
+		return nil, 0, 0, 0, fmt.Errorf("unknown archive signal %q", signal)
 	}
 }
 

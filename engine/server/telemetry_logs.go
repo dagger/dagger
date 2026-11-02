@@ -107,8 +107,11 @@ func presenceResourceLogs(presence []clientdb.LogPresence) *otlplogsv1.ResourceL
 
 // displayLogFetcher reads the display text of spans. A one-shot read ends at
 // the store's end when it first runs, or at through when that is lower and
-// non-negative; a follow reads to the current end on every poll. The scope is
-// resolved once and then follows new spans itself, so an idle poll (no new
+// non-negative, and reads its rows through the store's row indexes
+// (ReadDisplayLogs): its batches count the rows they return, and its cursor
+// may jump past rows outside the scope, up to the read's end. A follow scans
+// to the current end on every poll, placing spans that arrive late. The scope
+// is resolved once and then follows new spans itself, so an idle poll (no new
 // rows) costs one high-water read.
 func displayLogFetcher(spans []archive.LogSpan, oneShot bool, through int64) streamFetcher {
 	var scope *clientdb.LogQueryScope
@@ -134,7 +137,15 @@ func displayLogFetcher(spans []archive.LogSpan, oneShot bool, through int64) str
 		if scope == nil {
 			scope = db.LiveLogScope(spans)
 		}
-		rows, next, err := db.SelectDisplayLogs(ctx, clientdb.SelectLogsRangeParams{AfterID: since, ThroughID: end, Limit: int64(limit)}, "", scope)
+		p := clientdb.SelectLogsRangeParams{AfterID: since, ThroughID: end, Limit: int64(limit)}
+		if oneShot {
+			rows, next, n, err := db.ReadDisplayLogs(ctx, p, "", scope)
+			if err != nil {
+				return 0, nil, 0, err
+			}
+			return next, &collogspb.ExportLogsServiceRequest{ResourceLogs: clientdb.LogsToPB(rows)}, n, nil
+		}
+		rows, next, err := db.SelectDisplayLogs(ctx, p, "", scope)
 		if err != nil {
 			return 0, nil, 0, err
 		}

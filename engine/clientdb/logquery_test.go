@@ -133,6 +133,35 @@ func TestDisplayLogsLiveScopePlacesKnownSpansLater(t *testing.T) {
 	require.Equal(t, []int64{1, 2}, ids)
 }
 
+// A span a scope's reader already found outside the tree is placed once a
+// later snapshot links it beneath, though the reader keeps its decisions.
+func TestDisplayLogsLiveScopeRevisitsUnplacedSpans(t *testing.T) {
+	db := logQueryStore(t)
+	const (
+		root = "00000000000000a1"
+		svc  = "00000000000000b1"
+		mid  = "00000000000000b2"
+	)
+	_, err := db.AppendSpans([]Span{logQuerySpan(root, ""), logQuerySpan(svc, mid)})
+	require.NoError(t, err)
+	scope := db.LiveLogScope([]archive.LogSpan{{SpanID: root, Descendants: true}})
+	_, err = db.AppendLogs([]Log{selectionLog(t, svc, selectionText("before")), selectionLog(t, root, selectionText("root"))})
+	require.NoError(t, err)
+	ids, cursor := readDisplay(t, db, scope, 0, db.HighWater().Logs)
+	require.Equal(t, []int64{2}, ids)
+
+	// svc's parent arrives, cause-linked beneath the root.
+	linked := logQuerySpan(mid, "")
+	linked.Links = linksJSON(t, spanLink(t, selectionTrace, root, telemetry.LinkPurposeCause))
+	_, err = db.AppendSpans([]Span{linked})
+	require.NoError(t, err)
+	_, err = db.AppendLogs([]Log{selectionLog(t, svc, selectionText("after"))})
+	require.NoError(t, err)
+	ids, _ = readDisplay(t, db, scope, cursor, db.HighWater().Logs)
+	require.Equal(t, []int64{3}, ids)
+	require.True(t, scope.tree[svc])
+}
+
 func TestLogsWithoutDisplayReportsPresence(t *testing.T) {
 	db := logQueryStore(t)
 	_, err := db.AppendLogs([]Log{
