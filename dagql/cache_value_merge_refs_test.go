@@ -40,11 +40,10 @@ func TestMergePreparationRelocatesAsValidateThenVisit(t *testing.T) {
 	require.Empty(t, prep.stale)
 	require.Equal(t, uint64(10_000), prep.firstID)
 
-	relocate := func(ref *PersistedRef) error {
+	relocate := func(ref *PersistedRef) {
 		if ref.RecipeID == nil && ref.ResultID != 0 {
 			ref.ResultID = prep.firstID + ref.ResultID - 1
 		}
-		return nil
 	}
 	offers, owned, children := 0, 0, 0
 	for _, id := range prep.order {
@@ -55,9 +54,7 @@ func TestMergePreparationRelocatesAsValidateThenVisit(t *testing.T) {
 			if ref.Kind == PersistedRefChild && ref.ResultID != 0 {
 				children++
 			}
-			if err := relocate(ref); err != nil {
-				return err
-			}
+			relocate(ref)
 			if ref.RecipeID == nil && ref.ResultID != 0 {
 				refs = append(refs, ref.ResultID)
 			}
