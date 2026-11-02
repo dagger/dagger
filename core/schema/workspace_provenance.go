@@ -13,6 +13,12 @@ type provenancePathArgs struct {
 	Path  core.WorkspacePath
 	Kinds []string `default:"[]"`
 }
+type provenanceSelectionArgs struct {
+	Paths   []core.WorkspacePath        `default:"[]"`
+	Changes []dagql.ID[*core.Changeset] `default:"[]"`
+	Kinds   []string                    `default:"[]"`
+}
+
 type provenanceDiffArgs struct {
 	Changes dagql.ID[*core.Changeset]
 	Kinds   []string `default:"[]"`
@@ -71,6 +77,46 @@ func installWorkspaceProvenance(srv *dagql.Server) {
 		}).Doc("Whether this artifact may depend on changed workspace paths.").WithInput(dagql.PerCallInput),
 	}.Install(srv)
 	dagql.Fields[*core.Artifacts]{
+		dagql.Func("filterAffected", func(ctx context.Context, a *core.Artifacts, args provenanceSelectionArgs) (*core.Artifacts, error) {
+			if err := provenance.ValidateKinds(args.Kinds); err != nil {
+				return nil, err
+			}
+			for _, scope := range args.Paths {
+				if _, err := provenance.Path(string(scope)); err != nil {
+					return nil, err
+				}
+			}
+			srv, err := core.CurrentDagqlServer(ctx)
+			if err != nil {
+				return nil, err
+			}
+			changed := &core.ChangesetPaths{}
+			for _, id := range args.Changes {
+				change, err := id.Load(ctx, srv)
+				if err != nil {
+					return nil, err
+				}
+				paths, err := change.Self().ComputePaths(ctx)
+				if err != nil {
+					return nil, err
+				}
+				changed.Added = append(changed.Added, paths.Added...)
+				changed.Modified = append(changed.Modified, paths.Modified...)
+				changed.AllRemoved = append(changed.AllRemoved, paths.AllRemoved...)
+			}
+			return filterAffected(ctx, a, func(p *core.WorkspaceProvenance) (bool, error) {
+				if len(args.Changes) == 0 && len(args.Paths) > 0 {
+					for _, scope := range args.Paths {
+						match, err := p.AffectedByPath(string(scope), args.Kinds)
+						if err != nil || match {
+							return match, err
+						}
+					}
+					return false, nil
+				}
+				return p.AffectedByChangedPaths(changed, args.Paths, args.Kinds)
+			})
+		}).Doc("Keep artifacts affected by source paths or changesets. Paths limit changed paths when changesets are provided. Unknown inputs stay selected.").WithInput(dagql.PerCallInput),
 		dagql.Func("filterAffectedByPath", func(ctx context.Context, a *core.Artifacts, args provenancePathArgs) (*core.Artifacts, error) {
 			if _, err := provenance.Path(string(args.Path)); err != nil {
 				return nil, err

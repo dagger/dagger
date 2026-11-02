@@ -111,7 +111,7 @@ func runChecks(ctx context.Context, dag *dagger.Client, checks *core.Artifacts, 
 	if err != nil {
 		return err
 	}
-	if !cmd.Flags().Changed("path") {
+	if !artifactSourceFilterEnabled(cmd) {
 		if err := validateCheckSelection(include, len(results)); err != nil {
 			return err
 		}

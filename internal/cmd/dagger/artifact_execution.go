@@ -288,7 +288,7 @@ func commandArtifacts(ctx context.Context, dag *dagger.Client, ws *core.Workspac
 	if err != nil {
 		return nil, err
 	}
-	filterSource := cmd.Flags().Changed("path")
+	filterSource := artifactSourceFilterEnabled(cmd)
 	var workspaceID core.ID
 	if filterSource {
 		workspaceID, err = ws.Snapshot().ID(ctx)
@@ -363,15 +363,7 @@ func commandArtifacts(ctx context.Context, dag *dagger.Client, ws *core.Workspac
 	if !filterSource {
 		return selection, nil
 	}
-	sourcePath, err := cmd.Flags().GetString("path")
-	if err != nil {
-		return nil, err
-	}
-	id, err := selection.FilterAffectedByPath(core.WorkspacePath(sourcePath)).ID(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return core.Ref[*core.Artifacts](core.NewQuery(dag), id), nil
+	return filterArtifactsBySource(ctx, dag, ws, selection, cmd)
 }
 
 func sharedArtifactFilters(addresses []*dagaddress.Address) (*dagaddress.Address, error) {

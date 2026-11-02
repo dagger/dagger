@@ -2071,6 +2071,39 @@ func (r *Artifacts) Dimensions(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx)
 }
 
+// ArtifactsFilterAffectedOpts contains options for Artifacts.FilterAffected
+type ArtifactsFilterAffectedOpts struct {
+	Paths []WorkspacePath
+
+	Changes []*Changeset
+
+	Kinds []string
+}
+
+// Keep artifacts affected by source paths or changesets. Paths limit changed paths when changesets are provided. Unknown inputs stay selected.
+func (r *Artifacts) FilterAffected(opts ...ArtifactsFilterAffectedOpts) *Artifacts {
+	q := r.query.Select("filterAffected")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `paths` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Paths) {
+			q = q.Arg("paths", opts[i].Paths)
+		}
+		// `changes` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Changes) {
+			q = q.Arg("changes", opts[i].Changes)
+		}
+		// `kinds` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Kinds) {
+			q = q.Arg("kinds", opts[i].Kinds)
+		}
+	}
+
+	return &Artifacts{
+		query:     q,
+		refetchID: true,
+	}
+}
+
 // ArtifactsFilterAffectedByDiffOpts contains options for Artifacts.FilterAffectedByDiff
 type ArtifactsFilterAffectedByDiffOpts struct {
 	Kinds []string

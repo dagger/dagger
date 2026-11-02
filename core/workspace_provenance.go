@@ -70,33 +70,60 @@ func newWorkspaceProvenance(regions []provenance.Selector) *WorkspaceProvenance 
 func (p *WorkspaceProvenance) AffectedByPath(path string, kinds []string) (bool, error) {
 	return provenance.AffectedByPath(p.regions(), path, kinds)
 }
+func (p *WorkspaceProvenance) unknownInputs(kinds []string) bool {
+	return slices.ContainsFunc(p.Selectors, func(selector *WorkspaceSelector) bool {
+		return selector.Conservative && (len(kinds) == 0 || slices.Contains(kinds, selector.Kind))
+	})
+}
+
 func (p *WorkspaceProvenance) AffectedByDiff(ctx context.Context, changes *Changeset, kinds []string) (bool, error) {
 	if err := provenance.ValidateKinds(kinds); err != nil {
 		return false, err
 	}
-	for _, selector := range p.Selectors {
-		if selector.Conservative && (len(kinds) == 0 || slices.Contains(kinds, selector.Kind)) {
-			return true, nil
-		}
+	if p.unknownInputs(kinds) {
+		return true, nil
 	}
 	paths, err := changes.ComputePaths(ctx)
 	if err != nil {
 		return false, err
 	}
-	// Added/AllRemoved also contain directories. Treat them as regions so a
-	// removed subtree still matches a selector for an input inside it.
-	for _, path := range paths.Modified {
-		match, err := provenance.AffectedByFile(p.regions(), path, kinds)
-		if err != nil || match {
-			return match, err
-		}
+	return p.AffectedByChangedPaths(paths, nil, kinds)
+}
+
+// AffectedByChangedPaths limits the changed paths before matching dependencies.
+// Intersecting two artifact selections would also match a check that reads an
+// unchanged scoped file and a changed file outside that scope.
+func (p *WorkspaceProvenance) AffectedByChangedPaths(changes *ChangesetPaths, scopes []WorkspacePath, kinds []string) (bool, error) {
+	if err := provenance.ValidateKinds(kinds); err != nil {
+		return false, err
 	}
-	for _, path := range slices.Concat(paths.Added, paths.AllRemoved) {
+	roots := make([]string, 0, len(scopes))
+	for _, scope := range scopes {
+		root, err := provenance.Path(string(scope))
+		if err != nil {
+			return false, err
+		}
+		roots = append(roots, root)
+	}
+	if p.unknownInputs(kinds) {
+		return true, nil
+	}
+	regions := p.regions()
+	for _, changed := range slices.Concat(changes.Modified, changes.Added, changes.AllRemoved) {
+		file, err := provenance.Path(changed)
+		if err != nil {
+			return false, err
+		}
+		if len(roots) > 0 && !slices.ContainsFunc(roots, func(root string) bool {
+			return root == "/" || file == root || strings.HasPrefix(file, root+"/")
+		}) {
+			continue
+		}
 		var match bool
-		if strings.HasSuffix(path, "/") {
-			match, err = p.AffectedByPath(path, kinds)
+		if strings.HasSuffix(changed, "/") {
+			match, err = provenance.AffectedByPath(regions, file, kinds)
 		} else {
-			match, err = provenance.AffectedByFile(p.regions(), path, kinds)
+			match, err = provenance.AffectedByFile(regions, file, kinds)
 		}
 		if err != nil || match {
 			return match, err

@@ -83,7 +83,7 @@ later reads. Supplying dummy results would change the code's behavior.
 4. **Filter through Artifacts.** Keep unknown inputs selected. Keep collection
    views, legacy batching, module load errors, and cloud dispatch in the existing
    selection system. `--path PATH` uses one workspace snapshot for
-   filtering and execution. Paths start at the workspace root.
+   filtering and execution.
 
 First-run skipping is not supported. A cache hit without a recorded summary
 stays unknown. Filtering can construct receivers and discover collection keys;
@@ -94,6 +94,19 @@ workspaces. Unfiltered Directory values retain the full source tree, so they
 retain a root dependency. Git ignore reads also retain a root dependency.
 Symlink paths, live workspace access, and changing non-file inputs stay unknown.
 Other Workspace operations currently stay unknown.
+
+## CLI
+
+`--commit COMMIT` selects paths changed by that commit. `--uncommitted` selects
+current workspace changes from HEAD, including non-ignored untracked files.
+Repeat commits to combine their changed paths. Merge commits use their first
+parent; root commits use an empty tree.
+
+`--path PATH` limits these changed paths before matching dependencies. Without
+Git flags, it selects a source file or subtree directly. Repeat paths to include
+any listed path. Relative paths start at the current directory; `/` starts at
+the workspace root. Run selected artifacts in the current workspace snapshot.
+An empty filtered selection succeeds.
 
 ## Relationship to caching
 
