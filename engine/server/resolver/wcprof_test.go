@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/containerd/containerd/v2/core/remotes/docker"
+	localcontentstore "github.com/containerd/containerd/v2/plugins/content/local"
 	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
@@ -85,6 +86,44 @@ func TestPullProfiled(t *testing.T) {
 	require.Equal(t, "ok", fetch.Outcome)
 	require.GreaterOrEqual(t, fetch.StartNS, pull.StartNS)
 	require.LessOrEqual(t, fetch.EndNS, pull.EndNS)
+}
+
+// A pull pinned by digest with no local metadata downloads its root before
+// anything else. That download is an image.fetch under the pull like every
+// other blob's, and a failed one is a failed fetch.
+func TestPinnedPullProfilesRootDownload(t *testing.T) {
+	platform := ocispecs.Platform{OS: "linux", Architecture: "amd64"}
+	image := newTestPullImage(t, false, platform)
+	registry := newTestPullRegistry(t, image)
+	store, err := localcontentstore.NewLabeledStore(t.TempDir(), newTestContentLabelStore())
+	require.NoError(t, err)
+	resolver := newTestResolver(t, registry.host, store)
+	opts := PullOpts{Platform: platform}
+
+	ctx, root := profiledRoot(t.Context())
+	pulled, err := resolver.Pull(ctx, registry.host+"/test/image:latest@"+image.root.Digest.String(), opts)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, pulled.Release(context.WithoutCancel(ctx))) })
+	root.End(wcprof.OutcomeOK)
+	fetched := map[string]profiledEvent{}
+	for _, f := range profiledOps(t, root.ID())["image.fetch"] {
+		fetched[f.ident] = f
+	}
+	rootFetch, ok := fetched[image.root.Digest.String()]
+	require.True(t, ok, "the root's download is recorded")
+	require.Equal(t, "ok", rootFetch.Outcome)
+	require.EqualValues(t, len(image.rootBytes), rootFetch.Bytes)
+	require.Contains(t, fetched, image.layer.Digest.String())
+
+	missing := digest.FromString("missing")
+	ctx, root = profiledRoot(t.Context())
+	_, err = resolver.Pull(ctx, registry.host+"/test/image@"+missing.String(), opts)
+	require.Error(t, err)
+	root.End(wcprof.OutcomeOK)
+	fetches := profiledOps(t, root.ID())["image.fetch"]
+	require.Len(t, fetches, 1)
+	require.Equal(t, missing.String(), fetches[0].ident)
+	require.Equal(t, "error", fetches[0].Outcome)
 }
 
 // A profiled resolve is an io op naming the ref. Its fetches aren't

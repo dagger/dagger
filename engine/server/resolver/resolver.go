@@ -225,7 +225,7 @@ func (r *Resolver) ResolveImageConfig(
 		if err != nil {
 			return nil, fmt.Errorf("create registry resolve network recorder: %w", err)
 		}
-		resolvedRef, rootDesc, fetcher, err := r.resolveRemoteRootDescriptor(ctx, ref, opts.Network, opts.RegistryTransport, network)
+		resolvedRef, rootDesc, fetcher, err := r.resolveRemoteRootDescriptor(ctx, ref, opts.Network, opts.RegistryTransport, network, false)
 		if err != nil {
 			return nil, err
 		}
@@ -381,7 +381,6 @@ func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *Pull
 	if err != nil {
 		return nil, err
 	}
-	fetcher = profFetcher(ctx, fetcher)
 	leaseCtx, release, err := r.newPullLease(ctx)
 	if err != nil {
 		return nil, err
@@ -510,10 +509,10 @@ func (r *Resolver) resolvePullRootDescriptor(ctx context.Context, ref string, op
 			if err != nil {
 				return "", ocispecs.Descriptor{}, nil, err
 			}
-			return resolvedRef, rootDesc, fetcher, nil
+			return resolvedRef, rootDesc, profFetcher(ctx, fetcher), nil
 		}
 	}
-	return r.resolveRemoteRootDescriptor(ctx, ref, opts.Network, opts.RegistryTransport, recorder)
+	return r.resolveRemoteRootDescriptor(ctx, ref, opts.Network, opts.RegistryTransport, recorder, true)
 }
 
 // remoteResolver asks the registry through a transport that records every
@@ -536,11 +535,14 @@ func (r *Resolver) remoteHosts(network NetworkConfig, registryTransport Registry
 // such check: its root is the first thing fetched either way. So it is
 // fetched straight away, checked against the digest, and served from memory
 // when the fetcher is asked for it, saving a registry round trip.
-func (r *Resolver) resolveRemoteRootDescriptor(ctx context.Context, ref string, network NetworkConfig, registryTransport RegistryTransport, recorder *enginetelemetry.NetworkAccumulator) (string, ocispecs.Descriptor, remotes.Fetcher, error) {
+//
+// A pull's fetcher records each download when work under ctx is profiled
+// (profFetcher), the pinned root's included; a resolve's records none.
+func (r *Resolver) resolveRemoteRootDescriptor(ctx context.Context, ref string, network NetworkConfig, registryTransport RegistryTransport, recorder *enginetelemetry.NetworkAccumulator, pull bool) (string, ocispecs.Descriptor, remotes.Fetcher, error) {
 	hosts := r.remoteHosts(network, registryTransport, recorder)
 	if parsed, err := reference.ParseNormalizedNamed(ref); err == nil {
 		if canonical, ok := parsed.(reference.Canonical); ok {
-			return fetchPinnedRoot(ctx, hosts, ref, canonical.Digest())
+			return fetchPinnedRoot(ctx, hosts, ref, canonical.Digest(), pull)
 		}
 	}
 	resolver := docker.NewResolver(docker.ResolverOptions{Hosts: hosts})
@@ -552,14 +554,20 @@ func (r *Resolver) resolveRemoteRootDescriptor(ctx context.Context, ref string, 
 	if err != nil {
 		return "", ocispecs.Descriptor{}, nil, err
 	}
+	if pull {
+		fetcher = profFetcher(ctx, fetcher)
+	}
 	return resolvedRef, rootDesc, fetcher, nil
 }
 
-func fetchPinnedRoot(ctx context.Context, hosts docker.RegistryHosts, ref string, dgst digest.Digest) (string, ocispecs.Descriptor, remotes.Fetcher, error) {
+func fetchPinnedRoot(ctx context.Context, hosts docker.RegistryHosts, ref string, dgst digest.Digest, pull bool) (string, ocispecs.Descriptor, remotes.Fetcher, error) {
 	resolver := docker.NewResolver(docker.ResolverOptions{Hosts: acceptEveryManifestType(hosts)})
 	fetcher, err := resolver.Fetcher(ctx, ref)
 	if err != nil {
 		return "", ocispecs.Descriptor{}, nil, err
+	}
+	if pull {
+		fetcher = profFetcher(ctx, fetcher)
 	}
 	// Any manifest media type sends the request to the manifests endpoint.
 	// The fetcher doesn't return the response's type, so it's read from the
