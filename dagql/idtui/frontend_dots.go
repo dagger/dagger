@@ -72,6 +72,7 @@ func NewDots(output io.Writer) Frontend {
 		out:         out,
 		prefixW:     multiprefixw.New(out),
 		pendingLogs: make(map[dagui.SpanID][]sdklog.Record),
+		heldLogs:    make(map[dagui.SpanID][]sdklog.Record),
 		testLogs:    make(map[dagui.SpanID]*Vterm),
 	}
 	fe.reporter.logs.Logs = fe.logs.testLogs

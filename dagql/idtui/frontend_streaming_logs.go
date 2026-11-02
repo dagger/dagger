@@ -23,6 +23,10 @@ type streamingLogExporter struct {
 	out         TermOutput
 	prefixW     *multiprefixw.Writer
 	pendingLogs map[dagui.SpanID][]sdklog.Record
+	// heldLogs holds the logs of running spans that are hidden while their
+	// parents are shown, such as internal spans: they print if the span
+	// becomes shown, as when it fails, and are dropped when it ends otherwise.
+	heldLogs    map[dagui.SpanID][]sdklog.Record
 	testLogs    map[dagui.SpanID]*Vterm
 }
 
@@ -76,10 +80,17 @@ func (s *streamingLogExporter) flushLogsForSpan(spanID dagui.SpanID, records []s
 		return
 	}
 	if !streamsSpan(s.db, s.opts, dbSpan) {
+		if dbSpan.IsRunning() && parentsStream(s.db, s.opts, dbSpan) {
+			s.heldLogs[spanID] = append(s.heldLogs[spanID], records...)
+		}
 		return
 	}
+	s.printLogs(dbSpan, records)
+}
 
-	// Set prefix
+// printLogs writes a span's logs under its prefix.
+// The caller must hold the mutex.
+func (s *streamingLogExporter) printLogs(dbSpan *dagui.Span, records []sdklog.Record) {
 	r := newRenderer(s.db, 0, *s.opts, true)
 	prefix := streamingLogsPrefix(r, s.profile, dbSpan)
 
@@ -122,27 +133,50 @@ func (s *streamingLogExporter) flushLogsForSpan(spanID dagui.SpanID, records []s
 // other frontends, and no parent encapsulates it. An internal span, for
 // example, prints only with -vvv, unless it failed.
 func streamsSpan(db *dagui.DB, opts *dagui.FrontendOpts, span *dagui.Span) bool {
-	if !opts.ShouldShow(db, span) {
-		return false
-	}
+	return opts.ShouldShow(db, span) && parentsStream(db, opts, span) &&
+		(!span.Encapsulated || span.IsFailedOrCausedFailure())
+}
+
+// parentsStream reports whether all of a span's parents would show in the
+// trace, and none encapsulates it.
+func parentsStream(db *dagui.DB, opts *dagui.FrontendOpts, span *dagui.Span) bool {
 	for p := range span.Parents {
 		if p.Encapsulate || !opts.ShouldShow(db, p) {
 			return false
 		}
 	}
-	return !span.Encapsulated || span.IsFailedOrCausedFailure()
+	return true
 }
 
 // flushResolvedLogsForSpan flushes any logs that became routable once the span
 // or its creator became available.
 // The caller must hold the mutex.
 func (s *streamingLogExporter) flushResolvedLogsForSpan(spanID dagui.SpanID) {
+	s.releaseHeldLogs(spanID)
 	if records := s.db.DrainResolvedLogs(spanID); len(records) > 0 {
 		s.flushLogsForSpan(spanID, records)
 	}
 	if records, exists := s.pendingLogs[spanID]; exists {
 		s.flushLogsForSpan(spanID, records)
 		delete(s.pendingLogs, spanID)
+	}
+}
+
+// releaseHeldLogs prints a span's held logs once it is shown, and drops them
+// once it has ended without being shown.
+// The caller must hold the mutex.
+func (s *streamingLogExporter) releaseHeldLogs(spanID dagui.SpanID) {
+	held, ok := s.heldLogs[spanID]
+	if !ok {
+		return
+	}
+	span := s.db.Spans.Map[spanID]
+	switch {
+	case span != nil && streamsSpan(s.db, s.opts, span):
+		delete(s.heldLogs, spanID)
+		s.printLogs(span, held)
+	case span == nil || !span.IsRunning():
+		delete(s.heldLogs, spanID)
 	}
 }
 

@@ -73,6 +73,63 @@ func TestLogsFrontendHidesInternalSpanLogs(t *testing.T) {
 	}
 }
 
+// Logs an internal span writes while it runs print if it then fails, and are
+// dropped if it succeeds.
+func TestLogsFrontendPrintsHeldLogsOfInternalSpanThatFails(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	for _, tc := range []struct {
+		name   string
+		status codes.Code
+		shown  bool
+	}{
+		{name: "fails", status: codes.Error, shown: true},
+		{name: "succeeds", status: codes.Ok},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var output strings.Builder
+			fe := NewLogs(&output).(*frontendLogs)
+			fe.opts.Verbosity = dagui.ShowCompletedVerbosity
+			traceID := trace.TraceID{1}
+			start := time.Unix(100, 0)
+			stub := func(id, parent byte, name string, end time.Time, status codes.Code, attrs ...attribute.KeyValue) sdktrace.ReadOnlySpan {
+				span := tracetest.SpanStub{
+					Name:        name,
+					SpanContext: trace.NewSpanContext(trace.SpanContextConfig{TraceID: traceID, SpanID: trace.SpanID{id}}),
+					StartTime:   start,
+					EndTime:     end,
+					Status:      sdktrace.Status{Code: status},
+					Attributes:  attrs,
+				}
+				if parent != 0 {
+					span.Parent = trace.NewSpanContext(trace.SpanContextConfig{TraceID: traceID, SpanID: trace.SpanID{parent}})
+				}
+				return span.Snapshot()
+			}
+			internal := attribute.Bool(telemetry.UIInternalAttr, true)
+			exporter := fe.SpanExporter()
+
+			require.NoError(t, exporter.ExportSpans(context.Background(), []sdktrace.ReadOnlySpan{
+				stub(1, 0, "root", time.Time{}, codes.Unset),
+				stub(2, 1, "llm request", time.Time{}, codes.Unset, internal),
+			}))
+			require.NoError(t, fe.LogExporter().Export(context.Background(), []sdklog.Record{
+				frontendTestLogRecord(trace.SpanID{2}, otellog.StringValue("request body\n")),
+			}))
+			require.NotContains(t, output.String(), "request body", "a running internal span's logs must not print yet")
+
+			require.NoError(t, exporter.ExportSpans(context.Background(), []sdktrace.ReadOnlySpan{
+				stub(2, 1, "llm request", start.Add(time.Second), tc.status, internal),
+			}))
+			if tc.shown {
+				require.Contains(t, output.String(), "request body")
+			} else {
+				require.NotContains(t, output.String(), "request body")
+			}
+			require.Empty(t, fe.logs.heldLogs)
+		})
+	}
+}
+
 // The dots frontend prints no dot for an internal span unless internal spans
 // are shown.
 func TestDotsFrontendHidesInternalSpans(t *testing.T) {
