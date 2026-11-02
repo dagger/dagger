@@ -1221,24 +1221,38 @@ func (c *Client) setProxyEnvs(_ context.Context, state *execState) error {
 		}
 	}
 
-	if state.execMD == nil {
-		return nil
-	}
-
+	// pass every _DAGGER_ENGINE_SYSTEMENV_<NAME> set on the engine through to
+	// the container as <NAME>, e.g. GOPROXY or UV_DEFAULT_INDEX for engines that
+	// must use internal mirrors, so module code not under the user's control
+	// picks them up too
 	const systemEnvPrefix = "_DAGGER_ENGINE_SYSTEMENV_"
-	for _, entry := range state.execMD.SystemEnvNames {
-		systemEnvName, fallback, hasFallback := strings.Cut(entry, "=")
+	for _, kv := range os.Environ() {
+		systemEnvName, systemVal, _ := strings.Cut(strings.TrimPrefix(kv, systemEnvPrefix), "=")
+		if !strings.HasPrefix(kv, systemEnvPrefix) || systemEnvName == "" {
+			continue
+		}
 		if _, ok := state.origEnvMap[systemEnvName]; ok {
 			// don't overwrite explicit user-provided values
 			continue
 		}
-		systemVal, ok := os.LookupEnv(systemEnvPrefix + systemEnvName)
-		if !ok && hasFallback {
-			// neither the container nor the engine sets it
-			systemVal, ok = fallback, true
-		}
-		if ok {
-			state.spec.Process.Env = append(state.spec.Process.Env, systemEnvName+"="+systemVal)
+		state.spec.Process.Env = append(state.spec.Process.Env, systemEnvName+"="+systemVal)
+	}
+
+	// a container that opts into a variable with a fallback gets the fallback
+	// when neither it nor the engine sets the variable
+	if state.execMD != nil {
+		for _, entry := range state.execMD.SystemEnvNames {
+			systemEnvName, fallback, hasFallback := strings.Cut(entry, "=")
+			if !hasFallback {
+				continue
+			}
+			if _, ok := state.origEnvMap[systemEnvName]; ok {
+				continue
+			}
+			if _, ok := os.LookupEnv(systemEnvPrefix + systemEnvName); ok {
+				continue
+			}
+			state.spec.Process.Env = append(state.spec.Process.Env, systemEnvName+"="+fallback)
 		}
 	}
 
