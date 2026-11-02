@@ -222,7 +222,7 @@ func TestCacheErroredAttachmentIsSkippedAndReexecuted(t *testing.T) {
 	assert.Equal(t, int32(2), initCalls.Load())
 	assert.Assert(t, replacement.cacheSharedResult().id != attachFailedResult.id)
 
-	resolvedID, err := c.resultIDForCall(call)
+	resolvedID, err := c.resultIDForCall(t.Context(), call)
 	assert.NilError(t, err)
 	assert.Equal(t, replacement.cacheSharedResult().id, resolvedID)
 
@@ -283,7 +283,7 @@ func TestCacheAdoptionSkipsOpenAttachmentSibling(t *testing.T) {
 		leaderErrCh <- err
 	}()
 	<-attachmentStarted
-	openID, err := c.resultIDForCall(openCall)
+	openID, err := c.resultIDForCall(ctx, openCall)
 	assert.NilError(t, err)
 	c.egraphMu.RLock()
 	open := c.resultsByID[openID]

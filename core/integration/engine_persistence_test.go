@@ -1576,6 +1576,37 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		require.Equal(t, tokenA, tokenB, "private-field credential result should survive engine restart with the cached holder state")
 	})
 
+	t.Run("module object with inline object fields survives restart", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "persist-inline-object-field-state-" + rand.Text()
+		seed := rand.Text()
+
+		callOuterTokens := func(client *dagger.Client) string {
+			out, err := moduleFixture(t, client, "go/persist-inline-object-field").
+				WithEnvVariable("CACHE_BUST", rand.Text()).
+				With(daggerCall("outer", "--seed", seed, "tokens")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			return strings.TrimSpace(out)
+		}
+
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
+
+		tokensA := callOuterTokens(engineClientA)
+		require.Len(t, strings.Split(tokensA, ","), 3)
+		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
+		upstreamSvcA = nil
+		engineSvcA = nil
+		engineClientA = nil
+
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
+
+		tokensB := callOuterTokens(engineClientB)
+		require.Equal(t, tokensA, tokensB, "a cached object whose inline object fields hold directories should survive engine restart")
+	})
+
 	t.Run("function cache control survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		stateKey := "persist-function-cache-state-" + rand.Text()

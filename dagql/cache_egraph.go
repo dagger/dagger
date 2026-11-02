@@ -1334,7 +1334,9 @@ func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 	}
 }
 
-func (c *Cache) resultIDForCall(frame *ResultCall) (sharedResultID, error) {
+// resultIDForCall finds the attached result for frame. The lookup only reads
+// the e-graph, so it holds egraphMu for reading, as a cache-hit lookup does.
+func (c *Cache) resultIDForCall(ctx context.Context, frame *ResultCall) (sharedResultID, error) {
 	if frame == nil {
 		return 0, fmt.Errorf("resolve result ID for call: nil call")
 	}
@@ -1356,8 +1358,8 @@ func (c *Cache) resultIDForCall(frame *ResultCall) (sharedResultID, error) {
 		requestInputs = append(requestInputs, dig)
 	}
 
-	c.egraphMu.Lock()
-	defer c.egraphMu.Unlock()
+	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
+	defer c.egraphMu.RUnlock()
 	match := c.lookupMatchForCallLocked(frame, requestDigest, requestSelf, requestInputs, time.Now().Unix())
 	if match.candidates == nil || match.candidates.Empty() {
 		return 0, fmt.Errorf("resolve result ID for call: no attached result for %s", requestDigest)
@@ -1370,17 +1372,51 @@ func (c *Cache) resultIDForCall(frame *ResultCall) (sharedResultID, error) {
 	return 0, fmt.Errorf("resolve result ID for call: no attached result for %s", requestDigest)
 }
 
+// termForResultByDigestLocked returns a live term with termDigest that the
+// result is associated with. It walks the terms with that digest, not the
+// result's terms: a long-lived result gathers a term for every recipe that
+// reached it, such as one per session for a session-scoped call.
 func (c *Cache) termForResultByDigestLocked(resID sharedResultID, termDigest string) *egraphTerm {
-	for termID := range c.resultTerms[resID] {
-		term := c.egraphTerms[termID]
-		if term == nil {
+	resultTerms := c.resultTerms[resID]
+	if len(resultTerms) == 0 {
+		return nil
+	}
+	termSet := c.egraphTermsByTermDigest[termDigest]
+	if termSet == nil {
+		return nil
+	}
+	for termID := range termSet.Items() {
+		if _, ok := resultTerms[termID]; !ok {
 			continue
 		}
-		if term.termDigest == termDigest {
+		if term := c.egraphTerms[termID]; term != nil {
 			return term
 		}
 	}
 	return nil
+}
+
+// addResultExtraDigestsLocked records extra digests as facts of each of the
+// result's output eq-classes, which hold the outputs of all its terms.
+func (c *Cache) addResultExtraDigestsLocked(resID sharedResultID, frames ...*ResultCall) {
+	for outputEqID := range c.outputEqClassesForResultLocked(resID) {
+		extras := c.eqClassExtraDigests[outputEqID]
+		if extras == nil {
+			extras = make(map[call.ExtraDigest]struct{})
+			c.eqClassExtraDigests[outputEqID] = extras
+		}
+		for _, frame := range frames {
+			if frame == nil {
+				continue
+			}
+			for _, extra := range frame.ExtraDigests {
+				if extra.Digest == "" {
+					continue
+				}
+				extras[extra] = struct{}{}
+			}
+		}
+	}
 }
 
 func (c *Cache) outputEqClassesForResultLocked(resID sharedResultID) map[eqClassID]struct{} {
@@ -1689,27 +1725,7 @@ func (c *Cache) applyPreparedResultIdentityLocked(ctx context.Context, res *shar
 	}
 
 	c.addFramePostingsLocked(res.id, indexDigest, requestFrame.ExtraDigests)
-	for termID := range c.resultTerms[res.id] {
-		term := c.egraphTerms[termID]
-		if term == nil {
-			continue
-		}
-		outputEqID := c.findEqClassLocked(term.outputEqID)
-		if outputEqID == 0 {
-			continue
-		}
-		extras := c.eqClassExtraDigests[outputEqID]
-		if extras == nil {
-			extras = make(map[call.ExtraDigest]struct{})
-			c.eqClassExtraDigests[outputEqID] = extras
-		}
-		for _, extra := range requestFrame.ExtraDigests {
-			if extra.Digest == "" {
-				continue
-			}
-			extras[extra] = struct{}{}
-		}
-	}
+	c.addResultExtraDigestsLocked(res.id, requestFrame)
 }
 
 // addFramePostingsLocked posts a frame's recipe digest and extra digests for
@@ -1919,37 +1935,7 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 	if err := c.indexResultDigestsLocked(res, requestFrame, responseFrame); err != nil {
 		return err
 	}
-	for termID := range c.resultTerms[res.id] {
-		term := c.egraphTerms[termID]
-		if term == nil {
-			continue
-		}
-		outputEqID := c.findEqClassLocked(term.outputEqID)
-		if outputEqID == 0 {
-			continue
-		}
-		extras := c.eqClassExtraDigests[outputEqID]
-		if extras == nil {
-			extras = make(map[call.ExtraDigest]struct{})
-			c.eqClassExtraDigests[outputEqID] = extras
-		}
-		if requestFrame != nil {
-			for _, extra := range requestFrame.ExtraDigests {
-				if extra.Digest == "" {
-					continue
-				}
-				extras[extra] = struct{}{}
-			}
-		}
-		if responseFrame != nil {
-			for _, extra := range responseFrame.ExtraDigests {
-				if extra.Digest == "" {
-					continue
-				}
-				extras[extra] = struct{}{}
-			}
-		}
-	}
+	c.addResultExtraDigestsLocked(res.id, requestFrame, responseFrame)
 
 	return nil
 }

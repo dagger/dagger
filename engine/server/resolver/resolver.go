@@ -1,6 +1,7 @@
 package resolver
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -222,15 +223,11 @@ func (r *Resolver) ResolveImageConfig(
 		if err != nil {
 			return nil, fmt.Errorf("create registry resolve network recorder: %w", err)
 		}
-		resolvedRef, rootDesc, resolver, err := r.resolveRemoteRootDescriptor(ctx, ref, opts.Network, opts.RegistryTransport, network)
+		resolvedRef, rootDesc, fetcher, err := r.resolveRemoteRootDescriptor(ctx, ref, opts.Network, opts.RegistryTransport, network)
 		if err != nil {
 			return nil, err
 		}
 		identity = registryMetadataIdentity(rootDesc.Digest)
-		fetcher, err := resolver.Fetcher(ctx, resolvedRef)
-		if err != nil {
-			return nil, err
-		}
 
 		platformMatcher := imageConfigPlatformMatcher(opts.Platform)
 		if opts.ResolveMode == ResolveModeDefault {
@@ -300,13 +297,7 @@ func (r *Resolver) ResolveImageDigest(
 	if err != nil {
 		return "", "", fmt.Errorf("create registry resolve network recorder: %w", err)
 	}
-	resolvedRef, rootDesc, _, err := r.resolveRemoteRootDescriptor(
-		ctx,
-		ref,
-		opts.Network,
-		opts.RegistryTransport,
-		network,
-	)
+	resolvedRef, rootDesc, err := r.remoteResolver(opts.Network, opts.RegistryTransport, network).Resolve(ctx, ref)
 	if err != nil {
 		return "", "", err
 	}
@@ -380,11 +371,7 @@ func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *Pull
 	if err != nil {
 		return nil, fmt.Errorf("create registry pull network recorder: %w", err)
 	}
-	resolvedRef, rootDesc, resolver, err := r.resolvePullRootDescriptor(ctx, ref, opts, network)
-	if err != nil {
-		return nil, err
-	}
-	fetcher, err := resolver.Fetcher(ctx, resolvedRef)
+	resolvedRef, rootDesc, fetcher, err := r.resolvePullRootDescriptor(ctx, ref, opts, network)
 	if err != nil {
 		return nil, err
 	}
@@ -505,33 +492,157 @@ type localizedImageClosure struct {
 // the same name to a different registry. A cached blob only remembers the
 // name, so it cannot tell us which registry it really came from. Asking the
 // registry is the only safe option.
-func (r *Resolver) resolvePullRootDescriptor(ctx context.Context, ref string, opts PullOpts, recorder *enginetelemetry.NetworkAccumulator) (string, ocispecs.Descriptor, remotes.Resolver, error) {
+func (r *Resolver) resolvePullRootDescriptor(ctx context.Context, ref string, opts PullOpts, recorder *enginetelemetry.NetworkAccumulator) (string, ocispecs.Descriptor, remotes.Fetcher, error) {
 	if opts.ResolveMode == ResolveModeDefault && len(opts.Network.HostAliases) == 0 {
 		resolvedRef, rootDesc, _, found, err := r.tryLocalCanonicalConfigMetadata(ctx, ref, ResolveImageConfigOpts{Platform: &opts.Platform})
 		if err != nil {
 			return "", ocispecs.Descriptor{}, nil, err
 		}
 		if found {
-			hosts := r.registryHosts(opts.Network, opts.RegistryTransport)
-			fetchHosts := registryHostsWithNetworkRecorder(hosts, recorder)
-			return resolvedRef, rootDesc, docker.NewResolver(docker.ResolverOptions{Hosts: fetchHosts}), nil
+			fetcher, err := r.remoteResolver(opts.Network, opts.RegistryTransport, recorder).Fetcher(ctx, resolvedRef)
+			if err != nil {
+				return "", ocispecs.Descriptor{}, nil, err
+			}
+			return resolvedRef, rootDesc, fetcher, nil
 		}
 	}
 	return r.resolveRemoteRootDescriptor(ctx, ref, opts.Network, opts.RegistryTransport, recorder)
 }
 
-func (r *Resolver) resolveRemoteRootDescriptor(ctx context.Context, ref string, network NetworkConfig, registryTransport RegistryTransport, recorder *enginetelemetry.NetworkAccumulator) (string, ocispecs.Descriptor, remotes.Resolver, error) {
-	hosts := r.registryHosts(network, registryTransport)
-	resolveHosts := registryHostsWithNetworkRecorder(hosts, recorder)
-	resolver := docker.NewResolver(docker.ResolverOptions{
-		Hosts: resolveHosts,
+// remoteResolver asks the registry through a transport that records every
+// response body, resolution and content alike.
+func (r *Resolver) remoteResolver(network NetworkConfig, registryTransport RegistryTransport, recorder *enginetelemetry.NetworkAccumulator) remotes.Resolver {
+	return docker.NewResolver(docker.ResolverOptions{
+		Hosts: r.remoteHosts(network, registryTransport, recorder),
 	})
+}
+
+func (r *Resolver) remoteHosts(network NetworkConfig, registryTransport RegistryTransport, recorder *enginetelemetry.NetworkAccumulator) docker.RegistryHosts {
+	return registryHostsWithNetworkRecorder(r.registryHosts(network, registryTransport), recorder)
+}
+
+// resolveRemoteRootDescriptor resolves ref's root descriptor on the registry and returns
+// a fetcher for the image's content.
+//
+// A tag is resolved with a HEAD, which is all a later resolve needs when the
+// tag still names content the engine has. A ref pinned by digest needs no
+// such check: its root is the first thing fetched either way. So it is
+// fetched straight away, checked against the digest, and served from memory
+// when the fetcher is asked for it, saving a registry round trip.
+func (r *Resolver) resolveRemoteRootDescriptor(ctx context.Context, ref string, network NetworkConfig, registryTransport RegistryTransport, recorder *enginetelemetry.NetworkAccumulator) (string, ocispecs.Descriptor, remotes.Fetcher, error) {
+	hosts := r.remoteHosts(network, registryTransport, recorder)
+	if parsed, err := reference.ParseNormalizedNamed(ref); err == nil {
+		if canonical, ok := parsed.(reference.Canonical); ok {
+			return fetchPinnedRoot(ctx, hosts, ref, canonical.Digest())
+		}
+	}
+	resolver := docker.NewResolver(docker.ResolverOptions{Hosts: hosts})
 	resolvedRef, rootDesc, err := resolver.Resolve(ctx, ref)
 	if err != nil {
 		return "", ocispecs.Descriptor{}, nil, err
 	}
-	// The same transport records both resolution and descriptor response bodies.
-	return resolvedRef, rootDesc, resolver, nil
+	fetcher, err := resolver.Fetcher(ctx, resolvedRef)
+	if err != nil {
+		return "", ocispecs.Descriptor{}, nil, err
+	}
+	return resolvedRef, rootDesc, fetcher, nil
+}
+
+func fetchPinnedRoot(ctx context.Context, hosts docker.RegistryHosts, ref string, dgst digest.Digest) (string, ocispecs.Descriptor, remotes.Fetcher, error) {
+	resolver := docker.NewResolver(docker.ResolverOptions{Hosts: acceptEveryManifestType(hosts)})
+	fetcher, err := resolver.Fetcher(ctx, ref)
+	if err != nil {
+		return "", ocispecs.Descriptor{}, nil, err
+	}
+	// Any manifest media type sends the request to the manifests endpoint.
+	// The fetcher doesn't return the response's type, so it's read from the
+	// content, as for a root already in the content store.
+	rc, err := fetcher.Fetch(ctx, ocispecs.Descriptor{
+		MediaType: ocispecs.MediaTypeImageIndex,
+		Digest:    dgst,
+		Size:      -1,
+	})
+	if err != nil {
+		return "", ocispecs.Descriptor{}, nil, err
+	}
+	defer rc.Close()
+	data, err := io.ReadAll(io.LimitReader(rc, docker.MaxManifestSize+1))
+	if err != nil {
+		return "", ocispecs.Descriptor{}, nil, err
+	}
+	if int64(len(data)) > docker.MaxManifestSize {
+		return "", ocispecs.Descriptor{}, nil, fmt.Errorf("rejecting manifest larger than %d bytes for %s: %w", docker.MaxManifestSize, ref, cerrdefs.ErrNotFound)
+	}
+	if actual := dgst.Algorithm().FromBytes(data); actual != dgst {
+		return "", ocispecs.Descriptor{}, nil, fmt.Errorf("manifest for %s has digest %s", ref, actual)
+	}
+	mediaType, err := imageutil.DetectManifestBlobMediaType(data)
+	if err != nil {
+		return "", ocispecs.Descriptor{}, nil, fmt.Errorf("manifest for %s: %w", ref, err)
+	}
+	root := ocispecs.Descriptor{MediaType: mediaType, Digest: dgst, Size: int64(len(data))}
+	return ref, root, fetchedRootFetcher{Fetcher: fetcher, root: root, data: data}, nil
+}
+
+// manifestAccept asks for every manifest and index type the engine reads,
+// as containerd's resolver does when it resolves a ref.
+var manifestAccept = strings.Join([]string{
+	images.MediaTypeDockerSchema2Manifest,
+	images.MediaTypeDockerSchema2ManifestList,
+	ocispecs.MediaTypeImageManifest,
+	ocispecs.MediaTypeImageIndex,
+	"*/*",
+}, ", ")
+
+// acceptEveryManifestType makes manifest downloads ask for every manifest
+// type. A pinned root is downloaded before its type is known, but
+// containerd's fetcher asks only for the type it's given, and registries
+// such as Distribution refuse an OCI manifest or index whose own type isn't
+// asked for, wildcard or not.
+func acceptEveryManifestType(hosts docker.RegistryHosts) docker.RegistryHosts {
+	return func(domain string) ([]docker.RegistryHost, error) {
+		resolved, err := hosts(domain)
+		if err != nil {
+			return nil, err
+		}
+		for i := range resolved {
+			client := cloneHTTPClient(resolved[i].Client)
+			transport := client.Transport
+			if transport == nil {
+				transport = http.DefaultTransport
+			}
+			client.Transport = manifestAcceptTransport{RoundTripper: transport}
+			resolved[i].Client = client
+		}
+		return resolved, nil
+	}
+}
+
+type manifestAcceptTransport struct {
+	http.RoundTripper
+}
+
+func (t manifestAcceptTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.Method == http.MethodGet && strings.Contains(req.URL.Path, "/manifests/") {
+		req = req.Clone(req.Context())
+		req.Header.Set("Accept", manifestAccept)
+	}
+	return t.RoundTripper.RoundTrip(req)
+}
+
+// fetchedRootFetcher serves a root already read from the registry, and
+// fetches everything else.
+type fetchedRootFetcher struct {
+	remotes.Fetcher
+	root ocispecs.Descriptor
+	data []byte
+}
+
+func (f fetchedRootFetcher) Fetch(ctx context.Context, desc ocispecs.Descriptor) (io.ReadCloser, error) {
+	if desc.Digest == f.root.Digest {
+		return io.NopCloser(bytes.NewReader(f.data)), nil
+	}
+	return f.Fetcher.Fetch(ctx, desc)
 }
 
 func registryHostsWithNetworkRecorder(hosts docker.RegistryHosts, recorder *enginetelemetry.NetworkAccumulator) docker.RegistryHosts {

@@ -239,6 +239,10 @@ func (iface *InterfaceType) SourceMod() Mod {
 	return NewUserMod(iface.mod)
 }
 
+func (iface *InterfaceType) Kind() TypeDefKind {
+	return TypeDefKindInterface
+}
+
 func (iface *InterfaceType) TypeDef(ctx context.Context) (dagql.ObjectResult[*TypeDef], error) {
 	var sourceMap dagql.Optional[dagql.ID[*SourceMap]]
 	var err error

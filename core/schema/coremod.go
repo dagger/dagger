@@ -12,6 +12,7 @@ import (
 	dagqlintrospection "github.com/dagger/dagger/dagql/introspection"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
+	"golang.org/x/sync/errgroup"
 )
 
 // CoreMod is a special implementation of Mod for our core API, which is not *technically* a true module yet
@@ -26,8 +27,17 @@ type CoreSchemaBase struct {
 
 type coreSchemaViewState struct {
 	server *dagql.Server
+	view   call.View
 
-	typedefs         dagql.ObjectResultArray[*core.TypeDef]
+	// The view's type definitions are built on first use, not with the
+	// server: a client's schema needs only the server, and building them
+	// takes thousands of selects.
+	typeDefsMu sync.Mutex
+	typeDefs   *coreTypeDefs
+}
+
+type coreTypeDefs struct {
+	all              dagql.ObjectResultArray[*core.TypeDef]
 	objectDefsByName map[string]dagql.ObjectResult[*core.TypeDef]
 	scalarDefsByName map[string]dagql.ObjectResult[*core.TypeDef]
 	enumDefsByName   map[string]dagql.ObjectResult[*core.TypeDef]
@@ -81,7 +91,7 @@ func (base *CoreSchemaBase) Fork(ctx context.Context, root *core.Query, view cal
 // ForkForPersistedDecode returns a schema-only server for a background
 // persisted decode: the already-installed base forked onto the given root,
 // with the core view set and the ordinary core loaders installed. It
-// deliberately bypasses viewState, which builds cache-backed type
+// deliberately bypasses viewState, whose state builds cache-backed type
 // definitions; the native Service, Container and Module decoder classes this
 // needs are already installed on the base. It installs no user module and
 // builds no dynamic schema.
@@ -102,8 +112,8 @@ func (base *CoreSchemaBase) ForkForPersistedDecode(ctx context.Context, root *co
 }
 
 func (base *CoreSchemaBase) viewState(ctx context.Context, view call.View) (*coreSchemaViewState, error) {
-	// The schema-only fork used by a share's persisted decode bypasses this
-	// cache-backed type-definition build entirely.
+	// The schema-only fork used by a share's persisted decode bypasses this,
+	// and with it the cache-backed type definitions built from its state.
 	if err := engine.CheckSnapshotSharePreparation(ctx, "build core schema view"); err != nil {
 		return nil, err
 	}
@@ -119,9 +129,22 @@ func (base *CoreSchemaBase) viewState(ctx context.Context, view call.View) (*cor
 		return nil, fmt.Errorf("fork core schema base: %w", err)
 	}
 	srv.View = view
+	state := &coreSchemaViewState{
+		server: srv,
+		view:   view,
+	}
+	base.views[view] = state
+	return state, nil
+}
 
-	coreMod := base.CoreMod(view)
-	typedefs, err := coreMod.buildTypeDefs(ctx, srv)
+func (state *coreSchemaViewState) loadTypeDefs(ctx context.Context) (*coreTypeDefs, error) {
+	state.typeDefsMu.Lock()
+	defer state.typeDefsMu.Unlock()
+	if state.typeDefs != nil {
+		return state.typeDefs, nil
+	}
+
+	typedefs, err := buildCoreTypeDefs(ctx, state.server)
 	if err != nil {
 		return nil, err
 	}
@@ -137,9 +160,8 @@ func (base *CoreSchemaBase) viewState(ctx context.Context, view call.View) (*cor
 			return nil, fmt.Errorf("retain core typedef %q: %w", typedef.Self().Name, err)
 		}
 	}
-	state := &coreSchemaViewState{
-		server:           srv,
-		typedefs:         typedefs,
+	defs := &coreTypeDefs{
+		all:              typedefs,
 		objectDefsByName: make(map[string]dagql.ObjectResult[*core.TypeDef]),
 		scalarDefsByName: make(map[string]dagql.ObjectResult[*core.TypeDef]),
 		enumDefsByName:   make(map[string]dagql.ObjectResult[*core.TypeDef]),
@@ -150,15 +172,15 @@ func (base *CoreSchemaBase) viewState(ctx context.Context, view call.View) (*cor
 		}
 		switch typedef.Self().Kind {
 		case core.TypeDefKindObject:
-			state.objectDefsByName[typedef.Self().AsObject.Value.Self().Name] = typedef
+			defs.objectDefsByName[typedef.Self().AsObject.Value.Self().Name] = typedef
 		case core.TypeDefKindScalar:
-			state.scalarDefsByName[typedef.Self().AsScalar.Value.Self().Name] = typedef
+			defs.scalarDefsByName[typedef.Self().AsScalar.Value.Self().Name] = typedef
 		case core.TypeDefKindEnum:
-			state.enumDefsByName[typedef.Self().AsEnum.Value.Self().Name] = typedef
+			defs.enumDefsByName[typedef.Self().AsEnum.Value.Self().Name] = typedef
 		}
 	}
-	base.views[view] = state
-	return state, nil
+	state.typeDefs = defs
+	return defs, nil
 }
 
 func (m *CoreMod) Name() string {
@@ -287,7 +309,11 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 			return nil, false, nil
 		}
 
-		resolvedDef := state.scalarDefsByName[typeDef.AsScalar.Value.Self().Name]
+		defs, err := state.loadTypeDefs(ctx)
+		if err != nil {
+			return nil, false, err
+		}
+		resolvedDef := defs.scalarDefsByName[typeDef.AsScalar.Value.Self().Name]
 		if resolvedDef.Self() == nil {
 			return nil, false, fmt.Errorf("could not resolve scalar def %s", typeDef.AsScalar.Value.Self().Name)
 		}
@@ -300,7 +326,11 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 			return nil, false, nil
 		}
 
-		resolvedDef := state.objectDefsByName[typeDef.AsObject.Value.Self().Name]
+		defs, err := state.loadTypeDefs(ctx)
+		if err != nil {
+			return nil, false, err
+		}
+		resolvedDef := defs.objectDefsByName[typeDef.AsObject.Value.Self().Name]
 		if resolvedDef.Self() == nil {
 			return nil, false, fmt.Errorf("could not resolve object def %s", typeDef.AsObject.Value.Self().Name)
 		}
@@ -313,7 +343,11 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 			return nil, false, nil
 		}
 
-		resolvedDef := state.enumDefsByName[typeDef.AsEnum.Value.Self().Name]
+		defs, err := state.loadTypeDefs(ctx)
+		if err != nil {
+			return nil, false, err
+		}
+		resolvedDef := defs.enumDefsByName[typeDef.AsEnum.Value.Self().Name]
 		if resolvedDef.Self() == nil {
 			return nil, false, fmt.Errorf("could not resolve enum def %s", typeDef.AsEnum.Value.Self().Name)
 		}
@@ -364,15 +398,20 @@ func (m *CoreMod) TypeDefs(ctx context.Context, dag *dagql.Server) (dagql.Object
 	if err != nil {
 		return nil, err
 	}
-	return state.typedefs, nil
+	defs, err := state.loadTypeDefs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return defs.all, nil
 }
 
 func buildCoreTypeDefFunctions(
 	ctx context.Context,
 	dag *dagql.Server,
+	refs *coreTypeDefRefs,
 	introspectionType *introspection.Type,
-) ([]dagql.ID[*core.Function], bool, error) {
-	fnIDs := make([]dagql.ID[*core.Function], 0, len(introspectionType.Fields))
+) (dagql.ArrayInput[core.FunctionID], bool, error) {
+	fnIDs := make(dagql.ArrayInput[core.FunctionID], 0, len(introspectionType.Fields))
 	isIdable := false
 	objType, _ := dag.ObjectType(introspectionType.Name)
 	for _, introspectionField := range introspectionType.Fields {
@@ -381,7 +420,7 @@ func buildCoreTypeDefFunctions(
 			continue
 		}
 
-		rtType, ok, err := introspectionRefToTypeDef(ctx, dag, introspectionField.TypeRef, false)
+		rtType, ok, err := refs.typeDef(ctx, introspectionField.TypeRef, "")
 		if err != nil {
 			return nil, false, fmt.Errorf("failed to convert return type: %w", err)
 		}
@@ -392,35 +431,9 @@ func buildCoreTypeDefFunctions(
 		if err != nil {
 			return nil, false, err
 		}
-		var fn dagql.ObjectResult[*core.Function]
-		if err := dag.Select(ctx, dag.Root(), &fn, dagql.Selector{
-			Field: "__function",
-			Args: []dagql.NamedInput{
-				{Name: "name", Value: dagql.String(introspectionField.Name)},
-				{Name: "returnType", Value: rtTypeID},
-			},
-		}); err != nil {
-			return nil, false, err
-		}
-		if introspectionField.Description != "" {
-			if err := dag.Select(ctx, fn, &fn, dagql.Selector{
-				Field: "withDescription",
-				Args:  []dagql.NamedInput{{Name: "description", Value: dagql.String(introspectionField.Description)}},
-			}); err != nil {
-				return nil, false, err
-			}
-		}
-		if introspectionField.DeprecationReason != nil {
-			if err := dag.Select(ctx, fn, &fn, dagql.Selector{
-				Field: "withDeprecated",
-				Args:  []dagql.NamedInput{{Name: "reason", Value: core.OptString(introspectionField.DeprecationReason)}},
-			}); err != nil {
-				return nil, false, err
-			}
-		}
-
+		argIDs := make(dagql.ArrayInput[core.FunctionArgID], 0, len(introspectionField.Args))
 		for _, introspectionArg := range introspectionField.Args {
-			argType, ok, err := resolveArgTypeDef(ctx, dag, introspectionArg)
+			argType, ok, err := refs.typeDef(ctx, introspectionArg.TypeRef, introspectionArg.Directives.ExpectedType())
 			if err != nil {
 				return nil, false, fmt.Errorf("failed to convert argument type for %s.%s(%s): %w", introspectionType.Name, introspectionField.Name, introspectionArg.Name, err)
 			}
@@ -460,14 +473,22 @@ func buildCoreTypeDefFunctions(
 			if err != nil {
 				return nil, false, err
 			}
-			if err := dag.Select(ctx, fn, &fn, dagql.Selector{
-				Field: "__withArg",
-				Args:  []dagql.NamedInput{{Name: "arg", Value: fnArgID}},
-			}); err != nil {
-				return nil, false, err
-			}
+			argIDs = append(argIDs, fnArgID)
 		}
 
+		var fn dagql.ObjectResult[*core.Function]
+		if err := dag.Select(ctx, dag.Root(), &fn, dagql.Selector{
+			Field: "__functionExact",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.String(introspectionField.Name)},
+				{Name: "returnType", Value: rtTypeID},
+				{Name: "description", Value: dagql.String(introspectionField.Description)},
+				{Name: "deprecated", Value: core.OptString(introspectionField.DeprecationReason)},
+				{Name: "args", Value: argIDs},
+			},
+		}); err != nil {
+			return nil, false, err
+		}
 		fnID, err := core.ResultIDInput(fn)
 		if err != nil {
 			return nil, false, err
@@ -480,6 +501,7 @@ func buildCoreTypeDefFunctions(
 func buildCoreObjectLikeTypeDef[T dagql.Typed](
 	ctx context.Context,
 	dag *dagql.Server,
+	refs *coreTypeDefRefs,
 	introspectionType *introspection.Type,
 	baseSelector string,
 	wrapSelector string,
@@ -506,14 +528,14 @@ func buildCoreObjectLikeTypeDef[T dagql.Typed](
 		return zero, false, err
 	}
 
-	fnIDs, isIdable, err := buildCoreTypeDefFunctions(ctx, dag, introspectionType)
+	fnIDs, isIdable, err := buildCoreTypeDefFunctions(ctx, dag, refs, introspectionType)
 	if err != nil {
 		return zero, false, err
 	}
-	for _, fnID := range fnIDs {
+	if len(fnIDs) > 0 {
 		if err := dag.Select(ctx, obj, &obj, dagql.Selector{
-			Field: "__withFunction",
-			Args:  []dagql.NamedInput{{Name: "function", Value: fnID}},
+			Field: "__withFunctions",
+			Args:  []dagql.NamedInput{{Name: "functions", Value: fnIDs}},
 		}); err != nil {
 			return zero, false, err
 		}
@@ -536,8 +558,7 @@ func buildCoreObjectLikeTypeDef[T dagql.Typed](
 	return typeDef, true, nil
 }
 
-//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
-func (m *CoreMod) buildTypeDefs(ctx context.Context, dag *dagql.Server) (dagql.ObjectResultArray[*core.TypeDef], error) {
+func buildCoreTypeDefs(ctx context.Context, dag *dagql.Server) (dagql.ObjectResultArray[*core.TypeDef], error) {
 	dagqlSchema := dagqlintrospection.WrapSchema(dag.Schema())
 	schema := &introspection.Schema{}
 	if queryName := dagqlSchema.QueryType().Name(); queryName != nil {
@@ -562,197 +583,223 @@ func (m *CoreMod) buildTypeDefs(ctx context.Context, dag *dagql.Server) (dagql.O
 		schema.Directives = append(schema.Directives, dd)
 	}
 
-	typeDefs := make(dagql.ObjectResultArray[*core.TypeDef], 0, len(schema.Types))
-	for _, introspectionType := range schema.Types {
-		switch introspectionType.Kind {
-		case introspection.TypeKindObject:
-			typeDef, ok, err := buildCoreObjectLikeTypeDef[*core.ObjectTypeDef](
-				ctx,
-				dag,
-				introspectionType,
-				"__objectTypeDef",
-				"__withObjectTypeDef",
-				"objectTypeDef",
-			)
+	// Each type's definition is independent of the others, so build them all
+	// at once: this runs for a fresh engine's first client, and for each new view.
+	refs := newCoreTypeDefRefs(dag)
+	built := make([]dagql.ObjectResult[*core.TypeDef], len(schema.Types))
+	var eg errgroup.Group
+	for i, introspectionType := range schema.Types {
+		eg.Go(func() error {
+			typeDef, ok, err := buildCoreTypeDef(ctx, dag, refs, introspectionType)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			if ok {
-				typeDefs = append(typeDefs, typeDef)
+				built[i] = typeDef
 			}
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+	typeDefs := make(dagql.ObjectResultArray[*core.TypeDef], 0, len(built))
+	for _, typeDef := range built {
+		if typeDef.Self() != nil {
+			typeDefs = append(typeDefs, typeDef)
+		}
+	}
+	return typeDefs, nil
+}
 
-		case introspection.TypeKindInterface:
-			typeDef, ok, err := buildCoreObjectLikeTypeDef[*core.InterfaceTypeDef](
-				ctx,
-				dag,
-				introspectionType,
-				"__interfaceTypeDef",
-				"__withInterfaceTypeDef",
-				"interfaceTypeDef",
-			)
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
+func buildCoreTypeDef(ctx context.Context, dag *dagql.Server, refs *coreTypeDefRefs, introspectionType *introspection.Type) (dagql.ObjectResult[*core.TypeDef], bool, error) {
+	var zero dagql.ObjectResult[*core.TypeDef]
+	switch introspectionType.Kind {
+	case introspection.TypeKindObject:
+		typeDef, ok, err := buildCoreObjectLikeTypeDef[*core.ObjectTypeDef](
+			ctx,
+			dag,
+			refs,
+			introspectionType,
+			"__objectTypeDef",
+			"__withObjectTypeDef",
+			"objectTypeDef",
+		)
+		if err != nil {
+			return zero, false, err
+		}
+		return typeDef, ok, nil
+
+	case introspection.TypeKindInterface:
+		typeDef, ok, err := buildCoreObjectLikeTypeDef[*core.InterfaceTypeDef](
+			ctx,
+			dag,
+			refs,
+			introspectionType,
+			"__interfaceTypeDef",
+			"__withInterfaceTypeDef",
+			"interfaceTypeDef",
+		)
+		if err != nil {
+			return zero, false, err
+		}
+		return typeDef, ok, nil
+
+	case introspection.TypeKindInputObject:
+		var input dagql.ObjectResult[*core.InputTypeDef]
+		if err := dag.Select(ctx, dag.Root(), &input, dagql.Selector{
+			Field: "__inputTypeDef",
+			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(introspectionType.Name)}},
+		}); err != nil {
+			return zero, false, err
+		}
+
+		for _, introspectionField := range introspectionType.InputFields {
+			fieldType, ok, err := refs.typeDef(ctx, introspectionField.TypeRef, "")
 			if err != nil {
-				return nil, err
+				return zero, false, fmt.Errorf("failed to convert return type: %w", err)
 			}
-			if ok {
-				typeDefs = append(typeDefs, typeDef)
+			if !ok {
+				continue
 			}
-
-		case introspection.TypeKindInputObject:
-			var input dagql.ObjectResult[*core.InputTypeDef]
-			if err := dag.Select(ctx, dag.Root(), &input, dagql.Selector{
-				Field: "__inputTypeDef",
-				Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(introspectionType.Name)}},
+			fieldTypeID, err := core.ResultIDInput(fieldType)
+			if err != nil {
+				return zero, false, err
+			}
+			var field dagql.ObjectResult[*core.FieldTypeDef]
+			if err := dag.Select(ctx, dag.Root(), &field, dagql.Selector{
+				Field: "__fieldTypeDefExact",
+				Args: []dagql.NamedInput{
+					{Name: "name", Value: dagql.String(introspectionField.Name)},
+					{Name: "typeDef", Value: fieldTypeID},
+					{Name: "description", Value: dagql.String(introspectionField.Description)},
+					{Name: "deprecated", Value: core.OptString(introspectionField.DeprecationReason)},
+				},
 			}); err != nil {
-				return nil, err
+				return zero, false, err
 			}
-
-			for _, introspectionField := range introspectionType.InputFields {
-				fieldType, ok, err := introspectionRefToTypeDef(ctx, dag, introspectionField.TypeRef, false)
-				if err != nil {
-					return nil, fmt.Errorf("failed to convert return type: %w", err)
-				}
-				if !ok {
-					continue
-				}
-				fieldTypeID, err := core.ResultIDInput(fieldType)
-				if err != nil {
-					return nil, err
-				}
-				var field dagql.ObjectResult[*core.FieldTypeDef]
-				if err := dag.Select(ctx, dag.Root(), &field, dagql.Selector{
-					Field: "__fieldTypeDefExact",
-					Args: []dagql.NamedInput{
-						{Name: "name", Value: dagql.String(introspectionField.Name)},
-						{Name: "typeDef", Value: fieldTypeID},
-						{Name: "description", Value: dagql.String(introspectionField.Description)},
-						{Name: "deprecated", Value: core.OptString(introspectionField.DeprecationReason)},
-					},
-				}); err != nil {
-					return nil, err
-				}
-				fieldID, err := core.ResultIDInput(field)
-				if err != nil {
-					return nil, err
-				}
-				if err := dag.Select(ctx, input, &input, dagql.Selector{
-					Field: "__withField",
-					Args:  []dagql.NamedInput{{Name: "field", Value: fieldID}},
-				}); err != nil {
-					return nil, err
-				}
-			}
-			inputID, err := core.ResultIDInput(input)
+			fieldID, err := core.ResultIDInput(field)
 			if err != nil {
-				return nil, err
+				return zero, false, err
 			}
-			typeDef, err := core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
-				Field: "__withInputTypeDef",
-				Args:  []dagql.NamedInput{{Name: "inputTypeDef", Value: inputID}},
+			if err := dag.Select(ctx, input, &input, dagql.Selector{
+				Field: "__withField",
+				Args:  []dagql.NamedInput{{Name: "field", Value: fieldID}},
+			}); err != nil {
+				return zero, false, err
+			}
+		}
+		inputID, err := core.ResultIDInput(input)
+		if err != nil {
+			return zero, false, err
+		}
+		typeDef, err := core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+			Field: "__withInputTypeDef",
+			Args:  []dagql.NamedInput{{Name: "inputTypeDef", Value: inputID}},
+		})
+		if err != nil {
+			return zero, false, err
+		}
+		return typeDef, true, nil
+
+	case introspection.TypeKindScalar:
+		var (
+			typeDef dagql.ObjectResult[*core.TypeDef]
+			err     error
+		)
+		switch introspectionType.Name {
+		case string(introspection.ScalarString):
+			typeDef, err = core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+				Field: "withKind",
+				Args:  []dagql.NamedInput{{Name: "kind", Value: core.TypeDefKindString}},
 			})
-			if err != nil {
-				return nil, err
-			}
-			typeDefs = append(typeDefs, typeDef)
-
-		case introspection.TypeKindScalar:
-			var (
-				typeDef dagql.ObjectResult[*core.TypeDef]
-				err     error
-			)
-			switch introspectionType.Name {
-			case string(introspection.ScalarString):
-				typeDef, err = core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
-					Field: "withKind",
-					Args:  []dagql.NamedInput{{Name: "kind", Value: core.TypeDefKindString}},
-				})
-			case string(introspection.ScalarInt):
-				typeDef, err = core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
-					Field: "withKind",
-					Args:  []dagql.NamedInput{{Name: "kind", Value: core.TypeDefKindInteger}},
-				})
-			case string(introspection.ScalarFloat):
-				typeDef, err = core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
-					Field: "withKind",
-					Args:  []dagql.NamedInput{{Name: "kind", Value: core.TypeDefKindFloat}},
-				})
-			case string(introspection.ScalarBoolean):
-				typeDef, err = core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
-					Field: "withKind",
-					Args:  []dagql.NamedInput{{Name: "kind", Value: core.TypeDefKindBoolean}},
-				})
-			case string(introspection.ScalarVoid):
-				typeDef, err = core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
-					Field: "withKind",
-					Args:  []dagql.NamedInput{{Name: "kind", Value: core.TypeDefKindVoid}},
-				})
-			default:
-				typeDef, err = core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
-					Field: "withScalar",
-					Args: []dagql.NamedInput{
-						{Name: "name", Value: dagql.String(introspectionType.Name)},
-						{Name: "description", Value: dagql.String(introspectionType.Description)},
-					},
-				})
-			}
-			if err != nil {
-				return nil, err
-			}
-			typeDefs = append(typeDefs, typeDef)
-
-		case introspection.TypeKindEnum:
-			var enum dagql.ObjectResult[*core.EnumTypeDef]
-			if err := dag.Select(ctx, dag.Root(), &enum, dagql.Selector{
-				Field: "__enumTypeDef",
+		case string(introspection.ScalarInt):
+			typeDef, err = core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+				Field: "withKind",
+				Args:  []dagql.NamedInput{{Name: "kind", Value: core.TypeDefKindInteger}},
+			})
+		case string(introspection.ScalarFloat):
+			typeDef, err = core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+				Field: "withKind",
+				Args:  []dagql.NamedInput{{Name: "kind", Value: core.TypeDefKindFloat}},
+			})
+		case string(introspection.ScalarBoolean):
+			typeDef, err = core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+				Field: "withKind",
+				Args:  []dagql.NamedInput{{Name: "kind", Value: core.TypeDefKindBoolean}},
+			})
+		case string(introspection.ScalarVoid):
+			typeDef, err = core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+				Field: "withKind",
+				Args:  []dagql.NamedInput{{Name: "kind", Value: core.TypeDefKindVoid}},
+			})
+		default:
+			typeDef, err = core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+				Field: "withScalar",
 				Args: []dagql.NamedInput{
 					{Name: "name", Value: dagql.String(introspectionType.Name)},
 					{Name: "description", Value: dagql.String(introspectionType.Description)},
 				},
-			}); err != nil {
-				return nil, err
-			}
-
-			for _, value := range introspectionType.EnumValues {
-				var member dagql.ObjectResult[*core.EnumMemberTypeDef]
-				if err := dag.Select(ctx, dag.Root(), &member, dagql.Selector{
-					Field: "__enumMemberTypeDef",
-					Args: []dagql.NamedInput{
-						{Name: "name", Value: dagql.String(value.Name)},
-						{Name: "value", Value: dagql.String(value.Directives.EnumValue())},
-						{Name: "description", Value: dagql.String(value.Description)},
-						{Name: "deprecated", Value: core.OptString(value.DeprecationReason)},
-					},
-				}); err != nil {
-					return nil, err
-				}
-				memberID, err := core.ResultIDInput(member)
-				if err != nil {
-					return nil, err
-				}
-				if err := dag.Select(ctx, enum, &enum, dagql.Selector{
-					Field: "__withMember",
-					Args:  []dagql.NamedInput{{Name: "member", Value: memberID}},
-				}); err != nil {
-					return nil, err
-				}
-			}
-			enumID, err := core.ResultIDInput(enum)
-			if err != nil {
-				return nil, err
-			}
-			typeDef, err := core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
-				Field: "__withEnumTypeDef",
-				Args:  []dagql.NamedInput{{Name: "enumTypeDef", Value: enumID}},
 			})
-			if err != nil {
-				return nil, err
-			}
-			typeDefs = append(typeDefs, typeDef)
-
-		default:
-			return nil, fmt.Errorf("unexpected type kind %q for %q", introspectionType.Kind, introspectionType.Name)
 		}
+		if err != nil {
+			return zero, false, err
+		}
+		return typeDef, true, nil
+
+	case introspection.TypeKindEnum:
+		var enum dagql.ObjectResult[*core.EnumTypeDef]
+		if err := dag.Select(ctx, dag.Root(), &enum, dagql.Selector{
+			Field: "__enumTypeDef",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.String(introspectionType.Name)},
+				{Name: "description", Value: dagql.String(introspectionType.Description)},
+			},
+		}); err != nil {
+			return zero, false, err
+		}
+
+		for _, value := range introspectionType.EnumValues {
+			var member dagql.ObjectResult[*core.EnumMemberTypeDef]
+			if err := dag.Select(ctx, dag.Root(), &member, dagql.Selector{
+				Field: "__enumMemberTypeDef",
+				Args: []dagql.NamedInput{
+					{Name: "name", Value: dagql.String(value.Name)},
+					{Name: "value", Value: dagql.String(value.Directives.EnumValue())},
+					{Name: "description", Value: dagql.String(value.Description)},
+					{Name: "deprecated", Value: core.OptString(value.DeprecationReason)},
+				},
+			}); err != nil {
+				return zero, false, err
+			}
+			memberID, err := core.ResultIDInput(member)
+			if err != nil {
+				return zero, false, err
+			}
+			if err := dag.Select(ctx, enum, &enum, dagql.Selector{
+				Field: "__withMember",
+				Args:  []dagql.NamedInput{{Name: "member", Value: memberID}},
+			}); err != nil {
+				return zero, false, err
+			}
+		}
+		enumID, err := core.ResultIDInput(enum)
+		if err != nil {
+			return zero, false, err
+		}
+		typeDef, err := core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+			Field: "__withEnumTypeDef",
+			Args:  []dagql.NamedInput{{Name: "enumTypeDef", Value: enumID}},
+		})
+		if err != nil {
+			return zero, false, err
+		}
+		return typeDef, true, nil
+
+	default:
+		return zero, false, fmt.Errorf("unexpected type kind %q for %q", introspectionType.Kind, introspectionType.Name)
 	}
-	return typeDefs, nil
 }
 
 // CoreModScalar represents scalars from core (Platform, etc)
@@ -815,6 +862,10 @@ func (obj *CoreModScalar) CollectContent(ctx context.Context, value dagql.AnyRes
 
 func (obj *CoreModScalar) SourceMod() core.Mod {
 	return obj.coreMod
+}
+
+func (obj *CoreModScalar) Kind() core.TypeDefKind {
+	return core.TypeDefKindScalar
 }
 
 func (obj *CoreModScalar) TypeDef(ctx context.Context) (dagql.ObjectResult[*core.TypeDef], error) {
@@ -931,6 +982,10 @@ func (obj *CoreModObject) SourceMod() core.Mod {
 	return obj.coreMod
 }
 
+func (obj *CoreModObject) Kind() core.TypeDefKind {
+	return core.TypeDefKindObject
+}
+
 func (obj *CoreModObject) TypeDef(ctx context.Context) (dagql.ObjectResult[*core.TypeDef], error) {
 	// TODO: to support matching core types against interfaces, we will need to actually fill
 	// this out with the functions rather than just name
@@ -1000,6 +1055,10 @@ func (enum *CoreModEnum) SourceMod() core.Mod {
 	return enum.coreMod
 }
 
+func (enum *CoreModEnum) Kind() core.TypeDefKind {
+	return core.TypeDefKindEnum
+}
+
 func (enum *CoreModEnum) TypeDef(ctx context.Context) (dagql.ObjectResult[*core.TypeDef], error) {
 	var sourceMap dagql.Optional[dagql.ID[*core.SourceMap]]
 	var err error
@@ -1035,6 +1094,67 @@ func maybeOptional(ctx context.Context, dag *dagql.Server, inst dagql.ObjectResu
 		return inst, fmt.Errorf("make typedef optional: %w", err)
 	}
 	return inst, nil
+}
+
+// coreTypeDefRefs reuses resolved type references within a build of the core
+// type definitions: the core schema's fields and arguments name a few hundred
+// types thousands of times.
+type coreTypeDefRefs struct {
+	dag  *dagql.Server
+	mu   sync.Mutex
+	defs map[string]coreTypeDefRef
+}
+
+type coreTypeDefRef struct {
+	typeDef dagql.ObjectResult[*core.TypeDef]
+	ok      bool
+}
+
+func newCoreTypeDefRefs(dag *dagql.Server) *coreTypeDefRefs {
+	return &coreTypeDefRefs{
+		dag:  dag,
+		defs: map[string]coreTypeDefRef{},
+	}
+}
+
+// typeDef resolves a field's type, or an argument's along with the type its
+// @expectedType directive names, as resolveArgTypeDef does.
+func (refs *coreTypeDefRefs) typeDef(ctx context.Context, typeRef *introspection.TypeRef, expectedType string) (dagql.ObjectResult[*core.TypeDef], bool, error) {
+	key := typeRefKey(typeRef) + "@" + expectedType
+	refs.mu.Lock()
+	ref, found := refs.defs[key]
+	refs.mu.Unlock()
+	if found {
+		return ref.typeDef, ref.ok, nil
+	}
+	typeDef, ok, err := introspectionRefToTypeDef(ctx, refs.dag, typeRef, false)
+	if err != nil {
+		return typeDef, ok, err
+	}
+	if ok && expectedType != "" {
+		resolved, changed, err := resolveIDScalar(ctx, refs.dag, typeDef, expectedType)
+		if err != nil {
+			return resolved, changed, err
+		}
+		if changed {
+			typeDef = resolved
+		}
+	}
+	refs.mu.Lock()
+	refs.defs[key] = coreTypeDefRef{typeDef: typeDef, ok: ok}
+	refs.mu.Unlock()
+	return typeDef, ok, nil
+}
+
+func typeRefKey(typeRef *introspection.TypeRef) string {
+	switch typeRef.Kind {
+	case introspection.TypeKindNonNull:
+		return typeRefKey(typeRef.OfType) + "!"
+	case introspection.TypeKindList:
+		return "[" + typeRefKey(typeRef.OfType) + "]"
+	default:
+		return string(typeRef.Kind) + ":" + typeRef.Name
+	}
 }
 
 // resolveArgTypeDef converts an introspection arg's TypeRef into a TypeDef,

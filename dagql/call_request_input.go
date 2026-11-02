@@ -422,7 +422,7 @@ func handleIDFromResultCallRef(ctx context.Context, ref *ResultCallRef) (*call.I
 		return nil, fmt.Errorf("resolve result ref: %w", err)
 	}
 	if ref.Call != nil {
-		resultID, err := cache.resultIDForCall(ref.Call)
+		resultID, err := cache.resultIDForCall(ctx, ref.Call)
 		if err != nil {
 			// The inline recipe has no attached result in the e-graph — e.g.
 			// a client-supplied recipe-form handle (rebuilt from telemetry)

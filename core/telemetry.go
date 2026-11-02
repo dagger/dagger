@@ -616,6 +616,7 @@ var introspectionRootFields = map[string]struct{}{
 	"sourceMap":           {},
 	"__loadInputTypeDef":  {},
 	"__function":          {},
+	"__functionExact":     {},
 	"__functionArg":       {},
 	"__functionArgExact":  {},
 	"__fieldTypeDef":      {},

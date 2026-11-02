@@ -1,7 +1,6 @@
 package dangv2
 
 import (
-	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/json"
@@ -24,6 +23,7 @@ import (
 	"github.com/dagger/dagger/core"
 	dangshared "github.com/dagger/dagger/core/sdk/dang/shared"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/vito/dang/v2/pkg/dang"
@@ -584,10 +584,8 @@ func callDangFunction(ctx context.Context, env dang.ValueScope, fnCall *core.Fun
 		return nil, fmt.Errorf("unknown parent type: %s", fnCall.ParentName)
 	}
 
-	var parentState map[string]any
-	dec := json.NewDecoder(bytes.NewReader(fnCall.Parent))
-	dec.UseNumber()
-	if err := dec.Decode(&parentState); err != nil {
+	parentState, err := decodeReceivedParent(ctx, fnCall.Parent)
+	if err != nil {
 		return nil, fmt.Errorf("unmarshal parent: %w", err)
 	}
 
@@ -599,7 +597,7 @@ func callDangFunction(ctx context.Context, env dang.ValueScope, fnCall *core.Fun
 
 	// Argument and parent-state values are converted against the captured
 	// closure and the executing module's identity (for local-type namespacing).
-	conv := dangConverter{env: parentClosure, module: module}
+	conv := dangConverter{env: parentClosure, module: module, objects: map[receivedObjectKey]dang.Value{}}
 
 	var fnType *hm.FunctionType
 	if fnCall.Name == "" {
@@ -631,10 +629,8 @@ func callDangFunction(ctx context.Context, env dang.ValueScope, fnCall *core.Fun
 		if !provided {
 			continue
 		}
-		dec := json.NewDecoder(bytes.NewReader(jsonValue))
-		dec.UseNumber()
-		var val any
-		if err := dec.Decode(&val); err != nil {
+		val, err := decodeReceived(ctx, jsonValue)
+		if err != nil {
 			return nil, fmt.Errorf("unmarshal arg %s: %w", arg.Key, err)
 		}
 		dangVal, err := conv.convert(ctx, val, argType)
@@ -1470,6 +1466,15 @@ func createInterfaceTypeDef(ctx context.Context, srv *dagql.Server, name string,
 type dangConverter struct {
 	env    dang.ValueScope
 	module dangModule
+
+	// objects holds the objects this call has rebuilt, so an object received
+	// in many places is rebuilt once.
+	objects map[receivedObjectKey]dang.Value
+}
+
+type receivedObjectKey struct {
+	obj *receivedObject
+	mod dang.TypeScope
 }
 
 // convert turns a decoded JSON value into the Dang value expected by fieldType.
@@ -1492,7 +1497,7 @@ func (c dangConverter) convert(ctx context.Context, val any, fieldType hm.Type) 
 		return dang.BoolValue{Val: v}, nil
 	case []any:
 		return c.convertList(ctx, v, fieldType)
-	case map[string]any:
+	case *receivedObject:
 		return c.convertObject(ctx, v, fieldType)
 	case nil:
 		return dang.NullValue{}, nil
@@ -1581,7 +1586,20 @@ func (c dangConverter) convertObjectID(ctx context.Context, id string, modType *
 		Schema:     nodeFn.Schema,
 		TypeScope:  nodeFn.TypeScope,
 		QueryChain: querybuilder.Query().Select("node").Arg("id", id).InlineFragment(schemaName),
+		KnownID:    knownObjectID(id),
 	}, nil
+}
+
+// knownObjectID returns id if selecting `id` on node(id:) would hand back the
+// same ID, and "" otherwise. That holds for a handle: the engine scopes the
+// objects it passes in before encoding them. A recipe is evaluated by node(id:)
+// into a handle, which is what the module should pass on.
+func knownObjectID(id string) string {
+	var idp call.ID
+	if err := idp.Decode(id); err != nil || !idp.IsHandle() {
+		return ""
+	}
+	return id
 }
 
 // schemaTypeName maps a (possibly module-local) type name to the name it has in
@@ -1638,9 +1656,9 @@ func (c dangConverter) convertMap(ctx context.Context, vals map[string]any, mapT
 	return mapVal, nil
 }
 
-func (c dangConverter) convertObject(ctx context.Context, vals map[string]any, fieldType hm.Type) (dang.Value, error) {
+func (c dangConverter) convertObject(ctx context.Context, obj *receivedObject, fieldType hm.Type) (dang.Value, error) {
 	if mapT, isMap := fieldType.(dang.MapType); isMap {
-		return c.convertMap(ctx, vals, mapT)
+		return c.convertMap(ctx, obj.fields, mapT)
 	}
 
 	mod, isMod := fieldType.(dang.TypeScope)
@@ -1648,8 +1666,13 @@ func (c dangConverter) convertObject(ctx context.Context, vals map[string]any, f
 		return nil, fmt.Errorf("expected module type, got %T", fieldType)
 	}
 
+	key := receivedObjectKey{obj: obj, mod: mod}
+	if modVal, ok := c.objects[key]; ok {
+		return modVal, nil
+	}
+
 	modVal := dang.NewObject(mod)
-	for name, val := range vals {
+	for name, val := range obj.fields {
 		if name == "__daggerCollectionBase" {
 			base, ok := val.(string)
 			if !ok {
@@ -1676,6 +1699,7 @@ func (c dangConverter) convertObject(ctx context.Context, vals map[string]any, f
 	if err := evaluateDangClassBody(ctx, c.env, mod, modVal); err != nil {
 		return nil, err
 	}
+	c.objects[key] = modVal
 	return modVal, nil
 }
 

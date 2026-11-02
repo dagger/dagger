@@ -2,7 +2,10 @@ package daggercmd
 
 import (
 	"bytes"
+	"fmt"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
@@ -78,6 +81,51 @@ func TestArtifactListFormats(t *testing.T) {
 	})
 	t.Run("duplicate selections print once", func(t *testing.T) {
 		require.Equal(t, items[0].URI+"\n", render("link", []listedArtifact{items[0], items[0]}))
+	})
+	t.Run("a long listing reaches stdout in a few writes", func(t *testing.T) {
+		// Each write to a command's stdout becomes a telemetry log record, so
+		// a listing must not reach it cell by cell.
+		var rows []listedArtifact
+		for i := range 2000 {
+			rows = append(rows, row(fmt.Sprintf("go/modules/test/case%04d", i), ".", fmt.Sprintf("case%04d", i)))
+		}
+		for _, format := range []string{"table", "link", "cli"} {
+			cmd := &cobra.Command{Use: "check"}
+			cmd.Flags().String("format", format, "")
+			var writes recordedWrites
+			cmd.SetOut(&writes)
+			require.NoError(t, writeArtifactList(cmd, rows, names))
+			text := strings.Join(writes, "")
+			lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
+			if format == "table" {
+				require.Regexp(t, `^GO-MODULE +CHECK +DESCRIPTION$`, lines[0])
+				lines = lines[1:]
+			}
+			require.Len(t, lines, len(rows), format)
+			for i, line := range lines {
+				require.Contains(t, line, fmt.Sprintf("case%04d", i), format)
+			}
+			require.LessOrEqual(t, len(writes), len(text)/(32<<10)+1, format)
+		}
+	})
+	t.Run("a long listing is cut only between lines", func(t *testing.T) {
+		// A log record's body must be valid UTF-8, so no write may end inside
+		// a character: here the 32 KiB mark falls inside the "é".
+		item := listedArtifact{URI: "dag+check://test", Description: strings.Repeat("a", 32741) + "é", DimensionKeys: []struct{ Dimension, Key string }{{"type:Check", "test"}}}
+		next := item
+		next.URI = "dag+check://test2"
+		next.DimensionKeys = []struct{ Dimension, Key string }{{"type:Check", "test2"}}
+		cmd := &cobra.Command{Use: "check"}
+		cmd.Flags().String("format", "table", "")
+		var writes recordedWrites
+		cmd.SetOut(&writes)
+		require.NoError(t, writeArtifactList(cmd, []listedArtifact{item, next}, map[string]string{"type:Check": "check"}))
+		require.Equal(t, render("table", []listedArtifact{item, next}), strings.Join(writes, ""))
+		require.Greater(t, len(writes), 1)
+		for _, write := range writes {
+			require.True(t, utf8.ValidString(write))
+			require.True(t, strings.HasSuffix(write, "\n"))
+		}
 	})
 }
 
@@ -181,4 +229,13 @@ func TestArtifactListMainModulePathKeepsColumns(t *testing.T) {
 			})
 		}
 	}
+}
+
+// recordedWrites keeps each write separately, as a command's stdout emits
+// each one as its own log record.
+type recordedWrites []string
+
+func (w *recordedWrites) Write(p []byte) (int, error) {
+	*w = append(*w, string(p))
+	return len(p), nil
 }

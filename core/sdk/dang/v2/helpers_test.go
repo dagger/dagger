@@ -2,6 +2,7 @@ package dangv2
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -11,10 +12,14 @@ import (
 
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/stretchr/testify/require"
+	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"github.com/vito/dang/v2/pkg/dang"
+	"github.com/vito/dang/v2/pkg/hm"
+	"github.com/vito/dang/v2/pkg/introspection"
 
 	dangshared "github.com/dagger/dagger/core/sdk/dang/shared"
+	"github.com/dagger/dagger/dagql/call"
 )
 
 // inferReport builds the kind of error dang.RunDir returns for a module with
@@ -269,4 +274,38 @@ func TestRetainDangObjectDirectivesOnlyForTypeDefs(t *testing.T) {
 	require.Len(t, directives, 1)
 	require.Equal(t, "marked", directives[0].Name)
 	require.Empty(t, objectDirectives(env, "Plain"))
+}
+
+func TestConvertObjectIDKeepsHandleID(t *testing.T) {
+	t.Parallel()
+
+	env := dang.NewValueScope(dang.NewType("Test", dang.ObjectKind))
+	env.Bind("node", dang.GraphQLFunction{
+		Name:   "node",
+		Field:  &introspection.Field{Name: "node"},
+		Client: failingClient{},
+		Schema: contractTestSchema(),
+	}, dang.PublicVisibility)
+	conv := dangConverter{env: env}
+	dirType := dang.NewType("Directory", dang.ObjectKind)
+	gqlType := &ast.Type{NamedType: "Directory", NonNull: true}
+
+	// failingClient rejects every request, so a handle passes only if it is
+	// handed back without asking the API for it.
+	handle, err := call.NewEngineResultID(7, call.NewType(gqlType)).Encode()
+	require.NoError(t, err)
+	value, err := conv.convert(t.Context(), handle, hm.NonNullType{Type: dirType})
+	require.NoError(t, err)
+	gotJSON, err := json.Marshal(value)
+	require.NoError(t, err)
+	require.JSONEq(t, fmt.Sprintf("%q", handle), string(gotJSON))
+
+	// A recipe is still loaded, so the module passes on the handle node(id:)
+	// evaluates it to.
+	recipe, err := call.New().Append(gqlType, "directory").Encode()
+	require.NoError(t, err)
+	value, err = conv.convert(t.Context(), recipe, hm.NonNullType{Type: dirType})
+	require.NoError(t, err)
+	_, err = json.Marshal(value)
+	require.ErrorContains(t, err, "unexpected API request")
 }
