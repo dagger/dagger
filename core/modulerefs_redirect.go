@@ -232,6 +232,10 @@ func daggerGetProbe(ctx context.Context, refString string) string {
 		u.Path = u.Path[:i]
 	}
 
+	if target, ok := configuredModuleRedirect(u); ok {
+		return sourceURLWithVersion(target, version)
+	}
+
 	probe := *u
 	probe.RawQuery = daggerGetQueryParam + "=1"
 	probe.Fragment = ""

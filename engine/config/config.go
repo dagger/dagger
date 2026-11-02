@@ -45,6 +45,29 @@ type Config struct {
 
 	// CacheVolumes configures where the engine keeps cache volumes.
 	CacheVolumes CacheVolumesConfig `json:"cacheVolumes,omitempty"`
+
+	// Git configures the engine's git operations.
+	Git *GitConfig `json:"git,omitempty"`
+
+	// ModuleRedirects pins module URLs to the URLs their dagger-get redirect
+	// points to, so they resolve without asking the redirecting host, e.g.
+	// {"dagger.io/sdk/go": "github.com/dagger/go-sdk"}. Both are a host and
+	// path; a sub-path of a pinned URL maps to the same sub-path of its
+	// target. hack/update-module-redirects fills this in from dagger.io.
+	ModuleRedirects map[string]string `json:"moduleRedirects,omitempty"`
+}
+
+type GitConfig struct {
+	// URL rewrites remote git URLs, like git's url.<base>.insteadOf: each key
+	// is the base URL to use instead of the URL prefixes it lists, e.g.
+	// {"https://git-proxy.example.com/github/": {"insteadOf": ["https://github.com/"]}}.
+	// The engine's git ignores gitconfig files, so this is how to route its
+	// fetches through a git proxy or mirror.
+	URL map[string]GitURLConfig `json:"url,omitempty"`
+}
+
+type GitURLConfig struct {
+	InsteadOf []string `json:"insteadOf,omitempty"`
 }
 
 type CacheVolumesConfig struct {

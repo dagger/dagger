@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -390,4 +391,65 @@ func TestResolveDaggerGetRedirectPreservesDestinationVersion(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestDaggerGetProbeConfigured(t *testing.T) {
+	// Configured vanity URLs resolve without any request: point the probe
+	// client at a server that fails the test if it is reached.
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected probe request: %s", r.URL)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+	oldClient := daggerGetClient
+	daggerGetClient = srv.Client()
+	defer func() { daggerGetClient = oldClient }()
+
+	require.NoError(t, SetModuleRedirects(map[string]string{
+		"dagger.io/sdk/helpers":   "github.com/dagger/sdk-helpers",
+		"dagger.io/sdk/python":    "github.com/dagger/python-sdk",
+		"Dagger.io/linux/alpine/": "github.com/dagger/alpine",
+	}))
+	defer SetModuleRedirects(nil)
+
+	for _, tc := range []struct {
+		ref  string
+		want string
+	}{
+		{"https://dagger.io/sdk/helpers", "https://github.com/dagger/sdk-helpers"},
+		{"dagger.io/sdk/helpers@v1", "https://github.com/dagger/sdk-helpers@v1"},
+		{"dagger.io/sdk/python/runtime", "https://github.com/dagger/python-sdk/runtime"},
+		{"https://dagger.io/linux/alpine/", "https://github.com/dagger/alpine"},
+	} {
+		t.Run(tc.ref, func(t *testing.T) {
+			require.Equal(t, tc.want, daggerGetProbe(context.Background(), tc.ref))
+		})
+	}
+
+	for _, ref := range []string{
+		"https://dagger.io/sdk/helpersx",
+		"https://dagger.io:8443/sdk/helpers",
+		"https://user@dagger.io/sdk/helpers",
+	} {
+		_, ok := configuredModuleRedirect(mustParseURL(t, ref))
+		require.False(t, ok, ref)
+	}
+}
+
+func TestSetModuleRedirectsInvalid(t *testing.T) {
+	for _, tc := range []map[string]string{
+		{"https://dagger.io/sdk/go": "github.com/dagger/go-sdk"},
+		{"dagger.io/sdk/go": "https://github.com/dagger/go-sdk"},
+		{"dagger.io/sdk/go@v1": "github.com/dagger/go-sdk"},
+		{"dagger.io/sdk/go": ""},
+	} {
+		require.Error(t, SetModuleRedirects(tc), tc)
+	}
+}
+
+func mustParseURL(t *testing.T, raw string) *url.URL {
+	t.Helper()
+	u, err := url.Parse(raw)
+	require.NoError(t, err)
+	return u
 }
