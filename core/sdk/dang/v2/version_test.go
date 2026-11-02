@@ -63,7 +63,7 @@ dagger = "0.19"
 			dang:   "2.1",
 		},
 		{
-			// The naming cut is a prerelease, v1.0.0-beta.22, so a declared
+			// The naming cut is a prerelease, v1.0.0-beta.25, so a declared
 			// prerelease must reach the engine as is.
 			name: "dagger prerelease",
 			config: ptr(`[imports.Dagger]
@@ -186,8 +186,9 @@ func TestDefaultEntrypointVersions(t *testing.T) {
 	require.Equal(t, "2.1", defaults.DangString())
 
 	// It is the shared pre-cut view, the one every v1.0.0 prerelease before
-	// the cut gets and which generated entrypoints that declare nothing were
-	// written against: before the core renames and the new naming rules.
+	// engine.PrereleaseViewsVersion gets and which generated entrypoints that
+	// declare nothing were written against: before the core renames and the
+	// new naming rules.
 	require.Equal(t, engine.ModuleAPIViewVersion("v1.0.0-0"), engine.ModuleAPIViewVersion(defaults.Engine))
 	require.Equal(t, engine.ModuleAPIViewVersion("v1.0.0-beta.21"), engine.ModuleAPIViewVersion(defaults.Engine))
 	require.False(t, engine.APIVersionAtLeast(defaults.Engine, engine.IdentifierCasingVersion))
@@ -202,7 +203,7 @@ func TestDefaultEntrypointVersions(t *testing.T) {
 func TestResolveEntrypointVersionsLikeEngineVersion(t *testing.T) {
 	t.Parallel()
 
-	for _, declared := range []string{"v1.0.0", "v1.0.0-beta.19", "v1.0.0-beta.21", "v1.0.0-beta.22", "v1.0.0-beta.999", "v0.20.0"} {
+	for _, declared := range []string{"v1.0.0", "v1.0.0-beta.19", "v1.0.0-beta.21", "v1.0.0-beta.24", "v1.0.0-beta.25", "v1.0.0-beta.999", "v0.20.0"} {
 		t.Run(declared, func(t *testing.T) {
 			t.Parallel()
 			versions, err := ResolveEntrypointVersions(context.Background(), "dang.toml", []byte("[imports.Dagger]\ndagger = \""+declared+"\"\n"))

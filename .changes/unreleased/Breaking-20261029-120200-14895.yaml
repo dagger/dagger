@@ -1,7 +1,7 @@
 kind: Breaking
 body: |
   Core API names follow GraphQL casing for clients and modules on
-  v1.0.0-beta.22 or later: acronyms in fields and arguments are written like
+  v1.0.0-beta.25 or later: acronyms in fields and arguments are written like
   words, and enum values are `SCREAMING_SNAKE_CASE`. There are no aliases for
   the old names on those views.
 

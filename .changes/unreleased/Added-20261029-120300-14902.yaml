@@ -6,7 +6,7 @@ body: |
   for other modules.
 
   Without a declared version, an entrypoint module gets the v1.0.0-beta.20 API
-  and naming rules, from before the v1.0.0-beta.22 renames, instead of
+  and naming rules, from before the v1.0.0-beta.25 renames, instead of
   following the running engine.
 time: 2026-10-29T12:03:00Z
 custom:
