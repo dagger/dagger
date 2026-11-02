@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -51,8 +52,10 @@ type session struct {
 	// exports and from its own merges, which exports send as held rows.
 	known *dagql.KnownRows
 	// opened is the last idle period the service was told of, in the hello
-	// or an open. Only hello and then settles use it.
-	opened uint64
+	// or an open, and claimed the sessions whose claims it was told of
+	// (protocol.Claims). Only hello and then settles use them.
+	opened  uint64
+	claimed map[string]bool
 
 	mu sync.Mutex
 	// pending are the engine's requests waiting for their replies, by ID.
@@ -196,12 +199,14 @@ func (s *session) dispatchBody(env protocol.Envelope, body any) {
 	}
 }
 
-// settles tells the service of each new idle period at once (open), and,
-// once no session is live, asks it to settle, until the connection ends. A
-// settle is abandoned when its period ends or the engine gives up on it.
+// settles tells the service of each new idle period at once (open), and of
+// each live session's claim, and, once no session is live, asks it to
+// settle, until the connection ends. A settle is abandoned when its period
+// ends or the engine gives up on it.
 func (s *session) settles() {
 	for s.ctx.Err() == nil {
 		state, changed := s.adapter.SettleState()
+		claims := s.unclaimed(state.Claims)
 		switch {
 		case state.Period > s.opened:
 			if _, err := s.request(s.ctx, protocol.TypeOpen, protocol.Open{Period: state.Period}); err != nil {
@@ -211,6 +216,20 @@ func (s *session) settles() {
 				s.cfg.Logger.Warn("remote cache: open failed", "period", state.Period, "error", err)
 			}
 			s.opened = state.Period
+			continue
+		case len(claims) > 0:
+			if _, err := s.request(s.ctx, protocol.TypeClaims, protocol.Claims{Sessions: claims}); err != nil {
+				if s.ctx.Err() != nil {
+					return
+				}
+				s.cfg.Logger.Warn("remote cache: claims failed", "sessions", len(claims), "error", err)
+			}
+			if s.claimed == nil {
+				s.claimed = map[string]bool{}
+			}
+			for _, c := range claims {
+				s.claimed[c.ID] = true
+			}
 			continue
 		case state.settling():
 			s.settle(state)
@@ -222,6 +241,23 @@ func (s *session) settles() {
 			return
 		}
 	}
+}
+
+// unclaimed returns the live sessions' claims the service wasn't told of on
+// this connection, and forgets the ended sessions it was.
+func (s *session) unclaimed(live []protocol.SessionClaim) []protocol.SessionClaim {
+	var claims []protocol.SessionClaim
+	for _, c := range live {
+		if !s.claimed[c.ID] {
+			claims = append(claims, c)
+		}
+	}
+	for id := range s.claimed {
+		if !slices.ContainsFunc(live, func(c protocol.SessionClaim) bool { return c.ID == id }) {
+			delete(s.claimed, id)
+		}
+	}
+	return claims
 }
 
 // settle asks the service to settle state's period, and records its Settled.

@@ -78,6 +78,8 @@ func TestMessagesRoundTrip(t *testing.T) {
 		{TypeOpened, Opened{}, func() any { return &Opened{} }},
 		{TypeSettle, Settle{Period: 4, Sessions: []SettleSession{{ID: "sess-1", Marker: true}, {ID: "sess-2"}}}, func() any { return &Settle{} }},
 		{TypeSettled, Settled{}, func() any { return &Settled{} }},
+		{TypeClaims, Claims{Sessions: []SessionClaim{{ID: "sess-1", Claim: "claim-1"}}}, func() any { return &Claims{} }},
+		{TypeClaimed, Claimed{}, func() any { return &Claimed{} }},
 		{TypeError, Error{Message: StaleSettle}, func() any { return &Error{} }},
 		{TypeWelcome, Welcome{}, func() any { return &Welcome{} }},
 		{TypeExport, Export{Roots: []uint64{12, 13}, Outputs: []ExportOutput{{Number: 12, Address: testAddress()}}}, func() any { return &Export{} }},
@@ -174,6 +176,10 @@ func derefBody(v any) any {
 		return *b
 	case *Settled:
 		return *b
+	case *Claims:
+		return *b
+	case *Claimed:
+		return *b
 	case *Error:
 		return *b
 	}
@@ -233,12 +239,13 @@ func TestReplyType(t *testing.T) {
 		TypeLookup: TypeLookedUp,
 		TypeOpen:   TypeOpened,
 		TypeSettle: TypeSettled,
+		TypeClaims: TypeClaimed,
 	} {
 		got, ok := ReplyType(request)
 		require.True(t, ok, request)
 		require.Equal(t, reply, got)
 	}
-	for _, notRequest := range []Type{TypeWelcome, TypeExported, TypeUploaded, TypeMerged, TypeOffered, TypeRenewed, TypeLookedUp, TypeOpened, TypeSettled, TypeError} {
+	for _, notRequest := range []Type{TypeWelcome, TypeExported, TypeUploaded, TypeMerged, TypeOffered, TypeRenewed, TypeLookedUp, TypeOpened, TypeSettled, TypeClaimed, TypeError} {
 		_, ok := ReplyType(notRequest)
 		require.False(t, ok, notRequest)
 	}

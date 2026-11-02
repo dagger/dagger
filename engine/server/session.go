@@ -2379,7 +2379,7 @@ func (srv *Server) getOrInitClient(
 			phaseCtx = wcprof.ContextWithProfiling(phaseCtx)
 		}
 		sess.phase = srv.beginSessionPhase(phaseCtx, sess.sessionID)
-		srv.sessionLedger.sessionStarted(sess.mainClientCallerID, sess.cloudClaimID)
+		srv.sessionLedger.sessionStarted(sess.sessionID, sess.mainClientCallerID, sess.cloudClaimID)
 	}
 	if opts.requestLeaseOut != nil {
 		*opts.requestLeaseOut = requestLease

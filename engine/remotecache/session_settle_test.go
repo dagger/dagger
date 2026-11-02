@@ -157,3 +157,42 @@ func TestTimedOutEngineAsksNothing(t *testing.T) {
 	adapter.setSettle(SettleState{Period: 1, Sessions: []protocol.SettleSession{{ID: "sess-1"}}, TimedOut: true})
 	conn.none(t)
 }
+
+// The engine tells the service each live session's claim once on a
+// connection, after its open, and again on a new connection for a session
+// still live; a session with no claim, or an ended one, isn't sent.
+func TestClaimsTellTheServiceEachSessionsClaim(t *testing.T) {
+	t.Parallel()
+	adapter := newFakeAdapter()
+	first := protocol.SessionClaim{ID: "sess-1", Claim: "claim-1"}
+	adapter.setSettle(SettleState{Period: 1, Live: true, Claims: []protocol.SessionClaim{first}})
+	s, conn, _ := servedSession(t, adapter)
+	claims := conn.next(t)
+	require.Equal(t, protocol.TypeClaims, claims.Type)
+	require.Equal(t, protocol.Claims{Sessions: []protocol.SessionClaim{first}}, decode[protocol.Claims](t, claims))
+	s.dispatch(reply(claims.ID, protocol.TypeClaimed, protocol.Claimed{}))
+	conn.none(t)
+
+	second := protocol.SessionClaim{ID: "sess-2", Claim: "claim-2"}
+	adapter.setSettle(SettleState{Period: 1, Live: true, Claims: []protocol.SessionClaim{first, second}})
+	claims = conn.next(t)
+	require.Equal(t, protocol.Claims{Sessions: []protocol.SessionClaim{second}}, decode[protocol.Claims](t, claims), "only the new session")
+	s.dispatch(reply(claims.ID, protocol.TypeClaimed, protocol.Claimed{}))
+	conn.none(t)
+
+	// A session that starts on an engine with none live: its open goes
+	// first, so the service's period is current before the claim.
+	adapter.setSettle(SettleState{Period: 2, Live: true, Claims: []protocol.SessionClaim{{ID: "sess-3", Claim: "claim-3"}}})
+	open := conn.next(t)
+	require.Equal(t, protocol.TypeOpen, open.Type)
+	s.dispatch(reply(open.ID, protocol.TypeOpened, protocol.Opened{}))
+	claims = conn.next(t)
+	require.Equal(t, protocol.Claims{Sessions: []protocol.SessionClaim{{ID: "sess-3", Claim: "claim-3"}}}, decode[protocol.Claims](t, claims))
+	s.dispatch(reply(claims.ID, protocol.TypeClaimed, protocol.Claimed{}))
+	conn.none(t)
+
+	// A new connection tells the service of the sessions still live.
+	_, again, _ := servedSession(t, adapter)
+	claims = again.next(t)
+	require.Equal(t, protocol.Claims{Sessions: []protocol.SessionClaim{{ID: "sess-3", Claim: "claim-3"}}}, decode[protocol.Claims](t, claims))
+}
