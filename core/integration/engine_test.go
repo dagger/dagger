@@ -37,6 +37,7 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -454,6 +455,57 @@ exec /usr/local/bin/crun.real "$@"
 			require.Empty(t, strings.TrimSpace(containers), "containers left in the runtime")
 		})
 	}
+}
+
+// Something outside an exec's container can still be using its rootfs mount
+// after the process exits (#14744). The exec must still succeed, and the mount
+// must not outlive it.
+func (EngineSuite) TestExecRootfsBusyAfterExit(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// A process in the engine's mount namespace keeps its cwd in the rootfs
+	// of the exec that marks it, for longer than the unmount retries last,
+	// then reports whether the rootfs is still mounted once it has let go.
+	results := core.NewQuery(c).CacheVolume("rootfs-holder-" + rand.Text())
+	devEngineSvc := devEngineContainerAsService(devEngineContainer(c, func(ctr *core.Container) *core.Container {
+		entrypoint, err := ctr.Entrypoint(ctx)
+		require.NoError(t, err)
+		return ctr.
+			WithMountedCache("/holder", results).
+			WithEntrypoint(append([]string{"sh", "-c", `(
+	while :; do
+		for d in /tmp/rootfs*; do
+			[ -e "$d/hold-rootfs" ] || continue
+			cd "$d" && sleep 8 && cd / && sleep 1 || exit 1
+			if grep -q " $d " /proc/self/mountinfo; then
+				echo mounted > /holder/result.tmp
+			else
+				echo unmounted > /holder/result.tmp
+			fi
+			mv /holder/result.tmp /holder/result
+			exit 0
+		done
+		sleep 0.05
+	done
+) &
+exec "$0" "$@"`,
+			}, entrypoint...))
+	}))
+	_, err := engineClientContainer(ctx, t, c, devEngineSvc).
+		WithExec([]string{"dagger", "query"}, core.ContainerWithExecOpts{
+			Stdin:                 `{container{from(address:"` + alpineImage + `"){withExec(args:["sh","-c","touch /hold-rootfs && sleep 2"]){exitCode}}}}`,
+			DisableDaggerInDagger: true,
+		}).
+		Sync(ctx)
+	assert.NoError(t, err)
+
+	result, err := core.NewQuery(c).Container().From(alpineImage).
+		WithMountedCache("/holder", results).
+		WithEnvVariable("READ", rand.Text()).
+		WithExec([]string{"sh", "-c", "until [ -e /holder/result ]; do sleep 0.1; done; cat /holder/result"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "unmounted", strings.TrimSpace(result), "the exec's rootfs mount after its holder let go")
 }
 
 func (EngineSuite) TestDaggerExec(ctx context.Context, t *testctx.T) {

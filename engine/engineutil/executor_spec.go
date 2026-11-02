@@ -656,6 +656,28 @@ func unmountFromRootfs(ops rootfsUnmountOps, dstPath string, recursive bool) err
 	return ops.unmountRecursive(dstPath, 0)
 }
 
+// unmountRootfs unmounts an exec's rootfs once the exec is done, detaching it
+// instead if it is still busy after containerd's EBUSY retries (#14744). The
+// exec's processes only ever see a clone of this mount, so whatever holds it
+// is outside the exec and won't be waited out; failing the exec over it would
+// also leak the mount for the engine's lifetime. A detached mount is gone from
+// the engine's namespace at once, and the kernel frees it when the holder lets
+// go.
+func unmountRootfs(ctx context.Context, ops rootfsUnmountOps, execID, rootfsPath string) error {
+	err := ops.unmount(rootfsPath, 0)
+	if !errors.Is(err, unix.EBUSY) {
+		return err
+	}
+	if detachErr := ops.unmountSyscall(rootfsPath, unix.MNT_DETACH); detachErr != nil {
+		return errors.Join(err, detachErr)
+	}
+	bklog.G(ctx).WithError(err).
+		WithField("id", execID).
+		WithField("rootfs", rootfsPath).
+		Warn("rootfs still busy after unmount retries, detached it")
+	return nil
+}
+
 //nolint:gocyclo
 func (c *Client) setupRootfs(ctx context.Context, state *execState) error {
 	var err error
@@ -692,7 +714,7 @@ func (c *Client) setupRootfs(ctx context.Context, state *execState) error {
 	overlayIncompatDirs := overlay.VolatileIncompatDirs(rootMnts)
 
 	state.cleanups.Add("unmount rootfs", func() error {
-		if err := mount.Unmount(state.rootfsPath, 0); err != nil {
+		if err := unmountRootfs(ctx, systemRootfsUnmountOps, state.id, state.rootfsPath); err != nil {
 			return err
 		}
 		for _, dir := range overlayIncompatDirs {
