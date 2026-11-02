@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"strings"
 
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+
+	"github.com/dagger/dagger/engine"
 )
 
 // namingEquivalenceDang is a Dang module whose declarations the two naming
@@ -100,6 +103,27 @@ func gjsonStrings(res gjson.Result) []string {
 	return out
 }
 
+// requireQueryNamingMatches checks that Query.naming, at the version naming
+// reports, answers for the module naming reports, by its name (and its
+// original name, when it differs), exactly what naming answers: naming is a
+// ModuleNaming with selection selected, which must include version, name and
+// originalName.
+func requireQueryNamingMatches(ctx context.Context, t *testctx.T, ctr *core.Container, naming gjson.Result, selection string) {
+	t.Helper()
+	version := naming.Get("version").String()
+	name := naming.Get("name").String()
+	originalName := naming.Get("originalName").String()
+	require.NotEmpty(t, version, naming.Raw)
+	moduleArgs := fmt.Sprintf("name: %q", name)
+	if originalName != name {
+		moduleArgs += fmt.Sprintf(", originalName: %q", originalName)
+	}
+	out, err := ctr.With(daggerQuery(`{naming(version: %q) { version module(%s) { %s } }}`, version, moduleArgs, selection)).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, version, gjson.Get(out, "naming.version").String(), out)
+	require.JSONEq(t, naming.Raw, gjson.Get(out, "naming.module").Raw)
+}
+
 // TestModuleSourceNamingMatchesSchema checks ModuleSource.naming against the
 // names the engine actually registers once the module is loaded, for a module
 // pinned before the identifier casing cut (strcase) and one at the cut: its
@@ -141,7 +165,10 @@ func (ModuleNamingSuite) TestModuleSourceNamingMatchesSchema(ctx context.Context
 		t.Run(tc.module, func(ctx context.Context, t *testctx.T) {
 			types := []string{httpClient, jsonReader, cpuArch, tc.mainType}
 			functions := append(append([]string{}, httpClientFunctions...), mainFunctions...)
-			out, err := ws.With(daggerQuery(`{moduleSource(refString: %q) { naming {
+			selection := fmt.Sprintf(`
+  version
+  name
+  originalName
   typeNames(names: %s)
   fields: fieldNames(names: %s)
   args: fieldNames(names: %s)
@@ -149,10 +176,14 @@ func (ModuleNamingSuite) TestModuleSourceNamingMatchesSchema(ctx context.Context
   enumMemberNames(names: %s)
   mainObject(candidates: %s)
   currentFields: fieldNames(names: ["baseURL", "loadThingFromID", "readURL", "e2eTest"])
-} }}`, "./"+tc.module, gqlStrings(types), gqlStrings(httpClientFields), gqlStrings(args),
-				gqlStrings(functions), gqlStrings(members), gqlStrings([]string{httpClient, tc.mainType}))).Stdout(ctx)
+`, gqlStrings(types), gqlStrings(httpClientFields), gqlStrings(args),
+				gqlStrings(functions), gqlStrings(members), gqlStrings([]string{httpClient, tc.mainType}))
+			out, err := ws.With(daggerQuery(`{moduleSource(refString: %q) { naming { %s } }}`, "./"+tc.module, selection)).Stdout(ctx)
 			require.NoError(t, err)
 			naming := gjson.Get(out, "moduleSource.naming")
+			require.Equal(t, tc.module, naming.Get("name").String())
+			require.Equal(t, tc.module, naming.Get("originalName").String())
+			requireQueryNamingMatches(ctx, t, ws, naming, selection)
 			answer := func(field string, names []string) map[string]string {
 				got := gjsonStrings(naming.Get(field))
 				require.Len(t, got, len(names), field)
@@ -263,7 +294,8 @@ func (ModuleNamingSuite) TestModuleSourceNamingMatchesSchema(ctx context.Context
 // loaded twice in a session, as two dependencies under different names: each
 // load gets the names of its own (aliased) source. The two loads share an
 // implementation-scoped CurrentModule, whose source carries only one of the
-// names.
+// names. Query.naming answers the same for the version, name and original
+// name each reports.
 func (ModuleNamingSuite) TestCurrentModuleNamingAliases(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	module := func(name, deps string) string {
@@ -285,12 +317,29 @@ type Shared {
   pub names(tag: String!): [String!]! {
     currentModule.naming.typeNames(names: ["Thing"])
   }
+
+  pub identity(tag: String!): [String!]! {
+    let n = currentModule.naming
+    [n.version, n.name, n.originalName]
+  }
+
+  pub prefixed(tag: String!): [String!]! {
+    currentModule.naming.typeNames(names: ["SharedThing", "Shared"])
+  }
 }
 `).
 		WithNewFile("pa/dagger-module.toml", module("pa", dep("alias-one"))).
 		WithNewFile("pa/main.dang", `type Pa {
   pub names: [String!]! {
     aliasOne.names(tag: "a")
+  }
+
+  pub identity: [String!]! {
+    aliasOne.identity(tag: "a")
+  }
+
+  pub prefixed: [String!]! {
+    aliasOne.prefixed(tag: "a")
   }
 }
 `).
@@ -299,11 +348,72 @@ type Shared {
   pub names: [String!]! {
     aliasTwo.names(tag: "b")
   }
+
+  pub identity: [String!]! {
+    aliasTwo.identity(tag: "b")
+  }
+
+  pub prefixed: [String!]! {
+    aliasTwo.prefixed(tag: "b")
+  }
 }
 `)
-	out, err := ws.With(daggerQuery(`{ pa { names } pb { names } }`)).Stdout(ctx)
+	out, err := ws.With(daggerQuery(`{ pa { names identity prefixed } pb { names identity prefixed } }`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"pa": {"names": ["AliasOneThing"]}, "pb": {"names": ["AliasTwoThing"]}}`, out)
+	require.Equal(t, []string{"AliasOneThing"}, gjsonStrings(gjson.Get(out, "pa.names")), out)
+	require.Equal(t, []string{"AliasTwoThing"}, gjsonStrings(gjson.Get(out, "pb.names")), out)
+	// Types are namespaced under the alias, after the original name.
+	require.Equal(t, []string{"AliasOneThing", "AliasOne"}, gjsonStrings(gjson.Get(out, "pa.prefixed")), out)
+
+	// Query.naming answers the same for each load's version, name and
+	// original name.
+	for mod, alias := range map[string]string{"pa": "alias-one", "pb": "alias-two"} {
+		identity := gjsonStrings(gjson.Get(out, mod+".identity"))
+		require.Len(t, identity, 3, out)
+		require.Equal(t, engine.ModuleAPIViewVersion(namingCut), identity[0], out)
+		require.Equal(t, alias, identity[1], out)
+		require.Equal(t, "shared", identity[2], out)
+		naming, err := json.Marshal(map[string]any{
+			"version":      identity[0],
+			"name":         identity[1],
+			"originalName": identity[2],
+			"names":        gjsonStrings(gjson.Get(out, mod+".names")),
+			"prefixed":     gjsonStrings(gjson.Get(out, mod+".prefixed")),
+		})
+		require.NoError(t, err)
+		requireQueryNamingMatches(ctx, t, ws, gjson.ParseBytes(naming), `version name originalName
+  names: typeNames(names: ["Thing"])
+  prefixed: typeNames(names: ["SharedThing", "Shared"])`)
+	}
+}
+
+// TestNamingDangToml checks Query.naming against ModuleSource.naming for a
+// module whose dang.toml declares its engine version: the version naming
+// reports is the dang.toml's, not its dagger.json's.
+func (ModuleNamingSuite) TestNamingDangToml(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ws := dangTomlModule(t, c, "v1.0.0-beta.20", `type Tiny {
+  pub client: HttpClient! { HttpClient }
+}
+
+type HttpClient {
+  pub ping: String! { "pong" }
+}
+`, map[string]string{
+		"/dagger.toml": "[modules.tiny]\nsource = \"tiny\"\n",
+		"dang.toml":    "[imports.Dagger]\ndagger = \"" + namingCut + "\"\n",
+	})
+	const selection = `version name originalName
+  typeNames(names: ["HttpClient", "Tiny"])
+  fieldNames(names: ["getURL", "loadFooFromID"])
+  enumMemberNames(names: ["Arm64"])
+  mainObject(candidates: ["HttpClient", "Tiny"])`
+	out, err := ws.With(daggerQuery(`{moduleSource(refString: "./tiny") { naming { %s } }}`, selection)).Stdout(ctx)
+	require.NoError(t, err)
+	naming := gjson.Get(out, "moduleSource.naming")
+	require.Equal(t, engine.ModuleAPIViewVersion(namingCut), naming.Get("version").String(), out)
+	require.Equal(t, []string{"TinyHTTPClient", "Tiny"}, gjsonStrings(naming.Get("typeNames")), out)
+	requireQueryNamingMatches(ctx, t, ws, naming, selection)
 }
 
 // TestMainTypeSchemaName checks modules whose main type is spelled as the
