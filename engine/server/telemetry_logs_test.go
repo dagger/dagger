@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,10 +11,12 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
 	logapi "go.opentelemetry.io/otel/log"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	"google.golang.org/protobuf/proto"
 
@@ -449,4 +452,33 @@ func TestArchiveLogQueryAndSearch(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&result))
 	require.Len(t, result.Matches, 1, "the search stops at the cut")
 	require.Equal(t, strconv.FormatInt(cut.Logs, 10), strconv.FormatInt(result.Next, 10))
+}
+
+// TestFlushHandler: the barrier flushes what the session's providers still
+// hold into the client's store before answering its high-water marks.
+func TestFlushHandler(t *testing.T) {
+	f := newLogQueryFixture(t, "client")
+	f.append(t, "client", []clientdb.Span{logQuerySpanRow(lqRoot, ""), logQuerySpanRow(lqKid, lqRoot)},
+		logQueryRow(t, lqKid, "stored"),
+	)
+	sess := f.records["client"].daggerSession
+	sess.loggerProvider = sdklog.NewLoggerProvider(sdklog.WithProcessor(
+		sdklog.NewBatchProcessor(f.ps.Logs("client"), sdklog.WithExportInterval(time.Hour)),
+	))
+	t.Cleanup(func() { _ = sess.loggerProvider.Shutdown(context.Background()) })
+	var rec logapi.Record
+	rec.SetBody(logapi.StringValue("batched"))
+	sess.loggerProvider.Logger("test").Emit(t.Context(), rec)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST "+enginetel.LiveFlushPath, httpHandlerFunc(f.ps.FlushHandler, f.records["client"]))
+	ts := httptest.NewServer(mux)
+	t.Cleanup(ts.Close)
+	resp, err := ts.Client().Post(ts.URL+enginetel.LiveFlushPath, "", nil)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	var marks enginetel.LiveFlushResult
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&marks))
+	require.Equal(t, enginetel.LiveFlushResult{Spans: 2, Logs: 2}, marks, "the batched record is stored and counted")
 }

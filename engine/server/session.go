@@ -2562,7 +2562,7 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 
 	mux := http.NewServeMux()
 	switch path := r.URL.Path; {
-	case len(childMetadata) == 0 && (path == "/v1/traces" || path == "/v1/logs" || path == "/v1/metrics" || path == "/v1/logs/query" || path == "/v1/logs/search"):
+	case len(childMetadata) == 0 && (path == "/v1/traces" || path == "/v1/logs" || path == "/v1/metrics" || path == "/v1/logs/query" || path == "/v1/logs/search" || path == enginetel.LiveFlushPath):
 		// Telemetry subscriptions require only the stable client record.
 		record, err := srv.clientRecordFromIDs(clientMetadata.SessionID, clientMetadata.ClientID)
 		if err != nil {
@@ -2573,6 +2573,7 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		mux.HandleFunc("GET /v1/metrics", httpHandlerFunc(srv.telemetryPubSub.MetricsSubscribeHandler, record))
 		mux.HandleFunc("POST /v1/logs/query", httpHandlerFunc(srv.telemetryPubSub.LogsQueryHandler, record))
 		mux.HandleFunc("POST /v1/logs/search", httpHandlerFunc(srv.telemetryPubSub.LogsSearchHandler, record))
+		mux.HandleFunc("POST "+enginetel.LiveFlushPath, httpHandlerFunc(srv.telemetryPubSub.FlushHandler, record))
 		// The client's own telemetry (engine.ClientTelemetryIngestHeader).
 		ps := srv.telemetryPubSub
 		mux.HandleFunc("POST /v1/traces", ps.clientIngestHandler(ps.ingestClientTraces, record))
