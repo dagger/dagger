@@ -255,13 +255,14 @@ func (l *liveLogs) notify() {
 // subscribe, it runs on the frontend's event loop: it only takes l.mu,
 // which nothing holds while it waits on the frontend.
 //
-// A released span is forgotten whether it is followed, retired or
-// reactivated: it is no longer watched for activity, and a later request
-// for it is a new one, caught up from the start rather than resumed from
-// where it retired. So the pairs its retirement passed to its gap read are
-// forgotten too, the gap read in flight for it, if any, puts nothing back,
-// and the pairs routing to a dropped span are forgotten whichever read owns
-// them.
+// A released span is let go of whether it is followed, retired or
+// reactivated: it is no longer watched for activity -- the gap read in
+// flight for it, if any, puts nothing back -- and a later request for it
+// is a new one, caught up from the start rather than resumed from where it
+// retired. Which of its pairs that catch-up imports again is up to Dropped,
+// as for a followed span: the pairs routing to a dropped span are forgotten
+// whichever read owns them, a retired span's gap read included; the others
+// stay claimed, their text still held by the frontend.
 func (l *liveLogs) release(r idtui.LogRelease) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -274,8 +275,11 @@ func (l *liveLogs) release(r idtui.LogRelease) {
 		dropped[id] = true
 		l.released[id] = l.gen
 	}
-	// The gap reads of released retired spans: none of them runs again.
-	forsaken := map[uint64]bool{}
+	for key, claim := range l.owned {
+		if dropped[claim.target] {
+			delete(l.owned, key)
+		}
+	}
 	var left bool
 	for _, id := range r.Spans {
 		hex := id.String()
@@ -287,21 +291,10 @@ func (l *liveLogs) release(r idtui.LogRelease) {
 		delete(l.catching, hex)
 		delete(l.idleSince, hex)
 		delete(l.through, hex)
-		if rs, ok := l.retired[hex]; ok {
-			forsaken[rs.read] = true
-			delete(l.retired, hex)
-		}
-		if rs, ok := l.reactivated[hex]; ok {
-			forsaken[rs.read] = true
-			delete(l.reactivated, hex)
-		}
+		delete(l.retired, hex)
+		delete(l.reactivated, hex)
 		if l.reactivating == hex {
 			l.reactivating = ""
-		}
-	}
-	for key, claim := range l.owned {
-		if dropped[claim.target] || forsaken[claim.read] {
-			delete(l.owned, key)
 		}
 	}
 	if left {
@@ -619,13 +612,8 @@ func (l *liveLogs) reactivate(ctx context.Context) error {
 		l.mu.Lock()
 		switch {
 		case l.reactivating != id:
-			// Released meanwhile (release): forget it, and what this read
-			// claimed for it since.
-			for key, claim := range l.owned {
-				if claim.read == r.read {
-					delete(l.owned, key)
-				}
-			}
+			// Released meanwhile (release): let it go. Rows of a span it
+			// dropped meanwhile were left out.
 			err = nil
 		case err != nil:
 			l.reactivated[id] = r
