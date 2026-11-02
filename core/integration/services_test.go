@@ -674,6 +674,70 @@ func (ServiceSuite) TestPortsSkipHealthCheck(ctx context.Context, t *testctx.T) 
 	})
 }
 
+// TestPortHealthCheckIsPrompt checks that services which take a while to
+// listen are noticed soon after they do. Each service times the health
+// check's dial on its own clock, from the moment it listens. A check that backs
+// off between dials is late by seconds for most of these delays, and rarely
+// prompt for all three.
+func (ServiceSuite) TestPortHealthCheckIsPrompt(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	srvpy := `import http.server, socket, sys, time
+
+time.sleep(float(sys.argv[1]))
+
+s = socket.socket()
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+s.bind(("", 8000))
+s.listen()
+listened = time.monotonic()
+conn, _ = s.accept()
+late = time.monotonic() - listened
+conn.close()
+s.close()
+
+class Late(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(str(late).encode())
+
+http.server.HTTPServer(("", 8000), Late).serve_forever()
+`
+	delays := []string{"7", "10", "13"}
+
+	// A cached exec would report an earlier run's services.
+	client := core.NewQuery(c).Container().
+		From(alpineImage).
+		WithEnvVariable("BUST", rand.Text())
+	for _, delay := range delays {
+		srv := core.NewQuery(c).Container().
+			From("python").
+			WithNewFile("/srv.py", srvpy).
+			WithExposedPort(8000).
+			WithDefaultArgs([]string{"python", "/srv.py", delay}).
+			AsService()
+		client = client.WithServiceBinding("www"+delay, srv)
+	}
+
+	// Every service starts before the exec runs, so one exec reads them all.
+	out, err := client.
+		WithExec([]string{"sh", "-c", `for d in ` + strings.Join(delays, " ") + `; do
+			for i in $(seq 10); do wget -q -O- http://www$d:8000 && break; sleep 0.2; done
+			echo
+		done`}).
+		Stdout(ctx)
+	require.NoError(t, err)
+
+	lates := strings.Fields(out)
+	require.Len(t, lates, len(delays), "output: %q", out)
+	for i, delay := range delays {
+		late, err := strconv.ParseFloat(lates[i], 64)
+		require.NoError(t, err)
+		require.Less(t, late, 1.0, "health check noticed the service that listened after %ss %.2fs late", delay, late)
+	}
+}
+
 func (ServiceSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

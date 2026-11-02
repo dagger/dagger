@@ -3160,6 +3160,11 @@ pub struct ContainerWithExecOpts<'a> {
     /// Content to write to the command's standard input. Example: "Hello world")
     #[builder(setter(into, strip_option), default)]
     pub stdin: Option<&'a str>,
+    /// Let the command, and the processes it starts, use the Linux kernel's transparent huge pages. Large-memory programs such as compilers can run faster with them, at some cost in memory.
+    /// Without this, a command gets huge pages only for memory its own program asks huge pages for, as on a host set to "madvise". That only matters on hosts with Linux 6.18 or later whose transparent huge pages are set to "always" (/sys/kernel/mm/transparent_hugepage/enabled, or a size under /sys/kernel/mm/transparent_hugepage/hugepages-*). With the usual default settings, this changes nothing. On older kernels, commands get what the host's settings give them, whether they set this or not.
+    /// It isn't part of the exec's cache key: an exec that differs from a cached one only in this setting reuses the cached result, whichever setting produced it.
+    #[builder(setter(into, strip_option), default)]
+    pub transparent_huge_pages: Option<bool>,
     /// Apply the OCI entrypoint, if present, by prepending it to the args. Ignored by default.
     #[builder(setter(into, strip_option), default)]
     pub use_entrypoint: Option<bool>,
@@ -5219,6 +5224,9 @@ impl Container {
         }
         if let Some(no_init) = opts.no_init {
             query = query.arg("noInit", no_init);
+        }
+        if let Some(transparent_huge_pages) = opts.transparent_huge_pages {
+            query = query.arg("transparentHugePages", transparent_huge_pages);
         }
         Container {
             proc: self.proc.clone(),
@@ -8948,7 +8956,15 @@ pub struct FileExportOpts {
     pub allow_parent_dir_path: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct FileExtractOpts {
+pub struct FileExtractOpts<'a> {
+    /// If set, entries matching one of these glob patterns, or in a directory that does, are not extracted (e.g., ["**/testdata", "**/*_test.go"]).
+    /// Patterns match entry paths after stripComponents is applied.
+    #[builder(setter(into, strip_option), default)]
+    pub exclude: Option<Vec<&'a str>>,
+    /// If set, only entries matching one of these glob patterns, or in a directory that does, are extracted (e.g., ["src/", "*.go"]).
+    /// Patterns match entry paths after stripComponents is applied.
+    #[builder(setter(into, strip_option), default)]
+    pub include: Option<Vec<&'a str>>,
     /// Remove this many leading elements from each entry's path, as tar --strip-components does.
     /// Entries with no more elements than this are skipped.
     #[builder(setter(into, strip_option), default)]
@@ -9328,10 +9344,16 @@ impl File {
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn extract_opts(&self, opts: FileExtractOpts) -> Directory {
+    pub fn extract_opts<'a>(&self, opts: FileExtractOpts<'a>) -> Directory {
         let mut query = self.selection.select("extract");
         if let Some(strip_components) = opts.strip_components {
             query = query.arg("stripComponents", strip_components);
+        }
+        if let Some(include) = opts.include {
+            query = query.arg("include", include);
+        }
+        if let Some(exclude) = opts.exclude {
+            query = query.arg("exclude", exclude);
         }
         Directory {
             proc: self.proc.clone(),

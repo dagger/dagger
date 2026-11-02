@@ -100,6 +100,94 @@ func describePartRecord(record PersistedRecord) ([]PartProbe, error) {
 	return probes, err
 }
 
+// partDescription collects the complete parts of a row described rather than
+// encoded: those describePartRecord reports for the record it would encode
+// to. Each object is described as that record's payload walk describes it,
+// except that an object that describes its own parts isn't encoded.
+type partDescription struct {
+	complete []PersistedPartAddress
+}
+
+func (d *partDescription) describe(ctx context.Context, enc *PersistEncodeContext, family PersistedObjectFamily, object PersistedObject) error {
+	var desc PersistedPartsDescription
+	described := false
+	if describer, ok := object.(PersistedPartsDescriber); ok {
+		var err error
+		desc, described, err = describer.DescribePersistedParts(ctx, enc)
+		if err != nil {
+			return err
+		}
+	}
+	if !described {
+		encoding, err := object.EncodePersistedObject(ctx, enc)
+		if err != nil {
+			return err
+		}
+		desc.SnapshotLinks = encoding.SnapshotLinks
+		if describer, ok := family.Transfer.(PersistedPartDescriber); ok {
+			v := enc.PayloadVisit(cloneSnapshotRefLinks(encoding.SnapshotLinks))
+			v.Payload = encoding.JSON
+			probes, err := describer.DescribeParts(v)
+			if err != nil {
+				return err
+			}
+			desc.Complete = completePartAddresses(probes)
+		}
+	}
+	if err := checkObjectSnapshotLinks(desc.SnapshotLinks); err != nil {
+		return err
+	}
+	d.complete = append(d.complete, desc.Complete...)
+	return nil
+}
+
+// checkObjectSnapshotLinks checks one object's snapshot links as
+// partitionSnapshotLinks checks those of the record they would be part of:
+// each names a role of the object itself, once, with a snapshot key.
+func checkObjectSnapshotLinks(links []PersistedSnapshotRefLink) error {
+	for i, link := range links {
+		switch {
+		case len(link.OutputPath) != 0:
+			return fmt.Errorf("snapshot role %q path does not name a declared inline envelope", link.Role)
+		case link.Role == "":
+			return fmt.Errorf("empty snapshot role")
+		case link.RefKey == "":
+			return fmt.Errorf("snapshot role %q has empty key", link.Role)
+		}
+		for _, prior := range links[:i] {
+			if prior.Role == link.Role {
+				return fmt.Errorf("storage role %q declared twice", link.Role)
+			}
+		}
+	}
+	return nil
+}
+
+// completePartAddresses returns the addresses of probes' locally complete
+// parts.
+func completePartAddresses(probes []PartProbe) []PersistedPartAddress {
+	var complete []PersistedPartAddress
+	for _, probe := range probes {
+		if probe.LocalComplete {
+			complete = append(complete, probe.Descriptor.Address)
+		}
+	}
+	return complete
+}
+
+// partAddressKeys returns the keys of addresses, sorted and without
+// duplicates. An address without a key is left out.
+func partAddressKeys(addresses []PersistedPartAddress) []string {
+	var keys []string
+	for _, address := range addresses {
+		if key, err := partAddressKey(address); err == nil {
+			keys = append(keys, key)
+		}
+	}
+	slices.Sort(keys)
+	return slices.Compact(keys)
+}
+
 func (c *Cache) openAcquiredPart(ctx context.Context, res AnyResult, address PersistedPartAddress) error {
 	value, err := inlineValueAt(res, res.cacheSharedResult().loadResultCall(), address.OutputPath)
 	if err != nil {

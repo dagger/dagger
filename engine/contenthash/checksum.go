@@ -1273,7 +1273,10 @@ var pool32K = sync.Pool{
 
 func poolsCopy(dst io.Writer, src io.Reader) (written int64, err error) {
 	buf := pool32K.Get().(*[]byte)
-	written, err = io.CopyBuffer(dst, src, *buf)
+	// Only the io.Reader of src: an *os.File's WriteTo would take the copy
+	// over and, with no fast path to a hash, allocate its own buffer for every
+	// file instead of using buf.
+	written, err = io.CopyBuffer(dst, struct{ io.Reader }{src}, *buf)
 	pool32K.Put(buf)
 	return
 }

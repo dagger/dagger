@@ -98,6 +98,9 @@ type ContainerExecOpts struct {
 	// Skip the init process injected into containers by default so that the
 	// user's process is PID 1
 	NoInit bool `default:"false"`
+
+	// Let the command use transparent huge pages where the host provides them
+	TransparentHugePages bool `default:"false"`
 }
 
 type ContainerExecState struct {
@@ -253,29 +256,43 @@ func (lazy *ContainerExecLazy) AttachDependencies(ctx context.Context, attach fu
 }
 
 func (lazy *ContainerExecLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	persisted, err := lazy.persisted(enc)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persisted)
+}
+
+func (lazy *ContainerExecLazy) persistedRoute(enc *dagql.PersistEncodeContext) (containerRecipeRoute, error) {
+	_, err := lazy.persisted(enc)
+	return containerRecipeRoute{}, err
+}
+
+// persisted is the value EncodePersisted encodes.
+func (lazy *ContainerExecLazy) persisted(enc *dagql.PersistEncodeContext) (persistedContainerExecLazy, error) {
 	if lazy == nil || lazy.State == nil {
-		return nil, fmt.Errorf("encode persisted container withExec lazy: nil state")
+		return persistedContainerExecLazy{}, fmt.Errorf("encode persisted container withExec lazy: nil state")
 	}
 	if lazy.State.FunctionCall != nil {
-		return nil, fmt.Errorf("cannot persist container exec with active function call")
+		return persistedContainerExecLazy{}, fmt.Errorf("cannot persist container exec with active function call")
 	}
 	parentID, err := encodePersistedObjectRef(enc, lazy.State.Parent, "container withExec parent")
 	if err != nil {
-		return nil, err
+		return persistedContainerExecLazy{}, err
 	}
 	var moduleContextID uint64
 	if lazy.State.ModuleContext.Self() != nil {
 		moduleContextID, err = encodePersistedObjectRef(enc, lazy.State.ModuleContext, "container withExec module context")
 		if err != nil {
-			return nil, err
+			return persistedContainerExecLazy{}, err
 		}
 	}
-	return json.Marshal(persistedContainerExecLazy{
+	return persistedContainerExecLazy{
 		ParentResultID:        parentID,
 		ModuleContextResultID: moduleContextID,
 		Opts:                  lazy.State.Opts,
 		ExecMD:                lazy.State.originalExecMD,
-	})
+	}, nil
 }
 
 // execMeta copies the metadata by value, but mutates HostAliases in place.
@@ -322,10 +339,7 @@ func (lazy *ContainerVolatileExecCacheHitLazy) AttachDependencies(ctx context.Co
 }
 
 func (lazy *ContainerVolatileExecCacheHitLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
-	if lazy == nil {
-		return nil, fmt.Errorf("encode persisted container volatile exec cache hit lazy: nil lazy")
-	}
-	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container volatile exec cache hit parent")
+	parentID, err := lazy.persistedParent(enc)
 	if err != nil {
 		return nil, err
 	}
@@ -333,6 +347,19 @@ func (lazy *ContainerVolatileExecCacheHitLazy) EncodePersisted(ctx context.Conte
 		VolatileCacheHitParentResultID: parentID,
 		VolatileCacheHitVolatileEnv:    slices.Clone(lazy.VolatileEnv),
 	})
+}
+
+func (lazy *ContainerVolatileExecCacheHitLazy) persistedRoute(enc *dagql.PersistEncodeContext) (containerRecipeRoute, error) {
+	parentID, err := lazy.persistedParent(enc)
+	return containerRecipeRoute{volatileCacheHit: parentID != 0}, err
+}
+
+// persistedParent is the parent's result ID EncodePersisted encodes.
+func (lazy *ContainerVolatileExecCacheHitLazy) persistedParent(enc *dagql.PersistEncodeContext) (uint64, error) {
+	if lazy == nil {
+		return 0, fmt.Errorf("encode persisted container volatile exec cache hit lazy: nil lazy")
+	}
+	return encodePersistedObjectRef(enc, lazy.Parent, "container volatile exec cache hit parent")
 }
 
 func (container *Container) execMeta(
@@ -452,6 +479,7 @@ func (container *Container) metaSpec(ctx context.Context, opts ContainerExecOpts
 		Cwd:                       cmp.Or(cfg.WorkingDir, "/"),
 		User:                      cfg.User,
 		RemoveMountStubsRecursive: true,
+		TransparentHugePages:      opts.TransparentHugePages,
 	}
 	if opts.InsecureRootCapabilities {
 		metaSpec.SecurityMode = pb.SecurityMode_INSECURE

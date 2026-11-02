@@ -1,0 +1,11 @@
+kind: Fixed
+body: |
+  Importing an image now checks each layer's contents against the diffID the
+  image declares, and fails on a mismatch. The engine reuses a layer it has
+  already unpacked when a later image declares the same diffID on the same
+  parent, so a layer whose contents didn't match its diffID could give a later
+  image another image's files.
+time: 2026-11-02T19:00:00Z
+custom:
+  Author: sipsma
+  PR: 15007

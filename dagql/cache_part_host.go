@@ -167,6 +167,7 @@ func (host *PartHost) AddDependencies(ctx context.Context, deps []AnyResult) err
 	if _, found := c.resultsByID[host.row.id]; !found {
 		return fmt.Errorf("add part dependencies: result %d was already collected", host.row.id)
 	}
+	depShareds := make([]*sharedResult, 0, len(deps))
 	for _, dep := range deps {
 		depShared := dep.cacheSharedResult()
 		if depShared == nil || depShared.id == 0 {
@@ -175,11 +176,9 @@ func (host *PartHost) AddDependencies(ctx context.Context, deps []AnyResult) err
 		if _, found := c.resultsByID[depShared.id]; !found {
 			return fmt.Errorf("add part dependencies: dep result %d was already collected", depShared.id)
 		}
-		if err := c.addExplicitDependencyLocked(ctx, host.row, depShared, "part_dependency"); err != nil {
-			return err
-		}
+		depShareds = append(depShareds, depShared)
 	}
-	return nil
+	return c.addExplicitDependenciesLocked(ctx, host.row, depShareds, "part_dependency")
 }
 
 // SetContentDigestAfterEvaluation defers output equivalence until this native

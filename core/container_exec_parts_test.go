@@ -95,6 +95,12 @@ func TestContainerExecSuccessConsumesFinalReadOnlyMount(t *testing.T) {
 	require.True(t, persisted.Metadata.Consumed)
 	require.JSONEq(t, string(pendingRecipe), string(persisted.LazyJSON))
 	require.Equal(t, containerPartDirectory, persisted.Parts[ContainerPartMount("/ro")].Kind)
+
+	// A container the engine builds always has a platform. This one was
+	// built without, and the empty platform's encoding doesn't decode.
+	child.Platform = Platform{OS: "linux", Architecture: "amd64"}
+	execCall := &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: "withExec", Type: dagql.NewResultCallType(child.Type())}
+	require.True(t, requireDescribedAsEncoded(t, ctx, dagql.NewPersistEncodeContext(cache, 0, execCall), child))
 }
 
 func newExecPartsTestChild(t *testing.T, baseRes dagql.ObjectResult[*Container], base *Container) *Container {

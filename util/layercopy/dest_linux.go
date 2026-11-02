@@ -603,7 +603,9 @@ func opaqueXattr(userxattr bool) string {
 	return "trusted.overlay.opaque"
 }
 
-func overlayLayers(m *mount.Mount) ([]string, error) {
+// overlayLayers lists an overlay mount's layers from the bottom up, and how
+// many of them are lowerdirs: all but the upperdir, if there is one.
+func overlayLayers(m *mount.Mount) (_ []string, lowers int, _ error) {
 	var upper string
 	var lower []string
 	for _, opt := range m.Options {
@@ -615,16 +617,17 @@ func overlayLayers(m *mount.Mount) ([]string, error) {
 			slices.Reverse(lower)
 		case strings.HasPrefix(opt, "workdir="), opt == "index=off", opt == "userxattr", strings.HasPrefix(opt, "redirect_dir="), opt == "volatile":
 		default:
-			return nil, fmt.Errorf("unknown overlay option %q", opt)
+			return nil, 0, fmt.Errorf("unknown overlay option %q", opt)
 		}
 	}
+	lowers = len(lower)
 	if upper != "" {
 		lower = append(lower, upper)
 	}
 	if len(lower) == 0 {
-		return nil, fmt.Errorf("overlay mount has no layers")
+		return nil, 0, fmt.Errorf("overlay mount has no layers")
 	}
-	return lower, nil
+	return lower, lowers, nil
 }
 
 func isOverlayMount(m *mount.Mount) bool {

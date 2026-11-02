@@ -153,6 +153,8 @@ func TestContainerPersistedUnsupportedTargetPreservesConsumedExecMeta(t *testing
 			require.Error(t, wholeErr)
 			encoded, err := child.EncodePersistedObject(ctxA, dagql.NewPersistEncodeContext(cacheA, 0, nil))
 			require.NoError(t, err)
+			// The write target can't be routed, so no part is described.
+			require.False(t, requireDescribedAsEncoded(t, ctxA, dagql.NewPersistEncodeContext(cacheA, 0, frame), child))
 			var payload persistedContainerPayload
 			require.NoError(t, json.Unmarshal(encoded.JSON, &payload))
 			require.True(t, payload.Metadata.Consumed)
@@ -182,6 +184,7 @@ func TestContainerPersistedUnsupportedTargetPreservesConsumedExecMeta(t *testing
 			require.Equal(t, 1, managerB.openCount("metadata"))
 			_, err = restored.EncodePersistedObject(ctxB, dagql.NewPersistEncodeContext(cacheB, 0, nil))
 			require.NoError(t, err)
+			require.False(t, requireDescribedAsEncoded(t, ctxB, dagql.NewPersistEncodeContext(cacheB, 0, frame), restored))
 			require.NoError(t, cacheB.ReleaseSession(ctxB, "second"))
 			require.NoError(t, cacheB.Close(ctxB))
 		})
@@ -667,6 +670,7 @@ func TestContainerPersistedDetachedFileAndDirectoryPaths(t *testing.T) {
 	}
 	encoded, err := original.EncodePersistedObject(ctx, dagql.NewPersistEncodeContext(cache, 0, nil))
 	require.NoError(t, err)
+	require.True(t, requireDescribedAsEncoded(t, ctx, dagql.NewPersistEncodeContext(cache, 0, nil), original))
 	frame := &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: "container", Type: dagql.NewResultCallType(original.Type())}
 	res, err := cache.GetOrInitCall(ctx, "paths", srv, &dagql.CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (dagql.AnyResult, error) {
 		return dagql.NewObjectResultForCall(original, srv, frame)
@@ -720,6 +724,7 @@ func TestContainerPersistedDetachedFileAndDirectoryPaths(t *testing.T) {
 	require.NoError(t, err)
 	require.JSONEq(t, string(encoded.JSON), string(reencoded.JSON))
 	require.ElementsMatch(t, encoded.SnapshotLinks, reencoded.SnapshotLinks)
+	require.True(t, requireDescribedAsEncoded(t, ctx, dagql.NewPersistEncodeContext(cache, 0, nil), restored))
 }
 
 func TestContainerRestoreAttemptLifetime(t *testing.T) {

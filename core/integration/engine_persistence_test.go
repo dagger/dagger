@@ -1161,6 +1161,22 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		randomB := runRandom(ctx, t, engineClientB)
 		require.NotEqual(t, randomA, randomB, "cache state from before the unclean shutdown should be discarded")
 
+		// The reset recreates the snapshotter on an empty worker dir; it must
+		// still be overlayfs, whose snapshots each keep their files in fs/,
+		// rather than the native snapshotter, which copies every layer whole.
+		snapshotLayout, err := core.NewQuery(c).
+			Container().
+			From(alpineImage).
+			WithMountedCache("/state", core.NewQuery(c).CacheVolume(stateKey)).
+			WithEnvVariable("CACHEBUSTER", rand.Text()).
+			WithExec([]string{"sh", "-ec", "ls -d /state/worker/snapshots/snapshots/* | wc -l; ls -d /state/worker/snapshots/snapshots/*/fs | wc -l"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		snapshotCounts := strings.Fields(snapshotLayout)
+		require.Len(t, snapshotCounts, 2)
+		require.NotEqual(t, "0", snapshotCounts[0], "the reset engine should have made snapshots")
+		require.Equal(t, snapshotCounts[0], snapshotCounts[1], "every snapshot after a reset should be an overlayfs snapshot")
+
 		// The reset renames the invalid worker state aside to a sibling
 		// worker-trash-* directory and removes it in the background; poll the
 		// state volume until the trash is swept, so discarded state cannot

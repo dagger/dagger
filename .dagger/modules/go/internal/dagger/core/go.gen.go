@@ -604,7 +604,7 @@ type GoOpts struct {
 	Source *Directory
 	// Go version
 	//
-	// Default: "1.26"
+	// Default: "1.27"
 	Version string
 	// Use a custom module cache
 	ModuleCache *CacheVolume

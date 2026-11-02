@@ -39,9 +39,19 @@ func TestPartPureRoutes(t *testing.T) {
 			payload, err := json.Marshal(persistedContainerPayload{Metadata: persistedContainerMetadata{Consumed: true, Value: metadata}, LazyJSON: raw})
 			require.NoError(t, err)
 			visit := dagql.PersistedPayloadVisit{Path: path, Call: &dagql.ResultCall{Field: test.field}, Payload: payload}
+			// A live recipe's route stands in for its JSON.
+			recipeRoute, err := decodeContainerRecipeRoute(test.field, raw)
+			require.NoError(t, err)
+			live := &partRouter{family: "Container", v: visit, payload: &partPayload{
+				container:      persistedContainerPayload{Metadata: persistedContainerMetadata{Consumed: true, Value: metadata}},
+				containerRoute: &recipeRoute,
+			}}
 			for _, part := range append([]dagql.PartKey{ContainerPartMetadata}, containerSnapshotParts(ctr)...) {
 				route, err := foreignFamilyCodec("Container").RouteParts(visit, part)
 				require.NoError(t, err)
+				liveRoute, err := live.route(part, true)
+				require.NoError(t, err)
+				require.Equal(t, route, liveRoute)
 				expected, err := test.native.ContainerLazyGroups(ctx, ctr, []dagql.PartKey{part})
 				require.NoError(t, err)
 				require.Equal(t, []dagql.LazyGroupKey{route.Group.Group}, expected)

@@ -241,11 +241,17 @@ class File extends Client\AbstractObject implements Client\IdAble, Exportable, N
      *
      * An entry whose path would leave the directory is an error.
      */
-    public function extract(?int $stripComponents = 0): Directory
+    public function extract(?int $stripComponents = 0, ?array $include = [], ?array $exclude = []): Directory
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('extract');
         if (null !== $stripComponents) {
         $innerQueryBuilder->setArgument('stripComponents', $stripComponents);
+        }
+        if (null !== $include) {
+        $innerQueryBuilder->setArgument('include', $include);
+        }
+        if (null !== $exclude) {
+        $innerQueryBuilder->setArgument('exclude', $exclude);
         }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

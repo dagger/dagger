@@ -956,6 +956,7 @@ func (srv *Server) initializeClientMetrics(client *clientRuntime) {
 	}
 	meterOpts := []sdkmetric.Option{
 		sdkmetric.WithResource(telemetry.Resource),
+		sdkmetric.WithView(engineutil.ResourceMetricsView()),
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(
 			exporter,
 			sdkmetric.WithInterval(metricReaderInterval),
@@ -1977,20 +1978,32 @@ func (srv *Server) getOrInitClient(
 
 	// get or initialize the session as a whole
 
-	srv.daggerSessionsMu.Lock()
+	// Every request of a session looks it up here, so an existing session is
+	// found under the read lock, and only a new one takes the write lock.
+	srv.daggerSessionsMu.RLock()
 	if srv.isShuttingDown() {
-		srv.daggerSessionsMu.Unlock()
+		srv.daggerSessionsMu.RUnlock()
 		return nil, nil, errServerShuttingDown
 	}
-	// A newly constructed session is still unreachable when lifecycleMu is
-	// acquired, so this is the one unpublished-object exception to the rule that
-	// lifecycleMu and daggerSessionsMu are not nested.
-	sess, createdSession, err := srv.getOrCreateSessionLocked(sessionID, clientID)
-	if err != nil {
+	sess := srv.daggerSessions[sessionID]
+	srv.daggerSessionsMu.RUnlock()
+	createdSession := false
+	if sess == nil {
+		srv.daggerSessionsMu.Lock()
+		if srv.isShuttingDown() {
+			srv.daggerSessionsMu.Unlock()
+			return nil, nil, errServerShuttingDown
+		}
+		// A newly constructed session is still unreachable when lifecycleMu is
+		// acquired, so this is the one unpublished-object exception to the rule that
+		// lifecycleMu and daggerSessionsMu are not nested.
+		sess, createdSession, err = srv.getOrCreateSessionLocked(sessionID, clientID)
+		if err != nil {
+			srv.daggerSessionsMu.Unlock()
+			return nil, nil, err
+		}
 		srv.daggerSessionsMu.Unlock()
-		return nil, nil, err
 	}
-	srv.daggerSessionsMu.Unlock()
 
 	if !createdSession {
 		// Fast, lock-free check: if the session is already a removed tombstone,
@@ -2520,31 +2533,38 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		ctx = dagql.WithRepeatedTelemetry(ctx)
 	}
 
-	ctx = bklog.WithLogger(ctx, bklog.G(ctx).
-		WithField("trace", trace.SpanContextFromContext(ctx).TraceID().String()).
-		WithField("span", trace.SpanContextFromContext(ctx).SpanID().String()).
-		WithField("client_id", clientMetadata.ClientID).
-		WithField("client_hostname", clientMetadata.ClientHostname).
-		WithField("session_id", clientMetadata.SessionID))
+	spanCtx := trace.SpanContextFromContext(ctx)
+	traceID, spanID := spanCtx.TraceID().String(), spanCtx.SpanID().String()
+	ctx = bklog.WithLogger(ctx, bklog.G(ctx).WithFields(logrus.Fields{
+		"trace":           traceID,
+		"span":            spanID,
+		"client_id":       clientMetadata.ClientID,
+		"client_hostname": clientMetadata.ClientHostname,
+		"session_id":      clientMetadata.SessionID,
+	}))
 	ctx = slog.WithLogger(ctx, slog.FromContext(ctx).With(
 		"client_id", clientMetadata.ClientID,
 		"client_hostname", clientMetadata.ClientHostname,
 		"session_id", clientMetadata.SessionID,
-		"trace", trace.SpanContextFromContext(ctx).TraceID().String(),
-		"span", trace.SpanContextFromContext(ctx).SpanID().String(),
+		"trace", traceID,
+		"span", spanID,
 	))
 	ctx = dagql.ContextWithCache(ctx, srv.engineCache)
 
-	// Debug https://github.com/dagger/dagger/issues/7592 by logging method and some headers, which
-	// are checked by gqlgen's handler
-	bklog.G(ctx).WithFields(logrus.Fields{
-		"path":          r.URL.Path,
-		"method":        r.Method,
-		"upgradeHeader": r.Header.Get("Upgrade"),
-		"contentType":   r.Header.Get("Content-Type"),
-		"trace":         trace.SpanContextFromContext(ctx).TraceID().String(),
-		"span":          trace.SpanContextFromContext(ctx).SpanID().String(),
-	}).Debug("handling http request")
+	// Log the method and some headers, which gqlgen's handler checks, to debug transport errors
+	// such as https://github.com/dagger/dagger/issues/7592. This runs for every request, and the
+	// engine logs at debug level by default, so it's logged, and its fields built, only at trace
+	// level.
+	if logger := bklog.G(ctx); logger.Logger.IsLevelEnabled(logrus.TraceLevel) {
+		logger.WithFields(logrus.Fields{
+			"path":          r.URL.Path,
+			"method":        r.Method,
+			"upgradeHeader": r.Header.Get("Upgrade"),
+			"contentType":   r.Header.Get("Content-Type"),
+			"trace":         traceID,
+			"span":          spanID,
+		}).Trace("handling http request")
+	}
 
 	if r.URL.Path == "/v1/telemetry/archives" || strings.HasPrefix(r.URL.Path, "/v1/telemetry/archives/") {
 		record, err := srv.archiveRequestRecord(clientMetadata.ClientID, clientMetadata.SessionID, clientMetadata.ClientSecretToken)
@@ -2556,7 +2576,7 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 
 	childMetadata := r.Header.Values(engine.ChildClientMetadataMetaKey)
 
-	mux := http.NewServeMux()
+	var mux *http.ServeMux
 	switch path := r.URL.Path; {
 	case len(childMetadata) == 0 && (path == "/v1/traces" || path == "/v1/logs" || path == "/v1/metrics"):
 		// Telemetry subscriptions require only the stable client record.
@@ -2564,6 +2584,7 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		if err != nil {
 			return fmt.Errorf("get client record: %w", err)
 		}
+		mux = http.NewServeMux()
 		mux.HandleFunc("GET /v1/traces", httpHandlerFunc(srv.telemetryPubSub.TracesSubscribeHandler, record))
 		mux.HandleFunc("GET /v1/logs", httpHandlerFunc(srv.telemetryPubSub.LogsSubscribeHandler, record))
 		mux.HandleFunc("GET /v1/metrics", httpHandlerFunc(srv.telemetryPubSub.MetricsSubscribeHandler, record))
@@ -2625,6 +2646,28 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		ctx = analytics.WithContext(ctx, sess.analytics)
 		r = r.WithContext(ctx)
 
+		// The session's built-in endpoints are exact paths, so while no endpoint was mixed in through
+		// MuxEndpoint they're served without building a mux for every request; any other request
+		// goes through the mux as before, which also keeps a mixed-in pattern's precedence.
+		sess.endpointMu.RLock()
+		mixedIn := len(sess.endpoints) > 0
+		sess.endpointMu.RUnlock()
+		switch path := r.URL.Path; {
+		case mixedIn:
+		case path == engine.QueryEndpoint:
+			httpHandlerFunc(srv.serveQuery, client).ServeHTTP(w, r)
+			return nil
+		case path == engine.SessionAttachablesEndpoint:
+			httpHandlerFunc(srv.serveSessionAttachables, client.clientRecord).ServeHTTP(w, r)
+			return nil
+		case path == engine.InitEndpoint:
+			httpHandlerFunc(srv.serveInit, client).ServeHTTP(w, r)
+			return nil
+		case path == engine.ShutdownEndpoint:
+			httpHandlerFunc(srv.serveShutdown, client).ServeHTTP(w, r)
+			return nil
+		}
+		mux = http.NewServeMux()
 		mux.Handle(engine.SessionAttachablesEndpoint, httpHandlerFunc(srv.serveSessionAttachables, client.clientRecord))
 		mux.Handle(engine.QueryEndpoint, httpHandlerFunc(srv.serveQuery, client))
 		mux.Handle(engine.InitEndpoint, httpHandlerFunc(srv.serveInit, client))
@@ -2948,8 +2991,9 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 		return gqlErr(fmt.Errorf("failed to get schema: %w", err), http.StatusBadRequest)
 	}
 
-	gqlSrv := dagql.NewDefaultHandler(schema)
-	// NB: break glass when needed:
+	gqlSrv := schema.Handler()
+	// NB: break glass when needed, in dagql.NewDefaultHandler, since the handler is shared by
+	// every request to this schema:
 	// gqlSrv.AroundResponses(func(ctx context.Context, next graphql.ResponseHandler) *graphql.Response {
 	// 	res := next(ctx)
 	// 	pl, err := json.Marshal(res)
