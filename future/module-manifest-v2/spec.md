@@ -477,17 +477,18 @@ Defaults:
 
 | Declared | Dagger version | Dang version |
 | --- | --- | --- |
-| No `dang.toml` | `v1.0.0-beta.20` | `2.1` |
-| No Dagger import, or `dagger = true` | `v1.0.0-beta.20` | as declared |
+| No `dang.toml` | `v1.0.0-beta.24` | `2.1` |
+| No Dagger import, or `dagger = true` | `v1.0.0-beta.24` | as declared |
 | No `dang` key | as declared | `2.1` |
 
-**Decision: an undeclared Dagger version is v1.0.0-beta.20.** Entrypoints
+**Decision: an undeclared Dagger version is v1.0.0-beta.24.** Entrypoints
 written before the key existed were served at the engine that ran them, from
 v1.0.0-beta.16 to v1.0.0-beta.24: the v1 API, Dang 2.1 and the naming rules
 from before the cut at v1.0.0-beta.25 (`engine.IdentifierCasingVersion`).
-The releases before v1.0.0-beta.22 (`engine.PrereleaseViewsVersion`) have the
-same API view, the shared view of every v1.0.0 prerelease before it, and the
-default lands on it; it is pinned.
+The default is the last of those releases, so an entrypoint keeps the API
+they shipped, including what the releases from v1.0.0-beta.22
+(`engine.PrereleaseViewsVersion`, from which each release has a view of its
+own) added; it is pinned.
 It gets none of the API that changes at the cut, such as the renamed
 `FunctionCachePolicy` members that generated entrypoints spell the old way
 (`Never`, `PerSession`, `Default`), nor the new naming rules.

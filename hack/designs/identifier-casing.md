@@ -686,9 +686,9 @@ existing view mechanism (`AfterVersion` / `BeforeVersion` in `core/util.go`):
   Modules below `IdentifierNamingVersion` (`v1.0.0-beta.25`) keep strcase
   behavior until they bump. A module entrypoint (manifest v2) has no
   `engineVersion` in its manifest: its version is the Dagger version its
-  `dang.toml` declares, `v1.0.0-beta.20` (the shared pre-cut view) without
-  one, and it's named by that version's rules like any other module (see
-  [Module entrypoints](#module-entrypoints)).
+  `dang.toml` declares, `v1.0.0-beta.24` (the last release before the cut)
+  without one, and it's named by that version's rules like any other module
+  (see [Module entrypoints](#module-entrypoints)).
 - The core schema's renamed names exist by the caller's view: the old
   spellings before the cut only, the new ones from the cut on only (see
   [Core schema](#core-schema)).
@@ -770,7 +770,7 @@ it loads.
 `ModuleSource` ends up with, with no special path. That version is the Dagger
 version the `dang.toml` governing its entrypoint declares (`[imports.Dagger]
 dagger = "vX.Y.Z"`, read by `resolveEntrypointVersions` in
-`core/schema/modulesource.go`), or `v1.0.0-beta.20` when it declares none (see
+`core/schema/modulesource.go`), or `v1.0.0-beta.24` when it declares none (see
 `future/module-manifest-v2/spec.md`, "Versions"). Its client is served at that
 version's view, capped at the engine's own like any module's
 (`ModuleSource.NamingView`), so the typedef constructors its entrypoint calls
@@ -778,9 +778,8 @@ name by those rules, `Module.Namer` names its namespaced types, constructor
 and CLI paths by them, and its codegen gates on that same version. Dispatch
 doesn't care, since calls carry original names.
 
-An entrypoint that declares no version gets the shared pre-cut view
-(`v1.0.0-beta.21`, the view of every v1.0.0 prerelease before
-`engine.PrereleaseViewsVersion`): the
+An entrypoint that declares no version gets the view of `v1.0.0-beta.24`, the
+last release before the cut: the
 old core names, which every generated entrypoint spells today
 (`FunctionCachePolicy.Never`, `PerSession`, `Default`), and the strcase
 rules. Shipping the cut changes nothing for it. One that declares the cut or
@@ -829,7 +828,7 @@ pins the API view and naming together. A shared remote entrypoint pins
 through the `dang.toml` of the directory it names, so its author, not the
 module that uses it, picks the version: a module following a moving ref
 follows that ref's version too, and has no key of its own to pin it with. An
-entrypoint that declares no version gets `v1.0.0-beta.20`, not the engine's
+entrypoint that declares no version gets `v1.0.0-beta.24`, not the engine's
 own version, so it no longer follows the engine.
 
 ### What changes for module authors (on bump)
@@ -1138,7 +1137,7 @@ converters, so none of them carries a copy.
    Go codegen by `engine/naming`, and the in-repo clients regenerated
    (#14895).
 6. Manifest v2 entrypoint versions from `dang.toml`, with versionless
-   entrypoints pinned to the pre-cut view (see
+   entrypoints pinned to the last release before the cut (see
    [Module entrypoints](#module-entrypoints)).
 
 Steps 1 and 2 are merged; 3–6 are a stack of drafts. Not done:
