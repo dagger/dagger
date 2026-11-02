@@ -23,6 +23,7 @@ import (
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/telemetryattrs"
+	"github.com/dagger/dagger/engine/wcprof"
 )
 
 // A session that publishes to Dagger Cloud does so from its main client's
@@ -37,8 +38,10 @@ import (
 // (cacheSpanRow), take a lane of their own, ahead of the session's bulk
 // telemetry: on a slow link that can fall minutes behind, as when nested
 // engines under test publish through the session, and the remote cache must
-// not learn the cache only as late as that. Every span takes exactly one of the
-// two span lanes.
+// not learn the cache only as late as that. Every snapshot of a span takes the
+// same one of the two span lanes, so a span's live snapshots never reach
+// Cloud after its end, and each lane exports through its own Cloud exporter,
+// so the bulk lane's exports never hold the cache lane's.
 //
 // The store is the buffer: a lane holds one batch at a time and advances its
 // cursor only past rows Cloud took, so a Cloud outage costs the forwarder one
@@ -117,14 +120,16 @@ type cloudForwarder struct {
 	// closed when the forwarder releases.
 	db    *clientdb.DB
 	spans sdktrace.SpanExporter
-	logs  sdklog.Exporter
+	// cacheSpans exports the cache span lane's spans.
+	cacheSpans sdktrace.SpanExporter
+	logs       sdklog.Exporter
 	// onRelease runs once everything is released.
 	onRelease func()
 
 	lanes []*cloudForwardLane
-	// cacheSpans is the lane of the spans the remote cache reads, one of
+	// cacheSpanLane is the lane of the spans the remote cache reads, one of
 	// lanes.
-	cacheSpans *cloudForwardLane
+	cacheSpanLane *cloudForwardLane
 
 	// ctx ends every fetch, wait and export; stop cancels it.
 	ctx    context.Context
@@ -184,20 +189,21 @@ func (lane *cloudForwardLane) wake() {
 
 // newCloudForwarder starts forwarding db's spans and logs to Cloud through
 // spans and logs, which it owns from now on, as it owns the db reference.
-func newCloudForwarder(sessionID, clientID string, db *clientdb.DB, spans sdktrace.SpanExporter, logs sdklog.Exporter, tuning cloudForwardTuning, onRelease func()) *cloudForwarder {
+func newCloudForwarder(sessionID, clientID string, db *clientdb.DB, spans, cacheSpans sdktrace.SpanExporter, logs sdklog.Exporter, tuning cloudForwardTuning, onRelease func()) *cloudForwarder {
 	f := &cloudForwarder{
-		sessionID: sessionID,
-		clientID:  clientID,
-		tuning:    tuning,
-		db:        db,
-		spans:     spans,
-		logs:      logs,
-		onRelease: onRelease,
-		finished:  make(chan struct{}),
-		done:      make(chan struct{}),
+		sessionID:  sessionID,
+		clientID:   clientID,
+		tuning:     tuning,
+		db:         db,
+		spans:      spans,
+		cacheSpans: cacheSpans,
+		logs:       logs,
+		onRelease:  onRelease,
+		finished:   make(chan struct{}),
+		done:       make(chan struct{}),
 	}
 	f.ctx, f.cancel = context.WithCancelCause(context.Background())
-	spanLane := func(signal string, forward func(*clientdb.Span) bool) *cloudForwardLane {
+	spanLane := func(signal string, spans sdktrace.SpanExporter, forward func(*clientdb.Span) bool) *cloudForwardLane {
 		return &cloudForwardLane{
 			signal: signal,
 			fetch: func(ctx context.Context, since int64, limit int) (cloudForwardBatch, error) {
@@ -214,12 +220,12 @@ func newCloudForwarder(sessionID, clientID string, db *clientdb.DB, spans sdktra
 			end: func(hw clientdb.HighWater) int64 { return hw.Spans },
 		}
 	}
-	f.cacheSpans = spanLane("cache spans", func(row *clientdb.Span) bool {
+	f.cacheSpanLane = spanLane("cache spans", cacheSpans, func(row *clientdb.Span) bool {
 		return forwardSpanRow(row) && cacheSpanRow(row)
 	})
 	f.lanes = []*cloudForwardLane{
-		f.cacheSpans,
-		spanLane("spans", func(row *clientdb.Span) bool {
+		f.cacheSpanLane,
+		spanLane("spans", spans, func(row *clientdb.Span) bool {
 			return forwardSpanRow(row) && !cacheSpanRow(row)
 		}),
 		{
@@ -258,19 +264,52 @@ func forwardLogRow(row *clientdb.Log) bool   { return !cloudPublishedRow(row.Att
 
 var cloudPublishedAttrKey = []byte(telemetryattrs.TelemetryCloudPublishedAttr)
 
-var (
-	cacheResultIDAttrKey         = []byte(telemetryattrs.CacheResultIDAttr)
-	wcprofSessionCompleteAttrKey = []byte(telemetryattrs.WcprofSessionCompleteAttr)
-)
+// cacheSpanMarks are the encoded attributes, as a span's stored attributes
+// hold them, that mark a span the remote cache reads.
+var cacheSpanMarks = [][]byte{
+	// Present from a span's start: a dagql call's span, its frame on it
+	// (dagger.io/dag.call) or not (dagger.io/dag.inputs), a lazy
+	// evaluation's span, and a session's end, which starts with its counts.
+	encodedAttrKey(telemetry.DagCallAttr),
+	encodedAttrKey(telemetry.DagInputsAttr),
+	encodedAttr(telemetryattrs.WcprofOpKindAttr, wcprof.OpKindLazy.String()),
+	encodedAttrKey(telemetryattrs.WcprofSessionCompleteAttr),
+	// Present only at a span's end, on spans the marks above already carry;
+	// any other takes the cache lane at its end at least.
+	encodedAttrKey(telemetryattrs.CacheResultIDAttr),
+}
 
-// cacheSpanRow reports whether a stored span is one the remote cache reads: a
-// span naming a cache entry (dagger.io/cache.result.id) or a session's end
-// (wcprof.session_complete). It matches the attribute keys' bytes without
-// decoding: the rare row a value happens to match takes the cache lane, which
-// costs nothing, since the bulk lane leaves out exactly the rows it matches.
+// encodedAttrKey is the encoding of an attribute's key, which begins its
+// encoding in a stored span's attributes.
+func encodedAttrKey(key string) []byte {
+	b, err := proto.Marshal(&otlpcommonv1.KeyValue{Key: key})
+	if err != nil {
+		panic(err)
+	}
+	return b
+}
+
+// encodedAttr is the encoding of a string attribute, as a stored span's
+// attributes hold it.
+func encodedAttr(key, value string) []byte {
+	b, err := proto.Marshal(&otlpcommonv1.KeyValue{Key: key, Value: &otlpcommonv1.AnyValue{
+		Value: &otlpcommonv1.AnyValue_StringValue{StringValue: value},
+	}})
+	if err != nil {
+		panic(err)
+	}
+	return b
+}
+
+// cacheSpanRow reports whether a stored span is one the remote cache reads,
+// by its encoded attributes (cacheSpanMarks), without decoding them.
 func cacheSpanRow(row *clientdb.Span) bool {
-	return bytes.Contains(row.Attributes, cacheResultIDAttrKey) ||
-		bytes.Contains(row.Attributes, wcprofSessionCompleteAttrKey)
+	for _, mark := range cacheSpanMarks {
+		if bytes.Contains(row.Attributes, mark) {
+			return true
+		}
+	}
+	return false
 }
 
 // cloudPublishedRow reports whether a row's stored attributes carry the
@@ -464,9 +503,9 @@ func (f *cloudForwarder) waitCacheSpans(ctx context.Context) error {
 	case <-ctx.Done():
 		return context.Cause(ctx)
 	}
-	want := f.cacheSpans.end(f.db.HighWater())
+	want := f.cacheSpanLane.end(f.db.HighWater())
 	for {
-		cursor, advanced := f.cacheSpans.position()
+		cursor, advanced := f.cacheSpanLane.position()
 		if cursor >= want {
 			return nil
 		}
@@ -520,7 +559,7 @@ func (f *cloudForwarder) release() {
 	f.cancel(errCloudForwardStopped)
 	ctx, cancel := context.WithTimeout(context.Background(), f.tuning.shutdownTimeout)
 	defer cancel()
-	if err := errors.Join(f.spans.Shutdown(ctx), f.logs.Shutdown(ctx)); err != nil {
+	if err := errors.Join(f.spans.Shutdown(ctx), f.cacheSpans.Shutdown(ctx), f.logs.Shutdown(ctx)); err != nil {
 		lg.Warn("shutting down the session's Cloud exporters", "error", err)
 	}
 	if err := f.db.Close(); err != nil {
