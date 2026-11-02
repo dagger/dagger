@@ -16459,8 +16459,11 @@ type ModuleNaming struct {
 	// field again.
 	refetchID bool
 
-	id         *ID
-	mainObject *string
+	id           *ID
+	mainObject   *string
+	name         *string
+	originalName *string
+	version      *string
 }
 
 func (r *ModuleNaming) WithGraphQLQuery(q *querybuilder.Selection) *ModuleNaming {
@@ -16566,6 +16569,32 @@ func (r *ModuleNaming) MainObject(ctx context.Context, candidates []string) (str
 	return response, q.Execute(ctx)
 }
 
+// The module's name, which namespaces its types.
+func (r *ModuleNaming) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The module's original name, which its main object and namespaced type names are spelled after. It differs from name when the module is loaded under another name, as a dependency alias.
+func (r *ModuleNaming) OriginalName(ctx context.Context) (string, error) {
+	if r.originalName != nil {
+		return *r.originalName, nil
+	}
+	q := r.query.Select("originalName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // The schema names of objects, interfaces and enums this module declares, as the engine installs them: namespaced under the module's name, in input order.
 //
 // A name is prefixed with the module's name unless it already starts with the module's name on a word boundary. With the engine's identifier naming rules: HttpClient in module my-mod is MyModHTTPClient; Postman in module post is PostPostman, while PostMan stays PostMan; K8STools in module k8s-tools is K8sTools, the module's own name. With the legacy strcase rules, HttpClient in module my-mod is MyModHttpClient.
@@ -16576,6 +16605,19 @@ func (r *ModuleNaming) TypeNames(ctx context.Context, names []string) ([]string,
 	q = q.Arg("names", names)
 
 	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The normalized engine version whose naming rules name the module.
+func (r *ModuleNaming) Version(ctx context.Context) (string, error) {
+	if r.version != nil {
+		return *r.version, nil
+	}
+	q := r.query.Select("version")
+
+	var response string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -17447,6 +17489,190 @@ func (r *ModuleSource) AsSyncer() Syncer {
 	}
 }
 
+// The engine's identifier naming rules at an engine version.
+type Naming struct {
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	id      *ID
+	version *string
+}
+
+func (r *Naming) WithGraphQLQuery(q *querybuilder.Selection) *Naming {
+	return &Naming{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// The acronyms and terms used to parse and format identifiers.
+func (r *Naming) Dictionary(ctx context.Context) ([]NamingTerm, error) {
+	q := r.query.Select("dictionary")
+
+	q = q.Select("id")
+
+	type dictionary struct {
+		Id ID
+	}
+
+	convert := func(fields []dictionary) []NamingTerm {
+		out := []NamingTerm{}
+
+		for i := range fields {
+			val := NamingTerm{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "NamingTerm")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []dictionary
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// NamingFormatIdentifiersOpts contains options for Naming.FormatIdentifiers
+type NamingFormatIdentifiersOpts struct {
+	// How to write acronyms and terms where a word starts with a capital.
+	//
+	// Default: UPPERCASE
+	Acronyms AcronymStyle
+}
+
+// Format many names at once, for codegen. Returns them in input order.
+func (r *Naming) FormatIdentifiers(ctx context.Context, names []string, casing Casing, opts ...NamingFormatIdentifiersOpts) ([]string, error) {
+	q := r.query.Select("formatIdentifiers")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `acronyms` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Acronyms) {
+			q = q.Arg("acronyms", opts[i].Acronyms)
+		}
+	}
+	q = q.Arg("names", names)
+	q = q.Arg("casing", casing)
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this Naming.
+func (r *Naming) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Naming) XXX_GraphQLType() string {
+	return "Naming"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Naming) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Naming) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Naming) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Parse a name in any casing into words.
+//
+// Known acronyms and terms come from the naming dictionary; everything else falls back to the case heuristic. Errors on non-ASCII input, input with no letters or digits, or input over 256 bytes.
+func (r *Naming) Identifier(name string) *Identifier {
+	q := r.query.Select("identifier")
+	q = q.Arg("name", name)
+
+	return &Identifier{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// NamingModuleOpts contains options for Naming.Module
+type NamingModuleOpts struct {
+	// The module's original name, when it's loaded under another (as a dependency alias): its main object and namespaced type names are spelled after it. Defaults to name.
+	OriginalName string
+}
+
+// The names the engine gives the declarations of a module named by these rules.
+func (r *Naming) Module(name string, opts ...NamingModuleOpts) *ModuleNaming {
+	q := r.query.Select("module")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `originalName` optional argument
+		if !querybuilder.IsZeroValue(opts[i].OriginalName) {
+			q = q.Arg("originalName", opts[i].OriginalName)
+		}
+	}
+	q = q.Arg("name", name)
+
+	return &ModuleNaming{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// The normalized engine version these rules answer for.
+func (r *Naming) Version(ctx context.Context) (string, error) {
+	if r.version != nil {
+		return *r.version, nil
+	}
+	q := r.query.Select("version")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this Naming as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Naming) AsNode() Node {
+	return &NodeClient{
+		query:     r.query,
+		refetchID: r.refetchID,
+	}
+}
+
 // An entry in the naming dictionary.
 type NamingTerm struct {
 	query *querybuilder.Selection
@@ -18278,40 +18504,6 @@ func (r *Query) File(name string, contents string, opts ...FileOpts) *File {
 	}
 }
 
-// FormatIdentifiersOpts contains options for Query.FormatIdentifiers
-type FormatIdentifiersOpts struct {
-	// How to write acronyms and terms where a word starts with a capital.
-	//
-	// Default: UPPERCASE
-	Acronyms AcronymStyle
-	// The engine version whose naming dictionary to parse the names with, e.g. the __schemaVersion of a schema being generated. Defaults to the caller's engine version.
-	Version string
-}
-
-// Format many names at once, for codegen. Returns them in input order.
-//
-// Experimental: Identifier casing APIs are likely to change.
-func (r *Query) FormatIdentifiers(ctx context.Context, names []string, casing Casing, opts ...FormatIdentifiersOpts) ([]string, error) {
-	q := r.query.Select("formatIdentifiers")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `acronyms` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Acronyms) {
-			q = q.Arg("acronyms", opts[i].Acronyms)
-		}
-		// `version` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Version) {
-			q = q.Arg("version", opts[i].Version)
-		}
-	}
-	q = q.Arg("names", names)
-	q = q.Arg("casing", casing)
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
 // Creates a function.
 func (r *Query) Function(name string, returnType *TypeDef) *Function {
 	assertNotNil("returnType", returnType)
@@ -18493,21 +18685,6 @@ func (r *Query) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Parse a name in any casing into words.
-//
-// Known acronyms and terms come from the naming dictionary; everything else falls back to the case heuristic. Errors on non-ASCII input, input with no letters or digits, or input over 256 bytes.
-//
-// Experimental: Identifier casing APIs are likely to change.
-func (r *Query) Identifier(name string) *Identifier {
-	q := r.query.Select("identifier")
-	q = q.Arg("name", name)
-
-	return &Identifier{
-		query:     q,
-		refetchID: r.refetchID,
-	}
-}
-
 // Initialize a JSON value
 func (r *Query) JSON() *JSONValue {
 	q := r.query.Select("json")
@@ -18619,39 +18796,28 @@ func (r *Query) ModuleSource(refString string, opts ...ModuleSourceOpts) *Module
 	}
 }
 
-// The acronyms and terms used to parse and format identifiers.
+// NamingOpts contains options for Query.Naming
+type NamingOpts struct {
+	// The engine version to answer for, e.g. the engine version a module declares. Defaults to the caller's. Normalized as a module's is: a version past the engine's is capped at the engine's own.
+	Version string
+}
+
+// The engine's identifier naming rules at an engine version.
 //
 // Experimental: Identifier casing APIs are likely to change.
-func (r *Query) NamingDictionary(ctx context.Context) ([]NamingTerm, error) {
-	q := r.query.Select("namingDictionary")
-
-	q = q.Select("id")
-
-	type namingDictionary struct {
-		Id ID
-	}
-
-	convert := func(fields []namingDictionary) []NamingTerm {
-		out := []NamingTerm{}
-
-		for i := range fields {
-			val := NamingTerm{id: &fields[i].Id}
-			val.query = selectNode(q.Root(), fields[i].Id, "NamingTerm")
-			out = append(out, val)
+func (r *Query) Naming(opts ...NamingOpts) *Naming {
+	q := r.query.Select("naming")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `version` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
 		}
-
-		return out
-	}
-	var response []namingDictionary
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
 	}
 
-	return convert(response), nil
+	return &Naming{
+		query:     q,
+		refetchID: r.refetchID,
+	}
 }
 
 // Load any object by its ID.
@@ -26276,14 +26442,6 @@ func NewFile(name string, contents string, opts ...FileOpts) *File {
 	return root.File(name, contents, opts...)
 }
 
-// Format many names at once, for codegen. Returns them in input order.
-//
-// Experimental: Identifier casing APIs are likely to change.
-func FormatIdentifiers(ctx context.Context, names []string, casing Casing, opts ...FormatIdentifiersOpts) ([]string, error) {
-	root := initRoot()
-	return root.FormatIdentifiers(ctx, names, casing, opts...)
-}
-
 // Creates a function.
 func NewFunction(name string, returnType *TypeDef) *Function {
 	root := initRoot()
@@ -26318,16 +26476,6 @@ func HTTP(url string, opts ...HTTPOpts) *File {
 func NewID(ctx context.Context) (ID, error) {
 	root := initRoot()
 	return root.ID(ctx)
-}
-
-// Parse a name in any casing into words.
-//
-// Known acronyms and terms come from the naming dictionary; everything else falls back to the case heuristic. Errors on non-ASCII input, input with no letters or digits, or input over 256 bytes.
-//
-// Experimental: Identifier casing APIs are likely to change.
-func NewIdentifier(name string) *Identifier {
-	root := initRoot()
-	return root.Identifier(name)
 }
 
 // Initialize a JSON value
@@ -26366,12 +26514,12 @@ func NewModuleSource(refString string, opts ...ModuleSourceOpts) *ModuleSource {
 	return root.ModuleSource(refString, opts...)
 }
 
-// The acronyms and terms used to parse and format identifiers.
+// The engine's identifier naming rules at an engine version.
 //
 // Experimental: Identifier casing APIs are likely to change.
-func NamingDictionary(ctx context.Context) ([]NamingTerm, error) {
+func NewNaming(opts ...NamingOpts) *Naming {
 	root := initRoot()
-	return root.NamingDictionary(ctx)
+	return root.Naming(opts...)
 }
 
 // Load any object by its ID.

@@ -14763,6 +14763,50 @@ class ModuleNaming(Type):
         _ctx = self._select("mainObject", _args)
         return await _ctx.execute(str | None)
 
+    async def name(self) -> str:
+        """The module's name, which namespaces its types.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    async def original_name(self) -> str:
+        """The module's original name, which its main object and namespaced type
+        names are spelled after. It differs from name when the module is
+        loaded under another name, as a dependency alias.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("originalName", _args)
+        return await _ctx.execute(str)
+
     async def type_names(self, names: list[str]) -> list[str]:
         """The schema names of objects, interfaces and enums this module
         declares, as the engine installs them: namespaced under the module's
@@ -14803,6 +14847,27 @@ class ModuleNaming(Type):
         ]
         _ctx = self._select("typeNames", _args)
         return await _ctx.execute(list[str])
+
+    async def version(self) -> str:
+        """The normalized engine version whose naming rules name the module.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("version", _args)
+        return await _ctx.execute(str)
 
 
 @typecheck
@@ -15773,6 +15838,150 @@ class ModuleSource(Type):
 
 
 @typecheck
+class Naming(Type):
+    """The engine's identifier naming rules at an engine version."""
+
+    async def dictionary(self) -> list["NamingTerm"]:
+        """The acronyms and terms used to parse and format identifiers."""
+        _args: list[Arg] = []
+        _ctx = self._select("dictionary", _args)
+        return await _ctx.execute_object_list(NamingTerm)
+
+    async def format_identifiers(
+        self,
+        names: list[str],
+        casing: Casing,
+        *,
+        acronyms: AcronymStyle | None = AcronymStyle.UPPERCASE,
+    ) -> list[str]:
+        """Format many names at once, for codegen. Returns them in input order.
+
+        Parameters
+        ----------
+        names:
+            The names to format, in any casing.
+        casing:
+            The casing to format the names in.
+        acronyms:
+            How to write acronyms and terms where a word starts with a
+            capital.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("names", names),
+            Arg("casing", casing),
+            Arg("acronyms", acronyms, AcronymStyle.UPPERCASE),
+        ]
+        _ctx = self._select("formatIdentifiers", _args)
+        return await _ctx.execute(list[str])
+
+    async def id(self) -> str:
+        """A unique identifier for this Naming.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    def identifier(self, name: str) -> Identifier:
+        """Parse a name in any casing into words.
+
+        Known acronyms and terms come from the naming dictionary; everything
+        else falls back to the case heuristic. Errors on non-ASCII input,
+        input with no letters or digits, or input over 256 bytes.
+
+        Parameters
+        ----------
+        name:
+            The name to parse.
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("identifier", _args)
+        return Identifier(_ctx)
+
+    def module(
+        self,
+        name: str,
+        *,
+        original_name: str | None = None,
+    ) -> ModuleNaming:
+        """The names the engine gives the declarations of a module named by these
+        rules.
+
+        Parameters
+        ----------
+        name:
+            The module's name, which namespaces its types.
+        original_name:
+            The module's original name, when it's loaded under another (as a
+            dependency alias): its main object and namespaced type names are
+            spelled after it. Defaults to name.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("originalName", original_name, None),
+        ]
+        _ctx = self._select("module", _args)
+        return ModuleNaming(_ctx)
+
+    async def version(self) -> str:
+        """The normalized engine version these rules answer for.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("version", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
 class NamingTerm(Type):
     """An entry in the naming dictionary."""
 
@@ -16405,56 +16614,6 @@ class Query(Root):
         _ctx = self._select("file", _args)
         return File(_ctx)
 
-    async def format_identifiers(
-        self,
-        names: list[str],
-        casing: Casing,
-        *,
-        acronyms: AcronymStyle | None = AcronymStyle.UPPERCASE,
-        version: str | None = None,
-    ) -> list[str]:
-        """Format many names at once, for codegen. Returns them in input order.
-
-        .. caution::
-            Experimental: Identifier casing APIs are likely to change.
-
-        Parameters
-        ----------
-        names:
-            The names to format, in any casing.
-        casing:
-            The casing to format the names in.
-        acronyms:
-            How to write acronyms and terms where a word starts with a
-            capital.
-        version:
-            The engine version whose naming dictionary to parse the names
-            with, e.g. the __schemaVersion of a schema being generated.
-            Defaults to the caller's engine version.
-
-        Returns
-        -------
-        list[str]
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args = [
-            Arg("names", names),
-            Arg("casing", casing),
-            Arg("acronyms", acronyms, AcronymStyle.UPPERCASE),
-            Arg("version", version, None),
-        ]
-        _ctx = self._select("formatIdentifiers", _args)
-        return await _ctx.execute(list[str])
-
     def function(self, name: str, return_type: "TypeDef") -> Function:
         """Creates a function.
 
@@ -16608,27 +16767,6 @@ class Query(Root):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
-    def identifier(self, name: str) -> Identifier:
-        """Parse a name in any casing into words.
-
-        Known acronyms and terms come from the naming dictionary; everything
-        else falls back to the case heuristic. Errors on non-ASCII input,
-        input with no letters or digits, or input over 256 bytes.
-
-        .. caution::
-            Experimental: Identifier casing APIs are likely to change.
-
-        Parameters
-        ----------
-        name:
-            The name to parse.
-        """
-        _args = [
-            Arg("name", name),
-        ]
-        _ctx = self._select("identifier", _args)
-        return Identifier(_ctx)
-
     def json(self) -> JSONValue:
         """Initialize a JSON value"""
         _args: list[Arg] = []
@@ -16729,15 +16867,24 @@ class Query(Root):
         _ctx = self._select("moduleSource", _args)
         return ModuleSource(_ctx)
 
-    async def naming_dictionary(self) -> list[NamingTerm]:
-        """The acronyms and terms used to parse and format identifiers.
+    def naming(self, *, version: str | None = None) -> Naming:
+        """The engine's identifier naming rules at an engine version.
 
         .. caution::
             Experimental: Identifier casing APIs are likely to change.
+
+        Parameters
+        ----------
+        version:
+            The engine version to answer for, e.g. the engine version a module
+            declares. Defaults to the caller's. Normalized as a module's is: a
+            version past the engine's is capped at the engine's own.
         """
-        _args: list[Arg] = []
-        _ctx = self._select("namingDictionary", _args)
-        return await _ctx.execute_object_list(NamingTerm)
+        _args = [
+            Arg("version", version, None),
+        ]
+        _ctx = self._select("naming", _args)
+        return Naming(_ctx)
 
     async def node(self, id: Type) -> Node | None:
         """Load any object by its ID."""
@@ -21282,6 +21429,7 @@ __all__ = [
     "ModuleSource",
     "ModuleSourceExperimentalFeature",
     "ModuleSourceKind",
+    "Naming",
     "NamingTerm",
     "NetworkProtocol",
     "Node",

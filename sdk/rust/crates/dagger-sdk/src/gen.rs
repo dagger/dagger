@@ -14774,6 +14774,21 @@ impl ModuleNaming {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The normalized engine version whose naming rules name the module.
+    pub async fn version(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("version");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The module's name, which namespaces its types.
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The module's original name, which its main object and namespaced type names are spelled after. It differs from name when the module is loaded under another name, as a dependency alias.
+    pub async fn original_name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("originalName");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// The schema names of objects, interfaces and enums this module declares, as the engine installs them: namespaced under the module's name, in input order.
     /// A name is prefixed with the module's name unless it already starts with the module's name on a word boundary. With the engine's identifier naming rules: HttpClient in module my-mod is MyModHTTPClient; Postman in module post is PostPostman, while PostMan stays PostMan; K8STools in module k8s-tools is K8sTools, the module's own name. With the legacy strcase rules, HttpClient in module my-mod is MyModHttpClient.
     /// Errors on a name the module's naming rules can't parse (non-ASCII, no letters or digits, or over 256 bytes). The legacy rules name anything.
@@ -15569,6 +15584,179 @@ impl Syncer for ModuleSource {
     }
 }
 #[derive(Clone)]
+pub struct Naming {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct NamingFormatIdentifiersOpts {
+    /// How to write acronyms and terms where a word starts with a capital.
+    #[builder(setter(into, strip_option), default)]
+    pub acronyms: Option<AcronymStyle>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct NamingModuleOpts<'a> {
+    /// The module's original name, when it's loaded under another (as a dependency alias): its main object and namespaced type names are spelled after it. Defaults to name.
+    #[builder(setter(into, strip_option), default)]
+    pub original_name: Option<&'a str>,
+}
+impl IntoID<Id> for Naming {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for Naming {
+    fn graphql_type() -> &'static str {
+        "Naming"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl Naming {
+    /// A unique identifier for this Naming.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The normalized engine version these rules answer for.
+    pub async fn version(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("version");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Parse a name in any casing into words.
+    /// Known acronyms and terms come from the naming dictionary; everything else falls back to the case heuristic. Errors on non-ASCII input, input with no letters or digits, or input over 256 bytes.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name to parse.
+    pub fn identifier(&self, name: impl Into<String>) -> Identifier {
+        let mut query = self.selection.select("identifier");
+        query = query.arg("name", name.into());
+        Identifier {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Format many names at once, for codegen. Returns them in input order.
+    ///
+    /// # Arguments
+    ///
+    /// * `names` - The names to format, in any casing.
+    /// * `casing` - The casing to format the names in.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn format_identifiers(
+        &self,
+        names: Vec<impl Into<String>>,
+        casing: Casing,
+    ) -> Result<Vec<String>, DaggerError> {
+        let mut query = self.selection.select("formatIdentifiers");
+        query = query.arg(
+            "names",
+            names.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        query = query.arg("casing", casing);
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Format many names at once, for codegen. Returns them in input order.
+    ///
+    /// # Arguments
+    ///
+    /// * `names` - The names to format, in any casing.
+    /// * `casing` - The casing to format the names in.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn format_identifiers_opts(
+        &self,
+        names: Vec<impl Into<String>>,
+        casing: Casing,
+        opts: NamingFormatIdentifiersOpts,
+    ) -> Result<Vec<String>, DaggerError> {
+        let mut query = self.selection.select("formatIdentifiers");
+        query = query.arg(
+            "names",
+            names.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        query = query.arg("casing", casing);
+        if let Some(acronyms) = opts.acronyms {
+            query = query.arg("acronyms", acronyms);
+        }
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The acronyms and terms used to parse and format identifiers.
+    pub async fn dictionary(&self) -> Result<Vec<NamingTerm>, DaggerError> {
+        let query = self.selection.select("dictionary");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| NamingTerm {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("NamingTerm"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+    /// The names the engine gives the declarations of a module named by these rules.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The module's name, which namespaces its types.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn module(&self, name: impl Into<String>) -> ModuleNaming {
+        let mut query = self.selection.select("module");
+        query = query.arg("name", name.into());
+        ModuleNaming {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// The names the engine gives the declarations of a module named by these rules.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The module's name, which namespaces its types.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn module_opts<'a>(
+        &self,
+        name: impl Into<String>,
+        opts: NamingModuleOpts<'a>,
+    ) -> ModuleNaming {
+        let mut query = self.selection.select("module");
+        query = query.arg("name", name.into());
+        if let Some(original_name) = opts.original_name {
+            query = query.arg("originalName", original_name);
+        }
+        ModuleNaming {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+}
+impl Node for Naming {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
 pub struct NamingTerm {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -15967,11 +16155,8 @@ pub struct QueryLlmOpts<'a> {
     pub provider: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct QueryFormatIdentifiersOpts<'a> {
-    /// How to write acronyms and terms where a word starts with a capital.
-    #[builder(setter(into, strip_option), default)]
-    pub acronyms: Option<AcronymStyle>,
-    /// The engine version whose naming dictionary to parse the names with, e.g. the __schemaVersion of a schema being generated. Defaults to the caller's engine version.
+pub struct QueryNamingOpts<'a> {
+    /// The engine version to answer for, e.g. the engine version a module declares. Defaults to the caller's. Normalized as a module's is: a version past the engine's is capped at the engine's own.
     #[builder(setter(into, strip_option), default)]
     pub version: Option<&'a str>,
 }
@@ -16823,84 +17008,34 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Parse a name in any casing into words.
-    /// Known acronyms and terms come from the naming dictionary; everything else falls back to the case heuristic. Errors on non-ASCII input, input with no letters or digits, or input over 256 bytes.
+    /// The engine's identifier naming rules at an engine version.
     ///
     /// # Arguments
     ///
-    /// * `name` - The name to parse.
-    pub fn identifier(&self, name: impl Into<String>) -> Identifier {
-        let mut query = self.selection.select("identifier");
-        query = query.arg("name", name.into());
-        Identifier {
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn naming(&self) -> Naming {
+        let query = self.selection.select("naming");
+        Naming {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Format many names at once, for codegen. Returns them in input order.
+    /// The engine's identifier naming rules at an engine version.
     ///
     /// # Arguments
     ///
-    /// * `names` - The names to format, in any casing.
-    /// * `casing` - The casing to format the names in.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn format_identifiers(
-        &self,
-        names: Vec<impl Into<String>>,
-        casing: Casing,
-    ) -> Result<Vec<String>, DaggerError> {
-        let mut query = self.selection.select("formatIdentifiers");
-        query = query.arg(
-            "names",
-            names.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
-        );
-        query = query.arg("casing", casing);
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Format many names at once, for codegen. Returns them in input order.
-    ///
-    /// # Arguments
-    ///
-    /// * `names` - The names to format, in any casing.
-    /// * `casing` - The casing to format the names in.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn format_identifiers_opts<'a>(
-        &self,
-        names: Vec<impl Into<String>>,
-        casing: Casing,
-        opts: QueryFormatIdentifiersOpts<'a>,
-    ) -> Result<Vec<String>, DaggerError> {
-        let mut query = self.selection.select("formatIdentifiers");
-        query = query.arg(
-            "names",
-            names.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
-        );
-        query = query.arg("casing", casing);
-        if let Some(acronyms) = opts.acronyms {
-            query = query.arg("acronyms", acronyms);
-        }
+    pub fn naming_opts<'a>(&self, opts: QueryNamingOpts<'a>) -> Naming {
+        let mut query = self.selection.select("naming");
         if let Some(version) = opts.version {
             query = query.arg("version", version);
         }
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// The acronyms and terms used to parse and format identifiers.
-    pub async fn naming_dictionary(&self) -> Result<Vec<NamingTerm>, DaggerError> {
-        let query = self.selection.select("namingDictionary");
-        let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| NamingTerm {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("NamingTerm"),
-                graphql_client: self.graphql_client.clone(),
-            })
-            .collect())
+        Naming {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// Load a GraphQL introspection schema for merging.
     ///
