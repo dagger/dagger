@@ -53,6 +53,11 @@ type spanLookup struct {
 	// holds for it, so that walking it down finds exactly the spans place
 	// finds walking up (see closeBeneath).
 	parentOf map[string][]string
+	// arrivals lists, in order, the spans whose snapshot could place them
+	// somewhere new: a span's first snapshot, and one that gives it a parent
+	// or more cause links. A reader that placed spans as of some length of it
+	// need only place the arrivals since (see placeArrivals).
+	arrivals []string
 	// checkSpans/testSpans remember the spans whose attributes mark them as
 	// named checks or tests (telemetry.CheckNameAttr, semconv test.case.name
 	// / test.suite.name). Detected with a raw byte scan of the encoded
@@ -143,10 +148,11 @@ func (l *spanLookup) addLocked(row Span, causalTargets []string) {
 	// Link edges are indexed before (and regardless of) the duplicate-snapshot
 	// suppression below: a later snapshot of an already-seen span may carry
 	// links its first row lacked.
-	l.addCauseLinksLocked(row.SpanID, causalTargets)
+	linked := l.addCauseLinksLocked(row.SpanID, causalTargets)
 	// Likewise per-row, not per-span: the newest snapshot is the span's
 	// current state, and check/test markers may only appear on a snapshot
 	// taken after the attribute was set.
+	_, seen := l.lastRow[row.SpanID]
 	l.lastRow[row.SpanID] = row.ID
 	if _, marked := l.checkSpans[row.SpanID]; !marked && bytes.Contains(row.Attributes, checkNameAttrMarker) {
 		l.checkSpans[row.SpanID] = struct{}{}
@@ -162,6 +168,9 @@ func (l *spanLookup) addLocked(row Span, causalTargets []string) {
 			l.parent[row.SpanID] = row.ParentSpanID.String
 			l.parentOf[row.ParentSpanID.String] = append(l.parentOf[row.ParentSpanID.String], row.SpanID)
 		}
+	}
+	if !seen || linked || (row.ParentSpanID.Valid && !parentKnown) {
+		l.arrivals = append(l.arrivals, row.SpanID)
 	}
 	key := spanLookupKey{traceID: row.TraceID, spanID: row.SpanID}
 	if _, exists := l.firstRow[key]; exists {
@@ -179,11 +188,12 @@ func (l *spanLookup) addLocked(row Span, causalTargets []string) {
 	}
 }
 
-// addCauseLinksLocked adds targets to the set of spans spanID cause-links.
+// addCauseLinksLocked adds targets to the set of spans spanID cause-links,
+// reporting whether the set grew.
 // A span keeps one set: links that grow it move the span to the larger set.
-func (l *spanLookup) addCauseLinksLocked(spanID string, targets []string) {
+func (l *spanLookup) addCauseLinksLocked(spanID string, targets []string) bool {
 	if len(targets) == 0 {
-		return
+		return false
 	}
 	span := l.causalIDLocked(spanID)
 	old, linked := l.spanLinkSet[span]
@@ -204,7 +214,7 @@ func (l *spanLookup) addCauseLinksLocked(spanID string, targets []string) {
 		next = slices.Insert(next, i, id)
 	}
 	if linked && len(next) == len(current) {
-		return
+		return false
 	}
 	if linked {
 		members := l.linkSets[old].members
@@ -217,6 +227,7 @@ func (l *spanLookup) addCauseLinksLocked(spanID string, targets []string) {
 	set := l.linkSetLocked(next)
 	l.linkSets[set].members = append(l.linkSets[set].members, span)
 	l.spanLinkSet[span] = set
+	return true
 }
 
 func (l *spanLookup) causalIDLocked(spanID string) uint32 {
@@ -556,7 +567,12 @@ func (l *spanLookup) place(spanID string, scope map[string]bool, memo *placement
 	if _, known = l.lastRow[spanID]; !known {
 		return false, false, gen
 	}
-	if memo.out == nil || memo.gen != gen {
+	return true, l.beneathLocked(spanID, scope, memo), gen
+}
+
+// beneathLocked is place's walk, for a span with a snapshot.
+func (l *spanLookup) beneathLocked(spanID string, scope map[string]bool, memo *placementMemo) bool {
+	if gen := l.gen.Load(); memo.out == nil || memo.gen != gen {
 		memo.out, memo.gen = map[string]struct{}{}, gen
 	}
 	if memo.seen == nil {
@@ -569,7 +585,7 @@ func (l *spanLookup) place(spanID string, scope map[string]bool, memo *placement
 	for i := 0; i < len(queue); i++ {
 		id := queue[i]
 		if scope[id] {
-			return true, true, gen
+			return true
 		}
 		if memo.seen[id] == memo.walk {
 			continue
@@ -593,22 +609,49 @@ func (l *spanLookup) place(spanID string, scope map[string]bool, memo *placement
 	for _, id := range visited {
 		memo.out[id] = struct{}{}
 	}
-	return true, false, gen
+	return false
 }
 
 // closeBeneath adds to tree every span place would find beneath it: the
 // spans reachable from it downward over the exact inverses of place's
 // edges (parentOf, and the spans cause-linking each one). Every such span
-// has a snapshot, so a scope may place them for good. It returns the spans
-// of unplaced that still have no snapshot, as of the same state of the
-// index.
-func (l *spanLookup) closeBeneath(tree map[string]bool, unplaced []string) []string {
+// has a snapshot, so a scope may place them for good. It returns how many
+// arrivals that covers (for placeArrivals), and the spans of unplaced that
+// still have no snapshot, as of the same state of the index.
+func (l *spanLookup) closeBeneath(tree map[string]bool, unplaced []string) (arrivals int, still []string) {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
-	queue := make([]string, 0, len(tree))
+	seeds := make([]string, 0, len(tree))
 	for id := range tree {
-		queue = append(queue, id)
+		seeds = append(seeds, id)
 	}
+	l.closeFromLocked(tree, seeds)
+	return len(l.arrivals), l.stillUnplacedLocked(unplaced)
+}
+
+// placeArrivals brings a tree closed by closeBeneath, as of arrivals, up to
+// date: a span can only join it once it or a span above it arrives, so it
+// places the arrivals since, then closes the tree beneath them. It returns
+// the spans it added, the arrivals now covered, and the spans of unplaced
+// that still have no snapshot.
+func (l *spanLookup) placeArrivals(tree map[string]bool, arrivals int, memo *placementMemo, unplaced []string) (added []string, covered int, still []string) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	var seeds []string
+	for _, id := range l.arrivals[arrivals:] {
+		if !tree[id] && l.beneathLocked(id, tree, memo) {
+			tree[id] = true
+			seeds = append(seeds, id)
+		}
+	}
+	added = append(seeds, l.closeFromLocked(tree, seeds)...)
+	return added, len(l.arrivals), l.stillUnplacedLocked(unplaced)
+}
+
+// closeFromLocked adds to tree the spans beneath seeds (see closeBeneath),
+// returning them.
+func (l *spanLookup) closeFromLocked(tree map[string]bool, seeds []string) []string {
+	queue := slices.Clone(seeds)
 	add := func(kid string) bool {
 		if !tree[kid] {
 			tree[kid] = true
@@ -622,6 +665,10 @@ func (l *spanLookup) closeBeneath(tree map[string]bool, unplaced []string) []str
 		}
 		l.causalChildrenLocked(queue[i], add)
 	}
+	return queue[len(seeds):]
+}
+
+func (l *spanLookup) stillUnplacedLocked(unplaced []string) []string {
 	var still []string
 	for _, id := range unplaced {
 		if _, known := l.lastRow[id]; !known {

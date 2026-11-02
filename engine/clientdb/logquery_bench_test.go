@@ -259,6 +259,15 @@ func indexCatchUp(ctx context.Context, db *DB, traceID string, scope *LogQuerySc
 	return ids, batches, nil
 }
 
+// turnTrees selects the subtrees of the first n turns of a catch-up store.
+func turnTrees(n int) []archive.LogSpan {
+	spans := make([]archive.LogSpan, n)
+	for t := range spans {
+		spans[t] = archive.LogSpan{SpanID: catchUpSpanID(6 + t*catchUpSpansPerTurn), Descendants: true}
+	}
+	return spans
+}
+
 // withIndexShare runs f with displayIndexMaxShare set to share.
 func withIndexShare(share int64, f func()) {
 	old := displayIndexMaxShare
@@ -280,6 +289,8 @@ func BenchmarkLiveLogCatchUp(b *testing.B) {
 				{"own", []archive.LogSpan{{SpanID: store.own}}},
 				{"own+digest", []archive.LogSpan{{SpanID: store.own, Digests: []string{store.digest}}}},
 				{"tree", []archive.LogSpan{{SpanID: store.turn, Descendants: true}}},
+				// 60 turns' subtrees: 15% of the rows at 1M, 6% at 5M.
+				{"turns", turnTrees(60)},
 				// Scopes holding large shares of the store, where the read
 				// falls back to the scan: a service span (5% of rows), all
 				// four (20%), and the root roll-up (all of them).
@@ -328,6 +339,30 @@ func BenchmarkLiveLogCatchUp(b *testing.B) {
 					// one-shot read does.
 					read(b, "index", 0)
 					read(b, "read", displayIndexMaxShare)
+					if sc.spans[0].Descendants {
+						// read, as spans keep arriving elsewhere in the
+						// session: one before each batch.
+						b.Run("read-arrivals", func(b *testing.B) {
+							b.ReportAllocs()
+							arrived := 0
+							for b.Loop() {
+								scope := db.LiveLogScope(sc.spans)
+								n := 0
+								for after := int64(0); after < store.through; {
+									arrived++
+									_, err := db.AppendSpans([]Span{logQuerySpan(fmt.Sprintf("f%015x", arrived), catchUpSpanID(1))})
+									require.NoError(b, err)
+									rows, next, _, err := db.ReadDisplayLogs(b.Context(), SelectLogsRangeParams{AfterID: after, ThroughID: store.through, Limit: catchUpWindow}, "", scope)
+									require.NoError(b, err)
+									after = next
+									n += len(rows)
+								}
+								if n != len(want) {
+									b.Fatalf("read %d rows, the scan %d", n, len(want))
+								}
+							}
+						})
+					}
 				})
 			}
 			// The archive's fixed-cut scope, as serveArchiveSignal resolves
