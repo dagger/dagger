@@ -98,7 +98,7 @@ func (m *SchemaBuilderMemo) countSchemaBuild(root *Query, mods []modInstall) {
 	if m != nil && keyed {
 		entries := make([]modDepEntry, len(mods))
 		for i, entry := range mods {
-			entries[i] = modDepEntry(entry)
+			entries[i] = modDepEntry{mod: entry.mod, opts: entry.opts}
 		}
 		modules, _ := schemaEntriesKey(entries, false)
 		this := builtOn{root: fmt.Sprintf("%p", root), modules: modules}
@@ -188,7 +188,7 @@ func countDescription(key string, view call.View) {
 func modInstallsKey(mods []modInstall) (string, bool) {
 	entries := make([]modDepEntry, len(mods))
 	for i, entry := range mods {
-		entries[i] = modDepEntry(entry)
+		entries[i] = modDepEntry{mod: entry.mod, opts: entry.opts}
 	}
 	return schemaEntriesKey(entries, true)
 }

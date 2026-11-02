@@ -1067,37 +1067,9 @@ func (mod *Module) AttachDependencyResults(
 		if !ok {
 			return nil, fmt.Errorf("attach module self dependency: expected attached module result, got %T", self)
 		}
-		attachedSelfID, err := attachedSelf.ID()
-		if err != nil {
-			return nil, fmt.Errorf("attach module self dependency: self ID: %w", err)
-		}
-		// withSelf is deps with its self entry, if it has one, replaced by the
-		// attached self, or the attached self appended.
-		withSelf := func(deps *SchemaBuilder) (*SchemaBuilder, error) {
-			for i, dep := range deps.entries {
-				depInst := dep.mod.ModuleResult()
-				if depInst.Self() == nil {
-					continue
-				}
-				depID, err := depInst.ID()
-				if err != nil {
-					return nil, fmt.Errorf("attach module self dependency %q: dep ID: %w", dep.mod.Name(), err)
-				}
-				if depID == nil || depID.EngineResultID() != attachedSelfID.EngineResultID() {
-					continue
-				}
-				deps.entries[i].mod = NewUserMod(attachedSelf)
-				return deps, nil
-			}
-			return deps.Append(NewUserMod(attachedSelf)), nil
-		}
-		if mod.Deps, err = withSelf(mod.Deps); err != nil {
-			return nil, err
-		}
+		mod.Deps = mod.Deps.WithSelf(NewUserMod(attachedSelf))
 		if mod.EntrypointDeps != nil {
-			if mod.EntrypointDeps, err = withSelf(mod.EntrypointDeps); err != nil {
-				return nil, err
-			}
+			mod.EntrypointDeps = mod.EntrypointDeps.WithSelf(NewUserMod(attachedSelf))
 		}
 	}
 	return owned, nil
@@ -2673,10 +2645,15 @@ func (mod *userMod) install(ctx context.Context, dag *dagql.Server, opts ...Inst
 			return fmt.Errorf("failed to get mod type for type def: %w", err)
 		}
 		if ok {
-			if src := self.GetSource(); src != nil && src.SelfCallsEnabled() {
-				slog.ExtraDebug("type is already defined by dependency module", "type", objDef.Name, "module", modType.SourceMod().Name())
-			} else {
-				return fmt.Errorf("type %q is already defined by module %q", objDef.Name, modType.SourceMod().Name())
+			// With self calls, the module is among its own deps, so its own
+			// types are found there; anything else is a clash.
+			sourceMod := modType.SourceMod()
+			isSelf, err := mod.Same(sourceMod)
+			if err != nil {
+				return fmt.Errorf("compare source module of type %q: %w", objDef.Name, err)
+			}
+			if !isSelf {
+				return fmt.Errorf("type %q is already defined by module %q", objDef.Name, sourceMod.Name())
 			}
 		}
 

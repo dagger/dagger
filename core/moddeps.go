@@ -38,6 +38,9 @@ type coreSchemaForker interface {
 type modDepEntry struct {
 	mod  Mod
 	opts InstallOpts
+	// self marks a module's own entry in its dependencies, there when it can
+	// call itself (Module.IncludeSelfInDeps).
+	self bool
 }
 
 // SchemaBuilder lazily constructs a dagql server from a set of modules with
@@ -465,6 +468,21 @@ func schemaEntriesKey(entries []modDepEntry, byContent bool) (string, bool) {
 	return key.String(), true
 }
 
+// WithSelf returns a copy of b with mod as its self entry. A module cloned
+// into a new result carries over the self entry of the module it was cloned
+// from, which is replaced rather than kept beside the new one.
+func (b *SchemaBuilder) WithSelf(mod Mod) *SchemaBuilder {
+	cp := b.Clone()
+	for i, e := range cp.entries {
+		if e.self {
+			cp.entries[i].mod = mod
+			return cp
+		}
+	}
+	cp.entries = append(cp.entries, modDepEntry{mod: mod, self: true})
+	return cp
+}
+
 func (b *SchemaBuilder) With(mod Mod, opts InstallOpts) *SchemaBuilder {
 	cp := b.Clone()
 	for i, e := range cp.entries {
@@ -732,7 +750,7 @@ func (b *SchemaBuilder) lazilyLoadSchema(ctx context.Context) (loadedSchema *dag
 	if len(mains) == 0 {
 		mods := make([]modInstall, len(b.entries))
 		for i, e := range b.entries {
-			mods[i] = modInstall(e)
+			mods[i] = modInstall{mod: e.mod, opts: e.opts}
 		}
 		return buildSchema(ctx, b.root, mods)
 	}
@@ -750,10 +768,10 @@ func (b *SchemaBuilder) lazilyLoadSchema(ctx context.Context) (loadedSchema *dag
 
 	outerMods := make([]modInstall, 0, len(b.entries))
 	for _, e := range nonMains {
-		outerMods = append(outerMods, modInstall(e))
+		outerMods = append(outerMods, modInstall{mod: e.mod, opts: e.opts})
 	}
 	for _, e := range mains {
-		outerMods = append(outerMods, modInstall(e))
+		outerMods = append(outerMods, modInstall{mod: e.mod, opts: e.opts})
 	}
 	outer, err := buildSchema(ctx, b.root, outerMods)
 	if err != nil {
