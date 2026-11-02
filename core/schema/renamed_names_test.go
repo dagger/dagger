@@ -102,6 +102,7 @@ func TestCoreRenamedNamesViews(t *testing.T) {
 		{version: "v1.0.0-0"},
 		{version: "v1.0.0-beta.17"},
 		{version: "v1.0.0-beta.21"},
+		{version: "v1.0.0-beta.24"},
 		{version: engine.IdentifierCasingVersion, cased: true},
 		{version: "v1.0.0-dev-0123456789ab", cased: true},
 		{version: "v1.0.0", cased: true},
