@@ -139,6 +139,52 @@ func TestOpenRefusesUncleanFile(t *testing.T) {
 	}
 }
 
+// TestCloseOnAFullDisk saves a database larger than its filesystem holds.
+// The save fails and leaves no partial file behind, and the file on disk
+// still marks the database in use, so the next Open refuses it rather than
+// reading part of a save. It needs a small filesystem of its own:
+// test-split's testFastbolt check mounts one and names it in
+// FASTBOLT_SMALL_FS.
+func TestCloseOnAFullDisk(t *testing.T) {
+	dir := os.Getenv("FASTBOLT_SMALL_FS")
+	if dir == "" {
+		t.Skip("FASTBOLT_SMALL_FS names no small filesystem to fill")
+	}
+	path := filepath.Join(dir, "meta.db")
+	t.Cleanup(func() {
+		os.Remove(path)
+		os.Remove(path + ".tmp")
+	})
+	db, err := Open(path, 0o600, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value := make([]byte, 64<<10)
+	if err := db.Update(func(tx *Tx) error {
+		b, err := tx.CreateBucketIfNotExists([]byte("big"))
+		if err != nil {
+			return err
+		}
+		for i := range 64 {
+			if err := b.Put([]byte(fmt.Sprint(i)), value); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err == nil {
+		t.Fatal("close saved a database larger than its filesystem")
+	}
+	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
+		t.Fatalf("a failed save left its temporary file: %v", err)
+	}
+	if _, err := Open(path, 0o600, nil); !stderrors.Is(err, ErrUncleanShutdown) {
+		t.Fatalf("open after a failed save: %v", err)
+	}
+}
+
 func TestOpenRefusesDamagedFiles(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "meta.db")
