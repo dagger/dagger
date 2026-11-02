@@ -779,7 +779,8 @@ and CLI paths by them, and its codegen gates on that same version. Dispatch
 doesn't care, since calls carry original names.
 
 An entrypoint that declares no version gets the shared pre-cut view
-(`v1.0.0-beta.21`, the view of every v1.0.0 prerelease before the cut): the
+(`v1.0.0-beta.21`, the view of every v1.0.0 prerelease before
+`engine.PrereleaseViewsVersion`): the
 old core names, which every generated entrypoint spells today
 (`FunctionCachePolicy.Never`, `PerSession`, `Default`), and the strcase
 rules. Shipping the cut changes nothing for it. One that declares the cut or
