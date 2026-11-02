@@ -467,7 +467,8 @@ func (EngineSuite) TestExecRootfsBusyAfterExit(ctx context.Context, t *testctx.T
 	// A process in the engine's mount namespace keeps its cwd in the rootfs of
 	// the exec that marks it, until the engine has unmounted it or 30s pass,
 	// and then until an exec on the first one's result runs. It reports
-	// whether the engine detached the rootfs while it was held.
+	// whether the engine detached the rootfs while it was held, and whether
+	// that next exec ran while it still was.
 	results := core.NewQuery(c).CacheVolume("rootfs-holder-" + rand.Text())
 	devEngineSvc := devEngineContainerAsService(devEngineContainer(c, func(ctr *core.Container) *core.Container {
 		entrypoint, err := ctr.Entrypoint(ctx)
@@ -484,6 +485,7 @@ func (EngineSuite) TestExecRootfsBusyAfterExit(ctx context.Context, t *testctx.T
 	if grep -q " $d " /proc/self/mountinfo; then result=mounted; else result=detached; fi
 	i=0
 	until set -- /tmp/rootfs*/reused && [ -e "$1" ] || [ $i -ge 300 ]; do sleep 0.1; i=$((i+1)); done
+	if [ $result = detached ] && [ ! -e "$1" ]; then result=not-reused-while-held; fi
 	cd /
 	echo $result > /holder/result.tmp
 	mv /holder/result.tmp /holder/result
