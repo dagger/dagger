@@ -25,6 +25,33 @@ class ModuleNaming extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * The normalized engine version whose naming rules name the module.
+     */
+    public function version(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('version');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'version');
+    }
+
+    /**
+     * The module's name, which namespaces its types.
+     */
+    public function name(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
+    }
+
+    /**
+     * The module's original name, which its main object and namespaced type names are spelled after. It differs from name when the module is loaded under another name, as a dependency alias.
+     */
+    public function originalName(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('originalName');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'originalName');
+    }
+
+    /**
      * The schema names of objects, interfaces and enums this module declares, as the engine installs them: namespaced under the module's name, in input order.
      *
      * A name is prefixed with the module's name unless it already starts with the module's name on a word boundary. With the engine's identifier naming rules: HttpClient in module my-mod is MyModHTTPClient; Postman in module post is PostPostman, while PostMan stays PostMan; K8STools in module k8s-tools is K8sTools, the module's own name. With the legacy strcase rules, HttpClient in module my-mod is MyModHttpClient.

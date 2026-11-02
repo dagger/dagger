@@ -76,6 +76,28 @@ defmodule Dagger.ModuleNaming do
   end
 
   @doc """
+  The module's name, which namespaces its types.
+  """
+  @spec name(t()) :: {:ok, String.t()} | {:error, term()}
+  def name(%__MODULE__{} = module_naming) do
+    query_builder =
+      module_naming.query_builder |> QB.select("name")
+
+    Client.execute(module_naming.client, query_builder)
+  end
+
+  @doc """
+  The module's original name, which its main object and namespaced type names are spelled after. It differs from name when the module is loaded under another name, as a dependency alias.
+  """
+  @spec original_name(t()) :: {:ok, String.t()} | {:error, term()}
+  def original_name(%__MODULE__{} = module_naming) do
+    query_builder =
+      module_naming.query_builder |> QB.select("originalName")
+
+    Client.execute(module_naming.client, query_builder)
+  end
+
+  @doc """
   The schema names of objects, interfaces and enums this module declares, as the engine installs them: namespaced under the module's name, in input order.
 
   A name is prefixed with the module's name unless it already starts with the module's name on a word boundary. With the engine's identifier naming rules: HttpClient in module my-mod is MyModHTTPClient; Postman in module post is PostPostman, while PostMan stays PostMan; K8STools in module k8s-tools is K8sTools, the module's own name. With the legacy strcase rules, HttpClient in module my-mod is MyModHttpClient.
@@ -86,6 +108,17 @@ defmodule Dagger.ModuleNaming do
   def type_names(%__MODULE__{} = module_naming, names) do
     query_builder =
       module_naming.query_builder |> QB.select("typeNames") |> QB.put_arg("names", names)
+
+    Client.execute(module_naming.client, query_builder)
+  end
+
+  @doc """
+  The normalized engine version whose naming rules name the module.
+  """
+  @spec version(t()) :: {:ok, String.t()} | {:error, term()}
+  def version(%__MODULE__{} = module_naming) do
+    query_builder =
+      module_naming.query_builder |> QB.select("version")
 
     Client.execute(module_naming.client, query_builder)
   end

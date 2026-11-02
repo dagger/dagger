@@ -3432,6 +3432,20 @@ export function ModuleSourceKindNameToValue(name: string): ModuleSourceKind {
       return name as ModuleSourceKind
   }
 }
+export type NamingFormatIdentifiersOpts = {
+  /**
+   * How to write acronyms and terms where a word starts with a capital.
+   */
+  acronyms?: AcronymStyle
+}
+
+export type NamingModuleOpts = {
+  /**
+   * The module's original name, when it's loaded under another (as a dependency alias): its main object and namespaced type names are spelled after it. Defaults to name.
+   */
+  originalName?: string
+}
+
 /**
  * Transport layer network protocol associated to a port.
  */
@@ -3621,18 +3635,6 @@ export type ClientFileOpts = {
   permissions?: number
 }
 
-export type ClientFormatIdentifiersOpts = {
-  /**
-   * How to write acronyms and terms where a word starts with a capital.
-   */
-  acronyms?: AcronymStyle
-
-  /**
-   * The engine version whose naming dictionary to parse the names with, e.g. the __schemaVersion of a schema being generated. Defaults to the caller's engine version.
-   */
-  version?: string
-}
-
 export type ClientGitOpts = {
   /**
    * DEPRECATED: Set to true to keep .git directory.
@@ -3736,6 +3738,13 @@ export type ClientModuleSourceOpts = {
    * If set, error out if the ref string is not of the provided requireKind.
    */
   requireKind?: ModuleSourceKind
+}
+
+export type ClientNamingOpts = {
+  /**
+   * The engine version to answer for, e.g. the engine version a module declares. Defaults to the caller's. Normalized as a module's is: a version past the engine's is capped at the engine's own.
+   */
+  version?: string
 }
 
 export type ClientSecretOpts = {
@@ -15543,15 +15552,28 @@ export class ModuleConfigClient extends BaseClient {
 export class ModuleNaming extends BaseClient {
   private readonly _id?: ID = undefined
   private readonly _mainObject?: string = undefined
+  private readonly _name?: string = undefined
+  private readonly _originalName?: string = undefined
+  private readonly _version?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: ID, _mainObject?: string) {
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _mainObject?: string,
+    _name?: string,
+    _originalName?: string,
+    _version?: string,
+  ) {
     super(ctx)
 
     this._id = _id
     this._mainObject = _mainObject
+    this._name = _name
+    this._originalName = _originalName
+    this._version = _version
   }
 
   /**
@@ -15622,6 +15644,36 @@ export class ModuleNaming extends BaseClient {
   }
 
   /**
+   * The module's name, which namespaces its types.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The module's original name, which its main object and namespaced type names are spelled after. It differs from name when the module is loaded under another name, as a dependency alias.
+   */
+  originalName = async (): Promise<string> => {
+    if (this._originalName) {
+      return this._originalName
+    }
+
+    const ctx = this._ctx.select("originalName")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * The schema names of objects, interfaces and enums this module declares, as the engine installs them: namespaced under the module's name, in input order.
    *
    * A name is prefixed with the module's name unless it already starts with the module's name on a word boundary. With the engine's identifier naming rules: HttpClient in module my-mod is MyModHTTPClient; Postman in module post is PostPostman, while PostMan stays PostMan; K8STools in module k8s-tools is K8sTools, the module's own name. With the legacy strcase rules, HttpClient in module my-mod is MyModHttpClient.
@@ -15633,6 +15685,21 @@ export class ModuleNaming extends BaseClient {
     const ctx = this._ctx.select("typeNames", { names })
 
     const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The normalized engine version whose naming rules name the module.
+   */
+  version = async (): Promise<string> => {
+    if (this._version) {
+      return this._version
+    }
+
+    const ctx = this._ctx.select("version")
+
+    const response: Awaited<string> = await ctx.execute()
 
     return response
   }
@@ -16392,6 +16459,120 @@ export class ModuleSource extends BaseClient {
 }
 
 /**
+ * The engine's identifier naming rules at an engine version.
+ */
+export class Naming extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _version?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID, _version?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._version = _version
+  }
+
+  /**
+   * A unique identifier for this Naming.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The acronyms and terms used to parse and format identifiers.
+   */
+  dictionary = async (): Promise<NamingTerm[]> => {
+    type dictionary = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("dictionary").select("id")
+
+    const response: Awaited<dictionary[]> = await ctx.execute()
+
+    return response.map(
+      (r) => new NamingTerm(ctx.copy().selectNode(r.id, "NamingTerm")),
+    )
+  }
+
+  /**
+   * Format many names at once, for codegen. Returns them in input order.
+   * @param names The names to format, in any casing.
+   * @param casing The casing to format the names in.
+   * @param opts.acronyms How to write acronyms and terms where a word starts with a capital.
+   */
+  formatIdentifiers = async (
+    names: string[],
+    casing: Casing,
+    opts?: NamingFormatIdentifiersOpts,
+  ): Promise<string[]> => {
+    const metadata = {
+      casing: { is_enum: true, value_to_name: CasingValueToName },
+      acronyms: { is_enum: true, value_to_name: AcronymStyleValueToName },
+    }
+
+    const ctx = this._ctx.select("formatIdentifiers", {
+      names,
+      casing,
+      ...opts,
+      __metadata: metadata,
+    })
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Parse a name in any casing into words.
+   *
+   * Known acronyms and terms come from the naming dictionary; everything else falls back to the case heuristic. Errors on non-ASCII input, input with no letters or digits, or input over 256 bytes.
+   * @param name The name to parse.
+   */
+  identifier = (name: string): Identifier => {
+    const ctx = this._ctx.select("identifier", { name })
+    return new Identifier(ctx)
+  }
+
+  /**
+   * The names the engine gives the declarations of a module named by these rules.
+   * @param name The module's name, which namespaces its types.
+   * @param opts.originalName The module's original name, when it's loaded under another (as a dependency alias): its main object and namespaced type names are spelled after it. Defaults to name.
+   */
+  module_ = (name: string, opts?: NamingModuleOpts): ModuleNaming => {
+    const ctx = this._ctx.select("module", { name, ...opts })
+    return new ModuleNaming(ctx)
+  }
+
+  /**
+   * The normalized engine version these rules answer for.
+   */
+  version = async (): Promise<string> => {
+    if (this._version) {
+      return this._version
+    }
+
+    const ctx = this._ctx.select("version")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
  * An entry in the naming dictionary.
  */
 export class NamingTerm extends BaseClient {
@@ -17023,36 +17204,6 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Format many names at once, for codegen. Returns them in input order.
-   * @param names The names to format, in any casing.
-   * @param casing The casing to format the names in.
-   * @param opts.acronyms How to write acronyms and terms where a word starts with a capital.
-   * @param opts.version The engine version whose naming dictionary to parse the names with, e.g. the __schemaVersion of a schema being generated. Defaults to the caller's engine version.
-   * @experimental
-   */
-  formatIdentifiers = async (
-    names: string[],
-    casing: Casing,
-    opts?: ClientFormatIdentifiersOpts,
-  ): Promise<string[]> => {
-    const metadata = {
-      casing: { is_enum: true, value_to_name: CasingValueToName },
-      acronyms: { is_enum: true, value_to_name: AcronymStyleValueToName },
-    }
-
-    const ctx = this._ctx.select("formatIdentifiers", {
-      names,
-      casing,
-      ...opts,
-      __metadata: metadata,
-    })
-
-    const response: Awaited<string[]> = await ctx.execute()
-
-    return response
-  }
-
-  /**
    * Creates a function.
    * @param name Name of the function, in its original format from the implementation language.
    * @param returnType Return type of the function.
@@ -17110,18 +17261,6 @@ export class Client extends BaseClient {
   http = (url: string, opts?: ClientHttpOpts): File => {
     const ctx = this._ctx.select("http", { url, ...opts })
     return new File(ctx)
-  }
-
-  /**
-   * Parse a name in any casing into words.
-   *
-   * Known acronyms and terms come from the naming dictionary; everything else falls back to the case heuristic. Errors on non-ASCII input, input with no letters or digits, or input over 256 bytes.
-   * @param name The name to parse.
-   * @experimental
-   */
-  identifier = (name: string): Identifier => {
-    const ctx = this._ctx.select("identifier", { name })
-    return new Identifier(ctx)
   }
 
   /**
@@ -17191,21 +17330,13 @@ export class Client extends BaseClient {
   }
 
   /**
-   * The acronyms and terms used to parse and format identifiers.
+   * The engine's identifier naming rules at an engine version.
+   * @param opts.version The engine version to answer for, e.g. the engine version a module declares. Defaults to the caller's. Normalized as a module's is: a version past the engine's is capped at the engine's own.
    * @experimental
    */
-  namingDictionary = async (): Promise<NamingTerm[]> => {
-    type namingDictionary = {
-      id: ID
-    }
-
-    const ctx = this._ctx.select("namingDictionary").select("id")
-
-    const response: Awaited<namingDictionary[]> = await ctx.execute()
-
-    return response.map(
-      (r) => new NamingTerm(ctx.copy().selectNode(r.id, "NamingTerm")),
-    )
+  naming = (opts?: ClientNamingOpts): Naming => {
+    const ctx = this._ctx.select("naming", { ...opts })
+    return new Naming(ctx)
   }
 
   /**

@@ -236,6 +236,7 @@
                 "reference/api/module-config-client",
                 "reference/api/module-naming",
                 "reference/api/module-source",
+                "reference/api/naming",
                 "reference/api/naming-term",
                 "reference/api/node",
                 "reference/api/object-type-def",

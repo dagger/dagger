@@ -5837,6 +5837,19 @@ type ModuleNaming implements Node {
   """A unique identifier for this ModuleNaming."""
   id: ID!
 
+  """The normalized engine version whose naming rules name the module."""
+  version: String!
+
+  """The module's name, which namespaces its types."""
+  name: String!
+
+  """
+  The module's original name, which its main object and namespaced type names
+  are spelled after. It differs from name when the module is loaded under
+  another name, as a dependency alias.
+  """
+  originalName: String!
+
   """
   The schema names of objects, interfaces and enums this module declares, as the
   engine installs them: namespaced under the module's name, in input order.
@@ -6257,6 +6270,57 @@ enum ModuleSourceKind {
   LOCAL @enumValue(value: "LOCAL_SOURCE")
   GIT @enumValue(value: "GIT_SOURCE")
   DIR @enumValue(value: "DIR_SOURCE")
+}
+
+"""The engine's identifier naming rules at an engine version."""
+type Naming implements Node {
+  """A unique identifier for this Naming."""
+  id: ID!
+
+  """The normalized engine version these rules answer for."""
+  version: String!
+
+  """
+  Parse a name in any casing into words.
+
+  Known acronyms and terms come from the naming dictionary; everything else
+  falls back to the case heuristic. Errors on non-ASCII input, input with no
+  letters or digits, or input over 256 bytes.
+  """
+  identifier(
+    """The name to parse."""
+    name: String!
+  ): Identifier!
+
+  """Format many names at once, for codegen. Returns them in input order."""
+  formatIdentifiers(
+    """The names to format, in any casing."""
+    names: [String!]!
+
+    """The casing to format the names in."""
+    casing: Casing!
+
+    """How to write acronyms and terms where a word starts with a capital."""
+    acronyms: AcronymStyle = UPPERCASE
+  ): [String!]!
+
+  """The acronyms and terms used to parse and format identifiers."""
+  dictionary: [NamingTerm!]!
+
+  """
+  The names the engine gives the declarations of a module named by these rules.
+  """
+  module(
+    """The module's name, which namespaces its types."""
+    name: String!
+
+    """
+    The module's original name, when it's loaded under another (as a dependency
+    alias): its main object and namespaced type names are spelled after it.
+    Defaults to name.
+    """
+    originalName: String
+  ): ModuleNaming!
 }
 
 """An entry in the naming dictionary."""
@@ -6776,39 +6840,15 @@ type Query implements Node {
   """Initialize a JSON value"""
   json: JSONValue!
 
-  """
-  Parse a name in any casing into words.
-
-  Known acronyms and terms come from the naming dictionary; everything else
-  falls back to the case heuristic. Errors on non-ASCII input, input with no
-  letters or digits, or input over 256 bytes.
-  """
-  identifier(
-    """The name to parse."""
-    name: String!
-  ): Identifier! @experimental(reason: "Identifier casing APIs are likely to change.")
-
-  """Format many names at once, for codegen. Returns them in input order."""
-  formatIdentifiers(
-    """The names to format, in any casing."""
-    names: [String!]!
-
-    """The casing to format the names in."""
-    casing: Casing!
-
-    """How to write acronyms and terms where a word starts with a capital."""
-    acronyms: AcronymStyle = UPPERCASE
-
+  """The engine's identifier naming rules at an engine version."""
+  naming(
     """
-    The engine version whose naming dictionary to parse the names with, e.g. the
-    __schemaVersion of a schema being generated. Defaults to the caller's engine
-    version.
+    The engine version to answer for, e.g. the engine version a module declares.
+    Defaults to the caller's. Normalized as a module's is: a version past the
+    engine's is capped at the engine's own.
     """
     version: String
-  ): [String!]! @experimental(reason: "Identifier casing APIs are likely to change.")
-
-  """The acronyms and terms used to parse and format identifiers."""
-  namingDictionary: [NamingTerm!]! @experimental(reason: "Identifier casing APIs are likely to change.")
+  ): Naming! @experimental(reason: "Identifier casing APIs are likely to change.")
 
   """Load a GraphQL introspection schema for merging."""
   schema(
