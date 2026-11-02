@@ -218,7 +218,7 @@ func TestNestedClientDeclaredVersionMetadata(t *testing.T) {
 			srv, sess, parent, ctx, scope := newNestedTransportTestFixture(t)
 			defer scope.Lease().Release()
 			base := nestedTransportTestMetadata("nested")
-			base.ClientVersion = "v1.0.0-beta.22"
+			base.ClientVersion = "v1.0.0-beta.25"
 			base.ClientVersionDeclared = true
 			base.SDKEntrypoint = true
 			header := (engine.ClientMetadata{ClientID: "nested", ClientVersion: version, SessionID: "untrusted", ClientSecretToken: "untrusted"}).AppendToHTTPHeaders(http.Header{})

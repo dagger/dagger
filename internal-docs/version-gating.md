@@ -73,8 +73,10 @@ none. Outside a module it is not capped: a client announcing beta.21 to a
 beta.22 engine gets the beta.21 view, and one announcing a later version gets
 that view.
 
-`engine.IdentifierCasingVersion` (`v1.0.0-beta.22`, defined as
-`engine.PrereleaseViewsVersion`) is the cut for the identifier casing changes.
+`engine.IdentifierCasingVersion` (`v1.0.0-beta.25`) is the cut for the
+identifier casing changes. It is later than `engine.PrereleaseViewsVersion`
+(`v1.0.0-beta.22`), which shipped first, so the betas between them have their
+own views and are pre-cut.
 Gate on it like any version:
 `View(AfterVersion(engine.IdentifierCasingVersion))`,
 `View(BeforeVersion(engine.IdentifierCasingVersion))`,
@@ -85,22 +87,21 @@ capped view).
 
 ### If the cut slips a release
 
-`engine.PrereleaseViewsVersion` is frozen once a release ships with it. If the
-release it names ships without it (as `v1.0.0-beta.21` did), move the cut to
-the next release:
+`engine.PrereleaseViewsVersion` and `basePrereleaseView` shipped in
+`v1.0.0-beta.22` and are frozen: never move them. If the release
+`engine.IdentifierCasingVersion` names ships without the casing changes (as
+`v1.0.0-beta.22` and `v1.0.0-beta.23` did), move the cut to a later release:
 
-1. In `engine/version.go`, set `PrereleaseViewsVersion` to the next release
-   (`internal/version/VERSION` on `main`) and `basePrereleaseView` to the
-   release that just shipped. `IdentifierCasingVersion` follows
-   `PrereleaseViewsVersion`. `TestPrereleaseViewConstants` checks that
-   `basePrereleaseView` is the beta just before the cut; the view tests in
-   `engine` and `core/schema` derive their versions from the constants.
+1. In `engine/version.go`, set `IdentifierCasingVersion` to the release the
+   changes will ship in (no earlier than `internal/version/VERSION` on
+   `main`). The view tests in `engine`, `core` and `core/schema` derive the
+   cut, and the release just before it, from the constant.
 2. Audit gates set since the last bump:
    `git grep -nE '(After|Before)Version\("v1\.0\.0-|Supports\(ctx, "v1\.0\.0-'`,
    plus version constants passed to `core.Supports` (`git grep -n
-   'Version = "v1\.0\.0-'`). A gate at or before the release that shipped
-   still reaches every pre-cut caller. A gate at the new cut hides API from
-   pre-cut callers who saw it before: decide on it explicitly.
+   'Version = "v1\.0\.0-'`). Casing gates must use the constant, never a
+   literal or `PrereleaseViewsVersion`. Gates at a release that shipped (such
+   as `v1.0.0-beta.22`) belong to that release: leave them.
 3. Grep for the old cut (`git grep -n 'beta\.<old cut>'`) and move the
    mentions that mean "the cut" or "the last pre-cut release", in this file
    and in tests. Fixtures pinned to an earlier beta, such as
