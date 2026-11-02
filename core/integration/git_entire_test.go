@@ -144,7 +144,7 @@ func (GitEntireSuite) TestEntireRemote(ctx context.Context, t *testctx.T) {
 	// it, for both module sources and plain repositories.
 	workDir := t.TempDir()
 	helperQuery := fmt.Sprintf(`{
-  moduleSource(refString: %q) { commit htmlRepoURL }
+  moduleSource(refString: %q) { commit htmlRepoUrl }
   git(url: %q) { branch(name: "main") { tree { file(path: "README") { contents } } } }
 }`, repoURL+"/mod@main", repoURL)
 	require.NoError(t, os.WriteFile(filepath.Join(workDir, "query.graphql"), []byte(helperQuery), 0o600))
@@ -177,7 +177,7 @@ func (GitEntireSuite) TestEntireRemote(ctx context.Context, t *testctx.T) {
 	var helperResult struct {
 		ModuleSource struct {
 			Commit      string
-			HTMLRepoURL string `json:"htmlRepoURL"`
+			HTMLRepoURL string `json:"htmlRepoUrl"`
 		}
 		Git struct {
 			Branch struct {
