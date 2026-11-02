@@ -69,6 +69,8 @@ const (
 	TypeOpened   Type = "opened"
 	TypeSettle   Type = "settle"
 	TypeSettled  Type = "settled"
+	TypeClaims   Type = "claims"
+	TypeClaimed  Type = "claimed"
 	TypeError    Type = "error"
 )
 
@@ -94,6 +96,8 @@ func ReplyType(request Type) (Type, bool) {
 		return TypeOpened, true
 	case TypeSettle:
 		return TypeSettled, true
+	case TypeClaims:
+		return TypeClaimed, true
 	}
 	return "", false
 }
@@ -175,6 +179,26 @@ type SettleSession struct {
 	ID     string `json:"id"`
 	Marker bool   `json:"marker"`
 }
+
+// Claims tells the service which Dagger Cloud claim each of the engine's
+// live sessions started under, which the sessions' telemetry doesn't carry.
+// The engine sends each live session with a
+// claim once on a connection, as it starts or, for a session live at hello,
+// after it. A session with no claim isn't sent.
+type Claims struct {
+	Sessions []SessionClaim `json:"sessions"`
+}
+
+// SessionClaim is one session and its claim: ID is the engine session's ID,
+// as its telemetry names it (dagger.io/engine.session), and Claim is the
+// claim ID its client connected with.
+type SessionClaim struct {
+	ID    string `json:"id"`
+	Claim string `json:"claim"`
+}
+
+// Claimed is the service's reply to Claims.
+type Claimed struct{}
 
 // Settled is the service's reply to Settle, sent once it is done with every
 // listed session and has no export of the engine in flight or still to ask

@@ -137,6 +137,9 @@ type SettleState struct {
 	// TimedOut is set once the engine gave up waiting to settle after its
 	// last session ended, until a session starts again.
 	TimedOut bool
+	// Claims are the live sessions that started under a Dagger Cloud claim,
+	// sorted by session ID (protocol.Claims).
+	Claims []protocol.SessionClaim
 }
 
 // settling reports whether the engine should ask the service to settle:
