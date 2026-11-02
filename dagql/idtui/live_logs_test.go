@@ -151,6 +151,61 @@ func TestLiveLogsCoverage(t *testing.T) {
 	require.Equal(t, []LogCoverage{LogCovered, LogCovered, LogUncovered, LogCovered, LogUnknown, LogUnknown}, got)
 }
 
+// TestLiveLogsActivity: a span's display text may still grow while it runs,
+// while a descendant it rolls up runs, while an effect it caused (e.g. the
+// service whose stdio names the digest it created) runs, or before it is
+// received; otherwise it is idle. An effect that ran since, however
+// briefly, moves its Through.
+func TestLiveLogsActivity(t *testing.T) {
+	live := dagui.TraceID{TraceID: trace.TraceID{2}}
+	running, done, rollUp, child, creator, service, creatorDone, stopped :=
+		prettyTestSpanID(1), prettyTestSpanID(2), prettyTestSpanID(3), prettyTestSpanID(4),
+		prettyTestSpanID(5), prettyTestSpanID(6), prettyTestSpanID(7), prettyTestSpanID(8)
+	start := time.Unix(100, 0)
+	end := start.Add(time.Second)
+	db := dagui.NewDB()
+	fe := NewWithDB(io.Discard, db)
+	fe.reportOnly = true
+	fe.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: running, TraceID: live, Name: "running", StartTime: start, Final: true},
+		{ID: done, TraceID: live, Name: "done", StartTime: start, EndTime: end, Final: true},
+		{ID: rollUp, TraceID: live, Name: "check", StartTime: start, EndTime: end, RollUpLogs: true, Final: true},
+		{ID: child, TraceID: live, ParentID: rollUp, Name: "exec", StartTime: start, Final: true},
+		{ID: creator, TraceID: live, Name: "asService", StartTime: start, EndTime: end, Output: "xxh3:svc", Final: true},
+		{ID: service, TraceID: live, Name: "exec server", StartTime: start, Service: true, Final: true,
+			Links: []dagui.SpanLink{{SpanContext: dagui.SpanContext{TraceID: live, SpanID: creator}, Purpose: "cause"}}},
+		{ID: creatorDone, TraceID: live, Name: "asService", StartTime: start, EndTime: end, Output: "xxh3:svc2", Final: true},
+		{ID: stopped, TraceID: live, Name: "exec server", StartTime: start, EndTime: end, Service: true, Final: true,
+			Links: []dagui.SpanLink{{SpanContext: dagui.SpanContext{TraceID: live, SpanID: creatorDone}, Purpose: "cause"}}},
+	})
+	fe.SetLiveLogs(live, func(LogRequest) {})
+	active := func(ids ...dagui.SpanID) []bool {
+		var got []bool
+		for _, a := range fe.LiveLogsActivity(ids) {
+			got = append(got, a.Active)
+		}
+		return got
+	}
+	require.Equal(t, []bool{true, false, true, true, false, true},
+		active(running, done, rollUp, creator, creatorDone, prettyTestSpanID(9)))
+	require.Equal(t, []LogActivity{{Through: end}}, fe.LiveLogsActivity([]dagui.SpanID{done}))
+
+	// Once the descendant ends, so does the roll-up's activity.
+	fe.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: child, TraceID: live, ParentID: rollUp, Name: "exec", StartTime: start, EndTime: end, Final: true},
+	})
+	require.Equal(t, []bool{false}, active(rollUp))
+
+	// An effect that arrives already ended -- a quick lazy evaluation --
+	// is never seen running, but moves Through.
+	later := end.Add(time.Minute)
+	fe.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: prettyTestSpanID(10), TraceID: live, Name: "exec", StartTime: later, EndTime: later.Add(time.Millisecond), Final: true,
+			Links: []dagui.SpanLink{{SpanContext: dagui.SpanContext{TraceID: live, SpanID: done}, Purpose: "cause"}}},
+	})
+	require.Equal(t, []LogActivity{{Through: later.Add(time.Millisecond)}}, fe.LiveLogsActivity([]dagui.SpanID{done}))
+}
+
 // TestLiveLogsBufferAfterPrimaryOutput: what this process logs after the
 // primary output was read at exit (e.g. a failing cleanup) is still written.
 func TestLiveLogsBufferAfterPrimaryOutput(t *testing.T) {

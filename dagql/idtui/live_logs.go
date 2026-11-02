@@ -1,6 +1,8 @@
 package idtui
 
 import (
+	"time"
+
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 
 	"github.com/dagger/dagger/dagql/dagui"
@@ -51,6 +53,24 @@ type LiveLogsFrontend interface {
 	// routes them to a span it requested or to a descendant of one it
 	// requested with its descendants: a read may return more than that.
 	LiveLogsCoverage([]LogTarget) []LogCoverage
+	// LiveLogsActivity tells, for each span, whether more of the display
+	// text it routes may still come (LogActivity). A reader following a
+	// session's logs stops following spans that are idle, so a long
+	// session's follow selects only the spans still working. It returns
+	// nothing once the frontend quit.
+	LiveLogsActivity([]dagui.SpanID) []LogActivity
+}
+
+// LogActivity is whether a span's display text may still grow.
+type LogActivity struct {
+	// Active: the span runs, or work its logs include does -- running
+	// descendants, cause-linked effects such as the service whose stdio
+	// names a digest it created -- or it was not received yet.
+	Active bool
+	// Through is the latest end of the span and of its cause-linked
+	// effects. It only moves forward: when it does, work its logs include
+	// ran since, however briefly.
+	Through time.Time
 }
 
 // LogTarget names the records of one span and digest (if any).
@@ -214,6 +234,43 @@ func (fe *frontendPretty) LiveLogsCoverage(targets []LogTarget) []LogCoverage {
 		}
 	})
 	return coverage
+}
+
+func (fe *frontendPretty) LiveLogsActivity(spans []dagui.SpanID) []LogActivity {
+	got := make(chan []LogActivity, 1)
+	fe.dispatchWait(func() {
+		activity := make([]LogActivity, len(spans))
+		for i, id := range spans {
+			activity[i] = fe.liveLogActivity(id)
+		}
+		got <- activity
+	})
+	select {
+	case activity := <-got:
+		return activity
+	default:
+		// The TUI quit: nothing tells.
+		return nil
+	}
+}
+
+func (fe *frontendPretty) liveLogActivity(id dagui.SpanID) LogActivity {
+	span, ok := fe.db.Spans.Map[id]
+	if !ok || !span.Received {
+		return LogActivity{Active: true}
+	}
+	// RunningSpans holds the running descendants a roll-up shows; Activity
+	// (in IsRunningOrEffectsRunning) the effects and lazy evaluations linked
+	// to it or its descendants, a service's included.
+	activity := LogActivity{
+		Active:  span.IsRunningOrEffectsRunning() || span.RunningSpans.Len() > 0,
+		Through: span.EndTime,
+	}
+	// Merged and ordered by start, so the last interval ends last.
+	if ivals := span.Activity.CompletedIntervals; len(ivals) > 0 && ivals[len(ivals)-1].End.After(activity.Through) {
+		activity.Through = ivals[len(ivals)-1].End
+	}
+	return activity
 }
 
 func (fe *frontendPretty) liveLogCoverage(t LogTarget) LogCoverage {
