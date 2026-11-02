@@ -94,19 +94,28 @@ func TestLiveLogsReleaseDropsInFlightRows(t *testing.T) {
 	require.NotContains(t, l.owned, logOwner{span: liveTestSpan(1).SpanID}, "a dropped span's rows are not claimed")
 }
 
-// TestLiveLogsReleaseRetiredSpan: a span released after it retired is
-// forgotten like a followed one -- no longer watched, so work it includes
-// starting again does not bring it back, and the pairs its retirement
-// reserved for its gap read are forgotten, whether the frontend dropped its
-// text or only stopped requesting it -- and requested again, it is caught up
-// from the start like a new request, then followed.
+// TestLiveLogsReleaseRetiredSpan: a span released after it retired is let
+// go of like a followed one: no longer watched, so work it includes
+// starting again does not bring it back, and requested again, it is a new
+// request -- caught up from the start, not from where it retired -- then
+// followed. Dropped decides what that catch-up imports again: the pairs
+// its retirement reserved for its gap read are forgotten if the frontend
+// dropped their text, and stay claimed if it only stopped requesting it.
 func TestLiveLogsReleaseRetiredSpan(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		release idtui.LogRelease
+		forgets bool
 	}{
-		{name: "dropped", release: idtui.LogRelease{Spans: []dagui.SpanID{liveTestSpan(5)}, Dropped: []dagui.SpanID{liveTestSpan(5)}}},
-		{name: "unrequested", release: idtui.LogRelease{Spans: []dagui.SpanID{liveTestSpan(5)}}},
+		{
+			name:    "dropped",
+			release: idtui.LogRelease{Spans: []dagui.SpanID{liveTestSpan(5)}, Dropped: []dagui.SpanID{liveTestSpan(5)}},
+			forgets: true,
+		},
+		{
+			name:    "unrequested",
+			release: idtui.LogRelease{Spans: []dagui.SpanID{liveTestSpan(5)}},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			store := &fakeLogStore{}
@@ -128,6 +137,7 @@ func TestLiveLogsReleaseRetiredSpan(t *testing.T) {
 			claim := l.owned[pair]
 			l.mu.Unlock()
 			require.True(t, retired)
+			require.NotZero(t, r.read)
 			require.Equal(t, r.read, claim.read, "the pair passed to the gap read")
 
 			l.release(tc.release)
@@ -136,7 +146,11 @@ func TestLiveLogsReleaseRetiredSpan(t *testing.T) {
 			require.NotContains(t, l.reactivated, id)
 			require.NotContains(t, l.idleSince, id)
 			require.NotContains(t, l.through, id)
-			require.NotContains(t, l.owned, pair, "the gap read's pairs are forgotten")
+			if tc.forgets {
+				require.NotContains(t, l.owned, pair, "a dropped span's pairs are forgotten, its gap read's too")
+			} else {
+				require.Equal(t, claim, l.owned[pair], "a kept span's pairs stay claimed")
+			}
 			l.mu.Unlock()
 
 			// The service restarts: a released span is not watched, so it
@@ -157,13 +171,29 @@ func TestLiveLogsReleaseRetiredSpan(t *testing.T) {
 				require.NotContains(t, querySpanIDs(q), id, "the released span was read")
 			}
 
-			// Requested again, it is a new request: caught up from the
-			// start, not from where it retired, then followed.
+			// Requested again: caught up from the start, then followed.
+			n = len(store.seen())
 			l.subscribe(idtui.LogRequest{Span: liveTestSpan(5)})
 			waitFollowing(t, store, 5, 6)
+			var catchUps []tracesource.LogQuery
+			for _, q := range store.seen()[n:] {
+				if !q.Follow && q.Through != "" {
+					catchUps = append(catchUps, q)
+				}
+			}
+			require.Equal(t, []tracesource.LogQuery{{
+				Spans:   []archive.LogSpan{{SpanID: id}},
+				Through: "4",
+			}}, catchUps, "a catch-up from the start, not a gap read from where it retired")
 			store.add(liveLogRow{span: 5, body: "run3", digest: "xxh3:svc"})
 			require.Eventually(t, func() bool { return slices.Contains(out.got(), "run3") }, 5*time.Second, time.Millisecond)
-			require.Equal(t, []string{"run1", "c1", "c2", "run1", "run2", "run3"}, out.got())
+			if tc.forgets {
+				require.Equal(t, []string{"run1", "c1", "c2", "run1", "run2", "run3"}, out.got(), "the dropped text is read again")
+			} else {
+				got := out.got()
+				require.Equal(t, []string{"run1", "c1", "c2"}, got[:3])
+				require.NotContains(t, got[3:], "run1", "the kept text is not read twice")
+			}
 		})
 	}
 }
