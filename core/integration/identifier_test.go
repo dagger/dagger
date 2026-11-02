@@ -26,9 +26,9 @@ func TestIdentifier(t *testing.T) {
 }
 
 func (IdentifierSuite) TestWords(ctx context.Context, t *testctx.T) {
-	c := core.NewQuery(connect(ctx, t))
+	n := core.NewQuery(connect(ctx, t)).Naming()
 
-	id := c.Identifier("prerequisiteSHAs")
+	id := n.Identifier("prerequisiteSHAs")
 	name, err := id.Name(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "prerequisiteSHAs", name)
@@ -63,7 +63,7 @@ func (IdentifierSuite) TestWords(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.Equal(t, "SHA", spelling)
 
-	words, err = c.Identifier("IPv6Address").Words(ctx)
+	words, err = n.Identifier("IPv6Address").Words(ctx)
 	require.NoError(t, err)
 	require.Len(t, words, 2)
 	kind, err = words[0].Kind(ctx)
@@ -78,9 +78,9 @@ func (IdentifierSuite) TestWords(ctx context.Context, t *testctx.T) {
 }
 
 func (IdentifierSuite) TestFormat(ctx context.Context, t *testctx.T) {
-	c := core.NewQuery(connect(ctx, t))
+	n := core.NewQuery(connect(ctx, t)).Naming()
 
-	id := c.Identifier("http_api_client")
+	id := n.Identifier("http_api_client")
 	for _, tc := range []struct {
 		casing   core.Casing
 		acronyms core.AcronymStyle
@@ -101,48 +101,48 @@ func (IdentifierSuite) TestFormat(ctx context.Context, t *testctx.T) {
 }
 
 func (IdentifierSuite) TestFormatIdentifiers(ctx context.Context, t *testctx.T) {
-	c := core.NewQuery(connect(ctx, t))
+	n := core.NewQuery(connect(ctx, t)).Naming()
 
 	names := []string{"HTTPClient", "userIds", "GitHubRepo", "E2ETest", "md5sum"}
-	got, err := c.FormatIdentifiers(ctx, names, core.CasingPascal)
+	got, err := n.FormatIdentifiers(ctx, names, core.CasingPascal)
 	require.NoError(t, err)
 	require.Equal(t, []string{"HTTPClient", "UserIDs", "GitHubRepo", "E2ETest", "MD5Sum"}, got)
 
-	got, err = c.FormatIdentifiers(ctx, names, core.CasingPascal, core.FormatIdentifiersOpts{
+	got, err = n.FormatIdentifiers(ctx, names, core.CasingPascal, core.NamingFormatIdentifiersOpts{
 		Acronyms: core.AcronymStyleCapitalized,
 	})
 	require.NoError(t, err)
 	require.Equal(t, []string{"HttpClient", "UserIds", "GitHubRepo", "E2eTest", "Md5Sum"}, got)
 
-	got, err = c.FormatIdentifiers(ctx, names, core.CasingSnake)
+	got, err = n.FormatIdentifiers(ctx, names, core.CasingSnake)
 	require.NoError(t, err)
 	require.Equal(t, []string{"http_client", "user_ids", "github_repo", "e2e_test", "md5_sum"}, got)
 }
 
 func (IdentifierSuite) TestErrors(ctx context.Context, t *testctx.T) {
-	c := core.NewQuery(connect(ctx, t))
+	n := core.NewQuery(connect(ctx, t)).Naming()
 
-	_, err := c.Identifier("Café").Name(ctx)
+	_, err := n.Identifier("Café").Name(ctx)
 	require.ErrorContains(t, err, "identifier must be ASCII")
 
-	_, err = c.Identifier("__").Name(ctx)
+	_, err = n.Identifier("__").Name(ctx)
 	require.ErrorContains(t, err, "identifier must contain a letter or digit")
 
-	_, err = c.FormatIdentifiers(ctx, []string{"ok", "Café"}, core.CasingSnake)
+	_, err = n.FormatIdentifiers(ctx, []string{"ok", "Café"}, core.CasingSnake)
 	require.ErrorContains(t, err, "identifier must be ASCII")
 
 	tooLong := strings.Repeat("a", naming.MaxLength+1)
-	_, err = c.Identifier(tooLong).Name(ctx)
+	_, err = n.Identifier(tooLong).Name(ctx)
 	require.ErrorContains(t, err, "identifier must be at most 256 bytes")
 
-	_, err = c.FormatIdentifiers(ctx, []string{"ok", tooLong}, core.CasingSnake)
+	_, err = n.FormatIdentifiers(ctx, []string{"ok", tooLong}, core.CasingSnake)
 	require.ErrorContains(t, err, "identifier must be at most 256 bytes")
 }
 
-func (IdentifierSuite) TestNamingDictionary(ctx context.Context, t *testctx.T) {
-	c := core.NewQuery(connect(ctx, t))
+func (IdentifierSuite) TestDictionary(ctx context.Context, t *testctx.T) {
+	n := core.NewQuery(connect(ctx, t)).Naming()
 
-	terms, err := c.NamingDictionary(ctx)
+	terms, err := n.Dictionary(ctx)
 	require.NoError(t, err)
 	capitalized := map[string]string{}
 	for _, term := range terms {
@@ -158,36 +158,80 @@ func (IdentifierSuite) TestNamingDictionary(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "3D", capitalized["3D"])
 }
 
+// Query.naming answers for the version it's given, normalized as a module's
+// declared version is; without one, for the caller's.
+func (IdentifierSuite) TestNamingVersion(ctx context.Context, t *testctx.T) {
+	q := core.NewQuery(connect(ctx, t))
+
+	version, err := q.Naming().Version(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, version)
+	// The version a Naming reports answers for itself.
+	again, err := q.Naming(core.NamingOpts{Version: version}).Version(ctx)
+	require.NoError(t, err)
+	require.Equal(t, version, again)
+
+	for _, v := range []string{"v1.0.0-beta.20", engine.IdentifierCasingVersion} {
+		version, err := q.Naming(core.NamingOpts{Version: v}).Version(ctx)
+		require.NoError(t, err)
+		require.Equal(t, engine.ModuleAPIViewVersion(v), version, v)
+	}
+
+	// A version past the engine's is capped at the engine's own.
+	capped, err := q.Naming(core.NamingOpts{Version: "v1.999.0"}).Version(ctx)
+	require.NoError(t, err)
+	require.NotEqual(t, "v1.999.0", capped)
+
+	// The legacy rules apply before the cut, the engine's from it on.
+	for v, want := range map[string]string{
+		"v1.0.0-beta.20":               "MyModHttpClient",
+		engine.IdentifierCasingVersion: "MyModHTTPClient",
+	} {
+		got, err := q.Naming(core.NamingOpts{Version: v}).Module("my-mod").TypeNames(ctx, []string{"HttpClient"})
+		require.NoError(t, err)
+		require.Equal(t, []string{want}, got, v)
+	}
+}
+
 // The API is served on every v1 view, including the pre-cut view whose
 // modules keep the legacy strcase names (before
 // engine.IdentifierCasingVersion): SDK codegen picks its naming rules by the
 // engine version a module declares, not by whether the schema has
-// Query.formatIdentifiers.
+// Query.naming. Without a version, it answers for the caller's.
 func (IdentifierSuite) TestViews(ctx context.Context, t *testctx.T) {
 	cut := engine.IdentifierCasingVersion
 	preCut := engine.APIViewVersion("v1.0.0-0")
 	for _, tc := range []struct {
-		name string
-		opts []dagger.ClientOpt
-		want bool
+		name    string
+		opts    []dagger.ClientOpt
+		want    bool
+		version string
 	}{
 		{name: "current", want: true},
-		{name: cut, opts: []dagger.ClientOpt{dagger.WithVersionOverride(cut)}, want: true},
-		{name: preCut, opts: []dagger.ClientOpt{dagger.WithVersionOverride(preCut)}, want: true},
-		{name: "v1.0.0-beta.20", opts: []dagger.ClientOpt{dagger.WithVersionOverride("v1.0.0-beta.20")}, want: true},
-		{name: "v1.0.0-0", opts: []dagger.ClientOpt{dagger.WithVersionOverride("v1.0.0-0")}, want: true},
+		{name: cut, opts: []dagger.ClientOpt{dagger.WithVersionOverride(cut)}, want: true, version: engine.ModuleAPIViewVersion(cut)},
+		{name: preCut, opts: []dagger.ClientOpt{dagger.WithVersionOverride(preCut)}, want: true, version: engine.ModuleAPIViewVersion(preCut)},
+		{name: "v1.0.0-beta.20", opts: []dagger.ClientOpt{dagger.WithVersionOverride("v1.0.0-beta.20")}, want: true, version: engine.ModuleAPIViewVersion("v1.0.0-beta.20")},
+		{name: "v1.0.0-0", opts: []dagger.ClientOpt{dagger.WithVersionOverride("v1.0.0-0")}, want: true, version: engine.ModuleAPIViewVersion("v1.0.0-0")},
 		{name: "v0.21.0", opts: []dagger.ClientOpt{dagger.WithVersionOverride("v0.21.0")}},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			res, err := testutil.Query[struct {
-				FormatIdentifiers []string
-			}](t, `{ formatIdentifiers(names: ["prerequisiteSHAs"], casing: SNAKE) }`, nil, tc.opts...)
+				Naming struct {
+					Version           string
+					FormatIdentifiers []string
+				}
+			}](t, `{ naming { version formatIdentifiers(names: ["prerequisiteSHAs"], casing: SNAKE) } }`, nil, tc.opts...)
 			if !tc.want {
-				require.ErrorContains(t, err, "formatIdentifiers")
+				require.ErrorContains(t, err, "naming")
 				return
 			}
 			require.NoError(t, err)
-			require.Equal(t, []string{"prerequisite_shas"}, res.FormatIdentifiers)
+			if tc.version != "" {
+				require.Equal(t, tc.version, res.Naming.Version)
+			} else {
+				require.NotEmpty(t, res.Naming.Version)
+			}
+			require.Equal(t, []string{"prerequisite_shas"}, res.Naming.FormatIdentifiers)
 		})
 	}
 }
@@ -218,8 +262,8 @@ func (IdentifierSuite) TestFormatSchemaNames(ctx context.Context, t *testctx.T) 
 		}
 	}
 
-	c := core.NewQuery(connect(ctx, t))
-	formatted, err := c.FormatIdentifiers(ctx, names, core.CasingSnake)
+	n := core.NewQuery(connect(ctx, t)).Naming()
+	formatted, err := n.FormatIdentifiers(ctx, names, core.CasingSnake)
 	require.NoError(t, err)
 	require.Len(t, formatted, len(names))
 	for i, name := range names {
