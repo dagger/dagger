@@ -56,7 +56,7 @@ type logQueryFixture struct {
 	shutdown map[string]chan struct{}
 }
 
-func newLogQueryFixture(t *testing.T, clientIDs ...string) *logQueryFixture {
+func newLogQueryFixture(t testing.TB, clientIDs ...string) *logQueryFixture {
 	dbs := clientdb.NewDBs(t.TempDir())
 	t.Cleanup(func() { _ = dbs.Close() })
 	f := &logQueryFixture{srv: &Server{clientDBs: dbs}, records: map[string]*clientRecord{}, shutdown: map[string]chan struct{}{}}
@@ -70,7 +70,7 @@ func newLogQueryFixture(t *testing.T, clientIDs ...string) *logQueryFixture {
 	return f
 }
 
-func (f *logQueryFixture) append(t *testing.T, clientID string, spans []clientdb.Span, logs ...clientdb.Log) {
+func (f *logQueryFixture) append(t testing.TB, clientID string, spans []clientdb.Span, logs ...clientdb.Log) {
 	t.Helper()
 	db, err := f.srv.clientDBs.Open(t.Context(), clientID)
 	require.NoError(t, err)
@@ -87,7 +87,7 @@ func (f *logQueryFixture) append(t *testing.T, clientID string, spans []clientdb
 
 // serve exposes one client's live telemetry endpoints over a real HTTP
 // server, so a follow can be read while it is still being written.
-func (f *logQueryFixture) serve(t *testing.T, clientID string) *httptest.Server {
+func (f *logQueryFixture) serve(t testing.TB, clientID string) *httptest.Server {
 	record := f.records[clientID]
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/logs", httpHandlerFunc(f.ps.LogsSubscribeHandler, record))
