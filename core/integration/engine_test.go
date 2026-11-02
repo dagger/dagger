@@ -458,14 +458,16 @@ exec /usr/local/bin/crun.real "$@"
 }
 
 // Something outside an exec's container can still be using its rootfs mount
-// after the process exits (#14744). The exec must still succeed, and the mount
-// must not outlive it.
+// after the process exits (#14744). The exec must still succeed, its rootfs
+// must not stay mounted, and its result must stay usable while the old mount
+// is still held.
 func (EngineSuite) TestExecRootfsBusyAfterExit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	// A process in the engine's mount namespace keeps its cwd in the rootfs
-	// of the exec that marks it, for longer than the unmount retries last,
-	// then reports whether the rootfs is still mounted once it has let go.
+	// A process in the engine's mount namespace keeps its cwd in the rootfs of
+	// the exec that marks it, until the engine has unmounted it or 30s pass,
+	// and then until an exec on the first one's result runs. It reports
+	// whether the engine detached the rootfs while it was held.
 	results := core.NewQuery(c).CacheVolume("rootfs-holder-" + rand.Text())
 	devEngineSvc := devEngineContainerAsService(devEngineContainer(c, func(ctr *core.Container) *core.Container {
 		entrypoint, err := ctr.Entrypoint(ctx)
@@ -473,27 +475,35 @@ func (EngineSuite) TestExecRootfsBusyAfterExit(ctx context.Context, t *testctx.T
 		return ctr.
 			WithMountedCache("/holder", results).
 			WithEntrypoint(append([]string{"sh", "-c", `(
-	while :; do
-		for d in /tmp/rootfs*; do
-			[ -e "$d/hold-rootfs" ] || continue
-			cd "$d" && sleep 8 && cd / && sleep 1 || exit 1
-			if grep -q " $d " /proc/self/mountinfo; then
-				echo mounted > /holder/result.tmp
-			else
-				echo unmounted > /holder/result.tmp
-			fi
-			mv /holder/result.tmp /holder/result
-			exit 0
-		done
-		sleep 0.05
-	done
+	until set -- /tmp/rootfs*/hold-rootfs && [ -e "$1" ]; do sleep 0.05; done
+	d=${1%/hold-rootfs}
+	cd "$d" || exit 1
+	touch rootfs-held
+	i=0
+	while grep -q " $d " /proc/self/mountinfo && [ $i -lt 300 ]; do sleep 0.1; i=$((i+1)); done
+	if grep -q " $d " /proc/self/mountinfo; then result=mounted; else result=detached; fi
+	i=0
+	until set -- /tmp/rootfs*/reused && [ -e "$1" ] || [ $i -ge 300 ]; do sleep 0.1; i=$((i+1)); done
+	cd /
+	echo $result > /holder/result.tmp
+	mv /holder/result.tmp /holder/result
 ) &
 exec "$0" "$@"`,
 			}, entrypoint...))
 	}))
-	_, err := engineClientContainer(ctx, t, c, devEngineSvc).
+	// Keep the engine, and so the holder, running after the client is done.
+	_, err := devEngineSvc.Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = devEngineSvc.Stop(context.WithoutCancel(ctx), core.ServiceStopOpts{Kill: true})
+	})
+	_, err = engineClientContainer(ctx, t, c, devEngineSvc).
 		WithExec([]string{"dagger", "query"}, core.ContainerWithExecOpts{
-			Stdin:                 `{container{from(address:"` + alpineImage + `"){withExec(args:["sh","-c","touch /hold-rootfs && sleep 2"]){exitCode}}}}`,
+			Stdin: `{container{from(address:"` + alpineImage + `"){
+				withExec(args:["sh","-c","touch /hold-rootfs && timeout 60 sh -c 'until [ -e /rootfs-held ]; do sleep 0.1; done'"]){
+					withExec(args:["sh","-c","touch /reused && sleep 1"]){exitCode}
+				}
+			}}}`,
 			DisableDaggerInDagger: true,
 		}).
 		Sync(ctx)
@@ -502,10 +512,10 @@ exec "$0" "$@"`,
 	result, err := core.NewQuery(c).Container().From(alpineImage).
 		WithMountedCache("/holder", results).
 		WithEnvVariable("READ", rand.Text()).
-		WithExec([]string{"sh", "-c", "until [ -e /holder/result ]; do sleep 0.1; done; cat /holder/result"}).
+		WithExec([]string{"sh", "-c", "timeout 120 sh -c 'until [ -e /holder/result ]; do sleep 0.1; done'; cat /holder/result"}).
 		Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "unmounted", strings.TrimSpace(result), "the exec's rootfs mount after its holder let go")
+	require.Equal(t, "detached", strings.TrimSpace(result), "the exec's rootfs mount while still held")
 }
 
 func (EngineSuite) TestDaggerExec(ctx context.Context, t *testctx.T) {
