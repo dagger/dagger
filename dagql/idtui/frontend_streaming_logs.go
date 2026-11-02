@@ -71,21 +71,12 @@ func (s *streamingLogExporter) flushLogsForSpan(spanID dagui.SpanID, records []s
 		return
 	}
 
-	// Check if we should show this span
-	var skip bool
-	for p := range dbSpan.Parents {
-		if p.Encapsulate || !s.opts.ShouldShow(s.db, p) {
-			skip = true
-			break
-		}
-	}
 	if dbSpan.ID == s.db.PrimarySpan {
 		// don't print primary span logs; they'll be printed at the end
-		skip = true
+		return
 	}
-
-	if skip || (dbSpan.Encapsulated && !dbSpan.IsFailedOrCausedFailure()) {
-		return // Skip logs for encapsulated spans
+	if !streamsSpan(s.db, s.opts, dbSpan) {
+		return
 	}
 
 	// Set prefix
@@ -124,6 +115,22 @@ func (s *streamingLogExporter) flushLogsForSpan(spanID dagui.SpanID, records []s
 			s.out.String(multiprefixw.DefaultLineOverhang).
 				Foreground(termenv.ANSIBrightBlack).String()
 	}
+}
+
+// streamsSpan reports whether the logs and dots frontends print a span: only
+// when the span and all of its parents would show in the trace, as in the
+// other frontends, and no parent encapsulates it. An internal span, for
+// example, prints only with -vvv, unless it failed.
+func streamsSpan(db *dagui.DB, opts *dagui.FrontendOpts, span *dagui.Span) bool {
+	if !opts.ShouldShow(db, span) {
+		return false
+	}
+	for p := range span.Parents {
+		if p.Encapsulate || !opts.ShouldShow(db, p) {
+			return false
+		}
+	}
+	return !span.Encapsulated || span.IsFailedOrCausedFailure()
 }
 
 // flushResolvedLogsForSpan flushes any logs that became routable once the span

@@ -263,16 +263,7 @@ func (e *dotsSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.Rea
 			continue // Span hasn't ended yet
 		}
 
-		var skip bool
-		for p := range dbSpan.Parents {
-			if p.Encapsulate || !e.opts.ShouldShow(e.db, p) {
-				skip = true
-				break
-			}
-		}
-
-		if skip || (dbSpan.Encapsulated && !dbSpan.IsFailedOrCausedFailure()) {
-			// Don't print encapsulated spans
+		if !streamsSpan(e.db, &e.opts, dbSpan) {
 			continue
 		}
 
