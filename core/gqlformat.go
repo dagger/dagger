@@ -45,8 +45,8 @@ func formatGqlDescription(desc string) string {
 //
 // SDK generators decide which naming rules to apply by the engine version the
 // target module declares (and the engine's own version), not by the schema:
-// the identifier API (Query.formatIdentifiers and friends) is served on every
-// v1 view, and its version argument selects the dictionary.
+// the identifier API (Query.naming) is served on every v1 view, and its
+// version argument selects the rules.
 const IdentifierNamingVersion = engine.IdentifierCasingVersion
 
 // IdentifierNamingView is the API views whose names follow engine/naming:

@@ -32,6 +32,12 @@ func (s *moduleSourceSchema) installModuleNaming(dag *dagql.Server) {
 	}.Install(dag)
 
 	dagql.Fields[*core.ModuleNaming]{
+		dagql.Func("version", s.moduleNamingVersion).
+			Doc(`The normalized engine version whose naming rules name the module.`),
+		dagql.Func("name", s.moduleNamingName).
+			Doc(`The module's name, which namespaces its types.`),
+		dagql.Func("originalName", s.moduleNamingOriginalName).
+			Doc(`The module's original name, which its main object and namespaced type names are spelled after. It differs from name when the module is loaded under another name, as a dependency alias.`),
 		dagql.Func("typeNames", s.moduleNamingTypeNames).
 			DoNotCache(moduleNamingDoNotCache).
 			Doc(`The schema names of objects, interfaces and enums this module declares, as the engine installs them: namespaced under the module's name, in input order.`,
@@ -84,6 +90,18 @@ func moduleNamingStrings(names []string, err error) ([]dagql.String, error) {
 		out[i] = dagql.String(name)
 	}
 	return out, nil
+}
+
+func (s *moduleSourceSchema) moduleNamingVersion(_ context.Context, mn *core.ModuleNaming, _ struct{}) (dagql.String, error) {
+	return dagql.String(mn.View), nil
+}
+
+func (s *moduleSourceSchema) moduleNamingName(_ context.Context, mn *core.ModuleNaming, _ struct{}) (dagql.String, error) {
+	return dagql.String(mn.ModuleName), nil
+}
+
+func (s *moduleSourceSchema) moduleNamingOriginalName(_ context.Context, mn *core.ModuleNaming, _ struct{}) (dagql.String, error) {
+	return dagql.String(mn.ModuleOriginalName), nil
 }
 
 func (s *moduleSourceSchema) moduleNamingTypeNames(_ context.Context, mn *core.ModuleNaming, args moduleNamingNamesArgs) ([]dagql.String, error) {

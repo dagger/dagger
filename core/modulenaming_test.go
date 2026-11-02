@@ -30,6 +30,37 @@ func TestModuleNamingRules(t *testing.T) {
 	require.Equal(t, (&ModuleSource{EngineVersion: cutVersion}).NamingView(), moduleNamingFor(cutVersion, "m", "m").View)
 }
 
+// A module source's naming is the naming of its version, name and original
+// name: NamingFor normalizes a version idempotently, so asking again with the
+// version a ModuleNaming reports gives the same rules.
+func TestNamingModule(t *testing.T) {
+	t.Parallel()
+
+	for _, version := range []string{"", "v0.19.0", "v1.0.0-0", "v1.0.0-beta.15", legacyNamingVersion, cutVersion, "v1.0.0", "v1.999.0", "not-a-version"} {
+		for _, names := range [][2]string{{"my-mod", "my-mod"}, {"alias", "my-mod"}, {"", ""}} {
+			mn := moduleNamingFor(version, names[0], names[1])
+			require.Equal(t, mn, NamingFor(version).Module(names[0], names[1]), version)
+			require.Equal(t, mn, NamingFor(string(mn.View)).Module(mn.ModuleName, mn.ModuleOriginalName), version)
+			require.NotEmpty(t, mn.View, version)
+		}
+		n := NamingFor(version)
+		require.Equal(t, n, NamingFor(n.Version), version)
+	}
+}
+
+// A cached Naming decodes to the same version.
+func TestNamingPersisted(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	n := NamingFor(cutVersion)
+	encoded, err := n.EncodePersistedObject(ctx, nil)
+	require.NoError(t, err)
+	decoded, err := (*Naming)(nil).DecodePersistedObject(ctx, dagql.NewPersistDecodeContext(nil, 0, nil), encoded.JSON)
+	require.NoError(t, err)
+	require.Equal(t, n, decoded)
+}
+
 func TestModuleNamingTypeNames(t *testing.T) {
 	t.Parallel()
 
