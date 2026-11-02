@@ -33,6 +33,13 @@ import (
 // every row to Cloud once, in order, as the CLI's forwarding of the same stream
 // did before the engine published itself.
 //
+// The spans the remote cache reads, cache spans and the session's end
+// (cacheSpanRow), take a lane of their own, ahead of the session's bulk
+// telemetry: on a slow link that can fall minutes behind, as when nested
+// engines under test publish through the session, and the remote cache must
+// not learn the cache only as late as that. Every span takes exactly one of the
+// two span lanes.
+//
 // The store is the buffer: a lane holds one batch at a time and advances its
 // cursor only past rows Cloud took, so a Cloud outage costs the forwarder one
 // batch of memory per signal however long it lasts, and the rows wait on disk.
@@ -115,6 +122,9 @@ type cloudForwarder struct {
 	onRelease func()
 
 	lanes []*cloudForwardLane
+	// cacheSpans is the lane of the spans the remote cache reads, one of
+	// lanes.
+	cacheSpans *cloudForwardLane
 
 	// ctx ends every fetch, wait and export; stop cancels it.
 	ctx    context.Context
@@ -187,11 +197,11 @@ func newCloudForwarder(sessionID, clientID string, db *clientdb.DB, spans sdktra
 		done:      make(chan struct{}),
 	}
 	f.ctx, f.cancel = context.WithCancelCause(context.Background())
-	f.lanes = []*cloudForwardLane{
-		{
-			signal: "spans",
+	spanLane := func(signal string, forward func(*clientdb.Span) bool) *cloudForwardLane {
+		return &cloudForwardLane{
+			signal: signal,
 			fetch: func(ctx context.Context, since int64, limit int) (cloudForwardBatch, error) {
-				next, req, rows, err := fetchSpanBatch(ctx, db, since, limit, forwardSpanRow)
+				next, req, rows, err := fetchSpanBatch(ctx, db, since, limit, forward)
 				batch := cloudForwardBatch{next: next, rows: rows}
 				if err == nil && len(req.GetResourceSpans()) > 0 {
 					batch.size = proto.Size(req)
@@ -202,7 +212,16 @@ func newCloudForwarder(sessionID, clientID string, db *clientdb.DB, spans sdktra
 				return batch, err
 			},
 			end: func(hw clientdb.HighWater) int64 { return hw.Spans },
-		},
+		}
+	}
+	f.cacheSpans = spanLane("cache spans", func(row *clientdb.Span) bool {
+		return forwardSpanRow(row) && cacheSpanRow(row)
+	})
+	f.lanes = []*cloudForwardLane{
+		f.cacheSpans,
+		spanLane("spans", func(row *clientdb.Span) bool {
+			return forwardSpanRow(row) && !cacheSpanRow(row)
+		}),
 		{
 			signal: "logs",
 			fetch: func(ctx context.Context, since int64, limit int) (cloudForwardBatch, error) {
@@ -238,6 +257,21 @@ func forwardSpanRow(row *clientdb.Span) bool { return !cloudPublishedRow(row.Att
 func forwardLogRow(row *clientdb.Log) bool   { return !cloudPublishedRow(row.Attributes) }
 
 var cloudPublishedAttrKey = []byte(telemetryattrs.TelemetryCloudPublishedAttr)
+
+var (
+	cacheResultIDAttrKey         = []byte(telemetryattrs.CacheResultIDAttr)
+	wcprofSessionCompleteAttrKey = []byte(telemetryattrs.WcprofSessionCompleteAttr)
+)
+
+// cacheSpanRow reports whether a stored span is one the remote cache reads: a
+// span naming a cache entry (dagger.io/cache.result.id) or a session's end
+// (wcprof.session_complete). It matches the attribute keys' bytes without
+// decoding: the rare row a value happens to match takes the cache lane, which
+// costs nothing, since the bulk lane leaves out exactly the rows it matches.
+func cacheSpanRow(row *clientdb.Span) bool {
+	return bytes.Contains(row.Attributes, cacheResultIDAttrKey) ||
+		bytes.Contains(row.Attributes, wcprofSessionCompleteAttrKey)
+}
 
 // cloudPublishedRow reports whether a row's stored attributes carry the
 // published marker. The byte search keeps the common case cheap; a hit is
@@ -420,6 +454,32 @@ func (f *cloudForwarder) stop(cause error) {
 	f.cancel(cause)
 }
 
+// waitCacheSpans blocks until the cache span lane has published the store's
+// final end, the forwarder released, or ctx ends.
+func (f *cloudForwarder) waitCacheSpans(ctx context.Context) error {
+	select {
+	case <-f.finished:
+	case <-f.done:
+		return nil
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	}
+	want := f.cacheSpans.end(f.db.HighWater())
+	for {
+		cursor, advanced := f.cacheSpans.position()
+		if cursor >= want {
+			return nil
+		}
+		select {
+		case <-advanced:
+		case <-f.done:
+			return nil
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		}
+	}
+}
+
 // wait blocks until the forwarder released, or ctx ends.
 func (f *cloudForwarder) waitReleased(ctx context.Context) error {
 	select {
@@ -451,6 +511,7 @@ func (f *cloudForwarder) release() {
 	if len(unpublished) > 0 {
 		lg.Warn("session telemetry not fully published to Cloud",
 			"cause", context.Cause(f.ctx),
+			"unpublishedCacheSpanRows", unpublished["cache spans"],
 			"unpublishedSpans", unpublished["spans"],
 			"unpublishedLogs", unpublished["logs"])
 	} else {
@@ -572,9 +633,11 @@ func (r *cloudForwarders) KeepSet() map[string]bool {
 	return keep
 }
 
-// stopAll gives every forwarder and metric queue until grace passes to finish
-// on its own, then stops the rest and waits, until ctx ends, for them to
-// release.
+// stopAll gives every forwarder until grace passes to publish its cache spans
+// (waitCacheSpans), and every metric queue until then to finish on its own,
+// then stops the rest and waits, until ctx ends, for them to release. The
+// stop doesn't wait for the rest of a forwarder's telemetry: a backlog the
+// session left can take minutes to publish.
 func (r *cloudForwarders) stopAll(ctx context.Context, grace time.Duration) error {
 	r.mu.Lock()
 	active := make([]*cloudForwarder, 0, len(r.active))
@@ -592,7 +655,7 @@ func (r *cloudForwarders) stopAll(ctx context.Context, grace time.Duration) erro
 	graceCtx, cancel := context.WithTimeout(ctx, grace)
 	defer cancel()
 	for _, f := range active {
-		if f.waitReleased(graceCtx) != nil {
+		if f.waitCacheSpans(graceCtx) != nil {
 			break
 		}
 	}
