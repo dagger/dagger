@@ -16,8 +16,9 @@ import (
 
 // LogQueryScope is a resolved archive.LogQuery: the spans whose own rows
 // match, and the dag.digest values whose rows match wherever they were
-// emitted. A live scope also follows spans that arrive after it was resolved;
-// it belongs to one reader and is not safe for concurrent use.
+// emitted. A live scope also follows spans that arrive after it was resolved.
+// A scope belongs to one reader, which keeps what it decided about each span
+// and digest across its reads; it is not safe for concurrent use.
 type LogQueryScope struct {
 	// everything matches every span (an unscoped search).
 	everything bool
@@ -29,7 +30,33 @@ type LogQueryScope struct {
 
 	// live scopes resolve against a growing store.
 	live *spanLookup
+
+	// What the scope decided, by the store's interned span and digest IDs
+	// (logLookup.spanIndex, digestIndex). Rows are matched by these, so a
+	// span or digest is looked up by name once, when its first row is read,
+	// not once per row. A span not placed yet is decided again only once the
+	// span index has changed (spanAt holds the generation it was decided at).
+	spans     []scopeMatch
+	spanAt    []uint64
+	digestsBy []scopeMatch
+	placement placementMemo
 }
+
+// scopeMatch is a LogQueryScope's decision about one span or digest.
+type scopeMatch uint8
+
+const (
+	matchUnresolved scopeMatch = iota
+	// matchIn and matchOut are final: the tree only grows, and a fixed-cut
+	// or descendant-free scope never changes.
+	matchIn
+	matchOut
+	// matchOutAt: a live span not beneath the tree as of its generation.
+	matchOutAt
+	// matchUnplacedAt: a live span the store has no snapshot of as of its
+	// generation, so its place is unknown and it is left to the reader.
+	matchUnplacedAt
+)
 
 func newLogQueryScope(spans []archive.LogSpan) *LogQueryScope {
 	scope := &LogQueryScope{own: map[string]bool{}, tree: map[string]bool{}, digests: map[string]bool{}}
@@ -74,41 +101,84 @@ func (v *SpanView) LogQueryScope(spans []archive.LogSpan) *LogQueryScope {
 	return scope
 }
 
-// matcher returns the per-scan row predicate. Spans outside the tree are
-// decided once per scan only, since later spans and links may place them.
-func (q *LogQueryScope) matcher() func(idx *logLookup, m logMeta) bool {
-	undecided := map[uint32]bool{}
-	return func(idx *logLookup, m logMeta) bool {
-		if q.everything {
-			return true
+// match reports whether a row (its metadata, under idx's read lock) is in
+// scope. Spans outside the tree are placed as their rows are read, since
+// later spans and links may place them.
+func (q *LogQueryScope) match(idx *logLookup, m logMeta) bool {
+	if q.everything {
+		return true
+	}
+	if m.digest != 0 && len(q.digests) > 0 && q.digestIn(idx, m.digest) {
+		return true
+	}
+	return q.spanIn(idx, m.span)
+}
+
+func (q *LogQueryScope) digestIn(idx *logLookup, digest uint32) bool {
+	if int(digest) >= len(q.digestsBy) {
+		q.digestsBy = append(q.digestsBy, make([]scopeMatch, len(idx.digests)-len(q.digestsBy))...)
+	}
+	switch q.digestsBy[digest] {
+	case matchIn:
+		return true
+	case matchOut:
+		return false
+	case matchUnresolved:
+	}
+	ok := q.digests[idx.digests[digest]]
+	q.digestsBy[digest] = matchOut
+	if ok {
+		q.digestsBy[digest] = matchIn
+	}
+	return ok
+}
+
+func (q *LogQueryScope) spanIn(idx *logLookup, span uint32) bool {
+	if int(span) >= len(q.spans) {
+		grow := len(idx.spanIDs) - len(q.spans)
+		q.spans = append(q.spans, make([]scopeMatch, grow)...)
+		q.spanAt = append(q.spanAt, make([]uint64, grow)...)
+	}
+	switch state := q.spans[span]; state {
+	case matchIn:
+		return true
+	case matchOut:
+		return false
+	case matchOutAt, matchUnplacedAt:
+		if q.spanAt[span] == q.live.generation() {
+			return state == matchUnplacedAt
 		}
-		if m.digest != 0 && q.digests[idx.digests[m.digest]] {
-			return true
-		}
-		span := idx.spanIDs[m.span]
-		if q.own[span] || q.tree[span] {
-			return true
-		}
-		if q.live == nil || len(q.tree) == 0 {
-			return false
-		}
-		if ok, memo := undecided[m.span]; memo {
-			return ok
-		}
-		var ok bool
-		switch {
-		case !q.live.hasSpan(span):
-			// Its place is unknown yet: leave it to the reader.
-			ok = true
-		case q.live.beneath(span, q.tree):
-			// A span stored after the tree was resolved, or one whose parent
-			// or cause link arrived later. The tree only grows, so placing
-			// the span is permanent.
-			q.tree[span] = true
-			return true
-		}
-		undecided[m.span] = ok
-		return ok
+	}
+	return q.resolveSpan(span, idx.spanIDs[span])
+}
+
+// resolveSpan decides a span the scope has not decided yet, or whose place
+// may have changed since.
+func (q *LogQueryScope) resolveSpan(span uint32, id string) bool {
+	if q.own[id] || q.tree[id] {
+		q.spans[span] = matchIn
+		return true
+	}
+	if q.live == nil || len(q.tree) == 0 {
+		q.spans[span] = matchOut
+		return false
+	}
+	known, beneath, gen := q.live.place(id, q.tree, &q.placement)
+	switch {
+	case !known:
+		// Its place is unknown yet: leave it to the reader.
+		q.spans[span], q.spanAt[span] = matchUnplacedAt, gen
+		return true
+	case beneath:
+		// A span stored after the tree was resolved, or one whose parent
+		// or cause link arrived later. The tree only grows, so placing the
+		// span is permanent.
+		q.tree[id] = true
+		q.spans[span] = matchIn
+		return true
+	default:
+		q.spans[span], q.spanAt[span] = matchOutAt, gen
+		return false
 	}
 }
 
@@ -116,7 +186,6 @@ func (q *LogQueryScope) matcher() func(idx *logLookup, m logMeta) bool {
 // scope in (p.AfterID, p.ThroughID], scanning at most p.Limit rows. traceID
 // "" matches every trace. next advances across unmatched rows too.
 func (s *DB) SelectDisplayLogs(ctx context.Context, p SelectLogsRangeParams, traceID string, scope *LogQueryScope) ([]Log, int64, error) {
-	match := scope.matcher()
 	trace, traceKnown, traceResolved := uint32(0), false, traceID == ""
 	return s.scanLogs(ctx, p, func(idx *logLookup, _ int64, m logMeta) (bool, error) {
 		if !traceResolved {
@@ -126,7 +195,7 @@ func (s *DB) SelectDisplayLogs(ctx context.Context, p SelectLogsRangeParams, tra
 		if traceID != "" && (!traceKnown || m.trace != trace) {
 			return false, nil
 		}
-		return m.flags.display() && match(idx, m), nil
+		return m.flags.display() && scope.match(idx, m), nil
 	})
 }
 

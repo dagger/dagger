@@ -244,27 +244,6 @@ func scanCatchUp(ctx context.Context, db *DB, spans []archive.LogSpan, after, th
 	return ids, windows, nil
 }
 
-// sharedMemoCatchUp is scanCatchUp with one matcher for the whole catch-up,
-// so spans outside the tree are placed once rather than once per window.
-func sharedMemoCatchUp(ctx context.Context, db *DB, spans []archive.LogSpan, after, through int64) ([]int64, int, error) {
-	scope := db.LiveLogScope(spans)
-	match := scope.matcher()
-	var ids []int64
-	windows := 0
-	for after < through {
-		rows, next, err := db.scanLogs(ctx, SelectLogsRangeParams{AfterID: after, ThroughID: through, Limit: catchUpWindow}, func(idx *logLookup, _ int64, m logMeta) (bool, error) {
-			return m.flags.display() && match(idx, m), nil
-		})
-		if err != nil {
-			return nil, windows, err
-		}
-		windows++
-		after = next
-		ids = append(ids, logIDs(rows)...)
-	}
-	return ids, windows, nil
-}
-
 // indexCatchUp is a prototype of the same catch-up read through the per-span
 // row index: the scope's spans (resolved once, as LiveLogScope does), their
 // rows in (after, through] filtered by class, and one body read. Digest-routed
@@ -358,17 +337,6 @@ func BenchmarkLiveLogCatchUp(b *testing.B) {
 						b.ReportMetric(float64(windows), "windows/op")
 						b.ReportMetric(float64(len(want)), "rows/op")
 					})
-					if sc.spans[0].Descendants {
-						b.Run("scan-shared-memo", func(b *testing.B) {
-							b.ReportAllocs()
-							for b.Loop() {
-								ids, _, err := sharedMemoCatchUp(b.Context(), db, sc.spans, 0, store.through)
-								if err != nil || len(ids) != len(want) {
-									b.Fatal(err, len(ids))
-								}
-							}
-						})
-					}
 					got, err := indexCatchUp(b.Context(), db, store.byDigest, sc.spans, 0, store.through)
 					require.NoError(b, err)
 					require.NotEmpty(b, want)
