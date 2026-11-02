@@ -1260,6 +1260,45 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		require.NotEqual(t, randomA, runRandom(ctx, t, engineClientC), "the cache from before the unclean shutdown should be discarded")
 	})
 
+	t.Run("a start that fails without a reset leaves the cache for the next start", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "persist-failed-start-" + rand.Text()
+		runRandom := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client) string {
+			t.Helper()
+			out, err := core.NewQuery(engineClient).
+				Container().
+				From(alpineImage).
+				WithExec([]string{"sh", "-ec", "head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1"}).
+				Stdout(ctx)
+			require.NoError(t, err)
+			random := strings.TrimSpace(out)
+			require.NotEmpty(t, random)
+			return random
+		}
+
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
+		randomA := runRandom(ctx, t, engineClientA)
+		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
+		upstreamSvcA, engineSvcA, engineClientA = nil, nil, nil
+
+		// An unknown snapshotter fails the start after the engine has opened
+		// its metadata stores, for a reason a reset can't fix.
+		badEngine := devEngineContainerWithStateKey(c, stateKey,
+			engineWithPersistenceTestGC(ctx, t),
+			engineWithBkConfig(ctx, t, func(_ context.Context, _ *testctx.T, cfg bkconfig.Config) bkconfig.Config {
+				cfg.Workers.OCI.Snapshotter = "fuse-overlayfs"
+				return cfg
+			}),
+		)
+		_, err := devEngineContainerAsService(badEngine).Start(ctx)
+		require.Error(t, err, "an engine with an unknown snapshotter should fail to start")
+
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
+		require.Equal(t, randomA, runRandom(ctx, t, engineClientB), "the failed start should leave the cache for the next start")
+	})
+
 	t.Run("container withNewFile hit survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		stateKey := "persist-container-with-new-file-state-" + rand.Text()

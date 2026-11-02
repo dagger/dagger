@@ -672,7 +672,13 @@ func (srv *Server) initLocalCacheState(ctx context.Context, cfg config.Config, o
 		}
 		if resetReason == localCacheStateResetNone {
 			if err != nil {
-				return err
+				// A reset can't fix this failure. Close what it opened, as
+				// the reset path does. A failure before the dagql cache
+				// opens leaves the metadata stores unchanged, so they're
+				// saved clean and the next start keeps the local cache.
+				// After it opens, its store stays marked dirty, so the next
+				// start resets as before.
+				return errors.Join(err, srv.closeLocalCacheStateForReset())
 			}
 			return srv.updateRemoteCacheFixturePersistence(func(report *core.RemoteCacheFixturePersistence) {
 				report.PersistenceResetReason = bootReset.PersistenceResetReason
