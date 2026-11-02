@@ -360,13 +360,8 @@ func explicitGitRepoRoot(modPath string, scheme SchemeType, endpoint *transport.
 	}
 }
 
-// entireWebURL is Entire's web interface, where repositories are browsable at
-// their clone path. It is gitutil.EntireWebURL, kept here so this package stays
-// free of engine dependencies.
 const entireWebURL = "https://entire.io"
 
-// entireRepoRootSegments is the length of an Entire repository path:
-// /<forge>/<owner>/<repo>, e.g. /et/acme/api or /gh/acme/api.
 const entireRepoRootSegments = 3
 
 // entireRepoRoot splits an Entire ref into its repository and subpath without

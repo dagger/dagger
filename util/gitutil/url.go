@@ -11,18 +11,13 @@ import (
 )
 
 const (
-	HTTPProtocol  string = "http"
-	HTTPSProtocol string = "https"
-	SSHProtocol   string = "ssh"
-	GitProtocol   string = "git"
-	// EntireProtocol addresses repositories hosted on Entire
-	// (entire://<cluster-host>/<forge>/<owner>/<repo>). Git reaches them
-	// through the git-remote-entire helper, which speaks smart HTTP over TLS.
+	HTTPProtocol   string = "http"
+	HTTPSProtocol  string = "https"
+	SSHProtocol    string = "ssh"
+	GitProtocol    string = "git"
 	EntireProtocol string = "entire"
 )
 
-// EntireWebURL is the origin of Entire's web interface, where repositories
-// are browsable at the same /<forge>/<owner>/<repo> path they are cloned from.
 const EntireWebURL = "https://entire.io"
 
 var (
