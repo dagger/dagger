@@ -9,9 +9,8 @@ body: |
   core type. Modules declaring an older version keep their old names until
   they bump.
 
-  The experimental `Query.identifier`, `Query.formatIdentifiers` and
-  `Query.namingDictionary` APIs expose the engine's identifier parsing and
-  formatting to SDKs.
+  The experimental `Query.naming` API exposes the engine's identifier parsing
+  and formatting to SDKs, at a given engine version.
 time: 2026-10-29T12:01:00Z
 custom:
   Author: vito

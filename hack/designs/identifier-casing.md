@@ -372,8 +372,8 @@ letter-digit words like versions and product names: `APIv1`, `APIS3` and
   spelling. `K8s` and `K3s` are product names, not acronyms, so `K8STools`,
   `K8sTools` and `k8s-tools` all parse as *K8s · tools. They were added before
   any engine named modules with the dictionary (only the experimental
-  `formatIdentifiers` had shipped, in v1.0.0-beta.20, and no SDK used it), so
-  they're in `Initial` rather than a later dictionary. Other numeronyms
+  `Query.formatIdentifiers` had shipped, in v1.0.0-beta.20, and no SDK used
+  it), so they're in `Initial` rather than a later dictionary. Other numeronyms
   (`k0s`, `i18n`, `l10n`, `a11y`) are left to the heuristic: lowercase or
   capitalized they parse as one word, and their all-caps spellings (`I18N`)
   are as common as the lowercase ones, so no spelling is clearly canonical.
@@ -400,6 +400,21 @@ central list.
 ```graphql
 extend type Query {
   """
+  The engine's identifier naming rules at an engine version. Defaults to the
+  caller's version; normalized as a module's declared version is, capped at
+  the engine's own.
+  """
+  naming(version: String): Naming!
+}
+
+"""The engine's identifier naming rules at an engine version."""
+type Naming implements Node {
+  id: ID!
+
+  """The normalized engine version these rules answer for."""
+  version: String!
+
+  """
   Parse a name in any casing into words. Known acronyms and terms come from
   the naming dictionary; everything else falls back to the case heuristic.
   Errors on non-ASCII input, input with no letters or digits, or input over
@@ -414,16 +429,33 @@ extend type Query {
     names: [String!]!
     casing: Casing!
     acronyms: AcronymStyle = UPPERCASE
-    """
-    The engine version whose naming dictionary to parse the names with, e.g.
-    the __schemaVersion of a schema being generated. Defaults to the caller's
-    engine version.
-    """
-    version: String
   ): [String!]!
 
   """The acronyms and terms used to parse and format identifiers."""
-  namingDictionary: [NamingTerm!]!
+  dictionary: [NamingTerm!]!
+
+  """
+  The names the engine gives the declarations of a module named by these
+  rules. originalName defaults to name.
+  """
+  module(name: String!, originalName: String): ModuleNaming!
+}
+
+"""
+The names the engine gives a module's own declarations, by the naming rules
+of the version the module is named by. ModuleSource.naming and
+CurrentModule.naming return it for a module; Naming.module for any version
+and name.
+"""
+type ModuleNaming implements Node {
+  id: ID!
+  version: String!
+  name: String!
+  originalName: String!
+  typeNames(names: [String!]!): [String!]!
+  fieldNames(names: [String!]!): [String!]!
+  enumMemberNames(names: [String!]!): [String!]!
+  mainObject(candidates: [String!]!): String
 }
 
 """A name parsed into words, which can be formatted in any casing."""
@@ -510,13 +542,20 @@ Notes:
 - `formatIdentifiers` returns scalars on purpose. SDK clients load a list of
   objects one ID at a time, so a list of `Identifier`s would cost a round trip
   per name, and codegen formats thousands of names.
-- `identifier` and `namingDictionary` follow the caller's engine version, like
-  the rest of the schema. So does `formatIdentifiers`, unless given a
-  `version`: a caller generating code for a schema passes its
-  `__schemaVersion`, so the names are parsed with the dictionary of that
-  schema's engine version, whatever version the connection is served at.
-- `formatIdentifiers` isn't cached: it's pure and fast, and caching a result
-  with a large list argument costs more than formatting it.
+- Everything under `naming` answers for one engine version: the caller's, or
+  the one given. A caller generating code for a schema passes its
+  `__schemaVersion` (or the engine version the module declares), so the names
+  are parsed and the module named by the rules of that version, whatever
+  version the connection is served at. The version is normalized as a
+  module's is (`engine.ModuleAPIViewVersion`), which is idempotent, so
+  `naming(version: m.version).module(name: m.name, originalName:
+  m.originalName)` answers exactly as a `ModuleNaming` `m` does.
+- `module` takes the original name as well as the name: a module loaded under
+  another name (a dependency alias) namespaces its types under that name, but
+  strips a type's prefix, and finds its main object, by its original name.
+- `formatIdentifiers` and `ModuleNaming`'s lists aren't cached: they're pure
+  and fast, and caching a result with a large list argument costs more than
+  computing it.
 - `Casing` and `AcronymStyle` can gain values later without breaking anyone.
 - Like every object in the schema, `IdentifierWord` and `NamingTerm` also
   implement `Node`.
@@ -524,7 +563,7 @@ Notes:
   (`v1.0.0-0` and above), including the views whose modules keep the strcase
   names. Which rules a module's names follow is decided by the engine version
   it declares (see [The gate](#the-gate)), not by the API's presence; the
-  `version` argument of `formatIdentifiers` selects the dictionary.
+  `version` argument of `naming` selects them.
 
 ## Engine Integration
 
@@ -724,7 +763,7 @@ rules, so no engine names a module by rules it doesn't have. The Go
 generator gates on the same cut, by the generated schema's `__schemaVersion`,
 which for a module is that capped view
 (see [SDK Integration](#sdk-integration)). Nothing gates on
-`Query.formatIdentifiers` being in the schema: it is served on every v1 view
+`Query.naming` being in the schema: it is served on every v1 view
 (from `v1.0.0-0`).
 
 There are no aliases for the old spellings: a module's schema has exactly the
@@ -1131,7 +1170,8 @@ converters, so none of them carries a copy.
 
 1. The `engine/naming` package: parser, formatter, dictionary, and the
    test-vector file as table tests, with property tests for the guarantees.
-2. The core API (`identifier`, `formatIdentifiers`, `namingDictionary`).
+2. The core API (`Query.naming`: `identifier`, `formatIdentifiers`,
+   `dictionary`, `module`).
 3. Prerelease-granular API views (#14810), shipped in `v1.0.0-beta.22`, so
    the cut can sit at a prerelease: `v1.0.0-beta.26`
    (`engine.IdentifierCasingVersion`).

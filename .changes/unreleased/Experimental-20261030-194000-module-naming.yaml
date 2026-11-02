@@ -9,7 +9,8 @@ body: |
   is loaded instead of reimplementing the engine's naming rules. Names the rules
   can't parse are errors. It's served on every v1 API view. Module runtimes,
   which have no `ModuleSource`, get the same answers from
-  `CurrentModule.naming`.
+  `CurrentModule.naming`, and `Query.naming(version:).module(name:)` answers the
+  same given a module's version, name and original name.
 time: 2026-10-30T19:40:00Z
 custom:
   Author: vito
