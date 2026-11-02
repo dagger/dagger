@@ -9,8 +9,7 @@ const (
 	DaggerInitSessionPath = distconsts.DaggerInitSessionPath
 	DaggerCLIPath         = distconsts.DaggerCLIPath
 	TiniPath              = distconsts.TiniPath
-	// Git runs git-remote-<scheme> from PATH for entire:// remotes.
-	GitRemoteEntirePath = "/usr/local/bin/git-remote-entire"
+	GitRemoteEntirePath   = "/usr/local/bin/git-remote-entire"
 )
 
 const (
@@ -39,9 +38,6 @@ const (
 
 	XxImage = "tonistiigi/xx:1.2.1"
 
-	// The Entire CLI release that provides git-remote-entire, with the
-	// checksums its checksums.txt lists for each supported architecture.
-	// Update by hand.
 	EntireCLIVersion = "0.12.2"
 )
 
