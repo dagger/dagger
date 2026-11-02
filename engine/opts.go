@@ -272,6 +272,9 @@ type ClientMetadata struct {
 	// of this client's work. Experimental; the recorded events are retrieved
 	// via the engine debug endpoints.
 	Profile bool `json:"profile,omitempty"`
+	// ProfileEBPF names the eBPF programs a profiled session asks for (see
+	// engine/ebpf/wcbpf), loaded while it lasts.
+	ProfileEBPF []string `json:"profile_ebpf,omitempty"`
 }
 
 type suppressTelemetryCtxKey struct{}

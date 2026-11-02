@@ -38,6 +38,7 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	sdkresource "go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
@@ -221,6 +222,84 @@ func TestNestedTransportRegistrationBindsExactExecAttachables(t *testing.T) {
 	wrongSecret := nestedTransportTestMetadata("wrong-secret")
 	_, err = srv.RegisterNestedClientTransportForExec(ctx, wrongSecret, parent.clientID, bootstrapMetadata.ClientID, false)
 	require.ErrorContains(t, err, "different secret token")
+}
+
+func TestTelemetryStoresOnlyForClientsThatCanSubscribe(t *testing.T) {
+	t.Parallel()
+
+	srv, sess, parent, ctx, requestScope := newNestedTransportTestFixture(t)
+	defer requestScope.Lease().Release()
+
+	// An exec's own identity, as its session helper and its SDK's calls
+	// register it.
+	execMetadata := nestedTransportTestMetadata("exec")
+	execTransport, err := srv.RegisterNestedClientTransportForExec(ctx, execMetadata, parent.clientID, execMetadata.ClientID, false)
+	require.NoError(t, err)
+	defer execTransport.Close()
+
+	// A CLI in that exec, under an identity of its own.
+	cliMetadata := nestedTransportTestMetadata("exec-cli")
+	cliMetadata.ClientSecretToken = execMetadata.ClientSecretToken
+	cliTransport, err := srv.RegisterNestedClientTransportForExec(ctx, cliMetadata, parent.clientID, execMetadata.ClientID, false)
+	require.NoError(t, err)
+	defer cliTransport.Close()
+
+	// An in-engine SDK client.
+	sdkTransport, err := srv.RegisterNestedClientTransport(ctx, nestedTransportTestMetadata("sdk"), parent.clientID)
+	require.NoError(t, err)
+	defer sdkTransport.Close()
+
+	// A CLI run under `dagger api with-session`.
+	child, err := srv.childClient(ctx, parent, "with-session-cli", http.Header{})
+	require.NoError(t, err)
+	defer child.transport.Close()
+
+	sess.clientMu.RLock()
+	unread := map[string]bool{}
+	for id, record := range sess.clientRecords {
+		unread[id] = record.telemetryUnread
+	}
+	execRuntime := sess.clientRuntimes["exec"]
+	sess.clientMu.RUnlock()
+	require.Equal(t, map[string]bool{
+		"parent":           false,
+		"exec":             true,
+		"exec-cli":         false,
+		"sdk":              true,
+		"with-session-cli": false,
+	}, unread)
+
+	for origin, want := range map[string][]string{
+		"parent":           {"parent"},
+		"exec":             {"parent"},
+		"sdk":              {"parent"},
+		"exec-cli":         {"exec-cli", "parent"},
+		"with-session-cli": {"with-session-cli", "parent"},
+	} {
+		route, err := sess.telemetryRouteOriginClientID(origin)
+		require.NoError(t, err)
+		require.Equal(t, want, route, "route for %s", origin)
+	}
+
+	delivery, err := sess.telemetryDeliveryClientIDs(execRuntime.clientRecord)
+	require.NoError(t, err)
+	require.Equal(t, []string{"parent"}, delivery)
+	sess.clientMu.RLock()
+	cliRecord := sess.clientRecords["exec-cli"]
+	sess.clientMu.RUnlock()
+	delivery, err = sess.telemetryDeliveryClientIDs(cliRecord)
+	require.NoError(t, err)
+	require.Equal(t, []string{"parent", "exec-cli"}, delivery)
+
+	require.NoError(t, execRuntime.retainTelemetryDB(ctx))
+	require.Nil(t, execRuntime.telemetryDB, "a client nothing reads gets no store")
+	require.NoError(t, execRuntime.closeTelemetryDB())
+
+	ps := &PubSub{}
+	err = ps.streamHandler(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/v1/traces", nil), execRuntime.clientRecord, nil)
+	var refused httpError
+	require.ErrorAs(t, err, &refused)
+	require.Equal(t, http.StatusForbidden, refused.code, "a refused subscription must not be retried")
 }
 
 func TestNestedTransportRegistrationWaitsForExpectedAttachables(t *testing.T) {
@@ -2158,13 +2237,13 @@ func TestTelemetryStreamFramesBatchesAndDrain(t *testing.T) {
 	req.Header.Set("Accept", enginetel.LiveContentType)
 	req.Header.Set(enginetel.LiveCursorHeader, "4")
 	resp := httptest.NewRecorder()
-	err := ps.streamHandler(resp, req, record, func(_ context.Context, _ *clientdb.DB, since int64, _ int) (int64, proto.Message, int, error) {
+	err := ps.streamHandler(resp, req, record, func(_ context.Context, _ *clientdb.DB, since int64, _ int) (int64, streamEncoder, int, error) {
 		switch since {
 		case 4, 5:
 			next := since + 1
-			return next, &collogspb.ExportLogsServiceRequest{
+			return next, encodeMessage(&collogspb.ExportLogsServiceRequest{
 				ResourceLogs: []*otlplogsv1.ResourceLogs{{SchemaUrl: fmt.Sprintf("batch-%d", next)}},
-			}, 1, nil
+			}), 1, nil
 		default:
 			return since, nil, 0, nil
 		}
@@ -2214,7 +2293,7 @@ func TestTelemetryStreamRejectsInvalidCursorAsBadRequest(t *testing.T) {
 		req.Header.Set(enginetel.LiveCursorHeader, cursor)
 		resp := httptest.NewRecorder()
 		fetched := false
-		err := ps.streamHandler(resp, req, record, func(context.Context, *clientdb.DB, int64, int) (int64, proto.Message, int, error) {
+		err := ps.streamHandler(resp, req, record, func(context.Context, *clientdb.DB, int64, int) (int64, streamEncoder, int, error) {
 			fetched = true
 			return 0, nil, 0, nil
 		})
@@ -2243,11 +2322,11 @@ func TestTelemetryStreamDefaultsToLegacySSE(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/v1/logs", nil)
 	req.Header.Set(enginetel.LegacyLiveCursorHeader, "4")
 	resp := httptest.NewRecorder()
-	err := ps.streamHandler(resp, req, record, func(_ context.Context, _ *clientdb.DB, since int64, _ int) (int64, proto.Message, int, error) {
+	err := ps.streamHandler(resp, req, record, func(_ context.Context, _ *clientdb.DB, since int64, _ int) (int64, streamEncoder, int, error) {
 		if since != 4 {
 			return since, nil, 0, nil
 		}
-		return 5, &collogspb.ExportLogsServiceRequest{
+		return 5, encodeMessage(&collogspb.ExportLogsServiceRequest{
 			ResourceLogs: []*otlplogsv1.ResourceLogs{{
 				ScopeLogs: []*otlplogsv1.ScopeLogs{{
 					LogRecords: []*otlplogsv1.LogRecord{{
@@ -2255,7 +2334,7 @@ func TestTelemetryStreamDefaultsToLegacySSE(t *testing.T) {
 					}},
 				}},
 			}},
-		}, 1, nil
+		}), 1, nil
 	})
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.Code)
@@ -2308,14 +2387,14 @@ func TestTelemetryStreamSplitsOversizedBatchesAndProgresses(t *testing.T) {
 		limit int
 	}
 	var calls []fetchCall
-	fetcher := func(_ context.Context, _ *clientdb.DB, since int64, limit int) (int64, proto.Message, int, error) {
+	fetcher := func(_ context.Context, _ *clientdb.DB, since int64, limit int) (int64, streamEncoder, int, error) {
 		calls = append(calls, fetchCall{since: since, limit: limit})
 		remaining := 4 - int(since)
 		if remaining == 0 {
 			return since, nil, 0, nil
 		}
 		rows := min(limit, remaining)
-		return since + int64(rows), batch(since, rows), rows, nil
+		return since + int64(rows), encodeMessage(batch(since, rows)), rows, nil
 	}
 
 	resp := httptest.NewRecorder()
@@ -2379,17 +2458,17 @@ func TestTelemetryStreamSkipsSingleOversizedRow(t *testing.T) {
 		resp,
 		req,
 		record,
-		func(_ context.Context, _ *clientdb.DB, since int64, _ int) (int64, proto.Message, int, error) {
+		func(_ context.Context, _ *clientdb.DB, since int64, _ int) (int64, streamEncoder, int, error) {
 			fetches = append(fetches, since)
 			switch since {
 			case 0:
 				// Row 1 can never fit in a frame; it stays in the DB, so the
 				// stream must get past it rather than end on it.
-				return 1, &collogspb.ExportLogsServiceRequest{
+				return 1, encodeMessage(&collogspb.ExportLogsServiceRequest{
 					ResourceLogs: []*otlplogsv1.ResourceLogs{{SchemaUrl: strings.Repeat("x", 100)}},
-				}, 1, nil
+				}), 1, nil
 			case 1:
-				return 2, small, 1, nil
+				return 2, encodeMessage(small), 1, nil
 			default:
 				return since, nil, 0, nil
 			}
@@ -2446,12 +2525,12 @@ func TestTelemetryStreamInterruptsOnFetchError(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/v1/logs", nil)
 	req.Header.Set("Accept", enginetel.LiveContentType)
 	req.Header.Set(enginetel.LiveCursorHeader, "3")
-	err := ps.streamHandler(resp, req, record, func(_ context.Context, _ *clientdb.DB, since int64, _ int) (int64, proto.Message, int, error) {
+	err := ps.streamHandler(resp, req, record, func(_ context.Context, _ *clientdb.DB, since int64, _ int) (int64, streamEncoder, int, error) {
 		fetches++
 		if since == 3 {
-			return 4, &collogspb.ExportLogsServiceRequest{
+			return 4, encodeMessage(&collogspb.ExportLogsServiceRequest{
 				ResourceLogs: []*otlplogsv1.ResourceLogs{{SchemaUrl: "batch-4"}},
-			}, 1, nil
+			}), 1, nil
 		}
 		return 0, nil, 0, errors.New("database is locked")
 	})
@@ -2880,18 +2959,26 @@ func TestSessionTeardownFlushesTraceTelemetryAfterMetricShutdown(t *testing.T) {
 	gauge.Record(cleanupCtx, 1)
 	sess.schemaBuilderMemo.Store(core.NewSchemaBuilderMemo())
 
+	// Hold the main store the way a Cloud forwarder does: the session's end
+	// retires it, and it is deleted once this last reader closes it.
+	db, err := srv.clientDBs.OpenForAppend(t.Context(), client.clientID)
+	require.NoError(t, err)
+
 	require.NoError(t, srv.removeDaggerSession(t.Context(), sess))
 	require.Nil(t, sess.schemaBuilderMemo.Load(), "the session's schema memo is dropped with it")
 	require.Nil(t, client.telemetryDB)
-	require.Equal(t, clientdb.OpenStats{}, srv.clientDBs.OpenStats())
+	require.Equal(t, clientdb.OpenStats{Stores: 1, Streams: 3, Refs: 1}, srv.clientDBs.OpenStats(),
+		"only the test's reader holds the store")
 	select {
 	case <-exported:
 	default:
 		t.Fatal("final session telemetry barrier did not flush metrics")
 	}
-	db, err := srv.clientDBs.Open(t.Context(), client.clientID)
-	require.NoError(t, err)
-	defer db.Close()
+	defer func() {
+		require.NoError(t, db.Close())
+		_, err := os.Stat(filepath.Join(srv.clientDBs.Root, client.clientID+".spans.log"))
+		require.ErrorIs(t, err, os.ErrNotExist, "a retired store goes with its last reader")
+	}()
 	spans, err := db.Read().SelectSpansSince(t.Context(), clientdb.SelectSpansSinceParams{Limit: 100})
 	require.NoError(t, err)
 	var liveSnapshots, completedSnapshots int
@@ -2948,8 +3035,8 @@ func TestMainClientTraceStreamDeliversSessionEnd(t *testing.T) {
 	// The stream reads the store as TracesSubscribeHandler's fetcher does, and
 	// reports each read that finds nothing once the client has shut down.
 	idleAfterShutdown := make(chan struct{}, 2)
-	fetch := func(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, proto.Message, int, error) {
-		next, req, rows, err := fetchSpanBatch(ctx, db, since, limit, nil)
+	fetch := func(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, streamEncoder, int, error) {
+		next, encode, rows, err := fetchTraceStreamBatch(ctx, db, since, limit)
 		select {
 		case <-client.shutdownCh:
 			if rows == 0 && err == nil {
@@ -2960,10 +3047,7 @@ func TestMainClientTraceStreamDeliversSessionEnd(t *testing.T) {
 			}
 		default:
 		}
-		if req == nil {
-			return next, nil, rows, err
-		}
-		return next, req, rows, err
+		return next, encode, rows, err
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
@@ -4169,6 +4253,78 @@ func TestWithoutLogOriginPreservesCallPayloadRecord(t *testing.T) {
 	require.NotContains(t, attrs, telemetryattrs.TelemetryOriginClientIDAttr)
 	require.Equal(t, telemetryattrs.CallPayloadContentType, attrs[telemetry.ContentTypeAttr].AsString())
 	require.Equal(t, "value", attrs["test.keep"].AsString())
+}
+
+// A record that replaced an attribute is stored with the replacement
+// normalized, as the SDK normalizes attributes it sets. The SDK keeps a
+// replacement as given, so the exporter must take the origin out through
+// SetAttributes rather than write the record's attributes as they are.
+func TestSessionLogExporterNormalizesReplacedAttribute(t *testing.T) {
+	dbs := clientdb.NewDBs(t.TempDir())
+	srv := &Server{clientDBs: dbs}
+	srv.telemetryPubSub = NewPubSub(srv)
+	sess := &daggerSession{clientRecords: map[string]*clientRecord{}}
+	sess.clientRecords["client"] = &clientRecord{daggerSession: sess, clientID: "client"}
+	exporter := sessionLogExporter{sess: sess, ps: srv.telemetryPubSub}
+
+	require.NoError(t, exporter.Export(t.Context(), []sdklog.Record{scopedLogRecord(t,
+		"test.core",
+		otellog.StringValue("body"),
+		otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, "client"),
+		otellog.String("test.keep", "initial"),
+		otellog.Map("test.keep",
+			otellog.String("k", "first"),
+			otellog.String("k", "last")),
+	)}))
+
+	db, err := dbs.Open(t.Context(), "client")
+	require.NoError(t, err)
+	defer db.Close()
+	rows, err := db.Read().SelectLogsSince(t.Context(), clientdb.SelectLogsSinceParams{Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	var kvs []*otlpcommonv1.KeyValue
+	require.NoError(t, clientdb.UnmarshalProtoList(rows[0].Attributes, &otlpcommonv1.KeyValue{}, &kvs))
+	require.Len(t, kvs, 1)
+	require.Equal(t, "test.keep", kvs[0].GetKey())
+	entries := kvs[0].GetValue().GetKvlistValue().GetValues()
+	require.Len(t, entries, 1)
+	require.Equal(t, "k", entries[0].GetKey())
+	require.Equal(t, "last", entries[0].GetValue().GetStringValue())
+}
+
+// One encoder encodes a batch's rows: each row is the row of its record
+// alone, byte for byte, whichever scopes and resources the encoder has
+// already encoded.
+func TestLogRowEncoderSharesScopesAndResources(t *testing.T) {
+	payload, _ := serverCallPayload(t, "lookup", "value")
+	payloadRecord := scopedLogRecord(t,
+		"test.core",
+		otellog.BytesValue(payload),
+		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
+		otellog.String("test.keep", "value"),
+	)
+	otherScope := scopedLogRecord(t, "test.other", otellog.StringValue("output"))
+	capture := new(callPayloadRecordCapture)
+	provider := sdklog.NewLoggerProvider(
+		sdklog.WithResource(sdkresource.NewSchemaless(attribute.String("test.resource", "other"))),
+		sdklog.WithProcessor(sdklog.NewSimpleProcessor(capture)),
+	)
+	record := otellog.Record{}
+	record.SetBody(otellog.StringValue("other resource"))
+	provider.Logger("test.core").Emit(t.Context(), record)
+	require.NoError(t, provider.Shutdown(t.Context()))
+	require.Len(t, capture.records, 1)
+	otherResource := capture.records[0]
+
+	enc := newLogRowEncoder()
+	for _, rec := range []sdklog.Record{payloadRecord, otherScope, otherResource, payloadRecord} {
+		row, err := enc.row(&rec)
+		require.NoError(t, err)
+		want, err := logRecordRow(&rec)
+		require.NoError(t, err)
+		require.Equal(t, want, row)
+	}
 }
 
 func TestSessionLogExporterRoutesCallPayloadOnlyToMissingTargets(t *testing.T) {

@@ -1117,6 +1117,10 @@ type ExtendedError interface {
 func (s *Server) Exec(ctx1 context.Context) graphql.ResponseHandler {
 	return func(ctx context.Context) (res *graphql.Response) {
 		gqlOp := graphql.GetOperationContext(ctx)
+		// gqlgen read, parsed and validated the request before this handler
+		RecordStep(ctx, "graphql.read", gqlOp.Stats.Read.Start, gqlOp.Stats.Read.End)
+		RecordStep(ctx, "graphql.parse", gqlOp.Stats.Parsing.Start, gqlOp.Stats.Parsing.End)
+		RecordStep(ctx, "graphql.validate", gqlOp.Stats.Validation.Start, gqlOp.Stats.Validation.End)
 
 		if err := gqlOp.Validate(ctx); err != nil {
 			return graphql.ErrorResponse(ctx, "validate: %s", err)
@@ -1129,7 +1133,9 @@ func (s *Server) Exec(ctx1 context.Context) graphql.ResponseHandler {
 			}
 		}
 
+		_, marshalStep := BeginStep(ctx, "graphql.marshal")
 		data, err := json.Marshal(results)
+		marshalStep.End(err)
 		if err != nil {
 			return graphql.ErrorResponse(ctx, "marshal: %s", err)
 		}
@@ -1183,11 +1189,15 @@ func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (r
 				continue
 			}
 			var sels []Selection
-			sels, rerr = s.parseASTSelections(ctx, gqlOp, s.root.Type(), op.SelectionSet)
+			selCtx, selStep := BeginStep(ctx, "graphql.selections")
+			sels, rerr = s.parseASTSelections(selCtx, gqlOp, s.root.Type(), op.SelectionSet)
+			selStep.End(rerr)
 			if rerr != nil {
 				return nil, fmt.Errorf("query:\n%s\n\nerror: parse selections: %w", gqlOp.RawQuery, rerr)
 			}
-			results, rerr = s.Resolve(ctx, s.root, sels...)
+			resolveCtx, resolveStep := BeginStep(ctx, "graphql.resolve")
+			results, rerr = s.Resolve(resolveCtx, s.root, sels...)
+			resolveStep.End(rerr)
 			if rerr != nil {
 				return nil, rerr
 			}

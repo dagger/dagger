@@ -10,6 +10,64 @@ type Usage struct {
 	CPUSystemUS int64
 	// MemPeakBytes is the scope's peak memory, 0 when it couldn't be read.
 	MemPeakBytes int64
+	// CPUIowaitUS, CPUStealUS and CPUIdleUS are a whole machine's CPU time
+	// waiting for I/O, taken by its hypervisor for other guests, and idle,
+	// summed over its cores. Only machine scopes have them.
+	CPUIowaitUS int64
+	CPUStealUS  int64
+	CPUIdleUS   int64
+	// MinorFaults and MajorFaults are the scope's page faults: those served
+	// without I/O, and those that needed it. HugeFaults are those that
+	// allocated a transparent huge page. Process and exec scopes have them.
+	MinorFaults int64
+	MajorFaults int64
+	HugeFaults  int64
+	// CPUStallUS and MemStallUS are the time any of the scope's tasks
+	// stalled waiting for a CPU and for memory (its cgroup's cpu.pressure and
+	// memory.pressure "some" totals). Only exec scopes have them.
+	CPUStallUS int64
+	MemStallUS int64
+	// GoAllocBytes, GoGCCycles and GoGCCPUUS are a Go process's cumulative
+	// heap allocations, its completed GC cycles, and the CPU time its runtime
+	// estimates the GC used. Only the engine process scope has them.
+	GoAllocBytes int64
+	GoGCCycles   int64
+	GoGCCPUUS    int64
+	// IOReadBytes and IOWriteBytes are the bytes a cgroup scope read from
+	// and wrote to block devices.
+	IOReadBytes  int64
+	IOWriteBytes int64
+	// MemAnonBytes, MemFileBytes and MemHugeBytes are a cgroup's memory at
+	// the reading's time: anonymous memory, file pages, and the part of both
+	// in transparent huge pages. Only sample scopes have them.
+	MemAnonBytes int64
+	MemFileBytes int64
+	MemHugeBytes int64
+	// GCAssistUS, GCDedicatedUS, GCIdleUS and GCPauseUS are the CPU time a
+	// Go process's GC took, by class, as the runtime estimates it: mark
+	// assists by allocating goroutines, dedicated and idle mark workers, and
+	// stop-the-world pauses, counted as the pause's duration times GOMAXPROCS
+	// rather than processor time used. HeapLiveBytes is the heap the last GC
+	// marked live, and HeapGoalBytes the heap size the next GC aims for.
+	// ScanHeapBytes and ScanGlobalsBytes are the scannable heap and globals
+	// now, and ScanStackBytes the stack the last GC scanned. Only Go runtime
+	// sample scopes have them; see runtime/metrics for the definitions.
+	GCAssistUS       int64
+	GCDedicatedUS    int64
+	GCIdleUS         int64
+	GCPauseUS        int64
+	HeapLiveBytes    int64
+	HeapGoalBytes    int64
+	ScanHeapBytes    int64
+	ScanStackBytes   int64
+	ScanGlobalsBytes int64
+	// RunqWaitUS is the time the scope's threads spent runnable but waiting
+	// for a CPU, summed over its threads, and RunqWaits how many such waits
+	// ended; OnCPUUS is the time its threads ran. Only exec scheduling scopes
+	// have them.
+	RunqWaitUS int64
+	RunqWaits  int64
+	OnCPUUS    int64
 }
 
 // Usage scopes of an exec.
@@ -21,6 +79,11 @@ const (
 	// exec's resource cgroup, read with it, and only when a helper ran: the
 	// workload's usage is the exec cgroup's less this.
 	UsageScopeMountHelpers = "mount_helpers"
+	// UsageScopeExecSched is the exec's resource cgroup's threads as the
+	// exec_sched eBPF program saw them (engine/ebpf/execsched): the workload
+	// and its mount helpers, from the exec's start, when a recording asked for
+	// the program.
+	UsageScopeExecSched = "exec_sched"
 )
 
 type usageRecord struct {

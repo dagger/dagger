@@ -125,7 +125,7 @@ func (lazy *LazyState) Evaluate(ctx context.Context, typeName string, run func(c
 	}
 
 	start := time.Now()
-	slog.InfoContext(ctx, "start lazy evaluation",
+	slog.ExtraDebugContext(ctx, "start lazy evaluation",
 		"field", typeName,
 	)
 	defer func() {
@@ -136,7 +136,7 @@ func (lazy *LazyState) Evaluate(ctx context.Context, typeName string, run func(c
 		if rerr != nil {
 			args = append(args, "err", rerr)
 		}
-		slog.InfoContext(ctx, "end lazy evaluation", args...)
+		slog.ExtraDebugContext(ctx, "end lazy evaluation", args...)
 	}()
 
 	if run != nil {
@@ -196,7 +196,7 @@ func (lazy *LazyState) EvaluateGroup(ctx context.Context, typeName string, group
 	}
 
 	start := time.Now()
-	slog.InfoContext(ctx, "start lazy group evaluation",
+	slog.ExtraDebugContext(ctx, "start lazy group evaluation",
 		"field", typeName,
 		"group", string(group),
 	)
@@ -209,7 +209,7 @@ func (lazy *LazyState) EvaluateGroup(ctx context.Context, typeName string, group
 		if rerr != nil {
 			args = append(args, "err", rerr)
 		}
-		slog.InfoContext(ctx, "end lazy group evaluation", args...)
+		slog.ExtraDebugContext(ctx, "end lazy group evaluation", args...)
 	}()
 
 	if rerr = run(ctx); rerr != nil {

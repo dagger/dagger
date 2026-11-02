@@ -7,7 +7,8 @@ import (
 )
 
 type rowCodec[Row any] struct {
-	encode func(Row) []byte
+	// encode appends row's encoding to buf.
+	encode func(buf []byte, row Row) []byte
 	decode func([]byte) (Row, error)
 	size   func(Row) int64
 	getID  func(Row) int64
@@ -189,8 +190,8 @@ func sizeSpan(row Span) int64 {
 		len(row.StatusMessage)+len(row.InstrumentationScope)+len(row.Resource)+len(row.ResourceSchemaURL))
 }
 
-func encodeSpan(row Span) []byte {
-	e := rowEncoder{buf: make([]byte, 0, sizeSpan(row))}
+func encodeSpan(buf []byte, row Span) []byte {
+	e := rowEncoder{buf: buf}
 	e.int64(row.ID)
 	e.string(row.TraceID)
 	e.string(row.SpanID)
@@ -298,8 +299,8 @@ func sizeLog(row Log) int64 {
 		len(row.Body)+len(row.Attributes)+len(row.InstrumentationScope)+len(row.Resource)+len(row.ResourceSchemaURL))
 }
 
-func encodeLog(row Log) []byte {
-	e := rowEncoder{buf: make([]byte, 0, sizeLog(row))}
+func encodeLog(buf []byte, row Log) []byte {
+	e := rowEncoder{buf: buf}
 	e.int64(row.ID)
 	e.nullString(row.TraceID)
 	e.nullString(row.SpanID)
@@ -355,8 +356,8 @@ func decodeLog(buf []byte) (Log, error) {
 }
 
 var metricCodec = rowCodec[Metric]{
-	encode: func(row Metric) []byte {
-		e := rowEncoder{buf: make([]byte, 0, sizeMetric(row))}
+	encode: func(buf []byte, row Metric) []byte {
+		e := rowEncoder{buf: buf}
 		e.int64(row.ID)
 		e.bytes(row.Data)
 		return e.buf
