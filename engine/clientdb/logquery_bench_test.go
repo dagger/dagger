@@ -201,12 +201,25 @@ func newCatchUpStore(b *testing.B, rows int) *catchUpStore {
 	// Spill every row, so that each run reads bodies the same way: from the
 	// spill file (in the page cache), as for all but a session's newest rows.
 	require.NoError(b, db.logs.flush(b.Context()))
+	// The own span: a call of a turn near the end that has display rows
+	// (all of them do at a million rows; a small store may leave some bare).
 	tt := turns - 3
+	var own string
+	for c := 7; c < catchUpSpansPerTurn && own == ""; c++ {
+		id := catchUpSpanID(turnBase(tt) + c)
+		for _, row := range db.logIdx.rowsBySpan[id] {
+			if db.logIdx.meta[row-1].flags.display() {
+				own = id
+				break
+			}
+		}
+	}
+	require.NotEmpty(b, own, "no call span near the end has display rows")
 	return &catchUpStore{
 		db:       db,
 		through:  db.HighWater().Logs,
 		spans:    len(spans),
-		own:      catchUpSpanID(turnBase(tt) + 7),
+		own:      own,
 		turn:     catchUpSpanID(turnBase(tt)),
 		digest:   "xxh3:svc7",
 		byDigest: digestRows(db),
@@ -358,7 +371,8 @@ func BenchmarkLiveLogCatchUp(b *testing.B) {
 					}
 					got, err := indexCatchUp(b.Context(), db, store.byDigest, sc.spans, 0, store.through)
 					require.NoError(b, err)
-					require.Equal(b, want, got, "the index prototype reads the same rows")
+					require.NotEmpty(b, want)
+					require.True(b, slices.Equal(want, got), "the index prototype reads the same rows")
 					b.Run("index", func(b *testing.B) {
 						b.ReportAllocs()
 						for b.Loop() {
@@ -372,21 +386,33 @@ func BenchmarkLiveLogCatchUp(b *testing.B) {
 				})
 			}
 			// The archive's fixed-cut scope, as serveArchiveSignal resolves
-			// it: a span view (its topology cached per cut, so built once
-			// here), then the same windowed scan, with no live placement.
+			// it: a span view (its topology cached per cut, and built here
+			// before timing), then the same windowed scan, with no live
+			// placement.
 			b.Run("archive-tree/scan", func(b *testing.B) {
+				tree := []archive.LogSpan{{SpanID: store.turn, Descendants: true}}
+				want, _, err := scanCatchUp(b.Context(), db, tree, 0, store.through)
+				require.NoError(b, err)
 				cut := db.HighWater()
+				_, err = db.SpanViewAt(b.Context(), selectionTrace, cut, nil)
+				require.NoError(b, err)
 				b.ReportAllocs()
 				for b.Loop() {
 					view, err := db.SpanViewAt(b.Context(), selectionTrace, cut, nil)
 					require.NoError(b, err)
-					scope := view.LogQueryScope([]archive.LogSpan{{SpanID: store.turn, Descendants: true}})
+					scope := view.LogQueryScope(tree)
+					n := 0
 					for after := int64(0); after < store.through; {
-						_, next, err := db.SelectDisplayLogs(b.Context(), SelectLogsRangeParams{AfterID: after, ThroughID: store.through, Limit: catchUpWindow}, selectionTrace, scope)
+						rows, next, err := db.SelectDisplayLogs(b.Context(), SelectLogsRangeParams{AfterID: after, ThroughID: store.through, Limit: catchUpWindow}, selectionTrace, scope)
 						require.NoError(b, err)
 						after = next
+						n += len(rows)
+					}
+					if n != len(want) {
+						b.Fatalf("archive read %d rows, the live scan %d", n, len(want))
 					}
 				}
+				b.ReportMetric(float64(len(want)), "rows/op")
 			})
 		})
 	}

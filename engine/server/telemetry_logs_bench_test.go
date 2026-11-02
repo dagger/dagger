@@ -181,8 +181,31 @@ func appendCatchUpStore(b *testing.B, db *clientdb.DB, rows int) (own, turn, dig
 	// Spill every row, as clientdb's benchmark does.
 	_, err = db.Checkpoint(b.Context())
 	require.NoError(b, err)
+	// The own span: a call of a turn near the end that has display rows.
 	tt := turns - 3
-	return catchUpSpanID(turnBase(tt) + 7), catchUpSpanID(turnBase(tt)), "xxh3:svc7"
+	for c := 7; c < catchUpSpansPerTurn; c++ {
+		id := catchUpSpanID(turnBase(tt) + c)
+		if catchUpDisplayRows(b, db, []archive.LogSpan{{SpanID: id}}) > 0 {
+			return id, catchUpSpanID(turnBase(tt)), "xxh3:svc7"
+		}
+	}
+	b.Fatal("no call span near the end has display rows")
+	return "", "", ""
+}
+
+// catchUpDisplayRows counts the display rows a catch-up of spans returns,
+// read in the store as the server's fetcher reads them.
+func catchUpDisplayRows(b *testing.B, db *clientdb.DB, spans []archive.LogSpan) int {
+	scope := db.LiveLogScope(spans)
+	through := db.HighWater().Logs
+	n := 0
+	for after := int64(0); after < through; {
+		rows, next, err := db.SelectDisplayLogs(b.Context(), clientdb.SelectLogsRangeParams{AfterID: after, ThroughID: through, Limit: otlpBatchSize}, "", scope)
+		require.NoError(b, err)
+		after = next
+		n += len(rows)
+	}
+	return n
 }
 
 // catchUpOverHTTP sends one catch-up query and reads it to its terminal
@@ -252,11 +275,16 @@ func BenchmarkLiveLogCatchUpHTTP(b *testing.B) {
 				{"tree", []archive.LogSpan{{SpanID: turn, Descendants: true}}},
 			} {
 				b.Run(sc.name, func(b *testing.B) {
+					want := catchUpDisplayRows(b, db, sc.spans)
+					require.NotZero(b, want)
 					q := archive.LogQuery{Spans: sc.spans, Through: through}
 					var frames, records int
 					b.ReportAllocs()
 					for b.Loop() {
 						frames, records = catchUpOverHTTP(b, ts, q)
+						if records != want {
+							b.Fatalf("read %d records, want %d", records, want)
+						}
 					}
 					b.ReportMetric(float64(frames), "frames/op")
 					b.ReportMetric(float64(records), "rows/op")
