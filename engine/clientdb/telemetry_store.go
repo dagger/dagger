@@ -13,6 +13,7 @@ import (
 	"slices"
 	"sort"
 	"sync"
+	"sync/atomic"
 
 	telemetry "github.com/dagger/otel-go"
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
@@ -26,6 +27,10 @@ type spanLookupKey struct {
 
 type spanLookup struct {
 	mu sync.RWMutex
+	// gen counts the batches of span rows added. Readers that memoize an
+	// answer that more spans or links could change (see place) revalidate it
+	// when gen moves. Written under mu; read without it.
+	gen atomic.Uint64
 
 	// The composite key preserves SelectSpan's trace_id + span_id predicate.
 	firstRow map[spanLookupKey]int64
@@ -121,8 +126,12 @@ func (l *spanLookup) addAll(rows []Span) {
 	for i, row := range rows {
 		l.addLocked(row, targets[i])
 	}
+	l.gen.Add(1)
 	l.mu.Unlock()
 }
+
+// generation is the current gen.
+func (l *spanLookup) generation() uint64 { return l.gen.Load() }
 
 func (l *spanLookup) addLocked(row Span, causalTargets []string) {
 	// Link edges are indexed before (and regardless of) the duplicate-snapshot
@@ -513,30 +522,71 @@ func (l *spanLookup) hasSpan(spanID string) bool {
 	return found
 }
 
-// beneath reports whether spanID is in scope or reachable from it upward,
-// over the reverse of logScope's downward edges: the parent edge and the
-// span's own cause links. Cycle-safe.
-func (l *spanLookup) beneath(spanID string, scope map[string]bool) bool {
+// placementMemo remembers, for one reader, the spans place found not beneath
+// its scope, as of one generation of the index: more spans or links may
+// place them later, but until the index changes they need no second walk.
+type placementMemo struct {
+	gen uint64
+	out map[string]struct{}
+	// Buffers reused across walks: seen holds the walk that last visited
+	// each span, so it needs no clearing.
+	walk    uint64
+	seen    map[string]uint64
+	visited []string
+	queue   []string
+}
+
+// place reports whether spanID has a snapshot in the index and, if it does,
+// whether it is in scope or reachable from it upward, over the reverse of
+// logScope's downward edges: the parent edge and the span's own cause links.
+// gen is the generation the answer holds for. A span found not beneath is
+// remembered in memo, with every span its walk visited (their ancestry is
+// part of its own), so that later walks through them stop there. Cycle-safe.
+func (l *spanLookup) place(spanID string, scope map[string]bool, memo *placementMemo) (known, beneath bool, gen uint64) {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
-	seen := map[string]bool{}
-	queue := []string{spanID}
-	for len(queue) > 0 {
-		id := queue[0]
-		queue = queue[1:]
+	gen = l.gen.Load()
+	if _, known = l.lastRow[spanID]; !known {
+		return false, false, gen
+	}
+	if memo.out == nil || memo.gen != gen {
+		memo.out, memo.gen = map[string]struct{}{}, gen
+	}
+	if memo.seen == nil {
+		memo.seen = map[string]uint64{}
+	}
+	memo.walk++
+	visited := memo.visited[:0]
+	queue := append(memo.queue[:0], spanID)
+	defer func() { memo.visited, memo.queue = visited[:0], queue[:0] }()
+	for i := 0; i < len(queue); i++ {
+		id := queue[i]
 		if scope[id] {
-			return true
+			return true, true, gen
 		}
-		if seen[id] {
+		if memo.seen[id] == memo.walk {
 			continue
 		}
-		seen[id] = true
+		memo.seen[id] = memo.walk
+		visited = append(visited, id)
+		if _, out := memo.out[id]; out {
+			continue
+		}
 		if parent, ok := l.parent[id]; ok {
 			queue = append(queue, parent)
 		}
-		queue = append(queue, l.causalParentsLocked(id)...)
+		if span, ok := l.causalIDs[id]; ok {
+			if set, ok := l.spanLinkSet[span]; ok {
+				for _, target := range l.linkSets[set].targets {
+					queue = append(queue, l.causalName[target])
+				}
+			}
+		}
 	}
-	return false
+	for _, id := range visited {
+		memo.out[id] = struct{}{}
+	}
+	return true, false, gen
 }
 
 // allSpanIDs snapshots every span ID the index has seen a snapshot of.
