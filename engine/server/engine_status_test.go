@@ -30,9 +30,9 @@ func TestEngineStatusClients(t *testing.T) {
 		RemoteCache: StatusRemoteCache{State: RemoteCacheSettled},
 	}, l.status("engine-1"))
 
-	l.sessionStarted("a", "claim-a")
-	l.sessionStarted("a", "claim-a")
-	l.sessionStarted("b", "")
+	l.sessionStarted("sess-a1", "a", "claim-a")
+	l.sessionStarted("sess-a2", "a", "claim-a")
+	l.sessionStarted("sess-b", "b", "")
 	status := l.status("engine-1")
 	require.Equal(t, []StatusClient{{ClientID: "a", ClaimID: "claim-a"}, {ClientID: "b"}}, status.Open)
 	require.Empty(t, status.Ended)
@@ -55,7 +55,7 @@ func TestEngineStatusClients(t *testing.T) {
 	now = bEnded.Add(endedClientRetention)
 	require.Equal(t, []StatusEndedClient{{ClientID: "a", ClaimID: "claim-a", EndedAt: bEnded.Add(time.Second)}}, l.status("engine-1").Ended, "b is no longer reported")
 
-	l.sessionStarted("a", "claim-a2")
+	l.sessionStarted("sess-a3", "a", "claim-a2")
 	status = l.status("engine-1")
 	require.Equal(t, []StatusClient{{ClientID: "a", ClaimID: "claim-a2"}}, status.Open)
 	require.Empty(t, status.Ended, "a session with a's ID started again")
@@ -66,7 +66,7 @@ func TestEngineStatusClients(t *testing.T) {
 func TestServeStatus(t *testing.T) {
 	t.Parallel()
 	srv := &Server{engineName: "engine-1"}
-	srv.sessionLedger.sessionStarted("client-1", "claim-1")
+	srv.sessionLedger.sessionStarted("sess-1", "client-1", "claim-1")
 
 	w := httptest.NewRecorder()
 	srv.ServeStatus(w, httptest.NewRequest(http.MethodGet, StatusPath, nil))
@@ -133,8 +133,8 @@ func TestRemoteCacheSettles(t *testing.T) {
 	rt := newRemoteSettleTest(time.Hour)
 	require.Equal(t, StatusRemoteCache{State: RemoteCacheSettled}, rt.remoteCache(), "nothing to settle yet")
 
-	rt.ledger.sessionStarted("a", "claim-a")
-	rt.ledger.sessionStarted("b", "claim-b")
+	rt.ledger.sessionStarted("sess-a", "a", "claim-a")
+	rt.ledger.sessionStarted("sess-b", "b", "claim-b")
 	require.Equal(t, StatusRemoteCache{State: RemoteCacheBusy, IdlePeriod: 1}, rt.remoteCache())
 	rt.ledger.sessionEnded("sess-a", "a", "claim-a", true)
 	state, _ := rt.ledger.settleState()
@@ -163,13 +163,40 @@ func TestRemoteCacheSettles(t *testing.T) {
 	rt.exports = 0
 	rt.mu.Unlock()
 
-	rt.ledger.sessionStarted("c", "")
+	rt.ledger.sessionStarted("sess-c", "c", "")
 	require.Equal(t, StatusRemoteCache{State: RemoteCacheBusy, IdlePeriod: 2}, rt.remoteCache())
 	rt.ledger.settledFor(1, nil)
 	rt.ledger.sessionEnded("sess-c", "c", "", true)
 	state, _ = rt.ledger.settleState()
 	require.False(t, state.Settled, "a Settled for an earlier period settles nothing")
 	require.Equal(t, []protocol.SettleSession{{ID: "sess-c", Marker: true}}, state.Sessions)
+}
+
+// With the remote cache, the settle state reports each live session that
+// started under a claim, and a session's start or end with a claim changes it.
+func TestRemoteCacheReportsSessionClaims(t *testing.T) {
+	t.Parallel()
+	rt := newRemoteSettleTest(time.Hour)
+	_, changed := rt.ledger.settleState()
+	rt.ledger.sessionStarted("sess-b", "b", "claim-b")
+	select {
+	case <-changed:
+	default:
+		t.Fatal("a session with a claim changes the settle state")
+	}
+	rt.ledger.sessionStarted("sess-a", "a", "claim-a")
+	rt.ledger.sessionStarted("sess-c", "c", "")
+	state, changed := rt.ledger.settleState()
+	require.Equal(t, []protocol.SessionClaim{{ID: "sess-a", Claim: "claim-a"}, {ID: "sess-b", Claim: "claim-b"}}, state.Claims)
+
+	rt.ledger.sessionEnded("sess-b", "b", "claim-b", true)
+	select {
+	case <-changed:
+	default:
+		t.Fatal("a session's end changes the settle state")
+	}
+	state, _ = rt.ledger.settleState()
+	require.Equal(t, []protocol.SessionClaim{{ID: "sess-a", Claim: "claim-a"}}, state.Claims, "an ended session isn't reported")
 }
 
 // Once the bound passes after the last session ended without the engine
@@ -179,7 +206,7 @@ func TestRemoteCacheSettles(t *testing.T) {
 func TestRemoteCacheTimesOut(t *testing.T) {
 	t.Parallel()
 	rt := newRemoteSettleTest(20 * time.Millisecond)
-	rt.ledger.sessionStarted("a", "")
+	rt.ledger.sessionStarted("sess-a", "a", "")
 	rt.ledger.sessionEnded("sess-a", "a", "", true)
 	require.Eventually(t, func() bool { return rt.remoteCache().State == RemoteCacheTimedOut }, 5*time.Second, 5*time.Millisecond)
 	pauses, resumes := rt.counts()
@@ -188,7 +215,7 @@ func TestRemoteCacheTimesOut(t *testing.T) {
 	rt.ledger.settledFor(1, []protocol.SettleSession{{ID: "sess-a", Marker: true}})
 	require.Equal(t, RemoteCacheTimedOut, rt.remoteCache().State, "timed out stays until a session starts")
 
-	rt.ledger.sessionStarted("b", "")
+	rt.ledger.sessionStarted("sess-b", "b", "")
 	pauses, resumes = rt.counts()
 	require.Equal(t, 1, pauses)
 	require.Equal(t, 1, resumes)
@@ -201,7 +228,7 @@ func TestRemoteCacheTimesOut(t *testing.T) {
 func TestSettledEngineDoesNotTimeOut(t *testing.T) {
 	t.Parallel()
 	rt := newRemoteSettleTest(20 * time.Millisecond)
-	rt.ledger.sessionStarted("a", "")
+	rt.ledger.sessionStarted("sess-a", "a", "")
 	rt.ledger.sessionEnded("sess-a", "a", "", false)
 	rt.ledger.settledFor(1, []protocol.SettleSession{{ID: "sess-a"}})
 	time.Sleep(100 * time.Millisecond)
@@ -224,13 +251,13 @@ func TestSessionStartingAsTheEngineTimesOutResumes(t *testing.T) {
 		close(paused)
 	}, p.resume)
 	l.remote.bound = time.Millisecond
-	l.sessionStarted("a", "")
+	l.sessionStarted("sess-a", "a", "")
 	l.sessionEnded("sess-a", "a", "", true)
 	<-pausing
 
 	started := make(chan struct{})
 	go func() {
-		l.sessionStarted("b", "")
+		l.sessionStarted("sess-b", "b", "")
 		close(started)
 	}()
 	select {

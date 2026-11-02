@@ -88,6 +88,9 @@ type sessionLedger struct {
 	live     map[clientClaim]int
 	sessions int
 	ended    map[clientClaim]time.Time
+	// claims are the live sessions that started under a claim, by session
+	// ID, which the remote cache's settle state reports (settleState).
+	claims map[string]string
 	// remote is the remote cache's settle state, while an integration is
 	// attached (attachRemote).
 	remote *remoteSettle
@@ -123,10 +126,11 @@ func (l *sessionLedger) clock() time.Time {
 	return time.Now()
 }
 
-// sessionStarted counts a live root session of clientID under claimID. With
-// the remote cache, a session on an engine with none live starts a new idle
-// period, and ends a timed-out pause.
-func (l *sessionLedger) sessionStarted(clientID, claimID string) {
+// sessionStarted counts a live root session sessionID of clientID under
+// claimID. With the remote cache, a session on an engine with none live
+// starts a new idle period, and ends a timed-out pause, and a session with a
+// claim is reported to the service (protocol.Claims).
+func (l *sessionLedger) sessionStarted(sessionID, clientID, claimID string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.live == nil {
@@ -134,6 +138,15 @@ func (l *sessionLedger) sessionStarted(clientID, claimID string) {
 	}
 	l.live[clientClaim{clientID, claimID}]++
 	l.sessions++
+	if claimID != "" {
+		if l.claims == nil {
+			l.claims = map[string]string{}
+		}
+		l.claims[sessionID] = claimID
+		if l.remote != nil {
+			l.notifyLocked()
+		}
+	}
 	for ended := range l.ended {
 		if ended.clientID == clientID {
 			delete(l.ended, ended)
@@ -167,6 +180,7 @@ func (l *sessionLedger) sessionEnded(sessionID, clientID, claimID string, marker
 		return
 	}
 	l.sessions--
+	delete(l.claims, sessionID)
 	if r := l.remote; r != nil {
 		r.unacked = append(r.unacked, protocol.SettleSession{ID: sessionID, Marker: marker})
 		if l.sessions == 0 {
@@ -256,12 +270,18 @@ func (l *sessionLedger) settleState() (remotecache.SettleState, <-chan struct{})
 	if r == nil {
 		return remotecache.SettleState{Live: l.sessions > 0}, l.changed
 	}
+	var claims []protocol.SessionClaim
+	for id, claim := range l.claims {
+		claims = append(claims, protocol.SessionClaim{ID: id, Claim: claim})
+	}
+	slices.SortFunc(claims, func(a, b protocol.SessionClaim) int { return strings.Compare(a.ID, b.ID) })
 	return remotecache.SettleState{
 		Period:   r.period,
 		Live:     l.sessions > 0,
 		Sessions: slices.Clone(r.unacked),
 		Settled:  r.settled,
 		TimedOut: r.timedOut,
+		Claims:   claims,
 	}, l.changed
 }
 
