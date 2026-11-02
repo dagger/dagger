@@ -54,12 +54,20 @@ type LogQuery struct {
 	// at the end the store had when the request arrived. Archives are
 	// finite, so it is ignored there.
 	Follow bool `json:"follow,omitempty"`
+	// Through, when positive, ends a live one-shot read at this log row
+	// instead of the store's end, so a reader catching newly selected spans
+	// up to a follow's cursor reads exactly the rows that follow did not.
+	// Ignored with Follow, and by archives, which end at their cut.
+	Through int64 `json:"through,omitempty"`
 }
 
 // Validate checks q against the shared client/server contract.
 func (q LogQuery) Validate() error {
 	if len(q.Spans) == 0 {
 		return errors.New("log query selects no spans")
+	}
+	if q.Through < 0 {
+		return fmt.Errorf("log query through %d is negative", q.Through)
 	}
 	return validateLogSpans(q.Spans)
 }

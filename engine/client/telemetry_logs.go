@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	"google.golang.org/protobuf/proto"
@@ -35,6 +36,28 @@ func (c *Client) SupportsTelemetryFeature(feature string) bool {
 // it, and the frontend must read it with QueryLogs.
 func (c *Client) LogsPresence() bool {
 	return c.logsPresence
+}
+
+// WaitTelemetryIdle waits until the trace and log subscriptions have
+// delivered nothing for quiet, or ctx ends. The engine batches what it
+// records and the subscriptions poll for it, so a span (or presence) for work
+// that just ended reaches EngineTrace/EngineLogs a little later. A frontend
+// reading display text on demand waits for them at exit, before choosing what
+// its final render reads, while the session can still serve the reads.
+func (c *Client) WaitTelemetryIdle(ctx context.Context, quiet time.Duration) {
+	start := time.Now().UnixNano()
+	for {
+		last := max(start, c.telemetryFrameAt.Load())
+		wait := time.Duration(last + int64(quiet) - time.Now().UnixNano())
+		if wait <= 0 {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(wait):
+		}
+	}
 }
 
 func (c *Client) liveTelemetryHTTP() *httpClient {

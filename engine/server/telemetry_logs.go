@@ -105,19 +105,27 @@ func presenceResourceLogs(presence []clientdb.LogPresence) *otlplogsv1.ResourceL
 }
 
 // displayLogFetcher reads the display text of spans. A one-shot read ends at
-// the store's end when it first runs; a follow reads to the current end on
-// every poll. The scope is resolved once and then follows new spans itself, so
-// an idle poll (no new rows) costs one high-water read.
-func displayLogFetcher(spans []archive.LogSpan, oneShot bool) streamFetcher {
+// the store's end when it first runs, or at through when that is lower and
+// non-negative; a follow reads to the current end on every poll. The scope is
+// resolved once and then follows new spans itself, so an idle poll (no new
+// rows) costs one high-water read.
+func displayLogFetcher(spans []archive.LogSpan, oneShot bool, through int64) streamFetcher {
 	var scope *clientdb.LogQueryScope
-	through := int64(-1)
+	pinned := false
 	return func(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, proto.Message, int, error) {
-		end := through
-		if end < 0 {
+		var end int64
+		switch {
+		case !oneShot:
 			end = db.HighWater().Logs
-			if oneShot {
-				through = end
+		case !pinned:
+			// Never past the store's end as of the first poll.
+			if hw := db.HighWater().Logs; through < 0 || through > hw {
+				through = hw
 			}
+			pinned = true
+			end = through
+		default:
+			end = through
 		}
 		if since >= end {
 			return since, nil, 0, nil
@@ -149,7 +157,11 @@ func (ps *PubSub) LogsQueryHandler(w http.ResponseWriter, r *http.Request, recor
 	if err := q.Validate(); err != nil {
 		return rejectLogRequest(w, err, http.StatusBadRequest)
 	}
-	return ps.serveLiveStream(w, r, record, displayLogFetcher(q.Spans, !q.Follow), enginetel.MaxLivePayloadSize, liveStreamOptions{oneShot: !q.Follow})
+	through := int64(-1)
+	if q.Through > 0 && !q.Follow {
+		through = q.Through
+	}
+	return ps.serveLiveStream(w, r, record, displayLogFetcher(q.Spans, !q.Follow, through), enginetel.MaxLivePayloadSize, liveStreamOptions{oneShot: !q.Follow})
 }
 
 // rejectLogRequest answers a request that can never succeed as sent. It
