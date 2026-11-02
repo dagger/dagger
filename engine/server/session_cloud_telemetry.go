@@ -72,16 +72,26 @@ func (srv *Server) initializeSessionCloudTelemetry(sess *daggerSession, md *engi
 		slog.Warn("session telemetry not published to Cloud: cannot configure the Cloud exporters", "session", sess.sessionID, "error", err)
 		return
 	}
+	// The forwarder's cache span lane exports on a span exporter of its own
+	// (see cloudForwarder).
+	cacheSpans, err := enginetel.NewCloudSpanExporter(context.Background(), md.CloudAuth, tokenRefresh, md.CloudURL)
+	if err != nil {
+		slog.Warn("session telemetry not published to Cloud: cannot configure the Cloud exporters", "session", sess.sessionID, "error", err)
+		ctx, cancel := context.WithTimeout(context.Background(), sessionTelemetryFlushTimeout)
+		defer cancel()
+		_ = errors.Join(spans.Shutdown(ctx), logs.Shutdown(ctx), metrics.Shutdown(ctx))
+		return
+	}
 	bound := cloudFlushBound{sessionID: sess.sessionID, timeout: sessionTelemetryFlushTimeout, budget: &cloudShutdownBudget{}}
 	if srv.sessionCloudFlushTimeout > 0 {
 		bound.timeout = srv.sessionCloudFlushTimeout
 	}
-	forwarder, err := srv.startCloudForwarder(sess.sessionID, sess.mainClientCallerID, spans, logs, bound.timeout)
+	forwarder, err := srv.startCloudForwarder(sess.sessionID, sess.mainClientCallerID, spans, cacheSpans, logs, bound.timeout)
 	if err != nil {
 		slog.Warn("session telemetry not published to Cloud: cannot read the main client's telemetry store", "session", sess.sessionID, "error", err)
 		ctx, cancel := context.WithTimeout(context.Background(), bound.timeout)
 		defer cancel()
-		_ = errors.Join(spans.Shutdown(ctx), logs.Shutdown(ctx), metrics.Shutdown(ctx))
+		_ = errors.Join(spans.Shutdown(ctx), cacheSpans.Shutdown(ctx), logs.Shutdown(ctx), metrics.Shutdown(ctx))
 		return
 	}
 	sess.cloudBound = bound
@@ -95,9 +105,9 @@ func (srv *Server) initializeSessionCloudTelemetry(sess *daggerSession, md *engi
 }
 
 // startCloudForwarder starts forwarding the store of the session's main
-// client to Cloud through spans and logs, keeping the store from collection
-// until the forwarder releases it.
-func (srv *Server) startCloudForwarder(sessionID, mainClientID string, spans sdktrace.SpanExporter, logs sdklog.Exporter, shutdownTimeout time.Duration) (*cloudForwarder, error) {
+// client to Cloud through spans, cacheSpans and logs, keeping the store from
+// collection until the forwarder releases it.
+func (srv *Server) startCloudForwarder(sessionID, mainClientID string, spans, cacheSpans sdktrace.SpanExporter, logs sdklog.Exporter, shutdownTimeout time.Duration) (*cloudForwarder, error) {
 	if srv.clientDBs == nil {
 		return nil, errors.New("no telemetry stores")
 	}
@@ -113,7 +123,7 @@ func (srv *Server) startCloudForwarder(sessionID, mainClientID string, spans sdk
 	}
 	var forwarder *cloudForwarder
 	released := make(chan struct{})
-	forwarder = newCloudForwarder(sessionID, mainClientID, db, spans, logs, tuning, func() {
+	forwarder = newCloudForwarder(sessionID, mainClientID, db, spans, cacheSpans, logs, tuning, func() {
 		<-released
 		srv.cloudForwarders.remove(forwarder)
 	})
