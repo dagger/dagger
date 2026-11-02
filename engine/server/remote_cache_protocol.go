@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strconv"
 	"time"
 	"unicode/utf8"
 
@@ -420,7 +421,12 @@ func (a *RemoteCacheAdapter) Merge(ctx context.Context, id uint64, req protocol.
 		return protocol.Merged{}, err
 	}
 	priorityWait := time.Since(start)
+	// The merge's op is named by its ID, the ID of the protocol request
+	// that carried it, so overlapping merges can be told apart.
 	mergeCtx, mergeOp := wcprof.BeginOp(ctx, wcprof.OpKindRemoteCache, "remotecache.merge", wcprof.OpOpts{})
+	if mergeOp != nil {
+		mergeOp.SetIdent(strconv.FormatUint(id, 10))
+	}
 	reply, err := a.mergeValues(mergeCtx, dagql.CloudCacheID, req.Bundle)
 	if reply.Committed {
 		mergeOp.End(wcprof.OutcomeOK)

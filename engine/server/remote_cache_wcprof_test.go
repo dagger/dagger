@@ -157,7 +157,7 @@ func TestRemoteCacheAdapterExportProfiled(t *testing.T) {
 	require.Equal(t, size, parts[0].Bytes)
 }
 
-// A profiled merge is one op.
+// A profiled merge is one op, named by the merge's ID.
 func TestRemoteCacheAdapterMergeProfiled(t *testing.T) {
 	source := newGCTestCache(t)
 	sctx, res := addGCTestPersistableResult(t, source, "source", "merged", dagql.NewInt(7))
@@ -170,7 +170,7 @@ func TestRemoteCacheAdapterMergeProfiled(t *testing.T) {
 
 	wcprof.EnsureRecorder()
 	ctx, root := wcprof.BeginOp(wcprof.ContextWithProfiling(t.Context()), wcprof.OpKindRemoteCache, "test.merge", wcprof.OpOpts{})
-	_, err := adapter.Merge(ctx, 1, protocol.Merge{Bundle: bundle}, nil)
+	_, err := adapter.Merge(ctx, 41, protocol.Merge{Bundle: bundle}, nil)
 	require.NoError(t, err)
 	root.End(wcprof.OutcomeOK)
 
@@ -184,6 +184,7 @@ func TestRemoteCacheAdapterMergeProfiled(t *testing.T) {
 	require.Equal(t, "ok", merges[0].Outcome)
 	require.Equal(t, "remote_cache", merges[0].OpKind)
 	require.Equal(t, root.ID(), merges[0].ParentID)
+	require.Equal(t, "41", merges[0].ident)
 }
 
 // A profiled offer is one op per offered item, about its entry, under which
