@@ -239,8 +239,69 @@ func TestReadDisplayLogsMatchesScan(t *testing.T) {
 				got := readDisplayIndexed(t, s.db, selectionTrace, view.LogQueryScope(q), after, through, limit)
 				require.Equal(t, want, got, "archive scope %s", describe())
 			})
+
+			// Spans arriving while a read is under way: each batch holds the
+			// rows a scan resolved at the same time would read over the rows
+			// it covers, as the store stands when it is read.
+			withIndexShare(0, func() {
+				const batches = 64
+				scanScopes := make([]*LogQueryScope, batches)
+				for i := range scanScopes {
+					scanScopes[i] = s.db.LiveLogScope(q)
+				}
+				indexScope := s.db.LiveLogScope(q)
+				through := s.db.HighWater().Logs
+				for i, cursor := 0, int64(0); cursor < through && i < batches; i++ {
+					rows, next, _, err := s.db.ReadDisplayLogs(t.Context(), SelectLogsRangeParams{AfterID: cursor, ThroughID: through, Limit: 1 + s.rng.Int64N(3)}, "", indexScope)
+					require.NoError(t, err)
+					var got []int64
+					for _, row := range rows {
+						got = append(got, row.ID)
+					}
+					want := readDisplayScanned(t, s.db, "", scanScopes[i], cursor, next, 5)
+					require.Equal(t, want, got, "batch %d of live scope %s over (%d, %d]", i, describe(), cursor, next)
+					cursor = next
+					s.grow(s.rng.IntN(3))
+				}
+			})
 		})
 	}
+}
+
+// A span placed beneath the tree while a one-shot read is under way joins
+// the rest of the read, as it joins the rest of a scan.
+func TestReadDisplayLogsPlacesSpansMidRead(t *testing.T) {
+	db := logQueryStore(t)
+	const (
+		root = "00000000000000a1"
+		svc  = "00000000000000b1"
+		mid  = "00000000000000b2"
+	)
+	_, err := db.AppendSpans([]Span{logQuerySpan(root, ""), logQuerySpan(svc, mid)})
+	require.NoError(t, err)
+	_, err = db.AppendLogs([]Log{
+		selectionLog(t, root, selectionText("root")), // 1
+		selectionLog(t, svc, selectionText("svc")),   // 2
+		selectionLog(t, root, selectionText("root")), // 3
+		selectionLog(t, svc, selectionText("svc")),   // 4
+	})
+	require.NoError(t, err)
+	withIndexShare(0, func() {
+		scope := db.LiveLogScope([]archive.LogSpan{{SpanID: root, Descendants: true}})
+		rows, next, _, err := db.ReadDisplayLogs(t.Context(), SelectLogsRangeParams{AfterID: 0, ThroughID: 4, Limit: 1}, "", scope)
+		require.NoError(t, err)
+		require.Equal(t, []int64{1}, logIDs(rows))
+		require.EqualValues(t, 2, next)
+
+		// svc's parent arrives, cause-linked beneath the root.
+		linked := logQuerySpan(mid, "")
+		linked.Links = linksJSON(t, spanLink(t, selectionTrace, root, telemetry.LinkPurposeCause))
+		_, err = db.AppendSpans([]Span{linked})
+		require.NoError(t, err)
+		want := readDisplayScanned(t, db, "", db.LiveLogScope([]archive.LogSpan{{SpanID: root, Descendants: true}}), next, 4, 1)
+		require.Equal(t, []int64{3, 4}, want)
+		require.Equal(t, want, readDisplayIndexed(t, db, "", scope, next, 4, 1))
+	})
 }
 
 // A one-shot read's batch is bounded by bytes as well as rows, and its
