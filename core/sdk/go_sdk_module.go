@@ -60,11 +60,10 @@ func (l *Loader) loadBuiltinGoSDK(
 			return goSDKConstructorArgs(ctx, root, sdk.Config)
 		},
 		// Generated bindings unconditionally include the module's own types,
-		// so engine-side checks gated on SelfCallsEnabled (tolerating module
-		// types that shadow core or dependency types) must match. The module
-		// is NOT added to its own deps for codegen: the generator merges its
-		// own types in a single pass, and an engine-side self-append would
-		// collide with that merge.
+		// so engine-side checks gated on SelfCallsEnabled must match. The
+		// module is NOT added to its own deps for codegen: the generator
+		// merges its own types in a single pass, and an engine-side
+		// self-append would collide with that merge.
 		selfCalls:     true,
 		debugTerminal: true,
 		moduleTypes:   goModuleTypes{},

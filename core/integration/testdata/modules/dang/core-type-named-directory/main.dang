@@ -1,0 +1,16 @@
+"""
+Test module whose main object is named after the core Directory type, and
+which calls the core directory root field.
+"""
+type Directory {
+  pub dir: Dagger.Directory!
+
+  new() {
+    self.dir = Dagger.directory.withNewFile("a", "core directory")
+    self
+  }
+
+  pub text: String! {
+    dir.file("a").contents
+  }
+}
