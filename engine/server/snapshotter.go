@@ -17,7 +17,6 @@ import (
 	"github.com/containerd/containerd/v2/plugins/snapshots/native"
 	"github.com/containerd/containerd/v2/plugins/snapshots/overlay"
 	"github.com/containerd/containerd/v2/plugins/snapshots/overlay/overlayutils"
-	fuseoverlayfs "github.com/containerd/fuse-overlayfs-snapshotter/v2"
 	"github.com/dagger/dagger/engine/slog"
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
 	"github.com/sirupsen/logrus"
@@ -62,13 +61,8 @@ func newSnapshotter(
 		if err := overlayutils.Supported(rootDir); err == nil {
 			name = "overlayfs"
 		} else {
-			logrus.Debugf("auto snapshotter: overlayfs is not available for %s, trying fuse-overlayfs: %v", rootDir, err)
-			if err2 := fuseoverlayfs.Supported(rootDir); err2 == nil {
-				name = "fuse-overlayfs"
-			} else {
-				logrus.Debugf("auto snapshotter: fuse-overlayfs is not available for %s, falling back to native: %v", rootDir, err2)
-				name = "native"
-			}
+			logrus.Debugf("auto snapshotter: overlayfs is not available for %s, falling back to native: %v", rootDir, err)
+			name = "native"
 		}
 		logrus.Infof("auto snapshotter: using %s", name)
 	}
@@ -87,9 +81,6 @@ func newSnapshotter(
 			opts = append(opts, overlay.WithMountOptions([]string{"volatile"}))
 		}
 		sn, snErr = overlay.NewSnapshotter(rootDir, opts...)
-	case "fuse-overlayfs":
-		// no Opt (AsynchronousRemove is untested for fuse-overlayfs)
-		sn, snErr = fuseoverlayfs.NewSnapshotter(rootDir)
 	default:
 		return nil, "", fmt.Errorf("unknown snapshotter %q", name)
 	}

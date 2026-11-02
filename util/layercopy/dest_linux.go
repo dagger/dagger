@@ -631,7 +631,7 @@ func isOverlayMount(m *mount.Mount) bool {
 	if m == nil {
 		return false
 	}
-	return m.Type == "overlay" || strings.HasPrefix(m.Type, "fuse-overlayfs")
+	return m.Type == "overlay"
 }
 
 func statInode(st *syscall.Stat_t) inode {

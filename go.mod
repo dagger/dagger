@@ -50,7 +50,6 @@ require (
 	github.com/containerd/continuity v0.4.5
 	github.com/containerd/errdefs v1.0.0
 	github.com/containerd/errdefs/pkg v0.3.0
-	github.com/containerd/fuse-overlayfs-snapshotter/v2 v2.1.2
 	github.com/containerd/go-cni v1.1.13
 	github.com/containerd/go-runc v1.1.0
 	github.com/containerd/log v0.1.0
@@ -128,7 +127,6 @@ require (
 	github.com/morikuni/aec v1.1.0
 	github.com/muesli/termenv v0.16.0
 	github.com/openai/openai-go/v3 v3.61.0
-	github.com/opencontainers/cgroups v0.0.6
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/opencontainers/runtime-spec v1.3.0
