@@ -244,6 +244,7 @@ type TestSplit {
 
         # The real bbolt, renamed to realbolt so both can be imported at once.
         real="$root/hack/fastbolt-difftest/realbolt"
+        rm -rf "$real"
         cp -R "$(moddir go.etcd.io/bbolt@v1.4.3)" "$real"
         chmod -R u+w "$real"
         rm -rf "$real/cmd" "$real/tests"
