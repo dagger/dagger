@@ -211,18 +211,18 @@ func TestLiveLogsUnknownSpansStayUnclaimed(t *testing.T) {
 	l := newLiveLogs(reader, "trace", out, true)
 	var mu sync.Mutex
 	requested := map[byte]bool{}
-	l.coverage = func(targets []idtui.LogTarget) []idtui.LogCoverage {
+	l.coverage = func(targets []idtui.LogTarget) []idtui.LogRoute {
 		mu.Lock()
 		defer mu.Unlock()
-		var got []idtui.LogCoverage
+		var got []idtui.LogRoute
 		for _, target := range targets {
 			switch span := target.Span.SpanID[7]; {
 			case requested[span] || span == 1:
-				got = append(got, idtui.LogCovered)
+				got = append(got, idtui.LogRoute{Coverage: idtui.LogCovered, Span: target.Span})
 			case span == 9:
-				got = append(got, idtui.LogUnknown)
+				got = append(got, idtui.LogRoute{Coverage: idtui.LogUnknown})
 			default:
-				got = append(got, idtui.LogUncovered)
+				got = append(got, idtui.LogRoute{Coverage: idtui.LogUncovered, Span: target.Span})
 			}
 		}
 		return got
@@ -390,16 +390,16 @@ func TestLiveLogsSkipEmptyBatches(t *testing.T) {
 		return out.Export(ctx, records)
 	}), false)
 	asked := 0
-	l.coverage = func(targets []idtui.LogTarget) []idtui.LogCoverage {
+	l.coverage = func(targets []idtui.LogTarget) []idtui.LogRoute {
 		asked++
-		coverage := make([]idtui.LogCoverage, len(targets))
+		routes := make([]idtui.LogRoute, len(targets))
 		for i, target := range targets {
-			coverage[i] = idtui.LogUncovered
+			routes[i] = idtui.LogRoute{Coverage: idtui.LogUncovered, Span: target.Span}
 			if target.Span == liveTestSpan(1) {
-				coverage[i] = idtui.LogCovered
+				routes[i].Coverage = idtui.LogCovered
 			}
 		}
-		return coverage
+		return routes
 	}
 	l.subscribe(idtui.LogRequest{Span: liveTestSpan(1)})
 	require.NoError(t, l.finish(t.Context()))
@@ -995,7 +995,7 @@ func (f *fakeExitFrontend) SetPrimaryOutput(records []sdklog.Record) {
 		f.primary = append(f.primary, rec.Body().AsString())
 	}
 }
-func (f *fakeExitFrontend) LiveLogsCoverage([]idtui.LogTarget) []idtui.LogCoverage { return nil }
+func (f *fakeExitFrontend) LiveLogsCoverage([]idtui.LogTarget) []idtui.LogRoute { return nil }
 func (f *fakeExitFrontend) LiveLogsActivity([]dagui.SpanID) []idtui.LogActivity { return nil }
 
 // TestFinishLiveLogsInterrupted: against a hung engine, an interrupt during

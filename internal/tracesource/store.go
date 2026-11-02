@@ -153,6 +153,33 @@ func (a *Store) FetchLogs(ctx context.Context, traceID string, sel cloud.LogSele
 	return err
 }
 
+// LogSearcher searches a trace's display text where it is stored: the
+// engine's telemetry store. Cloud has no search, so a Cloud trace has none.
+type LogSearcher interface {
+	SearchLogs(ctx context.Context, traceID string, search archive.LogSearch) (archive.LogSearchResult, error)
+}
+
+var _ LogSearcher = (*Store)(nil)
+
+// StoreLogSearcher is the archive client's search (archive.Client.SearchLogs).
+type StoreLogSearcher interface {
+	SearchLogs(ctx context.Context, traceID string, unsealed bool, search archive.LogSearch) (archive.LogSearchResult, error)
+}
+
+var _ StoreLogSearcher = (*archive.Client)(nil)
+
+// SearchLogs searches the archive's display text, up to its cut.
+func (a *Store) SearchLogs(ctx context.Context, traceID string, search archive.LogSearch) (archive.LogSearchResult, error) {
+	searcher, ok := a.reader.(StoreLogSearcher)
+	if !ok {
+		return archive.LogSearchResult{}, errors.New("store reader does not support log search")
+	}
+	if _, err := a.options(traceID, a.manifest.HighWater.Logs); err != nil {
+		return archive.LogSearchResult{}, err
+	}
+	return searcher.SearchLogs(ctx, traceID, a.unsealed, search)
+}
+
 func (a *Store) FetchTrace(ctx context.Context, traceID string, sink cloud.TraceImportSink) (rerr error) {
 	// Match Cloud's sink contract: even a failed display import seals the spans
 	// it received, without claiming success or changing to another source.
