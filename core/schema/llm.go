@@ -9,6 +9,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -20,7 +21,7 @@ var _ SchemaResolvers = &llmSchema{}
 func (s llmSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.NodeFunc("llm", s.llm).
-			WithInput(dagql.PerSessionInput).
+			WithInput(llmSessionInput).
 			Experimental("LLM support is not yet stabilized").
 			Doc(`Initialize a new LLM conversation.`).
 			Args(
@@ -951,6 +952,49 @@ func (s *llmSchema) attempt(_ context.Context, llm *core.LLM, _ struct {
 	Number int
 }) (*core.LLM, error) {
 	return llm.Clone(), nil
+}
+
+// An explicit model retains the same session-scoped identity. Only the
+// default-model lookup depends on live configuration: a new llm() after setup
+// must not return a conversation pinned by an earlier configuration.
+var llmSessionInput = dagql.ImplicitInput{
+	Name: dagql.PerSessionInput.Name,
+	Resolver: func(ctx context.Context, args map[string]dagql.Input) (dagql.Input, error) {
+		session, err := dagql.PerSessionInput.Resolver(ctx, args)
+		if err != nil {
+			return nil, err
+		}
+		var model string
+		switch input := args["model"].(type) {
+		case dagql.String:
+			model = input.String()
+		case dagql.Optional[dagql.String]:
+			model = input.GetOr("").String()
+		case dagql.DynamicOptional:
+			if input.Valid {
+				if value, ok := input.Value.(dagql.String); ok {
+					model = value.String()
+				}
+			}
+		}
+		if model != "" {
+			return session, nil
+		}
+		query, err := core.CurrentQuery(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if live, ok := query.Server.(interface {
+			LLMConfigMetadata(context.Context) (*engine.ClientMetadata, *engine.ClientMetadata, string, error)
+		}); ok {
+			_, _, revision, err := live.LLMConfigMetadata(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return dagql.NewString(session.(dagql.String).String() + ":" + revision), nil
+		}
+		return session, nil
+	},
 }
 
 func (s *llmSchema) llm(ctx context.Context, parent dagql.ObjectResult[*core.Query], args struct {
