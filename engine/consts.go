@@ -42,6 +42,7 @@ const (
 	InitEndpoint      = "/init"
 	QueryEndpoint     = "/query"
 	ShutdownEndpoint  = "/shutdown"
+	LLMConfigEndpoint = "/llm-config"
 
 	// Buildkit-interpreted session keys, can't change
 	SessionIDMetaKey         = "X-Docker-Expose-Session-Uuid"

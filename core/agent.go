@@ -1269,6 +1269,11 @@ type AgentRuntime struct {
 	cancel        context.CancelCauseFunc  // kills the loop context (set on start)
 	stepCancel    context.CancelCauseFunc  // cancels the in-flight step's context (set while stepping)
 
+	// edit is an independent step-boundary barrier: unlike Pause/Reseed it
+	// never abandons a turn or changes the caller's pause/start decisions.
+	edit         *agentConversationEdit
+	lastRevision uint64
+
 	// Mailbox, guarded by mu. mailbox is the FIFO of pending (not yet
 	// consumed) message IDs; messages holds every record ever enqueued —
 	// records are never deleted, keeping await idempotent for the rest of
@@ -1394,6 +1399,7 @@ func (rt *AgentRuntime) publishStateLocked() {
 // a state that no longer matches the conversation it is reading.
 func (rt *AgentRuntime) commitLast(ctx context.Context, next dagql.ObjectResult[*LLM]) {
 	rt.last = next
+	rt.lastRevision++
 	// Whatever input the new commit holds is the loop's own to step; only
 	// Reseed holds it back, and it marks that after committing.
 	rt.held = false
@@ -1840,7 +1846,7 @@ func (rt *AgentRuntime) drainMailbox(ctx context.Context) error {
 			rt.mu.Unlock()
 			return err
 		}
-		if rt.stopRequested || rt.paused || len(rt.mailbox) == 0 {
+		if rt.stopRequested || rt.paused || rt.edit != nil || len(rt.mailbox) == 0 {
 			// Stop settles the queue itself; pause parks without draining
 			// (pause takes priority over pending work).
 			rt.mu.Unlock()
@@ -2108,7 +2114,7 @@ func (rt *AgentRuntime) loop(ctx context.Context) {
 				rt.mu.Unlock()
 				return
 			}
-			if rt.paused {
+			if rt.paused || rt.edit != nil {
 				// Pause takes priority over pending work: park without
 				// draining or stepping, even mid-turn — a suspended turn
 				// (turnOpen, pending input on the snapshot) waits for
@@ -2131,7 +2137,7 @@ func (rt *AgentRuntime) loop(ctx context.Context) {
 				rt.mu.Unlock()
 				return
 			}
-			if rt.paused {
+			if rt.paused || rt.edit != nil {
 				// A pause raced in during the drain: whatever was drained
 				// already joined the turn; park before stepping.
 				rt.mu.Unlock()
@@ -2167,7 +2173,11 @@ func (rt *AgentRuntime) loop(ctx context.Context) {
 			stepCancel(nil)
 			rt.mu.Lock()
 			rt.transitionLocked(func() {
-				rt.stepping = false
+				// On failure keep the step busy until loop teardown settles its
+				// message handles. A boundary editor must not race that teardown.
+				if err == nil || interrupted {
+					rt.stepping = false
+				}
 				rt.stepCancel = nil
 				// Step returns the last successfully recorded state even on
 				// error, so committing unconditionally preserves the
@@ -2210,25 +2220,9 @@ func (rt *AgentRuntime) loop(ctx context.Context) {
 		// resolves only after resume completes it — pause never cuts a
 		// turn short) and no mailbox continuation (queued mail waits for
 		// resume too).
-		rt.mu.Lock()
-		if !rt.paused && len(rt.mailbox) > 0 && !rt.stopRequested && ctx.Err() == nil {
-			rt.mu.Unlock()
+		if rt.continueTurnOrSettle(ctx) {
 			continue
 		}
-		if rt.turnOpen && !rt.paused {
-			// Resolve every message the turn consumed with its final
-			// reply: reply correlation follows the message to whichever
-			// turn consumed it (design §3.2), not the clock.
-			reply, _ := rt.last.Self().LastReply()
-			rt.transitionLocked(func() {
-				for _, rec := range rt.consumed {
-					rt.resolveLocked(rec, reply, nil)
-				}
-				rt.consumed = nil
-				rt.turnOpen = false
-			})
-		}
-		rt.mu.Unlock()
 
 		// Mailbox empty and turn complete (IDLE), or paused (PAUSED):
 		// block in receive until an enqueue, a resume, or a stop request
@@ -2239,6 +2233,197 @@ func (rt *AgentRuntime) loop(ctx context.Context) {
 		case <-rt.wake:
 			// Re-check stop, pause, and the mailbox at the top of the loop.
 		}
+	}
+}
+
+// continueTurnOrSettle rechecks all runnable input at the settlement boundary.
+// An editor can release its barrier after the inner loop decides to park but
+// before this lock is acquired, so mailbox emptiness alone cannot end a turn.
+func (rt *AgentRuntime) continueTurnOrSettle(ctx context.Context) bool {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	pending := !rt.held && rt.last.Self() != nil && rt.last.Self().HasPending()
+	if !rt.paused && rt.edit == nil && (len(rt.mailbox) > 0 || pending) && !rt.stopRequested && ctx.Err() == nil {
+		return true
+	}
+	if rt.turnOpen && !rt.paused && rt.edit == nil {
+		// Reply correlation follows every message through its complete turn.
+		reply, _ := rt.last.Self().LastReply()
+		rt.transitionLocked(func() {
+			for _, rec := range rt.consumed {
+				rt.resolveLocked(rec, reply, nil)
+			}
+			rt.consumed = nil
+			rt.turnOpen = false
+		})
+	}
+	return false
+}
+
+type agentConversationEdit struct {
+	token    string
+	ready    bool
+	revision uint64
+	expires  time.Time
+	timer    *time.Timer
+}
+
+const agentConversationEditLease = 10 * time.Minute
+
+// BeginConversationEdit reserves the next step/drain boundary without
+// interrupting work or changing pause state. The caller chooses the token so
+// cancellation before receiving the snapshot can still be followed by Abort.
+// Repeating the same token renews the lease; a different editor is rejected.
+// A fully stopped tombstone is editable without restarting it, so credentials
+// and model selection can be repaired before a later explicit Send/Resume.
+func (rt *AgentRuntime) BeginConversationEdit(ctx context.Context, token string) (dagql.ObjectResult[*LLM], error) {
+	return rt.beginConversationEdit(ctx, token, agentConversationEditLease)
+}
+
+func (rt *AgentRuntime) beginConversationEdit(ctx context.Context, token string, lease time.Duration) (snapshot dagql.ObjectResult[*LLM], rerr error) {
+	if token == "" {
+		return snapshot, errors.New("conversation edit token is empty")
+	}
+	if rt.ars != nil {
+		release, err := rt.ars.beginAgentWait(ctx, rt, "editing conversation")
+		if err != nil {
+			return snapshot, err
+		}
+		defer release()
+	}
+	rt.mu.Lock()
+	if rt.closing || (rt.stopRequested && !rt.done) {
+		rt.mu.Unlock()
+		return snapshot, errors.New("agent is stopping or closing")
+	}
+	if rt.edit != nil && rt.edit.token != token {
+		rt.mu.Unlock()
+		return snapshot, errors.New("another conversation edit is in progress")
+	}
+	if rt.edit == nil {
+		edit := &agentConversationEdit{token: token}
+		rt.transitionLocked(func() { rt.edit = edit })
+	}
+	edit := rt.edit
+	defer func() {
+		if rerr != nil {
+			rt.AbortConversationEdit(token)
+		}
+	}()
+	for {
+		if err := ctx.Err(); err != nil {
+			rt.mu.Unlock()
+			return snapshot, err
+		}
+		if rt.edit != edit {
+			rt.mu.Unlock()
+			return snapshot, errors.New("conversation edit was released or expired")
+		}
+		if rt.closing || (rt.stopRequested && !rt.done) {
+			rt.mu.Unlock()
+			return snapshot, errors.New("agent stopped while waiting for conversation edit")
+		}
+		if err := rt.abortedLocked(); err != nil {
+			rt.mu.Unlock()
+			return snapshot, err
+		}
+		if !rt.composing && !rt.stepping && !rt.draining {
+			if !edit.ready {
+				edit.ready, edit.revision = true, rt.lastRevision
+			}
+			// Waiting for a long build/step is bounded by the live request's
+			// context, not the handed-out snapshot lease. Start (or renew) the
+			// orphan protection only when there is a stable snapshot to edit.
+			edit.expires = time.Now().Add(lease)
+			if edit.timer == nil {
+				edit.timer = time.AfterFunc(lease, func() {
+					rt.mu.Lock()
+					defer rt.mu.Unlock()
+					if rt.edit == edit && !time.Now().Before(edit.expires) {
+						rt.releaseConversationEditLocked()
+					}
+				})
+			} else {
+				edit.timer.Reset(lease)
+			}
+			snapshot = rt.last
+			rt.mu.Unlock()
+			return snapshot, nil
+		}
+		changed := rt.stateChanged
+		rt.mu.Unlock()
+		select {
+		case <-ctx.Done():
+		case <-changed:
+		}
+		rt.mu.Lock()
+	}
+}
+
+// CommitConversationEdit changes only conversation state. In particular the
+// consumed message handles and open turn survive, so their response waiters
+// still observe the eventual reply rather than a rewind/cancellation error.
+func (rt *AgentRuntime) CommitConversationEdit(ctx context.Context, token string, next dagql.ObjectResult[*LLM]) error {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	edit := rt.edit
+	if edit == nil || edit.token != token {
+		return errors.New("conversation edit token is not active")
+	}
+	if edit.ready && !time.Now().Before(edit.expires) {
+		rt.releaseConversationEditLocked()
+		return errors.New("conversation edit expired")
+	}
+	if rt.closing || (rt.stopRequested && !rt.done) {
+		return errors.New("agent is stopping or closing")
+	}
+	if !edit.ready || rt.stepping || rt.draining || rt.lastRevision != edit.revision {
+		return errors.New("conversation changed before edit commit")
+	}
+	if next.Self() == nil {
+		return errors.New("edited conversation is empty")
+	}
+	// A compacted summary on an idle agent leads the next user turn. It must
+	// not wake the agent merely because it ends in a pending user message.
+	// Hold only newly introduced idle input. Existing pending input may be a
+	// failed step or an unstarted/paused seed that an explicit Resume must
+	// still run; a route/effort edit must not silently change that contract.
+	oldPending := rt.last.Self() != nil && rt.last.Self().HasPending()
+	held := rt.held || (!rt.turnOpen && !oldPending)
+	rt.transitionLocked(func() {
+		rt.commitLast(ctx, next)
+		rt.held = held && next.Self().HasPending()
+	})
+	rt.releaseConversationEditLocked()
+	return nil
+}
+
+// AbortConversationEdit is idempotent and never releases another editor's
+// token. It also serves as explicit cleanup when the caller cancels its UI.
+func (rt *AgentRuntime) AbortConversationEdit(token string) {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if rt.edit != nil && rt.edit.token == token {
+		rt.releaseConversationEditLocked()
+	}
+}
+
+func (rt *AgentRuntime) releaseConversationEditLocked() {
+	if rt.edit == nil {
+		return
+	}
+	if rt.edit.timer != nil {
+		rt.edit.timer.Stop()
+	}
+	rt.transitionLocked(func() { rt.edit = nil })
+	// Never starts/restarts a loop or clears paused. Runnable loops simply
+	// continue their existing turn; idle, failed, and paused agents stay so.
+	select {
+	case rt.wake <- struct{}{}:
+	default:
 	}
 }
 
@@ -2439,6 +2624,9 @@ func (rt *AgentRuntime) Resume(ctx context.Context) error {
 func (rt *AgentRuntime) Reseed(ctx context.Context, next dagql.ObjectResult[*LLM]) error {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
+	if rt.edit != nil {
+		return errors.New("a boundary conversation edit is in progress")
+	}
 	if rt.closing {
 		return errors.New("agent is closing")
 	}
@@ -2527,6 +2715,7 @@ func (rt *AgentRuntime) Stop(ctx context.Context, kill bool, cause error, reason
 		rt.mu.Unlock()
 		return nil
 	}
+	rt.releaseConversationEditLocked()
 	if reason == AgentStopSession && rt.preTeardownState == "" {
 		rt.preTeardownState = rt.stateLocked()
 		rt.closing = true

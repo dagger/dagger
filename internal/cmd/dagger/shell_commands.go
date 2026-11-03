@@ -3,14 +3,17 @@ package daggercmd
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os/exec"
 	"slices"
 	"strings"
 
+	"dagger.io/dagger/core"
 	"github.com/charmbracelet/huh"
 	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/spf13/cobra"
@@ -224,10 +227,7 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 			Args:        NoArgs,
 			State:       NoState,
 			Run: func(ctx context.Context, _ *ShellCommand, _ []string, _ *ShellState) error {
-				if h.llmSession == nil {
-					return fmt.Errorf("LLM not initialized")
-				}
-				return h.llmSession.Target().Clear()
+				return h.clearModelInteractive(ctx)
 			},
 		},
 		{
@@ -237,12 +237,11 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 			Args:        NoArgs,
 			State:       NoState,
 			Run: func(ctx context.Context, _ *ShellCommand, _ []string, _ *ShellState) error {
-				if h.llmSession == nil {
-					return fmt.Errorf("LLM not initialized")
+				target, err := h.commandTarget(ctx)
+				if err != nil {
+					return err
 				}
-				// Compacts the focused agent in place: same runtime, same
-				// roster entry, owned or attached.
-				return h.llmSession.Target().CompactInPlace(ctx)
+				return target.CompactInPlace(ctx)
 			},
 		},
 		{
@@ -252,10 +251,11 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 			Args:        NoArgs,
 			State:       NoState,
 			Run: func(ctx context.Context, _ *ShellCommand, _ []string, _ *ShellState) error {
-				if h.llmSession == nil {
-					return fmt.Errorf("LLM not initialized")
+				target, err := h.commandTarget(ctx)
+				if err != nil {
+					return err
 				}
-				return h.llmSession.Target().History(ctx)
+				return target.History(ctx)
 			},
 		},
 		{
@@ -268,15 +268,14 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 				if len(args) == 0 {
 					return h.selectModelInteractive(ctx)
 				}
-				llm, err := h.llm(ctx)
+				target, err := h.commandTarget(ctx)
 				if err != nil {
 					return err
 				}
-				target := llm.Target()
-				if err := target.Model(args[0]); err != nil {
+				if err := target.Model(ctx, args[0]); err != nil {
 					return err
 				}
-				h.noteModel(target.model)
+				h.noteCommandModel(target)
 				return nil
 			},
 		},
@@ -290,11 +289,11 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 				if len(args) == 0 {
 					return h.selectEffortInteractive(ctx)
 				}
-				llm, err := h.llm(ctx)
+				target, err := h.commandTarget(ctx)
 				if err != nil {
 					return err
 				}
-				return llm.Target().Effort(args[0])
+				return target.Effort(ctx, args[0])
 			},
 		},
 		{
@@ -319,47 +318,160 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 	}
 }
 
-// selectModelInteractive presents a picker of the models offered by the
-// configured providers and swaps the LLM to the chosen one. It mirrors the
-// ".model <model>" path once a model is selected, and no-ops if the user
-// aborts the form.
+// selectModelInteractive presents the configured providers' models, marking the
+// current route. Selection changes this conversation; saving a default for new
+// conversations requires a separate opt-in in the same form.
 func (h *shellCallHandler) selectModelInteractive(ctx context.Context) error {
-	llm, err := h.llm(ctx)
+	target, err := h.commandTarget(ctx)
 	if err != nil {
 		return err
 	}
 
-	options := availableModelOptions()
+	// The old route may no longer resolve after logout (notably local routes).
+	// Keep the picker usable to repair it; cached identity is only a display and
+	// preselection hint, never a prerequisite for choosing another provider.
+	llm, current := target.llmSnapshot()
+	if llm != nil {
+		if model, err := llm.Model(ctx); err == nil {
+			if provider, err := llm.Provider(ctx); err == nil {
+				current = modelSelection{Provider: provider, Model: model}
+			}
+		}
+	}
+	options, err := availableModelOptions(ctx, current)
+	if err != nil {
+		return err
+	}
 	if len(options) == 0 {
-		return fmt.Errorf("no models available; run 'dagger llm setup' to configure a provider")
+		return fmt.Errorf("no models available; run /setup to configure a provider")
 	}
 
-	var selected string
-	form := idtui.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Choose a model").
-				Height(min(len(options)+2, 12)).
-				Filtering(true).
-				Options(options...).
-				Value(&selected),
-		),
-	)
+	var selected modelSelection
+	var useDefault bool
+	form := newModelPickerForm(options, current, &selected, &useDefault)
 
 	if err := Frontend.HandleForm(ctx, form); err != nil {
+		if errors.Is(err, huh.ErrUserAborted) {
+			return nil
+		}
 		return err
 	}
 
-	if selected == "" {
+	if form.State == huh.StateAborted || selected.Model == "" {
 		return nil // user aborted
 	}
 
-	target := llm.Target()
-	if err := target.Model(selected); err != nil {
+	if err := target.Model(ctx, selected.Model, core.LLMWithModelOpts{Provider: selected.Provider}); err != nil {
 		return err
 	}
-	h.noteModel(target.model)
+	h.noteCommandModel(target)
+	// Persist only after the boundary edit succeeds: canceling a pending
+	// command must not change the default for future conversations.
+	if useDefault {
+		notice, err := h.saveModelDefault(ctx, selected)
+		if err != nil {
+			return err
+		}
+		return h.Print(ctx, notice)
+	}
 	return nil
+}
+
+func (h *shellCallHandler) noteCommandModel(target *sessionAgent) {
+	if target.isTarget() {
+		_, model := target.llmSnapshot()
+		h.noteModel(model.Model)
+	}
+}
+
+func (h *shellCallHandler) clearModelInteractive(ctx context.Context) error {
+	target, err := h.commandTarget(ctx)
+	if err != nil {
+		return err
+	}
+	var confirmed bool
+	form := idtui.NewForm(huh.NewGroup(
+		idtui.NewExplicitConfirm("Clear", "Cancel", &confirmed).
+			Title(fmt.Sprintf("Clear %s's conversation?", target.Name())).
+			Description("Interrupt its current work and discard its history and references. The agent will wait for your next prompt."),
+	))
+	if err := Frontend.HandleForm(ctx, form); err != nil {
+		if errors.Is(err, huh.ErrUserAborted) {
+			return nil
+		}
+		return err
+	}
+	if form.State == huh.StateAborted || !confirmed {
+		return nil
+	}
+	return target.Clear(ctx)
+}
+
+func newModelPickerForm(options []huh.Option[modelSelection], current modelSelection, selected *modelSelection, useDefault *bool) *huh.Form {
+	current = current.configRoute()
+	description := "Current model unavailable"
+	if current.Model != "" && current.Provider != "" {
+		description = fmt.Sprintf("Current: %s (%s)", current.Model, current.Provider)
+	}
+	options = slices.Clone(options)
+	for i := range options {
+		if options[i].Value == current {
+			options[i].Key += " (current)"
+			*selected = current
+		}
+	}
+	*useDefault = false
+	return idtui.NewForm(huh.NewGroup(
+		huh.NewSelect[modelSelection]().
+			Title("Choose a model").
+			Description(description).
+			Height(min(len(options)+2, 12)).
+			Filtering(true).
+			Options(options...).
+			Value(selected),
+		idtui.NewExplicitConfirm("Yes", "No", useDefault).
+			Title("Use as default for new conversations").
+			Description("Environment and .env model settings take priority over saved defaults."),
+	))
+}
+
+// saveModelDefault changes only the saved default route. In particular, choosing
+// an environment- or parent-configured provider must not copy credentials into
+// the file or re-enable a disabled saved provider.
+func (h *shellCallHandler) saveModelDefault(ctx context.Context, selected modelSelection) (string, error) {
+	selected = selected.configRoute()
+	cfg, err := llmconfig.Load()
+	if err != nil {
+		return "", err
+	}
+	if cfg == nil {
+		cfg = &llmconfig.Config{}
+	}
+	cfg.LLM.DefaultProvider = selected.Provider
+	cfg.LLM.DefaultModel = selected.Model
+	if err := ctx.Err(); err != nil {
+		return "", context.Cause(ctx)
+	}
+	if err := cfg.Save(); err != nil {
+		return "", err
+	}
+	if err := h.reloadLLMConfig(ctx); err != nil {
+		return "", err
+	}
+	notice := fmt.Sprintf("Saved default for new conversations: %s (%s).", selected.Model, selected.Provider)
+	effective, err := assembleLLMConfig()
+	if err != nil {
+		return "", err
+	}
+	if effective == nil || effective.DefaultProvider != selected.Provider || effective.DefaultModel != selected.Model {
+		if effective != nil && effective.DefaultProvider != "" {
+			notice += fmt.Sprintf("\nEnvironment or .env model settings currently override this default with %s (%s).", effective.DefaultModel, effective.DefaultProvider)
+		} else {
+			notice += "\nThis default is not effective while its saved provider is disabled; use /setup to enable it."
+		}
+		notice += " The selected model still applies to this conversation."
+	}
+	return notice, nil
 }
 
 // selectEffortInteractive presents a picker of the reasoning effort levels the
@@ -367,12 +479,13 @@ func (h *shellCallHandler) selectModelInteractive(ctx context.Context) error {
 // ".effort <level>" path once a level is selected, and no-ops if the user
 // aborts the form.
 func (h *shellCallHandler) selectEffortInteractive(ctx context.Context) error {
-	llm, err := h.llm(ctx)
+	target, err := h.commandTarget(ctx)
 	if err != nil {
 		return err
 	}
 
-	options := reasoningEffortOptions(h.llmModel)
+	_, model := target.llmSnapshot()
+	options := reasoningEffortOptions(model.Model)
 
 	var selected string
 	form := idtui.NewForm(
@@ -386,6 +499,9 @@ func (h *shellCallHandler) selectEffortInteractive(ctx context.Context) error {
 	)
 
 	if err := Frontend.HandleForm(ctx, form); err != nil {
+		if errors.Is(err, huh.ErrUserAborted) {
+			return nil
+		}
 		return err
 	}
 
@@ -393,7 +509,7 @@ func (h *shellCallHandler) selectEffortInteractive(ctx context.Context) error {
 		return nil // user aborted
 	}
 
-	return llm.Target().Effort(selected)
+	return target.Effort(ctx, selected)
 }
 
 // reasoningEffortOptions builds the option list for the interactive ".effort"
@@ -437,55 +553,85 @@ func reasoningEffortOptions(model string) []huh.Option[string] {
 	return options
 }
 
-// availableModelOptions builds the option list for the interactive ".model"
-// picker: every model offered by each configured & enabled provider, labelled
-// with its provider and deduplicated by model ID. When no providers are
-// configured on disk (e.g. an env-var-only setup), it falls back to the full
-// embedded catalog so the picker is still useful.
-func availableModelOptions() []huh.Option[string] {
-	cfg, _ := llmconfig.Load()
+// modelSelection keeps routing identity separate from the model's API ID.
+// Providers can share IDs, and IDs containing slashes need not be prefixed.
+type modelSelection struct {
+	Provider string
+	Model    string
+}
+
+// Unknown model names use the router's "other" provider, but its endpoint and
+// credentials come from the OpenAI configuration slot. Keep picker values and
+// saved defaults in the configuration's namespace rather than persisting "other".
+func (selection modelSelection) configRoute() modelSelection {
+	if selection.Provider == "other" {
+		selection.Provider = "openai"
+	}
+	return selection
+}
+
+// availableModelOptions asks the connected engine for effective routing config,
+// including providers inherited from a parent client in nested sessions. Without
+// a connection, assemble the local file, environment and .env configuration.
+func availableModelOptions(ctx context.Context, current modelSelection) ([]huh.Option[modelSelection], error) {
+	var cfg *engine.LLMConfig
+	var err error
+	if read, ok := ctx.Value(llmModelConfigKey{}).(llmModelConfigReader); ok {
+		cfg, err = read(ctx)
+	} else {
+		cfg, err = assembleLLMConfig()
+	}
+	if err != nil {
+		return nil, err
+	}
+	return modelOptions(cfg, current), nil
+}
+
+// modelOptions deduplicates within each provider, never across providers: the
+// same model can use different credentials/routes.
+func modelOptions(cfg *engine.LLMConfig, current modelSelection) []huh.Option[modelSelection] {
+	current = current.configRoute()
+	if cfg == nil {
+		return nil
+	}
 
 	var providers []string
-	if cfg != nil {
-		for name, p := range cfg.LLM.Providers {
-			if p.Enabled {
-				providers = append(providers, name)
-			}
-		}
-	}
-	// Nothing configured on disk: offer every known provider's catalog.
-	if len(providers) == 0 {
-		for _, e := range llmconfig.ProviderEntries() {
-			providers = append(providers, e.ConfigKey)
-		}
+	for name := range cfg.Providers {
+		providers = append(providers, name)
 	}
 	slices.Sort(providers)
-	providers = slices.Compact(providers)
 
-	var options []huh.Option[string]
-	seen := make(map[string]bool)
-	add := func(id, label string) {
-		if id == "" || seen[id] {
+	var options []huh.Option[modelSelection]
+	seen := make(map[modelSelection]bool)
+	add := func(provider, id, label string) {
+		selection := modelSelection{Provider: provider, Model: id}
+		if id == "" || seen[selection] {
 			return
 		}
-		seen[id] = true
-		options = append(options, huh.NewOption(label, id))
+		seen[selection] = true
+		options = append(options, huh.NewOption(fmt.Sprintf("%s (%s)", label, provider), selection))
 	}
 
 	for _, provider := range providers {
-		// A configured provider may pin a model that isn't in the catalog
-		// (e.g. a local / custom endpoint); offer it alongside the catalog.
-		if cfg != nil {
-			if p, ok := cfg.LLM.Providers[provider]; ok && p.Model != "" {
-				add(p.Model, fmt.Sprintf("%s (%s)", p.Model, provider))
-			}
+		// Keep a manually selected custom model visible, but never introduce an
+		// unconfigured provider just because an old conversation used it.
+		if provider == current.Provider {
+			add(provider, current.Model, current.Model)
 		}
+		// Configured custom models may not occur in the embedded catalog.
+		// The default model can be distinct from the provider's pinned model.
+		if provider == cfg.DefaultProvider {
+			add(provider, cfg.DefaultModel, cfg.DefaultModel)
+		}
+		p := cfg.Providers[provider]
+		add(provider, p.Model, p.Model)
+		add(provider, p.SmallModel, p.SmallModel)
 		for _, m := range llmconfig.ModelsForProvider(provider) {
 			label := m.Label
 			if label == "" {
 				label = m.ID
 			}
-			add(m.ID, fmt.Sprintf("%s (%s)", label, provider))
+			add(provider, m.ID, label)
 		}
 	}
 	return options
@@ -493,6 +639,9 @@ func availableModelOptions() []huh.Option[string] {
 
 func (h *shellCallHandler) registerCommands() error { //nolint:gocyclo
 	var builtins []*ShellCommand
+	// Keep Cloud sign-out distinct from the agent's provider logout picker.
+	cloudLogout := cobraToShellCommand(logoutCmd)
+	cloudLogout.Use = ".cloud-logout"
 
 	builtins = append(builtins,
 		&ShellCommand{
@@ -514,6 +663,13 @@ func (h *shellCallHandler) registerCommands() error { //nolint:gocyclo
 			Description: `Show documentation for a command, function, module, or type`,
 			Args:        MaximumArgs(1),
 			Run: func(ctx context.Context, cmd *ShellCommand, args []string, st *ShellState) error {
+				if h.commandMode(ctx) == modePrompt && st == nil {
+					help, err := h.promptHelp(args)
+					if err != nil {
+						return err
+					}
+					return h.Print(ctx, help)
+				}
 				var err error
 
 				// First command in chain
@@ -783,13 +939,14 @@ Without arguments, the current working directory is replaced by the initial cont
 			},
 		},
 		cobraToShellCommand(loginCmd),
-		cobraToShellCommand(logoutCmd),
+		cloudLogout,
 		cobraToShellCommand(moduleDepInstallCmd),
 		cobraToShellCommand(moduleUpdateCmd),
 	)
 
 	// Add LLM commands
 	builtins = append(builtins, h.llmBuiltins()...)
+	builtins = append(builtins, h.llmConfigBuiltins()...)
 	slices.SortStableFunc(builtins, func(x, y *ShellCommand) int {
 		return cmp.Compare(x.Use, y.Use)
 	})

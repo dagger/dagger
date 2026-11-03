@@ -72,7 +72,74 @@ func (h *shellCallHandler) CommandsList(name string, cmds []*ShellCommand) strin
 	return sb.String()
 }
 
+// agentCommandHelp is the intentional agent surface, not a mirror of shell
+// builtins. Routing, completion, and help share it so discovery stays honest.
+var agentCommandHelp = []struct {
+	name, description string
+	advanced          bool
+}{
+	{"help", "Show available commands", false},
+	{"setup", "Connect or reconnect an AI account", false},
+	{"model", "Choose a model, optionally making it your default", false},
+	{"clear", "Start a fresh conversation", false},
+	{"logout", "Disconnect a saved AI account", false},
+	{"exit", "Leave the agent session", false},
+	{"compact", "Summarize the conversation to free up context", true},
+	{"effort", "Adjust how much reasoning the model uses", true},
+	{"history", "View the conversation history", true},
+	{"context", "Inspect what occupies the context window", true},
+	{"shell", "Switch to the Dagger shell", true},
+}
+
+func agentCommandDescription(name string) (string, bool) {
+	for _, command := range agentCommandHelp {
+		if command.name == name {
+			return command.description, true
+		}
+	}
+	return "", false
+}
+
+func (h *shellCallHandler) promptHelp(args []string) (string, error) {
+	if len(args) > 0 {
+		name := strings.TrimPrefix(strings.TrimPrefix(args[0], "/"), ".")
+		description, ok := agentCommandDescription(name)
+		if !ok {
+			return "", fmt.Errorf("unknown agent command %q; use /help to see available commands", args[0])
+		}
+		command, err := h.BuiltinCommand("." + name)
+		if err != nil {
+			return "", err
+		}
+		use := strings.SplitN(command.Use, "\n", 2)[0]
+		if name == "help" {
+			use = ".help [command]"
+		}
+		return description + "\n\nUsage: /" + strings.TrimPrefix(use, "."), nil
+	}
+	var doc ShellDoc
+	for _, advanced := range []bool{false, true} {
+		var lines strings.Builder
+		for _, command := range agentCommandHelp {
+			if command.advanced == advanced {
+				fmt.Fprintf(&lines, "/%-10s %s\n", command.name, command.description)
+			}
+		}
+		title := "Everyday commands"
+		if advanced {
+			title = "Advanced"
+		}
+		doc.Add(title, strings.TrimSuffix(lines.String(), "\n"))
+	}
+	doc.Add("", "Use /help <command> for details. Type a message to talk to the agent.")
+	return doc.String(), nil
+}
+
 func (h *shellCallHandler) MainHelp() string {
+	if h.mode == modePrompt {
+		help, _ := h.promptHelp(nil)
+		return help
+	}
 	var doc ShellDoc
 
 	def := h.GetDef(nil)

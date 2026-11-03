@@ -327,6 +327,11 @@ type clientRecord struct {
 	// externally returned value is a deep clone of it.
 	metadataSealed bool
 
+	// Live LLM configuration is separate from immutable bootstrap metadata.
+	// Protected by daggerSession.scopeMu; revision > 0 includes explicit reset.
+	llmConfig         *engine.LLMConfig
+	llmConfigRevision uint64
+
 	// closed after the shutdown endpoint is called
 	shutdownCh        chan struct{}
 	closeShutdownOnce sync.Once
@@ -426,10 +431,11 @@ type clientRuntime struct {
 	// metadata of that ongoing function call
 	fnCall *core.FunctionCall
 
-	cloudArtifactMu      sync.Mutex
-	cloudArtifactClients map[string]*engineclient.Client
-	cloudArtifactClosed  bool
-	cloudArtifactConnect singleflight.Group[string, *engineclient.Client]
+	cloudArtifactMu         sync.Mutex
+	cloudArtifactClients    map[string]*engineclient.Client
+	cloudArtifactLLMConfigs map[string]*cloudLLMConfigState
+	cloudArtifactClosed     bool
+	cloudArtifactConnect    singleflight.Group[string, *engineclient.Client]
 
 	// Trace and log providers are session-owned. These lightweight bound
 	// exporters are retained only for integrations that deliver telemetry for a
@@ -2736,41 +2742,52 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		ctx = analytics.WithContext(ctx, sess.analytics)
 		r = r.WithContext(ctx)
 
-		// The session's built-in endpoints are exact paths, so while no endpoint was mixed in through
-		// MuxEndpoint they're served without building a mux for every request; any other request
-		// goes through the mux as before, which also keeps a mixed-in pattern's precedence.
-		sess.endpointMu.RLock()
-		mixedIn := len(sess.endpoints) > 0
-		sess.endpointMu.RUnlock()
-		switch path := r.URL.Path; {
-		case mixedIn:
-		case path == engine.QueryEndpoint:
-			httpHandlerFunc(srv.serveQuery, client).ServeHTTP(w, r)
-			return nil
-		case path == engine.SessionAttachablesEndpoint:
-			httpHandlerFunc(srv.serveSessionAttachables, client.clientRecord).ServeHTTP(w, r)
-			return nil
-		case path == engine.InitEndpoint:
-			httpHandlerFunc(srv.serveInit, client).ServeHTTP(w, r)
-			return nil
-		case path == engine.ShutdownEndpoint:
-			httpHandlerFunc(srv.serveShutdown, client).ServeHTTP(w, r)
-			return nil
-		}
-		mux = http.NewServeMux()
-		mux.Handle(engine.SessionAttachablesEndpoint, httpHandlerFunc(srv.serveSessionAttachables, client.clientRecord))
-		mux.Handle(engine.QueryEndpoint, httpHandlerFunc(srv.serveQuery, client))
-		mux.Handle(engine.InitEndpoint, httpHandlerFunc(srv.serveInit, client))
-		mux.Handle(engine.ShutdownEndpoint, httpHandlerFunc(srv.serveShutdown, client))
-		sess.endpointMu.RLock()
-		for path, handler := range sess.endpoints {
-			mux.Handle(path, handler)
-		}
-		sess.endpointMu.RUnlock()
+		srv.serveClientEndpoints(w, r, client)
+		return nil
 	}
 
 	mux.ServeHTTP(w, r)
 	return nil
+}
+
+func (srv *Server) serveClientEndpoints(w http.ResponseWriter, r *http.Request, client *clientRuntime) {
+	sess := client.daggerSession
+	// The session's built-in endpoints are exact paths, so while no endpoint was mixed in through
+	// MuxEndpoint they're served without building a mux for every request; any other request
+	// goes through the mux as before, which also keeps a mixed-in pattern's precedence.
+	sess.endpointMu.RLock()
+	mixedIn := len(sess.endpoints) > 0
+	sess.endpointMu.RUnlock()
+	switch path := r.URL.Path; {
+	case mixedIn:
+	case path == engine.QueryEndpoint:
+		httpHandlerFunc(srv.serveQuery, client).ServeHTTP(w, r)
+		return
+	case path == engine.SessionAttachablesEndpoint:
+		httpHandlerFunc(srv.serveSessionAttachables, client.clientRecord).ServeHTTP(w, r)
+		return
+	case path == engine.InitEndpoint:
+		httpHandlerFunc(srv.serveInit, client).ServeHTTP(w, r)
+		return
+	case path == engine.LLMConfigEndpoint:
+		httpHandlerFunc(srv.serveLLMConfig, client).ServeHTTP(w, r)
+		return
+	case path == engine.ShutdownEndpoint:
+		httpHandlerFunc(srv.serveShutdown, client).ServeHTTP(w, r)
+		return
+	}
+	mux := http.NewServeMux()
+	mux.Handle(engine.SessionAttachablesEndpoint, httpHandlerFunc(srv.serveSessionAttachables, client.clientRecord))
+	mux.Handle(engine.QueryEndpoint, httpHandlerFunc(srv.serveQuery, client))
+	mux.Handle(engine.InitEndpoint, httpHandlerFunc(srv.serveInit, client))
+	mux.Handle(engine.ShutdownEndpoint, httpHandlerFunc(srv.serveShutdown, client))
+	mux.Handle(engine.LLMConfigEndpoint, httpHandlerFunc(srv.serveLLMConfig, client))
+	sess.endpointMu.RLock()
+	for path, handler := range sess.endpoints {
+		mux.Handle(path, handler)
+	}
+	sess.endpointMu.RUnlock()
+	mux.ServeHTTP(w, r)
 }
 
 // serveChildClient serves a request that parent forwarded for a Dagger client
@@ -4733,11 +4750,25 @@ func (srv *Server) SharedCloudArtifactClient(ctx context.Context, scope string) 
 	client, _, err := parent.cloudArtifactConnect.Do(ctx, scope, func(ctx context.Context) (*engineclient.Client, error) {
 		parent.cloudArtifactMu.Lock()
 		cached, closed := parent.cloudArtifactClients[scope], parent.cloudArtifactClosed
+		var llmState *cloudLLMConfigState
+		if cached != nil && !closed {
+			if parent.cloudArtifactLLMConfigs == nil {
+				parent.cloudArtifactLLMConfigs = make(map[string]*cloudLLMConfigState)
+			}
+			llmState = parent.cloudArtifactLLMConfigs[scope]
+			if llmState == nil {
+				llmState = &cloudLLMConfigState{}
+				parent.cloudArtifactLLMConfigs[scope] = llmState
+			}
+		}
 		parent.cloudArtifactMu.Unlock()
 		if closed {
 			return nil, fmt.Errorf("cloud artifact clients are closed")
 		}
 		if cached != nil {
+			if err := llmState.sync(ctx, parent.daggerSession, parent.clientRecord, cached); err != nil {
+				return nil, fmt.Errorf("refresh cloud LLM configuration: %w", err)
+			}
 			return cached, nil
 		}
 		// Setup can outlive its first caller. Retain the parent until it ends.
@@ -4750,7 +4781,8 @@ func (srv *Server) SharedCloudArtifactClient(ctx context.Context, scope string) 
 		if err != nil {
 			return nil, err
 		}
-		client, remote, err := srv.CloudEngineClient(ctx, "", "checks", nil)
+		llmState = &cloudLLMConfigState{}
+		client, remote, err := srv.cloudEngineClient(ctx, "", "checks", nil, llmState)
 		if err != nil {
 			return nil, err
 		}
@@ -4764,6 +4796,10 @@ func (srv *Server) SharedCloudArtifactClient(ctx context.Context, scope string) 
 				parent.cloudArtifactClients = make(map[string]*engineclient.Client)
 			}
 			parent.cloudArtifactClients[scope] = client
+			if parent.cloudArtifactLLMConfigs == nil {
+				parent.cloudArtifactLLMConfigs = make(map[string]*cloudLLMConfigState)
+			}
+			parent.cloudArtifactLLMConfigs[scope] = llmState
 		}
 		parent.cloudArtifactMu.Unlock()
 		if closed || cached != nil {
@@ -4785,6 +4821,16 @@ func (srv *Server) CloudEngineClient(
 	function string,
 	execCmd []string,
 ) (*engineclient.Client, bool, error) {
+	return srv.cloudEngineClient(ctx, module, function, execCmd, &cloudLLMConfigState{})
+}
+
+func (srv *Server) cloudEngineClient(
+	ctx context.Context,
+	module string,
+	function string,
+	execCmd []string,
+	llmState *cloudLLMConfigState,
+) (*engineclient.Client, bool, error) {
 	parentClient, err := srv.nonModuleParentClient(ctx)
 	if err != nil {
 		return nil, false, err
@@ -4803,12 +4849,13 @@ func (srv *Server) CloudEngineClient(
 		runnerHost = testHost
 	}
 
+	llmConfig := llmState.bootstrap(parentClient.daggerSession, parentClient.clientRecord)
 	params := engineclient.Params{
 		RunnerHost:     runnerHost,
 		Workspace:      parentClient.clientMetadata.Workspace,
 		WorkspaceEnv:   parentClient.clientMetadata.WorkspaceEnv,
 		UserConfigPath: parentClient.clientMetadata.UserConfigPath,
-		LLMConfig:      parentClient.clientMetadata.LLMConfig,
+		LLMConfig:      llmConfig,
 		ExtraModules:   parentClient.clientMetadata.ExtraModules,
 		// Artifact queries load their own selected modules.
 		SkipWorkspaceModules: true,

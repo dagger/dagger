@@ -145,9 +145,15 @@ type sessionAgent struct {
 
 	// llm is the conversation as an immutable value: the last committed
 	// snapshot while a runtime drives it, and the seed before one exists.
-	llmL  sync.RWMutex
-	llm   *core.LLM
-	model string
+	llmL     sync.RWMutex
+	llm      *core.LLM
+	model    string
+	provider string
+
+	// Serialize local prompt preparation, control edits and snapshot adoption.
+	// Never held while waiting for a prompt's response.
+	mutationOnce sync.Once
+	mutationGate chan struct{}
 
 	// name is the display label the roster shows. It carries no identity.
 	name string
@@ -416,10 +422,11 @@ func (a *sessionAgent) reset() error {
 }
 
 func (a *sessionAgent) resetLLM() *core.LLM {
+	current, model := a.llmSnapshot()
 	if a.tracedReset != nil {
 		llm := a.tracedReset
-		if a.model != "" {
-			llm = llm.WithModel(a.model)
+		if model.Model != "" {
+			llm = llm.WithModel(model.Model, core.LLMWithModelOpts{Provider: model.Provider})
 		}
 		return llm
 	}
@@ -429,11 +436,11 @@ func (a *sessionAgent) resetLLM() *core.LLM {
 	// latest synchronized checkpoint rather than its original workspace.
 	dag := a.session.dag
 	baseline := a.lastSynced()
-	if baseline == nil && a.llm != nil {
+	if baseline == nil && current != nil {
 		// Attached and trace-restored conversations may not carry their original
 		// synchronization checkpoint. Their current portable workspace is the
 		// safest fallback when it is bound: it cannot compare unlike host roots.
-		candidate := a.llm.Workspace()
+		candidate := current.Workspace()
 		if _, err := candidate.ID(a.session.plumbingCtx); err != nil {
 			slog.Debug("current conversation has no workspace reset baseline", "error", err)
 		} else {
@@ -443,11 +450,11 @@ func (a *sessionAgent) resetLLM() *core.LLM {
 	var llm *core.LLM
 	if a.initialLLM != nil {
 		llm = a.initialLLM
-		if a.model != "" {
-			llm = llm.WithModel(a.model)
+		if model.Model != "" {
+			llm = llm.WithModel(model.Model, core.LLMWithModelOpts{Provider: model.Provider})
 		}
 	} else {
-		llm = core.NewQuery(dag).LLM(core.LLMOpts{Model: a.model})
+		llm = core.NewQuery(dag).LLM(core.LLMOpts{Model: model.Model, Provider: model.Provider})
 	}
 	if baseline != nil {
 		llm = llm.WithWorkspace(baseline)
@@ -686,35 +693,34 @@ func (a *sessionAgent) Interrupt() bool {
 // same instance and roster entry. Submitting the edited text therefore cannot
 // join the old turn, and no background conversation is touched.
 func (a *sessionAgent) Rewind(ctx context.Context, base *core.LLM) error {
-	if err := a.rewindRuntime(ctx, base); err != nil {
-		return err
-	}
-	return a.setLLM(base)
+	return a.withSettledRuntime(ctx, func(rt agentRuntime) error {
+		if rt != nil {
+			if err := rt.Reseed(ctx, base); err != nil {
+				return err
+			}
+		}
+		return a.setLLM(base)
+	})
 }
 
-// rewindRuntime synchronizes with the client turn and swaps the engine runtime;
-// split from Rewind so routing and turn-ordering policy can be tested without a
-// live dagger client.
+// rewindRuntime exercises the runtime-only half of Rewind under the same
+// settlement and conversation guard, so routing and turn-ordering policy can be
+// tested without a live dagger client.
 //
 // Unlike updateLLM, a refused reseed is NOT a reason to detach here: the edit
 // is abandoned with the error and the conversation left exactly as it was,
 // since the inline editor only exposes the old prompt once the rewind holds.
 func (a *sessionAgent) rewindRuntime(ctx context.Context, base *core.LLM) error {
-	rt, err := a.settleTurn(ctx)
-	if err != nil {
-		return err
-	}
-	if rt != nil {
-		if err := rt.Reseed(ctx, base); err != nil {
-			return err
+	return a.withSettledRuntime(ctx, func(rt agentRuntime) error {
+		if rt != nil {
+			return rt.Reseed(ctx, base)
 		}
-	}
-	return nil
+		return nil
+	})
 }
 
 // settleTurn brings the conversation to rest before an explicit in-place
-// replacement (rewind, branch, /compact), returning the runtime to replace
-// into (nil when there is none). The engine refuses to reseed a RUNNING agent,
+// replacement (rewind, branch, clear). The engine refuses to reseed a RUNNING agent,
 // so a replacement issued mid-turn must first stop that turn:
 //
 //   - a client turn in flight (WithPrompt) is canceled with errAgentRewound
@@ -724,7 +730,7 @@ func (a *sessionAgent) rewindRuntime(ctx context.Context, base *core.LLM) error 
 //     interrupted directly and awaited until it parks PAUSED.
 //
 // The abandoned turn's presentation callbacks are drained either way.
-func (a *sessionAgent) settleTurn(ctx context.Context) (agentRuntime, error) {
+func (a *sessionAgent) settleTurn(ctx context.Context) error {
 	a.turnL.Lock()
 	cancel := a.turnCancel
 	done := a.turnDone
@@ -738,22 +744,26 @@ func (a *sessionAgent) settleTurn(ctx context.Context) (agentRuntime, error) {
 		if done != nil {
 			select {
 			case <-ctx.Done():
-				return nil, context.Cause(ctx)
+				return context.Cause(ctx)
 			case <-done:
 			}
 		}
-	} else if rt := a.runtime(); rt != nil {
+	}
+	// Cancellation during preparation can finish before the client turn reaches
+	// its normal response/interrupt cleanup, yet still have spawned a runtime.
+	// Recheck it after the turn settles rather than assuming it is already parked.
+	if rt := a.runtime(); rt != nil {
 		state, err := rt.State(ctx)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		switch state {
 		case core.AgentStateRunning, core.AgentStateWaitingInput:
 			if err := rt.Interrupt(ctx); err != nil {
-				return nil, err
+				return err
 			}
 			if err := waitForAgentState(ctx, rt, core.AgentStatePaused); err != nil {
-				return nil, err
+				return err
 			}
 		}
 	}
@@ -761,33 +771,14 @@ func (a *sessionAgent) settleTurn(ctx context.Context) (agentRuntime, error) {
 	// Drain the abandoned turn's presentation callbacks before exposing the
 	// replacement.
 	a.stepWG.Wait()
-
-	// Read the runtime only now: a turn that was still opening may have
-	// spawned it while it was being canceled.
-	return a.runtime(), nil
+	return nil
 }
 
-// CompactInPlace is /compact: it settles the conversation, summarizes its
-// latest committed state, and replaces the conversation with the summary IN
-// PLACE -- the focused agent keeps its runtime and roster entry, whether this
-// session spawned it or attached to it.
+// CompactInPlace summarizes the latest committed state at a step boundary. The
+// engine preserves any active turn and resumes its existing work after commit;
+// idle/paused agents remain idle/paused and no user message is injected.
 func (a *sessionAgent) CompactInPlace(ctx context.Context) error {
-	rt, err := a.settleTurn(ctx)
-	if err != nil {
-		return err
-	}
-	if rt != nil {
-		// An attached agent may have advanced on its own since this
-		// conversation last re-rooted; compact what it actually holds.
-		if err := a.syncFromAgent(rt); err != nil {
-			return err
-		}
-	}
-	compacted, err := a.Compact(ctx)
-	if err != nil {
-		return err
-	}
-	return a.updateLLM(compacted)
+	return a.editAtBoundary(ctx, "compact agent conversation", compactLLM)
 }
 
 // Branch replaces the conversation with an earlier state of it (target), IN
@@ -801,27 +792,25 @@ func (a *sessionAgent) CompactInPlace(ctx context.Context) error {
 // Nothing is resumed afterwards either, so a branch taken mid-turn leaves the
 // interrupted agent parked until that next message.
 func (a *sessionAgent) Branch(ctx context.Context, target *core.LLM, summary idtui.BranchSummary) error {
-	rt, err := a.settleTurn(ctx)
-	if err != nil {
-		return err
-	}
-	if summary.Summarize {
-		if rt != nil {
-			if err := a.syncFromAgent(rt); err != nil {
-				slog.Warn("failed to sync conversation before summarizing branch", "error", err)
+	return a.withSettledRuntime(ctx, func(rt agentRuntime) error {
+		if summary.Summarize {
+			if rt != nil {
+				if err := a.syncFromAgentLocked(rt); err != nil {
+					slog.Warn("failed to sync conversation before summarizing branch", "error", err)
+				}
+			}
+			summaryText, err := a.BranchSummary(ctx, summary.CustomPrompt)
+			if err != nil {
+				slog.Error("failed to summarize old branch", "error", err)
+			} else {
+				target = target.WithPrompt(fmt.Sprintf(
+					"The user explored a different conversation branch before returning here. Summary of that exploration:\n\n%s",
+					summaryText,
+				))
 			}
 		}
-		summaryText, err := a.BranchSummary(ctx, summary.CustomPrompt)
-		if err != nil {
-			slog.Error("failed to summarize old branch", "error", err)
-		} else {
-			target = target.WithPrompt(fmt.Sprintf(
-				"The user explored a different conversation branch before returning here. Summary of that exploration:\n\n%s",
-				summaryText,
-			))
-		}
-	}
-	return a.updateLLM(target)
+		return a.updateLLM(target)
+	})
 }
 
 // interruptIfBusy preempts a runtime this session is not currently driving,
@@ -868,6 +857,17 @@ func (a *sessionAgent) interruptAgent(rt agentRuntime) {
 // runtime handle: the snapshot is the agent's own progression, not a wholesale
 // replacement.
 func (a *sessionAgent) syncFromAgent(rt agentRuntime) error {
+	unlock, err := a.lockConversation(a.session.plumbingCtx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	return a.syncFromAgentLocked(rt)
+}
+
+// syncFromAgentLocked is the snapshot/adoption half for callers that already
+// hold the conversation gate across a larger replacement operation.
+func (a *sessionAgent) syncFromAgentLocked(rt agentRuntime) error {
 	snapID, err := rt.SnapshotID(a.session.plumbingCtx)
 	if err != nil {
 		return err
@@ -898,6 +898,16 @@ func (a *sessionAgent) WithPromptInput(ctx context.Context, input idtui.PromptIn
 	defer cancel(nil)
 	a.beginTurn(cancel)
 	defer a.endTurn()
+	unlock, err := a.lockConversation(ctx)
+	if err != nil {
+		return err
+	}
+	preparing := true
+	defer func() {
+		if preparing {
+			unlock()
+		}
+	}()
 
 	// Resolve any @-references in the prompt: paths already inside the
 	// workspace are rewritten to workspace-relative paths, other paths are
@@ -910,7 +920,9 @@ func (a *sessionAgent) WithPromptInput(ctx context.Context, input idtui.PromptIn
 	if err != nil {
 		return err
 	}
+	a.llmL.Lock()
 	a.model = resolvedModel
+	a.llmL.Unlock()
 
 	// Check if we need to compact before adding the prompt.
 	compacted, err := a.maybeAutoCompact(ctx)
@@ -949,6 +961,9 @@ func (a *sessionAgent) WithPromptInput(ctx context.Context, input idtui.PromptIn
 		return err
 	}
 
+	preparing = false
+	unlock()
+
 	// Block until the turn that consumed the prompt ends.
 	_, responseErr := msg.Response(ctx)
 
@@ -980,7 +995,8 @@ func (a *sessionAgent) WithPromptInput(ctx context.Context, input idtui.PromptIn
 	}
 
 	// In --debug, surface how much this turn grew the context.
-	a.reportContextUsage(ctx, a.llm)
+	current, _ := a.llmSnapshot()
+	a.reportContextUsage(ctx, current)
 
 	// Run post-turn presentation work (title generation), even across
 	// interrupted turns.
@@ -1035,16 +1051,20 @@ func (a *sessionAgent) reseedAgent(llm *core.LLM) error {
 }
 
 func (a *sessionAgent) setLLM(llm *core.LLM) error {
-	a.llmL.Lock()
-	a.llm = llm
-	a.llmL.Unlock()
-
-	// figure out what the model resolved to
-	model, err := a.llm.Model(a.session.plumbingCtx)
+	model, err := resolveCommandModel(a.session.plumbingCtx, llm)
 	if err != nil {
 		return err
 	}
-	a.model = model
+	a.adoptLLM(llm, model)
+	return nil
+}
+
+func (a *sessionAgent) adoptLLM(llm *core.LLM, model modelSelection) {
+	a.llmL.Lock()
+	a.llm = llm
+	a.model = model.Model
+	a.provider = model.Provider
+	a.llmL.Unlock()
 
 	// Refresh the status line (and changes preview) so its token/cost/context
 	// stats stay in sync with the LLM. Routing this through setLLM means
@@ -1056,7 +1076,6 @@ func (a *sessionAgent) setLLM(llm *core.LLM) error {
 	// paid for them synchronously kept the client's "working" indicator lit
 	// well after the reply had landed.
 	a.scheduleUIRefresh()
-	return nil
 }
 
 // reportContextUsage emits a --debug span showing this turn's context size (the
@@ -1122,9 +1141,10 @@ func (a *sessionAgent) updateStatusLine(llm *core.LLM) error {
 		return err
 	}
 
+	_, selectedModel := a.llmSnapshot()
 	statusData := idtui.StatusLineData{
-		Model:             a.model,
-		SubscriptionLabel: a.session.subscriptionLabel(),
+		Model:             selectedModel.Model,
+		SubscriptionLabel: a.session.subscriptionLabel(selectedModel.Provider),
 		ContextPercent:    -1, // unknown by default
 		AutoCompact:       a.ShouldAutocompact(),
 	}
@@ -1141,7 +1161,7 @@ func (a *sessionAgent) updateStatusLine(llm *core.LLM) error {
 	statusData.CacheReads, _ = usage.CachedTokenReads(plumbing)
 	statusData.CacheWrites, _ = usage.CachedTokenWrites(plumbing)
 	if provider, err := llm.Provider(plumbing); err == nil {
-		statusData.TotalCost = modelcatalog.Cost(provider, a.model,
+		statusData.TotalCost = modelcatalog.Cost(provider, selectedModel.Model,
 			int64(statusData.InputTokens), int64(statusData.OutputTokens),
 			int64(statusData.CacheReads), int64(statusData.CacheWrites))
 	}
@@ -1330,7 +1350,8 @@ func (a *sessionAgent) busy() bool {
 // host-side cherry-picks and unrelated work stay on the host until an explicit
 // reload. Failed exports retain the checkpoint so the save can be retried.
 func (a *sessionAgent) ExportChanges(ctx context.Context) (rerr error) {
-	if a.llm == nil {
+	llm, _ := a.llmSnapshot()
+	if llm == nil {
 		return fmt.Errorf("no LLM session active")
 	}
 	if !a.syncOpL.TryLock() {
@@ -1349,7 +1370,7 @@ func (a *sessionAgent) ExportChanges(ctx context.Context) (rerr error) {
 	}
 	// Pin exactly what is exported. The save boundary remains in the agent's
 	// history even when export cherry-picks its commits onto different host IDs.
-	sourceID, err := a.llm.Workspace().ID(ctx)
+	sourceID, err := llm.Workspace().ID(ctx)
 	if err != nil {
 		return err
 	}
@@ -1376,9 +1397,6 @@ func (a *sessionAgent) ExportChanges(ctx context.Context) (rerr error) {
 // baseline from the checkout; capture failure leaves the conversation unchanged.
 // Bind it eagerly so binding failures surface here.
 func (a *sessionAgent) ResetWorkspace(ctx context.Context) (rerr error) {
-	if a.llm == nil {
-		return fmt.Errorf("no LLM session active")
-	}
 	if !a.syncOpL.TryLock() {
 		return fmt.Errorf("another save/reload is already in progress")
 	}
@@ -1386,6 +1404,18 @@ func (a *sessionAgent) ResetWorkspace(ctx context.Context) (rerr error) {
 	ctx, span := Tracer().Start(ctx, "reloading workspace from local checkout", telemetry.Reveal())
 	defer telemetry.EndWithCause(span, &rerr)
 
+	// Lock order is syncOpL -> conversation gate -> synchronization baseline.
+	// Read the LLM only after a pending boundary edit has committed or aborted,
+	// and retain the gate through reseed/adoption so reload cannot race its lease.
+	unlock, err := a.lockConversation(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	llm, _ := a.llmSnapshot()
+	if llm == nil {
+		return fmt.Errorf("no LLM session active")
+	}
 	if a.busy() {
 		return fmt.Errorf("agent is mid-turn; wait for it to finish (or interrupt with ctrl+c) before synchronizing")
 	}
@@ -1393,7 +1423,7 @@ func (a *sessionAgent) ResetWorkspace(ctx context.Context) (rerr error) {
 	if err != nil {
 		return err
 	}
-	reset, err := a.llm.WithWorkspace(baseline).Sync(ctx)
+	reset, err := llm.WithWorkspace(baseline).Sync(ctx)
 	if err != nil {
 		return fmt.Errorf("reset workspace: %w", err)
 	}
@@ -1452,19 +1482,42 @@ func (a *sessionAgent) maybeAutoCompact(ctx context.Context) (_ *core.LLM, rerr 
 //
 // The agent's runtime is reseeded with the cleared conversation in place, like
 // any wholesale replacement; an attached runtime is never stopped.
-func (a *sessionAgent) Clear() error {
-	err := a.reset()
+func (a *sessionAgent) Clear(ctx context.Context) error {
+	if err := a.settleTurn(ctx); err != nil {
+		return err
+	}
+	unlock, err := a.lockConversation(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	next := a.resetLLM()
+	model, err := resolveCommandModel(ctx, next)
+	if err != nil {
+		return err
+	}
+	if rt := a.runtime(); rt != nil {
+		if err := rt.Reseed(ctx, next); err != nil {
+			return err // failed clear never detaches or silently forks the agent
+		}
+	}
+	a.adoptLLM(next, model)
 	a.references = nil
 	a.tunnels = nil
 	a.updateReferencesPreview()
-	return err
+	return nil
 }
 
-func (a *sessionAgent) Compact(ctx context.Context) (_ *core.LLM, rerr error) {
+func (a *sessionAgent) Compact(ctx context.Context) (*core.LLM, error) {
+	llm, _ := a.llmSnapshot()
+	return compactLLM(ctx, llm)
+}
+
+func compactLLM(ctx context.Context, llm *core.LLM) (_ *core.LLM, rerr error) {
 	ctx, span := Tracer().Start(ctx, "compact", telemetry.Internal(), telemetry.Encapsulate())
 	defer telemetry.EndWithCause(span, &rerr)
 
-	compactedPrompt, err := a.llm.
+	compactedPrompt, err := llm.
 		WithoutSystemPrompts().
 		WithSystemPrompt("You are a helpful AI assistant tasked with summarizing conversations.").
 		WithPrompt(compactPrompt).
@@ -1474,7 +1527,7 @@ func (a *sessionAgent) Compact(ctx context.Context) (_ *core.LLM, rerr error) {
 		return nil, err
 	}
 
-	return a.llm.
+	return llm.
 		WithoutMessageHistory().
 		WithPrompt(fmt.Sprintf(
 			"This session is being continued from a previous conversation that ran out of context. The conversation is summarized below:\n\n%s",
@@ -1483,7 +1536,8 @@ func (a *sessionAgent) Compact(ctx context.Context) (_ *core.LLM, rerr error) {
 }
 
 func (a *sessionAgent) History(ctx context.Context) error {
-	transcript, err := a.llm.Transcript(ctx)
+	llm, _ := a.llmSnapshot()
+	transcript, err := llm.Transcript(ctx)
 	if err != nil {
 		return err
 	}
@@ -1492,30 +1546,23 @@ func (a *sessionAgent) History(ctx context.Context) error {
 	return nil
 }
 
-func (a *sessionAgent) Model(model string) error {
-	if err := a.updateLLM(a.llm.WithModel(model)); err != nil {
-		return err
-	}
-	resolved, err := a.llm.Model(a.session.plumbingCtx)
-	if err != nil {
-		return err
-	}
-	a.model = resolved
-	return nil
+func (a *sessionAgent) Model(ctx context.Context, model string, opts ...core.LLMWithModelOpts) error {
+	return a.editAtBoundary(ctx, "change agent model", func(_ context.Context, llm *core.LLM) (*core.LLM, error) {
+		return llm.WithModel(model, opts...), nil
+	})
 }
 
 // Effort changes the reasoning effort for the rest of the conversation,
 // overriding any provider-configured default. "none" disables reasoning.
-func (a *sessionAgent) Effort(effort string) error {
-	if err := a.updateLLM(a.llm.WithReasoningEffort(effort)); err != nil {
-		return err
-	}
-	// Resolve the endpoint eagerly so a configuration problem surfaces now
-	// rather than on the next prompt, mirroring Model above.
-	if _, err := a.llm.ReasoningEffort(a.session.plumbingCtx); err != nil {
-		return err
-	}
-	return nil
+func (a *sessionAgent) Effort(ctx context.Context, effort string) error {
+	return a.editAtBoundary(ctx, "change agent reasoning effort", func(ctx context.Context, llm *core.LLM) (*core.LLM, error) {
+		next := llm.WithReasoningEffort(effort)
+		// Validate before committing, so an invalid edit leaves the runtime alone.
+		if _, err := next.ReasoningEffort(ctx); err != nil {
+			return nil, err
+		}
+		return next, nil
+	})
 }
 
 // BranchSummary generates a summary of the current conversation branch. It is

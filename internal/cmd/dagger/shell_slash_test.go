@@ -29,12 +29,22 @@ func TestPromptSlashCommandMapping(t *testing.T) {
 		{"/clear", ".clear", true},
 		{"/compact", ".compact", true},
 		{"/help", ".help", true},
+		{"/setup", ".setup", true},
+		{"/config", "", false},
+		{"/show-config", "", false},
+		{"/logout", ".logout", true},
+		{"/add-key anthropic", "", false},
+		{"/remove-key openai", "", false},
+		{"/set-default openai-codex gpt-6-astra", "", false},
+		{"/reset", "", false},
 		// arguments are carried through verbatim
 		{"/model claude-sonnet-4-5", ".model claude-sonnet-4-5", true},
 		{"/effort high", ".effort high", true},
 		{"/help\tcreate", ".help\tcreate", true},
-		// hidden builtins are still runnable as slash commands
-		{"/cd ./sub", ".cd ./sub", true},
+		// Shell-only builtins are not agent slash commands.
+		{"/cd ./sub", "", false},
+		{"/shell", ".shell", true},
+		{"/exit", ".exit", true},
 		// non-commands are left for the LLM
 		{"/", "", false},
 		{"/ compact", "", false},
@@ -69,14 +79,17 @@ func TestPromptSlashCommandCompletion(t *testing.T) {
 	all := labels("/", 1)
 	require.NotEmpty(t, all)
 	require.Contains(t, all, "/help")
+	for _, command := range agentCommandHelp {
+		require.Contains(t, all, "/"+command.name)
+	}
+	for _, name := range []string{"config", "show-config", "set-default", "reset", "add-key", "remove-key", "cd", "ls", "types", "printenv", "cloud-logout"} {
+		require.NotContains(t, all, "/"+name)
+	}
 
 	// A prefix narrows the suggestions and keeps them sorted.
-	re := labels("/re", 3)
-	require.Contains(t, re, "/refresh")
-	require.True(t, sortedStrings(re), "completions should be sorted: %v", re)
-	for _, l := range re {
-		require.Contains(t, l, "/re")
-	}
+	co := labels("/co", 3)
+	require.ElementsMatch(t, []string{"/compact", "/context"}, co)
+	require.True(t, sortedStrings(co), "completions should be sorted: %v", co)
 
 	// Hidden builtins (e.g. .cd) are not suggested.
 	require.NotContains(t, labels("/cd", 3), "/cd")
@@ -87,6 +100,48 @@ func TestPromptSlashCommandCompletion(t *testing.T) {
 
 	// Ordinary prompt words yield no completions (only "/" and "$" do).
 	require.Empty(t, labels("hello", 5))
+}
+
+func TestAgentHelpIsCurated(t *testing.T) {
+	h := newSlashTestHandler(t)
+	h.mode = modePrompt
+	help := h.MainHelp() // must not need module/schema discovery
+	require.Contains(t, help, "EVERYDAY COMMANDS")
+	require.Contains(t, help, "ADVANCED")
+	for _, command := range agentCommandHelp {
+		require.Contains(t, help, "/"+command.name)
+		mapped, ok := h.slashCommand("/" + command.name)
+		require.True(t, ok)
+		require.Equal(t, "."+command.name, mapped)
+	}
+	for _, removed := range []string{"/config", "/show-config", "/set-default", "/reset", "/printenv", "Available Functions"} {
+		require.NotContains(t, help, removed)
+	}
+	for _, name := range []string{"model", "/model", ".model"} {
+		details, err := h.promptHelp([]string{name})
+		require.NoError(t, err)
+		require.Contains(t, details, "Usage: /model [model]")
+	}
+	_, err := h.promptHelp([]string{"printenv"})
+	require.ErrorContains(t, err, "unknown agent command")
+}
+
+func TestProviderLogoutDoesNotShadowCloudLogout(t *testing.T) {
+	h := newSlashTestHandler(t)
+	seen := map[string]bool{}
+	for _, command := range h.builtins {
+		require.False(t, seen[command.Name()], "duplicate builtin %s", command.Name())
+		seen[command.Name()] = true
+	}
+	logout, err := h.BuiltinCommand(".logout")
+	require.NoError(t, err)
+	require.NotNil(t, logout)
+	require.Equal(t, "llm", logout.GroupID)
+	require.False(t, logout.Hidden)
+	cloud, err := h.BuiltinCommand(".cloud-logout")
+	require.NoError(t, err)
+	require.NotNil(t, cloud)
+	require.True(t, cloud.Hidden)
 }
 
 func sortedStrings(s []string) bool {
