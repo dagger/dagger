@@ -75,6 +75,70 @@ func TestRestoreSessionInitializationNeedsNoProvider(t *testing.T) {
 	require.Nil(t, s.Target().runtime())
 }
 
+func TestSelectedModelProviderSurvivesReset(t *testing.T) {
+	for _, mode := range []string{"blank", "initial", "trace"} {
+		t.Run(mode, func(t *testing.T) {
+			var queries []string
+			dag, err := dagger.Connect(t.Context(), dagger.WithConn(agentTestConn{do: func(req *http.Request) (*http.Response, error) {
+				var query dagger.Request
+				require.NoError(t, json.NewDecoder(req.Body).Decode(&query))
+				queries = append(queries, query.Query)
+				return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"data":{"node":{"withModel":{"model":"gpt-5","provider":"openai-codex","id":"reset"}},"llm":{"id":"reset"}}}`))}, nil
+			}}))
+			require.NoError(t, err)
+			defer dag.Close()
+
+			seed := core.Ref[*core.LLM](core.NewQuery(dag), core.ID("seed"))
+			a := &sessionAgent{
+				session: &LLMSession{dag: dag, plumbingCtx: t.Context()},
+				llm:     seed,
+			}
+			require.NoError(t, a.Model("gpt-5", core.LLMWithModelOpts{Provider: "openai-codex"}))
+			require.Equal(t, "gpt-5", a.model)
+			require.Equal(t, "openai-codex", a.provider)
+			for _, query := range queries {
+				require.Contains(t, query, `provider:"openai-codex"`)
+			}
+			queries = nil
+			// Avoid workspace discovery: only exercise the reset model selection.
+			a.llm = nil
+			switch mode {
+			case "initial":
+				a.initialLLM = seed
+			case "trace":
+				a.tracedReset = seed
+			}
+			_, err = a.resetLLM().ID(t.Context())
+			require.NoError(t, err)
+			require.Len(t, queries, 1)
+			require.Contains(t, queries[0], `provider:"openai-codex"`)
+			require.Contains(t, queries[0], `model:"gpt-5"`)
+		})
+	}
+}
+
+func TestManualModelDoesNotPinPreviousProvider(t *testing.T) {
+	var queries []string
+	dag, err := dagger.Connect(t.Context(), dagger.WithConn(agentTestConn{do: func(req *http.Request) (*http.Response, error) {
+		var query dagger.Request
+		require.NoError(t, json.NewDecoder(req.Body).Decode(&query))
+		queries = append(queries, query.Query)
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"data":{"node":{"withModel":{"model":"gpt-5","provider":"openai"}}}}`))}, nil
+	}}))
+	require.NoError(t, err)
+	defer dag.Close()
+	a := &sessionAgent{
+		session:  &LLMSession{dag: dag, plumbingCtx: t.Context()},
+		llm:      core.Ref[*core.LLM](core.NewQuery(dag), core.ID("seed")),
+		provider: "openai-codex",
+	}
+	require.NoError(t, a.Model("gpt-5"))
+	require.Equal(t, "openai", a.provider)
+	for _, query := range queries {
+		require.NotContains(t, query, "provider:")
+	}
+}
+
 func TestTracedResetDoesNotRebindExportBaseline(t *testing.T) {
 	var queries []string
 	dag, err := dagger.Connect(t.Context(), dagger.WithConn(agentTestConn{do: func(req *http.Request) (*http.Response, error) {

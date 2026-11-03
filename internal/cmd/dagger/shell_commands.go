@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"dagger.io/dagger/core"
 	"github.com/charmbracelet/huh"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
@@ -329,15 +330,18 @@ func (h *shellCallHandler) selectModelInteractive(ctx context.Context) error {
 		return err
 	}
 
-	options := availableModelOptions()
+	options, err := availableModelOptions()
+	if err != nil {
+		return err
+	}
 	if len(options) == 0 {
 		return fmt.Errorf("no models available; run 'dagger llm setup' to configure a provider")
 	}
 
-	var selected string
+	var selected modelSelection
 	form := idtui.NewForm(
 		huh.NewGroup(
-			huh.NewSelect[string]().
+			huh.NewSelect[modelSelection]().
 				Title("Choose a model").
 				Height(min(len(options)+2, 12)).
 				Filtering(true).
@@ -350,12 +354,12 @@ func (h *shellCallHandler) selectModelInteractive(ctx context.Context) error {
 		return err
 	}
 
-	if selected == "" {
+	if selected.Model == "" {
 		return nil // user aborted
 	}
 
 	target := llm.Target()
-	if err := target.Model(selected); err != nil {
+	if err := target.Model(selected.Model, core.LLMWithModelOpts{Provider: selected.Provider}); err != nil {
 		return err
 	}
 	h.noteModel(target.model)
@@ -437,58 +441,60 @@ func reasoningEffortOptions(model string) []huh.Option[string] {
 	return options
 }
 
-// availableModelOptions builds the option list for the interactive ".model"
-// picker: every model offered by each configured & enabled provider, labelled
-// with its provider and deduplicated by model ID. When no providers are
-// configured on disk (e.g. an env-var-only setup), it falls back to the full
-// embedded catalog so the picker is still useful.
-func availableModelOptions() []huh.Option[string] {
-	cfg, _ := llmconfig.Load()
+// modelSelection keeps routing identity separate from the model's API ID.
+// Providers can share IDs, and IDs containing slashes need not be prefixed.
+type modelSelection struct {
+	Provider string
+	Model    string
+}
+
+// availableModelOptions lists models from the effective client configuration,
+// including environment and .env overrides. Deduplicate within each provider,
+// never across providers: the same model can use different credentials/routes.
+func availableModelOptions() ([]huh.Option[modelSelection], error) {
+	cfg, err := assembleLLMConfig()
+	if err != nil {
+		return nil, err
+	}
+	if cfg == nil {
+		return nil, nil
+	}
 
 	var providers []string
-	if cfg != nil {
-		for name, p := range cfg.LLM.Providers {
-			if p.Enabled {
-				providers = append(providers, name)
-			}
-		}
-	}
-	// Nothing configured on disk: offer every known provider's catalog.
-	if len(providers) == 0 {
-		for _, e := range llmconfig.ProviderEntries() {
-			providers = append(providers, e.ConfigKey)
-		}
+	for name := range cfg.Providers {
+		providers = append(providers, name)
 	}
 	slices.Sort(providers)
-	providers = slices.Compact(providers)
 
-	var options []huh.Option[string]
-	seen := make(map[string]bool)
-	add := func(id, label string) {
-		if id == "" || seen[id] {
+	var options []huh.Option[modelSelection]
+	seen := make(map[modelSelection]bool)
+	add := func(provider, id, label string) {
+		selection := modelSelection{Provider: provider, Model: id}
+		if id == "" || seen[selection] {
 			return
 		}
-		seen[id] = true
-		options = append(options, huh.NewOption(label, id))
+		seen[selection] = true
+		options = append(options, huh.NewOption(fmt.Sprintf("%s (%s)", label, provider), selection))
 	}
 
 	for _, provider := range providers {
-		// A configured provider may pin a model that isn't in the catalog
-		// (e.g. a local / custom endpoint); offer it alongside the catalog.
-		if cfg != nil {
-			if p, ok := cfg.LLM.Providers[provider]; ok && p.Model != "" {
-				add(p.Model, fmt.Sprintf("%s (%s)", p.Model, provider))
-			}
+		// Configured custom models may not occur in the embedded catalog.
+		// The default model can be distinct from the provider's pinned model.
+		if provider == cfg.DefaultProvider {
+			add(provider, cfg.DefaultModel, cfg.DefaultModel)
 		}
+		p := cfg.Providers[provider]
+		add(provider, p.Model, p.Model)
+		add(provider, p.SmallModel, p.SmallModel)
 		for _, m := range llmconfig.ModelsForProvider(provider) {
 			label := m.Label
 			if label == "" {
 				label = m.ID
 			}
-			add(m.ID, fmt.Sprintf("%s (%s)", label, provider))
+			add(provider, m.ID, label)
 		}
 	}
-	return options
+	return options, nil
 }
 
 func (h *shellCallHandler) registerCommands() error { //nolint:gocyclo

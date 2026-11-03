@@ -691,11 +691,11 @@ func modelOnlyDag(t *testing.T) *dagger.Client {
 	dag, err := dagger.Connect(t.Context(), dagger.WithConn(agentTestConn{do: func(req *http.Request) (*http.Response, error) {
 		var query dagger.Request
 		require.NoError(t, json.NewDecoder(req.Body).Decode(&query))
-		require.Contains(t, query.Query, "model")
-		body := `{"data":{"node":{"model":"test-model"}}}`
+		require.Regexp(t, "model|provider", query.Query)
+		body := `{"data":{"node":{"model":"test-model","provider":"local"}}}`
 		if strings.Contains(query.Query, "withModel") {
-			// .clear re-applies the selected model to the reset base.
-			body = `{"data":{"node":{"withModel":{"model":"test-model"}}}}`
+			// .clear re-applies the selected model and provider to the reset base.
+			body = `{"data":{"node":{"withModel":{"model":"test-model","provider":"local"}}}}`
 		}
 		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(body))}, nil
 	}}))

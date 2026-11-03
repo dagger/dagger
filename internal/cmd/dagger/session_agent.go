@@ -145,9 +145,10 @@ type sessionAgent struct {
 
 	// llm is the conversation as an immutable value: the last committed
 	// snapshot while a runtime drives it, and the seed before one exists.
-	llmL  sync.RWMutex
-	llm   *core.LLM
-	model string
+	llmL     sync.RWMutex
+	llm      *core.LLM
+	model    string
+	provider string
 
 	// name is the display label the roster shows. It carries no identity.
 	name string
@@ -419,7 +420,7 @@ func (a *sessionAgent) resetLLM() *core.LLM {
 	if a.tracedReset != nil {
 		llm := a.tracedReset
 		if a.model != "" {
-			llm = llm.WithModel(a.model)
+			llm = llm.WithModel(a.model, core.LLMWithModelOpts{Provider: a.provider})
 		}
 		return llm
 	}
@@ -444,10 +445,10 @@ func (a *sessionAgent) resetLLM() *core.LLM {
 	if a.initialLLM != nil {
 		llm = a.initialLLM
 		if a.model != "" {
-			llm = llm.WithModel(a.model)
+			llm = llm.WithModel(a.model, core.LLMWithModelOpts{Provider: a.provider})
 		}
 	} else {
-		llm = core.NewQuery(dag).LLM(core.LLMOpts{Model: a.model})
+		llm = core.NewQuery(dag).LLM(core.LLMOpts{Model: a.model, Provider: a.provider})
 	}
 	if baseline != nil {
 		llm = llm.WithWorkspace(baseline)
@@ -1044,7 +1045,12 @@ func (a *sessionAgent) setLLM(llm *core.LLM) error {
 	if err != nil {
 		return err
 	}
+	provider, err := a.llm.Provider(a.session.plumbingCtx)
+	if err != nil {
+		return err
+	}
 	a.model = model
+	a.provider = provider
 
 	// Refresh the status line (and changes preview) so its token/cost/context
 	// stats stay in sync with the LLM. Routing this through setLLM means
@@ -1492,16 +1498,8 @@ func (a *sessionAgent) History(ctx context.Context) error {
 	return nil
 }
 
-func (a *sessionAgent) Model(model string) error {
-	if err := a.updateLLM(a.llm.WithModel(model)); err != nil {
-		return err
-	}
-	resolved, err := a.llm.Model(a.session.plumbingCtx)
-	if err != nil {
-		return err
-	}
-	a.model = resolved
-	return nil
+func (a *sessionAgent) Model(model string, opts ...core.LLMWithModelOpts) error {
+	return a.updateLLM(a.llm.WithModel(model, opts...))
 }
 
 // Effort changes the reasoning effort for the rest of the conversation,
