@@ -145,6 +145,13 @@ func copySelectionMounts(ctx context.Context, root, rootPath string, mounts Cont
 				break
 			}
 		}
+		// An alias can put an earlier mount below this target. Its saved
+		// timestamps belong to the tree being removed, not its replacement.
+		for ancestor := range ancestors {
+			if ancestor == rel || strings.HasPrefix(ancestor, rel+"/") {
+				delete(ancestors, ancestor)
+			}
+		}
 		if err := handle.RemoveAll(rel); err != nil {
 			return err
 		}

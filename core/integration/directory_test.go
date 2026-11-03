@@ -3498,6 +3498,37 @@ func (DirectorySuite) TestDirectoryResolveBrokenSymlinksMounts(ctx context.Conte
 		require.NoError(t, err)
 		require.Equal(t, "root release", content)
 	})
+	t.Run("replaced mount ancestors keep their own timestamps", func(ctx context.Context, t *testctx.T) {
+		for _, keepOld := range []bool{false, true} {
+			t.Run(fmt.Sprintf("keep old=%t", keepOld), func(ctx context.Context, t *testctx.T) {
+				root := dag.Directory().WithNewDirectory("z/old").
+					WithSymlink("/z", "a").WithTimestamps(111)
+				replacement := dag.Directory().WithNewFile("value", "replacement")
+				if keepOld {
+					replacement = replacement.WithNewDirectory("old")
+				}
+				replacement = replacement.WithTimestamps(222)
+				out := dag.Container().WithRootfs(root).
+					WithMountedDirectory("/a/old/child", dag.Directory().WithNewFile("hidden", "hidden")).
+					WithMountedDirectory("/z", replacement).Directory("/z", opts)
+				content, err := out.File("value").Contents(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "replacement", content)
+				_, err = out.File("old/child/hidden").Contents(ctx)
+				require.ErrorContains(t, err, "no such file or directory")
+				args := []string{"stat", "-c", "%Y", "/result"}
+				want := "222\n"
+				if keepOld {
+					args = append(args, "/result/old")
+					want += "222\n"
+				}
+				stamps, err := dag.Container().From(alpineImage).
+					WithMountedDirectory("/result", out).WithExec(args).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, want, stamps)
+			})
+		}
+	})
 	t.Run("dangling proc link", func(ctx context.Context, t *testctx.T) {
 		out := dag.Container().WithRootfs(dag.Directory().WithSymlink("/proc/mounts", "etc/mtab")).Directory("/etc", opts)
 		stat, err := out.Stat(ctx, "mtab", sdkcore.DirectoryStatOpts{DoNotFollowSymlinks: true})
