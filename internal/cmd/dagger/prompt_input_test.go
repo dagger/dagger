@@ -53,7 +53,7 @@ func imagePrompt(text string) idtui.PromptInput {
 }
 
 func TestPromptQueueRecallAndReplace(t *testing.T) {
-	h := &shellCallHandler{}
+	h := &shellCallHandler{mode: modePrompt}
 	original := imagePrompt("describe this")
 	h.QueuePrompt(original)
 	original.Images[0].Data[0] = '!'
@@ -75,6 +75,79 @@ func TestPromptQueueRecallAndReplace(t *testing.T) {
 	require.Equal(t, idtui.PromptInput{Text: "legacy text"}, h.DequeuePrompt())
 	h.QueueMessage("old caller")
 	require.Equal(t, "old caller", h.DequeueMessage())
+}
+
+func TestPromptCommandsNeverJoinMailbox(t *testing.T) {
+	for _, busy := range []bool{false, true} {
+		s, agents := testSession(t, "chief")
+		if busy {
+			agents[0].beginTurn(func(error) {})
+			defer agents[0].endTurn()
+		}
+		h := newSlashTestHandler(t)
+		h.mode, h.llmSession = modePrompt, s
+		for _, text := range []string{"/help", "/context", "/model gpt-6-astra", "/compact", "/setup", "/logout", "/shell", "/exit", "exit", "/unknown"} {
+			require.True(t, h.Serial(text), text)
+			require.False(t, h.SubmitToTarget(text), text)
+		}
+		require.ErrorContains(t, h.Handle(t.Context(), "/unknown"), "unknown agent command")
+		h.mode = modeShell
+		require.False(t, h.SubmitToTarget("echo hello"))
+		runtimeOf(t, agents[0]).awaitNoSend(t)
+	}
+}
+
+func TestPromptCommandQueuePinsTargetAndMode(t *testing.T) {
+	s, agents := testSession(t, "chief", "scout")
+	h := newSlashTestHandler(t)
+	h.mode, h.llmSession = modePrompt, s
+	first := h.PreparePrompt(idtui.PromptInput{Text: "/shell"})
+	h.QueuePrompt(first)
+	h.QueuePrompt(imagePrompt("old draft"))
+	h.QueuePrompt(idtui.PromptInput{Text: "/compact"})
+	h.QueuePrompt(imagePrompt("latest draft"))
+	require.Contains(t, h.QueuedPromptSummary(), "2 command(s)")
+
+	// Focus and mode can change while the interpreter or a picker waits.
+	s.SetTarget(agents[1])
+	h.mode = modeShell
+	for _, text := range []string{"/shell", "/compact"} {
+		input := h.DequeuePrompt()
+		require.Equal(t, text, input.Text)
+		require.Equal(t, modePrompt, h.promptInputMode(input))
+		require.True(t, h.SerialPrompt(input))
+		require.NoError(t, h.ValidatePrompt(input))
+		ctx := context.WithValue(t.Context(), commandSubmissionKey{}, input.CommandTarget)
+		target, err := h.commandTarget(ctx)
+		require.NoError(t, err)
+		require.Same(t, agents[0], target)
+	}
+	require.Equal(t, imagePrompt("latest draft"), h.DequeuePrompt())
+	require.True(t, h.DequeuePrompt().Empty())
+	require.Empty(t, h.QueuedPromptSummary())
+
+	// A shell line remains shell input if /shell later switches back.
+	input := h.PreparePrompt(idtui.PromptInput{Text: "echo shell"})
+	h.mode = modePrompt
+	require.Equal(t, modeShell, h.promptInputMode(input))
+	require.False(t, h.SubmitPromptToTarget(input))
+}
+
+func TestPromptCommandQueueRecallAndCancel(t *testing.T) {
+	h := newSlashTestHandler(t)
+	h.mode = modePrompt
+	h.QueuePrompt(idtui.PromptInput{Text: "/model gpt-6-astra"})
+	h.QueuePrompt(imagePrompt("recall me"))
+	h.QueuePrompt(idtui.PromptInput{Text: "/effort high"})
+	require.Equal(t, imagePrompt("recall me"), h.RecallQueuedPrompt())
+	require.True(t, h.RecallQueuedPrompt().Empty())
+	require.Equal(t, "/model gpt-6-astra", h.DequeuePrompt().Text)
+	require.Equal(t, "/effort high", h.DequeuePrompt().Text)
+	h.QueuePrompt(idtui.PromptInput{Text: "/compact"})
+	h.QueuePrompt(imagePrompt("discard me"))
+	h.ClearQueuedPrompts()
+	require.True(t, h.DequeuePrompt().Empty())
+	require.Empty(t, h.QueuedPromptSummary())
 }
 
 func TestPromptAttachmentsRejectCommands(t *testing.T) {

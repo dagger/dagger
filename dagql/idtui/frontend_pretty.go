@@ -6395,7 +6395,14 @@ func (fe *frontendPretty) recallQueuedPrompt() bool {
 	// is already going to read.
 	if fe.queuedMsgLabel != nil && fe.queuedMsgLabel.Message() != "" && !fe.queuedMsgLabel.Sent() {
 		shown := PromptInput{Text: fe.queuedMsgLabel.Message()}
-		if input := fe.clearQueuedPrompt(); !input.Empty() {
+		var input PromptInput
+		if queue, ok := fe.shell.(PromptQueueControl); ok {
+			input = queue.RecallQueuedPrompt()
+			fe.refreshQueuedPromptLabel()
+		} else {
+			input = fe.clearQueuedPrompt()
+		}
+		if !input.Empty() {
 			shown = input
 		} else if _, typed := fe.shell.(PromptInputHandler); typed {
 			// The typed queue already drained. Its payload-free label cannot
@@ -6771,6 +6778,15 @@ func (fe *frontendPretty) handleInputComplete() {
 
 	value := fe.textInput.Value()
 	input := PromptInput{Text: value, Images: fe.promptImages}.Clone()
+	if validator, ok := fe.shell.(interface{ ValidatePrompt(PromptInput) error }); ok {
+		if err := validator.ValidatePrompt(input); err != nil {
+			fe.setPromptError(err)
+			return
+		}
+	}
+	if preparer, ok := fe.shell.(PromptPreparer); ok {
+		input = preparer.PreparePrompt(input)
+	}
 	fe.promptImages = nil
 	fe.historyImages = nil
 	// Add to history (encoded with mode prefix for round-trip fidelity)
@@ -6866,13 +6882,24 @@ func (fe *frontendPretty) setQueuedPrompt(input PromptInput) {
 		qh.QueueMessage(input.Text)
 	}
 	if fe.queuedMsgLabel != nil {
-		fe.queuedMsgLabel.SetMessage(input.Summary())
+		if queue, ok := fe.shell.(PromptQueueControl); ok {
+			fe.queuedMsgLabel.SetMessage(queue.QueuedPromptSummary())
+		} else {
+			fe.queuedMsgLabel.SetMessage(input.Summary())
+		}
 	}
 }
 
 // clearQueuedMessage removes the queued message from the shell handler and
 // the indicator. Used by callers that discard the queue.
 func (fe *frontendPretty) clearQueuedMessage() {
+	if queue, ok := fe.shell.(PromptQueueControl); ok {
+		queue.ClearQueuedPrompts()
+		if fe.queuedMsgLabel != nil {
+			fe.queuedMsgLabel.SetMessage("")
+		}
+		return
+	}
 	fe.clearQueuedPrompt()
 }
 
@@ -6883,10 +6910,19 @@ func (fe *frontendPretty) clearQueuedPrompt() PromptInput {
 	} else if qh, ok := fe.shell.(interface{ DequeueMessage() string }); ok {
 		input.Text = qh.DequeueMessage()
 	}
-	if fe.queuedMsgLabel != nil {
+	fe.refreshQueuedPromptLabel()
+	return input
+}
+
+func (fe *frontendPretty) refreshQueuedPromptLabel() {
+	if fe.queuedMsgLabel == nil {
+		return
+	}
+	if queue, ok := fe.shell.(PromptQueueControl); ok {
+		fe.queuedMsgLabel.SetMessage(queue.QueuedPromptSummary())
+	} else {
 		fe.queuedMsgLabel.SetMessage("")
 	}
-	return input
 }
 
 // startPromptHandle runs a shell turn for input in the background. It is used
@@ -6903,7 +6939,9 @@ func (fe *frontendPretty) startPromptHandle(input PromptInput) {
 		return
 	}
 	serial := true
-	if sh, ok := fe.shell.(interface{ Serial(string) bool }); ok {
+	if sh, ok := fe.shell.(interface{ SerialPrompt(PromptInput) bool }); ok {
+		serial = sh.SerialPrompt(input)
+	} else if sh, ok := fe.shell.(interface{ Serial(string) bool }); ok {
 		serial = sh.Serial(input.Text)
 	}
 	ctx, cancel := context.WithCancelCause(fe.shellCtx)

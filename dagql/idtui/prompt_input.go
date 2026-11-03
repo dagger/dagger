@@ -18,6 +18,11 @@ type PromptImage struct {
 type PromptInput struct {
 	Text   string
 	Images []PromptImage
+
+	// CommandTarget is opaque handler-owned submission metadata. It binds a
+	// command to its original target while asynchronous handling or a queue
+	// waits; ordinary user prompts leave it nil.
+	CommandTarget any
 }
 
 func (p PromptInput) Empty() bool {
@@ -38,7 +43,7 @@ func (p PromptInput) Summary() string {
 
 // Clone isolates a draft from asynchronous delivery and queue storage.
 func (p PromptInput) Clone() PromptInput {
-	clone := PromptInput{Text: p.Text}
+	clone := PromptInput{Text: p.Text, CommandTarget: p.CommandTarget}
 	for _, image := range p.Images {
 		clone.Images = append(clone.Images, PromptImage{
 			MIMEType: image.MIMEType,
@@ -46,6 +51,20 @@ func (p PromptInput) Clone() PromptInput {
 		})
 	}
 	return clone
+}
+
+// PromptPreparer captures handler-owned command routing before submission
+// crosses a goroutine or queue boundary. It must not perform blocking work.
+type PromptPreparer interface {
+	PreparePrompt(PromptInput) PromptInput
+}
+
+// PromptQueueControl separates committed commands from the recallable text
+// draft. Cancellation discards both; recall only withdraws the draft.
+type PromptQueueControl interface {
+	RecallQueuedPrompt() PromptInput
+	ClearQueuedPrompts()
+	QueuedPromptSummary() string
 }
 
 // PromptInputHandler is the optional multimodal extension of ShellHandler.
