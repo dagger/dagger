@@ -3521,7 +3521,7 @@ func (c *Cache) canonicalEquivalentSharedResultLocked(sessionID string, res *sha
 
 	candidates := newSharedResultSet()
 	for outputEqID := range c.outputEqClassRootsLocked(res.id) {
-		c.appendOutputEqClassResultsLocked(candidates, outputEqID, nowUnix)
+		c.appendOutputEqClassResultsLocked(candidates, outputEqID, nowUnix, nil)
 	}
 	if requireCleanAttachment {
 		clean := newSharedResultSet()
