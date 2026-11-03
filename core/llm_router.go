@@ -34,6 +34,9 @@ type LLMRouter struct {
 	// resolution bound to the request that asks, which suits tests that build
 	// a router without a session.
 	credentialCtx context.Context
+
+	// configRevision identifies the live configuration snapshot behind a route.
+	configRevision string
 }
 
 // llmProviderRoute is one provider's routing configuration plus the client
@@ -604,15 +607,23 @@ func loadLLMRouter(ctx context.Context, query *Query) (_ *LLMRouter, rerr error)
 	ctx, span := Tracer(ctx).Start(ctx, "load LLM router config", telemetry.Internal(), telemetry.Encapsulate())
 	defer telemetry.EndWithCause(span, &rerr)
 
-	parentClient, err := query.NonModuleParentClientMetadata(ctx)
+	var mainClient, parentClient *engine.ClientMetadata
+	var revision string
+	var err error
+	if live, ok := query.Server.(interface {
+		LLMConfigMetadata(context.Context) (*engine.ClientMetadata, *engine.ClientMetadata, string, error)
+	}); ok {
+		mainClient, parentClient, revision, err = live.LLMConfigMetadata(ctx)
+	} else {
+		parentClient, err = query.NonModuleParentClientMetadata(ctx)
+		if err == nil {
+			mainClient, err = query.MainClientCallerMetadata(ctx)
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
-	mainClient, err := query.MainClientCallerMetadata(ctx)
-	if err != nil {
-		return nil, err
-	}
-	router := &LLMRouter{Providers: map[LLMProvider]*llmProviderRoute{}}
+	router := &LLMRouter{Providers: map[LLMProvider]*llmProviderRoute{}, configRevision: revision}
 	if mainClient.ClientID != parentClient.ClientID {
 		if err := router.Apply(mainClient.LLMConfig, mainClient); err != nil {
 			return nil, err

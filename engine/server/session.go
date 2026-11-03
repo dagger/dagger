@@ -327,6 +327,11 @@ type clientRecord struct {
 	// externally returned value is a deep clone of it.
 	metadataSealed bool
 
+	// Live LLM configuration is separate from immutable bootstrap metadata.
+	// Protected by daggerSession.scopeMu; revision > 0 includes explicit reset.
+	llmConfig         *engine.LLMConfig
+	llmConfigRevision uint64
+
 	// closed after the shutdown endpoint is called
 	shutdownCh        chan struct{}
 	closeShutdownOnce sync.Once
@@ -2753,6 +2758,9 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		case path == engine.InitEndpoint:
 			httpHandlerFunc(srv.serveInit, client).ServeHTTP(w, r)
 			return nil
+		case path == engine.LLMConfigEndpoint:
+			httpHandlerFunc(srv.serveLLMConfig, client).ServeHTTP(w, r)
+			return nil
 		case path == engine.ShutdownEndpoint:
 			httpHandlerFunc(srv.serveShutdown, client).ServeHTTP(w, r)
 			return nil
@@ -2762,6 +2770,7 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		mux.Handle(engine.QueryEndpoint, httpHandlerFunc(srv.serveQuery, client))
 		mux.Handle(engine.InitEndpoint, httpHandlerFunc(srv.serveInit, client))
 		mux.Handle(engine.ShutdownEndpoint, httpHandlerFunc(srv.serveShutdown, client))
+		mux.Handle(engine.LLMConfigEndpoint, httpHandlerFunc(srv.serveLLMConfig, client))
 		sess.endpointMu.RLock()
 		for path, handler := range sess.endpoints {
 			mux.Handle(path, handler)

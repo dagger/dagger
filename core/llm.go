@@ -129,9 +129,10 @@ type LLM struct {
 	// explicitly disables reasoning; empty defers to the provider config.
 	reasoningEffort string
 
-	endpoint          *LLMEndpoint
-	endpointSessionID string
-	endpointMtx       *sync.Mutex
+	endpoint               *LLMEndpoint
+	endpointSessionID      string
+	endpointConfigRevision string
+	endpointMtx            *sync.Mutex
 
 	// Whether to disable the default system prompt
 	disableDefaultSystemPrompt bool
@@ -1299,10 +1300,8 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 	if scope, ok := engine.ClientScopeFromContext(ctx); ok {
 		sessionID = scope.SessionID()
 	}
-	if llm.endpoint != nil && llm.endpointSessionID == sessionID {
-		return llm.endpoint, nil
-	}
-
+	// Read a live configuration snapshot even for a cached endpoint. A key
+	// removal or route change must take effect on the next provider request.
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -1310,6 +1309,9 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 	router, err := loadLLMRouter(ctx, query)
 	if err != nil {
 		return nil, err
+	}
+	if llm.endpoint != nil && llm.endpointSessionID == sessionID && llm.endpointConfigRevision == router.configRevision {
+		return llm.endpoint, nil
 	}
 	endpoint, err := router.Endpoint(ctx, llm.model, llm.provider)
 	if err != nil {
@@ -1364,6 +1366,7 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 
 	llm.endpoint = endpoint
 	llm.endpointSessionID = sessionID
+	llm.endpointConfigRevision = router.configRevision
 
 	return llm.endpoint, nil
 }
