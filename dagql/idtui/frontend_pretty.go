@@ -3377,7 +3377,11 @@ func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) er
 	// Copy the slice — the OTel SDK reuses it after Export returns.
 	logsCopy := make([]sdklog.Record, len(logs))
 	copy(logsCopy, logs)
+	filter, _ := ctx.Value(liveLogsFilterKey{}).(func([]sdklog.Record) []sdklog.Record)
 	fe.dispatch(func() {
+		if fe.read && filter != nil {
+			logsCopy = filter(logsCopy)
+		}
 		logSpanIDs := make(map[dagui.SpanID]struct{})
 		for _, log := range logsCopy {
 			spanID := fe.db.LogTargetSpanID(log)
