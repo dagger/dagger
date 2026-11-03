@@ -24,7 +24,7 @@ const (
 const cloudFeaturesAnnotation = "dagger.io/requiredCloudFeatures"
 
 // requireCloudFeatures declares that cmd needs the given Cloud features enabled
-// on the target org. Enforcement happens via ensureCommandCloudFeatures once
+// on the target org. Enforcement happens via ensureCloudFeatures once
 // the command has resolved which org it operates on (commands resolve orgs at
 // different points, so this can't run as a blanket PreRun). Adding a
 // requirement to another command is a single line in its init(), e.g.:
@@ -61,13 +61,11 @@ func commandCloudFeatures(cmd *cobra.Command) []cloudFeature {
 	return features
 }
 
-// ensureCommandCloudFeatures verifies orgName has every feature cmd requires,
-// and fails with an actionable error when some are missing. Nothing is
-// enabled here: Cloud enables the features an organization created from the
-// CLI needs (see createNewOrg). A command with no declared requirements is a
-// no-op.
-func ensureCommandCloudFeatures(cmd *cobra.Command, client *cloudapi.Client, orgName string) error {
-	features := commandCloudFeatures(cmd)
+// ensureCloudFeatures verifies orgName has every one of features, and fails
+// with an actionable error when some are missing. Nothing is enabled here:
+// Cloud enables the features an organization created from the CLI needs (see
+// createNewOrg).
+func ensureCloudFeatures(cmd *cobra.Command, client *cloudapi.Client, orgName string, features []cloudFeature) error {
 	if len(features) == 0 {
 		return nil
 	}
