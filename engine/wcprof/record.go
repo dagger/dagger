@@ -116,7 +116,7 @@ type Op struct {
 	bytes       int64
 	startNS     int64
 	outcomeHint Outcome
-	// tallies are its tallied calls' counts (Tally), allocated on the first.
+	// tallies are its tallied calls (BeginTally), allocated on the first.
 	tallies atomic.Pointer[opTallies]
 }
 
@@ -197,6 +197,7 @@ func BeginOp(ctx context.Context, kind OpKind, class string, opts OpOpts) (conte
 		metaID:   op.metaID,
 		parentID: op.parentID,
 		startNS:  op.startNS,
+		handle:   op,
 	}
 	sh.mu.Unlock()
 	return context.WithValue(ctx, opCtxKey{}, &currentOp{id: op.id, op: op}), op
@@ -307,7 +308,9 @@ func (op *Op) endAt(outcome Outcome, resultID uint64, endNS int64) {
 		StartNS:  op.startNS,
 		EndNS:    endNS,
 	})
-	op.recordTallies(sh, endNS)
+	for _, ev := range op.tallyEvents(endNS, true) {
+		op.r.append(sh, ev)
+	}
 }
 
 // Wait is a handle for an in-progress wait interval. A nil *Wait is valid
