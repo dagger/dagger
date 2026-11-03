@@ -1,0 +1,10 @@
+kind: Fixed
+body: |
+  An engine stop that outlived the graceful-stop budget no longer wipes the
+  whole dagql cache on the next start: the final save and the clean-shutdown
+  marker now run detached from the stop budget, so a slow stop keeps the
+  cache it spent the run building.
+time: 2026-11-03T11:30:00Z
+custom:
+  Author: goingforstudying-ctrl
+  PR: 15052
