@@ -21,7 +21,7 @@ func TestClientLiveLLMConfig(t *testing.T) {
 		token, _, ok := req.BasicAuth()
 		require.True(t, ok)
 		require.Equal(t, "session-token", token)
-		body := "true"
+		body := `{"configured":true,"models":{"providers":{"anthropic":{"model":"claude-sonnet-4-5"}}}}`
 		if req.Method == http.MethodPut {
 			require.Equal(t, "application/json", req.Header.Get("Content-Type"))
 			require.NoError(t, json.NewDecoder(req.Body).Decode(&got))
@@ -41,6 +41,9 @@ func TestClientLiveLLMConfig(t *testing.T) {
 	configured, err := c.LLMConfigured(t.Context())
 	require.NoError(t, err)
 	require.True(t, configured)
+	models, err := c.LLMModelConfig(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, "claude-sonnet-4-5", models.Providers["anthropic"].Model)
 	status = http.StatusForbidden
 	require.ErrorContains(t, c.UpdateLLMConfig(t.Context(), cfg), "denied")
 	_, err = c.LLMConfigured(t.Context())

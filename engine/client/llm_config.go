@@ -32,14 +32,35 @@ func (c *Client) UpdateLLMConfig(ctx context.Context, cfg *engine.LLMConfig) err
 // credential or a local endpoint, including configuration inherited from the
 // session's main client. It does not retrieve or validate credential values.
 func (c *Client) LLMConfigured(ctx context.Context) (bool, error) {
-	resp, err := c.llmConfigRequest(ctx, http.MethodGet, nil)
+	status, err := c.llmConfigStatus(ctx)
 	if err != nil {
 		return false, err
 	}
+	return status.Configured, nil
+}
+
+// LLMModelConfig returns effective defaults and model names for the model
+// picker, including inherited providers. A provider's presence in the map means
+// it is configured; credential fields and endpoint addresses are always omitted.
+func (c *Client) LLMModelConfig(ctx context.Context) (*engine.LLMConfig, error) {
+	status, err := c.llmConfigStatus(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return status.Models, nil
+}
+
+func (c *Client) llmConfigStatus(ctx context.Context) (*engine.LLMConfigStatus, error) {
+	resp, err := c.llmConfigRequest(ctx, http.MethodGet, nil)
+	if err != nil {
+		return nil, err
+	}
 	defer resp.Body.Close()
-	var configured bool
-	err = json.NewDecoder(resp.Body).Decode(&configured)
-	return configured, err
+	var status engine.LLMConfigStatus
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		return nil, err
+	}
+	return &status, nil
 }
 
 func (c *Client) llmConfigRequest(ctx context.Context, method string, body io.Reader) (*http.Response, error) {

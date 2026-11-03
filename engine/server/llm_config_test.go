@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -45,7 +46,13 @@ func TestLiveLLMConfig(t *testing.T) {
 		require.NoError(t, srv.serveLLMConfig(rec, req, client))
 		return rec
 	}
-	require.Equal(t, "true\n", request(nestedCtx, nested, http.MethodGet, "").Body.String())
+	status := func(ctx context.Context, client *clientRuntime) engine.LLMConfigStatus {
+		var status engine.LLMConfigStatus
+		rec := request(ctx, client, http.MethodGet, "")
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &status))
+		return status
+	}
+	require.True(t, status(nestedCtx, nested).Configured)
 	_, _, before, err := srv.LLMConfigMetadata(nestedCtx)
 	require.NoError(t, err)
 	request(mainCtx, main, http.MethodPut, `{"providers":{"openai":{"api_key":"env://NEW_KEY"},"unused":null}}`)
@@ -63,12 +70,24 @@ func TestLiveLLMConfig(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "env://NEW_KEY", mainMD.LLMConfig.Providers["openai"].APIKey)
 	request(mainCtx, main, http.MethodPut, `null`)
-	require.Equal(t, "false\n", request(nestedCtx, nested, http.MethodGet, "").Body.String())
+	require.False(t, status(nestedCtx, nested).Configured)
 
 	// A nested update belongs to that client, not to the session's main client.
 	request(nestedCtx, nested, http.MethodPut, `{"providers":{"local":{"base_url":"http://localhost:1234"}}}`)
-	require.Equal(t, "true\n", request(nestedCtx, nested, http.MethodGet, "").Body.String())
-	require.Equal(t, "false\n", request(mainCtx, main, http.MethodGet, "").Body.String())
+	require.True(t, status(nestedCtx, nested).Configured)
+	require.False(t, status(mainCtx, main).Configured)
+
+	// The model picker sees inherited model names, never the owner's URIs or
+	// endpoint addresses. Nested model overrides layer over the main client.
+	request(mainCtx, main, http.MethodPut, `{"default_provider":"openai","default_model":"gpt-5","providers":{"openai":{"api_key":"env://HIDDEN_KEY","base_url":"https://private.example","model":"gpt-5","small_model":"gpt-5-mini"}}}`)
+	request(nestedCtx, nested, http.MethodPut, `{"providers":{"openai":{"model":"gpt-5.1"}}}`)
+	models := status(nestedCtx, nested).Models
+	require.Equal(t, &engine.LLMConfig{
+		DefaultProvider: "openai", DefaultModel: "gpt-5",
+		Providers: map[string]*engine.LLMProviderConfig{
+			"openai": {Model: "gpt-5.1", SmallModel: "gpt-5-mini"},
+		},
+	}, models)
 
 	// Configuration snapshots and replacements share the session lock.
 	var wg sync.WaitGroup

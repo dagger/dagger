@@ -20,6 +20,14 @@ type LLMConfig struct {
 	Providers map[string]*LLMProviderConfig `json:"providers,omitempty"`
 }
 
+// LLMConfigStatus is the response from the internal session configuration
+// endpoint. Models contains only defaults and model names for configured
+// providers, never credential URIs, tokens, or endpoint addresses.
+type LLMConfigStatus struct {
+	Configured bool       `json:"configured"`
+	Models     *LLMConfig `json:"models"`
+}
+
 // LLMProviderConfig configures one provider.
 type LLMProviderConfig struct {
 	// APIKey is a secret URI for the provider's API key.

@@ -92,17 +92,37 @@ func (srv *Server) serveLLMConfig(w http.ResponseWriter, r *http.Request, client
 				return err
 			}
 		}
-		configured := false
+		models := &engine.LLMConfig{Providers: map[string]*engine.LLMProviderConfig{}}
+		for _, md := range []*engine.ClientMetadata{main, parent} {
+			if md.LLMConfig == nil {
+				continue
+			}
+			if md.LLMConfig.DefaultProvider != "" {
+				models.DefaultProvider = md.LLMConfig.DefaultProvider
+			}
+			if md.LLMConfig.DefaultModel != "" {
+				models.DefaultModel = md.LLMConfig.DefaultModel
+			}
+		}
 		for name, provider := range router.Providers {
+			configured := false
 			switch name {
 			case core.OpenAI, core.OpenAICodex, core.OpenRouter, core.Anthropic, core.Google:
-				configured = configured || provider.HasCredential()
+				configured = provider.HasCredential()
 			case core.Local:
-				configured = configured || provider.BaseURL != ""
+				configured = provider.BaseURL != ""
+			}
+			if configured {
+				models.Providers[string(name)] = &engine.LLMProviderConfig{
+					Model: provider.Model, SmallModel: provider.SmallModel,
+				}
 			}
 		}
 		w.Header().Set("Content-Type", "application/json")
-		return json.NewEncoder(w).Encode(configured)
+		return json.NewEncoder(w).Encode(engine.LLMConfigStatus{
+			Configured: len(models.Providers) > 0,
+			Models:     models,
+		})
 	default:
 		w.Header().Set("Allow", "GET, PUT")
 		return httpErr(fmt.Errorf("method not allowed"), http.StatusMethodNotAllowed)
