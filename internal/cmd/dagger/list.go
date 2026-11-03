@@ -6,6 +6,7 @@ import (
 
 	"dagger.io/dagger/core"
 
+	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
@@ -123,25 +124,58 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args, raw
 	if err != nil {
 		return nil, err
 	}
+	// Help and completion list every module's flags.
+	help, _ := helpFlag(cmd, rawCommandArgs)
+	narrow := !helpCommand && !completing && !help
 	return withDiscovery("Load "+cmd.Name()+" filters", params, func(ctx context.Context, ec *client.Client) error {
-		id, err := core.NewQuery(ec.Dagger()).CurrentWorkspace().Artifacts().ID(ctx)
+		dag := ec.Dagger()
+		workspaceID, err := core.NewQuery(dag).CurrentWorkspace().ID(ctx)
 		if err != nil {
 			return err
 		}
-		all := core.Ref[*core.Artifacts](core.NewQuery(ec.Dagger()), id)
-		definitions, err := artifactDimensions(ctx, ec.Dagger(), all)
-		if err != nil {
+		ws := core.Ref[*core.Workspace](core.NewQuery(dag), workspaceID)
+		// A command line that selects modules by flag selects nothing outside
+		// them, so it needs only their flags, and the flags of the modules
+		// that name theirs.
+		var include []string
+		if narrow {
+			modules, err := workspaceModuleNames(ctx, ws)
+			if err != nil {
+				return err
+			}
+			if selected := artifactFlagModules(cmd, rawCommandArgs, modules); selected != nil {
+				include = artifactNamingModules(selected, modules)
+			}
+		}
+		if err := registerCommandArtifactFilters(ctx, dag, cmd, ws, include); err != nil {
 			return err
 		}
-		selected, err := artifactDimensions(ctx, ec.Dagger(), all.FilterTypes(commandArtifactTypes(cmd)))
-		if err != nil {
-			return err
-		}
-		if err := registerArtifactFilters(ctx, ec.Dagger(), cmd, definitions, selected, all); err != nil {
-			return err
+		if include != nil && !acceptsArtifactArgs(cmd, rawCommandArgs) {
+			// Cobra rejects the command line with the command's usage, or
+			// another module's flag makes it valid: register them all.
+			return registerCommandArtifactFilters(ctx, dag, cmd, ws, nil)
 		}
 		return nil
 	})
+}
+
+// registerCommandArtifactFilters registers cmd's flags for the artifacts of
+// the include modules, or of every module when include is nil.
+func registerCommandArtifactFilters(ctx context.Context, dag *dagger.Client, cmd *cobra.Command, ws *core.Workspace, include []string) error {
+	id, err := ws.Artifacts(core.WorkspaceArtifactsOpts{Include: include}).ID(ctx)
+	if err != nil {
+		return err
+	}
+	all := core.Ref[*core.Artifacts](core.NewQuery(dag), id)
+	definitions, err := artifactDimensions(ctx, dag, all)
+	if err != nil {
+		return err
+	}
+	selected, err := artifactDimensions(ctx, dag, all.FilterTypes(commandArtifactTypes(cmd)))
+	if err != nil {
+		return err
+	}
+	return registerArtifactFilters(ctx, dag, cmd, definitions, selected, all)
 }
 
 // artifactDiscovery discovers a command's artifact commands and flags as the
@@ -333,6 +367,33 @@ func addListCommand(name, short, group, key, value string) *cobra.Command {
 	setCommandCapabilities(cmd, mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig)
 	listCmd.AddCommand(cmd)
 	return cmd
+}
+
+// acceptsArtifactArgs reports whether Cobra accepts args for cmd with the
+// flags registered now, rather than printing an error and the usage: they
+// parse, and pass validateArtifactListFlags.
+func acceptsArtifactArgs(cmd *cobra.Command, args []string) bool {
+	if needsArtifactDiscovery(cmd, args) {
+		return false
+	}
+	flags := copyCommandFlags(cmd, "artifact arguments")
+	values := map[string]string{}
+	if err := flags.ParseAll(args, func(flag *pflag.Flag, value string) error {
+		values[flag.Name] = value
+		return nil
+	}); err != nil {
+		return false
+	}
+	changed := func(name string) bool {
+		_, ok := values[name]
+		return ok
+	}
+	return checkArtifactListFlags(cmd, changed, func(flag *pflag.Flag) string {
+		if value, ok := values[flag.Name]; ok {
+			return value
+		}
+		return flag.DefValue
+	}) == nil
 }
 
 // Unknown flags require schema metadata before Cobra can distinguish keys from
