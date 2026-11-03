@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-September%2018,%202026-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-November%202,%202026-success?style=flat-square)
 
 This document describes the process for releasing Dagger.
 
@@ -153,114 +153,11 @@ to dagger.
 
   ```console
   export ENGINE_VERSION="$(tr -d '[:space:]' < internal/version/VERSION)"
-
-  # this is required to interpolate $ENGINE_VERSION to the SDK release notes
-  export CHANGIE_ENGINE_VERSION="$ENGINE_VERSION"
   ```
 
-- [ ] Create the target release notes branch for a PR.
+- [ ] CHANGELOG
 
-  ```console
-  git checkout -b prep-$ENGINE_VERSION
-  ```
-
-- [ ] Propagate the release version to the SDKs, docs, and Helm chart.
-
-  `internal/version/VERSION` is the single source of truth; `dagger generate`
-  reads it and regenerates every version-pinned file.
-
-  ```console
-  dagger generate
-  ```
-
-- [ ] Bump [Go SDK package commit](https://github.com/dagger/dagger/blob/becc3f0a6626cf6829ef96ded00d379d3126ecd4/core/sdk/go_sdk.go#L27) to the latest commit from the [dagger-go-sdk](https://github.com/dagger/dagger-go-sdk) repository.
-
-  ```console
-  GO_SDK_COMMIT=$(git ls-remote https://github.com/dagger/dagger-go-sdk HEAD | awk '{print $1}')
-  ```
-
-  If Linux:
-
-  ```console
-  sed -i -E "s#^((const |\t)goSDKLibVersion = \")[0-9a-f]{40}\" // v.*#\1${GO_SDK_COMMIT}\" // ${ENGINE_VERSION}#" core/sdk/go_sdk.go
-  ```
-
-  If MacOS (sed -i is different compared to Linux):
-
-  ```console
-  sed -i '' -E "s#^((const |\t)goSDKLibVersion = \")[0-9a-f]{40}\" // v.*#\1${GO_SDK_COMMIT}\" // ${ENGINE_VERSION}#" core/sdk/go_sdk.go
-  ```
-
-- [ ] Commit
-
-  ```console
-  git add internal/version/VERSION docs sdk helm lib/dagger/core core/sdk
-  git commit -s -m "chore: bump dependencies to $ENGINE_VERSION"
-  ```
-
-- [ ] Push to `dagger/dagger` - we need access to secrets that PRs coming from forks will not have. Open the PR as a draft and capture the PR number:
-
-  ```console
-  git push $DAGGER_REPO_REMOTE prep-$ENGINE_VERSION
-  gh pr create -B "$RELEASE_BRANCH" --draft --title "chore: prep for $ENGINE_VERSION" --body "" | tee /tmp/prep-pr.txt
-  export RELEASE_PREP_PR=$(cat /tmp/prep-pr.txt | sed -r 's/^[^0-9]*([0-9]+).*/\1/')
-  ```
-
-- [ ] Generate bump changes for each SDK + the helm charts
-
-  ```console
-  export GITHUB_USERNAME=$(gh api /user --jq .login)
-  find sdk/go sdk/python sdk/typescript sdk/elixir sdk/php sdk/rust helm/dagger -maxdepth 1 -name .changie.yaml -execdir \
-        changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom PR="$RELEASE_PREP_PR" --custom Author="$GITHUB_USERNAME" \;
-  ```
-
-- [ ] Generate release notes `.changes/**/v0.12.4.md` for all releases:
-
-  ```console
-  export CHANGIE_MAINTAINERS=$(dagger call release get-maintainers --github-org-name dagger --github-token="cmd://gh auth token" --json)
-  find . sdk/go sdk/python sdk/typescript sdk/elixir sdk/php sdk/rust helm/dagger -maxdepth 1 -name .changie.yaml -execdir changie batch $ENGINE_VERSION \;
-  ```
-
-- [ ] Make any necessary edits to the newly generated file, e.g. `.changes/v0.12.4.md`
-- [ ] Update `CHANGELOG.md` by running:
-
-> [!NOTE]
->
-> We need to rethink SDK-specific changelogs, they're not really used anymore other than bumping engine versions.
-
-```console
-changie merge
-find . sdk/go sdk/python sdk/typescript sdk/elixir sdk/php sdk/rust helm/dagger -maxdepth 1 -name .changie.yaml -execdir changie merge \;
-find . -name .changes -type d -exec git add {} \;
-find . -name CHANGELOG.md -type f -exec git add {} \;
-git commit -s -m "chore: add release notes for $ENGINE_VERSION"
-```
-
-Keep `internal/version/VERSION` at `$ENGINE_VERSION` through tagging. The publish
-workflow requires the tag to match this file. Advance it in the post-release steps.
-
-- [ ] Push changes, and bring the prep PR out of draft:
-
-  ```console
-  git push $DAGGER_REPO_REMOTE prep-$ENGINE_VERSION
-  gh pr ready
-  ```
-
-- [ ] Ensure that all GitHub Actions checks pass for the dagger.io PR which
-      gets automatically created part of this PR. The PR is configured to deploy a
-      Daggerverse preview environment with a `main` Dagger Engine (the one that is
-      just about to be released). If all checks pass, close that PR & delete the
-      branch (this will clean up the infra that gets provisioned). If checks fail, cc
-      @marcosnils @matipan in the release thread and wait for a
-      response before continuing with the release (this might be a blocker).
-
-> [!NOTE]
->
-> If the dagger.io PR fails on:
-> `unexpected HTTP status code received from server: 200 (OK); malformed header: missing HTTP content-type`
-> that is a known unresolved issue. Rerun the job from GitHub Actions.
-
-- [ ] If everything above is green, review and merge the prep PR. The merged commit is what gets tagged in the next step.
+  TODO: Starting with v1.0, CHANGELOG updates should resume.
 
 - [ ] Confirm that all checks on `$RELEASE_BRANCH` are green, for main you're basically [checking](https://github.com/dagger/dagger/commits/main/) that the merged prep commit is has a green check.
       Do not push tags until this is finished.
@@ -356,8 +253,6 @@ This will also kick off [`.github/workflows/evals.yml`], which is currently brok
   - Update the version numbers in the commands below and run:
 
   ```console
-  old_dashed=$(echo $OLD_ENGINE_VERSION | sed -E 's/^v([0-9]+)\.([0-9]+)\.([0-9]+)$/\1-\2-\3/')
-  new_dashed=$(echo $ENGINE_VERSION | sed -E 's/^v([0-9]+)\.([0-9]+)\.([0-9]+)$/\1-\2-\3/')
   old_dotted=$(echo $OLD_ENGINE_VERSION | sed -E 's/^v([0-9]+)\.([0-9]+)\.([0-9]+)$/\1\\.\2\\.\3/')
   new_dotted=$(echo $ENGINE_VERSION | sed -E 's/^v([0-9]+)\.([0-9]+)\.([0-9]+)$/\1\\.\2\\.\3/')
   ```
@@ -365,20 +260,20 @@ This will also kick off [`.github/workflows/evals.yml`], which is currently brok
   If Linux:
 
   ```console
-  find .github/ -type f -exec sed -i "s/dagger-v${old_dashed}/dagger-v${new_dashed}/g; s/${old_dotted}/${new_dotted}/g" {} +
+  find .github/ -type f -exec sed -i "s/${old_dotted}/${new_dotted}/g" {} +
   ```
 
   If MacOS (sed -i is different compared to Linux):
 
   ```console
-  find .github/ -type f -exec sed -i '' -e "s/dagger-v${old_dashed}/dagger-v${new_dashed}/g" -e "s/${old_dotted}/${new_dotted}/g" {} +
+  find .github/ -type f -exec sed -i '' -e "s/${old_dotted}/${new_dotted}/g" {} +
   ```
 
 - [ ] Regenerate the internal tooling registered in `dagger.toml` using the
       published release. Run this from the repository root:
 
   ```console
-  dagger --x-release="$ENGINE_VERSION" generate \
+  dagger generate \
     go-sdk:generate \
     dang-sdk:generate \
     markdown-lint:fix \
@@ -404,7 +299,7 @@ This will also kick off [`.github/workflows/evals.yml`], which is currently brok
 
   ```console
   NEXT_VERSION=v1.0.0-beta.15
-  printf '%s\n' "$NEXT_VERSION" > internal/version/VERSION
+  echo "$NEXT_VERSION" > internal/version/VERSION
   ```
 
   Keep `ENGINE_VERSION` set to the published release for the remaining steps.
@@ -414,9 +309,9 @@ This will also kick off [`.github/workflows/evals.yml`], which is currently brok
   provisioning version. CI checks that these generated files are up to date.
 
   ```console
-  dagger --x-release="$ENGINE_VERSION" generate \
+  dagger generate \
     'release:*target-version' \
-    golang:packages:generate \
+    golang:modules:packages:generate \
     -y
   ```
 
