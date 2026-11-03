@@ -2742,45 +2742,52 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		ctx = analytics.WithContext(ctx, sess.analytics)
 		r = r.WithContext(ctx)
 
-		// The session's built-in endpoints are exact paths, so while no endpoint was mixed in through
-		// MuxEndpoint they're served without building a mux for every request; any other request
-		// goes through the mux as before, which also keeps a mixed-in pattern's precedence.
-		sess.endpointMu.RLock()
-		mixedIn := len(sess.endpoints) > 0
-		sess.endpointMu.RUnlock()
-		switch path := r.URL.Path; {
-		case mixedIn:
-		case path == engine.QueryEndpoint:
-			httpHandlerFunc(srv.serveQuery, client).ServeHTTP(w, r)
-			return nil
-		case path == engine.SessionAttachablesEndpoint:
-			httpHandlerFunc(srv.serveSessionAttachables, client.clientRecord).ServeHTTP(w, r)
-			return nil
-		case path == engine.InitEndpoint:
-			httpHandlerFunc(srv.serveInit, client).ServeHTTP(w, r)
-			return nil
-		case path == engine.LLMConfigEndpoint:
-			httpHandlerFunc(srv.serveLLMConfig, client).ServeHTTP(w, r)
-			return nil
-		case path == engine.ShutdownEndpoint:
-			httpHandlerFunc(srv.serveShutdown, client).ServeHTTP(w, r)
-			return nil
-		}
-		mux = http.NewServeMux()
-		mux.Handle(engine.SessionAttachablesEndpoint, httpHandlerFunc(srv.serveSessionAttachables, client.clientRecord))
-		mux.Handle(engine.QueryEndpoint, httpHandlerFunc(srv.serveQuery, client))
-		mux.Handle(engine.InitEndpoint, httpHandlerFunc(srv.serveInit, client))
-		mux.Handle(engine.ShutdownEndpoint, httpHandlerFunc(srv.serveShutdown, client))
-		mux.Handle(engine.LLMConfigEndpoint, httpHandlerFunc(srv.serveLLMConfig, client))
-		sess.endpointMu.RLock()
-		for path, handler := range sess.endpoints {
-			mux.Handle(path, handler)
-		}
-		sess.endpointMu.RUnlock()
+		srv.serveClientEndpoints(w, r, client)
+		return nil
 	}
 
 	mux.ServeHTTP(w, r)
 	return nil
+}
+
+func (srv *Server) serveClientEndpoints(w http.ResponseWriter, r *http.Request, client *clientRuntime) {
+	sess := client.daggerSession
+	// The session's built-in endpoints are exact paths, so while no endpoint was mixed in through
+	// MuxEndpoint they're served without building a mux for every request; any other request
+	// goes through the mux as before, which also keeps a mixed-in pattern's precedence.
+	sess.endpointMu.RLock()
+	mixedIn := len(sess.endpoints) > 0
+	sess.endpointMu.RUnlock()
+	switch path := r.URL.Path; {
+	case mixedIn:
+	case path == engine.QueryEndpoint:
+		httpHandlerFunc(srv.serveQuery, client).ServeHTTP(w, r)
+		return
+	case path == engine.SessionAttachablesEndpoint:
+		httpHandlerFunc(srv.serveSessionAttachables, client.clientRecord).ServeHTTP(w, r)
+		return
+	case path == engine.InitEndpoint:
+		httpHandlerFunc(srv.serveInit, client).ServeHTTP(w, r)
+		return
+	case path == engine.LLMConfigEndpoint:
+		httpHandlerFunc(srv.serveLLMConfig, client).ServeHTTP(w, r)
+		return
+	case path == engine.ShutdownEndpoint:
+		httpHandlerFunc(srv.serveShutdown, client).ServeHTTP(w, r)
+		return
+	}
+	mux := http.NewServeMux()
+	mux.Handle(engine.SessionAttachablesEndpoint, httpHandlerFunc(srv.serveSessionAttachables, client.clientRecord))
+	mux.Handle(engine.QueryEndpoint, httpHandlerFunc(srv.serveQuery, client))
+	mux.Handle(engine.InitEndpoint, httpHandlerFunc(srv.serveInit, client))
+	mux.Handle(engine.ShutdownEndpoint, httpHandlerFunc(srv.serveShutdown, client))
+	mux.Handle(engine.LLMConfigEndpoint, httpHandlerFunc(srv.serveLLMConfig, client))
+	sess.endpointMu.RLock()
+	for path, handler := range sess.endpoints {
+		mux.Handle(path, handler)
+	}
+	sess.endpointMu.RUnlock()
+	mux.ServeHTTP(w, r)
 }
 
 // serveChildClient serves a request that parent forwarded for a Dagger client
