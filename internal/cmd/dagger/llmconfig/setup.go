@@ -235,40 +235,6 @@ func setupAPIKeyProvider(ctx context.Context, ph PromptHandler, provider string)
 	return providerCfg, selectedModel, nil
 }
 
-// AutoSetupIfNeeded checks if config exists and prompts user to set up if not
-// Returns true if setup was completed, false if skipped or already configured
-func AutoSetupIfNeeded(ctx context.Context, promptHandler PromptHandler, interactive bool) (bool, error) {
-	if LLMConfigured() {
-		return false, nil // Already configured
-	}
-
-	// Check if we're in an interactive terminal
-	// (In non-interactive mode, just fail with helpful error)
-	if !interactive {
-		return false, nil
-	}
-
-	// Prompt to run setup
-	var runSetup bool
-	form := huh.NewForm(
-		huh.NewGroup(
-			idtui.NewExplicitConfirm("Yes", "No", &runSetup).
-				Title("No LLM configuration found").
-				Description("Would you like to configure it now?"),
-		),
-	)
-
-	if err := checkAbort(promptHandler.HandleForm(ctx, form)); err != nil {
-		return false, err
-	}
-
-	if !runSetup {
-		return false, nil
-	}
-
-	return InteractiveSetup(ctx, promptHandler)
-}
-
 // promptOp walks the user through selecting a 1Password secret via the op CLI.
 func promptOp(ctx context.Context, ph PromptHandler) (string, error) {
 	// List vaults

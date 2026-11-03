@@ -170,10 +170,11 @@ func TestRemoveKeyClearsDefaultModel(t *testing.T) {
 		},
 	})
 
-	llmRemoveKeyCmd.SetOut(io.Discard)
-	if err := llmRemoveKeyCmd.RunE(llmRemoveKeyCmd, []string{"anthropic"}); err != nil {
+	commands, _, reloads := newTestLLMConfigCommands(t, nil)
+	if err := runLLMConfigCommand(t, commands, ".remove-key", "anthropic"); err != nil {
 		t.Fatalf("remove-key failed: %v", err)
 	}
+	require.Equal(t, 1, *reloads)
 
 	loaded, err := llmconfig.Load()
 	if err != nil {
