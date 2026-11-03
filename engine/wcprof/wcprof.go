@@ -46,6 +46,8 @@ const (
 	// EventTypeSpan names the OTel span an op owns: the span the engine
 	// emits for the same work.
 	EventTypeSpan
+	// EventTypeTally is an op's tallied calls of one class (Tally).
+	EventTypeTally
 )
 
 // OpKind classifies operations.
