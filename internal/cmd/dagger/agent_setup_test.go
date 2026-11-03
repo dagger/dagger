@@ -13,12 +13,15 @@ import (
 func TestEnsureAgentLLMConfigured(t *testing.T) {
 	failure := errors.New("test failure")
 	for _, tc := range []struct {
-		name                                string
+		name                               string
+		traceID                            string
 		configured, interactive, setupReady bool
 		checkErr, setupErr, reloadErr       error
 		wantReady, wantSetup, wantReload    bool
-		wantErr                             string
+		wantErr                            string
 	}{
+		{name: "restore interactive", traceID: "0123456789abcdef0123456789abcdef", interactive: true, wantReady: true},
+		{name: "restore noninteractive", traceID: "0123456789abcdef0123456789abcdef", wantReady: true},
 		{name: "configured", configured: true, wantReady: true},
 		{name: "first run", interactive: true, setupReady: true, wantReady: true, wantSetup: true, wantReload: true},
 		{name: "cancelled", interactive: true, setupErr: llmconfig.ErrAborted, wantSetup: true},
@@ -29,9 +32,9 @@ func TestEnsureAgentLLMConfigured(t *testing.T) {
 		{name: "reload failed", interactive: true, setupReady: true, reloadErr: failure, wantSetup: true, wantReload: true, wantErr: "test failure"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			var setupCalled, reloadCalled bool
-			ready, err := ensureAgentLLMConfigured(t.Context(), tc.interactive,
-				func(context.Context) (bool, error) { return tc.configured, tc.checkErr },
+			var checkCalled, setupCalled, reloadCalled bool
+			ready, err := ensureAgentLLMConfigured(t.Context(), tc.traceID, tc.interactive,
+				func(context.Context) (bool, error) { checkCalled = true; return tc.configured, tc.checkErr },
 				func(context.Context) (bool, error) { setupCalled = true; return tc.setupReady, tc.setupErr },
 				func(context.Context) error { reloadCalled = true; return tc.reloadErr },
 			)
@@ -41,6 +44,7 @@ func TestEnsureAgentLLMConfigured(t *testing.T) {
 				require.NoError(t, err)
 			}
 			require.Equal(t, tc.wantReady, ready)
+			require.Equal(t, tc.traceID == "", checkCalled)
 			require.Equal(t, tc.wantSetup, setupCalled)
 			require.Equal(t, tc.wantReload, reloadCalled)
 		})

@@ -42,11 +42,18 @@ func (h *shellCallHandler) reloadLLMConfig(ctx context.Context) error {
 // Cancellation exits cleanly without composing an unusable agent.
 func ensureAgentLLMConfigured(
 	ctx context.Context,
+	traceID string,
 	interactive bool,
 	configured func(context.Context) (bool, error),
 	setup func(context.Context) (bool, error),
 	reload func(context.Context) error,
 ) (bool, error) {
+	// Restoring a trace only attaches archived agents. Their anchors own the
+	// provider and workspace; destination configuration is not required until
+	// inference, and must not block access to the archived conversation.
+	if traceID != "" {
+		return true, nil
+	}
 	ready, err := configured(ctx)
 	if err != nil || ready {
 		return ready, err

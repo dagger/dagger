@@ -1007,34 +1007,37 @@ func testCLITraceResume(ctx context.Context, t *testctx.T, cloudOnly bool) {
 		}
 		return res.StatusCode, string(data)
 	}
-	var last string
+	// Eventually can return on timeout while its callback is still running.
+	// Keep failure diagnostics safe even when an HTTP request finishes late.
+	var last atomic.Value
+	last.Store("")
 	defer func() {
 		if t.Failed() {
 			_, screen := request(http.MethodGet, "/screen", "")
-			t.Logf("Last console response: %s\nScreen:\n%s", last, screen)
+			t.Logf("Last console response: %s\nScreen:\n%s", last.Load(), screen)
 		}
 	}()
 	require.Eventually(t, func() bool {
 		status, body := request(http.MethodGet, "/toolset", "")
-		last = body
+		last.Store(body)
 		return status == http.StatusOK
-	}, time.Minute, 100*time.Millisecond, "interactive restored session never attached: %s", last)
+	}, time.Minute, 100*time.Millisecond, "interactive restored session never attached")
 	// The restored history is on screen before anything is sent: it hangs off
 	// the imported trace, which must not wait on the live one to surface.
 	require.Eventually(t, func() bool {
 		_, body := request(http.MethodGet, "/screen", "")
-		last = body
+		last.Store(body)
 		return strings.Contains(body, "source conversation retained")
-	}, time.Minute, 100*time.Millisecond, "restored history not shown before the first send: %s", last)
+	}, time.Minute, 100*time.Millisecond, "restored history not shown before the first send")
 	status, body := request(http.MethodPost, "/type", "after CLI restore")
 	require.Equal(t, http.StatusOK, status, "%s", body)
 	status, body = request(http.MethodPost, "/key", "enter")
 	require.Equal(t, http.StatusOK, status, "%s", body)
 	require.Eventually(t, func() bool {
 		_, body := request(http.MethodGet, "/screen", "")
-		last = body
+		last.Store(body)
 		return strings.Contains(body, "RESTORED-PROMPT-TURN-SUCCEEDED")
-	}, time.Minute, 100*time.Millisecond, "restored prompt did not complete a turn: %s", last)
+	}, time.Minute, 100*time.Millisecond, "restored prompt did not complete a turn")
 	if cloudOnly {
 		require.GreaterOrEqual(t, cloudRequests.Load(), int32(3), "CLI must fetch the Cloud trace on a local miss")
 	}

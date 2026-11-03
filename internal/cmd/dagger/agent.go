@@ -103,7 +103,7 @@ Use /help for everyday commands and advanced options.`,
 				if agentListMode {
 					return listAgents(ctx, dag, args, cmd)
 				}
-				ready, err := ensureAgentLLMConfigured(ctx,
+				ready, err := ensureAgentLLMConfigured(ctx, traceID,
 					canPromptForInit(progress, stdinIsTTY, false),
 					engineClient.LLMConfigured,
 					func(ctx context.Context) (bool, error) {
