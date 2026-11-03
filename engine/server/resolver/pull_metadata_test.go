@@ -293,8 +293,8 @@ type testPullRegistry struct {
 	layerResets       atomic.Int32
 }
 
-func (r *testPullRegistry) manifestRequests() int32 {
-	return r.manifestHEADs.Load() + r.manifestGETs.Load()
+func (registry *testPullRegistry) manifestRequests() int32 {
+	return registry.manifestHEADs.Load() + registry.manifestGETs.Load()
 }
 
 func newTestPullRegistry(t *testing.T, image *testPullImage) *testPullRegistry {
