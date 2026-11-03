@@ -3,11 +3,17 @@ package daggercmd
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"testing"
 
+	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
 	"github.com/stretchr/testify/require"
 )
@@ -211,4 +217,173 @@ func TestLLMConfigReloadFailure(t *testing.T) {
 	loaded, err := llmconfig.Load()
 	require.NoError(t, err)
 	require.Empty(t, loaded.LLM.Providers)
+}
+
+func TestLLMConfigLogoutStopsBeforeDeleting(t *testing.T) {
+	failure := errors.New("stop failed")
+	for _, tc := range []struct {
+		name             string
+		confirm          bool
+		formErr, stopErr error
+	}{
+		{name: "confirm", confirm: true},
+		{name: "cancel"},
+		{name: "abort", formErr: huh.ErrUserAborted},
+		{name: "form failure", formErr: failure},
+		{name: "stop failure", confirm: true, stopErr: failure},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			useTempLLMConfig(t, &llmconfig.Config{LLM: llmconfig.LLMConfig{Providers: map[string]llmconfig.Provider{
+				"openai":    {APIKey: "keep-until-stopped", Enabled: true},
+				"unrelated": {APIKey: "keep-forever", Enabled: true},
+			}}})
+			forms, stops, reloads := 0, 0, 0
+			commands, _, _ := newTestLLMConfigCommands(t, func(ctx context.Context, form *huh.Form) error {
+				forms++
+				require.Zero(t, stops, "stop must not happen before confirmation")
+				if forms == 1 {
+					return selectLogoutProvider(t, 0)(ctx, form)
+				}
+				field, ok := form.GetFocusedField().(*idtui.ExplicitConfirm)
+				require.True(t, ok)
+				require.Contains(t, field.View(), "Other agents will not be stopped")
+				if tc.formErr != nil {
+					return tc.formErr
+				}
+				if tc.confirm {
+					field.Focus()
+					field.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+				}
+				return nil
+			})
+			commands.beforeLogout = func(ctx context.Context, provider string) (bool, error) {
+				require.Equal(t, 1, forms, "picker opens before stop policy runs")
+				require.Equal(t, "openai", provider)
+				return confirmProviderLogout(ctx, commands.prompt, provider, func(context.Context) error {
+					stops++
+					cfg, err := llmconfig.Load()
+					require.NoError(t, err)
+					require.Contains(t, cfg.LLM.Providers, "openai", "credentials must exist until stop completes")
+					return tc.stopErr
+				})
+			}
+			commands.reload = func(context.Context) error {
+				reloads++
+				require.Equal(t, 1, stops)
+				cfg, err := llmconfig.Load()
+				require.NoError(t, err)
+				require.NotContains(t, cfg.LLM.Providers, "openai")
+				return nil
+			}
+			err := runLLMConfigCommand(t, commands, ".logout")
+			if tc.stopErr != nil || (tc.formErr != nil && !errors.Is(tc.formErr, huh.ErrUserAborted)) {
+				require.ErrorIs(t, err, failure)
+			} else {
+				require.NoError(t, err)
+			}
+			cfg, err := llmconfig.Load()
+			require.NoError(t, err)
+			require.Contains(t, cfg.LLM.Providers, "unrelated")
+			if tc.confirm && tc.stopErr == nil {
+				require.NotContains(t, cfg.LLM.Providers, "openai")
+				require.Equal(t, 1, reloads)
+			} else {
+				require.Contains(t, cfg.LLM.Providers, "openai")
+				require.Zero(t, reloads)
+			}
+			if tc.confirm {
+				require.Equal(t, 1, stops)
+			} else {
+				require.Zero(t, stops)
+			}
+		})
+	}
+}
+
+func TestLogoutProviderInUse(t *testing.T) {
+	for _, tc := range []struct {
+		name, live, cached, selected string
+		state                        core.AgentState
+		noRuntime, want, wantErr     bool
+	}{
+		{name: "unspawned", noRuntime: true, selected: "openai"},
+		{name: "idle", state: core.AgentStateIdle, cached: "openai", selected: "openai"},
+		{name: "paused", state: core.AgentStatePaused, cached: "openai", selected: "openai"},
+		{name: "busy matching", state: core.AgentStateRunning, live: "openai", selected: "openai", want: true},
+		{name: "waiting input", state: core.AgentStateWaitingInput, live: "openai", selected: "openai", want: true},
+		{name: "other alias", state: core.AgentStateRunning, live: "other", selected: "openai", want: true},
+		{name: "unrelated provider", state: core.AgentStateRunning, live: "anthropic", selected: "openai"},
+		{name: "live beats stale cache", state: core.AgentStateRunning, live: "anthropic", cached: "openai", selected: "openai"},
+		{name: "broken matching route", state: core.AgentStateRunning, cached: "openai", selected: "openai", want: true},
+		{name: "broken other route", state: core.AgentStateRunning, cached: "other", selected: "openai", want: true},
+		{name: "unknown live route fails closed", state: core.AgentStateRunning, cached: "anthropic", selected: "openai", wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			target := &sessionAgent{provider: tc.cached}
+			if !tc.noRuntime {
+				rt := newFakeRuntime()
+				rt.setState(tc.state)
+				target.bindRuntime(rt, "selected", "", true)
+			}
+			if tc.live != "" {
+				dag, err := dagger.Connect(t.Context(), dagger.WithConn(agentTestConn{do: func(*http.Request) (*http.Response, error) {
+					body := fmt.Sprintf(`{"data":{"node":{"provider":%q}}}`, tc.live)
+					return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(body))}, nil
+				}}))
+				require.NoError(t, err)
+				t.Cleanup(func() { dag.Close() })
+				target.llm = core.Ref[*core.LLM](core.NewQuery(dag), "logout-llm")
+			}
+			inUse, err := logoutProviderInUse(t.Context(), target, tc.selected)
+			if tc.wantErr {
+				require.ErrorContains(t, err, "stop the agent and retry /logout")
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, tc.want, inUse)
+		})
+	}
+	inUse, err := logoutProviderInUse(t.Context(), nil, "openai")
+	require.NoError(t, err)
+	require.False(t, inUse)
+}
+
+func TestLLMConfigLogoutPinsTargetBeforePicker(t *testing.T) {
+	useTempLLMConfig(t, &llmconfig.Config{LLM: llmconfig.LLMConfig{Providers: map[string]llmconfig.Provider{"openai": {Enabled: true}}}})
+	original, replacement := &sessionAgent{provider: "openai"}, &sessionAgent{provider: "anthropic"}
+	originalRT, replacementRT := newFakeRuntime(), newFakeRuntime()
+	originalRT.setState(core.AgentStateIdle)
+	replacementRT.setState(core.AgentStateIdle)
+	original.bindRuntime(originalRT, "original", "", true)
+	replacement.bindRuntime(replacementRT, "replacement", "", true)
+	focused := original
+	resolutions, forms := 0, 0
+	commands, _, reloads := newTestLLMConfigCommands(t, func(ctx context.Context, form *huh.Form) error {
+		forms++
+		require.Equal(t, 1, resolutions)
+		if forms == 1 {
+			// Work may start and focus may move while the picker is open.
+			originalRT.setState(core.AgentStateRunning)
+			focused = replacement
+			return selectLogoutProvider(t, 0)(ctx, form)
+		}
+		_, ok := form.GetFocusedField().(*idtui.ExplicitConfirm)
+		require.True(t, ok, "the original busy target still requires confirmation after focus changes")
+		return huh.ErrUserAborted
+	})
+	commands.logoutTarget = func(context.Context) (*sessionAgent, error) {
+		resolutions++
+		return focused, nil
+	}
+	require.NoError(t, runLLMConfigCommand(t, commands, ".logout"))
+	require.Equal(t, 2, forms)
+	require.Equal(t, 1, resolutions)
+	require.Zero(t, *reloads)
+	_, _, stopped := originalRT.counts()
+	require.Zero(t, stopped)
+	_, _, stopped = replacementRT.counts()
+	require.Zero(t, stopped)
+	cfg, err := llmconfig.Load()
+	require.NoError(t, err)
+	require.Contains(t, cfg.LLM.Providers, "openai")
 }
