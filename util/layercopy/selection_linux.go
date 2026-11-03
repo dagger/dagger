@@ -39,7 +39,7 @@ func (c *Copier) CopySelection(ctx context.Context, root, name string) error {
 		return err
 	}
 	if !ent.Info.IsDir() {
-		return fmt.Errorf("path %s is a file, not a directory", name)
+		return fmt.Errorf("path %s is a file: %w", name, unix.ENOTDIR)
 	}
 	copy := selectionCopy{copier: c, source: s, directories: map[inode]string{}}
 	return copy.directory(ctx, ent, name, "/", name)
@@ -170,8 +170,10 @@ func (s *selectionCopy) link(ctx context.Context, ent sourceEntry, name, dest, b
 }
 
 // A relative link keeps working if its text stays within the copied tree.
-// Check the resolved prefix before .. as well: a/../file can leave the tree
-// when a points outside it, even though the cleaned path looks local.
+// Check the resolved prefix before .. as well. A symlink in that prefix can
+// be copied or redirected to a shared directory elsewhere in the result.
+// Resolve these links in the source, even if the prefix stays in the tree:
+// its destination parent can differ, and the prefix may not be copied yet.
 func (s *selectionCopy) linkStaysWithin(boundary, parent, target string) (bool, error) {
 	prefix := parent
 	for _, part := range strings.Split(target, "/") {
@@ -182,6 +184,9 @@ func (s *selectionCopy) linkStaysWithin(boundary, parent, target string) (bool, 
 			}
 			if err != nil {
 				return false, err
+			}
+			if resolved != filepath.Clean(prefix) {
+				return false, nil
 			}
 			relative, err := filepath.Rel(boundary, resolved)
 			if err != nil {

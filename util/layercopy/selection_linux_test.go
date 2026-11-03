@@ -210,6 +210,46 @@ func TestSelectionResolvesDotDotAfterExternalLink(t *testing.T) {
 	require.Equal(t, "correct", string(content))
 }
 
+func TestSelectionResolvesDotDotAfterReusedDirectory(t *testing.T) {
+	for _, alias := range []string{"alias", "n-alias"} {
+		for _, decoy := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/decoy=%t", alias, decoy), func(t *testing.T) {
+				root := t.TempDir()
+				require.NoError(t, os.MkdirAll(filepath.Join(root, "src"), 0755))
+				require.NoError(t, os.MkdirAll(filepath.Join(root, "shared/other"), 0755))
+				require.NoError(t, os.WriteFile(filepath.Join(root, "shared/file"), []byte("correct"), 0644))
+				if decoy {
+					require.NoError(t, os.WriteFile(filepath.Join(root, "src/file"), []byte("wrong"), 0644))
+				}
+				for name, target := range map[string]string{
+					"src/a":              "../shared/other",
+					"src/b":              "../shared",
+					"shared/" + alias:    "/shared/other",
+					"shared/link":        alias + "/../file",
+					"shared/dangling":    alias + "/../missing",
+					"shared/other/local": "../file",
+				} {
+					require.NoError(t, os.Symlink(target, filepath.Join(root, name)))
+				}
+				dst := copySelection(t, root, "src")
+				content, err := os.ReadFile(filepath.Join(dst, "b/link"))
+				require.NoError(t, err)
+				require.Equal(t, "correct", string(content))
+				// Check both traversal orders: link can precede the alias that
+				// will later be redirected to a directory outside b.
+				for name, target := range map[string]string{
+					"b/dangling":    alias + "/../missing",
+					"b/other/local": "../file",
+				} {
+					actual, err := os.Readlink(filepath.Join(dst, name))
+					require.NoError(t, err)
+					require.Equal(t, target, actual)
+				}
+			})
+		}
+	}
+}
+
 func TestSelectionPreservesHardlinksWithoutLinkingSource(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(root, "a"), []byte("inside"), 0644))

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"syscall"
 	"time"
 
@@ -44,7 +45,10 @@ func (lazy *ContainerDirectoryLazy) materializeSelection(ctx context.Context, di
 	if !ok || rootfs == nil {
 		return fmt.Errorf("container directory selection: missing rootfs")
 	}
-	mounts := parent.Mounts
+	// Match exec mount order without changing the parent's mount metadata.
+	// In particular, a root mount must not discard earlier child mounts.
+	mounts := slices.Clone(parent.Mounts)
+	slices.SortFunc(mounts, func(a, b ContainerMount) int { return strings.Compare(a.Target, b.Target) })
 	// A directory mounted at / becomes the base view, including its metadata.
 	for i, mnt := range mounts {
 		if mnt.Target == "/" {

@@ -2418,27 +2418,13 @@ func (dir *Directory) materializeSubdirectory(ctx context.Context, source bkcach
 			// Pin the boundary before the copy opens it. A replaced parent
 			// pathname must not redirect the copy to another filesystem.
 			parentRoot = fmt.Sprintf("/proc/self/fd/%d", parentFile.Fd())
-			selected, err := containerdfs.RootPath(parentRoot, subdir)
-			if err != nil {
-				return err
+			// CopySelection resolves and checks the pinned selection itself.
+			// A separate path check can clean .. before expanding symlinks.
+			err = copier.CopySelection(ctx, parentRoot, subdir)
+			if errors.Is(err, syscall.ENOTDIR) {
+				return notADirectoryError{err}
 			}
-			rootHandle, err := os.OpenRoot(parentRoot)
-			if err != nil {
-				return err
-			}
-			defer rootHandle.Close()
-			selectedRel, err := filepath.Rel(parentRoot, selected)
-			if err != nil {
-				return err
-			}
-			info, err := rootHandle.Stat(selectedRel)
-			if err != nil {
-				return TrimErrPathPrefix(err, parentRoot)
-			}
-			if !info.IsDir() {
-				return notADirectoryError{fmt.Errorf("path %s is a file, not a directory", subdir)}
-			}
-			return copier.CopySelection(ctx, parentRoot, subdir)
+			return TrimErrPathPrefix(err, parentRoot)
 		}, mountRefAsReadOnly); err != nil {
 			return err
 		}

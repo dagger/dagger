@@ -3291,6 +3291,28 @@ func (DirectorySuite) TestDirectoryResolveBrokenSymlinks(ctx context.Context, t 
 				require.Equal(t, "hello", content)
 			})
 
+			t.Run("select a symlink with dot dot after another link", func(ctx context.Context, t *testctx.T) {
+				for _, decoy := range []string{"missing", "file", "directory"} {
+					t.Run(decoy, func(ctx context.Context, t *testctx.T) {
+						parent := dag.Directory().
+							WithNewDirectory("outside/deep").
+							WithNewFile("outside/chosen/value", "correct").
+							WithSymlink("../outside/deep", "src/link").
+							WithSymlink("link/../chosen", "src/alias")
+						switch decoy {
+						case "file":
+							parent = parent.WithNewFile("src/chosen", "wrong")
+						case "directory":
+							parent = parent.WithNewFile("src/chosen/value", "wrong")
+						}
+						out := tc.selectDir(parent, "src/alias", true)
+						content, err := out.File("value").Contents(ctx)
+						require.NoError(t, err)
+						require.Equal(t, "correct", content)
+					})
+				}
+			})
+
 			t.Run("copy needs no parent", func(ctx context.Context, t *testctx.T) {
 				out := tc.selectDir(source, "src", true)
 				copies := []*sdkcore.Directory{
@@ -3437,6 +3459,39 @@ func (DirectorySuite) TestDirectoryResolveBrokenSymlinksMounts(ctx context.Conte
 	}
 	_, err := ctr.Directory("/app", opts).File("link/hidden").Contents(ctx)
 	require.ErrorContains(t, err, "no such file or directory")
+	t.Run("root mount retains earlier child mounts", func(ctx context.Context, t *testctx.T) {
+		for _, rootFirst := range []bool{false, true} {
+			t.Run(fmt.Sprintf("root first=%t", rootFirst), func(ctx context.Context, t *testctx.T) {
+				ctr := dag.Container().WithRootfs(dag.Directory())
+				if rootFirst {
+					ctr = ctr.WithMountedDirectory("/", root)
+				}
+				ctr = ctr.WithMountedDirectory("/data", dag.Directory().WithNewFile("v", "mount"))
+				if !rootFirst {
+					ctr = ctr.WithMountedDirectory("/", root)
+				}
+				out := ctr.Directory("/app", opts)
+				content, err := out.File("link/v").Contents(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "mount", content)
+				_, err = out.File("link/hidden").Contents(ctx)
+				require.ErrorContains(t, err, "no such file or directory")
+			})
+		}
+	})
+	t.Run("mount aliases use exec order", func(ctx context.Context, t *testctx.T) {
+		root := dag.Directory().WithNewFile("z/v", "rootfs").
+			WithSymlink("/z", "a").WithSymlink("/z", "app/link")
+		ctr := dag.Container().WithRootfs(root).
+			WithMountedDirectory("/z", dag.Directory().WithNewFile("v", "z mount")).
+			WithMountedDirectory("/a", dag.Directory().WithNewFile("v", "a mount").WithNewFile("hidden", "hidden"))
+		out := ctr.Directory("/app", opts)
+		content, err := out.File("link/v").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "z mount", content)
+		_, err = out.File("link/hidden").Contents(ctx)
+		require.ErrorContains(t, err, "no such file or directory")
+	})
 	t.Run("mount back to rootfs", func(ctx context.Context, t *testctx.T) {
 		content, err := dag.Container().WithRootfs(root).WithMountedDirectory("/src", mounted).
 			Directory("/src", opts).File("release").Contents(ctx)
