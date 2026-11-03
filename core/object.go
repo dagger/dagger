@@ -148,6 +148,23 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 			return nil, fmt.Errorf("module object SDK input call frame: %w", err)
 		}
 		return t.objectToSDKInput(ctx, parentCall, x.Self())
+	case dagql.AnyResult:
+		// Nullable wrapping can erase the ObjectResult wrapper while keeping
+		// its shared result and call frame. Restore the selectable view before
+		// attaching or scoping it; an inline result does not have an ID yet.
+		srv, err := CurrentDagqlServer(ctx)
+		if err != nil {
+			return nil, err
+		}
+		selectable, err := srv.ToSelectable(ctx, x)
+		if err != nil {
+			return nil, fmt.Errorf("module object SDK input: %w", err)
+		}
+		obj, ok := selectable.(dagql.ObjectResult[*ModuleObject])
+		if !ok {
+			return nil, fmt.Errorf("unexpected module object result type %T", selectable)
+		}
+		return t.ConvertToSDKInput(ctx, obj)
 	case *ModuleObject:
 		return t.objectToSDKInput(ctx, dagql.CurrentCall(ctx), x)
 	case dagql.IDable:
