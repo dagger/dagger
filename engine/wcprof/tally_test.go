@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-var testTally = NewTallyClass("test.tallied")
+var testTally = NewTallyClass(OpKindInternal, "test.tallied")
 
 // tallyEvents dumps r and returns its tally events and its ops of class.
 func tallyEvents(t *testing.T, r *Recorder, class string) (tallies, ops []DumpEvent, names []string) {
@@ -21,6 +21,9 @@ func tallyEvents(t *testing.T, r *Recorder, class string) (tallies, ops []DumpEv
 	if err != nil {
 		t.Fatal(err)
 	}
+	if header.EventCount != len(events) {
+		t.Fatalf("header counts %d events, the dump has %d", header.EventCount, len(events))
+	}
 	for _, ev := range events {
 		switch {
 		case ev.Type == DumpTypeTally:
@@ -32,19 +35,26 @@ func tallyEvents(t *testing.T, r *Recorder, class string) (tallies, ops []DumpEv
 	return tallies, ops, header.Strings
 }
 
+// tallied makes a tallied call of testTally under ctx that takes d, failed
+// when err is set.
+func tallied(ctx context.Context, d time.Duration, err error) {
+	call := BeginTally(ctx, testTally)
+	time.Sleep(d)
+	call.End(err)
+}
+
 // Calls tallied under an op are one tally event on it, recorded when it
-// ends: their count, failures and summed duration, between its start and end.
-// Before it ends they aren't in a dump.
+// ends: their kind, count, failures and summed duration, between its start
+// and end. A dump taken while it's open has its tallies so far, to the dump.
 func TestTallyOnItsOp(t *testing.T) {
 	r := withTestRecorder(t, 0)
 	ctx, parent := BeginOp(context.Background(), OpKindInternal, "test.parent", OpOpts{})
-	for i, err := range []error{nil, errors.New("failed"), nil} {
-		start := time.Now().Add(-time.Duration(i+1) * time.Millisecond)
-		Tally(ctx, testTally, start, err)
+	tallied(ctx, time.Millisecond, nil)
+	if tallies, _, _ := tallyEvents(t, r, "test.tallied"); len(tallies) != 1 || tallies[0].Count != 1 || tallies[0].ParentID != parent.ID() {
+		t.Fatalf("an open op's tallies so far: %+v", tallies)
 	}
-	if tallies, _, _ := tallyEvents(t, r, "test.tallied"); len(tallies) != 0 {
-		t.Fatalf("tallies recorded before their op ended: %+v", tallies)
-	}
+	tallied(ctx, 2*time.Millisecond, errors.New("failed"))
+	tallied(ctx, 3*time.Millisecond, nil)
 	parent.End(OutcomeOK)
 
 	tallies, ops, names := tallyEvents(t, r, "test.tallied")
@@ -55,7 +65,7 @@ func TestTallyOnItsOp(t *testing.T) {
 		t.Fatalf("want one tally event, got %+v", tallies)
 	}
 	got := tallies[0]
-	if got.ParentID != parent.ID() || names[got.ClassID] != "test.tallied" || got.Count != 3 || got.Errors != 1 {
+	if got.ParentID != parent.ID() || names[got.ClassID] != "test.tallied" || got.OpKind != OpKindInternal.String() || got.Count != 3 || got.Errors != 1 {
 		t.Fatalf("tally: %+v", got)
 	}
 	if got.TotalNS < int64(6*time.Millisecond) {
@@ -66,20 +76,34 @@ func TestTallyOnItsOp(t *testing.T) {
 	}
 }
 
-// A call tallied under an op handed over by ID, whose op Tally can't reach,
-// is recorded as an op of its own under that ID.
-func TestTallyUnderAHandedOverOp(t *testing.T) {
+// A tallied call under an op handed over by ID, whose op it can't reach, or
+// under an op that has ended, is recorded as an op of its own under it.
+func TestTallyFallsBackToAnOp(t *testing.T) {
 	r := withTestRecorder(t, 0)
-	_, parent := BeginOp(context.Background(), OpKindInternal, "test.parent", OpOpts{})
-	handed := ContextWithOpID(context.Background(), parent.ID())
-	Tally(handed, testTally, time.Now(), errors.New("failed"))
+	ctx, parent := BeginOp(context.Background(), OpKindInternal, "test.parent", OpOpts{})
+	tallied(ContextWithOpID(context.Background(), parent.ID()), 0, errors.New("failed"))
 	parent.End(OutcomeOK)
+	tallied(ctx, 0, nil)
 
 	tallies, ops, _ := tallyEvents(t, r, "test.tallied")
 	if len(tallies) != 0 {
-		t.Fatalf("a handed-over op got tallies: %+v", tallies)
+		t.Fatalf("calls tallied on an op they couldn't reach or after its end: %+v", tallies)
 	}
-	if len(ops) != 1 || ops[0].ParentID != parent.ID() || ops[0].Outcome != OutcomeError.String() {
-		t.Fatalf("want one failed op under the handed-over op, got %+v", ops)
+	if len(ops) != 2 {
+		t.Fatalf("want two ops, got %+v", ops)
+	}
+	for _, op := range ops {
+		if op.ParentID != parent.ID() || op.OpKind != OpKindInternal.String() {
+			t.Fatalf("op %+v, want under the parent, internal", op)
+		}
+	}
+}
+
+// An unprofiled call is the zero call, which records nothing.
+func TestTallyUnprofiled(t *testing.T) {
+	withTestRecorder(t, 0)
+	globalOn.Store(false)
+	if call := BeginTally(context.Background(), testTally); call != (TallyCall{}) {
+		t.Fatalf("an unprofiled call began %+v", call)
 	}
 }

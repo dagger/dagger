@@ -358,6 +358,8 @@ type openOp struct {
 	metaID   uint32
 	parentID uint64
 	startNS  int64
+	// handle is the op, for the tallies a dump records while it's open.
+	handle *Op
 }
 
 // Recorder collects profiling events. Safe for concurrent use.

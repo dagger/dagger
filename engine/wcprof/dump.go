@@ -150,9 +150,11 @@ type DumpEvent struct {
 	HolderID      uint64 `json:"h,omitempty"`
 	HolderSinceNS int64  `json:"hs,omitempty"`
 
-	// Tally events (DumpTypeTally) count the calls of one class (ClassID)
-	// made under the op ParentID, from its start to its end (StartNS,
-	// EndNS): how many, how many failed, and their summed duration.
+	// Tally events (DumpTypeTally) count the calls of one class (OpKind,
+	// ClassID) made under the op ParentID, from its start to its end, or to
+	// the dump for an op still open (StartNS, EndNS): how many, how many
+	// failed, and their summed duration. A later dump of the same recorder
+	// can have the same op's tally again, grown.
 	Count   int64 `json:"n,omitempty"`
 	Errors  int64 `json:"er,omitempty"`
 	TotalNS int64 `json:"tn,omitempty"`
@@ -257,6 +259,7 @@ func toDumpEvent(ev Event) DumpEvent {
 	case EventTypeLink:
 		out.LinkKind = ev.LinkKind.String()
 	case EventTypeTally:
+		out.OpKind = ev.OpKind.String()
 		out.Count, out.Errors, out.TotalNS = int64(ev.TargetID), int64(ev.ResultID), ev.Bytes
 		out.TargetID, out.ResultID, out.Bytes = 0, 0, 0
 	case EventTypeSpan:
@@ -285,8 +288,10 @@ func (r *Recorder) WriteDump(w io.Writer, flush bool) error {
 		batches [numShards][]Event
 		usages  [numShards][]usageRecord
 		open    []DumpOpenOp
+		tallies []Event
 		total   int
 	)
+	nowNS := r.Now()
 	for i := range r.shards {
 		sh := &r.shards[i]
 		sh.mu.Lock()
@@ -311,6 +316,9 @@ func (r *Recorder) WriteDump(w io.Writer, flush bool) error {
 				MetaID:   oo.metaID,
 				StartNS:  oo.startNS,
 			})
+			if oo.handle != nil {
+				tallies = append(tallies, oo.handle.tallyEvents(nowNS, false)...)
+			}
 		}
 		sh.mu.Unlock()
 		total += len(batches[i]) + len(usages[i])
@@ -319,6 +327,7 @@ func (r *Recorder) WriteDump(w io.Writer, flush bool) error {
 		r.total.Add(int64(-total))
 	}
 
+	total += len(tallies)
 	reportedEvents, producers := r.dumpReported(flush)
 	total += len(reportedEvents)
 
@@ -345,6 +354,11 @@ func (r *Recorder) WriteDump(w io.Writer, flush bool) error {
 			if err := enc.Encode(toDumpEvent(ev)); err != nil {
 				return fmt.Errorf("wcprof: encode dump event: %w", err)
 			}
+		}
+	}
+	for _, ev := range tallies {
+		if err := enc.Encode(toDumpEvent(ev)); err != nil {
+			return fmt.Errorf("wcprof: encode dump tally: %w", err)
 		}
 	}
 	for _, batch := range usages {
