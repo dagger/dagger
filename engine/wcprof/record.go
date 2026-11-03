@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -12,10 +13,29 @@ type opCtxKey struct{}
 
 type profCtxKey struct{}
 
+// currentOp is ctx's current op: its ID, and the op itself when it was begun
+// in ctx (BeginOp) rather than handed over by ID (ContextWithOpID).
+type currentOp struct {
+	id uint64
+	op *Op
+}
+
 // CurrentOpID returns the profiling op ID carried by ctx, or 0.
 func CurrentOpID(ctx context.Context) uint64 {
-	id, _ := ctx.Value(opCtxKey{}).(uint64)
-	return id
+	cur, _ := ctx.Value(opCtxKey{}).(*currentOp)
+	if cur == nil {
+		return 0
+	}
+	return cur.id
+}
+
+// currentOpHandle returns ctx's current op when it was begun in ctx, or nil.
+func currentOpHandle(ctx context.Context) *Op {
+	cur, _ := ctx.Value(opCtxKey{}).(*currentOp)
+	if cur == nil {
+		return nil
+	}
+	return cur.op
 }
 
 // ContextWithOpID returns a context carrying the given op ID as the current
@@ -25,7 +45,7 @@ func ContextWithOpID(ctx context.Context, opID uint64) context.Context {
 	if opID == 0 {
 		return ctx
 	}
-	return context.WithValue(ctx, opCtxKey{}, opID)
+	return context.WithValue(ctx, opCtxKey{}, &currentOp{id: opID})
 }
 
 // ContextWithProfiling marks ctx (and any context derived from it) for
@@ -96,6 +116,8 @@ type Op struct {
 	bytes       int64
 	startNS     int64
 	outcomeHint Outcome
+	// tallies are its tallied calls' counts (Tally), allocated on the first.
+	tallies atomic.Pointer[opTallies]
 }
 
 // OpOpts carries optional per-op metadata.
@@ -177,7 +199,7 @@ func BeginOp(ctx context.Context, kind OpKind, class string, opts OpOpts) (conte
 		startNS:  op.startNS,
 	}
 	sh.mu.Unlock()
-	return ContextWithOpID(ctx, op.id), op
+	return context.WithValue(ctx, opCtxKey{}, &currentOp{id: op.id, op: op}), op
 }
 
 // StartTime is when the op began, or the zero time for a nil handle.
@@ -285,6 +307,7 @@ func (op *Op) endAt(outcome Outcome, resultID uint64, endNS int64) {
 		StartNS:  op.startNS,
 		EndNS:    endNS,
 	})
+	op.recordTallies(sh, endNS)
 }
 
 // Wait is a handle for an in-progress wait interval. A nil *Wait is valid
