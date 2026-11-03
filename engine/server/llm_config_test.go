@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +13,58 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/stretchr/testify/require"
 )
+
+type testCloudLLMUpdater struct {
+	config *engine.LLMConfig
+	calls  int
+	err    error
+}
+
+func (c *testCloudLLMUpdater) UpdateLLMConfig(_ context.Context, cfg *engine.LLMConfig) error {
+	c.calls++
+	if c.err != nil {
+		return c.err
+	}
+	c.config = cfg
+	return nil
+}
+
+func TestCloudLiveLLMConfig(t *testing.T) {
+	sess := &daggerSession{}
+	record := &clientRecord{clientMetadata: &engine.ClientMetadata{LLMConfig: &engine.LLMConfig{
+		DefaultProvider: "anthropic",
+	}}}
+	cloud := &testCloudLLMUpdater{}
+	state := &cloudLLMConfigState{}
+	require.NoError(t, state.sync(t.Context(), sess, record, cloud))
+	require.Equal(t, "anthropic", cloud.config.DefaultProvider)
+	require.NoError(t, state.sync(t.Context(), sess, record, cloud))
+	require.Equal(t, 1, cloud.calls, "unchanged revisions must not invalidate remote endpoint memos")
+
+	// Setup replaces bootstrap settings before cloud connection. The snapshot
+	// passed to a new client and the cached client's refresh must agree.
+	sess.replaceLLMConfig(record, &engine.LLMConfig{Providers: map[string]*engine.LLMProviderConfig{
+		"openai": {APIKey: "llmconfig://providers/openai/api_key"},
+	}})
+	firstRun, revision := sess.llmConfigSnapshot(record)
+	require.EqualValues(t, 1, revision)
+	require.Empty(t, firstRun.DefaultProvider)
+	require.NoError(t, state.sync(t.Context(), sess, record, cloud))
+	require.Equal(t, firstRun, cloud.config)
+	firstRun.Providers["openai"].APIKey = "changed by caller"
+	require.Equal(t, "llmconfig://providers/openai/api_key", cloud.config.Providers["openai"].APIKey)
+
+	// Failed synchronization is propagated and retried, not marked current.
+	sess.replaceLLMConfig(record, nil)
+	cloud.err = errors.New("remote update failed")
+	require.ErrorIs(t, state.sync(t.Context(), sess, record, cloud), cloud.err)
+	require.NotNil(t, cloud.config)
+	cloud.err = nil
+	require.NoError(t, state.sync(t.Context(), sess, record, cloud))
+	require.Nil(t, cloud.config)
+	require.EqualValues(t, 2, state.revision)
+	require.Equal(t, "anthropic", record.clientMetadata.LLMConfig.DefaultProvider)
+}
 
 func TestLiveLLMConfig(t *testing.T) {
 	sess := &daggerSession{sessionID: "session", mainClientCallerID: "main"}

@@ -431,10 +431,11 @@ type clientRuntime struct {
 	// metadata of that ongoing function call
 	fnCall *core.FunctionCall
 
-	cloudArtifactMu      sync.Mutex
-	cloudArtifactClients map[string]*engineclient.Client
-	cloudArtifactClosed  bool
-	cloudArtifactConnect singleflight.Group[string, *engineclient.Client]
+	cloudArtifactMu         sync.Mutex
+	cloudArtifactClients    map[string]*engineclient.Client
+	cloudArtifactLLMConfigs map[string]*cloudLLMConfigState
+	cloudArtifactClosed     bool
+	cloudArtifactConnect    singleflight.Group[string, *engineclient.Client]
 
 	// Trace and log providers are session-owned. These lightweight bound
 	// exporters are retained only for integrations that deliver telemetry for a
@@ -4742,11 +4743,25 @@ func (srv *Server) SharedCloudArtifactClient(ctx context.Context, scope string) 
 	client, _, err := parent.cloudArtifactConnect.Do(ctx, scope, func(ctx context.Context) (*engineclient.Client, error) {
 		parent.cloudArtifactMu.Lock()
 		cached, closed := parent.cloudArtifactClients[scope], parent.cloudArtifactClosed
+		var llmState *cloudLLMConfigState
+		if cached != nil && !closed {
+			if parent.cloudArtifactLLMConfigs == nil {
+				parent.cloudArtifactLLMConfigs = make(map[string]*cloudLLMConfigState)
+			}
+			llmState = parent.cloudArtifactLLMConfigs[scope]
+			if llmState == nil {
+				llmState = &cloudLLMConfigState{}
+				parent.cloudArtifactLLMConfigs[scope] = llmState
+			}
+		}
 		parent.cloudArtifactMu.Unlock()
 		if closed {
 			return nil, fmt.Errorf("cloud artifact clients are closed")
 		}
 		if cached != nil {
+			if err := llmState.sync(ctx, parent.daggerSession, parent.clientRecord, cached); err != nil {
+				return nil, fmt.Errorf("refresh cloud LLM configuration: %w", err)
+			}
 			return cached, nil
 		}
 		// Setup can outlive its first caller. Retain the parent until it ends.
@@ -4812,12 +4827,13 @@ func (srv *Server) CloudEngineClient(
 		runnerHost = testHost
 	}
 
+	llmConfig, _ := parentClient.daggerSession.llmConfigSnapshot(parentClient.clientRecord)
 	params := engineclient.Params{
 		RunnerHost:     runnerHost,
 		Workspace:      parentClient.clientMetadata.Workspace,
 		WorkspaceEnv:   parentClient.clientMetadata.WorkspaceEnv,
 		UserConfigPath: parentClient.clientMetadata.UserConfigPath,
-		LLMConfig:      parentClient.clientMetadata.LLMConfig,
+		LLMConfig:      llmConfig,
 		ExtraModules:   parentClient.clientMetadata.ExtraModules,
 		// Artifact queries load their own selected modules.
 		SkipWorkspaceModules: true,

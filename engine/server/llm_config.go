@@ -50,6 +50,42 @@ func llmConfigMetadataLocked(record *clientRecord) (*engine.ClientMetadata, erro
 	return md, nil
 }
 
+// llmConfigSnapshot is the configuration this client can forward through its
+// own attachables. Inherited main-client credentials have a different owner and
+// cannot be forwarded through this client's cloud attachables proxy.
+func (sess *daggerSession) llmConfigSnapshot(record *clientRecord) (*engine.LLMConfig, uint64) {
+	sess.scopeMu.Lock()
+	defer sess.scopeMu.Unlock()
+	if record.llmConfigRevision != 0 {
+		return record.llmConfig.Clone(), record.llmConfigRevision
+	}
+	return record.clientMetadata.LLMConfig.Clone(), 0
+}
+
+type llmConfigUpdater interface {
+	UpdateLLMConfig(context.Context, *engine.LLMConfig) error
+}
+
+// Calls are serialized by cloudArtifactConnect's per-scope singleflight.
+type cloudLLMConfigState struct {
+	revision uint64
+	synced   bool
+}
+
+// Cached cloud clients must receive replacements too, including an empty reset;
+// reconnecting is unnecessary and would discard their module call cache.
+func (s *cloudLLMConfigState) sync(ctx context.Context, sess *daggerSession, record *clientRecord, client llmConfigUpdater) error {
+	cfg, revision := sess.llmConfigSnapshot(record)
+	if s.synced && s.revision == revision {
+		return nil
+	}
+	if err := client.UpdateLLMConfig(ctx, cfg); err != nil {
+		return err
+	}
+	s.revision, s.synced = revision, true
+	return nil
+}
+
 func (sess *daggerSession) replaceLLMConfig(record *clientRecord, cfg *engine.LLMConfig) {
 	sess.scopeMu.Lock()
 	defer sess.scopeMu.Unlock()
