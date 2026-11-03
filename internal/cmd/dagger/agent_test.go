@@ -93,7 +93,7 @@ func TestSelectedModelProviderSurvivesReset(t *testing.T) {
 				session: &LLMSession{dag: dag, plumbingCtx: t.Context()},
 				llm:     seed,
 			}
-			require.NoError(t, a.Model("gpt-5", core.LLMWithModelOpts{Provider: "openai-codex"}))
+			require.NoError(t, a.Model(t.Context(), "gpt-5", core.LLMWithModelOpts{Provider: "openai-codex"}))
 			require.Equal(t, "gpt-5", a.model)
 			require.Equal(t, "openai-codex", a.provider)
 			for _, query := range queries {
@@ -132,7 +132,7 @@ func TestManualModelDoesNotPinPreviousProvider(t *testing.T) {
 		llm:      core.Ref[*core.LLM](core.NewQuery(dag), core.ID("seed")),
 		provider: "openai-codex",
 	}
-	require.NoError(t, a.Model("gpt-5"))
+	require.NoError(t, a.Model(t.Context(), "gpt-5"))
 	require.Equal(t, "openai", a.provider)
 	for _, query := range queries {
 		require.NotContains(t, query, "provider:")

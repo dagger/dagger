@@ -227,10 +227,7 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 			Args:        NoArgs,
 			State:       NoState,
 			Run: func(ctx context.Context, _ *ShellCommand, _ []string, _ *ShellState) error {
-				if h.llmSession == nil {
-					return fmt.Errorf("LLM not initialized")
-				}
-				return h.llmSession.Target().Clear()
+				return h.clearModelInteractive(ctx)
 			},
 		},
 		{
@@ -240,12 +237,11 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 			Args:        NoArgs,
 			State:       NoState,
 			Run: func(ctx context.Context, _ *ShellCommand, _ []string, _ *ShellState) error {
-				if h.llmSession == nil {
-					return fmt.Errorf("LLM not initialized")
+				target, err := h.commandTarget(ctx)
+				if err != nil {
+					return err
 				}
-				// Compacts the focused agent in place: same runtime, same
-				// roster entry, owned or attached.
-				return h.llmSession.Target().CompactInPlace(ctx)
+				return target.CompactInPlace(ctx)
 			},
 		},
 		{
@@ -255,10 +251,11 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 			Args:        NoArgs,
 			State:       NoState,
 			Run: func(ctx context.Context, _ *ShellCommand, _ []string, _ *ShellState) error {
-				if h.llmSession == nil {
-					return fmt.Errorf("LLM not initialized")
+				target, err := h.commandTarget(ctx)
+				if err != nil {
+					return err
 				}
-				return h.llmSession.Target().History(ctx)
+				return target.History(ctx)
 			},
 		},
 		{
@@ -271,15 +268,14 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 				if len(args) == 0 {
 					return h.selectModelInteractive(ctx)
 				}
-				llm, err := h.llm(ctx)
+				target, err := h.commandTarget(ctx)
 				if err != nil {
 					return err
 				}
-				target := llm.Target()
-				if err := target.Model(args[0]); err != nil {
+				if err := target.Model(ctx, args[0]); err != nil {
 					return err
 				}
-				h.noteModel(target.model)
+				h.noteCommandModel(target)
 				return nil
 			},
 		},
@@ -293,11 +289,11 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 				if len(args) == 0 {
 					return h.selectEffortInteractive(ctx)
 				}
-				llm, err := h.llm(ctx)
+				target, err := h.commandTarget(ctx)
 				if err != nil {
 					return err
 				}
-				return llm.Target().Effort(args[0])
+				return target.Effort(ctx, args[0])
 			},
 		},
 		{
@@ -326,19 +322,20 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 // current route. Selection changes this conversation; saving a default for new
 // conversations requires a separate opt-in in the same form.
 func (h *shellCallHandler) selectModelInteractive(ctx context.Context) error {
-	llm, err := h.llm(ctx)
+	target, err := h.commandTarget(ctx)
 	if err != nil {
 		return err
 	}
 
-	target := llm.Target()
 	// The old route may no longer resolve after logout (notably local routes).
 	// Keep the picker usable to repair it; cached identity is only a display and
 	// preselection hint, never a prerequisite for choosing another provider.
-	current := modelSelection{Provider: target.provider, Model: target.model}
-	if model, err := target.llm.Model(llm.plumbingCtx); err == nil {
-		if provider, err := target.llm.Provider(llm.plumbingCtx); err == nil {
-			current = modelSelection{Provider: provider, Model: model}
+	llm, current := target.llmSnapshot()
+	if llm != nil {
+		if model, err := llm.Model(ctx); err == nil {
+			if provider, err := llm.Provider(ctx); err == nil {
+				current = modelSelection{Provider: provider, Model: model}
+			}
 		}
 	}
 	options, err := availableModelOptions(ctx, current)
@@ -364,21 +361,50 @@ func (h *shellCallHandler) selectModelInteractive(ctx context.Context) error {
 		return nil // user aborted
 	}
 
-	var notice string
+	if err := target.Model(ctx, selected.Model, core.LLMWithModelOpts{Provider: selected.Provider}); err != nil {
+		return err
+	}
+	h.noteCommandModel(target)
+	// Persist only after the boundary edit succeeds: canceling a pending
+	// command must not change the default for future conversations.
 	if useDefault {
-		notice, err = h.saveModelDefault(ctx, selected)
+		notice, err := h.saveModelDefault(ctx, selected)
 		if err != nil {
 			return err
 		}
-	}
-	if err := target.Model(selected.Model, core.LLMWithModelOpts{Provider: selected.Provider}); err != nil {
-		return err
-	}
-	h.noteModel(target.model)
-	if notice != "" {
 		return h.Print(ctx, notice)
 	}
 	return nil
+}
+
+func (h *shellCallHandler) noteCommandModel(target *sessionAgent) {
+	if target.isTarget() {
+		_, model := target.llmSnapshot()
+		h.noteModel(model.Model)
+	}
+}
+
+func (h *shellCallHandler) clearModelInteractive(ctx context.Context) error {
+	target, err := h.commandTarget(ctx)
+	if err != nil {
+		return err
+	}
+	var confirmed bool
+	form := idtui.NewForm(huh.NewGroup(
+		idtui.NewExplicitConfirm("Clear", "Cancel", &confirmed).
+			Title(fmt.Sprintf("Clear %s's conversation?", target.Name())).
+			Description("Interrupt its current work and discard its history and references. The agent will wait for your next prompt."),
+	))
+	if err := Frontend.HandleForm(ctx, form); err != nil {
+		if errors.Is(err, huh.ErrUserAborted) {
+			return nil
+		}
+		return err
+	}
+	if form.State == huh.StateAborted || !confirmed {
+		return nil
+	}
+	return target.Clear(ctx)
 }
 
 func newModelPickerForm(options []huh.Option[modelSelection], current modelSelection, selected *modelSelection, useDefault *bool) *huh.Form {
@@ -423,6 +449,9 @@ func (h *shellCallHandler) saveModelDefault(ctx context.Context, selected modelS
 	}
 	cfg.LLM.DefaultProvider = selected.Provider
 	cfg.LLM.DefaultModel = selected.Model
+	if err := ctx.Err(); err != nil {
+		return "", context.Cause(ctx)
+	}
 	if err := cfg.Save(); err != nil {
 		return "", err
 	}
@@ -450,12 +479,13 @@ func (h *shellCallHandler) saveModelDefault(ctx context.Context, selected modelS
 // ".effort <level>" path once a level is selected, and no-ops if the user
 // aborts the form.
 func (h *shellCallHandler) selectEffortInteractive(ctx context.Context) error {
-	llm, err := h.llm(ctx)
+	target, err := h.commandTarget(ctx)
 	if err != nil {
 		return err
 	}
 
-	options := reasoningEffortOptions(h.llmModel)
+	_, model := target.llmSnapshot()
+	options := reasoningEffortOptions(model.Model)
 
 	var selected string
 	form := idtui.NewForm(
@@ -479,7 +509,7 @@ func (h *shellCallHandler) selectEffortInteractive(ctx context.Context) error {
 		return nil // user aborted
 	}
 
-	return llm.Target().Effort(selected)
+	return target.Effort(ctx, selected)
 }
 
 // reasoningEffortOptions builds the option list for the interactive ".effort"
@@ -633,7 +663,7 @@ func (h *shellCallHandler) registerCommands() error { //nolint:gocyclo
 			Description: `Show documentation for a command, function, module, or type`,
 			Args:        MaximumArgs(1),
 			Run: func(ctx context.Context, cmd *ShellCommand, args []string, st *ShellState) error {
-				if h.mode == modePrompt && st == nil {
+				if h.commandMode(ctx) == modePrompt && st == nil {
 					help, err := h.promptHelp(args)
 					if err != nil {
 						return err

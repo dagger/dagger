@@ -158,8 +158,8 @@ func TestCompactInPlaceDoesNotStartATurn(t *testing.T) {
 		"model":     "test-model",
 	})
 	require.NoError(t, a.CompactInPlace(t.Context()))
-	require.Equal(t, []string{"reseed"}, rt.verbLog(),
-		"/compact reseeds the summary and leaves it for the next prompt: no resume, no send")
+	require.Equal(t, []string{"beginEdit", "commitEdit"}, rt.verbLog(),
+		"/compact edits at a boundary; an idle agent stays idle without resume or send")
 	require.True(t, cd.sawChain("withoutMessageHistory", "withPrompt", "model"),
 		"the summary note leads the compacted conversation")
 }

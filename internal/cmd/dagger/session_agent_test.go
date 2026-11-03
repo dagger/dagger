@@ -807,7 +807,7 @@ func TestCompactingAFocusedWorkerReseedsItInPlace(t *testing.T) {
 	requireStillAlice(t, s, alice, aliceRT)
 
 	// .clear goes the same way: reseeded in place, not stopped or detached.
-	require.NoError(t, alice.Clear())
+	require.NoError(t, alice.Clear(t.Context()))
 	require.Equal(t, 2, aliceRT.reseedCount())
 	requireStillAlice(t, s, alice, aliceRT)
 }
