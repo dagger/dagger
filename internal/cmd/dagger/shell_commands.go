@@ -3,6 +3,7 @@ package daggercmd
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os/exec"
@@ -352,6 +353,9 @@ func (h *shellCallHandler) selectModelInteractive(ctx context.Context) error {
 	)
 
 	if err := Frontend.HandleForm(ctx, form); err != nil {
+		if errors.Is(err, huh.ErrUserAborted) {
+			return nil
+		}
 		return err
 	}
 
@@ -391,6 +395,9 @@ func (h *shellCallHandler) selectEffortInteractive(ctx context.Context) error {
 	)
 
 	if err := Frontend.HandleForm(ctx, form); err != nil {
+		if errors.Is(err, huh.ErrUserAborted) {
+			return nil
+		}
 		return err
 	}
 

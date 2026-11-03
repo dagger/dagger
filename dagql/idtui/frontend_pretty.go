@@ -2125,12 +2125,10 @@ func (fe *frontendPretty) completePromptForm(active *activePromptForm, invokeRes
 		// wrapper that just quit.
 		req.result(active.model)
 	}
-	if active.model.State == huh.StateAborted {
-		// A form owns input focus, so Ctrl+C reaches Huh instead of the
-		// frontend's navigation handler. Preserve the frontend-wide interrupt
-		// contract rather than treating the form's default value as a choice.
-		fe.quitAction(ErrInterrupted)
-	}
+	// Aborting a focused form belongs to its caller, not to the entire
+	// frontend session. HandleForm returns the abort error so commands can
+	// treat it as cancellation or propagate it (for example during startup).
+	// Ctrl+C outside a form still follows the normal interrupt handlers.
 	fe.activateNextPromptForm()
 	fe.refreshKeymap()
 	fe.Update()
