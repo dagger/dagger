@@ -155,6 +155,20 @@ func (r *LLMRouter) isOpenAIModel(model string) bool {
 	return strings.HasPrefix(model, "gpt-") || strings.HasPrefix(model, "openai/")
 }
 
+// preferCodexForGPT resolves the shared GPT naming convention against the
+// configured backends. A subscription can serve plain GPT names too; sending
+// those to an unconfigured OpenAI API endpoint loses the subscription auth.
+// When both backends are available, retain OpenAI's priority unless the user
+// chose Codex as their default. Callers with an explicit provider or prefix
+// bypass this inference.
+func (r *LLMRouter) preferCodexForGPT() bool {
+	if r.provider(OpenAICodex).AuthToken == "" {
+		return false
+	}
+	openai := r.provider(OpenAI)
+	return r.defaultProvider == OpenAICodex || (!openai.HasCredential() && openai.BaseURL == "")
+}
+
 func (r *LLMRouter) isCodexModel(model string) bool {
 	return strings.Contains(model, "codex") || strings.HasPrefix(model, "openai-codex/")
 }
@@ -461,13 +475,20 @@ func (r *LLMRouter) Route(model, provider string) (*LLMEndpoint, error) {
 		}
 	case r.isAnthropicModel(model):
 		endpoint = r.routeAnthropicModel()
+	case strings.HasPrefix(model, "openai/"):
+		// An explicit OpenAI prefix wins even for a codex-named model.
+		endpoint = r.routeOpenAIModel()
 	// NB: must precede isOpenAIModel — a "codex"-named model (e.g. gpt-5.3-codex)
 	// also matches the gpt- prefix; the codexModelPrefix form does not, but is
 	// caught here too.
 	case r.isCodexModel(model):
 		endpoint = r.routeCodexModel()
 	case r.isOpenAIModel(model):
-		endpoint = r.routeOpenAIModel()
+		if r.preferCodexForGPT() {
+			endpoint = r.routeCodexModel()
+		} else {
+			endpoint = r.routeOpenAIModel()
+		}
 	case r.isGoogleModel(model):
 		endpoint = r.routeGoogleModel()
 	case r.isMistralModel(model):

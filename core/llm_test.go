@@ -448,6 +448,64 @@ func TestCodexModelRouting(t *testing.T) {
 	assert.Equal(t, OpenAICodex, provider)
 }
 
+func TestConfiguredGPTModelRouting(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		defaultProvider string
+		openai          *engine.LLMProviderConfig
+		codex           *engine.LLMProviderConfig
+		want            LLMProvider
+	}{
+		{name: "unconfigured retains OpenAI", want: OpenAI},
+		{name: "subscription only", codex: &engine.LLMProviderConfig{AuthToken: "env://CODEX_TOKEN"}, want: OpenAICodex},
+		{name: "Anthropic default with subscription", defaultProvider: "anthropic", codex: &engine.LLMProviderConfig{AuthToken: "env://CODEX_TOKEN"}, want: OpenAICodex},
+		{name: "OpenAI preferences are not credentials", openai: &engine.LLMProviderConfig{Model: "gpt-other", ReasoningEffort: "high"}, codex: &engine.LLMProviderConfig{AuthToken: "env://CODEX_TOKEN"}, want: OpenAICodex},
+		{name: "API key only", openai: &engine.LLMProviderConfig{APIKey: "env://OPENAI_API_KEY"}, want: OpenAI},
+		{name: "both retain OpenAI priority", openai: &engine.LLMProviderConfig{APIKey: "env://OPENAI_API_KEY"}, codex: &engine.LLMProviderConfig{AuthToken: "env://CODEX_TOKEN"}, want: OpenAI},
+		{name: "both with Codex default", defaultProvider: "openai-codex", openai: &engine.LLMProviderConfig{APIKey: "env://OPENAI_API_KEY"}, codex: &engine.LLMProviderConfig{AuthToken: "env://CODEX_TOKEN"}, want: OpenAICodex},
+		{name: "both with OpenAI default", defaultProvider: "openai", openai: &engine.LLMProviderConfig{APIKey: "env://OPENAI_API_KEY"}, codex: &engine.LLMProviderConfig{AuthToken: "env://CODEX_TOKEN"}, want: OpenAI},
+		{name: "both with Anthropic default", defaultProvider: "anthropic", openai: &engine.LLMProviderConfig{APIKey: "env://OPENAI_API_KEY"}, codex: &engine.LLMProviderConfig{AuthToken: "env://CODEX_TOKEN"}, want: OpenAI},
+		{name: "keyless custom endpoint", openai: &engine.LLMProviderConfig{BaseURL: "http://model-runner/v1"}, codex: &engine.LLMProviderConfig{AuthToken: "env://CODEX_TOKEN"}, want: OpenAI},
+		{name: "Codex preferences are not credentials", codex: &engine.LLMProviderConfig{Model: "gpt-6-astra"}, want: OpenAI},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r, err := NewLLMRouter(&engine.LLMConfig{
+				DefaultProvider: tc.defaultProvider,
+				Providers: map[string]*engine.LLMProviderConfig{
+					"openai": tc.openai, "openai-codex": tc.codex,
+					"anthropic": {AuthToken: "env://ANTHROPIC_AUTH_TOKEN"},
+				},
+			}, &engine.ClientMetadata{})
+			require.NoError(t, err)
+			for _, request := range []struct {
+				model    string
+				provider string
+				want     LLMProvider
+			}{
+				{model: "claude-opus-5-5", want: Anthropic},
+				{model: "gpt-6-astra", want: tc.want},
+				{model: "claude-opus-5-5", want: Anthropic},
+				{model: "gpt-6-astra", provider: "openai", want: OpenAI},
+				{model: "gpt-6-astra", provider: "openai-codex", want: OpenAICodex},
+				{model: "openai/gpt-6-astra", want: OpenAI},
+				{model: "openai/gpt-5.3-codex", want: OpenAI},
+				{model: "openai-codex/gpt-6-astra", want: OpenAICodex},
+				{model: "gpt-5.3-codex", want: OpenAICodex},
+			} {
+				ep, err := r.Route(request.model, request.provider)
+				require.NoError(t, err)
+				assert.Equal(t, request.want, ep.Provider, "model=%s provider=%s", request.model, request.provider)
+				assert.Equal(t, request.want, ep.credentialProvider())
+				if request.model == "gpt-6-astra" && ep.Provider == OpenAICodex {
+					assert.Equal(t, request.model, ep.Model)
+					assert.Equal(t, "https://chatgpt.com/backend-api", ep.BaseURL)
+					assert.True(t, ep.IsOAuth)
+				}
+			}
+		})
+	}
+}
+
 func TestSmallModelRouting(t *testing.T) {
 	t.Run("configured model wins and provider remains concrete", func(t *testing.T) {
 		r := routerWith(t, map[string]*engine.LLMProviderConfig{

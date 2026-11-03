@@ -165,6 +165,69 @@ func llmTestHistory() []*LLMMessage {
 	}}
 }
 
+// Switching models must discard the old endpoint and resolve credentials for
+// the newly selected backend, including bare GPT names on a Codex subscription.
+func TestLLMWithModelSwitchesProviderCredentials(t *testing.T) {
+	for _, openaiProvider := range []LLMProvider{OpenAI, OpenAICodex} {
+		for _, anthropicOAuth := range []bool{false, true} {
+			name := string(openaiProvider) + "/anthropic-api-key"
+			if anthropicOAuth {
+				name = string(openaiProvider) + "/anthropic-oauth"
+			}
+			t.Run(name, func(t *testing.T) {
+				ctx, env := newLLMEndpointTestCtx(t)
+				md, err := engine.ClientMetadataFromContext(ctx)
+				require.NoError(t, err)
+				md.LLMConfig.DefaultProvider = "anthropic"
+				md.LLMConfig.DefaultModel = "claude-opus-5-5"
+				if !anthropicOAuth {
+					env.anthropic.AuthToken = ""
+					env.anthropic.AuthTokenExpiresAt = ""
+					env.anthropic.APIKey = "env://ANTHROPIC_API_KEY"
+					env.set("env://ANTHROPIC_API_KEY", "anthropic-key")
+				}
+				cfg := &engine.LLMProviderConfig{APIKey: "env://OPENAI_API_KEY"}
+				env.set("env://OPENAI_API_KEY", "openai-key")
+				if openaiProvider == OpenAICodex {
+					cfg = &engine.LLMProviderConfig{AuthToken: "env://CODEX_TOKEN"}
+					env.set("env://CODEX_TOKEN", "codex-token")
+				}
+				md.LLMConfig.Providers[string(openaiProvider)] = cfg
+				query, err := CurrentQuery(ctx)
+				require.NoError(t, err)
+				llm, err := query.NewLLM(ctx, "claude-opus-5-5", "anthropic")
+				require.NoError(t, err)
+				for _, model := range []string{"claude-opus-5-5", "gpt-6-astra", "claude-opus-5-5", "gpt-6-astra"} {
+					llm = llm.WithModel(model, "")
+					ep, err := llm.Endpoint(ctx)
+					require.NoError(t, err)
+					if model == "gpt-6-astra" {
+						require.Equal(t, openaiProvider, ep.Provider)
+						if openaiProvider == OpenAICodex {
+							assert.Equal(t, "codex-token", ep.AuthToken)
+							assert.Equal(t, "https://chatgpt.com/backend-api", ep.BaseURL)
+							assert.Empty(t, ep.Key)
+							assert.NotNil(t, ep.AuthTokenSource)
+						} else {
+							assert.Equal(t, "openai-key", ep.Key)
+							assert.Empty(t, ep.AuthToken)
+						}
+					} else {
+						require.Equal(t, Anthropic, ep.Provider)
+						if anthropicOAuth {
+							assert.Equal(t, "token-v1", ep.AuthToken)
+							assert.Empty(t, ep.Key)
+						} else {
+							assert.Equal(t, "anthropic-key", ep.Key)
+							assert.Empty(t, ep.AuthToken)
+						}
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestLLMEndpointCredentialOutlivesRoutingScope(t *testing.T) {
 	ctx, env := newLLMEndpointTestCtx(t)
 	var mu sync.Mutex
