@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
 	"github.com/stretchr/testify/require"
@@ -48,6 +49,37 @@ func TestEnsureAgentLLMConfigured(t *testing.T) {
 			require.Equal(t, tc.wantSetup, setupCalled)
 			require.Equal(t, tc.wantReload, reloadCalled)
 		})
+	}
+}
+
+func TestQueuedCommandRetriesTargetAfterSetup(t *testing.T) {
+	clearLLMEnv(t)
+	useTempLLMConfig(t, &llmconfig.Config{LLM: llmconfig.LLMConfig{
+		Providers: map[string]llmconfig.Provider{"anthropic": {Enabled: true, APIKey: "test-key"}},
+	}})
+	h := newSlashTestHandler(t)
+	h.mode = modePrompt
+	h.llmErr = errors.New("initialization before setup failed")
+	h.QueuePrompt(idtui.PromptInput{Text: "/setup"})
+	h.QueuePrompt(idtui.PromptInput{Text: "/model gpt-6-astra"})
+	require.Equal(t, "/setup", h.DequeuePrompt().Text)
+	queued := h.DequeuePrompt()
+	queuedCtx := context.WithValue(t.Context(), commandSubmissionKey{}, queued.CommandTarget)
+	_, err := h.commandTarget(queuedCtx)
+	require.ErrorContains(t, err, "initialization before setup failed")
+
+	// Successful setup publishes configuration and clears the cached failure.
+	ctx := context.WithValue(t.Context(), llmConfigUpdaterKey{}, llmConfigUpdater(func(context.Context, *engine.LLMConfig) error { return nil }))
+	require.NoError(t, h.reloadLLMConfig(ctx))
+	s, agents := testSession(t, "original", "other")
+	h.llmSession = s // the repaired session initializes its first conversation
+	fresh := h.PreparePrompt(idtui.PromptInput{Text: "/model gpt-6-astra"})
+	freshCtx := context.WithValue(t.Context(), commandSubmissionKey{}, fresh.CommandTarget)
+	s.SetTarget(agents[1])
+	for _, commandCtx := range []context.Context{queuedCtx, freshCtx} {
+		target, err := h.commandTarget(commandCtx)
+		require.NoError(t, err)
+		require.Same(t, agents[0], target, "recovery must use the original conversation, not later focus")
 	}
 }
 

@@ -58,21 +58,21 @@ func TestPromptQueueRecallAndReplace(t *testing.T) {
 	h.QueuePrompt(original)
 	original.Images[0].Data[0] = '!'
 	recalled := h.DequeuePrompt()
-	require.Equal(t, imagePrompt("describe this"), recalled)
+	require.Equal(t, h.PreparePrompt(imagePrompt("describe this")), recalled)
 	require.True(t, h.DequeuePrompt().Empty())
 
 	recalled.Text = "edited caption"
 	h.QueuePrompt(recalled)
 	recalled.Images[0].Data[0] = '!'
-	require.Equal(t, imagePrompt("edited caption"), h.DequeuePrompt())
+	require.Equal(t, h.PreparePrompt(imagePrompt("edited caption")), h.DequeuePrompt())
 
 	h.QueuePrompt(imagePrompt("replaced"))
 	h.QueuePrompt(imagePrompt(""))
-	require.Equal(t, imagePrompt(""), h.DequeuePrompt(), "image-only drafts are not empty")
+	require.Equal(t, h.PreparePrompt(imagePrompt("")), h.DequeuePrompt(), "image-only drafts are not empty")
 
 	h.QueuePrompt(imagePrompt("replaced by text"))
 	h.QueueMessage("legacy text")
-	require.Equal(t, idtui.PromptInput{Text: "legacy text"}, h.DequeuePrompt())
+	require.Equal(t, h.PreparePrompt(idtui.PromptInput{Text: "legacy text"}), h.DequeuePrompt())
 	h.QueueMessage("old caller")
 	require.Equal(t, "old caller", h.DequeueMessage())
 }
@@ -106,7 +106,8 @@ func TestPromptCommandQueuePinsTargetAndMode(t *testing.T) {
 	h.QueuePrompt(imagePrompt("old draft"))
 	h.QueuePrompt(idtui.PromptInput{Text: "/compact"})
 	h.QueuePrompt(idtui.PromptInput{Text: "/help"})
-	h.QueuePrompt(imagePrompt("latest draft"))
+	latestDraft := h.PreparePrompt(imagePrompt("latest draft"))
+	h.QueuePrompt(latestDraft)
 	require.Contains(t, h.QueuedPromptSummary(), "3 command(s)")
 
 	// Focus and mode can change while the interpreter or a picker waits.
@@ -124,7 +125,7 @@ func TestPromptCommandQueuePinsTargetAndMode(t *testing.T) {
 		require.NoError(t, err)
 		require.Same(t, agents[0], target)
 	}
-	require.Equal(t, imagePrompt("latest draft"), h.DequeuePrompt())
+	require.Equal(t, latestDraft, h.DequeuePrompt())
 	require.True(t, h.DequeuePrompt().Empty())
 	require.Empty(t, h.QueuedPromptSummary())
 
@@ -135,13 +136,32 @@ func TestPromptCommandQueuePinsTargetAndMode(t *testing.T) {
 	require.False(t, h.SubmitPromptToTarget(input))
 }
 
+func TestPromptDraftKeepsModeAcrossQueuedShell(t *testing.T) {
+	for _, draft := range []idtui.PromptInput{{Text: "echo this is a prompt, not shell code"}, imagePrompt("describe this"), imagePrompt("")} {
+		h := newSlashTestHandler(t)
+		h.mode = modePrompt
+		h.QueuePrompt(idtui.PromptInput{Text: "/shell"})
+		submitted := h.PreparePrompt(draft)
+		h.QueuePrompt(submitted)
+		require.Equal(t, "/shell", h.DequeuePrompt().Text)
+		h.mode = modeShell // the queued /shell has executed
+		input := h.DequeuePrompt()
+		require.Equal(t, submitted, input)
+		require.Equal(t, modePrompt, h.promptInputMode(input))
+		require.False(t, h.SerialPrompt(input), "queued prompts must never become shell scripts")
+		require.NoError(t, h.ValidatePrompt(input), "valid queued images retain prompt mode")
+		require.Nil(t, input.CommandTarget, "mode capture must not classify a prompt as a command")
+		require.Equal(t, input, h.PreparePrompt(input.Clone()), "requeue cannot reinterpret a submitted input")
+	}
+}
+
 func TestPromptCommandQueueRecallAndCancel(t *testing.T) {
 	h := newSlashTestHandler(t)
 	h.mode = modePrompt
 	h.QueuePrompt(idtui.PromptInput{Text: "/model gpt-6-astra"})
 	h.QueuePrompt(imagePrompt("recall me"))
 	h.QueuePrompt(idtui.PromptInput{Text: "/effort high"})
-	require.Equal(t, imagePrompt("recall me"), h.RecallQueuedPrompt())
+	require.Equal(t, h.PreparePrompt(imagePrompt("recall me")), h.RecallQueuedPrompt())
 	require.True(t, h.RecallQueuedPrompt().Empty())
 	require.Equal(t, "/model gpt-6-astra", h.DequeuePrompt().Text)
 	require.Equal(t, "/effort high", h.DequeuePrompt().Text)

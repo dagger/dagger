@@ -19,6 +19,10 @@ type PromptInput struct {
 	Text   string
 	Images []PromptImage
 
+	// SubmissionMode is opaque handler-owned input-mode metadata. Both prompts
+	// and commands retain their interpretation while waiting in a queue.
+	SubmissionMode any
+
 	// CommandTarget is opaque handler-owned submission metadata. It binds a
 	// command to its original target while asynchronous handling or a queue
 	// waits; ordinary user prompts leave it nil.
@@ -43,7 +47,7 @@ func (p PromptInput) Summary() string {
 
 // Clone isolates a draft from asynchronous delivery and queue storage.
 func (p PromptInput) Clone() PromptInput {
-	clone := PromptInput{Text: p.Text, CommandTarget: p.CommandTarget}
+	clone := PromptInput{Text: p.Text, SubmissionMode: p.SubmissionMode, CommandTarget: p.CommandTarget}
 	for _, image := range p.Images {
 		clone.Images = append(clone.Images, PromptImage{
 			MIMEType: image.MIMEType,

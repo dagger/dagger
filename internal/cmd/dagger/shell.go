@@ -287,7 +287,6 @@ func (h *shellCallHandler) SerialPrompt(input idtui.PromptInput) bool {
 type commandSubmission struct {
 	mode   interpreterMode
 	target *sessionAgent
-	err    error
 }
 
 type commandSubmissionKey struct{}
@@ -302,16 +301,22 @@ func (h *shellCallHandler) commandMode(ctx context.Context) interpreterMode {
 }
 
 func (h *shellCallHandler) promptInputMode(input idtui.PromptInput) interpreterMode {
-	if submission, ok := input.CommandTarget.(*commandSubmission); ok {
-		return submission.mode
+	if mode, ok := input.SubmissionMode.(interpreterMode); ok {
+		return mode
 	}
 	return h.mode
 }
 
 func (h *shellCallHandler) PreparePrompt(input idtui.PromptInput) idtui.PromptInput {
-	if input.CommandTarget == nil && h.SerialPrompt(input) {
-		target, err := h.focusedConversation()
-		input.CommandTarget = &commandSubmission{mode: h.mode, target: target, err: err}
+	if input.SubmissionMode != nil {
+		return input
+	}
+	input.SubmissionMode = h.mode
+	if h.SerialPrompt(input) {
+		// A setup command ahead of this one may repair failed initialization.
+		// Capture an existing conversation, not a transient startup error.
+		target, _ := h.focusedConversation()
+		input.CommandTarget = &commandSubmission{mode: h.mode, target: target}
 	}
 	return input
 }
@@ -320,8 +325,8 @@ func (h *shellCallHandler) PreparePrompt(input idtui.PromptInput) idtui.PromptIn
 // happens to be focused when an asynchronous picker or queued command resumes.
 func (h *shellCallHandler) commandTarget(ctx context.Context) (*sessionAgent, error) {
 	submission, captured := ctx.Value(commandSubmissionKey{}).(*commandSubmission)
-	if captured && (submission.target != nil || submission.err != nil) {
-		return submission.target, submission.err
+	if captured && submission.target != nil {
+		return submission.target, nil
 	}
 	s, err := h.llm(ctx)
 	if err != nil {
