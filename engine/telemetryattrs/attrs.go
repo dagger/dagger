@@ -797,15 +797,16 @@ const (
 //
 // When the engine has prepared a cache volume's backing snapshot for an exec
 // or service mount, or with cacheVolumes.dir has acquired its directory, it
-// reports the preparation on an internal span named
-// "<CacheVolumeMountSpan>: <key>", which also writes one log line with the
-// same facts. The span belongs to the session, so its EngineCacheAttr
-// resource attribute names the engine cache it ran in: another identity is
-// another cache database (a new disk, or the same disk after the engine wiped
-// its cache), another generation on the same identity is another start of
-// that cache, and the same generation is the same engine process.
+// reports the preparation as a CacheVolumeMountEvent on the span that mounts
+// the volume, with the attributes below. It is for diagnosing runs from their
+// traces, so it is an event: neither the CLI nor Dagger Cloud shows events.
+// The span belongs to the session, so its EngineCacheAttr resource attribute
+// names the engine cache it ran in: another identity is another cache
+// database (a new disk, or the same disk after the engine wiped its cache),
+// another generation on the same identity is another start of that cache,
+// and the same generation is the same engine process.
 const (
-	CacheVolumeMountSpan = "cache volume mount"
+	CacheVolumeMountEvent = "cache volume mount"
 
 	// CacheVolumeKeyAttr is the volume's key. (string)
 	CacheVolumeKeyAttr = "dagger.io/cache_volume.key"

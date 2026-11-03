@@ -457,7 +457,7 @@ func (fc *FuncCommand) logCommandParseSchemaSummary(ctx context.Context, reason 
 		errMsg = parseErr.Error()
 	}
 
-	slog.InfoContext(ctx, "dagger call parse schema summary",
+	slog.DebugContext(ctx, "dagger call parse schema summary",
 		"reason", reason,
 		"error", errMsg,
 		"requested_args", limitFuncLogStrings(requestedArgs, 40),

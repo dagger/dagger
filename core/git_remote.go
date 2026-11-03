@@ -89,7 +89,7 @@ func (repo *RemoteGitRepository) Remote(ctx context.Context) (result *gitutil.Re
 	if err != nil {
 		return nil, err
 	}
-	slog.Info("loaded git remote metadata", "cache_hit", hit, "cache_key", cacheKey)
+	slog.Debug("loaded git remote metadata", "cache_hit", hit, "cache_key", cacheKey)
 	return remote, nil
 }
 

@@ -17,14 +17,12 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
-	telemetry "github.com/dagger/otel-go"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
@@ -783,34 +781,17 @@ func reportCacheVolumeDirMount(ctx context.Context, cache *CacheVolume, target, 
 }
 
 // reportCacheVolumeMount reports a prepared mount of a cache volume at target
-// on an internal span (see telemetryattrs.CacheVolumeMountSpan), with the
-// volume's storage as idAttr: its snapshot or its directory.
+// as an event on the current span (see telemetryattrs.CacheVolumeMountEvent),
+// with the volume's storage as idAttr: its snapshot or its directory.
 func reportCacheVolumeMount(ctx context.Context, cache *CacheVolume, target, state, idAttr, id string) {
-	attrs := []attribute.KeyValue{
+	trace.SpanFromContext(ctx).AddEvent(telemetryattrs.CacheVolumeMountEvent, trace.WithAttributes(
 		attribute.String(telemetryattrs.CacheVolumeKeyAttr, cache.Key),
 		attribute.String(telemetryattrs.CacheVolumeNamespaceAttr, cache.Namespace),
 		attribute.String(telemetryattrs.CacheVolumeSharingAttr, string(cache.Sharing)),
 		attribute.String(telemetryattrs.CacheVolumeTargetAttr, target),
 		attribute.String(idAttr, id),
 		attribute.String(telemetryattrs.CacheVolumeStateAttr, state),
-	}
-	idName := "snapshot"
-	if idAttr == telemetryattrs.CacheVolumeDirAttr {
-		idName = "dir"
-	}
-	args := []any{
-		"key", cache.Key,
-		"namespace", cache.Namespace,
-		"sharing", string(cache.Sharing),
-		"target", target,
-		idName, id,
-		"state", state,
-	}
-
-	ctx, span := Tracer(ctx).Start(ctx, telemetryattrs.CacheVolumeMountSpan+": "+cache.Key,
-		telemetry.Internal(), trace.WithAttributes(attrs...))
-	defer telemetry.EndWithCause(span, nil)
-	slog.SpanLogger(ctx, InstrumentationLibrary).Info(telemetryattrs.CacheVolumeMountSpan, args...)
+	))
 }
 
 type CacheSharingMode string
