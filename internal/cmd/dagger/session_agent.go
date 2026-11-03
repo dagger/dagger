@@ -1130,7 +1130,7 @@ func (a *sessionAgent) updateStatusLine(llm *core.LLM) error {
 
 	statusData := idtui.StatusLineData{
 		Model:             a.model,
-		SubscriptionLabel: a.session.subscriptionLabel(),
+		SubscriptionLabel: a.session.subscriptionLabel(a.provider),
 		ContextPercent:    -1, // unknown by default
 		AutoCompact:       a.ShouldAutocompact(),
 	}

@@ -15,6 +15,7 @@ import (
 	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/telemetryattrs"
+	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
@@ -684,8 +685,59 @@ func TestReseedKeepsTheInstance(t *testing.T) {
 	require.NoError(t, fresh.reseedAgent(nil))
 }
 
-// modelOnlyDag is a dagger client answering only the LLM.model reads setLLM
-// makes, enough to drive updateLLM without an engine.
+func TestStatusSubscriptionLabelFollowsProvider(t *testing.T) {
+	cfg := &llmconfig.Config{LLM: llmconfig.LLMConfig{
+		DefaultProvider: "openai-codex",
+		Providers: map[string]llmconfig.Provider{
+			"openai-codex": {Enabled: true, AuthType: "oauth", SubscriptionType: "chatgpt"},
+			"anthropic":    {Enabled: true, APIKey: "test-key"},
+		},
+	}}
+	useTempLLMConfig(t, cfg)
+	dag, err := dagger.Connect(t.Context(), dagger.WithConn(agentTestConn{do: func(*http.Request) (*http.Response, error) {
+		body := `{"data":{"node":{"contextTokens":0,"contextWindow":0,"provider":"","tokenUsage":{"inputTokens":0,"outputTokens":0,"cachedTokenReads":0,"cachedTokenWrites":0}}}}`
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(body))}, nil
+	}}))
+	require.NoError(t, err)
+	t.Cleanup(func() { dag.Close() })
+	s, agents := testSession(t, "main", "worker")
+	var status idtui.StatusLineData
+	s.frontend = &idtui.FrontendMock{
+		SetStatusLineFunc:     func(data idtui.StatusLineData) { status = data },
+		SetSidebarContentFunc: func(idtui.SidebarSection) {},
+	}
+	llm := core.Ref[*core.LLM](core.NewQuery(dag), "status-llm")
+	check := func(agent *sessionAgent, provider, model, wantLabel string) {
+		t.Helper()
+		s.target = agent
+		agent.provider = provider
+		agent.model = model
+		require.NoError(t, agent.updateStatusLine(llm))
+		require.Equal(t, model, status.Model)
+		require.Equal(t, wantLabel, status.SubscriptionLabel)
+	}
+	check(agents[0], "openai-codex", "gpt-6-astra", "ChatGPT")
+	// Switching models or focused agents must not retain the default's label.
+	check(agents[0], "anthropic", "claude-opus-5-5", "")
+	check(agents[1], "openai-codex", "gpt-6-astra", "ChatGPT")
+	check(agents[0], "anthropic", "claude-opus-5-5", "")
+
+	// Setup/re-authentication changes the plan without changing the provider.
+	cfg.LLM.Providers["anthropic"] = llmconfig.Provider{Enabled: true, AuthType: "oauth", SubscriptionType: "pro"}
+	require.NoError(t, cfg.Save())
+	check(agents[0], "anthropic", "claude-opus-5-5", "Claude Pro")
+	cfg.LLM.Providers["anthropic"] = llmconfig.Provider{Enabled: true, AuthType: "oauth", SubscriptionType: "max"}
+	require.NoError(t, cfg.Save())
+	check(agents[0], "anthropic", "claude-opus-5-5", "Claude Max")
+	cfg.LLM.Providers["anthropic"] = llmconfig.Provider{Enabled: false, AuthType: "oauth", SubscriptionType: "max"}
+	require.NoError(t, cfg.Save())
+	check(agents[0], "anthropic", "claude-opus-5-5", "")
+	check(agents[0], "local", "custom-model", "")
+	check(agents[0], "", "unresolved-model", "")
+}
+
+// modelOnlyDag answers the LLM model/provider reads setLLM makes, enough to
+// drive updateLLM without an engine.
 func modelOnlyDag(t *testing.T) *dagger.Client {
 	t.Helper()
 	dag, err := dagger.Connect(t.Context(), dagger.WithConn(agentTestConn{do: func(req *http.Request) (*http.Response, error) {
