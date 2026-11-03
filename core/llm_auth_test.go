@@ -531,7 +531,7 @@ func TestLLMAuthFailureRetriesOnceWithFreshToken(t *testing.T) {
 
 	_, err = llm.sendQueryWithRetry(ctx, llmTestHistory(), nil, "", 0)
 	require.Error(t, err)
-	assert.ErrorContains(t, err, "dagger llm setup",
+	assert.ErrorContains(t, err, "/setup",
 		"an expired subscription login must say what to do about it")
 	assert.ErrorContains(t, err, string(Anthropic))
 
@@ -564,7 +564,7 @@ func TestLLMAuthFailureWithoutSourceIsPermanent(t *testing.T) {
 	llm := &LLM{endpoint: endpoint, endpointMtx: &sync.Mutex{}, mcp: newMCP()}
 	_, err := llm.sendQueryWithRetry(t.Context(), llmTestHistory(), nil, "", 0)
 	require.Error(t, err)
-	assert.NotContains(t, err.Error(), "dagger llm setup",
+	assert.NotContains(t, err.Error(), "/setup",
 		"an API key is the user's own env var; don't send them to the OAuth flow")
 
 	mu.Lock()
