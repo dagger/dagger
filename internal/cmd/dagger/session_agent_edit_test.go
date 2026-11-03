@@ -8,13 +8,178 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/stretchr/testify/require"
 )
+
+type leaseCheckedRuntime struct {
+	*controlledEditRuntime
+	editing *atomic.Bool
+}
+
+func (r *leaseCheckedRuntime) Reseed(ctx context.Context, llm *core.LLM) error {
+	if r.editing.Load() {
+		return errors.New("conversation edit lease active")
+	}
+	return r.fakeRuntime.Reseed(ctx, llm)
+}
+
+func TestResetWorkspaceWaitsForBoundaryEdit(t *testing.T) {
+	for _, owned := range []bool{false, true} {
+		for _, cancelReload := range []bool{false, true} {
+			name := "attached"
+			if owned {
+				name = "owned"
+			}
+			if cancelReload {
+				name += "/cancel"
+			} else {
+				name += "/wait"
+			}
+			t.Run(name, func(t *testing.T) {
+				a, baseRT, queries := idleAgent(t, map[string]any{
+					"model": "test-model", "id": "workspace-snapshot", "sync": "reloaded-llm",
+				})
+				var editing atomic.Bool
+				controlled := &controlledEditRuntime{fakeRuntime: baseRT}
+				rt := &leaseCheckedRuntime{controlledEditRuntime: controlled, editing: &editing}
+				controlled.begin = func(ctx context.Context, token string) (core.ID, error) {
+					editing.Store(true)
+					return baseRT.BeginEdit(ctx, token)
+				}
+				controlled.commit = func(ctx context.Context, token string, llm *core.LLM) error {
+					editing.Store(false)
+					return baseRT.CommitEdit(ctx, token, llm)
+				}
+				controlled.abort = func(ctx context.Context, token string) error {
+					editing.Store(false)
+					return baseRT.AbortEdit(ctx, token)
+				}
+				a.bindRuntime(rt, "same-agent", "", owned)
+				before, _ := a.llmSnapshot()
+				ready, release := make(chan struct{}), make(chan struct{})
+				var releaseOnce sync.Once
+				unblock := func() { releaseOnce.Do(func() { close(release) }) }
+				t.Cleanup(unblock)
+				editDone := make(chan error, 1)
+				go func() {
+					editDone <- a.editAtBoundary(t.Context(), "controlled compaction", func(ctx context.Context, llm *core.LLM) (*core.LLM, error) {
+						close(ready)
+						select {
+						case <-release:
+							return llm.WithModel("edited-model"), nil
+						case <-ctx.Done():
+							return nil, context.Cause(ctx)
+						}
+					})
+				}()
+				select {
+				case <-ready:
+				case <-time.After(5 * time.Second):
+					t.Fatal("boundary edit did not start")
+				}
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				reloadDone := make(chan error, 1)
+				go func() { reloadDone <- a.ResetWorkspace(ctx) }()
+				require.Eventually(t, func() bool {
+					if a.syncOpL.TryLock() {
+						a.syncOpL.Unlock()
+						return false
+					}
+					return true
+				}, 5*time.Second, time.Millisecond, "reload must retain its save/reload guard while waiting")
+				select {
+				case err := <-reloadDone:
+					t.Fatalf("reload bypassed the active boundary edit: %v", err)
+				case <-time.After(25 * time.Millisecond):
+				}
+				require.False(t, queries.sawChain("currentWorkspace"), "reload must not capture/rebind before obtaining the conversation gate")
+				require.ErrorContains(t, a.ResetWorkspace(t.Context()), "another save/reload")
+				if cancelReload {
+					cancel()
+					require.ErrorIs(t, <-reloadDone, context.Canceled)
+					after, _ := a.llmSnapshot()
+					require.Same(t, before, after)
+					require.Nil(t, a.lastSynced())
+					require.True(t, a.syncOpL.TryLock(), "canceled reload must release synchronization guard")
+					a.syncOpL.Unlock()
+					unblock()
+					require.NoError(t, <-editDone)
+					require.Zero(t, rt.reseedCount())
+				} else {
+					unblock()
+					require.NoError(t, <-editDone)
+					require.NoError(t, <-reloadDone)
+					require.True(t, queries.sawChain("withModel", "withWorkspace", "sync"), "reload must retain the just-committed edit")
+					require.Equal(t, []string{"beginEdit", "commitEdit", "reseed"}, rt.verbLog())
+					require.NotNil(t, a.lastSynced())
+				}
+				require.Same(t, rt, a.runtime())
+				require.Equal(t, "same-agent", a.agentHandle)
+				require.Equal(t, owned, a.owned)
+				_, _, stops := rt.counts()
+				require.Zero(t, stops, "waiting for compaction must never stop or fork the runtime")
+			})
+		}
+	}
+}
+
+func TestBranchAndRewindWaitForBoundaryEdit(t *testing.T) {
+	for _, operation := range []string{"branch", "summary branch", "rewind"} {
+		t.Run(operation, func(t *testing.T) {
+			a, baseRT, _ := idleAgent(t, map[string]any{
+				"model": "test-model", "transcript": "old conversation", "contextWindow": 0, "lastReply": "summary",
+			})
+			var editing atomic.Bool
+			editing.Store(true)
+			rt := &leaseCheckedRuntime{controlledEditRuntime: &controlledEditRuntime{fakeRuntime: baseRT}, editing: &editing}
+			a.bindRuntime(rt, "same-agent", "", true)
+			unlock, err := a.lockConversation(t.Context())
+			require.NoError(t, err)
+			var releaseOnce sync.Once
+			unblock := func() {
+				releaseOnce.Do(func() {
+					editing.Store(false)
+					unlock()
+				})
+			}
+			defer unblock()
+			done := make(chan error, 1)
+			target := core.Ref[*core.LLM](core.NewQuery(a.session.dag), "branch-target")
+			go func() {
+				if operation == "rewind" {
+					done <- a.Rewind(t.Context(), target)
+				} else {
+					done <- a.Branch(t.Context(), target, idtui.BranchSummary{Summarize: operation == "summary branch"})
+				}
+			}()
+			select {
+			case err := <-done:
+				t.Fatalf("replacement bypassed pending boundary edit: %v", err)
+			case <-time.After(25 * time.Millisecond):
+			}
+			unblock()
+			select {
+			case err := <-done:
+				require.NoError(t, err)
+			case <-time.After(5 * time.Second):
+				t.Fatal("replacement deadlocked while reading/adopting its snapshot")
+			}
+			require.Same(t, rt, a.runtime())
+			require.Equal(t, "same-agent", a.agentHandle)
+			require.Equal(t, []string{"reseed"}, rt.verbLog())
+			_, _, stops := rt.counts()
+			require.Zero(t, stops)
+		})
+	}
+}
 
 func TestPrivateAgentEditProtocol(t *testing.T) {
 	var fields []string

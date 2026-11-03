@@ -190,6 +190,21 @@ func (a *sessionAgent) editAtBoundary(ctx context.Context, operation string, edi
 	return nil
 }
 
+// withSettledRuntime guards explicit wholesale replacements after settling the
+// old turn. Settling must precede the gate: the canceled response waiter needs
+// that same gate to synchronize its final snapshot before the turn can end.
+func (a *sessionAgent) withSettledRuntime(ctx context.Context, replace func(agentRuntime) error) error {
+	if _, err := a.settleTurn(ctx); err != nil {
+		return err
+	}
+	unlock, err := a.lockConversation(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	return replace(a.runtime())
+}
+
 // StopForLogout is deliberately stronger than dropping an attachment: the user
 // confirmed stopping the focused runtime, including one owned by another agent.
 // Keep its tombstone/identity; do not silently fork a replacement conversation.
