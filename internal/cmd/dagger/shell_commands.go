@@ -332,15 +332,15 @@ func (h *shellCallHandler) selectModelInteractive(ctx context.Context) error {
 	}
 
 	target := llm.Target()
-	model, err := target.llm.Model(llm.plumbingCtx)
-	if err != nil {
-		return err
+	// The old route may no longer resolve after logout (notably local routes).
+	// Keep the picker usable to repair it; cached identity is only a display and
+	// preselection hint, never a prerequisite for choosing another provider.
+	current := modelSelection{Provider: target.provider, Model: target.model}
+	if model, err := target.llm.Model(llm.plumbingCtx); err == nil {
+		if provider, err := target.llm.Provider(llm.plumbingCtx); err == nil {
+			current = modelSelection{Provider: provider, Model: model}
+		}
 	}
-	provider, err := target.llm.Provider(llm.plumbingCtx)
-	if err != nil {
-		return err
-	}
-	current := modelSelection{Provider: provider, Model: model}
 	options, err := availableModelOptions(ctx, current)
 	if err != nil {
 		return err
@@ -382,6 +382,11 @@ func (h *shellCallHandler) selectModelInteractive(ctx context.Context) error {
 }
 
 func newModelPickerForm(options []huh.Option[modelSelection], current modelSelection, selected *modelSelection, useDefault *bool) *huh.Form {
+	current = current.configRoute()
+	description := "Current model unavailable"
+	if current.Model != "" && current.Provider != "" {
+		description = fmt.Sprintf("Current: %s (%s)", current.Model, current.Provider)
+	}
 	options = slices.Clone(options)
 	for i := range options {
 		if options[i].Value == current {
@@ -393,7 +398,7 @@ func newModelPickerForm(options []huh.Option[modelSelection], current modelSelec
 	return idtui.NewForm(huh.NewGroup(
 		huh.NewSelect[modelSelection]().
 			Title("Choose a model").
-			Description(fmt.Sprintf("Current: %s (%s)", current.Model, current.Provider)).
+			Description(description).
 			Height(min(len(options)+2, 12)).
 			Filtering(true).
 			Options(options...).
@@ -408,6 +413,7 @@ func newModelPickerForm(options []huh.Option[modelSelection], current modelSelec
 // an environment- or parent-configured provider must not copy credentials into
 // the file or re-enable a disabled saved provider.
 func (h *shellCallHandler) saveModelDefault(ctx context.Context, selected modelSelection) (string, error) {
+	selected = selected.configRoute()
 	cfg, err := llmconfig.Load()
 	if err != nil {
 		return "", err
@@ -524,6 +530,16 @@ type modelSelection struct {
 	Model    string
 }
 
+// Unknown model names use the router's "other" provider, but its endpoint and
+// credentials come from the OpenAI configuration slot. Keep picker values and
+// saved defaults in the configuration's namespace rather than persisting "other".
+func (selection modelSelection) configRoute() modelSelection {
+	if selection.Provider == "other" {
+		selection.Provider = "openai"
+	}
+	return selection
+}
+
 // availableModelOptions asks the connected engine for effective routing config,
 // including providers inherited from a parent client in nested sessions. Without
 // a connection, assemble the local file, environment and .env configuration.
@@ -544,6 +560,7 @@ func availableModelOptions(ctx context.Context, current modelSelection) ([]huh.O
 // modelOptions deduplicates within each provider, never across providers: the
 // same model can use different credentials/routes.
 func modelOptions(cfg *engine.LLMConfig, current modelSelection) []huh.Option[modelSelection] {
+	current = current.configRoute()
 	if cfg == nil {
 		return nil
 	}

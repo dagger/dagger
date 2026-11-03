@@ -18,9 +18,110 @@ import (
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/stretchr/testify/require"
 
+	enginecore "github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
 )
+
+func TestModelPickerCanReplaceUnavailableRoute(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		cached        bool
+		modelReadable bool
+	}{
+		{name: "no cached route"},
+		{name: "cached local route", cached: true},
+		{name: "provider unavailable", cached: true, modelReadable: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var queries []string
+			dag, err := dagger.Connect(t.Context(), dagger.WithConn(agentTestConn{do: func(req *http.Request) (*http.Response, error) {
+				var query dagger.Request
+				require.NoError(t, json.NewDecoder(req.Body).Decode(&query))
+				queries = append(queries, query.Query)
+				body := `{"errors":[{"message":"unsupported local API compatibility mode after logout"}]}`
+				if strings.Contains(query.Query, "withModel") {
+					body = `{"data":{"node":{"withModel":{"model":"gpt-5","provider":"openai"}}}}`
+				} else if tc.modelReadable && strings.Contains(query.Query, "model") {
+					body = `{"data":{"node":{"model":"old-local-model"}}}`
+				}
+				return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(body))}, nil
+			}}))
+			require.NoError(t, err)
+			t.Cleanup(func() { dag.Close() })
+			s := &LLMSession{dag: dag, plumbingCtx: t.Context()}
+			a := s.newAgent("test")
+			a.llm = core.Ref[*core.LLM](core.NewQuery(dag), "logged-out-local")
+			if tc.cached {
+				a.model, a.provider = "old-local-model", "local"
+			}
+			s.target = a
+			h := &shellCallHandler{llmSession: s}
+			ctx := context.WithValue(t.Context(), llmModelConfigKey{}, llmModelConfigReader(func(context.Context) (*engine.LLMConfig, error) {
+				return &engine.LLMConfig{Providers: map[string]*engine.LLMProviderConfig{"openai": {Model: "gpt-5"}}}, nil
+			}))
+			previous := Frontend
+			t.Cleanup(func() { Frontend = previous })
+			forms := 0
+			Frontend = &idtui.FrontendMock{HandleFormFunc: func(_ context.Context, form *huh.Form) error {
+				forms++
+				field := form.GetFocusedField()
+				require.Equal(t, modelSelection{Provider: "openai", Model: "gpt-5"}, field.GetValue())
+				if tc.cached {
+					require.Contains(t, field.View(), "Current: old-local-model (local)")
+				} else {
+					require.Contains(t, field.View(), "Current model unavailable")
+				}
+				return nil
+			}}
+			require.NoError(t, h.selectModelInteractive(ctx))
+			require.Equal(t, 1, forms)
+			require.Equal(t, "gpt-5", a.model)
+			require.Equal(t, "openai", a.provider)
+			require.Contains(t, strings.Join(queries, "\n"), `provider:"openai"`)
+		})
+	}
+}
+
+func TestModelPickerNormalizesOtherProvider(t *testing.T) {
+	clearLLMEnv(t)
+	t.Setenv("OPENAI_BASE_URL", "http://custom-provider.test")
+	useTempLLMConfig(t, &llmconfig.Config{LLM: llmconfig.LLMConfig{Providers: map[string]llmconfig.Provider{
+		"openai": {Enabled: true, Model: "qwen-old"},
+	}}})
+	cfg, err := assembleLLMConfig()
+	require.NoError(t, err)
+	router, err := enginecore.NewLLMRouter(cfg, &engine.ClientMetadata{})
+	require.NoError(t, err)
+	route, err := router.Route("qwen-new", "")
+	require.NoError(t, err)
+	require.Equal(t, enginecore.Other, route.Provider)
+	current := modelSelection{Provider: string(route.Provider), Model: route.Model}
+	options := modelOptions(cfg, current)
+	var selected modelSelection
+	var useDefault bool
+	form := newModelPickerForm(options, current, &selected, &useDefault)
+	require.Equal(t, modelSelection{Provider: "openai", Model: "qwen-new"}, selected)
+	require.Contains(t, form.GetFocusedField().View(), "qwen-new (openai) (current)")
+	require.Contains(t, form.GetFocusedField().View(), "qwen-old (openai)")
+	require.NotContains(t, form.GetFocusedField().View(), "(other)")
+	for _, option := range options {
+		require.Equal(t, "openai", option.Value.Provider)
+	}
+
+	ctx := context.WithValue(t.Context(), llmConfigUpdaterKey{}, llmConfigUpdater(func(_ context.Context, cfg *engine.LLMConfig) error {
+		require.Equal(t, "openai", cfg.DefaultProvider)
+		require.Equal(t, "qwen-new", cfg.DefaultModel)
+		return nil
+	}))
+	_, err = (&shellCallHandler{}).saveModelDefault(ctx, current)
+	require.NoError(t, err)
+	saved, err := llmconfig.Load()
+	require.NoError(t, err)
+	require.Equal(t, "openai", saved.LLM.DefaultProvider)
+	require.Equal(t, "qwen-new", saved.LLM.DefaultModel)
+	require.Equal(t, "qwen-old", saved.LLM.Providers["openai"].Model)
+}
 
 func TestModelPickerCurrentOnlyAndCancellation(t *testing.T) {
 	for _, outcome := range []string{"current only", "cancel error", "cancel state"} {
