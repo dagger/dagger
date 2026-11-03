@@ -804,12 +804,9 @@ func (h *shellCallHandler) PromptMode() bool {
 	return h.mode == modePrompt
 }
 
-// slashCommand maps a prompt-mode "/command" line to its equivalent ".command"
-// builtin invocation, returning the rewritten line and true when the leading
-// token names a real builtin. This lets agent-prompt users run session
-// commands (e.g. "/clear", "/compact") without switching to shell mode. Lines
-// that don't name a builtin -- including a bare "/" or ordinary prose that just
-// happens to start with a slash -- are left alone for the LLM.
+// slashCommand maps the curated agent commands to their shell implementations.
+// Shell-only builtins remain available after /shell, not as accidental agent
+// commands. Unknown input is handled by the caller.
 func (h *shellCallHandler) slashCommand(line string) (string, bool) {
 	name, ok := strings.CutPrefix(line, "/")
 	if !ok {
@@ -818,7 +815,7 @@ func (h *shellCallHandler) slashCommand(line string) (string, bool) {
 	if i := strings.IndexAny(name, " \t"); i >= 0 {
 		name = name[:i]
 	}
-	if name == "" {
+	if _, ok := agentCommandDescription(name); !ok {
 		return "", false
 	}
 	if cmd, _ := h.BuiltinCommand("." + name); cmd == nil {
@@ -880,12 +877,11 @@ func (h *shellCallHandler) AutoComplete(input string, cursorPos int) tuist.Compl
 		if wordStart == 0 && strings.HasPrefix(word, "/") {
 			prefix := word[1:]
 			var items []tuist.Completion
-			for _, c := range h.Builtins() {
-				name := strings.TrimPrefix(c.Name(), ".")
-				if strings.HasPrefix(name, prefix) {
+			for _, command := range agentCommandHelp {
+				if strings.HasPrefix(command.name, prefix) {
 					items = append(items, tuist.Completion{
-						Label:  "/" + name,
-						Detail: c.Short(),
+						Label:  "/" + command.name,
+						Detail: command.description,
 					})
 				}
 			}

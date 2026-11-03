@@ -519,6 +519,9 @@ func modelOptions(cfg *engine.LLMConfig) []huh.Option[modelSelection] {
 
 func (h *shellCallHandler) registerCommands() error { //nolint:gocyclo
 	var builtins []*ShellCommand
+	// Keep Cloud sign-out distinct from the agent's provider logout picker.
+	cloudLogout := cobraToShellCommand(logoutCmd)
+	cloudLogout.Use = ".cloud-logout"
 
 	builtins = append(builtins,
 		&ShellCommand{
@@ -540,6 +543,13 @@ func (h *shellCallHandler) registerCommands() error { //nolint:gocyclo
 			Description: `Show documentation for a command, function, module, or type`,
 			Args:        MaximumArgs(1),
 			Run: func(ctx context.Context, cmd *ShellCommand, args []string, st *ShellState) error {
+				if h.mode == modePrompt && st == nil {
+					help, err := h.promptHelp(args)
+					if err != nil {
+						return err
+					}
+					return h.Print(ctx, help)
+				}
 				var err error
 
 				// First command in chain
@@ -809,7 +819,7 @@ Without arguments, the current working directory is replaced by the initial cont
 			},
 		},
 		cobraToShellCommand(loginCmd),
-		cobraToShellCommand(logoutCmd),
+		cloudLogout,
 		cobraToShellCommand(moduleDepInstallCmd),
 		cobraToShellCommand(moduleUpdateCmd),
 	)
