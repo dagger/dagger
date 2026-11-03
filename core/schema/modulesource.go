@@ -4383,9 +4383,32 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		mod.SDKConfig = &core.SDKConfig{}
 	}
 
+	// A runtime that doesn't need the module's dependencies builds while
+	// they load. A load that finds its definition cached doesn't need the
+	// build, so the build stops when the load returns.
+	prebuildCtx, cancelPrebuild := context.WithCancel(ctx)
+	var prebuildErr error
+	prebuildDone := make(chan struct{})
+	go func() {
+		defer close(prebuildDone)
+		prebuildErr = prebuildModuleRuntime(prebuildCtx, execSrc)
+	}()
+	defer func() {
+		cancelPrebuild()
+		<-prebuildDone
+	}()
 	mod.Deps, err = s.loadDependencyModules(ctx, execSrc, defaultPathContextSrc)
 	if err != nil {
 		return inst, fmt.Errorf("failed to load dependencies as modules: %w", err)
+	}
+	select {
+	case <-prebuildDone:
+		if prebuildErr != nil {
+			return inst, fmt.Errorf("failed to build module runtime: %w", prebuildErr)
+		}
+	default:
+		// Still building: the definition below waits for the same build,
+		// unless it is cached.
 	}
 
 	// apply ForceDefaultFunctionCaching if requested
@@ -4458,6 +4481,23 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		return inst, fmt.Errorf("failed to create instance for module %q: %w", src.Self().ModuleName, err)
 	}
 	return inst, nil
+}
+
+// prebuildModuleRuntime builds src's runtime when its SDK can build it
+// without the module's dependencies (core.RuntimePrebuilder).
+func prebuildModuleRuntime(ctx context.Context, src dagql.ObjectResult[*core.ModuleSource]) error {
+	if src.Self().SDKImpl == nil {
+		return nil
+	}
+	runtimeImpl, ok := src.Self().SDKImpl.AsRuntime()
+	if !ok {
+		return nil
+	}
+	prebuilder, ok := runtimeImpl.(core.RuntimePrebuilder)
+	if !ok {
+		return nil
+	}
+	return prebuilder.PrebuildRuntime(ctx, src)
 }
 
 // load the given module source's dependencies as modules
