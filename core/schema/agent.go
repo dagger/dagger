@@ -35,6 +35,14 @@ func (s agentSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.Agent]{
+		// Private CLI control protocol: edits suspend at a step boundary, not
+		// by injecting a prompt or abandoning the consumed turn via reseed.
+		dagql.NodeFunc("__beginEdit", s.beginEdit).
+			DoNotCache("Reserves a live conversation edit boundary.").Reevaluate(),
+		dagql.NodeFunc("__commitEdit", s.commitEdit).
+			DoNotCache("Commits a reserved conversation edit without replacing the turn."),
+		dagql.NodeFunc("__abortEdit", s.abortEdit).
+			DoNotCache("Releases a live conversation edit reservation."),
 		dagql.NodeFunc("parent", s.parent).
 			DoNotCache("Projects lineage from the current session's runtime registry.").
 			Experimental("Agent APIs are likely to change.").
@@ -497,6 +505,65 @@ func (s agentSchema) stop(ctx context.Context, parent dagql.ObjectResult[*core.A
 	if err := rt.Stop(ctx, args.Kill, nil, core.AgentStopExplicit); err != nil {
 		return res, err
 	}
+	return agentSelfID(ctx, parent)
+}
+
+func (s agentSchema) beginEdit(ctx context.Context, parent dagql.ObjectResult[*core.Agent], args struct {
+	Token string
+}) (dagql.ObjectResult[*core.LLM], error) {
+	agents, err := agentRuntimes(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.LLM]{}, err
+	}
+	rt, err := agents.Require(ctx, parent)
+	if err != nil {
+		return dagql.ObjectResult[*core.LLM]{}, err
+	}
+	return rt.BeginConversationEdit(ctx, args.Token)
+}
+
+func (s agentSchema) commitEdit(ctx context.Context, parent dagql.ObjectResult[*core.Agent], args struct {
+	Token        string
+	Conversation core.LLMID
+}) (res dagql.Result[core.AgentID], _ error) {
+	agents, err := agentRuntimes(ctx)
+	if err != nil {
+		return res, err
+	}
+	rt, err := agents.Require(ctx, parent)
+	if err != nil {
+		return res, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, err
+	}
+	conversation, err := args.Conversation.Load(ctx, srv)
+	if err != nil {
+		return res, err
+	}
+	conversation, err = core.WithLLMOwnerAgent(ctx, conversation, parent.Self().Handle)
+	if err != nil {
+		return res, err
+	}
+	if err := rt.CommitConversationEdit(ctx, args.Token, conversation); err != nil {
+		return res, err
+	}
+	return agentSelfID(ctx, parent)
+}
+
+func (s agentSchema) abortEdit(ctx context.Context, parent dagql.ObjectResult[*core.Agent], args struct {
+	Token string
+}) (res dagql.Result[core.AgentID], _ error) {
+	agents, err := agentRuntimes(ctx)
+	if err != nil {
+		return res, err
+	}
+	rt, err := agents.Require(ctx, parent)
+	if err != nil {
+		return res, err
+	}
+	rt.AbortConversationEdit(args.Token)
 	return agentSelfID(ctx, parent)
 }
 
