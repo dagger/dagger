@@ -1,6 +1,7 @@
 package idtui
 
 import (
+	"context"
 	"time"
 
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -61,6 +62,21 @@ type LiveLogsFrontend interface {
 	// nothing once the frontend quit.
 	LiveLogsActivity([]dagui.SpanID) []LogActivity
 }
+
+// WithLiveLogsFilter attaches a batch's validity check to its export. The
+// exporter returned by SetLiveLogs runs it on the event loop immediately before
+// applying the records, so a cache sweep cannot drop their terminals between
+// validation and append. The filter must not wait on the event loop. It may
+// remove records in place; it must not modify the records themselves.
+//
+// The check travels with the batch rather than its read: queued exports can
+// outlive the read that selected them, including a drop and a new request for
+// the same span.
+func WithLiveLogsFilter(ctx context.Context, filter func([]sdklog.Record) []sdklog.Record) context.Context {
+	return context.WithValue(ctx, liveLogsFilterKey{}, filter)
+}
+
+type liveLogsFilterKey struct{}
 
 // LogActivity is whether a span's display text may still grow.
 type LogActivity struct {

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	telemetry "github.com/dagger/otel-go"
+	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
@@ -144,6 +145,10 @@ type logOwner struct {
 type logClaim struct {
 	read   uint64
 	target dagui.SpanID
+	// generation identifies the lifetime of the retained text, independently
+	// of the read that owns it. Retirement transfers ownership without
+	// changing it; a drop and reclaim always gets a newer generation.
+	generation uint64
 }
 
 // retiredLogSpan is a span the follow no longer reads, the cursor it was
@@ -724,6 +729,9 @@ func (l *liveLogs) importLogs(ctx context.Context, req *collogspb.ExportLogsServ
 	if l.coverage != nil {
 		routes = l.coverage(targets)
 	}
+	// Keep only this batch's claim lifetimes. The read may end, clearing
+	// released, before the frontend applies its queued export.
+	claims := make(map[logOwner]uint64)
 	l.mu.Lock()
 	i, kept := 0, 0
 	for _, rl := range req.GetResourceLogs() {
@@ -752,10 +760,13 @@ func (l *liveLogs) importLogs(ctx context.Context, req *collogspb.ExportLogsServ
 				}
 				claim, ok := l.owned[key]
 				if !ok {
-					l.owned[key] = logClaim{read: read, target: route.Span}
-					return false
+					claim = logClaim{read: read, target: route.Span, generation: l.gen}
+					l.owned[key] = claim
+				} else if claim.read != read && read != 0 {
+					return true
 				}
-				return claim.read != read && read != 0
+				claims[key] = claim.generation
+				return false
 			})
 			kept += len(sl.LogRecords)
 		}
@@ -764,6 +775,29 @@ func (l *liveLogs) importLogs(ctx context.Context, req *collogspb.ExportLogsServ
 	if kept == 0 {
 		return nil
 	}
+	ctx = idtui.WithLiveLogsFilter(ctx, func(records []sdklog.Record) []sdklog.Record {
+		// This runs on the frontend event loop, atomically with append
+		// relative to a sweep. No reader holds mu while waiting for it.
+		l.mu.Lock()
+		defer l.mu.Unlock()
+		return slices.DeleteFunc(records, func(rec sdklog.Record) bool {
+			key := logOwner{span: rec.SpanID()}
+			rec.WalkAttributes(func(kv log.KeyValue) bool {
+				if kv.Key == telemetry.DagDigestAttr {
+					key.digest = kv.Value.AsString()
+					return false
+				}
+				return true
+			})
+			generation, claimed := claims[key]
+			if !claimed {
+				// Unknown routes were imported without claiming their pair.
+				return false
+			}
+			claim, held := l.owned[key]
+			return !held || claim.generation != generation
+		})
+	})
 	return telemetry.ReexportLogsFromPB(ctx, l.export, req)
 }
 
