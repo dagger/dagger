@@ -29,6 +29,31 @@ func (c *testCloudLLMUpdater) UpdateLLMConfig(_ context.Context, cfg *engine.LLM
 	return nil
 }
 
+func TestCloudLLMConfigBootstrapRevision(t *testing.T) {
+	sess := &daggerSession{}
+	record := &clientRecord{clientMetadata: &engine.ClientMetadata{}}
+	// First-run setup happens before connecting to the cloud engine.
+	sess.replaceLLMConfig(record, &engine.LLMConfig{DefaultProvider: "anthropic"})
+	state := &cloudLLMConfigState{}
+	bootstrap := state.bootstrap(sess, record)
+	require.EqualValues(t, 1, state.revision)
+	cloud := &testCloudLLMUpdater{config: bootstrap, err: errors.New("old engine has no update endpoint")}
+	require.NoError(t, state.sync(t.Context(), sess, record, cloud))
+	require.Zero(t, cloud.calls, "a nonzero revision already sent at connect needs no update")
+
+	// Simulate a configuration change while another connection is dialing.
+	connectingState := &cloudLLMConfigState{}
+	connectingConfig := connectingState.bootstrap(sess, record)
+	sess.replaceLLMConfig(record, &engine.LLMConfig{DefaultProvider: "openai"})
+	connected := &testCloudLLMUpdater{config: connectingConfig}
+	require.EqualValues(t, 1, connectingState.revision, "publish the dial's snapshot revision, not the latest revision")
+	require.Equal(t, "anthropic", connected.config.DefaultProvider)
+	require.NoError(t, connectingState.sync(t.Context(), sess, record, connected))
+	require.Equal(t, 1, connected.calls)
+	require.Equal(t, "openai", connected.config.DefaultProvider)
+	require.EqualValues(t, 2, connectingState.revision)
+}
+
 func TestCloudLiveLLMConfig(t *testing.T) {
 	sess := &daggerSession{}
 	record := &clientRecord{clientMetadata: &engine.ClientMetadata{LLMConfig: &engine.LLMConfig{

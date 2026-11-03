@@ -4774,7 +4774,8 @@ func (srv *Server) SharedCloudArtifactClient(ctx context.Context, scope string) 
 		if err != nil {
 			return nil, err
 		}
-		client, remote, err := srv.CloudEngineClient(ctx, "", "checks", nil)
+		llmState = &cloudLLMConfigState{}
+		client, remote, err := srv.cloudEngineClient(ctx, "", "checks", nil, llmState)
 		if err != nil {
 			return nil, err
 		}
@@ -4788,6 +4789,10 @@ func (srv *Server) SharedCloudArtifactClient(ctx context.Context, scope string) 
 				parent.cloudArtifactClients = make(map[string]*engineclient.Client)
 			}
 			parent.cloudArtifactClients[scope] = client
+			if parent.cloudArtifactLLMConfigs == nil {
+				parent.cloudArtifactLLMConfigs = make(map[string]*cloudLLMConfigState)
+			}
+			parent.cloudArtifactLLMConfigs[scope] = llmState
 		}
 		parent.cloudArtifactMu.Unlock()
 		if closed || cached != nil {
@@ -4809,6 +4814,16 @@ func (srv *Server) CloudEngineClient(
 	function string,
 	execCmd []string,
 ) (*engineclient.Client, bool, error) {
+	return srv.cloudEngineClient(ctx, module, function, execCmd, &cloudLLMConfigState{})
+}
+
+func (srv *Server) cloudEngineClient(
+	ctx context.Context,
+	module string,
+	function string,
+	execCmd []string,
+	llmState *cloudLLMConfigState,
+) (*engineclient.Client, bool, error) {
 	parentClient, err := srv.nonModuleParentClient(ctx)
 	if err != nil {
 		return nil, false, err
@@ -4827,7 +4842,7 @@ func (srv *Server) CloudEngineClient(
 		runnerHost = testHost
 	}
 
-	llmConfig, _ := parentClient.daggerSession.llmConfigSnapshot(parentClient.clientRecord)
+	llmConfig := llmState.bootstrap(parentClient.daggerSession, parentClient.clientRecord)
 	params := engineclient.Params{
 		RunnerHost:     runnerHost,
 		Workspace:      parentClient.clientMetadata.Workspace,

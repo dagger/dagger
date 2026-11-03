@@ -72,6 +72,15 @@ type cloudLLMConfigState struct {
 	synced   bool
 }
 
+// bootstrap records exactly the snapshot sent when connecting, not the
+// revision observed after the connection completes: configuration can change
+// while dialing. Publish this state only with a successfully connected client.
+func (s *cloudLLMConfigState) bootstrap(sess *daggerSession, record *clientRecord) *engine.LLMConfig {
+	cfg, revision := sess.llmConfigSnapshot(record)
+	s.revision, s.synced = revision, true
+	return cfg
+}
+
 // Cached cloud clients must receive replacements too, including an empty reset;
 // reconnecting is unnecessary and would discard their module call cache.
 func (s *cloudLLMConfigState) sync(ctx context.Context, sess *daggerSession, record *clientRecord, client llmConfigUpdater) error {
