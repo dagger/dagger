@@ -107,7 +107,9 @@ func (srv *Server) serveLLMConfig(w http.ResponseWriter, r *http.Request, client
 		for name, provider := range router.Providers {
 			configured := false
 			switch name {
-			case core.OpenAI, core.OpenAICodex, core.OpenRouter, core.Anthropic, core.Google:
+			case core.OpenAI:
+				configured = provider.HasCredential() || provider.BaseURL != ""
+			case core.OpenAICodex, core.OpenRouter, core.Anthropic, core.Google:
 				configured = provider.HasCredential()
 			case core.Local:
 				configured = provider.BaseURL != ""

@@ -553,16 +553,17 @@ func TestLLMAuthFailureWithoutSourceIsPermanent(t *testing.T) {
 		requests++
 	})
 
-	endpoint := &LLMEndpoint{
-		Model:    "claude-sonnet-4-5",
-		BaseURL:  ts.URL,
-		Provider: Anthropic,
-		Key:      "sk-plain",
-	}
-	endpoint.Client = newAnthropicClient(endpoint)
-
-	llm := &LLM{endpoint: endpoint, endpointMtx: &sync.Mutex{}, mcp: newMCP()}
-	_, err := llm.sendQueryWithRetry(t.Context(), llmTestHistory(), nil, "", 0)
+	ctx, env := newLLMEndpointTestCtx(t)
+	env.anthropic.AuthToken = ""
+	env.anthropic.AuthTokenExpiresAt = ""
+	env.anthropic.APIKey = "env://ANTHROPIC_API_KEY"
+	env.anthropic.BaseURL = ts.URL
+	env.set("env://ANTHROPIC_API_KEY", "sk-plain")
+	query, err := CurrentQuery(ctx)
+	require.NoError(t, err)
+	llm, err := query.NewLLM(ctx, "claude-sonnet-4-5", "anthropic")
+	require.NoError(t, err)
+	_, err = llm.sendQueryWithRetry(ctx, llmTestHistory(), nil, "", 0)
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), "/setup",
 		"an API key is the user's own env var; don't send them to the OAuth flow")

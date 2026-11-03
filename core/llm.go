@@ -2256,17 +2256,15 @@ func (llm *LLM) sendQueryWithRetry(ctx context.Context, messages []*LLMMessage, 
 	b.MaxInterval = 30 * time.Second
 	b.MaxElapsedTime = 2 * time.Minute
 
-	ep, err := llm.Endpoint(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	var res *LLMResponse
 	var authRetried bool
 	err = backoff.Retry(func() error {
-		// Read the client inside the retry: recovering from a rejected
-		// credential is only worth anything if the next attempt picks up what
-		// the recovery changed.
+		// Re-read live configuration for each attempt, including after backoff:
+		// a removed key or changed endpoint must not survive in this loop.
+		ep, err := llm.Endpoint(ctx)
+		if err != nil {
+			return backoff.Permanent(err)
+		}
 		client := ep.Client
 		var sendErr error
 		// The provider streams this turn's content into its own per-block display

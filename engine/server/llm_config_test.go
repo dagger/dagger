@@ -89,6 +89,21 @@ func TestLiveLLMConfig(t *testing.T) {
 		},
 	}, models)
 
+	// Keyless OpenAI-compatible endpoints and both local wire protocols count
+	// as configured, but their URLs and API compatibility stay engine-side.
+	for _, body := range []string{
+		`{"providers":{"openai":{"base_url":"http://localhost:1234","model":"gpt-oss"}}}`,
+		`{"providers":{"local":{"base_url":"http://localhost:1234","api_compat":"openai","model":"gpt-oss"}}}`,
+		`{"providers":{"local":{"base_url":"http://localhost:1234","api_compat":"anthropic","model":"gpt-oss"}}}`,
+	} {
+		request(mainCtx, main, http.MethodPut, body)
+		got := status(mainCtx, main)
+		require.True(t, got.Configured)
+		for _, provider := range got.Models.Providers {
+			require.Equal(t, &engine.LLMProviderConfig{Model: "gpt-oss"}, provider)
+		}
+	}
+
 	// Configuration snapshots and replacements share the session lock.
 	var wg sync.WaitGroup
 	for i := 0; i < 8; i++ {
