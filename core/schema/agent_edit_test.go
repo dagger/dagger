@@ -80,15 +80,16 @@ func TestAgentBoundaryEditPreservesResumeInput(t *testing.T) {
 			require.NoError(t, err)
 			rt, err := agents.Require(ctx, agent)
 			require.NoError(t, err)
-			if mode == "failed" {
+			switch mode {
+			case "failed":
 				require.NoError(t, rt.Resume(ctx))
 				state, err := rt.WaitSettled(ctx)
 				require.NoError(t, err)
 				require.Equal(t, core.AgentStateFailed, state)
 				require.EqualValues(t, 1, requests.Load())
-			} else if mode == "paused" {
+			case "paused":
 				require.NoError(t, rt.Pause())
-			} else if mode == "stopped" {
+			case "stopped":
 				require.NoError(t, rt.Stop(ctx, true, nil, core.AgentStopExplicit))
 			}
 			before := rt.State()

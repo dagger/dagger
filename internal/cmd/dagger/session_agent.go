@@ -720,8 +720,7 @@ func (a *sessionAgent) rewindRuntime(ctx context.Context, base *core.LLM) error 
 }
 
 // settleTurn brings the conversation to rest before an explicit in-place
-// replacement (rewind, branch, clear), returning the runtime to replace
-// into (nil when there is none). The engine refuses to reseed a RUNNING agent,
+// replacement (rewind, branch, clear). The engine refuses to reseed a RUNNING agent,
 // so a replacement issued mid-turn must first stop that turn:
 //
 //   - a client turn in flight (WithPrompt) is canceled with errAgentRewound
@@ -731,7 +730,7 @@ func (a *sessionAgent) rewindRuntime(ctx context.Context, base *core.LLM) error 
 //     interrupted directly and awaited until it parks PAUSED.
 //
 // The abandoned turn's presentation callbacks are drained either way.
-func (a *sessionAgent) settleTurn(ctx context.Context) (agentRuntime, error) {
+func (a *sessionAgent) settleTurn(ctx context.Context) error {
 	a.turnL.Lock()
 	cancel := a.turnCancel
 	done := a.turnDone
@@ -745,7 +744,7 @@ func (a *sessionAgent) settleTurn(ctx context.Context) (agentRuntime, error) {
 		if done != nil {
 			select {
 			case <-ctx.Done():
-				return nil, context.Cause(ctx)
+				return context.Cause(ctx)
 			case <-done:
 			}
 		}
@@ -756,15 +755,15 @@ func (a *sessionAgent) settleTurn(ctx context.Context) (agentRuntime, error) {
 	if rt := a.runtime(); rt != nil {
 		state, err := rt.State(ctx)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		switch state {
 		case core.AgentStateRunning, core.AgentStateWaitingInput:
 			if err := rt.Interrupt(ctx); err != nil {
-				return nil, err
+				return err
 			}
 			if err := waitForAgentState(ctx, rt, core.AgentStatePaused); err != nil {
-				return nil, err
+				return err
 			}
 		}
 	}
@@ -772,10 +771,7 @@ func (a *sessionAgent) settleTurn(ctx context.Context) (agentRuntime, error) {
 	// Drain the abandoned turn's presentation callbacks before exposing the
 	// replacement.
 	a.stepWG.Wait()
-
-	// Read the runtime only now: a turn that was still opening may have
-	// spawned it while it was being canceled.
-	return a.runtime(), nil
+	return nil
 }
 
 // CompactInPlace summarizes the latest committed state at a step boundary. The
@@ -1487,7 +1483,7 @@ func (a *sessionAgent) maybeAutoCompact(ctx context.Context) (_ *core.LLM, rerr 
 // The agent's runtime is reseeded with the cleared conversation in place, like
 // any wholesale replacement; an attached runtime is never stopped.
 func (a *sessionAgent) Clear(ctx context.Context) error {
-	if _, err := a.settleTurn(ctx); err != nil {
+	if err := a.settleTurn(ctx); err != nil {
 		return err
 	}
 	unlock, err := a.lockConversation(ctx)

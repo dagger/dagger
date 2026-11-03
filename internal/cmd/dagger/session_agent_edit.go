@@ -194,7 +194,7 @@ func (a *sessionAgent) editAtBoundary(ctx context.Context, operation string, edi
 // old turn. Settling must precede the gate: the canceled response waiter needs
 // that same gate to synchronize its final snapshot before the turn can end.
 func (a *sessionAgent) withSettledRuntime(ctx context.Context, replace func(agentRuntime) error) error {
-	if _, err := a.settleTurn(ctx); err != nil {
+	if err := a.settleTurn(ctx); err != nil {
 		return err
 	}
 	unlock, err := a.lockConversation(ctx)
@@ -211,7 +211,7 @@ func (a *sessionAgent) withSettledRuntime(ctx context.Context, replace func(agen
 func (a *sessionAgent) StopForLogout(ctx context.Context) (rerr error) {
 	ctx, span := Tracer().Start(ctx, "stopping agent before logout", telemetry.Encapsulate())
 	defer telemetry.EndWithCause(span, &rerr)
-	if _, err := a.settleTurn(ctx); err != nil {
+	if err := a.settleTurn(ctx); err != nil {
 		return err
 	}
 	unlock, err := a.lockConversation(ctx)
