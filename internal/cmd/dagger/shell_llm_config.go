@@ -43,8 +43,7 @@ func (c *llmConfigCommands) builtins() []*ShellCommand {
 		command(".setup", "Configure LLM authentication interactively", NoArgs, c.setup),
 		command(".config", "Display saved LLM configuration (credentials redacted)", NoArgs, c.config),
 		command(".show-config", "Show saved LLM configuration as JSON (credentials redacted)", NoArgs, c.showConfig),
-		command(".add-key <provider>", "Add or update a provider's API key securely", ExactArgs(1), c.addKey),
-		command(".remove-key <provider>", "Remove a provider's stored credentials", ExactArgs(1), c.removeKey),
+		command(".logout", "Choose a provider whose saved credentials to remove", NoArgs, c.logout),
 		command(".set-default <provider> [model]", "Set the default provider and optionally model", func(args []string) error {
 			if err := MinimumArgs(1)(args); err != nil {
 				return err
@@ -146,69 +145,62 @@ func (c *llmConfigCommands) showConfig(ctx context.Context, _ []string) error {
 	return c.print(ctx, string(data))
 }
 
-func (c *llmConfigCommands) addKey(ctx context.Context, args []string) error {
-	provider := args[0]
-	validProviders := []string{"openrouter", "anthropic", "openai", "google"}
-	if !slices.Contains(validProviders, provider) {
-		return fmt.Errorf("unsupported provider %q, must be one of: %s", provider, strings.Join(validProviders, ", "))
+const logoutScopeNotice = "Environment, .env, and inherited credentials are not removed and may still provide access."
+
+func (c *llmConfigCommands) logout(ctx context.Context, _ []string) error {
+	cfg, err := llmconfig.Load()
+	if err != nil {
+		return err
 	}
-	var apiKey string
-	form := idtui.NewForm(huh.NewGroup(huh.NewInput().
-		Title(fmt.Sprintf("Enter API key for %s", provider)).
-		EchoMode(huh.EchoModePassword).
-		Value(&apiKey).
-		Validate(func(value string) error {
-			if strings.TrimSpace(value) == "" {
-				return fmt.Errorf("API key cannot be empty")
+	if cfg == nil || len(cfg.LLM.Providers) == 0 {
+		return c.print(ctx, "No saved LLM providers to log out from. Run /setup to configure one.\n"+logoutScopeNotice)
+	}
+
+	var options []huh.Option[string]
+	for _, name := range slices.Sorted(maps.Keys(cfg.LLM.Providers)) {
+		provider := cfg.LLM.Providers[name]
+		label := name
+		if provider.IsOAuth() {
+			subscription := llmconfig.SubscriptionLabel(provider.SubscriptionType)
+			if subscription == "" {
+				subscription = "OAuth"
 			}
-			return nil
-		})))
+			label += " (" + subscription + ")"
+		}
+		if !provider.Enabled {
+			label += " (disabled)"
+		}
+		options = append(options, huh.NewOption(label, name))
+	}
+	var provider string
+	form := idtui.NewForm(huh.NewGroup(huh.NewSelect[string]().
+		Title("Log out from a saved LLM provider").
+		Description(logoutScopeNotice).
+		Height(min(len(options)+2, 12)).
+		Filtering(true).
+		Options(options...).
+		Value(&provider)))
 	if err := c.prompt.HandleForm(ctx, form); err != nil {
 		if errors.Is(err, huh.ErrUserAborted) || errors.Is(err, llmconfig.ErrAborted) {
 			return nil
 		}
 		return err
 	}
-	apiKey = strings.TrimSpace(apiKey)
-	if form.State == huh.StateAborted || apiKey == "" {
+	if form.State == huh.StateAborted || provider == "" {
 		return nil
 	}
-	cfg, err := llmconfig.Load()
-	if err != nil {
-		return err
-	}
-	if cfg == nil {
-		cfg = &llmconfig.Config{LLM: llmconfig.LLMConfig{Providers: make(map[string]llmconfig.Provider)}}
-	}
-	providerCfg := llmconfig.Provider{APIKey: apiKey, Enabled: true}
-	if provider == "openrouter" {
-		providerCfg.BaseURL = "https://openrouter.ai/api/v1"
-	}
-	cfg.LLM.Providers[provider] = providerCfg
-	if cfg.LLM.DefaultProvider == "" {
-		cfg.LLM.DefaultProvider = provider
-	}
-	// Adding another provider must not bind its model to the existing default.
-	if cfg.LLM.DefaultProvider == provider && cfg.LLM.DefaultModel == "" {
-		cfg.LLM.DefaultModel = llmconfig.DefaultModelForProvider(provider)
-	}
-	if err := cfg.Save(); err != nil {
-		return fmt.Errorf("failed to save config: %w", err)
-	}
-	return c.changed(ctx, fmt.Sprintf("API key for %s saved successfully!", provider))
-}
 
-func (c *llmConfigCommands) removeKey(ctx context.Context, args []string) error {
-	provider := args[0]
-	cfg, err := llmconfig.Load()
+	// Re-read after the picker: another process may have updated other providers
+	// while it was open. Do not overwrite their latest saved configuration.
+	cfg, err = llmconfig.Load()
 	if err != nil {
 		return err
 	}
 	if cfg == nil {
-		return fmt.Errorf("no LLM configuration found")
+		return c.print(ctx, "No saved LLM providers to log out from.\n"+logoutScopeNotice)
 	}
 	if _, ok := cfg.LLM.Providers[provider]; !ok {
-		return fmt.Errorf("provider %q not found in config", provider)
+		return c.print(ctx, fmt.Sprintf("No saved credentials remain for %s.\n%s", provider, logoutScopeNotice))
 	}
 	delete(cfg.LLM.Providers, provider)
 	// The default model belongs to the removed provider, not whichever
@@ -220,7 +212,7 @@ func (c *llmConfigCommands) removeKey(ctx context.Context, args []string) error 
 	if err := cfg.Save(); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
-	return c.changed(ctx, fmt.Sprintf("Credentials for %s removed.", provider))
+	return c.changed(ctx, fmt.Sprintf("Saved credentials for %s removed.\n%s", provider, logoutScopeNotice))
 }
 
 func (c *llmConfigCommands) setDefault(ctx context.Context, args []string) error {
@@ -234,7 +226,7 @@ func (c *llmConfigCommands) setDefault(ctx context.Context, args []string) error
 	}
 	providerCfg, ok := cfg.LLM.Providers[provider]
 	if !ok {
-		return fmt.Errorf("provider %q not configured, run /add-key %s or /setup first", provider, provider)
+		return fmt.Errorf("provider %q not configured, run /setup first", provider)
 	}
 	cfg.LLM.DefaultProvider = provider
 	if len(args) > 1 {
