@@ -8,6 +8,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/stretchr/testify/require"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 // A filtered view holds concrete installed objects, even when two installations
@@ -42,6 +43,42 @@ func TestArtifactViewCacheSeparatesInstalledTypes(t *testing.T) {
 	}
 	require.NotEqual(t, keys[0], keys[1], "renamed installation must not load the original installed type")
 	require.Equal(t, keys[0], keys[2], "the same installed type must retain a stable cache key")
+}
+
+// A host checkout's Workspace and a module's recipe differ in every session, so
+// a filtered view's origin must not hold them, or no check under a filter caches
+// across sessions. What tells two collections apart must still reach it.
+func TestArtifactViewOriginHoldsNoPerSessionInputs(t *testing.T) {
+	named := func(name string) *ast.Type { return ast.NonNullNamedType(name, nil) }
+	workspace := func(nonce string) *call.ID {
+		return (*call.ID)(nil).Append(named("Workspace"), "currentWorkspace",
+			call.WithImplicitInputs(call.NewArgument("cachePerCall", call.NewLiteralString(nonce), false)))
+	}
+	module := func(name, nonce string) *call.Module {
+		id := (*call.ID)(nil).Append(named("Module"), "module", call.WithArgs(call.NewArgument("nonce", call.NewLiteralString(nonce), false)))
+		return call.NewModule(id, name, "ref", "")
+	}
+	collection := func(mod *call.Module, field string, ws *call.ID) *call.ID {
+		root := (*call.ID)(nil).Append(named("Tool"), "tool", call.WithModule(mod))
+		return root.Append(named("Tests"), field, call.WithModule(mod), call.WithArgs(call.NewArgument("ws", call.NewLiteralID(ws), false)))
+	}
+	view := func(id *call.ID) *call.ID {
+		return id.Append(id.Type().ToAST(), artifactViewField, call.WithArgs(call.NewArgument("view", call.NewLiteralString("state"), false)))
+	}
+
+	origin := artifactViewOrigin(collection(module("tool", "one"), "tests", workspace("one")))
+	require.NotEqual(t, origin, artifactViewOrigin(collection(module("other", "one"), "tests", workspace("one"))), "another module's collection")
+	require.NotEqual(t, origin, artifactViewOrigin(collection(module("tool", "one"), "builds", workspace("one"))), "another field's collection")
+	overlaid := workspace("one").Append(named("Workspace"), "withNewFile", call.WithArgs(call.NewArgument("path", call.NewLiteralString("checks.json"), false)))
+	require.NotEqual(t, origin, artifactViewOrigin(collection(module("tool", "one"), "tests", overlaid)), "an explicit Workspace overlay")
+
+	spine := (*call.ID)(nil).Append(named("Tool"), "tool")
+	sameWorkspace := func(nonce string) string {
+		return artifactViewOrigin(spine.Append(named("Tests"), "tests", call.WithArgs(call.NewArgument("ws", call.NewLiteralID(workspace(nonce)), false))))
+	}
+	require.Equal(t, sameWorkspace("one"), sameWorkspace("two"), "the ambient Workspace of another session")
+	scoped := spine.Append(named("Tests"), "tests", call.WithArgs(call.NewArgument("ws", call.NewLiteralID(workspace("one")), false)))
+	require.Equal(t, artifactViewOrigin(scoped), artifactViewOrigin(view(scoped)), "a view wrapper")
 }
 
 func TestArtifactViewLazyReferenceDefersProducerAndRetainsSelection(t *testing.T) {
