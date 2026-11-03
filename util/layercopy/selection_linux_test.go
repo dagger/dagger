@@ -250,6 +250,39 @@ func TestSelectionResolvesDotDotAfterReusedDirectory(t *testing.T) {
 	}
 }
 
+func TestSelectionPreservesLocalDotDotLinks(t *testing.T) {
+	for _, alias := range []string{"alias", "z-alias"} {
+		t.Run(alias, func(t *testing.T) {
+			root := t.TempDir()
+			require.NoError(t, os.MkdirAll(filepath.Join(root, "src/dir"), 0755))
+			require.NoError(t, os.WriteFile(filepath.Join(root, "src/file"), []byte("original"), 0644))
+			links := map[string]string{
+				alias:   "dir",
+				"chain": alias,
+				"link":  alias + "/../file",
+				"multi": "chain/../" + alias + "/../file",
+			}
+			for name, target := range links {
+				require.NoError(t, os.Symlink(target, filepath.Join(root, "src", name)))
+			}
+			dst := copySelection(t, root, "src")
+			for name, target := range links {
+				actual, err := os.Readlink(filepath.Join(dst, name))
+				require.NoError(t, err)
+				require.Equal(t, target, actual)
+			}
+			// Replacing the target must still change what the links read.
+			require.NoError(t, os.Remove(filepath.Join(dst, "file")))
+			require.NoError(t, os.WriteFile(filepath.Join(dst, "file"), []byte("replacement"), 0644))
+			for _, name := range []string{"link", "multi"} {
+				content, err := os.ReadFile(filepath.Join(dst, name))
+				require.NoError(t, err)
+				require.Equal(t, "replacement", string(content))
+			}
+		})
+	}
+}
+
 func TestSelectionPreservesHardlinksWithoutLinkingSource(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(root, "a"), []byte("inside"), 0644))

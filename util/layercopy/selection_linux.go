@@ -170,12 +170,15 @@ func (s *selectionCopy) link(ctx context.Context, ent sourceEntry, name, dest, b
 }
 
 // A relative link keeps working if its text stays within the copied tree.
-// Check the resolved prefix before .. as well. A symlink in that prefix can
-// be copied or redirected to a shared directory elsewhere in the result.
-// Resolve these links in the source, even if the prefix stays in the tree:
-// its destination parent can differ, and the prefix may not be copied yet.
+// Check the resolved prefix before .. as well. Relative links confined to
+// this tree stay unchanged. An absolute or escaping link in the prefix can
+// be copied or redirected elsewhere, changing the meaning of its parent.
 func (s *selectionCopy) linkStaysWithin(boundary, parent, target string) (bool, error) {
 	prefix := parent
+	localPrefix, err := filepath.Rel(boundary, parent)
+	if err != nil {
+		return false, err
+	}
 	for _, part := range strings.Split(target, "/") {
 		if part == ".." {
 			resolved, err := s.source.resolveRooted(prefix, true)
@@ -186,7 +189,13 @@ func (s *selectionCopy) linkStaysWithin(boundary, parent, target string) (bool, 
 				return false, err
 			}
 			if resolved != filepath.Clean(prefix) {
-				return false, nil
+				local, err := s.prefixStaysLocal(boundary, localPrefix)
+				if err != nil {
+					return false, err
+				}
+				if !local {
+					return false, nil
+				}
 			}
 			relative, err := filepath.Rel(boundary, resolved)
 			if err != nil {
@@ -197,8 +206,22 @@ func (s *selectionCopy) linkStaysWithin(boundary, parent, target string) (bool, 
 			}
 		}
 		prefix += "/" + part
+		localPrefix += "/" + part
 	}
 	return true, nil
+}
+
+// os.Root follows relative links but rejects absolute links and escapes.
+// A successful lookup therefore traverses only links we leave unchanged.
+// Keep the raw prefix: cleaning .. first can change what it refers to.
+func (s *selectionCopy) prefixStaysLocal(boundary, prefix string) (bool, error) {
+	root, err := s.source.rootHandle.OpenRoot(boundary)
+	if err != nil {
+		return false, err
+	}
+	defer root.Close()
+	_, err = root.Stat(prefix)
+	return err == nil, nil
 }
 
 func (s *selectionCopy) writeLink(ent sourceEntry, dest, target string) error {
