@@ -2,16 +2,207 @@ package daggercmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
 	"os"
+	"strings"
 	"testing"
 
+	"dagger.io/dagger"
+	"dagger.io/dagger/core"
+
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
 )
+
+func TestModelPickerCurrentOnlyAndCancellation(t *testing.T) {
+	for _, outcome := range []string{"current only", "cancel error", "cancel state"} {
+		t.Run(outcome, func(t *testing.T) {
+			useTempLLMConfig(t, &llmconfig.Config{LLM: llmconfig.LLMConfig{DefaultProvider: "local", DefaultModel: "current"}})
+			before, err := os.ReadFile(llmconfig.ConfigFile)
+			require.NoError(t, err)
+			var queries []string
+			dag, err := dagger.Connect(t.Context(), dagger.WithConn(agentTestConn{do: func(req *http.Request) (*http.Response, error) {
+				var query dagger.Request
+				require.NoError(t, json.NewDecoder(req.Body).Decode(&query))
+				queries = append(queries, query.Query)
+				body := `{"data":{"node":{"model":"current","provider":"local","withModel":{"model":"next","provider":"local"}}}}`
+				return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(body))}, nil
+			}}))
+			require.NoError(t, err)
+			t.Cleanup(func() { dag.Close() })
+			s := &LLMSession{dag: dag, plumbingCtx: t.Context()}
+			a := s.newAgent("test")
+			a.llm = core.Ref[*core.LLM](core.NewQuery(dag), "seed")
+			s.target = a
+			h := &shellCallHandler{llmSession: s}
+			ctx := context.WithValue(t.Context(), llmModelConfigKey{}, llmModelConfigReader(func(context.Context) (*engine.LLMConfig, error) {
+				return &engine.LLMConfig{Providers: map[string]*engine.LLMProviderConfig{"local": {Model: "next"}}}, nil
+			}))
+			ctx = context.WithValue(ctx, llmConfigUpdaterKey{}, llmConfigUpdater(func(context.Context, *engine.LLMConfig) error {
+				t.Fatal("current-only selection or cancellation must not reload config")
+				return nil
+			}))
+			previous := Frontend
+			t.Cleanup(func() { Frontend = previous })
+			Frontend = &idtui.FrontendMock{HandleFormFunc: func(_ context.Context, form *huh.Form) error {
+				field := form.GetFocusedField()
+				require.Equal(t, modelSelection{Provider: "local", Model: "current"}, field.GetValue())
+				field.Focus()
+				field.Update(tea.KeyMsg{Type: tea.KeyDown})
+				require.Equal(t, modelSelection{Provider: "local", Model: "next"}, field.GetValue())
+				if outcome == "current only" {
+					return nil
+				}
+				form.Update(huh.NextField())
+				confirm := form.GetFocusedField()
+				confirm.Focus()
+				confirm.Update(tea.KeyMsg{Type: tea.KeyLeft})
+				require.Equal(t, true, confirm.GetValue())
+				if outcome == "cancel error" {
+					return huh.ErrUserAborted
+				}
+				form.State = huh.StateAborted
+				return nil
+			}}
+			require.NoError(t, h.selectModelInteractive(ctx))
+			after, err := os.ReadFile(llmconfig.ConfigFile)
+			require.NoError(t, err)
+			require.Equal(t, before, after)
+			if outcome == "current only" {
+				require.Equal(t, "next", a.model)
+				require.Equal(t, "local", a.provider)
+				require.Contains(t, strings.Join(queries, "\n"), `provider:"local"`)
+			} else {
+				require.NotContains(t, strings.Join(queries, "\n"), "withModel")
+			}
+		})
+	}
+}
+
+func TestModelPickerCurrentSelectionAndDefaultOptIn(t *testing.T) {
+	current := modelSelection{Provider: "openai-codex", Model: "gpt-5"}
+	options := []huh.Option[modelSelection]{
+		huh.NewOption("GPT-5 (openai)", modelSelection{Provider: "openai", Model: "gpt-5"}),
+		huh.NewOption("GPT-5 (openai-codex)", current),
+	}
+	var selected modelSelection
+	useDefault := true // Every opening starts with an explicit opt-in.
+	form := newModelPickerForm(options, current, &selected, &useDefault)
+	require.Equal(t, current, selected)
+	require.Contains(t, form.GetFocusedField().View(), "GPT-5 (openai-codex) (current)")
+	require.NotContains(t, form.GetFocusedField().View(), "GPT-5 (openai) (current)")
+	require.False(t, useDefault)
+	form.Update(huh.NextField())
+	confirm, ok := form.GetFocusedField().(*idtui.ExplicitConfirm)
+	require.True(t, ok)
+	require.Contains(t, confirm.View(), "Use as default for new conversations")
+	require.Contains(t, confirm.View(), "Environment and .env model settings take priority")
+	confirm.Focus()
+	confirm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	require.False(t, useDefault, "enter alone must not save a default")
+	confirm.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	require.True(t, useDefault, "saving must require explicitly choosing Yes")
+}
+
+func TestModelOptionsKeepsCurrentCustomModel(t *testing.T) {
+	current := modelSelection{Provider: "local", Model: "my-current-model"}
+	options := modelOptions(&engine.LLMConfig{Providers: map[string]*engine.LLMProviderConfig{"local": {}}}, current)
+	require.Len(t, options, 1)
+	require.Equal(t, current, options[0].Value)
+	require.Empty(t, modelOptions(&engine.LLMConfig{}, current), "do not restore an unconfigured provider")
+}
+
+func TestSaveModelDefault(t *testing.T) {
+	for _, tc := range []struct {
+		name, envModel, dotenv, warning string
+		saved                           bool
+		disabled                        bool
+	}{
+		{name: "saved provider", saved: true},
+		{name: "environment provider without saved credentials"},
+		{name: "inherited provider without local credentials"},
+		{name: "environment model overrides saved default", envModel: "gpt-env", warning: "override"},
+		{name: "dotenv model overrides saved default", dotenv: "OPENAI_MODEL=gpt-dotenv\n", warning: "override"},
+		{name: "disabled saved provider stays disabled", saved: true, disabled: true, warning: "disabled"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clearLLMEnv(t)
+			cfg := &llmconfig.Config{LLM: llmconfig.LLMConfig{Providers: map[string]llmconfig.Provider{
+				"anthropic": {Enabled: true, APIKey: "preserved-key", Model: "claude-preserved", ReasoningEffort: "high"},
+			}}}
+			if tc.saved {
+				cfg.LLM.Providers["openai"] = llmconfig.Provider{Enabled: !tc.disabled, APIKey: "saved-openai-key", Model: "gpt-pinned"}
+			}
+			useTempLLMConfig(t, cfg)
+			data, err := os.ReadFile(llmconfig.ConfigFile)
+			require.NoError(t, err)
+			require.NoError(t, os.WriteFile(llmconfig.ConfigFile, append(data, []byte("\n[other]\nvalue = 'preserved'\n")...), 0600))
+			if tc.name == "environment provider without saved credentials" || tc.disabled {
+				t.Setenv("OPENAI_API_KEY", "env-only-key")
+			}
+			if tc.envModel != "" {
+				t.Setenv("OPENAI_MODEL", tc.envModel)
+			}
+			if tc.dotenv != "" {
+				require.NoError(t, os.WriteFile(".env", []byte(tc.dotenv), 0600))
+			}
+			reloads := 0
+			ctx := context.WithValue(t.Context(), llmConfigUpdaterKey{}, llmConfigUpdater(func(context.Context, *engine.LLMConfig) error {
+				reloads++
+				return nil
+			}))
+			h := &shellCallHandler{}
+			notice, err := h.saveModelDefault(ctx, modelSelection{Provider: "openai", Model: "gpt-selected"})
+			require.NoError(t, err)
+			require.Equal(t, 1, reloads)
+			loaded, err := llmconfig.Load()
+			require.NoError(t, err)
+			require.Equal(t, "openai", loaded.LLM.DefaultProvider)
+			require.Equal(t, "gpt-selected", loaded.LLM.DefaultModel)
+			require.Equal(t, cfg.LLM.Providers, loaded.LLM.Providers, "never copy or re-enable credentials")
+			data, err = os.ReadFile(llmconfig.ConfigFile)
+			require.NoError(t, err)
+			require.Contains(t, string(data), "[other]")
+			require.Contains(t, string(data), "preserved")
+			require.NotContains(t, string(data), "env-only-key")
+			require.Contains(t, notice, "Saved default for new conversations: gpt-selected (openai).")
+			if tc.warning != "" {
+				require.Contains(t, notice, tc.warning)
+			} else {
+				require.NotContains(t, notice, "override")
+				require.NotContains(t, notice, "disabled")
+			}
+		})
+	}
+}
+
+func TestSaveModelDefaultFilelessAndReloadFailure(t *testing.T) {
+	clearLLMEnv(t)
+	useTempLLMConfig(t, nil)
+	wantErr := errors.New("reload unavailable")
+	ctx := context.WithValue(t.Context(), llmConfigUpdaterKey{}, llmConfigUpdater(func(_ context.Context, cfg *engine.LLMConfig) error {
+		require.Equal(t, "openai-codex", cfg.DefaultProvider)
+		require.Equal(t, "gpt-selected", cfg.DefaultModel)
+		require.Empty(t, cfg.Providers, "parent credentials must not be copied")
+		return wantErr
+	}))
+	_, err := (&shellCallHandler{}).saveModelDefault(ctx, modelSelection{Provider: "openai-codex", Model: "gpt-selected"})
+	require.ErrorIs(t, err, wantErr)
+	require.ErrorContains(t, err, "saved")
+	cfg, err := llmconfig.Load()
+	require.NoError(t, err)
+	require.Equal(t, "openai-codex", cfg.LLM.DefaultProvider)
+	require.Equal(t, "gpt-selected", cfg.LLM.DefaultModel)
+	require.Empty(t, cfg.LLM.Providers)
+}
 
 func TestAvailableModelOptions(t *testing.T) {
 	for _, tc := range []struct {
@@ -74,7 +265,7 @@ func TestAvailableModelOptions(t *testing.T) {
 			if tc.dotenv != "" {
 				require.NoError(t, os.WriteFile(".env", []byte(tc.dotenv), 0600))
 			}
-			options, err := availableModelOptions(t.Context())
+			options, err := availableModelOptions(t.Context(), modelSelection{})
 			require.NoError(t, err)
 			seen := map[modelSelection]bool{}
 			providers := map[string]bool{}
@@ -117,7 +308,7 @@ func TestAvailableModelOptionsEffectiveConfig(t *testing.T) {
 		return cfg, nil
 	})
 	ctx := context.WithValue(t.Context(), llmModelConfigKey{}, read)
-	options, err := availableModelOptions(ctx)
+	options, err := availableModelOptions(ctx, modelSelection{})
 	require.NoError(t, err)
 	require.Equal(t, 1, calls)
 	seen := map[modelSelection]bool{}
@@ -136,14 +327,14 @@ func TestAvailableModelOptionsEffectiveConfig(t *testing.T) {
 	// the engine reports none (e.g. logout), or conceal a failed config read.
 	t.Setenv("OPENAI_API_KEY", "local-key")
 	cfg = nil
-	options, err = availableModelOptions(ctx)
+	options, err = availableModelOptions(ctx, modelSelection{})
 	require.NoError(t, err)
 	require.Empty(t, options)
 	wantErr := errors.New("engine config unavailable")
 	ctx = context.WithValue(t.Context(), llmModelConfigKey{}, llmModelConfigReader(func(context.Context) (*engine.LLMConfig, error) {
 		return nil, wantErr
 	}))
-	options, err = availableModelOptions(ctx)
+	options, err = availableModelOptions(ctx, modelSelection{})
 	require.ErrorIs(t, err, wantErr)
 	require.Empty(t, options)
 }
@@ -152,7 +343,7 @@ func TestAvailableModelOptionsMalformedConfig(t *testing.T) {
 	clearLLMEnv(t)
 	useTempLLMConfig(t, nil)
 	t.Setenv("OPENAI_DISABLE_STREAMING", "not-a-bool")
-	_, err := availableModelOptions(t.Context())
+	_, err := availableModelOptions(t.Context(), modelSelection{})
 	require.ErrorIs(t, err, llmconfig.ErrMalformed)
 }
 

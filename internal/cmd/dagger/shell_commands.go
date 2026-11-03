@@ -322,17 +322,26 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 	}
 }
 
-// selectModelInteractive presents a picker of the models offered by the
-// configured providers and swaps the LLM to the chosen one. It mirrors the
-// ".model <model>" path once a model is selected, and no-ops if the user
-// aborts the form.
+// selectModelInteractive presents the configured providers' models, marking the
+// current route. Selection changes this conversation; saving a default for new
+// conversations requires a separate opt-in in the same form.
 func (h *shellCallHandler) selectModelInteractive(ctx context.Context) error {
 	llm, err := h.llm(ctx)
 	if err != nil {
 		return err
 	}
 
-	options, err := availableModelOptions(ctx)
+	target := llm.Target()
+	model, err := target.llm.Model(llm.plumbingCtx)
+	if err != nil {
+		return err
+	}
+	provider, err := target.llm.Provider(llm.plumbingCtx)
+	if err != nil {
+		return err
+	}
+	current := modelSelection{Provider: provider, Model: model}
+	options, err := availableModelOptions(ctx, current)
 	if err != nil {
 		return err
 	}
@@ -341,16 +350,8 @@ func (h *shellCallHandler) selectModelInteractive(ctx context.Context) error {
 	}
 
 	var selected modelSelection
-	form := idtui.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[modelSelection]().
-				Title("Choose a model").
-				Height(min(len(options)+2, 12)).
-				Filtering(true).
-				Options(options...).
-				Value(&selected),
-		),
-	)
+	var useDefault bool
+	form := newModelPickerForm(options, current, &selected, &useDefault)
 
 	if err := Frontend.HandleForm(ctx, form); err != nil {
 		if errors.Is(err, huh.ErrUserAborted) {
@@ -359,16 +360,83 @@ func (h *shellCallHandler) selectModelInteractive(ctx context.Context) error {
 		return err
 	}
 
-	if selected.Model == "" {
+	if form.State == huh.StateAborted || selected.Model == "" {
 		return nil // user aborted
 	}
 
-	target := llm.Target()
+	var notice string
+	if useDefault {
+		notice, err = h.saveModelDefault(ctx, selected)
+		if err != nil {
+			return err
+		}
+	}
 	if err := target.Model(selected.Model, core.LLMWithModelOpts{Provider: selected.Provider}); err != nil {
 		return err
 	}
 	h.noteModel(target.model)
+	if notice != "" {
+		return h.Print(ctx, notice)
+	}
 	return nil
+}
+
+func newModelPickerForm(options []huh.Option[modelSelection], current modelSelection, selected *modelSelection, useDefault *bool) *huh.Form {
+	options = slices.Clone(options)
+	for i := range options {
+		if options[i].Value == current {
+			options[i].Key += " (current)"
+			*selected = current
+		}
+	}
+	*useDefault = false
+	return idtui.NewForm(huh.NewGroup(
+		huh.NewSelect[modelSelection]().
+			Title("Choose a model").
+			Description(fmt.Sprintf("Current: %s (%s)", current.Model, current.Provider)).
+			Height(min(len(options)+2, 12)).
+			Filtering(true).
+			Options(options...).
+			Value(selected),
+		idtui.NewExplicitConfirm("Yes", "No", useDefault).
+			Title("Use as default for new conversations").
+			Description("Environment and .env model settings take priority over saved defaults."),
+	))
+}
+
+// saveModelDefault changes only the saved default route. In particular, choosing
+// an environment- or parent-configured provider must not copy credentials into
+// the file or re-enable a disabled saved provider.
+func (h *shellCallHandler) saveModelDefault(ctx context.Context, selected modelSelection) (string, error) {
+	cfg, err := llmconfig.Load()
+	if err != nil {
+		return "", err
+	}
+	if cfg == nil {
+		cfg = &llmconfig.Config{}
+	}
+	cfg.LLM.DefaultProvider = selected.Provider
+	cfg.LLM.DefaultModel = selected.Model
+	if err := cfg.Save(); err != nil {
+		return "", err
+	}
+	if err := h.reloadLLMConfig(ctx); err != nil {
+		return "", err
+	}
+	notice := fmt.Sprintf("Saved default for new conversations: %s (%s).", selected.Model, selected.Provider)
+	effective, err := assembleLLMConfig()
+	if err != nil {
+		return "", err
+	}
+	if effective == nil || effective.DefaultProvider != selected.Provider || effective.DefaultModel != selected.Model {
+		if effective != nil && effective.DefaultProvider != "" {
+			notice += fmt.Sprintf("\nEnvironment or .env model settings currently override this default with %s (%s).", effective.DefaultModel, effective.DefaultProvider)
+		} else {
+			notice += "\nThis default is not effective while its saved provider is disabled; use /setup to enable it."
+		}
+		notice += " The selected model still applies to this conversation."
+	}
+	return notice, nil
 }
 
 // selectEffortInteractive presents a picker of the reasoning effort levels the
@@ -459,7 +527,7 @@ type modelSelection struct {
 // availableModelOptions asks the connected engine for effective routing config,
 // including providers inherited from a parent client in nested sessions. Without
 // a connection, assemble the local file, environment and .env configuration.
-func availableModelOptions(ctx context.Context) ([]huh.Option[modelSelection], error) {
+func availableModelOptions(ctx context.Context, current modelSelection) ([]huh.Option[modelSelection], error) {
 	var cfg *engine.LLMConfig
 	var err error
 	if read, ok := ctx.Value(llmModelConfigKey{}).(llmModelConfigReader); ok {
@@ -470,12 +538,12 @@ func availableModelOptions(ctx context.Context) ([]huh.Option[modelSelection], e
 	if err != nil {
 		return nil, err
 	}
-	return modelOptions(cfg), nil
+	return modelOptions(cfg, current), nil
 }
 
 // modelOptions deduplicates within each provider, never across providers: the
 // same model can use different credentials/routes.
-func modelOptions(cfg *engine.LLMConfig) []huh.Option[modelSelection] {
+func modelOptions(cfg *engine.LLMConfig, current modelSelection) []huh.Option[modelSelection] {
 	if cfg == nil {
 		return nil
 	}
@@ -498,6 +566,11 @@ func modelOptions(cfg *engine.LLMConfig) []huh.Option[modelSelection] {
 	}
 
 	for _, provider := range providers {
+		// Keep a manually selected custom model visible, but never introduce an
+		// unconfigured provider just because an old conversation used it.
+		if provider == current.Provider {
+			add(provider, current.Model, current.Model)
+		}
 		// Configured custom models may not occur in the embedded catalog.
 		// The default model can be distinct from the provider's pinned model.
 		if provider == cfg.DefaultProvider {
