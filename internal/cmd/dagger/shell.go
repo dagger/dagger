@@ -292,6 +292,15 @@ type commandSubmission struct {
 
 type commandSubmissionKey struct{}
 
+// commandMode is the mode a queued command was submitted in. Presentation
+// commands such as help must not adopt a mode selected after submission.
+func (h *shellCallHandler) commandMode(ctx context.Context) interpreterMode {
+	if submission, ok := ctx.Value(commandSubmissionKey{}).(*commandSubmission); ok {
+		return submission.mode
+	}
+	return h.mode
+}
+
 func (h *shellCallHandler) promptInputMode(input idtui.PromptInput) interpreterMode {
 	if submission, ok := input.CommandTarget.(*commandSubmission); ok {
 		return submission.mode

@@ -105,19 +105,21 @@ func TestPromptCommandQueuePinsTargetAndMode(t *testing.T) {
 	h.QueuePrompt(first)
 	h.QueuePrompt(imagePrompt("old draft"))
 	h.QueuePrompt(idtui.PromptInput{Text: "/compact"})
+	h.QueuePrompt(idtui.PromptInput{Text: "/help"})
 	h.QueuePrompt(imagePrompt("latest draft"))
-	require.Contains(t, h.QueuedPromptSummary(), "2 command(s)")
+	require.Contains(t, h.QueuedPromptSummary(), "3 command(s)")
 
 	// Focus and mode can change while the interpreter or a picker waits.
 	s.SetTarget(agents[1])
 	h.mode = modeShell
-	for _, text := range []string{"/shell", "/compact"} {
+	for _, text := range []string{"/shell", "/compact", "/help"} {
 		input := h.DequeuePrompt()
 		require.Equal(t, text, input.Text)
 		require.Equal(t, modePrompt, h.promptInputMode(input))
 		require.True(t, h.SerialPrompt(input))
 		require.NoError(t, h.ValidatePrompt(input))
 		ctx := context.WithValue(t.Context(), commandSubmissionKey{}, input.CommandTarget)
+		require.Equal(t, modePrompt, h.commandMode(ctx), "help must use the submitted mode after /shell")
 		target, err := h.commandTarget(ctx)
 		require.NoError(t, err)
 		require.Same(t, agents[0], target)
