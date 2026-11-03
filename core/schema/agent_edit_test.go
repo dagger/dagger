@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -33,6 +34,101 @@ func (s *agentEditSchemaServer) NonModuleParentClientMetadata(context.Context) (
 
 func (s *agentEditSchemaServer) SpecificClientAttachableConn(context.Context, string, core.SpecificClientAttachableConnOpts) (*grpc.ClientConn, bool, error) {
 	return s.conn, true, nil
+}
+
+func TestAgentBoundaryEditPreservesResumeInput(t *testing.T) {
+	for _, mode := range []string{"failed", "paused", "never-started", "stopped"} {
+		t.Run(mode, func(t *testing.T) {
+			cache, err := dagql.NewCache(t.Context(), "", nil, nil)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, cache.Close(context.Background())) })
+			ctx, srv, agents := agentIdentitySession(t, cache, "edit-resume-"+mode)
+			query, err := core.CurrentQuery(ctx)
+			require.NoError(t, err)
+			old := query.Server.(*agentIdentityTestServer)
+			env := &llmAuthSecrets{vars: map[string]string{"env://ANTHROPIC_API_KEY": "key"}}
+			query.Server = &agentEditSchemaServer{agentIdentityTestServer: old, conn: newLLMAuthAttachable(t, env)}
+			var requests atomic.Int64
+			var requestedModel atomic.Value
+			provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var request struct {
+					Model string `json:"model"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+					t.Error(err)
+				}
+				requestedModel.Store(request.Model)
+				n := requests.Add(1)
+				if mode == "failed" && n == 1 {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusBadRequest)
+					_, _ = w.Write([]byte(`{"type":"error","error":{"type":"invalid_request_error","message":"retry after changing effort"}}`))
+					return
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = w.Write([]byte("event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_retry\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5\",\"content\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"resumed\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":1}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"))
+			}))
+			t.Cleanup(provider.Close)
+			old.mainClient.LLMConfig = &engine.LLMConfig{Providers: map[string]*engine.LLMProviderConfig{
+				"anthropic": {APIKey: "env://ANTHROPIC_API_KEY", BaseURL: provider.URL},
+			}}
+			var base dagql.ObjectResult[*core.LLM]
+			require.NoError(t, srv.Select(ctx, srv.Root(), &base,
+				dagql.Selector{Field: "llm", Args: []dagql.NamedInput{{Name: "model", Value: dagql.Opt(dagql.String("claude-sonnet-4-5"))}}},
+				dagql.Selector{Field: "withPrompt", Args: []dagql.NamedInput{{Name: "prompt", Value: dagql.String("pending request")}}}))
+			agent, err := spawnIdentityAgent(ctx, srv, base)
+			require.NoError(t, err)
+			rt, err := agents.Require(ctx, agent)
+			require.NoError(t, err)
+			if mode == "failed" {
+				require.NoError(t, rt.Resume(ctx))
+				state, err := rt.WaitSettled(ctx)
+				require.NoError(t, err)
+				require.Equal(t, core.AgentStateFailed, state)
+				require.EqualValues(t, 1, requests.Load())
+			} else if mode == "paused" {
+				require.NoError(t, rt.Pause())
+			} else if mode == "stopped" {
+				require.NoError(t, rt.Stop(ctx, true, nil, core.AgentStopExplicit))
+			}
+			before := rt.State()
+			var edited dagql.ObjectResult[*core.LLM]
+			require.NoError(t, srv.Select(ctx, agent, &edited,
+				dagql.Selector{Field: "__beginEdit", Args: []dagql.NamedInput{{Name: "token", Value: dagql.String("edit")}}},
+				dagql.Selector{Field: "withReasoningEffort", Args: []dagql.NamedInput{{Name: "effort", Value: dagql.String("low")}}}))
+			t.Cleanup(func() { rt.AbortConversationEdit("edit") })
+			if mode == "stopped" {
+				require.NoError(t, srv.Select(ctx, edited, &edited, dagql.Selector{Field: "withModel", Args: []dagql.NamedInput{{Name: "model", Value: dagql.String("claude-opus-4-6")}}}))
+			}
+			rawID, err := edited.ID()
+			require.NoError(t, err)
+			var id core.AgentID
+			require.NoError(t, srv.Select(ctx, agent, &id, dagql.Selector{Field: "__commitEdit", Args: []dagql.NamedInput{
+				{Name: "token", Value: dagql.String("edit")}, {Name: "conversation", Value: dagql.NewID[*core.LLM](rawID)},
+			}}))
+			require.Equal(t, before, rt.State(), "commit must not restart the loop")
+			if mode == "stopped" {
+				require.Zero(t, requests.Load())
+				message, err := agents.Send(ctx, agent, "continue after setup", "")
+				require.NoError(t, err)
+				_, err = agents.MessageResponse(ctx, message)
+				require.NoError(t, err)
+				require.Equal(t, "claude-opus-4-6", requestedModel.Load())
+			} else {
+				require.NoError(t, rt.Resume(ctx))
+			}
+			_, err = rt.WaitSettled(ctx)
+			require.NoError(t, err)
+			require.Equal(t, core.AgentStateIdle, rt.State())
+			want := int64(1)
+			if mode == "failed" {
+				want = 2
+			}
+			require.Equal(t, want, requests.Load(), "explicit resume must execute the previously pending input")
+			reply, _ := rt.Snapshot().Self().LastReply()
+			require.Equal(t, "resumed", reply)
+		})
+	}
 }
 
 func TestAgentBoundaryEditPrivateSchema(t *testing.T) {

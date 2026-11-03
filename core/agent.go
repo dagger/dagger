@@ -2220,25 +2220,9 @@ func (rt *AgentRuntime) loop(ctx context.Context) {
 		// resolves only after resume completes it — pause never cuts a
 		// turn short) and no mailbox continuation (queued mail waits for
 		// resume too).
-		rt.mu.Lock()
-		if !rt.paused && rt.edit == nil && len(rt.mailbox) > 0 && !rt.stopRequested && ctx.Err() == nil {
-			rt.mu.Unlock()
+		if rt.continueTurnOrSettle(ctx) {
 			continue
 		}
-		if rt.turnOpen && !rt.paused && rt.edit == nil {
-			// Resolve every message the turn consumed with its final
-			// reply: reply correlation follows the message to whichever
-			// turn consumed it (design §3.2), not the clock.
-			reply, _ := rt.last.Self().LastReply()
-			rt.transitionLocked(func() {
-				for _, rec := range rt.consumed {
-					rt.resolveLocked(rec, reply, nil)
-				}
-				rt.consumed = nil
-				rt.turnOpen = false
-			})
-		}
-		rt.mu.Unlock()
 
 		// Mailbox empty and turn complete (IDLE), or paused (PAUSED):
 		// block in receive until an enqueue, a resume, or a stop request
@@ -2250,6 +2234,30 @@ func (rt *AgentRuntime) loop(ctx context.Context) {
 			// Re-check stop, pause, and the mailbox at the top of the loop.
 		}
 	}
+}
+
+// continueTurnOrSettle rechecks all runnable input at the settlement boundary.
+// An editor can release its barrier after the inner loop decides to park but
+// before this lock is acquired, so mailbox emptiness alone cannot end a turn.
+func (rt *AgentRuntime) continueTurnOrSettle(ctx context.Context) bool {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	pending := !rt.held && rt.last.Self() != nil && rt.last.Self().HasPending()
+	if !rt.paused && rt.edit == nil && (len(rt.mailbox) > 0 || pending) && !rt.stopRequested && ctx.Err() == nil {
+		return true
+	}
+	if rt.turnOpen && !rt.paused && rt.edit == nil {
+		// Reply correlation follows every message through its complete turn.
+		reply, _ := rt.last.Self().LastReply()
+		rt.transitionLocked(func() {
+			for _, rec := range rt.consumed {
+				rt.resolveLocked(rec, reply, nil)
+			}
+			rt.consumed = nil
+			rt.turnOpen = false
+		})
+	}
+	return false
 }
 
 type agentConversationEdit struct {
@@ -2266,6 +2274,8 @@ const agentConversationEditLease = 10 * time.Minute
 // interrupting work or changing pause state. The caller chooses the token so
 // cancellation before receiving the snapshot can still be followed by Abort.
 // Repeating the same token renews the lease; a different editor is rejected.
+// A fully stopped tombstone is editable without restarting it, so credentials
+// and model selection can be repaired before a later explicit Send/Resume.
 func (rt *AgentRuntime) BeginConversationEdit(ctx context.Context, token string) (dagql.ObjectResult[*LLM], error) {
 	return rt.beginConversationEdit(ctx, token, agentConversationEditLease)
 }
@@ -2282,27 +2292,17 @@ func (rt *AgentRuntime) beginConversationEdit(ctx context.Context, token string,
 		defer release()
 	}
 	rt.mu.Lock()
-	if rt.closing || rt.stopRequested || rt.stateLocked() == AgentStateStopped {
+	if rt.closing || (rt.stopRequested && !rt.done) {
 		rt.mu.Unlock()
-		return snapshot, errors.New("agent is stopped or closing")
+		return snapshot, errors.New("agent is stopping or closing")
 	}
 	if rt.edit != nil && rt.edit.token != token {
 		rt.mu.Unlock()
 		return snapshot, errors.New("another conversation edit is in progress")
 	}
 	if rt.edit == nil {
-		edit := &agentConversationEdit{token: token, expires: time.Now().Add(lease)}
+		edit := &agentConversationEdit{token: token}
 		rt.transitionLocked(func() { rt.edit = edit })
-		edit.timer = time.AfterFunc(lease, func() {
-			rt.mu.Lock()
-			defer rt.mu.Unlock()
-			if rt.edit == edit && !time.Now().Before(edit.expires) {
-				rt.releaseConversationEditLocked()
-			}
-		})
-	} else {
-		rt.edit.expires = time.Now().Add(lease)
-		rt.edit.timer.Reset(lease)
 	}
 	edit := rt.edit
 	defer func() {
@@ -2319,7 +2319,7 @@ func (rt *AgentRuntime) beginConversationEdit(ctx context.Context, token string,
 			rt.mu.Unlock()
 			return snapshot, errors.New("conversation edit was released or expired")
 		}
-		if rt.closing || rt.stopRequested || rt.stateLocked() == AgentStateStopped {
+		if rt.closing || (rt.stopRequested && !rt.done) {
 			rt.mu.Unlock()
 			return snapshot, errors.New("agent stopped while waiting for conversation edit")
 		}
@@ -2330,6 +2330,21 @@ func (rt *AgentRuntime) beginConversationEdit(ctx context.Context, token string,
 		if !rt.composing && !rt.stepping && !rt.draining {
 			if !edit.ready {
 				edit.ready, edit.revision = true, rt.lastRevision
+			}
+			// Waiting for a long build/step is bounded by the live request's
+			// context, not the handed-out snapshot lease. Start (or renew) the
+			// orphan protection only when there is a stable snapshot to edit.
+			edit.expires = time.Now().Add(lease)
+			if edit.timer == nil {
+				edit.timer = time.AfterFunc(lease, func() {
+					rt.mu.Lock()
+					defer rt.mu.Unlock()
+					if rt.edit == edit && !time.Now().Before(edit.expires) {
+						rt.releaseConversationEditLocked()
+					}
+				})
+			} else {
+				edit.timer.Reset(lease)
 			}
 			snapshot = rt.last
 			rt.mu.Unlock()
@@ -2358,12 +2373,12 @@ func (rt *AgentRuntime) CommitConversationEdit(ctx context.Context, token string
 	if edit == nil || edit.token != token {
 		return errors.New("conversation edit token is not active")
 	}
-	if !time.Now().Before(edit.expires) {
+	if edit.ready && !time.Now().Before(edit.expires) {
 		rt.releaseConversationEditLocked()
 		return errors.New("conversation edit expired")
 	}
-	if rt.closing || rt.stopRequested || rt.stateLocked() == AgentStateStopped {
-		return errors.New("agent is stopped or closing")
+	if rt.closing || (rt.stopRequested && !rt.done) {
+		return errors.New("agent is stopping or closing")
 	}
 	if !edit.ready || rt.stepping || rt.draining || rt.lastRevision != edit.revision {
 		return errors.New("conversation changed before edit commit")
@@ -2373,7 +2388,11 @@ func (rt *AgentRuntime) CommitConversationEdit(ctx context.Context, token string
 	}
 	// A compacted summary on an idle agent leads the next user turn. It must
 	// not wake the agent merely because it ends in a pending user message.
-	held := rt.held || (!rt.turnOpen && rt.stateLocked() != AgentStateRunning)
+	// Hold only newly introduced idle input. Existing pending input may be a
+	// failed step or an unstarted/paused seed that an explicit Resume must
+	// still run; a route/effort edit must not silently change that contract.
+	oldPending := rt.last.Self() != nil && rt.last.Self().HasPending()
+	held := rt.held || (!rt.turnOpen && !oldPending)
 	rt.transitionLocked(func() {
 		rt.commitLast(ctx, next)
 		rt.held = held && next.Self().HasPending()
@@ -2396,7 +2415,9 @@ func (rt *AgentRuntime) releaseConversationEditLocked() {
 	if rt.edit == nil {
 		return
 	}
-	rt.edit.timer.Stop()
+	if rt.edit.timer != nil {
+		rt.edit.timer.Stop()
+	}
 	rt.transitionLocked(func() { rt.edit = nil })
 	// Never starts/restarts a loop or clears paused. Runnable loops simply
 	// continue their existing turn; idle, failed, and paused agents stay so.

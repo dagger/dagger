@@ -55,6 +55,70 @@ func TestConversationEditPreservesTurn(t *testing.T) {
 	require.Equal(t, AgentStateRunning, rt.State())
 }
 
+func TestConversationEditReleaseBeforeSettlement(t *testing.T) {
+	rt, conversation := editTestRuntime(t)
+	rt.started, rt.turnOpen = true, true
+	ref, err := rt.enqueue("original prompt", nil, "")
+	require.NoError(t, err)
+	rec := rt.messages[ref]
+	rt.mailbox = nil
+	rec.consumed = true
+	rt.consumed = []*agentMessageRecord{rec}
+	_, err = rt.BeginConversationEdit(t.Context(), "edit")
+	require.NoError(t, err)
+
+	// Schedule precisely the loop's vulnerable window: it observes the
+	// barrier and leaves its step loop, but does not yet lock for settlement.
+	observed, settle := make(chan struct{}), make(chan struct{})
+	continued := make(chan bool, 1)
+	go func() {
+		rt.mu.Lock()
+		barrier := rt.edit != nil
+		rt.mu.Unlock()
+		if !barrier {
+			t.Error("expected loop to observe edit barrier")
+		}
+		close(observed)
+		<-settle
+		continued <- rt.continueTurnOrSettle(t.Context())
+	}()
+	<-observed
+	require.NoError(t, rt.CommitConversationEdit(t.Context(), "edit", conversation("pending compacted summary", true)))
+	close(settle)
+	require.True(t, <-continued, "released edit's pending input must continue the existing turn")
+	require.False(t, rec.resolved)
+	require.True(t, rt.turnOpen)
+
+	rt.mu.Lock()
+	rt.transitionLocked(func() { rt.commitLast(t.Context(), conversation("final continuation reply", false)) })
+	rt.mu.Unlock()
+	require.False(t, rt.continueTurnOrSettle(t.Context()))
+	require.True(t, rec.resolved)
+	require.Equal(t, "final continuation reply", rec.reply)
+	require.NoError(t, rec.err)
+}
+
+func TestConversationEditPreservesExistingPending(t *testing.T) {
+	for _, state := range []string{"failed", "paused", "never-started"} {
+		t.Run(state, func(t *testing.T) {
+			rt, conversation := editTestRuntime(t)
+			rt.last = conversation("existing pending prompt", true)
+			switch state {
+			case "failed":
+				rt.started, rt.done, rt.loopErr = true, true, errors.New("provider failed")
+			case "paused":
+				rt.paused = true
+			}
+			before := rt.State()
+			_, err := rt.BeginConversationEdit(t.Context(), "edit")
+			require.NoError(t, err)
+			require.NoError(t, rt.CommitConversationEdit(t.Context(), "edit", conversation("same prompt after route edit", true)))
+			require.False(t, rt.held, "existing retryable input must retain its resume semantics")
+			require.Equal(t, before, rt.State())
+		})
+	}
+}
+
 func TestConversationEditKeepsIdlePausedAndFailed(t *testing.T) {
 	for _, state := range []string{"never-started", "idle", "paused", "failed"} {
 		t.Run(state, func(t *testing.T) {
@@ -102,6 +166,29 @@ func TestConversationEditWaitCancelExpiryAndConflict(t *testing.T) {
 		require.Nil(t, rt.edit)
 		rt.draining = false
 		rt.mu.Unlock()
+	})
+	t.Run("lease starts after boundary wait", func(t *testing.T) {
+		rt, _ := editTestRuntime(t)
+		rt.stepping = true
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+		const lease = 20 * time.Millisecond
+		done := make(chan error, 1)
+		go func() { _, err := rt.beginConversationEdit(ctx, "edit", lease); done <- err }()
+		require.Eventually(t, func() bool { rt.mu.Lock(); defer rt.mu.Unlock(); return rt.edit != nil }, time.Second, time.Millisecond)
+		time.Sleep(3 * lease)
+		rt.mu.Lock()
+		edit := rt.edit
+		var timer *time.Timer
+		if edit != nil {
+			timer = edit.timer
+		}
+		rt.transitionLocked(func() { rt.stepping = false })
+		rt.mu.Unlock()
+		require.NotNil(t, edit, "a live wait for a long step must not expire")
+		require.Nil(t, timer)
+		require.NoError(t, <-done)
+		require.Eventually(t, func() bool { rt.mu.Lock(); defer rt.mu.Unlock(); return rt.edit == nil }, time.Second, time.Millisecond)
 	})
 	t.Run("lease expiry", func(t *testing.T) {
 		rt, conversation := editTestRuntime(t)
