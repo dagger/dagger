@@ -149,7 +149,17 @@ type DumpEvent struct {
 	// readers aren't named one by one.
 	HolderID      uint64 `json:"h,omitempty"`
 	HolderSinceNS int64  `json:"hs,omitempty"`
+
+	// Tally events (DumpTypeTally) count the calls of one class (ClassID)
+	// made under the op ParentID, from its start to its end (StartNS,
+	// EndNS): how many, how many failed, and their summed duration.
+	Count   int64 `json:"n,omitempty"`
+	Errors  int64 `json:"er,omitempty"`
+	TotalNS int64 `json:"tn,omitempty"`
 }
+
+// DumpTypeTally is the DumpEvent.Type of an op's tallied calls (Tally).
+const DumpTypeTally = "tally"
 
 // DumpTypeUsage is the DumpEvent.Type of a resource reading (RecordUsage).
 const DumpTypeUsage = "usage"
@@ -213,6 +223,8 @@ func eventTypeName(t EventType) string {
 		return "link"
 	case EventTypeSpan:
 		return "span"
+	case EventTypeTally:
+		return DumpTypeTally
 	default:
 		return "invalid"
 	}
@@ -244,6 +256,9 @@ func toDumpEvent(ev Event) DumpEvent {
 		out.ResultID, out.Bytes = 0, 0
 	case EventTypeLink:
 		out.LinkKind = ev.LinkKind.String()
+	case EventTypeTally:
+		out.Count, out.Errors, out.TotalNS = int64(ev.TargetID), int64(ev.ResultID), ev.Bytes
+		out.TargetID, out.ResultID, out.Bytes = 0, 0, 0
 	case EventTypeSpan:
 		var trace [16]byte
 		var span [8]byte
