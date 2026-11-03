@@ -17,8 +17,17 @@ import (
 // Use the same transport as go-git's ListContext, but retain the advertisement
 // before AllReferences guesses symbolic HEAD on servers without that capability.
 // Git's ls-remote --symref reports only symbolic refs actually advertised.
+//
+// The probe follows the engine's git.url rewrites, so it reaches the same
+// remote git fetches from. A file:// target is a repository local to the
+// engine, so git lists it directly; it gets the original URL and applies the
+// same rewrite itself.
 func publicRemoteAdvertisement(ctx context.Context, remote *gitutil.GitURL) (_ *gitutil.Remote, rerr error) {
-	endpoint, err := transport.NewEndpoint(remote.Remote())
+	target := gitutil.RewriteURL(remote.Remote())
+	if strings.HasPrefix(target, "file://") {
+		return gitutil.NewGitCLI().LsRemote(ctx, remote.Remote())
+	}
+	endpoint, err := transport.NewEndpoint(target)
 	if err != nil {
 		return nil, err
 	}

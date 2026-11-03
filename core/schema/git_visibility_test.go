@@ -137,3 +137,34 @@ func TestRemoteAdvertisementDoesNotInventSymbolicHEAD(t *testing.T) {
 	require.Empty(t, got.Symrefs)
 	require.Equal(t, []*gitutil.Ref{{Name: "HEAD", SHA: hash.String()}, {Name: "refs/heads/main", SHA: hash.String()}}, got.Refs)
 }
+
+func TestPublicRemoteAdvertisementFollowsFileURLRewrite(t *testing.T) {
+	repo := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		args = append([]string{"-C", repo, "-c", "user.name=Dagger", "-c", "user.email=test@example.com", "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false"}, args...)
+		out, err := exec.Command("git", args...).CombinedOutput()
+		require.NoError(t, err, string(out))
+	}
+	run("init", "--quiet", "--initial-branch=main")
+	run("commit", "--allow-empty", "-m", "initial")
+	run("tag", "-a", "v1", "-m", "annotated")
+
+	gitutil.SetURLRewrites(map[string][]string{
+		"file://" + repo: {"https://unreachable.invalid/repo"},
+	})
+	t.Cleanup(func() { gitutil.SetURLRewrites(nil) })
+
+	remoteURL, err := gitutil.ParseURL("https://unreachable.invalid/repo")
+	require.NoError(t, err)
+	remote, err := publicRemoteAdvertisement(t.Context(), remoteURL)
+	require.NoError(t, err)
+
+	names := make([]string, 0, len(remote.Refs))
+	for _, ref := range remote.Refs {
+		names = append(names, ref.Name)
+	}
+	require.Contains(t, names, "refs/heads/main")
+	require.Contains(t, names, "refs/tags/v1")
+	require.Equal(t, "refs/heads/main", remote.Symrefs["HEAD"])
+}

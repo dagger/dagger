@@ -32,3 +32,20 @@ func TestSetURLRewrites(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(out), "HEAD")
 }
+
+func TestRewriteURL(t *testing.T) {
+	SetURLRewrites(map[string][]string{
+		"https://git-mirror.example.com/github/": {"https://github.com/"},
+		"file:///srv/git/dagger/python-sdk":      {"https://github.com/dagger/python-sdk"},
+	})
+	defer SetURLRewrites(nil)
+
+	for remote, want := range map[string]string{
+		"https://github.com/dagger/python-sdk":     "file:///srv/git/dagger/python-sdk",
+		"https://github.com/dagger/python-sdk.git": "file:///srv/git/dagger/python-sdk.git",
+		"https://github.com/dagger/go-sdk":         "https://git-mirror.example.com/github/dagger/go-sdk",
+		"https://gitlab.com/dagger/go-sdk":         "https://gitlab.com/dagger/go-sdk",
+	} {
+		require.Equal(t, want, RewriteURL(remote), remote)
+	}
+}
