@@ -29,6 +29,13 @@ func TestPromptSlashCommandMapping(t *testing.T) {
 		{"/clear", ".clear", true},
 		{"/compact", ".compact", true},
 		{"/help", ".help", true},
+		{"/setup", ".setup", true},
+		{"/config", ".config", true},
+		{"/show-config", ".show-config", true},
+		{"/add-key anthropic", ".add-key anthropic", true},
+		{"/remove-key openai", ".remove-key openai", true},
+		{"/set-default openai-codex gpt-6-astra", ".set-default openai-codex gpt-6-astra", true},
+		{"/reset", ".reset", true},
 		// arguments are carried through verbatim
 		{"/model claude-sonnet-4-5", ".model claude-sonnet-4-5", true},
 		{"/effort high", ".effort high", true},
@@ -69,6 +76,9 @@ func TestPromptSlashCommandCompletion(t *testing.T) {
 	all := labels("/", 1)
 	require.NotEmpty(t, all)
 	require.Contains(t, all, "/help")
+	for _, command := range []string{"/setup", "/config", "/show-config", "/add-key", "/remove-key", "/set-default", "/reset"} {
+		require.Contains(t, all, command)
+	}
 
 	// A prefix narrows the suggestions and keeps them sorted.
 	re := labels("/re", 3)

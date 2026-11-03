@@ -12,6 +12,9 @@ import (
 type llmConfigUpdaterKey struct{}
 type llmConfigUpdater func(context.Context, *engine.LLMConfig) error
 
+type llmModelConfigKey struct{}
+type llmModelConfigReader func(context.Context) (*engine.LLMConfig, error)
+
 // reloadLLMConfig publishes a replacement, not an overlay: removing a provider
 // must also remove its route from the running session. Credentials remain URIs.
 func (h *shellCallHandler) reloadLLMConfig(ctx context.Context) error {

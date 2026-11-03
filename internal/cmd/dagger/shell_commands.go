@@ -790,6 +790,7 @@ Without arguments, the current working directory is replaced by the initial cont
 
 	// Add LLM commands
 	builtins = append(builtins, h.llmBuiltins()...)
+	builtins = append(builtins, h.llmConfigBuiltins()...)
 	slices.SortStableFunc(builtins, func(x, y *ShellCommand) int {
 		return cmp.Compare(x.Use, y.Use)
 	})
