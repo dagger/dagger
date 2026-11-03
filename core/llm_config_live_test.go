@@ -12,8 +12,14 @@ import (
 
 type liveLLMConfigTestServer struct {
 	*llmEndpointTestServer
-	config   *engine.LLMConfig
-	revision string
+	config          *engine.LLMConfig
+	revision        string
+	sessionContexts atomic.Int64
+}
+
+func (s *liveLLMConfigTestServer) SessionScopedContext(ctx context.Context) (context.Context, error) {
+	s.sessionContexts.Add(1)
+	return s.llmEndpointTestServer.SessionScopedContext(ctx)
 }
 
 func (s *liveLLMConfigTestServer) LLMConfigMetadata(context.Context) (*engine.ClientMetadata, *engine.ClientMetadata, string, error) {
@@ -78,9 +84,15 @@ func TestLLMEndpointLiveConfiguration(t *testing.T) {
 	first, err := llm.Endpoint(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "token-v1", first.AuthToken)
-	cached, err := llm.Endpoint(ctx)
-	require.NoError(t, err)
-	require.Same(t, first, cached)
+	require.EqualValues(t, 1, live.sessionContexts.Load())
+	for range 1000 {
+		_, _, err := query.DefaultLLMRoute(ctx, "")
+		require.NoError(t, err)
+		cached, err := llm.Endpoint(ctx)
+		require.NoError(t, err)
+		require.Same(t, first, cached)
+	}
+	require.EqualValues(t, 1, live.sessionContexts.Load(), "cached endpoints and route inspection must not retain session cancellation watchers")
 
 	// Removing a provider must discard the memo's credential source, not
 	// overlay an empty configuration on the old route.
@@ -91,6 +103,7 @@ func TestLLMEndpointLiveConfiguration(t *testing.T) {
 	require.NotSame(t, first, removed)
 	require.Empty(t, removed.AuthToken)
 	require.Nil(t, removed.AuthTokenSource)
+	require.EqualValues(t, 1, live.sessionContexts.Load(), "an endpoint without a token source needs no credential lifetime")
 
 	// Re-adding the same secret URI still rebuilds the endpoint and reads the
 	// new key, rather than reviving a cached credential.
@@ -100,6 +113,7 @@ func TestLLMEndpointLiveConfiguration(t *testing.T) {
 	added, err := llm.Endpoint(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "token-v2", added.AuthToken)
+	require.EqualValues(t, 2, live.sessionContexts.Load())
 	require.NotSame(t, first, added)
 	require.NotSame(t, removed, added)
 	require.Equal(t, "env://ANTHROPIC_AUTH_TOKEN", original.md.LLMConfig.Providers["anthropic"].AuthToken)

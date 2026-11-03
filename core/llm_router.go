@@ -29,11 +29,11 @@ type LLMRouter struct {
 	// session. Nil when the router was built for a single client.
 	localClient *engine.ClientMetadata
 
-	// credentialCtx bounds live credential resolution (subscription OAuth
-	// tokens re-read at request time) by the session's lifetime. Nil leaves
-	// resolution bound to the request that asks, which suits tests that build
-	// a router without a session.
-	credentialCtx context.Context
+	// credentialContext lazily creates the session lifetime needed by a
+	// subscription token source. Route inspection and endpoint memo hits must
+	// not allocate cancellation watchers that live until the session closes.
+	// Nil leaves credentials bound to the request (routers without a session).
+	credentialContext func(context.Context) (context.Context, error)
 
 	// configRevision identifies the live configuration snapshot behind a route.
 	configRevision string
@@ -550,8 +550,12 @@ func (r *LLMRouter) Endpoint(ctx context.Context, model, provider string) (*LLME
 			return nil, fmt.Errorf("resolve %s auth token: %w", endpoint.Provider, err)
 		}
 		endpoint.AuthToken = cred.Token
-		if r.credentialCtx != nil {
-			reload = reload.detach(r.credentialCtx)
+		if r.credentialContext != nil {
+			credentialCtx, err := r.credentialContext(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("LLM credentials: session context: %w", err)
+			}
+			reload = reload.detach(credentialCtx)
 		}
 		endpoint.AuthTokenSource = newCredentialSource(reload)
 	}
@@ -642,10 +646,11 @@ func loadLLMRouter(ctx context.Context, query *Query) (_ *LLMRouter, rerr error)
 	// borrows execution authority from each active request, since this call's
 	// client lease will already be released. The parent client identifies the
 	// session rather than the possibly-module ambient client.
-	router.credentialCtx, err = query.Server.SessionScopedContext(
-		engine.ContextWithClientMetadata(ctx, parentClient))
-	if err != nil {
-		return nil, fmt.Errorf("LLM credentials: session context: %w", err)
+	// Create this lifetime only if Endpoint installs an OAuth token source.
+	// Reading a default route or checking an existing endpoint's revision does
+	// not need a session cancellation watcher.
+	router.credentialContext = func(ctx context.Context) (context.Context, error) {
+		return query.Server.SessionScopedContext(engine.ContextWithClientMetadata(ctx, parentClient))
 	}
 	return router, nil
 }
