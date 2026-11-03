@@ -140,7 +140,9 @@ func (s *selectionCopy) link(ctx context.Context, ent sourceEntry, name, dest, b
 		// Do not clean .. before expanding intermediate symlinks.
 		lookup = filepath.Dir(name) + "/" + target
 	}
-	resolved, err := s.source.resolveRooted(lookup, true)
+	// The pinned link already consumed one traversal. Do not read its old
+	// pathname again, or grant its target a fresh budget of 40 links.
+	resolved, err := s.source.resolveRootedAfterLinks(lookup, true, 1)
 	if errors.Is(err, os.ErrNotExist) || errors.Is(err, unix.ENOTDIR) || errors.Is(err, unix.ELOOP) {
 		return s.writeLink(ent, dest, target)
 	}

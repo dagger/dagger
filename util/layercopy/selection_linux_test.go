@@ -283,6 +283,50 @@ func TestSelectionPreservesLocalDotDotLinks(t *testing.T) {
 	}
 }
 
+func TestSelectionPreservesSymlinkLimit(t *testing.T) {
+	for _, relative := range []bool{false, true} {
+		for _, links := range []int{40, 41} {
+			t.Run(fmt.Sprintf("relative=%t/links=%d", relative, links), func(t *testing.T) {
+				root := t.TempDir()
+				require.NoError(t, os.Mkdir(filepath.Join(root, "src"), 0755))
+				require.NoError(t, os.WriteFile(filepath.Join(root, "file"), []byte("target"), 0644))
+				target := "file"
+				for i := range links - 1 {
+					name := fmt.Sprintf("chain-%d", i)
+					require.NoError(t, os.Symlink(target, filepath.Join(root, name)))
+					target = name
+				}
+				if relative {
+					target = "../" + target
+				} else {
+					target = "/" + target
+				}
+				require.NoError(t, os.Symlink(target, filepath.Join(root, "src/link")))
+				if relative {
+					// Check the kernel's limit before selection changes the tree.
+					content, err := os.ReadFile(filepath.Join(root, "src/link"))
+					if links == 40 {
+						require.NoError(t, err)
+						require.Equal(t, "target", string(content))
+					} else {
+						require.ErrorIs(t, err, unix.ELOOP)
+					}
+				}
+				dst := copySelection(t, root, "src")
+				if links == 40 {
+					content, err := os.ReadFile(filepath.Join(dst, "link"))
+					require.NoError(t, err)
+					require.Equal(t, "target", string(content))
+				} else {
+					actual, err := os.Readlink(filepath.Join(dst, "link"))
+					require.NoError(t, err)
+					require.Equal(t, target, actual)
+				}
+			})
+		}
+	}
+}
+
 func TestSelectionPreservesHardlinksWithoutLinkingSource(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(root, "a"), []byte("inside"), 0644))

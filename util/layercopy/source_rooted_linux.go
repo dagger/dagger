@@ -60,9 +60,13 @@ func (s *source) openResolvedRooted(name, resolved string, flags int) (*os.File,
 // resolveRooted interprets link text without letting the kernel follow absolute
 // or magic links. The result is only used with os.Root, never an ordinary open.
 func (s *source) resolveRooted(name string, followFinal bool) (string, error) {
+	return s.resolveRootedAfterLinks(name, followFinal, 0)
+}
+
+// links includes any pinned symlinks whose text the caller already expanded.
+func (s *source) resolveRootedAfterLinks(name string, followFinal bool, links int) (string, error) {
 	pending := strings.Split(name, "/")
 	var resolved []string
-	links := 0
 	for len(pending) != 0 {
 		component := pending[0]
 		pending = pending[1:]
