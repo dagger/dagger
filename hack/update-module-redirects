@@ -6,7 +6,9 @@
 #
 # Each module URL already in the file, plus any given as arguments, is probed
 # at https://<url>?dagger-get=1 and its redirect target recorded. When there
-# are none, the dagger.io URLs Dagger's SDKs use are probed. Other keys in the
+# are none, the dagger.io URLs Dagger's SDKs use are probed. An entry already
+# in the file whose host answers without a redirect, such as one sending
+# github.com/dagger/python-sdk to a mirror, is kept as it is. Other keys in the
 # file are kept; a missing file is created.
 #
 #   hack/update-module-redirects ./engine.json                     # refresh
@@ -45,7 +47,8 @@ if [ -f "$file" ]; then
 	config="$(cat "$file")"
 fi
 
-names="$( (printf '%s\n' "$config" | jq -r '.moduleRedirects // {} | keys[]'; for name in "$@"; do echo "$name"; done) | sort -u)"
+existing="$(printf '%s\n' "$config" | jq -c '.moduleRedirects // {}')"
+names="$( (printf '%s\n' "$existing" | jq -r 'keys[]'; for name in "$@"; do echo "$name"; done) | sort -u)"
 if [ -z "$names" ]; then
 	names="$defaults"
 fi
@@ -67,6 +70,12 @@ for name in $names; do
 	case "$status" in
 	3??) ;;
 	*)
+		kept="$(printf '%s\n' "$existing" | jq -r --arg k "$name" '.[$k] // empty')"
+		if [ -n "$kept" ] && [ -n "$status" ]; then
+			echo "$name -> $kept (kept: HTTP $status, no redirect)"
+			redirects="$(printf '%s\n' "$redirects" | jq -S --arg k "$name" --arg v "$kept" '.[$k] = $v')"
+			continue
+		fi
 		echo "$name: expected a redirect, got HTTP $status" >&2
 		exit 1
 		;;

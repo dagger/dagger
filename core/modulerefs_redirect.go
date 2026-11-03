@@ -45,7 +45,10 @@ func ContextWithVanityURLLookupLock(ctx context.Context, lock *workspace.Lock) c
 
 // ResolveDaggerGetRedirect resolves a dagger-get vanity URL for any Git-backed
 // source consumer, including both modules and workspaces. It first consults the
-// workspace lockfile, then falls back to the session-cached HTTP probe.
+// engine's configured module redirects, then the workspace lockfile, then
+// falls back to the session-cached HTTP probe. Configured redirects also apply
+// to what the lockfile or probe resolves to, and are never written to the
+// lockfile: they describe the engine's network, not the module.
 func ResolveDaggerGetRedirect(ctx context.Context, refString string) (string, error) {
 	if !daggerGetEligible(refString) {
 		return refString, nil
@@ -54,6 +57,9 @@ func ResolveDaggerGetRedirect(ctx context.Context, refString string) (string, er
 	sourceURL, version, err := splitSourceURLVersion(refString)
 	if err != nil {
 		return refString, nil //nolint:nilerr // deliberate: unparseable refs fall back to the original ref
+	}
+	if target, ok := followConfiguredModuleRedirects(sourceURL); ok {
+		return sourceURLWithVersion(target, version), nil
 	}
 
 	lock, lockOverridden := ctx.Value(vanityURLLookupLockKey{}).(*workspace.Lock)
@@ -79,7 +85,7 @@ func ResolveDaggerGetRedirect(ctx context.Context, refString string) (string, er
 			workspace.LockOperationVanityURL,
 			lockInputs,
 		); ok {
-			return sourceURLWithVersion(resolvedURL, version), nil
+			return sourceURLWithVersion(redirectResolved(resolvedURL), version), nil
 		}
 		if !lockOverridden && queryErr == nil {
 			_, lockWritable, err := query.CurrentWorkspaceLock(ctx, true)
@@ -125,7 +131,7 @@ func ResolveDaggerGetRedirect(ctx context.Context, refString string) (string, er
 		return refString, nil
 	}
 	if setLookup == nil {
-		return sourceURLWithVersion(resolvedRef, version), nil
+		return sourceURLWithVersion(redirectResolved(resolvedRef), version), nil
 	}
 	// Store the destination before applying the caller's version. A version in
 	// the redirect is its default and must survive later lookups and refreshes.
@@ -137,7 +143,16 @@ func ResolveDaggerGetRedirect(ctx context.Context, refString string) (string, er
 	); err != nil {
 		return "", fmt.Errorf("set vanity-url lock entry: %w", err)
 	}
-	return sourceURLWithVersion(resolvedRef, version), nil
+	return sourceURLWithVersion(redirectResolved(resolvedRef), version), nil
+}
+
+// redirectResolved applies the configured module redirects to a URL the
+// lockfile or probe resolved to.
+func redirectResolved(resolvedURL string) string {
+	if target, ok := followConfiguredModuleRedirects(resolvedURL); ok {
+		return target
+	}
+	return resolvedURL
 }
 
 func splitSourceURLVersion(refString string) (string, string, error) {

@@ -49,11 +49,13 @@ type Config struct {
 	// Git configures the engine's git operations.
 	Git *GitConfig `json:"git,omitempty"`
 
-	// ModuleRedirects pins module URLs to the URLs their dagger-get redirect
-	// points to, so they resolve without asking the redirecting host, e.g.
+	// ModuleRedirects pins module URLs to the URLs they resolve to, so they
+	// resolve without asking the redirecting host, e.g.
 	// {"dagger.io/sdk/go": "github.com/dagger/go-sdk"}. Both are a host and
 	// path; a sub-path of a pinned URL maps to the same sub-path of its
-	// target. hack/update-module-redirects fills this in from dagger.io.
+	// target. A target may be pinned in turn, such as a GitHub URL to a
+	// mirror. Pins take precedence over dagger.lock and are not written to it.
+	// hack/update-module-redirects fills this in from dagger.io.
 	ModuleRedirects map[string]string `json:"moduleRedirects,omitempty"`
 }
 

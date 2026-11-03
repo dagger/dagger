@@ -223,8 +223,30 @@ A sub-path of a pinned URL maps to the same sub-path of its target:
 ref: `dagger.io/sdk/helpers@v1` resolves to `github.com/dagger/sdk-helpers@v1`.
 Module URLs that are not pinned are resolved with a request.
 
-The target is recorded in `dagger.lock` the same way as a redirect read from
-the host.
+A target can be pinned in turn. With these entries, both
+`dagger.io/sdk/python` and `github.com/dagger/python-sdk` resolve to
+`git.example.com/mirrors/python-sdk`:
+
+```json
+{
+  "moduleRedirects": {
+    "dagger.io/sdk/python": "github.com/dagger/python-sdk",
+    "github.com/dagger/python-sdk": "git.example.com/mirrors/python-sdk"
+  }
+}
+```
+
+The engine does not start if the entries form a loop.
+
+Pinned redirects take precedence over the redirects recorded in `dagger.lock`,
+and apply to their targets too. They are not written to `dagger.lock`, so a
+workspace keeps the same `dagger.toml` and `dagger.lock` on every engine. The
+commit pins in `dagger.lock` belong to the resolved URL, so a mirror whose
+commits differ from the original's gets pins of its own.
+
+Use `moduleRedirects` rather than `git.url` for a mirror that changes the
+module's files. With `git.url`, the engine keeps the original URL and its pins,
+which name commits the mirror does not have.
 
 To find the target of a module URL, request it from a machine that can reach
 the host:
