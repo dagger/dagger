@@ -34,12 +34,12 @@ func TestCloudLiveLLMConfig(t *testing.T) {
 	record := &clientRecord{clientMetadata: &engine.ClientMetadata{LLMConfig: &engine.LLMConfig{
 		DefaultProvider: "anthropic",
 	}}}
-	cloud := &testCloudLLMUpdater{}
+	cloud := &testCloudLLMUpdater{err: errors.New("old engine has no live-update endpoint")}
 	state := &cloudLLMConfigState{}
 	require.NoError(t, state.sync(t.Context(), sess, record, cloud))
-	require.Equal(t, "anthropic", cloud.config.DefaultProvider)
 	require.NoError(t, state.sync(t.Context(), sess, record, cloud))
-	require.Equal(t, 1, cloud.calls, "unchanged revisions must not invalidate remote endpoint memos")
+	require.Zero(t, cloud.calls, "bootstrap configuration must not require the live-update endpoint")
+	cloud.err = nil
 
 	// Setup replaces bootstrap settings before cloud connection. The snapshot
 	// passed to a new client and the cached client's refresh must agree.
@@ -51,6 +51,9 @@ func TestCloudLiveLLMConfig(t *testing.T) {
 	require.Empty(t, firstRun.DefaultProvider)
 	require.NoError(t, state.sync(t.Context(), sess, record, cloud))
 	require.Equal(t, firstRun, cloud.config)
+	require.Equal(t, 1, cloud.calls, "the first nonzero revision must synchronize")
+	require.NoError(t, state.sync(t.Context(), sess, record, cloud))
+	require.Equal(t, 1, cloud.calls, "unchanged revisions must not invalidate remote endpoint memos")
 	firstRun.Providers["openai"].APIKey = "changed by caller"
 	require.Equal(t, "llmconfig://providers/openai/api_key", cloud.config.Providers["openai"].APIKey)
 

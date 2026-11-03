@@ -76,6 +76,13 @@ type cloudLLMConfigState struct {
 // reconnecting is unnecessary and would discard their module call cache.
 func (s *cloudLLMConfigState) sync(ctx context.Context, sess *daggerSession, record *clientRecord, client llmConfigUpdater) error {
 	cfg, revision := sess.llmConfigSnapshot(record)
+	if revision == 0 {
+		// The immutable bootstrap configuration was already sent at connect.
+		// Do not require the live-update endpoint on older cloud engines until
+		// this client actually changes its configuration.
+		s.revision, s.synced = 0, true
+		return nil
+	}
 	if s.synced && s.revision == revision {
 		return nil
 	}
