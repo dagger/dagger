@@ -99,6 +99,11 @@ func newChainDag(t *testing.T, leaves map[string]any) (*dagger.Client, *chainDag
 		cd.mu.Unlock()
 		require.NotEmpty(t, path, "query: %s", query.Query)
 		leaf, ok := leaves[path[len(path)-1]]
+		if !ok && path[len(path)-1] == "provider" {
+			// Conversation adoption also reads the resolved provider. Fixtures
+			// that are not testing routing can use the same stable local route.
+			leaf, ok = "local", true
+		}
 		require.True(t, ok, "unexpected query: %s", query.Query)
 		for i := len(path) - 1; i >= 0; i-- {
 			leaf = map[string]any{path[i]: leaf}
