@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  `Directory.dockerBuild` no longer leaves a Dockerfile's build args in the built image's environment. As in Docker and BuildKit, build args are visible to `RUN` only.
+time: 2026-10-30T01:02:28Z
+custom:
+  Author: sipsma
+  PR: "14973"
