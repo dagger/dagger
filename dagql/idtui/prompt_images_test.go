@@ -130,7 +130,10 @@ func TestPromptCommandValidationRetainsDraft(t *testing.T) {
 		fe, handler := commandPromptFrontend(t)
 		handler.absorb = busy
 		fe.textInput.SetValue("/unknown")
-		fe.handleInputComplete()
+		fe.tui.Inject(tuist.ParseKey("enter"))
+		fe.tui.Step()
+		// The widget clears accepted input after OnSubmit returns. Assert only
+		// after the real key path completes, not inside the submit callback.
 		require.ErrorContains(t, fe.promptErr, "unknown agent command")
 		require.Equal(t, "/unknown", fe.textInput.Value())
 		require.Empty(t, fe.inputHistory)

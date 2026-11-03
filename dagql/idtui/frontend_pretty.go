@@ -6766,13 +6766,14 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 // ---------- editline input completion ---------------------------------------
 
 // handleInputComplete is called when the editline signals that input is
-// complete (user pressed Enter on a complete line).
-func (fe *frontendPretty) handleInputComplete() {
+// complete (user pressed Enter on a complete line). Its return value tells the
+// input widget whether submission was accepted and the draft may be cleared.
+func (fe *frontendPretty) handleInputComplete() bool {
 	// TextInput.OnSubmit is only reached through Tuist's focused input routing.
 	// reset prompt error state
 	if err := fe.validatePromptInput(); err != nil {
 		fe.setPromptError(err)
-		return
+		return false
 	}
 	fe.clearPromptError()
 
@@ -6781,7 +6782,7 @@ func (fe *frontendPretty) handleInputComplete() {
 	if validator, ok := fe.shell.(interface{ ValidatePrompt(PromptInput) error }); ok {
 		if err := validator.ValidatePrompt(input); err != nil {
 			fe.setPromptError(err)
-			return
+			return false
 		}
 	}
 	if preparer, ok := fe.shell.(PromptPreparer); ok {
@@ -6815,7 +6816,7 @@ func (fe *frontendPretty) handleInputComplete() {
 		// boundary, so show it queued above the prompt until that boundary
 		// lands -- without the hint, the submit looks like the input ate it.
 		fe.setInterjectHint(input.Summary())
-		return
+		return true
 	}
 	// Otherwise it opens a new turn -- unless the handler's one interpreter is
 	// busy with a shell command or a /command, which can't absorb input, so
@@ -6826,11 +6827,12 @@ func (fe *frontendPretty) handleInputComplete() {
 		_, promptQueue := fe.shell.(PromptInputHandler)
 		if textQueue || promptQueue {
 			fe.setQueuedPrompt(input)
-			return
+			return true
 		}
 	}
 
 	fe.startPromptHandle(input)
+	return true
 }
 
 // submitPromptToTarget offers the message to the focused conversation's in-flight
@@ -7604,8 +7606,7 @@ func (fe *frontendPretty) initTextInput() {
 			fe.textInput.InsertRune('\n')
 			return false // don't clear
 		}
-		fe.handleInputComplete()
-		return true // clear input
+		return fe.handleInputComplete()
 	}
 }
 
