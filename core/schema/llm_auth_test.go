@@ -85,6 +85,17 @@ func TestLLMCredentialReloadAfterRoutingCall(t *testing.T) {
 			dag, err := base.Fork(ctx, root, "")
 			require.NoError(t, err)
 			srv.dag = dag
+			// Route an authenticated endpoint inside a dagql call. Public metadata
+			// fields deliberately no longer resolve credentials or memoize clients.
+			dagql.Fields[*core.LLM]{
+				dagql.Func("authenticatedProviderForTest", func(ctx context.Context, llm *core.LLM, _ struct{}) (string, error) {
+					ep, err := llm.Endpoint(ctx)
+					if err != nil {
+						return "", err
+					}
+					return string(ep.Provider), nil
+				}),
+			}.Install(dag)
 
 			routingCtx, cancel := context.WithCancel(ctx)
 			defer cancel()
@@ -95,13 +106,13 @@ func TestLLMCredentialReloadAfterRoutingCall(t *testing.T) {
 			})
 			require.NoError(t, err)
 			var provider string
-			err = dag.Select(routingCtx, llm, &provider, dagql.Selector{Field: "provider"})
+			err = dag.Select(routingCtx, llm, &provider, dagql.Selector{Field: "authenticatedProviderForTest"})
 			require.NoError(t, err)
 			require.Equal(t, "anthropic", provider)
 			cancel()
 
-			// Endpoint is already memoized by provider(), so this must retain
-			// its original source rather than accidentally re-routing the LLM.
+			// Endpoint is memoized by the authenticated routing call, so this
+			// must retain its original source rather than re-routing the LLM.
 			ep, err := llm.Self().Endpoint(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "token-v1", ep.AuthToken)

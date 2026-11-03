@@ -109,10 +109,13 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			return llm.WithContributionOwner(args.Owner, args.Messages, args.Skills)
 		}).View(AfterVersion("v1.0.0-0")),
 		dagql.Func("model", s.model).
+			WithInput(llmSessionInput).
 			Doc("The model the conversation is running against, after resolving any configured default."),
 		dagql.Func("provider", s.provider).
+			WithInput(llmSessionInput).
 			Doc(`The provider serving the model, e.g. "anthropic", "openai", "google", or "local".`),
 		dagql.Func("contextWindow", s.contextWindow).
+			WithInput(llmSessionInput).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("The model's total context window in tokens, or null if unknown (e.g. a local or uncatalogued model)."),
 		dagql.Func("messages", s.messages).
@@ -156,9 +159,11 @@ func (s llmSchema) Install(srv *dagql.Server) {
 					View(AfterVersion("v1.0.0-0")),
 			),
 		dagql.NodeFunc("withSmallModel", s.withSmallModel).
+			WithInput(llmSessionInput).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Switch to the configured small model for the current provider, or that provider's recommended default. The message history is preserved; unknown providers without a small-model configuration keep their current model."),
 		dagql.Func("reasoningEffort", s.reasoningEffort).
+			WithInput(llmSessionInput).
 			View(AfterVersion("v1.0.0-0")).
 			Doc(`The reasoning effort in use, e.g. "low", "medium", or "high". Empty or "none" when reasoning is disabled.`),
 		dagql.Func("withReasoningEffort", s.withReasoningEffort).
@@ -414,7 +419,7 @@ func (s *llmSchema) artifacts(ctx context.Context, llm *core.LLM, args struct {
 }
 
 func (s *llmSchema) model(ctx context.Context, llm *core.LLM, args struct{}) (string, error) {
-	ep, err := llm.Endpoint(ctx)
+	ep, err := llm.Route(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -423,7 +428,7 @@ func (s *llmSchema) model(ctx context.Context, llm *core.LLM, args struct{}) (st
 
 func (s *llmSchema) contextWindow(ctx context.Context, llm *core.LLM, args struct{}) (dagql.Nullable[dagql.Int], error) {
 	none := dagql.Null[dagql.Int]()
-	ep, err := llm.Endpoint(ctx)
+	ep, err := llm.Route(ctx)
 	if err != nil {
 		return none, err
 	}
@@ -434,7 +439,7 @@ func (s *llmSchema) contextWindow(ctx context.Context, llm *core.LLM, args struc
 }
 
 func (s *llmSchema) provider(ctx context.Context, llm *core.LLM, args struct{}) (string, error) {
-	ep, err := llm.Endpoint(ctx)
+	ep, err := llm.Route(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -472,7 +477,7 @@ func (s *llmSchema) withSmallModel(ctx context.Context, parent dagql.ObjectResul
 }
 
 func (s *llmSchema) reasoningEffort(ctx context.Context, llm *core.LLM, args struct{}) (string, error) {
-	ep, err := llm.Endpoint(ctx)
+	ep, err := llm.Route(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -954,9 +959,10 @@ func (s *llmSchema) attempt(_ context.Context, llm *core.LLM, _ struct {
 	return llm.Clone(), nil
 }
 
-// An explicit model retains the same session-scoped identity. Only the
-// default-model lookup depends on live configuration: a new llm() after setup
-// must not return a conversation pinned by an earlier configuration.
+// Scope route-dependent selections by the session's live configuration revision.
+// The llm(model: ...) constructor is the exception: an explicit model retains
+// its session-scoped identity. Metadata fields have no model argument, so their
+// cache entries refresh even when the receiver's route is inferred from a name.
 var llmSessionInput = dagql.ImplicitInput{
 	Name: dagql.PerSessionInput.Name,
 	Resolver: func(ctx context.Context, args map[string]dagql.Input) (dagql.Input, error) {

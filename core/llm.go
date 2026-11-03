@@ -1288,6 +1288,32 @@ func (llm *LLM) AttachDependencyResults(
 	return deps, nil
 }
 
+// Route resolves model metadata against the live configuration without reading
+// credentials, opening a local tunnel, or creating a provider client. Metadata
+// must remain available when credentials need repair; Endpoint authenticates the
+// route when inference actually needs it.
+func (llm *LLM) Route(ctx context.Context) (*LLMEndpoint, error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	router, err := loadLLMRouter(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	endpoint, err := router.Route(llm.model, llm.provider)
+	if err != nil {
+		return nil, err
+	}
+	if endpoint.Model == "" {
+		return nil, fmt.Errorf("no valid LLM endpoint configuration")
+	}
+	if llm.reasoningEffort != "" {
+		endpoint.ReasoningEffort = llm.reasoningEffort
+	}
+	return endpoint, nil
+}
+
 func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 	llm.endpointMtx.Lock()
 	defer llm.endpointMtx.Unlock()
