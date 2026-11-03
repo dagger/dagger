@@ -13,12 +13,12 @@ import (
 func TestEnsureAgentLLMConfigured(t *testing.T) {
 	failure := errors.New("test failure")
 	for _, tc := range []struct {
-		name                               string
-		traceID                            string
+		name                                string
+		traceID                             string
 		configured, interactive, setupReady bool
 		checkErr, setupErr, reloadErr       error
 		wantReady, wantSetup, wantReload    bool
-		wantErr                            string
+		wantErr                             string
 	}{
 		{name: "restore interactive", traceID: "0123456789abcdef0123456789abcdef", interactive: true, wantReady: true},
 		{name: "restore noninteractive", traceID: "0123456789abcdef0123456789abcdef", wantReady: true},
