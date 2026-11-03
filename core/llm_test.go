@@ -547,6 +547,58 @@ func TestSmallModelRouting(t *testing.T) {
 	})
 }
 
+func TestSmallModelRouteCustomOpenAI(t *testing.T) {
+	catalogSmall, ok := defaultSmallModel(OpenAI)
+	require.True(t, ok)
+	for _, tc := range []struct {
+		name         string
+		model        string
+		provider     string
+		baseURL      string
+		smallModel   string
+		wantModel    string
+		wantProvider LLMProvider
+	}{
+		{
+			name: "manual custom model", model: "qwen-custom", baseURL: "http://model-runner/v1",
+			wantModel: "qwen-custom", wantProvider: Other,
+		},
+		{
+			name: "picker pins custom model to OpenAI", model: "qwen-custom", provider: "openai", baseURL: "http://model-runner/v1",
+			wantModel: "qwen-custom", wantProvider: OpenAI,
+		},
+		{
+			name: "explicit small model wins", model: "qwen-custom", provider: "openai", baseURL: "http://model-runner/v1", smallModel: "qwen-small",
+			wantModel: "qwen-small", wantProvider: OpenAI,
+		},
+		{
+			name: "catalog model retains recommendation", model: "gpt-4o", provider: "openai", baseURL: "http://model-runner/v1",
+			wantModel: catalogSmall, wantProvider: OpenAI,
+		},
+		{
+			name: "OpenAI without custom endpoint", model: "gpt-4o", provider: "openai",
+			wantModel: catalogSmall, wantProvider: OpenAI,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, _ := newLLMEndpointTestCtx(t)
+			md, err := engine.ClientMetadataFromContext(ctx)
+			require.NoError(t, err)
+			md.LLMConfig.Providers["openai"] = &engine.LLMProviderConfig{
+				BaseURL: tc.baseURL, SmallModel: tc.smallModel,
+			}
+			query, err := CurrentQuery(ctx)
+			require.NoError(t, err)
+			llm, err := query.NewLLM(ctx, tc.model, tc.provider)
+			require.NoError(t, err)
+			model, provider, err := llm.SmallModelRoute(ctx)
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantModel, model)
+			assert.Equal(t, string(tc.wantProvider), provider)
+		})
+	}
+}
+
 func TestExplicitProviderRouting(t *testing.T) {
 	r := routerWith(t, map[string]*engine.LLMProviderConfig{
 		"anthropic": {APIKey: "env://ANTHROPIC_API_KEY"},

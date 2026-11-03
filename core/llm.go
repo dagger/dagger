@@ -1149,6 +1149,14 @@ func (llm *LLM) SmallModelRoute(ctx context.Context) (string, string, error) {
 		return "", "", err
 	}
 	provider := current.Provider
+	if provider == OpenAI && current.BaseURL != "" && router.provider(provider).SmallModel == "" {
+		if _, known := lookupCatalogModel(provider, current.Model); !known {
+			// An OpenAI-compatible server may only serve this custom model.
+			// Pinning its provider in the picker must not replace it with a
+			// catalog GPT model for auxiliary work such as title generation.
+			return current.Model, string(provider), nil
+		}
+	}
 	small, ok := router.SmallModel(provider)
 	if !ok {
 		return current.Model, string(provider), nil
