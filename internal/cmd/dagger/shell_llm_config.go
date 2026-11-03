@@ -133,6 +133,8 @@ func (c *llmConfigCommands) showConfig(ctx context.Context, _ []string) error {
 		provider.APIKey = redact(provider.APIKey)
 		provider.AuthToken = redact(provider.AuthToken)
 		provider.RefreshToken = redact(provider.RefreshToken)
+		// Custom endpoints can carry credentials in userinfo, query or path.
+		provider.BaseURL = redact(provider.BaseURL)
 		provider.TokenExpiresAt = 0
 		provider.TokenExpiry = 0
 		cfg.LLM.Providers[name] = provider
@@ -259,10 +261,9 @@ func (c *llmConfigCommands) reset(ctx context.Context, _ []string) error {
 		return c.print(ctx, "No LLM configuration found.")
 	}
 	var confirmed bool
-	form := idtui.NewForm(huh.NewGroup(huh.NewConfirm().
+	form := idtui.NewForm(huh.NewGroup(idtui.NewExplicitConfirm("Delete", "Cancel", &confirmed).
 		Title("Delete all stored LLM credentials?").
-		Description("Environment variables and .env credentials are not changed.").
-		Affirmative("Delete").Negative("Cancel").Value(&confirmed)))
+		Description("Environment variables and .env credentials are not changed.")))
 	if err := c.prompt.HandleForm(ctx, form); err != nil {
 		if errors.Is(err, huh.ErrUserAborted) || errors.Is(err, llmconfig.ErrAborted) {
 			return nil

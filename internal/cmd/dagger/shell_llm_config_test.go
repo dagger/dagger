@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
 	"github.com/stretchr/testify/require"
 )
@@ -73,12 +74,12 @@ func TestLLMConfigCommandArguments(t *testing.T) {
 }
 
 func TestLLMConfigDisplaysRedactCredentials(t *testing.T) {
-	secrets := []string{"literal-api-key", "oauth-access-token", "oauth-refresh-token", "env://PRIVATE_KEY"}
+	secrets := []string{"literal-api-key", "oauth-access-token", "oauth-refresh-token", "env://PRIVATE_KEY", "private-proxy-password", "private-query-token", "private-path-token"}
 	useTempLLMConfig(t, &llmconfig.Config{LLM: llmconfig.LLMConfig{
 		DefaultProvider: "anthropic",
 		Providers: map[string]llmconfig.Provider{
 			"anthropic": {APIKey: secrets[0], AuthToken: secrets[1], RefreshToken: secrets[2], AuthType: "oauth", TokenExpiresAt: 1777777777777, TokenExpiry: 1777777777, Enabled: true},
-			"openai":    {APIKey: secrets[3], Enabled: true},
+			"openai":    {APIKey: secrets[3], BaseURL: "https://user:" + secrets[4] + "@proxy.example/" + secrets[6] + "?key=" + secrets[5], Enabled: true},
 		},
 	}})
 	for _, name := range []string{".config", ".show-config"} {
@@ -197,11 +198,13 @@ func TestLLMConfigResetConfirmation(t *testing.T) {
 			useTempLLMConfig(t, &llmconfig.Config{LLM: llmconfig.LLMConfig{Providers: map[string]llmconfig.Provider{"openai": {APIKey: "remove-me", Enabled: true}}}})
 			commands, _, reloads := newTestLLMConfigCommands(t, func(_ context.Context, form *huh.Form) error {
 				field := form.GetFocusedField()
-				_, ok := field.(*huh.Confirm)
+				_, ok := field.(*idtui.ExplicitConfirm)
 				require.True(t, ok)
+				field.Focus()
+				before := field.View()
 				if confirm {
-					field.Focus()
 					field.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+					require.NotEqual(t, before, field.View(), "selection must have an explicit textual marker")
 				}
 				return nil
 			})
