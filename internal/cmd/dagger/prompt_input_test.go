@@ -155,13 +155,22 @@ func TestPromptImagesPendingWhileSpawning(t *testing.T) {
 }
 
 func TestPromptImageOnlyInitialTurn(t *testing.T) {
-	// Model reads are the only engine plumbing needed when a runtime is already
-	// attached. Exercise the real HandlePrompt -> WithPromptInput idle path.
+	// Model and provider reads are the only engine plumbing needed when a runtime
+	// is already attached. Exercise the real HandlePrompt -> WithPromptInput idle path.
 	dag, err := dagger.Connect(t.Context(), dagger.WithConn(agentTestConn{do: func(req *http.Request) (*http.Response, error) {
 		var query dagger.Request
 		require.NoError(t, json.NewDecoder(req.Body).Decode(&query))
-		require.Contains(t, query.Query, "model")
-		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"data":{"node":{"model":"test-model"}}}`))}, nil
+		var node map[string]any
+		switch {
+		case strings.Contains(query.Query, "provider"):
+			node = map[string]any{"provider": "test-provider"}
+		default:
+			require.Contains(t, query.Query, "model")
+			node = map[string]any{"model": "test-model"}
+		}
+		body, err := json.Marshal(map[string]any{"data": map[string]any{"node": node}})
+		require.NoError(t, err)
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(bytes.NewReader(body))}, nil
 	}}))
 	require.NoError(t, err)
 	defer dag.Close()
@@ -179,6 +188,8 @@ func TestPromptImageOnlyInitialTurn(t *testing.T) {
 	require.Equal(t, "[1 image(s)]", h.initialPrompt)
 	require.Equal(t, 1, rt.resumes)
 	require.Zero(t, rt.reseedCount())
+	require.Equal(t, "test-model", a.model)
+	require.Equal(t, "test-provider", a.provider)
 	require.Nil(t, a.turnCancel)
 }
 
