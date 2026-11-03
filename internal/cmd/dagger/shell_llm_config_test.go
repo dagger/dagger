@@ -302,11 +302,13 @@ func TestLLMConfigLogoutStopsBeforeDeleting(t *testing.T) {
 
 func TestLogoutProviderInUse(t *testing.T) {
 	for _, tc := range []struct {
-		name, live, cached, selected string
-		state                        core.AgentState
-		noRuntime, want, wantErr     bool
+		name, live, cached, selected      string
+		state                             core.AgentState
+		noRuntime, opening, want, wantErr bool
 	}{
 		{name: "unspawned", noRuntime: true, selected: "openai"},
+		{name: "opening before spawn", noRuntime: true, opening: true, cached: "openai", selected: "openai", want: true},
+		{name: "opening on idle runtime", state: core.AgentStateIdle, opening: true, cached: "openai", selected: "openai", want: true},
 		{name: "idle", state: core.AgentStateIdle, cached: "openai", selected: "openai"},
 		{name: "paused", state: core.AgentStatePaused, cached: "openai", selected: "openai"},
 		{name: "busy matching", state: core.AgentStateRunning, live: "openai", selected: "openai", want: true},
@@ -320,6 +322,11 @@ func TestLogoutProviderInUse(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			target := &sessionAgent{provider: tc.cached}
+			if tc.opening {
+				_, cancel := context.WithCancelCause(t.Context())
+				target.beginTurn(cancel)
+				t.Cleanup(func() { cancel(nil); target.endTurn() })
+			}
 			if !tc.noRuntime {
 				rt := newFakeRuntime()
 				rt.setState(tc.state)
@@ -386,4 +393,31 @@ func TestLLMConfigLogoutPinsTargetBeforePicker(t *testing.T) {
 	cfg, err := llmconfig.Load()
 	require.NoError(t, err)
 	require.Contains(t, cfg.LLM.Providers, "openai")
+}
+
+func TestLLMConfigLogoutOpeningTurnRequiresConfirmation(t *testing.T) {
+	useTempLLMConfig(t, &llmconfig.Config{LLM: llmconfig.LLMConfig{Providers: map[string]llmconfig.Provider{"openai": {APIKey: "keep-during-preparation", Enabled: true}}}})
+	target := &sessionAgent{provider: "openai"}
+	_, cancel := context.WithCancelCause(t.Context())
+	target.beginTurn(cancel)
+	t.Cleanup(func() { cancel(nil); target.endTurn() })
+	require.Nil(t, target.runtime())
+	forms := 0
+	commands, _, reloads := newTestLLMConfigCommands(t, func(ctx context.Context, form *huh.Form) error {
+		forms++
+		if forms == 1 {
+			return selectLogoutProvider(t, 0)(ctx, form)
+		}
+		_, ok := form.GetFocusedField().(*idtui.ExplicitConfirm)
+		require.True(t, ok, "opening turns require confirmation even before a runtime exists")
+		return huh.ErrUserAborted
+	})
+	commands.logoutTarget = func(context.Context) (*sessionAgent, error) { return target, nil }
+	require.NoError(t, runLLMConfigCommand(t, commands, ".logout"))
+	require.Equal(t, 2, forms)
+	require.Zero(t, *reloads)
+	cfg, err := llmconfig.Load()
+	require.NoError(t, err)
+	require.Equal(t, "keep-during-preparation", cfg.LLM.Providers["openai"].APIKey)
+	require.True(t, target.busy(), "cancelled confirmation must leave the opening turn alone")
 }

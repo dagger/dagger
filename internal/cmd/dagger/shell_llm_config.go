@@ -183,16 +183,21 @@ func logoutProviderInUse(ctx context.Context, target *sessionAgent, provider str
 	if target == nil {
 		return false, nil
 	}
-	rt := target.runtime()
-	if rt == nil {
-		return false, nil
-	}
-	state, err := rt.State(ctx)
-	if err != nil {
-		return false, fmt.Errorf("cannot check whether the selected agent is running: %w", err)
-	}
-	if state != core.AgentStateRunning && state != core.AgentStateWaitingInput {
-		return false, nil
+	// A local turn is already using its route while preparing references or
+	// spawning a runtime. Runtime state alone misses that opening window (and
+	// preparation on an existing, still-idle runtime).
+	if !target.busy() {
+		rt := target.runtime()
+		if rt == nil {
+			return false, nil
+		}
+		state, err := rt.State(ctx)
+		if err != nil {
+			return false, fmt.Errorf("cannot check whether the selected agent is running: %w", err)
+		}
+		if state != core.AgentStateRunning && state != core.AgentStateWaitingInput {
+			return false, nil
+		}
 	}
 	target.llmL.RLock()
 	llm, cached := target.llm, target.provider
