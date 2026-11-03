@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"crypto/rand"
+	"strings"
 
 	"dagger.io/dagger/core"
 
@@ -129,4 +130,89 @@ func uncachedDirectoryToken(ctx context.Context, t *testctx.T, c *dagger.Client,
 		Stdout(ctx)
 	require.NoError(t, err)
 	return out
+}
+
+// TestGitWorkspaceModulesAreContentKeyed asserts that a module loaded from a
+// Git workspace, and a dependency it loads by relative path, are identified by
+// their own files rather than by the commit they came from. A commit that
+// changes nothing in a module must reuse the work done on it, as it does for a
+// local checkout; a commit that changes the module's files must not, even a
+// committed file an ignore rule matches. Otherwise every new commit of a
+// repository would rebuild every module in it.
+func (WorkspaceSuite) TestGitWorkspaceModulesAreContentKeyed(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// Unique per run, so earlier runs' work can't satisfy the test.
+	nonce := rand.Text()
+	tokenFn := func(typeName string) string {
+		return `
+# ` + nonce + `
+type ` + typeName + ` {
+  pub token: String! @cache(policy: FunctionCachePolicy.Never) {
+    Dagger.container.from("` + alpineImage + `")
+      .withMountedDirectory("/src", currentModule.source)
+      .withExec(["sh", "-c", "ls -R /src >/dev/null && cat /proc/sys/kernel/random/uuid"])
+      .stdout
+  }
+`
+	}
+	repo := core.NewQuery(c).Directory().
+		WithNewFile("dagger.toml", `[modules.probe]
+source = ".dagger/modules/probe"
+`).
+		WithNewFile("README.md", "first").
+		WithNewFile(".dagger/modules/probe/dagger.json", `{"name":"probe","sdk":{"source":"dang"},"dependencies":[{"name":"dep","source":"../dep"}]}`).
+		WithNewFile(".dagger/modules/probe/main.dang", tokenFn("Probe")+`
+  pub depToken: String! @cache(policy: FunctionCachePolicy.Never) {
+    dep.token
+  }
+}
+`).
+		WithNewFile(".dagger/modules/dep/dagger.json", `{"name":"dep","sdk":{"source":"dang"}}`).
+		WithNewFile(".dagger/modules/dep/main.dang", tokenFn("Dep")+"}\n").
+		// A Git tree holds committed files even where an ignore rule matches
+		// them, so the dependency's change below is to such a file.
+		WithNewFile(".dagger/modules/dep/.gitignore", "extra.txt\n")
+
+	// Three commits: the base, one outside both modules, one in the dependency.
+	history := core.NewQuery(c).Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithDirectory("/repo", repo).
+		WithWorkdir("/repo").
+		WithExec([]string{"sh", "-c", `set -e
+git config --global user.email "root@localhost"
+git config --global user.name "Test User"
+git init -q -b main
+git add -A && git commit -qm base && git tag base
+echo second > README.md
+git commit -qam outside && git tag outside
+echo changed > .dagger/modules/dep/extra.txt
+git add -f .dagger/modules/dep/extra.txt && git commit -qm dependency && git tag dependency
+`}).
+		Directory("/repo")
+	remote := strings.TrimSuffix(workspaceSelectionRemoteRef(ctx, t, c, history), "@main")
+
+	tokens := func(tag string) (probe, dep string) {
+		t.Helper()
+		call := func(fn string) string {
+			out, err := core.NewQuery(c).Container().From(alpineImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/empty").
+				With(workspaceSelectionDaggerCall("-W", remote+"@"+tag, "probe", fn)).
+				Stdout(ctx)
+			require.NoError(t, err)
+			return strings.TrimSpace(out)
+		}
+		return call("token"), call("dep-token")
+	}
+
+	baseProbe, baseDep := tokens("base")
+	outsideProbe, outsideDep := tokens("outside")
+	require.Equal(t, baseProbe, outsideProbe, "a commit outside the module must reuse work done on it")
+	require.Equal(t, baseDep, outsideDep, "a commit outside the dependency must reuse work done on it")
+
+	changedProbe, changedDep := tokens("dependency")
+	require.Equal(t, baseProbe, changedProbe, "a commit in another module must reuse work done on this one")
+	require.NotEqual(t, baseDep, changedDep, "a commit in the dependency must not reuse work done on it")
 }
