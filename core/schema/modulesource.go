@@ -31,6 +31,7 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"github.com/opencontainers/go-digest"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -4483,6 +4484,14 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	return inst, nil
 }
 
+// runtimePrebuilds bounds the engine's runtime prebuilds in flight. Builds
+// that run together on a cold build cache each compile the packages they
+// share, so starting every module's build at once costs more CPU and memory
+// and finishes later than a few at a time.
+var runtimePrebuilds = semaphore.NewWeighted(maxRuntimePrebuilds)
+
+const maxRuntimePrebuilds = 4
+
 // prebuildModuleRuntime builds src's runtime when its SDK can build it
 // without the module's dependencies (core.RuntimePrebuilder).
 func prebuildModuleRuntime(ctx context.Context, src dagql.ObjectResult[*core.ModuleSource]) error {
@@ -4497,6 +4506,10 @@ func prebuildModuleRuntime(ctx context.Context, src dagql.ObjectResult[*core.Mod
 	if !ok {
 		return nil
 	}
+	if err := runtimePrebuilds.Acquire(ctx, 1); err != nil {
+		return err
+	}
+	defer runtimePrebuilds.Release(1)
 	return prebuilder.PrebuildRuntime(ctx, src)
 }
 

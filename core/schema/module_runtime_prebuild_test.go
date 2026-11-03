@@ -174,6 +174,70 @@ func TestModuleRuntimePrebuildNotAwaited(t *testing.T) {
 	require.True(t, buildStopped.Load(), "the build was stopped")
 }
 
+// The engine prebuilds at most maxRuntimePrebuilds runtimes at once: here
+// more modules than that wait on a dependency that loads only once the test
+// lets it, so every one of them wants to prebuild at the same time. Not
+// parallel: the bound is engine-wide, and the other prebuild tests would take
+// its slots.
+func TestModuleRuntimePrebuildsBounded(t *testing.T) {
+	ctx, cache, srv, _ := prebuildTestEnv(t, "bounded")
+	depLoads := make(chan struct{})
+	dep := prebuildTestSource(t, ctx, cache, srv, "bounded", "dep", &prebuildTestSDK{runtime: func(ctx context.Context) error {
+		select {
+		case <-depLoads:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}})
+
+	var inFlight, most atomic.Int32
+	entered := make(chan struct{}, 2*maxRuntimePrebuilds)
+	modules := 2 * maxRuntimePrebuilds
+	srcs := make([]dagql.ObjectResult[*core.ModuleSource], modules)
+	for i := range srcs {
+		srcs[i] = prebuildTestSource(t, ctx, cache, srv, "bounded", fmt.Sprintf("mod%d", i), &prebuildTestSDK{prebuild: func(ctx context.Context) error {
+			n := inFlight.Add(1)
+			defer inFlight.Add(-1)
+			for {
+				m := most.Load()
+				if n <= m || most.CompareAndSwap(m, n) {
+					break
+				}
+			}
+			entered <- struct{}{}
+			<-ctx.Done()
+			return ctx.Err()
+		}}, dep)
+	}
+
+	loaded := make(chan error, modules)
+	for _, src := range srcs {
+		go func() {
+			_, err := selectAsModule(ctx, srv, src)
+			loaded <- err
+		}()
+	}
+	for range maxRuntimePrebuilds {
+		select {
+		case <-entered:
+		case <-time.After(30 * time.Second):
+			t.Fatalf("only %d runtimes started prebuilding", inFlight.Load())
+		}
+	}
+	// Give any prebuild past the bound time to start.
+	select {
+	case <-entered:
+		t.Fatalf("%d runtimes prebuilt at once, more than %d", most.Load(), maxRuntimePrebuilds)
+	case <-time.After(2 * time.Second):
+	}
+	close(depLoads)
+	for range modules {
+		require.NoError(t, <-loaded)
+	}
+	require.EqualValues(t, maxRuntimePrebuilds, most.Load())
+}
+
 // A dependency that fails to load fails the module with the dependency's
 // error, as before, and stops the module's runtime build. A build that fails
 // while the dependencies load fails the module with the build's error.
