@@ -3,6 +3,8 @@ package daggercmd
 import (
 	"bytes"
 	"context"
+	"errors"
+	"strconv"
 
 	"dagger.io/dagger/core"
 
@@ -369,16 +371,25 @@ func addListCommand(name, short, group, key, value string) *cobra.Command {
 	return cmd
 }
 
-// acceptsArtifactArgs reports whether Cobra accepts args for cmd with the
-// flags registered now, rather than printing an error and the usage: they
-// parse, and pass validateArtifactListFlags.
+// acceptsArtifactArgs reports whether Cobra runs cmd with args and the flags
+// registered now, rather than printing an error and the usage, or the help:
+// they parse, their values parse, and they pass validateArtifactListFlags.
 func acceptsArtifactArgs(cmd *cobra.Command, args []string) bool {
 	if needsArtifactDiscovery(cmd, args) {
 		return false
 	}
 	flags := copyCommandFlags(cmd, "artifact arguments")
+	cmd.InheritedFlags().VisitAll(func(flag *pflag.Flag) {
+		if flags.Lookup(flag.Name) == nil {
+			clone := *flag
+			flags.AddFlag(&clone)
+		}
+	})
 	values := map[string]string{}
 	if err := flags.ParseAll(args, func(flag *pflag.Flag, value string) error {
+		if flag.Name == "help" || !flagValueParses(flag, value) {
+			return errors.New("not accepted")
+		}
 		values[flag.Name] = value
 		return nil
 	}); err != nil {
@@ -394,6 +405,26 @@ func acceptsArtifactArgs(cmd *cobra.Command, args []string) bool {
 		}
 		return flag.DefValue
 	}) == nil
+}
+
+// flagValueParses reports whether value is valid for flag's type. A type it
+// doesn't know counts as invalid.
+func flagValueParses(flag *pflag.Flag, value string) bool {
+	var err error
+	switch flag.Value.Type() {
+	case "string", "stringArray":
+	case "bool":
+		_, err = strconv.ParseBool(value)
+	case "int":
+		_, err = strconv.ParseInt(value, 0, 64)
+	case "count":
+		if value != "+1" {
+			_, err = strconv.ParseInt(value, 0, 0)
+		}
+	default:
+		return false
+	}
+	return err == nil
 }
 
 // Unknown flags require schema metadata before Cobra can distinguish keys from
