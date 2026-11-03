@@ -8,7 +8,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
-	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
 	"github.com/stretchr/testify/require"
 )
@@ -55,81 +54,49 @@ func runLLMConfigCommand(t *testing.T, commands *llmConfigCommands, name string,
 
 func TestLLMConfigCommandArguments(t *testing.T) {
 	commands, _, reloads := newTestLLMConfigCommands(t, nil)
+	var names []string
 	for _, command := range commands.builtins() {
 		require.Equal(t, NoState, command.State)
 		require.Equal(t, "llm", command.GroupID)
-		require.NotContains(t, []string{".add-key", ".remove-key"}, command.Name())
+		names = append(names, command.Name())
+		require.Error(t, runLLMConfigCommand(t, commands, command.Name(), "extra"))
 	}
-	for _, name := range []string{".setup", ".config", ".show-config", ".reset", ".logout"} {
-		require.Error(t, runLLMConfigCommand(t, commands, name, "extra"))
-	}
-	require.Error(t, runLLMConfigCommand(t, commands, ".set-default"))
-	require.Error(t, runLLMConfigCommand(t, commands, ".set-default", "one", "two", "three"))
+	require.ElementsMatch(t, []string{".setup", ".logout"}, names)
 	require.Zero(t, *reloads)
 	for _, command := range rootCmd.Commands() {
 		require.NotEqual(t, "llm", command.Name(), "obsolete CLI command is still registered")
 	}
 }
 
-func TestLLMConfigDisplaysRedactCredentials(t *testing.T) {
-	secrets := []string{"literal-api-key", "oauth-access-token", "oauth-refresh-token", "env://PRIVATE_KEY", "private-proxy-password", "private-query-token", "private-path-token"}
-	useTempLLMConfig(t, &llmconfig.Config{LLM: llmconfig.LLMConfig{
-		DefaultProvider: "anthropic",
-		Providers: map[string]llmconfig.Provider{
-			"anthropic": {APIKey: secrets[0], AuthToken: secrets[1], RefreshToken: secrets[2], AuthType: "oauth", TokenExpiresAt: 1777777777777, TokenExpiry: 1777777777, Enabled: true},
-			"openai":    {APIKey: secrets[3], BaseURL: "https://user:" + secrets[4] + "@proxy.example/" + secrets[6] + "?key=" + secrets[5], Enabled: true},
-		},
-	}})
-	for _, name := range []string{".config", ".show-config"} {
-		t.Run(name, func(t *testing.T) {
-			commands, output, reloads := newTestLLMConfigCommands(t, nil)
-			require.NoError(t, runLLMConfigCommand(t, commands, name))
-			for _, secret := range secrets {
-				require.NotContains(t, output.String(), secret)
-			}
-			require.Contains(t, output.String(), "anthropic")
-			require.NotContains(t, output.String(), "1777777777")
-			require.Zero(t, *reloads)
-		})
-	}
+func TestLLMConfigSetupSummaryHidesSecrets(t *testing.T) {
+	secrets := []string{"literal-secret-token", "oauth-access-token", "oauth-refresh-token", "env://PRIVATE_KEY", "https://user:password@proxy.example/private-path?key=private-token"}
+	original := &llmconfig.Config{LLM: llmconfig.LLMConfig{Providers: map[string]llmconfig.Provider{
+		"anthropic": {AuthType: "oauth", AuthToken: secrets[1], RefreshToken: secrets[2], SubscriptionType: "max", Enabled: true},
+		"openai":    {APIKey: secrets[0], Enabled: true},
+		"google":    {APIKey: secrets[3], Enabled: true},
+		"local":     {APICompat: "openai", BaseURL: secrets[4], APIKey: secrets[0], Enabled: true},
+	}}}
+	useTempLLMConfig(t, original)
+	commands, output, reloads := newTestLLMConfigCommands(t, func(_ context.Context, form *huh.Form) error {
+		field, ok := form.GetFocusedField().(*huh.Select[string])
+		require.True(t, ok)
+		view := field.Height(100).View()
+		for _, secret := range secrets {
+			require.NotContains(t, view, secret)
+		}
+		require.NotContains(t, view, "lite…oken", "even token fragments should be hidden")
+		require.Contains(t, view, "Claude Max")
+		require.Contains(t, view, "API key connected")
+		require.Contains(t, view, "Custom endpoint connected")
+		require.Contains(t, view, "Checkmarks show saved connections")
+		return huh.ErrUserAborted
+	})
+	require.NoError(t, runLLMConfigCommand(t, commands, ".setup"))
+	require.Contains(t, output.String(), "cancelled")
+	require.Zero(t, *reloads)
 	loaded, err := llmconfig.Load()
 	require.NoError(t, err)
-	require.Equal(t, secrets[0], loaded.LLM.Providers["anthropic"].APIKey, "display must not persist redaction")
-}
-
-func TestLLMConfigSetDefaultRebindsModel(t *testing.T) {
-	for _, tc := range []struct {
-		name, provider, model, want string
-	}{
-		{name: "provider model", provider: "custom", want: "custom-model"},
-		{name: "catalog model", provider: "openai", want: llmconfig.DefaultModelForProvider("openai")},
-		{name: "no model", provider: "unknown"},
-		{name: "explicit model", provider: "openai", model: "gpt-explicit", want: "gpt-explicit"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			useTempLLMConfig(t, &llmconfig.Config{LLM: llmconfig.LLMConfig{
-				DefaultProvider: "anthropic", DefaultModel: "claude-old",
-				Providers: map[string]llmconfig.Provider{tc.provider: {Enabled: true}},
-			}})
-			if tc.provider == "custom" {
-				cfg, err := llmconfig.Load()
-				require.NoError(t, err)
-				cfg.LLM.Providers[tc.provider] = llmconfig.Provider{Enabled: true, Model: "custom-model"}
-				require.NoError(t, cfg.Save())
-			}
-			commands, _, reloads := newTestLLMConfigCommands(t, nil)
-			args := []string{tc.provider}
-			if tc.model != "" {
-				args = append(args, tc.model)
-			}
-			require.NoError(t, runLLMConfigCommand(t, commands, ".set-default", args...))
-			loaded, err := llmconfig.Load()
-			require.NoError(t, err)
-			require.Equal(t, tc.provider, loaded.LLM.DefaultProvider)
-			require.Equal(t, tc.want, loaded.LLM.DefaultModel)
-			require.Equal(t, 1, *reloads)
-		})
-	}
+	require.Equal(t, original, loaded)
 }
 
 func selectLogoutProvider(t *testing.T, index int) llmConfigPromptFunc {
@@ -192,7 +159,7 @@ func TestLLMConfigLogoutWithoutSavedProviders(t *testing.T) {
 		useTempLLMConfig(t, cfg)
 		commands, output, reloads := newTestLLMConfigCommands(t, nil)
 		require.NoError(t, runLLMConfigCommand(t, commands, ".logout"))
-		require.Contains(t, output.String(), "No saved LLM providers")
+		require.Contains(t, output.String(), "No saved AI provider connections")
 		require.Contains(t, output.String(), logoutScopeNotice)
 		require.Zero(t, *reloads)
 	}
@@ -216,7 +183,7 @@ func TestLLMConfigLogoutPreservesConcurrentChanges(t *testing.T) {
 }
 
 func TestLLMConfigFormsCancelled(t *testing.T) {
-	for _, name := range []string{".setup", ".logout", ".reset"} {
+	for _, name := range []string{".setup", ".logout"} {
 		t.Run(name, func(t *testing.T) {
 			original := &llmconfig.Config{LLM: llmconfig.LLMConfig{Providers: map[string]llmconfig.Provider{"openai": {APIKey: "keep", Enabled: true}}}}
 			useTempLLMConfig(t, original)
@@ -228,33 +195,6 @@ func TestLLMConfigFormsCancelled(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, original, loaded)
 			require.Zero(t, *reloads)
-		})
-	}
-}
-
-func TestLLMConfigResetConfirmation(t *testing.T) {
-	for _, confirm := range []bool{false, true} {
-		t.Run(map[bool]string{false: "cancel", true: "confirm"}[confirm], func(t *testing.T) {
-			useTempLLMConfig(t, &llmconfig.Config{LLM: llmconfig.LLMConfig{Providers: map[string]llmconfig.Provider{"openai": {APIKey: "remove-me", Enabled: true}}}})
-			commands, _, reloads := newTestLLMConfigCommands(t, func(_ context.Context, form *huh.Form) error {
-				field := form.GetFocusedField()
-				_, ok := field.(*idtui.ExplicitConfirm)
-				require.True(t, ok)
-				field.Focus()
-				before := field.View()
-				if confirm {
-					field.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
-					require.NotEqual(t, before, field.View(), "selection must have an explicit textual marker")
-				}
-				return nil
-			})
-			require.NoError(t, runLLMConfigCommand(t, commands, ".reset"))
-			require.Equal(t, !confirm, llmconfig.ConfigExists())
-			if confirm {
-				require.Equal(t, 1, *reloads)
-			} else {
-				require.Zero(t, *reloads)
-			}
 		})
 	}
 }
