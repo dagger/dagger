@@ -68,6 +68,8 @@ func (m *Keeper) Reveal(ctx context.Context) (string, error) {
 	return strings.Join(parts, ","), nil
 }
 `,
+		// Migration hands the module to the Go SDK's Dang entrypoint.
+		defaultFunctionCaching: true,
 	}
 }
 

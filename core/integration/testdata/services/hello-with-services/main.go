@@ -13,7 +13,7 @@ type HelloWithServices struct{}
 // Returns a web server service
 // +up
 func (m *HelloWithServices) Web() *dagger.Service {
-	return dag.Container().
+	return dagger.Connect().Container().
 		From("nginx:alpine").
 		WithExposedPort(80).
 		AsService()
@@ -22,7 +22,7 @@ func (m *HelloWithServices) Web() *dagger.Service {
 // Returns a redis service
 // +up
 func (m *HelloWithServices) Redis() *dagger.Service {
-	return dag.Container().
+	return dagger.Connect().Container().
 		From("redis:alpine").
 		WithExposedPort(6379).
 		AsService()
@@ -54,7 +54,7 @@ type Infra struct{}
 
 // +up
 func (i *Infra) Database() *dagger.Service {
-	return dag.Container().
+	return dagger.Connect().Container().
 		From("postgres:alpine").
 		WithEnvVariable("POSTGRES_PASSWORD", "test").
 		WithExposedPort(5432).

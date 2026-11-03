@@ -12,23 +12,23 @@ type HelloWithGenerators struct{}
 // Return a changeset with a new file
 // +generate
 func (m *HelloWithGenerators) GenerateFiles() *dagger.Changeset {
-	return dag.Directory().
+	return dagger.Connect().Directory().
 		WithNewFile("foo", "bar").
-		Changes(dag.Directory())
+		Changes(dagger.Connect().Directory())
 }
 
 // Return a changeset with a new file
 // +generate
 func (m *HelloWithGenerators) GenerateOtherFiles() *dagger.Changeset {
-	return dag.Directory().
+	return dagger.Connect().Directory().
 		WithNewFile("bar", "foo").
-		Changes(dag.Directory())
+		Changes(dagger.Connect().Directory())
 }
 
 // Return an empty changeset
 // +generate
 func (m *HelloWithGenerators) EmptyChangeset() *dagger.Changeset {
-	return dag.Directory().Changes(dag.Directory())
+	return dagger.Connect().Directory().Changes(dagger.Connect().Directory())
 }
 
 // Return an error
@@ -44,12 +44,12 @@ func (m *HelloWithGenerators) ChangesetFailure() (*dagger.Changeset, error) {
 // the message surfaces stderr specifically, not just the failed command.
 // +generate
 func (m *HelloWithGenerators) LazyExecFailure() *dagger.Changeset {
-	failed := dag.Container().
+	failed := dagger.Connect().Container().
 		From("alpine").
 		WithEnvVariable("MARKER", "STDERR_ONLY_MARKER").
 		WithExec([]string{"sh", "-c", "echo $MARKER >&2; exit 3"}).
 		Directory("/")
-	return failed.Changes(dag.Directory())
+	return failed.Changes(dagger.Connect().Directory())
 }
 
 func (m *HelloWithGenerators) WorkspaceGeneratorsEmpty(ctx context.Context, ws *dagger.Workspace) (bool, error) {
@@ -63,7 +63,7 @@ func (m *HelloWithGenerators) WorkspaceGeneratorsEmpty(ctx context.Context, ws *
 		if err != nil {
 			return false, err
 		}
-		itemEmpty, err := dagger.Ref[*dagger.Changeset](dag, id).IsEmpty(ctx)
+		itemEmpty, err := dagger.Ref[*dagger.Changeset](dagger.Connect(), id).IsEmpty(ctx)
 		if err != nil {
 			return false, err
 		}
@@ -80,7 +80,7 @@ func (m *HelloWithGenerators) OtherGenerators() *MetaGen {
 
 // +generate
 func (mg *MetaGen) GenThings() *dagger.Changeset {
-	return dag.Directory().
+	return dagger.Connect().Directory().
 		WithNewFile("meta-gen", "generated").
-		Changes(dag.Directory())
+		Changes(dagger.Connect().Directory())
 }

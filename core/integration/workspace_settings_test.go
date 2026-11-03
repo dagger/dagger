@@ -872,6 +872,10 @@ type workspaceSettingsModuleFixture struct {
 	relDir string
 	name   string
 	main   string
+
+	// defaultFunctionCaching leaves out disableDefaultFunctionCaching, which
+	// a module migrated to the Go SDK's Dang entrypoint can't carry.
+	defaultFunctionCaching bool
 }
 
 func newWorkspaceSettingsWorkdir(ctx context.Context, t *testctx.T, configTOML string, modules ...workspaceSettingsModuleFixture) string {
@@ -902,13 +906,17 @@ func writeWorkspaceSettingsModule(t *testctx.T, workdir string, module workspace
 
 	require.NoError(t, os.WriteFile(filepath.Join(moduleDir, "go.mod"), goMod, 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(moduleDir, "go.sum"), goSum, 0o644))
+	caching := `,
+  "disableDefaultFunctionCaching": true`
+	if module.defaultFunctionCaching {
+		caching = ""
+	}
 	require.NoError(t, os.WriteFile(filepath.Join(moduleDir, "dagger.json"), []byte(`{
   "name": "`+module.name+`",
   "engineVersion": "v0.20.1",
   "sdk": {
     "source": "go"
-  },
-  "disableDefaultFunctionCaching": true
+  }`+caching+`
 }
 `), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(moduleDir, "main.go"), []byte(module.main), 0o644))
