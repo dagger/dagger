@@ -5485,6 +5485,17 @@ func (c *Cache) Close(ctx context.Context) error {
 	return c.CloseWithShutdownError(ctx, nil)
 }
 
+// closePersistTimeout bounds the detached context the final persist and the
+// clean-shutdown marker write run on. Once the cache is quiescent, saving it
+// is deterministic local I/O whose duration scales with the store's size,
+// not with client behavior, so it must outlive a stop budget that expired
+// while earlier shutdown phases were still running: a save cut off at the
+// stop deadline leaves the store marked unclean, and the next start wipes
+// it (see NewCache). Generous on purpose, since a too-small bound costs the
+// whole store, while a too-big one only delays the exit after a save that
+// was going to finish anyway.
+const closePersistTimeout = 15 * time.Minute
+
 // CloseWithShutdownError is Close for a shutdown that has already failed. A
 // non-nil cause keeps the persistence checkpoint dirty even if drain and
 // cleanup succeed, and is returned joined with any close errors. It shares
@@ -5516,8 +5527,14 @@ func (c *Cache) CloseWithShutdownError(ctx context.Context, cause error) error {
 			slog.Error("dagql cache close found session cleanup errors; persistence will remain dirty", "err", err)
 			c.closeErr = errors.Join(c.closeErr, err)
 		}
+		// The persist and the marker write below run detached from the
+		// caller's stop budget: the wait for quiescence above stays on it,
+		// because in-flight calls are client behavior, but the save of the
+		// quiesced state is not.
+		persistCtx, persistCancel := context.WithTimeout(context.WithoutCancel(ctx), closePersistTimeout)
+		defer persistCancel()
 		if c.closeErr == nil {
-			if err := c.persistCurrentState(ctx); err != nil {
+			if err := c.persistCurrentState(persistCtx); err != nil {
 				slog.Error("failed to persist dagql cache during close", "err", err)
 				c.closeErr = errors.Join(c.closeErr, err)
 			}
@@ -5534,7 +5551,7 @@ func (c *Cache) CloseWithShutdownError(ctx context.Context, cause error) error {
 		}
 		if c.pdb != nil {
 			slog.Info("marking dagql cache clean shutdown")
-			if err := c.pdb.UpsertMeta(ctx, persistdb.MetaKeyCleanShutdown, "1"); err != nil {
+			if err := c.pdb.UpsertMeta(persistCtx, persistdb.MetaKeyCleanShutdown, "1"); err != nil {
 				slog.Warn("failed to mark clean shutdown in persistence metadata", "err", err)
 			}
 			slog.Warn("successfully marked clean shutdown in persistence metadata")
