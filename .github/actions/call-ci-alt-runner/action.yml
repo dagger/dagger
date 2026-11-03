@@ -45,7 +45,7 @@ runs:
           echo "::endgroup::"
         else
           echo "::group::Installing dagger"
-          curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=/usr/local/bin/ sudo -E sh
+          curl -fsSL https://dl.dagger.io/dagger/install.sh | sudo env DAGGER_VERSION="$DAGGER_VERSION" BIN_DIR=/usr/local/bin/ sh
           echo "::endgroup::"
         fi
 
