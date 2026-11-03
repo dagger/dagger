@@ -36,7 +36,12 @@ var agentFocus string
 var agentCmd = &cobra.Command{
 	Use:   "agent [FILTERS] [OPTIONS]",
 	Short: "Compose your installed agent modules and drop into an interactive prompt.",
-	Args:  cobra.ArbitraryArgs,
+	Long: `Compose your installed agent modules and drop into an interactive prompt.
+
+If no LLM provider is configured, interactive setup runs automatically.
+Use /setup to add or reconfigure providers, /model to switch models, and
+/config to inspect your configuration. Use /help to see all slash commands.`,
+	Args: cobra.ArbitraryArgs,
 	Annotations: map[string]string{
 		// Drop into the same interactive prompt mode as `dagger shell`, so keep
 		// completed conversation items in scrollback rather than GC'ing them
