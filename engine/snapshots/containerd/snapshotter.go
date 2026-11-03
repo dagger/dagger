@@ -5,7 +5,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/containerd/v2/core/snapshots"
@@ -43,13 +42,13 @@ func (s *nsSnapshotter) Update(ctx context.Context, info snapshots.Info, fieldpa
 
 // usageTally tallies Usage calls on the op they run under: an install asks
 // for usages often enough that an op for each made recording slow the engine.
-var usageTally = wcprof.NewTallyClass("snapshot.usage")
+var usageTally = wcprof.NewTallyClass(wcprof.OpKindInternal, "snapshot.usage")
 
 func (s *nsSnapshotter) Usage(ctx context.Context, key string) (snapshots.Usage, error) {
 	ctx = bksnapshots.WithNamespace(ctx, s.ns)
-	start := time.Now()
+	call := wcprof.BeginTally(ctx, usageTally)
 	usage, err := s.Snapshotter.Usage(ctx, key)
-	wcprof.Tally(ctx, usageTally, start, err)
+	call.End(err)
 	return usage, err
 }
 
