@@ -860,7 +860,8 @@ func (h *shellCallHandler) HandlePrompt(ctx context.Context, input idtui.PromptI
 				}
 				return err
 			}
-			h.noteModel(target.model)
+			_, selected := target.llmSnapshot()
+			h.noteModel(selected.Model)
 			return nil
 		}
 	}
@@ -1095,7 +1096,8 @@ func (h *shellCallHandler) initLLMSession(ctx context.Context, initial *core.LLM
 		return nil, err
 	}
 	h.llmSession = s
-	h.llmModel = s.Target().model
+	_, selected := s.Target().llmSnapshot()
+	h.llmModel = selected.Model
 	// Title generation is presentation only; persistence belongs to the trace.
 	if h.generateSessionTitle {
 		s.onStep = func(a *sessionAgent) {
