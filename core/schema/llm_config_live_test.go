@@ -3,6 +3,9 @@ package schema
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"github.com/dagger/dagger/core"
@@ -14,7 +17,17 @@ import (
 
 type liveDefaultLLMServer struct {
 	*llmAuthSchemaServer
-	revision string
+	revision        string
+	sessionContexts atomic.Int64
+}
+
+func (s *liveDefaultLLMServer) CurrentModule(context.Context) (dagql.ObjectResult[*core.Module], error) {
+	return dagql.ObjectResult[*core.Module]{}, core.ErrNoCurrentModule
+}
+
+func (s *liveDefaultLLMServer) SessionScopedContext(ctx context.Context) (context.Context, error) {
+	s.sessionContexts.Add(1)
+	return s.llmAuthSchemaServer.SessionScopedContext(ctx)
 }
 
 func (s *liveDefaultLLMServer) LLMConfigMetadata(context.Context) (*engine.ClientMetadata, *engine.ClientMetadata, string, error) {
@@ -45,7 +58,56 @@ func newLiveLLMMetadataTest(t *testing.T, nested bool, config *engine.LLMConfig,
 	dag, err := base.Fork(ctx, root, "")
 	require.NoError(t, err)
 	srv.dag = dag
+	srv.deps = core.NewSchemaBuilder(root, nil)
 	return ctx, dag, srv
+}
+
+func TestLLMStepsRetainCredentialSource(t *testing.T) {
+	for _, nested := range []bool{false, true} {
+		t.Run(fmt.Sprintf("nested=%t", nested), func(t *testing.T) {
+			var requests atomic.Int64
+			provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = w.Write([]byte("event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_test\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5\",\"content\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n" +
+					"event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n" +
+					"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"hello\"}}\n\n" +
+					"event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n" +
+					"event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":1}}\n\n" +
+					"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"))
+			}))
+			defer provider.Close()
+			env := &llmAuthSecrets{vars: map[string]string{"env://ANTHROPIC_AUTH_TOKEN": "token-v1"}}
+			config := &engine.LLMConfig{DefaultProvider: "anthropic", DefaultModel: "claude-sonnet-4-5", Providers: map[string]*engine.LLMProviderConfig{
+				"anthropic": {AuthToken: "env://ANTHROPIC_AUTH_TOKEN", BaseURL: provider.URL},
+			}}
+			ctx, dag, srv := newLiveLLMMetadataTest(t, nested, config, env)
+			var llm dagql.ObjectResult[*core.LLM]
+			require.NoError(t, dag.Select(ctx, dag.Root(), &llm, dagql.Selector{Field: "llm"}))
+			// Pure metadata must not accidentally warm the endpoint for this test.
+			var model string
+			require.NoError(t, dag.Select(ctx, llm, &model, dagql.Selector{Field: "model"}))
+			require.Zero(t, srv.sessionContexts.Load())
+			var firstReads int
+			for i := range 3 {
+				var stepped dagql.ObjectResult[*core.LLM]
+				require.NoError(t, dag.Select(ctx, llm, &stepped,
+					dagql.Selector{Field: "withPrompt", Args: []dagql.NamedInput{{Name: "prompt", Value: dagql.NewString(fmt.Sprintf("turn %d", i))}}},
+					dagql.Selector{Field: "step"}))
+				llm = stepped
+				require.EqualValues(t, i+1, requests.Load())
+				require.EqualValues(t, 1, srv.sessionContexts.Load(), "materialized responses retain the first step's credential lifetime")
+				env.mu.Lock()
+				reads := env.reads
+				env.mu.Unlock()
+				if i == 0 {
+					firstReads = reads
+					require.Positive(t, firstReads)
+				}
+				require.Equal(t, firstReads, reads, "subsequent turns must reuse the credential source")
+			}
+		})
+	}
 }
 
 func TestLLMMetadataWithoutCredentials(t *testing.T) {

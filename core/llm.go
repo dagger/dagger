@@ -1779,6 +1779,13 @@ func (llm *LLM) Step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxToke
 }
 
 func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxTokens int) (dagql.ObjectResult[*LLM], error) {
+	// Warm the persistent receiver before making the transient MCP clone.
+	// withResponse materializes from inst, not that clone, so resolving only
+	// on the clone would discard the endpoint and its session credential
+	// source after every turn. Endpoint still checks session and revision.
+	if _, err := llm.Endpoint(ctx); err != nil {
+		return inst, err
+	}
 	llm = llm.Clone()
 
 	// Capture the bound state entering this step before anything can mutate it

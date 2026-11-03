@@ -288,11 +288,13 @@ type llmAuthSecrets struct {
 	err             error
 	refreshRejected bool
 	lastRejected    string
+	reads           int
 }
 
 func (s *llmAuthSecrets) GetSecret(ctx context.Context, req *secrets.GetSecretRequest) (*secrets.GetSecretResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.reads++
 	if s.err != nil {
 		return nil, s.err
 	}
