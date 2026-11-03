@@ -1,7 +1,11 @@
 kind: Changed
 body: |
-  Dang modules move to a newer Dang. The `dang.toml` that governs a module's source, including one in a parent directory up to the repository root, now sets the Dang version the source is parsed and run as; a malformed `dang.toml`, which was ignored before, now fails the module's load. A module's own top-level declarations shadow builtins of the same name, and JSON, YAML and TOML can decode into `Map` types. Loading a Dang module on a fresh engine also parses its source once instead of three times.
+  Dang modules move to a newer Dang. The `dang.toml` that governs a module's source, including one in a parent directory up to the repository root, now sets the Dang version the source is parsed and run as; a malformed `dang.toml`, which was ignored before, now fails the module's load. A module's own top-level declarations shadow builtins of the same name, and JSON, YAML and TOML can decode into `Map` types, with YAML `<<` merge keys resolved.
+
+  Dang's type checker is stricter: it rejects programs it used to accept that could fail at runtime, so a module that loaded before may now fail to load with a type error. The most common cases: arithmetic and ordering operators need non-null operands (`xs[0] + 1` needs `!`, `??` or a null check), and `Map.get` returns a nullable value; the result of `JSON.decode`, `YAML.decode` or `TOML.decode` must be given a type (an annotation, an argument or `::`) before its fields or operators are used; and a top-level declaration's initializer may not write another top-level binding.
+
+  Function parameters now match by name: a block passed for a function-typed parameter takes that parameter's names, and a positional call through an interface binds arguments in the interface's parameter order, so a call to an implementation that declares its parameters in a different order can now return a different result. Malformed syntax is reported as an error instead of crashing the parser. Loading a Dang module on a fresh engine also parses its source once instead of three times.
 time: 2026-10-30T21:00:00Z
 custom:
   Author: sipsma
-  PR: ""
+  PR: "14953"

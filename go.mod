@@ -154,7 +154,7 @@ require (
 	github.com/vishvananda/netlink v1.3.1
 	github.com/vito/bubbline v0.0.0-20250312195236-5f4f49d6ebcb
 	github.com/vito/dang v1.0.1
-	github.com/vito/dang/v2 v2.3.1-0.20261030161807-8d1ebe92c92e
+	github.com/vito/dang/v2 v2.3.1-0.20261103042248-00dc3801b409
 	github.com/vito/go-interact v1.0.2
 	github.com/vito/go-sse v1.1.3
 	github.com/vito/midterm v0.2.5
@@ -375,5 +375,3 @@ tool github.com/matryer/moq
 // containerd and the engine run their metadata on an in-memory store with
 // bbolt's API, saved when the engine stops and loaded when it starts.
 replace go.etcd.io/bbolt => ./internal/fastbolt
-
-replace github.com/vito/dang/v2 => github.com/grouville/dang/v2 v2.1.5-0.20261029061443-57577ceef616
