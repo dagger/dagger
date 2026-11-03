@@ -58,7 +58,10 @@ func (r *runtime) eval(
 	// environment; a function call never reads object directives.
 	forTypeDefs := fnCall.ParentName == ""
 	return evalDangSource(ctx, query, r.modSource, schemaFile, nestedClientMetadata, inertAttachables, fnCall, moduleContext, forTypeDefs, func(ctx context.Context, modSrcDir string) (dang.ValueScope, error) {
-		return dang.RunDir(ctx, modSrcDir, false)
+		if forTypeDefs {
+			return dang.RunDir(ctx, modSrcDir, false)
+		}
+		return runPreparedDangDir(ctx, modSrcDir, r.modSource, schemaFile, moduleContext)
 	}, func(ctx context.Context, env dang.ValueScope) ([]byte, error) {
 		if fnCall.ParentName == "" {
 			srv, err := core.CurrentDagqlServer(ctx)
@@ -152,9 +155,8 @@ func evalDangSource(
 			} else if self := moduleContext.Self(); self != nil {
 				selfSource = &core.ModuleSource{ModuleName: self.Name(), ModuleOriginalName: self.OriginalName}
 			}
-			ensureModuleSelfTypes(schema, selfSource, modSrcDir)
 			ctx = dang.ContextWithImportConfigs(ctx, dang.ImportConfig{
-				Name: "Dagger", Client: gqlClient, Schema: schema, AutoImport: true,
+				Name: "Dagger", Client: gqlClient, Schema: ensureModuleSelfTypes(ctx, schema, selfSource, modSrcDir), AutoImport: true,
 			})
 
 			env, err = runSource(ctx, modSrcDir)
@@ -220,14 +222,9 @@ func cachedDangSchema(ctx context.Context, key string, read func(context.Context
 	if !ok {
 		return nil, fmt.Errorf("invalid Dang schema cache result %T", result.Value())
 	}
-	if schema == nil {
-		return nil, nil
-	}
-	// ensureModuleSelfTypes appends placeholders for the current module. Keep
-	// its wrapper and type-list storage separate from the cached schema.
-	local := *schema
-	local.Types = slices.Clone(schema.Types)
-	return &local, nil
+	// Every call of the session shares this schema, which lets a prepared
+	// program recognize it by pointer. Callers must not modify it.
+	return schema, nil
 }
 
 // dangSourceError is the span error for a module whose Dang source failed to
@@ -317,18 +314,9 @@ func retainDangObjectDirectives(ctx context.Context, env dang.ValueScope, dir st
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".dang" {
 			continue
 		}
-		path := filepath.Join(dir, entry.Name())
-		src, err := os.ReadFile(path)
+		file, err := parseDangSource(ctx, filepath.Join(dir, entry.Name()))
 		if err != nil {
 			return err
-		}
-		root, err := parseDangSource(path, src)
-		if err != nil {
-			return err
-		}
-		file, ok := root.(*dang.FileBlock)
-		if !ok {
-			continue
 		}
 		for _, form := range file.Forms {
 			decl, ok := form.(*dang.ObjectDecl)
@@ -366,22 +354,32 @@ func retainDangObjectDirectives(ctx context.Context, env dang.ValueScope, dir st
 // namespaces consistently); they are never emitted as TypeDefs, so a minimal
 // shape suffices. Once the served runtime schema already carries the types
 // (Module.IncludeSelfInDeps), this is a no-op.
-func ensureModuleSelfTypes(schema *introspection.Schema, src *core.ModuleSource, modSrcDir string) {
+//
+// The given schema is never modified, since it may be shared with other calls
+// (cachedDangSchema). When types are missing, they are added to a copy, which
+// is returned; otherwise the schema itself is returned.
+func ensureModuleSelfTypes(ctx context.Context, schema *introspection.Schema, src *core.ModuleSource, modSrcDir string) *introspection.Schema {
 	if schema == nil || src == nil {
-		return
+		return schema
 	}
 	moduleName := src.ModuleName
 	if moduleName == "" {
 		moduleName = src.ModuleOriginalName
 	}
 	if moduleName == "" {
-		return
+		return schema
 	}
 
-	for _, localName := range moduleDeclaredTypeNames(modSrcDir, moduleName) {
+	shared := schema
+	for _, localName := range moduleDeclaredTypeNames(ctx, modSrcDir, moduleName) {
 		schemaName := core.NamespaceObject(localName, moduleName, src.ModuleOriginalName)
 		if schema.Types.Get(schemaName) != nil {
 			continue
+		}
+		if schema == shared {
+			local := *shared
+			local.Types = slices.Clone(shared.Types)
+			schema = &local
 		}
 		schema.Types = append(schema.Types, &introspection.Type{
 			Kind: introspection.TypeKindObject,
@@ -400,6 +398,7 @@ func ensureModuleSelfTypes(schema *introspection.Schema, src *core.ModuleSource,
 			},
 		})
 	}
+	return schema
 }
 
 // moduleDeclaredTypeNames parses the module's .dang source files and returns the
@@ -419,9 +418,12 @@ func ensureModuleSelfTypes(schema *introspection.Schema, src *core.ModuleSource,
 // module's type names.
 var declaredTypeNames, _ = lru.New[string, []string](256) // error is impossible on positive size
 
-// parseDangSource is dang.Parse, replaceable so tests can count parses.
-var parseDangSource = func(filename string, src []byte) (any, error) {
-	return dang.Parse(filename, src)
+// parseDangSource parses a module's source file for the engine's own reads
+// of its syntax, through the engine's Dang syntax cache, which RunDir and
+// DeclareDir use too: a module's source is parsed once for all of them. It
+// is replaceable so tests can count parses.
+var parseDangSource = func(ctx context.Context, filename string) (*dang.FileBlock, error) {
+	return dang.ParseSourceFile(withDangSyntaxCache(ctx), filename)
 }
 
 // dangSourceFile is one .dang file of a module's source directory.
@@ -460,29 +462,37 @@ func readDangSourceFiles(dir string) ([]dangSourceFile, bool) {
 // declares at the top level of its source. The result is shared between
 // callers and must not be modified.
 //
-// Each file is read once and the bytes that were read are both the memo key
-// and what is parsed, so a file that fails to parse fails for its content and
-// can be remembered. A directory or file that cannot be read is not: the
-// names found are returned, and the next call tries again.
-func moduleDeclaredTypeNames(modSrcDir, moduleName string) []string {
+// The memo key is the Dang version the source is parsed as and the content
+// of the files that were read, and a module's source is an immutable mount,
+// so what is parsed is that content: a file that fails to parse fails for
+// its content and version and can be remembered. A directory, file or
+// dang.toml that cannot be read is not: the names found are returned, and
+// the next call tries again.
+func moduleDeclaredTypeNames(ctx context.Context, modSrcDir, moduleName string) []string {
 	files, complete := readDangSourceFiles(modSrcDir)
+	version, err := dang.VersionForDir(ctx, modSrcDir)
+	if err != nil {
+		slog.Debug("ensureModuleSelfTypes: determine Dang version", "dir", modSrcDir, "error", err)
+		complete = false
+	}
 	var key string
 	if complete {
-		key = declaredTypeNamesKey(moduleName, files)
+		key = declaredTypeNamesKey(moduleName, version, files)
 		if names, ok := declaredTypeNames.Get(key); ok {
 			return names
 		}
 	}
-	names := parseDeclaredTypeNames(modSrcDir, moduleName, files)
+	names := parseDeclaredTypeNames(ctx, modSrcDir, moduleName, files)
 	if complete {
 		declaredTypeNames.Add(key, names)
 	}
 	return names
 }
 
-// declaredTypeNamesKey identifies a module's declared type names by its name
-// and the names and content of its .dang files.
-func declaredTypeNamesKey(moduleName string, files []dangSourceFile) string {
+// declaredTypeNamesKey identifies a module's declared type names by its name,
+// the Dang version its source is parsed as, and the names and content of its
+// .dang files.
+func declaredTypeNamesKey(moduleName string, version dang.Version, files []dangSourceFile) string {
 	h := xxh3.New()
 	writeField := func(b []byte) {
 		var size [8]byte
@@ -491,6 +501,7 @@ func declaredTypeNamesKey(moduleName string, files []dangSourceFile) string {
 		h.Write(b)
 	}
 	writeField([]byte(moduleName))
+	writeField([]byte(version.String()))
 	for _, file := range files {
 		writeField([]byte(file.name))
 		writeField(file.content)
@@ -501,7 +512,7 @@ func declaredTypeNamesKey(moduleName string, files []dangSourceFile) string {
 
 // parseDeclaredTypeNames parses the module's source files for its declared
 // type names.
-func parseDeclaredTypeNames(modSrcDir, moduleName string, files []dangSourceFile) []string {
+func parseDeclaredTypeNames(ctx context.Context, modSrcDir, moduleName string, files []dangSourceFile) []string {
 	seen := map[string]struct{}{}
 	var names []string
 	add := func(name string) {
@@ -522,13 +533,9 @@ func parseDeclaredTypeNames(modSrcDir, moduleName string, files []dangSourceFile
 	add(strcase.ToCamel(moduleName))
 
 	for _, src := range files {
-		root, err := parseDangSource(filepath.Join(modSrcDir, src.name), src.content)
+		file, err := parseDangSource(ctx, filepath.Join(modSrcDir, src.name))
 		if err != nil {
 			slog.Debug("ensureModuleSelfTypes: parse module file", "file", src.name, "error", err)
-			continue
-		}
-		file, ok := root.(*dang.FileBlock)
-		if !ok {
 			continue
 		}
 		// Only top-level type declarations become module types in the schema;
@@ -838,7 +845,7 @@ func initDangModule(ctx context.Context, srv *dagql.Server, env dang.ValueScope)
 			})
 
 		case *dang.Object:
-			mod, ok := val.Mod.(*dang.Type)
+			mod, ok := dangDeclaredType(val)
 			if !ok {
 				slog.Warn("skipping non-module module value", "name", binding.Key)
 				break
@@ -860,7 +867,7 @@ func initDangModule(ctx context.Context, srv *dagql.Server, env dang.ValueScope)
 			case dang.ScalarKind:
 				slog.Info("skipping scalar module value (handled as string type)", "name", binding.Key)
 			case dang.InterfaceKind:
-				interfaceDef, err := createInterfaceTypeDef(ctx, srv, binding.Key, val, env, localTypes)
+				interfaceDef, err := createInterfaceTypeDef(ctx, srv, binding.Key, mod, env, localTypes)
 				if err != nil {
 					return res, fmt.Errorf("failed to create interface %s: %w", binding.Key, err)
 				}
@@ -1386,13 +1393,23 @@ func createEnumTypeDef(ctx context.Context, srv *dagql.Server, name string, enum
 	return res, nil
 }
 
-func createInterfaceTypeDef(ctx context.Context, srv *dagql.Server, name string, interfaceMod *dang.Object, env dang.ValueScope, localTypes dangLocalTypes) (dagql.ObjectResult[*core.TypeDef], error) {
-	var res dagql.ObjectResult[*core.TypeDef]
-
-	mod, ok := interfaceMod.Mod.(*dang.Type)
+// dangDeclaredType is the type a module's top-level value declares. Dang
+// binds an interface's name to its namespace, an object of the interface's
+// meta-type, which has no members of its own; the interface is the type that
+// meta-type describes.
+func dangDeclaredType(val *dang.Object) (*dang.Type, bool) {
+	mod, ok := val.Mod.(*dang.Type)
 	if !ok {
-		return res, fmt.Errorf("expected *dang.Type for interface %s, got %T", name, interfaceMod.Mod)
+		return nil, false
 	}
+	if instance := mod.InstanceType(); instance != nil {
+		return instance, true
+	}
+	return mod, true
+}
+
+func createInterfaceTypeDef(ctx context.Context, srv *dagql.Server, name string, mod *dang.Type, env dang.ValueScope, localTypes dangLocalTypes) (dagql.ObjectResult[*core.TypeDef], error) {
+	var res dagql.ObjectResult[*core.TypeDef]
 
 	sels := []dagql.Selector{
 		{Field: "typeDef"},
