@@ -845,7 +845,7 @@ func initDangModule(ctx context.Context, srv *dagql.Server, env dang.ValueScope)
 			})
 
 		case *dang.Object:
-			mod, ok := val.Mod.(*dang.Type)
+			mod, ok := dangDeclaredType(val)
 			if !ok {
 				slog.Warn("skipping non-module module value", "name", binding.Key)
 				break
@@ -867,7 +867,7 @@ func initDangModule(ctx context.Context, srv *dagql.Server, env dang.ValueScope)
 			case dang.ScalarKind:
 				slog.Info("skipping scalar module value (handled as string type)", "name", binding.Key)
 			case dang.InterfaceKind:
-				interfaceDef, err := createInterfaceTypeDef(ctx, srv, binding.Key, val, env, localTypes)
+				interfaceDef, err := createInterfaceTypeDef(ctx, srv, binding.Key, mod, env, localTypes)
 				if err != nil {
 					return res, fmt.Errorf("failed to create interface %s: %w", binding.Key, err)
 				}
@@ -1393,13 +1393,23 @@ func createEnumTypeDef(ctx context.Context, srv *dagql.Server, name string, enum
 	return res, nil
 }
 
-func createInterfaceTypeDef(ctx context.Context, srv *dagql.Server, name string, interfaceMod *dang.Object, env dang.ValueScope, localTypes dangLocalTypes) (dagql.ObjectResult[*core.TypeDef], error) {
-	var res dagql.ObjectResult[*core.TypeDef]
-
-	mod, ok := interfaceMod.Mod.(*dang.Type)
+// dangDeclaredType is the type a module's top-level value declares. Dang
+// binds an interface's name to its namespace, an object of the interface's
+// meta-type, which has no members of its own; the interface is the type that
+// meta-type describes.
+func dangDeclaredType(val *dang.Object) (*dang.Type, bool) {
+	mod, ok := val.Mod.(*dang.Type)
 	if !ok {
-		return res, fmt.Errorf("expected *dang.Type for interface %s, got %T", name, interfaceMod.Mod)
+		return nil, false
 	}
+	if instance := mod.InstanceType(); instance != nil {
+		return instance, true
+	}
+	return mod, true
+}
+
+func createInterfaceTypeDef(ctx context.Context, srv *dagql.Server, name string, mod *dang.Type, env dang.ValueScope, localTypes dangLocalTypes) (dagql.ObjectResult[*core.TypeDef], error) {
+	var res dagql.ObjectResult[*core.TypeDef]
 
 	sels := []dagql.Selector{
 		{Field: "typeDef"},

@@ -297,6 +297,47 @@ func TestRetainDangObjectDirectivesOnlyForTypeDefs(t *testing.T) {
 	require.Equal(t, "marked", directives[0].Name)
 }
 
+func TestDangDeclaredTypeOfInterface(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	writeDangFilesIn(t, dir, map[string]string{
+		"main.dang": "interface Greeter {\n  pub greet(name: String!): String!\n}\n",
+	})
+	env, err := runDangDirForModuleTypes(t.Context(), dir)
+	require.NoError(t, err)
+
+	// Registering a module's types reads each public binding the way
+	// initDangModule does: the interface's name is bound to a value whose
+	// declared type must be the interface itself, with its methods, and the
+	// same type the module names, so it is marked as local.
+	var iface *dang.Type
+	for _, binding := range env.Bindings(dang.PublicVisibility) {
+		if binding.Key != "Greeter" {
+			continue
+		}
+		obj, ok := binding.Value.(*dang.Object)
+		require.True(t, ok, "Greeter is bound to %T", binding.Value)
+		iface, ok = dangDeclaredType(obj)
+		require.True(t, ok)
+	}
+	require.NotNil(t, iface, "Greeter is not a public binding")
+	require.Equal(t, dang.InterfaceKind, iface.Kind)
+
+	var methods []string
+	for name := range iface.Bindings(dang.PublicVisibility) {
+		methods = append(methods, name)
+	}
+	require.Equal(t, []string{"greet"}, methods)
+
+	module, ok := dangEvalModule(env)
+	require.True(t, ok)
+	named, found := module.NamedType("Greeter")
+	require.True(t, found)
+	require.Same(t, named, iface)
+	require.True(t, collectDangLocalTypes(env).contains(iface))
+}
+
 func TestConvertObjectIDKeepsHandleID(t *testing.T) {
 	t.Parallel()
 
