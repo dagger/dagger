@@ -26,8 +26,8 @@ type streamingLogExporter struct {
 	// heldLogs holds the logs of running spans that are hidden while their
 	// parents are shown, such as internal spans: they print if the span
 	// becomes shown, as when it fails, and are dropped when it ends otherwise.
-	heldLogs    map[dagui.SpanID][]sdklog.Record
-	testLogs    map[dagui.SpanID]*Vterm
+	heldLogs map[dagui.SpanID][]sdklog.Record
+	testLogs map[dagui.SpanID]*Vterm
 }
 
 // Export processes log records: ingests them in the DB, groups renderable text
