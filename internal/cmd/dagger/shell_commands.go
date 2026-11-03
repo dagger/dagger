@@ -12,6 +12,7 @@ import (
 	"dagger.io/dagger/core"
 	"github.com/charmbracelet/huh"
 	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/spf13/cobra"
@@ -330,12 +331,12 @@ func (h *shellCallHandler) selectModelInteractive(ctx context.Context) error {
 		return err
 	}
 
-	options, err := availableModelOptions()
+	options, err := availableModelOptions(ctx)
 	if err != nil {
 		return err
 	}
 	if len(options) == 0 {
-		return fmt.Errorf("no models available; run 'dagger llm setup' to configure a provider")
+		return fmt.Errorf("no models available; run /setup to configure a provider")
 	}
 
 	var selected modelSelection
@@ -448,16 +449,28 @@ type modelSelection struct {
 	Model    string
 }
 
-// availableModelOptions lists models from the effective client configuration,
-// including environment and .env overrides. Deduplicate within each provider,
-// never across providers: the same model can use different credentials/routes.
-func availableModelOptions() ([]huh.Option[modelSelection], error) {
-	cfg, err := assembleLLMConfig()
+// availableModelOptions asks the connected engine for effective routing config,
+// including providers inherited from a parent client in nested sessions. Without
+// a connection, assemble the local file, environment and .env configuration.
+func availableModelOptions(ctx context.Context) ([]huh.Option[modelSelection], error) {
+	var cfg *engine.LLMConfig
+	var err error
+	if read, ok := ctx.Value(llmModelConfigKey{}).(llmModelConfigReader); ok {
+		cfg, err = read(ctx)
+	} else {
+		cfg, err = assembleLLMConfig()
+	}
 	if err != nil {
 		return nil, err
 	}
+	return modelOptions(cfg), nil
+}
+
+// modelOptions deduplicates within each provider, never across providers: the
+// same model can use different credentials/routes.
+func modelOptions(cfg *engine.LLMConfig) []huh.Option[modelSelection] {
 	if cfg == nil {
-		return nil, nil
+		return nil
 	}
 
 	var providers []string
@@ -494,7 +507,7 @@ func availableModelOptions() ([]huh.Option[modelSelection], error) {
 			add(provider, m.ID, label)
 		}
 	}
-	return options, nil
+	return options
 }
 
 func (h *shellCallHandler) registerCommands() error { //nolint:gocyclo

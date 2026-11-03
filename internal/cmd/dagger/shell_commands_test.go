@@ -1,12 +1,15 @@
 package daggercmd
 
 import (
+	"context"
+	"errors"
 	"os"
 	"testing"
 
 	"github.com/charmbracelet/huh"
 	"github.com/stretchr/testify/require"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
 )
 
@@ -71,7 +74,7 @@ func TestAvailableModelOptions(t *testing.T) {
 			if tc.dotenv != "" {
 				require.NoError(t, os.WriteFile(".env", []byte(tc.dotenv), 0600))
 			}
-			options, err := availableModelOptions()
+			options, err := availableModelOptions(t.Context())
 			require.NoError(t, err)
 			seen := map[modelSelection]bool{}
 			providers := map[string]bool{}
@@ -94,11 +97,62 @@ func TestAvailableModelOptions(t *testing.T) {
 	}
 }
 
+func TestAvailableModelOptionsEffectiveConfig(t *testing.T) {
+	// The main client can supply credentials to a nested agent with no local
+	// configuration. The engine returns only provider names and model metadata.
+	clearLLMEnv(t)
+	useTempLLMConfig(t, nil)
+	cfg := &engine.LLMConfig{
+		DefaultProvider: "local",
+		DefaultModel:    "org/inherited-default",
+		Providers: map[string]*engine.LLMProviderConfig{
+			"openai-codex": {},
+			"local":        {Model: "org/inherited-model", SmallModel: "org/inherited-small"},
+		},
+	}
+	calls := 0
+	read := llmModelConfigReader(func(ctx context.Context) (*engine.LLMConfig, error) {
+		calls++
+		require.Equal(t, t.Context().Done(), ctx.Done())
+		return cfg, nil
+	})
+	ctx := context.WithValue(t.Context(), llmModelConfigKey{}, read)
+	options, err := availableModelOptions(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, calls)
+	seen := map[modelSelection]bool{}
+	for _, option := range options {
+		seen[option.Value] = true
+		require.Contains(t, []string{"local", "openai-codex"}, option.Value.Provider)
+	}
+	for _, model := range []string{"org/inherited-default", "org/inherited-model", "org/inherited-small"} {
+		require.True(t, seen[modelSelection{Provider: "local", Model: model}])
+	}
+	for _, model := range llmconfig.ModelsForProvider("openai-codex") {
+		require.True(t, seen[modelSelection{Provider: "openai-codex", Model: model.ID}])
+	}
+
+	// A live reader is authoritative. Do not reintroduce local providers after
+	// the engine reports none (e.g. logout), or conceal a failed config read.
+	t.Setenv("OPENAI_API_KEY", "local-key")
+	cfg = nil
+	options, err = availableModelOptions(ctx)
+	require.NoError(t, err)
+	require.Empty(t, options)
+	wantErr := errors.New("engine config unavailable")
+	ctx = context.WithValue(t.Context(), llmModelConfigKey{}, llmModelConfigReader(func(context.Context) (*engine.LLMConfig, error) {
+		return nil, wantErr
+	}))
+	options, err = availableModelOptions(ctx)
+	require.ErrorIs(t, err, wantErr)
+	require.Empty(t, options)
+}
+
 func TestAvailableModelOptionsMalformedConfig(t *testing.T) {
 	clearLLMEnv(t)
 	useTempLLMConfig(t, nil)
 	t.Setenv("OPENAI_DISABLE_STREAMING", "not-a-bool")
-	_, err := availableModelOptions()
+	_, err := availableModelOptions(t.Context())
 	require.ErrorIs(t, err, llmconfig.ErrMalformed)
 }
 
