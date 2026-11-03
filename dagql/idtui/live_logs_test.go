@@ -10,6 +10,7 @@ import (
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/stretchr/testify/require"
+	"github.com/vito/tuist"
 	"go.opentelemetry.io/otel/codes"
 	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -120,6 +121,50 @@ func TestLiveLogsPresenceFlagsHasLogs(t *testing.T) {
 	}))
 	require.True(t, db.Spans.Map[step].HasLogs)
 	require.Nil(t, fe.logs.Logs[step], "presence rendered")
+}
+
+// Validation belongs to application, not enqueue: a release can already be
+// ahead of an export in the event-loop queue while its claim still looks valid.
+func TestLiveLogsFilterAtApplication(t *testing.T) {
+	fe := newWithTerminal(io.Discard, dagui.NewDB(), tuist.NewHeadlessTerminal(80, 24))
+	fe.reportOnly = true // set up inline, then step the real queue below
+	live := dagui.TraceID{TraceID: trace.TraceID{2}}
+	step := prettyTestSpanID(2)
+	fe.ImportSnapshots([]dagui.SpanSnapshot{{ID: step, TraceID: live, Name: "step", StartTime: time.Unix(100, 0), Final: true}})
+	read := fe.SetLiveLogs(live, func(LogRequest) {})
+	valid, checked := true, false
+	ctx := WithLiveLogsFilter(t.Context(), func(records []sdklog.Record) []sdklog.Record {
+		checked = true
+		if !valid {
+			return nil
+		}
+		return records
+	})
+	fe.reportOnly = false
+	fe.dispatch(func() {
+		fe.dropLogTerminal(step)
+		valid = false
+	})
+	require.NoError(t, read.Export(ctx, []sdklog.Record{liveTestLog(live, step, "stale\n")}))
+	require.False(t, checked, "validation must not run while merely enqueueing")
+	require.True(t, valid)
+	fe.tui.Step()
+	require.True(t, checked)
+	require.NotContains(t, fe.logs.Logs, step, "a stale export must not recreate its terminal")
+	require.NoError(t, read.Export(t.Context(), []sdklog.Record{liveTestLog(live, step, "fresh\n")}))
+	fe.tui.Step()
+	require.Equal(t, "fresh\n", vtermText(fe, step))
+
+	// The normal exporter still ingests local control/presence even when the
+	// caller's context carries a live-read filter.
+	checked = false
+	require.NoError(t, fe.LogExporter().Export(ctx, []sdklog.Record{
+		liveTestLog(live, step, "", otellog.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRolePresence)),
+	}))
+	fe.tui.Step()
+	require.False(t, checked, "live batch validation must not affect the normal exporter")
+	require.True(t, fe.db.Spans.Map[step].HasLogs)
+	require.Equal(t, "fresh\n", vtermText(fe, step))
 }
 
 // TestLiveLogsCoverage: a read may return more than was asked for; the
