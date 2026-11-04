@@ -608,10 +608,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("Current location within the workspace root.",
 				`The workspace root is returned as "/".`,
 				"Relative paths in workspace APIs resolve from here."),
-		dagql.NodeFunc("artifacts", s.artifacts).
-			// Discovery goes through the calling client's loaded modules,
-			// which aren't part of the workspace's content.
-			WithInput(dagql.PerClientInput).
+		dagql.NodeFuncWithDynamicInputs("artifacts", s.artifacts, s.artifactsCacheKey).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Discover static object artifacts from workspace modules without evaluating their values.",
 				"Omits the paths that the workspace's check.skip, generate.skip, and up.skip settings skip.").

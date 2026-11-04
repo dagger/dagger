@@ -36,7 +36,8 @@ func WorkspaceClientContext(ctx context.Context, ws *Workspace) (context.Context
 // caller's ancestry, or on another engine. Its content doesn't depend on that
 // client, so it goes through the caller's nearest non-module client instead,
 // whose loaded modules and credentials are the ones the caller's own workspace
-// would use. Fields that depend on those are keyed per client.
+// would use. Fields that depend on those are keyed per client, or by what
+// they read from it, as Workspace.artifacts is.
 func workspaceClientMetadata(ctx context.Context, query *Query, ws *Workspace) (*engine.ClientMetadata, error) {
 	if contentIdentifiableSource(ws.Source()) {
 		clientMetadata, err := query.NonModuleParentClientMetadata(ctx)

@@ -13,6 +13,7 @@ import (
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/util/hashutil"
 )
 
 type artifactsSchema struct{}
@@ -717,29 +718,60 @@ func (*artifactsSchema) withoutURI(_ context.Context, parent *core.Artifacts, ar
 	return parent.WithoutURI(address)
 }
 
-func (s *workspaceSchema) artifacts(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args struct {
+type workspaceArtifactsArgs struct {
 	Include dagql.Optional[dagql.ArrayInput[dagql.String]]
-}) (*core.Artifacts, error) {
+}
+
+func (s *workspaceSchema) artifacts(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceArtifactsArgs) (*core.Artifacts, error) {
 	return s.collectArtifacts(ctx, parent, workspaceIncludePatterns(args.Include))
 }
 
-// collectArtifacts discovers the workspace's static artifacts. Include
-// patterns narrow module loading and select each path and its children.
-func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], include []string) (*core.Artifacts, error) {
-	result := &core.Artifacts{Entries: []*core.Artifact{}}
-	if include != nil {
-		result.Selector.Paths = make([]string, 0, len(include))
-		for _, pattern := range include {
-			result.Selector.Paths = append(result.Selector.Paths, core.IncludePatterns(pattern)...)
+// artifactsCacheKey keys discovery by what it reads besides the workspace.
+// Discovery through a workspace identified by its content goes through the
+// calling client's loaded modules (see core.workspaceClientMetadata), so it
+// is keyed by those, and shared by every client and session that loads them
+// the same way. Any other workspace is keyed per call anyway (see
+// currentWorkspace), so its discovery stays per client and is not kept.
+func (s *workspaceSchema) artifactsCacheKey(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceArtifactsArgs, req *dagql.CallRequest) error {
+	if !parent.Self().HasContentIdentity() {
+		client, err := dagql.PerClientInput.Resolver(ctx, nil)
+		if err != nil {
+			return err
 		}
-	}
-	for i := range include {
-		include[i] = strings.ReplaceAll(include[i], "/", ":")
+		return req.SetImplicitInput(ctx, dagql.PerClientInput.Name, client)
 	}
 	ctx, err := s.withWorkspaceClientContext(ctx, parent.Self())
 	if err != nil {
-		return nil, err
+		return err
 	}
+	inputs, err := s.artifactDiscoveryInputs(ctx, parent, artifactModuleIncludes(workspaceIncludePatterns(args.Include)))
+	if err != nil {
+		return err
+	}
+	key, err := inputs.digest(ctx)
+	if err != nil {
+		return err
+	}
+	req.IsPersistable = true
+	return req.SetImplicitInput(ctx, artifactDiscoveryInput, dagql.NewString(key))
+}
+
+const artifactDiscoveryInput = "artifactDiscovery"
+
+// artifactDiscoveryInputs is what discovery reads from the calling client:
+// its selected environment, the modules it lists after overlay resolution,
+// which of them are workspace mains, and the modules that failed to load.
+type artifactDiscoveryInputs struct {
+	env      string
+	cfg      *workspace.Config
+	mods     []dagql.ObjectResult[*core.Module]
+	failures []core.ModuleLoadFailure
+	mains    map[string]bool
+}
+
+// artifactDiscoveryInputs reads them with ctx already in the workspace's
+// client context (see withWorkspaceClientContext).
+func (s *workspaceSchema) artifactDiscoveryInputs(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], include []string) (*artifactDiscoveryInputs, error) {
 	cfg, err := workspaceEffectiveConfig(ctx, parent.Self())
 	if err != nil {
 		return nil, err
@@ -752,6 +784,83 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 	if err != nil {
 		return nil, err
 	}
+	env, _ := selectedWorkspaceEnv(ctx, parent.Self())
+	return &artifactDiscoveryInputs{env: env, cfg: cfg, mods: mods, failures: failures, mains: mains}, nil
+}
+
+// digest identifies the inputs. A module counts by its implementation,
+// which is the same wherever the same module is loaded, as a workspace
+// records its client's modules (see Server.CurrentClientModules). The
+// configuration follows from the workspace and the environment.
+func (inputs *artifactDiscoveryInputs) digest(ctx context.Context) (string, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return "", err
+	}
+	parts := []string{artifactDiscoveryInput + "/v1", "env", inputs.env}
+	mods := make([]string, 0, len(inputs.mods))
+	for _, mod := range inputs.mods {
+		var scoped dagql.ObjectResult[*core.Module]
+		if err := dag.Select(ctx, mod, &scoped, dagql.Selector{Field: "_implementationScoped"}); err != nil {
+			return "", fmt.Errorf("module %s: %w", mod.Self().Name(), err)
+		}
+		dgst, err := scoped.ContentPreferredDigest(ctx)
+		if err != nil {
+			return "", fmt.Errorf("module %s: %w", mod.Self().Name(), err)
+		}
+		mods = append(mods, mod.Self().Name()+"="+dgst.String())
+	}
+	slices.Sort(mods)
+	parts = append(parts, "modules")
+	parts = append(parts, mods...)
+	mains := make([]string, 0, len(inputs.mains))
+	for name, main := range inputs.mains {
+		mains = append(mains, fmt.Sprintf("%s=%t", name, main))
+	}
+	slices.Sort(mains)
+	parts = append(parts, "mains")
+	parts = append(parts, mains...)
+	failures, err := json.Marshal(inputs.failures)
+	if err != nil {
+		return "", err
+	}
+	parts = append(parts, "failures", string(failures))
+	return hashutil.HashStrings(parts...).String(), nil
+}
+
+// artifactModuleIncludes turns include paths into the module tree patterns
+// that narrow module loading.
+func artifactModuleIncludes(include []string) []string {
+	if include == nil {
+		return nil
+	}
+	patterns := make([]string, len(include))
+	for i, pattern := range include {
+		patterns[i] = strings.ReplaceAll(pattern, "/", ":")
+	}
+	return patterns
+}
+
+// collectArtifacts discovers the workspace's static artifacts. Include
+// patterns narrow module loading and select each path and its children.
+func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], include []string) (*core.Artifacts, error) {
+	result := &core.Artifacts{Entries: []*core.Artifact{}}
+	if include != nil {
+		result.Selector.Paths = make([]string, 0, len(include))
+		for _, pattern := range include {
+			result.Selector.Paths = append(result.Selector.Paths, core.IncludePatterns(pattern)...)
+		}
+	}
+	include = artifactModuleIncludes(include)
+	ctx, err := s.withWorkspaceClientContext(ctx, parent.Self())
+	if err != nil {
+		return nil, err
+	}
+	inputs, err := s.artifactDiscoveryInputs(ctx, parent, include)
+	if err != nil {
+		return nil, err
+	}
+	cfg, mods, failures, mains := inputs.cfg, inputs.mods, inputs.failures, inputs.mains
 	sdkProviders := map[string]bool{}
 	for _, sdk := range cfg.SDKs {
 		sdkProviders[sdk.Module] = true
