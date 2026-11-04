@@ -116,6 +116,7 @@ func TestArtifactPatternCharacterClasses(t *testing.T) {
 		{Path: []string{"ci", "test1"}},
 		{Path: []string{"ci", "test5"}},
 		{Path: []string{"ci", "test9"}},
+		{Path: []string{"ci", "test09"}},
 	}}
 	for _, tc := range []struct {
 		pattern string
@@ -136,6 +137,23 @@ func TestArtifactPatternCharacterClasses(t *testing.T) {
 	matched, err := node.Match(t.Context(), []string{"ci:test[0-9]"})
 	require.NoError(t, err)
 	require.True(t, matched)
+	node.Name = "test09"
+	matched, err = node.Match(t.Context(), []string{"ci:test[0-9]"})
+	require.NoError(t, err)
+	require.False(t, matched, "a character class is not a literal-prefix shortcut")
+	for _, name := range []string{"test5", "test09"} {
+		parent := &ModTreeNode{Name: name, Parent: &ModTreeNode{Name: "ci", Parent: &ModTreeNode{}}}
+		child := &ModTreeNode{Name: "check", Parent: parent}
+		matched, err := child.Match(t.Context(), []string{"ci:test[0-9]"})
+		require.NoError(t, err)
+		replayed, err := matchesInclude(&Artifact{Path: child.CLIPath(), Node: child}, IncludePatterns("ci:test[0-9]"))
+		require.NoError(t, err)
+		require.Equal(t, name == "test5", matched)
+		require.Equal(t, matched, replayed)
+		matched, err = child.Match(t.Context(), []string{"ci:" + name})
+		require.NoError(t, err)
+		require.True(t, matched, "literal includes still select descendants")
+	}
 	require.Equal(t, `test[\]0-9]`, LatestNamer.CLIName(`test[\]0-9]`), "escaped class delimiters are preserved")
 }
 

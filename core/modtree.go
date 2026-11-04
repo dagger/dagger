@@ -413,8 +413,12 @@ func (node *ModTreeNode) Match(ctx context.Context, patterns []string) (bool, er
 		} else if match {
 			return true, nil
 		}
-		patternAsPath := NewModTreePath(pattern)
-		if patternAsPath.Contains(ctx, namer, node.Path()) {
+		// Includes also select descendants. Keep this a glob match: turning
+		// a pattern into API field names would strip classes such as [0-9]
+		// and make discovery disagree with the recorded include selector.
+		if match, err := node.Path().Glob(ctx, namer, pattern+":**"); err != nil {
+			return false, err
+		} else if match {
 			return true, nil
 		}
 	}
