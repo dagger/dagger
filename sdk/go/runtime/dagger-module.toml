@@ -1,0 +1,11 @@
+# The built-in Go SDK, as the engine image carries it: this directory at
+# /sdk/runtime, beside dagger/go at /sdk/dagger-go (internal/daggergo).
+name = "go-sdk"
+engineVersion = "v1.0.0-beta.24"
+
+[runtime]
+  source = "dang"
+
+[[dependencies]]
+  name = "go"
+  source = "../dagger-go"

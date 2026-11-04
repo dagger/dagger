@@ -63,6 +63,12 @@ type ModuleGeneratorConfig struct {
 
 	// If set, use `@dagger.io/dagger` with the given version and use it in the generated client.
 	LibVersion string
+
+	// Bootstrap stops after the first pass: the module's go.mod, tidied,
+	// and its initial bindings, which a pass that loads its package reads.
+	// The Go SDK compiles the packages that load imports in between, so
+	// the load reads their export data instead of compiling them.
+	Bootstrap bool
 }
 
 type ModuleSourceDependency struct {

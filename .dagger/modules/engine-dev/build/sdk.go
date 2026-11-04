@@ -259,15 +259,32 @@ func (build *Builder) goSDKContent(ctx context.Context) (*sdkContent, error) {
 		WithExec([]string{"go", "mod", "tidy"}).
 		WithExec([]string{"go", "list", "-m", "all"})
 
+	// The export driver serves codegen the export data of what a module
+	// imports from dagger/go's archives, so no Go build cache ships.
+	exportDriver := core.NewContainer().
+		From(consts.GolangImage).
+		With(build.goPlatformEnv).
+		WithEnvVariable("CGO_ENABLED", "0").
+		WithDirectory("/src", build.source.Directory("internal/exportdriver")).
+		WithWorkdir("/src").
+		WithExec([]string{"go", "build", "-o", "/export-driver", "."}).
+		File("/export-driver")
+
 	sdkCtrTarball := core.NewContainer(dagger.ContainerOpts{Platform: build.platform}).
 		From(consts.GolangImage).
 		With(build.goPlatformEnv).
 		WithExec([]string{"apk", "add", "git", "openssh", "openssl"}).
 		WithEnvVariable("GOTOOLCHAIN", "auto").
 		WithFile("/usr/local/bin/codegen", build.CodegenBinary()).
-		// these cache directories should match the cache volume locations in the engine's goSDK.base
+		WithFile("/usr/local/bin/export-driver", exportDriver).
+		// The Go SDK module, which the engine loads for every module with the
+		// Go runtime, and dagger/go, which it builds every runtime with, as
+		// dagger/go builds a user's Go code: one graph of package builds and
+		// one cache.
+		WithDirectory("/sdk/runtime", build.source.Directory("sdk/go/runtime")).
+		WithDirectory("/sdk/dagger-go", build.source.Directory("internal/daggergo")).
+		// this cache directory should match the module cache volume location in the engine's goSDK.base
 		WithDirectory("/go/pkg/mod", sdkCache.Directory("/go/pkg/mod")).
-		WithDirectory("/root/.cache/go-build", sdkCache.Directory("/root/.cache/go-build")).
 		AsTarball(dagger.ContainerAsTarballOpts{
 			ForcedCompression: dagger.ImageLayerCompressionZstd,
 		})
@@ -351,7 +368,7 @@ func goModuleSeed(ctx context.Context, source *dagger.Directory) (*dagger.Direct
 	}
 	mainGo.WriteString(")\n\nfunc main() {}\n")
 
-	libVersion, err := goSDKLibVersion(ctx, source.File("core/sdk/go_sdk.go"))
+	libVersion, err := goSDKLibVersion(ctx, source.File("core/sdk/go_sdk_module.go"))
 	if err != nil {
 		return nil, "", err
 	}
@@ -384,7 +401,7 @@ func goFileImports(ctx context.Context, file *dagger.File) ([]string, error) {
 }
 
 // goSDKLibVersion returns the dagger.io/dagger version the engine has module
-// codegen pin: the goSDKLibVersion constant in core/sdk/go_sdk.go.
+// codegen pin: the goSDKLibVersion constant in core/sdk/go_sdk_module.go.
 func goSDKLibVersion(ctx context.Context, file *dagger.File) (string, error) {
 	src, err := file.Contents(ctx)
 	if err != nil {
@@ -411,5 +428,5 @@ func goSDKLibVersion(ctx context.Context, file *dagger.File) (string, error) {
 			}
 		}
 	}
-	return "", fmt.Errorf("goSDKLibVersion constant not found in core/sdk/go_sdk.go")
+	return "", fmt.Errorf("goSDKLibVersion constant not found in core/sdk/go_sdk_module.go")
 }

@@ -175,6 +175,16 @@ func SystemEnvEntry(name string, fallback *string) string {
 	return name + "=" + *fallback
 }
 
+// systemEnvPrefix prefixes the engine's own environment variables that set
+// the system env variables of its execs.
+const systemEnvPrefix = "_DAGGER_ENGINE_SYSTEMENV_"
+
+// SystemEnvValue is the value the engine sets for the system env variable
+// name, as an exec without its own value gets it.
+func SystemEnvValue(name string) (string, bool) {
+	return os.LookupEnv(systemEnvPrefix + name)
+}
+
 func (c *Client) Run(
 	ctx context.Context,
 	id string,

@@ -1317,10 +1317,11 @@ func (GeneratorsSuite) TestWorkspaceGenerateReportsLoadFailureDetail(ctx context
 
 	requireSkipDetail := func(t *testctx.T, out string) {
 		t.Helper()
-		// The compile error is the reason broken-build was skipped: the go
-		// build output follows the load error.
+		// The compile error is the reason broken-build was skipped: the
+		// compiler's output follows the load error, with the exit code of the
+		// compile, which the Go SDK runs per package.
 		require.Contains(t, out, "modules/broken-build")
-		require.Contains(t, out, "exit code: 1")
+		require.Contains(t, out, "exit code: 2")
 		require.Contains(t, out, "undefined: intentionallyUndefinedSymbol")
 		// Missing generated files: skipped, without the misleading hint.
 		require.Contains(t, out, "modules/ungenerated")

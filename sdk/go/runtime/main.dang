@@ -1,0 +1,238 @@
+"""
+The Go SDK of modules with a Go runtime: their generated code, and their
+runtime, which dagger/go builds as it builds any Go code, with one cached
+exec per package.
+"""
+type GoSdk {
+  # The Go SDK image: the Go toolchain, the codegen binary, the export
+  # driver, and the module cache codegen starts from, with the engine's
+  # GOPROXY and GODEBUG. It carries nothing of the session.
+  let base: Container!
+
+  # The calling client's git configuration, one key=value entry each, for
+  # private modules.
+  let gitConfig: [String!]! = []
+
+  # The calling client's SSH agent, when it has one, for private modules.
+  let sshAuthSocket: Socket
+
+  # The Go version every runtime builds with: the engine's own, which a
+  # go.mod that asks for a newer Go still switches from.
+  let goVersion: String!
+
+  # The dagger.io/dagger version generated code pins, which the image's
+  # module cache is seeded for.
+  let libVersion: String!
+
+  # GOPRIVATE, from the module's SDK config.
+  let goprivate: String! = ""
+
+  new(
+    base: Container!,
+    goVersion: String!,
+    libVersion: String!,
+    gitConfig: [String!]! = [],
+    sshAuthSocket: Socket = null,
+  ) {
+    self.base = base
+    self.goVersion = goVersion
+    self.libVersion = libVersion
+    self.gitConfig = gitConfig
+    self.sshAuthSocket = sshAuthSocket
+    self
+  }
+
+  """
+  The SDK configured as the module's sdk config sets it.
+  """
+  pub withConfig(
+    """
+    GOPRIVATE for the module's downloads, e.g. github.com/acme/*.
+    """
+    goprivate: String! = "",
+  ): GoSdk! {
+    self.goprivate = goprivate
+    self
+  }
+
+  """
+  The files a Go client needs to be generated into.
+  """
+  pub requiredClientGenerationFiles: [String!]! {
+    ["./go.mod", "./go.sum", "main.go"]
+  }
+
+  """
+  A Go client of the module, generated into outputDir, a path from the
+  module's source root.
+  """
+  pub generateClient(modSource: ModuleSource!, introspectionJson: File!, outputDir: String!): Directory! {
+    let root = cleanPath(modSource.sourceRootSubpath)
+    let rootPath = if (root == ".") { contextPath } else { contextPath + "/" + root }
+    base
+      .withMountedFile("/schema.json", introspectionJson)
+      .withoutDefaultArgs
+      .withMountedDirectory(contextPath, modSource.contextDirectory)
+      .withWorkdir(rootPath)
+      .withExec([
+        "codegen", "generate-client",
+        "--output", rootPath,
+        "--introspection-json-path", "/schema.json",
+        "--module-source-id=" + toString(modSource.id),
+        "--client-dir=" + outputDir,
+      ])
+      .directory(contextPath)
+  }
+
+  """
+  The module's generated code: dagger.gen.go and its internal packages.
+  """
+  pub codegen(modSource: ModuleSource!, introspectionJson: File!): GeneratedCode! {
+    generatedCode(generated(modSource, introspectionJson).directory(contextPath))
+      .withVCSGeneratedPaths(["dagger.gen.go", "internal/dagger/**", "internal/telemetry/**"])
+      .withVCSIgnoredPaths(["dagger.gen.go", "internal/dagger", "internal/telemetry", ".env"])
+  }
+
+  """
+  The module's runtime: its process, built by dagger/go. Without the
+  introspection JSON, the module builds from its committed generated files.
+  """
+  pub moduleRuntime(modSource: ModuleSource!, introspectionJson: File = null): Container! {
+    let prepared = if (introspectionJson == null) {
+      withoutAccess(committed(modSource).withExec(["codegen", "prepare-go-runtime"]))
+    } else {
+      generated(modSource, introspectionJson!).withExec(["codegen", "prepare-go-runtime"])
+    }
+    let ws = prepared.directory(contextPath).asWorkspace
+    let modPath = cleanPath(modSource.sourceSubpath)
+    let bin = goTool.module(ws, path: modPath, findUp: false).packages(ws).get(key: modPath).binary(ws)
+    prepared
+      .withFile(runtimePath, bin)
+      .withEntrypoint([runtimePath])
+      # The module cache is codegen's: the module's own code must not reach
+      # what other modules share through it.
+      .withoutMount("/go/pkg/mod")
+  }
+
+  # Where the module's context directory is mounted.
+  let contextPath: String! = "/src"
+
+  # Where the runtime binary goes.
+  let runtimePath: String! = "/runtime"
+
+  # Where codegen reads the export data of what the module imports.
+  let archivesPath: String! = "/gobuild-archives"
+
+  # dagger/go, building as the SDK image's toolchain does, with the runtime
+  # binaries' flags. Downloads run with the module's private settings when
+  # it sets goprivate, and otherwise in the image alone, so they key the
+  # same in every session.
+  let goTool: Go! {
+    go(
+      version: goVersion,
+      buildFlags: ["-ldflags=-s -w"],
+      downloads: if (goprivate == "") { base } else { withAccess(base) },
+    )
+  }
+
+  # ctr with what downloads of private modules need: GOPRIVATE, the client's
+  # git configuration and its SSH agent.
+  let withAccess(ctr: Container!): Container! {
+    let private = if (goprivate == "") { ctr } else { ctr.withEnvVariable("GOPRIVATE", goprivate) }
+    # Without a prompt for unknown hosts, which nothing can answer.
+    let configured = gitConfig.reduce(private.withEnvVariable("GIT_SSH_COMMAND", "ssh -o StrictHostKeyChecking=no ")) { c, entry =>
+      let parts = entry.split("=")
+      c.withExec(["git", "config", "--global", parts.takeFirst(1).join(""), parts.takeLast(parts.length - 1).join("=")])
+    }
+    if (sshAuthSocket == null) {
+      configured
+    } else {
+      configured.withUnixSocket(sshSocketPath, sshAuthSocket!).withEnvVariable("SSH_AUTH_SOCK", sshSocketPath)
+    }
+  }
+
+  # ctr without the client's SSH agent, which the module's process must not
+  # reach.
+  let withoutAccess(ctr: Container!): Container! {
+    if (sshAuthSocket == null) {
+      ctr
+    } else {
+      ctr.withoutUnixSocket(sshSocketPath).withoutEnvVariable("SSH_AUTH_SOCK")
+    }
+  }
+
+  let sshSocketPath: String! = "/tmp/dagger-ssh-sock"
+
+  # The module's path in its context directory, "." for its root. The engine
+  # gives it clean.
+  let cleanPath(p: String!): String! {
+    if (p == "") { "." } else { p }
+  }
+
+  let sourcePath(modSource: ModuleSource!): String! {
+    let sub = cleanPath(modSource.sourceSubpath)
+    if (sub == ".") { contextPath } else { contextPath + "/" + sub }
+  }
+
+  let sourceFile(modSource: ModuleSource!, name: String!): String! {
+    let sub = cleanPath(modSource.sourceSubpath)
+    if (sub == ".") { name } else { sub + "/" + name }
+  }
+
+  # The module's committed sources, which a module that skips runtime
+  # codegen builds from. The engine has checked that its generated files
+  # are there.
+  let committed(modSource: ModuleSource!): Container! {
+    withAccess(base)
+      .withMountedDirectory(contextPath, modSource.contextDirectory)
+      .withWorkdir(sourcePath(modSource))
+  }
+
+  let codegenArgs(modSource: ModuleSource!): [String!]! {
+    let args = [
+      "codegen", "generate-module",
+      "--output", contextPath,
+      "--module-source-path", sourcePath(modSource),
+      "--module-name", modSource.moduleOriginalName,
+      "--introspection-json-path", "/schema.json",
+      "--lib-version", libVersion,
+    ]
+    if (modSource.configExists) { args } else { args + ["--is-init"] }
+  }
+
+  # The container codegen ran in, with the module's generated code in its
+  # context directory. Codegen's first pass bootstraps the module: its
+  # go.mod, tidied, and its initial bindings. Loading its package, in the
+  # pass after, type-checks it against what it imports, whose export data
+  # dagger/go compiles from that, as it compiles the runtime, and the export
+  # driver serves: the go command compiles none of it.
+  let generated(modSource: ModuleSource!, introspectionJson: File!): Container! {
+    let setup = withAccess(base)
+      .withMountedFile("/schema.json", introspectionJson)
+      .withMountedDirectory(contextPath, modSource.contextDirectory.withoutFile(sourceFile(modSource, "dagger.gen.go")))
+      .withWorkdir(sourcePath(modSource))
+      .withoutDefaultArgs
+    let bootstrapped = setup.withExec(codegenArgs(modSource) + ["--bootstrap"]).directory(contextPath)
+    let ws = bootstrapped.asWorkspace
+    # What codegen type-checks the module's root package against: its
+    # imports from other modules and the standard library, without tests.
+    let archives = goTool.module(ws, path: cleanPath(modSource.sourceSubpath), findUp: false).archives(ws, dependencies: true, packages: ["."], tests: false)
+    withoutAccess(
+      setup
+        .withMountedDirectory(contextPath, bootstrapped)
+        .withMountedDirectory(archivesPath, archives)
+        .withEnvVariable("GOPACKAGESDRIVER", "/usr/local/bin/export-driver")
+        .withEnvVariable("GOLANGCI_EXPORT_ARCHIVES", archivesPath)
+        .withEnvVariable("GOLANGCI_EXPORT_WORKDIR", "/tmp/export-driver")
+        # Codegen type-checks the module's own packages from source, with
+        # their function bodies left out: the driver compiles none of them.
+        .withEnvVariable("GOLANGCI_EXPORT_COMPILE", "never")
+        .withExec(codegenArgs(modSource))
+        .withoutEnvVariable("GOPACKAGESDRIVER")
+        .withoutEnvVariable("GOLANGCI_EXPORT_ARCHIVES")
+        .withoutEnvVariable("GOLANGCI_EXPORT_WORKDIR")
+        .withoutEnvVariable("GOLANGCI_EXPORT_COMPILE")
+        .withoutMount(archivesPath),
+    )
+  }
+}
