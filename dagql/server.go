@@ -360,6 +360,7 @@ func NewDefaultHandler(es graphql.ExecutableSchema) *handler.Server {
 	srv.Use(extension.AutomaticPersistedQuery{
 		Cache: lru.New[string](100),
 	})
+	srv.AroundResponses(stampResponse)
 
 	srv.SetValidationRulesFn(func() *rules.Rules {
 		validationRules := rules.NewDefaultRules()
