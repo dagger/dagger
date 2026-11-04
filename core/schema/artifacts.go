@@ -89,26 +89,15 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		dagql.Func("dimensions", s.dimensions).Doc("List dimension identifiers represented in this selection, sorted with no duplicates."),
 		dagql.Func("dimensionKeys", s.dimensionKeys).Doc("List keys represented in this selection for the given dimension, sorted with no duplicates."),
 		dagql.Func("dimensionItems", s.dimensionItems).Doc("List collection items represented in this selection for the given dimension. Preserve parent keys and remove duplicate item addresses. Does not evaluate item values."),
-		keptFromContent(dagql.Func("__evaluationItems", func(ctx context.Context, parent *core.Artifacts, _ struct{}) (dagql.ObjectResultArray[*core.Artifact], error) {
-			items, bound, err := keptExpansion(ctx, parent.EvaluationItems)
-			if err != nil {
-				return nil, err
-			}
-			if bound {
-				// A kept read of an item would keep this listing alive too.
-				for i, item := range items {
-					items[i] = item.Clone()
-					items[i].SessionBound = true
-				}
-			}
-			return core.ArtifactItemResults(ctx, items)
+		keptFromContent(dagql.Func("__evaluationItems", func(ctx context.Context, parent *core.Artifacts, _ struct{}) (core.ArtifactItems, error) {
+			items, err := keptExpansion(ctx, parent.EvaluationItems)
+			return core.ArtifactItems{Array: items}, err
 		}), artifactsFromContent),
 		dagql.Func("items", s.items).Doc("List artifact descriptions with their collection view. Discover collection keys without evaluating leaf values."),
 		keptFromContent(dagql.Func("__listing", func(ctx context.Context, parent *core.Artifacts, args artifactListingArgs) (core.JSON, error) {
-			listing, _, err := keptExpansion(ctx, func(ctx context.Context) (core.JSON, error) {
+			return keptExpansion(ctx, func(ctx context.Context) (core.JSON, error) {
 				return s.listing(ctx, parent, args)
 			})
-			return listing, err
 		}).
 			Doc("Internal listing metadata, serialized without per-item GraphQL object materialization.").
 			Args(dagql.Arg("absolute").Doc("Prefix each address with the workspace's Git address and commit."), dagql.Arg("typeAssertion").Doc("Include the artifact type in each address scheme.")), artifactsFromContent),
@@ -124,26 +113,18 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		}),
 		dagql.NodeFunc("__remoteCheck", s.remoteCheck),
 		dagql.Func("__failedCheck", s.failedCheck),
-		keptFromContent(dagql.Func("loadError", s.loadError).Doc("A module load failure, or an empty string if discovery succeeded."), artifactFromContent),
+		dagql.Func("loadError", s.loadError).Doc("A module load failure, or an empty string if discovery succeeded."),
 		dagql.Func("arguments", s.arguments).Doc("The arguments accepted by the artifact field."),
 		dagql.Func("description", s.description).Doc("The description of the field that supplies this artifact."),
-		keptFromContent(dagql.Func("workspace", s.artifactWorkspace).Doc("The workspace this artifact was discovered in; its address is relative to it. Null for an artifact without a workspace, such as one of an LLM's bound tool objects (see LLM.artifacts)."), artifactFromContent),
-		keptFromContent(dagql.Func("uri", s.artifactURI).
+		dagql.Func("workspace", s.artifactWorkspace).Doc("The workspace this artifact was discovered in; its address is relative to it. Null for an artifact without a workspace, such as one of an LLM's bound tool objects (see LLM.artifacts)."),
+		dagql.Func("uri", s.artifactURI).
 			Doc("The artifact's DAG address, such as dag://engine-dev/playground.").
 			Args(
 				dagql.Arg("absolute").Doc("Prefix the workspace's Git address and commit: dag://<workspace>@<commit>:<path>. Fails if the artifact has no workspace, or its workspace has no Git address."),
 				dagql.Arg("dimensionKeys").Doc("Include the dimension keys as a query. Without them, the address is a path selector."),
 				dagql.Arg("typeAssertion").Doc("Include the artifact type in the scheme: dag+container://."),
-			), artifactFromContent),
+			),
 	}.Install(srv)
-	// A check run reads these with every listed item.
-	for _, name := range []string{"path", "directives", "dimensionKeys"} {
-		field, ok := artifactClass.Field(name, "")
-		if !ok {
-			panic(fmt.Sprintf("Artifact has no field %q", name))
-		}
-		artifactClass.Install(keptFromContent(field, artifactFromContent))
-	}
 	artifactClass.Extend(dagql.FieldSpec{
 		Name: "value", Type: nodeInterfaceType{}, Args: dagql.NewInputSpecs(dagql.InputSpec{Name: "arguments", Type: core.JSON{}, Default: core.JSON("{}"), Description: "Field arguments as a JSON object."}),
 		Description: "Evaluate the target in the workspace that supplied this artifact.",
@@ -782,11 +763,12 @@ func (s *workspaceSchema) artifactsCacheKey(ctx context.Context, parent dagql.Ob
 
 const artifactDiscoveryInput = "artifactDiscovery"
 
-// artifactDiscoveryInputs is what discovery reads from the calling client:
-// its selected environment, the modules it lists after overlay resolution,
-// which of them are workspace mains, and the modules that failed to load.
+// artifactDiscoveryInputs is what discovery reads besides the workspace's
+// identity: the effective configuration, which the calling client's selected
+// environment and a remote include's current content can change, and from
+// the calling client the modules it lists after overlay resolution, which of
+// them are workspace mains, and the modules that failed to load.
 type artifactDiscoveryInputs struct {
-	env      string
 	cfg      *workspace.Config
 	mods     []dagql.ObjectResult[*core.Module]
 	failures []core.ModuleLoadFailure
@@ -808,20 +790,22 @@ func (s *workspaceSchema) artifactDiscoveryInputs(ctx context.Context, parent da
 	if err != nil {
 		return nil, err
 	}
-	env, _ := selectedWorkspaceEnv(ctx, parent.Self())
-	return &artifactDiscoveryInputs{env: env, cfg: cfg, mods: mods, failures: failures, mains: mains}, nil
+	return &artifactDiscoveryInputs{cfg: cfg, mods: mods, failures: failures, mains: mains}, nil
 }
 
 // digest identifies the inputs. A module counts by its implementation,
 // which is the same wherever the same module is loaded, as a workspace
-// records its client's modules (see Server.CurrentClientModules). The
-// configuration follows from the workspace and the environment.
+// records its client's modules (see Server.CurrentClientModules).
 func (inputs *artifactDiscoveryInputs) digest(ctx context.Context) (string, error) {
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return "", err
 	}
-	parts := []string{artifactDiscoveryInput + "/v1", "env", inputs.env}
+	cfg, err := json.Marshal(inputs.cfg)
+	if err != nil {
+		return "", err
+	}
+	parts := []string{artifactDiscoveryInput + "/v1", "config", string(cfg)}
 	mods := make([]string, 0, len(inputs.mods))
 	for _, mod := range inputs.mods {
 		var scoped dagql.ObjectResult[*core.Module]

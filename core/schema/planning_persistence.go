@@ -32,13 +32,9 @@ func workspaceFromContent(ws dagql.ObjectResult[*core.Workspace]) bool {
 	return ws.Self() != nil && ws.Self().HasContentIdentity()
 }
 
-func artifactFromContent(a dagql.ObjectResult[*core.Artifact]) bool {
-	return workspaceFromContent(a.Self().Workspace) && !a.Self().SessionBound
-}
-
 func artifactsFromContent(a dagql.ObjectResult[*core.Artifacts]) bool {
 	for _, entry := range a.Self().Entries {
-		if !workspaceFromContent(entry.Workspace) || entry.SessionBound {
+		if !workspaceFromContent(entry.Workspace) {
 			return false
 		}
 	}
@@ -47,15 +43,18 @@ func artifactsFromContent(a dagql.ObjectResult[*core.Artifacts]) bool {
 
 // keptExpansion runs a resolver of a keptFromContent field that evaluates
 // the selection's collections to list their items. Its result stands for
-// those evaluations, so it is kept only when each would give a later session
-// the same result: none is cached per call, session or client, or only for a
-// time. It reports whether it wasn't.
-func keptExpansion[R any](ctx context.Context, resolve func(context.Context) (R, error)) (R, bool, error) {
+// those evaluations, so it is kept only as long as each of them would give
+// the same result: not past the session when one is cached per call,
+// session or client, and not past the earliest expiry of their results.
+func keptExpansion[R any](ctx context.Context, resolve func(context.Context) (R, error)) (R, error) {
 	scoped, scopes := dagql.WithCallScopes(ctx)
 	result, err := resolve(scoped)
-	bound := err == nil && scopes.SessionBound() != ""
-	if bound {
+	if err != nil {
+		return result, err
+	}
+	if scopes.SessionBound() != "" {
 		dagql.DeclinePersistence(ctx)
 	}
-	return result, bound, err
+	dagql.ExpireBy(ctx, scopes.ExpiresAtUnix())
+	return result, nil
 }

@@ -70,11 +70,6 @@ type Artifact struct {
 	Directives  []string `field:"true" doc:"The directives carried by this artifact."`
 	LoadFailure *ModuleLoadFailure
 	Node        *ModTreeNode
-	// SessionBound marks an artifact listed from a collection whose
-	// producer a later session would call again, so what is read from it
-	// isn't kept past the session. It is never stored: such a listing isn't
-	// kept.
-	SessionBound bool
 	// Workspace is the workspace that supplied the artifact: its address is
 	// relative to it, and it names the artifact's identity. Unset for a
 	// bound artifact.
@@ -1165,6 +1160,28 @@ func (a *Artifacts) EncodePersistedObject(_ context.Context, enc *dagql.PersistE
 func (*Artifacts) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, raw json.RawMessage) (dagql.Typed, error) {
 	return decodeArtifacts(ctx, dec, raw)
 }
+// ArtifactItems is a list of artifacts that owns what they reference, as
+// each artifact does as a result of its own. A list of plain values owns
+// nothing, so a kept list of artifacts would store references to results it
+// doesn't keep.
+type ArtifactItems struct {
+	dagql.Array[*Artifact]
+}
+
+var _ dagql.HasDependencyResults = ArtifactItems{}
+
+func (items ArtifactItems) AttachDependencyResults(ctx context.Context, _ dagql.AnyResult, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	var owned []dagql.AnyResult
+	for _, item := range items.Array {
+		deps, err := item.AttachDependencyResults(ctx, nil, attach)
+		if err != nil {
+			return nil, err
+		}
+		owned = append(owned, deps...)
+	}
+	return owned, nil
+}
+
 func (a *Artifact) AttachDependencyResults(_ context.Context, _ dagql.AnyResult, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
 	owned, err := attachModTreeNodeDependencyResults(a.Node, attach)
 	if err != nil {

@@ -144,9 +144,13 @@ func checkCachingRemote(ctx context.Context, t *testctx.T, c *dagger.Client) str
 
 // planningCollectionModule is the main module of a Git workspace whose
 // collection gets a new key each time its producer runs, cached as policy
-// says. Each item's check records its key, so a test can tell which items a
-// run checked.
+// says, or by default when it's empty. Each item's check records its key, so
+// a test can tell which items a run checked.
 func planningCollectionModule(c *dagger.Client, policy string) *core.Directory {
+	cache := ""
+	if policy != "" {
+		cache = "// +cache=\"" + policy + "\"\n"
+	}
 	return core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"./probe\"\nmain = true\n").
 		WithNewFile("probe/dagger.json", `{"name":"probe","engineVersion":"latest","sdk":{"source":"go"},"source":"."}`).
@@ -164,8 +168,7 @@ const nonce = "`+rand.Text()+`"
 
 type Probe struct{}
 
-// +cache="`+policy+`"
-func (*Probe) Batches() *Batches { return &Batches{Names: []string{rand.Text()}} }
+`+cache+`func (*Probe) Batches() *Batches { return &Batches{Names: []string{rand.Text()}} }
 
 // +collection
 type Batches struct {
@@ -237,6 +240,18 @@ func (ChecksSuite) TestCheckPlanningFromGitAcrossSessions(ctx context.Context, t
 		checkCachingRun(ctx, t, ctr, core.ReturnTypeSuccess, "check", "-W", remoteRef, "per-session")
 		checkCachingRun(ctx, t, ctr, core.ReturnTypeSuccess, "check", "-W", remoteRef, "per-session")
 		require.Equal(t, "2", runs(ctx, t, remoteRef, "per-session"))
+	})
+
+	// Listing a collection's items calls its producer. A producer cached
+	// across sessions gives the same items, so the listing is reused: its
+	// items are the same results.
+	t.Run("items of a collection cached by default are reused in the next session", func(ctx context.Context, t *testctx.T) {
+		remoteRef := workspaceSelectionRemoteRef(ctx, t, c, planningCollectionModule(c, ""))
+		query := ctr.WithNewFile("/query.graphql", `{currentWorkspace{artifacts{__evaluationItems{id}}}}`)
+		first := workspaceIdentityExec(ctx, t, query, true, "query", "--doc", "/query.graphql", "-W", remoteRef)
+		second := workspaceIdentityExec(ctx, t, query, true, "query", "--doc", "/query.graphql", "-W", remoteRef)
+		require.Contains(t, first, `"id"`)
+		require.Equal(t, first, second, "the second session must reuse the listing")
 	})
 
 	// A collection's items come from its producer. When the producer isn't

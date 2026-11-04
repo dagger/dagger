@@ -40,7 +40,6 @@ var persistedObjectFamilies = []dagql.PersistedObjectFamily{
 	{Name: "core.WorkspaceSDK", Typed: (*WorkspaceSDK)(nil), Visitor: persistedWorkspaceSDKVisitor, BackgroundDecode: true},
 	{Name: "core.Artifact", Typed: (*Artifact)(nil), Visitor: persistedArtifactsVisitor},
 	{Name: "core.Artifacts", Typed: (*Artifacts)(nil), Visitor: persistedArtifactsVisitor},
-	{Name: "core.ArtifactDimensionKey", Typed: (*ArtifactDimensionKey)(nil), Visitor: dagql.PersistedNoReferences{}},
 	{Name: "core.Check", Typed: (*Check)(nil), Visitor: persistedCheckVisitor},
 	{Name: "core.Expertise", Typed: (*Expertise)(nil), Visitor: persistedArtifactsVisitor},
 

@@ -314,21 +314,3 @@ func (*Check) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecod
 	}
 	return c, nil
 }
-
-// persistedArtifactDimensionKey is an ArtifactDimensionKey's stored form.
-type persistedArtifactDimensionKey struct {
-	Dimension string `json:"dimension"`
-	Key       string `json:"key"`
-}
-
-func (k *ArtifactDimensionKey) EncodePersistedObject(_ context.Context, _ *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
-	return encodePersistedObjectPayload(persistedArtifactDimensionKey{Dimension: k.Dimension, Key: k.Key})
-}
-
-func (*ArtifactDimensionKey) DecodePersistedObject(_ context.Context, _ *dagql.PersistDecodeContext, raw json.RawMessage) (dagql.Typed, error) {
-	var payload persistedArtifactDimensionKey
-	if err := unmarshalPersistedPayload(raw, &payload); err != nil {
-		return nil, fmt.Errorf("decode persisted artifact dimension key: %w", err)
-	}
-	return &ArtifactDimensionKey{Dimension: payload.Dimension, Key: payload.Key}, nil
-}
