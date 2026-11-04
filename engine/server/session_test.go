@@ -4433,6 +4433,21 @@ func TestSessionLogExporterRoutesCallPayloadOnlyToMissingTargets(t *testing.T) {
 	}
 }
 
+func TestCurrentArtifactModuleNarrowing(t *testing.T) {
+	mods := []pendingModule{
+		{Kind: moduleLoadKindAmbient, Name: "GitHub"},
+		{Kind: moduleLoadKindAmbient, Name: "macOS"},
+		{Kind: moduleLoadKindAmbient, Name: "broken"},
+	}
+	for i, name := range []string{"github", "macos"} {
+		filtered := filterPendingWorkspaceModulesBySelectorInclude(mods, nil, []string{name + ":lint"})
+		require.Equal(t, []pendingModule{mods[i]}, filtered)
+		served := map[string]struct{}{mods[i].Name: {}}
+		filtered = filterPendingWorkspaceModulesBySelectorInclude(mods[2:], served, []string{name + ":lint"})
+		require.Empty(t, filtered, "an already served canonical name must not load unrelated modules")
+	}
+}
+
 func TestFilterPendingWorkspaceModulesBySelectorInclude(t *testing.T) {
 	t.Parallel()
 

@@ -111,6 +111,34 @@ func TestArtifactCollectionCurrentSpelling(t *testing.T) {
 	require.Equal(t, "Items", selected.Entries[0].TypeName)
 }
 
+func TestArtifactPatternCharacterClasses(t *testing.T) {
+	all := &Artifacts{Entries: []*Artifact{
+		{Path: []string{"ci", "test1"}},
+		{Path: []string{"ci", "test5"}},
+		{Path: []string{"ci", "test9"}},
+	}}
+	for _, tc := range []struct {
+		pattern string
+		count   int
+	}{
+		{"ci/test[0-9]", 3},
+		{"ci/test[!0-4]", 2},
+		{"ci/test[15]", 2},
+	} {
+		selected, err := all.FilterPattern(tc.pattern)
+		require.NoError(t, err)
+		require.Len(t, selected.Entries, tc.count)
+		require.Equal(t, []string{tc.pattern}, selected.Selector.Paths)
+		requireRoundTrip(t, all, selected)
+	}
+	require.Equal(t, []string{"ci/test[0-9]/**"}, IncludePatterns("ci:test[0-9]"))
+	node := &ModTreeNode{Name: "test5", Parent: &ModTreeNode{Name: "ci", Parent: &ModTreeNode{}}}
+	matched, err := node.Match(t.Context(), []string{"ci:test[0-9]"})
+	require.NoError(t, err)
+	require.True(t, matched)
+	require.Equal(t, `test[\]0-9]`, LatestNamer.CLIName(`test[\]0-9]`), "escaped class delimiters are preserved")
+}
+
 func TestArtifactCanonicalPatterns(t *testing.T) {
 	all := &Artifacts{Entries: []*Artifact{
 		{Path: []string{"e2e-tests", "e2e-test"}},

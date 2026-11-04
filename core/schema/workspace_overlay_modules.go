@@ -13,7 +13,6 @@ import (
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/util/hashutil"
-	"github.com/iancoleman/strcase"
 )
 
 // overlayModule is a workspace-config module loaded through the workspace's
@@ -425,12 +424,10 @@ func overlayIncludedModuleNames(names, include []string) map[string]struct{} {
 	return wanted
 }
 
-// canonicalOverlayModuleName is a comparison key for module names, never
-// shown; like the session loader's canonicalWorkspaceModuleName it keeps the
-// legacy strcase rules, which give a module name and its CLI spelling by
-// either the legacy or the latest naming rules the same key.
+// canonicalOverlayModuleName uses the same current CLI spelling as artifact
+// paths and the session loader, including dictionary terms such as GitHub.
 func canonicalOverlayModuleName(name string) string {
-	return strcase.ToKebab(name)
+	return core.LatestNamer.CLIName(name)
 }
 
 // overlayTouchesTree reports whether any of the overlay's edits fall inside the

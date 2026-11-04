@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	telemetry "github.com/dagger/otel-go"
-	"github.com/iancoleman/strcase"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/codes"
@@ -1402,7 +1401,7 @@ func (srv *Server) EnsureWorkspaceModules(ctx context.Context, include []string,
 // command names: "myMod", "my-mod", "MyMod" are the same module. Glob
 // metacharacters survive, so a glob never equals a module name.
 func canonicalWorkspaceModuleName(name string) string {
-	return strcase.ToKebab(name)
+	return core.LatestNamer.CLIName(name)
 }
 
 // pendingModuleCliName is the canonical name an include pattern matches against.

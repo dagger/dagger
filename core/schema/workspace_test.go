@@ -721,6 +721,13 @@ func TestMatchWorkspaceInclude(t *testing.T) {
 	})
 }
 
+func TestCurrentArtifactOverlayNarrowing(t *testing.T) {
+	for _, name := range []string{"github", "macos"} {
+		wanted := overlayIncludedModuleNames([]string{"GitHub", "macOS", "broken"}, []string{name + ":lint"})
+		require.Equal(t, map[string]struct{}{name: {}}, wanted)
+	}
+}
+
 func TestMatchWorkspaceIncludeCurrentSpelling(t *testing.T) {
 	ctx := t.Context()
 	mod, err := dagql.NewResultForCall(&core.Module{SourceOverrides: &core.SourceOverrides{EngineVersion: "v1.0.0-beta.20"}}, &dagql.ResultCall{})

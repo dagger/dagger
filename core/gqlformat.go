@@ -288,6 +288,29 @@ func (n Namer) CLIName(name string) string {
 	}
 	for i := 0; i < len(name); i++ {
 		c := name[i]
+		if c == '\\' && i+1 < len(name) {
+			flush(i)
+			b.WriteString(name[i : i+2])
+			i++
+			continue
+		}
+		if c == '[' {
+			// A glob class is syntax, not an identifier. In particular, the
+			// hyphen in [0-9] must not be consumed as a word separator.
+			end := i + 1
+			for end < len(name) && name[end] != ']' {
+				if name[end] == '\\' && end+1 < len(name) {
+					end++
+				}
+				end++
+			}
+			if end < len(name) {
+				flush(i)
+				b.WriteString(name[i : end+1])
+				i = end
+				continue
+			}
+		}
 		if isNameByte(c) {
 			if start < 0 {
 				start = i

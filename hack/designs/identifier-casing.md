@@ -594,8 +594,6 @@ commands get the legacy name as an alias. So `E2ETest` is `--e2e-test`, and
 
 - The legacy `Namer` path and `legacyNamespaceObject`, for modules below the
   gate.
-- `canonicalWorkspaceModuleName` and `canonicalOverlayModuleName`: comparison
-  keys only, never shown to users.
 - The `core/llm.go` and `core/json.go` acronym registrations, which the legacy
   path still needs.
 - Legacy fallbacks in the CLI and `core/envfile.go` (old flag and variable
