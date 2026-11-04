@@ -64,9 +64,11 @@ func (s *nsSnapshotter) Prepare(ctx context.Context, key, parent string, opts ..
 	return mounts, err
 }
 
+// View's op is named by the snapshot it views: its key is a mount's own,
+// different every time.
 func (s *nsSnapshotter) View(ctx context.Context, key, parent string, opts ...snapshots.Opt) ([]mount.Mount, error) {
 	ctx = bksnapshots.WithNamespace(ctx, s.ns)
-	op := beginSnapshotOp(ctx, "view", key)
+	op := beginSnapshotOp(ctx, "view", parent)
 	mounts, err := s.Snapshotter.View(ctx, key, parent, opts...)
 	op.EndErr(err)
 	return mounts, err
