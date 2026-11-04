@@ -21,6 +21,7 @@ const CacheSharingModeLocked = core.CacheSharingModeLocked
 
 type CacheVolume = core.CacheVolume
 type Changeset = core.Changeset
+type Check = core.Check
 type Container = core.Container
 type ContainerAsServiceOpts = core.ContainerAsServiceOpts
 type ContainerOpts = core.ContainerOpts

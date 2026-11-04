@@ -74,6 +74,7 @@ type Entrypoint implements ModuleEntrypoint {
       .withMountedDirectory("/workspace", currentModule.contextDirectory)
       .withWorkdir("/workspace/" + currentModule.sourceSubpath)
       .withEnvVariable("DAGGER_MODULE_CALL_DIGEST", callDigest ?? "")
+      .withEnvVariable("DAGGER_CLIENT_VERSION", "v1.0.0-beta.24")
       .withExec(
         ["/usr/local/bin/dispatch", "engine-call", "/dagger/result.json"],
         stdin: request,

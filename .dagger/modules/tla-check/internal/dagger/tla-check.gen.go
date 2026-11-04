@@ -33,12 +33,9 @@ type TlaCheck struct { // tla-check (../../:0:0)
 	// field again.
 	refetchID bool
 
-	cacheLifecycle  *Void
-	clientLifecycle *Void
-	id              *ID
-	one             *string
-	quick           *Void
-	some            *Void
+	id   *ID
+	one  *string
+	some *Void
 }
 
 func (r *TlaCheck) WithGraphQLQuery(q *querybuilder.Selection) *TlaCheck {
@@ -60,25 +57,19 @@ func (r *TlaCheck) WithGraphQLQuery(q *querybuilder.Selection) *TlaCheck {
 // Quick (seconds), Some (chosen configurations with their expectations
 // enforced), or One (a single configuration, raw output, optional probe
 // injection).
-func (r *TlaCheck) CacheLifecycle(ctx context.Context) error {
-	if r.cacheLifecycle != nil {
-		return nil
-	}
+func (r *TlaCheck) CacheLifecycle() *Check {
 	q := r.query.Select("cacheLifecycle")
 
-	return q.Execute(ctx)
+	return new(Check).WithGraphQLQuery(q)
 }
 
 // ClientLifecycle model-checks client runtime reclamation, typed leases,
 // nested-client ownership, authoritative session teardown, and the final
 // telemetry barrier.
-func (r *TlaCheck) ClientLifecycle(ctx context.Context) error {
-	if r.clientLifecycle != nil {
-		return nil
-	}
+func (r *TlaCheck) ClientLifecycle() *Check {
 	q := r.query.Select("clientLifecycle")
 
-	return q.Execute(ctx)
+	return new(Check).WithGraphQLQuery(q)
 }
 
 // The engine/server/tla spec directory.
@@ -190,13 +181,10 @@ func (r *TlaCheck) One(ctx context.Context, config string, opts ...TlaCheckOneOp
 // their expectations enforced. It finishes in about a minute and is the
 // right default while iterating; it does not replace the full
 // CacheLifecycle run before a push.
-func (r *TlaCheck) Quick(ctx context.Context) error {
-	if r.quick != nil {
-		return nil
-	}
+func (r *TlaCheck) Quick() *Check {
 	q := r.query.Select("quick")
 
-	return q.Execute(ctx)
+	return new(Check).WithGraphQLQuery(q)
 }
 
 // Some model-checks the named configurations (without the CacheLifecycle_

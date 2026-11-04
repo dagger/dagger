@@ -48,7 +48,7 @@ func (r *Notify) DaggerCloudTraceURL(ctx context.Context) (string, error) { // n
 	return response, q.Execute(ctx)
 }
 
-// Message a Discord webhook: `dagger call discord --webhook-url=env:DISCORD_WEBHOOK --message="👋 from Dagger notify module"`
+// Message a Discord webhook: `dagger call discord --webhook-url=env://DISCORD_WEBHOOK --message="👋 from Dagger notify module"`
 func (r *Notify) Discord(ctx context.Context, webhookUrl *Secret, message string) (string, error) { // notify (../../main.go:22:1)
 	assertNotNil("webhookUrl", webhookUrl)
 	if r.discord != nil {
@@ -143,7 +143,7 @@ type NotifySlackOpts struct {
 	ThreadID string // notify (../../main.go:76:2)
 }
 
-// Message a specific Slack channel: `dagger call slack --token=env:SLACK_TOKEN --channel-id=C07PBDE3U57 --color="#FC0" --message="👋 from Dagger notify module"`
+// Message a specific Slack channel: `dagger call slack --token=env://SLACK_TOKEN --channel-id=C07PBDE3U57 --color="#FC0" --message="👋 from Dagger notify module"`
 func (r *Notify) Slack(ctx context.Context, token *Secret, color string, message string, channelId string, opts ...NotifySlackOpts) (string, error) { // notify (../../main.go:52:1)
 	assertNotNil("token", token)
 	if r.slack != nil {

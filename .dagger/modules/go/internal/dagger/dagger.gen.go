@@ -17,6 +17,7 @@ import (
 
 type CacheVolume = core.CacheVolume
 type Changeset = core.Changeset
+type Check = core.Check
 type Container = core.Container
 type ContainerWithDirectoryOpts = core.ContainerWithDirectoryOpts
 type ContainerWithEnvVariableOpts = core.ContainerWithEnvVariableOpts

@@ -17,7 +17,6 @@ type DocsDev struct { // docs-dev (../../:0:0)
 	// field again.
 	refetchID bool
 
-	check   *Void
 	deploy  *string
 	id      *ID
 	publish *Void
@@ -33,13 +32,10 @@ func (r *DocsDev) WithGraphQLQuery(q *querybuilder.Selection) *DocsDev {
 }
 
 // Check the docs website build
-func (r *DocsDev) Check(ctx context.Context) error {
-	if r.check != nil {
-		return nil
-	}
+func (r *DocsDev) Check() *Check {
 	q := r.query.Select("check")
 
-	return q.Execute(ctx)
+	return new(Check).WithGraphQLQuery(q)
 }
 
 // Deploys a current build of the docs.

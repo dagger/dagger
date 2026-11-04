@@ -12,14 +12,10 @@ import (
 type ElixirClientDev struct { // elixir-client-dev (../../:0:0)
 	query *querybuilder.Selection
 
-	baseImage     *string
-	codegenTest   *Void
-	id            *ID
-	lint          *Void
-	publish       *Void
-	releaseDryRun *Void
-	sdkTest       *Void
-	sourcePath    *string
+	baseImage  *string
+	id         *ID
+	publish    *Void
+	sourcePath *string
 }
 
 func (r *ElixirClientDev) WithGraphQLQuery(q *querybuilder.Selection) *ElixirClientDev {
@@ -48,13 +44,10 @@ func (r *ElixirClientDev) ClientLibrary() *Changeset { // elixir-client-dev (../
 }
 
 // Run dagger_codegen tests
-func (r *ElixirClientDev) CodegenTest(ctx context.Context) error { // elixir-client-dev (../../:0:0)
-	if r.codegenTest != nil {
-		return nil
-	}
+func (r *ElixirClientDev) CodegenTest() *Check { // elixir-client-dev (../../:0:0)
 	q := r.query.Select("codegenTest")
 
-	return q.Execute(ctx)
+	return new(Check).WithGraphQLQuery(q)
 }
 
 func (r *ElixirClientDev) DevContainer() *Container { // elixir-client-dev (../../:0:0)
@@ -113,13 +106,10 @@ func (r *ElixirClientDev) UnmarshalJSON(bs []byte) error {
 }
 
 // Lint the SDK
-func (r *ElixirClientDev) Lint(ctx context.Context) error { // elixir-client-dev (../../:0:0)
-	if r.lint != nil {
-		return nil
-	}
+func (r *ElixirClientDev) Lint() *Check { // elixir-client-dev (../../:0:0)
 	q := r.query.Select("lint")
 
-	return q.Execute(ctx)
+	return new(Check).WithGraphQLQuery(q)
 }
 
 // ElixirClientDevPublishOpts contains options for ElixirClientDev.Publish
@@ -164,23 +154,17 @@ func (r *ElixirClientDev) Publish(ctx context.Context, tag string, opts ...Elixi
 }
 
 // Test the publishing process
-func (r *ElixirClientDev) ReleaseDryRun(ctx context.Context) error { // elixir-client-dev (../../:0:0)
-	if r.releaseDryRun != nil {
-		return nil
-	}
+func (r *ElixirClientDev) ReleaseDryRun() *Check { // elixir-client-dev (../../:0:0)
 	q := r.query.Select("releaseDryRun")
 
-	return q.Execute(ctx)
+	return new(Check).WithGraphQLQuery(q)
 }
 
 // Run the SDK tests
-func (r *ElixirClientDev) SDKTest(ctx context.Context) error { // elixir-client-dev (../../:0:0)
-	if r.sdkTest != nil {
-		return nil
-	}
+func (r *ElixirClientDev) SDKTest() *Check { // elixir-client-dev (../../:0:0)
 	q := r.query.Select("sdkTest")
 
-	return q.Execute(ctx)
+	return new(Check).WithGraphQLQuery(q)
 }
 
 func (r *ElixirClientDev) Source() *Directory { // elixir-client-dev (../../:0:0)

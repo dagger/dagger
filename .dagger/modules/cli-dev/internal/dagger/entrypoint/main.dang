@@ -62,18 +62,18 @@ type Entrypoint implements ModuleEntrypoint {
         .withFunction(
           function("PublishMetadata", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
             .withCachePolicy(FunctionCachePolicy.PerSession)
-            .withSourceMap(sourceMap("publish.go", 104, 1))
-            .withArg("awsAccessKeyID", typeDef.withObject("Secret"), sourceMap: sourceMap("publish.go", 107, 2))
-            .withArg("awsSecretAccessKey", typeDef.withObject("Secret"), sourceMap: sourceMap("publish.go", 108, 2))
-            .withArg("awsRegion", typeDef.withKind(TypeDefKind.STRING_KIND), sourceMap: sourceMap("publish.go", 109, 2))
-            .withArg("awsBucket", typeDef.withKind(TypeDefKind.STRING_KIND), sourceMap: sourceMap("publish.go", 110, 2))
-            .withArg("awsCloudfrontDistribution", typeDef.withKind(TypeDefKind.STRING_KIND), sourceMap: sourceMap("publish.go", 111, 2))
-            .withArg("awsEndpointURL", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true), sourceMap: sourceMap("publish.go", 112, 2))
+            .withSourceMap(sourceMap("publish.go", 108, 1))
+            .withArg("awsAccessKeyID", typeDef.withObject("Secret"), sourceMap: sourceMap("publish.go", 111, 2))
+            .withArg("awsSecretAccessKey", typeDef.withObject("Secret"), sourceMap: sourceMap("publish.go", 112, 2))
+            .withArg("awsRegion", typeDef.withKind(TypeDefKind.STRING_KIND), sourceMap: sourceMap("publish.go", 113, 2))
+            .withArg("awsBucket", typeDef.withKind(TypeDefKind.STRING_KIND), sourceMap: sourceMap("publish.go", 114, 2))
+            .withArg("awsCloudfrontDistribution", typeDef.withKind(TypeDefKind.STRING_KIND), sourceMap: sourceMap("publish.go", 115, 2))
+            .withArg("awsEndpointURL", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true), sourceMap: sourceMap("publish.go", 116, 2))
         )
         .withFunction(
           function("ReleaseDryRun", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
             .withDescription("Verify that the CLI builds without actually publishing anything")
-            .withSourceMap(sourceMap("publish.go", 175, 1))
+            .withSourceMap(sourceMap("publish.go", 179, 1))
             .withCheck
         )
         .withField("Version", typeDef.withKind(TypeDefKind.STRING_KIND), sourceMap: sourceMap("main.go", 116, 2))
@@ -111,6 +111,7 @@ type Entrypoint implements ModuleEntrypoint {
       .withMountedDirectory("/workspace", currentModule.contextDirectory)
       .withWorkdir("/workspace/" + currentModule.sourceSubpath)
       .withEnvVariable("DAGGER_MODULE_CALL_DIGEST", callDigest ?? "")
+      .withEnvVariable("DAGGER_CLIENT_VERSION", "v1.0.0-beta.24")
       .withExec(
         ["/usr/local/bin/dispatch", "engine-call", "/dagger/result.json"],
         stdin: request,

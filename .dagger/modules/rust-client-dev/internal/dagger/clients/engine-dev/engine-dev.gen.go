@@ -10,7 +10,7 @@ import (
 )
 
 // Creates a complete end-to-end build environment with CLI and engine for interactive testing
-type EngineDev struct { // engine-dev (../../main.go:93:6)
+type EngineDev struct { // engine-dev (../../main.go:96:6)
 	query *querybuilder.Selection
 	// refetchID is set when this object is built through a field marked
 	// @reevaluate: it fetches its ID on every use, so each use evaluates that
@@ -41,7 +41,7 @@ func (r *EngineDev) WithGraphQLQuery(q *querybuilder.Selection) *EngineDev {
 	}
 }
 
-func (r *EngineDev) ClientDockerConfig() *Secret { // engine-dev (../../main.go:108:2)
+func (r *EngineDev) ClientDockerConfig() *Secret { // engine-dev (../../main.go:111:2)
 	q := r.query.Select("clientDockerConfig")
 
 	return new(Secret).WithGraphQLQuery(q)
@@ -49,15 +49,15 @@ func (r *EngineDev) ClientDockerConfig() *Secret { // engine-dev (../../main.go:
 
 // EngineDevContainerOpts contains options for EngineDev.Container
 type EngineDevContainerOpts struct {
-	Platform Platform // engine-dev (../../main.go:147:2)
+	Platform Platform // engine-dev (../../main.go:150:2)
 
-	GpuSupport bool // engine-dev (../../main.go:149:2)
+	GpuSupport bool // engine-dev (../../main.go:152:2)
 
-	Version string // engine-dev (../../main.go:151:2)
+	Version string // engine-dev (../../main.go:154:2)
 }
 
 // Build the engine container
-func (r *EngineDev) Container(opts ...EngineDevContainerOpts) *Container { // engine-dev (../../main.go:143:1)
+func (r *EngineDev) Container(opts ...EngineDevContainerOpts) *Container { // engine-dev (../../main.go:146:1)
 	q := r.query.Select("container")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `platform` optional argument
@@ -79,11 +79,11 @@ func (r *EngineDev) Container(opts ...EngineDevContainerOpts) *Container { // en
 
 // EngineDevGraphqlSchemaOpts contains options for EngineDev.GraphqlSchema
 type EngineDevGraphqlSchemaOpts struct {
-	Version string // engine-dev (../../main.go:334:2)
+	Version string // engine-dev (../../main.go:337:2)
 }
 
 // Introspect the engine API schema, and return it as a graphql schema
-func (r *EngineDev) GraphqlSchema(opts ...EngineDevGraphqlSchemaOpts) *File { // engine-dev (../../main.go:331:1)
+func (r *EngineDev) GraphqlSchema(opts ...EngineDevGraphqlSchemaOpts) *File { // engine-dev (../../main.go:334:1)
 	q := r.query.Select("graphqlSchema")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
@@ -150,7 +150,7 @@ func (r *EngineDev) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-func (r *EngineDev) IncrementSubnet() *EngineDev { // engine-dev (../../main.go:117:1)
+func (r *EngineDev) IncrementSubnet() *EngineDev { // engine-dev (../../main.go:120:1)
 	q := r.query.Select("incrementSubnet")
 
 	return &EngineDev{
@@ -164,15 +164,15 @@ type EngineDevInstallClientOpts struct {
 	//
 	// The client container to configure
 	//
-	Client *Container // engine-dev (../../main.go:261:2)
+	Client *Container // engine-dev (../../main.go:264:2)
 	//
 	// The engine service to bind
 	//
-	Service *Service // engine-dev (../../main.go:264:2)
+	Service *Service // engine-dev (../../main.go:267:2)
 }
 
 // Configure the given client container so that it can connect to the given engine service
-func (r *EngineDev) InstallClient(opts ...EngineDevInstallClientOpts) *Container { // engine-dev (../../main.go:257:1)
+func (r *EngineDev) InstallClient(opts ...EngineDevInstallClientOpts) *Container { // engine-dev (../../main.go:260:1)
 	q := r.query.Select("installClient")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `client` optional argument
@@ -190,14 +190,14 @@ func (r *EngineDev) InstallClient(opts ...EngineDevInstallClientOpts) *Container
 
 // Introspect the engine API schema, and return it as a json-encoded file.
 // This file is used by SDKs to generate clients.
-func (r *EngineDev) IntrospectionJSON() *File { // engine-dev (../../main.go:318:1)
+func (r *EngineDev) IntrospectionJSON() *File { // engine-dev (../../main.go:321:1)
 	q := r.query.Select("introspectionJson")
 
 	return new(File).WithGraphQLQuery(q)
 }
 
 // Build the `introspect` tool which introspects the engine API
-func (r *EngineDev) IntrospectionTool() *File { // engine-dev (../../main.go:352:1)
+func (r *EngineDev) IntrospectionTool() *File { // engine-dev (../../main.go:355:1)
 	q := r.query.Select("introspectionTool")
 
 	return new(File).WithGraphQLQuery(q)
@@ -242,7 +242,7 @@ func (r *EngineDev) LoadToDocker(docker *Socket, opts ...EngineDevLoadToDockerOp
 	}
 }
 
-func (r *EngineDev) NetworkCidr(ctx context.Context) (string, error) { // engine-dev (../../main.go:113:1)
+func (r *EngineDev) NetworkCidr(ctx context.Context) (string, error) { // engine-dev (../../main.go:116:1)
 	if r.networkCidr != nil {
 		return *r.networkCidr, nil
 	}
@@ -261,17 +261,17 @@ type EngineDevPublishOpts struct {
 	//
 	//
 	// Default: "ghcr.io/dagger/engine"
-	Image string // engine-dev (../../main.go:401:2)
+	Image string // engine-dev (../../main.go:404:2)
 
-	DryRun bool // engine-dev (../../main.go:406:2)
+	DryRun bool // engine-dev (../../main.go:409:2)
 
-	RegistryUsername string // engine-dev (../../main.go:409:2)
+	RegistryUsername string // engine-dev (../../main.go:412:2)
 
-	RegistryPassword *Secret // engine-dev (../../main.go:411:2)
+	RegistryPassword *Secret // engine-dev (../../main.go:414:2)
 }
 
 // Publish all engine images to a registry
-func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDevPublishOpts) error { // engine-dev (../../main.go:396:1)
+func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDevPublishOpts) error { // engine-dev (../../main.go:399:1)
 	if r.publish != nil {
 		return nil
 	}
@@ -299,7 +299,7 @@ func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDev
 	return q.Execute(ctx)
 }
 
-func (r *EngineDev) ReleaseDryRun() *Check { // engine-dev (../../main.go:382:1)
+func (r *EngineDev) ReleaseDryRun() *Check { // engine-dev (../../main.go:385:1)
 	q := r.query.Select("releaseDryRun")
 
 	return new(Check).WithGraphQLQuery(q)
@@ -307,15 +307,15 @@ func (r *EngineDev) ReleaseDryRun() *Check { // engine-dev (../../main.go:382:1)
 
 // EngineDevServiceOpts contains options for EngineDev.Service
 type EngineDevServiceOpts struct {
-	GpuSupport bool // engine-dev (../../main.go:210:2)
+	GpuSupport bool // engine-dev (../../main.go:213:2)
 
-	SharedCache bool // engine-dev (../../main.go:212:2)
+	SharedCache bool // engine-dev (../../main.go:215:2)
 
-	Metrics bool // engine-dev (../../main.go:214:2)
+	Metrics bool // engine-dev (../../main.go:217:2)
 }
 
 // Create a test engine service
-func (r *EngineDev) Service(name string, opts ...EngineDevServiceOpts) *Service { // engine-dev (../../main.go:206:1)
+func (r *EngineDev) Service(name string, opts ...EngineDevServiceOpts) *Service { // engine-dev (../../main.go:209:1)
 	q := r.query.Select("service")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `gpuSupport` optional argument
@@ -336,7 +336,7 @@ func (r *EngineDev) Service(name string, opts ...EngineDevServiceOpts) *Service 
 	return new(Service).WithGraphQLQuery(q)
 }
 
-func (r *EngineDev) Source() *Directory { // engine-dev (../../main.go:94:2)
+func (r *EngineDev) Source() *Directory { // engine-dev (../../main.go:97:2)
 	q := r.query.Select("source")
 
 	return new(Directory).WithGraphQLQuery(q)
@@ -509,7 +509,7 @@ type EngineDevTestProfileOpts struct {
 // Run core engine tests against an engine recording a wcprof wall-clock
 // profile, and return the recording.
 //
-// The test engine records every session from startup (_DAGGER_WCPROF=1). The
+// The test engine records every session from startup (its --wcprof flag). The
 // dump is fetched from its debug endpoint after `go test` exits, whether or
 // not the tests passed, so a failing run still yields a profile. Benchmark
 // tests gated on _DAGGER_BENCH are opted in, since profiling is what they are
@@ -668,7 +668,7 @@ func (r *EngineDev) Tests(ctx context.Context) (string, error) { // engine-dev (
 	return response, q.Execute(ctx)
 }
 
-func (r *EngineDev) WithEbpfprogs(names []string) *EngineDev { // engine-dev (../../main.go:122:1)
+func (r *EngineDev) WithEbpfprogs(names []string) *EngineDev { // engine-dev (../../main.go:125:1)
 	q := r.query.Select("withEbpfprogs")
 	q = q.Arg("names", names)
 
@@ -678,7 +678,7 @@ func (r *EngineDev) WithEbpfprogs(names []string) *EngineDev { // engine-dev (..
 	}
 }
 
-func (r *EngineDev) WithEngineConfig(key string, value string) *EngineDev { // engine-dev (../../main.go:127:1)
+func (r *EngineDev) WithEngineConfig(key string, value string) *EngineDev { // engine-dev (../../main.go:130:1)
 	q := r.query.Select("withEngineConfig")
 	q = q.Arg("key", key)
 	q = q.Arg("value", value)
@@ -689,7 +689,7 @@ func (r *EngineDev) WithEngineConfig(key string, value string) *EngineDev { // e
 	}
 }
 
-func (r *EngineDev) WithLogLevel(level string) *EngineDev { // engine-dev (../../main.go:137:1)
+func (r *EngineDev) WithLogLevel(level string) *EngineDev { // engine-dev (../../main.go:140:1)
 	q := r.query.Select("withLogLevel")
 	q = q.Arg("level", level)
 
@@ -699,7 +699,7 @@ func (r *EngineDev) WithLogLevel(level string) *EngineDev { // engine-dev (../..
 	}
 }
 
-func (r *EngineDev) WithRace() *EngineDev { // engine-dev (../../main.go:132:1)
+func (r *EngineDev) WithRace() *EngineDev { // engine-dev (../../main.go:135:1)
 	q := r.query.Select("withRace")
 
 	return &EngineDev{

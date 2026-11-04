@@ -48,12 +48,8 @@ type RustClientDev struct { // rust-client-dev (../../:0:0)
 	// field again.
 	refetchID bool
 
-	cargoCheck    *Void
-	cargoFmt      *Void
-	id            *ID
-	release       *Void
-	releaseDryRun *Void
-	test          *Void
+	id      *ID
+	release *Void
 }
 type WithRustClientDevFunc func(r *RustClientDev) *RustClientDev
 
@@ -87,23 +83,17 @@ func (r *RustClientDev) BaseContainer() *Container {
 }
 
 // Run cargo check on the Rust SDK
-func (r *RustClientDev) CargoCheck(ctx context.Context) error {
-	if r.cargoCheck != nil {
-		return nil
-	}
+func (r *RustClientDev) CargoCheck() *Check {
 	q := r.query.Select("cargoCheck")
 
-	return q.Execute(ctx)
+	return new(Check).WithGraphQLQuery(q)
 }
 
 // Run cargo fmt on the Rust SDK
-func (r *RustClientDev) CargoFmt(ctx context.Context) error {
-	if r.cargoFmt != nil {
-		return nil
-	}
+func (r *RustClientDev) CargoFmt() *Check {
 	q := r.query.Select("cargoFmt")
 
-	return q.Execute(ctx)
+	return new(Check).WithGraphQLQuery(q)
 }
 
 func (r *RustClientDev) Changes() *Changeset {
@@ -224,10 +214,7 @@ type RustClientDevReleaseDryRunOpts struct {
 }
 
 // Test the publishing process
-func (r *RustClientDev) ReleaseDryRun(ctx context.Context, opts ...RustClientDevReleaseDryRunOpts) error {
-	if r.releaseDryRun != nil {
-		return nil
-	}
+func (r *RustClientDev) ReleaseDryRun(opts ...RustClientDevReleaseDryRunOpts) *Check {
 	q := r.query.Select("releaseDryRun")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `sourceTag` optional argument
@@ -236,7 +223,7 @@ func (r *RustClientDev) ReleaseDryRun(ctx context.Context, opts ...RustClientDev
 		}
 	}
 
-	return q.Execute(ctx)
+	return new(Check).WithGraphQLQuery(q)
 }
 
 // Source returns the source directory for the Rust SDK.
@@ -247,13 +234,10 @@ func (r *RustClientDev) Source() *Directory {
 }
 
 // Test the Rust SDK
-func (r *RustClientDev) Test(ctx context.Context) error {
-	if r.test != nil {
-		return nil
-	}
+func (r *RustClientDev) Test() *Check {
 	q := r.query.Select("test")
 
-	return q.Execute(ctx)
+	return new(Check).WithGraphQLQuery(q)
 }
 
 func (r *RustClientDev) WithGeneratedClient() *RustClientDev {

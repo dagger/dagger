@@ -5,7 +5,7 @@ go 1.26.6
 replace github.com/dagger/dagger => ../../..
 
 require (
-	dagger.io/dagger v1.0.0-beta.17
+	dagger.io/dagger v1.0.0-beta.24
 	github.com/Khan/genqlient v0.8.1
 	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/containerd/platforms v1.0.0-rc.2
@@ -14,6 +14,7 @@ require (
 	github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59
 	github.com/pelletier/go-toml v1.9.5
 	go.opentelemetry.io/otel v1.46.0
+	go.opentelemetry.io/otel/sdk v1.43.0
 	go.opentelemetry.io/otel/trace v1.46.0
 )
 
@@ -44,7 +45,6 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.43.0 // indirect
 	go.opentelemetry.io/otel/log v0.19.0 // indirect
 	go.opentelemetry.io/otel/metric v1.46.0 // indirect
-	go.opentelemetry.io/otel/sdk v1.43.0 // indirect
 	go.opentelemetry.io/otel/sdk/log v0.19.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.43.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.10.0 // indirect

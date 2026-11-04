@@ -17,12 +17,11 @@ type EngineDev struct { // engine-dev (../../:0:0)
 	// field again.
 	refetchID bool
 
-	id            *ID
-	networkCidr   *string
-	publish       *Void
-	releaseDryRun *Void
-	test          *Void
-	tests         *string
+	id          *ID
+	networkCidr *string
+	publish     *Void
+	test        *Void
+	tests       *string
 }
 type WithEngineDevFunc func(r *EngineDev) *EngineDev
 
@@ -292,13 +291,10 @@ func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDev
 	return q.Execute(ctx)
 }
 
-func (r *EngineDev) ReleaseDryRun(ctx context.Context) error {
-	if r.releaseDryRun != nil {
-		return nil
-	}
+func (r *EngineDev) ReleaseDryRun() *Check {
 	q := r.query.Select("releaseDryRun")
 
-	return q.Execute(ctx)
+	return new(Check).WithGraphQLQuery(q)
 }
 
 // EngineDevServiceOpts contains options for EngineDev.Service
@@ -471,7 +467,7 @@ type EngineDevTestProfileOpts struct {
 // Run core engine tests against an engine recording a wcprof wall-clock
 // profile, and return the recording.
 //
-// The test engine records every session from startup (_DAGGER_WCPROF=1). The
+// The test engine records every session from startup (its --wcprof flag). The
 // dump is fetched from its debug endpoint after `go test` exits, whether or
 // not the tests passed, so a failing run still yields a profile. Benchmark
 // tests gated on _DAGGER_BENCH are opted in, since profiling is what they are

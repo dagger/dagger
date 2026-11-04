@@ -140,7 +140,7 @@ type Entrypoint implements ModuleEntrypoint {
           function("", typeDef.withObject("Go"))
             .withSourceMap(sourceMap("main.go", 34, 1))
             .withArg("source", typeDef.withObject("Directory").withOptional(true), description: "Project source directory", defaultPath: "/", sourceMap: sourceMap("main.go", 39, 2))
-            .withArg("version", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true), description: "Go version", defaultValue: ("\"1.26\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 43, 2))
+            .withArg("version", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true), description: "Go version", defaultValue: ("\"1.27\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 43, 2))
             .withArg("moduleCache", typeDef.withObject("CacheVolume").withOptional(true), description: "Use a custom module cache", sourceMap: sourceMap("main.go", 46, 2))
             .withArg("buildCache", typeDef.withObject("CacheVolume").withOptional(true), description: "Use a custom build cache", sourceMap: sourceMap("main.go", 50, 2))
             .withArg("base", typeDef.withObject("Container").withOptional(true), description: "Use a custom base container.\nThe container must have Go installed.", sourceMap: sourceMap("main.go", 55, 2))
@@ -178,6 +178,7 @@ type Entrypoint implements ModuleEntrypoint {
       .withMountedDirectory("/workspace", currentModule.contextDirectory)
       .withWorkdir("/workspace/" + currentModule.sourceSubpath)
       .withEnvVariable("DAGGER_MODULE_CALL_DIGEST", callDigest ?? "")
+      .withEnvVariable("DAGGER_CLIENT_VERSION", "v1.0.0-beta.24")
       .withExec(
         ["/usr/local/bin/dispatch", "engine-call", "/dagger/result.json"],
         stdin: request,

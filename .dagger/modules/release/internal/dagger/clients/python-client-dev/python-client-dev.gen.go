@@ -13,11 +13,10 @@ import (
 type PythonClientDev struct { // python-client-dev (../../.dagger/modules/python-client-dev/main.go:15:6)
 	query *querybuilder.Selection
 
-	id            *ID
-	release       *Void
-	releaseDryRun *Void
-	sourcePath    *string
-	typecheck     *Void
+	id         *ID
+	release    *Void
+	sourcePath *string
+	typecheck  *Void
 }
 type WithPythonClientDevFunc func(r *PythonClientDev) *PythonClientDev
 
@@ -89,7 +88,7 @@ type PythonClientDevFormatOpts struct {
 }
 
 // Format source files
-func (r *PythonClientDev) Format(opts ...PythonClientDevFormatOpts) *Changeset { // python-client-dev (../../.dagger/modules/python-client-dev/main.go:115:1)
+func (r *PythonClientDev) Format(opts ...PythonClientDevFormatOpts) *Check { // python-client-dev (../../.dagger/modules/python-client-dev/main.go:115:1)
 	q := r.query.Select("format")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `paths` optional argument
@@ -98,7 +97,7 @@ func (r *PythonClientDev) Format(opts ...PythonClientDevFormatOpts) *Changeset {
 		}
 	}
 
-	return new(Changeset).WithGraphQLQuery(q)
+	return new(Check).WithGraphQLQuery(q)
 }
 
 // A unique identifier for this PythonClientDev.
@@ -159,7 +158,7 @@ type PythonClientDevLintOpts struct {
 }
 
 // Check for linting errors
-func (r *PythonClientDev) Lint(opts ...PythonClientDevLintOpts) *Container { // python-client-dev (../../.dagger/modules/python-client-dev/main.go:103:1)
+func (r *PythonClientDev) Lint(opts ...PythonClientDevLintOpts) *Check { // python-client-dev (../../.dagger/modules/python-client-dev/main.go:103:1)
 	q := r.query.Select("lint")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `paths` optional argument
@@ -168,7 +167,7 @@ func (r *PythonClientDev) Lint(opts ...PythonClientDevLintOpts) *Container { // 
 		}
 	}
 
-	return new(Container).WithGraphQLQuery(q)
+	return new(Check).WithGraphQLQuery(q)
 }
 
 // PythonClientDevLintDocsSnippetsOpts contains options for PythonClientDev.LintDocsSnippets
@@ -177,7 +176,7 @@ type PythonClientDevLintDocsSnippetsOpts struct {
 }
 
 // Lint the Python snippets in the documentation
-func (r *PythonClientDev) LintDocsSnippets(opts ...PythonClientDevLintDocsSnippetsOpts) *Container { // python-client-dev (../../.dagger/modules/python-client-dev/main.go:87:1)
+func (r *PythonClientDev) LintDocsSnippets(opts ...PythonClientDevLintDocsSnippetsOpts) *Check { // python-client-dev (../../.dagger/modules/python-client-dev/main.go:87:1)
 	q := r.query.Select("lintDocsSnippets")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `workspace` optional argument
@@ -186,7 +185,7 @@ func (r *PythonClientDev) LintDocsSnippets(opts ...PythonClientDevLintDocsSnippe
 		}
 	}
 
-	return new(Container).WithGraphQLQuery(q)
+	return new(Check).WithGraphQLQuery(q)
 }
 
 // PythonClientDevProvisionOpts contains options for PythonClientDev.Provision
@@ -330,13 +329,10 @@ func (r *PythonClientDev) Release(ctx context.Context, sourceTag string, opts ..
 }
 
 // Test the publishing process
-func (r *PythonClientDev) ReleaseDryRun(ctx context.Context) error { // python-client-dev (../../.dagger/modules/python-client-dev/main.go:235:1)
-	if r.releaseDryRun != nil {
-		return nil
-	}
+func (r *PythonClientDev) ReleaseDryRun() *Check { // python-client-dev (../../.dagger/modules/python-client-dev/main.go:235:1)
 	q := r.query.Select("releaseDryRun")
 
-	return q.Execute(ctx)
+	return new(Check).WithGraphQLQuery(q)
 }
 
 func (r *PythonClientDev) SourcePath(ctx context.Context) (string, error) { // python-client-dev (../../.dagger/modules/python-client-dev/main.go:19:2)
@@ -520,10 +516,8 @@ func (r *PythonClientDevDocs) AsNode() Node {
 type PythonClientDevTestForPythonVersion struct { // python-client-dev (../../.dagger/modules/python-client-dev/test.go:9:6)
 	query *querybuilder.Selection
 
-	id   *ID
-	run  *Void
-	slow *Void
-	unit *Void
+	id  *ID
+	run *Void
 }
 
 func (r *PythonClientDevTestForPythonVersion) WithGraphQLQuery(q *querybuilder.Selection) *PythonClientDevTestForPythonVersion {
@@ -593,23 +587,17 @@ func (r *PythonClientDevTestForPythonVersion) Run(ctx context.Context, args []st
 }
 
 // Run python slow tests
-func (r *PythonClientDevTestForPythonVersion) Slow(ctx context.Context) error { // python-client-dev (../../.dagger/modules/python-client-dev/test.go:20:1)
-	if r.slow != nil {
-		return nil
-	}
+func (r *PythonClientDevTestForPythonVersion) Slow() *Check { // python-client-dev (../../.dagger/modules/python-client-dev/test.go:20:1)
 	q := r.query.Select("slow")
 
-	return q.Execute(ctx)
+	return new(Check).WithGraphQLQuery(q)
 }
 
 // Run python unit tests
-func (r *PythonClientDevTestForPythonVersion) Unit(ctx context.Context) error { // python-client-dev (../../.dagger/modules/python-client-dev/test.go:26:1)
-	if r.unit != nil {
-		return nil
-	}
+func (r *PythonClientDevTestForPythonVersion) Unit() *Check { // python-client-dev (../../.dagger/modules/python-client-dev/test.go:26:1)
 	q := r.query.Select("unit")
 
-	return q.Execute(ctx)
+	return new(Check).WithGraphQLQuery(q)
 }
 
 // AsNode returns this PythonClientDevTestForPythonVersion as a Node.

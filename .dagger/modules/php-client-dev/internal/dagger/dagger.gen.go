@@ -16,6 +16,7 @@ import (
 )
 
 type Changeset = core.Changeset
+type Check = core.Check
 type Container = core.Container
 type ContainerWithEnvVariableOpts = core.ContainerWithEnvVariableOpts
 type Directory = core.Directory
