@@ -587,6 +587,57 @@ func (SecretSuite) TestCrossSessionGitAuthScoping(ctx context.Context, t *testct
 			runTest(ctx, t, sshTestCase, "SSH URLs are not supported without an SSH socket")
 		})
 	})
+
+	// A remote workspace selected by a commit SHA, as native CI selects one:
+	// a session without credentials can't read a private workspace another
+	// session read with them.
+	t.Run("remote workspace at a commit", func(ctx context.Context, t *testctx.T) {
+		authTokenTestCase := getVCSTestCase(t, "https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git")
+		require.NotEmpty(t, authTokenTestCase.encodedToken)
+
+		sshTestCase := getVCSTestCase(t, "ssh://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git")
+		require.True(t, sshTestCase.sshKey)
+
+		runTest := func(ctx context.Context, t *testctx.T, testCase vcsTestCase, expectedErr string) {
+			workspaceRef := testCase.gitTestRepoRef + "@" + testCase.gitTestRepoCommit
+			read := workspaceSelectionDaggerQuery(`{currentWorkspace{directory(path: "."){entries}}}`, "-W", workspaceRef)
+			var err error
+
+			// sanity test fail when no auth given
+			c1 := connect(ctx, t)
+			_, err = goGitBase(t, c1).
+				WithEnvVariable("CACHEBUST", rand.Text()).
+				With(read).
+				Sync(ctx)
+			requireErrOut(t, err, expectedErr)
+
+			// read the workspace with auth, get it into the cache
+			c2 := connect(ctx, t)
+			withRepo, withRepoCleanup := privateRepoSetup(c2, t, testCase)
+			t.Cleanup(withRepoCleanup)
+			_, err = goGitBase(t, c2).
+				WithEnvVariable("CACHEBUST", rand.Text()).
+				With(withRepo).
+				With(read).
+				Sync(ctx)
+			require.NoError(t, err)
+
+			// try again with no auth, should fail
+			c3 := connect(ctx, t)
+			_, err = goGitBase(t, c3).
+				WithEnvVariable("CACHEBUST", rand.Text()).
+				With(read).
+				Sync(ctx)
+			requireErrOut(t, err, expectedErr)
+		}
+
+		t.Run("auth token", func(ctx context.Context, t *testctx.T) {
+			runTest(ctx, t, authTokenTestCase, "Authentication failed")
+		})
+		t.Run("ssh key", func(ctx context.Context, t *testctx.T) {
+			runTest(ctx, t, sshTestCase, "SSH URLs are not supported without an SSH socket")
+		})
+	})
 }
 
 func (GitSuite) TestCrossSessionGitRepositoryIdentity(ctx context.Context, t *testctx.T) {
