@@ -79,6 +79,12 @@ func (c *Check) AttachDependencyResults(ctx context.Context, _ dagql.AnyResult, 
 		c.Generator = result.(dagql.ObjectResult[*Generator])
 		owned = append(owned, result)
 	}
+	inputs, deps, err := c.attachInputs(ctx, attach)
+	if err != nil {
+		return nil, err
+	}
+	c.Inputs = inputs
+	owned = append(owned, deps...)
 	if c.Workspace.Self() != nil {
 		result, err := attach(c.Workspace)
 		if err != nil {

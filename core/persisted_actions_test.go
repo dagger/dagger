@@ -175,3 +175,107 @@ func TestPersistedModuleEnumDecodesThroughDefiningModule(t *testing.T) {
 	require.Equal(t, value.Type().String(), restored.Type().String())
 	require.Equal(t, encoding.Envelope, persistedEncoding(t, ctx, cache, restored).Envelope, "the second save is identical")
 }
+
+// TestPersistedCheckKeepsInputsThroughRestart verifies that a check keeps its
+// function's inputs through two cache restarts, decoded through the
+// function's argument types, so a restored check selects its body with the
+// same arguments: an optional string given and one left out, an integer and
+// an object.
+func TestPersistedCheckKeepsInputsThroughRestart(t *testing.T) {
+	env := newPersistedFamiliesTestEnv(t, "check-a")
+	ctx, cache, srv := env.open(t)
+	modRes := env.attach(t, ctx, cache, srv, "check-module", &Module{NameField: "cold", OriginalName: "cold", Deps: NewSchemaBuilder(nil, nil)}).(dagql.ObjectResult[*Module])
+	dirRes := env.directory(t, ctx, cache, srv, "check-source", "check-source")
+	wsRes := env.attach(t, ctx, cache, srv, "check-workspace", &Workspace{rootfs: dirRes, Address: "file:///ws", Cwd: "/"}).(dagql.ObjectResult[*Workspace])
+	typeDef := func(name string, def *TypeDef) dagql.ObjectResult[*TypeDef] {
+		return env.attach(t, ctx, cache, srv, "typedef-"+name, def).(dagql.ObjectResult[*TypeDef])
+	}
+	directoryDef := env.attach(t, ctx, cache, srv, "directory-def", NewObjectTypeDef("Directory", "", nil)).(dagql.ObjectResult[*ObjectTypeDef])
+	fn := NewFunction("lint", typeDef("void", (&TypeDef{}).WithKind(TypeDefKindVoid)))
+	for _, arg := range []struct {
+		name string
+		def  *TypeDef
+	}{
+		{"label", (&TypeDef{}).WithKind(TypeDefKindString).WithOptional(true)},
+		{"note", (&TypeDef{}).WithKind(TypeDefKindString).WithOptional(true)},
+		{"count", (&TypeDef{}).WithKind(TypeDefKindInteger)},
+		{"src", (&TypeDef{}).WithObject(directoryDef)},
+	} {
+		fn = fn.WithArg(env.attach(t, ctx, cache, srv, "arg-"+arg.name, NewFunctionArg(arg.name, typeDef(arg.name, arg.def), "", nil, "", "", nil, nil)).(dagql.ObjectResult[*FunctionArg]))
+	}
+	holderDef := NewObjectTypeDef("Holder", "", nil).WithFunction(env.attach(t, ctx, cache, srv, "lint-function", fn).(dagql.ObjectResult[*Function]))
+	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*ModuleObject]{Typed: &ModuleObject{Module: modRes, TypeDef: holderDef}}))
+	receiver := env.attach(t, ctx, cache, srv, "check-receiver", &ModuleObject{Module: modRes, TypeDef: holderDef, Fields: map[string]any{}}).(dagql.ObjectResult[*ModuleObject])
+	srcID, err := dirRes.ID()
+	require.NoError(t, err)
+	var inputs []CallInput
+	for name, value := range map[string]any{"label": "x", "note": nil, "count": 3, "src": srcID} {
+		var arg *FunctionArg
+		for _, candidate := range fn.Args {
+			if candidate.Self().Name == name {
+				arg = candidate.Self()
+			}
+		}
+		input, err := arg.TypeDef.Self().ToInput().Decoder().DecodeInput(value)
+		require.NoError(t, err, name)
+		inputs = append(inputs, CallInput{Name: name, Value: input})
+	}
+	planned := env.attach(t, ctx, cache, srv, "planned-check", &Check{
+		Assertion: dagql.NonNull(dagql.String("lints")),
+		Receiver:  receiver, Workspace: wsRes, Function: "lint", Inputs: inputs, CacheTTL: 60,
+	}).(dagql.ObjectResult[*Check])
+	addressed := planned.Self().Clone()
+	addressed.Address, addressed.Unaddressed = "dag://cold/lint", planned
+	addressedRes := env.attach(t, ctx, cache, srv, "addressed-check", addressed)
+	ids := map[string]uint64{}
+	encodings := map[string]dagql.PersistedResultEnvelope{}
+	for name, res := range map[string]dagql.AnyResult{"planned": planned, "addressed": addressedRes} {
+		ids[name] = persistedRowID(t, cache, res)
+		encodings[name] = persistedEncoding(t, ctx, cache, res).Envelope
+		require.NotEmpty(t, assertPersistedRefsMatchOwnership(t, ctx, cache, res), name)
+	}
+	// An object input compares by the row its ID loads; the others by the
+	// value their argument type decodes.
+	literals := func(ctx context.Context, cache *dagql.Cache, srv *dagql.Server, inputs []CallInput) map[string]any {
+		values := map[string]any{}
+		for _, input := range inputs {
+			value, err := persistedCheckInputValue(input.Value)
+			require.NoError(t, err, input.Name)
+			if idable, ok := value.(dagql.IDable); ok {
+				id, err := idable.ID()
+				require.NoError(t, err, input.Name)
+				res, err := cache.LoadResultByResultID(ctx, env.session, srv, id.EngineResultID())
+				require.NoError(t, err, input.Name)
+				value = persistedRowID(t, cache, res)
+			}
+			values[input.Name] = value
+		}
+		return values
+	}
+	want := literals(ctx, cache, srv, inputs)
+	require.Equal(t, persistedRowID(t, cache, dirRes), want["src"])
+	modID, receiverID, wsID := persistedRowID(t, cache, modRes), persistedRowID(t, cache, receiver), persistedRowID(t, cache, wsRes)
+	for round := 1; round <= 2; round++ {
+		ctx, cache, srv = env.restart(t, ctx, cache)
+		restartedMod, err := cache.LoadResultByResultID(ctx, env.session, srv, modID)
+		require.NoError(t, err)
+		srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*ModuleObject]{Typed: &ModuleObject{Module: restartedMod.(dagql.ObjectResult[*Module]), TypeDef: holderDef}}))
+		load := func(name string) *Check {
+			res, err := cache.LoadResultByResultID(ctx, env.session, srv, ids[name])
+			require.NoError(t, err, name)
+			require.Equal(t, encodings[name], persistedEncoding(t, ctx, cache, res).Envelope, "round %d: %s", round, name)
+			return res.Unwrap().(*Check)
+		}
+		restored := load("planned")
+		require.Equal(t, want, literals(ctx, cache, srv, restored.Inputs), "round %d", round)
+		require.Equal(t, "lint", restored.Function)
+		require.Equal(t, "lints", restored.Assertion.Value.String())
+		require.Equal(t, int64(60), restored.CacheTTL)
+		require.Equal(t, receiverID, persistedRowID(t, cache, restored.Receiver))
+		require.Equal(t, wsID, persistedRowID(t, cache, restored.Workspace))
+		restoredAddressed := load("addressed")
+		require.Equal(t, "dag://cold/lint", restoredAddressed.Address)
+		require.Equal(t, ids["planned"], persistedRowID(t, cache, restoredAddressed.Unaddressed))
+		require.Equal(t, want, literals(ctx, cache, srv, restoredAddressed.Inputs), "round %d", round)
+	}
+}

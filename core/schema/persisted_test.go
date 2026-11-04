@@ -87,7 +87,7 @@ func TestCoreSchemaObjectsHavePersistedFamilies(t *testing.T) {
 		families[name] = family.Name
 	}
 	require.Equal(t, persistedSchemaExpectedWithoutCodec, missing, "every installed core object either has a codec pair with a registered family or is one of the documented exceptions")
-	for _, name := range []string{"EnvVariable", "Port", "Label", "HealthcheckConfig", "SDKConfig", "ModuleConfigClient", "Schema", "GitBundleRef", "CurrentModule", "WorkspaceMigration", "WorkspaceMigrationStep", "Cloud", "Terminal", "Artifact", "Artifacts", "CollectionTypeDef", "CollectionDelta", "Address", "WorkspaceSDK", "Container", "Directory", "GitRepository"} {
+	for _, name := range []string{"EnvVariable", "Port", "Label", "HealthcheckConfig", "SDKConfig", "ModuleConfigClient", "Schema", "GitBundleRef", "CurrentModule", "WorkspaceMigration", "WorkspaceMigrationStep", "Cloud", "Terminal", "Artifact", "Artifacts", "CollectionTypeDef", "CollectionDelta", "Address", "WorkspaceSDK", "Check", "ArtifactDimensionKey", "Container", "Directory", "GitRepository"} {
 		require.Contains(t, families, name, "%s is an installed core object with a family", name)
 	}
 }
@@ -102,10 +102,7 @@ var persistedSchemaExpectedWithoutCodec = []string{
 	"AgentMessage(*core.AgentMessage encode=false decode=false family=false)",
 	// Artifact metadata and evaluation wrappers have no persisted representation.
 	"ArtifactDimension(*artifact.Dimension encode=false decode=false family=false)",
-	"ArtifactDimensionKey(*core.ArtifactDimensionKey encode=false decode=false family=false)",
 	"ArtifactPath(*core.ArtifactPath encode=false decode=false family=false)",
-	// Check constructors and projected functions explicitly disable persistence.
-	"Check(*core.Check encode=false decode=false family=false)",
 	// Container.shell is not persistable; it describes a command without running it.
 	"Command(core.Command encode=false decode=false family=false)",
 	// Engine inspection values are hidden from module SDKs
