@@ -539,9 +539,11 @@ const (
 	// and the loader refuses a trace that received fewer (faithful data or refuse,
 	// never a wrong answer). A dropped leaf is otherwise undetectable from the trace.
 
-	// WcprofEngineSpanAttr (bool true) marks a span the ENGINE emitted for a trace —
-	// the counted, ranking-critical population. Stamped at span creation by the
-	// engine's per-client span-count processor (engine/server). The loader counts
+	// WcprofEngineSpanAttr (bool true) marks a span the ENGINE emitted for a trace
+	// while wcprof records — the counted, ranking-critical population. Stamped at span
+	// creation by the engine's per-session span-count processor (engine/server). A
+	// trace with no marks and no declared total wasn't recorded, and the loader reports
+	// its completeness as unknown. The loader counts
 	// these to reconcile against the declared total; CLI-shell and HTTP/buildkit
 	// spans (which the engine does not count) are unmarked and excluded, so they
 	// cannot cause a false pass/fail.
@@ -554,7 +556,7 @@ const (
 	// final total, not a running floor. The loader compares the count of received
 	// WcprofEngineSpanAttr spans to this declared total: because the declaration is
 	// the exact final (received <= total always), received < total ⇒ spans dropped ⇒
-	// hard-fail; absent ⇒ unverifiable ⇒ hard-fail (fail-by-default).
+	// hard-fail; absent on a trace with marked spans ⇒ unverifiable ⇒ hard-fail.
 	WcprofSessionSpanCountAttr = "wcprof.session_span_count"
 
 	// WcprofSessionCompleteAttr (bool true) marks the dedicated session-teardown

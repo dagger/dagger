@@ -1087,7 +1087,7 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 	tracerOpts := []sdktrace.TracerProviderOption{
 		sdktrace.WithRawSpanLimits(spanLimits),
 		sdktrace.WithSpanProcessor(dagql.NewWcprofLazyParentProcessor()),
-		sdktrace.WithSpanProcessor(srv.wcprofSpanCount),
+		sdktrace.WithSpanProcessor(wcprofSpanMarker{counter: srv.wcprofSpanCount, sess: sess}),
 		sdktrace.WithSpanProcessor(sess.cacheSpans),
 		// Stamp origin before the live processors freeze their start snapshots.
 		sdktrace.WithSpanProcessor(telemetryOriginSpanProcessor{sessionID: sess.sessionID}),
@@ -1548,9 +1548,10 @@ func (srv *Server) getOrCreateSessionLocked(sessionID, clientID string) (*dagger
 // the session-root span recorded in serveQuery so it lands in this trace, named
 // wcprofSessionCompleteSpanName so the counter excludes it from the total and the
 // loader drops it from the compiled ops. The session's final trace/log barrier
-// flushes the carrier after all cleanup producers have stopped. A trace that
-// never ran a traced main query gets no carrier and so fails the loader's
-// completeness check by default (unverifiable → refused).
+// flushes the carrier after all cleanup producers have stopped. A recorded trace
+// that never ran a traced main query gets no carrier and so fails the loader's
+// completeness check by default (unverifiable → refused). Nothing is counted while
+// wcprof isn't recording, so such a session declares no count.
 //
 // The carrier also marks the session's end for its cache spans: it declares
 // how many spans of this session named a cache entry
