@@ -8,6 +8,7 @@ import (
 	"os"
 	"reflect"
 	"slices"
+	"sync/atomic"
 	"time"
 
 	"github.com/dagger/dagger/dagql/dagui"
@@ -168,12 +169,7 @@ func withEngineAction(
 			defer telemetry.EndWithCause(span, &rerr)
 		}
 
-		otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
-			if opts.Debug {
-				slog.Error("failed to emit telemetry", "error", err)
-			}
-			Frontend.SetTelemetryError(err)
-		}))
+		setTelemetryErrorHandler(opts.Debug)
 		cleanup.Add("close telemetry", func() error {
 			return cleanupTelemetry(rerr)
 		})
@@ -479,12 +475,7 @@ func withLazySessions(
 		// Telemetry deliberately starts after the untraced setup phase (Cloud
 		// login), so credentials established there apply to the whole trace.
 		ctx, cleanupTelemetry := initEngineTelemetry(ctx)
-		otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
-			if opts.Debug {
-				slog.Error("failed to emit telemetry", "error", err)
-			}
-			Frontend.SetTelemetryError(err)
-		}))
+		setTelemetryErrorHandler(opts.Debug)
 		cleanup.Add("close telemetry", func() error {
 			return cleanupTelemetry(rerr)
 		})
@@ -739,7 +730,7 @@ func initEngineTelemetry(ctx context.Context) (context.Context, func(error) erro
 		rerr = errors.Join(rerr, drainErr)
 		telemetry.EndWithCause(span, &rerr)
 		// telemetry.Close owns the remote providers created by Init.
-		telemetry.Close()
+		closeTelemetry(telemetry.Close)
 		if diagnostics != nil {
 			// Remote processors above remain owned by telemetry.Close. Only
 			// close the local diagnostic processor here, with a short budget.
@@ -763,4 +754,33 @@ func drainCLIOutput(ctx context.Context, processor *enginetel.BlockingLogProcess
 	// OTel Writer.Close does not propagate OnEmit errors. Check the context
 	// explicitly so a failed EOF emission cannot be mistaken for success.
 	return errors.Join(err, context.Cause(ctx), shutdownErr)
+}
+
+// telemetryClosing is set while the command's telemetry shuts down. See
+// setTelemetryErrorHandler.
+var telemetryClosing atomic.Bool
+
+// closeTelemetry runs closeProviders, which shuts down the telemetry providers.
+func closeTelemetry(closeProviders func()) {
+	telemetryClosing.Store(true)
+	defer telemetryClosing.Store(false)
+	closeProviders()
+}
+
+// setTelemetryErrorHandler sends failures in the telemetry pipeline to the
+// frontend, which warns the user that the trace is incomplete.
+func setTelemetryErrorHandler(debug bool) {
+	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
+		if debug {
+			slog.Error("failed to emit telemetry", "error", err)
+		}
+		// Shutting down a metric reader cancels its periodic export if one is
+		// running or about to start, and the SDK reports that as a failure. The
+		// CLI records no metrics on these readers, so this loses nothing: the
+		// engine's metrics go to the exporters directly.
+		if telemetryClosing.Load() && errors.Is(err, context.Canceled) {
+			return
+		}
+		Frontend.SetTelemetryError(err)
+	}))
 }
