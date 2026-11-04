@@ -18,11 +18,8 @@ type PhpClientDev struct { // php-client-dev (../../:0:0)
 	refetchID bool
 
 	id             *ID
-	phpCodeSniffer *Void
-	phpStan        *Void
 	release        *Void
 	releaseDryRun  *Void
-	test           *Void
 	versionFromTag *string
 }
 type WithPhpClientDevFunc func(r *PhpClientDev) *PhpClientDev
@@ -140,23 +137,17 @@ func (r *PhpClientDev) UnmarshalJSON(bs []byte) error {
 }
 
 // Lint the PHP code with PHP CodeSniffer (https://github.com/squizlabs/PHP_CodeSniffer)
-func (r *PhpClientDev) PhpCodeSniffer(ctx context.Context) error {
-	if r.phpCodeSniffer != nil {
-		return nil
-	}
+func (r *PhpClientDev) PhpCodeSniffer() *Check {
 	q := r.query.Select("phpCodeSniffer")
 
-	return q.Execute(ctx)
+	return new(Check).WithGraphQLQuery(q)
 }
 
 // Analyze the PHP code with PHPStan (https://phpstan.org)
-func (r *PhpClientDev) PhpStan(ctx context.Context) error {
-	if r.phpStan != nil {
-		return nil
-	}
+func (r *PhpClientDev) PhpStan() *Check {
 	q := r.query.Select("phpStan")
 
-	return q.Execute(ctx)
+	return new(Check).WithGraphQLQuery(q)
 }
 
 // PhpClientDevReleaseOpts contains options for PhpClientDev.Release
@@ -241,13 +232,10 @@ func (r *PhpClientDev) Source() *Directory {
 }
 
 // Test the PHP SDK with PHPUnit (https://phpunit.de/)
-func (r *PhpClientDev) Test(ctx context.Context) error {
-	if r.test != nil {
-		return nil
-	}
+func (r *PhpClientDev) Test() *Check {
 	q := r.query.Select("test")
 
-	return q.Execute(ctx)
+	return new(Check).WithGraphQLQuery(q)
 }
 
 // Get v1.2.3 from sdk/php/v1.2.3

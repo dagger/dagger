@@ -11,6 +11,10 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	telemetry "github.com/dagger/otel-go"
+	"go.opentelemetry.io/otel/sdk/resource"
+	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 )
 
 // callRequest is the ModuleEntrypoint.call input. The entrypoint passes each
@@ -35,7 +39,7 @@ type functionSpec struct {
 }
 
 var functions = []functionSpec{
-	{Name: "go", Receiver: "Go", FnName: "", Args: map[string]argumentSpec{"source": {Required: false, Default: "", Encoding: "string"}, "version": {Required: false, Default: "\"1.26\"", Encoding: "string"}, "moduleCache": {Required: false, Default: "", Encoding: "string"}, "buildCache": {Required: false, Default: "", Encoding: "string"}, "base": {Required: false, Default: "", Encoding: "string"}, "ldflags": {Required: false, Default: "", Encoding: "json"}, "tags": {Required: false, Default: "", Encoding: "json"}, "values": {Required: false, Default: "", Encoding: "json"}, "cgo": {Required: false, Default: "", Encoding: "json"}, "race": {Required: false, Default: "", Encoding: "json"}, "experiment": {Required: false, Default: "", Encoding: "json"}, "extraPackages": {Required: false, Default: "", Encoding: "json"}, "limit": {Required: false, Default: "10", Encoding: "json"}, "ws": {Required: false, Default: "", Encoding: "string"}, "vcsCommit": {Required: false, Default: "", Encoding: "string"}, "vcsDirty": {Required: false, Default: "", Encoding: "json"}}},
+	{Name: "go", Receiver: "Go", FnName: "", Args: map[string]argumentSpec{"source": {Required: false, Default: "", Encoding: "string"}, "version": {Required: false, Default: "\"1.27\"", Encoding: "string"}, "moduleCache": {Required: false, Default: "", Encoding: "string"}, "buildCache": {Required: false, Default: "", Encoding: "string"}, "base": {Required: false, Default: "", Encoding: "string"}, "ldflags": {Required: false, Default: "", Encoding: "json"}, "tags": {Required: false, Default: "", Encoding: "json"}, "values": {Required: false, Default: "", Encoding: "json"}, "cgo": {Required: false, Default: "", Encoding: "json"}, "race": {Required: false, Default: "", Encoding: "json"}, "experiment": {Required: false, Default: "", Encoding: "json"}, "extraPackages": {Required: false, Default: "", Encoding: "json"}, "limit": {Required: false, Default: "10", Encoding: "json"}, "ws": {Required: false, Default: "", Encoding: "string"}, "vcsCommit": {Required: false, Default: "", Encoding: "string"}, "vcsDirty": {Required: false, Default: "", Encoding: "json"}}},
 	{Name: "binary", Receiver: "Go", FnName: "Binary", Args: map[string]argumentSpec{"pkg": {Required: true, Default: "", Encoding: "string"}, "noSymbols": {Required: false, Default: "", Encoding: "json"}, "noDwarf": {Required: false, Default: "", Encoding: "json"}, "platform": {Required: false, Default: "", Encoding: "string"}}},
 	{Name: "build", Receiver: "Go", FnName: "Build", Args: map[string]argumentSpec{"pkgs": {Required: false, Default: "[\"./...\"]", Encoding: "json"}, "noSymbols": {Required: false, Default: "", Encoding: "json"}, "noDwarf": {Required: false, Default: "", Encoding: "json"}, "platform": {Required: false, Default: "", Encoding: "string"}, "output": {Required: false, Default: "\"./bin/\"", Encoding: "string"}}},
 	{Name: "checkTidy", Receiver: "Go", FnName: "CheckTidy", Args: map[string]argumentSpec{"include": {Required: false, Default: "", Encoding: "json"}, "exclude": {Required: false, Default: "", Encoding: "json"}}},
@@ -55,6 +59,12 @@ func main() {
 	if len(os.Args) < 2 {
 		fatalf("usage: %s engine-call | call <FUNCTION> [--ARG VALUE]", os.Args[0])
 	}
+	// The engine passes the function call's trace in TRACEPARENT and its
+	// collector in OTEL_*; without them, spans of the author's code are lost.
+	ctx := telemetry.InitEmbedded(context.Background(), resource.NewWithAttributes(
+		semconv.SchemaURL,
+		semconv.ServiceNameKey.String("dagger-go-sdk"),
+	))
 	var err error
 	switch os.Args[1] {
 	case "engine-call":
@@ -69,12 +79,14 @@ func main() {
 			}
 			defer output.Close()
 		}
-		err = engineCall(context.Background(), os.Stdin, output)
+		err = engineCall(ctx, os.Stdin, output)
 	case "call":
-		err = developerCall(context.Background(), os.Args[2:], os.Stdout)
+		err = developerCall(ctx, os.Args[2:], os.Stdout)
 	default:
 		err = fmt.Errorf("unknown mode %q", os.Args[1])
 	}
+	// fatalf exits without running deferred calls, so spans are flushed first.
+	telemetry.Close()
 	if err != nil {
 		fatalf("%v", err)
 	}

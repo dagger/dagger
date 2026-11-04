@@ -19,7 +19,6 @@ type CliDev struct { // cli-dev (../../:0:0)
 
 	id              *ID
 	publishMetadata *Void
-	releaseDryRun   *Void
 	tag             *string
 	version         *string
 }
@@ -228,13 +227,10 @@ func (r *CliDev) PublishMetadata(ctx context.Context, awsAccessKeyId *Secret, aw
 }
 
 // Verify that the CLI builds without actually publishing anything
-func (r *CliDev) ReleaseDryRun(ctx context.Context) error {
-	if r.releaseDryRun != nil {
-		return nil
-	}
+func (r *CliDev) ReleaseDryRun() *Check {
 	q := r.query.Select("releaseDryRun")
 
-	return q.Execute(ctx)
+	return new(Check).WithGraphQLQuery(q)
 }
 
 func (r *CliDev) Tag(ctx context.Context) (string, error) {

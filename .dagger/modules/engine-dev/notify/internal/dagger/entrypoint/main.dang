@@ -31,7 +31,7 @@ type Entrypoint implements ModuleEntrypoint {
         )
         .withFunction(
           function("Discord", typeDef.withKind(TypeDefKind.STRING_KIND))
-            .withDescription("Message a Discord webhook: `dagger call discord --webhook-url=env:DISCORD_WEBHOOK --message=\"👋 from Dagger notify module\"`")
+            .withDescription("Message a Discord webhook: `dagger call discord --webhook-url=env://DISCORD_WEBHOOK --message=\"👋 from Dagger notify module\"`")
             .withCachePolicy(FunctionCachePolicy.PerSession)
             .withSourceMap(sourceMap("main.go", 22, 1))
             .withArg("webhookURL", typeDef.withObject("Secret"), sourceMap: sourceMap("main.go", 24, 2))
@@ -39,7 +39,7 @@ type Entrypoint implements ModuleEntrypoint {
         )
         .withFunction(
           function("Slack", typeDef.withKind(TypeDefKind.STRING_KIND))
-            .withDescription("Message a specific Slack channel: `dagger call slack --token=env:SLACK_TOKEN --channel-id=C07PBDE3U57 --color=\"#FC0\" --message=\"👋 from Dagger notify module\"`")
+            .withDescription("Message a specific Slack channel: `dagger call slack --token=env://SLACK_TOKEN --channel-id=C07PBDE3U57 --color=\"#FC0\" --message=\"👋 from Dagger notify module\"`")
             .withCachePolicy(FunctionCachePolicy.PerSession)
             .withSourceMap(sourceMap("main.go", 52, 1))
             .withArg("token", typeDef.withObject("Secret"), description: "The slack token to authenticate with the slack organization", sourceMap: sourceMap("main.go", 55, 2))
@@ -75,6 +75,7 @@ type Entrypoint implements ModuleEntrypoint {
       .withMountedDirectory("/workspace", currentModule.contextDirectory)
       .withWorkdir("/workspace/" + currentModule.sourceSubpath)
       .withEnvVariable("DAGGER_MODULE_CALL_DIGEST", callDigest ?? "")
+      .withEnvVariable("DAGGER_CLIENT_VERSION", "v1.0.0-beta.24")
       .withExec(
         ["/usr/local/bin/dispatch", "engine-call", "/dagger/result.json"],
         stdin: request,

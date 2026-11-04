@@ -17,14 +17,13 @@ type Go struct { // go (../../:0:0)
 	// field again.
 	refetchID bool
 
-	cgo       *bool
-	checkTidy *Void
-	id        *ID
-	limit     *int
-	race      *bool
-	test      *Void
-	tests     *string
-	version   *string
+	cgo     *bool
+	id      *ID
+	limit   *int
+	race    *bool
+	test    *Void
+	tests   *string
+	version *string
 }
 type WithGoFunc func(r *Go) *Go
 
@@ -158,10 +157,7 @@ type GoCheckTidyOpts struct {
 }
 
 // Check if 'go mod tidy' is up-to-date
-func (r *Go) CheckTidy(ctx context.Context, opts ...GoCheckTidyOpts) error {
-	if r.checkTidy != nil {
-		return nil
-	}
+func (r *Go) CheckTidy(opts ...GoCheckTidyOpts) *Check {
 	q := r.query.Select("checkTidy")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `include` optional argument
@@ -174,7 +170,7 @@ func (r *Go) CheckTidy(ctx context.Context, opts ...GoCheckTidyOpts) error {
 		}
 	}
 
-	return q.Execute(ctx)
+	return new(Check).WithGraphQLQuery(q)
 }
 
 // Download dependencies into the module cache
@@ -574,7 +570,7 @@ type GoOpts struct {
 	Source *Directory
 	// Go version
 	//
-	// Default: "1.26"
+	// Default: "1.27"
 	Version string
 	// Use a custom module cache
 	ModuleCache *CacheVolume

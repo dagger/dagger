@@ -201,10 +201,10 @@ func (r *CliDev) Publish(tag string, commit string, githubOrgName string, opts .
 
 // CliDevPublishMetadataOpts contains options for CliDev.PublishMetadata
 type CliDevPublishMetadataOpts struct {
-	AwsEndpointURL string // cli-dev (../../publish.go:112:2)
+	AwsEndpointURL string // cli-dev (../../publish.go:116:2)
 }
 
-func (r *CliDev) PublishMetadata(ctx context.Context, awsAccessKeyId *Secret, awsSecretAccessKey *Secret, awsRegion string, awsBucket string, awsCloudfrontDistribution string, opts ...CliDevPublishMetadataOpts) error { // cli-dev (../../publish.go:104:1)
+func (r *CliDev) PublishMetadata(ctx context.Context, awsAccessKeyId *Secret, awsSecretAccessKey *Secret, awsRegion string, awsBucket string, awsCloudfrontDistribution string, opts ...CliDevPublishMetadataOpts) error { // cli-dev (../../publish.go:108:1)
 	assertNotNil("awsAccessKeyId", awsAccessKeyId)
 	assertNotNil("awsSecretAccessKey", awsSecretAccessKey)
 	if r.publishMetadata != nil {
@@ -227,7 +227,7 @@ func (r *CliDev) PublishMetadata(ctx context.Context, awsAccessKeyId *Secret, aw
 }
 
 // Verify that the CLI builds without actually publishing anything
-func (r *CliDev) ReleaseDryRun() *Check { // cli-dev (../../publish.go:175:1)
+func (r *CliDev) ReleaseDryRun() *Check { // cli-dev (../../publish.go:179:1)
 	q := r.query.Select("releaseDryRun")
 
 	return new(Check).WithGraphQLQuery(q)

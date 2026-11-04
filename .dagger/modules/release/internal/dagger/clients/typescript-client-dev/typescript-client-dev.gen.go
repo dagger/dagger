@@ -66,17 +66,11 @@ type TypescriptClientDev struct { // typescript-client-dev (../../:0:0)
 	bunVersion         *string
 	id                 *ID
 	isSemver           *bool
-	lintDocsSnippets   *Void
-	lintTypescript     *Void
 	nodeVersionLts     *string
 	nodeVersionPrevLts *string
 	release            *Void
-	releaseDryRun      *Void
 	sourcePath         *string
-	testBunjs          *Void
 	testNodejs         *Void
-	testNodejsLts      *Void
-	testNodejsPrevLts  *Void
 }
 
 func (r *TypescriptClientDev) WithGraphQLQuery(q *querybuilder.Selection) *TypescriptClientDev {
@@ -191,10 +185,7 @@ type TypescriptClientDevLintDocsSnippetsOpts struct {
 }
 
 // Check the formatting of Typescript docs snippets
-func (r *TypescriptClientDev) LintDocsSnippets(ctx context.Context, opts ...TypescriptClientDevLintDocsSnippetsOpts) error { // typescript-client-dev (../../:0:0)
-	if r.lintDocsSnippets != nil {
-		return nil
-	}
+func (r *TypescriptClientDev) LintDocsSnippets(opts ...TypescriptClientDevLintDocsSnippetsOpts) *Check { // typescript-client-dev (../../:0:0)
 	q := r.query.Select("lintDocsSnippets")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `docsWorkspace` optional argument
@@ -203,17 +194,14 @@ func (r *TypescriptClientDev) LintDocsSnippets(ctx context.Context, opts ...Type
 		}
 	}
 
-	return q.Execute(ctx)
+	return new(Check).WithGraphQLQuery(q)
 }
 
 // Check the formatting of the SDK
-func (r *TypescriptClientDev) LintTypescript(ctx context.Context) error { // typescript-client-dev (../../:0:0)
-	if r.lintTypescript != nil {
-		return nil
-	}
+func (r *TypescriptClientDev) LintTypescript() *Check { // typescript-client-dev (../../:0:0)
 	q := r.query.Select("lintTypescript")
 
-	return q.Execute(ctx)
+	return new(Check).WithGraphQLQuery(q)
 }
 
 func (r *TypescriptClientDev) NodeVersionLts(ctx context.Context) (string, error) { // typescript-client-dev (../../:0:0)
@@ -314,13 +302,10 @@ func (r *TypescriptClientDev) Release(ctx context.Context, sourceTag string, opt
 	return q.Execute(ctx)
 }
 
-func (r *TypescriptClientDev) ReleaseDryRun(ctx context.Context) error { // typescript-client-dev (../../:0:0)
-	if r.releaseDryRun != nil {
-		return nil
-	}
+func (r *TypescriptClientDev) ReleaseDryRun() *Check { // typescript-client-dev (../../:0:0)
 	q := r.query.Select("releaseDryRun")
 
-	return q.Execute(ctx)
+	return new(Check).WithGraphQLQuery(q)
 }
 
 func (r *TypescriptClientDev) Source() *Directory { // typescript-client-dev (../../:0:0)
@@ -342,13 +327,10 @@ func (r *TypescriptClientDev) SourcePath(ctx context.Context) (string, error) { 
 }
 
 // Test the SDK with BunJS
-func (r *TypescriptClientDev) TestBunjs(ctx context.Context) error { // typescript-client-dev (../../:0:0)
-	if r.testBunjs != nil {
-		return nil
-	}
+func (r *TypescriptClientDev) TestBunjs() *Check { // typescript-client-dev (../../:0:0)
 	q := r.query.Select("testBunjs")
 
-	return q.Execute(ctx)
+	return new(Check).WithGraphQLQuery(q)
 }
 
 // Test the SDK with the given version of NodeJS
@@ -363,23 +345,17 @@ func (r *TypescriptClientDev) TestNodejs(ctx context.Context, nodeVersion string
 }
 
 // Test the SDK with LTS version of Node
-func (r *TypescriptClientDev) TestNodejsLts(ctx context.Context) error { // typescript-client-dev (../../:0:0)
-	if r.testNodejsLts != nil {
-		return nil
-	}
+func (r *TypescriptClientDev) TestNodejsLts() *Check { // typescript-client-dev (../../:0:0)
 	q := r.query.Select("testNodejsLts")
 
-	return q.Execute(ctx)
+	return new(Check).WithGraphQLQuery(q)
 }
 
 // Test the SDK with previous LTS version of Node
-func (r *TypescriptClientDev) TestNodejsPrevLts(ctx context.Context) error { // typescript-client-dev (../../:0:0)
-	if r.testNodejsPrevLts != nil {
-		return nil
-	}
+func (r *TypescriptClientDev) TestNodejsPrevLts() *Check { // typescript-client-dev (../../:0:0)
 	q := r.query.Select("testNodejsPrevLts")
 
-	return q.Execute(ctx)
+	return new(Check).WithGraphQLQuery(q)
 }
 
 func (r *TypescriptClientDev) WorkspaceDir() *Directory { // typescript-client-dev (../../:0:0)

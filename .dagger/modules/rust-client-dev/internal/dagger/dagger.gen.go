@@ -16,6 +16,7 @@ import (
 )
 
 type Changeset = core.Changeset
+type Check = core.Check
 type Container = core.Container
 type Directory = core.Directory
 type DirectoryFilterOpts = core.DirectoryFilterOpts

@@ -18,6 +18,7 @@ import (
 const CacheSharingModeLocked = core.CacheSharingModeLocked
 
 type Changeset = core.Changeset
+type Check = core.Check
 type Container = core.Container
 type ContainerAsServiceOpts = core.ContainerAsServiceOpts
 type ContainerAsTarballOpts = core.ContainerAsTarballOpts

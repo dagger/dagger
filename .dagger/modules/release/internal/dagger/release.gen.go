@@ -28,9 +28,8 @@ type Release struct { // release (../../:0:0)
 	// field again.
 	refetchID bool
 
-	id                       *ID
-	notify                   *Void
-	publishWithMockEndpoints *Void
+	id     *ID
+	notify *Void
 }
 
 func (r *Release) WithGraphQLQuery(q *querybuilder.Selection) *Release {
@@ -387,10 +386,7 @@ type ReleasePublishWithMockEndpointsOpts struct {
 }
 
 // Exercise the release publish path against local mock endpoints.
-func (r *Release) PublishWithMockEndpoints(ctx context.Context, opts ...ReleasePublishWithMockEndpointsOpts) error {
-	if r.publishWithMockEndpoints != nil {
-		return nil
-	}
+func (r *Release) PublishWithMockEndpoints(opts ...ReleasePublishWithMockEndpointsOpts) *Check {
 	q := r.query.Select("publishWithMockEndpoints")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `source` optional argument
@@ -399,7 +395,7 @@ func (r *Release) PublishWithMockEndpoints(ctx context.Context, opts ...ReleaseP
 		}
 	}
 
-	return q.Execute(ctx)
+	return new(Check).WithGraphQLQuery(q)
 }
 
 // Regenerate Python SDK files that reference the target Dagger Engine version.
