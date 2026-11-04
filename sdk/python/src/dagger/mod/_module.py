@@ -78,7 +78,7 @@ def _cache_policy(name: str, legacy_name: str) -> "dagger.FunctionCachePolicy":
     """The cache policy member of the module's schema.
 
     The client is generated for the module's engine version: from
-    v1.0.0-beta.25 on, its members are SCREAMING_SNAKE_CASE (NEVER), and
+    v1.0.0-beta.26 on, its members are SCREAMING_SNAKE_CASE (NEVER), and
     PascalCase (Never) before.
     """
     try:

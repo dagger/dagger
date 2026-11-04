@@ -16,7 +16,7 @@ import (
 //
 // A renamed field that had no view filter is view-scoped now: dagql records
 // the caller's view in its calls, where it recorded the internal view "", so
-// callers of different views (beta.25, beta.26, v1.0.0, and each pre-cut
+// callers of different views (beta.26, beta.27, v1.0.0, and each pre-cut
 // view) no longer share its cached or persisted results.
 
 // casedField is field in the views with the conventional core names.
