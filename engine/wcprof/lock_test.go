@@ -3,6 +3,7 @@ package wcprof
 import (
 	"bytes"
 	"context"
+	"regexp"
 	"runtime"
 	"testing"
 )
@@ -40,18 +41,25 @@ func writeLockWaiter(ctx context.Context, mu *RWMutex, locked chan<- struct{}) {
 	close(locked)
 }
 
-// waiterInLock reports whether writeLockWaiter has reached sync.RWMutex's
-// Lock, which WriteLock calls only after its wait has read the holder.
+// waiterInLock reports whether writeLockWaiter is in the sync.RWMutex Lock
+// that WriteLock calls itself, after its wait has read the holder; not in
+// another Lock before it, such as the recorder's as the wait interns its
+// ident.
 func waiterInLock() bool {
 	buf := make([]byte, 1<<20)
 	buf = buf[:runtime.Stack(buf, true)]
 	for _, g := range bytes.Split(buf, []byte("\n\n")) {
-		if bytes.Contains(g, []byte("wcprof.writeLockWaiter(")) && bytes.Contains(g, []byte("sync.(*RWMutex).Lock(")) {
+		if bytes.Contains(g, []byte("wcprof.writeLockWaiter(")) && lockedByWriteLock.Match(g) {
 			return true
 		}
 	}
 	return false
 }
+
+// lockedByWriteLock matches a goroutine's stack whose sync.RWMutex Lock frame
+// is called from WriteLock: each frame is a line naming the function and a
+// line naming its file.
+var lockedByWriteLock = regexp.MustCompile(`(?m)^sync\.\(\*RWMutex\)\.Lock\(.*\n.*\n\S*/engine/wcprof\.WriteLock\(`)
 
 // A wait on an RWMutex names the op that held it, taken with WriteLock, and
 // when it took it; the dump writes them as the wait's holder.
