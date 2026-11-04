@@ -954,7 +954,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).`),
 			),
 
-		dagql.Func("imageRef", s.imageRef).
+		dagql.NodeFunc("imageRef", s.imageRef).
 			Doc(`The unique image reference which can only be retrieved immediately after the 'Container.From' call.`),
 
 		dagql.NodeFunc("manifest", s.manifest).
@@ -4855,8 +4855,15 @@ func (s *containerSchema) withoutRegistryAuth(ctx context.Context, parent dagql.
 	return parent, nil
 }
 
-func (s *containerSchema) imageRef(ctx context.Context, parent *core.Container, args struct{}) (string, error) {
-	return parent.ImageRefOrErr(ctx)
+func (s *containerSchema) imageRef(ctx context.Context, parent dagql.ObjectResult[*core.Container], args struct{}) (string, error) {
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return "", err
+	}
+	if err := cache.EvaluateParts(ctx, parent, core.ContainerPartMetadata); err != nil {
+		return "", err
+	}
+	return parent.Self().ImageRefOrErr(ctx)
 }
 
 type containerManifestArgs struct {

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/plugins/content/local"
@@ -456,4 +457,79 @@ func TestMountConstructionLeavesParentBytesPending(t *testing.T) {
 	require.True(t, d.HasPendingLazyComputation())
 	require.True(t, f.HasPendingLazyComputation())
 	require.Empty(t, server.manager.outputs)
+}
+
+// imageRefMetadataOp holds a container's metadata evaluation at the point where
+// Container.from's has copied the parent's empty image ref over the container's.
+type imageRefMetadataOp struct {
+	core.ContainerWithLabelLazy
+	entered, release chan struct{}
+}
+
+func (op *imageRefMetadataOp) EvaluateContainerGroup(ctx context.Context, ctr *core.Container, group dagql.LazyGroupKey) error {
+	return op.LazyState.EvaluateGroup(ctx, "imageRefMetadataOp", group, func(context.Context) error {
+		if group != core.ContainerLazyGroupMetadata {
+			return nil
+		}
+		imageRef := ctr.ImageRef
+		ctr.ImageRef = ""
+		close(op.entered)
+		<-op.release
+		ctr.ImageRef = imageRef
+		return nil
+	})
+}
+
+// Sessions share a Container.from result, so one can read its image ref while
+// another is evaluating its metadata.
+func TestImageRefWaitsForConcurrentMetadataEvaluation(t *testing.T) {
+	ctx, srv, cache, _ := resolverOutputFixture(t)
+	const imageRef = "docker.io/library/alpine:latest@sha256:0000"
+	platform := core.Platform{OS: "linux", Architecture: "amd64"}
+	op := &imageRefMetadataOp{
+		ContainerWithLabelLazy: core.ContainerWithLabelLazy{LazyState: core.NewLazyState()},
+		entered:                make(chan struct{}),
+		release:                make(chan struct{}),
+	}
+	dagql.Fields[*core.Query]{
+		dagql.Func("__imageRefParent", func(context.Context, *core.Query, struct{}) (*core.Container, error) {
+			return core.NewContainer(platform), nil
+		}),
+		dagql.Func("__imageRefContainer", func(context.Context, *core.Query, struct{}) (*core.Container, error) {
+			ctr := core.NewContainer(platform)
+			ctr.ImageRef = imageRef
+			ctr.Lazy = op
+			return ctr, nil
+		}),
+	}.Install(srv)
+	require.NoError(t, srv.Select(ctx, srv.Root(), &op.Parent, dagql.Selector{Field: "__imageRefParent"}))
+	var ctr dagql.ObjectResult[*core.Container]
+	require.NoError(t, srv.Select(ctx, srv.Root(), &ctr, dagql.Selector{Field: "__imageRefContainer"}))
+
+	evaluated := make(chan error, 1)
+	go func() { evaluated <- cache.EvaluateParts(ctx, ctr, core.ContainerPartMetadata) }()
+	<-op.entered
+
+	type result struct {
+		imageRef string
+		err      error
+	}
+	read := make(chan result, 1)
+	go func() {
+		got, err := (&containerSchema{}).imageRef(ctx, ctr, struct{}{})
+		read <- result{got, err}
+	}()
+
+	// Give the read time to see the evaluation in progress, if it doesn't wait.
+	var got result
+	select {
+	case got = <-read:
+		close(op.release)
+	case <-time.After(100 * time.Millisecond):
+		close(op.release)
+		got = <-read
+	}
+	require.NoError(t, <-evaluated)
+	require.NoError(t, got.err)
+	require.Equal(t, imageRef, got.imageRef)
 }
