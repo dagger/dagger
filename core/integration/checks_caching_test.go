@@ -243,15 +243,33 @@ func (ChecksSuite) TestCheckPlanningFromGitAcrossSessions(ctx context.Context, t
 	})
 
 	// Listing a collection's items calls its producer. A producer cached
-	// across sessions gives the same items, so the listing is reused: its
-	// items are the same results.
-	t.Run("items of a collection cached by default are reused in the next session", func(ctx context.Context, t *testctx.T) {
+	// across sessions gives the same items, so the next session's listing is
+	// a cache hit. The engine reports each call's cache outcome to Cloud.
+	t.Run("items of a collection cached by default are listed once across sessions", func(ctx context.Context, t *testctx.T) {
 		remoteRef := workspaceSelectionRemoteRef(ctx, t, c, planningCollectionModule(c, ""))
-		query := ctr.WithNewFile("/query.graphql", `{currentWorkspace{artifacts{__evaluationItems{id}}}}`)
-		first := workspaceIdentityExec(ctx, t, query, true, "query", "--doc", "/query.graphql", "-W", remoteRef)
-		second := workspaceIdentityExec(ctx, t, query, true, "query", "--doc", "/query.graphql", "-W", remoteRef)
-		require.Contains(t, first, `"id"`)
-		require.Equal(t, first, second, "the second session must reuse the listing")
+		cloud := newTelemetrySplitCloud(t, c)
+		engine, err := devEngineContainerAsService(telemetrySplitEngineWithoutCloud(c, devEngineContainer(c))).Start(ctx)
+		require.NoError(t, err)
+		t.Cleanup(func() { _, _ = engine.Stop(ctx) })
+		for range 2 {
+			_, err := telemetrySplitClient(ctx, t, c, daggerCliFile(t, c), engine, cloud).
+				WithNewFile("/query.graphql", `{currentWorkspace{artifacts{__evaluationItems{uri}}}}`).
+				WithEnvVariable("CACHEBUSTER", rand.Text()).
+				WithExec([]string{"/bin/dagger", "query", "--doc", "/query.graphql", "-W", remoteRef}, core.ContainerWithExecOpts{DisableDaggerInDagger: true}).
+				Stdout(ctx)
+			require.NoError(t, err)
+		}
+		type span struct {
+			Name  string            `json:"name"`
+			Attrs map[string]string `json:"attrs"`
+		}
+		var outcomes []string
+		for _, s := range readTelemetrySplitLines[span](ctx, t, cloud, "v1/traces.json.spans") {
+			if strings.HasSuffix(s.Name, ".__evaluationItems") {
+				outcomes = append(outcomes, s.Attrs["dagger.io/cache.outcome"])
+			}
+		}
+		require.Contains(t, outcomes, "hit", "the second session must reuse the listing: %v", outcomes)
 	})
 
 	// A collection's items come from its producer. When the producer isn't
