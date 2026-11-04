@@ -195,7 +195,8 @@ func TestModuleImplementationScopedKeysGitModulesOnTheirCommit(t *testing.T) {
 // context directory, or from defaults that follow the engine, and decide how
 // its types are named, which API they target and how its source parses, so
 // they key its implementation digest, and through it the persisted
-// _moduleTypesDefinition. Modules of other SDKs keep their digest.
+// _moduleTypesDefinition. Effective engine versions alone remain irrelevant for
+// other SDKs; raw config and API-chain provenance are keyed separately.
 func TestSourceImplementationDigestKeysDangVersions(t *testing.T) {
 	ctx := t.Context()
 

@@ -1513,6 +1513,21 @@ func (src *ModuleSource) SourceImplementationDigest(ctx context.Context) (digest
 		)
 	}
 
+	// SDK-scoped sources remain mutation-capable. Equal effective versions
+	// do not imply equal behavior after withSourceSubpath/withSDK: an explicit
+	// override must survive, and a missing config must recover the manifest
+	// fallback and its raw caching policy. Keep this provenance in every scope
+	// keyed by the implementation digest, including modules exposing sources.
+	if src.ConfigEngineVersion != "" {
+		inputs = append(inputs, "configEngineVersion:"+src.ConfigEngineVersion)
+	}
+	if src.EngineVersionOverride != "" {
+		inputs = append(inputs, "engineVersionOverride:"+src.EngineVersionOverride)
+	}
+	if src.ConfigDisableDefaultFunctionCaching != nil {
+		inputs = append(inputs, fmt.Sprintf("configDisableDefaultFunctionCaching:%t", *src.ConfigDisableDefaultFunctionCaching))
+	}
+
 	inputs = append(inputs, src.IncludePaths...)
 
 	for _, dep := range src.Dependencies {

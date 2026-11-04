@@ -279,6 +279,9 @@ func versionMutationSource(t *testing.T, caching *bool) (context.Context, *modul
 	}
 	fileContents := map[*core.File]string{}
 	dagql.Fields[*core.Directory]{
+		dagql.Func("digest", func(context.Context, *core.Directory, struct{}) (string, error) {
+			return "version-files-digest", nil
+		}),
 		dagql.Func("exists", func(_ context.Context, _ *core.Directory, args struct{ Path string }) (bool, error) {
 			path := filepath.Clean(args.Path)
 			_, exists := files[path]
@@ -409,6 +412,53 @@ func TestDangSDKVersionMutations(t *testing.T) {
 				require.Equal(t, "1.0", got.DangVersion)
 			})
 		}
+	}
+}
+
+func TestDangVersionOverrideScopedMutation(t *testing.T) {
+	ctx, s, original := versionMutationSource(t, nil)
+	dag, err := core.CurrentDagqlServer(ctx)
+	require.NoError(t, err)
+	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*core.ModuleSource]{}))
+	dagql.Fields[*core.ModuleSource]{
+		dagql.NodeFunc("_implementationScoped", s.moduleSourceImplementationScoped),
+		dagql.Func("withSourceSubpath", s.moduleSourceWithSourceSubpath),
+	}.Install(dag)
+	scopedMutation := func(name string, src *core.ModuleSource) *core.ModuleSource {
+		t.Helper()
+		inst := moduleSourceObjectResult(t, dag, name, src)
+		var got dagql.ObjectResult[*core.ModuleSource]
+		require.NoError(t, dag.Select(ctx, inst, &got,
+			dagql.Selector{Field: "_implementationScoped"},
+			dagql.Selector{Field: "withSourceSubpath", Args: []dagql.NamedInput{{Name: "path", Value: dagql.String("b")}}},
+		))
+		return got.Self()
+	}
+	// Warm the same mutation without an override first. The effective source
+	// versions match, but future mutation behavior must not share that cache.
+	warm := scopedMutation("plain", original)
+	require.Equal(t, engine.IdentifierCasingVersion, warm.EngineVersion)
+	overridden, err := s.moduleSourceWithEngineVersion(ctx, original, struct{ Version string }{original.EngineVersion})
+	require.NoError(t, err)
+	got := scopedMutation("overridden", overridden)
+	require.Equal(t, original.EngineVersion, got.EngineVersion)
+	require.Equal(t, original.EngineVersion, got.EngineVersionOverride)
+
+	baseDigest, err := original.SourceImplementationDigest(ctx)
+	require.NoError(t, err)
+	seen := map[string]bool{baseDigest.String(): true}
+	for _, change := range []func(*core.ModuleSource){
+		func(src *core.ModuleSource) { src.EngineVersionOverride = src.EngineVersion },
+		func(src *core.ModuleSource) { src.ConfigEngineVersion = "v0.19.4" },
+		func(src *core.ModuleSource) { src.ConfigDisableDefaultFunctionCaching = ptr(false) },
+		func(src *core.ModuleSource) { src.ConfigDisableDefaultFunctionCaching = ptr(true) },
+	} {
+		src := original.Clone()
+		change(src)
+		digest, err := src.SourceImplementationDigest(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, seen, digest.String(), "scopes must distinguish every config/override provenance")
+		seen[digest.String()] = true
 	}
 }
 
