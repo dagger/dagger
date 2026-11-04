@@ -3477,11 +3477,15 @@ find . -path ./.git -prune -o -type f -print | sort | xargs sha256sum`}).
 func (GitSuite) TestRemoteWorkspaceAndItsModuleShareCheckout(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
+	// The function reads a file outside the module, from the workspace's
+	// root, so the call needs the commit's whole tree and not only the files
+	// loading the module reads.
+	nonce := rand.Text()
 	content := core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", "[modules.greeter]\nsource = '.dagger/modules/greeter'\nmain = true\n").
 		WithNewFile(".dagger/modules/greeter/dagger-module.toml", "name = \"greeter\"\n\n[runtime]\nsource = \"dang\"\n").
-		WithNewFile(".dagger/modules/greeter/main.dang", "type Greeter {\n  pub hello: String! {\n    \"hello\"\n  }\n}\n").
-		WithNewFile("nonce.txt", rand.Text())
+		WithNewFile(".dagger/modules/greeter/main.dang", "type Greeter {\n  pub nonce(root: Directory! @defaultPath(path: \"/\")): String! {\n    root.file(\"nonce.txt\").contents\n  }\n}\n").
+		WithNewFile("nonce.txt", nonce)
 	served := makeGitDir(c, content, "main")
 
 	const gitHost = "gitworkspace.test"
@@ -3504,11 +3508,11 @@ func (GitSuite) TestRemoteWorkspaceAndItsModuleShareCheckout(ctx context.Context
 
 	// As native CI runs a check: the CLI, with the workspace selected by its
 	// commit.
-	cmd := hostDaggerCommand(ctx, t, t.TempDir(), "-W", repoURL+"@"+sha, "call", "hello")
+	cmd := hostDaggerCommand(ctx, t, t.TempDir(), "-W", repoURL+"@"+sha, "call", "nonce")
 	cmd.Env = append(cmd.Env, "_EXPERIMENTAL_DAGGER_RUNNER_HOST="+endpoint)
 	out, err := cmd.Output()
 	require.NoError(t, err)
-	require.Equal(t, "hello", strings.TrimSpace(string(out)))
+	require.Equal(t, nonce, strings.TrimSpace(string(out)))
 
 	ents, err := core.NewQuery(plain).Engine().LocalCache().EntrySet().Entries(ctx)
 	require.NoError(t, err)
@@ -3519,13 +3523,16 @@ func (GitSuite) TestRemoteWorkspaceAndItsModuleShareCheckout(ctx context.Context
 		if !slices.Contains(recordTypes, "source.git.checkout") {
 			continue
 		}
-		desc, err := ent.Description(ctx)
+		// Each full checkout of a ref is a GitRef.tree entry. The
+		// repository's mirrors, which checkouts fetch from, are checkout
+		// entries of their own, and so is any tree holding only some files.
+		call, err := ent.DagqlCall(ctx)
 		require.NoError(t, err)
-		// The repository's mirror, which every checkout fetches from, is a
-		// checkout entry of its own.
-		if desc == "_remoteGitMirror" {
+		if call != "GitRef.tree" {
 			continue
 		}
+		desc, err := ent.Description(ctx)
+		require.NoError(t, err)
 		checkouts = append(checkouts, desc)
 	}
 	require.Len(t, checkouts, 1, "the workspace and its module share one checkout: %v", checkouts)
