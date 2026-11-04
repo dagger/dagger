@@ -39,8 +39,8 @@ func (fakeSnapshotter) Commit(context.Context, string, string, ...snapshots.Opt)
 }
 
 // Each snapshot call made under a profiled op is an op under it, named for the
-// call, with its snapshot key as its ident and a failed call failed. An
-// unprofiled call records nothing.
+// call, with its snapshot key as its ident, a view's being the snapshot it
+// views, and a failed call failed. An unprofiled call records nothing.
 func TestSnapshotCallsAreOps(t *testing.T) {
 	wcprof.EnsureRecorder()
 	sn := &nsSnapshotter{ns: "test", Snapshotter: fakeSnapshotter{}}
@@ -48,7 +48,7 @@ func TestSnapshotCallsAreOps(t *testing.T) {
 		_, _ = sn.Usage(ctx, prefix+"-usage")
 		_, _ = sn.Mounts(ctx, prefix+"-mounts")
 		_, _ = sn.Prepare(ctx, prefix+"-prepare", "")
-		_, _ = sn.View(ctx, prefix+"-view", "")
+		_, _ = sn.View(ctx, prefix+"-view", prefix+"-viewed")
 		_ = sn.Commit(ctx, prefix+"-commit", prefix+"-active")
 	}
 
@@ -74,7 +74,11 @@ func TestSnapshotCallsAreOps(t *testing.T) {
 	for _, call := range []string{"usage", "mounts", "prepare", "view", "commit"} {
 		ev, ok := got["snapshot."+call]
 		require.True(t, ok, "no snapshot.%s op under the parent", call)
-		require.Equal(t, "profiled-"+call, header.Strings[ev.IdentID])
+		ident := "profiled-" + call
+		if call == "view" {
+			ident = "profiled-viewed"
+		}
+		require.Equal(t, ident, header.Strings[ev.IdentID])
 		require.Equal(t, wcprof.OpKindInternal.String(), ev.OpKind)
 		want := wcprof.OutcomeOK.String()
 		if call == "commit" {
