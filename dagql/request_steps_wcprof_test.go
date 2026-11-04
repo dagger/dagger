@@ -3,9 +3,13 @@ package dagql_test
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
+	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -177,6 +181,65 @@ func TestRequestStepsKeepCallSpansVisible(t *testing.T) {
 	require.NotZero(t, calls, "the request made no calls")
 }
 
+// The engine serves every request to a schema with one handler
+// (Server.Handler). Profiled requests served through it, one after another
+// and at once, each get their write step, and serving them leaves the
+// handler as it was: a response is made no deeper in the stack after a
+// hundred profiled requests than in the first, so it runs through no more
+// of the handler's response interceptors.
+func TestRequestStepsSharedHandler(t *testing.T) {
+	wcprof.EnsureRecorder()
+	cache := newCache(t)
+	srv := newExternalDagqlServerForTest(t, Query{})
+	points.Install[Query](srv)
+	var depth atomic.Int64
+	shared := dagql.NewDefaultHandler(stackDepth{srv, &depth})
+	gql := client.New(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := engine.ContextWithClientMetadata(r.Context(), testClientMetadata())
+		ctx = dagql.ContextWithCache(ctx, cache)
+		ctx = wcprof.ContextWithProfiling(ctx)
+		ctx, op := wcprof.BeginOp(ctx, wcprof.OpKindSessionPhase, "steptest.query", wcprof.OpOpts{})
+		defer op.End(wcprof.OutcomeOK)
+		dagql.ServeHTTPWithWriteStep(shared, w, r.WithContext(ctx))
+	}))
+	const query = `query { point(x: 6, y: 7) { shiftLeft { x } } }`
+	query1 := func() error {
+		var res struct {
+			Point struct{ ShiftLeft struct{ X int } }
+		}
+		if err := gql.Post(query, &res); err != nil {
+			return err
+		}
+		if res.Point.ShiftLeft.X != 5 {
+			return fmt.Errorf("shiftLeft.x is %d, not 5", res.Point.ShiftLeft.X)
+		}
+		return nil
+	}
+
+	writes := countSteps(t, "graphql.write")
+	require.NoError(t, query1())
+	first := depth.Load()
+	require.NotZero(t, first, "the request made no response")
+	const n = 100
+	for range n {
+		require.NoError(t, query1())
+	}
+	require.Equal(t, first, depth.Load(), "a response is made deeper after %d profiled requests through the handler", n)
+
+	errs := make([]error, n)
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs[i] = query1()
+		}()
+	}
+	wg.Wait()
+	require.NoError(t, errors.Join(errs...))
+	require.Equal(t, writes+2*n+1, countSteps(t, "graphql.write"))
+}
+
 // oneResponse serves each operation's first response only. gqlgen's WebSocket
 // transport asks for responses until there are none, and dagql's never runs
 // out, so without it a query over a WebSocket resolves until the test ends.
@@ -190,6 +253,21 @@ func (s oneResponse) Exec(ctx context.Context) graphql.ResponseHandler {
 			return nil
 		}
 		done = true
+		return next(ctx)
+	}
+}
+
+// stackDepth stores, as each response is made, how deep in the stack its
+// making starts.
+type stackDepth struct {
+	*dagql.Server
+	depth *atomic.Int64
+}
+
+func (s stackDepth) Exec(ctx context.Context) graphql.ResponseHandler {
+	next := s.Server.Exec(ctx)
+	return func(ctx context.Context) *graphql.Response {
+		s.depth.Store(int64(runtime.Callers(0, make([]uintptr, 4096))))
 		return next(ctx)
 	}
 }
