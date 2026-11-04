@@ -618,6 +618,9 @@ func visitPersistedWorkspaceSourceRefs(w *persistedRefWalker, src *persistedWork
 	if err := w.child("gitRefResultID", &src.GitRefResultID); err != nil {
 		return err
 	}
+	if err := w.child("sparseResultID", &src.SparseResultID); err != nil {
+		return err
+	}
 	if err := w.child("changesID", &src.ChangesID); err != nil {
 		return err
 	}
