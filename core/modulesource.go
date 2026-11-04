@@ -197,15 +197,19 @@ type ModuleSource struct {
 	// DangVersionDeclared reports whether a dang.toml declares DangVersion,
 	// rather than it being the default for the module's engine version.
 	DangVersionDeclared bool
-	// ConfigEngineVersion is the engineVersion the module's manifest declares,
-	// normalized, which is what a config write keeps. It differs from
-	// EngineVersion when a Dang SDK module's dang.toml declares another one,
-	// which wins. Empty for a manifest v2 module.
+	// ConfigEngineVersion is the normalized manifest fallback, kept separate
+	// from dang.toml-derived values and explicit API-chain overrides. Config
+	// writes use it unless withEngineVersion supplied an override. Empty for
+	// a manifest v2 module.
 	ConfigEngineVersion string
-	// ConfigDisableDefaultFunctionCaching is DisableDefaultFunctionCaching as
-	// the manifest decides it, at ConfigEngineVersion, which is what a config
-	// write keeps when a dang.toml's engine version decides it instead.
-	ConfigDisableDefaultFunctionCaching bool
+	// EngineVersionOverride is an explicit withEngineVersion setting. It wins
+	// over config-derived versions for this source's API chain, including after
+	// source/SDK changes. A fresh load has no override.
+	EngineVersionOverride string
+	// ConfigDisableDefaultFunctionCaching is the raw optional manifest setting.
+	// Nil means the default follows the effective engine version; false and
+	// true are explicit choices and must survive config writes and reloads.
+	ConfigDisableDefaultFunctionCaching *bool
 
 	// The SDK configuration of the module as read from the module config or set by withSDK
 	SDK *SDKConfig `field:"true" name:"sdk" doc:"The SDK configuration of the module."`
@@ -283,6 +287,10 @@ var _ dagql.PersistedObject = (*ModuleSource)(nil)
 var _ dagql.PersistedObjectDecoder = (*ModuleSource)(nil)
 
 func (src ModuleSource) Clone() *ModuleSource {
+	if src.ConfigDisableDefaultFunctionCaching != nil {
+		explicit := *src.ConfigDisableDefaultFunctionCaching
+		src.ConfigDisableDefaultFunctionCaching = &explicit
+	}
 	if src.Entrypoint != nil {
 		entrypoint := *src.Entrypoint
 		src.Entrypoint = &entrypoint
@@ -503,7 +511,8 @@ type persistedModuleSourcePayload struct {
 	DangVersion                         string                                `json:"dangVersion,omitempty"`
 	DangVersionDeclared                 bool                                  `json:"dangVersionDeclared,omitempty"`
 	ConfigEngineVersion                 string                                `json:"configEngineVersion,omitempty"`
-	ConfigDisableDefaultFunctionCaching bool                                  `json:"configDisableDefaultFunctionCaching,omitempty"`
+	EngineVersionOverride               string                                `json:"engineVersionOverride,omitempty"`
+	ConfigDisableDefaultFunctionCaching *bool                                 `json:"configDisableDefaultFunctionCaching,omitempty"`
 	CodegenConfig                       *modules.ModuleCodegenConfig          `json:"codegenConfig,omitempty"`
 	ModuleConfigUserFields              modules.ModuleConfigUserFields        `json:"moduleConfigUserFields,omitempty"`
 	DisableDefaultFunctionCaching       bool                                  `json:"disableDefaultFunctionCaching,omitempty"`
@@ -831,6 +840,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, enc *dagql.P
 		DangVersion:                         src.DangVersion,
 		DangVersionDeclared:                 src.DangVersionDeclared,
 		ConfigEngineVersion:                 src.ConfigEngineVersion,
+		EngineVersionOverride:               src.EngineVersionOverride,
 		ConfigDisableDefaultFunctionCaching: src.ConfigDisableDefaultFunctionCaching,
 		CodegenConfig:                       src.CodegenConfig,
 		ModuleConfigUserFields:              src.ModuleConfigUserFields,
@@ -999,6 +1009,7 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dec *dagql.Persi
 		DangVersion:                         persisted.DangVersion,
 		DangVersionDeclared:                 persisted.DangVersionDeclared,
 		ConfigEngineVersion:                 persisted.ConfigEngineVersion,
+		EngineVersionOverride:               persisted.EngineVersionOverride,
 		ConfigDisableDefaultFunctionCaching: persisted.ConfigDisableDefaultFunctionCaching,
 		CodegenConfig:                       persisted.CodegenConfig,
 		ModuleConfigUserFields:              persisted.ModuleConfigUserFields,

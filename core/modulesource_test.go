@@ -126,6 +126,35 @@ func TestModuleSourcePersistenceRetainsSelfCallsCapability(t *testing.T) {
 	require.True(t, decodedSrc.SelfCallsEnabled())
 }
 
+func TestModuleSourceVersionProvenancePersistence(t *testing.T) {
+	for _, explicit := range []*bool{nil, ptr(false), ptr(true)} {
+		src := &ModuleSource{
+			EngineVersion:                       "v1.0.0-beta.26",
+			ConfigEngineVersion:                 "v0.19.0",
+			EngineVersionOverride:               "v1.0.0-beta.26",
+			DangVersion:                         "2.0",
+			DangVersionDeclared:                 true,
+			ConfigDisableDefaultFunctionCaching: explicit,
+		}
+		clone := src.Clone()
+		if explicit != nil {
+			*clone.ConfigDisableDefaultFunctionCaching = !*explicit
+			require.Equal(t, *explicit, *src.ConfigDisableDefaultFunctionCaching, "clone owns its optional config setting")
+		}
+		encoded, err := src.EncodePersistedObject(t.Context(), dagql.NewPersistEncodeContext(nil, 0, nil))
+		require.NoError(t, err)
+		decoded, err := (&ModuleSource{}).DecodePersistedObject(t.Context(), dagql.NewPersistDecodeContext(nil, 0, nil), encoded.JSON)
+		require.NoError(t, err)
+		got := decoded.(*ModuleSource)
+		require.Equal(t, src.EngineVersion, got.EngineVersion)
+		require.Equal(t, src.ConfigEngineVersion, got.ConfigEngineVersion)
+		require.Equal(t, src.EngineVersionOverride, got.EngineVersionOverride)
+		require.Equal(t, explicit, got.ConfigDisableDefaultFunctionCaching)
+		require.Equal(t, src.DangVersion, got.DangVersion)
+		require.True(t, got.DangVersionDeclared)
+	}
+}
+
 func TestGitModuleSourceSymbolic(t *testing.T) {
 	testCases := []struct {
 		name         string

@@ -41,7 +41,7 @@ type Versions struct {
 	// Dang is the Dang language version the module source is parsed as.
 	Dang dang.Version
 	// DeclaredEngine is the Dagger version the dang.toml declares, if any.
-	// Engine is that version when set.
+	// Engine is that version unless an API-chain override was supplied.
 	DeclaredEngine string
 	// DangDeclared reports whether the dang.toml declares Dang.
 	DangDeclared bool
@@ -79,7 +79,7 @@ func DefaultEntrypointVersions() Versions {
 // engine's own view (engine.ModuleAPIViewVersion caps it).
 func ResolveEntrypointVersions(ctx context.Context, configPath string, data []byte) (Versions, error) {
 	defaults := DefaultEntrypointVersions()
-	return resolveVersions(ctx, configPath, data, defaults.Engine, func(string) dang.Version {
+	return resolveVersions(ctx, configPath, data, defaults.Engine, "", func(string) dang.Version {
 		return defaults.Dang
 	})
 }
@@ -106,7 +106,7 @@ func DefaultModuleDangVersion(engineVersion string) dang.Version {
 // DefaultModuleVersions are the versions of a Dang SDK module at engine
 // version engineVersion that no dang.toml governs.
 func DefaultModuleVersions(engineVersion string) Versions {
-	versions, _ := resolveVersions(context.Background(), "", nil, engineVersion, DefaultModuleDangVersion) // no dang.toml: no error
+	versions, _ := resolveVersions(context.Background(), "", nil, engineVersion, "", DefaultModuleDangVersion) // no dang.toml: no error
 	return versions
 }
 
@@ -126,7 +126,15 @@ func DefaultModuleVersions(engineVersion string) Versions {
 // A declared engine version must be one this engine can serve, as an
 // engineVersion must.
 func ResolveModuleVersions(ctx context.Context, configPath string, data []byte, engineVersion string) (Versions, error) {
-	return resolveVersions(ctx, configPath, data, engineVersion, DefaultModuleDangVersion)
+	return ResolveModuleVersionsWithOverride(ctx, configPath, data, engineVersion, "")
+}
+
+// ResolveModuleVersionsWithOverride resolves the same declarations, then applies
+// an explicit API-chain engine version before choosing an undeclared grammar's
+// default. The override is not compatibility-checked here: withEngineVersion can
+// also be used to write a requirement for a newer engine without loading code.
+func ResolveModuleVersionsWithOverride(ctx context.Context, configPath string, data []byte, engineVersion, override string) (Versions, error) {
+	return resolveVersions(ctx, configPath, data, engineVersion, override, DefaultModuleDangVersion)
 }
 
 // resolveVersions resolves the versions in data (nil: no dang.toml) with
@@ -138,10 +146,14 @@ func resolveVersions(
 	configPath string,
 	data []byte,
 	defaultEngine string,
+	override string,
 	defaultDang func(engineVersion string) dang.Version,
 ) (Versions, error) {
 	versions := Versions{Engine: engine.NormalizeVersion(defaultEngine)}
 	if data == nil {
+		if override != "" {
+			versions.Engine = override
+		}
 		versions.Dang = defaultDang(versions.Engine)
 		if versions.Dang.IsZero() {
 			// No dang.toml governs the source, so Dang parses it as its
@@ -205,6 +217,9 @@ func resolveVersions(
 		}
 	}
 
+	if override != "" {
+		versions.Engine = override
+	}
 	pin := defaultDang(versions.Engine)
 	if !pin.IsZero() {
 		ctx = dang.ContextWithVersion(ctx, pin)

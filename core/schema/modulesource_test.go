@@ -3,7 +3,10 @@ package schema
 import (
 	"context"
 	"errors"
+	"fmt"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
@@ -249,4 +252,230 @@ func moduleSourceObjectResult(t *testing.T, dag *dagql.Server, op string, self *
 	})
 	require.NoError(t, err)
 	return res
+}
+
+// A finite in-memory filesystem drives the real mutators/resolver without an
+// engine service. Every test gets its own cache and a bounded context.
+func versionMutationSource(t *testing.T, caching *bool) (context.Context, *moduleSourceSchema, *core.ModuleSource) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	t.Cleanup(cancel)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{ClientID: "nested", SessionID: "version-mutation"})
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, cache.CloseDiscardingPersistence()) })
+	facade := &foreignWorkspaceTestServer{&currentTypeDefsTestServer{}}
+	query := core.NewRoot(facade)
+	ctx = core.ContextWithQuery(dagql.ContextWithCache(ctx, cache), query)
+	dag, err := dagql.NewServer(ctx, query)
+	require.NoError(t, err)
+	facade.dag = dag
+	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*core.Directory]{}))
+	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*core.File]{}))
+	files := map[string]string{
+		"a/dang.toml":       "dang = \"1.0\"\n[imports.Dagger]\ndagger = \"v0.19.0\"\n",
+		"b/dang.toml":       "dang = \"2.0\"\n[imports.Dagger]\ndagger = \"" + engine.IdentifierCasingVersion + "\"\n",
+		"default/dang.toml": "[imports.Dagger]\ndagger = \"v0.19.0\"\n",
+	}
+	fileContents := map[*core.File]string{}
+	dagql.Fields[*core.Directory]{
+		dagql.Func("exists", func(_ context.Context, _ *core.Directory, args struct{ Path string }) (bool, error) {
+			path := filepath.Clean(args.Path)
+			_, exists := files[path]
+			return exists || path == "." || path == "a" || path == "b" || path == "none" || path == "default", nil
+		}),
+		dagql.Func("file", func(_ context.Context, _ *core.Directory, args struct{ Path string }) (*core.File, error) {
+			contents, exists := files[filepath.Clean(args.Path)]
+			if !exists {
+				return nil, fmt.Errorf("unexpected read %s", args.Path)
+			}
+			file := &core.File{}
+			fileContents[file] = contents
+			return file, nil
+		}),
+	}.Install(dag)
+	dagql.Fields[*core.File]{dagql.Func("contents", func(_ context.Context, file *core.File, _ struct{}) (string, error) {
+		return fileContents[file], nil
+	})}.Install(dag)
+	dir, err := dagql.NewObjectResultForCall(&core.Directory{}, dag, &dagql.ResultCall{
+		Kind: dagql.ResultCallKindSynthetic, SyntheticOp: "version-files", Type: dagql.NewResultCallType((&core.Directory{}).Type()),
+	})
+	require.NoError(t, err)
+	s := &moduleSourceSchema{}
+	src := &core.ModuleSource{Kind: core.ModuleSourceKindDir, SourceRootSubpath: ".", ContextDirectory: dir, DirSrc: &core.DirModuleSource{OriginalContextDir: dir}, ConfigFilename: "dagger.json"}
+	config := `{"name":"tiny","sdk":"dang","source":"a","engineVersion":"v0.21.9"`
+	if caching != nil {
+		config += fmt.Sprintf(`,"disableDefaultFunctionCaching":%t`, *caching)
+	}
+	_, err = s.initFromModConfig([]byte(config+"}"), src)
+	require.NoError(t, err)
+	require.NoError(t, s.resolveModuleSourceVersions(ctx, src))
+	return ctx, s, src
+}
+
+func TestDangSourceVersionMutations(t *testing.T) {
+	ctx, s, original := versionMutationSource(t, nil)
+	require.Equal(t, "v0.19.0", original.EngineVersion)
+	require.Equal(t, "1.0", original.DangVersion)
+	require.True(t, original.DisableDefaultFunctionCaching)
+	for _, path := range []string{"b", "none", "default"} {
+		t.Run(path, func(t *testing.T) {
+			got, err := s.moduleSourceWithSourceSubpath(ctx, original, struct{ Path string }{path})
+			require.NoError(t, err)
+			fresh := original.Clone()
+			fresh.SourceSubpath = path
+			require.NoError(t, s.resolveModuleSourceVersions(ctx, fresh))
+			require.Equal(t, fresh.EngineVersion, got.EngineVersion)
+			require.Equal(t, fresh.DangVersion, got.DangVersion)
+			require.Equal(t, fresh.DisableDefaultFunctionCaching, got.DisableDefaultFunctionCaching)
+			require.Equal(t, "v0.21.9", got.ConfigEngineVersion)
+			if path == "b" {
+				require.Equal(t, engine.IdentifierCasingVersion, got.EngineVersion)
+				require.Equal(t, "2.0", got.DangVersion)
+				require.False(t, got.DisableDefaultFunctionCaching)
+			} else if path == "none" {
+				require.Equal(t, "v0.21.9", got.EngineVersion)
+				require.False(t, got.DangVersionDeclared)
+			}
+		})
+	}
+	require.Equal(t, "v0.19.0", original.EngineVersion, "mutators do not modify the receiver")
+
+	// Equal-valued overrides still carry provenance and survive later changes.
+	for _, override := range []string{"v0.19.0", engine.IdentifierCasingVersion} {
+		for _, path := range []string{"b", "none", "default"} {
+			t.Run(override+"/"+path, func(t *testing.T) {
+				before, err := s.moduleSourceWithEngineVersion(ctx, original, struct{ Version string }{override})
+				require.NoError(t, err)
+				before, err = s.moduleSourceWithSourceSubpath(ctx, before, struct{ Path string }{path})
+				require.NoError(t, err)
+				after, err := s.moduleSourceWithSourceSubpath(ctx, original, struct{ Path string }{path})
+				require.NoError(t, err)
+				after, err = s.moduleSourceWithEngineVersion(ctx, after, struct{ Version string }{override})
+				require.NoError(t, err)
+				require.Equal(t, override, before.EngineVersion)
+				require.Equal(t, before.EngineVersion, after.EngineVersion)
+				require.Equal(t, before.DangVersion, after.DangVersion)
+				require.Equal(t, before.DisableDefaultFunctionCaching, after.DisableDefaultFunctionCaching)
+				require.Equal(t, "v0.21.9", before.ConfigEngineVersion)
+				if path == "b" {
+					require.Equal(t, "2.0", before.DangVersion, "declared grammar survives API override")
+				} else if override == "v0.19.0" {
+					require.Equal(t, "1.0", before.DangVersion)
+				} else {
+					require.Equal(t, "2.1", before.DangVersion, "grammar default follows final API version")
+				}
+			})
+		}
+	}
+}
+
+func TestDangSDKVersionMutations(t *testing.T) {
+	ctx, s, original := versionMutationSource(t, nil)
+	for _, sdk := range []string{"go", ""} {
+		for _, override := range []string{"", engine.IdentifierCasingVersion} {
+			t.Run(sdk+"/"+override, func(t *testing.T) {
+				src := original
+				var err error
+				if override != "" {
+					src, err = s.moduleSourceWithEngineVersion(ctx, src, struct{ Version string }{override})
+					require.NoError(t, err)
+				}
+				got, err := s.moduleSourceWithSDK(ctx, src, struct{ Source string }{sdk})
+				require.NoError(t, err)
+				want := "v0.21.9"
+				if override != "" {
+					want = override
+				}
+				require.Equal(t, want, got.EngineVersion)
+				require.Empty(t, got.DangVersion)
+				require.False(t, got.DangVersionDeclared)
+				if override != "" {
+					after, err := s.moduleSourceWithSDK(ctx, original, struct{ Source string }{sdk})
+					require.NoError(t, err)
+					after, err = s.moduleSourceWithEngineVersion(ctx, after, struct{ Version string }{override})
+					require.NoError(t, err)
+					require.Equal(t, got.EngineVersion, after.EngineVersion)
+					require.Equal(t, got.DangVersion, after.DangVersion)
+					require.Equal(t, got.DisableDefaultFunctionCaching, after.DisableDefaultFunctionCaching)
+				}
+				got, err = s.moduleSourceWithSDK(ctx, got, struct{ Source string }{"dang"})
+				require.NoError(t, err)
+				want = "v0.19.0"
+				if override != "" {
+					want = override
+				}
+				require.Equal(t, want, got.EngineVersion)
+				require.Equal(t, "1.0", got.DangVersion)
+			})
+		}
+	}
+}
+
+func TestEntrypointReloadResolvesBeforeSources(t *testing.T) {
+	ctx, s, src := versionMutationSource(t, nil)
+	src.Entrypoint = &modules.ModuleEntrypointConfig{Kind: modules.ModuleEntrypointKindDang, Source: "./b"}
+	src.ConfigEngineVersion = ""
+	src.EngineVersionOverride = "v0.19.0"
+	raw := src.DirSrc.OriginalContextDir
+	dag, err := core.CurrentDagqlServer(ctx)
+	require.NoError(t, err)
+	// Model a previous sources output. Reload must discard it before reading
+	// the governing config or evaluating sources again.
+	src.ContextDirectory, err = dagql.NewObjectResultForCall(&core.Directory{}, dag, &dagql.ResultCall{
+		Kind: dagql.ResultCallKindSynthetic, SyntheticOp: "old-sources-output", Type: dagql.NewResultCallType((&core.Directory{}).Type()),
+	})
+	require.NoError(t, err)
+	stop := errors.New("stop before mounting entrypoint")
+	calls := 0
+	dagql.Fields[*core.Directory]{dagql.Func("directory", func(_ context.Context, dir *core.Directory, args struct{ Path string }) (*core.Directory, error) {
+		calls++
+		require.Same(t, raw.Self(), dir)
+		require.Equal(t, "b", args.Path)
+		require.Equal(t, "v0.19.0", src.EngineVersion, "override applied before sources")
+		require.Equal(t, "2.0", src.DangVersion, "declared grammar resolved before sources")
+		require.True(t, src.DisableDefaultFunctionCaching, "default caching follows the override")
+		return nil, stop
+	})}.Install(dag)
+	require.ErrorIs(t, s.reloadModuleSourceContext(ctx, src), stop)
+	require.Equal(t, 1, calls)
+	cfg, err := s.buildModuleConfig(src)
+	require.NoError(t, err)
+	require.Empty(t, cfg.EngineVersion, "entrypoint overrides are never written to manifests")
+}
+
+func TestDangVersionConfigProvenance(t *testing.T) {
+	for _, explicit := range []*bool{nil, ptr(false), ptr(true)} {
+		t.Run(fmt.Sprint(explicit), func(t *testing.T) {
+			ctx, s, src := versionMutationSource(t, explicit)
+			got, err := s.moduleSourceWithSourceSubpath(ctx, src, struct{ Path string }{"b"})
+			require.NoError(t, err)
+			cfg, err := s.buildModuleConfig(got)
+			require.NoError(t, err)
+			require.Equal(t, "v0.21.9", cfg.EngineVersion, "dang.toml must not leak into config")
+			require.Equal(t, explicit, cfg.DisableDefaultFunctionCaching)
+			if explicit != nil {
+				require.Equal(t, *explicit, got.DisableDefaultFunctionCaching)
+			}
+			got, err = s.moduleSourceWithEngineVersion(ctx, got, struct{ Version string }{"v999.0.0"})
+			require.NoError(t, err, "a future requirement can be written without loading module code")
+			cfg, err = s.buildModuleConfig(got)
+			require.NoError(t, err)
+			require.Equal(t, "v999.0.0", cfg.EngineVersion)
+			require.Equal(t, explicit, cfg.DisableDefaultFunctionCaching)
+			// Fresh load drops API-chain overrides; the source's dang.toml wins again.
+			got, err = s.moduleSourceWithEngineVersion(ctx, got, struct{ Version string }{"v0.19.0"})
+			require.NoError(t, err)
+			cfg, err = s.buildModuleConfig(got)
+			require.NoError(t, err)
+			data, err := modules.MarshalModuleConfigForFilename(cfg, "dagger.json")
+			require.NoError(t, err)
+			fresh := got.Clone()
+			_, err = s.initFromModConfig(data, fresh)
+			require.NoError(t, err)
+			require.Empty(t, fresh.EngineVersionOverride)
+			require.NoError(t, s.resolveModuleSourceVersions(ctx, fresh))
+			require.Equal(t, engine.IdentifierCasingVersion, fresh.EngineVersion)
+		})
+	}
 }
