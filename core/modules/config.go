@@ -78,11 +78,7 @@ func parseCurrentModuleConfigTOML(src []byte) (*ModuleConfigWithUserFields, erro
 	// The entrypoint table selects the manifest version 2 format. The format has
 	// no version key. See config_fat_manifest.go for the transitional rule that
 	// keeps a manifest with a runtime and dependencies on the pre-v2 format.
-	format, err := selectModuleManifestFormat(tree)
-	if err != nil {
-		return nil, err
-	}
-	if format == moduleManifestFormatV2 {
+	if selectModuleManifestFormat(tree) == moduleManifestFormatV2 {
 		return parseModuleManifestV2TOML(tree)
 	}
 

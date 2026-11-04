@@ -38,19 +38,19 @@ const (
 //	entrypoint, no dependencies          -> version 2, pre-v2 fields ignored
 //	entrypoint, dependencies, runtime    -> pre-v2, entrypoint ignored
 //	entrypoint, dependencies, no runtime -> version 2, with the dependencies
-func selectModuleManifestFormat(tree *toml.Tree) (moduleManifestFormat, error) {
+func selectModuleManifestFormat(tree *toml.Tree) moduleManifestFormat {
 	if !tree.Has("entrypoint") {
-		return moduleManifestFormatPreV2, nil
+		return moduleManifestFormatPreV2
 	}
 	if !tree.Has("dependencies") {
-		return moduleManifestFormatV2, nil
+		return moduleManifestFormatV2
 	}
 	if tree.Has("runtime") {
-		return moduleManifestFormatPreV2, nil
+		return moduleManifestFormatPreV2
 	}
 	// The entrypoint's own dependencies, such as dagger/go, which a Go
 	// module's generated entrypoint builds the module with.
-	return moduleManifestFormatV2, nil
+	return moduleManifestFormatV2
 }
 
 // legacyModuleManifestKeys are the pre-v2 top-level keys that a fat manifest
