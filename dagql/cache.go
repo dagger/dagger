@@ -3453,6 +3453,8 @@ type ongoingCall struct {
 	persistDecline          *persistDecline
 	resDeclined             bool
 	ttlSeconds              int64
+	// expiryLimit is the resolver's ExpireBy, in sharedWorkCtx.
+	expiryLimit             *expiryLimit
 	initCompletedResultOnce sync.Once
 	handoffHoldActive       bool
 	initCompletedResultErr  error
@@ -6187,12 +6189,18 @@ func (c *Cache) GetOrInitCall(
 	if sessionID == "" {
 		return nil, errors.New("get or init call: empty session ID")
 	}
-	recordCallScope(ctx, req)
+	scopes := callScopesFrom(ctx)
+	if scopes != nil {
+		scopes.record(req)
+	}
 	op, err := c.beginSessionOperation(sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("get or init call: %w", err)
 	}
 	res, callErr := c.getOrInitCall(ctx, sessionID, resolver, req, fn)
+	if callErr == nil {
+		c.recordCallResultExpiry(scopes, req, res)
+	}
 	if op.finish(callErr == nil && res != nil) {
 		return nil, fmt.Errorf("get or init call: %w: %q", ErrCacheSessionReleased, sessionID)
 	}
@@ -6511,6 +6519,8 @@ func (c *Cache) getOrInitCallInner(
 	}
 	decline := &persistDecline{}
 	sharedWorkCtx = context.WithValue(sharedWorkCtx, persistDeclineKey{}, decline)
+	expiry := &expiryLimit{}
+	sharedWorkCtx = context.WithValue(sharedWorkCtx, expiryLimitKey{}, expiry)
 	sharedWorkCtx = withoutCallScopes(sharedWorkCtx)
 	oc := &ongoingCall{
 		callConcurrencyKeys:     callConcKeys,
@@ -6521,6 +6531,7 @@ func (c *Cache) getOrInitCallInner(
 		clientScopeLease:        clientScopeLease,
 		sharedWorkCtx:           sharedWorkCtx,
 		persistDecline:          decline,
+		expiryLimit:             expiry,
 		releaseOperationLeaseFn: releaseOperationLease,
 		profOpID:                execOp.ID(),
 		// snapshot the target's skip decision for the OTel wait condition (oc.res is not
@@ -6995,7 +7006,7 @@ func (c *Cache) rollbackPartialPublicationLocked(ctx context.Context, res *share
 func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, oc *ongoingCall, req *CallRequest, sessionID string) error {
 	resWasCacheBacked := false
 	now := time.Now()
-	oc.persistedEdgeExpiresAtUnix = candidateSharedResultExpiryUnix(now.Unix(), oc.ttlSeconds)
+	oc.persistedEdgeExpiresAtUnix = oc.candidateExpiryUnix(now.Unix())
 	var (
 		resultTermSelf   digest.Digest
 		resultTermInputs []digest.Digest
@@ -7306,7 +7317,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		// an attachment, and the new value's expiries count from the
 		// decision.
 		now = time.Now()
-		oc.persistedEdgeExpiresAtUnix = candidateSharedResultExpiryUnix(now.Unix(), oc.ttlSeconds)
+		oc.persistedEdgeExpiresAtUnix = oc.candidateExpiryUnix(now.Unix())
 		cur := c.currentEntryForRecipeLocked(recipeDigest)
 		if req.ListItem {
 			// A list item read adopts only the item its list recorded for
@@ -7415,7 +7426,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	// - 0 only remains when all writers are 0.
 	oc.res.expiresAtUnix = mergeSharedResultExpiryUnix(
 		oc.res.expiresAtUnix,
-		candidateSharedResultExpiryUnix(now.Unix(), oc.ttlSeconds),
+		oc.candidateExpiryUnix(now.Unix()),
 	)
 	notify, notifyOwner := c.beginShareNotificationsLocked()
 	resultCall := oc.res.loadResultCall()
@@ -7763,6 +7774,12 @@ func sortedResultIDs(ids map[sharedResultID]struct{}) []uint64 {
 	}
 	slices.Sort(out)
 	return out
+}
+
+// candidateExpiryUnix is the expiry the call's result gets from its TTL and
+// its resolver's ExpireBy.
+func (oc *ongoingCall) candidateExpiryUnix(nowUnix int64) int64 {
+	return mergeSharedResultExpiryUnix(candidateSharedResultExpiryUnix(nowUnix, oc.ttlSeconds), oc.expiryLimit.load())
 }
 
 func candidateSharedResultExpiryUnix(nowUnix, ttlSeconds int64) int64 {
