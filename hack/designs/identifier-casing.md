@@ -319,7 +319,7 @@ Terms keep their entry's `capitalized` form in fields (`githubRepo`,
 `fromGitHubIpv6`, `myK8sCluster`). The core schema mixes both acronym styles
 in fields today (`traceURL` but `pushUrl`, `commitSHA` but `shortSha`); v1.0
 is the time to settle on one. The convention applies to module names from
-`v1.0.0-beta.25` (`engine.IdentifierCasingVersion`) on (see
+`v1.0.0-beta.26` (`engine.IdentifierCasingVersion`) on (see
 [The gate](#the-gate)); the core fields that write acronyms in capitals are
 exceptions until they're renamed (see [Core schema](#core-schema)).
 
@@ -729,7 +729,7 @@ use the results for selections, argument keys and `node(id:)` type names (the
 TypeScript runtime namespaces each interface the way the engine does,
 comparing words). The gate is the module's naming view: the engine version
 it declares, capped at the engine's own (`ModuleSource.NamingView`). When both
-are `v1.0.0-beta.25` or later, the engine names the module by the new rules
+are `v1.0.0-beta.26` or later, the engine names the module by the new rules
 (see [The gate](#the-gate)); otherwise the module keeps the conversion it
 always used. The identifier API is on every v1 view, so its presence says nothing
 about which rules apply. Go module codegen mirrors `Namer` instead (see
@@ -767,11 +767,11 @@ generates for a module or client at the new rules (see the gate below).
 **Gate:** the engine version the target module declares, capped at the
 engine's own `version`, as the engine names it (`ModuleSource.NamingView`,
 `engine.ModuleAPIViewVersion`). If the module declares a version before
-`v1.0.0-beta.25`, or the engine is older than that, no names are formatted
+`v1.0.0-beta.26`, or the engine is older than that, no names are formatted
 through the engine: codegen keeps its legacy converter, so older modules and
-clients regenerate byte-identical code. In particular, a `v1.0.0-beta.24`
+clients regenerate byte-identical code. In particular, a `v1.0.0-beta.25`
 engine serves the identifier API but names every module by strcase, so a
-module declaring `v1.0.0-beta.25` or bare `v1.0.0` keeps the legacy converter
+module declaring `v1.0.0-beta.26` or bare `v1.0.0` keeps the legacy converter
 on it. The gate is not the schema: the identifier API
 (`identifier`, `formatIdentifiers`, `namingDictionary`) is served on every v1
 view (`v1.0.0-0` on), including the views whose modules keep the strcase
@@ -842,7 +842,7 @@ The algorithm and the dictionary are selected by engine version through the
 existing view mechanism (`AfterVersion` / `BeforeVersion` in `core/util.go`):
 
 - A module's own names are parsed with the version its `engineVersion` selects.
-  Modules below `IdentifierNamingVersion` (`v1.0.0-beta.25`) keep strcase
+  Modules below `IdentifierNamingVersion` (`v1.0.0-beta.26`) keep strcase
   behavior until they bump. A module entrypoint (manifest v2) is named by
   whatever engine version its `ModuleSource` ends up with, like any other
   module (see [Module entrypoints](#module-entrypoints)).
@@ -857,7 +857,7 @@ Each dictionary release adds an entry to the list in
 `engine/naming/version.go`.
 
 Module normalization is gated on the API view, at `IdentifierNamingVersion`
-(`engine.IdentifierCasingVersion`, `v1.0.0-beta.25`, `core/gqlformat.go`):
+(`engine.IdentifierCasingVersion`, `v1.0.0-beta.26`, `core/gqlformat.go`):
 `NamerForView` gives the strcase rules to views before it and engine/naming to
 the rest (`IdentifierNamingView`), and a module is named by the rules of its
 view (`ModuleSource.NamingView`, `engine.ModuleAPIViewVersion` of its
@@ -866,7 +866,7 @@ prerelease from `v1.0.0-beta.22`
 (`engine.PrereleaseViewsVersion`) on, and every earlier v1.0.0 prerelease
 (`v1.0.0-0`, `v1.0.0-beta.1` to `v1.0.0-beta.21`) shares the `v1.0.0-beta.21`
 view, so modules released against the betas before the cut (through
-`v1.0.0-beta.24`) keep the strcase names they shipped with, byte for byte.
+`v1.0.0-beta.25`) keep the strcase names they shipped with, byte for byte.
 A prerelease engine serves a module declaring a view past its own (a later
 beta, or exactly `v1.0.0`) at its own view, and names it by that view's
 rules, so no engine names a module by rules it doesn't have. SDK
@@ -1125,7 +1125,7 @@ Other gaps:
 
 ### What changes for module authors (on bump)
 
-A module that declares an `engineVersion` of `v1.0.0-beta.25` or later
+A module that declares an `engineVersion` of `v1.0.0-beta.26` or later
 (`latest`, a later prerelease, or `v1.0.0`, which a prerelease engine serves
 at its own view) gets the new rules. Module type, field and argument names that
 contain runs of capitals or dictionary terms get their real casing back:

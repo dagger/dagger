@@ -22,9 +22,9 @@ import (
 )
 
 // namingCut is the first engine version whose modules are named by
-// engine/naming, and namingPreCut the view every v1.0.0 prerelease before it
-// shares. Derived from the engine's constants, so moving the cut needs no
-// test edits.
+// engine/naming. namingPreCut is the shared view of the prereleases before
+// PrereleaseViewsVersion; later pre-cut betas have their own views, but still
+// use the legacy naming rules. Both values derive from the engine's constants.
 var (
 	namingCut    = engine.IdentifierCasingVersion
 	namingPreCut = engine.APIViewVersion("v1.0.0-0")

@@ -73,7 +73,7 @@ none. Outside a module it is not capped: a client announcing beta.21 to a
 beta.22 engine gets the beta.21 view, and one announcing a later version gets
 that view.
 
-`engine.IdentifierCasingVersion` (`v1.0.0-beta.25`) is the cut for the
+`engine.IdentifierCasingVersion` (`v1.0.0-beta.26`) is the cut for the
 identifier casing changes. It is later than `engine.PrereleaseViewsVersion`
 (`v1.0.0-beta.22`), which shipped first, so the betas between them have their
 own views and are pre-cut.

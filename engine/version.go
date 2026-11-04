@@ -199,7 +199,7 @@ const basePrereleaseView = "v1.0.0-beta.21"
 // v1.0.0-beta.22), so this has its own, later, value; until a release ships
 // with the casing changes, if the release it names ships without them, move
 // it to a later one (see internal-docs/version-gating.md).
-const IdentifierCasingVersion = "v1.0.0-beta.25"
+const IdentifierCasingVersion = "v1.0.0-beta.26"
 
 // APIViewVersion returns the API view for a client or module that declares
 // version.
