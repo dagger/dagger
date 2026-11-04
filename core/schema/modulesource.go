@@ -31,6 +31,7 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"github.com/opencontainers/go-digest"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -705,26 +706,7 @@ func (s *moduleSourceSchema) localModuleSource(
 	}
 
 	if !daggerCfgFound {
-		// fill in an empty dir at the source root so the context dir digest incorporates that path
-		var srcRootDir dagql.ObjectResult[*core.Directory]
-		if err := dag.Select(ctx, dag.Root(), &srcRootDir, dagql.Selector{Field: "directory"}); err != nil {
-			return inst, fmt.Errorf("failed to create empty directory for source root subpath: %w", err)
-		}
-		srcRootDirID, err := srcRootDir.ID()
-		if err != nil {
-			return inst, fmt.Errorf("failed to get empty directory ID for source root subpath: %w", err)
-		}
-
-		err = dag.Select(ctx, dag.Root(), &localSrc.ContextDirectory,
-			dagql.Selector{Field: "directory"},
-			dagql.Selector{
-				Field: "withDirectory",
-				Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.String(localSrc.SourceRootSubpath)},
-					{Name: "source", Value: dagql.NewID[*core.Directory](srcRootDirID)},
-				},
-			},
-		)
+		localSrc.ContextDirectory, err = emptyContextDirectory(ctx, dag, localSrc.SourceRootSubpath)
 		if err != nil {
 			return inst, err
 		}
@@ -898,6 +880,32 @@ func (s *moduleSourceSchema) gitModuleSource(
 	return inst, nil
 }
 
+// emptyContextDirectory is the context of a source with no dagger config
+// file: an empty dir at the source root, so the context dir digest
+// incorporates that path.
+func emptyContextDirectory(ctx context.Context, dag *dagql.Server, sourceRootSubpath string) (dagql.ObjectResult[*core.Directory], error) {
+	var contextDir dagql.ObjectResult[*core.Directory]
+	var srcRootDir dagql.ObjectResult[*core.Directory]
+	if err := dag.Select(ctx, dag.Root(), &srcRootDir, dagql.Selector{Field: "directory"}); err != nil {
+		return contextDir, fmt.Errorf("failed to create empty directory for source root subpath: %w", err)
+	}
+	srcRootDirID, err := srcRootDir.ID()
+	if err != nil {
+		return contextDir, fmt.Errorf("failed to get empty directory ID for source root subpath: %w", err)
+	}
+	err = dag.Select(ctx, dag.Root(), &contextDir,
+		dagql.Selector{Field: "directory"},
+		dagql.Selector{
+			Field: "withDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(sourceRootSubpath)},
+				{Name: "source", Value: dagql.NewID[*core.Directory](srcRootDirID)},
+			},
+		},
+	)
+	return contextDir, err
+}
+
 type directoryAsModuleArgs struct {
 	SourceRootPath string `default:"."`
 }
@@ -1022,6 +1030,9 @@ func (s *moduleSourceSchema) workspaceModuleSource(
 	ctx context.Context,
 	workspaceResult dagql.ObjectResult[*core.Workspace],
 	sourceRootPath string,
+	// whether to tolerate a path with no dagger config file, returning a
+	// context-only source (ConfigExists=false) instead of erroring
+	allowNotExists bool,
 ) (inst dagql.ObjectResult[*core.ModuleSource], err error) {
 	ws := workspaceResult.Self()
 	if ws == nil {
@@ -1077,6 +1088,19 @@ func (s *moduleSourceSchema) workspaceModuleSource(
 		if err != nil {
 			return inst, fmt.Errorf("workspace module source URL: %w", err)
 		}
+		// The tree a git module was loaded from, where the modules it serves
+		// and the git clients its config declares are found: the workspace's
+		// own, read as its other files are.
+		dag, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return inst, err
+		}
+		if err := dag.Select(ctx, workspaceResult, &src.Git.UnfilteredContextDir, dagql.Selector{
+			Field: "directory",
+			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String("/")}},
+		}); err != nil {
+			return inst, fmt.Errorf("workspace module source tree: %w", err)
+		}
 	default:
 		return inst, fmt.Errorf("workspace module source: unsupported workspace backing %T", base)
 	}
@@ -1085,16 +1109,27 @@ func (s *moduleSourceSchema) workspaceModuleSource(
 	if err != nil {
 		return inst, fmt.Errorf("workspace module source %q: find module config: %w", sourceRootPath, err)
 	}
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
 	if !found {
-		return inst, fmt.Errorf("workspace module source %q does not contain a dagger config file", sourceRootPath)
+		if !allowNotExists {
+			return inst, fmt.Errorf("workspace module source %q does not contain a dagger config file", sourceRootPath)
+		}
+		// Loaded only as a +defaultPath context: its reads go through the
+		// workspace, so skip config parsing, SDK loading and dependencies,
+		// and give it the context a local source without a config gets.
+		src.ConfigExists = false
+		src.ContextDirectory, err = emptyContextDirectory(ctx, dag, sourceRootPath)
+		if err != nil {
+			return inst, err
+		}
+		return dagql.NewObjectResultForCurrentCall(ctx, dag, src)
 	}
 	src.ConfigFilename = configFilename
 	if err := s.loadConfiguredModuleSource(ctx, src); err != nil {
 		return inst, fmt.Errorf("load workspace module source: %w", err)
-	}
-	dag, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return inst, err
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, dag, src)
 }
@@ -1415,9 +1450,11 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 		return nil
 	}
 
+	// A Git tree holds only committed files, which ignore rules must not drop,
+	// whether the source reads the tree directly or through its workspace.
 	contextDir, err := core.NewModuleSourceFS(nil, src).ContextDirectory(ctx, core.CopyFilter{
 		Include:   moduleSourceContextIncludes(src),
-		Gitignore: src.Workspace.Self() != nil || src.Kind == core.ModuleSourceKindLocal,
+		Gitignore: src.Kind == core.ModuleSourceKindLocal || (src.Workspace.Self() != nil && src.Kind != core.ModuleSourceKindGit),
 	})
 	if err != nil {
 		return err
@@ -4195,6 +4232,15 @@ func resolveDefaultPathContextSource(
 	}
 	defaultPathContextSourceVariant := ""
 	switch {
+	case contextSource.Valid && defaultPathContextSrc.Self().Workspace.Self() != nil:
+		// A source loaded through a workspace is named by its ref string
+		// without the commit, as a ref passed in contextRef is: the files it
+		// supplies reach a function through its arguments, so a new commit
+		// doesn't make the module a different variant.
+		defaultPathContextSourceVariant = hashutil.HashStrings(
+			"defaultPathContextSource",
+			defaultPathContextSrc.Self().AsString(),
+		).String()
 	case contextSource.Valid:
 		// A source passed by ID may not carry a recipe digest (handle-form
 		// IDs), and a Dir source has no ref string, so key the variant on the
@@ -4338,9 +4384,32 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		mod.SDKConfig = &core.SDKConfig{}
 	}
 
+	// A runtime that doesn't need the module's dependencies builds while
+	// they load. A load that finds its definition cached doesn't need the
+	// build, so the build stops when the load returns.
+	prebuildCtx, cancelPrebuild := context.WithCancel(ctx)
+	var prebuildErr error
+	prebuildDone := make(chan struct{})
+	go func() {
+		defer close(prebuildDone)
+		prebuildErr = prebuildModuleRuntime(prebuildCtx, execSrc)
+	}()
+	defer func() {
+		cancelPrebuild()
+		<-prebuildDone
+	}()
 	mod.Deps, err = s.loadDependencyModules(ctx, execSrc, defaultPathContextSrc)
 	if err != nil {
 		return inst, fmt.Errorf("failed to load dependencies as modules: %w", err)
+	}
+	select {
+	case <-prebuildDone:
+		if prebuildErr != nil {
+			return inst, fmt.Errorf("failed to build module runtime: %w", prebuildErr)
+		}
+	default:
+		// Still building: the definition below waits for the same build,
+		// unless it is cached.
 	}
 
 	// apply ForceDefaultFunctionCaching if requested
@@ -4413,6 +4482,35 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		return inst, fmt.Errorf("failed to create instance for module %q: %w", src.Self().ModuleName, err)
 	}
 	return inst, nil
+}
+
+// runtimePrebuilds bounds the engine's runtime prebuilds in flight. Builds
+// that run together on a cold build cache each compile the packages they
+// share, so starting every module's build at once costs more CPU and memory
+// and finishes later than a few at a time.
+var runtimePrebuilds = semaphore.NewWeighted(maxRuntimePrebuilds)
+
+const maxRuntimePrebuilds = 4
+
+// prebuildModuleRuntime builds src's runtime when its SDK can build it
+// without the module's dependencies (core.RuntimePrebuilder).
+func prebuildModuleRuntime(ctx context.Context, src dagql.ObjectResult[*core.ModuleSource]) error {
+	if src.Self().SDKImpl == nil {
+		return nil
+	}
+	runtimeImpl, ok := src.Self().SDKImpl.AsRuntime()
+	if !ok {
+		return nil
+	}
+	prebuilder, ok := runtimeImpl.(core.RuntimePrebuilder)
+	if !ok {
+		return nil
+	}
+	if err := runtimePrebuilds.Acquire(ctx, 1); err != nil {
+		return err
+	}
+	defer runtimePrebuilds.Release(1)
+	return prebuilder.PrebuildRuntime(ctx, src)
 }
 
 // load the given module source's dependencies as modules

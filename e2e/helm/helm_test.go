@@ -264,7 +264,13 @@ func logDiagnostics(t *testing.T, k3s k3sCluster, kube *dagger.Container, engine
 func connect(t *testing.T) *dagger.Client {
 	t.Helper()
 
-	dag, err := dagger.Connect(t.Context())
+	// The client's session ends with the context it connects with, and the
+	// test's context ends before its cleanups run, including the Close below.
+	// Cancelling this one is the last cleanup, so a failed Connect, which
+	// registers no Close, still ends its session.
+	ctx, cancel := context.WithCancel(context.WithoutCancel(t.Context()))
+	t.Cleanup(cancel)
+	dag, err := dagger.Connect(ctx)
 	if err != nil {
 		t.Fatalf("connect to dagger: %v", err)
 	}

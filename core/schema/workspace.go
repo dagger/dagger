@@ -1067,6 +1067,12 @@ func (s *workspaceSchema) resolveRootfsInner(
 	}
 
 	if root, ok := ws.SourceDirectory(); ok && root.Self() != nil {
+		if sparse, ok := ws.GitSparseTree(); ok {
+			root, err = gitSparseReadRoot(ctx, srv, sparse, root, resolvedPath, filter, gitignore)
+			if err != nil {
+				return inst, fmt.Errorf("workspace directory %q: %w", resolvedPath, err)
+			}
+		}
 		return s.resolveRootfsFromDirectory(ctx, srv, ws, root, resolvedPath, filter, gitignore)
 	}
 	if _, ok := ws.BaseSource().(*core.WorkspaceSourceRootlessLocal); ok {
@@ -1226,6 +1232,58 @@ func filteredReadContentHash(ctx context.Context, dir dagql.ObjectResult[*core.D
 		return "", false
 	}
 	return dgst, true
+}
+
+// gitSparseReadRoot picks the tree a Git workspace's read comes from: its sparse
+// tree if that holds what the read selects, and otherwise its full tree, checked
+// out first.
+//
+// Either way, a read of a path the tree doesn't have fails when it's made, as
+// hashing a subdirectory of a checked-out tree does. And a view of a directory
+// in the full tree is hashed before any copy of it is, because a copy that gets
+// there first can stand in for the view, which can follow symlinks the copy can't.
+func gitSparseReadRoot(
+	ctx context.Context,
+	srv *dagql.Server,
+	sparse *core.GitSparseTree,
+	full dagql.ObjectResult[*core.Directory],
+	resolvedPath string,
+	filter core.CopyFilter,
+	gitignore bool,
+) (dagql.ObjectResult[*core.Directory], error) {
+	isRoot := resolvedPath == "." || resolvedPath == ""
+	if isRoot && filter.IsEmpty() && !gitignore {
+		// The tree itself, which something may never read.
+		return full, nil
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return full, err
+	}
+	covered := false
+	if !filter.IsEmpty() && !gitignore {
+		covered, err = sparse.CoversRead(ctx, resolvedPath, filter)
+		if err != nil {
+			slog.Warn("reading the sparse tree's paths failed; reading the full tree", "error", err)
+			covered = false
+		}
+	}
+	if !covered {
+		return full, cache.Evaluate(ctx, full)
+	}
+	if !isRoot {
+		var sub dagql.ObjectResult[*core.Directory]
+		if err := srv.Select(ctx, sparse.Root, &sub, dagql.Selector{
+			Field: "directory",
+			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(resolvedPath)}},
+		}); err != nil {
+			return full, err
+		}
+		if err := cache.Evaluate(ctx, sub); err != nil {
+			return full, err
+		}
+	}
+	return sparse.Root, nil
 }
 
 // resolveHostOverlayRootfs resolves a read against a host-backed overlay
