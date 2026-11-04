@@ -108,6 +108,13 @@ func (s *workspaceSchema) module(
 
 type workspaceModuleSourceArgs struct {
 	Path string
+
+	// AllowNotExists tolerates a path holding no dagger config file,
+	// returning a context-only source (ConfigExists=false) instead of
+	// erroring. The engine's module loader uses it for a Git workspace's
+	// legacy +defaultPath context, its root, which holds a Workspace config
+	// (dagger.toml), not a Module config. Mirrors Directory.asModuleSource.
+	AllowNotExists bool `internal:"true" default:"false"`
 }
 
 // moduleSource loads a module source from a path within the workspace, applying
@@ -128,11 +135,11 @@ func (s *workspaceSchema) moduleSource(
 
 	switch ws.BaseSource().(type) {
 	case *core.WorkspaceSourceClientLocal:
-		return (&moduleSourceSchema{}).workspaceModuleSource(ctx, parent, filepath.ToSlash(resolvedPath))
+		return (&moduleSourceSchema{}).workspaceModuleSource(ctx, parent, filepath.ToSlash(resolvedPath), args.AllowNotExists)
 	case *core.WorkspaceSourceGitRef:
 		if ref, ok := ws.SourceGitRef(); ok {
 			if repo := ref.Self().Repo.Self(); repo != nil && repo.URL.Valid {
-				return (&moduleSourceSchema{}).workspaceModuleSource(ctx, parent, filepath.ToSlash(resolvedPath))
+				return (&moduleSourceSchema{}).workspaceModuleSource(ctx, parent, filepath.ToSlash(resolvedPath), args.AllowNotExists)
 			}
 		}
 	}
@@ -155,12 +162,16 @@ func (s *workspaceSchema) moduleSource(
 	// doubles as the "path is not an initialized module" check. Keep the
 	// workspace as explicit provenance: the materialized directory changes on
 	// every source edit, but it still belongs to the same workspace.
+	asModuleSourceArgs := []dagql.NamedInput{
+		{Name: "sourceRootPath", Value: dagql.String(filepath.ToSlash(resolvedPath))},
+		{Name: "workspace", Value: dagql.Opt(dagql.NewID[*core.Workspace](workspaceID))},
+	}
+	if args.AllowNotExists {
+		asModuleSourceArgs = append(asModuleSourceArgs, dagql.NamedInput{Name: "allowNotExists", Value: dagql.Boolean(true)})
+	}
 	if err := srv.Select(ctx, root, &inst, dagql.Selector{
 		Field: "asModuleSource",
-		Args: []dagql.NamedInput{
-			{Name: "sourceRootPath", Value: dagql.String(filepath.ToSlash(resolvedPath))},
-			{Name: "workspace", Value: dagql.Opt(dagql.NewID[*core.Workspace](workspaceID))},
-		},
+		Args:  asModuleSourceArgs,
 	}); err != nil {
 		return inst, fmt.Errorf("workspace module source %q: %w", args.Path, err)
 	}

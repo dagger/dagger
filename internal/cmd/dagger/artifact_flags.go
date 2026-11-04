@@ -2,9 +2,13 @@ package daggercmd
 
 import (
 	"cmp"
+	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
+
+	"dagger.io/dagger/core"
 
 	"github.com/dagger/dagger/core/artifact"
 	"github.com/spf13/cobra"
@@ -177,4 +181,81 @@ func registerArtifactModuleFlags(cmd *cobra.Command, dimensions, selected artifa
 			cmd.Flags().AddFlag(&alias)
 		}
 	}
+}
+
+// artifactFlagModules returns the workspace modules that args select with
+// module flags (--module=NAME, --by-NAME or the --NAME alias), before
+// discovery has registered those flags. It returns nil when args select no
+// module, or name one that modules doesn't have.
+func artifactFlagModules(cmd *cobra.Command, args, modules []string) []string {
+	flags := copyCommandFlags(cmd, "module selectors")
+	reserved := artifactReservedFlags(cmd)
+	counts := map[string]int{}
+	for _, module := range modules {
+		counts[cliName(module)]++
+	}
+	selectors := map[string]string{}
+	for _, module := range modules {
+		names := []string{"by-" + module}
+		if alias := cliName(module); alias != "" && !reserved[alias] && !strings.HasPrefix(alias, "by-") && counts[alias] == 1 {
+			names = append(names, alias)
+		}
+		for _, name := range names {
+			if flags.Lookup(name) == nil {
+				flags.Bool(name, false, "")
+				selectors[name] = module
+			}
+		}
+	}
+	var selected []string
+	known := true
+	err := flags.ParseAll(args, func(flag *pflag.Flag, value string) error {
+		if module, ok := selectors[flag.Name]; ok && value == "true" {
+			selected = append(selected, module)
+		} else if flag.Name == "module" {
+			known = known && slices.Contains(modules, value)
+			selected = append(selected, value)
+		}
+		return nil
+	})
+	if err != nil || !known {
+		return nil
+	}
+	slices.Sort(selected)
+	return slices.Compact(selected)
+}
+
+// artifactNamingModules adds to modules every workspace module whose
+// artifacts can change the flag names of theirs. Names are allocated across
+// every dimension at once, and each module's dimension flags start with its
+// own name, so two modules' flags can meet only when one name extends the
+// other at a hyphen: a module go-sdk can take a name from go. It returns nil
+// when that is every module.
+func artifactNamingModules(modules, all []string) []string {
+	related := func(a, b string) bool {
+		a, b = cliName(a), cliName(b)
+		return a == b || strings.HasPrefix(a, b+"-") || strings.HasPrefix(b, a+"-")
+	}
+	scope := slices.Clone(modules)
+	for i := 0; i < len(scope); i++ {
+		for _, module := range all {
+			if !slices.Contains(scope, module) && related(scope[i], module) {
+				scope = append(scope, module)
+			}
+		}
+	}
+	if !slices.ContainsFunc(all, func(module string) bool { return !slices.Contains(scope, module) }) {
+		return nil
+	}
+	slices.Sort(scope)
+	return scope
+}
+
+// workspaceModuleNames lists the modules of the workspace's effective config.
+func workspaceModuleNames(ctx context.Context, ws *core.Workspace) ([]string, error) {
+	cfg, err := artifactWorkspaceConfig(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
+	return slices.Sorted(maps.Keys(cfg.Modules)), nil
 }

@@ -20,7 +20,16 @@ func prepareArtifactOutput(ctx context.Context, dag *dagger.Client, cmd *cobra.C
 	}
 	// All naming queries must reuse this discovery result. currentWorkspace
 	// creates a new workspace on each call.
-	id, err := core.NewQuery(dag).CurrentWorkspace().Artifacts().ID(ctx)
+	workspaceID, err := core.NewQuery(dag).CurrentWorkspace().ID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ws := core.Ref[*core.Workspace](core.NewQuery(dag), workspaceID)
+	include, err := artifactOutputModules(ctx, ws, items)
+	if err != nil {
+		return nil, err
+	}
+	id, err := ws.Artifacts(core.WorkspaceArtifactsOpts{Include: include}).ID(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -80,6 +89,32 @@ func prepareArtifactOutput(ctx context.Context, dag *dagger.Client, cmd *cobra.C
 		}
 	}
 	return names, nil
+}
+
+// artifactOutputModules returns the modules whose artifacts name the items'
+// flags: the items' modules, and the modules that can take a name from them.
+// It returns nil, for every module, when an item has no module.
+func artifactOutputModules(ctx context.Context, ws *core.Workspace, items []listedArtifact) ([]string, error) {
+	var modules []string
+	for _, item := range items {
+		i := slices.IndexFunc(item.DimensionKeys, func(key struct{ Dimension, Key string }) bool {
+			return key.Dimension == artifact.ModuleDimension
+		})
+		if i < 0 {
+			return nil, nil
+		}
+		modules = append(modules, item.DimensionKeys[i].Key)
+	}
+	all, err := workspaceModuleNames(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
+	slices.Sort(modules)
+	modules = slices.Compact(modules)
+	if slices.ContainsFunc(modules, func(module string) bool { return !slices.Contains(all, module) }) {
+		return nil, nil
+	}
+	return artifactNamingModules(modules, all), nil
 }
 
 func itemDimensionFilters(item listedArtifact) []dagaddress.Pair {

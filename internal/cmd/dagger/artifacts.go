@@ -180,8 +180,13 @@ func artifactPaths(addresses []*dagaddress.Address, keys ...dagaddress.Pair) []s
 		if path == "" {
 			// Module selectors are known before schema discovery. Reuse include
 			// narrowing without guessing which module owns a type or collection.
+			// A type needs no binding, and its key resolves among the selected
+			// modules' paths either way.
 			var modules []string
 			for _, pair := range slices.Concat(addr.Query, keys) {
+				if strings.HasPrefix(pair.Dimension, "type:") {
+					continue
+				}
 				if pair.Dimension != artifact.ModuleDimension {
 					return nil // Preserve the schema scope used to bind other dimensions.
 				}

@@ -18,6 +18,7 @@ import (
 	"github.com/dagger/dagger/util/parallel"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/semaphore"
 )
@@ -449,18 +450,24 @@ func commandArtifactsWithFlags(ctx context.Context, dag *dagger.Client, ws *core
 }
 
 func validateArtifactListFlags(cmd *cobra.Command) error {
+	return checkArtifactListFlags(cmd, cmd.Flags().Changed, func(flag *pflag.Flag) string { return flag.Value.String() })
+}
+
+// checkArtifactListFlags is validateArtifactListFlags over flag values that
+// value reads, and changed reports, so a command line can be checked without
+// parsing it into cmd.
+func checkArtifactListFlags(cmd *cobra.Command, changed func(string) bool, value func(*pflag.Flag) string) error {
 	if isArtifactCommand(cmd) {
-		list, _ := cmd.Flags().GetBool("list")
-		if !list {
+		if flag := cmd.Flags().Lookup("list"); flag == nil || value(flag) != "true" {
 			for _, name := range []string{"all", "absolute", "abs", "format"} {
-				if cmd.Flags().Changed(name) {
+				if changed(name) {
 					return fmt.Errorf("--%s requires --list", name)
 				}
 			}
 		}
 	}
 	if flag := cmd.Flags().Lookup("format"); flag != nil && (isArtifactCommand(cmd) || cmd.Name() == "list" || cmd.Annotations[artifactListType] != "" || cmd.Annotations[artifactListCollection] != "") {
-		return validateArtifactListFormat(flag.Value.String())
+		return validateArtifactListFormat(value(flag))
 	}
 	return nil
 }

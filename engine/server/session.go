@@ -3715,18 +3715,25 @@ func readRemoteWorkspaceLock(ctx context.Context, ws *core.Workspace) (*workspac
 	if root.Self() == nil {
 		return nil, true, fmt.Errorf("remote Git workspace has no root filesystem")
 	}
-	lock, err := readWorkspaceLockFromRootfs(ctx, root, ws.LockFile)
+	var statFS core.StatFS = &core.DirectoryStatFS{Dir: root}
+	readFile := func(ctx context.Context, path string) ([]byte, error) {
+		return core.DirectoryReadFile(ctx, root, path)
+	}
+	if fs, ok := ws.GitSparseTreeFS(); ok {
+		statFS, readFile = fs, fs.ReadFile
+	}
+	lock, err := readWorkspaceLockFromTree(ctx, statFS, readFile, ws.LockFile)
 	return lock, true, err
 }
 
-func readWorkspaceLockFromRootfs(
+func readWorkspaceLockFromTree(
 	ctx context.Context,
-	root dagql.ObjectResult[*core.Directory],
+	statFS core.StatFS,
+	readFile func(context.Context, string) ([]byte, error),
 	lockPath string,
 ) (*workspace.Lock, error) {
 	lockPath = filepath.ToSlash(lockPath)
 	legacyPath := filepath.ToSlash(workspace.LegacyLockFilePathForCanonical(lockPath))
-	statFS := &core.DirectoryStatFS{Dir: root}
 
 	_, exists, err := core.StatFSExists(ctx, statFS, lockPath)
 	if err != nil {
@@ -3743,7 +3750,7 @@ func readWorkspaceLockFromRootfs(
 		return workspace.NewLock(), nil
 	}
 
-	data, err := core.DirectoryReadFile(ctx, root, lockPath)
+	data, err := readFile(ctx, lockPath)
 	if err != nil {
 		if lockPath == legacyPath {
 			return nil, fmt.Errorf("reading legacy lock: %w", err)
