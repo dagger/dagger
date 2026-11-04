@@ -2303,7 +2303,12 @@ git commit -am next
 					return ctr.WithEnvVariable("_DAGGER_EGRAPH_BOOT_ID", bootID)
 				},
 			)
-			service := devEngineContainerAsService(engineCtr)
+			// Started rather than only bound to each CLI container: a service with no
+			// binders is stopped after DetachGracePeriod, and killed if its shutdown
+			// then takes more than TerminateGracePeriod, so a slow gap between calls
+			// would restart the engine or lose its cache mid-test.
+			service, err := devEngineContainerAsService(engineCtr).Start(ctx)
+			require.NoError(t, err)
 
 			endpoint, err := service.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 			require.NoError(t, err)
@@ -2349,7 +2354,9 @@ grep -q 'var versionAnnotation = distconsts.OCIVersionAnnotation + "-test"' /app
 				})
 			}
 
-			ctr = ctr.WithExec(execArgs)
+			// Without this the CLI joins this test's session on the outer engine, as
+			// a nested client, instead of connecting to engine.
+			ctr = ctr.WithExec(execArgs, core.ContainerWithExecOpts{DisableDaggerInDagger: true})
 
 			stdout, err := ctr.Stdout(ctx)
 			return strings.TrimSpace(stdout), err
