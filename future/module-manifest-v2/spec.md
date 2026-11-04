@@ -431,7 +431,7 @@ written against in a `dang.toml`, with the keys Dang defines:
 dang = "2.1"
 
 [imports.Dagger]
-dagger = "v1.0.0-beta.25"
+dagger = "v1.0.0-beta.26"
 ```
 
 | Key | Meaning |
@@ -477,14 +477,14 @@ Defaults:
 
 | Declared | Dagger version | Dang version |
 | --- | --- | --- |
-| No `dang.toml` | `v1.0.0-beta.24` | `2.1` |
-| No Dagger import, or `dagger = true` | `v1.0.0-beta.24` | as declared |
+| No `dang.toml` | `v1.0.0-beta.25` | `2.1` |
+| No Dagger import, or `dagger = true` | `v1.0.0-beta.25` | as declared |
 | No `dang` key | as declared | `2.1` |
 
-**Decision: an undeclared Dagger version is v1.0.0-beta.24.** Entrypoints
+**Decision: an undeclared Dagger version is v1.0.0-beta.25.** Entrypoints
 written before the key existed were served at the engine that ran them, from
-v1.0.0-beta.16 to v1.0.0-beta.24: the v1 API, Dang 2.1 and the naming rules
-from before the cut at v1.0.0-beta.25 (`engine.IdentifierCasingVersion`).
+v1.0.0-beta.16 to v1.0.0-beta.25: the v1 API, Dang 2.1 and the naming rules
+from before the cut at v1.0.0-beta.26 (`engine.IdentifierCasingVersion`).
 The default is the last of those releases, so an entrypoint keeps the API
 they shipped, including what the releases from v1.0.0-beta.22
 (`engine.PrereleaseViewsVersion`, from which each release has a view of its

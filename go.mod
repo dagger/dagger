@@ -19,6 +19,7 @@ require (
 	cloud.google.com/go/secretmanager v1.16.0
 	github.com/1password/onepassword-sdk-go v0.3.1
 	github.com/99designs/gqlgen v0.17.89
+	github.com/BurntSushi/toml v1.6.0
 	github.com/Khan/genqlient v0.8.1
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
 	github.com/Microsoft/go-winio v0.6.2
@@ -218,7 +219,6 @@ require (
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.12.0 // indirect
-	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/ProtonMail/go-crypto v1.1.6 // indirect
 	github.com/agnivade/levenshtein v1.2.1 // indirect
 	github.com/aofei/backoff v1.2.0 // indirect

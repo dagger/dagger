@@ -21,15 +21,15 @@ const EntrypointConfigFilename = "dang.toml"
 // dang.toml at all.
 //
 // Entrypoints written before the version could be declared were served at
-// whatever engine ran them, v1.0.0-beta.16 to v1.0.0-beta.24: the v1 API,
+// whatever engine ran them, v1.0.0-beta.16 to v1.0.0-beta.25: the v1 API,
 // Dang 2.1 and the naming rules from before the cut at
-// engine.IdentifierCasingVersion (v1.0.0-beta.25). This is the last of those
+// engine.IdentifierCasingVersion (v1.0.0-beta.26). This is the last of those
 // releases, so an entrypoint keeps the API they shipped, including what the
 // releases from engine.PrereleaseViewsVersion on added (they have views of
 // their own), without the renames. It is pinned and must NOT follow
 // engine.Version: an entrypoint that declares nothing would otherwise change
 // meaning with every engine release.
-const DefaultEntrypointEngineVersion = "v1.0.0-beta.24"
+const DefaultEntrypointEngineVersion = "v1.0.0-beta.25"
 
 // EntrypointVersions are the versions a Dang module entrypoint is written
 // against.

@@ -682,7 +682,7 @@ existing view mechanism (`AfterVersion` / `BeforeVersion` in `core/util.go`):
   Modules below `IdentifierNamingVersion` (`v1.0.0-beta.26`) keep strcase
   behavior until they bump. A module entrypoint (manifest v2) has no
   `engineVersion` in its manifest: its version is the Dagger version its
-  `dang.toml` declares, `v1.0.0-beta.24` (the last release before the cut)
+  `dang.toml` declares, `v1.0.0-beta.25` (the last release before the cut)
   without one, and it's named by that version's rules like any other module
   (see [Module entrypoints](#module-entrypoints)).
 - The core schema's renamed names exist by the caller's view: the old
@@ -761,7 +761,7 @@ it loads.
 `ModuleSource` ends up with, with no special path. That version is the Dagger
 version the `dang.toml` governing its entrypoint declares (`[imports.Dagger]
 dagger = "vX.Y.Z"`, read by `resolveEntrypointVersions` in
-`core/schema/modulesource.go`), or `v1.0.0-beta.24` when it declares none (see
+`core/schema/modulesource.go`), or `v1.0.0-beta.25` when it declares none (see
 `future/module-manifest-v2/spec.md`, "Versions"). Its client is served at that
 version's view, capped at the engine's own like any module's
 (`ModuleSource.NamingView`), so the typedef constructors its entrypoint calls
@@ -769,7 +769,7 @@ name by those rules, `Module.Namer` names its namespaced types, constructor
 and CLI paths by them, and its codegen gates on that same version. Dispatch
 doesn't care, since calls carry original names.
 
-An entrypoint that declares no version gets the view of `v1.0.0-beta.24`, the
+An entrypoint that declares no version gets the view of `v1.0.0-beta.25`, the
 last release before the cut: the
 old core names, which every generated entrypoint spells today
 (`FunctionCachePolicy.Never`, `PerSession`, `Default`), and the strcase
@@ -819,7 +819,7 @@ pins the API view and naming together. A shared remote entrypoint pins
 through the `dang.toml` of the directory it names, so its author, not the
 module that uses it, picks the version: a module following a moving ref
 follows that ref's version too, and has no key of its own to pin it with. An
-entrypoint that declares no version gets `v1.0.0-beta.24`, not the engine's
+entrypoint that declares no version gets `v1.0.0-beta.25`, not the engine's
 own version, so it no longer follows the engine.
 
 ### What changes for module authors (on bump)

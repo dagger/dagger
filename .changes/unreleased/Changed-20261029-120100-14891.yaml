@@ -1,6 +1,6 @@
 kind: Changed
 body: |
-  Modules declaring `engineVersion` v1.0.0-beta.25 or later get GraphQL-style
+  Modules declaring `engineVersion` v1.0.0-beta.26 or later get GraphQL-style
   names for their types, fields, arguments and enum values: acronyms are
   uppercase in type names and capitalized in fields and arguments
   (`MyModHTTPClient`, not `MyModHttpclient`; `withGpu`), and names with digits
