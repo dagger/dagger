@@ -1860,6 +1860,41 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		require.Contains(t, out, "included-ignore")
 	})
 
+	// A check run from a Git workspace keeps its planning past the session,
+	// so the engine saves those results at shutdown too. A result it can't
+	// store, or can't load back, costs the whole saved cache: a function's
+	// result from the same engine would then not survive the restart.
+	t.Run("a check run from a git workspace is saved at shutdown", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "persist-git-check-planning-state-" + rand.Text()
+		remoteRef := workspaceSelectionRemoteRef(ctx, t, c, workspaceIdentityRepo(t, c).WithNewFile("nonce.txt", rand.Text()))
+
+		cliCtr := func(engineClient *dagger.Client) *core.Container {
+			return core.NewQuery(engineClient).Container().From(alpineImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, engineClient)).
+				WithWorkdir("/empty")
+		}
+
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
+		ctrA := cliCtr(engineClientA)
+		workspaceIdentityExec(ctx, t, ctrA, true, "check", "-W", remoteRef, "recorded")
+		value := workspaceIdentityCall(ctx, t, ctrA, "-W", remoteRef, "check")
+		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
+		upstreamSvcA = nil
+		engineSvcA = nil
+		engineClientA = nil
+
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
+		ctrB := cliCtr(engineClientB)
+		require.Equal(t, value, workspaceIdentityCall(ctx, t, ctrB, "-W", remoteRef, "check"),
+			"the first engine's results must survive the restart")
+		workspaceIdentityExec(ctx, t, ctrB, true, "check", "-W", remoteRef, "recorded")
+		require.Equal(t, "1", workspaceIdentityCall(ctx, t, ctrB, "-W", remoteRef, "runs"),
+			"the check must be reused after the restart")
+	})
+
 	t.Run("passing check result survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		stateKey := "persist-check-result-state-" + rand.Text()

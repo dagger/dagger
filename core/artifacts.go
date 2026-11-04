@@ -70,6 +70,11 @@ type Artifact struct {
 	Directives  []string `field:"true" doc:"The directives carried by this artifact."`
 	LoadFailure *ModuleLoadFailure
 	Node        *ModTreeNode
+	// SessionBound marks an artifact listed from a collection whose
+	// producer a later session would call again, so what is read from it
+	// isn't kept past the session. It is never stored: such a listing isn't
+	// kept.
+	SessionBound bool
 	// Workspace is the workspace that supplied the artifact: its address is
 	// relative to it, and it names the artifact's identity. Unset for a
 	// bound artifact.

@@ -44,6 +44,32 @@ func (a *Artifacts) EvaluationItems(ctx context.Context) ([]*Artifact, error) {
 	return expanded.legacyBatchChecks(ctx)
 }
 
+// ArtifactItemResults gives each listed artifact a result of its own, at its
+// place in the list the current call returns, so the list owns what each
+// artifact references, as a module function's list owns its items.
+func ArtifactItemResults(ctx context.Context, items []*Artifact) (dagql.ObjectResultArray[*Artifact], error) {
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	call := dagql.CurrentCall(ctx)
+	if call == nil {
+		return nil, fmt.Errorf("artifact items without a call")
+	}
+	results := make(dagql.ObjectResultArray[*Artifact], len(items))
+	for i, item := range items {
+		itemCall := cloneResultCall(call)
+		itemCall.Nth = int64(i + 1)
+		if itemCall.Type != nil {
+			itemCall.Type = itemCall.Type.Elem
+		}
+		if results[i], err = dagql.NewObjectResultForCall(item, srv, itemCall); err != nil {
+			return nil, err
+		}
+	}
+	return results, nil
+}
+
 func (a *Artifacts) legacyBatchChecks(ctx context.Context) ([]*Artifact, error) {
 	type batchGroup struct {
 		artifact *Artifact

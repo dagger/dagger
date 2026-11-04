@@ -8,12 +8,16 @@ package core
 // See also:
 // - checks_test.go: running and listing checks.
 // - engine_persistence_test.go: a cached check across an engine restart.
+//
+// From a Git workspace, a check run's planning is reused across sessions too
+// (TestCheckPlanningFromGitAcrossSessions).
 
 import (
 	"context"
 	"crypto/rand"
 	"strings"
 
+	"dagger.io/dagger"
 	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -125,5 +129,143 @@ func (ChecksSuite) TestChecksCachedAcrossSessions(ctx context.Context, t *testct
 		checkCachingRun(ctx, t, mod, core.ReturnTypeFailure, "check", "failing-container")
 		checkCachingRun(ctx, t, mod, core.ReturnTypeFailure, "check", "failing-container")
 		require.Equal(t, "2", checkCachingRuns(ctx, t, mod))
+	})
+}
+
+// checkCachingRemote serves the check-caching module, made unique to this
+// test, as the main module of a Git workspace, and returns its address.
+func checkCachingRemote(ctx context.Context, t *testctx.T, c *dagger.Client) string {
+	t.Helper()
+	return workspaceSelectionRemoteRef(ctx, t, c, core.NewQuery(c).Directory().
+		WithNewFile("dagger.toml", "[modules.check-caching]\nsource = \".dagger/modules/check-caching\"\nmain = true\n").
+		WithDirectory(".dagger/modules/check-caching", core.NewQuery(c).Host().Directory(testDataPath(t, "checks", "check-caching"))).
+		WithNewFile(".dagger/modules/check-caching/nonce.go", "package main\n\nconst nonce = \""+rand.Text()+"\"\n"))
+}
+
+// planningCollectionModule is the main module of a Git workspace whose
+// collection gets a new key each time its producer runs, cached as policy
+// says. Each item's check records its key, so a test can tell which items a
+// run checked.
+func planningCollectionModule(c *dagger.Client, policy string) *core.Directory {
+	return core.NewQuery(c).Directory().
+		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"./probe\"\nmain = true\n").
+		WithNewFile("probe/dagger.json", `{"name":"probe","engineVersion":"latest","sdk":{"source":"go"},"source":"."}`).
+		WithNewFile("probe/main.go", `package main
+
+import (
+	"context"
+	"crypto/rand"
+	"strings"
+
+	"dagger/probe/internal/dagger"
+)
+
+const nonce = "`+rand.Text()+`"
+
+type Probe struct{}
+
+// +cache="`+policy+`"
+func (*Probe) Batches() *Batches { return &Batches{Names: []string{rand.Text()}} }
+
+// +collection
+type Batches struct {
+	// +keys
+	Names []string
+}
+
+// +get
+func (*Batches) Batch(name string) *Batch { return &Batch{Name: name} }
+
+type Batch struct{ Name string }
+
+// +check
+func (b *Batch) Verify(ctx context.Context) error {
+	_, err := runLog().
+		WithEnvVariable("NONCE", rand.Text()).
+		WithExec([]string{"sh", "-c", "echo '" + b.Name + "' >> /runs/log"}).
+		Sync(ctx)
+	return err
+}
+
+// Checked lists the keys of the items whose check ran, once each.
+// +cache="never"
+func (*Probe) Checked(ctx context.Context) (string, error) {
+	out, err := runLog().
+		WithEnvVariable("NONCE", rand.Text()).
+		WithExec([]string{"sh", "-c", "sort -u /runs/log"}).
+		Stdout(ctx)
+	return strings.TrimSpace(out), err
+}
+
+func runLog() *dagger.Container {
+	return dag.Container().
+		From("alpine:3").
+		WithMountedCache("/runs", dag.CacheVolume("planning-collection-"+nonce))
+}
+`)
+}
+
+// From a Git workspace, a check run's planning is reused across sessions:
+// the workspace's artifacts, the listed items and each check's run. These
+// tests cover what must still run again in the next session.
+func (ChecksSuite) TestCheckPlanningFromGitAcrossSessions(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ctr := core.NewQuery(c).Container().From(alpineImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/empty")
+
+	runs := func(ctx context.Context, t *testctx.T, remoteRef, name string) string {
+		return workspaceIdentityCall(ctx, t, ctr, "-W", remoteRef, "runs", "--name", name)
+	}
+
+	t.Run("a failing check runs again in the next session", func(ctx context.Context, t *testctx.T) {
+		remoteRef := checkCachingRemote(ctx, t, c)
+		checkCachingRun(ctx, t, ctr, core.ReturnTypeFailure, "check", "-W", remoteRef, "fail")
+		checkCachingRun(ctx, t, ctr, core.ReturnTypeFailure, "check", "-W", remoteRef, "fail")
+		require.Equal(t, "2", runs(ctx, t, remoteRef, "fail"))
+	})
+
+	t.Run("a passing check is reused in the next session", func(ctx context.Context, t *testctx.T) {
+		remoteRef := checkCachingRemote(ctx, t, c)
+		checkCachingRun(ctx, t, ctr, core.ReturnTypeSuccess, "check", "-W", remoteRef, "pass")
+		checkCachingRun(ctx, t, ctr, core.ReturnTypeSuccess, "check", "-W", remoteRef, "pass")
+		require.Equal(t, "1", runs(ctx, t, remoteRef, "pass"))
+	})
+
+	t.Run("a per-session check runs once in each session", func(ctx context.Context, t *testctx.T) {
+		remoteRef := checkCachingRemote(ctx, t, c)
+		checkCachingRun(ctx, t, ctr, core.ReturnTypeSuccess, "check", "-W", remoteRef, "per-session")
+		checkCachingRun(ctx, t, ctr, core.ReturnTypeSuccess, "check", "-W", remoteRef, "per-session")
+		require.Equal(t, "2", runs(ctx, t, remoteRef, "per-session"))
+	})
+
+	// A collection's items come from its producer. When the producer isn't
+	// cached across sessions, the next session lists the items it returns
+	// then, not the ones listed before.
+	for _, policy := range []string{"session", "never"} {
+		t.Run("items of a collection cached per "+policy+" are listed again", func(ctx context.Context, t *testctx.T) {
+			remoteRef := workspaceSelectionRemoteRef(ctx, t, c, planningCollectionModule(c, policy))
+			first := workspaceIdentityExec(ctx, t, ctr, true, "check", "-W", remoteRef, "-l", "--all", "-f=cli")
+			second := workspaceIdentityExec(ctx, t, ctr, true, "check", "-W", remoteRef, "-l", "--all", "-f=cli")
+			require.Contains(t, first, "--probe-batch=")
+			require.NotEqual(t, first, second, "the second session must list the producer's new item")
+		})
+	}
+
+	// Checking an item evaluates its collection again, so only a producer
+	// cached for the session can be checked: one never cached returns other
+	// keys.
+	t.Run("items of a collection cached per session are checked again", func(ctx context.Context, t *testctx.T) {
+		remoteRef := workspaceSelectionRemoteRef(ctx, t, c, planningCollectionModule(c, "session"))
+		checkCachingRun(ctx, t, ctr, core.ReturnTypeSuccess, "check", "-W", remoteRef)
+		checkCachingRun(ctx, t, ctr, core.ReturnTypeSuccess, "check", "-W", remoteRef)
+		out, err := ctr.
+			WithEnvVariable("CACHE_BUST", rand.Text()).
+			WithExec([]string{"dagger", "call", "-W", remoteRef, "checked"}, core.ContainerWithExecOpts{
+				DaggerInDaggerNewSession: true,
+			}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Len(t, strings.Fields(out), 2, "each session must check the item its producer returned then")
 	})
 }
