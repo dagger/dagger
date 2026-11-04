@@ -48,6 +48,7 @@ func (s *querySchema) Install(srv *dagql.Server) {
 			Doc(`(Internal-only) Returns the persistent bare git mirror for a remote URL.`).
 			Args(
 				dagql.Arg("remoteURL").Doc("Normalized remote repository URL."),
+				dagql.Arg("blobless").Doc("A separate partial clone of the remote, holding only the file contents asked for."),
 			),
 		dagql.NodeFunc("_clientFilesyncMirror", s.clientFilesyncMirror).
 			View(AfterVersion("v0.21.0")).
@@ -139,6 +140,7 @@ type pipelineArgs struct {
 
 type remoteGitMirrorArgs struct {
 	RemoteURL string `name:"remoteURL"`
+	Blobless  bool   `default:"false"`
 }
 
 type clientFilesyncMirrorArgs struct {
@@ -160,6 +162,7 @@ func (s *querySchema) currentTimestamp(_ context.Context, _ *core.Query, args st
 
 func (s *querySchema) remoteGitMirror(ctx context.Context, parent dagql.ObjectResult[*core.Query], args remoteGitMirrorArgs) (dagql.Result[*core.RemoteGitMirror], error) {
 	mirror := core.NewRemoteGitMirror(args.RemoteURL)
+	mirror.Blobless = args.Blobless
 	if err := mirror.EnsureCreated(ctx, parent.Self()); err != nil {
 		return dagql.Result[*core.RemoteGitMirror]{}, err
 	}

@@ -61,6 +61,14 @@ func moduleTree(src *ModuleSource) (dagql.ObjectResult[*Directory], bool) {
 // such as a local module whose host belongs to another engine.
 func moduleTreeReader(ctx context.Context, dag *dagql.Server, src *ModuleSource) (workspace.TreeFileReader, error) {
 	if tree, ok := moduleTree(src); ok {
+		// A module loaded through a Git workspace has that workspace's tree.
+		if ws := src.Workspace.Self(); ws != nil {
+			if fs, ok := ws.GitSparseTreeFS(); ok {
+				return func(rel string) ([]byte, bool, error) {
+					return directoryFileReader(ctx, dag, fs.dirFor(ctx, rel))(rel)
+				}, nil
+			}
+		}
 		return directoryFileReader(ctx, dag, tree), nil
 	}
 	if src.Kind == ModuleSourceKindLocal && src.Local != nil && !src.Local.Foreign {

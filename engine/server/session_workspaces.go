@@ -313,11 +313,25 @@ func (srv *Server) loadWorkspaceFromRemote(ctx context.Context, client *clientRu
 		return core.GitRefString(parsedRef.CloneRef, subPath, parsedRef.Version)
 	}
 
+	var statFS core.StatFS = &core.DirectoryStatFS{Dir: tree}
+	readFile := func(ctx context.Context, path string) ([]byte, error) {
+		return core.DirectoryReadFile(ctx, tree, path)
+	}
+	source := &core.WorkspaceSourceGitRef{Ref: gitRef.Result}
+	sparse, err := core.LoadGitWorkspaceSparseTree(ctx, client.dag, gitRef, parsedRef.WorkspaceSubdir)
+	switch {
+	case err != nil:
+		// Nothing needs it: the workspace reads from its full tree.
+		slog.Warn("loading the workspace's sparse tree failed; using its full tree", "workspace", remoteRef, "error", err)
+	case sparse != nil:
+		source.Sparse = sparse
+		fs := &core.GitSparseTreeFS{Sparse: sparse, Full: tree}
+		statFS, readFile = fs, fs.ReadFile
+	}
+
 	return srv.detectAndLoadWorkspaceWithRootfs(ctx, client,
-		&core.DirectoryStatFS{Dir: tree},
-		func(ctx context.Context, path string) ([]byte, error) {
-			return core.DirectoryReadFile(ctx, tree, path)
-		},
+		statFS,
+		readFile,
 		parsedRef.WorkspaceSubdir,
 		resolveLocalRef,
 		func(ws *workspace.Workspace) string {
@@ -325,7 +339,7 @@ func (srv *Server) loadWorkspaceFromRemote(ctx context.Context, client *clientRu
 		},
 		false, // isLocal
 		tree,  // pre-built rootfs for remote
-		core.NewWorkspaceSourceGitRef(gitRef.Result),
+		source,
 		// The workspace tree is remote, but user-level config still comes from
 		// the caller's host; the key is the declared remote itself.
 		client.daggerSession.engineUtilClient.ReadCallerHostFile,
