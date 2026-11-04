@@ -108,17 +108,8 @@ func planGitWorkspaceFiles(ctx context.Context, files *core.GitTreeFiles, cwd st
 		for _, p := range selected {
 			planned[p] = struct{}{}
 		}
-		deps := append(slices.Clone(src.ConfigDependencies), src.ConfigToolchains...)
-		if src.ConfigBlueprint != nil {
-			deps = append(deps, src.ConfigBlueprint)
-		}
-		for _, dep := range deps {
-			if dep != nil && workspace.IsLocalRef(dep.Source, dep.Pin) {
-				visitModule(path.Join(dir, dep.Source))
-			}
-		}
-		if src.SDK != nil && workspace.IsLocalRef(src.SDK.Source, "") {
-			visitModule(path.Join(dir, src.SDK.Source))
+		for _, dep := range gitWorkspaceModuleLocalDeps(src) {
+			visitModule(path.Join(dir, dep))
 		}
 	}
 	visitConfig := func(file string) *workspace.Config {
@@ -165,6 +156,25 @@ func planGitWorkspaceFiles(ctx context.Context, files *core.GitTreeFiles, cwd st
 		}
 	}
 	return slices.Sorted(maps.Keys(planned)), nil
+}
+
+// gitWorkspaceModuleLocalDeps returns the sources a module's config names that
+// are paths beside it: its dependencies, toolchains, blueprint and SDK.
+func gitWorkspaceModuleLocalDeps(src *core.ModuleSource) []string {
+	deps := append(slices.Clone(src.ConfigDependencies), src.ConfigToolchains...)
+	if src.ConfigBlueprint != nil {
+		deps = append(deps, src.ConfigBlueprint)
+	}
+	var local []string
+	for _, dep := range deps {
+		if dep != nil && workspace.IsLocalRef(dep.Source, dep.Pin) {
+			local = append(local, dep.Source)
+		}
+	}
+	if src.SDK != nil && workspace.IsLocalRef(src.SDK.Source, "") {
+		local = append(local, src.SDK.Source)
+	}
+	return local
 }
 
 // gitWorkspaceModuleConfig reads the module config in dir into a source, with
