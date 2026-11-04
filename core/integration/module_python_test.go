@@ -643,6 +643,46 @@ class Test:
 		require.Equal(t, "0.7.13", out)
 	})
 
+	t.Run("slow python startup", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// Installs a .pth file, which runs on every Python startup, delaying
+		// only uv's bytecode compile workers past uv's default limit of 60s.
+		out, err := daggerCliBase(t, c).
+			With(withPythonModule(t, c, "python/base-test")).
+			With(pythonSource(`
+import dagger
+
+@dagger.object_type
+class Test:
+    @dagger.function
+    def hello(self) -> str:
+        return "hello"
+`)).
+			With(pyprojectExtra([]string{"slowstart"}, "[tool.uv.sources.slowstart]\npath = \"slowstart\"\n")).
+			With(fileContents("slowstart/pyproject.toml", `
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "slowstart"
+version = "0.0.0"
+
+[tool.hatch.build.targets.wheel]
+bypass-selection = true
+
+[tool.hatch.build.targets.wheel.force-include]
+"slowstart.pth" = "slowstart.pth"
+`)).
+			With(fileContents("slowstart/slowstart.pth", `import sys, time; "pip_compileall" in sys.argv[0] and time.sleep(61)`+"\n")).
+			With(daggerCallAt(".", "hello")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "hello", out)
+	})
+
 	t.Run("index-url", func(ctx context.Context, t *testctx.T) {
 		source := pythonSource(`
 import contextlib
