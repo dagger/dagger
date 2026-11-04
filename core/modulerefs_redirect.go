@@ -20,8 +20,8 @@ const (
 	// for a redirect that points at the real module source.
 	daggerGetQueryParam = "dagger-get"
 
-	// daggerGetProbeTimeout bounds the redirect probe so a slow or hanging host
-	// cannot block module resolution.
+	// daggerGetProbeTimeout bounds each attempt of the redirect probe so a slow or
+	// hanging host cannot block module resolution.
 	daggerGetProbeTimeout = 5 * time.Second
 )
 
@@ -241,6 +241,12 @@ func daggerGetProbe(ctx context.Context, refString string) string {
 		return refString
 	}
 	resp, err := daggerGetClient.Do(req)
+	if err != nil {
+		// A vanity URL generally can't be resolved without its redirect, so one
+		// slow response shouldn't decide that.
+		slog.Debug("dagger-get probe failed; retrying", "url", probe.String(), "error", err)
+		resp, err = daggerGetClient.Do(req)
+	}
 	if err != nil {
 		slog.Debug("dagger-get probe failed; using original ref", "url", probe.String(), "error", err)
 		return refString
