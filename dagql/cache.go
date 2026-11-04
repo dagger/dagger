@@ -6187,6 +6187,7 @@ func (c *Cache) GetOrInitCall(
 	if sessionID == "" {
 		return nil, errors.New("get or init call: empty session ID")
 	}
+	recordCallScope(ctx, req)
 	op, err := c.beginSessionOperation(sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("get or init call: %w", err)
@@ -6510,6 +6511,7 @@ func (c *Cache) getOrInitCallInner(
 	}
 	decline := &persistDecline{}
 	sharedWorkCtx = context.WithValue(sharedWorkCtx, persistDeclineKey{}, decline)
+	sharedWorkCtx = withoutCallScopes(sharedWorkCtx)
 	oc := &ongoingCall{
 		callConcurrencyKeys:     callConcKeys,
 		ttlSeconds:              req.TTL,
