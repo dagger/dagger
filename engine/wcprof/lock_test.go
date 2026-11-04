@@ -1,6 +1,7 @@
 package wcprof
 
 import (
+	"bytes"
 	"context"
 	"runtime"
 	"testing"
@@ -8,15 +9,14 @@ import (
 
 // lockWait has one goroutine take mu with WriteLock under ctx while the
 // test holds it, and returns the wait it recorded. The test holds mu on
-// entry; lockWait releases it.
+// entry; lockWait releases it only once the goroutine is in mu's own Lock,
+// after its wait has read mu's holder, so the release can't change the
+// holder the wait reads.
 func lockWait(t *testing.T, r *Recorder, ctx context.Context, mu *RWMutex, unlock func()) Event {
 	t.Helper()
 	locked := make(chan struct{})
-	go func() {
-		WriteLock(ctx, mu, "test.mu")
-		close(locked)
-	}()
-	for !waitingOn(r) {
+	go writeLockWaiter(ctx, mu, locked)
+	for !waiterInLock() {
 		runtime.Gosched()
 	}
 	unlock()
@@ -32,6 +32,25 @@ func lockWait(t *testing.T, r *Recorder, ctx context.Context, mu *RWMutex, unloc
 		t.Fatalf("expected 1 wait, got %+v", waits)
 	}
 	return waits[0]
+}
+
+// writeLockWaiter takes mu with WriteLock under ctx, then closes locked.
+func writeLockWaiter(ctx context.Context, mu *RWMutex, locked chan<- struct{}) {
+	WriteLock(ctx, mu, "test.mu")
+	close(locked)
+}
+
+// waiterInLock reports whether writeLockWaiter has reached sync.RWMutex's
+// Lock, which WriteLock calls only after its wait has read the holder.
+func waiterInLock() bool {
+	buf := make([]byte, 1<<20)
+	buf = buf[:runtime.Stack(buf, true)]
+	for _, g := range bytes.Split(buf, []byte("\n\n")) {
+		if bytes.Contains(g, []byte("wcprof.writeLockWaiter(")) && bytes.Contains(g, []byte("sync.(*RWMutex).Lock(")) {
+			return true
+		}
+	}
+	return false
 }
 
 // A wait on an RWMutex names the op that held it, taken with WriteLock, and
