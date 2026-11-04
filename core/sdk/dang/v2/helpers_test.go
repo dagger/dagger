@@ -276,11 +276,11 @@ func TestRetainDangObjectDirectivesOnlyForTypeDefs(t *testing.T) {
 	require.Empty(t, objectDirectives(env, "Thing"), "Dang itself does not retain object directives")
 
 	parses := countDangParses(t)
-	require.NoError(t, retainDangObjectDirectives(t.Context(), env, dir, dang.CurrentVersion, false))
+	require.NoError(t, retainDangObjectDirectives(t.Context(), env, dir, false))
 	require.Zero(t, *parses, "a function call does not parse the source again")
 	require.Empty(t, objectDirectives(env, "Thing"))
 
-	require.NoError(t, retainDangObjectDirectives(t.Context(), env, dir, dang.CurrentVersion, true))
+	require.NoError(t, retainDangObjectDirectives(t.Context(), env, dir, true))
 	require.Equal(t, 1, *parses)
 	directives := objectDirectives(env, "Thing")
 	require.Len(t, directives, 1)
@@ -459,14 +459,14 @@ func TestModuleSourceParsesAtDangVersion(t *testing.T) {
 	writeDangFilesIn(t, dir, map[string]string{"main.dang": legacySelectionSource})
 
 	countDangParses(t) // a fresh memo
-	require.Equal(t, []string{"Legacy", "Pair", "Picker"}, moduleDeclaredTypeNames(dir, "legacy", dang.Version1_0))
-	require.Equal(t, []string{"Legacy"}, moduleDeclaredTypeNames(dir, "legacy", dang.CurrentVersion),
+	require.Equal(t, []string{"Legacy", "Pair", "Picker"}, moduleDeclaredTypeNames(dang.ContextWithVersion(t.Context(), dang.Version1_0), dir, "legacy"))
+	require.Equal(t, []string{"Legacy"}, moduleDeclaredTypeNames(dang.ContextWithVersion(t.Context(), dang.CurrentVersion), dir, "legacy"),
 		"the names are keyed by version: the source does not parse as the current version")
 
 	ctx := dang.ContextWithVersion(t.Context(), dang.Version1_0)
 	env, err := runDangDirForModuleTypes(ctx, dir)
 	require.NoError(t, err)
-	require.NoError(t, retainDangObjectDirectives(ctx, env, dir, dang.Version1_0, true))
+	require.NoError(t, retainDangObjectDirectives(ctx, env, dir, true))
 	value, found, err := env.Lookup(ctx, "Pair")
 	require.NoError(t, err)
 	require.True(t, found)
@@ -474,5 +474,5 @@ func TestModuleSourceParsesAtDangVersion(t *testing.T) {
 	require.Len(t, directives, 1)
 	require.Equal(t, "marked", directives[0].Name)
 
-	require.Error(t, retainDangObjectDirectives(ctx, env, dir, dang.CurrentVersion, true))
+	require.Error(t, retainDangObjectDirectives(dang.ContextWithVersion(ctx, dang.CurrentVersion), env, dir, true))
 }

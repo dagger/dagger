@@ -177,12 +177,6 @@ func evalDangSource(
 			}
 			defer cleanup()
 
-			// The version Dang parses the source as, for the parses below.
-			version, err := dang.VersionForDir(ctx, modSrcDir)
-			if err != nil {
-				version = dang.VersionFromContext(ctx)
-			}
-
 			// During the typedef/declaration phase (ModuleTypes) the schema
 			// handed to us is deps-only: it does not yet carry the module's own
 			// object/interface/enum types, because those are exactly what this
@@ -212,7 +206,7 @@ func evalDangSource(
 				}
 				return fmt.Errorf("run dir: %w", err)
 			}
-			return retainDangObjectDirectives(ctx, env, modSrcDir, version, forTypeDefs)
+			return retainDangObjectDirectives(ctx, env, modSrcDir, forTypeDefs)
 		})
 		if err != nil {
 			if errors.As(err, new(*dangSourceError)) {
@@ -389,9 +383,8 @@ func reportDangSourceError(stderr io.Writer, err error) error {
 // Type. Keep these declarations alongside the field directives for registration.
 //
 // Only type registration reads them (createObjectTypeDef), so nothing is
-// parsed unless forTypeDefs says the environment is used for that. version is
-// the Dang version the source is written in.
-func retainDangObjectDirectives(ctx context.Context, env dang.ValueScope, dir string, version dang.Version, forTypeDefs bool) error {
+// parsed unless forTypeDefs says the environment is used for that.
+func retainDangObjectDirectives(ctx context.Context, env dang.ValueScope, dir string, forTypeDefs bool) error {
 	if !forTypeDefs {
 		return nil
 	}
