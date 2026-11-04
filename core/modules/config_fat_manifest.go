@@ -1,8 +1,6 @@
 package modules
 
 import (
-	"fmt"
-
 	toml "github.com/pelletier/go-toml"
 )
 
@@ -14,11 +12,12 @@ import (
 // on an engine that does not. An engine that predates entrypoints ignores the
 // entrypoint table and reads the pre-v2 fields.
 //
-// Manifest version 2 has no dependency list, and the SDKs still need one. A
-// module that declares dependencies therefore stays on the pre-v2 format even
-// when it also declares an entrypoint.
+// Manifest version 2 lists dependencies only as an entrypoint's own, for a
+// module without a runtime. A module that declares a runtime and dependencies
+// therefore stays on the pre-v2 format even when it also declares an
+// entrypoint, so an engine that predates entrypoints still loads it.
 //
-// To remove fat manifest support once manifest version 2 covers dependencies:
+// To remove fat manifest support once no engine needs the pre-v2 fields:
 // delete this file, select version 2 in parseCurrentModuleConfigTOML with
 // tree.Has("entrypoint") alone, and drop the legacyModuleManifestKeys branch
 // from validateModuleManifestV2TOML.
@@ -38,7 +37,7 @@ const (
 //	no entrypoint                        -> pre-v2
 //	entrypoint, no dependencies          -> version 2, pre-v2 fields ignored
 //	entrypoint, dependencies, runtime    -> pre-v2, entrypoint ignored
-//	entrypoint, dependencies, no runtime -> error, neither format can load it
+//	entrypoint, dependencies, no runtime -> version 2, with the dependencies
 func selectModuleManifestFormat(tree *toml.Tree) (moduleManifestFormat, error) {
 	if !tree.Has("entrypoint") {
 		return moduleManifestFormatPreV2, nil
@@ -49,19 +48,17 @@ func selectModuleManifestFormat(tree *toml.Tree) (moduleManifestFormat, error) {
 	if tree.Has("runtime") {
 		return moduleManifestFormatPreV2, nil
 	}
-	return moduleManifestFormatPreV2, fmt.Errorf(
-		"%s sets %q and %q without %q: manifest version 2 has no dependency list, so a module with dependencies needs a runtime to load",
-		Filename, "entrypoint", "dependencies", "runtime",
-	)
+	// The entrypoint's own dependencies, such as dagger/go, which a Go
+	// module's generated entrypoint builds the module with.
+	return moduleManifestFormatV2, nil
 }
 
 // legacyModuleManifestKeys are the pre-v2 top-level keys that a fat manifest
 // carries for older engines. A version 2 read ignores them rather than
 // rejecting them.
 //
-// "dependencies" is absent on purpose: selectModuleManifestFormat never picks
-// version 2 for a manifest that has one, so a dependency list reaching the
-// version 2 validator is a bug and stays an error.
+// "dependencies" is absent: a version 2 manifest reads it as the
+// entrypoint's dependencies, when it has no runtime.
 var legacyModuleManifestKeys = []string{
 	"$schema",
 	"clients",

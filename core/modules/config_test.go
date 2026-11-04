@@ -100,8 +100,9 @@ source = "go"
 }
 
 // A fat manifest carries a version 2 entrypoint table and the pre-v2 fields at
-// the same time. Manifest version 2 has no dependency list, so a manifest that
-// declares dependencies stays on the pre-v2 format. See config_fat_manifest.go.
+// the same time. Manifest version 2 lists only an entrypoint's own
+// dependencies, so a manifest that declares a runtime and dependencies stays
+// on the pre-v2 format. See config_fat_manifest.go.
 func TestParseFatModuleManifest(t *testing.T) {
 	t.Parallel()
 
@@ -157,21 +158,32 @@ source = "./entrypoint"
 		require.Equal(t, "github.com/acme/dep", cfg.Dependencies[0].Source)
 	})
 
-	t.Run("entrypoint with dependencies and no runtime is an error", func(t *testing.T) {
+	t.Run("entrypoint with dependencies and no runtime has the entrypoint's dependencies", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := ParseModuleConfigForFilename([]byte(`
-name = "fat"
+		cfg, err := ParseModuleConfigForFilename([]byte(`
+name = "app"
 
 [[dependencies]]
-source = "github.com/acme/dep"
+name = "go"
+source = "github.com/acme/go"
 
 [entrypoint]
 kind = "dang"
 source = "./entrypoint"
 `), Filename)
-		require.ErrorContains(t, err, `sets "entrypoint" and "dependencies" without "runtime"`)
-		require.ErrorContains(t, err, "manifest version 2 has no dependency list")
+		require.NoError(t, err)
+		require.Equal(t, "app", cfg.Name)
+		require.Equal(t, ModuleEntrypointKindDang, cfg.Entrypoint.Kind)
+		require.Len(t, cfg.Dependencies, 1)
+		require.Equal(t, "go", cfg.Dependencies[0].Name)
+		require.Equal(t, "github.com/acme/go", cfg.Dependencies[0].Source)
+
+		out, err := MarshalModuleConfigForFilename(cfg, Filename)
+		require.NoError(t, err)
+		got, err := ParseModuleConfigForFilename(out, Filename)
+		require.NoError(t, err)
+		require.Equal(t, cfg, got)
 	})
 }
 

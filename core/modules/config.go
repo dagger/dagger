@@ -77,7 +77,7 @@ func parseCurrentModuleConfigTOML(src []byte) (*ModuleConfigWithUserFields, erro
 
 	// The entrypoint table selects the manifest version 2 format. The format has
 	// no version key. See config_fat_manifest.go for the transitional rule that
-	// keeps a manifest with dependencies on the pre-v2 format.
+	// keeps a manifest with a runtime and dependencies on the pre-v2 format.
 	format, err := selectModuleManifestFormat(tree)
 	if err != nil {
 		return nil, err
@@ -137,8 +137,9 @@ func parseModuleManifestV2TOML(tree *toml.Tree) (*ModuleConfigWithUserFields, er
 
 	return &ModuleConfigWithUserFields{
 		ModuleConfig: ModuleConfig{
-			Name:       manifest.Name,
-			Entrypoint: &manifest.Entrypoint,
+			Name:         manifest.Name,
+			Entrypoint:   &manifest.Entrypoint,
+			Dependencies: moduleConfigDependenciesFromCurrent(manifest.Dependencies),
 		},
 	}, nil
 }
@@ -190,8 +191,9 @@ func MarshalModuleConfigForFormat(modCfg *ModuleConfigWithUserFields, format Con
 		encoder := toml.NewEncoder(&buf).Order(toml.OrderPreserve)
 		if modCfg.Entrypoint != nil {
 			err = encoder.Encode(&ModuleManifestV2{
-				Name:       modCfg.Name,
-				Entrypoint: *modCfg.Entrypoint,
+				Name:         modCfg.Name,
+				Entrypoint:   *modCfg.Entrypoint,
+				Dependencies: currentModuleConfigDependencies(modCfg.Dependencies),
 			})
 		} else {
 			err = encoder.Encode(newCurrentModuleConfigWithUserFields(modCfg))

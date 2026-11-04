@@ -19,6 +19,9 @@ const (
 type ModuleManifestV2 struct {
 	Name       string                 `toml:"name"`
 	Entrypoint ModuleEntrypointConfig `toml:"entrypoint"`
+	// Dependencies are the modules the entrypoint calls, installed in its
+	// schema.
+	Dependencies []*CurrentModuleConfigDependency `toml:"dependencies,omitempty"`
 }
 
 // ModuleEntrypointConfig selects and configures a module entrypoint.
@@ -222,7 +225,7 @@ func validateCurrentModuleConfigTOML(tree *toml.Tree) error {
 
 func validateModuleManifestV2TOML(tree *toml.Tree) error {
 	for _, key := range tree.Keys() {
-		if slices.Contains([]string{"name", "entrypoint"}, key) {
+		if slices.Contains([]string{"name", "entrypoint", "dependencies"}, key) {
 			continue
 		}
 		// A fat manifest keeps the pre-v2 fields for older engines. Ignore them
