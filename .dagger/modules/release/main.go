@@ -317,7 +317,7 @@ func (r *Release) Publish( //nolint:gocyclo
 				})
 			},
 			dryRun: func(ctx context.Context) error {
-				return pythonclientdev.New(r.Workspace, pythonclientdev.PythonClientDevOpts{WorkspaceDir: pythonWorkspaceDir}).ReleaseDryRun(ctx)
+				return checkError(ctx, pythonclientdev.New(r.Workspace, pythonclientdev.PythonClientDevOpts{WorkspaceDir: pythonWorkspaceDir}).ReleaseDryRun())
 			},
 			published: func(ctx context.Context) (bool, error) {
 				u, err := pypiVersionURL(pypiRepo, pypiURL, strings.TrimPrefix(version, "v"))
@@ -339,7 +339,7 @@ func (r *Release) Publish( //nolint:gocyclo
 				})
 			},
 			dryRun: func(ctx context.Context) error {
-				return typescriptclientdev.New(r.Workspace).ReleaseDryRun(ctx)
+				return checkError(ctx, typescriptclientdev.New(r.Workspace).ReleaseDryRun())
 			},
 			published: func(ctx context.Context) (bool, error) {
 				return registryHasVersion(ctx, npmVersionURL(npmRegistryURL, strings.TrimPrefix(version, "v")))
@@ -357,7 +357,7 @@ func (r *Release) Publish( //nolint:gocyclo
 				})
 			},
 			dryRun: func(ctx context.Context) error {
-				return elixirclientdev.New(r.Workspace).ReleaseDryRun(ctx)
+				return checkError(ctx, elixirclientdev.New(r.Workspace).ReleaseDryRun())
 			},
 			published: func(ctx context.Context) (bool, error) {
 				return hexHasReleaseWithDocs(ctx, hexVersionURL(hexAPIURL, strings.TrimPrefix(version, "v")))
@@ -375,15 +375,7 @@ func (r *Release) Publish( //nolint:gocyclo
 					})
 			},
 			dryRun: func(ctx context.Context) error {
-				checkErr, err := rustclientdev.New(r.Workspace).ReleaseDryRun().Error(ctx)
-				if err != nil || checkErr == nil {
-					return err
-				}
-				msg, err := checkErr.Message(ctx)
-				if err != nil {
-					return err
-				}
-				return errors.New(msg)
+				return checkError(ctx, rustclientdev.New(r.Workspace).ReleaseDryRun())
 			},
 			published: func(ctx context.Context) (bool, error) {
 				return crateHasVersion(ctx, cargoRegistryIndex, strings.TrimPrefix(version, "v"))
@@ -535,6 +527,19 @@ func (r *Release) Publish( //nolint:gocyclo
 	}
 
 	return &report, nil
+}
+
+// checkError runs a dependency's check and returns its failure as an error.
+func checkError(ctx context.Context, check *core.Check) error {
+	checkErr, err := check.Error(ctx)
+	if err != nil || checkErr == nil {
+		return err
+	}
+	msg, err := checkErr.Message(ctx)
+	if err != nil {
+		return err
+	}
+	return errors.New(msg)
 }
 
 // +cache="session"
