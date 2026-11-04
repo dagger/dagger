@@ -26,9 +26,12 @@ func (s *gitSchema) sparseWorkspaceTree(ctx context.Context, parent dagql.Object
 		return inst, err
 	}
 	// Pinned like a tree without .git: the commit alone decides these files, so
-	// a later selection by SHA must not reuse a mutable branch's recipe.
+	// a later selection by SHA must not reuse a mutable branch's recipe. A
+	// remote ref with no name was already looked up by a full SHA through a
+	// pinned recipe, as tree keeps it, so its sparse tree is its own.
 	ref := parent.Self()
-	if ref.Ref.Name != ref.Ref.SHA {
+	_, remote := ref.Repo.Self().Backend.(*core.RemoteGitRepository)
+	if ref.Ref.Name != ref.Ref.SHA && (ref.Ref.Name != "" || !remote) {
 		err := srv.Select(ctx, ref.Repo, &inst,
 			dagql.Selector{Field: "ref", Args: []dagql.NamedInput{{Name: "name", Value: dagql.NewString(ref.Ref.SHA)}}},
 			dagql.Selector{Field: "__sparseWorkspaceTree", Args: []dagql.NamedInput{{Name: "cwd", Value: dagql.NewString(args.Cwd)}}},
