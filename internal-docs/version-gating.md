@@ -18,7 +18,7 @@ a cap. Dependency modules keep their configured versions.
 
 A manifest v2 module (a `dagger-module.toml` with an `[entrypoint]` table) has
 no `engineVersion`: its version is the `[imports.Dagger] dagger` key of the
-`dang.toml` governing its entrypoint, and `v1.0.0-beta.24`, the last release
+`dang.toml` governing its entrypoint, and `v1.0.0-beta.25`, the last release
 before the identifier casing cut, without one (see
 `future/module-manifest-v2/spec.md`, "Versions"). It then gets its view like
 any module.
