@@ -10,6 +10,8 @@ type TestForPythonVersion struct {
 	// The base container to run the tests
 	// +private
 	Container *dagger.Container
+	// +private
+	Ws *dagger.Workspace
 	// The python version to test against
 	// +private
 	Version string
@@ -33,11 +35,9 @@ func (t *TestForPythonVersion) Run(
 	// Arguments to pass to pytest
 	args []string,
 ) error {
-	return dag.Pytest(dagger.PytestOpts{
-		Container: t.Container,
-		Source:    t.Container.Directory("/src/sdk/python"),
-	}).Test(ctx, dagger.PytestTestOpts{
-		Version: t.Version,
-		Args:    args,
-	})
+	return dag.Pytest(t.Ws, dagger.PytestOpts{
+		Container:  t.Container.WithEnvVariable("UV_PYTHON", t.Version),
+		SourcePath: "sdk/python",
+		Args:       args,
+	}).Test(ctx)
 }

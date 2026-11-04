@@ -148,6 +148,7 @@ func (t PythonClientDev) WithDirectory(
 func (t PythonClientDev) Python310() *TestForPythonVersion {
 	return &TestForPythonVersion{
 		Container: t.DevContainer,
+		Ws:        t.Ws,
 		Version:   "3.10",
 	}
 }
@@ -156,6 +157,7 @@ func (t PythonClientDev) Python310() *TestForPythonVersion {
 func (t PythonClientDev) Python311() *TestForPythonVersion {
 	return &TestForPythonVersion{
 		Container: t.DevContainer,
+		Ws:        t.Ws,
 		Version:   "3.11",
 	}
 }
@@ -164,6 +166,7 @@ func (t PythonClientDev) Python311() *TestForPythonVersion {
 func (t PythonClientDev) Python312() *TestForPythonVersion {
 	return &TestForPythonVersion{
 		Container: t.DevContainer,
+		Ws:        t.Ws,
 		Version:   "3.12",
 	}
 }
@@ -172,6 +175,7 @@ func (t PythonClientDev) Python312() *TestForPythonVersion {
 func (t PythonClientDev) Python313() *TestForPythonVersion {
 	return &TestForPythonVersion{
 		Container: t.DevContainer,
+		Ws:        t.Ws,
 		Version:   "3.13",
 	}
 }
@@ -180,6 +184,7 @@ func (t PythonClientDev) Python313() *TestForPythonVersion {
 func (t PythonClientDev) Python314() *TestForPythonVersion {
 	return &TestForPythonVersion{
 		Container: t.DevContainer,
+		Ws:        t.Ws,
 		Version:   "3.14",
 	}
 }
