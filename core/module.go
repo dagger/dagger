@@ -1580,109 +1580,6 @@ func (mod *Module) validateInterfaceTypeDef(ctx context.Context, typeDef dagql.O
 	return nil
 }
 
-// depTypeReference resolves a reference to a dependency's type whose name, as
-// normalized by this module's naming rules, isn't the dependency's name for
-// it.
-//
-// SDKs refer to a dependency's types by their schema names, or by names
-// derived from them (the Go SDK's bindings spell DepUserIds as DepUserIDs).
-// When the dependency names its types by other rules than this module (one
-// of them declares an engine version older than IdentifierNamingVersion),
-// this module's rules can respell such a name: strcase turns "DepHTTPClient"
-// into "DepHttpclient", and engine/naming turns "DepUserIds" into
-// "DepUserIDs". The respelled name then misses the dependency's type, and the
-// reference would be namespaced as a type of this module instead. So a miss
-// falls back to the dependency type that the reference names verbatim, or
-// whose name normalizes to the same name by this module's rules, and the
-// reference takes that type's name.
-//
-// For a legacy module this only applies to types of dependency modules, so
-// its references to core types resolve exactly as they always have.
-func (mod *Module) depTypeReference(ctx context.Context, dag *dagql.Server, typeDef dagql.ObjectResult[*TypeDef]) (dagql.ObjectResult[*TypeDef], error) {
-	td := typeDef.Self()
-	name, _ := typeDefNames(td)
-	if name == "" || mod.Deps == nil {
-		return typeDef, nil
-	}
-	if _, ok, err := mod.Deps.ModTypeFor(ctx, td); err != nil || ok {
-		return typeDef, err
-	}
-	namer := mod.Namer()
-	if namer.Legacy() && !mod.hasNewNamingDep() {
-		// Every module involved names by the legacy rules, so nothing can
-		// have been respelled: resolve references as they always were.
-		return typeDef, nil
-	}
-	depTypeDefs, err := mod.Deps.TypeDefs(ctx, dag)
-	if err != nil {
-		return typeDef, err
-	}
-	_, originalName := typeDefNames(td)
-	for _, dep := range depTypeDefs {
-		depTD := dep.Self()
-		if depTD == nil || depTD.Kind != td.Kind {
-			continue
-		}
-		depName, _ := typeDefNames(depTD)
-		if depName == "" || (depName != originalName && namer.ObjectName(depName) != name) {
-			continue
-		}
-		if namer.Legacy() && typeDefSourceModuleName(depTD) == "" {
-			// a core type
-			continue
-		}
-		renamed, err := withFinalTypeNameWithServer(ctx, dag, typeDef, depName)
-		if err != nil {
-			return typeDef, err
-		}
-		if _, ok, err := mod.Deps.ModTypeFor(ctx, renamed.Self()); err != nil || !ok {
-			return typeDef, err
-		}
-		return renamed, nil
-	}
-	return typeDef, nil
-}
-
-// hasNewNamingDep reports whether one of the module's dependency modules
-// names by the engine/naming rules.
-func (mod *Module) hasNewNamingDep() bool {
-	for _, dep := range mod.Deps.Mods() {
-		if depMod := dep.ModuleResult(); depMod.Self() != nil && !depMod.Self().Namer().Legacy() {
-			return true
-		}
-	}
-	return false
-}
-
-// typeDefNames returns the name and original name of an object, interface
-// or enum typedef.
-func typeDefNames(td *TypeDef) (name, originalName string) {
-	switch {
-	case td == nil:
-	case td.Kind == TypeDefKindObject && td.AsObject.Valid:
-		return td.AsObject.Value.Self().Name, td.AsObject.Value.Self().OriginalName
-	case td.Kind == TypeDefKindInterface && td.AsInterface.Valid:
-		return td.AsInterface.Value.Self().Name, td.AsInterface.Value.Self().OriginalName
-	case td.Kind == TypeDefKindEnum && td.AsEnum.Valid:
-		return td.AsEnum.Value.Self().Name, td.AsEnum.Value.Self().OriginalName
-	}
-	return "", ""
-}
-
-// typeDefSourceModuleName returns the module that defines an object,
-// interface or enum typedef, or "" for a core type.
-func typeDefSourceModuleName(td *TypeDef) string {
-	switch {
-	case td.Kind == TypeDefKindObject && td.AsObject.Valid:
-		return td.AsObject.Value.Self().SourceModuleName
-	case td.Kind == TypeDefKindInterface && td.AsInterface.Valid:
-		return td.AsInterface.Value.Self().SourceModuleName
-	case td.Kind == TypeDefKindEnum && td.AsEnum.Valid:
-		return td.AsEnum.Value.Self().SourceModuleName
-	}
-	return ""
-}
-
 // prefix the given typedef (and any recursively referenced typedefs) with this
 // module's name/path for any objects
 //
@@ -1832,14 +1729,6 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, modPath string, typeDef
 			}
 		}
 		return updated, nil
-	}
-
-	switch typeDef.Self().Kind {
-	case TypeDefKindObject, TypeDefKindInterface, TypeDefKindEnum:
-		typeDef, err = mod.depTypeReference(ctx, dag, typeDef)
-		if err != nil {
-			return typeDef, err
-		}
 	}
 
 	switch typeDef.Self().Kind {
