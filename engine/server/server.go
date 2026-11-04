@@ -181,9 +181,9 @@ type Server struct {
 
 	// wcprofSpanCount declares, per trace, how many engine spans the engine emitted
 	// — the producer half of the wcprof completeness checksum, so the
-	// loader can refuse a trace that silently dropped a leaf span. Registered on
-	// each session-owned tracer provider so nested-client spans count into the
-	// same trace.
+	// loader can refuse a trace that silently dropped a leaf span. Each
+	// session-owned tracer provider marks into it while wcprof records, so
+	// nested-client spans count into the same trace.
 	wcprofSpanCount *wcprofSpanCounter
 
 	// armed is the CPU profile armed for a phase's next run, if any

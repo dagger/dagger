@@ -198,6 +198,8 @@ func engineEventsEngine(ctx context.Context, t *testctx.T, c *dagger.Client, clo
 // the sessions reported retained. The parts the first session's spans
 // reported for an entry are its complete parts: a later hit on it reports the
 // same, in the same process and after the restart.
+//
+//nolint:gocyclo // One check per event kind and per span the Cloud receives; splitting them would hide that they describe one session.
 func (ClientSuite) TestEngineEventsToCloud(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	cloud := newTelemetrySplitCloud(t, c)
@@ -376,6 +378,13 @@ func (ClientSuite) TestEngineEventsToCloud(ctx context.Context, t *testctx.T) {
 	require.True(t, readReported, "the first process reports a read of an entry its first session's spans name")
 
 	requireSessionCacheSpanCounts(t, spans)
+
+	// These engines don't record with wcprof, so no span is marked or counted.
+	for _, span := range spans {
+		require.NotContains(t, span.Attrs, telemetryattrs.WcprofEngineSpanAttr, "span %s", span.SpanID)
+		_, counted := span.attr(telemetryattrs.WcprofSessionSpanCountAttr)
+		require.False(t, counted, "span %s", span.SpanID)
+	}
 }
 
 // sharedTraceScript runs four sessions of telemetry-session, in two traces,
@@ -426,11 +435,12 @@ func randomHex(t *testctx.T, n int) string {
 // after the other, each session's wcprof count covers the spans it started,
 // and together they cover the trace. Overlapping, A's wcprof count is the
 // whole trace's, B's included, as before; B's session end still arrives, with
-// its own cache span count and no wcprof count.
+// its own cache span count and no wcprof count. The engine records with wcprof,
+// since it counts only then.
 func (ClientSuite) TestCacheSpanCountsPerSessionInSharedTrace(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	cloud := newTelemetrySplitCloud(t, c)
-	engine, err := devEngineContainerAsService(telemetrySplitEngine(c, devEngineContainer(c), cloud)).Start(ctx)
+	engine, err := devEngineContainerAsService(telemetrySplitEngine(c, devEngineContainer(c), cloud, "--wcprof")).Start(ctx)
 	require.NoError(t, err)
 
 	thisRepoPath, err := filepath.Abs("../..")

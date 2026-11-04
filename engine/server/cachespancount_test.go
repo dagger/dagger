@@ -133,12 +133,13 @@ func cacheSpanTestSession(t *testing.T, id string, traceID trace.TraceID, wcprof
 		cacheSpans:         &cacheSpanCounter{},
 		wcprofTraceID:      traceID,
 		wcprofRootSpanID:   trace.SpanID{1},
+		wcprofEnabled:      true,
 	}
 	sess.clientRecords = map[string]*clientRecord{
 		sess.mainClientCallerID: {clientID: sess.mainClientCallerID, clientMetadata: &engine.ClientMetadata{SessionID: id, ClientID: sess.mainClientCallerID}},
 	}
 	sess.tracerProvider = sdktrace.NewTracerProvider(
-		sdktrace.WithSpanProcessor(wcprof),
+		sdktrace.WithSpanProcessor(wcprofSpanMarker{counter: wcprof, sess: sess}),
 		sdktrace.WithSpanProcessor(sess.cacheSpans),
 		sdktrace.WithSpanProcessor(telemetryOriginSpanProcessor{sessionID: id}),
 		sdktrace.WithSpanProcessor(rec),

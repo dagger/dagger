@@ -10,6 +10,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/dagger/dagger/engine/telemetryattrs"
+	"github.com/dagger/dagger/engine/wcprof"
 )
 
 // wcprofSessionCompleteSpanName is the name of the session-teardown count carrier
@@ -24,12 +25,15 @@ const wcprofSessionCompleteSpanName = "wcprof.session_complete"
 // DECLARES how many spans it emitted and the loader refuses a trace that received
 // fewer.
 //
-// It is an sdktrace.SpanProcessor registered on the session-owned tracer
-// provider, so the per-trace count accumulates across the whole nested-client
-// tree. At span creation OnStart (a) marks the span WcprofEngineSpanAttr — the
-// counted population, which lets the loader exclude CLI-shell and
-// otelhttp/buildkit spans the engine never counts — and (b) increments the
-// trace's count.
+// It counts only while wcprof records: engine-global recording, or a session that
+// opted in. Other spans get no mark and no count, so a trace nothing recorded
+// declares nothing and the loader reports its completeness as unknown.
+//
+// Each session-owned tracer provider gets a wcprofSpanMarker on this counter, so
+// the per-trace count accumulates across the whole nested-client tree. At span
+// creation the marker (a) marks the span WcprofEngineSpanAttr — the counted
+// population, which lets the loader exclude CLI-shell and otelhttp/buildkit spans
+// the engine never counts — and (b) increments the trace's count.
 //
 // The total is declared ONCE, at session teardown: removeDaggerSession drains
 // requests and background runtimes and completes cleanup (so no more engine
@@ -41,7 +45,7 @@ const wcprofSessionCompleteSpanName = "wcprof.session_complete"
 // post-query async padding) shows up as received < declared and is caught. Reap
 // then drops the per-trace entry, bounding the map to live traces.
 //
-// The carrier must not be counted in the total it carries: OnStart skips the span
+// The carrier must not be counted in the total it carries: the marker skips the span
 // named wcprofSessionCompleteSpanName (no mark, no increment), so it is excluded
 // from both the declared count and the loader's received tally.
 //
@@ -60,7 +64,17 @@ func newWcprofSpanCounter() *wcprofSpanCounter {
 	return &wcprofSpanCounter{counts: map[trace.TraceID]int{}}
 }
 
-func (c *wcprofSpanCounter) OnStart(_ context.Context, s sdktrace.ReadWriteSpan) {
+// wcprofSpanMarker is the sdktrace.SpanProcessor that marks and counts a session's
+// spans while wcprof records.
+type wcprofSpanMarker struct {
+	counter *wcprofSpanCounter
+	sess    *daggerSession
+}
+
+func (m wcprofSpanMarker) OnStart(_ context.Context, s sdktrace.ReadWriteSpan) {
+	if !wcprof.GloballyEnabled() && !m.sess.wcprofEnabled {
+		return
+	}
 	tid := s.SpanContext().TraceID()
 	if !tid.IsValid() {
 		return
@@ -72,14 +86,14 @@ func (c *wcprofSpanCounter) OnStart(_ context.Context, s sdktrace.ReadWriteSpan)
 	}
 	// Mark the engine population (one cheap bool attr); the loader counts these.
 	s.SetAttributes(attribute.Bool(telemetryattrs.WcprofEngineSpanAttr, true))
-	c.mu.Lock()
-	c.counts[tid]++
-	c.mu.Unlock()
+	m.counter.mu.Lock()
+	m.counter.counts[tid]++
+	m.counter.mu.Unlock()
 }
 
-func (c *wcprofSpanCounter) OnEnd(sdktrace.ReadOnlySpan)      {}
-func (c *wcprofSpanCounter) Shutdown(context.Context) error   { return nil }
-func (c *wcprofSpanCounter) ForceFlush(context.Context) error { return nil }
+func (wcprofSpanMarker) OnEnd(sdktrace.ReadOnlySpan)      {}
+func (wcprofSpanMarker) Shutdown(context.Context) error   { return nil }
+func (wcprofSpanMarker) ForceFlush(context.Context) error { return nil }
 
 // Final returns the current engine span total for tid WITHOUT reaping it. The
 // session-teardown handler calls it once span emission for the trace has quiesced
