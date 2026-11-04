@@ -1554,6 +1554,16 @@ func (s *moduleSourceSchema) loadEntrypointSources(ctx context.Context, src *cor
 	if err != nil {
 		return fail(err)
 	}
+	// Evaluating sources type-checks the whole entrypoint, so the schema holds
+	// the dependencies the rest of it calls, such as dagger/go for a Go
+	// module's dispatch.
+	for _, depSrc := range src.Dependencies {
+		var depMod dagql.ObjectResult[*core.Module]
+		if err := dag.Select(ctx, depSrc, &depMod, dagql.Selector{Field: "asModule"}); err != nil {
+			return fail(fmt.Errorf("load entrypoint dependency: %w", err))
+		}
+		deps = deps.Append(core.NewUserMod(depMod))
+	}
 	schemaFile, err := deps.SchemaIntrospectionJSONFileForModule(ctx)
 	if err != nil {
 		return fail(fmt.Errorf("get entrypoint schema: %w", err))
