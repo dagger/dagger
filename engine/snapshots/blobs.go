@@ -254,6 +254,10 @@ func (cm *snapshotManager) ensureExportBlob(
 		diffStart := time.Now()
 		diffCtx, op := wcprof.BeginOp(ctx, wcprof.OpKindIO, "snapshot.export.diff", wcprof.OpOpts{Start: diffStart})
 		diffOp = op
+		if op != nil {
+			// The snapshot diffed: its blob is the op's ident, once known.
+			wcprof.Fact(diffCtx, op.ID(), "snapshot:"+ref.SnapshotID(), 0)
+		}
 		var desc ocispecs.Descriptor
 		var enableOverlay, fallback, logWarnOnErr bool
 		if forceOvlStr := os.Getenv("BUILDKIT_DEBUG_FORCE_OVERLAY_DIFF"); forceOvlStr != "" {
