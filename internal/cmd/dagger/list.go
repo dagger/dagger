@@ -130,35 +130,41 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args, raw
 	help, _ := helpFlag(cmd, rawCommandArgs)
 	narrow := !helpCommand && !completing && !help
 	return withDiscovery("Load "+cmd.Name()+" filters", params, func(ctx context.Context, ec *client.Client) error {
-		dag := ec.Dagger()
-		workspaceID, err := core.NewQuery(dag).CurrentWorkspace().ID(ctx)
+		return loadCommandArtifactFilters(ctx, ec.Dagger(), cmd, rawCommandArgs, narrow)
+	})
+}
+
+// loadCommandArtifactFilters registers cmd's flags for the workspace's
+// artifacts. When narrow, a command line that selects modules by flag gets
+// only the flags it can use.
+func loadCommandArtifactFilters(ctx context.Context, dag *dagger.Client, cmd *cobra.Command, rawCommandArgs []string, narrow bool) error {
+	workspaceID, err := core.NewQuery(dag).CurrentWorkspace().ID(ctx)
+	if err != nil {
+		return err
+	}
+	ws := core.Ref[*core.Workspace](core.NewQuery(dag), workspaceID)
+	// A command line that selects modules by flag selects nothing outside
+	// them, so it needs only their flags, and the flags of the modules
+	// that name theirs.
+	var include []string
+	if narrow {
+		modules, err := workspaceModuleNames(ctx, ws)
 		if err != nil {
 			return err
 		}
-		ws := core.Ref[*core.Workspace](core.NewQuery(dag), workspaceID)
-		// A command line that selects modules by flag selects nothing outside
-		// them, so it needs only their flags, and the flags of the modules
-		// that name theirs.
-		var include []string
-		if narrow {
-			modules, err := workspaceModuleNames(ctx, ws)
-			if err != nil {
-				return err
-			}
-			if selected := artifactFlagModules(cmd, rawCommandArgs, modules); selected != nil {
-				include = artifactNamingModules(selected, modules)
-			}
+		if selected := artifactFlagModules(cmd, rawCommandArgs, modules); selected != nil {
+			include = artifactNamingModules(selected, modules)
 		}
-		if err := registerCommandArtifactFilters(ctx, dag, cmd, ws, include); err != nil {
-			return err
-		}
-		if include != nil && !acceptsArtifactArgs(cmd, rawCommandArgs) {
-			// Cobra rejects the command line with the command's usage, or
-			// another module's flag makes it valid: register them all.
-			return registerCommandArtifactFilters(ctx, dag, cmd, ws, nil)
-		}
-		return nil
-	})
+	}
+	if err := registerCommandArtifactFilters(ctx, dag, cmd, ws, include); err != nil {
+		return err
+	}
+	if include != nil && !acceptsArtifactArgs(cmd, rawCommandArgs) {
+		// Cobra rejects the command line with the command's usage, or
+		// another module's flag makes it valid: register them all.
+		return registerCommandArtifactFilters(ctx, dag, cmd, ws, nil)
+	}
+	return nil
 }
 
 // registerCommandArtifactFilters registers cmd's flags for the artifacts of
