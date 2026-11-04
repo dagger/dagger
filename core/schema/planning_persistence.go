@@ -6,6 +6,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 // keptFromContent keeps a planning field's results past their session when
@@ -52,7 +53,8 @@ func keptExpansion[R any](ctx context.Context, resolve func(context.Context) (R,
 	if err != nil {
 		return result, err
 	}
-	if scopes.SessionBound() != "" {
+	if bound := scopes.SessionBound(); bound != "" {
+		slog.Debug("listing not kept past its session", "boundBy", bound)
 		dagql.DeclinePersistence(ctx)
 	}
 	dagql.ExpireBy(ctx, scopes.ExpiresAtUnix())

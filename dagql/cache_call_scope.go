@@ -33,8 +33,9 @@ func WithCallScopes(ctx context.Context) (context.Context, *CallScopes) {
 	return context.WithValue(ctx, callScopesKey{}, scopes), scopes
 }
 
-// SessionBound returns the field of the first recorded call that a later
-// session would make again, or "" when there was none.
+// SessionBound names the first recorded call that a later session would
+// make again, as Type.field when its receiver type is known, or returns ""
+// when there was none.
 func (s *CallScopes) SessionBound() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -57,6 +58,9 @@ func (s *CallScopes) record(req *CallRequest) {
 	defer s.mu.Unlock()
 	if s.bound == "" {
 		s.bound = req.Field
+		if req.ReceiverTypeName != "" {
+			s.bound = req.ReceiverTypeName + "." + req.Field
+		}
 	}
 }
 
