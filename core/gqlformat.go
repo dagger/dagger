@@ -55,10 +55,10 @@ var IdentifierNamingView dagql.ViewFilter = AfterVersion(IdentifierNamingVersion
 // arguments, enum members) into schema names, and schema names into CLI
 // names.
 //
-// A Namer is selected by the engine version of the module whose names it
-// produces: engine/naming with that version's dictionary from
+// For GraphQL names, a Namer is selected by the module's engine version:
+// engine/naming with that version's dictionary from
 // IdentifierNamingVersion on, and the legacy strcase rules before it. The
-// zero Namer is the legacy one.
+// zero Namer is the legacy one. Artifact addresses always use LatestNamer.
 type Namer struct {
 	// dict is the naming dictionary, or nil for the legacy strcase rules.
 	dict *naming.Dictionary
@@ -433,14 +433,10 @@ func FieldNameCandidates(name string) []string {
 	return []string{latest, legacy}
 }
 
-// SameCLIName reports whether two names are the same once spelled the CLI
-// way (kebab-case) by the latest or the legacy naming rules: "myMod",
-// "my-mod" and "MyMod" are the same module. Comparisons of names whose
-// module, and so naming rules, aren't known use it.
+// SameCLIName compares address/module keys using the current CLI spelling,
+// independently of the module's GraphQL naming view.
 func SameCLIName(a, b string) bool {
-	return a == b ||
-		LatestNamer.CLIName(a) == LatestNamer.CLIName(b) ||
-		LegacyNamer.CLIName(a) == LegacyNamer.CLIName(b)
+	return a == b || LatestNamer.CLIName(a) == LatestNamer.CLIName(b)
 }
 
 // anyNamerMatches reports whether name, in any casing, normalizes to

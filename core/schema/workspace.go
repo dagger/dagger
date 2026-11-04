@@ -4862,10 +4862,10 @@ func matchWorkspaceInclude(ctx context.Context, node *core.ModTreeNode, include 
 	if err != nil || match {
 		return match, err
 	}
-	if match, err := matchWorkspaceIncludePath(ctx, node.Namer(), node.Path(), include); err != nil || match {
+	if match, err := matchWorkspaceIncludePath(ctx, core.LatestNamer, node.Path(), include); err != nil || match {
 		return match, err
 	}
-	return matchWorkspaceIncludePath(ctx, node.Namer(), node.CommandPath(), include)
+	return matchWorkspaceIncludePath(ctx, core.LatestNamer, node.CommandPath(), include)
 }
 
 // withWorkspaceClientContext stamps the workspace owner's immutable client

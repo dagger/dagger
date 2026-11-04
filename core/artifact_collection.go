@@ -767,9 +767,9 @@ func walkArtifactNodes(ctx context.Context, node *ModTreeNode, visit func(*ModTr
 		return err
 	}
 	if members != nil {
-		// The path segments spell the node's path, by its module's rules (see
-		// ModTreeNode.CLIPath).
-		namer := node.Namer()
+		// Artifact dimensions use current CLI spelling, even when their
+		// backing collection's GraphQL names belong to an older view.
+		namer := LatestNamer
 		path := []string{}
 		parent := node
 		for parent.Parent != nil && parent.CollectionDimension == nil {
@@ -782,9 +782,7 @@ func walkArtifactNodes(ctx context.Context, node *ModTreeNode, visit func(*ModTr
 			prefix = parent.CollectionDimension.Identifier
 		}
 		identifier := strings.Join(append([]string{prefix}, path...), "/")
-		// The namespaced name keeps short names unique across modules. It's
-		// spelled by the module's rules, like the identifier, so a legacy
-		// module's selectors keep their names (k-8-s-cluster).
+		// The namespaced current spelling keeps short names unique across modules.
 		itemType := members.Get.ReturnType.Self().AsObject.Value.Self().Name
 		dim := &ArtifactDimension{
 			Kind: "COLLECTION", CollectionType: obj.Name,

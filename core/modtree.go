@@ -336,8 +336,8 @@ func NewModTreePath(s string) ModTreePath {
 	return ModTreePath(strings.Split(s, ":"))
 }
 
-// CliCase spells each segment the CLI way (kebab-case), by the naming rules
-// of the module the path belongs to.
+// CliCase spells each segment the CLI way (kebab-case) with the supplied
+// rules. Artifact address callers always use LatestNamer.
 func (p ModTreePath) CliCase(namer Namer) []string {
 	cliCase := make([]string, len(p))
 	for i := range p {
@@ -406,7 +406,7 @@ func (node *ModTreeNode) Match(ctx context.Context, patterns []string) (bool, er
 	if len(patterns) == 0 {
 		return true, nil
 	}
-	namer := node.Namer()
+	namer := LatestNamer
 	for _, pattern := range patterns {
 		if match, err := node.Path().Glob(ctx, namer, pattern); err != nil {
 			return false, err
@@ -421,28 +421,15 @@ func (node *ModTreeNode) Match(ctx context.Context, patterns []string) (bool, er
 	return false, nil
 }
 
-// Namer is the naming rules of the module that defines the node, which spell
-// its CLI path.
-func (node *ModTreeNode) Namer() Namer {
-	for n := node; n != nil; n = n.Parent {
-		if mod := n.OriginalModule.Self(); mod != nil {
-			return mod.Namer()
-		}
-		if mod := n.Module.Self(); mod != nil {
-			return mod.Namer()
-		}
-	}
-	return LatestNamer
-}
-
-// CLIPath is the node's path, spelled the CLI way.
+// CLIPath is the node's address path in current CLI spelling. Node.Name and
+// Path retain the backing GraphQL names for execution in the module's view.
 func (node *ModTreeNode) CLIPath() []string {
-	return node.Path().CliCase(node.Namer())
+	return node.Path().CliCase(LatestNamer)
 }
 
-// CommandCLIPath is the node's command path, spelled the CLI way.
+// CommandCLIPath is the node's command path in current CLI spelling.
 func (node *ModTreeNode) CommandCLIPath() []string {
-	return node.CommandPath().CliCase(node.Namer())
+	return node.CommandPath().CliCase(LatestNamer)
 }
 
 func (node *ModTreeNode) PathString() string {

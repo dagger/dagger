@@ -721,6 +721,33 @@ func TestMatchWorkspaceInclude(t *testing.T) {
 	})
 }
 
+func TestMatchWorkspaceIncludeCurrentSpelling(t *testing.T) {
+	ctx := t.Context()
+	mod, err := dagql.NewResultForCall(&core.Module{SourceOverrides: &core.SourceOverrides{EngineVersion: "v1.0.0-beta.20"}}, &dagql.ResultCall{})
+	require.NoError(t, err)
+	node := modTreeNode("e2e-tests", "k8SCluster", "e2ETest")
+	node.OriginalModule = dagql.ObjectResult[*core.Module]{Result: mod}
+	for _, tc := range []struct {
+		pattern string
+		want    bool
+	}{
+		{"e2e-tests:k8s-cluster:e2e-test", true},
+		{"e2e-tests:k8s-cluster", true},
+		{"e2e-tests:*:e2e-*", true},
+		{"{e2e-tests,other}:k8s-cluster", true},
+		{"e-2-e-tests:k-8-s-cluster:e-2-e-test", false},
+	} {
+		match, err := matchWorkspaceInclude(ctx, node, []string{tc.pattern})
+		require.NoError(t, err)
+		require.Equal(t, tc.want, match, tc.pattern)
+	}
+	node.Parent.Parent.WorkspaceMain = true
+	match, err := matchWorkspaceInclude(ctx, node, []string{"k8s-cluster:e2e-test"})
+	require.NoError(t, err)
+	require.True(t, match)
+	require.Equal(t, "e2ETest", node.Name, "include matching does not rename GraphQL fields")
+}
+
 func TestWorkspaceConfigWithCompatFallback(t *testing.T) {
 	ctx := context.Background()
 

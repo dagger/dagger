@@ -600,8 +600,9 @@ func (a *Artifacts) Types() []string {
 
 func (a *Artifacts) withPathFilter(matches func(*Artifact) bool, patterns []string) *Artifacts {
 	selected := a.filter(matches)
-	// A question mark is a path glob here, but starts the query in a DAG link.
-	if a.Selector.Paths == nil && !slices.ContainsFunc(patterns, func(pattern string) bool { return strings.Contains(pattern, "?") }) {
+	// A question mark starts a URI query, and an empty URI path means all
+	// paths. Materialize either filter so replay cannot broaden the selection.
+	if a.Selector.Paths == nil && !slices.ContainsFunc(patterns, func(pattern string) bool { return pattern == "" || strings.Contains(pattern, "?") }) {
 		selected.Selector.Paths = patterns
 	} else {
 		selected.Selector.Paths = selected.exactPaths()
@@ -625,27 +626,15 @@ func (a *Artifacts) FilterPath(path []string) *Artifacts {
 // exactly. The qualified path with the module name also matches, so an
 // workspace main artifact answers to both its shorthand and its full path.
 func (a *Artifacts) FilterPattern(pattern string) (*Artifacts, error) {
-	patterns := artifactPatterns(pattern)
+	pattern = artifactPattern(pattern)
 	var matchErr error
 	selected := a.withPathFilter(func(artifact *Artifact) bool {
-		for _, pattern := range patterns {
-			match, err := artifact.matchesPattern(pattern)
-			if err != nil {
-				matchErr = err
-			}
-			if match {
-				return true
-			}
+		match, err := artifact.matchesPattern(pattern)
+		if err != nil {
+			matchErr = err
 		}
-		if !a.exact {
-			for _, pattern := range patterns {
-				if artifact.mayContainPath(pattern, true) {
-					return true
-				}
-			}
-		}
-		return false
-	}, patterns)
+		return match || !a.exact && artifact.mayContainPath(pattern, true)
+	}, []string{pattern})
 	if matchErr != nil {
 		return nil, matchErr
 	}
@@ -657,38 +646,22 @@ func (a *Artifacts) FilterPattern(pattern string) (*Artifacts, error) {
 	return selected, nil
 }
 
-// artifactPatterns normalizes a path pattern to CLI case, as artifact paths
-// are. Each module's paths are spelled by its own naming rules (see
-// ModTreeNode.CLIPath), so a pattern is normalized by both the legacy and the
-// latest rules, legacy first; the spellings are alternatives, and are only
-// both returned when they differ (E2ETest is e-2-e-test by the legacy rules,
-// e2e-test by the latest).
-func artifactPatterns(pattern string) []string {
-	legacy := artifactPattern(LegacyNamer, pattern)
-	latest := artifactPattern(LatestNamer, pattern)
-	if latest == legacy {
-		return []string{legacy}
-	}
-	return []string{legacy, latest}
-}
-
-func artifactPattern(namer Namer, pattern string) string {
+// artifactPattern spells a path pattern using the current CLI naming rules,
+// independently of the backing modules' GraphQL views. Explicit user glob
+// alternatives are preserved; no legacy alternatives are added.
+func artifactPattern(pattern string) string {
 	segments := strings.Split(pattern, "/")
 	for i, segment := range segments {
-		segments[i] = namer.CLIName(segment)
+		segments[i] = LatestNamer.CLIName(segment)
 	}
 	return strings.Join(segments, "/")
 }
 
-// IncludePatterns are the DAG address patterns with the same meaning as a
-// Workspace.artifacts include pattern: a literal path also selects its
-// children. See artifactPatterns for why there may be more than one.
+// IncludePatterns returns the canonical DAG address pattern with the same
+// meaning as a Workspace.artifacts include: a literal path also selects its
+// children. The slice shape is shared with callers combining several includes.
 func IncludePatterns(include string) []string {
-	patterns := artifactPatterns(strings.ReplaceAll(include, ":", "/"))
-	for i, pattern := range patterns {
-		patterns[i] = pattern + "/**"
-	}
-	return patterns
+	return []string{artifactPattern(strings.ReplaceAll(include, ":", "/")) + "/**"}
 }
 
 func (a *Artifact) matchesPattern(pattern string) (bool, error) {

@@ -560,19 +560,21 @@ the old strcase code byte for byte:
 - **Module-level naming** (`namespaceObject`, type and constructor lookups,
   validation) uses `Module.Namer()`, chosen by the module source's
   `engineVersion` (`ModuleSource.Namer`; a module entrypoint is served at the
-  engine's own version). Module tree CLI paths (checks, generators, artifacts)
-  use the namer of the module that declared the node, so a legacy dependency
-  keeps its old paths inside a new workspace.
+  engine's own version). Artifact paths and collection dimensions use the
+  current CLI naming rules regardless of the backing module's version; the
+  tree retains its original GraphQL names for dispatch.
 - **Mixed versions.** A dependency's types are installed with *its* rules, so
   a module at a different version may spell a reference differently
   (`HttpClient` vs `HTTPClient`). `namespaceTypeName` falls back to a
   dependency type whose name matches under either rule set
   (`depTypeReference`). Legacy modules skip core types in that fallback, so
   their schema doesn't change.
-- **Matching user input.** Addresses, include patterns and pre-load module
-  name matching (`FieldNameCandidates`, `SameCLIName`, `artifactPatterns`)
-  accept both the legacy and the new spelling, since they run before the
-  module's version is known.
+- **Matching user input.** Artifact addresses, include patterns and module
+  address keys use current CLI spelling (`artifactPattern`, `SameCLIName`),
+  with no implicit alternatives for earlier betas. Explicit glob unions are
+  preserved. `FieldNameCandidates` still bridges a selected address to the
+  actual GraphQL field name in the owning module's view; dispatch and schema
+  naming remain versioned.
 - **SDK runtime arguments.** SDK interface arguments keep their names across
   the cut: `introspectionJson` is spelled alike by strcase and by the new
   field convention.
@@ -895,11 +897,6 @@ Known gaps:
   predicts schema names with ports of strcase. It isn't wired in and runs
   without an engine connection; whoever wires it should resolve names through
   the engine like the runtimes do (see [Module runtimes](#module-runtimes)).
-- CLI naming follows the CLI's engine version, not each module's (see
-  [CLI](#cli)). For a legacy module whose name has digits or terms (`k8s`),
-  `dagger call` spells its collection selectors by the latest rules
-  (`--k8s-cluster`) while the engine's artifact dimensions, and so
-  `dagger list` and `check`, spell them by the module's (`--k-8-s-cluster`).
 - The in-repo Go module codegen (`cmd/codegen`) still names a module's own
   types, fields and arguments in its self-binding schema by strcase, so a Go
   module at the new rules that references a core type starting with an

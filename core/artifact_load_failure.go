@@ -31,17 +31,13 @@ func (a *Artifact) failedModule() string {
 	return a.Path[0]
 }
 
-// failedModuleNames are the spellings the failed module's artifacts could
-// have: its address name, by the latest naming rules, and by the legacy
-// ones when they differ (e-2-e-tests for e2e-tests). A module that failed to
-// load has no known engine version, so its rules aren't known.
+// failedModuleNames contains the failed module's canonical address name.
+// Artifact spelling does not depend on the module's API version, even when
+// loading failed before its schema was available.
 func (a *Artifact) failedModuleNames() []string {
 	module := a.failedModule()
 	if module == "" {
 		return nil
-	}
-	if legacy := LegacyNamer.CLIName(module); legacy != module {
-		return []string{module, legacy}
 	}
 	return []string{module}
 }
@@ -69,10 +65,8 @@ func (a *Artifact) mayContainPath(pattern string, glob bool) bool {
 				return true
 			}
 		}
-		// A main's shorthand path starts with any of its fields,
-		// which no other module's name can be, by either naming rules: a
-		// sibling's artifacts are spelled by its own (e-2-e-tests for a
-		// legacy e2e-tests).
+		// A main's shorthand path starts with any of its fields, except a
+		// sibling module's canonical address name.
 		if a.LoadFailure.Entrypoint && (isGlob || !slices.ContainsFunc(a.LoadFailure.Siblings, func(sibling string) bool { return SameCLIName(first, sibling) })) {
 			return true
 		}
@@ -106,7 +100,7 @@ func (a *Artifact) mayHaveDimension(id string, keys []string) bool {
 		// An unknown name of one of the module's collections.
 		return true
 	case slices.ContainsFunc(a.LoadFailure.Siblings, func(sibling string) bool {
-		return namedBy(id, sibling) || namedBy(id, LegacyNamer.CLIName(sibling))
+		return namedBy(id, LatestNamer.CLIName(sibling))
 	}):
 		// Another module's collection.
 		return false
@@ -123,10 +117,8 @@ func namedBy(name, module string) bool {
 	return name == module || strings.HasPrefix(name, module+"-")
 }
 
-// moduleKeysMatch reports whether any key of the module dimension names
-// module. Keys compare in their address form, kebab-case, by either naming
-// rules, so a module configured as my_mod answers to both my_mod and my-mod,
-// and e2e-tests to e-2-e-tests too.
+// moduleKeysMatch compares module keys in their current address spelling:
+// my_mod and my-mod name the same module, without legacy beta aliases.
 func moduleKeysMatch(keys []string, module string) bool {
 	return slices.ContainsFunc(keys, func(key string) bool { return SameCLIName(key, module) })
 }
