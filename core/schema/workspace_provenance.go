@@ -13,10 +13,15 @@ type provenancePathArgs struct {
 	Path  core.WorkspacePath
 	Kinds []string `default:"[]"`
 }
-type provenanceSelectionArgs struct {
-	Paths   []core.WorkspacePath        `default:"[]"`
-	Changes []dagql.ID[*core.Changeset] `default:"[]"`
-	Kinds   []string                    `default:"[]"`
+type provenancePathsArgs struct {
+	Paths []core.WorkspacePath
+	Kinds []string `default:"[]"`
+}
+
+type provenanceDiffFilterArgs struct {
+	Changes []dagql.ID[*core.Changeset]
+	Paths   []core.WorkspacePath `default:"[]"`
+	Kinds   []string             `default:"[]"`
 }
 
 type provenanceDiffArgs struct {
@@ -77,7 +82,7 @@ func installWorkspaceProvenance(srv *dagql.Server) {
 		}).Doc("Whether this artifact may depend on changed workspace paths.").WithInput(dagql.PerCallInput),
 	}.Install(srv)
 	dagql.Fields[*core.Artifacts]{
-		dagql.Func("filterAffected", func(ctx context.Context, a *core.Artifacts, args provenanceSelectionArgs) (*core.Artifacts, error) {
+		dagql.Func("filterAffectedByDiff", func(ctx context.Context, a *core.Artifacts, args provenanceDiffFilterArgs) (*core.Artifacts, error) {
 			if err := provenance.ValidateKinds(args.Kinds); err != nil {
 				return nil, err
 			}
@@ -104,41 +109,35 @@ func installWorkspaceProvenance(srv *dagql.Server) {
 				changed.Modified = append(changed.Modified, paths.Modified...)
 				changed.AllRemoved = append(changed.AllRemoved, paths.AllRemoved...)
 			}
-			if len(changed.Added)+len(changed.Modified)+len(changed.AllRemoved) == 0 && (len(args.Changes) > 0 || len(args.Paths) == 0) {
+			if len(changed.Added)+len(changed.Modified)+len(changed.AllRemoved) == 0 {
 				return a.FilterTypes([]string{}, false), nil
 			}
 			return filterAffected(ctx, a, func(p *core.WorkspaceProvenance) (bool, error) {
-				if len(args.Changes) == 0 && len(args.Paths) > 0 {
-					for _, scope := range args.Paths {
-						match, err := p.AffectedByPath(string(scope), args.Kinds)
-						if err != nil || match {
-							return match, err
-						}
-					}
-					return false, nil
-				}
 				return p.AffectedByChangedPaths(changed, args.Paths, args.Kinds)
 			})
-		}).Doc("Keep artifacts affected by source paths or changesets. Paths limit changed paths when changesets are provided. Unknown inputs stay selected.").WithInput(dagql.PerCallInput),
-		dagql.Func("filterAffectedByPath", func(ctx context.Context, a *core.Artifacts, args provenancePathArgs) (*core.Artifacts, error) {
-			if _, err := provenance.Path(string(args.Path)); err != nil {
-				return nil, err
-			}
+		}).Doc("Keep artifacts that may depend on paths changed in any listed changeset. Paths limit changed paths before matching dependencies. Unknown inputs stay selected for nonempty changes.").WithInput(dagql.PerCallInput),
+		dagql.Func("filterAffectedByPath", func(ctx context.Context, a *core.Artifacts, args provenancePathsArgs) (*core.Artifacts, error) {
 			if err := provenance.ValidateKinds(args.Kinds); err != nil {
 				return nil, err
 			}
-			return filterAffected(ctx, a, func(p *core.WorkspaceProvenance) (bool, error) {
-				return p.AffectedByPath(string(args.Path), args.Kinds)
-			})
-		}).Doc("Keep artifacts that may depend on this workspace-root path. Enumerates collections but does not run artifact leaves.").WithInput(dagql.PerCallInput),
-		dagql.Func("filterAffectedByDiff", func(ctx context.Context, a *core.Artifacts, args provenanceDiffArgs) (*core.Artifacts, error) {
-			if err := provenance.ValidateKinds(args.Kinds); err != nil {
-				return nil, err
+			for _, path := range args.Paths {
+				if _, err := provenance.Path(string(path)); err != nil {
+					return nil, err
+				}
+			}
+			if len(args.Paths) == 0 {
+				return a.FilterTypes([]string{}, false), nil
 			}
 			return filterAffected(ctx, a, func(p *core.WorkspaceProvenance) (bool, error) {
-				return args.matches(ctx, p)
+				for _, path := range args.Paths {
+					match, err := p.AffectedByPath(string(path), args.Kinds)
+					if err != nil || match {
+						return match, err
+					}
+				}
+				return false, nil
 			})
-		}).Doc("Keep artifacts that may depend on changed workspace paths. Unknown inputs stay selected.").WithInput(dagql.PerCallInput),
+		}).Doc("Keep artifacts that may depend on any listed workspace-root path. Enumerates collections but does not run artifact leaves.").WithInput(dagql.PerCallInput),
 	}.Install(srv)
 }
 

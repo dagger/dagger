@@ -84,7 +84,7 @@ type Probe {
 			}
 		}](c, t, `query($ws: ID!, $check: String!, $path: WorkspacePath!) {
  node(id: $ws) { ... on Workspace { artifacts(include: [$check]) {
-  filterAffectedByPath(path: $path) { items { uri } }
+  filterAffectedByPath(paths: [$path]) { items { uri } }
  } } }
 }`, &testutil.QueryOptions{Variables: map[string]any{"ws": ws, "check": check, "path": path}})
 		require.NoError(t, err)
@@ -96,7 +96,7 @@ type Probe {
 		t.Helper()
 		items, err := core.Ref[*core.Workspace](core.NewQuery(c), ws).
 			Artifacts(core.WorkspaceArtifactsOpts{Include: []string{"first"}}).
-			FilterAffectedByDiff(source.Changes(source)).Items(ctx)
+			FilterAffectedByDiff([]*core.Changeset{source.Changes(source)}).Items(ctx)
 		require.NoError(t, err)
 		require.LessOrEqual(t, len(items), 1)
 		return len(items) == 1

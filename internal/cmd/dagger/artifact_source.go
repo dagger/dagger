@@ -59,7 +59,12 @@ func filterArtifactsBySource(ctx context.Context, dag *dagger.Client, ws *core.W
 			changes = append(changes, core.Ref[*core.Changeset](query, id))
 		}
 	}
-	id, err := selection.FilterAffected(core.ArtifactsFilterAffectedOpts{Paths: paths, Changes: changes}).ID(ctx)
+	if uncommitted || len(commits) > 0 {
+		selection = selection.FilterAffectedByDiff(changes, core.ArtifactsFilterAffectedByDiffOpts{Paths: paths})
+	} else {
+		selection = selection.FilterAffectedByPath(paths)
+	}
+	id, err := selection.ID(ctx)
 	if err != nil {
 		return nil, err
 	}

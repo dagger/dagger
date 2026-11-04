@@ -74,6 +74,7 @@ type Probe {
 	require.ElementsMatch(t, all, list(repo, "--commit", "HEAD"), "cold checks remain selected")
 	run(repo, "check", "--generated=false", "--path", "/")
 	require.ElementsMatch(t, []string{"dag+check://?check=staged"}, list(repo, "--commit", "HEAD"))
+	require.ElementsMatch(t, []string{"dag+check://?check=staged", "dag+check://?check=other"}, list(repo, "--path", "src/staged.txt", "--path", "other.txt"))
 	require.Empty(t, list(repo, "--uncommitted"))
 
 	write("README.md", "documentation change\n")
