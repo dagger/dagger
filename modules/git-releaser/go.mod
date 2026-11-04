@@ -1,6 +1,6 @@
 module dagger/git-releaser
 
-go 1.26.1
+go 1.26.6
 
 require (
 	dagger.io/dagger v1.0.0-beta.24

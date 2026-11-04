@@ -1,6 +1,6 @@
 module dagger/gh
 
-go 1.26.1
+go 1.26.6
 
 replace go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc => go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.16.0
 

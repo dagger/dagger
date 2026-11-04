@@ -1,6 +1,6 @@
 module dagger/tla-check
 
-go 1.26.5
+go 1.26.6
 
 require (
 	dagger.io/dagger v1.0.0-beta.24
