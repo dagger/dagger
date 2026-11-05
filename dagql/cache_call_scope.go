@@ -76,6 +76,19 @@ func (frame *ResultCall) SessionBound() bool {
 	return frame != nil && sessionBoundInputs(frame.ImplicitInputs)
 }
 
+// sessionScopedInputs names the implicit inputs, besides the per-call,
+// per-session and per-client ones, that key a call to its session whenever
+// they have a value (see SessionScopedInput).
+var sessionScopedInputs sync.Map
+
+// SessionScopedInput declares that the implicit input named name keys a call
+// to its session, or to one of its clients or calls, whenever its value isn't
+// empty: a later session gives the call another key. A call with such an
+// input is one CallScopes reports as session-bound.
+func SessionScopedInput(name string) {
+	sessionScopedInputs.Store(name, struct{}{})
+}
+
 func sessionBoundInputs(inputs []*ResultCallArg) bool {
 	return slices.ContainsFunc(inputs, func(input *ResultCallArg) bool {
 		if input == nil {
@@ -84,6 +97,9 @@ func sessionBoundInputs(inputs []*ResultCallArg) bool {
 		switch input.Name {
 		case PerCallInput.Name, PerSessionInput.Name, PerClientInput.Name:
 			return true
+		}
+		if _, scoped := sessionScopedInputs.Load(input.Name); scoped {
+			return input.Value == nil || input.Value.Kind != ResultCallLiteralKindString || input.Value.StringValue != ""
 		}
 		return false
 	})

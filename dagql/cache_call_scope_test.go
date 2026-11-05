@@ -101,3 +101,26 @@ func TestCallScopesLimitTheCallersExpiry(t *testing.T) {
 	plain := s.call(s.ctx, "standing-for-nothing", false, false, 0, nil)
 	require.Zero(t, s.expiresAt(plain))
 }
+
+// An implicit input declared session-scoped binds its call to the session
+// whenever it has a value, as a tag lookup's scope does; empty, as for a
+// digest, it doesn't.
+func TestCallScopesRecordDeclaredSessionScopedInputs(t *testing.T) {
+	s := newCallScopesTest(t)
+	const name = "test-session-scope"
+	SessionScopedInput(name)
+	scoped := func(field, value string) string {
+		ctx, scopes := WithCallScopes(s.ctx)
+		frame := &ResultCall{Kind: ResultCallKindField, Field: field, Type: NewResultCallType(String("").Type())}
+		arg, err := resultCallArgFromInput(ctx, name, NewString(value), false)
+		require.NoError(t, err)
+		frame.ImplicitInputs = []*ResultCallArg{arg}
+		_, err = s.c.GetOrInitCall(ctx, s.session, s.srv, &CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+			return NewResultForCall(String(field), frame)
+		})
+		require.NoError(t, err)
+		return scopes.SessionBound()
+	}
+	require.Equal(t, "session-scoped", scoped("session-scoped", "session-1"))
+	require.Empty(t, scoped("unscoped", ""))
+}

@@ -1200,8 +1200,10 @@ func agentAddressScopedInput(input dagql.ImplicitInput) dagql.ImplicitInput {
 // gets a fresh key per call, except for a full SHA: it is immutable.
 func gitLockScopedInput(argName string) dagql.ImplicitInput {
 	perClient := gitLiveInput(dagql.PerClientInput)
+	name := "cachePerClientLock:" + argName
+	dagql.SessionScopedInput(name)
 	return dagql.ImplicitInput{
-		Name:        "cachePerClientLock:" + argName,
+		Name:        name,
 		PerCallWhen: perClient.PerCallWhen,
 		Resolver: func(ctx context.Context, args map[string]dagql.Input) (dagql.Input, error) {
 			if name, ok := args[argName].(dagql.String); ok {
