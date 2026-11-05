@@ -261,7 +261,7 @@ func (CommittedTypesSuite) TestMatchesTheBuiltDefinition(ctx context.Context, t 
 	require.NoError(t, err)
 	require.Contains(t, out, "hello")
 
-	const query = `{moduleSource(refString:"."){clientSchemaIntrospectionJSON{contents} asModule{description dependencies{name}}}}`
+	const query = `{moduleSource(refString:"."){clientSchemaIntrospectionJson{contents} asModule{description dependencies{name}}}}`
 	readOut, err := read.With(daggerQuery(query)).Stdout(ctx)
 	require.NoError(t, err)
 	builtOut, err := built.With(daggerQuery(query)).Stdout(ctx)
