@@ -310,7 +310,7 @@ func versionMutationSource(t *testing.T, caching *bool) (context.Context, *modul
 	if caching != nil {
 		config += fmt.Sprintf(`,"disableDefaultFunctionCaching":%t`, *caching)
 	}
-	_, err = s.initFromModConfig([]byte(config+"}"), src)
+	err = s.initFromModConfig([]byte(config+"}"), src)
 	require.NoError(t, err)
 	require.NoError(t, s.resolveModuleSourceVersions(ctx, src))
 	return ctx, s, src
@@ -332,11 +332,12 @@ func TestDangSourceVersionMutations(t *testing.T) {
 			require.Equal(t, fresh.DangVersion, got.DangVersion)
 			require.Equal(t, fresh.DisableDefaultFunctionCaching, got.DisableDefaultFunctionCaching)
 			require.Equal(t, "v0.21.9", got.ConfigEngineVersion)
-			if path == "b" {
+			switch path {
+			case "b":
 				require.Equal(t, engine.IdentifierCasingVersion, got.EngineVersion)
 				require.Equal(t, "2.0", got.DangVersion)
 				require.False(t, got.DisableDefaultFunctionCaching)
-			} else if path == "none" {
+			case "none":
 				require.Equal(t, "v0.21.9", got.EngineVersion)
 				require.False(t, got.DangVersionDeclared)
 			}
@@ -521,7 +522,7 @@ func TestDangVersionConfigProvenance(t *testing.T) {
 			data, err := modules.MarshalModuleConfigForFilename(cfg, "dagger.json")
 			require.NoError(t, err)
 			fresh := got.Clone()
-			_, err = s.initFromModConfig(data, fresh)
+			err = s.initFromModConfig(data, fresh)
 			require.NoError(t, err)
 			require.Empty(t, fresh.EngineVersionOverride)
 			require.NoError(t, s.resolveModuleSourceVersions(ctx, fresh))

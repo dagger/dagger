@@ -290,14 +290,3 @@ func parseEntrypointDangVersion(version string) (dang.Version, error) {
 	}
 	return v, nil
 }
-
-// entrypointDangVersion is parseEntrypointDangVersion for best-effort parses,
-// which fall back to dang.DefaultVersion; running the entrypoint reports an
-// invalid version.
-func entrypointDangVersion(version string) dang.Version {
-	v, err := parseEntrypointDangVersion(version)
-	if err != nil {
-		return dang.DefaultVersion
-	}
-	return v
-}

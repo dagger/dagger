@@ -1157,11 +1157,11 @@ func (s *moduleSourceSchema) workspaceModuleSource(
 }
 
 // set values in the given src using values read from the module config file
-// provided as bytes, and return the parsed config
-func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.ModuleSource) (*modules.ModuleConfigWithUserFields, error) {
+// provided as bytes
+func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.ModuleSource) error {
 	// sanity checks
 	if src.SourceRootSubpath == "" {
-		return nil, fmt.Errorf("source root path must be set")
+		return fmt.Errorf("source root path must be set")
 	}
 	if src.ConfigFilename == "" {
 		src.ConfigFilename = modules.Filename
@@ -1169,18 +1169,18 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 
 	modCfg, err := modules.ParseModuleConfigForFilename(configBytes, src.ConfigFilename)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	if modCfg.Blueprint != nil {
 		if modCfg.SDK != nil {
-			return nil, fmt.Errorf("blueprint and sdk can't both be set")
+			return fmt.Errorf("blueprint and sdk can't both be set")
 		}
 		if len(modCfg.Dependencies) != 0 {
-			return nil, fmt.Errorf("blueprint and dependencies can't both be set")
+			return fmt.Errorf("blueprint and dependencies can't both be set")
 		}
 		if modCfg.Source != "" {
-			return nil, fmt.Errorf("blueprint and source can't both be set")
+			return fmt.Errorf("blueprint and source can't both be set")
 		}
 	}
 
@@ -1255,7 +1255,7 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	switch {
 	case sdkSource == "" && modCfg.Source != "":
 		// invalid, can't have source when no sdk
-		return nil, fmt.Errorf("source path %q specified without sdk", modCfg.Source)
+		return fmt.Errorf("source path %q specified without sdk", modCfg.Source)
 	case sdkSource == "":
 		// skip setting source subpath when no sdk
 	case sdkSource != "" && modCfg.Source == "":
@@ -1264,11 +1264,11 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	case sdkSource != "" && modCfg.Source != "":
 		// sdk was set and source was too, get the full rel path under the context
 		if filepath.IsAbs(modCfg.Source) {
-			return nil, fmt.Errorf("source path %q is absolute", modCfg.Source)
+			return fmt.Errorf("source path %q is absolute", modCfg.Source)
 		}
 		sourceSubpath := filepath.Join(src.SourceRootSubpath, modCfg.Source)
 		if !filepath.IsLocal(sourceSubpath) {
-			return nil, fmt.Errorf("source path %q escapes context from source root %q", modCfg.Source, src.SourceRootSubpath)
+			return fmt.Errorf("source path %q escapes context from source root %q", modCfg.Source, src.SourceRootSubpath)
 		}
 		src.SourceSubpath = sourceSubpath
 	}
@@ -1277,11 +1277,11 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	// to being relative to the context dir
 	rebasedIncludes, err := rebasePatterns(modCfg.Include, src.SourceRootSubpath)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	src.RebasedIncludePaths = append(src.RebasedIncludePaths, rebasedIncludes...)
 
-	return modCfg, nil
+	return nil
 }
 
 func moduleSourceConfigFilename(src *core.ModuleSource) string {
@@ -1442,7 +1442,7 @@ func (s *moduleSourceSchema) loadConfiguredModuleSource(ctx context.Context, src
 	if err != nil {
 		return fmt.Errorf("read module config: %w", err)
 	}
-	_, err = s.initFromModConfig(configContents, src)
+	err = s.initFromModConfig(configContents, src)
 	if err != nil {
 		return err
 	}
