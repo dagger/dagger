@@ -278,11 +278,10 @@ func (build *Builder) goSDKContent(ctx context.Context) (*sdkContent, error) {
 		WithFile("/usr/local/bin/codegen", build.CodegenBinary()).
 		WithFile("/usr/local/bin/export-driver", exportDriver).
 		// The Go SDK module, which the engine loads for every module with the
-		// Go runtime, and dagger/go, which it builds every runtime with, as
-		// dagger/go builds a user's Go code: one graph of package builds and
-		// one cache.
+		// Go runtime. It depends on dagger/go by go-sdk's pin, and builds
+		// every runtime with it as dagger/go builds a user's Go code: one
+		// graph of package builds and one cache.
 		WithDirectory("/sdk/runtime", build.source.Directory("sdk/go/runtime")).
-		WithDirectory("/sdk/dagger-go", build.source.Directory("internal/daggergo")).
 		// this cache directory should match the module cache volume location in the engine's goSDK.base
 		WithDirectory("/go/pkg/mod", sdkCache.Directory("/go/pkg/mod")).
 		AsTarball(dagger.ContainerAsTarballOpts{

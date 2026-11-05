@@ -216,7 +216,7 @@ type GoSdk {
     let ws = bootstrapped.asWorkspace
     # What codegen type-checks the module's root package against: its
     # imports from other modules and the standard library, without tests.
-    let archives = goTool.module(ws, path: cleanPath(modSource.sourceSubpath), findUp: false).archives(ws, dependencies: true, packages: ["."], tests: false)
+    let archives = goTool.module(ws, path: cleanPath(modSource.sourceSubpath), findUp: false).archives(ws, dependencies: true, packages: ["."], noTests: true)
     withoutAccess(
       setup
         .withMountedDirectory(contextPath, bootstrapped)
