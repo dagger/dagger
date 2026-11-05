@@ -4865,8 +4865,8 @@ func BuildLegacyAsModuleArgs(
 // loadDependencyModules loads src's dependencies as modules, into the
 // schema they feed: the module's own (moduleDeps), or, when src lists them
 // as its entrypoint's own (ModuleSource.EntrypointOnlyDependencies), the
-// entrypoint's (entrypointDeps, otherwise nil), leaving the module's own
-// schema the core's alone.
+// entrypoint's (entrypointDeps), leaving the module's own schema the core's
+// alone. entrypointDeps is nil when the entrypoint has none of its own.
 func (s *moduleSourceSchema) loadDependencyModules(
 	ctx context.Context,
 	src dagql.ObjectResult[*core.ModuleSource],
@@ -4958,11 +4958,12 @@ func (s *moduleSourceSchema) loadDependencyModulesForEngineVersion(
 	if err != nil {
 		return nil, nil, err
 	}
-	deps := base
-	for _, depMod := range depMods {
-		deps = deps.Append(core.NewUserMod(depMod))
+	mods := make([]core.Mod, len(depMods))
+	for i, depMod := range depMods {
+		mods[i] = core.NewUserMod(depMod)
 	}
-	if src.Self().EntrypointOnlyDependencies {
+	deps := base.Append(mods...)
+	if src.Self().EntrypointOnlyDependencies && len(mods) > 0 {
 		return base, deps, nil
 	}
 	return deps, nil, nil

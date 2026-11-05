@@ -47,7 +47,8 @@ type Module struct {
 	// its entrypoint's own (ModuleSource.EntrypointOnlyDependencies), is the
 	// schema the entrypoint runs with: the core's and those dependencies.
 	// Deps then holds the core's alone, so the module's own code, its
-	// callers and its generated code don't see them. Nil otherwise.
+	// callers and its generated code don't see them. Nil otherwise, and when
+	// the entrypoint has no dependencies of its own.
 	EntrypointDeps *SchemaBuilder
 
 	// Runtime is the container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.

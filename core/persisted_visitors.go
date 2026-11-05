@@ -574,6 +574,9 @@ var persistedModuleVisitor = persistedStructVisitor("", func(p *persistedModuleP
 	if err := w.children("depModuleResultIDs", p.DepModuleResultIDs); err != nil {
 		return err
 	}
+	if err := w.children("entrypointDepModuleResultIDs", p.EntrypointDepModuleResultIDs); err != nil {
+		return err
+	}
 	if err := w.children("objectDefResultIDs", p.ObjectDefResultIDs); err != nil {
 		return err
 	}
