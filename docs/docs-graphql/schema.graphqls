@@ -1056,7 +1056,7 @@ type Cloud implements Node {
   id: ID!
 
   """The trace URL for the current session"""
-  traceURL: String!
+  traceUrl: String!
 }
 
 type CollectionDelta implements Node {
@@ -1152,7 +1152,7 @@ type Container implements Exportable & Node & Syncer {
     """
     Allow HTTPS registry communication without verifying the server certificate.
     """
-    insecureSkipTLSVerify: Boolean = false
+    insecureSkipTlsVerify: Boolean = false
 
     """Ignore the workspace lockfile for this lookup."""
     noLock: Boolean = false
@@ -2108,7 +2108,7 @@ type Container implements Exportable & Node & Syncer {
     Defaults to "OCI", which is compatible with most recent registries, but
     "Docker" may be needed for older registries without OCI support.
     """
-    mediaTypes: ImageMediaTypes = OCIMediaTypes
+    mediaTypes: ImageMediaTypes = OCI
 
     """
     Service to use as the registry endpoint for the image address.
@@ -2127,7 +2127,7 @@ type Container implements Exportable & Node & Syncer {
     """
     Allow HTTPS registry communication without verifying the server certificate.
     """
-    insecureSkipTLSVerify: Boolean = false
+    insecureSkipTlsVerify: Boolean = false
 
     """
     Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
@@ -2181,7 +2181,7 @@ type Container implements Exportable & Node & Syncer {
     Defaults to OCI, which is largely compatible with most recent container
     runtimes, but Docker may be needed for older runtimes without OCI support.
     """
-    mediaTypes: ImageMediaTypes = OCIMediaTypes
+    mediaTypes: ImageMediaTypes = OCI
 
     """
     Replace "${VAR}" or "$VAR" in the value of path according to the current
@@ -2230,7 +2230,7 @@ type Container implements Exportable & Node & Syncer {
     Defaults to OCI, which is largely compatible with most recent container
     runtimes, but Docker may be needed for older runtimes without OCI support.
     """
-    mediaTypes: ImageMediaTypes = OCIMediaTypes
+    mediaTypes: ImageMediaTypes = OCI
 
     """
     Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
@@ -2272,7 +2272,7 @@ type Container implements Exportable & Node & Syncer {
     Defaults to OCI, which is largely compatible with most recent container
     runtimes, but Docker may be needed for older runtimes without OCI support.
     """
-    mediaTypes: ImageMediaTypes = OCIMediaTypes
+    mediaTypes: ImageMediaTypes = OCI
 
     """
     Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.
@@ -2346,7 +2346,7 @@ type Container implements Exportable & Node & Syncer {
     forcedCompression: ImageLayerCompression
 
     """Media types to use for image layers. Defaults to OCI."""
-    mediaTypes: ImageMediaTypes = OCIMediaTypes
+    mediaTypes: ImageMediaTypes = OCI
   ): File!
 
   """
@@ -2368,7 +2368,7 @@ type Container implements Exportable & Node & Syncer {
     forcedCompression: ImageLayerCompression
 
     """Media types to use for image layers. Defaults to OCI."""
-    mediaTypes: ImageMediaTypes = OCIMediaTypes
+    mediaTypes: ImageMediaTypes = OCI
   ): File!
 
   """
@@ -2536,24 +2536,24 @@ type Container implements Exportable & Node & Syncer {
 
   This currently works with NVIDIA devices only, and requires the engine to run with GPU support enabled.
   """
-  withGPU: Container!
+  withGpu: Container!
 
   """
   Configures the provided list of devices to be accessible to this container.
 
   This currently works for Nvidia devices only.
   """
-  experimentalWithGPU(
+  experimentalWithGpu(
     """List of devices to be accessible to this container."""
     devices: [String!]!
-  ): Container! @deprecated(reason: "Use \"withGPU\" instead, which exposes all GPUs available on the host.")
+  ): Container! @deprecated(reason: "Use \"withGpu\" instead, which exposes all GPUs available on the host.")
 
   """
   Configures all available GPUs on the host to be accessible to this container.
 
   This currently works for Nvidia devices only.
   """
-  experimentalWithAllGPUs: Container! @deprecated(reason: "Use \"withGPU\" instead.")
+  experimentalWithAllGpus: Container! @deprecated(reason: "Use \"withGpu\" instead.")
 
   """
   Turn the container into a Service.
@@ -2712,6 +2712,17 @@ type CurrentModule implements Node {
 
   """The name of the module being executed in"""
   name: String!
+
+  """
+  The names the engine gives this module's own declarations: the same as its
+  source's ModuleSource.naming, for module runtimes, which have no ModuleSource.
+
+  It answers for the module under its own name (ModuleSource.moduleName), by the
+  naming rules of the version the module is named by. A workspace or toolchain
+  that loads the module under another name namespaces its types under that name
+  instead, which this doesn't reflect.
+  """
+  naming: ModuleNaming! @experimental(reason: "Identifier casing APIs are likely to change.")
 
   """
   The directory containing the module's source code loaded into the engine (plus
@@ -3771,7 +3782,7 @@ type File implements Exportable & Node & Syncer {
   asGitBundle: GitBundle!
 
   """Parse the file contents as JSON."""
-  asJSON: JSONValue!
+  asJson: JSONValue!
 
   """
   Extracts this archive file into a directory.
@@ -3999,9 +4010,9 @@ type FunctionArg implements Node {
 
 """The behavior configured for function result caching."""
 enum FunctionCachePolicy {
-  Default
-  PerSession
-  Never
+  DEFAULT
+  PER_SESSION
+  NEVER
 }
 
 """An active function call."""
@@ -4058,10 +4069,10 @@ type GeneratedCode implements Node {
   id: ID!
 
   """Set the list of paths to mark generated in version control."""
-  withVCSGeneratedPaths(paths: [String!]!): GeneratedCode!
+  withVcsGeneratedPaths(paths: [String!]!): GeneratedCode!
 
   """Set the list of paths to ignore in version control."""
-  withVCSIgnoredPaths(paths: [String!]!): GeneratedCode!
+  withVcsIgnoredPaths(paths: [String!]!): GeneratedCode!
 
   """The directory containing the generated code."""
   code: Directory!
@@ -4108,6 +4119,9 @@ type GitBundle implements Node {
   """Return the bundle bytes as a File."""
   asFile: File!
 
+  """Commits that must already exist wherever this bundle is applied."""
+  prerequisiteShas: [String!]!
+
   """Bundle format version (2 or 3)."""
   version: Int!
 
@@ -4116,9 +4130,6 @@ type GitBundle implements Node {
 
   """Refs advertised by the bundle and the object IDs they resolve to."""
   refs: [GitBundleRef!]!
-
-  """Commits that must already exist wherever this bundle is applied."""
-  prerequisiteSHAs: [String!]!
 }
 
 """A ref advertised by a Git bundle."""
@@ -4186,7 +4197,7 @@ type GitCommit implements Node {
 
   Commits with identical trees have identical contents and file modes.
   """
-  treeSHA: String!
+  treeSha: String!
 
   """Git author date, in RFC3339 format."""
   authoredDate: String!
@@ -4241,11 +4252,11 @@ type GitPushResult implements Node {
   """A unique identifier for this GitPushResult."""
   id: ID!
 
+  """The previous remote object ID; empty when the ref was created."""
+  previousSha: String!
+
   """The fully qualified remote ref."""
   ref: String!
-
-  """The previous remote object ID; empty when the ref was created."""
-  previousSHA: String!
 
   """The object ID pushed to the remote."""
   sha: String!
@@ -4297,14 +4308,14 @@ type GitRef implements Node {
     or omitted uses normal non-force rules, creating the ref if it does not
     exist.
     """
-    expectedRemoteSHA: String = ""
+    expectedRemoteSha: String = ""
   ): GitPushResult! @reevaluate
 
   """The commit this ref resolves to."""
   targetCommit: GitCommit!
 
   """The resolved commit SHA at this ref."""
-  commitSHA: String!
+  commitSha: String!
 
   """The filesystem tree at this ref."""
   tree(
@@ -4319,7 +4330,7 @@ type GitRef implements Node {
   ): Directory!
 
   """The resolved commit id at this ref."""
-  commit: String! @deprecated(reason: "Use \"commitSHA\" instead.")
+  commit: String! @deprecated(reason: "Use \"commitSha\" instead.")
 
   """The resolved name of this ref."""
   name: String!
@@ -4850,22 +4861,16 @@ enum IdentifierWordKind {
 
 """Compression algorithm to use for image layers."""
 enum ImageLayerCompression {
-  Gzip
-  Zstd
-  EStarGZ
-  Uncompressed
-  GZIP @enumValue(value: "Gzip")
-  ZSTD @enumValue(value: "Zstd")
-  ESTARGZ @enumValue(value: "EStarGZ")
-  UNCOMPRESSED @enumValue(value: "Uncompressed")
+  GZIP
+  ZSTD
+  ESTARGZ
+  UNCOMPRESSED
 }
 
 """Mediatypes to use in published or exported image metadata."""
 enum ImageMediaTypes {
-  OCIMediaTypes
-  DockerMediaTypes
-  OCI @enumValue(value: "OCIMediaTypes")
-  DOCKER @enumValue(value: "DockerMediaTypes")
+  OCI
+  DOCKER
 }
 
 """
@@ -5235,7 +5240,7 @@ type LLM implements Node & Syncer {
   withoutDefaultSystemPrompt: LLM!
 
   """Add an external MCP server to the LLM"""
-  withMCPServer(
+  withMcpServer(
     """The name of the MCP server"""
     name: String!
 
@@ -5740,7 +5745,7 @@ type Module implements Node & Syncer {
 
   Note: this is in the context of a module, so some core types may be hidden.
   """
-  introspectionSchemaJSON: File!
+  introspectionSchemaJson: File!
 
   """
   The generated files and directories made on top of the module source's context directory.
@@ -5824,6 +5829,103 @@ type ModuleConfigClient implements Node {
 }
 
 """
+The names the engine gives a module's own declarations, by the naming rules of the version the module is named by.
+
+Every list-taking field answers in input order.
+"""
+type ModuleNaming implements Node {
+  """A unique identifier for this ModuleNaming."""
+  id: ID!
+
+  """The normalized engine version whose naming rules name the module."""
+  version: String!
+
+  """The module's name, which namespaces its types."""
+  name: String!
+
+  """
+  The module's original name, which its main object and namespaced type names
+  are spelled after. It differs from name when the module is loaded under
+  another name, as a dependency alias.
+  """
+  originalName: String!
+
+  """
+  The schema names of objects, interfaces and enums this module declares, as the
+  engine installs them: namespaced under the module's name, in input order.
+
+  A name is prefixed with the module's name unless it already starts with the
+  module's name on a word boundary. With the engine's identifier naming rules:
+  HttpClient in module my-mod is MyModHTTPClient; Postman in module post is
+  PostPostman, while PostMan stays PostMan; K8STools in module k8s-tools is
+  K8sTools, the module's own name. With the legacy strcase rules, HttpClient in
+  module my-mod is MyModHttpClient.
+
+  Errors on a name the module's naming rules can't parse (non-ASCII, no letters
+  or digits, or over 256 bytes). The legacy rules name anything.
+  """
+  typeNames(
+    """The type names as the module's source declares them."""
+    names: [String!]!
+  ): [String!]!
+
+  """
+  The schema names of functions, object fields and function arguments this
+  module declares, including interface functions and their arguments, in input
+  order.
+
+  With the engine's identifier naming rules, acronyms are written like words:
+  getURL is getUrl, baseURL is baseUrl, HTTPClient is httpClient. With the
+  legacy strcase rules, HTTPClient is httpclient and e2eTest is e2ETest.
+
+  Errors on a name the module's naming rules can't parse (non-ASCII, no letters
+  or digits, or over 256 bytes). The legacy rules name anything.
+  """
+  fieldNames(
+    """
+    The function, field and argument names as the module's source declares them.
+    """
+    names: [String!]!
+  ): [String!]!
+
+  """
+  The schema names of enum members this module declares, in input order: SCREAMING_SNAKE_CASE.
+
+  A name already written in GraphQL's enum member convention (HTTP2, P_256) is
+  kept as it is. With the engine's identifier naming rules, Arm64 is ARM64 and
+  GitHub is GITHUB; with the legacy strcase rules, Arm64 is ARM_64.
+
+  Errors on a name the module's naming rules can't parse (non-ASCII, no letters
+  or digits, or over 256 bytes). The legacy rules name anything.
+  """
+  enumMemberNames(
+    """The enum member names as the module's source declares them."""
+    names: [String!]!
+  ): [String!]!
+
+  """
+  Which of the candidates, the names of objects this module declares, the engine
+  takes as the module's main object; null if none.
+
+  The engine finds the main object by the module's name, in any casing: the
+  first candidate, in input order, whose name normalizes to the same type name
+  as the module's, or is spelled as that type name already (K8STools for module
+  k8s-tools, by either rules: strcase spells k8s-tools K8STools, though it would
+  normalize K8STools again to K8Stools). Failing that, with the engine's
+  identifier naming rules only, the only candidate spelled the same once
+  lowercased without word boundaries (Sha256Sum for module sha256sum); several
+  such candidates are ambiguous, and give null.
+
+  Errors on a name the module's naming rules can't parse (non-ASCII, no letters
+  or digits, or over 256 bytes). The legacy rules name anything.
+  """
+  mainObject(
+    """The object names as the module's source declares them."""
+    candidates: [String!]!
+  ): String
+}
+
+"""
 The source needed to load and run a module, along with any metadata about the source such as versions/urls/etc.
 """
 type ModuleSource implements Node & Syncer {
@@ -5875,7 +5977,7 @@ type ModuleSource implements Node & Syncer {
   ): ModuleSource!
 
   """Update the module source with a new SDK."""
-  withSDK(
+  withSdk(
     """The SDK source to set."""
     source: String!
   ): ModuleSource!
@@ -6009,18 +6111,31 @@ type ModuleSource implements Node & Syncer {
 
   Note: this is in the context of a module, so some core types may be hidden.
   """
-  introspectionSchemaJSON: File!
+  introspectionSchemaJson: File!
 
   """
   The client-facing introspection schema JSON file for this module source.
 
-  This is the schema consumed by client codegen: unlike introspectionSchemaJSON
+  This is the schema consumed by client codegen: unlike introspectionSchemaJson
   (the module-facing schema), it hides no core types and installs this module
   (reached via dag.<moduleName>) so a generated client can bind it. The module's
   dependencies are excluded: a client is generated for a single module plus
   core, not its dependency graph.
   """
-  clientSchemaIntrospectionJSON: File!
+  clientSchemaIntrospectionJson(
+    """
+    The engine version of the client the schema is generated for, e.g. the
+    engineVersion of the module that depends on this one: core is described as
+    that client sees it, capped at this engine's version.
+
+    This module is still loaded at the engine version it declares, and so named
+    by its own naming rules, as the engine serves it to such a client. Defaults
+    to this module's own engine version.
+
+    Use this rather than withEngineVersion, which makes this module declare another version and so changes its names.
+    """
+    clientVersion: String = ""
+  ): File!
 
   """
   The directory containing the module configuration and source code (source code may be in a subdir).
@@ -6038,12 +6153,12 @@ type ModuleSource implements Node & Syncer {
   """
   The URL to the source's git repo in a web browser. Only valid for git sources.
   """
-  htmlURL: String!
+  htmlUrl: String!
 
   """
   The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket).
   """
-  htmlRepoURL: String!
+  htmlRepoUrl: String!
 
   """The specified version of the git repo this source points to."""
   version: String!
@@ -6121,6 +6236,24 @@ type ModuleSource implements Node & Syncer {
 
   """The kind of module source (currently local, git or dir)."""
   kind: ModuleSourceKind!
+
+  """
+  The names the engine gives this module's own declarations, by the naming rules
+  of the version the module is named by: its engine version, capped at the
+  engine's own.
+
+  Modules declaring a version before the identifier casing cut get the legacy
+  strcase names; later ones get the engine's identifier naming rules.
+
+  For SDK codegen, which must reproduce these names before the module is loaded:
+  this reads only the source's name, original name and engine version, so it
+  answers before the module's entrypoint is generated.
+
+  It answers for the module under its own name (moduleName). A workspace or
+  toolchain that loads the module under another name namespaces its types under
+  that name instead, which this doesn't reflect.
+  """
+  naming: ModuleNaming! @experimental(reason: "Identifier casing APIs are likely to change.")
 }
 
 """Experimental features of a module"""
@@ -6137,6 +6270,57 @@ enum ModuleSourceKind {
   LOCAL @enumValue(value: "LOCAL_SOURCE")
   GIT @enumValue(value: "GIT_SOURCE")
   DIR @enumValue(value: "DIR_SOURCE")
+}
+
+"""The engine's identifier naming rules at an engine version."""
+type Naming implements Node {
+  """A unique identifier for this Naming."""
+  id: ID!
+
+  """The normalized engine version these rules answer for."""
+  version: String!
+
+  """
+  Parse a name in any casing into words.
+
+  Known acronyms and terms come from the naming dictionary; everything else
+  falls back to the case heuristic. Errors on non-ASCII input, input with no
+  letters or digits, or input over 256 bytes.
+  """
+  identifier(
+    """The name to parse."""
+    name: String!
+  ): Identifier!
+
+  """Format many names at once, for codegen. Returns them in input order."""
+  formatIdentifiers(
+    """The names to format, in any casing."""
+    names: [String!]!
+
+    """The casing to format the names in."""
+    casing: Casing!
+
+    """How to write acronyms and terms where a word starts with a capital."""
+    acronyms: AcronymStyle = UPPERCASE
+  ): [String!]!
+
+  """The acronyms and terms used to parse and format identifiers."""
+  dictionary: [NamingTerm!]!
+
+  """
+  The names the engine gives the declarations of a module named by these rules.
+  """
+  module(
+    """The module's name, which namespaces its types."""
+    name: String!
+
+    """
+    The module's original name, when it's loaded under another (as a dependency
+    alias): its main object and namespaced type names are spelled after it.
+    Defaults to name.
+    """
+    originalName: String
+  ): ModuleNaming!
 }
 
 """An entry in the naming dictionary."""
@@ -6656,39 +6840,15 @@ type Query implements Node {
   """Initialize a JSON value"""
   json: JSONValue!
 
-  """
-  Parse a name in any casing into words.
-
-  Known acronyms and terms come from the naming dictionary; everything else
-  falls back to the case heuristic. Errors on non-ASCII input, input with no
-  letters or digits, or input over 256 bytes.
-  """
-  identifier(
-    """The name to parse."""
-    name: String!
-  ): Identifier! @experimental(reason: "Identifier casing APIs are likely to change.")
-
-  """Format many names at once, for codegen. Returns them in input order."""
-  formatIdentifiers(
-    """The names to format, in any casing."""
-    names: [String!]!
-
-    """The casing to format the names in."""
-    casing: Casing!
-
-    """How to write acronyms and terms where a word starts with a capital."""
-    acronyms: AcronymStyle = UPPERCASE
-
+  """The engine's identifier naming rules at an engine version."""
+  naming(
     """
-    The engine version whose naming dictionary to parse the names with, e.g. the
-    __schemaVersion of a schema being generated. Defaults to the caller's engine
-    version.
+    The engine version to answer for, e.g. the engine version a module declares.
+    Defaults to the caller's. Normalized as a module's is: a version past the
+    engine's is capped at the engine's own.
     """
     version: String
-  ): [String!]! @experimental(reason: "Identifier casing APIs are likely to change.")
-
-  """The acronyms and terms used to parse and format identifiers."""
-  namingDictionary: [NamingTerm!]! @experimental(reason: "Identifier casing APIs are likely to change.")
+  ): Naming! @experimental(reason: "Identifier casing APIs are likely to change.")
 
   """Load a GraphQL introspection schema for merging."""
   schema(
@@ -7881,7 +8041,7 @@ type Workspace implements Node {
   ): Workspace!
 
   """Return this workspace with an SDK installed in its config."""
-  withSDK(
+  withSdk(
     """SDK module reference to install."""
     ref: String!
 
@@ -7898,7 +8058,7 @@ type Workspace implements Node {
   ): Workspace!
 
   """Return this workspace with an SDK removed from its config."""
-  withoutSDK(
+  withoutSdk(
     """Name of the installed SDK entry to remove."""
     name: String!
 

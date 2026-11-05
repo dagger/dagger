@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	telemetry "github.com/dagger/otel-go"
-	"github.com/iancoleman/strcase"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/codes"
@@ -1402,7 +1401,7 @@ func (srv *Server) EnsureWorkspaceModules(ctx context.Context, include []string,
 // command names: "myMod", "my-mod", "MyMod" are the same module. Glob
 // metacharacters survive, so a glob never equals a module name.
 func canonicalWorkspaceModuleName(name string) string {
-	return strcase.ToKebab(name)
+	return core.LatestNamer.CLIName(name)
 }
 
 // pendingModuleCliName is the canonical name an include pattern matches against.
@@ -1480,7 +1479,9 @@ func filterPendingWorkspaceModulesForRootFields(mods []pendingModule, served map
 
 	servedFields := make(map[string]struct{}, len(served))
 	for name := range served {
-		servedFields[strcase.ToLowerCamel(name)] = struct{}{}
+		for _, field := range core.FieldNameCandidates(name) {
+			servedFields[field] = struct{}{}
+		}
 	}
 
 	selected := make([]bool, len(mods))
@@ -1494,7 +1495,7 @@ func filterPendingWorkspaceModulesForRootFields(mods []pendingModule, served map
 		}
 		matched := false
 		for i, mod := range mods {
-			if pendingModuleRootFieldName(mod) == field {
+			if slices.Contains(pendingModuleRootFieldNames(mod), field) {
 				selected[i] = true
 				matched = true
 			}
@@ -1638,11 +1639,13 @@ func pendingWorkspaceMainIndexes(mods []pendingModule) []int {
 	return indexes
 }
 
-func pendingModuleRootFieldName(mod pendingModule) string {
+func pendingModuleRootFieldNames(mod pendingModule) []string {
+	// The constructor is named by the module's rules, which aren't known
+	// before it loads: accept the spelling of either.
 	if mod.Name != "" {
-		return strcase.ToLowerCamel(mod.Name)
+		return core.FieldNameCandidates(mod.Name)
 	}
-	return strcase.ToLowerCamel(moduleProgressName(mod))
+	return core.FieldNameCandidates(moduleProgressName(mod))
 }
 
 func isCoreRootField(field string) bool {

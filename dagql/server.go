@@ -1473,7 +1473,17 @@ func (s *Server) loadNthValue(
 func (s *Server) resolveLeafList(ctx context.Context, val AnyResult, enum Enumerable) ([]any, error) {
 	if values, ok := enum.(valueEnumerable); ok {
 		// read plain values straight from the list (see valueEnumerable)
-		return leafValues(values)
+		results, err := leafValues(values)
+		if err != nil {
+			return nil, err
+		}
+		for i, result := range results {
+			results[i], err = viewLeaf(result, s.View)
+			if err != nil {
+				return nil, fmt.Errorf("nth %d: %w", i+1, err)
+			}
+		}
+		return results, nil
 	}
 	// resolve serially (fast path, no goroutine overhead)
 	results := make([]any, enum.Len()) // TODO subtle: favor [] over null result
@@ -1485,9 +1495,45 @@ func (s *Server) resolveLeafList(ctx context.Context, val AnyResult, enum Enumer
 		if elemVal == nil || elemVal.Unwrap() == nil {
 			continue
 		}
-		results[nth-1] = elemVal.Unwrap()
+		results[nth-1], err = viewLeaf(elemVal.Unwrap(), s.View)
+		if err != nil {
+			return nil, fmt.Errorf("nth %d: %w", nth, err)
+		}
 	}
 	return results, nil
+}
+
+// viewLeaf renders a query leaf in the caller's view, including enum values
+// nested in typed lists and nullable wrappers. Other scalar values are unchanged.
+func viewLeaf(val any, view call.View) (any, error) {
+	if result, ok := val.(AnyResult); ok {
+		return viewLeaf(result.Unwrap(), view)
+	}
+	if nullable, ok := val.(Derefable); ok {
+		inner, valid := nullable.Deref()
+		if !valid || inner == nil {
+			return nil, nil
+		}
+		return viewLeaf(inner, view)
+	}
+	if values, ok := val.(Enumerable); ok {
+		results := make([]any, values.Len())
+		for nth := 1; nth <= len(results); nth++ {
+			elem, err := values.Nth(nth)
+			if err != nil {
+				return nil, fmt.Errorf("nth %d: %w", nth, err)
+			}
+			results[nth-1], err = viewLeaf(elem, view)
+			if err != nil {
+				return nil, fmt.Errorf("nth %d: %w", nth, err)
+			}
+		}
+		return results, nil
+	}
+	if viewed, ok := val.(ViewLiteraler); ok {
+		return viewed.ViewLiteral(view).ToInput(), nil
+	}
+	return val, nil
 }
 
 func beginLoadTypeCacheOperation(ctx context.Context, id *call.ID) (*Cache, cacheOperation, string, error) {
@@ -2550,7 +2596,7 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 		if _, ok := s.ObjectType(val.Type().Name()); ok {
 			return nil, fmt.Errorf("field %q of type %q must have a selection of subfields", sel.Selector.Field, val.Type().Name())
 		}
-		return val.Unwrap(), nil
+		return viewLeaf(val.Unwrap(), s.View)
 	}
 
 	// instantiate the return value so we can sub-select
@@ -2647,6 +2693,38 @@ func (s *Server) typeConditionMatches(condition string, objectTypeName string) b
 	return false
 }
 
+// SelectorViewFunc picks the view a GraphQL selection of typeName.field
+// records and resolves at, instead of the server's: ok is false to keep the
+// server's view.
+type SelectorViewFunc func(typeName, field string) (view call.View, ok bool)
+
+type selectorViewsCtx struct{}
+
+// ContextWithSelectorViews makes the GraphQL queries executed with ctx select
+// the view-scoped fields fn picks at the view it picks rather than the
+// server's, so their calls (IDs and cache keys) record that view. A field
+// that doesn't exist at the picked view keeps the server's.
+func ContextWithSelectorViews(ctx context.Context, fn SelectorViewFunc) context.Context {
+	return context.WithValue(ctx, selectorViewsCtx{}, fn)
+}
+
+// selectorView is the view a view-scoped selection sel of class records: the
+// one ContextWithSelectorViews picks, or sel's own.
+func selectorView(ctx context.Context, class ObjectType, sel Selector) call.View {
+	fn, _ := ctx.Value(selectorViewsCtx{}).(SelectorViewFunc)
+	if fn == nil {
+		return sel.View
+	}
+	view, ok := fn(class.TypeName(), sel.Field)
+	if !ok || view == sel.View {
+		return sel.View
+	}
+	if spec, ok := class.FieldSpec(sel.Field, view); !ok || spec.ViewFilter == nil {
+		return sel.View
+	}
+	return view
+}
+
 func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.OperationContext, self *ast.Type, astSels ast.SelectionSet) ([]Selection, error) {
 	vars := gqlOp.Variables
 
@@ -2684,6 +2762,9 @@ func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.Operatio
 			sel, resType, err := parser.ParseField(ctx, s.View, x, vars)
 			if err != nil {
 				return nil, fmt.Errorf("parse field %q: %w", x.Name, err)
+			}
+			if sel.View != "" && class != nil {
+				sel.View = selectorView(ctx, class, sel)
 			}
 			var subsels []Selection
 			if len(x.SelectionSet) > 0 {

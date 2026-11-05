@@ -36,7 +36,7 @@ type Hirer {
     seed: LLM!,
     name: String!,
     task: String!,
-  ): Dagger.Hirer! @cache(policy: FunctionCachePolicy.Never) {
+  ): Dagger.Hirer! @cache(policy: FunctionCachePolicy.NEVER) {
     # @cache(Never): spawns, messages and awaits a real agent runtime —
     # side effects that must actually run, never replay from cache.
     let worker = seed.withSystemPrompt(workerPrompt).spawn(name: name)
@@ -64,7 +64,7 @@ type Hirer {
   ask(
     name: String!,
     message: String!,
-  ): String! @cache(policy: FunctionCachePolicy.Never) {
+  ): String! @cache(policy: FunctionCachePolicy.NEVER) {
     # @cache(Never): sends and blocks on live runtime state; a replayed
     # answer would masquerade as a fresh round-trip.
     let worker = member(name)
@@ -81,7 +81,7 @@ type Hirer {
   askAgent(
     agent: Agent!,
     message: String!,
-  ): String! @cache(policy: FunctionCachePolicy.Never) {
+  ): String! @cache(policy: FunctionCachePolicy.NEVER) {
     # @cache(Never): same as ask.
     agent.resume
     agent.send(message).response

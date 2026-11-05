@@ -1,10 +1,7 @@
-// Package dangv2 evaluates Dagger modules written against Dang v2
-// (github.com/vito/dang/v2: `.{ }` is dot-block application, `.{{ }}` is
-// selection).
-//
-// This is the LIVING implementation: new Dang SDK features land here only.
-// Older majors are frozen snapshots of this package; see
-// core/sdk/dang/README.md for the maintenance policy.
+// Package dangv2 evaluates Dagger modules written in Dang with the
+// github.com/vito/dang/v2 library, which parses every Dang language version
+// since 1.0: each module's source is parsed as the version it is written in
+// (ModuleSource.DangVersion). See core/sdk/dang/README.md.
 package dangv2
 
 import (
@@ -18,7 +15,7 @@ import (
 	"github.com/vito/dang/v2/pkg/dang"
 )
 
-// Impl is the Dang v2 implementation behind the dang SDK's version dispatch.
+// Impl is the Dang implementation behind the dang SDK.
 type Impl struct{}
 
 func (Impl) ModuleTypes(
@@ -57,7 +54,16 @@ func (Impl) ModuleTypes(
 	// schema, which does not yet carry the module's own API. The Dang SDK always
 	// enables self-calls (AlwaysEnablesSelfCalls), so gate on SelfCallsEnabled
 	// rather than the raw experimental flag.
-	if src.Self().SelfCallsEnabled() {
+	declareOnly := src.Self().SelfCallsEnabled()
+	if isDang1Module(src.Self()) {
+		// The SDK of the Dang v1 line declared only when the module enabled
+		// self calls itself, and declaring alone types fewer fields (a `pub`
+		// field with no annotation and a computed value has no type until
+		// its body is inferred), so a Dang 1.0 module keeps that.
+		sdk := src.Self().SDK
+		declareOnly = sdk != nil && sdk.ExperimentalFeatureEnabled(core.ModuleSourceExperimentalFeatureSelfCalls)
+	}
+	if declareOnly {
 		runner = runDangDirForModuleTypes
 	}
 

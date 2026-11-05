@@ -12,6 +12,7 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/dagger/dagger/core/artifact"
 	"github.com/dagger/dagger/core/dagaddress"
+	"github.com/dagger/dagger/engine/naming"
 	"github.com/spf13/cobra"
 	"mvdan.cc/sh/v3/syntax"
 )
@@ -206,7 +207,8 @@ func artifactListMatchesIncludePath(include string, paths []string) (bool, error
 	}
 	segments := strings.Split(include, "/")
 	for i, segment := range segments {
-		segments[i] = cliName(segment)
+		// Keep glob syntax: cliName alone would strip it (item* to item).
+		segments[i] = naming.MapNamePattern(segment, cliName)
 	}
 	include = strings.Join(segments, "/")
 	for _, path := range paths {

@@ -371,3 +371,86 @@ func TestConvertObjectIDKeepsHandleID(t *testing.T) {
 	_, err = json.Marshal(value)
 	require.ErrorContains(t, err, "unexpected API request")
 }
+
+// The engine reads a module's dang.toml only up to its module directory, but
+// Dang walks further up for the one that decides the source's version. A
+// module source that a dang.toml above its module directory would govern runs
+// from an isolated copy, so the engine's version decides.
+func TestDangSourceDir(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(root, ".git"), 0o755))
+	moduleDir := filepath.Join(root, "mod")
+	srcDir := filepath.Join(moduleDir, "src")
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
+	writeDangFilesIn(t, srcDir, map[string]string{"main.dang": "pub x: Int! = 1\n", "notes.txt": "not source"})
+
+	dir, cleanup, err := dangSourceDir(srcDir, moduleDir)
+	require.NoError(t, err)
+	cleanup()
+	require.Equal(t, srcDir, dir, "no dang.toml: the source runs in place")
+
+	require.NoError(t, os.WriteFile(filepath.Join(root, "dang.toml"), []byte("dang = \"1.0\"\n"), 0o644))
+	dir, cleanup, err = dangSourceDir(srcDir, moduleDir)
+	require.NoError(t, err)
+	require.NotEqual(t, srcDir, dir, "a dang.toml above the module directory: the source runs isolated")
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	require.Equal(t, "main.dang", entries[0].Name())
+	configPath, _, err := dang.FindProjectConfig(dir)
+	require.NoError(t, err)
+	require.NotEqual(t, filepath.Join(root, "dang.toml"), configPath)
+	cleanup()
+	_, err = os.Stat(dir)
+	require.True(t, os.IsNotExist(err), "cleanup removes the copy")
+
+	for _, governing := range []string{moduleDir, srcDir} {
+		require.NoError(t, os.WriteFile(filepath.Join(governing, "dang.toml"), []byte(""), 0o644))
+		dir, cleanup, err = dangSourceDir(srcDir, moduleDir)
+		require.NoError(t, err)
+		cleanup()
+		require.Equal(t, srcDir, dir, "a dang.toml the engine reads: the source runs in place")
+		require.NoError(t, os.Remove(filepath.Join(governing, "dang.toml")))
+	}
+
+	// A source directory outside the module directory has only its own.
+	outside := filepath.Join(root, "outside")
+	require.NoError(t, os.Mkdir(outside, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "dang.toml"), []byte(""), 0o644))
+	dir, cleanup, err = dangSourceDir(outside, moduleDir)
+	require.NoError(t, err)
+	cleanup()
+	require.Equal(t, outside, dir)
+}
+
+// legacySelectionSource is Dang 1.0 source: `.{a, b}` is object selection,
+// which no later version parses.
+const legacySelectionSource = "directive @marked on OBJECT\n\n" +
+	"type Pair @marked {\n  pub a: Int! = 1\n  pub b: Int! = 2\n}\n\n" +
+	"type Picker {\n  pub picked: Int! {\n    let p = Pair.{a, b}\n    p.a\n  }\n}\n"
+
+// The engine's own parses of a module's source (declared type names, object
+// directives) parse it as the Dang version it is written in, as Dang does: a
+// Dang 1.0 module has types and directives too.
+func TestModuleSourceParsesAtDangVersion(t *testing.T) {
+	dir := t.TempDir()
+	writeDangFilesIn(t, dir, map[string]string{"main.dang": legacySelectionSource})
+
+	countDangParses(t) // a fresh memo
+	require.Equal(t, []string{"Legacy", "Pair", "Picker"}, moduleDeclaredTypeNames(dang.ContextWithVersion(t.Context(), dang.Version1_0), dir, "legacy"))
+	require.Equal(t, []string{"Legacy"}, moduleDeclaredTypeNames(dang.ContextWithVersion(t.Context(), dang.CurrentVersion), dir, "legacy"),
+		"the names are keyed by version: the source does not parse as the current version")
+
+	ctx := dang.ContextWithVersion(t.Context(), dang.Version1_0)
+	env, err := runDangDirForModuleTypes(ctx, dir)
+	require.NoError(t, err)
+	require.NoError(t, retainDangObjectDirectives(ctx, env, dir, true))
+	value, found, err := env.Lookup(ctx, "Pair")
+	require.NoError(t, err)
+	require.True(t, found)
+	directives := value.(*dang.ConstructorFunction).ObjectType.GetDirectives("")
+	require.Len(t, directives, 1)
+	require.Equal(t, "marked", directives[0].Name)
+
+	require.Error(t, retainDangObjectDirectives(dang.ContextWithVersion(ctx, dang.CurrentVersion), env, dir, true))
+}

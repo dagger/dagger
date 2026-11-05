@@ -2,6 +2,8 @@ package schema
 
 import (
 	"context"
+	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -15,13 +17,29 @@ import (
 	"github.com/dagger/dagger/engine"
 )
 
-// The identifier casing cut, and the view every v1.0.0 prerelease before it
-// shares: that of the last release before the cut. Tests derive them from the
-// engine's constants, so moving the cut needs no test edits.
+// The identifier casing cut, the release before it (pre-cut, but with its own
+// view: views keep their prerelease from engine.PrereleaseViewsVersion on),
+// and the view every v1.0.0 prerelease before prerelease views shares. Tests
+// derive them from the engine's constants, so moving the cut needs no test
+// edits.
 var (
 	cutVersion = engine.IdentifierCasingVersion
+	lastPreCut = betaBefore(engine.IdentifierCasingVersion)
 	preCutView = engine.APIViewVersion("v1.0.0-0")
 )
+
+// betaBefore returns the beta before version, a vX.Y.Z-beta.N.
+func betaBefore(version string) string {
+	base, num, ok := strings.Cut(version, "-beta.")
+	if !ok {
+		panic(version + " is not a beta")
+	}
+	n, err := strconv.Atoi(num)
+	if err != nil {
+		panic(version + " is not a beta")
+	}
+	return fmt.Sprintf("%s-beta.%d", base, n-1)
+}
 
 // Callers' declared versions, mapped to views as the engine does, against
 // view gates at the identifier casing cut and at boundaries set while views
@@ -39,6 +57,8 @@ var viewGateCases = []struct {
 	{version: "v1.0.0-beta.19", v1: true},
 	{version: "v1.0.0-beta.20", v1: true},
 	{version: preCutView, v1: true},
+	{version: engine.PrereleaseViewsVersion, v1: true},
+	{version: lastPreCut, v1: true},
 	{version: cutVersion, post: true, v1: true},
 	{version: "v1.0.0-rc.1", post: true, v1: true},
 	{version: "v1.0.0-dev-0123456789ab", post: true, v1: true},
@@ -104,9 +124,10 @@ func TestViewGateAtIdentifierCasingVersion(t *testing.T) {
 }
 
 // View-scoped fields carry the view in their call identity, so callers on
-// either side of the cut never share a cached result, while pre-cut callers,
-// which share a view, do. An unscoped field's identity has no view: a
-// resolver whose result depends on the caller's version must be view-scoped.
+// either side of the cut never share a cached result, while callers before
+// prerelease views, which share a view, do. An unscoped field's identity has
+// no view: a resolver whose result depends on the caller's version must be
+// view-scoped.
 func TestViewGateCacheIdentity(t *testing.T) {
 	ctx, srv := newViewGateTestServer(t)
 	selectIn := func(version, field string) string {
@@ -129,10 +150,11 @@ func TestViewGateCacheIdentity(t *testing.T) {
 		"unscoped fields share one cached result across views")
 }
 
-// Every v1.0.0 prerelease before the cut gets the same core schema, so no
-// view gate set before views kept prereleases tells them apart, and the gates
-// they saw still apply: the v1.0 API (Workspace, Container.withGPU,
-// disableDaggerInDagger) and @reevaluate (from v1.0.0-beta.17).
+// Every v1.0.0 prerelease before engine.PrereleaseViewsVersion gets the same
+// core schema, so no view gate set before views kept prereleases tells them
+// apart, and the gates they saw still apply: the v1.0 API (Workspace,
+// Container.withGPU, disableDaggerInDagger) and @reevaluate (from
+// v1.0.0-beta.17).
 func TestPreCutCoreSchemaShared(t *testing.T) {
 	ctx := t.Context()
 	cache, err := dagql.NewCache(ctx, "", nil, nil)
@@ -162,6 +184,7 @@ func TestPreCutCoreSchemaShared(t *testing.T) {
 		schema, got := schemaFor(version)
 		require.Equal(t, want, got, "schema for %s", version)
 		require.NotNil(t, schema.Types["Workspace"], version)
+		// the pre-cut spelling of withGpu
 		require.NotNil(t, schema.Types["Container"].Fields.ForName("withGPU"), version)
 		require.NotNil(t, schema.Types["Container"].Fields.ForName("withExec").Arguments.ForName("disableDaggerInDagger"), version)
 		require.Contains(t, schema.Directives, "reevaluate", version)
@@ -186,6 +209,7 @@ func TestModuleViewCappedAtEngine(t *testing.T) {
 		{version: "v1.0.0", view: cutVersion, post: true},
 		{version: "v1.0.0-rc.1", view: cutVersion, post: true},
 		{version: cutVersion, view: cutVersion, post: true},
+		{version: lastPreCut, view: lastPreCut},
 		{version: "v1.0.0-beta.19", view: preCutView},
 	} {
 		t.Run(tc.version, func(t *testing.T) {

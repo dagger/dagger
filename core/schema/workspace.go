@@ -55,6 +55,27 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 		currentWorkspaceField,
 	}.Install(srv)
 
+	// withSdk and withoutSdk are withSDK and withoutSDK in views before
+	// engine.IdentifierCasingVersion.
+	withSDKField := dagql.NodeFunc("withSdk", s.withSDK).
+		View(AfterVersion("v1.0.0-0")).
+		WithInput(dagql.PerClientInput).
+		Doc("Return this workspace with an SDK installed in its config.").
+		Args(
+			dagql.Arg("ref").Doc("SDK module reference to install."),
+			dagql.Arg("name").Doc("Override name for the installed SDK entry."),
+			dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
+			dagql.Arg("asSdkName").Doc("Optional override for the SDK name conventionally derived from the installed module name."),
+		)
+	withoutSDKField := dagql.NodeFunc("withoutSdk", s.withoutSDK).
+		View(AfterVersion("v1.0.0-0")).
+		WithInput(dagql.PerClientInput).
+		Doc("Return this workspace with an SDK removed from its config.").
+		Args(
+			dagql.Arg("name").Doc("Name of the installed SDK entry to remove."),
+			dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
+		)
+
 	dagql.Fields[*core.Workspace]{
 		dagql.NodeFunc("resolve", s.resolve).
 			View(AfterVersion("v1.0.0-0")).
@@ -353,24 +374,10 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc("Installed module name or source to remove. Version selectors are not accepted."),
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 			),
-		dagql.NodeFunc("withSDK", s.withSDK).
-			View(AfterVersion("v1.0.0-0")).
-			WithInput(dagql.PerClientInput).
-			Doc("Return this workspace with an SDK installed in its config.").
-			Args(
-				dagql.Arg("ref").Doc("SDK module reference to install."),
-				dagql.Arg("name").Doc("Override name for the installed SDK entry."),
-				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
-				dagql.Arg("asSdkName").Doc("Optional override for the SDK name conventionally derived from the installed module name."),
-			),
-		dagql.NodeFunc("withoutSDK", s.withoutSDK).
-			View(AfterVersion("v1.0.0-0")).
-			WithInput(dagql.PerClientInput).
-			Doc("Return this workspace with an SDK removed from its config.").
-			Args(
-				dagql.Arg("name").Doc("Name of the installed SDK entry to remove."),
-				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
-			),
+		casedField(withSDKField),
+		legacyField(withSDKField, "withSDK"),
+		casedField(withoutSDKField),
+		legacyField(withoutSDKField, "withoutSDK"),
 		dagql.NodeFunc("withMain", s.withMain).
 			View(AfterVersion("v1.0.0-0")).
 			WithInput(dagql.PerClientInput).
@@ -4680,6 +4687,7 @@ func workspaceIncludePatterns(includeArg dagql.Optional[dagql.ArrayInput[dagql.S
 
 func matchWorkspaceIncludePath(
 	ctx context.Context,
+	namer core.Namer,
 	path core.ModTreePath,
 	include []string,
 ) (bool, error) {
@@ -4690,12 +4698,12 @@ func matchWorkspaceIncludePath(
 		return false, nil
 	}
 	for _, pattern := range include {
-		if match, err := path.Glob(ctx, pattern); err != nil {
+		if match, err := path.Glob(ctx, namer, pattern); err != nil {
 			return false, err
 		} else if match {
 			return true, nil
 		}
-		if match, err := path.Glob(ctx, pattern+":**"); err != nil || match {
+		if match, err := path.Glob(ctx, namer, pattern+":**"); err != nil || match {
 			return match, err
 		}
 	}
@@ -4861,10 +4869,10 @@ func matchWorkspaceInclude(ctx context.Context, node *core.ModTreeNode, include 
 	if err != nil || match {
 		return match, err
 	}
-	if match, err := matchWorkspaceIncludePath(ctx, node.Path(), include); err != nil || match {
+	if match, err := matchWorkspaceIncludePath(ctx, core.LatestNamer, node.Path(), include); err != nil || match {
 		return match, err
 	}
-	return matchWorkspaceIncludePath(ctx, node.CommandPath(), include)
+	return matchWorkspaceIncludePath(ctx, core.LatestNamer, node.CommandPath(), include)
 }
 
 // withWorkspaceClientContext stamps the workspace owner's immutable client

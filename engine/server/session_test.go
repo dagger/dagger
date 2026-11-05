@@ -3520,6 +3520,22 @@ func TestFilterPendingWorkspaceModulesForRootFields(t *testing.T) {
 		require.Equal(t, []pendingModule{mods[0]}, filtered)
 	})
 
+	// The constructor's spelling depends on the module's naming rules,
+	// which aren't known before it loads: either selects it. (The rules
+	// spell acronyms in fields alike, myApi, but not digits: e2eTests by
+	// engine/naming, e2ETests by strcase.)
+	t.Run("constructor by either naming rules", func(t *testing.T) {
+		t.Parallel()
+
+		api := []pendingModule{mods[0], {Kind: moduleLoadKindAmbient, Name: "e2e-tests"}, mods[1]}
+		for _, field := range []string{"e2eTests", "e2ETests"} {
+			filtered := filterPendingWorkspaceModulesForRootFields(api, nil, nil, []string{field})
+			require.Equal(t, []pendingModule{api[1]}, filtered, field)
+			filtered = filterPendingWorkspaceModulesForRootFields(api, map[string]struct{}{"e2e-tests": {}}, nil, []string{field})
+			require.Empty(t, filtered, field)
+		}
+	})
+
 	t.Run("introspection loads all", func(t *testing.T) {
 		t.Parallel()
 
@@ -4414,6 +4430,21 @@ func TestSessionLogExporterRoutesCallPayloadOnlyToMissingTargets(t *testing.T) {
 			require.Contains(t, [][]byte{original, tampered}, record.Body.GetBytesValue(),
 				"byte bodies must survive client DB to binary OTLP reconstruction")
 		}
+	}
+}
+
+func TestCurrentArtifactModuleNarrowing(t *testing.T) {
+	mods := []pendingModule{
+		{Kind: moduleLoadKindAmbient, Name: "GitHub"},
+		{Kind: moduleLoadKindAmbient, Name: "macOS"},
+		{Kind: moduleLoadKindAmbient, Name: "broken"},
+	}
+	for i, name := range []string{"github", "macos"} {
+		filtered := filterPendingWorkspaceModulesBySelectorInclude(mods, nil, []string{name + ":lint"})
+		require.Equal(t, []pendingModule{mods[i]}, filtered)
+		served := map[string]struct{}{mods[i].Name: {}}
+		filtered = filterPendingWorkspaceModulesBySelectorInclude(mods[2:], served, []string{name + ":lint"})
+		require.Empty(t, filtered, "an already served canonical name must not load unrelated modules")
 	}
 }
 

@@ -1344,6 +1344,201 @@
     }
   },
   {
+    "input": "K8STools",
+    "words": [
+      {
+        "kind": "TERM",
+        "text": "K8s",
+        "suffix": "",
+        "capitalized": "K8s"
+      },
+      {
+        "kind": "WORD",
+        "text": "tools",
+        "suffix": "",
+        "capitalized": "Tools"
+      }
+    ],
+    "formats": {
+      "CAMEL": "k8sTools",
+      "CAMEL_CAPITALIZED": "k8sTools",
+      "FLAT": "k8stools",
+      "KEBAB": "k8s-tools",
+      "PASCAL": "K8sTools",
+      "PASCAL_CAPITALIZED": "K8sTools",
+      "SCREAMING_SNAKE": "K8S_TOOLS",
+      "SNAKE": "k8s_tools"
+    }
+  },
+  {
+    "input": "K8sTools",
+    "words": [
+      {
+        "kind": "TERM",
+        "text": "K8s",
+        "suffix": "",
+        "capitalized": "K8s"
+      },
+      {
+        "kind": "WORD",
+        "text": "tools",
+        "suffix": "",
+        "capitalized": "Tools"
+      }
+    ],
+    "formats": {
+      "CAMEL": "k8sTools",
+      "CAMEL_CAPITALIZED": "k8sTools",
+      "FLAT": "k8stools",
+      "KEBAB": "k8s-tools",
+      "PASCAL": "K8sTools",
+      "PASCAL_CAPITALIZED": "K8sTools",
+      "SCREAMING_SNAKE": "K8S_TOOLS",
+      "SNAKE": "k8s_tools"
+    }
+  },
+  {
+    "input": "k8s-tools",
+    "words": [
+      {
+        "kind": "TERM",
+        "text": "K8s",
+        "suffix": "",
+        "capitalized": "K8s"
+      },
+      {
+        "kind": "WORD",
+        "text": "tools",
+        "suffix": "",
+        "capitalized": "Tools"
+      }
+    ],
+    "formats": {
+      "CAMEL": "k8sTools",
+      "CAMEL_CAPITALIZED": "k8sTools",
+      "FLAT": "k8stools",
+      "KEBAB": "k8s-tools",
+      "PASCAL": "K8sTools",
+      "PASCAL_CAPITALIZED": "K8sTools",
+      "SCREAMING_SNAKE": "K8S_TOOLS",
+      "SNAKE": "k8s_tools"
+    }
+  },
+  {
+    "input": "K8S_TOOLS",
+    "words": [
+      {
+        "kind": "TERM",
+        "text": "K8s",
+        "suffix": "",
+        "capitalized": "K8s"
+      },
+      {
+        "kind": "WORD",
+        "text": "tools",
+        "suffix": "",
+        "capitalized": "Tools"
+      }
+    ],
+    "formats": {
+      "CAMEL": "k8sTools",
+      "CAMEL_CAPITALIZED": "k8sTools",
+      "FLAT": "k8stools",
+      "KEBAB": "k8s-tools",
+      "PASCAL": "K8sTools",
+      "PASCAL_CAPITALIZED": "K8sTools",
+      "SCREAMING_SNAKE": "K8S_TOOLS",
+      "SNAKE": "k8s_tools"
+    }
+  },
+  {
+    "input": "MyK8SCluster",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "my",
+        "suffix": "",
+        "capitalized": "My"
+      },
+      {
+        "kind": "TERM",
+        "text": "K8s",
+        "suffix": "",
+        "capitalized": "K8s"
+      },
+      {
+        "kind": "WORD",
+        "text": "cluster",
+        "suffix": "",
+        "capitalized": "Cluster"
+      }
+    ],
+    "formats": {
+      "CAMEL": "myK8sCluster",
+      "CAMEL_CAPITALIZED": "myK8sCluster",
+      "FLAT": "myk8scluster",
+      "KEBAB": "my-k8s-cluster",
+      "PASCAL": "MyK8sCluster",
+      "PASCAL_CAPITALIZED": "MyK8sCluster",
+      "SCREAMING_SNAKE": "MY_K8S_CLUSTER",
+      "SNAKE": "my_k8s_cluster"
+    }
+  },
+  {
+    "input": "K3SServer",
+    "words": [
+      {
+        "kind": "TERM",
+        "text": "K3s",
+        "suffix": "",
+        "capitalized": "K3s"
+      },
+      {
+        "kind": "WORD",
+        "text": "server",
+        "suffix": "",
+        "capitalized": "Server"
+      }
+    ],
+    "formats": {
+      "CAMEL": "k3sServer",
+      "CAMEL_CAPITALIZED": "k3sServer",
+      "FLAT": "k3sserver",
+      "KEBAB": "k3s-server",
+      "PASCAL": "K3sServer",
+      "PASCAL_CAPITALIZED": "K3sServer",
+      "SCREAMING_SNAKE": "K3S_SERVER",
+      "SNAKE": "k3s_server"
+    }
+  },
+  {
+    "input": "k3s_server",
+    "words": [
+      {
+        "kind": "TERM",
+        "text": "K3s",
+        "suffix": "",
+        "capitalized": "K3s"
+      },
+      {
+        "kind": "WORD",
+        "text": "server",
+        "suffix": "",
+        "capitalized": "Server"
+      }
+    ],
+    "formats": {
+      "CAMEL": "k3sServer",
+      "CAMEL_CAPITALIZED": "k3sServer",
+      "FLAT": "k3sserver",
+      "KEBAB": "k3s-server",
+      "PASCAL": "K3sServer",
+      "PASCAL_CAPITALIZED": "K3sServer",
+      "SCREAMING_SNAKE": "K3S_SERVER",
+      "SNAKE": "k3s_server"
+    }
+  },
+  {
     "input": "IDsFoo",
     "words": [
       {
