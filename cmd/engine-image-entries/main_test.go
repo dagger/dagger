@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -26,6 +27,14 @@ func TestGoSDKBuildFlagsMatchRuntime(t *testing.T) {
 		flags = append(flags, flag)
 	}
 	require.Equal(t, goSDKBuildFlags, flags)
+}
+
+// go.buildFlags is a non-null list: a nil slice goes out as null and the image
+// build fails.
+func TestEntrypointBuildFlagsSentAsList(t *testing.T) {
+	b, err := json.Marshal(map[string]any{"flags": entrypointBuildFlags})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"flags": []}`, string(b))
 }
 
 // A runtime's compiles generate no debug information its link would drop, its

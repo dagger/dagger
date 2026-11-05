@@ -33,8 +33,8 @@ import (
 var goSDKBuildFlags = []string{"-ldflags=-s -w", "-gcflags=all=-dwarf=false", "-gcflags=std=", "-gcflags=./internal/dagger/...=-dwarf=false -l"}
 
 // entrypointBuildFlags are the build flags go-sdk's generated entrypoints
-// build with: none.
-var entrypointBuildFlags []string
+// build with: none, as an empty list, which the query's non-null argument needs.
+var entrypointBuildFlags = []string{}
 
 // seedFlags are the -seed flags, in order.
 type seedFlags []string
