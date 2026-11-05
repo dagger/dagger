@@ -37,6 +37,26 @@ import (
 	"github.com/dagger/dagger/dagql"
 )
 
+// readCacheDebugSnapshot reads the dagql cache snapshot of the engine svc
+// runs, from its debug endpoint. The snapshot lists every entry the engine
+// holds, several MB once the engine has merged its image's entries, so it is
+// written to a file and exported, not printed: an exec's output and a string
+// a call returns both go into the run's logs, which every client holds.
+func readCacheDebugSnapshot(ctx context.Context, t *testctx.T, c *dagger.Client, svc *core.Service) []byte {
+	t.Helper()
+	const path = "/snapshot.json"
+	exported, err := core.NewQuery(c).Container().From(alpineImage).
+		WithServiceBinding("debug-engine", svc).
+		WithEnvVariable("READ_NUMBER", rand.Text()).
+		WithExec([]string{"wget", "-qO", path, "http://debug-engine:6060/debug/dagql/cache"}).
+		File(path).
+		Export(ctx, filepath.Join(t.TempDir(), "snapshot.json"))
+	require.NoError(t, err)
+	raw, err := os.ReadFile(exported)
+	require.NoError(t, err)
+	return raw
+}
+
 //nolint:gocyclo // Independent restart subtests share engine fixtures; the metric counts their bodies together.
 func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Context, t *testctx.T) {
 	const persistenceTestGCThresholdBytes = "1000000000000000"
@@ -141,14 +161,11 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 	}
 	readSnapshotRows := func(ctx context.Context, t *testctx.T, c *dagger.Client, svc *core.Service) map[uint64]savedSnapshotRow {
 		t.Helper()
-		raw, err := core.NewQuery(c).Container().From(alpineImage).WithServiceBinding("snapshot-engine", svc).
-			WithEnvVariable("READ_NUMBER", rand.Text()).
-			WithExec([]string{"wget", "-qO-", "http://snapshot-engine:6060/debug/dagql/cache"}).Stdout(ctx)
-		require.NoError(t, err)
+		raw := readCacheDebugSnapshot(ctx, t, c, svc)
 		var snapshot struct {
 			Results []savedSnapshotRow `json:"results"`
 		}
-		require.NoError(t, json.Unmarshal([]byte(raw), &snapshot))
+		require.NoError(t, json.Unmarshal(raw, &snapshot))
 		rows := make(map[uint64]savedSnapshotRow, len(snapshot.Results))
 		for _, row := range snapshot.Results {
 			rows[row.ID] = row
@@ -820,15 +837,11 @@ COPY src /app/src
 		}
 		readRows := func(svc *core.Service) map[uint64]rowState {
 			t.Helper()
-			raw, err := core.NewQuery(c).Container().From(alpineImage).
-				WithServiceBinding("part-engine", svc).
-				WithEnvVariable("READ_NUMBER", rand.Text()).
-				WithExec([]string{"wget", "-qO-", "http://part-engine:6060/debug/dagql/cache"}).Stdout(ctx)
-			require.NoError(t, err)
+			raw := readCacheDebugSnapshot(ctx, t, c, svc)
 			var snapshot struct {
 				Results []rowState `json:"results"`
 			}
-			require.NoError(t, json.Unmarshal([]byte(raw), &snapshot))
+			require.NoError(t, json.Unmarshal(raw, &snapshot))
 			rows := make(map[uint64]rowState, len(snapshot.Results))
 			for _, row := range snapshot.Results {
 				rows[row.ID] = row
