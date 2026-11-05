@@ -3342,6 +3342,22 @@ func (s *moduleSchema) moduleImplementationScoped(
 	// its own files do not cover; its commit covers the whole tree.
 	if src.Kind == core.ModuleSourceKindGit && src.Git != nil {
 		scopedDigestInputs = append(scopedDigestInputs, "gitCommit:"+src.Git.Commit)
+		// Loaded through a workspace, it serves from the workspace's tree, which
+		// can carry edits or mounts on top of the commit; the workspace's
+		// content identity covers them. Any overlay counts as an edit, even one
+		// that changes nothing; a workspace without one keeps the commit's key.
+		if ws := src.Workspace.Self(); ws != nil {
+			_, edited := ws.OverlayChanges()
+			if _, mounted := ws.MountsDir(); edited || mounted {
+				identity, ok, err := ws.ContentIdentity(ctx)
+				if err != nil {
+					return inst, fmt.Errorf("failed to get git module workspace identity: %w", err)
+				}
+				if ok {
+					scopedDigestInputs = append(scopedDigestInputs, "workspace:"+identity.String())
+				}
+			}
+		}
 	}
 	// The origin namespaces the module's cache volumes, so the same files
 	// served from two origins must not share the execs that create them.
