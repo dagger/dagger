@@ -3494,7 +3494,7 @@ func (srv *Server) ServeModule(ctx context.Context, mod dagql.ObjectResult[*core
 				if err != nil {
 					return err
 				}
-				tcMod, err := srv.resolveModuleSourceAsModule(ctx, client.dag, tcSrc, pending)
+				tcMod, err := srv.resolveModuleSourceAsModule(ctx, client.dag, dagql.ObjectResult[*core.Workspace]{}, tcSrc, pending)
 				if err != nil {
 					return fmt.Errorf("error resolving toolchain module: %w", err)
 				}
