@@ -1,0 +1,6 @@
+kind: Fixed
+body: Drop build metadata, such as the digest Flux appends to OCI charts, from the default engine image tag
+time: 2026-11-05T14:51:50.158192105-03:00
+custom:
+    Author: marcosnils
+    PR: "15086"
