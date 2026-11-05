@@ -268,7 +268,7 @@ module = "go-sdk"
 
 [sdks.go.scopes.".dagger/modules/cli-dev"]
 is-module = true
-clients = ["dagger.io/linux/alpine", "./.dagger/modules/go"]
+clients = ["github.com/dagger/alpine@ec2076f26edb34274e533cd526484a2d0baa5aa8", "./.dagger/modules/go"]
 
 [sdks.go.scopes.".dagger/modules/cli-dev".settings]
 dangEntrypoint = true
@@ -291,7 +291,7 @@ unifiedClients = true
 
 [sdks.go.scopes.".dagger/modules/engine-dev"]
 is-module = true
-clients = ["dagger.io/linux/alpine", "./cmd/codegen", "./.dagger/modules/cli-dev", "./.dagger/modules/go", "dagger.io/linux/wolfi", "./.dagger/modules/engine-dev/notify"]
+clients = ["github.com/dagger/alpine@ec2076f26edb34274e533cd526484a2d0baa5aa8", "./cmd/codegen", "./.dagger/modules/cli-dev", "./.dagger/modules/go", "github.com/dagger/wolfi@f762661d70b5b19dc63b96bdfa455e2f77bbd179", "./.dagger/modules/engine-dev/notify"]
 
 [sdks.go.scopes.".dagger/modules/engine-dev".settings]
 dangEntrypoint = true
@@ -314,7 +314,7 @@ unifiedClients = true
 
 [sdks.go.scopes.".dagger/modules/python-client-dev"]
 is-module = true
-clients = ["./.dagger/modules/engine-dev", "./.dagger/modules/python-client-dev/dockerd", "github.com/dagger/pytest", "dagger.io/linux/wolfi"]
+clients = ["./.dagger/modules/engine-dev", "./.dagger/modules/python-client-dev/dockerd", "github.com/dagger/pytest", "github.com/dagger/wolfi@f762661d70b5b19dc63b96bdfa455e2f77bbd179"]
 
 [sdks.go.scopes.".dagger/modules/python-client-dev".settings]
 dangEntrypoint = true
@@ -329,7 +329,7 @@ unifiedClients = true
 
 [sdks.go.scopes.".dagger/modules/release"]
 is-module = true
-clients = ["./.dagger/modules/changie", "./.dagger/modules/cli-dev", "./.dagger/modules/docs-dev", "./.dagger/modules/elixir-client-dev", "./.dagger/modules/engine-dev", "./.dagger/modules/engine-dev/notify", "./.dagger/modules/go-client-dev", "./.dagger/modules/php-client-dev", "./.dagger/modules/python-client-dev", "./.dagger/modules/release/gh", "./.dagger/modules/rust-client-dev", "./.dagger/modules/typescript-client-dev", "dagger.io/linux/wolfi"]
+clients = ["./.dagger/modules/changie", "./.dagger/modules/cli-dev", "./.dagger/modules/docs-dev", "./.dagger/modules/elixir-client-dev", "./.dagger/modules/engine-dev", "./.dagger/modules/engine-dev/notify", "./.dagger/modules/go-client-dev", "./.dagger/modules/php-client-dev", "./.dagger/modules/python-client-dev", "./.dagger/modules/release/gh", "./.dagger/modules/rust-client-dev", "./.dagger/modules/typescript-client-dev", "github.com/dagger/wolfi@f762661d70b5b19dc63b96bdfa455e2f77bbd179"]
 
 [sdks.go.scopes.".dagger/modules/release".settings]
 dangEntrypoint = true
@@ -371,7 +371,7 @@ unifiedClients = true
 
 [sdks.go.scopes."modules/git-releaser"]
 is-module = true
-clients = ["dagger.io/linux/alpine"]
+clients = ["github.com/dagger/alpine@ec2076f26edb34274e533cd526484a2d0baa5aa8"]
 
 [sdks.go.scopes."modules/git-releaser".settings]
 dangEntrypoint = true
@@ -386,7 +386,7 @@ clients = ["./.dagger/modules/engine-dev", "./.dagger/modules/cli-dev"]
 is-module = true
 
 [sdks.go.scopes.".dagger/modules/go"]
-clients = ["dagger.io/linux/wolfi"]
+clients = ["github.com/dagger/wolfi@f762661d70b5b19dc63b96bdfa455e2f77bbd179"]
 is-module = true
 
 [sdks.go.scopes.".dagger/modules/go".settings]
