@@ -818,7 +818,11 @@ func lockedImagePin(ctx context.Context, address string, args AddressLookupArgs,
 		return "", nil
 	}
 	ref, err := reference.ParseNormalizedNamed(address)
-	if err != nil || reference.IsNameOnly(ref) {
+	if err != nil {
+		// Keyed as before, the lookup reports the address it can't parse.
+		return "", nil //nolint:nilerr // deliberate: no pin, not a failure
+	}
+	if reference.IsNameOnly(ref) {
 		return "", nil
 	}
 	if _, canonical := ref.(reference.Canonical); canonical {
