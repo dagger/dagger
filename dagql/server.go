@@ -1825,7 +1825,7 @@ func (s *Server) lazyRefArgNames(id *call.ID) map[string]bool {
 		return nil
 	}
 	var lazyRefs map[string]bool
-	for _, argSpec := range fieldSpec.Args.Inputs(id.View()) {
+	for _, argSpec := range fieldSpec.Args.inputs(id.View()) {
 		if argSpec.LazyRef {
 			if lazyRefs == nil {
 				lazyRefs = make(map[string]bool)
@@ -2056,7 +2056,7 @@ func selectorFromLoadedCall(ctx context.Context, frame *ResultCall, baseObj AnyO
 		}
 	}
 	args := make([]NamedInput, 0, len(frame.Args))
-	for _, argSpec := range fieldSpec.Args.Inputs(view) {
+	for _, argSpec := range fieldSpec.Args.inputs(view) {
 		if lazyRefs[argSpec.Name] {
 			lit, ok := recipeArgLiterals[argSpec.Name]
 			if !ok {
