@@ -31,6 +31,44 @@ func TestPython(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(PythonSuite{})
 }
 
+func (PythonSuite) TestNullableObjectReceiver(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	mod := moduleFixture(t, c, "python/type-return-nested-object-02")
+
+	for _, tc := range []struct {
+		name  string
+		query string
+		want  string
+	}{
+		{
+			name:  "populated",
+			query: `{optionalFoo{message}}`,
+			want:  `{"optionalFoo":{"message":"hello world"}}`,
+		},
+		{
+			name:  "null",
+			query: `{optionalFoo(populated:false){message}}`,
+			want:  `{"optionalFoo":{"message":"empty"}}`,
+		},
+		{
+			name:  "chained populated",
+			query: `{optionalFoo{withMessage(message:"updated"){withMessage(message:"again"){message}}}}`,
+			want:  `{"optionalFoo":{"withMessage":{"withMessage":{"message":"again"}}}}`,
+		},
+		{
+			name:  "chained null",
+			query: `{optionalFoo(populated:false){withMessage(message:"updated"){message}}}`,
+			want:  `{"optionalFoo":{"withMessage":{"message":"updated"}}}`,
+		},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			out, err := mod.With(daggerQuery(tc.query)).Stdout(ctx)
+			require.NoError(t, err)
+			require.JSONEq(t, tc.want, out)
+		})
+	}
+}
+
 func (PythonSuite) TestProjectLayout(ctx context.Context, t *testctx.T) {
 	// NB: This is testing uv integration with different build backends,
 	// **not** different package managers.

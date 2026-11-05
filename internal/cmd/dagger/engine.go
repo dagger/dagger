@@ -143,6 +143,12 @@ func withEngineAction(
 	params client.Params,
 	fn runClientCallback,
 ) (rerr error) {
+	run := fn
+	fn = func(ctx context.Context, sess *client.Client) error {
+		ctx = context.WithValue(ctx, llmConfigUpdaterKey{}, llmConfigUpdater(sess.UpdateLLMConfig))
+		ctx = context.WithValue(ctx, llmModelConfigKey{}, llmModelConfigReader(sess.LLMModelConfig))
+		return run(ctx, sess)
+	}
 	if open := takeOpenSession(ctx); open != nil {
 		return open.run(ctx, action, params, fn)
 	}

@@ -104,14 +104,22 @@ legacy-default-path = true
 
 	remoteRef := workspaceSelectionRemoteRef(ctx, t, c, workspaceDir)
 
-	out, err := core.NewQuery(c).Container().From(alpineImage).
+	cli := core.NewQuery(c).Container().From(alpineImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/empty").
+		WithWorkdir("/empty")
+	out, err := cli.
 		With(workspaceSelectionDaggerCall("-W", remoteRef, "reader", "read")).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, workspaceMarker, strings.TrimSpace(out))
 	require.NotContains(t, out, toolMarker)
+
+	// Listing checks reads every module's +defaultPath context too.
+	out, err = cli.
+		With(workspaceSelectionDaggerExec("-W", remoteRef, "check", "-l")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "check-marker")
 }
 
 // Value workspaces load legacy toolchains with their own root as the

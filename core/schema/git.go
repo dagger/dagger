@@ -316,6 +316,12 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("__fullCheckout", s.fullCheckout).
 			IsPersistable().
 			Doc(`(Internal-only) Materialize full history and Git metadata regardless of keepGitDir.`),
+		dagql.NodeFunc("__sparseWorkspaceTree", s.sparseWorkspaceTree).
+			IsPersistable().
+			Doc(`(Internal-only) The files of this ref that loading a workspace at it reads, with only those fetched.`).
+			Args(
+				dagql.Arg("cwd").Doc("The workspace directory, from the repository's root."),
+			),
 		dagql.NodeFuncWithDynamicInputs("tree", s.tree, s.treeCacheKey).
 			IsPersistable().
 			View(AllVersion).

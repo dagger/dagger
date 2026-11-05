@@ -88,9 +88,9 @@ func init() {
 // the same way via requireCloudFeatures.
 var cloudChecksRequiredFeatures = []cloudFeature{featureCloudChecks, featureCloudModules}
 
-// runCloudCheckSet returns a RunE that sets the workspace autocheck flag for
-// the selected remote. The optional name arg is accepted but not used —
-// today's underlying API only models a single autocheck per remote.
+// runCloudCheckSet returns a RunE that turns Cloud checks on or off for the
+// selected remote's repository, on GitHub or Entire. The optional name arg
+// selects the repository instead of the workspace remote.
 func runCloudCheckSet(enabled bool) func(cmd *cobra.Command, args []string) error {
 	return func(cmd *cobra.Command, args []string) error {
 		// The feature requirements are declared as annotations on the
@@ -118,7 +118,14 @@ func runCloudCheckSet(enabled bool) func(cmd *cobra.Command, args []string) erro
 		}
 		state, err := setWorkspaceAutocheckState(cmd, remote, enabled)
 		if enabled && errors.Is(err, errCloudSourceNotConfigured) {
-			if setupErr := prepareCloudChecksIntegration(cmd, args); setupErr != nil {
+			prepare := prepareCloudChecksIntegration
+			var entireErr *entirePluginNotInstalledError
+			if errors.As(err, &entireErr) {
+				prepare = func(cmd *cobra.Command, args []string) error {
+					return prepareCloudChecksEntireInstall(cmd, args, entireErr)
+				}
+			}
+			if setupErr := prepare(cmd, args); setupErr != nil {
 				return setupErr
 			}
 			// Re-read Cloud state after the user completes the browser step.
@@ -130,9 +137,9 @@ func runCloudCheckSet(enabled bool) func(cmd *cobra.Command, args []string) erro
 		}
 		var accessErr *repoAccessError
 		if enabled && errors.As(err, &accessErr) {
-			// The GitHub App installation exists but does not grant access to
-			// this repository: offer to open the installation settings page,
-			// then retry once the user has granted access.
+			// The installation exists but does not grant access to this
+			// repository: offer to open the installation settings page, then
+			// retry once the user has granted access.
 			if promptErr := prepareCloudChecksRepoAccess(cmd, accessErr); promptErr != nil {
 				return promptErr
 			}
@@ -283,15 +290,43 @@ func prepareCloudChecksAppInstall(cmd *cobra.Command, args []string) error {
 // waits for confirmation. Without a prompt (non-interactive), it returns the
 // actionable error as-is.
 func prepareCloudChecksRepoAccess(cmd *cobra.Command, accessErr *repoAccessError) error {
-	if !canPromptForCloudChecks() || !confirmSetupCommand(cmd, "Repository permissions not found for the GitHub App. Open browser to configure?", "open "+accessErr.settingsURL) {
+	if !canPromptForCloudChecks() || !confirmSetupCommand(cmd, "Repository permissions not found for the installation. Open browser to configure?", "open "+accessErr.settingsURL) {
 		return accessErr
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Manual step: grant access to this repository, then return here:\n%s\n", accessErr.settingsURL)
 	if err := browser.OpenURL(accessErr.settingsURL); err != nil {
 		fmt.Fprintln(cmd.ErrOrStderr(), "Could not open a browser. Open the URL above.")
 	}
-	if !confirmManualStep(cmd, "Have you completed the manual GitHub step?") {
+	if !confirmManualStep(cmd, "Have you completed the manual step?") {
 		return accessErr
+	}
+	return nil
+}
+
+// prepareCloudChecksEntireInstall offers to install the Dagger plugin on the
+// repository's Entire project in the browser, then waits for confirmation.
+// Entire returns the browser to Dagger Cloud, which completes the install.
+func prepareCloudChecksEntireInstall(cmd *cobra.Command, args []string, notInstalled *entirePluginNotInstalledError) error {
+	client, _, err := cloudCLI.cloudClientWithLogin(cmd.Context(), false)
+	if err != nil {
+		return err
+	}
+	installURL, err := entireInstallPage(cmd.Context(), client, notInstalled)
+	if err != nil {
+		return fmt.Errorf("%w\n\n%w", notInstalled, err)
+	}
+	required := cloudChecksPrerequisiteError(cmd, args,
+		fmt.Sprintf("Cloud checks need the Dagger plugin installed on the Entire project of %s (install it here: %s)", notInstalled.repo, installURL),
+		"")
+	if !canPromptForCloudChecks() || !confirmSetupCommand(cmd, "Install the Dagger plugin on Entire in the browser?", installURL) {
+		return required
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "Manual step: install the Dagger plugin on the repository's Entire project, then return here:\n%s\n", installURL)
+	if err := browser.OpenURL(installURL); err != nil {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Could not open a browser. Open the URL above.")
+	}
+	if !confirmManualStep(cmd, "Have you completed the manual Entire step?") {
+		return required
 	}
 	return nil
 }

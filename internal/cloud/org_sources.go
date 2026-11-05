@@ -11,25 +11,40 @@ type Source struct {
 	ID           string  `json:"id"`
 	Type         string  `json:"type"`
 	ConfiguredAt string  `json:"configuredAt"`
+	OrgID        *string `json:"orgId"`
 	OrgName      *string `json:"orgName"`
 	ConfigURL    string  `json:"configUrl"`
 }
 
+// SourceRepository is a repository that an installed source can reach, as
+// seen by one organization.
 type SourceRepository struct {
 	Repository string `json:"repository"`
 	Selected   bool   `json:"selected"`
+	// Eligible is false when another organization has claimed the repository.
+	Eligible         bool    `json:"eligible"`
+	ClaimedByOrgName *string `json:"claimedByOrgName"`
 }
 
+// MappedSource is the installed source that claims a repository for an
+// organization.
 type MappedSource struct {
-	SourceName     string   `json:"sourceName"`
-	InstallationID string   `json:"installationId"`
-	Mode           string   `json:"mode"`
-	Repositories   []string `json:"repositories"`
+	Provider       string `json:"provider"`
+	SourceName     string `json:"sourceName"`
+	InstallationID string `json:"installationId"`
+	ConfigURL      string `json:"configUrl"`
+	Org            *Org   `json:"org"`
+}
+
+// Org identifies a Dagger Cloud organization.
+type Org struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 // Repository is a repo-scoped view of Cloud configuration, reachable through
 // the user-scoped User.repositories(refs:) field. It only surfaces repos that
-// are currently auto-checked (selected under a mapped source).
+// one of the user's organizations has claimed for checks.
 type Repository struct {
 	Ref          string        `json:"ref"`
 	Settings     *RepoSetting  `json:"settings"`
@@ -67,6 +82,7 @@ query GetSources {
 		id
 		type
 		configuredAt
+		orgId
 		orgName
 		configUrl
 	}
@@ -91,12 +107,18 @@ query GetUserRepositories($refs: [String!]) {
 			settings {
 				repo
 				isPublic
+				effectiveRunChecksOnDefaultBranch
+				effectiveRunChecksOnPullRequest
 			}
 			mappedSource {
+				provider
 				sourceName
 				installationId
-				mode
-				repositories
+				configUrl
+				org {
+					id
+					name
+				}
 			}
 		}
 	}
@@ -104,8 +126,8 @@ query GetUserRepositories($refs: [String!]) {
 `
 
 // UserRepositories returns the repo-scoped Cloud configuration for the given
-// refs, scoped to the authenticated user. Only repos that are currently
-// auto-checked (selected) are returned.
+// refs, scoped to the authenticated user. Only repos that one of the user's
+// organizations has claimed are returned.
 func (c *Client) UserRepositories(ctx context.Context, refs ...string) ([]Repository, error) {
 	var data struct {
 		User struct {
@@ -120,38 +142,13 @@ func (c *Client) UserRepositories(ctx context.Context, refs ...string) ([]Reposi
 	return data.User.Repositories, nil
 }
 
-const getOrgMappedSourcesOperation = `
-query GetOrgMappedSources($org: String!) {
-	org(name: $org) {
-		mappedSources {
-			sourceName
-			installationId
-			mode
-			repositories
-		}
-	}
-}
-`
-
-func (c *Client) OrgMappedSources(ctx context.Context, orgName string) ([]MappedSource, error) {
-	var data struct {
-		Org struct {
-			MappedSources []MappedSource `json:"mappedSources"`
-		} `json:"org"`
-	}
-	if err := c.doGraphQL(ctx, "GetOrgMappedSources", getOrgMappedSourcesOperation, map[string]any{
-		"org": orgName,
-	}, &data); err != nil {
-		return nil, err
-	}
-	return data.Org.MappedSources, nil
-}
-
 const getSourceRepositoriesOperation = `
 query GetSourceRepositories($installationId: ID!, $org: ID) {
 	sourceRepositories(installationId: $installationId, org: $org) {
 		repository
 		selected
+		eligible
+		claimedByOrgName
 	}
 }
 `
@@ -167,30 +164,6 @@ func (c *Client) SourceRepositories(ctx context.Context, installationID, orgID s
 		return nil, err
 	}
 	return data.SourceRepositories, nil
-}
-
-const configureSourceOperation = `
-mutation ConfigureSource($installationId: ID!, $mode: SourceMode!, $repositories: [String!]!) {
-	configureSource(source: { installationId: $installationId, mode: $mode, repositories: $repositories }) {
-		sourceName
-		installationId
-		mode
-	}
-}
-`
-
-func (c *Client) ConfigureSource(ctx context.Context, installationID, mode string, repositories []string) (*MappedSource, error) {
-	var data struct {
-		ConfigureSource MappedSource `json:"configureSource"`
-	}
-	if err := c.doGraphQL(ctx, "ConfigureSource", configureSourceOperation, map[string]any{
-		"installationId": installationID,
-		"mode":           mode,
-		"repositories":   repositories,
-	}, &data); err != nil {
-		return nil, err
-	}
-	return &data.ConfigureSource, nil
 }
 
 const createQuickstartOrgOperation = `
@@ -246,35 +219,6 @@ func (c *Client) GitHubConnection(ctx context.Context) (*GitHubConnection, error
 		return nil, err
 	}
 	return data.GitHubConnection, nil
-}
-
-const configureOrgSourceOperation = `
-mutation ConfigureOrgSource($org: ID!, $installationId: ID!, $mode: SourceMode!, $repositories: [String!]!) {
-	configureOrgSource(org: $org, source: { installationId: $installationId, mode: $mode, repositories: $repositories }) {
-		sourceName
-		installationId
-		mode
-	}
-}
-`
-
-// ConfigureOrgSource maps the given GitHub App installation to org (creating the
-// mapping if needed) and applies the repo selection. Unlike ConfigureSource, it
-// does not require the installation to already be mapped, so it is used to
-// onboard a freshly installed app into the user's org. Requires org admin.
-func (c *Client) ConfigureOrgSource(ctx context.Context, orgID, installationID, mode string, repositories []string) (*MappedSource, error) {
-	var data struct {
-		ConfigureOrgSource MappedSource `json:"configureOrgSource"`
-	}
-	if err := c.doGraphQL(ctx, "ConfigureOrgSource", configureOrgSourceOperation, map[string]any{
-		"org":            orgID,
-		"installationId": installationID,
-		"mode":           mode,
-		"repositories":   repositories,
-	}, &data); err != nil {
-		return nil, err
-	}
-	return &data.ConfigureOrgSource, nil
 }
 
 const getGithubOAuthURLOperation = `

@@ -53,11 +53,7 @@ nearest `package.json`.
 Each project has a `fix` function that runs `eslint --fix` and returns the
 repaired source as a changeset. Problems ESLint cannot fix are left for the
 check to report. It is a regular function rather than a check, so it does not
-run during `dagger check`:
-
-```bash
-dagger -c 'eslint | projects | get packages/ui | fix | export .'
-```
+run during `dagger check`.
 
 ## Configure it
 

@@ -34,7 +34,7 @@ source = ".dagger/modules/go-client-dev"
 legacy-default-path = true
 
 [modules.golang]
-source = "dagger.io/go@552271d51223e70821b554d8b88769afc50f98dd"
+source = "dagger.io/go"
 legacy-default-path = true
 
 [modules.golang.settings]
@@ -291,7 +291,11 @@ clients = ["./.dagger/modules/engine-dev", "./modules/git-releaser"]
 
 [sdks.go.scopes.".dagger/modules/python-client-dev"]
 is-module = true
-clients = ["./.dagger/modules/engine-dev", "./.dagger/modules/python-client-dev/dockerd", "github.com/dagger/pytest@cdf6dc0bce0fe8fdf87c6b26ecd991e6f96200b0", "dagger.io/linux/wolfi"]
+clients = ["./.dagger/modules/engine-dev", "./.dagger/modules/python-client-dev/dockerd", "github.com/dagger/pytest", "dagger.io/linux/wolfi"]
+
+[sdks.go.scopes.".dagger/modules/python-client-dev".settings]
+dangEntrypoint = false
+unifiedClients = false
 
 [sdks.go.scopes.".dagger/modules/python-client-dev/dockerd"]
 is-module = true

@@ -189,3 +189,25 @@ func CloneWorkspaceGitTree(
 	}
 	return tree, gitRef, nil
 }
+
+// LoadGitWorkspaceSparseTree loads the files of a workspace's commit that
+// loading it reads. It's nil for a repository that isn't remote, which has its
+// objects at hand.
+func LoadGitWorkspaceSparseTree(
+	ctx context.Context,
+	dag *dagql.Server,
+	gitRef dagql.ObjectResult[*GitRef],
+	cwd string,
+) (*GitSparseTree, error) {
+	if _, ok := gitRef.Self().Backend.(*RemoteGitRef); !ok {
+		return nil, nil
+	}
+	var root dagql.ObjectResult[*Directory]
+	if err := dag.Select(ctx, gitRef, &root, dagql.Selector{
+		Field: "__sparseWorkspaceTree",
+		Args:  []dagql.NamedInput{{Name: "cwd", Value: dagql.String(cwd)}},
+	}); err != nil {
+		return nil, err
+	}
+	return &GitSparseTree{Root: root}, nil
+}
