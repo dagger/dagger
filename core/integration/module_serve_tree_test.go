@@ -11,6 +11,7 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"slices"
 	"strings"
 
 	"dagger.io/dagger/core"
@@ -298,5 +299,121 @@ source = "modules/caller"
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"serveModule": null}`, out)
+	})
+}
+
+// twoBranchRepo commits tree on main, and on next the same tree with one file
+// changed.
+func twoBranchRepo(c *dagger.Client, tree *core.Directory, path, contents string) *core.Directory {
+	git := []string{"git", "-c", "user.email=dagger@example.com", "-c", "user.name=Dagger Tests"}
+	return core.NewQuery(c).Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithDirectory("/repo", tree).
+		WithWorkdir("/repo").
+		WithExec([]string{"git", "init", "-q", "-b", "main"}).
+		WithExec([]string{"git", "add", "-A"}).
+		WithExec(append(slices.Clone(git), "commit", "-qm", "main")).
+		WithExec([]string{"git", "checkout", "-qb", "next"}).
+		WithNewFile(path, contents).
+		WithExec([]string{"git", "add", "-A"}).
+		WithExec(append(slices.Clone(git), "commit", "-qm", "next")).
+		WithExec([]string{"git", "checkout", "-q", "main"}).
+		Directory("/repo")
+}
+
+// A module serves modules from its own tree at run time, after the engine has
+// looked up the calling function in the cache. Whatever the calling module
+// can serve must therefore reach the function's cache key, or a change to a
+// served module leaves the caller's result stale. Every subtest gets its own
+// caller, so parallel subtests never hit each other's results.
+func (ModuleLoadingSuite) TestServeModuleCallerTreeCache(ctx context.Context, t *testctx.T) {
+	t.Run("git module follows a new commit of a sibling it serves", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		tree := serveTreeModules(c).
+			WithNewFile("modules/caller/nonce.go", "package main\n\n// "+rand.Text()+"\n")
+		gitDaemon, repoURL := gitService(ctx, t, c,
+			twoBranchRepo(c, tree, "modules/hello/main.dang", serveTreeDecoySource))
+		gitHost, err := gitDaemon.Hostname(ctx)
+		require.NoError(t, err)
+		ctr := goGitBase(t, c).
+			WithServiceBinding(gitHost, gitDaemon).
+			WithNewFile("dagger.toml", "\n")
+
+		out, err := ctr.With(daggerCallAt(repoURL+"#main:modules/caller", "message", "--address=/modules/hello")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hi from hello", out)
+
+		out, err = ctr.With(daggerCallAt(repoURL+"#next:modules/caller", "message", "--address=/modules/hello")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hi from the caller's workspace", out)
+	})
+
+	t.Run("git workspace module follows an edit to a sibling it serves", func(ctx context.Context, t *testctx.T) {
+		tree := serveTreeModules(connect(ctx, t)).
+			WithNewFile("modules/caller/nonce.go", "package main\n\n// "+rand.Text()+"\n")
+		// message serves the sibling from the module's tree and returns its
+		// answer. Each run is its own session.
+		var commits []string
+		message := func(edit bool) string {
+			c := connect(ctx, t)
+			gitDaemon, repoURL := gitService(ctx, t, c, tree)
+			ref := core.NewQuery(c).Git(repoURL, core.GitOpts{ExperimentalServiceHost: gitDaemon}).Branch("main")
+			commit, err := ref.CommitSHA(ctx)
+			require.NoError(t, err)
+			commits = append(commits, commit)
+			ws := ref.AsWorkspace()
+			if edit {
+				// The same commit, with an edit the workspace carries.
+				ws = ws.WithNewFile("modules/hello/main.dang", serveTreeDecoySource)
+			}
+			require.NoError(t, ws.ModuleSource("/modules/caller").AsModule().Serve(ctx))
+			res, err := testutil.QueryWithClient[struct {
+				Caller struct {
+					Message string
+				}
+			}](c, t, `{caller{message(address: "/modules/hello")}}`, nil)
+			require.NoError(t, err)
+			return res.Caller.Message
+		}
+		require.Equal(t, "hi from hello", message(false))
+		edited := message(true)
+		require.Equal(t, commits[0], commits[1], "both runs serve the same commit")
+		require.Equal(t, "hi from the caller's workspace", edited)
+	})
+
+	t.Run("git module in a clean repository workspace shares results with the same commit's ref", func(ctx context.Context, t *testctx.T) {
+		// stamp changes on every run, so an equal answer is a shared result.
+		tree := serveTreeModules(connect(ctx, t)).
+			WithNewFile("modules/caller/nonce.go", "package main\n\n// "+rand.Text()+"\n").
+			WithNewFile("modules/caller/stamp.go", `package main
+
+import (
+	"strconv"
+	"time"
+)
+
+func (m *Caller) Stamp() string {
+	return strconv.FormatInt(time.Now().UnixNano(), 10)
+}
+`)
+		stamp := func(asWorkspace func(*core.GitRepository) *core.Workspace) string {
+			c := connect(ctx, t)
+			gitDaemon, repoURL := gitService(ctx, t, c, tree)
+			repo := core.NewQuery(c).Git(repoURL, core.GitOpts{ExperimentalServiceHost: gitDaemon})
+			require.NoError(t, asWorkspace(repo).ModuleSource("/modules/caller").AsModule().Serve(ctx))
+			res, err := testutil.QueryWithClient[struct {
+				Caller struct {
+					Stamp string
+				}
+			}](c, t, `{caller{stamp}}`, nil)
+			require.NoError(t, err)
+			return res.Caller.Stamp
+		}
+		// The repository's own workspace applies its uncommitted changes, none
+		// here; its commit's ref has none to apply.
+		first := stamp(func(repo *core.GitRepository) *core.Workspace { return repo.AsWorkspace() })
+		second := stamp(func(repo *core.GitRepository) *core.Workspace { return repo.Head().AsWorkspace() })
+		require.Equal(t, first, second)
 	})
 }
