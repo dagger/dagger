@@ -99,7 +99,7 @@ func ResolveDaggerGetRedirect(ctx context.Context, refString string) (string, er
 	// looks them up: a vanity URL is served from its owner's own domain. A
 	// renamed repository on such a host still resolves, because git follows the
 	// host's redirect when it clones.
-	if vcs.IsKnownCodeHost(strings.TrimPrefix(sourceURL, gitref.SchemeHTTPS.Prefix())) {
+	if u, err := url.Parse(sourceURL); err == nil && vcs.IsKnownCodeHost(u.Host+u.Path) {
 		return refString, nil
 	}
 

@@ -223,6 +223,7 @@ func TestResolveDaggerGetRedirectSkipsKnownCodeHosts(t *testing.T) {
 		"github.com/old-owner/repo",
 		"github.com/old-owner/repo/sub@v1.0.0",
 		"https://github.com/old-owner/repo@main",
+		"https://git@github.com/old-owner/repo",
 		"bitbucket.org/old-owner/repo",
 		"codeberg.org/old-owner/repo/sub",
 	} {
