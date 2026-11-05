@@ -262,13 +262,23 @@ type entrypointContract struct {
 	sources     bool
 }
 
-func (c *entrypointContract) run(ctx context.Context, dir string) (dang.ValueScope, error) {
-	sources, err := DeclaresEntrypointSources(dir, c.dangVersion)
+func (c *entrypointContract) run(ctx context.Context, sourceDir string) (dang.ValueScope, error) {
+	// The sources check parses through the syntax cache at the version on
+	// ctx, so set the entrypoint's version before it, not only for the run.
+	ctx, err := contextWithEntrypointVersion(ctx, c.dangVersion)
 	if err != nil {
 		return nil, err
 	}
-	c.sources = sources
-	return runEntrypointDir(ctx, dir, c.dangVersion, sources)
+	dir, err := copyEntrypointDir(sourceDir)
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(dir)
+	c.sources, err = declaresSourcesIn(ctx, dir)
+	if err != nil {
+		return nil, err
+	}
+	return runCopiedEntrypoint(ctx, dir, c.sources)
 }
 
 func (c *entrypointContract) workspaceArgs(
@@ -291,31 +301,52 @@ func (c *entrypointContract) workspaceArgs(
 }
 
 func runEntrypointDir(ctx context.Context, sourceDir string, dangVersion string, sources bool) (dang.ValueScope, error) {
-	ctx = withDangSyntaxCache(ctx)
 	ctx, err := contextWithEntrypointVersion(ctx, dangVersion)
 	if err != nil {
 		return nil, err
 	}
-	dir, err := os.MkdirTemp("", "dagger-module-entrypoint-")
-	if err != nil {
-		return nil, fmt.Errorf("create module entrypoint directory: %w", err)
-	}
-	defer os.RemoveAll(dir)
-
-	files, err := entrypointFiles(sourceDir)
+	dir, err := copyEntrypointDir(sourceDir)
 	if err != nil {
 		return nil, err
+	}
+	defer os.RemoveAll(dir)
+	return runCopiedEntrypoint(ctx, dir, sources)
+}
+
+// copyEntrypointDir copies the entrypoint's top-level Dang files, and nothing
+// else, to a new temporary directory, where the engine installs the
+// entrypoint interface beside them and runs them. The caller removes it.
+func copyEntrypointDir(sourceDir string) (_ string, rerr error) {
+	dir, err := os.MkdirTemp("", "dagger-module-entrypoint-")
+	if err != nil {
+		return "", fmt.Errorf("create module entrypoint directory: %w", err)
+	}
+	defer func() {
+		if rerr != nil {
+			os.RemoveAll(dir)
+		}
+	}()
+	files, err := entrypointFiles(sourceDir)
+	if err != nil {
+		return "", err
 	}
 	for _, path := range files {
 		name := filepath.Base(path)
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return nil, fmt.Errorf("read module entrypoint file %q: %w", name, err)
+			return "", fmt.Errorf("read module entrypoint file %q: %w", name, err)
 		}
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
-			return nil, fmt.Errorf("copy module entrypoint file %q: %w", name, err)
+			return "", fmt.Errorf("copy module entrypoint file %q: %w", name, err)
 		}
 	}
+	return dir, nil
+}
+
+// runCopiedEntrypoint installs the entrypoint interface in dir, a copy from
+// copyEntrypointDir, and runs it.
+func runCopiedEntrypoint(ctx context.Context, dir string, sources bool) (dang.ValueScope, error) {
+	ctx = withDangSyntaxCache(ctx)
 	contractPath := filepath.Join(dir, "__module_entrypoint.dang")
 	contract, err := os.OpenFile(contractPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {

@@ -1530,7 +1530,7 @@ func (s *moduleSourceSchema) loadEntrypointSources(ctx context.Context, src *cor
 	}
 	declared := false
 	err = entryDir.Self().Mount(ctx, entryDir, func(dir string) error {
-		declared, err = dangv2.DeclaresEntrypointSources(dir, src.DangVersion)
+		declared, err = dangv2.DeclaresEntrypointSources(ctx, dir, src.DangVersion)
 		return err
 	})
 	if err != nil {

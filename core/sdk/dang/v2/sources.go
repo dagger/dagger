@@ -30,11 +30,27 @@ const EntrypointSourcesMember = "sources"
 // type does not count. A file that does not parse declares nothing, so its
 // error surfaces when the entrypoint runs. dangVersion is the Dang version the
 // files are written in (ModuleSource.DangVersion).
-func DeclaresEntrypointSources(dir string, dangVersion string) (bool, error) {
-	version, err := parseEntrypointDangVersion(dangVersion)
+func DeclaresEntrypointSources(ctx context.Context, dir string, dangVersion string) (bool, error) {
+	ctx, err := contextWithEntrypointVersion(ctx, dangVersion)
 	if err != nil {
 		return false, err
 	}
+	runDir, err := copyEntrypointDir(dir)
+	if err != nil {
+		return false, err
+	}
+	defer os.RemoveAll(runDir)
+	return declaresSourcesIn(ctx, runDir)
+}
+
+// declaresSourcesIn is DeclaresEntrypointSources on dir, a copy from
+// copyEntrypointDir. Every module source load and every entrypoint run asks,
+// so it parses the files where the entrypoint runs from, through the engine's
+// Dang syntax cache: they parse as the run parses them, and an entrypoint is
+// parsed once for all of them. ctx carries the entrypoint's Dang version
+// (contextWithEntrypointVersion), so the files parse at the version the run
+// parses them at.
+func declaresSourcesIn(ctx context.Context, dir string) (bool, error) {
 	files, err := entrypointFiles(dir)
 	if err != nil {
 		return false, err
@@ -47,11 +63,11 @@ func DeclaresEntrypointSources(dir string, dangVersion string) (bool, error) {
 		if !bytes.Contains(data, []byte(EntrypointSourcesMember)) {
 			continue
 		}
-		root, err := dang.Parse(path, data, dang.WithVersion(version))
+		file, err := parseDangSource(ctx, path)
 		if err != nil {
 			return false, nil //nolint:nilerr
 		}
-		if file, ok := root.(*dang.FileBlock); ok && declaresSources(file) {
+		if declaresSources(file) {
 			return true, nil
 		}
 	}

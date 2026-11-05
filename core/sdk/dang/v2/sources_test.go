@@ -3,8 +3,10 @@ package dangv2
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"testing"
 
@@ -122,6 +124,16 @@ func TestDeclaresEntrypointSources(t *testing.T) {
 			files: map[string]string{"main.dang": entrypointSource(withoutSourcesMethods)},
 		},
 		{
+			// The entrypoint runs from a copy of its Dang files alone, so it
+			// declares sources as that copy parses.
+			name: "a dang.toml the run does not read",
+			files: map[string]string{
+				"dang.toml": "dang = \n",
+				"main.dang": entrypointSource(sourcesMember, goSDKMethods),
+			},
+			declared: true,
+		},
+		{
 			name: "syntax error",
 			files: map[string]string{
 				"main.dang": entrypointSource(sourcesMember, goSDKMethods) + "let broken = \"unterminated\n",
@@ -130,11 +142,47 @@ func TestDeclaresEntrypointSources(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			declared, err := DeclaresEntrypointSources(writeDangFiles(t, tc.files), "")
+			declared, err := DeclaresEntrypointSources(t.Context(), writeDangFiles(t, tc.files), "")
 			require.NoError(t, err)
 			require.Equal(t, tc.declared, declared)
 		})
 	}
+}
+
+// Every module source load and every entrypoint run asks whether the
+// entrypoint declares sources, each from its own mount of the entrypoint. Once
+// one has parsed the entrypoint, asking again about the same content costs a
+// copy of its syntax, not another parse. Parsing allocates many times what
+// the copy does, so this compares the bytes each allocates.
+func TestDeclaresEntrypointSourcesParsesOncePerContent(t *testing.T) {
+	members := []string{sourcesMember, goSDKMethods}
+	for i := range 100 {
+		members = append(members, fmt.Sprintf("  pub greeting%d(name: String!): String! { \"hello %d, \" + name }\n", i, i))
+	}
+	// Content of its own, so no earlier test has parsed it.
+	source := fmt.Sprintf("# %s\n", t.Name()) + entrypointSource(members...)
+
+	allocated := func(f func()) uint64 {
+		var before, after goruntime.MemStats
+		goruntime.GC()
+		goruntime.ReadMemStats(&before)
+		f()
+		goruntime.ReadMemStats(&after)
+		return after.TotalAlloc - before.TotalAlloc
+	}
+	declares := func() {
+		declared, err := DeclaresEntrypointSources(t.Context(), writeDangFiles(t, map[string]string{"main.dang": source}), "")
+		require.NoError(t, err)
+		require.True(t, declared)
+	}
+
+	parse := allocated(func() {
+		_, err := dang.Parse("main.dang", []byte(source))
+		require.NoError(t, err)
+	})
+	declares()
+	again := allocated(declares)
+	require.Less(t, again, parse/4, "asking again parsed the entrypoint again: %d bytes allocated, against %d for a parse", again, parse)
 }
 
 type failingClient struct{}
