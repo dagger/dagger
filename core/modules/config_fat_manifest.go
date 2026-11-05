@@ -1,6 +1,8 @@
 package modules
 
 import (
+	"strings"
+
 	toml "github.com/pelletier/go-toml"
 )
 
@@ -58,7 +60,11 @@ func selectModuleManifestFormat(tree *toml.Tree) moduleManifestFormat {
 // rejecting them.
 //
 // "dependencies" is absent: a version 2 manifest reads it as the
-// entrypoint's dependencies, when it has no runtime.
+// entrypoint's dependencies, when it has no runtime. "include" is absent too:
+// a version 2 manifest reads it with the same meaning, so a fat manifest's
+// include applies on either engine, together with its pre-v2 "exclude" (see
+// fatManifestExclusions). A version 2 manifest itself writes an exclusion as a
+// "!" pattern in include.
 var legacyModuleManifestKeys = []string{
 	"$schema",
 	"clients",
@@ -66,7 +72,25 @@ var legacyModuleManifestKeys = []string{
 	"disableDefaultFunctionCaching",
 	"engineVersion",
 	"exclude",
-	"include",
 	"runtime",
 	"source",
+}
+
+// fatManifestExclusions returns a fat manifest's pre-v2 exclude as include
+// patterns, as the pre-v2 format reads it, so the include that both formats
+// read selects the same files on either engine.
+func fatManifestExclusions(tree *toml.Tree) []string {
+	values, _ := tree.Get("exclude").([]any)
+	var include []string
+	for _, value := range values {
+		exclude, _ := value.(string)
+		switch {
+		case exclude == "":
+		case strings.HasPrefix(exclude, "!"):
+			include = append(include, exclude[1:])
+		default:
+			include = append(include, "!"+exclude)
+		}
+	}
+	return include
 }

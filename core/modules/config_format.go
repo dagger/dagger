@@ -17,7 +17,12 @@ const (
 // ModuleManifestV2 is the version 2 dagger-module.toml schema. The presence of
 // the entrypoint table selects this schema; there is no explicit version key.
 type ModuleManifestV2 struct {
-	Name       string                 `toml:"name"`
+	Name string `toml:"name"`
+	// Include lists the files outside the module directory that the module
+	// builds from, relative to the module directory, as patterns; a pattern
+	// that starts with "!" excludes. The engine loads them with the module's
+	// own files, so they are part of its context and of its digest.
+	Include    []string               `toml:"include,omitempty"`
 	Entrypoint ModuleEntrypointConfig `toml:"entrypoint"`
 	// Dependencies are the modules the entrypoint calls, installed in its
 	// schema.
@@ -225,7 +230,7 @@ func validateCurrentModuleConfigTOML(tree *toml.Tree) error {
 
 func validateModuleManifestV2TOML(tree *toml.Tree) error {
 	for _, key := range tree.Keys() {
-		if slices.Contains([]string{"name", "entrypoint", "dependencies"}, key) {
+		if slices.Contains([]string{"name", "include", "entrypoint", "dependencies"}, key) {
 			continue
 		}
 		// A fat manifest keeps the pre-v2 fields for older engines. Ignore them

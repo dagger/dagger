@@ -135,6 +135,7 @@ func parseModuleManifestV2TOML(tree *toml.Tree) (*ModuleConfigWithUserFields, er
 		ModuleConfig: ModuleConfig{
 			Name:         manifest.Name,
 			Entrypoint:   &manifest.Entrypoint,
+			Include:      append(manifest.Include, fatManifestExclusions(tree)...),
 			Dependencies: moduleConfigDependenciesFromCurrent(manifest.Dependencies),
 		},
 	}, nil
@@ -188,6 +189,7 @@ func MarshalModuleConfigForFormat(modCfg *ModuleConfigWithUserFields, format Con
 		if modCfg.Entrypoint != nil {
 			err = encoder.Encode(&ModuleManifestV2{
 				Name:         modCfg.Name,
+				Include:      modCfg.Include,
 				Entrypoint:   *modCfg.Entrypoint,
 				Dependencies: currentModuleConfigDependencies(modCfg.Dependencies),
 			})

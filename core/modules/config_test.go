@@ -46,6 +46,45 @@ source = "./entrypoint"
 	require.Nil(t, cfg.SDK)
 }
 
+// A version 2 manifest names the files outside the module directory that its
+// build reads, and writes them back in the same place.
+func TestModuleManifestV2Include(t *testing.T) {
+	t.Parallel()
+
+	src := `name = "tiny"
+include = ["../../../go.mod", "../../../util/parallel/*.go", "!../../../util/parallel/*_test.go"]
+
+[entrypoint]
+  kind = "dang"
+  source = "./entrypoint"
+`
+	cfg, err := ParseModuleConfigForFilename([]byte(src), Filename)
+	require.NoError(t, err)
+	require.Equal(t, []string{"../../../go.mod", "../../../util/parallel/*.go", "!../../../util/parallel/*_test.go"}, cfg.Include)
+
+	out, err := MarshalModuleConfigForFilename(cfg, Filename)
+	require.NoError(t, err)
+	require.Equal(t, src, string(out))
+}
+
+// A fat manifest's include applies to both formats, so a version 2 read takes
+// its pre-v2 exclude with it, as the pre-v2 format does.
+func TestFatModuleManifestIncludeKeepsExclude(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := ParseModuleConfigForFilename([]byte(`name = "tiny"
+include = ["../shared/*.txt"]
+exclude = ["../shared/skip.txt", "!../shared/keep.txt"]
+
+[entrypoint]
+  kind = "dang"
+  source = "./entrypoint"
+`), Filename)
+	require.NoError(t, err)
+	require.NotNil(t, cfg.Entrypoint)
+	require.Equal(t, []string{"../shared/*.txt", "!../shared/skip.txt", "../shared/keep.txt"}, cfg.Include)
+}
+
 // The entrypoint table is the only manifest version 2 selector. A manifest
 // without it is the pre-v2 format.
 func TestParseModuleConfigSelectsFormatByEntrypoint(t *testing.T) {
