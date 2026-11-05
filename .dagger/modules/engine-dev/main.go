@@ -264,7 +264,7 @@ func (dev *EngineDev) imageEntries(ctx context.Context, builder *build.Builder, 
 		return nil, err
 	}
 	const out = "/entries"
-	return client.
+	ran := client.
 		WithMountedFile("/usr/local/bin/engine-image-entries", builder.ImageEntriesBinary()).
 		WithMountedDirectory("/seed", seed).
 		WithMountedDirectory("/seed-go-sdk", builder.GoSDKImageEntriesSeed()).
@@ -274,8 +274,21 @@ func (dev *EngineDev) imageEntries(ctx context.Context, builder *build.Builder, 
 			"-dagger-go", daggerGo,
 			"-go-version", distconsts.GolangVersion,
 			"-out", out,
-		)).
-		Directory(out), nil
+		), dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny})
+	// A failure says why, such as dagger/go unreachable at the Go SDK
+	// module's pin, rather than only its exit code.
+	exitCode, err := ran.ExitCode(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if exitCode != 0 {
+		output, err := ran.CombinedOutput(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("make the engine image's entries, with dagger/go at %s (exit code %d):\n%s", daggerGo, exitCode, tailLines(output, 40))
+	}
+	return ran.Directory(out), nil
 }
 
 // Create a test engine service
