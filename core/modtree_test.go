@@ -26,19 +26,19 @@ func TestModTreeMatchingOpensNoSpans(t *testing.T) {
 	t.Parallel()
 	rec := tracetest.NewSpanRecorder()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(rec))
-	ctx, span := tp.Tracer("test").Start(t.Context(), "check")
+	_, span := tp.Tracer("test").Start(t.Context(), "check")
 
 	root := &ModTreeNode{}
 	mod := &ModTreeNode{Parent: root, Name: "goTests"}
 	leaf := &ModTreeNode{Parent: mod, Name: "unitTests"}
 	for _, node := range []*ModTreeNode{mod, leaf} {
-		_, err := node.Match(ctx, []string{"go-tests:unit-tests", "lint", "**:lint"})
+		_, err := node.Match([]string{"go-tests:unit-tests", "lint", "**:lint"})
 		require.NoError(t, err)
 	}
-	_, err := leaf.Path().Glob(ctx, LatestNamer, "other:*")
+	_, err := leaf.Path().Glob(LatestNamer, "other:*")
 	require.NoError(t, err)
-	NewModTreePath("goTests:integration").Contains(ctx, LatestNamer, leaf.Path())
-	leaf.Path().Equals(ctx, LatestNamer, NewModTreePath("go-tests:lint"))
+	NewModTreePath("goTests:integration").Contains(LatestNamer, leaf.Path())
+	leaf.Path().Equals(LatestNamer, NewModTreePath("go-tests:lint"))
 	span.End()
 
 	ended := rec.Ended()

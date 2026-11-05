@@ -55,3 +55,4 @@ type connectorFunc func(context.Context) (net.Conn, error)
 
 func (f connectorFunc) Connect(ctx context.Context) (net.Conn, error) { return f(ctx) }
 func (f connectorFunc) EngineID() string                              { return "" }
+func (f connectorFunc) ClaimID() string                               { return "" }
