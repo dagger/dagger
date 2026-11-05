@@ -77,15 +77,22 @@ func (t *PathTree) FileCount(rel string) int {
 // tree as the copy does, with the copy's own matcher, so the two can't disagree
 // on a pattern. A gitignore filter reads files, so it can't be answered here.
 func (t *PathTree) SelectedFiles(root string, filter Filter) ([]string, error) {
+	files, _, err := t.SelectedPaths(root, filter)
+	return files, err
+}
+
+// SelectedPaths is SelectedFiles, also returning the directories the copy
+// selects itself, which it writes even when it selects nothing in them.
+func (t *PathTree) SelectedPaths(root string, filter Filter) (files, dirs []string, _ error) {
 	if filter.Gitignore {
-		return nil, fmt.Errorf("path tree can't apply a gitignore filter")
+		return nil, nil, fmt.Errorf("path tree can't apply a gitignore filter")
 	}
 	m, err := newMatcher("", filter)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	root = strings.TrimPrefix(path.Clean("/"+root), "/")
-	var selected []string
+	var selected, selectedDirs []string
 	var walk func(rel string, parent matchState) error
 	walk = func(rel string, parent matchState) error {
 		for _, entry := range t.children[path.Join(root, rel)] {
@@ -100,6 +107,9 @@ func (t *PathTree) SelectedFiles(root string, filter Filter) ([]string, error) {
 				}
 				continue
 			}
+			if include {
+				selectedDirs = append(selectedDirs, path.Join(root, childRel))
+			}
 			if !m.shouldDescend(childRel, state) || !m.mayHoldIncluded(childRel, state) {
 				continue
 			}
@@ -110,8 +120,9 @@ func (t *PathTree) SelectedFiles(root string, filter Filter) ([]string, error) {
 		return nil
 	}
 	if err := walk("", matchState{}); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	slices.Sort(selected)
-	return selected, nil
+	slices.Sort(selectedDirs)
+	return selected, selectedDirs, nil
 }

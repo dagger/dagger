@@ -91,6 +91,13 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.GitRepository]{
+		dagql.NodeFunc("__sparseFiles", s.sparseFiles).
+			IsPersistable().
+			Doc(`(Internal-only) The given files of this repository, by object ID, with only those fetched.`).
+			Args(
+				dagql.Arg("files").Doc(`Each file as "mode oid path".`),
+				dagql.Arg("dirs").Doc("Directories to write, even when empty."),
+			),
 		dagql.NodeFunc("__resolvedRef", s.resolvedRef).
 			View(AllVersion).
 			IsPersistable().

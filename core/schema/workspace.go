@@ -1072,7 +1072,8 @@ func (s *workspaceSchema) resolveRootfsInner(
 
 	if root, ok := ws.SourceDirectory(); ok && root.Self() != nil {
 		if sparse, ok := ws.GitSparseTree(); ok {
-			root, err = gitSparseReadRoot(ctx, srv, sparse, root, resolvedPath, filter, gitignore)
+			ref, _ := ws.SourceGitRef()
+			root, err = gitSparseReadRoot(ctx, srv, sparse, ref, root, resolvedPath, filter, gitignore)
 			if err != nil {
 				return inst, fmt.Errorf("workspace directory %q: %w", resolvedPath, err)
 			}
@@ -1239,8 +1240,9 @@ func filteredReadContentHash(ctx context.Context, dir dagql.ObjectResult[*core.D
 }
 
 // gitSparseReadRoot picks the tree a Git workspace's read comes from: its sparse
-// tree if that holds what the read selects, and otherwise its full tree, checked
-// out first.
+// tree if that holds what the read selects, a sparse tree of the read's own if
+// it selects anything else that a sparse tree can serve, and otherwise its full
+// tree, checked out first.
 //
 // Either way, a read of a path the tree doesn't have fails when it's made, as
 // hashing a subdirectory of a checked-out tree does. And a view of a directory
@@ -1250,6 +1252,7 @@ func gitSparseReadRoot(
 	ctx context.Context,
 	srv *dagql.Server,
 	sparse *core.GitSparseTree,
+	ref dagql.Result[*core.GitRef],
 	full dagql.ObjectResult[*core.Directory],
 	resolvedPath string,
 	filter core.CopyFilter,
@@ -1264,20 +1267,36 @@ func gitSparseReadRoot(
 	if err != nil {
 		return full, err
 	}
-	covered := false
-	if !filter.IsEmpty() && !gitignore {
-		covered, err = sparse.CoversRead(ctx, resolvedPath, filter)
+	source := core.GitSparseReadFull
+	if !filter.IsEmpty() || gitignore {
+		filter.Gitignore = gitignore
+		source, err = sparse.ReadSource(ctx, resolvedPath, filter)
 		if err != nil {
 			slog.Warn("reading the sparse tree's paths failed; reading the full tree", "error", err)
-			covered = false
+			source = core.GitSparseReadFull
 		}
 	}
-	if !covered {
+	root := sparse.Root
+	switch source {
+	case core.GitSparseReadFull:
 		return full, cache.Evaluate(ctx, full)
+	case core.GitSparseReadOwn:
+		files, err := sparse.ReadFiles(ctx, resolvedPath, filter)
+		if err != nil {
+			return full, err
+		}
+		if files == nil {
+			// A sparse tree written before they listed their objects.
+			return full, cache.Evaluate(ctx, full)
+		}
+		root, err = core.LoadGitSparseFiles(ctx, srv, ref, files)
+		if err != nil {
+			return full, err
+		}
 	}
 	if !isRoot {
 		var sub dagql.ObjectResult[*core.Directory]
-		if err := srv.Select(ctx, sparse.Root, &sub, dagql.Selector{
+		if err := srv.Select(ctx, root, &sub, dagql.Selector{
 			Field: "directory",
 			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(resolvedPath)}},
 		}); err != nil {
@@ -1287,7 +1306,7 @@ func gitSparseReadRoot(
 			return full, err
 		}
 	}
-	return sparse.Root, nil
+	return root, nil
 }
 
 // resolveHostOverlayRootfs resolves a read against a host-backed overlay

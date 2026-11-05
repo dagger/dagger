@@ -201,3 +201,33 @@ func gitWorkspaceModuleConfig(ctx context.Context, files *core.GitTreeFiles, dir
 	}
 	return nil, nil
 }
+
+type sparseFilesArgs struct {
+	Files []string
+	Dirs  []string `default:"[]"`
+}
+
+// sparseFiles is identified by the repository and the files' object IDs, not
+// by a commit, so a read of files no commit changed is the same call on every
+// commit.
+func (s *gitSchema) sparseFiles(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args sparseFilesArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	backend, ok := parent.Self().Backend.(*core.RemoteGitRepository)
+	if !ok {
+		return inst, fmt.Errorf("sparse files: %T is not a remote repository", parent.Self().Backend)
+	}
+	// Readers of one repository recipe share its credentials, so they may
+	// share fetches.
+	poolKey, err := parent.RecipeDigest(ctx)
+	if err != nil {
+		return inst, err
+	}
+	dir, err := backend.SparseFiles(ctx, srv, poolKey.String(), args.Files, args.Dirs)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+}

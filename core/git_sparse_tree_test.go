@@ -2,8 +2,10 @@ package core
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -176,8 +178,160 @@ func TestGitWorkspaceReadsFullTreeWithoutSparseContent(t *testing.T) {
 			}, mountRefAsReadOnly))
 
 			// A filtered read's route: it reads the full tree on this error.
-			_, err := sparse.CoversRead(ctx, ".", CopyFilter{Include: []string{"dagger.toml"}})
+			_, err := sparse.ReadSource(ctx, ".", CopyFilter{Include: []string{"dagger.toml"}})
 			require.ErrorIs(t, err, errPartInjectedProvider)
 		}
 	})
+}
+
+// TestGitSparseReadSource checks where each read of a Git workspace's tree
+// comes from, given which of the commit's paths a sparse tree holds.
+func TestGitSparseReadSource(t *testing.T) {
+	manifest := func(entries ...string) *gitSparseManifest {
+		return parseGitSparseManifest([]byte(strings.Join(entries, "\x00") + "\x00"))
+	}
+	// The plan held the module, but not the root module's files, as a
+	// workspace whose modules build from them has it.
+	planned := manifest(
+		"f.gitignore",
+		"fgo.mod",
+		"autil/a.go",
+		"autil/b.go",
+		"fmod/dagger.json",
+		"fmod/main.go",
+		"amod/big.bin",
+		"fmod/sub/.gitignore",
+		"fmod/sub/x.txt",
+		"fmod/sub/y.txt",
+		"lmod/link",
+		"aoutside/.gitignore",
+		"aoutside/z.txt",
+	)
+	for _, tc := range []struct {
+		name   string
+		m      *gitSparseManifest
+		dir    string
+		filter CopyFilter
+		want   GitSparseReadSource
+	}{
+		{"what the plan holds", planned, "mod", CopyFilter{Include: []string{"dagger.json", "main.go"}}, GitSparseReadPlanned},
+		{"what the plan holds, with gitignore", planned, "mod", CopyFilter{Include: []string{"main.go"}, Gitignore: true}, GitSparseReadPlanned},
+		{"files the plan missed", planned, "", CopyFilter{Include: []string{"go.mod", "util/*.go"}}, GitSparseReadOwn},
+		{"files the plan missed, with gitignore", planned, "", CopyFilter{Include: []string{"go.mod", "util/*.go"}, Gitignore: true}, GitSparseReadOwn},
+		{"ignore files below the read the plan missed", planned, "", CopyFilter{Include: []string{"go.mod"}, Gitignore: true}, GitSparseReadOwn},
+		{"ignore files beside the read the plan missed don't count", planned, "mod", CopyFilter{Include: []string{"main.go"}, Gitignore: true}, GitSparseReadPlanned},
+		{"everything in a directory", planned, "mod/sub", CopyFilter{Exclude: []string{"**/.git"}, Gitignore: true}, GitSparseReadFull},
+		{"through a symlink", planned, "mod/link", CopyFilter{Include: []string{"x"}}, GitSparseReadFull},
+		{"a path the commit doesn't have", planned, "no/such/dir", CopyFilter{Include: []string{"x"}}, GitSparseReadPlanned},
+		{"a tree from before sparse trees held ignore files", manifest("a.gitignore", "fmod/dagger.json", "fmod/main.go"), "mod", CopyFilter{Include: []string{"main.go"}, Gitignore: true}, GitSparseReadOwn},
+		{"an ignore file that's a symlink", manifest("l.gitignore", "fmod/dagger.json", "fmod/main.go"), "mod", CopyFilter{Include: []string{"main.go"}, Gitignore: true}, GitSparseReadFull},
+		{"submodules", manifest("gvendor/sub"), "", CopyFilter{Include: []string{"vendor/sub/x"}}, GitSparseReadFull},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := tc.m.readSource(tc.dir, tc.filter)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+		})
+	}
+}
+
+// TestGitSparseReadFiles checks what identifies a read that gets a sparse tree
+// of its own: its files with their modes and object IDs, the attribute files
+// that apply to them, the ignore files a gitignore filter reads, and the
+// directories it holds. Anything that can change the read's result must be in
+// it, or a later commit could reuse an earlier commit's files.
+func TestGitSparseReadFiles(t *testing.T) {
+	var objects, manifest strings.Builder
+	for _, e := range []struct{ mode, oid, path string }{
+		{"100644", "a0", ".gitattributes"},
+		{"100644", "a1", "data/.gitattributes"},
+		{"100644", "a2", "other/.gitattributes"},
+		{"100644", "i0", ".gitignore"},
+		{"100644", "i1", "data/sub/.gitignore"},
+		{"100644", "i2", "other/.gitignore"},
+		{"100755", "f0", "data/run.sh"},
+		{"100644", "f1", "data/sub/keep.txt"},
+		{"100644", "f2", "other/x.txt"},
+	} {
+		objects.WriteString(e.mode + " " + e.oid + " " + e.path + "\x00")
+		manifest.WriteString("a" + e.path + "\x00")
+	}
+	m := parseGitSparseManifest([]byte(manifest.String()))
+	m.objects = parseGitSparseObjects([]byte(objects.String()))
+
+	got, err := m.readFiles("data", CopyFilter{Include: []string{"run.sh", "sub/*.txt"}})
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"100644 a0 .gitattributes",
+		"100644 a1 data/.gitattributes",
+		"100644 f1 data/sub/keep.txt",
+		"100755 f0 data/run.sh",
+	}, got.Files)
+	require.Equal(t, []string{"data", "data/sub"}, got.Dirs)
+
+	got, err = m.readFiles("data", CopyFilter{Include: []string{"run.sh"}, Gitignore: true})
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"100644 a0 .gitattributes",
+		"100644 a1 data/.gitattributes",
+		"100644 i0 .gitignore",
+		"100644 i1 data/sub/.gitignore",
+		"100755 f0 data/run.sh",
+	}, got.Files)
+}
+
+// TestFetchPooled checks that a reader fetching for the readers waiting with
+// it isn't failed by their objects: a pooled fetch that fails is retried with
+// the reader's own objects, and with none when the mirror holds them all.
+func TestFetchPooled(t *testing.T) {
+	const gone = "gone"
+	for _, tc := range []struct {
+		name    string
+		have    []string
+		own     []string
+		pooled  []string
+		wantErr bool
+		fetched [][]string
+	}{
+		{"own present, a pooled object gone", []string{"a"}, []string{"a"}, []string{gone}, false, [][]string{{gone}}},
+		{"own missing, a pooled object gone", nil, []string{"a"}, []string{gone}, false, [][]string{{"a", gone}, {"a"}}},
+		{"own gone", nil, []string{gone}, nil, true, [][]string{{gone}, {gone}}},
+		{"all fetched in one request", nil, []string{"a"}, []string{"b"}, false, [][]string{{"a", "b"}}},
+		{"nothing missing", []string{"a", "b"}, []string{"a"}, []string{"b"}, false, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			have := map[string]bool{}
+			for _, oid := range tc.have {
+				have[oid] = true
+			}
+			var fetched [][]string
+			err := fetchPooled(tc.own, tc.pooled,
+				func(oids []string) ([]string, error) {
+					var missing []string
+					for _, oid := range oids {
+						if !have[oid] {
+							missing = append(missing, oid)
+						}
+					}
+					slices.Sort(missing)
+					return slices.Compact(missing), nil
+				},
+				func(oids []string) error {
+					fetched = append(fetched, oids)
+					if slices.Contains(oids, gone) {
+						return errors.New("remote: object " + gone + " not found")
+					}
+					for _, oid := range oids {
+						have[oid] = true
+					}
+					return nil
+				})
+			if tc.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, tc.fetched, fetched)
+		})
+	}
 }

@@ -233,3 +233,24 @@ func LoadGitWorkspaceSparseTree(
 	}
 	return &GitSparseTree{Root: root}, nil
 }
+
+// LoadGitSparseFiles loads a sparse tree holding exactly files, identified by
+// their object IDs, from a workspace's repository.
+func LoadGitSparseFiles(
+	ctx context.Context,
+	dag *dagql.Server,
+	gitRef dagql.Result[*GitRef],
+	files *GitSparseReadFiles,
+) (dagql.ObjectResult[*Directory], error) {
+	var root dagql.ObjectResult[*Directory]
+	ref := gitRef.Self()
+	if ref == nil {
+		return root, fmt.Errorf("sparse files: workspace has no git ref")
+	}
+	args := []dagql.NamedInput{{Name: "files", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(files.Files...))}}
+	if len(files.Dirs) > 0 {
+		args = append(args, dagql.NamedInput{Name: "dirs", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(files.Dirs...))})
+	}
+	err := dag.Select(ctx, ref.Repo, &root, dagql.Selector{Field: "__sparseFiles", Args: args})
+	return root, err
+}
