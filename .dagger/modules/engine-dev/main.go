@@ -226,7 +226,8 @@ func goSDKDaggerGo(ctx context.Context, source *dagger.Directory) (string, error
 
 // imageEntries are the cache entries the engine image ships for Go module
 // runtimes, which the engine merges at start: the builds of the standard library
-// and of what generated Go module code imports (GoImageEntriesSeed),
+// and of what generated Go module code imports, the built-in Go SDK's
+// (GoImageEntriesSeed) and go-sdk's (GoSDKImageEntriesSeed),
 // gobuild's binary, which dagger/go builds every runtime with, and what a
 // fresh engine would fetch to build with them (dagger/go's tree and the two
 // images the builds run in), made
@@ -266,8 +267,10 @@ func (dev *EngineDev) imageEntries(ctx context.Context, builder *build.Builder, 
 	return client.
 		WithMountedFile("/usr/local/bin/engine-image-entries", builder.ImageEntriesBinary()).
 		WithMountedDirectory("/seed", seed).
+		WithMountedDirectory("/seed-go-sdk", builder.GoSDKImageEntriesSeed()).
 		WithExec(withoutOuterSession("engine-image-entries",
 			"-seed", "/seed",
+			"-seed", "/seed-go-sdk",
 			"-dagger-go", daggerGo,
 			"-go-version", distconsts.GolangVersion,
 			"-out", out,

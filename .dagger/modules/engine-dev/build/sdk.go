@@ -354,6 +354,44 @@ func (build *Builder) GoImageEntriesSeed(ctx context.Context) (*dagger.Directory
 		Directory("/seed"), nil
 }
 
+// goSDKModuleLibVersion is the dagger.io/dagger version go-sdk's generated
+// modules pin (go-sdk's defaultTarget), and goSDKModuleImports what their
+// generated code imports besides the standard library.
+const goSDKModuleLibVersion = "v1.0.0-beta.24"
+
+var goSDKModuleImports = []string{
+	"dagger.io/dagger",
+	"dagger.io/dagger/core",
+	"github.com/Khan/genqlient/graphql",
+	"github.com/dagger/otel-go",
+	"github.com/dagger/querybuilder",
+	"go.opentelemetry.io/otel",
+	"go.opentelemetry.io/otel/sdk/resource",
+	"go.opentelemetry.io/otel/semconv/v1.40.0",
+	"go.opentelemetry.io/otel/trace",
+}
+
+// GoSDKImageEntriesSeed is the Go module whose dependencies' builds the
+// engine image ships for the modules go-sdk generates: one that imports
+// what their generated code imports, tidied with the dagger.io/dagger
+// version they pin. GoImageEntriesSeed has the standard library's.
+func (build *Builder) GoSDKImageEntriesSeed() *dagger.Directory {
+	var mainGo strings.Builder
+	mainGo.WriteString("package main\n\nimport (\n")
+	for _, imp := range goSDKModuleImports {
+		fmt.Fprintf(&mainGo, "\t_ %q\n", imp)
+	}
+	mainGo.WriteString(")\n\nfunc main() {}\n")
+	return dag.Container().
+		From(consts.GolangImage).
+		WithNewFile("/seed/go.mod", "module seed\n\ngo "+distconsts.GolangVersion+"\n").
+		WithNewFile("/seed/main.go", mainGo.String()).
+		WithWorkdir("/seed").
+		WithExec([]string{"go", "get", "dagger.io/dagger@" + goSDKModuleLibVersion}).
+		WithExec([]string{"go", "mod", "tidy"}).
+		Directory("/seed")
+}
+
 func unpackTar(tarball *dagger.File) *dagger.Directory {
 	return wolfi.New().
 		Container().

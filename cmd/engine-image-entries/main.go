@@ -9,7 +9,7 @@
 //
 // It loads dagger/go from -dagger-go, the pin the Go SDK module and go-sdk's
 // generated modules depend on, so that every result is the one their builds
-// look up. It takes what codegen's archives of the Go module in -seed read
+// look up. It takes what codegen's archives of each Go module in -seed read
 // from the cache (archiveBuilds of its root package, its dependencies alone,
 // without tests), at -go-version with the Go SDK's build flags, gobuild's
 // binary (Module._prebuild), and exports them with their blobs into -out.
@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strings"
 
 	"dagger.io/dagger"
 )
@@ -30,17 +31,24 @@ import (
 // with (sdk/go/runtime/main.dang).
 var goSDKBuildFlags = []string{"-ldflags=-s -w"}
 
+// seedFlags are the -seed flags, in order.
+type seedFlags []string
+
+func (s *seedFlags) String() string     { return strings.Join(*s, ",") }
+func (s *seedFlags) Set(v string) error { *s = append(*s, v); return nil }
+
 func main() {
-	seed := flag.String("seed", "", "the Go module whose dependencies' builds to export")
+	var seeds seedFlags
+	flag.Var(&seeds, "seed", "a Go module whose dependencies' builds to export (repeatable)")
 	daggerGo := flag.String("dagger-go", "", "the dagger/go module ref the Go SDK depends on")
 	goVersion := flag.String("go-version", "", "the Go version the Go SDK builds with")
 	out := flag.String("out", "", "where to export the entries")
 	flag.Parse()
-	if *seed == "" || *daggerGo == "" || *goVersion == "" || *out == "" {
+	if len(seeds) == 0 || *daggerGo == "" || *goVersion == "" || *out == "" {
 		flag.Usage()
 		os.Exit(2)
 	}
-	if err := run(context.Background(), *seed, *daggerGo, *goVersion, *out); err != nil {
+	if err := run(context.Background(), seeds, *daggerGo, *goVersion, *out); err != nil {
 		fmt.Fprintln(os.Stderr, "engine-image-entries:", err)
 		os.Exit(1)
 	}
@@ -53,7 +61,7 @@ const daggerGoModule = `moduleSource(refString: $pin) { %s }`
 // entrypoint: the last .from("…") of the file.
 var fromImage = regexp.MustCompile(`\.from\("([^"]+)"\)`)
 
-func run(ctx context.Context, seed, daggerGo, goVersion, out string) error {
+func run(ctx context.Context, seeds []string, daggerGo, goVersion, out string) error {
 	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err
@@ -128,6 +136,37 @@ func run(ctx context.Context, seed, daggerGo, goVersion, out string) error {
 		}
 		containers = append(containers, ctr.Container.From.ID)
 	}
+	// The seeds share what they import alike, such as the standard library,
+	// and the tools: each result once.
+	var ids []string
+	seen := map[string]bool{}
+	for _, seed := range seeds {
+		seedIDs, err := archiveBuilds(do, seed, goVersion)
+		if err != nil {
+			return fmt.Errorf("seed %s: %w", seed, err)
+		}
+		for _, id := range seedIDs {
+			if !seen[id] {
+				seen[id] = true
+				ids = append(ids, id)
+			}
+		}
+	}
+	results := append(append(append(ids, mod.ModuleSource.ID, mod.ModuleSource.ContextDirectory.ID), files...), containers...)
+	if err := do(`query($results: [ID!]!, $out: String!) { _engineImageBundle(results: $results) { export(path: $out) } }`,
+		map[string]any{"results": results, "out": out}, nil); err != nil {
+		return fmt.Errorf("export the entries: %w", err)
+	}
+	fmt.Fprintf(os.Stderr, "engine-image-entries: exported %d results dagger/go's archive builds read (package builds, module downloads and tools), gobuild's binary, dagger/go's checkout and context, and the images %s and %s to %s\n",
+		len(ids), goImage.Go.Image, images[len(images)-1][1], out)
+	return nil
+}
+
+// archiveBuilds is what codegen's archives of the Go module in seed read
+// from the cache, as IDs: archiveBuilds of its root package, its
+// dependencies alone, without tests, at goVersion with the Go SDK's build
+// flags.
+func archiveBuilds(do func(string, map[string]any, any) error, seed, goVersion string) ([]string, error) {
 	var ws struct {
 		Host struct {
 			Directory struct {
@@ -139,7 +178,7 @@ func run(ctx context.Context, seed, daggerGo, goVersion, out string) error {
 	}
 	if err := do(`query($path: String!) { host { directory(path: $path) { asWorkspace { id } } } }`,
 		map[string]any{"path": seed}, &ws); err != nil {
-		return fmt.Errorf("seed workspace: %w", err)
+		return nil, fmt.Errorf("workspace: %w", err)
 	}
 	var builds struct {
 		Go struct {
@@ -155,18 +194,10 @@ func run(ctx context.Context, seed, daggerGo, goVersion, out string) error {
 			}
 		}
 	}`, map[string]any{"ws": ws.Host.Directory.AsWorkspace.ID, "version": goVersion, "flags": goSDKBuildFlags}, &builds); err != nil {
-		return fmt.Errorf("archive builds: %w", err)
+		return nil, fmt.Errorf("archive builds: %w", err)
 	}
-	ids := builds.Go.Module.ArchiveBuilds
-	if len(ids) == 0 {
-		return errors.New("archive builds: none")
+	if len(builds.Go.Module.ArchiveBuilds) == 0 {
+		return nil, errors.New("archive builds: none")
 	}
-	results := append(append(append(ids, mod.ModuleSource.ID, mod.ModuleSource.ContextDirectory.ID), files...), containers...)
-	if err := do(`query($results: [ID!]!, $out: String!) { _engineImageBundle(results: $results) { export(path: $out) } }`,
-		map[string]any{"results": results, "out": out}, nil); err != nil {
-		return fmt.Errorf("export the entries: %w", err)
-	}
-	fmt.Fprintf(os.Stderr, "engine-image-entries: exported %d results dagger/go's archive builds read (package builds, module downloads and tools), gobuild's binary, dagger/go's checkout and context, and the images %s and %s to %s\n",
-		len(ids), goImage.Go.Image, images[len(images)-1][1], out)
-	return nil
+	return builds.Go.Module.ArchiveBuilds, nil
 }
