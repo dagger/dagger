@@ -211,12 +211,17 @@ func (dev *EngineDev) Container(
 
 // imageEntries are the cache entries the engine image ships for Go module
 // runtimes, which the engine merges at start: the builds of the standard library
-// and of what generated Go module code imports (GoImageEntriesSeed), made
+// and of what generated Go module code imports (GoImageEntriesSeed), and
+// gobuild's binary, which dagger/go builds every runtime with, made
 // by the engine of this image, engine, on a state of its own, and exported
 // by cmd/engine-image-entries. An entry's identity is its engine's, so an
 // image's entries come from an engine of its own build.
 func (dev *EngineDev) imageEntries(ctx context.Context, builder *build.Builder, engine *dagger.Container) (*dagger.Directory, error) {
 	seed, err := builder.GoImageEntriesSeed(ctx)
+	if err != nil {
+		return nil, err
+	}
+	goSDKDigest, err := engine.EnvVariable(ctx, distconsts.GoSDKManifestDigestEnvName)
 	if err != nil {
 		return nil, err
 	}
@@ -244,10 +249,9 @@ func (dev *EngineDev) imageEntries(ctx context.Context, builder *build.Builder, 
 	return client.
 		WithMountedFile("/usr/local/bin/engine-image-entries", builder.ImageEntriesBinary()).
 		WithMountedDirectory("/seed", seed).
-		WithMountedDirectory("/dagger-go", dev.Source.Directory("internal/daggergo")).
 		WithExec(withoutOuterSession("engine-image-entries",
 			"-seed", "/seed",
-			"-dagger-go", "/dagger-go",
+			"-go-sdk-digest", goSDKDigest,
 			"-go-version", distconsts.GolangVersion,
 			"-out", out,
 		)).

@@ -1,13 +1,17 @@
 // Command engine-image-entries exports the cache entries an engine image
 // ships for Go module runtimes, on an engine of the image's own build: the
 // builds of the standard library and of what every Go module's generated
-// code imports, as dagger/go builds them for the built-in Go SDK, which the
-// engine merges into its cache at start.
+// code imports, as dagger/go builds them for the built-in Go SDK, and the
+// binary of dagger/go's gobuild, which the engine merges into its cache at
+// start.
 //
-// It loads dagger/go from -dagger-go, takes the builds codegen's archives of
-// the Go module in -seed read (archiveBuilds of its root package, its
-// dependencies alone, without tests), with the Go SDK's -go-version and
-// build flags, and exports them with their blobs into -out.
+// It loads dagger/go from the Go SDK image, whose manifest digest is
+// -go-sdk-digest, as the engine loads it for the Go SDK, so that every
+// result is the one the engine's own builds look up. It takes the builds
+// codegen's archives of the Go module in -seed read (archiveBuilds of its
+// root package, its dependencies alone, without tests), with the Go SDK's
+// -go-version and build flags, and gobuild's binary (Module._prebuild), and
+// exports them with their blobs into -out.
 package main
 
 import (
@@ -26,21 +30,25 @@ var goSDKBuildFlags = []string{"-ldflags=-s -w"}
 
 func main() {
 	seed := flag.String("seed", "", "the Go module whose dependencies' builds to export")
-	daggerGo := flag.String("dagger-go", "", "the dagger/go module the Go SDK builds with")
+	goSDKDigest := flag.String("go-sdk-digest", "", "the manifest digest of the engine's Go SDK image")
 	goVersion := flag.String("go-version", "", "the Go version the Go SDK builds with")
 	out := flag.String("out", "", "where to export the entries")
 	flag.Parse()
-	if *seed == "" || *daggerGo == "" || *goVersion == "" || *out == "" {
+	if *seed == "" || *goSDKDigest == "" || *goVersion == "" || *out == "" {
 		flag.Usage()
 		os.Exit(2)
 	}
-	if err := run(context.Background(), *seed, *daggerGo, *goVersion, *out); err != nil {
+	if err := run(context.Background(), *seed, *goSDKDigest, *goVersion, *out); err != nil {
 		fmt.Fprintln(os.Stderr, "engine-image-entries:", err)
 		os.Exit(1)
 	}
 }
 
-func run(ctx context.Context, seed, daggerGo, goVersion, out string) error {
+// goSDKDaggerGo selects dagger/go in the Go SDK image, as the Go SDK module
+// (sdk/go/runtime) depends on it there: the image's /sdk/dagger-go.
+const goSDKDaggerGo = `_builtinContainer(digest: $digest) { rootfs { directory(path: "/sdk") { asModuleSource(sourceRootPath: "dagger-go") { asModule { %s } } } } }`
+
+func run(ctx context.Context, seed, goSDKDigest, goVersion, out string) error {
 	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err
@@ -50,9 +58,41 @@ func run(ctx context.Context, seed, daggerGo, goVersion, out string) error {
 		return client.Do(ctx, &dagger.Request{Query: query, Variables: vars}, &dagger.Response{Data: data})
 	}
 
-	if err := do(`query($src: String!) { moduleSource(refString: $src) { asModule { serve } } }`,
-		map[string]any{"src": daggerGo}, nil); err != nil {
+	digest := map[string]any{"digest": goSDKDigest}
+	if err := do(`query($digest: String!) { `+fmt.Sprintf(goSDKDaggerGo, "serve")+` }`, digest, nil); err != nil {
 		return fmt.Errorf("load dagger/go: %w", err)
+	}
+	// gobuild's binary: dagger/go's dependency gobuild declares it as its
+	// entrypoint's prebuild member.
+	var deps struct {
+		BuiltinContainer struct {
+			Rootfs struct {
+				Directory struct {
+					AsModuleSource struct {
+						AsModule struct {
+							Dependencies []struct {
+								Name     string `json:"name"`
+								Prebuild *struct {
+									ID string `json:"id"`
+								} `json:"_prebuild"`
+							} `json:"dependencies"`
+						} `json:"asModule"`
+					} `json:"asModuleSource"`
+				} `json:"directory"`
+			} `json:"rootfs"`
+		} `json:"_builtinContainer"`
+	}
+	if err := do(`query($digest: String!) { `+fmt.Sprintf(goSDKDaggerGo, "dependencies { name _prebuild { id } }")+` }`, digest, &deps); err != nil {
+		return fmt.Errorf("gobuild's binary: %w", err)
+	}
+	var files []string
+	for _, dep := range deps.BuiltinContainer.Rootfs.Directory.AsModuleSource.AsModule.Dependencies {
+		if dep.Name == "gobuild" && dep.Prebuild != nil {
+			files = append(files, dep.Prebuild.ID)
+		}
+	}
+	if len(files) != 1 {
+		return fmt.Errorf("gobuild's binary: dagger/go's dependency gobuild declares no prebuild member")
 	}
 	var ws struct {
 		Host struct {
@@ -87,10 +127,10 @@ func run(ctx context.Context, seed, daggerGo, goVersion, out string) error {
 	if len(ids) == 0 {
 		return errors.New("archive builds: none")
 	}
-	if err := do(`query($ids: [ID!]!, $out: String!) { _engineImageBundle(directories: $ids) { export(path: $out) } }`,
-		map[string]any{"ids": ids, "out": out}, nil); err != nil {
+	if err := do(`query($ids: [ID!]!, $files: [ID!]!, $out: String!) { _engineImageBundle(directories: $ids, files: $files) { export(path: $out) } }`,
+		map[string]any{"ids": ids, "files": files, "out": out}, nil); err != nil {
 		return fmt.Errorf("export the entries: %w", err)
 	}
-	fmt.Fprintf(os.Stderr, "engine-image-entries: exported the builds of %d packages to %s\n", len(ids), out)
+	fmt.Fprintf(os.Stderr, "engine-image-entries: exported the builds of %d packages and gobuild's binary to %s\n", len(ids), out)
 	return nil
 }
