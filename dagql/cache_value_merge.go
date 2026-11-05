@@ -1709,6 +1709,8 @@ type mergeReplacement struct {
 func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow, committedAt int64) {
 	rec := row.rec
 	res.imported = true
+	// The record's own parts and offers decide its value's sources now.
+	res.unavailableParts = nil
 	if !c.blobBacked {
 		res.mergedAtUnixNano = committedAt
 	}

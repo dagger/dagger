@@ -755,11 +755,28 @@ func (c *Cache) selectLookupCandidateForSessionLocked(sessionID string, candidat
 		return nil
 	}
 	for res := range candidates.Items() {
-		if c.sessionSatisfiesResourceRequirementsLocked(sessionID, res) {
+		if c.sessionSatisfiesResourceRequirementsLocked(sessionID, res) && servableLocked(res) {
 			return res
 		}
 	}
 	return nil
+}
+
+// servableLocked reports whether a lookup may return res: not while a part of
+// its value that a demand found no source for is still incomplete. A local
+// entry always has its parts or the operation that makes them; this one has
+// neither until its call runs again. Requires egraphMu.
+func servableLocked(res *sharedResult) bool {
+	if len(res.unavailableParts) == 0 {
+		return true
+	}
+	complete := completePartKeysLocked(res)
+	for key := range res.unavailableParts {
+		if !slices.Contains(complete, key) {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *Cache) lookupMatchForDigestsLocked(recipeDigest digest.Digest, extraDigests []call.ExtraDigest, nowUnix int64) lookupMatch {
@@ -1007,15 +1024,16 @@ func (c *Cache) lookupCacheForRequestLocked(
 		} else {
 			ev.MissSawExpired = match.expired.any
 			ev.MissExpiredRemote = match.expired.remote
-			// Expiry is applied during accumulation, so a non-empty candidate
-			// set on a miss means every surviving candidate failed the
-			// session-resource filter.
-			ev.MissIncompatibleCandidates = match.candidates != nil && !match.candidates.Empty()
-			if ev.MissIncompatibleCandidates {
+			// Expiry is applied during accumulation, so each candidate a
+			// miss had failed the session-resource filter, or was passed by
+			// for a part no source could supply.
+			if match.candidates != nil {
 				for res := range match.candidates.Items() {
-					if res.imported {
-						ev.MissIncompatibleRemote = true
-						break
+					if !c.sessionSatisfiesResourceRequirementsLocked(sessionID, res) {
+						ev.MissIncompatibleCandidates = true
+						ev.MissIncompatibleRemote = ev.MissIncompatibleRemote || res.imported
+					} else {
+						ev.MissUnavailableParts = true
 					}
 				}
 			}

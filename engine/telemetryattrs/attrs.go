@@ -671,6 +671,13 @@ const (
 	// set means every surviving candidate failed the session-resource filter.
 	CacheMissIncompatibleCandidatesAttr = "dagger.io/cache.miss.incompatible_candidates"
 
+	// CacheMissUnavailablePartsAttr ("true", executed misses only, absent
+	// otherwise) records that a candidate result existed but was passed by
+	// because a part of its value that a demand found no source for is still
+	// incomplete: a value another engine sent without that part, whose offer
+	// of it is gone or failed. The call runs again to make the part.
+	CacheMissUnavailablePartsAttr = "dagger.io/cache.miss.unavailable_parts"
+
 	// CacheMissSawExpiredAttr ("true", executed misses only, absent otherwise)
 	// records that TTL expiry eliminated at least one otherwise-matching result
 	// during candidate accumulation.

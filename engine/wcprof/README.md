@@ -74,6 +74,7 @@ Current hook points:
   `dagger.io/cache.*` attributes without the prefix: `hit.remote` (about
   the result hit), `miss.saw_expired`, `miss.expired_remote`,
   `miss.incompatible_candidates`, `miss.incompatible_remote`,
+  `miss.unavailable_parts`,
   `miss.chosen_remote`, `miss.producer_released`, `miss.requirements_grew`,
   `miss.unknown_input`, `miss.fresh_inputs`, `adopted` and
   `adopted.remote`. They read the call's `CacheDecision`; when no recording
@@ -123,7 +124,9 @@ Current hook points:
   graph lock acquisitions are `dagql.egraph` lock waits. A part demand's
   acquire task (`acquire:…`) records each step of its passes as an
   `internal` op: `part.demand.probe`, `.select` (its source scan's graph lock
-  acquisitions `dagql.egraph` lock waits), `.decide`, `.join` and `.open`. Outcomes are `ok`, `refused`,
+  acquisitions `dagql.egraph` lock waits), `.decide`, `.call` (running
+  again the call of a value whose part nothing supplies and no operation
+  makes), `.join` and `.open`. Outcomes are `ok`, `refused`,
   `superseded`, `canceled` or `error` (with an `install.content` fact when
   the source's bytes were bad). A part that no source could supply and that
   is computed locally gets a `part.no_source` fact. Lazy ops name their task
