@@ -342,6 +342,18 @@ func RepoRootForImportPath(importPath string, verbose bool) (*RepoRoot, error) {
 
 var errUnknownSite = errors.New("dynamic lookup required to find mapping")
 
+// IsKnownCodeHost reports whether importPath is on one of the code hosts in
+// vcsPaths, such as github.com. Their repository roots follow from the path
+// itself, so they are never looked up dynamically.
+func IsKnownCodeHost(importPath string) bool {
+	for _, srv := range vcsPaths {
+		if srv.prefix != "" && strings.HasPrefix(importPath, srv.prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // RepoRootForImportPathStatic attempts to map importPath to a
 // RepoRoot using the commonly-used VCS hosting sites in vcsPaths
 // (github.com/user/dir), or from a fully-qualified importPath already
