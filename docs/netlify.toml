@@ -2492,13 +2492,11 @@
 ## start: migration 1.0 cleanup leftovers ##
 ##
 ## Pages cut or re-nested after the 0.21 -> 1.0 and reference-section
-## migrations, but never given a rule. Without one they fell through to the
-## /* -> /0.21/ fallback below and 404ed there.
+## migrations, but never given a rule.
 ##
 ## The /next/* rule is the important one. Every rule in this file is written
 ## without a version prefix, so a /next/<old path> URL never matches any of
-## them and always fell through to the fallback (as /0.21/next/..., which the
-## loop guard turns into a 404). Stripping the prefix re-enters the chain
+## them. Stripping the prefix re-enters the chain
 ## above. Unforced rules are shadowed by real files, so this is inert for any
 ## page that still exists under /next/. Keep it in this trailing block: it is
 ## a wildcard, and it must come after every specific rule.
@@ -2652,30 +2650,6 @@
   status = 301
 
 ## end: migration 1.0 cleanup leftovers ##
-
-## start: 1.0 fallback (keep last) ##
-##
-## The site default at / is the 1.0 beta, which dropped many 0.21-era pages.
-## Any path with no page under the default falls back to the same path in the
-## 0.21 stable docs, so old links keep resolving instead of 404ing.
-##
-## To retarget (e.g. when 0.21 is retired, or a newer stable snapshot exists),
-## change /0.21/ in BOTH rules below. To drop the fallback entirely, delete
-## this block -- old 0.21 URLs then 404.
-##
-## The first rule is a loop guard: a /0.21/* path that itself 404s must not
-## fall through to the catch-all and get another /0.21/ prefix.
-
-[[redirects]]
-  from = "/0.21/*"
-  to = "/404.html"
-  status = 404
-
-[[redirects]]
-  from = "/*"
-  to = "/0.21/:splat"
-  status = 301
-## end: 1.0 fallback ##
 
 [[headers]]
   for = "/*"
