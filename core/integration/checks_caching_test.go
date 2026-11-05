@@ -19,6 +19,7 @@ import (
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -208,6 +209,73 @@ func runLog() *dagger.Container {
 `)
 }
 
+// planningImageCollectionModule is the main module of a Git workspace whose
+// constructor takes an image from a module setting set to a tag, and whose
+// collection is cached by default.
+func planningImageCollectionModule(c *dagger.Client) *core.Directory {
+	return core.NewQuery(c).Directory().
+		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"./probe\"\nmain = true\nsettings.base = \"alpine:latest\"\n").
+		WithNewFile("probe/dagger.json", `{"name":"probe","engineVersion":"latest","sdk":{"source":"go"},"source":"."}`).
+		WithNewFile("probe/main.go", `package main
+
+import "dagger/probe/internal/dagger"
+
+type Probe struct {
+	// +private
+	Base *dagger.Container
+}
+
+func New(base *dagger.Container) *Probe { return &Probe{Base: base} }
+
+func (*Probe) Batches() *Batches { return &Batches{Names: []string{"a", "b"}} }
+
+// +collection
+type Batches struct {
+	// +keys
+	Names []string
+}
+
+// +get
+func (*Batches) Batch(name string) *Batch { return &Batch{Name: name} }
+
+type Batch struct{ Name string }
+
+// +check
+func (*Batch) Verify() error { return nil }
+`)
+}
+
+// planningListingOutcomes lists the checks of the Git workspace at remoteRef
+// in two sessions of one engine, and returns the cache outcome of each
+// listing of their items, as the engine reports it to Cloud.
+func planningListingOutcomes(ctx context.Context, t *testctx.T, c *dagger.Client, remoteRef string) []string {
+	t.Helper()
+	cloud := newTelemetrySplitCloud(t, c)
+	engine, err := devEngineContainerAsService(telemetrySplitEngineWithoutCloud(c, devEngineContainer(c))).Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = engine.Stop(ctx) })
+	for range 2 {
+		_, err := telemetrySplitClient(ctx, t, c, daggerCliFile(t, c), engine, cloud).
+			WithNewFile("/query.graphql", `{currentWorkspace{artifacts{__evaluationItems{uri}}}}`).
+			WithEnvVariable("CACHEBUSTER", rand.Text()).
+			WithExec([]string{"/bin/dagger", "query", "--doc", "/query.graphql", "-W", remoteRef}, core.ContainerWithExecOpts{DisableDaggerInDagger: true}).
+			Stdout(ctx)
+		require.NoError(t, err)
+	}
+	type span struct {
+		Name  string            `json:"name"`
+		Attrs map[string]string `json:"attrs"`
+	}
+	var outcomes []string
+	for _, s := range readTelemetrySplitLines[span](ctx, t, cloud, "v1/traces.json.spans") {
+		if strings.HasSuffix(s.Name, ".__evaluationItems") {
+			outcomes = append(outcomes, s.Attrs["dagger.io/cache.outcome"])
+		}
+	}
+	t.Logf("listing outcomes: %v", outcomes)
+	return outcomes
+}
+
 // From a Git workspace, a check run's planning is reused across sessions:
 // the workspace's artifacts, the listed items and each check's run. These
 // tests cover what must still run again in the next session.
@@ -247,29 +315,29 @@ func (ChecksSuite) TestCheckPlanningFromGitAcrossSessions(ctx context.Context, t
 	// a cache hit. The engine reports each call's cache outcome to Cloud.
 	t.Run("items of a collection cached by default are listed once across sessions", func(ctx context.Context, t *testctx.T) {
 		remoteRef := workspaceSelectionRemoteRef(ctx, t, c, planningCollectionModule(c, ""))
-		cloud := newTelemetrySplitCloud(t, c)
-		engine, err := devEngineContainerAsService(telemetrySplitEngineWithoutCloud(c, devEngineContainer(c))).Start(ctx)
+		require.Contains(t, planningListingOutcomes(ctx, t, c, remoteRef), "hit", "the second session must reuse the listing")
+	})
+
+	// A module setting set to an image tag resolves while listing. The
+	// workspace lock can pin the tag, so the listing is reused; an unpinned
+	// tag may move, so the next session lists the items again.
+	t.Run("a listing over an image tag", func(ctx context.Context, t *testctx.T) {
+		imageRef, err := core.NewQuery(c).Container().From("alpine:latest").ImageRef(ctx)
 		require.NoError(t, err)
-		t.Cleanup(func() { _, _ = engine.Stop(ctx) })
-		for range 2 {
-			_, err := telemetrySplitClient(ctx, t, c, daggerCliFile(t, c), engine, cloud).
-				WithNewFile("/query.graphql", `{currentWorkspace{artifacts{__evaluationItems{uri}}}}`).
-				WithEnvVariable("CACHEBUSTER", rand.Text()).
-				WithExec([]string{"/bin/dagger", "query", "--doc", "/query.graphql", "-W", remoteRef}, core.ContainerWithExecOpts{DisableDaggerInDagger: true}).
-				Stdout(ctx)
-			require.NoError(t, err)
-		}
-		type span struct {
-			Name  string            `json:"name"`
-			Attrs map[string]string `json:"attrs"`
-		}
-		var outcomes []string
-		for _, s := range readTelemetrySplitLines[span](ctx, t, cloud, "v1/traces.json.spans") {
-			if strings.HasSuffix(s.Name, ".__evaluationItems") {
-				outcomes = append(outcomes, s.Attrs["dagger.io/cache.outcome"])
-			}
-		}
-		require.Contains(t, outcomes, "hit", "the second session must reuse the listing: %v", outcomes)
+		_, pin, found := strings.Cut(imageRef, "@")
+		require.True(t, found, "expected an image ref with a digest: %q", imageRef)
+
+		t.Run("pinned by the lock is reused in the next session", func(ctx context.Context, t *testctx.T) {
+			remoteRef := workspaceSelectionRemoteRef(ctx, t, c, planningImageCollectionModule(c).
+				WithNewFile(workspace.LockFileName, mustMarshalOCISHALock(t, pin)))
+			require.Contains(t, planningListingOutcomes(ctx, t, c, remoteRef), "hit", "a pinned tag must not keep the listing from being reused")
+		})
+		t.Run("without a pin is listed again", func(ctx context.Context, t *testctx.T) {
+			remoteRef := workspaceSelectionRemoteRef(ctx, t, c, planningImageCollectionModule(c))
+			outcomes := planningListingOutcomes(ctx, t, c, remoteRef)
+			require.NotEmpty(t, outcomes)
+			require.NotContains(t, outcomes, "hit", "an unpinned tag may move, so the listing must not be reused")
+		})
 	})
 
 	// A collection's items come from its producer. When the producer isn't

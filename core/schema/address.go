@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/distribution/reference"
+
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/core/workspace"
@@ -771,17 +773,25 @@ func getLocalPath(path string) string {
 // containerDynamicInputs keys Address.container like the lookup it makes. An
 // external address loads its image through Container.from, so it shares that
 // call's scope: a tag resolves once per session and workspace lock, and every
-// evaluation of a module setting set to it gets the same container. A DAG
-// address or a legacy module reference runs a function that may give a new
-// result each time, so it stays per call, as does an address Container.from
-// can't parse, whose error the lookup reports.
+// evaluation of a module setting set to it gets the same container. A tag the
+// workspace lock pins resolves to the pinned image in any session, so it is
+// keyed by the pin instead. A DAG address or a legacy module reference runs a
+// function that may give a new result each time, so it stays per call, as
+// does an address Container.from can't parse, whose error the lookup reports.
 func (s *addressSchema) containerDynamicInputs(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Address],
-	_ AddressLookupArgs,
+	args AddressLookupArgs,
 	req *dagql.CallRequest,
 ) error {
 	if isExternalAddress(parent.Self()) {
+		pin, err := lockedImagePin(ctx, parent.Self().Value, args, req)
+		if err != nil {
+			return err
+		}
+		if pin != "" {
+			return req.SetImplicitInput(ctx, addressImagePinInput, dagql.NewString(pin))
+		}
 		scope, err := fromSessionScopeInput.Resolver(ctx, map[string]dagql.Input{
 			"address": dagql.NewString(parent.Self().Value),
 		})
@@ -794,6 +804,39 @@ func (s *addressSchema) containerDynamicInputs(
 		return err
 	}
 	return req.SetImplicitInput(ctx, dagql.PerCallInput.Name, perCall)
+}
+
+const addressImagePinInput = "imagePin"
+
+// lockedImagePin returns the digest the workspace lock pins an image tag to,
+// when Container.from would load the tag through that pin: the address names
+// a tag, and neither noLock, a lock refresh, nor the call's API view sets the
+// lock aside. It returns "" otherwise, including for an address that names
+// only a repository, whose lookup may select its latest release instead.
+func lockedImagePin(ctx context.Context, address string, args AddressLookupArgs, req *dagql.CallRequest) (string, error) {
+	if args.NoLock {
+		return "", nil
+	}
+	ref, err := reference.ParseNormalizedNamed(address)
+	if err != nil || reference.IsNameOnly(ref) {
+		return "", nil
+	}
+	if _, canonical := ref.(reference.Canonical); canonical {
+		return "", nil
+	}
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return "", err
+	}
+	// The lock applies as the call's API view allows.
+	ctx = dagql.ContextWithCall(ctx, req.ResultCall)
+	lookupLock, err := lookupLockForAPI(ctx, query, workspace.LockOperationOCISHA)
+	if err != nil {
+		return "", err
+	}
+	resolution := resolveLookupFromLoadedLock(lookupLock, workspace.LockOperationOCISHA,
+		workspace.LookupInputs([]any{reference.TagNameOnly(ref).String()}))
+	return resolution.Pin, nil
 }
 
 func (s *addressSchema) container(
