@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"maps"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -4741,13 +4742,17 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	return inst, nil
 }
 
-// runtimePrebuilds bounds the engine's runtime prebuilds in flight. Builds
-// that run together on a cold build cache each compile the packages they
-// share, so starting every module's build at once costs more CPU and memory
-// and finishes later than a few at a time.
-var runtimePrebuilds = semaphore.NewWeighted(maxRuntimePrebuilds)
+// runtimePrebuilds bounds the engine's runtime prebuilds in flight to one per
+// CPU the engine runs on, and at least 4. Builds that run together share
+// what they compile in common, so more at once finish sooner where there are
+// CPUs to run them; past that, each one only adds CPU and memory.
+var runtimePrebuilds = semaphore.NewWeighted(int64(maxRuntimePrebuilds))
 
-const maxRuntimePrebuilds = 4
+// maxRuntimePrebuilds is the engine's GOMAXPROCS, at least 4: the CPUs the
+// engine may run on, or GOMAXPROCS when it's set. A CPU quota on the engine's
+// container doesn't count, since the engine runs in a child cgroup of it,
+// which Go doesn't read the quota of.
+var maxRuntimePrebuilds = max(4, runtime.GOMAXPROCS(0))
 
 // prebuildModuleRuntime builds src's runtime when its SDK can build it
 // without the module's dependencies (core.RuntimePrebuilder).
