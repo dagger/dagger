@@ -347,12 +347,19 @@ func (build *Builder) GoImageEntriesSeed(ctx context.Context) (*dagger.Directory
 	mainGo.WriteString(")\n\nfunc main() {}\n")
 	return dag.Container().
 		From(consts.GolangImage).
+		WithEnvVariable("GOPROXY", seedGoProxy).
 		WithDirectory("/seed", seedMod.WithNewFile("main.go", mainGo.String())).
 		WithWorkdir("/seed").
 		WithExec([]string{"go", "get", "dagger.io/dagger@" + libVersion}).
 		WithExec([]string{"go", "mod", "tidy"}).
 		Directory("/seed"), nil
 }
+
+// seedGoProxy is the GOPROXY of the seeds' downloads: proxy.golang.org
+// sometimes resets a module zip download mid-stream, which Go's default fails
+// on; "|" retries the proxy once, then fetches from the origin, as the Go SDK
+// does (core/sdk's goSDKDefaultGoProxy). go.sum still verifies the result.
+const seedGoProxy = "https://proxy.golang.org|https://proxy.golang.org|direct"
 
 // goSDKModuleLibVersion is the dagger.io/dagger version go-sdk's generated
 // modules pin (go-sdk's defaultTarget), and goSDKModuleImports what their
@@ -384,6 +391,7 @@ func (build *Builder) GoSDKImageEntriesSeed() *dagger.Directory {
 	mainGo.WriteString(")\n\nfunc main() {}\n")
 	return dag.Container().
 		From(consts.GolangImage).
+		WithEnvVariable("GOPROXY", seedGoProxy).
 		WithNewFile("/seed/go.mod", "module seed\n\ngo "+distconsts.GolangVersion+"\n").
 		WithNewFile("/seed/main.go", mainGo.String()).
 		WithWorkdir("/seed").
