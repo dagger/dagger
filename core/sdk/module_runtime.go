@@ -135,7 +135,7 @@ func (sdk *runtimeModule) runtimeContainer(
 		})
 	}
 
-	err = dag.Select(ctx, sdkInst.sdk, &inst,
+	err = sdkInst.selectSDK(ctx, &inst,
 		dagql.Selector{
 			Field: "moduleRuntime",
 			Args:  args,

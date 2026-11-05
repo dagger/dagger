@@ -54,6 +54,13 @@ type moduleInstance struct {
 	sdk dagql.AnyObjectResult
 }
 
+// selectSDK selects from the SDK object as the engine's own work
+// (core.WithEngineWork): what the SDK does to answer is the engine's
+// machinery, internal in telemetry, as the built-in SDKs' work is.
+func (inst *moduleInstance) selectSDK(ctx context.Context, dest any, sels ...dagql.Selector) error {
+	return inst.dag.Select(core.WithEngineWork(ctx), inst.sdk, dest, sels...)
+}
+
 func newModuleSDK(
 	ctx context.Context,
 	root *core.Query,
@@ -224,6 +231,8 @@ func sessionModuleInstance(ctx context.Context, key string, build func(context.C
 
 // newInstance serves the SDK module, configured, in a new server.
 func (sdk *module) newInstance(ctx context.Context) (*moduleInstance, error) {
+	// Making and configuring the SDK object is the engine's own work too.
+	ctx = core.WithEngineWork(ctx)
 	dag, err := dagql.NewServer(ctx, sdk.root)
 	if err != nil {
 		return nil, fmt.Errorf("create sdk module server: %w", err)
@@ -484,7 +493,7 @@ func (sdk *module) TargetRuntime(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("initialize sdk module %s targetRuntime: %w", sdk.mod.Self().Name(), err)
 	}
 	var out dagql.String
-	if err := sdkInst.dag.Select(ctx, sdkInst.sdk, &out, dagql.Selector{
+	if err := sdkInst.selectSDK(ctx, &out, dagql.Selector{
 		Field: "targetRuntime",
 	}); err != nil {
 		return "", fmt.Errorf("call sdk %s targetRuntime: %w", sdk.mod.Self().Name(), err)

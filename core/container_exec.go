@@ -112,10 +112,10 @@ type ContainerExecState struct {
 	ModuleContext dagql.ObjectResult[*Module]
 	FunctionCall  *FunctionCall
 
-	// EngineCalled marks an exec run for a call the engine made itself (see
-	// FunctionCall.engineCalled): the process it starts with nesting does the
-	// engine's own work too, and its calls are internal in telemetry.
-	EngineCalled bool
+	// EngineWork marks an exec run as the engine's own work (WithEngineWork):
+	// the process it starts with nesting does the engine's own work too, and
+	// its calls are internal in telemetry.
+	EngineWork bool
 
 	// ExecMD changes during execution and retries. Persist the supplied input.
 	originalExecMD *engineutil.ExecutionMetadata
@@ -1389,22 +1389,6 @@ func (ssh *execSSHMountInstance) Mount() ([]ctrdmount.Mount, func() error, error
 	}}, release, nil
 }
 
-// execEngineCalled reports whether an exec runs for a call the engine made
-// itself: a function runtime's exec for its own call, or an exec that the
-// module process of such a call asks for, as a module entrypoint starts its
-// module's process.
-func execEngineCalled(ctx context.Context, functionCall *FunctionCall) bool {
-	if functionCall != nil {
-		return functionCall.EngineCalled()
-	}
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return false
-	}
-	caller, err := query.CurrentFunctionCall(ctx)
-	return err == nil && caller.EngineCalled()
-}
-
 // mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithExec(
 	ctx context.Context,
@@ -1421,7 +1405,10 @@ func (container *Container) WithExec(
 		ExecMD:         execMD,
 		ModuleContext:  moduleContext,
 		FunctionCall:   functionCall,
-		EngineCalled:   execEngineCalled(ctx, functionCall),
+		// A function runtime's exec for a call made as engine work, or an
+		// exec that a process doing engine work asks for, as a module
+		// entrypoint starts its module's process.
+		EngineWork:     functionCall.EngineWork() || IsEngineWork(ctx),
 		originalExecMD: copyExecInputMetadata(execMD),
 	}
 	container.Lazy = &ContainerExecLazy{State: state}
@@ -2401,7 +2388,7 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 				SessionID:             clientMetadata.SessionID,
 				AllowedLLMModules:     slices.Clone(clientMetadata.AllowedLLMModules),
 				UseRecipeIDsByDefault: execMD != nil && execMD.UseRecipeIDsByDefault,
-				EngineCalled:          state.EngineCalled,
+				EngineWork:            state.EngineWork,
 			}
 		}
 

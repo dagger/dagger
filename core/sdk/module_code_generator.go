@@ -49,7 +49,7 @@ func (sdk *codeGeneratorModule) Codegen(
 	}
 
 	var inst dagql.Result[*core.GeneratedCode]
-	err = dag.Select(ctx, sdkInst.sdk, &inst, dagql.Selector{
+	err = sdkInst.selectSDK(ctx, &inst, dagql.Selector{
 		Field: "codegen",
 		Args: []dagql.NamedInput{
 			{

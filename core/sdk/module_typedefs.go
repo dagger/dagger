@@ -76,7 +76,7 @@ func (sdk *moduleTypes) ModuleTypes(
 		core.SetExecutionIdentity(ctx, &execMD)
 	}
 	var ctr dagql.ObjectResult[*core.Container]
-	err = dag.Select(ctx, sdkInst.sdk, &ctr,
+	err = sdkInst.selectSDK(ctx, &ctr,
 		dagql.Selector{
 			Field: "moduleTypes",
 			Args: []dagql.NamedInput{

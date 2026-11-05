@@ -274,11 +274,11 @@ type ClientMetadata struct {
 	// the processes the entrypoint starts.
 	SDKEntrypoint bool `json:"-"`
 
-	// EngineCalled marks the nested client of a process that does the
-	// engine's own work: one an exec started for a call the engine made
-	// itself, such as an SDK building a module's runtime. Its calls are
-	// internal in telemetry. Engine-internal: never read from client headers.
-	EngineCalled bool `json:"-"`
+	// EngineWork marks the nested client of a process that does the engine's
+	// own work, such as one an SDK starts to build a module's runtime. Its
+	// calls are internal in telemetry. Engine-internal: never read from
+	// client headers.
+	EngineWork bool `json:"-"`
 
 	// Profile enables engine wall-clock profiling (wcprof) for the duration
 	// of this client's work. Experimental; the recorded events are retrieved
