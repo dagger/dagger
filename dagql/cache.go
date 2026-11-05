@@ -3450,9 +3450,9 @@ type ongoingCall struct {
 	// and resDeclined the published entry's mark, read with the entry under
 	// egraphMu: a call that adopted a value another call declined doesn't
 	// persist it either.
-	persistDecline          *persistDecline
-	resDeclined             bool
-	ttlSeconds              int64
+	persistDecline *persistDecline
+	resDeclined    bool
+	ttlSeconds     int64
 	// expiryLimit is the resolver's ExpireBy, in sharedWorkCtx.
 	expiryLimit             *expiryLimit
 	initCompletedResultOnce sync.Once

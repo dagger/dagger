@@ -1160,6 +1160,7 @@ func (a *Artifacts) EncodePersistedObject(_ context.Context, enc *dagql.PersistE
 func (*Artifacts) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, raw json.RawMessage) (dagql.Typed, error) {
 	return decodeArtifacts(ctx, dec, raw)
 }
+
 // ArtifactItems is a list of artifacts that owns what they reference, as
 // each artifact does as a result of its own. A list of plain values owns
 // nothing, so a kept list of artifacts would store references to results it

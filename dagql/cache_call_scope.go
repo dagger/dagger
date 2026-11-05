@@ -72,8 +72,8 @@ func (s *CallScopes) recordExpiry(expiresAt int64) {
 
 // SessionBound reports whether the call is keyed per call, session or
 // client, so no later session makes it again.
-func (call *ResultCall) SessionBound() bool {
-	return call != nil && sessionBoundInputs(call.ImplicitInputs)
+func (frame *ResultCall) SessionBound() bool {
+	return frame != nil && sessionBoundInputs(frame.ImplicitInputs)
 }
 
 func sessionBoundInputs(inputs []*ResultCallArg) bool {
