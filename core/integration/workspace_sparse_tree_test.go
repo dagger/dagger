@@ -28,6 +28,12 @@ func sparseWorkspaceRepo(ctx context.Context, t *testctx.T, c *dagger.Client, mo
 		WithNewFile(".gitignore", "*.skip\n").
 		WithNewFile("outside/kept.skip", "kept\n").
 		WithNewFile(".dagger/modules/probe/sub/kept.skip", "kept\n").
+		// A nested ignore file that takes a file back, and a file whose bytes
+		// the root's attributes change, both outside every module.
+		WithNewFile("outside/nested/.gitignore", "!again.skip\n").
+		WithNewFile("outside/nested/again.skip", "again\n").
+		WithNewFile("outside/nested/dropped.skip", "dropped\n").
+		WithNewFile("outside/nested/notes.crlf", "one\ntwo\n").
 		WithNewFile("dagger.toml", `[modules.probe]
 source = ".dagger/modules/probe"
 
@@ -264,6 +270,8 @@ func (WorkspaceSuite) TestGitWorkspaceSparseReadsMatchFullReads(ctx context.Cont
 		{"a file outside the modules", "/outside", core.WorkspaceDirectoryOpts{Include: []string{"also.txt"}}},
 		{"a file outside the modules, with gitignore", "/outside", core.WorkspaceDirectoryOpts{Include: []string{"also.txt", "kept.skip"}, Gitignore: true}},
 		{"both inside and outside", "/", core.WorkspaceDirectoryOpts{Include: []string{".dagger/modules/probe/**", "outside/also.txt"}}},
+		{"a nested ignore file outside the modules", "/outside", core.WorkspaceDirectoryOpts{Include: []string{"nested/**", "also.txt"}, Gitignore: true}},
+		{"attributes outside the modules", "/outside/nested", core.WorkspaceDirectoryOpts{Include: []string{"notes.crlf"}}},
 		{"both inside and outside, with gitignore", "/", core.WorkspaceDirectoryOpts{Include: []string{".dagger/modules/probe/sub/**", "outside/*.*"}, Exclude: []string{"outside/lost.txt"}, Gitignore: true}},
 	}
 	// Reads the full tree serves, so these are on the complete server.
