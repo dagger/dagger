@@ -306,6 +306,55 @@ func (build *Builder) goSDKContent(ctx context.Context) (*sdkContent, error) {
 	}, nil
 }
 
+// GoImageEntriesSeed is the Go module whose dependencies' builds the engine
+// image ships for Go module runtimes: a module as module codegen generates
+// one (goModuleSeed), tidied with the dagger.io/dagger version codegen pins,
+// whose main package imports every package of the standard library a build
+// can import and everything generated module code imports. The builds of what its
+// root package imports are what every Go module's codegen and runtime build
+// read first: the standard library and the constant dependencies.
+func (build *Builder) GoImageEntriesSeed(ctx context.Context) (*dagger.Directory, error) {
+	seedMod, libVersion, err := goModuleSeed(ctx, build.source)
+	if err != nil {
+		return nil, err
+	}
+	stdList, err := dag.Container().
+		From(consts.GolangImage).
+		WithEnvVariable("CGO_ENABLED", "0").
+		WithExec([]string{"go", "list", "-e", "-f", "{{if and (not .Incomplete) (ne .Name \"main\") (not .Error)}}{{.ImportPath}}{{end}}", "std"}).
+		Stdout(ctx)
+	if err != nil {
+		return nil, err
+	}
+	generated, err := goFileImports(ctx, build.source.File("sdk/go/internal/codegendeps/codegendeps.go"))
+	if err != nil {
+		return nil, err
+	}
+	// Generated module code imports these, and none of dagger.io/dagger:
+	// a module has bindings of its own.
+	imports := generated
+	for _, pkg := range strings.Split(strings.TrimSpace(stdList), "\n") {
+		if pkg == "" || strings.HasPrefix(pkg, "vendor/") || strings.HasPrefix(pkg, "cmd/") ||
+			pkg == "internal" || strings.HasPrefix(pkg, "internal/") || strings.Contains(pkg, "/internal/") || strings.HasSuffix(pkg, "/internal") {
+			continue
+		}
+		imports = append(imports, pkg)
+	}
+	var mainGo strings.Builder
+	mainGo.WriteString("package main\n\nimport (\n")
+	for _, imp := range imports {
+		fmt.Fprintf(&mainGo, "\t_ %q\n", imp)
+	}
+	mainGo.WriteString(")\n\nfunc main() {}\n")
+	return dag.Container().
+		From(consts.GolangImage).
+		WithDirectory("/seed", seedMod.WithNewFile("main.go", mainGo.String())).
+		WithWorkdir("/seed").
+		WithExec([]string{"go", "get", "dagger.io/dagger@" + libVersion}).
+		WithExec([]string{"go", "mod", "tidy"}).
+		Directory("/seed"), nil
+}
+
 func unpackTar(tarball *dagger.File) *dagger.Directory {
 	return wolfi.New().
 		Container().

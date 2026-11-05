@@ -202,7 +202,56 @@ func (dev *EngineDev) Container(
 
 	// ctr = ctr.WithEnvVariable("BUILDKIT_SCHEDULER_DEBUG", "1")
 
-	return ctr, nil
+	entries, err := dev.imageEntries(ctx, builder, ctr)
+	if err != nil {
+		return nil, fmt.Errorf("engine image entries: %w", err)
+	}
+	return ctr.WithDirectory(distconsts.EngineContainerImageEntriesDir, entries), nil
+}
+
+// imageEntries are the cache entries the engine image ships for Go module
+// runtimes, which the engine merges at start: the builds of the standard library
+// and of what generated Go module code imports (GoImageEntriesSeed), made
+// by the engine of this image, engine, on a state of its own, and exported
+// by cmd/engine-image-entries. An entry's identity is its engine's, so an
+// image's entries come from an engine of its own build.
+func (dev *EngineDev) imageEntries(ctx context.Context, builder *build.Builder, engine *dagger.Container) (*dagger.Directory, error) {
+	seed, err := builder.GoImageEntriesSeed(ctx)
+	if err != nil {
+		return nil, err
+	}
+	nested := dev.IncrementSubnet()
+	service := engine.
+		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume("dagger-image-entries-"+rand.Text()), dagger.ContainerWithMountedCacheOpts{
+			Sharing: dagger.CacheSharingModeLocked,
+		}).
+		AsService(dagger.ContainerAsServiceOpts{
+			Args: []string{
+				"--addr", "tcp://0.0.0.0:1234",
+				// Its bridge is the name and "0": at most 15 characters.
+				"--network-name", "dagger-seed",
+				"--network-cidr", nested.NetworkCidr(),
+			},
+			UseEntrypoint:            true,
+			InsecureRootCapabilities: true,
+		})
+	client, err := dev.InstallClient(ctx, dag.Wolfi().Container(), service)
+	if err != nil {
+		return nil, err
+	}
+	const out = "/entries"
+	return client.
+		WithMountedFile("/usr/local/bin/engine-image-entries", builder.ImageEntriesBinary()).
+		WithMountedDirectory("/seed", seed).
+		WithMountedDirectory("/dagger-go", dev.Source.Directory("internal/daggergo")).
+		WithExec(withoutOuterSession("engine-image-entries",
+			"-seed", "/seed",
+			"-dagger-go", "/dagger-go",
+			"-go-version", distconsts.GolangVersion,
+			"-out", out,
+		)).
+		Directory(out), nil
 }
 
 // Create a test engine service

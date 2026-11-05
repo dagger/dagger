@@ -207,6 +207,12 @@ func (build *Builder) CodegenBinary() *dagger.File {
 	return build.binary("./cmd/codegen", false)
 }
 
+// ImageEntriesBinary exports the cache entries the engine image ships
+// (cmd/engine-image-entries).
+func (build *Builder) ImageEntriesBinary() *dagger.File {
+	return build.binary("./cmd/engine-image-entries", false)
+}
+
 func (build *Builder) engineBinary(race bool) *dagger.File {
 	return build.binaryWithSource("./cmd/engine", race, build.source)
 }
