@@ -614,6 +614,11 @@ type persistedContainerMetadataValue struct {
 	SystemEnvNames     []string                            `json:"systemEnvNames,omitempty"`
 	VolatileEnv        []string                            `json:"volatileEnv,omitempty"`
 	DefaultArgs        bool                                `json:"defaultArgs,omitempty"`
+
+	// FromContentDigestSafe keeps Container.fromContentDigestSafe: a scratch
+	// container read back from the cache is still one From may give a
+	// content digest.
+	FromContentDigestSafe bool `json:"fromContentDigestSafe,omitempty"`
 }
 
 type persistedContainerWithEntrypointLazy struct {
@@ -1666,6 +1671,8 @@ func (container *Container) encodeContainerMetadata(enc *dagql.PersistEncodeCont
 		SystemEnvNames:     slices.Clone(container.SystemEnvNames),
 		VolatileEnv:        slices.Clone(container.VolatileEnv),
 		DefaultArgs:        container.DefaultArgs,
+
+		FromContentDigestSafe: container.fromContentDigestSafe,
 	}
 
 	for _, mnt := range container.Mounts {
@@ -1902,6 +1909,8 @@ func (*Container) DecodePersistedObject(ctx context.Context, dec *dagql.PersistD
 		SystemEnvNames:     slices.Clone(persisted.SystemEnvNames),
 		VolatileEnv:        slices.Clone(persisted.VolatileEnv),
 		DefaultArgs:        persisted.DefaultArgs,
+
+		fromContentDigestSafe: persisted.FromContentDigestSafe,
 	}
 	// Local persistence may contain an unchanged pending part without a recipe.
 	// Admit only the same closed, recorded-parent mapping used after transfer.
