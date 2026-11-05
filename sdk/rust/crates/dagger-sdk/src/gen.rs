@@ -8905,6 +8905,12 @@ pub struct File {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct FileSyncOpts {
+    /// Also key the file by its content, so that what consumes it is cached across any two recipes that produce the same file. This hashes the file unless it already has a content key.
+    #[builder(setter(into, strip_option), default)]
+    pub key_by_content: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct FileContentsOpts {
     /// Maximum number of lines to read
     #[builder(setter(into, strip_option), default)]
@@ -9016,8 +9022,33 @@ impl File {
         query.execute(self.graphql_client.clone()).await
     }
     /// Force evaluation in the engine.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn sync(&self) -> Result<File, DaggerError> {
         let query = self.selection.select("sync");
+        let id: Id = query.execute(self.graphql_client.clone()).await?;
+        Ok(File {
+            proc: self.proc.clone(),
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("File"),
+            graphql_client: self.graphql_client.clone(),
+        })
+    }
+    /// Force evaluation in the engine.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn sync_opts(&self, opts: FileSyncOpts) -> Result<File, DaggerError> {
+        let mut query = self.selection.select("sync");
+        if let Some(key_by_content) = opts.key_by_content {
+            query = query.arg("keyByContent", key_by_content);
+        }
         let id: Id = query.execute(self.graphql_client.clone()).await?;
         Ok(File {
             proc: self.proc.clone(),

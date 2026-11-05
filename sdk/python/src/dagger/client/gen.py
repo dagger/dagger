@@ -8953,8 +8953,19 @@ class File(Type):
         _ctx = self._select("stat", _args)
         return await _ctx.execute_object(Stat)
 
-    async def sync(self) -> Self:
+    async def sync(
+        self,
+        *,
+        key_by_content: bool | None = False,
+    ) -> Self:
         """Force evaluation in the engine.
+
+        Parameters
+        ----------
+        key_by_content:
+            Also key the file by its content, so that what consumes it is
+            cached across any two recipes that produce the same file. This
+            hashes the file unless it already has a content key.
 
         Raises
         ------
@@ -8963,7 +8974,9 @@ class File(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("keyByContent", key_by_content, False),
+        ]
         return await self._ctx.execute_sync(self, "sync", _args)
 
     def __await__(self):

@@ -9629,9 +9629,21 @@ func (r *File) Stat(ctx context.Context) (*Stat, error) {
 	}, nil
 }
 
+// FileSyncOpts contains options for File.Sync
+type FileSyncOpts struct {
+	// Also key the file by its content, so that what consumes it is cached across any two recipes that produce the same file. This hashes the file unless it already has a content key.
+	KeyByContent bool
+}
+
 // Force evaluation in the engine.
-func (r *File) Sync(ctx context.Context) (*File, error) {
+func (r *File) Sync(ctx context.Context, opts ...FileSyncOpts) (*File, error) {
 	q := r.query.Select("sync")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `keyByContent` optional argument
+		if !querybuilder.IsZeroValue(opts[i].KeyByContent) {
+			q = q.Arg("keyByContent", opts[i].KeyByContent)
+		}
+	}
 
 	var id ID
 	if err := q.Bind(&id).Execute(ctx); err != nil {

@@ -34,6 +34,84 @@ func TestDirectory(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(DirectorySuite{})
 }
 
+// File.sync with keyByContent keys a file by its content whatever made it, so
+// what consumes it is cached across recipes that produce the same file. Without
+// the option, a file from an unevaluated directory keeps its recipe as its key.
+func (DirectorySuite) TestFileSyncKeyByContent(ctx context.Context, t *testctx.T) {
+	seed := rand.Text()
+	// A command's output. salt changes its recipe and nothing it writes.
+	exec := func(c *dagger.Client, salt string) *sdkcore.Container {
+		return sdkcore.NewQuery(c).Container().From(alpineImage).
+			WithEnvVariable("SALT", salt).
+			WithExec([]string{"sh", "-c", "mkdir /out && echo " + seed + " > /out/a"})
+	}
+	syncByContent := func(ctx context.Context, file *sdkcore.File) error {
+		_, err := file.Sync(ctx, sdkcore.FileSyncOpts{KeyByContent: true})
+		return err
+	}
+	// What a build's next step does: mount the file and run a command, whose
+	// output is random, so an equal output is a cache hit.
+	consume := func(ctx context.Context, t *testctx.T, c *dagger.Client, file *sdkcore.File) string {
+		out, err := sdkcore.NewQuery(c).Container().From(alpineImage).
+			WithMountedFiles("/mnt/files", []*sdkcore.File{file}).
+			WithExec([]string{"sh", "-c", "cat /mnt/files/a; head -c 16 /dev/urandom | od -An -tx1"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, seed)
+		return out
+	}
+
+	t.Run("hits across recipes", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		one := exec(c, "one").Directory("/out").File("a")
+		two := exec(c, "two").Directory("/out").File("a")
+		require.NoError(t, syncByContent(ctx, one))
+		require.NoError(t, syncByContent(ctx, two))
+		require.Equal(t, consume(ctx, t, c, one), consume(ctx, t, c, two))
+	})
+	t.Run("hits for a file read from a container", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		one := exec(c, "container-one").File("/out/a")
+		two := exec(c, "container-two").File("/out/a")
+		require.NoError(t, syncByContent(ctx, one))
+		require.NoError(t, syncByContent(ctx, two))
+		require.Equal(t, consume(ctx, t, c, one), consume(ctx, t, c, two))
+	})
+	t.Run("a plain read of the same recipe gets the key", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		keyed := exec(c, "shared-one").Directory("/out").File("a")
+		require.NoError(t, syncByContent(ctx, keyed))
+		other := exec(c, "shared-two").Directory("/out").File("a")
+		require.NoError(t, syncByContent(ctx, other))
+		// A new client reading the same recipe, with no option.
+		c2 := connect(ctx, t)
+		plain := exec(c2, "shared-one").Directory("/out").File("a")
+		require.Equal(t, consume(ctx, t, c, other), consume(ctx, t, c2, plain))
+	})
+	t.Run("without the option, misses across recipes", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		one, err := exec(c, "plain-one").Directory("/out").File("a").Sync(ctx)
+		require.NoError(t, err)
+		two, err := exec(c, "plain-two").Directory("/out").File("a").Sync(ctx)
+		require.NoError(t, err)
+		require.NotEqual(t, consume(ctx, t, c, one), consume(ctx, t, c, two))
+	})
+	t.Run("a failing command fails the sync", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		failing := sdkcore.NewQuery(c).Container().From(alpineImage).
+			WithEnvVariable("SEED", seed).
+			WithExec([]string{"sh", "-c", "mkdir /out && echo a > /out/a && exit 1"}).
+			Directory("/out").
+			File("a")
+		_, err := failing.ID(ctx)
+		require.NoError(t, err, "reading the file runs nothing")
+		err = syncByContent(ctx, failing)
+		var execErr *sdkcore.ExecError
+		require.ErrorAs(t, err, &execErr)
+		require.Equal(t, 1, execErr.ExitCode)
+	})
+}
+
 func (DirectorySuite) TestEmpty(ctx context.Context, t *testctx.T) {
 	res, err := testutil.Query[struct {
 		Directory struct {

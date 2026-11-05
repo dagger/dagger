@@ -1028,24 +1028,10 @@ func (s *directorySchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 		}
 	}
 
-	snapshot, ok := fileResult.Self().Snapshot.Peek()
-	if !ok {
-		return inst, fmt.Errorf("file snapshot not set after detached evaluation")
-	}
-	filePath, ok := fileResult.Self().File.Peek()
-	if !ok {
-		return inst, fmt.Errorf("file path not set after detached evaluation")
-	}
-
-	dgst, err := core.GetContentHashFromFile(ctx, snapshot, filePath)
+	dgst, err := fileContentDigest(ctx, fileResult.Self())
 	if err != nil {
 		return inst, err
 	}
-
-	dgst = hashutil.HashStrings(
-		filePath,
-		string(dgst),
-	)
 
 	return fileResult.WithContentDigest(ctx, dgst)
 }
