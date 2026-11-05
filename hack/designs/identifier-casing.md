@@ -924,10 +924,13 @@ the old names and later views only the new ones, and
 
 ### Accepted breaks
 
-- **Old generated clients under a newer session.** A host client generated
-  before the cut, run under a newer outer session (a newer CLI), gets the
-  newer view, so its calls to renamed fields, arguments and enum values fail.
-  Pre-cut modules keep their own view and keep working.
+- **Old generated clients using a newer view.** A client that sends old field
+  or argument spellings in a post-cut view fails. A client announcing its own
+  pre-cut version keeps that core view even under a newer CLI; a client that
+  does not announce its version can inherit the newer session's view. Enum
+  input spellings remain accepted in every view. Module typedefs keep the
+  module's own naming rules; a runtime client declaring its own version gets
+  that version's core view, capped at the engine's view.
 - **Recordings from pre-cut engines.** A recipe that a pre-cut engine
   recorded and that uses a renamed field can't be rebuilt by a post-cut
   engine: agent checkpoints, `dagger restore` from a Cloud trace, stored
