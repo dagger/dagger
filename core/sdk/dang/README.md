@@ -39,7 +39,9 @@ entrypoint, with its own defaults (`ResolveEntrypointVersions`).
 
 A config write (`dagger develop`, `install`, ...) keeps the manifest's own
 `engineVersion` (`ModuleSource.ConfigEngineVersion`), not the one from
-`dang.toml`.
+`dang.toml`, unless `withEngineVersion` explicitly overrides it. That override
+survives source and SDK mutations within the API chain; a fresh load reads
+`dang.toml` again.
 
 A Dang 1.0 module builds its types with full inference (`dang.RunDir`) unless
 it enables self calls explicitly, as the SDK of the Dang v1 line did; later

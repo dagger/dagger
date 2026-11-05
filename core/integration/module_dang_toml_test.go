@@ -178,6 +178,85 @@ func (DangSuite) TestDangTomlEngineVersion(ctx context.Context, t *testctx.T) {
 	})
 }
 
+// Source and SDK mutations re-read the governing config, while an explicit
+// engine override survives even when it originally equals the resolved version.
+func (DangSuite) TestDangTomlVersionMutations(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	const oldVersion = "v0.20.6"
+	const manifestVersion = "v0.21.9"
+	dir := core.NewQuery(c).Directory().
+		WithNewFile("dagger.json", `{"name":"tiny","engineVersion":"`+manifestVersion+`","sdk":{"source":"dang"},"source":"a"}`).
+		WithNewFile("a/dang.toml", "[imports.Dagger]\ndagger = \""+oldVersion+"\"\n").
+		WithNewFile("a/main.dang", dangSelection("{", "}")).
+		WithNewFile("b/dang.toml", "dang = \"1.0\"\n[imports.Dagger]\ndagger = \""+manifestVersion+"\"\n").
+		WithNewFile("b/main.dang", dangSelection("{", "}")).
+		WithNewFile("default/main.dang", dangSelection("{{", "}}")).
+		WithNewFile("legacy/main.dang", dangSelection("{", "}"))
+	src := dir.AsModuleSource()
+	version := func(ctx context.Context, t *testctx.T, src *core.ModuleSource, want string) {
+		t.Helper()
+		got, err := src.EngineVersion(ctx)
+		require.NoError(t, err)
+		require.Equal(t, want, got)
+	}
+	loads := func(ctx context.Context, t *testctx.T, src *core.ModuleSource) {
+		t.Helper()
+		_, err := src.AsModule().Sync(ctx)
+		require.NoError(t, err)
+	}
+	version(ctx, t, src, oldVersion)
+	loads(ctx, t, src)
+
+	t.Run("source config and manifest fallback", func(ctx context.Context, t *testctx.T) {
+		version(ctx, t, src.WithSourceSubpath("b"), manifestVersion)
+		loads(ctx, t, src.WithSourceSubpath("b")) // declared 1.0, despite the newer API
+		version(ctx, t, src.WithSourceSubpath("default"), manifestVersion)
+		loads(ctx, t, src.WithSourceSubpath("default")) // no config: default grammar is new
+		version(ctx, t, src, oldVersion)                // mutations leave their receiver unchanged
+	})
+
+	t.Run("SDK switch and removal", func(ctx context.Context, t *testctx.T) {
+		for _, sdk := range []string{"go", ""} {
+			switched := src.WithSDK(sdk)
+			version(ctx, t, switched, manifestVersion)
+			version(ctx, t, switched.WithSDK("dang"), oldVersion)
+			loads(ctx, t, switched.WithSDK("dang"))
+			version(ctx, t, src.WithEngineVersion(oldVersion).WithSDK(sdk), oldVersion)
+		}
+	})
+
+	t.Run("equal override survives source changes and config writes", func(ctx context.Context, t *testctx.T) {
+		// Warm the ordinary chain first: equal effective versions must not
+		// cause the override-bearing source to reuse its later mutations.
+		version(ctx, t, src.WithSourceSubpath("b"), manifestVersion)
+		overridden := src.WithEngineVersion(oldVersion).WithSourceSubpath("b")
+		version(ctx, t, overridden, oldVersion)
+		loads(ctx, t, overridden) // a declared grammar survives the override
+		version(ctx, t, src.WithSourceSubpath("b").WithEngineVersion(oldVersion), oldVersion)
+
+		layer := overridden.GeneratedContextChangeset().Layer()
+		contents, err := layer.File("dagger.json").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, contents, `"engineVersion": "`+oldVersion+`"`)
+		require.NotContains(t, contents, "disableDefaultFunctionCaching")
+		// Reloading reads b/dang.toml again, not the API chain's override.
+		fresh := dir.WithDirectory(".", layer).AsModuleSource()
+		version(ctx, t, fresh, manifestVersion)
+		loads(ctx, t, fresh)
+	})
+
+	t.Run("only default grammar follows the override", func(ctx context.Context, t *testctx.T) {
+		// b declares 1.0; raising its engine version must not raise its grammar.
+		loads(ctx, t, src.WithSourceSubpath("b").WithEngineVersion(engine.IdentifierCasingVersion))
+		// Without a declaration, the final effective engine selects the grammar.
+		loads(ctx, t, src.WithEngineVersion(oldVersion).WithSourceSubpath("legacy"))
+		_, err := src.WithSourceSubpath("legacy").AsModule().Sync(ctx)
+		require.Error(t, err, "the manifest's default grammar rejects legacy selection")
+		_, err = src.WithEngineVersion(oldVersion).WithSourceSubpath("default").AsModule().Sync(ctx)
+		require.Error(t, err, "the override's default grammar rejects modern selection")
+	})
+}
+
 // The Dagger version a dang.toml declares selects the module's naming rules,
 // like an engineVersion: a module whose dagger.json predates the naming cut
 // (engine.IdentifierCasingVersion) gets the new rules from a dang.toml that
@@ -337,10 +416,10 @@ type Tiny {
   pub rescue: Int! = 1
   pub total(rescue: Int! = 3): Int! { rescue + loop }
 }
-`, nil).
-			With(daggerCallAt("tiny", "total")).
+`, map[string]string{"/dagger.toml": "[modules.tiny]\nsource = \"tiny\"\n"}).
+			With(daggerQuery(`{tiny{total rescue}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "5", strings.TrimSpace(out))
+		require.JSONEq(t, `{"tiny":{"total":5,"rescue":1}}`, out)
 	})
 }
