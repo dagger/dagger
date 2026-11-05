@@ -576,26 +576,32 @@ func (r *PythonClientDevTestForPythonVersion) UnmarshalJSON(bs []byte) error {
 }
 
 // Run the pytest command.
-func (r *PythonClientDevTestForPythonVersion) Run(ctx context.Context, args []string) error { // python-client-dev (../../.dagger/modules/python-client-dev/test.go:31:1)
+func (r *PythonClientDevTestForPythonVersion) Run(ctx context.Context, ws *Workspace, args []string) error { // python-client-dev (../../.dagger/modules/python-client-dev/test.go:31:1)
+	assertNotNil("ws", ws)
 	if r.run != nil {
 		return nil
 	}
 	q := r.query.Select("run")
+	q = q.Arg("ws", ws)
 	q = q.Arg("args", args)
 
 	return q.Execute(ctx)
 }
 
 // Run python slow tests
-func (r *PythonClientDevTestForPythonVersion) Slow() *Check { // python-client-dev (../../.dagger/modules/python-client-dev/test.go:20:1)
+func (r *PythonClientDevTestForPythonVersion) Slow(ws *Workspace) *Check { // python-client-dev (../../.dagger/modules/python-client-dev/test.go:20:1)
+	assertNotNil("ws", ws)
 	q := r.query.Select("slow")
+	q = q.Arg("ws", ws)
 
 	return new(Check).WithGraphQLQuery(q)
 }
 
 // Run python unit tests
-func (r *PythonClientDevTestForPythonVersion) Unit() *Check { // python-client-dev (../../.dagger/modules/python-client-dev/test.go:26:1)
+func (r *PythonClientDevTestForPythonVersion) Unit(ws *Workspace) *Check { // python-client-dev (../../.dagger/modules/python-client-dev/test.go:26:1)
+	assertNotNil("ws", ws)
 	q := r.query.Select("unit")
+	q = q.Arg("ws", ws)
 
 	return new(Check).WithGraphQLQuery(q)
 }
