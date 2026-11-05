@@ -44,6 +44,9 @@ type moduleSDKOpts struct {
 	// debugTerminal opens a terminal in a module's runtime container when
 	// its SDK config sets debug, as the built-in Go SDK did.
 	debugTerminal bool
+	// moduleTypes reports a module's types without its runtime, in the engine.
+	// Such a module has no reason to build while it loads.
+	moduleTypes core.ModuleTypes
 }
 
 type moduleInstance struct {
@@ -414,6 +417,9 @@ func (sdk *module) AsRuntime() (core.Runtime, bool) {
 }
 
 func (sdk *module) AsModuleTypes() (core.ModuleTypes, bool) {
+	if sdk.moduleSDKOpts.moduleTypes != nil {
+		return sdk.moduleSDKOpts.moduleTypes, true
+	}
 	if _, ok := sdk.funcs["moduleTypes"]; !ok {
 		return nil, false
 	}

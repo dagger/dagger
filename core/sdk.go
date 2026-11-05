@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -416,6 +417,11 @@ type ModuleTypes interface {
 		*Module,
 	) (dagql.ObjectResult[*Module], error)
 }
+
+// ErrModuleTypesNeedRuntime is what a ModuleTypes returns when it can't report
+// this module's types itself: the engine then asks the module's runtime for
+// them, as for an SDK without ModuleTypes.
+var ErrModuleTypesNeedRuntime = errors.New("module types need the module's runtime")
 
 /*
 	  SDK aggregates all the interfaces that a SDK may implement.

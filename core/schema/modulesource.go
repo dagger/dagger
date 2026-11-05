@@ -3700,6 +3700,8 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 			// Go SDK now discovers types via its runtime); take the runtime
 			// path the capability-less SDK would have taken.
 			typeDefsEnabled = false
+		case errors.Is(terr, core.ErrModuleTypesNeedRuntime):
+			typeDefsEnabled = false
 		case terr != nil:
 			return nil, terr
 		default:
@@ -3733,7 +3735,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 		}
 	}
 
-	if typeDefsEnabled && isSelfCallsEnabled(src) {
+	if typeDefsEnabled && isSelfCallsEnabled(src) && !sdk.GeneratorMergesOwnTypes(src.Self().SDK.Source) {
 		mod.IncludeSelfInDeps = true
 	}
 

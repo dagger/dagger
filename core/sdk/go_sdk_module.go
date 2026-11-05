@@ -66,6 +66,7 @@ func (l *Loader) loadBuiltinGoSDK(
 		// collide with that merge.
 		selfCalls:     true,
 		debugTerminal: true,
+		moduleTypes:   goModuleTypes{},
 		generatedFiles: []string{
 			"dagger.gen.go",
 			filepath.Join("internal", "dagger", "dagger.gen.go"),

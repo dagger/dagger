@@ -51,6 +51,9 @@ func (sdk *runtimeModule) PrebuildRuntime(
 	ctx context.Context,
 	source dagql.ObjectResult[*core.ModuleSource],
 ) (rerr error) {
+	if sdk.mod.moduleSDKOpts.moduleTypes != nil {
+		return nil
+	}
 	sdkInst, err := sdk.mod.instantiate(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to initialize sdk module %s runtime: %w", sdk.mod.mod.Self().Name(), err)
