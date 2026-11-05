@@ -124,13 +124,15 @@ type GoSdk {
   let archivesPath: String! = "/gobuild-archives"
 
   # dagger/go, building as the SDK image's toolchain does, with the runtime
-  # binaries' flags. Downloads run with the module's private settings when
+  # binaries' flags: the link drops debug information, so compiles don't
+  # generate it, but for the standard library, whose archives stay the ones
+  # every other build reads from the engine image. Downloads run with the module's private settings when
   # it sets goprivate, and otherwise in the image alone, so they key the
   # same in every session.
   let goTool: Go! {
     go(
       version: goVersion,
-      buildFlags: ["-ldflags=-s -w"],
+      buildFlags: ["-ldflags=-s -w", "-gcflags=all=-dwarf=false", "-gcflags=std="],
       downloads: if (goprivate == "") { base } else { withAccess(base) },
     )
   }

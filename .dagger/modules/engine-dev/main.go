@@ -270,7 +270,7 @@ func (dev *EngineDev) imageEntries(ctx context.Context, builder *build.Builder, 
 		WithMountedDirectory("/seed-go-sdk", builder.GoSDKImageEntriesSeed()).
 		WithExec(withoutOuterSession("engine-image-entries",
 			"-seed", "/seed",
-			"-seed", "/seed-go-sdk",
+			"-entrypoint-seed", "/seed-go-sdk",
 			"-dagger-go", daggerGo,
 			"-go-version", distconsts.GolangVersion,
 			"-out", out,

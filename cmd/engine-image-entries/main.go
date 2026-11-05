@@ -11,8 +11,9 @@
 // generated modules depend on, so that every result is the one their builds
 // look up. It takes what codegen's archives of each Go module in -seed read
 // from the cache (archiveBuilds of its root package, its dependencies alone,
-// without tests), at -go-version with the Go SDK's build flags, gobuild's
-// binary (Module._prebuild), and exports them with their blobs into -out.
+// without tests), at -go-version with the Go SDK's build flags, or for an
+// -entrypoint-seed with go-sdk's entrypoints', gobuild's binary
+// (Module._prebuild), and exports them with their blobs into -out.
 package main
 
 import (
@@ -29,7 +30,11 @@ import (
 
 // goSDKBuildFlags are the build flags the Go SDK builds every module runtime
 // with (sdk/go/runtime/main.dang).
-var goSDKBuildFlags = []string{"-ldflags=-s -w"}
+var goSDKBuildFlags = []string{"-ldflags=-s -w", "-gcflags=all=-dwarf=false", "-gcflags=std="}
+
+// entrypointBuildFlags are the build flags go-sdk's generated entrypoints
+// build with: none.
+var entrypointBuildFlags []string
 
 // seedFlags are the -seed flags, in order.
 type seedFlags []string
@@ -39,7 +44,9 @@ func (s *seedFlags) Set(v string) error { *s = append(*s, v); return nil }
 
 func main() {
 	var seeds seedFlags
-	flag.Var(&seeds, "seed", "a Go module whose dependencies' builds to export (repeatable)")
+	var entrypointSeeds seedFlags
+	flag.Var(&seeds, "seed", "a Go module whose dependencies' builds to export, with the Go SDK's flags (repeatable)")
+	flag.Var(&entrypointSeeds, "entrypoint-seed", "a Go module whose dependencies' builds to export, with go-sdk's entrypoints' flags (repeatable)")
 	daggerGo := flag.String("dagger-go", "", "the dagger/go module ref the Go SDK depends on")
 	goVersion := flag.String("go-version", "", "the Go version the Go SDK builds with")
 	out := flag.String("out", "", "where to export the entries")
@@ -48,7 +55,7 @@ func main() {
 		flag.Usage()
 		os.Exit(2)
 	}
-	if err := run(context.Background(), seeds, *daggerGo, *goVersion, *out); err != nil {
+	if err := run(context.Background(), seeds, entrypointSeeds, *daggerGo, *goVersion, *out); err != nil {
 		fmt.Fprintln(os.Stderr, "engine-image-entries:", err)
 		os.Exit(1)
 	}
@@ -61,7 +68,7 @@ const daggerGoModule = `moduleSource(refString: $pin) { %s }`
 // entrypoint: the last .from("…") of the file.
 var fromImage = regexp.MustCompile(`\.from\("([^"]+)"\)`)
 
-func run(ctx context.Context, seeds []string, daggerGo, goVersion, out string) error {
+func run(ctx context.Context, seeds, entrypointSeeds []string, daggerGo, goVersion, out string) error {
 	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err
@@ -140,17 +147,26 @@ func run(ctx context.Context, seeds []string, daggerGo, goVersion, out string) e
 	// and the tools: each result once.
 	var ids []string
 	seen := map[string]bool{}
-	for _, seed := range seeds {
-		seedIDs, err := archiveBuilds(do, seed, goVersion)
-		if err != nil {
-			return fmt.Errorf("seed %s: %w", seed, err)
-		}
-		for _, id := range seedIDs {
-			if !seen[id] {
-				seen[id] = true
-				ids = append(ids, id)
+	exportSeeds := func(seeds []string, flags []string) error {
+		for _, seed := range seeds {
+			seedIDs, err := archiveBuilds(do, seed, goVersion, flags)
+			if err != nil {
+				return fmt.Errorf("seed %s: %w", seed, err)
+			}
+			for _, id := range seedIDs {
+				if !seen[id] {
+					seen[id] = true
+					ids = append(ids, id)
+				}
 			}
 		}
+		return nil
+	}
+	if err := exportSeeds(seeds, goSDKBuildFlags); err != nil {
+		return err
+	}
+	if err := exportSeeds(entrypointSeeds, entrypointBuildFlags); err != nil {
+		return err
 	}
 	results := append(append(append(ids, mod.ModuleSource.ID, mod.ModuleSource.ContextDirectory.ID), files...), containers...)
 	if err := do(`query($results: [ID!]!, $out: String!) { _engineImageBundle(results: $results) { export(path: $out) } }`,
@@ -164,9 +180,8 @@ func run(ctx context.Context, seeds []string, daggerGo, goVersion, out string) e
 
 // archiveBuilds is what codegen's archives of the Go module in seed read
 // from the cache, as IDs: archiveBuilds of its root package, its
-// dependencies alone, without tests, at goVersion with the Go SDK's build
-// flags.
-func archiveBuilds(do func(string, map[string]any, any) error, seed, goVersion string) ([]string, error) {
+// dependencies alone, without tests, at goVersion with flags.
+func archiveBuilds(do func(string, map[string]any, any) error, seed, goVersion string, flags []string) ([]string, error) {
 	var ws struct {
 		Host struct {
 			Directory struct {
@@ -193,7 +208,7 @@ func archiveBuilds(do func(string, map[string]any, any) error, seed, goVersion s
 				archiveBuilds(ws: $ws, dependencies: true, packages: ["."], noTests: true)
 			}
 		}
-	}`, map[string]any{"ws": ws.Host.Directory.AsWorkspace.ID, "version": goVersion, "flags": goSDKBuildFlags}, &builds); err != nil {
+	}`, map[string]any{"ws": ws.Host.Directory.AsWorkspace.ID, "version": goVersion, "flags": flags}, &builds); err != nil {
 		return nil, fmt.Errorf("archive builds: %w", err)
 	}
 	if len(builds.Go.Module.ArchiveBuilds) == 0 {
