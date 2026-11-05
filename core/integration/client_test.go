@@ -255,6 +255,9 @@ source = "dang"
 `, engine.IdentifierCasingVersion)).
 			WithNewFile("main.dang", `type EnumResults {
   pub policy: FunctionCachePolicy! { FunctionCachePolicy.NEVER }
+  pub optionalPolicy: FunctionCachePolicy { FunctionCachePolicy.NEVER }
+  pub absentPolicy: FunctionCachePolicy { null }
+  pub policies: [[FunctionCachePolicy]]! { [[FunctionCachePolicy.NEVER, null], null, []] }
   pub compression: ImageLayerCompression! { ImageLayerCompression.ESTARGZ }
   pub mediaTypes: ImageMediaTypes! { ImageMediaTypes.OCI }
 }
@@ -270,12 +273,17 @@ source = "dang"
 			SchemaVersion string `json:"__schemaVersion"`
 			EnumResults   struct {
 				Policy, Compression, MediaTypes string
+				OptionalPolicy, AbsentPolicy    *string
+				Policies                        [][]*string
 			}
-		}](tc.client, t, `{ __schemaVersion enumResults { policy compression mediaTypes } }`, nil)
+		}](tc.client, t, `{ __schemaVersion enumResults { policy optionalPolicy absentPolicy policies compression mediaTypes } }`, nil)
 		require.NoError(t, err, tc.version)
 		require.Equal(t, tc.version, result.SchemaVersion)
 		// Decode into strings, not SDK enum types that could normalize the wire value.
 		require.Equal(t, tc.policy, result.EnumResults.Policy, tc.version)
+		require.Equal(t, &tc.policy, result.EnumResults.OptionalPolicy, tc.version)
+		require.Nil(t, result.EnumResults.AbsentPolicy, tc.version)
+		require.Equal(t, [][]*string{{&tc.policy, nil}, nil, {}}, result.EnumResults.Policies, tc.version)
 		require.Equal(t, tc.compression, result.EnumResults.Compression, tc.version)
 		require.Equal(t, tc.mediaTypes, result.EnumResults.MediaTypes, tc.version)
 	}
