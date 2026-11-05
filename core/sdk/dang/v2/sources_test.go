@@ -185,37 +185,89 @@ func TestDeclaresEntrypointSourcesParsesOncePerContent(t *testing.T) {
 	require.Less(t, again, parse/4, "asking again parsed the entrypoint again: %d bytes allocated, against %d for a parse", again, parse)
 }
 
-// The entrypoint's copy has no dang.toml, so a Dang version on the context
-// decides how the run parses it. The check must parse it the same way, or it
-// can find no sources member where the run has one. Postfix rescue is syntax
-// from Dang 2.1; in 2.0 it does not parse.
+// The entrypoint's copy has no dang.toml, so the Dang version its module
+// source records decides how the run parses it. The check must parse it the
+// same way, or it can find no sources member where the run has one. Postfix
+// rescue is syntax from Dang 2.1; in 2.0 it does not parse.
 func TestDeclaresEntrypointSourcesAtTheContextVersion(t *testing.T) {
 	t.Parallel()
 	dir := writeDangFiles(t, map[string]string{
 		"main.dang": entrypointSource(sourcesMember, goSDKMethods) + "let caught: Int! = 1 rescue { e: Error => 2 }\n",
 	})
-	atVersion := func(v dang.Version) context.Context {
-		return dang.ContextWithVersion(dang.ContextWithImportConfigs(t.Context(), dang.ImportConfig{
-			Name:       "Dagger",
-			Client:     failingClient{},
-			Schema:     contractTestSchema(),
-			AutoImport: true,
-		}), v)
-	}
+	ctx := dang.ContextWithImportConfigs(t.Context(), dang.ImportConfig{
+		Name:       "Dagger",
+		Client:     failingClient{},
+		Schema:     contractTestSchema(),
+		AutoImport: true,
+	})
 
-	ctx := atVersion(dang.Version2_1)
-	declared, err := DeclaresEntrypointSources(ctx, dir)
+	declared, err := DeclaresEntrypointSources(ctx, dir, "2.1")
 	require.NoError(t, err)
 	require.True(t, declared)
-	_, err = runEntrypointDir(ctx, dir, true)
+	_, err = runEntrypointDir(ctx, dir, "2.1", true)
 	require.NoError(t, err)
 
-	ctx = atVersion(dang.Version2_0)
-	declared, err = DeclaresEntrypointSources(ctx, dir)
+	declared, err = DeclaresEntrypointSources(ctx, dir, "2.0")
 	require.NoError(t, err)
 	require.False(t, declared)
-	_, err = runEntrypointDir(ctx, dir, true)
+	_, err = runEntrypointDir(ctx, dir, "2.0", true)
 	require.ErrorContains(t, err, "failed to parse file", "the run parses the entrypoint as the check does")
+}
+
+const prebuildMember = `
+  pub prebuild: File! { directory.withNewFile("dispatch", "binary").file("dispatch") }
+`
+
+// The prebuild check reads the entrypoint as the run reads it: through the
+// syntax cache, so an entrypoint the sources check has parsed isn't parsed
+// again.
+func TestDeclaresEntrypointPrebuildParsesOncePerContent(t *testing.T) {
+	members := []string{sourcesMember, goSDKMethods, prebuildMember}
+	for i := range 100 {
+		members = append(members, fmt.Sprintf("  pub greeting%d(name: String!): String! { \"hello %d, \" + name }\n", i, i))
+	}
+	// Content of its own, so no earlier test has parsed it.
+	source := fmt.Sprintf("# %s\n", t.Name()) + entrypointSource(members...)
+	dir := writeDangFiles(t, map[string]string{"main.dang": source})
+
+	allocated := func(f func()) uint64 {
+		var before, after goruntime.MemStats
+		goruntime.GC()
+		goruntime.ReadMemStats(&before)
+		f()
+		goruntime.ReadMemStats(&after)
+		return after.TotalAlloc - before.TotalAlloc
+	}
+	parse := allocated(func() {
+		_, err := dang.Parse("main.dang", []byte(source))
+		require.NoError(t, err)
+	})
+	declared, err := DeclaresEntrypointSources(t.Context(), dir, "")
+	require.NoError(t, err)
+	require.True(t, declared)
+	again := allocated(func() {
+		declared, err := declaresEntrypointMember(t.Context(), dir, EntrypointPrebuildMember)
+		require.NoError(t, err)
+		require.True(t, declared)
+	})
+	require.Less(t, again, parse/4, "the prebuild check parsed the entrypoint again: %d bytes allocated, against %d for a parse", again, parse)
+}
+
+// The prebuild check parses at the Dang version on the context, as the run
+// and the sources check do, so the run never builds from a member the check
+// misses, or the other way round. Postfix rescue is syntax from Dang 2.1; in
+// 2.0 it does not parse.
+func TestDeclaresEntrypointPrebuildAtTheContextVersion(t *testing.T) {
+	t.Parallel()
+	dir := writeDangFiles(t, map[string]string{
+		"main.dang": entrypointSource(sourcesMember, goSDKMethods, prebuildMember) + "let caught: Int! = 1 rescue { e: Error => 2 }\n",
+	})
+	declared, err := declaresEntrypointMember(dang.ContextWithVersion(t.Context(), dang.Version2_1), dir, EntrypointPrebuildMember)
+	require.NoError(t, err)
+	require.True(t, declared)
+	declared, err = declaresEntrypointMember(dang.ContextWithVersion(t.Context(), dang.Version2_0), dir, EntrypointPrebuildMember)
+	require.NoError(t, err)
+	require.False(t, declared)
 }
 
 type failingClient struct{}

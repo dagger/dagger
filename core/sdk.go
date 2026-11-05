@@ -369,6 +369,20 @@ type RuntimePrebuilder interface {
 }
 
 /*
+ModulePrebuilder is an interface that a Runtime may implement when every call
+of its module builds on one file, such as the module's compiled binary, that
+can be built as soon as the module is loaded. Loading the module doesn't need
+the file, so it can be built ahead of the module's first call, and a call then
+finds it built or joins its build.
+*/
+type ModulePrebuilder interface {
+	// PrebuildFile returns that file for the loaded module, not yet built, or
+	// false when the module has none. It is the same result the module's
+	// calls build on.
+	PrebuildFile(context.Context, dagql.ObjectResult[*Module]) (dagql.ObjectResult[*File], bool, error)
+}
+
+/*
 ModuleTypes is an interface that a SDK may implement to expose type definitions of the module.
 
 This interface MUST be implemented to support self calls.

@@ -1,0 +1,85 @@
+package core
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/json"
+	"fmt"
+	"strings"
+
+	"github.com/dagger/testctx"
+	"github.com/stretchr/testify/require"
+)
+
+// prebuildEntrypoint is a module entrypoint whose prebuild member returns the
+// file its calls read. The file holds the time, in seconds, at which its exec
+// ran. The nonce, spliced in with %q, keeps the exec from being cached by an
+// earlier run of the test.
+const prebuildEntrypoint = `type Entrypoint implements ModuleEntrypoint {
+  pub sources(workspace: Workspace!): Directory! {
+    directory.withDirectory(workspace.cwd, workspace.directory(".", gitignore: true))
+  }
+
+  let built: File! {
+    container
+      .from(%q)
+      .withEnvVariable("NONCE", %q)
+      .withExec(["sh", "-c", "date +%%s > /built"])
+      .file("/built")
+  }
+
+  pub prebuild: File! {
+    built
+  }
+
+  pub types: [TypeDef!]! {
+    [
+      typeDef
+        .withObject("M")
+        .withConstructor(function("", typeDef.withObject("M")))
+        .withFunction(function("Built", typeDef.withKind(TypeDefKind.STRING_KIND))),
+    ]
+  }
+
+  pub call(receiverType: String!, receiverValue: JSON, fnName: String!, fnArgs: JSON!): JSON! {
+    if (fnName == "") {
+      ("{}" :: JSON!)
+    } else {
+      (JSON.encode(built.contents.trimSpace) :: JSON!)
+    }
+  }
+}
+`
+
+// A module's _prebuild field returns the file its entrypoint's prebuild member
+// declares, as the module's calls build it: selecting the field builds the
+// file, and a call made later reads that file rather than building another,
+// which would hold a later time.
+func (ModuleSuite) TestModuleEntrypointPrebuildField(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ctr := goGitBase(t, c).
+		WithNewFile("m/dagger-module.toml", sourcesModuleManifest).
+		WithNewFile("m/entrypoint/main.dang", fmt.Sprintf(prebuildEntrypoint, alpineImage, rand.Text()))
+
+	out, err := ctr.With(daggerQuery(`{moduleSource(refString: "m") {asModule {_prebuild {contents}}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	var res struct {
+		ModuleSource struct {
+			AsModule struct {
+				Prebuild struct {
+					Contents string
+				} `json:"_prebuild"`
+			}
+		}
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &res), out)
+	prebuilt := strings.TrimSpace(res.ModuleSource.AsModule.Prebuild.Contents)
+	require.NotEmpty(t, prebuilt, out)
+
+	called, err := ctr.
+		WithExec([]string{"sleep", "2"}).
+		With(daggerCallAt("m", "built")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, prebuilt, strings.TrimSpace(called), "the call read the file _prebuild built")
+}

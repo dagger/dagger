@@ -223,6 +223,110 @@ func (r *entrypointRuntime) Call(
 	return fnCall.ReturnValue(ctx, core.JSON(resultJSON))
 }
 
+// EntrypointPrebuildMember is the optional entrypoint member that returns the
+// file every call of the module builds on, such as the module's compiled
+// binary. It takes no arguments. Since the file doesn't depend on a call, the
+// engine can build it ahead of the module's first call, and a call that
+// builds on the same file then finds it built or joins its build.
+const EntrypointPrebuildMember = "prebuild"
+
+// EntrypointPrebuildFile returns the file of mod's built-in Dang module
+// entrypoint's prebuild member, not yet built, or false when the entrypoint
+// declares no such member. The entrypoint runs as the module's calls see it:
+// currentModule is mod.
+func EntrypointPrebuildFile(
+	ctx context.Context,
+	mod dagql.ObjectResult[*core.Module],
+) (file dagql.ObjectResult[*core.File], declared bool, rerr error) {
+	defer func() {
+		if rerr != nil {
+			rerr = dangshared.ConvertError(rerr)
+		}
+	}()
+	if !mod.Self().Source.Valid {
+		return file, false, fmt.Errorf("module %q has no source", mod.Self().Name())
+	}
+	src := mod.Self().Source.Value
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return file, false, fmt.Errorf("get Dagger server for entrypoint prebuild: %w", err)
+	}
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return file, false, fmt.Errorf("get current query for entrypoint prebuild: %w", err)
+	}
+	entrySrc, err := entrypoint.ResolveSource(ctx, dag, src)
+	if err != nil {
+		return file, false, err
+	}
+	schemaJSONFile, err := mod.Self().Deps.SchemaIntrospectionJSONFileForModule(ctx)
+	if err != nil {
+		return file, false, fmt.Errorf("get entrypoint schema: %w", err)
+	}
+	nestedClientMetadata, err := dangshared.NewNestedClientMetadata(ctx)
+	if err != nil {
+		return file, false, err
+	}
+	nestedClientMetadata.SDKEntrypoint = true
+
+	// The program runs as the module's process, as a call's does: an exec it
+	// starts is keyed on the module it runs for, so the file it returns is
+	// the one the module's calls build.
+	fnCall := &core.FunctionCall{Name: EntrypointPrebuildMember}
+	fnCall.SetModuleProcess()
+
+	contract := entrypointContract{dangVersion: src.Self().DangVersion}
+	_, err = evalDangSource(
+		ctx,
+		query,
+		entrySrc,
+		schemaJSONFile,
+		nestedClientMetadata,
+		true, /* inert attachables */
+		fnCall,
+		mod,
+		false, /* a prebuild reads no object directives */
+		contract.run,
+		func(ctx context.Context, env dang.ValueScope) ([]byte, error) {
+			if !contract.prebuild {
+				return nil, nil
+			}
+			declared = true
+			entrypointName, err := findModuleEntrypoint(env)
+			if err != nil {
+				return nil, err
+			}
+			value, err := callEntrypointMethod(ctx, env, entrypointName, EntrypointPrebuildMember, mod, nil)
+			if err != nil {
+				return nil, fmt.Errorf("call module entrypoint %s: %w", EntrypointPrebuildMember, err)
+			}
+			file, err = loadEntrypointFile(ctx, dag, value)
+			return nil, err
+		},
+	)
+	if err != nil {
+		return file, false, err
+	}
+	return file, declared, nil
+}
+
+func loadEntrypointFile(ctx context.Context, dag *dagql.Server, value dang.Value) (dagql.ObjectResult[*core.File], error) {
+	var file dagql.ObjectResult[*core.File]
+	object, ok := value.(dang.GraphQLValue)
+	if !ok || object.TypeName != "File" {
+		return file, fmt.Errorf("module entrypoint %s returned %T instead of a File", EntrypointPrebuildMember, value)
+	}
+	encoded, err := object.ID(ctx)
+	if err != nil {
+		return file, fmt.Errorf("get module entrypoint %s file ID: %w", EntrypointPrebuildMember, err)
+	}
+	var id dagql.ID[*core.File]
+	if err := id.Decode(encoded); err != nil {
+		return file, fmt.Errorf("decode module entrypoint %s file ID: %w", EntrypointPrebuildMember, err)
+	}
+	return id.Load(ctx, dag)
+}
+
 const moduleEntrypointInterface = `interface ModuleEntrypoint {
   types(workspace: Workspace!): [TypeDef!]!
   call(
@@ -260,6 +364,7 @@ type entrypointContract struct {
 	// (ModuleSource.DangVersion).
 	dangVersion string
 	sources     bool
+	prebuild    bool
 }
 
 func (c *entrypointContract) run(ctx context.Context, sourceDir string) (dang.ValueScope, error) {
@@ -274,8 +379,10 @@ func (c *entrypointContract) run(ctx context.Context, sourceDir string) (dang.Va
 		return nil, err
 	}
 	defer os.RemoveAll(dir)
-	c.sources, err = declaresSourcesIn(ctx, dir)
-	if err != nil {
+	if c.sources, err = declaresEntrypointMember(ctx, dir, EntrypointSourcesMember); err != nil {
+		return nil, err
+	}
+	if c.prebuild, err = declaresEntrypointMember(ctx, dir, EntrypointPrebuildMember); err != nil {
 		return nil, err
 	}
 	return runCopiedEntrypoint(ctx, dir, c.sources)
