@@ -633,6 +633,24 @@ defmodule Dagger.Directory do
   end
 
   @doc """
+  Retrieves this directory, declared as made for the given platform.
+
+  Declare a result whose contents are the same whichever platform made them, such as a Go package compiled for a platform by any platform's Go toolchain. An engine of another platform that makes the same directory for the same platform then finds this one, and the other way around.
+
+  The contents are not checked: a declared result that depends on the platform it was made on can be found where it doesn't belong.
+  """
+  @spec with_platform(t(), Dagger.Platform.t()) :: Dagger.Directory.t()
+  def with_platform(%__MODULE__{} = directory, platform) do
+    query_builder =
+      directory.query_builder |> QB.select("withPlatform") |> QB.put_arg("platform", platform)
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: directory.client
+    }
+  end
+
+  @doc """
   Return a snapshot with a symlink
   """
   @spec with_symlink(t(), String.t(), String.t()) :: Dagger.Directory.t()

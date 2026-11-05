@@ -7111,6 +7111,30 @@ class Directory(Type):
         _ctx = self._select("withPatchFile", _args)
         return Directory(_ctx)
 
+    def with_platform(self, platform: Platform) -> Self:
+        """Retrieves this directory, declared as made for the given platform.
+
+        Declare a result whose contents are the same whichever platform made
+        them, such as a Go package compiled for a platform by any platform's
+        Go toolchain. An engine of another platform that makes the same
+        directory for the same platform then finds this one, and the other way
+        around.
+
+        The contents are not checked: a declared result that depends on the
+        platform it was made on can be found where it doesn't belong.
+
+        Parameters
+        ----------
+        platform:
+            The platform the directory's contents are for (e.g.,
+            "linux/arm64").
+        """
+        _args = [
+            Arg("platform", platform),
+        ]
+        _ctx = self._select("withPlatform", _args)
+        return Directory(_ctx)
+
     def with_symlink(self, target: str, link_name: str) -> Self:
         """Return a snapshot with a symlink
 

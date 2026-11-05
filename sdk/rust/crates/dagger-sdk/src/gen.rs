@@ -7451,6 +7451,22 @@ impl Directory {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Retrieves this directory, declared as made for the given platform.
+    /// Declare a result whose contents are the same whichever platform made them, such as a Go package compiled for a platform by any platform's Go toolchain. An engine of another platform that makes the same directory for the same platform then finds this one, and the other way around.
+    /// The contents are not checked: a declared result that depends on the platform it was made on can be found where it doesn't belong.
+    ///
+    /// # Arguments
+    ///
+    /// * `platform` - The platform the directory's contents are for (e.g., "linux/arm64").
+    pub fn with_platform(&self, platform: Platform) -> Directory {
+        let mut query = self.selection.select("withPlatform");
+        query = query.arg("platform", platform);
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Retrieves this directory with all file/dir timestamps set to the given time.
     ///
     /// # Arguments

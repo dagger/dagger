@@ -7313,6 +7313,21 @@ func (r *Directory) WithPatchFile(patch *File, opts ...DirectoryWithPatchFileOpt
 	}
 }
 
+// Retrieves this directory, declared as made for the given platform.
+//
+// Declare a result whose contents are the same whichever platform made them, such as a Go package compiled for a platform by any platform's Go toolchain. An engine of another platform that makes the same directory for the same platform then finds this one, and the other way around.
+//
+// The contents are not checked: a declared result that depends on the platform it was made on can be found where it doesn't belong.
+func (r *Directory) WithPlatform(platform Platform) *Directory {
+	q := r.query.Select("withPlatform")
+	q = q.Arg("platform", platform)
+
+	return &Directory{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
 // Return a snapshot with a symlink
 func (r *Directory) WithSymlink(target string, linkName string) *Directory {
 	q := r.query.Select("withSymlink")
