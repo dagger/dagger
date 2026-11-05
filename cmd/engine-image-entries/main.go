@@ -50,12 +50,13 @@ func main() {
 	daggerGo := flag.String("dagger-go", "", "the dagger/go module ref the Go SDK depends on")
 	goVersion := flag.String("go-version", "", "the Go version the Go SDK builds with")
 	out := flag.String("out", "", "where to export the entries")
+	platform := flag.String("platform", "", "the platform of the engine image the entries are for (default: the engine's)")
 	flag.Parse()
 	if len(seeds) == 0 || *daggerGo == "" || *goVersion == "" || *out == "" {
 		flag.Usage()
 		os.Exit(2)
 	}
-	if err := run(context.Background(), seeds, entrypointSeeds, *daggerGo, *goVersion, *out); err != nil {
+	if err := run(context.Background(), seeds, entrypointSeeds, *daggerGo, *goVersion, *platform, *out); err != nil {
 		fmt.Fprintln(os.Stderr, "engine-image-entries:", err)
 		os.Exit(1)
 	}
@@ -68,7 +69,7 @@ const daggerGoModule = `moduleSource(refString: $pin) { %s }`
 // entrypoint: the last .from("…") of the file.
 var fromImage = regexp.MustCompile(`\.from\("([^"]+)"\)`)
 
-func run(ctx context.Context, seeds, entrypointSeeds []string, daggerGo, goVersion, out string) error {
+func run(ctx context.Context, seeds, entrypointSeeds []string, daggerGo, goVersion, platform, out string) error {
 	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err
@@ -105,7 +106,13 @@ func run(ctx context.Context, seeds, entrypointSeeds []string, daggerGo, goVersi
 			} `json:"asModule"`
 		} `json:"moduleSource"`
 	}
-	if err := do(`query($pin: String!) { `+fmt.Sprintf(daggerGoModule, `id contextDirectory { id file(path: "gobuild/internal/dagger/entrypoint/main.dang") { contents } } asModule { dependencies { name _prebuild { id } } }`)+` }`, pin, &mod); err != nil {
+	// gobuild's binary is the one an engine of the image's platform builds.
+	params, prebuild, vars := "$pin: String!", "_prebuild", map[string]any{"pin": daggerGo}
+	if platform != "" {
+		params, prebuild = params+", $platform: Platform", "_prebuild(platform: $platform)"
+		vars["platform"] = platform
+	}
+	if err := do(`query(`+params+`) { `+fmt.Sprintf(daggerGoModule, `id contextDirectory { id file(path: "gobuild/internal/dagger/entrypoint/main.dang") { contents } } asModule { dependencies { name `+prebuild+` { id } } }`)+` }`, vars, &mod); err != nil {
 		return fmt.Errorf("dagger/go: %w", err)
 	}
 	var files []string
@@ -138,7 +145,7 @@ func run(ctx context.Context, seeds, entrypointSeeds []string, daggerGo, goVersi
 				} `json:"from"`
 			} `json:"container"`
 		}
-		if err := do(`query($ref: String!) { container { from(address: $ref) { id } } }`, map[string]any{"ref": ref}, &ctr); err != nil {
+		if err := do(`query($ref: String!, $platform: Platform) { container(platform: $platform) { from(address: $ref) { id } } }`, map[string]any{"ref": ref, "platform": optional(platform)}, &ctr); err != nil {
 			return fmt.Errorf("image %s: %w", ref, err)
 		}
 		containers = append(containers, ctr.Container.From.ID)
@@ -149,7 +156,7 @@ func run(ctx context.Context, seeds, entrypointSeeds []string, daggerGo, goVersi
 	seen := map[string]bool{}
 	exportSeeds := func(seeds []string, flags []string) error {
 		for _, seed := range seeds {
-			seedIDs, err := archiveBuilds(do, seed, goVersion, flags)
+			seedIDs, err := archiveBuilds(do, seed, goVersion, platform, flags)
 			if err != nil {
 				return fmt.Errorf("seed %s: %w", seed, err)
 			}
@@ -181,7 +188,7 @@ func run(ctx context.Context, seeds, entrypointSeeds []string, daggerGo, goVersi
 // archiveBuilds is what codegen's archives of the Go module in seed read
 // from the cache, as IDs: archiveBuilds of its root package, its
 // dependencies alone, without tests, at goVersion with flags.
-func archiveBuilds(do func(string, map[string]any, any) error, seed, goVersion string, flags []string) ([]string, error) {
+func archiveBuilds(do func(string, map[string]any, any) error, seed, goVersion, platform string, flags []string) ([]string, error) {
 	var ws struct {
 		Host struct {
 			Directory struct {
@@ -202,17 +209,31 @@ func archiveBuilds(do func(string, map[string]any, any) error, seed, goVersion s
 			} `json:"module"`
 		} `json:"go"`
 	}
-	if err := do(`query($ws: ID!, $version: String!, $flags: [String!]!) {
+	vars := map[string]any{"ws": ws.Host.Directory.AsWorkspace.ID, "version": goVersion, "flags": flags}
+	platformArg, platformVar := "", ""
+	if platform != "" {
+		platformArg, platformVar = ", platform: $platform", ", $platform: String"
+		vars["platform"] = platform
+	}
+	if err := do(`query($ws: ID!, $version: String!, $flags: [String!]!`+platformVar+`) {
 		go(version: $version, buildFlags: $flags) {
 			module(ws: $ws, path: ".", findUp: false) {
-				archiveBuilds(ws: $ws, dependencies: true, packages: ["."], noTests: true)
+				archiveBuilds(ws: $ws, dependencies: true, packages: ["."], noTests: true`+platformArg+`)
 			}
 		}
-	}`, map[string]any{"ws": ws.Host.Directory.AsWorkspace.ID, "version": goVersion, "flags": flags}, &builds); err != nil {
+	}`, vars, &builds); err != nil {
 		return nil, fmt.Errorf("archive builds: %w", err)
 	}
 	if len(builds.Go.Module.ArchiveBuilds) == 0 {
 		return nil, errors.New("archive builds: none")
 	}
 	return builds.Go.Module.ArchiveBuilds, nil
+}
+
+// optional is v as a nullable argument: null when empty.
+func optional(v string) any {
+	if v == "" {
+		return nil
+	}
+	return v
 }
