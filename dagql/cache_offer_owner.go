@@ -337,6 +337,12 @@ func (res *sharedResult) pendingOffersLocked() ([]PersistedPartOffer, error) {
 		// ships the entry leaves it to run its recipe.
 		return nil, nil
 	}
+	return res.attachedOffersLocked()
+}
+
+// attachedOffersLocked is every offer attached to res, by part key, the
+// image's included.
+func (res *sharedResult) attachedOffersLocked() ([]PersistedPartOffer, error) {
 	var keys []string
 	for key := range res.partOffersLocked() {
 		keys = append(keys, key)
